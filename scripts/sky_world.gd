@@ -13,8 +13,10 @@ extends RefCounted
 ##
 ## The bounds: the plate's first home (home coordinates, the origin) is the
 ## world's middle. Islands, islets, cumulus and clouds stand only within
-## SCATTER of it (`inside`, read through SkyPeaks `blocks`), and keep clear
-## of every range laid out here (SkyPeaks `blocks`).
+## SCATTER of it and BAND_CLEAR clear of the band's rock (`inside`, read
+## through SkyPeaks `blocks`): out among the band's foothills, so the regions
+## out by the band have their own groups; and keep clear of every range
+## laid out here (SkyPeaks `blocks`).
 ##
 ## Every range is a real one (scripts/sky_peak.gd, made by seed), placed
 ## and scaled here: `scale` stretches it along its crest (x), across (z)
@@ -39,25 +41,29 @@ extends RefCounted
 ##     peaks stand behind lower ones;
 ##   the far row (kind "far"): a few tall ranges out behind the band,
 ##     fading into the haze;
-##   the dividing ridges (kind "ridge", `_ridges`): long ridges of ranges
-##     laid crest to crest that cut the middle into regions, running across
-##     it, not round. A knot of peaks out across the plate from the range in
-##     sight of it, its arms out to the band: two side arms passing the
-##     plate either side, halving the world, and one or two outer arms
-##     dividing the far half; and two arms off the range in sight of the
-##     plate's ends out to the band, closing off the region behind it. The
-##     pieces' heights vary (role): the knot's tallest, walls over the
-##     glide's ceiling, low stretches under it to hop, spurs off the walls
-##     into the regions; a few walls keep their gorge (a tight line through).
-##     Every arm has a pass, a wide col open at glide height (PASS_TOP,
-##     PASS_OPEN): a gap between two pieces of a side arm, a col at an outer
-##     arm's root before the band, a col by the range in sight of the plate.
-##     The plan is judged as laid (`_judge`, on a grid, `basins`): as many
-##     regions as it means, every one reached from every other through the
-##     passes, the plate's open round it with its range in sight, room and
-##     islands in every region, and tried again from the seed's own stream
-##     until it keeps every rule. Each region past the plate's has its own
-##     cumulus where one has room (`towers`, SkyTowers `spot`).
+##   the dividing ridges (kind "ridge", `_ridges`): long walls of ranges
+##     laid crest to crest that slice the middle into regions. Three run
+##     across the world (`_ridge_plan`): one through the range in sight of
+##     the plate, out from its ends, and two more a third of the way round
+##     either side, each as near the plate as its open air, the fixed
+##     islands and their currents let it stand. Where two cross inside the
+##     band they meet at a corner, one running on out to the band. So the
+##     plate's region is the middle, walled round, and between each wall and
+##     the band lies a long valley region of its own: from above, a
+##     triangle in the ring. Each wall's middle is its knot, its tallest; the
+##     pieces' heights vary (role): walls over the glide's ceiling, low
+##     stretches under it to hop, spurs off the walls into the regions; a
+##     few walls keep their gorge (a tight line through). Every wall has a
+##     pass, a wide gap open at glide height (PASS_TOP, PASS_OPEN), between
+##     two of its pieces or by the end of the range in sight of the plate,
+##     and across it a col, a low saddle under the glide's way, so the wall
+##     reads whole from above. The plan is judged as laid (`_judge`, on a
+##     grid, `basins`): as many regions as it means, every one reached from
+##     every other through the passes, the plate's open round it with its
+##     range in sight, room and islands in every region; tried again from
+##     the seed's own stream, the evenest of those that keep every rule is
+##     taken (`_balance`). Each region past the plate's has its own cumulus
+##     where one has room (`towers`, SkyTowers `spot`).
 ##
 ## Ranges on an island the world has saved (`kept`) are left out: a world
 ## saved before the ring might have one out where it would stand.
@@ -95,9 +101,17 @@ static var kept: Array[Vector3] = []
 ## The fixed islands (SkyIslands OFFSETS, kept equal: tests/
 ## test_sky_world.gd), the plate at the origin among them.
 const SLOTS := [Vector3.ZERO,Vector3(380.0,-20.0,-160.0),Vector3(-260.0,25.0,-520.0),Vector3(-640.0,-35.0,120.0),Vector3(180.0,-50.0,700.0),Vector3(820.0,15.0,420.0)]
-## Everything scattered stands within SCATTER (m) of the middle.
-const SCATTER := 2200.0
-## The band's rock stands at least GAP (m) past the bounds.
+## Everything scattered stands within SCATTER (m) of the middle, and
+## BAND_CLEAR (m) clear of the band's rock (its runs', massifs' and
+## foothills' boxes).
+const SCATTER := 2700.0
+const BAND_CLEAR := 170.0
+## The band's rock stands no nearer the middle than BAND_IN (m).
+const BAND_IN := 2350.0
+## Nor further than WORLD_HALF (m) from the middle along x or z.
+const WORLD_HALF := 4390.0
+## The band's rock stands at least GAP (m) past the old bounds (2200 m),
+## BAND_IN.
 const GAP := 150.0
 ## The crest line: its mean radius (m); its waves twice, three and five
 ## times round (m); and how far it bulges out at a massif (m) over how wide
@@ -117,6 +131,11 @@ const FLANK := 420.0
 ## line; each joint jogs up to JOG (m) in or out of it.
 const SADDLE := 135.0
 const HEADROOM := 75.0
+## The plan's crest is read only CREST_HALF (m, its own x) each side of a
+## range's middle: further out its heightfield falls away to its grid's
+## ends (SkyPeak HALF) whatever the plan says, so a joint laid there would
+## stand low.
+const CREST_HALF := 520.0
 const JOIN := 70.0
 const JOG := 50.0
 ## The band's runs and massifs: their scale (x and z: along and across the
@@ -146,40 +165,29 @@ const FAR_OUT := 1000.0
 const FAR_X := Vector2(1.8,2.1)
 const FAR_Z := Vector2(1.2,1.3)
 const FAR_Y := Vector2(1.3,1.45)
-## The dividing ridges (`_ridges`), a knot and arms out from it. The knot:
-## KNOT_AT (m) from the middle (and KNOT_ROOM further out than any fixed
-## island stands that way, up to KNOT_MOST), across the plate from the
-## range in sight of it, up to KNOT_STRAY (radians) off. The two side arms leave it SIDE
-## (radians) either way off the way back to the plate, passing the plate
-## on either side; OUTER_ODDS for one or two outer arms between them round
-## the back. Every arm leaves the knot ARM_APART (radians) from the
-## next, runs straight on (bowed off its line by BEND of its length) to
-## the band's crest line, and its root there stands ROOT_CLEAR (m) from a
-## notch's edge and a kept gorge's mouth. Nearly square to the way back to
-## the plate, the side arms halve the world: the plate's half, and the far
-## half the outer arms divide.
-const KNOT_AT := Vector2(950.0,1250.0)
-const KNOT_STRAY := 1.2
-const KNOT_ROOM := 560.0
-const KNOT_MOST := 1500.0
-const SIDE := Vector2(1.15,1.5)
-## An arm whose root would fall in a notch or a gorge's mouth is turned
-## NUDGE (radians) at a time, up to NUDGE_MOST, till it doesn't.
+## The dividing ridges (`_ridges`): CHORDS walls across the world
+## (`_ridge_plan`), one through the range in sight of the plate, the others
+## turned about a third of the way round from it either way, CHORD_STRAY
+## (radians) off, each standing as near the plate as it may (`_chord_reach`)
+## and up to CHORD_MORE (m) further, its middle slid up to CHORD_SLIDE (m)
+## along it. Each is laid as two arms out from its middle (the knot) each
+## way, bowed off its line by BEND of its length (halved), to a corner or
+## the band; a root on the band stands ROOT_CLEAR (m) from a notch's edge
+## and a kept gorge's mouth, an arm turned NUDGE (radians) at a time, up to
+## NUDGE_MOST, till it does, and no two roots closer than ROOT_APART.
+const CHORDS := 3
+const CHORD_STRAY := 0.3
+const CHORD_MORE := Vector2(0.0,200.0)
+const CHORD_SLIDE := 350.0
 const NUDGE := 0.04
 const NUDGE_MOST := 0.32
-## The arms off the range in sight of the plate: each leaves its end
-## splayed HOME_SPLAY along its crest off the way out, up to HOME_TURN
-## (radians) either way; each with a col by the range's end at HOME_PASS
-## odds (one at least), or its rock lapped HOME_LAP (m) over the range's.
-const HOME_SPLAY := 0.35
+## The arms off the range in sight of the plate: each leaves its end along
+## its crest, turned up to HOME_TURN (radians) either way; each with a col
+## by the range's end at HOME_PASS odds (one at least), or its rock lapped
+## HOME_LAP (m) over the range's.
 const HOME_TURN := 0.4
 const HOME_PASS := 0.6
 const HOME_LAP := 250.0
-## A root off the range in sight of the plate may be nudged this far
-## (radians): the range can't move off a notch or a gorge.
-const HOME_NUDGE := 0.8
-const OUTER_ODDS := [0.55,0.45]
-const ARM_APART := 0.95
 const ROOT_CLEAR := 450.0
 const BEND := Vector2(0.04,0.16)
 ## The pieces: their scale along and across (the knot's and the spurs'
@@ -190,18 +198,26 @@ const BEND := Vector2(0.04,0.16)
 ## KNOT_OFF (m) from the knot. A side arm's crest runs INTO (m) past where
 ## the band's rock starts, so the two are one wall.
 const RIDGE_X := Vector2(0.7,1.0)
-const RIDGE_Z := Vector2(0.5,0.62)
+const RIDGE_Z := Vector2(0.62,0.74)
 const KNOT_X := Vector2(0.6,0.75)
 const KNOT_Y := Vector2(1.15,1.28)
 const WALL_Y := Vector2(0.9,1.12)
-const LOW_Y := Vector2(0.36,0.42)
+const LOW_Y := Vector2(0.41,0.45)
 const SPUR_X := Vector2(0.6,0.8)
 const SPUR_Z := Vector2(0.5,0.6)
 const SPUR_Y := Vector2(0.5,0.66)
-const LAY_AT := {"knot":200.0,"wall":170.0,"low":-10.0,"spur":40.0}
+const LAY_AT := {"knot":200.0,"wall":170.0,"low":-10.0,"spur":40.0,"col":SkyPeak.SEA+25.0}
+## The cols: a low saddle across every pass (`_col`), its crest COL_LAP (m)
+## past the pass's ends each way, so a wall reads whole from above; its
+## height (COL_Y: nothing in it stands over SkyPeak SEA+(MOST-SEA)*COL_Y.y,
+## -40 m, under PASS_TOP) and its width across.
+const COL_Y := Vector2(0.125,0.144)
+const COL_Z := Vector2(0.55,0.65)
+const COL_LAP := 60.0
 const LOW_ODDS := 0.3
 const KNOT_OFF := 40.0
 const INTO := 150.0
+const CORNER_INTO := -30.0
 ## How far along its crest a piece's rock stands over PASS_TOP, and over
 ## the sea, at most (m, its own x): its heightfield falls away at its
 ## grid's ends (SkyPeak HALF), whatever the plan's crest says.
@@ -245,8 +261,12 @@ const PASS_HALF := 110.0
 const PLATE_OPEN := 700.0
 const ROOM := 0.3
 const ROOM_CLEAR := 220.0
-## Tries at a layout that keeps every rule before the best is taken.
+## Tries at a layout that keeps every rule before the best is taken; of
+## those that keep every rule, the evenest (`_balance`) is taken, once one
+## is BALANCED or EVEN_TRIES are made.
 const RIDGE_TRIES := 150
+const BALANCED := 0.45
+const EVEN_TRIES := 60
 ## The ridges keep PLATE_ROOM (m) from the plate, ISLAND_ROOM from a fixed
 ## island, AIR_ROOM from the islands' jet streams, CORRIDOR from the range
 ## in sight of the plate.
@@ -267,7 +287,7 @@ const TOWER_IN := 150.0
 const TOWER_ROOM := 40.0
 ## Every region holds an island at least (SkyCells), and ISLANDS if any
 ## try can.
-const ISLANDS := 2
+const ISLANDS := 4
 ## The arms' roots stand ROOT_APART (m, round the crest line) from each
 ## other's, so no two close a pocket against the band.
 const ROOT_APART := 1500.0
@@ -280,7 +300,7 @@ const NOTCH_STRAY := 0.35
 const NOTCH_INSET := 80.0
 ## A range's low end beside a notch may run this far (m) into the inset and
 ## the notch's edge, falling into the sea: the notch's shoulders.
-const SHOULDER := 150.0
+const SHOULDER := 100.0
 ## The low shoulder before a range's crest by a notch: no longer than
 ## LEAD_MOST (m) if a few draws can help it.
 const LEAD_MOST := 250.0
@@ -297,10 +317,13 @@ const EDGE_GROW := 1.0
 const EDGE_MOST := 5.5
 const EDGE_VANE := 0.35
 const KEPT_ROOM := 800.0
-## The band's haze: the rock past HAZE_FROM (m from the middle) takes the
-## band's curve, fully by HAZE_TO; its reach and where it is whole (m).
-const HAZE_FROM := SCATTER+60.0
-const HAZE_TO := SCATTER+460.0
+## The band's haze: the rock takes the band's curve from HAZE_FROM (m) in
+## from where its rock starts round the middle (`haze_inner`, HAZE_ANGLES
+## a turn) to HAZE_TO past it, so nothing scattered (BAND_CLEAR off it)
+## ever does; its reach and where it is whole (m).
+const HAZE_FROM := 40.0
+const HAZE_TO := 250.0
+const HAZE_ANGLES := 128
 const HAZE_REACH := 3500.0
 const HAZE_WHOLE := 8500.0
 ## How far the glide's view reaches with the ring (m), and without.
@@ -372,7 +395,59 @@ static func salted(base: int) -> int:
 ## always, with the ring off.
 static func inside(home: Vector3, margin := 0.0) -> bool:
 	if not ring_on(): return true
-	return Vector2(home.x,home.z).length() <= SCATTER-margin
+	var flat := Vector2(home.x,home.z)
+	if flat.length() > SCATTER-margin: return false
+	# Quick: well inside the band's rock everywhere.
+	if flat.length() < BAND_IN-BAND_CLEAR-margin: return true
+	return clear_of_band(flat,layout().ranges,margin) and haze_share(flat) == 0.0
+
+## True if a home point (plate plane) stands BAND_CLEAR (and `margin`) clear
+## of the band's rock among `ranges` (its runs', massifs' and foothills'
+## boxes).
+static func clear_of_band(p: Vector2, ranges: Array, margin := 0.0) -> bool:
+	for r: Dictionary in ranges:
+		if r.kind != "run" and r.kind != "massif" and r.kind != "foot": continue
+		if box_distance(r,p) < BAND_CLEAR+margin: return false
+	return true
+
+## Where the band's rock starts round the middle (m), HAZE_ANGLES a turn
+## from +x toward +z: the nearest any of its boxes (the far row's too)
+## comes along each way out, for its haze (SkyHaze `ring_spot`).
+static func _haze_inner(ranges: Array) -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	var band: Array = ranges.filter(func(r: Dictionary) -> bool: return in_band(r.kind))
+	for k in range(HAZE_ANGLES):
+		var a := TAU*k/HAZE_ANGLES
+		var way := Vector2(cos(a),sin(a))
+		var near: Array = band.filter(func(q: Dictionary) -> bool: return absf(angle_difference(float(q.angle),a)) < 0.9)
+		var r := BAND_IN-200.0
+		while r < crest(a)+400.0:
+			if near.any(func(q: Dictionary) -> bool: return box_distance(q,way*r) < 1.0): break
+			r += 60.0
+		r -= 60.0
+		while r < crest(a)+400.0:
+			if near.any(func(q: Dictionary) -> bool: return box_distance(q,way*r) < 1.0): break
+			r += 10.0
+		out.append(r)
+	# Each way the nearest of it and the two either side: the curve never
+	# reaches in past the rock between them.
+	var eased := out.duplicate()
+	for k in range(HAZE_ANGLES):
+		for m in range(-2,3): eased[k] = minf(eased[k],out[(k+m+HAZE_ANGLES)%HAZE_ANGLES])
+	return eased
+
+## How far onto the band's haze curve a home point is (0 to 1): as the
+## shader has it (shaders/reference_surface_haze.gdshaderinc zs_glide_ring).
+static func haze_share(p: Vector2) -> float:
+	if not ring_on(): return 0.0
+	return _share(p,layout().get("haze_inner",PackedFloat32Array()))
+
+static func _share(p: Vector2, inner: PackedFloat32Array) -> float:
+	if inner.size() != HAZE_ANGLES: return 0.0
+	var f := fposmod(atan2(p.y,p.x)/TAU,1.0)*HAZE_ANGLES
+	var i := int(f)
+	var at := lerpf(inner[i%HAZE_ANGLES],inner[(i+1)%HAZE_ANGLES],f-i)
+	return smoothstep(at-HAZE_FROM,at+HAZE_TO,p.length())
 
 ## The crest line's frame for the world's seed: {phase: Vector3, notches,
 ## massifs: Array[float] (angles)}. The massifs stand midway between two
@@ -449,18 +524,95 @@ static func in_band(kind: String) -> bool:
 ## (`_ridges`): regions, passes, towers, knot, islands (each region's),
 ## kept_rules (false only if no try kept every rule), tries}. A range's
 ## index stays its own when one before it is left out for a saved island.
+##
+## Worked out on a worker when asked ahead (`prepare`, from SkyIslands
+## `load_state`: as a world starts), so the main thread never waits on it in
+## play; asked for before that worker is done, it is waited for, and asked
+## for with none started, worked out here and now (tests, tools). Either way
+## the same seed lays the same world.
 static func layout() -> Dictionary:
 	var wonders := int(SkyHomes.stone)+2*int(SkyHomes.isles)
 	if _layout_seed == seed and not _kept_changed and _layout_wonders == wonders: return _layout
-	var key := "%d|%s|%s%s" % [seed,str(kept),SkyHomes.stone,SkyHomes.isles]
+	var key := _key_now()
+	var began := Time.get_ticks_usec()
+	# The one being worked out on a worker: waited for, and taken if it is
+	# this one.
+	if key != _layout_key and _task >= 0: settle()
 	_layout_seed = seed
 	_layout_wonders = wonders
 	_kept_changed = false
 	if key == _layout_key: return _layout
+	frame()
+	_layout = _compute()
 	_layout_key = key
+	main_ms += (Time.get_ticks_usec()-began)/1000.0
+	return _layout
+
+## The layout's key: the seed, the islands kept and the wonders standing.
+static func _key_now() -> String:
+	return "%d|%s|%s%s" % [seed,str(kept),SkyHomes.stone,SkyHomes.isles]
+
+## The worker working out a layout ahead (`prepare`), its key and its result.
+static var _task := -1
+static var _task_key := ""
+static var _task_out := {}
+## Main-thread milliseconds `prepare` and the waits on its worker took, for
+## the record (tests/test_sky_world.gd).
+static var main_ms := 0.0
+
+## Sets a worker working out the layout for the world as it stands (its
+## seed, kept islands and wonders), unless it is worked out or being worked
+## out already. The seed and the kept islands are not changed while it works
+## (`settle` first: SkyIslands `load_state`, `keep`).
+static func prepare() -> void:
+	var began := Time.get_ticks_usec()
+	read_flags()
+	if not ring_on(): return
+	var key := _key_now()
+	if key == _layout_key or (_task >= 0 and key == _task_key):
+		return
+	settle()
+	# The crest line's frame cached here, so the worker only reads it; the
+	# cells' script loaded here, so the worker only finds it.
+	frame()
+	load("res://scripts/sky_cells.gd")
+	_task_key = key
+	_task_out = {}
+	_task = WorkerThreadPool.add_task(_work.bind(_task_out),false,"Sky world layout")
+	main_ms += (Time.get_ticks_usec()-began)/1000.0
+
+static func _work(out: Dictionary) -> void:
+	out.layout = _compute()
+
+## True once the layout for the world as it stands is worked out (taking a
+## worker's if it is done): nothing then waits on it.
+static func ready() -> bool:
+	if _task >= 0 and WorkerThreadPool.is_task_completed(_task): settle()
+	return _key_now() == _layout_key
+
+## Waits for a worker still working out a layout, and takes its result.
+static func settle() -> void:
+	if _task < 0: return
+	var began := Time.get_ticks_usec()
+	WorkerThreadPool.wait_for_task_completion(_task)
+	_take()
+	main_ms += (Time.get_ticks_usec()-began)/1000.0
+
+static func _take() -> void:
+	_task = -1
+	if not _task_out.has("layout"): return
+	_layout = _task_out.layout
+	_layout_key = _task_key
+	# Read through the quick check again on the next ask.
+	_layout_seed = -1
+	_task_out = {}
+
+## The whole layout, worked out from the statics as they stand: only read
+## here, never written, so a worker may run it.
+static func _compute() -> Dictionary:
 	var f := frame()
-	_layout = {"ranges":[],"notches":[],"massifs":f.massifs,"regions":[],"passes":[],"towers":[],"knot":Vector3.ZERO,"kept_rules":true}
-	for a: float in f.notches: _layout.notches.append({"angle":a,"arc":NOTCH_ARC,"at":crest_point(a)})
+	var out := {"ranges":[],"notches":[],"massifs":f.massifs,"regions":[],"passes":[],"towers":[],"knot":Vector3.ZERO,"kept_rules":true}
+	for a: float in f.notches: out.notches.append({"angle":a,"arc":NOTCH_ARC,"at":crest_point(a)})
 	var rng := RandomNumberGenerator.new()
 	rng.seed = int(noise(Vector2i(seed,3),SALT)*2147483647.0)
 	# The band, a stretch between each notch and the next.
@@ -475,14 +627,20 @@ static func layout() -> Dictionary:
 	ranges.append_array(_far_row(rng))
 	# The ridges through the middle, from a stream of their own; a foothill
 	# whose middle a ridge would stand on (FOOT_ROOM) left out.
-	var ridges := _ridges(ranges)
+	# Where the band's rock starts round the middle, for its haze and the
+	# islands' bounds (the foothills a ridge will put out counted all the
+	# same: the nearer for it).
+	var inner := _haze_inner(ranges+feet)
+	var ridges := _ridges(ranges,feet,inner)
 	for foot: Dictionary in feet:
 		if not ridges.ranges.any(func(q: Dictionary) -> bool: return box_distance(q,Vector2(foot.at.x,foot.at.z)) < FOOT_ROOM): ranges.append(foot)
 	ranges.append_array(ridges.ranges)
-	for part in ["regions","passes","towers","knot"]: _layout[part] = ridges[part]
-	_layout.islands = ridges.get("islands",[])
-	_layout.tries = ridges.get("tries",0)
-	_layout.kept_rules = ridges.ok
+	for part in ["regions","passes","towers","knot"]: out[part] = ridges[part]
+	out.chords = ridges.get("chords",[])
+	out.islands = ridges.get("islands",[])
+	out.tries = ridges.get("tries",0)
+	out.balance = ridges.get("balance",0.0)
+	out.kept_rules = ridges.ok
 	# None on a saved island.
 	for i in range(ranges.size()):
 		var r: Dictionary = ranges[i]
@@ -490,8 +648,9 @@ static func layout() -> Dictionary:
 		for h: Vector3 in kept:
 			if box_distance(r,Vector2(h.x,h.z)) < 250.0: r.index = -1
 	for r: Dictionary in ranges:
-		if r.index >= 0: _layout.ranges.append(r)
-	return _layout
+		if r.index >= 0: out.ranges.append(r)
+	out.haze_inner = inner
+	return out
 
 ## Half a notch's width, and the ranges' inset from it, as an angle at its
 ## place on the crest line.
@@ -531,6 +690,7 @@ static func _draw(kind: String, rng: RandomNumberGenerator) -> Dictionary:
 		# Over SADDLE once lifted: SEA+(h-SEA)*y.
 		var y: float = r.scale.y
 		var span := SkyPeak.crest_span(r.seed,r.stature,SkyPeak.SEA+(SADDLE+HEADROOM-SkyPeak.SEA)/y)
+		span = Vector2(maxf(span.x,-CREST_HALF),minf(span.y,CREST_HALF))
 		if span.y-span.x < 300.0: continue
 		r.span = Vector2(-span.y,-span.x) if r.flip else span
 		return r
@@ -614,8 +774,17 @@ static func _stretch(from: float, to: float, massifs: Array, rng: RandomNumberGe
 		# Its inner flank no nearer the bounds than GAP: narrower across
 		# where the line runs in.
 		var s: Vector3 = r.scale
-		s.z = clampf((_nearest(r)-SCATTER-GAP)/FLANK,0.8,s.z)
+		s.z = clampf((_nearest(r)-BAND_IN)/FLANK,0.8,s.z)
 		r.scale = s
+		# And its footprint within WORLD_HALF of the middle each way (x and
+		# z): the world stays its size, a range by a corner narrower across.
+		for k in range(8):
+			var far := 0.0
+			for p: Vector2 in box_outline(r): far = maxf(far,maxf(absf(p.x),absf(p.y)))
+			if far <= WORLD_HALF or float(r.scale.z) <= 0.8: break
+			s = r.scale
+			s.z = maxf(s.z-0.05,0.8)
+			r.scale = s
 	return out
 
 ## How near the middle a range's crest line comes (m), over its rock's whole
@@ -709,7 +878,7 @@ static func _foothills(band: Array, rng: RandomNumberGenerator) -> Array:
 	while more < FOOT_MORE and tries < 200:
 		tries += 1
 		var a := rng.randf()*TAU
-		if crest(a)-FOOT_IN < SCATTER+GAP+FLANK*FOOT_Z.y+60.0: continue
+		if crest(a)-FOOT_IN < BAND_IN+FLANK*FOOT_Z.y+60.0: continue
 		var clear := true
 		for s in spots:
 			if absf(angle_difference(a,s))*crest(a) < 1300.0: clear = false
@@ -719,15 +888,15 @@ static func _foothills(band: Array, rng: RandomNumberGenerator) -> Array:
 	for a: float in spots:
 		if in_notch(a,1100.0): continue
 		var s := Vector3(rng.randf_range(FOOT_X.x,FOOT_X.y),rng.randf_range(FOOT_Y.x,FOOT_Y.y),rng.randf_range(FOOT_Z.x,FOOT_Z.y))
-		var r := maxf(crest(a)-FOOT_IN,SCATTER+GAP+FLANK*s.z+60.0)
+		var r := maxf(crest(a)-FOOT_IN,BAND_IN+FLANK*s.z+60.0)
 		var foot := {"kind":"foot","seed":int(rng.randf()*16777216.0),"stature":rng.randf_range(0.85,0.95),"scale":s,"gorge":false,
 			"at":Vector3(cos(a)*r,0.0,sin(a)*r),"turn":-a-PI*0.5+rng.randf_range(-0.35,0.35)+(PI if rng.randf() < 0.5 else 0.0),"angle":fposmod(a,TAU)}
 		# Its whole footprint GAP past the bounds: out a little if not.
 		for k in range(6):
 			var near := INF
 			for p: Vector2 in box_outline(foot): near = minf(near,p.length())
-			if near >= SCATTER+GAP+20.0: break
-			foot.at = foot.at*(1.0+(SCATTER+GAP+30.0-near)/Vector2(foot.at.x,foot.at.z).length())
+			if near >= BAND_IN+20.0: break
+			foot.at = foot.at*(1.0+(BAND_IN+30.0-near)/Vector2(foot.at.x,foot.at.z).length())
 		out.append(foot)
 	return out
 
@@ -755,19 +924,26 @@ static func _far_row(rng: RandomNumberGenerator) -> Array:
 ## until a layout keeps every rule (`_judge`) with ISLANDS islands to every
 ## region, up to RIDGE_TRIES; failing that, the first that kept every rule;
 ## failing that, the one that kept the most.
-static func _ridges(band: Array) -> Dictionary:
+static func _ridges(band: Array, feet: Array, inner: PackedFloat32Array) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = int(noise(Vector2i(seed,5),SALT)*2147483647.0)
 	var mouths := _gorge_mouths(band)
-	var band_open := _band_open(band)
+	var band_open := _band_open(band,feet,inner)
+	var keep_off: Array = band.filter(func(r: Dictionary) -> bool: return r.kind != "far")
+	keep_off.append_array(feet)
 	var best := {}
 	var fewer := {}
+	var even := {}
 	for tries in range(RIDGE_TRIES):
-		var plan := _ridge_plan(mouths,band_open,rng)
+		var plan := _ridge_plan(mouths,band_open,keep_off,inner,rng)
 		plan.tries = tries+1
-		if plan.ok and plan.islands.min() >= ISLANDS: return plan
+		if plan.ok and plan.islands.min() >= ISLANDS:
+			plan.balance = _balance(plan)
+			if even.is_empty() or float(plan.balance) > float(even.balance): even = plan
+			if float(even.balance) >= BALANCED or tries+1 >= EVEN_TRIES: return even
 		if plan.ok and fewer.is_empty(): fewer = plan
 		if best.is_empty() or float(plan.score) > float(best.score): best = plan
+	if not even.is_empty(): return even
 	# Every rule kept but a region with fewer islands than ISLANDS: the
 	# first such.
 	if not fewer.is_empty(): return fewer
@@ -778,6 +954,13 @@ static func _ridges(band: Array) -> Dictionary:
 	for r: Dictionary in best.ranges:
 		for key in ["start","end","last","home_arm"]: r.erase(key)
 	return best
+
+## How even a plan's regions are (0 to 1): the smallest's room for islands
+## over the largest's, or its islands over the most's, whichever is less.
+static func _balance(plan: Dictionary) -> float:
+	var areas: Array = plan.regions.map(func(g: Dictionary) -> float: return float(g.area))
+	var islands: Array = plan.islands
+	return minf(float(areas.min())/maxf(float(areas.max()),0.01),float(islands.min())/maxf(float(islands.max()),1.0))
 
 ## The angles (round the middle) where the band's kept gorges open inward.
 static func _gorge_mouths(band: Array) -> Array[float]:
@@ -790,96 +973,138 @@ static func _gorge_mouths(band: Array) -> Array[float]:
 		out.append(fposmod(atan2(p.z,p.x),TAU))
 	return out
 
-## One try: the knot across the plate from the range in sight of it, the
-## arms out from it to the band, their passes, the spurs, the gorges kept
-## and the cumulus, one to a region; judged as it goes.
-static func _ridge_plan(mouths: Array[float], band_open: PackedByteArray, rng: RandomNumberGenerator) -> Dictionary:
+## One try: CHORDS long walls across the world, one through the range in
+## sight of the plate (its arms off the range's ends, along its crest), the
+## others turned about a third of the way round from it either side, each
+## as near the plate as the plate's open air, the fixed islands, the
+## cumulus in sight of it and the islands' jet streams let it stand
+## (`_chord_reach`), a little further by chance. Where two walls cross
+## inside the band they meet at a corner: one runs on out through it to the
+## band (a spur of the corner), the other ends in its rock. So the plate's
+## region is the middle, walled round, and between each wall and the band
+## lies a valley region of its own. Each wall has a pass (a col by the
+## range in sight of the plate's end; through the others, between two
+## pieces); then the spurs, the gorges kept and the cumulus, one to a
+## region; judged as it goes.
+static func _ridge_plan(mouths: Array[float], band_open: PackedByteArray, band: Array, inner: PackedFloat32Array, rng: RandomNumberGenerator) -> Dictionary:
 	var failed := {"ranges":[],"ok":false,"score":0.0}
-	var phi := atan2(SkyHomes.RANGE.z,SkyHomes.RANGE.x)+PI+rng.randf_range(-KNOT_STRAY,KNOT_STRAY)
-	# Far enough out that the side arms pass the fixed islands that way by
-	# their room (KNOT_ROOM past them).
-	var out := rng.randf_range(KNOT_AT.x,KNOT_AT.y)
-	for slot: Vector3 in SLOTS: out = maxf(out,Vector2(slot.x,slot.z).dot(Vector2.from_angle(phi))+KNOT_ROOM)
-	var knot := Vector2.from_angle(phi)*minf(out,KNOT_MOST)
-	# The arms' ways out of the knot: the two sides, either way off the way
-	# back to the plate, then the outer arms round the back between them.
-	var back := phi+PI
-	var left := rng.randf_range(SIDE.x,SIDE.y)
-	var right := rng.randf_range(SIDE.x,SIDE.y)
-	var ways: Array[float] = [back+left,back-right]
-	var roll := rng.randf()
-	var outer := 1 if roll < OUTER_ODDS[0] else 2
-	for k in range(outer):
-		for tries in range(40):
-			var w := back+left+rng.randf_range(ARM_APART,TAU-left-right-ARM_APART)
-			if ways.all(func(o: float) -> bool: return absf(angle_difference(w,o)) >= ARM_APART):
-				ways.append(w)
-				break
-	# The roots off the range in sight of the plate's ends first: it can't
-	# move, the knot's arms can.
+	var air := _air()
+	var home_at := Vector2(SkyHomes.RANGE.x,SkyHomes.RANGE.z)
 	var hway := Vector2(1.0,0.0).rotated(-SkyHomes.RANGE_TURN)
 	var hspan := _home_span()
-	var ends: Array[Vector2] = []
-	var home_roots: Array[float] = []
-	for k in range(2):
-		var side := -1.0 if k == 0 else 1.0
-		var e := Vector2(SkyHomes.RANGE.x,SkyHomes.RANGE.z)+hway*(hspan.x if k == 0 else hspan.y)
-		var way := (e.normalized()+hway*side*HOME_SPLAY).normalized().angle()+rng.randf_range(-HOME_TURN,HOME_TURN)
-		var root := -1.0
-		for step in range(int(HOME_NUDGE/NUDGE)*2+1):
-			var w := way+NUDGE*((step+1)/2)*(1.0 if step%2 == 1 else -1.0)
-			if _root_ok(_root(e,w),mouths):
-				root = _root(e,w)
-				break
-		if root < 0.0: return failed
-		ends.append(e)
-		home_roots.append(root)
+	# The chords: a point on each and its way along.
+	var at: Array[Vector2] = [home_at]
+	var along: Array[Vector2] = [hway]
+	var phi := home_at.angle()
+	for side in [1.0,-1.0]:
+		var normal := Vector2.from_angle(phi+side*TAU/3.0+rng.randf_range(-CHORD_STRAY,CHORD_STRAY))
+		var d := _chord_reach(normal,air)+rng.randf_range(CHORD_MORE.x,CHORD_MORE.y)
+		var way := normal.orthogonal()
+		at.append(normal*d+way*rng.randf_range(-CHORD_SLIDE,CHORD_SLIDE))
+		along.append(way)
+	# Each chord's two arms: from its middle (the range in sight of the
+	# plate's ends for its own, each turned up to HOME_TURN off its crest's
+	# way) each way along it, to a corner or the band.
+	var starts := []
+	var ways := []
+	for k in range(CHORDS):
+		if k == 0:
+			starts.append([home_at+hway*hspan.x,home_at+hway*hspan.y])
+			ways.append([(-hway).rotated(rng.randf_range(-HOME_TURN,HOME_TURN)),hway.rotated(rng.randf_range(-HOME_TURN,HOME_TURN))])
+		else:
+			starts.append([at[k],at[k]])
+			ways.append([-along[k],along[k]])
+	# The corners: where two arms of two chords cross in the open inside the
+	# band, the nearest along each its own.
+	var ends := []
+	for k in range(CHORDS): ends.append([{},{}])
+	for i in range(CHORDS):
+		for j in range(i+1,CHORDS):
+			for si in range(2):
+				for sj in range(2):
+					var a: Vector2 = starts[i][si]
+					var b: Vector2 = starts[j][sj]
+					var x: Variant = Geometry2D.segment_intersects_segment(a,a+(ways[i][si] as Vector2)*7000.0,b,b+(ways[j][sj] as Vector2)*7000.0)
+					if x == null: continue
+					var p: Vector2 = x
+					if p.length() >= crest(p.angle()) or band_open[_grid_index(p,grid_size())] == 0: continue
+					var through := rng.randf() < 0.5
+					for pair in [[i,si,through],[j,sj,not through]]:
+						var e: Dictionary = ends[pair[0]][pair[1]]
+						var from: Vector2 = starts[pair[0]][pair[1]]
+						if e.is_empty() or from.distance_to(p) < from.distance_to(e.at): ends[pair[0]][pair[1]] = {"at":p,"through":pair[2]}
+	# The roots on the band: no two closer than ROOT_APART, none in a notch
+	# or a kept gorge's mouth.
+	var lines := []
 	var roots: Array[float] = []
-	for k in range(ways.size()):
-		var found := false
-		for step in range(int(NUDGE_MOST/NUDGE)*2+1):
-			var w := ways[k]+NUDGE*((step+1)/2)*(1.0 if step%2 == 1 else -1.0)
-			if not range(k).all(func(o: int) -> bool: return absf(angle_difference(w,ways[o])) >= ARM_APART*0.9): continue
-			var a := _root(knot,w)
-			if not _root_ok(a,mouths) or (roots+home_roots).any(func(o: float) -> bool: return absf(angle_difference(a,o))*crest(a) < ROOT_APART): continue
-			ways[k] = w
-			roots.append(a)
-			found = true
-			break
-		if not found: return failed
+	for k in range(CHORDS):
+		for s in range(2):
+			var from: Vector2 = starts[k][s]
+			var way: Vector2 = ways[k][s]
+			var e: Dictionary = ends[k][s]
+			var line := PackedVector2Array()
+			var stop := -1.0
+			if e.is_empty():
+				# Turned a little at a time, up to NUDGE_MOST, till its root
+				# keeps off the notches and the kept gorges' mouths.
+				var w := _nudged(from,way.angle(),mouths)
+				way = Vector2.from_angle(w)
+				line = _arm_line(from,from+way*6000.0,0.0)
+				roots.append(_root(from,w))
+			else:
+				var corner: Vector2 = e.at
+				var bend := rng.randf_range(BEND.x,BEND.y)*0.5*(1.0 if rng.randf() < 0.5 else -1.0)
+				line = _arm_line(from,corner,bend)
+				if e.through:
+					# On out of the corner toward the band, likewise turned.
+					var w := _nudged(corner,corner.angle(),mouths)
+					var out := Vector2.from_angle(w)
+					for m in range(1,80): line.append(corner+out*m*50.0)
+					roots.append(_root(corner,w))
+				else:
+					for m in range(1,10): line.append(corner+way*m*50.0)
+					stop = _line_length(_arm_line(from,corner,bend))
+			lines.append({"line":line,"stop":stop,"chord":k,"side":s,"corner":e.get("at",Vector2.INF)})
+	for a in roots:
+		if not _root_ok(a,mouths): return failed
+	for i in range(roots.size()):
+		for j in range(i+1,roots.size()):
+			if absf(angle_difference(roots[i],roots[j]))*crest(roots[i]) < ROOT_APART: return failed
 	failed.score = 1.0
-	# The arms, each from the knot out toward its root on the crest line.
+	# The walls: through each chord but the plate's range's, one arm with a
+	# pass between two pieces and one whole; off that range's ends, a col by
+	# one end at least.
 	var pieces := []
 	var passes := []
-	for k in range(roots.size()):
-		var a := roots[k]
-		var to := Vector2(cos(a),sin(a))*crest(a)
-		var line := _arm_line(knot,to,rng.randf_range(BEND.x,BEND.y)*(1.0 if rng.randf() < 0.5 else -1.0))
-		var arm := _arm(line,band_open,"outer" if k >= 2 else "side",rng)
-		if arm.is_empty(): return failed
-		pieces.append_array(arm.pieces)
-		passes.append(arm.pass)
-	# The arms from the range in sight of the plate's ends out to the band,
-	# closing off the region behind it; at least one with a col by the
-	# range's end.
 	var with_pass := [rng.randf() < HOME_PASS,rng.randf() < HOME_PASS]
 	if not (with_pass[0] or with_pass[1]): with_pass[rng.randi_range(0,1)] = true
-	for k in range(2):
-		var root := home_roots[k]
-		var line := _arm_line(ends[k],Vector2(cos(root),sin(root))*crest(root),rng.randf_range(BEND.x,BEND.y)*0.5*(1.0 if rng.randf() < 0.5 else -1.0))
-		var arm := _arm(line,band_open,"home_pass" if with_pass[k] else "home",rng)
+	var open_side := []
+	for k in range(CHORDS): open_side.append(rng.randi_range(0,1))
+	for l: Dictionary in lines:
+		var k: int = l.chord
+		var s: int = l.side
+		var kind := ("home_pass" if with_pass[s] else "home") if k == 0 else ("side" if s == open_side[k] else "wall")
+		var corner: Vector2 = l.corner
+		var span := -1.0 if corner == Vector2.INF else (starts[k][s] as Vector2).distance_to(corner)
+		var arm := _arm(l.line,band_open,kind,rng,float(l.stop),span)
 		if arm.is_empty(): return failed
-		for r: Dictionary in arm.pieces: r.home_arm = true
+		if k == 0:
+			for r: Dictionary in arm.pieces: r.home_arm = true
 		pieces.append_array(arm.pieces)
-		if not arm.pass.is_empty(): passes.append(arm.pass)
+		if not arm.pass.is_empty():
+			arm.pass.chord = k
+			passes.append(arm.pass)
 	failed.score = 2.0
 	var home := {"at":SkyHomes.RANGE,"turn":SkyHomes.RANGE_TURN,"scale":Vector3.ONE}
-	var air := _air()
 	for r: Dictionary in pieces:
 		if not _clear(r,home,air): return failed
 	failed.score = 3.0
-	var judged := _judge(pieces,ways.size()+1,band_open)
-	var plan := {"ranges":pieces,"passes":passes,"knot":Vector3(knot.x,0.0,knot.y),"ok":false,"score":3.0+float(judged.kept),"towers":[],"regions":judged.regions,"rules":judged.rules}
+	var knot := at[1]
+	var regions := CHORDS+1
+	var judged := _judge(pieces,regions,band_open)
+	var chords := []
+	for k in range(CHORDS): chords.append({"at":Vector3(at[k].x,0.0,at[k].y),"along":Vector3(along[k].x,0.0,along[k].y)})
+	var plan := {"chords":chords,"ranges":pieces,"passes":passes,"knot":Vector3(knot.x,0.0,knot.y),"ok":false,"score":3.0+float(judged.kept),"towers":[],"regions":judged.regions,"rules":judged.rules}
 	if not judged.ok: return plan
 	# The spurs, each kept only if the regions keep every rule with it.
 	var spurs := rng.randi_range(SPURS.x,SPURS.y)
@@ -890,7 +1115,7 @@ static func _ridge_plan(mouths: Array[float], band_open: PackedByteArray, rng: R
 		if spur.is_empty() or not _clear(spur,home,air): continue
 		var with := pieces.duplicate()
 		with.append(spur)
-		var again := _judge(with,ways.size()+1,band_open)
+		var again := _judge(with,regions,band_open)
 		if not again.ok: continue
 		pieces.append(spur)
 		judged = again
@@ -904,6 +1129,8 @@ static func _ridge_plan(mouths: Array[float], band_open: PackedByteArray, rng: R
 		for key in ["start","end","last","home_arm"]: r.erase(key)
 	plan.ranges = pieces
 	plan.regions = judged.regions
+	judged.band = band
+	judged.inner = inner
 	plan.towers = _towers(pieces,judged)
 	# ISLANDS islands to every region: a region's cumulus gives way to them.
 	var islands := _islands(pieces,judged,plan.towers)
@@ -928,6 +1155,7 @@ static func _islands(pieces: Array, judged: Dictionary, towers: Array) -> Array:
 	var blocked := func(p: Vector3) -> bool:
 		var flat := Vector2(p.x,p.z)
 		if flat.length() > SCATTER or flat.distance_to(Vector2(SkyHomes.RANGE.x,SkyHomes.RANGE.z)) < SkyHomes.RANGE_KEEP: return true
+		if flat.length() > BAND_IN-BAND_CLEAR and (not clear_of_band(flat,judged.band) or _share(flat,judged.inner) > 0.0): return true
 		for t: Vector3 in keeps:
 			if flat.distance_to(Vector2(t.x,t.z)) < SkyHomes.TOWER_KEEP: return true
 		return pieces.any(func(r: Dictionary) -> bool: return box_distance(r,flat) < RIDGE_CLEAR)
@@ -946,6 +1174,31 @@ static func _islands(pieces: Array, judged: Dictionary, towers: Array) -> Array:
 		var k := labels[_grid_index(Vector2(p.x,p.z),n)]
 		if k >= 0: out[k] += 1
 	return out
+
+## The way (radians) nearest `way` out of `from` whose root on the band
+## keeps off the notches and the kept gorges' mouths (`_root_ok`), turned
+## NUDGE at a time either side up to NUDGE_MOST; `way` itself if none does.
+static func _nudged(from: Vector2, way: float, mouths: Array[float]) -> float:
+	for step in range(int(NUDGE_MOST/NUDGE)*2+1):
+		var w := way+NUDGE*((step+1)/2)*(1.0 if step%2 == 1 else -1.0)
+		if _root_ok(_root(from,w),mouths): return w
+	return way
+
+## How near the plate a wall across the world may stand along `normal` (m):
+## its rock (a ridge's half across, and a little) its room from the plate,
+## the fixed islands, the cumulus in sight of the plate (and the other
+## wonders, standing), and the islands' jet streams (`air`).
+static func _chord_reach(normal: Vector2, air: Array) -> float:
+	var half := FLANK*RIDGE_Z.y+40.0
+	var d := PLATE_ROOM+half
+	for slot: Vector3 in SLOTS.slice(1): d = maxf(d,Vector2(slot.x,slot.z).dot(normal)+ISLAND_ROOM+half)
+	for w: Array in SkyHomes.spots():
+		var p: Vector3 = w[0]
+		if p == SkyHomes.RANGE: continue
+		var keep := SkyHomes.TOWER_KEEP+60.0 if p == SkyHomes.TOWER else float(w[1])
+		d = maxf(d,Vector2(p.x,p.z).dot(normal)+keep+half)
+	for q: Vector2 in air: d = maxf(d,q.dot(normal)+AIR_ROOM+half)
+	return d
 
 ## Where an arm leaving the knot along `way` (radians) meets the band's
 ## crest line: its angle round the middle.
@@ -1002,28 +1255,36 @@ static func _over_tail(r: Dictionary) -> float:
 	return (float(r.over.y)-float(r.span.y))*float(r.scale.x)
 
 ## One arm's pieces down `line` from the knot, laid crest to crest as the
-## band's are, a low stretch now and then, and its pass. A side arm runs on
-## until its crest stands INTO the band's rock, its pass between two of its
-## pieces: the next laid PASS_OPEN on from where the last's rock falls
-## under PASS_TOP, once the arm has come PASS_ALONG of its way. An outer
-## arm (`outer`) stops short of the band, its last piece stretched so its
-## rock ends PASS_OPEN before the band's: the pass at its root. {pieces,
-## pass}, or empty if it can't be laid so.
-static func _arm(line: PackedVector2Array, band_open: PackedByteArray, kind: String, rng: RandomNumberGenerator) -> Dictionary:
+## band's are, a low stretch now and then, and its pass. It runs on until
+## its crest stands INTO the band's rock, or, ending at a corner (`stop`, m
+## along it), CORNER_INTO the other wall's. Its `kind`: "side", its pass
+## between two of its pieces, the next laid PASS_OPEN on from where the
+## last's rock falls under PASS_TOP, once the arm has come PASS_ALONG of its
+## way (of `span`, to its corner, if given); "wall", whole; "home_pass" and
+## "home", off the range in sight of the plate's end, with a col by it or
+## lapped over it; "outer", stopping short of the band, its last piece
+## stretched so its rock ends PASS_OPEN before the band's. A pass has its
+## col (`_col`). {pieces, pass}, or empty if it can't be laid so.
+static func _arm(line: PackedVector2Array, band_open: PackedByteArray, kind: String, rng: RandomNumberGenerator, stop := -1.0, span := -1.0) -> Dictionary:
 	var outer := kind == "outer"
 	var anchored := kind.begins_with("home")
 	var total := _line_length(line)
 	var n := grid_size()
-	# Where the band's rock starts along it.
+	# Where the band's rock starts along it, or where it is to end in
+	# another wall's rock (`stop`, m along it).
 	var band_at := total
 	var d := 0.0
-	while d < total:
+	while d < total and stop < 0.0:
 		if band_open[_grid_index(_along(line,d),n)] == 0:
 			band_at = d
 			break
 		d += 20.0
+	if stop >= 0.0: band_at = stop
+	# Into the band's rock INTO; into another wall's at a corner only up to
+	# its crest (CORNER_INTO), so the two meet rather than cross.
+	var into := CORNER_INTO if stop >= 0.0 else INTO
 	var open := rng.randf_range(PASS_OPEN.x,PASS_OPEN.y)
-	var pass_at := rng.randf_range(PASS_ALONG.x,PASS_ALONG.y)*band_at
+	var pass_at := rng.randf_range(PASS_ALONG.x,PASS_ALONG.y)*(span if span > 0.0 else band_at)
 	var pieces := []
 	var gap := Vector2.ZERO
 	var gap_joint := -1
@@ -1037,7 +1298,7 @@ static func _arm(line: PackedVector2Array, band_open: PackedByteArray, kind: Str
 		if pieces.is_empty() and r.span.x > -r.span.y: _ridge_turn(r)
 		# One reaching the band: turned so its rock ends nearest its crest's
 		# end, and none of it stands out past the band.
-		if not outer and not pieces.is_empty() and at-JOIN+_crest_length(r) >= band_at+INTO and float(r.sea.y)-float(r.span.y) > float(r.span.x)-float(r.sea.x): _ridge_turn(r)
+		if not outer and not pieces.is_empty() and at-JOIN+_crest_length(r) >= band_at+into and float(r.sea.y)-float(r.span.y) > float(r.span.x)-float(r.sea.x): _ridge_turn(r)
 		var start := at
 		if pieces.is_empty() and anchored:
 			# Off the range in sight of the plate: a col by its end, or its
@@ -1064,7 +1325,7 @@ static func _arm(line: PackedVector2Array, band_open: PackedByteArray, kind: Str
 			break
 		pieces.append(r)
 		at = r.end
-		if not outer and at >= band_at+INTO: break
+		if not outer and at >= band_at+into: break
 	var last: Dictionary = pieces[-1]
 	if outer:
 		# Stretched so its rock ends a pass short of the band's.
@@ -1074,11 +1335,11 @@ static func _arm(line: PackedVector2Array, band_open: PackedByteArray, kind: Str
 		last.end = float(last.start)+_crest_length(last)
 		gap = Vector2(float(last.end)+_over_tail(last),band_at)
 	else:
-		if (kind == "side" and gap_joint < 0) or gap.y > band_at-150.0 or at < band_at+INTO: return {}
+		if (kind == "side" and gap_joint < 0) or gap.y > band_at-150.0 or at < band_at+into: return {}
 		# Into the band's rock, no further.
-		if at > band_at+INTO+200.0:
+		if at > band_at+into+200.0:
 			var s: Vector3 = last.scale
-			s.x = maxf((band_at+INTO+100.0-float(last.start))/(float(last.span.y)-float(last.span.x)),0.55)
+			s.x = maxf((band_at+into+100.0-float(last.start))/(float(last.span.y)-float(last.span.x)),0.55)
 			last.scale = s
 			last.end = float(last.start)+_crest_length(last)
 	for r: Dictionary in pieces:
@@ -1087,10 +1348,24 @@ static func _arm(line: PackedVector2Array, band_open: PackedByteArray, kind: Str
 		_lay(r,Vector3(a.x,0.0,a.y),Vector3(b.x,0.0,b.y))
 		_tighten(r)
 	last.last = true
-	if kind == "home": return {"pieces":pieces,"pass":{}}
+	if kind == "home" or kind == "wall": return {"pieces":pieces,"pass":{}}
+	# The col: a low saddle across the pass, under it at glide height.
+	var col := _col(line,gap,rng)
+	if not col.is_empty(): pieces.append(col)
 	var mid := _along(line,(gap.x+gap.y)*0.5)
 	var along := (_along(line,gap.y)-_along(line,gap.x)).normalized()
 	return {"pieces":pieces,"pass":{"at":Vector3(mid.x,0.0,mid.y),"along":Vector3(along.x,0.0,along.y),"way":Vector3(-along.y,0.0,along.x),"open":roundf(gap.y-gap.x),"root":outer}}
+
+## The col across a pass `gap` (m along `line`, from and to), or empty.
+static func _col(line: PackedVector2Array, gap: Vector2, rng: RandomNumberGenerator) -> Dictionary:
+	if gap.y-gap.x < 100.0: return {}
+	var r := _ridge_draw("col",rng)
+	if r.is_empty(): return {}
+	var a := _along(line,gap.x-COL_LAP)
+	var b := _along(line,gap.y+COL_LAP)
+	_lay(r,Vector3(a.x,0.0,a.y),Vector3(b.x,0.0,b.y))
+	_tighten(r)
+	return r
 
 ## A ridge piece of `role` drawn from `rng` (as `_draw`): its seed, stature
 ## and scale, flipped end for end half the time, and its crest's spans as
@@ -1099,16 +1374,16 @@ static func _arm(line: PackedVector2Array, band_open: PackedByteArray, kind: Str
 ## OVER_HALF and ROCK_HALF at most). Drawn again until its crest stands
 ## that high for long enough.
 static func _ridge_draw(role: String, rng: RandomNumberGenerator) -> Dictionary:
-	var ys: Vector2 = {"knot":KNOT_Y,"wall":WALL_Y,"low":LOW_Y,"spur":SPUR_Y}[role]
-	var xs: Vector2 = {"knot":KNOT_X,"wall":RIDGE_X,"low":RIDGE_X,"spur":SPUR_X}[role]
-	var zs := SPUR_Z if role == "spur" else RIDGE_Z
+	var ys: Vector2 = {"knot":KNOT_Y,"wall":WALL_Y,"low":LOW_Y,"spur":SPUR_Y,"col":COL_Y}[role]
+	var xs: Vector2 = {"knot":KNOT_X,"wall":RIDGE_X,"low":RIDGE_X,"spur":SPUR_X,"col":RIDGE_X}[role]
+	var zs: Vector2 = {"spur":SPUR_Z,"col":COL_Z}.get(role,RIDGE_Z)
 	for tries in range(40):
 		var r := {"kind":"ridge","role":role,"seed":int(rng.randf()*16777216.0),"stature":1.0 if role == "knot" else rng.randf_range(0.85,1.0),
 			"scale":Vector3(rng.randf_range(xs.x,xs.y),rng.randf_range(ys.x,ys.y),rng.randf_range(zs.x,zs.y)),"gorge":false,"flip":rng.randf() < 0.5,
-			"coarse":role == "low" or role == "spur"}
+			"coarse":role in ["low","spur","col"]}
 		var y: float = r.scale.y
 		var span := SkyPeak.crest_span(r.seed,r.stature,_unscaled(float(LAY_AT[role]),y))
-		span = Vector2(maxf(span.x,-OVER_HALF+60.0),minf(span.y,OVER_HALF-60.0))
+		span = Vector2(maxf(span.x,-CREST_HALF),minf(span.y,CREST_HALF))
 		if span.y-span.x < 250.0: continue
 		var over := SkyPeak.crest_span(r.seed,r.stature,_unscaled(PASS_TOP,y))
 		var sea := SkyPeak.crest_span(r.seed,r.stature,SkyPeak.SEA)
@@ -1193,7 +1468,7 @@ static func _judge(pieces: Array, arms: int, band_open: PackedByteArray) -> Dict
 	rooms.resize(int(b.count))
 	rooms.fill(0)
 	for c in range(n*n):
-		if labels[c] < 0 or dist[c] < ROOM_CLEAR or grid_point(c,n).length() > SCATTER: continue
+		if labels[c] < 0 or dist[c] < ROOM_CLEAR or open[c] != 2: continue
 		rooms[labels[c]] += 1
 	var roomy := true
 	for k in range(int(b.count)):
@@ -1228,7 +1503,10 @@ static func _grid_index(p: Vector2, n: int) -> int:
 ## its rock (its foothills aside: laid after the ridges) doesn't stand, along each range's rock
 ## (SEA_HALF less BAND_SHORT, times its scale) BAND_FLANK of its FLANK
 ## each side.
-static func _band_open(band: Array) -> PackedByteArray:
+##
+## 2 where it is open and within the bounds (`inside`: SCATTER, BAND_CLEAR
+## off the band's rock and `feet`, its foothills): room for islands.
+static func _band_open(band: Array, feet: Array = [], inner := PackedFloat32Array()) -> PackedByteArray:
 	var n := grid_size()
 	var open := PackedByteArray()
 	open.resize(n*n)
@@ -1243,6 +1521,13 @@ static func _band_open(band: Array) -> PackedByteArray:
 		var reach := (SEA_HALF-BAND_SHORT)*s.x
 		lines.append([(r.at as Vector3)-way*reach,(r.at as Vector3)+way*reach,FLANK*s.z*BAND_FLANK])
 	_carve(open,lines)
+	var keep_off: Array = band.filter(func(r: Dictionary) -> bool: return r.kind in ["run","massif","foot"])
+	keep_off.append_array(feet)
+	for c in range(n*n):
+		if open[c] == 0: continue
+		var p := grid_point(c,n)
+		if p.length() > SCATTER: continue
+		if p.length() < BAND_IN-BAND_CLEAR or (clear_of_band(p,keep_off) and _share(p,inner) == 0.0): open[c] = 2
 	return open
 
 ## The plan's open air at glide height: the band's (`band_open`), less
@@ -1252,6 +1537,7 @@ static func plan_open(pieces: Array, band_open: PackedByteArray) -> PackedByteAr
 	var open := band_open.duplicate()
 	var lines := []
 	for r: Dictionary in pieces:
+		if r.get("role","") == "col": continue
 		var way := ((r.p_hi as Vector3)-(r.p_lo as Vector3)).normalized()
 		var s: Vector3 = r.scale
 		var at: Vector3 = r.at
@@ -1302,7 +1588,7 @@ static func basins(open: PackedByteArray, n: int, cell: float, core: float, pass
 	for c in range(n*n):
 		var i := c%n
 		var j := c/n
-		dist[c] = 1.0e9 if open[c] == 1 and i > 0 and j > 0 and i < n-1 and j < n-1 else 0.0
+		dist[c] = 1.0e9 if open[c] >= 1 and i > 0 and j > 0 and i < n-1 and j < n-1 else 0.0
 	var d1 := cell
 	var d2 := cell*sqrt(2.0)
 	for j in range(1,n-1):
@@ -1401,7 +1687,7 @@ static func _towers(pieces: Array, judged: Dictionary) -> Array:
 		if region.home: continue
 		var cells := []
 		for c in range(n*n):
-			if labels[c] == int(region.label) and grid_point(c,n).length() <= SCATTER-TOWER_IN: cells.append(c)
+			if labels[c] == int(region.label) and grid_point(c,n).length() <= SCATTER-TOWER_IN and b.dist[c] > 0.0 and judged.open[c] == 2: cells.append(c)
 		cells.sort_custom(func(x: int, y: int) -> bool: return dist[x] > dist[y])
 		for c: int in cells.slice(0,400):
 			var p := grid_point(c,n)
@@ -1409,6 +1695,7 @@ static func _towers(pieces: Array, judged: Dictionary) -> Array:
 			var cell := Vector2i(floori(p.x/TOWER_CELL+0.5),floori(p.y/TOWER_CELL+0.5))
 			if cell in taken or p.distance_to(Vector2(SkyHomes.TOWER.x,SkyHomes.TOWER.z)) < keep*2.0 or box_distance(home,p) < room: continue
 			if pieces.any(func(r: Dictionary) -> bool: return box_distance(r,p) < room): continue
+			if not clear_of_band(p,judged.band,SkyHomes.TOWER_KEEP-BAND_CLEAR+TOWER_IN): continue
 			out.append(at)
 			taken.append(cell)
 			break
@@ -1477,6 +1764,8 @@ static func box_gap(a: Dictionary, b: Dictionary) -> float:
 ## outside the bounds (only a world saved before the ring can have one) are
 ## `kept`; the rest change nothing, so a claim inside never moves a range.
 static func keep(homes: Array[Vector3]) -> void:
+	# Never changed under a worker reading it (`prepare`).
+	settle()
 	var out: Array[Vector3] = []
 	for h in homes:
 		if Vector2(h.x,h.z).length() > SCATTER: out.append(h)

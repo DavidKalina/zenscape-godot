@@ -419,9 +419,10 @@ void vertex() {
 			vec3 dirt = vec3(0.1441, 0.0976, 0.0630) * (0.88 + 0.24 * UV2.x);
 			COLOR.rgb = mix(dirt, living, smoothstep(0.02, 0.42, grown));
 		}
-		// A sky peak's snow line follows the season (sky_season): the line's
-		// fall is the world's metres, the face's need the range's own.
-		if (sea_cut > -1.0e8 && zs_sky_snow_fall() / max(length(MODEL_MATRIX[1].xyz), 1e-3) > UV.x)
+		// A sky peak's snow line follows the season down to its floor
+		// (sky_season): the fall and the floor are the world's metres, the
+		// face's need and height the range's own.
+		if (sea_cut > -1.0e8 && zs_sky_peak_snowy(UV.x, VERTEX.y, max(length(MODEL_MATRIX[1].xyz), 1e-3), sea_cut))
 			COLOR.rgb = zs_sky_snow_colour(peak_snow, UV2.x);
 		if (bird_wings && source_bird_flight) {
 			float span = abs(VERTEX.x);

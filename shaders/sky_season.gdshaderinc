@@ -28,6 +28,26 @@ float zs_sky_snow_fall() {
 	return dot(zs_sky_season, ZS_SKY_SNOW_FALL) + zs_snow * ZS_SKY_SNOW_WEATHER;
 }
 
+// However far the season brings the line down, it settles no lower than
+// the season's floor (m, the world's height, as scripts/sky_peak.gd
+// SNOW_WORLD has it for the line as drawn): low foothills and the walls' low
+// stretches take only a dusting, never a white blanket. Under the floor a
+// face needs ZS_SKY_SNOW_TAPER m more fall a metre, so only the hollows and
+// treads just under it catch any. Spring's, summer's and autumn's are the
+// drawn floor (their line never comes lower than drawn); winter's is lower.
+const vec4 ZS_SKY_SNOW_FLOOR = vec4(140.0, 140.0, 140.0, 90.0);
+const float ZS_SKY_SNOW_TAPER = 4.0;
+
+// Whether a range's face is snowed: its need (UV.x) and height `y` in the
+// range's own frame, placed scaled `scale` in height about the sea `sea`.
+// What was snowed as drawn stays snowed until the line rises past it.
+bool zs_sky_peak_snowy(float need, float y, float scale, float sea) {
+	float fall = zs_sky_snow_fall() / scale;
+	float floor_at = sea + (dot(zs_sky_season, ZS_SKY_SNOW_FLOOR) - sea) / scale;
+	float under = need >= 0.0 ? max(floor_at - y, 0.0) * ZS_SKY_SNOW_TAPER : 0.0;
+	return fall > need + under;
+}
+
 // A snowy face's colour: the world's snow, a touch blue in the hollows and
 // nudged face by face, as scripts/sky_peak.gd packs it (`_snow_pack`): the
 // whole part the nudge in 1/32 steps, the fraction how blue.

@@ -4,6 +4,8 @@ extends SceneTree
 ## SEASONS), the weather held clear and the ground settled into the season
 ## (its gold, cold and a winter's frost) so only the season differs:
 ##   plate: the plate overview in the build camera, the cloud sea behind;
+##   build: the build view tipped down to the horizon toward the range in
+##     sight of the plate, the ranges standing round as skylines;
 ##   range: a range of the band from a kilometre in, at glide height (and
 ##     at golden hour);
 ##   valley: from the plate at glide height down its valley to a pass,
@@ -14,8 +16,9 @@ extends SceneTree
 ## Rendered only when asked for (needs a window):
 ##   Godot --windowed --path . --resolution 1280x720 -s res://tools/capture_sky_seasons.gd \
 ##     -- --no-title --still-weather --out=/private/tmp/zs-seasons
-## Options: --out=DIR, --only=plate,range,valley,sea, --seasons=spring,winter.
+## Options: --out=DIR, --only=plate,build,range,valley,sea, --seasons=spring,winter.
 const SkyWorld = preload("res://scripts/sky_world.gd")
+const SkyHomes = preload("res://scripts/sky_homes.gd")
 const LivingWeather = preload("res://scripts/living_weather.gd")
 const GOLDEN_SUN := 0.1
 const SEASON_NAMES := ["spring","summer","autumn","winter"]
@@ -50,6 +53,8 @@ func run() -> void:
 	create_timer(1800).timeout.connect(func() -> void: push_error("sky seasons capture timed out"); quit(2))
 	root.mode = Window.MODE_WINDOWED
 	root.size = Vector2i(1280,720)
+	# Never takes the keyboard (tools/capture_sky_overview.gd).
+	root.unfocusable = true
 	scene = load("res://studies/cozy_worlds.tscn").instantiate()
 	scene.set_meta("movie_capture",true)
 	scene.set_meta("no_title",true)
@@ -61,14 +66,36 @@ func run() -> void:
 	while scene.places.busy or scene._chunk_editor.forming: await process_frame
 	await create_timer(1.0).timeout
 	scene.world_clock.running = false
-	# The plate overview, in the build camera, before the glide.
-	if only.is_empty() or "plate" in only:
+	# The build view, before the glide: the plate overview, and tipped down
+	# to the horizon toward the range in sight of the plate, once the
+	# ranges' skyline stands whole (tools/capture_sky_overview.gd).
+	if only.is_empty() or "plate" in only or "build" in only:
+		var ring: Node = scene.wanderer.islands.peaks.ring if scene.wanderer != null else null
+		var began := Time.get_ticks_msec()
+		if ring != null and ring.get("whole") != null:
+			while not ring.whole and Time.get_ticks_msec()-began < 240000: await process_frame
+			await create_timer(3.0).timeout
+		var to_range := atan2(SkyHomes.RANGE.x,SkyHomes.RANGE.z)
+		var was_building: bool = scene._ui.visible
 		for season: String in seasons:
 			await _season(season)
-			for i in range(40):
-				scene.world_clock.set_time(scene.world_clock.day,noon)
-				await process_frame
-			await still("plate-%s-noon" % season)
+			for shot: String in ["plate","build"]:
+				if not only.is_empty() and shot not in only: continue
+				scene.set_building(true)
+				await frames(2)
+				scene._frame_diorama()
+				if shot == "build":
+					scene.yaw = to_range+PI
+					scene.polar = 1.5
+				scene._auto_orbit = false
+				scene._update_camera()
+				for i in range(40):
+					scene.world_clock.set_time(scene.world_clock.day,noon)
+					await process_frame
+				await still("%s-%s-noon" % [shot,season])
+		# As it was, so the build view's tools are not over the glide's stills.
+		scene.set_building(was_building)
+		await frames(2)
 	eye = scene.wanderer
 	eye.place(Vector3(eye.PLATE_REACH-0.6,0.0,0.0))
 	eye.enter()
@@ -119,11 +146,16 @@ func _season(season: String) -> void:
 func _shots() -> Array:
 	var shots := []
 	var layout := SkyWorld.layout()
-	var r: Dictionary = layout.ranges[layout.ranges.size()/2]
+	# A range of the band's (tools/capture_sky_ring.gd `approach`).
+	var band: Array = layout.ranges.filter(func(q: Dictionary) -> bool: return q.get("kind","") == "run" or q.get("kind","") == "massif")
+	if band.is_empty(): band = layout.ranges
+	var r: Dictionary = band[band.size()/2]
 	var rw := Vector3(r.at.x,0.0,r.at.z).normalized()
 	shots.append({"view":"range","eye":r.at-rw*1100.0+Vector3.UP*70.0,"look":r.at+Vector3.UP*150.0,"golden":true})
-	if not layout.passes.is_empty():
-		var p0: Dictionary = layout.passes[0]
+	# Down the plate's region to a wall's pass (capture_sky_ring `plate-valley`).
+	var outer: Array = layout.passes.filter(func(p: Dictionary) -> bool: return int(p.get("chord",1)) != 0)
+	if not outer.is_empty():
+		var p0: Dictionary = outer[0]
 		var to0: Vector3 = (p0.at as Vector3).normalized()
 		shots.append({"view":"valley","eye":to0*60.0+Vector3.UP*50.0,"look":p0.at+Vector3.UP*35.0,"fov":62.0})
 	shots.append({"view":"sea","eye":Vector3.UP*60.0,"look":Vector3(0,0,-1)*1200.0+Vector3.DOWN*260.0,"fov":75.0,"styles":["opal","storybook","mystic"]})
@@ -150,7 +182,12 @@ func _hold(shot: Dictionary, hour: float, count: int) -> void:
 		eye.sky.haze = 1.0
 		eye.sky.advance(delta,at,0.0)
 		eye.islands.advance(delta,at,glide.heading,0.0)
-		if i == 1: eye.islands.peaks.flush()
+		# The ranges near the eye surveyed now and made in full at once.
+		if i == 1:
+			var peaks: Node3D = eye.islands.peaks
+			peaks._since = peaks.CHECK
+			peaks.advance(0.0,at)
+			peaks.flush()
 		var o := at-look
 		scene.target = look
 		scene.distance = maxf(o.length(),0.01)

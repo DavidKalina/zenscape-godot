@@ -24,9 +24,18 @@ uniform vec4 glide_emerge_hi[4];
 // reach takes the landform's gentler curve (zs_glide_fog_far).
 uniform vec4 glide_peaks[2];
 // The mountain ring (scripts/sky_world.gd, sky_haze.gd `publish`): the
-// world's middle (x, z), and the distance from it (m) the ring's curve
-// starts at (z) and has taken over by (w); w 0 with no ring.
+// world's middle (x, z), and how far (m) in from where the band's rock
+// starts the ring's curve starts (z), and out past it it has taken over
+// (w); w 0 with no ring. Where the rock starts, each way out from the
+// middle, 128 ways a turn from +x toward +z (SkyWorld `haze_inner`).
 uniform vec4 glide_ring = vec4(0.0);
+uniform float glide_ring_inner[128];
+// The build view's mountains (scripts/sky_haze.gd `overview`): the plate's
+// middle (x, z), and the distance from it (m) where its own haze gives way
+// (z) to the ring's skyline curve (w), so ranges a kilometre and more off
+// stand pale in the distance rather than gone into the plate's haze. Only
+// the ranges stand that far off in the build view. w 0 with no ring.
+uniform vec4 overview_far = vec4(0.0);
 
 // The cloud sea the glide flies over, as the sky's material has it
 // (scripts/sky_haze.gd `publish`): x its strength, y its style (0 Opal,
@@ -112,7 +121,11 @@ float zs_glide_peak(vec3 point) {
 // world's bounds, all past the ring's start.
 float zs_glide_ring(vec3 point) {
 	if (glide_ring.w <= 0.0) return 0.0;
-	return smoothstep(glide_ring.z, glide_ring.w, length(point.xz - glide_ring.xy));
+	vec2 d = point.xz - glide_ring.xy;
+	float f = fract(atan(d.y, d.x) / 6.28318530718) * 128.0;
+	int i = int(floor(f));
+	float inner = mix(glide_ring_inner[i % 128], glide_ring_inner[(i + 1) % 128], f - float(i));
+	return smoothstep(inner - glide_ring.z, inner + glide_ring.w, length(d));
 }
 
 vec3 zs_surface_haze(vec3 color, vec2 uv) {
@@ -151,6 +164,11 @@ vec3 zs_surface_haze(vec3 color, vec2 uv) {
 	if (surface_inversion_enabled) {
 		float inversion = zs_inversion_surface_amount(zs_camera_position + offset);
 		result = mix(result, zs_inversion_color, inversion);
+	}
+	if (overview_far.w > 0.0) {
+		vec3 point = ray_origin + offset;
+		float share = smoothstep(overview_far.z, overview_far.w, length(point.xz - overview_far.xy));
+		if (share > 0.0) result = mix(result, mix(color, zs_glide_horizon(ray), zs_glide_fog_ring(ray_length, point.y)), share);
 	}
 	// Gliding, the plate's haze gives way to the sky's own colour with
 	// distance (glide_haze.gdshaderinc), the aerial perspective that ties

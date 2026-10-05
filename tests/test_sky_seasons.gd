@@ -16,6 +16,8 @@ const PeakTest = preload("res://tests/test_sky_peaks.gd")
 const SEASON_NAMES := ["spring","summer","autumn","winter"]
 const SEEDS := [101,2024,77777]
 var failures := 0
+var floors := Vector4.ZERO
+var taper := 0.0
 
 func _initialize() -> void:
 	run.call_deferred()
@@ -25,6 +27,7 @@ func run() -> void:
 	_shaders()
 	var falls := _snow_falls()
 	_snow_line(falls)
+	_low_range(falls)
 	_sea_mood()
 	await _published()
 	print("PASS: sky seasons" if failures == 0 else "FAIL: sky seasons (%d)" % failures)
@@ -63,7 +66,7 @@ func _shaders() -> void:
 	var names: Array = surface.get_shader_uniform_list().map(func(e: Dictionary) -> String: return e.name)
 	check(names.has("peak_snow") and names.has("sea_cut"),"The ground shader parses and takes the peaks' snow")
 	var code := surface.code
-	check("sky_season.gdshaderinc" in code and "zs_sky_snow_fall()" in code,"The ground shader lays the peaks' snow by the season's fall")
+	check("sky_season.gdshaderinc" in code and "zs_sky_peak_snowy(UV.x" in code,"The ground shader lays the peaks' snow by the season's fall and floor")
 	check("zs_sky_summer_grass(tint)" in code,"The peaks' grass dries a little through the summer")
 	check("sea_cut <= -1.0e8" in code,"The plate's snow cover leaves the peaks to their own line")
 	var sky: Shader = load("res://shaders/reference_sky.gdshader")
@@ -80,13 +83,31 @@ func _snow_falls() -> Vector4:
 	var falls := _vec4(text,"ZS_SKY_SNOW_FALL")
 	check(falls.x == 0.0,"Spring leaves the snow line where it was drawn")
 	check(falls.y < falls.z and falls.z < falls.x and falls.x < falls.w,"Summer's line highest, then autumn's, spring's, winter's lowest: %s" % str(falls))
+	floors = _vec4(text,"ZS_SKY_SNOW_FLOOR")
+	taper = _float(text,"ZS_SKY_SNOW_TAPER")
+	check(floors.x == SkyPeak.SNOW_WORLD and floors.y >= SkyPeak.SNOW_WORLD and floors.z >= SkyPeak.SNOW_WORLD,"Spring, summer and autumn keep the drawn floor (%.0f m)" % SkyPeak.SNOW_WORLD)
+	check(floors.w < SkyPeak.SNOW_WORLD and floors.w > 40.0 and taper >= 2.0,"Winter's floor is lower, %.0f m, tapering %.1f m a metre under it" % [floors.w,taper])
 	return falls
+
+## zs_sky_peak_snowy, as the shader runs it, in quarter `q` alone.
+func _snowy(need: float, y: float, q: int, falls: Vector4, scale := 1.0) -> bool:
+	var fall: float = falls[q]/scale
+	var floor_at: float = SkyPeak.SEA+(floors[q]-SkyPeak.SEA)/scale
+	var under := maxf(floor_at-y,0.0)*taper if need >= 0.0 else 0.0
+	return fall > need+under
+
+## A range as the game makes it, placed scaled `height` in height: its
+## snow line no lower than the drawn floor (SkyPeaks `_make`).
+func _range(seed_value: int, height := 1.0) -> RefCounted:
+	var peak: RefCounted = SkyPeak.make(seed_value)
+	peak.snowline = maxf(peak.snowline,SkyPeak.snow_floor(height))
+	return peak
 
 ## The snow line on real ranges, near faces and far and the skyline's.
 func _snow_line(falls: Vector4) -> void:
 	var snow := Color(0.9,0.93,0.96)
 	for s: int in SEEDS:
-		var peak: RefCounted = SkyPeak.make(s)
+		var peak: RefCounted = _range(s)
 		var arrays: Array = peak.body_arrays([Color(0.1,0.3,0.1)],[Color(0.27,0.23,0.18)],Color(0.3,0.3,0.28),Vector3.ZERO,1,snow)
 		var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
 		var need: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV]
@@ -104,7 +125,7 @@ func _snow_line(falls: Vector4) -> void:
 			var sheer := 0
 			for k in range(0,vertices.size(),3):
 				var y := (vertices[k].y+vertices[k+1].y+vertices[k+2].y)/3.0
-				var snowy := fall > need[k].x
+				var snowy := _snowy(need[k].x,y,q,falls)
 				var n := (vertices[k+2]-vertices[k]).cross(vertices[k+1]-vertices[k]).normalized()
 				if y > peak.top-40.0:
 					top += 1
@@ -120,8 +141,10 @@ func _snow_line(falls: Vector4) -> void:
 			summit_snow.append(float(top_snow)/maxf(top,1.0))
 			steep_snow.append(sheer)
 		check(counts[3] > counts[0] and counts[0] > counts[2] and counts[2] > counts[1],"Seed %d: more faces snowed in winter than spring, autumn, summer (%s)" % [s,str(counts)])
-		check(counts[3] > counts[0]*2,"Seed %d: winter's snow is generous, over twice spring's (%d to %d)" % [s,counts[3],counts[0]])
-		check(float(lowest[3]) < float(lowest[0])-100.0,"Seed %d: winter's snow comes over 100 m lower than spring's (%.0f to %.0f m)" % [s,lowest[3],lowest[0]])
+		check(counts[3] > counts[0]*1.5,"Seed %d: winter's snow is generous above its floor, over half again spring's (%d to %d)" % [s,counts[3],counts[0]])
+		check(float(lowest[3]) <= float(lowest[0]),"Seed %d: winter's snow comes at least as low as spring's (%.0f to %.0f m)" % [s,lowest[3],lowest[0]])
+		var dust := _winter_dust(arrays,falls,1.0)
+		check(dust < 0.12,"Seed %d: under the drawn floor winter adds only a dusting (%.1f%% of that ground)" % [s,dust*100.0])
 		check(float(lowest[1]) > float(lowest[0])+40.0,"Seed %d: summer's snow keeps well above spring's (%.0f to %.0f m)" % [s,lowest[1],lowest[0]])
 		check(float(summit_snow[1]) > 0.15,"Seed %d: summer still holds snow on the summits (%.0f%% of the top faces)" % [s,float(summit_snow[1])*100.0])
 		check(int(steep_snow[3]) < steep,"Seed %d: even in winter the sheerest faces up high stay bare rock (%d of %d)" % [s,steep_snow[3],steep])
@@ -136,15 +159,52 @@ func _snow_line(falls: Vector4) -> void:
 			var coarse: Array = peak.body_arrays([Color(0.1,0.3,0.1)],[Color(0.27,0.23,0.18)],Color(0.3,0.3,0.28),Vector3.ZERO,stride,snow)
 			var gaps := []
 			for q in range(4):
-				gaps.append(snappedf(_snow_share(arrays,falls[q],peak.top)-_snow_share(coarse,falls[q],peak.top),0.001))
+				gaps.append(snappedf(_snow_share(arrays,falls,q)-_snow_share(coarse,falls,q),0.001))
 			print("     seed %d stride %d gaps %s" % [s,stride,str(gaps)])
 			var worst := 0.0
 			for q in range(4): worst = maxf(worst,absf(float(gaps[q])))
 			check(worst < 0.08,"Seed %d: faces at every %d-th point snow as the near ones do (worst band %.3f)" % [s,stride,worst])
 
+## Under the drawn floor (SNOW_WORLD, the world's height), the share of
+## the face area winter snows that was bare as drawn, on a range placed
+## scaled `height` about the sea.
+func _winter_dust(arrays: Array, falls: Vector4, height: float) -> float:
+	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var need: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV]
+	var low := SkyPeak.snow_floor(height)
+	var area := 0.0
+	var white := 0.0
+	for k in range(0,vertices.size(),3):
+		var y := (vertices[k].y+vertices[k+1].y+vertices[k+2].y)/3.0
+		if y < SkyPeak.SEA or y > low: continue
+		var a := (vertices[k+1]-vertices[k]).cross(vertices[k+2]-vertices[k]).length()*0.5
+		area += a
+		if need[k].x >= 0.0 and _snowy(need[k].x,y,3,falls,height): white += a
+	return white/maxf(area,1.0)
+
+## A low range, as a wall's low stretch or a foothill stands (its top not
+## far over the drawn floor): winter leaves it a dusting, never a blanket.
+func _low_range(falls: Vector4) -> void:
+	for s: int in SEEDS:
+		var height := 0.5
+		var peak: RefCounted = _range(s,height)
+		var top_world: float = SkyPeak.SEA+(peak.top-SkyPeak.SEA)*height
+		var arrays: Array = peak.body_arrays([Color(0.1,0.3,0.1)],[Color(0.27,0.23,0.18)],Color(0.3,0.3,0.28),Vector3.ZERO,SkyRing.STRIDE)
+		var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var need: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV]
+		var area := 0.0
+		var white := 0.0
+		for k in range(0,vertices.size(),3):
+			var y := (vertices[k].y+vertices[k+1].y+vertices[k+2].y)/3.0
+			if y < SkyPeak.SEA: continue
+			var a := (vertices[k+1]-vertices[k]).cross(vertices[k+2]-vertices[k]).length()*0.5
+			area += a
+			if _snowy(need[k].x,y,3,falls,height): white += a
+		check(white/maxf(area,1.0) < 0.1,"Seed %d low (top %.0f m): winter dusts it, %.1f%% of its face white" % [s,top_world,white/maxf(area,1.0)*100.0])
+
 ## How much of a range's face area is snowed, worst over 40 m height bands
 ## from the sea to the top, as one share per band averaged.
-func _snow_share(arrays: Array, fall: float, top: float) -> float:
+func _snow_share(arrays: Array, falls: Vector4, q: int) -> float:
 	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
 	var need: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV]
 	var area := {}
@@ -155,7 +215,7 @@ func _snow_share(arrays: Array, fall: float, top: float) -> float:
 		var band := floori((y-SkyPeak.SEA)/40.0)
 		var a := (vertices[k+1]-vertices[k]).cross(vertices[k+2]-vertices[k]).length()*0.5
 		area[band] = float(area.get(band,0.0))+a
-		if fall > need[k].x: white[band] = float(white.get(band,0.0))+a
+		if _snowy(need[k].x,y,q,falls): white[band] = float(white.get(band,0.0))+a
 	var total := 0.0
 	var count := 0
 	for band in area:
