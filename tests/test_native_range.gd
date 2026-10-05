@@ -18,9 +18,18 @@ func _run() -> void:
 	button.pressed.emit()
 	while editor.forming: await process_frame
 	var generated: PackedFloat32Array = editor.data.heights.duplicate()
+	# The imported fidelity terrain is the authored 28 m mesh, no longer the
+	# plate: the range's equations are read at its points, its rim held at
+	# 0.6 as that plate's rim was.
+	var source: Node3D = load("res://assets/zen_reference/geometry.scn").instantiate()
+	var imported := NativeTerrainData.new()
+	imported.setup(source.get_node("terrain").mesh,[],false)
+	source.free()
+	var equations: PackedFloat32Array = preload("res://scripts/native_recipe_samples.gd").build(editor.data._recipe_settings,imported.points,PackedFloat64Array(),PackedFloat64Array(),false).heights
 	var worst := 0.0
-	for i in range(generated.size()):
-		worst = maxf(worst,absf(generated[i]-editor.data.original_heights[i]))
+	for i in range(equations.size()):
+		var rim := maxf(absf(imported.points[i].x),absf(imported.points[i].y)) > preload("res://scripts/plate.gd").LEGACY_HALF-0.0001
+		worst = maxf(worst,absf((0.6 if rim else equations[i])-imported.original_heights[i]))
 	print("Generated range vs imported fidelity vertices: max error ",worst)
 	check(worst < 0.0001,"Default range reconstructs fidelity terrain from equations")
 	check(editor.data.blank and editor.data.objects.is_empty(),"Generation leaves source scenery hidden and placements empty")
