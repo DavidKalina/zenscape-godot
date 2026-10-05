@@ -30,7 +30,7 @@ const STRETCH := 0.7
 
 func _init() -> void:
 	name = "RedwoodBiomeMist"
-	size = Vector3(32,40,32)
+	size = Vector3(Plate.MAP_SPAN,40,Plate.MAP_SPAN)
 	position.y = 17.0
 	fog_material.shader = preload("res://shaders/redwood_biome_mist.gdshader")
 	woodland_material.shader = preload("res://shaders/beauty_mist.gdshader")

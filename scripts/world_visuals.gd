@@ -54,9 +54,9 @@ func _volume(shader: Shader, extent: Vector3) -> FogVolume:
 	return volume
 func sync(scene: Node3D) -> void:
 	if _fog == null:
-		_fog = _volume(preload("res://shaders/living_fog.gdshader"),Vector3(28,24,28))
+		_fog = _volume(preload("res://shaders/living_fog.gdshader"),Vector3(Plate.SIZE,24,Plate.SIZE))
 		_fog.position.y = 10.0
-		_peaks = _volume(preload("res://shaders/peak_clouds.gdshader"),Vector3(28,7,28))
+		_peaks = _volume(preload("res://shaders/peak_clouds.gdshader"),Vector3(Plate.SIZE,7,Plate.SIZE))
 	_fog.visible = fog_density>0.0
 	_peaks.visible = peak_density>0.0
 	_peaks.position.y = peak_altitude
