@@ -28,6 +28,9 @@ var golden := WorldClock.hour_for_phase(0.75-asin(clampf(GOLDEN_SUN/WorldClock.e
 var only: Array = []
 
 func _initialize() -> void:
+	# The wonders are off in play (SkyHomes `stone`, `isles`); on here.
+	preload("res://scripts/sky_homes.gd").stone = true
+	preload("res://scripts/sky_homes.gd").isles = true
 	run.call_deferred()
 
 func frames(count: int) -> void:

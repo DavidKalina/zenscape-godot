@@ -57,6 +57,7 @@ const SkyIslets = preload("res://scripts/sky_islets.gd")
 const SkyPeaks = preload("res://scripts/sky_peaks.gd")
 const SkyTowers = preload("res://scripts/sky_towers.gd")
 const SkyForestIsles = preload("res://scripts/sky_forest_isles.gd")
+const SkyHomes = preload("res://scripts/sky_homes.gd")
 ## The most chunks standing at once. Each is three draws.
 const CAP := 9
 ## A copy that turns up rises this far (metres) over this long (seconds):
@@ -121,6 +122,9 @@ func setup(owner_scene: Node3D) -> void:
 	scene = owner_scene
 	editor = scene._chunk_editor
 	name = "SkyIslands"
+	if "--wonders" in OS.get_cmdline_user_args():
+		SkyHomes.stone = true
+		SkyHomes.isles = true
 	currents = SkyCurrents.new()
 	add_child(currents)
 	var slots := [Vector3.ZERO]

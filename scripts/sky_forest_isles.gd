@@ -133,6 +133,10 @@ func _exit_tree() -> void:
 func reset(new_cells: RefCounted) -> void:
 	clear()
 	_water = null
+	# None stand while the isles are off (SkyHomes `isles`).
+	if not SkyHomes.isles:
+		cells = null
+		return
 	cells = new_cells
 	_since = CHECK
 	position = cells.origin
@@ -208,6 +212,7 @@ static func cell_of(home: Vector3) -> Vector2i:
 ## one, outside RING, off the ranges (and the kinds kept with them), off
 ## the towers and off every wonder in sight of the plate (SkyHomes).
 static func spot(cell: Vector2i) -> Variant:
+	if not SkyHomes.isles: return null
 	if cell == Vector2i.ZERO: return Vector4(HOME.x,HOME.y,HOME.z,HOME_TURN)
 	if noise(cell,SALT) >= HOLDS: return null
 	var middle := Vector2(cell)*CELL

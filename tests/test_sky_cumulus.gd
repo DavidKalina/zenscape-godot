@@ -21,6 +21,9 @@ const SEEDS := [101,2024,77777,4242,9,31337]
 var failures := 0
 
 func _initialize() -> void:
+	# The wonders are off in play (SkyHomes `stone`, `isles`); on here.
+	preload("res://scripts/sky_homes.gd").stone = true
+	preload("res://scripts/sky_homes.gd").isles = true
 	_same_seed()
 	_size()
 	_rare()

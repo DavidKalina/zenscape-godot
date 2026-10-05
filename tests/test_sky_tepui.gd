@@ -25,6 +25,9 @@ var failures := 0
 var shapes := {}
 
 func _initialize() -> void:
+	# The wonders are off in play (SkyHomes `stone`, `isles`); on here.
+	preload("res://scripts/sky_homes.gd").stone = true
+	preload("res://scripts/sky_homes.gd").isles = true
 	_same_seed()
 	_walls()
 	_plateau()

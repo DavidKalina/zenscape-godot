@@ -47,6 +47,9 @@ var homes := []
 
 func _initialize() -> void:
 	preload("res://scripts/native_terrain_kernels.gd").get_kernel()
+	_off_in_play()
+	SkyHomes.stone = true
+	SkyHomes.isles = true
 	_gather()
 	_in_sight()
 	_facing()
@@ -59,6 +62,31 @@ func _initialize() -> void:
 func check(ok: bool, label: String) -> void:
 	if not ok: failures += 1
 	print(("OK   " if ok else "FAIL ")+label)
+
+## Off in play (SkyHomes `stone`, `isles`): only the cumulus stands, and no
+## range, pillar forest, tepui or isle turns up or keeps anything out.
+func _off_in_play() -> void:
+	check(not SkyHomes.stone and not SkyHomes.isles,"The stone wonders and the forested isles start off")
+	check(SkyHomes.spots() == [[SkyHomes.TOWER,SkyHomes.TOWER_KEEP]],"Only the towering cumulus stands in sight of the plate")
+	var none := true
+	for x in range(-WINDOW,WINDOW+1):
+		for z in range(-WINDOW,WINDOW+1):
+			var cell := Vector2i(x,z)
+			if SkyPeaks.spot(cell) != null or SkyForestIsles.spot(cell) != null: none = false
+	check(none,"No range or isle turns up in any cell")
+	check(not SkyPeaks.blocks(SkyPeaks.HOME) and not SkyPeaks.blocks(SkyPillars.HOME) and not SkyPeaks.blocks(SkyTepuis.HOME) and not SkyForestIsles.blocks(SkyForestIsles.HOME),"Nothing is kept clear for them")
+	var peaks: Node3D = SkyPeaks.new()
+	var isles: Node3D = SkyForestIsles.new()
+	var cells := SkyCells.new([Vector3.ZERO])
+	peaks.reset(cells)
+	isles.reset(cells)
+	peaks.advance(1.0,Vector3.ZERO)
+	isles.advance(1.0,Vector3.ZERO)
+	peaks.flush()
+	isles.flush()
+	check(peaks.range_count() == 0 and peaks.kinds[0].forest_count() == 0 and peaks.tepuis.tepui_count() == 0 and isles.isle_count() == 0,"Reset and run, none is made")
+	peaks.free()
+	isles.free()
 
 # --- The home wonders' footprints ---------------------------------------------------
 

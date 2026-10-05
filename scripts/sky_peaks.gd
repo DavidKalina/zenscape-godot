@@ -122,6 +122,10 @@ func _exit_tree() -> void:
 func reset(new_cells: RefCounted, air: Node3D = null) -> void:
 	clear()
 	_material = null
+	# None stand while the stone wonders are off (SkyHomes `stone`).
+	if not SkyHomes.stone:
+		cells = null
+		return
 	cells = new_cells
 	currents = air
 	_since = CHECK
@@ -210,6 +214,7 @@ static func cell_of(home: Vector3) -> Vector2i:
 ## would reach into the keep of a wonder in sight of the plate (SkyHomes
 ## `blocks`) or of one of the other kinds kept here.
 static func spot(cell: Vector2i) -> Variant:
+	if not SkyHomes.stone: return null
 	if cell == Vector2i.ZERO: return Vector4(HOME.x,HOME.y,HOME.z,HOME_TURN)
 	if noise(cell,SALT) >= HOLDS: return null
 	var middle := Vector2(cell)*CELL
@@ -233,6 +238,7 @@ static func spread_of(cell: Vector2i) -> float:
 
 ## True if a home point lies within KEEP (plus `margin`) of a range's middle.
 static func blocks(home: Vector3, margin := 0.0) -> bool:
+	if not SkyHomes.stone: return false
 	var c := cell_of(home)
 	for dx in range(-1,2):
 		for dz in range(-1,2):
