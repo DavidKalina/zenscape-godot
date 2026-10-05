@@ -78,8 +78,11 @@ signal land_released(screen_pos: Vector2)
 ## The hand took hold of "sun" or "rim", or let go ("").
 signal holding_changed(what: String)
 
-## Half the plate's side, metres (the terrain is 28 m square, centred).
-const PLATE_HALF := 14.0
+## Half the plate's side, metres (the terrain is square, centred).
+const PLATE_HALF := preload("res://scripts/plate.gd").HALF
+## Metres between the samples of the square rim's outline (24 a side on
+## the 28 m plate); a bigger plate takes more of them.
+const RIM_SAMPLE := 7.0/6.0
 ## The sun's disc is small (about 2 degrees), so it is grabbed generously:
 ## within this many pixels of its centre, or this many degrees of it.
 const SUN_PIXELS := 64.0
@@ -646,7 +649,7 @@ func rim_outline() -> PackedVector2Array:
 	var camera: Camera3D = scene.camera
 	var terrain: Node3D = _editor().terrain
 	var points := PackedVector2Array()
-	var steps := 24
+	var steps := roundi(2.0*PLATE_HALF/RIM_SAMPLE)
 	for side in range(4):
 		for i in range(steps):
 			var f := -PLATE_HALF+2.0*PLATE_HALF*float(i)/steps
@@ -669,7 +672,7 @@ func _outline_nearest(point: Vector2) -> Array:
 			var pixels := point.distance_to(camera.unproject_position(world))
 			if pixels < float(best[0]): best = [pixels,local]
 		return best
-	var steps := 24
+	var steps := roundi(2.0*PLATE_HALF/RIM_SAMPLE)
 	for side in range(4):
 		for i in range(steps):
 			var f := -PLATE_HALF+2.0*PLATE_HALF*(i+0.5)/steps
@@ -1741,8 +1744,8 @@ func _keep_bare(root: Vector2, emerged: bool) -> void:
 	var intent: RefCounted = editor.emergence.intent if editor.get("emergence") != null else null
 	var wish: PackedFloat32Array = intent.forest if intent != null else PackedFloat32Array()
 	var clear: float = preload("res://scripts/forest_brush.gd").CLEAR_BELOW
-	var low := Vector2i(((root-Vector2.ONE*PLUCK_BARE+Vector2(14,14))/step).floor()).clamp(Vector2i.ZERO,Vector2i.ONE*(side-1))
-	var high := Vector2i(((root+Vector2.ONE*PLUCK_BARE+Vector2(14,14))/step).floor()).clamp(Vector2i.ZERO,Vector2i.ONE*(side-1))
+	var low := Vector2i(((root-Vector2.ONE*PLUCK_BARE+Vector2.ONE*PLATE_HALF)/step).floor()).clamp(Vector2i.ZERO,Vector2i.ONE*(side-1))
+	var high := Vector2i(((root+Vector2.ONE*PLUCK_BARE+Vector2.ONE*PLATE_HALF)/step).floor()).clamp(Vector2i.ZERO,Vector2i.ONE*(side-1))
 	for z in range(low.y,high.y+1):
 		for x in range(low.x,high.x+1):
 			var cell := z*side+x

@@ -11,6 +11,7 @@ extends RefCounted
 ## outside is locked through the `fixed` mask, so fresh land gets gullies and
 ## aprons while the rest of the world stays exactly as it was.
 const Erosion = preload("res://scripts/terrain_erosion.gd")
+const Plate = preload("res://scripts/plate.gd")
 ## Bucket size for the per-vertex lookup, in metres.
 const CELL := 2.0
 ## Peak rise in metres per second at the stroke centre, at strength 1.
@@ -38,7 +39,7 @@ const CORE := 0.18
 ## same ridged pattern again on each pass.
 const WEATHER := {"detail":0.0,"frequency":0.16,"warp":1.3,"slope_ref":1.2,"iterations":20,"k":0.012,
 	"channel_area":2.5,"jitter":0.6,"max_cut":0.7,"deposit":0.5,"deposit_slope":0.35,"deposit_cap":0.05,
-	"edge_inner":11.6,"edge_outer":13.4}
+	"edge_inner":Plate.HALF-2.4,"edge_outer":Plate.HALF-0.6}
 ## The creation brush interface (scripts/creation_brush.gd); land keeps its
 ## size and strength on the editor (land_radius, land_strength).
 var brush_id := "land"
@@ -161,7 +162,7 @@ func weather(data: NativeTerrainData) -> bool:
 func weather_job(data: NativeTerrainData) -> Callable:
 	if not has_bounds: return Callable()
 	has_bounds = false
-	var region := bounds.grow(Erosion.CELL*2.0).intersection(Rect2(-14,-14,28,28))
+	var region := bounds.grow(Erosion.CELL*2.0).intersection(Plate.RECT)
 	if region.size.x <= 0.0 or region.size.y <= 0.0: return Callable()
 	# The native kernel loads on the main thread, before a worker needs it.
 	preload("res://scripts/native_terrain_kernels.gd").get_kernel()

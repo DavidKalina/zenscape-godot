@@ -9,8 +9,9 @@ extends RefCounted
 ## chunk-local border they lie on: n is z = -HALF, s is z = +HALF, e is
 ## x = +HALF, w is x = -HALF.
 
-const SIZE := 28.0
-const HALF := 14.0
+const Plate = preload("res://scripts/plate.gd")
+const SIZE := Plate.SIZE
+const HALF := Plate.HALF
 ## Border samples per edge: the reference terrain's 44 cells, 45 vertices.
 const SAMPLES := 45
 ## Strip heights are frozen at this quantum (strips.js), so both sides of a

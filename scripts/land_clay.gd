@@ -143,9 +143,12 @@ const MIN_UPRIGHT := 0.3
 const NOTICE := 8.0
 const Disturbance = preload("res://scripts/disturbance.gd")
 ## The plate's last metres, where shaping fades to nothing (as the land
-## spring and the mountain forms), and its half-width to the rim.
-const EDGE := Vector2(11.4,13.6)
-const PLATE_HALF := 14.0
+## spring and the mountain forms), and its half-width to the rim. The fade
+## keeps its width as the plate grows: it starts 2.6 m in from the rim and
+## is done 0.4 m in.
+const Plate = preload("res://scripts/plate.gd")
+const EDGE := Vector2(Plate.HALF-2.6,Plate.HALF-0.4)
+const PLATE_HALF := Plate.HALF
 ## Metres per bucket of the point lookup.
 const CELL := 1.5
 ## A stroke's heading is taken over its last HEADING_RUN metres, so a slow
@@ -883,8 +886,8 @@ func _dirt() -> void:
 	var data := editor.data
 	var side := NativeTerrainData.MEADOW_CELLS
 	var step := NativeTerrainData.MEADOW_STEP
-	var low := Vector2i(((_dirt_rect.position+Vector2(14,14))/step).floor()).clamp(Vector2i.ZERO,Vector2i.ONE*(side-1))
-	var high := Vector2i(((_dirt_rect.end+Vector2(14,14))/step).floor()).clamp(Vector2i.ZERO,Vector2i.ONE*(side-1))
+	var low := Vector2i(((_dirt_rect.position+Vector2.ONE*PLATE_HALF)/step).floor()).clamp(Vector2i.ZERO,Vector2i.ONE*(side-1))
+	var high := Vector2i(((_dirt_rect.end+Vector2.ONE*PLATE_HALF)/step).floor()).clamp(Vector2i.ZERO,Vector2i.ONE*(side-1))
 	var layers := strata()
 	var turned := TURNED.srgb_to_linear()
 	var turns := tool.turns_lip(verb)

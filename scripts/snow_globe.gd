@@ -92,7 +92,7 @@ const ROCK := 0.35
 const PACE := Vector2(0.35,1.6)
 ## The plate's half size and the earth block's lip beyond it (m, plate space),
 ## and how far in from the edge the plate's top counts as rim.
-const EDGE := 14.0
+const EDGE := preload("res://scripts/plate.gd").HALF
 const LIP := 0.2
 const RIM_BAND := 1.5
 ## A grip keeps this far (m) from a corner.

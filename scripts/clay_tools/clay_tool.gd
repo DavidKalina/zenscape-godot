@@ -36,6 +36,9 @@ extends RefCounted
 ##   it at once (an undo, a new press, a change of tool), leaving what it
 ##   would have left had it run out.
 
+## The plate (scripts/plate.gd), for the tools that walk its cover grid.
+const Plate = preload("res://scripts/plate.gd")
+
 ## The clay working the land (scripts/land_clay.gd), set when the tool is made.
 var clay: Node
 ## The hold's lift in metres, as last shown (the clay reads it as `lift`).

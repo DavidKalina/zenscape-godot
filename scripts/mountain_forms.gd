@@ -13,6 +13,7 @@ extends RefCounted
 ## Per-vertex noise is built once per world (`prepare`); a tick only scales a
 ## stored lift, and the lift is reshaped only when the drag moves it.
 const Erosion = preload("res://scripts/terrain_erosion.gd")
+const Plate = preload("res://scripts/plate.gd")
 
 ## The forms in picker order: data only, so a shell can restyle the picker.
 ## `glyph` names a scripts/glass_chrome.gd GLYPHS entry.
@@ -44,7 +45,7 @@ const SHAPES := {
 ## The weathering pass's shared settings; `detail` scales with the height
 ## (per HEIGHT_REF m). The kernel's plate-edge fade matches land_brush.gd.
 const STROKE_EROSION := {"frequency":0.16,"warp":1.3,"slope_ref":1.2,"iterations":24,"jitter":0.6,
-	"deposit_slope":0.35,"deposit_cap":0.06,"edge_inner":11.6,"edge_outer":13.4}
+	"deposit_slope":0.35,"deposit_cap":0.06,"edge_inner":Plate.HALF-2.4,"edge_outer":Plate.HALF-0.6}
 const HEIGHT_REF := 8.0
 ## Rock colours (sRGB), picked per tint cell. Sandstone bands by height
 ## (BAND m each, bottom to top), and basalt reddens toward the crater
@@ -66,7 +67,7 @@ const CAP_WEIGHT := 0.55
 ## at .y, and over the plate's last metres (EDGE, as |x| or |z|), so a form
 ## never buries a pond or a stream nor walls the plate's rim.
 const WATER_GAP := Vector2(1.0,2.6)
-const EDGE := Vector2(11.4,13.6)
+const EDGE := Vector2(Plate.HALF-2.6,Plate.HALF-0.4)
 ## Seconds a mountain takes to rise; a quick click finishes rising after the
 ## button comes up.
 const RISE_SECONDS := 2.2
@@ -371,8 +372,8 @@ func _keep_out(data: NativeTerrainData) -> PackedFloat32Array:
 				var at := a.lerp(b,float(s)/steps)
 				for offset: Vector2 in [Vector2.ZERO,Vector2(width,0),Vector2(-width,0),Vector2(0,width),Vector2(0,-width)]: wet.append(at+offset)
 	for p in wet:
-		var x := floori((p.x+14.0)/step)
-		var z := floori((p.y+14.0)/step)
+		var x := floori((p.x+Plate.HALF)/step)
+		var z := floori((p.y+Plate.HALF)/step)
 		if x >= 0 and z >= 0 and x < side and z < side: distance[z*side+x] = 0.0
 	var diagonal := step*1.4142
 	for z in range(side):
@@ -397,8 +398,8 @@ func _keep_out(data: NativeTerrainData) -> PackedFloat32Array:
 			distance[c] = best
 	for i in range(_points):
 		var p: Vector2 = data.points[i]
-		var x := clampi(floori((p.x+14.0)/step),0,side-1)
-		var z := clampi(floori((p.y+14.0)/step),0,side-1)
+		var x := clampi(floori((p.x+Plate.HALF)/step),0,side-1)
+		var z := clampi(floori((p.y+Plate.HALF)/step),0,side-1)
 		keep[i] *= smoothstep(WATER_GAP.x,WATER_GAP.y,distance[z*side+x])
 	return keep
 
@@ -408,7 +409,7 @@ func _keep_out(data: NativeTerrainData) -> PackedFloat32Array:
 ## heights they were taken from. Empty when nothing rose.
 func weather_job(data: NativeTerrainData) -> Callable:
 	if not _has_bounds: return Callable()
-	var region := bounds.grow(Erosion.CELL*2.0).intersection(Rect2(-14,-14,28,28))
+	var region := bounds.grow(Erosion.CELL*2.0).intersection(Plate.RECT)
 	if region.size.x <= 0.0 or region.size.y <= 0.0: return Callable()
 	preload("res://scripts/native_terrain_kernels.gd").get_kernel()
 	var snapshot: NativeTerrainData = preload("res://scripts/native_terrain_snapshot.gd").for_height(data)
@@ -479,8 +480,8 @@ static func _rock_tint(data: NativeTerrainData, job: Dictionary) -> PackedFloat3
 	var lock: PackedByteArray = job.get("lock",PackedByteArray())
 	var side := data.MEADOW_CELLS
 	var step := data.MEADOW_STEP
-	var low := Vector2i(clampi(floori((region.position.x+14.0)/step),0,side-1),clampi(floori((region.position.y+14.0)/step),0,side-1))
-	var high := Vector2i(clampi(floori((region.end.x+14.0)/step),0,side-1),clampi(floori((region.end.y+14.0)/step),0,side-1))
+	var low := Vector2i(clampi(floori((region.position.x+Plate.HALF)/step),0,side-1),clampi(floori((region.position.y+Plate.HALF)/step),0,side-1))
+	var high := Vector2i(clampi(floori((region.end.x+Plate.HALF)/step),0,side-1),clampi(floori((region.end.y+Plate.HALF)/step),0,side-1))
 	for z in range(low.y,high.y+1):
 		for x in range(low.x,high.x+1):
 			if not lock.is_empty() and lock[z*side+x] != 0: continue

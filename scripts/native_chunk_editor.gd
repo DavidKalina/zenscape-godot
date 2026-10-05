@@ -230,6 +230,7 @@ var land_brush = preload("res://scripts/land_brush.gd").new()
 ## a neighbour, whose earth-block walls are cut away.
 var border_pin: RefCounted = null
 const AtlasView = preload("res://scripts/chunk_atlas_view.gd")
+const Plate = preload("res://scripts/plate.gd")
 var open_sides := {}
 var land_radius := 4.5
 var land_strength := 1.0
@@ -1315,8 +1316,8 @@ func _update_surface_maps(original: bool, frame_tree: SceneTree = null) -> bool:
 		return true
 	var clip := Rect2i(0,0,size,size)
 	if region != null:
-		var low: Vector2 = (region.position+Vector2.ONE*16.0)/32.0*float(size)-Vector2.ONE*0.5
-		var high: Vector2 = (region.end+Vector2.ONE*16.0)/32.0*float(size)-Vector2.ONE*0.5
+		var low: Vector2 = (region.position+Vector2.ONE*Plate.MAP_HALF)/(Plate.MAP_HALF*2.0)*float(size)-Vector2.ONE*0.5
+		var high: Vector2 = (region.end+Vector2.ONE*Plate.MAP_HALF)/(Plate.MAP_HALF*2.0)*float(size)-Vector2.ONE*0.5
 		clip = Rect2i(Vector2i(clampi(floori(low.x),0,size),clampi(floori(low.y),0,size)),Vector2i.ZERO)
 		clip = clip.expand(Vector2i(clampi(ceili(high.x)+1,0,size),clampi(ceili(high.y)+1,0,size)))
 	var image: Image
@@ -1345,7 +1346,7 @@ func _update_surface_maps(original: bool, frame_tree: SceneTree = null) -> bool:
 			for x in range(clip.position.x,clip.end.x):
 				if original and not data.blank:
 					continue
-				var point := (Vector2(x,z)+Vector2.ONE*0.5)/float(size)*32.0-Vector2.ONE*16.0
+				var point := (Vector2(x,z)+Vector2.ONE*0.5)/float(size)*(Plate.MAP_HALF*2.0)-Vector2.ONE*Plate.MAP_HALF
 				var height: Variant = data.height_at(point.x,point.y)
 				var value := Color(-1000,-1000,-1000,-1000) if data.blank else _original_ground_map.get_pixel(x,z)
 				value.g = float(height) if height != null else -1000.0
@@ -1563,7 +1564,7 @@ var _shore_fitted: ArrayMesh
 
 ## The land's edge, metres from the middle: the terrain's rim points stand on
 ## it, and the earth sides' top ring is laid along it.
-const SIDES_HALF := 14.0
+const SIDES_HALF := Plate.HALF
 ## How much of the authored sides' lean past the edge they keep: up to
 ## 0.11 m out at the foot, which the grass's edge hides from above.
 const SIDES_BATTER := 0.25
@@ -1652,7 +1653,7 @@ func _rim_ids(source: NativeTerrainData) -> PackedInt32Array:
 	_rim_ids_found = PackedInt32Array()
 	for i in range(source.points.size()):
 		var point := source.points[i]
-		if maxf(absf(point.x),absf(point.y)) > 13.9999: _rim_ids_found.append(i)
+		if maxf(absf(point.x),absf(point.y)) > Plate.RIM: _rim_ids_found.append(i)
 	_rim_ids_key = [source,source.points.size()]
 	return _rim_ids_found
 
@@ -1664,8 +1665,8 @@ func _rim_sides(source: NativeTerrainData) -> Array:
 	var sides: Array = [[],[],[],[]]
 	for i in _rim_ids(source):
 		var point := source.points[i]
-		if absf(point.x) > 13.9999: sides[0 if point.x < 0.0 else 1].append(Vector2(point.y,i))
-		if absf(point.y) > 13.9999: sides[2 if point.y < 0.0 else 3].append(Vector2(point.x,i))
+		if absf(point.x) > Plate.RIM: sides[0 if point.x < 0.0 else 1].append(Vector2(point.y,i))
+		if absf(point.y) > Plate.RIM: sides[2 if point.y < 0.0 else 3].append(Vector2(point.x,i))
 	_rim_sides_found = []
 	for side: Array in sides:
 		side.sort_custom(func(a: Vector2, b: Vector2) -> bool: return a.x < b.x)
@@ -1692,7 +1693,7 @@ func _skirt_reads_for(source: NativeTerrainData, sliced_key: Array, vertices: Pa
 		var weight := clampf((vertices[i].y-low)/(high-low),0.0,1.0)
 		if weight <= 0.0: continue
 		var local := placing*vertices[i]
-		var point := Vector2(local.x,local.z).clamp(Vector2(-14,-14),Vector2(14,14))
+		var point := Vector2(local.x,local.z).clamp(Vector2(-SIDES_HALF,-SIDES_HALF),Vector2(SIDES_HALF,SIDES_HALF))
 		# `sample` resolves and memoises the face; take its answer as is.
 		if source.sample(point,source.heights) == null: continue
 		var slot: int = source._locate_cache[point]

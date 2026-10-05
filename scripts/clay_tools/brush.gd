@@ -84,8 +84,8 @@ func paint_dab(_heights: PackedFloat32Array, q: Vector2, work: float) -> float:
 	var palette: NativeTerrainPalette = data._palette
 	var side := NativeTerrainData.MEADOW_CELLS
 	var step := NativeTerrainData.MEADOW_STEP
-	var low := Vector2i(((q-Vector2.ONE*radius+Vector2.ONE*14.0)/step).floor()).clamp(Vector2i.ZERO,Vector2i.ONE*(side-1))
-	var high := Vector2i(((q+Vector2.ONE*radius+Vector2.ONE*14.0)/step).floor()).clamp(Vector2i.ZERO,Vector2i.ONE*(side-1))
+	var low := Vector2i(((q-Vector2.ONE*radius+Vector2.ONE*Plate.HALF)/step).floor()).clamp(Vector2i.ZERO,Vector2i.ONE*(side-1))
+	var high := Vector2i(((q+Vector2.ONE*radius+Vector2.ONE*Plate.HALF)/step).floor()).clamp(Vector2i.ZERO,Vector2i.ONE*(side-1))
 	var tint := data.tint
 	var grass := data.grass
 	var verb: String = clay.verb
