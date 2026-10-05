@@ -116,6 +116,16 @@ static func mask(points: PackedVector2Array, ids: PackedInt32Array, seed_value: 
 	for f in range(faces): result[f] = 0 if land[f] == 1 else 1
 	return result
 
+## The square of land `half` metres each way from the plate's middle, as an
+## outline over faces whose middles are `middles`: 1 for every face whose
+## middle lies outside it. With the plate's grid lines on ±`half`
+## (Plate.LEGACY_HALF) its shore runs straight along faces' edges.
+static func square(middles: PackedVector2Array, half: float) -> PackedByteArray:
+	var result := PackedByteArray()
+	result.resize(middles.size())
+	for f in range(middles.size()): result[f] = 0 if absf(middles[f].x) < half and absf(middles[f].y) < half else 1
+	return result
+
 ## Metres inside the outline at each point: the distance to the nearest shore
 ## edge for a point on the island, 0 on the shore (an edge with land on one
 ## side only, which takes in the plate's own rim where the land reaches it),

@@ -210,8 +210,11 @@ func release_listeners() -> void:
 			disconnect(info.name,connection.callable)
 
 ## `arrays` are the mesh's own surface arrays when the caller already holds
-## them (a worker thread baking a plain off to the side reads no mesh).
-func setup(mesh: ArrayMesh, arrays: Array = []) -> void:
+## them (a worker thread baking a plain off to the side reads no mesh). The
+## land starts as the square (`square_outline`) unless `squared` is false,
+## which leaves it with no outline: only the 28 m template old worlds are read
+## against (scripts/plate_migration.gd) is set up that way.
+func setup(mesh: ArrayMesh, arrays: Array = [], squared := true) -> void:
 	_clear_pond_cache()
 	blades.resize(MEADOW_CELLS*MEADOW_CELLS)
 	blades.fill(0.0)
@@ -273,18 +276,34 @@ func setup(mesh: ArrayMesh, arrays: Array = []) -> void:
 	# centroid. Growing an edited region by this margin therefore reaches every
 	# face whose shading could have moved.
 	_face_margin += 0.25+MEADOW_STEP
+	if squared: set_outline(PackedByteArray())
 
 func is_void(point: Vector2) -> bool:
 	return not void_faces.is_empty() and height_at(point.x,point.y) == null and sample(point,heights) != null
 
 ## The island's outline from now on (`outline`, as scripts/island_outline.gd
-## `mask` makes it). An empty mask, or one with every face on the island, is
-## the full square. Part of the undo step it is set in.
+## `mask` makes it). The plate's rim is never land, so no land runs past the
+## shore walls (scripts/island_shore.gd): the faces on it are left off. An
+## empty mask, or one with no land, is the square (`square_outline`). Part
+## of the undo step it is set in.
 func set_outline(mask: PackedByteArray) -> void:
-	if mask.size() != vertex_ids.size()/3 or mask.count(0) == mask.size(): mask = PackedByteArray()
+	mask = _island_mask(mask)
 	if mask == outline: return
-	outline = mask.duplicate()
+	outline = mask
 	_outline_changed()
+
+## The square of land every island without an outline of its own is: the
+## LEGACY_HALF square the plate was before it grew, the middle of it.
+func square_outline() -> PackedByteArray:
+	return preload("res://scripts/island_outline.gd").square(_face_center,Plate.LEGACY_HALF)
+
+## `mask` as an outline may be: the square for none, the rim's faces off.
+func _island_mask(mask: PackedByteArray) -> PackedByteArray:
+	if mask.size() != vertex_ids.size()/3 or mask.count(0) == 0: mask = square_outline()
+	else: mask = mask.duplicate()
+	for f in range(mask.size()):
+		if _face_rim[f] == 1: mask[f] = 1
+	return mask
 
 ## The shore read again from `outline`: the distance field, the shore's
 ## edges, the points off the island, and the cut faces.
@@ -1187,9 +1206,13 @@ func form_foundation(elevation := 0.0, relief := 1.0, frame_tree: SceneTree = nu
 	landscape_waterfall=false
 	heights = _recipe_heights.duplicate()
 
+## A blank flat land on the square (`square_outline`): landscapes made
+## from a recipe were authored at that size and stay it; a plain's own
+## outline (scripts/genesis_canvas.gd) is set after.
 func reset_flat() -> void:
 	tunnels.clear()
 	_set_recipe({})
+	set_outline(PackedByteArray())
 	blank = true
 	source_replacements.clear()
 	heights.fill(0.0)
@@ -1212,10 +1235,10 @@ func _snapshot() -> Dictionary:
 
 func _restore(state: Dictionary) -> void:
 	tunnels.assign(state.get("tunnels",[]).duplicate(true))
-	# A state from before outlines is the full square.
-	var mask: PackedByteArray = state.get("outline",PackedByteArray())
+	# A state from before outlines is the square.
+	var mask := _island_mask(state.get("outline",PackedByteArray()))
 	if mask != outline:
-		outline = mask.duplicate()
+		outline = mask
 		_outline_changed()
 	_set_recipe(state.get("terrain_recipe",{}))
 	landscape_waterfall=state.get("landscape_waterfall",false)
@@ -1583,9 +1606,9 @@ func add_pond(point: Vector2, level: float) -> bool:
 	return true
 
 func to_document() -> Dictionary:
-	var document := {"tunnels":tunnels.duplicate(true),"source_replacements":source_replacements.duplicate(),"version":11,"tint":Array(tint),"landscape_waterfall":landscape_waterfall,"terrain_recipe":preload("res://scripts/native_terrain_recipe.gd").encode(_recipe_settings),"template":_template_id(),"heights":Array(heights),"blank":blank,"meadow":Array(meadow),"grass":Array(grass),"blades":Array(blades),"provenance":provenance.hex_encode(),"objects":_saved_objects(),"fences":fences.duplicate(true),"ponds":ponds.duplicate(true),"streams":streams.map(func(value): return preload("res://scripts/native_stream_record.gd").encode(value)),"next_id":next_id}
-	# Since version 11: the island's outline, deflated, base64. None for the
-	# full square.
+	var document := {"tunnels":tunnels.duplicate(true),"source_replacements":source_replacements.duplicate(),"version":12,"tint":Array(tint),"landscape_waterfall":landscape_waterfall,"terrain_recipe":preload("res://scripts/native_terrain_recipe.gd").encode(_recipe_settings),"template":_template_id(),"heights":Array(heights),"blank":blank,"meadow":Array(meadow),"grass":Array(grass),"blades":Array(blades),"provenance":provenance.hex_encode(),"objects":_saved_objects(),"fences":fences.duplicate(true),"ponds":ponds.duplicate(true),"streams":streams.map(func(value): return preload("res://scripts/native_stream_record.gd").encode(value)),"next_id":next_id}
+	# Since version 11: the island's outline, deflated, base64 (always, since
+	# version 12; a document without one is the square).
 	if not outline.is_empty(): document["outline"] = Marshalls.raw_to_base64(outline.compress(FileAccess.COMPRESSION_DEFLATE))
 	document_captured.emit(document)
 	return document
@@ -1596,11 +1619,19 @@ func _saved_objects() -> Array[Dictionary]:
 	for item in saved: item.erase("born")
 	return saved
 
+## The triangulation's fingerprint, which a document must carry to load.
+## The triangulation never changes after setup, so it is worked out once.
 func _template_id() -> String:
-	return var_to_bytes([points,vertex_ids,original_heights]).hex_encode().sha256_text()
+	if _template.is_empty(): _template = var_to_bytes([points,vertex_ids,original_heights]).hex_encode().sha256_text()
+	return _template
+var _template := ""
 
+## A document saved by `to_document`. One saved on the 28 m plate (before
+## version 12, scripts/plate_migration.gd) is brought onto this plate first.
 func load_document(document: Variant) -> bool:
-	if not document is Dictionary or (document.get("version") != 3 and document.get("version") != 4 and document.get("version") != 5 and document.get("version") != 6 and document.get("version") != 7 and document.get("version") != 8 and document.get("version") != 9 and document.get("version") != 10 and document.get("version") != 11) or document.get("template") != _template_id() or not document.get("blank") is bool:
+	if preload("res://scripts/plate_migration.gd").needs(document):
+		document = preload("res://scripts/plate_migration.gd").migrate(document,self)
+	if not document is Dictionary or (document.get("version") != 3 and document.get("version") != 4 and document.get("version") != 5 and document.get("version") != 6 and document.get("version") != 7 and document.get("version") != 8 and document.get("version") != 9 and document.get("version") != 10 and document.get("version") != 11 and document.get("version") != 12) or document.get("template") != _template_id() or not document.get("blank") is bool:
 		return false
 	var recipe: Variant = preload("res://scripts/native_terrain_recipe.gd").decode(document.get("terrain_recipe",{})) if document.version >= 6 else {}
 	if not preload("res://scripts/native_terrain_recipe.gd").valid(recipe):
