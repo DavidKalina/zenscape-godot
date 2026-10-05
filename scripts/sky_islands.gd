@@ -21,10 +21,12 @@ extends Node3D
 ##
 ## Chunks are only translated, never turned, so they light like the plate.
 ##
-## Between them stand the islets (scripts/sky_islets.gd), small scenery, and
-## now and then a mountain range of the land far below risen up through the
-## cloud sea (scripts/sky_peaks.gd), giant stone with a gorge through it.
-## Both are solids to the glide (`body`); no island stands on a range.
+## Between them stand the islets (scripts/sky_islets.gd), small scenery, a
+## few big forested isles (scripts/sky_forest_isles.gd) to glide in under
+## the trees of, and now and then a mountain range of the land far below
+## risen up through the cloud sea (scripts/sky_peaks.gd), giant stone with a
+## gorge through it. All are solids to the glide (`body`); no island stands
+## on a range or an isle.
 
 const HALF := 14.0
 ## Where the copies stand from the plate, in metres: far apart (400 to
@@ -37,6 +39,7 @@ const SkyCells = preload("res://scripts/sky_cells.gd")
 const Genesis = preload("res://scripts/genesis_canvas.gd")
 const SkyIslets = preload("res://scripts/sky_islets.gd")
 const SkyPeaks = preload("res://scripts/sky_peaks.gd")
+const SkyForestIsles = preload("res://scripts/sky_forest_isles.gd")
 ## The most chunks standing at once. Each is three draws.
 const CAP := 9
 ## A copy that turns up rises this far (metres) over this long (seconds):
@@ -77,6 +80,8 @@ var clouds: Node3D
 var islets: Node3D
 ## The mountain ranges risen through the cloud sea (scripts/sky_peaks.gd).
 var peaks: Node3D
+## The forested isles (scripts/sky_forest_isles.gd).
+var isles: Node3D
 
 func setup(owner_scene: Node3D) -> void:
 	scene = owner_scene
@@ -99,6 +104,12 @@ func setup(owner_scene: Node3D) -> void:
 	peaks.tree_parts = Callable(SkyIslets,"_tree_parts")
 	add_child(peaks)
 	skip.append(peaks)
+	isles = SkyForestIsles.new()
+	isles.palette_source = editor.data._palette
+	isles.tree_parts = Callable(SkyIslets,"_tree_parts")
+	isles.islets = islets
+	add_child(isles)
+	skip.append(isles)
 	show_air(false)
 
 ## Sets a flat chunk at every offset, replacing any earlier ones.
@@ -115,6 +126,10 @@ func build() -> void:
 	peaks.ground_source = islets.ground_source
 	peaks.canopy_tint = SkyIslets._canopy_tint
 	peaks.reset(cells,currents)
+	isles.ground_source = islets.ground_source
+	isles.side_source = editor._skirt_mesh.surface_get_material(0) if editor._skirt_mesh != null else null
+	isles.canopy_tint = SkyIslets._canopy_tint
+	isles.reset(cells)
 
 func clear() -> void:
 	for island in _copies: island.queue_free()
@@ -128,6 +143,7 @@ func clear() -> void:
 	if currents != null: currents.drop_added()
 	if islets != null: islets.clear()
 	if peaks != null: peaks.clear()
+	if isles != null: isles.clear()
 
 func _add(home: Vector3, at: Vector3, rise: Vector3) -> void:
 	var island := Node3D.new()
@@ -158,6 +174,7 @@ func advance(delta: float, eye: Vector3, heading: float, parted: float) -> void:
 	trim(eye)
 	islets.advance(delta,eye)
 	peaks.advance(delta,eye)
+	isles.advance(delta,eye)
 	clouds.follow(eye)
 
 ## Puts a copy at a home spot, rising from below, with a thermal beside it
@@ -304,6 +321,7 @@ func show_air(on: bool) -> void:
 	clouds.visible = on
 	islets.visible = on
 	peaks.visible = on
+	isles.visible = on
 
 ## The air at a global point (SkyCurrents `air_at`).
 func air(point: Vector3) -> Dictionary:
@@ -321,6 +339,8 @@ func ground(point: Vector3) -> Variant:
 		if h != null: return float(h)+offset.y
 	var islet: Variant = islets.body(point)
 	if islet != null: return (islet as Vector2).x
+	var isle: Variant = isles.ground(point)
+	if isle != null: return isle
 	return peaks.ground(point)
 
 ## The island whose footprint holds a global point, as a solid: Vector2(its
@@ -336,7 +356,15 @@ func body(point: Vector3) -> Variant:
 		if b != null: return (b as Vector2)+Vector2(offset.y,offset.y)
 	var islet: Variant = islets.body(point)
 	if islet != null: return islet
+	var isle: Variant = isles.body(point)
+	if isle != null: return isle
 	return peaks.body(point)
+
+## True where the solid at a global point is one the glide only rides where
+## it is gentle and is turned aside by at its sides (SkyGlide `stone`): a
+## range's rock, or a forested isle's trunks and crowns.
+func stone(point: Vector3) -> bool:
+	return isles.stone(point) or peaks.solid(point)
 
 func _body(point: Vector3, land: NativeTerrainData = null) -> Variant:
 	var top: Variant = _height(point,land)

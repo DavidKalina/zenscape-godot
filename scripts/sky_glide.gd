@@ -281,7 +281,9 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 ## face turns it aside. Giant stone (`stone`) is a heightfield with no side
 ## and no underside the glide can reach: it rides up only what rises no
 ## steeper than STEEP since the last step, and any steeper face turns it
-## aside, so it can skim a ledge or a col but never climbs a cliff.
+## aside, so it can skim a ledge or a col but never climbs a cliff; stone
+## with an underside it can reach (a forested isle's crown, scripts/
+## sky_forest_isles.gd) is a ceiling it slides along from below.
 func _skim(delta: float, ground: Callable, was: Vector3) -> void:
 	skimming = false
 	under_rock = false
@@ -293,6 +295,8 @@ func _skim(delta: float, ground: Callable, was: Vector3) -> void:
 		var up := Vector3(position.x,body.x+SKIM,position.z)
 		if was.y >= body.x+SKIM-give:
 			_ride(delta,up)
+		elif was.y <= body.y-CLEAR+0.01:
+			_under(delta,body)
 		else:
 			_brush(delta,ground,was)
 		return
@@ -300,12 +304,17 @@ func _skim(delta: float, ground: Callable, was: Vector3) -> void:
 	if before == Vector2.INF and position.y < body.x-LIP:
 		_brush(delta,ground,was)
 	elif before != Vector2.INF and was.y <= before.y-CLEAR+0.01:
-		under_rock = true
-		position.y = body.y-CLEAR
-		if velocity.y > 0.0: velocity.y = 0.0
-		if pitch > 0.0: pitch = lerpf(pitch,0.0,_ease(0.15,delta))
+		_under(delta,body)
 	else:
 		_ride(delta,Vector3(position.x,body.x+SKIM,position.z))
+
+## Sliding along under the solid `body`: kept CLEAR under it, the climb
+## stops and the nose comes level.
+func _under(delta: float, body: Vector2) -> void:
+	under_rock = true
+	position.y = body.y-CLEAR
+	if velocity.y > 0.0: velocity.y = 0.0
+	if pitch > 0.0: pitch = lerpf(pitch,0.0,_ease(0.15,delta))
 
 ## Riding along the ground at `up`: the fall stops, the nose comes level and
 ## the ground drags a little speed off.

@@ -20,6 +20,7 @@ extends Node3D
 ## the shader's `shift`, so the wrap works in one frame.
 
 const SkyPeaks = preload("res://scripts/sky_peaks.gd")
+const SkyForestIsles = preload("res://scripts/sky_forest_isles.gd")
 const COUNT := 70
 ## The field round the islands' slots, and the band of heights clouds sit
 ## in (metres).
@@ -62,8 +63,10 @@ func build(slots: Array) -> void:
 		var clear := true
 		for s: Vector3 in slots:
 			if Vector2(at.x,at.z).distance_to(Vector2(s.x,s.z)) < CLEAR: clear = false
-		# Nor on a mountain risen through the sea: its cloud is at its foot.
+		# Nor on a mountain risen through the sea (its cloud is at its foot),
+		# nor in a forested isle's trees.
 		if SkyPeaks.blocks(at): clear = false
+		if SkyForestIsles.blocks(at,40.0): clear = false
 		if clear: clouds.append(Vector4(at.x,at.y,at.z,rng.randf_range(SIZE.x,SIZE.y)))
 	_build_puffs(rng)
 
