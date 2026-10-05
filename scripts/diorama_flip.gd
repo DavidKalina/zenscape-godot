@@ -1028,7 +1028,7 @@ func _bake_underside(signature: Array) -> void:
 		ghost._ground_tint = tint
 		ghost.world_offset = offset
 		ghost.setup(mesh,arrays)
-		Genesis.shape(ghost,chosen)
+		Genesis.shape(ghost,chosen,Vector2.ZERO,true,Genesis.first_size())
 		baked.append(ghost)
 		# Its outline's faces only (an island's); the sides fit it below.
 		baked.append(ghost.play_mesh(ghost.build_mesh())))
@@ -1153,7 +1153,9 @@ func _make_new(id: int) -> void:
 	_forming_started = true
 	Budget.override_usec = MAKE_BUDGET_USEC
 	var began := Time.get_ticks_usec()
-	await Genesis.form(editor,_world,true)
+	# The flip's new home is a comfortable size, as a new world's first, and
+	# the underside baked for it (`_bake_underside`) is the same island.
+	await Genesis.form(editor,_world,true,Vector2.ZERO,true,Genesis.first_size())
 	form_ms = (Time.get_ticks_usec()-began)/1000.0
 	Budget.override_usec = 0
 	_stamp("formed")

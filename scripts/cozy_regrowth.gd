@@ -424,7 +424,8 @@ func regrow(requested_seed := -1, to_plain := false) -> void:
 		generated_world = Genesis.world(plain_seed)
 		world_seed = plain_seed
 		scene._notice.text = "Laying down a quiet plain…"
-		await Genesis.form(scene._chunk_editor,generated_world,true,atlas.live_origin() if atlas != null else Vector2.ZERO,atlas == null)
+		# The home plain laid again is a comfortable size, as a new world's first.
+		await Genesis.form(scene._chunk_editor,generated_world,true,atlas.live_origin() if atlas != null else Vector2.ZERO,atlas == null,Genesis.first_size())
 	else:
 		var chosen := _fresh_seed() if requested_seed<0 else requested_seed
 		if atlas != null: generated_world = await atlas.sample_world(chosen)
