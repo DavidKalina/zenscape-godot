@@ -3,7 +3,8 @@ extends SceneTree
 ## above the glider at a cruise, swings out wider at the float and pulls in
 ## close in a dive; it hangs on a spring, so a turn swings it out and it
 ## catches up; the free look turns it round the glider and it swings back
-## when let go; it never goes into rock; first person puts it in the head.
+## when let go, at once or, lingering, only after a while without a turn;
+## it never goes into rock; first person puts it in the head.
 ## The glider
 ## (scripts/glider_figure.gd) follows the glide and its mark shows near
 ## the ground.
@@ -103,6 +104,16 @@ func _free_look() -> void:
 	run(glide,cam,3.0,{})
 	off = cam.eye-glide.position
 	check(off.dot(-glide.forward()) > 3.0,"Let go, it swings back behind")
+	var held := flying()
+	var pan := GlideCamera.new()
+	pan.linger = 2.5
+	pan.reset(held,held.position)
+	run(held,pan,3.0,{})
+	pan.turn(Vector2(PI*0.5,0.0))
+	run(held,pan,2.0,{})
+	check(pan.free.x > PI*0.5-0.01,"Lingering, a pan holds after the turn (%.2f rad)" % pan.free.x)
+	run(held,pan,3.0,{})
+	check(absf(pan.free.x) < 0.3,"Then it swings back behind (%.2f rad)" % pan.free.x)
 
 func _keeps_out() -> void:
 	var glide := flying()

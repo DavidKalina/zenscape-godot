@@ -9,7 +9,9 @@ extends RefCounted
 ## kicks open on entering a jet stream.
 ##
 ## Held, the free look turns it round the glider without steering, to look
-## at an island while circling it; let go, it swings back behind. It never
+## at an island while circling it; let go, it swings back behind, after
+## `linger` seconds without a turn (none for the glide; the plane's pan holds
+## a while, for the view). It never
 ## goes inside an island: with `solid` it stops short of rock and ground.
 ## `first_person` puts the eye in the glider's head, as before.
 ##
@@ -71,6 +73,10 @@ var first_person := false
 ## whether it is held.
 var free := Vector2.ZERO
 var free_held := false
+## Seconds the free look holds after its last turn before it swings back,
+## and seconds since that turn.
+var linger := 0.0
+var _since_turn := INF
 ## How close in it is now (0 cruise, 1 tucked) and how wide (the float).
 var tuck := 0.0
 var float_out := 0.0
@@ -89,6 +95,7 @@ func reset(glide: RefCounted, from: Vector3, view := FOV) -> void:
 	_offset_v = Vector3.ZERO
 	free = Vector2.ZERO
 	free_held = false
+	_since_turn = INF
 	tuck = 0.0
 	float_out = 0.0
 	roll = _lean(float(glide.bank))
@@ -101,6 +108,7 @@ func reset(glide: RefCounted, from: Vector3, view := FOV) -> void:
 func turn(by: Vector2) -> void:
 	free.x = wrapf(free.x+by.x,-PI,PI)
 	free.y = clampf(free.y+by.y,FREE_PITCH.x,FREE_PITCH.y)
+	_since_turn = 0.0
 
 ## One frame behind `glide`, `dive` held 0..1. `solid`, if given, is a
 ## Callable(Vector3) -> bool: true inside rock or ground.
@@ -128,7 +136,8 @@ func step(delta: float, glide: RefCounted, dive: float, solid := Callable()) -> 
 	float_out = lerpf(float_out,hang,_ease(FLOAT_IN if hang > float_out else FLOAT_OUT,delta))
 	var back := lerpf(lerpf(BACK.x,BACK.y,float_out),BACK.z,tuck)
 	var up := lerpf(lerpf(UP.x,UP.y,float_out),UP.z,tuck)
-	if not free_held: free = free.lerp(Vector2.ZERO,_ease(EASE_BACK,delta))
+	_since_turn += delta
+	if not free_held and _since_turn >= linger: free = free.lerp(Vector2.ZERO,_ease(EASE_BACK,delta))
 	# Behind along the flat of the way, lifted by its climb or dive, then
 	# turned by the free look.
 	var flat := Vector3(_way.x,0.0,_way.z)

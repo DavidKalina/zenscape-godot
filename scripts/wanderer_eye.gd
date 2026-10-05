@@ -37,8 +37,10 @@ extends Node
 ## drawn by scripts/plane_figure.gd): always under power, Space or the pad's
 ## right trigger (or A) boosts, Shift or the left trigger brakes, left and
 ## right roll it into its turns, and Q and E (or a click, or the pad's
-## shoulders) throw a barrel roll. The camera, the sky and the landing are
-## the glide's.
+## shoulders) throw a barrel roll. The mouse (or the right stick) pans the
+## camera round it rather than steering, and the pan holds PLANE_LINGER
+## seconds before swinging back behind, for the view. The camera, the sky
+## and the landing are the glide's.
 
 ## The figure's height and the eye's height above the ground, in metres. The
 ## diorama is toy-scaled: trees stand about 3 to 5 m and photo mode's ground
@@ -117,7 +119,10 @@ const Disturbance = preload("res://scripts/disturbance.gd")
 const Footbridge = preload("res://scripts/footbridge.gd")
 const HINT := "Mouse to look  ·  WASD or arrows to walk  ·  Shift to run  ·  Space to jump, hold to glide  ·  V or Esc to step out"
 const PERCH_HINT := "Mouse to look  ·  WASD or arrows to walk  ·  Walk off the edge or hold Space to glide  ·  V or Esc to step out"
-const PLANE_HINT := "Mouse or A D to bank and turn  ·  W S to pitch  ·  Space to boost  ·  Shift to brake  ·  Q E or click to barrel roll  ·  F to land  ·  Right mouse to look round  ·  C for the camera  ·  V or Esc to step out"
+const PLANE_HINT := "A D to bank and turn  ·  W S to pitch  ·  Mouse to look round  ·  Space to boost  ·  Shift to brake  ·  Q E or click to barrel roll  ·  F to land  ·  C for the camera  ·  V or Esc to step out"
+## The plane's camera pan holds this many seconds after the mouse or the
+## right stick last turned it, then swings back behind.
+const PLANE_LINGER := 2.5
 const FLY_HINT := "Mouse or A D to turn  ·  W S to pitch  ·  Click or E to flap  ·  Space to rise  ·  Shift to dive  ·  F to land  ·  Right mouse to look round  ·  C for the camera  ·  V or Esc to step out"
 const SkyGlide = preload("res://scripts/sky_glide.gd")
 const SkyIslands = preload("res://scripts/sky_islands.gd")
@@ -288,7 +293,9 @@ func setup(owner_scene: Node3D) -> void:
 		_dot.draw_circle(_dot.size*0.5,2.5,Color(1,1,1,0.55),true,-1.0,true))
 	_layer.add_child(_dot)
 	if glide_enabled:
-		if plane: glide = SkyPlane.new()
+		if plane:
+			glide = SkyPlane.new()
+			chase.linger = PLANE_LINGER
 		islands = SkyIslands.new()
 		islands.setup(scene)
 		add_child(islands)
@@ -1182,7 +1189,7 @@ func handle(event: InputEvent) -> bool:
 		if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not perch.is_empty():
 			_yaw -= event.relative.x*LOOK
 			_polar = clampf(_polar-event.relative.y*LOOK,POLAR.x,POLAR.y)
-		elif Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and flying and chase.free_held:
+		elif Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and flying and (chase.free_held or plane):
 			chase.turn(Vector2(-event.relative.x,-event.relative.y)*LOOK)
 		elif Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and flying:
 			_fly_look += Vector2(event.relative.x,-event.relative.y)*LOOK
