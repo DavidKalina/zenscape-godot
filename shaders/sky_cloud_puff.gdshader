@@ -44,6 +44,9 @@ uniform vec2 tower_spans[4];
 // How deep the eye itself is in a tower's fog (0 to 1): the puffs beyond
 // it go dim behind the fog round the eye.
 uniform float veiled = 0.0;
+// A batch fading in or out as a whole (the cloud wrapped round a range's
+// foot as the range comes and goes: scripts/sky_peaks.gd `swap_of`).
+instance uniform float batch_fade = 1.0;
 
 varying vec2 across;
 varying float opacity;
@@ -126,7 +129,7 @@ void fragment() {
 	// Thicker in the middle, so heaped puffs read as round.
 	float body = edge * (0.55 + 0.45 * (1.0 - r * r));
 	ALBEDO = shade * (0.92 + 0.12 * (1.0 - r));
-	ALPHA = clamp(body, 0.0, 1.0) * 0.85 * opacity;
+	ALPHA = clamp(body, 0.0, 1.0) * 0.85 * opacity * batch_fade;
 	if (soft_depth > 0.0) {
 		float scene = texture(depth_texture, SCREEN_UV).r;
 		vec4 behind = INV_PROJECTION_MATRIX * vec4(SCREEN_UV * 2.0 - 1.0, scene, 1.0);

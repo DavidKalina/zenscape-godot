@@ -57,6 +57,8 @@ const CLEAR := 95.0
 const VIEW := 900.0
 const FORGET := 1050.0
 const BUILDS := 1
+## Seconds a new islet takes to fade in, so it never pops into the haze.
+const FADE_IN := 1.4
 const MAKING := 2
 const CHECK := 0.25
 ## How far away the trees, the stones, the small plants and the fall's
@@ -201,6 +203,9 @@ func advance(delta: float, eye: Vector3) -> void:
 	for key in built:
 		var b: Dictionary = built[key]
 		(b.node as Node3D).position = (b.home as Vector3)+Vector3.UP*BOB*sin(_clock*TAU/float(b.period)+float(b.phase))
+		if float(b.get("age",FADE_IN)) < FADE_IN:
+			b.age = float(b.age)+delta
+			_fade(b)
 	_since += delta
 	if _since >= CHECK:
 		_since = 0.0
@@ -229,6 +234,10 @@ func flush() -> void:
 		WorkerThreadPool.wait_for_task_completion(m.task)
 		_finish(m.cell,m.home,m.out)
 	_making.clear()
+	# Whole at once (tests, probes, captures).
+	for key in built:
+		built[key].age = FADE_IN
+		_fade(built[key])
 
 ## The cells within VIEW of `home` (the eye in home coordinates) without an
 ## islet yet, nearest first; and built ones beyond FORGET let go.
@@ -333,7 +342,16 @@ func _finish(cell: Vector2i, home: Vector3, out: Dictionary) -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = shape.seed
 	built[_key(cell)] = {"node":node,"shape":shape,"home":home,"cell":cell,"usec":out.get("usec",0),
-		"phase":rng.randf()*TAU,"period":rng.randf_range(BOB_PERIOD.x,BOB_PERIOD.y)}
+		"phase":rng.randf()*TAU,"period":rng.randf_range(BOB_PERIOD.x,BOB_PERIOD.y),"age":0.0}
+	_fade(built[_key(cell)])
+
+## A new islet's faces fade in over FADE_IN (its body, sides and pond: the
+## plants draw only near).
+func _fade(b: Dictionary) -> void:
+	var t := 1.0-smoothstep(0.0,1.0,clampf(float(b.get("age",FADE_IN))/FADE_IN,0.0,1.0))
+	for part in ["Body","Sides","Pond"]:
+		var g := (b.node as Node3D).get_node_or_null(part) as GeometryInstance3D
+		if g != null: g.transparency = t
 
 ## The plants: one batch a catalog part standing on this islet, drawn with
 ## the plate's own mesh and its material made safe for the sky. Trees draw

@@ -88,6 +88,8 @@ extends RefCounted
 
 const SkyHomes = preload("res://scripts/sky_homes.gd")
 const SkyPeak = preload("res://scripts/sky_peak.gd")
+## The disk cache the layout is kept in (scripts/sky_cache.gd).
+const SkyCache = preload("res://scripts/sky_cache.gd")
 
 ## The seed every hash used before there was one; and the world's.
 const LEGACY_SEED := 7
@@ -550,7 +552,7 @@ static func layout() -> Dictionary:
 	_kept_changed = false
 	if key == _layout_key: return _layout
 	frame()
-	_layout = _compute()
+	_layout = _cached(SkyCache.key("layout",[key]))
 	_layout_key = key
 	main_ms += (Time.get_ticks_usec()-began)/1000.0
 	return _layout
@@ -585,11 +587,22 @@ static func prepare() -> void:
 	load("res://scripts/sky_cells.gd")
 	_task_key = key
 	_task_out = {}
-	_task = WorkerThreadPool.add_task(_work.bind(_task_out),false,"Sky world layout")
+	SkyCache.prune()
+	_task = WorkerThreadPool.add_task(_work.bind(_task_out,SkyCache.key("layout",[key])),false,"Sky world layout")
 	main_ms += (Time.get_ticks_usec()-began)/1000.0
 
-static func _work(out: Dictionary) -> void:
-	out.layout = _compute()
+static func _work(out: Dictionary, cache_key: String) -> void:
+	out.layout = _cached(cache_key)
+
+## The layout kept on disk under `cache_key` (scripts/sky_cache.gd: the
+## seed, kept islands and wonders, and the code that lays it out), or worked
+## out and kept.
+static func _cached(cache_key: String) -> Dictionary:
+	var kept_layout: Variant = SkyCache.load_value(cache_key)
+	if kept_layout is Dictionary and kept_layout.get("ranges") is Array: return kept_layout
+	var made := _compute()
+	SkyCache.save_value(cache_key,made)
+	return made
 
 ## True once the layout for the world as it stands is worked out (taking a
 ## worker's if it is done): nothing then waits on it.

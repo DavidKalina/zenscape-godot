@@ -125,6 +125,9 @@ var origin := Vector3.ZERO
 var plate_seed := -1
 ## True while a claim is under way.
 var claiming := false
+## True once a glide has shown the islands: made ahead as the world starts
+## (`make_ahead`), they stay out of the build view till then, as before.
+var _flown := false
 
 func setup(owner_scene: Node3D) -> void:
 	scene = owner_scene
@@ -221,6 +224,7 @@ func _add(home: Vector3, at: Vector3, rise: Vector3) -> Node3D:
 	var island := Node3D.new()
 	island.name = "Island%d" % get_child_count()
 	island.position = at+Vector3.DOWN*rise.x
+	island.visible = _air or _flown
 	add_child(island)
 	_copies.append(island)
 	offsets.append(at)
@@ -499,6 +503,7 @@ func load_state(state: Dictionary) -> void:
 	# is (`_process`). A skyline made for another world's seed is let go.
 	SkyWorld.prepare()
 	if peaks != null and peaks.ring.line_count() > 0: peaks.ring.warm(peaks)
+	_flown = false
 
 ## Sets the mountain ring's skyline (scripts/sky_ring.gd) to be worked out
 ## on workers, if it isn't yet (it is from the world's start: `_process`);
@@ -524,6 +529,129 @@ func _process(_delta: float) -> void:
 		peaks.canopy_tint = SkyIslets._canopy_tint
 		peaks._material = null
 	peaks.overview(origin)
+	# The ranges within reach of the plate made ahead and kept fresh (a new
+	# layout, a claim, a new palette), so a glide starts among them whole.
+	_ahead_since += _delta
+	if _ahead_since >= 1.0 and SkyWorld.ready():
+		_ahead_since = 0.0
+		peaks.premake(-origin)
+
+var _ahead_since := 1.0
+
+# --- Made ahead, as a world starts ----------------------------------------------------
+# Under the loading screen (scripts/sky_reveal.gd) the sky the world will
+# show is made before it is seen: the layout, every range's skyline (the
+# build view's mountains), the ranges within reach of the plate in full
+# and the islands, islets and cumulus round it (the glide's first sight),
+# all hidden till they are wanted.
+
+## Where the glide starts from: over the plate (global).
+const AHEAD_EYE := Vector3(0.0,50.0,0.0)
+
+## A frame's making ahead: everything above set going, and what workers
+## have finished stood up (hidden: islets, cumulus and isles show only in
+## the glide, the islands only once one has been flown).
+func make_ahead(delta: float) -> void:
+	if not SkyWorld.ring_on() or peaks == null: return
+	SkyWorld.prepare()
+	_note_ahead()
+	if peaks.ground_source == null or not SkyWorld.ready(): return
+	peaks.premake(-origin)
+	if not built(): build()
+	islets.advance(delta,AHEAD_EYE)
+	towers.advance(delta,AHEAD_EYE)
+	isles.advance(delta,AHEAD_EYE)
+
+## True once the sky the world will show is made (`make_ahead`): with the
+## ring off, at once (nothing is laid out ahead then).
+func sky_ready() -> bool:
+	if not SkyWorld.ring_on() or peaks == null: return true
+	if not SkyWorld.ready() or not peaks.ring.whole: return false
+	if not peaks.premade_whole(-origin): return false
+	if not built() or lands.has(null): return false
+	return islets._making.is_empty() and towers._making.is_empty() and isles._making.is_empty() and islets._wanted.is_empty()
+
+## When each part of it was made (msec, from the first ask), for the
+## record (scripts/sky_reveal.gd).
+var ahead_times := {}
+
+func _note_ahead() -> void:
+	var now := Time.get_ticks_msec()
+	if not ahead_times.has("asked"): ahead_times.asked = now
+	var parts := {"layout":SkyWorld.ready(),"skylines":SkyWorld.ready() and peaks.ring.whole,"ranges":SkyWorld.ready() and peaks.premade_whole(-origin),"islands":built() and not lands.has(null),"islets":built() and islets._making.is_empty() and islets._wanted.is_empty() and towers._making.is_empty()}
+	for part: String in parts:
+		if parts[part] and not ahead_times.has(part): ahead_times[part] = now-int(ahead_times.asked)
+
+## How much of it is made, 0 to 1, by rough share of the time each takes:
+## the layout, the skylines, the ranges near in full, the islands.
+func sky_progress() -> float:
+	if not SkyWorld.ring_on() or peaks == null: return 1.0
+	var done := 0.1 if SkyWorld.ready() else 0.0
+	if SkyWorld.ready():
+		done += 0.55*peaks.ring.progress()
+		done += 0.2*peaks.premade_progress(-origin)
+		if built(): done += 0.15*float(lands.size()-lands.count(null))/float(maxi(lands.size(),1))
+	return clampf(done,0.0,1.0)
+
+## Stand-ins for everything the sky will draw, each mesh and material once
+## (scripts/pipeline_warmup.gd: drawn tiny before the camera for a few
+## frames, so their pipelines are built under the loading screen): the
+## skylines, solid and fading; a range made in full, the cloud at its foot
+## and its spruces; and whatever stands under the sky now (islands, islets,
+## cumulus, clouds), hidden or not.
+func standins() -> Array[GeometryInstance3D]:
+	var out: Array[GeometryInstance3D] = []
+	var seen := {}
+	_standins_of(self,out,seen)
+	if peaks != null and not peaks.premade.is_empty():
+		var made: Dictionary = peaks.premade.values()[0]
+		var holder := Node3D.new()
+		for mesh: ArrayMesh in [made.body,made.far]:
+			mesh.surface_set_material(0,peaks._ground())
+			var body := MeshInstance3D.new()
+			body.mesh = mesh
+			holder.add_child(body)
+		if not made.shape.wraps.is_empty(): holder.add_child(peaks._wrap(made.shape))
+		if peaks.tree_parts.is_valid(): peaks._plant(holder,made.shape)
+		_standins_of(holder,out,seen)
+		holder.free()
+	# Fading (the skylines' reveal and swaps, the far faces' visibility
+	# fade): the same meshes through the transparent pass.
+	for node in out.duplicate():
+		if node is MeshInstance3D and (node as MeshInstance3D).mesh is ArrayMesh:
+			var faded := node.duplicate() as MeshInstance3D
+			faded.transparency = 0.5
+			out.append(faded)
+			break
+	return out
+
+func _standins_of(node: Node, out: Array[GeometryInstance3D], seen: Dictionary) -> void:
+	for child in node.get_children():
+		_standins_of(child,out,seen)
+		var g := child as GeometryInstance3D
+		if g == null: continue
+		var drawn: Resource = (g as MeshInstance3D).mesh if g is MeshInstance3D else ((g as MultiMeshInstance3D).multimesh if g is MultiMeshInstance3D else null)
+		if drawn == null: continue
+		var key := [drawn.get_rid(),g.material_override.get_rid() if g.material_override != null else RID()]
+		if seen.has(key): continue
+		seen[key] = true
+		var copy: GeometryInstance3D
+		if g is MeshInstance3D:
+			var m := MeshInstance3D.new()
+			m.mesh = (g as MeshInstance3D).mesh
+			for k in range(mini(m.get_surface_override_material_count(),(g as MeshInstance3D).get_surface_override_material_count())):
+				m.set_surface_override_material(k,(g as MeshInstance3D).get_surface_override_material(k))
+			copy = m
+		else:
+			var mm := MultiMeshInstance3D.new()
+			mm.multimesh = (g as MultiMeshInstance3D).multimesh
+			copy = mm
+		copy.material_override = g.material_override
+		copy.material_overlay = g.material_overlay
+		copy.cast_shadow = g.cast_shadow
+		copy.layers = g.layers
+		copy.extra_cull_margin = 16384.0
+		out.append(copy)
 
 ## Tells the ring which islands it must keep clear of and hold inside its
 ## edge (SkyWorld `keep`): every one built and left, and the plate's own.
@@ -563,6 +691,9 @@ func _copy(source: GeometryInstance3D, drawn: Mesh = null) -> GeometryInstance3D
 ## go, so the build view stands on their skylines.
 func show_air(on: bool) -> void:
 	_air = on
+	if on and not _flown:
+		_flown = true
+		for island in _copies: island.visible = true
 	currents.visible = on
 	clouds.visible = on
 	islets.visible = on
