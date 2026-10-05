@@ -621,7 +621,7 @@ func handle_input(event: InputEvent) -> bool:
 				var ground: Variant = pick(event.position)
 				var item := selected_object()
 				_selection_plane_y = terrain.to_global(Vector3(item.x,data.sample(Vector2(item.x,item.z),data.heights),item.z)).y
-				if item.asset == "log" and not data.void_faces.is_empty():
+				if item.asset == "log" and data.has_chasm():
 					var plane_point: Variant = Plane(Vector3.UP,_selection_plane_y).intersects_ray(scene.camera.project_ray_origin(event.position),scene.camera.project_ray_normal(event.position))
 					ground = terrain.to_local(plane_point) if plane_point != null else null
 				if ground == null:
@@ -1127,7 +1127,7 @@ var _lifted_for: Array = []
 ## array the data edits in place, so the key would always match and a change
 ## made outside a stroke (erosion at the rim) left the sides standing proud.
 func _lift_key() -> Array:
-	return [data,data.heights.duplicate(),data.blank,open_sides.duplicate(),data.void_faces.is_empty()]
+	return [data,data.heights.duplicate(),data.blank,open_sides.duplicate(),data.void_faces.duplicate()]
 
 func _finish_refresh(published: bool) -> bool:
 	refresh_pending -= 1
@@ -1455,13 +1455,15 @@ func start_flat() -> void:
 	refresh()
 
 func _rebuild_skirt() -> void:
-	_skirt.visible = data.void_faces.is_empty()
+	# An island with an outline hangs its own shore wall in the sides' place
+	# (scripts/island_shore.gd); a chasm alone walls its banks itself.
+	_skirt.visible = data.void_faces.is_empty() or not data.outline.is_empty()
 	if not _skirt.visible: return
 	# The sides' strata, the same as cut ground's (scripts/strata.gd).
 	var placing := terrain.global_transform.affine_inverse()*_skirt.global_transform
 	preload("res://scripts/strata.gd").for_seed(land_seed).apply(_skirt_mesh.surface_get_material(0) as ShaderMaterial,placing.origin)
 	var mesh := skirt_mesh_for(data)
-	_skirt.mesh = mesh if open_sides.is_empty() else AtlasView.cut_sides(mesh,_skirt.position,open_sides)
+	_skirt.mesh = mesh if open_sides.is_empty() or not data.outline.is_empty() else AtlasView.cut_sides(mesh,_skirt.position,open_sides)
 
 ## The faceted earth sides fitted to `source`'s rim: the editor's own land, or
 ## a plain baked off to the side for the flip's underside
@@ -1473,6 +1475,7 @@ func _rebuild_skirt() -> void:
 ## their foot. Built again only when the rim moves.
 func skirt_mesh_for(source: NativeTerrainData) -> ArrayMesh:
 	var placing := terrain.global_transform.affine_inverse()*_skirt.global_transform
+	if not source.outline.is_empty(): return _shore_mesh_for(source,placing)
 	var rim := PackedFloat32Array()
 	for i in _rim_ids(source): rim.append(source.heights[i])
 	var fitted_key := [source,source.points.size(),rim,_skirt_mesh,placing]
@@ -1543,6 +1546,20 @@ func skirt_mesh_for(source: NativeTerrainData) -> ArrayMesh:
 	return mesh
 var _skirt_fitted_key: Array = []
 var _skirt_fitted: ArrayMesh
+
+## An island with an outline: its shore wall (scripts/island_shore.gd) in the
+## sides' own space and material. Built again only when the shore moves.
+func _shore_mesh_for(source: NativeTerrainData, placing: Transform3D) -> ArrayMesh:
+	var tops := PackedFloat32Array()
+	var edges := source.shore_edges
+	for k in range(0,edges.size(),3): tops.append(source.heights[edges[k]])
+	var key := [source,source.outline,tops,_skirt_mesh,placing]
+	if _shore_fitted_key == key: return _shore_fitted
+	_shore_fitted = preload("res://scripts/island_shore.gd").build(source,placing,_skirt_mesh.surface_get_material(0))
+	_shore_fitted_key = key
+	return _shore_fitted
+var _shore_fitted_key: Array = []
+var _shore_fitted: ArrayMesh
 
 ## The land's edge, metres from the middle: the terrain's rim points stand on
 ## it, and the earth sides' top ring is laid along it.
@@ -1944,7 +1961,7 @@ func move_selection_pointer(mouse: Vector2) -> void:
 	if not _selection_drag or mouse.distance_to(_selection_press) < 5.0 and not _selection_edit:
 		return
 	var ground: Variant = pick(mouse)
-	if selected_object().get("asset") == "log" and not data.void_faces.is_empty():
+	if selected_object().get("asset") == "log" and data.has_chasm():
 		var hit: Variant = Plane(Vector3.UP,_selection_plane_y).intersects_ray(scene.camera.project_ray_origin(mouse),scene.camera.project_ray_normal(mouse))
 		ground = terrain.to_local(hit) if hit != null else null
 	if ground == null:
