@@ -156,12 +156,19 @@ func _shots() -> Array:
 		var inward: Vector3 = -mid.normalized()
 		shots.append({"label":"ridge","eye":mid+inward*700.0-along*500.0+Vector3.UP*60.0,"look":mid+along*2200.0+Vector3.UP*80.0,"fov":62.0})
 		shots.append({"label":"knot","eye":knot.normalized()*80.0+Vector3.UP*45.0,"look":knot+Vector3.UP*120.0,"golden":false})
-		# Down a valley between a wall and the band, at glide height.
+		# Down a valley between a wall and the band, at glide height, from
+		# well clear of its cumulus.
 		for g: Dictionary in layout.regions:
 			if g.home: continue
 			var heart: Vector3 = g.at
 			var round := Vector3(-heart.z,0.0,heart.x).normalized()
-			shots.append({"label":"valley-region","eye":heart-round*700.0+Vector3.UP*55.0,"look":heart+round*1500.0+Vector3.UP*40.0,"fov":64.0})
+			var from := heart-round*700.0
+			for k in range(12):
+				var at: Vector3 = heart+round*(-1100.0+200.0*k)
+				if layout.towers.all(func(t: Vector3) -> bool: return Vector2(t.x-at.x,t.z-at.z).length() > 650.0):
+					from = at
+					break
+			shots.append({"label":"valley-region","eye":from+Vector3.UP*55.0,"look":from+(heart-from).normalized()*2000.0 if from.distance_to(heart) > 300.0 else from+round*2000.0,"fov":64.0})
 			break
 	# The walls from high over the plate, looking out over a corner.
 	shots.append({"label":"overhead","eye":Vector3(0.0,1500.0,1.0)-knot.normalized()*900.0,"look":knot*1.6,"haze":true,"golden":false,"fov":66.0})
