@@ -87,6 +87,9 @@ var counts := {}
 func setup(owner_scene: Node3D) -> void:
 	scene = owner_scene
 	name = "PadInput"
+	# Last among the scene's children, so its `_input` comes first, before
+	# the hand's (scripts/hand_reach.gd moves itself last the same way).
+	scene.move_child.call_deferred(self,-1)
 	Pad.ensure()
 	_layer = CanvasLayer.new()
 	_layer.layer = 96
@@ -130,11 +133,18 @@ func context() -> String:
 # --- Devices ------------------------------------------------------------------------
 
 func _window_input(event: InputEvent) -> void:
+	if _warp_echo(event): return
 	Pad.note(event)
 	# The mouse moved by hand: the cursor goes where it is.
 	if event is InputEventMouseMotion and event.device != Pad.PAD_DEVICE:
 		cursor = event.position
 		_anchor = null
+
+## The system's own report of the pointer warped to the cursor (X11 sends
+## one; macOS does not): not the mouse picked up, and not a second move.
+func _warp_echo(event: InputEvent) -> bool:
+	return event is InputEventMouseMotion and event.device != Pad.PAD_DEVICE and Pad.using_pad() and _placed \
+		and event.position.distance_to(cursor) < 1.5
 
 func _device_changed(pad: bool) -> void:
 	if not pad:
@@ -144,6 +154,9 @@ func _device_changed(pad: bool) -> void:
 # --- Events -----------------------------------------------------------------------------
 
 func _input(event: InputEvent) -> void:
+	if _warp_echo(event):
+		get_viewport().set_input_as_handled()
+		return
 	if not (event is InputEventJoypadButton or event is InputEventJoypadMotion): return
 	_context = context()
 	var used := false

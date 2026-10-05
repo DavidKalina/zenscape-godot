@@ -328,9 +328,14 @@ func _photo_and_watch() -> void:
 func _keys_and_mouse() -> void:
 	var materials: Node = scene.hand_reach.materials
 	# The mouse takes the cursor back, and V steps in under it.
-	mouse_to(land_middle())
+	var echo: Vector2 = pad.cursor
+	mouse_to(echo)
 	await frames(2)
-	check(not Pad.using_pad() and pad.cursor.distance_to(land_middle()) < 1.0,"A moved mouse puts the cursor where it is")
+	check(Pad.using_pad(),"The system's echo of the warped pointer is not the mouse picked up")
+	var by_hand := land_middle()+Vector2(6,4)
+	mouse_to(by_hand)
+	await frames(2)
+	check(not Pad.using_pad() and pad.cursor.distance_to(by_hand) < 1.0,"A moved mouse puts the cursor where it is")
 	key(KEY_V)
 	key(KEY_V,false)
 	await frames(3)
