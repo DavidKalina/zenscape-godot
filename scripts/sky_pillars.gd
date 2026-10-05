@@ -43,6 +43,11 @@ const OFF_MAP := Vector3(2000.0,0.0,2000.0)
 ## How far off the spruces still draw (m), and the haze's reach (m).
 const TREE_RANGE := 700.0
 const HAZE_REACH := 480.0
+## The feet's fray into the cloud (m): ragged over the first, pale over the
+## second (reference_surface `sea_fray`).
+const SEA_FRAY := Vector2(3.0,5.0)
+## The puffs at the feet, fainter than the ranges' wrap.
+const WRAP_STRENGTH := 0.55
 
 var cells: RefCounted
 var currents: Node3D
@@ -53,18 +58,26 @@ var host: Node3D
 var built := {}
 var _making := {}
 var _since := CHECK
+var _material: Material
+var _puffs: ShaderMaterial
+static var _wisp_material: ShaderMaterial
+static var _wisp_quad: QuadMesh
 
 func _init() -> void:
 	name = "SkyPillars"
 
 func _exit_tree() -> void:
 	clear()
+	_wisp_material = null
+	_wisp_quad = null
 
 func reset(new_cells: RefCounted, air: Node3D = null, owner_node: Node3D = null) -> void:
 	clear()
 	cells = new_cells
 	currents = air
 	host = owner_node
+	_material = null
+	_puffs = null
 	_since = CHECK
 
 func clear() -> void:
@@ -178,7 +191,16 @@ func _finish(cell: Vector2i, s: Vector4, out: Dictionary) -> void:
 	body.position = -OFF_MAP
 	body.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	node.add_child(body)
-	if host != null and host.has_method("_wrap") and not shape.wraps.is_empty(): node.add_child(host._wrap(shape))
+	if host != null and host.has_method("_wrap") and not shape.wraps.is_empty():
+		var wrap: MultiMeshInstance3D = host._wrap(shape)
+		# Fainter than the ranges' wrap: a soft edge to each foot, never a
+		# white pedestal.
+		if _puffs == null:
+			_puffs = (wrap.material_override as ShaderMaterial).duplicate()
+			_puffs.set_shader_parameter("strength",WRAP_STRENGTH)
+		wrap.material_override = _puffs
+		node.add_child(wrap)
+	if not shape.wisps.is_empty(): node.add_child(_wisps(shape))
 	var parts: Variant = host.get("tree_parts") if host != null else null
 	if parts is Callable and (parts as Callable).is_valid(): _plant(node,shape,parts)
 	var key := _key(cell)
@@ -186,25 +208,62 @@ func _finish(cell: Vector2i, s: Vector4, out: Dictionary) -> void:
 	_air(key)
 
 ## The ranges' ground material (cut at the sea), or the plate's reference
-## surface if standing alone.
+## surface if standing alone; the pillars' feet fray into the cloud without
+## the ranges' pale band over it (SEA_FRAY), the mist doing that work.
 func _ground() -> Material:
-	if host != null and host.has_method("_ground"): return host._ground()
-	var m := ShaderMaterial.new()
-	m.shader = preload("res://shaders/reference_surface.gdshader")
-	m.set_shader_parameter("flat_faces",true)
-	m.set_shader_parameter("palette_role",1)
-	m.set_shader_parameter("base_color",Color.WHITE)
-	m.set_shader_parameter("sea_cut",SkyPillar.SEA)
-	return m
+	if _material != null: return _material
+	var m: ShaderMaterial
+	if host != null and host.has_method("_ground"):
+		m = (host._ground() as ShaderMaterial).duplicate()
+	else:
+		m = ShaderMaterial.new()
+		m.shader = preload("res://shaders/reference_surface.gdshader")
+		m.set_shader_parameter("flat_faces",true)
+		m.set_shader_parameter("palette_role",1)
+		m.set_shader_parameter("base_color",Color.WHITE)
+		m.set_shader_parameter("sea_cut",SkyPillar.SEA)
+	m.set_shader_parameter("sea_fray",SEA_FRAY)
+	_material = m
+	return _material
+
+## The thin mist (shaders/sky_mist_wisp.gdshader): each wisp a soft streak
+## drawn out along the air, drifting a little on its own slow beat.
+func _wisps(shape: RefCounted) -> MultiMeshInstance3D:
+	if _wisp_material == null:
+		_wisp_quad = QuadMesh.new()
+		_wisp_quad.size = Vector2.ONE
+		_wisp_material = ShaderMaterial.new()
+		_wisp_material.shader = preload("res://shaders/sky_mist_wisp.gdshader")
+	var wisps: PackedVector4Array = shape.wisps
+	var looks: PackedVector3Array = shape.wisp_looks
+	var multimesh := MultiMesh.new()
+	multimesh.transform_format = MultiMesh.TRANSFORM_3D
+	multimesh.use_custom_data = true
+	multimesh.mesh = _wisp_quad
+	multimesh.instance_count = wisps.size()
+	for i in range(wisps.size()):
+		var w := wisps[i]
+		var look := looks[i]
+		multimesh.set_instance_transform(i,Transform3D(Basis(Vector3.RIGHT*w.w,Vector3.UP*look.x,Vector3.BACK),Vector3(w.x,w.y,w.z)))
+		multimesh.set_instance_custom_data(i,Color(look.y,look.z,0.0,0.0))
+	var batch := MultiMeshInstance3D.new()
+	batch.name = "Wisps"
+	batch.multimesh = multimesh
+	batch.material_override = _wisp_material
+	batch.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var reach := SkyPillar.REACH+Vector2(150.0,150.0)
+	batch.custom_aabb = AABB(Vector3(-reach.y,SkyPillar.SEA-60.0,-reach.y),Vector3(reach.y*2.0,240.0,reach.y*2.0))
+	return batch
 
 ## The spruces, a batch pair (trunk, crown) per variant, as the ranges'.
 func _plant(node: Node3D, shape: RefCounted, tree_parts: Callable) -> void:
 	var by_variant := {}
 	var trees: PackedVector4Array = shape.trees
 	var variants: PackedInt32Array = shape.tree_variants
+	var leans: PackedVector3Array = shape.tree_leans
 	for i in range(trees.size()):
 		if not by_variant.has(variants[i]): by_variant[variants[i]] = []
-		by_variant[variants[i]].append(trees[i])
+		by_variant[variants[i]].append(i)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = shape.seed*7+3
 	var tint: Color = host.get("canopy_tint") if host != null and host.get("canopy_tint") is Color else Color.WHITE
@@ -212,8 +271,12 @@ func _plant(node: Node3D, shape: RefCounted, tree_parts: Callable) -> void:
 		var parts: Array = tree_parts.call(v)
 		var tall := maxf((parts[1] as Mesh).get_aabb().end.y,0.1)
 		var poses := []
-		for t: Vector4 in by_variant[v]:
-			poses.append(Transform3D(Basis(Vector3.UP,rng.randf()*TAU).scaled(Vector3.ONE*t.w/tall),Vector3(t.x,t.y,t.z)))
+		for i: int in by_variant[v]:
+			var t := trees[i]
+			# Those clinging to a face lean out over the drop.
+			var lean := leans[i]
+			var tilt := Basis(lean.normalized(),lean.length()) if lean.length() > 0.001 else Basis.IDENTITY
+			poses.append(Transform3D(tilt*Basis(Vector3.UP,rng.randf()*TAU).scaled(Vector3.ONE*t.w/tall),Vector3(t.x,t.y,t.z)))
 		for part in range(2):
 			var batch := MultiMeshInstance3D.new()
 			batch.name = "Spruce%d%s" % [v,"Crown" if part == 1 else "Trunk"]

@@ -60,32 +60,50 @@ func _same_seed() -> void:
 ## across; their faces running on down under the cloud sea.
 func _pillars(s: int) -> void:
 	var forest: RefCounted = shape(s)
-	var count: int = forest.pillars.size()
-	check(count >= 12 and count <= 30,"Seed %d: %d pillars" % [s,count])
+	var count := 0
 	var worst := ""
 	var low := 0
 	var leaning := 0
-	var fins := 0
-	for i in range(count):
+	var joined := 0
+	var stubs := 0
+	var broken := 0
+	var bodies := 0
+	for i in range(forest.pillars.size()):
 		var p: Dictionary = forest.pillars[i]
+		if p.role == "massif":
+			# A clump's body: under every one of its pillars' tops, standing
+			# out of the cloud, its foot under it.
+			bodies += 1
+			for q: Dictionary in forest.pillars:
+				if q.group == p.group and q.role != "massif" and float(q.top) < float(p.top)+10.0: worst = "body %d over its pillar" % i
+			if float(p.top) < SkyPillar.SEA+10.0 or float(p.top) > 150.0: worst = "body %d top %.0f m" % [i,p.top]
+			continue
+		count += 1
 		# The slot's fins are long walls: their narrow way counts.
 		var across := float(p.b)*2.0 if p.role == "slot" else float(p.a)+float(p.b)
-		if i != forest.meadow and (float(p.top) < 60.0 or float(p.top) > 250.0): worst = "pillar %d top %.0f m" % [i,p.top]
+		if p.role == "stub":
+			stubs += 1
+			if float(p.top) < SkyPillar.SEA+20.0 or float(p.top) > 60.0: worst = "stub %d top %.0f m" % [i,p.top]
+		elif i != forest.meadow and (float(p.top) < 60.0 or float(p.top) > 250.0): worst = "pillar %d top %.0f m" % [i,p.top]
 		if across < 15.0 or across > 45.0: worst = "pillar %d %.0f m across" % [i,across]
-		var ring: PackedVector2Array = forest.outline(i,SkyPillar.THREAD_Y if float(p.top) > 10.0 else float(p.top)-2.0)
+		var y := minf(SkyPillar.THREAD_Y,float(p.top)-2.0)
+		var ring: PackedVector2Array = forest.outline(i,y)
 		var mean := 0.0
-		var c: Vector2 = forest.axis(p,SkyPillar.THREAD_Y)
+		var c: Vector2 = forest.axis(p,y)
 		for v in ring: mean += v.distance_to(c)*2.0/ring.size()
 		# Measured, the grooves and the taper aside.
 		if mean < 14.0 or mean > 50.0: worst = "pillar %d measures %.0f m across" % [i,mean]
 		if (p.ys as PackedFloat32Array)[0] > SkyPillar.SEA-20.0: worst = "pillar %d's foot at %.0f m" % [i,(p.ys as PackedFloat32Array)[0]]
 		if float(p.top) < SkyPillar.GLIDE_BAND.y: low += 1
 		if (p.lean as Vector2).length() > 0.02: leaning += 1
-		if p.role == "fin": fins += 1
-	check(worst == "","Seed %d: tops 60 to 250 m over the islands, 15 to 45 m across, feet under the sea %s" % [s,worst])
+		if p.role == "fin" or p.role == "clump": joined += 1
+		if (p.broken as Vector3).z > 0.0: broken += 1
+	check(count >= 12 and count <= 30,"Seed %d: %d pillars" % [s,count])
+	check(worst == "","Seed %d: tops 60 to 250 m over the islands (stubs out of the cloud to 60 m), 15 to 45 m across, feet under the sea %s" % [s,worst])
 	var meadow: Dictionary = forest.pillars[forest.meadow]
 	check(float(meadow.top) < SkyPillar.THREAD_Y-15.0 and float(meadow.top) > SkyPillar.GLIDE_BAND.x,"Seed %d: the meadow's top lies under the thread, over the glide's floor (%.0f m)" % [s,meadow.top])
-	check(low >= 2 and leaning >= 3 and fins >= 2,"Seed %d: some tops low enough to reach (%d), some leaning (%d), some fins (%d)" % [s,low,leaning,fins])
+	check(low >= 2 and leaning >= 3 and joined >= 4,"Seed %d: some tops low enough to reach (%d), some leaning (%d), some joined in fins and clumps (%d)" % [s,low,leaning,joined])
+	check(bodies >= 2 and stubs+broken >= 3,"Seed %d: clumps on shared bodies (%d), stubs (%d) and snapped tops (%d)" % [s,bodies,stubs,broken])
 	check(forest.top > 200.0,"Seed %d: the tallest stands %.0f m over the islands" % [s,forest.top])
 
 ## Every two pillars of different stands, the slot's two apart, at least
@@ -286,7 +304,9 @@ func _streaming() -> void:
 	var b: Dictionary = pillars.built.values()[0]
 	var forest: RefCounted = b.shape
 	check(forest.pillars[3].radii == shape(home_seed()).pillars[3].radii,"It is the forest its spot's seed raises")
-	var p: Dictionary = forest.pillars[6]
+	var p: Dictionary = {}
+	for q: Dictionary in forest.pillars:
+		if p.is_empty() and q.role == "" and (q.broken as Vector3).z == 0.0 and float(q.top) > 100.0 and (q.lean as Vector2).length() < 0.01: p = q
 	var c: Vector2 = forest.axis(p,float(p.top))
 	var at: Vector3 = pillars.global_of(b,Vector3(c.x,0.0,c.y))
 	var solid: Variant = peaks.body(Vector3(at.x,float(p.top)+20.0,at.z))
