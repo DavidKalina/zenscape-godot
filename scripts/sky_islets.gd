@@ -40,6 +40,7 @@ const WaterFlowView = preload("res://scripts/water_flow_view.gd")
 const SkyPeaks = preload("res://scripts/sky_peaks.gd")
 const SkyTowers = preload("res://scripts/sky_towers.gd")
 const SkyForestIsles = preload("res://scripts/sky_forest_isles.gd")
+const SkyFallThread = preload("res://scripts/sky_fall_thread.gd")
 
 ## The cells: size (m), the share holding an islet, how far its spot may sit
 ## from the cell's middle (share of the cell), and the height band (m).
@@ -436,7 +437,8 @@ func _side_material(shape: RefCounted) -> Material:
 
 ## The fall off a spring islet's lip: the waterfalls' strand on a course
 ## of its own, arcing off the rim and falling free until it breaks into
-## strands and droplets, as an edge fall does past the plate's foot.
+## strands and droplets, as an edge fall does past the plate's foot; from
+## there a soft thread carries it on down to the cloud sea (`_fall`).
 ## The lip is where the spring's channel leaves the rim (SkyIslet `water`),
 ## at the water's level; `out` the shore's outward normal there; the wall's
 ## facet ring stands at most RING_OUT.y past the rim.
@@ -490,6 +492,11 @@ func _fall(node: Node3D, shape: RefCounted, rings: Dictionary) -> void:
 	var across: Vector3 = rings.across_axis
 	drops.transform = Transform3D(Basis(across,Vector3.UP,out),(rings.bottom_point as Vector3)+Vector3.DOWN*0.3)
 	node.add_child(drops)
+	# On down to the cloud sea as a soft thread, taking over where the
+	# strand breaks up (scripts/sky_fall_thread.gd).
+	var lip := Vector3(water.lip.x,water.level,water.lip.y)
+	var overhang := IslandShore.RING_OUT.y+0.05
+	node.add_child(SkyFallThread.build(lip,out,float(rings.half),SkyFallThread.SEA-node.position.y,shape.seed,float(rings.face_drop),FALL_SPEED,overhang+0.2))
 
 ## A fall's rings for shaders/flow_fall.gdshader, in the islet's frame: off
 ## `lip` (on the rim, at the water's level) out along `out`, clearing the
