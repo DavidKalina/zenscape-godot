@@ -287,6 +287,15 @@ func haze_spots() -> Array:
 		out.append(Vector4(at.x,at.z,HAZE_REACH,1.0))
 	return out
 
+## Each forest's keep-out for the drifting clouds: Vector4(global x,
+## global z, 0, KEEP).
+func keep_spots() -> Array:
+	var out := []
+	for key in built:
+		var at := _origin()+(built[key].home as Vector3)
+		out.append(Vector4(at.x,at.z,0.0,KEEP))
+	return out
+
 func _palette(which: String) -> Array:
 	if host != null and host.has_method("_palette"): return host._palette(which)
 	return [Color("5d9e53").srgb_to_linear(),Color("7fb069").srgb_to_linear(),Color("4a8548").srgb_to_linear()] if which == "grass" \

@@ -6,11 +6,11 @@ extends Node3D
 ## over the islands, and a gorge cut through it that the glide can dive into
 ## and come out of the far side of, a jet stream running down it.
 ##
-## Ranges are rare: at most one to a CELL, seeded, and the cell the plate
-## first stood in always holds HOME, the range within sight of the plate, its
-## crest turned square to it, so its long face and the gorge's mouth look
-## back at the plate. For now (the first range, a prototype) HOLDS is 0 and
-## HOME is the only one; raising it scatters more through the far cells. Islands and islets never stand within KEEP of a range's middle
+## Ranges are rare: at most one to a CELL (HOLDS of them), seeded, each its
+## own height and spread; and the cell the plate first stood in always holds
+## HOME, the range within sight of the plate, its crest turned square to it,
+## so its long face and the gorge's mouth look back at the plate. Far off a
+## range draws coarser faces (LOD_NEAR). Islands and islets never stand within KEEP of a range's middle
 ## (`blocks`, read by scripts/sky_cells.gd and scripts/sky_islets.gd), and
 ## the fixed slots are clear of HOME by as much.
 ##
@@ -33,6 +33,7 @@ const SkyPeak = preload("res://scripts/sky_peak.gd")
 ## `blocks`), standing as a child here at the cells' origin, so the ranges'
 ## readers read them too.
 const KINDS := [preload("res://scripts/sky_pillars.gd")]
+const SkyCurrentsScript = preload("res://scripts/sky_currents.gd")
 
 ## The range in sight of the plate: its middle (home coordinates) and the
 ## way its crest runs (radians about y; local +x is the crest's way).
@@ -42,10 +43,18 @@ const HOME_TURN := -0.4636
 ## from the cell's middle (share of the cell); the cell holding the plate's
 ## first home is (0, 0).
 const CELL := 2600.0
-const HOLDS := 0.0
-const JITTER := 0.2
+const HOLDS := 0.3
+## Away from HOME a range stands STATURE of its drawn height and spreads
+## SPREAD wider (its frame scaled in x and z), seeded per cell.
+const STATURE := Vector2(0.8,1.0)
+const SPREAD := Vector2(1.0,1.3)
+## Past LOD_NEAR m a range draws its faces at every LOD_STRIDE-th grid point.
+const LOD_NEAR := 1300.0
+const LOD_STRIDE := 2
+const JITTER := 0.12
 const SALT := 3000
-## Nothing else stands within KEEP (m, plate plane) of a range's middle.
+## Nothing else stands within KEEP (m, plate plane, times its spread) of a
+## range's middle.
 const KEEP := 720.0
 ## Made within BUILD of the eye, let go past FORGET.
 const BUILD := 2300.0
@@ -55,6 +64,8 @@ const CHECK := 0.5
 const OFF_MAP := Vector3(2000.0,0.0,2000.0)
 ## The jet down the gorge: its height (m).
 const JET_Y := 15.0
+## A gorge with a pinch: its jet runs this much faster down the slot.
+const PINCH_JET := 1.3
 ## How far off the spruces still draw (m).
 const TREE_RANGE := 650.0
 ## The haze: a range's spot reaches this far out (m) for the gentler curve.
@@ -184,13 +195,19 @@ static func spot(cell: Vector2i) -> Variant:
 static func seed_of(cell: Vector2i) -> int:
 	return int(noise(cell,SALT+4)*16777216.0)
 
+static func stature_of(cell: Vector2i) -> float:
+	return 1.0 if cell == Vector2i.ZERO else lerpf(STATURE.x,STATURE.y,noise(cell,SALT+5))
+
+static func spread_of(cell: Vector2i) -> float:
+	return 1.0 if cell == Vector2i.ZERO else lerpf(SPREAD.x,SPREAD.y,noise(cell,SALT+6))
+
 ## True if a home point lies within KEEP (plus `margin`) of a range's middle.
 static func blocks(home: Vector3, margin := 0.0) -> bool:
 	var c := cell_of(home)
 	for dx in range(-1,2):
 		for dz in range(-1,2):
 			var s: Variant = spot(c+Vector2i(dx,dz))
-			if s != null and Vector2(s.x-home.x,s.z-home.z).length() < KEEP+margin: return true
+			if s != null and Vector2(s.x-home.x,s.z-home.z).length() < KEEP*spread_of(c+Vector2i(dx,dz))+margin: return true
 	for kind: GDScript in KINDS:
 		if kind.blocks(home,margin): return true
 	return false
@@ -210,13 +227,14 @@ func _start(cell: Vector2i, s: Vector4) -> void:
 	# thread, before a worker asks for it.
 	preload("res://scripts/native_terrain_kernels.gd").get_kernel()
 	var out := {}
-	var task := WorkerThreadPool.add_task(_make.bind(seed_of(cell),_palette("grass"),_palette("rock"),_gravel(),out),false,"Sky peak")
+	var task := WorkerThreadPool.add_task(_make.bind(seed_of(cell),stature_of(cell),_palette("grass"),_palette("rock"),_gravel(),_snow(),out),false,"Sky peak")
 	_making[_key(cell)] = {"task":task,"cell":cell,"spot":s,"out":out}
 
-static func _make(seed_value: int, grass: Array, rock: Array, gravel: Color, out: Dictionary) -> void:
-	var shape: RefCounted = SkyPeak.make(seed_value)
+static func _make(seed_value: int, stature: float, grass: Array, rock: Array, gravel: Color, snow: Color, out: Dictionary) -> void:
+	var shape: RefCounted = SkyPeak.make(seed_value,stature)
 	out.shape = shape
-	out.body = shape.body_arrays(grass,rock,gravel,OFF_MAP)
+	out.body = shape.body_arrays(grass,rock,gravel,OFF_MAP,1,snow)
+	out.far = shape.body_arrays(grass,rock,gravel,OFF_MAP,LOD_STRIDE,snow)
 
 ## The worker's range, stood up as nodes: its faces, the cloud at its foot,
 ## and the jet down its gorge.
@@ -226,17 +244,26 @@ func _finish(cell: Vector2i, s: Vector4, out: Dictionary) -> void:
 	node.name = "Peak_%d_%d" % [cell.x,cell.y]
 	node.position = Vector3(s.x,s.y,s.z)
 	node.rotation.y = s.w
+	var spread := spread_of(cell)
+	node.scale = Vector3(spread,1.0,spread)
 	add_child(node)
-	var body := MeshInstance3D.new()
-	body.name = "Body"
-	body.mesh = SkyPeak.mesh_from(out.body,_ground())
-	body.position = -OFF_MAP
-	body.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	node.add_child(body)
+	# Near, every face; far, the coarse faces, crossfading between.
+	for far in [false,true]:
+		var body := MeshInstance3D.new()
+		body.name = "BodyFar" if far else "Body"
+		body.mesh = SkyPeak.mesh_from(out.far if far else out.body,_ground())
+		body.position = -OFF_MAP
+		body.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		if far: body.visibility_range_begin = LOD_NEAR
+		else: body.visibility_range_end = LOD_NEAR
+		body.visibility_range_begin_margin = 80.0
+		body.visibility_range_end_margin = 80.0
+		body.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+		node.add_child(body)
 	if not shape.wraps.is_empty(): node.add_child(_wrap(shape))
 	if tree_parts.is_valid(): _plant(node,shape)
 	var key := _key(cell)
-	built[key] = {"node":node,"shape":shape,"home":Vector3(s.x,s.y,s.z),"turn":s.w,"cell":cell}
+	built[key] = {"node":node,"shape":shape,"home":Vector3(s.x,s.y,s.z),"turn":s.w,"cell":cell,"spread":spread}
 	_jet(key)
 
 ## The plate's ground material, cut at the cloud sea's top (reference_
@@ -307,7 +334,9 @@ func _plant(node: Node3D, shape: RefCounted) -> void:
 		var poses := []
 		for t: Vector4 in by_variant[v]:
 			var at := Vector3(t.x,float(shape.height_at(Vector2(t.x,t.y)))-0.1,t.y)
-			poses.append(Transform3D(Basis(Vector3.UP,rng.randf()*TAU).scaled(Vector3.ONE*t.z/tall),at))
+			# Upright and round however wide the range is spread.
+			var spread := node.scale.x
+			poses.append(Transform3D(Basis.from_scale(Vector3(1.0/spread,1.0,1.0/spread))*Basis(Vector3.UP,rng.randf()*TAU).scaled(Vector3.ONE*t.z/tall),at))
 		for part in range(2):
 			var batch := MultiMeshInstance3D.new()
 			batch.name = "Spruce%d%s" % [v,"Crown" if part == 1 else "Trunk"]
@@ -333,10 +362,11 @@ func _jet(key: String) -> void:
 	var b: Dictionary = built[key]
 	var shape: RefCounted = b.shape
 	var points := PackedVector3Array()
-	for p: Vector3 in shape.gorge_line(JET_Y,48): points.append(global_of(b,p))
+	for p: Vector3 in shape.gorge_line(JET_Y,96): points.append(global_of(b,Vector3(p.x,shape.jet_height(p.z,JET_Y),p.z)))
 	# Downstream away from the plate.
 	if points[0].distance_squared_to(cells.origin) > points[points.size()-1].distance_squared_to(cells.origin): points.reverse()
-	currents.add_jet(points,_jet_key(key))
+	# Strongest where it threads a pinch's slot.
+	currents.add_jet(points,_jet_key(key),SkyCurrentsScript.JET*(PINCH_JET if not shape.pinch.is_empty() else 1.0))
 
 func _jet_key(key: String) -> String:
 	return "peak:"+key
@@ -345,11 +375,13 @@ func _jet_key(key: String) -> String:
 
 ## A point in a range's own frame from a global one, and back.
 func local_of(b: Dictionary, point: Vector3) -> Vector3:
-	var at := point-position-(b.home as Vector3)
-	return at.rotated(Vector3.UP,-float(b.turn))
+	var at := (point-position-(b.home as Vector3)).rotated(Vector3.UP,-float(b.turn))
+	var spread: float = b.get("spread",1.0)
+	return Vector3(at.x/spread,at.y,at.z/spread)
 
 func global_of(b: Dictionary, local: Vector3) -> Vector3:
-	return position+(b.home as Vector3)+local.rotated(Vector3.UP,float(b.turn))
+	var spread: float = b.get("spread",1.0)
+	return position+(b.home as Vector3)+Vector3(local.x*spread,local.y,local.z*spread).rotated(Vector3.UP,float(b.turn))
 
 ## The range under a global point as a solid, Vector2(its ground's height,
 ## its underside far under the cloud) in global metres, or null.
@@ -383,8 +415,20 @@ func haze_spots(eye := Vector3.ZERO) -> Array:
 	for key in built:
 		var b: Dictionary = built[key]
 		var at := position+(b.home as Vector3)
-		out.append(Vector4(at.x,at.z,HAZE_REACH,1.0))
+		out.append(Vector4(at.x,at.z,HAZE_REACH*float(b.get("spread",1.0)),1.0))
 	for kind in kinds: out.append_array(kind.haze_spots())
+	out.sort_custom(func(a: Vector4, c: Vector4) -> bool: return Vector2(a.x-eye.x,a.y-eye.z).length() < Vector2(c.x-eye.x,c.y-eye.z).length())
+	return out
+
+## Each standing range's keep-out for the drifting clouds, nearest `eye`
+## first: Vector4(global x, global z, 0, KEEP times its spread).
+func keep_spots(eye := Vector3.ZERO) -> Array:
+	var out := []
+	for key in built:
+		var b: Dictionary = built[key]
+		var at := position+(b.home as Vector3)
+		out.append(Vector4(at.x,at.z,0.0,KEEP*float(b.get("spread",1.0))))
+	for kind in kinds: out.append_array(kind.keep_spots())
 	out.sort_custom(func(a: Vector4, c: Vector4) -> bool: return Vector2(a.x-eye.x,a.y-eye.z).length() < Vector2(c.x-eye.x,c.y-eye.z).length())
 	return out
 
@@ -398,6 +442,10 @@ func _palette(which: String) -> Array:
 		found = [Color("5d9e53").srgb_to_linear(),Color("7fb069").srgb_to_linear(),Color("4a8548").srgb_to_linear()] if which == "grass" \
 			else [Color("8d8577").srgb_to_linear(),Color("6f6a5f").srgb_to_linear()]
 	return found
+
+func _snow() -> Color:
+	if palette_source != null and palette_source.get("snow") is Color: return palette_source.snow
+	return SkyPeak.SNOW_COLOUR
 
 func _gravel() -> Color:
 	if palette_source != null and palette_source.get("gravel") is Color: return palette_source.gravel

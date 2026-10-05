@@ -137,6 +137,17 @@ const GORGE_WANDER := Vector2(18.0,36.0)
 const GORGE_LONG := Vector2(520.0,760.0)
 ## The gorge is roughed out this much (m) wider before the weathering.
 const GORGE_ROUGH := 10.0
+## The pinch some gorges have (`_pinch`): its odds, its middle along the
+## gorge (m from where it crosses the crest), its length and the ramp at its ends (m), the
+## slot's half width (m), the fins' top (m), and how far under it the jet
+## runs down the slot (m).
+const PINCH_ODDS := 0.65
+const PINCH_AT := Vector2(-35.0,35.0)
+const PINCH_LENGTH := Vector2(120.0,170.0)
+const PINCH_RAMP := 40.0
+const PINCH_HALF := 11.0
+const PINCH_TOP := Vector2(-5.0,15.0)
+const PINCH_JET_UNDER := 22.0
 ## The glide's way through: its half width kept clear at glide heights (m)
 ## and the band of those heights (scripts/sky_glide.gd FLOOR to CEILING).
 const CLEAR_HALF := 20.0
@@ -169,6 +180,24 @@ const TREE_VARIANTS := [0,1,2,4]
 ## the sea line, WRAP_SIZE m across.
 const WRAP_APART := 58.0
 const WRAP_SIZE := Vector2(20.0,62.0)
+## Snow: the line stands SNOW_DEPTH m under the top, broken SNOW_RAG m
+## either way by a noise, brought down SNOW_HOLLOW m a metre of hollow (and
+## lifted on ridges); it holds on ground no steeper than SNOW_SLOPE (at the
+## line, and well above it); below the line it lingers SNOW_LINGER m down on
+## ledges and in hollows. Its colour is the world's snow
+## (scripts/native_terrain_palette.gd), a touch blue in the hollows, each
+## face nudged by SNOW_JITTER; the light makes it warm or cool by the hour.
+const SNOW_DEPTH := Vector2(135.0,165.0)
+const SNOW_RAG := 32.0
+const SNOW_HOLLOW := 2.4
+const SNOW_SLOPE := Vector2(1.3,2.8)
+const SNOW_LINGER := 50.0
+const SNOW_JITTER := 0.03
+const SNOW_COLOUR := Color(0.9,0.93,0.96)
+## The rock's cooling toward the far peaks' blue-grey, of its own lightness:
+## half of COOL at the sea, all of it at the top; and that grey's hue.
+const COOL := 0.6
+const COOL_HUE := Vector3(0.9,0.97,1.16)
 ## The plate's own rock (scripts/native_terrain_palette.gd's first grey,
 ## linear): the world's rock over this tints the beds.
 const ROCK_REF := Color(0.2664,0.2346,0.1845)
@@ -176,6 +205,8 @@ const Erosion = preload("res://scripts/terrain_erosion.gd")
 const Strata = preload("res://scripts/strata.gd")
 
 var seed := 0
+## How tall it stands, as a share of its drawn summits (SkyPeaks `stature_of`).
+var stature := 1.0
 ## Summits: (x, height, z) in the range's frame, as they stand.
 var summits: Array[Vector3] = []
 ## The highest point.
@@ -190,8 +221,12 @@ var settled := PackedFloat32Array()
 var stepped := PackedFloat32Array()
 ## The gorge: its line's x at z = 0, wander and wavelength, phase, walls.
 var gorge := {}
+## The gorge's pinch, if it has one: {z, length, top} (`_pinch`).
+var pinch := {}
 ## The cloud round the foot: (x, y, z, radius).
 var wraps := PackedVector4Array()
+## The snow line's mean height (m).
+var snowline := 1000.0
 ## Spruces: (x, z, height, variant), standing on the ground.
 var trees: Array[Vector4] = []
 ## The steep side of the crest (+1 is +z).
@@ -208,8 +243,10 @@ var _spine := PackedFloat32Array()
 var _peaks: Array = []
 
 ## The range for `seed_value` (a hash of its spot).
-static func make(seed_value: int) -> RefCounted:
+## `stature` (at most 1) brings its summits down, never its shoulder.
+static func make(seed_value: int, stature := 1.0) -> RefCounted:
 	var peak: RefCounted = new()
+	peak.stature = stature
 	peak._shape(seed_value)
 	return peak
 
@@ -222,6 +259,10 @@ func _shape(seed_value: int) -> void:
 	_fine(coarse)
 	_carve()
 	_measure()
+	# The snow line from a stream of its own, so the shape's draws stand.
+	var snow_rng := RandomNumberGenerator.new()
+	snow_rng.seed = seed*53+9
+	snowline = top-snow_rng.randf_range(SNOW_DEPTH.x,SNOW_DEPTH.y)
 	_wrap()
 	_plant()
 
@@ -262,7 +303,7 @@ func _plan() -> void:
 	var middle := (lo+hi)*0.5
 	_peaks.clear()
 	for i in range(xs.size()):
-		_peaks.append({"x":float(xs[i])-middle,"h":hs[i],"fall":Vector2(_rng.randf_range(FALL.x,FALL.y),_rng.randf_range(FALL.x,FALL.y))})
+		_peaks.append({"x":float(xs[i])-middle,"h":float(hs[i])*(stature if i < xs.size()-1 else 1.0),"fall":Vector2(_rng.randf_range(FALL.x,FALL.y),_rng.randf_range(FALL.x,FALL.y))})
 	# The ends of the crest fall faster.
 	var first := 0
 	var final := 0
@@ -594,9 +635,78 @@ func _carve() -> void:
 			var p := point(i,j)
 			heights[c] = minf(heights[c],gorge_face(gorge_distance(p),p.y,ribs))
 			peak = maxf(peak,heights[c])
-	if peak <= MOST: return
-	var k := (MOST-BASE)/(peak-BASE)
-	for c in range(nx*nz): heights[c] = BASE+(heights[c]-BASE)*k
+	if peak > MOST:
+		var k := (MOST-BASE)/(peak-BASE)
+		for c in range(nx*nz):
+			heights[c] = BASE+(heights[c]-BASE)*k
+	_pinch(ribs)
+
+## Some gorges narrow: for a stretch, two fins of rock jut in from the walls
+## up to `pinch.top`, leaving a slot PINCH_HALF*2 m wide down the middle (the
+## tight line, where the jet runs) and the wide way open above the fins.
+## Drawn from a stream of its own; with none, `pinch` stays empty.
+func _pinch(ribs: FastNoiseLite) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed*61+3
+	pinch = {}
+	if rng.randf() >= PINCH_ODDS: return
+	pinch = {"z":spine(float(gorge.x))+rng.randf_range(PINCH_AT.x,PINCH_AT.y),"length":rng.randf_range(PINCH_LENGTH.x,PINCH_LENGTH.y),"top":rng.randf_range(PINCH_TOP.x,PINCH_TOP.y)}
+	# The fins reach out to where the walls stand over their tops, and only
+	# where both walls do: never out over the open flanks.
+	var reach := GORGE_HALF
+	while gorge_wall(reach) < float(pinch.top)+30.0: reach += 2.0
+	var walled := {}
+	var before := heights.duplicate()
+	for j in range(nz):
+		for i in range(nx):
+			var p := point(i,j)
+			var d := gorge_distance(p)
+			if absf(d) > reach: continue
+			var fin := pinch_fin(d,p.y,ribs)
+			if fin == -INF: continue
+			var row := int(round(p.y/STEP))
+			if not walled.has(row):
+				var way := gorge_way(p.y)
+				var across := Vector2(way.y,-way.x)
+				var line := Vector2(gorge_x(p.y),p.y)
+				var ok := true
+				for side in [1.0,-1.0]:
+					var c := cell_of(line+across*side*(reach+16.0))
+					if before[c.y*nx+c.x] < float(pinch.top)+10.0: ok = false
+				walled[row] = ok
+			if not walled[row]: continue
+			var c := j*nx+i
+			heights[c] = maxf(heights[c],fin)
+	# Where the walls don't stand the whole of its middle, no pinch.
+	var z := float(pinch.z)-float(pinch.length)*0.5
+	while z < float(pinch.z)+float(pinch.length)*0.5:
+		if pinch_share(z) >= 0.999 and not walled.get(int(round(z/STEP)),false):
+			heights = before
+			pinch = {}
+			return
+		z += STEP
+
+## How far into the pinch's stretch `z` is (0 outside, 1 in its middle).
+func pinch_share(z: float) -> float:
+	if pinch.is_empty(): return 0.0
+	var off := absf(z-float(pinch.z))
+	var half := float(pinch.length)*0.5
+	return 1.0-smoothstep(half-PINCH_RAMP,half,off)
+
+## The fin's top at `d` m out from the gorge's line, `z` along it, or -INF
+## where there is none; never over `pinch.top`, crags only taking from it.
+func pinch_fin(d: float, z: float, ribs: FastNoiseLite) -> float:
+	var share := pinch_share(z)
+	if share <= 0.0 or absf(d) < PINCH_HALF: return -INF
+	var rise := smoothstep(PINCH_HALF,PINCH_HALF+3.0,absf(d))
+	var crag := maxf(0.0,ribs.get_noise_2d(z*2.0,d))*8.0
+	var top := float(pinch.top)-crag
+	return lerpf(GORGE_FLOOR,top,share*rise)
+
+## The jet's height down the gorge at `z`: dipping into the pinch's slot.
+func jet_height(z: float, high: float) -> float:
+	if pinch.is_empty(): return high
+	return lerpf(high,float(pinch.top)-PINCH_JET_UNDER,pinch_share(z))
 
 func _measure() -> void:
 	top = -INF
@@ -679,7 +789,7 @@ func _plant() -> void:
 			x += TREE_STEP
 			if stands.get_noise_2d(p.x,p.y) < TREE_PATCH or absf(gorge_distance(p)) < GORGE_HALF*2.5: continue
 			var h: Variant = height_at(p)
-			if h == null or float(h) < TREE_BAND.x or float(h) > TREE_BAND.y: continue
+			if h == null or float(h) < TREE_BAND.x or float(h) > minf(TREE_BAND.y,snowline-SNOW_LINGER): continue
 			var c := cell_of(p)
 			if _gradient(heights,c.x,c.y).length() > TREE_SLOPE: continue
 			trees.append(Vector4(p.x,p.y,rng.randf_range(TREE_HEIGHT.x,TREE_HEIGHT.y),TREE_VARIANTS[rng.randi() % TREE_VARIANTS.size()]))
@@ -727,6 +837,17 @@ func height_at(p: Vector2) -> Variant:
 ## height, so ridges and gullies follow the grid's faces, not zigzag.
 static func _split(h00: float, h10: float, h01: float, h11: float) -> bool:
 	return absf(h00-h11) <= absf(h10-h01)
+
+## How much each mesh point lies in a hollow (m): its neighbours' mean
+## height two points out over its own; under 0 on a ridge.
+func _hollows() -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	out.resize(nx*nz)
+	for j in range(nz):
+		for i in range(nx):
+			var around := heights[j*nx+maxi(i-2,0)]+heights[j*nx+mini(i+2,nx-1)]+heights[maxi(j-2,0)*nx+i]+heights[mini(j+2,nz-1)*nx+i]
+			out[j*nx+i] = around*0.25-heights[j*nx+i]
+	return out
 
 ## The rise (per metre, in x and z) at a mesh grid point.
 func _gradient(field: PackedFloat32Array, i: int, j: int) -> Vector2:
@@ -776,7 +897,7 @@ func _noise(salt: int, frequency: float, octaves: int, fractal: int) -> FastNois
 ## coloured per face from the world's `grass` and `rock` (linear) and its
 ## `gravel`, every vertex laid `shift` off (SkyIslets OFF_MAP). Safe on a
 ## worker.
-func body_arrays(grass: Array, rock: Array, gravel: Color, shift := Vector3.ZERO) -> Array:
+func body_arrays(grass: Array, rock: Array, gravel: Color, shift := Vector3.ZERO, stride := 1, snow := SNOW_COLOUR) -> Array:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed*31+7
 	var fields := [_noise(67,1.0/90.0,3,FastNoiseLite.FRACTAL_FBM),_noise(73,1.0/150.0,2,FastNoiseLite.FRACTAL_FBM),_noise(79,1.0/70.0,2,FastNoiseLite.FRACTAL_FBM)]
@@ -786,25 +907,27 @@ func body_arrays(grass: Array, rock: Array, gravel: Color, shift := Vector3.ZERO
 		for i in range(nx):
 			var g := _gradient(heights,i,j)
 			normals[j*nx+i] = Vector3(-g.x,1.0,-g.y).normalized()
+	var hollows := _hollows()
 	var colours := _strata_colours()
+	colours["snow"] = snow
 	var vertices := PackedVector3Array()
 	var normal_list := PackedVector3Array()
 	var colour_list := PackedColorArray()
-	for j in range(nz-1):
-		for i in range(nx-1):
+	for j in range(0,nz-stride,stride):
+		for i in range(0,nx-stride,stride):
 			var c00 := j*nx+i
-			var c10 := c00+1
-			var c01 := c00+nx
-			var c11 := c01+1
+			var c10 := c00+stride
+			var c01 := c00+nx*stride
+			var c11 := c01+stride
 			var h00 := heights[c00]
 			var h10 := heights[c10]
 			var h01 := heights[c01]
 			var h11 := heights[c11]
 			if maxf(maxf(h00,h10),maxf(h01,h11)) < CUT: continue
 			var p00 := _v(i,j,h00)
-			var p10 := _v(i+1,j,h10)
-			var p01 := _v(i,j+1,h01)
-			var p11 := _v(i+1,j+1,h11)
+			var p10 := _v(i+stride,j,h10)
+			var p01 := _v(i,j+stride,h01)
+			var p11 := _v(i+stride,j+stride,h11)
 			var tris: Array
 			if _split(h00,h10,h01,h11): tris = [[p00,p11,p10,c00,c11,c10],[p00,p01,p11,c00,c01,c11]]
 			else: tris = [[p00,p01,p10,c00,c01,c10],[p10,p01,p11,c10,c01,c11]]
@@ -827,7 +950,8 @@ func body_arrays(grass: Array, rock: Array, gravel: Color, shift := Vector3.ZERO
 				# face's own, so it lies in patches, not face by face.
 				var lie := (normals[t[3]]+normals[ib]+normals[id]+n*1.2).normalized()
 				var ledge := (stepped[t[3]]+stepped[ib]+stepped[id])/3.0
-				var tone := _tone((a+b+d)/3.0,lie,(settled[t[3]]+settled[ib]+settled[id])/3.0,ledge,grass,rock,gravel,colours,fields,rng)
+				var hollow := (hollows[t[3]]+hollows[ib]+hollows[id])/3.0
+				var tone := _tone((a+b+d)/3.0,lie,(settled[t[3]]+settled[ib]+settled[id])/3.0,ledge,hollow,grass,rock,gravel,colours,fields,rng)
 				# Godot's front faces wind clockwise seen from outside.
 				for q in [[a,t[3]],[d,id],[b,ib]]:
 					vertices.append((q[0] as Vector3)+shift)
@@ -874,7 +998,7 @@ static func _strata_colours() -> Dictionary:
 ## erosion filled; and on the steep faces the world's rock, a little lighter
 ## or darker bed by bed (the granite core's three tones) with now and then a
 ## band of shale.
-func _tone(at: Vector3, n: Vector3, laid: float, ledge: float, grass: Array, rock: Array, gravel: Color, strata: Dictionary, fields: Array, rng: RandomNumberGenerator) -> Color:
+func _tone(at: Vector3, n: Vector3, laid: float, ledge: float, hollow: float, grass: Array, rock: Array, gravel: Color, strata: Dictionary, fields: Array, rng: RandomNumberGenerator) -> Color:
 	var slope := sqrt(maxf(0.0,1.0-n.y*n.y))/maxf(n.y,0.001)
 	var p := Vector2(at.x,at.z)
 	var patch: float = (fields[0] as FastNoiseLite).get_noise_2d(p.x,p.y)
@@ -884,13 +1008,30 @@ func _tone(at: Vector3, n: Vector3, laid: float, ledge: float, grass: Array, roc
 	var jitter := 1.0+rng.randf_range(-FACE_JITTER,FACE_JITTER)
 	var stone := (rock[0] as Color).lerp(rock[rock.size()-1],smoothstep(0.3,0.7,mix_rock))
 	var green := (grass[0] as Color).lerp(grass[2 if grass.size() > 2 else 0],smoothstep(0.25,0.75,mix_green))
+	# The rock cools toward the blue-grey of the far peaks over the sea
+	# (shaders/sky_cloud_sea_opal.gdshaderinc), the more the higher, so the
+	# range and the backdrop read as one family.
+	var grey := (stone.r+stone.g+stone.b)/3.0
+	stone = stone.lerp(Color(grey*COOL_HUE.x,grey*COOL_HUE.y,grey*COOL_HUE.z),COOL*(0.5+0.5*smoothstep(SEA,top,at.y)))
+	var lift := tilt.dot(p)
+	var phase := fposmod((at.y+lift)/bed,1.0)
+	var index := floori((at.y+lift)/bed)
+	# Snow above a ragged line: lower down the hollows and gullies, higher
+	# on the wind-scoured ridges; up high it holds on steeper ground. Below
+	# the line it lingers on the beds' treads and in the deeper hollows.
+	var line := snowline+patch*SNOW_RAG-clampf(hollow,-10.0,25.0)*SNOW_HOLLOW
+	var deep := smoothstep(line-20.0,line+60.0,at.y)
+	var snowy := at.y > line and slope < lerpf(SNOW_SLOPE.x,SNOW_SLOPE.y,deep)
+	snowy = snowy or (ledge > 0.5 and phase < 0.5 and slope < 1.3 and at.y > line-SNOW_LINGER)
+	snowy = snowy or (hollow > 5.0 and slope < 1.1 and at.y > line-SNOW_LINGER*1.3)
+	if snowy:
+		var white: Color = strata.snow
+		var blue := clampf(hollow/18.0,0.0,1.0)
+		return Color(white.r*lerpf(1.0,0.93,blue),white.g*lerpf(1.0,0.965,blue),white.b,1.0)*(1.0+rng.randf_range(-SNOW_JITTER,SNOW_JITTER))
 	if slope < GRASS_SLOPE+patch*0.3 and high < GRASS_HIGH:
 		if laid > SCREE and slope > 0.35: return gravel.lerp(stone,0.3)*jitter
 		# Thinner and drier up high.
 		return green.lerp(stone,smoothstep(GRASS_HIGH-140.0,GRASS_HIGH+20.0,high)*0.45)*jitter
-	var lift := tilt.dot(p)
-	var phase := fposmod((at.y+lift)/bed,1.0)
-	var index := floori((at.y+lift)/bed)
 	var earthy: Color = (strata.topsoil as Color).lerp(strata.clay,smoothstep(0.35,0.65,mix_green)*0.6)
 	if slope < EARTH_SLOPE+patch*0.25 and high < GRASS_HIGH+30.0:
 		if laid > SCREE*0.6: return gravel.lerp(stone,0.45)*jitter
