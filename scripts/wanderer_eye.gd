@@ -50,6 +50,14 @@ extends Node
 ## (off the edge, a held jump) brings it along: the parked one goes in a
 ## puff, so there is only ever the one plane, and it is always yours.
 ##
+## The pad (docs/gamepad.md) walks with the left stick (a click of it runs
+## until the stick comes back to rest), looks with the right, jumps (or takes
+## off by the plane) with A, and B or View steps out. Flying keeps the stick,
+## triggers and shoulders, Y lands and R3 swaps the camera. Every read goes
+## through scripts/pad.gd's named actions, the keys beside the pad's where
+## they are polled; the hints name the pad's controls while it is in hand
+## (scripts/pad_prompt.gd).
+##
 ## With `--glider` it glides under the old cloth wing instead
 ## (scripts/glider_figure.gd): a click (or E, or the pad's X) flaps for lift
 ## of its own, the right mouse button (or the right stick) looks round it,
@@ -57,6 +65,7 @@ extends Node
 ## anywhere on the island lands, the camera swooping down into its eyes.
 
 const Plate = preload("res://scripts/plate.gd")
+const Pad = preload("res://scripts/pad.gd")
 ## The figure's height and the eye's height above the ground, in metres. The
 ## diorama is toy-scaled: trees stand about 3 to 5 m and photo mode's ground
 ## eye sits at 0.85 m.
@@ -144,6 +153,21 @@ const LANDING_HINT := "Coming in to land  ·  Space, Q E or F to fly on"
 const ROLLING_HINT := "F to hop out"
 const NO_LANDING_HINT := "No island near enough to land on"
 const PLANE_HINT := "A D to bank and turn  ·  W S to pitch  ·  Mouse to look round  ·  Space to boost  ·  Shift to brake  ·  Q E or click to barrel roll  ·  F to land  ·  C for the camera  ·  V or Esc to step out"
+## The hints' forms for the pad (scripts/pad_prompt.gd `alternates`).
+const PAD_HINTS := {
+	HINT:"{LS} walk  ·  {L3} run  ·  {RS} look  ·  {A} jump, hold to fly  ·  {B} step out",
+	PERCH_HINT:"{LS} walk  ·  {RS} look  ·  Walk off the edge or hold {A} to fly  ·  {B} step out",
+	GLIDER_HINT:"{LS} walk  ·  {L3} run  ·  {RS} look  ·  {A} jump, hold to glide  ·  {B} step out",
+	GLIDER_PERCH_HINT:"{LS} walk  ·  {RS} look  ·  Walk off the edge or hold {A} to glide  ·  {B} step out",
+	BOARD_HINT:"{A} take off  ·  {LS} walk  ·  {RS} look  ·  {B} step out",
+	LANDING_HINT:"Coming in to land  ·  {RT}, {LB} {RB} or {Y} to fly on",
+	ROLLING_HINT:"{Y} to hop out",
+	PLANE_HINT:"{LS} bank, turn and pitch  ·  {RS} look round  ·  {RT} boost  ·  {LT} brake  ·  {LB} {RB} barrel roll  ·  {Y} land  ·  {R3} camera  ·  {B} step out",
+	FLY_HINT:"{LS} turn and pitch  ·  {X} flap  ·  {LT} rise  ·  {RT} dive  ·  {Y} land  ·  {RS} look round  ·  {R3} camera  ·  {B} step out",
+}
+## The right stick's look while walking, radians a second at full tilt,
+## side to side and up and down.
+const STICK_WALK_LOOK := Vector2(2.2,1.4)
 ## The plane's camera pan holds this many seconds after the mouse or the
 ## right stick last turned it, then swings back behind.
 const PLANE_LINGER := 2.5
@@ -231,6 +255,8 @@ var _fov_before := 45.0
 var _hint_time := 0.0
 var _layer: CanvasLayer
 var _hint: Label
+## A click of the left stick runs until the stick comes back to rest.
+var _run_latched := false
 var _dot: Control
 ## Obstacles in the plate plane: [Vector3(x, z, radius)], figure radius
 ## included, and what they were read from (`_obstacle_key`).
@@ -286,14 +312,11 @@ var vapour := GlideVapour.new()
 var _swoop := 0.0
 var _swoop_from := {}
 ## A flap asked for since the last glide step (click, E or the pad's X),
-## the pad's X last frame, and the glide's flaps when last heard.
+## and the glide's flaps when last heard.
 var _flap_asked := false
-var _pad_flap_was := false
 var _flaps_heard := 0
-## The plane's barrel roll asked for since the last step (-1 left, 1 right),
-## and the pad's shoulders last frame.
+## The plane's barrel roll asked for since the last step (-1 left, 1 right).
 var _roll_asked := 0.0
-var _pad_roll_was := Vector2.ZERO
 var _far_before := 500.0
 ## The jump: how high the feet are off the ground, how fast they rise, and
 ## how long Space has been held since the jump (-1 once let go).
@@ -323,6 +346,7 @@ func setup(owner_scene: Node3D) -> void:
 	editor = scene._chunk_editor
 	camera = scene.camera
 	name = "WandererEye"
+	Pad.ensure()
 	# Before the scene's own _process (and with photo mode), so the scene
 	# reads this frame's pose.
 	process_priority = -10
@@ -338,7 +362,8 @@ func setup(owner_scene: Node3D) -> void:
 	_layer.layer = 5
 	_layer.visible = false
 	add_child(_layer)
-	_hint = Label.new()
+	_hint = preload("res://scripts/pad_prompt.gd").new()
+	_hint.alternates = PAD_HINTS
 	_hint.text = _walk_hint()
 	_hint.add_theme_font_size_override("font_size",15)
 	_hint.add_theme_color_override("font_color",Color("fbf6ea"))
@@ -743,11 +768,7 @@ func _advance_eye(delta: float) -> void:
 	if flying:
 		_advance_flight(delta)
 		return
-	var want := Vector2(
-		float(Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_RIGHT))-float(Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_LEFT)),
-		float(Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_DOWN))-float(Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_UP)))
-	if want.length() > 1.0: want = want.normalized()
-	want *= RUN if Input.is_physical_key_pressed(KEY_SHIFT) else WALK
+	var want := _walk_input(delta)
 	_pace = _pace.lerp(want,_ease(EASE_PACE,delta))
 	# Walk in the terrain's frame: the scene's yaw is in world space, and the
 	# world may be turned under the camera.
@@ -795,6 +816,18 @@ func _advance_eye(delta: float) -> void:
 	_hint_time += delta
 	_hint_plane()
 	_hint.modulate.a = clampf(1.0-(_hint_time-4.0)/1.5,0.0,1.0)
+
+## The walk this frame, metres a second in the eye's frame (x right, y
+## back): WASD, the arrows or the left stick, Shift or a stick click to run;
+## the right stick turns the eye as the mouse does.
+func _walk_input(delta: float) -> Vector2:
+	var want := Input.get_vector(&"move_left",&"move_right",&"move_forward",&"move_back")
+	if want == Vector2.ZERO: _run_latched = false
+	var look := Pad.curve(Pad.stick(&"look_left",&"look_right",&"look_up",&"look_down"),1.6)
+	if look != Vector2.ZERO:
+		_yaw -= look.x*STICK_WALK_LOOK.x*delta
+		_polar = clampf(_polar-look.y*STICK_WALK_LOOK.y*delta,POLAR.x,POLAR.y)
+	return want*(RUN if Input.is_action_pressed(&"walk_run") or _run_latched else WALK)
 
 ## Just landed from the chase: the camera swoops from where it was down
 ## into the eyes.
@@ -868,26 +901,23 @@ func _end_flight() -> void:
 	air.stop()
 	_hint.text = _walk_hint()
 
-## The glide's input this frame: keys, the first gamepad and the mouse.
+## The glide's input this frame: keys, the pad and the mouse, through
+## scripts/pad.gd's actions.
 func _fly_input() -> Dictionary:
-	var key := func(a: Key, b: Key) -> float: return float(Input.is_physical_key_pressed(a) or Input.is_physical_key_pressed(b))
-	var stick := Vector2(Input.get_joy_axis(0,JOY_AXIS_LEFT_X),Input.get_joy_axis(0,JOY_AXIS_LEFT_Y))
-	if stick.length() < 0.15: stick = Vector2.ZERO
+	var stick := Input.get_vector(&"move_left",&"move_right",&"move_forward",&"move_back")
 	var input := {
-		"turn":clampf(key.call(KEY_D,KEY_RIGHT)-key.call(KEY_A,KEY_LEFT)+stick.x,-1.0,1.0),
-		"pitch":clampf(key.call(KEY_S,KEY_DOWN)-key.call(KEY_W,KEY_UP)+stick.y,-1.0,1.0),
-		"rise":maxf(float(Input.is_physical_key_pressed(KEY_SPACE) or Input.is_joy_button_pressed(0,JOY_BUTTON_A)),Input.get_joy_axis(0,JOY_AXIS_TRIGGER_LEFT)),
-		"dive":maxf(float(Input.is_physical_key_pressed(KEY_SHIFT)),Input.get_joy_axis(0,JOY_AXIS_TRIGGER_RIGHT)),
+		"turn":stick.x,
+		"pitch":stick.y,
+		"rise":Input.get_action_strength(&"glide_rise"),
+		"dive":Input.get_action_strength(&"glide_dive"),
 		"look":_fly_look,
 	}
 	_fly_look = Vector2.ZERO
-	var pad_flap := Input.is_joy_button_pressed(0,JOY_BUTTON_X)
-	input["flap"] = _flap_asked or (pad_flap and not _pad_flap_was)
-	_pad_flap_was = pad_flap
+	input["flap"] = _flap_asked
 	_flap_asked = false
 	# The right stick looks round the glider.
-	var right := Vector2(Input.get_joy_axis(0,JOY_AXIS_RIGHT_X),Input.get_joy_axis(0,JOY_AXIS_RIGHT_Y))
-	var stick_held := right.length() > 0.2
+	var right := Pad.stick(&"look_left",&"look_right",&"look_up",&"look_down")
+	var stick_held := right != Vector2.ZERO
 	if stick_held: chase.turn(Vector2(-right.x,-right.y)*STICK_LOOK*get_process_delta_time())
 	chase.free_held = Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) or stick_held
 	if plane: _plane_input(input)
@@ -897,16 +927,13 @@ func _fly_input() -> Dictionary:
 ## (or A) boosts and Shift or its left trigger brakes, in place of Rise and
 ## the dive; Q, E, a click or the pad's shoulders ask for a barrel roll.
 func _plane_input(input: Dictionary) -> void:
-	input["boost"] = maxf(float(Input.is_physical_key_pressed(KEY_SPACE) or Input.is_joy_button_pressed(0,JOY_BUTTON_A)),Input.get_joy_axis(0,JOY_AXIS_TRIGGER_RIGHT))
-	input["brake"] = maxf(float(Input.is_physical_key_pressed(KEY_SHIFT)),Input.get_joy_axis(0,JOY_AXIS_TRIGGER_LEFT))
+	input["boost"] = Input.get_action_strength(&"fly_boost")
+	input["brake"] = Input.get_action_strength(&"fly_brake")
 	input["rise"] = 0.0
 	input["dive"] = 0.0
 	input["flap"] = false
-	var pad := Vector2(float(Input.is_joy_button_pressed(0,JOY_BUTTON_LEFT_SHOULDER)),float(Input.is_joy_button_pressed(0,JOY_BUTTON_RIGHT_SHOULDER)))
-	if pad.x > _pad_roll_was.x: _roll_asked = -1.0
-	if pad.y > _pad_roll_was.y: _roll_asked = 1.0
-	_pad_roll_was = pad
 	input["roll"] = _roll_asked
+	if _roll_asked != 0.0: Pad.pulse(0.3,0.1,0.12)
 	_roll_asked = 0.0
 
 func _advance_flight(delta: float) -> void:
@@ -1015,7 +1042,7 @@ func _solid(point: Vector3) -> bool:
 ## Space (or the pad's A) jumps from the ground; held past OPEN_AFTER it
 ## opens the glide. Returns true when it should open.
 func _advance_jump(delta: float) -> bool:
-	var down := Input.is_physical_key_pressed(KEY_SPACE) or Input.is_joy_button_pressed(0,JOY_BUTTON_A)
+	var down := Input.is_action_pressed(&"walk_jump")
 	var pressed := down and not _jump_was
 	_jump_was = down
 	# By the parked plane, Space climbs in rather than jumping.
@@ -1137,11 +1164,7 @@ func _advance_perch(delta: float) -> void:
 		_launch(1.0)
 		return
 	var shape: RefCounted = perch.shape
-	var want := Vector2(
-		float(Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_RIGHT))-float(Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_LEFT)),
-		float(Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_DOWN))-float(Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_UP)))
-	if want.length() > 1.0: want = want.normalized()
-	want *= RUN if Input.is_physical_key_pressed(KEY_SHIFT) else WALK
+	var want := _walk_input(delta)
 	_pace = _pace.lerp(want,_ease(EASE_PACE,delta))
 	# Islets are never turned, so the eye's yaw is the islet's frame's too.
 	var forward := -Vector3(sin(_yaw),0.0,cos(_yaw))
@@ -1543,6 +1566,7 @@ func _touchdown() -> void:
 	_puff(at,surface)
 	steps.step(surface,1.0)
 	air.blip()
+	Pad.pulse(0.35,0.2,0.14)
 	Disturbance.raise(at,RADIUS*4.0,0.8,"figure")
 
 ## A soft puff at a global point: grass-green and pale on grass, warm dust
@@ -1729,6 +1753,10 @@ func handle(event: InputEvent) -> bool:
 		return true
 	if event is InputEventMagnifyGesture or event is InputEventPanGesture:
 		return true
+	if event is InputEventJoypadButton or event is InputEventJoypadMotion:
+		_pad_event(event)
+		# Every pad event is the eye's: none moves a control's focus.
+		return true
 	if event is InputEventKey:
 		if event.ctrl_pressed or event.meta_pressed: return false
 		if event.pressed and not event.echo and event.keycode in [KEY_V,KEY_ESCAPE]:
@@ -1747,6 +1775,24 @@ func handle(event: InputEvent) -> bool:
 		# Walking keys are read each frame; every plain key stays here.
 		return true
 	return false
+
+## The pad's presses (its sticks and triggers are polled): B or View steps
+## out, Y lands (or flies on, or hops out, as F), R3 swaps the camera, the
+## shoulders roll the plane, X flaps the glider, and a click of the left
+## stick runs. Menu is the scene's (scripts/pad_input.gd).
+func _pad_event(event: InputEvent) -> void:
+	var airborne := flying and perch.is_empty()
+	if Pad.pressed(event,&"eye_leave"): leave()
+	elif Pad.pressed(event,&"walk_run_toggle") and not flying: _run_latched = true
+	elif airborne and Pad.pressed(event,&"fly_land"):
+		if plane: _land_key()
+		else: glide.approach = not glide.approach
+	elif airborne and Pad.pressed(event,&"fly_camera"):
+		chase.first_person = not chase.first_person
+		glider.visible = not chase.first_person
+	elif airborne and plane and Pad.pressed(event,&"fly_roll_left"): _roll_asked = -1.0
+	elif airborne and plane and Pad.pressed(event,&"fly_roll_right"): _roll_asked = 1.0
+	elif airborne and not plane and Pad.pressed(event,&"glide_flap"): _flap_asked = true
 
 func _notification(what: int) -> void:
 	# Stepping out of the window lets the mouse go.

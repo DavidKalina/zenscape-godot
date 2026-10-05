@@ -84,11 +84,13 @@ class Row extends Button:
 		var baseline := roundf(10.0*px+font.get_ascent(font_size))
 		draw_string(font,Vector2(roundf(12.0*px),baseline),text,HORIZONTAL_ALIGNMENT_LEFT,-1,font_size,Worlds.INK)
 		var right := size.x-12.0*px
-		if not hint.is_empty():
+		# With the pad in hand, Esc's place is its B (scripts/pad.gd).
+		var shown := preload("res://scripts/pad.gd").pick(hint,"B" if hint == "Esc" else hint)
+		if not shown.is_empty():
 			var caps := Worlds.caps_size(13.0*px)
 			hint_font.spacing_glyph = roundi(13.0*px*0.2)
-			var width := hint_font.get_string_size(Worlds.caps(hint),HORIZONTAL_ALIGNMENT_LEFT,-1,caps).x-hint_font.spacing_glyph
-			draw_string(hint_font,Vector2(roundf(right-width),baseline),Worlds.caps(hint),HORIZONTAL_ALIGNMENT_LEFT,-1,caps,Worlds.MUTED)
+			var width := hint_font.get_string_size(Worlds.caps(shown),HORIZONTAL_ALIGNMENT_LEFT,-1,caps).x-hint_font.spacing_glyph
+			draw_string(hint_font,Vector2(roundf(right-width),baseline),Worlds.caps(shown),HORIZONTAL_ALIGNMENT_LEFT,-1,caps,Worlds.MUTED)
 		elif chevron > 0:
 			# Neither face has ▸/▾, so draw them: Spectral 16 on the baseline.
 			var s := 16.0*px

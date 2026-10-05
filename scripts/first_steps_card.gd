@@ -47,6 +47,7 @@ const KICKER := "First steps"
 const SKIP := "Skip"
 const LAST_NAME := "The rest is yours to find"
 const LAST_LINE := "The field notes are under Esc"
+const PAD_LAST_LINE := "The field notes are under Menu"
 ## Layout, design pixels: the card's width, its inset from the right and top
 ## edges (the almanac's RIGHT and the top strip's TOP_INSET), its padding (x, y).
 const WIDTH := 300.0
@@ -197,10 +198,10 @@ static func point_at(spot: String) -> Array:
 
 ## The words on the card now: its name and the parts of its line.
 func words() -> Array:
-	if mode == "last": return [LAST_NAME,[LAST_LINE]]
+	if mode == "last": return [LAST_NAME,[preload("res://scripts/pad.gd").pick(LAST_LINE,PAD_LAST_LINE)]]
 	if steps == null or _step.is_empty(): return ["",[]]
 	var verb: Dictionary = steps.verb(_step)
-	var line := str(verb.get("line",""))
+	var line := FirstSteps.line(_step)
 	return [str(verb.get("name","")),Array(line.split(" · ")) if not line.is_empty() else []]
 
 # --- Reading the pointer --------------------------------------------------------

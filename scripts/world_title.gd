@@ -24,6 +24,10 @@ const Linen = preload("res://scripts/hud_linen.gd")
 ## Muted fills standing in for a capture, by land.
 const LAND_TINTS := {"plain":Color("66704f"),"canyon":Color("7d5544"),"isle":Color("5f686d"),"hollow":Color("4a5743"),
 	"wildflowers":Color("7d8a4c"),"sunflowers":Color("a08a3c"),"dandelions":Color("6f8f45"),"cosmos":Color("9a7484"),"alpine_meadow":Color("5f7a66")}
+const Pad = preload("res://scripts/pad.gd")
+## The strip's hint, with the keys and with the pad.
+const HINT := "◂ ▸ browse · ↵ enter"
+const PAD_HINT := "◂ ▸ browse · A enter · ▴ rename, copy, delete · X new world · B back"
 const TILE := Vector2(156,96)
 const TILE_GAP := 14.0
 const TILE_LABEL_GAP := 7.0
@@ -522,9 +526,15 @@ func _build_strip() -> void:
 	new_tile.picked.connect(func(_tile: Tile) -> void: new_world_requested.emit())
 	new_tile.opened.connect(func(_tile: Tile) -> void: new_world_requested.emit())
 	_row.add_child(new_tile)
-	hint = label("◂ ▸ browse · ↵ enter",Style.newsreader(500),13,Style.MUTED,0.24,true)
+	hint = label(HINT,Style.newsreader(500),13,Style.MUTED,0.24,true)
+	Pad.hub.device_changed.connect(_device_changed)
 	strip.add_child(hint)
 	strip.gui_input.connect(_on_strip_input)
+
+## The strip's hint names the pad's moves while it is in hand
+## (scripts/pad_input.gd reads them).
+func _device_changed(pad: bool) -> void:
+	hint.text = Style.caps(PAD_HINT if pad else HINT)
 
 ## Reads the library: `setup` once, then `refresh` whenever worlds change.
 func setup(world_library) -> void:
