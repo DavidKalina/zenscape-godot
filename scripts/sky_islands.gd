@@ -175,6 +175,9 @@ func advance(delta: float, eye: Vector3, heading: float, parted: float) -> void:
 	islets.advance(delta,eye)
 	peaks.advance(delta,eye)
 	isles.advance(delta,eye)
+	var keep: Array = peaks.keep_spots(eye)+isles.keep_spots(eye)
+	keep.sort_custom(func(a: Vector4, b: Vector4) -> bool: return Vector2(a.x-eye.x,a.y-eye.z).length() < Vector2(b.x-eye.x,b.y-eye.z).length())
+	clouds.keep_off(keep)
 	clouds.follow(eye)
 
 ## Puts a copy at a home spot, rising from below, with a thermal beside it

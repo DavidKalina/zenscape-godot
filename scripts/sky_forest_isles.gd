@@ -604,6 +604,17 @@ func haze_spots(eye := Vector3.ZERO) -> Array:
 	out.sort_custom(func(a: Vector4, c: Vector4) -> bool: return Vector2(a.x-eye.x,a.y-eye.z).length() < Vector2(c.x-eye.x,c.y-eye.z).length())
 	return out
 
+## Each standing isle's keep-out for the drifting clouds (SkyClouds
+## `keep_off`), nearest `eye` first: Vector4(global x, global z, 0, reach).
+func keep_spots(eye := Vector3.ZERO) -> Array:
+	var out := []
+	for key in built:
+		var b: Dictionary = built[key]
+		var at := position+(b.home as Vector3)
+		out.append(Vector4(at.x,at.z,0.0,float(b.reach)+40.0))
+	out.sort_custom(func(a: Vector4, c: Vector4) -> bool: return Vector2(a.x-eye.x,a.y-eye.z).length() < Vector2(c.x-eye.x,c.y-eye.z).length())
+	return out
+
 ## A few colours of the world's own ground (linear), as SkyIslets reads them.
 func _palette(which: String) -> Array:
 	var found: Array = []
