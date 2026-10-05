@@ -27,6 +27,10 @@ extends Node3D
 ## it stays in sight further off than the islands do.
 
 const SkyPeak = preload("res://scripts/sky_peak.gd")
+## The table mountain within sight of the plate (scripts/sky_tepuis.gd): a
+## landform of the same kind, held here so everything that reads the ranges
+## (solids, `blocks`, the haze) reads it too.
+const SkyTepuis = preload("res://scripts/sky_tepuis.gd")
 
 ## The range in sight of the plate: its middle (home coordinates) and the
 ## way its crest runs (radians about y; local +x is the crest's way).
@@ -77,9 +81,12 @@ var _since := CHECK
 var _material: Material
 static var _puff_material: ShaderMaterial
 static var _quad: QuadMesh
+var tepuis: Node3D
 
 func _init() -> void:
 	name = "SkyPeaks"
+	tepuis = SkyTepuis.new()
+	add_child(tepuis)
 
 func _exit_tree() -> void:
 	clear()
@@ -95,6 +102,7 @@ func reset(new_cells: RefCounted, air: Node3D = null) -> void:
 	currents = air
 	_since = CHECK
 	position = cells.origin
+	tepuis.reset(new_cells,air,self)
 
 func clear() -> void:
 	for key in _making: WorkerThreadPool.wait_for_task_completion(_making[key].task)
@@ -103,6 +111,7 @@ func clear() -> void:
 		(built[key].node as Node3D).queue_free()
 		if currents != null: currents.drop_thermals(_jet_key(key))
 	built.clear()
+	if tepuis != null: tepuis.clear()
 
 func range_count() -> int:
 	return built.size()
@@ -113,6 +122,7 @@ func range_count() -> int:
 func advance(delta: float, eye: Vector3) -> void:
 	if cells == null: return
 	position = cells.origin
+	tepuis.advance(delta,eye)
 	_since += delta
 	if _since >= CHECK:
 		_since = 0.0
@@ -133,6 +143,7 @@ func flush() -> void:
 		WorkerThreadPool.wait_for_task_completion(m.task)
 		_finish(m.cell,m.spot,m.out)
 	_making.clear()
+	tepuis.flush()
 
 func _survey(home: Vector3) -> void:
 	var gone := []
@@ -176,7 +187,7 @@ static func blocks(home: Vector3, margin := 0.0) -> bool:
 		for dz in range(-1,2):
 			var s: Variant = spot(c+Vector2i(dx,dz))
 			if s != null and Vector2(s.x-home.x,s.z-home.z).length() < KEEP+margin: return true
-	return false
+	return SkyTepuis.blocks(home,margin)
 
 ## A hash of a cell, 0 to 1, one per salt (as SkyCells `noise`).
 static func noise(cell: Vector2i, salt: int) -> float:
@@ -344,7 +355,7 @@ func body(point: Vector3) -> Variant:
 		if h == null: continue
 		var y := position.y+float(b.home.y)
 		return Vector2(float(h)+y,SkyPeak.BOTTOM+y)
-	return null
+	return tepuis.body(point)
 
 ## The ground's height under a global point, or null.
 func ground(point: Vector3) -> Variant:
@@ -364,6 +375,7 @@ func haze_spots(eye := Vector3.ZERO) -> Array:
 		var b: Dictionary = built[key]
 		var at := position+(b.home as Vector3)
 		out.append(Vector4(at.x,at.z,HAZE_REACH,1.0))
+	out.append_array(tepuis.haze_spots())
 	out.sort_custom(func(a: Vector4, c: Vector4) -> bool: return Vector2(a.x-eye.x,a.y-eye.z).length() < Vector2(c.x-eye.x,c.y-eye.z).length())
 	return out
 

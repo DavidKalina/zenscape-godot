@@ -101,18 +101,20 @@ func build(slots: Array) -> void:
 		_thermal((here+next)*0.5+across*rng.randf_range(-90.0,90.0))
 	_build_wisps()
 
-func _thermal(base: Vector3, key := "") -> void:
+func _thermal(base: Vector3, key := "", span := Vector2(THERMAL_FROM,THERMAL_TO), radius := THERMAL_RADIUS, lift := LIFT) -> void:
 	var points := PackedVector3Array()
 	for i in range(SAMPLES):
-		points.append(base+Vector3.UP*lerpf(THERMAL_FROM,THERMAL_TO,float(i)/(SAMPLES-1)))
-	var current := _current(points,false,LIFT,THERMAL_RADIUS,"thermal")
+		points.append(base+Vector3.UP*lerpf(span.x,span.y,float(i)/(SAMPLES-1)))
+	var current := _current(points,false,lift,radius,"thermal")
 	current.key = key
 	currents.append(current)
 
 ## A thermal at a global point, belonging to `key` (a later island), and
-## the wisps rebuilt to show it.
-func add_thermal(base: Vector3, key: String) -> void:
-	_thermal(base-position,key)
+## the wisps rebuilt to show it. A tall one (the updraft off a tepui's wall,
+## scripts/sky_tepuis.gd) rises from `base` itself to `top` (global m),
+## `radius` m round, at `lift` m/s.
+func add_thermal(base: Vector3, key: String, top := NAN, radius := THERMAL_RADIUS, lift := LIFT) -> void:
+	_thermal(base-position,key,Vector2(THERMAL_FROM,THERMAL_TO) if is_nan(top) else Vector2(0.0,top-base.y),radius,lift)
 	_build_wisps()
 
 ## An open jet stream along `path` (global points, upstream first),
@@ -261,7 +263,7 @@ func _build_wisps() -> void:
 	var custom := []
 	for row in range(currents.size()):
 		var current: Dictionary = currents[row]
-		var count := int(float(current.length)*JET_WISPS) if current.kind == "jet" else THERMAL_WISPS
+		var count := int(float(current.length)*JET_WISPS) if current.kind == "jet" else THERMAL_WISPS*maxi(1,roundi(float(current.length)/(THERMAL_TO-THERMAL_FROM)))
 		for i in range(count):
 			# Row, where along it starts, a seed, a size.
 			custom.append(Color((row+0.5)/currents.size(),rng.randf(),rng.randf(),rng.randf()))
