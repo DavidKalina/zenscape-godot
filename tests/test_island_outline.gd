@@ -3,7 +3,9 @@ extends SceneTree
 ## triangulation (scripts/island_outline.gd), owned by the terrain
 ## (NativeTerrainData `outline`, `shore_distance`): saved, loaded, undone; the
 ## Quiet plain takes one from its seed; tools leave the sky off the island
-## alone; and the live water has no cells there.
+## alone; and the live water has no cells there. Phase 2: water leaving an
+## island pours off its shore (WaterFlow `_shore_spills`), and the square
+## plate's spills are the kernel's as before.
 const Outline = preload("res://scripts/island_outline.gd")
 const Genesis = preload("res://scripts/genesis_canvas.gd")
 const LandClay = preload("res://scripts/land_clay.gd")
@@ -33,6 +35,10 @@ func run() -> void:
 	shaped(plate())
 	tools(plate())
 	await water(plate())
+	await shore_falls(plate(),true)
+	await shore_falls(plate(),false)
+	await shore_course(plate())
+	await square_falls(plate())
 	await far(plate())
 	print("ISLAND OUTLINE failures=",failures)
 	quit(1 if failures else 0)
@@ -365,28 +371,204 @@ func water(data: NativeTerrainData) -> void:
 	check(flow.inside != was and flow.inside.count(0) == 0,"Clearing the outline gives the water the whole square")
 	data.set_outline(Outline.mask(data.points,data.vertex_ids,31))
 	check(flow.inside == was,"The outline back, the water's grid follows")
-	# Springs by the shore all round: their water drains over the shore, and
-	# no spill is reported where an edge fall would hang off the island.
+	# Springs by the shore all round: their water leaves over the shore, and
+	# every spill stands on it, facing out (phase 1 dropped the spills the
+	# kernel laid on the square's rim; now they follow the shore).
 	for k in range(8):
 		var way := Vector2.from_angle(TAU*k/8.0)
 		var r := 0.0
 		while data.ground_height(way*(r+0.5)) != null and r < 14.0: r += 0.25
 		flow.springs.append({"x":way.x*maxf(r-1.0,0.0),"z":way.y*maxf(r-1.0,0.0),"rate":0.05,"radius":0.6,"age":100.0})
 	for k in range(200): flow.run(4)
-	var raw: Array = flow.kernel.spills(preload("res://scripts/edge_falls.gd").DETECT)
-	var kept: Array = flow.spills(preload("res://scripts/edge_falls.gd").DETECT)
-	var floating := 0
-	for spill: Dictionary in raw:
-		var lip: Vector3 = spill.lip
-		var n: Vector2 = spill.normal
-		if data.ground_height(Vector2(lip.x,lip.z)-n*0.3) == null: floating += 1
-	print("shore spills: %d, %d off the island" % [raw.size(),floating])
-	check(not raw.is_empty(),"Water reaches the shore and leaves over it (%d spills)" % raw.size())
-	check(kept.size() == raw.size()-floating,"Spills off the island are dropped (%d of %d)" % [floating,raw.size()])
-	for spill: Dictionary in kept:
-		var lip: Vector3 = spill.lip
-		var n: Vector2 = spill.normal
-		check(data.ground_height(Vector2(lip.x,lip.z)-n*0.3) != null,"No edge fall stands off the island")
+	var spills: Array = flow.spills(preload("res://scripts/edge_falls.gd").DETECT)
+	print("shore spills: %d" % spills.size())
+	check(spills.size() >= 4,"Water reaches the shore and leaves over it (%d spills)" % spills.size())
+	for spill: Dictionary in spills: check_on_shore(data,spill)
+	data.release_listeners()
+
+## A spill stands on the shore, facing out of the land: ground just inward
+## of its lip and sky just outward, the lip on a shore edge.
+func check_on_shore(data: NativeTerrainData, spill: Dictionary) -> void:
+	var lip: Vector3 = spill.lip
+	var at := Vector2(lip.x,lip.z)
+	var n: Vector2 = spill.normal
+	check(int(spill.side) == -1 and is_equal_approx(n.length(),1.0),"A shore spill has side -1 and a unit normal")
+	check(data.ground_height(at-n*0.3) != null,"A spill's lip has land behind it (%s, %s)" % [at,n])
+	check(data.ground_height(at+n*0.3) == null,"A spill pours out over the sky, not over land (%s, %s)" % [at,n])
+	check(shore_gap(data,at) < 0.01,"A spill's lip is on the shore (%.3f m off)" % shore_gap(data,at))
+
+## Metres from `at` to the nearest shore edge.
+static func shore_gap(data: NativeTerrainData, at: Vector2) -> float:
+	var best := INF
+	var edges := data.shore_edges
+	for k in range(0,edges.size(),3):
+		best = minf(best,at.distance_to(Geometry2D.get_closest_point_to_segment(at,data.points[edges[k]],data.points[edges[k+1]])))
+	return best
+
+## A spring poured near the head of a bay: its water leaves over the bay's
+## own shore, and the spill's lip is there, facing out of the land; what the
+## spills carry is what the kernel drains. On the native kernel and the
+## mirror.
+func shore_falls(data: NativeTerrainData, native: bool) -> void:
+	Genesis.shape(data,31)
+	var flow: RefCounted = preload("res://scripts/water_flow.gd").new(data,native)
+	await flow.setup()
+	var label := "native" if native else "mirror"
+	if native and not flow.native:
+		check(false,"The native kernel is built")
+		data.release_listeners()
+		return
+	# The bay: the deepest dip of the shore's reach round the middle, below
+	# both its neighbours' reach a quarter turn either way.
+	var reach := PackedFloat32Array()
+	for k in range(144):
+		var way := Vector2.from_angle(TAU*k/144.0)
+		var r := 0.0
+		while data.ground_height(way*(r+0.1)) != null and r < 20.0: r += 0.1
+		reach.append(r)
+	var bay := -1
+	var deepest := 0.0
+	for k in range(144):
+		var dip := minf(reach[(k+18)%144],reach[(k+126)%144])-reach[k]
+		if dip > deepest:
+			deepest = dip
+			bay = k
+	check(bay >= 0 and deepest > 1.0,"Seed 31's island has a bay (%.1f m deep)" % deepest)
+	var way := Vector2.from_angle(TAU*bay/144.0)
+	var head := way*reach[bay]
+	var spring := way*maxf(reach[bay]-1.2,0.0)
+	flow.springs.append({"x":spring.x,"z":spring.y,"rate":0.06,"radius":0.5,"age":100.0})
+	for k in range(150): flow.run(4)
+	var detect: Dictionary = preload("res://scripts/edge_falls.gd").DETECT.duplicate()
+	var spills: Array = flow.spills(detect)
+	print("%s bay at %s: spills %s" % [label,head,spills.map(func(s: Dictionary) -> String: return "%s %s %.4f" % [s.lip,s.normal,s.flux])])
+	check(not spills.is_empty(),"%s: water poured by the bay leaves over its shore" % label)
+	if spills.is_empty():
+		data.release_listeners()
+		return
+	var first: Dictionary = spills[0]
+	var lip: Vector3 = first.lip
+	check(Vector2(lip.x,lip.z).distance_to(head) < 3.0,"%s: the largest spill is at the bay (%.2f m from its head)" % [label,Vector2(lip.x,lip.z).distance_to(head)])
+	check((first.normal as Vector2).dot(way) > 0.5,"%s: it pours out of the bay, away from the land (%s)" % [label,first.normal])
+	check(float(first.speed) >= 0.0 and float(first.half) > 0.0 and float(first.depth) > 0.0,"%s: it has a speed, a width and a brink" % label)
+	check(absf(float(first.lip.y)-float(data.ground_height(Vector2(lip.x,lip.z)-(first.normal as Vector2)*0.3)))< 0.6,"%s: the lip is at the ground's edge, not hanging" % label)
+	for spill: Dictionary in spills: check_on_shore(data,spill)
+	# What the spills carry is what leaves the island: every cell the kernel
+	# drains over is counted, and the spills take all of it but crumbs.
+	detect.max = 64
+	var all: Array = flow.spills(detect)
+	var carried := 0.0
+	for spill: Dictionary in all: carried += float(spill.flux)
+	var leaving: Dictionary = flow.kernel.edge_leaving(0.0)
+	var counted := 0.0
+	for rate in leaving.rate: counted += rate
+	var stats: Dictionary = flow.stats()
+	check(absf(counted-float(stats.edge_flux)) < 0.00001,"%s: edge_leaving counts every edge cell's outflow (%.5f of %.5f m³/s)" % [label,counted,stats.edge_flux])
+	check(carried <= float(stats.edge_flux)+0.00001 and carried >= 0.9*float(stats.edge_flux),"%s: the spills carry what drains (%.5f of %.5f m³/s)" % [label,carried,stats.edge_flux])
+	var balance := float(stats.poured)-float(stats.volume)-float(stats.drained)-float(stats.soaked)-float(stats.removed)
+	check(absf(balance) < 0.01*maxf(float(stats.poured),1.0),"%s: every litre poured is standing, drained or soaked (%.4f m³ off)" % [label,balance])
+	data.release_listeners()
+
+## An editor as the edge falls read it: the terrain's frame, the earth sides
+## and the land.
+func stand_in(data: NativeTerrainData, sides: ArrayMesh) -> Node:
+	var script := GDScript.new()
+	script.source_code = "extends Node\nvar terrain: Node3D\nvar _skirt: MeshInstance3D\nvar data: NativeTerrainData\n"
+	script.reload()
+	var editor: Node = script.new()
+	editor.terrain = Node3D.new()
+	editor._skirt = MeshInstance3D.new()
+	editor._skirt.mesh = sides
+	editor.data = data
+	editor.add_child(editor.terrain)
+	editor.add_child(editor._skirt)
+	root.add_child(editor)
+	return editor
+
+## The edge fall off a bay: it pours out over the sky, hugs the shore wall
+## down to its foot and falls free below it; under rock that falls away
+## beneath the lip it leaves the rock there and falls free.
+func shore_course(data: NativeTerrainData) -> void:
+	Genesis.shape(data,31)
+	var flow: RefCounted = preload("res://scripts/water_flow.gd").new(data)
+	await flow.setup()
+	flow.springs.append({"x":-2.7,"z":-0.35,"rate":0.06,"radius":0.5,"age":100.0})
+	for k in range(150): flow.run(4)
+	var wall := preload("res://scripts/island_shore.gd").build(data,Transform3D(),null)
+	var editor := stand_in(data,wall)
+	var falls: Node3D = preload("res://scripts/edge_falls.gd").new()
+	falls.setup(flow,editor)
+	for k in range(5): falls._read(0.25)
+	falls._ease(10.0)
+	var standing: Array = falls.describe()
+	check(standing.size() == 1,"One edge fall stands at the bay (%d)" % standing.size())
+	if standing.size() == 1:
+		var fall: Dictionary = falls._falls[0]
+		var rings: Dictionary = falls._rings(fall,1.0,falls._strength(fall.now.flux))
+		var lip: Vector3 = fall.now.lip
+		var n: Vector2 = fall.now.normal
+		var points: PackedVector3Array = rings.points
+		var over_land := 0
+		var behind := 0
+		var widest := 0.0
+		var last_face: int = falls.BEND_RINGS+falls.FACE_RINGS-1
+		for r in range(1,points.size()):
+			var flat := Vector2(points[r].x,points[r].z)
+			var out := (flat-Vector2(lip.x,lip.z)).dot(n)
+			if out < 0.0: behind += 1
+			if points[r].y > lip.y-0.3 and data.ground_height(flat) != null: over_land += 1
+			if r <= last_face: widest = maxf(widest,out)
+		print("bay fall: lip %s, normal %s, face %.2f m, out to %.2f m on the face" % [lip,n,float(rings.face_drop),widest])
+		check(behind == 0 and over_land == 0,"The fall pours out over the sky, never back into the land (%d behind, %d over land)" % [behind,over_land])
+		check(absf(float(fall.bottom)-NativeTerrainData.SLAB_BASE) < 0.5,"It hugs the shore wall down to its foot (%.2f)" % float(fall.bottom))
+		check(widest < 0.8,"It clings to the wall rather than flying off it (%.2f m out)" % widest)
+		check(points[points.size()-1].y < float(fall.bottom)-1.0,"Below the wall it falls free")
+		# Rock that recedes 2 m back under the lip from 3 m down: the fall
+		# leaves it there.
+		var shelf := ArrayMesh.new()
+		var at := Vector3(lip.x,0.0,lip.z)
+		var nn := Vector3(n.x,0.0,n.y)
+		var side := Vector3(-n.y,0.0,n.x)*3.0
+		var top := at+Vector3.UP*(lip.y+0.5)
+		var knee := at+Vector3.UP*(lip.y-3.0)
+		var foot := at-nn*2.0+Vector3.UP*(lip.y-6.0)
+		var soup := PackedVector3Array()
+		for quad in [[top,knee],[knee,foot]]:
+			var a: Vector3 = quad[0]
+			var b: Vector3 = quad[1]
+			# Wound to face out, as the earth sides are ((c-a)×(b-a) out).
+			soup.append_array([a-side,b+side,a+side,a-side,b-side,b+side])
+		var arrays := []
+		arrays.resize(Mesh.ARRAY_MAX)
+		arrays[Mesh.ARRAY_VERTEX] = soup
+		shelf.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
+		var faces := shelf.get_faces()
+		var front := (faces[2]-faces[0]).cross(faces[1]-faces[0])
+		check(front.dot(nn) > 0.0,"The test's rock faces out")
+		editor._skirt.mesh = shelf
+		rings = falls._rings(fall,1.0,falls._strength(fall.now.flux))
+		print("receding rock: bottom %.2f (knee %.2f)" % [float(fall.bottom),knee.y])
+		check(float(fall.bottom) < knee.y+0.05 and float(fall.bottom) > knee.y-0.9,"Where the rock falls away under it the fall leaves it (%.2f, knee %.2f)" % [float(fall.bottom),knee.y])
+	falls.free()
+	editor.queue_free()
+	data.release_listeners()
+
+## The square plate's spills are the kernel's own, along its four sides, as
+## before islands had shores: the outline's path never touches them.
+func square_falls(data: NativeTerrainData) -> void:
+	Genesis.shape(data,31,Vector2.ZERO,false)
+	check(data.outline.is_empty(),"A square plain")
+	var flow: RefCounted = preload("res://scripts/water_flow.gd").new(data)
+	await flow.setup()
+	for spot in [Vector2(13.6,-3.0),Vector2(-13.6,4.0),Vector2(2.0,13.6)]:
+		flow.springs.append({"x":spot.x,"z":spot.y,"rate":0.06,"radius":0.5,"age":100.0})
+	for k in range(150): flow.run(4)
+	var detect: Dictionary = preload("res://scripts/edge_falls.gd").DETECT
+	var spills: Array = flow.spills(detect)
+	print("square spills: ",spills.map(func(s: Dictionary) -> String: return "%d %s %.4f" % [s.side,s.lip,s.flux]))
+	check(spills.size() >= 3,"Water leaves the square over its sides (%d spills)" % spills.size())
+	check(spills == flow.kernel.spills(detect),"The square's spills are the kernel's, untouched")
+	for spill: Dictionary in spills: check(int(spill.side) >= 0 and absf(maxf(absf(spill.lip.x),absf(spill.lip.z))-14.0) < 0.01,"A square spill's lip is on the rim")
 	data.release_listeners()
 
 ## A far island is baked as scripts/sky_islands.gd `_bake` does: a detached
