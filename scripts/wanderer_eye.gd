@@ -110,7 +110,7 @@ const Disturbance = preload("res://scripts/disturbance.gd")
 const Footbridge = preload("res://scripts/footbridge.gd")
 const HINT := "Mouse to look  ·  WASD or arrows to walk  ·  Shift to run  ·  Space to jump, hold to glide  ·  V or Esc to step out"
 const PERCH_HINT := "Mouse to look  ·  WASD or arrows to walk  ·  Walk off the edge or hold Space to glide  ·  V or Esc to step out"
-const FLY_HINT := "Mouse or A D to turn  ·  W S to pitch  ·  Click or E to flap  ·  Space to rise  ·  Shift to dive  ·  Right mouse to look round  ·  C for the camera  ·  V or Esc to step out"
+const FLY_HINT := "Mouse or A D to turn  ·  W S to pitch  ·  Click or E to flap  ·  Space to rise  ·  Shift to dive  ·  F to land  ·  Right mouse to look round  ·  C for the camera  ·  V or Esc to step out"
 const SkyGlide = preload("res://scripts/sky_glide.gd")
 const SkyIslands = preload("res://scripts/sky_islands.gd")
 const SkyIslets = preload("res://scripts/sky_islets.gd")
@@ -148,6 +148,8 @@ const RIDGE_REACH := 14.0
 const GUST_LIFT := 9.0
 const GUST_PUSH := 5.0
 const LAND_TIME := 0.3
+## F lands on the nearest island this near (m, in the plate plane).
+const LANDING_REACH := 160.0
 
 signal entered
 signal left
@@ -226,9 +228,6 @@ var _jump_was := false
 var perch := {}
 var _perch_feet := Vector3.ZERO
 var _perch_eye := EYE_HEIGHT
-## What the copies were last built from, so a glide opened again from the
-## same island keeps the sky as it was.
-var _built_key := []
 ## Tree and rock crowns in the plate plane: (x, z, radius, top), terrain-local.
 var _crowns := PackedVector4Array()
 ## Footprint profile of a mesh: [y0, band height, radius per band...].
@@ -280,6 +279,9 @@ func setup(owner_scene: Node3D) -> void:
 		# glide can ride, and an isle's trees turn it aside (SkyGlide
 		# `stone`).
 		glide.stone = Callable(islands,"stone")
+		# A world loaded before the islands were made left its sky here.
+		var places: Variant = scene.get("places")
+		if places is Node: islands.load_state(places.sky_state)
 		sky = SkyFlight.new()
 		add_child(sky)
 		sky.setup(scene)
@@ -336,7 +338,8 @@ func _build_figure() -> void:
 	if islands != null: islands.skip.append(figure)
 
 func _world_restored(state: Dictionary) -> void:
-	if state.is_empty(): forget()
+	# A claimed island's plain is formed under the glide, not a new world.
+	if state.is_empty() and not (islands != null and islands.claiming): forget()
 
 ## The figure is gone, stepped out of first if the eye is in it; V sets a
 ## new one down.
@@ -726,11 +729,8 @@ func _launch(pace: float, drop := true) -> void:
 	_hop = 0.0
 	_hop_rise = 0.0
 	_hop_held = -1.0
-	# The sky stays as it was unless the island has changed since.
-	var key := [editor.data.objects_revision,hash(editor.data.heights)]
-	if not islands.built() or key != _built_key:
-		islands.build()
-		_built_key = key
+	# The sky stays as it was between glides.
+	if not islands.built(): islands.build()
 	if not perched: _far_before = camera.far
 	camera.far = FLY_FAR
 	islands.show_air(true)
@@ -793,7 +793,12 @@ func _advance_flight(delta: float) -> void:
 		return
 	var input := _fly_input()
 	_read_obstacles(false)
+	if glide.approach: glide.approach_target = _landing_spot()
 	glide.step(delta,input,_fly_ground,_fly_air)
+	# Into another island's footprint, it becomes the plate.
+	if not islands.claiming:
+		var under: int = islands.copy_under(glide.position)
+		if under >= 0: _claim(under)
 	sky.advance(delta,glide.position,islands.in_cloud(glide.position,scene._motion_time))
 	# Wandered off or fallen into the sea, an island turns up.
 	islands.advance(delta,glide.position,glide.heading,sky.flight.w)
@@ -821,6 +826,31 @@ func _advance_flight(delta: float) -> void:
 	if _skim_time >= LAND_TIME:
 		if on_plate: _land()
 		else: _perch(islet)
+
+## Where F comes in to land: the middle of the nearest island within
+## LANDING_REACH, or INF.
+func _landing_spot() -> Vector3:
+	var best := Vector3.INF
+	var nearest := LANDING_REACH
+	var middles: Array[Vector3] = [editor.terrain.global_position]
+	for i in range(islands.offsets.size()): middles.append(editor.terrain.global_position+islands.offsets[i]+Vector3.DOWN*islands.sunk(i))
+	for m in middles:
+		var d := Vector2(m.x-glide.position.x,m.z-glide.position.z).length()
+		if d < nearest:
+			nearest = d
+			best = m
+	return best
+
+## Claims an island (SkyIslands `claim`); once the plate is its land, the
+## world has shifted, and everything that flies shifts with it.
+func _claim(index: int) -> void:
+	var shift: Vector3 = await islands.claim(index)
+	if not flying or shift == Vector3.ZERO: return
+	glide.position += shift
+	sky.move(shift)
+	glider.shift(shift)
+	chase.eye += shift
+	chase.look += shift
 
 ## The chase camera's pose, written into the scene's orbit.
 func _write_chase() -> void:
@@ -1138,6 +1168,8 @@ func handle(event: InputEvent) -> bool:
 			leave()
 		elif event.pressed and not event.echo and event.keycode == KEY_E and flying and perch.is_empty():
 			_flap_asked = true
+		elif event.pressed and not event.echo and event.keycode == KEY_F and flying and perch.is_empty():
+			glide.approach = not glide.approach
 		elif event.pressed and not event.echo and event.keycode == KEY_C and flying and perch.is_empty():
 			chase.first_person = not chase.first_person
 			glider.visible = not chase.first_person

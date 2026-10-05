@@ -70,6 +70,9 @@ var pool_revision := -1
 var pool_depth := 0.0
 ## True while the current world is a Genesis plain (scripts/genesis_canvas.gd).
 var plain := false
+## The world's islands in the sky (scripts/sky_islands.gd `save_state`), as
+## loaded; the glide's islands take it when they are made (`_sky_load`).
+var sky_state := {}
 
 ## Launch into the Genesis plain unless asked for the old start: --generated
 ## (or --seed N) opens the saved place or the valley as before, --resume opens
@@ -127,6 +130,7 @@ func setup(owner_scene: Node3D, choice := "", land_seed := -1) -> void:
 		scene._refresh_habitat()
 		plain = scene._chunk_editor.data.blank and scene._chunk_editor.data._recipe_settings.is_empty()
 		_sync_plain_day(false)
+	_sky_load(saved.get("islands",{}))
 	scene.position = Vector3.ZERO
 	if saved.get("layout","")!="regrowth": scene._frame_diorama()
 	scene._chunk_editor.save_path = scene.library_path.path_join("Current.json")
@@ -646,10 +650,14 @@ func save_places() -> bool:
 	state.scene._paused = false
 	state.diorama.resident = not _scenery()
 	slots[active] = {"label":_label(scene),"document":scene._chunk_editor.data.to_document(),"state":state}
+	var payload := {"version":1,"layout":"regrowth","active":active,"slots":slots}
+	var islands := _sky()
+	if islands != null: sky_state = islands.save_state()
+	if not sky_state.is_empty(): payload["islands"] = sky_state
 	var temporary: String = primary.places_path+".tmp"
 	var file := FileAccess.open(temporary,FileAccess.WRITE)
 	if file==null: return false
-	file.store_string(JSON.stringify({"version":1,"layout":"regrowth","active":active,"slots":slots},"",true,true))
+	file.store_string(JSON.stringify(payload,"",true,true))
 	file.flush()
 	var result := file.get_error()
 	file.close()
@@ -696,6 +704,7 @@ func open_land(land: String, seed_value: int) -> bool:
 	busy = true
 	_suspend()
 	await _form_land(land,seed_value)
+	_sky_load({})
 	scene._chunk_editor.land_seed = world_seed
 	scene.position = Vector3.ZERO
 	scene._frame_diorama()
@@ -708,6 +717,7 @@ func _restore(saved: Dictionary) -> void:
 	_suspend()
 	slots = saved.slots
 	active = int(saved.active)
+	_sky_load(saved.get("islands",{}))
 	scene._chunk_editor.data.load_document(slots[active].document)
 	scene._chunk_editor.data._undo.clear()
 	scene._chunk_editor.data._redo.clear()
@@ -719,6 +729,16 @@ func _restore(saved: Dictionary) -> void:
 	generated_world = {}
 	world_seed = -1
 	_settled()
+
+## The glide's islands (scripts/sky_islands.gd), or null before they are made.
+func _sky() -> Node:
+	var wanderer: Variant = scene.get("wanderer")
+	return wanderer.get("islands") if wanderer is Node else null
+
+func _sky_load(state: Variant) -> void:
+	sky_state = state if state is Dictionary else {}
+	var islands := _sky()
+	if islands != null: islands.load_state(sky_state)
 
 func _suspend() -> void:
 	if scene.has_method("suspend_creation"): scene.suspend_creation()

@@ -27,6 +27,19 @@ extends Node3D
 ## risen up through the cloud sea (scripts/sky_peaks.gd), giant stone with a
 ## gorge through it. All are solids to the glide (`body`); no island stands
 ## on a range or an isle.
+##
+## Flying into a chunk claims it (`claim`): the island left behind is kept
+## (its land document, in `built_islands`, saved with the world) and its look baked
+## where it stands; the plate is formed as the chunk's plain (or, for an
+## island built before, its land is loaded back); then the whole world is
+## shifted so the chunk's spot becomes the plate's own, and every island
+## moves by the same amount. The chunk showed exactly the plain the plate
+## now holds, so the swap can't be seen, and the ~300 places that assume
+## the plate sits at the origin never notice. An island left as the fresh
+## plain it was claimed as goes back to being a chunk.
+##
+## Only the land travels with an island. The sky, the day and the weather
+## are the world's, and stay as they are.
 
 const HALF := 14.0
 ## Where the copies stand from the plate, in metres: far apart (400 to
@@ -51,6 +64,11 @@ const FALL_RISE := Vector2(140.0,7.0)
 ## it reaches the cushion under the band.
 const THERMAL_SIDE := 24.0
 const THERMAL_DOWN := 25.0
+## Only parts this near the plate's middle, and smaller than this, are
+## hidden while the plate is formed again (`_hide_plate`). That leaves out
+## the sky, the fog and anything else world-sized.
+const NEAR := 22.0
+const LARGEST := 80.0
 ## Height lookups snap to this grid. The terrain data memoises every point
 ## it is asked about, and a glide asks about a great many.
 const SNAP := 0.1
@@ -85,6 +103,15 @@ var peaks: Node3D
 var towers: Node3D
 ## The forested isles (scripts/sky_forest_isles.gd).
 var isles: Node3D
+## The islands built and left, by home key (`_key`): {home, label, document}.
+var built_islands := {}
+## The swaps' shifts added up: the plate's own home is -origin.
+var origin := Vector3.ZERO
+## The seed the plate's plain was formed from when it was claimed, or -1
+## for a world's first island.
+var plate_seed := -1
+## True while a claim is under way.
+var claiming := false
 
 func setup(owner_scene: Node3D) -> void:
 	scene = owner_scene
@@ -118,15 +145,24 @@ func setup(owner_scene: Node3D) -> void:
 	skip.append(isles)
 	show_air(false)
 
-## Sets a flat chunk at every offset, replacing any earlier ones.
+## Sets an island at every fixed slot and every island built, except the
+## plate's own, replacing any earlier ones.
 func build() -> void:
 	clear()
-	currents.position = Vector3.ZERO
 	clouds.reset()
 	var slots := [Vector3.ZERO]
 	slots.append_array(OFFSETS)
 	cells = SkyCells.new(slots)
-	for offset: Vector3 in OFFSETS: _add(offset,offset,Vector3.ZERO)
+	cells.origin = origin
+	currents.position = origin
+	clouds.move(origin)
+	var spots: Array = slots.duplicate()
+	for entry: Dictionary in built_islands.values():
+		if not _fixed(entry.home): spots.append(entry.home)
+	for home: Vector3 in spots:
+		if SkyCells._flat(home,-origin) < 1.0: continue
+		_add(home,home+origin,Vector3.ZERO)
+		if not _fixed(home): _thermal(home)
 	_islet_materials()
 	islets.reset(cells)
 	peaks.ground_source = islets.ground_source
@@ -153,7 +189,7 @@ func clear() -> void:
 	if towers != null: towers.clear()
 	if isles != null: isles.clear()
 
-func _add(home: Vector3, at: Vector3, rise: Vector3) -> void:
+func _add(home: Vector3, at: Vector3, rise: Vector3) -> Node3D:
 	var island := Node3D.new()
 	island.name = "Island%d" % get_child_count()
 	island.position = at+Vector3.DOWN*rise.x
@@ -164,7 +200,8 @@ func _add(home: Vector3, at: Vector3, rise: Vector3) -> void:
 	_rise.append(rise)
 	lands.append(null)
 	seeds.append(seed_of(home))
-	_bake(island,seeds[-1])
+	_bake(island,seeds[-1],built_islands.get(_key(home),{}).get("document",{}))
+	return island
 
 ## Each frame of the glide: copies rise, a new one turns up if the glide has
 ## wandered off or fallen into the sea (SkyCells `advance`), the farthest
@@ -196,9 +233,11 @@ func realise(home: Vector3, kind: String) -> void:
 	var at := home+cells.origin
 	_add(home,at,_rise_for(kind))
 	_newest = home
-	if _fixed(home): return
+	if not _fixed(home): _thermal(home)
+
+func _thermal(home: Vector3) -> void:
 	var a := fposmod(home.x*0.37+home.z*0.71,TAU)
-	currents.add_thermal(at+Vector3(cos(a),0.0,sin(a))*THERMAL_SIDE+Vector3.DOWN*THERMAL_DOWN,_key(home))
+	currents.add_thermal(home+cells.origin+Vector3(cos(a),0.0,sin(a))*THERMAL_SIDE+Vector3.DOWN*THERMAL_DOWN,_key(home))
 
 func _rise_for(kind: String) -> Vector3:
 	var r := FALL_RISE if kind == "fall" else WANDER_RISE
@@ -220,8 +259,8 @@ func sunk(index: int) -> float:
 	if r == Vector3.ZERO: return 0.0
 	return r.x*(1.0-smoothstep(0.0,r.z,r.y))
 
-## Lets go of the farthest copies past CAP, never the nearest to the eye or
-## the newest.
+## Lets go of the farthest copies past CAP, never the nearest to the eye,
+## the newest or one you built.
 func trim(eye: Vector3) -> void:
 	if _copies.size() <= CAP: return
 	var keep := []
@@ -232,15 +271,15 @@ func trim(eye: Vector3) -> void:
 		if d < nearest:
 			nearest = d
 			near_i = i
-		if homes[i].distance_to(_newest) < 1.0: keep.append(i)
+		if homes[i].distance_to(_newest) < 1.0 or built_islands.has(_key(homes[i])): keep.append(i)
 	keep.append(near_i)
 	var freed := SkyCells.trim(eye,offsets,CAP,keep)
 	freed.sort()
 	freed.reverse()
 	for i in freed: _free(i)
 
-func _free(index: int) -> void:
-	if not _fixed(homes[index]): currents.drop_thermals(_key(homes[index]))
+func _free(index: int, thermal := true) -> void:
+	if thermal and not _fixed(homes[index]): currents.drop_thermals(_key(homes[index]))
 	_copies[index].queue_free()
 	_copies.remove_at(index)
 	offsets.remove_at(index)
@@ -269,11 +308,11 @@ static func seed_of(home: Vector3) -> int:
 	return int(SkyCells.noise(Vector2i(roundi(home.x),roundi(home.z)),11)*1000000.0)
 
 ## On a worker, a detached copy of the land is shaped as the Quiet plain from
-## `chunk_seed` and its mesh built, as the flip bakes its underside
-## (scripts/diorama_flip.gd `_bake_underside`); its earth sides are fitted
+## `chunk_seed`, or given a built island's `document`, and its mesh built,
+## as the flip bakes its underside (scripts/diorama_flip.gd `_bake_underside`); its earth sides are fitted
 ## here on the main thread. Drawn with the plate's own ground and earth-side
 ## materials, only the plate's palette carries over, never what stands on it.
-func _bake(island: Node3D, chunk_seed: int) -> void:
+func _bake(island: Node3D, chunk_seed: int, document: Dictionary = {}) -> void:
 	var land := editor.data
 	var mesh := land.source_mesh
 	var arrays := land._arrays.duplicate()
@@ -288,7 +327,7 @@ func _bake(island: Node3D, chunk_seed: int) -> void:
 		plain._ground_tint = tint
 		plain.world_offset = offset
 		plain.setup(mesh,arrays)
-		Genesis.shape(plain,chunk_seed)
+		if document.is_empty() or not plain.load_document(document): Genesis.shape(plain,chunk_seed)
 		baked.append(plain)
 		baked.append(plain.build_mesh()))
 	while not WorkerThreadPool.is_task_completed(task): await get_tree().process_frame
@@ -301,6 +340,112 @@ func _bake(island: Node3D, chunk_seed: int) -> void:
 	var sides := _copy(editor._skirt,editor.skirt_mesh_for(baked[0]))
 	island.add_child(ground)
 	island.add_child(sides)
+
+## The copy whose footprint holds a global point, or -1. A copy still
+## rising or baking can't be claimed yet.
+func copy_under(point: Vector3) -> int:
+	for i in range(offsets.size()):
+		if _rise[i] != Vector3.ZERO or lands[i] == null: continue
+		var local := editor.terrain.to_local(point-offsets[i])
+		if absf(local.x) <= HALF and absf(local.z) <= HALF: return i
+	return -1
+
+## Makes copy `index` the plate. The island left is kept, and its look baked
+## at the plate's spot; the plate's own parts hide while it is formed again
+## as the copy's land; then every copy moves by the shift, which is returned
+## to add to anything that flies. The world is saved after.
+func claim(index: int) -> Vector3:
+	claiming = true
+	var target := homes[index]
+	var places: Node = scene.get("places")
+	if places != null: places.busy = true
+	var left := -origin
+	editor.finish_stroke()
+	var fresh := plate_seed >= 0 and editor.data._undo.is_empty()
+	if not fresh: built_islands[_key(left)] = {"home":left,"label":_label(),"document":editor.data.to_document()}
+	var behind := _add(left,Vector3.ZERO,Vector3.ZERO)
+	while _copies.has(behind) and lands[_copies.find(behind)] == null: await get_tree().process_frame
+	var hidden := _hide_plate()
+	var entry: Dictionary = built_islands.get(_key(target),{})
+	if entry.is_empty() or not editor.data.load_document(entry.document):
+		await Genesis.form(editor,Genesis.world(seed_of(target)),true)
+		plate_seed = seed_of(target)
+	else:
+		await editor.refresh(get_tree())
+		plate_seed = -1
+	built_islands.erase(_key(target))
+	editor.data._undo.clear()
+	editor.data._redo.clear()
+	if scene.has_method("_refresh_habitat"): scene._refresh_habitat()
+	# The copy may have moved in the list while the plate formed.
+	var shift := Vector3.ZERO
+	index = homes.find(target)
+	if index >= 0:
+		shift = -offsets[index]
+		_free(index,false)
+	for i in range(offsets.size()):
+		offsets[i] += shift
+		_copies[i].position = offsets[i]+Vector3.DOWN*sunk(i)
+	origin += shift
+	cells.origin = origin
+	currents.position += shift
+	clouds.move(shift)
+	_show_plate(hidden)
+	if places != null:
+		places.busy = false
+		places.save_places()
+	claiming = false
+	return shift
+
+func _label() -> String:
+	var places: Node = scene.get("places")
+	return places._label(scene) if places != null else "Island"
+
+## The plate's drawn parts, put on no render layer, each with the layers it
+## had (`_show_plate` gives them back).
+func _hide_plate() -> Dictionary:
+	var hidden := {}
+	var stack: Array[Node] = [scene]
+	while not stack.is_empty():
+		var node: Node = stack.pop_back()
+		if node == self or node in skip or node is Camera3D: continue
+		for child in node.get_children(): stack.append(child)
+		if not node is GeometryInstance3D: continue
+		var part := node as GeometryInstance3D
+		var box := part.global_transform*part.get_aabb()
+		var middle := box.get_center()
+		if absf(middle.x) > NEAR or absf(middle.z) > NEAR: continue
+		if box.size.x > LARGEST or box.size.z > LARGEST: continue
+		hidden[part] = part.layers
+		part.layers = 0
+	return hidden
+
+func _show_plate(hidden: Dictionary) -> void:
+	for part: Variant in hidden:
+		if is_instance_valid(part): (part as GeometryInstance3D).layers = hidden[part]
+
+## What the world's save keeps of the sky: where the plate stands, what it
+## was claimed as, and the islands built and left.
+func save_state() -> Dictionary:
+	var kept := []
+	for entry: Dictionary in built_islands.values():
+		kept.append({"home":[entry.home.x,entry.home.y,entry.home.z],"label":entry.label,"document":entry.document})
+	return {"origin":[origin.x,origin.y,origin.z],"plate_seed":plate_seed,"built":kept}
+
+## Takes a world's saved sky (`save_state`), or none for a new world. The
+## islands stand again at the next glide.
+func load_state(state: Dictionary) -> void:
+	clear()
+	built_islands = {}
+	origin = Vector3.ZERO
+	plate_seed = -1
+	var at: Variant = state.get("origin")
+	if at is Array and at.size() == 3: origin = Vector3(float(at[0]),float(at[1]),float(at[2]))
+	plate_seed = int(state.get("plate_seed",-1))
+	for entry: Variant in state.get("built",[]):
+		if not entry is Dictionary or not entry.get("home") is Array or entry.home.size() != 3 or not entry.get("document") is Dictionary: continue
+		var home := Vector3(float(entry.home[0]),float(entry.home[1]),float(entry.home[2]))
+		built_islands[_key(home)] = {"home":home,"label":str(entry.get("label","Island")),"document":entry.document}
 
 ## A new instance of `source` that shares its materials, and its mesh unless
 ## given `drawn`.
