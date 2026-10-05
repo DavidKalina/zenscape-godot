@@ -1,6 +1,6 @@
 extends Node
-## A first test for a human who roams the chunk: a small figure stands on the
-## land and the camera can step into its eyes. V with the pointer on the land
+## A first test for a human who roams the chunk: an unseen figure stands on
+## the land and the camera can step into its eyes. V with the pointer on the land
 ## sets the figure down there (or picks it up and moves it) and looks out
 ## through it; V with the pointer off the land steps into it where it stands.
 ## In its eyes the mouse is captured: move to look, WASD or the arrows walk,
@@ -389,45 +389,12 @@ func setup(owner_scene: Node3D) -> void:
 
 # --- The figure -------------------------------------------------------------------
 
-## A plain little person: a capsule body, a head and a pale face side so its
-## heading reads from the orbit.
+## Where the walker stands and faces, kept as a bare node: it is never drawn
+## (the parked plane shows where you came down), only remembered for the
+## next V and moved through the hop in and out of the plane.
 func _build_figure() -> void:
 	figure = Node3D.new()
 	figure.name = "Wanderer"
-	var cloth := StandardMaterial3D.new()
-	cloth.albedo_color = Color("c8643b")
-	cloth.roughness = 0.85
-	var skin := StandardMaterial3D.new()
-	skin.albedo_color = Color("e8c39e")
-	skin.roughness = 0.7
-	var body := MeshInstance3D.new()
-	var capsule := CapsuleMesh.new()
-	capsule.radius = 0.14
-	capsule.height = FIGURE_HEIGHT*0.78
-	capsule.radial_segments = 12
-	capsule.rings = 4
-	body.mesh = capsule
-	body.material_override = cloth
-	body.position.y = capsule.height*0.5
-	figure.add_child(body)
-	var head := MeshInstance3D.new()
-	var sphere := SphereMesh.new()
-	sphere.radius = 0.1
-	sphere.height = 0.2
-	sphere.radial_segments = 12
-	sphere.rings = 6
-	head.mesh = sphere
-	head.material_override = skin
-	head.position.y = FIGURE_HEIGHT-0.1
-	figure.add_child(head)
-	# A nose, so which way it faces reads from above.
-	var nose := MeshInstance3D.new()
-	var box := BoxMesh.new()
-	box.size = Vector3(0.04,0.04,0.06)
-	nose.mesh = box
-	nose.material_override = skin
-	nose.position = Vector3(0.0,FIGURE_HEIGHT-0.1,-0.11)
-	figure.add_child(nose)
 	editor.terrain.add_child(figure)
 	if islands != null: islands.skip.append(figure)
 
