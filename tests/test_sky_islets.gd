@@ -24,6 +24,7 @@ func _initialize() -> void:
 	_same_seed()
 	_outlines()
 	_ground_over_stone()
+	_weathered()
 	_mesh_matches()
 	_pond()
 	_fall()
@@ -142,6 +143,50 @@ func _ground_over_stone() -> void:
 	check(worst >= 1.0,"The ground stands over the rock everywhere (least %.2f m)" % worst)
 	check(out_ok,"Inside is the outline's faces, and past its reach is off the land")
 	check(deep_ok,"The rock hangs deep under the middle")
+
+## Their edges are weathered, as the islands' land: the rim wanders and
+## slumps, the erosion cuts gullies down to the shore and the walls slump
+## out and overhang; at a spring's lip the wall stands back for its fall.
+func _weathered() -> void:
+	var islets := _sample(40)
+	var ragged := 0
+	var gullied := 0
+	var slumped := 0
+	for islet: RefCounted in islets:
+		var low := INF
+		var high := -INF
+		var cut_shore := 0
+		for k in range(0,islet.shore_edges.size(),3):
+			var i: int = islet.shore_edges[k]
+			low = minf(low,islet.heights[i])
+			high = maxf(high,islet.heights[i])
+			if islet.wear[i] > 0.12: cut_shore += 1
+		if high-low > 0.35: ragged += 1
+		if cut_shore >= 2: gullied += 1
+		# The wall's facet ring: out past the rim in places, under it in others.
+		var sides: PackedVector3Array = islet.side_arrays()[Mesh.ARRAY_VERTEX]
+		var out_of_rim := 0
+		for v in sides:
+			if v.y > islet.base+0.2 and v.y < islet.heights[0]+5.0 and not islet.inside(Vector2(v.x,v.z)): out_of_rim += 1
+		if out_of_rim > 20: slumped += 1
+	check(ragged >= islets.size()*0.9,"The rim wanders and slumps, never one level (%d of %d)" % [ragged,islets.size()])
+	check(gullied >= islets.size()*0.7,"Erosion cuts gullies down to the shore (%d of %d)" % [gullied,islets.size()])
+	check(slumped >= islets.size()*0.9,"The walls slump out past the rim (%d of %d)" % [slumped,islets.size()])
+	var clear := true
+	for s in range(8):
+		var spring: RefCounted = SkyIslet.make(31337+s*101,"spring")
+		var lip := Vector3(spring.lip.x,0.0,spring.lip.y)
+		var out := Vector3(spring.lip_out.x,0.0,spring.lip_out.y)
+		# The wall's rings under the shore near the lip stand no further out
+		# than LIP_CLEAR ahead of it, inside the overhang the fall clears
+		# (SkyIslets `_fall_rings`).
+		var outward: Dictionary = SkyIslets.IslandShore._outward(spring.points,spring.shore_edges)
+		var slump := FastNoiseLite.new()
+		for i: int in outward:
+			if spring.points[i].distance_to(spring.lip) > 1.5: continue
+			for v: Vector3 in spring._wall_rings(i,outward[i],slump):
+				if (Vector3(v.x,0.0,v.z)-lip).dot(out) > SkyIslet.LIP_CLEAR+0.001: clear = false
+	check(clear and SkyIslet.LIP_CLEAR < SkyIslets.IslandShore.RING_OUT.y+0.05,"At a spring's lip the wall stands back for the fall")
 
 func _mesh_matches() -> void:
 	for kind in ["meadow","grove","hills","crag","spring","shore"]:

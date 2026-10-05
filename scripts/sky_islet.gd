@@ -12,13 +12,17 @@ extends RefCounted
 ##     and warped as an island is; then its shore distance and edges;
 ##   the top: heights on the grid's points, a seeded field by kind (KINDS)
 ##     eased to Genesis RIM_HEIGHT over the last metres before the shore as
-##     the plain is (scripts/genesis_canvas.gd `shape`), drawn as the plate
+##     the plain is (scripts/genesis_canvas.gd `shape`), to a rim that
+##     wanders and slumps, then weathered by the plate's own erosion
+##     (scripts/terrain_erosion.gd, `_erode`): gullies and runnels cut down
+##     to the shore and break the lip, scree left in them; drawn as the plate
 ##     draws its ground: one flat face a triangle in the world's grass greens,
 ##     rock where a face is steeper than the palette's rock slope, sand at a
 ##     pond's bank and on a beach;
 ##   the sides: the islands' shore wall and the hanging rock under the land
 ##     (scripts/island_shore.gd: its facet ring, `keel`), from a shallower
-##     foot (BASE), in the earth sides' strata;
+##     foot (BASE), in the earth sides' strata; the wall slumps out and
+##     overhangs along the shore and bulges part way down (`_wall_rings`);
 ##   what grows: object records like the plate's ({asset, x, z, angle, scale,
 ##     tint}), drawn with the plate's own catalog (GardenView, through
 ##     scripts/garden_instance_samples.gd `add_item`): the world's tree
@@ -44,6 +48,7 @@ const Emergence = preload("res://scripts/emergence.gd")
 const Stands = preload("res://scripts/tree_stands.gd")
 const MeadowTypes = preload("res://scripts/meadow_types.gd")
 const Samples = preload("res://scripts/garden_instance_samples.gd")
+const Erosion = preload("res://scripts/terrain_erosion.gd")
 
 ## Kinds and how often each turns up.
 const KINDS := [["meadow",0.22],["grove",0.22],["hills",0.15],["crag",0.11],["spring",0.18],["shore",0.12]]
@@ -81,6 +86,38 @@ const KNOB := Vector2(0.35,0.6)
 ## The earth wall's foot under the rim (m): BASE.x plus BASE.y a metre of
 ## radius. The hanging rock (IslandShore `keel`) hangs from it.
 const BASE := Vector2(1.5,0.25)
+## The rim (the ground's height at the shore): how far it wanders up and
+## down (m), how far it slumps where the lip has broken away (m), over
+## waves LIP_WAVE (1/m).
+const LIP := Vector2(0.16,0.4)
+const LIP_WAVE := 0.32
+## The erosion (`_erode`): its grid reaches ERODE_MARGIN m past the land,
+## the sky round it stands ERODE_DROP m under the lowest rim, and its
+## strengths by kind over the common settings (TerrainErosion `erode`; the
+## plate's own families run 0.004 to 0.010 for k and 0.3 to 1.1 m of cut,
+## an islet a little harder, so its small slopes show their weathering).
+const ERODE_MARGIN := 1.5
+const ERODE_DROP := 1.5
+const ERODE_COMMON := {"frequency":0.32,"warp":1.3,"slope_ref":1.0,"iterations":16,"channel_area":1.5,"jitter":0.6,
+	"deposit":0.45,"deposit_slope":0.35,"deposit_cap":0.06}
+const ERODE := {"meadow":{"detail":0.12,"k":0.02,"max_cut":0.5},"grove":{"detail":0.14,"k":0.02,"max_cut":0.55},
+	"hills":{"detail":0.3,"k":0.025,"max_cut":0.8},"crag":{"detail":0.5,"k":0.03,"max_cut":1.0},
+	"spring":{"detail":0.12,"k":0.02,"max_cut":0.5},"shore":{"detail":0.06,"k":0.015,"max_cut":0.35}}
+## Scree: ground the erosion cut this deep (m) and at least this steep
+## turns to gravel and earth, and a few loose stones lie in the deepest
+## gullies (SCREE_STONES).
+const SCREE := Vector2(0.12,0.3)
+const SCREE_STONES := Vector2i(0,4)
+## The shore wall: its facet ring's drop under the rim (m) and how far it
+## stands out (m, negative undercut under an overhanging lip), wandering
+## along the shore so the earth slumps out in places; a second ring part
+## way down bulges by up to WALL_BULGE m. Near the spring's lip the wall
+## stands back at most LIP_CLEAR m, so its fall pours clear.
+const WALL_DROP := Vector2(0.35,1.5)
+const WALL_OUT := Vector2(-0.12,0.45)
+const WALL_BULGE := 0.3
+const WALL_WAVE := 0.45
+const LIP_CLEAR := 0.15
 ## The pond: its radius (m, and share of the islet's radius at most), the
 ## bowl's depth under the water, the water's level, and the channel's half
 ## width (m) out to the lip on the rim, where the fall pours off.
@@ -181,6 +218,8 @@ var shore_edges := PackedInt32Array()
 ## Each point's ground height, and how far under BASE the rock hangs.
 var heights := PackedFloat32Array()
 var keel := PackedFloat32Array()
+## How deep the erosion cut each point (m): gully floors and scree.
+var wear := PackedFloat32Array()
 ## The wall's foot (m, under 0), and how deep the islet hangs at its deepest
 ## (m, positive).
 var base := -2.5
@@ -330,6 +369,10 @@ func _lay_ground(rng: RandomNumberGenerator) -> void:
 		var knob := _inland_point(rng,inland*0.2)
 		mounds.append(Vector4(knob.x,knob.y,radius*rng.randf_range(0.35,0.5),peak*rng.randf_range(KNOB.x,KNOB.y)))
 	var ease := minf(RIM_EASE,radius*RIM_EASE_SHARE)
+	var lip_noise := FastNoiseLite.new()
+	lip_noise.seed = seed+43
+	lip_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	lip_noise.frequency = LIP_WAVE
 	heights.resize(points.size())
 	for i in range(points.size()):
 		var d := shore_distance[i]
@@ -349,8 +392,59 @@ func _lay_ground(rng: RandomNumberGenerator) -> void:
 				h += m.w*fall+RIDGE*fall*(ridge.get_noise_2d(p.x,p.y)*0.5+0.5)
 			else:
 				h += m.w*(1.0-r*r)*(1.0-r*r)
-		heights[i] = lerpf(RIM_HEIGHT,h,smoothstep(0.0,ease,d))
+		# The lip wanders up and down, and slumps in places (`_rim_at`).
+		heights[i] = lerpf(_rim_at(p,lip_noise),h,smoothstep(0.0,ease,d))
+	_erode()
 	if kind == "spring": _cut_pond(rng,inland)
+
+## The rim's height at shore point `p`: RIM_HEIGHT wandering by LIP.x, and
+## slumped down by up to LIP.y where the lip has broken away.
+func _rim_at(p: Vector2, noise: FastNoiseLite) -> float:
+	var wander := noise.get_noise_2d(p.x,p.y)
+	var slump := smoothstep(0.15,0.6,noise.get_noise_2d(p.x+137.0,p.y-59.0))
+	return RIM_HEIGHT+wander*LIP.x-slump*LIP.y
+
+## The plate's erosion (scripts/terrain_erosion.gd `erode`, the stream power
+## the islands' land is weathered by) over the islet's ground, on its own
+## 0.7 m grid over the land: the sky round the land is a fixed outlet just
+## under the lowest rim, so water runs off every side and cuts gullies and
+## runnels down to the shore, breaking the lip where they leave, and the
+## ridged detail roughens the slopes. Each point's cut is kept (`wear`) for
+## the scree it leaves.
+func _erode() -> void:
+	var cell := Erosion.CELL
+	var n := ceili((reach+ERODE_MARGIN)*2.0/cell)+1
+	var origin := -float(n-1)*0.5*cell
+	var low := INF
+	for k in range(0,shore_edges.size(),3): low = minf(low,heights[shore_edges[k]])
+	var base := PackedFloat64Array()
+	var fixed := PackedByteArray()
+	base.resize(n*n)
+	fixed.resize(n*n)
+	for j in range(n):
+		for i in range(n):
+			var p := Vector2(origin+i*cell,origin+j*cell)
+			var hit := _locate(p)
+			var f: int = hit[0]
+			if f < 0:
+				base[j*n+i] = low-ERODE_DROP
+				fixed[j*n+i] = 1
+				continue
+			var w: Vector3 = hit[1]
+			base[j*n+i] = w.x*heights[ids[f*3]]+w.y*heights[ids[f*3+1]]+w.z*heights[ids[f*3+2]]
+	var settings: Dictionary = (ERODE[kind] as Dictionary).duplicate()
+	settings.merge(ERODE_COMMON)
+	settings.merge({"size":n,"cell":cell,"origin":origin,"seed":(seed*7+53) & 0x7fffffff,"edge_inner":1.0e5,"edge_outer":1.0e5+1.0})
+	var delta := Erosion.erode(base,fixed,settings)
+	wear.resize(points.size())
+	wear.fill(0.0)
+	if delta.size() != n*n: return
+	for i in range(points.size()):
+		if shore_distance[i] < 0.0: continue
+		var p := points[i]
+		var cut := Erosion.sample(delta,p.x,p.y,n,origin)
+		heights[i] += cut
+		wear[i] = maxf(-cut,0.0)
 
 ## A land point at least `inside` m in from the shore, seeded; the middle if
 ## none.
@@ -599,6 +693,22 @@ func _plant(rng: RandomNumberGenerator) -> void:
 				continue
 			_add(asset,at,rng.randf()*TAU,rng.randf_range(sizes.x,sizes.y))
 			if asset in ["log","stump"]: taken.append(Vector3(at.x,at.y,0.5))
+	# Loose stones in the deepest gullies, where the erosion cut most.
+	if wear.size() == points.size():
+		var worn := []
+		for i in range(points.size()):
+			if wear[i] > SCREE.y and shore_distance[i] > 0.3 and not wet(points[i]): worn.append([wear[i],i])
+		worn.sort()
+		worn.reverse()
+		var placed := 0
+		var loose := rng.randi_range(SCREE_STONES.x,SCREE_STONES.y)
+		for entry: Array in worn:
+			if placed >= loose: break
+			var p: Vector2 = points[int(entry[1])]+Vector2(rng.randf_range(-0.2,0.2),rng.randf_range(-0.2,0.2))
+			if not inside(p) or _near(p,taken,0.2): continue
+			_add(BOULDERS[rng.randi() % BOULDERS.size()],p,rng.randf()*TAU,rng.randf_range(0.22,0.42))
+			taken.append(Vector3(p.x,p.y,0.3))
+			placed += 1
 	# Reeds and bank grass round the pond's water, and along a beach.
 	if pond.z > 0.0:
 		for n in range(rng.randi_range(REEDS.x,REEDS.y)):
@@ -771,6 +881,7 @@ func top_arrays(palette: Dictionary, shift := Vector3.ZERO) -> Array:
 	var sand: Color = palette.sand
 	var gravel: Color = palette.gravel
 	var rock_slope: float = palette.rock_slope
+	var earth: Color = palette.get("earth",Color(Genesis.FIDELITY.earth).srgb_to_linear())
 	var patch := FastNoiseLite.new()
 	patch.seed = seed+5
 	patch.frequency = 0.4
@@ -800,9 +911,15 @@ func top_arrays(palette: Dictionary, shift := Vector3.ZERO) -> Array:
 		var shimmer := (PlateMesh._hash(f,seed % 9973,5)-0.5)*0.07
 		var n := patch.get_noise_2d(at.x,at.y)*0.5+0.5
 		var tone: Color = grass[1 if n > 0.55 else (2 if n < 0.42 else 0) if grass.size() > 2 else 0]
-		if _slope(f) > rock_slope:
+		var slope := _slope(f)
+		var worn := (wear[ids[f*3]]+wear[ids[f*3+1]]+wear[ids[f*3+2]])/3.0 if wear.size() == points.size() else 0.0
+		var edge := (shore_distance[ids[f*3]]+shore_distance[ids[f*3+1]]+shore_distance[ids[f*3+2]])/3.0
+		if slope > rock_slope:
 			tone = rock[0 if patch.get_noise_2d(at.x+71.0,at.y) > 0.0 else rock.size()-1]
-		elif pond.z > 0.0 and minf(a.y,minf(b.y,c.y)) < WATER+0.06:
+		elif (worn > SCREE.x and slope > SCREE.y) or (edge < 0.45 and slope > SCREE.y*2.0):
+			# Scree: a gully's floor or the crumbling lip, gravel and earth.
+			tone = gravel.lerp(earth,clampf(patch.get_noise_2d(at.x*3.0,at.y*3.0)*0.5+0.5,0.0,1.0))
+		elif pond.z > 0.0 and minf(a.y,minf(b.y,c.y)) < WATER+0.06 and (at.distance_to(Vector2(pond.x,pond.y)) < pond.z*1.5 or _channel_distance(at) < CHANNEL*1.5):
 			tone = sand*lerpf(1.0,0.72,clampf((WATER-middle.y)/BOWL,0.0,1.0))
 		elif kind == "shore":
 			var d := (shore_distance[ids[f*3]]+shore_distance[ids[f*3+1]]+shore_distance[ids[f*3+2]])/3.0
@@ -836,27 +953,29 @@ func side_arrays() -> Array:
 	var vertices := PackedVector3Array()
 	var uvs := PackedVector2Array()
 	var outward: Dictionary = IslandShore._outward(points,shore_edges)
+	var slump := FastNoiseLite.new()
+	slump.seed = seed+61
+	slump.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	slump.frequency = WALL_WAVE
+	var rings := {}
+	for k in range(0,shore_edges.size(),3):
+		for i in [shore_edges[k],shore_edges[k+1]]:
+			if not rings.has(i): rings[i] = _wall_rings(i,outward[i],slump)
 	for k in range(0,shore_edges.size(),3):
 		var a := shore_edges[k]
 		var b := shore_edges[k+1]
 		var pa := points[a]
 		var pb := points[b]
 		var out: Vector2 = ((outward[a] as Vector2)+(outward[b] as Vector2)).normalized()
-		var top_a := Vector3(pa.x,heights[a],pa.y)
-		var top_b := Vector3(pb.x,heights[b],pb.y)
-		var ring_a := IslandShore._ring(a,top_a,outward[a])
-		var ring_b := IslandShore._ring(b,top_b,outward[b])
-		ring_a.y = maxf(ring_a.y,base+0.3)
-		ring_b.y = maxf(ring_b.y,base+0.3)
-		var foot_a := Vector3(pa.x,base-keel[a],pa.y)
-		var foot_b := Vector3(pb.x,base-keel[b],pb.y)
 		var face := Vector3(out.x,0.0,out.y)
 		var ha := heights[a]
 		var hb := heights[b]
-		IslandShore._add(vertices,uvs,into,[top_a,top_b,ring_b],face,[ha,hb,hb],0.0)
-		IslandShore._add(vertices,uvs,into,[top_a,ring_b,ring_a],face,[ha,hb,ha],0.0)
-		IslandShore._add(vertices,uvs,into,[ring_a,ring_b,foot_b],face,[ha,hb,hb],0.0)
-		IslandShore._add(vertices,uvs,into,[ring_a,foot_b,foot_a],face,[ha,hb,ha],0.0)
+		# Down the wall: the rim, the facet ring, the bulge, the foot.
+		var wall_a: Array = [Vector3(pa.x,ha,pa.y)]+(rings[a] as Array)+[Vector3(pa.x,base-keel[a],pa.y)]
+		var wall_b: Array = [Vector3(pb.x,hb,pb.y)]+(rings[b] as Array)+[Vector3(pb.x,base-keel[b],pb.y)]
+		for r in range(wall_a.size()-1):
+			IslandShore._add(vertices,uvs,into,[wall_a[r],wall_b[r],wall_b[r+1]],face,[ha,hb,hb],0.0)
+			IslandShore._add(vertices,uvs,into,[wall_a[r],wall_b[r+1],wall_a[r+1]],face,[ha,hb,ha],0.0)
 	for f in land:
 		var tri := []
 		for k in range(3):
@@ -874,6 +993,36 @@ func side_arrays() -> Array:
 	arrays[Mesh.ARRAY_NORMAL] = normals
 	arrays[Mesh.ARRAY_TEX_UV] = uvs
 	return arrays
+
+## A shore point's wall under its rim: the facet ring and the bulge below
+## it, each stood out (or undercut) by a seeded amount that wanders along
+## the shore (`slump`), so the earth slumps out in places and the lip
+## overhangs in others; never further out than LIP_CLEAR near the spring's
+## lip, where the fall pours.
+func _wall_rings(i: int, out: Vector2, slump: FastNoiseLite) -> Array:
+	var p := points[i]
+	var top := heights[i]
+	var foot := base-keel[i]
+	var lean := slump.get_noise_2d(p.x,p.y)*0.5+0.5
+	var jitter := PlateMesh._hash(i,seed % 7919,9)
+	var drop := lerpf(WALL_DROP.x,WALL_DROP.y,clampf(lean*0.6+jitter*0.4,0.0,1.0))
+	var reach := lerpf(WALL_OUT.x,WALL_OUT.y,clampf(lean*0.75+jitter*0.25,0.0,1.0))
+	var bulge := reach*0.5+(PlateMesh._hash(i,seed % 7919,11)-0.35)*WALL_BULGE
+	var ring_y := maxf(top-drop,foot+0.6)
+	var ring := Vector3(p.x+out.x*reach,ring_y,p.y+out.y*reach)
+	var mid_y := lerpf(ring_y,foot,0.45+0.2*PlateMesh._hash(i,seed % 7919,13))
+	var mid := Vector3(p.x+out.x*bulge,mid_y,p.y+out.y*bulge)
+	if pond.z > 0.0 and p.distance_to(lip) < 2.0:
+		ring = _behind_lip(ring)
+		mid = _behind_lip(mid)
+	return [ring,mid]
+
+## A wall point near the spring's lip held back to no more than LIP_CLEAR m
+## ahead of the lip along its way out, so the fall pours clear of the wall.
+func _behind_lip(v: Vector3) -> Vector3:
+	var ahead := Vector2(v.x,v.z).dot(lip_out)-lip.dot(lip_out)-LIP_CLEAR
+	if ahead <= 0.0: return v
+	return v-Vector3(lip_out.x,0.0,lip_out.y)*ahead
 
 ## The top as a mesh (tests): `palette` as `top_arrays` takes it.
 func build_mesh(palette: Dictionary, material: Material = null, shift := Vector3.ZERO) -> ArrayMesh:

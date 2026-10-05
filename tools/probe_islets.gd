@@ -20,6 +20,8 @@ func _initialize() -> void:
 	var tris := []
 	var batches := []
 	var sizes := []
+	var cuts := []
+	var worn_share := []
 	var count := 0
 	for x in range(-12,12):
 		for z in range(-6,6):
@@ -43,6 +45,13 @@ func _initialize() -> void:
 			times.flora.append(Time.get_ticks_usec()-t)
 			tris.append(((top[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()+(sides[Mesh.ARRAY_VERTEX] as PackedVector3Array).size())/3)
 			batches.append(flora.size())
+			var deepest := 0.0
+			var worn := 0
+			for w in islet.wear:
+				deepest = maxf(deepest,w)
+				if w > 0.1: worn += 1
+			cuts.append(deepest)
+			worn_share.append(float(worn)/maxf(islet.land.size()*0.5,1.0))
 			var box: Rect2 = islet.extent()
 			sizes.append(maxf(box.size.x,box.size.y))
 			kinds[islet.kind] = int(kinds.get(islet.kind,0))+1
@@ -53,6 +62,9 @@ func _initialize() -> void:
 	print("kinds: %s" % str(kinds))
 	print("tree species (islets with): %s" % str(species))
 	print("flowers (islets with): %s; islets with flowers %d of %d" % [str(flowers),with_flowers,count])
+	cuts.sort()
+	worn_share.sort()
+	if not cuts.is_empty(): print("erosion: deepest cut per islet median %.2f m, max %.2f m; points worn over 0.1 m median %.0f%%" % [cuts[cuts.size()/2],cuts[-1],worn_share[worn_share.size()/2]*100.0])
 	sizes.sort()
 	print("across (m): min %.1f median %.1f max %.1f" % [sizes[0],sizes[sizes.size()/2],sizes[-1]])
 	for key in times:

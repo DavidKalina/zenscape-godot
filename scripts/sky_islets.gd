@@ -137,6 +137,13 @@ func _init() -> void:
 ## leaks at exit; they go with the islets and are made again if wanted.
 func _exit_tree() -> void:
 	clear()
+	_release()
+
+## Everything the islets hold that would outlive them: their materials, and
+## the shared pieces in static vars (the catalog, the grids, the trees, the
+## fall's pieces), made again if wanted.
+func _release() -> void:
+	_sides.clear()
 	_water = null
 	_ground_material = null
 	_water_material = null
@@ -175,7 +182,9 @@ func _notification(what: int) -> void:
 func clear() -> void:
 	for key in _making: WorkerThreadPool.wait_for_task_completion(_making[key].task)
 	_making.clear()
-	for key in built: (built[key].node as Node3D).queue_free()
+	for key in built:
+		var node: Node3D = built[key].node
+		if is_instance_valid(node): node.queue_free()
 	built.clear()
 	_wanted.clear()
 	pinned = null
@@ -304,10 +313,12 @@ func _finish(cell: Vector2i, home: Vector3, out: Dictionary) -> void:
 	body.name = "Body"
 	body.mesh = SkyIslet.mesh_from(out.top,ground_source if ground_source != null else _ground_material)
 	body.position = -OFF_MAP
+	body.set_meta("skip_reflection",true)
 	node.add_child(body)
 	var sides := MeshInstance3D.new()
 	sides.name = "Sides"
 	sides.mesh = SkyIslet.mesh_from(out.sides,_side_material(shape))
+	sides.set_meta("skip_reflection",true)
 	node.add_child(sides)
 	if not (out.water as Array).is_empty():
 		var pond := MeshInstance3D.new()
@@ -341,6 +352,11 @@ func _plant(node: Node3D, plants: Dictionary) -> void:
 		multimesh.buffer = plants[key].buffer
 		batch.multimesh = multimesh
 		batch.material_override = _plant_material(key)
+		# Far out in the sky, nothing of an islet shows in the plate's
+		# water: its planar reflection (scripts/planar_water.gd) copies only
+		# what does, and would keep a copy and a clip material of every
+		# islet part it ever saw.
+		batch.set_meta("skip_reflection",true)
 		var role: String = _catalog.roles.get(key,"plant")
 		batch.visibility_range_end = TREE_RANGE if role == "tree" else (STONE_RANGE if role == "stone" else PLANT_RANGE)
 		batch.visibility_range_end_margin = 30.0
@@ -431,7 +447,9 @@ func _side_material(shape: RefCounted) -> Material:
 	m.set_shader_parameter("earth_sides",true)
 	m.set_shader_parameter("earth_sides_top",SkyIslet.RIM_HEIGHT)
 	m.set_shader_parameter("earth_sides_base",-float(key.y)*0.5+MIST)
-	Strata.for_seed(strata).apply(m,Vector3.ZERO)
+	# Made here, not through Strata's own cache, which is static and would
+	# hold the islets' strata past the scene's end.
+	Strata.new(strata).apply(m,Vector3.ZERO)
 	_sides[key] = m
 	return m
 
