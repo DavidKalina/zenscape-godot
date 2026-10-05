@@ -105,6 +105,7 @@ protected:
         ClassDB::bind_method(D_METHOD("cascades", "params"), &ZenScapeWaterFlow::cascades);
         ClassDB::bind_method(D_METHOD("edge_outflow"), &ZenScapeWaterFlow::edge_outflow);
         ClassDB::bind_method(D_METHOD("spills", "params"), &ZenScapeWaterFlow::spills);
+        ClassDB::bind_method(D_METHOD("edge_leaving", "min_rate"), &ZenScapeWaterFlow::edge_leaving);
     }
 
     static int64_t now_usec() {
@@ -974,6 +975,36 @@ public:
         Dictionary out;
         out["sides"] = sides;
         out["total"] = total;
+        return out;
+    }
+
+    // Every edge cell leaving more than `min_rate` m³/s (smoothed), in grid
+    // order, for spills along a shore that is not the grid's border (an
+    // island's outline; scripts/water_flow.gd `_shore_spills` groups them):
+    // {"cell" (index), "rate", "surface" (the water's top at the brink, as
+    // `spills` takes it), "floor" (the ground under the cell), "brink" (the
+    // brink depth), "velocity" (Vector2, x and z, of the cell inward of it)}.
+    Dictionary edge_leaving(double min_rate) const {
+        PackedInt32Array cells;
+        PackedFloat32Array rate, surface, floor, brink;
+        PackedVector2Array velocity;
+        for (size_t e = 0; e < edge_cells.size(); ++e) {
+            const int c = edge_cells[e], in = edge_inner[e];
+            if (edge_rate[c] <= min_rate) continue;
+            cells.push_back(c);
+            rate.push_back(edge_rate[c]);
+            surface.push_back(float(std::max(double(ground[in]+depth[in]), double(ground[c]+edge_brink[c]))));
+            floor.push_back(ground[c]);
+            brink.push_back(edge_brink[c]);
+            velocity.push_back(Vector2(vx[in], vz[in]));
+        }
+        Dictionary out;
+        out["cell"] = cells;
+        out["rate"] = rate;
+        out["surface"] = surface;
+        out["floor"] = floor;
+        out["brink"] = brink;
+        out["velocity"] = velocity;
         return out;
     }
 
