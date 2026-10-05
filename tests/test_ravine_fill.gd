@@ -31,10 +31,8 @@ func check(ok: bool, message: String) -> void:
 		push_error(message)
 
 func ravine(from: Vector2, to: Vector2) -> Array:
-	var source: Node3D = preload("res://assets/zen_reference/geometry.scn").instantiate()
 	var data := NativeTerrainData.new()
-	data.setup(source.get_node("terrain").mesh)
-	source.free()
+	data.setup(preload("res://tests/fixtures/plate.gd").mesh())
 	data.reset_flat()
 	var heights := data.heights.duplicate()
 	var clay := FakeClay.new()
@@ -126,7 +124,9 @@ func closed_ravine() -> void:
 	await take_down(flow,mid,[Vector2(-6,0),Vector2(0,0),Vector2(6,0)],"closed ravine")
 
 func open_ravine() -> void:
-	var made: Array = await ravine(Vector2(-Plate.HALF-0.6,0),Vector2(Plate.HALF+0.6,0))
+	# Through the square island's shore (reset_flat's land), as it once ran
+	# through the plate's rim.
+	var made: Array = await ravine(Vector2(-Plate.LEGACY_HALF-0.6,0),Vector2(Plate.LEGACY_HALF+0.6,0))
 	var data: NativeTerrainData = made[0]
 	var flow: RefCounted = made[1]
 	var mid := Vector2.ZERO
@@ -159,10 +159,8 @@ func take_down(flow: RefCounted, mid: Vector2, points: Array, label: String) -> 
 
 ## A crater lake, to show taking water out is not the ravine's alone.
 func crater() -> void:
-	var source: Node3D = preload("res://assets/zen_reference/geometry.scn").instantiate()
 	var data := NativeTerrainData.new()
-	data.setup(source.get_node("terrain").mesh)
-	source.free()
+	data.setup(preload("res://tests/fixtures/plate.gd").mesh())
 	data.reset_flat()
 	var heights := data.heights.duplicate()
 	for i in heights.size():
