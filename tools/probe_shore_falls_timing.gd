@@ -5,10 +5,11 @@ extends SceneTree
 ## rings (every frame), with springs pouring off the land. Prints each
 ## fall's lip, way out and face drop too, so runs before and after a change
 ## can be compared. Headless, CPU only; the edge falls' stand-in editor holds
-## the authored earth sides (square) or the shore wall (island).
+## the shore wall (the square island's or the seed's island's).
 ##   godot --headless --path . --script tools/probe_shore_falls_timing.gd
 const Genesis = preload("res://scripts/genesis_canvas.gd")
 const EdgeFalls = preload("res://scripts/edge_falls.gd")
+const Plate = preload("res://scripts/plate.gd")
 const READS := 200
 const FRAMES := 400
 
@@ -16,25 +17,22 @@ func _initialize() -> void:
 	run.call_deferred()
 
 func run() -> void:
-	var source: Node3D = preload("res://assets/zen_reference/geometry.scn").instantiate()
-	var skirt: MeshInstance3D = source.get_node("skirt")
+	var mesh: ArrayMesh = preload("res://scripts/plate_mesh.gd").build()
+	var offset := Vector3(0.0,-2.0,0.0)
 	for island in [false,true]:
 		var data := NativeTerrainData.new()
-		data.setup(source.get_node("terrain").mesh)
+		data.setup(mesh)
 		Genesis.shape(data,31,Vector2.ZERO,island)
 		var flow: RefCounted = preload("res://scripts/water_flow.gd").new(data)
 		await flow.setup()
 		var spots := [Vector2(13.6,-3.0),Vector2(-13.6,4.0),Vector2(2.0,13.6)]
-		if island: spots = [Vector2(-2.7,-0.35),_inside(data,Vector2(1,0)),_inside(data,Vector2(0,1))]
+		if island: spots = [_inside(data,Vector2(-1,0)),_inside(data,Vector2(1,0)),_inside(data,Vector2(0,1))]
 		for spot: Vector2 in spots: flow.springs.append({"x":spot.x,"z":spot.y,"rate":0.06,"radius":0.5,"age":100.0})
 		var step_usec := 0
 		for k in range(150):
 			flow.run(4)
 			step_usec += flow.last_step_usec
-		var sides: Mesh = skirt.mesh
-		var offset := skirt.position
-		if island:
-			sides = preload("res://scripts/island_shore.gd").build(data,Transform3D(Basis(),offset),null)
+		var sides: Mesh = preload("res://scripts/island_shore.gd").build(data,Transform3D(Basis(),offset),null)
 		var editor := _stand_in(data,sides,offset)
 		var falls: Node3D = EdgeFalls.new()
 		falls.setup(flow,editor)
@@ -73,13 +71,12 @@ func run() -> void:
 		falls.free()
 		editor.free()
 		data.release_listeners()
-	source.free()
 	quit()
 
 ## A point 1.2 m inside the shore along `way` from the middle.
 static func _inside(data: NativeTerrainData, way: Vector2) -> Vector2:
 	var r := 0.0
-	while data.ground_height(way*(r+0.1)) != null and r < 14.0: r += 0.1
+	while data.ground_height(way*(r+0.1)) != null and r < Plate.HALF: r += 0.1
 	return way*maxf(r-1.2,0.0)
 
 func _stand_in(data: NativeTerrainData, sides: Mesh, offset: Vector3) -> Node:

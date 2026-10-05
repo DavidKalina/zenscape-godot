@@ -27,10 +27,8 @@ func check(ok: bool, message: String) -> void:
 		push_error(message)
 
 func plate() -> NativeTerrainData:
-	var source: Node3D = preload("res://assets/zen_reference/geometry.scn").instantiate()
 	var data := NativeTerrainData.new()
-	data.setup(source.get_node("terrain").mesh)
-	source.free()
+	data.setup(preload("res://scripts/plate_mesh.gd").build())
 	return data
 
 func run() -> void:
@@ -85,7 +83,7 @@ func generator(data: NativeTerrainData) -> void:
 				across[f*3+j] = int(edges[key])/3
 				across[int(edges[key])] = f
 			else: edges[key] = f*3+j
-	var smallest := 1.0
+	var smallest := INF
 	var largest := 0.0
 	var shapes := {}
 	var banded_total := 0.0
@@ -94,10 +92,10 @@ func generator(data: NativeTerrainData) -> void:
 		check(mask.size() == faces,"The outline holds a byte a face")
 		if seed_value <= 3: check(mask == Outline.mask(points,ids,seed_value),"The same seed gives the same outline")
 		shapes[mask.hex_encode().sha256_text()] = true
-		var share := area(data,mask)
+		var share := area(data,mask)*Plate.SIZE*Plate.SIZE
 		smallest = minf(smallest,share)
 		largest = maxf(largest,share)
-		check(share >= 0.3 and share <= 0.88,"Seed %d's island is %.2f of the square" % [seed_value,share])
+		check(share >= Outline.AREA.x*0.85 and share <= Outline.AREA.y*1.05,"Seed %d's island is %.0f m^2" % [seed_value,share])
 		# The middle is land: the player and the landing spot arrive there.
 		var middle_land := true
 		for f in range(faces):
@@ -188,10 +186,25 @@ func generator(data: NativeTerrainData) -> void:
 		check(nearest_rim >= 0.8,"Seed %d keeps %.2f m of sky to the plate's rim" % [seed_value,nearest_rim])
 		check(share_banded < 0.2,"Seed %d's shore is its own, not the square's (%.2f against the rim's band)" % [seed_value,share_banded])
 	check(shapes.size() == 40,"Every seed shapes its own island")
-	print("islands %.2f to %.2f of the square; %.3f of their shores against the rim's band" % [smallest,largest,banded_total/40.0])
+	print("islands %.0f to %.0f m^2; %.3f of their shores against the rim's band" % [smallest,largest,banded_total/40.0])
 	check(banded_total/40.0 < 0.04,"Shores are rarely held in by the rim's band (%.3f)" % (banded_total/40.0))
-	check(smallest < 0.5 and largest > 0.45,"Sizes vary clearly by seed (%.2f to %.2f)" % [smallest,largest])
-	check(absf(area(data,Outline.mask(points,ids,7,0.0))-Outline.AREA.x) < 0.06 and absf(area(data,Outline.mask(points,ids,7,1.0))-Outline.AREA.y) < 0.06,"An asked size gives its area")
+	check(smallest < Outline.area_for(0.25) and largest > Outline.area_for(0.75),"Sizes vary clearly by seed (%.0f to %.0f m^2)" % [smallest,largest])
+	var square_m := Plate.SIZE*Plate.SIZE
+	for size: float in [0.0,0.5,1.0,Outline.first_size()]:
+		var asked := area(data,Outline.mask(points,ids,7,size))*square_m
+		check(absf(asked/Outline.area_for(size)-1.0) < 0.1,"An asked size gives its area (%.0f m^2 for %.0f)" % [asked,Outline.area_for(size)])
+	# From about 11 m across to about 43 m, and a new world's first island
+	# about the land of the 28 m square whatever its seed.
+	for seed_value in range(1,7):
+		data.set_outline(Outline.mask(points,ids,seed_value,0.0))
+		var small := data.land_rect().size
+		check(maxf(small.x,small.y) > 9.0 and maxf(small.x,small.y) < 14.0,"Seed %d's smallest island is about 11 m across (%s)" % [seed_value,small])
+		data.set_outline(Outline.mask(points,ids,seed_value,1.0))
+		var large := data.land_rect().size
+		check(maxf(large.x,large.y) > 38.0 and maxf(large.x,large.y) <= Plate.SIZE-2.0*Outline.RIM.x,"Seed %d's largest island is about 43 m across (%s)" % [seed_value,large])
+		data.set_outline(Outline.mask(points,ids,seed_value,Outline.first_size()))
+		check(data.land_area() > 680.0 and data.land_area() < 820.0,"Seed %d's first island is about the 28 m square's land (%.0f m^2)" % [seed_value,data.land_area()])
+	data.set_outline(PackedByteArray())
 	# Not a circle: the shore wanders in and out round the middle.
 	var mask := Outline.mask(points,ids,11,0.5)
 	var distance := Outline.shore_distance(points,ids,mask)
@@ -232,8 +245,8 @@ static func _nearest(points: PackedVector2Array, at: Vector2) -> int:
 func ownership(data: NativeTerrainData) -> void:
 	data.reset_flat()
 	var square := data.to_document()
-	check(square.version == 11,"Documents are version 11")
-	check(not square.has("outline"),"A square island saves no outline")
+	check(square.version == 12,"Documents are version 12")
+	check(square.has("outline"),"A square island saves its outline, the square")
 	# A document from before outlines (version 10) loads as the full square.
 	var old: Dictionary = JSON.parse_string(JSON.stringify(square))
 	old.version = 10
@@ -242,13 +255,15 @@ func ownership(data: NativeTerrainData) -> void:
 	check(data.outline == mask and not data.void_faces.is_empty(),"Setting an outline cuts the faces off the island")
 	check(data.ground_height(Vector2.ZERO) != null,"The middle stands on land")
 	check(data.load_document(old),"A version 10 document still loads")
-	check(data.outline.is_empty() and data.void_faces.is_empty() and data.shore_distance.is_empty(),"A document without an outline loads as the full square")
+	check(data.outline == data.square_outline() and not data.shore_distance.is_empty(),"A document without an outline loads as the square")
 	# A saved outline comes back, through JSON as a save file holds it.
 	data.set_outline(mask)
+	# A point off the island but on the square.
 	var off := Vector2.ZERO
 	for i in range(data.points.size()):
-		if data.shore_distance[i] < 0.0:
-			off = data.points[i]
+		var p := data.points[i]
+		if data.shore_distance[i] < 0.0 and absf(p.x) < Plate.LEGACY_HALF-1.0 and absf(p.y) < Plate.LEGACY_HALF-1.0:
+			off = p
 			break
 	check(data.ground_height(off) == null,"No ground off the island")
 	var saved: Dictionary = JSON.parse_string(JSON.stringify(data.to_document()))
@@ -277,7 +292,7 @@ func ownership(data: NativeTerrainData) -> void:
 	data.begin_stroke()
 	await preload("res://scripts/inland_landscape.gd").new().form(data,preload("res://scripts/chasm_glade.gd").RECIPE)
 	data.end_stroke()
-	check(data.outline == other,"A terrain recipe keeps the island's outline")
+	check(data.outline == data.square_outline(),"A terrain recipe forms on the square it was authored for")
 	check(not data.chasm_faces.is_empty() and data.has_chasm(),"The chasm still cuts its own faces")
 	for f in range(data.void_faces.size()):
 		if data.void_faces[f] != int(data.outline[f] != 0 or data.chasm_faces[f] != 0):
@@ -297,7 +312,7 @@ func shaped(data: NativeTerrainData) -> void:
 		if data.shore_distance[i] == 0.0 and absf(data.heights[i]-Genesis.RIM_HEIGHT) > 0.001: rim_ok = false
 	check(rim_ok,"The plain meets its shore at the rim height")
 	Genesis.shape(data,77,Vector2.ZERO,false)
-	check(data.outline.is_empty(),"A plain asked for without an island is the full square")
+	check(data.outline == data.square_outline(),"A plain asked for without an island is the square")
 	# Picking: straight down onto land hits, off the island misses.
 	Genesis.shape(data,77)
 	data.play_mesh()
@@ -401,7 +416,12 @@ func water(data: NativeTerrainData) -> void:
 	# A new outline sets the grid up again.
 	var was: PackedByteArray = flow.inside.duplicate()
 	data.set_outline(PackedByteArray())
-	check(flow.inside != was and flow.inside.count(0) == 0,"Clearing the outline gives the water the whole square")
+	var square_wrong := 0
+	for c in range(flow.width*flow.height):
+		var at := Vector2(flow.origin.x+(c%flow.width+0.5)*flow.cell,flow.origin.y+(c/flow.width+0.5)*flow.cell)
+		var reach := maxf(absf(at.x),absf(at.y))
+		if (reach < Plate.LEGACY_HALF-flow.cell and flow.inside[c] == 0) or (reach > Plate.LEGACY_HALF+flow.cell and flow.inside[c] != 0): square_wrong += 1
+	check(flow.inside != was and square_wrong == 0,"Clearing the outline gives the water the square (%d cells wrong)" % square_wrong)
 	data.set_outline(Outline.mask(data.points,data.vertex_ids,31))
 	check(flow.inside == was,"The outline back, the water's grid follows")
 	# Springs by the shore all round: their water leaves over the shore, and
@@ -526,7 +546,10 @@ func shore_course(data: NativeTerrainData) -> void:
 	Genesis.shape(data,31)
 	var flow: RefCounted = preload("res://scripts/water_flow.gd").new(data)
 	await flow.setup()
-	flow.springs.append({"x":-2.7,"z":-0.35,"rate":0.06,"radius":0.5,"age":100.0})
+	# A spring by the head of the island's bay.
+	var found := bay_of(data)
+	var spring: Vector2 = found[0]*maxf(float(found[1])-1.2,0.0)
+	flow.springs.append({"x":spring.x,"z":spring.y,"rate":0.06,"radius":0.5,"age":100.0})
 	for k in range(150): flow.run(4)
 	var wall := preload("res://scripts/island_shore.gd").build(data,Transform3D(),null)
 	var editor := stand_in(data,wall)
@@ -677,23 +700,40 @@ func shore_water(data: NativeTerrainData) -> void:
 	print("shore water: %.2f m³ standing, %d spring pools near the shore" % [flow.volume(),pools])
 	data.release_listeners()
 
-## The square plate's spills are the kernel's own, along its four sides, as
-## before islands had shores: the outline's path never touches them.
+## The square island (a plain without an outline of its own) pours over its
+## four sides, its shore; a plate with no outline at all (the 28 m template
+## old worlds are read against) spills as the kernel always did, along the
+## plate's rim: the outline's path never touches it.
 func square_falls(data: NativeTerrainData) -> void:
 	Genesis.shape(data,31,Vector2.ZERO,false)
-	check(data.outline.is_empty(),"A square plain")
+	check(data.outline == data.square_outline(),"A square plain")
 	var flow: RefCounted = preload("res://scripts/water_flow.gd").new(data)
 	await flow.setup()
-	for spot in [Vector2(13.6,-3.0),Vector2(-13.6,4.0),Vector2(2.0,13.6)]:
+	var edge := Plate.LEGACY_HALF-0.4
+	for spot in [Vector2(edge,-3.0),Vector2(-edge,4.0),Vector2(2.0,edge)]:
 		flow.springs.append({"x":spot.x,"z":spot.y,"rate":0.06,"radius":0.5,"age":100.0})
 	for k in range(150): flow.run(4)
 	var detect: Dictionary = preload("res://scripts/edge_falls.gd").DETECT
 	var spills: Array = flow.spills(detect)
 	print("square spills: ",spills.map(func(s: Dictionary) -> String: return "%d %s %.4f" % [s.side,s.lip,s.flux]))
 	check(spills.size() >= 3,"Water leaves the square over its sides (%d spills)" % spills.size())
-	check(spills == flow.kernel.spills(detect),"The square's spills are the kernel's, untouched")
-	for spill: Dictionary in spills: check(int(spill.side) >= 0 and absf(maxf(absf(spill.lip.x),absf(spill.lip.z))-Plate.HALF) < 0.01,"A square spill's lip is on the rim")
+	for spill: Dictionary in spills: check(absf(maxf(absf(spill.lip.x),absf(spill.lip.z))-Plate.LEGACY_HALF) < 0.01,"A square spill's lip is on the square's side")
 	data.release_listeners()
+	var bare := NativeTerrainData.new()
+	bare.setup(data.source_mesh,[],false)
+	check(bare.outline.is_empty(),"A plate with no outline")
+	flow = preload("res://scripts/water_flow.gd").new(bare)
+	await flow.setup()
+	edge = Plate.HALF-0.4
+	for spot in [Vector2(edge,-3.0),Vector2(-edge,4.0),Vector2(2.0,edge)]:
+		flow.springs.append({"x":spot.x,"z":spot.y,"rate":0.06,"radius":0.5,"age":100.0})
+	for k in range(150): flow.run(4)
+	spills = flow.spills(detect)
+	print("bare plate spills: ",spills.map(func(s: Dictionary) -> String: return "%d %s %.4f" % [s.side,s.lip,s.flux]))
+	check(spills.size() >= 3,"Water leaves the bare plate over its sides (%d spills)" % spills.size())
+	check(spills == flow.kernel.spills(detect),"The bare plate's spills are the kernel's, untouched")
+	for spill: Dictionary in spills: check(int(spill.side) >= 0 and absf(maxf(absf(spill.lip.x),absf(spill.lip.z))-Plate.HALF) < 0.01,"A bare plate's spill lip is on the rim")
+	bare.release_listeners()
 
 ## A far island is baked as scripts/sky_islands.gd `_bake` does: a detached
 ## plain shaped on a worker, its play mesh built there, and its earth sides
@@ -835,10 +875,12 @@ func rock(data: NativeTerrainData) -> void:
 		Genesis.shape(other,seed_value)
 		most = maxi(most,Shore.build(other,Transform3D(),null).get_faces().size()/3)
 	print("most triangles in an island's sides and rock, seeds 1-20: %d" % most)
-	check(most <= 3000,"An island's sides and rock stay within 3000 triangles (%d)" % most)
-	# No outline: the flat slab's base, as before.
-	Genesis.shape(other,77,Vector2.ZERO,false)
-	check(other.keel.is_empty() and other.underside(Vector2.ZERO) == NativeTerrainData.SLAB_BASE,"A square plate keeps its flat base")
+	check(most <= 6500,"An island's sides and rock stay within 6500 triangles (%d)" % most)
+	# No outline at all (the template old worlds are read against): the flat
+	# slab's base, as before.
+	var bare := NativeTerrainData.new()
+	bare.setup(other.source_mesh,[],false)
+	check(bare.keel.is_empty() and bare.underside(Vector2.ZERO) == NativeTerrainData.SLAB_BASE,"A plate with no outline keeps its flat base")
 
 ## Two corners as a key, either way round.
 static func _edge_key(a: Vector3, b: Vector3) -> String:

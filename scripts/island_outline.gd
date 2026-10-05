@@ -5,13 +5,14 @@ extends RefCounted
 ## (NativeTerrainData `outline`, saved and undone with the land).
 ##
 ## The shape is the forested isles' share field (scripts/sky_forest_isle.gd
-## `main_share`), plate-sized: 0 at the middle and growing outward, from a
-## seeded ellipse with lobes round it, bays bitten in, its points pushed about
-## by a slow warp so no edge runs true. The land is every face whose middle's
-## share is under the level that leaves the seed's share of the square
-## (AREA); then it is cleaned up so it reads as one island:
-##   features narrower than OPEN twice over are opened away (a morphological
-##   opening on the faces' middles), so no spit or neck is a triangle wide;
+## `main_share`), sized to the island: 0 at the middle and growing outward,
+## from a seeded ellipse with lobes round it, bays bitten in, its points
+## pushed about by a slow warp so no edge runs true. The land is every face
+## whose middle's share is under the level that leaves the island's area
+## (AREA, by the seed); then it is cleaned up so it reads as one island:
+##   features narrower than its opening's reach twice over are opened away (a
+##   morphological opening on the faces' middles), so no spit or neck is a
+##   triangle wide;
 ##   the plate's middle (MIDDLE) is always land: the player and the landing
 ##   spot arrive there;
 ##   a band of sky along the plate's rim (RIM) is never land, a seeded
@@ -21,14 +22,24 @@ extends RefCounted
 ##   land are filled;
 ##   a face hanging on by one side goes, a notch open on one side is filled,
 ##   and two pieces of land touching at a single point are joined there.
+## The shape's own parts (the warp, the drift, the opening) go with the
+## island's radius, and a large island's lobes and bays are bolder (BOLD), so
+## a small island is as lobed and bayed as a large one rather than a blob,
+## and a large one no rounded square; the middle and the rim's band stay in
+## metres.
 ## Deterministic for a seed: the same seed is the same island.
 
 const Plate = preload("res://scripts/plate.gd")
-## The share of the square that is land, from the smallest island to the
-## largest.
-const AREA := Vector2(0.32,0.5)
+## The island's land (m^2), from the smallest (about 11 m across) to the
+## largest (about 43 m). Sizes between are even in width rather than in
+## area: area grows as the square of width, so sizes even in area would make
+## most islands large and the small ones rare.
+const AREA := Vector2(78.0,1100.0)
+## A new world's first island, whatever its seed: about the land of the
+## 28 m square the plate was, room to learn the tools on.
+const FIRST_AREA := 760.0
 ## Metres round the plate's middle that are always land.
-const MIDDLE := 3.0
+const MIDDLE := 2.0
 ## The band along the plate's rim that is never land: its width (m) from
 ## narrowest to widest, wandering along the rim over a wavelength (m). The
 ## plate's rim stands HALF from its middle.
@@ -41,21 +52,27 @@ const HALF := Plate.HALF
 const RIM_SOFT := 3.0
 const RIM_PUSH := 6.0
 const ROUND := 3.0
-## The opening's reach (m): land narrower than twice this is cut away.
-const OPEN := 1.0
+## The opening's reach (m): land narrower than twice this is cut away. A
+## share of the island's radius, never under OPEN.x (a face or so, so no
+## neck is a triangle wide) nor over OPEN.y.
+const OPEN := Vector2(1.0,1.7)
+const OPEN_SHARE := 0.085
 ## The ellipse: its long half against its short (a range), the middle's drift
-## off the plate's middle (m).
+## off the plate's middle (a share of the radius).
 const ASPECT := Vector2(1.0,1.5)
-const DRIFT := 1.6
+const DRIFT := 0.15
 ## Lobes round the rim: [count round, share out].
-const LOBES := [[2,0.14],[3,0.13],[4,0.08],[5,0.05],[7,0.035]]
+const LOBES := [[2,0.14],[3,0.13],[4,0.08],[5,0.05],[7,0.035],[9,0.025]]
 ## Bays bitten in: how many, how deep (share), how wide (radians).
 const BAYS := Vector2i(1,3)
 const BAY_DEEP := Vector2(0.24,0.42)
 const BAY_WIDE := Vector2(0.16,0.34)
-## The warp (m, over a wavelength of m).
-const WARP := 2.0
-const WARP_WAVE := 10.0
+## How much deeper the lobes and bays of the largest island are than the
+## smallest's (a share), against the rim's lean, which rounds what it holds in.
+const BOLD := 0.35
+## The warp: how far (a share of the radius) over a wavelength (radii).
+const WARP := 0.2
+const WARP_WAVE := 1.0
 
 ## How large the island for `seed_value` is, 0 (smallest) to 1 (largest).
 static func size_for(seed_value: int) -> float:
@@ -63,9 +80,17 @@ static func size_for(seed_value: int) -> float:
 	rng.seed = hash([seed_value,"island size"])
 	return rng.randf()
 
-## The share of the square that is land at `size` (0..1).
+## The island's land (m^2) at `size` (0..1), even in width (AREA).
 static func area_for(size: float) -> float:
-	return lerpf(AREA.x,AREA.y,clampf(size,0.0,1.0))
+	return pow(lerpf(sqrt(AREA.x),sqrt(AREA.y),clampf(size,0.0,1.0)),2.0)
+
+## The size whose land is `area` m^2.
+static func size_of(area: float) -> float:
+	return clampf(inverse_lerp(sqrt(AREA.x),sqrt(AREA.y),sqrt(maxf(area,0.0))),0.0,1.0)
+
+## A new world's first island's size (FIRST_AREA).
+static func first_size() -> float:
+	return size_of(FIRST_AREA)
 
 ## The outline for `seed_value` on the triangulation (`points`, and `ids`
 ## three a face, as NativeTerrainData holds them): a byte a face, 1 where
@@ -73,14 +98,11 @@ static func area_for(size: float) -> float:
 ## (`size_for`).
 static func mask(points: PackedVector2Array, ids: PackedInt32Array, seed_value: int, size := -1.0) -> PackedByteArray:
 	if size < 0.0: size = size_for(seed_value)
-	var field := _Field.new(seed_value)
 	var faces := ids.size()/3
 	var middles := PackedVector2Array()
 	var areas := PackedFloat32Array()
-	var shares := PackedFloat32Array()
 	middles.resize(faces)
 	areas.resize(faces)
-	shares.resize(faces)
 	var total := 0.0
 	for f in range(faces):
 		var a := points[ids[f*3]]
@@ -88,26 +110,31 @@ static func mask(points: PackedVector2Array, ids: PackedInt32Array, seed_value: 
 		var c := points[ids[f*3+2]]
 		middles[f] = (a+b+c)/3.0
 		areas[f] = absf((b-a).cross(c-a))*0.5
-		shares[f] = field.share(middles[f])
 		total += areas[f]
+	# Never more than the plate inside its rim's band can hold.
+	var goal := minf(area_for(size),total*0.6)
+	var radius := sqrt(goal/PI)
+	var field := _Field.new(seed_value,radius,1.0+BOLD*size_of(goal))
 	var rim := _Rim.new(seed_value)
 	var near_rim := rim.faces(points,ids)
-	for f in range(faces): shares[f] = INF if near_rim[f] == 1 else shares[f]+rim.push(middles[f])
-	# The level: faces taken lowest share first until the island's area.
-	var order := range(faces)
-	order.sort_custom(func(x: int, y: int) -> bool: return shares[x] < shares[y] or (shares[x] == shares[y] and x < y))
+	# The level: faces taken lowest share first until the island's area,
+	# sorted as [share, face] pairs (ties go to the lower face).
+	var order := []
+	order.resize(faces)
+	for f in range(faces): order[f] = Vector2(INF if near_rim[f] == 1 else field.share(middles[f])+rim.push(middles[f]),f)
+	order.sort()
 	var land := PackedByteArray()
 	land.resize(faces)
-	var goal := area_for(size)*total
 	var taken := 0.0
-	for f: int in order:
+	for entry: Vector2 in order:
+		var f := int(entry.y)
 		if taken >= goal or near_rim[f] == 1: break
 		land[f] = 1
 		taken += areas[f]
 	var topology := _Topology.new(points,ids,middles)
 	for f in range(faces):
 		if middles[f].length() <= MIDDLE: land[f] = 1
-	land = topology.open(land,OPEN)
+	land = topology.open(land,clampf(radius*OPEN_SHARE,OPEN.x,OPEN.y))
 	for f in range(faces):
 		if middles[f].length() <= MIDDLE: land[f] = 1
 	land = topology.tidy(land,near_rim)
@@ -211,24 +238,29 @@ class _Field:
 	var lobes := PackedVector3Array()
 	var bays := PackedVector3Array()
 	var warp := FastNoiseLite.new()
+	## The warp's reach (m).
+	var warp_reach := 0.0
 
-	func _init(seed_value: int) -> void:
+	## `radius`: the island's, as a circle of its area (m); `bold` deepens
+	## its lobes and bays.
+	func _init(seed_value: int, radius: float, bold: float) -> void:
 		var rng := RandomNumberGenerator.new()
 		rng.seed = hash([seed_value,"island outline"])
 		aspect = rng.randf_range(ASPECT.x,ASPECT.y)
 		heading = rng.randf()*TAU
-		drift = Vector2.from_angle(rng.randf()*TAU)*rng.randf()*DRIFT
-		for l: Array in LOBES: lobes.append(Vector3(float(l[0]),float(l[1])*rng.randf_range(0.6,1.3),rng.randf()*TAU))
+		drift = Vector2.from_angle(rng.randf()*TAU)*rng.randf()*DRIFT*radius
+		for l: Array in LOBES: lobes.append(Vector3(float(l[0]),float(l[1])*rng.randf_range(0.6,1.3)*bold,rng.randf()*TAU))
 		for i in range(rng.randi_range(BAYS.x,BAYS.y)):
-			bays.append(Vector3(rng.randf()*TAU,rng.randf_range(BAY_DEEP.x,BAY_DEEP.y),rng.randf_range(BAY_WIDE.x,BAY_WIDE.y)))
+			bays.append(Vector3(rng.randf()*TAU,rng.randf_range(BAY_DEEP.x,BAY_DEEP.y)*bold,rng.randf_range(BAY_WIDE.x,BAY_WIDE.y)))
 		warp.seed = rng.randi()
 		warp.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
-		warp.frequency = 1.0/WARP_WAVE
+		warp.frequency = 1.0/(WARP_WAVE*radius)
 		warp.fractal_type = FastNoiseLite.FRACTAL_FBM
 		warp.fractal_octaves = 2
+		warp_reach = WARP*radius
 
 	func share(p: Vector2) -> float:
-		var w := p-drift+Vector2(warp.get_noise_2d(p.x,p.y),warp.get_noise_2d(p.x+911.0,p.y-337.0))*WARP
+		var w := p-drift+Vector2(warp.get_noise_2d(p.x,p.y),warp.get_noise_2d(p.x+911.0,p.y-337.0))*warp_reach
 		var q := w.rotated(-heading)
 		q.x /= aspect
 		var t := q.angle()
@@ -321,27 +353,38 @@ class _Topology:
 		return result
 
 	## A morphological opening: land stays only within `reach` of a face
-	## whose whole reach is land.
+	## whose whole reach is land. Faces with no sky in any cell their reach
+	## covers need no closer look, so only the shore's band is measured.
 	func open(land: PackedByteArray, reach: float) -> PackedByteArray:
 		var count := land.size()
+		var sky := {}
+		for cell: Vector2i in _buckets:
+			for g: int in _buckets[cell]:
+				if land[g] == 0:
+					sky[cell] = true
+					break
 		var core := PackedByteArray()
 		core.resize(count)
-		var rounds: Array[PackedInt32Array] = []
-		rounds.resize(count)
 		for f in range(count):
 			if land[f] == 0: continue
-			rounds[f] = near(f,reach)
-			var whole := true
-			for g in rounds[f]:
-				if land[g] == 0:
-					whole = false
-					break
-			core[f] = 1 if whole else 0
-		var result := PackedByteArray()
-		result.resize(count)
+			var p := middles[f]
+			var clear := true
+			for z in range(floori(p.y-reach),floori(p.y+reach)+1):
+				for x in range(floori(p.x-reach),floori(p.x+reach)+1): clear = clear and not sky.has(Vector2i(x,z))
+			if not clear:
+				clear = true
+				for g in near(f,reach):
+					if land[g] == 0:
+						clear = false
+						break
+			core[f] = 1 if clear else 0
+		var result := core.duplicate()
 		for f in range(count):
-			if core[f] == 0: continue
-			for g in rounds[f]: result[g] = 1
+			if land[f] == 0 or core[f] == 1: continue
+			for g in near(f,reach):
+				if core[g] == 1:
+					result[f] = 1
+					break
 		return result
 
 	## One piece holding the middle, no enclosed sky, no face on one side, no
@@ -424,6 +467,10 @@ class _Topology:
 	## across the edges that meet at it).
 	func _fans(land: PackedByteArray, i: int) -> int:
 		var round := star[i]
+		# Two runs need two faces of land and sky between them.
+		var lands := 0
+		for f in round: lands += land[f]
+		if lands < 2 or lands == round.size(): return mini(lands,1)
 		var seen := {}
 		var runs := 0
 		for f in round:

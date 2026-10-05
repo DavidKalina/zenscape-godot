@@ -23,10 +23,8 @@ func check(ok: bool, message: String) -> void:
 	print(("OK   " if ok else "FAIL ")+message)
 
 func plate() -> NativeTerrainData:
-	var source: Node3D = preload("res://assets/zen_reference/geometry.scn").instantiate()
 	var data := NativeTerrainData.new()
-	data.setup(source.get_node("terrain").mesh)
-	source.free()
+	data.setup(preload("res://scripts/plate_mesh.gd").build())
 	return data
 
 func eye_on(data: NativeTerrainData) -> Node:
@@ -136,13 +134,17 @@ func claiming(data: NativeTerrainData, way: Vector2) -> void:
 	editor.terrain.free()
 
 func square() -> void:
+	# A plate without an outline of its own is the 28 m square island.
 	var data := plate()
-	check(data.outline.is_empty() and data.has_land(Vector2(Plate.HALF-0.1,-(Plate.HALF-0.1))),"A square island is land to its corners")
-	check(data.nearest_land(Vector2(30.0,2.0),0.5) == Vector2(30.0,2.0),"A square island's nearest land is the point itself")
+	const EDGE := Plate.LEGACY_HALF
+	check(data.outline == data.square_outline() and data.has_land(Vector2(EDGE-0.1,-(EDGE-0.1))),"A square island is land to its corners")
+	check(data.nearest_land(Vector2(10.0,2.0),0.5) == Vector2(10.0,2.0),"A square island's nearest land inside it is the point itself")
+	var outside := data.nearest_land(Vector2(30.0,2.0),0.5)
+	check(data.has_land(outside) and absf(outside.x-(EDGE-0.5)) < 0.25,"From outside, the nearest land is at its side (%s)" % outside)
 	var eye := eye_on(data)
-	check(not eye._off_plate(Vector2(Plate.HALF-0.6,-(Plate.HALF-0.6))) and eye._off_plate(Vector2(Plate.HALF-0.4,0.0)) and eye._off_plate(Vector2(0.0,-(Plate.HALF-0.4))),"A square walk goes off at +-13.5, as before")
+	check(not eye._off_plate(Vector2(EDGE-0.2,-(EDGE-0.2))) and eye._off_plate(Vector2(EDGE+0.1,0.0)) and eye._off_plate(Vector2(0.0,-(EDGE+0.1))),"A square walk goes off at its sides, +-14")
 	var held: Vector3 = eye._clamped(Vector3(Plate.HALF+6.0,0.0,-(Plate.HALF+6.0)))
-	check(is_equal_approx(held.x,Plate.HALF-0.5) and is_equal_approx(held.z,-(Plate.HALF-0.5)),"A square clamp is the square")
+	check(absf(held.x-EDGE) < 0.4 and absf(held.z+EDGE) < 0.4 and data.has_land(Vector2(held.x,held.z)),"A square clamp is the square, at its corner (%s)" % held)
 	var islands: Node3D = SkyIslands.new()
 	var editor := NativeChunkEditor.new()
 	editor.terrain = MeshInstance3D.new()
@@ -151,6 +153,6 @@ func square() -> void:
 	islands.offsets.append(Vector3.ZERO)
 	islands._rise.append(Vector3.ZERO)
 	islands.lands.append(data)
-	check(islands.copy_under(Vector3(Plate.HALF-0.1,0.0,-(Plate.HALF-0.1))) == 0 and islands.copy_under(Vector3(Plate.HALF+0.1,0.0,0.0)) == -1,"A square island claims anywhere inside +-14 m, as before")
+	check(islands.copy_under(Vector3(EDGE-0.1,0.0,-(EDGE-0.1))) == 0 and islands.copy_under(Vector3(EDGE+SkyIslands.CLAIM_MARGIN+0.3,0.0,0.0)) == -1,"A square island claims anywhere inside +-14 m, and not past its margin")
 	islands.free()
 	editor.terrain.free()

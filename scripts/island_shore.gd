@@ -29,11 +29,13 @@ extends RefCounted
 const RING_DROP := Vector2(0.55,1.5)
 const RING_OUT := Vector2(0.02,0.2)
 ## The rock, in metres under SLAB_BASE. The point's depth from the smallest
-## island to the largest (scripts/island_outline.gd AREA), give or take
-## DEEP_SPREAD of it, and never more than DEEPEST.
-const DEEP := Vector2(8.0,14.0)
+## island to the largest (scripts/island_outline.gd AREA), about the
+## island's radius so a large island's rock is no thin plate and a small
+## one's no spike, give or take DEEP_SPREAD of it, and never more than
+## DEEPEST.
+const DEEP := Vector2(5.0,19.0)
 const DEEP_SPREAD := 0.12
-const DEEPEST := 18.0
+const DEEPEST := 22.0
 ## The wall's foot along the shore: from this far over SLAB_BASE to this far
 ## under it, wandering over LIP_WAVE metres.
 const LIP := Vector2(-0.3,2.2)
@@ -47,15 +49,17 @@ const SHELF := 0.9
 const PLANES := Vector2i(4,6)
 const PLANE_RUN := Vector2(1.0,1.5)
 ## The point stands at least this share of the deepest inland distance in
-## from the shore, and at least AWAY m from the island's middle.
+## from the shore, and at least AWAY of the island's mean radius from its
+## middle.
 const POINT_IN := 0.45
-const AWAY := 1.5
-## Spurs: how many, their own run (m), how far each hangs past the rock
-## round it (share of the point's depth), and how far in they stand (m).
+const AWAY := 0.15
+## Spurs: how many, their own run (a share of the island's mean radius), how
+## far each hangs past the rock round it (share of the point's depth), and
+## how far in they stand (a share of the mean radius).
 const SPURS := Vector2i(1,3)
-const SPUR_RUN := Vector2(1.8,3.6)
+const SPUR_RUN := Vector2(0.18,0.36)
 const SPUR_DROP := Vector2(0.22,0.5)
-const SPUR_IN := 2.5
+const SPUR_IN := 0.25
 ## Ledges: depths fall in steps of this height (m), each step's riser this
 ## share of it, blended in by TIER_SHARE.
 const TIER := Vector2(1.8,2.8)
@@ -190,8 +194,7 @@ static func keel(points: PackedVector2Array, ids: PackedInt32Array, outline: Pac
 		middle += (a+b+c)/3.0*area
 	if land <= 0.0: return result
 	middle /= land
-	var area_range: Vector2 = preload("res://scripts/island_outline.gd").AREA
-	var size := clampf(inverse_lerp(area_range.x,area_range.y,land/total),0.0,1.0)
+	var size: float = preload("res://scripts/island_outline.gd").size_of(land)
 	var radius := sqrt(land/PI)
 	var deepest_in := 0.0
 	for d in distance: deepest_in = maxf(deepest_in,d)
@@ -201,7 +204,7 @@ static func keel(points: PackedVector2Array, ids: PackedInt32Array, outline: Pac
 	for i in range(points.size()):
 		if distance[i] < deepest_in*POINT_IN: continue
 		fallback.append(i)
-		if points[i].distance_to(middle) >= AWAY: choices.append(i)
+		if points[i].distance_to(middle) >= AWAY*radius: choices.append(i)
 	if choices.is_empty(): choices = fallback
 	var at := points[choices[rng.randi_range(0,choices.size()-1)]]
 	var depth := lerpf(DEEP.x,DEEP.y,size)*rng.randf_range(1.0-DEEP_SPREAD,1.0+DEEP_SPREAD)
@@ -210,7 +213,7 @@ static func keel(points: PackedVector2Array, ids: PackedInt32Array, outline: Pac
 	# hanging past the rock round it.
 	var spots := PackedInt32Array()
 	for i in range(points.size()):
-		if distance[i] >= SPUR_IN: spots.append(i)
+		if distance[i] >= SPUR_IN*radius: spots.append(i)
 	for k in range(rng.randi_range(SPURS.x,SPURS.y)):
 		for attempt in range(12):
 			if spots.is_empty(): break
@@ -218,7 +221,7 @@ static func keel(points: PackedVector2Array, ids: PackedInt32Array, outline: Pac
 			var clear := true
 			for pyramid in pyramids: clear = clear and spot.distance_to(pyramid.apex) >= radius*0.35
 			if not clear: continue
-			var run := rng.randf_range(SPUR_RUN.x,SPUR_RUN.y)
+			var run := rng.randf_range(SPUR_RUN.x,SPUR_RUN.y)*radius
 			var past := pyramids[0].depth_at(spot)+depth*rng.randf_range(SPUR_DROP.x,SPUR_DROP.y)
 			pyramids.append(_Pyramid.new(rng,spot,past,run*0.8,run*1.2,Vector2i(3,4)))
 			break

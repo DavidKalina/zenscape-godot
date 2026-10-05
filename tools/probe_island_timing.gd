@@ -14,10 +14,8 @@ func _initialize() -> void:
 	run.call_deferred()
 
 func run() -> void:
-	var source: Node3D = preload("res://assets/zen_reference/geometry.scn").instantiate()
 	var data := NativeTerrainData.new()
-	data.setup(source.get_node("terrain").mesh)
-	source.free()
+	data.setup(preload("res://scripts/plate_mesh.gd").build())
 	var t := Time.get_ticks_usec()
 	var mask := Outline.mask(data.points,data.vertex_ids,77)
 	var mask_ms := (Time.get_ticks_usec()-t)/1000.0
@@ -25,6 +23,12 @@ func run() -> void:
 	Outline.shore_distance(data.points,data.vertex_ids,mask)
 	var distance_ms := (Time.get_ticks_usec()-t)/1000.0
 	print("outline mask %.1f ms, shore distance %.1f ms" % [mask_ms,distance_ms])
+	# The smallest, a first island (on the main thread as a world is made)
+	# and the largest.
+	for size: float in [0.0,Outline.first_size(),1.0]:
+		t = Time.get_ticks_usec()
+		Outline.mask(data.points,data.vertex_ids,77,size)
+		print("  size %.2f: outline mask %.1f ms" % [size,(Time.get_ticks_usec()-t)/1000.0])
 	# Rays as a pointer sweeping the island from a diorama camera.
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 5
