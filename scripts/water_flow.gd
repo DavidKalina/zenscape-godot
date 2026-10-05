@@ -277,11 +277,14 @@ func setup(tree: SceneTree = null) -> void:
 	_void = cut
 	_shore_cells.clear()
 	_hollows.clear()
-	ready = true
 	# The land changed while the cells were mapped (a fresh island's outline
 	# is set while the first map runs on a worker, and `_void_changed` waits
-	# for `ready`): map them again, or the water would run over the sky.
-	if data.void_faces != cut or data.vertex_ids != ids: await setup(tree)
+	# for `ready`): map them again, or the water would run over the sky. The
+	# grid is not ready until the map it holds is the land's.
+	if data.void_faces != cut or data.vertex_ids != ids:
+		await setup(tree)
+		return
+	ready = true
 
 ## For each cell centre of a `w`×`h` grid, the triangle under it: three vertex
 ## ids and barycentric (u, v) as NativeTerrainData.sample weighs them, or -1.

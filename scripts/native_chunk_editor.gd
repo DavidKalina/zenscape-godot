@@ -2540,7 +2540,7 @@ func _setup_flow() -> void:
 ## Steps the water at its fixed rate, redraws it, and now and then reads the
 ## ponds it makes for life and emergence.
 func _flow_process(delta: float) -> void:
-	if flow == null or not flow.ready: return
+	if flow == null or not flow.ready or flow_view == null: return
 	flow.paused = forming
 	# The sky's rain and snow (and the snow globe's, added to it) reach the water.
 	var precipitation: Variant = scene.get("_precipitation") if scene != null else null
