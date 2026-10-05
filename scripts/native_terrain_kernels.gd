@@ -1,4 +1,5 @@
 extends RefCounted
+const Plate := preload("res://scripts/plate.gd")
 ## Prefer the native kernel when built; keep GDScript for unbuilt checkouts.
 ## Load on the main thread before handing the immutable kernel to workers.
 static var _kernel: RefCounted
@@ -30,6 +31,9 @@ static func _exit_failed_validation() -> void:
 	if tree != null: tree.quit(1)
 
 static func shade(kernel: RefCounted, data: NativeTerrainData, arrays: Array, faces: PackedInt32Array, water: Dictionary, sculpted: bool, has_recipe: bool, first: int, last: int) -> Dictionary:
+	return kernel.shade(shade_inputs(data,sculpted,has_recipe),arrays,faces,water,first,last)
+
+static func shade_inputs(data: NativeTerrainData, sculpted: bool, has_recipe: bool) -> Dictionary:
 	var inputs := {}
 	for key in ["heights","vertex_ids","grass","meadow","tint","_recipe_heights","_face_probe","_locate_face","_locate_u","_locate_v","_face_x","_face_z","_face_shimmer","_face_grass","_face_rock","_face_snow","_face_rim","_recipe_gradients","blank","_ground_tint"]:
 		inputs[key] = data.get(key)
@@ -41,4 +45,10 @@ static func shade(kernel: RefCounted, data: NativeTerrainData, arrays: Array, fa
 	inputs.source_colors = data._arrays[Mesh.ARRAY_COLOR]
 	inputs.sculpted = sculpted
 	inputs.has_recipe = has_recipe
-	return kernel.shade(inputs,arrays,faces,water,first,last)
+	# The plate's reach and the grids' sizes; a library built before these keys
+	# existed ignores them and shades the 28 m plate.
+	inputs.plate_half = Plate.HALF
+	inputs.water_cells = NativeRecipeWater.N
+	inputs.meadow_cells = NativeTerrainData.MEADOW_CELLS
+	inputs.meadow_step = NativeTerrainData.MEADOW_STEP
+	return inputs
