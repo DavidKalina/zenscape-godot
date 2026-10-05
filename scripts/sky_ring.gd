@@ -1,11 +1,10 @@
 extends Node3D
 ## The mountain ring's far skyline (scripts/sky_world.gd): every ring range
-## and every inner range laid out with it stood whole, at once, as coarse
+## and every dividing ridge laid out with it stood whole, at once, as coarse
 ## faces (every STRIDE-th grid point of its heightfield, scripts/sky_peak.gd;
-## the low foothills and the far row every STRIDE_LOW-th), so the ring
-## stands round the world as
+## the low ones every STRIDE_LOW-th), so the ring stands round the world as
 ## a skyline from anywhere in it and never streams in or out. Near, a range
-## is made in full by SkyPeaks (within its RING_BUILD), and its skyline
+## is made in full by SkyPeaks (within its `build_reach`), and its skyline
 ## steps aside for it (`advance`); let go again, the skyline comes back.
 ##
 ## The skyline is worked out on workers from the wanderer's first steps
@@ -22,7 +21,8 @@ const SkyPeak = preload("res://scripts/sky_peak.gd")
 const SkyWorld = preload("res://scripts/sky_world.gd")
 ## The skyline's grid: every STRIDE-th point (SkyPeak STEP apart, so 16 m).
 const STRIDE := 4
-## The low foothills and the far row, coarser still (32 m).
+## The low foothills, the far row and the ridges' low stretches and spurs,
+## coarser still (32 m: SkyPeaks `coarse_of`).
 const STRIDE_LOW := 8
 
 ## The ranges (SkyPeaks), whose palette, material and built ranges this reads.
@@ -75,7 +75,7 @@ func warm(owner: Node3D) -> void:
 		var key: String = peaks._key(cell)
 		if lines.has(key) or _making.has(key): continue
 		var out := {}
-		var task := WorkerThreadPool.add_task(_make.bind(peaks.seed_of(cell),peaks.stature_of(cell),peaks._palette("grass"),peaks._palette("rock"),peaks._gravel(),peaks._snow(),_off_map(),STRIDE_LOW if peaks.kind_of(cell) in ["foot","far"] else STRIDE,peaks.gorge_of(cell),out),false,"Sky ring skyline")
+		var task := WorkerThreadPool.add_task(_make.bind(peaks.seed_of(cell),peaks.stature_of(cell),peaks._palette("grass"),peaks._palette("rock"),peaks._gravel(),peaks._snow(),_off_map(),STRIDE_LOW if peaks.coarse_of(cell) else STRIDE,peaks.gorge_of(cell),out),false,"Sky ring skyline")
 		_making[key] = {"task":task,"out":out,"cell":cell}
 
 static func _make(seed_value: int, stature: float, grass: Array, rock: Array, gravel: Color, snow: Color, off_map: Vector3, stride: int, gorge: bool, out: Dictionary) -> void:

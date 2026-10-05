@@ -29,13 +29,14 @@ extends Node3D
 ##
 ## The ring (scripts/sky_world.gd): with it on, the cells hold no scattered
 ## ranges; the world's ranges are HOME and those laid out once for the whole
-## world (the band round its edge and the inner ranges), each scaled
-## (`scale_of`: along its crest, in height about the sea, across) and only
-## some keeping their gorge (`gorge_of`). Each streams in as a cell's does, keyed by its
-## ring cell (`ring_cell`: a row no real cell reaches), within RING_BUILD,
-## and far off stands as a coarse skyline (scripts/sky_ring.gd), so the ring
-## is in sight right across the world. Nothing scattered stands outside the
-## world's bounds (`blocks`).
+## world (the band round its edge and the ridges dividing its middle), each
+## scaled (`scale_of`: along its crest, in height about the sea, across) and
+## only some keeping their gorge (`gorge_of`). Each streams in as a cell's
+## does, keyed by its ring cell (`ring_cell`: a row no real cell reaches),
+## within its reach (`build_reach`), a ridge's piece drawn coarser near
+## (`detail_of`), and far off stands as a coarse skyline (scripts/
+## sky_ring.gd), so the ring is in sight right across the world. Nothing
+## scattered stands outside the world's bounds or on a ridge (`blocks`).
 
 const SkyPeak = preload("res://scripts/sky_peak.gd")
 ## Other landforms of the land below risen through the sea, kept with the
@@ -58,13 +59,17 @@ const SkyRing = preload("res://scripts/sky_ring.gd")
 ## The ring's ranges stand in cells (RING_ROW, index): a row no real cell
 ## reaches (it would lie billions of metres off). Each is made within
 ## RING_BUILD of the eye and let go past RING_FORGET; past that its skyline
-## stands in for it.
+## stands in for it. A dividing ridge's piece, smaller and many together,
+## within RIDGE_BUILD and past RIDGE_FORGET (`build_reach`).
 const RING_ROW := 1000000
 const RING_BUILD := 1800.0
 const RING_FORGET := 2200.0
-## Nothing scattered stands within INNER_CLEAR (m) of an inner range's
-## footprint (SkyWorld `box_distance`).
-const INNER_CLEAR := 120.0
+const RIDGE_BUILD := 1400.0
+const RIDGE_FORGET := 1750.0
+const RIDGE_STRIDE := 2
+## Nothing scattered stands within INNER_CLEAR (m) of a dividing ridge's
+## footprint (SkyWorld `box_distance`, RIDGE_CLEAR).
+const INNER_CLEAR := SkyWorld.RIDGE_CLEAR
 
 ## The range in sight of the plate: its middle (home coordinates) and the
 ## way its crest runs (radians about y; local +x is the crest's way).
@@ -234,7 +239,7 @@ func flush() -> void:
 func _survey(home: Vector3) -> void:
 	var gone := []
 	for key in built:
-		if _flat(built[key].home,home) > (RING_FORGET if is_ring(built[key].cell) else FORGET): gone.append(key)
+		if _flat(built[key].home,home) > (build_reach(built[key].cell).y if is_ring(built[key].cell) else FORGET): gone.append(key)
 	for key in gone:
 		(built[key].node as Node3D).queue_free()
 		if currents != null: currents.drop_thermals(_jet_key(key))
@@ -253,7 +258,7 @@ func _survey(home: Vector3) -> void:
 		var key := _key(cell)
 		if built.has(key) or _making.has(key): continue
 		var s: Vector4 = spot(cell)
-		if Vector2(s.x-home.x,s.z-home.z).length() <= RING_BUILD: _start(cell,s)
+		if Vector2(s.x-home.x,s.z-home.z).length() <= build_reach(cell).x: _start(cell,s)
 
 # --- Where they stand ------------------------------------------------------------
 
@@ -311,6 +316,26 @@ static func scale_of(cell: Vector2i) -> Vector3:
 static func gorge_of(cell: Vector2i) -> bool:
 	return bool(_ring_range(cell).gorge) if is_ring(cell) else true
 
+## Whether a laid range's far skyline is drawn coarser (SkyRing
+## STRIDE_LOW): the band's foothills and far row, the ridges' low stretches
+## and spurs.
+static func coarse_of(cell: Vector2i) -> bool:
+	if not is_ring(cell): return false
+	var r: Dictionary = _ring_range(cell)
+	return bool(r.get("coarse",r.kind in ["foot","far"]))
+
+## Every how many grid points a range's near faces are drawn (its far ones
+## LOD_STRIDE times more): a dividing ridge's piece, squeezed along its
+## crest, every RIDGE_STRIDE-th, so its faces are about the band's size.
+static func detail_of(cell: Vector2i) -> int:
+	return RIDGE_STRIDE if is_ring(cell) and not SkyWorld.in_band(kind_of(cell)) else 1
+
+## How near the eye a laid range is made in full, and how far off it is
+## let go (m): a dividing ridge's piece nearer than the band's.
+static func build_reach(cell: Vector2i) -> Vector2:
+	if SkyWorld.in_band(kind_of(cell)): return Vector2(RING_BUILD,RING_FORGET)
+	return Vector2(RIDGE_BUILD,RIDGE_FORGET)
+
 ## A laid range's kind (SkyWorld `layout`), or "" for a cell's.
 static func kind_of(cell: Vector2i) -> String:
 	return str(_ring_range(cell).kind) if is_ring(cell) else ""
@@ -344,11 +369,11 @@ static func _ring_range(cell: Vector2i) -> Variant:
 static func blocks(home: Vector3, margin := 0.0) -> bool:
 	if not SkyWorld.inside(home,margin): return true
 	if not (SkyHomes.peaks or SkyHomes.stone): return false
-	# The inner ranges laid within the bounds: their whole footprint, and
-	# INNER_CLEAR past it.
+	# The dividing ridges laid through the middle: their whole footprint,
+	# and INNER_CLEAR past it.
 	if SkyWorld.ring_on():
 		for r: Dictionary in SkyWorld.layout().ranges:
-			if r.kind == "inner" and SkyWorld.box_distance(r,Vector2(home.x,home.z)) < INNER_CLEAR+margin: return true
+			if not SkyWorld.in_band(r.kind) and SkyWorld.box_distance(r,Vector2(home.x,home.z)) < INNER_CLEAR+margin: return true
 	var c := cell_of(home)
 	for dx in range(-1,2):
 		for dz in range(-1,2):
@@ -370,14 +395,14 @@ func _start(cell: Vector2i, s: Vector4) -> void:
 	# thread, before a worker asks for it.
 	preload("res://scripts/native_terrain_kernels.gd").get_kernel()
 	var out := {}
-	var task := WorkerThreadPool.add_task(_make.bind(seed_of(cell),stature_of(cell),_palette("grass"),_palette("rock"),_gravel(),_snow(),out,gorge_of(cell)),false,"Sky peak")
+	var task := WorkerThreadPool.add_task(_make.bind(seed_of(cell),stature_of(cell),_palette("grass"),_palette("rock"),_gravel(),_snow(),out,gorge_of(cell),detail_of(cell)),false,"Sky peak")
 	_making[_key(cell)] = {"task":task,"cell":cell,"spot":s,"out":out}
 
-static func _make(seed_value: int, stature: float, grass: Array, rock: Array, gravel: Color, snow: Color, out: Dictionary, gorge := true) -> void:
+static func _make(seed_value: int, stature: float, grass: Array, rock: Array, gravel: Color, snow: Color, out: Dictionary, gorge := true, stride := 1) -> void:
 	var shape: RefCounted = SkyPeak.make(seed_value,stature,gorge)
 	out.shape = shape
-	out.body = shape.body_arrays(grass,rock,gravel,OFF_MAP,1,snow)
-	out.far = shape.body_arrays(grass,rock,gravel,OFF_MAP,LOD_STRIDE,snow)
+	out.body = shape.body_arrays(grass,rock,gravel,OFF_MAP,stride,snow)
+	out.far = shape.body_arrays(grass,rock,gravel,OFF_MAP,stride*LOD_STRIDE,snow)
 
 ## The worker's range, stood up as nodes: its faces, the cloud at its foot,
 ## and the jet down its gorge.

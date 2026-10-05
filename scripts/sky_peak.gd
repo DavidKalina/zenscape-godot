@@ -332,6 +332,16 @@ static func crest_span(seed_value: int, stature := 1.0, above := 140.0) -> Vecto
 			hi = maxf(hi,x)
 		x += 8.0
 	return Vector2(lo,hi) if lo <= hi else Vector2.ZERO
+
+## Where the gorge crosses the crest (the range's own x), from the plan
+## alone: the dividing ridges keep their roots off a kept gorge's mouth.
+static func gorge_at(seed_value: int, stature := 1.0) -> float:
+	var peak: RefCounted = new()
+	peak.stature = stature
+	peak.seed = seed_value
+	peak._rng.seed = seed_value
+	peak._plan()
+	return float(peak.gorge.x)
 # --- End of ring hooks ---------------------------------------------------------------
 
 func _shape(seed_value: int) -> void:

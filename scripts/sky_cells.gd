@@ -85,10 +85,16 @@ static func raw(cell: Vector2i) -> Variant:
 ## outranking neighbour stands within SPACING. Neighbours further than one
 ## cell off can't come that close.
 func spot(cell: Vector2i) -> Variant:
+	return pick(cell,reserved,func(here: Vector3) -> bool: return SkyPeaks.blocks(here) or SkyTowers.blocks(here) or SkyForestIsles.blocks(here,ISLE_CLEAR))
+
+## The cell's island as `spot` finds it, round fixed slots `reserved`, with
+## `blocked` (Callable(home) -> bool) saying where none may stand: the sky
+## world's layout reads its own plan's islands so (SkyWorld `_islands`).
+static func pick(cell: Vector2i, reserved: Array, blocked: Callable) -> Variant:
 	var here: Variant = raw(cell)
 	if here == null: return null
-	if SkyPeaks.blocks(here) or SkyTowers.blocks(here) or SkyForestIsles.blocks(here,ISLE_CLEAR): return null
-	for s in reserved:
+	if blocked.call(here): return null
+	for s: Vector3 in reserved:
 		if _flat(s,here) < SPACING: return null
 	var rank := noise(cell,4)
 	for dx in range(-1,2):
