@@ -21,7 +21,9 @@ extends Node3D
 ##
 ## Flying the plane (scripts/sky_plane.gd), `engine` adds the propeller's
 ## hum: a low soft buzz that rises in pitch with speed and swells with the
-## throttle. The glide never calls it, and stays silent of it.
+## throttle. The glide never calls it, and stays silent of it. Landing,
+## the hum eases down with the throttle and the engine spinning down, and
+## the wheels' touch gives it a little blip (`blip`).
 
 const COUNT := 420
 const BOX := 36.0
@@ -54,6 +56,11 @@ const HUM_THROTTLE := 0.4
 const HUM_PITCH := 52.0
 const HUM_PER := 2.2
 const HUM_EASE := 0.0004
+## The touch's blip: how much it swells the hum, how much higher it sounds
+## (Hz), and how long it lasts (s).
+const BLIP := 0.9
+const BLIP_PITCH := 14.0
+const BLIP_TIME := 0.16
 
 var _streaks: MultiMeshInstance3D
 var _material: ShaderMaterial
@@ -78,6 +85,8 @@ var _hum := 0.0
 var _hum_goal := 0.0
 var _hum_pitch := HUM_PITCH
 var _hum_phase := 0.0
+## Samples of blip left.
+var _blip_left := 0
 
 func _ready() -> void:
 	name = "GlideAir"
@@ -142,10 +151,15 @@ func advance(delta: float, velocity: Vector3, hang: float, dive: float, near := 
 	_deep = lerpf(_deep,clampf(dive*fast*1.4,0.0,1.0),k)
 	_fill()
 
-## The plane's engine this frame: its speed (m/s) and throttle (-1 to 1).
-func engine(speed: float, throttle: float) -> void:
-	_hum_goal = HUM*(1.0+HUM_THROTTLE*throttle)
+## The plane's engine this frame: its speed (m/s), throttle (-1 to 1) and
+## how far it is running (0 off, 1 on).
+func engine(speed: float, throttle: float, running := 1.0) -> void:
+	_hum_goal = HUM*(1.0+HUM_THROTTLE*throttle)*clampf(running,0.0,1.0)
 	_hum_pitch = HUM_PITCH+HUM_PER*speed
+
+## The wheels touch: a little blip of throttle.
+func blip() -> void:
+	_blip_left = int(BLIP_TIME*RATE)
 
 ## A flap: a whoosh.
 func flap() -> void:
@@ -172,10 +186,12 @@ func _fill() -> void:
 		_whoosh_f += (white-_whoosh_f)*0.06
 		_whoosh_f2 += (_whoosh_f-_whoosh_f2)*0.12
 		var s := (_hiss*0.8+_roar2*6.0*_deep)*_gain+_whoosh_f2*_whoosh*WHOOSH*3.0
-		if _hum_goal > 0.0 or _hum > 0.0001:
+		if _hum_goal > 0.0 or _hum > 0.0001 or _blip_left > 0:
 			# The hum: a soft buzz, beating gently with the blades.
-			_hum += (_hum_goal-_hum)*HUM_EASE
-			_hum_phase = fmod(_hum_phase+_hum_pitch/RATE,2.0)
+			var blipping := _blip_left > 0
+			_blip_left -= 1
+			_hum += (_hum_goal+(HUM*BLIP if blipping else 0.0)-_hum)*HUM_EASE*(4.0 if blipping else 1.0)
+			_hum_phase = fmod(_hum_phase+(_hum_pitch+(BLIP_PITCH if blipping else 0.0))/RATE,2.0)
 			var a := _hum_phase*TAU
 			s += _hum*(sin(a)+0.4*sin(a*2.0)+0.15*sin(a*3.0))*(0.75+0.25*sin(a*0.5))
 		buffer[i] = Vector2(s,s)

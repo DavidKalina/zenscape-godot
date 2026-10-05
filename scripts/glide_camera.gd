@@ -15,6 +15,10 @@ extends RefCounted
 ## goes inside an island: with `solid` it stops short of rock and ground.
 ## `first_person` puts the eye in the glider's head, as before.
 ##
+## A sequence can ask for a framing of its own (`cine`): the plane's landing
+## (scripts/plane_landing.gd) swings it wider on final and round to a low
+## side view at the touch, eased over EASE_CINE, on top of the free look.
+##
 ## Like the glide, it is plain state and maths, so tests can step it.
 
 ## Metres back from the glider and up over it: at a cruise, at the float,
@@ -61,6 +65,8 @@ const EASE_BACK := 0.45
 ## many steps.
 const KEEP := 0.45
 const PROBES := 12
+## How fast it eases to a sequence's framing (seconds).
+const EASE_CINE := 0.9
 
 ## The camera's eye and the point it looks at (global), its roll and its
 ## field of view (degrees).
@@ -77,6 +83,12 @@ var free_held := false
 ## and seconds since that turn.
 var linger := 0.0
 var _since_turn := INF
+## The framing a sequence asks for: Vector3(how far round the plane it
+## swings, radians, right positive; how far it tips down towards level,
+## radians; how much further back and up it stands, a share), and where
+## it has eased to.
+var cine := Vector3.ZERO
+var _cine := Vector3.ZERO
 ## How close in it is now (0 cruise, 1 tucked) and how wide (the float).
 var tuck := 0.0
 var float_out := 0.0
@@ -96,6 +108,8 @@ func reset(glide: RefCounted, from: Vector3, view := FOV) -> void:
 	free = Vector2.ZERO
 	free_held = false
 	_since_turn = INF
+	cine = Vector3.ZERO
+	_cine = Vector3.ZERO
 	tuck = 0.0
 	float_out = 0.0
 	roll = _lean(float(glide.bank))
@@ -134,25 +148,27 @@ func step(delta: float, glide: RefCounted, dive: float, solid := Callable()) -> 
 	# tip-over.
 	var hang := float(glide.hang)
 	float_out = lerpf(float_out,hang,_ease(FLOAT_IN if hang > float_out else FLOAT_OUT,delta))
-	var back := lerpf(lerpf(BACK.x,BACK.y,float_out),BACK.z,tuck)
-	var up := lerpf(lerpf(UP.x,UP.y,float_out),UP.z,tuck)
+	_cine = _cine.lerp(cine,_ease(EASE_CINE,delta))
+	var back := lerpf(lerpf(BACK.x,BACK.y,float_out),BACK.z,tuck)*(1.0+_cine.z)
+	var up := lerpf(lerpf(UP.x,UP.y,float_out),UP.z,tuck)*(1.0+_cine.z*0.5)
 	_since_turn += delta
 	if not free_held and _since_turn >= linger: free = free.lerp(Vector2.ZERO,_ease(EASE_BACK,delta))
+	var swing := free+Vector2(_cine.x,_cine.y)
 	# Behind along the flat of the way, lifted by its climb or dive, then
 	# turned by the free look.
 	var flat := Vector3(_way.x,0.0,_way.z)
 	if flat.length() < 0.05: flat = Vector3(-sin(float(glide.heading)),0.0,-cos(float(glide.heading)))
 	flat = flat.normalized()
-	var behind := (-_way*back+Vector3.UP*up).rotated(Vector3.UP,free.x)
-	var side := flat.cross(Vector3.UP).rotated(Vector3.UP,free.x)
-	behind = behind.rotated(side.normalized(),free.y)
+	var behind := (-_way*back+Vector3.UP*up).rotated(Vector3.UP,swing.x)
+	var side := flat.cross(Vector3.UP).rotated(Vector3.UP,swing.x)
+	behind = behind.rotated(side.normalized(),swing.y)
 	# The spring it hangs on: critically damped, towards the goal.
 	var accel := (behind-_offset)*SPRING*SPRING-_offset_v*2.0*SPRING
 	_offset_v += accel*delta
 	_offset += _offset_v*delta
 	eye = at+_offset
 	var ahead := AHEAD+AHEAD_SPEED*float(glide.speed)
-	look = at.lerp(at+_way*ahead+Vector3.UP*LOOK_UP,1.0-smoothstep(0.3,1.0,absf(free.x)/PI))
+	look = at.lerp(at+_way*ahead+Vector3.UP*LOOK_UP,1.0-smoothstep(0.3,1.0,absf(swing.x)/PI))
 	roll = lerpf(roll,_lean(float(glide.bank)),_ease(EASE_ROLL,delta))
 	if solid.is_valid(): _keep_clear(at,solid)
 

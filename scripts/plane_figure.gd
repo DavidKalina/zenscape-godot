@@ -3,7 +3,7 @@ extends Node3D
 ## camera (scripts/glide_camera.gd): a chunky toy biplane in warm wood
 ## browns, cream wings tipped in terracotta, a spinning propeller, and the
 ## wanderer's head in the open cockpit with the scarf streaming behind. It
-## stands in for the glider (scripts/glider_figure.gd) under `--plane`, with
+## is what flies; the glider (scripts/glider_figure.gd, `--glider`) has
 ## the same calls, so the wanderer's eye can swap one for the other.
 ##
 ## Faceted solids and soft light, as the style asks: every solid is a few
@@ -13,6 +13,9 @@ extends Node3D
 ## pitch, so the stick shows on the wings. Like the glider, a soft mark
 ## under it shows where it would touch down, and close past rock vapour
 ## peels off its upper wingtips.
+##
+## Landed, it stands on its two wheels and a tail skid, nose up (`park`,
+## scripts/plane_strip.gd `rest`), the pilot out, the propeller still.
 
 const GliderFigure = preload("res://scripts/glider_figure.gd")
 const WOOD := Color("8f5234")
@@ -53,6 +56,11 @@ const VAPOUR_DRIFT := Vector2(0.18,0.3)
 const VAPOUR_COLOR := Color(1.0,0.98,0.94)
 
 var _prop: Node3D
+var _blur: MeshInstance3D
+## The pilot's head and cap in the cockpit, hidden once they hop out.
+var _pilot: Array[MeshInstance3D] = []
+## True while it stands parked on the land, not flying.
+var parked := false
 var _blur_material: StandardMaterial3D
 var _prop_angle := 0.0
 ## The ailerons (left, right) and the elevator, on their hinges.
@@ -87,8 +95,9 @@ func _init() -> void:
 	# A dark band where the cockpit is cut, and the wanderer in it: the head
 	# in a leather cap, peeking over the rim.
 	_add(_hull([Vector3(-0.12,0.1,0.06),Vector3(0.12,0.1,0.06)],8),dark,Vector3(0.0,0.15,0.22),Vector3.ZERO)
-	_add(GliderFigure._gem(0.085),skin,Vector3(0.0,0.23,0.22),Vector3.ZERO)
-	_add(GliderFigure._gem(0.07),dark,Vector3(0.0,0.28,0.24),Vector3.ZERO).scale = Vector3(1.15,0.6,1.15)
+	_pilot.append(_add(GliderFigure._gem(0.085),skin,Vector3(0.0,0.23,0.22),Vector3.ZERO))
+	_pilot.append(_add(GliderFigure._gem(0.07),dark,Vector3(0.0,0.28,0.24),Vector3.ZERO))
+	_pilot[1].scale = Vector3(1.15,0.6,1.15)
 	# The wings: a long lower wing through the body and an upper one on
 	# struts, cream, tipped in terracotta, the upper a little forward.
 	var wing := _prism([Vector2(-CHORD*0.5,0.0),Vector2(-CHORD*0.3,THICK*0.6),Vector2(CHORD*0.25,THICK*0.5),Vector2(CHORD*0.5,0.0),Vector2(CHORD*0.25,-THICK*0.4),Vector2(-CHORD*0.3,-THICK*0.4)])
@@ -114,6 +123,9 @@ func _init() -> void:
 		# The wheels under the nose, on short legs.
 		_strut(Vector3(0.08*side,-0.15,-0.3),Vector3(0.17*side,-0.33,-0.28),dark)
 		_add(GliderFigure._frustum(0.08,0.08,0.05,8),dark,Vector3(0.2*side,-0.33,-0.28),Vector3(0.0,0.0,PI*0.5))
+	# A tail skid it rests on, parked (scripts/plane_strip.gd TAIL).
+	_strut(Vector3(0.0,-0.03,0.58),Vector3(0.0,-0.11,0.66),dark)
+	_add(GliderFigure._gem(0.022),dark,Vector3(0.0,-0.1,0.66),Vector3.ZERO)
 	# The tail: a terracotta fin, a cream tailplane and its elevator.
 	var fin := _prism([Vector2(-0.1,0.0),Vector2(0.12,0.0),Vector2(0.14,0.26),Vector2(0.02,0.24)],THICK*0.5)
 	_add(fin,trim,Vector3(0.0,0.03,0.58),Vector3.ZERO)
@@ -137,6 +149,7 @@ func _init() -> void:
 		blade.position = Vector3(0.0,0.13,0.0).rotated(Vector3.BACK,turn)
 		_prop.add_child(blade)
 	var blur := MeshInstance3D.new()
+	_blur = blur
 	var disc := QuadMesh.new()
 	disc.size = Vector2.ONE*0.6
 	blur.mesh = disc
@@ -197,6 +210,8 @@ func _init() -> void:
 ##
 ## Starts the scarf streaming straight back from where it is now.
 func reset(glide: RefCounted) -> void:
+	parked = false
+	show_pilot(true)
 	_scarf_points.resize(SCARF)
 	var back: Vector3 = -glide.forward()
 	for i in range(SCARF): _scarf_points[i] = glide.position+back*SCARF_GAP*i
@@ -220,7 +235,7 @@ func shift(by: Vector3) -> void:
 func update(delta: float, glide: RefCounted, _dive: float, ground: Callable, landable: bool, near := 0.0, lean := 0.0) -> void:
 	var at: Vector3 = glide.position
 	var roll := _roll(glide)
-	transform = Transform3D(Basis.from_euler(Vector3(float(glide.pitch),float(glide.heading),-roll)),at+Vector3.DOWN*0.2)
+	transform = pose(at,float(glide.heading),float(glide.pitch),roll)
 	# The control surfaces follow how fast it rolls and pitches.
 	if delta > 0.0:
 		var rolled := clampf((roll-_last_roll)/delta*AILERON,-DEFLECT,DEFLECT)
@@ -233,12 +248,40 @@ func update(delta: float, glide: RefCounted, _dive: float, ground: Callable, lan
 	_last_roll = roll
 	_last_pitch = float(glide.pitch)
 	var pace := float(glide.speed)
-	_prop_angle = wrapf(_prop_angle+delta*(PROP_TURNS+PROP_PER*pace)*TAU,0.0,TAU)
-	_prop.rotation.z = _prop_angle
-	_blur_material.albedo_color.a = lerpf(BLUR.x,BLUR.y,clampf(pace/30.0,0.0,1.0))
+	var running: Variant = glide.get("engine")
+	_spin_prop(delta,pace,float(running) if running != null else 1.0)
 	_trail_scarf(delta,glide)
 	_trail_vapour(delta,near,lean)
 	_place_mark(delta,at,ground,landable)
+
+## The propeller turns with the speed while the engine runs (`running`, 0
+## to 1), its blur fading as it spins down.
+func _spin_prop(delta: float, pace: float, running: float) -> void:
+	_prop_angle = wrapf(_prop_angle+delta*(PROP_TURNS+PROP_PER*pace)*running*TAU,0.0,TAU)
+	_prop.rotation.z = _prop_angle
+	_blur_material.albedo_color.a = lerpf(BLUR.x,BLUR.y,clampf(pace/30.0,0.0,1.0))*smoothstep(0.0,0.6,running)
+	_blur.visible = running > 0.01
+
+## The pilot in the cockpit, or not (hopped out).
+func show_pilot(on: bool) -> void:
+	for part in _pilot: part.visible = on
+	_scarf.visible = on
+
+## Where the figure stands for a flight's pose: its position (the flight's,
+## the figure hangs FIGURE_DROP under it), heading, pitch and roll.
+static func pose(at: Vector3, heading: float, pitch: float, roll: float) -> Transform3D:
+	return Transform3D(Basis.from_euler(Vector3(pitch,heading,-roll)),at+Vector3.DOWN*0.2)
+
+## Stands it parked: `placed` is its transform in its parent's frame (the
+## plate's, so it turns and moves with the land); the engine off, the
+## pilot out, no scarf, mark or vapour.
+func park(placed: Transform3D) -> void:
+	parked = true
+	transform = placed
+	show_pilot(false)
+	_spin_prop(0.0,0.0,0.0)
+	_mark.visible = false
+	_vapour.visible = false
 
 ## The whole roll it is drawn at: the bank and, on a plane, the barrel roll.
 func _roll(glide: RefCounted) -> float:

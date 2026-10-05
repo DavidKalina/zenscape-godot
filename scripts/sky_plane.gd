@@ -1,6 +1,6 @@
 extends "res://scripts/sky_glide.gd"
-## The little plane: the glide's opt-in other way to fly (`--plane`,
-## scripts/wanderer_eye.gd), a toy prop plane in the spirit of an island
+## The little plane: how the wanderer flies (scripts/wanderer_eye.gd; the
+## old glider is `--glider`), a toy prop plane in the spirit of an island
 ## flyover rather than a flight sim. It keeps the glide's rules and its
 ## shape, so the chase camera, the vapour, the sky and the landing read it
 ## the same: no stamina, no crashing (it skims the ground, slides under an
@@ -25,7 +25,9 @@ extends "res://scripts/sky_glide.gd"
 ##
 ## Coming in to land (`approach`) it throttles back to LANDING_SPEED and
 ## comes down as the glide does; a touch slow enough lands, and Boost or a
-## roll calls it off.
+## roll calls it off. The wanderer's F lands it by its own sequence
+## instead (scripts/plane_landing.gd), which flies it from outside and
+## hands it back with `resume`; `engine` spins down when it is parked.
 
 ## Speeds along the path, in metres a second: the cruise the engine holds,
 ## Boost's and Brake's, the floor it never drops below, the cap a long dive
@@ -69,6 +71,9 @@ var roll_dir := 0.0
 ## The throttle held now: 1 boosting, -1 braking, 0 cruising (for the
 ## figure's propeller and the hum).
 var throttle := 0.0
+## The engine running, 0 to 1: the propeller and the hum spin down to
+## nothing when it is parked (scripts/plane_landing.gd).
+var engine := 1.0
 ## The lean the keys and stick hold (radians), which turns it, and the
 ## mouse's and the approach's turn rate, which only lean it.
 var _lean := 0.0
@@ -83,9 +88,27 @@ func launch(from: Vector3, towards: float, pace: float, drop := true) -> void:
 	rolling = false
 	roll_dir = 0.0
 	throttle = 0.0
+	engine = 1.0
 	_roll_time = 0.0
 	_lean = 0.0
 	_mouse_rate = 0.0
+	velocity = forward()*speed
+
+## Flying on from a pose set from outside (a landing called off, a
+## takeoff's lift; scripts/plane_landing.gd): at `pace` m/s, the nose at
+## `nose`, level, the engine on, nothing turning it.
+func resume(pace: float, nose: float) -> void:
+	speed = clampf(pace,SLOW,FAST)
+	pitch = clampf(nose,PITCH_LIMIT.x,PITCH_LIMIT.y)
+	spin = 0.0
+	rolling = false
+	roll_dir = 0.0
+	approach = false
+	airborne = FALL_TIME+CATCH
+	engine = 1.0
+	_lean = 0.0
+	_mouse_rate = 0.0
+	_roll_time = 0.0
 	velocity = forward()*speed
 
 ## One step. `input` holds:

@@ -16,7 +16,8 @@ extends SceneTree
 ##     the sky and the save; flown back, the island built returns;
 ##   - F comes in to land, slows, flares and touches down.
 ## Visuals (the chunks' look, the streaks) need a rendered run.
-##   godot --headless --fixed-fps 60 --path . -s res://tools/probe_sky_glide.gd -- --no-title
+## The glider is opt-in now (the plane flies by default): pass --glider.
+##   godot --headless --fixed-fps 60 --path . -s res://tools/probe_sky_glide.gd -- --no-title --glider
 var scene: Node3D
 var editor: NativeChunkEditor
 var eye: Node

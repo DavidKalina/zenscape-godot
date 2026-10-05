@@ -24,23 +24,37 @@ extends Node
 ## (ridge lift) and as a gust front passes, and tree crowns lift it over
 ## them like the ground. A prototype: `--no-glide` keeps the old plate clamp.
 ##
-## In the air the camera chases the glider from behind (scripts/glide_camera.gd)
-## and the figure is drawn gliding under its cloth wing
-## (scripts/glider_figure.gd). A click (or E, or the pad's X) flaps for
-## lift of its own. C swaps to the old view from its eyes; the
-## right mouse button (or the right stick) looks round it. The glide can dip
-## under an island's slab. Near the
-## ground a mark shows where it would touch down, and touching down slowly
-## anywhere on the island lands, the camera swooping down into its eyes.
+## It flies a little prop plane (scripts/sky_plane.gd, drawn by
+## scripts/plane_figure.gd): always under power, Space or the pad's right
+## trigger (or A) boosts, Shift or the left trigger brakes, left and right
+## roll it into its turns, and Q and E (or a click, or the pad's shoulders)
+## throw a barrel roll. The mouse (or the right stick) pans the camera round
+## it rather than steering, and the pan holds PLANE_LINGER seconds before
+## swinging back behind, for the view. In the air the camera chases it from
+## behind (scripts/glide_camera.gd); C swaps to the view from its eyes. It
+## can dip under an island's slab. Near the ground a mark shows where it
+## would touch down.
 ##
-## With `--plane` it flies a little prop plane instead (scripts/sky_plane.gd,
-## drawn by scripts/plane_figure.gd): always under power, Space or the pad's
-## right trigger (or A) boosts, Shift or the left trigger brakes, left and
-## right roll it into its turns, and Q and E (or a click, or the pad's
-## shoulders) throw a barrel roll. The mouse (or the right stick) pans the
-## camera round it rather than steering, and the pan holds PLANE_LINGER
-## seconds before swinging back behind, for the view. The camera, the sky
-## and the landing are the glide's.
+## F lands it (scripts/plane_landing.gd): the nearest island within
+## LANDING_REACH is claimed if it is not the plate yet, a strip picked on
+## its land (scripts/plane_strip.gd: the longest, flattest clear run, into
+## the wind), and the plane lines up, glides down, flares, touches with a
+## bounce and a puff, rolls to a stop, and the pilot hops out; the camera
+## swoops into the eyes beside it. Before the touch, Boost, a roll or F
+## again flies on; after, F hops out at once. A slow touch anywhere on the
+## land without F rolls it to a stop where it came down. The plane stays
+## parked where it stopped, on its wheels and tail skid, out of the way of
+## the editor's tools (not a record on the land; the walker steps round
+## it). Walked up to, Space takes off from it: the pilot hops in, it turns
+## to its longest clear run, rolls, lifts and flies. Flying any other way
+## (off the edge, a held jump) brings it along: the parked one goes in a
+## puff, so there is only ever the one plane, and it is always yours.
+##
+## With `--glider` it glides under the old cloth wing instead
+## (scripts/glider_figure.gd): a click (or E, or the pad's X) flaps for lift
+## of its own, the right mouse button (or the right stick) looks round it,
+## F comes in to land at the island's middle, and touching down slowly
+## anywhere on the island lands, the camera swooping down into its eyes.
 
 const Plate = preload("res://scripts/plate.gd")
 ## The figure's height and the eye's height above the ground, in metres. The
@@ -120,12 +134,31 @@ const Shape = preload("res://scripts/native_formation_shape.gd")
 const Presets = preload("res://scripts/native_landscape_presets.gd")
 const Disturbance = preload("res://scripts/disturbance.gd")
 const Footbridge = preload("res://scripts/footbridge.gd")
-const HINT := "Mouse to look  ·  WASD or arrows to walk  ·  Shift to run  ·  Space to jump, hold to glide  ·  V or Esc to step out"
-const PERCH_HINT := "Mouse to look  ·  WASD or arrows to walk  ·  Walk off the edge or hold Space to glide  ·  V or Esc to step out"
+const HINT := "Mouse to look  ·  WASD or arrows to walk  ·  Shift to run  ·  Space to jump, hold to fly  ·  V or Esc to step out"
+const PERCH_HINT := "Mouse to look  ·  WASD or arrows to walk  ·  Walk off the edge or hold Space to fly  ·  V or Esc to step out"
+const GLIDER_HINT := "Mouse to look  ·  WASD or arrows to walk  ·  Shift to run  ·  Space to jump, hold to glide  ·  V or Esc to step out"
+const GLIDER_PERCH_HINT := "Mouse to look  ·  WASD or arrows to walk  ·  Walk off the edge or hold Space to glide  ·  V or Esc to step out"
+## Beside the parked plane, coming in to land, and rolling out.
+const BOARD_HINT := "Space to take off  ·  WASD or arrows to walk  ·  Mouse to look  ·  V or Esc to step out"
+const LANDING_HINT := "Coming in to land  ·  Space, Q E or F to fly on"
+const ROLLING_HINT := "F to hop out"
+const NO_LANDING_HINT := "No island near enough to land on"
 const PLANE_HINT := "A D to bank and turn  ·  W S to pitch  ·  Mouse to look round  ·  Space to boost  ·  Shift to brake  ·  Q E or click to barrel roll  ·  F to land  ·  C for the camera  ·  V or Esc to step out"
 ## The plane's camera pan holds this many seconds after the mouse or the
 ## right stick last turned it, then swings back behind.
 const PLANE_LINGER := 2.5
+## Walked within BOARD_REACH m of the parked plane, Space takes off; the
+## walker keeps PARKED_ROOM m from its middle.
+const BOARD_REACH := 1.9
+const PARKED_ROOM := 0.75
+## Hopping out, the walker lands this far to the plane's left (m) and a
+## little ahead, and hops this high (m).
+const HOP_SIDE := 1.4
+const HOP_AHEAD := 0.3
+const HOP_HEIGHT := 0.55
+## Anything standing taller than this over its ground (m) is in the wings'
+## way on a strip.
+const WING_LOW := 0.28
 const FLY_HINT := "Mouse or A D to turn  ·  W S to pitch  ·  Click or E to flap  ·  Space to rise  ·  Shift to dive  ·  F to land  ·  Right mouse to look round  ·  C for the camera  ·  V or Esc to step out"
 const SkyGlide = preload("res://scripts/sky_glide.gd")
 const SkyIslands = preload("res://scripts/sky_islands.gd")
@@ -141,6 +174,8 @@ const IslandFrame = preload("res://scripts/island_frame.gd")
 const GlideVapour = preload("res://scripts/glide_vapour.gd")
 const SkyPlane = preload("res://scripts/sky_plane.gd")
 const PlaneFigure = preload("res://scripts/plane_figure.gd")
+const PlaneStrip = preload("res://scripts/plane_strip.gd")
+const PlaneLanding = preload("res://scripts/plane_landing.gd")
 ## The chase view's field of view at a cruise; the camera widens it with
 ## speed (GlideCamera `fov`).
 const CHASE_FOV := GlideCamera.FOV
@@ -221,8 +256,23 @@ var air: Node3D
 var sky: Node
 var flying := false
 var glide_enabled := "--no-glide" not in OS.get_cmdline_user_args()
-## Flying the little plane instead of the glider (`--plane`).
-var plane := "--plane" in OS.get_cmdline_user_args()
+## Flying the little plane (the default), or the old glider (`--glider`).
+var plane := flies_plane(OS.get_cmdline_user_args())
+## The plane's landing or takeoff under way (scripts/plane_landing.gd), and
+## which; F pressed and waiting for its island to be claimed.
+var landing: RefCounted = null
+var _taking_off := false
+var _landing_wait := false
+## The plane parked on the plate (a PlaneFigure under the terrain), where
+## its flight position stands (plate XZ) and its heading (plate yaw).
+var parked: Node3D = null
+var _parked_at := Vector2.ZERO
+var _parked_heading := 0.0
+## Where the hop out lands (plate frame) and where it leaves from.
+var _hop_to := Vector3.INF
+var _hop_from := Vector3.ZERO
+var _board_asked := false
+var _near_plane := false
 ## Mouse look gathered for the glide's next step, and seconds of skim so far.
 var _fly_look := Vector2.ZERO
 var _skim_time := 0.0
@@ -263,6 +313,11 @@ var _middles := {}
 ## Footprint profile of a mesh: [y0, band height, radius per band...].
 static var _profiles := {}
 
+## Whether a run with these command line arguments flies the plane: yes,
+## unless `--glider` asks for the old glider.
+static func flies_plane(args: PackedStringArray) -> bool:
+	return "--glider" not in args
+
 func setup(owner_scene: Node3D) -> void:
 	scene = owner_scene
 	editor = scene._chunk_editor
@@ -275,6 +330,8 @@ func setup(owner_scene: Node3D) -> void:
 	# A new world (`reset_flat`: the flip, a new plain, a regrow) has no
 	# figure on it until the next V.
 	editor.data.state_restored.connect(_world_restored)
+	# The parked plane settles again on land shaped under it.
+	editor.data.history_captured.connect(func(_state: Dictionary) -> void: _seat_parked.call_deferred())
 	steps = WandererSteps.new()
 	add_child(steps)
 	_layer = CanvasLayer.new()
@@ -282,7 +339,7 @@ func setup(owner_scene: Node3D) -> void:
 	_layer.visible = false
 	add_child(_layer)
 	_hint = Label.new()
-	_hint.text = HINT
+	_hint.text = _walk_hint()
 	_hint.add_theme_font_size_override("font_size",15)
 	_hint.add_theme_color_override("font_color",Color("fbf6ea"))
 	_hint.add_theme_color_override("font_shadow_color",Color(0,0,0,0.55))
@@ -377,6 +434,7 @@ func _build_figure() -> void:
 func _world_restored(state: Dictionary) -> void:
 	# A claimed island's plain is formed under the glide, not a new world.
 	if state.is_empty() and not (islands != null and islands.claiming): forget()
+	elif has_parked(): _seat_parked.call_deferred()
 
 ## The figure is gone, stepped out of first if the eye is in it; V sets a
 ## new one down.
@@ -384,6 +442,7 @@ func forget() -> void:
 	if active: leave()
 	if has_figure(): figure.queue_free()
 	figure = null
+	_unpark(false)
 	_feet = Vector3.ZERO
 	_obstacle_key = []
 	_obstacles = PackedVector3Array()
@@ -451,12 +510,14 @@ func _read_obstacles(force: bool) -> void:
 	var content: Node = editor.content
 	if content == null: return
 	var batches: Array = content._batches
-	var key := [editor.data.objects_revision,batches.size()]
+	var key := [editor.data.objects_revision,batches.size(),_parked_at if has_parked() else null]
 	for batch in batches: key.append(batch.get_instance_id())
 	if not force and key == _obstacle_key: return
 	_obstacle_key = key
 	_obstacles = PackedVector3Array()
 	_crowns = PackedVector4Array()
+	# The parked plane: the walker steps round it.
+	if has_parked(): _obstacles.append(Vector3(_parked_at.x,_parked_at.y,PARKED_ROOM+RADIUS))
 	var to_plate: Transform3D = editor.terrain.global_transform.affine_inverse()
 	for batch: MultiMeshInstance3D in batches:
 		if not is_instance_valid(batch) or batch.multimesh == null or batch.multimesh.mesh == null: continue
@@ -670,7 +731,12 @@ func leave() -> void:
 		var at := glide.position
 		# From the chase the orbit takes over where the camera is.
 		eye = camera.global_position
+		# On the ground, mid landing or takeoff, the plane stays parked
+		# where it stands and the walker steps out beside it.
+		var grounded: bool = landing != null and landing.on_ground()
+		if grounded: _park_here()
 		_end_flight()
+		if grounded: _read_obstacles(true)
 		_feet = _clamped(_free_spot(_clamped(editor.terrain.to_local(at))))
 		_eye_y = _feet.y+EYE_HEIGHT
 	active = false
@@ -734,6 +800,10 @@ func _advance_eye(delta: float) -> void:
 	if _advance_jump(delta):
 		_launch(move.length(),false)
 		return
+	if _board_asked:
+		_board_asked = false
+		_board()
+		return
 	_feet = _clamped(walked)
 	var moved := Vector2(_feet.x-was.x,_feet.z-was.z).length()
 	_notice_step(moved,delta)
@@ -756,6 +826,7 @@ func _advance_eye(delta: float) -> void:
 	# The figure keeps the eye's heading and place for when you step out.
 	_sync_figure()
 	_hint_time += delta
+	_hint_plane()
 	_hint.modulate.a = clampf(1.0-(_hint_time-4.0)/1.5,0.0,1.0)
 
 ## Just landed from the chase: the camera swoops from where it was down
@@ -773,12 +844,14 @@ func _swoop_in(delta: float) -> void:
 
 ## Off the edge: the plate is copied out into the sky and the glide takes the eye.
 ## Off an islet the sky is already out, and the glide leaves from its top.
-func _launch(pace: float, drop := true) -> void:
+func _launch(pace: float, drop := true, start := Vector3.INF, towards := 0.0) -> void:
 	var from := _eye_global()
 	var perched := not perch.is_empty()
 	if perched:
 		from = _perch_eye_global()
 		_unperch()
+	# There is only the one plane: flying from anywhere but it brings it along.
+	if start == Vector3.INF: _unpark(true)
 	flying = true
 	_fly_look = Vector2.ZERO
 	_skim_time = 0.0
@@ -790,8 +863,11 @@ func _launch(pace: float, drop := true) -> void:
 	if not perched: _far_before = camera.far
 	camera.far = SkyWorld.VIEW_FAR if SkyWorld.ring_on() else FLY_FAR
 	islands.show_air(true)
-	glide.launch(from,_yaw,pace,drop)
-	glide.pitch = clampf(_polar-PI*0.5,-0.6,0.3)
+	if start != Vector3.INF:
+		glide.launch(start,towards,pace,drop)
+	else:
+		glide.launch(from,_yaw,pace,drop)
+		glide.pitch = clampf(_polar-PI*0.5,-0.6,0.3)
 	_flap_asked = false
 	_flaps_heard = 0
 	_roll_asked = 0.0
@@ -812,13 +888,18 @@ func _launch(pace: float, drop := true) -> void:
 func _end_flight() -> void:
 	_unperch()
 	flying = false
+	landing = null
+	_taking_off = false
+	_landing_wait = false
+	chase.cine = Vector3.ZERO
 	scene.camera_roll = 0.0
 	glider.visible = false
+	if glider.has_method("show_pilot"): glider.show_pilot(true)
 	camera.far = _far_before
 	islands.show_air(false)
 	sky.stop()
 	air.stop()
-	_hint.text = HINT
+	_hint.text = _walk_hint()
 
 ## The glide's input this frame: keys, the first gamepad and the mouse.
 func _fly_input() -> Dictionary:
@@ -865,9 +946,13 @@ func _advance_flight(delta: float) -> void:
 	if not perch.is_empty():
 		_advance_perch(delta)
 		return
+	if landing != null:
+		_advance_sequence(delta)
+		return
 	var input := _fly_input()
 	_read_obstacles(false)
 	if glide.approach: glide.approach_target = _landing_spot()
+	if _landing_wait: _wait_to_land(delta,input)
 	glide.step(delta,input,_fly_ground,_fly_air)
 	# Into another island's footprint, it becomes the plate.
 	if not islands.claiming:
@@ -899,7 +984,8 @@ func _advance_flight(delta: float) -> void:
 	glider.update(delta,glide,float(input.dive),_fly_ground,landable,vapour.near,vapour.side)
 	_skim_time = _skim_time+delta if glide.skimming and landable else 0.0
 	if _skim_time >= LAND_TIME:
-		if on_plate: _land()
+		if on_plate and plane: _roll_out()
+		elif on_plate: _land()
 		else: _perch(islet)
 
 ## Where F comes in to land: the middle of the nearest island's land within
@@ -965,6 +1051,10 @@ func _advance_jump(delta: float) -> bool:
 	var down := Input.is_physical_key_pressed(KEY_SPACE) or Input.is_joy_button_pressed(0,JOY_BUTTON_A)
 	var pressed := down and not _jump_was
 	_jump_was = down
+	# By the parked plane, Space climbs in rather than jumping.
+	if pressed and _hop <= 0.0 and perch.is_empty() and by_plane():
+		_board_asked = true
+		return false
 	if pressed and _hop <= 0.0:
 		_hop_rise = JUMP
 		_hop = 0.001
@@ -1048,7 +1138,7 @@ func _perch(islet: Dictionary) -> void:
 	_bob = 0.0
 	_bob_offset = Vector3.ZERO
 	steps.step("grass",1.0)
-	_hint.text = PERCH_HINT
+	_hint.text = PERCH_HINT if plane else GLIDER_PERCH_HINT
 	_hint.modulate.a = 1.0
 	_hint_time = 0.0
 
@@ -1180,7 +1270,10 @@ func _footfall(moved: float, delta: float, right: Vector3) -> void:
 ## bare earth, as a worn path is.
 func _surface() -> String:
 	if not perch.is_empty(): return "grass"
-	var at := Vector2(_feet.x,_feet.z)
+	return _surface_at(Vector2(_feet.x,_feet.z))
+
+## What stands at plate point `at`, as `_surface`.
+func _surface_at(at: Vector2) -> String:
 	if not _deck(at).is_empty(): return "wood"
 	if _depth(at) >= Footbridge.WET: return "water"
 	var data: NativeTerrainData = editor.data
@@ -1215,6 +1308,421 @@ func _advance_return(delta: float) -> void:
 	scene.yaw = lerp_angle(scene.yaw,_before.yaw,k)
 	scene.polar = lerpf(scene.polar,_before.polar,k)
 	scene.distance = lerpf(scene.distance,_before.distance,k)
+
+
+# --- The plane: landing, parked, taking off ---------------------------------------
+
+func _walk_hint() -> String:
+	if not plane: return GLIDER_HINT
+	return BOARD_HINT if _near_plane else HINT
+
+## Walking: the hint offers the takeoff by the parked plane.
+func _hint_plane() -> void:
+	var near := by_plane()
+	if near == _near_plane: return
+	_near_plane = near
+	_hint.text = _walk_hint()
+	if near:
+		_hint_time = 0.0
+		_hint.modulate.a = 1.0
+
+func has_parked() -> bool:
+	return parked != null and is_instance_valid(parked)
+
+## True with the walker within BOARD_REACH of the parked plane, walking.
+func by_plane() -> bool:
+	if not plane or not has_parked() or flying or not perch.is_empty(): return false
+	return Vector2(_feet.x,_feet.z).distance_to(_parked_at) <= BOARD_REACH
+
+## F in the plane: lands; mid line-up, flies on; rolling out, hops out now.
+func _land_key() -> void:
+	if landing != null:
+		if _taking_off: return
+		if landing.can_cancel(): _fly_on()
+		else: landing.skip()
+		return
+	if _landing_wait:
+		_landing_wait = false
+		_hint.text = PLANE_HINT
+		return
+	_landing_wait = true
+	_hint.text = LANDING_HINT
+	_hint.modulate.a = 1.0
+	_hint_time = 0.0
+
+## Called off before the touch: back to flying from where it is.
+func _fly_on() -> void:
+	if landing == null or not landing.cancel(): return
+	landing = null
+	chase.cine = Vector3.ZERO
+	_hint.text = PLANE_HINT
+	_hint.modulate.a = 1.0
+	_hint_time = 0.0
+
+## F pressed: the plane heads for the island to land on while it is
+## claimed; once it is the plate, the strip is picked and the landing
+## begins. Boost or a roll calls it off.
+func _wait_to_land(delta: float, input: Dictionary) -> void:
+	if float(input.get("boost",0.0)) > 0.0 or float(input.get("roll",0.0)) != 0.0:
+		_landing_wait = false
+		_hint.text = PLANE_HINT
+		return
+	# Turning towards it meanwhile, unless steered.
+	glide.approach_target = _landing_spot()
+	if glide.approach_target != Vector3.INF and is_zero_approx(float(input.get("turn",0.0))): glide.heading += glide._aim(delta)
+	if islands.claiming: return
+	var target := _landing_target()
+	if target == -2:
+		_landing_wait = false
+		_hint.text = NO_LANDING_HINT
+		_hint.modulate.a = 1.0
+		_hint_time = 0.0
+		return
+	if target >= 0:
+		# Claimed first, so the strip is read off the real land.
+		if islands._rise[target] == Vector3.ZERO and islands.lands[target] != null: _claim(target)
+		return
+	# Under the island or below its land, it climbs out first, so the way
+	# in never has to pass through its rock.
+	var under: Variant = _fly_ground(glide.position)
+	var middle: Variant = _fly_ground(glide.approach_target) if glide.approach_target != Vector3.INF else null
+	var floor_y := maxf((under as Vector2).x if under != null else -INF,(middle as Vector2).x if middle != null else -INF)
+	if glide.under_rock or glide.position.y < floor_y+2.0:
+		if is_zero_approx(float(input.get("pitch",0.0))): input["pitch"] = 0.8
+		return
+	_begin_landing()
+
+## Which island F lands on: -1 the plate, a copy's index, or -2 none
+## within LANDING_REACH.
+func _landing_target() -> int:
+	var best := -2
+	var nearest := LANDING_REACH
+	var m := editor.terrain.global_position+_land_middle(editor.data)
+	var d := Vector2(m.x-glide.position.x,m.z-glide.position.z).length()
+	if d < nearest:
+		nearest = d
+		best = -1
+	for i in range(islands.offsets.size()):
+		m = editor.terrain.global_position+islands.offsets[i]+Vector3.DOWN*islands.sunk(i)+_land_middle(islands.lands[i])
+		d = Vector2(m.x-glide.position.x,m.z-glide.position.z).length()
+		if d < nearest:
+			nearest = d
+			best = i
+	return best
+
+## The plate's land as a strip survey (PlaneStrip `survey`): its heights,
+## water and decks, and everything standing taller than the wings.
+func _strip_map() -> Dictionary:
+	_read_obstacles(true)
+	_read_depths()
+	var data: NativeTerrainData = editor.data
+	var height := func(p: Vector2) -> Variant: return data.ground_height(p) if data.has_land(p) else null
+	var wet := func(p: Vector2) -> bool: return _depth(p) > Footbridge.WET or not _deck(p).is_empty()
+	return PlaneStrip.survey(data.land_rect(),height,wet,_strip_blockers())
+
+## What stands taller than the wings on the plate: every placed thing's
+## footprint above WING_LOW (trees, rocks, cabins, lamps, fences), and the
+## walker's own obstacles but the parked plane.
+func _strip_blockers() -> PackedVector3Array:
+	var out := PackedVector3Array()
+	for i in range(1 if has_parked() else 0,_obstacles.size()): out.append(_obstacles[i])
+	var content: Node = editor.content
+	if content == null: return out
+	var to_plate: Transform3D = editor.terrain.global_transform.affine_inverse()
+	for batch: MultiMeshInstance3D in content._batches:
+		if not is_instance_valid(batch) or batch.multimesh == null or batch.multimesh.mesh == null: continue
+		var profile := _profile(batch.multimesh.mesh)
+		if profile.size() < 3: continue
+		for source: Dictionary in content._sources.get(batch.get_meta("part"),[]):
+			var item: Variant = source.get("item")
+			if item == null: continue
+			var placed: Variant = content._instance_transform(source)
+			if placed == null: continue
+			var at: Transform3D = to_plate*batch.global_transform*(placed as Transform3D)
+			var ground := _ground(Vector3(float(item.x),at.origin.y,float(item.z)))
+			var lift: float = at.basis.y.y
+			var wide := maxf(at.basis.get_scale().x,at.basis.get_scale().z)
+			var reach := 0.0
+			for band in range(profile.size()-2):
+				var high := at.origin.y+lift*(profile[0]+profile[1]*(band+1))
+				if high > ground+WING_LOW: reach = maxf(reach,profile[band+2]*wide)
+			if reach > 0.0: out.append(Vector3(at.origin.x,at.origin.z,reach))
+	return out
+
+## The wind's way over the plate (plate XZ), or none.
+func _wind_way() -> Vector2:
+	var atmosphere: Node = scene.get("_atmosphere")
+	if atmosphere == null: return Vector2.ZERO
+	var angle: float = atmosphere._air_angle
+	var way := editor.terrain.global_basis.inverse()*Vector3(cos(angle),0.0,sin(angle))
+	return Vector2(way.x,way.z)
+
+## The ground's height under a global point's XZ, or NAN off the land.
+func _floor_global(p: Vector2) -> float:
+	var local := editor.terrain.to_local(Vector3(p.x,0.0,p.y))
+	if not _on_land(Vector2(local.x,local.z)): return NAN
+	return editor.terrain.to_global(Vector3(local.x,_ground(local),local.z)).y
+
+## A strip in the plate's frame (PlaneStrip) made global.
+func _strip_global(strip: Dictionary) -> Dictionary:
+	var out := strip.duplicate()
+	for key in ["touch","end"]:
+		var at: Vector2 = strip[key]
+		out[key] = editor.terrain.to_global(Vector3(at.x,_ground(Vector3(at.x,0.0,at.y)),at.y))
+	var dir: Vector2 = strip.dir
+	out.dir = (editor.terrain.global_basis*Vector3(dir.x,0.0,dir.y)).normalized()
+	return out
+
+## Picks the strip on the plate and starts the landing.
+func _begin_landing() -> void:
+	_landing_wait = false
+	var map := _strip_map()
+	var local := editor.terrain.to_local(glide.position)
+	var way := editor.terrain.global_basis.inverse()*glide.forward()
+	var strips := []
+	for strip in PlaneStrip.candidates(map,_wind_way(),Vector2(local.x,local.z),Vector2(way.x,way.z)): strips.append(_strip_global(strip))
+	var seq := PlaneLanding.new()
+	var chosen: Dictionary = seq.choose(glide,strips,_fly_ground)
+	seq.land(glide,chosen,_fly_ground,_floor_global)
+	_start_sequence(seq,false)
+	_hint.text = LANDING_HINT
+
+func _start_sequence(seq: RefCounted, takeoff: bool) -> void:
+	landing = seq
+	_taking_off = takeoff
+	_hop_to = Vector3.INF
+	glide.approach = false
+
+## A slow touch on the land without F: it rolls to a stop straight ahead,
+## as far as the land is clear.
+func _roll_out() -> void:
+	var map := _strip_map()
+	var local := editor.terrain.to_local(glide.position)
+	var way3 := editor.terrain.global_basis.inverse()*glide.forward()
+	var way := Vector2(way3.x,way3.z).normalized() if Vector2(way3.x,way3.z).length() > 0.01 else Vector2(0.0,-1.0)
+	var at := Vector2(local.x,local.z)
+	var ahead := PlaneStrip.clear_ahead(map,at,way,PlaneLanding.ROLL_LEN)
+	var strip := _strip_global({"touch":at,"end":at+way*maxf(ahead,0.3),"dir":way,"length":maxf(ahead,0.3),"hop":true})
+	var seq := PlaneLanding.new()
+	seq.land(glide,strip,_fly_ground,_floor_global,true)
+	_start_sequence(seq,false)
+	_touchdown()
+	_hint.text = ROLLING_HINT
+
+## One frame of the landing or takeoff: the sequence flies the plane and
+## the sky, the sound and the camera follow it.
+func _advance_sequence(delta: float) -> void:
+	var input := _fly_input()
+	var seq := landing
+	if seq.can_cancel() and (float(input.get("boost",0.0)) > 0.0 or float(input.get("roll",0.0)) != 0.0):
+		# Flying on from the next frame; a roll asked for still rolls.
+		_fly_on()
+		_roll_asked = float(input.get("roll",0.0))
+		return
+	seq.step(delta)
+	glide.engine = seq.engine
+	if seq.touched: _touchdown()
+	if not _taking_off and seq.phase == PlaneLanding.HOP_OUT and _hop_to == Vector3.INF: _begin_hop_out()
+	if seq.phase in [PlaneLanding.HOP_OUT,PlaneLanding.BOARD]: _hop_figure(seq.hop)
+	elif has_figure(): figure.visible = false
+	if not _taking_off and seq.phase == PlaneLanding.TOUCHDOWN: _hint.text = ROLLING_HINT
+	sky.advance(delta,glide.position,islands.in_cloud(glide.position,scene._motion_time))
+	islands.advance(delta,glide.position,glide.heading,sky.flight.w)
+	vapour.step(delta,glide,_fly_ground)
+	air.advance(delta,glide.velocity,0.0,0.0,vapour.near,islands.towers.fade(glide.position))
+	air.engine(glide.speed,seq.throttle,seq.engine)
+	chase.cine = _framing(seq)
+	chase.step(delta,glide,0.0,_solid)
+	_write_chase()
+	scene._auto_orbit = false
+	scene._orbit_delta = Vector2.ZERO
+	scene._pan_delta = Vector2.ZERO
+	camera.fov = chase.fov
+	if not has_parked() or _taking_off: glider.update(delta,glide,0.0,_fly_ground,false,vapour.near,vapour.side)
+	_hint_time += delta
+	_hint.modulate.a = clampf(1.0-(_hint_time-6.0)/1.5,0.0,1.0)
+	if not seq.done(): return
+	landing = null
+	if _taking_off:
+		_taking_off = false
+		chase.cine = Vector3.ZERO
+		glider.show_pilot(true)
+		_hint.text = PLANE_HINT
+		_hint.modulate.a = 1.0
+		_hint_time = 0.0
+	else:
+		_land_beside_plane()
+
+## How the camera frames each part: a little wider lining up, wider and to
+## the left on final, round low to the left side for the touch and the hop
+## out (the pilot climbs out on the left), and from there for the takeoff.
+func _framing(seq: RefCounted) -> Vector3:
+	match seq.phase:
+		PlaneLanding.LINE_UP: return Vector3(0.0,0.0,0.25)
+		PlaneLanding.DESCENT: return Vector3(-0.8,0.02,0.45)
+		PlaneLanding.FLARE,PlaneLanding.TOUCHDOWN,PlaneLanding.ROLLOUT: return Vector3(-1.25,0.0,0.3)
+		PlaneLanding.BEAT,PlaneLanding.HOP_OUT: return Vector3(-1.35,-0.04,0.3)
+		PlaneLanding.BOARD,PlaneLanding.TAXI: return Vector3(-1.2,-0.04,0.3)
+		PlaneLanding.ROLL: return Vector3(-0.9,0.0,0.3)
+	return Vector3.ZERO
+
+## The wheels touch: a puff of grass or dust, a thump, a blip of throttle,
+## and the life round it startles.
+func _touchdown() -> void:
+	var local := editor.terrain.to_local(glide.position)
+	var surface := _surface_at(Vector2(local.x,local.z))
+	var ground := _floor_global(Vector2(glide.position.x,glide.position.z))
+	var at := Vector3(glide.position.x,ground if not is_nan(ground) else glide.position.y-0.6,glide.position.z)
+	_puff(at,surface)
+	steps.step(surface,1.0)
+	air.blip()
+	Disturbance.raise(at,RADIUS*4.0,0.8,"figure")
+
+## A soft puff at a global point: grass-green and pale on grass, warm dust
+## on earth and sand, snow on snow, spray on water; a few soft balls that
+## swell, drift up and fade.
+func _puff(at: Vector3, surface: String) -> void:
+	var tints := {"grass":Color("d6dcb4"),"snow":Color("f4f6f8"),"water":Color("e8f2f4"),"stone":Color("cfc8bc"),"wood":Color("d8c4a4")}
+	var tint: Color = tints.get(surface,Color("d8c39c"))
+	var rng := RandomNumberGenerator.new()
+	rng.seed = int(at.x*13.0+at.z*7.0)
+	var sphere := SphereMesh.new()
+	sphere.radius = 0.5
+	sphere.height = 1.0
+	sphere.radial_segments = 8
+	sphere.rings = 4
+	for i in range(7):
+		var ball := MeshInstance3D.new()
+		ball.mesh = sphere
+		var material := StandardMaterial3D.new()
+		material.albedo_color = Color(tint,0.38)
+		material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		material.cull_mode = BaseMaterial3D.CULL_DISABLED
+		ball.material_override = material
+		ball.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		ball.name = "PlanePuff"
+		add_child(ball)
+		var side := Vector3(rng.randf_range(-1.0,1.0),0.0,rng.randf_range(-1.0,1.0))
+		ball.global_position = at+side*0.25+Vector3.UP*0.1
+		ball.scale = Vector3.ONE*0.18
+		var tween := ball.create_tween().set_parallel(true)
+		tween.tween_property(ball,"scale",Vector3.ONE*rng.randf_range(0.55,0.9),1.1).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+		tween.tween_property(ball,"global_position",ball.global_position+side*0.7+Vector3.UP*rng.randf_range(0.25,0.55),1.1).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+		tween.tween_property(material,"albedo_color:a",0.0,1.1).set_ease(Tween.EASE_IN)
+		tween.chain().tween_callback(ball.queue_free)
+
+## Stopped: the plane is parked where it stands, and the walker's hop out
+## is worked out: to the plane's left, a little ahead, on free ground.
+func _begin_hop_out() -> void:
+	_park_here()
+	glider.visible = false
+	_read_obstacles(true)
+	_read_depths()
+	var local := editor.terrain.to_local(glide.position)
+	var heading := _parked_heading
+	var forward := Vector3(-sin(heading),0.0,-cos(heading))
+	var right := Vector3(cos(heading),0.0,-sin(heading))
+	var spot := Vector3(local.x,0.0,local.z)-right*HOP_SIDE+forward*HOP_AHEAD
+	_hop_to = _clamped(_free_spot(_clamped(spot)))
+	_hop_from = Vector3(local.x,local.y+0.1,local.z)
+
+## The walker mid-hop: `k` 0 in the cockpit, 1 on the ground beside it.
+func _hop_figure(k: float) -> void:
+	if not has_figure() or _hop_to == Vector3.INF: return
+	figure.visible = k > 0.02 and k < 0.999
+	var at := _hop_from.lerp(_hop_to,smoothstep(0.0,1.0,k))
+	at.y += HOP_HEIGHT*sin(PI*k)
+	figure.position = at
+	var way := _hop_to-_hop_from
+	figure.rotation = Vector3(0.0,atan2(-way.x,-way.z),0.0)
+
+## Down beside the parked plane: walking, facing it, the camera swooping
+## from the chase into the eyes.
+func _land_beside_plane() -> void:
+	if not has_parked(): _park_here()
+	if _hop_to == Vector3.INF: _begin_hop_out()
+	_swoop = 0.0 if chase.first_person else SWOOP
+	_swoop_from = {"target":scene.target,"yaw":scene.yaw,"polar":scene.polar,"distance":scene.distance}
+	_end_flight()
+	_feet = _hop_to
+	var to := Vector2(_parked_at.x-_feet.x,_parked_at.y-_feet.z)
+	_yaw = atan2(-to.x,-to.y)+_turn()
+	_polar = PI*0.5-0.18
+	_eye_y = _feet.y+EYE_HEIGHT
+	_pace = Vector2.ZERO
+	_steps = FIRST_STEP
+	_bob = 0.0
+	_bob_offset = Vector3.ZERO
+	figure.visible = false
+	steps.step(_surface(),0.6)
+	_disturb(PLACE_STRENGTH)
+	_sync_figure()
+	_near_plane = by_plane()
+	_hint.text = _walk_hint()
+	_hint.modulate.a = 1.0
+	_hint_time = 0.0
+
+## Parks the plane where the flight stands now.
+func _park_here() -> void:
+	var local := editor.terrain.to_local(glide.position)
+	_park(Vector2(local.x,local.z),glide.heading-_turn())
+
+## Stands the plane parked at plate point `at`, facing `heading` (plate yaw).
+func _park(at: Vector2, heading: float) -> void:
+	if not has_parked():
+		parked = PlaneFigure.new()
+		parked.name = "ParkedPlane"
+		editor.terrain.add_child(parked)
+		if islands != null: islands.skip.append(parked)
+	_parked_at = at
+	_parked_heading = heading
+	_seat_parked()
+	_obstacle_key = []
+
+## Sits the parked plane on its wheels and skid on the ground under it.
+func _seat_parked() -> void:
+	if not has_parked(): return
+	var r := PlaneStrip.rest(func(p: Vector2) -> float: return _ground(Vector3(p.x,0.0,p.y)),_parked_at,_parked_heading)
+	parked.park(PlaneFigure.pose(Vector3(_parked_at.x,r.x,_parked_at.y),_parked_heading,r.y,r.z))
+
+## The parked plane goes: with `puff`, in a puff where it stood.
+func _unpark(puff: bool) -> void:
+	if not has_parked():
+		parked = null
+		return
+	if puff and is_inside_tree(): _puff(parked.global_position,"grass")
+	if islands != null: islands.skip.erase(parked)
+	parked.queue_free()
+	parked = null
+	_obstacle_key = []
+
+## Space by the parked plane: the pilot hops in, and it turns to its
+## longest clear run, rolls, lifts and flies.
+func _board() -> void:
+	if not has_parked(): return
+	var map := _strip_map()
+	var heading := _parked_heading
+	var run := PlaneStrip.takeoff(map,_parked_at,Vector2(-sin(heading),-cos(heading)),_wind_way())
+	var r := PlaneStrip.rest(func(p: Vector2) -> float: return _ground(Vector3(p.x,0.0,p.y)),_parked_at,heading)
+	var start := editor.terrain.to_global(Vector3(_parked_at.x,r.x,_parked_at.y))
+	_hop_to = _feet
+	_hop_from = Vector3(_parked_at.x,r.x+0.1,_parked_at.y)
+	_unpark(false)
+	_launch(0.0,false,start,heading+_turn())
+	glide.pitch = r.y
+	glide.bank = r.z
+	glider.reset(glide)
+	glider.show_pilot(false)
+	var dir: Vector2 = run.dir
+	var global_run := {"dir":(editor.terrain.global_basis*Vector3(dir.x,0.0,dir.y)).normalized(),"length":run.length,"edge":run.edge}
+	var seq := PlaneLanding.new()
+	seq.take_off(glide,global_run,_floor_global)
+	# Hopping in from where the walker stood.
+	var hop_to := _hop_to
+	_start_sequence(seq,true)
+	_hop_to = hop_to
+	_hint.text = PLANE_HINT
 
 # --- Input ------------------------------------------------------------------------
 
@@ -1262,6 +1770,8 @@ func handle(event: InputEvent) -> bool:
 			_roll_asked = -1.0 if event.keycode == KEY_Q else 1.0
 		elif event.pressed and not event.echo and event.keycode == KEY_E and flying and perch.is_empty():
 			_flap_asked = true
+		elif event.pressed and not event.echo and event.keycode == KEY_F and flying and perch.is_empty() and plane:
+			_land_key()
 		elif event.pressed and not event.echo and event.keycode == KEY_F and flying and perch.is_empty():
 			glide.approach = not glide.approach
 		elif event.pressed and not event.echo and event.keycode == KEY_C and flying and perch.is_empty():
