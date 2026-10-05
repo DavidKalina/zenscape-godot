@@ -21,6 +21,7 @@ var _blown_at := -1.0
 ## Metres a second the mist drifts in still air, and more per unit of wind
 ## (the atmosphere's strength, gusts and all): a breeze of 0.4 moves it about
 ## 0.35 m/s, a strong wind of 2 nearly 2 m/s.
+const Plate := preload("res://scripts/plate.gd")
 const DRIFT_CALM := 0.1
 const DRIFT_CARRY := 0.85
 ## How far a wind draws the mist out along itself: at strength s the noise is
@@ -46,17 +47,17 @@ func _cover(data: NativeTerrainData) -> void:
 	var signature := var_to_bytes(footprints)
 	if cover != null and signature == _cover_signature: return
 	_cover_signature = signature
-	cover_image = Image.create(64,64,false,Image.FORMAT_RF)
+	cover_image = Image.create(Plate.SHADE_SIZE,Plate.SHADE_SIZE,false,Image.FORMAT_RF)
 	cover_image.fill(Color(0,0,0,1))
 	# A tree contributes nothing beyond its radius. Rasterize its footprint
 	# instead of testing every tree against every pixel on each edit.
 	for tree in trees:
 		var radius: float = clampf(tree.scale*3.5,1.5,6.0)
-		var low := Vector2i(clampi(floori((tree.x-radius+16)*2),0,64),clampi(floori((tree.z-radius+16)*2),0,64))
-		var high := Vector2i(clampi(ceili((tree.x+radius+16)*2),0,64),clampi(ceili((tree.z+radius+16)*2),0,64))
+		var low := Vector2i(clampi(floori((tree.x-radius+Plate.MAP_HALF)/Plate.SHADE_TEXEL),0,Plate.SHADE_SIZE),clampi(floori((tree.z-radius+Plate.MAP_HALF)/Plate.SHADE_TEXEL),0,Plate.SHADE_SIZE))
+		var high := Vector2i(clampi(ceili((tree.x+radius+Plate.MAP_HALF)/Plate.SHADE_TEXEL),0,Plate.SHADE_SIZE),clampi(ceili((tree.z+radius+Plate.MAP_HALF)/Plate.SHADE_TEXEL),0,Plate.SHADE_SIZE))
 		for y in range(low.y,high.y):
 			for x in range(low.x,high.x):
-				var point := Vector2((x+0.5)*0.5-16,(y+0.5)*0.5-16)
+				var point := Vector2((x+0.5)*Plate.SHADE_TEXEL-Plate.MAP_HALF,(y+0.5)*Plate.SHADE_TEXEL-Plate.MAP_HALF)
 				var distance := point.distance_to(Vector2(tree.x,tree.z))/radius
 				var value := maxf(cover_image.get_pixel(x,y).r,1.0-smoothstep(0.1,1.0,distance))
 				cover_image.set_pixel(x,y,Color(value,0,0,1))

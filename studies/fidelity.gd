@@ -33,6 +33,7 @@ var _source: Dictionary
 var _orbiting := false
 ## Source OrbitControls damping: pointer deltas pool here and 5 % of the pool
 ## is applied per 60 Hz frame, so the camera glides and settles.
+const Plate := preload("res://scripts/plate.gd")
 const CAMERA_DAMPING := 0.05
 ## Time-based by default so the glide is the same at 60, 144 or 240 Hz and
 ## frame-time jitter does not become speed jitter. False restores the source's
@@ -855,7 +856,7 @@ func _fire_water(position: Vector3) -> bool:
 	if _fire_water_map == null:
 		return false
 	var size := _fire_water_map.get_width()
-	var pixel := (Vector2(position.x,position.z)+Vector2.ONE*16.0)/32.0*float(size)-Vector2.ONE*0.5
+	var pixel := (Vector2(position.x,position.z)+Vector2.ONE*Plate.MAP_HALF)/Plate.MAP_SPAN*float(size)-Vector2.ONE*0.5
 	var x := clampi(roundi(pixel.x),0,size-1)
 	var z := clampi(roundi(pixel.y),0,size-1)
 	var value := _fire_water_map.get_pixel(x,z)

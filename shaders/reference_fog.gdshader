@@ -13,8 +13,8 @@ uniform sampler2D stream_map : filter_nearest, repeat_disable;
 uniform sampler2D ground_map : filter_nearest, repeat_disable;
 
 float groundAt(vec2 p) {
-	if (max(abs(p.x), abs(p.y)) > 16.0) return -1000.0;
-	return zs_surface_height(texture(ground_map, (p + 16.0) / 32.0), texture(stream_map, (p + 16.0) / 32.0));
+	if (max(abs(p.x), abs(p.y)) > zs_map_half) return -1000.0;
+	return zs_surface_height(texture(ground_map, (p + zs_map_half) / (zs_map_half * 2.0)), texture(stream_map, (p + zs_map_half) / (zs_map_half * 2.0)));
 }
 #include "res://shaders/reference_orographic.gdshaderinc"
 #include "res://shaders/reference_inversion.gdshaderinc"
@@ -36,7 +36,7 @@ void fog() {
 		vec3 c = p * vec3(0.26, 0.5, 0.26) - vec3(zs_wind_direction.x, -0.25, zs_wind_direction.y) * zs_pour.w * 0.6;
 		float churn = clamp(wxFbm2(c) * 1.33, 0.0, 1.0);
 		float floor_y = mix(0.6, floor_height, smoothstep(0.13, 0.43, zs_growth.x));
-		poured = zs_pour_at(p, ground, floor_y, churn) * 0.8 * (1.0 - smoothstep(0.9, 1.05, max(abs(p.x), abs(p.z)) / 14.0));
+		poured = zs_pour_at(p, ground, floor_y, churn) * 0.8 * (1.0 - smoothstep(0.9, 1.05, max(abs(p.x), abs(p.z)) / zs_plate_half));
 	}
 	float d = (density * pool * noise * 0.36 * stream + haze * 0.026) * fade * reveal + poured;
 	if (over < -0.4 || ground < -100.0) d = 0.0;

@@ -2,8 +2,9 @@ class_name GardenSurfaceMap
 extends RefCounted
 ## Rasterize editable terrain and connected pond triangles into the same surface
 ## texture channels used by the port's atmosphere and precipitation.
-const SIZE := 128
-const SPAN := 32.0
+const Plate := preload("res://scripts/plate.gd")
+const SIZE := Plate.MAP_SIZE
+const SPAN := Plate.MAP_SPAN
 var ground := ImageTexture.new()
 var stream := ImageTexture.new()
 

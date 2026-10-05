@@ -222,10 +222,10 @@ uniform vec4 atlas_hold = vec4(0.0);
 uniform float atlas_hold_width = 3.2;
 float zs_atlas_hold_at(vec2 p) {
 	float d = 1.0e3;
-	if (atlas_hold.x > 0.5) d = min(d, p.y + 14.0);
-	if (atlas_hold.y > 0.5) d = min(d, 14.0 - p.x);
-	if (atlas_hold.z > 0.5) d = min(d, 14.0 - p.y);
-	if (atlas_hold.w > 0.5) d = min(d, p.x + 14.0);
+	if (atlas_hold.x > 0.5) d = min(d, p.y + zs_plate_half);
+	if (atlas_hold.y > 0.5) d = min(d, zs_plate_half - p.x);
+	if (atlas_hold.z > 0.5) d = min(d, zs_plate_half - p.y);
+	if (atlas_hold.w > 0.5) d = min(d, p.x + zs_plate_half);
 	return 1.0 - smoothstep(0.0, atlas_hold_width, d);
 }
 
@@ -559,7 +559,7 @@ void vertex() {
 		if (grass_blades) {
 			// Light the tuft as part of the field's soft mass: the ground's
 			// normal from the height map, domed outward toward the tips.
-			ivec2 texel = clamp(ivec2(floor((plant_root + 16.0) * 4.0)), ivec2(0), ivec2(126));
+			ivec2 texel = clamp(ivec2(floor((plant_root + zs_map_half) * 4.0)), ivec2(0), ivec2(ZS_MAP_TEXELS - 2));
 			float h00 = texelFetch(zs_water_map, texel, 0).g;
 			float h10 = texelFetch(zs_water_map, texel + ivec2(1, 0), 0).g;
 			float h01 = texelFetch(zs_water_map, texel + ivec2(0, 1), 0).g;
@@ -693,8 +693,8 @@ void fragment() {
 		float water = -1000.0;
 		for (int i = 0; i < 5; i++) {
 			vec2 offset = i == 0 ? vec2(0.0) : vec2(cos(float(i) * 1.5708), sin(float(i) * 1.5708)) * 0.45;
-			ivec2 texel = ivec2(floor((world_position.xz + offset + 16.0) * 4.0));
-			if (all(greaterThanEqual(texel, ivec2(0))) && all(lessThan(texel, ivec2(128))))
+			ivec2 texel = ivec2(floor((world_position.xz + offset + zs_map_half) * 4.0));
+			if (all(greaterThanEqual(texel, ivec2(0))) && all(lessThan(texel, ivec2(ZS_MAP_TEXELS))))
 				water = max(water, texelFetch(zs_water_map, texel, 0).a);
 		}
 		float above = world_position.y - water;

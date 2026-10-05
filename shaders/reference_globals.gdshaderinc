@@ -1,5 +1,14 @@
 #ifndef ZS_REFERENCE_GLOBALS
 #define ZS_REFERENCE_GLOBALS
+// The plate's reach (scripts/plate.gd, published by Plate.publish_shader_globals):
+// zs_plate_half the land's half-extent, zs_map_half the half-extent of the
+// ground, stream and shade maps (the plate and a margin), both in metres. The
+// maps hold 4 texels a metre (zs_water_map, ground_map, stream_map) and 2
+// (zs_ground_shade), so their sizes follow from zs_map_half.
+global uniform float zs_plate_half;
+global uniform float zs_map_half;
+#define ZS_MAP_TEXELS int(zs_map_half * 8.0)
+#define ZS_SHADE_TEXELS int(zs_map_half * 4.0)
 global uniform vec3 zs_local_ambient_velocity;
 global uniform vec4 zs_local_gust_origin_0;
 global uniform vec4 zs_local_gust_vector_0;

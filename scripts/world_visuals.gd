@@ -1,5 +1,6 @@
 extends Node3D
 ## Shared, saved atmosphere and geology for editor worlds and title covers.
+const Plate := preload("res://scripts/plate.gd")
 const LIMITS := {"fog_density":[0.0,1.8],"fog_height":[1.5,14.0],"peak_density":[0.0,0.7],"peak_altitude":[2.0,24.0],"rock_style":[0,2],"rock_detail":[0.0,1.0]}
 var fog_density := 0.0
 var fog_height := 6.0
@@ -85,7 +86,7 @@ func sync(scene: Node3D) -> void:
 				image = Image.create(128,128,false,Image.FORMAT_RGBA8)
 				for z in range(128):
 					for x in range(128):
-						var field: Vector3 = preload("res://scripts/desert_landscape.gd").field(_genome,Vector2(-14.0+(x+0.5)*28.0/128.0,-14.0+(z+0.5)*28.0/128.0))
+						var field: Vector3 = preload("res://scripts/desert_landscape.gd").field(_genome,Vector2(-Plate.HALF+(x+0.5)*Plate.SIZE/128.0,-Plate.HALF+(z+0.5)*Plate.SIZE/128.0))
 						image.set_pixel(x,z,Color(field.y,field.z,0,1))
 			_geology = ImageTexture.create_from_image(image)
 	var material: ShaderMaterial = scene._chunk_editor.terrain.get_active_material(0)

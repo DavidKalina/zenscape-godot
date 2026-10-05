@@ -6,7 +6,7 @@ float zs_inversion_at(vec3 p) {
 	float band = max(0.6, 0.12 * (zs_summit.y - 0.15));
 	float lid = mix(0.15, zs_summit.y, zs_inversion.y);
 	if (p.y > lid + band) return 0.0;
-	float fade = 1.0 - smoothstep(0.75, 1.0, max(abs(p.x), abs(p.z)) / 14.0);
+	float fade = 1.0 - smoothstep(0.75, 1.0, max(abs(p.x), abs(p.z)) / zs_plate_half);
 	if (zs_inversion.x > 0.77 && p.y < lid - 1.6 * band) return 0.9 * amount * fade;
 	float top = zs_inversion_top(p.xz, lid, 0.15 - band);
 	if (p.y > top + band) return 0.0;

@@ -15,9 +15,10 @@ extends Node3D
 const HALF := 14.0
 const TILES := 8
 const SIDE := 32
-const MASK_SIZE := 128
-## The ground map's span, which the mask shares texel for texel.
-const MAP_SPAN := 32.0
+const Plate := preload("res://scripts/plate.gd")
+## The ground map's size and span, which the mask shares texel for texel.
+const MASK_SIZE := Plate.MAP_SIZE
+const MAP_SPAN := Plate.MAP_SPAN
 ## Blades per tuft, fanned round its root and arcing outward, like the
 ## source's grass tuft (foliage.js grassTuftGeometry) but curved and softer.
 const BLADES := 6

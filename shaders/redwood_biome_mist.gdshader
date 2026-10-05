@@ -13,11 +13,11 @@ uniform float air_travel = 0.0;
 uniform float air_stretch = 1.0;
 void fog() {
  vec3 p = WORLD_POSITION;
- vec2 uv = (p.xz+16.0)/32.0;
+ vec2 uv = (p.xz+zs_map_half)/(zs_map_half*2.0);
  float ground = zs_surface_height(texture(ground_map,uv),texture(stream_map,uv));
  float h = p.y-ground;
  float cover = texture(tree_cover,uv).r;
- float edge = 1.0-smoothstep(12.0,15.0,max(abs(p.x),abs(p.z)));
+ float edge = 1.0-smoothstep(zs_plate_half-2.0,zs_plate_half+1.0,max(abs(p.x),abs(p.z)));
  float density = 0.0;
  if (cover>0.01 && h>=-0.1 && ground>-100.0) {
   density = 0.008*cover;

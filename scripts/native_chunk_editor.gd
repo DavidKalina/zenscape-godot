@@ -127,6 +127,7 @@ var fences: Node3D
 var falls: NativeGardenFalls
 ## The footbridges laid over water (scripts/footbridge.gd), and its planner.
 const Footbridge = preload("res://scripts/footbridge.gd")
+const Plate := preload("res://scripts/plate.gd")
 var bridges: Node3D
 var reactions: NativeDropReactions
 ## Placement plays a short visual reaction. Tests that compare instances turn
@@ -1315,8 +1316,8 @@ func _update_surface_maps(original: bool, frame_tree: SceneTree = null) -> bool:
 		return true
 	var clip := Rect2i(0,0,size,size)
 	if region != null:
-		var low: Vector2 = (region.position+Vector2.ONE*16.0)/32.0*float(size)-Vector2.ONE*0.5
-		var high: Vector2 = (region.end+Vector2.ONE*16.0)/32.0*float(size)-Vector2.ONE*0.5
+		var low: Vector2 = (region.position+Vector2.ONE*Plate.MAP_HALF)/Plate.MAP_SPAN*float(size)-Vector2.ONE*0.5
+		var high: Vector2 = (region.end+Vector2.ONE*Plate.MAP_HALF)/Plate.MAP_SPAN*float(size)-Vector2.ONE*0.5
 		clip = Rect2i(Vector2i(clampi(floori(low.x),0,size),clampi(floori(low.y),0,size)),Vector2i.ZERO)
 		clip = clip.expand(Vector2i(clampi(ceili(high.x)+1,0,size),clampi(ceili(high.y)+1,0,size)))
 	var image: Image
@@ -1345,7 +1346,7 @@ func _update_surface_maps(original: bool, frame_tree: SceneTree = null) -> bool:
 			for x in range(clip.position.x,clip.end.x):
 				if original and not data.blank:
 					continue
-				var point := (Vector2(x,z)+Vector2.ONE*0.5)/float(size)*32.0-Vector2.ONE*16.0
+				var point := (Vector2(x,z)+Vector2.ONE*0.5)/float(size)*Plate.MAP_SPAN-Vector2.ONE*Plate.MAP_HALF
 				var height: Variant = data.height_at(point.x,point.y)
 				var value := Color(-1000,-1000,-1000,-1000) if data.blank else _original_ground_map.get_pixel(x,z)
 				value.g = float(height) if height != null else -1000.0
