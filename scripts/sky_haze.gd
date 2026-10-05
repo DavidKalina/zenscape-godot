@@ -125,13 +125,15 @@ static func _dome(state: Dictionary, toward: Vector3) -> Vector3:
 
 ## The islands still rising into place, as boxes round them, nearest
 ## first: [low corner, high corner, how hidden (0 to 1)], in world metres.
+## The box reaches down past the deepest rock an island's outline can hang
+## (scripts/island_shore.gd DEEPEST).
 ## A wandered-to island rises its whole WANDER_RISE depth out of the haze;
 ## one surfacing from the cloud sea is hidden until it is that near.
 static func emerging(islands: Node, eye: Vector3) -> Array:
 	var out := []
 	var terrain: Node3D = islands.editor.terrain if islands.get("editor") != null else null
 	if terrain == null: return out
-	var corners := [terrain.to_global(Vector3(-SkyIslands.HALF-1.0,NativeTerrainData.SLAB_BASE-2.0,-SkyIslands.HALF-1.0)),
+	var corners := [terrain.to_global(Vector3(-SkyIslands.HALF-1.0,NativeTerrainData.SLAB_BASE-preload("res://scripts/island_shore.gd").DEEPEST-2.0,-SkyIslands.HALF-1.0)),
 		terrain.to_global(Vector3(SkyIslands.HALF+1.0,12.0,SkyIslands.HALF+1.0))]
 	var lo: Vector3 = (corners[0] as Vector3).min(corners[1])
 	var hi: Vector3 = (corners[0] as Vector3).max(corners[1])
