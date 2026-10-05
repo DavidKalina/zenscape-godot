@@ -7,6 +7,8 @@ extends SceneTree
 ##   overview-low: the same, tipped down to the horizon (the orbit's lowest),
 ##     looking toward the range in sight of the plate;
 ##   overview-back: tipped down, looking the other way, toward the knot;
+##   overview-summit: tipped down, toward the nearest of the sea's summits
+##     (the plate beside it);
 ##   inspect: the chunk inspected (the build toggle off), tipped down;
 ## each at noon and golden hour (overview-low at night too).
 ## Rendered only when asked for (needs a window):
@@ -17,6 +19,9 @@ extends SceneTree
 const SkyWorld = preload("res://scripts/sky_world.gd")
 const SkyHomes = preload("res://scripts/sky_homes.gd")
 const GOLDEN_SUN := 0.1
+## overview-summit: how far (radians) the view turns past the nearest of the
+## sea's summits, so the plate stands beside it.
+const SUMMIT_SIDE := 0.45
 var scene: Node3D
 var out := "/private/tmp/zs-overview"
 var tag := ""
@@ -80,9 +85,18 @@ func run() -> void:
 	var to_range := atan2(SkyHomes.RANGE.x,SkyHomes.RANGE.z)
 	var knot: Vector3 = SkyWorld.layout().knot if SkyWorld.ring_on() else -SkyHomes.RANGE
 	var to_knot := atan2(knot.x,knot.z)
+	# The nearest of the sea's summits (SkyWorld `_summits`), a little to the
+	# side so the plate stands beside it, not in front.
+	var to_summit := to_range
+	var nearest := INF
+	for summit: Dictionary in (SkyWorld.layout().get("summits",[]) if SkyWorld.ring_on() else []):
+		var tip: Vector3 = summit.tips[0]
+		if Vector2(tip.x,tip.z).length() < nearest:
+			nearest = Vector2(tip.x,tip.z).length()
+			to_summit = atan2(tip.x,tip.z)+SUMMIT_SIDE
 	for hour: float in [noon,golden,night]:
 		var time_tag := "noon" if hour == noon else ("golden" if hour == golden else "night")
-		for shot in ["overview","overview-low","overview-back","inspect"]:
+		for shot in ["overview","overview-low","overview-back","overview-summit","inspect"]:
 			if not only.is_empty() and shot not in only: continue
 			if hour == night and shot != "overview-low": continue
 			scene.set_building(shot != "inspect")
@@ -95,6 +109,9 @@ func run() -> void:
 				scene.polar = 1.5
 			elif shot == "overview-back":
 				scene.yaw = to_knot+PI
+				scene.polar = 1.5
+			elif shot == "overview-summit":
+				scene.yaw = to_summit+PI
 				scene.polar = 1.5
 			scene._auto_orbit = false
 			scene._update_camera()

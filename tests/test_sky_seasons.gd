@@ -28,6 +28,7 @@ func run() -> void:
 	var falls := _snow_falls()
 	_snow_line(falls)
 	_low_range(falls)
+	_summits(falls)
 	_sea_mood()
 	await _published()
 	print("PASS: sky seasons" if failures == 0 else "FAIL: sky seasons (%d)" % failures)
@@ -201,6 +202,30 @@ func _low_range(falls: Vector4) -> void:
 			area += a
 			if _snowy(need[k].x,y,3,falls,height): white += a
 		check(white/maxf(area,1.0) < 0.1,"Seed %d low (top %.0f m): winter dusts it, %.1f%% of its face white" % [s,top_world,white/maxf(area,1.0)*100.0])
+
+## The sea's summits (scripts/sky_ring.gd `_make_summit`), only their top
+## tens of metres over the sea: a cap in every season, thinnest in summer,
+## fullest in winter, never the whole of what shows.
+func _summits(falls: Vector4) -> void:
+	for pick: Array in [[101,25.0],[2024,50.0],[77777,80.0]]:
+		var out := {}
+		SkyRing._make_summit(int(pick[0]),float(pick[1]),[Color(0.1,0.3,0.1)],[Color(0.27,0.23,0.18)],Color(0.3,0.3,0.28),Color(0.9,0.93,0.96),Vector3.ZERO,out)
+		var sea: float = float(out.top)-float(pick[1])
+		var vertices: PackedVector3Array = out.arrays[Mesh.ARRAY_VERTEX]
+		var need: PackedVector2Array = out.arrays[Mesh.ARRAY_TEX_UV]
+		var shares := []
+		for q in range(4):
+			var area := 0.0
+			var white := 0.0
+			for k in range(0,vertices.size(),3):
+				var y := (vertices[k].y+vertices[k+1].y+vertices[k+2].y)/3.0
+				if y < sea: continue
+				var a := (vertices[k+1]-vertices[k]).cross(vertices[k+2]-vertices[k]).length()*0.5
+				area += a
+				if _snowy(need[k].x,y,q,falls): white += a
+			shares.append(snappedf(white/maxf(area,1.0),0.001))
+		var ok: bool = float(shares[0]) > 0.0 and float(shares[1]) > float(shares[0])*0.5 and float(shares[1]) < float(shares[2]) and float(shares[2]) < float(shares[0]) and float(shares[0]) < float(shares[3]) and float(shares[3]) < 0.9
+		check(ok,"Summit %d (%.0f m over the sea): a cap every season, summer at least half spring's, summer to winter %s of what shows" % [pick[0],pick[1],str([shares[1],shares[2],shares[0],shares[3]])])
 
 ## How much of a range's face area is snowed, worst over 40 m height bands
 ## from the sea to the top, as one share per band averaged.

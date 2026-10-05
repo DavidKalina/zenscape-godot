@@ -10,15 +10,20 @@ extends SceneTree
 ##     at golden hour);
 ##   valley: from the plate at glide height down its valley to a pass,
 ##     the islets on the way;
+##   summit: the nearest of the sea's summits from the plate (and at
+##     golden hour); summit-near: it from 900 m off across the open sea;
 ##   sea: the cloud sea out to the horizon from over the plate, in each of
 ##     the three styles (Opal, Storybook, Mystic).
 ## Stills are named <view>-<season>[-<style>]-<hour>.png.
 ## Rendered only when asked for (needs a window):
 ##   Godot --windowed --path . --resolution 1280x720 -s res://tools/capture_sky_seasons.gd \
 ##     -- --no-title --still-weather --out=/private/tmp/zs-seasons
-## Options: --out=DIR, --only=plate,build,range,valley,sea, --seasons=spring,winter.
+## Options: --out=DIR, --only=plate,build,range,valley,summit,summit-near,sea, --seasons=spring,winter.
 const SkyWorld = preload("res://scripts/sky_world.gd")
 const SkyHomes = preload("res://scripts/sky_homes.gd")
+const SkyHomesScript = SkyHomes
+const SkyPeakScript = preload("res://scripts/sky_peak.gd")
+const SkyPeaksScript = preload("res://scripts/sky_peaks.gd")
 const LivingWeather = preload("res://scripts/living_weather.gd")
 const GOLDEN_SUN := 0.1
 const SEASON_NAMES := ["spring","summer","autumn","winter"]
@@ -158,6 +163,19 @@ func _shots() -> Array:
 		var p0: Dictionary = outer[0]
 		var to0: Vector3 = (p0.at as Vector3).normalized()
 		shots.append({"view":"valley","eye":to0*60.0+Vector3.UP*50.0,"look":p0.at+Vector3.UP*35.0,"fov":62.0})
+	# A sea's summit (SkyWorld `_summits`) from the plate, the nearest it
+	# sees clear of cumulus, and from 900 m off across the open sea
+	# (tools/capture_sky_ring.gd `summit-plate`, `summit-N`).
+	var summits: Array = layout.get("summits",[])
+	var nearest := -1
+	for i in range(summits.size()):
+		var t: Vector3 = summits[i].tips[0]
+		if _clear_way(Vector3.ZERO,t) and (nearest < 0 or Vector2(t.x,t.z).length() < Vector2(summits[nearest].tips[0].x,summits[nearest].tips[0].z).length()): nearest = i
+	if not summits.is_empty():
+		var tip: Vector3 = summits[maxi(nearest,0)].tips[0]
+		var w0 := Vector3(tip.x,0.0,tip.z).normalized()
+		shots.append({"view":"summit","eye":w0*40.0+Vector3.UP*90.0,"look":tip+Vector3.UP*(SkyPeakScript.SEA+20.0),"fov":44.0,"golden":true})
+		shots.append({"view":"summit-near","eye":_open_side(tip,900.0)+Vector3.UP*45.0,"look":tip+Vector3.UP*(SkyPeakScript.SEA+30.0),"fov":56.0})
 	shots.append({"view":"sea","eye":Vector3.UP*60.0,"look":Vector3(0,0,-1)*1200.0+Vector3.DOWN*260.0,"fov":75.0,"styles":["opal","storybook","mystic"]})
 	return shots
 
@@ -199,3 +217,46 @@ func _hold(shot: Dictionary, hour: float, count: int) -> void:
 		scene._update_camera()
 		eye.camera.fov = shot.get("fov",64.0)
 		await process_frame
+
+## A point `reach` m from `tip` (home, plate plane) to see it from at glide
+## height across the open sea: of sixteen ways round, the one whose spot
+## and way in to the tip stand clearest of rock, islands and the bounds.
+func _open_side(tip: Vector3, reach: float) -> Vector3:
+	var best := Vector3.ZERO
+	var best_score := -INF
+	var slots: Array = [Vector3.ZERO]
+	slots.append_array(preload("res://scripts/sky_islands.gd").OFFSETS)
+	for k in range(16):
+		var way := Vector3(cos(TAU*k/16.0),0.0,sin(TAU*k/16.0))
+		var from := Vector3(tip.x,0.0,tip.z)+way*reach
+		var score := 0.0
+		for s in range(0,11):
+			var p := from-way*reach*0.08*s
+			if SkyPeaksScript.blocks(p) and _flat(p,tip) > SkyWorld.SUMMIT_KEEP*1.5: score -= 1.0
+			for q: Vector3 in slots:
+				if _flat(p,q) < 120.0: score -= 1.0
+			if _in_cumulus(p): score -= 3.0
+		if not SkyWorld.inside(from): score -= 20.0
+		# Toward the world's middle a little: the islands stand behind.
+		score += 0.3*way.dot(-Vector3(tip.x,0.0,tip.z).normalized())
+		if score > best_score:
+			best_score = score
+			best = from
+	return best
+
+static func _flat(a: Vector3, b: Vector3) -> float:
+	return Vector2(a.x-b.x,a.z-b.z).length()
+
+## True if a home point stands in a cumulus's keep (SkyHomes TOWER_KEEP).
+static func _in_cumulus(p: Vector3) -> bool:
+	var towers: Array = [SkyHomesScript.TOWER]
+	towers.append_array(SkyWorld.layout().towers)
+	for t: Vector3 in towers:
+		if _flat(p,t) < SkyHomesScript.TOWER_KEEP+60.0: return true
+	return false
+
+## True if the way from `a` to `b` (home) runs clear of every cumulus.
+static func _clear_way(a: Vector3, b: Vector3) -> bool:
+	for s in range(21):
+		if _in_cumulus(a.lerp(b,s/20.0)): return false
+	return true
