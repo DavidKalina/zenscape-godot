@@ -4,10 +4,12 @@ extends SceneTree
 ## made, and the eye is set at a row of spots round it for stills, the clock
 ## held at noon and at golden hour:
 ##   distant: from far off past the plate, the range pale in the haze;
+##   overview: over the plate, the islands in front and the range behind;
 ##   approach: from out by the plate, the range across the sky;
 ##   cliff: beside a face under the highest summit, looking along it;
 ##   gorge: inside the gorge at glide height, looking out of its far mouth;
 ##   base: over the flank, looking down to where it goes into the cloud;
+##   foot: level with the cloud sea off the flank, the foot going into it;
 ##   slot, fins: down a pinch's tight slot, and over its fins (if any);
 ##   another: a range further off in the sky;
 ##   glider: the chase view behind the glider, heading for the gorge.
@@ -85,8 +87,9 @@ func run() -> void:
 		push_error("no sky peak was made")
 		quit(1)
 		return
-	# Ranges further off too, so a scattered one stands for its still.
-	islands.peaks.advance(0.6,Vector3(-1200.0,0.0,1200.0))
+	# Ranges further off too, so a scattered one stands for its still; from
+	# a spot near enough that the home range is kept (SkyPeaks FORGET).
+	islands.peaks.advance(0.6,Vector3(-700.0,0.0,700.0))
 	islands.peaks.flush()
 	var b: Dictionary = islands.peaks.built["0,0"]
 	var shape: RefCounted = b.shape
@@ -113,6 +116,9 @@ func _shots(peaks: Node3D, b: Dictionary) -> Array:
 	var shots := []
 	# Far off past the plate, the range pale in the haze.
 	shots.append({"label":"distant","eye":plate-toward*520.0+Vector3.UP*20.0,"look":middle+Vector3.UP*20.0})
+	# Over the plate, as the builder's eye sees it: the islands' land in
+	# front, the range across the sky behind.
+	shots.append({"label":"overview","eye":plate-toward*70.0+Vector3.UP*45.0,"look":middle+Vector3.UP*10.0})
 	# Out by the plate, looking across at the range.
 	shots.append({"label":"approach","eye":plate+toward*180.0+Vector3.UP*10.0,"look":middle})
 	# Beside a face under the highest summit, on the side toward the plate.
@@ -132,6 +138,9 @@ func _shots(peaks: Node3D, b: Dictionary) -> Array:
 	var fz := summit.z
 	while fz*side < SkyPeak_half() and shape.height_at(Vector2(summit.x+140.0,fz)) != null and float(shape.height_at(Vector2(summit.x+140.0,fz))) > -95.0: fz += side*4.0
 	shots.append({"label":"base","eye":g.call(Vector3(summit.x+140.0,70.0,fz+side*130.0)),"look":g.call(Vector3(summit.x+100.0,-105.0,fz-side*30.0))})
+	# Level with the cloud sea, off the flank: the foot going into the cloud.
+	var foot_out: Vector3 = g.call(Vector3(summit.x+140.0,0.0,fz+side*260.0))
+	shots.append({"label":"foot","eye":foot_out+Vector3.UP*(SkyPeak_sea()+45.0),"look":g.call(Vector3(summit.x-40.0,SkyPeak_sea()+20.0,fz-side*20.0))})
 	# Through a pinch, if the gorge has one: down the slot, and over the fins.
 	if not shape.pinch.is_empty():
 		var pz: float = shape.pinch.z
@@ -150,6 +159,9 @@ func _shots(peaks: Node3D, b: Dictionary) -> Array:
 	# The chase view behind the glider, heading into the gorge.
 	shots.append({"label":"glider","eye":g.call(Vector3(shape.gorge_x(side*300.0),30.0,side*300.0)),"look":g.call(Vector3(shape.gorge_x(0.0),20.0,0.0)),"chase":true,"golden":false})
 	return shots
+
+func SkyPeak_sea() -> float:
+	return preload("res://scripts/sky_peak.gd").SEA
 
 func SkyPeak_half() -> float:
 	return preload("res://scripts/sky_peak.gd").HALF.y
