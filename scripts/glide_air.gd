@@ -18,6 +18,10 @@ extends Node3D
 ## In a towering cumulus (scripts/sky_towers.gd `fade`), the air goes soft:
 ## the hiss closes down to a hush and quietens, and the streaks thicken
 ## into the cloud's own wisps flying past.
+##
+## Flying the plane (scripts/sky_plane.gd), `engine` adds the propeller's
+## hum: a low soft buzz that rises in pitch with speed and swells with the
+## throttle. The glide never calls it, and stays silent of it.
 
 const COUNT := 420
 const BOX := 36.0
@@ -42,6 +46,14 @@ const CLOUD_STREAKS := 0.35
 const WHOOSH := 0.32
 const WHOOSH_IN := 0.0035
 const WHOOSH_OUT := 0.99975
+## The propeller's hum: its loudness at a cruise, how much the throttle
+## swells it, its pitch at rest (Hz) and per m/s, and how fast it follows
+## (per sample).
+const HUM := 0.06
+const HUM_THROTTLE := 0.4
+const HUM_PITCH := 52.0
+const HUM_PER := 2.2
+const HUM_EASE := 0.0004
 
 var _streaks: MultiMeshInstance3D
 var _material: ShaderMaterial
@@ -61,6 +73,11 @@ var _whoosh := 0.0
 var _whoosh_goal := 0.0
 var _whoosh_f := 0.0
 var _whoosh_f2 := 0.0
+## The hum: its loudness now and where it is heading, its pitch, and its phase.
+var _hum := 0.0
+var _hum_goal := 0.0
+var _hum_pitch := HUM_PITCH
+var _hum_phase := 0.0
 
 func _ready() -> void:
 	name = "GlideAir"
@@ -102,6 +119,8 @@ func start() -> void:
 	_player.volume_db = 0.0
 	_player.play()
 	_playback = _player.get_stream_playback()
+	_hum = 0.0
+	_hum_goal = 0.0
 
 func stop() -> void:
 	visible = false
@@ -122,6 +141,11 @@ func advance(delta: float, velocity: Vector3, hang: float, dive: float, near := 
 	_open = lerpf(_open,(0.04+0.4*fast+NEAR_OPEN*near)*(1.0-MUFFLE_OPEN*cloud),k)
 	_deep = lerpf(_deep,clampf(dive*fast*1.4,0.0,1.0),k)
 	_fill()
+
+## The plane's engine this frame: its speed (m/s) and throttle (-1 to 1).
+func engine(speed: float, throttle: float) -> void:
+	_hum_goal = HUM*(1.0+HUM_THROTTLE*throttle)
+	_hum_pitch = HUM_PITCH+HUM_PER*speed
 
 ## A flap: a whoosh.
 func flap() -> void:
@@ -148,5 +172,11 @@ func _fill() -> void:
 		_whoosh_f += (white-_whoosh_f)*0.06
 		_whoosh_f2 += (_whoosh_f-_whoosh_f2)*0.12
 		var s := (_hiss*0.8+_roar2*6.0*_deep)*_gain+_whoosh_f2*_whoosh*WHOOSH*3.0
+		if _hum_goal > 0.0 or _hum > 0.0001:
+			# The hum: a soft buzz, beating gently with the blades.
+			_hum += (_hum_goal-_hum)*HUM_EASE
+			_hum_phase = fmod(_hum_phase+_hum_pitch/RATE,2.0)
+			var a := _hum_phase*TAU
+			s += _hum*(sin(a)+0.4*sin(a*2.0)+0.15*sin(a*3.0))*(0.75+0.25*sin(a*0.5))
 		buffer[i] = Vector2(s,s)
 	_playback.push_buffer(buffer)

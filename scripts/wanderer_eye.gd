@@ -32,6 +32,13 @@ extends Node
 ## under an island's slab. Near the
 ## ground a mark shows where it would touch down, and touching down slowly
 ## anywhere on the island lands, the camera swooping down into its eyes.
+##
+## With `--plane` it flies a little prop plane instead (scripts/sky_plane.gd,
+## drawn by scripts/plane_figure.gd): always under power, Space or the pad's
+## right trigger (or A) boosts, Shift or the left trigger brakes, left and
+## right roll it into its turns, and Q and E (or a click, or the pad's
+## shoulders) throw a barrel roll. The camera, the sky and the landing are
+## the glide's.
 
 ## The figure's height and the eye's height above the ground, in metres. The
 ## diorama is toy-scaled: trees stand about 3 to 5 m and photo mode's ground
@@ -110,6 +117,7 @@ const Disturbance = preload("res://scripts/disturbance.gd")
 const Footbridge = preload("res://scripts/footbridge.gd")
 const HINT := "Mouse to look  ·  WASD or arrows to walk  ·  Shift to run  ·  Space to jump, hold to glide  ·  V or Esc to step out"
 const PERCH_HINT := "Mouse to look  ·  WASD or arrows to walk  ·  Walk off the edge or hold Space to glide  ·  V or Esc to step out"
+const PLANE_HINT := "Mouse or A D to bank and turn  ·  W S to pitch  ·  Space to boost  ·  Shift to brake  ·  Q E or click to barrel roll  ·  F to land  ·  Right mouse to look round  ·  C for the camera  ·  V or Esc to step out"
 const FLY_HINT := "Mouse or A D to turn  ·  W S to pitch  ·  Click or E to flap  ·  Space to rise  ·  Shift to dive  ·  F to land  ·  Right mouse to look round  ·  C for the camera  ·  V or Esc to step out"
 const SkyGlide = preload("res://scripts/sky_glide.gd")
 const SkyIslands = preload("res://scripts/sky_islands.gd")
@@ -119,6 +127,8 @@ const SkyFlight = preload("res://scripts/sky_flight.gd")
 const GlideCamera = preload("res://scripts/glide_camera.gd")
 const GliderFigure = preload("res://scripts/glider_figure.gd")
 const GlideVapour = preload("res://scripts/glide_vapour.gd")
+const SkyPlane = preload("res://scripts/sky_plane.gd")
+const PlaneFigure = preload("res://scripts/plane_figure.gd")
 ## The chase view's field of view at a cruise; the camera widens it with
 ## speed (GlideCamera `fov`).
 const CHASE_FOV := GlideCamera.FOV
@@ -199,6 +209,8 @@ var air: Node3D
 var sky: Node
 var flying := false
 var glide_enabled := "--no-glide" not in OS.get_cmdline_user_args()
+## Flying the little plane instead of the glider (`--plane`).
+var plane := "--plane" in OS.get_cmdline_user_args()
 ## Mouse look gathered for the glide's next step, and seconds of skim so far.
 var _fly_look := Vector2.ZERO
 var _skim_time := 0.0
@@ -216,6 +228,10 @@ var _swoop_from := {}
 var _flap_asked := false
 var _pad_flap_was := false
 var _flaps_heard := 0
+## The plane's barrel roll asked for since the last step (-1 left, 1 right),
+## and the pad's shoulders last frame.
+var _roll_asked := 0.0
+var _pad_roll_was := Vector2.ZERO
 var _far_before := 500.0
 ## The jump: how high the feet are off the ground, how fast they rise, and
 ## how long Space has been held since the jump (-1 once let go).
@@ -272,6 +288,7 @@ func setup(owner_scene: Node3D) -> void:
 		_dot.draw_circle(_dot.size*0.5,2.5,Color(1,1,1,0.55),true,-1.0,true))
 	_layer.add_child(_dot)
 	if glide_enabled:
+		if plane: glide = SkyPlane.new()
 		islands = SkyIslands.new()
 		islands.setup(scene)
 		add_child(islands)
@@ -288,7 +305,8 @@ func setup(owner_scene: Node3D) -> void:
 		air = GlideAir.new()
 		add_child(air)
 		islands.skip.append(air)
-		glider = GliderFigure.new()
+		if plane: glider = PlaneFigure.new()
+		else: glider = GliderFigure.new()
 		glider.visible = false
 		add_child(glider)
 		islands.skip.append(glider)
@@ -738,6 +756,7 @@ func _launch(pace: float, drop := true) -> void:
 	glide.pitch = clampf(_polar-PI*0.5,-0.6,0.3)
 	_flap_asked = false
 	_flaps_heard = 0
+	_roll_asked = 0.0
 	# The camera pulls back out of the eyes to chase.
 	chase.reset(glide,from,camera.fov)
 	vapour.reset()
@@ -747,7 +766,7 @@ func _launch(pace: float, drop := true) -> void:
 	if not perched:
 		air.start()
 		sky.start(glide.position)
-	_hint.text = FLY_HINT
+	_hint.text = PLANE_HINT if plane else FLY_HINT
 	_hint.modulate.a = 1.0
 	_hint_time = 0.0
 	steps.step(_surface(),1.0)
@@ -785,7 +804,24 @@ func _fly_input() -> Dictionary:
 	var stick_held := right.length() > 0.2
 	if stick_held: chase.turn(Vector2(-right.x,-right.y)*STICK_LOOK*get_process_delta_time())
 	chase.free_held = Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) or stick_held
+	if plane: _plane_input(input)
 	return input
+
+## The plane's own input over the glide's: Space or the pad's right trigger
+## (or A) boosts and Shift or its left trigger brakes, in place of Rise and
+## the dive; Q, E, a click or the pad's shoulders ask for a barrel roll.
+func _plane_input(input: Dictionary) -> void:
+	input["boost"] = maxf(float(Input.is_physical_key_pressed(KEY_SPACE) or Input.is_joy_button_pressed(0,JOY_BUTTON_A)),Input.get_joy_axis(0,JOY_AXIS_TRIGGER_RIGHT))
+	input["brake"] = maxf(float(Input.is_physical_key_pressed(KEY_SHIFT)),Input.get_joy_axis(0,JOY_AXIS_TRIGGER_LEFT))
+	input["rise"] = 0.0
+	input["dive"] = 0.0
+	input["flap"] = false
+	var pad := Vector2(float(Input.is_joy_button_pressed(0,JOY_BUTTON_LEFT_SHOULDER)),float(Input.is_joy_button_pressed(0,JOY_BUTTON_RIGHT_SHOULDER)))
+	if pad.x > _pad_roll_was.x: _roll_asked = -1.0
+	if pad.y > _pad_roll_was.y: _roll_asked = 1.0
+	_pad_roll_was = pad
+	input["roll"] = _roll_asked
+	_roll_asked = 0.0
 
 func _advance_flight(delta: float) -> void:
 	if not perch.is_empty():
@@ -804,6 +840,7 @@ func _advance_flight(delta: float) -> void:
 	islands.advance(delta,glide.position,glide.heading,sky.flight.w)
 	vapour.step(delta,glide,_fly_ground)
 	air.advance(delta,glide.velocity,glide.hang,float(input.dive),vapour.near,islands.towers.fade(glide.position))
+	if plane: air.engine(glide.speed,(glide as SkyPlane).throttle)
 	if glide.flaps != _flaps_heard:
 		_flaps_heard = glide.flaps
 		air.flap()
@@ -1158,6 +1195,9 @@ func handle(event: InputEvent) -> bool:
 		if event.pressed and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		if event.button_index == MOUSE_BUTTON_RIGHT and flying: chase.free_held = event.pressed
+		elif event.button_index == MOUSE_BUTTON_LEFT and event.pressed and flying and perch.is_empty() and plane:
+			# A click rolls the way it is turning, or right flying straight.
+			_roll_asked = -1.0 if glide.bank < -0.05 else 1.0
 		elif event.button_index == MOUSE_BUTTON_LEFT and event.pressed and flying and perch.is_empty(): _flap_asked = true
 		return true
 	if event is InputEventMagnifyGesture or event is InputEventPanGesture:
@@ -1166,6 +1206,8 @@ func handle(event: InputEvent) -> bool:
 		if event.ctrl_pressed or event.meta_pressed: return false
 		if event.pressed and not event.echo and event.keycode in [KEY_V,KEY_ESCAPE]:
 			leave()
+		elif event.pressed and not event.echo and event.keycode in [KEY_Q,KEY_E] and flying and perch.is_empty() and plane:
+			_roll_asked = -1.0 if event.keycode == KEY_Q else 1.0
 		elif event.pressed and not event.echo and event.keycode == KEY_E and flying and perch.is_empty():
 			_flap_asked = true
 		elif event.pressed and not event.echo and event.keycode == KEY_F and flying and perch.is_empty():
