@@ -1,19 +1,26 @@
 extends RefCounted
 ## The 3D world's render resolution: drawn at no more than the chosen height
-## (1080 lines unless the player picks otherwise) and scaled up to the window,
+## and scaled up to the window,
 ## the HUD and menus staying sharp at the window's own size. A Retina window
 ## of 1440×900 is 2880×1800 pixels, four times a 1080p screen's worth of
 ## cloud sea (shaders/sky_sea.gdshader) and peaks to shade; capped, it costs
 ## what a 1080p one does. Upscaled by MetalFX on Metal, else FSR, both spatial
 ## so the drifting cloud and the wind in the grass never ghost. Kept in
 ## user://look.cfg (scripts/look_pass.gd SETTINGS_PATH) under [display], and
-## offered in the Settings dialog (studies/diorama.gd) by `build`.
+## offered in the Settings dialog (studies/diorama.gd) by `build`. Until the
+## player chooses, a discrete GPU draws at the window's own resolution and
+## anything else (integrated, Apple's) at 1080 lines (`default_cap`).
 
 const SETTINGS_PATH := "user://look.cfg"
 ## Each choice's most lines high; 0 draws at the window's own resolution.
 const CAPS := [0,1440,1080,720]
 const CAP_NAMES := ["Native","1440p","1080p","720p"]
 const DEFAULT_CAP := 1080
+
+## The cap until the player chooses: none on a discrete GPU, full fidelity
+## for the cards that can carry it; 1080 lines on anything else.
+static func default_cap(device_type := RenderingServer.get_video_adapter_type()) -> int:
+	return 0 if device_type == RenderingDevice.DEVICE_TYPE_DISCRETE_GPU else DEFAULT_CAP
 
 ## Draws `viewport`'s 3D at the kept cap now and whenever it is resized.
 static func attach(viewport: Viewport) -> void:
@@ -30,9 +37,9 @@ static func apply(viewport: Viewport, cap: int) -> void:
 
 static func load_cap(path := SETTINGS_PATH) -> int:
 	var file := ConfigFile.new()
-	if file.load(path) != OK: return DEFAULT_CAP
-	var cap := int(file.get_value("display","max_lines",DEFAULT_CAP))
-	return cap if cap in CAPS else DEFAULT_CAP
+	if file.load(path) != OK or not file.has_section_key("display","max_lines"): return default_cap()
+	var cap := int(file.get_value("display","max_lines"))
+	return cap if cap in CAPS else default_cap()
 
 static func save_cap(cap: int, path := SETTINGS_PATH) -> void:
 	var file := ConfigFile.new()

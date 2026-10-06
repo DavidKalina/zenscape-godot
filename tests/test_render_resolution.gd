@@ -1,7 +1,8 @@
 extends SceneTree
 ## The 3D render resolution cap (scripts/render_resolution.gd): a tall window
 ## is drawn at the cap's lines and scaled up, a short one at its own; Native
-## never scales; the choice is kept, and an unknown one falls back to 1080p.
+## never scales; the choice is kept, and until one is a discrete GPU draws at
+## full resolution and anything else at 1080 lines.
 const RenderResolution = preload("res://scripts/render_resolution.gd")
 const PATH := "user://test_render_resolution.cfg"
 var failures := 0
@@ -23,11 +24,13 @@ func run() -> void:
 	RenderResolution.apply(view,1080)
 	check(view.scaling_3d_scale == 1.0, "A window under the cap is never scaled")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(PATH))
-	check(RenderResolution.load_cap(PATH) == 1080, "With nothing kept the cap is 1080p")
+	check(RenderResolution.load_cap(PATH) == RenderResolution.default_cap(), "With nothing kept the cap is the GPU's default")
+	check(RenderResolution.default_cap(RenderingDevice.DEVICE_TYPE_DISCRETE_GPU) == 0, "A discrete GPU draws at full resolution")
+	check(RenderResolution.default_cap(RenderingDevice.DEVICE_TYPE_INTEGRATED_GPU) == 1080, "An integrated GPU (Apple's too) draws at 1080 lines")
 	RenderResolution.save_cap(720,PATH)
 	check(RenderResolution.load_cap(PATH) == 720, "The choice is kept")
 	RenderResolution.save_cap(333,PATH)
-	check(RenderResolution.load_cap(PATH) == 1080, "An unknown kept cap falls back to 1080p")
+	check(RenderResolution.load_cap(PATH) == RenderResolution.default_cap(), "An unknown kept cap falls back to the default")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(PATH))
 	view.queue_free()
 	await process_frame
