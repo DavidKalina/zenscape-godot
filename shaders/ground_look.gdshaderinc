@@ -11,7 +11,9 @@
 // (meadow drifts under flowers) belong in zs_ground_meadow_tint below.
 //
 // Include after scene_palette, reference_wind and grass_look (zs_noise,
-// zs_grass_dry, zs_grass_living), and after `zs_water_map` is declared.
+// zs_grass_dry, zs_grass_living), and after `zs_water_map` is declared;
+// the maps are read through zs_water_texel and zs_shade_texel, which a far
+// sky chunk points at its own (shaders/reference_surface.gdshader).
 #ifndef ZS_GROUND_LOOK
 #define ZS_GROUND_LOOK
 
@@ -148,10 +150,10 @@ float zs_ground_height(vec2 g_p, out bool g_ok) {
 	vec2 g_f = g_t - floor(g_t);
 	g_ok = all(greaterThanEqual(g_i, ivec2(0))) && all(lessThan(g_i, ivec2(ZS_MAP_TEXELS - 1)));
 	if (!g_ok) return 0.0;
-	float g_00 = texelFetch(zs_water_map, g_i, 0).g;
-	float g_10 = texelFetch(zs_water_map, g_i + ivec2(1, 0), 0).g;
-	float g_01 = texelFetch(zs_water_map, g_i + ivec2(0, 1), 0).g;
-	float g_11 = texelFetch(zs_water_map, g_i + ivec2(1, 1), 0).g;
+	float g_00 = zs_water_texel(g_i).g;
+	float g_10 = zs_water_texel(g_i + ivec2(1, 0)).g;
+	float g_01 = zs_water_texel(g_i + ivec2(0, 1)).g;
+	float g_11 = zs_water_texel(g_i + ivec2(1, 1)).g;
 	g_ok = min(min(g_00, g_10), min(g_01, g_11)) > -100.0;
 	return mix(mix(g_00, g_10, g_f.x), mix(g_01, g_11, g_f.x), g_f.y);
 }
@@ -195,7 +197,7 @@ float zs_ground_lush_at(vec3 g_v) {
 			vec2 g_p = g_v.xz + vec2(cos(g_angle), sin(g_angle)) * g_reach;
 			ivec2 g_texel = ivec2(floor((g_p + zs_map_half) * 4.0));
 			if (any(lessThan(g_texel, ivec2(0))) || any(greaterThanEqual(g_texel, ivec2(ZS_MAP_TEXELS)))) continue;
-			float g_water = texelFetch(zs_water_map, g_texel, 0).a;
+			float g_water = zs_water_texel(g_texel).a;
 			if (g_water < -100.0) continue;
 			float g_above = g_v.y - g_water;
 			g_lush = max(g_lush, (g_r == 0 ? 1.0 : 0.5) * (1.0 - smoothstep(0.4, 1.0, g_above)) * step(-0.3, g_above));
@@ -211,10 +213,10 @@ float zs_ground_shade_at(vec2 g_p) {
 	ivec2 g_i = ivec2(floor(g_t));
 	vec2 g_f = g_t - floor(g_t);
 	ivec2 g_hi = ivec2(ZS_SHADE_TEXELS - 1);
-	vec2 g_00 = texelFetch(zs_ground_shade, clamp(g_i, ivec2(0), g_hi), 0).rg;
-	float g_10 = texelFetch(zs_ground_shade, clamp(g_i + ivec2(1, 0), ivec2(0), g_hi), 0).r;
-	float g_01 = texelFetch(zs_ground_shade, clamp(g_i + ivec2(0, 1), ivec2(0), g_hi), 0).r;
-	float g_11 = texelFetch(zs_ground_shade, clamp(g_i + ivec2(1, 1), ivec2(0), g_hi), 0).r;
+	vec2 g_00 = zs_shade_texel(clamp(g_i, ivec2(0), g_hi)).rg;
+	float g_10 = zs_shade_texel(clamp(g_i + ivec2(1, 0), ivec2(0), g_hi)).r;
+	float g_01 = zs_shade_texel(clamp(g_i + ivec2(0, 1), ivec2(0), g_hi)).r;
+	float g_11 = zs_shade_texel(clamp(g_i + ivec2(1, 1), ivec2(0), g_hi)).r;
 	if (g_00.g > 0.5 || any(lessThan(g_p, vec2(-zs_map_half))) || any(greaterThan(g_p, vec2(zs_map_half)))) return 0.0;
 	return mix(mix(g_00.r, g_10, g_f.x), mix(g_01, g_11, g_f.x), g_f.y);
 }
@@ -235,7 +237,7 @@ vec2 zs_ground_form_at(vec3 g_v) {
 			vec2 g_p = g_v.xz + vec2(cos(g_angle), sin(g_angle)) * (g_r == 0 ? 1.5 : 3.5);
 			ivec2 g_texel = ivec2(floor((g_p + zs_map_half) * 4.0));
 			if (any(lessThan(g_texel, ivec2(0))) || any(greaterThanEqual(g_texel, ivec2(ZS_MAP_TEXELS)))) continue;
-			float g_ground = texelFetch(zs_water_map, g_texel, 0).g;
+			float g_ground = zs_water_texel(g_texel).g;
 			if (g_ground < -100.0) continue;
 			// The near ring reads curvature at a stride's scale, the far one
 			// the land's; the far one counts a little less.

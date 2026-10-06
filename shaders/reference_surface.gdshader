@@ -225,6 +225,25 @@ global uniform sampler2D zs_water_map;
 // The shade trees lay on the ground: 64 texels over the plate, red the
 // shade (scripts/ground_shade.gd).
 global uniform sampler2D zs_ground_shade;
+// A sky chunk's far version (scripts/sky_islands.gd): drawn hundreds of
+// metres off, it reads the look the plate would give it. `look_shift` is
+// where it stands from the plate's spot, taken off every world-placed look
+// (the field's patches, the land's form, the seasons' paint, a plant's
+// root), so it shows the very colours it will once claimed; and its ground
+// reads its own land's maps (`own_maps`: its height and water map and its
+// trees' shade, made as the plate's are), never the plate's.
+uniform vec3 look_shift = vec3(0.0);
+uniform bool own_maps = false;
+uniform sampler2D own_water_map : filter_nearest, repeat_disable;
+uniform sampler2D own_ground_shade : filter_nearest, repeat_disable;
+vec4 zs_water_texel(ivec2 t) {
+	if (own_maps) return texelFetch(own_water_map, t, 0);
+	return texelFetch(zs_water_map, t, 0);
+}
+vec4 zs_shade_texel(ivec2 t) {
+	if (own_maps) return texelFetch(own_ground_shade, t, 0);
+	return texelFetch(zs_ground_shade, t, 0);
+}
 
 #include "res://shaders/terrain_geology.gdshaderinc"
 #include "res://shaders/ground_look.gdshaderinc"
@@ -300,7 +319,7 @@ void vertex() {
 		float far_d = distance(zs_camera_position, MODEL_MATRIX[3].xyz);
 		float far_t = smoothstep(flower_far.x, flower_far.y, far_d);
 		float keep = mix(1.0, flower_far.z, far_t);
-		float rank = fract(sin(dot(MODEL_MATRIX[3].xz, vec2(27.17, 63.41))) * 43758.5453);
+		float rank = fract(sin(dot(MODEL_MATRIX[3].xz - look_shift.xz, vec2(27.17, 63.41))) * 43758.5453);
 		float fade = smoothstep(keep * 1.08, keep * 1.08 - 0.08, rank);
 		if (flower_lod.x > 0.0 && fract(UV2.y) > 0.125) fade *= 1.0 - smoothstep(flower_lod.x, flower_lod.y, far_d);
 		if (UV2.y > 0.5) {
@@ -367,7 +386,7 @@ void vertex() {
 			float rim_top = UV.y > 0.5 ? UV.x : earth_sides_top;
 			earth_side = vec4(rim_top - VERTEX.y, rim_top - earth_sides_top, VERTEX.y - earth_sides_base, VERTEX.x + VERTEX.z);
 		}
-		plant_root = MODEL_MATRIX[3].xz;
+		plant_root = MODEL_MATRIX[3].xz - look_shift.xz;
 		if (leaf_season.w > 0.0) VERTEX *= zs_season_dieback(leaf_season.w);
 		foliage_gust = 0.0;
 		grass_along = grass_blades ? clamp(UV.y, 0.0, 1.0) : 0.0;
@@ -397,7 +416,7 @@ void vertex() {
 				COLOR.rgb = flower_living * flower_stem_shade * UV.x;
 			} else {
 				if (UV2.x > 2.5 && UV2.x < 3.5 && flower_variant_count > 0) {
-					int flower_pick = flower_chosen >= 0 ? min(flower_chosen, flower_variant_count - 1) : min(int(fract(sin(dot(MODEL_MATRIX[3].xz, vec2(41.3, 17.9))) * 43758.5453) * float(flower_variant_count)), flower_variant_count - 1);
+					int flower_pick = flower_chosen >= 0 ? min(flower_chosen, flower_variant_count - 1) : min(int(fract(sin(dot(MODEL_MATRIX[3].xz - look_shift.xz, vec2(41.3, 17.9))) * 43758.5453) * float(flower_variant_count)), flower_variant_count - 1);
 					vec3 flower_variant = flower_variants[0];
 					if (flower_pick == 1) flower_variant = flower_variants[1];
 					else if (flower_pick == 2) flower_variant = flower_variants[2];
@@ -585,9 +604,9 @@ void vertex() {
 			// Light the tuft as part of the field's soft mass: the ground's
 			// normal from the height map, domed outward toward the tips.
 			ivec2 texel = clamp(ivec2(floor((plant_root + zs_map_half) * 4.0)), ivec2(0), ivec2(ZS_MAP_TEXELS - 2));
-			float h00 = texelFetch(zs_water_map, texel, 0).g;
-			float h10 = texelFetch(zs_water_map, texel + ivec2(1, 0), 0).g;
-			float h01 = texelFetch(zs_water_map, texel + ivec2(0, 1), 0).g;
+			float h00 = zs_water_texel(texel).g;
+			float h10 = zs_water_texel(texel + ivec2(1, 0)).g;
+			float h01 = zs_water_texel(texel + ivec2(0, 1)).g;
 			vec2 slope = min(h00, min(h10, h01)) > -100.0 ? vec2(h10 - h00, h01 - h00) * 4.0 : vec2(0.0);
 			vec3 ground_normal = normalize(vec3(-slope.x, 1.0, -slope.y));
 			vec2 out_dir = (mat3(MODEL_MATRIX) * vec3(leaf_local.x, 0.0, leaf_local.z)).xz;
@@ -643,7 +662,9 @@ void fragment() {
 		NORMAL = normalize((VIEW_MATRIX * vec4(light_normal, 0.0)).xyz);
 	}
 	// The ground's colour is made in one place (ground_look zs_ground_color).
-	vec3 look_position = world_position / look_scale;
+	// Where the look is read: the world point, less a far chunk's shift.
+	vec3 look_world = world_position - look_shift;
+	vec3 look_position = look_world / look_scale;
 	vec3 tint = ground ? zs_ground_color(base_color.rgb * COLOR.rgb, look_position, earth_side.x, ground_grass)
 		: scene_palette(base_color.rgb * COLOR.rgb);
 	// Slopes to the sun a little warmer, away from it a little deeper (the
@@ -651,7 +672,7 @@ void fragment() {
 	if (ground) tint = zs_ground_sun_warm(tint, normalize(world_normal), zs_sun_direction, ground_grass);
 	// The land's own colour: hollows lusher, crests drier, steep grass thin
 	// (ground_look zs_ground_form); the trees' shade comes after the seasons.
-	if (ground) tint = zs_ground_form(tint, world_position, earth_side.xyz, normalize(world_normal), ground_grass);
+	if (ground) tint = zs_ground_form(tint, look_world, earth_side.xyz, normalize(world_normal), ground_grass);
 	// The earth sides: strata, each facet a shade apart like the ground's,
 	// dimming toward the base where the void's mist takes over (EMISSION).
 	float side_mist = 0.0;
@@ -715,7 +736,7 @@ void fragment() {
 	float mineral = 0.0;
 	if (wet_ground && zs_ground_wet > 0.001) {
 		float exposure = smoothstep(-0.3, 0.0, face_normal.y) * mix(0.6, 1.0, smoothstep(0.0, 0.6, face_normal.y));
-		float patch = zs_noise(world_position.xz * 0.65 + world_position.y * 0.17);
+		float patch = zs_noise(look_world.xz * 0.65 + look_world.y * 0.17);
 		surface_wet = smoothstep(patch * 0.28, 0.72 + patch * 0.28, zs_ground_wet) * exposure;
 		float green = max(0.0, tint.g - max(tint.r, tint.b));
 		mineral = 1.0 - smoothstep(0.015, 0.10, green);
@@ -728,12 +749,12 @@ void fragment() {
 		float water = -1000.0;
 		for (int i = 0; i < 5; i++) {
 			vec2 offset = i == 0 ? vec2(0.0) : vec2(cos(float(i) * 1.5708), sin(float(i) * 1.5708)) * 0.45;
-			ivec2 texel = ivec2(floor((world_position.xz + offset + zs_map_half) * 4.0));
+			ivec2 texel = ivec2(floor((look_world.xz + offset + zs_map_half) * 4.0));
 			if (all(greaterThanEqual(texel, ivec2(0))) && all(lessThan(texel, ivec2(ZS_MAP_TEXELS))))
-				water = max(water, texelFetch(zs_water_map, texel, 0).a);
+				water = max(water, zs_water_texel(texel).a);
 		}
-		float above = world_position.y - water;
-		float line = 0.16 + 0.10 * zs_noise(world_position.xz * 1.7);
+		float above = look_world.y - water;
+		float line = 0.16 + 0.10 * zs_noise(look_world.xz * 1.7);
 		float bank = water > -100.0 ? (1.0 - smoothstep(line * 0.4, line, above)) * step(-0.3, above) : 0.0;
 		bank *= smoothstep(-0.2, 0.3, face_normal.y) * zs_look_shore * (1.0 - zs_ice);
 		surface_wet = max(surface_wet, bank);
@@ -741,9 +762,9 @@ void fragment() {
 	}
 	// A sky peak's snow is its season's line instead (vertex, sky_season).
 	if (!bird_wings && zs_snow > 0.004 && sea_cut <= -1.0e8) {
-		float noise = zs_noise(world_position.xz * 0.85);
+		float noise = zs_noise(look_world.xz * 0.85);
 		float line = mix(zs_summit.y + 2.0, 0.15 - 2.5, pow(zs_snow, 0.7));
-		float cover = smoothstep(line - 0.6, line + 2.4, world_position.y + (noise - 0.5) * 3.0)
+		float cover = smoothstep(line - 0.6, line + 2.4, look_world.y + (noise - 0.5) * 3.0)
 			* smoothstep(0.35, 0.72, face_normal.y) * smoothstep(0.0, 0.1, zs_snow);
 		// Crowns catch some of the snow: the floor under trees lies thinner.
 		if (ground) cover *= 1.0 - ZS_GROUND_SNOW_SHELTER * earth_side.z;
