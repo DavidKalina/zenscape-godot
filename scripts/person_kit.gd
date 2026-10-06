@@ -14,6 +14,10 @@ extends RefCounted
 
 const GliderFigure = preload("res://scripts/glider_figure.gd")
 const FacetMesh = preload("res://scripts/facet_mesh.gd")
+## The folk's look (shaders/folk_surface.gdshader): the world gives no
+## ambient light, so a plain material goes black in shade; this one takes the
+## sky's hemisphere like the land does.
+const FOLK_SURFACE := preload("res://shaders/folk_surface.gdshader")
 const SKIN := Color("e8c39e")
 const JACKET := Color("4a2a1e")
 const LEATHER := Color("5e3522")
@@ -145,20 +149,19 @@ static func part(parent: Node3D, mesh: Mesh, material: Material, at: Vector3, tu
 	parent.add_child(node)
 	return node
 
-static func _matte(color: Color, roughness: float) -> StandardMaterial3D:
-	var m := StandardMaterial3D.new()
-	m.albedo_color = color
-	m.roughness = roughness
+static func _matte(color: Color, roughness: float) -> ShaderMaterial:
+	var m := ShaderMaterial.new()
+	m.shader = FOLK_SURFACE
+	m.set_shader_parameter("albedo",color)
+	m.set_shader_parameter("roughness_value",roughness)
 	return m
 
-static func _lacquer(color: Color, roughness: float, coat: float) -> StandardMaterial3D:
+static func _lacquer(color: Color, roughness: float, coat: float) -> ShaderMaterial:
 	var m := _matte(color,roughness)
-	m.clearcoat_enabled = true
-	m.clearcoat = coat
-	m.clearcoat_roughness = 0.12
+	m.set_shader_parameter("coat",coat)
 	return m
 
-static func _metal(color: Color, roughness: float) -> StandardMaterial3D:
+static func _metal(color: Color, roughness: float) -> ShaderMaterial:
 	var m := _matte(color,roughness)
-	m.metallic = 1.0
+	m.set_shader_parameter("metallic_value",1.0)
 	return m
