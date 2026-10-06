@@ -44,9 +44,9 @@ func run() -> void:
 		check(swimmer.position != before,"Pond fish keep swimming without the resident")
 	var heights: PackedFloat32Array = world._chunk_editor.data.heights.duplicate()
 	flow.regrow(11)
-	check(flow.busy and not flow.holding,"Regrow starts without carrying anyone")
+	check(flow.busy and not world.creature.visible,"Regrow starts with nobody in sight")
 	while flow.busy: await process_frame
-	check(flow.generation == 1 and not flow.holding,"One regeneration completes")
+	check(flow.generation == 1,"One regeneration completes")
 	check(world._chunk_editor.data.heights != heights,"Regrowth builds new terrain")
 	check(not world.resident_enabled and not world._paused,"The new landscape is live and still unpopulated")
 	check(flow.save_places(),"Scenery landscape saves")

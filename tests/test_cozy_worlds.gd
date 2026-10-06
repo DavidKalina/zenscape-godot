@@ -3,7 +3,7 @@ extends SceneTree
 ## straight past the title on its default land with the resident away; Regrow
 ## folds it down and grows a new wilderness in place, holding every gesture
 ## while it works; native undo and redo swap the whole worlds; the place saves
-## and reopens with its terrain, colours, weather and fog.
+## and opens again with its terrain, colours, weather and fog.
 var failures := 0
 var checks := 0
 func _initialize() -> void: run.call_deferred()
@@ -94,7 +94,10 @@ func run() -> void:
 	primary.queue_free()
 	await process_frame
 	await process_frame
-	primary = await open_world(path)
+	# A world past the title opens on a new plain; the saved place is opened
+	# into it as the world session does (scripts/world_session.gd).
+	primary = await open_world(path.get_basename()+"-other.json")
+	check(await primary.places.open_place(path),"The saved place opens")
 	check(primary._chunk_editor.data._recipe_settings==generated and same_saved_look(primary._celestial.look.document(),new_look) and primary._precipitation.preset_index==weather,"Reopening restores the generated terrain, colors and weather")
 	check(same_numbers(primary._world_visuals.document(),new_visuals),"Reopening restores the generated fog banks and wisps")
 	check(not primary.resident_enabled,"Reopening keeps the resident away")
