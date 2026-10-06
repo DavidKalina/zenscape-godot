@@ -13,7 +13,14 @@ var rim := 0.35
 var grade := 0.55
 var saturation := 1.06
 var vignette := 0.16
-var rays := 0.22
+## The light shafts' strength (shaders/reference_air_blend.gdshader); 0 for
+## none. --rays=N tries another, --no-rays turns them off.
+var rays := default_rays()
+## The shafts' strength unless asked otherwise (was 0.22, when they only
+## drew under the display-fog blend and took the air's colour).
+const RAYS := 0.7
+## The shafts' light at full strength: the sun's hue at this brightness.
+const RAYS_LIGHT := 0.55
 var ridges := 0.85
 ## The cloud sea under the floating plate (shaders/sky_cloud_sea.gdshaderinc):
 ## the backdrop the overview looks down into, below the ridges' reach.
@@ -151,22 +158,37 @@ func update(camera: Camera3D, celestial) -> void:
 	# Night's rod-lit shift, by the hour and the moon (studies/celestial.gd).
 	var night: Vector4 = celestial.get("night_grade") if celestial.get("night_grade") != null else Vector4.ZERO
 	target.set_shader_parameter("grade_night", Vector4(night.x * on, night.y, night.z, night.w))
-	# Native fog draws its own shafts from the lights' volumetric energy.
-	if not blended: return
-	var blend: ShaderMaterial = fog.blend
+	# The light shafts, on whichever of the two draws the grade: the native
+	# woodland mist hides the blend whenever the plate has woods, which is
+	# most of play, so the standalone grade gathers them too, from the same
+	# depth copy (studies/surface_depth.gd).
+	var depth: Texture2D = fog.depth.texture if fog != null else null
+	if depth != null and _grade.get_shader_parameter("surface_depth") != depth:
+		_grade.set_shader_parameter("surface_depth", depth)
 	var sun: Vector3 = celestial.state.get("zs_sun_direction",Vector3.UP)
-	var ahead := enabled and tier != 1 and sun.y > -0.05 and not camera.is_position_behind(camera.global_position + sun * 400.0)
-	blend.set_shader_parameter("rays_strength", rays if ahead else 0.0)
+	var ahead := enabled and tier != 1 and depth != null and sun.y > -0.05 and not camera.is_position_behind(camera.global_position + sun * 400.0)
+	target.set_shader_parameter("rays_strength", rays if ahead else 0.0)
 	if ahead:
 		var screen: Vector2 = camera.unproject_position(camera.global_position + sun * 400.0) / camera.get_viewport().get_visible_rect().size
 		# Shafts fade as the sun sinks or hides behind cloud.
 		var cloud: float = celestial.cloud
 		var strength := smoothstep(-0.05, 0.12, sun.y) * (1.0 - minf(cloud * 1.2, 0.9))
-		blend.set_shader_parameter("rays_sun", Vector3(screen.x, screen.y, strength))
-		blend.set_shader_parameter("rays_color", _tint(celestial.aerial_sun_color, 1.0) * 0.6)
+		target.set_shader_parameter("rays_sun", Vector3(screen.x, screen.y, strength))
+		# The sun's own light (gold low, near white high), not the air's.
+		var sun_light: Vector3 = celestial.state.get("zs_cloud_sun",Vector3.ONE)
+		target.set_shader_parameter("rays_color", sun_light / maxf(maxf(sun_light.x,sun_light.y),maxf(sun_light.z,0.001)) * RAYS_LIGHT)
 
 static func _flag(name: String) -> bool:
 	return name in OS.get_cmdline_user_args() or name in OS.get_cmdline_args()
+
+## The shafts' strength for this run: RAYS, --rays=N, or none with --no-rays.
+static func default_rays() -> float:
+	return 0.0 if _flag("--no-rays") else _arg_float("--rays=", RAYS)
+
+static func _arg_float(prefix: String, fallback: float) -> float:
+	for arg: String in OS.get_cmdline_user_args():
+		if arg.begins_with(prefix): return float(arg.trim_prefix(prefix))
+	return fallback
 
 ## Say which grass is on, so a film or a play session can tell: the tier,
 ## whether the dense GPU meadow draws and at what cover, and which tuft.
