@@ -338,7 +338,7 @@ func can_begin() -> bool:
 
 func _idle_world() -> bool:
 	var places: Node = scene.get("places")
-	return not editor.forming and (places == null or (places.initialized and not places.busy and not places.holding))
+	return not editor.forming and (places == null or (places.initialized and not places.busy))
 
 # --- The rim gesture's API ---------------------------------------------------
 

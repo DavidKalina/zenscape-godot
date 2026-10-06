@@ -220,7 +220,7 @@ func value(control: String) -> String:
 ## True while a regrowth or carry owns the world.
 func busy() -> bool:
 	var places: Node = scene.get("places")
-	return places != null and (places.busy or places.holding)
+	return places != null and places.busy
 
 # --- Changes -------------------------------------------------------------------
 
