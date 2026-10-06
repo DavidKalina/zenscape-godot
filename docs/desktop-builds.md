@@ -7,8 +7,9 @@ not need Godot, Node.js, or the source repository installed to play.
 
 1. Sign into GitHub and open [Godot desktop builds](https://github.com/DavidKalina/zenscape-godot/actions/workflows/desktop.yml).
 2. Choose a successful run. Its commit identifies exactly which game version was built.
-3. In the run summary, follow **Download Windows and Mac builds** to its draft release.
-4. Download `ZenScape-windows-x64-<commit>.zip` or `ZenScape-mac-universal-<commit>.zip` and extract it.
+3. In the run summary, follow **Download build** to its draft release.
+4. Download `ZenScape-windows-x64-<commit>.zip` and extract it. CI builds Windows
+   only; for a Mac app, export locally (below).
 
 The ZIP filename includes the build commit. Extract each download into a fresh
 folder to avoid launching an older executable or mixing it with another build’s
@@ -20,7 +21,7 @@ This build targets ordinary Intel/AMD 64-bit PCs. If Windows SmartScreen blocks
 this personal test build, use **More info → Run anyway** after verifying that
 you downloaded it from your own repository's run.
 
-**Mac:** move `ZenScape.app` into Applications. The same app supports Apple
+**Mac** (local export): move `ZenScape.app` into Applications. The same app supports Apple
 Silicon and Intel. It has an ad-hoc signature, but no Apple notarization. If
 macOS blocks it, attempt to open it, then use **System Settings → Privacy &
 Security → Open Anyway**. See [Godot's Mac launch instructions](https://docs.godotengine.org/en/stable/tutorials/export/running_on_macos.html).
@@ -47,17 +48,16 @@ included. The repository is private; draft releases require signing in with repo
 write access (the repository owner can download them).
 
 The workflow pins **Godot 4.7.2**, downloads the official editor and templates,
-and verifies their SHA-512 checksums. Windows and Mac runners compile our C++
-terrain kernel with pinned godot-cpp bindings and SCons 4.8.1, then export their
-respective platform. Mac libraries include both Apple Silicon and Intel slices.
+and verifies their SHA-512 checksums. A Windows runner compiles our C++ terrain
+kernel with pinned godot-cpp bindings and SCons 4.8.1, then exports Windows.
+Mac builds are made locally (see below) to save Actions minutes.
 
 Before uploading each download, CI launches its actual release executable from
 outside the source checkout. It requires the packaged native kernel, compares its
 mesh results with GDScript, and checks that the diorama menu appears and New
 diorama opens the editor tool tray. A missing kernel fails the build rather than
 silently using the fallback. The draft release is created before builds start;
-assets appear only after that platform's checks pass. Check both jobs before
-treating the entire run as successful. No signing secrets or paid developer
+the download appears only after its checks pass. No signing secrets or paid developer
 accounts are needed.
 
 `export_presets.cfg` includes JSON data read through `FileAccess`, alongside

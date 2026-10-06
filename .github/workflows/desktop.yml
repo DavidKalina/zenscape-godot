@@ -59,9 +59,6 @@ jobs:
           - platform: Windows
             os: windows-latest
             arch: x86_64
-          - platform: macOS
-            os: macos-14
-            arch: universal
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
