@@ -34,6 +34,9 @@ extends Node3D
 ## gorge through it. All are solids to the glide (`body`); no island stands
 ## on a range or an isle.
 ##
+## On every island but the plate's first home live a few sky folk (scripts/
+## sky_folk.gd), the same ones each time, who go with their island.
+##
 ## Flying into a chunk claims it (`claim`): the island left behind is kept
 ## (its land document, in `built_islands`, saved with the world) and its look baked
 ## where it stands; the plate is formed as the chunk's plain (or, for an
@@ -65,6 +68,7 @@ const SkyPeaks = preload("res://scripts/sky_peaks.gd")
 const SkyTowers = preload("res://scripts/sky_towers.gd")
 const SkyForestIsles = preload("res://scripts/sky_forest_isles.gd")
 const SkyHomes = preload("res://scripts/sky_homes.gd")
+const SkyFolk = preload("res://scripts/sky_folk.gd")
 ## The world's seed, bounds, ring and edge (scripts/sky_world.gd).
 const SkyWorld = preload("res://scripts/sky_world.gd")
 ## The most chunks standing at once. Each is three draws.
@@ -119,6 +123,8 @@ var peaks: Node3D
 var towers: Node3D
 ## The forested isles (scripts/sky_forest_isles.gd).
 var isles: Node3D
+## The people on the islands (scripts/sky_folk.gd).
+var folk: Node3D
 ## The islands built and left, by home key (`_key`): {home, label, document}.
 var built_islands := {}
 ## The swaps' shifts added up: the plate's own home is -origin.
@@ -182,6 +188,10 @@ func setup(owner_scene: Node3D) -> void:
 	isles.islets = islets
 	add_child(isles)
 	skip.append(isles)
+	folk = SkyFolk.new()
+	folk.islands = self
+	add_child(folk)
+	skip.append(folk)
 	show_air(false)
 
 ## Sets an island at every fixed slot and every island built, except the
@@ -399,6 +409,9 @@ func _bake(island: Node3D, chunk_seed: int, document: Dictionary = {}) -> void:
 	var sides := _copy(editor._skirt,editor.skirt_mesh_for(baked[0]))
 	island.add_child(ground)
 	island.add_child(sides)
+	# Its people, on its ground in its own frame; none at the first home.
+	if homes[index].length() >= 1.0:
+		folk.settle(island,chunk_seed,baked[0],editor.terrain.global_transform)
 
 ## The copy whose footprint holds a global point, or -1. A copy still
 ## rising or baking can't be claimed yet.
@@ -424,6 +437,7 @@ func _over_land(land: NativeTerrainData, p: Vector2) -> bool:
 ## to add to anything that flies. The world is saved after.
 func claim(index: int) -> Vector3:
 	claiming = true
+	folk.clear_plate()
 	var target := homes[index]
 	var places: Node = scene.get("places")
 	if places != null: places.busy = true
