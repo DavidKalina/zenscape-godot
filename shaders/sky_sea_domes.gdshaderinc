@@ -40,4 +40,8 @@ float zs_storybook_sea_domes(vec2 p) {
   }
   return pow(max(best, 0.0), 0.7);
 }
+// The near sea's domes (shaders/sky_sea.gdshader, its envelope bake) are
+// this many cells wide, so its heaps stand as a few broad masses for the
+// cauliflower to billow on, not a field of even lumps.
+const float ZS_SEA_DOME = 1.7;
 #endif
