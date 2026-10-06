@@ -28,9 +28,16 @@ func setup(source: Dictionary) -> void:
 	# Hemisphere bounce comes from the imported material's source lighting.
 	environment.ambient_light_source = Environment.AMBIENT_SOURCE_DISABLED
 	environment.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
-	environment.tonemap_mode = Environment.TONE_MAPPER_ACES
+	# AgX rolls bright skies and pastels off gently where ACES pushed them
+	# toward a plastic saturation; --aces brings the old curve back to compare.
+	if "--aces" in OS.get_cmdline_user_args():
+		environment.tonemap_mode = Environment.TONE_MAPPER_ACES
+		environment.tonemap_white = 16.0
+	else:
+		environment.tonemap_mode = Environment.TONE_MAPPER_AGX
+		environment.tonemap_agx_white = 16.0
+		environment.tonemap_agx_contrast = 1.25
 	environment.tonemap_exposure = float(source.exposure) / 1.08
-	environment.tonemap_white = 16.0
 	environment.ssao_enabled = true
 	environment.ssao_radius = 0.65
 	environment.ssao_intensity = 0.7
