@@ -62,7 +62,7 @@ const float CELL = 46.0;
 const vec2 DRIFT = vec2(0.6, 0.35) * 1.2;
 // How much higher the heaps stand under an island and how far round it.
 const float SWELL = 22.0;
-const vec2 SWELL_REACH = vec2(0.7, 2.2);
+const vec2 SWELL_REACH = vec2(0.6, 1.5);
 // The land far below the gaps (m under the sea's top) and its scale.
 const float GROUND = 700.0;
 const float GROUND_UNIT = 150.0;
@@ -85,7 +85,7 @@ const int REFINE = 5;
 float sea_rise(vec2 xz, float detail, float close) {
 	vec2 p = (xz + DRIFT * zs_motion_time) / CELL;
 	float mass = zs_storybook_sea_gnoise(p * 0.23 + vec2(3.1, 7.7)) * 0.7 + zs_storybook_sea_gnoise(p * 0.51 + vec2(8.3, 1.9)) * 0.3;
-	float heap = smoothstep(-0.33, 0.22, mass);
+	float heap = smoothstep(-0.2, 0.3, mass);
 	float h = zs_storybook_sea_domes(p) * 0.62;
 	// Without them, their mean, so the march's coarse surface stands where
 	// the fine one does.
@@ -336,12 +336,18 @@ void fragment() {
 		// The heaps' feet thin into the gap below them.
 		col = mix(deep_air, col, smoothstep(0.0, 0.1, rise));
 	} else {
-		// A gap: the land far below, through a great deal of air.
+		// A gap: the Opal dome's land far below (fields, woods, a river,
+		// coasts and the blue ocean), so the near sea opens onto the same
+		// world the far one does, in every style.
 		float t_ground = (SEA - GROUND - eye.y) / rd.y;
 		vec2 gp = (eye.xz + rd.xz * t_ground) / GROUND_UNIT;
 		float gfoot = t_ground * pixel / GROUND_UNIT;
-		vec3 ground = zs_storybook_sea_ground(gp, gfoot, deep_air, mix(0.12, dot(lit_col, vec3(0.3, 0.5, 0.2)) * 1.15, 0.85));
-		col = mix(ground, deep_air, mix(0.5, 0.85, dull));
+		float level = clamp(dot(lit_col, vec3(0.2126, 0.7152, 0.0722)), 0.05, 1.0);
+		vec3 shadow_hue = deep_air / max(dot(deep_air, vec3(0.2126, 0.7152, 0.0722)), 1e-3);
+		vec3 lamp = normalize(mix(sun, zs_moon_direction, zs_night * zs_celestial_clear));
+		float glint = pow(0.5 + 0.5 * dot(flat_dir, normalize(lamp.xz + 1e-4)), 8.0) * smoothstep(-0.05, 0.2, lamp.y) * mix(1.0, 0.5, zs_night) * (1.0 - dull);
+		vec3 ground = zs_opal_sea_land(gp / SEA_LAND.x, gfoot / SEA_LAND.x, level, shadow_hue, pearl, max(golden, zs_night), glint);
+		col = mix(ground, deep_air, mix(0.12, 0.6, dull));
 		if (cloud_sea_style == 2) {
 			// Mystic's faint light from the deep, breathing slowly.
 			float patch = smoothstep(0.4, 0.8, zs_mystic_sea_noise(gp * 0.6 + zs_motion_time * vec2(0.003, 0.002)));
