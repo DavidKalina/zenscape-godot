@@ -93,7 +93,9 @@ var _dirty_cover := false
 ## `wind_sampler(position: Vector3) -> Vector3` in m/s (LocalWindField.sample),
 ## `weather_sampler() -> Dictionary` with ground_wet/snow_cover/rain in 0..1
 ## (studies/surface_weather.gd plus `_precipitation.state.x`), and
-## `water_sampler(position: Vector3) -> bool` for cells standing under water.
+## `water_sampler(position: Vector3) -> bool` for cells standing under water,
+## read on the plate's plane: a rebuild gives it each cell's x and z at
+## height 0 (`rebuild`).
 func setup(data: NativeTerrainData, wind_sampler := Callable(), weather_sampler := Callable(), water_sampler := Callable(), rng_seed := 0) -> void:
 	_data = data
 	_wind = wind_sampler
@@ -154,8 +156,12 @@ func rebuild() -> void:
 	for index in range(fuel.size()):
 		var center := _center2(index)
 		var wet := false
+		# On the plane: the land's height under each of the cells is never
+		# read here. After the land's lookups were let go (NativeTerrainData
+		# `sample`), reading it walked every cell's triangle: 45 ms of the
+		# frame a sky chunk became the plate in (SkyIslands `claim`).
 		if _water.is_valid():
-			wet = bool(_water.call(_world(index,center)))
+			wet = bool(_water.call(Vector3(center.x,0.0,center.y)))
 		_water_cell[index] = 1 if wet else 0
 		if _in_active[index] != 0:
 			continue

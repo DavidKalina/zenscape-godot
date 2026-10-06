@@ -31,6 +31,9 @@ const INSET := 3.0
 const DRY := 1.5
 const FLAT := 0.8
 const STEEP := 0.3
+## How far clear of anything standing on the land (a tree, a stone) they
+## keep, past its own size (m).
+const CLEAR := 0.9
 ## How far from their spot they wander (m), and seconds stood between walks.
 const WANDER := 3.5
 const REST := Vector2(2.0,6.0)
@@ -91,7 +94,7 @@ func settle(holder: Node3D, chunk_seed: int, land: Object, frame: Transform3D) -
 	return spots.size()
 
 ## Whether someone can stand at `p`: on the land in from its shore, dry,
-## and gentle.
+## gentle, and clear of what stands on it (its `objects`).
 static func good(p: Vector2, land: Object) -> bool:
 	if land.nearest_land(p,INSET,0.0) != p: return false
 	var h: Variant = _height(land,p)
@@ -100,6 +103,10 @@ static func good(p: Vector2, land: Object) -> bool:
 	for d in [Vector2(FLAT,0.0),Vector2(-FLAT,0.0),Vector2(0.0,FLAT),Vector2(0.0,-FLAT)]:
 		var e: Variant = _height(land,p+d)
 		if e == null or absf(float(e)-float(h)) > STEEP: return false
+	var things: Variant = land.get("objects")
+	if things is Array:
+		for item: Dictionary in things:
+			if Vector2(float(item.get("x",INF)),float(item.get("z",INF))).distance_to(p) < CLEAR+0.5*float(item.get("scale",1.0)): return false
 	return true
 
 ## The land's ground at `p`, or null off it; read on a 0.1 m grid, as the

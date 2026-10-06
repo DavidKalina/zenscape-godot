@@ -119,8 +119,13 @@ static func square_islands() -> bool:
 ## the plain its seed's outline (unless --square-islands); atlas chunks,
 ## which meet their neighbours, stay square. `size` (0..1) asks for an
 ## island's size; left out, the seed's own.
-static func shape(data: NativeTerrainData, seed_value: int, origin := Vector2.ZERO, islanded := true, size := -1.0) -> void:
-	data.reset_flat(preload("res://scripts/island_outline.gd").mask(data.points,data.vertex_ids,seed_value,size) if islanded and not square_islands() else PackedByteArray())
+static func shape(data: NativeTerrainData, seed_value: int, origin := Vector2.ZERO, islanded := true, size := -1.0, outline := PackedByteArray()) -> void:
+	var mask := PackedByteArray()
+	if islanded and not square_islands():
+		# `outline`: the very mask this seed gives, worked out already (a sky
+		# chunk's plain, baked on a worker: SkyIslands `claim`).
+		mask = outline if not outline.is_empty() else preload("res://scripts/island_outline.gd").mask(data.points,data.vertex_ids,seed_value,size)
+	data.reset_flat(mask)
 	var swell := FastNoiseLite.new()
 	swell.seed = seed_value
 	swell.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
@@ -187,8 +192,8 @@ static func _wild_tree(data: NativeTerrainData, seed_value: int) -> void:
 
 ## Form the plain as one undoable operation that also restores the previous
 ## scene look, as `form_inland` does for generated worlds.
-## `size` as `shape` takes it.
-static func form(editor: NativeChunkEditor, world_value: Dictionary, live := true, origin := Vector2.ZERO, islanded := true, size := -1.0) -> void:
+## `size` and `outline` as `shape` takes them.
+static func form(editor: NativeChunkEditor, world_value: Dictionary, live := true, origin := Vector2.ZERO, islanded := true, size := -1.0, outline := PackedByteArray()) -> void:
 	if editor.forming: return
 	editor.finish_stroke()
 	editor.selected_object_id = -1
@@ -196,7 +201,7 @@ static func form(editor: NativeChunkEditor, world_value: Dictionary, live := tru
 	editor.formation_started.emit()
 	editor.data.begin_stroke()
 	editor.data._before["favorite_scene"] = NativeGardenStore.capture(editor.scene)
-	shape(editor.data,int(world_value.seed),origin,islanded,size)
+	shape(editor.data,int(world_value.seed),origin,islanded,size,outline)
 	editor.data.end_stroke()
 	await editor.refresh(editor.get_tree() if live else null)
 	editor.land_seed = int(world_value.seed)

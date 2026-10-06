@@ -36,6 +36,7 @@ extends Node3D
 ## crown's underside a ceiling it slides along, so under the canopy it keeps
 ## to the lanes.
 
+const SkyCommits = preload("res://scripts/sky_commits.gd")
 const SkyForestIsle = preload("res://scripts/sky_forest_isle.gd")
 const SkyPeaks = preload("res://scripts/sky_peaks.gd")
 const SkyTowers = preload("res://scripts/sky_towers.gd")
@@ -171,11 +172,16 @@ func advance(delta: float, eye: Vector3) -> void:
 		_since = 0.0
 		_survey(eye-cells.origin)
 	for key in _making.keys():
+		# One a frame, while the frame's share for the sky lasts
+		# (scripts/sky_commits.gd).
+		if not SkyCommits.open(): break
 		var m: Dictionary = _making[key]
 		if not WorkerThreadPool.is_task_completed(m.task): continue
 		WorkerThreadPool.wait_for_task_completion(m.task)
 		_making.erase(key)
+		var began := Time.get_ticks_usec()
 		_finish(m.cell,m.spot,m.out)
+		SkyCommits.spend("isle",Time.get_ticks_usec()-began)
 		break
 
 ## Waits for every isle being made and stands it up (tests, captures).

@@ -166,14 +166,21 @@ func bake() -> Dictionary:
 				i += 1
 	return {"size":n,"data":data}
 
-## The bake as a float 3D texture for the shader.
-static func texture_of(baked: Dictionary) -> ImageTexture3D:
+## The bake as a float 3D texture for the shader, from its slices
+## (`slices_of`, made on a worker if given).
+static func texture_of(baked: Dictionary, slices: Array[Image] = []) -> ImageTexture3D:
+	var n: Vector3i = baked.size
+	if slices.is_empty(): slices = slices_of(baked)
+	var texture := ImageTexture3D.new()
+	texture.create(Image.FORMAT_RF,n.x,n.y,n.z,false,slices)
+	return texture
+
+## The bake's slices as images, one per depth: plain data, safe on a worker.
+static func slices_of(baked: Dictionary) -> Array[Image]:
 	var n: Vector3i = baked.size
 	var data: PackedFloat32Array = baked.data
 	var slices: Array[Image] = []
 	var slice := n.x*n.y
 	for z in range(n.z):
 		slices.append(Image.create_from_data(n.x,n.y,false,Image.FORMAT_RF,data.slice(z*slice,(z+1)*slice).to_byte_array()))
-	var texture := ImageTexture3D.new()
-	texture.create(Image.FORMAT_RF,n.x,n.y,n.z,false,slices)
-	return texture
+	return slices

@@ -1,7 +1,7 @@
 extends SceneTree
 ## The sky folk (scripts/sky_folk.gd) on a stand-in island: the same seed
 ## gives the same people in the same spots; they stand on dry, gentle
-## ground in from the shore, never in the pond or on the cliff; left alone
+## ground in from the shore, never in the pond, on the cliff or in a tree; left alone
 ## they wander a little and stay near their spot, on the ground; a plane
 ## over them and they hail it, turned towards it; the wanderer near and
 ## they wave; far off they are still, and farther not drawn.
@@ -9,9 +9,10 @@ const SkyFolk = preload("res://scripts/sky_folk.gd")
 const DT := 1.0/30.0
 var failures := 0
 
-## An island 30 m across with a pond in one corner (x, z > 6) and a cliff
-## (a sharp step) along x = -6.
+## An island 30 m across with a pond in one corner (x, z > 6), a cliff
+## (a sharp step) along x = -6, and a tree at (0, -8).
 class Land extends RefCounted:
+	var objects: Array[Dictionary] = [{"asset":"tree","x":0.0,"z":-8.0,"scale":1.0}]
 	func nearest_land(p: Vector2, inset: float, _reach: float) -> Vector2:
 		return p if maxf(absf(p.x),absf(p.y)) <= 15.0-inset else Vector2.INF
 	func water_reaches(r: Rect2) -> bool:
@@ -32,13 +33,13 @@ func _initialize() -> void:
 		for i in range(a.people.size()):
 			var p: Vector2 = a.people[i].home
 			same = same and b.people.size() == a.people.size() and p == b.people[i].home
-			ok = ok and maxf(absf(p.x),absf(p.y)) <= 15.0-SkyFolk.INSET and not (p.x > 6.0-SkyFolk.DRY and p.y > 6.0-SkyFolk.DRY) and absf(p.x+6.0) > SkyFolk.FLAT
+			ok = ok and maxf(absf(p.x),absf(p.y)) <= 15.0-SkyFolk.INSET and not (p.x > 6.0-SkyFolk.DRY and p.y > 6.0-SkyFolk.DRY) and absf(p.x+6.0) > SkyFolk.FLAT and p.distance_to(Vector2(0.0,-8.0)) > SkyFolk.CLEAR
 			ok = ok and is_equal_approx(a.people[i].figure.position.y,float(land.ground_height(p))+5.0)
 		a.free()
 		b.free()
 	check(same,"The same seed gives the same people in the same spots")
 	check(counts.size() > 1 and counts.keys().all(func(n: int) -> bool: return n >= SkyFolk.PER_ISLAND.x and n <= SkyFolk.PER_ISLAND.y),"Between %d and %d an island (%s)" % [SkyFolk.PER_ISLAND.x,SkyFolk.PER_ISLAND.y,str(counts.keys())])
-	check(ok,"On dry, gentle ground in from the shore, standing on it")
+	check(ok,"On dry, gentle ground in from the shore, clear of the tree, standing on it")
 	var folk := _settle(3,land)
 	var person: Dictionary = folk.people[0]
 	var figure: Node3D = person.figure

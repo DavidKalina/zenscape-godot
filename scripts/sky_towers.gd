@@ -33,6 +33,7 @@ extends Node3D
 ## the vapour and the muffled wind (scripts/wanderer_eye.gd). Not a solid:
 ## nothing collides with a cloud.
 
+const SkyCommits = preload("res://scripts/sky_commits.gd")
 const SkyTower = preload("res://scripts/sky_tower.gd")
 const SkyPeaks = preload("res://scripts/sky_peaks.gd")
 const SkyHomes = preload("res://scripts/sky_homes.gd")
@@ -133,11 +134,16 @@ func advance(delta: float, eye: Vector3) -> void:
 		_since = 0.0
 		_survey(eye-cells.origin)
 	for key in _making.keys():
+		# One a frame, while the frame's share for the sky lasts
+		# (scripts/sky_commits.gd).
+		if not SkyCommits.open(): break
 		var m: Dictionary = _making[key]
 		if not WorkerThreadPool.is_task_completed(m.task): continue
 		WorkerThreadPool.wait_for_task_completion(m.task)
 		_making.erase(key)
+		var began := Time.get_ticks_usec()
 		_finish(m.cell,m.spot,m.out)
+		SkyCommits.spend("cumulus",Time.get_ticks_usec()-began)
 		break
 	for key in built:
 		var b: Dictionary = built[key]
@@ -224,6 +230,10 @@ static func _make(seed_value: int, out: Dictionary) -> void:
 	var shape: RefCounted = SkyTower.make(seed_value)
 	out.shape = shape
 	out.baked = shape.bake()
+	# The volume's slices, and the shared noise's the first time: only the
+	# textures are made on the main thread (`_finish`).
+	out.slices = SkyTower.slices_of(out.baked)
+	_noise_slices()
 
 ## The worker's tower, stood up: its box, drawn by the volume, and the
 ## thermals in its heart.
@@ -237,7 +247,7 @@ func _finish(cell: Vector2i, s: Vector3, out: Dictionary) -> void:
 	var material := ShaderMaterial.new()
 	material.shader = preload("res://shaders/sky_tower.gdshader")
 	material.render_priority = RENDER_PRIORITY
-	material.set_shader_parameter("body",SkyTower.texture_of(out.baked))
+	material.set_shader_parameter("body",SkyTower.texture_of(out.baked,out.get("slices",[] as Array[Image])))
 	material.set_shader_parameter("cauliflower",_noise())
 	material.set_shader_parameter("box_mid",box.get_center())
 	material.set_shader_parameter("box_half",box.size*0.5)
@@ -281,6 +291,23 @@ func _thermal_key(key: String) -> String:
 ## green the soft wisps (fbm). One texture, so a step reads both at once.
 static func _noise() -> ImageTexture3D:
 	if _cauliflower != null: return _cauliflower
+	_cauliflower = ImageTexture3D.new()
+	_cauliflower.create(Image.FORMAT_RG8,NOISE,NOISE,NOISE,false,_noise_slices())
+	return _cauliflower
+
+## The noise volume's slices, worked out once a run, on whichever thread
+## asks first (a tower's worker, `_make`); the rest wait for them.
+static func _noise_slices() -> Array[Image]:
+	_noise_lock.lock()
+	if _noise_made.is_empty(): _noise_made = _make_noise_slices()
+	var made := _noise_made
+	_noise_lock.unlock()
+	return made
+
+static var _noise_lock := Mutex.new()
+static var _noise_made: Array[Image] = []
+
+static func _make_noise_slices() -> Array[Image]:
 	var bumps := FastNoiseLite.new()
 	bumps.seed = 31
 	bumps.noise_type = FastNoiseLite.TYPE_CELLULAR
@@ -309,9 +336,7 @@ static func _noise() -> ImageTexture3D:
 			both[i*2] = r[i]
 			both[i*2+1] = g[i]
 		slices.append(Image.create_from_data(NOISE,NOISE,false,Image.FORMAT_RG8,both))
-	_cauliflower = ImageTexture3D.new()
-	_cauliflower.create(Image.FORMAT_RG8,NOISE,NOISE,NOISE,false,slices)
-	return _cauliflower
+	return slices
 
 # --- Reading them ------------------------------------------------------------------
 

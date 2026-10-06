@@ -27,6 +27,7 @@ extends Node3D
 ## (`islet_at`, scripts/wanderer_eye.gd), and the one perched on is never
 ## let go (`pinned`).
 
+const SkyCommits = preload("res://scripts/sky_commits.gd")
 const SkyIslet = preload("res://scripts/sky_islet.gd")
 const IslandShore = preload("res://scripts/island_shore.gd")
 const Strata = preload("res://scripts/strata.gd")
@@ -210,15 +211,18 @@ func advance(delta: float, eye: Vector3) -> void:
 	if _since >= CHECK:
 		_since = 0.0
 		_survey(eye-cells.origin)
-	# Islets the workers have finished stand up, BUILDS a frame.
+	# Islets the workers have finished stand up, BUILDS a frame, while the
+	# frame's share for the sky lasts (scripts/sky_commits.gd).
 	var made := 0
 	for key in _making.keys():
-		if made >= BUILDS: break
+		if made >= BUILDS or not SkyCommits.open(): break
 		var m: Dictionary = _making[key]
 		if not WorkerThreadPool.is_task_completed(m.task): continue
 		WorkerThreadPool.wait_for_task_completion(m.task)
 		_making.erase(key)
+		var began := Time.get_ticks_usec()
 		_finish(m.cell,m.home,m.out)
+		SkyCommits.spend("islet",Time.get_ticks_usec()-began)
 		made += 1
 	while _making.size() < MAKING and not _wanted.is_empty():
 		var cell: Vector2i = _wanted.pop_front()
@@ -297,10 +301,13 @@ func _start(cell: Vector2i, home: Vector3) -> void:
 	_prepare()
 	if _catalog.is_empty(): catalog(flora_source)
 	var out := {}
-	var task := WorkerThreadPool.add_task(_make.bind(seed_of(cell),_ground_palette(),_catalog.data,out),false,"Sky islet")
+	var task := WorkerThreadPool.add_task(_make.bind(seed_of(cell),_ground_palette(),_catalog.data,out,home.y),false,"Sky islet")
 	_making[_key(cell)] = {"task":task,"cell":cell,"home":home,"out":out}
 
-static func _make(seed_value: int, palette: Dictionary, plants: Dictionary, out: Dictionary) -> void:
+## On a worker: the islet's shape, its meshes (their materials are set as
+## it stands up, `_finish`), its plants' buffers, and its fall's rings and
+## thread, for an islet whose middle stands at `home_y`.
+static func _make(seed_value: int, palette: Dictionary, plants: Dictionary, out: Dictionary, home_y := 0.0) -> void:
 	var began := Time.get_ticks_usec()
 	var shape: RefCounted = SkyIslet.make(seed_value)
 	out.shape = shape
@@ -308,8 +315,20 @@ static func _make(seed_value: int, palette: Dictionary, plants: Dictionary, out:
 	out.sides = shape.side_arrays()
 	out.water = shape.water_arrays(WaterFlowView.TINT.mid.srgb_to_linear(),OFF_MAP)
 	out.plants = shape.flora(plants)
-	if not (out.water as Array).is_empty(): out.fall = _fall_rings(shape)
+	out.meshes = {"top":SkyIslet.mesh_from(out.top,null),"sides":SkyIslet.mesh_from(out.sides,null)}
+	if not (out.water as Array).is_empty():
+		out.fall = _fall_rings(shape)
+		out.thread = _thread_plan(shape,out.fall,home_y)
+		out.meshes.water = SkyIslet.mesh_from(out.water,null,SkyIslet.WATER_FORMAT)
 	out.usec = Time.get_ticks_usec()-began
+
+## A part's mesh as the worker made it (`_make`), wearing `material`, or
+## made here from its arrays.
+static func _mesh_of(out: Dictionary, part: String, material: Material, format := 0) -> ArrayMesh:
+	var made: Variant = (out.get("meshes",{}) as Dictionary).get(part)
+	if not made is ArrayMesh: return SkyIslet.mesh_from(out[part],material,format)
+	if material != null: (made as ArrayMesh).surface_set_material(0,material)
+	return made
 
 ## The worker's islet, stood up as nodes.
 func _finish(cell: Vector2i, home: Vector3, out: Dictionary) -> void:
@@ -320,24 +339,24 @@ func _finish(cell: Vector2i, home: Vector3, out: Dictionary) -> void:
 	add_child(node)
 	var body := MeshInstance3D.new()
 	body.name = "Body"
-	body.mesh = SkyIslet.mesh_from(out.top,ground_source if ground_source != null else _ground_material)
+	body.mesh = _mesh_of(out,"top",ground_source if ground_source != null else _ground_material)
 	body.position = -OFF_MAP
 	body.set_meta("skip_reflection",true)
 	node.add_child(body)
 	var sides := MeshInstance3D.new()
 	sides.name = "Sides"
-	sides.mesh = SkyIslet.mesh_from(out.sides,_side_material(shape))
+	sides.mesh = _mesh_of(out,"sides",_side_material(shape))
 	sides.set_meta("skip_reflection",true)
 	node.add_child(sides)
 	if not (out.water as Array).is_empty():
 		var pond := MeshInstance3D.new()
 		pond.name = "Pond"
-		pond.mesh = SkyIslet.mesh_from(out.water,_pond_material(),SkyIslet.WATER_FORMAT)
+		pond.mesh = _mesh_of(out,"water",_pond_material(),SkyIslet.WATER_FORMAT)
 		pond.position = -OFF_MAP
 		pond.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		pond.set_meta("skip_reflection",true)
 		node.add_child(pond)
-		_fall(node,shape,out.fall)
+		_fall(node,shape,out.fall,out.get("thread",{}))
 	_plant(node,out.plants)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = shape.seed
@@ -485,7 +504,7 @@ static func _fall_rings(shape: RefCounted) -> Dictionary:
 	var overhang := IslandShore.RING_OUT.y+0.05
 	return curtain(lip,out,shape.depth*FALL_DROP.x+FALL_DROP.y,FALL_TAIL,SkyIslet.CHANNEL*0.6,overhang,FALL_STRENGTH)
 
-func _fall(node: Node3D, shape: RefCounted, rings: Dictionary) -> void:
+func _fall(node: Node3D, shape: RefCounted, rings: Dictionary, thread: Dictionary = {}) -> void:
 	var water: Dictionary = shape.water()
 	var out := Vector3(water.out.x,0.0,water.out.y)
 	var curtain_node := MeshInstance3D.new()
@@ -529,10 +548,19 @@ func _fall(node: Node3D, shape: RefCounted, rings: Dictionary) -> void:
 	drops.transform = Transform3D(Basis(across,Vector3.UP,out),(rings.bottom_point as Vector3)+Vector3.DOWN*0.3)
 	node.add_child(drops)
 	# On down to the cloud sea as a soft thread, taking over where the
-	# strand breaks up (scripts/sky_fall_thread.gd).
+	# strand breaks up (scripts/sky_fall_thread.gd), planned on the worker
+	# (`_make`) when it could be.
+	if thread.is_empty(): thread = _thread_plan(shape,rings,node.position.y)
+	node.add_child(SkyFallThread.node_from(thread))
+
+## The fall's thread on down to the cloud sea (SkyFallThread `plan`), for
+## an islet whose middle stands at `home_y`.
+static func _thread_plan(shape: RefCounted, rings: Dictionary, home_y: float) -> Dictionary:
+	var water: Dictionary = shape.water()
+	var out := Vector3(water.out.x,0.0,water.out.y)
 	var lip := Vector3(water.lip.x,water.level,water.lip.y)
 	var overhang := IslandShore.RING_OUT.y+0.05
-	node.add_child(SkyFallThread.build(lip,out,float(rings.half),SkyFallThread.SEA-node.position.y,shape.seed,float(rings.face_drop),FALL_SPEED,overhang+0.2))
+	return SkyFallThread.plan(lip,out,float(rings.half),SkyFallThread.SEA-home_y,shape.seed,float(rings.face_drop),FALL_SPEED,overhang+0.2)
 
 ## A fall's rings for shaders/flow_fall.gdshader, in the islet's frame: off
 ## `lip` (on the rim, at the water's level) out along `out`, clearing the
