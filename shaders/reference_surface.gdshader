@@ -16,6 +16,7 @@ shader_type spatial;
 #include "res://shaders/reference_inversion.gdshaderinc"
 #include "res://shaders/cave_cutaway.gdshaderinc"
 #include "res://shaders/sky_season.gdshaderinc"
+#include "res://shaders/sky_peak_look.gdshaderinc"
 render_mode cull_disabled, diffuse_lambert, specular_schlick_ggx;
 
 uniform bool brush_visible = false;
@@ -443,11 +444,6 @@ void vertex() {
 			vec3 dirt = vec3(0.1441, 0.0976, 0.0630) * (0.88 + 0.24 * UV2.x);
 			COLOR.rgb = mix(dirt, living, smoothstep(0.02, 0.42, grown));
 		}
-		// A sky peak's snow line follows the season down to its floor
-		// (sky_season): the fall and the floor are the world's metres, the
-		// face's need and height the range's own.
-		if (sea_cut > -1.0e8 && zs_sky_peak_snowy(UV.x, VERTEX.y, max(length(MODEL_MATRIX[1].xyz), 1e-3), sea_cut))
-			COLOR.rgb = zs_sky_snow_colour(peak_snow, UV2.x);
 		if (bird_wings && source_bird_flight) {
 			float span = abs(VERTEX.x);
 			float lever = smoothstep(0.07, 1.12, span);
@@ -623,12 +619,18 @@ void vertex() {
 
 void fragment() {
 	float sea_mist = 0.0;
+	// A sky peak's point in its range's own frame (sky_peak_look).
+	vec3 peak_rel = vec3(0.0);
 	if (sea_cut > -1.0e8) {
 		float wander = zs_noise(world_position.xz * 0.021) * 0.7 + zs_noise(world_position.xz * 0.057 + 31.0) * 0.3;
 		float above = world_position.y - sea_cut - wander * sea_fray.x;
 		if (above < 0.0) discard;
 		sea_mist = 1.0 - smoothstep(0.0, sea_fray.y, above);
 		sea_mist *= sea_mist * (3.0 - 2.0 * sea_mist);
+		// Higher up, the low air and a drifting band of mist take the rock
+		// part of the way into the same light (sky_peak_look).
+		peak_rel = world_position - MODEL_MATRIX[3].xyz;
+		sea_mist = max(sea_mist, zs_peak_low_air(above, peak_rel, zs_motion_time));
 	}
 	if (cutaway_reveal > 0.0 && cave_cutaway(world_position - cutaway_origin, cutaway_normal, cutaway_half_width, cutaway_ceiling, cutaway_reveal, FRAGCOORD.xy)) discard;
 	if (leaf_season.y > 0.0 && zs_leaf_fallen(leaf_local, plant_root, leaf_season.y)) discard;
@@ -670,8 +672,23 @@ void fragment() {
 	// Where the look is read: the world point, less a far chunk's shift.
 	vec3 look_world = world_position - look_shift;
 	vec3 look_position = look_world / look_scale;
-	vec3 tint = ground ? zs_ground_color(base_color.rgb * COLOR.rgb, look_position, earth_side.x, ground_grass)
-		: scene_palette(base_color.rgb * COLOR.rgb);
+	vec3 surface = COLOR.rgb;
+	if (sea_cut > -1.0e8) {
+		// A sky peak: its basalt's fine grain, and its snow line following
+		// the season down to its floor (sky_season): the fall and the floor
+		// are the world's metres, the face's need (UV.x) and height (UV2.y)
+		// the range's own; the line ragged, softened and fluted across the
+		// faces (sky_peak_look).
+		float peak_scale = max(length(MODEL_MATRIX[1].xyz), 1e-3);
+		float px = length(fwidth(peak_rel));
+		vec3 lie = normalize(world_normal);
+		if (peak_rock) surface = zs_peak_rock_grain(surface, peak_rel, lie, px);
+		float margin = zs_sky_peak_margin(UV.x, UV2.y, peak_scale, sea_cut) * peak_scale;
+		float cover = zs_peak_snow_cover(margin, peak_rel, lie, px);
+		if (cover > 0.0) surface = mix(surface, zs_peak_snow_grain(zs_sky_snow_colour(peak_snow, UV2.x), peak_rel, px), cover);
+	}
+	vec3 tint = ground ? zs_ground_color(base_color.rgb * surface, look_position, earth_side.x, ground_grass)
+		: scene_palette(base_color.rgb * surface);
 	// Slopes to the sun a little warmer, away from it a little deeper (the
 	// smoothed ground normal rides world_normal on the ground).
 	if (ground) tint = zs_ground_sun_warm(tint, normalize(world_normal), zs_sun_direction, ground_grass);

@@ -29,6 +29,8 @@ func _initialize() -> void:
 	SkyRing._make_summit(9001,90.0,palette.grass,palette.rock,palette.gravel,palette.snow,SkyPeaks.OFF_MAP,out)
 	_check_arrays("A sea's summit",SkyPeak.make(9001,1.0,false),out.arrays,false)
 	_material()
+	_close_look()
+	for s: int in [SkyPeaks.seed_of(Vector2i.ZERO),4242,77]: _shoulder_clouds(SkyPeak.make(s))
 	print("PASS: sky peak look" if failures == 0 else "FAIL: sky peak look")
 	quit(1 if failures else 0)
 
@@ -150,4 +152,58 @@ func _material() -> void:
 	check(m.get_shader_parameter("peak_rock") == true,"The ranges' material is bare rock (peak_rock)")
 	var code := FileAccess.get_file_as_string("res://shaders/reference_surface.gdshader")
 	check("ground_grass = peak_rock ? 0.0" in code and "!peak_rock && (rock_treatment" in code,"Bare rock takes neither the plate's grass field nor its geology")
+	peaks.free()
+
+## Up close (shaders/sky_peak_look.gdshaderinc): the ground shader still
+## parses with it; the snow is laid per pixel from the season's margin, not
+## per face in the vertex; the rock's grain, the snow's rag and flutes and
+## the low air are all read in the range's own frame, so the skyline and the
+## full range paint alike and a swap moves nothing; and none of it uses
+## sin() hashes, which go to noise this far from the origin.
+func _close_look() -> void:
+	var surface: Shader = load("res://shaders/reference_surface.gdshader")
+	var names: Array = surface.get_shader_uniform_list().map(func(e: Dictionary) -> String: return e.name)
+	check(names.has("peak_lee") and names.has("peak_snow"),"The ground shader parses with the peaks' close look")
+	var code := FileAccess.get_file_as_string("res://shaders/reference_surface.gdshader")
+	var vertex := code.substr(code.find("void vertex()"),code.find("void fragment()")-code.find("void vertex()"))
+	check(not "peak_snow" in vertex,"No face is whitened whole in the vertex")
+	check("zs_peak_snow_cover(margin, peak_rel" in code and "zs_peak_rock_grain(surface, peak_rel" in code and "zs_peak_low_air(above, peak_rel" in code,"Snow, grain and low air are read per pixel in the range's frame")
+	check("peak_rel = world_position - MODEL_MATRIX[3].xyz" in code,"The range's frame is its mesh's own origin")
+	var look := FileAccess.get_file_as_string("res://shaders/sky_peak_look.gdshaderinc")
+	check(not "fract(sin" in look,"The close look's noise has no sin() hash")
+	check("zs_peak_resolved(px" in look,"Each fine pattern fades before it would shimmer")
+
+## The cloud caught on the flanks (SkyPeak `_shoulder_clouds`): a few puffs
+## high over the sea, apart, never in the gorge, each by the rock, and the
+## puffs' batch bounds reach up to them (SkyPeaks `_wrap`).
+func _shoulder_clouds(shape: RefCounted) -> void:
+	var low := lerpf(SkyPeak.SEA,shape.top,SkyPeak.SHOULDER_CLOUD.x)
+	var high: Array[Vector4] = []
+	for w: Vector4 in shape.wraps:
+		if w.y > low-1.0: high.append(w)
+	var label := "Range %d" % shape.seed
+	check(high.size() >= 1 and high.size() <= SkyPeak.SHOULDER_MOST,"%s: cloud hangs on its flanks, a few puffs (%d)" % [label,high.size()])
+	var apart := INF
+	var in_gorge := 0
+	var by_rock := 0
+	for a in range(high.size()):
+		var p := Vector2(high[a].x,high[a].z)
+		for b in range(a+1,high.size()): apart = minf(apart,p.distance_to(Vector2(high[b].x,high[b].z)))
+		if shape.cut and absf(shape.gorge_distance(p)) < SkyPeak.GORGE_HALF*3.0: in_gorge += 1
+		# Rock within the puff's reach at about its height.
+		var near := INF
+		for k in range(24):
+			var r := high[a].w*(0.1+0.4*float(k%3)/2.0)
+			var ground: Variant = shape.height_at(p+Vector2.from_angle(float(k)*TAU/8.0)*r)
+			if ground != null: near = minf(near,absf(float(ground)-high[a].y))
+		if near < high[a].w*0.4: by_rock += 1
+	check(high.size() < 2 or apart >= SkyPeak.SHOULDER_APART*0.99,"%s: the flanks' puffs stand apart (%.0f m)" % [label,apart])
+	check(in_gorge == 0,"%s: none in the gorge" % label)
+	check(by_rock == high.size(),"%s: each by the rock it caught on (%d of %d)" % [label,by_rock,high.size()])
+	var peaks: Node3D = SkyPeaks.new()
+	var puffs: MultiMeshInstance3D = peaks._wrap(shape)
+	var top := -INF
+	for w in high: top = maxf(top,w.y)
+	check(high.is_empty() or puffs.custom_aabb.end.y >= top,"%s: the puffs' bounds reach the flanks' cloud" % label)
+	puffs.free()
 	peaks.free()

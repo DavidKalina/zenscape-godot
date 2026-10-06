@@ -40,7 +40,9 @@ extends RefCounted
 ## top is never drawn: over the last metres the rock goes into the cloud's
 ## own light, lit as the sea's level top is, so the foot is soft cloud, not
 ## a ragged hem (reference_surface's `sea_cut`), wrapped in cloud puffs
-## (`wraps`).
+## (`wraps`), with a few more caught on its flanks high over the sea.
+## Up close the rock's grain, the snow's ragged, fluted edge and the low air
+## are the shader's (shaders/sky_peak_look.gdshaderinc).
 ##
 ## The frame is the range's own: its spot on the islands' plane at the
 ## origin, x along the crest, heights the world's.
@@ -231,6 +233,13 @@ const TREE_VARIANTS := [0,1,2,4]
 ## the sea line, WRAP_SIZE m across.
 const WRAP_APART := 38.0
 const WRAP_SIZE := Vector2(28.0,78.0)
+## The cloud caught on the flanks (`_shoulder_clouds`): the share of the way
+## from the sea to the top it hangs at, the puffs' spacing and size (m), and
+## how many at most.
+const SHOULDER_CLOUD := Vector2(0.35,0.55)
+const SHOULDER_APART := 140.0
+const SHOULDER_SIZE := Vector2(34.0,66.0)
+const SHOULDER_MOST := 6
 ## Snow: the line stands SNOW_DEPTH m under the top, broken SNOW_RAG m
 ## either way by a noise, brought down SNOW_HOLLOW m a metre of hollow (and
 ## lifted on ridges); it holds on ground no steeper than SNOW_SLOPE (at the
@@ -984,6 +993,7 @@ func _wrap() -> void:
 		var size := rng.randf_range(WRAP_SIZE.x,WRAP_SIZE.y)
 		var at := p+down_way*size*0.15
 		wraps.append(Vector4(at.x,SEA+rng.randf_range(-4.0,6.0)+size*rng.randf_range(0.0,0.3),at.y,size))
+	_shoulder_clouds(rng)
 	# Along the gorge's floor, where its walls stand over the sea.
 	var z := -HALF.y if cut else HALF.y
 	while z < HALF.y:
@@ -993,6 +1003,38 @@ func _wrap() -> void:
 		if wall != null and other != null and minf(float(wall),float(other)) > SEA:
 			wraps.append(Vector4(p.x+rng.randf_range(-8.0,8.0),SEA+rng.randf_range(0.0,10.0),p.y,rng.randf_range(WRAP_SIZE.x,WRAP_SIZE.y)))
 		z += WRAP_APART*0.8
+
+## Cloud caught on the flanks, high over the sea: a few puffs where the
+## ground crosses one level SHOULDER_CLOUD of the way from the sea to the
+## top, SHOULDER_APART apart, at most SHOULDER_MOST, stood a little out
+## from the slope. Something soft and known-sized half way up a face is
+## what says how big the face is.
+func _shoulder_clouds(rng: RandomNumberGenerator) -> void:
+	var level := lerpf(SEA,top,rng.randf_range(SHOULDER_CLOUD.x,SHOULDER_CLOUD.y))
+	var spots := []
+	for j in range(1,nz-3,3):
+		for i in range(1,nx-3,3):
+			var h := heights[j*nx+i]
+			if (h-level)*(heights[j*nx+i+3]-level) < 0.0 or (h-level)*(heights[(j+3)*nx+i]-level) < 0.0:
+				spots.append(Vector2i(i,j))
+	var kept: Array[Vector2] = []
+	while not spots.is_empty() and kept.size() < SHOULDER_MOST:
+		var s: Vector2i = spots.pop_at(rng.randi_range(0,spots.size()-1))
+		var g := _gradient(heights,s.x,s.y)
+		var down_way := -g.normalized() if g.length() > 0.001 else Vector2.ZERO
+		var size := rng.randf_range(SHOULDER_SIZE.x,SHOULDER_SIZE.y)
+		var at := point(s.x,s.y)+down_way*size*0.3
+		var lift := size*rng.randf_range(0.05,0.2)
+		# Never in the gorge, the glide's way through.
+		if cut and absf(gorge_distance(at)) < GORGE_HALF*3.0: continue
+		var ok := true
+		for q in kept:
+			if q.distance_to(at) < SHOULDER_APART:
+				ok = false
+				break
+		if not ok: continue
+		kept.append(at)
+		wraps.append(Vector4(at.x,level+lift,at.y,size))
 
 ## Spruces in stands on the gentle ground and the ledges, clear of the
 ## gorge's floor, a little scattered off the grid.
