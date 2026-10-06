@@ -1,8 +1,8 @@
 extends Node3D
 ## Branches the weather tears out of the trees. Wind and falling water drop them
-## on the walkable ground under a tree, they lie there as a visible trace, they
-## rot away after a few world days, and while they lie there they are the thing
-## Bigfoot gathers for his bed.
+## on the walkable ground under a tree, they lie there as a visible trace, and
+## they rot away after a few world days. A branch can still be taken up and
+## carried (`take_for_carry`), as the old resident did.
 ##
 ## Like the pond, this lives on world time (`scene.world_clock.elapsed`), never
 ## on engine seconds: a frozen sky drops nothing and a fast day drops branches at

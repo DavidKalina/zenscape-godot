@@ -5,7 +5,7 @@ const Blast = preload("res://scripts/terrain_blast.gd")
 const InternalBlast = preload("res://scripts/internal_blast.gd")
 const Collapse = preload("res://scripts/mountain_collapse.gd")
 const MAX_BODIES := 100
-## Only fast, substantial debris knocks down the resident or unseats props.
+## Only fast, substantial debris unseats props.
 const STRIKE_SPEED := 4.0
 const STRIKE_RADIUS := 0.25
 const SOLIDS := ["tree","layered_tree","redwood","broadleaf","snag","bigfoot_tree","birch","willow","juniper","rock","log","stump","boulder_1","boulder_2","boulder_3","boulder_4"]
@@ -31,7 +31,6 @@ var _revision := -1
 var _syncing := false
 var _elapsed := 0.0
 var collapse_count := 0
-var _resident_before: Variant = null
 ## Last detonation stage costs, in microseconds; instrumentation only.
 var last_stage_usec := {}
 var phase := "idle"
@@ -199,9 +198,6 @@ func _geometry_changed() -> void:
 func clear_effects(clear_pending := true) -> void:
 	if clear_pending: fire_queue.clear()
 	_blast_generation += 1
-	if _resident_before is Vector3 and editor != null:
-		editor.scene.creature.reset_at(_resident_before)
-	_resident_before = null
 	requested = false
 	collapse_count = 0
 	for body in bodies:
@@ -247,7 +243,6 @@ func _physics_process(delta: float) -> void:
 				body.remove_meta("collapse_velocity")
 				effects.emit_rockfall(body.global_position,0.8)
 	if not _blocked():
-		_strike_resident()
 		_splash_debris()
 
 func detonate(live := false, only_id := -1) -> void:
@@ -293,14 +288,9 @@ func detonate(live := false, only_id := -1) -> void:
 	phase = "affected"
 	stage_start = Time.get_ticks_usec()
 	var affected := {}
-	var resident := editor.scene.get("creature") as CreatureActor
-	var resident_enabled: bool = resident != null and editor.scene.get("resident_enabled") == true
-	var resident_kick := Vector3.ZERO
 	for i in range(salvo.size()):
 		var charge := salvo[i]
 		var origin := origins[i]
-		if resident_enabled:
-			resident_kick += Blast.impulse(origin,resident.global_position+Vector3.UP*0.9,charge.blast_radius)*0.8
 		for item in editor.data.objects:
 			if item.asset in ["explosive","waterfall","bridge"]: continue
 			var world := editor.terrain.to_global(editor.data.object_position(item))
@@ -343,14 +333,6 @@ func detonate(live := false, only_id := -1) -> void:
 				var world := Vector3(point.x,float(editor.data.sample(point,collapse.before)),point.y)
 				kick = ((world-collapse.origin).normalized()+Vector3.UP*0.25).normalized()*collapse.radius*2.5
 			affected[item.id] = {"item":item.duplicate(true),"kick":kick}
-	for collapse in collapses:
-		if not collapse.get("internal",false) or not resident_enabled: continue
-		var feet: Vector3 = editor.terrain.to_local(resident.global_position)
-		if Collapse.displacement(editor.data,collapse,Vector2(feet.x,feet.z))<0.18: continue
-		var surface: Variant = editor.data.sample(Vector2(feet.x,feet.z),collapse.before)
-		if surface == null or absf(feet.y-surface)>2.0: continue
-		var kick: Vector3 = ((feet-collapse.origin).normalized()+Vector3.UP*0.25).normalized()*collapse.radius*2.5
-		if kick.length()>resident_kick.length(): resident_kick = editor.terrain.global_basis*kick
 	# The live instance transforms still describe the unbroken mountainside.
 	var parts := _capture_parts(affected)
 	last_stage_usec["capture"] = Time.get_ticks_usec()-stage_start
@@ -402,7 +384,7 @@ func detonate(live := false, only_id := -1) -> void:
 	stage_start = Time.get_ticks_usec()
 	var world_play: Variant = editor.scene.get("world_play")
 	if world_play != null:
-		# The resident and thrown props share these colliders. Refresh them now,
+		# Thrown props share these colliders. Refresh them now,
 		# before debris can encounter the pre-blast ground on the next tick.
 		world_play.ensure_collision()
 	else:
@@ -411,9 +393,6 @@ func detonate(live := false, only_id := -1) -> void:
 	last_stage_usec["collision"] = Time.get_ticks_usec()-stage_start
 	await publication_budget.checkpoint()
 	if _aborted(generation,target_data): return
-	if resident_kick.length() > 0.1:
-		var before := resident.global_position
-		if resident.receive_blast(resident_kick): _resident_before = before
 	for collapse in collapses:
 		if collapse.get("internal",false):
 			# Surface breakouts make the buried blast visible around the cap.
@@ -553,7 +532,7 @@ func _launch_parts(parts: Array, kick: Vector3) -> void:
 	body.collision_layer = 0 if _staging else 4
 	body.collision_mask = 0 if _staging else 1|2
 	body.continuous_cd = true
-	# Rock-like density so a slab shoves Bigfoot and a pebble does not. Kicks
+	# Rock-like density so a slab shoves props and a pebble does not. Kicks
 	# below are scaled by mass, so launch speeds are unchanged.
 	body.mass = clampf(bounds.get_volume()*400.0,0.5,400.0)
 	body.set_meta("radius",bounds.size.length()*0.5)
@@ -610,27 +589,6 @@ func _splash_debris() -> void:
 
 func _strikes(body: RigidBody3D) -> bool:
 	return not body.freeze and body.linear_velocity.length() >= STRIKE_SPEED and float(body.get_meta("radius",0.0)) >= STRIKE_RADIUS
-
-## Flying debris knocks a standing resident into the same physical tumble a
-## blast does. Once airborne, the solver handles further hits directly.
-func _strike_resident() -> void:
-	var resident := editor.scene.get("creature") as CreatureActor
-	if resident == null or editor.scene.get("resident_enabled") != true: return
-	if resident.blast_airborne or resident.is_held() or (resident.wind_body != null and resident.wind_body.active): return
-	var feet := resident.global_position
-	for body in bodies:
-		if not _strikes(body): continue
-		var point := body.global_position
-		var axis := feet+Vector3.UP*clampf(point.y-feet.y,0.0,2.3)
-		if point.distance_to(axis) > float(body.get_meta("radius"))+0.55: continue
-		var kick := body.linear_velocity*clampf(body.mass/32.0,0.25,1.0)
-		if kick.length() < 5.0: kick = kick.normalized()*5.0
-		kick += Vector3.UP*2.0
-		var before := resident.global_position
-		if resident.receive_blast(kick):
-			if not _resident_before is Vector3: _resident_before = before
-			body.linear_velocity *= 0.55
-		return
 
 ## A static authored prop struck by fast debris joins the solver and takes the
 ## hit, so rockfall clears whatever stands in its path.

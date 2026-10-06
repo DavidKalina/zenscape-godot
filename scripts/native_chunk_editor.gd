@@ -29,7 +29,7 @@ const TOOL_TEXT := {
 	"rock":"Click to set a stone.",
 	"flower":"Click for one flower or drag to plant a trail.",
 	"arch":"Click to raise a stone arch.",
-	"bigfoot_tree":"Click to plant the tree Bigfoot visits.",
+	"bigfoot_tree":"Click to plant an old tree.",
 	"assets":"Pick a piece below, then click to place it.",
 	"pond":"Dig a hollow first. Hover to preview the water, then click to fill.",
 	"waterfall":"Click the waterfall lip, then a lower landing point.",
@@ -220,9 +220,9 @@ var _map_generation := 0
 var _map_busy := false
 var surface_workers := 4
 var last_surface_profile := {}
-var _bigfoot_mesh: Mesh
+var _ground_mesh: Mesh
 ## Standalone creature scenes provide their own physical ground.
-var update_encounter_ground := true
+var update_ground := true
 ## The creation brush (scripts/land_brush.gd): broad, noisy natural landforms,
 ## weathered by a local erosion pass when the stroke ends.
 var land_brush = preload("res://scripts/land_brush.gd").new()
@@ -1082,16 +1082,10 @@ func refresh(frame_tree: SceneTree = null, on_publish: Callable = Callable()) ->
 	last_refresh_usec["maps_elapsed"] = Time.get_ticks_usec()-stage_start
 	refresh_stage = "post_maps"
 	stage_start = Time.get_ticks_usec()
-	if update_encounter_ground and terrain.mesh != _bigfoot_mesh:
-		_bigfoot_mesh = terrain.mesh
-		if frame_tree != null: _setup_encounter_ground(terrain.mesh)
-		else: scene._bigfoot.ground.setup(terrain)
-	var encounter_pose: Variant = null
-	for item: Dictionary in data.objects:
-		if item.asset == "bigfoot_tree":
-			encounter_pose = Transform3D(Basis(Vector3.UP,item.angle).scaled(Vector3.ONE*item.scale),data.object_position(item))
-			break
-	scene._bigfoot.set_authored_tree(encounter_pose)
+	if update_ground and terrain.mesh != _ground_mesh:
+		_ground_mesh = terrain.mesh
+		if frame_tree != null: _setup_ground(terrain.mesh)
+		else: scene._ground.setup(terrain)
 	scene._bird_flight.ground = _original_bird_ground if original else data
 	scene._atmosphere.update_ground_bounds(terrain,original)
 	scene._precipitation.set_ceiling(_original_precip_top if original else scene._atmosphere._summit.y + scene._precipitation.SKY_CLEARANCE)
@@ -1112,15 +1106,15 @@ func refresh(frame_tree: SceneTree = null, on_publish: Callable = Callable()) ->
 
 	return _finish_refresh(true)
 
-## A yielding refresh buckets the encounter ground's triangles on a worker
-## (about 3-4 ms on the main thread) and adopts them a frame or two later,
-## unless a newer terrain mesh has been published meanwhile.
-func _setup_encounter_ground(mesh: Mesh) -> void:
-	var ground = scene._bigfoot.ground
+## A yielding refresh buckets the scene ground's triangles (rain, lightning)
+## on a worker (about 3-4 ms on the main thread) and adopts them a frame or
+## two later, unless a newer terrain mesh has been published meanwhile.
+func _setup_ground(mesh: Mesh) -> void:
+	var ground = scene._ground
 	var prepared: Dictionary = ground.prepare(terrain)
 	var job = preload("res://scripts/background_work.gd").new()
 	var built: Dictionary = await job.run(func() -> Dictionary: return preload("res://scripts/reference_ground.gd").build(prepared),get_tree())
-	if _bigfoot_mesh == mesh and is_instance_valid(scene) and scene._bigfoot.ground == ground: ground.adopt(built)
+	if _ground_mesh == mesh and is_instance_valid(scene) and scene._ground == ground: ground.adopt(built)
 
 ## The heights (and rim state) anchors and skirt were last lifted for.
 var _lifted_for: Array = []
@@ -1285,7 +1279,7 @@ func force_refresh() -> void:
 	content.discard_cache()
 	falls.discard_cache()
 	_map_ready = false
-	_bigfoot_mesh = null
+	_ground_mesh = null
 	refresh()
 
 ## Resample only the map pixels the edit can reach. The height pass is kept in

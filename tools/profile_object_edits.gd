@@ -21,7 +21,7 @@ func _run() -> void:
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--out="): output = arg.trim_prefix("--out=")
 		if arg.begins_with("--file="): world_file = arg.trim_prefix("--file=")
-		if arg == "--redwood-bigfoot": redwood = true
+		if arg == "--redwood": redwood = true
 	var scene = load("res://studies/diorama.tscn").instantiate()
 	root.add_child(scene)
 	scene.close_menu()
@@ -33,7 +33,6 @@ func _run() -> void:
 	if redwood:
 		editor.form_landscape("redwood_grove","",false)
 		scene._has_world = true
-		measure("invite_bigfoot",func(): scene.invite_bigfoot(Vector3.ZERO))
 	if not world_file.is_empty():
 		editor.save_path = world_file
 		if not editor.open_garden():
@@ -73,8 +72,6 @@ func _run() -> void:
 		measure("navigation_begin",func(): scene.navigation.begin_rebuild(scene.habitat,scene.habitat.clear_at,0.35,0.3))
 		measure("navigation_all_cells",func():
 			while not scene.navigation.advance_rebuild(2000): pass)
-		measure("brain_world_changed",func(): scene.brain.world_changed())
-		measure("brain_advance",func(): scene.brain.advance(1.0/60.0))
 	process_frame.disconnect(_frame)
 	var file := FileAccess.open(output,FileAccess.WRITE)
 	file.store_string(JSON.stringify({"gpu":RenderingServer.get_video_adapter_name(),"rows":rows,"frame_gaps_ms":frame_gaps},"\t"))

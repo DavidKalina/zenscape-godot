@@ -1,6 +1,6 @@
 extends Node3D
 ## The Blender heron (tools/blender_creatures/heron.py): one skinned, faceted mesh with
-## hand-keyed clips in the ambient Bigfoot's style. LifeMoments places and turns it and
+## hand-keyed clips (curve helpers from tools/blender_bigfoot/ambient_clips.py). LifeMoments places and turns it and
 ## says which clip to play; the clips play in place. `--classic-life` brings back the
 ## code-built heron from life_models.gd for comparison.
 

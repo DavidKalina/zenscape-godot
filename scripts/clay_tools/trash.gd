@@ -4,7 +4,7 @@ extends "res://scripts/clay_tools/clay_tool.gd"
 ## State.PAINT): press and hold or drag, and every object whose foot is within
 ## the can's reach (trees, rocks, shrubs, flowers, logs, leaf beds...) goes,
 ## flying up into its mouth and shrinking away; a footbridge goes when any of
-## its span is in reach. Waterfalls, explosives and Bigfoot's tree stay.
+## its span is in reach. Waterfalls, explosives and the old tree stay.
 ## **Shift** spares the big things (BIG: trees, rocks and boulders (a pebble
 ## counts as a rock), arches, and everything built: lamps, campfires, cabins,
 ## bridges and fences): only the small stuff goes, flowers, wheat, shrubs,

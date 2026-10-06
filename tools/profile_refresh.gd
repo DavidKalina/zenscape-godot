@@ -37,7 +37,7 @@ func run() -> void:
 				image.set_pixel(x,z,v))
 	t("paint_water", func(): GardenSurfaceMap.paint_water(editor._original_ground_map.duplicate(), editor.content.pond_vertices))
 	t("paint_streams", func(): GardenSurfaceMap.paint_streams(editor._original_ground_map.duplicate(), editor._original_stream_map.duplicate(), editor.content._stream_nodes))
-	t("bigfoot ground.setup", func(): scene._bigfoot.ground.setup(editor.terrain))
+	t("ground.setup", func(): scene._ground.setup(editor.terrain))
 	t("atmosphere.update_ground_bounds", func(): scene._atmosphere.update_ground_bounds(editor.terrain, false))
 	t("skirt rebuild", func(): editor._rebuild_skirt())
 	t("FULL editor.refresh()", func(): editor.refresh())

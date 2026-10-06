@@ -8,7 +8,6 @@ var previous := 0
 var preset := "cone"
 var output := "/tmp/zs-interaction.json"
 var reflections := true
-var resident := false
 var monitors := {}
 var orbit_seconds := 8.0
 var place_flowers := true
@@ -50,7 +49,6 @@ func run() -> void:
 		if arg.begins_with("--preset="): preset = arg.trim_prefix("--preset=")
 		if arg.begins_with("--out="): output = arg.trim_prefix("--out=")
 		if arg == "--no-reflections": reflections = false
-		if arg == "--bigfoot": resident = true
 		if arg == "--orbit-only": place_flowers = false
 		if arg == "--camera-stress":
 			camera_stress = true
@@ -71,7 +69,6 @@ func run() -> void:
 	await editor.form_landscape(preset,"",false)
 	scene._has_world = true
 	scene._frame_diorama()
-	if resident: scene.invite_bigfoot(Vector3.ZERO)
 	editor.set_active(true)
 	editor.select_tool("flower")
 	editor.placement_trail = false
@@ -113,7 +110,7 @@ func run() -> void:
 	phase = "settle"
 	await create_timer(1.0).timeout
 	process_frame.disconnect(frame)
-	var report := {"preset":preset,"gpu":RenderingServer.get_video_adapter_name(),"reflections":reflections,"bigfoot":resident,"operations":operations,"samples":samples}
+	var report := {"preset":preset,"gpu":RenderingServer.get_video_adapter_name(),"reflections":reflections,"operations":operations,"samples":samples}
 	var file := FileAccess.open(output,FileAccess.WRITE)
 	file.store_string(JSON.stringify(report,"\t"))
 	for name in ["idle","place","orbit","fast_orbit1","zoom1","pan1","fast_orbit2","zoom2","pan2"]:

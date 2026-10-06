@@ -813,12 +813,10 @@ func _keys(delta: float) -> void:
 func _world_pointer(point: Vector2) -> bool:
 	return editor.pointer_in_world(point) and not contains_pointer(point)
 
-## Something in the hand (a prop, a bent tree, Bigfoot) owns the pointer.
+## Something in the hand (a prop, a bent tree) owns the pointer.
 func _hands_full() -> bool:
 	var play: Node = scene.get("world_play")
-	if play != null and play.get("owner_scene") != null and (play._tree_drag or play.loose_props.grabbed != null): return true
-	var resident: Object = scene.get("_resident_play")
-	return resident != null and resident.scene != null and (resident.carrying or resident.hovered)
+	return play != null and play.get("owner_scene") != null and (play._tree_drag or play.loose_props.grabbed != null)
 
 func _input(event: InputEvent) -> void:
 	if live and handle(event): get_viewport().set_input_as_handled()

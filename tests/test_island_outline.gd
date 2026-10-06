@@ -290,7 +290,7 @@ func ownership(data: NativeTerrainData) -> void:
 	check(data.outline == other,"Redo restores the outline after")
 	# The chasm composition keeps its own cut alongside, and keeps the outline.
 	data.begin_stroke()
-	await preload("res://scripts/inland_landscape.gd").new().form(data,preload("res://scripts/chasm_glade.gd").RECIPE)
+	await preload("res://scripts/inland_landscape.gd").new().form(data,{"kind":"inland","version":5,"seed":7,"composition":"chasm","archetype":"ridgeback","landform":"original","biome":"meadow","relief":1.0,"breadth":1.0})
 	data.end_stroke()
 	check(data.outline == data.square_outline(),"A terrain recipe forms on the square it was authored for")
 	check(not data.chasm_faces.is_empty() and data.has_chasm(),"The chasm still cuts its own faces")

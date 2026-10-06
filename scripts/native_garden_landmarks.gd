@@ -3,6 +3,9 @@ extends Node3D
 signal instances_published()
 ## Place the demo's source landmarks with a ground-centered pivot.
 const KINDS := ["arch", "bigfoot_tree"]
+## The old tree ("bigfoot_tree", kept as its saved name) stands at the size it
+## had in the Fidelity world.
+const OLD_TREE_SCALE := 2.85 / 2.52
 var _arch_mesh: Mesh
 var _arch_material: Material
 var _arch_offset := Vector3.ZERO
@@ -51,7 +54,7 @@ func rebuild(data: NativeTerrainData) -> void:
 		else:
 			var tree: Node3D = preload("res://assets/bigfoot/old_tree.glb").instantiate()
 			landmark.add_child(tree)
-			tree.scale *= preload("res://studies/bigfoot_encounter.gd").PEEK_SCALE
+			tree.scale *= OLD_TREE_SCALE
 			for mesh: MeshInstance3D in tree.find_children("*","MeshInstance3D",true,false):
 				var original := mesh.mesh.surface_get_material(0) as StandardMaterial3D
 				var material := ShaderMaterial.new()

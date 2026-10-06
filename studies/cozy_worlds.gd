@@ -295,7 +295,6 @@ func _run_title() -> String:
 ## A showcase world (scripts/title_showcase.gd) formed and framed for the title.
 func _form_showcase(loading: Node) -> void:
 	loading.stage("Raising the land · growing the forest")
-	resident_enabled = false
 	title_recipe = preload("res://scripts/title_showcase.gd").choose(title_seed if title_seed >= 0 else int(Time.get_unix_time_from_system()*1000000.0))
 	if title_recipe.has("terrain_recipe"):
 		await _chunk_editor.form_inland(title_recipe.terrain_recipe,true,false)
@@ -923,7 +922,7 @@ func _hand_key(event: InputEventKey) -> bool:
 	return true
 
 func handle_resident_input(event: InputEvent) -> bool:
-	# The build palette forwards resident gestures before the scene's _input:
+	# The build palette forwards world gestures before the scene's _input:
 	# while the regrowth controller is starting or regrowing it takes them all.
 	if places != null and places.handle(event):
 		get_viewport().set_input_as_handled()
@@ -989,18 +988,4 @@ func new_diorama() -> void:
 	super.new_diorama()
 	if _chunk_editor.data.blank:
 		_refresh_habitat()
-		invite_bigfoot(Vector3(0,0,5))
 		save_current()
-
-func open_crossing_glade(chasm := false) -> void:
-	if places == null or places.busy or not save_current(): return
-	# Regrowth normally saves over its active slot. Keep an ordinary Open-able
-	# world before starting this separate activity, rather than replacing it.
-	var previous := _chunk_editor.save_path
-	_chunk_editor.save_path = library_path.path_join("Before-crossing-"+str(Time.get_unix_time_from_system())+".json")
-	var saved := _chunk_editor.save_garden()
-	_chunk_editor.save_path = previous
-	if not saved:
-		_notice.text = "Could not save the current place. Your world is still open."
-		return
-	super.open_crossing_glade(chasm)

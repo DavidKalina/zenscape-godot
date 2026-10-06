@@ -169,7 +169,7 @@ func _ready() -> void:
 		_catalog_parts["rock_variants"] = stones
 	_catalog_parts["leaf_bed"] = ["leaf_bed"]
 	_catalog_poses["leaf_bed"] = Transform3D.IDENTITY
-	_meshes["leaf_bed"] = preload("res://scripts/bigfoot_leaf_bed.gd").mesh()
+	_meshes["leaf_bed"] = preload("res://scripts/leaf_bed.gd").mesh()
 	_materials["leaf_bed"] = rock_material.duplicate()
 	_catalog_parts["explosive"] = ["explosive"]
 	_catalog_poses["explosive"] = Transform3D.IDENTITY

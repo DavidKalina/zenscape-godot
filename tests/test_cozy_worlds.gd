@@ -41,7 +41,6 @@ func run() -> void:
 	primary._process(0.01)
 	check(flow.initialized and not flow.busy,"The place is ready to play")
 	check(root.find_children("*","Node3D",false,false).size()==1,"Only one full world is loaded")
-	check(not primary.resident_enabled and not primary.creature.visible,"The resident stays away from the landscape")
 	var data: NativeTerrainData = primary._chunk_editor.data
 	var initial: Dictionary = data._recipe_settings.duplicate(true)
 	var heights: PackedFloat32Array = data.heights.duplicate()
@@ -75,7 +74,6 @@ func run() -> void:
 	check(not added_shroud,"Rebuild and growth never add a transition fog blanket")
 	check(primary._atmosphere._wind_time>wind_time,"The atmosphere keeps moving while the world is paused")
 	check(flow.generation==1 and not flow.handle(press),"One regeneration finishes and hands gestures back")
-	check(not primary.resident_enabled and not primary.creature.visible,"The resident stays away after a regrow")
 	check(data._recipe_settings.kind=="inland" and data.heights!=heights,"Regeneration builds a genuinely new native terrain")
 	check(primary._growth.terrain==1 and primary._growth.water==1 and primary._growth.foliage==1,"Forward growth restores exact finished channels")
 	check(primary._tremor.trauma==0 and is_equal_approx(primary.distance,flow.next_distance),"Camera settles into the framing for the new landscape")
@@ -100,7 +98,6 @@ func run() -> void:
 	check(await primary.places.open_place(path),"The saved place opens")
 	check(primary._chunk_editor.data._recipe_settings==generated and same_saved_look(primary._celestial.look.document(),new_look) and primary._precipitation.preset_index==weather,"Reopening restores the generated terrain, colors and weather")
 	check(same_numbers(primary._world_visuals.document(),new_visuals),"Reopening restores the generated fog banks and wisps")
-	check(not primary.resident_enabled,"Reopening keeps the resident away")
 	print("Cozy worlds: %d checks, %d failures" % [checks,failures])
 	primary.queue_free()
 	await process_frame

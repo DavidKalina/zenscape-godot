@@ -16,7 +16,7 @@ func _run() -> void:
 	scene.set_process(false)
 	scene._paused = true
 	var editor: NativeChunkEditor = scene._chunk_editor
-	check(editor.update_encounter_ground, "Fidelity editor retains its active original Bigfoot encounter ground updates")
+	check(editor.update_ground, "Fidelity editor keeps the scene ground (rain, lightning) updated")
 	editor.set_process(false)
 	var terrain: MeshInstance3D = scene.get_node("Reference/terrain")
 	var mesh: ArrayMesh = terrain.mesh

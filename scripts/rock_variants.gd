@@ -24,8 +24,8 @@ const VARIANTS := [
 	["shard", 71, [Vector3(0.62,0.95,0.58), 8, 0.2, 0.08, 0.45, 0.0, 0.8]],
 	["column", 83, [Vector3(0.7,1.05,0.66), 9, 0.24, 0.04, 0.9, 0.82, 0.9]],
 ]
-## Old footprint per kind, in metres at scale 1, so collisions, Bigfoot's
-## cover and clearings keep their sizes. The rock was a 1.2 m sphere lifted
+## Old footprint per kind, in metres at scale 1, so collisions, cover
+## and clearings keep their sizes. The rock was a 1.2 m sphere lifted
 ## 0.24; boulders were rotated icosahedra standing on their lowest point.
 const FOOTPRINT := {"rock":1.2,"boulder_1":1.9,"boulder_2":1.55,"boulder_3":1.45,"boulder_4":1.55}
 ## Rocks sit on this share of their height below the ground.

@@ -10,7 +10,6 @@ func run() -> void:
 	scene._paused = true
 	scene._ui.hide()
 	scene.get_node("Reference").hide()
-	scene._bigfoot.hide()
 	scene._atmosphere.set_fog(0.0)
 	scene._atmosphere.set_haze(0.0)
 	scene._celestial.inversion_enabled = false

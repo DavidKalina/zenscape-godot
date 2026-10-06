@@ -23,7 +23,7 @@ func run() -> void:
 	wheel.pressed = true
 	wheel.factor = 1.0
 	scene._unhandled_input(wheel)
-	check(scene.distance < 6.5,"Zooming in after Bigfoot moves closer")
+	check(scene.distance < 6.5,"Zooming in moves closer")
 	scene.distance = 0.5
 	scene._unhandled_input(wheel)
 	check(scene.distance == 0.5,"Close zoom respects the near limit")

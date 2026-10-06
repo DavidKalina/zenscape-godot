@@ -118,7 +118,6 @@ func setup(owner_scene: Node3D, choice := "", land_seed := -1) -> void:
 	scene.set_building(false)
 	_set_growth(1.0)
 	scene._paused = false
-	scene.resident_enabled = false
 	_build_overlay()
 	initialized = true
 	busy = false
@@ -452,7 +451,6 @@ func _payload() -> Dictionary:
 	scene.flush_world_play()
 	var state := NativeGardenStore.capture(scene)
 	state.scene._paused = false
-	state.diorama.resident = false
 	slots[active] = {"label":_label(scene),"document":scene._chunk_editor.data.to_document(),"state":state}
 	var payload := {"version":1,"layout":"regrowth","active":active,"slots":slots}
 	var islands := _sky()

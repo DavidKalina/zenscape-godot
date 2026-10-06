@@ -55,7 +55,6 @@ func run() -> void:
 	scene._update_camera()
 	scene.set_building(false)
 	scene._set_quality(1)
-	for tuner in get_nodes_in_group("tree_motion_tuner"): tuner.hide()
 	root.mode = Window.MODE_WINDOWED
 	await create_timer(0.5).timeout
 	root.size = Vector2i(1440,900)
