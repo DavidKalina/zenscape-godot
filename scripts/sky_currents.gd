@@ -119,7 +119,7 @@ func _thermal(base: Vector3, key := "", span := Vector2(THERMAL_FROM,THERMAL_TO)
 ## `radius` m round, at `lift` m/s.
 func add_thermal(base: Vector3, key: String, top := NAN, radius := THERMAL_RADIUS, lift := LIFT) -> void:
 	_thermal(base-position,key,Vector2(THERMAL_FROM,THERMAL_TO) if is_nan(top) else Vector2(0.0,top-base.y),radius,lift)
-	_build_wisps()
+	_wisps_later()
 
 ## An open jet stream along `path` (global points, upstream first),
 ## belonging to `key` (a sky peak's gorge, scripts/sky_peaks.gd), running
@@ -138,19 +138,19 @@ func add_jet(path: PackedVector3Array, key: String, speed := JET) -> void:
 	var current := _current(points,false,speed,JET_RADIUS,"jet")
 	current.key = key
 	currents.append(current)
-	_build_wisps()
+	_wisps_later()
 
 ## Takes away the currents (thermals, jets) belonging to `key`.
 func drop_thermals(key: String) -> void:
 	var before := currents.size()
 	currents = currents.filter(func(c: Dictionary) -> bool: return c.get("key","") != key)
-	if currents.size() != before: _build_wisps()
+	if currents.size() != before: _wisps_later()
 
 ## Takes away every thermal a later island brought.
 func drop_added() -> void:
 	var before := currents.size()
 	currents = currents.filter(func(c: Dictionary) -> bool: return c.get("key","") == "")
-	if currents.size() != before: _build_wisps()
+	if currents.size() != before: _wisps_later()
 
 func _current(points: PackedVector3Array, closed: bool, speed: float, radius: float, kind: String) -> Dictionary:
 	var length := 0.0
@@ -260,7 +260,21 @@ func _texture() -> ImageTexture:
 		image.set_pixel(SAMPLES+1,row,Color(1.0 if current.closed else 0.0,0.0 if current.kind == "jet" else 1.0,0.0,0.0))
 	return ImageTexture.create_from_image(image)
 
+## The wisps rebuilt once at the frame's end, however many currents came
+## and went in it (a cumulus brings three thermals, a range its jet), so
+## standing a part up mid-glide never rebuilds them more than once.
+func _wisps_later() -> void:
+	if _wisps_due: return
+	_wisps_due = true
+	_flush_wisps.call_deferred()
+
+var _wisps_due := false
+
+func _flush_wisps() -> void:
+	if _wisps_due: _build_wisps()
+
 func _build_wisps() -> void:
+	_wisps_due = false
 	if _wisps != null: _wisps.queue_free()
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 5
@@ -278,9 +292,21 @@ func _build_wisps() -> void:
 	multimesh.use_custom_data = true
 	multimesh.mesh = quad
 	multimesh.instance_count = custom.size()
+	# Each wisp's transform (the identity: the shader places it) and custom
+	# data, in one buffer.
+	var buffer := PackedFloat32Array()
+	buffer.resize(custom.size()*16)
 	for i in range(custom.size()):
-		multimesh.set_instance_transform(i,Transform3D.IDENTITY)
-		multimesh.set_instance_custom_data(i,custom[i])
+		var c: Color = custom[i]
+		var at := i*16
+		buffer[at] = 1.0
+		buffer[at+5] = 1.0
+		buffer[at+10] = 1.0
+		buffer[at+12] = c.r
+		buffer[at+13] = c.g
+		buffer[at+14] = c.b
+		buffer[at+15] = c.a
+	multimesh.buffer = buffer
 	_material = ShaderMaterial.new()
 	_material.shader = preload("res://shaders/sky_current.gdshader")
 	_material.set_shader_parameter("paths",_texture())
@@ -295,4 +321,5 @@ func _build_wisps() -> void:
 	add_child(_wisps)
 
 func wisp_count() -> int:
+	_flush_wisps()
 	return _wisps.multimesh.instance_count if _wisps != null else 0

@@ -59,6 +59,7 @@ const SkyCurrents = preload("res://scripts/sky_currents.gd")
 const SkyClouds = preload("res://scripts/sky_clouds.gd")
 const SkyCells = preload("res://scripts/sky_cells.gd")
 const Genesis = preload("res://scripts/genesis_canvas.gd")
+const IslandShore = preload("res://scripts/island_shore.gd")
 const SkyIslets = preload("res://scripts/sky_islets.gd")
 const SkyPeaks = preload("res://scripts/sky_peaks.gd")
 const SkyTowers = preload("res://scripts/sky_towers.gd")
@@ -66,6 +67,7 @@ const SkyForestIsles = preload("res://scripts/sky_forest_isles.gd")
 const SkyHomes = preload("res://scripts/sky_homes.gd")
 ## The world's seed, bounds, ring and edge (scripts/sky_world.gd).
 const SkyWorld = preload("res://scripts/sky_world.gd")
+const SkyCommits = preload("res://scripts/sky_commits.gd")
 ## The most chunks standing at once. Each is three draws.
 const CAP := 9
 ## A copy that turns up rises this far (metres) over this long (seconds):
@@ -353,11 +355,15 @@ static func seed_of(home: Vector3) -> int:
 
 ## On a worker, a detached copy of the land is shaped as the Quiet plain from
 ## `chunk_seed`, or given a built island's `document`, and its mesh built,
-## as the flip bakes its underside (scripts/diorama_flip.gd `_bake_underside`); its earth sides are fitted
-## here on the main thread. Drawn with the plate's own ground and earth-side
-## materials, only the plate's palette carries over, never what stands on it.
-## A fresh plain is its seed's island (Genesis `shape`), so the far islands
-## show their outlines and shore walls as the plate does.
+## as the flip bakes its underside (scripts/diorama_flip.gd `_bake_underside`),
+## and an island's earth sides with it: its shore wall and hanging rock
+## (scripts/island_shore.gd), as the plate's are fitted (NativeChunkEditor
+## `skirt_mesh_for`). Only the nodes are made on the main thread, when the
+## frame has room for them (scripts/sky_commits.gd). A square land's sides
+## are fitted there, from the plate's own. Drawn with the plate's own ground
+## and earth-side materials, only the plate's palette carries over, never
+## what stands on it. A fresh plain is its seed's island (Genesis `shape`),
+## so the far islands show their outlines and shore walls as the plate does.
 func _bake(island: Node3D, chunk_seed: int, document: Dictionary = {}) -> void:
 	var land := editor.data
 	var mesh := land.source_mesh
@@ -366,6 +372,10 @@ func _bake(island: Node3D, chunk_seed: int, document: Dictionary = {}) -> void:
 	for key in ["sand","gravel","snowline","rock_slope"]: palette[key] = land._palette.get(key)
 	var tint: Variant = land._ground_tint
 	var offset := land.world_offset
+	# The earth sides' space to the terrain's, and their material, as
+	# NativeChunkEditor `skirt_mesh_for` reads them.
+	var placing := editor.terrain.global_transform.affine_inverse()*editor._skirt.global_transform
+	var side_material: Material = editor._skirt_mesh.surface_get_material(0) if editor._skirt_mesh != null else null
 	var baked: Array = []
 	var task := WorkerThreadPool.add_task(func() -> void:
 		var plain := NativeTerrainData.new()
@@ -376,18 +386,21 @@ func _bake(island: Node3D, chunk_seed: int, document: Dictionary = {}) -> void:
 		if document.is_empty() or not plain.load_document(document): Genesis.shape(plain,chunk_seed)
 		baked.append(plain)
 		# Only the island's faces (scripts/island_outline.gd); its shore wall
-		# comes with the earth sides below.
-		baked.append(plain.play_mesh(plain.build_mesh())))
-	while not WorkerThreadPool.is_task_completed(task): await get_tree().process_frame
+		# comes with the earth sides.
+		baked.append(plain.play_mesh(plain.build_mesh()))
+		if not plain.outline.is_empty(): baked.append(IslandShore.build(plain,placing,side_material)))
+	while not WorkerThreadPool.is_task_completed(task) or not SkyCommits.open(): await get_tree().process_frame
 	WorkerThreadPool.wait_for_task_completion(task)
+	var began := Time.get_ticks_usec()
 	if baked.size() < 2 or baked[1] == null or not is_instance_valid(island) or island.is_queued_for_deletion(): return
 	var index := _copies.find(island)
 	if index < 0: return
 	lands[index] = baked[0]
 	var ground := _copy(editor.terrain,baked[1])
-	var sides := _copy(editor._skirt,editor.skirt_mesh_for(baked[0]))
+	var sides := _copy(editor._skirt,baked[2] if baked.size() > 2 else editor.skirt_mesh_for(baked[0]))
 	island.add_child(ground)
 	island.add_child(sides)
+	SkyCommits.spend("island",Time.get_ticks_usec()-began)
 
 ## The copy whose footprint holds a global point, or -1. A copy still
 ## rising or baking can't be claimed yet.
@@ -413,7 +426,12 @@ func _over_land(land: NativeTerrainData, p: Vector2) -> bool:
 ## to add to anything that flies. The world is saved after.
 func claim(index: int) -> Vector3:
 	claiming = true
+	var began := Time.get_ticks_usec()
 	var target := homes[index]
+	# The chunk's plain as its worker baked it: the plate is formed as the
+	# same plain, so its outline is taken as it stands, and its shore read
+	# back (NativeTerrainData `_known_shore`), not worked out again here.
+	var baked: NativeTerrainData = lands[index]
 	var places: Node = scene.get("places")
 	if places != null: places.busy = true
 	var left := -origin
@@ -421,19 +439,27 @@ func claim(index: int) -> Vector3:
 	var fresh := plate_seed >= 0 and editor.data._undo.is_empty()
 	if not fresh: built_islands[_key(left)] = {"home":left,"label":_label(),"document":editor.data.to_document()}
 	var behind := _add(left,Vector3.ZERO,Vector3.ZERO)
+	SkyCommits.spend("claim:leave",Time.get_ticks_usec()-began)
 	while _copies.has(behind) and lands[_copies.find(behind)] == null: await get_tree().process_frame
+	began = Time.get_ticks_usec()
 	var hidden := _hide_plate()
+	SkyCommits.spend("claim:hide",Time.get_ticks_usec()-began)
 	var entry: Dictionary = built_islands.get(_key(target),{})
 	if entry.is_empty() or not editor.data.load_document(entry.document):
-		await Genesis.form(editor,Genesis.world(seed_of(target)),true)
+		var outline := PackedByteArray()
+		if entry.is_empty() and baked != null and not baked.outline.is_empty():
+			outline = baked.outline
+			baked._keep_shore()
+		await Genesis.form(editor,Genesis.world(seed_of(target)),true,Vector2.ZERO,true,-1.0,outline)
 		plate_seed = seed_of(target)
 	else:
 		await editor.refresh(get_tree())
 		plate_seed = -1
+	began = Time.get_ticks_usec()
 	built_islands.erase(_key(target))
 	editor.data._undo.clear()
 	editor.data._redo.clear()
-	if scene.has_method("_refresh_habitat"): scene._refresh_habitat()
+	_settle_habitat()
 	# The copy may have moved in the list while the plate formed.
 	var shift := Vector3.ZERO
 	index = homes.find(target)
@@ -451,8 +477,29 @@ func claim(index: int) -> Vector3:
 	if places != null:
 		places.busy = false
 		places.save_places()
+	SkyCommits.spend("claim:settle",Time.get_ticks_usec()-began)
 	claiming = false
 	return shift
+
+## The plate's habitat (where its creatures may stand and walk) read again
+## for the new land, a slice a frame (the scene's budgeted refresh) rather
+## than all at once: in one go its walks held a claim's last frame for a
+## third of a second. A newer claim takes over.
+func _settle_habitat() -> void:
+	if not scene.has_method("_refresh_habitat"): return
+	var navigation: Variant = scene.get("navigation")
+	if scene.get("_habitat_changed") == null or navigation == null or navigation.get("rebuilding") == null:
+		scene._refresh_habitat()
+		return
+	scene.set("_habitat_changed",true)
+	_habitat_serial += 1
+	var serial := _habitat_serial
+	while is_instance_valid(scene) and serial == _habitat_serial:
+		scene._refresh_habitat(true)
+		if not scene.get("_habitat_changed") and not navigation.rebuilding: return
+		await get_tree().process_frame
+
+var _habitat_serial := 0
 
 func _label() -> String:
 	var places: Node = scene.get("places")
@@ -616,12 +663,18 @@ func sky_progress() -> float:
 ## (scripts/pipeline_warmup.gd: drawn tiny before the camera for a few
 ## frames, so their pipelines are built under the loading screen): the
 ## skylines, solid and fading; a range made in full, the cloud at its foot
-## and its spruces; and whatever stands under the sky now (islands, islets,
-## cumulus, clouds), hidden or not.
+## and its spruces; whatever stands under the sky now (islands, islets,
+## cumulus, clouds), hidden or not; and the plane or glider the glide flies,
+## all its parts.
 func standins() -> Array[GeometryInstance3D]:
 	var out: Array[GeometryInstance3D] = []
 	var seen := {}
 	_standins_of(self,out,seen)
+	# And what flies with the glide, drawn only in it (`skip`, set by the
+	# wanderer: the plane or glider with its prop's blur and vapour, the
+	# streaks of air).
+	for node in skip:
+		if is_instance_valid(node) and not is_ancestor_of(node): _standins_of(node,out,seen)
 	if peaks != null and not peaks.premade.is_empty():
 		var made: Dictionary = peaks.premade.values()[0]
 		var holder := Node3D.new()

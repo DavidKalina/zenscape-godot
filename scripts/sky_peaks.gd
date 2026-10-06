@@ -49,6 +49,7 @@ extends Node3D
 ## within reach of the plate are made ahead as the world starts (`premake`,
 ## under the loading screen) and kept, so a glide starts among them whole.
 
+const SkyCommits = preload("res://scripts/sky_commits.gd")
 const SkyPeak = preload("res://scripts/sky_peak.gd")
 ## Other landforms of the land below risen through the sea, kept with the
 ## ranges: each kind a node made the same way (`reset` (cells, currents,
@@ -264,12 +265,17 @@ func advance(delta: float, eye: Vector3) -> void:
 		_since = 0.0
 		_survey(home)
 	for key in _making.keys():
+		# One a frame, while the frame's share for the sky lasts
+		# (scripts/sky_commits.gd).
+		if not SkyCommits.open(): break
 		var m: Dictionary = _making[key]
 		if int(m.task) >= 0:
 			if not WorkerThreadPool.is_task_completed(m.task): continue
 			WorkerThreadPool.wait_for_task_completion(m.task)
 		_making.erase(key)
+		var began := Time.get_ticks_usec()
 		_finish(m.cell,m.spot,m.out)
+		SkyCommits.spend("range",Time.get_ticks_usec()-began)
 		break
 	_fade_leaving()
 	for kind in kinds: kind.advance(delta,eye)
