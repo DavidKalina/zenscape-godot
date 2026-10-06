@@ -57,6 +57,7 @@ const CLAIM_MARGIN := 1.0
 ## at different heights, so each is a destination.
 const OFFSETS := [Vector3(380.0,-20.0,-160.0),Vector3(-260.0,25.0,-520.0),Vector3(-640.0,-35.0,120.0),Vector3(180.0,-50.0,700.0),Vector3(820.0,15.0,420.0)]
 const SkyCurrents = preload("res://scripts/sky_currents.gd")
+const SkyTraffic = preload("res://scripts/sky_traffic.gd")
 const SkyClouds = preload("res://scripts/sky_clouds.gd")
 const SkyCells = preload("res://scripts/sky_cells.gd")
 const Genesis = preload("res://scripts/genesis_canvas.gd")
@@ -125,6 +126,8 @@ var lands: Array = []
 var seeds: Array[int] = []
 ## The jet streams and thermals between the islands (scripts/sky_currents.gd).
 var currents: Node3D
+## The other planes touring the jets (scripts/sky_traffic.gd), or null.
+var traffic: Node
 ## The clouds between them (scripts/sky_clouds.gd).
 var clouds: Node3D
 ## The small islets scattered between them (scripts/sky_islets.gd).
@@ -166,6 +169,14 @@ func setup(owner_scene: Node3D) -> void:
 	var slots := [Vector3.ZERO]
 	slots.append_array(OFFSETS)
 	currents.build(slots)
+	if SkyTraffic.enabled():
+		traffic = SkyTraffic.new()
+		add_child(traffic)
+		skip.append(traffic)
+		traffic.ground = ground
+		traffic.cloud_near = cloud_near
+		traffic.cloud_depth = func(point: Vector3) -> float: return in_cloud(point,scene._motion_time)
+		traffic.build(currents,slots)
 	# The clouds are laid out with the islands (`build`), once the world's
 	# seed and its mountains are known: never here, where it would wait on
 	# the layout on the main thread.
@@ -981,6 +992,7 @@ func show_air(on: bool) -> void:
 		_flown = true
 		for island in _copies: island.visible = true
 	currents.visible = on
+	if traffic != null: traffic.show(on)
 	clouds.visible = on
 	islets.visible = on
 	peaks.visible = on or SkyWorld.ring_on()
@@ -993,6 +1005,19 @@ func show_air(on: bool) -> void:
 ## a tower draws its own fog round the eye), 0 to 1.
 func in_cloud(point: Vector3, time: float) -> float:
 	return maxf(clouds.inside(point,time),towers.fade(point)*SkyTowers.VEIL)
+
+## The middle of the drifting cloud nearest a global point within `reach`
+## metres, global, or null (for the other planes, scripts/sky_traffic.gd).
+func cloud_near(point: Vector3, reach: float) -> Variant:
+	var best: Variant = null
+	var gap := reach
+	for i in range(clouds.clouds.size()):
+		var c: Vector3 = clouds.centre(i,scene._motion_time)
+		var d := c.distance_to(point)
+		if d < gap:
+			gap = d
+			best = c
+	return best
 
 ## The air at a global point (SkyCurrents `air_at`), and past the mountain
 ## ring the edge wind blowing home (SkyWorld `edge_air`).
