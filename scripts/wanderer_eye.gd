@@ -162,7 +162,7 @@ const PAD_HINTS := {
 	BOARD_HINT:"{A} take off  ·  {LS} walk  ·  {RS} look  ·  {B} step out",
 	LANDING_HINT:"Coming in to land  ·  {RT}, {LB} {RB} or {Y} to fly on",
 	ROLLING_HINT:"{Y} to hop out",
-	PLANE_HINT:"{LS} bank, turn and pitch  ·  {RS} look round  ·  {RT} boost  ·  {LT} brake  ·  {LB} {RB} barrel roll  ·  {Y} land  ·  {R3} camera  ·  {B} step out",
+	PLANE_HINT:"{LS} steer  ·  {RS} look round  ·  {RT} boost  ·  {LT} brake  ·  {LB} {RB} barrel roll  ·  {Y} land  ·  {R3} camera  ·  {B} step out",
 	FLY_HINT:"{LS} turn and pitch  ·  {X} flap  ·  {LT} rise  ·  {RT} dive  ·  {Y} land  ·  {RS} look round  ·  {R3} camera  ·  {B} step out",
 }
 ## The right stick's look while walking, radians a second at full tilt,

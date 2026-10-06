@@ -45,9 +45,14 @@ func _draw() -> void:
 	var font_size := get_theme_font_size("font_size")
 	var parts := split(_shown)
 	var height := font_size*GLYPH
-	var width := 0.0
-	for part: Array in parts:
-		width += glyph_width(str(part[1]),height) if part[0] == "glyph" else font.get_string_size(str(part[1]),HORIZONTAL_ALIGNMENT_LEFT,-1,font_size).x
+	var width := _width(parts,font,font_size)
+	# A long line steps its size down to fit the label and the screen, never
+	# below 10 px (the keys' longer line can have widened the label past it).
+	var room := minf(size.x,get_viewport_rect().size.x-48.0)
+	while width > room and font_size > 10:
+		font_size -= 1
+		height = font_size*GLYPH
+		width = _width(parts,font,font_size)
 	var x := (size.x-width)*0.5 if horizontal_alignment == HORIZONTAL_ALIGNMENT_CENTER else 0.0
 	var middle := size.y*0.5
 	var ink := get_theme_color("font_color")
@@ -63,6 +68,12 @@ func _draw() -> void:
 			if shadow.a > 0.0: draw_string(font,Vector2(x,baseline+1.0),words,HORIZONTAL_ALIGNMENT_LEFT,-1,font_size,shadow)
 			draw_string(font,Vector2(x,baseline),words,HORIZONTAL_ALIGNMENT_LEFT,-1,font_size,ink)
 			x += font.get_string_size(words,HORIZONTAL_ALIGNMENT_LEFT,-1,font_size).x
+
+func _width(parts: Array, font: Font, font_size: int) -> float:
+	var width := 0.0
+	for part: Array in parts:
+		width += glyph_width(str(part[1]),font_size*GLYPH) if part[0] == "glyph" else font.get_string_size(str(part[1]),HORIZONTAL_ALIGNMENT_LEFT,-1,font_size).x
+	return width
 
 ## A line as ["text", words] and ["glyph", id] parts.
 static func split(line: String) -> Array:
@@ -133,10 +144,9 @@ static func draw_glyph(item: CanvasItem, id: String, centre: Vector2, height: fl
 			item.draw_circle(centre,r,fill,true,-1.0,true)
 			item.draw_circle(centre,r-line*0.5,edge,false,line,true)
 			item.draw_circle(centre,r*0.55,Color(edge,edge.a*0.35),true,-1.0,true)
-			var mark := ("L" if id.begins_with("L") else "R")+("" if id.length() == 2 and id.ends_with("S") else "")
-			_letter(item,font,mark,centre,int(round(height*0.5)),ink)
-			if id.ends_with("3"):
-				item.draw_circle(centre,r*0.55,ink,false,line,true)
+			# A click of a stick reads "L3", "R3"; the stick itself its letter.
+			var click := id.ends_with("3")
+			_letter(item,font,id if click else id.left(1),centre,int(round(height*(0.4 if click else 0.5))),ink)
 		"DPAD","UP","DOWN","LEFT","RIGHT":
 			var arm := r*0.36
 			var cross := [Rect2(centre+Vector2(-arm,-r),Vector2(arm*2.0,r*2.0)),Rect2(centre+Vector2(-r,-arm),Vector2(r*2.0,arm*2.0))]
