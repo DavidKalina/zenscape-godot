@@ -81,6 +81,9 @@ func run() -> void:
 	for i in range(900):
 		if not islands.lands.has(null): break
 		await frames(1)
+	# The ring's ranges stand up on workers after the islands: give them time,
+	# so every run's stills show the same skyline.
+	await create_timer(6.0).timeout
 	var shots := _shots()
 	for tag: String in want_hours:
 		for shot: Dictionary in shots:
@@ -88,7 +91,11 @@ func run() -> void:
 			if tag == "night" and not shot.get("night",false): continue
 			await _hold(shot,hours[tag],90 if shot == shots[0] else 60)
 			print("TOUR %s-%s frame %.2f ms" % [shot.label,tag,await _frame_ms(30)])
-			if shot == shots[0]: print("TOUR %s hour %.2f sun %.3f weather %s cloud %s" % [tag,hours[tag],scene._celestial.sun_height,scene._celestial.state.get("zs_cloud"),scene._celestial.state.get("zs_cloud_sun")])
+			if shot == shots[0]:
+				var st: Dictionary = scene._celestial.state
+				print("TOUR %s light hemi_sky %s hemi_ground %s hemi_energy %s key %s cloud_sky %s sky_up %s sky_down %s sky_glow %s" % [tag,st.get("zs_hemi_sky"),st.get("zs_hemi_ground"),st.get("zs_hemi_energy"),st.get("zs_key_irradiance"),st.get("zs_cloud_sky"),st.get("zs_sky_up"),st.get("zs_sky_down"),st.get("zs_sky_glow")])
+				print("TOUR %s look colors %s" % [tag,scene._celestial.look.document()])
+			if shot == shots[0]: print("TOUR %s hour %.2f sun %.3f cloud cover %.2f storm %.2f cloud sun %s look %s" % [tag,hours[tag],scene._celestial.sun_height,scene._celestial.cloud,scene._celestial.storm,scene._celestial.state.get("zs_cloud_sun"),scene._celestial.look.settings])
 			await still("%s-%s" % [shot.label,tag])
 	print("TOUR done")
 	quit(0)
@@ -107,6 +114,9 @@ func _shots() -> Array:
 	shots.append({"label":"sea-down","eye":Vector3(reach+200.0,60.0,-200.0),"look":Vector3(reach+420.0,sea,-60.0)})
 	shots.append({"label":"keel","eye":Vector3(reach+90.0,-40.0,30.0),"look":Vector3(reach-20.0,sea+10.0,0.0)})
 	shots.append({"label":"chase","eye":Vector3(reach+60.0,20.0,0.0),"look":Vector3(reach+600.0,sea+40.0,120.0),"chase":true,"night":true})
+	# Into the sun from off the plate's edge, the sun high in the frame: the
+	# light shafts, the sun's glow and what stands against it.
+	shots.append({"label":"sun","eye":Vector3(reach+40.0,10.0,0.0),"look":Vector3.ZERO,"at_sun":true})
 	return shots
 
 ## The mean frame time (ms) over `count` frames, the view held.
@@ -121,6 +131,15 @@ func _frame_ms(count: int) -> float:
 func _hold(shot: Dictionary, hour: float, count: int) -> void:
 	var at: Vector3 = shot.eye
 	var look: Vector3 = shot.look
+	if shot.get("at_sun",false):
+		scene.world_clock.set_time(scene.world_clock.day,hour)
+		await frames(2)
+		var sun: Vector3 = scene._celestial.state.get("zs_sun_direction",Vector3.UP)
+		# Into the islands' frame: the diorama may stand turned in the world.
+		sun = eye.islands.global_basis.inverse()*sun
+		var flat := Vector3(sun.x,0.0,sun.z).normalized()
+		# Level toward the sun, tipped up so it stands in the upper third.
+		look = at+flat*1000.0+Vector3.UP*(clampf(sun.y,0.0,0.45)*1000.0-120.0)
 	var way := (look-at).normalized()
 	var glide: RefCounted = eye.glide
 	glide.position = at
