@@ -22,7 +22,8 @@ static func attach(viewport: Viewport) -> void:
 	update.call()
 
 static func apply(viewport: Viewport, cap: int) -> void:
-	var height := float(viewport.get_visible_rect().size.y)
+	# In pixels: a Retina window's visible rect is in points, half its pixels.
+	var height := float((viewport as Window).size.y if viewport is Window else (viewport as SubViewport).size.y)
 	var scale := 1.0 if cap <= 0 or height <= cap else cap/height
 	viewport.scaling_3d_mode = Viewport.SCALING_3D_MODE_METALFX_SPATIAL if RenderingServer.get_current_rendering_driver_name() == "metal" else Viewport.SCALING_3D_MODE_FSR
 	viewport.scaling_3d_scale = scale
