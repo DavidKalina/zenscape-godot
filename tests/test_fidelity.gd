@@ -97,16 +97,6 @@ func _check_scene() -> void:
 	_check(is_equal_approx(scene._celestial._target, 0.75), "Repeated advance progresses to dusk")
 	scene._celestial.next_hour()
 	_check(is_equal_approx(scene._celestial._target, 0.0), "Advance sun wraps through midnight")
-	_check(scene._bigfoot.available, "Imported terrain has a valid encounter clearing")
-	scene._summon_bigfoot()
-	scene._bigfoot.advance(5.8, false, scene.camera.global_position)
-	var head_pose: Transform3D = scene._bigfoot.rig.head.transform
-	scene._bigfoot.advance(1.0, true, scene.camera.global_position + Vector3(5, 2, 3))
-	_check(scene._bigfoot.rig.head.transform.is_equal_approx(head_pose), "Pause freezes the encounter pose even when the camera moves")
-	scene._bigfoot.advance(11.0, false, scene.camera.global_position)
-	_check(not scene._bigfoot.active and not scene._bigfoot.rig.visible, "Completed peek hides the actor")
-	scene._summon_bigfoot()
-	_check(scene._bigfoot.active and scene._bigfoot.rig.visible, "Encounter can be summoned again")
 	scene._update_camera()
 	var base_camera: Transform3D = scene.camera.transform
 	scene._tremor.add(0.7)
@@ -163,7 +153,7 @@ func _check_scene() -> void:
 	_check(not scene._panning, "Releasing over UI ends pan")
 	scene.queue_free()
 	await process_frame
-	print("PASS: fidelity water, celestial, wind, encounter, tremor, and navigation checks" if failures == 0 else "FAIL: %d fidelity checks" % failures)
+	print("PASS: fidelity water, celestial, wind, tremor, and navigation checks" if failures == 0 else "FAIL: %d fidelity checks" % failures)
 	quit(1 if failures else 0)
 
 func _check(condition: bool, message: String) -> void:

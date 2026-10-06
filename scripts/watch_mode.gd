@@ -64,7 +64,7 @@ const PAD_HINTS := {HINT:"Watching  ·  any button to come back"}
 const SPECIAL := {"cabin":3.0,"campfire":3.0,"waterfall":3.0,"bridge":2.0,"arch":2.0,"bigfoot_tree":2.0,"stone_lamp":1.2,"redwood":1.2,"willow":1.2,"sunflower":0.8,"wheat":0.6}
 const LIT := ["cabin","campfire","stone_lamp"]
 const TREES := ["tree","broadleaf","layered_tree","redwood","birch","willow","juniper"]
-const FOLLOWED := {"deer":1.6,"heron":1.6,"bird":1.0,"bigfoot":2.0}
+const FOLLOWED := {"deer":1.6,"heron":1.6,"bird":1.0}
 
 const IslandFrame = preload("res://scripts/island_frame.gd")
 

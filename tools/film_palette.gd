@@ -173,7 +173,7 @@ func run() -> void:
 	await hold(2)
 	press(false)
 	await hold(6)
-	await drag("bigfoot_tree",6.5,-7.5,44)
+	await drag("arch",6.5,-7.5,44)
 	# A mountain rides in on its ghost, sized down so it reads inside the frame.
 	await click(tab("Landscape"))
 	editor.set_setting("mountain_radius",3.0)

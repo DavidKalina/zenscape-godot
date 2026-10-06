@@ -1,8 +1,7 @@
 extends Node
 ## Cozy prototype: reverse the source growth channels, regenerate in place,
-## then replay them forward. One native world; the camera and Bigfoot stay put.
-## In scenery mode there is no Bigfoot to carry: regrow folds and replays the
-## land directly.
+## then replay them forward. One native world; the camera stays put. Regrow
+## folds and replays the land directly; the resident stays away.
 const Generator = preload("res://scripts/cozy_world_generator.gd")
 const Genesis = preload("res://scripts/genesis_canvas.gd")
 const Presets = preload("res://scripts/native_landscape_presets.gd")
@@ -33,15 +32,7 @@ var scene: Node3D
 var primary: Node3D
 var initialized := false
 var busy := false
-var holding := false
-var pressed := false
-var press_at := Vector2.ZERO
-var last_mouse := Vector2.ZERO
-var origin_feet := Vector3.ZERO
 var old_paused := false
-var armed := true
-var edge_time := 0.0
-var pending_drop := false
 var phase := "ready"
 var generation := 0
 ## The seed the current landscape grew from; -1 for saved or preset places.
@@ -59,13 +50,6 @@ var active := 0
 var regrow_button: Button
 var cover := CanvasLayer.new()
 var badge := Label.new()
-var carry_view := SubViewport.new()
-var carry_actor := CreatureActor.new()
-var carry_image := TextureRect.new()
-var carry_offset := Vector2.ZERO
-var marker := MeshInstance3D.new()
-var marker_mat := StandardMaterial3D.new()
-var landing: Variant = null
 var pool_revision := -1
 var pool_depth := 0.0
 ## True while the current world is a Genesis plain (scripts/genesis_canvas.gd).
@@ -110,15 +94,12 @@ func setup(owner_scene: Node3D, choice := "", land_seed := -1) -> void:
 		world_seed = int(recipe.get("terrain_recipe",{}).get("seed",-1))
 		plain = false
 		_sync_plain_day(true)
-		if not _scenery(): scene._refresh_habitat()
 		slots = [{}]
 		active = 0
 		saved = {}
 	elif saved.is_empty():
-		scene.restore_cave_state({})
 		await scene._chunk_editor.form_landscape("valley","",true)
 		scene._refresh_habitat()
-		scene.invite_bigfoot(Vector3(0,0,5))
 		slots = [{}]
 	else:
 		# Retain earlier prototype places on disk, but only load the chosen one.
@@ -137,12 +118,11 @@ func setup(owner_scene: Node3D, choice := "", land_seed := -1) -> void:
 	scene.set_building(false)
 	_set_growth(1.0)
 	scene._paused = false
-	scene.resident_enabled = not _scenery()
 	_build_overlay()
 	initialized = true
 	busy = false
 	_update_badge()
-	scene._notice.text = "Regrow for a new landscape, or press Build to shape this one." if _scenery() else "Regrow this landscape, or carry Bigfoot to an edge to discover a new place."
+	scene._notice.text = "Regrow for a new landscape, or press Build to shape this one."
 	if plain or _hand_only(): scene._notice.text = _plain_notice()
 	if world_seed >= 0: scene._chunk_editor.land_seed = world_seed
 	var args := OS.get_cmdline_user_args()
@@ -174,7 +154,6 @@ func _form_land(land: String, seed_value: int) -> void:
 	generated_world = formed.world
 	world_seed = seed_value
 	_sync_plain_day(true)
-	if not plain and not _scenery(): scene._refresh_habitat()
 	slots = [{}]
 	active = 0
 
@@ -183,9 +162,6 @@ func _plain_seed() -> int:
 	var at := args.find("--plain-seed")
 	if at >= 0 and at+1 < args.size() and args[at+1].is_valid_int(): return int(args[at+1])
 	return randi() % 1000000
-
-func _scenery() -> bool:
-	return bool(scene.get("scenery_mode"))
 
 ## Turn the plain's day (PLAIN_DAY_LENGTH) when a plain opens in creation mode,
 ## and put other worlds back on the default day; their moods hold the hour.
@@ -228,46 +204,6 @@ func _build_overlay() -> void:
 	regrow_button = scene._button(scene._toolbar,"Regrow landscape",regrow)
 	preload("res://scripts/tactile_editor_style.gd").button(regrow_button)
 	regrow_button.tooltip_text = "Fold this landscape away and discover a different landscape. Undo restores the old terrain."
-	carry_view.size = Vector2i(320,400)
-	carry_view.transparent_bg = true
-	carry_view.own_world_3d = true
-	carry_view.render_target_update_mode = SubViewport.UPDATE_DISABLED
-	add_child(carry_view)
-	var rig := Node3D.new()
-	carry_view.add_child(rig)
-	rig.add_child(carry_actor)
-	carry_actor.setup("res://assets/models/zenscape-bigfoot-breathing.glb")
-	carry_actor.set_process(false)
-	var material := ShaderMaterial.new()
-	material.shader = preload("res://shaders/reference_surface.gdshader")
-	for mesh: MeshInstance3D in carry_actor.actor.find_children("*","MeshInstance3D",true,false):
-		if "_n7_" not in mesh.name and "_n8_" not in mesh.name: mesh.material_override = material
-	var eye := Camera3D.new()
-	rig.add_child(eye)
-	eye.projection = Camera3D.PROJECTION_ORTHOGONAL
-	eye.size = 3.5
-	eye.position = Vector3(0,1.55,8)
-	eye.look_at(Vector3(0,1.55,0))
-	for source: DirectionalLight3D in scene._lights:
-		var light := DirectionalLight3D.new()
-		light.transform = source.transform
-		light.light_color = source.light_color
-		light.light_energy = source.light_energy
-		rig.add_child(light)
-	cover.add_child(carry_image)
-	carry_image.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	carry_image.texture = carry_view.get_texture()
-	carry_image.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	carry_image.hide()
-	var ring := TorusMesh.new()
-	ring.inner_radius = 0.48
-	ring.outer_radius = 0.59
-	marker.mesh = ring
-	marker_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	marker_mat.albedo_color = Color("b3e699")
-	marker.material_override = marker_mat
-	add_child(marker)
-	marker.hide()
 
 func _label(world: Node3D) -> String:
 	var recipe: Dictionary = world._chunk_editor.data._recipe_settings
@@ -296,83 +232,17 @@ func _update_badge() -> void:
 func blocks(point: Vector2) -> bool:
 	return busy or (badge.visible and badge.get_global_rect().has_point(point))
 
-func handle(event: InputEvent) -> bool:
+## Holds every gesture until the controller is ready and while a regrow runs.
+func handle(_event: InputEvent) -> bool:
 	if not initialized: return true
-	if _scenery(): return busy
-	if event is InputEventKey and event.pressed and event.keycode==KEY_ESCAPE and holding:
-		cancel_carry()
-		return true
-	if event is InputEventMouseMotion:
-		last_mouse = event.position
-		if pressed and not holding and event.position.distance_to(press_at)>=5:
-			begin_carry()
-			return true
-		if holding or busy: return true
-	if event is InputEventMouseButton and event.button_index==MOUSE_BUTTON_LEFT:
-		last_mouse = event.position
-		if not event.pressed and (pressed or holding):
-			pressed = false
-			if holding: drop_at(event.position)
-			else: scene.creature.notice(scene.camera.global_position)
-			return true
-		if event.pressed and not busy and scene._resident_play.pick(event.position):
-			pressed = true
-			press_at = event.position
-			return true
-	return holding or busy
+	return busy
 
-func begin_carry() -> void:
-	if busy or holding: return
-	origin_feet = scene.creature._safe_position
-	old_paused = scene._paused
-	scene._chunk_editor.finish_stroke()
-	scene.world_play.cancel()
-	scene.routine.cancel("carried through the landscape")
-	scene.environment_life.cancel()
-	if scene.foliage_tread != null: scene.foliage_tread.clear()
-	scene._resident_play.cancel()
-	holding = true
-	scene._paused = true
-	scene.resident_enabled = false
-	scene.creature.hide()
-	carry_actor.reset_at(Vector3.ZERO)
-	carry_actor.pick_up()
-	carry_actor.rotation.y = scene.creature.rotation.y-scene.yaw
-	var feet: Vector2 = scene.camera.unproject_position(origin_feet)
-	var head: Vector2 = scene.camera.unproject_position(origin_feet+Vector3.UP*3)
-	var height := clampf(feet.distance_to(head)*1.25,90,250)
-	carry_image.size = Vector2(height*0.8,height)
-	carry_offset = Vector2(height*0.4,height*0.16)
-	carry_view.render_target_update_mode = SubViewport.UPDATE_ALWAYS
-	carry_image.show()
-	armed = true
-	edge_time = 0.0
-	pending_drop = false
-	scene._notice.text = "Hold near an edge to grow a new landscape. Release to set him down."
-
-func _process(delta: float) -> void:
+func _process(_delta: float) -> void:
 	if not initialized: return
 	regrow_button.disabled = busy or scene._chunk_editor.forming
-	if holding:
-		carry_actor.advance(minf(delta,0.05))
-		carry_image.position = (last_mouse-carry_offset).clamp(Vector2.ZERO,scene.get_viewport().get_visible_rect().size-carry_image.size)
 	if busy: return
 	_pass_plain_night()
 	if badge.text!=_badge_text(): _update_badge()
-	if not holding: return
-	_update_landing(last_mouse)
-	var size: Vector2 = scene.get_viewport().get_visible_rect().size
-	var x := last_mouse.x/size.x
-	var inside := Rect2(Vector2.ZERO,size).has_point(last_mouse)
-	var edge := inside and (x<0.08 or x>0.92)
-	if not edge:
-		edge_time = 0
-		if inside and x>0.18 and x<0.82: armed = true
-	elif armed:
-		edge_time += minf(delta,0.05)
-		if edge_time>=0.45:
-			armed = false
-			regrow()
 
 ## Fold this world away and lay down a fresh Genesis plain in its place.
 func new_plain(requested_seed := -1) -> void:
@@ -381,26 +251,15 @@ func new_plain(requested_seed := -1) -> void:
 func regrow(requested_seed := -1, to_plain := false) -> void:
 	if busy or not initialized or scene._chunk_editor.forming: return
 	var before_state := NativeGardenStore.capture(scene)
-	if holding:
-		before_state.scene._paused = old_paused
-		before_state.diorama.resident = true
-		before_state.diorama.position = [origin_feet.x,origin_feet.y,origin_feet.z]
 	previous_look = scene._celestial.look.document()
 	previous_hour = scene._celestial.phase
 	previous_distance = scene.distance
 	next_look = {}
-	if _scenery():
-		old_paused = scene._paused
-		scene._chunk_editor.finish_stroke()
-		scene.world_play.cancel()
-		scene._paused = true
-	elif not holding:
-		last_mouse = scene.camera.unproject_position(scene.creature.global_position+Vector3.UP*2.0)
-		begin_carry()
-		pending_drop = true
+	old_paused = scene._paused
+	scene._chunk_editor.finish_stroke()
+	scene.world_play.cancel()
+	scene._paused = true
 	busy = true
-	armed = false
-	marker.hide()
 	var rumble: Node = scene.get("world_rumble")
 	if rumble != null:
 		rumble.hold(&"regrow",RUMBLE_SINK.x)
@@ -451,23 +310,11 @@ func regrow(requested_seed := -1, to_plain := false) -> void:
 	# The atlas frames its whole ring, not the one chunk.
 	next_distance = await _fit_distance(get_tree()) if atlas == null else previous_distance
 	_set_growth(0.0)
-	# Navigation is prepared before Bigfoot can be released onto the new ground.
-	# Scenery mode has nobody to walk it; the habitat rebuilds lazily if he returns.
+	# Nobody walks the new ground: the habitat rebuilds lazily if he returns.
 	await get_tree().process_frame
-	if not _scenery():
-		var nav_workers: int = scene.navigation.thread_workers
-		# Two snapshots leave room for rendering; four copies cost a frame by
-		# themselves on dense forests. Poll and merge within the native 2 ms budget.
-		scene.navigation.thread_workers = 2
-		scene._refresh_habitat(true)
-		while scene.navigation.rebuilding:
-			await get_tree().process_frame
-			scene._refresh_habitat(true)
-		scene.navigation.thread_workers = nav_workers
-		await get_tree().process_frame
 	scene._growth.reset_feedback()
 	phase = "growing"
-	scene._notice.text = "A new little wilderness, growing…" if _scenery() else "A new little wilderness, growing around him…"
+	scene._notice.text = "A new little wilderness, growing…"
 	await _animate_growth(true,GROW_SECONDS)
 	generation += 1
 	phase = "ready"
@@ -475,18 +322,8 @@ func regrow(requested_seed := -1, to_plain := false) -> void:
 	busy = false
 	_update_badge()
 	if scene.has_method("resume_creation"): scene.resume_creation()
-	if _scenery():
-		scene._paused = old_paused
-		scene._notice.text = _plain_notice() if plain else ""
-		return
-	# The original pickup ground no longer exists after regeneration.
-	var safe: Variant = scene.navigation.nearest_safe(origin_feet)
-	if safe!=null: origin_feet = safe
-	if pending_drop:
-		pending_drop = false
-		drop_at(last_mouse)
-	else:
-		scene._notice.text = "Set him down wherever feels like home."
+	scene._paused = old_paused
+	scene._notice.text = _plain_notice() if plain else ""
 
 func _fit_distance(frame_tree: SceneTree = null) -> float:
 	# Fit the fully grown plant meshes too: redwoods can tower above the land.
@@ -574,77 +411,8 @@ func _set_growth(progress: float) -> void:
 	content._water.visible = scene._growth.terrain>=0.995 and fill>0.001
 
 
-func _update_landing(mouse: Vector2) -> void:
-	landing = null
-	marker.hide()
-	if not holding or busy: return
-	var terrain: MeshInstance3D = scene._chunk_editor.terrain
-	var ray := terrain.to_local(scene.camera.project_ray_origin(mouse))
-	var vector: Vector3 = terrain.global_basis.inverse()*scene.camera.project_ray_normal(mouse)
-	var hit: Variant = scene._chunk_editor.data.ray_hit(ray,vector.normalized())
-	if hit==null: return
-	landing = scene.navigation.nearest_safe(terrain.to_global(hit))
-	if landing!=null:
-		marker.position = landing+Vector3.UP*0.08
-		marker.show()
-
-func drop_at(mouse: Vector2) -> void:
-	if not holding: return
-	if busy:
-		pending_drop = true
-		return
-	# The carry portrait has no world position. Project its release onto the
-	# original bank's plane so a missing triangle remains a deliberate drop.
-	if scene._chunk_editor.pointer_in_world(mouse) and not scene._chunk_editor.data.void_faces.is_empty():
-		var hit: Variant = Plane(Vector3.UP,origin_feet.y).intersects_ray(scene.camera.project_ray_origin(mouse),scene.camera.project_ray_normal(mouse))
-		if hit is Vector3:
-			var p := Vector2(hit.x,hit.z)
-			var data: NativeTerrainData = scene._chunk_editor.data
-			if data.is_void(p):
-				var support: Variant = scene.navigation._ground(hit)
-				if support == null and not scene.navigation.rebuilding and scene.nearest_safe_bank(hit) != null:
-					_end_hold()
-					scene.creature.reset_at(hit+Vector3.UP*0.9)
-					if scene.try_void_fall(true): return
-				elif support != null and scene.navigation.is_safe(support):
-					_end_hold()
-					scene.creature.reset_at(support)
-					return
-	_update_landing(mouse)
-	if landing==null: landing = scene.navigation.nearest_safe(origin_feet)
-	if landing==null: cancel_carry(); return
-	var point: Vector3 = landing
-	_end_hold()
-	scene.creature.reset_at(point)
-	scene.creature.pick_up()
-	scene.creature.position = point+Vector3.UP*0.9
-	scene.creature.release_at(point)
-	scene.environment_life.welcome_arrival()
-	scene._notice.text = "A little place to linger."
-
-func cancel_carry() -> void:
-	if not holding: return
-	if busy:
-		pending_drop = true
-		return
-	_end_hold()
-	var safe: Variant = scene.navigation.nearest_safe(origin_feet)
-	if safe!=null: scene.creature.reset_at(safe)
-	scene._notice.text = "Back on solid ground."
-
-func _end_hold() -> void:
-	holding = false
-	pressed = false
-	carry_image.hide()
-	marker.hide()
-	carry_view.render_target_update_mode = SubViewport.UPDATE_DISABLED
-	scene.resident_enabled = true
-	scene.creature.show()
-	scene._paused = old_paused
-	scene.brain.reset_behavior()
-
 func save_places() -> bool:
-	if busy or holding or not initialized: return false
+	if busy or not initialized: return false
 	var payload := _payload()
 	_finish_write()
 	return _write(payload,primary.places_path)
@@ -655,7 +423,7 @@ func save_places() -> bool:
 ## 10 ms of the main thread (SkyIslands `claim`). A save meanwhile waits
 ## for it. Returns false when no save could start.
 func save_places_soon() -> bool:
-	if busy or holding or not initialized: return false
+	if busy or not initialized: return false
 	var payload := _payload()
 	# The containers the main thread may change while the worker reads them.
 	payload.slots = slots.duplicate()
@@ -683,7 +451,6 @@ func _payload() -> Dictionary:
 	scene.flush_world_play()
 	var state := NativeGardenStore.capture(scene)
 	state.scene._paused = false
-	state.diorama.resident = not _scenery()
 	slots[active] = {"label":_label(scene),"document":scene._chunk_editor.data.to_document(),"state":state}
 	var payload := {"version":1,"layout":"regrowth","active":active,"slots":slots}
 	var islands := _sky()
@@ -712,7 +479,7 @@ func has_previous() -> bool:
 ## Swap this place with the one set aside: this place is saved and set aside in
 ## turn, so choosing it again swaps back. Undo history starts over.
 func resume_previous() -> bool:
-	if busy or holding or not initialized or scene._chunk_editor.forming: return false
+	if busy or not initialized or scene._chunk_editor.forming: return false
 	var previous := _read_saved(previous_path())
 	if previous.is_empty():
 		scene._notice.text = "There is no earlier place to return to."
@@ -729,7 +496,7 @@ func resume_previous() -> bool:
 ## (scripts/world_session.gd saves it first). Undo history starts over. False
 ## when busy or when the file is missing or unreadable.
 func open_place(path: String) -> bool:
-	if busy or holding or not initialized or scene._chunk_editor.forming: return false
+	if busy or not initialized or scene._chunk_editor.forming: return false
 	var saved := _read_saved(path)
 	if saved.is_empty(): return false
 	await _restore(saved)
@@ -739,7 +506,7 @@ func open_place(path: String) -> bool:
 ## Forms a new world's land in place of this one (scripts/world_lands.gd), at
 ## once: a world opened or previewed, not regrown. Undo history starts over.
 func open_land(land: String, seed_value: int) -> bool:
-	if busy or holding or not initialized or scene._chunk_editor.forming: return false
+	if busy or not initialized or scene._chunk_editor.forming: return false
 	busy = true
 	_suspend()
 	await _form_land(land,seed_value)

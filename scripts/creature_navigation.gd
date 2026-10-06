@@ -268,7 +268,7 @@ func segment_safe(a: Vector3,b: Vector3) -> bool:
 
 ## Routes are validated at planning/edit boundaries. During playback check the
 ## actual next foot displacement, so a long clear leg costs no more per frame
-## than a short grid edge. Match CreatureActor's horizontal travel convention.
+## than a short grid edge. Horizontal travel, as a walker on the ground covers it.
 func motion_safe(from: Vector3, to: Vector3, travel: float) -> bool:
 	var distance := Vector2(to.x-from.x,to.z-from.z).length()
 	var next := to if distance<=travel else from.lerp(to,travel/distance)

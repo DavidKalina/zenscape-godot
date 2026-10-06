@@ -48,7 +48,6 @@ func setup(owner_scene: Node) -> void:
 				var nearby: Variant = scene.navigation.nearest_safe(Vector3(point.x,level,point.y))
 				if nearby == null or Vector2(nearby.x-point.x,nearby.z-point.y).length()>1.75: continue
 				var home := Vector3(point.x,level-0.08,point.y)
-				if not scene.routine._plan_approach({"position":home},"fish",false): continue
 				candidates.append(home)
 	# Cover the whole pond instead of filling four slots along the first bank
 	# visited by the scan. Different shores belong to different walkable regions.
@@ -234,7 +233,7 @@ func catch_for_carry(id: String) -> Dictionary:
 		"commit":func() -> bool: return store_fish(id)
 	}
 
-## Commit a held identity to the lair. Keeping its node hidden allows an
+## Take a held fish out of the pond for good. Keeping its node hidden allows an
 ## in-place save restore to reactivate the same fish without manufacturing one.
 func store_fish(id: String) -> bool:
 	for fish in population:

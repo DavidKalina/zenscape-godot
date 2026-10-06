@@ -1,18 +1,16 @@
 # Life answers the land
 
-Phase 3, slice 3 (`feature/life-answers`). Fish, frogspawn, frogs, birds and fireflies find their places in the world as it stands now, and arrive in their own time. Herons, deer, a grass snake, a rainbow and, very rarely, Bigfoot come when a place has become rich. Nothing is placed by the player.
+Phase 3, slice 3 (`feature/life-answers`). Fish, frogspawn, frogs, birds and fireflies find their places in the world as it stands now, and arrive in their own time. Herons, deer, a grass snake and a rainbow come when a place has become rich. Nothing is placed by the player.
 
 - `scripts/land_life.gd`: the scheduler and the everyday creatures.
 - `scripts/life_survey.gd`: what the land offers, read from the live world.
-- `scripts/life_moments.gd`: the rare moments, and when Bigfoot may come.
-- `scripts/life_bigfoot.gd`: the Bigfoot sighting: where he stands, what he does, when he leaves.
-- `scripts/life_trail.gd`: Bigfoot's trail, the signs before the sighting: tracks, a cairn, a snapped sapling, a far howl and wood knocks.
+- `scripts/life_moments.gd`: the rare moments.
 - `scripts/life_models.gd`: low-poly procedural meshes for the fish, frogs and frogspawn, and the classic heron and deer (`--classic-life`). Fish and frogs come in kinds, one table entry each (`FISH_KINDS`, `FROG_KINDS`).
 - `scripts/life_rigs.gd` and `scripts/life_rig_heron.gd`: the rigged Blender deer and heron (`tools/blender_creatures/`), played as clips.
 - `scripts/life_snakes.gd`: the grass snake, built and moved in code.
 - `scripts/disturbance.gd` and `scripts/life_notice.gd`: player actions raise a disturbance, and the creatures near it notice (see "Noticing").
 - `scripts/pond_seasons.gd`: lilies on old ponds and autumn leaves on the water (see "Ponds through the year").
-- `tools/probe_land_life.gd` and `tools/probe_bigfoot_sighting.gd`: the headless probes.
+- `tools/probe_land_life.gd`: the headless probe.
 - `tools/probe_snake.gd` and `tools/render_snake_probe.py`: the snake's headless probe and a Blender renderer for what it dumps.
 - `tools/dump_life_models.gd` and `tools/render_life_models.py`: every fish and frog kind dumped headless and rendered in Blender (`-b`) as a contact sheet, or as a koi pond and a wild pond (`--pond`), for judging the designs without opening the game.
 
@@ -89,8 +87,6 @@ Checked every `CHECK` (2 s) of life time. Each moment has its conditions, a dela
 | Deer at dawn | ≥ 6 trees; a forest edge that has stood 25 s; celestial phase 0.2-0.36; rain < 0.3 | 0.25 | 300 |
 | Rainbow after rain | ≥ 8 s of rain above 0.25 that then stops (< 0.06); richness ≥ 1.2; daylight > 0.35 | 0.6 once per rain | none |
 | Moonbow after night rain | the same rain stopping at night (daylight < 0.1); richness ≥ 1.2; the moon up and ≥ 90% lit | 0.5 once per rain | none |
-| Bigfoot | see "Bigfoot: when he comes" below | up to 0.006 × light × weather × trail boost (1-1.6) | 1200 |
-| Bigfoot's signs | see "Bigfoot's trail" below | up to 0.02 (marks), 0.015 (howl), 0.014 (knocks) × kinship | 240, 420, 300 |
 
 What each moment looks like:
 
@@ -99,9 +95,8 @@ What each moment looks like:
   The deer are a rigged Blender model (`assets/models/zenscape-deer.glb`, built by `tools/blender_creatures/deer.py`, clips in `deer_clips.py`) played through `scripts/life_rigs.gd`: Walk synced to ground speed (the fawn's legs run faster), HeadDown into Graze, and HeadUp into Alert on the first lift of a visit, then Look or Idle in turn. Clips advance on the life clock. `--classic-life` brings back the code-built deer from `life_models.gd`.
 - **Rainbow:** `celestial.moment_bow`, a new term in `studies/celestial.gd` next to `rainbow_strength` and `weather_bow`, rises to 0.85 over 6 s, holds 30 s and fades over 10 s. It is never saved.
 - **Moonbow:** `celestial.moon_bow`, published as `zs_moonbow`: the rainbow's drawing (`zsRainbow`) about the antilunar point, washed nearly to grey and cooled. It rises to 0.35 over 12 s, holds 40 s and fades over 15 s, and sounds as a lower, quieter bow swell. Near-full moons at night after rain make it legendary.
-- **Bigfoot:** the ambient model steps out of the wood, watches you and goes back in, or strides across in front of it like the 1967 film. See "Bigfoot" below. The resident Bigfoot (`--bigfoot`) is untouched.
 
-`moments.force(kind)` starts one now for probes. It skips the delay, chance and hour, but not the place it needs. For Bigfoot the kinds are `bigfoot` (any sighting), `bigfoot_watch`, `bigfoot_listen` and `bigfoot_stride`; for his trail, `bigfoot_tracks`, `bigfoot_cairn`, `bigfoot_branch`, `bigfoot_howl` and `bigfoot_knocks`.
+`moments.force(kind)` starts one now for probes. It skips the delay, chance and hour, but not the place it needs.
 
 ## Winter on the water
 
@@ -140,119 +135,6 @@ Life eats life, now and then. Both are on by default; the counts and the save st
 **Counts and the save.** `LandLife.take(site, mouth)` removes the creature from `present()` at once, so the heron's and snake's conditions see the smaller pond. Its site stays open with a fresh delay of `PREY_RETURN` (fish 70-160 s, frogs 90-210 s), and a new one arrives the usual way (it counts in `arrivals`). `LandLife.taken` counts by kind. The save writes a taken creature's site as not here, with that delay, so a load brings it back on the same schedule. Lures, frozen frogs and moments in progress are not saved.
 
 **Checked** headless only, on a dug pond with a scratch probe that steps the heron and snake at 30 fps. With the default odds one visit drew in two fish and swallowed both, each showing in the bill for the clip's 27 frames. With `HERON_CARRY` forced to 1, three visits drew in six, caught three and flew off with each, the fish held through take-off and flight. Before the heron landed facing the water, two visits in three struck at dry ground and could not catch. Misses cut to Stand 1.6 s into the clip, and catches play the whole clip. A snake that found a frog in reach took it, swallowed and left. With the escape forced, three strikes all missed, and the snake hunted on each time. Taken fish and frogs came back through arrivals within the next 260 s. `probe_heron_rig.gd` (both herons), `probe_snake.gd --visits=3` and `probe_land_life.gd` still pass. How any of it looks is unverified: the bill fish's size and grip, the strike and the bulge have not been seen rendered.
-
-## Bigfoot
-
-The rarest thing in the world: a moment you might tell someone about. It is scenery mode only (`scenery_mode` and no resident), so `--bigfoot` and the old game never see it. The sighting is `scripts/life_bigfoot.gd`, owned by `LifeMoments`.
-
-### When he comes
-
-Every `CHECK` (2 s) of life time, while all of these hold:
-
-| Condition | Rule | Why |
-|---|---|---|
-| A mature wood | ≥ 18 trees (`BIGFOOT_TREES`), richness ≥ 2.0, and a forest edge with ≥ 7 trees within 3 m (`BIGFOOT_EDGE_TREES`) | 18 trees fill the survey's tree share of richness (1.5), so 2.0 also needs undergrowth or water: a whole place, not a plantation. A dense edge gives him somewhere to come out of and go back into. A true edge has trees on one side only, so its 7×7 m count runs at about half the wood's density. 9 rejected the real edges of a 1.9 m-spaced wood and kept only gaps inside it. |
-| Held a while | all of the above for 10 minutes of life (`BIGFOOT_SETTLE` 600 s) | The minimum session time. A wood has to have stood a while. Nobody paints a forest and gets him straight away. Loaded worlds wait too. |
-| A quiet world | not painting, and no stroke for 45 s (`BIGFOOT_QUIET`) | He comes when you sit back and watch, not while you work. |
-| Low light | dawn and dusk (phase 0.2-0.36 and 0.64-0.8) weigh 1; night weighs 0.6 (`BIGFOOT_NIGHT`); full day weighs 0, except in mist (fog ≥ 0.45, `BIGFOOT_MIST`), which weighs 1 | The classic hour is dusk. At night he is harder to see, apart from his eyes. |
-| Weather | mist, or the 3 minutes after rain above 0.25 (`BIGFOOT_AFTER_RAIN`), multiplies the chance by 1.75 (`BIGFOOT_DAMP`); a downpour (rain > 0.5) keeps him in | A damp, grey wood is his weather. |
-| Cooldown | 20 minutes after he leaves (`BIGFOOT_COOLDOWN` 1200 s) | So a second sighting is its own event. |
-
-The chance per check is `BIGFOOT_CHANCE` (0.006) × light × weather. On a win he is "about" for 90 s (`BIGFOOT_ABOUT`). He shows at the first check that finds an edge the camera can see:
-
-- 14-60 m from the camera, seen from the open side.
-- A real edge: no trunk within 1.1 m of the line from him toward the camera for 8 m (`OPEN_REACH`, `OPEN_WIDTH`). The survey also calls gaps inside a wood "edges", and this check leaves those out. It applies to forced sightings too.
-- On screen, inside an 8% margin.
-- Camera no more than 55° above him.
-- Walkable footing (below).
-
-If no such edge comes up in those 90 s, he passed by unseen, and nothing counts against the cooldown.
-
-**The numbers.** The world clock's day is 480 s. With its horizon linger, dawn and dusk take 37% of real time, night 37% and full day 26%. So a clear day averages light 0.37 + 0.37 × 0.6 = 0.59. That is 0.006/2 × 0.59 ≈ 0.0018 sightings a second of eligible time, a mean wait of about 9.4 minutes.
-
-- **A player who sits back and watches a rich world:** first sighting after about 10 + 9 ≈ 20 minutes, and about one every 30 minutes after that (20-minute cooldown + wait). The chance of none in the first hour is under 1%.
-- **A player who keeps painting half the time:** about 10 + 19 ≈ 30 minutes to the first, about one every 40 minutes after that, and a 7% chance of none in an hour.
-- **Mist or after rain:** 1.75 × as likely, and mist lets him out by day.
-- **Missed chances:** camera placement makes some "about" windows pass unseen, so real sessions run a little rarer than these figures.
-
-That is the target: roughly once per 20-40 minutes of a rich world, rare enough to remember and likely in a long session.
-
-The plain's clock must turn for any of this outside mist. `_phase()` reads `celestial.phase`, which is the world clock's, so dawn and dusk arrive once the plain's day runs.
-
-### What he does
-
-He stands 2.21 m tall at scale 1, the model's own height, next to 3-6 m trees. He faces +Z, and his root sits on the live ground height (`data.ground_height`) at his position every frame. The clips carry their own foot placement. `life._rng` picks the sighting: 40% stride, 40% watch, 20% listen. If that one finds no footing, the others are tried.
-
-- **Watch** (about 26 s, 38-41 s if you are patient): he walks out of the trees (`Walk`, 0.336 m/s) from 1.8 m inside to 0.4 m outside the edge, turns to the camera and plays 9.5 s of `Watch`: the glance, the slow turn to face you and the long look. A calm camera then gets a linger beat: 12 s of `Idle` looking out at water (60% of the time when there is water within 14 m and no more than 2 rad from the camera, `WATER_REACH`, `WATER_TURN`, `WATER_ODDS`), or the whole 15 s `Forage`: he crouches to pick at a plant, notices you over his hand and straightens. Then he walks 3.4 m back into the wood with `WalkGlance`, looking back over his shoulder.
-- **Listen** (about 25 s, 35 s if patient): the same, with 9 s of `Listen`. His body turns 0.42 rad away from the camera, so the sound he finds with his head is you, off to his left. A calm camera gets the second look: he turns and gives you 9.5 s of `Watch`.
-- **Stride** (about 13 s, 23 s if patient): the film. An arc of about 12.5 m from 1.8 m inside the wood, out 0.6 m into the open along the edge, and back in. The edge must run side-on to the camera (`STRIDE_FACING`). He plays whole `Stride` cycles, then `StrideLookL` or `StrideLookR`, whichever looks toward the camera, then `Stride` again. The clips chain on the same heel strike with no blend, and the look is centred on the arc. He moves at the rig's `stride_speed_mps` (0.97 m/s), so the feet do not slide. A calm camera stops him after the look, out in the open, for a standing 9.5 s `Watch`; he then picks the stride back up with a 0.6 s blend.
-- **Patience** (`calm()`): a linger beat plays only if the camera has been calm for 2.5 s when it comes up (`CALM`): not within 9 m of his head (`SHY_WARY`), not rushing (below), and no stroke anywhere. Otherwise he skips it and moves on, so a fidgety camera gets the short sighting. `Forage` and the second looks turn toward wherever the camera is when they start (`Forage` 0.5 rad off it, `FORAGE_TURN`). The ambient model has no sit clip; `Forage` is the crouch. His rarity is unchanged: lingering only lengthens a sighting, and the 20-minute cooldown still runs from when he goes.
-- **Leaving early:** distances are from the camera to his head (1.4 m up, `HEAD`). He turns into the trees and strides 3.4 m in (`leave(why)`) if:
-  - the camera comes within 6 m (`SHY_NEAR`, "camera near");
-  - the camera rushes him ("camera closing"): rush is the metres the camera closes inside 30 m (`SHY_WATCH`), drained at 2 m/s (`SHY_FORGIVE`). He goes once rush passes 8 m (`SHY_RUSH`) and has stayed above 4 m (`SHY_UNEASE`) for 0.5 s (`SHY_RUSH_TIME`). A creep under 2 m/s never builds rush, and a single frame's jump has to hold before it counts. One wheel notch closes 12% of the distance (about 3 m at 26 m), which does not even unsettle him; three or four quick notches, or a glide onto him, do send him off;
-  - a stroke lands within 8 m (`SHY_PAINT`, "painting near").
-
-  The old rules (leave within 9 m, or at a smoothed 5 m/s for a moment) tripped on the first zoom everyone makes to look at him, so most sightings lasted about 3 s.
-- **Appearing and going:** he grows over 0.6 s as he appears inside the trees and shrinks over the last 0.6 s, again inside the trees, as the deer do.
-- **Eyes:** the eye surface keeps its dark amber vertex colour and gains an amber emission, 1.4 × (1 − smoothstep(0.03, 0.28, daylight)) (`EYE_GLOW`). This is the original game's darkness fade, so they glow only at night: two small amber points at 22 m, and nothing by day. At 0.55 they did not show at all.
-
-**Footing.** Every point of a path must be:
-
-- inside the plate (±12.8 m);
-- on ground with a height;
-- dry (`survey.wet_at`);
-- gentle: a rise of no more than 0.45 per metre, sampled ±0.35 m around it. Steep rock fails this, and the survey's edge rule already asks for grass cover.
-- clear of tree trunks: 0.5 m in the open, 0.32 m inside the wood.
-
-**Peek not used.** `PeekL`/`PeekR` are authored against a 0.42 m trunk radius. The plain's emerged trees are much thinner, so he would grip air, and a thin trunk would not hide him. They can come in with the hero trees.
-
-### Cost
-
-- **Model load:** once, on a worker thread (`ResourceLoader.load_threaded_request`) when LandLife sets up. LifeMoments polls it on its 2 s check and builds it hidden: coat and eyes get `reference_surface` materials, and the AnimationPlayer runs in manual mode. The coat has `flat_faces` on, as all life does, so a re-export with welded vertices can't turn him smooth. The eyes keep it off, on purpose. Nothing loads on the frame he appears.
-- **Hidden:** `visible = false`, and the AnimationPlayer is not advanced, so nothing runs.
-- **Per frame while he shows:** one `AnimationPlayer.advance`, one ground sample and one camera distance.
-- **Placement:** runs once, when he appears, including the search for water to look at (at most 14 × 24 `wet_at` samples).
-- **Measured headless (`tools/probe_bigfoot_sighting.gd`, 2026-09-26, 40 trees + 24 shrubs):**
-  - Placement plus the first frame (`force`): 0.8-1.2 ms.
-  - Per frame while he shows: median 0.05 ms, p95 0.10 ms, max 0.5 ms.
-  - Building the model from the threaded load: 0.1-0.3 ms.
-  - All frames p95 8.7 ms, max 13.5 ms.
-- **Ground contact:** the lower foot's bone heads, less their rest height, sit -4 to +2 cm from the live ground over whole sightings (median about -0.7 cm). Paths never cross water, and the steepest ground under him was 0.1.
-- **Shyness:** zooming the camera onto him sends him off ("camera closing"), and so does a stroke 3 m away ("painting near").
-- **Patience (2026-10-03):** with the camera framed on him 26 m away and still, each sighting stayed and lingered: Watch 38 s (water) or 41 s (Forage), Listen 35 s (second look), Stride 23 s (stop and look). A camera that zoomed one notch early and then crept in at 1.5 m/s to 12.5 m kept him for 38-41 s with his linger beat. A zoom from 26 m to 12 m in 0.6 s sent him off 0.72 s after it began ("camera closing"), a 7.2 s glimpse; a stroke 3 m away, a 6.5 s one. Per frame while he shows: median 0.03 ms, p95 0.06 ms, max 0.21 ms. The probe exits 1 if any of these fail. Its opening world varies run to run, so it paints grass under its wood to be sure of edges, and when a sighting of the asked kind will not stage from where the camera is (every edge must face it from the open side, and the film needs one side-on), it walks the camera round 12 bearings until one does.
-- **The dice:** at dusk with `--natural=50 --pace=30`, he settled at 10 minutes of life and came about 7 minutes later, then the cooldown held.
-- **Rendered stills** (`--stills`, dusk and night, camera 22 m) show him grounded, in scale with the trees, and reading well: a Watch facing the camera at the wood's edge, the stride with StrideLookL, and the night Watch with the eyes lit.
-
-### Forcing a sighting
-
-- `moments.force("bigfoot")`, `"bigfoot_watch"`, `"bigfoot_listen"` or `"bigfoot_stride"` start one now. They prefer an edge on screen and fall back to any edge with footing.
-- `--force-bigfoot` on the command line (or `--force-bigfoot=watch|listen|stride`) brings him as soon as the wood qualifies (the survey's trees and edge, not the hour, settle time or chance), and again 12 s after each sighting ends, for filming. Example: `godot --path . -- --force-bigfoot=stride`.
-- `--force-life` (or `--force-life=deer,heron,snake`, any of them) does the same for the deer, heron and grass snake: each comes as soon as the world has its place (a forest edge; wading water; a pond with a bank), skipping delay, chance and hour, and again 8 s after it has gone. Example: `godot --path . -- --force-life`, then paint a pond with a wood beside it.
-
-### Bigfoot's trail
-
-`scripts/life_trail.gd`, owned by LifeMoments and checked on its 2 s clock. He is a rumour before he is a glimpse: on a world that is becoming his kind of place, signs turn up earlier and more often than he does. Nothing marks or names them; photo mode labels only what it already did.
-
-**The gate** is a weaker sighting wood: ≥ 10 trees (`TRAIL_TREES`), richness ≥ 1.4, a forest edge with ≥ 5 trees near, held 3 minutes (`TRAIL_SETTLE`), scenery mode only. Sounds and in-the-dark marks also want no stroke for 20 s.
-
-**Kinship** (`kinship`, 0.2-1) scales every chance: trees (10 → 30), richness (1.4 → 3.0), the densest edge (5 → 12 trees), dead wood in the wood (an old stand), and water, then × 0.5 → 1 as the wood holds from 3 to 15 minutes.
-
-| Sign | When | Where |
-|---|---|---|
-| Tracks | a mark: at night or dawn (0.02 × kinship per check), or once for each night that goes by (0.5 × kinship; the plain eases through its night in seconds) | from a strong edge down to the nearest shore (≤ 11 m) and back into the wood; in snow with no water near, a loop out of the wood and back. Prints show in snow (`snow_cover` ≥ 0.2), on wet ground (`ground_wet` ≥ 0.35) or within 3 m of water, so on a dry day only the muddy end shows |
-| Stacked stones | a mark, as above | at the wood's edge nearest the elder stand: 3-5 flat stones, knee high |
-| Snapped sapling | a mark, as above | the same: snapped at 1.5-1.8 m and folded down, or bent into an arch with its crown to the ground |
-| Far howl | the last of dusk or night, still (air + swell < 0.45), clear (no rain or snow, cloud < 0.45, fog < 0.3) | 16 m beyond the elder stand, away from the camera |
-| Wood knocks | the sighting's light (dawn, dusk, night, day mist), no downpour | 4 m into the elder stand, 2-3 knocks 0.7-1.2 s apart |
-
-Marks are tracks (55%; a cairn or sapling when no tracks can be laid), a cairn (25%) or a sapling (20%), at most one per 240 s. The elder stand is the dead wood with the most dead wood and trees round it (old stands grow snags, logs and stumps, `emergence.gd`), or the densest square metre of wood without any.
-
-- **Prints:** big bare feet, about 0.42 m long (a person's are 0.27), 1.25 m a step (a person's is 0.75), toed out a little, two MultiMeshes (left, right) of the `reference_surface` material, laid on the ground's slope and toned by instance colour: dark mud, or blue snow shadow. They fade over 15 minutes of life, in 45 s of rain, in 2 minutes of falling snow, and snow tracks in a minute once the snow goes; fading prints shrink and fill toward the ground's tone. At most two sets of 20.
-- **Cairns and saplings:** one faceted mesh each from a seed, at most three; one goes when its ground moves more than 0.25 m or floods.
-- **Sound:** GenesisAudio answers the `bigfoot_howl` and `bigfoot_knocks` moments on the far bus and hushes the wood for 20 s (`docs/scenic/sound.md`). The howl, `far-howl.wav`, is synthesised (`tools/generate_nature_audio.py --howl`).
-- **The sighting:** every sign counts, and his chance per check grows by up to 60% (`SIGHTING_BOOST`) once four have been left (`boost()`, shown in `bigfoot_conditions().trail`).
-- **Saved:** LandLife's document carries `trail`: `{"version": 1, "count", "tracks": [{"kind", "fade", "prints": [x, z, yaw, left, ...]}], "marks": [[kind, x, z, yaw, seed]]}`. Loads rebuild them; a new world clears them; an undo keeps them if their ground still stands.
-- **Cost:** nothing per frame without tracks; with tracks, a fade step per frame and a redraw of at most 40 prints every 0.5 s. The elder stand is looked for only when a sign needs it.
 
 ## The grass snake
 
@@ -358,7 +240,7 @@ Sounds are synthesised in code the first time they are needed (`life_small_kit.g
 - **Butterfly size.** `SCALE` came down from 2.4 to 0.9. The wings span 0.242 m at scale 1, so a butterfly is now 0.19–0.25 m across (0.22 m typical, with the per-fly size of 0.85–1.15) and its body about 0.1 m long. At 2.4 they spanned about 0.58 m, as wide as a fence is tall and like a bird. 0.22 m is still two to three times life size, in keeping with the flower heads, which are drawn one and a half to two times life size. It is about twice a daisy's drawn head (0.08–0.1 m across), about two-thirds of a sitting frog's length (0.31–0.40 m), a quarter of a cosmos's height and a third of a fence's. Flight heights, bob, reach and the landing radius are in metres, not scaled by `SCALE`, so they were kept.
 - **Perches.** A butterfly settles on its flower's head (`flower_tops`, minus `PERCH_DROP` 2 cm) instead of at a flat 0.2 m, which put the smaller model among the stems. It also flies at least 0.15 m over a flower that stands taller than its flight height. On rising ground, the height easing could sink a flier into a slope, so it now keeps `CLEAR` (6 cm) over the ground.
 - **Dragonfly wings.** The wings are a single sheet each on their own material, `Dragonflies.wing_material()`. It is a lit, alpha-blended `StandardMaterial3D` with a pale blue-grey film, darker veins at the rim, alpha `WING_ALPHA` 0.32, roughness 0.18 for a glint, both sides drawn and no shadows. `render_priority` 1 draws them after the blended pond water (priority 0), so the water doesn't paint over them. The wings were already their own MultiMesh, so this costs no extra draws: one batch of 36 wings. The body stays on the shared faceted life material.
-- **Checked** headless by `tools/probe_creature_polish.gd`. It measures the wingspan from the wing mesh AABB through the instance transforms, and checks the wing and body materials and Bigfoot's coat. It then runs the butterflies on a planted meadow and checks that they settle on their flower's head and keep out of the ground. Over three runs, flying butterflies kept a median of 0.80–0.87 m over the ground (p95 1.86–2.04 m, with sunflowers in the patch). The probe pins a dry midsummer noon, as the weather is random. How they look is unverified: the new size at play distance, and the wings' translucency, glint and sorting against water and fog, need a rendered look.
+- **Checked** headless by `tools/probe_creature_polish.gd`. It measures the wingspan from the wing mesh AABB through the instance transforms, and checks the wing and body materials. It then runs the butterflies on a planted meadow and checks that they settle on their flower's head and keep out of the ground. Over three runs, flying butterflies kept a median of 0.80–0.87 m over the ground (p95 1.86–2.04 m, with sunflowers in the patch). The probe pins a dry midsummer noon, as the weather is random. How they look is unverified: the new size at play distance, and the wings' translucency, glint and sorting against water and fog, need a rendered look.
 
 ## Ponds through the year
 
@@ -407,7 +289,7 @@ The look is not yet verified rendered: pad and flower size, the pad greens and r
 | Heron | 5 parts, the wings shown only in flight |
 | Deer | 7 parts: body, neck and head, 4 legs |
 
-Fish, frogspawn, frogs and rings are MultiMeshes with fixed slots. The heron and the two deer are built once at setup and hidden. Bigfoot is the ambient model (`assets/models/zenscape-bigfoot-ambient.glb`, about 1,860 faces, 27 deform bones), loaded once on a worker thread.
+Fish, frogspawn, frogs and rings are MultiMeshes with fixed slots. The heron and the two deer are built once at setup and hidden.
 
 ## Cost
 
@@ -431,9 +313,6 @@ Measured headless, CPU only, on 2026-09-26:
 ```
 godot --headless --path . -s res://tools/probe_land_life.gd -- --pace=6 --watch=20
 godot --headless --path . -s res://tools/probe_land_life.gd -- --pace=1 --watch=12 --world-seed=198
-godot --headless --path . -s res://tools/probe_bigfoot_sighting.gd
-godot --headless --path . -s res://tools/probe_bigfoot_sighting.gd -- --natural=60 --pace=30
-godot --path . -s res://tools/probe_bigfoot_sighting.gd -- --stills=/tmp/zs-bigfoot-sighting
 godot --headless --path . -s res://tools/probe_snake.gd -- --dump=/tmp/zs-snake-previews/frames
 blender -b --python tools/render_snake_probe.py -- --view=close --video --every=2 --name=visit
 ```
@@ -497,10 +376,9 @@ The survey's thresholds are at the top of `life_survey.gd`: `DEEP`, `SHALLOW_*`,
 - At the default overview (43 m) the snake is a line one or two pixels wide. Only its motion and wake show from there; it is for looking at up close.
 - The snake's cover is where it vanishes, not something it hides under: a painted-grass world has no blades for it to slip between.
 - Fish live in ponds only, not streams.
-- Moments (heron, deer, rainbow, Bigfoot) are not saved; they come round again on their own conditions. Bigfoot's trail is saved.
-- Bigfoot's trail is unseen and unheard: the prints, cairn and sapling have not been rendered, and the howl has not been listened to. Snow tracks do not also show deer or foxes yet.
+- Moments (heron, deer, rainbow) are not saved; they come round again on their own conditions.
 - Noticing is checked headless only. None of it has been seen or heard: the dart and nose springs, the gulls' lift, the firefly scatter and wave, the deer's bolt at a sped-up Walk, or the chorus.
 - Deer need the dawn window. In creation mode the plain's day now turns (`scripts/cozy_regrowth.gd`, `PLAIN_DAY_LENGTH` 1200 s per day, the night eased through from phase 0.8 to 0.2), so a plain launched at full day reaches dawn within six to eight minutes. Generated worlds still hold their hour.
 - Sound: `scripts/genesis_audio.gd` listens to `LandLife.arrived` and `LandLife.moment` and reads the survey for its beds (`docs/scenic/sound.md`).
 - Small life is unseen on the GPU and unheard: scale (`SCALE` in each script, tuned for the 43 m overview), the goose height and the drum roll's level (`GAIN`) need a rendered look.
-- `fidelity_fish.gd`, Bigfoot's catchable fish, still seeds from the Fidelity water once at startup. It is separate from these ambient fish and only matters with `--bigfoot`.
+- `fidelity_fish.gd`, the Fidelity pond's fish, still seeds from the Fidelity water once at startup. It is separate from these ambient fish.

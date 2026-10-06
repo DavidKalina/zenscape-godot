@@ -182,7 +182,6 @@ func _real_clay() -> void:
 		return
 	check(shudder.clay == clay and shudder.tremor == scene._tremor,"the clay's tremor kicks the scene's tremor")
 	scene._paused = false
-	scene.resident_enabled = false
 	var editor: NativeChunkEditor = scene._chunk_editor
 	editor.set_active(true)
 	for i in range(5): await process_frame

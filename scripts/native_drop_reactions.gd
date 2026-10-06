@@ -20,7 +20,7 @@ extends Node3D
 ## finished state rather than a partial one; `finished` still fires.
 
 ## How each placeable asset arrives. Living things grow, so they sprout; the
-## Bigfoot tree sprouts and thumps the ground. Dead wood is set down rather
+## old tree sprouts and thumps the ground. Dead wood is set down rather
 ## than grown, so a stump or a snag settles: a short low fall and a small puff,
 ## no squash, because a dead trunk has no give in it. A log lands and rocks to
 ## rest on its round side. Loose stone and the arch fall far enough to squash
@@ -73,7 +73,7 @@ const SPROUT_DURATION := 0.4
 const DROP_DURATION := 0.46
 const SETTLE_DURATION := 0.34
 const ROLL_DURATION := 0.46
-const BIGFOOT_DURATION := 0.7
+const THUMP_DURATION := 0.7
 ## The share of a falling reaction spent in the air; the rest is the landing.
 const FALL_FRACTION := 0.5
 ## Each style, in one row: how long it runs, how much of that is the fall, how
@@ -82,7 +82,7 @@ const FALL_FRACTION := 0.5
 ## two grow styles use the easeOutBack curve and none of the falling columns.
 const STYLES := {
 	"sprout":{"grow":true,"duration":SPROUT_DURATION,"fall":0.0,"height":0.0,"squash":0.0,"rock":0.0,"dust":0.0},
-	"thump":{"grow":true,"duration":BIGFOOT_DURATION,"fall":0.0,"height":0.0,"squash":0.0,"rock":0.0,"dust":0.0},
+	"thump":{"grow":true,"duration":THUMP_DURATION,"fall":0.0,"height":0.0,"squash":0.0,"rock":0.0,"dust":0.0},
 	"drop":{"grow":false,"duration":DROP_DURATION,"fall":FALL_FRACTION,"height":1.1,"squash":0.26,"rock":0.0,"dust":1.0},
 	"settle":{"grow":false,"duration":SETTLE_DURATION,"fall":0.72,"height":0.34,"squash":0.0,"rock":0.0,"dust":0.55},
 	"roll":{"grow":false,"duration":ROLL_DURATION,"fall":0.55,"height":0.55,"squash":0.0,"rock":0.22,"dust":0.7},
@@ -275,7 +275,7 @@ func _apply(reaction: Dictionary, t: float) -> void:
 			_shape_dust(reaction,landing(style,t))
 	if reaction.kind == "bigfoot_tree" and not reaction.thumped and t >= 0.6:
 		reaction.thumped = true
-		if _editor.scene._bigfoot != null and _editor.scene._bigfoot.rig != null:
+		if _editor.scene.get("_tremor") != null:
 			_editor.scene._tremor.add(THUMP)
 
 func _release(reaction: Dictionary) -> void:

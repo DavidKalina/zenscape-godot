@@ -105,7 +105,7 @@ func run() -> void:
 	for shape: String in Mesh_.ORDER: total += Mesh_.triangles(shape)
 	check(total <= 60,"Stacked instancing mesh stays small (%d triangles)" % total)
 	check(stacked.get_faces().size()/3 == total,"Stacked mesh triangle count")
-	var bed: ArrayMesh = load("res://scripts/bigfoot_leaf_bed.gd").mesh()
+	var bed: ArrayMesh = load("res://scripts/leaf_bed.gd").mesh()
 	check(bed.get_faces().size()/3 <= 600,"Leaf bed stays under budget")
 	litter.free()
 	print("LEAF LITTER: ",failures," failures; per-leaf triangles ",counts)

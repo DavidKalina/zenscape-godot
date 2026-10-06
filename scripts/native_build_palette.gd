@@ -130,7 +130,6 @@ var _hud_count := Label.new()
 var _placing := ""
 var _tool_rail: Control
 var _hand := preload("res://scripts/native_garden_cursor.gd").new()
-var _inhabitant: CreatureActor
 var _entrance: Tween
 var _mono: Font
 
@@ -283,17 +282,15 @@ func _build() -> void:
 		button.pressed.connect(func() -> void: close_palette(); entry[2].call())
 		_library.add_child(button)
 		_entries["command_"+entry[0]] = {"button":button,"group":"Scene","title":entry[1],"blurb":"Care for your diorama"}
-	for entry: Array in [["bigfoot","Bigfoot","Creatures","A curious visitor. Set him down and watch him settle."], ["wind_gust","Wind gust","Weather","Drag the ground to aim a gust. Release to send it."], ["fireflies","Fireflies","Creatures","Invite little lights, even in daylight."], ["fog_bank","Fog bank","Weather","Wrap the landscape in a soft bank of mist."], ["ember","Ember","Weather","Drop a live ember. Dry grass catches; wet ground and snow smother it."]]:
+	for entry: Array in [["wind_gust","Wind gust","Weather","Drag the ground to aim a gust. Release to send it."], ["fireflies","Fireflies","Creatures","Invite little lights, even in daylight."], ["fog_bank","Fog bank","Weather","Wrap the landscape in a soft bank of mist."], ["ember","Ember","Weather","Drop a live ember. Dry grass catches; wet ground and snow smother it."]]:
 		var button := Button.new()
 		_library.add_child(button)
 		button.pressed.connect(_take_special.bind(entry[0]))
 		_entries[entry[0]] = {"button":button,"group":entry[2],"title":entry[1],"blurb":entry[3]}
-	if editor.scene.get("scenery_mode"):
-		# Scenery mode: the resident and his tree stay out of the palette.
-		for id: String in ["bigfoot","bigfoot_tree"]:
-			if not _entries.has(id): continue
-			_entries[id].button.hide()
-			_entries.erase(id)
+	# The old tree ("bigfoot_tree") stays out of the palette.
+	if _entries.has("bigfoot_tree"):
+		_entries.bigfoot_tree.button.hide()
+		_entries.erase("bigfoot_tree")
 	# Use truthful descriptions of the currently available tools.
 	for id: String in {"tree":"Pine", "raise":"Rolling hill", "rock":"Boulder", "meadow":"Wildflowers", "range":"Mountain ridge"}:
 		_entries[id].title = {"tree":"Pine", "raise":"Rolling hill", "rock":"Boulder", "meadow":"Wildflowers", "range":"Mountain ridge"}[id]
@@ -450,7 +447,7 @@ func _refresh_results() -> void:
 	_matches.clear()
 	var query := _search.text.strip_edges().to_lower()
 	var ordered: Array = _entries.keys()
-	var featured := ["range","mountain","raise","rock","pond","waterfall","tree","broadleaf","meadow","flower","bigfoot","fireflies"]
+	var featured := ["range","mountain","raise","rock","pond","waterfall","tree","broadleaf","meadow","flower","fireflies"]
 	ordered.sort_custom(func(a: String,b: String) -> bool:
 		if not query.is_empty():
 			var ar := _search_rank(a,query)
@@ -558,7 +555,6 @@ func _verb(id: String) -> String:
 	if id == "wind_gust": return "aim"
 	if id.begins_with("command_") or _entries[id].group == "Weather" or id == "fireflies": return "scene"
 	if _placeable(id): return "click"
-	if id == "bigfoot": return "hero"
 	if id == "wind_gust": return "aim"
 	return "shape" if _entries[id].group == "Terrain" else "brush"
 
@@ -764,7 +760,7 @@ func _caption_text(text: String) -> Label:
 
 func _title(id: String) -> String:
 	if _entries.has(id): return str(_entries[id].title)
-	return "Bigfoot tree" if id == "bigfoot_tree" else id.replace("_"," ").capitalize()
+	return "Old tree" if id == "bigfoot_tree" else id.replace("_"," ").capitalize()
 
 func _placeable(id: String) -> bool:
 	return id in LANDMARKS or NativeAssetCatalog.PARTS.has(id)
@@ -1096,9 +1092,6 @@ func ensure_thumbnails() -> void:
 			continue
 		_thumbs[id] = _render(model,id)
 		_tiles[id].icon = _thumbs[id]
-	var bigfoot_model: Node3D = load("res://assets/models/zenscape-bigfoot-breathing.glb").instantiate()
-	_style_bigfoot(bigfoot_model)
-	_thumbs["bigfoot"] = _render(bigfoot_model,"bigfoot")
 	for id: String in _entries:
 		if _thumbs.has(id): continue
 		var symbol := ToolGlyph.new()
@@ -1140,7 +1133,7 @@ func build_model(id: String) -> Node3D:
 			_part(root,editor.landmarks._arch_mesh,editor.landmarks._arch_material,Color.WHITE,Transform3D(Basis(),editor.landmarks._arch_offset))
 		"bigfoot_tree":
 			var tree: Node3D = preload("res://assets/bigfoot/old_tree.glb").instantiate()
-			tree.scale *= preload("res://studies/bigfoot_encounter.gd").PEEK_SCALE
+			tree.scale *= NativeGardenLandmarks.OLD_TREE_SCALE
 			root.add_child(tree)
 		"mountain","range":
 			var patch := MeshInstance3D.new()
@@ -1328,15 +1321,8 @@ func _finish_placing(placed := false) -> void:
 	editor.select_tool("select")
 	Input.set_default_cursor_shape(Input.CURSOR_ARROW)
 
-func _style_bigfoot(model: Node3D) -> void:
-	var coat := StandardMaterial3D.new()
-	coat.vertex_color_use_as_albedo = true
-	coat.roughness = 0.9
-	for mesh: MeshInstance3D in model.find_children("*","MeshInstance3D",true,false):
-		if "_n7_" not in mesh.name and "_n8_" not in mesh.name: mesh.material_override = coat
-
 func _take_special(id: String) -> void:
-	if id in ["bigfoot","wind_gust","ember"]: editor.select_tool("select")
+	if id in ["wind_gust","ember"]: editor.select_tool("select")
 	close_palette()
 	match id:
 		"fireflies": editor.scene._fireflies.called = true
@@ -1356,15 +1342,6 @@ func _place_special(point: Vector2) -> bool:
 		var field: Variant = editor.scene.get("_fire_field")
 		if field == null: return false
 		field.ignite(hit as Vector3,0.6,1.0)
-	elif _placing == "bigfoot":
-		if editor.scene.has_method("invite_bigfoot"):
-			return editor.scene.invite_bigfoot(world)
-		if not is_instance_valid(_inhabitant):
-			_inhabitant = CreatureActor.new()
-			editor.scene.add_child(_inhabitant)
-			_inhabitant.setup("res://assets/models/zenscape-bigfoot-breathing.glb")
-			_style_bigfoot(_inhabitant.actor)
-		_inhabitant.reset_at(world)
 	return true
 
 func _scale_tile(button: Button, factor: float) -> void:
@@ -1535,10 +1512,10 @@ func _input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			return
 		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed and not _bar.visible and editor.pointer_in_world(event.position):
-			var placed := _place_special(event.position) if _placing in ["bigfoot","wind_gust","ember"] else editor.place_at(event.position)
+			var placed := _place_special(event.position) if _placing in ["wind_gust","ember"] else editor.place_at(event.position)
 			if placed:
 				_hand.release(true)
-				if _placing in ["bigfoot","wind_gust","ember"]: _finish_placing(true)
+				if _placing in ["wind_gust","ember"]: _finish_placing(true)
 			get_viewport().set_input_as_handled()
 			return
 	if event is InputEventKey and event.pressed and not event.echo:
@@ -1734,8 +1711,8 @@ func _process(delta: float) -> void:
 	else:
 		_hand.hide_pointer()
 	if editor != null:
-		_hud_count.text = "meadow-01 · %d objects" % (editor.data.objects.size()+(1 if is_instance_valid(_inhabitant) else 0))
-		if editor.scene.has_method("capture_diorama_state"):
+		_hud_count.text = "meadow-01 · %d objects" % editor.data.objects.size()
+		if editor.scene.get("world_play") != null:
 			_hud_count.text = "a little world of your own"
 		_launcher.modulate.a = 1.0 if _launcher.is_hovered() else 0.775+0.225*sin(Time.get_ticks_msec()*TAU/4000.0)
 	if _category == SKY_TAB and not _sky_rows.is_empty() and is_visible_in_tree():

@@ -4,8 +4,6 @@ class PlayScene extends Node3D:
 	var camera := Camera3D.new()
 	var _paused := false
 	var gust_tool := false
-	var _carrying := false
-	var mischief: Node = null
 	func _over_controls(_mouse: Vector2) -> bool: return false
 	func _probe_ground(_point: Vector3) -> Variant: return null
 	func _show_reaction(_symbol: String, _message: String) -> void: pass

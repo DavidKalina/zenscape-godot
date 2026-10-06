@@ -49,7 +49,7 @@ class StubScene extends Node3D:
 	func leave_title() -> void:
 		titled = false
 		left += 1
-	func _places_idle() -> bool: return places != null and places.initialized and not places.busy and not places.holding
+	func _places_idle() -> bool: return places != null and places.initialized and not places.busy
 	func save_current() -> bool: return places.save_places()
 
 func _initialize() -> void: run.call_deferred()

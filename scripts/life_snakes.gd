@@ -13,7 +13,7 @@ extends Node3D
 ## (leaving the coil) the upper part rests on whatever of the lower part is
 ## still under it.
 ##
-## The motion keeps the ambient Bigfoot's rules
+## The motion keeps the ambient clips' rules
 ## (tools/blender_bigfoot/ambient_clips.py), with nothing keyed pose to pose:
 ## every head and neck quantity is a goal that eases in and follows on a
 ## critically damped spring. It travels in bursts and holds, and settles its

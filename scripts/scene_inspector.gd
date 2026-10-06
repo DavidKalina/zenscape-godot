@@ -1,7 +1,6 @@
 extends RefCounted
 ## What is under a screen point in the creation shell: creatures from LandLife
-## (fish, frogspawn, frogs, birds, the heron, deer, the snake and a Bigfoot
-## sighting), plants, stones and landmarks from the object picker (and the ones
+## (fish, frogspawn, frogs, birds, the heron, deer and the snake), plants, stones and landmarks from the object picker (and the ones
 ## Look's play has picked up), and ponds. Photo mode names what a click lands
 ## on with it; the camera (scripts/camera_rig.gd) highlights, frames and
 ## follows with it.
@@ -199,20 +198,16 @@ func creatures() -> Array[Dictionary]:
 	for deer: Dictionary in moments.get("_deer"):
 		var root: Node3D = deer.root
 		if root.visible: found.append({"kind":"deer","title":"Deer","p":root.global_position+Vector3.UP*0.8,"r":0.8,"node":root,"lift":0.8})
-	var bigfoot: Node3D = moments.get("bigfoot")
-	if bigfoot != null and bigfoot.showing():
-		found.append({"kind":"bigfoot","title":"Something tall","p":bigfoot.global_position+Vector3.UP*1.2,"r":1.0,"detail":"gone if you look too long","node":bigfoot,"lift":1.2})
 	return found
 
 ## Where a found creature is now, or null once it has gone. Plants and ponds
 ## stay where they are.
 func track(found: Dictionary) -> Variant:
-	if not str(found.get("kind","")) in ["fish","spawn","frog","bird","snake","heron","deer","bigfoot","songbird"]: return found.get("point")
+	if not str(found.get("kind","")) in ["fish","spawn","frog","bird","snake","heron","deer","songbird"]: return found.get("point")
 	var node: Node3D = found.get("node")
 	if node != null:
 		if not is_instance_valid(node) or not node.is_visible_in_tree(): return null
 		if found.kind == "snake": return node.to_global(node._head_pos)+Vector3.UP*0.08 if not str(node.showing()).is_empty() else null
-		if found.kind == "bigfoot" and not node.showing(): return null
 		return node.global_position+Vector3.UP*float(found.get("lift",0.5))
 	# Sites are dictionaries LandLife keeps while the creature stays.
 	for candidate: Dictionary in creatures():

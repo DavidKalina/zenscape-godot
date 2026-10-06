@@ -2,7 +2,7 @@ extends RefCounted
 ## Fallen leaves: real silhouettes (a pointed tip, a midrib fold so each half
 ## catches the light on its own facet), warm varied colour, and the shared
 ## drift scatter. Used by the loose wind litter (scripts/wind_leaf_litter.gd)
-## and the placeable leaf bed (scripts/bigfoot_leaf_bed.gd).
+## and the placeable leaf bed (scripts/leaf_bed.gd).
 ##
 ## A leaf lies along z, tip at -z, about 1.2 long before scaling. Each shape is
 ## a list of stations (z, half width); an edge station is lifted by the fold,

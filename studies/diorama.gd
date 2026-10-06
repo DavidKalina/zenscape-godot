@@ -1,4 +1,4 @@
-extends "res://studies/bigfoot_lair.gd"
+extends "res://studies/fidelity_life.gd"
 ## Product entry point. Study scenes remain available through their launchers.
 const IslandFrame = preload("res://scripts/island_frame.gd")
 var library_path := "user://dioramas"
@@ -28,9 +28,6 @@ var _gust_button: Button
 var _resident_wind = preload("res://scripts/resident_wind.gd").new()
 var world_play = preload("res://scripts/diorama_world_play.gd").new()
 var _performance_trace = preload("res://scripts/performance_trace.gd").new()
-## Scenery mode keeps the resident Bigfoot built but never lets him out, so the
-## product is a landscape diorama. Launch with --bigfoot to bring him back.
-var scenery_mode := "--bigfoot" not in OS.get_cmdline_user_args()
 
 func _ready() -> void:
 	if "--verify-desktop-build" in OS.get_cmdline_user_args():
@@ -43,8 +40,18 @@ func _ready() -> void:
 	add_child(loading)
 	await get_tree().process_frame
 	await get_tree().process_frame
-	ambient_without_resident = scenery_mode
 	super._ready()
+	_refresh_habitat()
+	# Fidelity's first fish lives by the bank beside the pond.
+	if not fish.population.is_empty():
+		var home := Vector3(4.25,0.3,-2.75)
+		if fish._wet(home):
+			fish.population[0].home = home
+			fish.population[0].spawn_home = home
+			fish.population[0].node.position = home
+			# The slot moves with him, so a restocked fish returns to this bank.
+			if not fish.home_slots.is_empty(): fish.home_slots[0] = home
+	_focus_world()
 	# Weather drifts and seasons hold per world; --still-weather keeps the sky
 	# on each world's own weather. Before the snapshots below, so new and
 	# Fidelity worlds drift too.
@@ -54,7 +61,6 @@ func _ready() -> void:
 	_fidelity_state = NativeGardenStore.capture(self)
 	get_window().title = "ZenScape"
 	get_tree().auto_accept_quit = false
-	_life_status.get_parent().hide()
 	_ui.hide()
 	_celestial.cycling = false
 	_celestial.set_phase(0.48)
@@ -69,8 +75,6 @@ func _ready() -> void:
 	_frame_diorama()
 	_celestial.update_rig()
 	_defaults = NativeGardenStore.capture(self)
-	_defaults.diorama.resident = false
-	_defaults.cave_system = {}
 	# The title holds its sky still, but a new world's day should turn.
 	_defaults._celestial.cycling = true
 	if _defaults.has("world_clock"): _defaults.world_clock.running = true
@@ -89,7 +93,7 @@ func _ready() -> void:
 	_chunk_editor.status_changed.connect(_show_status)
 	_toolbar.hide()
 	_menu.hide()
-	loading.stage("Waking the land" if scenery_mode else "Waking the land · welcoming Bigfoot")
+	loading.stage("Waking the land")
 	launch_fidelity()
 	await get_tree().process_frame
 	loading.queue_free()
@@ -146,9 +150,19 @@ func _frame_title() -> void:
 	_world_visuals.rock_style = 1 if title_recipe.has("terrain_recipe") else 0
 	_update_camera()
 
+## The whole Fidelity world from the south-west, the camera held still.
+func _focus_world() -> void:
+	_auto_orbit = false
+	target = Vector3(0,0,0)
+	distance = 64
+	yaw = -0.45
+	polar = 1.3
+	_orbit_delta = Vector2.ZERO
+	_pan_delta = Vector2.ZERO
+	_update_camera()
+
 func _overview() -> void:
-	if lair != null: _focus_stack()
-	else: _frame_diorama()
+	_frame_diorama()
 
 ## The overview's default look (`_frame_diorama`): its angle from straight
 ## down, tilted up from the 0.82 it was so the sky world's mountains stand
@@ -422,23 +436,7 @@ func _fill_world_menu() -> void:
 		set_building(true)
 		_build_palette.close_palette()
 		edit_scene_look(),4)
-	if not scenery_mode:
-		add_world_action("Bigfoot",func() -> void:
-			if resident_enabled: _focus_bigfoot()
-			else:
-				set_building(true)
-				_build_palette._start_placing("bigfoot"),5)
 	add_world_action("Overview",_overview,6)
-	if scenery_mode: return
-	add_world_action("His spot",_focus_resting_spot,7,func() -> bool: return resident_enabled and routine.habits.home != null)
-	var has_lair := func() -> bool: return lair != null
-	_world_menu.get_popup().add_separator()
-	add_world_action("See both stories",_focus_stack,100,has_lair)
-	add_world_action("Look through lair windows",_focus_lair,101,has_lair)
-	add_world_action("Find cave entrance",_focus_cave,102,has_lair)
-	_world_menu.get_popup().add_separator()
-	add_world_action("New crossing glade",open_crossing_glade.bind(false),110)
-	add_world_action("New chasm glade",open_crossing_glade.bind(true),111)
 
 ## One World menu entry: `action` runs when chosen, and `available`, when
 ## given, greys the entry out whenever it returns false.
@@ -537,7 +535,6 @@ func launch_fidelity() -> void:
 		show_menu()
 		return
 	show_menu()
-	routine.cancel("Fidelity world")
 	_chunk_editor._fall_start = null
 	if not _chunk_editor.data.load_document(_fidelity_document):
 		_notice.text = "Could not open Fidelity. Your current world is unchanged."
@@ -552,16 +549,14 @@ func launch_fidelity() -> void:
 	_menu_orbit = false
 	close_menu()
 	set_building(false)
-	_focus_stack()
-	_notice.text = "Fidelity world" if scenery_mode else "Fidelity world · World menu explores both stories."
+	_focus_world()
+	_notice.text = "Fidelity world"
 
 func new_diorama() -> void:
 	if _chunk_editor.forming or not save_current(): return
 	if DirAccess.make_dir_recursive_absolute(library_path) != OK:
 		_notice.text = "Could not create the diorama folder."
 		return
-	routine.cancel("new diorama")
-	resident_enabled = false
 	_chunk_editor.start_flat()
 	_chunk_editor.data._undo.clear()
 	_chunk_editor.data._redo.clear()
@@ -576,29 +571,6 @@ func new_diorama() -> void:
 	_frame_diorama()
 	save_current()
 	_notice.text = "Your blank diorama · Choose Landscapes for a curated starting point, or sculpt your own."
-
-func open_crossing_glade(chasm := false) -> void:
-	var previous := _chunk_editor.save_path
-	new_diorama()
-	if _chunk_editor.save_path == previous: return
-	if chasm: preload("res://scripts/chasm_glade.gd").populate(_chunk_editor.data)
-	else: preload("res://scripts/crossing_glade.gd").populate(_chunk_editor.data)
-	_chunk_editor.refresh()
-	_refresh_habitat()
-	invite_bigfoot(Vector3(-3,0,2))
-	apply_scene_mood("Meadow morning")
-	environment_life.cancel()
-	environment_life.arrival_pending = false
-	routine.crossing_wish._next = routine._clock+3.0
-	routine._next_action = routine._clock+12.0
-	target = Vector3(0,0.5,0)
-	distance = 15.0
-	yaw = 0.0
-	polar = 0.85
-	_update_camera()
-	_chunk_editor.select_object(-1)
-	save_current()
-	_notice.text = "A real gap between the banks. Move the long log across to give him a way over." if chasm else "He has his eye on the other bank. Move the long log across the stream, or shape a way over."
 
 func continue_world() -> void:
 	if _has_world: close_menu()
@@ -643,44 +615,6 @@ func open_path(path: String) -> bool:
 	_notice.text = "Opened · "+path.get_file()
 	return true
 
-func invite_bigfoot(point: Vector3) -> bool:
-	if scenery_mode or not _has_world: return false
-	_refresh_habitat()
-	var safe: Variant = navigation.nearest_safe(point)
-	if safe == null:
-		_notice.text = "Bigfoot needs a dry, open place to stand."
-		return false
-	if environment_life != null: environment_life.world_changed()
-	routine.cancel("Bigfoot invited")
-	creature.reset_at(safe)
-	brain.reset_behavior()
-	resident_enabled = true
-	return true
-
-func _summon_bigfoot(_fog := false) -> void:
-	if resident_enabled: _focus_bigfoot()
-
-func capture_diorama_state() -> Dictionary:
-	var point: Vector3 = routine.cave.entrance if routine.cave._inside else creature.position
-	return {"resident":resident_enabled,"resident_scale":creature.body_scale,"position":[point.x,point.y,point.z]}
-
-func restore_life_state(state: Dictionary) -> void:
-	# Physical props from the previous world cannot survive a world switch.
-	routine.cancel("world switched")
-	for projectile in routine._projectiles:
-		if is_instance_valid(projectile.node): projectile.node.queue_free()
-	routine._projectiles.clear()
-	super.restore_life_state(state)
-
-func restore_diorama_state(state: Dictionary) -> void:
-	creature.set_body_scale(float(state.get("resident_scale",1.0)))
-	resident_enabled = not scenery_mode and bool(state.get("resident",false))
-	if resident_enabled:
-		var p: Array = state.position
-		var safe: Variant = navigation.nearest_safe(Vector3(p[0],p[1],p[2]))
-		if safe != null: creature.reset_at(safe)
-	brain.reset_behavior()
-
 func _input(event: InputEvent) -> void:
 	if not is_node_ready(): return
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F9:
@@ -707,9 +641,6 @@ func send_scene_gust(center: Vector3, direction := Vector3.ZERO) -> void:
 	_resident_wind.send(center,direction)
 
 func handle_resident_input(event: InputEvent) -> bool:
-	if event is InputEventMouseButton and event.pressed:
-		for tuner in get_tree().get_nodes_in_group("tree_motion_tuner"):
-			if tuner.contains(event.position): return false
 	if _resident_play.scene == null or _menu.visible or _file_dialog.visible or _settings.visible: return false
 	if world_play.owner_scene != null and (world_play._tree_drag or world_play.loose_props.grabbed != null) and world_play.handle(event):
 		get_viewport().set_input_as_handled()
@@ -727,9 +658,6 @@ func flush_world_play() -> void:
 
 func flush_world_play_budgeted(frame_tree: SceneTree) -> void:
 	await world_play.flush_budgeted(frame_tree)
-
-func resident_activity_owned() -> bool:
-	return world_play.owner_scene != null and world_play.owns_resident()
 
 func blocks_world_input(point: Vector2) -> bool:
 	if _menu == null: return false

@@ -1,7 +1,7 @@
 extends SceneTree
 ## Three seconds of placement reactions, one per class: a tree sprouts, a rock
 ## drops and squashes, a log lands and rocks to rest, a stump settles with a
-## wisp of dust and the Bigfoot tree sprouts with its thump. Frames land in
+## wisp of dust and the old tree sprouts with its thump. Frames land in
 ## /tmp for ffmpeg:
 ## ffmpeg -y -framerate 30 -i /private/tmp/drop-reaction-frames/%04d.jpg \
 ##   -c:v libx264 -pix_fmt yuv420p -crf 23 docs/garden/drop-reactions.mp4

@@ -295,8 +295,6 @@ func _run_title() -> String:
 ## A showcase world (scripts/title_showcase.gd) formed and framed for the title.
 func _form_showcase(loading: Node) -> void:
 	loading.stage("Raising the land · growing the forest")
-	resident_enabled = false
-	restore_cave_state({})
 	title_recipe = preload("res://scripts/title_showcase.gd").choose(title_seed if title_seed >= 0 else int(Time.get_unix_time_from_system()*1000000.0))
 	if title_recipe.has("terrain_recipe"):
 		await _chunk_editor.form_inland(title_recipe.terrain_recipe,true,false)
@@ -370,7 +368,7 @@ func _recent_path() -> String:
 	return places_path if FileAccess.file_exists(places_path) else ""
 
 func _places_idle() -> bool:
-	return places != null and places.initialized and not places.busy and not places.holding and not _chunk_editor.forming
+	return places != null and places.initialized and not places.busy and not _chunk_editor.forming
 
 ## Every brush and land form how-to, as the editor's status repeats them.
 func _brush_hints() -> Array:
@@ -832,7 +830,6 @@ func _process(delta: float) -> void:
 		RenderingServer.global_shader_parameter_set("zs_motion_time",_motion_time)
 		_precipitation.advance(delta,false,_celestial)
 	super._process(delta)
-	if places != null and places.holding: creature.hide()
 	# Cmd/Ctrl K opens the palette directly; treat that as entering Craft.
 	if creation_mode and not hand_only and not crafting and _ui.visible and _chunk_editor.active and _menu != null and not _menu.visible:
 		crafting = true
@@ -925,9 +922,8 @@ func _hand_key(event: InputEventKey) -> bool:
 	return true
 
 func handle_resident_input(event: InputEvent) -> bool:
-	# The build palette forwards resident gestures before the scene's _input.
-	# Claim the gesture at their shared entry point so the legacy carry handler
-	# cannot take Bigfoot before the regrowth controller sees the press.
+	# The build palette forwards world gestures before the scene's _input:
+	# while the regrowth controller is starting or regrowing it takes them all.
 	if places != null and places.handle(event):
 		get_viewport().set_input_as_handled()
 		return true
@@ -962,7 +958,7 @@ func save_current() -> bool:
 	if places == null or not places.initialized: return true
 	# A New world preview is not the open world, which was kept before it.
 	if world_session != null and world_session.previewing: return true
-	if places.holding or places.busy: return false
+	if places.busy: return false
 	if not places.save_places():
 		_notice.text = "Could not save this place. Please try Save again."
 		return false
@@ -975,14 +971,9 @@ func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
 		_quit_safely()
 		return
-	if what == NOTIFICATION_APPLICATION_FOCUS_OUT and places != null and places.holding and not has_meta("movie_capture"):
-		places.cancel_carry()
 	super._notification(what)
 
 func _quit_safely() -> void:
-	if places != null and places.holding:
-		await places.cancel_carry()
-		while places.busy or places.holding: await get_tree().process_frame
 	if atlas != null: atlas.save()
 	# A preview, or the title's backdrop, is not a world being played.
 	if world_session != null and (world_session.previewing or (world_session.managing and titled)):
@@ -993,22 +984,8 @@ func _quit_safely() -> void:
 		get_tree().quit()
 
 func new_diorama() -> void:
-	if places == null or places.busy or places.holding or _chunk_editor.forming: return
+	if places == null or places.busy or _chunk_editor.forming: return
 	super.new_diorama()
 	if _chunk_editor.data.blank:
 		_refresh_habitat()
-		invite_bigfoot(Vector3(0,0,5))
 		save_current()
-
-func open_crossing_glade(chasm := false) -> void:
-	if places == null or places.busy or places.holding or not save_current(): return
-	# Regrowth normally saves over its active slot. Keep an ordinary Open-able
-	# world before starting this separate activity, rather than replacing it.
-	var previous := _chunk_editor.save_path
-	_chunk_editor.save_path = library_path.path_join("Before-crossing-"+str(Time.get_unix_time_from_system())+".json")
-	var saved := _chunk_editor.save_garden()
-	_chunk_editor.save_path = previous
-	if not saved:
-		_notice.text = "Could not save the current place. Your world is still open."
-		return
-	super.open_crossing_glade(chasm)

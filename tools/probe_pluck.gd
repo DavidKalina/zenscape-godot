@@ -11,7 +11,7 @@ extends SceneTree
 ##     shrub plucks it and drops the forest wish under it to CLEAR_BELOW;
 ##     one undo restores the shrub and the wish;
 ##   - a Shift-press on a flower plucks it;
-##   - Bigfoot's tree is never plucked, by a Shift-press at its root or by
+##   - the old tree is never plucked, by a Shift-press at its root or by
 ##     `pluck` itself, nor is a rock.
 ##   godot --headless --fixed-fps 60 --path . -s res://tools/probe_pluck.gd -- --no-title
 ## Nothing here is seen: the dummy renderer draws nothing, so the pop and the
@@ -264,16 +264,16 @@ func run() -> void:
 		await settled()
 	else: check("an open spot for a flower",false)
 
-	# Bigfoot's tree and a rock stay.
+	# The old tree and a rock stay.
 	var big_p: Variant = open_spot(2.5,taken)
 	if big_p != null:
 		taken.append(big_p)
 		var big := await plant("bigfoot_tree",big_p,"hand")
-		check("Bigfoot's tree is set down",big > 0)
+		check("the old tree is set down",big > 0)
 		held = await press(ground_screen(big_p),true)
-		check("a Shift-press at Bigfoot's tree plucks nothing",not record(big).is_empty() and held != "pluck",held)
+		check("a Shift-press at the old tree plucks nothing",not record(big).is_empty() and held != "pluck",held)
 		check("nor does pluck itself",not reach.pluck(big) and not record(big).is_empty())
-	else: check("an open spot for Bigfoot's tree",false)
+	else: check("an open spot for the old tree",false)
 	var rock_p: Variant = open_spot(1.6,taken)
 	if rock_p != null:
 		var rock := await plant("rock",rock_p,"hand")

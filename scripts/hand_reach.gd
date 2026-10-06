@@ -265,12 +265,12 @@ const TREE_STRENGTH := 1.8
 const TREE_REST := 45.0
 const TREE_HINT := "Bend it and let go"
 const TREE_RESTING_HINT := "Resting"
-## Tree kinds emergence can grow from spores; others (a snag, Bigfoot's tree)
+## Tree kinds emergence can grow from spores; others (a snag, the old tree)
 ## leave the kind to the stand.
 const SPORE_KINDS := ["tree","layered_tree","broadleaf","redwood","birch","willow","juniper"]
 ## Plucking (`pluck`): a Shift-press where a plain press would bend a tree
 ## pulls up the plant under it, one of PLUCK_TREES (a snag too, but never
-## Bigfoot's tree) or PLUCK_UNDERGROWTH (a shrub, fern, flower, reeds, a tuft
+## the old tree) or PLUCK_UNDERGROWTH (a shrub, fern, flower, reeds, a tuft
 ## or a mushroom). Logs, stumps, rocks and the falls are not plants and stay.
 ## Pinned plants pluck too: a pin keeps a plant from the world's own changes
 ## (emergence, sliding, a clearing brush), not from the hand, and one undo
@@ -1274,8 +1274,7 @@ func _prop_at(point: Vector2, trees := true) -> bool:
 		if id > 0:
 			var asset: Variant = play._records.get(id,{}).get("asset")
 			if asset in play.TREES or asset in play.PROPS: return true
-	var resident: Variant = scene.get("_resident_play")
-	return resident != null and resident.scene != null and bool(resident.hovered)
+	return false
 
 ## A drag on the held rim, once the snow globe has been fed it. Undecided, the
 ## first AXIS_PIXELS of travel choose: sideways the turn, up the flip, down
@@ -1672,7 +1671,7 @@ func _tree_under(point: Vector2) -> int:
 
 ## The plant a Shift-press at `point` would pluck (its object id), or -1: the
 ## tree whose mesh is under the pointer, else the plant (`pluckable`) whose
-## root stands nearest the ground under it, within PLUCK_REACH. Bigfoot's
+## root stands nearest the ground under it, within PLUCK_REACH. The old
 ## tree under the pointer is nobody's to pluck, and hides what is behind it.
 func plant_under(point: Vector2) -> int:
 	var tree := _tree_under(point)
@@ -2023,13 +2022,10 @@ func _tree_let_go() -> void:
 	if _tree == null:
 		_tree_id = -1
 		return
-	var play: Variant = scene.get("world_play")
 	var strength := float(_tree.get("tension"))
 	if strength >= FLICK_MIN and _tree_rested(_tree_id): _flick(_tree,_tree_id,strength)
 	_tree.release()
 	_springing[_tree_id] = _tree
-	if play != null and not play._habitat_blocked and scene.get("environment_life") != null:
-		scene.environment_life.notice_tree_release(_tree,strength)
 	_tree = null
 	_tree_id = -1
 

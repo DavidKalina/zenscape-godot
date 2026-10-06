@@ -1,8 +1,8 @@
 extends SceneTree
 ## The command palette (scripts/command_palette.gd) in the product scene,
 ## headless: Cmd K opens it, typing filters, Tab changes pocket, Enter takes
-## a redwood seed, a mood (Rose dusk) and a world verb, Life summons Bigfoot
-## and a snake (or says what it needs), Esc and a press outside close it.
+## a redwood seed, a mood (Rose dusk) and a world verb, Life summons a
+## snake and deer (or says what it needs), Esc and a press outside close it.
 ## Headless draws nothing; the look has to be judged on screen.
 ##   Godot --headless --fixed-fps 60 --path . -s res://tools/probe_command_palette.gd -- --no-title
 
@@ -91,7 +91,7 @@ func run() -> void:
 	check(scene.world_clock.running != running,"Still time toggles the clock")
 	scene.world_clock.running = running
 
-	for kind: String in ["bigfoot_watch","snake","deer"]:
+	for kind: String in ["snake","deer"]:
 		key(KEY_K,true)
 		palette.tab = 4
 		palette._refresh()
@@ -102,7 +102,6 @@ func run() -> void:
 		key(KEY_ENTER)
 		var said: String = palette.last_refusal if palette.is_open() else ""
 		print("  %s: %s" % [kind,"came" if said.is_empty() else "refused: "+said])
-		if kind == "bigfoot_watch": check(said.is_empty() and scene.land_life.moments.bigfoot.showing(),"Bigfoot comes when called")
 		if palette.is_open(): key(KEY_ESCAPE)
 		palette.last_refusal = ""
 

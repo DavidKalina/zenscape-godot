@@ -315,7 +315,7 @@ Four parallel branches, merged in this order:
   - Shrubs arrive at about 9-21 s and trees at about 18-38 s, following live biome rules: nothing on water, steep rock or snow.
   - Provenance (generated / emerged / hand) keeps hand work safe and survives saves.
   - Each emerged plant grows in at its own birth time through `INSTANCE_CUSTOM` and `zs_emergence_time`, instead of popping.
-- **Bigfoot's cave, lair and earthwork are not built in scenery mode.** `--bigfoot` restores them.
+- **Bigfoot's cave, lair and earthwork were removed (2026-10-05).**
 - **Tools:**
   - `tools/film_genesis.gd` records a Movie Maker film of a stroke and the world answering. The user asked for this visual capture.
   - `tools/profile_stroke.gd -- --mode=land --watch=40` times strokes and emergence headless.

@@ -1,5 +1,5 @@
 extends Node3D
-## Product gusts share one force field with ribbons, leaves and the resident.
+## Product gusts share one force field with ribbons, leaves and loose props.
 var scene: Node3D
 var field := preload("res://scripts/local_wind_field.gd").new()
 var visuals := preload("res://scripts/wind_gust_visuals.gd").new()
@@ -15,9 +15,6 @@ func setup(owner_scene: Node3D) -> void:
 	visuals.setup(field)
 	add_child(collision_root)
 	scene._leaf_litter.local_wind = field
-	scene.creature.enable_wind(field,ground,safe_ground)
-	scene.creature.state_changed.connect(func(state: CreatureActor.State) -> void:
-		if state == CreatureActor.State.WIND: scene.routine.cancel("wind gust"))
 	scene._chunk_editor.play_geometry_changed.connect(func() -> void: dirty = true)
 	scene._chunk_editor.formation_started.connect(func() -> void: dirty = true)
 
@@ -32,18 +29,12 @@ func send(center: Vector3, direction := Vector3.ZERO) -> void:
 func ground(point: Vector3) -> Variant:
 	return scene.navigation._ground(point)
 
-func safe_ground(point: Vector3) -> Variant:
-	return scene.navigation.nearest_safe(point)
-
 func _physics_process(delta: float) -> void:
 	if scene == null: return
-	var active: bool = not scene._paused and scene.resident_enabled and scene.creature.visible
-	scene.creature.set_physics_process(active)
-	scene.creature.wind_body.freeze = not active or not scene.creature.wind_body.active
 	if scene._paused: return
 	# Static collision is paid only when a gust needs it after an edit, not on
 	# every brush dab. Publish forces on the following physics boundary.
-	if dirty and (not _pending.is_empty() or scene.creature.wind_body.active):
+	if dirty and not _pending.is_empty():
 		_rebuild_collision()
 		dirty = false
 		return

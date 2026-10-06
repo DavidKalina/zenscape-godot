@@ -139,8 +139,6 @@ const ROCK_BAND := 1.8
 ## metre across the ground on screen, so a camera looking straight down still
 ## holds.
 const MIN_UPRIGHT := 0.3
-## A resident within NOTICE metres looks round at a tap (`stir`).
-const NOTICE := 8.0
 const Disturbance = preload("res://scripts/disturbance.gd")
 ## The plate's last metres, where shaping fades to nothing (as the land
 ## spring and the mountain forms), and its half-width to the rim. The fade
@@ -724,14 +722,10 @@ func settle() -> void:
 	editor._settle_pending = true
 	editor._settle_stroke()
 
-## A tap on the land stirs the life round `at` (plate): a resident within
-## NOTICE looks round, and frogs, fish, deer and the heron near it notice too
-## (scripts/life_notice.gd answers a "poke").
+## A tap on the land stirs the life round `at` (plate): frogs, fish, deer and
+## the heron near it notice (scripts/life_notice.gd answers a "poke").
 func stir(at: Vector2, radius: float, strength: float) -> void:
 	var point: Vector3 = editor.terrain.to_global(ground_at(at))
-	var creature: Node3D = scene.get("creature") as Node3D
-	if creature != null and creature.visible and creature.has_method("notice"):
-		if creature.global_position.distance_to(point) < NOTICE: creature.notice(point)
 	Disturbance.raise(point,radius,strength,"poke")
 
 ## The range's rock onto ground the stroke raised round `at`, `reach` out

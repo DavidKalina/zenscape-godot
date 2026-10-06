@@ -235,7 +235,7 @@ func _dress_places(work: RefCounted) -> void:
 	for place: Dictionary in data._recipe.inland.sampler.places:
 		place_index += 1
 		# A log, rock grouping or flower patch gives each clearing an edge;
-		# the middle stays available for Bigfoot and the player's own objects.
+		# the middle stays available for the player's own objects.
 		# In a blend, each clearing is dressed for the habitat it sits in.
 		var habitat := _habitat(place.center)
 		var cluster := Vector2.from_angle(rng.randf()*TAU)

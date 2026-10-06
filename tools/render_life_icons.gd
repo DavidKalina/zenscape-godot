@@ -7,7 +7,7 @@ extends SceneTree
 
 const Icons = preload("res://scripts/hud_icons.gd")
 const OUT := "/tmp/zs-critter-icons-review"
-const LIFE := ["deer","heron","snake","bigfoot","bigfoot_stride","track","howl","woodpecker","geese","rainbow"]
+const LIFE := ["deer","heron","snake","woodpecker","geese","rainbow"]
 const OLD := ["oak","pine","feather","hand","track","sun","moon"]
 const LINEN := Color("62584a")
 const SHADOW := Color(0.047,0.035,0.020,0.28)

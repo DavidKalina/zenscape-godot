@@ -85,7 +85,7 @@ const Plate = preload("res://scripts/plate.gd")
 ## The edge falls (scripts/edge_falls.gd) hide themselves while it flips. The
 ## sky's cloud (scripts/sky_cloud.gd) floats in the room, so it stays put;
 ## so do the sky world's mountains, kilometres off (scripts/sky_islands.gd).
-const LEAVE_OUT := ["sky_islands.gd","precipitation.gd","lightning.gd","atmosphere.gd","landscape_lighting.gd","fire_effects.gd","god_hand.gd","creature_actor.gd","diorama_world_play.gd","native_explosives.gd","native_object_selection.gd","bigfoot_encounter.gd","resident_wind.gd","diorama_flip.gd","edge_falls.gd","sky_cloud.gd"]
+const LEAVE_OUT := ["sky_islands.gd","precipitation.gd","lightning.gd","atmosphere.gd","landscape_lighting.gd","fire_effects.gd","god_hand.gd","diorama_world_play.gd","native_explosives.gd","native_object_selection.gd","resident_wind.gd","diorama_flip.gd","edge_falls.gd","sky_cloud.gd"]
 ## The plate when its skirt cannot be read: half its width, the height of
 ## its middle and its thickness, rim to foot (m).
 const DEFAULT_HALF := Plate.HALF
@@ -338,7 +338,7 @@ func can_begin() -> bool:
 
 func _idle_world() -> bool:
 	var places: Node = scene.get("places")
-	return not editor.forming and (places == null or (places.initialized and not places.busy and not places.holding))
+	return not editor.forming and (places == null or (places.initialized and not places.busy))
 
 # --- The rim gesture's API ---------------------------------------------------
 
@@ -1145,7 +1145,6 @@ func _settle_editor(id: int) -> void:
 ## Lay down the plain the underside shows, behind the snapshot. The sky is
 ## left as it is.
 func _make_new(id: int) -> void:
-	var places: Node = scene.get("places")
 	while editor.forming and id == _make_id: await get_tree().process_frame
 	if id != _make_id: return
 	_seed = _under_seed if _under_mesh != null else (next_seed if next_seed >= 0 else randi()%1000000)
@@ -1164,12 +1163,6 @@ func _make_new(id: int) -> void:
 	# A step of undo that brings the whole old scene back.
 	if not editor.data._undo.is_empty(): editor.data._undo.back()["flip"] = true
 	await get_tree().process_frame
-	if places != null and not bool(scene.get("scenery_mode")):
-		var nav_workers: int = scene.navigation.thread_workers
-		scene.navigation.thread_workers = 2
-		scene._refresh_habitat(true)
-		while scene.navigation.rebuilding: await get_tree().process_frame; scene._refresh_habitat(true)
-		scene.navigation.thread_workers = nav_workers
 
 func _make_kept(id: int) -> void:
 	var places: Node = scene.get("places")

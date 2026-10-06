@@ -35,14 +35,6 @@ func _run() -> void:
 		check(max_error < 0.00001, "All source growth attributes survive winding conversion: " + name)
 	asset.free()
 	var growth: RefCounted = scene._growth
-	var encounter = scene._bigfoot
-	var tree_rest: Transform3D = encounter._tree.transform
-	encounter.update_growth(1.0,0.5)
-	check(encounter.visible and encounter._tree.basis.x.length() < tree_rest.basis.x.length(), "Shelter tree grows from its anchor with foliage")
-	encounter.update_growth(0.5,1.0)
-	check(not encounter.visible, "Shelter tree stays hidden over unfinished terrain")
-	encounter.update_growth(1.0,1.0)
-	check(encounter._tree.transform.is_equal_approx(tree_rest), "Full growth restores the shelter tree asset transform")
 	var boulders: Array[Transform3D] = []
 	for name in ["mesh-4","mesh-5","mesh-6","mesh-7"]:
 		boulders.append(scene.get_node("Reference/"+name).transform)

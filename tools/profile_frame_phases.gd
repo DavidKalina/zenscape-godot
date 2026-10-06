@@ -144,14 +144,13 @@ func _apply(name: String, on: bool) -> void:
 			"motion": _per_frame = func(): sc._motion_time += 1.0/60.0; RenderingServer.global_shader_parameter_set("zs_motion_time", sc._motion_time)
 			"birds": _per_frame = func(): sc._bird_flight.advance(1.0/60.0, false, sc._atmosphere._air_strength, Vector2(cos(sc._atmosphere._air_angle),sin(sc._atmosphere._air_angle)))
 			"fireflies": _per_frame = func(): sc._fireflies.update_conditions(sc._celestial.state.get("zs_daylight",1.0), sc._precipitation.state.x, sc._precipitation.surface_weather.cold, 1.0)
-			"bigfoot": _per_frame = func(): sc._bigfoot.advance(1.0/60.0, false, sc.camera.global_position, sc.camera, 1.0, sc._atmosphere.fog_amount)
 			"foam": _per_frame = func(): sc._fall_foam.advance(sc._motion_time, false, 0.0, 1.0, true)
 			"tremor": _per_frame = func(): sc._tremor.advance(1.0/60.0, false); sc.camera.transform = sc._tremor.apply(sc.camera.transform)
 			"camera": _per_frame = func(): sc._update_camera(); RenderingServer.global_shader_parameter_set("zs_camera_position", sc.camera.global_position)
 			"displayfog": _per_frame = func(): sc._environment.volumetric_fog_enabled = false; sc._display_fog.update_view()
 			"spray": _per_frame = func(): sc.get_node("WaterfallSpray").update_view(sc.camera, sc._display_fog.depth)
 			"labels": _per_frame = func(): sc._time_label.text = "Time of day · %02d:%02d" % [randi()%24, randi()%60]; sc._terrain_slider.set_value_no_signal(sc._growth.terrain)
-			"visibility": _per_frame = func(): sc._chunk_editor.sync_visibility(); sc.get_node("WaterfallSpray").visible = true; sc._bigfoot.visible = true
+			"visibility": _per_frame = func(): sc._chunk_editor.sync_visibility(); sc.get_node("WaterfallSpray").visible = true
 		return
 	if name.begins_with("free-"):
 		if on:

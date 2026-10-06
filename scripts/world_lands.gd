@@ -34,7 +34,6 @@ static func offered() -> Array:
 ## {"plain":bool,"world":Genesis world or {}} for the regrowth controller.
 static func form(scene: Node3D, land: String, seed_value: int, live := true) -> Dictionary:
 	var editor: NativeChunkEditor = scene._chunk_editor
-	scene.restore_cave_state({})
 	match land:
 		"canyon":
 			await editor.form_landscape("canyon","arid",live,1+seed_value%999)

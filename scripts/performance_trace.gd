@@ -43,14 +43,11 @@ func _sample() -> void:
 		"render_gpu_ms":RenderingServer.viewport_get_measured_render_time_gpu(viewport),
 		"object_count":data.objects.size(),"objects_revision":data.objects_revision,"water_revision":scene._chunk_editor.content.revision,
 		"preset":data._recipe_settings.get("family",""),"tool":scene._chunk_editor.mode,
-		"bigfoot":scene.resident_enabled,"navigation_rebuilding":scene.navigation.rebuilding,
+		"navigation_rebuilding":scene.navigation.rebuilding,
 		"forming":scene._chunk_editor.forming,"paused":scene._paused,
 		"camera":[scene.yaw,scene.polar,scene.distance],
 		"camera_target":[scene.target.x,scene.target.y,scene.target.z],
 		"orbiting":scene._orbiting,"panning":scene._panning}
-	row["ai_planning"] = scene.brain.choosing
-	row["ai_last_choice_peak_ms"] = scene.brain.last_choice_slice_usec/1000.0
-	row["ai_last_choice_slices"] = scene.brain.last_choice_slices
 	for key in _monitors: row[key] = Performance.get_monitor(_monitors[key])
 	samples.append(row)
 	_previous = now

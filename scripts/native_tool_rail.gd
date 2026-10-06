@@ -213,16 +213,13 @@ func _bind_feel(button: Button) -> void:
 
 func activate(key: String) -> void:
 	if key == "Place":
-		if item == "bigfoot": palette._take_special(item)
-		else: palette._choose(item)
+		palette._choose(item)
 	else: palette._choose(remembered[key])
 
 func sync() -> void:
 	var id := editor.catalog_asset if editor.mode == "assets" else editor.mode
-	if palette._placing == "bigfoot": id = "bigfoot"
 	for key: String in FAMILIES:
 		if editor.mode in FAMILIES[key]: family = key
-	if id == "bigfoot": family = "Place"
 	remembered[family] = editor.mode
 	if family == "Place": item = id
 	for key: String in buttons: buttons[key].set_pressed_no_signal(key == family)
@@ -244,19 +241,18 @@ func sync() -> void:
 	for tool: String in _family_tools(family): choices.add_item(palette._title(tool))
 	var index: int = _family_tools(family).find(editor.mode)
 	if index >= 0: choices.select(index)
-	trail.visible = editor.trail_available() and id != "bigfoot"
+	trail.visible = editor.trail_available()
 	trail.set_pressed_no_signal(editor.placement_trail)
 	dig.visible = id == "pond"
 	tunnel_actions.visible = id == "tunnel"
 	_sync_tunnels()
-	if id == "bigfoot": hint.text = "Find him a little place to call home."
-	elif editor.trail_available(): hint.text = "Drag to plant a trail · Esc to put away" if editor.placement_trail else "Click to place · Esc to put away"
+	if editor.trail_available(): hint.text = "Drag to plant a trail · Esc to put away" if editor.placement_trail else "Click to place · Esc to put away"
 	elif id == "pond": hint.text = "Hover over a hollow to see the shoreline."
 	elif id in ["ground","range"]: hint.text = "Open Adjust to shape the landscape."
 	elif id == "tunnel": hint.text = "Click into a steep slope · Plant, seal, then X"
 	elif family in ["Sculpt","Paint"]: hint.text = "Drag to brush · Right drag to orbit"
 	else: hint.text = "Click to place · Esc to put away"
-	context.get_node("Actions/Settings").visible = editor.mode != "select" and id != "bigfoot"
+	context.get_node("Actions/Settings").visible = editor.mode != "select"
 	context.get_node("Actions/ChooseItem").visible = family in ["Place","Paint","Water"]
 	if _shown_id != id:
 		_shown_id = id
@@ -284,7 +280,7 @@ func _build_quick(id: String) -> void:
 		quick.remove_child(child)
 		child.queue_free()
 	quick_row.clear()
-	if id == "bigfoot" or family == "Select": return
+	if family == "Select": return
 	var property := "object_scale" if family == "Place" else "radius"
 	if id == "explosive": property = "blast_radius"
 	if id == "tunnel": property = "tunnel_width"
@@ -337,8 +333,8 @@ func fit() -> void:
 	card.position = (Vector2(card_left,screen.y-(card.size.y+size.y)*factor-28)-position)/factor
 	palette._fit_details.call_deferred()
 
-## Scenery mode leaves the resident's tree out of the Place choices.
+## The old tree ("bigfoot_tree") is kept for saves but is no longer a Place choice.
 func _family_tools(key: String) -> Array:
 	var tools: Array = FAMILIES[key]
-	if editor.scene.get("scenery_mode"): tools = tools.filter(func(tool: String) -> bool: return tool != "bigfoot_tree")
+	tools = tools.filter(func(tool: String) -> bool: return tool != "bigfoot_tree")
 	return tools

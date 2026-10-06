@@ -99,7 +99,8 @@ var _aurora_slider: HSlider
 var _cycle_toggle: CheckBox
 var _time_slider: HSlider
 var _time_label: Label
-var _bigfoot: Node3D
+## The world's ground under rain, lightning and the habitat (scripts/reference_ground.gd).
+var _ground: RefCounted
 var _wind_slider: HSlider
 var _fog_slider: HSlider
 var _haze_slider: HSlider
@@ -211,9 +212,8 @@ func _ready() -> void:
 	add_child(camera)
 	camera.current = true
 	_reset_camera()
-	_bigfoot = preload("res://studies/bigfoot_encounter.gd").new()
-	add_child(_bigfoot)
-	_bigfoot.setup(geometry)
+	_ground = preload("res://scripts/reference_ground.gd").new()
+	_ground.setup(geometry.get_node("terrain"))
 	var bird_data: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://assets/zen_reference/bird-flight.json"))
 	var bird_ground = preload("res://scripts/reference_source_ground.gd").new()
 	bird_ground.setup()
@@ -222,12 +222,12 @@ func _ready() -> void:
 	bird_material.set_shader_parameter("source_bird_flight", true)
 	_precipitation = preload("res://studies/precipitation.gd").new()
 	add_child(_precipitation)
-	_precipitation.setup(geometry, _bigfoot.ground)
+	_precipitation.setup(geometry, _ground)
 	_precipitation.weather_selected.connect(_atmosphere.set_weather_profile)
 	_atmosphere.set_ground_texture(_precipitation.ground_texture, _precipitation.stream_texture)
 	_lightning = preload("res://studies/lightning.gd").new()
 	add_child(_lightning)
-	_lightning.setup(_bigfoot.ground)
+	_lightning.setup(_ground)
 	_thunder_audio = preload("res://studies/thunder_audio.gd").new()
 	add_child(_thunder_audio)
 	_ambient_audio = preload("res://studies/ambient_audio.gd").new()
@@ -413,12 +413,6 @@ func _ready() -> void:
 			_precipitation.cloud_override = float(argument.trim_prefix("--clouds="))
 		if argument.begins_with("--weather="):
 			_precipitation.set_weather(int(argument.trim_prefix("--weather=")), true)
-		if argument == "--bigfoot-fog":
-			_atmosphere.set_fog(0.75)
-			_summon_bigfoot(true)
-		if argument == "--bigfoot":
-			_summon_bigfoot()
-			_bigfoot.age = 5.0
 		if argument == "--aurora":
 			_celestial.aurora_strength = 1.2
 		if argument.begins_with("--shroud="):
@@ -435,7 +429,6 @@ func _ready() -> void:
 	_atmosphere.rain = maxf(_precipitation.state.x, _precipitation.state.y)
 	_atmosphere._publish_wind()
 	_celestial.update_rig()
-	_bigfoot.advance(0.0, false, camera.global_position)
 	if _preroll > 0.0:
 		_prerolling = true
 		_process(_preroll)
@@ -624,7 +617,6 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_G: _atmosphere.send_gust(target)
 			KEY_F: _frog_motion.startle()
 			KEY_N: _celestial.next_hour()
-			KEY_B: _summon_bigfoot()
 			KEY_F6:
 				look_pass.toggle()
 				var note: Label = get("_notice") if get("_notice") != null else _status
@@ -758,7 +750,6 @@ func _process(delta: float) -> void:
 	_foliage_slider.set_value_no_signal(_growth.foliage)
 	_water_slider.set_value_no_signal(_growth.water)
 	$WaterfallSpray.visible = not _chunk_editor.data.blank and _growth.terrain >= 0.995 and _growth.water >= 0.5
-	_bigfoot.update_growth(_growth.terrain,_growth.foliage)
 	_precipitation.wind = _atmosphere.strength
 	_celestial.shroud = _atmosphere.shroud
 	_precipitation.advance(delta, _paused, _celestial)
@@ -797,7 +788,6 @@ func _process(delta: float) -> void:
 	var life: Variant = get("land_life")
 	if _chunk_editor.data.blank and not (life != null and life.active):
 		_fireflies.visible = false
-	_bigfoot.visible = not _chunk_editor.data.blank or _bigfoot.authored_tree
 	_bird_flight.advance(delta, _paused, _atmosphere._air_strength, Vector2(cos(_atmosphere._air_angle),sin(_atmosphere._air_angle)))
 	_time_slider.set_value_no_signal(_celestial.phase)
 	_fall_foam.advance(_motion_time, _paused, _precipitation.surface_weather.ice, smoothstep(0.0,0.5,_growth.water), _growth.terrain >= 0.995)
@@ -809,7 +799,6 @@ func _process(delta: float) -> void:
 	_update_camera()
 	camera.transform = _tremor.apply(camera.transform)
 	RenderingServer.global_shader_parameter_set("zs_camera_position", camera.global_position)
-	_bigfoot.advance(delta, _paused or not _bigfoot.visible, camera.global_position, camera, minf(_growth.terrain, _growth.foliage), _atmosphere.fog_amount)
 	if _display_fog != null:
 		_environment.volumetric_fog_enabled = false
 		_display_fog.blend.set_shader_parameter("surface_fog_color", _celestial.surface_fog_color)
@@ -1341,12 +1330,6 @@ func _build_ui() -> void:
 	full_flock.focus_mode = Control.FOCUS_NONE
 	full_flock.toggled.connect(func(value: bool) -> void: _bird_flight.swell_target = 1.0 if value else 0.0)
 	study.add_child(full_flock)
-	var encounter := Button.new()
-	encounter.text = "Bigfoot encounter · B"
-	encounter.disabled = not _bigfoot.available
-	encounter.focus_mode = Control.FOCUS_NONE
-	encounter.pressed.connect(_summon_bigfoot)
-	study.add_child(encounter)
 	var quality := OptionButton.new()
 	_quality = quality
 	quality.add_item("Beauty · glow and light shafts")
@@ -1421,17 +1404,6 @@ func _film_frame() -> void:
 	if _recorded_frames == _film_frames:
 		print("Film motion time: ", _motion_time, " cloud drift: ", _atmosphere._cloud_drift)
 		get_tree().quit()
-
-func _summon_bigfoot(fog := false) -> void:
-	if (_chunk_editor.data.blank and not _bigfoot.authored_tree) or not _bigfoot.available or _growth.terrain < 0.995 or _growth.foliage < 0.7:
-		return
-	_bigfoot.summon(fog)
-	target = _bigfoot._frame.to_global(Vector3(1.05, 1.5, 1.05)) if fog else _bigfoot.focus_point()
-	distance = 6.5
-	yaw = _bigfoot._frame.rotation.y
-	polar = 1.25
-	_update_camera()
-	_bigfoot.advance(0.0, false, camera.global_position)
 
 func _apply_mood(index: int) -> void:
 	var moods := [

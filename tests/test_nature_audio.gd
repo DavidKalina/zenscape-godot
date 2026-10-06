@@ -1,6 +1,6 @@
 extends SceneTree
 var failures := 0
-var contacts: Array[Vector3] = []
+
 func _initialize() -> void: run.call_deferred()
 func check(ok: bool, message: String) -> void:
 	if not ok:
@@ -55,27 +55,7 @@ func run() -> void:
 	check(nature.steps[0].playing and nature.steps[0].global_position == Vector3(3,0,4),"Footstep starts at the foot")
 	tick(nature,1.0,true)
 	check(nature.steps[0].stream_paused,"Pause silences footsteps already playing")
-	var creature := CreatureActor.new()
-	root.add_child(creature)
-	creature.setup("res://assets/models/zenscape-bigfoot-interactions.glb")
-	creature.set_process(false)
-	creature.footstep.connect(func(point: Vector3) -> void: contacts.append(point))
-	for i in range(146):
-		creature.walk_step(Vector3(0,0,20),CreatureActor.WALK_SPEED_MPS,0.05)
-		creature.advance(0.05)
-	check(contacts.size() == 4,"Two alternating foot contacts per authored walk cycle, including loop wrap")
-	if contacts.size() >= 2: check(contacts[0].x * contacts[1].x < 0.0,"Steps alternate between actual left and right feet")
-	creature.stop_walking()
-	for i in range(80): creature.advance(0.05)
-	check(contacts.size() == 4,"Idle emits no footsteps")
-	for i in range(74):
-		creature.walk_step(Vector3(0,0,20),CreatureActor.WALK_SPEED_MPS*2.0,0.05)
-		creature.advance(0.05)
-	check(contacts.size() == 8,"Footstep cadence follows walking speed")
-	creature.advance(0.0)
-	check(contacts.size() == 8,"Frozen actor emits no footsteps")
-	creature.queue_free()
 	ambience.queue_free()
 	await process_frame
-	print("PASS: original wildlife, water, controls and gait-synchronized footsteps" if failures == 0 else "FAIL: nature audio")
+	print("PASS: original wildlife, water, controls and footsteps" if failures == 0 else "FAIL: nature audio")
 	quit(1 if failures else 0)

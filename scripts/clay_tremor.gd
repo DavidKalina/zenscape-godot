@@ -31,8 +31,7 @@ extends Node
 ## gesture, so it is in DIGS and its sink kicks at full weight, not SINK of a
 ## rise as a pit or a dip does. A tool not in FEEL
 ## (the Brush, the Feather, the Paddle, the Hills, the Bowl, the Sculpt, the
-## can and the plants) never shakes. Every kick stays under the resident's 0.2 stumble threshold
-## (scripts/creature_actor.gd `queue_tremor`), and the clay never pushes the
+## can and the plants) never shakes. Every kick stays small, and the clay never pushes the
 ## trauma past CAP of its feel, so a long fast pull shakes hard but never
 ## unwatchably.
 ##

@@ -31,7 +31,7 @@ const BRUSH_FEEL := {
 	"water": {"rumble": 0.0, "swell": 0.28, "reveal": true, "gust": 0.0, "wave": false},
 }
 
-# Tremor. Kicks stay under the creature's 0.2 stumble threshold; a mountain thump does not.
+# Tremor. Kicks stay under 0.2 (a stumble's worth); a mountain thump does not.
 const RUMBLE_MAX := 0.42
 const RUMBLE_KICK := 0.15
 ## Brush strength spent per second that reads as a full-speed rise.

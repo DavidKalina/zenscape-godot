@@ -166,7 +166,7 @@ const ORDER := ["wildflower","sunflower","dandelion","cosmos","alpine"]
 ## The head width the candidate lattice packs whole (see `packing`).
 const PACK_HEAD := 0.16
 ## Flower candidates stand no closer than this to a clearing's centre, the
-## same ground inland_landscape.gd keeps open for Bigfoot and the player.
+## same ground inland_landscape.gd keeps open for the player.
 const CLEARING := 1.15
 ## Meadow ground flowers stop this far below the snowline.
 const SNOW_GAP := 1.2
