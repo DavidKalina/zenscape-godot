@@ -155,7 +155,9 @@ func setup(owner_scene: Node3D) -> void:
 		add_child(traffic)
 		skip.append(traffic)
 		traffic.ground = ground
-		traffic.build(currents)
+		traffic.cloud_near = cloud_near
+		traffic.cloud_depth = func(point: Vector3) -> float: return in_cloud(point,scene._motion_time)
+		traffic.build(currents,slots)
 	# The clouds are laid out with the islands (`build`), once the world's
 	# seed and its mountains are known: never here, where it would wait on
 	# the layout on the main thread.
@@ -736,6 +738,19 @@ func show_air(on: bool) -> void:
 ## a tower draws its own fog round the eye), 0 to 1.
 func in_cloud(point: Vector3, time: float) -> float:
 	return maxf(clouds.inside(point,time),towers.fade(point)*SkyTowers.VEIL)
+
+## The middle of the drifting cloud nearest a global point within `reach`
+## metres, global, or null (for the other planes, scripts/sky_traffic.gd).
+func cloud_near(point: Vector3, reach: float) -> Variant:
+	var best: Variant = null
+	var gap := reach
+	for i in range(clouds.clouds.size()):
+		var c: Vector3 = clouds.centre(i,scene._motion_time)
+		var d := c.distance_to(point)
+		if d < gap:
+			gap = d
+			best = c
+	return best
 
 ## The air at a global point (SkyCurrents `air_at`), and past the mountain
 ## ring the edge wind blowing home (SkyWorld `edge_air`).
