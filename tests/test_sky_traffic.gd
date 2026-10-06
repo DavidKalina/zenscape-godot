@@ -25,7 +25,7 @@ func _initialize() -> void:
 	traffic.build(currents,slots)
 	check(traffic.planes.size() == SkyTraffic.COUNT,"%d planes" % traffic.planes.size())
 	var liveries := {}
-	for plane: Dictionary in traffic.planes: liveries[plane.figure.get_child(0).material_override.albedo_color] = true
+	for plane: Dictionary in traffic.planes: liveries[plane.figure.get_child(0).material_override.get_shader_parameter("albedo")] = true
 	check(liveries.size() == traffic.planes.size() and not liveries.has(PlaneFigure.WOOD),"Each in its own livery, none the wanderer's brown")
 	check(traffic.planes.all(func(p: Dictionary) -> bool: return not p.figure.visible),"Hidden till the sky is shown")
 	traffic.show(true)
