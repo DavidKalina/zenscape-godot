@@ -38,9 +38,9 @@ render_mode unshaded, blend_mix, cull_front, depth_draw_never, depth_test_disabl
 // river, coasts and the blue ocean.
 //
 // Cost: the march leaps through the clear air over the heaps (by how far
-// over their envelope a point stands), then steps through them, two reads
-// a step (the envelope, the noise), a third near the eye (the finer
-// bumps), two more toward the sun to light a point, and four once where
+// over their envelope a point stands), then steps through them, three
+// reads a step (the envelope, the billows, the billows on them), a fourth
+// near the eye (the finer bumps), two more toward the sun to light a point, and four once where
 // the ray first meets the cloud (the lobe's face); it stops once all but
 // 3% of the light is gone. STEPS, STEP and FINE_NEAR are the knobs.
 #include "res://shaders/reference_globals.gdshaderinc"
@@ -103,27 +103,31 @@ const vec2 NEAR_FADE = vec2(6.0, 45.0);
 // `tall` + SWELL; the box (scripts/sky_sea.gd) is as tall.
 const float HEADROOM = 1.3;
 // The cauliflower: the noise's tile (m), how far its bumps swell the
-// heaps (m) and how much the wisps fray them; the finer octave's tile and
+// heaps (m) and how much the wisps fray them; the billows on the billows
+// (everywhere, so a heap reads as big rounded masses with smaller ones
+// on them, as a tower does, not an even field of lumps); the finer octave's tile and
 // swell, and how near the eye (m) it shows; how soft the edge is at the
 // crown and the foot (m); how the bumps boil up and drift with the heaps
 // (m/s).
-const float TILE = 150.0;
-const float LOBE = 26.0;
+const float TILE = 280.0;
+const float LOBE = 32.0;
+const float MID = 95.0;
+const float MID_SWELL = 6.0;
 const float WISP = 2.5;
 const float FINE = 34.0;
 const float FINE_SWELL = 4.0;
 const float FINE_NEAR = 260.0;
 const vec2 SOFT = vec2(1.5, 3.5);
 const vec3 BOIL = vec3(0.72, -0.4, 0.42);
-// How thick the cloud is (per metre at full density): denser than a
-// tower's, so the heaps' tops read as a surface of lobes, not a haze.
-const float SIGMA = 0.22;
+// How thick the cloud is (per metre at full density): a little denser
+// than a tower's, so the heaps' tops read as lobes, yet soft-edged.
+const float SIGMA = 0.18;
 // How much cloud (m) a lobe's face turned from the sun counts as lying
 // between it and the sun, so its far side falls into shade even with the
 // sun high; and how far apart the taps that find the face are (m, near and
 // far).
 const float FACE_SHADE = 70.0;
-const vec2 FACE_TAP = vec2(2.5, 7.0);
+const vec2 FACE_TAP = vec2(6.0, 14.0);
 // The march: its most steps; a step's length in the heaps (m), from the
 // eye out, growing by STEP_GROW of the distance; the envelope's steepest
 // slope, so a leap through the clear air over it never passes into a heap.
@@ -132,7 +136,7 @@ const vec2 STEP = vec2(2.0, 14.0);
 const float STEP_GROW = 0.012;
 const float SLOPE = 1.6;
 // How far over the envelope a bump can stand (m): over that, clear air.
-const float OVER = LOBE * 0.6 + WISP * 0.5 + FINE_SWELL * 0.6 + 2.0;
+const float OVER = LOBE * 0.6 + WISP * 0.5 + MID_SWELL * 0.6 + FINE_SWELL * 0.6 + 2.0;
 // Each style's pull toward its own palette (Opal, Storybook, Mystic), and
 // at night toward the style's own moonlit sea.
 const vec3 STYLE_TINT = vec3(0.3, 0.0, 0.45);
@@ -144,7 +148,7 @@ const float AIR = 2600.0;
 const float LAND_AIR = 4000.0;
 // The heaps a little brighter than a tower's light by day, so their sunlit
 // tops read as white cloud from above.
-const float LIFT = 1.2;
+const float LIFT = 1.4;
 
 // The heaps' envelope: how high they stand over their feet (0 to 1) at
 // world `xz`, the Storybook sea's domes (their finer octave as its mean:
@@ -160,7 +164,7 @@ float sea_rise(vec2 xz) {
 		h = baked.g;
 	} else {
 		mass = zs_storybook_sea_gnoise(p * 0.23 + vec2(3.1, 7.7)) * 0.7 + zs_storybook_sea_gnoise(p * 0.51 + vec2(8.3, 1.9)) * 0.3;
-		h = zs_storybook_sea_domes(p) * 0.62 + 0.38 * 0.45;
+		h = zs_storybook_sea_domes(p / ZS_SEA_DOME) * 0.62 + 0.38 * 0.45;
 	}
 	float heap = smoothstep(-0.2, 0.3, mass);
 	// Under the islands: the heap-field full and the heaps higher. Round a
@@ -233,11 +237,16 @@ vec2 noise_at(vec3 p, vec3 boil) {
 }
 
 // How far into the heaps a point is, all worked out at it.
+float mid_at(vec3 p, vec3 boil, float rise) {
+	if (has_noise < 0.5) return 0.0;
+	return smoothstep(0.0, 0.15, rise) * MID_SWELL * (texture(cauliflower, (p + boil * 1.3 + 37.0) / MID).r - 0.45);
+}
+
 float inside_at(vec3 p, vec3 boil) {
 	float rise = sea_rise(p.xz);
 	float env = floor_y + tall * rise;
 	float hh = clamp((p.y - floor_y) / max(env - floor_y, 4.0), 0.0, 1.0);
-	return heap_inside(p, env, rise, noise_at(p, boil), hh);
+	return heap_inside(p, env, rise, noise_at(p, boil), hh) + mid_at(p, boil, rise);
 }
 
 void fragment() {
@@ -317,7 +326,7 @@ void fragment() {
 		}
 		float hh = clamp((p.y - floor_y) / max(env - floor_y, 4.0), 0.0, 1.0);
 		vec2 n = noise_at(p, boil);
-		float inside = heap_inside(p, env, rise, n, hh);
+		float inside = heap_inside(p, env, rise, n, hh) + mid_at(p, boil, rise);
 		// The finer bumps, close to the eye only.
 		float fine = (1.0 - smoothstep(FINE_NEAR * 0.6, FINE_NEAR, t)) * has_noise;
 		if (fine > 0.0) inside += fine * smoothstep(0.0, 0.15, rise) * FINE_SWELL * (texture(cauliflower, (p + boil * 1.6 + 71.0) / FINE).r - 0.45);
@@ -333,6 +342,10 @@ void fragment() {
 			// sun and a shaded one away, open to the sky on top and darker
 			// under its bulge; what lies behind it along the ray takes the
 			// same face.
+			// Overhead and toward the light, close by (while the ray still
+			// shows much), as a tower's lobes are lit: how much deeper in
+			// the cloud it gets, so each billow's top and sunny face are lit
+			// and its underside and far side shaded.
 			if (!faced) {
 				faced = true;
 				float e = mix(FACE_TAP.x, FACE_TAP.y, smoothstep(60.0, 900.0, t));
@@ -340,7 +353,7 @@ void fragment() {
 				vec3 grad = vec3(inside_at(p + vec3(e, 0.0, 0.0), boil), inside_at(p + vec3(0.0, e, 0.0), boil), inside_at(p + vec3(0.0, 0.0, e), boil)) - here;
 				if (dot(grad, grad) > 1e-6) face = -normalize(grad);
 			}
-			float turned = smoothstep(-0.3, 0.85, dot(face, key));
+			float turned = smoothstep(-0.15, 0.8, dot(face, key));
 			float up_open = clamp(face.y * 0.6 + 0.5, 0.0, 1.0);
 			vec3 q2 = p + key * 35.0;
 			vec3 q3 = p + key * 90.0;

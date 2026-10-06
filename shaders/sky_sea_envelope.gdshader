@@ -17,6 +17,6 @@ uniform float cell = 72.0;
 void fragment() {
 	vec2 p = (origin + UV * side) / cell;
 	float mass = zs_storybook_sea_gnoise(p * 0.23 + vec2(3.1, 7.7)) * 0.7 + zs_storybook_sea_gnoise(p * 0.51 + vec2(8.3, 1.9)) * 0.3;
-	float h = zs_storybook_sea_domes(p) * 0.62 + 0.38 * 0.45;
+	float h = zs_storybook_sea_domes(p / ZS_SEA_DOME) * 0.62 + 0.38 * 0.45;
 	COLOR = vec4(mass * 0.5 + 0.5, h, 0.0, 1.0);
 }
