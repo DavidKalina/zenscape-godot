@@ -145,6 +145,52 @@ const DUSK_FILL_CLOUD := 0.6
 ## Golden hour's contrast: the sky's fill eases off by this share while the sun
 ## is low and up, so the warm key leads and shade goes cool and deep.
 const GOLDEN_FILL_DIP := 0.18
+## The day's key against its fill (the de-Roblox light pass, 2026-10-06): the
+## sun this much stronger and the sky's hemisphere fill this much weaker than
+## the look's own energies, so forms read sunlit, with a lit side and a shade
+## side, instead of evenly lit under an overcast-feeling sky. The night's fill
+## and dusk's are left as they were. --key-gain=K / --fill-gain=F try others.
+## The clear day's sky (before the look's ratios and the weather): under the
+## horizon, the zenith, and the band round the horizon. A deeper blue
+## overhead over a pale, clean horizon, so a clear noon reads clear; it was
+## slate over a warm grey band ((0.055, 0.07, 0.1), (0.1, 0.14, 0.24),
+## (0.3, 0.18, 0.14)), which read overcast under any cover.
+const DAY_SKY := [Vector3(0.055, 0.07, 0.1), Vector3(0.075, 0.15, 0.31), Vector3(0.3, 0.18, 0.14)]
+static var key_gain := _arg_float("--key-gain=", 1.4)
+static var fill_gain := _arg_float("--fill-gain=", 0.65)
+
+## The light's colour cast (2026-10-06: "why is the lighting super greenish
+## and blue"). The only ambient is the sky's hemisphere (zs_hemi_sky from
+## above, zs_hemi_ground from below), lighting land, rock and folk as
+## emission, and the looks' palettes push it hard: a saturated blue from
+## above (blue twice the red at noon) and a grass-green bounce from below,
+## under a teal zenith and a cyan horizon. Tempered where they are made:
+## the fill keeps FILL_SATURATION of its colour (still cool, no longer
+## blue), the bounce goes BOUNCE_NEUTRAL of the way to a warm grey of its
+## brightness, and the sky's green never rises past SKY_GREEN_CAP of the
+## way from its red to its blue, so a teal turns blue and a blue stays.
+const FILL_SATURATION := 0.55
+const BOUNCE_NEUTRAL := 0.7
+const BOUNCE_GREY := Vector3(1.0, 0.96, 0.9)
+const SKY_GREEN_CAP := 0.5
+
+static func _luma(c: Vector3) -> float:
+	return c.dot(Vector3(0.2126, 0.7152, 0.0722))
+
+static func _temper_fill(c: Vector3) -> Vector3:
+	return Vector3.ONE * _luma(c) + (c - Vector3.ONE * _luma(c)) * FILL_SATURATION
+
+static func _temper_bounce(c: Vector3) -> Vector3:
+	var grey := BOUNCE_GREY * _luma(c) / _luma(BOUNCE_GREY)
+	return c.lerp(grey, BOUNCE_NEUTRAL)
+
+static func _temper_sky(c: Vector3) -> Vector3:
+	return Vector3(c.x, minf(c.y, lerpf(c.x, c.z, SKY_GREEN_CAP) if c.z > c.x else c.y), c.z)
+
+static func _arg_float(prefix: String, fallback: float) -> float:
+	for arg: String in OS.get_cmdline_user_args():
+		if arg.begins_with(prefix): return float(arg.trim_prefix(prefix))
+	return fallback
 ## Aurora: each night rolls once, with this chance by the season it falls in
 ## (winter, late autumn from AURORA_LATE_AUTUMN, and the rest of the year).
 const AURORA_CHANCE := Vector3(0.5, 0.2, 0.025)
@@ -269,7 +315,7 @@ func update_rig() -> void:
 	var overcast := lerpf(1.0, 0.44, cloud) * lerpf(1.0, 0.8, storm) * lerpf(1.0, 0.86, shroud) * lerpf(1.0, 0.92, cold)
 	_sun.position = key_direction * Vector3(20, 14, 12).length()
 	_sun.look_at(Vector3.ZERO)
-	_sun.light_energy = energy * overcast / PI * look.settings.sun_energy
+	_sun.light_energy = energy * overcast / PI * look.settings.sun_energy * lerpf(1.0, key_gain, day)
 	if shimmer > 0.0:
 		var t := Time.get_ticks_msec() * 0.001
 		_sun.light_energy *= 1.0 + shimmer * 0.16 * (0.5 * sin(t * 37.0) + 0.5 * sin(t * 23.0 + 1.3))
@@ -280,8 +326,10 @@ func update_rig() -> void:
 	hemi_sky = hemi_sky.lerp(AFTERGLOW_AMBIENT * maxf(hemi_sky.dot(Vector3(0.2126, 0.7152, 0.0722)), 0.0) / AFTERGLOW_AMBIENT.dot(Vector3(0.2126, 0.7152, 0.0722)), dusk_glow * 0.6)
 	hemi_sky *= look.ratio("ambient")
 	hemi_sky = hemi_sky.lerp(Vector3(0.5, 0.55, 0.62), cloud * 0.6).lerp(Vector3(0.66, 0.58, 0.46), autumn * 0.3).lerp(Vector3(0.62, 0.70, 0.85), cold * 0.35)
+	hemi_sky = _temper_fill(hemi_sky)
 	var hemi_ground := _rgb("0d1016").lerp(_rgb("4a5240"), sky_day)
 	hemi_ground *= look.ratio("bounce")
+	hemi_ground = _temper_bounce(hemi_ground)
 	if _rim_turned != room_yaw:
 		_rim.global_basis = Basis(Vector3.UP, room_yaw) * _rim_basis
 		_rim_turned = room_yaw
@@ -312,10 +360,10 @@ func update_rig() -> void:
 	_publish("zs_hemi_sky", surface_sky + NIGHT_FILL * fill)
 	_publish("zs_hemi_ground", hemi_ground + Vector3(0.08, 0.1, 0.13) * fill)
 	var golden := smoothstep(0.3, 0.1, e) * smoothstep(-0.03, 0.05, e) * (1.0 - minf(1.0, cloud * 1.3))
-	_publish("zs_hemi_energy", (0.55 * (0.22 + 0.78 * ambient) * (1.0 - GOLDEN_FILL_DIP * golden) * lerpf(1.0, 1.25, cloud) * lerpf(1.0, 0.55, storm) + 0.4 * fill + DUSK_FILL * dusk_fill) * look.settings.ambient_energy)
-	var down := Vector3(0.006, 0.009, 0.016).lerp(Vector3(0.055, 0.07, 0.1), sky_day)
-	var up := Vector3(0.01, 0.016, 0.038).lerp(Vector3(0.1, 0.14, 0.24), sky_day).lerp(Vector3(0.1, 0.07, 0.16), warmth * 0.55)
-	var glow := Vector3(0.016, 0.024, 0.045).lerp(Vector3(0.3, 0.18, 0.14), sky_day).lerp(Vector3(0.85, 0.3, 0.09), warmth * 0.8)
+	_publish("zs_hemi_energy", (0.55 * (0.22 + 0.78 * ambient) * (1.0 - GOLDEN_FILL_DIP * golden) * lerpf(1.0, 1.25, cloud) * lerpf(1.0, 0.55, storm) * lerpf(1.0, fill_gain, day) + 0.4 * fill + DUSK_FILL * dusk_fill) * look.settings.ambient_energy)
+	var down := Vector3(0.006, 0.009, 0.016).lerp(DAY_SKY[0], sky_day)
+	var up := Vector3(0.01, 0.016, 0.038).lerp(DAY_SKY[1], sky_day).lerp(Vector3(0.1, 0.07, 0.16), warmth * 0.55)
+	var glow := Vector3(0.016, 0.024, 0.045).lerp(DAY_SKY[2], sky_day).lerp(Vector3(0.85, 0.3, 0.09), warmth * 0.8)
 	up = up.lerp(AFTERGLOW_SKY, dusk_glow * 0.7)
 	down = down.lerp(AFTERGLOW_DOWN, dusk_glow * 0.7)
 	down *= look.ratio("horizon")
@@ -327,8 +375,8 @@ func update_rig() -> void:
 	down = down.lerp(Vector3(0.052, 0.058, 0.066) * sky_dim, cover).lerp(Vector3(0.022, 0.024, 0.028) * sky_dim, storm)
 	up = up.lerp(Vector3(0.085, 0.096, 0.112) * sky_dim, cover).lerp(Vector3(0.034, 0.038, 0.046) * sky_dim, storm)
 	glow = glow.lerp(Vector3(0.085, 0.085, 0.090) * sky_dim, cover).lerp(Vector3(0.040, 0.042, 0.048) * sky_dim, storm)
-	_publish("zs_sky_down", down)
-	_publish("zs_sky_up", up)
+	_publish("zs_sky_down", _temper_sky(down))
+	_publish("zs_sky_up", _temper_sky(up))
 	_publish("zs_sky_glow", glow)
 	_publish("zs_sun_direction", sun)
 	_publish("zs_moon_direction", moon)

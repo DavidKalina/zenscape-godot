@@ -38,6 +38,9 @@ const SkyIslets = preload("res://scripts/sky_islets.gd")
 const REACH := 520.0
 const WHOLE := SkyIslets.VIEW
 const SEA := -105.0
+## The Opal sea's far air's share of the sun's hue by day (shaders/
+## reference_surface_haze.gdshaderinc ZS_GLIDE_PEARL_SUN, the same).
+const PEARL_SUN := 0.2
 const LOW := 75.0
 const THICK := 0.6
 ## The most rising islands hazed at once (the shader's arrays).
@@ -123,7 +126,7 @@ static func sea_air(state: Dictionary, horizon: Vector3, style: int) -> Vector3:
 	var cloud_sun: Vector3 = state.get("zs_cloud_sun",Vector3.ONE)
 	var sun_hue := cloud_sun/maxf(maxf(maxf(cloud_sun.x,cloud_sun.y),cloud_sun.z),1e-3)
 	var golden := smoothstep(0.35,0.06,sun.y)*smoothstep(-0.12,0.0,sun.y)*(1.0-overcast)
-	var pearl := Vector3(0.97,0.97,1.0).lerp(sun_hue,lerpf(0.35,0.5,golden))
+	var pearl := Vector3(0.97,0.97,1.0).lerp(sun_hue,lerpf(PEARL_SUN,0.5,golden))
 	return horizon.lerp(pearl*level,0.45)
 
 ## The dome's gradient along `toward` (zsSkyBase).

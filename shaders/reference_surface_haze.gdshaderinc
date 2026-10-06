@@ -46,6 +46,11 @@ uniform vec2 glide_sea = vec2(0.0);
 // style (shaders/sky_cloud_sea_*.gdshaderinc), from the horizon it is given:
 // Opal's luminous pearl haze, Storybook's heaps fading into the horizon,
 // and Mystic's by day cleaned of a dusty horizon to a pale pearl.
+// How much of the sun's hue the Opal sea's far air takes by day (golden
+// hour takes half): kept under the horizon's own warmth, so by day the
+// sea's air stays cleaner than the horizon glow (scripts/sky_haze.gd
+// PEARL_SUN, the same on the CPU). Was 0.35, under a slate zenith.
+const float ZS_GLIDE_PEARL_SUN = 0.2;
 vec3 zs_glide_sea_air(vec3 horizon) {
 	const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
 	float overcast = smoothstep(0.35, 0.9, zs_cloud.x);
@@ -62,7 +67,7 @@ vec3 zs_glide_sea_air(vec3 horizon) {
 	float level = max(lum, 0.17 * zs_night * zs_celestial_clear) * (1.0 + 0.3 * overcast * (1.0 - zs_night));
 	vec3 sun_hue = zs_cloud_sun / max(max(max(zs_cloud_sun.r, zs_cloud_sun.g), zs_cloud_sun.b), 1e-3);
 	float golden = smoothstep(0.35, 0.06, zs_sun_direction.y) * smoothstep(-0.12, 0.0, zs_sun_direction.y) * (1.0 - overcast);
-	vec3 pearl = mix(vec3(0.97, 0.97, 1.0), sun_hue, mix(0.35, 0.5, golden));
+	vec3 pearl = mix(vec3(0.97, 0.97, 1.0), sun_hue, mix(ZS_GLIDE_PEARL_SUN, 0.5, golden));
 	return mix(horizon, pearl * level, 0.45);
 }
 
