@@ -1,6 +1,6 @@
 extends SceneTree
 ## Headless probe of the small-creature polish (docs/scenic/life.md "Small
-## life", "Bigfoot"). Opens the product scene on the Genesis plain, plants a
+## life"). Opens the product scene on the Genesis plain, plants a
 ## patch of meadow flowers and a pond, and checks:
 ## - butterflies: wingspan (from the wing mesh's AABB through the instance
 ##   transforms) inside SPAN for every per-fly size, and, run on the real
@@ -8,8 +8,7 @@ extends SceneTree
 ##   stay between the ground and a sensible height;
 ## - dragonflies: the wing batch uses the translucent wing material (alpha,
 ##   both sides, drawn after the water) while the body stays on the shared
-##   faceted life material;
-## - Bigfoot: the coat material has flat_faces on, the eyes off.
+##   faceted life material.
 ## Exits 1 if a check fails. CPU only under the dummy renderer: nothing here
 ## says how the wings or the new size look.
 ##   godot --headless --path . -s res://tools/probe_creature_polish.gd
@@ -80,28 +79,6 @@ func run() -> void:
 	check(body_mat == life.material,"dragonfly body on the shared life material")
 	check(body_mat is ShaderMaterial and bool((body_mat as ShaderMaterial).get_shader_parameter("flat_faces")),"shared life material has flat_faces")
 	check(flies._bodies.mesh.surface_get_material(0) == life.material and flies._wings.mesh.surface_get_material(0) == life.material,"butterflies stay on the shared life material")
-
-	# --- Bigfoot's coat.
-	var bigfoot: Node3D = life.moments.bigfoot
-	check(bigfoot.ready_to_show(true),"bigfoot model builds")
-	var coats := 0
-	var eyes := 0
-	var faceted_coats := 0
-	var smooth_eyes := 0
-	for mesh: MeshInstance3D in bigfoot.actor.find_children("*","MeshInstance3D",true,false):
-		for surface in range(mesh.mesh.get_surface_count()):
-			var used := mesh.get_surface_override_material(surface) as ShaderMaterial
-			if used == null: continue
-			var flat := bool(used.get_shader_parameter("flat_faces"))
-			if used == bigfoot._eyes:
-				eyes += 1
-				if not flat: smooth_eyes += 1
-			else:
-				coats += 1
-				if flat: faceted_coats += 1
-	print("CREATURE bigfoot coat surfaces=%d faceted=%d eye surfaces=%d smooth=%d" % [coats,faceted_coats,eyes,smooth_eyes])
-	check(coats > 0 and faceted_coats == coats,"bigfoot coat has flat_faces on")
-	check(eyes > 0 and smooth_eyes == eyes,"bigfoot eyes stay smooth")
 
 	# --- Butterflies on a real survey: a patch of meadow flowers and a pond.
 	var tops := {}

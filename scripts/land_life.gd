@@ -1,8 +1,8 @@
 extends Node3D
 ## Life answers the land (docs/scenic/life.md). Fish, frogspawn, frogs, birds
 ## and fireflies find their places in the world as it stands now, and arrive
-## there in their own time; herons, deer, a rainbow and, very rarely, a
-## glimpse of Bigfoot come when a place has become rich (scripts/life_moments.gd).
+## there in their own time; herons, deer and a rainbow come when a place has
+## become rich (scripts/life_moments.gd).
 ##
 ## Nothing here is placed by the player. The editor tells us when the land,
 ## water or plants changed (`play_geometry_changed`, `stroke_finished`, and
@@ -343,7 +343,7 @@ func clear() -> void:
 ## kind lists [key, delay, age, here]: the survey cell (a bird's slot), its own
 ## delay, the life-clock seconds since its conditions first held, and whether
 ## its creature had arrived. Moments are not saved; they come round again.
-## Bigfoot's trail (life_trail.gd) is: its signs stay where he left them.
+## Saves from before Bigfoot went may carry his trail's "trail": ignored.
 func document() -> Dictionary:
 	if not active: return {}
 	var saved := {}
@@ -356,8 +356,6 @@ func document() -> Dictionary:
 			rows.append([key,snappedf(float(site.delay),0.001),snappedf(maxf(clock-float(site.since),0.0),0.001),bool(site.here) and not site.has("taken")])
 		saved[kind] = rows
 	var result := {"version":DOCUMENT_VERSION,"clock":clock,"sites":saved,"ponds":seasons.document()}
-	var trail: Dictionary = moments.trail.document()
-	if not trail.is_empty(): result["trail"] = trail
 	return result
 
 static func valid_document(value: Variant) -> bool:
@@ -365,7 +363,6 @@ static func valid_document(value: Variant) -> bool:
 	if value.is_empty(): return true
 	if value.get("version") != float(DOCUMENT_VERSION) and value.get("version") != DOCUMENT_VERSION: return false
 	if not GardenData._number(value.get("clock"),0.0,1e9) or not value.get("sites") is Dictionary: return false
-	if value.has("trail") and not Moments.Trail.valid_document(value.trail): return false
 	for kind: Variant in value.sites:
 		if not DELAYS.has(kind) or not value.sites[kind] is Array or value.sites[kind].size() > 64: return false
 		for row: Variant in value.sites[kind]:
@@ -389,7 +386,6 @@ func restore_document(value: Dictionary) -> void:
 	# Sites carry their own ages, so the clock only has to not run backwards:
 	# moments keep cooldowns on it within a session.
 	clock = maxf(clock,float(value.clock))
-	moments.trail.restore(value.get("trail",{}))
 	for kind: String in value.sites:
 		var rows := {}
 		for row: Array in value.sites[kind]: rows[int(row[0])] = [float(row[1]),float(row[2]),bool(row[3])]
@@ -1149,10 +1145,10 @@ func force(kind: String) -> bool:
 	return snakes.force() if kind == "snake" else moments.force(kind)
 
 ## Kinds `summon` knows, in the command palette's order.
-const SUMMONS := ["deer","heron","snake","bigfoot_watch","bigfoot_stride","bigfoot_tracks","bigfoot_howl","woodpecker","geese","rainbow"]
+const SUMMONS := ["deer","heron","snake","woodpecker","geese","rainbow"]
 
 ## Call `kind` (a SUMMONS id) now, whatever its chance, hour or season: the
-## command palette's creative override. Deer and Bigfoot come out of the
+## command palette's creative override. Deer come out of the
 ## nearest wood, or, on open ground, from just beyond the view; the others
 ## still need their place (water for heron and snake, a snag for the
 ## woodpecker). "" when it came, else a short line saying what it needs.
@@ -1170,15 +1166,6 @@ func summon(kind: String) -> String:
 			if moments.force("deer"): return ""
 			moments._deer_arrive(_open_edges())
 			return ""
-		"bigfoot","bigfoot_watch","bigfoot_listen","bigfoot_stride":
-			if moments.bigfoot.showing(): return "He is already about"
-			if moments.force(kind): return ""
-			var how := kind.trim_prefix("bigfoot").trim_prefix("_")
-			var edges := _open_edges()
-			if moments.bigfoot.begin(how,edges,0,true) or moments.bigfoot.begin(how,edges,0,false):
-				moments._record("bigfoot",moments.bigfoot.position)
-				return ""
-			return "Bigfoot found no footing here"
 		"woodpecker":
 			return "" if small.woodpecker.start() else "A woodpecker needs a dead tree"
 		"geese":
@@ -1187,7 +1174,7 @@ func summon(kind: String) -> String:
 			return "" if moments.force(kind) else "Not now"
 
 ## Stand-in forest edges for open ground (`summon`): a grid over the plate's
-## middle (inside the 12.8 m Bigfoot keeps to, with room to walk in and out),
+## middle (inside 12.8 m, with room to walk in and out),
 ## each with its "wood" behind it, away from the camera, so whatever steps
 ## out walks toward the view. The callers pick the best of them as ever.
 func _open_edges() -> Array:

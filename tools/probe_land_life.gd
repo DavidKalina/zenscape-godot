@@ -124,7 +124,7 @@ func run() -> void:
 	print("LIFE moments ",JSON.stringify(life.moments.history.map(func(m: Dictionary) -> Array: return [m.kind,snappedf(m.at,0.1)])))
 	# Each moment on demand, so the probe covers them whatever the dice said.
 	var forced := {}
-	for kind in ["heron","deer","bigfoot","rainbow"]: forced[kind] = life.moments.force(kind)
+	for kind in ["heron","deer","rainbow"]: forced[kind] = life.moments.force(kind)
 	phase = "forced"
 	await watch_frames(3.0,frames,own)
 	print("LIFE forced ",JSON.stringify(forced)," showing ",JSON.stringify(life.moments.showing()))

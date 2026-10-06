@@ -320,9 +320,7 @@ static func _build() -> void:
 
 # --- Life (the command palette's Life pocket, scripts/command_palette.gd LIFE) ---
 # Each creature as a naturalist's stamp: a profile facing right where it
-# matters, in one muted tint. Seeds 46-54. Bigfoot's "bigfoot" (the Patterson
-# look-back, watching you) and "bigfoot_stride" share his russet with "howl"
-# (his head thrown back, the call's arcs); his tracks reuse "track" above.
+# matters, in one muted tint. Seeds 46-54.
 
 static func _life() -> void:
 	_add("deer","Deer","Wood's edge","#b98a5c",_deer(),["M18.6 5.4 L18.7 5.4"],46,1.0,1.2)
@@ -330,12 +328,6 @@ static func _life() -> void:
 	_add("heron","Heron","Wading","#7f93a3",heron[0],heron[1],47,1.0,1.2)
 	var snake := _snake()
 	_add("snake","Snake","By the pond","#7d8048",snake[0],snake[1],48,1.0,1.2)
-	var watch := _bigfoot_watch()
-	_add("bigfoot","Bigfoot","Watching","#6e4a34",watch[0],watch[1],49,1.0,1.1)
-	var stride := _bigfoot_stride()
-	_add("bigfoot_stride","Bigfoot","Striding","#6e4a34",stride[0],stride[1],50,1.0,1.2)
-	var howl := _howl()
-	_add("howl","Howl","A sign","#6e4a34",howl[0],howl[1],51,1.0,1.2)
 	var woodpecker := _woodpecker()
 	_add("woodpecker","Woodpecker","On a snag","#8a3a30",woodpecker[0],woodpecker[1],52,1.0,1.2)
 	_add("geese","Geese","Passing over","#8a7f6c",_geese(),[],53)
@@ -403,39 +395,6 @@ static func _snake() -> Array:
 		widths.append(lerpf(0.8,4.0,sqrt(t)))
 	var head := _poly(_pts([15.6,13, 17.6,10.6, 20.6,9.8, 22.6,10.8, 22.6,12.2, 19.4,14.6, 16.2,17]))
 	return [[_ribbon(spine,widths),head],["M19.8 11.4 L19.9 11.4"]]
-
-## Bigfoot watching: the Patterson look-back, his stooped body side-on to
-## the right and his peaked head turned to face you, his near arm hanging
-## long past the hip. [fills, lines].
-static func _bigfoot_watch() -> Array:
-	var body := _poly(_pts([13.2,2.2, 14.8,3, 15.4,5, 15.2,6.6, 17.6,7.8, 18.4,10.4, 17.8,13.4, 16.8,15.6,
-		17,19, 16.8,21.6, 19,22.4, 19,22.9, 13.6,22.9, 13.8,21.4, 13.4,18.8, 12.6,18.6,
-		12.4,21.6, 13.2,22.9, 8.6,22.9, 9.4,21.6, 9.2,17.4, 8.4,14, 8.4,10, 9.6,6.6, 11.2,5.8, 11,5, 11.6,3]))
-	var arm := _ribbon(_pts([14.2,8, 16.6,12.2, 17.8,17]),[3.2,2.6,2.4])
-	return [[body,arm],["M12.4 4.8 L12.5 4.8 M14 4.8 L14.1 4.8","M12.4 9 Q14 12.8 16 17.2"]]
-
-## Bigfoot side-on in the Patterson stride, facing right: peaked head thrust
-## forward, hunched back, the far arm swung back and the near one forward,
-## legs in mid-step. [fills, lines].
-static func _bigfoot_stride() -> Array:
-	var body := _poly(_pts([12.8,2.4, 15,2.8, 16.8,4.2, 16.4,5, 17.2,6.4, 16.2,7.6, 15.6,7.8, 17.2,9, 17.4,10.8, 16.6,13.4, 15.8,15.4,
-		18.8,17.6, 18.8,21.4, 21.6,22.3, 21.6,22.9, 17,22.9, 16.8,21.4, 16.2,18.8, 13.4,17.2,
-		11,19.4, 8,21.4, 8.8,22.9, 4.8,22.9, 5.4,21.6, 9.4,18.4, 10.2,16, 10,12.4, 10.2,8.6, 11.2,5.8, 12.4,4.6]))
-	var back_arm := _ribbon(_pts([11.8,7.6, 8.8,11.8, 6.2,15.2]),[3,2.2,2.2])
-	var fore_arm := _ribbon(_pts([14.4,8.4, 17.2,12.6, 19.2,16.6]),[3.2,2.4,2.2])
-	return [[body,back_arm,fore_arm],["M15.6 5 L15.7 5","M12.8 9.6 Q14.8 12.6 17.6 17"]]
-
-## The howl: Bigfoot's head and shoulders, the head (drawn facing right, then
-## turned 55 degrees up round `at`) thrown back with its mouth open, and the
-## call going out from the mouth in two arcs. [fills, lines].
-static func _howl() -> Array:
-	var at := Vector2(8.4,9.8)
-	var up := func(p: Vector2) -> Vector2: return at+p.rotated(-0.96)*1.15
-	var head: Array = _pts([-3.4,2.4, -3.2,-1.2, -1.6,-4.4, 1.6,-3.2, 3,-2, 2.6,-1.2, 3.6,0, 3.4,0.8, 1.4,1.4, 3.2,2.4, 2.6,3.8, 0.4,4.4]).map(up)
-	var body := _poly(_pts([1,23, 1.4,18.6, 3,15.4])+head+_pts([13.6,14.4, 16,17.4, 17,23]))
-	var mouth: Vector2 = up.call(Vector2(1.4,1.4))
-	var eye: Vector2 = up.call(Vector2(2.2,-1.4))
-	return [[body,_arc(mouth,4.8,-1.65,-0.15,1.6),_arc(mouth,8.0,-1.55,-0.25,1.6)],["M%.2f %.2f L%.2f %.2f" % [eye.x,eye.y,eye.x+0.1,eye.y]]]
 
 ## A woodpecker on a snag: clinging upright, bill to the trunk, tail propped
 ## against it, the dead trunk's top broken off. [fills, lines].

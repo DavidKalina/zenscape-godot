@@ -129,10 +129,7 @@ func run() -> void:
 	audio._on_moment("deer",at)
 	audio._on_moment("rainbow",at)
 	for _i in range(100): await frame()
-	audio._rng.seed = 1
-	audio._on_moment("bigfoot",at)
-	for _i in range(60*8): await frame()
-	print("SOUND moments ",JSON.stringify({"played":audio.played,"pending":audio._pending.size(),"hush":snappedf(audio._hush,0.1),"song_after_bigfoot":snappedf(nature.song_presence,0.01)}))
+	print("SOUND moments ",JSON.stringify({"played":audio.played,"pending":audio._pending.size(),"song":snappedf(nature.song_presence,0.01)}))
 	print("SOUND frames ",JSON.stringify({"all_ms":stats(frames),"genesis_audio_ms":stats(own),"worst_ms":audio.worst_usec/1000.0}))
 	scene.queue_free()
 	for _frame in range(3): await process_frame

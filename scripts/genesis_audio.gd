@@ -17,14 +17,11 @@ extends Node
 ##   crickets need cover, and frogs sing only where frogs have arrived.
 ##   Water lapping, the stream bed and rain stay with Nature's own beds.
 ## - Arrivals and moments get sparse, quiet one-shots: a plop for fish, one
-##   croak for a frog, a heron's call, deer steps. When Bigfoot shows, the
-##   birds hush for a while, and sometimes there is a distant wood knock.
-##   Before he is ever seen, his trail (scripts/life_trail.gd) sounds too: a
-##   far howl on a still, clear night, and knocks from the elder stand.
+##   croak for a frog, a heron's call, deer steps.
 ##
 ## Everything plays on the "Genesis" bus (the Sound volume) under Master; the
-## knocks and the howl go through "GenesisFar" (low-passed, with reverb). Streams load
-## once in setup; players are pooled; nothing allocates per frame.
+## small life's distant voices go through "GenesisFar" (low-passed, with
+## reverb; scripts/life_small_kit.gd). Streams load once in setup; players are pooled; nothing allocates per frame.
 
 const Feedback = preload("res://scripts/stroke_feedback.gd")
 const Survey = preload("res://scripts/life_survey.gd")
@@ -102,24 +99,6 @@ const BOW_DELAY := 1.5
 ## The moonbow's swell: quieter and lower.
 const MOONBOW_GAIN := 0.05
 const MOONBOW_PITCH := 0.8
-## Bigfoot: the birds hush this long; a knock comes with this chance, from
-## KNOCK_BACK metres further into the wood, KNOCK_DELAY seconds after he shows.
-const HUSH_SECONDS := 50.0
-const KNOCK_CHANCE := 0.6
-const KNOCK_GAIN := 0.22
-const KNOCK_BACK := 8.0
-const KNOCK_DELAY := Vector2(3.0,6.0)
-const KNOCK_SPACING := 0.8
-## His trail: a howl from HOWL_BACK m beyond the elder stand, away from the
-## camera, and KNOCKS knocks (two or three) from TRAIL_KNOCK_BACK m into it,
-## KNOCK_GAPS s apart. Each quiets the wood's night voices for TRAIL_HUSH s.
-const HOWL_GAIN := 0.3
-const HOWL_BACK := 16.0
-const HOWL_DELAY := 0.5
-const KNOCKS := Vector2i(2,3)
-const KNOCK_GAPS := Vector2(0.7,1.2)
-const TRAIL_KNOCK_BACK := 4.0
-const TRAIL_HUSH := 20.0
 const THUMP_GAP := 0.3
 const POOL := 4
 
@@ -143,7 +122,6 @@ var _rustle: AudioStreamPlayer3D
 var _plain: AudioStreamPlayer
 var _bow: AudioStreamPlayer
 var _pool: Array[AudioStreamPlayer3D] = []
-var _far: AudioStreamPlayer3D
 var _clips := {}
 var _rng := RandomNumberGenerator.new()
 
@@ -178,13 +156,12 @@ var _rustle_gain := 0.0
 var _plain_gain := 0.0
 var _rustle_target := 0.0
 var _plain_target := 0.0
-var _hush := 0.0
 
 # One-shot state.
 var _shot_wait := 0.0
 var _kind_wait := {}
 var _quiet := SHOT_QUIET
-## Sounds waiting for their moment: [seconds left, clip, position, gain, pitch, far].
+## Sounds waiting for their moment: [seconds left, clip, position, gain, pitch].
 var _pending: Array = []
 
 func setup(owner_scene: Node3D) -> void:
@@ -217,9 +194,7 @@ func setup(owner_scene: Node3D) -> void:
 	_bow.bus = BUS
 	add_child(_bow)
 	for i in range(POOL): _pool.append(_player3d(null,true))
-	_far = _player3d(null,true)
-	_far.bus = FAR_BUS
-	for clip: String in ["genesis-thump","fish-plop-1","fish-plop-2","frog-croak","heron-call","wood-knock","far-howl","bow-swell","footstep-1","footstep-2","footstep-3","footstep-4"]:
+	for clip: String in ["genesis-thump","fish-plop-1","fish-plop-2","frog-croak","heron-call","bow-swell","footstep-1","footstep-2","footstep-3","footstep-4"]:
 		_clips[clip] = load(_path(clip))
 	editor.stroke_started.connect(_on_stroke_started)
 	editor.stroke_moved.connect(_on_stroke_moved)
@@ -381,50 +356,24 @@ func _on_arrived(kind: String, position: Vector3) -> void:
 func _on_moment(kind: String, position: Vector3) -> void:
 	match kind:
 		"heron":
-			_pending.append([HERON_DELAY,"heron-call",position,HERON_GAIN,_rng.randf_range(0.95,1.03),false])
+			_pending.append([HERON_DELAY,"heron-call",position,HERON_GAIN,_rng.randf_range(0.95,1.03)])
 		"deer":
 			# A few soft steps in the litter as they come out of the trees.
 			var at := 0.4
 			for i in range(4):
 				var step := position+Vector3(_rng.randf_range(-0.4,0.4),0.0,_rng.randf_range(-0.4,0.4))
-				_pending.append([at,"footstep-%d" % _rng.randi_range(1,4),step,DEER_GAIN,_rng.randf_range(1.2,1.35),false])
+				_pending.append([at,"footstep-%d" % _rng.randi_range(1,4),step,DEER_GAIN,_rng.randf_range(1.2,1.35)])
 				at += _rng.randf_range(0.45,0.7)
 		"rainbow":
-			_pending.append([BOW_DELAY,"bow-swell",Vector3.ZERO,BOW_GAIN,1.0,false])
+			_pending.append([BOW_DELAY,"bow-swell",Vector3.ZERO,BOW_GAIN,1.0])
 		"moonbow":
-			_pending.append([BOW_DELAY,"bow-swell",Vector3.ZERO,MOONBOW_GAIN,MOONBOW_PITCH,false])
-		"bigfoot":
-			# The wood goes quiet. Sometimes, from further in, a knock and another.
-			_hush = HUSH_SECONDS
-			if _rng.randf() < KNOCK_CHANCE:
-				var away: Vector3 = position-scene.camera.global_position
-				away.y = 0.0
-				var from: Vector3 = position+away.normalized()*KNOCK_BACK if away.length() > 0.01 else position
-				var delay := _rng.randf_range(KNOCK_DELAY.x,KNOCK_DELAY.y)
-				_pending.append([delay,"wood-knock",from,KNOCK_GAIN,1.0,true])
-				_pending.append([delay+KNOCK_SPACING+_rng.randf_range(-0.1,0.15),"wood-knock",from,KNOCK_GAIN*0.85,0.96,true])
-		"bigfoot_howl":
-			_hush = maxf(_hush,TRAIL_HUSH)
-			_pending.append([HOWL_DELAY,"far-howl",_beyond(position,HOWL_BACK),HOWL_GAIN,_rng.randf_range(0.92,1.04),true])
-		"bigfoot_knocks":
-			_hush = maxf(_hush,TRAIL_HUSH)
-			var from := _beyond(position,TRAIL_KNOCK_BACK)
-			var at := 0.0
-			for i in range(_rng.randi_range(KNOCKS.x,KNOCKS.y)):
-				_pending.append([at,"wood-knock",from,KNOCK_GAIN*(1.0-0.1*i),_rng.randf_range(0.94,1.02),true])
-				at += _rng.randf_range(KNOCK_GAPS.x,KNOCK_GAPS.y)
+			_pending.append([BOW_DELAY,"bow-swell",Vector3.ZERO,MOONBOW_GAIN,MOONBOW_PITCH])
 		_:
 			return
 	played[kind] = int(played.get(kind,0))+1
 
-## `metres` further from the camera than `position`, on the level.
-func _beyond(position: Vector3, metres: float) -> Vector3:
-	var away: Vector3 = position-scene.camera.global_position
-	away.y = 0.0
-	return position+away.normalized()*metres if away.length() > 0.01 else position
-
 ## Play a one-shot from the pool; false when every player is busy.
-func _shot(clip: String, position: Vector3, gain: float, pitch: float, far := false) -> bool:
+func _shot(clip: String, position: Vector3, gain: float, pitch: float) -> bool:
 	var stream: AudioStream = _clips[clip]
 	if clip == "bow-swell":
 		if _bow.playing: return false
@@ -433,13 +382,10 @@ func _shot(clip: String, position: Vector3, gain: float, pitch: float, far := fa
 		_bow.play()
 		return true
 	var player: AudioStreamPlayer3D = null
-	if far:
-		player = _far if not _far.playing else null
-	else:
-		for candidate in _pool:
-			if not candidate.playing:
-				player = candidate
-				break
+	for candidate in _pool:
+		if not candidate.playing:
+			player = candidate
+			break
 	if player == null: return false
 	player.stream = stream
 	player.global_position = position
@@ -471,7 +417,6 @@ func _process(delta: float) -> void:
 	if _tick <= 0.0:
 		_tick = BED_TICK
 		if _active: _bed_targets()
-	_hush = maxf(0.0,_hush-delta)
 	var bed := 1.0-exp(-delta*BED_RESPONSE)
 	_rustle_gain = lerpf(_rustle_gain,_rustle_target,bed)
 	_plain_gain = lerpf(_plain_gain,_plain_target,bed)
@@ -484,7 +429,7 @@ func _process(delta: float) -> void:
 		if not paused: entry[0] = float(entry[0])-delta
 		if float(entry[0]) > 0.0: continue
 		_pending.remove_at(i)
-		_shot(entry[1],entry[2],entry[3],entry[4],entry[5])
+		_shot(entry[1],entry[2],entry[3],entry[4])
 	last_usec = Time.get_ticks_usec()-began
 	worst_usec = maxi(worst_usec,last_usec)
 
@@ -591,10 +536,8 @@ func _bed_targets() -> void:
 	_plain_target = PLAIN_GAIN*lerpf(1.0,PLAIN_FLOOR,alive)*(0.55+0.45*wind)*(1.0-0.5*rain)
 	var nature: Node = _nature()
 	if nature == null: return
-	# 1 while Bigfoot's hush holds, easing back over its last ten seconds.
-	var hush := smoothstep(0.0,10.0,_hush)
-	nature.song_presence = clampf(_trees/8.0+_shrubs/40.0+birds/4.0,0.0,1.0)*(1.0-0.85*rain)*(1.0-hush)
-	nature.cricket_presence = clampf(0.15+_shrubs/25.0+_trees/15.0+_damp/80.0,0.0,1.0)*(1.0-0.7*hush)
+	nature.song_presence = clampf(_trees/8.0+_shrubs/40.0+birds/4.0,0.0,1.0)*(1.0-0.85*rain)
+	nature.cricket_presence = clampf(0.15+_shrubs/25.0+_trees/15.0+_damp/80.0,0.0,1.0)
 	nature.frog_presence = 1.0 if frogs > 0 else (0.35 if spawn > 0 else 0.0)
 	nature.song_points = _wood
 

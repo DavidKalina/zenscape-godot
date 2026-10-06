@@ -30,7 +30,7 @@ Existing wind, rain and waterfall beds are procedural ZenScape audio.
 
 Genesis sounds (genesis-rumble, genesis-thump, genesis-pour, genesis-fill,
 genesis-meadow, genesis-path, leaf-rustle-bed, plain-air-bed, fish-plop-1/2,
-frog-croak, heron-call, wood-knock, bow-swell) are synthesised from noise,
+frog-croak, heron-call, bow-swell) are synthesised from noise,
 filters and sines by tools/generate_nature_audio.py --genesis. They use no
 recordings and carry no licence beyond the project's own (docs/scenic/sound.md).
 
