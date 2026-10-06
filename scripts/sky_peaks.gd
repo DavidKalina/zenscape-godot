@@ -132,8 +132,10 @@ const SEA_FRAY := Vector2(18.0,30.0)
 ## mountains are a few metres high, a range a few hundred.
 const LOOK_SCALE := 30.0
 ## How far the rock's light leans to its broad lie from each small face's
-## (reference_surface `facet_soft`).
-const FACET_SOFT := 0.45
+## (reference_surface `facet_soft`): enough that the light finds the big
+## planes and the rock's own grain (shaders/sky_peak_look.gdshaderinc) the
+## small, not the grid's 4 m steps.
+const FACET_SOFT := 0.58
 
 ## The cells' origin keeper (scripts/sky_cells.gd), and the currents for the
 ## gorges' jets.
@@ -736,7 +738,10 @@ func _wrap(shape: RefCounted) -> MultiMeshInstance3D:
 	puffs.material_override = _puff_material
 	puffs.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	puffs.set_meta("skip_reflection",true)
-	puffs.custom_aabb = AABB(Vector3(-SkyPeak.HALF.x-60.0,SkyPeak.SEA-60.0,-SkyPeak.HALF.y-60.0),Vector3(SkyPeak.HALF.x*2.0+120.0,120.0,SkyPeak.HALF.y*2.0+120.0))
+	# Up to the highest puff: the flanks' own cloud hangs well over the sea.
+	var high := SkyPeak.SEA+60.0
+	for w: Vector4 in shape.wraps: high = maxf(high,w.y+w.w)
+	puffs.custom_aabb = AABB(Vector3(-SkyPeak.HALF.x-60.0,SkyPeak.SEA-60.0,-SkyPeak.HALF.y-60.0),Vector3(SkyPeak.HALF.x*2.0+120.0,high-SkyPeak.SEA+60.0,SkyPeak.HALF.y*2.0+120.0))
 	return puffs
 
 ## The spruces: one batch pair (trunk, crown) per variant, as the islets

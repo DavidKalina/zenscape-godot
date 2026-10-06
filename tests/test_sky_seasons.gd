@@ -67,7 +67,7 @@ func _shaders() -> void:
 	var names: Array = surface.get_shader_uniform_list().map(func(e: Dictionary) -> String: return e.name)
 	check(names.has("peak_snow") and names.has("sea_cut"),"The ground shader parses and takes the peaks' snow")
 	var code := surface.code
-	check("sky_season.gdshaderinc" in code and "zs_sky_peak_snowy(UV.x" in code,"The ground shader lays the peaks' snow by the season's fall and floor")
+	check("sky_season.gdshaderinc" in code and "zs_sky_peak_margin(UV.x" in code,"The ground shader lays the peaks' snow by the season's fall and floor")
 	check("zs_sky_summer_grass(tint)" in code,"The peaks' grass dries a little through the summer")
 	check("sea_cut <= -1.0e8" in code,"The plate's snow cover leaves the peaks to their own line")
 	var sky: Shader = load("res://shaders/reference_sky.gdshader")

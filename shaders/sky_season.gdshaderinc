@@ -41,11 +41,18 @@ const float ZS_SKY_SNOW_TAPER = 4.0;
 // Whether a range's face is snowed: its need (UV.x) and height `y` in the
 // range's own frame, placed scaled `scale` in height about the sea `sea`.
 // What was snowed as drawn stays snowed until the line rises past it.
-bool zs_sky_peak_snowy(float need, float y, float scale, float sea) {
+// How far (m, the range's own frame) the season's line has come past the
+// face's need: over 0 it is snowed. The ground shader softens and rags the
+// line by it (shaders/sky_peak_look.gdshaderinc), so the snow's edge runs
+// across the faces instead of stepping from one to the next.
+float zs_sky_peak_margin(float need, float y, float scale, float sea) {
 	float fall = zs_sky_snow_fall() / scale;
 	float floor_at = sea + (dot(zs_sky_season, ZS_SKY_SNOW_FLOOR) - sea) / scale;
 	float under = need >= 0.0 ? max(floor_at - y, 0.0) * ZS_SKY_SNOW_TAPER : 0.0;
-	return fall > need + under;
+	return fall - (need + under);
+}
+bool zs_sky_peak_snowy(float need, float y, float scale, float sea) {
+	return zs_sky_peak_margin(need, y, scale, sea) > 0.0;
 }
 
 // A snowy face's colour: the world's snow, a touch blue in the hollows and
