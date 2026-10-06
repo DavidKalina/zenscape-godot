@@ -8,7 +8,11 @@ render_mode unshaded, blend_mix, cull_front, depth_draw_never, depth_test_disabl
 // no face to clip and nothing to sort.
 //
 // The body is the shape's smooth heap of lobes as a coarse grid of signed
-// distances (`body`, metres). Far out of it the ray leaps by that distance;
+// distances (`body`, metres), two stages of its rising in red and green,
+// morphed between (`morph`), so it climbs smoothly out of the sea; while it
+// rises its bumps boil upward faster (`lift`), and as it wanes (`wane`) it
+// shrinks a little, goes ragged and see-through, its wisps tearing into
+// rags, the foot first and the crown last, and is gone. Far out of it the ray leaps by that distance;
 // near it, it steps, finer near the eye. On the body the cauliflower
 // swells: round bumps (`cauliflower` red, inverted cellular noise), bigger
 // toward the crown and boiling slowly upward, a finer octave of them close
@@ -45,12 +49,17 @@ render_mode unshaded, blend_mix, cull_front, depth_draw_never, depth_test_disabl
 #include "res://shaders/cumulus_light.gdshaderinc"
 
 uniform sampler3D body : filter_linear, repeat_disable;
+// How far from the red stage to the green; how far it has waned (0 to 1);
+// how far (m) its bumps have boiled up beyond the steady drift.
+uniform float morph = 0.0;
+uniform float wane = 0.0;
+uniform float lift = 0.0;
 uniform sampler3D cauliflower : filter_linear, repeat_enable;
 // The body's box in the tower's frame: middle and half size. The box mesh
 // stands at box_mid in the tower's frame.
 uniform vec3 box_mid;
 uniform vec3 box_half;
-// The sea's top and the crown's top, the tower's frame.
+// The sea's top and the crown's top as it stands now, the tower's frame.
 uniform float sea = -105.0;
 uniform float top = 300.0;
 uniform float strength = 1.0;
@@ -79,9 +88,12 @@ const float FINEST_SWELL = 1.8;
 const float FINE_NEAR = 240.0;
 const vec2 SOFT = vec2(2.5, 8.0);
 const vec3 DRIFT = vec3(0.9, -0.7, 0.5);
+// How far (m) the body shrinks, whole waned.
+const float ERODE = 30.0;
 
 float body_at(vec3 p) {
-	return texture(body, (p - box_mid) / (2.0 * box_half) + 0.5).r;
+	vec2 d = texture(body, (p - box_mid) / (2.0 * box_half) + 0.5).rg;
+	return mix(d.r, d.g, morph) + wane * ERODE;
 }
 
 // How far into the cloud a point is (m, below 0 outside): the body `d`
@@ -119,9 +131,9 @@ void fragment() {
 	vec3 shade_col;
 	float lining;
 	zs_cumulus_palette(rd, sun, sun_hue, sun_col, shade_col, lining);
-	vec3 boil = DRIFT * time + noise_shift;
+	vec3 boil = DRIFT * time + noise_shift - vec3(0.0, lift, 0.0);
 	float jitter = fract(52.9829189 * fract(dot(FRAGCOORD.xy, vec2(0.06711056, 0.00583715))));
-	float span = top - sea;
+	float span = max(top - sea, 40.0);
 	float reach = SWELL * 0.6 + FINE_SWELL * 0.5 + 9.0;
 	// How deep in the cloud the eye itself is: in it, the fog round it is
 	// lit as a sunlit cloud's heart is, a glowing white, and thins into
@@ -173,6 +185,9 @@ void fragment() {
 		density *= mix(1.0, smoothstep(0.47, 0.64, pocket), immersed);
 		// The foot thins into the cloud sea.
 		density *= smoothstep(sea - 8.0, sea + 40.0, p.y);
+		// Waning, the foot first: torn into rags along the wisps, thinner.
+		float gone = clamp(wane * 1.4 + (1.0 - h) * 0.4 - 0.4, 0.0, 1.0);
+		density *= smoothstep(gone * 0.75, gone * 0.75 + 0.2, n.g) * (1.0 - gone * gone);
 		if (density > 0.002) {
 			// Overhead and toward the sun, close by (while the ray still
 			// shows much): how much deeper in the cloud it gets, so a

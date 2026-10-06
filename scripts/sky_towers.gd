@@ -25,6 +25,20 @@ extends Node3D
 ## stand within KEEP of a tower's middle (`blocks`, read by scripts/
 ## sky_cells.gd, sky_islets.gd and sky_clouds.gd).
 ##
+## Each lives (`age_of`): it rests unseen over its thermals for REST, then
+## climbs up out of the sea over GROW (SkyTower `lobes_at`, the foot heaping
+## up first, then the column turret by turret, its crown boiling up faster
+## while it rises), stands HOLD, and wanes away over WANE, from the foot up,
+## going ragged and see-through, then rests and rises again. It never drifts: it stands
+## over its thermals, as a thermal's tower does, and a drift fast enough to
+## see would carry it out of its keep into the islands and their air. The
+## lives are seeded, so the towers are never in step; the home tower's
+## starts RISE_SOON into the glide's first sight of it. Its rising is baked
+## in STAGES on a worker, two at a time, and the shader morphs between the
+## pair (`morph`), the next pair baked while this one shows. `--tower-pace=N`
+## runs the lives N times faster, `--tower-age=S` starts the home tower S
+## seconds into its life, `--still-towers` holds them whole and still.
+##
 ## Within BUILD of the eye one is made on a worker, beyond FORGET let go,
 ## the same one coming back when flown back to; it is far in the haze when
 ## it comes, and fades in over FADE_IN besides. The node stands at the
@@ -80,16 +94,46 @@ const SCREEN := 0.42
 ## How far onto a landform's gentler haze (SkyHaze PEAK_REACH): a tower is
 ## a landmark, standing in the far haze as the ranges do.
 const HAZE_FAR := 1.0
+## A life (s): resting, rising, standing, waning.
+const REST := 120.0
+const GROW := 300.0
+const HOLD := 840.0
+const WANE := 180.0
+const LIFE := REST+GROW+HOLD+WANE
+## The middle of its standing, where a held tower is kept.
+const MATURE := REST+GROW+HOLD*0.5
+## The home tower's life starts this long before its rising.
+const RISE_SOON := 10.0
+## Its rising's baked stages.
+const STAGES := 40
+## How fast (m/s) its bumps boil up the faster while it rises.
+const RISE_BOIL := 2.5
+## How far (m) its in-cloud amount recedes, whole waned: the drawn body
+## shrinks less (shaders/sky_tower.gdshader ERODE) but goes ragged and
+## see-through, so there is little to be in.
+const ERODE := 110.0
 
 var cells: RefCounted
 var currents: Node3D
-## Built towers by cell key: {node, shape, home, cell, material, age}.
+## Built towers by cell key: {node, shape, home, cell, material, age (its
+## fade in), pair (the stage its texture starts at), baked (stage: bake),
+## job (the pair being baked, or {}), ready (finished pairs by stage),
+## grown and wane (as shown), heap (its lobes as shown), lift}.
 var built := {}
 var _making := {}
 var _since := CHECK
+## The lives' clock (s), how many times faster they run, and an age every
+## tower is held at (below 0: none).
+var clock := 0.0
+var pace := 1.0
+var pinned := -1.0
 
 func _init() -> void:
 	name = "SkyTowers"
+	for argument: String in OS.get_cmdline_user_args():
+		if argument.begins_with("--tower-pace="): pace = maxf(float(argument.trim_prefix("--tower-pace=")),0.0)
+		elif argument.begins_with("--tower-age="): clock = float(argument.trim_prefix("--tower-age="))-phase(Vector2i.ZERO)
+		elif argument == "--still-towers": pinned = MATURE
 
 func _exit_tree() -> void:
 	clear()
@@ -107,12 +151,19 @@ func reset(new_cells: RefCounted, air: Node3D = null) -> void:
 ## engine's exit.
 func _notification(what: int) -> void:
 	if what != NOTIFICATION_PREDELETE: return
+	_wait_all()
+
+func _wait_all() -> void:
 	for key in _making: WorkerThreadPool.wait_for_task_completion(_making[key].task)
 	_making.clear()
+	for key in built:
+		var b: Dictionary = built[key]
+		if not b.job.is_empty():
+			WorkerThreadPool.wait_for_task_completion(b.job.task)
+			b.job = {}
 
 func clear() -> void:
-	for key in _making: WorkerThreadPool.wait_for_task_completion(_making[key].task)
-	_making.clear()
+	_wait_all()
 	for key in built:
 		(built[key].node as Node3D).queue_free()
 		if currents != null: currents.drop_thermals(_thermal_key(key))
@@ -127,6 +178,7 @@ func tower_count() -> int:
 func advance(delta: float, eye: Vector3) -> void:
 	if cells == null: return
 	position = cells.origin
+	clock += delta*pace
 	_since += delta
 	if _since >= CHECK:
 		_since = 0.0
@@ -143,29 +195,117 @@ func advance(delta: float, eye: Vector3) -> void:
 		_finish(m.cell,m.spot,m.out)
 		SkyCommits.spend("cumulus",Time.get_ticks_usec()-began)
 		break
+	for key in built: _live(built[key],delta)
 	for key in built:
 		var b: Dictionary = built[key]
 		if b.age >= FADE_IN: continue
 		b.age = minf(b.age+delta,FADE_IN)
 		(b.material as ShaderMaterial).set_shader_parameter("strength",smoothstep(0.0,1.0,b.age/FADE_IN))
 
-## Waits for every tower being made and stands it up, whole at once
-## (tests, probes, captures).
+## Waits for every tower being made and stands it up, whole at once and
+## held there, its life no longer running, unless already held at another
+## age (tests, probes, captures).
 func flush() -> void:
+	if pinned < 0.0: pinned = MATURE
 	for key in _making.keys():
 		var m: Dictionary = _making[key]
 		WorkerThreadPool.wait_for_task_completion(m.task)
 		_finish(m.cell,m.spot,m.out)
 	_making.clear()
 	for key in built:
-		built[key].age = FADE_IN
-		(built[key].material as ShaderMaterial).set_shader_parameter("strength",1.0)
+		var b: Dictionary = built[key]
+		b.age = FADE_IN
+		(b.material as ShaderMaterial).set_shader_parameter("strength",1.0)
+		if not b.job.is_empty():
+			WorkerThreadPool.wait_for_task_completion(b.job.task)
+			b.ready[b.job.k] = b.job.out
+			b.job = {}
+		var k := _stage(grown_of(age_of(b.cell)))
+		if b.pair != k:
+			var out := {}
+			_bake_pair(b.shape,k,b.baked,out)
+			b.ready[k] = out
+		_live(b,0.0,true)
+
+# --- Its life ----------------------------------------------------------------------
+
+## Where a cell's tower is in its life (s, 0 to LIFE).
+func age_of(cell: Vector2i) -> float:
+	if pinned >= 0.0: return pinned
+	return fposmod(clock+phase(cell),LIFE)
+
+## The cell's life's start against the clock: the home tower's comes to
+## its rising RISE_SOON in, the others' are seeded.
+static func phase(cell: Vector2i) -> float:
+	if cell == Vector2i.ZERO: return REST-RISE_SOON
+	return SkyPeaks.noise(cell,SALT+5)*LIFE
+
+## How far through its rising (0 to 1) and its waning (0 to 1) at an age.
+static func grown_of(age: float) -> float:
+	return clampf((age-REST)/GROW,0.0,1.0)
+
+static func wane_of(age: float) -> float:
+	return clampf((age-REST-GROW-HOLD)/WANE,0.0,1.0)
+
+## The pair of stages a grown amount shows, the first of the two.
+static func _stage(grown: float) -> int:
+	return clampi(floori(grown*STAGES),0,STAGES-1)
+
+## A frame of a tower's life: stand up the pair of stages its rising has
+## come to once baked, bake the next ahead, and set its morph, waning and
+## boil. A pair later than wanted (a new life starting) keeps it
+## hidden till the right one is baked. `now` stands up a ready pair
+## whatever the frame's share.
+func _live(b: Dictionary, delta: float, now := false) -> void:
+	var age := age_of(b.cell)
+	var grown := grown_of(age)
+	var k := _stage(grown)
+	if not b.job.is_empty() and WorkerThreadPool.is_task_completed(b.job.task):
+		WorkerThreadPool.wait_for_task_completion(b.job.task)
+		b.ready[b.job.k] = b.job.out
+		b.job = {}
+	var material: ShaderMaterial = b.material
+	if b.pair != k and b.ready.has(k) and (now or SkyCommits.open()):
+		var began := Time.get_ticks_usec()
+		var out: Dictionary = b.ready[k]
+		b.baked = {k:out.a,k+1:out.b}
+		material.set_shader_parameter("body",SkyTower.pair_texture(out.a,out.slices))
+		b.pair = k
+		SkyCommits.spend("cumulus",Time.get_ticks_usec()-began)
+	for stage: int in b.ready.keys():
+		if stage < k or (stage > k+1 and stage != 0): b.ready.erase(stage)
+	# Bake the pair wanted, else the next ahead while it rises.
+	if b.job.is_empty():
+		var want := -1
+		if b.pair != k and not b.ready.has(k): want = k
+		elif grown < 1.0 and k+1 < STAGES and not b.ready.has(k+1): want = k+1
+		elif grown >= 1.0 and wane_of(age) > 0.5 and not b.ready.has(0): want = 0
+		if want >= 0:
+			var out := {}
+			b.job = {"k":want,"out":out,"task":WorkerThreadPool.add_task(_bake_pair.bind(b.shape,want,b.baked.duplicate(),out),false,"Sky tower stage")}
+	var morph := clampf(grown*STAGES-b.pair,0.0,1.0)
+	b.grown = (b.pair+morph)/STAGES
+	b.wane = wane_of(age) if b.pair <= k else 1.0
+	b.heap = (b.shape as RefCounted).lobes_at(b.grown)
+	if grown > 0.0 and grown < 1.0: b.lift += RISE_BOIL*delta*pace
+	material.set_shader_parameter("morph",morph)
+	material.set_shader_parameter("wane",b.wane)
+	material.set_shader_parameter("lift",b.lift)
+	material.set_shader_parameter("top",minf(b.shape.front(b.grown),b.shape.top()))
+
+## Bakes a pair of stages (k and k+1) of a tower's rising, reusing those in
+## `have`, and their two-channel slices: {a, b, slices}. Safe on a worker.
+static func _bake_pair(shape: RefCounted, k: int, have: Dictionary, out: Dictionary) -> void:
+	out.a = have[k] if have.has(k) else shape.bake(float(k)/STAGES)
+	out.b = have[k+1] if have.has(k+1) else shape.bake(float(k+1)/STAGES)
+	out.slices = SkyTower.pair_slices(out.a,out.b)
 
 func _survey(home: Vector3) -> void:
 	var gone := []
 	for key in built:
 		if _flat(built[key].home,home) > FORGET: gone.append(key)
 	for key in gone:
+		if not built[key].job.is_empty(): WorkerThreadPool.wait_for_task_completion(built[key].job.task)
 		(built[key].node as Node3D).queue_free()
 		if currents != null: currents.drop_thermals(_thermal_key(key))
 		built.erase(key)
@@ -221,16 +361,19 @@ static func blocks(home: Vector3, margin := 0.0) -> bool:
 
 func _start(cell: Vector2i, s: Vector3) -> void:
 	var out := {}
-	var task := WorkerThreadPool.add_task(_make.bind(seed_of(cell),out),false,"Sky tower")
+	var k := _stage(grown_of(age_of(cell)))
+	var task := WorkerThreadPool.add_task(_make.bind(seed_of(cell),k,out),false,"Sky tower")
 	_making[_key(cell)] = {"task":task,"cell":cell,"spot":s,"out":out}
 
-static func _make(seed_value: int, out: Dictionary) -> void:
+## The tower and the pair of stages (k, k+1) its life has come to.
+static func _make(seed_value: int, k: int, out: Dictionary) -> void:
 	var shape: RefCounted = SkyTower.make(seed_value)
 	out.shape = shape
-	out.baked = shape.bake()
+	out.k = k
 	# The volume's slices, and the shared noise's the first time: only the
 	# textures are made on the main thread (`_finish`).
-	out.slices = SkyTower.slices_of(out.baked)
+	out.pair = {}
+	_bake_pair(shape,k,{},out.pair)
 	CumulusNoise.slices()
 
 ## The worker's tower, stood up: its box, drawn by the volume, and the
@@ -245,7 +388,8 @@ func _finish(cell: Vector2i, s: Vector3, out: Dictionary) -> void:
 	var material := ShaderMaterial.new()
 	material.shader = preload("res://shaders/sky_tower.gdshader")
 	material.render_priority = RENDER_PRIORITY
-	material.set_shader_parameter("body",SkyTower.texture_of(out.baked,out.get("slices",[] as Array[Image])))
+	var pair: Dictionary = out.pair
+	material.set_shader_parameter("body",SkyTower.pair_texture(pair.a,pair.slices))
 	material.set_shader_parameter("cauliflower",CumulusNoise.texture())
 	material.set_shader_parameter("box_mid",box.get_center())
 	material.set_shader_parameter("box_half",box.size*0.5)
@@ -266,11 +410,14 @@ func _finish(cell: Vector2i, s: Vector3, out: Dictionary) -> void:
 	volume.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	node.add_child(volume)
 	var key := _key(cell)
-	built[key] = {"node":node,"shape":shape,"home":s,"cell":cell,"material":material,"age":0.0}
+	built[key] = {"node":node,"shape":shape,"home":s,"cell":cell,"material":material,"age":0.0,
+		"pair":int(out.k),"baked":{int(out.k):pair.a,int(out.k)+1:pair.b},"job":{},"ready":{},
+		"grown":0.0,"wane":0.0,"heap":PackedVector4Array(),"lift":0.0}
+	_live(built[key],0.0)
 	_thermals(key)
 
 ## Thermals in the tower's heart, so flying in lifts the glide up through
-## it (SkyCurrents `add_thermal`).
+## it (SkyCurrents `add_thermal`); they rise all its life, before it does.
 func _thermals(key: String) -> void:
 	if currents == null or not currents.has_method("add_thermal"): return
 	var b: Dictionary = built[key]
@@ -293,15 +440,17 @@ func local_of(b: Dictionary, point: Vector3) -> Vector3:
 func global_of(b: Dictionary, local: Vector3) -> Vector3:
 	return position+(b.home as Vector3)+local
 
-## How deep (m) a global point is in the nearest built tower's smooth body:
-## below 0 outside, -INF with none near.
+## How deep (m) a global point is in the nearest built tower's smooth body
+## as it stands now (risen and waned so far): below 0 outside, -INF with
+## none near or standing.
 func depth(point: Vector3) -> float:
 	var deepest := -INF
 	for key in built:
 		var b: Dictionary = built[key]
+		if b.wane >= 1.0 or (b.heap as PackedVector4Array).is_empty(): continue
 		var local := local_of(b,point)
 		if not (b.shape.box as AABB).grow(EDGE).has_point(local): continue
-		deepest = maxf(deepest,b.shape.depth(local))
+		deepest = maxf(deepest,-b.shape._distance(local,b.heap)-b.wane*ERODE)
 	return deepest
 
 ## How far into a tower a global point is: 0 outside it (EDGE clear of
@@ -318,10 +467,13 @@ func screens(eye: Vector3) -> Array:
 	var out := []
 	for key in built:
 		var b: Dictionary = built[key]
+		if b.wane > 0.5: continue
 		var shape: RefCounted = b.shape
+		var high: float = minf(shape.top(),shape.front(b.grown))-shape.wide*0.15
+		if high <= SkyTower.SEA: continue
 		var mid: Vector2 = shape._axis(SkyTower.SEA+shape.tall*0.5)
 		var at := global_of(b,Vector3(mid.x,0.0,mid.y))
-		out.append([Vector4(at.x,at.z,shape.wide*SCREEN,1.0),Vector2(position.y+SkyTower.SEA,position.y+shape.top()-shape.wide*0.15)])
+		out.append([Vector4(at.x,at.z,shape.wide*SCREEN,1.0),Vector2(position.y+SkyTower.SEA,position.y+high)])
 	out.sort_custom(func(a: Array, c: Array) -> bool: return Vector2(a[0].x-eye.x,a[0].y-eye.z).length() < Vector2(c[0].x-eye.x,c[0].y-eye.z).length())
 	return out.slice(0,4)
 

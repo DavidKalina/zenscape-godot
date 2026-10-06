@@ -18,7 +18,10 @@ extends SceneTree
 ##     -- --no-title --out=/private/tmp/zs-cumulus
 ## Options: --out=DIR, --noon=HOUR, --golden=HOUR (by default the clock's
 ## noon and the hour the setting sun stands GOLDEN_SUN high),
-## --only=approach,inside,... Each still also prints the frame's time with
+## --only=approach,inside,...; --rising=0.1,0.4,... and --waning=0.3,...
+## take, instead of the shots, a still from out past the plate at each point
+## of the tower's rising and waning (SkyTowers `pinned`), at noon and at
+## golden hour. Each still also prints the frame's time with
 ## the towers drawn and hidden (vsync off), a rough measure of their cost.
 const GOLDEN_SUN := 0.1
 var scene: Node3D
@@ -27,6 +30,8 @@ var out := "/private/tmp/zs-cumulus"
 var noon := WorldClock.hour_for_phase(0.5)
 var golden := WorldClock.hour_for_phase(0.75-asin(clampf(GOLDEN_SUN/WorldClock.elevation_for_phase(0.5),-1.0,1.0))/TAU)
 var only: Array = []
+var rising: Array = []
+var waning: Array = []
 
 func _initialize() -> void:
 	run.call_deferred()
@@ -48,6 +53,8 @@ func run() -> void:
 		elif argument.begins_with("--noon="): noon = float(argument.trim_prefix("--noon="))
 		elif argument.begins_with("--golden="): golden = float(argument.trim_prefix("--golden="))
 		elif argument.begins_with("--only="): only = Array(argument.trim_prefix("--only=").split(","))
+		elif argument.begins_with("--rising="): rising = Array(argument.trim_prefix("--rising=").split(",")).map(func(v: String) -> float: return float(v))
+		elif argument.begins_with("--waning="): waning = Array(argument.trim_prefix("--waning=").split(",")).map(func(v: String) -> float: return float(v))
 	DirAccess.make_dir_recursive_absolute(out)
 	create_timer(600).timeout.connect(func() -> void: push_error("sky cumulus capture timed out"); quit(2))
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
@@ -89,6 +96,11 @@ func run() -> void:
 	var shape: RefCounted = b.shape
 	print("CUMULUS tower at %s, %.0f m tall, %.0f m wide, %d lobes, box %s, %d towers built" % [b.home,shape.tall,shape.wide,shape.lobes.size(),shape.box.size,islands.towers.tower_count()])
 	var shots := _shots(islands.towers,b)
+	if not rising.is_empty() or not waning.is_empty():
+		await _life(islands.towers,shots[0])
+		print("CUMULUS done")
+		quit(0)
+		return
 	for hour: float in [noon,golden]:
 		var tag := "noon" if hour == noon else "golden"
 		for shot: Dictionary in shots:
@@ -133,6 +145,25 @@ func _shots(towers: Node3D, b: Dictionary) -> Array:
 	shots.append({"label":"burst","eye":far_side-toward*6.0,"look":far_side+toward*200.0+Vector3.DOWN*10.0})
 	shots.append({"label":"glider","eye":near_side-toward*60.0,"look":heart,"chase":true,"golden":false})
 	return shots
+
+## The tower held at points of its rising and waning, seen from out past
+## the plate (`shot`, nearer than the distant still, the whole column in view).
+func _life(towers: Node3D, shot: Dictionary) -> void:
+	var look: Vector3 = shot.look
+	var at: Vector3 = shot.eye
+	var view := {"label":"life","eye":look+(at-look).normalized()*900.0+Vector3.UP*20.0,"look":look+Vector3.UP*60.0}
+	var points := []
+	for g: float in rising: points.append(["rising-%03d" % roundi(g*100.0),towers.REST+towers.GROW*g])
+	for w: float in waning: points.append(["waning-%03d" % roundi(w*100.0),towers.REST+towers.GROW+towers.HOLD+towers.WANE*w])
+	var first := true
+	for hour: float in [noon,golden]:
+		for p: Array in points:
+			towers.pinned = p[1]
+			towers.flush()
+			# The first held longer: the ranges are still coming in.
+			await _hold(view,hour,240 if first else 40)
+			first = false
+			await still("%s-%s" % [p[0],"noon" if hour == noon else "golden"])
 
 ## The mean frame time (ms) over `count` frames, the view held.
 func _frame_ms(count: int) -> float:

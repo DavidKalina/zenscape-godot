@@ -684,6 +684,11 @@ func _finish(cell: Vector2i, s: Vector4, out: Dictionary) -> void:
 	_fade_range(node,swap_of(key))
 	if gorge_of(cell): _jet(key)
 
+## Where the ranges' faces draw among the see-through things while they
+## fade: before the cloud sea's (scripts/sky_sea.gd RENDER_PRIORITY) and
+## the towering cumulus' (scripts/sky_towers.gd).
+const FADE_PRIORITY := -3
+
 ## The plate's ground material, cut at the cloud sea's top (reference_
 ## surface `sea_cut`): one copy a sky, made when the first range stands.
 func _ground() -> Material:
@@ -703,6 +708,11 @@ func _ground() -> Material:
 	m.set_shader_parameter("facet_soft",FACET_SOFT)
 	# Bare basalt: the plate's grass field and geology stay off it.
 	m.set_shader_parameter("peak_rock",true)
+	# Fading (a swap with its skyline, its near and far faces crossfading)
+	# it draws with the see-through things: first of them, so the cloud
+	# sea and the towering cumulus, which stand no depth, draw over it, not
+	# it over them (it would show through a tower in front of it).
+	m.render_priority = FADE_PRIORITY
 	_material = m
 	return _material
 

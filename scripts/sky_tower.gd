@@ -15,6 +15,13 @@ extends RefCounted
 ## its own noise on top. Here, the same body says how deep a point is in the
 ## cloud (`depth`), for the vapour, the muffled wind and the tests.
 ##
+## It rises (`lobes_at`): a front climbs from under the sea's top to the
+## crown, and each lobe swells upward off its own base, its top on the
+## front, until the front has passed over it, so the foot heaps up out of
+## the sea first and the column climbs out of it turret by turret, a round
+## head always on top. `grown` is how far through its rising (0 to 1); the
+## towers (scripts/sky_towers.gd) bake it in stages.
+##
 ## A seed always makes the same tower.
 
 ## The cloud sea's top in the tower's frame (scripts/sky_flight.gd SEA_Y).
@@ -31,6 +38,10 @@ const CELLS := 40
 const CLAMP := 160.0
 ## The smooth union's reach, a share of the trunk's width.
 const BLEND := 0.07
+## The rising front starts UNDER metres below the sea's top, and eases
+## out by RISE_EASE (quick off the sea, slowing as it tops out).
+const UNDER := 10.0
+const RISE_EASE := 1.4
 
 var seed := 0
 var tall := 0.0
@@ -42,6 +53,8 @@ var lobes := PackedVector4Array()
 var box := AABB()
 ## The smooth union's reach (m).
 var blend := 0.0
+## The highest lobe's top, the tower's frame: where the front stops.
+var crest := 0.0
 
 static func make(seed_value: int) -> RefCounted:
 	var t := new()
@@ -117,6 +130,8 @@ func _grow() -> void:
 			var y := SEA+tall*lerpf(from,to,n/2.0)
 			var at := _axis(y)+Vector2(cos(f),sin(f))*wide*lerpf(0.36,0.3,n/2.0)
 			lobes.append(Vector4(at.x,y,at.y,tr*lerpf(1.0,0.8,n/2.0)))
+	crest = SEA
+	for l in lobes: crest = maxf(crest,l.y+l.w)
 	var lo := Vector3(INF,INF,INF)
 	var hi := -lo
 	for l in lobes:
@@ -132,12 +147,32 @@ func _grow() -> void:
 func _axis(y: float) -> Vector2:
 	return lean*clampf((y-SEA)/tall,0.0,1.0)
 
+## The rising front's height (the tower's frame), `grown` through its rising.
+func front(grown: float) -> float:
+	var eased := 1.0-pow(1.0-clampf(grown,0.0,1.0),RISE_EASE)
+	return lerpf(SEA-UNDER,crest,eased)
+
+## The lobes as they stand `grown` through its rising: each swells upward
+## off its own base (its bottom stays put), its top on the front; those the
+## front has not reached are left out.
+func lobes_at(grown: float) -> PackedVector4Array:
+	if grown >= 1.0: return lobes
+	var at := front(grown)
+	var out := PackedVector4Array()
+	for l in lobes:
+		var s := clampf((at-(l.y-l.w))/(2.0*l.w),0.0,1.0)
+		if s > 0.0: out.append(Vector4(l.x,l.y-l.w*(1.0-s),l.z,l.w*s))
+	return out
+
 ## The smooth body's signed distance at a point in the tower's frame (m):
-## below 0 inside.
-func distance(p: Vector3) -> float:
+## below 0 inside; `grown` through its rising.
+func distance(p: Vector3, grown := 1.0) -> float:
+	return _distance(p,lobes_at(grown))
+
+func _distance(p: Vector3, heap: PackedVector4Array) -> float:
 	var d := CLAMP
 	var k := blend
-	for l in lobes:
+	for l in heap:
 		var e := Vector3(p.x-l.x,p.y-l.y,p.z-l.z).length()-l.w
 		# Polynomial smooth minimum.
 		var h := clampf(0.5+0.5*(d-e)/k,0.0,1.0)
@@ -145,13 +180,15 @@ func distance(p: Vector3) -> float:
 	return d
 
 ## How deep (m) a point in the tower's frame is inside the body: below 0
-## outside it.
-func depth(p: Vector3) -> float:
-	return -distance(p)
+## outside it; `grown` through its rising.
+func depth(p: Vector3, grown := 1.0) -> float:
+	return -distance(p,grown)
 
-## The body's distances on a grid over `box`: {size: Vector3i, data:
-## PackedFloat32Array, x fastest, then y, then z}, clamped to ±CLAMP.
-func bake() -> Dictionary:
+## The body's distances on a grid over `box`, `grown` through its rising:
+## {size: Vector3i, data: PackedFloat32Array, x fastest, then y, then z},
+## clamped to ±CLAMP.
+func bake(grown := 1.0) -> Dictionary:
+	var heap := lobes_at(grown)
 	var longest := maxf(box.size.x,maxf(box.size.y,box.size.z))
 	var cell := longest/CELLS
 	var n := Vector3i(maxi(4,ceili(box.size.x/cell)),maxi(4,ceili(box.size.y/cell)),maxi(4,ceili(box.size.z/cell)))
@@ -162,25 +199,31 @@ func bake() -> Dictionary:
 		for y in range(n.y):
 			for x in range(n.x):
 				var p := box.position+Vector3((x+0.5)/n.x*box.size.x,(y+0.5)/n.y*box.size.y,(z+0.5)/n.z*box.size.z)
-				data[i] = clampf(distance(p),-CLAMP,CLAMP)
+				data[i] = clampf(_distance(p,heap),-CLAMP,CLAMP)
 				i += 1
 	return {"size":n,"data":data}
 
-## The bake as a float 3D texture for the shader, from its slices
-## (`slices_of`, made on a worker if given).
-static func texture_of(baked: Dictionary, slices: Array[Image] = []) -> ImageTexture3D:
-	var n: Vector3i = baked.size
-	if slices.is_empty(): slices = slices_of(baked)
-	var texture := ImageTexture3D.new()
-	texture.create(Image.FORMAT_RF,n.x,n.y,n.z,false,slices)
-	return texture
-
-## The bake's slices as images, one per depth: plain data, safe on a worker.
-static func slices_of(baked: Dictionary) -> Array[Image]:
-	var n: Vector3i = baked.size
-	var data: PackedFloat32Array = baked.data
+## Two bakes of one tower as a two-channel float 3D texture's slices (red
+## the first, green the second), so the shader morphs between them with
+## one read: plain data, safe on a worker.
+static func pair_slices(a: Dictionary, b: Dictionary) -> Array[Image]:
+	var n: Vector3i = a.size
+	var da: PackedFloat32Array = a.data
+	var db: PackedFloat32Array = b.data
 	var slices: Array[Image] = []
 	var slice := n.x*n.y
+	var both := PackedFloat32Array()
+	both.resize(slice*2)
 	for z in range(n.z):
-		slices.append(Image.create_from_data(n.x,n.y,false,Image.FORMAT_RF,data.slice(z*slice,(z+1)*slice).to_byte_array()))
+		var from := z*slice
+		for i in range(slice):
+			both[i*2] = da[from+i]
+			both[i*2+1] = db[from+i]
+		slices.append(Image.create_from_data(n.x,n.y,false,Image.FORMAT_RGF,both.to_byte_array()))
 	return slices
+
+static func pair_texture(baked: Dictionary, slices: Array[Image]) -> ImageTexture3D:
+	var n: Vector3i = baked.size
+	var texture := ImageTexture3D.new()
+	texture.create(Image.FORMAT_RGF,n.x,n.y,n.z,false,slices)
+	return texture
