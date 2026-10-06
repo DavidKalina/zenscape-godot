@@ -184,6 +184,11 @@ uniform float look_scale = 1.0;
 // A sky peak's rock is lit this far toward its mesh's own (broader) normal
 // from each small face's, so its facets read as big planes, not the grid.
 uniform float facet_soft : hint_range(0.0, 1.0) = 0.0;
+// A sky peak's bare rock (scripts/sky_peaks.gd `_ground`): its own basalt
+// (scripts/sky_peak.gd `_tone`), never the plate's ground painted over it:
+// no grass field pulled onto a face that reads green, and no plate geology
+// (terrain_geology's grey rock above its height, its damp green stains).
+uniform bool peak_rock = false;
 // A sky peak's snow (shaders/sky_season.gdshaderinc): the world's snow
 // (linear, scripts/sky_peaks.gd `_snow`), laid on each face whose line the
 // season has brought down far enough (UV.x, m; its shade packed in UV2.x).
@@ -638,7 +643,7 @@ void fragment() {
 	if (ground) {
 		vec3 facet = normalize(cross(dFdx(world_position), dFdy(world_position)));
 		if (dot(facet, world_normal) < 0.0) facet = -facet;
-		ground_grass = zs_ground_grassness(base_color.rgb * COLOR.rgb);
+		ground_grass = peak_rock ? 0.0 : zs_ground_grassness(base_color.rgb * COLOR.rgb);
 		face_normal = facet;
 		light_normal = normalize(mix(facet, normalize(world_normal), max(ground_soft * ground_grass, facet_soft)));
 		NORMAL = normalize((VIEW_MATRIX * vec4(light_normal, 0.0)).xyz);
@@ -705,7 +710,7 @@ void fragment() {
 		tint = mix(ground_under * grass_root_blend.x, tint, smoothstep(0.0, grass_root_blend.y, grass_along));
 		tint *= 1.0 + ZS_GRASS_WAVE_SHEEN * grass_bow * grass_along;
 	}
-	if (terrain_growth && (rock_treatment > 0 || inland_rock_amount > 0.0 || desert_enabled)) tint = terrain_geology(tint,look_position,face_normal);
+	if (terrain_growth && !peak_rock && (rock_treatment > 0 || inland_rock_amount > 0.0 || desert_enabled)) tint = terrain_geology(tint,look_position,face_normal);
 	vec3 before_autumn = tint;
 	if (stand_autumn >= 0.0) zs_autumn_stand_paint(tint, plant_root, zs_autumn * leaf_season.x, stand_autumn);
 	else zs_autumn_paint(tint, look_position, zs_autumn * leaf_season.x);
