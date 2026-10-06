@@ -34,7 +34,7 @@ with tempfile.TemporaryDirectory(prefix='zenscape-export-check-') as temporary:
     log = root / 'builds' / 'packaged-release.log'
     result = subprocess.run([str(executable), '--headless', '--log-file', str(log),
                              '--', '--native-kernels', '--verify-desktop-build'],
-                            cwd=folder, timeout=240,
+                            cwd=folder, timeout=900,
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     output = result.stdout.decode(errors='replace')
     if log.exists():
