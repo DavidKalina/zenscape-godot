@@ -645,6 +645,40 @@ func _end_hold() -> void:
 
 func save_places() -> bool:
 	if busy or holding or not initialized: return false
+	var payload := _payload()
+	_finish_write()
+	return _write(payload,primary.places_path)
+
+## As `save_places`, but only what the save holds is gathered here (the
+## world's state, its land's document, the sky's islands); it is turned to
+## JSON and written on a worker, where in a sky claim's frame it took 6 to
+## 10 ms of the main thread (SkyIslands `claim`). A save meanwhile waits
+## for it. Returns false when no save could start.
+func save_places_soon() -> bool:
+	if busy or holding or not initialized: return false
+	var payload := _payload()
+	# The containers the main thread may change while the worker reads them.
+	payload.slots = slots.duplicate()
+	_finish_write()
+	var path: String = primary.places_path
+	_writing = WorkerThreadPool.add_task(func() -> void: _written = _write(payload,path),false,"Places save")
+	return true
+
+## Waits for a save writing on a worker (`save_places_soon`), if any.
+## Returns whether the last one written succeeded.
+func _finish_write() -> bool:
+	if _writing >= 0:
+		WorkerThreadPool.wait_for_task_completion(_writing)
+		_writing = -1
+	return _written
+
+var _writing := -1
+var _written := true
+
+func _exit_tree() -> void:
+	_finish_write()
+
+func _payload() -> Dictionary:
 	scene._chunk_editor.finish_stroke()
 	scene.flush_world_play()
 	var state := NativeGardenStore.capture(scene)
@@ -655,14 +689,18 @@ func save_places() -> bool:
 	var islands := _sky()
 	if islands != null: sky_state = islands.save_state()
 	if not sky_state.is_empty(): payload["islands"] = sky_state
-	var temporary: String = primary.places_path+".tmp"
+	return payload
+
+## Writes `payload` as the places file at `path` (any thread).
+static func _write(payload: Dictionary, path: String) -> bool:
+	var temporary: String = path+".tmp"
 	var file := FileAccess.open(temporary,FileAccess.WRITE)
 	if file==null: return false
 	file.store_string(JSON.stringify(payload,"",true,true))
 	file.flush()
 	var result := file.get_error()
 	file.close()
-	return result==OK and DirAccess.rename_absolute(temporary,primary.places_path)==OK
+	return result==OK and DirAccess.rename_absolute(temporary,path)==OK
 
 ## The place a plain launch set aside before the plain replaced it.
 func previous_path() -> String:
@@ -752,6 +790,7 @@ func _settled() -> void:
 	if scene.has_method("resume_creation"): scene.resume_creation()
 
 func _read_saved(path := "") -> Dictionary:
+	_finish_write()
 	var source: String = primary.places_path if path.is_empty() else path
 	if not FileAccess.file_exists(source): return {}
 	var file := FileAccess.open(source,FileAccess.READ)

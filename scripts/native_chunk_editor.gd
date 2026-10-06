@@ -1563,6 +1563,19 @@ func _shore_mesh_for(source: NativeTerrainData, placing: Transform3D) -> ArrayMe
 var _shore_fitted_key: Array = []
 var _shore_fitted: ArrayMesh
 
+## Takes `mesh` as the shore wall fitted to the land as it stands: one
+## made for the same land off the main thread, by the same fitting (a sky
+## chunk's earth sides, baked on its worker: SkyIslands `claim`), so the
+## refresh that follows does not fit it again (4 to 6 ms).
+func adopt_shore(mesh: ArrayMesh) -> void:
+	if mesh == null or data.outline.is_empty(): return
+	var placing := terrain.global_transform.affine_inverse()*_skirt.global_transform
+	var tops := PackedFloat32Array()
+	var edges := data.shore_edges
+	for k in range(0,edges.size(),3): tops.append(data.heights[edges[k]])
+	_shore_fitted = mesh
+	_shore_fitted_key = [data,data.outline,tops,_skirt_mesh,placing]
+
 ## The land's edge, metres from the middle: the terrain's rim points stand on
 ## it, and the earth sides' top ring is laid along it.
 const SIDES_HALF := Plate.HALF

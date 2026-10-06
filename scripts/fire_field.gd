@@ -142,6 +142,28 @@ static func _blank(count: int) -> PackedFloat32Array:
 func rebuild() -> void:
 	if _data == null:
 		return
+	_rebuild_begin()
+	_rebuild_cells(fuel.size())
+
+## As `rebuild`, but while nothing burns its cells are re-seeded
+## REBUILD_USEC of a frame at a time by `advance` (all at once when a fire is alight or
+## is lit meanwhile). The whole field is 10 to 15 ms of GDScript: in the
+## frame a sky chunk became the plate (SkyIslands `claim`) it was most of
+## the frame, and again as its water map came in.
+func rebuild_soon() -> void:
+	if _data == null:
+		return
+	if active():
+		rebuild()
+		return
+	_rebuild_begin()
+
+## Microseconds of a frame a rebuild spread over frames takes.
+const REBUILD_USEC := 1500
+
+## The canopy and each record's cell, read again; the cells' fuel and water
+## from `_rebuild_next` on are re-seeded by `_rebuild_cells`.
+func _rebuild_begin() -> void:
 	_revision = _data.objects_revision
 	_canopy.fill(0.0)
 	_object_cell.clear()
@@ -153,7 +175,22 @@ func rebuild() -> void:
 		var group := FireField.group_of(item.asset)
 		if index >= 0 and CANOPY_FUEL.has(group):
 			_canopy[index] = minf(1.4,_canopy[index]+CANOPY_FUEL[group]*clampf(item.scale,0.2,2.0))
-	for index in range(fuel.size()):
+	_rebuild_next = 0
+
+## The next cell a rebuild re-seeds, or -1 when none is under way.
+var _rebuild_next := -1
+
+## Re-seeds up to `count` more cells, or until `usec` have passed (0: no
+## limit); true once the rebuild is done.
+func _rebuild_cells(count: int, usec := 0) -> bool:
+	if _rebuild_next < 0:
+		return true
+	var began := Time.get_ticks_usec()
+	var last := mini(fuel.size(),_rebuild_next+count)
+	for index in range(_rebuild_next,last):
+		if usec > 0 and index%64 == 0 and Time.get_ticks_usec()-began >= usec:
+			last = index
+			break
 		var center := _center2(index)
 		var wet := false
 		# On the plane: the land's height under each of the cells is never
@@ -169,6 +206,12 @@ func rebuild() -> void:
 			fuel[index] = 0.0
 		else:
 			fuel[index] = clampf(maxf(_data.grass[index],maxf(_data.meadow[index],_data.blades[index])),0.0,1.0)+_canopy[index]
+	_rebuild_next = last if last < fuel.size() else -1
+	return _rebuild_next < 0
+
+## True while a rebuild spread over frames is still under way.
+func rebuilding() -> bool:
+	return _rebuild_next >= 0
 
 # ------------------------------------------------------------------ queries
 
@@ -238,6 +281,7 @@ func _remember_ignition() -> void:
 func ignite(position: Vector3, radius := 0.6, strength := 1.0) -> bool:
 	if _data == null or radius <= 0.0 or strength <= 0.0:
 		return false
+	_rebuild_cells(fuel.size())
 	var gate := clampf(_suppression(_conditions())*2.0,0.0,1.0)
 	if gate <= 0.0:
 		return false
@@ -276,7 +320,11 @@ func advance(delta: float, paused := false) -> void:
 	if _data == null or paused or delta <= 0.0:
 		return
 	if _data.objects_revision != _revision:
-		rebuild()
+		rebuild_soon()
+	if _rebuild_next >= 0:
+		# A fire alight takes the whole field now; a quiet one a slice a frame.
+		if active(): _rebuild_cells(fuel.size())
+		elif not _rebuild_cells(fuel.size(),REBUILD_USEC): return
 	_clock += delta
 	var steps := 0
 	while _clock >= TICK and steps < 8:
@@ -714,10 +762,12 @@ func restore(value: Dictionary = {}) -> void:
 	_ignition_pending = false
 	history_before_fire = {}
 	_rng.seed = _seed
-	rebuild()
 	if value.is_empty() or not FireField.valid(value):
+		# Nothing alight: the field re-seeds a slice a frame (`rebuild_soon`).
+		rebuild_soon()
 		state_restored.emit()
 		return
+	rebuild()
 	for item: Dictionary in value.get("charred",[]):
 		object_char[int(item.id)] = float(item["char"])
 	var cells: PackedInt32Array = value.cells.hex_decode().to_int32_array()

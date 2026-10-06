@@ -16,6 +16,9 @@ static var _used := 0
 ## While set, every commit is kept: [process frame, what, usec].
 static var recording := false
 static var log: Array = []
+## While `recording`, the steps timed for the record only, never spent
+## (a claim's slices, tools/profile_claim.gd): [process frame, what, usec].
+static var trace: Array = []
 
 ## True while this frame may stand one more part up.
 static func open() -> bool:
@@ -28,6 +31,10 @@ static func spend(what: String, usec: int) -> void:
 	# Never zero, so a frame's first commit closes it for the next heavy one.
 	_used += maxi(usec,1)
 	if recording: log.append([_frame,what,usec])
+
+## A step timed for the record only (`trace`), while `recording`.
+static func note(what: String, usec: int) -> void:
+	if recording: trace.append([Engine.get_process_frames(),what,usec])
 
 ## This frame's spend so far (usec).
 static func used() -> int:

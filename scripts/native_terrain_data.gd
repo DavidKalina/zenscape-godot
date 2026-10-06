@@ -1334,8 +1334,9 @@ func _snapshot() -> Dictionary:
 
 func _restore(state: Dictionary) -> void:
 	tunnels.assign(state.get("tunnels",[]).duplicate(true))
-	# A state from before outlines is the square.
-	var mask := _island_mask(state.get("outline",PackedByteArray()))
+	# A state from before outlines is the square. One adopted from a land on
+	# the same triangulation (`adopt`) was masked there.
+	var mask: PackedByteArray = state.outline if _adopting else _island_mask(state.get("outline",PackedByteArray()))
 	if mask != outline:
 		outline = mask
 		_outline_changed()
@@ -1358,7 +1359,29 @@ func _restore(state: Dictionary) -> void:
 	ponds.assign(state.ponds.duplicate(true))
 	streams.assign(state.get("streams",[]).duplicate(true))
 	next_id = state.next_id
-	state_restored.emit(state)
+	state_restored.emit(_announced if _adopting else state)
+
+## Takes `land`'s state as its own: a land worked out on another
+## NativeTerrainData on the same triangulation, off the main thread (a sky
+## chunk's plain or a built island's document, baked on a worker as it
+## turned up: SkyIslands `claim`), so the plate becomes it without forming
+## it or reading its document again (20 to 30 ms on the main thread). The
+## state as `_restore` takes it (`_snapshot`, or the state its document
+## loaded as, kept from its `state_restored`), its outline as that land
+## masked it; `announced` is what `state_restored` tells: none for a new
+## plain (as `reset_flat` tells it), the loaded state for a document.
+func adopt(state: Dictionary, announced: Dictionary) -> void:
+	_adopting = true
+	_announced = announced
+	_restore(state)
+	_adopting = false
+	_announced = {}
+	_undo.clear()
+	_redo.clear()
+	_before = {}
+
+var _adopting := false
+var _announced := {}
 
 func meadow_side() -> int:
 	return MEADOW_CELLS

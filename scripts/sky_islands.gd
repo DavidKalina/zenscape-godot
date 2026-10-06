@@ -69,6 +69,7 @@ const SkyHomes = preload("res://scripts/sky_homes.gd")
 ## The world's seed, bounds, ring and edge (scripts/sky_world.gd).
 const SkyWorld = preload("res://scripts/sky_world.gd")
 const SkyCommits = preload("res://scripts/sky_commits.gd")
+const SkyAmbientLife = preload("res://scripts/sky_ambient_life.gd")
 const Samples = preload("res://scripts/garden_instance_samples.gd")
 const Snapshot = preload("res://scripts/native_terrain_snapshot.gd")
 const SurfaceSamples = preload("res://scripts/native_surface_samples.gd")
@@ -144,6 +145,9 @@ var origin := Vector3.ZERO
 var plate_seed := -1
 ## True while a claim is under way.
 var claiming := false
+## The other islands' life, seen from the air (scripts/sky_ambient_life.gd);
+## --no-sky-life leaves them without.
+var ambient: Node3D
 ## True once a glide has shown the islands: made ahead as the world starts
 ## (`make_ahead`), they stay out of the build view till then, as before.
 var _flown := false
@@ -190,6 +194,11 @@ func setup(owner_scene: Node3D) -> void:
 	isles.islets = islets
 	add_child(isles)
 	skip.append(isles)
+	if not "--no-sky-life" in args:
+		ambient = SkyAmbientLife.new()
+		ambient.setup(self)
+		add_child(ambient)
+		skip.append(ambient)
 	show_air(false)
 
 ## Sets an island at every fixed slot and every island built, except the
@@ -238,6 +247,7 @@ func clear() -> void:
 	if peaks != null: peaks.clear()
 	if towers != null: towers.clear()
 	if isles != null: isles.clear()
+	if ambient != null: ambient.clear()
 
 func _add(home: Vector3, at: Vector3, rise: Vector3, maps: Dictionary = {}) -> Node3D:
 	var island := Node3D.new()
@@ -291,6 +301,7 @@ func advance(delta: float, eye: Vector3, heading: float, parted: float) -> void:
 	keep.sort_custom(func(a: Vector4, b: Vector4) -> bool: return Vector2(a.x-eye.x,a.y-eye.z).length() < Vector2(b.x-eye.x,b.y-eye.z).length())
 	clouds.keep_off(keep)
 	clouds.follow(eye)
+	if ambient != null: ambient.advance(delta,eye)
 
 ## Puts a copy at a home spot, rising from below, with a thermal beside it
 ## unless it is one of the fixed slots (those have theirs).
@@ -411,6 +422,11 @@ func _bake(island: Node3D, chunk_seed: int, document: Dictionary = {}, maps: Dic
 	if garden != null and not garden._meshes.is_empty():
 		catalog = {"parts":garden._catalog_parts.duplicate(true),"poses":garden._catalog_poses.duplicate(true),"tints":garden._tints.duplicate(true)}
 	var source_maps := [editor._original_ground_map,editor._original_stream_map]
+	# Where its life goes from the air (scripts/sky_ambient_life.gd `layout`).
+	var life := {}
+	if ambient != null and garden != null and not garden._meshes.is_empty():
+		var parts: Dictionary = SkyIslets.catalog(garden)
+		life = {"roles":parts.roles,"boxes":(parts.get("data",{}) as Dictionary).get("boxes",{}),"plate":editor.terrain.global_transform,"place":garden.global_transform}
 	var out := {}
 	var task := WorkerThreadPool.add_task(func() -> void:
 		var plain := NativeTerrainData.new()
@@ -418,7 +434,18 @@ func _bake(island: Node3D, chunk_seed: int, document: Dictionary = {}, maps: Dic
 		plain._ground_tint = tint
 		plain.world_offset = offset
 		plain.setup(mesh,arrays)
-		if document.is_empty() or not plain.load_document(document): Genesis.shape(plain,chunk_seed)
+		# What the plate takes as its own if this island is claimed (`claim`,
+		# NativeTerrainData `adopt`): the state its document loaded as, or its
+		# fresh plain's.
+		var loaded := {}
+		if not document.is_empty():
+			plain.state_restored.connect(func(state: Dictionary) -> void: loaded.merge(state))
+			if not plain.load_document(document): loaded.clear()
+		if loaded.is_empty():
+			Genesis.shape(plain,chunk_seed)
+			out.claim = {"state":plain._snapshot(),"announced":{},"fresh":true}
+		else:
+			out.claim = {"state":loaded,"announced":loaded,"fresh":false}
 		out.plain = plain
 		# Only the island's faces (scripts/island_outline.gd); its shore wall
 		# comes with the earth sides.
@@ -431,7 +458,8 @@ func _bake(island: Node3D, chunk_seed: int, document: Dictionary = {}, maps: Dic
 		# The island left at a claim takes the plate's own maps (`plate_maps`):
 		# they are its land's, and the claim waits on its bake.
 		out.maps = maps if not maps.is_empty() else far_maps(plain,source_maps[0],source_maps[1])
-		out.maps_usec = Time.get_ticks_usec()-began)
+		out.maps_usec = Time.get_ticks_usec()-began
+		if not life.is_empty(): out.life = SkyAmbientLife.layout(plain,out.get("flora",{}),life.roles,life.boxes,life.plate,life.place))
 	while not WorkerThreadPool.is_task_completed(task) or not SkyCommits.open(): await get_tree().process_frame
 	WorkerThreadPool.wait_for_task_completion(task)
 	var began := Time.get_ticks_usec()
@@ -439,6 +467,8 @@ func _bake(island: Node3D, chunk_seed: int, document: Dictionary = {}, maps: Dic
 	var index := _copies.find(island)
 	if index < 0: return
 	lands[index] = out.plain
+	island.set_meta("claim",out.claim)
+	if out.has("life"): island.set_meta("life",out.life)
 	_stand(island,out)
 	SkyCommits.spend("island",Time.get_ticks_usec()-began)
 
@@ -633,17 +663,25 @@ func _over_land(land: NativeTerrainData, p: Vector2) -> bool:
 	return land.nearest_land(at,0.0,CLAIM_MARGIN) != Vector2.INF
 
 ## Makes copy `index` the plate. The island left is kept, and its look baked
-## at the plate's spot; the plate's own parts hide while it is formed again
-## as the copy's land; then every copy moves by the shift, which is returned
-## to add to anything that flies. The world is saved after.
+## at the plate's spot; the plate's own parts hide while it becomes the
+## copy's land; then every copy moves by the shift, which is returned to add
+## to anything that flies. The world is saved after.
+##
+## No frame of it holds the main thread for long (tools/profile_claim.gd,
+## tests/test_sky_streaming_budget.gd): the copy's land was worked out on
+## its worker as it turned up (`_bake`: its plain formed, or its document
+## read), so the plate takes it as it stands (NativeTerrainData `adopt`)
+## rather than forming it or reading the document again here (20 to 30 ms);
+## the plate is drawn again a slice a frame (NativeChunkEditor `refresh`),
+## while the island left shows where it stood and the copy where it stands;
+## the swap itself (the copy let go, the plate shown, the world shifted) has
+## a frame of its own, as do the habitat's first slice and the save, whose
+## file is written on a worker.
 func claim(index: int) -> Vector3:
 	claiming = true
 	var began := Time.get_ticks_usec()
 	var target := homes[index]
-	# The chunk's plain as its worker baked it: the plate is formed as the
-	# same plain, so its outline is taken as it stands, and its shore read
-	# back (NativeTerrainData `_known_shore`), not worked out again here.
-	var baked: NativeTerrainData = lands[index]
+	var taken: Dictionary = _copies[index].get_meta("claim",{})
 	var places: Node = scene.get("places")
 	if places != null: places.busy = true
 	var left := -origin
@@ -653,30 +691,74 @@ func claim(index: int) -> Vector3:
 	var behind := _add(left,Vector3.ZERO,Vector3.ZERO,plate_maps())
 	SkyCommits.spend("claim:leave",Time.get_ticks_usec()-began)
 	while _copies.has(behind) and lands[_copies.find(behind)] == null: await get_tree().process_frame
+	# Its own frame: the island left has just stood up in this one.
+	await get_tree().process_frame
 	began = Time.get_ticks_usec()
 	var hidden := _hide_plate()
+	# The plate's life hides with it: the island left takes it on, from where
+	# its gulls were flying (scripts/sky_ambient_life.gd).
+	if ambient != null and _copies.has(behind): ambient.leave(_copies.find(behind))
 	SkyCommits.spend("claim:hide",Time.get_ticks_usec()-began)
+	await get_tree().process_frame
+	began = Time.get_ticks_usec()
 	var entry: Dictionary = built_islands.get(_key(target),{})
-	if entry.is_empty() or not editor.data.load_document(entry.document):
-		var outline := PackedByteArray()
-		if entry.is_empty() and baked != null and not baked.outline.is_empty():
-			outline = baked.outline
-			baked._keep_shore()
-		await Genesis.form(editor,Genesis.world(seed_of(target)),true,Vector2.ZERO,true,-1.0,outline)
+	editor.finish_stroke()
+	editor.selected_object_id = -1
+	# Its shore as its worker read it, kept among the known ones again (others
+	# baked since may have pushed it out), so the plate's outline is not read
+	# again here (NativeTerrainData `_known_shore`).
+	var baked: NativeTerrainData = lands[homes.find(target)] if homes.has(target) else null
+	if baked != null and not baked.outline.is_empty(): baked._keep_shore()
+	# And its shore wall as its worker fitted it, the very one the plate's
+	# fitting gives (`_bake`), so the refresh does not fit it again.
+	var walls: Mesh = null
+	if homes.has(target):
+		var copy: Node3D = _copies[homes.find(target)]
+		if copy.get_child_count() > 1 and copy.get_child(1) is MeshInstance3D: walls = (copy.get_child(1) as MeshInstance3D).mesh
+	if not taken.is_empty() and bool(taken.fresh):
+		# As Genesis `form` forms a plain, the plain worked out already.
+		editor.forming = true
+		editor.formation_started.emit()
+		editor.data.adopt(taken.state,taken.announced)
+		if walls is ArrayMesh: editor.adopt_shore(walls)
+		editor.land_seed = seed_of(target)
+		plate_seed = seed_of(target)
+		SkyCommits.spend("claim:adopt",Time.get_ticks_usec()-began)
+		await editor.refresh(get_tree())
+		editor.forming = false
+	elif not taken.is_empty():
+		editor.data.adopt(taken.state,taken.announced)
+		if walls is ArrayMesh: editor.adopt_shore(walls)
+		# A built island's life is not kept with it: the plate's creatures
+		# are sent away, as a new plain's are (LandLife `_world_restored`),
+		# and its own come in, rather than the last island's jumping across.
+		var life: Variant = scene.get("land_life")
+		if life != null: life.clear()
+		plate_seed = -1
+		SkyCommits.spend("claim:adopt",Time.get_ticks_usec()-began)
+		await editor.refresh(get_tree())
+	elif entry.is_empty() or not editor.data.load_document(entry.document):
+		# A copy without its worker's land (none should be): formed here.
+		await Genesis.form(editor,Genesis.world(seed_of(target)),true)
 		plate_seed = seed_of(target)
 	else:
 		await editor.refresh(get_tree())
 		plate_seed = -1
+	# The swap, in a frame of its own: the copy let go as the plate shows in
+	# its place, and the world shifted.
+	await get_tree().process_frame
 	began = Time.get_ticks_usec()
 	built_islands.erase(_key(target))
 	editor.data._undo.clear()
 	editor.data._redo.clear()
-	_settle_habitat()
 	# The copy may have moved in the list while the plate formed.
 	var shift := Vector3.ZERO
 	index = homes.find(target)
 	if index >= 0:
 		shift = -offsets[index]
+		# Its stand-in life stays, over the plate now, till the plate's own
+		# comes in.
+		if ambient != null: ambient.handover(index)
 		_free(index,false)
 	for i in range(offsets.size()):
 		offsets[i] += shift
@@ -687,12 +769,31 @@ func claim(index: int) -> Vector3:
 	currents.position += shift
 	clouds.move(shift)
 	_show_plate(hidden)
-	if places != null:
-		places.busy = false
-		places.save_places()
-	SkyCommits.spend("claim:settle",Time.get_ticks_usec()-began)
+	if places != null: places.busy = false
+	SkyCommits.spend("claim:swap",Time.get_ticks_usec()-began)
 	claiming = false
+	claimed.emit(shift)
+	_after_claim(places)
 	return shift
+
+## A claim's ends, each in a frame after the swap: the habitat read again
+## for the new land (a slice a frame from the next), and the world saved,
+## its file written on a worker (cozy_regrowth `save_places_soon`).
+func _after_claim(places: Node) -> void:
+	await get_tree().process_frame
+	if claiming: return
+	var began := Time.get_ticks_usec()
+	_settle_habitat()
+	SkyCommits.spend("claim:habitat",Time.get_ticks_usec()-began)
+	await get_tree().process_frame
+	if claiming or places == null or not is_instance_valid(places): return
+	began = Time.get_ticks_usec()
+	if places.has_method("save_places_soon"): places.save_places_soon()
+	else: places.save_places()
+	SkyCommits.spend("claim:save",Time.get_ticks_usec()-began)
+
+## Emitted the frame a claim swaps the plate for the copy, with the shift.
+signal claimed(shift: Vector3)
 
 ## The plate's habitat (where its creatures may stand and walk) read again
 ## for the new land, a slice a frame (the scene's budgeted refresh) rather
@@ -708,7 +809,9 @@ func _settle_habitat() -> void:
 	_habitat_serial += 1
 	var serial := _habitat_serial
 	while is_instance_valid(scene) and serial == _habitat_serial:
+		var began := Time.get_ticks_usec()
 		scene._refresh_habitat(true)
+		SkyCommits.note("habitat",Time.get_ticks_usec()-began)
 		if not scene.get("_habitat_changed") and not navigation.rebuilding: return
 		await get_tree().process_frame
 
@@ -987,6 +1090,9 @@ func show_air(on: bool) -> void:
 	if not on: peaks.let_go()
 	towers.visible = on
 	isles.visible = on
+	if ambient != null:
+		ambient.visible = on
+		if not on: ambient.clear()
 
 ## How deep a global point is in cloud, for the vapour: a drifting one's
 ## heap (SkyClouds `inside`) or a tower's (SkyTowers `fade`, by its VEIL:

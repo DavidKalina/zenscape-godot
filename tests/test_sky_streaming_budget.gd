@@ -5,24 +5,29 @@ extends SceneTree
 ## over a chunk, which is claimed as it is flown into: no frame stands a
 ## part up once the sky's share of it is spent; an island's ground and
 ## earth sides are made on its worker, so standing it up is only its nodes,
-## and the sides are the very ones the plate's own fitting gives; the claim
-## never holds a frame for long (it re-formed the plate and read its whole
-## habitat in single frames, ~300 ms) and its habitat is read again a slice
-## a frame, finishing; and a plain formed from its baked outline is the
-## plain its seed gives.
+## and the sides are the very ones the plate's own fitting gives; no step of
+## the claim, and no frame's steps together, take more than CLAIM_MS (it
+## re-formed the plate and read its whole habitat in single frames, ~300
+## ms; then formed the plain, 24 ms, and saved the world, 9 ms, in single
+## frames: scripts/sky_islands.gd `claim` now takes the land its worker
+## worked out, and spreads the rest over frames of their own) and its
+## habitat is read again a slice a frame, finishing; and a plain formed from
+## its baked outline is the plain its seed gives. tests/test_sky_ambient_life.gd
+## flies the claim back into a built island and out again, frame by frame.
 ##
 ## Headless measures the scripts only, never the GPU's uploads or pipeline
-## builds. The frame bounds are loose (several times the frames seen), so a
-## slower machine still passes and the old stalls still fail.
+## builds. The whole-frame bound is loose (a few times the frames seen), so
+## a slower machine still passes and the old stalls still fail.
 const SkyCommits = preload("res://scripts/sky_commits.gd")
 const Profile = preload("res://tools/profile_sky_streaming.gd")
 const Genesis = preload("res://scripts/genesis_canvas.gd")
 const PlateFixture = preload("res://tests/fixtures/plate.gd")
 ## Each kind's commit, at most (ms): an island's nodes alone; the claim's
-## steps; the worst whole frame of the flight (uncapped, headless).
+## steps, each and all of a frame's together; the worst whole frame of the
+## flight (uncapped, headless).
 const ISLAND_MS := 3.0
-const CLAIM_STEP_MS := 60.0
-const FRAME_MS := 120.0
+const CLAIM_MS := 8.0
+const FRAME_MS := 40.0
 var failures := 0
 
 func _initialize() -> void:
@@ -74,11 +79,22 @@ func _flight() -> void:
 	check(late == 0,"No frame stands a part up once its share is spent (%d did)" % late)
 	var island_ms := 0.0
 	var claim_ms := 0.0
+	var claim_steps := {}
+	var by_frame := {}
 	for c: Array in commits:
 		if c[1] == "island": island_ms = maxf(island_ms,c[2]/1000.0)
-		if (c[1] as String).begins_with("claim:"): claim_ms = maxf(claim_ms,c[2]/1000.0)
+		if (c[1] as String).begins_with("claim:"):
+			claim_ms = maxf(claim_ms,c[2]/1000.0)
+			claim_steps[c[1]] = maxf(float(claim_steps.get(c[1],0.0)),c[2]/1000.0)
+			by_frame[c[0]] = float(by_frame.get(c[0],0.0))+c[2]/1000.0
+	var claim_frame := 0.0
+	for f in by_frame: claim_frame = maxf(claim_frame,by_frame[f])
+	var named: Array[String] = []
+	for step: String in claim_steps: named.append("%s %.1f" % [step.trim_prefix("claim:"),claim_steps[step]])
 	check(island_ms <= ISLAND_MS,"An island's ground and sides are made on its worker: standing it up takes %.2f ms (at most %.1f)" % [island_ms,ISLAND_MS])
-	check(claim_ms <= CLAIM_STEP_MS,"Each step of the claim on the main thread takes %.1f ms (at most %.0f)" % [claim_ms,CLAIM_STEP_MS])
+	check(claim_ms <= CLAIM_MS,"Each step of the claim on the main thread takes %.1f ms at most (%s; at most %.0f)" % [claim_ms,", ".join(named),CLAIM_MS])
+	check(claim_frame <= CLAIM_MS,"No frame's claim steps together take more than %.0f ms (%.1f)" % [CLAIM_MS,claim_frame])
+	check(claim_steps.has("claim:adopt") and claim_steps.has("claim:swap") and claim_steps.has("claim:save"),"The claim takes its worker's land, swaps and saves in frames of their own (%s)" % [claim_steps.keys()])
 	var worst := 0.0
 	for f in frames: worst = maxf(worst,f)
 	check(worst <= FRAME_MS,"The flight's worst frame, claim and all, is %.1f ms (at most %.0f)" % [worst,FRAME_MS])
