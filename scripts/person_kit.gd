@@ -1,10 +1,11 @@
 extends RefCounted
 ## The sky folk's parts, shared by the pilot in the plane's cockpit
 ## (scripts/plane_pilot.gd) and the islanders standing on their land
-## (scripts/islander_figure.gd), so they are one people: a leather jacket,
-## the scarf wound at the neck, a faceted head in a leather cap with ear
-## flaps and brass goggles on a strap, gloved hands, canvas trousers and
-## boots. Faceted solids, lacquered leather and brass that catch the sun.
+## (scripts/islander_figure.gd), so they are one people: a leather jacket
+## with a turned-up sheepskin collar, the scarf wound at the neck, a faceted
+## head in a leather cap with ear flaps and brass goggles on a strap, their
+## glass catching the sun, gloved hands, canvas trousers and boots. Faceted
+## solids, lacquered leather and brass that catch the sun.
 ##
 ## Also how they move: springs that lag, overshoot a little and settle,
 ## and two-bone limbs posed from a root to a hand or foot.
@@ -23,7 +24,8 @@ const JACKET := Color("4a2a1e")
 const LEATHER := Color("5e3522")
 const STRAP := Color("6b3b28")
 const BRASS := Color("d6ad62")
-const LENS := Color("2c4650")
+const LENS := Color("3b6370")
+const FLEECE := Color("e6d8bb")
 const TROUSERS := Color("6b6250")
 const BOOTS := Color("3a2a22")
 const SCARF := Color("d9573a")
@@ -54,32 +56,36 @@ class Spring:
 			left -= dt
 		return x
 
-## The materials, keyed skin, jacket, leather, strap, brass, lens,
+## The materials, keyed skin, jacket, fleece, leather, strap, brass, lens,
 ## trousers, boots and scarf, the scarf in `scarf`.
 static func outfit(scarf := SCARF) -> Dictionary:
 	return {
 		"skin":_matte(SKIN,0.8),
 		"jacket":_lacquer(JACKET,0.6,0.2),
+		"fleece":_matte(FLEECE,0.95),
 		"leather":_lacquer(LEATHER,0.55,0.3),
 		"strap":_lacquer(STRAP,0.4,0.5),
 		"brass":_metal(BRASS,0.28),
-		"lens":_metal(LENS,0.04),
+		"lens":_glass(LENS),
 		"trousers":_matte(TROUSERS,0.9),
 		"boots":_lacquer(BOOTS,0.45,0.35),
 		"scarf":_matte(scarf,0.95),
 	}
 
 ## The chest on `parent` at its root: the jacket tapering to the
-## shoulders, the scarf wound at the neck and its knot behind.
+## shoulders, its pale sheepskin collar turned up round the neck (the
+## figure's brightest band from behind), the scarf wound over it and its
+## knot behind.
 static func chest(parent: Node3D, m: Dictionary) -> void:
 	part(parent,FacetMesh.hull([Vector3(0.0,0.07,0.055),Vector3(0.08,0.085,0.062),Vector3(0.125,0.092,0.058),Vector3(0.152,0.05,0.04)],8),m.jacket,Vector3.ZERO,Vector3(-PI*0.5,0.0,0.0))
 	for side in [-1.0,1.0]: part(parent,GliderFigure._gem(0.036),m.jacket,Vector3(SHOULDER.x*side,SHOULDER.y+0.005,0.0),Vector3.ZERO)
+	part(parent,GliderFigure._frustum(0.07,0.056,0.03,10),m.fleece,Vector3(0.0,NECK-0.012,0.006),Vector3.ZERO,Vector3(1.0,1.0,0.92))
 	part(parent,GliderFigure._gem(0.05),m.scarf,Vector3(0.0,NECK,0.0),Vector3.ZERO,Vector3(1.3,0.55,1.2))
 	part(parent,GliderFigure._gem(0.024),m.scarf,Vector3(0.0,0.152,0.05),Vector3.ZERO)
 
 ## The neck and head on `parent` (the chest), returned [neck, head], each
 ## a pivot to turn: the faceted head in its cap, ear flaps, strap and
-## goggles, `size` against the body.
+## goggles, a nose under them, `size` against the body.
 static func head(parent: Node3D, m: Dictionary, size := 0.9) -> Array:
 	var neck := Node3D.new()
 	neck.position = Vector3(0.0,NECK,0.0)
@@ -98,6 +104,7 @@ static func head(parent: Node3D, m: Dictionary, size := 0.9) -> Array:
 		var turn := Vector3(PI*0.5,0.35*side,0.0)
 		part(pivot,GliderFigure._frustum(0.025,0.025,0.014,8),m.brass,mid+Vector3(0.03*side,0.012,-0.073),turn)
 		part(pivot,GliderFigure._frustum(0.019,0.019,0.016,8),m.lens,mid+Vector3(0.031*side,0.012,-0.076),turn)
+	part(pivot,GliderFigure._gem(0.011),m.skin,mid+Vector3(0.0,-0.012,-0.074),Vector3.ZERO,Vector3(0.8,1.0,1.2))
 	return [neck,pivot]
 
 ## A limb on `parent`: [upper, lower, end], the two bones unit tall (posed
@@ -164,4 +171,14 @@ static func _lacquer(color: Color, roughness: float, coat: float) -> ShaderMater
 static func _metal(color: Color, roughness: float) -> ShaderMaterial:
 	var m := _matte(color,roughness)
 	m.set_shader_parameter("metallic_value",1.0)
+	return m
+
+## Goggle glass: dark and clear under a mirror-smooth coat, so it flashes
+## when it turns to the sun, a cool sky rim round it in shade.
+static func _glass(color: Color) -> ShaderMaterial:
+	var m := _matte(color,0.05)
+	m.set_shader_parameter("metallic_value",0.6)
+	m.set_shader_parameter("coat",1.0)
+	m.set_shader_parameter("coat_roughness",0.02)
+	m.set_shader_parameter("rim",1.2)
 	return m
