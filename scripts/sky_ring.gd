@@ -34,17 +34,23 @@ extends Node3D
 ## is made on the worker too, so standing it up is only adding a node. A
 ## new layout keeps every skyline whose inputs it still has.
 ##
-## The swap with the full range is a cross-fade, never a cut (`_show`): the
-## full range comes in solid under its skyline, which fades out over SWAP
-## seconds; let go, the skyline fades back in over it before it goes
-## (SkyPeaks `leaving`).
+## The swap with the full range is a cross-fade, never a cut (`_show`), in
+## two halves over SWAP seconds: the full range fades in over its skyline
+## standing solid, then the skyline fades out over it standing solid; let
+## go, the same backwards (SkyPeaks `_leaving`). The two are not the same
+## faces (the skyline's coarser, so its light and colour lie a little
+## apart), and a fading mesh shows only where it stands in front of a solid
+## one: were the full range to come in solid while the skyline faded out
+## over it, it would show at once wherever it stands proud of the skyline,
+## about half the range. So each half fades only one of the two, the other
+## standing solid (`line_fade`, `range_fade`).
 
 const SkyPeak = preload("res://scripts/sky_peak.gd")
 const SkyWorld = preload("res://scripts/sky_world.gd")
 const SkyCache = preload("res://scripts/sky_cache.gd")
-## Seconds a skyline takes to fade out over its full range made near, or
-## back in over it as it is let go.
-const SWAP := 1.6
+## Seconds the swap between a skyline and its full range takes, both its
+## halves (`line_fade`, `range_fade`).
+const SWAP := 2.4
 ## The skyline's grid: every STRIDE-th point (SkyPeak STEP apart, so 16 m).
 const STRIDE := 4
 ## The low foothills, the far row and the ridges' low stretches and spurs,
@@ -432,12 +438,25 @@ func _show() -> void:
 		if node == null: continue
 		var swap: float = peaks.swap_of(key)
 		node.visible = whole and swap < 1.0
-		(node.get_child(0) as GeometryInstance3D).transparency = maxf(fade,swap)
+		(node.get_child(0) as GeometryInstance3D).transparency = maxf(fade,line_fade(swap))
 	for i in summits:
 		var node: Node3D = summits[i].node
 		if node == null: continue
 		node.visible = whole
 		(node.get_child(0) as GeometryInstance3D).transparency = fade
+
+## How far a skyline is faded (its transparency) as the swap with its full
+## range stands at `swap` (SkyPeaks `swap_of`: 0 the skyline alone, 1 the
+## full range alone): solid through the first half, while the full range
+## fades in over it; fading out over the full range through the second.
+static func line_fade(swap: float) -> float:
+	return clampf(swap*2.0-1.0,0.0,1.0)
+
+## How far the full range is faded: fading in over its solid skyline
+## through the first half, solid through the second. Never both fading at
+## once: at every moment one of the two stands solid (0).
+static func range_fade(swap: float) -> float:
+	return clampf(1.0-swap*2.0,0.0,1.0)
 
 ## The skyline stands whole at once, without its own fade (the loading
 ## screen fades the world in instead).
