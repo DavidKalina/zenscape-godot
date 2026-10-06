@@ -44,6 +44,13 @@ var settings_path := SETTINGS_PATH
 ## Motes of light adrift round the plate over the sea (scripts/sky_motes.gd),
 ## shown with the Mystic sea only.
 var _motes = preload("res://scripts/sky_motes.gd").new()
+## The near cloud sea (scripts/sky_sea.gd): the sea's heaps as a surface in
+## the world round the eye, handing over to the dome's sea far out. It
+## follows the camera and takes the sky's sea strength and style.
+## --dome-sea leaves the dome's painted sea alone, for a before/after.
+const SkySea = preload("res://scripts/sky_sea.gd")
+var sea = SkySea.new()
+var near_sea := not _flag("--dome-sea")
 var shore := 1.0
 var _scene: Node3D
 ## The grade alone, drawn only while native volumetric fog (the redwood and
@@ -80,6 +87,7 @@ func setup(scene: Node3D) -> void:
 	_grade_layer.add_child(rect)
 	scene.add_child(_grade_layer)
 	scene.add_child(_motes)
+	scene.add_child(sea)
 	grass.setup(scene)
 	_publish_night_style()
 
@@ -115,6 +123,7 @@ func update(camera: Camera3D, celestial) -> void:
 	RenderingServer.global_shader_parameter_set("zs_look_rim", rim * on)
 	_update_ridges(on)
 	_update_cloud_sea(on)
+	_update_near_sea(camera)
 	_update_sky_planet()
 	var now := Time.get_ticks_usec()
 	grass.set_reduced(tier != 2)
@@ -200,6 +209,7 @@ func _update_cloud_sea(on: float) -> void:
 	var strength := cloud_sea * on
 	var style := maxi(CLOUD_STYLES.find(cloud_style), 0)
 	_motes.set_strength(strength if style == 2 else 0.0)
+	sea.set_sea(strength if near_sea else 0.0, style)
 	if sky.get_meta("look_cloud_sea_style", -1) != style:
 		sky.set_meta("look_cloud_sea_style", style)
 		sky.set_shader_parameter("cloud_sea_style", style)
@@ -207,6 +217,18 @@ func _update_cloud_sea(on: float) -> void:
 	if sky.get_meta("look_cloud_sea", -1.0) == strength: return
 	sky.set_meta("look_cloud_sea", strength)
 	sky.set_shader_parameter("cloud_sea", strength)
+
+## The near sea round the eye, under the plate and the islands over it.
+func _update_near_sea(camera: Camera3D) -> void:
+	if not sea.visible or camera == null: return
+	sea.follow(camera)
+	var wanderer: Variant = _scene.get("wanderer")
+	var islands: Node = wanderer.get("islands") if wanderer is Node else null
+	var editor = _scene.get("_chunk_editor")
+	var plate: Node3D = editor.terrain if editor != null and editor.get("terrain") is Node3D else null
+	sea.set_islands(SkySea.island_spots(islands, plate, camera.global_position))
+	var peaks: Node = islands.get("peaks") if islands != null else null
+	sea.set_ranges(peaks.keep_spots(camera.global_position) if peaks != null and peaks.has_method("keep_spots") else [])
 
 ## The Opal sea's painted distant peaks off while the sky world's ring of
 ## real ranges stands (SkyWorld `sea_peaks`), in the overview and the glide.
