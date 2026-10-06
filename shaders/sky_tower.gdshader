@@ -15,7 +15,8 @@ render_mode unshaded, blend_mix, cull_front, depth_draw_never, depth_test_disabl
 // to the eye, and soft wisps (green) fray the edge and leave pockets in the
 // heart, which is what the eye sees streaming past inside.
 //
-// Light, in the glide's clouds' own colours (zs_cloud_sun, zs_cloud_sky)
+// Light (shaders/cumulus_light.gdshaderinc, shared with the near cloud
+// sea's heaps), in the glide's clouds' own colours (zs_cloud_sun, zs_cloud_sky)
 // but with a painter's contrast: the sun's side takes the sun's hue (gold,
 // peach at golden hour), kept under white so it never bleaches; the shaded
 // side and the crevices between lobes the sky's cool lavender-blue, darker
@@ -41,6 +42,7 @@ render_mode unshaded, blend_mix, cull_front, depth_draw_never, depth_test_disabl
 #include "res://shaders/reference_globals.gdshaderinc"
 #include "res://shaders/glide_haze.gdshaderinc"
 #include "res://shaders/reference_sky_common.gdshaderinc"
+#include "res://shaders/cumulus_light.gdshaderinc"
 
 uniform sampler3D body : filter_linear, repeat_disable;
 uniform sampler3D cauliflower : filter_linear, repeat_enable;
@@ -60,12 +62,9 @@ uniform sampler2D depth_texture : hint_depth_texture, filter_nearest, repeat_dis
 // and round an eye inside it, and how it is shaded along the sun.
 const float SIGMA = 0.1;
 const float SIGMA_IN = 0.045;
-// The scene's exposure lifts what is drawn here about twice over: the
-// cloud is lit at this share so its sunny side keeps the sun's hue rather
-// than bleaching white; the fog round an eye inside it at GLOW.
-const float LIT_SHARE = 0.46;
+// The fog round an eye inside it is lit at GLOW (the cloud itself at
+// cumulus_light's ZS_CUMULUS_LIT_SHARE).
 const float GLOW = 1.4;
-const float SUN_SIGMA = 0.028;
 const int STEPS = 56;
 // The noise's tile (m) and how far its bumps swell the body (m); the finer
 // octaves' tiles and swells, and how near the eye (m) they show; how soft
@@ -115,15 +114,11 @@ void fragment() {
 	float time = zs_motion_time;
 	vec3 sun = normalize(zs_sun_direction + vec3(0.0, 1e-4, 0.0));
 	float toward_sun = max(dot(rd, sun), 0.0);
-	float golden = smoothstep(0.35, 0.04, sun.y) * smoothstep(-0.1, 0.02, sun.y);
-	// The sun's hue, deepened toward peach and gold as it gets low, at no
-	// more than white; and the shade's cool lavender-blue off the sky.
-	float sun_level = max(max(zs_cloud_sun.r, zs_cloud_sun.g), max(zs_cloud_sun.b, 1e-3));
-	vec3 sun_hue = zs_cloud_sun / sun_level;
-	sun_hue *= mix(vec3(1.0), vec3(1.0, 0.8, 0.66), golden);
-	vec3 sun_col = sun_hue * min(sun_level, 1.0);
-	vec3 shade_col = zs_cloud_sky * vec3(1.3, 1.02, 0.98) * 1.55;
-	float lining = pow(toward_sun, 10.0) * 0.6 + pow(toward_sun, 60.0) * 1.6;
+	vec3 sun_hue;
+	vec3 sun_col;
+	vec3 shade_col;
+	float lining;
+	zs_cumulus_palette(rd, sun, sun_hue, sun_col, shade_col, lining);
 	vec3 boil = DRIFT * time + noise_shift;
 	float jitter = fract(52.9829189 * fract(dot(FRAGCOORD.xy, vec2(0.06711056, 0.00583715))));
 	float span = top - sea;
@@ -173,7 +168,7 @@ void fragment() {
 		// Crisper close to the eye, so flying up to it the edge is never
 		// a blur.
 		float soft = mix(SOFT.y, SOFT.x, h) * mix(0.5, 1.0, smoothstep(40.0, 300.0, t));
-		float density = smoothstep(0.0, soft, inside) * mix(0.55, 1.0, smoothstep(0.3, 0.68, n.g));
+		float density = zs_cumulus_density(inside, soft, n.g);
 		// Round an eye inside: drifting pockets and holes.
 		density *= mix(1.0, smoothstep(0.47, 0.64, pocket), immersed);
 		// The foot thins into the cloud sea.
@@ -194,15 +189,9 @@ void fragment() {
 			float o2 = clamp((-body_at(p + sun * 40.0) + 12.0) / 40.0, 0.0, 1.0);
 			float o3 = clamp((-body_at(p + sun * 110.0) + 12.0) / 40.0, 0.0, 1.0);
 			float thick = near_sun * 1.2 + o2 * 60.0 + o3 * 100.0;
-			float sunlit = exp(-thick * SUN_SIGMA);
+			float sunlit = zs_cumulus_sunlit(thick);
 			float deep = smoothstep(0.0, 45.0, inside);
-			// The sky's light, less of it where the sun's is strong, so the
-			// sunny side keeps the sun's hue.
-			vec3 ambient = shade_col * mix(0.4, 1.0, up_open) * mix(0.55, 1.0, h) * mix(1.0, 0.7, deep) * mix(1.0, 0.3, sunlit);
-			vec3 direct = sun_col * (sunlit * 0.88 + exp(-thick * 0.004) * 0.1);
-			// A lining on thin edges against the sun.
-			vec3 rim = sun_col * lining * (1.0 - smoothstep(0.1, 0.9, density)) * exp(-thick * 0.012) * 2.2;
-			vec3 col = (ambient + direct + rim) * LIT_SHARE;
+			vec3 col = zs_cumulus_shade(sun_col, shade_col, lining, thick, up_open, h, deep, density);
 			// In it: bright, brightest looking toward the sun and where
 			// the sun comes through thin cloud.
 			col = mix(col, glow_col * (0.85 + 0.3 * sunlit + 0.7 * pow(toward_sun, 3.0)), immersed);
