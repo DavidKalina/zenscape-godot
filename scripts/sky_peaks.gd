@@ -20,8 +20,10 @@ extends Node3D
 ## cells' origin, so the swaps that move the world carry the ranges along.
 ##
 ## Its faces are drawn with the plate's own ground material, laid OFF_MAP off
-## so the plate's maps read nothing on them (as SkyIslets does), its look
-## read LOOK_SCALE times larger and its foot gone into the cloud's light. The glide
+## so the plate's maps read nothing on them (as SkyIslets does), as bare
+## rock (reference_surface `peak_rock`: its own basalt, never the plate's
+## grass field or geology painted over it), its look read LOOK_SCALE times
+## larger and its foot gone into the cloud's light. The glide
 ## reads each as a solid (`body`): giant stone, ridden only where it is no
 ## steeper than the glide can ride (SkyGlide `stone`). The haze reads their
 ## spots (`haze_spots`): a range is a landform, not scenery streamed in, so
@@ -43,12 +45,14 @@ extends Node3D
 ## No pop: a range is made ahead along the glide's way (`_survey`: within
 ## its reach of the eye, or of where the eye will be LEAD seconds on), its
 ## meshes made on the worker so standing it up is only adding nodes, one a
-## frame; it comes in under its skyline, which fades out over it (SkyRing
-## SWAP, `swap_of`), the cloud at its foot fading in with it; let go, the
-## skyline fades back in over it before it goes (`_leaving`). The ranges
-## within reach of the plate are made ahead as the world starts (`premake`,
-## under the loading screen) and kept, so a glide starts among them whole.
+## frame; it fades in over its skyline, which then fades out over it
+## (SkyRing SWAP, `swap_of`, `_fade_range`), the cloud at its foot fading
+## in with it; let go, the skyline fades back in over it and it fades out
+## before it goes (`_leaving`). The ranges within reach of the plate are
+## made ahead as the world starts (`premake`, under the loading screen) and
+## kept, so a glide starts among them whole.
 
+const SkyCommits = preload("res://scripts/sky_commits.gd")
 const SkyPeak = preload("res://scripts/sky_peak.gd")
 ## Other landforms of the land below risen through the sea, kept with the
 ## ranges: each kind a node made the same way (`reset` (cells, currents,
@@ -264,12 +268,17 @@ func advance(delta: float, eye: Vector3) -> void:
 		_since = 0.0
 		_survey(home)
 	for key in _making.keys():
+		# One a frame, while the frame's share for the sky lasts
+		# (scripts/sky_commits.gd).
+		if not SkyCommits.open(): break
 		var m: Dictionary = _making[key]
 		if int(m.task) >= 0:
 			if not WorkerThreadPool.is_task_completed(m.task): continue
 			WorkerThreadPool.wait_for_task_completion(m.task)
 		_making.erase(key)
+		var began := Time.get_ticks_usec()
 		_finish(m.cell,m.spot,m.out)
+		SkyCommits.spend("range",Time.get_ticks_usec()-began)
 		break
 	_fade_leaving()
 	for kind in kinds: kind.advance(delta,eye)
@@ -325,22 +334,31 @@ func swap_of(key: String) -> float:
 	elif _leaving.has(key): swap = 1.0-(Time.get_ticks_msec()-int(_leaving[key].at))/(ring.SWAP*1000.0)
 	return clampf(swap,0.0,1.0)
 
-## The cloud round each range's foot fades with it (`swap_of`), and a
-## range let go goes once its skyline is back over it.
+## Each range fades in and out over its skyline (`_fade_range`), the cloud
+## round its foot with it, and a range let go goes once its skyline is back
+## over it and it has faded out.
 func _fade_leaving() -> void:
-	for key in built:
-		var wrap: Node = (built[key].node as Node3D).get_node_or_null("Wrap")
-		if wrap != null: (wrap as GeometryInstance3D).set_instance_shader_parameter("batch_fade",swap_of(key))
+	for key in built: _fade_range(built[key].node,swap_of(key))
 	for key in _leaving.keys():
-		var wrap: Node = (_leaving[key].node as Node3D).get_node_or_null("Wrap")
-		if wrap != null: (wrap as GeometryInstance3D).set_instance_shader_parameter("batch_fade",swap_of(key))
+		_fade_range(_leaving[key].node,swap_of(key))
 		if Time.get_ticks_msec()-int(_leaving[key].at) >= ring.SWAP*1000.0:
 			(_leaving[key].node as Node3D).queue_free()
 			_leaving.erase(key)
 
+## A range made in full as its swap with its skyline stands at `swap`
+## (`swap_of`): its faces and spruces faded by SkyRing `range_fade`, so it
+## fades in over its skyline standing solid and only then does the skyline
+## fade out over it (never both fading, never a cut where its faces stand
+## in front of the skyline's); the cloud at its foot fading in all the way.
+func _fade_range(node: Node3D, swap: float) -> void:
+	var fade: float = SkyRing.range_fade(swap)
+	for child in node.get_children():
+		if child.name == "Wrap": (child as GeometryInstance3D).set_instance_shader_parameter("batch_fade",swap)
+		elif child is GeometryInstance3D: (child as GeometryInstance3D).transparency = fade
+
 ## Lets a range made in full go: out of the solids at once; its nodes stay
-## under its skyline till that is back over them (a ring range's), or go at
-## once.
+## till its skyline is back over them and they have faded out (a ring
+## range's), or go at once.
 func _let_go_of(key: String) -> void:
 	var b: Dictionary = built[key]
 	if currents != null: currents.drop_thermals(_jet_key(key))
@@ -648,15 +666,20 @@ func _finish(cell: Vector2i, s: Vector4, out: Dictionary) -> void:
 	if not shape.wraps.is_empty(): node.add_child(_wrap(shape))
 	if tree_parts.is_valid(): _plant(node,shape)
 	var key := _key(cell)
-	# One let go and still fading out under its skyline goes now.
-	if _leaving.has(key):
-		(_leaving[key].node as Node3D).queue_free()
-		_leaving.erase(key)
-	# A range with its skyline showing comes in under it as that fades out
-	# (`swap_of`); one with none showing (the skyline not yet whole, a
+	# A range with its skyline showing fades in over it, and the skyline
+	# out (`swap_of`); one with none showing (the skyline not yet whole, a
 	# cell's range) comes in at once.
 	var under: bool = ring.showing(key) and ring.whole
-	built[key] = {"node":node,"shape":shape,"home":Vector3(s.x,s.y,s.z),"turn":s.w,"cell":cell,"spread":spread_of(cell),"scale":scale,"at":Time.get_ticks_msec() if under else -int(ring.SWAP*1000.0)-1}
+	var at := Time.get_ticks_msec() if under else -int(ring.SWAP*1000.0)-1
+	# One let go and still fading out goes now, this one (the same faces)
+	# taking up its swap from where that stood.
+	if _leaving.has(key):
+		at = Time.get_ticks_msec()-int(swap_of(key)*ring.SWAP*1000.0)
+		(_leaving[key].node as Node3D).queue_free()
+		_leaving.erase(key)
+	built[key] = {"node":node,"shape":shape,"home":Vector3(s.x,s.y,s.z),"turn":s.w,"cell":cell,"spread":spread_of(cell),"scale":scale,"at":at}
+	# Unseen till it fades in: never drawn solid over its skyline at once.
+	_fade_range(node,swap_of(key))
 	if gorge_of(cell): _jet(key)
 
 ## The plate's ground material, cut at the cloud sea's top (reference_
@@ -676,6 +699,8 @@ func _ground() -> Material:
 	m.set_shader_parameter("sea_fray",SEA_FRAY)
 	m.set_shader_parameter("look_scale",LOOK_SCALE)
 	m.set_shader_parameter("facet_soft",FACET_SOFT)
+	# Bare basalt: the plate's grass field and geology stay off it.
+	m.set_shader_parameter("peak_rock",true)
 	_material = m
 	return _material
 

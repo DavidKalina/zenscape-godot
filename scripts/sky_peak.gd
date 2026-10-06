@@ -26,16 +26,16 @@ extends RefCounted
 ##     couloirs cut down its walls and its pinch's fins broken along their
 ##     tops, only ever lowering the rock, so the way stays open.
 ##
-## Faces are flat and coloured per face as the islets' are (scripts/
-## sky_islet.gd), for the plate's own ground material: the world's grass on
-## gentle ground and ledges, an earth band under a ledge's lip, scree down
-## the gullies, and on the steep faces the world's rock stepped through the
-## granite core's beds, now and then a pale sand bed or a dark shale one
-## (scripts/strata.gd's colours), so the range is layered as an island's
-## side is and reads as cut from the same stuff. Grass and earth go by the
-## ground's broad lie (`_calm`) as well as each face's, so they lie in
-## patches. The material reads the plate's look LOOK_SCALE times larger
-## (scripts/sky_peaks.gd). The flanks run on down past the sea to BASE;
+## Faces are flat and coloured per face (`_tone`), for the plate's own
+## ground material as bare rock (scripts/sky_peaks.gd `_ground`): not the
+## islands' weathered rock but basalt, as the Karakoram's and the
+## Himalaya's great ranges stand dark under their snow: blue-black on the
+## sheer faces, basalt grey on the steep, weathered slate where it lies
+## back and down the gullies' scree, its beds (lava flows) stepping the
+## cliffs lighter and darker. No grass and no earth on it. The snow is the
+## season's (shaders/sky_season.gdshaderinc), by each face's need: caps and
+## couloirs, ledges and the gentler slopes, the steepest faces left dark.
+## The flanks run on down past the sea to BASE;
 ## faces wholly below CUT are left out, and what does stand under the sea's
 ## top is never drawn: over the last metres the rock goes into the cloud's
 ## own light, lit as the sea's level top is, so the foot is soft cloud, not
@@ -190,30 +190,27 @@ const FIN_TEETH := 18.0
 ## and the band of those heights (scripts/sky_glide.gd FLOOR to CEILING).
 const CLEAR_HALF := 20.0
 const GLIDE_BAND := Vector2(-55.0,95.0)
-## Colours: grass on ground no steeper than GRASS_SLOPE (gradient) below
-## GRASS_HIGH m, earth up to EARTH_SLOPE, rock above; the earth band under
-## a ledge's lip is the top LIP share of a bed. Gullies (scree) are where the
-## erosion laid down more than SCREE m.
-const GRASS_SLOPE := 0.85
-const EARTH_SLOPE := 1.25
-const GRASS_HIGH := 240.0
-const LIP := 0.2
+## Colours: the rock is basalt (linear): blue-black, basalt grey and its
+## weathered slate. The slate lies on ground no steeper than BASALT_STEEP.x
+## (gradient), the grey from BASALT_STEEP.y, the blue-black coming in past
+## that; broad patches BASALT_PATCH lighter or darker. Gullies (scree) are
+## where the erosion laid down more than SCREE m, BASALT_SCREE lighter.
+const BASALT := [Color(0.052,0.058,0.073),Color(0.092,0.098,0.115),Color(0.142,0.146,0.160)]
+const BASALT_STEEP := Vector2(0.45,1.5)
+const BASALT_PATCH := 0.12
+const BASALT_SCREE := 0.08
 const SCREE := 3.0
-## The lie colours read: the slope (gradient) averaged CALM_REACH grid
-## points round, and the steepest such lie a bed's tread still holds grass.
-const CALM_REACH := 3
-const LEDGE_CALM := 1.6
-## How far a face's colour is nudged from its neighbours', and how far the
-## beds' tones lighten and darken the rock.
+## How far a face's colour is nudged from its neighbours'.
 const FACE_JITTER := 0.025
-## The faces' normals are read over this many grid points each way.
+## The faces' normals are read over this many grid points each way (times
+## the stride), and no vertex's leans further than NORMAL_AGREE (a cosine)
+## from its face's own, so the light never meets a face from behind.
 const NORMAL_REACH := 2
-const BED_TONE := 0.62
-## The odds of a bed being a band of shale (x) or of sand (y), and how far
-## such a band takes its own colour over the rock's.
-const BANDS := Vector2(0.2,0.14)
-const BAND_TONE := 0.5
-## The beds' colours show from BAND_SLOPE.x (gradient) and fully on cliffs
+const NORMAL_AGREE := 0.5
+## The beds (lava flows): how much lighter or darker each is than the rock,
+## one of these per bed.
+const BED_TONES := [1.0,0.8,1.16,0.9,1.3,0.7]
+## The beds' tones show from BAND_SLOPE.x (gradient) and fully on cliffs
 ## by its y; a gully cut (or a hollow) GULLY_CUT m deep breaks them; their
 ## edges wander BED_EDGE m.
 const BAND_SLOPE := Vector2(0.75,1.9)
@@ -241,7 +238,7 @@ const WRAP_SIZE := Vector2(28.0,78.0)
 ## ledges and in hollows. Its colour is the world's snow
 ## (scripts/native_terrain_palette.gd), a touch blue in the hollows, each
 ## face nudged by SNOW_JITTER; the light makes it warm or cool by the hour.
-const SNOW_DEPTH := Vector2(135.0,165.0)
+const SNOW_DEPTH := Vector2(150.0,180.0)
 ## Placed scaled in height (scripts/sky_world.gd), a range holds no snow
 ## under SNOW_WORLD (m, the world's height): the low ones (foothills, the
 ## ridges' low stretches and cols) are bare rock going into the cloud, not
@@ -249,7 +246,7 @@ const SNOW_DEPTH := Vector2(135.0,165.0)
 const SNOW_WORLD := 140.0
 const SNOW_RAG := 32.0
 const SNOW_HOLLOW := 2.4
-const SNOW_SLOPE := Vector2(1.3,2.8)
+const SNOW_SLOPE := Vector2(1.2,2.3)
 const SNOW_LINGER := 50.0
 const SNOW_JITTER := 0.03
 const SNOW_COLOUR := Color(0.9,0.93,0.96)
@@ -265,9 +262,6 @@ const SUMMIT_SEASON := Vector2(1.0/1400.0,1.0/300.0)
 ## half of COOL at the sea, all of it at the top; and that grey's hue.
 const COOL := 0.3
 const COOL_HUE := Vector3(0.9,0.97,1.16)
-## The plate's own rock (scripts/native_terrain_palette.gd's first grey,
-## linear): the world's rock over this tints the beds.
-const ROCK_REF := Color(0.2664,0.2346,0.1845)
 const Erosion = preload("res://scripts/terrain_erosion.gd")
 const Strata = preload("res://scripts/strata.gd")
 
@@ -306,7 +300,6 @@ var tilt := Vector2.ZERO
 var ridges: Array = []
 
 var _rng := RandomNumberGenerator.new()
-var _calm_field := PackedFloat32Array()
 var _fold_noise: FastNoiseLite
 var _bed_phase := 0.0
 var _spine := PackedFloat32Array()
@@ -842,6 +835,21 @@ func _carve() -> void:
 	# An uncut range has no gorge, so no pinch, planned or not.
 	if cut: _pinch(ribs)
 	else: pinch = {}
+	_fill_sinks()
+
+## No lone pit in the rock: a point the crags, the beds' steps or a couloir
+## left under all eight round it (a dark pocket of faces all turned in) is
+## brought up to the lowest of them. Only ever raised to its rim, so the
+## gorge's way stays as open as it was.
+func _fill_sinks() -> void:
+	for j in range(1,nz-1):
+		for i in range(1,nx-1):
+			var c := j*nx+i
+			var h := heights[c]
+			if h < CUT: continue
+			var lowest := INF
+			for o: int in [c-nx-1,c-nx,c-nx+1,c-1,c+1,c+nx-1,c+nx,c+nx+1]: lowest = minf(lowest,heights[o])
+			if h < lowest: heights[c] = lowest
 
 ## Some gorges narrow: for a stretch, two fins of rock jut in from the walls
 ## up to `pinch.top`, leaving a slot PINCH_HALF*2 m wide down the middle (the
@@ -1050,41 +1058,6 @@ func height_at(p: Vector2) -> Variant:
 static func _split(h00: float, h10: float, h01: float, h11: float) -> bool:
 	return absf(h00-h11) <= absf(h10-h01)
 
-## The slope (gradient) at each mesh point averaged over CALM_REACH points
-## each way (a box, run along x then z): the ground's broad lie. Made once,
-## for the near faces and the far alike.
-func _calm() -> PackedFloat32Array:
-	if _calm_field.size() == nx*nz: return _calm_field
-	var field := PackedFloat32Array()
-	field.resize(nx*nz)
-	for j in range(nz):
-		for i in range(nx): field[j*nx+i] = _gradient(heights,i,j).length()
-	field = _box(field,1,nx,nz)
-	_calm_field = _box(field,nx,nz,nx)
-	return _calm_field
-
-## A running box mean of CALM_REACH each way down lines `stride` apart
-## within a line, `count` long, `lines` of them (the other axis).
-static func _box(field: PackedFloat32Array, stride: int, count: int, lines: int) -> PackedFloat32Array:
-	var out := PackedFloat32Array()
-	out.resize(field.size())
-	var step := 1 if stride != 1 else count
-	for line in range(lines):
-		var first := line*step
-		var sum := 0.0
-		for k in range(mini(CALM_REACH,count-1)+1): sum += field[first+k*stride]
-		var lo := 0
-		var hi := mini(CALM_REACH,count-1)
-		for k in range(count):
-			out[first+k*stride] = sum/float(hi-lo+1)
-			if k+CALM_REACH+1 < count:
-				hi += 1
-				sum += field[first+hi*stride]
-			if k-CALM_REACH >= 0:
-				sum -= field[first+lo*stride]
-				lo += 1
-	return out
-
 ## How much each mesh point lies in a hollow (m): its neighbours' mean
 ## height two points out over its own; under 0 on a ridge.
 func _hollows() -> PackedFloat32Array:
@@ -1148,23 +1121,24 @@ func _noise(salt: int, frequency: float, octaves: int, fractal: int) -> FastNois
 
 # --- The mesh -----------------------------------------------------------------------
 
-## The range's faces as surface arrays for the plate's ground material,
-## coloured per face from the world's `grass` and `rock` (linear) and its
-## `gravel`, every vertex laid `shift` off (SkyIslets OFF_MAP). Safe on a
-## worker.
+## The range's faces as surface arrays for the plate's ground material
+## (as SkyPeaks `_ground` sets it for bare rock), coloured per face in
+## basalt (`_tone`; the world's `_grass`, `_rock` and `_gravel` are kept in
+## the call for the cache's key, not read), every vertex laid `shift` off
+## (SkyIslets OFF_MAP). Safe on a worker.
 ## Faces wholly under `above` (the range's own heights) are left out: CUT,
 ## or for a range sunk so only its summits stand over the sea (scripts/
 ## sky_ring.gd `summit_arrays`), just under the sea's line there; and the
 ## lie, the light's normals and the colours are read only over the faces
 ## kept (and NORMAL_REACH round).
-func body_arrays(grass: Array, rock: Array, gravel: Color, shift := Vector3.ZERO, stride := 1, snow := SNOW_COLOUR, above := CUT) -> Array:
+func body_arrays(_grass: Array, _rock: Array, _gravel: Color, shift := Vector3.ZERO, stride := 1, snow := SNOW_COLOUR, above := CUT) -> Array:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed*31+7
-	var fields := [_noise(67,1.0/90.0,3,FastNoiseLite.FRACTAL_FBM),_noise(73,1.0/150.0,2,FastNoiseLite.FRACTAL_FBM),_noise(79,1.0/70.0,2,FastNoiseLite.FRACTAL_FBM)]
+	var fields := [_noise(67,1.0/90.0,3,FastNoiseLite.FRACTAL_FBM),_noise(73,1.0/150.0,2,FastNoiseLite.FRACTAL_FBM)]
 	# The ground's lie at each point, for the colours; and over NORMAL_REACH
-	# points each way for the light, which leans on that broader lie
-	# (reference_surface `facet_soft`) so the grid's small steps don't each
-	# catch it.
+	# times the stride's points each way for the light, which leans on that
+	# broader lie (reference_surface `facet_soft`) so the grid's small steps
+	# don't each catch it.
 	# The grid's box holding every face kept.
 	var lo := Vector2i(nx,nz)
 	var hi := Vector2i(-1,-1)
@@ -1173,7 +1147,7 @@ func body_arrays(grass: Array, rock: Array, gravel: Color, shift := Vector3.ZERO
 			if heights[j*nx+i] < above: continue
 			lo = Vector2i(mini(lo.x,i),mini(lo.y,j))
 			hi = Vector2i(maxi(hi.x,i),maxi(hi.y,j))
-	var reach := stride+NORMAL_REACH+1
+	var reach := stride*(NORMAL_REACH+1)+1
 	lo = Vector2i(maxi(lo.x-reach,0),maxi(lo.y-reach,0))
 	hi = Vector2i(mini(hi.x+reach,nx-1),mini(hi.y+reach,nz-1))
 	# Kept on the stride's own grid, so the faces fall where they always do.
@@ -1186,18 +1160,18 @@ func body_arrays(grass: Array, rock: Array, gravel: Color, shift := Vector3.ZERO
 		for i in range(lo.x,hi.x+1):
 			var g := _gradient(heights,i,j)
 			normals[j*nx+i] = Vector3(-g.x,1.0,-g.y).normalized()
-			g = _gradient_over(heights,i,j,NORMAL_REACH)
+			g = _gradient_over(heights,i,j,NORMAL_REACH*stride)
 			broad[j*nx+i] = Vector3(-g.x,1.0,-g.y).normalized()
 	var hollows := _hollows()
-	var calm := _calm()
-	var colours := _strata_colours()
-	colours["snow"] = snow
 	var vertices := PackedVector3Array()
 	var normal_list := PackedVector3Array()
 	var colour_list := PackedColorArray()
-	# Seasons: each face's snow need and shade (`_snow_need`), per vertex.
-	var snow_list := PackedVector2Array()
+	# Seasons: each face's snow need and shade (`_snow_need`).
+	var needs := PackedFloat32Array()
+	var shades := PackedFloat32Array()
 	var snow_out := [SNOW_NEVER,0.0]
+	# Each face's corners on the grid, for the faces round it (`_despeckle`).
+	var corners := PackedInt32Array()
 	# Coarse faces (the far faces, the skyline) are gentler than the fine
 	# ones they stand for, so would snow more: theirs is read at a corner off
 	# the fine grid instead (`_point_need`), so near and far snow alike.
@@ -1240,14 +1214,16 @@ func body_arrays(grass: Array, rock: Array, gravel: Color, shift := Vector3.ZERO
 				var lie := (normals[t[3]]+normals[ib]+normals[id]+n*1.2).normalized()
 				var ledge := (stepped[t[3]]+stepped[ib]+stepped[id])/3.0
 				var hollow := (hollows[t[3]]+hollows[ib]+hollows[id])/3.0
-				var soft := (calm[t[3]]+calm[ib]+calm[id])/3.0
-				var tone := _tone((a+b+d)/3.0,lie,soft,(settled[t[3]]+settled[ib]+settled[id])/3.0,ledge,hollow,grass,rock,gravel,colours,fields,rng,snow_out)
+				var tone := _tone((a+b+d)/3.0,lie,(settled[t[3]]+settled[ib]+settled[id])/3.0,ledge,hollow,fields,rng,snow_out)
+				needs.append(snow_out[0] if stride == 1 else _point_need(t[3],normals,hollows,fields,point_needs))
+				shades.append(snow_out[1])
+				corners.append_array(PackedInt32Array([t[3],id,ib]))
 				# Godot's front faces wind clockwise seen from outside.
 				for q in [[a,t[3]],[d,id],[b,ib]]:
 					vertices.append((q[0] as Vector3)+shift)
-					normal_list.append(broad[q[1]])
+					normal_list.append(_agree(broad[q[1]],n))
 					colour_list.append(tone)
-					snow_list.append(Vector2(snow_out[0] if stride == 1 else _point_need(t[3],normals,hollows,fields,point_needs),snow_out[1]))
+	needs = _despeckle(needs,corners)
 	var uv := PackedVector2Array()
 	var uv2 := PackedVector2Array()
 	uv.resize(vertices.size())
@@ -1255,8 +1231,8 @@ func body_arrays(grass: Array, rock: Array, gravel: Color, shift := Vector3.ZERO
 	# Seasons: the snow need rides UV.x and its shade UV2.x, both unread by
 	# the ground material's grown terrain (reference_surface `peak_snow`).
 	for k in range(vertices.size()):
-		uv[k] = Vector2(snow_list[k].x,1.0)
-		uv2[k] = Vector2(snow_list[k].y,vertices[k].y)
+		uv[k] = Vector2(needs[k/3],1.0)
+		uv2[k] = Vector2(shades[k/3],vertices[k].y)
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = vertices
@@ -1277,6 +1253,63 @@ static func season_share(arrays: Array, share: Vector2) -> void:
 		uv[k] = Vector2(uv[k].x/maxf(share.x if uv[k].x < 0.0 else share.y,1e-4),uv[k].y)
 	arrays[Mesh.ARRAY_TEX_UV] = uv
 
+## A vertex's light normal `broad` (the ground's broader lie), leaned
+## toward its face's own `n` until they part no further than NORMAL_AGREE:
+## on a fin, a couloir's wall or a bed's step the broader lie can face away
+## from the face, and the ground shader, turning each face's normal to agree
+## with the vertices' (reference_surface `facet`), would light it from
+## behind: a dark triangular pit.
+static func _agree(broad: Vector3, n: Vector3) -> Vector3:
+	var along := broad.dot(n)
+	if along >= NORMAL_AGREE: return broad
+	var side := broad-n*along
+	if side.length_squared() < 1e-8: return n
+	return (n*NORMAL_AGREE+side.normalized()*sqrt(1.0-NORMAL_AGREE*NORMAL_AGREE)).normalized()
+
+## Seasons: the faces' snow needs with no lone face left out of the snow
+## round it, nor a lone white face on bare rock. Faces sharing an edge
+## (`corners`: three grid points a face) are its neighbours; a face whose
+## need is over all of theirs (bare while they all whiten: a steep facet in
+## a snowfield, which reads as a hole) takes the greatest of theirs, and
+## one under all of theirs the least, so at every season's line the snow
+## and the rock lie in patches, never one face alone.
+static func _despeckle(needs: PackedFloat32Array, corners: PackedInt32Array) -> PackedFloat32Array:
+	var count := needs.size()
+	# Up to three faces round each face (-1 for none).
+	var round := PackedInt32Array()
+	round.resize(count*3)
+	round.fill(-1)
+	var by_edge := {}
+	for f in range(count):
+		for e in range(3):
+			var p := corners[f*3+e]
+			var q := corners[f*3+(e+1)%3]
+			var key := mini(p,q)*16777216+maxi(p,q)
+			if by_edge.has(key):
+				var g: int = by_edge[key]
+				round[f*3+e] = g
+				for k in range(3):
+					if round[g*3+k] < 0:
+						round[g*3+k] = f
+						break
+			else: by_edge[key] = f
+	var out := needs.duplicate()
+	for f in range(count):
+		var near := 0
+		var most := -INF
+		var least := INF
+		for k in range(3):
+			var g := round[f*3+k]
+			if g < 0: continue
+			near += 1
+			most = maxf(most,needs[g])
+			least = minf(least,needs[g])
+		if near < 2: continue
+		var need := needs[f]
+		if need > most: out[f] = most
+		elif need < least: out[f] = least
+	return out
+
 ## A one-surface mesh from surface arrays, with its material.
 static func mesh_from(arrays: Array, material: Material) -> ArrayMesh:
 	var mesh := ArrayMesh.new()
@@ -1295,24 +1328,27 @@ static func _strata_colours() -> Dictionary:
 	for key: String in Strata.COLORS: out[key] = Color(Strata.COLORS[key]).srgb_to_linear()
 	return out
 
-## A face's colour, from fields that change over tens of metres so the
-## colours lie in patches and bands, not speckled face by face; each face is
-## only nudged (FACE_JITTER), so the facets still read. Grass on gentle
-## ground below GRASS_HIGH and on the beds' ledges; earth where the ground
-## steepens and under a stepped ledge's lip; scree down the gullies the
-## erosion filled; and on the steep faces the world's rock, a little lighter
-## or darker bed by bed (the granite core's three tones) with now and then a
-## band of shale.
-func _tone(at: Vector3, n: Vector3, calm: float, laid: float, ledge: float, hollow: float, grass: Array, rock: Array, gravel: Color, strata: Dictionary, fields: Array, rng: RandomNumberGenerator, snow_out := []) -> Color:
+## A face's colour: basalt, from fields that change over tens of metres so
+## the colours lie in patches and bands, not speckled face by face; each face
+## is only nudged (FACE_JITTER), so the facets still read. The rock is the
+## dark, cool basalt of BASALT: its weathered slate on the gentler ground and
+## down the gullies' scree, darker the steeper it stands, a broad patch
+## lighter or darker here and there (BASALT_PATCH), cooler toward the top;
+## on the cliffs its beds (lava flows) show, each a little lighter or darker
+## than the next (`_bed_tone`). No grass, no earth: green and brown never
+## mix into it. The snow is the shader's, by the season (`_snow_need`).
+func _tone(at: Vector3, n: Vector3, laid: float, ledge: float, hollow: float, fields: Array, rng: RandomNumberGenerator, snow_out := []) -> Color:
 	var slope := sqrt(maxf(0.0,1.0-n.y*n.y))/maxf(n.y,0.001)
 	var p := Vector2(at.x,at.z)
 	var patch: float = (fields[0] as FastNoiseLite).get_noise_2d(p.x,p.y)
-	var mix_rock: float = (fields[1] as FastNoiseLite).get_noise_2d(p.x,p.y)*0.5+0.5
-	var mix_green: float = (fields[2] as FastNoiseLite).get_noise_2d(p.x,p.y)*0.5+0.5
-	var high := at.y+patch*45.0
+	var broad: float = (fields[1] as FastNoiseLite).get_noise_2d(p.x,p.y)
 	var jitter := 1.0+rng.randf_range(-FACE_JITTER,FACE_JITTER)
-	var stone := (rock[0] as Color).lerp(rock[rock.size()-1],smoothstep(0.3,0.7,mix_rock))
-	var green := (grass[0] as Color).lerp(grass[2 if grass.size() > 2 else 0],smoothstep(0.25,0.75,mix_green))
+	# Weathered slate where it lies back, basalt where it stands, blue-black
+	# on the sheerest faces.
+	var steep := smoothstep(BASALT_STEEP.x,BASALT_STEEP.y,slope)
+	var stone: Color = (BASALT[2] as Color).lerp(BASALT[1],steep)
+	stone = stone.lerp(BASALT[0],smoothstep(BASALT_STEEP.y,BASALT_STEEP.y+1.2,slope)*0.6)
+	stone *= 1.0+BASALT_PATCH*broad
 	# The rock cools toward the blue-grey of the far peaks over the sea
 	# (shaders/sky_cloud_sea_opal.gdshaderinc), the more the higher, so the
 	# range and the backdrop read as one family.
@@ -1330,7 +1366,7 @@ func _tone(at: Vector3, n: Vector3, calm: float, laid: float, ledge: float, holl
 	var snowy := at.y > line and slope < lerpf(SNOW_SLOPE.x,SNOW_SLOPE.y,deep)
 	snowy = snowy or (ledge > 0.5 and phase < 0.5 and slope < 1.3 and at.y > line-SNOW_LINGER)
 	snowy = snowy or (hollow > 5.0 and slope < 1.1 and at.y > line-SNOW_LINGER*1.3)
-	# Seasons: the colour is the ground's under the snow; the shader lays the
+	# Seasons: the colour is the rock's under the snow; the shader lays the
 	# snow on once the season brings the line down past this face's need
 	# (shaders/sky_season.gdshaderinc). Snowy as drawn is a need under 0,
 	# and keeps its nudge from the same draw, so nothing else's changes.
@@ -1345,38 +1381,14 @@ func _tone(at: Vector3, n: Vector3, calm: float, laid: float, ledge: float, holl
 	if snow_out.size() >= 2:
 		snow_out[0] = need
 		snow_out[1] = _snow_pack(clampf(hollow/18.0,0.0,1.0),nudge)
-	# Grass and earth by the ground's lie over CALM_REACH m as well as the
-	# face's own, so they lie in whole patches, never a lone green facet on
-	# a cliff.
-	if slope < GRASS_SLOPE*1.5 and calm < GRASS_SLOPE+patch*0.3 and high < GRASS_HIGH:
-		if laid > SCREE and slope > 0.35: return gravel.lerp(stone,0.3)*jitter
-		# Thinner and drier up high.
-		return green.lerp(stone,smoothstep(GRASS_HIGH-140.0,GRASS_HIGH+20.0,high)*0.45)*jitter
-	var earthy: Color = (strata.topsoil as Color).lerp(strata.clay,smoothstep(0.35,0.65,mix_green)*0.6)
-	if slope < EARTH_SLOPE*1.5 and calm < EARTH_SLOPE+patch*0.25 and high < GRASS_HIGH+30.0:
-		if laid > SCREE*0.6: return gravel.lerp(stone,0.45)*jitter
-		return earthy.lerp(stone,0.72+0.2*mix_rock)*jitter
-	# A stepped bed's tread holds grass; under its lip, the earth band.
-	if ledge > 0.5 and phase < 0.5 and slope < 1.4 and calm < LEDGE_CALM and high < GRASS_HIGH+40.0:
-		return green.lerp(stone,0.3)*jitter
-	if ledge > 0.6 and phase > 1.0-LIP and high < GRASS_HIGH+60.0:
-		return earthy.lerp(stone,0.5)*jitter
-	# The beds: the granite core's three tones, and now and then a band of
-	# the islands' own sides (scripts/strata.gd): a pale sand bed or a dark
-	# shale one, in the world's rock as the granite is, so the range is
-	# layered as an island's side is, only a hundredfold.
-	# They show on the cliffs, hardly on the easier rock, and a gully's
+	# Scree down the gullies the erosion filled: the slate, broken lighter.
+	if laid > SCREE and slope < BASALT_STEEP.y:
+		return (BASALT[2] as Color).lerp(stone,0.35)*(1.0+BASALT_SCREE)*jitter
+	# The beds show on the cliffs, hardly on the easier rock, and a gully's
 	# scree and fresh-cut rock run down across them.
 	var show := smoothstep(BAND_SLOPE.x,BAND_SLOPE.y,slope)
 	show *= 1.0-maxf(smoothstep(GULLY_CUT.x,GULLY_CUT.y,-laid),smoothstep(GULLY_CUT.x,GULLY_CUT.y,hollow))
-	var core_a: Color = strata.core_a
-	var key := _bed_kind(index)
-	var tone: Color = strata[key]
-	var own := Color(stone.r/core_a.r,stone.g/core_a.g,stone.b/core_a.b)
-	if key == "sand" or key == "shale_dark":
-		return (tone*own).lerp(stone,1.0-BAND_TONE*show)*jitter
-	var shade := (tone.r+tone.g+tone.b)/(core_a.r+core_a.g+core_a.b)
-	return stone*lerpf(1.0,shade,BED_TONE*show)*jitter
+	return stone*lerpf(1.0,_bed_tone(index),show)*jitter
 
 ## Seasons: how far (m) the snow line must come down before a face at
 ## height `y` whitens, by the same tests `_tone` draws the snow with (above
@@ -1417,10 +1429,10 @@ static func _snow_pack(blue: float, nudge: float) -> float:
 	var step := roundf((clampf(nudge/SNOW_JITTER,-1.0,1.0)*0.5+0.5)*32.0)
 	return step+clampf(blue,0.0,1.0)*0.999
 
-## What a bed is, by its index up the range: mostly the granite's three
-## tones, with BANDS' odds of a sand or a shale band, seeded per range.
-func _bed_kind(index: int) -> String:
-	var h := absi(hash([seed,index,"bed"])) % 1000/1000.0
-	if h < BANDS.x: return "shale_dark"
-	if h < BANDS.x+BANDS.y: return "sand"
-	return ["core_a","core_b","core_c"][posmod(index,3)]
+## How much lighter or darker a bed (a lava flow) is than the basalt, by
+## its index up the range, seeded per range: one of BED_TONES, seldom the
+## same as the bed under it, so the cliffs read as stacked flows.
+func _bed_tone(index: int) -> float:
+	var pick := absi(hash([seed,index,"bed"]))%BED_TONES.size()
+	if pick == absi(hash([seed,index-1,"bed"]))%BED_TONES.size(): pick = (pick+1)%BED_TONES.size()
+	return BED_TONES[pick]

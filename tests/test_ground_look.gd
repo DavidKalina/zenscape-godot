@@ -73,7 +73,7 @@ func _hooks(include: String, surface: String) -> void:
 	# Round five: the land's own colour rides the ground's spare earth_side
 	# lanes (y the bowl, z the trees' shade), no new varyings.
 	check(surface.contains("earth_side = vec4(zs_ground_lush_at(VERTEX), zs_ground_form_at(VERTEX), 0.0);"), "The ground's form and shade ride earth_side")
-	check(surface.contains("if (ground) tint = zs_ground_form(tint, world_position, earth_side.xyz"), "The ground's tint takes the land's form")
+	check(surface.contains("if (ground) tint = zs_ground_form(tint, look_world, earth_side.xyz"), "The ground's tint takes the land's form (read where it stands from the plate's spot)")
 	check(surface.contains("global uniform sampler2D zs_ground_shade;"), "reference_surface reads the trees' shade")
 
 ## The soft tuft is the default: fuller and lower than the source's six

@@ -9,7 +9,8 @@ extends SceneTree
 ##     on the land and in the walker's way; F to walking in a few seconds;
 ##   - Space by it takes off: off the ground and flying, the parked one gone;
 ##   - F again mid line-up flies on;
-##   - F by another island claims it and lands on it;
+##   - F by another island claims it and lands on it, its folk (scripts/
+##     sky_folk.gd) standing on it before and on the plate after;
 ##   - flying off the edge brings the parked plane along.
 ##   godot --headless --path . --script tests/test_plane_flight.gd
 ##   godot --headless --path . --script tests/test_plane_flight.gd -- --glider
@@ -176,6 +177,10 @@ func _other_island(objects: int) -> void:
 		await process_frame
 	check(index >= 0,"Another island stands baked in the sky")
 	if index < 0: return
+	var copy: Node3D = islands._copies[index]
+	var dwellers: Array = islands.folk.people.filter(func(p: Dictionary) -> bool: return p.figure.get_parent() == copy)
+	check(not dwellers.is_empty(),"Its folk stand on it (%d)" % dwellers.size())
+	var target: Vector3 = islands.homes[index]
 	var origin: Vector3 = islands.origin
 	var home: Vector3 = islands.offsets[index]+eye.editor.terrain.global_position
 	eye.glide.position = home+Vector3(-90.0,30.0,0.0)
@@ -185,5 +190,17 @@ func _other_island(objects: int) -> void:
 	eye.handle(_key(KEY_F))
 	var out: Array = await _until_walking(60.0)
 	check(islands.origin != origin,"F by another island claims it (the world shifted %s)" % str(islands.origin-origin))
+	var plate_folk: Array = []
+	began = Time.get_ticks_msec()
+	while plate_folk.is_empty() and Time.get_ticks_msec()-began < 5000:
+		await process_frame
+		plate_folk = islands.folk.people.filter(func(p: Dictionary) -> bool: return p.figure.get_parent() == islands.folk.plate_holder)
+	check(plate_folk.size() == dwellers.size() and -islands.origin == target,"Claimed, its folk are on the plate (%d)" % plate_folk.size())
+	var off := 0.0
+	for person: Dictionary in plate_folk:
+		var at: Vector3 = person.figure.global_position
+		var under: Variant = islands.ground(at+Vector3.UP*2.0)
+		off = maxf(off,absf(at.y-float(under)) if under != null else INF)
+	check(off < 0.2,"Standing on its ground (%.3f m off at worst)" % off)
 	check(eye.active and not eye.flying and (out[0] as Array).has("touchdown"),"And lands on it: %s" % " > ".join(out[0]))
 	await _parked_well(eye.editor.data.objects.size())

@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
-"""Run Godot tests sequentially, headless by default, and retain evidence.
+"""Run Godot tests, headless by default, and retain evidence.
 
 Examples:
   python3 tools/check_bigfoot_living_regressions.py --list
   python3 tools/check_bigfoot_living_regressions.py --output /tmp/living-full-suite
   python3 tools/check_bigfoot_living_regressions.py --tests 'test_bigfoot_*.gd'
+  python3 tools/check_bigfoot_living_regressions.py --jobs 8
+
+Tests run one at a time unless --jobs asks for more. Parallel workers each get
+their own HOME under the output directory, so user:// (saves, settings) never
+collides between tests running at once. Timing-sensitive tests may run slower
+under load; raise --timeout if a parallel run times out where a serial one did not.
 
 Use --rendered only for an intentional graphical run: it opens Godot windows
 and may steal focus. Tests requiring GPU image readback or MultiMesh transforms
@@ -16,9 +22,11 @@ other engine errors, script errors, assertion failures and timeouts fail a test.
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed as futures_completed
 from datetime import datetime, timezone
 import json
 import os
+import queue
 from pathlib import Path
 import re
 import signal
@@ -70,7 +78,7 @@ def write_report(path: Path, report: dict) -> None:
     temporary.replace(path)
 
 
-def run_one(test: Path, args: argparse.Namespace, output_dir: Path) -> dict:
+def run_one(test: Path, args: argparse.Namespace, output_dir: Path, home: Path | None = None) -> dict:
     name = test.stem
     stdout_path = output_dir / f"{name}.stdout.log"
     engine_path = output_dir / f"{name}.godot.log"
@@ -81,9 +89,12 @@ def run_one(test: Path, args: argparse.Namespace, output_dir: Path) -> dict:
     timeout = args.timeout
     started = time.monotonic()
     timed_out = False
+    env = None
+    if home is not None:
+        env = dict(os.environ, HOME=str(home))
     with stdout_path.open("w") as log:
         process = subprocess.Popen(command, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT,
-                                   start_new_session=True)
+                                   start_new_session=True, env=env)
         try:
             process.wait(timeout=timeout)
         except (subprocess.TimeoutExpired, KeyboardInterrupt) as error:
@@ -115,10 +126,13 @@ def main() -> int:
     parser.add_argument("--tests", action="append", default=[], help="Glob under tests/; repeat for multiple patterns")
     parser.add_argument("--output", type=Path, default=Path("/tmp") / ("bigfoot-living-regressions-" + datetime.now().strftime("%Y%m%d-%H%M%S")))
     parser.add_argument("--list", action="store_true", help="List selected scripts without launching Godot")
+    parser.add_argument("--jobs", "-j", type=int, default=1, help="Tests to run at once (default: 1); each worker gets its own HOME")
     parser.add_argument("--strict-engine-errors", action="store_true", help="Also fail known renderer/environment error signatures")
     args = parser.parse_args()
     if args.timeout <= 0:
         parser.error("--timeout must be positive")
+    if args.jobs < 1:
+        parser.error("--jobs must be at least 1")
     tests = select_tests(args.tests or ["test_*.gd"])
     if not tests:
         parser.error("No test scripts matched")
@@ -136,20 +150,51 @@ def main() -> int:
         parser.error(f"Output already contains results; select a fresh --output: {output_dir}")
     report = dict(started_at=datetime.now(timezone.utc).isoformat(), project=str(ROOT),
                   renderer="forward_plus" if args.rendered else "dummy", headless=not args.rendered,
-                  resolution="640x480", timeout_seconds=args.timeout,
+                  resolution="640x480", timeout_seconds=args.timeout, jobs=args.jobs,
                   expected_tests=len(tests), complete=False, passed=False, results=[])
     write_report(report_path, report)
+    def show(index: int, test: Path, result: dict) -> None:
+        print(f"[{index}/{len(tests)}] {result['status'].upper()} {test.name} ({result['seconds']}s)", flush=True)
+        for issue in result["errors"] + result["assertion_failures"]:
+            print(issue, flush=True)
+        for issue in result["known_engine_errors"]:
+            print(f"  classified, retained in log: {issue['kind']}", flush=True)
+
     try:
-        for index, test in enumerate(tests, 1):
-            print(f"[{index}/{len(tests)}] RUN {test.name}", flush=True)
-            result = run_one(test, args, output_dir)
-            report["results"].append(result)
-            write_report(report_path, report)
-            print(f"[{index}/{len(tests)}] {result['status'].upper()} {test.name} ({result['seconds']}s)", flush=True)
-            for issue in result["errors"] + result["assertion_failures"]:
-                print(issue, flush=True)
-            for issue in result["known_engine_errors"]:
-                print(f"  classified, retained in log: {issue['kind']}", flush=True)
+        if args.jobs == 1:
+            for index, test in enumerate(tests, 1):
+                print(f"[{index}/{len(tests)}] RUN {test.name}", flush=True)
+                result = run_one(test, args, output_dir)
+                report["results"].append(result)
+                write_report(report_path, report)
+                show(index, test, result)
+        else:
+            # Each worker borrows a HOME slot for the length of one test.
+            homes: queue.Queue[Path] = queue.Queue()
+            for slot in range(args.jobs):
+                home = output_dir / "homes" / f"worker{slot}"
+                home.mkdir(parents=True, exist_ok=True)
+                homes.put(home)
+
+            def work(test: Path) -> dict:
+                home = homes.get()
+                try:
+                    return run_one(test, args, output_dir, home)
+                finally:
+                    homes.put(home)
+
+            done = 0
+            with ThreadPoolExecutor(max_workers=args.jobs) as pool:
+                futures = {pool.submit(work, test): test for test in tests}
+                for future in futures_completed(futures):
+                    test = futures[future]
+                    result = future.result()
+                    done += 1
+                    report["results"].append(result)
+                    write_report(report_path, report)
+                    show(done, test, result)
+            order = {str(test.relative_to(ROOT)): i for i, test in enumerate(tests)}
+            report["results"].sort(key=lambda result: order[result["test"]])
     except KeyboardInterrupt:
         report["interrupted"] = True
         write_report(report_path, report)

@@ -248,8 +248,23 @@ func _init(terrain: NativeTerrainData, prefer_native := true) -> void:
 	data.document_captured.connect(func(document: Dictionary) -> void:
 		if ready and (not springs.is_empty() or volume() > 0.01): document["water_flow"] = encode())
 
+## As a sky chunk becomes the plate (NativeTerrainData `adopt`, SkyIslands
+## `claim`) the cells are mapped again on a worker (9 ms on the main thread,
+## most of that frame); the water waits meanwhile, and the state restored
+## meanwhile is taken once the cells are the land's (`_restore`).
 func _void_changed() -> void:
-	if ready: await setup()
+	if not ready: return
+	if not data._adopting:
+		await setup()
+		return
+	ready = false
+	_remapping = true
+	await setup(Engine.get_main_loop() as SceneTree)
+
+## True while `_void_changed` maps the cells again; a state restored
+## meanwhile (`_pending`) is taken once they are mapped.
+var _remapping := false
+var _pending: Variant = null
 
 ## Maps every grid cell to the terrain triangle under its centre, synchronously
 ## or on a worker when `tree` is given. Call again if the mesh changes.
@@ -285,6 +300,11 @@ func setup(tree: SceneTree = null) -> void:
 		await setup(tree)
 		return
 	ready = true
+	_remapping = false
+	if _pending != null:
+		var state: Dictionary = _pending
+		_pending = null
+		_restore(state)
 
 ## For each cell centre of a `w`×`h` grid, the triangle under it: three vertex
 ## ids and barycentric (u, v) as NativeTerrainData.sample weighs them, or -1.
@@ -1081,7 +1101,9 @@ func _restore(state: Dictionary) -> void:
 	var saved: Variant = state.get("water_flow")
 	springs.clear()
 	runoff.reset()
-	if not ready: return
+	if not ready:
+		if _remapping: _pending = state
+		return
 	if data.vertex_ids != _topology or data.void_faces != _void: await setup()
 	if saved is Dictionary:
 		springs.assign(saved.springs)

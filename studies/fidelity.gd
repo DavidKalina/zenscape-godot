@@ -894,7 +894,7 @@ func _refresh_fire_water() -> void:
 	# The water mask is read once per rebuild, not per tick, so the first map to
 	# arrive (and any later replacement) has to re-seed it.
 	if _fire_field != null and _fire_water_map != before:
-		_fire_field.rebuild()
+		_fire_field.rebuild_soon()
 
 func _advance_fire(delta: float) -> void:
 	if _fire_field == null:

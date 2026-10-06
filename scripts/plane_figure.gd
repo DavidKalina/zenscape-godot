@@ -2,12 +2,16 @@ extends Node3D
 ## The wanderer flying the little plane (scripts/sky_plane.gd), for the chase
 ## camera (scripts/glide_camera.gd): a chunky toy biplane in warm wood
 ## browns, cream wings tipped in terracotta, a spinning propeller, and the
-## wanderer's head in the open cockpit with the scarf streaming behind. It
+## wanderer in the open cockpit behind a little windscreen, in a leather
+## cap and brass goggles, the scarf's two tails streaming behind. It
 ## is what flies; the glider (scripts/glider_figure.gd, `--glider`) has
 ## the same calls, so the wanderer's eye can swap one for the other.
 ##
 ## Faceted solids and soft light, as the style asks: every solid is a few
-## flat faces; the propeller is two dark blades inside a soft pale blur
+## flat faces, lacquered so each facet catches the sun as it turns (the
+## wings a satin doped cloth, the spinner and fittings brass); the scarf is
+## soft wool, fluttering faster the faster it flies; the propeller is two
+## dark blades inside a soft pale blur
 ## that thickens with speed. It is drawn turned by the bank and the barrel
 ## roll together. The ailerons tip with the roll, the elevator with the
 ## pitch, so the stick shows on the wings. Like the glider, a soft mark
@@ -18,11 +22,16 @@ extends Node3D
 ## scripts/plane_strip.gd `rest`), the pilot out, the propeller still.
 
 const GliderFigure = preload("res://scripts/glider_figure.gd")
+const PlanePilot = preload("res://scripts/plane_pilot.gd")
+const FacetMesh = preload("res://scripts/facet_mesh.gd")
+const PersonKit = preload("res://scripts/person_kit.gd")
 const WOOD := Color("8f5234")
 const DARK := Color("6b3b28")
 const TRIM := Color("c8643b")
 const WING := Color("f3ead6")
-const SKIN := Color("e8c39e")
+const LEATHER := Color("5e3522")
+const BRASS := Color("d6ad62")
+const STRIPE := Color("f3ead6")
 ## The wings: span (m), chord and thickness, the height of the lower and
 ## upper wing over the body's middle, and how far the upper sits forward.
 const SPAN := 1.4
@@ -41,10 +50,18 @@ const DEFLECT := 0.5
 const PROP_TURNS := 3.0
 const PROP_PER := 0.6
 const BLUR := Vector2(0.12,0.38)
-## The scarf: points, the gap between them (m), and its width.
+## The scarf: points of the long tail and the short, the gap between them
+## (m), its width, where its two pale stripes run (fractions of a tail's
+## length), and its flutter: the waves' rate (radians a second) slow and
+## fast, their reach at the tip (m), and the speed (m/s) it is fastest at.
 const SCARF := 12
-const SCARF_GAP := 0.13
-const SCARF_WIDTH := 0.075
+const SCARF_SHORT := 8
+const SCARF_GAP := 0.09
+const SCARF_WIDTH := 0.085
+const SCARF_STRIPES := [Vector2(0.7,0.77),Vector2(0.83,0.9)]
+const FLUTTER := Vector2(5.0,17.0)
+const FLUTTER_REACH := 0.035
+const FLUTTER_FAST := 18.0
 ## The landing mark shows within MARK_HEIGHT m of the ground.
 const MARK_HEIGHT := 28.0
 ## The wingtip vapour, as the glider's.
@@ -57,8 +74,9 @@ const VAPOUR_COLOR := Color(1.0,0.98,0.94)
 
 var _prop: Node3D
 var _blur: MeshInstance3D
-## The pilot's head and cap in the cockpit, hidden once they hop out.
-var _pilot: Array[MeshInstance3D] = []
+## The pilot in the cockpit, hidden once they hop out.
+var _pilot: Array[Node3D] = []
+var _rig: Node3D
 ## True while it stands parked on the land, not flying.
 var parked := false
 var _blur_material: StandardMaterial3D
@@ -69,6 +87,7 @@ var _elevator: Node3D
 var _last_roll := 0.0
 var _last_pitch := 0.0
 var _scarf_points := PackedVector3Array()
+var _short_points := PackedVector3Array()
 var _scarf: MeshInstance3D
 var _scarf_mesh: ImmediateMesh
 var _mark: MeshInstance3D
@@ -80,24 +99,39 @@ var _vapour_points := PackedVector3Array()
 var _vapour_strength := PackedFloat32Array()
 var _vapour_clock := 0.0
 
-func _init() -> void:
+## `livery` repaints it (scripts/sky_traffic.gd): any of body, dark, trim,
+## wing and scarf, each a Color; the wanderer's own plane takes none.
+func _init(livery := {}) -> void:
 	name = "Plane"
-	var wood := _material(WOOD)
-	var dark := _material(DARK)
-	var trim := _material(TRIM)
-	var cream := _material(WING)
-	var skin := _material(SKIN)
+	var wood := _lacquer(livery.get("body",WOOD))
+	var dark := _lacquer(livery.get("dark",DARK))
+	var trim := _lacquer(livery.get("trim",TRIM))
+	var cream := _lacquer(livery.get("wing",WING),0.5,0.35)
+	var leather := _lacquer(LEATHER,0.55,0.3)
+	var brass := _metal(BRASS,0.28)
+	var steel := _metal(Color("3b3430"),0.4)
 	# The body runs along -Z, the nose forward: a round chunky barrel that
 	# tapers to the tail, a terracotta cowl round the nose, a cream spinner.
 	_add(_hull([Vector3(-0.5,0.15,0.15),Vector3(-0.36,0.19,0.2),Vector3(-0.05,0.2,0.21),Vector3(0.3,0.13,0.14),Vector3(0.72,0.05,0.07)],8),wood,Vector3.ZERO,Vector3.ZERO)
 	_add(_hull([Vector3(-0.6,0.12,0.12),Vector3(-0.56,0.17,0.17),Vector3(-0.46,0.175,0.175),Vector3(-0.42,0.15,0.15)],8),trim,Vector3.ZERO,Vector3.ZERO)
-	_add(_hull([Vector3(-0.74,0.0,0.0),Vector3(-0.66,0.06,0.06),Vector3(-0.6,0.065,0.065)],6),cream,Vector3.ZERO,Vector3.ZERO)
-	# A dark band where the cockpit is cut, and the wanderer in it: the head
-	# in a leather cap, peeking over the rim.
+	_add(_hull([Vector3(-0.74,0.0,0.0),Vector3(-0.66,0.06,0.06),Vector3(-0.6,0.065,0.065)],6),brass,Vector3.ZERO,Vector3.ZERO)
+	# Short exhaust stubs either side of the cowl, and a terracotta band
+	# round the body before the tail.
+	for side in [-1.0,1.0]:
+		_add(GliderFigure._frustum(0.02,0.015,0.08,6),steel,Vector3(0.165*side,0.04,-0.48),Vector3(PI*0.5,0.0,0.0))
+	_add(_hull([Vector3(0.42,0.111,0.124),Vector3(0.47,0.102,0.116)],8),trim,Vector3.ZERO,Vector3.ZERO)
+	# The cockpit: a dark tub let into the back, a padded leather rim and a
+	# small glass windscreen before it. In it, the wanderer from the chest
+	# up, alive in the seat (scripts/plane_pilot.gd).
 	_add(_hull([Vector3(-0.12,0.1,0.06),Vector3(0.12,0.1,0.06)],8),dark,Vector3(0.0,0.15,0.22),Vector3.ZERO)
-	_pilot.append(_add(GliderFigure._gem(0.085),skin,Vector3(0.0,0.23,0.22),Vector3.ZERO))
-	_pilot.append(_add(GliderFigure._gem(0.07),dark,Vector3(0.0,0.28,0.24),Vector3.ZERO))
-	_pilot[1].scale = Vector3(1.15,0.6,1.15)
+	var rim := _add(GliderFigure._frustum(0.115,0.1,0.035,10),leather,Vector3(0.0,0.205,0.22),Vector3.ZERO)
+	rim.scale = Vector3(1.0,1.0,1.3)
+	var screen := _add(_prism([Vector2(0.0,0.0),Vector2(0.005,0.0),Vector2(0.027,0.068),Vector2(0.022,0.068)],0.11),_glass(),Vector3(0.0,0.205,0.1),Vector3.ZERO)
+	screen.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	for side in [-1.0,1.0]: _strut(Vector3(0.056*side,0.205,0.1),Vector3(0.056*side,0.273,0.124),brass,0.005)
+	_rig = PlanePilot.new(PersonKit.outfit(livery.get("scarf",PersonKit.SCARF)))
+	add_child(_rig)
+	_pilot.append(_rig)
 	# The wings: a long lower wing through the body and an upper one on
 	# struts, cream, tipped in terracotta, the upper a little forward.
 	var wing := _prism([Vector2(-CHORD*0.5,0.0),Vector2(-CHORD*0.3,THICK*0.6),Vector2(CHORD*0.25,THICK*0.5),Vector2(CHORD*0.5,0.0),Vector2(CHORD*0.25,-THICK*0.4),Vector2(-CHORD*0.3,-THICK*0.4)])
@@ -123,6 +157,10 @@ func _init() -> void:
 		# The wheels under the nose, on short legs.
 		_strut(Vector3(0.08*side,-0.15,-0.3),Vector3(0.17*side,-0.33,-0.28),dark)
 		_add(GliderFigure._frustum(0.08,0.08,0.05,8),dark,Vector3(0.2*side,-0.33,-0.28),Vector3(0.0,0.0,PI*0.5))
+		_add(GliderFigure._frustum(0.03,0.022,0.06,8),brass,Vector3(0.21*side,-0.33,-0.28),Vector3(0.0,0.0,PI*0.5))
+		# Bracing wires crossed between the wings, glinting.
+		_strut(Vector3(SPAN*0.34*side,UPPER_Y,STAGGER),Vector3(0.2*side,LOWER_Y,0.0),steel,0.004)
+		_strut(Vector3(SPAN*0.34*side,LOWER_Y,0.0),Vector3(0.16*side,UPPER_Y,STAGGER),steel,0.004)
 	# A tail skid it rests on, parked (scripts/plane_strip.gd TAIL).
 	_strut(Vector3(0.0,-0.03,0.58),Vector3(0.0,-0.11,0.66),dark)
 	_add(GliderFigure._gem(0.022),dark,Vector3(0.0,-0.1,0.66),Vector3.ZERO)
@@ -167,7 +205,10 @@ func _init() -> void:
 	_scarf = MeshInstance3D.new()
 	_scarf.mesh = _scarf_mesh
 	_scarf.top_level = true
-	var scarf_material := _material(Color("d9573a"))
+	var scarf_material := _material(Color.WHITE)
+	scarf_material.roughness = 0.95
+	scarf_material.vertex_color_use_as_albedo = true
+	scarf_material.set_meta("scarf",livery.get("scarf",Color("d9573a")))
 	scarf_material.cull_mode = BaseMaterial3D.CULL_DISABLED
 	_scarf.material_override = scarf_material
 	_scarf.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -213,8 +254,10 @@ func reset(glide: RefCounted) -> void:
 	parked = false
 	show_pilot(true)
 	_scarf_points.resize(SCARF)
+	_short_points.resize(SCARF_SHORT)
 	var back: Vector3 = -glide.forward()
 	for i in range(SCARF): _scarf_points[i] = glide.position+back*SCARF_GAP*i
+	for i in range(SCARF_SHORT): _short_points[i] = glide.position+back*SCARF_GAP*i
 	_mark_bright = 0.0
 	_vapour_clock = 0.0
 	_vapour_points.fill(glide.position)
@@ -226,6 +269,7 @@ func reset(glide: RefCounted) -> void:
 ## The world moved under it (SkyIslands `arrive`): the scarf goes too.
 func shift(by: Vector3) -> void:
 	for i in range(_scarf_points.size()): _scarf_points[i] += by
+	for i in range(_short_points.size()): _short_points[i] += by
 	for i in range(_vapour_points.size()): _vapour_points[i] += by
 
 ## One frame, as the glider's: posed on `glide` (a SkyPlane, or a plain
@@ -236,10 +280,17 @@ func update(delta: float, glide: RefCounted, _dive: float, ground: Callable, lan
 	var at: Vector3 = glide.position
 	var roll := _roll(glide)
 	transform = pose(at,float(glide.heading),float(glide.pitch),roll)
-	# The control surfaces follow how fast it rolls and pitches.
+	# The control surfaces follow how fast it rolls and pitches, and so
+	# does the pilot.
+	var roll_rate := (roll-_last_roll)/delta if delta > 0.0 else 0.0
+	var pitch_rate := (float(glide.pitch)-_last_pitch)/delta if delta > 0.0 else 0.0
+	var spin: Variant = glide.get("spin")
+	var throttle: Variant = glide.get("throttle")
+	var running: Variant = glide.get("engine")
+	if _rig.visible: _rig.animate(delta,float(glide.bank),float(glide.pitch),roll_rate,pitch_rate,float(throttle) if throttle != null else 0.0,float(spin) if spin != null else 0.0,float(running) if running != null else 1.0)
 	if delta > 0.0:
-		var rolled := clampf((roll-_last_roll)/delta*AILERON,-DEFLECT,DEFLECT)
-		var pitched := clampf((float(glide.pitch)-_last_pitch)/delta*ELEVATOR,-DEFLECT,DEFLECT)
+		var rolled := clampf(roll_rate*AILERON,-DEFLECT,DEFLECT)
+		var pitched := clampf(pitch_rate*ELEVATOR,-DEFLECT,DEFLECT)
 		var k := 1.0-exp(-delta/0.08)
 		for s in range(2):
 			var hand := -1.0 if s == 0 else 1.0
@@ -248,7 +299,6 @@ func update(delta: float, glide: RefCounted, _dive: float, ground: Callable, lan
 	_last_roll = roll
 	_last_pitch = float(glide.pitch)
 	var pace := float(glide.speed)
-	var running: Variant = glide.get("engine")
 	_spin_prop(delta,pace,float(running) if running != null else 1.0)
 	_trail_scarf(delta,glide)
 	_trail_vapour(delta,near,lean)
@@ -288,30 +338,76 @@ func _roll(glide: RefCounted) -> float:
 	var spin: Variant = glide.get("spin")
 	return float(glide.bank)+(float(spin) if spin != null else 0.0)
 
+## The scarf's two tails, from the knot at the back of the neck: each point
+## is dragged back by the air past it and kept a gap behind the one before,
+## sagging when slow. Drawn, ripples run down each tail, side to side and up
+## and down, twisting it so the wool catches the light, reaching further
+## towards the tip and running faster with the speed.
 func _trail_scarf(delta: float, glide: RefCounted) -> void:
 	if _scarf_points.size() != SCARF: return
-	var neck := transform*Vector3(0.0,0.17,0.28)
-	_scarf_points[0] = neck
-	var wind: Vector3 = glide.velocity
-	var t := Time.get_ticks_msec()*0.001
-	for i in range(1,SCARF):
-		# Each point is dragged back by the air past it and kept a gap
-		# behind the one before; it flutters more towards the tail.
-		var p := _scarf_points[i]-wind*delta*0.15
-		p += Vector3(0.0,sin(t*9.0+i*0.9)*0.004*i,0.0)
-		var d := p-_scarf_points[i-1]
-		if d.length() > 0.0001: p = _scarf_points[i-1]+d.normalized()*SCARF_GAP
-		_scarf_points[i] = p
-	_scarf_mesh.clear_surfaces()
-	_scarf_mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLE_STRIP)
+	var knot: Vector3 = transform*_rig.knot()
 	var side := basis.x.normalized()
-	for i in range(SCARF):
-		var w := SCARF_WIDTH*(1.0-0.55*float(i)/SCARF)
-		_scarf_mesh.surface_set_normal(basis.y)
-		_scarf_mesh.surface_add_vertex(_scarf_points[i]-side*w*0.5)
-		_scarf_mesh.surface_set_normal(basis.y)
-		_scarf_mesh.surface_add_vertex(_scarf_points[i]+side*w*0.5)
+	var up := basis.y.normalized()
+	var fast := clampf(float(glide.speed)/FLUTTER_FAST,0.0,1.0)
+	var wind: Vector3 = glide.velocity
+	_drag_tail(_scarf_points,knot-side*0.012,wind,delta,fast)
+	_drag_tail(_short_points,knot+side*0.014,wind,delta,fast)
+	var t := Time.get_ticks_msec()*0.001
+	var rate := lerpf(FLUTTER.x,FLUTTER.y,fast)
+	var color: Color = (_scarf.material_override as StandardMaterial3D).get_meta("scarf",Color("d9573a"))
+	_scarf_mesh.clear_surfaces()
+	_draw_tail(_scarf_points,side,up,t*rate,fast,1.0,color)
+	_draw_tail(_short_points,side,up,t*rate*1.13+1.7,fast,0.85,color)
+
+func _drag_tail(points: PackedVector3Array, root: Vector3, wind: Vector3, delta: float, fast: float) -> void:
+	points[0] = root
+	for i in range(1,points.size()):
+		var p := points[i]-wind*delta*0.15+Vector3.DOWN*delta*0.5*(1.0-fast)
+		var d := p-points[i-1]
+		if d.length() > 0.0001: p = points[i-1]+d.normalized()*SCARF_GAP
+		points[i] = p
+
+## One tail as a ribbon, `phase` its ripples' clock, `wide` its width's
+## share, with the pale stripes cut sharp near its end.
+func _draw_tail(points: PackedVector3Array, side: Vector3, up: Vector3, phase: float, fast: float, wide: float, color: Color) -> void:
+	var last := float(points.size()-1)
+	var cuts := []
+	for i in range(points.size()): cuts.append(float(i))
+	for stripe: Vector2 in SCARF_STRIPES:
+		cuts.append(stripe.x*last)
+		cuts.append(stripe.y*last)
+	cuts.sort()
+	var reach := FLUTTER_REACH*lerpf(0.35,1.0,fast)
+	_scarf_mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLE_STRIP)
+	var before := Color(0,0,0,0)
+	for u: float in cuts:
+		var i := mini(int(u),points.size()-2)
+		var p := points[i].lerp(points[i+1],u-i)
+		var along := (points[i+1]-points[i]).normalized()
+		var tip := pow(u/last,1.3)
+		var wave := phase-u*1.1
+		p += side*sin(wave)*reach*tip+up*sin(wave*0.8+1.3)*reach*0.6*tip
+		var across := side.rotated(along,sin(wave+0.6)*0.7*tip) if along.length_squared() > 0.5 else side
+		var normal := across.cross(along).normalized()
+		var f := u/last
+		var c := color
+		for stripe: Vector2 in SCARF_STRIPES:
+			if f >= stripe.x-0.0001 and f < stripe.y-0.0001: c = STRIPE
+		if before.a > 0.0 and c != before:
+			# The stripe's edge: the same place again in the new colour.
+			for e in [-1.0,1.0]:
+				_scarf_mesh.surface_set_color(before)
+				_scarf_mesh.surface_set_normal(normal)
+				_scarf_mesh.surface_add_vertex(p+across*e*_scarf_width(f,wide)*0.5)
+		before = c
+		for e in [-1.0,1.0]:
+			_scarf_mesh.surface_set_color(c)
+			_scarf_mesh.surface_set_normal(normal)
+			_scarf_mesh.surface_add_vertex(p+across*e*_scarf_width(f,wide)*0.5)
 	_scarf_mesh.surface_end()
+
+static func _scarf_width(along: float, wide: float) -> float:
+	return SCARF_WIDTH*wide*(1.0-0.4*along)
 
 ## The vapour, as the glider's: each upper wingtip lays a point every
 ## VAPOUR_EVERY seconds; the points hang, drifting and widening as they fade.
@@ -380,6 +476,30 @@ func _material(color: Color) -> StandardMaterial3D:
 	m.roughness = 0.85
 	return m
 
+## Glossy paint: a `roughness` base under a clear coat of `coat`.
+func _lacquer(color: Color, roughness := 0.32, coat := 0.8) -> StandardMaterial3D:
+	var m := _material(color)
+	m.roughness = roughness
+	m.clearcoat_enabled = true
+	m.clearcoat = coat
+	m.clearcoat_roughness = 0.12
+	return m
+
+func _metal(color: Color, roughness: float) -> StandardMaterial3D:
+	var m := _material(color)
+	m.metallic = 1.0
+	m.roughness = roughness
+	return m
+
+## The windscreen: faint, clear and sharp-shining.
+func _glass() -> StandardMaterial3D:
+	var m := _material(Color(0.85,0.93,0.96,0.22))
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.roughness = 0.03
+	m.metallic = 0.3
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	return m
+
 func _add(mesh: Mesh, material: Material, at: Vector3, turn: Vector3) -> MeshInstance3D:
 	var part := MeshInstance3D.new()
 	part.mesh = mesh
@@ -389,9 +509,9 @@ func _add(mesh: Mesh, material: Material, at: Vector3, turn: Vector3) -> MeshIns
 	add_child(part)
 	return part
 
-## A thin dark strut from `from` to `to`.
-func _strut(from: Vector3, to: Vector3, material: Material) -> void:
-	var part := _add(GliderFigure._frustum(0.014,0.014,1.0,4),material,(from+to)*0.5,Vector3.ZERO)
+## A thin strut (or, `radius` finer, a wire) from `from` to `to`.
+func _strut(from: Vector3, to: Vector3, material: Material, radius := 0.014) -> void:
+	var part := _add(GliderFigure._frustum(radius,radius,1.0,4),material,(from+to)*0.5,Vector3.ZERO)
 	var y := (to-from)
 	var x := y.cross(Vector3.FORWARD if absf(y.normalized().dot(Vector3.FORWARD)) < 0.9 else Vector3.RIGHT).normalized()
 	part.basis = Basis(x,y,x.cross(y.normalized()).normalized())
@@ -410,31 +530,9 @@ static func _scaled(mesh: ArrayMesh, by: Vector3) -> ArrayMesh:
 	out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
 	return out
 
-## A flat-shaded body along Z: `rings` of Vector3(z, half width, half
-## height), `sides` faces round, capped at both ends.
+## A flat-shaded body along Z (scripts/facet_mesh.gd `hull`).
 static func _hull(rings: Array, sides: int) -> ArrayMesh:
-	var tris := []
-	var ring_at := func(r: Vector3, i: int) -> Vector3:
-		var a := TAU*(float(i)+0.5)/sides
-		return Vector3(cos(a)*r.y,sin(a)*r.z,r.x)
-	for k in range(rings.size()-1):
-		var r0: Vector3 = rings[k]
-		var r1: Vector3 = rings[k+1]
-		var inside := Vector3(0.0,0.0,(r0.x+r1.x)*0.5)
-		for i in range(sides):
-			var a0: Vector3 = ring_at.call(r0,i)
-			var a1: Vector3 = ring_at.call(r0,i+1)
-			var b0: Vector3 = ring_at.call(r1,i)
-			var b1: Vector3 = ring_at.call(r1,i+1)
-			tris.append([a0,b0,b1,inside])
-			tris.append([a0,b1,a1,inside])
-	for end in [0,rings.size()-1]:
-		var r: Vector3 = rings[end]
-		var centre := Vector3(0.0,0.0,r.x)
-		var inside := Vector3(0.0,0.0,r.x+(0.01 if end == 0 else -0.01))
-		if r.y > 0.0001:
-			for i in range(sides): tris.append([centre,ring_at.call(r,i),ring_at.call(r,i+1),inside])
-	return _shell(tris)
+	return FacetMesh.hull(rings,sides)
 
 ## A flat-shaded prism along X, from -0.5 to 0.5: `section` is its outline
 ## in (z, y), convex. With `width` it runs along X only that wide.
@@ -454,30 +552,6 @@ static func _prism(section: Array, width := 1.0) -> ArrayMesh:
 			tris.append([Vector3(e,mid.y,mid.x),Vector3(e,p.y,p.x),Vector3(e,q.y,q.x),Vector3(0.0,mid.y,mid.x)])
 	return _shell(tris)
 
-## Triangles [a, b, c, a point inside] as a flat-shaded mesh, each face
-## wound and lit outward from its inside point.
+## Triangles as a flat-shaded mesh (scripts/facet_mesh.gd `shell`).
 static func _shell(tris: Array) -> ArrayMesh:
-	var vertices := PackedVector3Array()
-	var normals := PackedVector3Array()
-	for t: Array in tris:
-		var a: Vector3 = t[0]
-		var b: Vector3 = t[1]
-		var c: Vector3 = t[2]
-		var n := -(b-a).cross(c-a)
-		if n.length_squared() < 1e-12: continue
-		n = n.normalized()
-		if n.dot((a+b+c)/3.0-(t[3] as Vector3)) < 0.0:
-			var swap := b
-			b = c
-			c = swap
-			n = -n
-		for v in [a,b,c]:
-			vertices.append(v)
-			normals.append(n)
-	var arrays := []
-	arrays.resize(Mesh.ARRAY_MAX)
-	arrays[Mesh.ARRAY_VERTEX] = vertices
-	arrays[Mesh.ARRAY_NORMAL] = normals
-	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
-	return mesh
+	return FacetMesh.shell(tris)

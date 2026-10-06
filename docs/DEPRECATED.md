@@ -125,10 +125,11 @@ building game.
   `play_spring_tree.gd`, `play_water_mischief.gd`, `world_loose_body.gd`,
   `world_loose_props.gd`, `world_spring_tree.gd`, `world_water_play.gd`,
   `diorama_world_play.gd`.
-- Tests: `test_native_explosives`, `test_explosive_landscapes`,
-  `test_internal_blast`, `test_mountain_collapse`, `test_native_tunnels`,
-  `test_threaded_destruction`, `test_chasm_terrain`, `test_creature_void_fall`,
+- Tests: `test_chasm_terrain`, `test_creature_void_fall`,
   `test_creature_tremor`, `test_fidelity_tremor`, `test_loose_prop_cursor`.
+  Removed 2026-10-06: `test_native_explosives`, `test_explosive_landscapes`,
+  `test_internal_blast`, `test_mountain_collapse`, `test_native_tunnels`,
+  `test_threaded_destruction`.
   **Keep** `reference_tremor.gd`: the shaping tools' rumble
   (`clay_tremor.gd`) kicks it now.
 - Docs: `docs/terrain-destruction`, `docs/chasm`.
@@ -144,15 +145,17 @@ might be part of the water ball splash.
 
 ---
 
-## 4. Wildfire (Proposed, needs a decision)
+## 4. Wildfire (Decided 2026-10-06: dropped)
 
 The wildfire simulation (PR #5, `docs/fire/DESIGN.md`) isn't in the new
-vision. Keeping it as a rare weather event could fit, the same way Bigfoot is.
+vision, and the game won't support fire or explosives. Its tests were
+removed 2026-10-06: `test_fire_field`, `test_fire_effects`, `test_fire_look`,
+`test_fire_transactions`, `test_fire_integration` and `test_bigfoot_fire`.
+The scripts are still wired in.
 
 - Scripts: `fire_field.gd`, `fire_effects.gd`, `fire_look.gd`,
   `fire_material.gd`, `bigfoot_fire.gd`.
-- Tests: `test_fire_*` (five files). **Not** `test_fireflies.gd`: fireflies are
-  ambient life and stay.
+- **Not** `test_fireflies.gd`: fireflies are ambient life and stay.
 - Tools: `film_fire*.gd`, `profile_fire.gd`.
 - Branches: `feature/fire`, `feature/fire-*`.
 - Wired in via `native_chunk_editor.gd`, `garden_view.gd` (10 references) and
@@ -221,6 +224,7 @@ Genesis is now the only way to create. These keep the older paths alive:
   `native_build_palette.gd`, `native_selection_panel.gd`,
   `landscape_preset_editor.gd`, `scene_look_editor.gd`,
   `tree_motion_tuner.gd`. Check each one against Genesis before removing it.
+  `test_scene_look` (the Looks editor) was removed 2026-10-06.
 
 ---
 
