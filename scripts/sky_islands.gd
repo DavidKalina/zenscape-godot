@@ -461,9 +461,10 @@ func _bake(island: Node3D, chunk_seed: int, document: Dictionary = {}, maps: Dic
 	if index < 0: return
 	lands[index] = out.plain
 	_stand(island,out)
-	# Its people, on its ground in its own frame; none at the first home.
-	if homes[index].length() >= 1.0: folk.settle(island,chunk_seed,out.plain,editor.terrain.global_transform)
 	SkyCommits.spend("island",Time.get_ticks_usec()-began)
+	# Its people, on its ground in its own frame, in a later frame with room
+	# (SkyFolk `settle_later`); none at the first home.
+	if homes[index].length() >= 1.0: folk.settle_later(island,chunk_seed,out.plain,editor.terrain.global_transform)
 
 ## The island's nodes, from its worker's `out`: its ground, in a copy of the
 ## plate's own ground material reading the island's own maps; its earth

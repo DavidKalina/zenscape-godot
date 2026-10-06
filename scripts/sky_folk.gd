@@ -17,9 +17,15 @@ extends Node3D
 ## land's own frame (plate metres, as NativeTerrainData reads them), set
 ## in their holder's by `frame`, the land's place in it (only ever moved,
 ## never turned).
+##
+## Settling is part of the sky streaming in, so it shares the sky's frame
+## budget (scripts/sky_commits.gd): islands are queued (`settle_later`) and
+## one settles in a frame that still has room, never in the frame its
+## island stood up in.
 
 const IslanderFigure = preload("res://scripts/islander_figure.gd")
 const Plate = preload("res://scripts/plate.gd")
+const SkyCommits = preload("res://scripts/sky_commits.gd")
 ## The figure's scale to the world: its eyes at the wanderer's height.
 const SCALE := 1.9
 ## People an island, fewest and most, and how far apart they stand (m).
@@ -58,6 +64,8 @@ var people := []
 var plate_holder: Node3D
 var _plate_key := ""
 var _plate_wait := 0.0
+## Islands waiting to be settled: [holder, seed, land, frame].
+var _queue := []
 
 func _init() -> void:
 	name = "SkyFolk"
@@ -93,6 +101,26 @@ func settle(holder: Node3D, chunk_seed: int, land: Object, frame: Transform3D) -
 		_ground(person)
 	return spots.size()
 
+## Queues an island's folk (`settle`) for a frame with room in the sky's
+## budget.
+func settle_later(holder: Node3D, chunk_seed: int, land: Object, frame: Transform3D) -> void:
+	_queue.append([holder,chunk_seed,land,frame])
+
+## Settles the next queued island, if this frame has room; true if one was.
+func _settle_next() -> bool:
+	while not _queue.is_empty():
+		var next: Array = _queue[0]
+		if not is_instance_valid(next[0]) or (next[0] as Node).is_queued_for_deletion():
+			_queue.pop_front()
+			continue
+		if not SkyCommits.open(): return false
+		_queue.pop_front()
+		var began := Time.get_ticks_usec()
+		settle(next[0],next[1],next[2],next[3])
+		SkyCommits.spend("folk",Time.get_ticks_usec()-began)
+		return true
+	return false
+
 ## Whether someone can stand at `p`: on the land in from its shore, dry,
 ## gentle, and clear of what stands on it (its `objects`).
 static func good(p: Vector2, land: Object) -> bool:
@@ -124,6 +152,7 @@ func clear_plate() -> void:
 	_plate_key = ""
 
 func _process(delta: float) -> void:
+	_settle_next()
 	if islands != null: _keep_plate(delta)
 	var camera := get_viewport().get_camera_3d()
 	if camera == null: return
@@ -145,8 +174,10 @@ func _keep_plate(delta: float) -> void:
 		_plate_key = key
 		return
 	var land: Object = islands.editor.data
-	if not land._shore_ready: return
+	if not land._shore_ready or not SkyCommits.open(): return
+	var began := Time.get_ticks_usec()
 	settle(plate_holder,islands.seed_of(home),land,plate_holder.global_transform.affine_inverse()*islands.editor.terrain.global_transform)
+	SkyCommits.spend("folk",Time.get_ticks_usec()-began)
 	_plate_key = key
 
 func _prune() -> void:
