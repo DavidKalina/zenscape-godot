@@ -221,7 +221,7 @@ func _update_cloud_sea(on: float) -> void:
 ## The near sea round the eye, under the plate and the islands over it.
 func _update_near_sea(camera: Camera3D) -> void:
 	if not sea.visible or camera == null: return
-	sea.follow(camera)
+	sea.follow(camera, float(_scene.get("_motion_time")) if _scene.get("_motion_time") != null else 0.0)
 	var wanderer: Variant = _scene.get("wanderer")
 	var islands: Node = wanderer.get("islands") if wanderer is Node else null
 	var editor = _scene.get("_chunk_editor")

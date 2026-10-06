@@ -12,7 +12,10 @@ extends SceneTree
 ## Options: --out=DIR (a still of each spot whole goes there), --only=overview,sea-low,...,
 ## --parts=sky,near_sea,... (default all), --frames=N (measured frames, 40),
 ## --cap=LINES (the render resolution cap for the run, scripts/render_resolution.gd;
-## the player's kept one otherwise).
+## the player's kept one otherwise), --freeze=T (hold the shaders' motion time
+## at T, so stills of one spot match but for what is taken away),
+## --stills=unbaked,... (a still of each spot with these parts taken away,
+## <spot>-without-<part>.png, beside its whole <spot>.png).
 const GOLDEN_SUN := 0.1
 var scene: Node3D
 var eye: Node
@@ -22,6 +25,8 @@ var only: Array = []
 var parts_wanted: Array = []
 var measure_frames := 40
 var cap := -1
+var freeze := -1.0
+var still_parts: Array = []
 var _viewport: RID
 
 func _initialize() -> void:
@@ -43,6 +48,8 @@ func run() -> void:
 		elif argument.begins_with("--parts="): parts_wanted = Array(argument.trim_prefix("--parts=").split(","))
 		elif argument.begins_with("--frames="): measure_frames = int(argument.trim_prefix("--frames="))
 		elif argument.begins_with("--cap="): cap = int(argument.trim_prefix("--cap="))
+		elif argument.begins_with("--freeze="): freeze = float(argument.trim_prefix("--freeze="))
+		elif argument.begins_with("--stills="): still_parts = Array(argument.trim_prefix("--stills=").split(","))
 	DirAccess.make_dir_recursive_absolute(out)
 	create_timer(1800).timeout.connect(func() -> void: push_error("profile timed out"); quit(2))
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
@@ -66,6 +73,9 @@ func run() -> void:
 	var RenderResolution = preload("res://scripts/render_resolution.gd")
 	print("PROFILE kept cap %d" % RenderResolution.load_cap())
 	if cap >= 0: RenderResolution.apply(root,cap)
+	if freeze >= 0.0: RenderingServer.frame_pre_draw.connect(func() -> void:
+		scene._motion_time = freeze
+		RenderingServer.global_shader_parameter_set("zs_motion_time",freeze))
 	print("PROFILE\tspot\tpart\twall_ms\tgpu_ms\trender_cpu_ms\tprocess_ms\tdraws\tprimitives")
 	print("PROFILE render scale %.3f, window %s, driver %s" % [root.scaling_3d_scale,root.size,RenderingServer.get_current_rendering_driver_name()])
 	if _wanted("overview"):
@@ -106,8 +116,8 @@ func _shots() -> Array:
 	]
 
 ## Each part of the look, as [name, take away, put back]. Taking away is
-## re-applied every measured frame, so parts the game re-publishes each frame
-## stay away.
+## re-applied just before every measured frame is drawn, so parts the game
+## re-publishes each frame stay away.
 func _parts() -> Array:
 	var lighting = scene._lighting
 	var env: Environment = scene._environment
@@ -121,7 +131,17 @@ func _parts() -> Array:
 	parts.append(["radiance",func() -> void: env.reflected_light_source = Environment.REFLECTION_SOURCE_DISABLED,func() -> void: env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY])
 	var sky: Sky = env.sky
 	parts.append(["radiance_32",func() -> void: sky.radiance_size = Sky.RADIANCE_SIZE_32,func() -> void: sky.radiance_size = Sky.RADIANCE_SIZE_256])
-	if look.sea != null: parts.append(["near_sea",func() -> void: look.sea.visible = false,func() -> void: look.sea.visible = true])
+	if look.sea != null:
+		parts.append(["near_sea",func() -> void: look.sea.visible = false,func() -> void: look.sea.visible = true])
+		var sea_material: ShaderMaterial = look.sea.material
+		var sea: Node = look.sea
+		# Negative: what one bake of the envelope costs, baked every frame.
+		parts.append(["rebake",func() -> void: sea._baked_middle = Vector2.INF,func() -> void: pass])
+		parts.append(["unbaked",func() -> void:
+			var at: Vector4 = sea_material.get_shader_parameter("envelope_at")
+			sea_material.set_shader_parameter("envelope_at",Vector4(at.x,at.y,at.z,0.0)),func() -> void:
+			var at: Vector4 = sea_material.get_shader_parameter("envelope_at")
+			sea_material.set_shader_parameter("envelope_at",Vector4(at.x,at.y,at.z,1.0))])
 	if islands != null:
 		for key: String in ["towers","peaks","clouds","islets","currents","folk","ambient"]:
 			var node = islands.get(key)
@@ -162,22 +182,28 @@ func _profile(spot: String, shot := {}) -> void:
 		var name: String = part[0]
 		if not parts_wanted.is_empty() and name.get_slice("(",0) not in parts_wanted: continue
 		var without := await _measure(part[1])
+		if name in still_parts:
+			RenderingServer.frame_pre_draw.connect(part[1])
+			await frames(4)
+			await still("%s-without-%s" % [spot,name])
+			RenderingServer.frame_pre_draw.disconnect(part[1])
 		part[2].call()
 		await frames(8)
 		_print(spot,"-"+name,without,whole)
 	# Whole again, to see the drift between the start and the end.
 	_print(spot,"whole_again",await _measure(Callable()))
 
-## The means over measure_frames frames, `take_away` applied before each.
+## The means over measure_frames frames, `take_away` applied before each
+## is drawn (after the game's own processing, which may put it back).
 func _measure(take_away: Callable) -> Dictionary:
-	if take_away.is_valid(): take_away.call()
+	if take_away.is_valid():
+		take_away.call()
+		RenderingServer.frame_pre_draw.connect(take_away)
 	for i in range(12):
-		if take_away.is_valid(): take_away.call()
 		await RenderingServer.frame_post_draw
 	var sum := {"wall":0.0,"gpu":0.0,"cpu":0.0,"process":0.0,"draws":0.0,"primitives":0.0}
 	var from := Time.get_ticks_usec()
 	for i in range(measure_frames):
-		if take_away.is_valid(): take_away.call()
 		await RenderingServer.frame_post_draw
 		sum.gpu += RenderingServer.viewport_get_measured_render_time_gpu(_viewport)
 		sum.cpu += RenderingServer.viewport_get_measured_render_time_cpu(_viewport)
@@ -185,6 +211,7 @@ func _measure(take_away: Callable) -> Dictionary:
 		sum.draws += Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)
 		sum.primitives += Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME)
 	sum.wall = float(Time.get_ticks_usec()-from)/1000.0
+	if take_away.is_valid(): RenderingServer.frame_pre_draw.disconnect(take_away)
 	for key: String in sum: sum[key] /= measure_frames
 	return sum
 

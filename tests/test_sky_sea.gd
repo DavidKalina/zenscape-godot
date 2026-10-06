@@ -49,6 +49,22 @@ func run() -> void:
 	sea.follow(camera)
 	check(is_equal_approx(sea.reach, SkySea.REACH), "A far plane past it leaves it at its full reach")
 
+	# The envelope, baked round the eye and baked again only once it has gone far.
+	camera.global_position = Vector3(0.0, 40.0, 0.0)
+	sea._baked_middle = Vector2.INF
+	sea.follow(camera, 10.0)
+	var baked: Vector4 = sea.material.get_shader_parameter("envelope_at")
+	var middle := Vector2(baked.x, baked.y) + Vector2.ONE * baked.z * 0.5
+	check(baked.w == 1.0 and middle.distance_to(SkySea.DRIFT * 10.0) < 0.01, "The envelope is baked round the eye in the drifting field (%s)" % baked)
+	check(baked.z * 0.5 >= sea.reach + SkySea.BAKE_MOVE + 150.0, "It covers the reach and the march's taps wherever the eye goes before the next bake")
+	check(sea.material.get_shader_parameter("envelope") is ViewportTexture, "The sea reads the bake")
+	camera.global_position = Vector3(SkySea.BAKE_MOVE * 0.5, 40.0, 0.0)
+	sea.follow(camera, 10.0)
+	check(sea.material.get_shader_parameter("envelope_at") == baked, "A short way on it is not baked again")
+	camera.global_position = Vector3(SkySea.BAKE_MOVE * 1.5, 40.0, 0.0)
+	sea.follow(camera, 10.0)
+	check(sea.material.get_shader_parameter("envelope_at") != baked, "Far enough on it is baked again")
+
 	# The towers' own noise, made on a worker and handed over once ready.
 	for i in range(600):
 		if float(sea.material.get_shader_parameter("has_noise")) > 0.0: break

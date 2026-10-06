@@ -18,6 +18,12 @@ extends MeshInstance3D
 ## cauliflower on the heaps is the towers' noise volume (scripts/
 ## cumulus_noise.gd), made on a worker and handed over once it is ready
 ## (`_take_noise`); till then the heaps are their smooth envelope.
+##
+## That envelope (the heap-field and the domes of `sea_rise`) is the
+## costliest part of the march, some forty hashes a step; it only drifts, so
+## it is baked into a texture over a square of the drifting field round the
+## eye (`_bake`, shaders/sky_sea_envelope.gdshader) and read from there,
+## baked again only once the eye has gone BAKE_MOVE from the square's middle.
 
 const SkyIslands = preload("res://scripts/sky_islands.gd")
 const NativeTerrainData = preload("res://scripts/native_terrain_data.gd")
@@ -40,11 +46,24 @@ const RANGES := 4
 ## Drawn before the glide's towers (scripts/sky_towers.gd RENDER_PRIORITY),
 ## which rise out of it.
 const RENDER_PRIORITY := -2
+## The envelope's bake: texels a side, how far past `reach` it covers (m;
+## past the march's furthest taps), how far the eye goes from its middle
+## before it is baked again, and the heaps' cell and drift (m, m/s; as
+## shaders/sky_sea.gdshader CELL and DRIFT).
+const BAKE_TEXELS := 2048
+const BAKE_PAST := 600.0
+const BAKE_MOVE := 400.0
+const CELL := 72.0
+const DRIFT := Vector2(0.6,0.35)*1.2
 
 var material := ShaderMaterial.new()
 var reach := REACH
 var _box := BoxMesh.new()
 var _has_noise := false
+var _bake_view := SubViewport.new()
+var _bake_material := ShaderMaterial.new()
+var _baked_middle := Vector2.INF
+var _baked_side := 0.0
 
 func _init() -> void:
 	name = "SkySea"
@@ -60,6 +79,19 @@ func _init() -> void:
 	set_islands([])
 	set_ranges([])
 	_size(REACH)
+	_bake_view.name = "EnvelopeBake"
+	_bake_view.size = Vector2i(BAKE_TEXELS,BAKE_TEXELS)
+	_bake_view.disable_3d = true
+	_bake_view.use_hdr_2d = true
+	_bake_view.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	_bake_material.shader = preload("res://shaders/sky_sea_envelope.gdshader")
+	_bake_material.set_shader_parameter("cell",CELL)
+	var sheet := ColorRect.new()
+	sheet.size = Vector2(BAKE_TEXELS,BAKE_TEXELS)
+	sheet.material = _bake_material
+	_bake_view.add_child(sheet)
+	add_child(_bake_view)
+	material.set_shader_parameter("envelope",_bake_view.get_texture())
 
 ## The sea's strength (0 paints none) and style (scripts/look_pass.gd
 ## CLOUD_STYLES), as the sky has them.
@@ -68,13 +100,15 @@ func set_sea(strength: float, style: int) -> void:
 	material.set_shader_parameter("cloud_sea",strength)
 	material.set_shader_parameter("cloud_sea_style",style)
 
-## Stands round `camera`, out as far as its far plane allows.
-func follow(camera: Camera3D) -> void:
+## Stands round `camera`, out as far as its far plane allows, the
+## envelope baked round it at `motion_time` (the shaders' zs_motion_time).
+func follow(camera: Camera3D, motion_time := 0.0) -> void:
 	if camera == null: return
 	var want := minf(REACH,camera.far*FAR_SHARE)
 	if not is_equal_approx(want,reach): _size(want)
 	_take_noise()
 	var eye := camera.global_position
+	_bake(Vector2(eye.x,eye.z)+DRIFT*motion_time)
 	global_position = Vector3(eye.x,FLOOR+(TALL+SWELL)*HEADROOM*0.5,eye.z)
 	material.set_shader_parameter("eye_xz",Vector2(eye.x,eye.z))
 
@@ -127,6 +161,21 @@ func _take_noise() -> void:
 	_has_noise = true
 	material.set_shader_parameter("cauliflower",noise)
 	material.set_shader_parameter("has_noise",1.0)
+
+## Bakes the envelope round `middle` (in the drifting field) when the eye
+## has gone BAKE_MOVE from the last bake's middle or the reach has grown.
+## The bake is drawn before the frame's 3D (a viewport inside it), so the
+## sea reads the new square from the frame it is set.
+func _bake(middle: Vector2) -> void:
+	var side := (reach+BAKE_PAST)*2.0
+	if middle.distance_to(_baked_middle) < BAKE_MOVE and side <= _baked_side: return
+	_baked_middle = middle
+	_baked_side = side
+	var corner := middle-Vector2.ONE*side*0.5
+	_bake_material.set_shader_parameter("origin",corner)
+	_bake_material.set_shader_parameter("side",side)
+	_bake_view.render_target_update_mode = SubViewport.UPDATE_ONCE
+	material.set_shader_parameter("envelope_at",Vector4(corner.x,corner.y,side,1.0))
 
 func _size(value: float) -> void:
 	reach = value

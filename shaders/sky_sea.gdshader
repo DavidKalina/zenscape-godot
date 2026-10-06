@@ -73,6 +73,11 @@ uniform vec2 eye_xz = vec2(0.0);
 uniform sampler3D cauliflower : filter_linear, repeat_enable;
 uniform float has_noise = 0.0;
 uniform sampler2D depth_texture : hint_depth_texture, filter_nearest, repeat_disable;
+// The envelope's heap-field and domes baked round the eye (scripts/
+// sky_sea.gd `_bake`, shaders/sky_sea_envelope.gdshader): xy the square's
+// corner in the drifting field, z its side (m), w 1 once it is drawn.
+uniform sampler2D envelope : filter_linear, repeat_disable;
+uniform vec4 envelope_at = vec4(0.0);
 
 // The sea's top (m): the eye's height over it is the dome's "depth", so its
 // haze (per depth) is matched here.
@@ -140,10 +145,19 @@ const float LIFT = 1.2;
 // world `xz`, the Storybook sea's domes (their finer octave as its mean:
 // the cauliflower is the finer form now).
 float sea_rise(vec2 xz) {
-	vec2 p = (xz + DRIFT * zs_motion_time) / CELL;
-	float mass = zs_storybook_sea_gnoise(p * 0.23 + vec2(3.1, 7.7)) * 0.7 + zs_storybook_sea_gnoise(p * 0.51 + vec2(8.3, 1.9)) * 0.3;
+	vec2 drifted = xz + DRIFT * zs_motion_time;
+	vec2 p = drifted / CELL;
+	float mass;
+	float h;
+	if (envelope_at.w > 0.5) {
+		vec2 baked = texture(envelope, (drifted - envelope_at.xy) / envelope_at.z).rg;
+		mass = baked.r * 2.0 - 1.0;
+		h = baked.g;
+	} else {
+		mass = zs_storybook_sea_gnoise(p * 0.23 + vec2(3.1, 7.7)) * 0.7 + zs_storybook_sea_gnoise(p * 0.51 + vec2(8.3, 1.9)) * 0.3;
+		h = zs_storybook_sea_domes(p) * 0.62 + 0.38 * 0.45;
+	}
 	float heap = smoothstep(-0.2, 0.3, mass);
-	float h = zs_storybook_sea_domes(p) * 0.62 + 0.38 * 0.45;
 	// Under the islands: the heap-field full and the heaps higher.
 	float lift = 0.0;
 	for (int i = 0; i < 8; i++) {
