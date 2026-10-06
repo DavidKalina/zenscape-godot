@@ -135,6 +135,11 @@ func _parts() -> Array:
 		parts.append(["near_sea",func() -> void: look.sea.visible = false,func() -> void: look.sea.visible = true])
 		var sea_material: ShaderMaterial = look.sea.material
 		var sea: Node = look.sea
+		parts.append(["unswelled",func() -> void:
+			var at: Vector4 = sea_material.get_shader_parameter("swells_at")
+			sea_material.set_shader_parameter("swells_at",Vector4(at.x,at.y,at.z,0.0)),func() -> void:
+			var at: Vector4 = sea_material.get_shader_parameter("swells_at")
+			sea_material.set_shader_parameter("swells_at",Vector4(at.x,at.y,at.z,1.0))])
 		# Negative: what one bake of the envelope costs, baked every frame.
 		parts.append(["rebake",func() -> void: sea._baked_middle = Vector2.INF,func() -> void: pass])
 		parts.append(["unbaked",func() -> void:
@@ -146,6 +151,11 @@ func _parts() -> Array:
 		for key: String in ["towers","peaks","clouds","islets","currents","folk","ambient"]:
 			var node = islands.get(key)
 			if node is Node3D: parts.append([key,func() -> void: node.visible = false,func() -> void: node.visible = true])
+		if islands.peaks != null and "peak_children" in parts_wanted:
+			for child: Node in islands.peaks.get_children():
+				if child is Node3D and child.visible:
+					var node3: Node3D = child
+					parts.append(["peak_children:%s" % child.name,func() -> void: node3.visible = false,func() -> void: node3.visible = true])
 		if islands.peaks != null:
 			var puffs: Array = islands.peaks.find_children("*","MultiMeshInstance3D",true,false)
 			parts.append(["peak_puffs(%d)" % puffs.size(),func() -> void:
@@ -180,7 +190,7 @@ func _profile(spot: String, shot := {}) -> void:
 	_print(spot,"whole",whole)
 	for part: Array in _parts():
 		var name: String = part[0]
-		if not parts_wanted.is_empty() and name.get_slice("(",0) not in parts_wanted: continue
+		if not parts_wanted.is_empty() and name.get_slice("(",0) not in parts_wanted and name.get_slice(":",0) not in parts_wanted: continue
 		var without := await _measure(part[1])
 		if name in still_parts:
 			RenderingServer.frame_pre_draw.connect(part[1])

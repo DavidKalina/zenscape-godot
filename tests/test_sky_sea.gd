@@ -64,6 +64,19 @@ func run() -> void:
 	camera.global_position = Vector3(SkySea.BAKE_MOVE * 1.5, 40.0, 0.0)
 	sea.follow(camera, 10.0)
 	check(sea.material.get_shader_parameter("envelope_at") != baked, "Far enough on it is baked again")
+	# The swells, baked round the eye in the world, again when the islands change.
+	var swells: Vector4 = sea.material.get_shader_parameter("swells_at")
+	check(swells.w == 1.0 and is_equal_approx(swells.x + swells.z * 0.5, camera.global_position.x), "The swells are baked round the eye in the world (%s)" % swells)
+	check(sea.material.get_shader_parameter("swells") is ViewportTexture, "The sea reads the swells' bake")
+	sea.set_islands([Vector4(0.0, 0.0, 40.0, -20.0)])
+	var swells_again: Vector4 = sea.material.get_shader_parameter("swells_at")
+	sea.set_islands([Vector4(0.0, 0.0, 40.0, -20.0)])
+	check(sea.material.get_shader_parameter("swells_at") == swells_again, "The same islands again are not baked again")
+	sea._swells_middle = Vector2.INF
+	sea.set_islands([Vector4(0.0, 0.0, 40.0, -20.0)])
+	check(sea._swell_material.get_shader_parameter("islands")[0] == Vector4(0.0, 0.0, 40.0, -20.0), "The islands it is told of are the ones baked")
+	sea.set_islands([Vector4(90.0, 0.0, 40.0, -20.0)])
+	check(sea._swell_material.get_shader_parameter("islands")[0] == Vector4(90.0, 0.0, 40.0, -20.0), "An island moved is baked again")
 
 	# The towers' own noise, made on a worker and handed over once ready.
 	for i in range(600):

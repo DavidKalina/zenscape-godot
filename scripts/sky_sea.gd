@@ -24,6 +24,10 @@ extends MeshInstance3D
 ## it is baked into a texture over a square of the drifting field round the
 ## eye (`_bake`, shaders/sky_sea_envelope.gdshader) and read from there,
 ## baked again only once the eye has gone BAKE_MOVE from the square's middle.
+## The swells under the islands and round the ranges' feet sit still in the
+## world, so they are baked likewise in a square of the world (`_bake_swells`,
+## shaders/sky_sea_swells.gdshader), again when the eye has gone as far or the
+## islands or ranges it is told of change.
 
 const SkyIslands = preload("res://scripts/sky_islands.gd")
 const NativeTerrainData = preload("res://scripts/native_terrain_data.gd")
@@ -55,6 +59,9 @@ const BAKE_PAST := 600.0
 const BAKE_MOVE := 400.0
 const CELL := 72.0
 const DRIFT := Vector2(0.6,0.35)*1.2
+## How far round an island its swell starts and ends, in its reaches (as
+## shaders/sky_sea.gdshader SWELL_REACH).
+const SWELL_REACH := Vector2(0.6,1.5)
 
 var material := ShaderMaterial.new()
 var reach := REACH
@@ -64,6 +71,14 @@ var _bake_view := SubViewport.new()
 var _bake_material := ShaderMaterial.new()
 var _baked_middle := Vector2.INF
 var _baked_side := 0.0
+var _swell_view := SubViewport.new()
+var _swell_material := ShaderMaterial.new()
+var _swells_middle := Vector2.INF
+var _swells_side := 0.0
+var _swells_key := PackedVector3Array()
+var _eye_xz := Vector2.INF
+var _islands := PackedVector4Array()
+var _ranges := PackedVector4Array()
 
 func _init() -> void:
 	name = "SkySea"
@@ -79,19 +94,14 @@ func _init() -> void:
 	set_islands([])
 	set_ranges([])
 	_size(REACH)
-	_bake_view.name = "EnvelopeBake"
-	_bake_view.size = Vector2i(BAKE_TEXELS,BAKE_TEXELS)
-	_bake_view.disable_3d = true
-	_bake_view.use_hdr_2d = true
-	_bake_view.render_target_update_mode = SubViewport.UPDATE_DISABLED
 	_bake_material.shader = preload("res://shaders/sky_sea_envelope.gdshader")
 	_bake_material.set_shader_parameter("cell",CELL)
-	var sheet := ColorRect.new()
-	sheet.size = Vector2(BAKE_TEXELS,BAKE_TEXELS)
-	sheet.material = _bake_material
-	_bake_view.add_child(sheet)
-	add_child(_bake_view)
+	_sheet(_bake_view,"EnvelopeBake",_bake_material)
 	material.set_shader_parameter("envelope",_bake_view.get_texture())
+	_swell_material.shader = preload("res://shaders/sky_sea_swells.gdshader")
+	_swell_material.set_shader_parameter("swell_reach",SWELL_REACH)
+	_sheet(_swell_view,"SwellBake",_swell_material)
+	material.set_shader_parameter("swells",_swell_view.get_texture())
 
 ## The sea's strength (0 paints none) and style (scripts/look_pass.gd
 ## CLOUD_STYLES), as the sky has them.
@@ -108,7 +118,9 @@ func follow(camera: Camera3D, motion_time := 0.0) -> void:
 	if not is_equal_approx(want,reach): _size(want)
 	_take_noise()
 	var eye := camera.global_position
-	_bake(Vector2(eye.x,eye.z)+DRIFT*motion_time)
+	_eye_xz = Vector2(eye.x,eye.z)
+	_bake(_eye_xz+DRIFT*motion_time)
+	_bake_swells()
 	global_position = Vector3(eye.x,FLOOR+(TALL+SWELL)*HEADROOM*0.5,eye.z)
 	material.set_shader_parameter("eye_xz",Vector2(eye.x,eye.z))
 
@@ -119,6 +131,8 @@ func set_islands(spots: Array) -> void:
 	for i in range(ISLANDS):
 		list.append(spots[i] if i < spots.size() else Vector4.ZERO)
 	material.set_shader_parameter("islands",list)
+	_islands = list
+	_bake_swells()
 
 ## The ranges standing near: Vector4(x, z, how far round, 0), at most
 ## RANGES, nearest first (scripts/sky_peaks.gd `keep_spots`, whose w is the
@@ -129,6 +143,8 @@ func set_ranges(spots: Array) -> void:
 		var spot: Vector4 = spots[i] if i < spots.size() else Vector4.ZERO
 		list.append(Vector4(spot.x,spot.y,spot.w,0.0))
 	material.set_shader_parameter("ranges",list)
+	_ranges = list
+	_bake_swells()
 
 ## The plate and the islands of `islands` (scripts/sky_islands.gd) nearest
 ## `eye`, as `set_islands` takes them; the plate alone when there are none.
@@ -176,6 +192,42 @@ func _bake(middle: Vector2) -> void:
 	_bake_material.set_shader_parameter("side",side)
 	_bake_view.render_target_update_mode = SubViewport.UPDATE_ONCE
 	material.set_shader_parameter("envelope_at",Vector4(corner.x,corner.y,side,1.0))
+
+## Bakes the swells round the eye when it has gone BAKE_MOVE from the last
+## bake's middle, the reach has grown, or the islands or ranges (where they
+## stand and how far round) have changed. Drawn before the frame's 3D, as
+## `_bake`.
+func _bake_swells() -> void:
+	if _eye_xz == Vector2.INF: return
+	var key := PackedVector3Array()
+	for spot: Vector4 in _islands: key.append(Vector3(spot.x,spot.y,spot.z))
+	for spot: Vector4 in _ranges: key.append(Vector3(spot.x,spot.y,spot.z))
+	var side := (reach+BAKE_PAST)*2.0
+	if _eye_xz.distance_to(_swells_middle) < BAKE_MOVE and side <= _swells_side and key == _swells_key: return
+	_swells_middle = _eye_xz
+	_swells_side = side
+	_swells_key = key
+	var corner := _eye_xz-Vector2.ONE*side*0.5
+	_swell_material.set_shader_parameter("origin",corner)
+	_swell_material.set_shader_parameter("side",side)
+	_swell_material.set_shader_parameter("islands",_islands)
+	_swell_material.set_shader_parameter("ranges",_ranges)
+	_swell_view.render_target_update_mode = SubViewport.UPDATE_ONCE
+	material.set_shader_parameter("swells_at",Vector4(corner.x,corner.y,side,1.0))
+
+## A bake: `view` drawing one sheet of `sheet_material` over all its texels,
+## in float, only when asked (UPDATE_ONCE).
+func _sheet(view: SubViewport, view_name: String, sheet_material: ShaderMaterial) -> void:
+	view.name = view_name
+	view.size = Vector2i(BAKE_TEXELS,BAKE_TEXELS)
+	view.disable_3d = true
+	view.use_hdr_2d = true
+	view.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	var sheet := ColorRect.new()
+	sheet.size = Vector2(BAKE_TEXELS,BAKE_TEXELS)
+	sheet.material = sheet_material
+	view.add_child(sheet)
+	add_child(view)
 
 func _size(value: float) -> void:
 	reach = value

@@ -78,6 +78,11 @@ uniform sampler2D depth_texture : hint_depth_texture, filter_nearest, repeat_dis
 // corner in the drifting field, z its side (m), w 1 once it is drawn.
 uniform sampler2D envelope : filter_linear, repeat_disable;
 uniform vec4 envelope_at = vec4(0.0);
+// The islands' lift and the ranges' foot baked round the eye in the world
+// (scripts/sky_sea.gd `_bake_swells`, shaders/sky_sea_swells.gdshader), as
+// `envelope_at` but world xz.
+uniform sampler2D swells : filter_linear, repeat_disable;
+uniform vec4 swells_at = vec4(0.0);
 
 // The sea's top (m): the eye's height over it is the dome's "depth", so its
 // haze (per depth) is matched here.
@@ -158,22 +163,28 @@ float sea_rise(vec2 xz) {
 		h = zs_storybook_sea_domes(p) * 0.62 + 0.38 * 0.45;
 	}
 	float heap = smoothstep(-0.2, 0.3, mass);
-	// Under the islands: the heap-field full and the heaps higher.
+	// Under the islands: the heap-field full and the heaps higher. Round a
+	// range's foot: the heap-field full and the heaps up over where its
+	// rock is cut (SEA), so it always goes down into cloud.
 	float lift = 0.0;
-	for (int i = 0; i < 8; i++) {
-		if (islands[i].z <= 0.0) break;
-		float d = length(xz - islands[i].xy);
-		lift = max(lift, 1.0 - smoothstep(islands[i].z * SWELL_REACH.x, islands[i].z * SWELL_REACH.y, d));
+	float foot = 0.0;
+	if (swells_at.w > 0.5) {
+		vec2 baked = texture(swells, (xz - swells_at.xy) / swells_at.z).rg;
+		lift = baked.r;
+		foot = baked.g;
+	} else {
+		for (int i = 0; i < 8; i++) {
+			if (islands[i].z <= 0.0) break;
+			float d = length(xz - islands[i].xy);
+			lift = max(lift, 1.0 - smoothstep(islands[i].z * SWELL_REACH.x, islands[i].z * SWELL_REACH.y, d));
+		}
+		for (int i = 0; i < 4; i++) {
+			if (ranges[i].z <= 0.0) break;
+			float d = length(xz - ranges[i].xy);
+			foot = max(foot, 1.0 - smoothstep(ranges[i].z * 0.6, ranges[i].z, d));
+		}
 	}
 	heap = mix(heap, 1.0, lift * 0.85);
-	// Round a range's foot: the heap-field full and the heaps up over
-	// where its rock is cut (SEA), so it always goes down into cloud.
-	float foot = 0.0;
-	for (int i = 0; i < 4; i++) {
-		if (ranges[i].z <= 0.0) break;
-		float d = length(xz - ranges[i].xy);
-		foot = max(foot, 1.0 - smoothstep(ranges[i].z * 0.6, ranges[i].z, d));
-	}
 	heap = mix(heap, 1.0, 0.9 * foot);
 	float rise = max(h * (0.35 + 0.65 * heap) - (1.0 - heap) * 0.55, 0.0);
 	rise *= 1.0 + max(lift, foot) * SWELL / tall;
