@@ -1,4 +1,4 @@
-extends "res://studies/bigfoot_lair.gd"
+extends "res://studies/fidelity_life.gd"
 ## Product entry point. Study scenes remain available through their launchers.
 const IslandFrame = preload("res://scripts/island_frame.gd")
 var library_path := "user://dioramas"
@@ -45,6 +45,18 @@ func _ready() -> void:
 	await get_tree().process_frame
 	ambient_without_resident = scenery_mode
 	super._ready()
+	creature.set_body_scale(1.0)
+	_refresh_habitat()
+	# Fidelity's first fish lives by the bank beside the pond.
+	if not fish.population.is_empty():
+		var home := Vector3(4.25,0.3,-2.75)
+		if fish._wet(home):
+			fish.population[0].home = home
+			fish.population[0].spawn_home = home
+			fish.population[0].node.position = home
+			# The slot moves with him, so a restocked fish returns to this bank.
+			if not fish.home_slots.is_empty(): fish.home_slots[0] = home
+	_focus_world()
 	# Weather drifts and seasons hold per world; --still-weather keeps the sky
 	# on each world's own weather. Before the snapshots below, so new and
 	# Fidelity worlds drift too.
@@ -70,7 +82,6 @@ func _ready() -> void:
 	_celestial.update_rig()
 	_defaults = NativeGardenStore.capture(self)
 	_defaults.diorama.resident = false
-	_defaults.cave_system = {}
 	# The title holds its sky still, but a new world's day should turn.
 	_defaults._celestial.cycling = true
 	if _defaults.has("world_clock"): _defaults.world_clock.running = true
@@ -146,9 +157,19 @@ func _frame_title() -> void:
 	_world_visuals.rock_style = 1 if title_recipe.has("terrain_recipe") else 0
 	_update_camera()
 
+## The whole Fidelity world from the south-west, the camera held still.
+func _focus_world() -> void:
+	_auto_orbit = false
+	target = Vector3(0,0,0)
+	distance = 64
+	yaw = -0.45
+	polar = 1.3
+	_orbit_delta = Vector2.ZERO
+	_pan_delta = Vector2.ZERO
+	_update_camera()
+
 func _overview() -> void:
-	if lair != null: _focus_stack()
-	else: _frame_diorama()
+	_frame_diorama()
 
 ## The overview's default look (`_frame_diorama`): its angle from straight
 ## down, tilted up from the 0.82 it was so the sky world's mountains stand
@@ -429,11 +450,6 @@ func _fill_world_menu() -> void:
 	add_world_action("Overview",_overview,6)
 	if scenery_mode: return
 	add_world_action("His spot",_focus_resting_spot,7,func() -> bool: return resident_enabled and routine.habits.home != null)
-	var has_lair := func() -> bool: return lair != null
-	_world_menu.get_popup().add_separator()
-	add_world_action("See both stories",_focus_stack,100,has_lair)
-	add_world_action("Look through lair windows",_focus_lair,101,has_lair)
-	add_world_action("Find cave entrance",_focus_cave,102,has_lair)
 	_world_menu.get_popup().add_separator()
 	add_world_action("New crossing glade",open_crossing_glade.bind(false),110)
 	add_world_action("New chasm glade",open_crossing_glade.bind(true),111)
@@ -550,8 +566,8 @@ func launch_fidelity() -> void:
 	_menu_orbit = false
 	close_menu()
 	set_building(false)
-	_focus_stack()
-	_notice.text = "Fidelity world" if scenery_mode else "Fidelity world · World menu explores both stories."
+	_focus_world()
+	_notice.text = "Fidelity world"
 
 func new_diorama() -> void:
 	if _chunk_editor.forming or not save_current(): return
@@ -659,7 +675,7 @@ func _summon_bigfoot(_fog := false) -> void:
 	if resident_enabled: _focus_bigfoot()
 
 func capture_diorama_state() -> Dictionary:
-	var point: Vector3 = routine.cave.entrance if routine.cave._inside else creature.position
+	var point: Vector3 = creature.position
 	return {"resident":resident_enabled,"resident_scale":creature.body_scale,"position":[point.x,point.y,point.z]}
 
 func restore_life_state(state: Dictionary) -> void:

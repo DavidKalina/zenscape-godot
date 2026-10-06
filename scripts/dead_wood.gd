@@ -309,7 +309,7 @@ func sweep(point: Vector3, radius: float) -> Array[Node3D]:
 	branches = kept
 	return nodes
 
-## The carry reached the lair: this branch is gone from the world for good.
+## A carried branch is gone from the world for good.
 func consume(id: String) -> bool:
 	for index in range(branches.size()):
 		var branch: Dictionary = branches[index]

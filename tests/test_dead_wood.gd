@@ -6,7 +6,6 @@ var failures := 0
 var _scenes: Array[Node] = []
 
 const Wood := preload("res://scripts/dead_wood.gd")
-const Mind := preload("res://scripts/bigfoot_life_mind.gd")
 
 class StubHabitat:
 	var interests: Array[Dictionary] = []
@@ -169,17 +168,6 @@ func _initialize() -> void:
 	check(not Wood.valid_state({"version": 1, "branches": [{"id": "branch:0", "position": [0, 0, 0], "age": 99.0}]}), "A branch older than rot is rejected")
 	check(not Wood.valid_state({"version": 2, "branches": []}), "A future version is rejected")
 
-	# ------------------------------------------------- the mind sees the wood
-	var mind := Mind.new()
-	var base := _gather_score(mind, {})
-	check(is_equal_approx(_gather_score(mind, {"branches_nearby": 0}), base), "A bare forest floor scores exactly as before dead wood existed")
-	var invitation := _gather_score(mind, {"branches_nearby": 3}) - base
-	check(invitation > 0.07 and invitation < 0.09, "Branches on the ground make gathering a little more attractive")
-	check(invitation < 0.22, "Fallen wood never outweighs the comfort spread it decorates")
-	check(is_equal_approx(_gather_score(mind, {"branches_nearby": 9}), _gather_score(mind, {"branches_nearby": 3})), "The invitation saturates")
-	check(_gather_reason(mind, {"branches_nearby": 2}) == "Branches are down under the trees", "He names the wood he can see")
-	check(_gather_reason(mind, {}) == "The bed could be more comfortable", "Without wood he gathers for the old reason")
-
 	for stub in _scenes: stub.free()
 	print("PASS: the wind drops branches and they rot" if failures == 0 else "FAIL: dead wood")
 	print("Failures: ", failures)
@@ -210,21 +198,6 @@ func _run_hours(wood: Node3D, clock: WorldClock, hours: float) -> void:
 		var total := float(clock.day) * 24.0 + clock.hour + 1.0
 		clock.set_time(int(total / 24.0), fposmod(total, 24.0))
 		wood.advance(1.0 / 30.0)
-
-func _gather_context(extra: Dictionary) -> Dictionary:
-	var context := {"home": true, "material_needed": true, "can_gather": true, "comfort": 0.0, "hour": 12.0, "daylight": 1.0}
-	context.merge(extra, true)
-	return context
-
-func _gather_score(mind: RefCounted, extra: Dictionary) -> float:
-	for option: Dictionary in mind.ranked(_gather_context(extra)):
-		if option.kind == "gather": return float(option.score)
-	return -1.0
-
-func _gather_reason(mind: RefCounted, extra: Dictionary) -> String:
-	for option: Dictionary in mind.ranked(_gather_context(extra)):
-		if option.kind == "gather": return str(option.reason)
-	return ""
 
 func check(ok: bool, message: String) -> void:
 	if ok:

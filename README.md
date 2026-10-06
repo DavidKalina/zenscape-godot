@@ -68,14 +68,11 @@ For a standalone Windows or Mac app, see
 ## Older study scenes
 
 The game's scene inherits a chain of older scripts:
-`cozy_worlds.gd` → `diorama.gd` → `bigfoot_lair.gd` → `bigfoot_cave.gd` →
-`fidelity_life.gd` → `fidelity.gd`. Their scenes (`studies/diorama.tscn`,
-`fidelity.tscn`, `fidelity_life.tscn`, `bigfoot_lair.tscn` and
-`bigfoot_cave.tscn`) are not part of the game, but many tests and tools load
-them, and `run-diorama.command`, `run-fidelity.command`,
-`run-fidelity-life.command`, `run-bigfoot-lair.command`,
-`run-bigfoot-cave.command` and `run-godot-comparison.command` still open
-them. The fidelity study, a port of the original Three.js scene, is the look
+`cozy_worlds.gd` → `diorama.gd` → `fidelity_life.gd` → `fidelity.gd`. Their
+scenes (`studies/diorama.tscn`, `fidelity.tscn` and `fidelity_life.tscn`) are
+not part of the game, but many tests and tools load them, and
+`run-diorama.command`, `run-fidelity.command`, `run-fidelity-life.command`
+and `run-godot-comparison.command` still open them. The fidelity study, a port of the original Three.js scene, is the look
 reference: see [comparison and remaining gaps](docs/fidelity/NOTES.md) and
 the [parity checklist](docs/fidelity/PARITY.md).
 

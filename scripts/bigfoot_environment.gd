@@ -208,13 +208,9 @@ func advance(delta: float) -> bool:
 func _ready_for(kind: String) -> bool:
 	return _clock>=float(_cooldowns.get(kind,0.0))
 
-## Cave visits and needs-driven surface actions can own him without setting
-## the legacy routine's active verb. Emergencies above still take precedence.
+## Emergencies above still take precedence over the routine's active verb.
 func _routine_busy() -> bool:
-	if not scene.routine.active.is_empty(): return true
-	var living: Variant = scene.routine.get("living")
-	var cave: Variant = scene.routine.get("cave")
-	return (living != null and not living.current.is_empty()) or (cave != null and not cave.phase.is_empty())
+	return not scene.routine.active.is_empty()
 
 ## Also used by the repeatable visual study; never teleports to a contact.
 func request(kind: String) -> bool:

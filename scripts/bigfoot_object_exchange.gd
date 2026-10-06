@@ -31,7 +31,7 @@ func accepts(body: RigidBody3D) -> bool:
 
 func _available() -> bool:
 	var owner: Node = scene.owner_scene
-	return not scene._habitat_blocked and not scene._carrying and not scene.gust_tool and not scene._tree_drag and not scene.mischief.busy() and not scene.loose_props.busy() and owner.routine.active.is_empty() and owner.routine.living.current.is_empty() and owner.routine.cave.phase.is_empty() and (owner.environment_life == null or not owner.environment_life.busy())
+	return not scene._habitat_blocked and not scene._carrying and not scene.gust_tool and not scene._tree_drag and not scene.mischief.busy() and not scene.loose_props.busy() and owner.routine.active.is_empty() and (owner.environment_life == null or not owner.environment_life.busy())
 
 func advance(delta: float) -> void:
 	if scene._paused: return

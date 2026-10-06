@@ -1,11 +1,8 @@
 extends Node
 ## Daily activities own their approaches and authored performances; CreatureBrain
 ## supplies curiosity and wandering between activities.
-var cave = preload("res://scripts/bigfoot_cave.gd").new()
 var habits = preload("res://scripts/bigfoot_habits.gd").new()
 var crossing_wish = preload("res://scripts/bigfoot_crossing_wish.gd").new()
-var foraging = preload("res://scripts/bigfoot_lair_foraging.gd").new()
-var living = preload("res://scripts/bigfoot_living_world.gd").new()
 var _tended := false
 var _tending := false
 var scene: Node
@@ -42,9 +39,6 @@ func setup(owner_scene: Node) -> void:
 	habits.setup(scene)
 	add_child(crossing_wish)
 	crossing_wish.setup(self)
-	cave.setup(scene)
-	foraging.setup(self)
-	living.setup(self)
 	scene.creature.action_finished.connect(_action_finished)
 	scene.creature.state_changed.connect(func(state: CreatureActor.State) -> void:
 		if state == CreatureActor.State.STUMBLING and not active.is_empty(): cancel("ground tremor"))
@@ -59,13 +53,9 @@ func setup(owner_scene: Node) -> void:
 
 ## Returns true while an authored action owns the actor.
 func advance(delta: float) -> bool:
-	scene.brain.interest_choices_enabled = not living.enabled
 	var dt := minf(delta,0.05)
 	_clock += dt
 	_advance_projectiles(dt)
-	foraging.advance(dt)
-	if living.advance(dt): return true
-	if cave.advance(dt): return true
 	if not active.is_empty():
 		_elapsed += dt
 		if _phase == "approach":
@@ -118,18 +108,13 @@ func advance(delta: float) -> bool:
 	if crossing_wish.advance(dt): return true
 	if _clock < _next_action or not scene.creature.can_roam(): return false
 	if not scene.brain.ready_for_activity(dt): return false
-	if living.enabled:
-		if not living.choose(): _next_action = _clock+3.0
-		return not living.current.is_empty()
 	var kind: String = ORDER[_choice%ORDER.size()]
 	_choice += 1
 	if kind == "sleep" and _choice%10 == 0: kind = "hibernate"
 	if not request(kind): _next_action = _clock+3.0
-	return not active.is_empty() or not cave.phase.is_empty()
+	return not active.is_empty()
 
 func request(kind: String, chosen: Dictionary = {}, invited := false) -> bool:
-	if not cave.phase.is_empty(): return false
-	if kind in ["sleep","hibernate"] and cave.request(kind): return true
 	if kind in ["stone","tree"] and scene.has_method("resident_activity_owned"): return false
 	if not active.is_empty() or not scene.creature.can_roam(): return false
 	if kind in ["sit","sleep","hibernate"]:
@@ -194,16 +179,6 @@ func request(kind: String, chosen: Dictionary = {}, invited := false) -> bool:
 		_elapsed = 0.0
 		return true
 	return false
-
-## Sources such as the fish population transfer one real visual here. A true
-## result means this routine owns it until lair commit or release callback.
-func carry_catch_home(kind: String, source_id: String, visual: Node3D, release_source: Callable = Callable(), commit_source: Callable = Callable()) -> bool:
-	if not active.is_empty() or not cave.phase.is_empty(): return false
-	return foraging.begin(kind,source_id,visual,release_source,commit_source)
-
-func carry_payload_home(payload: Dictionary) -> bool:
-	if not payload.has("kind") or not payload.has("source_id") or not payload.has("node"): return false
-	return carry_catch_home(str(payload.kind),str(payload.source_id),payload.node,payload.get("release",Callable()),payload.get("commit",Callable()))
 
 func _rest_stance(point: Vector3) -> bool:
 	if not scene.navigation.is_safe(point): return false
@@ -440,18 +415,8 @@ func _action_finished(clip: String, cancelled: bool) -> void:
 		for label in _sleep_marks: label.visible = false
 		scene.creature.perform_action("StandUp")
 	else:
-		if active == "tree" and foraging.collect_tree_material(target):
-			history.append("tree")
-			_restore_tree()
-			scene.creature.clear_hand_targets()
-			return
 		if active == "fish" and not _catch_payload.is_empty():
 			scene.fish.reserve_target(target.id,false)
-			if foraging.begin(str(_catch_payload.kind),str(_catch_payload.source_id),_catch_payload.node,_catch_payload.get("release",Callable()),_catch_payload.get("commit",Callable())):
-				_held = null
-				_catch_payload = {}
-				scene.creature.clear_hand_targets()
-				return
 			if (_catch_payload.get("release",Callable()) as Callable).is_valid(): _catch_payload.release.call()
 			_held = null
 			_catch_payload = {}
@@ -462,9 +427,6 @@ func _action_finished(clip: String, cancelled: bool) -> void:
 		_finish()
 
 func cancel(reason := "world edit or explicit cancellation") -> void:
-	living.cancel()
-	cave.cancel()
-	foraging.cancel()
 	last_cancel = reason
 	if scene.creature.state == CreatureActor.State.ACTION: scene.creature.cancel_action()
 	_finish()
@@ -476,7 +438,6 @@ func _finish() -> void:
 	_hop_pending = false
 	_approach_hops.clear()
 	if crossing_wish.travelling or crossing_wish._planning or not crossing_wish._planned.is_empty(): crossing_wish.interrupted()
-	if active == "forage" and foraging.carrying(): foraging.cancel()
 	if active in ["sit","sleep","hibernate"] and _phase == "perform": scene.creature.basis = _rest_upright
 	if active == "fish" and not target.is_empty(): scene.fish.reserve_target(target.id,false)
 	scene.creature.clear_hand_targets()
@@ -501,8 +462,6 @@ func _finish() -> void:
 
 func world_changed() -> void:
 	if habits.writing: return
-	living.cancel()
-	cave.cancel()
 	habits.world_changed()
 	# Undo may restore a taken record: remove its transient representation first.
 	for record: Dictionary in scene._chunk_editor.data.objects:

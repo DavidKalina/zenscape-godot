@@ -7,7 +7,6 @@ var failures := 0
 var _scenes: Array[Node] = []
 
 const Fish := preload("res://scripts/fidelity_fish.gd")
-const Mind := preload("res://scripts/bigfoot_life_mind.gd")
 
 class StubWater:
 	var _stream_channels: Array = []
@@ -105,7 +104,7 @@ func _initialize() -> void:
 	busy.population[1].reserved = true
 	_run_world_days(busy, busy_clock, 12.0, 4)
 	check(busy.live_count() == 4 and busy.population.size() == 4, "Reserved and carried fish are not replaced under him")
-	check(busy.store_fish(busy.population[0].id), "A carried fish commits to the lair")
+	check(busy.store_fish(busy.population[0].id), "A carried fish leaves the pond for good")
 	check(busy.live_count() == 3, "Committing one leaves a free slot")
 	_run_world_days(busy, busy_clock, 12.0, 1)
 	check(busy.live_count() == 4, "The freed slot fills again")
@@ -139,15 +138,6 @@ func _initialize() -> void:
 	check(not Fish.valid_state({"version": 1, "stored_ids": [], "surprise": 1}), "An unknown key is rejected")
 	check(not Fish.valid_state({"version": 1, "stored_ids": [], "restock": 2.0}), "An out-of-range accumulator is rejected")
 	check(not Fish.valid_state({"version": 1, "stored_ids": [], "capacity": "many"}), "A non-numeric capacity is rejected")
-
-	# ------------------------------------------------- the mind sees the pond
-	var mind := Mind.new()
-	var base := _fish_score(mind, {})
-	check(is_equal_approx(_fish_score(mind, {"fish_available": 0}), base), "An empty pond scores exactly as before restocking existed")
-	var plenty := _fish_score(mind, {"fish_available": 3}) - base
-	check(plenty > 0.04 and plenty < 0.06, "A full pond makes fishing a little more attractive")
-	check(plenty < 0.22, "The pond never outweighs the gather term's comfort spread")
-	check(is_equal_approx(_fish_score(mind, {"fish_available": 9}), _fish_score(mind, {"fish_available": 3})), "The plenty bonus saturates")
 
 	for stub in _scenes: stub.free()
 	print("PASS: the pond restocks on world time" if failures == 0 else "FAIL: fish restocking")
@@ -184,13 +174,6 @@ func _run_world_days(pond: Node3D, clock: WorldClock, hour: float, days: int) ->
 	for i in range(days):
 		clock.set_time(clock.day + 1, hour)
 		pond.advance(1.0 / 30.0)
-
-func _fish_score(mind: RefCounted, extra: Dictionary) -> float:
-	var context := {"home": true, "can_fish": true, "food_count": 0, "hour": 12.0, "daylight": 1.0}
-	context.merge(extra, true)
-	for option: Dictionary in mind.ranked(context):
-		if option.kind == "fish": return float(option.score)
-	return -1.0
 
 func check(ok: bool, message: String) -> void:
 	if ok:

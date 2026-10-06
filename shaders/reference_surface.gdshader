@@ -14,7 +14,6 @@ shader_type spatial;
 #include "res://shaders/reference_alpenglow.gdshaderinc"
 #include "res://shaders/reference_display.gdshaderinc"
 #include "res://shaders/reference_inversion.gdshaderinc"
-#include "res://shaders/cave_cutaway.gdshaderinc"
 #include "res://shaders/sky_season.gdshaderinc"
 render_mode cull_disabled, diffuse_lambert, specular_schlick_ggx;
 
@@ -161,13 +160,6 @@ uniform bool instance_birth_enabled = false;
 // An emerged tree's stand autumn (zs_instance_autumn), -1 for everything else.
 varying flat float stand_autumn;
 uniform vec2 object_fire = vec2(0.0);
-// Cave earth walls only (BigfootLairRoom): the room's unrotated world origin,
-// the wall's outward normal, and how far its middle has dissolved.
-uniform vec3 cutaway_origin = vec3(0.0);
-uniform vec3 cutaway_normal = vec3(0.0);
-uniform float cutaway_half_width = 14.2;
-uniform float cutaway_ceiling = 8.3;
-uniform float cutaway_reveal = 0.0;
 // A sky peak's rock (scripts/sky_peaks.gd): nothing is drawn under the cloud
 // sea's top (`sea_cut`, world metres), the line it is cut at wandering
 // `sea_fray.x` metres up and down over a few tens of metres, and over the
@@ -606,7 +598,6 @@ void fragment() {
 		sea_mist = 1.0 - smoothstep(0.0, sea_fray.y, above);
 		sea_mist *= sea_mist * (3.0 - 2.0 * sea_mist);
 	}
-	if (cutaway_reveal > 0.0 && cave_cutaway(world_position - cutaway_origin, cutaway_normal, cutaway_half_width, cutaway_ceiling, cutaway_reveal, FRAGCOORD.xy)) discard;
 	if (leaf_season.y > 0.0 && zs_leaf_fallen(leaf_local, plant_root, leaf_season.y)) discard;
 	// Trees thin round a shaping tool at work (shaders/shaping_reveal.gdshaderinc).
 	if (tree_tread && zs_revealed(leaf_local, plant_root, tree_tread_height, FRAGCOORD.xy)) discard;

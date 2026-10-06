@@ -68,7 +68,8 @@ above are archived.
 
 The vision keeps Bigfoot only as a rare ambient event. The earlier Bigfoot
 simulation is a large AI and animation system with a personality, a lair, a
-cave, routines, mischief, rage, object exchange, tree hugs and wetness.
+cave, routines, mischief, rage, object exchange, tree hugs and wetness. The
+lair, the cave and his needs-driven living world were removed on 2026-10-05.
 
 **Keep:**
 
@@ -80,21 +81,18 @@ cave, routines, mischief, rage, object exchange, tree hugs and wetness.
 
 **Proposed for removal:**
 
-- Scripts: `scripts/bigfoot_*.gd` (24 files: breath, cave, cave_site,
-  crossing_wish, environment, fire, habits, lair_foraging, lair_room, leaf_bed,
-  life_mind, living_world, mischief, object_exchange, personality, routine,
-  shelter, temper, tree_hug, tree_touch, warm_hands, wetness), plus
-  `scripts/reference_bigfoot.gd`, `scripts/cave_genome.gd`,
+- Scripts: `scripts/bigfoot_*.gd` (17 files: breath, crossing_wish,
+  environment, fire, habits, leaf_bed, mischief, object_exchange, personality,
+  routine, shelter, temper, tree_hug, tree_touch, warm_hands, wetness), plus
+  `scripts/reference_bigfoot.gd`,
   `scripts/creature_brain.gd`, `scripts/creature_hand_reach.gd`,
   `scripts/creature_tree_peek.gd` and `scripts/resident_interaction.gd`.
   Check `creature_actor.gd` and `creature_navigation.gd` for the deer and
   heron before removing them.
-- Studies: `studies/bigfoot_*.{gd,tscn}` (cave, encounter, lair). The cave
-  and lair scenes are also test harnesses; retarget or delete those tests first.
-- Launchers: `run-bigfoot-{cave,lair}.command`.
-- Tests: `tests/test_bigfoot*.gd` (25 files), `test_cave_genome.gd`.
+- Studies: `studies/bigfoot_encounter.gd`.
+- Tests: `tests/test_bigfoot*.gd`.
 - Tools: `tools/*bigfoot*` (the Blender rig, restyle, animate and film
-  scripts), `build_cave_study.py`, `export_cave.py`. **Keep** anything
+  scripts). **Keep** anything
   `feature/ambient-bigfoot` still uses to rebuild its model.
 - Docs: `docs/bigfoot-*` (9 folders) and `docs/bigfoot-heavy-walk.md`,
   `docs/fidelity-life/`.
@@ -103,8 +101,7 @@ cave, routines, mischief, rage, object exchange, tree hugs and wetness.
 
 **Still wired into the live product.** Untangle these before deleting:
 
-- `studies/diorama.gd` → `studies/bigfoot_lair.gd` → `bigfoot_cave.gd` →
-  `fidelity_life.gd` (14 Bigfoot references in diorama.gd).
+- `studies/diorama.gd` → `fidelity_life.gd` (Bigfoot references in both).
 - `scripts/cozy_regrowth.gd` → `creature_actor.gd` → `bigfoot_personality.gd`
   (6 references in cozy_regrowth).
 - `scripts/native_chunk_editor.gd` → `native_garden_landmarks.gd` →
@@ -194,11 +191,10 @@ Corrections to the earlier list, all of which stay:
 - `scripts/title_showcase.gd` is live (`cozy_worlds.gd` loads it).
 - `shaders/lake_reference_water.gdshader` is live through
   `assets/zen_reference/geometry.scn`.
-- `studies/diorama.tscn`, `fidelity.tscn`, `fidelity_life.tscn`,
-  `bigfoot_lair.tscn` and `bigfoot_cave.tscn` are unreachable from the game
-  but are the harness scenes of about 70 tests and 30 tools. Their scripts are
-  the game's ancestors (`cozy_worlds.gd` → `diorama.gd` → `bigfoot_lair.gd` →
-  `bigfoot_cave.gd` → `fidelity_life.gd` → `fidelity.gd`).
+- `studies/diorama.tscn`, `fidelity.tscn` and `fidelity_life.tscn` are
+  unreachable from the game but are the harness scenes of many tests and
+  tools. Their scripts are the game's ancestors (`cozy_worlds.gd` →
+  `diorama.gd` → `fidelity_life.gd` → `fidelity.gd`).
 - `art/blender/bigfoot/zenscape-bigfoot-classic.blend` and
   `assets/models/zenscape-bigfoot-classic.glb`:
   `tools/animate_bigfoot_interactions.py` builds the interactions model the

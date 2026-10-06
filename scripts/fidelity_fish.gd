@@ -234,7 +234,7 @@ func catch_for_carry(id: String) -> Dictionary:
 		"commit":func() -> bool: return store_fish(id)
 	}
 
-## Commit a held identity to the lair. Keeping its node hidden allows an
+## Take a held fish out of the pond for good. Keeping its node hidden allows an
 ## in-place save restore to reactivate the same fish without manufacturing one.
 func store_fish(id: String) -> bool:
 	for fish in population:

@@ -111,11 +111,10 @@ Slices 0 and 4 of the world-progression plan wire five consumers:
   cold.
 - `scripts/fidelity_fish.gd` — the pond's restock rate, through
   `WorldClock.season_factor` and the pond's own `SEASON_RATE`.
-- `scripts/bigfoot_living_world.gd` `_context()` — `season`, `season_name`,
-  `cold` and `harvest` reach his decisions.
-- `scripts/bigfoot_life_mind.gd` `ranked()` — the cold nudges `sleep`, the
-  autumn gold nudges `gather`. Both are small; needs still win.
-- `scripts/bigfoot_life_mind.gd` `drift()` (slice 5) — the cold is also the pull
+- (removed 2026-10-05 with the cave and lair) `bigfoot_living_world.gd`
+  `_context()` gave his decisions the season; `bigfoot_life_mind.gd` `ranked()`
+  let the cold nudge `sleep` and the gold nudge `gather`.
+- (removed 2026-10-05) `bigfoot_life_mind.gd` `drift()` (slice 5) — the cold is also the pull
   of the long winter drive, `torpor`, the one need kept on **world hours**
   instead of watched seconds: it chases `cold` with an 18-hour rise and a
   48-hour fall, so a garden that is fast-forwarded or reopened feels exactly as
@@ -250,7 +249,7 @@ world's time.
   the ground is right at all four quarters, and that each quarter's simulated
   weather mix looks like itself.
 - `tests/test_fish_restock.gd` — the pond's rate at all four seasons.
-- `tests/test_bigfoot_life_mind.gd` — the cold and gold scoring terms.
+- `tests/test_bigfoot_life_mind.gd` (removed) — the cold and gold scoring terms.
 - `tests/test_bigfoot_living_world.gd` (removed) — the season keys in `_context()`.
 
 Run one at a time, never headless:
