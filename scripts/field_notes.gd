@@ -240,7 +240,7 @@ func _build() -> void:
 			entry.id = id
 			entry.found = bool(_steps.found.get(id,false))
 			entry.title = verb["name"] if entry.found else ""
-			entry.body = verb["line"] if entry.found else verb["clue"]
+			entry.body = FirstSteps.line(id) if entry.found else verb["clue"]
 			entry.name_font = _name_font
 			entry.line_font = _body_font
 			entry.clue_font = _note_font

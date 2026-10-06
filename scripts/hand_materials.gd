@@ -232,6 +232,21 @@ const LAMP_REFUSALS := {
 ## A fence line the land took none of (all water or too steep).
 const FENCE_REFUSAL := "No ground for a fence there  ·  It needs dry, gentle ground"
 const BACK_HINT := "Click the sky or the case to put it back"
+## The hint line's words for the pad (docs/gamepad.md), by the keyboard and
+## mouse words; scripts/hand_reach.gd `_show_hint` picks by the device in hand.
+const PAD_HINTS := {
+	TREE_HINT:"Tap A to plant a tree  ·  hold A and move to paint a wood  ·  hold X to thin",
+	FLOWER_HINT:"Hold A and move over the land to paint flowers  ·  hold X to thin them",
+	"Hold over water to scoop it up":"Hold A over water to scoop it up",
+	"Tap to set a stone  ·  Drag to scatter pebbles":"Tap A to set a stone  ·  hold A and move to scatter pebbles",
+	"Tap to set reeds  ·  Drag to scatter":"Tap A to set reeds  ·  hold A and move to scatter",
+	"Tap to set a stone lamp  ·  Drag to line a path with them":"Tap A to set a stone lamp  ·  hold A and move to line a path with them",
+	"Drag a line to set a fence  ·  Start or end on a fence to join it":"Hold A and move to set a fence  ·  Start or end on a fence to join it",
+	"Drag across a stream or a gap to lay a footbridge":"Hold A and move across a stream or a gap to lay a footbridge",
+	"Tap to set a campfire  ·  It needs flat, dry ground clear of trees":"Tap A to set a campfire  ·  It needs flat, dry ground clear of trees",
+	"Tap to set a cabin  ·  It needs a patch of flat, dry ground clear of trees":"Tap A to set a cabin  ·  It needs a patch of flat, dry ground clear of trees",
+	BACK_HINT:"B puts it back, or A on the sky or the case",
+}
 ## Water in hand pressed on dry land: nothing to scoop.
 const DRY_HINT := "No water here to scoop  ·  Pour some with the watering can"
 ## The watering can (the tool roll's "can"): not a clay tool either. Its press
@@ -430,17 +445,48 @@ func key(event: InputEventKey) -> bool:
 		KEY_1, KEY_2, KEY_3: set_size(event.keycode-KEY_1)
 		KEY_BRACKETLEFT: set_size(roll.size_level-1)
 		KEY_BRACKETRIGHT: set_size(roll.size_level+1)
-		KEY_Q, KEY_E:
-			var clay: Node = scene.get("land_clay")
-			if clay == null or not held.is_empty() or roll.modes.is_empty() or clay.tool_id != roll.tool: return false
-			clay.tool.step_mode(-1 if event.keycode == KEY_Q else 1)
-			set_mode(clay.tool.mode)
-		KEY_ESCAPE:
-			if not held.is_empty(): put_back()
-			elif roll.tool != FREE: select_tool(FREE)
-			else: return false
+		KEY_Q, KEY_E: return step_mode(-1 if event.keycode == KEY_Q else 1)
+		KEY_ESCAPE: return put_down()
 		_: return false
 	return true
+
+## Steps the mode of the tool in hand, `way` 1 or -1 (Q and E, the pad's Y).
+## False with no tool with modes in hand.
+func step_mode(way: int) -> bool:
+	var clay: Node = scene.get("land_clay")
+	if clay == null or not held.is_empty() or roll.modes.is_empty() or clay.tool_id != roll.tool: return false
+	clay.tool.step_mode(way)
+	set_mode(clay.tool.mode)
+	return true
+
+## Puts down what is in hand: a material, else the tool (Esc, the pad's B).
+## False with nothing to put down.
+func put_down() -> bool:
+	if not held.is_empty(): put_back()
+	elif roll != null and roll.tool != FREE: select_tool(FREE)
+	else: return false
+	return true
+
+## The next built tool on the roll, `way` 1 or -1, round from the Modeller
+## (the pad's shoulders). A material in hand goes back first.
+func cycle_tool(way: int) -> void:
+	if roll == null: return
+	var tools: Array = Roll.TOOLS.filter(func(id: String) -> bool: return roll.discovered(id))
+	if tools.is_empty(): return
+	var at := tools.find(roll.tool)
+	var next: String = tools[posmod(at+way,tools.size()) if at >= 0 else (0 if way > 0 else tools.size()-1)]
+	put_back()
+	select_tool(next)
+
+## The next specimen found in the case, `way` 1 or -1, in the case's order
+## (the pad's D-pad left and right).
+func cycle_material(way: int) -> void:
+	if tray == null: return
+	var ids: Array = tray.specimens().map(func(entry: Dictionary) -> String: return entry.id).filter(func(id: String) -> bool:
+		return tray.discovered(id) and (sows(id) or paints(id) or SCATTER.has(id) or id in ["water",FENCE,BRIDGE]))
+	if ids.is_empty(): return
+	var at := ids.find(held)
+	take(ids[posmod(at+way,ids.size()) if at >= 0 else (0 if way > 0 else ids.size()-1)])
 
 func _pointer() -> Vector2:
 	return scene.get_viewport().get_mouse_position() if reach.pointer_override == null else reach.pointer_override

@@ -50,6 +50,12 @@ const DOF_AMOUNT := 0.09
 const STRIP_IDLE := 2.2
 const HINT := "Drag to orbit  ·  right-drag to pan  ·  scroll to dolly  ·  G ground eye  ·  [ ] lens  ·  F focus  ·  Space takes the photo  ·  P back"
 const GROUND_HINT := "Ground eye  ·  drag to look  ·  right-drag or arrows to walk  ·  scroll to step  ·  G to rise"
+## The hints for the pad (scripts/pad_prompt.gd, docs/gamepad.md).
+const PadPrompt = preload("res://scripts/pad_prompt.gd")
+const PAD_HINTS := {
+	HINT:"{RS} orbit  ·  {LS} pan  ·  {LT} {RT} dolly  ·  {X} ground eye  ·  {LB} {RB} lens  ·  {Y} focus  ·  {A} takes the photo  ·  {B} back",
+	GROUND_HINT:"Ground eye  ·  {RS} look  ·  {LS} walk  ·  {LT} {RT} step  ·  {X} to rise",
+}
 ## Seconds the return glide takes after leaving.
 const RETURN := 0.7
 
@@ -109,7 +115,7 @@ var focus_button: Button
 var exposure_label := Label.new()
 var shutter: Button
 var done_button: Button
-var hint := Label.new()
+var hint := PadPrompt.new()
 var toast := Control.new()
 var toast_glass: Panel
 var toast_row := HBoxContainer.new()
@@ -231,6 +237,7 @@ func _build_chrome() -> void:
 	shutter.pressed.connect(capture)
 	done_button = _button("Back","back","Back to where you were · P or Esc")
 	done_button.pressed.connect(leave)
+	hint.alternates = PAD_HINTS
 	hint.add_theme_font_size_override("font_size",13)
 	hint.add_theme_color_override("font_color",Color(Glass.INK,0.72))
 	hint.add_theme_color_override("font_shadow_color",Color("182628",0.8))
@@ -759,6 +766,23 @@ func _key(event: InputEventKey) -> bool:
 
 func _wake() -> void:
 	_idle = 0.0
+
+## The pad's sticks and triggers this frame (scripts/pad_input.gd): `move`
+## pans the orbit by screen pixels (or walks the ground eye, metres), `look`
+## turns it as a drag of that many pixels would, `dolly` notches of the
+## wheel.
+func pad_step(move: Vector2, look: Vector2, dolly: float) -> void:
+	if not active: return
+	_wake()
+	if look != Vector2.ZERO:
+		var was := _drag
+		_drag = "turn"
+		_drag_by(look,false)
+		_drag = was
+	if move != Vector2.ZERO:
+		if ground: _walk(move)
+		else: _pan(-move)
+	if dolly != 0.0: _dolly(dolly)
 
 func _drag_by(relative: Vector2, _shift: bool) -> void:
 	var height := maxf(scene.get_viewport().get_visible_rect().size.y,1.0)

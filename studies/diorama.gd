@@ -383,6 +383,13 @@ func _make_shell() -> void:
 	options.add_child(planet)
 	# Master volume and mute, and the creation Sound volume (scripts/sound_settings.gd).
 	preload("res://scripts/sound_settings.gd").build(options)
+	# A small rumble on the pad's touchdowns, rolls and presses (scripts/pad.gd).
+	var vibration := CheckButton.new()
+	vibration.name = "PadVibration"
+	vibration.text = "Controller vibration"
+	vibration.button_pressed = preload("res://scripts/pad.gd").vibration()
+	vibration.toggled.connect(func(on: bool) -> void: preload("res://scripts/pad.gd").set_vibration(on))
+	options.add_child(vibration)
 	for group: String in ["_ambient_audio","_thunder_audio"]:
 		var audio: Node = get(group)
 		var toggle := CheckButton.new()
