@@ -20,8 +20,10 @@ extends Node3D
 ## cells' origin, so the swaps that move the world carry the ranges along.
 ##
 ## Its faces are drawn with the plate's own ground material, laid OFF_MAP off
-## so the plate's maps read nothing on them (as SkyIslets does), its look
-## read LOOK_SCALE times larger and its foot gone into the cloud's light. The glide
+## so the plate's maps read nothing on them (as SkyIslets does), as bare
+## rock (reference_surface `peak_rock`: its own basalt, never the plate's
+## grass field or geology painted over it), its look read LOOK_SCALE times
+## larger and its foot gone into the cloud's light. The glide
 ## reads each as a solid (`body`): giant stone, ridden only where it is no
 ## steeper than the glide can ride (SkyGlide `stone`). The haze reads their
 ## spots (`haze_spots`): a range is a landform, not scenery streamed in, so
@@ -697,6 +699,8 @@ func _ground() -> Material:
 	m.set_shader_parameter("sea_fray",SEA_FRAY)
 	m.set_shader_parameter("look_scale",LOOK_SCALE)
 	m.set_shader_parameter("facet_soft",FACET_SOFT)
+	# Bare basalt: the plate's grass field and geology stay off it.
+	m.set_shader_parameter("peak_rock",true)
 	_material = m
 	return _material
 

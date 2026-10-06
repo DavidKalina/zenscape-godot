@@ -187,23 +187,20 @@ func _base() -> void:
 	check(low_snow == 0,"None lies far under the snow line")
 	check(steep_snow < steep_high,"The sheerest faces up there stay bare rock (%d of %d snowed)" % [steep_snow,steep_high])
 	check(worst < 0.8,"Its faces are the heights the glide reads (worst %.2f m)" % worst)
-	# Grass lies in patches on the ground's broad lie, hardly ever a green
-	# facet on a cliff.
+	# Bare basalt (tests/test_sky_peak_look.gd has the rest): no green.
 	var green := 0
-	var cliff_green := 0
 	for k in range(0,vertices.size(),3):
 		var c := colours[k]
-		if not (c.g > c.r*1.6 and c.g > c.b*1.6): continue
-		green += 1
-		var n := (vertices[k+2]-vertices[k]).cross(vertices[k+1]-vertices[k]).normalized()
-		if absf(n.y) < 0.5: cliff_green += 1
-	check(green > 0 and cliff_green < green*0.025,"Grass lies in patches, hardly any on the cliffs (%d of %d green faces)" % [cliff_green,green])
-	# The beds: mostly the granite's tones, with bands of sand and of shale
-	# as an island's side has.
-	var kinds := {}
-	for index in range(-10,30): kinds[peak._bed_kind(index)] = kinds.get(peak._bed_kind(index),0)+1
-	var granite: int = kinds.get("core_a",0)+kinds.get("core_b",0)+kinds.get("core_c",0)
-	check(kinds.has("sand") and kinds.has("shale_dark") and granite > 20,"The rock is layered: granite beds with bands of sand and shale (%s)" % str(kinds))
+		if c.g > maxf(c.r,c.b): green += 1
+	check(green == 0,"The rock is bare basalt, no green faces (%d)" % green)
+	# The beds (lava flows): several tones, seldom one the same as the bed
+	# under it.
+	var tones := {}
+	var same := 0
+	for index in range(-10,30):
+		tones[peak._bed_tone(index)] = true
+		if peak._bed_tone(index) == peak._bed_tone(index-1): same += 1
+	check(tones.size() >= 4 and same < 4,"The rock is layered: beds of %d tones, %d the same as the one under" % [tones.size(),same])
 	# Not a layer cake: the beds run unevenly thick, and the ledges and the
 	# colours read the same beds (`bed_height` undoes `bed_at`).
 	var thin := INF
