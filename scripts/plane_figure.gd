@@ -80,12 +80,14 @@ var _vapour_points := PackedVector3Array()
 var _vapour_strength := PackedFloat32Array()
 var _vapour_clock := 0.0
 
-func _init() -> void:
+## `livery` repaints it (scripts/sky_traffic.gd): any of body, dark, trim,
+## wing and scarf, each a Color; the wanderer's own plane takes none.
+func _init(livery := {}) -> void:
 	name = "Plane"
-	var wood := _material(WOOD)
-	var dark := _material(DARK)
-	var trim := _material(TRIM)
-	var cream := _material(WING)
+	var wood := _material(livery.get("body",WOOD))
+	var dark := _material(livery.get("dark",DARK))
+	var trim := _material(livery.get("trim",TRIM))
+	var cream := _material(livery.get("wing",WING))
 	var skin := _material(SKIN)
 	# The body runs along -Z, the nose forward: a round chunky barrel that
 	# tapers to the tail, a terracotta cowl round the nose, a cream spinner.
@@ -167,7 +169,7 @@ func _init() -> void:
 	_scarf = MeshInstance3D.new()
 	_scarf.mesh = _scarf_mesh
 	_scarf.top_level = true
-	var scarf_material := _material(Color("d9573a"))
+	var scarf_material := _material(livery.get("scarf",Color("d9573a")))
 	scarf_material.cull_mode = BaseMaterial3D.CULL_DISABLED
 	_scarf.material_override = scarf_material
 	_scarf.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
