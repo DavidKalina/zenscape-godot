@@ -11,7 +11,7 @@ extends Node3D
 ## be anywhere, in it or out of it, with no geometry to clip or sort. The
 ## body is the shape's smooth heap of lobes baked into a coarse float 3D
 ## texture on a worker (SkyTower `bake`); its cauliflower and wisps are one
-## small tiling noise volume made once a run (`_noise`), drifting up so the
+## small tiling noise volume made once a run (scripts/cumulus_noise.gd), drifting up so the
 ## crown slowly boils. It draws before the other see-through things
 ## (RENDER_PRIORITY), so the glide's streaks and the current wisps near the
 ## eye stay over it when inside; the glide's small drifting clouds, which
@@ -35,6 +35,7 @@ extends Node3D
 
 const SkyCommits = preload("res://scripts/sky_commits.gd")
 const SkyTower = preload("res://scripts/sky_tower.gd")
+const CumulusNoise = preload("res://scripts/cumulus_noise.gd")
 const SkyPeaks = preload("res://scripts/sky_peaks.gd")
 const SkyHomes = preload("res://scripts/sky_homes.gd")
 const SkyWorld = preload("res://scripts/sky_world.gd")
@@ -79,8 +80,6 @@ const SCREEN := 0.42
 ## How far onto a landform's gentler haze (SkyHaze PEAK_REACH): a tower is
 ## a landmark, standing in the far haze as the ranges do.
 const HAZE_FAR := 1.0
-## The noise volumes' size (texels a side).
-const NOISE := 64
 
 var cells: RefCounted
 var currents: Node3D
@@ -88,7 +87,6 @@ var currents: Node3D
 var built := {}
 var _making := {}
 var _since := CHECK
-static var _cauliflower: ImageTexture3D
 
 func _init() -> void:
 	name = "SkyTowers"
@@ -233,7 +231,7 @@ static func _make(seed_value: int, out: Dictionary) -> void:
 	# The volume's slices, and the shared noise's the first time: only the
 	# textures are made on the main thread (`_finish`).
 	out.slices = SkyTower.slices_of(out.baked)
-	_noise_slices()
+	CumulusNoise.slices()
 
 ## The worker's tower, stood up: its box, drawn by the volume, and the
 ## thermals in its heart.
@@ -248,7 +246,7 @@ func _finish(cell: Vector2i, s: Vector3, out: Dictionary) -> void:
 	material.shader = preload("res://shaders/sky_tower.gdshader")
 	material.render_priority = RENDER_PRIORITY
 	material.set_shader_parameter("body",SkyTower.texture_of(out.baked,out.get("slices",[] as Array[Image])))
-	material.set_shader_parameter("cauliflower",_noise())
+	material.set_shader_parameter("cauliflower",CumulusNoise.texture())
 	material.set_shader_parameter("box_mid",box.get_center())
 	material.set_shader_parameter("box_half",box.size*0.5)
 	material.set_shader_parameter("sea",SkyTower.SEA)
@@ -285,58 +283,6 @@ func _thermals(key: String) -> void:
 
 func _thermal_key(key: String) -> String:
 	return "tower:"+key
-
-## The tiling noise volume, made once a run: in red the cauliflower's
-## round bumps (cellular, inverted so each cell is a dome, two octaves), in
-## green the soft wisps (fbm). One texture, so a step reads both at once.
-static func _noise() -> ImageTexture3D:
-	if _cauliflower != null: return _cauliflower
-	_cauliflower = ImageTexture3D.new()
-	_cauliflower.create(Image.FORMAT_RG8,NOISE,NOISE,NOISE,false,_noise_slices())
-	return _cauliflower
-
-## The noise volume's slices, worked out once a run, on whichever thread
-## asks first (a tower's worker, `_make`); the rest wait for them.
-static func _noise_slices() -> Array[Image]:
-	_noise_lock.lock()
-	if _noise_made.is_empty(): _noise_made = _make_noise_slices()
-	var made := _noise_made
-	_noise_lock.unlock()
-	return made
-
-static var _noise_lock := Mutex.new()
-static var _noise_made: Array[Image] = []
-
-static func _make_noise_slices() -> Array[Image]:
-	var bumps := FastNoiseLite.new()
-	bumps.seed = 31
-	bumps.noise_type = FastNoiseLite.TYPE_CELLULAR
-	bumps.cellular_distance_function = FastNoiseLite.DISTANCE_EUCLIDEAN
-	bumps.cellular_return_type = FastNoiseLite.RETURN_DISTANCE
-	bumps.frequency = 5.0/NOISE
-	bumps.fractal_type = FastNoiseLite.FRACTAL_FBM
-	bumps.fractal_octaves = 2
-	bumps.fractal_lacunarity = 3.0
-	bumps.fractal_gain = 0.32
-	var wisps := FastNoiseLite.new()
-	wisps.seed = 57
-	wisps.noise_type = FastNoiseLite.TYPE_PERLIN
-	wisps.frequency = 7.0/NOISE
-	wisps.fractal_type = FastNoiseLite.FRACTAL_FBM
-	wisps.fractal_octaves = 3
-	var red: Array[Image] = bumps.get_seamless_image_3d(NOISE,NOISE,NOISE,true,0.15,true)
-	var green: Array[Image] = wisps.get_seamless_image_3d(NOISE,NOISE,NOISE,false,0.15,true)
-	var slices: Array[Image] = []
-	for z in range(NOISE):
-		var r := red[z].get_data()
-		var g := green[z].get_data()
-		var both := PackedByteArray()
-		both.resize(r.size()*2)
-		for i in range(r.size()):
-			both[i*2] = r[i]
-			both[i*2+1] = g[i]
-		slices.append(Image.create_from_data(NOISE,NOISE,false,Image.FORMAT_RG8,both))
-	return slices
 
 # --- Reading them ------------------------------------------------------------------
 

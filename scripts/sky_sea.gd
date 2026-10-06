@@ -1,6 +1,7 @@
 extends MeshInstance3D
-## The near cloud sea (shaders/sky_sea.gdshader): the sea's heaps as a
-## surface at their own height in the world, SEA metres down, out to
+## The near cloud sea (shaders/sky_sea.gdshader): a floor of cumulus heaps,
+## the towering cumulus' own cloud (scripts/sky_towers.gd) only low and
+## wide, at their own height in the world, about SEA metres down, out to
 ## `reach`, where the dome's painted sea (shaders/sky_cloud_sea.gdshaderinc)
 ## takes over to the horizon. So the near sea slides by under a glide and
 ## swings under a turn, the islands' shadows lie on it and they ride on a
@@ -13,15 +14,19 @@ extends MeshInstance3D
 ## --no-cloud-sea and Settings > Clouds turn it with the dome's. The
 ## islands under the glide (scripts/sky_islands.gd) are handed it
 ## (`island_spots`), the plate's own first, and the ranges standing near
-## (`set_ranges`), round whose feet the heaps close their gaps.
+## (`set_ranges`), round whose feet the heaps close their gaps. The
+## cauliflower on the heaps is the towers' noise volume (scripts/
+## cumulus_noise.gd), made on a worker and handed over once it is ready
+## (`_take_noise`); till then the heaps are their smooth envelope.
 
 const SkyIslands = preload("res://scripts/sky_islands.gd")
 const NativeTerrainData = preload("res://scripts/native_terrain_data.gd")
 const IslandShore = preload("res://scripts/island_shore.gd")
+const CumulusNoise = preload("res://scripts/cumulus_noise.gd")
 ## The heaps' feet and their tallest (m); the swell over them under an
 ## island (shaders/sky_sea.gdshader SWELL), for the box.
-const FLOOR := -130.0
-const TALL := 30.0
+const FLOOR := -150.0
+const TALL := 45.0
 const SWELL := 22.0
 const HEADROOM := 1.3
 ## How far out it reaches (m), never past this share of the camera's far
@@ -39,6 +44,7 @@ const RENDER_PRIORITY := -2
 var material := ShaderMaterial.new()
 var reach := REACH
 var _box := BoxMesh.new()
+var _has_noise := false
 
 func _init() -> void:
 	name = "SkySea"
@@ -67,6 +73,7 @@ func follow(camera: Camera3D) -> void:
 	if camera == null: return
 	var want := minf(REACH,camera.far*FAR_SHARE)
 	if not is_equal_approx(want,reach): _size(want)
+	_take_noise()
 	var eye := camera.global_position
 	global_position = Vector3(eye.x,FLOOR+(TALL+SWELL)*HEADROOM*0.5,eye.z)
 	material.set_shader_parameter("eye_xz",Vector2(eye.x,eye.z))
@@ -108,6 +115,18 @@ static func island_spots(islands: Node, plate: Node3D, eye: Vector3) -> Array:
 	var rest := out.slice(1)
 	rest.sort_custom(func(a: Vector4, b: Vector4) -> bool: return Vector2(a.x-eye.x,a.y-eye.z).length_squared() < Vector2(b.x-eye.x,b.y-eye.z).length_squared())
 	return ([first]+rest).slice(0,ISLANDS)
+
+func _exit_tree() -> void:
+	CumulusNoise.settle()
+
+## The cumulus' noise volume, once it is made (on a worker, never here).
+func _take_noise() -> void:
+	if _has_noise: return
+	var noise := CumulusNoise.request()
+	if noise == null: return
+	_has_noise = true
+	material.set_shader_parameter("cauliflower",noise)
+	material.set_shader_parameter("has_noise",1.0)
 
 func _size(value: float) -> void:
 	reach = value

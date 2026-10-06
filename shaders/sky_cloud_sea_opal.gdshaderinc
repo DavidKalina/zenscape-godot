@@ -116,9 +116,10 @@ vec3 zs_opal_sea_opal(float t) {
 }
 
 // The ground under the sea, seen through its rifts from `at` (the point on
-// the sea): far deeper, so its fields are small beside the puffs.
-// Display colour, already in the air's haze.
-vec3 zs_opal_sea_land(vec2 at, float blur, float level, vec3 shadow_hue, vec3 pearl, float dusk, float glint) {
+// the sea): far deeper, so its fields are small beside the puffs. Lit by
+// the hour (`level`), before any air: the near sea (shaders/sky_sea
+// .gdshader) lays its own, by the metre.
+vec3 zs_opal_sea_land_lit(vec2 at, float blur, float level, vec3 pearl, float glint) {
   vec2 g = at * SEA_LAND.x + vec2(41.0, 17.0);
   float fine = 1.0 - smoothstep(0.25, 0.8, blur * SEA_LAND.x * 3.0 / SEA_SCALE);
   float fields = zs_opal_sea_noise(g * 1.6);
@@ -147,8 +148,14 @@ vec3 zs_opal_sea_land(vec2 at, float blur, float level, vec3 shadow_hue, vec3 pe
   water *= 0.94 + 0.12 * swell * fine;
   water += pearl * glint * (0.05 + 0.22 * sparkle);
   land = mix(land, water / max(level * 1.05, 1e-3), ocean);
-  // Lit by the hour, then deep in the air between: blue-grey and faint.
-  land *= level * 1.05;
+  // Lit by the hour.
+  return land * level * 1.05;
+}
+
+// The same, as the dome sees it: deep in the air between, blue-grey and
+// faint. Display colour, already in the air's haze.
+vec3 zs_opal_sea_land(vec2 at, float blur, float level, vec3 shadow_hue, vec3 pearl, float dusk, float glint) {
+  vec3 land = zs_opal_sea_land_lit(at, blur, level, pearl, glint);
   vec3 air = shadow_hue * level * 0.88;
   // Low light leaves the land to the air: a hint, never a dark hole.
   return mix(land, air, min(SEA_LAND.y + 0.25 * dusk, 0.85));

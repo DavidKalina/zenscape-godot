@@ -26,6 +26,7 @@ func run() -> void:
 	var names: Array = sea.material.shader.get_shader_uniform_list().map(func(entry: Dictionary) -> String: return entry.name)
 	check(names.has("islands") and names.has("ranges") and names.has("reach") and names.has("cloud_sea_style"), "Its shader compiles and takes the sea's style, reach and islands")
 	check(sea.material.render_priority < preload("res://scripts/sky_towers.gd").RENDER_PRIORITY, "It draws before the towers that rise out of it")
+	check(names.has("cauliflower") and names.has("has_noise"), "Its heaps take the cumulus' cauliflower")
 	look.cloud_sea = 1.0
 	look._update_cloud_sea(1.0)
 	check(sea.visible, "It shows with the sea")
@@ -47,6 +48,14 @@ func run() -> void:
 	camera.far = 9000.0
 	sea.follow(camera)
 	check(is_equal_approx(sea.reach, SkySea.REACH), "A far plane past it leaves it at its full reach")
+
+	# The towers' own noise, made on a worker and handed over once ready.
+	for i in range(600):
+		if float(sea.material.get_shader_parameter("has_noise")) > 0.0: break
+		sea.follow(camera)
+		await process_frame
+	check(float(sea.material.get_shader_parameter("has_noise")) == 1.0, "The cumulus' noise reaches the heaps")
+	check(sea.material.get_shader_parameter("cauliflower") == preload("res://scripts/cumulus_noise.gd").texture(), "It is the towers' one noise volume, not a second")
 
 	# Each style is the sky's.
 	var sky: ShaderMaterial = scene._environment.sky.sky_material
