@@ -230,7 +230,7 @@ Bending needs a free hand: the tool put down (**Esc**, or press the tool's
 pocket on the roll again; pick it to take it back up) or the Feather, not a
 shaping tool, which presses through plants to the land. With the tool down a
 press on the land does nothing. Plucking works with any tool but the can (whose
-Shift sprinkles). Bigfoot's tree, logs, stumps and
+Shift sprinkles). The old tree, logs, stumps and
 rocks can't be plucked; a pinned plant can.
 
 ## Keys

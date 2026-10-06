@@ -34,7 +34,7 @@ already use approximately 2 ms slices; instrumented habitat work was about
 Run from a source checkout with Godot 4.7.2 and imported assets:
 
 ```sh
-godot --path . --script tools/profile_object_edits.gd -- --redwood-bigfoot --out=redwood-edits.json
+godot --path . --script tools/profile_object_edits.gd -- --redwood --out=redwood-edits.json
 godot --path . --script tools/profile_object_edits.gd -- --file=res://docs/garden/fall-world-proof.json --out=populated-edits.json
 ```
 

@@ -64,49 +64,33 @@ above are archived.
 
 ---
 
-## 2. Bigfoot as a character (Proposed)
+## 2. Bigfoot (Removed)
 
-The vision keeps Bigfoot only as a rare ambient event. The earlier Bigfoot
-simulation is a large AI and animation system with a personality, a lair, a
-cave, routines, mischief, rage, object exchange, tree hugs and wetness. The
-lair, the cave and his needs-driven living world were removed on 2026-10-05.
+The lair, the cave and his needs-driven living world were removed on
+2026-10-05. On 2026-10-06 (`cleanup/no-bigfoot`) the rest went too: the
+roaming resident and his mind, routine, habits, mischief, temper, object
+exchange, tree hugs, wetness and wind body; the Fidelity encounter; the rare
+dusk sighting and his trail (tracks, cairn, howl, knocks); the "Bigfoot"
+placeable, the crossing and chasm glades, the `--bigfoot` and
+`--force-bigfoot` flags; their models, shaders, sounds, Blender source,
+build tools, docs and tests.
 
-**Keep:**
+**Kept, under old names:**
 
-- `scripts/life_bigfoot.gd`: the rare dusk sighting, driven by `life_moments.gd`.
-- `assets/models/zenscape-bigfoot-ambient.glb`
-- `feature/ambient-bigfoot` (worktree `.claude/worktrees/ambient-bigfoot`): the
-  stooped prop with 8 clips. It isn't wired in yet, but it's the likely future
-  of the rare event.
+- `bigfoot_tree`, the old tree landmark (`assets/bigfoot/old_tree.glb`):
+  saved worlds and generated landscapes still hold it. It is no longer a
+  Place choice.
+- `tools/blender_bigfoot/ambient_clips.py`: the curve helpers the deer, heron
+  and god hand rigs share.
+- `scripts/resident_interaction.gd` and `scripts/resident_wind.gd`: now only
+  the Wind gust gesture and the scene's wind field.
+- `scripts/creature_navigation.gd` and `scripts/fidelity_habitat.gd`: the
+  Fidelity pond's fish, the fallen wood and loose props read them.
+- `shaders/foliage_tread.gdshaderinc`: no walker feeds it any more.
+- `tools/check_bigfoot_living_regressions.py`: the headless test runner.
 
-**Proposed for removal:**
-
-- Scripts: `scripts/bigfoot_*.gd` (17 files: breath, crossing_wish,
-  environment, fire, habits, leaf_bed, mischief, object_exchange, personality,
-  routine, shelter, temper, tree_hug, tree_touch, warm_hands, wetness), plus
-  `scripts/reference_bigfoot.gd`,
-  `scripts/creature_brain.gd`, `scripts/creature_hand_reach.gd`,
-  `scripts/creature_tree_peek.gd` and `scripts/resident_interaction.gd`.
-  Check `creature_actor.gd` and `creature_navigation.gd` for the deer and
-  heron before removing them.
-- Studies: `studies/bigfoot_encounter.gd`.
-- Tests: `tests/test_bigfoot*.gd`.
-- Tools: `tools/*bigfoot*` (the Blender rig, restyle, animate and film
-  scripts). **Keep** anything
-  `feature/ambient-bigfoot` still uses to rebuild its model.
-- Docs: `docs/bigfoot-*` (9 folders) and `docs/bigfoot-heavy-walk.md`,
-  `docs/fidelity-life/`.
-- Branches: `codex/bigfoot-*`, `codex/cozy-bigfoot`, `codex/resolve-pr10`,
-  `feature/bigfoot-patterson-walk`, `feature/hide-cave`.
-
-**Still wired into the live product.** Untangle these before deleting:
-
-- `studies/diorama.gd` → `fidelity_life.gd` (Bigfoot references in both).
-- `scripts/cozy_regrowth.gd` → `creature_actor.gd` → `bigfoot_personality.gd`
-  (6 references in cozy_regrowth).
-- `scripts/native_chunk_editor.gd` → `native_garden_landmarks.gd` →
-  `studies/bigfoot_encounter.gd` → `reference_bigfoot.gd`.
-- The `--force-bigfoot` flag.
+Saves carrying `diorama`, `bigfoot_habits`, `bigfoot_living`,
+`cave_system` or a land life `trail` still load; those keys are ignored.
 
 ---
 
