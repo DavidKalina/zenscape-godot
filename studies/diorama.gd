@@ -381,6 +381,8 @@ func _make_shell() -> void:
 	planet.button_pressed = look_pass.sky_planet
 	planet.toggled.connect(func(on: bool) -> void: look_pass.set_sky_planet(on))
 	options.add_child(planet)
+	# How many lines the 3D is drawn at before it is scaled up (scripts/render_resolution.gd).
+	preload("res://scripts/render_resolution.gd").build(options,get_viewport())
 	# Master volume and mute, and the creation Sound volume (scripts/sound_settings.gd).
 	preload("res://scripts/sound_settings.gd").build(options)
 	# A small rumble on the pad's touchdowns, rolls and presses (scripts/pad.gd).

@@ -466,6 +466,8 @@ func _setup_environment() -> void:
 	_lighting = lighting
 	_environment = lighting.environment
 	look_pass.setup(self)
+	# The 3D drawn at no more than 1080 lines unless the player picks otherwise.
+	preload("res://scripts/render_resolution.gd").attach(get_viewport())
 	_lights.assign(lighting.lights)
 
 func _reset_camera(reference_pose := false) -> void:
