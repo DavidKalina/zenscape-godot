@@ -50,6 +50,8 @@ var mood_panel: Control
 var almanac_pages: Control
 ## The shell's camera: focus, follow, glides and gestures (scripts/camera_rig.gd).
 var camera_rig: Node
+## The gamepad's verbs in each place (scripts/pad_input.gd).
+var pad: Node
 ## True once the shell is built and the first world is open.
 var shell_ready := false
 var _craft_before_menu := false
@@ -182,6 +184,10 @@ func _ready() -> void:
 			hand_reach.edge_spring_released.connect(edge_spring.release)
 	_build_first_steps()
 	if world_session.managing: _build_worlds_screens()
+	# The gamepad, beside the keyboard and mouse (scripts/pad_input.gd).
+	pad = preload("res://scripts/pad_input.gd").new()
+	add_child(pad)
+	pad.setup(self)
 	# The world is shown once its sky is ready (scripts/sky_reveal.gd):
 	# under the veil from the title, or played straight on (--resume).
 	if veil == null and places_ready and _sky_veil_wanted():

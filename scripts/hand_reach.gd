@@ -134,6 +134,17 @@ const SUN_HINT := "Drag the sun"
 const MOON_HINT := "Drag the moon"
 const RIM_HINT := "Drag the rim to turn the season"
 const RIM_HINT_MODELESS := "Push the rim to turn the seasons"
+## The hints' words for the pad (docs/gamepad.md).
+const PAD_HINTS := {
+	SUN_HINT:"Hold A on the sun and move", MOON_HINT:"Hold A on the moon and move",
+	RIM_HINT:"Hold A on the rim and move round to turn the season",
+	RIM_HINT_MODELESS:"Hold A on the rim and push it to turn the seasons",
+	"Click the sky for night or day":"Press A on the sky for night or day",
+	"Hold in the sky to call a cloud":"Hold A in the sky to call a cloud",
+	"Pull the cloud for water":"Hold A on the cloud and pull for water",
+	"Bend it and let go":"Hold A to bend it and let go",
+}
+const Pad = preload("res://scripts/pad.gd")
 const HINT_UNTIL := 1
 const HOVER_UNTIL := 3
 const HOVER_READ := 1.0
@@ -370,6 +381,7 @@ signal snapped(phase: float, step: bool)
 func setup(owner_scene: Node3D) -> void:
 	scene = owner_scene
 	name = "HandReach"
+	Pad.hub.device_changed.connect(_device_changed)
 	# Last among the scene's children, so its `_input` comes before theirs.
 	scene.move_child.call_deferred(self,-1)
 	# The snap's sound loads here, so the first snap does not wait on it.
@@ -1203,6 +1215,17 @@ func _read_hint(zone: String) -> void:
 func _show_hint(text: String) -> void:
 	if text == _hint: return
 	_hint = text
+	_say()
+
+func _device_changed(_pad: bool) -> void:
+	if not _hint.is_empty(): _say()
+
+## Shows `_hint` in the words for the device in hand (PAD_HINTS and the
+## materials' own); the line is said again when the device changes.
+func _say() -> void:
+	var text := _hint
+	var pad_words: Dictionary = PAD_HINTS.merged(materials.PAD_HINTS if materials != null else {})
+	text = Pad.pick(text,str(pad_words.get(text,text)))
 	var shell: Node = scene.get("creation_palette")
 	if shell != null and shell.has_method("reach_hint"): shell.reach_hint(text)
 	elif not text.is_empty() and _editor() != null: _editor()._set_status(text)

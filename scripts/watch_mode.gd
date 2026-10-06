@@ -59,6 +59,7 @@ const CELL := 3.5
 const RECENT := 3
 const POINTER_IDLE := 2.5
 const HINT := "Watching  ·  O, Esc or a click to come back"
+const PAD_HINTS := {HINT:"Watching  ·  any button to come back"}
 ## Built and rare things worth a look, by weight; LIT ones count more at night.
 const SPECIAL := {"cabin":3.0,"campfire":3.0,"waterfall":3.0,"bridge":2.0,"arch":2.0,"bigfoot_tree":2.0,"stone_lamp":1.2,"redwood":1.2,"willow":1.2,"sunflower":0.8,"wheat":0.6}
 const LIT := ["cabin","campfire","stone_lamp"]
@@ -106,7 +107,7 @@ var _fov_back := 0.0
 var _clock := 0.0
 # Chrome: one faint line, shown while the pointer moves.
 var layer := CanvasLayer.new()
-var hint := Label.new()
+var hint: Label = preload("res://scripts/pad_prompt.gd").new()
 var _still := 0.0
 var _pointer_hidden := false
 
@@ -124,6 +125,7 @@ func setup(owner_scene: Node3D) -> void:
 	layer.visible = false
 	add_child(layer)
 	hint.text = HINT
+	hint.alternates = PAD_HINTS
 	hint.add_theme_font_size_override("font_size",13)
 	hint.add_theme_color_override("font_color",Color(Glass.INK,0.85))
 	hint.add_theme_color_override("font_shadow_color",Color("182628",0.85))

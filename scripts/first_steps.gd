@@ -68,6 +68,43 @@ const VERBS := {
 	"mood":{"group":"air","name":"Change the mood","line":"Press M, or the first pocket of the almanac","clue":"The same land, another light","near":"almanac:mood"},
 }
 
+## How each verb is done on the pad (docs/gamepad.md), where its `line`
+## names keys or the mouse; `line` reads the one for the device in hand.
+## The pad's glyphs are written as their names here: the card and the field
+## notes draw plain words.
+const PAD_LINES := {
+	"look":"Right stick to look round · the triggers come closer",
+	"glide":"Press A twice on something to glide to it",
+	"photo":"Click the left stick and the cloth steps out of the shot · A keeps it",
+	"raise":"The Mountain is in your hand · hold A on the land and pull up",
+	"hollow":"With the Crater, hold A on the land and pull down",
+	"groove":"The thumb is in your hand · hold A and move slowly across the land · water will run along it",
+	"smooth":"With the thumb, hold A and rub fast, back and forth",
+	"level":"With the palm, hold A and move and it levels a flat a pond can fill",
+	"spillway":"Thumb a groove out through the edge · water pours off into the void",
+	"tool":"LB and RB step through the roll · B puts it down",
+	"undo":"Hold B to take back any shaping · hold Y to bring it back",
+	"tree":"The tool is put down, your hand is free · hold A on a tree, bend it right over and let go",
+	"pluck":"Hold X and press A on a tree, a shrub or a flower",
+	"turn":"The rim is the plate's lit edge · hold A on it and push sideways · spin it fast and time winds on",
+	"shake":"Hold A on the rim and shake it",
+	"spring":"Hold A on the rim, pull it down and let go · what you made springs up bigger",
+	"basin":"Hold A on the rim, pull it up and let go slowly",
+	"flip":"Hold A on the rim, pull it up and flick it hard",
+	"gust":"Hold A in the empty sky and sweep across it",
+	"water":"The watering can is in your hand · hold A over the land to pour",
+	"scoop":"The D-pad brings the drop from the case · hold A where water lies, carry it and let go",
+	"sow":"The D-pad brings a seed or a flower from the case · hold A and move over the land",
+	"stone":"The D-pad brings the stone from the case · tap A on the land · hold longer for a bigger one",
+	"night":"Press A on the sun on the almanac · hold X with it to step the golden hours",
+	"mood":"Press A on the first pocket of the almanac",
+}
+
+## How verb `id` is done, for the device in hand (scripts/pad.gd).
+static func line(id: String) -> String:
+	var keys := str(VERBS.get(id,{}).get("line",""))
+	return preload("res://scripts/pad.gd").pick(keys,str(PAD_LINES.get(id,keys)))
+
 const FlowerSowing = preload("res://scripts/flower_sowing.gd")
 ## What the case holds that counts as sowing when used: every flower slot
 ## (scripts/flower_sowing.gd SLOTS), the tree seeds (painted as trees since
