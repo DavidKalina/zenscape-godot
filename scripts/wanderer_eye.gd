@@ -101,12 +101,12 @@ const FOV := 60.0
 const EASE_FOV := 0.2
 ## The camera behind the pilot: how far back, how high over the feet it
 ## looks, its tilt at rest (up over the pilot, looking down on them and the
-## ground round them, about 35 degrees: steeper and the horizon leaves the
+## ground round them, about 40 degrees: steeper and the horizon leaves the
 ## top of the frame), and the range of its tilt (polar from straight up:
 ## high over the pilot to low, looking up past them).
-const CAM_DISTANCE := 5.5
+const CAM_DISTANCE := 7.0
 const CAM_HEIGHT := 0.8
-const CAM_POLAR := PI*0.5-0.6
+const CAM_POLAR := PI*0.5-0.7
 const POLAR := Vector2(0.45,1.85)
 ## How the look point follows the feet up and down, on the ground and,
 ## lagging so a jump is not chased, in the air.
