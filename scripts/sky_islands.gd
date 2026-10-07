@@ -68,6 +68,7 @@ const IslandShore = preload("res://scripts/island_shore.gd")
 const SkyIslets = preload("res://scripts/sky_islets.gd")
 const SkyPeaks = preload("res://scripts/sky_peaks.gd")
 const SkyTowers = preload("res://scripts/sky_towers.gd")
+const CloudWakes = preload("res://scripts/cloud_wakes.gd")
 const SkyForestIsles = preload("res://scripts/sky_forest_isles.gd")
 const SkyHomes = preload("res://scripts/sky_homes.gd")
 const SkyFolk = preload("res://scripts/sky_folk.gd")
@@ -141,6 +142,10 @@ var islets: Node3D
 var peaks: Node3D
 ## The towering cumulus risen out of the cloud sea (scripts/sky_towers.gd).
 var towers: Node3D
+## The planes' tunnels through the clouds and the tufts they tear off
+## (scripts/cloud_wakes.gd), every flier's: the eye's plane (`wake`) and
+## the traffic's.
+var wakes: Node3D
 ## The forested isles (scripts/sky_forest_isles.gd).
 var isles: Node3D
 ## The people on the islands (scripts/sky_folk.gd).
@@ -205,6 +210,9 @@ func setup(owner_scene: Node3D) -> void:
 	towers = SkyTowers.new()
 	add_child(towers)
 	skip.append(towers)
+	wakes = CloudWakes.new()
+	add_child(wakes)
+	skip.append(wakes)
 	isles = SkyForestIsles.new()
 	isles.palette_source = editor.data._palette
 	isles.tree_parts = Callable(SkyIslets,"_tree_parts")
@@ -267,6 +275,7 @@ func clear() -> void:
 	if islets != null: islets.clear()
 	if peaks != null: peaks.clear()
 	if towers != null: towers.clear()
+	if wakes != null: wakes.clear()
 	if isles != null: isles.clear()
 	if ambient != null: ambient.clear()
 
@@ -322,6 +331,7 @@ func advance(delta: float, eye: Vector3, heading: float, parted: float) -> void:
 	keep.sort_custom(func(a: Vector4, b: Vector4) -> bool: return Vector2(a.x-eye.x,a.y-eye.z).length() < Vector2(b.x-eye.x,b.y-eye.z).length())
 	clouds.keep_off(keep)
 	clouds.follow(eye)
+	_tear(delta)
 	if ambient != null: ambient.advance(delta,eye)
 
 ## Puts a copy at a home spot, rising from below, with a thermal beside it
@@ -793,6 +803,7 @@ func claim(index: int) -> Vector3:
 	cells.origin = origin
 	currents.position += shift
 	clouds.move(shift)
+	wakes.move(shift)
 	_show_plate(hidden)
 	if places != null: places.busy = false
 	SkyCommits.spend("claim:swap",Time.get_ticks_usec()-began)
@@ -1115,6 +1126,8 @@ func show_air(on: bool) -> void:
 	peaks.visible = on or SkyWorld.ring_on()
 	if not on: peaks.let_go()
 	towers.visible = on
+	wakes.visible = on
+	if not on: wakes.clear()
 	isles.visible = on
 	if ambient != null:
 		ambient.visible = on
@@ -1125,6 +1138,38 @@ func show_air(on: bool) -> void:
 ## a tower draws its own fog round the eye), 0 to 1.
 func in_cloud(point: Vector3, time: float) -> float:
 	return maxf(clouds.inside(point,time),towers.fade(point)*SkyTowers.VEIL)
+
+## How deep a global point is in the body of a cloud, drifting or a
+## tower, 0 to 1: what a plane tears through and the mist round the eye.
+func cloud_body(point: Vector3) -> float:
+	return maxf(clouds.inside(point,scene._motion_time),towers.fade(point))
+
+## The eye's plane this frame, through the clouds (CloudWakes `trace`).
+func wake(position: Vector3, velocity: Vector3, delta: float) -> void:
+	wakes.trace("eye",position,velocity,cloud_body(position),scene._motion_time,delta)
+
+## The traffic through the clouds, the tufts flown on, and every tunnel
+## handed to the clouds that show it: all to the drifting puffs, and to
+## each tower the few near it.
+func _tear(delta: float) -> void:
+	var time: float = scene._motion_time
+	if traffic != null:
+		for i in range(traffic.planes.size()):
+			var flight: RefCounted = traffic.planes[i].flight
+			wakes.trace(i,flight.position,flight.velocity,cloud_body(flight.position),time,delta)
+	wakes.advance(delta)
+	clouds.wakes(wakes.at,wakes.way)
+	for b: Dictionary in towers.built.values():
+		var material: ShaderMaterial = b.get("material")
+		if material == null or not is_instance_valid(b.get("node")): continue
+		var half: Variant = material.get_shader_parameter("box_half")
+		var mid: Variant = material.get_shader_parameter("box_mid")
+		if not half is Vector3 or not mid is Vector3: continue
+		var near: Array = wakes.near_box((b.node as Node3D).global_position+mid,half,time,8)
+		material.set_shader_parameter("wake_count",near[2])
+		if near[2] > 0:
+			material.set_shader_parameter("wake_at",near[0])
+			material.set_shader_parameter("wake_way",near[1])
 
 ## The middle of the drifting cloud nearest a global point within `reach`
 ## metres, global, or null (for the other planes, scripts/sky_traffic.gd).

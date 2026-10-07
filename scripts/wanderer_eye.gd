@@ -956,7 +956,8 @@ func _advance_flight(delta: float) -> void:
 	# Wandered off or fallen into the sea, an island turns up.
 	islands.advance(delta,glide.position,glide.heading,sky.flight.w)
 	vapour.step(delta,glide,_fly_ground)
-	air.advance(delta,glide.velocity,glide.hang,float(input.dive),vapour.near,islands.towers.fade(glide.position))
+	islands.wake(glide.position,glide.velocity,delta)
+	air.advance(delta,glide.velocity,glide.hang,float(input.dive),vapour.near,islands.cloud_body(camera.global_position))
 	if plane: air.engine(glide.speed,(glide as SkyPlane).throttle)
 	if glide.flaps != _flaps_heard:
 		_flaps_heard = glide.flaps

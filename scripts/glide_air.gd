@@ -15,9 +15,11 @@ extends Node3D
 ## thickens: the streaks brighten and the hiss rises and opens, a rush of
 ## breath along the rock.
 ##
-## In a towering cumulus (scripts/sky_towers.gd `fade`), the air goes soft:
-## the hiss closes down to a hush and quietens, and the streaks thicken
-## into the cloud's own wisps flying past.
+## In a cloud (a drifting one or a towering cumulus: SkyIslands
+## `cloud_body`), the air goes soft: the hiss closes down to a hush and
+## quietens, the streaks fade, and the cloud's own mist is all round the
+## eye instead (shaders/glide_mist.gdshader): soft clots in a box that
+## wraps round it, which part and swell past with true depth as it flies.
 ##
 ## Flying the plane (scripts/sky_plane.gd), `engine` adds the propeller's
 ## hum: a low soft buzz that rises in pitch with speed and swells with the
@@ -40,10 +42,16 @@ const NEAR_STREAKS := 0.45
 const NEAR_GAIN := 0.22
 const NEAR_OPEN := 0.18
 ## Deep in a cloud: how much the hiss closes, how much quieter it is, and
-## the streaks' extra strength.
+## how much the streaks fade.
 const MUFFLE_OPEN := 0.8
 const MUFFLE_GAIN := 0.45
-const CLOUD_STREAKS := 0.35
+const CLOUD_STREAKS := 0.85
+## The mist round the eye in a cloud: how many clots, the box they wrap
+## in (m), their sizes (m), and how fast it comes and goes (s).
+const MIST := 120
+const MIST_BOX := 56.0
+const MIST_SIZE := Vector2(2.5,7.5)
+const MIST_EASE := 0.25
 ## A flap's whoosh: its loudness, and how fast it swells and dies (per sample).
 const WHOOSH := 0.32
 const WHOOSH_IN := 0.0035
@@ -64,6 +72,10 @@ const BLIP_TIME := 0.16
 
 var _streaks: MultiMeshInstance3D
 var _material: ShaderMaterial
+var _mist: MultiMeshInstance3D
+var _mist_material: ShaderMaterial
+## How thick the mist round the eye is now (0 to 1).
+var mist := 0.0
 var _player: AudioStreamPlayer
 var _playback: AudioStreamGeneratorPlayback
 var _rng := RandomNumberGenerator.new()
@@ -113,6 +125,10 @@ func _ready() -> void:
 	# The motes are moved in the shader; never cull them.
 	_streaks.custom_aabb = AABB(Vector3.ONE*-1e5,Vector3.ONE*2e5)
 	add_child(_streaks)
+	_mist = _wrapping("Mist",MIST,MIST_BOX,MIST_SIZE,preload("res://shaders/glide_mist.gdshader"))
+	_mist_material = _mist.material_override
+	_mist.visible = false
+	add_child(_mist)
 	var stream := AudioStreamGenerator.new()
 	stream.mix_rate = RATE
 	stream.buffer_length = 0.15
@@ -121,10 +137,37 @@ func _ready() -> void:
 	add_child(_player)
 	visible = false
 
+## A box of `count` cards wrapping round the eye, each with a seed, a size
+## in `sizes` and a strength.
+func _wrapping(label: String, count: int, edge: float, sizes: Vector2, shader: Shader) -> MultiMeshInstance3D:
+	var quad := QuadMesh.new()
+	quad.size = Vector2.ONE
+	var multimesh := MultiMesh.new()
+	multimesh.transform_format = MultiMesh.TRANSFORM_3D
+	multimesh.use_custom_data = true
+	multimesh.mesh = quad
+	multimesh.instance_count = count
+	for i in range(count):
+		multimesh.set_instance_transform(i,Transform3D(Basis(),Vector3(_rng.randf(),_rng.randf(),_rng.randf())*edge))
+		multimesh.set_instance_custom_data(i,Color(_rng.randf(),_rng.randf_range(sizes.x,sizes.y),_rng.randf_range(0.3,1.0),0.0))
+	var material := ShaderMaterial.new()
+	material.shader = shader
+	material.set_shader_parameter("box",edge)
+	var cards := MultiMeshInstance3D.new()
+	cards.name = label
+	cards.multimesh = multimesh
+	cards.material_override = material
+	cards.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# Moved in the shader; never cull them.
+	cards.custom_aabb = AABB(Vector3.ONE*-1e5,Vector3.ONE*2e5)
+	return cards
+
 func start() -> void:
 	visible = true
 	_gain = 0.0
 	_shown = 0.0
+	mist = 0.0
+	_mist.visible = false
 	_player.volume_db = 0.0
 	_player.play()
 	_playback = _player.get_stream_playback()
@@ -138,14 +181,17 @@ func stop() -> void:
 
 ## Each frame of the glide: its velocity, its float (0 to 1), whether it is
 ## tucked in a dive, how close it is passing to rock and how deep it is in
-## a tower's cloud (0 to 1 each).
+## cloud (0 to 1 each).
 func advance(delta: float, velocity: Vector3, hang: float, dive: float, near := 0.0, cloud := 0.0) -> void:
 	var speed := velocity.length()
 	var fast := clampf((speed-QUIET)/(LOUD-QUIET),0.0,1.0)
 	var k := 1.0-exp(-delta/EASE)
-	_shown = lerpf(_shown,minf(smoothstep(0.0,1.0,fast)*(1.0-hang*0.8)+NEAR_STREAKS*near+CLOUD_STREAKS*cloud,1.0),k)
+	_shown = lerpf(_shown,minf(smoothstep(0.0,1.0,fast)*(1.0-hang*0.8)+NEAR_STREAKS*near,1.0),k)
+	mist = lerpf(mist,clampf(cloud,0.0,1.0),1.0-exp(-delta/MIST_EASE))
 	_material.set_shader_parameter("velocity",velocity)
-	_material.set_shader_parameter("strength",0.12+0.75*_shown)
+	_material.set_shader_parameter("strength",(0.12+0.75*_shown)*(1.0-CLOUD_STREAKS*mist))
+	_mist.visible = mist > 0.003
+	_mist_material.set_shader_parameter("strength",mist)
 	_gain = lerpf(_gain,(lerpf(GAIN.x,GAIN.y,fast*fast)*(1.0-0.9*hang)+NEAR_GAIN*near)*(1.0-MUFFLE_GAIN*cloud),k)
 	_open = lerpf(_open,(0.04+0.4*fast+NEAR_OPEN*near)*(1.0-MUFFLE_OPEN*cloud),k)
 	_deep = lerpf(_deep,clampf(dive*fast*1.4,0.0,1.0),k)

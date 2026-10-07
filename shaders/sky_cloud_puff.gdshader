@@ -6,6 +6,10 @@ render_mode unshaded, blend_mix, cull_disabled, shadows_disabled, depth_draw_nev
 // colour all over, the sun's on the side and tops that face it, a cool
 // shade underneath. Up close a puff thins away, so flying into a cloud is a
 // soft white-out (the vapour, scripts/sky_flight.gd), never a flat card.
+// A plane's tunnel through a cloud (scripts/cloud_wakes.gd, `wake_*`)
+// drifts on with it: puffs near the line are shoved out to its walls,
+// dragged a little along the way the plane flew and thinned, and the
+// tunnel itself is cut out of them with a torn edge, till it heals.
 // Instance custom data: xyz the puff's offset from its cloud's middle as a
 // share of the cloud's size (y up), w a seed. The instance transform's
 // origin is the puff's centre, its basis x's length the puff's radius and
@@ -13,6 +17,7 @@ render_mode unshaded, blend_mix, cull_disabled, shadows_disabled, depth_draw_nev
 // a whole cloud at a time.
 #include "res://shaders/reference_globals.gdshaderinc"
 #include "res://shaders/glide_haze.gdshaderinc"
+#include "res://shaders/cloud_wake.gdshaderinc"
 
 uniform float strength = 1.0;
 // Metres a second the clouds drift on the breeze.
@@ -47,11 +52,19 @@ uniform float veiled = 0.0;
 // A batch fading in or out as a whole (the cloud wrapped round a range's
 // foot as the range comes and goes: scripts/sky_peaks.gd `swap_of`).
 instance uniform float batch_fade = 1.0;
+// The planes' tunnels (CloudWakes `at`, `way`), global, laid where the
+// clouds stood then: each drifts on with them.
+uniform vec4 wake_at[32];
+uniform vec4 wake_way[32];
 
 varying vec2 across;
 varying float opacity;
 varying vec3 shade;
 varying float seed;
+// Where on the puff's card a fragment is (global), and whether any tunnel
+// comes near the puff at all.
+varying vec3 card;
+varying float carved;
 
 float puff_hash(vec2 p) {
 	vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -77,14 +90,39 @@ void vertex() {
 	vec3 centre = vec3(wrapped.x, home.y, wrapped.y) + data.xyz * size + shift;
 	// A slow swell, each puff on its own beat.
 	radius *= 1.0 + 0.06 * sin(zs_motion_time * 0.11 + seed * 31.0);
+	// Shoved out of a plane's tunnel, dragged along it, thinned.
+	carved = 0.0;
+	float thinned = 1.0;
+	vec3 breeze = vec3(drift.x, 0.0, drift.y);
+	for (int i = 0; i < 32; i++) {
+		if (wake_way[i].w <= 0.0) continue;
+		float age = zs_motion_time - wake_at[i].w;
+		float s = zs_wake_strength(age);
+		if (s <= 0.0) continue;
+		float rad = zs_wake_radius(wake_way[i].w, age);
+		vec3 q = zs_wake_nearest(centre, wake_at[i].xyz + breeze * age, wake_way[i].xyz);
+		vec3 off = centre - q;
+		float d = length(off);
+		float reach = rad + radius;
+		if (d >= reach) continue;
+		float f = 1.0 - d / reach;
+		vec3 out_ = d > 1e-3 ? off / d : vec3(0.0, 1.0, 0.0);
+		centre += out_ * s * f * rad * 1.1;
+		float len = length(wake_way[i].xyz);
+		if (len > 1e-3) centre += wake_way[i].xyz / len * s * f * smoothstep(0.0, 2.0, age) * 1.6;
+		radius *= 1.0 - 0.2 * s * f;
+		thinned = min(thinned, 1.0 - 0.3 * s * f);
+		carved = 1.0;
+	}
 	vec3 right = INV_VIEW_MATRIX[0].xyz;
 	vec3 up = INV_VIEW_MATRIX[1].xyz;
 	vec3 world = centre + (right * VERTEX.x + up * VERTEX.y) * radius * 2.0;
+	card = world;
 	POSITION = PROJECTION_MATRIX * VIEW_MATRIX * vec4(world, 1.0);
 	across = VERTEX.xy * 2.0;
 	float away = distance(CAMERA_POSITION_WORLD, centre);
 	// Thinned away close up; gone in the far haze.
-	opacity = smoothstep(radius * 0.35, radius * 1.4, away) * (1.0 - smoothstep(2600.0, 3000.0, away)) * strength;
+	opacity = smoothstep(radius * 0.35, radius * 1.4, away) * (1.0 - smoothstep(2600.0, 3000.0, away)) * strength * thinned;
 	// Into the glide's haze with distance (glide_haze.gdshaderinc): drawn
 	// over the open sky, which the display haze leaves be, a far cloud melts
 	// away into the sky behind it rather than standing out sharp.
@@ -130,6 +168,22 @@ void fragment() {
 	float body = edge * (0.55 + 0.45 * (1.0 - r * r));
 	ALBEDO = shade * (0.92 + 0.12 * (1.0 - r));
 	ALPHA = clamp(body, 0.0, 1.0) * 0.85 * opacity * batch_fade;
+	if (carved > 0.0) {
+		// The tunnel cut out, its edge torn.
+		float tear = puff_noise(card.xy * 0.45 + card.z * 0.3) * 0.6 + puff_noise(card.zy * 1.1 + seed * 5.0) * 0.4;
+		vec3 breeze = vec3(drift.x, 0.0, drift.y);
+		float keep = 1.0;
+		for (int i = 0; i < 32; i++) {
+			if (wake_way[i].w <= 0.0) continue;
+			float age = zs_motion_time - wake_at[i].w;
+			float s = zs_wake_strength(age);
+			if (s <= 0.0) continue;
+			float rad = zs_wake_radius(wake_way[i].w, age);
+			float d = distance(card, zs_wake_nearest(card, wake_at[i].xyz + breeze * age, wake_way[i].xyz));
+			keep = min(keep, 1.0 - s * (1.0 - smoothstep(rad * 0.5, rad * 1.1, d + (tear - 0.5) * rad * 0.9)));
+		}
+		ALPHA *= keep;
+	}
 	if (soft_depth > 0.0) {
 		float scene = texture(depth_texture, SCREEN_UV).r;
 		vec4 behind = INV_PROJECTION_MATRIX * vec4(SCREEN_UV * 2.0 - 1.0, scene, 1.0);
