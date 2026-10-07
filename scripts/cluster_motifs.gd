@@ -114,6 +114,30 @@ const MOTIFS := {
 				"features":[{"type":"dock"},{"type":"fisher","chance":0.8}],
 				"relation":{"type":"bridge","to":"keeper","gap":Vector2(5.0,10.0)}},
 		]},
+	# The lake: a lead islet mostly a lake (spec `lake`, scripts/islet_lake.gd)
+	# with its features (scripts/cluster_lake.gd): spill (its fall off the
+	# rim), jetty, boat, floats (lilies and floating lanterns).
+	"lake": {
+		"label":"Lake","layout":"scatter",
+		"rock":{"palettes":["slate","basalt"],"tone":Vector2(0.92,1.12)},"keel":Vector2(1.5,2.0),
+		"night":{"windows":true,"lanterns":true,"beam":false},
+		"roles":[
+			{"name":"lake","anchor":true,"kind":"meadow","radius":Vector2(15.0,18.0),"height":Vector2(0.0,0.0),
+				"spec":{"lake":{},"dome":0.15,"trees":Vector2i(4,7),"tree_pool":{"willow":1.0,"birch":0.8,"tree":0.3},"mixed":true,
+					"drifts":Vector2i(3,5),"undergrowth":0.6},
+				"features":[{"type":"spill"},{"type":"jetty"},{"type":"fisher","chance":0.75},{"type":"boat"},{"type":"floats"}]},
+			{"name":"boathouse","kind":"shore","radius":Vector2(6.5,8.0),"height":Vector2(-1.5,1.2),
+				"spec":{"trees":Vector2i(1,2),"tree_pool":{"willow":1.0,"birch":0.5},"dome":0.25},
+				"features":[{"type":"cabin"},{"type":"dock"},{"type":"lamps","count":Vector2i(1,2)},{"type":"bearer","chance":0.7}],
+				"relation":{"type":"bridge","to":"lake","gap":Vector2(5.0,10.0)}},
+			{"name":"reeds","kind":"shore","radius":Vector2(3.0,4.5),"height":Vector2(-3.0,0.8),"count":Vector2i(1,3),"chance":0.9,
+				"spec":{"trees":Vector2i(0,1),"tree_pool":{"willow":1.0},"dome":0.1},
+				"relation":{"type":"near","to":"lake","gap":Vector2(3.0,10.0)}},
+			{"name":"meadow","kind":"meadow","radius":Vector2(5.0,6.5),"height":Vector2(-1.5,1.5),"chance":0.85,
+				"spec":{"dome":0.3,"trees":Vector2i(1,2),"tree_pool":{"birch":1.0,"broadleaf":0.6},"drifts":Vector2i(3,5)},
+				"features":[{"type":"lookout"}],
+				"relation":{"type":"stones","to":"lake","stones":Vector2i(2,3)}},
+		]},
 }
 
 ## The showcase (--showcase): the farmstead as first laid out by hand, its

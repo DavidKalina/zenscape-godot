@@ -38,6 +38,7 @@ const Footbridge = preload("res://scripts/footbridge.gd")
 const Cabin = preload("res://scripts/cabin.gd")
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const MeadowTypes = preload("res://scripts/meadow_types.gd")
+const ClusterLake = preload("res://scripts/cluster_lake.gd")
 
 ## Rim to rim (m): any two members at least MIN_GAP; stepping stones
 ## STONE_GAP apart (a running jump is about 2.5 to 3 m; checked against
@@ -434,6 +435,8 @@ static func _feature(m: Dictionary, f: Dictionary, placed: Array, centre: Vector
 			m.features.append({"type":"lamp","at":at+Vector2(0.5,0.3)})
 		"dock":
 			_dock(m,f,placed,outward,rng,plan)
+		"spill", "jetty", "boat", "floats":
+			ClusterLake.feature(m,f,placed,centre,rng,plan)
 		"fisher":
 			var dock := _find(m,"dock")
 			if dock.is_empty(): return
@@ -566,6 +569,7 @@ static func validate(plan: Dictionary) -> Array:
 						if _distance_to_rim({"offset":p.offset,"rim":rims[p.name]},q) < 2.0: problems.append("dock on %s runs into %s" % [m.name,p.name])
 				"fisher":
 					if shape.deck_y(f.at) == -INF: problems.append("fisher off the dock on %s" % m.name)
+	problems.append_array(ClusterLake.validate(plan))
 	return problems
 
 ## A footprint's ground: on the land, dry, in from the rim and level

@@ -22,6 +22,7 @@ const Cabin = preload("res://scripts/cabin.gd")
 const StoneLamp = preload("res://scripts/stone_lamp.gd")
 const IslanderFigure = preload("res://scripts/islander_figure.gd")
 const SkyFolk = preload("res://scripts/sky_folk.gd")
+const LakeDress = preload("res://scripts/lake_dress.gd")
 
 const WARM := Color("ffb466")
 const LIGHT_COLOR := Color("ffb36b")
@@ -69,6 +70,7 @@ static func _mats() -> Dictionary:
 ## Lets the shared pieces go (with the sky).
 static func release() -> void:
 	_shared = {}
+	LakeDress.release()
 
 ## The night's glow on every cluster: 0 by day, 1 at full night.
 static func set_night(night: float) -> void:
@@ -239,6 +241,7 @@ static func furnish(node: Node3D, member: Dictionary, plan: Dictionary, made: Di
 		bridge.mesh = mesh
 		bridge.material_override = m.solid
 		node.add_child(bridge)
+	LakeDress.furnish(node,member,halos,live)
 	if not halos.is_empty():
 		var batch := MultiMeshInstance3D.new()
 		batch.name = "Halos"
