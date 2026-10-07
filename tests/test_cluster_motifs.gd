@@ -22,7 +22,7 @@ func _initialize() -> void:
 	wants["forest"] = ["cabin","treehouse","canopy","trail"]
 	wants["stack"] = ["cabin","stair"]
 	wants["ravine"] = ["cabin","dock","post"]
-	wants["falls"] = ["cabin","paddies","plunge","moss"]
+	wants["falls"] = ["cabin","plunge","moss","post"]
 	wants["mountain"] = ["cabin","star","post"]
 	for motif: String in Motifs.names():
 		var bad := []

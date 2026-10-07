@@ -312,7 +312,10 @@ static func _canopy(m: Dictionary, f: Dictionary, rng: RandomNumberGenerator) ->
 		var h: float = float(t[1])*rng.randf_range(BOUGH_AT.x,BOUGH_AT.y)
 		var reach: float = float(t[2])*(1.0-h/float(t[1]))*1.05+0.25
 		var p := at+out*reach
-		var ground: float = shape.ground_at(p) if shape.on_land(p) else shape.ground_at(at)
+		# The ground under the lantern as the validator (`check`) reads it,
+		# and past the rim no lower than the trunk's.
+		var ground: float = shape.ground_at(p)
+		if not shape.on_land(p): ground = maxf(ground,shape.ground_at(at))
 		var hook := Vector3(p.x,shape.ground_at(at)+h,p.y)
 		if hook.y-ForestBuilds.HOOK-ground < HEADROOM: continue
 		hangs.append([Vector3(at.x+out.x*0.15,hook.y+0.35,at.y+out.y*0.15),hook])

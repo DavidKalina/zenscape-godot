@@ -211,16 +211,26 @@ func _stood() -> void:
 	var stairs := 0
 	var posts := 0
 	var windows := 0
-	for b: Dictionary in stood.values():
+	var lit_on: Array = []
+	for key: String in stood:
+		var b: Dictionary = stood[key]
 		for child: Node in (b.node as Node3D).get_children():
 			# Same-named nodes are renamed; the posts are known by their mesh.
 			if child.name.contains("Stair"): stairs += 1
 			elif child is MeshInstance3D and (child as MeshInstance3D).mesh == Dresser._mats().post: posts += 1
-			elif child.name.contains("CabinWindow"): windows += 1
+			elif child.name.contains("CabinWindow") and not child.name.contains("Frame"):
+				windows += 1
+				if not key in lit_on: lit_on.append(key)
+	var top := ""
+	for pm: Dictionary in plan.members:
+		if pm.role == "top": top = pm.name
 	var lanterns := 0
 	for st: Dictionary in plan.stairs: lanterns += (st.lanterns as Array).size()
 	check(stairs == (plan.stairs as Array).size() and stairs >= 3,"Its stairs stand (%d)" % stairs)
-	check(windows == 1,"One window, at the top")
+	# One cabin lit, on the top. The dresser adds panes round each cabin
+	# (Dresser CABIN_PANES), their names taken, so the cabin's own pane
+	# stands for its windows: one, and on the top only.
+	check(windows == 1 and lit_on == [top],"One lit cabin, at the top (%d on %s)" % [windows,str(lit_on)])
 	check(posts >= lanterns and lanterns >= 6,"The lanterns climb the stairs (%d, %d posts)" % [lanterns,posts])
 	var lit := 0
 	for entry: Array in field.clusters[spot.key].live.lights:
