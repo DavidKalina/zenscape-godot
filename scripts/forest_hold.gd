@@ -54,16 +54,16 @@ const STRING_LANTERNS := 0.75
 const HEADROOM := 2.3
 ## Bough lanterns (count a square metre of land, and at most), hung from
 ## this share of a tree's height.
-const BOUGHS := 0.012
-const BOUGHS_MOST := 14
+const BOUGHS := 0.02
+const BOUGHS_MOST := 22
 const BOUGH_AT := Vector2(0.38,0.5)
 ## The lights: a string lantern's scale, halos (m across near, strength),
 ## real lights' (reach m, energy) and how far they show (m).
 const SMALL := 0.75
-const HALO_STRING := Vector2(0.75,0.75)
-const HALO_BOUGH := Vector2(1.0,0.8)
-const HALO_EAVE := Vector2(1.3,0.9)
-const GLOW := Color("ffa955")
+const HALO_STRING := Vector2(0.8,0.75)
+const HALO_BOUGH := Vector2(1.1,0.85)
+const HALO_EAVE := Vector2(1.4,0.9)
+const GLOW := Color("ff7418")
 const LIGHT_COLOR := Color("ffb36b")
 const LIGHT := Vector2(5.5,1.0)
 const FADE := 50.0
