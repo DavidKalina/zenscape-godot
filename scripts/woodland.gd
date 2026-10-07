@@ -37,36 +37,36 @@ const MeadowTypes = preload("res://scripts/meadow_types.gd")
 ## Each species' drawn height at record scale 1 (m): the catalog's.
 const HEIGHT := {"tree":4.4,"birch":3.4,"redwood":14.9,"juniper":1.6,"broadleaf":3.0,"willow":2.7,"layered_tree":4.9}
 ## A crown's reach as a share of its height, by species.
-const REACH := {"tree":0.16,"birch":0.2,"redwood":0.15,"juniper":0.7,"broadleaf":0.35,"willow":0.45,"layered_tree":0.4}
+const REACH := {"tree":0.15,"birch":0.2,"redwood":0.15,"juniper":0.7,"broadleaf":0.35,"willow":0.45,"layered_tree":0.4}
 ## The layers' heights (m): the canopy, the understory, the edge; the
 ## giants'. The canopy runs up to CLUMP_LIFT taller in a clump's heart, the
 ## edge's trees down to EDGE_LOW of their height at the shore.
-const CANOPY := Vector2(5.4,7.6)
-const UNDER := Vector2(2.4,3.8)
-const MARGIN := Vector2(3.4,5.6)
-const GIANT := Vector2(12.5,16.5)
+const CANOPY := Vector2(7.5,11.0)
+const UNDER := Vector2(2.6,4.8)
+const MARGIN := Vector2(4.4,7.2)
+const GIANT := Vector2(15.0,20.0)
 const CLUMP_LIFT := 0.18
 const EDGE_LOW := 0.72
 ## The edge's width (m in from the shore), trees' least inset (m) and the
 ## steepest ground they stand on.
 const EDGE := 2.6
-const INSET := 0.55
-const STEEP := 0.85
+const INSET := 0.3
+const STEEP := 1.1
 ## The cover: clump noise's frequency (1/m), the cover in a gap between
 ## clumps (share of a clump's), the understory's share of the trees, and
 ## how far a crown's reach keeps the next trunk (share of the two reaches).
 const CLUMP := 0.12
-const GAP_COVER := 0.22
+const GAP_COVER := 0.3
 const UNDER_SHARE := 0.3
-const CROWN_KEEP := 0.95
+const CROWN_KEEP := 0.8
 ## Ground is wooded where the cover passes WOODED (give or take half of
 ## WOODED_DITHER, so a wood's edge is ragged); wooded ground fills over
 ## PASSES of the grid, the last only with understory, which stands closer
 ## under the crowns (UNDER_KEEP).
-const WOODED := 0.42
+const WOODED := 0.22
 const WOODED_DITHER := 0.25
-const PASSES := 3
-const UNDER_KEEP := 0.7
+const PASSES := 4
+const UNDER_KEEP := 0.55
 ## Glades fade into the wood over this many metres past their radius.
 const GLADE_EDGE := 2.2
 ## Giants keep this far apart (m), and the canopy's trunks this far off a
@@ -75,7 +75,7 @@ const GIANT_APART := 7.0
 const GIANT_ROOM := 1.6
 ## The floor: ferns a square metre of shade (in beds of FERN_BED), logs and
 ## stumps a square metre, snags, shrubs along an edge (a metre of it).
-const FERNS := 0.09
+const FERNS := 0.2
 const FERN_BED := Vector2i(2,5)
 const LOGS := 0.008
 const STUMPS := 0.006
