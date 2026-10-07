@@ -941,12 +941,21 @@ func claim(at: Vector2, radius: float, lift := 0.0, rect := Vector2.ZERO) -> voi
 	var target := ground_at(at)+lift
 	for i in range(points.size()):
 		if shore_distance[i] < 0.0: continue
+		# Ground claimed before keeps its level.
+		if _claimed(points[i]): continue
 		var d := _footprint_distance(points[i]-at,radius,rect)
 		var t := 1.0-smoothstep(0.0,LEVEL_EASE,d)
 		if t > 0.0: heights[i] = lerpf(heights[i],target,t)
 	objects = objects.filter(func(o: Dictionary) -> bool:
 		return _footprint_distance(Vector2(o.x,o.z)-at,radius,rect) > LEVEL_EASE*0.5+0.3)
 	claims.append(Vector4(at.x,at.y,rect.x,rect.y) if rect != Vector2.ZERO else Vector4(at.x,at.y,radius,0.0))
+
+## True on ground already claimed (within its footprint, a little past).
+func _claimed(p: Vector2) -> bool:
+	for c in claims:
+		var d := _footprint_distance(p-Vector2(c.x,c.y),c.z,Vector2(c.z,c.w) if c.w > 0.0 else Vector2.ZERO)
+		if d < 0.05: return true
+	return false
 
 ## How far `d` (from a footprint's middle) lies outside it: 0 inside.
 static func _footprint_distance(d: Vector2, radius: float, rect: Vector2) -> float:
