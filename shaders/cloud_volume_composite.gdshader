@@ -9,13 +9,16 @@ render_mode unshaded, blend_mix, cull_disabled, depth_draw_never, depth_test_dis
 // (shaders/cumulus_light.gdshaderinc) in the sky's own colours, tinted
 // toward the player's sea style, Opal's mother-of-pearl on the crowns, the
 // haze over the far heaps, the land far below through the gaps, and the
-// season's grade. The sun's phase is applied here per pixel: a forward
-// lobe for the silver lining looking toward the sun, a softer back lobe.
+// season's grade. The towers keep their own air instead (shaders/
+// sky_tower.gdshader): the glide's haze toward the dome's colour and the
+// sun's aureole, so a far tower goes pale and blue as before. The sun's
+// phase and its scattering octaves are the march's; here only colour.
 #include "res://shaders/reference_globals.gdshaderinc"
 #include "res://shaders/reference_sky_common.gdshaderinc"
 #include "res://shaders/cumulus_light.gdshaderinc"
 #define ZS_CLOUD_SEA_SHADE
 #include "res://shaders/sky_cloud_sea.gdshaderinc"
+#include "res://shaders/glide_haze.gdshaderinc"
 
 uniform sampler2D cloud_light : filter_nearest, repeat_disable;
 uniform sampler2D cloud_shape : filter_nearest, repeat_disable;
@@ -38,15 +41,20 @@ const float LAND_AIR = 4000.0;
 const float LIFT = 1.25;
 // The in-cloud glow (shaders/sky_tower.gdshader GLOW).
 const float GLOW = 1.4;
-// The phase: forward and back lobes (Henyey-Greenstein g), their mix, and
-// how much of the direct light follows it.
-const vec2 PHASE_G = vec2(0.6, -0.2);
-const float PHASE_MIX = 0.5;
-const float PHASE_SHARE = 0.35;
+// The light off the sea below on a tower's flanks: the sea's sunlit white,
+// a touch cooler.
+const vec3 BOUNCE_TINT = vec3(0.92, 0.96, 1.0);
+// The towers' haze reach (scripts/sky_towers.gd HAZE_FAR).
+const float TOWER_HAZE_FAR = 1.0;
 
-float hg4pi(float c, float g) {
-	float g2 = g * g;
-	return (1.0 - g2) / pow(max(1.0 + g2 - 2.0 * g * c, 1e-4), 1.5);
+// The glide's haze on a tower (glide_haze.gdshaderinc zs_glide_fog_far at
+// the towers' TOWER_HAZE_FAR), its low-down thickening written with the
+// edges in order.
+float tower_fog(float dist, float y) {
+	float low = 1.0 - smoothstep(zs_glide_haze.w, zs_glide_haze.w + 75.0, y);
+	float far = dist * (1.0 + 0.6 * low) / (max(zs_glide_haze.y, 1.0) * mix(1.0, ZS_PEAK_REACH, TOWER_HAZE_FAR));
+	float whole = zs_glide_haze.z * mix(1.0, ZS_PEAK_WHOLE, TOWER_HAZE_FAR);
+	return 1.0 - exp(-far * far) * (1.0 - smoothstep(whole * 0.72, whole, dist));
 }
 
 void vertex() {
@@ -83,24 +91,22 @@ void fragment() {
 	vec3 c_shade;
 	float lining;
 	zs_cumulus_palette(rd, sun, c_sun_hue, c_sun, c_shade, lining);
-	vec3 key = normalize(key_light + vec3(0.0, 1e-4, 0.0));
-	float c = dot(rd, key);
-	float phase = mix(hg4pi(c, PHASE_G.x), hg4pi(c, PHASE_G.y), PHASE_MIX);
-	float phase_mod = clamp(mix(1.0, phase, PHASE_SHARE), 0.5, 3.0);
 	float toward_sun = max(dot(rd, sun), 0.0);
 	vec3 glow_col = mix(vec3(0.95, 0.97, 1.0), c_sun_hue, 0.3) * GLOW;
 	vec3 lit = vec3(0.0);
 	float met = 0.0;
 	float crown = 0.0;
 	float bright = 0.0;
+	float tower = 0.0;
 	if (cloud_a > 1e-4) {
 		vec4 terms = a / cloud_a;
-		lit = (terms.x * c_shade + terms.y * c_sun * phase_mod + terms.z * c_sun + terms.w * c_sun * lining) * ZS_CUMULUS_LIT_SHARE;
+		lit = (terms.x * c_shade + terms.y * c_sun + terms.z * c_sun * BOUNCE_TINT) * ZS_CUMULUS_LIT_SHARE;
+		tower = clamp(terms.w, 0.0, 1.0);
 		float glow = b.w / cloud_a;
 		lit += glow_col * glow * (1.0 + 0.7 * pow(toward_sun, 3.0));
 		met = b.y / cloud_a;
 		crown = b.z / cloud_a;
-		bright = clamp((terms.y + terms.z) / 0.95, 0.0, 1.0);
+		bright = clamp(terms.y / 0.95, 0.0, 1.0);
 	}
 	float t_seen = (cloud_a > 0.5 || !ground) ? met : t_floor;
 
@@ -204,8 +210,21 @@ void fragment() {
 	}
 	// Air between the eye and the far heaps, by the metre.
 	col = mix(col, haze_col, (1.0 - exp(-met / AIR)) * 0.85);
-
+	// The towers in their own air (shaders/sky_tower.gdshader): the glide's
+	// haze toward the dome's colour along the ray, the sun's aureole round
+	// it, and gone where the haze is whole.
 	float alpha = cloud_a;
+	if (tower > 0.0) {
+		float tower_haze = tower_fog(met, eye.y + rd.y * met) * zs_glide_haze.x;
+		vec3 toward = normalize(vec3(rd.x, max(rd.y, 0.0) + 0.01, rd.z));
+		float sun_away = sqrt(max(2.0 * (1.0 - dot(toward, sun)), 0.0));
+		float high = smoothstep(0.02, 0.4, sun.y);
+		vec3 air = zsSkyBase(toward) + mix(vec3(1.0, 0.42, 0.12), vec3(1.0, 0.8, 0.52), high) * exp(-sun_away / 0.16) * mix(0.16, 0.07, high) * zs_celestial_clear;
+		vec3 tower_col = mix(lit * mix(1.0, LIFT, zs_daylight), air, tower_haze);
+		tower_col = mix(tower_col, painted, NIGHT_TINT * zs_night);
+		col = mix(col, tower_col, tower);
+		alpha = cloud_a * mix(1.0, 1.0 - smoothstep(0.8, 1.0, tower_haze), tower);
+	}
 	if (ground) {
 		// A gap: the Opal dome's land far below (fields, woods, a river,
 		// coasts and the blue ocean), so the near sea opens onto the same

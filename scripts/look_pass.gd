@@ -125,6 +125,7 @@ func apply_tier(index: int) -> void:
 	_scene.get_viewport().msaa_3d = Viewport.MSAA_4X if tier == 2 else Viewport.MSAA_2X
 	# Ultra marches the cloud deck at full resolution (docs/performance/gpu-headroom.md).
 	if _scene.get("_lighting") != null: _scene._lighting.full_res_clouds = tier == 2
+	if cloud_volume != null: cloud_volume.set_tier(tier)
 	var fog: CanvasLayer = _scene._display_fog
 	if fog != null and fog.buffer_scale != (0.75 if tier == 2 else 0.5):
 		fog.buffer_scale = 0.75 if tier == 2 else 0.5
@@ -266,6 +267,7 @@ func _update_cloud_volume(camera: Camera3D, celestial) -> void:
 	var islands: Node = wanderer.get("islands") if wanderer is Node else null
 	var flight: Variant = wanderer.get("sky") if wanderer is Node else null
 	var sea_flight: Variant = flight.get("flight") if flight is Object else null
+	cloud_volume.lightning = _scene.get("_lightning")
 	cloud_volume.update(camera, sea, islands, celestial, float(_scene.get("_motion_time")) if _scene.get("_motion_time") != null else 0.0, sea_flight if sea_flight is Vector4 else Vector4.ZERO)
 
 ## The Opal sea's painted distant peaks off while the sky world's ring of

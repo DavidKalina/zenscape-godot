@@ -20,7 +20,7 @@ layout(set = 0, binding = 0, std430) restrict readonly buffer Params {
 	vec4 lens;          // tan half fov x, y this frame; blend; history valid
 	vec4 prev_lens;     // tan half fov x, y last frame
 	vec4 eye;           // xyz this frame, w the march's frame index
-	vec4 planes;        // near, far, the marched pixel's blend, 0
+	vec4 planes;        // near, far, the marched pixel's blend, the march's scale (1 or 2)
 } P;
 
 layout(set = 0, binding = 1) uniform sampler2D march_a;
@@ -37,12 +37,22 @@ ivec2 zs_block_offset(int frame) {
 	return k == 0 ? ivec2(0, 0) : (k == 1 ? ivec2(1, 1) : (k == 2 ? ivec2(1, 0) : ivec2(0, 1)));
 }
 
+// A march sample made safe: no NaN or infinity ever reaches the history
+// (one would stay as a speck), and no light term past a sane ceiling.
+vec4 safe(vec4 v, vec4 most) {
+	bvec4 bad = bvec4(isnan(v.x) || isinf(v.x), isnan(v.y) || isinf(v.y), isnan(v.z) || isinf(v.z), isnan(v.w) || isinf(v.w));
+	return clamp(mix(v, vec4(0.0), bad), vec4(0.0), most);
+}
+const vec4 MOST_A = vec4(4.0, 8.0, 2.0, 1.0);
+const vec4 MOST_B = vec4(1.0, 1e5, 1.0, 64.0);
+
 void main() {
 	ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
 	ivec2 size = imageSize(out_a);
 	if (any(greaterThanEqual(pixel, size))) return;
 	ivec2 low = textureSize(march_a, 0);
-	ivec2 offset = zs_block_offset(int(P.eye.w));
+	int scale = max(int(P.planes.w), 1);
+	ivec2 offset = scale > 1 ? zs_block_offset(int(P.eye.w)) : ivec2(0);
 	vec2 uv = (vec2(pixel) + 0.5) / vec2(size);
 	vec3 view_dir = normalize(vec3((uv.x * 2.0 - 1.0) * P.lens.x, (1.0 - uv.y * 2.0) * P.lens.y, -1.0));
 	float d = texelFetch(scene_depth, min(pixel, textureSize(scene_depth, 0) - 1), 0).r;
@@ -55,7 +65,7 @@ void main() {
 	// This frame's march round this pixel: the four nearest samples (march
 	// pixel p stands at render pixel 2p + offset), weighted by distance and
 	// by how near their solid stands to this pixel's.
-	vec2 lp = (vec2(pixel - offset)) * 0.5;
+	vec2 lp = (vec2(pixel - offset)) / float(scale);
 	ivec2 base = ivec2(floor(lp));
 	vec2 f = lp - vec2(base);
 	vec4 a = vec4(0.0), b = vec4(0.0);
@@ -69,8 +79,8 @@ void main() {
 		float rel = abs(ld - t_solid) / max(min(ld, t_solid), 1.0);
 		float near = exp(-rel * 8.0);
 		float w = (bil + 0.02) * near + 1e-6;
-		vec4 na = texelFetch(march_a, q, 0);
-		vec4 nb = texelFetch(march_b, q, 0);
+		vec4 na = safe(texelFetch(march_a, q, 0), MOST_A);
+		vec4 nb = safe(texelFetch(march_b, q, 0), MOST_B);
 		a += na * w;
 		b += nb * w;
 		wsum += w;
@@ -85,11 +95,11 @@ void main() {
 		lo_a = a; hi_a = a; lo_b = b; hi_b = b;
 	}
 	// Marched this frame: its own sample, exactly.
-	bool marched = all(equal((pixel - offset) & 1, ivec2(0))) && all(greaterThanEqual(pixel - offset, ivec2(0)));
+	bool marched = scale == 1 || (all(equal((pixel - offset) & 1, ivec2(0))) && all(greaterThanEqual(pixel - offset, ivec2(0))));
 	if (marched) {
-		ivec2 q = min((pixel - offset) / 2, low - 1);
-		a = texelFetch(march_a, q, 0);
-		b = texelFetch(march_b, q, 0);
+		ivec2 q = min((pixel - offset) / scale, low - 1);
+		a = safe(texelFetch(march_a, q, 0), MOST_A);
+		b = safe(texelFetch(march_b, q, 0), MOST_B);
 	}
 	if (P.lens.w < 0.5) {
 		imageStore(out_a, pixel, a);

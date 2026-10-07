@@ -68,10 +68,42 @@ func run() -> void:
 	check(r.size() == CloudVolumeEffect.RESOLVE_FLOATS and is_equal_approx(r[44],camera.near), "The resolve's block is set")
 	effect.resize(Vector2i(1920,1080))
 	check(effect.size == Vector2i(960,540) and effect.full_size == Vector2i(1920,1080), "The march is half the render each axis, the resolve the whole")
+	effect.resize(Vector2i(1920,1080),1)
+	check(effect.size == Vector2i(1920,1080) and effect.scale == 1, "Asked to, it marches every pixel")
+	effect.resize(Vector2i(1920,1080),2)
+
+	# The weather map round the eye, the quality tier, the shade on the land.
+	var side: float = (sea.reach+CloudVolume.WEATHER_PAST)*2.0
+	var texel: float = side/CloudVolumeEffect.WEATHER_TEXELS
+	check(is_equal_approx(p[166],side) and is_equal_approx(p[167],CloudVolumeEffect.WEATHER_TEXELS), "The weather map's square spans the sea's reach and past it")
+	check(p[164] <= camera.global_position.x-side*0.5+0.01 and p[164] > camera.global_position.x-side*0.5-texel and is_equal_approx(fposmod(p[164],texel),0.0) or is_equal_approx(fposmod(p[164],texel),texel), "centred on the eye, snapped to its texels")
+	volume.set_tier(1)
+	volume._fill()
+	check(int(p[168]) == CloudVolume.TIERS[1][0] and int(p[169]) == CloudVolume.TIERS[1][1] and int(p[170]) == 2 and p[171] == 0.0, "Balanced marches fewer steps and taps, no fine octaves")
+	volume.set_tier(0)
+	volume._fill()
+	check(int(p[168]) > CloudVolume.TIERS[1][0] and p[171] == 1.0, "Beauty more, with the fine octaves")
+	look.apply_tier(1)
+	check(volume.tier == 1, "The look pass's quality tier reaches it")
+	look.apply_tier(0)
+	check(is_equal_approx(p[176],CloudVolume.SHADE_SPLIT), "The shade's split is handed on")
+	check(is_equal_approx(volume.shade_at.z,side) and volume.shade_at.w == 1.0 and is_equal_approx(volume.shade_at.x,p[164]), "The land is told where the cloud's shade lies")
+	check(effect.shadow is Texture2DRD and effect.weather is Texture2DRD, "The shade map and the weather map are the passes' own")
+	var flash := Node.new()
+	var flash_script := GDScript.new()
+	flash_script.source_code = "extends Node\nvar flash := 0.8\nvar flash_position := Vector3(10.0, 50.0, -20.0)\n"
+	flash_script.reload()
+	flash.set_script(flash_script)
+	volume.lightning = flash
+	volume._fill()
+	check(Vector4(p[172],p[173],p[174],p[175]).is_equal_approx(Vector4(10.0,50.0,-20.0,0.8)), "Lightning lights it from within")
+	volume.lightning = null
+	flash.free()
 
 	# Off: the drawing handed back.
 	volume.set_enabled(false)
 	check(sea.mesh is BoxMesh and (tower.node.get_node("Volume") as Node3D).visible, "Off, the sea and the tower draw themselves again")
+	check(volume.shade_at.w == 0.0, "and the land takes no cloud shade")
 	check(not volume.attached() and not volume.sheet.visible, "and the march leaves the compositor")
 	volume.set_enabled(true)
 	volume.update(camera,sea,islands,scene._celestial,12.5)

@@ -30,9 +30,10 @@ const FLAG := "--cloud-volume"
 ## Drawn where the near sea drew (SkySea RENDER_PRIORITY): before the
 ## towers' old slot, the streaks and wisps.
 const RENDER_PRIORITY := SkySea.RENDER_PRIORITY
-## At most this many towers marched (nearest first), and wake points.
+## At most this many towers marched (nearest first; each brings its own
+## body texture), and wake points (CloudWakes COUNT: the whole trail).
 const TOWERS := 4
-const WAKES := 8
+const WAKES := 32
 ## How much of this frame's march goes into a pixel: one marched this
 ## frame, and one only upsampled from the march round it (the rest last
 ## frame's, reprojected).
@@ -40,6 +41,24 @@ const MARCHED_BLEND := 0.5
 const UPSAMPLED_BLEND := 0.08
 ## The wakes looked for round the eye (m).
 const WAKE_REACH := 900.0
+## The weather map's square round the eye: the sea's reach and this much
+## past it (m) each side.
+const WEATHER_PAST := 200.0
+## Where the cloud's shade on the land splits (m): shade from cloud on high
+## (towers) and from the heaps below it, so land over the heaps' crowns
+## takes only the towers'.
+const SHADE_SPLIT := -55.0
+## Per quality tier (LookPass tier: 0 Beauty, 1 Balanced, 2 Ultra): march
+## steps, light taps toward the sun, the march's scale (2: half the render
+## each axis, a pixel of each 2x2 block a frame; 1: every pixel), and the
+## fine octaves near the eye.
+const TIERS := [
+	[120,6,2,1],
+	[88,4,2,0],
+	[150,6,2,1],
+]
+## --cloud-full-res marches every pixel every frame, at any tier.
+const FULL_RES_FLAG := "--cloud-full-res"
 
 var effect := CloudVolumeEffect.new()
 var material := ShaderMaterial.new()
@@ -59,6 +78,16 @@ var wake_count := 0
 ## Off, the sea and the towers draw themselves again (`set_enabled`, for a
 ## before/after in one run).
 var enabled := true
+## The quality tier (`set_tier`) and its row of TIERS.
+var tier := 0
+var quality: Array = TIERS[0]
+var full_res := FULL_RES_FLAG in OS.get_cmdline_user_args()
+## The storm's lightning (studies/lightning.gd: `flash`, `flash_position`),
+## lighting the cloud from within; null where there is none.
+var lightning: Object
+## The weather map's square this frame: corner xz, side (m).
+var weather_corner := Vector2.ZERO
+var weather_side := 0.0
 var _frame := 0
 var _prev_view := Projection.IDENTITY
 var _prev_lens := Vector2.ONE
@@ -93,6 +122,7 @@ func _exit_tree() -> void:
 	if RenderingServer.frame_pre_draw.is_connected(_before_draw):
 		RenderingServer.frame_pre_draw.disconnect(_before_draw)
 	_detach()
+	_publish_shade(false)
 
 ## Each frame, after the near sea has followed the eye: the camera, the
 ## sea, and the sky world's islands (whose towers and wakes it reads).
@@ -114,6 +144,15 @@ func update(view: Camera3D, near_sea: Node, islands: Node, sky, time: float, fli
 	var sea_on: bool = sea != null and sea.visible
 	sheet.visible = camera != null and (sea_on or (towers != null and towers.get("built") is Dictionary and not (towers.built as Dictionary).is_empty()))
 
+## The quality tier (LookPass tier: 0 Beauty, 1 Balanced, 2 Ultra).
+func set_tier(index: int) -> void:
+	tier = clampi(index,0,TIERS.size()-1)
+	quality = TIERS[tier]
+
+## The march's scale this frame: 2 half the render each axis, 1 every pixel.
+func march_scale() -> int:
+	return 1 if full_res else int(quality[2])
+
 ## Turns the volume on or off; off, the sea and the towers draw themselves.
 func set_enabled(on: bool) -> void:
 	if on == enabled: return
@@ -125,6 +164,7 @@ func set_enabled(on: bool) -> void:
 		return
 	_detach()
 	sheet.visible = false
+	_publish_shade(false)
 	if sea != null and sea is MeshInstance3D: (sea as MeshInstance3D).mesh = sea.get("_box")
 	if towers != null and towers.get("built") is Dictionary:
 		for b: Dictionary in (towers.built as Dictionary).values():
@@ -174,7 +214,7 @@ func _before_draw() -> void:
 	var viewport := camera.get_viewport()
 	var physical := Vector2(window.size) if window != null else Vector2(1280,720)
 	var scale := viewport.scaling_3d_scale if viewport != null else 1.0
-	effect.resize(Vector2i((physical*scale).round()))
+	effect.resize(Vector2i((physical*scale).round()),march_scale())
 	_fill()
 
 ## The march's parameters (shaders/cloud_volume_march.glsl Params) and the
@@ -258,9 +298,23 @@ func _fill() -> void:
 		var near: Array = wakes.near_box(middle,Vector3(WAKE_REACH,(top-SkySea.FLOOR)*0.5,WAKE_REACH),motion_time,WAKES)
 		wake_count = int(near[2])
 		for i in range(wake_count):
-			_put4(p,164+i*4,near[0][i])
-			_put4(p,196+i*4,near[1][i])
+			_put4(p,180+i*4,near[0][i])
+			_put4(p,308+i*4,near[1][i])
 	_put4(p,48,Vector4(_frame,tower_count,wake_count,night))
+	# The weather map's square, snapped to its texels so it never swims.
+	var reach_now: float = float(sea.reach) if sea != null else SkySea.REACH
+	weather_side = (reach_now+WEATHER_PAST)*2.0
+	var texel := weather_side/CloudVolumeEffect.WEATHER_TEXELS
+	weather_corner = ((Vector2(eye.x,eye.z)-Vector2.ONE*weather_side*0.5)/texel).floor()*texel
+	_put4(p,164,Vector4(weather_corner.x,weather_corner.y,weather_side,CloudVolumeEffect.WEATHER_TEXELS))
+	_put4(p,168,Vector4(quality[0],quality[1],march_scale(),quality[3]))
+	var flash := Vector4.ZERO
+	if lightning != null and is_instance_valid(lightning) and lightning.get("flash") != null:
+		var at: Vector3 = lightning.get("flash_position")
+		flash = Vector4(at.x,at.y,at.z,float(lightning.get("flash")))
+	_put4(p,172,flash)
+	_put4(p,176,Vector4(SHADE_SPLIT,CloudVolumeEffect.SHADOW_TEXELS,0.0,0.0))
+	_publish_shade(sea != null and strength > 0.0 or tower_count > 0, key)
 	_frame = (_frame+1)%4096
 	var sea_material: ShaderMaterial = sea.material if sea != null else null
 	# The bakes only once drawn (their render targets are made by then).
@@ -274,7 +328,7 @@ func _fill() -> void:
 	_put4(r,32,Vector4(tan_x,tan_y,UPSAMPLED_BLEND,1.0 if _has_prev else 0.0))
 	_put4(r,36,Vector4(_prev_lens.x,_prev_lens.y,0.0,0.0))
 	_put4(r,40,Vector4(eye.x,eye.y,eye.z,p[48]))
-	_put4(r,44,Vector4(camera.near,camera.far,MARCHED_BLEND,0.0))
+	_put4(r,44,Vector4(camera.near,camera.far,MARCHED_BLEND,march_scale()))
 	if not _has_prev: effect.history_ok = false
 	_prev_view = Projection(xf.affine_inverse())
 	_prev_lens = Vector2(tan_x,tan_y)
@@ -285,6 +339,25 @@ func _fill() -> void:
 	material.set_shader_parameter("floor_y",SkySea.FLOOR)
 	material.set_shader_parameter("key_light",key)
 	sheet.global_position = eye
+
+## The cloud's shade on the land (shaders/cloud_volume_shadow.gdshaderinc):
+## the shade map, its square, and the light and the sea's feet it looks up
+## from; off, the land takes none.
+## What the land was last told (zs_cloud_shadow_at): corner xz, side, on.
+var shade_at := Vector4.ZERO
+var _shade_published := false
+func _publish_shade(on: bool, light := Vector3.UP) -> void:
+	if not on:
+		if _shade_published: RenderingServer.global_shader_parameter_set("zs_cloud_shadow_at",Vector4.ZERO)
+		_shade_published = false
+		shade_at = Vector4.ZERO
+		return
+	if not _shade_published:
+		RenderingServer.global_shader_parameter_set("zs_cloud_shadow",effect.shadow)
+	_shade_published = true
+	shade_at = Vector4(weather_corner.x,weather_corner.y,weather_side,1.0)
+	RenderingServer.global_shader_parameter_set("zs_cloud_shadow_at",shade_at)
+	RenderingServer.global_shader_parameter_set("zs_cloud_shadow_light",Vector4(light.x,light.y,light.z,SkySea.FLOOR))
 
 static func _v4(value: Variant) -> Vector4:
 	return value if value is Vector4 else Vector4.ZERO

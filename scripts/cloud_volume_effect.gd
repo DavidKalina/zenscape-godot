@@ -1,11 +1,14 @@
 extends CompositorEffect
 ## The unified cloud volume's GPU passes (scripts/cloud_volume.gd), run on
 ## the camera's compositor after the opaque pass and before the
-## see-through one: the march (shaders/cloud_volume_march.glsl) at half
-## the render size each axis (one pixel of each 2x2 block a frame, in
-## turn), then the temporal resolve (shaders/cloud_volume_resolve.glsl) at
-## the render's full size into `resolved_a`/`resolved_b`, kept as next
-## frame's history. The composite (shaders/cloud_volume_composite.gdshader)
+## see-through one. shaders/cloud_volume_march.glsl runs four times: the
+## weather map round the eye (`weather`), its ceiling of highest crowns,
+## the cloud's shade looking up toward the sun (`shadow`, which the land
+## reads next frame through the zs_cloud_shadow global), then the march at
+## half the render size each axis (one pixel of each 2x2 block a frame, in
+## turn; the whole render on Ultra, `scale` 1). Then the temporal resolve
+## (shaders/cloud_volume_resolve.glsl) at the render's full size into
+## `resolved_a`/`resolved_b`, kept as next frame's history. The composite (shaders/cloud_volume_composite.gdshader)
 ## draws them into the scene in the see-through pass, where the near sea
 ## used to draw, so sorting against waterfalls, puffs and glass is as it was.
 ##
@@ -19,6 +22,11 @@ extends CompositorEffect
 var resolved_a := Texture2DRD.new()
 var resolved_b := Texture2DRD.new()
 var march_depth := Texture2DRD.new()
+## The weather map (crown height, density, base, slope) and the cloud's
+## shade on the land (light kept from on high, from the heaps, the shade's
+## height), both over the square `weather_at` (march Params) round the eye.
+var weather := Texture2DRD.new()
+var shadow := Texture2DRD.new()
 ## The parameter blocks (std430 floats, as the shaders' Params).
 var march_params := PackedFloat32Array()
 var resolve_params := PackedFloat32Array()
@@ -32,12 +40,21 @@ var bodies: Array[RID] = [RID(), RID(), RID(), RID()]
 ## resolve's), and whether last frame's resolve can be trusted as history.
 var size := Vector2i.ZERO
 var full_size := Vector2i.ZERO
+## 2: the march takes one pixel of each 2x2 block a frame; 1: every pixel.
+var scale := 2
 var history_ok := false
 ## Frames the passes actually ran (tests, probes).
 var runs := 0
 
-const MARCH_FLOATS := 16+4*9+4*8+4*4*5+4*8*2
+const MARCH_FLOATS := 16+4*9+4*8+4*4*5+4*4+4*32*2
 const RESOLVE_FLOATS := 16+16+4*4
+## The weather map's texels a side, its ceiling's (a block is the march
+## shader's CEILING_BLOCK texels), and the shade's.
+const WEATHER_TEXELS := 1024
+const CEILING_TEXELS := WEATHER_TEXELS/32
+const SHADOW_TEXELS := 256
+## The march shader's passes (its push constant).
+enum {PASS_WEATHER, PASS_CEILING, PASS_SHADOW, PASS_MARCH}
 
 var _rd: RenderingDevice
 var _march_shader := RID()
@@ -58,6 +75,10 @@ var _resolved_a := RID()
 var _resolved_b := RID()
 var _history_a := RID()
 var _history_b := RID()
+var _weather := RID()
+var _ceiling := RID()
+var _shadow := RID()
+var _scratch := RID()
 var _fresh := true
 
 func _init() -> void:
@@ -68,12 +89,14 @@ func _init() -> void:
 	march_params.resize(MARCH_FLOATS)
 	resolve_params.resize(RESOLVE_FLOATS)
 
-## The render's internal size; the march is half of it each axis.
-func resize(render_size: Vector2i) -> void:
+## The render's internal size; the march is `march_scale` (2: half each
+## axis, 1: whole) of it.
+func resize(render_size: Vector2i, march_scale := 2) -> void:
 	var whole := render_size.max(Vector2i(16,16))
-	if whole == full_size: return
+	if whole == full_size and march_scale == scale: return
 	full_size = whole
-	size = Vector2i(ceili(whole.x/2.0),ceili(whole.y/2.0))
+	scale = march_scale
+	size = Vector2i(ceili(whole.x/float(scale)),ceili(whole.y/float(scale)))
 	history_ok = false
 	RenderingServer.call_on_render_thread(_allocate.bind(size,whole))
 
@@ -127,6 +150,14 @@ func _allocate(want: Vector2i, whole: Vector2i) -> void:
 		empty.format = RenderingDevice.DATA_FORMAT_R32G32_SFLOAT
 		empty.usage_bits = RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT
 		_empty_body = _rd.texture_create(empty,RDTextureView.new(),[PackedFloat32Array([1000.0,1000.0]).to_byte_array()])
+		_weather = _target(Vector2i(WEATHER_TEXELS,WEATHER_TEXELS),RenderingDevice.DATA_FORMAT_R16G16B16A16_SFLOAT)
+		_ceiling = _target(Vector2i(CEILING_TEXELS,CEILING_TEXELS),RenderingDevice.DATA_FORMAT_R16G16B16A16_SFLOAT)
+		_shadow = _target(Vector2i(SHADOW_TEXELS,SHADOW_TEXELS),RenderingDevice.DATA_FORMAT_R16G16B16A16_SFLOAT)
+		# Stands in for whichever of those a pass does not write.
+		_scratch = _target(Vector2i(1,1),RenderingDevice.DATA_FORMAT_R16G16B16A16_SFLOAT)
+		_rd.texture_clear(_shadow,Color(1.0,1.0,0.0,0.0),0,1,0,1)
+		weather.texture_rd_rid = _weather
+		shadow.texture_rd_rid = _shadow
 	for rid in [_march_a,_march_b,_depth,_resolved_a,_resolved_b,_history_a,_history_b]:
 		if rid.is_valid(): _rd.free_rid(rid)
 	_march_a = _target(want,RenderingDevice.DATA_FORMAT_R16G16B16A16_SFLOAT)
@@ -189,25 +220,12 @@ func _render_callback(_type: int, data: RenderData) -> void:
 	resolve_params[16+16+3] = 1.0 if trust else 0.0
 	_rd.buffer_update(_march_buffer,0,MARCH_FLOATS*4,march_params.to_byte_array())
 	_rd.buffer_update(_resolve_buffer,0,RESOLVE_FLOATS*4,resolve_params.to_byte_array())
-	var groups := Vector2i(ceili(size.x/8.0),ceili(size.y/8.0))
-	var march := UniformSetCacheRD.get_cache(_march_shader,0,[
-		_buffer(0,_march_buffer),
-		_sampled(1,_linear,envelope,_flat),
-		_sampled(2,_linear,swells,_flat),
-		_sampled(3,_repeat,noise,_empty_body),
-		_sampled(4,_nearest,depth,_flat),
-		_sampled(5,_linear,bodies[0],_empty_body),
-		_sampled(6,_linear,bodies[1],_empty_body),
-		_sampled(7,_linear,bodies[2],_empty_body),
-		_sampled(8,_linear,bodies[3],_empty_body),
-		_image(9,_march_a),
-		_image(10,_march_b),
-		_image(11,_depth)])
-	var list := _rd.compute_list_begin()
-	_rd.compute_list_bind_compute_pipeline(list,_march_pipeline)
-	_rd.compute_list_bind_uniform_set(list,march,0)
-	_rd.compute_list_dispatch(list,groups.x,groups.y,1)
-	_rd.compute_list_end()
+	# The weather map, its ceiling, the shade on the land, then the march:
+	# each pass writes one target and reads what the ones before it wrote.
+	_pass(PASS_WEATHER,depth,_weather,_flat,_scratch,_scratch,_flat,Vector2i(WEATHER_TEXELS,WEATHER_TEXELS))
+	_pass(PASS_CEILING,depth,_scratch,_weather,_scratch,_ceiling,_flat,Vector2i(CEILING_TEXELS,CEILING_TEXELS))
+	_pass(PASS_SHADOW,depth,_scratch,_weather,_shadow,_scratch,_ceiling,Vector2i(SHADOW_TEXELS,SHADOW_TEXELS))
+	_pass(PASS_MARCH,depth,_scratch,_weather,_scratch,_scratch,_ceiling,size)
 	var resolve := UniformSetCacheRD.get_cache(_resolve_shader,0,[
 		_buffer(0,_resolve_buffer),
 		_sampled(1,_nearest,_march_a,_flat),
@@ -218,7 +236,7 @@ func _render_callback(_type: int, data: RenderData) -> void:
 		_sampled(6,_linear,_history_b,_flat),
 		_image(7,_resolved_a),
 		_image(8,_resolved_b)])
-	list = _rd.compute_list_begin()
+	var list := _rd.compute_list_begin()
 	_rd.compute_list_bind_compute_pipeline(list,_resolve_pipeline)
 	_rd.compute_list_bind_uniform_set(list,resolve,0)
 	_rd.compute_list_dispatch(list,ceili(full_size.x/8.0),ceili(full_size.y/8.0),1)
@@ -231,10 +249,43 @@ func _render_callback(_type: int, data: RenderData) -> void:
 	history_ok = true
 	runs += 1
 
+## One run of the march shader: `mode` its pass, the targets it may write
+## (`weather_out`, `shadow_out`, `ceiling_out`; the scratch texel where a
+## pass writes none) and the maps it reads (`weather_in`, `ceiling_in`),
+## over `texels` threads.
+func _pass(mode: int, depth: RID, weather_out: RID, weather_in: RID, shadow_out: RID, ceiling_out: RID, ceiling_in: RID, texels: Vector2i) -> void:
+	var set := UniformSetCacheRD.get_cache(_march_shader,0,[
+		_buffer(0,_march_buffer),
+		_sampled(1,_linear,envelope,_flat),
+		_sampled(2,_linear,swells,_flat),
+		_sampled(3,_repeat,noise,_empty_body),
+		_sampled(4,_nearest,depth,_flat),
+		_sampled(5,_linear,bodies[0],_empty_body),
+		_sampled(6,_linear,bodies[1],_empty_body),
+		_sampled(7,_linear,bodies[2],_empty_body),
+		_sampled(8,_linear,bodies[3],_empty_body),
+		_image(9,_march_a),
+		_image(10,_march_b),
+		_image(11,_depth),
+		_image(12,weather_out),
+		_sampled(13,_linear,weather_in,_flat),
+		_image(14,shadow_out),
+		_image(15,ceiling_out),
+		_sampled(16,_linear,ceiling_in,_flat)])
+	var push := PackedInt32Array([mode,0,0,0]).to_byte_array()
+	var list := _rd.compute_list_begin()
+	_rd.compute_list_bind_compute_pipeline(list,_march_pipeline)
+	_rd.compute_list_bind_uniform_set(list,set,0)
+	_rd.compute_list_set_push_constant(list,push,push.size())
+	_rd.compute_list_dispatch(list,ceili(texels.x/8.0),ceili(texels.y/8.0),1)
+	_rd.compute_list_end()
+
 func _notification(what: int) -> void:
 	if what != NOTIFICATION_PREDELETE or _rd == null: return
 	resolved_a.texture_rd_rid = RID()
 	resolved_b.texture_rd_rid = RID()
 	march_depth.texture_rd_rid = RID()
-	for rid in [_march_a,_march_b,_depth,_resolved_a,_resolved_b,_history_a,_history_b,_march_buffer,_resolve_buffer,_flat,_empty_body,_linear,_repeat,_nearest,_march_pipeline,_resolve_pipeline,_march_shader,_resolve_shader]:
+	weather.texture_rd_rid = RID()
+	shadow.texture_rd_rid = RID()
+	for rid in [_march_a,_march_b,_depth,_resolved_a,_resolved_b,_history_a,_history_b,_weather,_ceiling,_shadow,_scratch,_march_buffer,_resolve_buffer,_flat,_empty_body,_linear,_repeat,_nearest,_march_pipeline,_resolve_pipeline,_march_shader,_resolve_shader]:
 		if rid.is_valid(): _rd.free_rid(rid)
