@@ -368,6 +368,9 @@ static func _clear_under(shape: RefCounted, a: Vector3, b: Vector3, sag: float) 
 		if not shape.on_land(q):
 			if k == 0 or k == 8: return false
 			continue
+		# Never over a building (a claimed footprint as wide as the hut's).
+		for c: Vector4 in shape.claims:
+			if c.w == 0.0 and c.z >= CABIN-0.01 and q.distance_to(Vector2(c.x,c.y)) < c.z+0.8: return false
 		var low := p.y-ForestBuilds.CORD-ForestBuilds.HOOK*SMALL
 		if low-shape.ground_at(q) < HEADROOM: return false
 	return true
