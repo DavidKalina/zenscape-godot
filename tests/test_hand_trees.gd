@@ -18,6 +18,13 @@ const Materials = preload("res://scripts/hand_materials.gd")
 const Emergence = preload("res://scripts/emergence.gd")
 
 var failures := 0
+## The scene's world: a plain's seed is drawn with randi(), and a random plain
+## put the fixed paths on its shore (a press there is the rim's) or left one
+## pass's draws short; this one is fixed with the paths well inland.
+const WORLD_SEED := 6
+## The most a stroke's settle is waited for (ms): its worker sampling took
+## over 10 s with several suites running at once.
+const SETTLE_MS := 30000
 var scene: Node3D
 var editor: Node
 var reach: Node
@@ -29,9 +36,13 @@ func check(ok: bool, message: String) -> void:
 	if not ok: failures += 1
 	print(("PASS: " if ok else "FAIL: ")+message)
 
+## Where `point` (plate) shows on screen: on the ground, or on the live water
+## standing over it (a pit's floor can be hidden behind the ground before it,
+## so a press aimed at the floor would land there instead).
 func screen_of(point: Vector2) -> Vector2:
 	var data: NativeTerrainData = editor.data
-	return scene.camera.unproject_position(editor.terrain.to_global(Vector3(point.x,float(data.sample(point,data.heights)),point.y)))
+	var water: float = editor.flow.depth_at(point) if editor.flow != null and editor.flow.ready else 0.0
+	return scene.camera.unproject_position(editor.terrain.to_global(Vector3(point.x,float(data.sample(point,data.heights))+water,point.y)))
 
 func button(at: Vector2, pressed: bool, shift := false) -> void:
 	point(at)
@@ -89,8 +100,10 @@ func paint(slot: String, path: Array, seconds: float, shift := false, passes := 
 	button(was,false,shift)
 	await process_frame
 	out.summary = editor.last_paint
+	# The settle samples on a worker and publishes when it is done, slower on
+	# a loaded machine: wait for it (and the preview it clears), not N frames.
 	var waited := Time.get_ticks_msec()
-	while int(editor.refresh_pending) > 0 and Time.get_ticks_msec()-waited < 10000: await process_frame
+	while (int(editor.refresh_pending) > 0 or editor.content.paint_preview_count() > 0) and Time.get_ticks_msec()-waited < SETTLE_MS: await process_frame
 	for i in range(4): await process_frame
 	materials.put_back()
 	return out
@@ -112,6 +125,7 @@ func run() -> void:
 	for seed: String in ["oak","pine","willow"]:
 		check(Materials.paints(seed) and Materials.plants_trees(seed) and not Materials.sows(seed),"%s is painted as trees" % seed)
 	root.size = Vector2i(1440,900)
+	seed(WORLD_SEED)
 	scene = load("res://studies/cozy_worlds.tscn").instantiate()
 	scene.set_meta("movie_capture",true)
 	scene.set_meta("no_title",true)

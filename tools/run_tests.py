@@ -26,7 +26,8 @@ Each worker gets its own HOME under the output directory, so user:// never
 collides between tests running at once. Slow tests start first.
 
 A classified engine message (a renderer light unpair, the macOS certificate
-store, resources or RIDs still alive at exit) is recorded as
+store, an unmapped controller plugged into the host, resources or RIDs still
+alive at exit) is recorded as
 pass_with_known_engine_error, never as a clean pass; --strict-engine-errors
 fails them. All other engine errors, script errors, assertion failures and
 timeouts fail a test. Headless runs never fall back to a graphical renderer.
@@ -73,6 +74,8 @@ def diagnostics(output: str) -> dict:
         elif (line == 'ERROR: Condition "ret != noErr" is true. Returning: ""'
                 and "get_system_ca_certificates (platform/macos/os_macos.mm:" in block):
             known_errors.append({"kind": "macos_certificate_environment", "diagnostic": block})
+        elif line.startswith("ERROR: Error opening gamepad at index ") and "Couldn't find mapping" in line:
+            known_errors.append({"kind": "host_gamepad_unmapped", "diagnostic": block})
         elif EXIT_LEAK.match(line):
             known_errors.append({"kind": "exit_leak", "diagnostic": block})
         else:

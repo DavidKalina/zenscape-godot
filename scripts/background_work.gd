@@ -10,17 +10,27 @@ static var _jobs := 0
 static var _partitions_pending := 0
 static var _peak_jobs := 0
 static var _peak_partitions := 0
+## Abandoned jobs still running when freed: [task, group, partitions], joined
+## once they complete (_reclaim), never waited on from PREDELETE.
+static var _orphans: Array = []
+## Every submitted task not yet joined (task: group), for the drain at exit.
+static var _running := {}
+static var _drain_hooked := false
 
 ## Submitted work awaiting its join, not the number of CPU threads executing.
 static func statistics() -> Dictionary:
+	_reclaim()
 	_stats_lock.lock()
 	var result := {"jobs":_jobs,"partitions":_partitions_pending,"peak_jobs":_peak_jobs,"peak_partitions":_peak_partitions}
 	_stats_lock.unlock()
 	return result
 
 func _submitted(partitions: int) -> void:
+	_reclaim()
+	_hook_drain()
 	_partitions = partitions
 	_stats_lock.lock()
+	_running[_task] = _group
 	_jobs += 1
 	_partitions_pending += partitions
 	_peak_jobs = maxi(_peak_jobs,_jobs)
@@ -35,8 +45,8 @@ func start(action: Callable) -> void:
 	_group = false
 	_results = [null]
 	var result := _results
-	_submitted(1)
 	_task = WorkerThreadPool.add_task(func(): result[0] = action.call(),false,"Background data work")
+	_submitted(1)
 
 func start_group(actions: Array[Callable], workers: int) -> void:
 	assert(not active(), "A background job cannot be reused while running")
@@ -47,12 +57,12 @@ func start_group(actions: Array[Callable], workers: int) -> void:
 	var inputs: Array[Callable] = actions.duplicate()
 	var mutex := Mutex.new()
 	_group = true
-	_submitted(actions.size())
 	_task = WorkerThreadPool.add_group_task(func(index: int) -> void:
 		var value: Variant = inputs[index].call()
 		mutex.lock()
 		result[index] = value
 		mutex.unlock(),actions.size(),clampi(workers,1,8),false,"Background data group")
+	_submitted(actions.size())
 
 func completed() -> bool:
 	return not active() or (WorkerThreadPool.is_group_task_completed(_task) if _group else WorkerThreadPool.is_task_completed(_task))
@@ -99,22 +109,60 @@ func run_group(actions: Array[Callable], tree: SceneTree, workers: int) -> Array
 	return work.finish()
 
 func _join() -> void:
-	if _group: WorkerThreadPool.wait_for_group_task_completion(_task)
-	else: WorkerThreadPool.wait_for_task_completion(_task)
+	_release(_task,_group,_partitions)
 	_task = -1
-	_stats_lock.lock()
-	_jobs -= 1
-	_partitions_pending -= _partitions
-	_stats_lock.unlock()
 	_partitions = 0
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_PREDELETE and _task != -1:
 		# The callback captures input/result storage, never the awaiting owner.
-		# Abandoned finite jobs still join, including when the scene exits.
-		if _group: WorkerThreadPool.wait_for_group_task_completion(_task)
-		else: WorkerThreadPool.wait_for_task_completion(_task)
-		_stats_lock.lock()
-		_jobs -= 1
-		_partitions_pending -= _partitions
-		_stats_lock.unlock()
+		# A finished job joins now. A running one is never waited on here: an
+		# abandoned await is freed under GDScript's language lock (a scene freed
+		# mid-job, the quit), and a worker reaching for that lock would never
+		# finish, so the join waits for _reclaim. At the quit, _drain has let
+		# every job finish before the tree came down.
+		if _done(_task,_group): _release(_task,_group,_partitions)
+		else:
+			_stats_lock.lock()
+			_orphans.append([_task,_group,_partitions])
+			_stats_lock.unlock()
+		_task = -1
+
+static func _done(task: int, group: bool) -> bool:
+	return WorkerThreadPool.is_group_task_completed(task) if group else WorkerThreadPool.is_task_completed(task)
+
+static func _release(task: int, group: bool, partitions: int) -> void:
+	if group: WorkerThreadPool.wait_for_group_task_completion(task)
+	else: WorkerThreadPool.wait_for_task_completion(task)
+	_stats_lock.lock()
+	_running.erase(task)
+	_jobs -= 1
+	_partitions_pending -= partitions
+	_stats_lock.unlock()
+
+## Join the abandoned jobs that have finished since.
+static func _reclaim() -> void:
+	_stats_lock.lock()
+	var finished := _orphans.filter(func(orphan: Array) -> bool: return _done(orphan[0],orphan[1]))
+	for orphan in finished: _orphans.erase(orphan)
+	_stats_lock.unlock()
+	for orphan in finished: _release(orphan[0],orphan[1],orphan[2])
+
+## The quit frees abandoned awaits under the language lock, then shuts the
+## script languages down; a worker still running GDScript then would hang or
+## crash. So when the root leaves the tree, before any of that, every job
+## runs to its end. Results still join where they are taken.
+func _hook_drain() -> void:
+	if _drain_hooked: return
+	var tree := Engine.get_main_loop() as SceneTree
+	if tree == null or tree.root == null: return
+	_drain_hooked = true
+	tree.root.tree_exiting.connect(Callable(get_script(),"_drain"))
+
+static func _drain() -> void:
+	_stats_lock.lock()
+	var running := _running.duplicate()
+	_stats_lock.unlock()
+	for task in running:
+		while not _done(task,running[task]): OS.delay_usec(200)
+	_reclaim()

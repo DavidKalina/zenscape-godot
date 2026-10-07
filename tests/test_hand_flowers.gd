@@ -39,6 +39,15 @@ const PlateFixture := preload("res://tests/fixtures/plate.gd")
 
 var failures := 0
 var only := ""
+## Runs of the timed stroke (`painting`), each frame's quickest kept.
+const TIMED := 3
+## The scene's world: a plain's seed is drawn with randi(), and a random plain
+## put the fixed brush paths on its shore (a press there is the rim's) or
+## left a pass's draws short; this one is fixed with the paths well inland.
+const WORLD_SEED := 6
+## The most a stroke's settle is waited for (ms): its worker sampling took
+## over 10 s with several suites running at once.
+const SETTLE_MS := 30000
 
 func _initialize() -> void: run.call_deferred()
 
@@ -476,24 +485,32 @@ func painting() -> void:
 		if JSON.stringify(a) != JSON.stringify(reopened.objects[i]): same = false
 	check(same and reopened.tint == saved.tint,"Its flowers and wash reopen as they were (%d records)" % reopened.objects.size())
 	# Cost: a frame of painting compares numbers once its spots are judged.
-	var timing := _flat_data()
-	var sowing := FlowerSowing.new(timing,"wildflower",4242)
-	var stroke = FlowerPaint.new(sowing,1.5,false,9)
-	timing.begin_stroke()
-	stroke.press(Vector2(-8.0,-3.0))
+	# The same stroke is timed TIMED times and each frame keeps its quickest:
+	# the work is the same each time, so a frame the OS took the thread away
+	# in (a loaded machine) does not count as the paint's own cost.
+	var quickest := PackedInt64Array()
+	quickest.resize(240)
+	quickest.fill(1<<40)
+	var placed := 0
+	for run in range(TIMED):
+		var timing := _flat_data()
+		var sowing := FlowerSowing.new(timing,"wildflower",4242)
+		var stroke = FlowerPaint.new(sowing,1.5,false,9)
+		timing.begin_stroke()
+		stroke.press(Vector2(-8.0,-3.0))
+		for f in range(1,241):
+			var began := Time.get_ticks_usec()
+			stroke.stroke(Vector2(-8.0,-3.0).lerp(Vector2(8.0,3.0),f/240.0),1.0/60.0)
+			quickest[f-1] = mini(quickest[f-1],Time.get_ticks_usec()-began)
+		stroke.finish()
+		timing.end_stroke()
+		placed = stroke.placed.size()
 	var worst := 0
 	var total := 0
-	var frames := 0
-	for f in range(1,241):
-		var began := Time.get_ticks_usec()
-		stroke.stroke(Vector2(-8.0,-3.0).lerp(Vector2(8.0,3.0),f/240.0),1.0/60.0)
-		var took := Time.get_ticks_usec()-began
+	for took in quickest:
 		worst = maxi(worst,took)
 		total += took
-		frames += 1
-	stroke.finish()
-	timing.end_stroke()
-	print("painting cost, wide wildflower brush at 4.3 m/s: mean %.2f ms, worst %.2f ms a frame (%d flowers)" % [total/1000.0/frames,worst/1000.0,stroke.placed.size()])
+	print("painting cost, wide wildflower brush at 4.3 m/s: mean %.2f ms, worst %.2f ms a frame (%d flowers, quickest of %d)" % [total/1000.0/quickest.size(),worst/1000.0,placed,TIMED])
 	check(worst < 12000,"A painted frame stays light (worst %.1f ms on the main thread)" % (worst/1000.0))
 
 # --- The bar --------------------------------------------------------------------------
@@ -599,14 +616,17 @@ func paint(kind: String, path: Array, seconds: float, shift := false) -> Diction
 	button(was,false,shift)
 	await process_frame
 	out.summary = editor.last_paint
+	# The settle samples on a worker and publishes when it is done, slower on
+	# a loaded machine: wait for it (and the preview it clears), not N frames.
 	began = Time.get_ticks_msec()
-	while int(editor.refresh_pending) > 0 and Time.get_ticks_msec()-began < 10000: await process_frame
+	while (int(editor.refresh_pending) > 0 or editor.content.paint_preview_count() > 0) and Time.get_ticks_msec()-began < SETTLE_MS: await process_frame
 	for i in range(4): await process_frame
 	materials.put_back()
 	return out
 
 func in_scene() -> void:
 	root.size = Vector2i(1440,900)
+	seed(WORLD_SEED)
 	scene = load("res://studies/cozy_worlds.tscn").instantiate()
 	scene.set_meta("movie_capture",true)
 	scene.set_meta("no_title",true)
