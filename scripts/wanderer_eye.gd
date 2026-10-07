@@ -1318,6 +1318,11 @@ func _fly_air(point: Vector3) -> Dictionary:
 
 # --- Perched on an islet ------------------------------------------------------------
 
+## How far under the last ground stood on a jump between grouped islets
+## falls before the flight opens (m).
+const PERCH_FALL := 4.0
+var _perch_floor := 0.0
+
 ## True when a point over an islet is down near its ground, not riding over
 ## a crown or the spire.
 func _islet_ground_near(islet: Dictionary, point: Vector3) -> bool:
@@ -1335,6 +1340,7 @@ func _perch(islet: Dictionary) -> void:
 	var local: Vector3 = glide.position-islands.islets.place(islet)
 	var at := _perch_free(islet.shape,Vector2(local.x,local.z))
 	_perch_feet = Vector3(at.x,islet.shape.ground_at(at),at.y)
+	_perch_floor = _perch_feet.y
 	_yaw = glide.heading
 	_polar = CAM_POLAR
 	glider.visible = false
@@ -1384,11 +1390,24 @@ func _advance_perch(delta: float) -> void:
 	# Islets are never turned, so the camera's yaw is the islet's frame's too.
 	var want := _want(_yaw,delta)
 	_asked = want.length()
-	var ground := func(p: Vector2) -> float: return float(shape.ground_at(p)) if shape.inside(p) else -INF
+	# A grouped islet (an authored cluster's, scripts/sky_showcase.gd) reads
+	# its neighbours' ground too, so the pilot jumps from one to the next.
+	var ground := func(p: Vector2) -> float: return _perch_ground(p)
 	var events := motor.step(delta,want,_top(),jump,ground,
 		func(feet: Vector3, step: Vector2) -> Vector3: return _perch_slide(shape,feet,step),
 		func(near: Vector2, y: float) -> Dictionary: return PilotLedge.find(ground,near,y))
-	if events.has("fly") or (not motor.on_ledge() and not shape.inside(Vector2(motor.feet.x,motor.feet.z))):
+	var at := Vector2(motor.feet.x,motor.feet.z)
+	if motor.grounded: _perch_floor = motor.feet.y
+	if not events.has("fly") and not motor.on_ledge() and not shape.inside(at) and motor.grounded and motor.hold == "":
+		var next := _perch_neighbour(at)
+		if not next.is_empty(): _perch_move(next)
+	shape = perch.shape
+	at = Vector2(motor.feet.x,motor.feet.z)
+	# Off the land the flight opens; in a group, only once fallen PERCH_FALL
+	# under the last ground, so a jump between islets carries on.
+	var off: bool = not motor.on_ledge() and _perch_ground(at) == -INF
+	if off and perch.has("group") and motor.feet.y > _perch_floor-PERCH_FALL: off = false
+	if events.has("fly") or off:
 		_launch(maxf(motor.speed(),1.0),not events.has("fly"))
 		return
 	_ledge_events(events)
@@ -1400,8 +1419,7 @@ func _advance_perch(delta: float) -> void:
 	_body_events(drawn,delta)
 	_water_events(events,drawn,delta)
 	var place: Vector3 = islands.islets.place(perch)
-	_frame_walker(delta,Transform3D(Basis.IDENTITY,place),0.0,func(p: Vector3) -> float:
-		return float(shape.ground_at(Vector2(p.x,p.z))) if shape.inside(Vector2(p.x,p.z)) else -INF)
+	_frame_walker(delta,Transform3D(Basis.IDENTITY,place),0.0,func(p: Vector3) -> float: return _perch_ground(Vector2(p.x,p.z)))
 	camera.fov = lerpf(camera.fov,FOV,_ease(EASE_FOV,delta))
 	# The sky goes on round it: the islets bob, the clouds drift, the wind
 	# quietens.
@@ -1411,6 +1429,38 @@ func _advance_perch(delta: float) -> void:
 	air.advance(delta,Vector3.ZERO,0.0,0.0)
 	_hint_time += delta
 	_hint.modulate.a = clampf(1.0-(_hint_time-6.0)/1.5,0.0,1.0)
+
+## The ground under `p` in the perched islet's frame: its own, or, in a
+## group, a neighbour's (in this frame), or -INF.
+func _perch_ground(p: Vector2) -> float:
+	var shape: RefCounted = perch.shape
+	if shape.inside(p): return float(shape.ground_at(p))
+	var next := _perch_neighbour(p)
+	return float(next.ground) if not next.is_empty() else -INF
+
+## The islet of the perched one's group whose land holds `p` (perched
+## frame): {islet, off (its middle from the perched one's), ground (in the
+## perched frame)}, or {}.
+func _perch_neighbour(p: Vector2) -> Dictionary:
+	if not perch.has("group") or islands == null: return {}
+	var here: Vector3 = islands.islets.place(perch)
+	for b: Dictionary in islands.islets.built.values():
+		if b.get("group","") != perch.group or b.node == perch.node: continue
+		var off: Vector3 = islands.islets.place(b)-here
+		var q := p-Vector2(off.x,off.z)
+		if b.shape.inside(q): return {"islet":b,"off":off,"ground":float(b.shape.ground_at(q))+off.y}
+	return {}
+
+## Stood on a grouped neighbour: it becomes the perch, the feet carried
+## into its frame.
+func _perch_move(next: Dictionary) -> void:
+	var off: Vector3 = next.off
+	perch = next.islet
+	islands.islets.pinned = perch.node
+	motor.feet -= off
+	motor.ground_y -= off.y
+	_perch_floor -= off.y
+	_perch_feet = motor.feet
 
 ## A step over an islet: round what blocks the way, sliding along one axis
 ## or standing. Off its rim is let through, for the flight to open.

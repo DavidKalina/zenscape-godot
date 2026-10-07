@@ -120,6 +120,10 @@ var _clock := 0.0
 var _wanted: Array = []
 ## Islets being worked out on workers, by cell key: {task, cell, home, out}.
 var _making := {}
+## Places in the sky (home x, z and radius, Vector3) no seeded islet stands
+## within: room kept for authored ones (scripts/sky_showcase.gd), which
+## stand in `built` as `fixed` and are never let go.
+var keep_clear: Array[Vector3] = []
 
 static var _ground_material: ShaderMaterial
 static var _water_material: ShaderMaterial
@@ -249,7 +253,7 @@ func _survey(home: Vector3) -> void:
 	var gone := []
 	for key in built:
 		var b: Dictionary = built[key]
-		if b.node == pinned: continue
+		if b.node == pinned or b.get("fixed",false): continue
 		if _flat(b.home,home) > FORGET: gone.append(key)
 	for key in gone:
 		(built[key].node as Node3D).queue_free()
@@ -276,6 +280,9 @@ func spot(cell: Vector2i) -> Variant:
 	if here != null and cells != null and not cells.spots_near(here,CLEAR).is_empty(): here = null
 	if here != null and (SkyPeaks.blocks(here) or SkyTowers.blocks(here)): here = null
 	if here != null and SkyForestIsles.blocks(here,CLEAR*0.3): here = null
+	if here != null:
+		for k in keep_clear:
+			if Vector2(here.x-k.x,here.z-k.y).length() < k.z: here = null
 	_spots[key] = here
 	return here
 
@@ -307,9 +314,9 @@ func _start(cell: Vector2i, home: Vector3) -> void:
 ## On a worker: the islet's shape, its meshes (their materials are set as
 ## it stands up, `_finish`), its plants' buffers, and its fall's rings and
 ## thread, for an islet whose middle stands at `home_y`.
-static func _make(seed_value: int, palette: Dictionary, plants: Dictionary, out: Dictionary, home_y := 0.0) -> void:
+static func _make(seed_value: int, palette: Dictionary, plants: Dictionary, out: Dictionary, home_y := 0.0, spec := {}) -> void:
 	var began := Time.get_ticks_usec()
-	var shape: RefCounted = SkyIslet.make(seed_value)
+	var shape: RefCounted = SkyIslet.author(seed_value,spec) if not spec.is_empty() else SkyIslet.make(seed_value)
 	out.shape = shape
 	out.top = shape.top_arrays(palette,OFF_MAP)
 	out.sides = shape.side_arrays()
@@ -322,6 +329,19 @@ static func _make(seed_value: int, palette: Dictionary, plants: Dictionary, out:
 		out.meshes.water = SkyIslet.mesh_from(out.water,null,SkyIslet.WATER_FORMAT)
 	out.usec = Time.get_ticks_usec()-began
 
+## An authored islet's parts (SkyIslet `author`), as `_make` makes them,
+## for `stand`; safe on a worker once `prepare_authored` has run.
+static func make(seed_value: int, spec: Dictionary, palette: Dictionary, home_y: float) -> Dictionary:
+	var out := {}
+	_make(seed_value,palette,_catalog.data,out,home_y,spec)
+	return out
+
+## The shared pieces `make` needs, made on the main thread.
+func prepare_authored() -> Dictionary:
+	_prepare()
+	if _catalog.is_empty(): catalog(flora_source)
+	return _ground_palette()
+
 ## A part's mesh as the worker made it (`_make`), wearing `material`, or
 ## made here from its arrays.
 static func _mesh_of(out: Dictionary, part: String, material: Material, format := 0) -> ArrayMesh:
@@ -332,9 +352,18 @@ static func _mesh_of(out: Dictionary, part: String, material: Material, format :
 
 ## The worker's islet, stood up as nodes.
 func _finish(cell: Vector2i, home: Vector3, out: Dictionary) -> void:
+	var b := stand("Islet_%d_%d" % [cell.x,cell.y],home,out)
+	b.cell = cell
+	built[_key(cell)] = b
+	_fade(b)
+
+## An islet made by `make` (or `_make`) stood up as nodes at `home`, as its
+## built record: {node, shape, home, phase, period, age, usec}. Not yet in
+## `built`.
+func stand(node_name: String, home: Vector3, out: Dictionary) -> Dictionary:
 	var shape: RefCounted = out.shape
 	var node := Node3D.new()
-	node.name = "Islet_%d_%d" % [cell.x,cell.y]
+	node.name = node_name
 	node.position = home
 	add_child(node)
 	var body := MeshInstance3D.new()
@@ -360,9 +389,8 @@ func _finish(cell: Vector2i, home: Vector3, out: Dictionary) -> void:
 	_plant(node,out.plants)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = shape.seed
-	built[_key(cell)] = {"node":node,"shape":shape,"home":home,"cell":cell,"usec":out.get("usec",0),
+	return {"node":node,"shape":shape,"home":home,"usec":out.get("usec",0),
 		"phase":rng.randf()*TAU,"period":rng.randf_range(BOB_PERIOD.x,BOB_PERIOD.y),"age":0.0}
-	_fade(built[_key(cell)])
 
 ## A new islet's faces fade in over FADE_IN (its body, sides and pond: the
 ## plants draw only near).
@@ -395,7 +423,7 @@ func _plant(node: Node3D, plants: Dictionary) -> void:
 		# islet part it ever saw.
 		batch.set_meta("skip_reflection",true)
 		var role: String = _catalog.roles.get(key,"plant")
-		batch.visibility_range_end = TREE_RANGE if role == "tree" else (STONE_RANGE if role == "stone" else PLANT_RANGE)
+		batch.visibility_range_end = TREE_RANGE if role in ["tree","build"] else (STONE_RANGE if role == "stone" else PLANT_RANGE)
 		batch.visibility_range_end_margin = 30.0
 		batch.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 		# Small plants cast no shadow worth drawing out here, but the tall
@@ -435,6 +463,10 @@ static func catalog(source: Node = null) -> Dictionary:
 	for stone: String in SkyIslet.BOULDERS+["rock_variants"]:
 		for key: String in parts.get(stone,[]): roles[key] = "stone"
 	roles["rock"] = "stone"
+	# What is built (an authored islet's cabin and lamps) draws as far as
+	# the trees.
+	for built_key in ["cabin","stone_lamp"]:
+		for key: String in parts.get(built_key,[]): roles[key] = "build"
 	_catalog = {"meshes":meshes,"materials":materials,"roles":roles,
 		"data":{"parts":parts,"poses":poses,"tints":tints,"boxes":boxes,"world":Variety.world({})}}
 	return _catalog

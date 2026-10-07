@@ -66,6 +66,7 @@ const SkyCells = preload("res://scripts/sky_cells.gd")
 const Genesis = preload("res://scripts/genesis_canvas.gd")
 const IslandShore = preload("res://scripts/island_shore.gd")
 const SkyIslets = preload("res://scripts/sky_islets.gd")
+const SkyShowcase = preload("res://scripts/sky_showcase.gd")
 const SkyPeaks = preload("res://scripts/sky_peaks.gd")
 const SkyTowers = preload("res://scripts/sky_towers.gd")
 const CloudWakes = preload("res://scripts/cloud_wakes.gd")
@@ -150,6 +151,9 @@ var wakes: Node3D
 var isles: Node3D
 ## The people on the islands (scripts/sky_folk.gd).
 var folk: Node3D
+## The hand-laid showcase cluster (scripts/sky_showcase.gd), with
+## --showcase; else null.
+var showcase: Node3D
 ## The islands built and left, by home key (`_key`): {home, label, document}.
 var built_islands := {}
 ## The swaps' shifts added up: the plate's own home is -origin.
@@ -228,6 +232,12 @@ func setup(owner_scene: Node3D) -> void:
 	folk.islands = self
 	add_child(folk)
 	skip.append(folk)
+	if SkyShowcase.enabled():
+		showcase = SkyShowcase.new()
+		showcase.islets = islets
+		showcase.scene = scene
+		add_child(showcase)
+		skip.append(showcase)
 	show_air(false)
 
 ## Sets an island at every fixed slot and every island built, except the
@@ -253,6 +263,7 @@ func build() -> void:
 	_islet_materials()
 	islets.side_source = editor._skirt_mesh.surface_get_material(0) if editor._skirt_mesh != null else null
 	islets.reset(cells)
+	if showcase != null: showcase.build()
 	peaks.ground_source = islets.ground_source
 	peaks.canopy_tint = SkyIslets._canopy_tint
 	peaks.reset(cells,currents)
