@@ -29,18 +29,18 @@ uniform sampler2D paths : filter_nearest;
 uniform int samples = 64;
 // The strokes' light (the breeze ribbons' 2), their opacity, and their
 // width and the run of their tails, as shares of the design.
-uniform float glow = 2.0;
-uniform float opacity = 0.8;
+uniform float glow = 1.6;
+uniform float opacity = 0.42;
 uniform float width_scale = 1.0;
 uniform float tail_scale = 1.0;
 // Drawn at least JR_MIN_PIXELS wide (its paint thinned to match) and at
 // most JR_MAX_PIXELS, so near ones never tape (far ones broaden, FAR_BROADEN).
 const float JR_MIN_PIXELS = 2.0;
-const float JR_MAX_PIXELS = 26.0;
+const float JR_MAX_PIXELS = 9.0;
 // A jet's stroke: true width (m), tail (s), a stroke's life (s), how far it
 // meanders off the core (share of the stream's radius) and how fast (1/s),
 // how far it swells and sinks (m) over how long (s).
-const vec2 JET_WIDTH = vec2(1.1, 2.2);
+const vec2 JET_WIDTH = vec2(0.45, 0.9);
 const vec2 JET_TAIL = vec2(2.4, 3.6);
 const vec2 JET_LIFE = vec2(13.0, 20.0);
 const float JET_MEANDER = 0.75;
@@ -54,7 +54,7 @@ const vec2 EDDY_TIME = vec2(2.6, 3.6);
 const vec2 EDDY_WIDE = vec2(0.16, 0.22);
 // A thermal's stroke: true width (m), tail (s), life (s), how far round the
 // column it turns (share of the column's radius) and how fast (rad/s).
-const vec2 THERMAL_WIDTH = vec2(0.7, 1.3);
+const vec2 THERMAL_WIDTH = vec2(0.3, 0.6);
 const vec2 THERMAL_TAIL = vec2(2.2, 3.2);
 const vec2 THERMAL_LIFE = vec2(8.0, 12.0);
 const float THERMAL_ROUND = 0.65;
@@ -63,9 +63,9 @@ const float THERMAL_TURN = 1.5;
 const float BORN = 1.4;
 const float GONE = 2.4;
 const vec2 NEAR = vec2(4.0, 20.0);
-const vec2 FAR = vec2(1200.0, 1900.0);
+const vec2 FAR = vec2(450.0, 850.0);
 // Metres off over which a stroke grows by its own width again (and pales).
-const float FAR_BROADEN = 220.0;
+const float FAR_BROADEN = 600.0;
 // Jet strokes are ten times a breeze ribbon's: the brush's pressure and
 // grain run at a tenth of a metre.
 const float BRUSH_SCALE = 0.1;

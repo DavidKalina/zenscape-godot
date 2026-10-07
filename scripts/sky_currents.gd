@@ -59,9 +59,9 @@ const THERMAL_TO := 55.0
 const JET_WISPS := 0.5
 const THERMAL_WISPS := 90
 ## How the ribbons fill each kind: per metre of jet (a stroke and its tail
-## run about 80 m), and per thermal of the usual height. Each ribbon is a
+## run about 80 m; sparse, so the jets stay out of the view), and per thermal of the usual height. Each ribbon is a
 ## strip of RIBBON_SEGMENTS down its length.
-const JET_RIBBONS := 1.0/55.0
+const JET_RIBBONS := 1.0/85.0
 const THERMAL_RIBBONS := 5
 const RIBBON_SEGMENTS := 48
 
