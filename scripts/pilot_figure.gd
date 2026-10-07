@@ -88,7 +88,7 @@ const STILL := 0.15
 ## Seconds a cross-fade between standing and moving takes, about.
 const FADE := 0.12
 ## The pelvis over the feet (pilot_build.py HIPS): it flips about it.
-const HIPS := 0.379
+const HIPS := 0.4329
 ## Radians of bank per radian a second of turn at a full run, and the most.
 const BANK := 0.06
 const BANK_MOST := 0.35
