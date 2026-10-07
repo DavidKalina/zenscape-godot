@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://b006dnyjltx0u"
+path="res://.godot/imported/cloud_volume_march.glsl-ec8a98f03153704509310624e805ebf0.res"
+
+[deps]
+
+source_file="res://shaders/cloud_volume_march.glsl"
+dest_files=["res://.godot/imported/cloud_volume_march.glsl-ec8a98f03153704509310624e805ebf0.res"]
+
+[params]
+

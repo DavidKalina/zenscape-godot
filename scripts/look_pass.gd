@@ -58,6 +58,11 @@ var _motes = preload("res://scripts/sky_motes.gd").new()
 const SkySea = preload("res://scripts/sky_sea.gd")
 var sea = SkySea.new()
 var near_sea := not _flag("--dome-sea")
+## The unified cloud volume (scripts/cloud_volume.gd): with --cloud-volume
+## the near sea and the towers are drawn as one marched body of cloud
+## instead, the sea and towers keeping their lives and data. Null without it.
+const CloudVolume = preload("res://scripts/cloud_volume.gd")
+var cloud_volume: Node3D = CloudVolume.new() if CloudVolume.wanted() else null
 var shore := 1.0
 var _scene: Node3D
 ## The grade alone, drawn only while native volumetric fog (the redwood and
@@ -95,6 +100,7 @@ func setup(scene: Node3D) -> void:
 	scene.add_child(_grade_layer)
 	scene.add_child(_motes)
 	scene.add_child(sea)
+	if cloud_volume != null: scene.add_child(cloud_volume)
 	grass.setup(scene)
 	_publish_night_style()
 
@@ -131,6 +137,7 @@ func update(camera: Camera3D, celestial) -> void:
 	_update_ridges(on)
 	_update_cloud_sea(on)
 	_update_near_sea(camera)
+	_update_cloud_volume(camera, celestial)
 	_update_sky_planet()
 	var now := Time.get_ticks_usec()
 	grass.set_reduced(tier != 2)
@@ -251,6 +258,15 @@ func _update_near_sea(camera: Camera3D) -> void:
 	sea.set_islands(SkySea.island_spots(islands, plate, camera.global_position))
 	var peaks: Node = islands.get("peaks") if islands != null else null
 	sea.set_ranges(peaks.keep_spots(camera.global_position) if peaks != null and peaks.has_method("keep_spots") else [])
+
+## The unified cloud volume, after the near sea has followed the eye.
+func _update_cloud_volume(camera: Camera3D, celestial) -> void:
+	if cloud_volume == null or camera == null: return
+	var wanderer: Variant = _scene.get("wanderer")
+	var islands: Node = wanderer.get("islands") if wanderer is Node else null
+	var flight: Variant = wanderer.get("sky") if wanderer is Node else null
+	var sea_flight: Variant = flight.get("flight") if flight is Object else null
+	cloud_volume.update(camera, sea, islands, celestial, float(_scene.get("_motion_time")) if _scene.get("_motion_time") != null else 0.0, sea_flight if sea_flight is Vector4 else Vector4.ZERO)
 
 ## The Opal sea's painted distant peaks off while the sky world's ring of
 ## real ranges stands (SkyWorld `sea_peaks`), in the overview and the glide.
