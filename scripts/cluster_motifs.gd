@@ -127,8 +127,8 @@ const MOTIFS := {
 		"roles":[
 			{"name":"foot","anchor":true,"kind":"crag","radius":Vector2(6.5,8.0),"height":Vector2(0.0,0.0),
 				"spec":{"peaks":[Vector4(0.0,0.0,4.5,1.6)],"trees":Vector2i(2,4),"tree_pool":{"tree":1.0,"juniper":0.7},"drifts":Vector2i(1,2)}},
-			{"name":"ledge","kind":"crag","radius":Vector2(4.3,5.4),"count":Vector2i(2,3),
-				"spec":{"peaks":[Vector4(0.0,0.0,3.2,1.2)],"trees":Vector2i(1,2),"tree_pool":{"tree":1.0,"juniper":0.8},"drifts":Vector2i(0,1)},
+			{"name":"ledge","kind":"crag","radius":Vector2(3.8,4.8),"count":Vector2i(2,3),
+				"spec":{"peaks":[Vector4(0.0,0.0,3.2,2.0)],"trees":Vector2i(1,2),"tree_pool":{"tree":1.0,"juniper":0.8},"drifts":Vector2i(0,1)},
 				"relation":{"type":"stack"}},
 			{"name":"top","kind":"crag","radius":Vector2(6.0,7.0),
 				"spec":{"peaks":[],"dome":0.3,"trees":Vector2i(1,2),"tree_pool":{"tree":1.0,"juniper":0.6},"drifts":Vector2i(1,2)},

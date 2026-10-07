@@ -176,7 +176,10 @@ func _stood() -> void:
 	var stood: Dictionary = field.members_of(spot.key)
 	var plan: Dictionary = field.clusters[spot.key].plan
 	check(stood.size() == (plan.members as Array).size() and stood.size() >= 4,"The stack stands whole (%d members)" % stood.size())
-	# A point of a lower member's land under an upper member's rock.
+	# A point of a lower member's land under an upper member's rock (not
+	# where a stair's head lies on it).
+	var heads: Array[Vector3] = []
+	for st: Dictionary in plan.stairs: heads.append(stood[st.from].home+((st.points as Array).back() as Vector3))
 	var picked := 0
 	var tried := 0
 	for low: Dictionary in stood.values():
@@ -187,6 +190,7 @@ func _stood() -> void:
 				var p: Vector2 = shape.points[i]
 				if shape.shore_distance[i] < 0.5 or shape.deck_y(p) > -INF: continue
 				var g: Vector3 = islets.place(low)+Vector3(p.x,Stack.land_y(shape,p),p.y)
+				if heads.any(func(h: Vector3) -> bool: return Vector2(h.x-(g.x-islets.position.x),h.z-(g.z-islets.position.z)).length() < 2.5): continue
 				var q: Vector3 = g-islets.place(high)
 				if not high.shape.inside(Vector2(q.x,q.z)): continue
 				tried += 1

@@ -428,8 +428,8 @@ static func _walled(shape: RefCounted, p: Vector2, points: Array) -> bool:
 	return false
 
 ## True when the pilot can come in up the stair arriving (`came`, its run
-## in) and walk the lower land to `to` with the new stair standing (its
-## high stretches a wall), round the water.
+## in), step off it, and walk the lower land to `to` with the new stair
+## standing (its high stretches a wall), round the water.
 static func _open_way(shape: RefCounted, came: Array, to: Vector2, points: Array) -> bool:
 	var landing: Vector2 = came[0]
 	var head: Vector2 = came[1]
@@ -438,6 +438,11 @@ static func _open_way(shape: RefCounted, came: Array, to: Vector2, points: Array
 		var q := landing.lerp(head,k/8.0)
 		for side: Vector2 in [Vector2.ZERO,across,-across]:
 			if shape.on_land(q+side) and _walled(shape,q+side,points): return false
+	# And room to step off it.
+	for ring: float in [0.8,1.6]:
+		for k in range(12):
+			var q := head+Vector2.from_angle(TAU*k/12.0)*ring
+			if shape.on_land(q) and _walled(shape,q,points): return false
 	var from := head
 	var n: int = shape.cells+1
 	var count: int = shape.points.size()

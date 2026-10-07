@@ -13,6 +13,7 @@ extends RefCounted
 ## (the dresser's lantern posts, each with its halo and light), its hives.
 
 const Builds = preload("res://scripts/showcase_builds.gd")
+const Cabin = preload("res://scripts/cabin.gd")
 
 ## A riser (m), a tread's depth on a level run (m), a tread's thickness.
 const RISER := 0.19
@@ -21,6 +22,11 @@ const TREAD := 0.05
 ## The rail's height and the posts' spacing (m).
 const RAIL := 0.95
 const POST_EVERY := 1.6
+## The stack's own night glows (m across near, strength): round each stair
+## lantern, wider than the lantern's own; round the hut's window.
+const HALO_STAIR := Vector2(3.2,1.0)
+const HALO_BEACON := Vector2(7.5,1.0)
+const AMBER := Color("ff7a1c")
 const HIVE_BODY := Color("e6dccb")
 const HIVE_HONEY := Color("d9b56e")
 
@@ -108,12 +114,15 @@ static func prepare(member: Dictionary, plan: Dictionary) -> Array:
 	return out
 
 ## Stands `member`'s stairs, their lanterns and its hives under `node`;
-## halos and lights go with the dresser's (`halos`, `live`).
+## the lanterns' halos and lights go with the dresser's (`halos`, `live`),
+## the stack's own wider amber glows (round each stair lantern, round the
+## hut's window, its beacon) in a batch of its own.
 static func furnish(node: Node3D, member: Dictionary, plan: Dictionary, made: Dictionary, halos: Array, live: Dictionary) -> void:
+	if plan.get("motif","") != "stack": return
 	var stairs: Array = made.get("stairs",[])
 	var hives: Array = (member.features as Array).filter(func(f: Dictionary) -> bool: return f.type == "hive")
-	if stairs.is_empty() and hives.is_empty(): return
 	var dresser: GDScript = load("res://scripts/cluster_dresser.gd")
+	var glows: Array = []
 	var solid: Material = dresser._mats().solid
 	for mesh: Mesh in stairs:
 		var built := MeshInstance3D.new()
@@ -123,5 +132,33 @@ static func furnish(node: Node3D, member: Dictionary, plan: Dictionary, made: Di
 		node.add_child(built)
 	for st: Dictionary in plan.get("stairs",[]):
 		if st.from != member.name: continue
-		for l: Dictionary in st.lanterns: dresser._post(node,l.at,float(l.angle),halos,live)
+		for l: Dictionary in st.lanterns:
+			dresser._post(node,l.at,float(l.angle),halos,live)
+			# A wider, deeper glow round each, so the climb reads from far.
+			glows.append([(l.at as Vector3)+Basis(Vector3.UP,float(l.angle))*(Builds.post_lantern()+Vector3.UP*0.12),HALO_STAIR])
+	# The hut's one window, the stack's beacon: a glow wide enough to read
+	# from across the sky.
+	for f: Dictionary in member.features:
+		if f.type != "cabin": continue
+		var pose := Transform3D(Basis(Vector3.UP,float(f.angle)),Vector3(f.at.x,member.shape.ground_at(f.at),f.at.y))
+		var pane: AABB = Cabin.info().pane
+		glows.append([pose*(pane.get_center()+Vector3(0.5,0.1,0.0)),HALO_BEACON])
+	if glows.is_empty(): return
+	# In a batch of their own, a deeper amber than the dresser's halos.
+	var batch := MultiMeshInstance3D.new()
+	batch.name = "StackGlows"
+	var multi := MultiMesh.new()
+	multi.transform_format = MultiMesh.TRANSFORM_3D
+	multi.use_colors = true
+	multi.mesh = dresser._mats().quad
+	multi.instance_count = glows.size()
+	for k in range(glows.size()):
+		var size: Vector2 = glows[k][1]
+		multi.set_instance_transform(k,Transform3D(Basis.from_scale(Vector3.ONE*size.x),glows[k][0]))
+		multi.set_instance_color(k,Color(AMBER,size.y))
+	batch.multimesh = multi
+	batch.material_override = dresser._mats().halo
+	batch.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	batch.custom_aabb = AABB(Vector3(-60.0,-20.0,-60.0),Vector3(120.0,60.0,120.0))
+	node.add_child(batch)
 	for f: Dictionary in hives: dresser._stand(node,member.shape,"Hive",hive(),f.at,float(f.angle))
