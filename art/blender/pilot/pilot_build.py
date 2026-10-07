@@ -7,11 +7,10 @@ short legs kept, but drawn as his own: soft, rounded and smooth shaded, a
 painted cartoon rather than the folk's faceted solids. A leather helmet over
 the head and down its sides, open round the face with a lumpy sheepskin
 trim; the goggles down over the eyes in a leather mask, modest dark lenses
-in thin dulled brass; the red scarf pulled up over the nose and mouth and
-wound round the chin, its tails streaming behind. What shows of the face is
-deep shadow (the game paints it so: scripts/pilot_paint.gd), so no face
-reads. An ochre bomber wide at the chest tapering to a knitted hem, slate
-trousers, chunky mitts and boots with sheepskin cuffs and tops. About 15k
+in thin dulled brass; the red scarf wound round the neck and pulled up over
+the nose and mouth, its tails streaming behind, so only a band of plain,
+lit, weathered face shows round the goggles. An ochre bomber wide at the
+chest tapering to a knitted hem, slate trousers, chunky mitts and boots with sheepskin cuffs and tops. About 15k
 triangles. Each part rides one bone (weight 1), so nothing stretches.
 
 The clips, each a seamless loop, in place (the game moves the body), walk and
@@ -169,9 +168,9 @@ BALL = 0.068
 # by its material's name (scripts/pilot_paint.gd, shaders/pilot_paint.gdshader,
 # which keep these colours); here they are matte, for Blender's stills.
 PALETTE = {
-    "pilot_face": "4e2c24", "pilot_cap": "a0643e", "pilot_fleece": "f1e6cf", "pilot_jacket": "a8743f",
+    "pilot_skin": "c99a78", "pilot_cap": "5c3826", "pilot_fleece": "f1e6cf", "pilot_jacket": "a8743f",
     "pilot_hem": "7a4a2a", "pilot_trousers": "4f6478", "pilot_mitt": "6b4029", "pilot_boots": "4a3226",
-    "pilot_strap": "5c3a26", "pilot_brass": "8a7046", "pilot_lens": "26343f", "pilot_scarf": "cc2f2f",
+    "pilot_strap": "3a2418", "pilot_brass": "8a7046", "pilot_lens": "26343f", "pilot_scarf": "cc2f2f",
 }
 
 def srgb_to_linear(c):
@@ -500,19 +499,19 @@ part(blob(0.027, 0.024, 0.022, 20, 10), "pilot_scarf", "chest", torso @ place((0
 
 # ---------------------------------------------------------------- neck, head
 neck = torso @ place((0, NECK, 0))
-part(ring_hull([(-0.028, 0.026, 0.026), (0.028, 0.023, 0.023)], 16), "pilot_face", "neck", neck @ place((0, 0.02, 0), UP))
+part(ring_hull([(-0.028, 0.026, 0.026), (0.028, 0.023, 0.023)], 16), "pilot_skin", "neck", neck @ place((0, 0.02, 0), UP))
 head = neck @ place((0, HEAD_UP, 0), size=(HEAD_SIZE,) * 3)
 C = Vector((0, 0.055, 0))
 # The head as big as the kit's: a round ball a touch taller than wide.
 HR = (0.075, 0.078, 0.08, 0.075)       # x, up, down, z
 
-part(blob(HR[0], HR[1], HR[3], 28, 14, down=HR[2]), "pilot_face", "head", head @ place(C))
+part(blob(HR[0], HR[1], HR[3], 28, 14, down=HR[2]), "pilot_skin", "head", head @ place(C))
 
 # The helmet: soft leather over the crown and down the sides to the jaw,
 # open in front round the face (cut on a plane tipped down a little), its
 # foot cut level under the jaw and higher behind over the nape.
 CAP_AT = C + Vector((0, 0.0, 0.008))
-CAP = (0.083, 0.102, 0.083, 0.092)     # x, up, z, down
+CAP = (0.083, 0.095, 0.083, 0.092)     # x, up, z, down
 OPEN = Vector((0, -0.22, -1)).normalized()
 OPEN_AT = 0.049                        # the opening's plane off the head's middle, along OPEN
 FOOT = -0.068                          # the helmet's foot under the head's middle
@@ -565,12 +564,12 @@ def face_edge(phi):
     inner, outer = on_head(OPEN * OPEN_AT, w), on_cap(OPEN * OPEN_AT, w)
     return C + (inner + outer) * 0.5, (w * 0.6 + OPEN).normalized(), (outer - inner).length * 0.5
 
-# The sheepskin trim round the face, lumpy, from one flap over the brow to
-# the other.
+# The sheepskin trim round the face, lumpy, from the scarf over the brow to
+# the scarf again.
 rim = []
 RIM = 13
 for i in range(RIM):
-    phi = math.radians(-62 + 304 * i / (RIM - 1))
+    phi = math.radians(-12 + 204 * i / (RIM - 1))
     p, n, gap = face_edge(phi)
     if p.y - C.y > FOOT + 0.006:
         rim.append((p + n * 0.002, max(0.0105, gap + 0.004) * (1.0 + 0.3 * max(math.sin(phi), 0.0) ** 2)))
@@ -613,28 +612,35 @@ for s in (L, R):
     part(ring_hull([(-0.004, 0.0172, 0.0162), (0.004, 0.0178, 0.0168), (0.0075, 0.0158, 0.0148)], 32), "pilot_brass", "head", head @ f, crisp=True)
     part(blob(0.0142, 0.0134, 0.0055, 24, 8), "pilot_lens", "head", head @ f @ place((0, 0, 0.0045)))
 
-# The scarf pulled up over the nose and mouth: wound round the lower face
-# and chin, over the helmet's sides and the flaps' feet, close in front, a
-# rolled top edge under the goggles and a turn of it below, slanting as a
-# wound scarf does. What shows of the face between is in deep shadow.
-WRAP_AT = C + Vector((0, -0.062, 0.006))
-WRAP = (0.079, 0.052, 0.079, 0.046)     # x, up, z, down
-WRAP_FRONT = 0.07
-part(blob(WRAP[0], WRAP[1], WRAP[2], 32, 14, down=WRAP[3], front=WRAP_FRONT), "pilot_scarf", "head", head @ place(WRAP_AT))
+# The scarf wound round the neck and pulled up over the nose and mouth: a
+# shell of the head's shape a little out from it (snug, not a bowl), from
+# the neck up to its rolled top edge across the bridge of the nose just
+# under the goggles, two turns of it below slanting as a wound scarf does.
+# Only a band of face shows, round the goggles.
+WRAP_TOP = -0.021                        # the top edge under the head's middle
+WRAP_OUT = 1.1                           # the shell over the head's radii
 
-def round_wrap(y, a):
-    """A point on the wrap at height `y` (a share of its up radius) and
-    `a` round it (0 the front, the figure's right positive)."""
-    c = math.sqrt(max(1.0 - y * y, 0.0))
-    z = math.cos(a) * c
-    return WRAP_AT + Vector((math.sin(a) * WRAP[0] * c, y * WRAP[1], -z * (WRAP_FRONT if z > 0 else WRAP[2])))
+def wrap_point(y, a):
+    """A point on the shell at `y` off the head's middle and `a` round it
+    (0 the front, the figure's right positive)."""
+    rx, rd, rz = HR[0] * WRAP_OUT, HR[2] * WRAP_OUT, HR[3] * WRAP_OUT
+    c = math.sqrt(max(1.0 - (y / rd) ** 2, 0.0))
+    return C + Vector((math.sin(a) * rx * c, y, -math.cos(a) * rz * c))
 
-for y, slant, r in ((0.86, 0.04, 0.0065), (0.25, 0.22, 0.0055)):
+shell = [C + Vector((v.x * WRAP_OUT, v.y * WRAP_OUT, v.z * WRAP_OUT)) for v in blob(HR[0], HR[1], HR[3], 32, 16, down=HR[2]) if v.y * WRAP_OUT < WRAP_TOP]
+shell += [wrap_point(WRAP_TOP, math.tau * k / 32) for k in range(32)]
+shell += [C + Vector((math.cos(math.tau * k / 24) * 0.047, -0.104, math.sin(math.tau * k / 24) * 0.047 + 0.004)) for k in range(24)]
+part(shell, "pilot_scarf", "head", head)
+for y, slant, r, reach in ((WRAP_TOP, 0.0, 0.0062, 80), (-0.044, 0.01, 0.0045, 62), (-0.068, 0.014, 0.005, 70)):
     turn = []
     for k in range(11):
-        a = math.radians(-100 + 200 * k / 10)
-        turn.append((round_wrap(y + slant * a / math.radians(100), a), r))
-    tube(turn, "pilot_scarf", "head", head, 10, 2, lumps=0.08)
+        t = -1.0 + 2.0 * k / 10
+        a = math.radians(reach * t)
+        q = wrap_point(y - slant * t, a)
+        # Thinning to nothing at the ends, so each turn folds back into the wrap.
+        w = r * (0.35 + 0.65 * math.cos(t * math.pi * 0.5) ** 0.5)
+        turn.append((q + Vector((q.x - C.x, 0, q.z - C.z)).normalized() * w * 0.4, w))
+    tube(turn, "pilot_scarf", "head", head, 10, 2, lumps=0.06)
 
 # ---------------------------------------------------------------- limbs
 # Sleeves tapering to sheepskin cuffs, big round mitts (a thumb forward);

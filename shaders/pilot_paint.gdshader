@@ -10,8 +10,7 @@ render_mode diffuse_lambert;
 // UV maps carry it, so the paint stays on the cloth as he moves), and a
 // part's own number shifts its colour a touch, so neighbouring pieces of one
 // colour read as painted separately; the band edges wander with the same
-// noise, as a brush would leave them. The face under the helmet is painted
-// as deep shadow (a low `sun` and `fill`), unreadable even in full sun.
+// noise, as a brush would leave them.
 global uniform vec3 zs_hemi_sky;
 global uniform vec3 zs_hemi_ground;
 global uniform float zs_hemi_energy;
@@ -28,7 +27,7 @@ uniform float half_at = -0.05;
 uniform float full_at = 0.38;
 uniform float soft = 0.09;
 uniform float half_share = 0.55;
-uniform float rim = 0.2;
+uniform float rim = 0.12;
 // The sun's share (the bands' top), under 1 so the lit side doesn't burn out.
 uniform float sun = 0.5;
 // The paint: how strong the mottle and the streaks are, how big (per metre).
@@ -87,7 +86,9 @@ void fragment() {
 	vec3 hemi = mix(zs_hemi_ground, zs_hemi_sky, normal.y * 0.5 + 0.5) * zs_hemi_energy / PI;
 	float edge = smoothstep(0.6, 0.95, 1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0));
 	EMISSION = ALBEDO * cool * hemi * fill
-		+ mix(ALBEDO, vec3(1.0), 0.5) * zs_hemi_sky * zs_hemi_energy * edge * rim;
+		// The rim takes the sky's brightness, not its tint, so it doesn't
+		// glare green or blue on the edges in the sun.
+		+ mix(ALBEDO, vec3(1.0), 0.5) * dot(zs_hemi_sky, vec3(0.3333)) * zs_hemi_energy * edge * rim;
 	if (sheen > 0.0) {
 		vec3 view = normalize((INV_VIEW_MATRIX * vec4(VIEW, 0.0)).xyz);
 		vec3 r = reflect(-view, normal);
