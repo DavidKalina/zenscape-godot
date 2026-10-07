@@ -23,6 +23,7 @@ const StoneLamp = preload("res://scripts/stone_lamp.gd")
 const IslanderFigure = preload("res://scripts/islander_figure.gd")
 const SkyFolk = preload("res://scripts/sky_folk.gd")
 const LakeDress = preload("res://scripts/lake_dress.gd")
+const FallsDress = preload("res://scripts/cluster_falls_dress.gd")
 
 ## The panes' and lamps' glow, the halos' (deeper, so added over the night
 ## and through the tonemap they still read as lamplight, amber, not
@@ -92,6 +93,7 @@ static func _mats() -> Dictionary:
 static func release() -> void:
 	_shared = {}
 	LakeDress.release()
+	FallsDress.release()
 
 ## The night's glow on every cluster: 0 by day, 1 at full night.
 static func set_night(night: float) -> void:
@@ -127,6 +129,8 @@ static func prepare(member: Dictionary, plan: Dictionary) -> Dictionary:
 							best = mid.distance_to(cabin.at)
 							gate = k
 				out.features[i] = Builds.fence(corners,gate,func(p: Vector2) -> float: return shape.ground_at(p) if shape.inland(p) > 0.2 else -INF,int(member.seed) % 991)
+			"paddies", "moss", "wheel":
+				out.features[i] = FallsDress.prepare(member,f)
 	for br: Dictionary in plan.bridges:
 		if br.from == member.name: out.bridges.append(Footbridge.build_mesh(br.a,br.b,hash(br.to) % 997))
 	return out
@@ -254,6 +258,8 @@ static func furnish(node: Node3D, member: Dictionary, plan: Dictionary, made: Di
 				line.material_override = m.solid
 				line.position = figure.transform*(hand+Builds.rod_tip(2.6)/SkyFolk.SCALE)
 				node.add_child(line)
+			"paddies", "moss", "wheel", "plunge":
+				FallsDress.furnish(node,member,f,made.features.get(i),m,halos,live)
 			"field":
 				var fence := MeshInstance3D.new()
 				fence.name = "Fence"

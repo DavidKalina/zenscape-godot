@@ -37,7 +37,9 @@ extends RefCounted
 ##     field (fenced wheat), lamps (stone lamps by the cabin), bearer
 ##     (someone with a lantern by the door), windmill, lighthouse, lookout
 ##     (a lamp on the highest ground), dock (off the rim into open sky),
-##     fisher (on the dock's end);
+##     fisher (on the dock's end); paddies (stepped rice ponds), moss,
+##     wheel (a mill wheel in the brook), brook (a footbridge over it),
+##     edge_lanterns (posts along a terrace's edge): scripts/cluster_falls.gd;
 ##   relation: how it is laid against another member:
 ##     {type: near | bridge | stones | outer, to: a role's name, or
 ##     "prev" (the last of its own role, else `from`'s, else the anchor),
@@ -45,7 +47,9 @@ extends RefCounted
 ##     "stones")}:
 ##     near, a flight apart; bridge, a rope footbridge's span; stones, a
 ##     run of stepping stones the pilot jumps; outer, out on the side
-##     facing open sky (a landmark).
+##     facing open sky (a landmark); fall, under the lip of the member it
+##     names, that one's fall landing in its pool ({drop, gap} ranges,
+##     scripts/cluster_falls.gd).
 ## Fixed layouts (the showcase): a role may give `offset` (its middle from
 ## the anchor's), `seed` and `radius` exactly, and a stones relation
 ## `angle` and `swings`.
@@ -148,6 +152,24 @@ const MOTIFS := {
 				"spec":{"dome":0.3,"trees":Vector2i(1,2),"tree_pool":{"birch":1.0,"broadleaf":0.6},"drifts":Vector2i(3,5)},
 				"features":[{"type":"lookout"}],
 				"relation":{"type":"stones","to":"lake","stones":Vector2i(2,3)}},
+	"falls": {
+		"label":"Waterfall terraces","layout":"terrace",
+		"rock":{"palettes":["slate","basalt"],"tone":Vector2(0.9,1.1)},"keel":Vector2(1.5,2.0),
+		"night":{"windows":true,"lanterns":true,"beam":false},
+		"roles":[
+			{"name":"spring","anchor":true,"kind":"meadow","radius":Vector2(14.5,17.0),"height":Vector2(0.0,0.0),"pond":1.0,
+				"spec":{"dome":0.45,"trees":Vector2i(4,7),"tree_pool":{"willow":1.0,"birch":0.7,"broadleaf":0.4},"mixed":true,
+					"tree_size":Vector2(0.9,1.25),"drifts":Vector2i(3,6),"undergrowth":1.5},
+				"features":[{"type":"cabin"},{"type":"paddies"},{"type":"lamps","count":Vector2i(1,2)},{"type":"bearer","chance":0.7},
+					{"type":"moss"},{"type":"brook","chance":0.8},{"type":"edge_lanterns"}]},
+			{"name":"willows","kind":"grove","radius":Vector2(7.0,9.0),"height":Vector2(1.0,3.0),"chance":0.6,
+				"spec":{"dome":0.8,"trees":Vector2i(9,14),"tree_pool":{"willow":1.0,"birch":0.6,"broadleaf":0.25},"mixed":true,
+					"tree_size":Vector2(0.85,1.3),"undergrowth":2.0},
+				"relation":{"type":"bridge","to":"spring","gap":Vector2(5.0,10.0)}},
+			{"name":"step","kind":"spring","radius":Vector2(6.5,8.5),"count":Vector2i(2,3),
+				"spec":{"dome":0.25,"trees":Vector2i(1,3),"tree_pool":{"willow":1.0,"birch":0.3},"mixed":true,"undergrowth":2.5,"drifts":Vector2i(1,2)},
+				"features":[{"type":"wheel","chance":0.6},{"type":"brook","chance":0.5},{"type":"moss"},{"type":"edge_lanterns"}],
+				"relation":{"type":"fall","to":"prev","drop":Vector2(3.6,5.4),"gap":Vector2(1.7,2.5)}},
 		]},
 }
 

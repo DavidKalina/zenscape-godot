@@ -235,7 +235,9 @@ var land := PackedInt32Array()
 var pond := Vector3.ZERO
 var lip := Vector2.ZERO
 var lip_out := Vector2.ZERO
-## The water's level (islet frame): WATER for a pond, a lake's own.
+## The water's level (islet frame): WATER for a pond, unless the recipe
+## pond gives its own `level` (a pool sunk under the rim, a pond held
+## high), or a lake's own (scripts/islet_lake.gd).
 var water_level := WATER
 ## A lake (scripts/islet_lake.gd), empty if none: the recipe's `lake`.
 var lake := {}
@@ -255,8 +257,10 @@ var flowers: Array[String] = []
 ##   mounds / peaks: Array of Vector4(x, z, reach, height), smooth hill
 ##     mounds or the crag's ridged peaks, instead of the kind's own;
 ##   dome: how high the ground rises inland, instead of the kind's;
-##   pond: {at: Vector2, radius, toward: Vector2}, a pond whose channel
-##     leaves over the rim in the `toward` direction, on any kind;
+##   pond: {at: Vector2, radius, toward: Vector2, level}, a pond whose
+##     channel leaves over the rim in the `toward` direction (or at the
+##     shore point nearest `lip`), on any kind, its water at `level`
+##     (islet frame) instead of WATER;
 ##   pads: Array of Vector4(x, z, radius, lift), ground levelled to its
 ##     height at the middle (plus lift) for something to stand on, and kept
 ##     clear of plants;
@@ -554,6 +558,7 @@ func _cut_pond(rng: RandomNumberGenerator, inland: float) -> void:
 	var spec: Dictionary = recipe.get("pond",{})
 	if spec.has("at"): middle = spec.at
 	if spec.has("radius"): r = float(spec.radius)
+	if spec.has("level"): water_level = float(spec.level)
 	pond = Vector3(middle.x,middle.y,r)
 	# The lip: the shore point nearest the pond, a little seeded among the
 	# nearest few, so the channel is short; or, for a recipe's, the shore
@@ -563,9 +568,10 @@ func _cut_pond(rng: RandomNumberGenerator, inland: float) -> void:
 		var i := shore_edges[k]
 		var score := points[i].distance_to(middle)
 		if spec.has("toward"): score += 12.0*(1.0-(points[i]-middle).normalized().dot((spec.toward as Vector2).normalized()))
+		if spec.has("lip"): score = points[i].distance_to(spec.lip)
 		shore.append([score,i])
 	shore.sort()
-	var pick: int = shore[0 if spec.has("toward") else rng.randi_range(0,mini(2,shore.size()-1))][1]
+	var pick: int = shore[0 if spec.has("toward") or spec.has("lip") else rng.randi_range(0,mini(2,shore.size()-1))][1]
 	lip = points[pick]
 	var outward: Dictionary = IslandShore._outward(points,shore_edges)
 	lip_out = outward.get(pick,(lip-middle).normalized())

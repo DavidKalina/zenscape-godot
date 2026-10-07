@@ -43,6 +43,7 @@ const SkyTowers = preload("res://scripts/sky_towers.gd")
 const SkyForestIsles = preload("res://scripts/sky_forest_isles.gd")
 const SkyFallThread = preload("res://scripts/sky_fall_thread.gd")
 const RockLooks = preload("res://scripts/rock_looks.gd")
+const ClusterFalls = preload("res://scripts/cluster_falls.gd")
 
 ## The cells: size (m), the share holding an islet, how far its spot may sit
 ## from the cell's middle (share of the cell), and the height band (m).
@@ -554,6 +555,11 @@ static func _fall_rings(shape: RefCounted) -> Dictionary:
 	var lip := Vector3(water.lip.x,water.level,water.lip.y)
 	var out := Vector3(water.out.x,0.0,water.out.y)
 	var overhang := IslandShore.RING_OUT.y+0.05
+	# A cluster's fall onto a lower member's pool (scripts/cluster_falls.gd):
+	# thrown to land in it, ending under its water, no thread on down.
+	if shape.recipe.has("fall_to"):
+		var to: Dictionary = shape.recipe.fall_to
+		return curtain(to.lip,to.out,float(to.drop),ClusterFalls.SUNK,ClusterFalls.HALF,overhang,FALL_STRENGTH,float(to.speed))
 	return curtain(lip,out,shape.depth*FALL_DROP.x+FALL_DROP.y,FALL_TAIL,float(water.get("half",SkyIslet.CHANNEL*0.6)),overhang,FALL_STRENGTH)
 
 func _fall(node: Node3D, shape: RefCounted, rings: Dictionary, thread: Dictionary = {}) -> void:
@@ -603,11 +609,12 @@ func _fall(node: Node3D, shape: RefCounted, rings: Dictionary, thread: Dictionar
 	# strand breaks up (scripts/sky_fall_thread.gd), planned on the worker
 	# (`_make`) when it could be.
 	if thread.is_empty(): thread = _thread_plan(shape,rings,node.position.y)
-	node.add_child(SkyFallThread.node_from(thread))
+	if not thread.is_empty(): node.add_child(SkyFallThread.node_from(thread))
 
 ## The fall's thread on down to the cloud sea (SkyFallThread `plan`), for
 ## an islet whose middle stands at `home_y`.
 static func _thread_plan(shape: RefCounted, rings: Dictionary, home_y: float) -> Dictionary:
+	if shape.recipe.has("fall_to"): return {}
 	var water: Dictionary = shape.water()
 	var out := Vector3(water.out.x,0.0,water.out.y)
 	var lip := Vector3(water.lip.x,water.level,water.lip.y)
@@ -618,7 +625,8 @@ static func _thread_plan(shape: RefCounted, rings: Dictionary, home_y: float) ->
 ## `lip` (on the rim, at the water's level) out along `out`, clearing the
 ## grass lip's `overhang`, falling `drop` m as a sheet and `tail` m more as
 ## it breaks up. As scripts/edge_falls.gd `_rings`, with no face to hug.
-static func curtain(lip: Vector3, out: Vector3, drop: float, tail: float, half: float, overhang: float, strength: float) -> Dictionary:
+## `speed`: the water's speed off the lip (m/s), FALL_SPEED unless given.
+static func curtain(lip: Vector3, out: Vector3, drop: float, tail: float, half: float, overhang: float, strength: float, speed := FALL_SPEED) -> Dictionary:
 	var bend_rings := 4
 	var face_rings := 12
 	var bend := [0.0,0.06,0.2,0.45]
@@ -637,7 +645,7 @@ static func curtain(lip: Vector3, out: Vector3, drop: float, tail: float, half: 
 		var y := lip.y-drops[r]
 		var away := -0.1
 		if r > 0:
-			var thrown := FALL_SPEED*sqrt(2.0*drops[r]/9.81)
+			var thrown := speed*sqrt(2.0*drops[r]/9.81)
 			# Clear of the grass lip that juts past the rim.
 			away = maxf(thrown,overhang+thick[r]+0.1)
 		points.append(lip+out*away+Vector3.UP*(y-lip.y))

@@ -40,6 +40,7 @@ const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const MeadowTypes = preload("res://scripts/meadow_types.gd")
 const RockLooks = preload("res://scripts/rock_looks.gd")
 const ClusterLake = preload("res://scripts/cluster_lake.gd")
+const Falls = preload("res://scripts/cluster_falls.gd")
 
 ## Rim to rim (m): any two members at least MIN_GAP; stepping stones
 ## STONE_GAP apart (a running jump is about 2.5 to 3 m; checked against
@@ -126,6 +127,7 @@ static func _solve(motif_name: String, seed_value: int, attempt: int) -> Diction
 			continue
 		var ok := false
 		if rel.type == "stones": ok = _lay_stones(m,parent,rel,placed,plan,rng)
+		elif rel.type == "fall": ok = Falls.lay(m,parent,rel,placed,plan,rng,func(s: Dictionary, at: Vector3, pl: Array) -> bool: return _clear(s,at,pl,MIN_GAP))
 		else:
 			for angle in _ways(motif,rel,m,parent,placed,rng,ring_base):
 				var gap: Vector2 = rel.get("gap",Vector2(6.0,12.0))
@@ -512,6 +514,8 @@ static func _feature(m: Dictionary, f: Dictionary, placed: Array, centre: Vector
 			_dock(m,f,placed,outward,rng,plan)
 		"spill", "jetty", "boat", "floats":
 			ClusterLake.feature(m,f,placed,centre,rng,plan)
+		"paddies", "moss", "wheel", "brook", "edge_lanterns":
+			Falls.feature(m,f,rng,plan)
 		"fisher":
 			var dock := _find(m,"dock")
 			if dock.is_empty(): return
@@ -645,6 +649,7 @@ static func validate(plan: Dictionary) -> Array:
 				"fisher":
 					if shape.deck_y(f.at) == -INF: problems.append("fisher off the dock on %s" % m.name)
 	problems.append_array(ClusterLake.validate(plan))
+	problems.append_array(Falls.validate(plan))
 	return problems
 
 ## A footprint's ground: on the land, dry, in from the rim and level

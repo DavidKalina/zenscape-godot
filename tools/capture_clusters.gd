@@ -151,10 +151,12 @@ func _shots(field: Node3D, s: Dictionary) -> Array:
 			var door: Vector3 = b.home+Vector3(f.at.x,b.shape.ground_at(f.at),f.at.y)
 			var back := Vector3(0.0,0.0,-1.0).rotated(Vector3.UP,float(f.angle)+0.7)
 			shots.append({"label":"cabin","eye":door+back*9.0+Vector3.UP*2.5,"look":door+Vector3.UP*1.0})
-	return [{"label":"overview","eye":centre+(toward_home*1.3+side*0.9)*reach+Vector3.UP*reach*0.9,"look":centre+Vector3.DOWN*2.0},
+	var out: Array = [{"label":"overview","eye":centre+(toward_home*1.3+side*0.9)*reach+Vector3.UP*reach*0.9,"look":centre+Vector3.DOWN*2.0},
 		{"label":"pass","eye":centre+(toward_home*0.9-side*0.9)*reach+Vector3.UP*4.0,"look":centre+Vector3.UP*2.0},
 		{"label":"rock","eye":rock_eye,"look":big.home+Vector3.DOWN*float(big.shape.depth)*0.35},
 		{"label":"far","eye":centre+(toward_home*0.9-side*0.9).normalized()*220.0+Vector3.UP*25.0,"look":centre}]+shots
+	if s.motif == "falls": out.append_array(_falls_shots(field,s,stood))
+	return out
 
 ## `count` seeded islets (the nearest to the home with their cells' spots),
 ## each from its side a little under its rim, at noon.
@@ -182,6 +184,34 @@ func _lone_islets(count: int) -> void:
 		var eye_at: Vector3 = at+Vector3(1.0,0.0,0.6).normalized()*(reach*1.6+14.0)+Vector3.DOWN*2.0
 		await _hold_at(eye_at,at+Vector3.DOWN*float(b.shape.depth)*0.35,hours.noon,40)
 		await still("lone-%d-%s" % [k,b.shape.kind])
+
+## The waterfall terraces close: beside the first fall, over the paddies,
+## and from a pool's bank up at the fall pouring into it.
+func _falls_shots(field: Node3D, s: Dictionary, stood: Dictionary) -> Array:
+	var plan: Dictionary = field.clusters[s.key].plan
+	var out: Array = []
+	for f: Dictionary in plan.get("falls",[]):
+		if not stood.has(f.from) or not stood.has(f.to): continue
+		var to: Dictionary = stood[f.from].shape.recipe.fall_to
+		var lip: Vector3 = stood[f.from].home+to.lip
+		var pool: Vector3 = stood[f.from].home+to.pool
+		var way := Vector3(to.out.x,0.0,to.out.z)
+		var across := way.cross(Vector3.UP).normalized()
+		var mid := (lip+pool)*0.5
+		out.append({"label":"cascade","eye":mid+across*11.0+way*2.0+Vector3.UP*1.5,"look":mid})
+		out.append({"label":"pool","eye":pool+way*4.2-across*1.6+Vector3.UP*1.7,"look":lip+Vector3.DOWN*1.0})
+		break
+	for m: Dictionary in plan.members:
+		for f: Dictionary in m.features:
+			if f.type != "paddies" or not stood.has(m.name): continue
+			var pads: Array = f.pads
+			var a: Rect2 = pads[0].rect
+			var b: Rect2 = pads[pads.size()-1].rect
+			var home: Vector3 = stood[m.name].home
+			var middle := home+Vector3((a.get_center().x+b.get_center().x)*0.5,float(pads[0].y),(a.get_center().y+b.get_center().y)*0.5)
+			var along := Vector3(b.get_center().x-a.get_center().x,0.0,b.get_center().y-a.get_center().y).normalized()
+			out.append({"label":"paddies","eye":middle+along*9.0+along.cross(Vector3.UP)*4.0+Vector3.UP*5.0,"look":middle})
+	return out
 
 func _view(local: Vector3) -> Vector3:
 	return _parent.to_local(_islets.to_global(local))
