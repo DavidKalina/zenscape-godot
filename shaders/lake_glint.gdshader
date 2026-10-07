@@ -13,7 +13,7 @@ render_mode blend_add, unshaded, depth_draw_never, cull_disabled, shadows_disabl
 global uniform float zs_flow_time;
 uniform float glow = 0.0;
 uniform float far_size = 0.012;
-uniform float stretch = 5.0;
+uniform float stretch = 7.0;
 
 varying float v_fade;
 varying float v_length;

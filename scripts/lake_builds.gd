@@ -18,7 +18,7 @@ const HULL := [[-1.45,0.03,0.56,0.0,0.2],[-1.05,0.36,0.46,0.16,0.05],[-0.35,0.56
 	[0.45,0.56,0.41,0.3,0.0],[1.12,0.46,0.45,0.25,0.05],[1.25,0.43,0.47,0.22,0.08]]
 ## How deep the hull sits in the water (m), where its lantern's foot stands
 ## (boat frame), and the paints a boat is drawn in: [hull, band].
-const DRAFT := 0.13
+const DRAFT := 0.22
 const BOAT_LANTERN := Vector3(0.0,1.18,1.08)
 const BOAT_PAINTS := [[Color("4f6f6c"),Color("d8cdb4")],[Color("8a4a36"),Color("e6dccb")],[Color("6f5238"),Color("4f6f6c")],
 	[Color("d8cdb4"),Color("8a4a36")]]
@@ -33,7 +33,7 @@ const HEART := Color("e8c34e")
 ## height (m), and its paper.
 const RAFT := 0.13
 const SHADE := Vector2(0.1,0.2)
-const PAPER := Color("efdcb4")
+const PAPER := Color("e9cc98")
 
 ## The rowing boat in paint `paint` (an index into BOAT_PAINTS).
 static func boat(paint: int) -> ArrayMesh:

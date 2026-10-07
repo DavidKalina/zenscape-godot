@@ -580,7 +580,10 @@ func _cut_pond(rng: RandomNumberGenerator, inland: float) -> void:
 ## lip and the way out; empty if the islet has none.
 func water() -> Dictionary:
 	if pond.z <= 0.0: return {}
-	return {"level":water_level,"middle":Vector2(pond.x,pond.y),"radius":pond.z,"lip":lip,"out":lip_out}
+	var w := {"level":water_level,"middle":Vector2(pond.x,pond.y),"radius":pond.z,"lip":lip,"out":lip_out}
+	# A lake pours off as a broader fall.
+	if not lake.is_empty(): w.half = IsletLake.FALL_HALF
+	return w
 
 func _channel_distance(p: Vector2) -> float:
 	if pond.z <= 0.0: return INF

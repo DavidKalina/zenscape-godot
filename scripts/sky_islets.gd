@@ -553,7 +553,7 @@ static func _fall_rings(shape: RefCounted) -> Dictionary:
 	var lip := Vector3(water.lip.x,water.level,water.lip.y)
 	var out := Vector3(water.out.x,0.0,water.out.y)
 	var overhang := IslandShore.RING_OUT.y+0.05
-	return curtain(lip,out,shape.depth*FALL_DROP.x+FALL_DROP.y,FALL_TAIL,SkyIslet.CHANNEL*0.6,overhang,FALL_STRENGTH)
+	return curtain(lip,out,shape.depth*FALL_DROP.x+FALL_DROP.y,FALL_TAIL,float(water.get("half",SkyIslet.CHANNEL*0.6)),overhang,FALL_STRENGTH)
 
 func _fall(node: Node3D, shape: RefCounted, rings: Dictionary, thread: Dictionary = {}) -> void:
 	var water: Dictionary = shape.water()

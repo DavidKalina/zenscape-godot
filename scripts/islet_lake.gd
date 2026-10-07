@@ -47,7 +47,7 @@ const SHELF := Vector2(1.2,2.8)
 const SHELF_DEPTH := 0.22
 const DROP := 2.4
 ## The deep bowl's depth under the water (m), and its bed's swell (m).
-const DEPTH := Vector2(1.4,2.1)
+const DEPTH := Vector2(2.6,3.6)
 const BED_SWELL := 0.14
 ## The water's level over Genesis RIM_HEIGHT (m).
 const LEVEL := Vector2(-0.1,0.08)
@@ -67,8 +67,13 @@ const REED_SPREAD := 0.45
 const BANK_GRASS := Vector2i(10,18)
 ## The fetch (open water upwind) is read this far at most (m).
 const FETCH := 9.0
-## Sheet colours of the bed, by depth: the beach sand darkening to silt.
-const SILT := Color(0.13,0.14,0.1)
+## The bed's colours: the beach sand, the shelf's weed-dark sand (WEED of
+## the way to WEEDY) darkening to silt in the deep.
+const SILT := Color(0.11,0.12,0.09)
+const WEEDY := Color(0.24,0.27,0.16)
+const WEED := 0.4
+## The fall off the spill: its half width (m).
+const FALL_HALF := 0.72
 
 ## Shapes the lake into `islet`'s ground (after the erosion): the bank,
 ## the shelf, the bowl, the isle, the land over the water all round, and
@@ -276,7 +281,7 @@ static func bed_tone(islet: RefCounted, sand: Color, gravel: Color, y: float, at
 	var under := float(islet.water_level)-y
 	if under < 0.0: return sand.lerp(gravel,0.25+0.25*sin(at.x*1.7+at.y*2.3))
 	var t := clampf(under/float(islet.lake.get("depth",1.6)),0.0,1.0)
-	return sand.lerp(SILT,smoothstep(0.05,0.9,t))
+	return sand.lerp(WEEDY,WEED*smoothstep(0.0,0.1,under)).lerp(SILT,smoothstep(0.08,0.8,t))
 
 # --- What grows -------------------------------------------------------------------
 

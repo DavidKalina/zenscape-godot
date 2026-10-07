@@ -20,18 +20,22 @@ const DRESSER := "res://scripts/cluster_dresser.gd"
 const LakeBuilds = preload("res://scripts/lake_builds.gd")
 const IsletLake = preload("res://scripts/islet_lake.gd")
 
-## Halos: the boat's lantern, a floating lantern (m across, strength).
-const HALO_BOAT := Vector2(1.0,0.85)
-const HALO_FLOAT := Vector2(0.75,0.75)
+## Halos: the boat's lantern, a floating lantern (m across, strength), in
+## their own batch, a deeper amber than the dresser's (the lake's own
+## warmth: candle-lit paper); the reflections take it too.
+const HALO_BOAT := Vector2(1.0,0.45)
+const HALO_FLOAT := Vector2(0.9,0.5)
+const AMBER := Color("ff7a2e")
 ## Reflections: of lights at most this high over the water (m), their
 ## width a share of the halo's, their strength a share of its.
 const GLINT_HIGH := 9.0
-const GLINT_WIDTH := 0.32
-const GLINT_STRENGTH := 0.7
+const GLINT_WIDTH := 0.45
+const GLINT_STRENGTH := 1.4
 ## How far the open water round a reflection is read (m).
 const GLINT_OPEN := 8.0
-## The paper's glow at full night; the boat's rock (rad) and bob (m).
-const PAPER_GLOW := 2.4
+## The paper's glow (colour, and energy at full night); the boat's rock (rad) and bob (m).
+const PAPER_EMBER := Color("ff9240")
+const PAPER_GLOW := 1.0
 const ROCK := 0.035
 const BOB := 0.018
 
@@ -47,7 +51,7 @@ static func _mats() -> Dictionary:
 	paper.albedo_color = LakeBuilds.PAPER
 	paper.roughness = 0.85
 	paper.emission_enabled = true
-	paper.emission = Dresser.WARM
+	paper.emission = PAPER_EMBER
 	paper.emission_energy_multiplier = 0.0
 	var glint := ShaderMaterial.new()
 	glint.shader = preload("res://shaders/lake_glint.gdshader")
@@ -65,8 +69,9 @@ static func release() -> void:
 	_shared = {}
 
 ## Stands the lake's floating things on `member` under `node`, adds their
-## halos to `halos` ([position, size], the dresser's), then a reflection
-## for every halo over the water; the boat's light goes in `live`.
+## halos (their own batch), then a reflection for every halo over the
+## water, the dresser's (`halos`, [position, size]) and their own; the
+## boat's light goes in `live`.
 static func furnish(node: Node3D, member: Dictionary, halos: Array, live: Dictionary) -> void:
 	var shape: RefCounted = member.shape
 	if shape.lake.is_empty(): return
@@ -74,6 +79,7 @@ static func furnish(node: Node3D, member: Dictionary, halos: Array, live: Dictio
 	var Dresser := _dresser()
 	var solid: Material = Dresser._mats().solid
 	var level: float = shape.water_level
+	var own: Array = []
 	var life := Life.new()
 	life.name = "LakeLife"
 	life.paper = m.paper
@@ -91,7 +97,7 @@ static func furnish(node: Node3D, member: Dictionary, halos: Array, live: Dictio
 				boat.rotation.y = float(f.angle)
 				node.add_child(boat)
 				var lantern: MeshInstance3D = Dresser._lantern(boat,LakeBuilds.BOAT_LANTERN,1.0)
-				halos.append([boat.transform*(LakeBuilds.BOAT_LANTERN+Vector3.UP*0.14),HALO_BOAT])
+				own.append([boat.transform*(LakeBuilds.BOAT_LANTERN+Vector3.UP*0.14),HALO_BOAT])
 				Dresser._light(lantern,Vector3(0.0,0.12,0.0),4.5,0.9,Dresser.FADE_SMALL,live)
 				life.add(boat,ROCK,BOB)
 			"floats":
@@ -106,9 +112,26 @@ static func furnish(node: Node3D, member: Dictionary, halos: Array, live: Dictio
 					lantern.rotation.y = fposmod(p.x*3.1+p.y*1.7,TAU)
 					lantern.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 					node.add_child(lantern)
-					halos.append([lantern.position+LakeBuilds.float_glow()+Vector3.UP*0.04,HALO_FLOAT])
+					own.append([lantern.position+LakeBuilds.float_glow()+Vector3.UP*0.04,HALO_FLOAT])
 					life.add(lantern,ROCK*1.5,BOB*0.8)
-	_glints(node,shape,halos)
+	_glints(node,shape,halos+own)
+	if own.is_empty(): return
+	var batch := MultiMeshInstance3D.new()
+	batch.name = "LakeHalos"
+	var multi := MultiMesh.new()
+	multi.transform_format = MultiMesh.TRANSFORM_3D
+	multi.use_colors = true
+	multi.mesh = m.quad
+	multi.instance_count = own.size()
+	for k in range(own.size()):
+		var size: Vector2 = own[k][1]
+		multi.set_instance_transform(k,Transform3D(Basis.from_scale(Vector3.ONE*size.x),own[k][0]))
+		multi.set_instance_color(k,Color(AMBER,size.y))
+	batch.multimesh = multi
+	batch.material_override = Dresser._mats().halo
+	batch.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	batch.custom_aabb = AABB(Vector3(-60.0,-20.0,-60.0),Vector3(120.0,60.0,120.0))
+	node.add_child(batch)
 
 ## The lilies, one batch a kind of pad, lying on the water.
 static func _lilies(node: Node3D, lilies: Array, level: float) -> void:
@@ -162,7 +185,7 @@ static func _glints(node: Node3D, shape: RefCounted, halos: Array) -> void:
 		var size: Vector2 = g[2]
 		var flat: Vector2 = g[0]
 		multi.set_instance_transform(k,Transform3D(Basis.from_scale(Vector3.ONE*size.x*GLINT_WIDTH),Vector3(flat.x,level,flat.y)))
-		multi.set_instance_color(k,Color(_dresser().WARM,size.y*GLINT_STRENGTH))
+		multi.set_instance_color(k,Color(AMBER,size.y*GLINT_STRENGTH))
 		multi.set_instance_custom_data(k,Color(float(g[1]),float(g[3]),0.0,0.0))
 	batch.multimesh = multi
 	batch.material_override = _mats().glint
