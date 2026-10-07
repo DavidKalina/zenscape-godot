@@ -30,12 +30,14 @@ extends RefCounted
 ##     (a lamp on the highest ground), dock (off the rim into open sky),
 ##     fisher (on the dock's end);
 ##   relation: how it is laid against another member:
-##     {type: near | bridge | stones | outer, to: a role's name, or
+##     {type: near | bridge | stones | outer | stack, to: a role's name, or
 ##     "prev" (the last of its own role, else `to`), gap (m, rim to rim,
 ##     a range), stones (how many stepping stones, for "stones")}:
 ##     near, a flight apart; bridge, a rope footbridge's span; stones, a
 ##     run of stepping stones the pilot jumps; outer, out on the side
-##     facing open sky (a landmark).
+##     facing open sky (a landmark); stack, over the stack's head, a plank
+##     stair winding up to it (scripts/cluster_stack.gd; may give turn and
+##     shift ranges).
 ## Fixed layouts (the showcase): a role may give `offset` (its middle from
 ## the anchor's), `seed` and `radius` exactly, and a stones relation
 ## `angle` and `swings`.
@@ -44,7 +46,7 @@ extends RefCounted
 ## piece kind with a trail feature), lake (a role whose recipe sets its own
 ## water level), ravine (a role split by a cleft, a bridge relation within
 ## it), waterfall terraces (a fall relation onto a lower role's pool),
-## forest hold, hermit's stack (the stack pattern). They fit as new kinds,
+## forest hold. They fit as new kinds,
 ## features and relations; the format stays.
 
 const MOTIFS := {
@@ -113,6 +115,26 @@ const MOTIFS := {
 				"spec":{"trees":Vector2i(0,1),"tree_pool":{"willow":1.0}},
 				"features":[{"type":"dock"},{"type":"fisher","chance":0.8}],
 				"relation":{"type":"bridge","to":"keeper","gap":Vector2(5.0,10.0)}},
+		]},
+	# A column of narrow crags, each over the last and turned round the
+	# stack, plank stairs winding up their rock from one to the next, a
+	# hermit's hut on the top with a garden and hives. By night one window
+	# at the very top and the stair's lanterns climbing to it.
+	"stack": {
+		"label":"Hermit's stack","layout":"stack",
+		"rock":{"palettes":["slate","basalt"],"tone":Vector2(0.88,1.08)},"keel":Vector2(1.2,1.6),
+		"night":{"windows":true,"lanterns":true,"beam":false},
+		"roles":[
+			{"name":"foot","anchor":true,"kind":"crag","radius":Vector2(6.5,8.0),"height":Vector2(0.0,0.0),
+				"spec":{"peaks":[Vector4(0.0,0.0,4.5,1.6)],"trees":Vector2i(2,4),"tree_pool":{"tree":1.0,"juniper":0.7},"drifts":Vector2i(1,2)}},
+			{"name":"ledge","kind":"crag","radius":Vector2(4.3,5.4),"count":Vector2i(2,3),
+				"spec":{"peaks":[Vector4(0.0,0.0,3.2,1.2)],"trees":Vector2i(1,2),"tree_pool":{"tree":1.0,"juniper":0.8},"drifts":Vector2i(0,1)},
+				"relation":{"type":"stack"}},
+			{"name":"top","kind":"crag","radius":Vector2(6.0,7.0),
+				"spec":{"peaks":[],"dome":0.3,"trees":Vector2i(1,2),"tree_pool":{"tree":1.0,"juniper":0.6},"drifts":Vector2i(1,2)},
+				"features":[{"type":"cabin"},{"type":"garden","chance":0.75},{"type":"hives","chance":0.6,"count":Vector2i(2,3)},
+					{"type":"bearer","chance":0.6}],
+				"relation":{"type":"stack"}},
 		]},
 }
 

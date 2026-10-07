@@ -38,6 +38,7 @@ const Footbridge = preload("res://scripts/footbridge.gd")
 const Cabin = preload("res://scripts/cabin.gd")
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const MeadowTypes = preload("res://scripts/meadow_types.gd")
+const Stack = preload("res://scripts/cluster_stack.gd")
 
 ## Rim to rim (m): any two members at least MIN_GAP; stepping stones
 ## STONE_GAP apart (a running jump is about 2.5 to 3 m; checked against
@@ -114,6 +115,7 @@ static func _solve(motif_name: String, seed_value: int, attempt: int) -> Diction
 			continue
 		var ok := false
 		if rel.type == "stones": ok = _lay_stones(m,parent,rel,placed,plan,rng)
+		elif rel.type == "stack": ok = Stack.place(m,placed,plan,rng)
 		else:
 			for angle in _ways(motif,rel,m,parent,placed,rng,ring_base):
 				var gap: Vector2 = rel.get("gap",Vector2(6.0,12.0))
@@ -442,6 +444,8 @@ static func _feature(m: Dictionary, f: Dictionary, placed: Array, centre: Vector
 			var way := Vector2(b.x-a.x,b.z-a.z).normalized()
 			var at := Vector2(b.x,b.z)-way*0.45+Vector2(-way.y,way.x)*0.25
 			m.features.append({"type":"fisher","at":at,"angle":atan2(-way.x,-way.y),"deck_y":a.y})
+		"garden", "hives":
+			Stack.feature(m,f,rng,plan)
 
 static func _missing(m: Dictionary, f: Dictionary, plan: Dictionary) -> void:
 	if float(f.get("chance",1.0)) >= 1.0: plan.problems.append("no room for the %s on %s" % [f.type,m.name])
@@ -519,7 +523,7 @@ static func validate(plan: Dictionary) -> Array:
 		for j in range(i+1,members.size()):
 			var a: Dictionary = members[i]
 			var b: Dictionary = members[j]
-			if rim_gap(rims[a.name],a.offset,rims[b.name],b.offset) < 0.5: problems.append("overlap: %s and %s" % [a.name,b.name])
+			if rim_gap(rims[a.name],a.offset,rims[b.name],b.offset) < 0.5 and not Stack.stacked(a,b): problems.append("overlap: %s and %s" % [a.name,b.name])
 	for route: Array in plan.routes:
 		for k in range(route.size()-1):
 			var a: Dictionary = by_name[route[k]]
@@ -566,6 +570,7 @@ static func validate(plan: Dictionary) -> Array:
 						if _distance_to_rim({"offset":p.offset,"rim":rims[p.name]},q) < 2.0: problems.append("dock on %s runs into %s" % [m.name,p.name])
 				"fisher":
 					if shape.deck_y(f.at) == -INF: problems.append("fisher off the dock on %s" % m.name)
+	problems.append_array(Stack.validate(plan))
 	return problems
 
 ## A footprint's ground: on the land, dry, in from the rim and level
