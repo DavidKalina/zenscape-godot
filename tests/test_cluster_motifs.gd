@@ -20,6 +20,7 @@ func _initialize() -> void:
 	var wants := {"farmstead":["cabin","field","dock"],"hamlet":["cabin","dock"],"reef":["cabin","lighthouse"]}
 	wants["lake"] = ["dock","boat","floats","cabin"]
 	wants["forest"] = ["cabin","treehouse","canopy","trail"]
+	wants["stack"] = ["cabin","stair"]
 	for motif: String in Motifs.names():
 		var bad := []
 		var missing := 0
