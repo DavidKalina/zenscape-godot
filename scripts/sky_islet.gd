@@ -50,6 +50,7 @@ const MeadowTypes = preload("res://scripts/meadow_types.gd")
 const Samples = preload("res://scripts/garden_instance_samples.gd")
 const Erosion = preload("res://scripts/terrain_erosion.gd")
 const RockLooks = preload("res://scripts/rock_looks.gd")
+const IsletLake = preload("res://scripts/islet_lake.gd")
 
 ## Kinds and how often each turns up.
 const KINDS := [["meadow",0.22],["grove",0.22],["hills",0.15],["crag",0.11],["spring",0.18],["shore",0.12]]
@@ -234,6 +235,10 @@ var land := PackedInt32Array()
 var pond := Vector3.ZERO
 var lip := Vector2.ZERO
 var lip_out := Vector2.ZERO
+## The water's level (islet frame): WATER for a pond, a lake's own.
+var water_level := WATER
+## A lake (scripts/islet_lake.gd), empty if none: the recipe's `lake`.
+var lake := {}
 ## What grows: object records, as the plate's.
 var objects: Array[Dictionary] = []
 ## Trees and stones, for the glide and the walker: crowns (x, z, top over
@@ -463,7 +468,8 @@ func _lay_ground(rng: RandomNumberGenerator) -> void:
 		# The lip wanders up and down, and slumps in places (`_rim_at`).
 		heights[i] = lerpf(_rim_at(p,lip_noise),h,smoothstep(0.0,ease,d))
 	_erode()
-	if kind == "spring" or recipe.has("pond"): _cut_pond(rng,inland)
+	if recipe.has("lake"): IsletLake.cut(self,rng,inland)
+	elif kind == "spring" or recipe.has("pond"): _cut_pond(rng,inland)
 	_level_pads()
 
 ## A recipe's pads: the ground eased to the height at each pad's middle
@@ -570,17 +576,20 @@ func _cut_pond(rng: RandomNumberGenerator, inland: float) -> void:
 		var d := p.distance_to(middle)/r
 		var cut := 1.0-smoothstep(CHANNEL*0.8,CHANNEL*1.45,_channel_distance(p))
 		# The bank stands over the water all round, but where the channel runs.
-		if d < 1.8 and cut <= 0.0: h = maxf(h,WATER+BANK*(1.0-smoothstep(1.2,1.8,d))+0.06)
+		if d < 1.8 and cut <= 0.0: h = maxf(h,water_level+BANK*(1.0-smoothstep(1.2,1.8,d))+0.06)
 		var bowl := 1.0-smoothstep(0.55,1.15,d)
-		h = minf(h,lerpf(h,WATER-BOWL,bowl))
-		h = minf(h,lerpf(h,WATER-0.14,cut))
+		h = minf(h,lerpf(h,water_level-BOWL,bowl))
+		h = minf(h,lerpf(h,water_level-0.14,cut))
 		heights[i] = h
 
 ## The pond's water in the islet frame: level, middle and radius, with the
 ## lip and the way out; empty if the islet has none.
 func water() -> Dictionary:
 	if pond.z <= 0.0: return {}
-	return {"level":WATER,"middle":Vector2(pond.x,pond.y),"radius":pond.z,"lip":lip,"out":lip_out}
+	var w := {"level":water_level,"middle":Vector2(pond.x,pond.y),"radius":pond.z,"lip":lip,"out":lip_out}
+	# A lake pours off as a broader fall.
+	if not lake.is_empty(): w.half = IsletLake.FALL_HALF
+	return w
 
 func _channel_distance(p: Vector2) -> float:
 	if pond.z <= 0.0: return INF
@@ -591,6 +600,7 @@ func _channel_distance(p: Vector2) -> float:
 
 ## True over the pond's water or its channel.
 func wet(p: Vector2) -> bool:
+	if not lake.is_empty(): return IsletLake.wet(self,p)
 	if pond.z <= 0.0: return false
 	return p.distance_to(Vector2(pond.x,pond.y)) < pond.z*1.05 or _channel_distance(p) < CHANNEL
 
@@ -680,6 +690,8 @@ func solid_top(p: Vector2) -> float:
 	var h := ground_at(p)
 	for c in crowns:
 		if p.distance_to(Vector2(c.x,c.y)) < c.w: h = maxf(h,ground_at(Vector2(c.x,c.y))+c.z)
+	# A lake's water is a surface to skim and come down on.
+	if not lake.is_empty() and wet(p): h = maxf(h,water_level)
 	return h
 
 ## How far out toward the rim a point is along its ray from the middle: 0 at
@@ -706,7 +718,8 @@ func rim_point(a: float) -> Vector2:
 func blocked(at: Vector2) -> bool:
 	for b in blocks:
 		if at.distance_to(Vector2(b.x,b.y)) < b.z: return true
-	return wet(at)
+	# Out over the water only on a deck (a jetty).
+	return wet(at) and deck_y(at) == -INF
 
 static func _barycentric(p: Vector2, a: Vector2, b: Vector2, c: Vector2) -> Vector3:
 	var v0 := b-a
@@ -838,7 +851,8 @@ func _plant(rng: RandomNumberGenerator) -> void:
 			taken.append(Vector3(p.x,p.y,0.3))
 			placed += 1
 	# Reeds and bank grass round the pond's water, and along a beach.
-	if pond.z > 0.0:
+	if not lake.is_empty(): IsletLake.plant(self,rng)
+	elif pond.z > 0.0:
 		for n in range(rng.randi_range(REEDS.x,REEDS.y)):
 			var a := rng.randf()*TAU
 			var p := Vector2(pond.x,pond.y)+Vector2.from_angle(a)*pond.z*rng.randf_range(0.95,1.3)
@@ -927,7 +941,9 @@ func _spread(p: Vector2, radius: float, rect: Vector2, wet_room: float) -> float
 	for q in samples:
 		if not on_land(q): return -1.0
 		if wet(q): return -1.0
-		if pond.z > 0.0 and q.distance_to(Vector2(pond.x,pond.y)) < pond.z+wet_room: return -1.0
+		if not lake.is_empty():
+			if IsletLake.near(self,q,wet_room): return -1.0
+		elif pond.z > 0.0 and q.distance_to(Vector2(pond.x,pond.y)) < pond.z+wet_room: return -1.0
 		if pond.z > 0.0 and _channel_distance(q) < CHANNEL+wet_room: return -1.0
 		var h := ground_at(q)
 		low = minf(low,h)
@@ -1014,7 +1030,9 @@ func _ground_ok(p: Vector2, inset: float, steep: float, grassy: bool) -> bool:
 	var f: int = hit[0]
 	if f < 0: return false
 	if inland(p) < inset or wet(p): return false
-	if pond.z > 0.0 and p.distance_to(Vector2(pond.x,pond.y)) < pond.z*1.25: return false
+	if not lake.is_empty():
+		if IsletLake.near(self,p,0.7): return false
+	elif pond.z > 0.0 and p.distance_to(Vector2(pond.x,pond.y)) < pond.z*1.25: return false
 	if _slope(f) > steep: return false
 	if grassy and kind == "shore" and inland(p) < BEACH: return false
 	return true
@@ -1175,8 +1193,10 @@ func top_arrays(palette: Dictionary, shift := Vector3.ZERO) -> Array:
 			tone = gravel.lerp(earth,clampf(patch.get_noise_2d(at.x*3.0,at.y*3.0)*0.5+0.5,0.0,1.0))
 		elif _in_soil(at):
 			tone = earth.lerp(gravel,0.15)*lerpf(0.8,0.95,n)
-		elif pond.z > 0.0 and minf(a.y,minf(b.y,c.y)) < WATER+0.06 and (at.distance_to(Vector2(pond.x,pond.y)) < pond.z*1.5 or _channel_distance(at) < CHANNEL*1.5):
-			tone = sand*lerpf(1.0,0.72,clampf((WATER-middle.y)/BOWL,0.0,1.0))
+		elif not lake.is_empty() and minf(a.y,minf(b.y,c.y)) < water_level+0.06:
+			tone = IsletLake.bed_tone(self,sand,gravel,middle.y,at)
+		elif pond.z > 0.0 and minf(a.y,minf(b.y,c.y)) < water_level+0.06 and (at.distance_to(Vector2(pond.x,pond.y)) < pond.z*1.5 or _channel_distance(at) < CHANNEL*1.5):
+			tone = sand*lerpf(1.0,0.72,clampf((water_level-middle.y)/BOWL,0.0,1.0))
 		elif kind == "shore":
 			var d := (shore_distance[ids[f*3]]+shore_distance[ids[f*3+1]]+shore_distance[ids[f*3+2]])/3.0
 			if d < BEACH*(0.8+0.4*n): tone = gravel if patch.get_noise_2d(at.x*2.0,at.y*2.0) > 0.25 else sand
@@ -1313,13 +1333,14 @@ func build_water(material: Material, color := Color(0.25,0.57,0.59), shift := Ve
 ## The pond's surface arrays (`build_water`), empty with no pond; safe to
 ## make on a worker.
 func water_arrays(color := Color(0.25,0.57,0.59), shift := Vector3.ZERO) -> Array:
+	if not lake.is_empty(): return IsletLake.water_arrays(self,color,shift)
 	if pond.z <= 0.0: return []
 	var middle := Vector2(pond.x,pond.y)
 	var r := pond.z*1.1
 	var rings := maxi(int(ceil(r/0.28)),4)
 	var segments := 36
 	var faces := []
-	var at := func(p: Vector2) -> Vector3: return Vector3(p.x,WATER,p.y)
+	var at := func(p: Vector2) -> Vector3: return Vector3(p.x,water_level,p.y)
 	var ring := func(k: int, s: int) -> Vector2: return middle+Vector2.from_angle(TAU*s/segments)*r*k/rings
 	for k in range(rings):
 		for s in range(segments):
@@ -1355,7 +1376,7 @@ func water_arrays(color := Color(0.25,0.57,0.59), shift := Vector3.ZERO) -> Arra
 	for f: Array in faces:
 		var v: Vector3 = f[0]
 		var p := Vector2(v.x,v.z)
-		var deep := maxf(WATER-ground_at(p),0.0)
+		var deep := maxf(water_level-ground_at(p),0.0)
 		vertices.append(v+shift)
 		normals.append(Vector3.UP)
 		colors.append(f[1])
