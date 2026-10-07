@@ -34,8 +34,10 @@ const MOTIF := {
 			"spec":{"mounds":[],"dome":0.45,"trees":Vector2i(2,4),"tree_pool":{"tree":1.0,"juniper":0.7}},
 			"features":[{"type":"cabin"},{"type":"lamps","count":Vector2i(1,2)},{"type":"bearer","chance":0.4}],
 			"relation":{"type":"stones","to":"peak","stones":Vector2i(2,4)}},
-		{"name":"crag","kind":"crag","radius":Vector2(2.8,5.5),"height":Vector2(-16.0,-3.0),"count":Vector2i(2,4),
-			"spec":{"trees":Vector2i(0,2),"tree_pool":{"tree":1.0,"juniper":1.0}},
+		{"name":"crag","kind":"hills","radius":Vector2(3.2,6.0),"height":Vector2(-16.0,-3.0),"count":Vector2i(2,4),
+			"spec":{"mounds":[],"dome":0.2,"trees":Vector2i(0,1),"tree_pool":{"tree":1.0,"juniper":1.0},
+				"spire":{"height":Vector2(4.0,13.0),"stature":Vector2(1.6,2.6),"foot":Vector2(0.55,0.75),"meadow":1.0,
+					"snow":false,"trail":false,"spruces":Vector2i(0,3),"boulders":Vector2i(0,2)}},
 			"relation":{"type":"near","to":"peak","gap":Vector2(3.0,14.0)}},
 	]}
 
@@ -77,7 +79,9 @@ static func lay(m: Dictionary, plan: Dictionary) -> void:
 	var out: Vector2 = spire.hut_out
 	var at: Vector2 = spire.hut
 	var angle := atan2(out.x,out.y)
-	shape.claim(at,CABIN)
+	# Its ledge is already level (MountainSpire `_carve`): kept, not levelled
+	# again, so the ease round it never reaches the trail below.
+	shape.claims.append(Vector4(at.x,at.y,CABIN,0.0))
 	shape.add_record("cabin",at,angle,1.0)
 	m.features.append({"type":"cabin","at":at,"angle":angle})
 	var pose := Transform3D(Basis(Vector3.UP,angle),Vector3(at.x,shape.ground_at(at),at.y))

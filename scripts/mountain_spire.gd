@@ -40,7 +40,7 @@ extends RefCounted
 ## radius (drawn), held within HEIGHT (m).
 const FOOT_SHARE := Vector2(0.6,0.7)
 const MEADOW := 3.0
-const STATURE := Vector2(2.5,3.0)
+const STATURE := Vector2(2.3,2.8)
 const HEIGHT := Vector2(30.0,58.0)
 ## How far the summit stands off the islet's middle (share of its radius).
 const OFF := 0.16
@@ -50,16 +50,16 @@ const OFF := 0.16
 ## height).
 const SPOKES := Vector2i(7,9)
 const SPOKE_TURN := 0.22
-const SPOKE_REACH := Vector2(0.86,1.12)
-const ARETE := 0.07
-const GULLY := 0.06
+const SPOKE_REACH := Vector2(0.8,1.15)
+const ARETE := 0.1
+const GULLY := 0.09
 ## Profiles: [share of the foot's radius out, share of the height], summit
 ## to foot. Each has cliff bands and ledges; one is drawn per peak and each
 ## point jittered (PROFILE_JITTER: share of radius, share of height).
 const PROFILES := [
 	[[0.0,1.0],[0.09,0.9],[0.2,0.74],[0.27,0.6],[0.37,0.565],[0.47,0.42],[0.54,0.3],[0.64,0.265],[0.75,0.16],[0.87,0.075],[1.0,0.02],[1.14,0.0]],
-	[[0.0,1.0],[0.11,0.86],[0.18,0.72],[0.3,0.68],[0.4,0.5],[0.46,0.39],[0.57,0.355],[0.68,0.22],[0.8,0.12],[0.9,0.06],[1.0,0.02],[1.14,0.0]],
-	[[0.0,1.0],[0.08,0.92],[0.16,0.8],[0.22,0.66],[0.33,0.62],[0.43,0.48],[0.5,0.36],[0.62,0.31],[0.72,0.19],[0.85,0.08],[1.0,0.02],[1.14,0.0]],
+	[[0.0,1.0],[0.12,0.94],[0.22,0.83],[0.3,0.66],[0.41,0.62],[0.5,0.47],[0.58,0.35],[0.69,0.3],[0.8,0.17],[0.9,0.07],[1.0,0.02],[1.14,0.0]],
+	[[0.0,1.0],[0.1,0.95],[0.2,0.86],[0.27,0.72],[0.38,0.67],[0.47,0.5],[0.55,0.37],[0.66,0.32],[0.76,0.19],[0.87,0.08],[1.0,0.02],[1.14,0.0]],
 ]
 const PROFILE_JITTER := Vector2(0.025,0.025)
 ## A second summit: the odds, how far out (share of the foot) and how high
@@ -72,20 +72,25 @@ const TWIN := Vector2(0.11,0.93)
 ## for the seasons' shader (sky_season zs_sky_peak_margin): SNOW_NEED m at
 ## the line, SNOW_NEED_RISE m more a metre over it, so summer bares the
 ## lower cap and the summit keeps its snow.
-const SNOW_SHARE := Vector2(0.7,0.78)
+const SNOW_SHARE := Vector2(0.56,0.64)
 const SNOW_RAG := 1.6
-const SNOW_SLOPE := 3.6
-const LEDGE_SLOPE := 1.3
-const SNOW_LINGER := 7.0
+const SNOW_SLOPE := 6.0
+const LEDGE_SLOPE := 1.4
+const SNOW_LINGER := 9.0
+## A snowy face's lie, for the shader's snow (not its light): leaned up by
+## this, so the snow lies thick on the cap and fluted only on the sheerest.
+const SNOW_LIE := 1.1
 const SNOW_NEED := 25.0
 const SNOW_NEED_RISE := 8.0
 ## The hut's ledge: its height (share of the peak's, the highest its
 ## ledge keeps HUT_CLEAR m off the summit), its radius and the ease round
 ## it (m), how far it is carved in from the face (m).
-const HUT := Vector2(0.5,0.6)
-const HUT_CLEAR := 7.0
-const PAD := 3.2
-const PAD_EASE := 1.6
+const HUT := Vector2(0.52,0.62)
+const HUT_CLEAR := 5.4
+## Ledges tried round the peak for the trail.
+const HUT_TRIES := 8
+const PAD := 2.9
+const PAD_EASE := 1.3
 const PAD_IN := 1.0
 ## The trail: its grade (rise over run), its sample spacing (m), the bench's
 ## half width and its ease (m), the most turns, and where it ends at the
@@ -114,10 +119,10 @@ const BOULDER_SIZE := Vector2(0.35,1.05)
 const BOULDER_KINDS := ["boulder_1","boulder_2","boulder_3","boulder_4","rock"]
 ## Spruces on the lower slopes: how many, how high up they climb (share of
 ## the height), the steepest they stand on, their size and spacing (m).
-const SPRUCES := Vector2i(16,26)
-const SPRUCE_BAND := Vector2(0.4,0.42)
-const SPRUCE_SLOPE := 1.6
-const SPRUCE_SIZE := Vector2(0.7,1.15)
+const SPRUCES := Vector2i(22,34)
+const SPRUCE_BAND := Vector2(0.3,0.42)
+const SPRUCE_SLOPE := 2.2
+const SPRUCE_SIZE := Vector2(0.85,1.35)
 const SPRUCE_APART := 2.1
 const JUNIPER_ODDS := 0.25
 ## The rock's colours (linear): the basalt ring's (SkyPeak BASALT), the
@@ -160,7 +165,16 @@ var hut := Vector2.ZERO
 var hut_y := 0.0
 var hut_out := Vector2.RIGHT
 var seed := 0
+## The recipe's `spire` may set: foot, stature and height (as FOOT_SHARE,
+## STATURE and HEIGHT), meadow (m), snow and trail (false for a bare crag
+## with neither), spruces and boulders (counts).
 var stature := STATURE
+var tall := HEIGHT
+var meadow := MEADOW
+var snowy := true
+var with_trail := true
+var spruces := SPRUCES
+var boulders := BOULDERS
 
 ## Raises the peak on `islet` (after its ground and keel are laid, before
 ## its planting): its heights, keel and recipe (the spruces and boulders as
@@ -190,6 +204,12 @@ func _raise(islet: RefCounted) -> void:
 	var share: Vector2 = spec.get("foot",FOOT_SHARE)
 	foot = radius*rng.randf_range(share.x,share.y)
 	stature = spec.get("stature",STATURE)
+	tall = spec.get("height",HEIGHT)
+	meadow = float(spec.get("meadow",MEADOW))
+	snowy = bool(spec.get("snow",true))
+	with_trail = bool(spec.get("trail",true))
+	spruces = spec.get("spruces",SPRUCES)
+	boulders = spec.get("boulders",BOULDERS)
 	ground = islet.ground_at(centre)
 	_shape_coarse(islet,rng)
 	_read_lift(islet)
@@ -198,7 +218,7 @@ func _raise(islet: RefCounted) -> void:
 	islet.heights = heights
 	summit = Vector3(centre.x,islet.ground_at(centre),centre.y)
 	snowline = ground+height*rng.randf_range(SNOW_SHARE.x,SNOW_SHARE.y)
-	_plan_trail(islet,rng)
+	if with_trail: _plan_trail(islet,rng)
 	_carve(islet)
 	_deepen(islet)
 	_mark(islet)
@@ -218,6 +238,10 @@ func _shape_coarse(islet: RefCounted, rng: RandomNumberGenerator) -> void:
 	var lie := PackedFloat32Array()
 	var last: Array = profile[profile.size()-1]
 	var mean := 0.0
+	var half_room := PackedFloat32Array()
+	for k in range(spokes):
+		var next := angles[(k+1)%spokes]+(TAU if k == spokes-1 else 0.0)
+		half_room.append(_room(islet,(angles[k]+next)*0.5)/(foot*float(last[0])))
 	for k in range(spokes):
 		var room := _room(islet,angles[k])
 		reach.append(minf(rng.randf_range(SPOKE_REACH.x,SPOKE_REACH.y),room/(foot*float(last[0]))))
@@ -225,7 +249,7 @@ func _shape_coarse(islet: RefCounted, rng: RandomNumberGenerator) -> void:
 		mean += reach[k]*foot/spokes
 	# Its height by its foot's mean reach, so a narrow islet's peak is a
 	# ridge no steeper than a round one's.
-	height = clampf(mean*rng.randf_range(stature.x,stature.y),HEIGHT.x,HEIGHT.y)
+	height = clampf(mean*rng.randf_range(stature.x,stature.y),tall.x,tall.y)
 	coarse = PackedVector2Array([centre])
 	coarse_lift = PackedFloat32Array([height])
 	for r in range(1,profile.size()):
@@ -242,7 +266,7 @@ func _shape_coarse(islet: RefCounted, rng: RandomNumberGenerator) -> void:
 			if half:
 				var next := angles[k2] if k2 > k else angles[k2]+TAU
 				a = (a+next)*0.5
-				reach_here = (reach[k]+reach[k2])*0.5
+				reach_here = minf((reach[k]+reach[k2])*0.5,half_room[k])
 				lie_here = (lie[k]+lie[k2])*0.25
 			var out := s*(1.0+(0.0 if outer else rng.randf_range(-PROFILE_JITTER.x,PROFILE_JITTER.x)))*reach_here*foot
 			var up := 0.0
@@ -272,9 +296,9 @@ func _room(islet: RefCounted, angle: float) -> float:
 	var way := Vector2.from_angle(angle)
 	var r := 0.0
 	while r < float(islet.reach):
-		if islet.inland(centre+way*(r+0.5)) < MEADOW: break
+		if islet.inland(centre+way*(r+0.5)) < meadow: break
 		r += 0.5
-	return maxf(r,3.0)
+	return maxf(r,1.5)
 
 ## The peak's lift at `p` (islet frame), 0 off it.
 func lift_at(p: Vector2) -> float:
@@ -327,60 +351,90 @@ static func _barycentric(p: Vector2, a: Vector2, b: Vector2, c: Vector2) -> Vect
 
 # --- The trail and the hut's ledge --------------------------------------------------
 
-## Where the face along `angle` from the summit first comes down to `y`: the
-## distance out (m), scanning out from the summit and narrowing in.
-func _out_at(islet: RefCounted, angle: float, y: float) -> float:
+## Where the face along `angle` from the summit comes down to `y` (the
+## ground read as the foot's plus the peak's lift): the distance out (m),
+## stepped from `near` (or from the summit) and narrowed in.
+func _out_at(angle: float, y: float, near := -1.0) -> float:
 	var way := Vector2.from_angle(angle)
-	var r := 0.0
 	var limit := foot*1.3
-	while r < limit:
-		if islet.ground_at(centre+way*(r+0.3)) < y: break
-		r += 0.3
+	var step := 0.3
+	var r := maxf(near,0.0)
+	var above := func(d: float) -> bool: return ground+lift_at(centre+way*d) >= y
+	if near < 0.0 or above.call(r):
+		while r < limit and above.call(r+step): r += step
+	else:
+		while r > 0.0 and not above.call(r): r -= step
+		r = maxf(r,0.0)
 	var lo := r
-	var hi := r+0.3
-	for k in range(8):
+	var hi := r+step
+	for k in range(7):
 		var mid := (lo+hi)*0.5
-		if islet.ground_at(centre+way*mid) < y: hi = mid
-		else: lo = mid
+		if above.call(mid): lo = mid
+		else: hi = mid
 	return (lo+hi)*0.5
 
 ## The hut's ledge, then the trail down from it round the peak to the foot
-## (kept foot to hut).
+## (kept foot to hut). A few ledges round the peak are tried, each trail
+## both ways round; the highest ledge whose trail comes down to the foot
+## on the meadow is taken.
 func _plan_trail(islet: RefCounted, rng: RandomNumberGenerator) -> void:
-	var hut_angle := rng.randf()*TAU
-	hut_y = ground+height*rng.randf_range(HUT.x,HUT.y)
-	var face := _out_at(islet,hut_angle,hut_y)
+	var base := rng.randf()*TAU
+	var share := rng.randf_range(HUT.x,HUT.y)
+	var best := {}
+	for k in range(HUT_TRIES*2):
+		var tried := _walk(islet,base+TAU*(k/2)/float(HUT_TRIES),share,1.0 if k%2 == 0 else -1.0)
+		if not tried.ok: continue
+		if best.is_empty() or float(tried.hut_y) > float(best.hut_y)+0.75: best = tried
+		# A ledge as high as asked needs no more trying.
+		if float(best.hut_y) >= ground+height*share-0.01: break
+	if best.is_empty(): best = _walk(islet,base,share,1.0)
+	hut = best.hut
+	hut_y = best.hut_y
+	hut_out = best.out
+	trail = best.trail
+
+## One ledge at `angle` and its trail down, going round by `turn`:
+## {hut, hut_y, out, trail, ok (it reached the foot on the meadow)}.
+func _walk(islet: RefCounted, hut_angle: float, share: float, turn: float) -> Dictionary:
+	var y_hut := ground+height*share
+	var face := _out_at(hut_angle,y_hut)
 	# Lower till the ledge stands clear of the summit's spire.
-	while face-PAD_IN < HUT_CLEAR and hut_y > ground+height*0.2:
-		hut_y -= 0.5
-		face = _out_at(islet,hut_angle,hut_y)
-	hut_out = Vector2.from_angle(hut_angle)
-	hut = centre+hut_out*maxf(face-PAD_IN,1.0)
-	var turn := 1.0 if rng.randf() < 0.5 else -1.0
+	while face-PAD_IN < HUT_CLEAR and y_hut > ground+height*0.2:
+		y_hut -= 0.5
+		face = _out_at(hut_angle,y_hut,face)
+	var out := Vector2.from_angle(hut_angle)
+	var at := centre+out*maxf(face-PAD_IN,1.0)
 	var angle := hut_angle
-	var y := hut_y
+	var y := y_hut
 	var down: Array[Vector3] = []
 	var swept := 0.0
-	var steps := 0
-	while steps < 4000:
-		steps += 1
-		var r := _out_at(islet,angle,y)
+	var r := face
+	var ok := false
+	while swept <= TAU*TURNS:
+		r = _out_at(angle,y,r)
 		var p := centre+Vector2.from_angle(angle)*r
+		if islet.inland(p) < 1.6 or not islet.on_land(p): break
 		down.append(Vector3(p.x,y,p.y))
-		if lift_at(p) < FOOT_LIFT or swept > TAU*TURNS: break
+		if lift_at(p) < FOOT_LIFT:
+			ok = true
+			break
 		# On round: the next point TRAIL_STEP on, lower by the grade over
 		# the way it went (level while still on the ledge).
 		var a := angle-turn*TRAIL_STEP/maxf(r,2.0)
-		var on_ledge := p.distance_to(hut) < PAD
+		var on_ledge := p.distance_to(at) < PAD
 		var next_y := y-(0.0 if on_ledge else GRADE*TRAIL_STEP)
-		for k in range(2):
-			var q := centre+Vector2.from_angle(a)*_out_at(islet,a,next_y)
-			if not on_ledge: next_y = y-GRADE*maxf(q.distance_to(p),0.05)
+		if not on_ledge:
+			for k in range(2):
+				var q := centre+Vector2.from_angle(a)*_out_at(a,next_y,r)
+				next_y = y-GRADE*maxf(q.distance_to(p),0.05)
 		swept += absf(a-angle)
 		angle = a
 		y = next_y
 	down.reverse()
-	trail = PackedVector3Array(down)
+	# Below the ledge it passes no nearer than its ease and the bench.
+	for q: Vector3 in down:
+		if absf(q.y-y_hut) > 1.0 and Vector2(q.x,q.z).distance_to(at) < PAD+PAD_EASE+BENCH: ok = false
+	return {"hut":at,"hut_y":y_hut,"out":out,"trail":PackedVector3Array(down),"ok":ok and down.size() >= 8}
 
 ## Cuts the ledge and then the trail's bench into the heights: level across,
 ## eased into the face either side.
@@ -404,6 +458,9 @@ func _carve(islet: RefCounted) -> void:
 			for i in range(i0,i1+1):
 				if distance[j*side+i] >= 0.0: out.append(j*side+i)
 		return out
+	if not with_trail:
+		islet.heights = heights
+		return
 	# The ledge.
 	var reach := PAD+PAD_EASE
 	for n: int in near.call(Rect2(hut-Vector2.ONE*reach,Vector2.ONE*reach*2.0)):
@@ -481,19 +538,19 @@ func _dress(islet: RefCounted, rng: RandomNumberGenerator) -> void:
 	var objects: Array = recipe.get("objects",[])
 	var clear: Array = recipe.get("clear",[])
 	for k in range(0,trail.size(),3): clear.append(Vector3(trail[k].x,trail[k].z,BENCH+0.4))
-	clear.append(Vector3(hut.x,hut.y,PAD+0.6))
+	if with_trail: clear.append(Vector3(hut.x,hut.y,PAD+0.6))
 	var taken: Array[Vector3] = []
 	for c: Vector3 in clear: taken.append(c)
 	var script: Script = islet.get_script()
 	var tints := {}
-	var want := rng.randi_range(SPRUCES.x,SPRUCES.y)
+	var want := rng.randi_range(spruces.x,spruces.y)
 	var placed := 0
 	for attempt in range(want*14):
 		if placed >= want: break
 		var p := centre+Vector2.from_angle(rng.randf()*TAU)*foot*sqrt(rng.randf_range(0.04,1.3))
 		var up := lift_at(p)
 		if up < 0.6 or up > height*rng.randf_range(SPRUCE_BAND.x,SPRUCE_BAND.y): continue
-		if not islet.on_land(p) or islet.inland(p) < 1.0: continue
+		if not islet.on_land(p) or islet.inland(p) < 1.0 or islet.wet(p): continue
 		if _steep(islet,p) > SPRUCE_SLOPE: continue
 		var tree := "juniper" if rng.randf() < JUNIPER_ODDS else "tree"
 		var size := rng.randf_range(SPRUCE_SIZE.x,SPRUCE_SIZE.y)*lerpf(1.0,0.75,up/(height*SPRUCE_BAND.y))
@@ -504,7 +561,7 @@ func _dress(islet: RefCounted, rng: RandomNumberGenerator) -> void:
 		taken.append(Vector3(p.x,p.y,room*0.5))
 		clear.append(Vector3(p.x,p.y,0.6))
 		placed += 1
-	var stones := rng.randi_range(BOULDERS.x,BOULDERS.y)
+	var stones := rng.randi_range(boulders.x,boulders.y)
 	placed = 0
 	var scree := _noise(31,0.16)
 	for attempt in range(stones*16):
@@ -512,8 +569,8 @@ func _dress(islet: RefCounted, rng: RandomNumberGenerator) -> void:
 		var p := centre+Vector2.from_angle(rng.randf()*TAU)*foot*rng.randf_range(0.7,1.15)
 		var up := lift_at(p)
 		if up > SCREE_LIFT or up < 0.05 or scree.get_noise_2d(p.x,p.y) < SCREE_NOISE-0.1: continue
-		if not islet.on_land(p) or islet.inland(p) < 1.0: continue
-		var size := rng.randf_range(BOULDER_SIZE.x,BOULDER_SIZE.y)
+		if not islet.on_land(p) or islet.inland(p) < 1.0 or islet.wet(p): continue
+		var size := rng.randf_range(BOULDER_SIZE.x,BOULDER_SIZE.y)*clampf(height/30.0,0.5,1.0)
 		if _taken(p,taken,size*0.7): continue
 		objects.append({"asset":BOULDER_KINDS[rng.randi()%BOULDER_KINDS.size()],"x":p.x,"z":p.y,"angle":rng.randf()*TAU,"scale":size,"inset":0.8})
 		taken.append(Vector3(p.x,p.y,size*0.7))
@@ -568,6 +625,7 @@ func arrays(islet: RefCounted, shift := Vector3.ZERO) -> Array:
 		var tone: Color
 		var need := SNOW_NEVER
 		var shade := 16.0
+		var lie := n
 		if kind == 2:
 			tone = PATH*(1.0+0.08*patch.get_noise_2d(mid.x*3.0,mid.z*3.0))*jitter
 		elif kind == 3:
@@ -575,13 +633,14 @@ func arrays(islet: RefCounted, shift := Vector3.ZERO) -> Array:
 		else:
 			tone = _rock(mid,slope,patch)*jitter
 			var line := snowline+rag.get_noise_2d(mid.x,mid.z)*SNOW_RAG*2.0
-			var snowy := (mid.y > line and slope < SNOW_SLOPE) or (mid.y > line-SNOW_LINGER and slope < LEDGE_SLOPE)
-			if snowy:
+			var white := snowy and ((mid.y > line and slope < SNOW_SLOPE) or (mid.y > line-SNOW_LINGER and slope < LEDGE_SLOPE))
+			if white:
 				need = -(SNOW_NEED+maxf(mid.y-line,0.0)*SNOW_NEED_RISE)
 				shade = _snow_pack(clampf(1.0-n.y,0.0,1.0)*0.6,rng.randf_range(-SNOW_JITTER,SNOW_JITTER))
+				lie = (n+Vector3.UP*SNOW_LIE).normalized()
 		for q: Vector3 in [a,b,c]:
 			vertices.append(q+shift)
-			normals.append(n)
+			normals.append(lie)
 			colours.append(tone)
 			uv.append(Vector2(need,1.0))
 			uv2.append(Vector2(shade,q.y))
@@ -622,7 +681,8 @@ static func _snow_pack(blue: float, nudge: float) -> float:
 func problems(islet: RefCounted, label: String) -> Array:
 	var out: Array = []
 	var top := summit.y-float(islet.ground_at(centre+(hut_out*foot*1.2)))
-	if height < HEIGHT.x-0.01: out.append("peak too low on %s (%.1f m)" % [label,height])
+	if height < tall.x-0.01: out.append("peak too low on %s (%.1f m)" % [label,height])
+	if not with_trail: return out
 	if trail.size() < 8:
 		out.append("no trail on %s" % label)
 		return out
@@ -655,9 +715,9 @@ func problems(islet: RefCounted, label: String) -> Array:
 	var low := INF
 	var high := -INF
 	for k in range(9):
-		var q := hut if k == 8 else hut+Vector2.from_angle(TAU*k/8.0)*PAD*0.8
+		var q := hut if k == 8 else hut+Vector2.from_angle(TAU*k/8.0)*PAD*0.7
 		low = minf(low,float(islet.ground_at(q)))
 		high = maxf(high,float(islet.ground_at(q)))
 	if high-low > 0.3: out.append("hut ledge not level on %s (%.2f m)" % [label,high-low])
-	if top < HEIGHT.x*0.8: out.append("peak stands low over its meadow on %s (%.1f m)" % [label,top])
+	if top < tall.x*0.8: out.append("peak stands low over its meadow on %s (%.1f m)" % [label,top])
 	return out
