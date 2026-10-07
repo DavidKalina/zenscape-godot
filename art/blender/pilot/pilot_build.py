@@ -116,7 +116,7 @@ SKID_DROP = 0.055      # m the hips drop skidding
 # The ledge (scripts/pilot_motor.gd keeps copies): hanging, the lip's edge
 # stands HANG_OUT ahead of the feet (the origin) and HANG_DROP over them; the
 # climb ends standing CLIMB_IN in from the edge, on the lip's height.
-HANG_DROP = 1.0
+HANG_DROP = 0.825
 HANG_OUT = 0.22
 HANG_LENGTH = 4.0
 SHIMMY_SPEED = 0.7     # m/s along the lip
@@ -141,14 +141,15 @@ SCALE = 2.2
 # height still (the torso NECK shorter by what the legs gained).
 HIPS_BUILD = 0.1945    # the hips, standing near straight legged (walking and running lower)
 NECK = 0.13
-SHOULDER = (0.074, NECK - 0.024, 0.0)
+SHOULDER = (0.078, NECK - 0.024, 0.0)
 KNOT = (0.0, NECK + 0.002, 0.06)
 HIP_X = 0.058
 LEG = (0.095, 0.091)
-ARM = (0.079, 0.074)
-# The arms hang out from the shoulders this much (x over down), clear of
-# the belly.
-ARM_OUT = 0.3
+# Short arms, hanging near straight, the mitts about at the hem (Mario's).
+ARM = (0.058, 0.052)
+# The arms hang out from the shoulders this much (x over down, a lateral
+# raise of 15 degrees), clear of the belly.
+ARM_OUT = 0.268
 ANKLE_BUILD = 0.024
 TAIL_LENGTH = 0.036
 # In rest the legs hang straight, so the hips stand higher than they ever
@@ -488,21 +489,21 @@ torso = hips @ place((0, TORSO_UP, 0))
 # ---------------------------------------------------------------- hips
 # The seat of the slate trousers, broad and rounded under the jacket's hem,
 # the legs hung from its sides.
-part(ring_hull(capped([(-0.034, 0.07, 0.046), (-0.012, 0.084, 0.054), (0.02, 0.087, 0.057)], 0.7), 28),
+part(ring_hull(capped([(-0.034, 0.068, 0.045), (-0.012, 0.079, 0.052), (0.02, 0.081, 0.055)], 0.7), 28),
      "pilot_trousers", "hips", hips @ place(turn=UP))
 
 # ---------------------------------------------------------------- chest
 # A bomber jacket, a soft pear: fullest at the belly over the hips, easing
 # in up the chest to narrow shoulders and rounding over into them (the
 # arms' domes under them: no balls).
-JACKET = [(-0.006, 0.083, 0.062), (0.01, 0.091, 0.069), (0.036, 0.091, 0.07), (0.065, 0.084, 0.066),
-          (0.088, 0.074, 0.059), (0.107, 0.061, 0.05), (0.124, 0.045, 0.036), (0.136, 0.03, 0.026)]
+JACKET = [(-0.006, 0.079, 0.06), (0.01, 0.083, 0.064), (0.036, 0.081, 0.064), (0.065, 0.075, 0.061),
+          (0.088, 0.067, 0.056), (0.107, 0.057, 0.048), (0.124, 0.043, 0.035), (0.136, 0.03, 0.026)]
 part(ring_hull(capped(JACKET, 0.5, start=False), 28, between=1), "pilot_jacket", "chest", torso @ place(turn=UP))
 # The hem, a darker knitted band round the waist.
-part(ring_hull([(-0.012, 0.079, 0.058), (-0.007, 0.085, 0.064), (0.0, 0.087, 0.066), (0.007, 0.086, 0.065), (0.012, 0.081, 0.061)], 32),
+part(ring_hull([(-0.012, 0.073, 0.055), (-0.007, 0.079, 0.06), (0.0, 0.081, 0.062), (0.007, 0.08, 0.061), (0.012, 0.075, 0.057)], 32),
      "pilot_hem", "chest", torso @ place((0, -0.014, 0), UP))
 # Toggles down the front.
-for y, z in ((0.029, -0.0725), (0.065, -0.068)):
+for y, z in ((0.029, -0.0665), (0.065, -0.063)):
     part(blob(0.0075, 0.0075, 0.004, 12, 6), "pilot_hem", "chest", torso @ place((0, y, z)))
 # The sheepskin collar spread on the shoulders, the scarf wound fat over it,
 # its knot behind.
@@ -670,14 +671,32 @@ def sole(y):
 def boot():
     return [Vector((p.x, sole(p.y), p.z)) for p in ring_hull(capped(BOOT, 0.5), 18)]
 
+def mitt(hand, s, bone):
+    """A mitten on the wrist's frame `hand` (Y up the arm, -Z forward, X
+    the figure's right), side `s`: a broad flat paddle (wider fore and aft
+    than thick, the palm in), its rounded tip curled a little in towards
+    the palm past the knuckles, and a thumb lobe of its own off the front
+    edge on the palm's side, angled forward and in; the cuff over the
+    wrist is the forearm's."""
+    # The back of the hand, from the wrist down to the knuckles.
+    part(ring_hull(capped([(0.0, 0.021, 0.026), (0.017, 0.023, 0.031), (0.032, 0.0225, 0.032)], 0.6), 20, between=1),
+         "pilot_mitt", bone, hand @ place(turn=(math.pi * 0.5, 0, 0)))
+    # The fingers, curled in a little past the knuckles.
+    knuckles = hand @ place((0.0, -0.03, 0.0), (0.0, 0.0, -0.32 * s))
+    part(ring_hull(capped([(0.0, 0.0215, 0.032), (0.015, 0.02, 0.0305), (0.026, 0.0165, 0.026)], 0.85), 20, between=1),
+         "pilot_mitt", bone, knuckles @ place(turn=(math.pi * 0.5, 0, 0)))
+    # The thumb, off the front edge on the palm's side, out forward and down.
+    thumb = hand @ place((-0.008 * s, -0.012, -0.025), (0.85, 0.4 * s, 0.0))
+    part(ring_hull(capped([(0.0, 0.0105, 0.0115), (0.017, 0.0105, 0.0115)], 0.9), 14), "pilot_mitt", bone,
+         thumb @ place(turn=(math.pi * 0.5, 0, 0)))
+
 for n, s in SIDES.items():
     sh, el, wr = arm_joints(s)
-    part(limb(0.022, 0.021, ARM[0], 16), "pilot_jacket", f"upper_arm.{n}", bone_between(sh, el))
-    part(limb(0.021, 0.018, ARM[1], 16), "pilot_jacket", f"forearm.{n}", bone_between(el, wr))
+    part(limb(0.021, 0.02, ARM[0], 16), "pilot_jacket", f"upper_arm.{n}", bone_between(sh, el))
+    part(limb(0.02, 0.018, ARM[1], 16), "pilot_jacket", f"forearm.{n}", bone_between(el, wr))
     hand = aligned(wr, el - wr)
-    part(blob(0.025, 0.0105, 0.025, 20, 6), "pilot_fleece", f"forearm.{n}", hand @ place((0, 0.011, 0)))
-    part(blob(0.03, 0.034, 0.029, 18, 9), "pilot_mitt", f"hand.{n}", hand @ place((0, -0.017, -0.002)))
-    part(blob(0.012, 0.015, 0.011, 12, 6), "pilot_mitt", f"hand.{n}", hand @ place((-0.023 * s, -0.009, -0.014)))
+    part(blob(0.028, 0.011, 0.029, 20, 6), "pilot_fleece", f"forearm.{n}", hand @ place((0, 0.011, 0)))
+    mitt(hand, s, f"hand.{n}")
     hp, kn, an = leg_joints(s)
     part(limb(0.039, 0.034, LEG[0], 16), "pilot_trousers", f"thigh.{n}", bone_between(hp, kn))
     part(limb(0.034, 0.025, LEG[1], 16), "pilot_trousers", f"shin.{n}", bone_between(kn, an))
@@ -930,8 +949,8 @@ def walk_pose(p):
         # Against its leg, a small swing, the forearm and the mitt trailing
         # it; flung out a touch as the body comes down on each step.
         a = (q + 0.5) % 1.0
-        pose.turns[f"upper_arm.{n}"] = turn(pitch=2.0 + 14.0 * wave(a, 1, 0.07), roll=-s * (4.5 + 1.5 * wave(p, 2, 0.14)))
-        pose.turns[f"forearm.{n}"] = turn(pitch=10.0 + 7.0 * (0.5 + 0.5 * wave(a, 1, 0.17)))
+        pose.turns[f"upper_arm.{n}"] = turn(pitch=2.0 + 16.0 * wave(a, 1, 0.07), roll=-s * (3.5 + 1.5 * wave(p, 2, 0.14)))
+        pose.turns[f"forearm.{n}"] = turn(pitch=5.0 + 5.0 * (0.5 + 0.5 * wave(a, 1, 0.17)))
         pose.turns[f"hand.{n}"] = turn(pitch=5.0 + 8.0 * wave(a, 1, 0.25))
         scarf(pose, p, n, s, back=14.0, flutter=6.0, flap=8.0)
     return pose
@@ -965,17 +984,17 @@ def run_pose(p):
         y, lift, pitch = RUN.at(q)
         pose.feet[n] = boot_on(Vector((s * 0.12, y, 0.0)), lift, pitch, -5.0 * s)
         pose.pole[n] = qz(deg(-4.0 * s)) @ Vector((0, 1, 0.0))
-        # Mario's arms (Odyssey): held well out from the body, the elbow
-        # bent sharp so they read short, pumping forward and back out at
-        # the sides against the legs, the mitts about chest high and wide
-        # of the jacket, loose and lagging; flung out a little wider as the
-        # body comes down on each step. (The rest already holds them ARM_OUT
-        # out, 17 degrees: the roll is on top of it.)
+        # Mario's arms (Odyssey): held out from the body, near straight
+        # (a little give at the elbow), swinging forward and back from the
+        # shoulder out at the sides against the legs, loose and lagging;
+        # flung out a little wider as the body comes down on each step.
+        # (The rest already holds them ARM_OUT out, 15 degrees: the roll is
+        # on top of it, 25 in all.)
         a = (q + 0.5) % 1.0
         swing = wave(a, 1, 0.06)
-        pose.turns[f"upper_arm.{n}"] = turn(pitch=-4.0 + 36.0 * swing, roll=-s * (34.5 + 3.0 * swing + 4.0 * wave(p, 2, 0.22)))
-        pose.turns[f"forearm.{n}"] = turn(pitch=100.0 + 8.0 * wave(a, 1, 0.12), yaw=-s * 4.0)
-        pose.turns[f"hand.{n}"] = turn(pitch=-8.0 + 12.0 * wave(a, 1, 0.24), roll=-s * 4.0 * wave(p, 2, 0.3))
+        pose.turns[f"upper_arm.{n}"] = turn(pitch=2.0 + 38.0 * swing, roll=-s * (10.0 + 3.0 * swing + 4.0 * wave(p, 2, 0.22)))
+        pose.turns[f"forearm.{n}"] = turn(pitch=20.0 + 6.0 * wave(a, 1, 0.12), yaw=-s * 3.0)
+        pose.turns[f"hand.{n}"] = turn(pitch=-4.0 + 10.0 * wave(a, 1, 0.24), roll=-s * 4.0 * wave(p, 2, 0.3))
         scarf(pose, p, n, s, back=62.0, flutter=9.0, flap=10.0)
     return pose
 
@@ -1001,7 +1020,7 @@ def skid_pose(p):
     pose.pole["R"] = Vector((0.2, 1.0, 0.0))
     for n, s in SIDES.items():
         flail = sine(p, 2, 0.1 + (0.12 if n == "R" else 0.0))
-        pose.turns[f"upper_arm.{n}"] = turn(pitch=-70.0 + 8.0 * flail, roll=-s * (47.5 + 5.0 * sine(p, 3, 0.2)))
+        pose.turns[f"upper_arm.{n}"] = turn(pitch=-70.0 + 8.0 * flail, roll=-s * (49.0 + 5.0 * sine(p, 3, 0.2)))
         pose.turns[f"forearm.{n}"] = turn(pitch=25.0 + 8.0 * flail)
         pose.turns[f"hand.{n}"] = turn(pitch=-10.0 + 14.0 * sine(p, 3, 0.3))
         for i in range(3):
@@ -1082,8 +1101,8 @@ def idle_pose(p):
         # Hanging loose, swinging a little after the hips as the weight
         # moves, forward as he rocks back, up with the sigh.
         pose.turns[f"upper_arm.{n}"] = turn(pitch=2.0 + 1.0 * breath + 0.8 * rock + 2.0 * sigh,
-                                            roll=-s * (4.0 + 1.0 * breath + 3.5 * sigh) + 4.0 * (w - w_late))
-        pose.turns[f"forearm.{n}"] = turn(pitch=12.0 + 2.0 * breath + 1.5 * sine(p, 2, 0.14 + 0.1 * (s > 0)) + 3.0 * sigh)
+                                            roll=-s * (3.0 + 1.0 * breath + 3.5 * sigh) + 4.0 * (w - w_late))
+        pose.turns[f"forearm.{n}"] = turn(pitch=6.0 + 1.5 * breath + 1.5 * sine(p, 2, 0.14 + 0.1 * (s > 0)) + 3.0 * sigh)
         pose.turns[f"hand.{n}"] = turn(pitch=5.0 + 2.0 * sine(p, 3, 0.2 + 0.07 * (s > 0)))
         for i in range(3):
             lag = 0.012 * (i + 1) + (0.008 if n == "R" else 0.0)
@@ -1110,7 +1129,7 @@ def dangle(pose, n, s, hips, kick=0.0, out=0.0, toe=-28.0):
     pose.feet[n] = (ankle, qz(deg(-6.0 * s)) @ qx(deg(toe)))
     pose.pole[n] = Vector((0.15 * s, 1.0, 0.1))
 
-HANG_HIPS = Vector((0.0, HANG_OUT - 0.17, HANG_DROP - 0.495))
+HANG_HIPS = Vector((0.0, HANG_OUT - 0.17, HANG_DROP - 0.325))
 
 def hang_pose(p):
     """Hanging by both mitts from the lip, the arms near straight up over
@@ -1297,8 +1316,8 @@ def climb_clip():
     gather = climb_stage(H + Vector((0, 0.01, 0.025)), -2.0, 2.0, 18.0,
                          {"L": (H + Vector((-0.13, 0.03, -0.35)), -20.0, WIDE_KNEE), "R": (H + Vector((0.13, 0.04, -0.35)), -20.0, WIDE_KNEE)},
                          (0.9, -0.5, -0.6))
-    pulled = climb_stage(Vector((0.0, e - 0.19, t - 0.3)), -4.0, -6.0, 22.0,
-                         {"L": (Vector((-0.13, e - 0.17, t - 0.64)), -25.0, WIDE_KNEE), "R": (Vector((0.14, e - 0.15, t - 0.58)), -15.0, WIDE_KNEE)},
+    pulled = climb_stage(Vector((0.0, e - 0.19, t - 0.22)), -4.0, -6.0, 22.0,
+                         {"L": (Vector((-0.13, e - 0.17, t - 0.57)), -25.0, WIDE_KNEE), "R": (Vector((0.14, e - 0.15, t - 0.52)), -15.0, WIDE_KNEE)},
                          (0.7, -0.9, -0.9))
     pressed = climb_stage(Vector((0.0, e - 0.16, t - 0.06)), -16.0, -30.0, 14.0,
                           {"L": (Vector((-0.13, e - 0.15, t - 0.38)), -25.0, WIDE_KNEE), "R": (Vector((0.14, e - 0.14, t - 0.34)), -15.0, WIDE_KNEE)},
@@ -1306,15 +1325,15 @@ def climb_clip():
     swung = climb_stage(Vector((0.0, e - 0.12, t + 0.0)), -22.0, -30.0, 12.0,
                         {"L": (Vector((-0.13, e - 0.15, t - 0.36)), -25.0, WIDE_KNEE), "R": (Vector((0.14, e - 0.1, t + 0.1)), 10.0, HIGH_KNEE)},
                         (0.5, -1.0, 0.8))
-    planted = climb_stage(Vector((0.02, e - 0.02, t + 0.06)), -24.0, -26.0, 10.0,
+    planted = climb_stage(Vector((0.02, e - 0.06, t + 0.02)), -24.0, -26.0, 10.0,
                           {"L": (Vector((-0.13, e - 0.14, t - 0.3)), -25.0, WIDE_KNEE), "R": (right, 0.0, HIGH_KNEE)},
                           (0.5, -1.0, 0.8))
     drawn = climb_stage(Vector((0.04, e + 0.04, t + 0.13)), -16.0, -16.0, 8.0,
                         {"L": (Vector((-0.13, e - 0.05, t + 0.09)), 5.0, HIGH_KNEE), "R": (right, 0.0, HIGH_KNEE)},
-                        (0.5, -1.0, 0.6), hands=0.7, hand_lift=0.03)
+                        (0.5, -1.0, 0.6), hands=0.25, hand_lift=0.08)
     risen = climb_stage(Vector((0.03, e + 0.22, t + 0.3)), -8.0, -8.0, 4.0,
                         {"L": (left + Vector((0.0, -0.06, 0.05)), -6.0, FORWARD_KNEE), "R": (right, 0.0, FORWARD_KNEE)},
-                        (0.6, -1.0, 0.0), hands=0.3, hand_lift=0.1, hand_pitch=0.0, tails=12.0)
+                        (0.6, -1.0, 0.0), hands=0.0, hand_pitch=0.0, tails=12.0)
     # The right boot plants as it stands at the end, and stays.
     for st in (planted, drawn, risen):
         st.feet["R"] = stand.feet["R"]

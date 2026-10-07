@@ -73,7 +73,7 @@ const FLIP_TIME := 0.55
 ## the lip's top HANG_DROP over the feet and its edge HANG_OUT ahead; the
 ## climb (CLIMB_TIME s) ends stood CLIMB_IN in from the edge; the shimmy's
 ## pace, m/s along the lip.
-const HANG_DROP := 1.0
+const HANG_DROP := 0.825
 const HANG_OUT := 0.22
 const CLIMB_IN := 0.3
 const CLIMB_TIME := 0.9
