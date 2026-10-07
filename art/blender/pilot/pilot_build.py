@@ -25,9 +25,10 @@ run starting on the left boot's touchdown so the game can blend them in step:
         for WALK_SPEED m/s: short quick steps, bouncing up off each, the arms
         hanging at the sides and swinging a little, loose at the elbow;
   run   the pace he goes by default, made for RUN_SPEED m/s (the motor's
-        RUN): leaning in, knees up and heels kicked back, a moment in the air
-        every step, the arms swinging loose and low, out from the body, the
-        scarf streaming;
+        RUN): fairly upright, leaning in a little, knees up and heels kicked
+        back, a moment in the air every step, the head steady, the arms
+        bent near square and pumping against the legs (mitts up to the
+        chest in front, back past the hip), the scarf streaming;
   skid  SKID_LENGTH s, braking hard out of a run (the game slides the body
         and turns it round after): a held pose juddering, facing the way it
         ran, dropped low and leaning back, the left boot braced in front on
@@ -690,33 +691,38 @@ RUN = Gait(RUN_SPEED, RUN_CYCLE, RUN_STANCE, lift=0.17, peak=0.36,
            ahead=-0.05, tangent=0.55)
 
 def run_pose(p):
-    """Leaning into it, the knees driving up and the heels kicking back,
-    low over each planted boot and up through the leap between, the arms
-    swinging loose and low, carried out from the body."""
+    """A cartoon hero's run (Mario's, A Short Hike's): fairly upright,
+    leaning in only a little, the knees driving up and the heels kicking
+    back, low over each planted boot and up through the leap between, the
+    head steady and looking ahead; the arms bent near square at the elbow,
+    pumping against the legs, the mitt up in front of the chest on the
+    swing forward and back past the hip on the swing back."""
     pose = Pose()
     # Lowest over the planted boot, highest in the air between steps.
     bob = 0.03 * wave(p, 2, RUN_STANCE * 0.5 + 0.25)
     pose.hips_at = Vector((-0.008 * sine(p, 1, 0.05), 0.012 * wave(p, 2, 0.2), HIPS + 0.012 + bob))
     pelvis_yaw = -13.0 * wave(p, 1, 0.02)
-    pose.turns["hips"] = turn(pitch=-12.0 + 2.0 * wave(p, 2, 0.15), roll=4.0 * sine(p, 1, 0.02), yaw=pelvis_yaw)
-    chest_yaw = 18.0 * wave(p, 1, 0.05)
-    pose.turns["chest"] = turn(pitch=-10.0 - 3.0 * wave(p, 2, 0.24), roll=-3.0 * sine(p, 1, 0.07), yaw=chest_yaw)
+    pose.turns["hips"] = turn(pitch=-4.0 + 1.5 * wave(p, 2, 0.15), roll=4.0 * sine(p, 1, 0.02), yaw=pelvis_yaw)
+    chest_yaw = 16.0 * wave(p, 1, 0.05)
+    pose.turns["chest"] = turn(pitch=-3.0 - 2.0 * wave(p, 2, 0.24), roll=-3.0 * sine(p, 1, 0.07), yaw=chest_yaw)
     net = pelvis_yaw + chest_yaw
-    pose.turns["neck"] = turn(pitch=10.0 - 2.0 * wave(p, 2, 0.3), yaw=-net * 0.45, roll=1.0 * sine(p, 1, 0.12))
-    pose.turns["head"] = turn(pitch=8.0 - 3.0 * wave(p, 2, 0.36), yaw=-net * 0.4, roll=-1.5 * sine(p, 1, 0.16))
+    # The head kept level against the bob and the chest's dip, looking ahead.
+    pose.turns["neck"] = turn(pitch=3.0 + 1.0 * wave(p, 2, 0.24), yaw=-net * 0.45, roll=1.0 * sine(p, 1, 0.12))
+    pose.turns["head"] = turn(pitch=3.0 + 1.0 * wave(p, 2, 0.3), yaw=-net * 0.4, roll=-1.5 * sine(p, 1, 0.16))
     for n, s in SIDES.items():
         q = (p + (0.0 if n == "L" else 0.5)) % 1.0
         y, lift, pitch = RUN.at(q)
         pose.feet[n] = boot_on(Vector((s * 0.09, y, 0.0)), lift, pitch, -5.0 * s)
         pose.pole[n] = qz(deg(-4.0 * s)) @ Vector((0, 1, 0.0))
-        # The arm swings against its leg, out from the body, the elbow
-        # easy, the forearm and the mitt trailing the swing; flung wider
-        # as the body comes down on each step.
+        # The arm pumps against its leg, close in by the body, the elbow
+        # bent near square (closing a little on the swing forward, opening
+        # on the swing back), the mitt coming up in front of the chest and
+        # in a little, then back past the hip.
         a = (q + 0.5) % 1.0
         swing = wave(a, 1, 0.06)
-        pose.turns[f"upper_arm.{n}"] = turn(pitch=2.0 + 30.0 * swing, roll=-s * (19.0 - 3.0 * swing + 3.0 * wave(p, 2, 0.22)), yaw=s * 4.0 * swing)
-        pose.turns[f"forearm.{n}"] = turn(pitch=42.0 + 16.0 * wave(a, 1, 0.17), yaw=-s * 4.0)
-        pose.turns[f"hand.{n}"] = turn(pitch=4.0 + 10.0 * wave(a, 1, 0.27))
+        pose.turns[f"upper_arm.{n}"] = turn(pitch=-6.0 + 52.0 * swing, roll=-s * (10.0 - 4.0 * swing + 2.0 * wave(p, 2, 0.22)), yaw=-s * 10.0 * (0.5 + 0.5 * swing))
+        pose.turns[f"forearm.{n}"] = turn(pitch=90.0 + 12.0 * wave(a, 1, 0.1), yaw=s * 6.0)
+        pose.turns[f"hand.{n}"] = turn(pitch=-6.0 + 6.0 * wave(a, 1, 0.2))
         scarf(pose, p, n, s, back=62.0, flutter=9.0, flap=10.0)
     return pose
 

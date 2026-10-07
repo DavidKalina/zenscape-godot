@@ -123,12 +123,14 @@ const NOD_MOST := 0.25
 ## Radians the arms fly out in the air.
 const ARMS_UP := 0.7
 ## The chest's own lean (the legs keep the clips' planted boots): radians
-## forward at a full run; forward per unit of slope climbed (back going
+## forward at a full run, on the clip's own few degrees (as the walk gives
+## way to the run, none walking: a cartoon run stays fairly upright, about
+## 11 degrees in all); forward per unit of slope climbed (back going
 ## down) and the most; rolled into a turn per radian a second of it at a
 ## full run and the most; the share of the look the chest leads a turn
 ## with (the neck and head turning the rest); and the share of its lean the
 ## head lifts back, to look ahead.
-const RUN_LEAN := 0.15
+const RUN_LEAN := 0.08
 const SLOPE_LEAN := 0.6
 const SLOPE_MOST := 0.25
 const CHEST_BANK := 0.03
@@ -366,7 +368,7 @@ func drive(motor: RefCounted, delta: float) -> Dictionary:
 	var across := Vector2(feet.x-_feet_was.x,feet.z-_feet_was.z).length() if _feet_was.is_finite() else 0.0
 	var climb := clampf((feet.y-_feet_was.y)/across,-1.0,1.0) if motor.grounded and across > 0.001 else 0.0
 	_feet_was = feet
-	_hunch_to = -(RUN_LEAN*pace+clampf(climb*SLOPE_LEAN,-SLOPE_MOST,SLOPE_MOST)) if motor.grounded and not motor.skidding else 0.0
+	_hunch_to = -(RUN_LEAN*pace*_running+clampf(climb*SLOPE_LEAN,-SLOPE_MOST,SLOPE_MOST)) if motor.grounded and not motor.skidding else 0.0
 	_roll_to = clampf(turned*CHEST_BANK*pace,-CHEST_BANK_MOST,CHEST_BANK_MOST) if motor.grounded else 0.0
 	_advance(delta)
 	return out
