@@ -8,13 +8,17 @@ extends Node3D
 ## cells), jittered in it, the seeded islets' scatter (scripts/
 ## sky_islets.gd) kept KEEP clear round each so there is open sky round a
 ## cluster and lone islets in the gaps; none stands within ISLAND_CLEAR of
-## an island's spot, by the ranges, the cumulus or the forested isles, or
-## past the world's bounds (SkyPeaks `blocks`).
+## an island's spot, or past the world's bounds (SkyPeaks `blocks`); and
+## none where haze would hide it: WALL_CLEAR off the ranges, the walls and
+## the band (the mist on their flanks), HAZE_CLEAR inside the band's haze
+## curve, TOWER_CLEAR
+## past a cumulus tower's keep (its body and the heaped foot round it), so
+## a cluster stands in clear air and reads whole from an approach.
 ##
 ## SPACING is the density: the side of a cluster's cell (one at most a
 ## cell). At 850 m with HOLDS 0.8, after the keeps, the default world holds
-## about ten: one to every 0.7 km² or so of the open sky left between the
-## ranges, a flight passing near one every 800 m or so.
+## about six, each in clear air: one to every km² or so of the open sky
+## left between the ranges and the cumulus.
 ##
 ## Streaming: within VIEW of the eye a cluster is planned and its members'
 ## meshes made on a worker, one cluster at a time, nearest first; then its
@@ -32,6 +36,7 @@ extends Node3D
 const SkyIslets = preload("res://scripts/sky_islets.gd")
 const SkyCells = preload("res://scripts/sky_cells.gd")
 const SkyPeaks = preload("res://scripts/sky_peaks.gd")
+const SkyWorld = preload("res://scripts/sky_world.gd")
 const SkyTowers = preload("res://scripts/sky_towers.gd")
 const SkyForestIsles = preload("res://scripts/sky_forest_isles.gd")
 const SkyCommits = preload("res://scripts/sky_commits.gd")
@@ -45,14 +50,20 @@ const Cabin = preload("res://scripts/cabin.gd")
 const SPACING := 850.0
 const HOLDS := 0.8
 ## Places tried in a cell for one clear of everything.
-const TRIES := 8
+const TRIES := 32
 ## How far a cluster's middle may sit off its cell's (share of the cell),
 ## and its height band (m).
 const JITTER := 0.38
 const BAND := Vector2(-25.0,25.0)
 const SALT := 3100
-## Kept clear: of an island's spot, of the ranges, cumulus and isles (m).
+## Kept clear (m): of an island's spot; of the ranges' and walls' boxes and
+## the band, past their own keeps (SkyPeaks `blocks`); of the band's haze
+## curve (HAZE_CLEAR); of a cumulus tower, past its keep (SkyTowers KEEP,
+## about its body's reach); of the forested isles.
 const ISLAND_CLEAR := 240.0
+const WALL_CLEAR := 100.0
+const TOWER_CLEAR := 200.0
+const HAZE_CLEAR := 200.0
 const WONDER_CLEAR := 50.0
 ## Seeded islets keep this far off a cluster's middle.
 const KEEP := 120.0
@@ -153,13 +164,21 @@ func spot_of(cell: Vector2i) -> Variant:
 		var here := Vector3(middle.x+off.x,lerpf(BAND.x,BAND.y,SkyCells.noise(cell,SALT+3)),middle.y+off.y)
 		if Vector2(here.x,here.z).length() < ISLAND_CLEAR: continue
 		if cells != null and not cells.spots_near(here,ISLAND_CLEAR).is_empty(): continue
-		if SkyPeaks.blocks(here,WONDER_CLEAR) or SkyTowers.blocks(here,WONDER_CLEAR) or SkyForestIsles.blocks(here,WONDER_CLEAR): continue
+		if SkyPeaks.blocks(here,WALL_CLEAR) or SkyTowers.blocks(here,TOWER_CLEAR) or SkyForestIsles.blocks(here,WONDER_CLEAR): continue
+		if in_haze(here): continue
 		at = here
 		break
 	if at == null: return null
 	var names: Array = Motifs.names()
 	var motif: String = names[mini(int(SkyCells.noise(cell,SALT+4)*names.size()),names.size()-1)]
 	return {"key":"%d,%d" % [cell.x,cell.y],"at":at,"motif":motif,"seed":int(SkyCells.noise(cell,SALT+5)*16777216.0)}
+
+## True if a home point is on or within HAZE_CLEAR of the band's haze
+## curve (SkyWorld `haze_share`), where the band's mist would veil it.
+static func in_haze(home: Vector3) -> bool:
+	var flat := Vector2(home.x,home.z)
+	if flat.length() < 1.0: return false
+	return SkyWorld.haze_share(flat*(1.0+HAZE_CLEAR/flat.length())) > 0.0
 
 ## Each frame of the glide (the eye in the islets' frame, as the islets'
 ## `advance` takes it): plan the near, stand what is made, let the far go,

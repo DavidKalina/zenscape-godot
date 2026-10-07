@@ -4,10 +4,12 @@ extends SceneTree
 ## at night: the hand-laid showcase from its old spots (approach, overview,
 ## stones, field, point), and PER motif random clusters of each motif (the
 ## world's cluster spots re-dealt to the motifs, seeds from --seed), each
-## from high to one side (overview) and low in passing (pass).
+## from high to one side (overview), low in passing (pass) and close by a
+## member's rock (rock); then --lone=N of the seeded islets between them,
+## each from its side (lone), by day.
 ## Rendered only when asked for (needs a window):
 ##   Godot --windowed --path . --resolution 1280x720 -s res://tools/capture_clusters.gd \
-##     -- --no-title --showcase --out=captures/clusters/try1 [--per=2] [--seed=7] [--hours=noon,night] [--only=showcase]
+##     -- --no-title --showcase --out=captures/clusters/try1 [--per=2] [--seed=7] [--hours=noon,night] [--only=showcase] [--lone=3]
 const Motifs = preload("res://scripts/cluster_motifs.gd")
 var scene: Node3D
 var eye: Node
@@ -15,6 +17,7 @@ var out := "/private/tmp/zs-clusters"
 var per := 2
 var seed_base := 7
 var only := ""
+var lone := 0
 var hours_wanted: Array = ["noon","night"]
 var hours := {"noon": WorldClock.hour_for_phase(0.5), "golden": WorldClock.hour_for_phase(0.72), "night": WorldClock.hour_for_phase(0.02)}
 var _islets: Node3D
@@ -40,6 +43,7 @@ func run() -> void:
 		elif argument.begins_with("--per="): per = int(argument.trim_prefix("--per="))
 		elif argument.begins_with("--seed="): seed_base = int(argument.trim_prefix("--seed="))
 		elif argument.begins_with("--only="): only = argument.trim_prefix("--only=")
+		elif argument.begins_with("--lone="): lone = int(argument.trim_prefix("--lone="))
 		elif argument.begins_with("--hours="): hours_wanted = Array(argument.trim_prefix("--hours=").split(","))
 	if out.is_relative_path(): out = ProjectSettings.globalize_path("res://").path_join(out)
 	DirAccess.make_dir_recursive_absolute(out)
@@ -100,6 +104,7 @@ func run() -> void:
 			for shot: Dictionary in shots:
 				await _hold_at(shot.eye,shot.look,hours[hour_name],60 if shot == shots[0] else 35)
 				await still("%s-%s-%s" % [label,shot.label,hour_name])
+	await _lone_islets(lone)
 	print("CLUSTERS done")
 	quit(0)
 
@@ -127,8 +132,37 @@ func _shots(field: Node3D, s: Dictionary) -> Array:
 			{"label":"stones","eye":dock+Vector3(-14.0,3.0,13.0),"look":lead+Vector3(0.0,2.0,0.0)},
 			{"label":"point","eye":light+Vector3(26.0,6.0,18.0),"look":(light+mill)*0.5+Vector3(-6.0,2.0,0.0)},
 			{"label":"field","eye":lead+Vector3(14.0,4.5,-16.0),"look":lead+Vector3(-2.0,1.5,4.0)}]
+	# The rock: the biggest member's side, from a little under its rim.
+	var big: Dictionary = {}
+	for b: Dictionary in stood.values():
+		if big.is_empty() or float(b.shape.radius) > float(big.shape.radius): big = b
+	var to_eye := Vector2(toward_home.x,toward_home.z).rotated(0.6)
+	var rock_eye: Vector3 = big.home+Vector3(to_eye.x,0.0,to_eye.y)*(float(big.shape.reach)+16.0)+Vector3.DOWN*3.0
 	return [{"label":"overview","eye":centre+(toward_home*1.3+side*0.9)*reach+Vector3.UP*reach*0.9,"look":centre+Vector3.DOWN*2.0},
-		{"label":"pass","eye":centre+(toward_home*0.9-side*0.9)*reach+Vector3.UP*4.0,"look":centre+Vector3.UP*2.0}]
+		{"label":"pass","eye":centre+(toward_home*0.9-side*0.9)*reach+Vector3.UP*4.0,"look":centre+Vector3.UP*2.0},
+		{"label":"rock","eye":rock_eye,"look":big.home+Vector3.DOWN*float(big.shape.depth)*0.35}]
+
+## `count` seeded islets (the nearest to the home with their cells' spots),
+## each from its side a little under its rim, at noon.
+func _lone_islets(count: int) -> void:
+	if count <= 0: return
+	var found: Array = []
+	for x in range(-6,7):
+		for z in range(-6,7):
+			var at: Variant = _islets.spot(Vector2i(x,z))
+			if at != null and Vector2(at.x,at.z).length() > 300.0: found.append(at)
+	found.sort_custom(func(a: Vector3, b: Vector3) -> bool: return Vector2(a.x,a.z).length() < Vector2(b.x,b.z).length())
+	for k in range(mini(count,found.size())):
+		var at: Vector3 = found[k]
+		await _hold_at(at+Vector3(30.0,10.0,30.0),at,hours.noon,90)
+		var b: Dictionary = {}
+		for key: String in _islets.built:
+			if not key.begins_with("cluster:") and (_islets.built[key].home as Vector3).distance_to(at) < 1.0: b = _islets.built[key]
+		if b.is_empty(): continue
+		var reach: float = b.shape.reach
+		var eye_at: Vector3 = at+Vector3(1.0,0.0,0.6).normalized()*(reach*1.6+14.0)+Vector3.DOWN*2.0
+		await _hold_at(eye_at,at+Vector3.DOWN*float(b.shape.depth)*0.35,hours.noon,40)
+		await still("lone-%d-%s" % [k,b.shape.kind])
 
 func _view(local: Vector3) -> Vector3:
 	return _parent.to_local(_islets.to_global(local))
