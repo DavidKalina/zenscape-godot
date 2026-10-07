@@ -1440,16 +1440,24 @@ func _perch_ground(p: Vector2) -> float:
 
 ## The islet of the perched one's group whose land holds `p` (perched
 ## frame): {islet, off (its middle from the perched one's), ground (in the
-## perched frame)}, or {}.
+## perched frame)}, or {}. Where several stand one over another (a
+## cluster's stack), the highest whose ground is within a step over the
+## feet, else the lowest.
 func _perch_neighbour(p: Vector2) -> Dictionary:
 	if not perch.has("group") or islands == null: return {}
 	var here: Vector3 = islands.islets.place(perch)
+	var best := {}
 	for b: Dictionary in islands.islets.built.values():
 		if b.get("group","") != perch.group or b.node == perch.node: continue
 		var off: Vector3 = islands.islets.place(b)-here
 		var q := p-Vector2(off.x,off.z)
-		if b.shape.inside(q): return {"islet":b,"off":off,"ground":float(b.shape.ground_at(q))+off.y}
-	return {}
+		if not b.shape.inside(q): continue
+		var hit := {"islet":b,"off":off,"ground":float(b.shape.ground_at(q))+off.y}
+		var reach := motor.feet.y+PilotMotor.STEP_UP
+		if best.is_empty() or (float(hit.ground) <= reach and (float(best.ground) > reach or float(hit.ground) > float(best.ground))) \
+				or (float(hit.ground) > reach and float(best.ground) > reach and float(hit.ground) < float(best.ground)):
+			best = hit
+	return best
 
 ## Stood on a grouped neighbour: it becomes the perch, the feet carried
 ## into its frame.

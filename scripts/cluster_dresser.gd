@@ -22,6 +22,7 @@ const Cabin = preload("res://scripts/cabin.gd")
 const StoneLamp = preload("res://scripts/stone_lamp.gd")
 const IslanderFigure = preload("res://scripts/islander_figure.gd")
 const SkyFolk = preload("res://scripts/sky_folk.gd")
+const StackBuilds = preload("res://scripts/stack_builds.gd")
 
 const WARM := Color("ffb466")
 const LIGHT_COLOR := Color("ffb36b")
@@ -106,6 +107,7 @@ static func prepare(member: Dictionary, plan: Dictionary) -> Dictionary:
 				out.features[i] = Builds.fence(corners,gate,func(p: Vector2) -> float: return shape.ground_at(p) if shape.inland(p) > 0.2 else -INF,int(member.seed) % 991)
 	for br: Dictionary in plan.bridges:
 		if br.from == member.name: out.bridges.append(Footbridge.build_mesh(br.a,br.b,hash(br.to) % 997))
+	out.stairs = StackBuilds.prepare(member,plan)
 	return out
 
 ## Stands what stands on `member` under its islet's `node`; what moves or
@@ -239,6 +241,7 @@ static func furnish(node: Node3D, member: Dictionary, plan: Dictionary, made: Di
 		bridge.mesh = mesh
 		bridge.material_override = m.solid
 		node.add_child(bridge)
+	StackBuilds.furnish(node,member,plan,made,halos,live)
 	if not halos.is_empty():
 		var batch := MultiMeshInstance3D.new()
 		batch.name = "Halos"

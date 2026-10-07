@@ -802,15 +802,31 @@ func place(b: Dictionary) -> Vector3:
 	return position+(b.node as Node3D).position
 
 ## The islet whose top holds a global point (plate plane), as its built
-## record, or {}.
+## record, or {}. Where islets stand over one another (a cluster's stack,
+## scripts/cluster_stack.gd), the one the point is in, else the highest
+## under it, else the lowest.
 func islet_at(point: Vector3) -> Dictionary:
+	var hits: Array = []
 	for key in built:
 		var b: Dictionary = built[key]
 		var local := point-place(b)
 		var shape: RefCounted = b.shape
 		if absf(local.x) > shape.reach+0.5 or absf(local.z) > shape.reach+0.5: continue
-		if shape.inside(Vector2(local.x,local.z)): return b
-	return {}
+		if shape.inside(Vector2(local.x,local.z)): hits.append(b)
+	if hits.size() < 2: return hits[0] if not hits.is_empty() else {}
+	var best: Dictionary = {}
+	var best_top := -INF
+	var lowest: Dictionary = hits[0]
+	for b: Dictionary in hits:
+		var local := point-place(b)
+		var at := Vector2(local.x,local.z)
+		var top: float = b.shape.ground_at(at)
+		if local.y <= top+0.5 and local.y >= float(b.shape.underside(at)): return b
+		if top < local.y and place(b).y+top > best_top:
+			best_top = place(b).y+top
+			best = b
+		if place(b).y < place(lowest).y: lowest = b
+	return best if not best.is_empty() else lowest
 
 ## The islet under a global point as a solid, Vector2(top, underside) in
 ## global metres (the crowns and the stones count as top), or null.

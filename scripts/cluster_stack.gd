@@ -67,6 +67,8 @@ const STAIR_IN := 0.9
 const STAIR_INSET := 1.2
 const STAIR_TURN := 5.0
 const CHORD := 1.5
+## The stair's top LANDING (m) is level, before it turns in over the rim.
+const LANDING := 0.9
 ## A deck runs this far (m) past each bend into the next.
 const OVERLAP := 0.3
 ## Its deck rides this far over the ground at its ends.
@@ -288,18 +290,22 @@ static func _wind(lower: Dictionary, upper: Dictionary, uc: Vector2, dy: float, 
 		var inside := Vector2.from_angle(phi)*(_around(rims,phi)-STAIR_INSET)
 		if not upper.shape.on_land(inside) or float(upper.shape.inland(inside)) < 0.5: continue
 		yb = dy+land_y(upper.shape,inside)+LIFT
-		if ya+arc*grade >= yb:
+		if ya+(arc-LANDING)*grade >= yb:
 			b = uc+inside
 			break
-	if yb-ya < 1.0 or arc < CHORD: return {}
+	if yb-ya < 1.0 or arc < CHORD+LANDING: return {}
+	# Decks about CHORD long up to the landing, then the landing, level.
+	var climb := arc-LANDING
+	var wants: Array[float] = []
+	var n := maxi(1,ceili(climb/CHORD))
+	for i in range(n+1): wants.append(climb*i/n)
+	wants.append(arc)
 	var points: Array[Vector3] = []
-	var n := maxi(1,ceili(arc/CHORD))
 	var j := 0
-	for i in range(n+1):
-		var want := arc*i/n
-		while j < arcs.size()-1 and arcs[j] < want: j += 1
+	for i in range(wants.size()):
+		while j < arcs.size()-1 and arcs[j] < wants[i]: j += 1
 		var p: Vector2 = dense[j] if i > 0 else a
-		points.append(Vector3(p.x,lerpf(ya,yb,arcs[j]/arc if i > 0 else 0.0),p.y))
+		points.append(Vector3(p.x,lerpf(ya,yb,minf(arcs[j]/climb,1.0) if i > 0 else 0.0),p.y))
 	points.append(Vector3(b.x,yb,b.y))
 	return {"points":points,"around":uc,"end":points.size()-2}
 
@@ -396,18 +402,43 @@ static func _home_points(st: Dictionary) -> Array:
 	for p: Vector3 in st.points: out.append(p+off)
 	return out
 
-## Where the stair coming up onto `m` ends, in its frame, or null.
+## The run in of the stair coming up onto `m` (from its landing to its
+## head, in `m`'s frame), or null.
 static func _arrival(m: Dictionary, plan: Dictionary) -> Variant:
 	for st: Dictionary in plan.get("stairs",[]):
 		if st.to != m.name: continue
-		var end: Vector3 = (st.points as Array).back()+(st.offset as Vector3)-(m.offset as Vector3)
-		return Vector2(end.x,end.z)
+		var points: Array = st.points
+		var shift: Vector3 = (st.offset as Vector3)-(m.offset as Vector3)
+		var landing: Vector3 = points[points.size()-2]+shift
+		var head: Vector3 = points.back()+shift
+		return [Vector2(landing.x,landing.z),Vector2(head.x,head.z)]
 	return null
 
-## True when the pilot can walk the lower land from `from` to `to` with
-## the stair standing (its high stretches a wall: higher than a step over
-## the ground), round the water.
-static func _open_way(shape: RefCounted, from: Vector2, to: Vector2, points: Array) -> bool:
+## True where a stair's deck (`points`) stands over `p` higher than a step
+## over the land: a wall to a walker on it.
+static func _walled(shape: RefCounted, p: Vector2, points: Array) -> bool:
+	var g := land_y(shape,p)
+	for k in range(points.size()-1):
+		var a: Vector3 = points[k]
+		var b: Vector3 = points[k+1]
+		var flat := Geometry2D.get_closest_point_to_segment(p,Vector2(a.x,a.z),Vector2(b.x,b.z))
+		if flat.distance_to(p) > STAIR_WIDTH*0.5+0.35: continue
+		var t := Vector2(a.x,a.z).distance_to(flat)/maxf(Vector2(a.x,a.z).distance_to(Vector2(b.x,b.z)),0.001)
+		if lerpf(a.y,b.y,t)-g > PilotMotor.STEP_UP: return true
+	return false
+
+## True when the pilot can come in up the stair arriving (`came`, its run
+## in) and walk the lower land to `to` with the new stair standing (its
+## high stretches a wall), round the water.
+static func _open_way(shape: RefCounted, came: Array, to: Vector2, points: Array) -> bool:
+	var landing: Vector2 = came[0]
+	var head: Vector2 = came[1]
+	var across := (head-landing).normalized().orthogonal()*STAIR_WIDTH*0.4
+	for k in range(9):
+		var q := landing.lerp(head,k/8.0)
+		for side: Vector2 in [Vector2.ZERO,across,-across]:
+			if shape.on_land(q+side) and _walled(shape,q+side,points): return false
+	var from := head
 	var n: int = shape.cells+1
 	var count: int = shape.points.size()
 	var open := PackedByteArray()
@@ -417,17 +448,7 @@ static func _open_way(shape: RefCounted, from: Vector2, to: Vector2, points: Arr
 		if shape.shore_distance[i] < 0.2 or shape.wet(p):
 			open[i] = 0
 			continue
-		open[i] = 1
-		var g := land_y(shape,p)
-		for k in range(points.size()-1):
-			var a: Vector3 = points[k]
-			var b: Vector3 = points[k+1]
-			var flat := Geometry2D.get_closest_point_to_segment(p,Vector2(a.x,a.z),Vector2(b.x,b.z))
-			if flat.distance_to(p) > STAIR_WIDTH*0.5+0.35: continue
-			var t := Vector2(a.x,a.z).distance_to(flat)/maxf(Vector2(a.x,a.z).distance_to(Vector2(b.x,b.z)),0.001)
-			if lerpf(a.y,b.y,t)-g > PilotMotor.STEP_UP:
-				open[i] = 0
-				break
+		open[i] = 0 if _walled(shape,p,points) else 1
 	var start := _nearest_open(shape,open,from)
 	var goal := _nearest_open(shape,open,to)
 	if start < 0 or goal < 0: return false
@@ -471,7 +492,16 @@ static func _lay(lower: Dictionary, upper: Dictionary, stair: Dictionary, placed
 	var first: Vector3 = points[0]
 	var last: Vector3 = points.back()
 	lower.shape.claim(Vector2(first.x,first.z),0.9)
-	upper.shape.claim(Vector2(last.x,last.z)-uc,1.1)
+	# The upper land levelled to the deck from its head out to the rim, so
+	# the stair steps straight onto it.
+	var head := Vector2(last.x,last.z)-uc
+	var level := last.y-dy-LIFT
+	var before: Vector3 = points[points.size()-2]
+	var outward := Vector2(before.x,before.z)-uc-head
+	for k in range(int(outward.length()/0.6)+1):
+		var at := head+outward.normalized()*k*0.6
+		if not upper.shape.on_land(at): break
+		upper.shape.claim(at,1.1 if k == 0 else 0.7,level-land_y(upper.shape,at))
 	_clear_plants(lower.shape,points,Vector2.ZERO)
 	_clear_plants(upper.shape,points,uc)
 	# Each deck runs on OVERLAP past the bends, so their outer corners meet.
@@ -521,6 +551,7 @@ static func _lay(lower: Dictionary, upper: Dictionary, stair: Dictionary, placed
 		var off := Vector2(m.offset.x,m.offset.z)-uxz
 		m.shape.objects = (m.shape.objects as Array[Dictionary]).filter(func(o: Dictionary) -> bool:
 			return not (str(o.asset) in TALL and _near_land(upper.shape,Vector2(o.x,o.z)+off,CLEAR_UNDER)))
+	lower.features.append({"type":"stair","to":upper.name})
 	plan.get_or_add("stairs",[]).append({"from":lower.name,"to":upper.name,"points":points,"offset":lower.offset,"around":uc,
 		"stilts":stilts,"struts":struts,"lanterns":lanterns})
 
