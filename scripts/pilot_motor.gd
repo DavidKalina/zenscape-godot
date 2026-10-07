@@ -29,6 +29,18 @@ extends RefCounted
 ## through the world goes through `slide`, which takes the feet and a step
 ## and gives back where they come to, round whatever stands in the way. Both
 ## in one frame: the plate's terrain or an islet's.
+##
+## Water is anything `water` answers, a depth of water over the ground for a
+## point of the frame (none: all dry). Measured on his body (about 1.1 m
+## tall: the knees about 0.2 m up, the jacket's hem and hips about 0.4, the
+## shoulders about 0.7): wading, he is slowed by the depth over his boots,
+## past WADE_FROM, up to WADE_SLOW of his pace lost at SWIM_IN, chest deep;
+## any deeper and he swims. Swimming he floats SWIM_DRAFT under the surface
+## (his head and shoulders out), bobbing on a spring as he goes in, slower and
+## floatier than on foot, drifting on as he turns; where it grows shallower
+## than SWIM_OUT he stands and walks out. Jump while swimming hops him out of
+## the water (SWIM_HOP), onto a bank or back in with a splash; that hop never
+## asks to fly. Never drowning, never hurt.
 
 ## Speeds, metres a second, and how fast they are reached and lost.
 const WALK := 2.0
@@ -110,6 +122,26 @@ const SHIMMY_ACCEL := 6.0
 const HANG_TURN := 8.0
 const CURL_MOST := 2.5
 const SHIMMY_SLOPE := 1.0
+## Water: the depth (m) over the boots from which a wade slows him, the
+## share of his pace it takes at SWIM_IN; deeper than SWIM_IN (chest deep)
+## at his feet he swims, shallower than SWIM_OUT he stands again. Swimming:
+## the feet SWIM_DRAFT under the surface (the shoulders just out); his pace
+## (m/s), pick-up and coast to a stop (m/s²) and turn (radians a second); the
+## float's spring (Hz, damping) and the share of a fall's speed kept going
+## in; the hop out (m).
+const WADE_FROM := 0.08
+const WADE_SLOW := 0.6
+const SWIM_IN := 0.55
+const SWIM_OUT := 0.45
+const SWIM_DRAFT := 0.58
+const SWIM := 1.2
+const SWIM_ACCEL := 2.6
+const SWIM_DRAG := 1.4
+const SWIM_TURN := 3.2
+const SWIM_SPRING := 1.1
+const SWIM_DAMP := 0.6
+const SWIM_ENTRY := 0.35
+const SWIM_HOP := 0.9
 
 ## The feet, in the frame.
 var feet := Vector3.ZERO
@@ -147,6 +179,13 @@ var _since_ground := 0.0
 var _buffer := 0.0
 var _held := false
 var _jumped := false
+## Water (see above): its depth for a frame point, or none; swimming; the
+## water over the feet (m, 0 dry) and its top (the frame's height, -INF dry).
+var water := Callable()
+var swimming := false
+var wade := 0.0
+var surface := -INF
+var _from_water := false
 
 ## Stood at `at`, facing `towards`, moving `speed` the way it faces.
 func reset(at: Vector3, towards: float, speed := 0.0) -> void:
@@ -168,6 +207,10 @@ func reset(at: Vector3, towards: float, speed := 0.0) -> void:
 	hold_t = 0.0
 	shimmy = 0.0
 	_regrab = 0.0
+	swimming = false
+	wade = 0.0
+	surface = -INF
+	_from_water = false
 
 ## The way `towards` faces, in the frame's plane (x, z).
 static func forward(towards: float) -> Vector2:
@@ -187,7 +230,9 @@ func speed() -> float:
 ## "jumped" (the chain's number), "landed" (how hard, metres a second),
 ## "fly"; on a ledge (`ledge`: a point (x, z) and a height near the lip,
 ## giving {"at", "out"} or {}), "grabbed" ("air" or "step"), "hung",
-## "climbed", "let_go", "stopped" (a shimmy that can't go on).
+## "climbed", "let_go", "stopped" (a shimmy that can't go on); in water
+## (`water`), "swam" (gone in deep enough to swim, how hard he fell in,
+## m/s), "stood" (out of a swim onto his feet), "hopped" (out of the water).
 func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable, slide: Callable, ledge := Callable()) -> Dictionary:
 	var out := {}
 	if want.length() > 1.0: want = want.normalized()
@@ -195,6 +240,14 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 	_held = jump
 	_regrab = maxf(0.0,_regrab-delta)
 	if hold != "": return _hold_step(delta,want,pressed,ground,slide,ledge)
+	if swimming: return _swim_step(delta,want,pressed,ground,slide)
+	_wet_at(Vector2(feet.x,feet.z),ground)
+	if grounded and wade > SWIM_IN:
+		# Waded in chest deep: afloat.
+		_float_in(0.0,out)
+		return _swim_step(delta,want,false,ground,slide,out)
+	# Wading, slowed by the water over the boots.
+	if grounded: top *= 1.0-WADE_SLOW*clampf((wade-WADE_FROM)/(SWIM_IN-WADE_FROM),0.0,1.0)
 	_buffer = BUFFER if pressed else maxf(0.0,_buffer-delta)
 	_since_land += delta
 	if grounded: _since_ground = 0.0
@@ -215,7 +268,7 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 		_buffer = 0.0
 		flip = 0.0 if next == JUMPS.size() else -1.0
 		out["jumped"] = next
-	elif pressed and not grounded and (velocity.y > 0.0 or feet.y-ground_y > FLY_CLEAR):
+	elif pressed and not grounded and not _from_water and (velocity.y > 0.0 or feet.y-ground_y > FLY_CLEAR):
 		_buffer = 0.0
 		out["fly"] = true
 	if flip >= 0.0: flip = minf(1.0,flip+delta/FLIP_TIME)
@@ -251,6 +304,16 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 		velocity.y = maxf(velocity.y-g*delta,-TERMINAL)
 		var y := feet.y+velocity.y*delta
 		ground_y = under
+		var deep := _depth(Vector2(moved.x,moved.z))
+		if deep > SWIM_IN and is_finite(under) and velocity.y <= 0.0 and y <= under+deep-SWIM_DRAFT:
+			# Fallen into deep water: in with a splash, afloat.
+			feet = Vector3(moved.x,y,moved.z)
+			velocity.x = h.x
+			velocity.z = h.y
+			_float_in(-velocity.y,out)
+			velocity.y *= SWIM_ENTRY
+			_wet_at(Vector2(feet.x,feet.z),ground)
+			return out
 		if y <= under and velocity.y <= 0.0:
 			out["landed"] = -velocity.y
 			y = under
@@ -261,6 +324,7 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 			flip = -1.0
 			_since_land = 0.0
 			_jumped = false
+			_from_water = false
 		elif y < under:
 			y = under
 		feet = Vector3(moved.x,y,moved.z)
@@ -297,7 +361,7 @@ func _catch(ledge: Callable, ground: Callable) -> bool:
 	if _regrab > 0.0: return false
 	var found: Dictionary = ledge.call(Vector2(feet.x,feet.z),feet.y)
 	if found.is_empty() or absf(found.at.y-feet.y) > SNAP+0.1: return false
-	if not _room_under(found,ground): return false
+	if not _room_under(found,ground) or _deep_under(found): return false
 	lip = found.at
 	lip_out = found.out
 	hold = "catch"
@@ -319,7 +383,7 @@ func _grab(ledge: Callable, ground: Callable) -> bool:
 	if f.dot(-out_way) < GRAB_FACING: return false
 	var off := (at-Vector2(found.at.x,found.at.z)).dot(out_way)
 	if off < -0.15 or off > GRAB_REACH+0.15: return false
-	if not _room_under(found,ground): return false
+	if not _room_under(found,ground) or _deep_under(found): return false
 	# Only a lip in reach of the hands, not one round a corner.
 	var hang := Vector2(found.at.x,found.at.z)+out_way*HANG_OUT
 	if hang.distance_to(at) > GRAB_REACH: return false
@@ -333,6 +397,10 @@ func _grab(ledge: Callable, ground: Callable) -> bool:
 func _room_under(found: Dictionary, ground: Callable) -> bool:
 	var hang := Vector2(found.at.x,found.at.z)+(found.out as Vector2)*HANG_OUT
 	return float(ground.call(hang)) < found.at.y-HANG_DROP*0.8
+
+## Whether deep water stands under `found`'s hang: he goes in, not over.
+func _deep_under(found: Dictionary) -> bool:
+	return _depth(Vector2(found.at.x,found.at.z)+(found.out as Vector2)*HANG_OUT) > SWIM_IN
 
 ## Hanging from `found`.
 func _hang_on(found: Dictionary) -> void:
@@ -464,6 +532,99 @@ func _climb(ground: Callable, slide: Callable) -> bool:
 	velocity = Vector3.ZERO
 	_snap = Vector3.ZERO
 	return true
+
+## The water's depth at a frame point (0 without `water`).
+func _depth(p: Vector2) -> float:
+	if not water.is_valid(): return 0.0
+	var d := float(water.call(p))
+	return d if is_finite(d) and d > 0.0 else 0.0
+
+## The water at frame point `p` (the feet's place): its top and its depth
+## over the feet.
+func _wet_at(p: Vector2, ground: Callable) -> void:
+	var d := _depth(p)
+	if d <= 0.0:
+		wade = 0.0
+		surface = -INF
+		return
+	surface = float(ground.call(p))+d
+	wade = maxf(0.0,surface-feet.y) if is_finite(surface) else 0.0
+
+## Into a swim, coming in at `fall` m/s.
+func _float_in(fall: float, out: Dictionary) -> void:
+	swimming = true
+	grounded = false
+	skidding = false
+	chain = 0
+	flip = -1.0
+	_jumped = false
+	_from_water = false
+	_buffer = 0.0
+	out["swam"] = fall
+
+## One step afloat: the stick paddles him its way, slower and floatier than
+## on foot, his way drifting after his turn; the float bobs him to
+## SWIM_DRAFT under the surface on its spring. Shallow enough, he stands;
+## Jump hops him out.
+func _swim_step(delta: float, want: Vector2, pressed: bool, ground: Callable, slide: Callable, out := {}) -> Dictionary:
+	var h := Vector2(velocity.x,velocity.z)
+	if want != Vector2.ZERO:
+		var way := want.normalized()
+		facing = rotate_toward(facing,facing_of(way),SWIM_TURN*delta)
+		var f := forward(facing)
+		h = h.move_toward(f*want.length()*SWIM*(0.4+0.6*maxf(f.dot(way),0.0)),SWIM_ACCEL*delta)
+	else:
+		h = h.move_toward(Vector2.ZERO,SWIM_DRAG*delta)
+	var moved: Vector3 = slide.call(feet,h*delta)
+	var at := Vector2(moved.x,moved.z)
+	var bed := float(ground.call(at))
+	if not is_finite(bed) or bed > feet.y+STEP_UP:
+		# A bank too steep to wade up, or the island's rim: held off it.
+		h = Vector2.ZERO
+		moved = feet
+		at = Vector2(feet.x,feet.z)
+		bed = float(ground.call(at))
+	var d := _depth(at)
+	if pressed:
+		# Up out of the water.
+		swimming = false
+		grounded = false
+		chain = 1
+		_jumped = true
+		_from_water = true
+		_since_ground = COYOTE
+		feet = Vector3(moved.x,maxf(feet.y,bed),moved.z)
+		velocity = Vector3(h.x,sqrt(2.0*GRAVITY*SWIM_HOP),h.y)
+		ground_y = bed
+		_wet_at(at,ground)
+		out["jumped"] = 1
+		out["hopped"] = true
+		return out
+	if d < SWIM_OUT:
+		# Shallow enough to stand: on his feet, walking out.
+		swimming = false
+		grounded = true
+		feet = Vector3(moved.x,bed,moved.z)
+		ground_y = bed
+		velocity = Vector3(h.x,0.0,h.y)
+		_since_land = 99.0
+		_wet_at(at,ground)
+		out["stood"] = true
+		return out
+	# Afloat on the float's spring.
+	var goal := maxf(bed+d-SWIM_DRAFT,bed)
+	var w := TAU*SWIM_SPRING
+	velocity.y += (w*w*(goal-feet.y)-2.0*SWIM_DAMP*w*velocity.y)*delta
+	var y := feet.y+velocity.y*delta
+	if y < bed:
+		y = bed
+		velocity.y = maxf(velocity.y,0.0)
+	feet = Vector3(moved.x,y,moved.z)
+	ground_y = bed
+	velocity.x = h.x
+	velocity.z = h.y
+	_wet_at(at,ground)
+	return out
 
 ## On the ground: turn to the stick and run up to its pace, or skid.
 func _run(h: Vector2, want: Vector2, top: float, delta: float) -> Vector2:

@@ -1307,6 +1307,99 @@ def climb_clip():
     return keyed([(0.0, hang_pose(0.0)), (0.12, gather), (0.34, pulled), (0.5, pressed), (0.58, swung),
                   (0.66, planted), (0.75, drawn), (0.85, risen), (1.0, stand)])
 
+# ------------------------------------------------------------------ the water
+# Afloat in deep water (scripts/pilot_motor.gd swims him, scripts/
+# pilot_figure.gd keeps copies of the numbers): the feet (the origin) stand
+# SWIM_DRAFT under the water's top, so the head and the shoulders are out of
+# it. Both clips are posed from the joints where the rig puts them (the
+# shoulders and the hips, `joints`), the limbs reached by IK, so they keep up
+# with the body's measures.
+#   swim   a doggy paddle, made for SWIM_SPEED m/s, a loop of SWIM_CYCLE s
+#          (both mitts): lying forward SWIM_LEAN degrees, the head held up
+#          and looking ahead, the mitts paddling in turn in little circles
+#          under the chin, reaching forward over the top and pulling down
+#          and back, the boots kicking behind, the scarf's tails trailing;
+#   tread  treading water, TREAD_LENGTH s: nearly upright, the legs
+#          pedalling under him, the mitts sculling out at his sides just
+#          under the surface, bobbing with the kicks, glancing about.
+SWIM_SPEED = 1.2
+SWIM_CYCLE = 0.8
+TREAD_LENGTH = 1.6
+SWIM_DRAFT = 0.58
+SWIM_LEAN = 30.0
+
+def joints(pose):
+    """Where `pose` puts the shoulders and the hips' joints (armature space,
+    by side), before any reach: its FK, the legs stood anywhere."""
+    for n, s in SIDES.items():
+        pose.feet.setdefault(n, (Vector((s * 0.1, 0.0, 0.0)), Quaternion()))
+        pose.pole.setdefault(n, Vector((0, 1, 0)))
+    P, _ = solve(pose)
+    shoulders = {n: P[f"upper_arm.{n}"].translation.copy() for n in SIDES}
+    hips = {n: (P["hips"] @ (REST["hips"].inverted() @ REST[f"thigh.{n}"])).translation.copy() for n in SIDES}
+    return shoulders, hips
+
+def swim_pose(p):
+    """A doggy paddle (see above): `p` 0 at the left mitt's reach over the
+    top of its circle."""
+    pose = Pose()
+    # Surging a little on each pull.
+    surge = wave(p, 2, 0.15)
+    pose.hips_at = Vector((0.0, -0.02 + 0.006 * surge, HIPS + 0.008 * surge))
+    pose.turns["hips"] = turn(pitch=-SWIM_LEAN, roll=2.5 * sine(p), yaw=3.0 * sine(p, 1, 0.1))
+    pose.turns["chest"] = turn(pitch=-6.0 - 2.0 * surge, roll=-3.0 * sine(p, 1, 0.05), yaw=-5.0 * sine(p, 1, 0.08))
+    # The head held up out of it, looking ahead.
+    pose.turns["neck"] = turn(pitch=16.0, yaw=2.0 * sine(p, 1, 0.1))
+    pose.turns["head"] = turn(pitch=18.0 + 2.0 * surge, roll=-2.0 * sine(p, 1, 0.12))
+    for n, s in SIDES.items():
+        scarf(pose, p, n, s, back=25.0, flutter=4.0, flap=5.0)
+    shoulders, hips = joints(pose)
+    for n, s in SIDES.items():
+        q = (p + (0.0 if n == "L" else 0.5)) % 1.0
+        a = math.tau * q + math.pi * 0.5
+        sh = shoulders[n]
+        # A little circle under the chin: forward over the top, down and
+        # back under it.
+        middle = sh + Vector((-s * 0.04, 0.19, -0.12))
+        wrist = middle + Vector((0.0, -0.09 * math.cos(a), 0.06 * math.sin(a)))
+        pose.hands[n] = (wrist, Vector((0.9 * s, -0.3, -0.6)), 1.0)
+        pose.turns[f"hand.{n}"] = turn(pitch=-35.0 - 20.0 * math.sin(a), roll=-s * 10.0)
+        # The boots kicking behind, each against its own side's mitt.
+        k = math.tau * q
+        ankle = hips[n] + Vector((s * 0.02, -0.22 - 0.03 * math.sin(k), -0.24 + 0.06 * math.cos(k)))
+        pose.feet[n] = (ankle, qz(deg(-6.0 * s)) @ qx(deg(-55.0 + 12.0 * math.sin(k))))
+        pose.pole[n] = Vector((0.15 * s, 1.0, -0.2))
+    return pose
+
+def tread_pose(p):
+    """Treading water (see above): two kicks of each leg a loop."""
+    pose = Pose()
+    bob = wave(p, 4, 0.1)
+    pose.hips_at = Vector((0.004 * sine(p, 2), 0.0, HIPS + 0.01 * bob))
+    pose.turns["hips"] = turn(pitch=-9.0 + 1.5 * bob, roll=2.0 * sine(p, 2, 0.1))
+    pose.turns["chest"] = turn(pitch=-3.0 - 1.5 * bob, roll=-1.5 * sine(p, 2, 0.15))
+    look = 14.0 * sine(p, 1, 0.1)
+    pose.turns["neck"] = turn(pitch=5.0, yaw=0.4 * look)
+    pose.turns["head"] = turn(pitch=6.0 + 1.5 * bob, yaw=0.6 * look, roll=-2.0 * sine(p, 1, 0.3))
+    for n, s in SIDES.items():
+        scarf(pose, p, n, s, back=10.0, flutter=4.0, flap=4.0, beat=4)
+    shoulders, hips = joints(pose)
+    for n, s in SIDES.items():
+        q = (p + (0.0 if n == "L" else 0.25)) % 1.0
+        # Pedalling: each ankle round a little upright circle under its hip.
+        k = math.tau * 2.0 * (p + (0.0 if n == "L" else 0.25))
+        ankle = hips[n] + Vector((s * 0.03, 0.03 + 0.07 * math.cos(k), -0.3 + 0.06 * math.sin(k)))
+        pose.feet[n] = (ankle, qz(deg(-8.0 * s)) @ qx(deg(-35.0 + 10.0 * math.sin(k))))
+        pose.pole[n] = Vector((0.25 * s, 1.0, 0.1))
+        # Sculling: the mitts swept in and out at his sides under the
+        # water's top, palms tipping each way.
+        c = math.tau * 2.0 * q
+        sh = shoulders[n]
+        wrist = sh + Vector((s * (0.15 + 0.06 * math.cos(c)), 0.13 + 0.03 * math.sin(2.0 * c), -0.17))
+        pose.hands[n] = (wrist, Vector((1.0 * s, -0.2, -0.4)), 1.0)
+        pose.turns[f"hand.{n}"] = turn(pitch=-10.0, roll=s * 18.0 * math.sin(c))
+    return pose
+
 # ================================================================== keying
 rig.animation_data_create()
 for pb in rig.pose.bones:
@@ -1355,6 +1448,16 @@ bake("hang", HANG_LENGTH, hang_pose)
 bake("shimmy_left", SHIMMY_CYCLE, lambda p: shimmy_pose(p, -1.0))
 bake("shimmy_right", SHIMMY_CYCLE, lambda p: shimmy_pose(p, 1.0))
 bake("climb", CLIMB_LENGTH, climb_clip())
+for value in (SWIM_CYCLE, TREAD_LENGTH):
+    assert abs(round(value * FPS) - value * FPS) < 1e-6, "a cycle must be whole frames"
+bake("swim", SWIM_CYCLE, swim_pose)
+bake("tread", TREAD_LENGTH, tread_pose)
+# How far out of the water the shoulders and the chin stand, afloat.
+for clip, at in (("swim", swim_pose), ("tread", tread_pose)):
+    P, _ = solve(at(0.0))
+    top = min(P[f"upper_arm.{n}"].translation.z for n in SIDES)
+    chin = P["head"].translation.z
+    print(f"PILOT_AFLOAT {clip} shoulders {top - SWIM_DRAFT:+.3f} m, head's base {chin - SWIM_DRAFT:+.3f} m over the water")
 for pb in rig.pose.bones:
     pb.location = (0, 0, 0)
     pb.rotation_quaternion = (1, 0, 0, 0)
