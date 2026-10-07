@@ -5,8 +5,8 @@ extends SceneTree
 ## islets' `built` the whole time, never let go while towed, and moves with
 ## the ship, hanging under it within its lines' reach; a walker standing on
 ## it (feet kept in its frame, as scripts/wanderer_eye.gd perches) is
-## carried along: the islet under the feet is always it, the ground under
-## them always where the feet are; it rides a swap of the world's origin
+## carried along, round with it as it spins once let go: the islet under
+## the feet is always it, the ground under them always where the feet are; it rides a swap of the world's origin
 ## mid-tow; the moored islet stays where it was left for the session (let go
 ## and grown again, it comes back there); and nothing is left behind.
 ## Headless: nodes and numbers only, nothing drawn.
@@ -72,7 +72,8 @@ func run() -> void:
 		if not ship.busy(): break
 		if islets.built.get(key) != b: kept = false
 		var place: Vector3 = islets.place(b)
-		var global_feet := place+feet
+		# In the islet's own frame, turned as it spins once let go.
+		var global_feet: Vector3 = islets.frame(b)*feet
 		var under: Dictionary = islets.islet_at(global_feet)
 		var body: Variant = islets.body(global_feet+Vector3.UP*0.5)
 		if under != b or body == null or (body as Vector2).x < global_feet.y-0.05: carried = false
@@ -98,6 +99,8 @@ func run() -> void:
 	check(moved > SkyAirship.TOW_DISTANCE.x*0.8,"It is towed away to a new mooring (%.0f m)" % moved)
 	check(islets.moved.get(key) is Vector3,"The mooring is kept for the session")
 	check(not b.get("fixed",false) and not b.has("towed"),"Moored, it is an ordinary islet again")
+	var spun: float = SkyIslets.yaw_of(b)
+	check(absf(spun) >= SkyAirship.SPIN.x*TAU-0.01 and is_equal_approx(float(islets.turned.get(key,0.0)),spun) and is_equal_approx((b.node as Node3D).rotation.y,spun),"Let go, it spins a quarter turn or more about up, and is kept turned (%.2f rad)" % spun)
 	# Let go far off and grown again, it comes back at its mooring.
 	var mooring: Vector3 = b.home
 	var cell: Vector2i = b.cell
@@ -108,7 +111,7 @@ func run() -> void:
 		islets.advance(1.0/60.0,mooring+Vector3(20.0,0.0,0.0))
 		islets.flush()
 	var again: Dictionary = islets.built.get(key,{})
-	check(not again.is_empty() and (again.home as Vector3).is_equal_approx(mooring) and again.cell == cell,"Flown back to, it stands at its mooring")
+	check(not again.is_empty() and (again.home as Vector3).is_equal_approx(mooring) and again.cell == cell and is_equal_approx(SkyIslets.yaw_of(again),spun),"Flown back to, it stands at its mooring, turned as it was left")
 	# The ship's parts are hidden and its lines empty between events.
 	check(not ship._ship.visible and (ship._lines.mesh as ArrayMesh).get_surface_count() == 0,"Between events the ship is hidden and its lines gone")
 	_carried_off(islets,ship,eye)
