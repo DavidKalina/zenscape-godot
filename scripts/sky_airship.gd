@@ -70,7 +70,7 @@ const TURN := 0.22
 const EASE := 3.2
 ## The hover: the deck at least HOVER m over the islet's middle, and
 ## CLEAR m over its highest crown.
-const HOVER := 15.0
+const HOVER := 11.0
 const CLEAR := 5.5
 ## Seconds of each step: lowering the grapples, their bite, the lines
 ## winding taut, the tear, settling at the mooring, and letting go.
@@ -85,8 +85,8 @@ const RELEASE := 4.5
 const LIFT := 2.4
 const SHUDDER := 0.14
 const SHUDDER_RATE := 11.0
-const TEAR_PUFFS := 34
-const TEAR_PEBBLES := 26
+const TEAR_PUFFS := 60
+const TEAR_PEBBLES := 40
 ## The tow: how far (m, least and most) to the mooring, the islet's spring
 ## to its place under the ship (1/s²) and its damping (1/s), how far behind
 ## the ship's way it trails (s of the ship's speed), and its sway (m, s).
@@ -116,17 +116,20 @@ const LOST := 1150.0
 ## strength), the lantern's light (reach m, energy) and the halos' least
 ## size far off (share of distance, as shaders/cluster_halo.gdshader).
 const WARM := Color("ffb466")
-const HALO_WINDOW := Vector2(1.8,0.8)
-const HALO_LANTERN := Vector2(3.2,1.0)
+const HALO_WINDOW := Vector2(1.5,0.65)
+const HALO_LANTERN := Vector2(2.4,0.75)
 const LIGHT := Vector2(10.0,1.6)
 const FAR_SIZE := 0.03
+## The cargo lamp under the keel at night, shining down on the load: its
+## reach (m), cone (degrees) and energy.
+const CARGO_LAMP := Vector3(34.0,32.0,2.2)
 ## The tow lines: their thickness (m half), their segments, their sag when
 ## slack and when taut (share of length), and their colour.
-const LINE := 0.045
+const LINE := 0.06
 const LINE_SEGMENTS := 16
 const SLACK := 0.1
 const TAUT_SAG := 0.008
-const LINE_COLOUR := Color("8f7b58")
+const LINE_COLOUR := Color("a08a62")
 
 ## The islets (scripts/sky_islets.gd) and the scene (daylight), set by
 ## SkyIslands; `eye_override` (home coordinates) stands in for the camera
@@ -158,6 +161,7 @@ var _drum: MeshInstance3D
 var _windows: MeshInstance3D
 var _halos: MultiMeshInstance3D
 var _light: OmniLight3D
+var _cargo: SpotLight3D
 var _crew: Array[Node3D] = []
 var _lines: MeshInstance3D
 var _grapples: Array[MeshInstance3D] = []
@@ -689,6 +693,10 @@ func _draw_lines() -> void:
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = verts
 	arrays[Mesh.ARRAY_NORMAL] = normals
+	var colours := PackedColorArray()
+	colours.resize(verts.size())
+	colours.fill(LINE_COLOUR.srgb_to_linear())
+	arrays[Mesh.ARRAY_COLOR] = colours
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
 	mesh.surface_set_material(0,_line_material)
 
@@ -746,12 +754,18 @@ func _shed(puffs: int, pebbles: int) -> void:
 		var low := _rng.randf_range(0.0,1.0)
 		var y := lerpf(float(shape.ground_at(rim*0.95)),float(shape.underside(rim*0.7)),low*0.6)
 		var out := Vector3(cos(a),0.0,sin(a))
-		_dust.puff(at+Vector3(rim.x,y,rim.y)+out*0.4,out*_rng.randf_range(1.0,3.2)+Vector3.UP*_rng.randf_range(-0.6,1.2),_rng.randf_range(0.7,1.8))
+		var from := at+Vector3(rim.x,y,rim.y)+out*0.3
+		var throw := out*_rng.randf_range(1.2,3.6)+Vector3.UP*_rng.randf_range(-1.2,0.6)
+		var size := _rng.randf_range(0.3,0.85)
+		_dust.puff(from,throw,size)
+		# A smaller lobe or two heaped on it, so it reads as a little cloud.
+		for k in range(_rng.randi_range(1,2)):
+			_dust.puff(from+Vector3(_rng.randf_range(-0.4,0.4),_rng.randf_range(0.0,0.35),_rng.randf_range(-0.4,0.4))*size,throw*0.9,size*_rng.randf_range(0.5,0.75))
 	for i in range(pebbles):
 		var p := Vector2.from_angle(_rng.randf_range(0.0,TAU))*_rng.randf_range(0.0,0.8)*float(shape.reach)*0.7
 		if not shape.inside(p): p *= 0.5
 		var under := float(shape.underside(p)) if shape.inside(p) else float(shape.base)
-		_dust.pebble(at+Vector3(p.x,under+_rng.randf_range(0.0,1.5),p.y),Vector3(_rng.randf_range(-0.8,0.8),_rng.randf_range(-1.5,0.3),_rng.randf_range(-0.8,0.8)),_rng.randf_range(0.12,0.4))
+		_dust.pebble(at+Vector3(p.x,under+_rng.randf_range(0.0,1.5),p.y),Vector3(_rng.randf_range(-0.8,0.8),_rng.randf_range(-1.5,0.3),_rng.randf_range(-0.8,0.8)),_rng.randf_range(0.2,0.55))
 
 ## The propellers turn with the pull, the winch drum as the lines pay out
 ## or wind in, the crew act, and the night lights glow.
@@ -789,6 +803,10 @@ func _night_lights(delta: float) -> void:
 	_halo.set_shader_parameter("glow",night)
 	_light.visible = night > 0.01
 	_light.light_energy = LIGHT.y*night
+	# The cargo lamp only while something hangs under it.
+	var hung := 1.0 if event.get("phase","") in ["lower","bite","taut","tear","tow","settle","release"] else 0.0
+	_cargo.visible = night*hung > 0.01
+	_cargo.light_energy = CARGO_LAMP.z*night*hung
 
 # --- Making and ending ------------------------------------------------------------
 
@@ -870,6 +888,20 @@ func _make_ship() -> void:
 	_light.position = Build.LANTERN+Vector3.DOWN*0.2
 	_light.visible = false
 	_ship.add_child(_light)
+	_cargo = SpotLight3D.new()
+	_cargo.name = "CargoLamp"
+	_cargo.light_color = Color("ffc483")
+	_cargo.spot_range = CARGO_LAMP.x
+	_cargo.spot_angle = CARGO_LAMP.y
+	_cargo.spot_attenuation = 0.6
+	_cargo.shadow_enabled = false
+	_cargo.distance_fade_enabled = true
+	_cargo.distance_fade_begin = 180.0
+	_cargo.distance_fade_length = 60.0
+	_cargo.position = Vector3(0.0,-0.8,0.2)
+	_cargo.rotation = Vector3(-PI*0.5,0.0,0.0)
+	_cargo.visible = false
+	_ship.add_child(_cargo)
 	for i in range(Build.CREW.size()):
 		var figure := IslanderFigure.new(SkyFolk.SCARVES[(i*2+1) % SkyFolk.SCARVES.size()])
 		figure.scale = Vector3.ONE*SkyFolk.SCALE
@@ -922,6 +954,7 @@ func _end(cut: bool) -> void:
 		for g: MeshInstance3D in _grapples: g.visible = false
 		_dust.clear()
 		_light.visible = false
+		_cargo.visible = false
 	wait = _rng.randf_range(EVERY.x,EVERY.y)
 
 ## The islets' key for a built record's cell (SkyIslets `_key`).

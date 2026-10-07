@@ -18,8 +18,8 @@ const Builds = preload("res://scripts/showcase_builds.gd")
 
 const CANVAS := Color("efe4cc")
 const CANVAS_SHADE := Color("dccdb0")
-const RUST := Color("b4543c")
-const RUST_DARK := Color("8a3e2e")
+const RUST := Color("a8644a")
+const RUST_DARK := Color("7e4636")
 const SAGE := Color("7f9474")
 const WOOD := Color("6f5238")
 const WOOD_DARK := Color("4c3a2a")
@@ -37,7 +37,7 @@ const ENVELOPE_AT := Vector3(0.0,6.4,0.3)
 const ENVELOPE_LENGTH := 17.0
 const ENVELOPE_RADIUS := 3.3
 const ENVELOPE_FAT := -0.18
-const GORES := 14
+const GORES := 15
 ## The gondola: its half length, half width, how deep the hull hangs under
 ## the deck.
 const HULL := Vector3(0.85,0.55,2.5)
@@ -145,8 +145,8 @@ static func _envelope(st: SurfaceTool) -> void:
 		var cap := k == 0 or k >= rings.size()-3
 		var band := k == 4 or k == 9
 		for i in range(GORES):
-			var c := RUST if (i % 2 == 0) else CANVAS
-			if i % 4 == 3: c = CANVAS_SHADE
+			# Cream gores, every third a faded terracotta.
+			var c := RUST if (i % 3 == 0) else (CANVAS if i % 3 == 1 else CANVAS_SHADE)
 			if cap: c = RUST_DARK
 			elif band: c = SAGE
 			var p := func(r: Vector2, j: int) -> Vector3:

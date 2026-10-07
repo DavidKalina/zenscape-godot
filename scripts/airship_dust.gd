@@ -11,8 +11,8 @@ const PilotPuffs = preload("res://scripts/pilot_puffs.gd")
 const SHADER := preload("res://shaders/pilot_puff.gdshader")
 
 ## Puffs and pebbles at once at most (the oldest is reused).
-const PUFFS := 96
-const PEBBLES := 64
+const PUFFS := 220
+const PEBBLES := 96
 ## A puff's life (s, least and most), how fast its throw dies, how fast it
 ## sinks (m/s) as it billows, and how much it swells over its life.
 const PUFF_LIFE := Vector2(2.2,4.0)
@@ -23,8 +23,8 @@ const SWELL := 1.8
 const PEBBLE_LIFE := Vector2(3.0,5.0)
 const GRAVITY := 9.8
 const TERMINAL := 22.0
-const EARTH := Color(0.74,0.66,0.54)
-const STONE := Color(0.52,0.48,0.44)
+const EARTH := Color(0.6,0.5,0.38)
+const STONE := Color(0.42,0.37,0.32)
 
 var _puffs: MultiMeshInstance3D
 var _pebbles: MultiMeshInstance3D
@@ -38,7 +38,7 @@ var alive := 0
 func _init() -> void:
 	name = "Dust"
 	_rng.randomize()
-	_puffs = _pool(PUFFS,_material(1.2,0.7),_p)
+	_puffs = _pool(PUFFS,_material(0.9,0.35),_p)
 	_pebbles = _pool(PEBBLES,_material(1.0,0.35),_s)
 	_puffs.name = "Puffs"
 	_pebbles.name = "Pebbles"
@@ -79,7 +79,7 @@ func _pool(count: int, material: Material, into: Dictionary) -> MultiMeshInstanc
 
 ## A puff of dust at `at` thrown at `velocity`, `size` m across at most.
 func puff(at: Vector3, velocity: Vector3, size: float) -> void:
-	var i := _take(_p,_puffs,EARTH.lightened(_rng.randf_range(0.0,0.12)))
+	var i := _take(_p,_puffs,EARTH.lightened(_rng.randf_range(-0.06,0.1)))
 	_p.at[i] = at
 	_p.velocity[i] = velocity
 	_p.life[i] = _rng.randf_range(PUFF_LIFE.x,PUFF_LIFE.y)
