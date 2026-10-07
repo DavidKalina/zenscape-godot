@@ -97,6 +97,18 @@ func _snowy(need: float, y: float, q: int, falls: Vector4, scale := 1.0) -> bool
 	var under := maxf(floor_at-y,0.0)*taper if need >= 0.0 else 0.0
 	return fall > need+under
 
+## How much of the face from vertex `k` is white: the share of its three
+## corners snowed (SkyPeak `_point_needs`: the need rides each corner and the
+## shader blends it across the face); `bare_only` counts only corners bare
+## as drawn.
+func _white(need: PackedVector2Array, k: int, y: float, q: int, falls: Vector4, scale := 1.0, bare_only := false) -> float:
+	var white := 0.0
+	for c in range(3):
+		var n: float = need[k+c].x
+		if bare_only and n < 0.0: continue
+		if _snowy(n,y,q,falls,scale): white += 1.0
+	return white/3.0
+
 ## A range as the game makes it, placed scaled `height` in height: its
 ## snow line no lower than the drawn floor (SkyPeaks `_make`).
 func _range(seed_value: int, height := 1.0) -> RefCounted:
@@ -126,7 +138,7 @@ func _snow_line(falls: Vector4) -> void:
 			var sheer := 0
 			for k in range(0,vertices.size(),3):
 				var y := (vertices[k].y+vertices[k+1].y+vertices[k+2].y)/3.0
-				var snowy := _snowy(need[k].x,y,q,falls)
+				var snowy := _white(need,k,y,q,falls) > 0.5
 				var n := (vertices[k+2]-vertices[k]).cross(vertices[k+1]-vertices[k]).normalized()
 				if y > peak.top-40.0:
 					top += 1
@@ -152,8 +164,13 @@ func _snow_line(falls: Vector4) -> void:
 		# Spring as drawn: exactly the faces the range was always snowed on.
 		var drawn := PeakTest._as_drawn(arrays,falls.x,snow)
 		var white := 0
+		# A face counts white when most of its corners are (SkyPeak
+		# `_point_needs`), as `counts` reads it.
 		for k in range(0,drawn.size(),3):
-			if drawn[k].b > 0.8 and drawn[k].g > 0.8: white += 1
+			var corners_white := 0
+			for c in range(3):
+				if drawn[k+c].b > 0.8 and drawn[k+c].g > 0.8: corners_white += 1
+			if corners_white >= 2: white += 1
 		check(white == counts[0],"Seed %d: in spring the snowed faces are the ones drawn white (%d, %d)" % [s,white,counts[0]])
 		# The far faces and the skyline's read the same line.
 		for stride: int in [SkyPeaks.LOD_STRIDE,SkyRing.STRIDE]:
@@ -180,7 +197,7 @@ func _winter_dust(arrays: Array, falls: Vector4, height: float) -> float:
 		if y < SkyPeak.SEA or y > low: continue
 		var a := (vertices[k+1]-vertices[k]).cross(vertices[k+2]-vertices[k]).length()*0.5
 		area += a
-		if need[k].x >= 0.0 and _snowy(need[k].x,y,3,falls,height): white += a
+		white += a*_white(need,k,y,3,falls,height,true)
 	return white/maxf(area,1.0)
 
 ## A low range, as a wall's low stretch or a foothill stands (its top not
@@ -200,7 +217,7 @@ func _low_range(falls: Vector4) -> void:
 			if y < SkyPeak.SEA: continue
 			var a := (vertices[k+1]-vertices[k]).cross(vertices[k+2]-vertices[k]).length()*0.5
 			area += a
-			if _snowy(need[k].x,y,3,falls,height): white += a
+			white += a*_white(need,k,y,3,falls,height)
 		check(white/maxf(area,1.0) < 0.1,"Seed %d low (top %.0f m): winter dusts it, %.1f%% of its face white" % [s,top_world,white/maxf(area,1.0)*100.0])
 
 ## The sea's summits (scripts/sky_ring.gd `_make_summit`), only their top
@@ -222,7 +239,7 @@ func _summits(falls: Vector4) -> void:
 				if y < sea: continue
 				var a := (vertices[k+1]-vertices[k]).cross(vertices[k+2]-vertices[k]).length()*0.5
 				area += a
-				if _snowy(need[k].x,y,q,falls): white += a
+				white += a*_white(need,k,y,q,falls)
 			shares.append(snappedf(white/maxf(area,1.0),0.001))
 		var ok: bool = float(shares[0]) > 0.0 and float(shares[1]) > float(shares[0])*0.5 and float(shares[1]) < float(shares[2]) and float(shares[2]) < float(shares[0]) and float(shares[0]) < float(shares[3]) and float(shares[3]) < 0.9
 		check(ok,"Summit %d (%.0f m over the sea): a cap every season, summer at least half spring's, summer to winter %s of what shows" % [pick[0],pick[1],str([shares[1],shares[2],shares[0],shares[3]])])
@@ -240,7 +257,7 @@ func _snow_share(arrays: Array, falls: Vector4, q: int) -> float:
 		var band := floori((y-SkyPeak.SEA)/40.0)
 		var a := (vertices[k+1]-vertices[k]).cross(vertices[k+2]-vertices[k]).length()*0.5
 		area[band] = float(area.get(band,0.0))+a
-		if _snowy(need[k].x,y,q,falls): white[band] = float(white.get(band,0.0))+a
+		white[band] = float(white.get(band,0.0))+a*_white(need,k,y,q,falls)
 	var total := 0.0
 	var count := 0
 	for band in area:

@@ -158,6 +158,13 @@ func screen(spots: Array, veiled := 0.0) -> void:
 	_material.set_shader_parameter("tower_spans",spans)
 	_material.set_shader_parameter("veiled",veiled)
 
+## The planes' tunnels (CloudWakes `at`, `way`), for the puffs to part
+## along.
+func wakes(at: PackedVector4Array, way: PackedVector4Array) -> void:
+	if _material == null: return
+	_material.set_shader_parameter("wake_at",at)
+	_material.set_shader_parameter("wake_way",way)
+
 ## A cloud's middle now, at `time` (the scene's motion time), as the shader
 ## places it.
 func centre(index: int, time: float) -> Vector3:

@@ -261,12 +261,16 @@ const SNOW_JITTER := 0.03
 const SNOW_COLOUR := Color(0.9,0.93,0.96)
 ## Seasons: a face's snow need (m) where it never holds snow.
 const SNOW_NEVER := 1.0e5
+## Seasons: a corner's need is blended from needs held this far (m) either
+## way, past any season's fall (shaders/sky_season.gdshaderinc), so what is
+## bare at the line's lowest stays bare (`_point_needs`).
+const SNOW_BLEND := 220.0
 ## Seasons: a sea's summit (scripts/sky_ring.gd `_make_summit`) shows only
 ## its top few tens of metres, so the season's fall (m, shaders/
 ## sky_season.gdshaderinc) moves its line this share of its showing height
 ## a metre of fall: up (x, toward summer) only a little, so summer still
 ## leaves a cap; down (y, toward winter) further (`season_share`).
-const SUMMIT_SEASON := Vector2(1.0/1400.0,1.0/300.0)
+const SUMMIT_SEASON := Vector2(1.0/1800.0,1.0/300.0)
 ## The rock's cooling toward the far peaks' blue-grey, of its own lightness:
 ## half of COOL at the sea, all of it at the top; and that grey's hue.
 const COOL := 0.3
@@ -1265,15 +1269,17 @@ func body_arrays(_grass: Array, _rock: Array, _gravel: Color, shift := Vector3.Z
 					vertices.append((q[0] as Vector3)+shift)
 					normal_list.append(_agree(broad[q[1]],n))
 					colour_list.append(tone)
-	needs = _despeckle(needs,corners)
+	needs = _point_needs(_despeckle(needs,corners),corners)
 	var uv := PackedVector2Array()
 	var uv2 := PackedVector2Array()
 	uv.resize(vertices.size())
 	uv2.resize(vertices.size())
 	# Seasons: the snow need rides UV.x and its shade UV2.x, both unread by
 	# the ground material's grown terrain (reference_surface `peak_snow`).
+	# The need is each corner's, shared by every face round it, so the snow's
+	# edge runs smoothly across the faces instead of face by face.
 	for k in range(vertices.size()):
-		uv[k] = Vector2(needs[k/3],1.0)
+		uv[k] = Vector2(needs[k],1.0)
 		uv2[k] = Vector2(shades[k/3],vertices[k].y)
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
@@ -1350,6 +1356,47 @@ static func _despeckle(needs: PackedFloat32Array, corners: PackedInt32Array) -> 
 		var need := needs[f]
 		if need > most: out[f] = most
 		elif need < least: out[f] = least
+	return out
+
+## Seasons: each vertex's snow need (one per entry of `corners`, the faces'
+## grid points in vertex order), the middle of the needs of the faces round
+## its grid point, each held within SNOW_BLEND either way so a face that
+## never snows doesn't pull its corners past any season's line. Read per
+## vertex and blended across each face, the snow's edge is a line through the
+## faces, not a checkerboard of whole faces white and bare.
+static func _point_needs(needs: PackedFloat32Array, corners: PackedInt32Array) -> PackedFloat32Array:
+	var round := {}
+	# The grid points sharing a face with each, for the despeckle below.
+	var near := {}
+	for k in range(corners.size()):
+		var c := corners[k]
+		if not round.has(c):
+			round[c] = []
+			near[c] = {}
+		(round[c] as Array).append(clampf(needs[k/3],-SNOW_BLEND,SNOW_BLEND))
+		var f := k/3*3
+		for e in range(3):
+			if corners[f+e] != c: (near[c] as Dictionary)[corners[f+e]] = true
+	var middle := {}
+	for c: int in round:
+		var all: Array = round[c]
+		all.sort()
+		var half := all.size()/2
+		middle[c] = all[half] if all.size()%2 == 1 else (float(all[half-1])+float(all[half]))*0.5
+	# No lone point either: one over (or under) every point round it takes
+	# the greatest (least) of theirs, as `_despeckle` does the faces.
+	var kept := middle.duplicate()
+	for c: int in middle:
+		var most := -INF
+		var least := INF
+		for g: int in near[c]:
+			most = maxf(most,middle[g])
+			least = minf(least,middle[g])
+		if (near[c] as Dictionary).size() < 2: continue
+		kept[c] = clampf(middle[c],least,most)
+	var out := PackedFloat32Array()
+	out.resize(corners.size())
+	for k in range(corners.size()): out[k] = kept[corners[k]]
 	return out
 
 ## A one-surface mesh from surface arrays, with its material.
