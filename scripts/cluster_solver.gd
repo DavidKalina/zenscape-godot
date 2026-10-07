@@ -43,6 +43,7 @@ const ClusterLake = preload("res://scripts/cluster_lake.gd")
 const Falls = preload("res://scripts/cluster_falls.gd")
 const ForestHold = preload("res://scripts/forest_hold.gd")
 const Stack = preload("res://scripts/cluster_stack.gd")
+const RavineCut = preload("res://scripts/ravine_cut.gd")
 
 ## Rim to rim (m): any two members at least MIN_GAP; stepping stones
 ## STONE_GAP apart (a running jump is about 2.5 to 3 m; checked against
@@ -131,6 +132,7 @@ static func _solve(motif_name: String, seed_value: int, attempt: int) -> Diction
 		if rel.type == "stones": ok = _lay_stones(m,parent,rel,placed,plan,rng)
 		elif rel.type == "fall": ok = Falls.lay(m,parent,rel,placed,plan,rng,func(s: Dictionary, at: Vector3, pl: Array) -> bool: return _clear(s,at,pl,MIN_GAP))
 		elif rel.type == "stack": ok = Stack.place(m,placed,plan,rng)
+		elif rel.type in RavineCut.RELATIONS: ok = RavineCut.place(m,parent,rel,placed,plan,rng)
 		else:
 			for angle in _ways(motif,rel,m,parent,placed,rng,ring_base):
 				var gap: Vector2 = rel.get("gap",Vector2(6.0,12.0))
@@ -212,6 +214,9 @@ static func _member(motif: Dictionary, role: Dictionary, index: int, count: int,
 	if rng.randf() < float(role.get("pond",0.0)) and not spec.has("pond"):
 		spec.pond = {"toward":Vector2.from_angle(rng.randf()*TAU)}
 	var member_seed: int = int(role.get("seed",hash([seed_value,name]) & 0xffffff))
+	# A ravine's halves share the whole's seed, rock and keel (RavineCut
+	# `share`), so their variant is the whole's too.
+	if spec.has("tear"): member_seed = RavineCut.share(spec,rng.seed,motif)
 	spec.rock.vary = RockLooks.vary_of(member_seed)
 	var shape: RefCounted = SkyIslet.author(member_seed,spec)
 	var y := rng.randf_range(height.x,height.y)
@@ -423,7 +428,7 @@ static func _lay_stones(m: Dictionary, parent: Dictionary, rel: Dictionary, plac
 # --- 3. Bridges ---------------------------------------------------------------------
 
 static func _bridge(parent: Dictionary, m: Dictionary, plan: Dictionary) -> void:
-	var ends := _bridge_ends(parent,m,m.offset)
+	var ends: Array = m.bridge_ends if m.has("bridge_ends") else _bridge_ends(parent,m,m.offset)
 	var a: Vector3 = ends[0]
 	var b: Vector3 = ends[1]
 	var span := Vector2(b.x-a.x,b.z-a.z).length()
@@ -519,6 +524,8 @@ static func _feature(m: Dictionary, f: Dictionary, placed: Array, centre: Vector
 			ClusterLake.feature(m,f,placed,centre,rng,plan)
 		"paddies", "moss", "wheel", "brook", "edge_lanterns":
 			Falls.feature(m,f,rng,plan)
+		"overlook", "lip_lanterns":
+			if not RavineCut.feature(m,f,placed,plan): _missing(m,f,plan)
 		"fisher":
 			var dock := _find(m,"dock")
 			if dock.is_empty(): return

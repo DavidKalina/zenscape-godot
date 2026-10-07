@@ -52,6 +52,7 @@ const Erosion = preload("res://scripts/terrain_erosion.gd")
 const RockLooks = preload("res://scripts/rock_looks.gd")
 const IsletLake = preload("res://scripts/islet_lake.gd")
 const Woodland = preload("res://scripts/woodland.gd")
+const RavineCut = preload("res://scripts/ravine_cut.gd")
 
 ## Kinds and how often each turns up.
 const KINDS := [["meadow",0.22],["grove",0.22],["hills",0.15],["crag",0.11],["spring",0.18],["shore",0.12]]
@@ -287,6 +288,9 @@ var flowers: Array[String] = []
 ##     walker and the glide treat as land, reaching off the rim (a dock, a
 ##     footbridge's deck): straight from a to b, bowed `bow` m at the middle
 ##     (Footbridge `lift`'s shapes: up a sine, down a sine squared).
+##   tear: a ravine's half, cut from a whole island along a jagged tear
+##     (scripts/ravine_cut.gd: its side, the tear's shape, filled by
+##     `share`).
 var recipe := {}
 ## The recipe's decks, as it gives them.
 var decks: Array = []
@@ -296,6 +300,12 @@ var decks: Array = []
 var claims: Array[Vector4] = []
 ## Rectangles (Rect2) of tilled earth, drawn in the earth's colour.
 var soil: Array[Rect2] = []
+## A ravine's half (a recipe's `tear`, scripts/ravine_cut.gd `cut`): the
+## grid's points stand `grid_shift` off its own middle (the whole island's
+## frame to the half's), and `cleft` holds the whole's keel, the tear's
+## shore edges and the half's middle in the whole's frame.
+var grid_shift := Vector2.ZERO
+var cleft := {}
 
 ## An islet laid out by hand from `spec` (see `recipe`), its kind
 ## `spec.kind`, the rest of it seeded by `seed_value` as any islet's is.
@@ -340,6 +350,7 @@ func _shape(seed_value: int, forced: String) -> void:
 	outline = IslandOutline.mask(points,ids,seed_value,-1.0,half,area)
 	shore_distance = IslandOutline.shore_distance(points,ids,outline)
 	shore_edges = IslandOutline.shore_edges(ids,outline)
+	if recipe.has("tear"): RavineCut.cut(self)
 	land.clear()
 	for f in range(outline.size()):
 		if outline[f] == 0: land.append(f)
@@ -347,7 +358,7 @@ func _shape(seed_value: int, forced: String) -> void:
 	for i in range(points.size()):
 		if shore_distance[i] >= 0.0: reach = maxf(reach,points[i].length())
 	_lay_ground(rng)
-	keel = IslandShore.keel(points,ids,outline,shore_distance)
+	keel = IslandShore.keel(points,ids,outline,shore_distance) if cleft.is_empty() else cleft.keel
 	if recipe.has("keel") or recipe.has("deep"):
 		var deeper := float(recipe.keel) if recipe.has("keel") else RockLooks.keel(radius,float(recipe.deep))
 		for i in range(keel.size()): keel[i] *= deeper
@@ -618,8 +629,8 @@ func wet(p: Vector2) -> bool:
 ## The land face holding `p`, as Vector4(face, weights a, b, c's first two),
 ## or face -1 off the land.
 func _locate(p: Vector2) -> Array:
-	var i := floori((p.x+half)/STEP)
-	var j := floori((p.y+half)/STEP)
+	var i := floori((p.x+grid_shift.x+half)/STEP)
+	var j := floori((p.y+grid_shift.y+half)/STEP)
 	for dj in [0,-1,1]:
 		for di in [0,-1,1]:
 			var ci: int = i+di
@@ -1249,6 +1260,7 @@ func side_arrays() -> Array:
 		for i in [shore_edges[k],shore_edges[k+1]]:
 			if not rings.has(i): rings[i] = _wall_rings(i,outward[i],slump)
 	for k in range(0,shore_edges.size(),3):
+		if not cleft.is_empty() and cleft.edges[k/3] == 1: continue
 		var a := shore_edges[k]
 		var b := shore_edges[k+1]
 		var pa := points[a]
@@ -1269,6 +1281,7 @@ func side_arrays() -> Array:
 			var i := ids[f*3+k]
 			tri.append(Vector3(points[i].x,base-keel[i],points[i].y))
 		IslandShore._add(vertices,uvs,into,tri,Vector3.DOWN,[],0.0)
+	if not cleft.is_empty(): RavineCut.wall(self,vertices,uvs)
 	var normals := PackedVector3Array()
 	normals.resize(vertices.size())
 	for i in range(0,vertices.size(),3):

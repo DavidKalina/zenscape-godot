@@ -223,6 +223,33 @@ const MOTIFS := {
 				"features":[{"type":"cabin"},{"type":"garden","chance":0.75},{"type":"hives","chance":0.6,"count":Vector2i(2,3)},
 					{"type":"bearer","chance":0.6}],
 				"relation":{"type":"stack"}},
+	# One big island torn in two (scripts/ravine_cut.gd): the halves share
+	# the whole's outline and rock, the far one stands a little higher, a
+	# rope bridge spans the gap, the near half's spring falls into it, a
+	# broken-off chunk hangs in its wide end, a lookout juts out over it.
+	"ravine": {
+		"label":"Ravine","layout":"scatter",
+		"rock":{"palettes":["basalt_warm","basalt_warm","basalt"],"tone":Vector2(0.95,1.1)},"keel":Vector2(1.0,1.25),
+		"night":{"windows":true,"lanterns":true,"beam":false},
+		"roles":[
+			{"name":"near","anchor":true,"kind":"meadow","radius":Vector2(20.0,20.0),"height":Vector2(0.0,0.0),
+				"spec":{"tear":{"side":-1,"fall":true},"dome":0.6,"trees":Vector2i(6,10),"tree_pool":{"broadleaf":1.0,"birch":0.8,"tree":0.6,"willow":0.3},
+					"mixed":true,"tree_size":Vector2(0.9,1.3),"drifts":Vector2i(6,10)},
+				"features":[{"type":"cabin"},{"type":"lamps","count":Vector2i(2,3)},{"type":"bearer","chance":0.7},{"type":"lip_lanterns","count":Vector2i(2,3)}]},
+			{"name":"far","kind":"grove","radius":Vector2(20.0,20.0),"height":Vector2(0.8,1.8),
+				"spec":{"tear":{"side":1},"dome":1.1,"trees":Vector2i(34,48),"tree_pool":{"tree":1.0,"redwood":0.35,"juniper":0.4,"broadleaf":0.5,"birch":0.4},
+					"mixed":true,"tree_size":Vector2(0.75,1.6),"apart":0.75,"undergrowth":1.6},
+				"features":[{"type":"overlook"},{"type":"lip_lanterns","count":Vector2i(2,3)}],
+				"relation":{"type":"tear","to":"near"}},
+			{"name":"chunk","kind":"crag","radius":Vector2(2.3,2.9),"height":Vector2(-14.0,-8.0),
+				"spec":{"peaks":[Vector4(0.0,0.0,2.4,1.1)],"trees":Vector2i(0,2),"tree_pool":{"juniper":1.0},"keel":1.6},
+				"relation":{"type":"cleft","to":"near"}},
+			{"name":"isle","kind":"hills","radius":Vector2(3.2,5.5),"height":Vector2(-7.0,5.0),"count":Vector2i(1,2),"chance":0.9,
+				"spec":{"trees":Vector2i(1,3),"tree_pool":{"juniper":1.0,"tree":0.7,"birch":0.4}},
+				"relation":{"type":"flank","to":"near","gap":Vector2(6.0,14.0)}},
+			{"name":"crag","kind":"crag","radius":Vector2(3.0,4.5),"height":Vector2(-4.0,9.0),"count":Vector2i(1,2),"chance":0.85,
+				"spec":{"peaks":[Vector4(0.0,0.0,3.0,1.0)],"trees":Vector2i(0,2),"tree_pool":{"juniper":1.0}},
+				"relation":{"type":"flank","to":"far","gap":Vector2(6.0,14.0)}},
 		]},
 }
 

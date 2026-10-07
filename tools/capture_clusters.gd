@@ -12,6 +12,7 @@ extends SceneTree
 ##   Godot --windowed --path . --resolution 1280x720 -s res://tools/capture_clusters.gd \
 ##     -- --no-title --showcase --out=captures/clusters/try1 [--per=2] [--seed=7] [--hours=noon,night] [--only=showcase] [--lone=3]
 const Motifs = preload("res://scripts/cluster_motifs.gd")
+const RavineShots = preload("res://tools/ravine_shots.gd")
 var scene: Node3D
 var eye: Node
 var out := "/private/tmp/zs-clusters"
@@ -156,6 +157,8 @@ func _shots(field: Node3D, s: Dictionary) -> Array:
 		{"label":"rock","eye":rock_eye,"look":big.home+Vector3.DOWN*float(big.shape.depth)*0.35},
 		{"label":"far","eye":centre+(toward_home*0.9-side*0.9).normalized()*220.0+Vector3.UP*25.0,"look":centre}]+shots
 	if s.motif == "falls": out.append_array(_falls_shots(field,s,stood))
+	var plan: Dictionary = field.clusters.get(s.key,{}).get("plan",{})
+	if plan.has("cleft"): out.append_array(RavineShots.shots(plan,at))
 	return out
 
 ## `count` seeded islets (the nearest to the home with their cells' spots),

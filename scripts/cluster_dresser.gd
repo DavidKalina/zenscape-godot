@@ -26,6 +26,7 @@ const LakeDress = preload("res://scripts/lake_dress.gd")
 const FallsDress = preload("res://scripts/cluster_falls_dress.gd")
 const ForestHold = preload("res://scripts/forest_hold.gd")
 const StackBuilds = preload("res://scripts/stack_builds.gd")
+const RavineBuilds = preload("res://scripts/ravine_builds.gd")
 
 ## The panes' and lamps' glow, the halos' (deeper, so added over the night
 ## and through the tonemap they still read as lamplight, amber, not
@@ -117,7 +118,7 @@ static func prepare(member: Dictionary, plan: Dictionary) -> Dictionary:
 		var f: Dictionary = member.features[i]
 		match str(f.type):
 			"dock":
-				out.features[i] = Builds.dock(f.a,f.b,1.5,int(member.seed) % 997)
+				out.features[i] = RavineBuilds.overlook(f,int(member.seed) % 997) if f.has("lookout") else Builds.dock(f.a,f.b,1.5,int(member.seed) % 997)
 			"field":
 				var rect: Rect2 = f.rect
 				var corners := PackedVector2Array([rect.position+Vector2(-0.3,-0.3),Vector2(rect.end.x+0.3,rect.position.y-0.3),rect.end+Vector2(0.3,0.3),Vector2(rect.position.x-0.3,rect.end.y+0.3)])
@@ -244,7 +245,7 @@ static func furnish(node: Node3D, member: Dictionary, plan: Dictionary, made: Di
 				dock.mesh = made.features.get(i)
 				dock.material_override = m.solid
 				node.add_child(dock)
-				var hang := Builds.dock_lantern(f.a,f.b,1.5)
+				var hang := RavineBuilds.overlook_lantern(f) if f.has("lookout") else Builds.dock_lantern(f.a,f.b,1.5)
 				var lantern := _lantern(node,hang+Vector3.DOWN*0.34,1.0)
 				halos.append([hang+Vector3.DOWN*0.2,HALO_LANTERN])
 				_light(lantern,Vector3(0.0,0.12,0.0),4.0,0.9,FADE_SMALL,live)
