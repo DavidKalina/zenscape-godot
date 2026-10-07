@@ -87,6 +87,9 @@ func run() -> void:
 	check(volume.tier == 1, "The look pass's quality tier reaches it")
 	look.apply_tier(0)
 	check(is_equal_approx(p[176],CloudVolume.SHADE_SPLIT), "The shade's split is handed on")
+	# The shade map is drawn every few frames and told to the land the frame
+	# after.
+	for i in range(CloudVolume.SHADE_EVERY+1): volume._fill()
 	check(is_equal_approx(volume.shade_at.z,side) and volume.shade_at.w == 1.0 and is_equal_approx(volume.shade_at.x,p[164]), "The land is told where the cloud's shade lies")
 	check(effect.shadow is Texture2DRD and effect.weather is Texture2DRD, "The shade map and the weather map are the passes' own")
 	var flash := Node.new()

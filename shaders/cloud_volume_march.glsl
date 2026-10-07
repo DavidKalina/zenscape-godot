@@ -70,7 +70,7 @@ layout(set = 0, binding = 0, std430) restrict readonly buffer Params {
 	vec4 weather_at;    // corner xz (world), side (m), texels a side
 	vec4 quality;       // march steps, light taps, march scale (1 or 2), fine octaves on
 	vec4 flash;         // lightning: xyz, strength (zs_flash)
-	vec4 shadow_at;     // the split height (m) between the shade from on high and the heaps', shadow texels a side, 0, 0
+	vec4 shadow_at;     // the split height (m) between the shade from on high and the heaps', shadow texels a side, weather redrawn, shade redrawn
 	vec4 wake_at[32];   // xyz, time laid
 	vec4 wake_way[32];  // back to the previous point xyz, radius
 } P;
@@ -825,14 +825,16 @@ void march_pass() {
 			if (!faced) {
 				faced = true;
 				float e = mix(5.0, 14.0, sstep(60.0, 900.0, t));
-				// Central differences of the coarse form; where it has none
-				// round here (a wisp off the body), half turned.
+				// The coarse form's slope (central differences); where it
+				// has none round here (a wisp off the body, the sentinel),
+				// half turned.
+				float here = inside_cheap(p);
 				vec3 grad = vec3(
 					inside_cheap(p + vec3(e, 0.0, 0.0)) - inside_cheap(p - vec3(e, 0.0, 0.0)),
 					inside_cheap(p + vec3(0.0, e, 0.0)) - inside_cheap(p - vec3(0.0, e, 0.0)),
 					inside_cheap(p + vec3(0.0, 0.0, e)) - inside_cheap(p - vec3(0.0, 0.0, e)));
 				turned = 0.5;
-				if (dot(grad, grad) > 1e-6 && dot(grad, grad) < 1e5 * e * e) turned = sstep(-0.2, 0.75, dot(-normalize(grad), key));
+				if (here > -500.0 && dot(grad, grad) > 1e-6 && dot(grad, grad) < 4e5 * e * e) turned = sstep(-0.2, 0.75, dot(-normalize(grad), key));
 			}
 			od += (1.0 - turned) * FACE_SHADE;
 			if (T > 0.1) od += tower_shade(p, key);

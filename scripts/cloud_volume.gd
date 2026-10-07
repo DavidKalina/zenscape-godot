@@ -57,6 +57,10 @@ const TIERS := [
 	[88,4,2,0],
 	[150,6,2,1],
 ]
+## The weather map is redrawn every this many frames, the shade on the
+## land every this many (every frame for now; a lighter tier may skip).
+const WEATHER_EVERY := 1
+const SHADE_EVERY := 1
 ## --cloud-full-res marches every pixel every frame, at any tier.
 const FULL_RES_FLAG := "--cloud-full-res"
 
@@ -301,11 +305,16 @@ func _fill() -> void:
 			_put4(p,180+i*4,near[0][i])
 			_put4(p,308+i*4,near[1][i])
 	_put4(p,48,Vector4(_frame,tower_count,wake_count,night))
-	# The weather map's square, snapped to its texels so it never swims.
-	var reach_now: float = float(sea.reach) if sea != null else SkySea.REACH
-	weather_side = (reach_now+WEATHER_PAST)*2.0
-	var texel := weather_side/CloudVolumeEffect.WEATHER_TEXELS
-	weather_corner = ((Vector2(eye.x,eye.z)-Vector2.ONE*weather_side*0.5)/texel).floor()*texel
+	# The weather map's square, snapped to its texels so it never swims;
+	# moved only on a frame it is redrawn, so the march always reads it
+	# where it was drawn.
+	var weather_due := _frame%WEATHER_EVERY == 0 or weather_side == 0.0
+	var shade_due := _frame%SHADE_EVERY == 0
+	if weather_due:
+		var reach_now: float = float(sea.reach) if sea != null else SkySea.REACH
+		weather_side = (reach_now+WEATHER_PAST)*2.0
+		var texel := weather_side/CloudVolumeEffect.WEATHER_TEXELS
+		weather_corner = ((Vector2(eye.x,eye.z)-Vector2.ONE*weather_side*0.5)/texel).floor()*texel
 	_put4(p,164,Vector4(weather_corner.x,weather_corner.y,weather_side,CloudVolumeEffect.WEATHER_TEXELS))
 	_put4(p,168,Vector4(quality[0],quality[1],march_scale(),quality[3]))
 	var flash := Vector4.ZERO
@@ -313,8 +322,12 @@ func _fill() -> void:
 		var at: Vector3 = lightning.get("flash_position")
 		flash = Vector4(at.x,at.y,at.z,float(lightning.get("flash")))
 	_put4(p,172,flash)
-	_put4(p,176,Vector4(SHADE_SPLIT,CloudVolumeEffect.SHADOW_TEXELS,0.0,0.0))
-	_publish_shade(sea != null and strength > 0.0 or tower_count > 0, key)
+	_put4(p,176,Vector4(SHADE_SPLIT,CloudVolumeEffect.SHADOW_TEXELS,1.0 if weather_due else 0.0,1.0 if shade_due else 0.0))
+	# The land reads the shade map the frame after it is drawn (it is drawn
+	# after the land), at the square it was drawn over.
+	var shading: bool = sea != null and strength > 0.0 or tower_count > 0
+	if _shade_drawn != Vector4.ZERO or not shading: _publish_shade(shading,key,_shade_drawn)
+	_shade_drawn = Vector4(weather_corner.x,weather_corner.y,weather_side,1.0) if shade_due and shading else Vector4.ZERO
 	_frame = (_frame+1)%4096
 	var sea_material: ShaderMaterial = sea.material if sea != null else null
 	# The bakes only once drawn (their render targets are made by then).
@@ -343,10 +356,12 @@ func _fill() -> void:
 ## The cloud's shade on the land (shaders/cloud_volume_shadow.gdshaderinc):
 ## the shade map, its square, and the light and the sea's feet it looks up
 ## from; off, the land takes none.
-## What the land was last told (zs_cloud_shadow_at): corner xz, side, on.
+## What the land was last told (zs_cloud_shadow_at): corner xz, side, on;
+## and the square of the shade map drawn last frame, still to tell it.
 var shade_at := Vector4.ZERO
+var _shade_drawn := Vector4.ZERO
 var _shade_published := false
-func _publish_shade(on: bool, light := Vector3.UP) -> void:
+func _publish_shade(on: bool, light := Vector3.UP, square := Vector4.ZERO) -> void:
 	if not on:
 		if _shade_published: RenderingServer.global_shader_parameter_set("zs_cloud_shadow_at",Vector4.ZERO)
 		_shade_published = false
@@ -355,7 +370,7 @@ func _publish_shade(on: bool, light := Vector3.UP) -> void:
 	if not _shade_published:
 		RenderingServer.global_shader_parameter_set("zs_cloud_shadow",effect.shadow)
 	_shade_published = true
-	shade_at = Vector4(weather_corner.x,weather_corner.y,weather_side,1.0)
+	shade_at = square
 	RenderingServer.global_shader_parameter_set("zs_cloud_shadow_at",shade_at)
 	RenderingServer.global_shader_parameter_set("zs_cloud_shadow_light",Vector4(light.x,light.y,light.z,SkySea.FLOOR))
 

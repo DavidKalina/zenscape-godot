@@ -53,6 +53,12 @@ const RESOLVE_FLOATS := 16+16+4*4
 const WEATHER_TEXELS := 1024
 const CEILING_TEXELS := WEATHER_TEXELS/32
 const SHADOW_TEXELS := 256
+## Where in the march's block the driver says whether the weather map (with
+## its ceiling) and the shade are redrawn this frame (shadow_at z, w), for
+## when a lighter tier draws them less often (CloudVolume WEATHER_EVERY,
+## SHADE_EVERY).
+const WEATHER_DUE := 178
+const SHADE_DUE := 179
 ## The march shader's passes (its push constant).
 enum {PASS_WEATHER, PASS_CEILING, PASS_SHADOW, PASS_MARCH}
 
@@ -222,9 +228,11 @@ func _render_callback(_type: int, data: RenderData) -> void:
 	_rd.buffer_update(_resolve_buffer,0,RESOLVE_FLOATS*4,resolve_params.to_byte_array())
 	# The weather map, its ceiling, the shade on the land, then the march:
 	# each pass writes one target and reads what the ones before it wrote.
-	_pass(PASS_WEATHER,depth,_weather,_flat,_scratch,_scratch,_flat,Vector2i(WEATHER_TEXELS,WEATHER_TEXELS))
-	_pass(PASS_CEILING,depth,_scratch,_weather,_scratch,_ceiling,_flat,Vector2i(CEILING_TEXELS,CEILING_TEXELS))
-	_pass(PASS_SHADOW,depth,_scratch,_weather,_shadow,_scratch,_ceiling,Vector2i(SHADOW_TEXELS,SHADOW_TEXELS))
+	if march_params[WEATHER_DUE] > 0.5 or _fresh:
+		_pass(PASS_WEATHER,depth,_weather,_flat,_scratch,_scratch,_flat,Vector2i(WEATHER_TEXELS,WEATHER_TEXELS))
+		_pass(PASS_CEILING,depth,_scratch,_weather,_scratch,_ceiling,_flat,Vector2i(CEILING_TEXELS,CEILING_TEXELS))
+	if march_params[SHADE_DUE] > 0.5 or _fresh:
+		_pass(PASS_SHADOW,depth,_scratch,_weather,_shadow,_scratch,_ceiling,Vector2i(SHADOW_TEXELS,SHADOW_TEXELS))
 	_pass(PASS_MARCH,depth,_scratch,_weather,_scratch,_scratch,_ceiling,size)
 	var resolve := UniformSetCacheRD.get_cache(_resolve_shader,0,[
 		_buffer(0,_resolve_buffer),
