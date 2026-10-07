@@ -16,7 +16,8 @@
 //   the basalt carries its beds' fine layering, blotches and cracks inside
 //     each face, a few metres across, faded out before they alias, so near
 //     faces show many lines and the facet itself steps back;
-//   the low air: the rock pales into the cloud's mist toward the sea and
+//   the low air: the rock pales into the cloud's mist toward the sea (its
+//     top riding up the gullies and down off the spurs, never level) and
 //     through a slow, drifting band of mist on its flanks (as `sea_mist`).
 // On the peaks alone, and each part skipped where it can't show: the grain
 // past the distance it resolves at, the low air above its reach, the
@@ -56,6 +57,11 @@ const float ZS_PEAK_BAND_WANDER = 45.0;
 const float ZS_PEAK_BAND_HALF = 20.0;
 const float ZS_PEAK_BAND_MOST = 0.5;
 const float ZS_PEAK_BAND_DRIFT = 2.2;
+// The low air's top isn't level: it rides this many metres up and down
+// either way over this wavelength (m) along the range, so its edge climbs
+// the gullies and dips off the spurs instead of ruling a line across.
+const float ZS_PEAK_LOW_AIR_RAG = 55.0;
+const float ZS_PEAK_LOW_AIR_RAG_WAVE = 190.0;
 
 // The prevailing wind over the ranges (world xz), for the lee: the snow
 // gathers on the faces turned away from it. Not the plate's breeze, which
@@ -161,10 +167,16 @@ vec3 zs_peak_rock_grain(vec3 rock, vec3 rel, vec3 n, float px) {
 	return rock * max(shade, 0.4);
 }
 
+// How far (m) the low air rides up (+) or down (-) at `rel`.
+float zs_peak_low_air_lift(vec3 rel) {
+	return (zs_peak_fbm(rel.xz / ZS_PEAK_LOW_AIR_RAG_WAVE + 13.7) - 0.5) * 2.0 * ZS_PEAK_LOW_AIR_RAG;
+}
+
 // How far into the mist the low air takes the rock (`above` m over the
 // sea's top), and the drifting band's share.
 float zs_peak_low_air(float above, vec3 rel, float time) {
-	if (above > max(ZS_PEAK_LOW_AIR, ZS_PEAK_BAND_AT + ZS_PEAK_BAND_WANDER + ZS_PEAK_BAND_HALF * 2.5)) return 0.0;
+	if (above > max(ZS_PEAK_LOW_AIR, ZS_PEAK_BAND_AT + ZS_PEAK_BAND_WANDER + ZS_PEAK_BAND_HALF * 2.5) + ZS_PEAK_LOW_AIR_RAG) return 0.0;
+	above = max(above - zs_peak_low_air_lift(rel), 0.0);
 	float low = 1.0 - smoothstep(0.0, ZS_PEAK_LOW_AIR, above);
 	vec2 drift = rel.xz + normalize(peak_lee) * time * ZS_PEAK_BAND_DRIFT;
 	float lay = zs_peak_fbm(drift / 160.0);

@@ -75,7 +75,7 @@ func _check_arrays(label: String, shape: RefCounted, arrays: Array, snow_line: b
 		broad[f] = (nrm[f*3]+nrm[f*3+1]+nrm[f*3+2]).normalized()
 		if n.y <= 0.0: turned += 1
 		for k in range(3): worst_agree = minf(worst_agree,nrm[f*3+k].dot(n))
-		var snowy := uv[f*3].x < 0.0
+		var snowy := _face_need(uv,f) < 0.0
 		var colour := col[f*3]
 		drawn[f] = palette.snow if snowy else colour
 		var y := (a.y+b.y+c.y)/3.0
@@ -119,18 +119,30 @@ func _check_arrays(label: String, shape: RefCounted, arrays: Array, snow_line: b
 	# a few are fine; the pits were faces lit from behind and lone bare
 	# faces in the snow, five to ten times as many on a skyline.
 	check(pits <= faces/500,"%s: hardly a face lit far darker than every face round it, a pit (%d of %d)" % [label,pits,faces])
-	# At every season's line no face stands alone: bare in the snow, or
-	# white on bare rock (`_despeckle`): summer's, as drawn and winter's.
+	# At every season's line no corner stands alone: a speck bare in the
+	# snow, or white on bare rock (`_despeckle`, `_point_needs`): summer's,
+	# as drawn and winter's. The need rides the corners, each grid point's
+	# shared by every face round it.
+	var point_need := {}
+	var point_near := {}
+	for k in range(v.size()):
+		var key := Vector3i((v[k]*4.0).round())
+		point_need[key] = uv[k].x
+		if not point_near.has(key): point_near[key] = {}
+		var f := k/3*3
+		for e in range(3):
+			var other := Vector3i((v[f+e]*4.0).round())
+			if other != key: (point_near[key] as Dictionary)[other] = true
 	for fall in [-70.0,0.0,110.0]:
 		var lone := 0
-		for f in range(faces):
-			if (round[f] as Array).size() < 2: continue
-			var mine: bool = uv[f*3].x < fall
+		for key: Vector3i in point_need:
+			if (point_near[key] as Dictionary).size() < 2: continue
+			var mine: bool = float(point_need[key]) < fall
 			var alone := true
-			for g: int in round[f]:
-				if (uv[g*3].x < fall) == mine: alone = false
+			for other: Vector3i in point_near[key]:
+				if (float(point_need[other]) < fall) == mine: alone = false
 			if alone: lone += 1
-		check(lone == 0,"%s: with the snow line %+.0f m, no face alone, bare in the snow or white on the rock (%d)" % [label,fall,lone])
+		check(lone == 0,"%s: with the snow line %+.0f m, no corner alone, bare in the snow or white on the rock (%d)" % [label,fall,lone])
 	check(green == 0,"%s: no green rock (%d faces)" % [label,green])
 	check(warm == 0,"%s: no warm, brown rock (%d faces)" % [label,warm])
 	check(rock > 0 and lum_lo >= 0.03 and lum_hi <= 0.2,"%s: the rock is basalt, dark (luminance %.3f to %.3f, linear)" % [label,lum_lo,lum_hi])
@@ -143,7 +155,7 @@ func _check_arrays(label: String, shape: RefCounted, arrays: Array, snow_line: b
 	else:
 		var snowed := 0
 		for f in range(faces):
-			if uv[f*3].x < 0.0: snowed += 1
+			if _face_need(uv,f) < 0.0: snowed += 1
 		check(snowed > faces/20,"%s: its cap is snowed (%d of %d faces)" % [label,snowed,faces])
 
 func _material() -> void:
@@ -207,3 +219,8 @@ func _shoulder_clouds(shape: RefCounted) -> void:
 	check(high.is_empty() or puffs.custom_aabb.end.y >= top,"%s: the puffs' bounds reach the flanks' cloud" % label)
 	puffs.free()
 	peaks.free()
+
+## A face's snow need at its middle: the mean of its corners' (SkyPeak
+## `_point_needs`), as the shader blends it across the face.
+static func _face_need(uv: PackedVector2Array, f: int) -> float:
+	return (uv[f*3].x+uv[f*3+1].x+uv[f*3+2].x)/3.0
