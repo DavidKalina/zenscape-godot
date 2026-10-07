@@ -49,6 +49,7 @@ const Stands = preload("res://scripts/tree_stands.gd")
 const MeadowTypes = preload("res://scripts/meadow_types.gd")
 const Samples = preload("res://scripts/garden_instance_samples.gd")
 const Erosion = preload("res://scripts/terrain_erosion.gd")
+const RockLooks = preload("res://scripts/rock_looks.gd")
 
 ## Kinds and how often each turns up.
 const KINDS := [["meadow",0.22],["grove",0.22],["hills",0.15],["crag",0.11],["spring",0.18],["shore",0.12]]
@@ -242,8 +243,9 @@ var blocks: Array[Vector3] = []
 ## The tree species and flower kinds standing on it, for the curious.
 var species: Array[String] = []
 var flowers: Array[String] = []
-## An authored islet's recipe (`author`), empty for a seeded one. What it
-## may set, each optional, every place in the islet's frame (m):
+## An authored islet's recipe (`author`); a seeded one's holds only its
+## rock and `deep` (RockLooks `seeded`). What it may set, each optional,
+## every place in the islet's frame (m):
 ##   radius: the land's radius, instead of the kind's range;
 ##   mounds / peaks: Array of Vector4(x, z, reach, height), smooth hill
 ##     mounds or the crag's ridged peaks, instead of the kind's own;
@@ -264,9 +266,11 @@ var flowers: Array[String] = []
 ##     they are, after the planting (a cabin, lamps, a field's rows);
 ##   blocks / crowns: extra walker blocks Vector3(x, z, radius) and glide
 ##     crowns Vector4(x, z, top, reach), for what stands on it;
-##   keel: a multiplier on how deep the rock hangs under it;
-##   rock: the look of its earth sides (SkyIslets `rock_material`):
-##     {"palette": name, "tone": brightness, "seed"};
+##   keel: a multiplier on how deep the rock hangs under it; or deep, the
+##     same by its size (RockLooks `keel`);
+##   rock: the look of its earth sides (scripts/rock_looks.gd, SkyIslets
+##     `_side_material`): {"palette": name, "tone": brightness, "vary": its
+##     variant, 0 to 1};
 ##   decks: Array of {a: Vector3, b: Vector3, width, bow}, planked ways a
 ##     walker and the glide treat as land, reaching off the rim (a dock, a
 ##     footbridge's deck): straight from a to b, bowed `bow` m at the middle
@@ -293,6 +297,8 @@ static func author(seed_value: int, spec: Dictionary) -> RefCounted:
 ## drawn by the seed.
 static func make(seed_value: int, forced := "") -> RefCounted:
 	var islet: RefCounted = new()
+	# Its rock as the clusters' is (scripts/rock_looks.gd), by its seed.
+	islet.recipe = RockLooks.seeded(seed_value)
 	islet._shape(seed_value,forced)
 	return islet
 
@@ -330,8 +336,8 @@ func _shape(seed_value: int, forced: String) -> void:
 		if shore_distance[i] >= 0.0: reach = maxf(reach,points[i].length())
 	_lay_ground(rng)
 	keel = IslandShore.keel(points,ids,outline,shore_distance)
-	if recipe.has("keel"):
-		var deeper := float(recipe.keel)
+	if recipe.has("keel") or recipe.has("deep"):
+		var deeper := float(recipe.keel) if recipe.has("keel") else RockLooks.keel(radius,float(recipe.deep))
 		for i in range(keel.size()): keel[i] *= deeper
 	base = -(BASE.x+BASE.y*radius)
 	var deepest := 0.0

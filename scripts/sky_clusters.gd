@@ -52,9 +52,10 @@ const HOLDS := 0.8
 ## Places tried in a cell for one clear of everything.
 const TRIES := 32
 ## How far a cluster's middle may sit off its cell's (share of the cell),
-## and its height band (m).
+## and its height band (m): high enough that a reef's tail and the deepest
+## keels stay over the cloud sea's heaps.
 const JITTER := 0.38
-const BAND := Vector2(-25.0,25.0)
+const BAND := Vector2(-8.0,30.0)
 const SALT := 3100
 ## Kept clear (m): of an island's spot; of the ranges' and walls' boxes and
 ## the band, past their own keeps (SkyPeaks `blocks`); of the band's haze

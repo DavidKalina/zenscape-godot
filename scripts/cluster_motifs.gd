@@ -117,7 +117,7 @@ const MOTIFS := {
 				"features":[{"type":"lighthouse"}],
 				"relation":{"type":"stones","to":"keeper","stones":Vector2i(2,3)}},
 			{"name":"reef","kind":"crag","kinds":{"crag":1.0,"hills":0.35},"radius":Vector2(2.0,7.5),"height":Vector2(-13.0,3.0),"count":Vector2i(4,7),
-				"rough":Vector2(0.15,0.75),"trail":{"size":Vector2(0.85,0.1),"mix":0.3,"odd":0.2,"lift":3.0,"bend":Vector2(0.3,0.6),"clump":0.35},
+				"rough":Vector2(0.12,0.45),"trail":{"size":Vector2(0.85,0.1),"mix":0.3,"odd":0.2,"lift":3.0,"bend":Vector2(0.3,0.6),"clump":0.35},
 				"spec":{"trees":Vector2i(0,2),"tree_pool":{"juniper":1.0,"tree":0.5},"drifts":Vector2i(0,2)},
 				"relation":{"type":"near","to":"prev","from":"rock","gap":Vector2(2.5,10.0)}},
 			{"name":"jetty","kind":"shore","radius":Vector2(4.5,5.5),"height":Vector2(-4.0,-2.0),"chance":0.7,

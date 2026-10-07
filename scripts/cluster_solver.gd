@@ -38,6 +38,7 @@ const Footbridge = preload("res://scripts/footbridge.gd")
 const Cabin = preload("res://scripts/cabin.gd")
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const MeadowTypes = preload("res://scripts/meadow_types.gd")
+const RockLooks = preload("res://scripts/rock_looks.gd")
 
 ## Rim to rim (m): any two members at least MIN_GAP; stepping stones
 ## STONE_GAP apart (a running jump is about 2.5 to 3 m; checked against
@@ -201,11 +202,11 @@ static func _member(motif: Dictionary, role: Dictionary, index: int, count: int,
 	var tone: Vector2 = rock.get("tone",Vector2.ONE)
 	spec.rock = {"palette":palettes[rng.randi()%palettes.size()],"tone":rng.randf_range(tone.x,tone.y)}
 	var keel: Vector2 = motif.get("keel",Vector2.ONE)
-	# Small islets hang less deep, so a run of them reads as rocks, not teeth.
-	spec.keel = lerpf(1.0,rng.randf_range(keel.x,keel.y),clampf((float(spec.radius)-2.0)/7.0,0.25,1.0))
+	spec.keel = RockLooks.keel(float(spec.radius),rng.randf_range(keel.x,keel.y))
 	if rng.randf() < float(role.get("pond",0.0)) and not spec.has("pond"):
 		spec.pond = {"toward":Vector2.from_angle(rng.randf()*TAU)}
 	var member_seed: int = int(role.get("seed",hash([seed_value,name]) & 0xffffff))
+	spec.rock.vary = RockLooks.vary_of(member_seed)
 	var shape: RefCounted = SkyIslet.author(member_seed,spec)
 	var y := rng.randf_range(height.x,height.y)
 	# A trail steps down toward its tail, each member off the line a little.
@@ -378,6 +379,8 @@ static func _lay_stones(m: Dictionary, parent: Dictionary, rel: Dictionary, plac
 			"rock":m.shape.recipe.get("rock",{}),"keel":float(m.shape.recipe.get("keel",1.0))}
 		var stone_seed: int = hash([plan.seed,m.name,"stone",k]) & 0xffffff
 		if m.role_data.has("seed"): stone_seed = 40031+k*977
+		spec.rock = (spec.rock as Dictionary).duplicate()
+		if not (spec.rock as Dictionary).is_empty(): spec.rock.vary = RockLooks.vary_of(stone_seed)
 		var shape: RefCounted = SkyIslet.author(stone_seed,spec)
 		stones.append({"name":"%s_stone%d" % [m.name,k],"role":"stone","role_data":{},"index":k,"seed":stone_seed,"shape":shape,
 			"y":lerpf(y_from,m.y,float(k+1)/(n+1)),"rim":_rim(shape),"features":[],"offset":Vector3.ZERO})
