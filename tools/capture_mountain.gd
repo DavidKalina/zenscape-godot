@@ -76,6 +76,8 @@ func run() -> void:
 	for k in range(mini(count,randoms.size())):
 		var s: Dictionary = randoms[k]
 		s.motif = "mountain"
+		# One streamed in already as its own motif goes, to be made again.
+		if field.clusters.has(s.key): field._forget(s.key)
 		s.seed = seed_base*1000+k*37
 		var label := "mountain-%d" % int(s.seed)
 		await _hold_at(s.at+Vector3(0.0,40.0,0.0),s.at,hours.noon,5)

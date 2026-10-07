@@ -48,7 +48,7 @@ const FIRST_POST := 2.0
 const POST_OUT := 0.8
 ## The hut's star: its halo (m across near, strength), its light's reach
 ## (m) and energy, and how far over the window it burns (m).
-const STAR_HALO := Vector2(8.0,1.0)
+const STAR_HALO := Vector2(3.6,1.0)
 const STAR_REACH := 12.0
 const STAR_ENERGY := 1.8
 ## The trail's steps: the run of one (m), its half width, its thickness, how
