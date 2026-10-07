@@ -798,7 +798,7 @@ void fragment() {
 	}
 	float cloud_shade = cloudShadeAt(vec3(world_position.x, 0.6, world_position.z), zs_cloud_direction);
 	tint *= mix(1.0, 0.42 + 0.58 * cloud_shade, min(1.0, zs_cloud.x * 1.35) * 0.85);
-	// The cloud volume's shade (--cloud-volume): a tower's shadow over an
+	// The cloud volume's shade (the cloud volume, default): a tower's shadow over an
 	// island, the heaps' over a range's foot.
 	tint *= 1.0 - 0.5 * zs_cloud_volume_shade(world_position);
 	if (brush_visible) {

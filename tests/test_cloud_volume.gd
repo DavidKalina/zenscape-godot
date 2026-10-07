@@ -1,7 +1,7 @@
 extends SceneTree
-## The unified cloud volume (scripts/cloud_volume.gd, --cloud-volume): off
-## without the flag, the near sea and the towers drawing themselves as
-## before; on, their own drawing goes, the march rides the camera's
+## The unified cloud volume (scripts/cloud_volume.gd, on by default): off
+## with --old-clouds or without a RenderingDevice, the near sea and the
+## towers drawing themselves as before; on, their own drawing goes, the march rides the camera's
 ## compositor, its parameters are the sea's and the towers' as they stand,
 ## and turning it off hands the drawing back. Headless: the GPU passes do
 ## not run here, only that the compute shaders compile, the composite's
@@ -24,7 +24,7 @@ func run() -> void:
 	await process_frame
 	var look = scene.look_pass
 	var sea: MeshInstance3D = look.sea
-	check(not CloudVolume.wanted() and look.cloud_volume == null, "Without --cloud-volume the look pass makes none")
+	check(not CloudVolume.wanted() and look.cloud_volume == null, "Without a RenderingDevice (headless) the look pass makes none")
 	check(sea.mesh is BoxMesh, "and the near sea draws itself")
 	look.cloud_sea = 1.0
 	look._update_cloud_sea(1.0)

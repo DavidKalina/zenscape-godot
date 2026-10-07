@@ -58,9 +58,9 @@ var _motes = preload("res://scripts/sky_motes.gd").new()
 const SkySea = preload("res://scripts/sky_sea.gd")
 var sea = SkySea.new()
 var near_sea := not _flag("--dome-sea")
-## The unified cloud volume (scripts/cloud_volume.gd): with --cloud-volume
-## the near sea and the towers are drawn as one marched body of cloud
-## instead, the sea and towers keeping their lives and data. Null without it.
+## The unified cloud volume (scripts/cloud_volume.gd): the near sea and the
+## towers drawn as one marched body of cloud, the sea and towers keeping their
+## lives and data. Null with --old-clouds or without a RenderingDevice.
 const CloudVolume = preload("res://scripts/cloud_volume.gd")
 var cloud_volume: Node3D = CloudVolume.new() if CloudVolume.wanted() else null
 var shore := 1.0

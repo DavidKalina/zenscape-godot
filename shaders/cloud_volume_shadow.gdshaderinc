@@ -1,7 +1,7 @@
 #ifndef ZS_CLOUD_VOLUME_SHADOW
 #define ZS_CLOUD_VOLUME_SHADOW
 // The unified cloud volume's shade on the land (scripts/cloud_volume.gd,
-// --cloud-volume): its shadow pass (shaders/cloud_volume_march.glsl
+// on by default): its shadow pass (shaders/cloud_volume_march.glsl
 // SHADOW) looks up from the sea's feet toward the sun through the heaps and
 // the towers and keeps, per spot of a square round the eye, how much light
 // the cloud on high lets through, how much the heaps do, and how high the

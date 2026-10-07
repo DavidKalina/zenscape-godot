@@ -3,7 +3,7 @@ extends SceneTree
 ## and towers it replaces, rendered in one run so the sky, season and
 ## weather match: at each spot a still with the volume, then with the old
 ## renderers (CloudVolume `set_enabled`), and each one's frame time (vsync
-## off) and GPU render time. Needs --cloud-volume. Shots:
+## off) and GPU render time. On by default (not with --old-clouds). Shots:
 ##   above: high over the sea, looking down across it, noon;
 ##   low_sun: skimming the heaps' tops toward the low sun, golden hour;
 ##   approach: the home tower from a few hundred metres, noon;
@@ -15,7 +15,7 @@ extends SceneTree
 ##   night: over the sea under the moon.
 ## Rendered only when asked for (needs a window):
 ##   Godot --windowed --path . --resolution 1280x720 -s res://tools/capture_cloud_volume.gd \
-##     -- --no-title --cloud-volume --out=/private/tmp/zs-cloud-volume [--only=above,inside]
+##     -- --no-title --out=/private/tmp/zs-cloud-volume [--only=above,inside]
 ##     [--volume-only]
 const GOLDEN_SUN := 0.1
 const SUNSET_SUN := 0.01
@@ -78,7 +78,7 @@ func run() -> void:
 	await create_timer(1.0).timeout
 	volume = scene.look_pass.cloud_volume
 	if volume == null:
-		push_error("run with --cloud-volume")
+		push_error("no cloud volume: drop --old-clouds and run with a RenderingDevice")
 		quit(1)
 		return
 	scene.world_clock.running = false

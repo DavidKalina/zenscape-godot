@@ -1,5 +1,5 @@
 extends Node3D
-## The unified cloud volume (opt-in, `--cloud-volume`): the near cloud sea
+## The unified cloud volume (default; `--old-clouds` for the old renderers): the near cloud sea
 ## (scripts/sky_sea.gd) and the towering cumulus (scripts/sky_towers.gd)
 ## drawn as one raymarched body of cloud instead of a box each, so a tower
 ## rises out of the sea as the same cloud, shades the heaps round its foot,
@@ -19,14 +19,16 @@ extends Node3D
 ## every CPU query (`fade`, `depth`, `in_cloud`) is theirs as before. Only
 ## their own drawing is switched off (`_hide`), and their textures and
 ## uniforms are read from them each frame (`update`). The look pass
-## (scripts/look_pass.gd) makes this when the flag is given and updates it
+## (scripts/look_pass.gd) makes this unless --old-clouds is given and updates it
 ## after the near sea.
 
 const SkySea = preload("res://scripts/sky_sea.gd")
 const CloudVolumeEffect = preload("res://scripts/cloud_volume_effect.gd")
 const CumulusNoise = preload("res://scripts/cumulus_noise.gd")
-## The flag that turns it on.
-const FLAG := "--cloud-volume"
+## On by default; this flag brings back the old near sea and towers. With no
+## RenderingDevice (headless, the Compatibility renderer) there is no compute
+## pass, so the old ones draw too.
+const OLD_FLAG := "--old-clouds"
 ## Drawn where the near sea drew (SkySea RENDER_PRIORITY): before the
 ## towers' old slot, the streaks and wisps.
 const RENDER_PRIORITY := SkySea.RENDER_PRIORITY
@@ -98,7 +100,7 @@ var _prev_lens := Vector2.ONE
 var _has_prev := false
 
 static func wanted() -> bool:
-	return FLAG in OS.get_cmdline_user_args()
+	return not OLD_FLAG in OS.get_cmdline_user_args() and RenderingServer.get_rendering_device() != null
 
 func _init() -> void:
 	name = "CloudVolume"
