@@ -4,14 +4,15 @@ extends SceneTree
 ## run by eye: a run straight on (the puffs off the heels), thrown back into
 ## a skid (the spray), a chained jump's landings (the rings), then standing.
 ## Rendered only when asked for (needs a window):
-##   Godot --windowed --fixed-fps 60 --path . -s res://tools/capture_pilot_run.gd -- --no-title [--out=DIR]
+##   Godot --windowed --fixed-fps 60 --path . -s res://tools/capture_pilot_run.gd -- --no-title [--out=DIR] [--scene=res://studies/test_island.tscn]
 ## Writes DIR/<moment>.png (default /tmp/pilot_run) and quits.
 
 ## Moments to save: the name and the frame after the island is ready.
-const RUN_SHOTS := {"run_a":40,"run_b":52,"run_c":64}
+const RUN_SHOTS := {"run_a":40,"run_b":43,"run_c":46,"run_d":49,"run_e":52}
 const SKID_SHOTS := {"skid_a":4,"skid_b":9,"skid_c":15,"skid_turn":22}
 
 var out := "/tmp/pilot_run"
+var scene_path := "res://studies/walk_island.tscn"
 var scene: Node3D
 
 func _initialize() -> void:
@@ -20,9 +21,10 @@ func _initialize() -> void:
 func run() -> void:
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--out="): out = arg.trim_prefix("--out=")
+		if arg.begins_with("--scene="): scene_path = arg.trim_prefix("--scene=")
 	DirAccess.make_dir_recursive_absolute(out)
 	create_timer(300.0).timeout.connect(func() -> void: push_error("pilot run capture timed out"); quit(2))
-	scene = load("res://studies/walk_island.tscn").instantiate()
+	scene = load(scene_path).instantiate()
 	scene.places_path = OS.get_temp_dir().path_join("pilot-run-capture-%d" % Time.get_ticks_usec()).path_join("places.json")
 	root.size = Vector2i(1440,900)
 	root.add_child(scene)
