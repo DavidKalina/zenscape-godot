@@ -42,6 +42,7 @@ const SkyPeaks = preload("res://scripts/sky_peaks.gd")
 const SkyTowers = preload("res://scripts/sky_towers.gd")
 const SkyForestIsles = preload("res://scripts/sky_forest_isles.gd")
 const SkyFallThread = preload("res://scripts/sky_fall_thread.gd")
+const RockLooks = preload("res://scripts/rock_looks.gd")
 
 ## The cells: size (m), the share holding an islet, how far its spot may sit
 ## from the cell's middle (share of the cell), and the height band (m).
@@ -121,7 +122,7 @@ var _wanted: Array = []
 ## Islets being worked out on workers, by cell key: {task, cell, home, out}.
 var _making := {}
 ## Places in the sky (home x, z and radius, Vector3) no seeded islet stands
-## within: room kept for authored ones (scripts/sky_showcase.gd), which
+## within: room kept for the clusters (scripts/sky_clusters.gd), whose members
 ## stand in `built` as `fixed` and are never let go.
 var keep_clear: Array[Vector3] = []
 
@@ -282,7 +283,9 @@ func spot(cell: Vector2i) -> Variant:
 	if here != null and SkyForestIsles.blocks(here,CLEAR*0.3): here = null
 	if here != null:
 		for k in keep_clear:
-			if Vector2(here.x-k.x,here.z-k.y).length() < k.z: here = null
+			if Vector2(here.x-k.x,here.z-k.y).length() < k.z:
+				here = null
+				break
 	_spots[key] = here
 	return here
 
@@ -317,6 +320,19 @@ func _start(cell: Vector2i, home: Vector3) -> void:
 static func _make(seed_value: int, palette: Dictionary, plants: Dictionary, out: Dictionary, home_y := 0.0, spec := {}) -> void:
 	var began := Time.get_ticks_usec()
 	var shape: RefCounted = SkyIslet.author(seed_value,spec) if not spec.is_empty() else SkyIslet.make(seed_value)
+	_dress(shape,palette,plants,out,home_y)
+	out.usec = Time.get_ticks_usec()-began
+
+## An islet's shape (made, and perhaps claimed on and furnished with
+## records) given its arrays, meshes, plants and fall, into `out`, as
+## `_make` gives them, for `stand`. Safe on a worker once
+## `prepare_authored` has run.
+static func dress(shape: RefCounted, palette: Dictionary, home_y: float) -> Dictionary:
+	var out := {}
+	_dress(shape,palette,_catalog.data,out,home_y)
+	return out
+
+static func _dress(shape: RefCounted, palette: Dictionary, plants: Dictionary, out: Dictionary, home_y: float) -> void:
 	out.shape = shape
 	out.top = shape.top_arrays(palette,OFF_MAP)
 	out.sides = shape.side_arrays()
@@ -327,7 +343,6 @@ static func _make(seed_value: int, palette: Dictionary, plants: Dictionary, out:
 		out.fall = _fall_rings(shape)
 		out.thread = _thread_plan(shape,out.fall,home_y)
 		out.meshes.water = SkyIslet.mesh_from(out.water,null,SkyIslet.WATER_FORMAT)
-	out.usec = Time.get_ticks_usec()-began
 
 ## An authored islet's parts (SkyIslet `author`), as `_make` makes them,
 ## for `stand`; safe on a worker once `prepare_authored` has run.
@@ -504,7 +519,9 @@ func _ground_palette() -> Dictionary:
 ## one strata seed and about one depth (`_sides`).
 func _side_material(shape: RefCounted) -> Material:
 	var strata := posmod(int(shape.seed),STRATA_SEEDS)
-	var key := Vector2i(strata,roundi(float(shape.depth)*2.0))
+	var rock: Dictionary = shape.recipe.get("rock",{})
+	var key: Variant = Vector2i(strata,roundi(float(shape.depth)*2.0))
+	if not rock.is_empty(): key = [key,str(rock.get("palette","basalt")),snappedf(float(rock.get("tone",1.0)),0.05)]
 	if _sides.has(key): return _sides[key]
 	var m: ShaderMaterial
 	if side_source is ShaderMaterial: m = side_source.duplicate()
@@ -515,10 +532,12 @@ func _side_material(shape: RefCounted) -> Material:
 		m.set_shader_parameter("base_color",Color.WHITE)
 	m.set_shader_parameter("earth_sides",true)
 	m.set_shader_parameter("earth_sides_top",SkyIslet.RIM_HEIGHT)
-	m.set_shader_parameter("earth_sides_base",-float(key.y)*0.5+MIST)
+	m.set_shader_parameter("earth_sides_base",-roundf(float(shape.depth)*2.0)*0.5+MIST)
 	# Made here, not through Strata's own cache, which is static and would
 	# hold the islets' strata past the scene's end.
 	Strata.new(strata).apply(m,Vector3.ZERO)
+	# A cluster's islets wear a rock look of their own (scripts/rock_looks.gd).
+	if not rock.is_empty(): RockLooks.apply(m,str(rock.get("palette","basalt")),float(rock.get("tone",1.0)))
 	_sides[key] = m
 	return m
 

@@ -61,6 +61,8 @@ const REACH := 1.45
 const MARGIN := 3.2
 ## The grid's step and nudge: the plate's (scripts/plate_mesh.gd).
 const STEP := Plate.POINT_STEP
+## Claimed ground eases back to the land round it over this many metres.
+const LEVEL_EASE := 1.6
 ## The shore's ease: the ground meets RIM_HEIGHT this far in (m), at most
 ## a share of the islet's radius.
 const RIM_HEIGHT := Genesis.RIM_HEIGHT
@@ -262,6 +264,9 @@ var flowers: Array[String] = []
 ##     they are, after the planting (a cabin, lamps, a field's rows);
 ##   blocks / crowns: extra walker blocks Vector3(x, z, radius) and glide
 ##     crowns Vector4(x, z, top, reach), for what stands on it;
+##   keel: a multiplier on how deep the rock hangs under it;
+##   rock: the look of its earth sides (SkyIslets `rock_material`):
+##     {"palette": name, "tone": brightness, "seed"};
 ##   decks: Array of {a: Vector3, b: Vector3, width, bow}, planked ways a
 ##     walker and the glide treat as land, reaching off the rim (a dock, a
 ##     footbridge's deck): straight from a to b, bowed `bow` m at the middle
@@ -269,6 +274,12 @@ var flowers: Array[String] = []
 var recipe := {}
 ## The recipe's decks, as it gives them.
 var decks: Array = []
+## Ground claimed after it was shaped (`claim`), for something to stand on:
+## Vector4(x, z, radius, 0) circles and Vector4(x, z, half x, half z) with
+## w > 0 rectangles. `find_spot` keeps off them.
+var claims: Array[Vector4] = []
+## Rectangles (Rect2) of tilled earth, drawn in the earth's colour.
+var soil: Array[Rect2] = []
 
 ## An islet laid out by hand from `spec` (see `recipe`), its kind
 ## `spec.kind`, the rest of it seeded by `seed_value` as any islet's is.
@@ -319,6 +330,9 @@ func _shape(seed_value: int, forced: String) -> void:
 		if shore_distance[i] >= 0.0: reach = maxf(reach,points[i].length())
 	_lay_ground(rng)
 	keel = IslandShore.keel(points,ids,outline,shore_distance)
+	if recipe.has("keel"):
+		var deeper := float(recipe.keel)
+		for i in range(keel.size()): keel[i] *= deeper
 	base = -(BASE.x+BASE.y*radius)
 	var deepest := 0.0
 	for k in keel: deepest = maxf(deepest,k)
@@ -839,6 +853,115 @@ func _plant(rng: RandomNumberGenerator) -> void:
 		if inland(Vector2(item.x,item.z)) < float(item.get("inset",0.4)): continue
 		_add(item.asset,Vector2(item.x,item.z),float(item.get("angle",0.0)),float(item.get("scale",1.0)),str(item.get("tint","")))
 
+# --- Claiming ground ----------------------------------------------------------------
+
+## A spot on the land for something `radius` m round (or, with `rect` set,
+## a rectangle of those half extents, axis-aligned), at least `rim` m in
+## from the shore past its own reach, dry with `wet_room` m to spare,
+## whose ground varies by at most `flat` m over it, clear of what is
+## claimed and of `avoid` (Vector3(x, z, radius)). Scored by `prefer`:
+## {"toward": Vector2 a way to lean to, "high": weight on height, "middle":
+## weight on staying central, "near": Vector2 a place to stay near}; null
+## if none suits. Scanned on a STEP grid, so the same islet and asks give
+## the same spot.
+func find_spot(radius: float, rim: float, flat: float, avoid: Array = [], prefer: Dictionary = {}, rect := Vector2.ZERO, wet_room := 1.0) -> Variant:
+	var reach_of := rect.length() if rect != Vector2.ZERO else radius
+	var best: Variant = null
+	var best_score := -INF
+	var toward: Vector2 = (prefer.get("toward",Vector2.ZERO) as Vector2).normalized()
+	var step := maxf(0.6,reach/28.0)
+	var span := reach
+	var x := -span
+	while x <= span:
+		var z := -span
+		while z <= span:
+			var p := Vector2(x,z)
+			z += step
+			if not on_land(p) or inland(p) < rim+reach_of: continue
+			if _blocked_by(p,reach_of,avoid): continue
+			var spread := _spread(p,radius,rect,wet_room)
+			if spread < 0.0 or spread > flat: continue
+			var score := -spread*2.0
+			if toward != Vector2.ZERO: score += p.dot(toward)/maxf(radius_of_land(),1.0)*float(prefer.get("toward_weight",3.0))
+			score += ground_at(p)*float(prefer.get("high",0.0))
+			score -= p.length()/maxf(radius_of_land(),1.0)*float(prefer.get("middle",0.0))
+			if prefer.has("near"): score -= p.distance_to(prefer.near)*float(prefer.get("near_weight",0.3))
+			score += _hash01(p)*0.05
+			if score > best_score:
+				best_score = score
+				best = p
+		x += step
+	return best
+
+## A circle of the land's area's radius (m).
+func radius_of_land() -> float:
+	if _land_radius < 0.0: _land_radius = sqrt(maxf(land_area(),1.0)/PI)
+	return _land_radius
+
+var _land_radius := -1.0
+
+## How much the ground varies over a footprint at `p` (circle `radius`, or
+## a `rect` of half extents), -1 where any of it is off the land or wet.
+func _spread(p: Vector2, radius: float, rect: Vector2, wet_room: float) -> float:
+	var low := INF
+	var high := -INF
+	var samples: Array[Vector2] = [p]
+	if rect != Vector2.ZERO:
+		for i in range(-2,3):
+			for j in range(-2,3): samples.append(p+Vector2(rect.x*i/2.0,rect.y*j/2.0))
+	else:
+		for k in range(8): samples.append(p+Vector2.from_angle(TAU*k/8.0)*radius)
+		for k in range(4): samples.append(p+Vector2.from_angle(TAU*k/4.0+0.4)*radius*0.5)
+	for q in samples:
+		if not on_land(q): return -1.0
+		if wet(q): return -1.0
+		if pond.z > 0.0 and q.distance_to(Vector2(pond.x,pond.y)) < pond.z+wet_room: return -1.0
+		if pond.z > 0.0 and _channel_distance(q) < CHANNEL+wet_room: return -1.0
+		var h := ground_at(q)
+		low = minf(low,h)
+		high = maxf(high,h)
+	return high-low
+
+func _blocked_by(p: Vector2, room: float, avoid: Array) -> bool:
+	for c in claims:
+		var r := Vector2(c.z,c.w).length() if c.w > 0.0 else c.z
+		if p.distance_to(Vector2(c.x,c.y)) < r+room+0.4: return true
+	for a: Vector3 in avoid:
+		if p.distance_to(Vector2(a.x,a.y)) < a.z+room: return true
+	return false
+
+static func _hash01(p: Vector2) -> float:
+	return fposmod(sin(p.x*12.9898+p.y*78.233)*43758.5453,1.0)
+
+## Claims ground for something to stand on: the ground levelled to its
+## height at `at` (plus `lift`) over a circle of `radius` (or a `rect` of
+## half extents), easing back over LEVEL_EASE m; whatever grew on it or on
+## the ease is cleared. Done before `flora` and the meshes.
+func claim(at: Vector2, radius: float, lift := 0.0, rect := Vector2.ZERO) -> void:
+	var target := ground_at(at)+lift
+	for i in range(points.size()):
+		if shore_distance[i] < 0.0: continue
+		var d := _footprint_distance(points[i]-at,radius,rect)
+		var t := 1.0-smoothstep(0.0,LEVEL_EASE,d)
+		if t > 0.0: heights[i] = lerpf(heights[i],target,t)
+	objects = objects.filter(func(o: Dictionary) -> bool:
+		return _footprint_distance(Vector2(o.x,o.z)-at,radius,rect) > LEVEL_EASE*0.5+0.3)
+	claims.append(Vector4(at.x,at.y,rect.x,rect.y) if rect != Vector2.ZERO else Vector4(at.x,at.y,radius,0.0))
+
+## How far `d` (from a footprint's middle) lies outside it: 0 inside.
+static func _footprint_distance(d: Vector2, radius: float, rect: Vector2) -> float:
+	if rect != Vector2.ZERO: return Vector2(maxf(absf(d.x)-rect.x,0.0),maxf(absf(d.y)-rect.y,0.0)).length()
+	return maxf(d.length()-radius,0.0)
+
+func _in_soil(p: Vector2) -> bool:
+	for r in soil:
+		if r.has_point(p): return true
+	return false
+
+## Sets a record (a cabin, a lamp, a row's wheat) as it is.
+func add_record(asset: String, at: Vector2, angle: float, size := 1.0, tint := "") -> void:
+	_add(asset,at,angle,size,tint)
+
 ## A seeded count round a mean: its whole part, and one more at the odds of
 ## the rest.
 static func _count(rng: RandomNumberGenerator, mean: float) -> int:
@@ -1029,6 +1152,8 @@ func top_arrays(palette: Dictionary, shift := Vector3.ZERO) -> Array:
 		elif (worn > SCREE.x and slope > SCREE.y) or (edge < 0.45 and slope > SCREE.y*2.0):
 			# Scree: a gully's floor or the crumbling lip, gravel and earth.
 			tone = gravel.lerp(earth,clampf(patch.get_noise_2d(at.x*3.0,at.y*3.0)*0.5+0.5,0.0,1.0))
+		elif _in_soil(at):
+			tone = earth.lerp(gravel,0.15)*lerpf(0.8,0.95,n)
 		elif pond.z > 0.0 and minf(a.y,minf(b.y,c.y)) < WATER+0.06 and (at.distance_to(Vector2(pond.x,pond.y)) < pond.z*1.5 or _channel_distance(at) < CHANNEL*1.5):
 			tone = sand*lerpf(1.0,0.72,clampf((WATER-middle.y)/BOWL,0.0,1.0))
 		elif kind == "shore":

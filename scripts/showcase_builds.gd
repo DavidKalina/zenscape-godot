@@ -1,5 +1,5 @@
 extends RefCounted
-## The built things on the showcase cluster (scripts/sky_showcase.gd): a
+## The built things on the sky clusters (scripts/cluster_dresser.gd): a
 ## windmill, a lighthouse, a plank dock, a split-rail fence, a fishing rod
 ## and a hand lantern. Made as the stone lamp and the footbridge are
 ## (scripts/stone_lamp.gd, scripts/footbridge.gd): upright faceted prisms
@@ -266,23 +266,36 @@ static func prism_axis(st: SurfaceTool, sides: int, bottom: float, top: float, l
 	_cylinder(st,sides,bottom,top,high-low,Transform3D(Basis(Vector3.RIGHT,PI*0.5)*Basis(Vector3.UP,turn),Vector3(0.0,0.0,(low+high)*0.5)),colour)
 
 static func _cylinder(st: SurfaceTool, sides: int, bottom: float, top: float, height: float, pose: Transform3D, colour: Color) -> void:
-	var cylinder := CylinderMesh.new()
-	cylinder.bottom_radius = bottom
-	cylinder.top_radius = top
-	cylinder.height = height
-	cylinder.radial_segments = sides
-	cylinder.rings = 0
+	# Made by hand, not from a CylinderMesh: a primitive mesh asks the
+	# renderer for its faces, which a worker must never wait on.
 	var linear := colour.srgb_to_linear()
-	for vertex in cylinder.get_faces():
-		st.set_color(linear)
-		st.add_vertex(pose*vertex)
+	var low := -height*0.5
+	var high := height*0.5
+	for k in range(sides):
+		var a0 := TAU*k/sides
+		var a1 := TAU*(k+1)/sides
+		var b0 := Vector3(sin(a0)*bottom,low,cos(a0)*bottom)
+		var b1 := Vector3(sin(a1)*bottom,low,cos(a1)*bottom)
+		var t0 := Vector3(sin(a0)*top,high,cos(a0)*top)
+		var t1 := Vector3(sin(a1)*top,high,cos(a1)*top)
+		_tri(st,pose,linear,b0,t0,t1)
+		_tri(st,pose,linear,b0,t1,b1)
+		_tri(st,pose,linear,Vector3(0.0,high,0.0),t1,t0)
+		_tri(st,pose,linear,Vector3(0.0,low,0.0),b0,b1)
 
 ## A box of half extents `half` at `centre`, turned by `basis`.
 static func box(st: SurfaceTool, centre: Vector3, basis: Basis, half: Vector3, colour: Color) -> void:
-	var cube := BoxMesh.new()
-	cube.size = half*2.0
 	var pose := Transform3D(basis,centre)
 	var linear := colour.srgb_to_linear()
-	for vertex in cube.get_faces():
-		st.set_color(linear)
-		st.add_vertex(pose*vertex)
+	var c := []
+	for i in range(8): c.append(Vector3(half.x*(1 if i & 1 else -1),half.y*(1 if i & 2 else -1),half.z*(1 if i & 4 else -1)))
+	for q: Array in [[0,2,3,1],[4,5,7,6],[0,1,5,4],[2,6,7,3],[0,4,6,2],[1,3,7,5]]:
+		_tri(st,pose,linear,c[q[0]],c[q[2]],c[q[1]])
+		_tri(st,pose,linear,c[q[0]],c[q[3]],c[q[2]])
+
+## One flat face, wound to face out (front faces are clockwise from
+## outside in Godot).
+static func _tri(st: SurfaceTool, pose: Transform3D, colour: Color, a: Vector3, b: Vector3, c: Vector3) -> void:
+	for v: Vector3 in [a,b,c]:
+		st.set_color(colour)
+		st.add_vertex(pose*v)

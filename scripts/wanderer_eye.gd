@@ -1390,7 +1390,7 @@ func _advance_perch(delta: float) -> void:
 	# Islets are never turned, so the camera's yaw is the islet's frame's too.
 	var want := _want(_yaw,delta)
 	_asked = want.length()
-	# A grouped islet (an authored cluster's, scripts/sky_showcase.gd) reads
+	# A grouped islet (a cluster's, scripts/sky_clusters.gd) reads
 	# its neighbours' ground too, so the pilot jumps from one to the next.
 	var ground := func(p: Vector2) -> float: return _perch_ground(p)
 	var events := motor.step(delta,want,_top(),jump,ground,
