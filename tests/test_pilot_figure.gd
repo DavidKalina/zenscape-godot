@@ -1,7 +1,7 @@
 extends SceneTree
 ## The drawn pilot on foot (scripts/pilot_figure.gd, its model and clips from
 ## art/blender/pilot/pilot_build.py): the model loads with its clips (idle,
-## walk, run, skid), all loops, dressed in the folk's materials; walking at
+## walk, run, skid), all loops, dressed in the pilot's paint; walking at
 ## the walk's speed and running at the run's, a planted boot moves back under
 ## the body at that speed (it stays on the ground as the body moves on) and
 ## the boots take turns; let stand, it fades to idle and a boot on the ground
@@ -10,7 +10,7 @@ extends SceneTree
 ## the shuffle), and the loop closes; the skid is short, both boots down, the
 ## braced one well ahead of the hips.
 const PilotFigure = preload("res://scripts/pilot_figure.gd")
-const PersonKit = preload("res://scripts/person_kit.gd")
+const PilotPaint = preload("res://scripts/pilot_paint.gd")
 const DT := 1.0/60.0
 ## Under this, an ankle's boot is flat on the ground (its ankle stands 0.053).
 const FLAT := 0.06
@@ -46,8 +46,8 @@ func run() -> void:
 	for mesh: MeshInstance3D in figure.find_children("*","MeshInstance3D",true,false):
 		for i in range(mesh.mesh.get_surface_count()):
 			var m := mesh.mesh.surface_get_material(i) as ShaderMaterial
-			if m != null and m.shader == PersonKit.FOLK_SURFACE: dressed += 1
-	check(dressed >= 10,"Dressed in the folk's materials (%d surfaces)" % dressed)
+			if m != null and m.shader == PilotPaint.PAINT: dressed += 1
+	check(dressed >= 10,"Dressed in the pilot's paint (%d surfaces)" % dressed)
 	var skeleton: Skeleton3D = figure.find_children("*","Skeleton3D",true,false)[0]
 	var feet := [skeleton.find_bone("foot.L"),skeleton.find_bone("foot.R")]
 	check(feet[0] >= 0 and feet[1] >= 0,"The rig has its boots")

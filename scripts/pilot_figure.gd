@@ -46,14 +46,16 @@ extends Node3D
 ## ahead; its head looks into turns and up and down with a jump; its arms
 ## fly out in the air and flop back landing. Never stiffly upright.
 ##
-## The model's own materials are swapped for the folk's (scripts/
-## person_kit.gd outfit, by surface name), so it is lit as the islanders are.
+## The model's own materials are swapped for the pilot's paint (scripts/
+## pilot_paint.gd, by surface name): soft toon bands, not the islanders'
+## lacquer.
 ##
 ## Its origin is the feet, facing -Z; the walker (scripts/wanderer_eye.gd)
 ## puts it where the motor's feet are and turns it to its facing.
 
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const PersonKit = preload("res://scripts/person_kit.gd")
+const PilotPaint = preload("res://scripts/pilot_paint.gd")
 const Spring = PersonKit.Spring
 const MODEL := preload("res://assets/models/pilot.glb")
 ## The clips' ground speeds (m/s) and loops (s), as pilot_build.py made them.
@@ -290,10 +292,10 @@ func _init() -> void:
 	_idle_anywhere()
 	_apply()
 
-## The folk's materials on the model, by its surfaces' names (on its own
-## copy of the mesh, so the imported one keeps its own).
+## The pilot's paint on the model, by its surfaces' names (on its own copy
+## of the mesh, so the imported one keeps its own).
 func _dress() -> void:
-	var outfit := PersonKit.outfit()
+	var outfit := PilotPaint.outfit()
 	for node: MeshInstance3D in _model.find_children("*","MeshInstance3D",true,false):
 		var mesh := node.mesh.duplicate() as ArrayMesh
 		for i in range(mesh.get_surface_count()):
