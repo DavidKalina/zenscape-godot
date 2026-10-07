@@ -11,6 +11,8 @@ extends SceneTree
 ##   - B on the library returns to the front page;
 ##   - the focus ring follows the focus while the pad is in hand.
 ##   godot --headless --path . --script tests/test_gamepad_screens.gd
+## Waits about a minute headless for the sky under the loading veil.
+## suite: slow
 const Library = preload("res://scripts/world_library.gd")
 const Pad = preload("res://scripts/pad.gd")
 var failures := 0
@@ -123,5 +125,7 @@ func run() -> void:
 	await frames(5)
 	await tap(JOY_BUTTON_B)
 	check(await until(func() -> bool: return not world.library_open and pad.context() == "front"),"B on the library returns to the front page")
+	world.queue_free()
+	await frames(2)
 	print("PASS: gamepad screens" if failures == 0 else "FAIL: gamepad screens (%d)" % failures)
 	quit(1 if failures else 0)

@@ -1,4 +1,7 @@
 extends SceneTree
+## The stream surface map matches the source pixel for pixel and follows undo,
+## redo and reopen (texture readback: the dummy renderer keeps no updates).
+## suite: gpu
 func _initialize() -> void:
 	run.call_deferred()
 func run() -> void:

@@ -1,4 +1,5 @@
 extends SceneTree
+## suite: gpu
 var failures := 0
 func _initialize() -> void:
 	call_deferred("run")
@@ -78,6 +79,9 @@ func pixel() -> Vector3:
 		RenderingServer.force_draw(false)
 		await process_frame
 	var image := root.get_texture().get_image()
+	if image == null:
+		check(false, "The rendered frame reads back")
+		return Vector3.ZERO
 	var c := image.get_pixel(image.get_width() / 2, image.get_height() / 2)
 	return Vector3(c.r,c.g,c.b)
 func check(ok: bool, message: String) -> void:

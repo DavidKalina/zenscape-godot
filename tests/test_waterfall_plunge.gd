@@ -1,6 +1,7 @@
 extends SceneTree
 ## An authored fall lands with spray, bobbing foam, and rings on its pond.
 ## Run graphically: the headless renderer does not retain MultiMesh transforms.
+## suite: gpu
 var failures := 0
 func _initialize() -> void: _run.call_deferred()
 func check(ok: bool, message: String) -> void:
@@ -8,14 +9,11 @@ func check(ok: bool, message: String) -> void:
 		failures += 1
 		push_error(message)
 	else: print("PASS: "+message)
+## A left press is the hand's under the modeless default (7a1d6669); place_at
+## applies the tool exactly as a classic press did.
 func click(editor: NativeChunkEditor, point: Vector2) -> void:
-	var event := InputEventMouseButton.new()
-	event.button_index = MOUSE_BUTTON_LEFT
-	event.pressed = true
-	event.position = editor.scene.camera.unproject_position(Vector3(point.x,editor.data.ground_height(point),point.y))
-	editor.handle_input(event)
-	event.pressed = false
-	editor.handle_input(event)
+	editor.place_at(editor.scene.camera.unproject_position(Vector3(point.x,editor.data.ground_height(point),point.y)))
+	editor.finish_stroke()
 func _run() -> void:
 	root.size = Vector2i(1440,900)
 	var scene: Node3D = load("res://studies/fidelity.tscn").instantiate()

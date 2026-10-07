@@ -1,5 +1,6 @@
 extends SceneTree
 ## GPU regression: the elevated diorama camera must see the cloud deck below it.
+## suite: gpu
 func _initialize() -> void: run.call_deferred()
 func run() -> void:
 	if DisplayServer.get_name()=="headless":

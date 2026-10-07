@@ -395,6 +395,7 @@ func tools(data: NativeTerrainData) -> void:
 	for i in off: kept = kept and data.heights[i] == before[i]
 	check(kept,"Written heights keep every point off the island where it stood")
 	clay.free()
+	editor.pond_preview.free() # parented only by `setup`
 	editor.free()
 
 func water(data: NativeTerrainData) -> void:
@@ -930,6 +931,7 @@ func span(data: NativeTerrainData) -> void:
 	check(islands._body(editor.terrain.to_global(Vector3(off.x,40.0,off.y))) == null,"Off the island, open air")
 	islands.free()
 	editor.terrain.free()
+	editor.pond_preview.free() # parented only by `setup`
 	editor.free()
 
 ## The rock's height in `rock` (a face soup) straight under `at`.

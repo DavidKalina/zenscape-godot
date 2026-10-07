@@ -1,4 +1,5 @@
 extends SceneTree
+## suite: serial
 ## Trees painted from the hand (scripts/tree_paint.gd, docs/scenic/handful.md
 ## "Tree seed"). Headless, in the cozy scene with the hand scheme's real input:
 ##

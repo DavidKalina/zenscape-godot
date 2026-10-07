@@ -34,6 +34,11 @@ func eye_on(data: NativeTerrainData) -> Node:
 	eye.editor = editor
 	return eye
 
+## A bare editor's pond preview is parented only by `setup`: free it too.
+func drop(editor: NativeChunkEditor) -> void:
+	editor.pond_preview.free()
+	editor.free()
+
 ## A seed's island whose bays reach into the square: a bay point inside
 ## +-13 m, and the walk's direction from the middle to it.
 func bay_of(data: NativeTerrainData) -> Vector2:
@@ -56,6 +61,9 @@ func run() -> void:
 	placing(data,eye)
 	claiming(data,way)
 	square()
+	drop(eye.editor)
+	eye.free()
+	await process_frame
 	print("ISLAND FOOTPRINT failures=",failures)
 	quit(1 if failures else 0)
 
@@ -132,6 +140,7 @@ func claiming(data: NativeTerrainData, way: Vector2) -> void:
 	check(over.call(Vector2(Plate.HALF+1.0,0.0)) == -1,"Past the square it does not")
 	islands.free()
 	editor.terrain.free()
+	drop(editor)
 
 func square() -> void:
 	# A plate without an outline of its own is the 28 m square island.
@@ -156,3 +165,6 @@ func square() -> void:
 	check(islands.copy_under(Vector3(EDGE-0.1,0.0,-(EDGE-0.1))) == 0 and islands.copy_under(Vector3(EDGE+SkyIslands.CLAIM_MARGIN+0.3,0.0,0.0)) == -1,"A square island claims anywhere inside +-14 m, and not past its margin")
 	islands.free()
 	editor.terrain.free()
+	drop(editor)
+	drop(eye.editor)
+	eye.free()

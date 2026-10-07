@@ -93,10 +93,12 @@ func the_spec() -> void:
 		check(Flowers.SPEC.has(kind) and not kind in Flowers.CYCLE_KINDS,"%s is a kit flower with no round" % kind)
 		check(FlowerSowing.has(str(Seeds.BLOOMS[kind].slot)),"%s grows by an existing slot (%s)" % [kind,Seeds.BLOOMS[kind].slot])
 	check(not Seeds.BLOOMS.has("dandelion") and not Seeds.BLOOMS.has("dandelion_clock"),"the dandelion's kinds keep their seeds, not pollen")
+	# Wheat is wind-pollinated and left out on purpose (d555b996, docs/scenic/wheat.md).
 	var covered := true
 	for kind: String in Flowers.KINDS:
-		if not kind.begins_with("dandelion") and not Seeds.BLOOMS.has(kind): covered = false
+		if not kind.begins_with("dandelion") and kind != "wheat" and not Seeds.BLOOMS.has(kind): covered = false
 	check(covered,"every other kit kind is in the spec")
+	check(not Seeds.BLOOMS.has("wheat"),"wheat lets no pollen go")
 	check(Seeds.POLLEN_TAKE <= Seeds.TAKE*0.25,"a grain takes at most a quarter as often as a dandelion seed")
 
 func pollen_in_the_air() -> void:

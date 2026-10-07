@@ -62,7 +62,8 @@ func run() -> void:
 		check(not objects.planet.visible and not LookPass.load_sky_planet(KEPT), "Turning it off hides and keeps that")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(KEPT))
 	scene.queue_free()
-	await process_frame
+	# The mixer lets go of the menu's cloth sounds a moment later.
+	await create_timer(0.5).timeout
 	print("PASS: night styles" if failures == 0 else "FAIL: night styles (%d)" % failures)
 	quit(1 if failures else 0)
 

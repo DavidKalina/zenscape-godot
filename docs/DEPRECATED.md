@@ -87,7 +87,6 @@ build tools, docs and tests.
 - `scripts/creature_navigation.gd` and `scripts/fidelity_habitat.gd`: the
   Fidelity pond's fish, the fallen wood and loose props read them.
 - `shaders/foliage_tread.gdshaderinc`: no walker feeds it any more.
-- `tools/check_bigfoot_living_regressions.py`: the headless test runner.
 
 Saves carrying `diorama`, `bigfoot_habits`, `bigfoot_living`,
 `cave_system` or a land life `trail` still load; those keys are ignored.

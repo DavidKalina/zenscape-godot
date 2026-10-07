@@ -1,4 +1,5 @@
 extends SceneTree
+## suite: gpu
 var failures := 0
 func _initialize() -> void:
 	call_deferred("run")

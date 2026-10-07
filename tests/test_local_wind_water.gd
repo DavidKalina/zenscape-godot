@@ -1,5 +1,6 @@
 extends SceneTree
 ## GPU contract of the actual helpers used by both water materials and spray.
+## suite: gpu
 var failures := 0
 func _initialize() -> void:
 	run.call_deferred()

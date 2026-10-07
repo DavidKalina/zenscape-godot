@@ -1,4 +1,5 @@
 extends SceneTree
+## suite: serial
 ## Flowers from the hand (scripts/flower_paint.gd, scripts/flower_sowing.gd,
 ## docs/scenic/handful.md "Flower seed"). Headless.
 ##

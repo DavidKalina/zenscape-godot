@@ -1,4 +1,7 @@
 extends SceneTree
+## The landscape fall's mist matches the source and shares the scene's depth
+## texture (a RenderingDevice texture, none headless); undo and reopen keep it.
+## suite: gpu
 func _initialize() -> void: run.call_deferred()
 func run() -> void:
 	var scene=load("res://studies/fidelity.tscn").instantiate()

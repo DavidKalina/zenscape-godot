@@ -1,5 +1,6 @@
 extends SceneTree
 ## GPU checks of the deformation shared by editable pine trunks and crowns.
+## suite: gpu
 var failures := 0
 func _initialize() -> void:
 	run.call_deferred()

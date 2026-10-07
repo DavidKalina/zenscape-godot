@@ -12,8 +12,10 @@ func run() -> void:
 	var data: NativeTerrainData = scene._chunk_editor.data
 	for family: String in Presets.PRESETS:
 		await scene._chunk_editor.form_landscape(family,"",false)
-		check(scene._chunk_editor.content._landscape_falls.size()>0,"Steep sections render animated cascade geometry: "+family)
-		check(not data.streams.is_empty(),"Connected courses exist: "+family)
+		# Redwood Grove is a dry woodland (8925214f): no courses or falls.
+		var wet: bool = family != "redwood_grove"
+		check(not wet or scene._chunk_editor.content._landscape_falls.size()>0,"Steep sections render animated cascade geometry: "+family)
+		check(not wet or not data.streams.is_empty(),"Connected courses exist: "+family)
 		var submerged := 0
 		var total := 0
 		for route: Dictionary in data.streams:
@@ -25,7 +27,7 @@ func run() -> void:
 				total += 1
 				if data.height_at(station.x,station.z)>center: submerged += 1
 		print(family," routes=",data.streams.size()," pools=",data.ponds.size()," obscured stations=",submerged,"/",total)
-		check(submerged<float(total)*0.15,"Faceted mesh keeps most of each course visible: "+family)
+		check(not wet or submerged<float(total)*0.15,"Faceted mesh keeps most of each course visible: "+family)
 		for pool: Dictionary in data.ponds:
 			var mesh := data.pond_surface(pool)
 			check(mesh.size()>30,"Pool renders: "+family)

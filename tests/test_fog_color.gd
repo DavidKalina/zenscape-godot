@@ -1,4 +1,5 @@
 extends SceneTree
+## suite: gpu
 
 # GPU regression: neutral, low-density fog must not become yellow/green.
 # --control bypasses the correction to reproduce the renderer's truncation.

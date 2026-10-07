@@ -1,4 +1,5 @@
 extends SceneTree
+## suite: slow
 ## The main scene's integration test (studies/cozy_worlds.tscn): a world opens
 ## straight past the title on its default land with the resident away; Regrow
 ## folds it down and grows a new wilderness in place, holding every gesture

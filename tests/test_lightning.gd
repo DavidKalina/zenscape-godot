@@ -31,7 +31,8 @@ func run() -> void:
 	bolt.advance(100, false, 0, 0.4, Vector2.RIGHT, Vector3.ZERO)
 	check(bolt.strike_count == count, "Clear weather never schedules a strike")
 	scene.queue_free()
-	await process_frame
+	# The mixer lets go of the thunder's playbacks a moment later.
+	await create_timer(0.5).timeout
 	print("PASS: lightning pulses, pause, downburst, thunder and storm scheduling" if failures == 0 else "FAIL: lightning")
 	quit(1 if failures else 0)
 func check(ok: bool, message: String) -> void:

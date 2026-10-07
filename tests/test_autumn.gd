@@ -1,4 +1,5 @@
 extends SceneTree
+## suite: gpu
 var failures := 0
 func _initialize() -> void:
 	call_deferred("run")
@@ -16,6 +17,8 @@ func run() -> void:
 	for key in ["Sun", "Sky"]:
 		var a = source["u" + key + "Color"]
 		var expected := Vector3(a[0], a[1], a[2])
+		# The sky fill keeps FILL_SATURATION of the source's colour (3824ab2c).
+		if key == "Sky": expected = scene._celestial._temper_fill(expected)
 		check(scene._celestial.state["zs_cloud_" + key.to_lower()].distance_to(expected) < 0.00002, "Captured source autumn " + key + " color")
 	# Matched source arch patch is warm stone. The old backface-normal bug
 	# made this same visible face blue-black despite the warm light.

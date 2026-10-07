@@ -11,11 +11,20 @@ func check(ok: bool, message: String) -> void:
 		failures += 1
 		push_error(message)
 
+## A tree draws as its spruce variant's pair and a rock as its stone variant
+## (a2eec160, 6502b431); --classic-trees/--classic-rocks keep the plain parts.
+func is_part(key: String, part: String) -> bool:
+	match part:
+		"canopy": return key == "canopy" or (key.begins_with("tree:") and key.ends_with("-canopies"))
+		"trunk": return key == "trunk" or (key.begins_with("tree:") and key.ends_with("-trunk"))
+		"rock": return key == "rock" or key.begins_with("boulder_stone:")
+	return key == part
+
 func rendered_center(editor: NativeChunkEditor, id: int, part: String) -> Vector3:
 	for batch: MultiMeshInstance3D in editor.content._batches:
-		if batch.get_meta("part") != part:
+		if not is_part(batch.get_meta("part"),part):
 			continue
-		var sources: Array = editor.content._sources[part]
+		var sources: Array = editor.content._sources[batch.get_meta("part")]
 		for index in range(sources.size()):
 			var item: Variant = sources[index].item
 			if item is Dictionary and item.id == id:
@@ -25,9 +34,9 @@ func rendered_center(editor: NativeChunkEditor, id: int, part: String) -> Vector
 
 func rendered_color(editor: NativeChunkEditor, id: int, part: String) -> Color:
 	for batch: MultiMeshInstance3D in editor.content._batches:
-		if batch.get_meta("part") != part:
+		if not is_part(batch.get_meta("part"),part):
 			continue
-		var sources: Array = editor.content._sources[part]
+		var sources: Array = editor.content._sources[batch.get_meta("part")]
 		for index in range(sources.size()):
 			var item: Variant = sources[index].item
 			if item is Dictionary and item.id == id:
@@ -140,30 +149,33 @@ func _run() -> void:
 	editor.undo()
 	check(not editor.data.object_by_id(duplicate_id).is_empty(),"Undo restores a deleted prop with its stable ID")
 
-	# A mouse drag must move the selected object, not stamp another one, and
-	# all of its motion events must share one undo boundary.
-	editor.select_object(rock_id)
-	var rock_before := editor.selected_object().duplicate(true)
-	rock_screen = scene.camera.unproject_position(rendered_center(editor,rock_id,"rock"))
-	var drag_end := rock_screen+Vector2(30,12)
-	check(editor.pick(drag_end) != null,"The drag ends above terrain")
-	press(editor,rock_screen,true)
-	move(editor,rock_screen+Vector2(15,6),rock_screen)
-	move(editor,drag_end,rock_screen+Vector2(15,6))
-	press(editor,drag_end,false)
-	var rock_after := editor.data.object_by_id(rock_id)
-	check(not is_equal_approx(rock_before.x,rock_after.x) or not is_equal_approx(rock_before.z,rock_after.z),"Dragging the rendered rock moves its existing record")
-	check(editor.data.objects.size() == 3,"Dragging never places another prop")
-	editor.undo()
-	check(editor.data.object_by_id(rock_id) == rock_before,"One undo restores a multi-event mouse drag")
-	editor.redo()
-	check(editor.data.object_by_id(rock_id) == rock_after,"Redo restores the dragged position")
+	# Under modeless controls, the default since 7a1d6669, a left press is the
+	# hand's, never the editor's: the mouse drag and click are --classic-controls'.
+	if not preload("res://scripts/modeless_input.gd").enabled():
+		# A mouse drag must move the selected object, not stamp another one, and
+		# all of its motion events must share one undo boundary.
+		editor.select_object(rock_id)
+		var rock_before := editor.selected_object().duplicate(true)
+		rock_screen = scene.camera.unproject_position(rendered_center(editor,rock_id,"rock"))
+		var drag_end := rock_screen+Vector2(30,12)
+		check(editor.pick(drag_end) != null,"The drag ends above terrain")
+		press(editor,rock_screen,true)
+		move(editor,rock_screen+Vector2(15,6),rock_screen)
+		move(editor,drag_end,rock_screen+Vector2(15,6))
+		press(editor,drag_end,false)
+		var rock_after := editor.data.object_by_id(rock_id)
+		check(not is_equal_approx(rock_before.x,rock_after.x) or not is_equal_approx(rock_before.z,rock_after.z),"Dragging the rendered rock moves its existing record")
+		check(editor.data.objects.size() == 3,"Dragging never places another prop")
+		editor.undo()
+		check(editor.data.object_by_id(rock_id) == rock_before,"One undo restores a multi-event mouse drag")
+		editor.redo()
+		check(editor.data.object_by_id(rock_id) == rock_after,"Redo restores the dragged position")
 
-	var empty := Vector2(2,2)
-	check(editor.pick_object(empty) < 0,"The corner is empty sky")
-	press(editor,empty,true)
-	press(editor,empty,false)
-	check(editor.selected_object().is_empty(),"Clicking empty space clears selection")
+		var empty := Vector2(2,2)
+		check(editor.pick_object(empty) < 0,"The corner is empty sky")
+		press(editor,empty,true)
+		press(editor,empty,false)
+		check(editor.selected_object().is_empty(),"Clicking empty space clears selection")
 	editor.select_object(tree_id)
 	check(editor.save_garden(),"An edited garden saves successfully")
 	var saved := editor.data.to_document()

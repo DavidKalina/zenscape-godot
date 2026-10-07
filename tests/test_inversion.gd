@@ -13,9 +13,13 @@ func run() -> void:
 	var source = JSON.parse_string(FileAccess.get_file_as_string("res://assets/zen_reference/inversion-checks.json"))
 	check(absf(sky.state.zs_inversion.x - source.uInv) < 0.00001, "Source dawn inversion strength")
 	check(absf(sky.state.zs_inversion.y - source.uInvLine) < 0.00001, "Source dawn lid altitude")
-	for pair in [["zs_inversion_color", "uInvColor"], ["zs_cloud_sun", "uSunColor"], ["zs_cloud_sky", "uSkyColor"]]:
+	# The sky fill keeps FILL_SATURATION of the source's colour (3824ab2c), and
+	# the inversion's colour is mixed from that fill, so it no longer matches
+	# the source's uInvColor; only the sun and the tempered sky are held to it.
+	for pair in [["zs_cloud_sun", "uSunColor"], ["zs_cloud_sky", "uSkyColor"]]:
 		var a = source[pair[1]]
 		var expected := Vector3(a[0], a[1], a[2])
+		if pair[0] == "zs_cloud_sky": expected = sky._temper_fill(expected)
 		check(sky.state[pair[0]].distance_to(expected) < 0.00002, "Source dawn color: " + pair[0] + " actual " + str(sky.state[pair[0]]) + " expected " + str(expected))
 	sky.set_phase(0.74)
 	check(sky.state.zs_inversion.x == 0.0, "Dusk has no cold-air inversion")
