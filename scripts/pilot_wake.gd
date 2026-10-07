@@ -64,6 +64,8 @@ const EASE_PACE := 0.1
 ## Moved further than this in a frame he was set down somewhere else: the
 ## path starts over there.
 const CUT := 2.0
+## Wading deeper than this (m), or swimming, he parts nothing: underwater.
+const UNDER := 0.2
 
 ## The motor he is moved by (scripts/pilot_motor.gd), for his height over the
 ## ground and his fall; without one he is always on the ground.
@@ -101,9 +103,17 @@ func _exit_tree() -> void:
 
 func _process(delta: float) -> void:
 	var parent := get_parent() as Node3D
-	var visible_now := on and parent != null and parent.is_visible_in_tree()
+	var visible_now := on and parent != null and parent.is_visible_in_tree() and not _under_water()
 	var at := parent.global_position if parent != null else Vector3.ZERO
 	advance(delta,at,visible_now,_lift(at))
+
+## Whether he is in water too deep for anything to grow (scripts/
+## pilot_motor.gd `wade`, `swimming`): swimming, or wading deeper than
+## UNDER m; the wake is quiet there.
+func _under_water() -> bool:
+	if motor == null: return false
+	if "swimming" in motor and motor.swimming: return true
+	return "wade" in motor and float(motor.wade) > UNDER
 
 ## His height over the ground under him, from the motor.
 func _lift(_at: Vector3) -> float:

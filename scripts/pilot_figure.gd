@@ -11,7 +11,9 @@ extends Node3D
 ##   hang, shimmy_left, shimmy_right, climb  on a ledge (when the model has
 ##         them): hanging by the mitts from a lip, swaying; hand over hand
 ##         along it, made for SHIMMY_SPEED m/s; up onto it, one go of
-##         CLIMB_LENGTH s, which played back lowers him into the hang.
+##         CLIMB_LENGTH s, which played back lowers him into the hang;
+##   swim, tread  in deep water (when the model has them): a doggy paddle
+##         made for SWIM_SPEED m/s, and treading water (TREAD_LENGTH s).
 ## Walk and run are played in step, both at one gait phase, and blended by
 ## the speed: the phase moves on by the distance covered over the stride the
 ## blend has (a walk's stride is shorter than a run's), so at either clip's
@@ -45,6 +47,15 @@ extends Node3D
 ## down one), rolls into turns and leads them, the head lifting to look
 ## ahead; its head looks into turns and up and down with a jump; its arms
 ## fly out in the air and flop back landing. Never stiffly upright.
+##
+## In water (the motor's `wade` and `swimming`): wading, he lifts his knees
+## higher through each swing and holds his arms a little up and out for
+## balance, more the deeper it is (WADE_FULL); swimming, the paddle is
+## blended with the treading by his pace and in step with it (each stroke
+## tells the walker, "stroke"), the body bobbing gently on the water. Out
+## of it he drips a while (`soak`: points the walker drops droplets from,
+## off the wet mitts, the hem and the trousers) and his clothes stay dark
+## where the water reached, drying back over DRY_TIME s.
 ##
 ## The model's own materials are swapped for the pilot's paint (scripts/
 ## pilot_paint.gd, by surface name): soft toon bands, not the islanders'
@@ -87,6 +98,38 @@ const BLEND_TO := 3.3
 const STILL := 0.15
 ## Seconds a cross-fade between standing and moving takes, about.
 const FADE := 0.12
+## The swim's ground speed (m/s) and stroke loop (s), the tread's loop, as
+## pilot_build.py made them; seconds the swim fades in and out, the pace's
+## share of SWIM_SPEED at which the paddle has taken over from the tread; the
+## bob on the water (m, Hz).
+const SWIM_SPEED := 1.2
+const SWIM_CYCLE := 0.8
+const TREAD_LENGTH := 1.6
+const SWIM_FADE := 0.25
+const SWIM_BLEND := 0.5
+const BOB := 0.018
+const BOB_RATE := 0.45
+## Wading: the depth (m) of the fullest wading gait; the thigh lifted and
+## the shin tucked through a swing (radians), and the arms up and out.
+const WADE_FULL := 0.5
+const WADE_KNEE := 0.55
+const WADE_SHIN := 0.75
+const WADE_ARMS := 0.45
+const WADE_ELBOWS := 0.35
+## Out of the water: seconds he drips, drips a second at first, seconds his
+## clothes take to dry; the wet line's rest height (m) per metre of water at
+## the feet (rest stands the hips higher than play does), and where the
+## drips come from, in rest heights (m): the mitts, the jacket's hem, the
+## trousers at the knee; the highest it wets, the shoulders (the head stays
+## out, swimming).
+const DRIP_TIME := 4.0
+const DRIP_RATE := 22.0
+const DRY_TIME := 15.0
+const WET_REST := 1.17
+const DRIP_MITTS := 0.4
+const DRIP_HEM := 0.48
+const DRIP_KNEES := 0.2
+const WET_MOST := 0.8
 ## The pelvis over the feet (pilot_build.py HIPS): it flips about it.
 const HIPS := 0.4329
 ## Radians of bank per radian a second of turn at a full run, and the most.
@@ -201,6 +244,28 @@ var _neck := -1
 var _upper_arms: Array[int] = []
 var _to_skeleton := Basis.IDENTITY
 var _rng := RandomNumberGenerator.new()
+## In water: the swim's clips there, 0 to 1 into them, the paddle's share
+## over the tread, the paddle's phase and the tread's time, the bob's clock,
+## swimming last frame; the wading gait's share; wet (1 soaked to 0 dry) and
+## up to where (rest height, m), seconds of dripping left and drips due; the
+## paint's materials; the legs', forearms' and hands' bones.
+var _has_swim := false
+var _swim := 0.0
+var _paddle := 0.0
+var _swim_phase := 0.0
+var _tread_time := 0.0
+var _bob_time := 0.0
+var _swimming_was := false
+var _wade := 0.0
+var wet := 0.0
+var wet_line := 0.0
+var drip_left := 0.0
+var _drip_due := 0.0
+var _paints: Array[ShaderMaterial] = []
+var _thighs: Array[int] = []
+var _shins: Array[int] = []
+var _hands: Array[int] = []
+var _forearms: Array[int] = []
 
 func _init() -> void:
 	name = "Pilot"
@@ -217,6 +282,7 @@ func _init() -> void:
 	var player := _model.find_child("AnimationPlayer",true,false) as AnimationPlayer
 	_has_skid = player.has_animation(&"skid")
 	_has_ledge = player.has_animation(&"hang") and player.has_animation(&"climb")
+	_has_swim = player.has_animation(&"swim") and player.has_animation(&"tread")
 	_idle_length = player.get_animation(&"idle").length
 	_skeleton = _model.find_children("*","Skeleton3D",true,false)[0]
 	_boots = [_skeleton.find_bone("foot.L"),_skeleton.find_bone("foot.R")]
@@ -224,6 +290,10 @@ func _init() -> void:
 	_chest = _skeleton.find_bone("chest")
 	_neck = _skeleton.find_bone("neck")
 	_upper_arms = [_skeleton.find_bone("upper_arm.L"),_skeleton.find_bone("upper_arm.R")]
+	_thighs = [_skeleton.find_bone("thigh.L"),_skeleton.find_bone("thigh.R")]
+	_shins = [_skeleton.find_bone("shin.L"),_skeleton.find_bone("shin.R")]
+	_hands = [_skeleton.find_bone("hand.L"),_skeleton.find_bone("hand.R")]
+	_forearms = [_skeleton.find_bone("forearm.L"),_skeleton.find_bone("forearm.R")]
 	var placed := Transform3D.IDENTITY
 	var up: Node = _skeleton
 	while up != _model:
@@ -234,6 +304,7 @@ func _init() -> void:
 	var clips: Array[String] = ["idle","walk","run"]
 	if _has_skid: clips.append("skid")
 	if _has_ledge: clips.append_array(["hang","shimmy_left","shimmy_right","climb"])
+	if _has_swim: clips.append_array(["swim","tread"])
 	for clip: String in clips:
 		var animation := player.get_animation(clip)
 		animation.loop_mode = Animation.LOOP_NONE if clip == "climb" else Animation.LOOP_LINEAR
@@ -265,6 +336,7 @@ func _init() -> void:
 		blend.connect_node(&"skid",0,&"move")
 		blend.connect_node(&"skid",1,&"skid_at")
 	var ground := &"skid" if _has_skid else &"move"
+	var top := ground
 	if _has_ledge:
 		for clip: StringName in [&"hang",&"shimmy_left",&"shimmy_right",&"climb"]:
 			var node := AnimationNodeAnimation.new()
@@ -281,9 +353,24 @@ func _init() -> void:
 		blend.connect_node(&"climbing",1,&"climb_at")
 		blend.connect_node(&"ledge",0,ground)
 		blend.connect_node(&"ledge",1,&"climbing")
-		blend.connect_node(&"output",0,&"ledge")
-	else:
-		blend.connect_node(&"output",0,ground)
+		top = &"ledge"
+	if _has_swim:
+		# In deep water: the tread blended into the paddle by the pace, over
+		# everything else.
+		for clip: StringName in [&"swim",&"tread"]:
+			var node := AnimationNodeAnimation.new()
+			node.animation = clip
+			blend.add_node(StringName(String(clip)+"_clip"),node)
+			blend.add_node(StringName(String(clip)+"_at"),AnimationNodeTimeSeek.new())
+			blend.connect_node(StringName(String(clip)+"_at"),0,StringName(String(clip)+"_clip"))
+		blend.add_node(&"paddle",AnimationNodeBlend2.new())
+		blend.add_node(&"water",AnimationNodeBlend2.new())
+		blend.connect_node(&"paddle",0,&"tread_at")
+		blend.connect_node(&"paddle",1,&"swim_at")
+		blend.connect_node(&"water",0,top)
+		blend.connect_node(&"water",1,&"paddle")
+		top = &"water"
+	blend.connect_node(&"output",0,top)
 	_tree = AnimationTree.new()
 	_tree.name = "Moves"
 	_tree.tree_root = blend
@@ -305,11 +392,18 @@ func _dress() -> void:
 			var key := material.resource_name if material != null else ""
 			if outfit.has(key): mesh.surface_set_material(i,outfit[key])
 		node.mesh = mesh
+	for key: String in outfit: _paints.append(outfit[key])
 
 ## One frame of the motor's state. Returns what the body did this frame:
 ## "footfall" (0 the left boot touched down, 1 the right), "set_off" (moving
 ## from a stand), "turned" (whipped round out of a skid).
 func drive(motor: RefCounted, delta: float) -> Dictionary:
+	var swimming: bool = "swimming" in motor and motor.swimming
+	var depth := float(motor.get("wade")) if "wade" in motor else 0.0
+	_wade = move_toward(_wade,0.0 if swimming else clampf(depth/WADE_FULL,0.0,1.0),delta*4.0)
+	if _has_swim and swimming: return _drive_swim(motor,delta)
+	_swimming_was = false
+	_swim = move_toward(_swim,0.0,delta/SWIM_FADE)
 	var hold: String = motor.hold if _has_ledge and "hold" in motor else ""
 	if hold != "" or _hold_was != "": return _drive_ledge(motor,hold,delta)
 	_ledge = move_toward(_ledge,0.0,delta/GRAB_FADE)
@@ -374,6 +468,111 @@ func drive(motor: RefCounted, delta: float) -> Dictionary:
 	_roll_to = clampf(turned*CHEST_BANK*pace,-CHEST_BANK_MOST,CHEST_BANK_MOST) if motor.grounded else 0.0
 	_advance(delta)
 	return out
+
+## One frame afloat: the tread blended into the paddle by the pace, the
+## paddle in step with it; turning a beat behind its way as on foot, banked
+## a little into a turn, bobbing on the water. Returns "stroke" (0 the left
+## mitt's pull, 1 the right's) as the paddle or the tread pushes the water.
+func _drive_swim(motor: RefCounted, delta: float) -> Dictionary:
+	var out := {}
+	if not _swimming_was:
+		# Into the water: the run's and the air's springs let go of.
+		for spring: Spring in [_bank,_look,_nod,_arms,_hunch,_roll,_lean]:
+			spring.x = 0.0
+			spring.v = 0.0
+		_skid = 0.0
+		_skidding_was = false
+		_hold_was = ""
+		_tread_time = _rng.randf()*TREAD_LENGTH
+	_swimming_was = true
+	_ledge = move_toward(_ledge,0.0,delta/GRAB_FADE)
+	_climbing = 0.0
+	var turned := 0.0
+	if _facing_was != INF:
+		var swung := angle_difference(_facing_was,motor.facing)
+		_yaw.x = wrapf(_yaw.x-swung,-PI,PI)
+		if delta > 0.0: turned = swung/delta
+	_facing_was = motor.facing
+	var speed: float = motor.speed()
+	_swim = move_toward(_swim,1.0,delta/SWIM_FADE)
+	_moving = move_toward(_moving,0.0,delta/FADE)
+	_standing = true
+	_paddle = move_toward(_paddle,clampf(speed/(SWIM_SPEED*SWIM_BLEND),0.0,1.0),delta*3.0)
+	var was := _swim_phase
+	_swim_phase = fmod(_swim_phase+speed/(SWIM_SPEED*SWIM_CYCLE)*delta,1.0)
+	var tread_was := _tread_time
+	_tread_time = fmod(_tread_time+delta,TREAD_LENGTH)
+	if _paddle > 0.5:
+		if _swim_phase < was: out["stroke"] = 0
+		elif was < 0.5 and _swim_phase >= 0.5: out["stroke"] = 1
+	elif _tread_time < tread_was: out["stroke"] = 0
+	elif tread_was < TREAD_LENGTH*0.5 and _tread_time >= TREAD_LENGTH*0.5: out["stroke"] = 1
+	_bob_time += delta
+	var pace := clampf(speed/SWIM_SPEED,0.0,1.0)
+	var bank := _bank.step(clampf(turned*BANK*pace,-BANK_MOST,BANK_MOST),delta)
+	_tilt.rotation = Vector3(_lean.step(0.0,delta),_yaw.step(0.0,delta),bank)
+	_tilt.position = Vector3.ZERO
+	_pivot.rotation = Vector3.ZERO
+	_stretch_to = 1.0
+	_nod_to = 0.0
+	_arms_to = 0.0
+	_look_to = clampf(turned*LOOK,-LOOK_MOST,LOOK_MOST)
+	_hunch_to = 0.0
+	_roll_to = 0.0
+	_speed_was = speed
+	_grounded_was = false
+	_feet_was = Vector3.INF
+	_advance(delta)
+	# Bobbing gently on the water.
+	_pivot.position.y += BOB*sin(TAU*BOB_RATE*_bob_time)
+	return out
+
+## One frame of the water on him (the motor's `wade` and `swimming`): in it
+## he is soaked up to where it reaches; out of it he drips for DRIP_TIME s,
+## less and less, and dries over DRY_TIME s. Returns the points (world) a
+## drip falls from this frame: off the wet mitts, the jacket's hem and the
+## trousers.
+func soak(motor: RefCounted, delta: float) -> PackedVector3Array:
+	var drips := PackedVector3Array()
+	var depth := float(motor.get("wade")) if "wade" in motor else 0.0
+	var swimming: bool = "swimming" in motor and motor.swimming
+	if swimming or depth > 0.02:
+		wet = 1.0
+		wet_line = minf(maxf(wet_line,depth*WET_REST+0.03),WET_MOST)
+		drip_left = DRIP_TIME
+		_drip_due = 0.0
+	else:
+		var dripping := drip_left > 0.0
+		drip_left = maxf(0.0,drip_left-delta)
+		wet = maxf(0.0,wet-delta/DRY_TIME)
+		if wet <= 0.0: wet_line = 0.0
+		if dripping and _skeleton != null:
+			_drip_due += DRIP_RATE*pow(drip_left/DRIP_TIME,1.5)*delta
+			var from := _drip_sources()
+			while _drip_due >= 1.0 and not from.is_empty():
+				_drip_due -= 1.0
+				drips.append(from[_rng.randi()%from.size()])
+	for paint in _paints:
+		paint.set_shader_parameter("wet",wet)
+		paint.set_shader_parameter("wet_line",wet_line)
+	return drips
+
+## Where the wet parts drip from now (world), one point each, a little
+## scattered round its part.
+func _drip_sources() -> PackedVector3Array:
+	var out := PackedVector3Array()
+	var to_world := _skeleton.global_transform
+	if wet_line > DRIP_MITTS:
+		for bone in _hands: if bone >= 0: out.append(to_world*_skeleton.get_bone_global_pose(bone).origin+_scatter()*0.03)
+	if wet_line > DRIP_HEM and _chest >= 0:
+		out.append(to_world*_skeleton.get_bone_global_pose(_chest).origin+_scatter().normalized()*0.12)
+	if wet_line > DRIP_KNEES:
+		for bone in _shins: if bone >= 0: out.append(to_world*_skeleton.get_bone_global_pose(bone).origin+_scatter()*0.05)
+	return out
+
+## A random flat way, at most 1 long.
+func _scatter() -> Vector3:
+	return Vector3(_rng.randf_range(-1.0,1.0),0.0,_rng.randf_range(-1.0,1.0)).limit_length(1.0)
 
 ## One frame on a ledge (and the one coming off it).
 func _drive_ledge(motor: RefCounted, hold: String, delta: float) -> Dictionary:
@@ -467,6 +666,11 @@ func boot(side: int) -> Vector3:
 	var at := _skeleton.global_transform*_skeleton.get_bone_global_pose(_boots[side]).origin
 	return Vector3(at.x,global_position.y,at.z)
 
+## Where mitt `side` (0 the left, 1 the right) is, in the world.
+func mitt(side: int) -> Vector3:
+	if _hands.size() <= side or _hands[side] < 0: return global_position
+	return _skeleton.global_transform*_skeleton.get_bone_global_pose(_hands[side]).origin
+
 ## Metres a full gait cycle (both feet) covers, `running` 0 walking to 1
 ## running.
 static func stride(running: float) -> float:
@@ -538,6 +742,11 @@ func _apply() -> void:
 		_tree.set(&"parameters/shimmy_left_at/seek_request",_shimmy_phase*SHIMMY_CYCLE)
 		_tree.set(&"parameters/shimmy_right_at/seek_request",_shimmy_phase*SHIMMY_CYCLE)
 		_tree.set(&"parameters/climb_at/seek_request",_climb_at)
+	if _has_swim:
+		_tree.set(&"parameters/water/blend_amount",smoothstep(0.0,1.0,_swim))
+		_tree.set(&"parameters/paddle/blend_amount",smoothstep(0.0,1.0,_paddle))
+		_tree.set(&"parameters/swim_at/seek_request",_swim_phase*SWIM_CYCLE)
+		_tree.set(&"parameters/tread_at/seek_request",_tread_time)
 
 ## The idle taken up at a random moment of its loop.
 func _idle_anywhere() -> void:
@@ -576,6 +785,28 @@ func _springs(delta: float) -> void:
 	# Out is down the -X side for the left arm, +X for the right.
 	_turn_bone(_upper_arms[0],Vector3.BACK,-arms)
 	_turn_bone(_upper_arms[1],Vector3.BACK,arms)
+	if _wade > 0.001: _wading()
+
+## The wading gait over the walk and the run: each knee lifted higher
+## through its swing (the shin tucked under, so the boot clears the water
+## rather than reaching), the arms held a little up and out for balance,
+## the elbows bent; all by how deep he wades.
+func _wading() -> void:
+	if _thighs.has(-1) or _shins.has(-1): return
+	var wade := smoothstep(0.0,1.0,_wade)*_moving
+	# The share of the gait each boot is planted (pilot_build.py WALK_STANCE,
+	# RUN_STANCE); the left swings after it, the right half a cycle on.
+	var stance := lerpf(0.58,0.3,_running)
+	for side in range(2):
+		var q := fmod(_phase+0.5*side,1.0)
+		var swing := sin(PI*(q-stance)/(1.0-stance)) if q > stance else 0.0
+		_turn_bone(_thighs[side],Vector3.RIGHT,WADE_KNEE*wade*swing)
+		_turn_bone(_shins[side],Vector3.RIGHT,-WADE_SHIN*wade*swing)
+	var arms := smoothstep(0.0,1.0,_wade)
+	_turn_bone(_upper_arms[0],Vector3.BACK,-WADE_ARMS*arms)
+	_turn_bone(_upper_arms[1],Vector3.BACK,WADE_ARMS*arms)
+	if not _forearms.has(-1):
+		for bone in _forearms: _turn_bone(bone,Vector3.RIGHT,WADE_ELBOWS*arms)
 
 ## Turns `bone` by `angle` about `axis` (the model's), on top of its pose.
 func _turn_bone(bone: int, axis: Vector3, angle: float) -> void:

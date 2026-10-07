@@ -15,7 +15,11 @@ extends Node
 ## (scripts/wanderer_steps.gd): earth, a bridge's planks or a wade, as the
 ## drawn boot touches down; at a run it kicks up puffs of the ground behind,
 ## lands in a ring of them and sprays them ahead in a skid (scripts/
-## pilot_puffs.gd).
+## pilot_puffs.gd). Through the pond's live water he wades, rings spreading
+## from his legs (scripts/pilot_ripples.gd) and droplets off each wet
+## footfall; deeper he swims, a V of rings opening behind him and a splash
+## off each stroke; out of it he drips a while and his clothes dry
+## (scripts/pilot_figure.gd `soak`).
 ##
 ## Like photo mode (scripts/photo_mode.gd) this runs before the scene each
 ## frame (process_priority) and writes the pose into the scene's own orbit
@@ -149,10 +153,10 @@ const HEAD := FIGURE_HEIGHT+0.2
 const BANDS := 24
 ## Push-out passes a step takes; each can move off one more obstacle.
 const PASSES := 3
-## Water: the figure wades in, slowing, and will not step where live water
-## stands deeper than WADE metres; a soft wall it slides along.
-const WADE := 0.4
-const WADE_SLOW := 0.55
+## Water: the figure wades in, slowed by the motor (scripts/pilot_motor.gd
+## WADE_SLOW), and swims where live water stands deeper than WADE metres; it
+## is never set down there.
+const WADE := PilotMotor.SWIM_IN
 ## How far round `place` looks for a free spot, and the ring spacing.
 const FREE_REACH := 4.0
 const FREE_STEP := 0.2
@@ -177,6 +181,7 @@ const SHORE := 0.7
 const WandererSteps = preload("res://scripts/wanderer_steps.gd")
 const PilotPuffs = preload("res://scripts/pilot_puffs.gd")
 const PilotWake = preload("res://scripts/pilot_wake.gd")
+const PilotRipples = preload("res://scripts/pilot_ripples.gd")
 const BiomeBlend = preload("res://scripts/biome_blend.gd")
 const Shape = preload("res://scripts/native_formation_shape.gd")
 const Presets = preload("res://scripts/native_landscape_presets.gd")
@@ -319,6 +324,8 @@ var steps: Node
 ## The puffs at the feet, on the figure; the stick's push this frame (0 to
 ## 1); skidding last frame.
 var puffs: Node3D
+## The rings on the water round him.
+var ripples: Node3D
 var _asked := 0.0
 var _skid_was := false
 ## The glide (scripts/sky_glide.gd), the islands it flies between and the air
@@ -462,6 +469,10 @@ func _build_figure() -> void:
 	figure.add_child(body)
 	puffs = PilotPuffs.new()
 	figure.add_child(puffs)
+	ripples = PilotRipples.new()
+	figure.add_child(ripples)
+	# The motor wades and swims in the plate's live water (none on an islet).
+	motor.water = func(p: Vector2) -> float: return _depth(p) if perch.is_empty() else 0.0
 	# The low foliage parts round him and springs back (scripts/pilot_wake.gd).
 	var wake := PilotWake.new()
 	wake.name = "Wake"
@@ -651,8 +662,7 @@ func _blocked(point: Vector2) -> bool:
 ## One step of the walk: into the obstacles, then pushed back out along
 ## their normals, which keeps the part of the step along them, so the figure
 ## slides round a trunk. Walked square into one it is turned a little aside,
-## so it never stops dead. Deep water is a wall: the step keeps whichever of
-## its two plate axes stays shallow.
+## so it never stops dead. Deep water is no wall: he swims it.
 func _walk(feet: Vector3, step: Vector2) -> Vector3:
 	if step.length_squared() < 1e-10: return feet
 	var from := Vector2(feet.x,feet.z)
@@ -671,12 +681,6 @@ func _walk(feet: Vector3, step: Vector2) -> Vector3:
 	# step off its side, where the water allows.
 	var deck := _deck(from)
 	if not deck.is_empty() and deck.deck.rails and _deck(to).is_empty(): to = Footbridge.keep_on(deck.deck,to,RADIUS*0.5)
-	if _wet(to) and not _wet(from):
-		var across := Vector2(to.x,from.y)
-		var along := Vector2(from.x,to.y)
-		if not _wet(across) and not _blocked(_pushed_out(across)): to = _pushed_out(across)
-		elif not _wet(along) and not _blocked(_pushed_out(along)): to = _pushed_out(along)
-		else: to = from
 	return Vector3(to.x,feet.y,to.y)
 
 ## The free, shallow spot nearest `local` (on the plate), or `local` itself
@@ -825,8 +829,7 @@ func _advance_eye(delta: float) -> void:
 		return
 	_read_obstacles(false)
 	_read_depths()
-	# Wading slows the run as the water deepens.
-	var top := _top()*(1.0-WADE_SLOW*clampf(_depth(Vector2(_feet.x,_feet.z))/WADE,0.0,1.0))
+	var top := _top()
 	var jump := Input.is_action_pressed(&"walk_jump")
 	var pressed := jump and not _jump_was
 	_jump_was = jump
@@ -854,7 +857,9 @@ func _advance_eye(delta: float) -> void:
 	_notice_step(moved,delta)
 	_sync_figure()
 	_motor_events(events)
-	_body_events(body.drive(motor,delta),delta)
+	var drawn: Dictionary = body.drive(motor,delta)
+	_body_events(drawn,delta)
+	_water_events(events,drawn,delta)
 	_frame_walker(delta,editor.terrain.global_transform,_turn(),func(p: Vector3) -> float:
 		var h: Variant = editor.data.ground_height(Vector2(p.x,p.z))
 		return float(h) if h != null else -INF)
@@ -943,6 +948,44 @@ func _body_events(out: Dictionary, delta: float) -> void:
 		if not _skid_was: steps.slide(_surface(),speed/RUN)
 		puffs.spray(_puff_at(figure.global_position+travel*0.15),travel,_surface(),clampf(speed/RUN,0.3,1.0),delta)
 	_skid_was = motor.skidding
+
+## The water round him: going in deep enough to swim, a splash (puffs of
+## drops, rings, a wade's sound) as hard as he came in, and hopping out
+## another; wading on, rings round the legs and one at each wet footfall;
+## swimming, a ring let go at the chest every few strokes' worth (a V behind
+## him), and each stroke throws a few drops and a ring off the mitt. Out of
+## it, the drips off him (scripts/pilot_figure.gd `soak`) fall.
+func _water_events(events: Dictionary, drawn: Dictionary, delta: float) -> void:
+	for at in body.soak(motor,delta): puffs.drip(at,at.y-figure.global_position.y)
+	if not is_finite(motor.surface) or not perch.is_empty():
+		ripples.dry()
+		return
+	var top := figure.global_position+Vector3.UP*(motor.surface-motor.feet.y)
+	if events.has("swam"):
+		var hard := clampf(float(events.swam)/8.0,0.3,1.0)
+		ripples.splash(top,hard)
+		puffs.burst(top,"water",hard)
+		steps.step("water",hard)
+	if events.has("hopped"):
+		ripples.splash(top,0.4)
+		puffs.burst(top,"water",0.3)
+	var ahead := _world_way(Vector3.ZERO)
+	if motor.swimming:
+		ripples.trail(top+ahead*0.15,true,0.16)
+	elif motor.grounded and motor.wade > 0.04 and motor.speed() > 0.3:
+		ripples.trail(top,false,0.18)
+	else:
+		ripples.dry()
+	if drawn.has("footfall") and motor.wade > 0.04:
+		var boot: Vector3 = body.boot(int(drawn.footfall))
+		ripples.ring(Vector3(boot.x,top.y,boot.z),0.07,0.25)
+	if drawn.has("stroke"):
+		var mitt: Vector3 = body.mitt(int(drawn.stroke))
+		var on := Vector3(mitt.x,top.y,mitt.z)
+		var paddling := motor.speed() > 0.3
+		ripples.ring(on,0.06,0.3 if paddling else 0.15)
+		puffs.footfall(on,-ahead,"water",0.5 if paddling else 0.2)
+		steps.step("water",0.2 if paddling else 0.1,int(drawn.stroke))
 
 ## A way in the motor's frame (`way`, its x and z) as a flat unit way in the
 ## world; none (too short) is the way the figure faces.
@@ -1340,7 +1383,9 @@ func _advance_perch(delta: float) -> void:
 	_pace = Vector2(motor.velocity.x,motor.velocity.z)
 	_sync_figure()
 	_motor_events(events)
-	_body_events(body.drive(motor,delta),delta)
+	var drawn: Dictionary = body.drive(motor,delta)
+	_body_events(drawn,delta)
+	_water_events(events,drawn,delta)
 	var place: Vector3 = islands.islets.place(perch)
 	_frame_walker(delta,Transform3D(Basis.IDENTITY,place),0.0,func(p: Vector3) -> float:
 		return float(shape.ground_at(Vector2(p.x,p.z))) if shape.inside(Vector2(p.x,p.z)) else -INF)

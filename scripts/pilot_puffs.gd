@@ -9,7 +9,8 @@ extends Node3D
 ## see-through. Its colour is the
 ## ground's (KINDS, by scripts/wanderer_steps.gd surface): pale dust off
 ## grass, tan off earth, sand, a white powder off snow; wading throws
-## droplets instead, flung up and falling back.
+## droplets instead, flung up and falling back, and a wet pilot drips
+## (`drip`).
 ##
 ## One MultiMesh of POOL faceted balls (an icosahedron cut once more) in
 ## the world's frame (top level; the oldest is reused when all are out), lit
@@ -110,6 +111,15 @@ func footfall(at: Vector3, back: Vector3, surface: String, effort: float) -> voi
 	var size := lerpf(0.75,1.0,effort)
 	for i in range(2 if surface in ["sand","snow"] else 1):
 		_cloud(at+back*0.06+Vector3.UP*0.06,back*_rng.randf_range(0.6,1.1)+side*_rng.randf_range(-0.35,0.35)+Vector3.UP*_rng.randf_range(0.25,0.55),kind,size*_rng.randf_range(0.8,1.15),LOBES)
+
+## A drip falling off him from `at` (a wet mitt, hem or boot), `fall` m
+## over the ground: a small droplet let go with no throw, falling until it
+## reaches the ground.
+func drip(at: Vector3, fall: float) -> void:
+	var kind: Dictionary = KINDS.water
+	var i := _next
+	_spawn(at,Vector3(_rng.randf_range(-0.05,0.05),-0.2,_rng.randf_range(-0.05,0.05)),kind,_rng.randf_range(0.8,1.1),true)
+	_life[i] = maxf(0.08,(sqrt(0.04+2.0*GRAVITY*maxf(fall,0.0))-0.2)/GRAVITY)/0.75
 
 ## A ring of puffs thrown out flat from `at`, `strength` 0 (a hop) to 1 (a
 ## hard landing); `back` (flat, or zero) leans the ring that way, for a push

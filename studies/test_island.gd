@@ -4,7 +4,7 @@ extends "res://studies/cozy_worlds.gd"
 ## pilot_motor.gd, pilot_figure.gd, pilot_wake.gd, pilot_ledge.gd, through
 ## scripts/wanderer_eye.gd). Most of it is a field of wheat drilled in the
 ## game's own rows (scripts/flower_sowing.gd "wheat"), with a grass margin
-## round it, three trees, a shallow pond to wade into and a few tufts and
+## round it, three trees, a pond to wade into and swim in and a few tufts and
 ## ferns; every shore is an open rim to hang from.
 ##
 ## Nothing of the sky world is made: the walker's glide is off from the start
@@ -30,11 +30,12 @@ const HALF := 12.0
 const FIELD := Rect2(-8.5,-9.5,12.5,19.0)
 const SOW_STEP := 0.25
 ## The pond: its middle, the bowl's radius and depth (m), and how far under
-## the bowl's lowest edge its water stands. The middle is deeper than the
-## walker's WADE, a wall; the shelf round it is wadeable.
+## the bowl's lowest edge its water stands. The middle, about 1.3 m, is
+## deeper than the walker's WADE: he swims there (about 1.9 m round); the
+## shelf round it is wadeable.
 const POND := Vector2(7.6,-6.4)
-const POND_RADIUS := 3.2
-const POND_DEPTH := 0.9
+const POND_RADIUS := 3.6
+const POND_DEPTH := 1.4
 const POND_BELOW_RIM := 0.1
 ## The trees: [kind, at, size, tint].
 const TREES := [

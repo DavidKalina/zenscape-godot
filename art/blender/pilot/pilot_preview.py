@@ -6,7 +6,8 @@ measures the planted boots in the game).
 Writes OUT_DIR/<clip>_<view>_<frame>.png (default /tmp/pilot_preview): about
 ten stills through each of walk, run and skid, the idle once a second
 through its length, the ledge's clips against a block standing for the lip, and the model up close in its rest pose
-(model_<view>_000.png, to compare builds by). CLIP names limit it to those clips (`model` for
+(model_<view>_000.png, to compare builds by), the water's clips dry and in a
+pool (swim, tread). CLIP names limit it to those clips (`model` for
 the close-ups). Tile them with ffmpeg.
 """
 import sys
@@ -119,3 +120,24 @@ if any(wanted(c) for c in LEDGE) and "HANG_DROP" in rig:
     ground.hide_render = False
 if wanted("idle"):
     render("idle", range(0, last("idle"), 60), ["three", "front"])
+# The water's clips, dry (the whole body) and in a pool standing for the
+# water, its top SWIM_DRAFT over the feet (pilot_build.py), the ground
+# hidden: what shows above it.
+WATER = ("swim", "tread")
+if any(wanted(c) for c in WATER):
+    for c in WATER:
+        if wanted(c):
+            render(c, range(0, last(c), 8 if c == "swim" else 16), ["side", "three", "front"])
+    bpy.ops.mesh.primitive_plane_add(size=4)
+    pool = bpy.context.object
+    pool.location = (0, 0, 0.58)
+    pool.data.materials.append(bpy.data.materials.new("pool"))
+    pool.data.materials[0].diffuse_color = (0.3, 0.5, 0.62, 1)
+    ground.hide_render = True
+    for v, (at, look, scale) in list(VIEWS.items()):
+        VIEWS["pool" + v] = (at + Vector((0, 0, 0.5)), look + Vector((0, 0, 0.1)), scale)
+    for c in WATER:
+        if wanted(c):
+            render(c, range(0, last(c), 8 if c == "swim" else 16), ["poolside", "poolthree", "poolfront"], name=c + "_pool")
+    pool.hide_render = True
+    ground.hide_render = False

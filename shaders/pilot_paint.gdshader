@@ -41,6 +41,12 @@ uniform float wobble = 0.08;
 // light the lens gives back, so it dims with the sky at night; it never
 // glows of itself.
 uniform float sheen = 0.0;
+// Wet from wading or a swim (scripts/pilot_figure.gd `soak`): up to
+// `wet_line` (m, in the rest position's height, so it rides the body) the
+// cloth is darkened by `wet_dark`, `wet` 1 soaked drying back to 0.
+uniform float wet = 0.0;
+uniform float wet_line = 0.0;
+uniform float wet_dark = 0.32;
 
 varying vec3 rest;
 varying float own;
@@ -78,6 +84,7 @@ void fragment() {
 	base *= 1.0 + (m - 0.5) * 2.0 * mottle + s * 2.0 * streaks;
 	// A part's own shift, a little warmer or cooler.
 	base *= mix(vec3(1.03, 1.0, 0.96), vec3(0.97, 1.0, 1.04), own) ;
+	base *= 1.0 - wet_dark * wet * (1.0 - smoothstep(wet_line - 0.03 + (m - 0.5) * 0.04, wet_line + 0.02, rest.z));
 	ALBEDO = clamp(base, 0.0, 1.0);
 	ROUGHNESS = 1.0;
 	METALLIC = 0.0;
