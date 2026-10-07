@@ -125,6 +125,10 @@ var _making := {}
 ## within: room kept for the clusters (scripts/sky_clusters.gd), whose members
 ## stand in `built` as `fixed` and are never let go.
 var keep_clear: Array[Vector3] = []
+## Islets an airship has moved this session (scripts/sky_airship.gd), by
+## cell key: the home it was moored at, or null for one carried off. Kept
+## over `reset` and `clear`; a new world forgets them.
+var moved := {}
 
 static var _ground_material: ShaderMaterial
 static var _water_material: ShaderMaterial
@@ -276,6 +280,7 @@ func _survey(home: Vector3) -> void:
 ## in the cell, at a height in the band, unless an island's spot is too near.
 func spot(cell: Vector2i) -> Variant:
 	var key := _key(cell)
+	if moved.has(key): return moved[key]
 	if _spots.has(key): return _spots[key]
 	var here: Variant = raw(cell)
 	if here != null and cells != null and not cells.spots_near(here,CLEAR).is_empty(): here = null

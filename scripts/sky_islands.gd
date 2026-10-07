@@ -67,6 +67,7 @@ const Genesis = preload("res://scripts/genesis_canvas.gd")
 const IslandShore = preload("res://scripts/island_shore.gd")
 const SkyIslets = preload("res://scripts/sky_islets.gd")
 const SkyClusters = preload("res://scripts/sky_clusters.gd")
+const SkyAirship = preload("res://scripts/sky_airship.gd")
 const SkyPeaks = preload("res://scripts/sky_peaks.gd")
 const SkyTowers = preload("res://scripts/sky_towers.gd")
 const CloudWakes = preload("res://scripts/cloud_wakes.gd")
@@ -153,6 +154,8 @@ var isles: Node3D
 var folk: Node3D
 ## The clusters of islets that read as places (scripts/sky_clusters.gd).
 var clusters: Node3D
+## Now and then an airship towing a lone islet away (scripts/sky_airship.gd).
+var airship: Node3D
 ## The islands built and left, by home key (`_key`): {home, label, document}.
 var built_islands := {}
 ## The swaps' shifts added up: the plate's own home is -origin.
@@ -236,6 +239,11 @@ func setup(owner_scene: Node3D) -> void:
 	clusters.scene = scene
 	add_child(clusters)
 	skip.append(clusters)
+	airship = SkyAirship.new()
+	airship.islets = islets
+	airship.scene = scene
+	add_child(airship)
+	skip.append(airship)
 	show_air(false)
 
 ## Sets an island at every fixed slot and every island built, except the
@@ -282,6 +290,7 @@ func clear() -> void:
 	_newest = Vector3.INF
 	if currents != null: currents.drop_added()
 	if clusters != null: clusters.clear()
+	if airship != null: airship.clear()
 	if islets != null: islets.clear()
 	if peaks != null: peaks.clear()
 	if towers != null: towers.clear()
@@ -903,6 +912,7 @@ func save_state() -> Dictionary:
 ## islands stand again at the next glide.
 func load_state(state: Dictionary) -> void:
 	clear()
+	if airship != null: airship.forget_session()
 	built_islands = {}
 	origin = Vector3.ZERO
 	plate_seed = -1
@@ -1134,6 +1144,7 @@ func show_air(on: bool) -> void:
 	if traffic != null: traffic.show(on)
 	clouds.visible = on
 	islets.visible = on
+	if airship != null: airship.visible = on
 	peaks.visible = on or SkyWorld.ring_on()
 	if not on: peaks.let_go()
 	towers.visible = on
