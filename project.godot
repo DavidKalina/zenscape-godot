@@ -505,6 +505,18 @@ zs_ground_shade={
 "type": "sampler2D",
 "value": ""
 }
+zs_cloud_shadow={
+"type": "sampler2D",
+"value": ""
+}
+zs_cloud_shadow_at={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_cloud_shadow_light={
+"type": "vec4",
+"value": Vector4(0, 1, 0, -150)
+}
 zs_sun_direction={
 "type": "vec3",
 "value": Vector3(0.744849, 0.445679, -0.496558)

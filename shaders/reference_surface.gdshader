@@ -16,6 +16,7 @@ shader_type spatial;
 #include "res://shaders/reference_inversion.gdshaderinc"
 #include "res://shaders/sky_season.gdshaderinc"
 #include "res://shaders/sky_peak_look.gdshaderinc"
+#include "res://shaders/cloud_volume_shadow.gdshaderinc"
 render_mode cull_disabled, diffuse_lambert, specular_schlick_ggx;
 
 uniform bool brush_visible = false;
@@ -797,6 +798,9 @@ void fragment() {
 	}
 	float cloud_shade = cloudShadeAt(vec3(world_position.x, 0.6, world_position.z), zs_cloud_direction);
 	tint *= mix(1.0, 0.42 + 0.58 * cloud_shade, min(1.0, zs_cloud.x * 1.35) * 0.85);
+	// The cloud volume's shade (--cloud-volume): a tower's shadow over an
+	// island, the heaps' over a range's foot.
+	tint *= 1.0 - 0.5 * zs_cloud_volume_shade(world_position);
 	if (brush_visible) {
 		float distance_to_brush = length(world_position.xz - brush_center);
 		float aa = max(fwidth(distance_to_brush), 0.025);
