@@ -617,11 +617,14 @@ void fragment() {
 		float wander = zs_noise(world_position.xz * 0.021) * 0.7 + zs_noise(world_position.xz * 0.057 + 31.0) * 0.3;
 		float above = world_position.y - sea_cut - wander * sea_fray.x;
 		if (above < 0.0) discard;
-		sea_mist = 1.0 - smoothstep(0.0, sea_fray.y, above);
+		peak_rel = world_position - MODEL_MATRIX[3].xyz;
+		// The foot's mist climbs higher in places and lower in others, as
+		// the low air above it does (sky_peak_look), never a level line.
+		float reach = sea_fray.y * (1.0 + 0.6 * zs_peak_low_air_lift(peak_rel) / ZS_PEAK_LOW_AIR_RAG);
+		sea_mist = 1.0 - smoothstep(0.0, reach, above);
 		sea_mist *= sea_mist * (3.0 - 2.0 * sea_mist);
 		// Higher up, the low air and a drifting band of mist take the rock
 		// part of the way into the same light (sky_peak_look).
-		peak_rel = world_position - MODEL_MATRIX[3].xyz;
 		sea_mist = max(sea_mist, zs_peak_low_air(above, peak_rel, zs_motion_time));
 	}
 	if (leaf_season.y > 0.0 && zs_leaf_fallen(leaf_local, plant_root, leaf_season.y)) discard;
