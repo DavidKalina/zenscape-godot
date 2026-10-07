@@ -23,12 +23,30 @@ const StoneLamp = preload("res://scripts/stone_lamp.gd")
 const IslanderFigure = preload("res://scripts/islander_figure.gd")
 const SkyFolk = preload("res://scripts/sky_folk.gd")
 
-const WARM := Color("ffb466")
-const LIGHT_COLOR := Color("ffb36b")
+## The panes' and lamps' glow, the halos' (deeper, so added over the night
+## and through the tonemap they still read as lamplight, amber, not
+## white), and the real lights'.
+const WARM := Color("ff8a36")
+const HALO_WARM := Color("ff6610")
+const LIGHT_COLOR := Color("ffa45e")
+## The panes' and lamps' glow at full night: bright enough to read, low
+## enough that the tonemap keeps it amber rather than washing it white.
+const GLOW_ENERGY := 1.7
+## The cabin's windows (cabin frame, door toward +Z): the model has one, on
+## its +X side (Cabin `pane`); these are added on the other three, each
+## [middle, width and height, outward], a glowing pane in a dark frame on
+## the logs, so a cabin reads as lit from any side.
+const CABIN_PANES := [
+	[Vector3(0.3,0.86,-1.3),Vector2(0.52,0.4),Vector3(0.0,0.0,-1.0)],
+	[Vector3(-1.09,0.86,0.62),Vector2(0.46,0.4),Vector3(-1.0,0.0,0.0)],
+	[Vector3(-0.62,0.9,1.3),Vector2(0.36,0.34),Vector3(0.0,0.0,1.0)],
+]
+const FRAME := Color("3a2a1f")
+const FRAME_WIDTH := 0.06
 const BEAM_REACH := 70.0
 ## Halos (m across near, strength): a window, a lamp, a lantern, the
 ## lighthouse's lamp.
-const HALO_WINDOW := Vector2(2.2,0.9)
+const HALO_WINDOW := Vector2(2.0,0.75)
 const HALO_LAMP := Vector2(1.1,0.8)
 const HALO_LANTERN := Vector2(1.0,0.8)
 const HALO_BEACON := Vector2(5.0,1.0)
@@ -56,11 +74,14 @@ static func _mats() -> Dictionary:
 	beam.vertex_color_use_as_albedo = true
 	beam.cull_mode = BaseMaterial3D.CULL_DISABLED
 	beam.albedo_color = Color(1.0,1.0,1.0,0.0)
+	var frame := StandardMaterial3D.new()
+	frame.albedo_color = FRAME
+	frame.roughness = 0.9
 	var halo := ShaderMaterial.new()
 	halo.shader = preload("res://shaders/cluster_halo.gdshader")
 	var quad := QuadMesh.new()
 	quad.size = Vector2.ONE
-	_shared = {"solid":solid,"glow":glow,"beam":beam,"halo":halo,"quad":quad,
+	_shared = {"solid":solid,"glow":glow,"frame":frame,"beam":beam,"halo":halo,"quad":quad,
 		"windmill":Builds.windmill(),"sails":Builds.sails(),"mill_windows":Builds.windmill_windows(),
 		"lighthouse":Builds.lighthouse(),"lamp_room":Builds.lamp_room(),"beam_mesh":Builds.beam(BEAM_REACH,2.4),
 		"lantern":Builds.lantern(),"post":Builds.post(),"rod":Builds.rod(2.6),"line":Builds.line(5.5)}
@@ -73,7 +94,7 @@ static func release() -> void:
 ## The night's glow on every cluster: 0 by day, 1 at full night.
 static func set_night(night: float) -> void:
 	var m := _mats()
-	(m.glow as StandardMaterial3D).emission_energy_multiplier = 2.6*night
+	(m.glow as StandardMaterial3D).emission_energy_multiplier = GLOW_ENERGY*night
 	(m.halo as ShaderMaterial).set_shader_parameter("glow",night)
 	(m.beam as StandardMaterial3D).albedo_color = Color(1.0,1.0,1.0,0.5*night)
 
@@ -135,6 +156,10 @@ static func furnish(node: Node3D, member: Dictionary, plan: Dictionary, made: Di
 				var outside: Vector3 = pose*(pane.get_center()+Vector3(0.45,0.0,0.0))
 				halos.append([pose*(pane.get_center()+Vector3(0.12,0.0,0.0)),HALO_WINDOW])
 				_light(node,outside,4.5,1.4,FADE_WINDOW,live)
+				for k in range(CABIN_PANES.size()):
+					_pane(node,pose,CABIN_PANES[k],halos)
+				# One more light, out behind, so the far side is lit too.
+				_light(node,pose*Vector3(-0.4,0.86,-1.75),4.5,1.1,FADE_WINDOW,live)
 				var porch: Vector3 = pose*((Cabin.info().door as Vector3)+Vector3(0.8,0.0,0.15))
 				var p2 := Vector2(porch.x,porch.z)
 				if shape.on_land(p2) and not shape.wet(p2):
@@ -250,13 +275,33 @@ static func furnish(node: Node3D, member: Dictionary, plan: Dictionary, made: Di
 		for k in range(halos.size()):
 			var size: Vector2 = halos[k][1]
 			multi.set_instance_transform(k,Transform3D(Basis.from_scale(Vector3.ONE*size.x),halos[k][0]))
-			multi.set_instance_color(k,Color(WARM,size.y))
+			multi.set_instance_color(k,Color(HALO_WARM,size.y))
 		batch.multimesh = multi
 		batch.material_override = m.halo
 		batch.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		batch.custom_aabb = AABB(Vector3(-60.0,-20.0,-60.0),Vector3(120.0,60.0,120.0))
 		node.add_child(batch)
 	return live
+
+## A window added to a cabin (CABIN_PANES' `entry`) at `pose`: its frame
+## on the logs, its glowing pane just proud of it, and its halo.
+static func _pane(node: Node3D, pose: Transform3D, entry: Array, halos: Array) -> void:
+	var middle: Vector3 = entry[0]
+	var size: Vector2 = entry[1]
+	var out: Vector3 = entry[2]
+	var across := Vector3(absf(out.z),0.0,absf(out.x))
+	for part in [["CabinWindowFrame",size+Vector2.ONE*FRAME_WIDTH*2.0,0.03,0.0,_mats().frame],["CabinWindow",size,0.02,0.012,_mats().glow]]:
+		var box := MeshInstance3D.new()
+		box.name = part[0]
+		var cube := BoxMesh.new()
+		cube.size = Vector3.ONE
+		box.mesh = cube
+		box.material_override = part[4]
+		var wide: Vector2 = part[1]
+		box.transform = pose*Transform3D(Basis.from_scale(across*wide.x+Vector3.UP*wide.y+out.abs()*float(part[2])),middle+out*float(part[3]))
+		box.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		node.add_child(box)
+	halos.append([pose*(middle+out*0.12),HALO_WINDOW])
 
 static func _stand(node: Node3D, shape: RefCounted, label: String, mesh: Mesh, at: Vector2, angle: float) -> MeshInstance3D:
 	var built := MeshInstance3D.new()

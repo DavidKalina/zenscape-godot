@@ -12,7 +12,7 @@ render_mode blend_add, unshaded, depth_draw_never, cull_disabled, shadows_disabl
 
 uniform float glow = 0.0;
 uniform float far_size = 0.02;
-uniform float far_boost = 2.2;
+uniform float far_boost = 1.9;
 
 varying float v_far;
 

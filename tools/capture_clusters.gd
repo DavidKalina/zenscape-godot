@@ -5,7 +5,8 @@ extends SceneTree
 ## stones, field, point), and PER motif random clusters of each motif (the
 ## world's cluster spots re-dealt to the motifs, seeds from --seed), each
 ## from high to one side (overview), low in passing (pass) and close by a
-## member's rock (rock); then --lone=N of the seeded islets between them,
+## member's rock (rock), from 220 m off (far) and by a cabin from behind
+## (cabin); then --lone=N of the seeded islets between them,
 ## each from its side (lone), by day.
 ## Rendered only when asked for (needs a window):
 ##   Godot --windowed --path . --resolution 1280x720 -s res://tools/capture_clusters.gd \
@@ -138,9 +139,22 @@ func _shots(field: Node3D, s: Dictionary) -> Array:
 		if big.is_empty() or float(b.shape.radius) > float(big.shape.radius): big = b
 	var to_eye := Vector2(toward_home.x,toward_home.z).rotated(0.6)
 	var rock_eye: Vector3 = big.home+Vector3(to_eye.x,0.0,to_eye.y)*(float(big.shape.reach)+16.0)+Vector3.DOWN*3.0
+	# A cabin from behind and to one side (its door faces +Z), to see it lit
+	# from the side away from its door.
+	var shots: Array = []
+	for b: Dictionary in stood.values():
+		var plan_member: Dictionary = {}
+		for pm: Dictionary in field.clusters[s.key].plan.members:
+			if pm.name == b.member: plan_member = pm
+		for f: Dictionary in plan_member.get("features",[]):
+			if f.type != "cabin" or not shots.is_empty(): continue
+			var door: Vector3 = b.home+Vector3(f.at.x,b.shape.ground_at(f.at),f.at.y)
+			var back := Vector3(0.0,0.0,-1.0).rotated(Vector3.UP,float(f.angle)+0.7)
+			shots.append({"label":"cabin","eye":door+back*9.0+Vector3.UP*2.5,"look":door+Vector3.UP*1.0})
 	return [{"label":"overview","eye":centre+(toward_home*1.3+side*0.9)*reach+Vector3.UP*reach*0.9,"look":centre+Vector3.DOWN*2.0},
 		{"label":"pass","eye":centre+(toward_home*0.9-side*0.9)*reach+Vector3.UP*4.0,"look":centre+Vector3.UP*2.0},
-		{"label":"rock","eye":rock_eye,"look":big.home+Vector3.DOWN*float(big.shape.depth)*0.35}]
+		{"label":"rock","eye":rock_eye,"look":big.home+Vector3.DOWN*float(big.shape.depth)*0.35},
+		{"label":"far","eye":centre+(toward_home*0.9-side*0.9).normalized()*220.0+Vector3.UP*25.0,"look":centre}]+shots
 
 ## `count` seeded islets (the nearest to the home with their cells' spots),
 ## each from its side a little under its rim, at noon.
@@ -152,13 +166,18 @@ func _lone_islets(count: int) -> void:
 			var at: Variant = _islets.spot(Vector2i(x,z))
 			if at != null and Vector2(at.x,at.z).length() > 300.0: found.append(at)
 	found.sort_custom(func(a: Vector3, b: Vector3) -> bool: return Vector2(a.x,a.z).length() < Vector2(b.x,b.z).length())
+	print("CLUSTERS %d lone islet spots" % found.size())
 	for k in range(mini(count,found.size())):
 		var at: Vector3 = found[k]
-		await _hold_at(at+Vector3(30.0,10.0,30.0),at,hours.noon,90)
 		var b: Dictionary = {}
-		for key: String in _islets.built:
-			if not key.begins_with("cluster:") and (_islets.built[key].home as Vector3).distance_to(at) < 1.0: b = _islets.built[key]
-		if b.is_empty(): continue
+		for wait in range(12):
+			await _hold_at(at+Vector3(30.0,10.0,30.0),at,hours.noon,30)
+			for key: String in _islets.built:
+				if not key.begins_with("cluster:") and (_islets.built[key].home as Vector3).distance_to(at) < 1.0: b = _islets.built[key]
+			if not b.is_empty(): break
+		if b.is_empty():
+			print("CLUSTERS lone islet at %s not built" % at)
+			continue
 		var reach: float = b.shape.reach
 		var eye_at: Vector3 = at+Vector3(1.0,0.0,0.6).normalized()*(reach*1.6+14.0)+Vector3.DOWN*2.0
 		await _hold_at(eye_at,at+Vector3.DOWN*float(b.shape.depth)*0.35,hours.noon,40)
