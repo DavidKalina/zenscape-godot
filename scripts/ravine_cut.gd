@@ -7,10 +7,15 @@ extends RefCounted
 ## on its side of a jagged tear line, the gap between them a few metres at
 ## the narrow end and wide enough at the other for the plane to thread.
 ##
-## The tear (a recipe's `tear`, filled by `share` from the cluster's draw so
-## both halves read the same one), in the whole island's frame (its grid's
-## middle at the origin):
-##   along: the tear's way, across: its normal (the far half's side);
+## The tear (a recipe's `tear`, filled by `share` from the cluster's draw,
+## and by `cut` from the whole's outline, so both halves read the same one),
+## in the whole island's frame (its grid's middle at the origin):
+##   at: the whole's land's middle, which the tear runs through;
+##   along: the tear's way, of TURNS tried the one that cuts the whole
+##     longest while leaving each half at least HALF of it; across: its
+##     normal (the far half's side); extent: where along it the whole's
+##     land runs (`share_s` reads a share of it, -1 to 1, toward the wide
+##     end);
 ##   offset(s): how far the tear's middle line stands off the straight
 ##     line at `s` m along it: a slow bend plus a zigzag through seeded
 ##     knots (JAG), so the walls are jagged and the two halves' walls match
@@ -57,10 +62,15 @@ const FEATURES := ["overlook","lip_lanterns"]
 ## The whole island's radius (m, a circle of its land).
 const RADIUS := Vector2(19.0,23.0)
 ## The gap (m): at the narrow end (a range) and at the wide end (a range),
-## easing between over WIDTH_RUN of the radius each side of the middle.
+## easing between over WIDTH_RUN of the tear's half length each side of
+## its middle.
 const NARROW := Vector2(3.6,4.8)
 const WIDE := Vector2(12.5,15.0)
 const WIDTH_RUN := 0.75
+## The tear's ways tried (over a half turn), and the least share of the
+## whole's land either half keeps.
+const TURNS := 12
+const HALF := 0.36
 ## The tear's bend: its sway (m) and wavelength (share of the radius); its
 ## zigzag: knots JAG_STEP m apart, each off by up to JAG m, alternating.
 const BEND := Vector2(1.2,3.2)
@@ -69,18 +79,18 @@ const JAG := 1.05
 const JAG_STEP := Vector2(1.7,3.0)
 ## The spring whose fall pours into the gap: its pond's radius (m) and how
 ## far in from the lip it lies (m past its radius), and where along the
-## tear (share of the radius toward the wide end).
+## tear (`share_s`).
 const POND := Vector2(1.9,2.4)
 const POND_IN := 2.6
 const FALL_AT := Vector2(0.15,0.4)
-## Where along the tear (share of the radius, toward the wide end) the
+## Where along the tear (`share_s`) the
 ## bridge would rather cross, and the span it would rather have (m).
 const BRIDGE_AT := Vector2(-0.6,0.1)
 const BRIDGE_SPAN := 7.5
 const BRIDGE_INSET := 1.3
-## The chunk: tried along the tear's wide part (share of the radius), and
+## The chunk: tried along the tear's wide part (`share_s`), and
 ## kept this far clear of the fall's line along the tear (m).
-const CHUNK_AT := Vector2(0.35,0.85)
+const CHUNK_AT := Vector2(0.3,0.75)
 const CHUNK_CLEAR := 1.6
 const FALL_CLEAR := 5.0
 ## The lookout: its deck's length (m, and share of the gap at most), its
@@ -88,7 +98,7 @@ const FALL_CLEAR := 5.0
 const LOOKOUT := Vector2(2.8,4.2)
 const LOOKOUT_SHARE := 0.34
 const LOOKOUT_WIDTH := 1.4
-const LOOKOUT_OFF := Vector2(2.5,4.5)
+const LOOKOUT_OFF := Vector2(2.5,9.0)
 ## Lantern posts along a lip: how many (a range), at least this far apart
 ## along the tear and off the bridge's and the lookout's heads (m), and how
 ## far in from the lip (m).
@@ -96,6 +106,8 @@ const LIP_LANTERNS := Vector2i(3,4)
 const LIP_APART := 5.5
 const LIP_CLEAR := 3.0
 const LIP_IN := 0.85
+## How far along the tear the lip lanterns spread (a share of it, each way).
+const LIP_SPREAD := 0.7
 ## The inner wall: shelves from lip to foot and a shelf's height (m), the
 ## lip's drop (m) and jut, the ribs' and ledges' jut (m) and waves (1/m),
 ## and the most it stands out into the gap (m, and share of the gap) or
@@ -136,7 +148,7 @@ static func share(spec: Dictionary, draw: int, motif: Dictionary) -> int:
 	for k in range(count): knots.append((1.0 if k % 2 == 0 else -1.0)*rng.randf_range(0.25,1.0)*JAG)
 	tear.knots = knots
 	tear.step = step
-	tear.fall_s = wide_s(tear,rng.randf_range(FALL_AT.x,FALL_AT.y))
+	tear.fall_share = rng.randf_range(FALL_AT.x,FALL_AT.y)
 	spec.radius = r
 	var rock: Dictionary = motif.get("rock",{})
 	var palettes: Array = rock.get("palettes",["basalt"])
@@ -146,7 +158,7 @@ static func share(spec: Dictionary, draw: int, motif: Dictionary) -> int:
 	spec.keel = rng.randf_range(keel.x,keel.y)
 	spec.erase("pond")
 	if bool(tear.get("fall",false)) and float(tear.side) < 0.0:
-		spec.pond = {"radius":rng.randf_range(POND.x,POND.y),"toward":across(tear)*-float(tear.side)}
+		spec.pond = {"radius":rng.randf_range(POND.x,POND.y)}
 	return int(tear.seed)
 
 static func along(tear: Dictionary) -> Vector2:
@@ -155,9 +167,11 @@ static func along(tear: Dictionary) -> Vector2:
 static func across(tear: Dictionary) -> Vector2:
 	return along(tear).orthogonal()
 
-## `share` of the radius along the tear toward its wide end, as `s` (m).
-static func wide_s(tear: Dictionary, share_: float) -> float:
-	return share_*float(tear.radius)*float(tear.narrow)
+## A share along the tear's extent, -1 at its narrow end to 1 at its wide
+## (past 1, beyond), as `s` (m).
+static func share_s(tear: Dictionary, share_: float) -> float:
+	var extent: Vector2 = tear.get("extent",Vector2(-1.0,1.0)*float(tear.radius))
+	return (extent.x+extent.y)*0.5+share_*(extent.y-extent.x)*0.5*float(tear.narrow)
 
 ## The tear's middle line's offset (m, across) at `s` m along.
 static func offset(tear: Dictionary, s: float) -> float:
@@ -171,21 +185,70 @@ static func offset(tear: Dictionary, s: float) -> float:
 
 ## The gap's width (m) at `s` m along.
 static func width(tear: Dictionary, s: float) -> float:
-	var run := float(tear.radius)*WIDTH_RUN
+	var extent: Vector2 = tear.get("extent",Vector2(-1.0,1.0)*float(tear.radius))
+	var run := (extent.y-extent.x)*0.5*WIDTH_RUN
 	var w: Vector2 = tear.width
-	return lerpf(w.x,w.y,smoothstep(-run,run,s*float(tear.narrow)))
+	return lerpf(w.x,w.y,smoothstep(-run,run,(s-(extent.x+extent.y)*0.5)*float(tear.narrow)))
 
 ## How far (m, across) the whole's point `p` lies past the edge of the
 ## half on `side`'s land: positive on that half's land, negative in the gap
 ## or on the other half.
 static func margin(tear: Dictionary, p: Vector2, side: float) -> float:
-	var s := p.dot(along(tear))
-	var d := p.dot(across(tear))-offset(tear,s)
+	var at: Vector2 = tear.get("at",Vector2.ZERO)
+	var s := (p-at).dot(along(tear))
+	var d := (p-at).dot(across(tear))-offset(tear,s)
 	return d*side-width(tear,s)*0.5
 
 ## The point on the gap's middle line at `s` (the whole's frame).
 static func middle_at(tear: Dictionary, s: float) -> Vector2:
-	return along(tear)*s+across(tear)*offset(tear,s)
+	return (tear.get("at",Vector2.ZERO) as Vector2)+along(tear)*s+across(tear)*offset(tear,s)
+
+## Where along the tear (m) the whole's point `p` lies.
+static func s_of(tear: Dictionary, p: Vector2) -> float:
+	return (p-(tear.get("at",Vector2.ZERO) as Vector2)).dot(along(tear))
+
+## Lays the tear through the whole (`whole`, the outline over faces whose
+## middles are `middles`): through its land's middle, along the way of
+## TURNS that cuts it longest leaving each half HALF of it; its extent;
+## the fall's place along it. The same whole lays the same tear.
+static func _lay(tear: Dictionary, whole: PackedByteArray, middles: PackedVector2Array) -> void:
+	var at := Vector2.ZERO
+	var land := 0
+	for f in range(whole.size()):
+		if whole[f] != 0: continue
+		at += middles[f]
+		land += 1
+	tear.at = at/maxf(land,1)
+	var first := float(tear.angle)
+	var best := -INF
+	var best_angle := first
+	var best_extent := Vector2(-1.0,1.0)*float(tear.radius)
+	for k in range(TURNS):
+		tear.angle = first+PI*k/TURNS
+		tear.erase("extent")
+		var near := 0
+		var far := 0
+		var low := INF
+		var high := -INF
+		for f in range(whole.size()):
+			if whole[f] != 0: continue
+			var p := middles[f]
+			if margin(tear,p,-1.0) > 0.0: near += 1
+			elif margin(tear,p,1.0) > 0.0: far += 1
+			var s := s_of(tear,p)
+			if absf((p-tear.at).dot(across(tear))-offset(tear,s)) < 0.8:
+				low = minf(low,s)
+				high = maxf(high,s)
+		var least := float(mini(near,far))/maxf(near+far,1)
+		if high <= low: continue
+		var score := (high-low)*(1.0 if least >= HALF else least/HALF*0.25)
+		if score > best:
+			best = score
+			best_angle = tear.angle
+			best_extent = Vector2(low,high)
+	tear.angle = best_angle
+	tear.extent = best_extent
+	tear.fall_s = share_s(tear,float(tear.get("fall_share",0.3)))
 
 # --- A half ---------------------------------------------------------------------
 
@@ -207,8 +270,9 @@ static func cut(islet: RefCounted) -> void:
 	var out := whole.duplicate()
 	var middles := PackedVector2Array()
 	middles.resize(faces)
+	for f in range(faces): middles[f] = (points[ids[f*3]]+points[ids[f*3+1]]+points[ids[f*3+2]])/3.0
+	_lay(tear,whole,middles)
 	for f in range(faces):
-		middles[f] = (points[ids[f*3]]+points[ids[f*3+1]]+points[ids[f*3+2]])/3.0
 		if whole[f] == 0 and margin(tear,middles[f],side) < 0.0: out[f] = 1
 	# Neighbours over the whole's land, for the tidying and the tear edges.
 	var edges := {}
@@ -298,6 +362,7 @@ static func cut(islet: RefCounted) -> void:
 	# The spring: its pond in from the lip where the fall is wanted.
 	if islet.recipe.has("pond"):
 		var pond: Dictionary = islet.recipe.pond
+		pond.toward = across(tear)*-side
 		var r := float(pond.get("radius",2.0))
 		var s := float(tear.fall_s)
 		var at := Vector2.INF
@@ -364,8 +429,7 @@ static func wall(islet: RefCounted, vertices: PackedVector3Array, uvs: PackedVec
 ## One tear point's column of rings, lip to foot (islet frame).
 static func _column(islet: RefCounted, i: int, out: Vector2, middle: Vector2, tear: Dictionary, ribs: FastNoiseLite, ledges: FastNoiseLite, top: float, foot: float) -> Array:
 	var p: Vector2 = islet.points[i]
-	var whole := p+middle
-	var s := whole.dot(along(tear))
+	var s := s_of(tear,p+middle)
 	var gap := width(tear,s)
 	var most := minf(WALL_OUT,gap*WALL_OUT_SHARE)
 	var h1 := PlateMesh._hash(i,int(tear.seed) % 7919,21)
@@ -430,7 +494,7 @@ static func place(m: Dictionary, parent: Dictionary, rel: Dictionary, placed: Ar
 			var tear: Dictionary = parent.shape.recipe.tear
 			var fall_s := float(tear.fall_s)
 			for k in range(16):
-				var s := wide_s(tear,lerpf(CHUNK_AT.y,CHUNK_AT.x,k/15.0))
+				var s := share_s(tear,lerpf(CHUNK_AT.y,CHUNK_AT.x,k/15.0))
 				if absf(s-fall_s) < FALL_CLEAR or absf(s-float(cleft.bridge_s)) < FALL_CLEAR: continue
 				var q := middle_at(tear,s)
 				var at: Vector3 = (cleft.origin as Vector3)+Vector3(q.x,parent.offset.y-(cleft.origin as Vector3).y+float(m.y),q.y)
@@ -465,7 +529,7 @@ static func _bridge_ends(near: Dictionary, far: Dictionary) -> Array:
 	var best: Array = []
 	var best_score := INF
 	for k in range(25):
-		var s := wide_s(tear,lerpf(BRIDGE_AT.x,BRIDGE_AT.y,k/24.0))
+		var s := share_s(tear,lerpf(BRIDGE_AT.x,BRIDGE_AT.y,k/24.0))
 		if absf(s-float(tear.fall_s)) < FALL_CLEAR: continue
 		var q := middle_at(tear,s)
 		var a2 := _land_end(near.shape,q-n_mid,-way)
@@ -510,8 +574,8 @@ static func feature(m: Dictionary, f: Dictionary, placed: Array, plan: Dictionar
 	var way := across(tear)*-float(tear.side)
 	var cleft: Dictionary = plan.cleft
 	var tries: Array = []
-	for k in range(10):
-		var off := lerpf(LOOKOUT_OFF.x,LOOKOUT_OFF.y,float(k/2)/4.0)*(1.0 if k % 2 == 0 else -1.0)
+	for k in range(18):
+		var off := lerpf(LOOKOUT_OFF.x,LOOKOUT_OFF.y,float(k/2)/8.0)*(1.0 if k % 2 == 0 else -1.0)
 		tries.append(float(cleft.fall_s)+off*float(tear.narrow))
 	for s: float in tries:
 		if absf(s-float(cleft.bridge_s)) < 3.5: continue
@@ -565,16 +629,28 @@ static func _lip_lanterns(m: Dictionary, f: Dictionary, plan: Dictionary) -> boo
 	for g: Dictionary in m.features:
 		if g.get("lookout",false):
 			var at: Vector3 = g.a
-			taken.append([(Vector2(at.x,at.z)+mid).dot(along(tear)),LIP_CLEAR])
+			taken.append([s_of(tear,Vector2(at.x,at.z)+mid),LIP_CLEAR])
 	var laid := 0
-	var r := float(tear.radius)
-	# From the bridge outward both ways, so the lights gather round it.
-	var tries: Array = []
-	for k in range(1,40):
-		for sign_: float in [1.0,-1.0]: tries.append(float(cleft.bridge_s)+sign_*k*1.0)
-	for s: float in tries:
-		if laid >= count.y: break
-		if absf(s) > r*1.2: continue
+	var extent: Vector2 = tear.extent
+	# Spread evenly along the tear, at the same places on both lips so they
+	# pair across the gap, each nudged a little off what is there.
+	for k in range(count.y):
+		var at_s := _lip_lantern(m,tear,mid,way,share_s(tear,lerpf(-LIP_SPREAD,LIP_SPREAD,float(k)/maxf(count.y-1,1))),taken,extent)
+		if at_s.is_empty(): continue
+		var at: Vector2 = at_s[0]
+		shape.claim(at,0.35)
+		m.features.append({"type":"post","at":at,"angle":atan2(-way.x,-way.y)})
+		taken.append([float(at_s[1]),LIP_APART])
+		laid += 1
+	return laid >= count.x
+
+## A lip lantern's spot near `s` along the tear on `m`'s lip: [at, s], or
+## [] if none near will do.
+static func _lip_lantern(m: Dictionary, tear: Dictionary, mid: Vector2, way: Vector2, target: float, taken: Array, extent: Vector2) -> Array:
+	var shape: RefCounted = m.shape
+	for nudge: float in [0.0,1.0,-1.0,2.0,-2.0,3.0,-3.0]:
+		var s := target+nudge
+		if s < extent.x or s > extent.y: continue
 		var near := false
 		for t: Array in taken: near = near or absf(s-float(t[0])) < float(t[1])
 		if near: continue
@@ -589,8 +665,5 @@ static func _lip_lanterns(m: Dictionary, f: Dictionary, plan: Dictionary) -> boo
 		if edge == Vector2.INF: continue
 		var at := edge-way*LIP_IN
 		if not shape.on_land(at) or shape.wet(at) or shape.inland(at) < 0.5 or shape.wet(at-way*1.0): continue
-		shape.claim(at,0.35)
-		m.features.append({"type":"post","at":at,"angle":atan2(-way.x,-way.y)})
-		taken.append([s,LIP_APART])
-		laid += 1
-	return laid >= count.x
+		return [at,s]
+	return []

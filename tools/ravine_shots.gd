@@ -24,10 +24,10 @@ static func shots(plan: Dictionary, at: Vector3) -> Array:
 	var r := float(tear.radius)
 	var bridge_s := float(cleft.bridge_s)
 	var out: Array = [
-		{"label":"aerial","eye":point.call(RavineCut.wide_s(tear,2.4),rim+28.0),"look":point.call(RavineCut.wide_s(tear,-0.2),rim-4.0)},
-		{"label":"thread","eye":point.call(RavineCut.wide_s(tear,1.45),rim+2.0),"look":point.call(RavineCut.wide_s(tear,0.1),rim-2.5)},
-		{"label":"inside","eye":point.call(RavineCut.wide_s(tear,0.55),rim-3.0),"look":point.call(bridge_s,rim-0.5)},
-		{"label":"under","eye":point.call(bridge_s+RavineCut.wide_s(tear,0.3),rim-9.0),"look":point.call(bridge_s,rim)}]
+		{"label":"aerial","eye":point.call(RavineCut.share_s(tear,2.4),rim+28.0),"look":point.call(RavineCut.share_s(tear,-0.2),rim-4.0)},
+		{"label":"thread","eye":point.call(RavineCut.share_s(tear,1.45),rim+2.0),"look":point.call(RavineCut.share_s(tear,0.1),rim-2.5)},
+		{"label":"inside","eye":point.call(RavineCut.share_s(tear,0.55),rim-3.0),"look":point.call(bridge_s,rim-0.5)},
+		{"label":"under","eye":point.call(bridge_s+RavineCut.share_s(tear,0.3)-RavineCut.share_s(tear,0.0),rim-9.0),"look":point.call(bridge_s,rim)}]
 	for br: Dictionary in plan.bridges:
 		var a: Vector3 = at+(near.offset as Vector3)+(br.a as Vector3)
 		var b: Vector3 = at+(near.offset as Vector3)+(br.b as Vector3)
