@@ -794,7 +794,7 @@ func leave() -> void:
 	_layer.visible = false
 	figure.visible = false
 	_sync_figure()
-	if not bool(_before.looking): scene.select_brush(scene.brush)
+	if not bool(_before.looking): _brush_back()
 	scene._auto_orbit = bool(_before.auto)
 	# Re-express the eye as an orbit around a point ahead of it, then glide home.
 	var reach := 6.0
@@ -802,6 +802,18 @@ func leave() -> void:
 	scene.distance = reach
 	_returning = RETURN
 	left.emit()
+
+## The brush picked back up on leaving. The scene refuses it while the places
+## are busy, as they are all through a claim (SkyIslands `claim`), and
+## stepping out of a plane mid-claim would leave the build view with no brush
+## and the editor off: the hand grips the land and nothing shapes it. So it
+## waits for the places, unless the walk was taken up again meanwhile.
+func _brush_back() -> void:
+	var places: Node = scene.get("places")
+	while places != null and is_instance_valid(places) and places.busy:
+		await get_tree().process_frame
+		if active: return
+	scene.select_brush(scene.brush)
 
 static func _offset(yaw: float, polar: float) -> Vector3:
 	return Vector3(sin(polar)*sin(yaw),cos(polar),sin(polar)*cos(yaw))
