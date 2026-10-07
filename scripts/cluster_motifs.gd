@@ -156,6 +156,7 @@ const MOTIFS := {
 				"spec":{"dome":0.3,"trees":Vector2i(1,2),"tree_pool":{"birch":1.0,"broadleaf":0.6},"drifts":Vector2i(3,5)},
 				"features":[{"type":"lookout"}],
 				"relation":{"type":"stones","to":"lake","stones":Vector2i(2,3)}},
+		]},
 	"falls": {
 		"label":"Waterfall terraces","layout":"terrace",
 		"rock":{"palettes":["slate","basalt"],"tone":Vector2(0.9,1.1)},"keel":Vector2(1.5,2.0),
@@ -174,6 +175,7 @@ const MOTIFS := {
 				"spec":{"dome":0.25,"trees":Vector2i(1,3),"tree_pool":{"willow":1.0,"birch":0.3},"mixed":true,"undergrowth":2.5,"drifts":Vector2i(1,2)},
 				"features":[{"type":"wheel","chance":0.6},{"type":"brook","chance":0.5},{"type":"moss"},{"type":"edge_lanterns"}],
 				"relation":{"type":"fall","to":"prev","drop":Vector2(3.6,5.4),"gap":Vector2(1.7,2.5)}},
+		]},
 	# The forest hold: a real wood on a big islet, a hut in its glade and a
 	# platform up its hold tree, wooded islets round it on rope bridges;
 	# lanterns strung through the trees and along the bridges at night
@@ -206,6 +208,7 @@ const MOTIFS := {
 			{"name":"knoll","kind":"hills","radius":Vector2(3.6,4.6),"height":Vector2(-1.5,1.5),"chance":0.6,
 				"spec":{"mounds":[],"dome":0.3,"trees":Vector2i(1,1),"tree_pool":{"redwood":1.0},"tree_size":Vector2(1.5,1.8),"undergrowth":1.5},
 				"relation":{"type":"stones","to":"hold","stones":Vector2i(2,3)}},
+		]},
 	# A column of narrow crags, each over the last and turned round the
 	# stack, plank stairs winding up their rock from one to the next, a
 	# hermit's hut on the top with a garden and hives. By night one window
@@ -225,6 +228,7 @@ const MOTIFS := {
 				"features":[{"type":"cabin"},{"type":"garden","chance":0.75},{"type":"hives","chance":0.6,"count":Vector2i(2,3)},
 					{"type":"bearer","chance":0.6}],
 				"relation":{"type":"stack"}},
+		]},
 	# One big island torn in two (scripts/ravine_cut.gd): the halves share
 	# the whole's outline and rock, the far one stands a little higher, a
 	# rope bridge spans the gap, the near half's spring falls into it, a
