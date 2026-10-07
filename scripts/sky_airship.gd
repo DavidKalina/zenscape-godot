@@ -149,6 +149,8 @@ var phases: Array[String] = []
 ## of the event's own clock.
 var daylight_override := -1.0
 var pace := 1.0
+## The odds an event carries its islet off (AWAY; tests set it).
+var away_odds := AWAY
 var night := 0.0
 ## Starts one at once (--airship-now) as soon as an islet is in reach.
 var now := false
@@ -259,7 +261,7 @@ func start_on(key: String, eye: Vector3, spawn := SPAWN) -> bool:
 	var b: Dictionary = islets.built.get(key,{})
 	if b.is_empty() or not is_instance_valid(b.node): return false
 	var home: Vector3 = b.home
-	var away: bool = _rng.randf() < AWAY and b.node != islets.pinned
+	var away: bool = _rng.randf() < away_odds and b.node != islets.pinned
 	var dir: Variant = _tow_way(home,eye,away)
 	if dir == null and away:
 		away = false
