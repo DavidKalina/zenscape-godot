@@ -19,6 +19,7 @@ func _initialize() -> void:
 	check(_signature(a) != _signature(Solver.solve("reef",4243)),"Another seed another")
 	var wants := {"farmstead":["cabin","field","dock"],"hamlet":["cabin","dock"],"reef":["cabin","lighthouse"]}
 	wants["lake"] = ["dock","boat","floats","cabin"]
+	wants["forest"] = ["cabin","treehouse","canopy","trail"]
 	for motif: String in Motifs.names():
 		var bad := []
 		var missing := 0

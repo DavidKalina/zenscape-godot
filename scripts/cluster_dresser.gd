@@ -24,6 +24,7 @@ const IslanderFigure = preload("res://scripts/islander_figure.gd")
 const SkyFolk = preload("res://scripts/sky_folk.gd")
 const LakeDress = preload("res://scripts/lake_dress.gd")
 const FallsDress = preload("res://scripts/cluster_falls_dress.gd")
+const ForestHold = preload("res://scripts/forest_hold.gd")
 
 ## The panes' and lamps' glow, the halos' (deeper, so added over the night
 ## and through the tonemap they still read as lamplight, amber, not
@@ -133,6 +134,7 @@ static func prepare(member: Dictionary, plan: Dictionary) -> Dictionary:
 				out.features[i] = FallsDress.prepare(member,f)
 	for br: Dictionary in plan.bridges:
 		if br.from == member.name: out.bridges.append(Footbridge.build_mesh(br.a,br.b,hash(br.to) % 997))
+	out.forest = ForestHold.prepare(member,plan)
 	return out
 
 ## Stands what stands on `member` under its islet's `node`; what moves or
@@ -282,6 +284,7 @@ static func furnish(node: Node3D, member: Dictionary, plan: Dictionary, made: Di
 		bridge.name = "Footbridge"
 		node.add_child(bridge)
 	LakeDress.furnish(node,member,halos,live)
+	ForestHold.furnish(node,made.get("forest",{}),m,live)
 	if not halos.is_empty():
 		var batch := MultiMeshInstance3D.new()
 		batch.name = "Halos"
