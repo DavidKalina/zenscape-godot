@@ -167,6 +167,7 @@ const GRASSY := 0.4
 const SHORE := 0.7
 const WandererSteps = preload("res://scripts/wanderer_steps.gd")
 const PilotPuffs = preload("res://scripts/pilot_puffs.gd")
+const PilotWake = preload("res://scripts/pilot_wake.gd")
 const BiomeBlend = preload("res://scripts/biome_blend.gd")
 const Shape = preload("res://scripts/native_formation_shape.gd")
 const Presets = preload("res://scripts/native_landscape_presets.gd")
@@ -450,6 +451,11 @@ func _build_figure() -> void:
 	figure.add_child(body)
 	puffs = PilotPuffs.new()
 	figure.add_child(puffs)
+	# The low foliage parts round him and springs back (scripts/pilot_wake.gd).
+	var wake := PilotWake.new()
+	wake.name = "Wake"
+	wake.motor = motor
+	figure.add_child(wake)
 	if islands != null: islands.skip.append(figure)
 
 func _world_restored(state: Dictionary) -> void:

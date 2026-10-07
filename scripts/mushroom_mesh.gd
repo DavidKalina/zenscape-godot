@@ -21,6 +21,11 @@ const SIDES := 8
 const STEM_SIDES := 6
 ## Strength of the gill light, a share of the cap's own colour.
 const UNDERGLOW := 0.5
+## The pilot brushing past tips the huddle about its foot, springing back
+## past upright (reference_surface.gdshader `tread_wobble`): metres at the
+## tallest cap's top per unit of the wake's lean, and that height.
+const WOBBLE := 0.07
+const WOBBLE_HEIGHT := 0.21
 const STEM_ROOT := Color("b9a98c")
 const STEM_TOP := Color("f0e8d4")
 ## Cap crown and rim shades are `tone` times these.
@@ -66,6 +71,8 @@ static func dress(material: Material, node_name: String, tints: Dictionary, key:
 	shader_material.set_shader_parameter("flat_faces", true)
 	shader_material.set_shader_parameter("base_color", Color.WHITE)
 	shader_material.set_shader_parameter("underglow", UNDERGLOW if node_name == "fungus-caps" else 0.0)
+	shader_material.set_shader_parameter("tread_wobble", WOBBLE)
+	shader_material.set_shader_parameter("tread_wobble_height", WOBBLE_HEIGHT)
 
 static func triangle_count(mesh_to_count: Mesh) -> int:
 	return mesh_to_count.surface_get_arrays(0)[Mesh.ARRAY_VERTEX].size() / 3

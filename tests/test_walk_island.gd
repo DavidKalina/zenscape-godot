@@ -2,7 +2,7 @@ extends SceneTree
 ## The walk-test island (studies/walk_island.tscn), headless: it opens on one
 ## irregular sky island with mountains along it, trees and undergrowth on its
 ## land, and the pilot standing on its open ground in walk mode (not flying),
-## drawn, facing the mountains.
+## drawn, facing the mountains, his wake through the foliage live.
 ##   godot --headless --path . --script tests/test_walk_island.gd
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const TREES := ["tree","broadleaf","birch","juniper"]
@@ -60,6 +60,10 @@ func run() -> void:
 	# The walker.
 	check(eye.active and not eye.flying,"Walking, not flying")
 	check(eye.has_figure() and eye.figure.is_visible_in_tree() and eye.body != null and eye.body.is_visible_in_tree(),"The pilot is drawn")
+	# His wake through the undergrowth (scripts/pilot_wake.gd) is live at his feet.
+	var wake: Node = eye.figure.get_node_or_null("Wake")
+	var at: Vector3 = eye.figure.global_position
+	check(wake != null and wake.published.size() > 0 and wake.published[0].z > 0.0 and Vector2(wake.published[0].x,wake.published[0].y).distance_to(Vector2(at.x,at.z)) < 0.05,"His wake parts the foliage at his feet")
 	var feet: Vector3 = eye._feet
 	check(data.has_land(Vector2(feet.x,feet.z)),"Standing on the island")
 	check(absf(feet.y-float(data.ground_height(Vector2(feet.x,feet.z)))) < 0.2,"On its ground (%.2f m off)" % (feet.y-float(data.ground_height(Vector2(feet.x,feet.z)))))

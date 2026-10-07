@@ -86,7 +86,8 @@ build tools, docs and tests.
   the Wind gust gesture and the scene's wind field.
 - `scripts/creature_navigation.gd` and `scripts/fidelity_habitat.gd`: the
   Fidelity pond's fish, the fallen wood and loose props read them.
-- `shaders/foliage_tread.gdshaderinc`: no walker feeds it any more.
+- `shaders/foliage_tread.gdshaderinc`: its trees' half (`zs_tree_tread`); the
+  pilot's wake (scripts/pilot_wake.gd) feeds only the low foliage.
 - `tools/check_bigfoot_living_regressions.py`: the headless test runner.
 
 Saves carrying `diorama`, `bigfoot_habits`, `bigfoot_living`,

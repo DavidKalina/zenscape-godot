@@ -417,6 +417,42 @@ zs_tread_7={
 "type": "vec4",
 "value": Vector4(0, 0, 0, 0)
 }
+zs_tread_8={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_tread_9={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_tread_10={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_tread_11={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_tread_12={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_tread_13={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_tread_14={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_tread_15={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_tread_box={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
 zs_tree_tread_weights_0={
 "type": "vec4",
 "value": Vector4(0, 0, 0, 0)
