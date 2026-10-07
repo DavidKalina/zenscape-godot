@@ -30,9 +30,9 @@ const SECONDS := 0.16
 const SLIDE_SECONDS := 0.42
 ## Linear gain at a walk and at a full run, before the Sound volume, and each
 ## surface's share of it: grass hushes a step, stone and planks carry it.
-const WALK_GAIN := 0.06
-const RUN_GAIN := 0.085
-const SLIDE_GAIN := 0.09
+const WALK_GAIN := 0.05
+const RUN_GAIN := 0.07
+const SLIDE_GAIN := 0.08
 const LEVEL := {"grass":0.85,"earth":0.9,"stone":0.8,"sand":0.85,"snow":0.9,"wood":0.8,"water":0.9}
 ## Each step's gain wanders this many dB either way.
 const JITTER_DB := 1.5
@@ -46,8 +46,11 @@ const ATTACK := 0.008
 ## Hz each surface's takes are rounded off above (two poles), and its skid's.
 const CUTOFF := {"grass":1500.0,"earth":1300.0,"stone":1900.0,"sand":1700.0,"snow":1500.0,"wood":1600.0,"water":1400.0}
 const SLIDE_CUTOFF := 1300.0
+## Hz every take is thinned out below (two poles), so the thud under a step
+## stays a soft pad, not a boom.
+const LOW_CUT := 260.0
 ## How hard the gentle squeeze (tanh) drives each take's peak.
-const SQUEEZE := 1.6
+const SQUEEZE := 0.8
 
 static var _takes := {}
 static var _slides := {}
@@ -325,6 +328,14 @@ static func _wav(mix: PackedFloat32Array, cutoff: float, attack: float) -> Audio
 		a = lerpf(a,mix[i],k)
 		b = lerpf(b,a,k)
 		mix[i] = b
+	# Then the lows thinned out: the take less what a low-pass at LOW_CUT
+	# keeps of it, twice.
+	var low_k := 1.0-exp(-TAU*LOW_CUT/RATE)
+	for _round in range(2):
+		var under := 0.0
+		for i in range(total):
+			under = lerpf(under,mix[i],low_k)
+			mix[i] -= under
 	var swell := maxi(1,int(attack*RATE))
 	for i in range(mini(swell,total)): mix[i] *= 0.5-0.5*cos(float(i)/swell*PI)
 	var tail := int(total*0.25)
