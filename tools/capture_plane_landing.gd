@@ -70,6 +70,7 @@ func run() -> void:
 	eye.place(Vector3(eye.PLATE_REACH-0.6,0.0,4.0))
 	eye.enter()
 	eye._yaw = atan2(-1.0,0.0)+eye._turn()
+	eye.motor.facing = eye._yaw-eye._turn()
 	eye._polar = PI*0.5
 	eye._launch(1.0)
 	await create_timer(away).timeout

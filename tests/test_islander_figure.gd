@@ -44,7 +44,7 @@ func _initialize() -> void:
 				check(_highest_boot(figure,240) > 0.015,"And the other lifts")
 				check(absf(_planted_speed(figure)-IslanderFigure.WALK_SPEED) < 0.01,"The planted boot slides back at WALK_SPEED (%.3f)" % _planted_speed(figure))
 	figure.play("dance")
-	check(figure.move == "walk","An unknown move is ignored")
+	check(figure.move == IslanderFigure.MOVES[-1],"An unknown move is ignored")
 	figure.free()
 	print("PASS: islander figure" if failures == 0 else "FAIL: islander figure")
 	quit(1 if failures else 0)

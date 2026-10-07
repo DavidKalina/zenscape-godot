@@ -251,7 +251,8 @@ void vertex() {
 		motion += (blow + vec2(-blow.y, blow.x) * blow_shiver * 0.12 * sin(zs_motion_time * 13.0 + CUSTOM0.w * 40.0)) * zs_blow_give(blade_h) * bend * blade_h;
 		wind_bow = max(wind_bow, max(length(blow), blow_shiver) * 0.8);
 		float press = 0.0;
-		if (zs_tread_0.w > 0.0) {
+		// The pilot's wake parts the meadow and springs back (foliage_tread).
+		if (zs_tread_live()) {
 			vec2 shove = zs_tread_push(root, press) * blade_h * ZS_TREAD_REACH * bend;
 			motion += shove;
 		}

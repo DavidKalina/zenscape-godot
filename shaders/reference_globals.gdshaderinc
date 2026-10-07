@@ -113,6 +113,12 @@ global uniform vec4 zs_wake_8;
 global uniform vec4 zs_wake_9;
 global uniform vec4 zs_wake_10;
 global uniform vec4 zs_wake_11;
+// The pilot's wake through low foliage (scripts/pilot_wake.gd, read by
+// zs_tread_push in shaders/foliage_tread.gdshaderinc): zs_tread_0 where he
+// is now, 1..15 where he has been, newest first, each (x, z, radius, lean),
+// the lean already sprung (negative springing back past rest); a radius of 0
+// ends the path. zs_tread_box (min x, z, max x, z) holds all of it.
+global uniform vec4 zs_tread_box;
 global uniform vec4 zs_tread_0;
 global uniform vec4 zs_tread_1;
 global uniform vec4 zs_tread_2;
@@ -121,6 +127,14 @@ global uniform vec4 zs_tread_4;
 global uniform vec4 zs_tread_5;
 global uniform vec4 zs_tread_6;
 global uniform vec4 zs_tread_7;
+global uniform vec4 zs_tread_8;
+global uniform vec4 zs_tread_9;
+global uniform vec4 zs_tread_10;
+global uniform vec4 zs_tread_11;
+global uniform vec4 zs_tread_12;
+global uniform vec4 zs_tread_13;
+global uniform vec4 zs_tread_14;
+global uniform vec4 zs_tread_15;
 global uniform vec4 zs_tree_tread_weights_0;
 global uniform vec4 zs_tree_tread_weights_1;
 global uniform vec4 zs_flash;

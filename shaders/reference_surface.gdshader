@@ -38,6 +38,11 @@ uniform bool blow_enabled = false;
 uniform vec2 blow_shape = vec2(0.4, 2.4);
 uniform bool tree_tread = false;
 uniform float tree_tread_height = 4.26;
+// A stiff plant that does not sway (a mushroom cluster) still tips in the
+// pilot's wake: metres at `tread_wobble_height` (model units) per unit of
+// lean (zs_tread_wobble); 0 holds it still.
+uniform float tread_wobble = 0.0;
+uniform float tread_wobble_height = 0.2;
 uniform vec4 sway_shape = vec4(0.0, 1.0, 0.0, 0.0);
 uniform vec4 sway_frequency = vec4(1.0, 2.0, 1.0, 0.5);
 uniform vec3 sway_phase = vec3(0.9, 0.7, 1.3);
@@ -531,13 +536,14 @@ void vertex() {
 			// Plants bowed by a wave or gust pale a little (the plant_growth tint
 			// below), so the classic tufts show the rolling bands too.
 			foliage_gust = clamp(max(breeze_gust * 0.5, breeze_bow * 0.7) * bend, 0.0, 1.0);
-			// A walker's tread (shaders/foliage_tread.gdshaderinc): stems inside a
-			// tread lean away from it and lie over, and whatever is under the
-			// foot itself is pressed flat. World-space like the wind above.
-			if (zs_tread_0.w > 0.0 && !tree_tread) {
+			// The pilot's wake (shaders/foliage_tread.gdshaderinc): stems by his
+			// path lean out from it and lie over, then spring back past rest
+			// and settle, and whatever is under him is pressed down.
+			// World-space like the wind above.
+			if (zs_tread_live() && !tree_tread) {
 				float press = 0.0;
 				vec2 shove = zs_tread_push(root, press) * (arm * ZS_TREAD_REACH * bend);
-				if (press > 0.0) {
+				if (dot(shove, shove) > 0.0 || press != 0.0) {
 					VERTEX += inverse(mat3(MODEL_MATRIX)) * vec3(shove.x, 0.0, shove.y) * instance_scale;
 					float lean_sq = min(dot(shove, shove), arm * arm * 0.96);
 					VERTEX.y -= (arm - sqrt(arm * arm - lean_sq)) + arm * bend * press * ZS_TREAD_FLATTEN;
@@ -566,6 +572,8 @@ void vertex() {
 
 		}
 		if (tree_tread && zs_tread_0.w > 0.0) VERTEX += zs_tree_tread(VERTEX, MODEL_MATRIX, tree_tread_height);
+		// Stiff low things (mushrooms) tip and wobble as he brushes past.
+		if (tread_wobble > 0.0 && !sway_enabled && zs_tread_live()) VERTEX += zs_tread_wobble(VERTEX, MODEL_MATRIX, tread_wobble, tread_wobble_height);
 		if (cozy_prop_growth && !plant_growth) VERTEX *= smoothstep(0.70, 0.98, zs_growth_now().x);
 		// An emerged instance also pops in at its own birth, INSTANCE_CUSTOM.ba =
 		// (born, seconds, with the stand's autumn packed above); instances without
