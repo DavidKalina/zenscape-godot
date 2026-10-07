@@ -1,4 +1,5 @@
 extends SceneTree
+## suite: gpu
 const Look = preload("res://scripts/scene_look.gd")
 var failures := 0
 func _initialize() -> void: _run.call_deferred()

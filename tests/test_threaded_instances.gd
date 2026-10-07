@@ -1,6 +1,8 @@
 extends SceneTree
 ## Native rendered instance buffer equivalence. Optional --reference=<script>
 ## compares an earlier GardenView implementation as an independent oracle.
+## Publication has no hidden staging node since 7750365d: each part takes its
+## new buffer in the batch it has, in one frame, so nothing yields to mutate.
 const PlateFixture := preload("res://tests/fixtures/plate.gd")
 var failures := 0
 func _initialize() -> void: run.call_deferred()
@@ -29,7 +31,7 @@ func cache_publication(view: GardenView) -> void:
 	var completed: Array = []
 	rebuilt(view,completed)
 	check(completed.is_empty(),"Object-only rebuild is pending before an environment change")
-	view.data.grass[0] += 0.1
+	view.data._recipe_settings["test_cache"] = true
 	while completed.is_empty(): await process_frame
 	check(before == buffers(view),"Rejected object-only rebuild preserves its visible batches")
 	check(not view._view_ready and signature == view._view_signature and water_signature == view._water_signature and revision == view.revision,"Rejected rebuild does not mark changed environment or object state as rendered")
@@ -53,7 +55,9 @@ func stale_inputs(view: GardenView) -> void:
 			"meadow": data.meadow[0] = 0.0
 			"provider": view.data = preload("res://scripts/native_terrain_snapshot.gd").for_queries(data)
 			"tints": view._tints.canopy = Color.RED
-			"environment": data.grass[0] += 0.1
+			## The grass mask left the environment signature in 5f9ba0bb; an unread
+			## recipe key still changes it.
+			"environment": data._recipe_settings["test_environment"] = data._recipe_settings.get("test_environment",0)+1
 		while completed.is_empty(): await process_frame
 		check(completed == [false],field+": changed input rejects pending instances")
 		check(before == buffers(view) and before_sources == var_to_bytes(view._sources),field+": rejection preserves visible buffers and sources")
@@ -62,24 +66,6 @@ func stale_inputs(view: GardenView) -> void:
 		var repaired := buffers(view)
 		view.rebuild(true)
 		check(repaired == buffers(view),field+": ordinary rebuild repairs rejected inputs")
-func staged_inputs(view: GardenView) -> void:
-	view.rebuild(true)
-	var before := buffers(view)
-	var before_sources := var_to_bytes(view._sources)
-	var changed := [false]
-	var observer := func() -> void:
-		if changed[0]: return
-		for child in view.get_children():
-			if child is Node3D and not child.visible and child.get_child_count() > 0:
-				view.data.objects[0].angle += 0.3
-				changed[0] = true
-	process_frame.connect(observer)
-	var accepted := await view._rebuild_instances(self)
-	process_frame.disconnect(observer)
-	check(changed[0],"Mutation reaches hidden staging after sampling has finished")
-	check(not accepted,"Input mutation during GPU staging rejects the result")
-	check(before == buffers(view) and before_sources == var_to_bytes(view._sources),"Stale hidden staging preserves visible buffers and sources")
-	check(view.get_children().filter(func(child: Node) -> bool: return child is Node3D and not child.visible and child.get_child_count() > 0).is_empty(),"Rejected staging releases all temporary nodes")
 func cached_supersession(view: GardenView) -> void:
 	view.rebuild(true)
 	var original: Array = view._batches.duplicate()
@@ -152,7 +138,6 @@ func run() -> void:
 	check(latest == buffers(view),"Only the newest instance snapshot is published")
 	await stale_inputs(view)
 	await cache_publication(view)
-	await staged_inputs(view)
 	await cached_supersession(view)
 	view.free()
 	var generic := GardenData.new()
@@ -165,7 +150,6 @@ func run() -> void:
 	var generic_expected := buffers(generic_view)
 	await generic_view.rebuild(true,self)
 	check(generic_expected == buffers(generic_view),"Synchronous sampling with staged publication preserves generic garden buffers")
-	await staged_inputs(generic_view)
 	generic_view.free()
 	print("Threaded instances: ",failures," failures")
 	quit(1 if failures else 0)

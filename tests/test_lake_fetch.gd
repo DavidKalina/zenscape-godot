@@ -1,4 +1,7 @@
 extends SceneTree
+## The source lake's fetch attributes and swell, and every saved instance's
+## transform, survive native import (MultiMesh transforms: GPU readback).
+## suite: gpu
 var failures := 0
 func _initialize() -> void:
 	call_deferred("run")

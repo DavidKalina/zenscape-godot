@@ -1,4 +1,5 @@
 extends SceneTree
+## suite: serial
 ## A sky chunk shows from afar what it will show once claimed (scripts/
 ## sky_islands.gd `_bake`, `_stand`), so flying into it nothing pops in.
 ## Before, a chunk was only its ground and earth sides: its wild tree, the
@@ -43,6 +44,8 @@ func check(ok: bool, label: String) -> void:
 
 func run() -> void:
 	create_timer(600).timeout.connect(func() -> void: push_error("sky chunk pop-in test timed out"); quit(2))
+	# The headless root is 100 px wide, narrower than the shell lays out for.
+	root.size = Vector2i(1440,900)
 	root.unfocusable = true
 	var scene: Node3D = load("res://studies/cozy_worlds.tscn").instantiate()
 	scene.set_meta("movie_capture",true)

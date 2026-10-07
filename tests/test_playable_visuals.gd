@@ -33,7 +33,8 @@ func run() -> void:
 	scene._growth.publish()
 	var water = scene._planar_water
 	water.sync(scene)
-	check(water.views.size() == 3, "Playable terraces reflect all three pond levels")
+	# Views are capped at the two largest pond levels (3b00653b, MAX_VIEWS).
+	check(water.views.size() == water.MAX_VIEWS, "Playable terraces reflect their two largest pond levels")
 	var pool_arrays: Array = []
 	for view in water.views: pool_arrays.append(var_to_bytes(view.surface.mesh.surface_get_arrays(0)))
 	water.clear()
@@ -61,7 +62,7 @@ func run() -> void:
 	check(water.views.is_empty() and water.get_child_count()==0,"Cancelled reflection setup cannot republish partial views")
 	water.sync(scene)
 	for i in range(3): await process_frame
-	check(water.views.size()==3,"Cancelled continuations cannot clear a newer synchronous reflection setup")
+	check(water.views.size()==water.MAX_VIEWS,"Cancelled continuations cannot clear a newer synchronous reflection setup")
 	for view in water.views:
 		check(view.viewport.msaa_3d == viewport.msaa_3d, "Reflection MSAA matches the scene to share precompiled pipelines")
 		check(view.material.get_shader_parameter("caustics_strength") > 0.0, "Every pond gets caustics")
@@ -76,7 +77,10 @@ func run() -> void:
 	binding.source.visible = true
 	var material_binding: Dictionary = water._material_bindings.values()[0]
 	material_binding.material.set_shader_parameter("roughness_value", 0.63)
-	water.update_views()
+	# A first change is found a rolling DISCOVERY_READS a frame (0773b6d6).
+	for i in range(100):
+		water.update_views()
+		if material_binding.target.get_shader_parameter("roughness_value") == 0.63: break
 	check(material_binding.target.get_shader_parameter("roughness_value") == material_binding.material.get_shader_parameter("roughness_value"), "Reflection tracks edited material")
 	scene._redwood_mist.sync(scene)
 	if RenderingServer.get_current_rendering_method() == "forward_plus":
@@ -127,7 +131,7 @@ func run() -> void:
 	check(editor.save_garden(), "Effects allow normal garden save")
 	check(editor.open_garden(), "Effects allow normal garden reload")
 	water.sync(scene)
-	check(water.views.size() == 3, "Reload restores every reflected pond")
+	check(water.views.size() == water.MAX_VIEWS, "Reload restores every reflected pond")
 	scene._atmosphere.set_fog(0.0)
 	scene._redwood_mist.sync(scene)
 	check(not scene._redwood_mist.active, "Mist control disables native fog")
@@ -141,7 +145,8 @@ func run() -> void:
 	editor.start_flat()
 	water.sync(scene)
 	check(water.views.is_empty(), "Empty garden removes reflection viewports")
-	check(water._shader_cache.is_empty(),"Removing all ponds releases retained reflection shaders")
+	# Clip shaders stay while their source shader lives (0773b6d6).
+	check(water._shader_cache.keys().all(func(key): return is_instance_id_valid(int(key))),"Removing all ponds keeps only clip shaders whose source still lives")
 	scene.free()
 	await process_frame
 	print("PLAYABLE VISUALS failures=",failures)

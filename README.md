@@ -106,21 +106,35 @@ godot --headless --path . --script tests/test_garden.gd
 godot --headless --path . --script tests/test_world_clock.gd
 ```
 
-The Python runners also default to headless, so automated checks do not open
-windows or take focus. To run selected tests with retained logs and a JSON report:
+The test runner runs every script under `tests/`, headless, eight at a time,
+and keeps each test's log and a JSON report:
 
 ```sh
-python3 tools/check_bigfoot_living_regressions.py --tests test_world_clock.gd
+python3 tools/run_tests.py                          # the whole headless suite
+python3 tools/run_tests.py --quick                  # skip tests tagged slow
+python3 tools/run_tests.py --tests 'test_sky_*.gd'  # repeat --tests for more globs
+python3 tools/run_tests.py --list                   # what would run, with tags
 ```
 
-Use `--godot /path/to/Godot` to override the executable. Repeat `--tests` to select
-multiple scripts, or omit it to attempt all tests headless.
+A test declares what it needs with a `## suite:` line near its top:
 
-Headless uses Godot's dummy renderer. Some integration tests require GPU pixel
-readback or MultiMesh transform storage and can fail or time out in this mode;
-a headless run does not replace those visual checks. Both Python runners accept
-`--rendered` for an explicitly requested Forward+ run, which opens windows and
-may take focus. They never automatically fall back to graphical execution.
+- `## suite: gpu`: needs a real renderer (pixel readback, MultiMesh
+  transforms, global shader parameters). Headless runs skip it and never count
+  it as passing.
+- `## suite: slow`: takes over a minute headless. `--quick` skips it, and it
+  gets three times the per-test `--timeout` (180 s by default).
+- `## suite: serial`: holds a frame-time or wall-clock budget that fails under
+  load. It runs alone, after the parallel tests.
+
+`tests/known_failures.txt` lists tests that fail for a recorded reason. They
+still run, but they don't fail the suite. The runner says when one starts
+passing so its line can go. Any other failure fails the run.
+
+Headless uses Godot's dummy renderer, so a headless run doesn't replace the
+visual checks. `--rendered --gpu-only` runs the gpu set in Forward+, which opens
+windows and may take focus. Use it only when you mean to. Headless runs never
+fall back to a graphical renderer. Use `--godot /path/to/Godot` to override the
+executable.
 
 The original Three.js ZenScape project remains a separate reference for
 landscape recipes, atmosphere, water and wildlife. This project has no runtime

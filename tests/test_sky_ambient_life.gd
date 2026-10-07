@@ -1,4 +1,5 @@
 extends SceneTree
+## suite: serial
 ## The other islands' life from the air (scripts/sky_ambient_life.gd) and
 ## the claim it hands over at (scripts/sky_islands.gd `claim`), flown as
 ## tools/profile_claim.gd flies: from open sky into a fresh chunk, back into
@@ -71,6 +72,8 @@ func check(ok: bool, label: String) -> void:
 
 func run() -> void:
 	create_timer(900).timeout.connect(func() -> void: push_error("sky ambient life test timed out"); quit(2))
+	# The headless root is 100 px wide, narrower than the shell lays out for.
+	root.size = Vector2i(1440,900)
 	var flown: Dictionary = await Profile.fly(root,self,22.0,false,Callable(),3,_watch)
 	print(flown.report)
 	_claim_frames(flown)

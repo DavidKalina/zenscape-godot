@@ -1,4 +1,5 @@
 extends SceneTree
+## suite: slow
 ## The bounded sky world (scripts/sky_world.gd): one seed, the bounds, the
 ## whole-world layout (the band round the edge, its foothills and far row,
 ## the dividing ridges and the regions they cut), and the edge wind.

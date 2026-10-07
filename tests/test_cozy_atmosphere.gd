@@ -1,4 +1,5 @@
 extends SceneTree
+## suite: slow
 var failures := 0
 func check(ok: bool, message: String) -> void:
 	if not ok:

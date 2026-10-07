@@ -88,7 +88,6 @@ build tools, docs and tests.
   Fidelity pond's fish, the fallen wood and loose props read them.
 - `shaders/foliage_tread.gdshaderinc`: its trees' half (`zs_tree_tread`); the
   pilot's wake (scripts/pilot_wake.gd) feeds only the low foliage.
-- `tools/check_bigfoot_living_regressions.py`: the headless test runner.
 
 Saves carrying `diorama`, `bigfoot_habits`, `bigfoot_living`,
 `cave_system` or a land life `trail` still load; those keys are ignored.

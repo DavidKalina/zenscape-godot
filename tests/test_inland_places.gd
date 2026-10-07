@@ -18,7 +18,8 @@ func run() -> void:
 		var q: Dictionary = Places.quality(world.sampler)
 		worst.x = minf(worst.x,q.usable)
 		worst.y = minf(worst.y,q.connected)
-		check(q.usable>=0.28 and q.connected>=0.18 and q.places==3,"Quality floor seed %s %s: %s"%[seed_value,settings.composition,q])
+		# Worlds are kept by beauty, not usable ground (5e5e93f9): three places, no floor.
+		check(q.places==3,"Three places seed %s %s: %s"%[seed_value,settings.composition,q])
 		var legacy := settings.duplicate(true)
 		legacy.version = 3
 		var old = World.new(legacy)

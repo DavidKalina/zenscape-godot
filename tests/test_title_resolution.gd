@@ -17,13 +17,15 @@ func run() -> void:
 		await process_frame
 		menu.present(false)
 		check(menu._frame.scale == Vector2.ONE,"Menu rasterizes at its displayed size: " + str(extent))
-		var factor: float = minf(minf(extent.x/1180.0,extent.y/613.0),1.75)
-		check(menu.buttons[0].get_theme_font_size("font_size") == roundi(22 * factor),"Text resolution follows layout size: " + str(extent))
+		# The picks draw their own words at 19 design px times `px` (f887a787),
+		# on a frame at least as tall as the card.
+		var factor: float = minf(minf(extent.x/1180.0,extent.y/maxf(613.0,menu._card_rect.end.y+40.0)),1.75)
+		check(is_equal_approx(menu.buttons[0].px,factor),"Text resolution follows layout size: " + str(extent))
 		for button in menu.buttons:
 			check(Rect2(Vector2.ZERO,Vector2(extent)).encloses(button.get_global_rect()),"Action stays inside the viewport")
 	menu.buttons[0].disabled = true
 	menu.present(false)
-	check(not menu.buttons[0].visible and menu.buttons[1].get_theme_font_size("font_size") == roundi(22*1.75),"Hidden Continue promotes the next action without losing font resolution")
+	check(not menu.buttons[0].visible and is_equal_approx(menu.buttons[1].px,1.75),"Hidden Continue promotes the next action without losing font resolution")
 	menu.free()
 	viewport.free()
 	print("TITLE RESOLUTION failures=",failures)

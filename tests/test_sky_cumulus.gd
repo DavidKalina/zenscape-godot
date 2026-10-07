@@ -5,8 +5,9 @@ extends SceneTree
 ## ranges; the one in sight of the plate is clear of its islands and their
 ## jet streams, and no island, islet or drifting cloud turns up in one; the
 ## in-cloud amount is 0 outside, 1 in the heart and rises on the way in; a
-## thermal stands in its heart; it is no solid; and deep in one the wind is
-## muffled. Headless: shapes and queries only, nothing drawn.
+## thermal stands in its heart; it is no solid; it rises out of the sea from
+## the foot up, stands, wanes away and rises again; and deep in one the wind
+## is muffled. Headless: shapes and queries only, nothing drawn.
 const SkyTower = preload("res://scripts/sky_tower.gd")
 const SkyTowers = preload("res://scripts/sky_towers.gd")
 const SkyPeaks = preload("res://scripts/sky_peaks.gd")
@@ -33,6 +34,9 @@ func _initialize() -> void:
 	_home()
 	_clear()
 	await _inside()
+	_rises()
+	await _lives()
+	_drawn_over_fading_ranges()
 	await _muffled()
 	print("PASS: sky cumulus" if failures == 0 else "FAIL: sky cumulus")
 	quit(1 if failures else 0)
@@ -247,6 +251,91 @@ func _inside() -> void:
 	towers.queue_free()
 	currents.queue_free()
 	await process_frame
+
+## Its rising: nothing over the sea at first, the front climbing to the
+## crown, each lobe swelling up off its own base, whole at the end.
+func _rises() -> void:
+	var t: RefCounted = home_shape()
+	var top_of := func(heap: PackedVector4Array) -> float:
+		var high := -INF
+		for l in heap: high = maxf(high,l.y+l.w)
+		return high
+	check(top_of.call(t.lobes_at(0.0)) <= SkyTower.SEA,"Before it rises nothing stands over the sea (%.0f m)" % (top_of.call(t.lobes_at(0.0))-SkyTower.SEA))
+	var last := -INF
+	var climbing := true
+	var on_front := true
+	for i in range(1,11):
+		var g := i/10.0
+		var high: float = top_of.call(t.lobes_at(g))
+		if high <= last: climbing = false
+		if absf(high-t.front(g)) > 0.5: on_front = false
+		last = high
+	check(climbing and on_front,"It climbs steadily, its head on the rising front")
+	check(t.lobes_at(1.0) == t.lobes and is_equal_approx(t.front(1.0),t.crest),"Risen, it is the whole tower")
+	var half: PackedVector4Array = t.lobes_at(0.5)
+	var based := true
+	var low := 0
+	for l in half:
+		var whole := false
+		for w in t.lobes:
+			if Vector2(l.x,l.z) == Vector2(w.x,w.z) and is_equal_approx(l.y-l.w,w.y-w.w): whole = true
+		if not whole: based = false
+		if l.y+l.w < SkyTower.SEA+t.tall*0.3: low += 1
+	check(based and low > 0,"Each lobe swells up off its own base, the foot first (%d of %d low)" % [low,half.size()])
+	check(t.bake(0.5).data != t.bake().data,"A stage of its rising bakes its own body")
+
+## Its life, held at points along it: rising, it stands to its front and no
+## higher; waned, it is gone; the lives are out of step; the home tower
+## rises soon after the glide first sees it.
+func _lives() -> void:
+	check(is_equal_approx(SkyTowers.grown_of(SkyTowers.phase(Vector2i.ZERO)+SkyTowers.RISE_SOON),0.0) and SkyTowers.grown_of(SkyTowers.phase(Vector2i.ZERO)+SkyTowers.RISE_SOON+1.0) > 0.0,"The home tower starts rising soon after it is first seen")
+	check(SkyTowers.phase(Vector2i(3,1)) != SkyTowers.phase(Vector2i(-2,4)),"The towers' lives are out of step")
+	var slots := [Vector3.ZERO]
+	slots.append_array(SkyIslands.OFFSETS)
+	var cells := SkyCells.new(slots)
+	var towers: Node3D = SkyTowers.new()
+	root.add_child(towers)
+	towers.reset(cells,null)
+	towers.pinned = SkyTowers.REST+SkyTowers.GROW*0.3
+	towers.advance(0.6,Vector3.ZERO)
+	towers.flush()
+	var b: Dictionary = towers.built["0,0"]
+	var t: RefCounted = b.shape
+	var axis: Vector2 = t._axis(SkyTower.SEA+20.0)
+	var foot: Vector3 = towers.global_of(b,Vector3(axis.x,SkyTower.SEA+20.0,axis.y))
+	var head: float = t.top()-t.wide*0.21
+	var crown: Vector3 = towers.global_of(b,Vector3(t._axis(head).x,head,t._axis(head).y))
+	check(towers.fade(foot) > 0.9 and towers.fade(crown) == 0.0,"Rising, its foot stands and its crown is not there yet (foot %.2f, crown %.2f)" % [towers.fade(foot),towers.fade(crown)])
+	check(b.pair == SkyTowers._stage(b.grown) and absf(b.grown-0.3) < 0.03,"It shows the stage its life has come to (%.3f)" % b.grown)
+	var material: ShaderMaterial = b.material
+	var risen_top: float = material.get_shader_parameter("top")
+	check(risen_top < t.top()-50.0,"Its crown's light follows its head (top %.0f of %.0f)" % [risen_top,t.top()])
+	towers.pinned = SkyTowers.MATURE
+	towers.flush()
+	check(towers.fade(crown) > 0.9 and b.wane == 0.0,"Standing, it is whole to the crown (%.2f)" % towers.fade(crown))
+	towers.pinned = SkyTowers.LIFE
+	towers.flush()
+	check(towers.fade(foot) == 0.0 and towers.screens(Vector3.ZERO).is_empty() and is_equal_approx(float(material.get_shader_parameter("wane")),1.0),"Waned, it is gone")
+	# A new life: shown nothing till its first stages are baked, then rises.
+	towers.pinned = 0.0
+	towers.advance(0.0,Vector3.ZERO)
+	check(b.wane >= 1.0 or b.pair == 0,"A new life never shows the last one's tower")
+	towers.flush()
+	check(b.pair == 0 and b.wane == 0.0,"Then it rests, ready to rise")
+	towers.queue_free()
+	await process_frame
+
+## A range fading (its swap with its skyline, its near and far faces
+## crossfading) is drawn with the see-through things, and the tower stands
+## no depth: the range must draw before the tower and the cloud sea, or it
+## shows through a tower in front of it (tools/probe_tower_seethrough.gd
+## sees it rendered).
+func _drawn_over_fading_ranges() -> void:
+	var peaks: Node3D = SkyPeaks.new()
+	var ground: Material = peaks._ground()
+	var sea_priority: int = preload("res://scripts/sky_sea.gd").RENDER_PRIORITY
+	check(ground.render_priority < SkyTowers.RENDER_PRIORITY and ground.render_priority < sea_priority,"A fading range draws before the tower and the cloud sea (%d, %d, %d)" % [ground.render_priority,SkyTowers.RENDER_PRIORITY,sea_priority])
+	peaks.free()
 
 ## Deep in a tower the wind closes down and quietens, and the streaks thicken.
 func _muffled() -> void:

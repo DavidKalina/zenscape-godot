@@ -26,6 +26,8 @@ func run() -> void:
 	await process_frame
 	await process_frame
 	check(AudioServer.bus_count == buses, "Scene teardown restores audio buses")
+	# The mixer lets go of the retired playbacks a moment later.
+	await create_timer(0.5).timeout
 	print("PASS: thunder decode, distance filtering, overlap, pause, mute and cleanup" if failures == 0 else "FAIL: thunder audio")
 	quit(1 if failures else 0)
 func check(ok: bool, message: String) -> void:

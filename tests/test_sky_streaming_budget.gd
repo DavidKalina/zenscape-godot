@@ -1,4 +1,5 @@
 extends SceneTree
+## suite: serial
 ## The main thread's share of the sky streaming in mid-flight (scripts/
 ## sky_commits.gd). A scripted flight (tools/profile_sky_streaming.gd) from
 ## the plate past the fixed islands, out till a fresh island turns up, and
@@ -59,6 +60,8 @@ func _same_plain() -> void:
 	check(a.heights == b.heights and a.blades == b.blades and a.meadow == b.meadow and a.objects.size() == b.objects.size(),"Given its baked outline, the plain's ground and cover are its seed's")
 
 func _flight() -> void:
+	# The headless root is 100 px wide, narrower than the shell lays out for.
+	root.size = Vector2i(1440,900)
 	var flown: Dictionary = await Profile.fly(root,self,22.0)
 	print(flown.report)
 	var commits: Array = flown.commits

@@ -1,4 +1,5 @@
 extends SceneTree
+## suite: serial
 ## The gamepad in the live scene (docs/gamepad.md, scripts/pad_input.gd),
 ## headless, through injected joypad events:
 ##   - the named actions are in the InputMap, the pad's A and B in ui_accept
@@ -17,6 +18,8 @@ extends SceneTree
 ##   - the keyboard and mouse still do what they did: V and Esc, the walk's
 ##     keys, the wheel, Q and Esc in hand, and a moved mouse takes the cursor.
 ##   godot --headless --path . --script tests/test_gamepad.gd
+## Waits about a minute headless for the sky under the loading veil.
+## suite: slow
 const Pad = preload("res://scripts/pad.gd")
 const PadInput = preload("res://scripts/pad_input.gd")
 const FirstSteps = preload("res://scripts/first_steps.gd")
@@ -37,6 +40,15 @@ func frames(n: int) -> void:
 
 func seconds(s: float) -> void:
 	await create_timer(s).timeout
+
+## Waits for `condition` up to `limit` seconds: under load (parallel runs)
+## a fixed wait comes up short.
+func until(condition: Callable, limit := 10.0) -> bool:
+	var deadline := Time.get_ticks_msec()+int(limit*1000.0)
+	while not condition.call():
+		if Time.get_ticks_msec() > deadline: return false
+		await process_frame
+	return true
 
 func button(index: JoyButton, down: bool) -> void:
 	var event := InputEventJoypadButton.new()
@@ -144,7 +156,7 @@ func _prompts() -> void:
 	key(KEY_SHIFT,false)
 	await frames(2)
 	check(not Pad.using_pad() and eye._hint.shown_text() == eye.PLANE_HINT and FirstSteps.line("look") == FirstSteps.VERBS.look.line,"A key again: back to the keys' words")
-	check(str(scene.creation_palette.get("_reach_hint")) == reach.VOID_HINT,"And the hand's hint line with them")
+	check(await until(func() -> bool: return str(scene.creation_palette.get("_reach_hint")) == reach.VOID_HINT),"And the hand's hint line with them")
 	reach._show_hint("")
 	eye._hint.text = eye._walk_hint()
 	# A small push of a stick is not the pad picked up.
@@ -383,8 +395,7 @@ func _keys_and_mouse() -> void:
 		Input.parse_input_event(click)
 		Input.flush_buffered_events()
 		await frames(2)
-	await seconds(0.5)
-	check(scene._chunk_editor.data.objects.size() > objects,"A click plants a tree")
+	check(await until(func() -> bool: return scene._chunk_editor.data.objects.size() > objects),"A click plants a tree")
 	key(KEY_ESCAPE)
 	key(KEY_ESCAPE,false)
 	await frames(2)
