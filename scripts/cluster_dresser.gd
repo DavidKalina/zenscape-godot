@@ -233,11 +233,20 @@ static func furnish(node: Node3D, member: Dictionary, plan: Dictionary, made: Di
 				fence.mesh = made.features.get(i)
 				fence.material_override = m.solid
 				node.add_child(fence)
-	for mesh: Mesh in made.get("bridges",[]):
-		var bridge := MeshInstance3D.new()
+	# The bridges, in `prepare`'s order; a rope one lives (scripts/
+	# rope_bridge.gd), its deck the walker reads moving with it.
+	var ours := (plan.bridges as Array).filter(func(br: Dictionary) -> bool: return br.from == member.name)
+	var meshes: Array = made.get("bridges",[])
+	for k in range(meshes.size()):
+		var br: Dictionary = ours[k]
+		var bridge: MeshInstance3D
+		if Footbridge.roped(Vector2(br.b.x-br.a.x,br.b.z-br.a.z).length()):
+			bridge = Footbridge.live(meshes[k],br.a,br.b,hash(br.to) % 997,_deck_of(shape,br))
+		else:
+			bridge = MeshInstance3D.new()
+			bridge.mesh = meshes[k]
+			bridge.material_override = m.solid
 		bridge.name = "Footbridge"
-		bridge.mesh = mesh
-		bridge.material_override = m.solid
 		node.add_child(bridge)
 	if not halos.is_empty():
 		var batch := MultiMeshInstance3D.new()
@@ -257,6 +266,12 @@ static func furnish(node: Node3D, member: Dictionary, plan: Dictionary, made: Di
 		batch.custom_aabb = AABB(Vector3(-60.0,-20.0,-60.0),Vector3(120.0,60.0,120.0))
 		node.add_child(batch)
 	return live
+
+## `shape`'s deck record for bridge `br` (its ends the same), or {}.
+static func _deck_of(shape: RefCounted, br: Dictionary) -> Dictionary:
+	for deck: Dictionary in shape.decks:
+		if (deck.a as Vector3).is_equal_approx(br.a) and (deck.b as Vector3).is_equal_approx(br.b): return deck
+	return {}
 
 static func _stand(node: Node3D, shape: RefCounted, label: String, mesh: Mesh, at: Vector2, angle: float) -> MeshInstance3D:
 	var built := MeshInstance3D.new()

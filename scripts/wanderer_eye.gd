@@ -187,6 +187,7 @@ const Shape = preload("res://scripts/native_formation_shape.gd")
 const Presets = preload("res://scripts/native_landscape_presets.gd")
 const Disturbance = preload("res://scripts/disturbance.gd")
 const Footbridge = preload("res://scripts/footbridge.gd")
+const RopeBridge = preload("res://scripts/rope_bridge.gd")
 const HINT := "Mouse to look  ·  WASD or arrows to run  ·  Space to jump, again in the air to fly  ·  V or Esc to step out"
 const PERCH_HINT := "Mouse to look  ·  WASD or arrows to run  ·  Space to jump  ·  Off the edge or Space again in the air to fly  ·  V or Esc to step out"
 const GLIDER_HINT := "Mouse to look  ·  WASD or arrows to run  ·  Space to jump, again in the air to glide  ·  V or Esc to step out"
@@ -679,8 +680,9 @@ func _walk(feet: Vector3, step: Vector2) -> Vector3:
 	to = _pushed_out(to)
 	# A bridge with hand rails keeps the walker on it; one without lets them
 	# step off its side, where the water allows.
+	to = RopeBridge.hold(editor.terrain,feet,to)
 	var deck := _deck(from)
-	if not deck.is_empty() and deck.deck.rails and _deck(to).is_empty(): to = Footbridge.keep_on(deck.deck,to,RADIUS*0.5)
+	if not deck.is_empty() and deck.deck.rails and deck.deck.get("sim") == null and _deck(to).is_empty(): to = Footbridge.keep_on(deck.deck,to,RADIUS*0.5)
 	return Vector3(to.x,feet.y,to.y)
 
 ## The free, shallow spot nearest `local` (on the plate), or `local` itself
@@ -870,6 +872,8 @@ func _advance_eye(delta: float) -> void:
 	_sync_figure()
 	_motor_events(events)
 	var drawn: Dictionary = body.drive(motor,delta)
+	_tread(editor.terrain,events,drawn)
+	_feet = motor.feet
 	_body_events(drawn,delta)
 	_water_events(events,drawn,delta)
 	_frame_walker(delta,editor.terrain.global_transform,_turn(),func(p: Vector3) -> float:
@@ -1187,6 +1191,7 @@ func _advance_flight(delta: float) -> void:
 	if glide.approach: glide.approach_target = _landing_spot()
 	if _landing_wait: _wait_to_land(delta,input)
 	glide.step(delta,input,_fly_ground,_fly_air)
+	RopeBridge.flown_by(islands.global_transform*glide.position,glide.velocity)
 	# Into another island's footprint, it becomes the plate.
 	if not islands.claiming:
 		var under: int = islands.copy_under(glide.position)
@@ -1416,6 +1421,8 @@ func _advance_perch(delta: float) -> void:
 	_sync_figure()
 	_motor_events(events)
 	var drawn: Dictionary = body.drive(motor,delta)
+	_tread(perch.node,events,drawn)
+	_perch_feet = motor.feet
 	_body_events(drawn,delta)
 	_water_events(events,drawn,delta)
 	var place: Vector3 = islands.islets.place(perch)
@@ -1462,11 +1469,19 @@ func _perch_move(next: Dictionary) -> void:
 	_perch_floor -= off.y
 	_perch_feet = motor.feet
 
+## A rope bridge underfoot (scripts/rope_bridge.gd) takes the pilot's
+## weight, footfalls and landings, and carries his feet with its sway.
+func _tread(frame: Node3D, events: Dictionary, drawn: Dictionary) -> void:
+	var effort := clampf((motor.speed()-WALK)/(RUN-WALK),0.0,1.0)
+	var carry := RopeBridge.tread(frame,motor.feet,motor.grounded,events,drawn,effort)
+	if carry != Vector3.ZERO: motor.feet += Vector3(carry.x,0.0,carry.z)
+
 ## A step over an islet: round what blocks the way, sliding along one axis
 ## or standing. Off its rim is let through, for the flight to open.
 func _perch_slide(shape: RefCounted, feet: Vector3, step: Vector2) -> Vector3:
 	var was := Vector2(feet.x,feet.z)
-	var next := was+step
+	var next := RopeBridge.hold(perch.node,feet,was+step)
+	step = next-was
 	if not shape.inside(next): return Vector3(next.x,feet.y,next.y)
 	if SkyIslets.blocked(shape,next):
 		next = was+Vector2(step.x,0.0)
