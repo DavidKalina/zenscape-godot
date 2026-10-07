@@ -7,6 +7,8 @@ extends SceneTree
 ## reframed: a saved place's camera is put back as it was. The title keeps
 ## its own orbit (`_frame_title`), and world_beauty scores from the old
 ## framing, so generated worlds don't change. Headless: numbers only.
+## Each launch rolls its own land, so the island differs run to run.
+## suite: slow
 const SkyWorld = preload("res://scripts/sky_world.gd")
 const WorldBeauty = preload("res://scripts/world_beauty.gd")
 var failures := 0
@@ -68,8 +70,14 @@ func run() -> void:
 		if not Rect2(Vector2.ZERO,screen).has_point(at): outside += 1
 		spread = Rect2(at,Vector2.ZERO) if first else spread.expand(at)
 		first = false
+	# What is fitted is the land and its rock (`_skirt`): on a seed whose rock
+	# hangs deep, the rock bounds the frame and the land alone fills less.
+	for vertex: Vector3 in editor._skirt.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]:
+		var at: Vector2 = camera.unproject_position(editor._skirt.to_global(vertex))
+		if not Rect2(Vector2.ZERO,screen).has_point(at): outside += 1
+		spread = spread.expand(at)
 	var share := maxf(spread.size.x/screen.x,spread.size.y/screen.y)
-	check(not first and outside == 0 and share > 0.5,"The island is all on screen and fills %.0f %% of it one way" % (share*100.0))
+	check(not first and outside == 0 and share > 0.5,"The island and its rock are all on screen and fill %.0f %% of it one way" % (share*100.0))
 	# An orbited view is not reframed: a saved place's camera comes back.
 	var store := preload("res://scripts/native_garden_store.gd")
 	check(FileAccess.get_file_as_string("res://scripts/native_garden_store.gd").contains("polar") and FileAccess.get_file_as_string("res://scripts/cozy_regrowth.gd").contains("layout") ,"A saved place keeps its own camera (native_garden_store), framed afresh only when new")

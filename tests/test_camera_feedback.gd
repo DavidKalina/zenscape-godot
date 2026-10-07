@@ -15,18 +15,29 @@ func _check_camera_feedback() -> void:
 	scene.target = Vector3.ZERO
 	scene._update_camera()
 
-	# OrbitControls applies 5% of its pending pointer motion on each displayed
-	# frame. Replay uneven frame durations: the visual step must still decay by
-	# the same 0.95 ratio rather than pulse with the measured frame interval.
+	# The product eases by elapsed time (a7e857fc): the pointer motion left
+	# after any run of uneven frames is 0.95 per 60 Hz frame of time passed, so
+	# the glide is the same at any refresh rate.
 	scene._orbit_delta = Vector2(120.0, 0.0)
 	var frame_times := [1.0 / 240.0, 1.0 / 30.0, 1.0 / 120.0, 1.0 / 60.0]
+	var elapsed := 0.0
+	for frame_time: float in frame_times:
+		scene._ease_camera(frame_time)
+		elapsed += frame_time
+		check(is_equal_approx(scene._orbit_delta.x, 120.0 * pow(0.95, elapsed * 60.0)), "Orbit feedback decays by 0.95 per 60 Hz frame of elapsed time")
+
+	# The source's response (OrbitControls applies 5% of its pending pointer
+	# motion on each displayed frame) stays behind the comparison switch.
+	scene.camera_time_based_damping = false
+	scene._orbit_delta = Vector2(120.0, 0.0)
 	var steps: Array[float] = []
 	for frame_time: float in frame_times:
 		var before: float = scene.yaw
 		scene._ease_camera(frame_time)
 		steps.append(absf(scene.yaw - before))
 	for index in range(1, steps.size()):
-		check(is_equal_approx(steps[index] / steps[index - 1], 0.95), "Orbit feedback decays by 0.95 per displayed frame")
+		check(is_equal_approx(steps[index] / steps[index - 1], 0.95), "Source orbit feedback decays by 0.95 per displayed frame")
+	scene.camera_time_based_damping = true
 
 	# Multiple input events arriving between frames are one accumulated pointer
 	# displacement, matching OrbitControls' event queue semantics.

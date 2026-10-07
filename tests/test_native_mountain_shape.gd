@@ -12,10 +12,11 @@ func _initialize() -> void:
 	data.reset_flat()
 	data.heights.fill(-0.5)
 	data.begin_stroke()
-	data.mountain(Vector2.ZERO,8.0,24.0)
+	## The ridge overshoots its peak; stamp at the limit (64 m since 500a574b) so the clamp bites.
+	data.mountain(Vector2.ZERO,8.0,NativeTerrainData.MAX_HEIGHT)
 	data.end_stroke()
 	check(data.ground_height(Vector2(12,12)) == -0.5,"Mountain preserves hollows outside footprint")
-	check(Array(data.heights).max() <= 24.0,"Peak respects editing height limit")
+	check(Array(data.heights).max() <= NativeTerrainData.MAX_HEIGHT,"Peak respects editing height limit")
 	check(data.undo() and data.heights.count(-0.5) == data.heights.size(),"Whole ridge stamp undoes")
 	print("Mountain shape: ",failures," failures")
 	quit(1 if failures else 0)

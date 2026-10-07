@@ -70,6 +70,8 @@ func run() -> void:
 	check(ambience.water_layout.points.has("stream"),"Authored landscape stream receives its own emitter")
 	ambience.update_world(0.05,true,scene)
 	for player in ambience.nature.beds.values(): check(player.stream_paused,"Scene pause reaches new sound beds")
+	## Quits with the editor's background jobs still running: that once
+	## deadlocked the quit (scripts/background_work.gd _drain).
 	scene.queue_free()
 	await process_frame
 	print("PASS: ambience weather, growth, loops, pause and mute" if failures == 0 else "FAIL: ambience")

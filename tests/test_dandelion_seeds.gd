@@ -17,6 +17,7 @@ const Flowers = preload("res://scripts/meadow_flower_mesh.gd")
 const FlowerSowing = preload("res://scripts/flower_sowing.gd")
 const Emergence = preload("res://scripts/emergence.gd")
 const PlateFixture := preload("res://tests/fixtures/plate.gd")
+const WORLD_SEED := 6
 
 var failures := 0
 
@@ -243,6 +244,8 @@ func taking_root() -> void:
 
 func in_scene() -> void:
 	root.size = Vector2i(1440,900)
+	# The cozy scene rolls its land with randi(): pin it so the drift sits inland.
+	seed(WORLD_SEED)
 	var scene: Node3D = load("res://studies/cozy_worlds.tscn").instantiate()
 	scene.set_meta("movie_capture",true)
 	scene.set_meta("no_title",true)

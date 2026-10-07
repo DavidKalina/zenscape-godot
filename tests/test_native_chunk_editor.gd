@@ -1,5 +1,6 @@
 extends SceneTree
 ## The editor changes the original fidelity terrain, without replacing its look.
+## suite: gpu
 var failures := 0
 var capture_directory := ""
 var save_file := "/tmp/native-garden-test-%d.json" % OS.get_process_id()
@@ -11,6 +12,8 @@ func _initialize() -> void:
 	_run.call_deferred()
 
 func _run() -> void:
+	## The bare headless root is 64 px; clicks need a screen to land on.
+	root.size = Vector2i(1440,960)
 	var scene: Node3D = load("res://studies/fidelity.tscn").instantiate()
 	root.add_child(scene)
 	scene.set_process(false)
@@ -66,7 +69,8 @@ func _run() -> void:
 	var sculpted := data.heights.duplicate()
 	await capture("native-sculpt", scene)
 	editor.undo()
-	check(terrain.mesh == mesh and data.heights == data.original_heights, "Undo restores the exact imported mesh")
+	## The plate shows the imported mesh cut to its island outline (1ed5dfe0).
+	check(terrain.mesh == data.play_mesh(mesh) and data.heights == data.original_heights, "Undo restores the exact imported mesh")
 	editor.redo()
 	check(data.heights == sculpted, "Redo restores the exact edit")
 	editor.undo()
@@ -76,12 +80,15 @@ func _run() -> void:
 	button.button_index = MOUSE_BUTTON_LEFT
 	button.position = camera.unproject_position(terrain.to_global(Vector3(0,original,0)))
 	button.pressed = true
-	scene._unhandled_input(button)
+	## Under modeless controls (the default since 7a1d6669) the left press is
+	## the hand's; the click-to-sculpt is --classic-controls'.
+	var classic: bool = not preload("res://scripts/modeless_input.gd").enabled()
+	if classic: scene._unhandled_input(button)
 	button.pressed = false
-	scene._input(button)
-	check(data.heights != data.original_heights, "First mouse click sculpts the inspected chunk")
+	if classic: scene._input(button)
+	check(not classic or data.heights != data.original_heights, "First mouse click sculpts the inspected chunk")
 	check(not scene._orbiting and not editor._painting, "Left sculpt does not start orbit and release closes the stroke")
-	editor.undo()
+	if classic: editor.undo()
 	button.button_index = MOUSE_BUTTON_RIGHT
 	button.pressed = true
 	scene._unhandled_input(button)
@@ -90,7 +97,7 @@ func _run() -> void:
 	scene._input(button)
 	check(not scene._orbiting, "Camera drag ends on release")
 	editor.set_active(false)
-	check(terrain.material_override == null and terrain.mesh == mesh, "Inspect after undo has the exact source terrain and material")
+	check(terrain.material_override == null and terrain.mesh == data.play_mesh(mesh), "Inspect after undo has the exact source terrain and material")
 	editor.set_active(true)
 	editor.start_flat()
 	check(data.blank and data.heights.count(0.0) == data.heights.size(), "Start flat clears the original terrain's own vertices")
@@ -129,14 +136,14 @@ func _run() -> void:
 	for entry: Array in [["tree",Vector2(-4,-3)],["rock",Vector2(0,1)],["flower",Vector2(1,3)]]:
 		click(editor,entry[0],entry[1])
 	check(data.objects.size() == 3, "Native clicks place a tree, a rock, and an individual flower")
-	var canopy: MultiMeshInstance3D = editor.content.get_node("Canopy")
-	check(canopy.multimesh.mesh == editor.content._meshes.canopy, "Authored tree uses the port's actual canopy mesh")
+	var canopy := canopies(editor)[0]
+	check(canopy.multimesh.mesh == editor.content._meshes[canopy.get_meta("part")], "Authored tree uses the port's actual canopy mesh")
 	var tree_y := canopy.multimesh.get_instance_transform(0).origin.y
 	data.begin_stroke()
 	data.brush(Vector2(-4,-3),2.0,0.5,"raise",0)
 	data.end_stroke()
 	editor.refresh()
-	check(editor.content.get_node("Canopy").multimesh.get_instance_transform(0).origin.y > tree_y, "Authored tree follows native terrain edits")
+	check(canopies(editor)[0].multimesh.get_instance_transform(0).origin.y > tree_y, "Authored tree follows native terrain edits")
 	editor.undo()
 	editor.pond_level = -0.15
 	click(editor,"pond",Vector2(4,2))
@@ -146,7 +153,10 @@ func _run() -> void:
 		check(absf(vertex.y+0.15) < 0.0001, "Native pond has a flat waterline")
 	check(editor.content._water.material_override.shader.resource_path.ends_with("lake_reference_water.gdshader"), "Authored pond uses the native lake shader")
 	map = scene._precipitation.ground_texture.get_image()
-	check(absf(map.get_pixel(80,72).a+0.15) < 0.0001, "Native rain and fog map includes authored water")
+	## The map spans the 48 m plate's ±MAP_HALF (dd35b546); (80,72) was this point on the 28 m one.
+	var plate := preload("res://scripts/plate.gd")
+	var texel := Vector2i(((Vector2(3.5,1.75)+Vector2.ONE*plate.MAP_HALF)/(plate.MAP_HALF*2.0)*map.get_width()).floor())
+	check(absf(map.get_pixel(texel.x,texel.y).a+0.15) < 0.0001, "Native rain and fog map includes authored water")
 	await capture("native-flat-sculpt", scene)
 	# Persist an in-progress native rain transition, its accumulated wetness,
 	# and an intentional camera pose before destroying the entire scene.
@@ -181,7 +191,9 @@ func _run() -> void:
 		if not data.undo():
 			break
 	editor.refresh()
-	check(not data.blank and terrain.mesh == mesh and skirt.mesh == skirt_mesh, "Undo restores imported terrain and original earth sides")
+	## An island with an outline (1ed5dfe0) shows the imported mesh cut to it, and its
+	## shore wall stands in the earth sides' place.
+	check(not data.blank and terrain.mesh == data.play_mesh(mesh) and skirt.mesh == editor.skirt_mesh_for(data), "Undo restores imported terrain and original earth sides")
 	check(scene._precipitation.ground_texture.get_image().get_data() == ground_bytes, "Undo restores original terrain/water texture byte for byte")
 	check(scene.get_node("Reference/mesh-8").visible, "Undo restores source vegetation")
 	editor.set_active(false)
@@ -215,7 +227,7 @@ func _run() -> void:
 			check(absf(setting.control.value-float(value)) <= maxf(setting.control.step,0.00001), "Reopened slider matches saved "+setting.property)
 	check(reopened._chunk_editor.content.pond_vertices == expected_water, "Reopened native pond has the exact same shoreline")
 	check(reopened._precipitation.ground_texture.get_image().get_data() == expected_ground, "Reopened weather map matches byte for byte")
-	check(reopened._chunk_editor.content.get_node("Canopy").multimesh.instance_count == 1, "Reopened native garden reconstructs its tree")
+	check(canopies(reopened._chunk_editor).reduce(func(total: int, batch: MultiMeshInstance3D) -> int: return total+batch.multimesh.instance_count,0) == 1, "Reopened native garden reconstructs its tree")
 	check(reopened._precipitation._instances[0].visible_instance_count > 0, "Reopened native weather still renders rain")
 	check(reopened._chunk_editor.save_garden() and FileAccess.get_file_as_bytes(save_file) == saved_bytes, "Reopening and saving produces the same file bytes")
 	await capture("native-garden-reopened",reopened)
@@ -246,7 +258,20 @@ func click(editor: NativeChunkEditor, tool: String, point: Vector2) -> void:
 	var event := InputEventMouseButton.new()
 	event.button_index = MOUSE_BUTTON_LEFT
 	event.position = editor.scene.camera.unproject_position(Vector3(point.x,editor.data.ground_height(point),point.y))
-	event.pressed = true
-	editor.scene._unhandled_input(event)
-	event.pressed = false
-	editor.scene._input(event)
+	## place_at is the left press's own placement (the press is the hand's under
+	## modeless controls, 7a1d6669).
+	editor.place_at(event.position)
+	editor.finish_stroke()
+
+## A tree's canopy batches: the spruce variants' (a2eec160), or --classic-trees' one.
+func canopies(editor: NativeChunkEditor) -> Array[MultiMeshInstance3D]:
+	var found: Array[MultiMeshInstance3D] = []
+	for batch: MultiMeshInstance3D in editor.content._batches:
+		var part: String = batch.get_meta("part")
+		if part == "canopy" or (part.begins_with("tree:") and part.ends_with("-canopies")): found.append(batch)
+	if found.is_empty():
+		check(false, "The tree has a canopy batch")
+		var none := MultiMeshInstance3D.new()
+		none.multimesh = MultiMesh.new()
+		found.append(none)
+	return found
