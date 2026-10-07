@@ -553,7 +553,9 @@ func _sync_figure() -> void:
 		figure.position = drawn
 		figure.rotation = Vector3(0.0,motor.facing,0.0)
 	elif is_instance_valid(perch.node):
-		figure.global_transform = Transform3D(Basis(Vector3.UP,motor.facing),islands.islets.place(perch)+drawn)
+		# In the islet's own frame, which an airship's islet may turn
+		# (scripts/sky_airship.gd): the pilot goes round with it.
+		figure.global_transform = islands.islets.frame(perch)*Transform3D(Basis(Vector3.UP,motor.facing),drawn)
 
 # --- Obstacles and water ------------------------------------------------------------
 
@@ -888,7 +890,7 @@ func _want(heading: float, delta: float) -> Vector2:
 	var look := Pad.curve(Pad.stick(&"look_left",&"look_right",&"look_up",&"look_down"),1.6)
 	if look != Vector2.ZERO:
 		_yaw -= look.x*STICK_WALK_LOOK.x*delta
-		_polar = clampf(_polar-look.y*STICK_WALK_LOOK.y*delta,POLAR.x,POLAR.y)
+		_polar = clampf(_polar-look.y*STICK_WALK_LOOK.y*delta,POLAR.x,_polar_most())
 		_look_rest = 0.0
 	var forward := PilotMotor.forward(heading)
 	var right := Vector2(-forward.y,forward.x)
@@ -1005,6 +1007,7 @@ func _world_way(way: Vector3) -> Vector3:
 	var flat := Vector3(way.x,0.0,way.z)
 	if flat.length_squared() < 0.01: flat = Vector3(PilotMotor.forward(motor.facing).x,0.0,PilotMotor.forward(motor.facing).y)
 	if perch.is_empty(): flat = editor.terrain.global_basis*flat
+	else: flat = Basis(Vector3.UP,SkyIslets.yaw_of(perch))*flat
 	flat.y = 0.0
 	return flat.normalized()
 
@@ -1086,8 +1089,10 @@ func _swoop_in(delta: float) -> void:
 func _launch(pace: float, drop := true, start := Vector3.INF, towards := 0.0) -> void:
 	var from := _eye_global()
 	var perched := not perch.is_empty()
+	var perch_turn := 0.0
 	if perched:
 		from = _perch_eye_global()
+		perch_turn = SkyIslets.yaw_of(perch)
 		_unperch()
 	# There is only the one plane: flying from anywhere but it brings it along.
 	if start == Vector3.INF: _unpark(true)
@@ -1104,7 +1109,7 @@ func _launch(pace: float, drop := true, start := Vector3.INF, towards := 0.0) ->
 		glide.launch(start,towards,pace,drop)
 	else:
 		# Off the way the pilot faces, level, a jump lifting the nose.
-		var way: float = motor.facing+(0.0 if perched else _turn())
+		var way: float = motor.facing+(perch_turn if perched else _turn())
 		glide.launch(from,way,pace,drop)
 		glide.pitch = clampf(motor.velocity.y*0.06,-0.3,0.3)
 	_flap_asked = false
@@ -1326,7 +1331,7 @@ var _perch_floor := 0.0
 ## True when a point over an islet is down near its ground, not riding over
 ## a crown or the spire.
 func _islet_ground_near(islet: Dictionary, point: Vector3) -> bool:
-	var local: Vector3 = point-islands.islets.place(islet)
+	var local: Vector3 = islands.islets.local_of(islet,point)
 	return local.y-float(islet.shape.ground_at(Vector2(local.x,local.z))) < SkyGlide.SKIM+0.5
 
 ## Touched down on an islet: the glide stops and the pilot runs on over
@@ -1337,7 +1342,7 @@ func _perch(islet: Dictionary) -> void:
 	_swoop_from = {"target":scene.target,"yaw":scene.yaw,"polar":scene.polar,"distance":scene.distance}
 	perch = islet
 	islands.islets.pinned = islet.node
-	var local: Vector3 = glide.position-islands.islets.place(islet)
+	var local: Vector3 = islands.islets.local_of(islet,glide.position)
 	var at := _perch_free(islet.shape,Vector2(local.x,local.z))
 	_perch_feet = Vector3(at.x,islet.shape.ground_at(at),at.y)
 	_perch_floor = _perch_feet.y
@@ -1346,7 +1351,8 @@ func _perch(islet: Dictionary) -> void:
 	glider.visible = false
 	scene.camera_roll = 0.0
 	# It lands at a run that eases off.
-	motor.reset(_perch_feet,glide.heading,RUN*0.7)
+	_perch_turn = SkyIslets.yaw_of(islet)
+	motor.reset(_perch_feet,glide.heading-_perch_turn,RUN*0.7)
 	_stand_camera()
 	figure.visible = true
 	body.settle()
@@ -1374,7 +1380,17 @@ func _perch_free(shape: RefCounted, at: Vector2) -> Vector2:
 	return at
 
 func _perch_eye_global() -> Vector3:
-	return islands.islets.place(perch)+_perch_feet+Vector3.UP*EYE_HEIGHT
+	return islands.islets.frame(perch)*(_perch_feet+Vector3.UP*EYE_HEIGHT)
+
+## The perched islet's turn when last read: as it turns (an airship's islet
+## let spin, scripts/sky_airship.gd) the camera turns with the pilot.
+var _perch_turn := 0.0
+
+## How far the camera may tilt up on foot: further on an airship's towed
+## islet, to look up at the ship.
+const POLAR_TOWED := 2.45
+func _polar_most() -> float:
+	return POLAR_TOWED if not perch.is_empty() and perch.get("towed",false) else POLAR.y
 
 ## Running over an islet's top as over the plate: the same keys, jumps and
 ## camera, round trunks and the pond; off the rim, or Space again in the
@@ -1387,8 +1403,12 @@ func _advance_perch(delta: float) -> void:
 	var shape: RefCounted = perch.shape
 	var jump := Input.is_action_pressed(&"walk_jump")
 	_jump_was = jump
-	# Islets are never turned, so the camera's yaw is the islet's frame's too.
-	var want := _want(_yaw,delta)
+	# An islet may be turned (an airship's, let spin): the camera turns with
+	# it, and the stick is read in its frame.
+	var turn := SkyIslets.yaw_of(perch)
+	_yaw += wrapf(turn-_perch_turn,-PI,PI)
+	_perch_turn = turn
+	var want := _want(_yaw-turn,delta)
 	_asked = want.length()
 	# A grouped islet (a cluster's, scripts/sky_clusters.gd) reads
 	# its neighbours' ground too, so the pilot jumps from one to the next.
@@ -1418,8 +1438,8 @@ func _advance_perch(delta: float) -> void:
 	var drawn: Dictionary = body.drive(motor,delta)
 	_body_events(drawn,delta)
 	_water_events(events,drawn,delta)
-	var place: Vector3 = islands.islets.place(perch)
-	_frame_walker(delta,Transform3D(Basis.IDENTITY,place),0.0,func(p: Vector3) -> float: return _perch_ground(Vector2(p.x,p.z)))
+	_frame_walker(delta,islands.islets.frame(perch),turn,func(p: Vector3) -> float: return _perch_ground(Vector2(p.x,p.z)))
+	if not perch.get("towed",false) and _polar > POLAR.y: _polar = lerpf(_polar,POLAR.y,_ease(0.4,delta))
 	camera.fov = lerpf(camera.fov,FOV,_ease(EASE_FOV,delta))
 	# The sky goes on round it: the islets bob, the clouds drift, the wind
 	# quietens.
@@ -1988,7 +2008,7 @@ func handle(event: InputEvent) -> bool:
 	if event is InputEventMouseMotion:
 		if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not perch.is_empty():
 			_yaw -= event.relative.x*LOOK
-			_polar = clampf(_polar-event.relative.y*LOOK,POLAR.x,POLAR.y)
+			_polar = clampf(_polar-event.relative.y*LOOK,POLAR.x,_polar_most())
 			_look_rest = 0.0
 		elif Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and flying and (chase.free_held or plane):
 			chase.turn(Vector2(-event.relative.x,-event.relative.y)*LOOK)

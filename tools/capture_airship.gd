@@ -8,6 +8,7 @@ extends SceneTree
 ## Rendered only when asked for (needs a window):
 ##   Godot --windowed --path . --resolution 1280x720 -s res://tools/capture_airship.gd \
 ##     -- --no-title --out=captures/airship/try1 [--hours=noon,night] [--only=tear]
+## --only=ride sets the pilot on the islet as it is let go, to ride the spin.
 ## With --airship-now --only=now it checks the flag's own start instead.
 var scene: Node3D
 var eye: Node
@@ -18,6 +19,9 @@ var hours := {"noon": WorldClock.hour_for_phase(0.5), "golden": WorldClock.hour_
 var islands: Node3D
 var ship: Node3D
 var _islets: Node3D
+const SkyIsletsScript = preload("res://scripts/sky_islets.gd")
+## Frames between the spin's stills.
+const SPIN_EVERY := 75
 var _parent: Node3D
 
 func _initialize() -> void:
@@ -122,9 +126,20 @@ func _event(hour_name: String) -> void:
 	# camera following, the ship pulling on ahead.
 	if _wants("perch"):
 		await _perch_shots(b,hour,hour_name)
-	_run_until(func() -> bool: return ship.event.is_empty() or ship.event.phase == "release")
-	if _wants("moored") and not ship.event.is_empty():
-		await _shoot("release-"+hour_name,func() -> Array: return [ship.event.rest+side*30.0-way*20.0+Vector3.UP*6.0,ship.event.rest+Vector3.UP*7.0],hour,30,true)
+	_run_until(func() -> bool: return ship.event.is_empty() or (ship.event.phase == "settle" and ship.event.t > ship.SETTLE-1.0))
+	if not ship.event.is_empty():
+		var mid: Vector3 = ship.event.islet
+		var cam := mid+side*26.0-way*18.0+Vector3.UP*3.0
+		if _wants("ride"):
+			await _ride_release(b,hour,hour_name)
+		elif _wants("release"):
+			# The release: the grapples popping free and the lines springing
+			# back; then the spin and the bob, a still every SPIN_EVERY frames.
+			await _shoot("pre-release-"+hour_name,func() -> Array: return [cam,mid+Vector3.UP*6.0],hour,60,true)
+			await _shoot("release-"+hour_name,func() -> Array: return [cam,mid+Vector3.UP*6.0],hour,20,true)
+			for k in range(8):
+				await _shoot("spin-%s-%d" % [hour_name,k],func() -> Array: return [cam,mid+Vector3.UP*4.0],hour,SPIN_EVERY,true)
+			print("AIRSHIP spun to %.2f rad, drop %.2f m" % [SkyIsletsScript.yaw_of(b),float(ship.event.get("drop",0.0)) if not ship.event.is_empty() else 0.0])
 	_run_until(func() -> bool: return ship.event.is_empty(),3000)
 	print("AIRSHIP phases ",ship.phases)
 
@@ -183,6 +198,39 @@ func _perch_shots(b: Dictionary, hour: float, hour_name: String) -> void:
 		await process_frame
 	await still("perch-ship-"+hour_name)
 	print("AIRSHIP perched: islet moved %.1f m, feet drifted %.3f m, still perched %s" % [(b.home-start_home).length(),(eye._perch_feet-start_feet).length(),not eye.perch.is_empty()])
+	eye._launch(4.0,false)
+	await frames(10)
+	print("AIRSHIP took off: flying %s, perch empty %s" % [eye.flying,eye.perch.is_empty()])
+	eye.set_process(false)
+	ship.set_process(false)
+
+## The pilot set down on the islet just before it is let go, riding the
+## release, the spin and the bob through the wanderer's own perch: stills
+## from its camera, and how far the feet slid in the islet's frame.
+func _ride_release(b: Dictionary, hour: float, hour_name: String) -> void:
+	var glide: RefCounted = eye.glide
+	glide.position = _islets.to_global(b.node.position)+Vector3(1.0,float(b.shape.ground_at(Vector2(1.0,0.0)))+0.4,0.0)
+	glide.heading = ship.event.heading
+	eye._perch(b)
+	eye.set_process(true)
+	ship.set_process(true)
+	ship.eye_override = Vector3.INF
+	for i in range(90):
+		scene.world_clock.set_time(scene.world_clock.day,hour)
+		await process_frame
+	var start_feet: Vector3 = eye._perch_feet
+	var start_yaw: float = SkyIsletsScript.yaw_of(b)
+	var cam_yaw: float = eye._yaw
+	var k := 0
+	var worst := 0.0
+	for i in range(60*20):
+		scene.world_clock.set_time(scene.world_clock.day,hour)
+		await process_frame
+		worst = maxf(worst,(eye._perch_feet-start_feet).length())
+		if i % 150 == 30:
+			await still("ride-%s-%d" % [hour_name,k])
+			k += 1
+	print("AIRSHIP ride: islet turned %.2f rad, camera turned %.2f rad, feet slid at most %.3f m, still perched %s" % [SkyIsletsScript.yaw_of(b)-start_yaw,eye._yaw-cam_yaw,worst,not eye.perch.is_empty()])
 	eye._launch(4.0,false)
 	await frames(10)
 	print("AIRSHIP took off: flying %s, perch empty %s" % [eye.flying,eye.perch.is_empty()])

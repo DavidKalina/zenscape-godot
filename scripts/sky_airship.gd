@@ -78,8 +78,33 @@ const LOWER := 5.0
 const BITE := 1.1
 const TAUT := 2.6
 const TEAR := 2.6
-const SETTLE := 7.0
-const RELEASE := 4.5
+const SETTLE := 4.5
+const RELEASE := 3.4
+## The release (all tunable): under the still ship the islet is let down
+## LOWERED of the LIFT it was raised (the rest it drops on its own). Then
+## the grapples pop free, POP m up and out over POP_TIME s, and the lines
+## spring back up to the winch over REEL s, overshooting a little (REEL_BOUNCE
+## rad/s of wobble). Freed, the islet spins about up by SPIN turns (least,
+## most; either way), easing in over SPIN_IN of the spin and out over the
+## rest (its rate falling as (1-v)^SPIN_FALL), SPIN_TIME s plus SPIN_PER s a
+## turn; at once it drops, kicked down at
+## DROP m/s, and rebounds on a spring (stiffness 1/s², damping 1/s) from
+## where it hung to where it first stood, settling into the islets' own bob;
+## a little dust is shaken off it.
+const LOWERED := 0.5
+const POP := Vector2(0.8,0.6)
+const POP_TIME := 0.35
+const REEL := 1.9
+const REEL_BOUNCE := 7.5
+const SPIN := Vector2(0.25,0.8)
+const SPIN_IN := 0.12
+const SPIN_FALL := 1.4
+const SPIN_TIME := 8.0
+const SPIN_PER := 11.0
+const BOUNCE := Vector2(1.5,0.5)
+const DROP := 0.5
+const FREE_PUFFS := 18
+const FREE_PEBBLES := 12
 ## The tear: how high the islet is lifted (m), how hard it shudders (m)
 ## and how fast (Hz); dust puffs and pebbles let go.
 const LIFT := 2.4
@@ -203,7 +228,9 @@ func clear() -> void:
 ## A new world: what was moved in the last one is forgotten.
 func forget_session() -> void:
 	clear()
-	if islets != null: islets.moved.clear()
+	if islets != null:
+		islets.moved.clear()
+		islets.turned.clear()
 	now = flag_now()
 	wait = _rng.randf_range(FIRST.x,FIRST.y)
 
@@ -282,7 +309,7 @@ func start_on(key: String, eye: Vector3, spawn := SPAWN) -> bool:
 	_make_ship()
 	event = {"key":key,"b":b,"phase":"come","t":0.0,"pos":from,"vel":to_hover.normalized()*CRUISE,
 		"heading":atan2(-to_hover.x,-to_hover.z),"hover":hover,"anchors":[],"islet":home,"ivel":Vector3.ZERO,
-		"rest":home,"dest":dir.dest,"way":way,"away":away,"age":0.0,"lift":0.0,"pitch":0.0,"bank":0.0,
+		"rest":home,"start_y":home.y,"dest":dir.dest,"way":way,"away":away,"age":0.0,"lift":0.0,"pitch":0.0,"bank":0.0,
 		"was_fixed":bool(b.get("fixed",false)),"turn_rate":0.0}
 	b.fixed = true
 	b.towed = true
@@ -414,6 +441,7 @@ func _step(delta: float, eye: Vector3) -> void:
 		"release": _hold(delta)
 		"leave": _leave(delta,eye)
 	if event.is_empty(): return
+	if event.has("free"): _free_step(delta)
 	_carry_islet()
 	_place_ship(delta)
 	_draw_lines()
@@ -444,6 +472,7 @@ func _next_phase() -> void:
 			if t >= SETTLE:
 				_moor()
 				_phase("release")
+				_let_go()
 		"release":
 			if t >= RELEASE:
 				_phase("leave")
@@ -515,7 +544,7 @@ func _tow(delta: float, eye: Vector3) -> void:
 func _settle(delta: float) -> void:
 	_fly(delta,Vector3.ZERO,TOW_ACCEL)
 	var k := smoothstep(0.0,1.0,event.t/SETTLE)
-	event.rel = Vector3((event.rel as Vector3).x*(1.0-delta),(event.rel as Vector3).y-LIFT*delta/SETTLE,(event.rel as Vector3).z*(1.0-delta))
+	event.rel = Vector3((event.rel as Vector3).x*(1.0-delta),(event.rel as Vector3).y-LIFT*LOWERED*delta/SETTLE,(event.rel as Vector3).z*(1.0-delta))
 	_swing(delta,1.0+3.0*k)
 
 ## The islet's spring to its place under the ship: `stiff` firms it up.
@@ -534,14 +563,66 @@ func _swing(delta: float, stiff := 1.0) -> void:
 		left -= dt
 	event.ivel = ivel
 
-## Moored: the islet's new home, kept for the session.
+## Moored: the islet's new home, kept for the session: where it is let go,
+## at the height it first stood, turned as far as its spin will take it.
 func _moor() -> void:
 	var b: Dictionary = event.b
-	var home: Vector3 = event.islet
-	b.home = home
-	islets.moved[_cell_key(b)] = home
+	var home := Vector3((event.islet as Vector3).x,float(event.start_y),(event.islet as Vector3).z)
 	event.rest = home
 	event.moored = true
+	var turns := _rng.randf_range(SPIN.x,SPIN.y)*(1.0 if _rng.randf() < 0.5 else -1.0)
+	event.spin = turns*TAU
+	event.spin_time = SPIN_TIME+SPIN_PER*absf(turns)
+	event.yaw0 = SkyIslets.yaw_of(b)
+	islets.moved[_cell_key(b)] = home
+	islets.turned[_cell_key(b)] = float(event.yaw0)+float(event.spin)
+
+## Let go: the grapples pop free where they bit, a little dust is shaken
+## off, and the islet starts its spin and its drop from where it hung.
+func _let_go() -> void:
+	var b: Dictionary = event.b
+	var node: Node3D = b.node
+	var popped := []
+	for i in range(Build.TETHERS.size()):
+		var anchor: Vector3 = event.anchors[i]
+		var out := Vector3(anchor.x,0.0,anchor.z)
+		out = node.transform.basis*(out.normalized() if out.length() > 0.01 else Vector3.FORWARD)
+		popped.append([node.transform*anchor,out])
+	event.popped = popped
+	event.free = 0.0
+	event.drop = (event.islet as Vector3).y-float(event.start_y)
+	event.drop_vel = -DROP
+	_shed(FREE_PUFFS,FREE_PEBBLES)
+
+## The freed islet's turn `t` s after it is let go: the spin's share eased
+## in over SPIN_IN and out over the rest (a smooth rise of the turn rate
+## and a long fall), 0 to 1.
+func _spin_share(t: float) -> float:
+	var u := clampf(t/float(event.spin_time),0.0,1.0)
+	# The rate: up over SPIN_IN, then down as (1-v)^SPIN_FALL; its integral, scaled
+	# to reach 1 at the end.
+	var a := SPIN_IN
+	var ramp := (u*u/(2.0*a)) if u < a else a*0.5
+	var tail := 0.0
+	if u > a:
+		var v := (u-a)/(1.0-a)
+		tail = (1.0-a)*(1.0-pow(1.0-v,SPIN_FALL+1.0))/(SPIN_FALL+1.0)
+	var whole := a*0.5+(1.0-a)/(SPIN_FALL+1.0)
+	return (ramp+tail)/whole
+
+## The freed islet's drop and rebound, and its spin, on along with time.
+func _free_step(delta: float) -> void:
+	event.free = float(event.free)+delta
+	var y: float = event.drop
+	var v: float = event.drop_vel
+	var left := delta
+	while left > 0.0:
+		var dt := minf(left,1.0/60.0)
+		v += (-BOUNCE.x*y-BOUNCE.y*v)*dt
+		y += v*dt
+		left -= dt
+	event.drop = y
+	event.drop_vel = v
 
 ## Out of view with its islet: both gone for the session.
 func _carried_off() -> void:
@@ -607,8 +688,10 @@ func _carry_islet() -> void:
 		var fall := 1.0-smoothstep(0.0,TEAR,event.t)
 		var w: float = TAU*SHUDDER_RATE*event.t
 		at += Vector3(sin(w),0.6*sin(w*1.37+1.0),cos(w*0.83))*SHUDDER*(0.35+0.65*fall)
-	if event.phase in ["release","leave"]: at = event.rest
 	var node: Node3D = b.node
+	if event.has("free"):
+		at = (event.rest as Vector3)+Vector3.UP*float(event.drop)
+		SkyIslets.turn(b,float(event.yaw0)+float(event.spin)*_spin_share(float(event.free)))
 	var bob := node.position-(b.home as Vector3)
 	b.home = at
 	node.position = at+bob
@@ -634,7 +717,7 @@ func _grapple_at(i: int) -> Vector3:
 	var stowed := hard+Vector3.DOWN*0.05
 	if (event.anchors as Array).is_empty(): return stowed
 	var b: Dictionary = event.b
-	var bite: Vector3 = (b.node as Node3D).position+(event.anchors[i] as Vector3)
+	var bite: Vector3 = (b.node as Node3D).transform*(event.anchors[i] as Vector3)
 	var t: float = event.t
 	match str(event.phase):
 		"lower":
@@ -644,9 +727,16 @@ func _grapple_at(i: int) -> Vector3:
 		"bite":
 			return bite+Vector3.UP*0.25*(1.0-smoothstep(0.0,0.5,t))
 		"release":
-			var u := smoothstep(0.0,1.0,clampf((t-0.6-0.2*i)/(RELEASE-1.4),0.0,1.0))
-			var lift := bite+Vector3.UP*0.6*smoothstep(0.0,0.6,t)
-			return lift.lerp(stowed,u)
+			# Popped free up and out, then sprung back up to the winch.
+			var from: Vector3 = event.popped[i][0]
+			var out: Vector3 = event.popped[i][1]
+			var pop := smoothstep(0.0,1.0,clampf(t/POP_TIME,0.0,1.0))
+			var popped := from+(Vector3.UP*POP.x+out*POP.y)*(1.0-pow(1.0-pop,2.0))
+			var u := clampf((t-POP_TIME-0.08*i)/REEL,0.0,1.0)
+			var reel := 1.0-exp(-4.5*u)*cos(REEL_BOUNCE*u)
+			reel = lerpf(reel,1.0,smoothstep(0.75,1.0,u))
+			var whip := Vector3(cos(t*9.0+i*2.1),0.0,sin(t*8.0+i))*0.35*sin(PI*u)*(1.0-u)
+			return popped.lerp(stowed,reel)+whip
 		"come", "leave":
 			return stowed
 	return bite
@@ -658,7 +748,7 @@ func _slack(i: int) -> float:
 		"lower": return 0.35
 		"bite": return 0.9
 		"taut": return 0.9*(1.0-smoothstep(0.0,1.0,t/(TAUT*0.8)))
-		"release": return 0.9*smoothstep(0.0,0.8,t)
+		"release": return 0.9*(1.0-smoothstep(POP_TIME,POP_TIME+REEL*0.8,t))
 		"come", "leave": return 0.0
 	return 0.0
 
@@ -779,7 +869,7 @@ func _animate(delta: float, eye: Vector3) -> void:
 	match str(event.phase):
 		"lower": drum = 3.0
 		"taut": drum = -4.0
-		"release": drum = -3.0
+		"release": drum = -14.0*(1.0-smoothstep(POP_TIME,POP_TIME+REEL,event.t))
 	_drum.rotate_object_local(Vector3.RIGHT,drum*delta)
 	if _crew.size() >= 2:
 		var near := (event.pos as Vector3).distance_to(eye) < 70.0
@@ -946,6 +1036,14 @@ func _end(cut: bool) -> void:
 	if not b.is_empty() and not event.get("carried",false) and is_instance_valid(b.get("node")):
 		if cut and not event.get("moored",false) and event.phase in ["tear","tow","settle"]:
 			islets.moved[_cell_key(b)] = b.home
+		# Let go mid-spin (the event cut short): it stands where its spin
+		# would have left it.
+		if event.has("free"):
+			var node: Node3D = b.node
+			var bob := node.position-(b.home as Vector3)
+			b.home = event.rest
+			node.position = (b.home as Vector3)+bob
+			SkyIslets.turn(b,float(event.yaw0)+float(event.spin))
 		b.erase("towed")
 		b.fixed = bool(event.get("was_fixed",false))
 	if not event.is_empty(): phases.append("done")
@@ -971,6 +1069,30 @@ func busy() -> bool:
 ## The towed islet's built record, or {}.
 func towed() -> Dictionary:
 	return event.get("b",{}) if not event.is_empty() else {}
+
+## The ship as a solid to the plane (SkyIslands `body`): over its
+## envelope or its gondola, Vector2(its top, its underside) at a point of
+## the islands' frame, the envelope read as a fat ellipsoid round its axis;
+## or null. Only while it is out, whole enough to see.
+func body(point: Vector3) -> Variant:
+	if event.is_empty() or _ship == null or not _ship.visible or float(event.age) < FADE*0.5: return null
+	if event.phase == "leave" and (_body.transparency > 0.5): return null
+	var local := (transform*_ship.transform).affine_inverse()*point
+	if absf(local.z) > Build.ENVELOPE_LENGTH*0.5+0.5 or absf(local.x) > Build.ENVELOPE_RADIUS+2.0: return null
+	var top := -INF
+	var under := INF
+	var r := Build.envelope_radius(local.z-Build.ENVELOPE_AT.z)
+	var x := local.x-Build.ENVELOPE_AT.x
+	if absf(x) < r:
+		var half := sqrt(r*r-x*x)*0.94
+		top = Build.ENVELOPE_AT.y+half
+		under = Build.ENVELOPE_AT.y-half
+	if absf(local.x) < Build.HULL.x and absf(local.z) < Build.HULL.z:
+		top = maxf(top,1.6)
+		under = minf(under,-Build.HULL.y)
+	if top == -INF: return null
+	var lift: float = (transform*_ship.transform).origin.y
+	return Vector2(top+lift,under+lift)
 
 ## Where the ship stands (this node's frame, home), or INF.
 func ship_position() -> Vector3:

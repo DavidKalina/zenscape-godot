@@ -1228,6 +1228,8 @@ func ground(point: Vector3) -> Variant:
 		if h != null: return float(h)+offset.y
 	var islet: Variant = islets.body(point)
 	if islet != null: return (islet as Vector2).x
+	var ship: Variant = airship.body(point) if airship != null else null
+	if ship != null: return (ship as Vector2).x
 	var isle: Variant = isles.ground(point)
 	if isle != null: return isle
 	return peaks.ground(point)
@@ -1246,6 +1248,8 @@ func body(point: Vector3) -> Variant:
 		if b != null: return (b as Vector2)+Vector2(offset.y,offset.y)
 	var islet: Variant = islets.body(point)
 	if islet != null: return islet
+	var ship: Variant = airship.body(point) if airship != null else null
+	if ship != null: return ship
 	var isle: Variant = isles.body(point)
 	if isle != null: return isle
 	return peaks.body(point)
