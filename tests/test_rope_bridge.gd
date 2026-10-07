@@ -217,6 +217,10 @@ func _live_in_tree() -> void:
 	check(is_equal_approx(free.y,0.9),"Jumped clear over them, he is let over")
 	var past: Vector2 = RopeBridge.hold(frame,Vector3(0.5,1.0,0.0),Vector2(-0.3,0.9))
 	check(is_equal_approx(past.y,0.9),"Off its end, no hold")
+	var calm: float = bridge.sim._shudder
+	RopeBridge.flown_by(frame.to_global(Vector3(6.0,6.0,4.0)),Vector3(22.0,0.0,0.0))
+	check(float(bridge.sim._shudder) > calm+0.2,"A plane roaring close past makes it shudder")
+	RopeBridge.flown_by(frame.to_global(Vector3(6.0,60.0,4.0)),Vector3(22.0,0.0,0.0))
 	frame.queue_free()
 	await process_frame
 	check(not record.has("sim"),"Out of the tree, its deck is the static one again")

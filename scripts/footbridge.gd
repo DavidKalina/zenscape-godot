@@ -16,7 +16,9 @@ extends Node3D
 ## drawn here, not by the garden's instance batches: each record is one
 ## faceted mesh in plate metres, a child of the terrain, rebuilt from the
 ## ground under its ends whenever the records or the land change. It changes
-## no height and holds no water: the live water runs under it untouched.
+## no height and holds no water: the live water runs under it untouched. A
+## rope bridge's mesh lives (scripts/rope_bridge.gd, `live`): it sags under
+## the walker, bounces and sways, and its deck (`deck_at`) moves with it.
 ##
 ## The planning half is static (`water`, `level_at`, `plan`) so probes and the
 ## editor read the same answer the ghost shows.
