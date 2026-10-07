@@ -44,6 +44,7 @@ const Falls = preload("res://scripts/cluster_falls.gd")
 const ForestHold = preload("res://scripts/forest_hold.gd")
 const Stack = preload("res://scripts/cluster_stack.gd")
 const RavineCut = preload("res://scripts/ravine_cut.gd")
+const Mountain = preload("res://scripts/cluster_mountain.gd")
 
 ## Rim to rim (m): any two members at least MIN_GAP; stepping stones
 ## STONE_GAP apart (a running jump is about 2.5 to 3 m; checked against
@@ -534,6 +535,10 @@ static func _feature(m: Dictionary, f: Dictionary, placed: Array, centre: Vector
 			var way := Vector2(b.x-a.x,b.z-a.z).normalized()
 			var at := Vector2(b.x,b.z)-way*0.45+Vector2(-way.y,way.x)*0.25
 			m.features.append({"type":"fisher","at":at,"angle":atan2(-way.x,-way.y),"deck_y":a.y})
+		# "trail" is two motifs' word: up a peak (a recipe's `spire`,
+		# scripts/cluster_mountain.gd) or through a wood (scripts/forest_hold.gd).
+		"trail" when m.shape.recipe.has("spire"):
+			Mountain.lay(m,plan)
 		"hut", "treehouse", "trail", "canopy":
 			ForestHold.feature(m,f,placed,rng,plan)
 		"garden", "hives":
@@ -636,6 +641,7 @@ static func validate(plan: Dictionary) -> Array:
 		if absf(b.y-(to.shape.ground_at(Vector2(b.x-off.x,b.z-off.z))+off.y)) > 0.35: problems.append("bridge %s-%s: far end floats" % [br.from,br.to])
 	for m: Dictionary in members:
 		var shape: RefCounted = m.shape
+		problems.append_array(Mountain.problems(m))
 		for o: Dictionary in shape.objects:
 			var p := Vector2(o.x,o.z)
 			if not shape.on_land(p): problems.append("off the rim: %s on %s" % [o.asset,m.name])

@@ -53,6 +53,7 @@ const RockLooks = preload("res://scripts/rock_looks.gd")
 const IsletLake = preload("res://scripts/islet_lake.gd")
 const Woodland = preload("res://scripts/woodland.gd")
 const RavineCut = preload("res://scripts/ravine_cut.gd")
+const MountainSpire = preload("res://scripts/mountain_spire.gd")
 
 ## Kinds and how often each turns up.
 const KINDS := [["meadow",0.22],["grove",0.22],["hills",0.15],["crag",0.11],["spring",0.18],["shore",0.12]]
@@ -306,6 +307,9 @@ var soil: Array[Rect2] = []
 ## shore edges and the half's middle in the whole's frame.
 var grid_shift := Vector2.ZERO
 var cleft := {}
+## A recipe's `spire` (a Dictionary, may be empty): a real peak raised on the
+## islet (scripts/mountain_spire.gd), which draws its own faces; null if none.
+var spire: RefCounted = null
 
 ## An islet laid out by hand from `spec` (see `recipe`), its kind
 ## `spec.kind`, the rest of it seeded by `seed_value` as any islet's is.
@@ -362,6 +366,7 @@ func _shape(seed_value: int, forced: String) -> void:
 	if recipe.has("keel") or recipe.has("deep"):
 		var deeper := float(recipe.keel) if recipe.has("keel") else RockLooks.keel(radius,float(recipe.deep))
 		for i in range(keel.size()): keel[i] *= deeper
+	if recipe.has("spire"): spire = MountainSpire.raise(self)
 	base = -(BASE.x+BASE.y*radius)
 	var deepest := 0.0
 	for k in keel: deepest = maxf(deepest,k)
@@ -1197,6 +1202,8 @@ func top_arrays(palette: Dictionary, shift := Vector3.ZERO) -> Array:
 	uv2.resize(count)
 	var v := 0
 	for f in land:
+		# A spire's faces are its own (MountainSpire `arrays`).
+		if spire != null and spire.drawn[f] != 0: continue
 		var a := _vertex(ids[f*3])
 		var b := _vertex(ids[f*3+1])
 		var c := _vertex(ids[f*3+2])
@@ -1232,6 +1239,12 @@ func top_arrays(palette: Dictionary, shift := Vector3.ZERO) -> Array:
 			uv[v] = Vector2(0.0,1.0)
 			uv2[v] = Vector2(0.5,p.y+shift.y)
 			v += 1
+	if v < count:
+		vertices.resize(v)
+		normals.resize(v)
+		colors.resize(v)
+		uv.resize(v)
+		uv2.resize(v)
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = vertices

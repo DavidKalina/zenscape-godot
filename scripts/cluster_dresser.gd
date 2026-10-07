@@ -27,6 +27,7 @@ const FallsDress = preload("res://scripts/cluster_falls_dress.gd")
 const ForestHold = preload("res://scripts/forest_hold.gd")
 const StackBuilds = preload("res://scripts/stack_builds.gd")
 const RavineBuilds = preload("res://scripts/ravine_builds.gd")
+const Mountain = preload("res://scripts/cluster_mountain.gd")
 
 ## The panes' and lamps' glow, the halos' (deeper, so added over the night
 ## and through the tonemap they still read as lamplight, amber, not
@@ -97,6 +98,7 @@ static func release() -> void:
 	_shared = {}
 	LakeDress.release()
 	FallsDress.release()
+	Mountain.release()
 
 ## The night's glow on every cluster: 0 by day, 1 at full night.
 static func set_night(night: float) -> void:
@@ -138,6 +140,7 @@ static func prepare(member: Dictionary, plan: Dictionary) -> Dictionary:
 		if br.from == member.name: out.bridges.append(Footbridge.build_mesh(br.a,br.b,hash(br.to) % 997))
 	out.forest = ForestHold.prepare(member,plan)
 	out.stairs = StackBuilds.prepare(member,plan)
+	if shape.get("spire") != null: out.mountain = Mountain.prepare(member)
 	return out
 
 ## Stands what stands on `member` under its islet's `node`; what moves or
@@ -265,12 +268,17 @@ static func furnish(node: Node3D, member: Dictionary, plan: Dictionary, made: Di
 				node.add_child(line)
 			"paddies", "moss", "wheel", "plunge":
 				FallsDress.furnish(node,member,f,made.features.get(i),m,halos,live)
+			"star":
+				# A big warm point high up (a mountain hut's window), seen from far.
+				halos.append([f.at,f.get("halo",HALO_WINDOW)])
+				_light(node,f.at,float(f.get("reach",6.0)),float(f.get("energy",1.4)),FADE_BEACON,live)
 			"field":
 				var fence := MeshInstance3D.new()
 				fence.name = "Fence"
 				fence.mesh = made.features.get(i)
 				fence.material_override = m.solid
 				node.add_child(fence)
+	if made.has("mountain"): Mountain.furnish(node,made.mountain)
 	# The bridges, in `prepare`'s order; a rope one lives (scripts/
 	# rope_bridge.gd), its deck the walker reads moving with it.
 	var ours := (plan.bridges as Array).filter(func(br: Dictionary) -> bool: return br.from == member.name)
