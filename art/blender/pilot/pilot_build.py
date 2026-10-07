@@ -1,17 +1,18 @@
 """Build the pilot on foot: one of the sky folk, rigged and animated, for the
 third-person walker (scripts/pilot_figure.gd).
 
-The body is the islanders' own (scripts/islander_figure.gd, the parts from
-scripts/person_kit.gd), part for part and at the pilot's SCALE of them: the
-big head in its leather cap with ear flaps and brass goggles, a nose, the
-jacket with its sheepskin collar and shoulder pads, the scarf wound at the
-neck with two tails behind, mittened hands, canvas trousers belted with
-brass, and pebble boots on short legs. Every part is where person_kit.gd puts
-it and as big, but cut with more facets than the islanders' (flat shaded
-still, faceted solids, but rounder: rings of 12-16 sides with more rings
-between, limbs of 10 rounded off at the joints, balls for the kit's gems), as
-the hero seen up close. Each part rides one bone (weight 1), so nothing
-stretches.
+The body is at the islanders' sizes and places (scripts/islander_figure.gd,
+scripts/person_kit.gd) and at the pilot's SCALE of them, the big head and
+short legs kept, but drawn as his own: soft, rounded and smooth shaded, a
+painted cartoon rather than the folk's faceted solids. A leather helmet over
+the head and down its sides, open round the face with a lumpy sheepskin
+trim; the goggles down over the eyes in a leather mask, modest dark lenses
+in thin dulled brass; the red scarf pulled up over the nose and mouth and
+wound round the chin, its tails streaming behind. What shows of the face is
+deep shadow (the game paints it so: scripts/pilot_paint.gd), so no face
+reads. An ochre bomber wide at the chest tapering to a knitted hem, slate
+trousers, chunky mitts and boots with sheepskin cuffs and tops. About 15k
+triangles. Each part rides one bone (weight 1), so nothing stretches.
 
 The clips, each a seamless loop, in place (the game moves the body), walk and
 run starting on the left boot's touchdown so the game can blend them in step:
@@ -70,7 +71,7 @@ Contract with the game (scripts/pilot_figure.gd), which keeps copies of the
 numbers:
 | Name                   | What                                              |
 |------------------------|---------------------------------------------------|
-| Pilot                  | the skinned mesh; surfaces named after PersonKit.outfit keys |
+| Pilot                  | the skinned mesh; surfaces named after PilotPaint.SURFACES keys (scripts/pilot_paint.gd) |
 | idle, walk, run, skid  | the clips, loops; walk and run start on the left touchdown |
 | WALK_SPEED, WALK_CYCLE | the walk's ground speed (m/s) and its loop (s)    |
 | RUN_SPEED, RUN_CYCLE   | the run's                                         |
@@ -164,11 +165,13 @@ HEEL = -0.05
 BALL = 0.068
 
 # ------------------------------------------------------------------ colours
-# PersonKit's palette; the game swaps in its own materials by these names.
+# The pilot's own palette, not the islanders': the game paints each surface
+# by its material's name (scripts/pilot_paint.gd, shaders/pilot_paint.gdshader,
+# which keep these colours); here they are matte, for Blender's stills.
 PALETTE = {
-    "skin": "e8c39e", "jacket": "4a2a1e", "leather": "5e3522", "strap": "6b3b28",
-    "brass": "d6ad62", "lens": "3b6370", "fleece": "e6d8bb", "trousers": "6b6250",
-    "boots": "3a2a22", "scarf": "d9573a",
+    "pilot_face": "4e2c24", "pilot_cap": "a0643e", "pilot_fleece": "f1e6cf", "pilot_jacket": "a8743f",
+    "pilot_hem": "7a4a2a", "pilot_trousers": "4f6478", "pilot_mitt": "6b4029", "pilot_boots": "4a3226",
+    "pilot_strap": "5c3a26", "pilot_brass": "8a7046", "pilot_lens": "26343f", "pilot_scarf": "cc2f2f",
 }
 
 def srgb_to_linear(c):
@@ -185,11 +188,14 @@ for key, h in PALETTE.items():
     m = bpy.data.materials.new(key)
     rgb = [srgb_to_linear(int(h[i:i + 2], 16) / 255.0) for i in (0, 2, 4)]
     m.diffuse_color = (*rgb, 1.0)
+    m.roughness = 1.0
+    m.metallic = 0.0
+    m.specular_intensity = 0.0
     bsdf = m.node_tree.nodes.get("Principled BSDF") if m.node_tree else None
     if bsdf:
         bsdf.inputs["Base Color"].default_value = (*rgb, 1.0)
-        bsdf.inputs["Roughness"].default_value = 0.3 if key in ("brass", "lens") else 0.8
-        bsdf.inputs["Metallic"].default_value = 1.0 if key == "brass" else 0.0
+        bsdf.inputs["Roughness"].default_value = 1.0
+        bsdf.inputs["Metallic"].default_value = 0.0
     m.use_backface_culling = True
     materials[key] = m
 
@@ -261,34 +267,21 @@ REST = {b.name: b.matrix_local.copy() for b in arm_data.bones}
 PARENT = {name: BONES[name][2] for name in ORDER}
 
 # ================================================================== the parts
-# person_kit.gd's shapes in the game's frame, at the same sizes and places,
-# cut with more facets: its rings with more sides and more rings between
-# (along a smooth curve through its own), its frusta rounder, its
-# six-pointed gems as round solids. A polygon of more sides stands wider
-# between its corners, so each radius is trimmed to keep the part's mean
-# width (it reads as big as it did); a gem's ball, sized the same way, is
-# 0.83 of its points.
-def keep_width(r, was, sides):
-    """A radius drawn at `was` sides, for `sides`, as wide on the mean."""
-    return r * (was * math.sin(math.pi / was)) / (sides * math.sin(math.pi / sides))
+# Soft, rounded solids at person_kit.gd's places and the kit's head size:
+# each the convex hull of dense rings or an ellipsoid (or a tube swept
+# along a curve: the trim, the scarf's turns), every end rounded off (no
+# flat caps), smooth shaded all over; only the goggles' brass rims keep a
+# crisp edge (CRISP).
+CRISP = math.radians(60.0)
 
-GEM_BALL = 0.83
-
-def smooth_rings(rings, between, apex=False):
+def smooth_rings(rings, between):
     """`between` more rings between each pair, on a Catmull-Rom curve
-    through them (the profile rounds out, its ends stay put). `apex`: the
-    last ring is a point on the axis, and the curve meets it square, a
-    round dome."""
+    through them (the profile rounds out, its ends stay put)."""
     pts = [Vector(r) for r in rings]
     out = []
     for i in range(len(pts) - 1):
         p0, p1, p2 = pts[max(i - 1, 0)], pts[i], pts[i + 1]
-        if i + 2 < len(pts):
-            p3 = pts[i + 2]
-        elif apex:
-            p3 = Vector((p1.x, -p1.y, -p1.z))
-        else:
-            p3 = p2
+        p3 = pts[i + 2] if i + 2 < len(pts) else p2
         for k in range(between + 1):
             t = k / (between + 1)
             out.append(0.5 * (2 * p1 + (p2 - p0) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t
@@ -296,55 +289,62 @@ def smooth_rings(rings, between, apex=False):
     out.append(pts[-1])
     return [(v.x, max(v.y, 0.0), max(v.z, 0.0)) for v in out]
 
-def ring_hull(rings, sides, was=None, between=0, apex=False):
-    """FacetMesh.hull: rings (along, radius x, radius y) round local Z;
-    drawn at `was` sides in person_kit.gd."""
-    k = keep_width(1.0, was, sides) if was else 1.0
+CAP_ANGLES = (25, 50, 72, 88)
+
+def capped(rings, depth=0.6, start=True, end=True):
+    """The rings (along, radius x, radius y) closed off at either end by a
+    dome `depth` of the end ring's smaller radius deep, so no flat cap."""
+    out = list(rings)
+    if start:
+        z, a, b = rings[0]
+        d = min(a, b) * depth
+        out = [(z - d * math.sin(math.radians(t)), a * math.cos(math.radians(t)), b * math.cos(math.radians(t)))
+               for t in reversed(CAP_ANGLES)] + out
+    if end:
+        z, a, b = rings[-1]
+        d = min(a, b) * depth
+        out += [(z + d * math.sin(math.radians(t)), a * math.cos(math.radians(t)), b * math.cos(math.radians(t)))
+                for t in CAP_ANGLES]
+    return out
+
+def ring_hull(rings, sides, between=0):
+    """Rings (along, radius x, radius y) round local Z, `between` more on a
+    smooth curve between each pair."""
     pts = []
-    for z, rx, ry in smooth_rings(rings, between, apex):
+    for z, rx, ry in smooth_rings(rings, between):
         for i in range(sides):
             a = math.tau * (i + 0.5) / sides
-            pts.append(Vector((math.cos(a) * rx * k, math.sin(a) * ry * k, z)))
-        pts.append(Vector((0, 0, z)))
+            pts.append(Vector((math.cos(a) * rx, math.sin(a) * ry, z)))
     return pts
 
-def frustum(bottom, top, height, sides, was=None):
-    """GliderFigure._frustum, along Y, centred; drawn at `was` sides."""
-    k = keep_width(1.0, was, sides) if was else 1.0
-    pts = []
-    for i in range(sides):
-        a = math.tau * i / sides
-        pts.append(Vector((math.cos(a) * bottom * k, -height * 0.5, math.sin(a) * bottom * k)))
-        pts.append(Vector((math.cos(a) * top * k, height * 0.5, math.sin(a) * top * k)))
+def blob(rx, ry, rz, sides=24, bands=12, down=None, front=None):
+    """An ellipsoid about the origin (Y up, -Z the front): `down` the lower
+    half's Y radius, `front` the front half's Z radius."""
+    down = ry if down is None else down
+    front = rz if front is None else front
+    pts = [Vector((0, ry, 0)), Vector((0, -down, 0))]
+    for k in range(1, bands):
+        lat = math.pi * (k / bands - 0.5)
+        y = math.sin(lat) * (ry if lat > 0 else down)
+        c = math.cos(lat)
+        for i in range(sides):
+            a = math.tau * (i + 0.5 * (k % 2)) / sides
+            z = math.sin(a) * c
+            pts.append(Vector((math.cos(a) * c * rx, y, z * (front if z < 0 else rz))))
     return pts
 
-def limb(near, far, length, sides, was):
-    """A limb's frustum, unit tall along Y (for bone_between), its ends
-    rounded off past the joints (into the next part) so a bent knee or
-    elbow stays whole; drawn at `was` sides."""
-    near, far = keep_width(near, was, sides), keep_width(far, was, sides)
-    rings = [(-0.5 - 0.42 * near / length, 0.55 * near), (-0.5 - 0.2 * near / length, 0.9 * near),
-             (-0.5, near), (0.5, far), (0.5 + 0.2 * far / length, 0.9 * far), (0.5 + 0.42 * far / length, 0.55 * far)]
+def limb(near, far, length, sides=20):
+    """A limb unit tall along Y (for bone_between), tapering from `near` to
+    `far`, each end a round dome centred on its joint, so a bent knee or
+    elbow stays whole and round."""
     pts = []
+    rings = [(-0.5 - near / length * math.sin(math.radians(t)), near * math.cos(math.radians(t))) for t in (85, 60, 30)]
+    rings += [(-0.5, near), (0.5, far)]
+    rings += [(0.5 + far / length * math.sin(math.radians(t)), far * math.cos(math.radians(t))) for t in (30, 60, 85)]
     for y, r in rings:
         for i in range(sides):
             a = math.tau * i / sides
             pts.append(Vector((math.cos(a) * r, y, math.sin(a) * r)))
-    return pts
-
-def ball(r, sides=12, bands=6, up=1.15, front=1.1):
-    """A round solid in a gem's place: GliderFigure._gem(r) as a ball as
-    wide on the mean, `up` and `front` stretching its top and front halves
-    as the gem's points are."""
-    r *= GEM_BALL
-    pts = [Vector((0, r * up, 0)), Vector((0, -r, 0))]
-    for b in range(1, bands):
-        lat = math.pi * (b / bands - 0.5)
-        y = math.sin(lat) * r * (up if lat > 0 else 1.0)
-        for i in range(sides):
-            a = math.tau * (i + 0.5 * (b % 2)) / sides
-            z = math.sin(a) * math.cos(lat) * r
-            pts.append(Vector((math.cos(a) * math.cos(lat) * r, y, z * (front if z < 0 else 1.0))))
     return pts
 
 def place(at=(0, 0, 0), turn=(0, 0, 0), size=(1, 1, 1)):
@@ -362,27 +362,6 @@ def bone_between(a, b):
     m.translation = (a + b) * 0.5
     return m
 
-parts = []
-
-def part(points, mat, bone, m):
-    bm = bmesh.new()
-    for p in points:
-        q = m @ p
-        bm.verts.new(G(q.x, q.y, q.z))
-    bmesh.ops.convex_hull(bm, input=bm.verts[:])
-    for v in [v for v in bm.verts if not v.link_faces]:
-        bm.verts.remove(v)
-    me = bpy.data.meshes.new(bone)
-    bm.to_mesh(me)
-    bm.free()
-    for poly in me.polygons:
-        poly.use_smooth = False
-    ob = bpy.data.objects.new(bone, me)
-    scene.collection.objects.link(ob)
-    ob.data.materials.append(materials[mat])
-    ob.vertex_groups.new(name=bone).add(range(len(me.vertices)), 1.0, "REPLACE")
-    parts.append(ob)
-
 def aligned(at, y_dir):
     """A frame at `at` whose Y runs along `y_dir`, its X the figure's right."""
     y = y_dir.normalized()
@@ -391,56 +370,309 @@ def aligned(at, y_dir):
     m.translation = at
     return m
 
+def frame(at, normal, up=Vector((0, 1, 0))):
+    """A frame at `at` whose Z runs out along `normal`, its Y up."""
+    z = normal.normalized()
+    x = up.cross(z).normalized()
+    y = z.cross(x)
+    m = Matrix((x, y, z)).transposed().to_4x4()
+    m.translation = at
+    return m
+
+parts = []
+
+def part(points, mat, bone, m, crisp=False):
+    """The convex hull of `points` (the game's frame, build units) through
+    `m`, riding `bone`, smooth shaded; `crisp` keeps its edges sharper than
+    CRISP."""
+    bm = bmesh.new()
+    for p in points:
+        q = m @ p
+        bm.verts.new(G(q.x, q.y, q.z))
+    bmesh.ops.convex_hull(bm, input=bm.verts[:])
+    for v in [v for v in bm.verts if not v.link_faces]:
+        bm.verts.remove(v)
+    bm.normal_update()
+    if crisp:
+        for e in bm.edges:
+            if len(e.link_faces) == 2 and e.link_faces[0].normal.angle(e.link_faces[1].normal, 0.0) > CRISP:
+                e.smooth = False
+    add(bm, mat, bone)
+
+def add(bm, mat, bone):
+    """`bm` as a part riding `bone`, smooth shaded. Its two UV maps carry
+    where each corner stands in rest (x, y; z) and a number of its own (for
+    the paint's noise, which so stays on the body as it moves)."""
+    for f in bm.faces:
+        f.smooth = True
+    me = bpy.data.meshes.new(bone)
+    bm.to_mesh(me)
+    bm.free()
+    own = ((len(parts) * 0.618034) % 1.0)
+    rest_xy, rest_z = me.uv_layers.new(name="rest_xy"), me.uv_layers.new(name="rest_z")
+    for loop in me.loops:
+        co = me.vertices[loop.vertex_index].co
+        rest_xy.data[loop.index].uv = (co.x, co.y)
+        rest_z.data[loop.index].uv = (co.z, own)
+    ob = bpy.data.objects.new(bone, me)
+    scene.collection.objects.link(ob)
+    ob.data.materials.append(materials[mat])
+    ob.vertex_groups.new(name=bone).add(range(len(me.vertices)), 1.0, "REPLACE")
+    parts.append(ob)
+
+def tube(points, mat, bone, m, sides=12, between=3, lumps=0.0):
+    """A rolled band through `points` ((point, radius) pairs), on a smooth
+    curve with `between` more rings between each, its radius swelling and
+    pinching `lumps` of itself between them (sheepskin), each end a dome."""
+    pts = [Vector(p) for p, r in points]
+    radii = [r for p, r in points]
+    path, rad = [], []
+    for i in range(len(pts) - 1):
+        p0, p1, p2 = pts[max(i - 1, 0)], pts[i], pts[i + 1]
+        p3 = pts[min(i + 2, len(pts) - 1)]
+        for k in range(between + 1):
+            t = k / (between + 1)
+            path.append(0.5 * (2 * p1 + (p2 - p0) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t
+                               + (3 * p1 - p0 - 3 * p2 + p3) * t ** 3))
+            rad.append((radii[i] * (1 - t) + radii[i + 1] * t) * (1.0 + lumps * math.cos(math.tau * t)))
+    path.append(pts[-1])
+    rad.append(radii[-1] * (1.0 + lumps))
+    # Domes on the ends.
+    first, last = (path[0] - path[1]).normalized(), (path[-1] - path[-2]).normalized()
+    for a in (35, 65, 85):
+        c = math.cos(math.radians(a))
+        path.insert(0, pts[0] + first * radii[0] * (1.0 + lumps) * math.sin(math.radians(a)))
+        rad.insert(0, radii[0] * (1.0 + lumps) * c)
+    for a in (35, 65, 85):
+        c = math.cos(math.radians(a))
+        path.append(pts[-1] + last * radii[-1] * (1.0 + lumps) * math.sin(math.radians(a)))
+        rad.append(radii[-1] * (1.0 + lumps) * c)
+    bm = bmesh.new()
+    rings = []
+    normal = None
+    for i, p in enumerate(path):
+        along = (path[min(i + 1, len(path) - 1)] - path[max(i - 1, 0)]).normalized()
+        if normal is None:
+            normal = along.orthogonal().normalized()
+        normal = (normal - along * normal.dot(along)).normalized()
+        side = along.cross(normal)
+        ring = []
+        for k in range(sides):
+            a = math.tau * k / sides
+            q = m @ (p + (normal * math.cos(a) + side * math.sin(a)) * rad[i])
+            ring.append(bm.verts.new(G(q.x, q.y, q.z)))
+        rings.append(ring)
+    for r0, r1 in zip(rings, rings[1:]):
+        for k in range(sides):
+            bm.faces.new((r0[k], r0[(k + 1) % sides], r1[(k + 1) % sides], r1[k]))
+    bm.faces.new(rings[0][::-1])
+    bm.faces.new(rings[-1])
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+    bmesh.ops.triangulate(bm, faces=bm.faces[:])
+    add(bm, mat, bone)
+
 UP = (-math.pi * 0.5, 0, 0)
 hips = place((0, REST_HIPS, 0))
-# The hips in canvas, belted, a brass buckle.
-part(ring_hull([(-0.03, 0.06, 0.045), (0.0, 0.072, 0.052), (0.035, 0.07, 0.055)], 16, was=8, between=1), "trousers", "hips", hips @ place(turn=UP))
-part(frustum(0.075, 0.075, 0.014, 16, was=8), "strap", "hips", hips @ place((0, 0.03, 0), size=(1, 1, 0.78)))
-part(ball(0.011, 8, 4), "brass", "hips", hips @ place((0, 0.03, -0.058), size=(1.3, 1, 0.6)))
-# The chest: the jacket tapering to the shoulders, the collar, the scarf.
 torso = hips @ place((0, TORSO_UP, 0))
-part(ring_hull([(0.0, 0.07, 0.055), (0.08, 0.085, 0.062), (0.125, 0.092, 0.058), (0.152, 0.05, 0.04)], 16, was=8, between=1), "jacket", "chest", torso @ place(turn=UP))
-for s in (L, R):
-    part(ball(0.036, 12, 6), "jacket", "chest", torso @ place((SHOULDER[0] * s, SHOULDER[1] + 0.005, 0), size=(1.05, 0.82, 1.0)))
-part(frustum(0.07, 0.056, 0.03, 16, was=10), "fleece", "chest", torso @ place((0, NECK - 0.012, 0.006), size=(1, 1, 0.92)))
-part(ball(0.05, 16, 5), "scarf", "chest", torso @ place((0, NECK, 0), size=(1.3, 0.55, 1.2)))
-part(ball(0.024, 10, 5), "scarf", "chest", torso @ place((0, 0.152, 0.05)))
-# The neck, and the head in its cap.
+
+# ---------------------------------------------------------------- hips
+# The seat of the slate trousers, rounded under the jacket's hem.
+part(ring_hull(capped([(-0.036, 0.05, 0.042), (-0.012, 0.062, 0.05), (0.03, 0.064, 0.051)], 0.7), 24),
+     "pilot_trousers", "hips", hips @ place(turn=UP))
+
+# ---------------------------------------------------------------- chest
+# A bomber jacket: widest across the chest, tapering in to the hem and
+# rounding over into the shoulders (the arms' domes under them: no balls).
+JACKET = [(-0.004, 0.066, 0.053), (0.03, 0.08, 0.059), (0.07, 0.094, 0.066), (0.1, 0.099, 0.065),
+          (0.126, 0.1, 0.06), (0.146, 0.088, 0.05), (0.158, 0.05, 0.034)]
+part(ring_hull(capped(JACKET, 0.5, start=False), 28, between=1), "pilot_jacket", "chest", torso @ place(turn=UP))
+# The hem, a darker knitted band round the waist.
+part(ring_hull([(-0.016, 0.062, 0.049), (-0.01, 0.07, 0.056), (0.0, 0.072, 0.058), (0.01, 0.07, 0.056), (0.016, 0.064, 0.051)], 28),
+     "pilot_hem", "chest", torso @ place((0, -0.002, 0), UP))
+# Toggles down the front.
+for y, z in ((0.032, -0.0605), (0.07, -0.0675)):
+    part(blob(0.0075, 0.0075, 0.004, 12, 6), "pilot_hem", "chest", torso @ place((0, y, z)))
+# The sheepskin collar spread on the shoulders, the scarf wound fat over it,
+# its knot behind.
+part(blob(0.07, 0.02, 0.058, 28, 8), "pilot_fleece", "chest", torso @ place((0, NECK - 0.018, 0.004)))
+part(blob(0.06, 0.034, 0.056, 28, 10), "pilot_scarf", "chest", torso @ place((0, NECK + 0.003, 0.002), (0.12, 0, 0)))
+part(blob(0.027, 0.024, 0.022, 20, 10), "pilot_scarf", "chest", torso @ place((0, 0.15, 0.055)))
+
+# ---------------------------------------------------------------- neck, head
 neck = torso @ place((0, NECK, 0))
-part(frustum(0.026, 0.023, 0.05, 12, was=6), "skin", "neck", neck @ place((0, 0.02, 0)))
+part(ring_hull([(-0.028, 0.026, 0.026), (0.028, 0.023, 0.023)], 16), "pilot_face", "neck", neck @ place((0, 0.02, 0), UP))
 head = neck @ place((0, HEAD_UP, 0), size=(HEAD_SIZE,) * 3)
-mid = Vector((0, 0.055, 0))
-part(ring_hull([(-0.08, 0.03, 0.03), (-0.05, 0.064, 0.064), (0.0, 0.075, 0.075), (0.045, 0.066, 0.068), (0.078, 0.03, 0.034)], 16, was=8, between=1), "skin", "head", head @ place(mid, UP))
-part(ring_hull([(-0.005, 0.081, 0.083), (0.04, 0.073, 0.076), (0.072, 0.045, 0.048), (0.09, 0.0, 0.0)], 16, was=8, between=2, apex=True), "leather", "head", head @ place(mid + Vector((0, 0.012, 0.012)), UP))
+C = Vector((0, 0.055, 0))
+# The head as big as the kit's: a round ball a touch taller than wide.
+HR = (0.075, 0.078, 0.08, 0.075)       # x, up, down, z
+
+part(blob(HR[0], HR[1], HR[3], 28, 14, down=HR[2]), "pilot_face", "head", head @ place(C))
+
+# The helmet: soft leather over the crown and down the sides to the jaw,
+# open in front round the face (cut on a plane tipped down a little), its
+# foot cut level under the jaw and higher behind over the nape.
+CAP_AT = C + Vector((0, 0.0, 0.008))
+CAP = (0.083, 0.102, 0.083, 0.092)     # x, up, z, down
+OPEN = Vector((0, -0.22, -1)).normalized()
+OPEN_AT = 0.049                        # the opening's plane off the head's middle, along OPEN
+FOOT = -0.068                          # the helmet's foot under the head's middle
+
+def keep_cap(p):
+    """Whether a point (off the head's middle) is helmet, not opening or below its foot."""
+    return OPEN.dot(p) < OPEN_AT and p.y > FOOT + 0.15 * max(p.z, 0.0)
+
+def on_cap(origin, way):
+    """Where a ray from `origin` (off the head's middle) along `way` leaves the helmet's shell."""
+    lo, hi = 0.0, 0.3
+    for _ in range(40):
+        mid = (lo + hi) * 0.5
+        q = origin + way * mid - (CAP_AT - C)
+        ry = CAP[1] if q.y > 0 else CAP[3]
+        if (q.x / CAP[0]) ** 2 + (q.y / ry) ** 2 + (q.z / CAP[2]) ** 2 < 1.0:
+            lo = mid
+        else:
+            hi = mid
+    return origin + way * lo
+
+part([p for p in [v + (CAP_AT - C) for v in blob(CAP[0], CAP[1], CAP[2], 28, 14, down=CAP[3])] if keep_cap(p)], "pilot_cap", "head", head @ place(C))
+part(blob(0.012, 0.008, 0.012, 16, 8), "pilot_cap", "head", head @ place(CAP_AT + Vector((0, CAP[1] - 0.002, 0))))
+
+# The opening's edge: round it in the cut's plane, where it meets the shell.
+_u = Vector((1, 0, 0))
+_v = OPEN.cross(_u).normalized()
+if _v.y < 0:
+    _v = -_v
+
+def on_head(origin, way):
+    """Where a ray from `origin` (off the head's middle) along `way` leaves the head."""
+    lo, hi = 0.0, 0.3
+    for _ in range(40):
+        mid = (lo + hi) * 0.5
+        q = origin + way * mid
+        ry = HR[1] if q.y > 0 else HR[2]
+        if (q.x / HR[0]) ** 2 + (q.y / ry) ** 2 + (q.z / HR[3]) ** 2 < 1.0:
+            lo = mid
+        else:
+            hi = mid
+    return origin + way * lo
+
+def face_edge(phi):
+    """The opening's edge in the direction `phi` round it (0 the figure's
+    right, up at pi/2): halfway between where the cut's plane leaves the
+    head and the helmet's shell (the cut face between, which the trim
+    covers), the way out of the face there, and the gap's half width."""
+    w = _u * math.cos(phi) + _v * math.sin(phi)
+    inner, outer = on_head(OPEN * OPEN_AT, w), on_cap(OPEN * OPEN_AT, w)
+    return C + (inner + outer) * 0.5, (w * 0.6 + OPEN).normalized(), (outer - inner).length * 0.5
+
+# The sheepskin trim round the face, lumpy, from one flap over the brow to
+# the other.
+rim = []
+RIM = 13
+for i in range(RIM):
+    phi = math.radians(-62 + 304 * i / (RIM - 1))
+    p, n, gap = face_edge(phi)
+    if p.y - C.y > FOOT + 0.006:
+        rim.append((p + n * 0.002, max(0.0105, gap + 0.004) * (1.0 + 0.3 * max(math.sin(phi), 0.0) ** 2)))
+tube(rim, "pilot_fleece", "head", head, 12, 3, lumps=0.12)
+
+# Goggles down over the eyes: a leather mask round the head at the eyes
+# (the strap, its front the goggles' frame across the face opening), two
+# modest lenses set in it in thin dulled brass, dark and sky-tinted.
+EYES = 0.002                           # the goggles' middle over the head's middle
+band = []
+for i in range(48):
+    a = math.tau * i / 48
+    for off in (-0.0075, 0.0075):
+        d = Vector((math.cos(a), 0, math.sin(a)))
+        o = Vector((0, EYES + off - (CAP_AT.y - C.y), 0))
+        lo, hi = 0.0, 0.2
+        for _ in range(30):
+            mid = (lo + hi) * 0.5
+            v = o + d * mid
+            if (v.x / CAP[0]) ** 2 + (v.y / (CAP[1] if v.y > 0 else CAP[3])) ** 2 + (v.z / CAP[2]) ** 2 < 1.0:
+                lo = mid
+            else:
+                hi = mid
+        band.append(CAP_AT + o + d * (lo + 0.0016))
+part(band, "pilot_strap", "head", head)
 for s in (L, R):
-    part(ball(0.03, 10, 5), "leather", "head", head @ place(mid + Vector((0.078 * s, -0.02, 0.007)), size=(0.45, 1.3, 0.9)))
-part(frustum(0.085, 0.085, 0.016, 16, was=10), "strap", "head", head @ place(mid + Vector((0, 0.012, 0.01))))
-for s in (L, R):
-    turn = (math.pi * 0.5, 0.35 * s, 0)
-    part(frustum(0.025, 0.025, 0.014, 14, was=8), "brass", "head", head @ place(mid + Vector((0.03 * s, 0.012, -0.073)), turn))
-    part(frustum(0.019, 0.019, 0.016, 14, was=8), "lens", "head", head @ place(mid + Vector((0.031 * s, 0.012, -0.076)), turn))
-part(ball(0.011, 8, 4), "skin", "head", head @ place(mid + Vector((0, -0.012, -0.074)), size=(0.8, 1, 1.2)))
-# Arms in the jacket, mittened hands (a thumb forward); legs in canvas,
-# pebble boots with a flat to the sole.
-BOOT = [(-0.055, 0.014, 0.01), (-0.035, 0.028, 0.02), (0.015, 0.027, 0.024), (0.03, 0.02, 0.02)]
+    # On the mask's front, turned out a little to each side.
+    d = Vector((0.33 * s, 0.0, -1.0)).normalized()
+    q = Vector((0, EYES - (CAP_AT.y - C.y), 0))
+    lo, hi = 0.0, 0.2
+    for _ in range(30):
+        mid = (lo + hi) * 0.5
+        v = q + d * mid
+        if (v.x / CAP[0]) ** 2 + (v.y / CAP[1]) ** 2 + (v.z / CAP[2]) ** 2 < 1.0:
+            lo = mid
+        else:
+            hi = mid
+    p = CAP_AT + q + d * (lo + 0.003)
+    f = frame(p, (d + Vector((0, 0.05, 0))).normalized())
+    part(ring_hull([(-0.004, 0.0172, 0.0162), (0.004, 0.0178, 0.0168), (0.0075, 0.0158, 0.0148)], 32), "pilot_brass", "head", head @ f, crisp=True)
+    part(blob(0.0142, 0.0134, 0.0055, 24, 8), "pilot_lens", "head", head @ f @ place((0, 0, 0.0045)))
+
+# The scarf pulled up over the nose and mouth: wound round the lower face
+# and chin, over the helmet's sides and the flaps' feet, close in front, a
+# rolled top edge under the goggles and a turn of it below, slanting as a
+# wound scarf does. What shows of the face between is in deep shadow.
+WRAP_AT = C + Vector((0, -0.062, 0.006))
+WRAP = (0.079, 0.052, 0.079, 0.046)     # x, up, z, down
+WRAP_FRONT = 0.07
+part(blob(WRAP[0], WRAP[1], WRAP[2], 32, 14, down=WRAP[3], front=WRAP_FRONT), "pilot_scarf", "head", head @ place(WRAP_AT))
+
+def round_wrap(y, a):
+    """A point on the wrap at height `y` (a share of its up radius) and
+    `a` round it (0 the front, the figure's right positive)."""
+    c = math.sqrt(max(1.0 - y * y, 0.0))
+    z = math.cos(a) * c
+    return WRAP_AT + Vector((math.sin(a) * WRAP[0] * c, y * WRAP[1], -z * (WRAP_FRONT if z > 0 else WRAP[2])))
+
+for y, slant, r in ((0.86, 0.04, 0.0065), (0.25, 0.22, 0.0055)):
+    turn = []
+    for k in range(11):
+        a = math.radians(-100 + 200 * k / 10)
+        turn.append((round_wrap(y + slant * a / math.radians(100), a), r))
+    tube(turn, "pilot_scarf", "head", head, 10, 2, lumps=0.08)
+
+# ---------------------------------------------------------------- limbs
+# Sleeves tapering to sheepskin cuffs, big round mitts (a thumb forward);
+# slate trousers into chunky boots with rolled sheepskin tops, round toes
+# and a soft flat sole.
+BOOT = [(-0.07, 0.017, 0.014), (-0.058, 0.031, 0.026), (-0.03, 0.034, 0.03), (0.005, 0.031, 0.03), (0.03, 0.027, 0.026), (0.038, 0.016, 0.015)]
+SOLE = 0.006       # the sole's rounding (build units)
+
+def sole(y):
+    """Flattens what is under the sole onto it, softly."""
+    f = -ANKLE_BUILD + SOLE
+    return y if y > f else f - SOLE * math.tanh((f - y) / SOLE)
+
 def boot():
-    return [Vector((p.x, max(p.y * 1.1, -ANKLE_BUILD), p.z)) if p.y < 0 else p
-            for p in ring_hull(BOOT, 12, was=6, between=1)]
+    return [Vector((p.x, sole(p.y), p.z)) for p in ring_hull(capped(BOOT, 0.5), 18)]
+
 for n, s in SIDES.items():
     sh, el, wr = arm_joints(s)
-    part(limb(0.02, 0.017, ARM[0], 10, was=5), "jacket", f"upper_arm.{n}", bone_between(sh, el))
-    part(limb(0.017, 0.015, ARM[1], 10, was=5), "jacket", f"forearm.{n}", bone_between(el, wr))
+    part(limb(0.022, 0.021, ARM[0], 16), "pilot_jacket", f"upper_arm.{n}", bone_between(sh, el))
+    part(limb(0.021, 0.018, ARM[1], 16), "pilot_jacket", f"forearm.{n}", bone_between(el, wr))
     hand = aligned(wr, el - wr)
-    part(ball(0.021, 10, 6, up=1.1, front=1.0), "leather", f"hand.{n}", hand @ place((0, -0.003, 0), size=(0.95, 1.05, 1.0)))
-    part(ball(0.0085, 8, 4), "leather", f"hand.{n}", hand @ place((-0.007 * s, -0.001, -0.013)))
+    part(blob(0.0225, 0.0095, 0.0225, 20, 6), "pilot_fleece", f"forearm.{n}", hand @ place((0, 0.011, 0)))
+    part(blob(0.026, 0.03, 0.025, 18, 9), "pilot_mitt", f"hand.{n}", hand @ place((0, -0.015, -0.002)))
+    part(blob(0.0105, 0.013, 0.0095, 12, 6), "pilot_mitt", f"hand.{n}", hand @ place((-0.02 * s, -0.008, -0.012)))
     hp, kn, an = leg_joints(s)
-    part(limb(0.03, 0.026, LEG[0], 10, was=5), "trousers", f"thigh.{n}", bone_between(hp, kn))
-    part(limb(0.025, 0.021, LEG[1], 10, was=5), "trousers", f"shin.{n}", bone_between(kn, an))
-    part(boot(), "boots", f"foot.{n}", place(an))
-    # The scarf's tails, hinged strips from the knot.
-    at = place(torso_at(KNOT[0] + 0.011 * s, KNOT[1] - 0.004, KNOT[2]))
+    part(limb(0.034, 0.029, LEG[0], 16), "pilot_trousers", f"thigh.{n}", bone_between(hp, kn))
+    part(limb(0.029, 0.026, LEG[1], 16), "pilot_trousers", f"shin.{n}", bone_between(kn, an))
+    part(boot(), "pilot_boots", f"foot.{n}", place(an))
+    part(ring_hull(capped([(-0.022, 0.03, 0.03), (0.022, 0.028, 0.028)], 0.4), 20), "pilot_boots", f"foot.{n}", place(an + Vector((0, 0.022, 0.004)), UP))
+    part(blob(0.0335, 0.0105, 0.0335, 20, 8), "pilot_fleece", f"foot.{n}", place(an + Vector((0, 0.046, 0.004))))
+    # The scarf's tails: broad soft strips, one to a hinged bone, the last
+    # running on past its bone to a longer free end.
+    at = place(torso_at(KNOT[0] + 0.02 * s, KNOT[1] - 0.004, KNOT[2] + 0.004))
     for i in range(3):
-        part(frustum(0.017 - i * 0.002, 0.015 - i * 0.002, TAIL_LENGTH, 8, was=4), "scarf", f"tail.{n}.{i}", at @ place((0, -TAIL_LENGTH * 0.5, 0), size=(1, 1, 0.3)))
+        w = 0.02 - i * 0.0014
+        ln = TAIL_LENGTH * (1.0 if i < 2 else 1.6)
+        part(blob(w, w * 0.5, w * 0.3, 12, 4) + [Vector((0, -ln, 0)) + v for v in blob(w * 0.93, w * 0.5, w * 0.28, 12, 4)],
+             "pilot_scarf", f"tail.{n}.{i}", at @ place((0, 0.003, 0)))
         at = at @ place((0, -TAIL_LENGTH, 0))
 
 # One mesh, skinned to the rig, one material slot per colour.
