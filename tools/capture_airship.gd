@@ -8,6 +8,7 @@ extends SceneTree
 ## Rendered only when asked for (needs a window):
 ##   Godot --windowed --path . --resolution 1280x720 -s res://tools/capture_airship.gd \
 ##     -- --no-title --out=captures/airship/try1 [--hours=noon,night] [--only=tear]
+## With --airship-now --only=now it checks the flag's own start instead.
 var scene: Node3D
 var eye: Node
 var out := "/private/tmp/zs-airship"
@@ -68,6 +69,10 @@ func run() -> void:
 		await frames(1)
 	_islets = islands.islets
 	ship = islands.airship
+	if only == "now":
+		await _flag_now()
+		quit(0)
+		return
 	ship.set_process(false)
 	ship.enabled = false
 	ship.now = false
@@ -122,6 +127,17 @@ func _event(hour_name: String) -> void:
 		await _shoot("release-"+hour_name,func() -> Array: return [ship.event.rest+side*30.0-way*20.0+Vector3.UP*6.0,ship.event.rest+Vector3.UP*7.0],hour,30,true)
 	_run_until(func() -> bool: return ship.event.is_empty(),3000)
 	print("AIRSHIP phases ",ship.phases)
+
+## --only=now (run with --airship-now): the event left to start itself off
+## the flag on the first flight, the glide flying on as it would, a still
+## once the ship has come in.
+func _flag_now() -> void:
+	eye.set_process(true)
+	for i in range(60*45):
+		if ship.busy() and ship.event.phase != "come": break
+		await process_frame
+	print("AIRSHIP flag now: busy %s phases %s" % [ship.busy(),ship.phases])
+	await still("flag-now")
 
 func _wants(label: String) -> bool:
 	return only == "" or label in only.split(",")
