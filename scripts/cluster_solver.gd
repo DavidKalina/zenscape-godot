@@ -56,6 +56,13 @@ const BRIDGE_INSET := 1.3
 const DOCK_LENGTH := Vector2(5.5,7.5)
 const DOCK_WIDTH := 1.5
 const DOCK_CLEAR := 6.0
+## A trail's clump: laid this much past its relation's least gap at most.
+const CLUMP_GAP := 1.6
+## A trail's gaps: drawn to this power of their share of the range, so
+## most are close and a few wide; its first member turns off the way to
+## its head by this much more (rad), so the trail sweeps round, not on.
+const TRAIL_GAPS := 2.2
+const TRAIL_TURN := Vector2(0.5,1.0)
 ## Rim samples a member's outline is compared by, and the ways tried for
 ## each member.
 const RIM_SAMPLES := 32
@@ -91,8 +98,11 @@ static func _solve(motif_name: String, seed_value: int, attempt: int) -> Diction
 		if rng.randf() > float(role.get("chance",1.0)): continue
 		var count: Vector2i = role.get("count",Vector2i(1,1))
 		var n := rng.randi_range(count.x,count.y)
+		# A trail curls one way along its whole length.
+		var curl := (1.0 if rng.randf() < 0.5 else -1.0) if role.has("trail") else 0.0
 		for i in range(n):
 			var m := _member(motif,role,i,n,seed_value,rng)
+			if role.has("trail"): _trail(m,role.trail,i,curl,rng)
 			members.append(m)
 	# 2. Where they stand.
 	var placed: Array = []
@@ -117,7 +127,10 @@ static func _solve(motif_name: String, seed_value: int, attempt: int) -> Diction
 		else:
 			for angle in _ways(motif,rel,m,parent,placed,rng,ring_base):
 				var gap: Vector2 = rel.get("gap",Vector2(6.0,12.0))
+				if m.get("clump",false): gap = Vector2(gap.x,gap.x+CLUMP_GAP)
 				var g := rng.randf_range(gap.x,gap.y)
+				# A trail runs mostly close, now and then a wide break.
+				if m.has("bend"): g = lerpf(gap.x,gap.y,pow(rng.randf(),TRAIL_GAPS))
 				var at := _beyond(parent,m,angle,g)
 				if rel.type == "bridge" and not _bridgeable(parent,m,at,placed): continue
 				if not _clear(m,at,placed,MIN_GAP): continue
@@ -161,7 +174,28 @@ static func _member(motif: Dictionary, role: Dictionary, index: int, count: int,
 	var height: Vector2 = role.get("height",Vector2.ZERO)
 	var spec: Dictionary = (role.get("spec",{}) as Dictionary).duplicate(true)
 	spec.kind = role.kind
+	if role.has("kinds"): spec.kind = _weighted(role.kinds,rng.randf())
 	spec.radius = rng.randf_range(radius_range.x,radius_range.y)
+	var t := float(index)/maxf(count-1,1)
+	var trail: Dictionary = role.get("trail",{})
+	if not trail.is_empty():
+		# Big near its head, dwindling toward its tail, but strongly mixed:
+		# a share of the range either way, and now and then a big one out
+		# along it or a crumb by the head.
+		var size: Vector2 = trail.size
+		var share := lerpf(size.x,size.y,t)+rng.randf_range(-1.0,1.0)*float(trail.mix)
+		if rng.randf() < float(trail.get("odd",0.0)): share = 1.0-share*0.6
+		spec.radius = lerpf(radius_range.x,radius_range.y,clampf(share,0.0,1.0))
+	if role.has("rough"):
+		# Its own ridged rock: one to three peaks, off its middle, each its
+		# own reach and height, so no two read as the same stump.
+		var rough: Vector2 = role.rough
+		var r: float = spec.radius
+		var peaks: Array = []
+		for k in range(rng.randi_range(1,3)):
+			var off := Vector2.from_angle(rng.randf()*TAU)*r*rng.randf_range(0.0,0.4)
+			peaks.append(Vector4(off.x,off.y,r*rng.randf_range(0.35,0.75),r*rng.randf_range(rough.x,rough.y)/(1.0+k*0.6)))
+		spec.peaks = peaks
 	var rock: Dictionary = motif.get("rock",{})
 	var palettes: Array = rock.get("palettes",["basalt"])
 	var tone: Vector2 = rock.get("tone",Vector2.ONE)
@@ -174,9 +208,29 @@ static func _member(motif: Dictionary, role: Dictionary, index: int, count: int,
 	var member_seed: int = int(role.get("seed",hash([seed_value,name]) & 0xffffff))
 	var shape: RefCounted = SkyIslet.author(member_seed,spec)
 	var y := rng.randf_range(height.x,height.y)
+	# A trail steps down toward its tail, each member off the line a little.
+	if not trail.is_empty(): y = lerpf(height.y,height.x,t)+rng.randf_range(-1.0,1.0)*float(trail.lift)
 	if role.has("offset"): y = (role.offset as Vector3).y
 	return {"name":name,"role":role.name,"role_data":role,"index":index,"seed":member_seed,"shape":shape,"y":y,
 		"rim":_rim(shape),"features":[],"offset":Vector3.ZERO}
+
+## A trail's member: how far it bends on from the last (`curl` the way the
+## whole trail curls), or a clump: a stray laid off to the side of the last
+## close in, the trail going on from the one before it (`_parent`).
+static func _trail(m: Dictionary, trail: Dictionary, index: int, curl: float, rng: RandomNumberGenerator) -> void:
+	var bend: Vector2 = trail.bend
+	m.bend = curl*rng.randf_range(bend.x,bend.y)
+	if index == 0: m.bend += curl*rng.randf_range(TRAIL_TURN.x,TRAIL_TURN.y)
+	m.clump = index > 0 and rng.randf() < float(trail.get("clump",0.0))
+
+static func _weighted(pool: Dictionary, roll: float) -> String:
+	var total := 0.0
+	for k: String in pool: total += float(pool[k])
+	roll *= total
+	for k: String in pool:
+		roll -= float(pool[k])
+		if roll <= 0.0: return k
+	return pool.keys()[0]
 
 ## The rim's points, RIM_SAMPLES round (islet frame).
 static func _rim(shape: RefCounted) -> PackedVector2Array:
@@ -189,8 +243,13 @@ static func _rim(shape: RefCounted) -> PackedVector2Array:
 static func _parent(rel: Dictionary, m: Dictionary, placed: Array) -> Dictionary:
 	var to: String = rel.get("to","")
 	if to == "prev":
+		# A clump strays off the last; the trail goes on from the last that
+		# is not a clump; the first starts from `from` (else the anchor).
 		for k in range(placed.size()-1,-1,-1):
-			if placed[k].role == m.role: return placed[k]
+			if placed[k].role == m.role and (m.get("clump",false) or not placed[k].get("clump",false)): return placed[k]
+		if rel.has("from"):
+			for p: Dictionary in placed:
+				if p.role == rel.from: return p
 		return placed[0] if not placed.is_empty() else {}
 	for p: Dictionary in placed:
 		if p.role == to or p.name == to: return p
@@ -215,6 +274,19 @@ static func _ways(motif: Dictionary, rel: Dictionary, m: Dictionary, parent: Dic
 		for k in range(TRIES): ways.append(a+(k/2)*0.15*(1.0 if k%2 == 0 else -1.0))
 		return ways
 	if layout == "chain" and parent.has("from_angle"):
+		var on := float(parent.from_angle)
+		if m.get("clump",false):
+			# Off to one side of the last, never on along the way.
+			var side := 1.0 if rng.randf() < 0.5 else -1.0
+			for k in range(TRIES): ways.append(on+side*(1.0 if k%2 == 0 else -1.0)*rng.randf_range(1.0,2.1))
+			return ways
+		if m.has("bend"):
+			# On along the way the last went, bent by the trail's curl: a
+			# few tries close to it, then wider, then anywhere.
+			for k in range(TRIES):
+				var spread := 0.12+k*0.05
+				ways.append(on+float(m.bend)+rng.randf_range(-spread,spread) if k < TRIES*3/4 else rng.randf()*TAU)
+			return ways
 		for k in range(TRIES): ways.append(float(parent.from_angle)+rng.randf_range(-1.1,1.1)*(1.0+k*0.05))
 		return ways
 	for k in range(TRIES): ways.append(rng.randf()*TAU)

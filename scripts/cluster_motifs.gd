@@ -22,6 +22,15 @@ extends RefCounted
 ##     planting start from; radius (m, a range); height: its middle over
 ##     the anchor's (m, a range);
 ##   count: how many (a range), chance: the odds it is there at all;
+##   kinds: islet kinds drawn per member by weight, instead of `kind`;
+##   rough: each member's own ridged peaks, one to three, their heights
+##     this share of its radius (a range), instead of the spec's;
+##   trail: the members of a chain laid as a curling, dwindling trail:
+##     size (the radius range's share at its head and its tail), mix (that
+##     share either way at random), odd (the odds of one far off its size),
+##     lift (m either way off the height stepping down head to tail), bend
+##     (rad each member turns on from the last, the whole trail one way),
+##     clump (the odds a member strays close off the side of the last);
 ##   spec: anything more of the islet's recipe (SkyIslet `recipe`);
 ##   pond: the odds of a pond whose stream falls off the rim;
 ##   features: what stands on it, each {type, chance, count}: cabin,
@@ -31,8 +40,9 @@ extends RefCounted
 ##     fisher (on the dock's end);
 ##   relation: how it is laid against another member:
 ##     {type: near | bridge | stones | outer, to: a role's name, or
-##     "prev" (the last of its own role, else `to`), gap (m, rim to rim,
-##     a range), stones (how many stepping stones, for "stones")}:
+##     "prev" (the last of its own role, else `from`'s, else the anchor),
+##     gap (m, rim to rim, a range), stones (how many stepping stones, for
+##     "stones")}:
 ##     near, a flight apart; bridge, a rope footbridge's span; stones, a
 ##     run of stepping stones the pilot jumps; outer, out on the side
 ##     facing open sky (a landmark).
@@ -106,9 +116,10 @@ const MOTIFS := {
 				"spec":{"peaks":[Vector4(0.0,0.0,5.5,1.6)],"trees":Vector2i(0,1),"tree_pool":{"juniper":1.0}},
 				"features":[{"type":"lighthouse"}],
 				"relation":{"type":"stones","to":"keeper","stones":Vector2i(2,3)}},
-			{"name":"reef","kind":"crag","radius":Vector2(2.4,6.0),"height":Vector2(-9.0,2.0),"count":Vector2i(3,6),
-				"spec":{"peaks":[Vector4(0.0,0.0,3.0,0.9)],"trees":Vector2i(0,2),"tree_pool":{"juniper":1.0,"tree":0.5},"drifts":Vector2i(0,2)},
-				"relation":{"type":"near","to":"prev","gap":Vector2(2.5,11.0)}},
+			{"name":"reef","kind":"crag","kinds":{"crag":1.0,"hills":0.35},"radius":Vector2(2.0,7.5),"height":Vector2(-13.0,3.0),"count":Vector2i(4,7),
+				"rough":Vector2(0.15,0.75),"trail":{"size":Vector2(0.85,0.1),"mix":0.3,"odd":0.2,"lift":3.0,"bend":Vector2(0.3,0.6),"clump":0.35},
+				"spec":{"trees":Vector2i(0,2),"tree_pool":{"juniper":1.0,"tree":0.5},"drifts":Vector2i(0,2)},
+				"relation":{"type":"near","to":"prev","from":"rock","gap":Vector2(2.5,10.0)}},
 			{"name":"jetty","kind":"shore","radius":Vector2(4.5,5.5),"height":Vector2(-4.0,-2.0),"chance":0.7,
 				"spec":{"trees":Vector2i(0,1),"tree_pool":{"willow":1.0}},
 				"features":[{"type":"dock"},{"type":"fisher","chance":0.8}],
