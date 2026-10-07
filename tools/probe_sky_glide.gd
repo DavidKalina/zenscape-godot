@@ -60,6 +60,7 @@ func run() -> void:
 	eye.place(Vector3(eye.PLATE_REACH-0.6,0.0,0.0))
 	eye.enter()
 	eye._yaw = atan2(-1.0,0.0)+eye._turn()
+	eye.motor.facing = eye._yaw-eye._turn()
 	eye._polar = PI*0.5
 	key(KEY_W,true)
 	for i in range(120):
@@ -241,6 +242,7 @@ func run() -> void:
 		await frames(60)
 		check("then it looks from the eyes on the islet",scene.camera.global_position.distance_to(eye._perch_eye_global()) < 0.3,scene.camera.global_position.distance_to(eye._perch_eye_global()))
 		eye._yaw = atan2(-cos(outward),-sin(outward))
+		eye.motor.facing = eye._yaw-eye._turn()
 		key(KEY_W,true)
 		for i in range(600):
 			await frames(1)
@@ -261,33 +263,38 @@ func run() -> void:
 	check("a slow skim on the plate lands",not eye.flying and eye.active,"flying %s" % eye.flying)
 	check("landed, the feet are on the plate",absf(eye._feet.x) <= eye.PLATE_REACH and absf(eye._feet.z) <= eye.PLATE_REACH,eye._feet)
 	check("landed, the lean is gone",scene.camera_roll == 0.0)
-	check("landed, the camera swoops down into the eyes",eye._swoop > 0.0 and scene.camera.global_position.distance_to(eye._eye_global()) > 0.5,"%.2f s" % eye._swoop)
+	check("landed, the camera swoops down behind the pilot",eye._swoop > 0.0,"%.2f s" % eye._swoop)
 	check("landed, the glider is put away",not eye.glider.visible)
 	await frames(70)
-	check("then it looks from the eyes",scene.camera.global_position.distance_to(eye._eye_global()) < 0.3,scene.camera.global_position.distance_to(eye._eye_global()))
+	check("then it looks on from behind the pilot",absf(scene.camera.global_position.distance_to(eye.figure.global_position)-eye.CAM_DISTANCE) < 1.5,scene.camera.global_position.distance_to(eye.figure.global_position))
 	await frames(120)
 	check("landed, the cloud sea settles back to rest",eye.sky.flight.is_equal_approx(Vector4(0.0,0.0,1.0,0.0)) and eye.sky.vapour < 0.01,eye.sky.flight)
 	check("landed, the clouds hide",not eye.islands.clouds.visible)
 
-	# Glide from anywhere: a tap of Space hops; held, it opens the glide.
+	# Glide from anywhere: a tap of Space jumps; again on the way up, it
+	# opens the glide.
 	await frames(30)
 	eye._feet = eye._clamped(Vector3(2.0,0.0,2.0))
-	eye._pace = Vector2.ZERO
+	eye.motor.reset(eye._feet,eye.motor.facing)
 	await frames(10)
-	var stand: float = eye._eye_y
+	var stand: float = eye.motor.feet.y
 	key(KEY_SPACE,true)
 	await frames(4)
 	key(KEY_SPACE,false)
 	var peak := stand
 	for i in range(60):
 		await frames(1)
-		peak = maxf(peak,eye._eye_y)
-	check("a tap of Space jumps and comes down",peak > stand+0.3 and eye._hop == 0.0 and not eye.flying,"%.2f m up" % (peak-stand))
+		peak = maxf(peak,eye.motor.feet.y)
+	check("a tap of Space jumps and comes down",peak > stand+0.3 and eye.motor.grounded and not eye.flying,"%.2f m up" % (peak-stand))
+	key(KEY_SPACE,true)
+	await frames(3)
+	key(KEY_SPACE,false)
+	await frames(2)
 	key(KEY_SPACE,true)
 	for i in range(40):
 		await frames(1)
 		if eye.flying: break
-	check("held, it opens the glide anywhere",eye.flying)
+	check("again in the air, it opens the glide anywhere",eye.flying)
 	check("opened from a jump, there is no drop",eye.glide.airborne >= eye.glide.FALL_TIME)
 	check("off flat ground, Rise barely lifts it (no airspeed)",eye.glide.climb < 1.5,"%.2f m/s" % eye.glide.climb)
 	key(KEY_SPACE,false)
@@ -343,6 +350,7 @@ func run() -> void:
 	# Off again, and V mid-glide.
 	eye._feet = eye._clamped(Vector3(0.0,0.0,-(eye.PLATE_REACH-0.4)))
 	eye._yaw = 0.0+eye._turn()
+	eye.motor.facing = eye._yaw-eye._turn()
 	key(KEY_W,true)
 	for i in range(120):
 		await frames(1)
@@ -363,6 +371,7 @@ func run() -> void:
 	eye.place(Vector3(eye.PLATE_REACH-0.6,0.0,0.0))
 	eye.enter()
 	eye._yaw = atan2(-1.0,0.0)+eye._turn()
+	eye.motor.facing = eye._yaw-eye._turn()
 	eye._polar = PI*0.5
 	key(KEY_W,true)
 	for i in range(120):

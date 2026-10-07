@@ -74,6 +74,7 @@ func _off_the_edge() -> void:
 	eye.place(Vector3(eye.PLATE_REACH-0.6,0.0,0.0))
 	eye.enter()
 	eye._yaw = atan2(-1.0,0.0)+eye._turn()
+	eye.motor.facing = eye._yaw-eye._turn()
 	eye._polar = PI*0.5
 	eye._launch(1.0)
 	await frames(2)
@@ -94,7 +95,7 @@ func _until_walking(most: float) -> Array:
 
 func _plane() -> void:
 	check(eye.plane and eye.glide is SkyPlane and eye.glider is PlaneFigure,"By default it flies the plane")
-	check("hold to fly" in eye._walk_hint() and not "glide" in eye._walk_hint() and not "flap" in eye.PLANE_HINT and "F to land" in eye.PLANE_HINT,"And the hints name the plane's controls")
+	check("again in the air to fly" in eye._walk_hint() and not "glide" in eye._walk_hint() and not "flap" in eye.PLANE_HINT and "F to land" in eye.PLANE_HINT,"And the hints name the plane's controls")
 	var objects: int = eye.editor.data.objects.size()
 	await _off_the_edge()
 	check(eye.flying,"Off the edge, it flies")

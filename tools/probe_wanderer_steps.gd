@@ -1,12 +1,15 @@
 extends SceneTree
 ## Headless probe of the wanderer's footsteps and bob (scripts/wanderer_eye.gd,
 ## scripts/wanderer_steps.gd) on the real cozy worlds scene: stepped into the
-## figure and walked with W held, footfalls sound about two a second, the eye
-## dips and sways while walking and comes to rest standing still, a run steps
-## faster than a walk, and a bridge's planks and a wade sound as themselves.
+## figure and run with W held, a footfall sounds at each boot's touchdown
+## (scripts/pilot_figure.gd), about six a second, with puffs kicked up
+## behind (scripts/pilot_puffs.gd), none standing still; thrown back with S
+## it skids, scraping once and spraying puffs; and the ground underfoot
+## sounds as itself.
 ##   godot --headless --fixed-fps 60 --path . -s res://tools/probe_wanderer_steps.gd -- --modeless --no-title --no-rain-runoff
 const Steps = preload("res://scripts/wanderer_steps.gd")
 const Preload = preload("res://scripts/wanderer_eye.gd")
+const PilotMotor = preload("res://scripts/pilot_motor.gd")
 
 var scene: Node3D
 var editor: NativeChunkEditor
@@ -26,24 +29,43 @@ func key(code: Key, down: bool) -> void:
 	event.pressed = down
 	Input.parse_input_event(event)
 
-## Holds W (with Shift for a run) for `seconds`; the steps sounded, and the
-## lowest and highest the eye's bob went.
-func walk(seconds: float, run := false) -> Dictionary:
+## Holds `code` for `seconds`; the steps sounded, the most puffs out, and
+## how far the camera's look point trailed the feet (the most, and in the
+## first tenth of a second).
+func hold(code: Key, seconds: float) -> Dictionary:
 	var count0: int = eye.steps.count
-	var low := INF
-	var high := -INF
-	var side := 0.0
-	if run: key(KEY_SHIFT,true)
-	key(KEY_W,true)
+	var puffed := 0
+	var trail := 0.0
+	var early := 0.0
+	key(code,true)
 	for i in range(int(seconds*60.0)):
 		await process_frame
-		if i > 30:
-			low = minf(low,eye._bob_offset.y)
-			high = maxf(high,eye._bob_offset.y)
-			side = maxf(side,Vector2(eye._bob_offset.x,eye._bob_offset.z).length())
-	key(KEY_W,false)
-	if run: key(KEY_SHIFT,false)
-	return {"steps":eye.steps.count-count0,"low":low,"high":high,"side":side}
+		puffed = maxi(puffed,eye.puffs.alive)
+		var off: float = eye.cam_at.distance_to(Vector2(eye.motor.feet.x,eye.motor.feet.z))
+		trail = maxf(trail,off)
+		if i == 6: early = off
+	key(code,false)
+	return {"steps":eye.steps.count-count0,"puffs":puffed,"trail":trail,"early":early}
+
+## A plate point with `length` m of dry, level, open land ahead the way the
+## camera looks (the way W runs), for a run that never meets a slope.
+func open_run(length: float) -> Vector3:
+	var data := editor.data
+	var ahead: Vector2 = PilotMotor.forward(eye._yaw-eye._turn())
+	for ring in range(0,14):
+		for k in range(maxi(1,ring*6)):
+			var at := Vector2.from_angle(TAU*k/maxf(1.0,ring*6.0))*ring*1.5
+			var base: Variant = data.ground_height(at)
+			if base == null: continue
+			var ok := true
+			for d in range(0,int(length)+1):
+				var p := at+ahead*d
+				var h: Variant = data.ground_height(p)
+				if h == null or not data.has_land(p) or absf(float(h)-float(base)) > 0.25*d+0.3 or eye._depth(p) > 0.0 or eye._surface_at(p) == "stone":
+					ok = false
+					break
+			if ok: return Vector3(at.x,float(base),at.y)
+	return Vector3(-6.0,0.0,0.0)
 
 func run() -> void:
 	create_timer(300).timeout.connect(func() -> void: push_error("wanderer steps probe timed out"); quit(2))
@@ -64,22 +86,32 @@ func run() -> void:
 	eye.enter()
 	await process_frame
 	check("stepped into its eyes",eye.active)
-	var walked := await walk(3.0)
-	print("walk: ",walked)
-	check("a walk sounds about two footfalls a second",walked.steps >= 5 and walked.steps <= 8,walked.steps)
+	var start := open_run(14.0)
+	eye.motor.reset(start,eye.motor.facing)
+	eye._stand_camera()
+	for i in range(5): await process_frame
+	var ran := await hold(KEY_W,3.0)
+	print("run: ",ran," from ",start)
+	check("a run sounds a footfall at each touchdown, about six a second",ran.steps >= 14 and ran.steps <= 20,ran.steps)
 	check("on open ground, grass or earth",eye.steps.last_surface in ["grass","earth"],eye.steps.last_surface)
-	check("the eye dips with each step, a few centimetres",walked.low < -0.025 and walked.low > -0.05 and walked.high > -0.01,[walked.low,walked.high])
-	check("and sways a little from side to side",walked.side > 0.008 and walked.side < 0.04,walked.side)
+	check("and kicks up puffs behind",ran.puffs >= 2,ran.puffs)
+	check("the camera lets the pilot drift ahead, slow to follow, then keeps about a metre behind the run",ran.early > 0.05 and ran.trail > 0.6 and ran.trail < eye.CAM_LAG,[ran.early,ran.trail])
 	for i in range(60): await process_frame
-	check("standing still, the bob settles",absf(eye._bob_offset.y) < 0.004,eye._bob_offset)
+	check("and stopping, it eases back in over them",eye.cam_at.distance_to(Vector2(eye.motor.feet.x,eye.motor.feet.z)) < 0.1,eye.cam_at.distance_to(Vector2(eye.motor.feet.x,eye.motor.feet.z)))
 	var still: int = eye.steps.count
 	for i in range(60): await process_frame
 	check("and no footfalls sound",eye.steps.count == still)
-	eye._feet = eye._clamped(Vector3(-6.0,0.0,0.0))
-	var ran := await walk(3.0,true)
-	print("run: ",ran)
-	check("a run steps faster than a walk",ran.steps > walked.steps,[ran.steps,walked.steps])
-	check("and bobs deeper",ran.low < walked.low,[ran.low,walked.low])
+	check("and the puffs are gone",eye.puffs.alive == 0,eye.puffs.alive)
+	# A skid: a run, then thrown back.
+	eye.motor.reset(start,eye.motor.facing)
+	key(KEY_W,true)
+	for i in range(60): await process_frame
+	key(KEY_W,false)
+	var slides0: int = eye.steps.slides
+	var skid := await hold(KEY_S,0.3)
+	print("skid: ",skid)
+	check("thrown back at a run it skids, scraping once",eye.steps.slides == slides0+1,eye.steps.slides-slides0)
+	check("and sprays puffs",skid.puffs >= 4,skid.puffs)
 	eye.leave()
 	# The ground under the feet: its cover, then a steep slope.
 	var data := editor.data
@@ -107,7 +139,8 @@ func run() -> void:
 	for surface: String in Steps.SURFACES:
 		var takes: Array = Steps.takes_for(surface)
 		var ok := takes.size() == Steps.VARIANTS
-		for take: AudioStreamWAV in takes: ok = ok and take.data.size() > 1000 and take.get_length() > 0.1
-		check("%s steps are synthesized" % surface,ok)
+		for take: AudioStreamWAV in takes: ok = ok and take.data.size() > 1000 and take.get_length() > 0.1 and take.get_length() < 0.2
+		for take: AudioStreamWAV in Steps.slides_for(surface): ok = ok and take.get_length() > 0.3
+		check("%s steps are synthesized, short, and its skid" % surface,ok)
 	print("RESULT ","PASS" if failures.is_empty() else "FAIL "+str(failures))
 	quit(0 if failures.is_empty() else 1)

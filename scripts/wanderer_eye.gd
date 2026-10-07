@@ -1,13 +1,21 @@
 extends Node
-## A first test for a human who roams the chunk: an unseen figure stands on
-## the land and the camera can step into its eyes. V with the pointer on the land
-## sets the figure down there (or picks it up and moves it) and looks out
-## through it; V with the pointer off the land steps into it where it stands.
-## In its eyes the mouse is captured: move to look, WASD or the arrows walk,
-## Shift runs. V or Esc steps back out, and the camera glides back to where it
-## was; the figure stays where you walked it. Walking, the eye bobs with each
-## footfall and sways a little from foot to foot, and each footfall sounds
-## (scripts/wanderer_steps.gd): earth, a bridge's planks or a wade.
+## The pilot on foot, seen from behind: V with the pointer on the land sets
+## the pilot down there (or picks them up and moves them) and the camera
+## swoops down behind; V with the pointer off the land steps out where they
+## stand. The mouse is captured: it swings the camera round the pilot, WASD
+## or the arrows run the way the camera looks (no sprint: a run is the pace;
+## a light touch on the stick walks). The pilot
+## (scripts/pilot_figure.gd) moves like a platformer's hero
+## (scripts/pilot_motor.gd): turning to run the way asked, skidding on a
+## hard reversal, jumping as high as Space is held, jumps chaining on
+## landing at a run, the third a flip. The camera eases round behind the
+## run when the mouse is left alone. V or Esc steps back out to building,
+## and the camera glides back to where it was; the pilot is hidden there
+## and kept where you walked them. Each footfall sounds
+## (scripts/wanderer_steps.gd): earth, a bridge's planks or a wade, as the
+## drawn boot touches down; at a run it kicks up puffs of the ground behind,
+## lands in a ring of them and sprays them ahead in a skid (scripts/
+## pilot_puffs.gd).
 ##
 ## Like photo mode (scripts/photo_mode.gd) this runs before the scene each
 ## frame (process_priority) and writes the pose into the scene's own orbit
@@ -18,9 +26,8 @@ extends Node
 ## over the cloud sea towards fresh flat chunks set in the sky
 ## (scripts/sky_islands.gd), with the air streaking past and the wind's sound
 ## (scripts/glide_air.gd). Touching down on land skims along it, and a
-## slow skim lands, back to walking. Space jumps; held past the top of the
-## jump it opens the glide anywhere: a flutter off flat ground, a real glide
-## off a ridge. Over the island the wind lifts it where it blows up a slope
+## slow skim lands, back to walking. Space again in a jump, on the way up
+## or falling from high, opens the flight anywhere. Over the island the wind lifts it where it blows up a slope
 ## (ridge lift) and as a gust front passes, and tree crowns lift it over
 ## them like the ground. A prototype: `--no-glide` keeps the old plate clamp.
 ##
@@ -31,7 +38,7 @@ extends Node
 ## throw a barrel roll. The mouse (or the right stick) pans the camera round
 ## it rather than steering, and the pan holds PLANE_LINGER seconds before
 ## swinging back behind, for the view. In the air the camera chases it from
-## behind (scripts/glide_camera.gd); C swaps to the view from its eyes. It
+## behind (scripts/glide_camera.gd); C swaps to the view from the cockpit. It
 ## can dip under an island's slab. Near the ground a mark shows where it
 ## would touch down.
 ##
@@ -40,7 +47,7 @@ extends Node
 ## its land (scripts/plane_strip.gd: the longest, flattest clear run, into
 ## the wind), and the plane lines up, glides down, flares, touches with a
 ## bounce and a puff, rolls to a stop, and the pilot hops out; the camera
-## swoops into the eyes beside it. Before the touch, Boost, a roll or F
+## swoops down behind them beside it. Before the touch, Boost, a roll or F
 ## again flies on; after, F hops out at once. A slow touch anywhere on the
 ## land without F rolls it to a stop where it came down. The plane stays
 ## parked where it stopped, on its wheels and tail skid, out of the way of
@@ -50,9 +57,10 @@ extends Node
 ## (off the edge, a held jump) brings it along: the parked one goes in a
 ## puff, so there is only ever the one plane, and it is always yours.
 ##
-## The pad (docs/gamepad.md) walks with the left stick (a click of it runs
-## until the stick comes back to rest), looks with the right, jumps (or takes
-## off by the plane) with A, and B or View steps out. Flying keeps the stick,
+## The pad (docs/gamepad.md) runs with the left stick, as fast as it is
+## pushed (a click of it runs faster until the stick comes back to rest),
+## swings the camera with the right, jumps (or takes off by the plane, or
+## again in the air flies) with A, and B or View steps out. Flying keeps the stick,
 ## triggers and shoulders, Y lands and R3 swaps the camera. Every read goes
 ## through scripts/pad.gd's named actions, the keys beside the pad's where
 ## they are polled; the hints name the pad's controls while it is in hand
@@ -62,7 +70,7 @@ extends Node
 ## (scripts/glider_figure.gd): a click (or E, or the pad's X) flaps for lift
 ## of its own, the right mouse button (or the right stick) looks round it,
 ## F comes in to land at the island's middle, and touching down slowly
-## anywhere on the island lands, the camera swooping down into its eyes.
+## anywhere on the island lands, the camera swooping down behind the pilot.
 
 const Plate = preload("res://scripts/plate.gd")
 const Pad = preload("res://scripts/pad.gd")
@@ -71,21 +79,46 @@ const Pad = preload("res://scripts/pad.gd")
 ## eye sits at 0.85 m.
 const FIGURE_HEIGHT := 0.95
 const EYE_HEIGHT := 0.85
-## Walking and running speed, in metres a second, and how fast the pace eases.
-const WALK := 1.6
-const RUN := 4.0
-const EASE_PACE := 0.12
-## The eye rides over bumps rather than snapping to every step.
-const EASE_HEIGHT := 0.08
+const PilotMotor = preload("res://scripts/pilot_motor.gd")
+const PilotFigure = preload("res://scripts/pilot_figure.gd")
+## Jogging and running speed, in metres a second (the motor's).
+const WALK := PilotMotor.WALK
+const RUN := PilotMotor.RUN
 ## Radians of look per pixel of captured mouse movement.
 const LOOK := 0.0025
-## The eye's vertical field of view, in degrees: wider than the orbit's 45 so
-## the land round the figure fills the view as it would for someone standing
-## there. It eases in on stepping in and back on stepping out.
-const FOV := 70.0
+## The camera's vertical field of view on foot, in degrees, eased in on
+## stepping in and back on stepping out.
+const FOV := 60.0
 const EASE_FOV := 0.2
-## The polar range of the look: near straight down to well above the horizon.
-const POLAR := Vector2(0.25,2.8)
+## The camera behind the pilot: how far back, how high over the feet it
+## looks, its tilt at rest (up over the pilot, looking down on them and the
+## ground round them, about 35 degrees: steeper and the horizon leaves the
+## top of the frame), and the range of its tilt (polar from straight up:
+## high over the pilot to low, looking up past them).
+const CAM_DISTANCE := 5.5
+const CAM_HEIGHT := 0.8
+const CAM_POLAR := PI*0.5-0.6
+const POLAR := Vector2(0.45,1.85)
+## How the look point follows the feet up and down, on the ground and,
+## lagging so a jump is not chased, in the air.
+const EASE_CAM_Y := 0.08
+const EASE_CAM_Y_AIR := 0.35
+## Across the ground the look point follows the feet on a spring, CAM_FOLLOW
+## Hz, critically damped: the pilot sets off and drifts ahead, the camera,
+## slow to start, pans after and keeps a little behind a run (about a metre
+## at a full one), and stopping, it eases in over them. Never more than
+## CAM_LAG m behind.
+const CAM_FOLLOW := 1.4
+const CAM_LAG := 1.6
+## Left alone LOOK_REST seconds, the camera swings round behind the run,
+## at FOLLOW (an easing time, at a full run); never while running at it.
+const LOOK_REST := 0.8
+const FOLLOW := 0.9
+## The camera keeps this far over the ground, drawing in to, and eases back
+## out over EASE_CAM_OUT.
+const CAM_CLEAR := 0.35
+const CAM_NEAREST := 0.9
+const EASE_CAM_OUT := 0.4
 ## The walk stays on the plate.
 const PLATE_REACH := Plate.HALF-0.5
 ## How far inside the shore a walker is put back on an outlined island (m).
@@ -122,51 +155,47 @@ const STRIDE := 0.7
 const STILL_PING := 2.0
 const STILL_STRENGTH := 0.15
 const PLACE_STRENGTH := 0.6
-## Footfalls: metres a step at a walk and at a full run. The eye dips BOB m at
-## each footfall (more at a run) and sways SWAY of that from side to side, a
-## sway a stride of two steps; the bob eases in and out with the pace.
-const STEP_WALK := 0.7
-const STEP_RUN := 1.25
-const BOB_WALK := 0.032
-const BOB_RUN := 0.06
-const SWAY := 0.6
-const EASE_BOB := 0.15
-## Where the first footfall comes on setting off, as a share of a step.
-const FIRST_STEP := 0.55
+## A landing kicks up a ring of puffs from this hard (m/s), at its fullest
+## this much harder; a stick pushed at least SET_OFF sets off in a push of
+## them.
+const PUFF_LAND := 5.0
+const PUFF_LAND_FULL := 10.0
+const SET_OFF := 0.7
 ## Ground cover at least GRASSY sounds as grass; bare ground within SHORE m of
 ## water to wade sounds as sand.
 const GRASSY := 0.4
 const SHORE := 0.7
 const WandererSteps = preload("res://scripts/wanderer_steps.gd")
+const PilotPuffs = preload("res://scripts/pilot_puffs.gd")
 const BiomeBlend = preload("res://scripts/biome_blend.gd")
 const Shape = preload("res://scripts/native_formation_shape.gd")
 const Presets = preload("res://scripts/native_landscape_presets.gd")
 const Disturbance = preload("res://scripts/disturbance.gd")
 const Footbridge = preload("res://scripts/footbridge.gd")
-const HINT := "Mouse to look  ·  WASD or arrows to walk  ·  Shift to run  ·  Space to jump, hold to fly  ·  V or Esc to step out"
-const PERCH_HINT := "Mouse to look  ·  WASD or arrows to walk  ·  Walk off the edge or hold Space to fly  ·  V or Esc to step out"
-const GLIDER_HINT := "Mouse to look  ·  WASD or arrows to walk  ·  Shift to run  ·  Space to jump, hold to glide  ·  V or Esc to step out"
-const GLIDER_PERCH_HINT := "Mouse to look  ·  WASD or arrows to walk  ·  Walk off the edge or hold Space to glide  ·  V or Esc to step out"
+const HINT := "Mouse to look  ·  WASD or arrows to run  ·  Space to jump, again in the air to fly  ·  V or Esc to step out"
+const PERCH_HINT := "Mouse to look  ·  WASD or arrows to run  ·  Space to jump  ·  Off the edge or Space again in the air to fly  ·  V or Esc to step out"
+const GLIDER_HINT := "Mouse to look  ·  WASD or arrows to run  ·  Space to jump, again in the air to glide  ·  V or Esc to step out"
+const GLIDER_PERCH_HINT := "Mouse to look  ·  WASD or arrows to run  ·  Space to jump  ·  Off the edge or Space again in the air to glide  ·  V or Esc to step out"
 ## Beside the parked plane, coming in to land, and rolling out.
-const BOARD_HINT := "Space to take off  ·  WASD or arrows to walk  ·  Mouse to look  ·  V or Esc to step out"
+const BOARD_HINT := "Space to take off  ·  WASD or arrows to run  ·  Mouse to look  ·  V or Esc to step out"
 const LANDING_HINT := "Coming in to land  ·  Space, Q E or F to fly on"
 const ROLLING_HINT := "F to hop out"
 const NO_LANDING_HINT := "No island near enough to land on"
 const PLANE_HINT := "A D to bank and turn  ·  W S to pitch  ·  Mouse to look round  ·  Space to boost  ·  Shift to brake  ·  Q E or click to barrel roll  ·  F to land  ·  C for the camera  ·  V or Esc to step out"
 ## The hints' forms for the pad (scripts/pad_prompt.gd `alternates`).
 const PAD_HINTS := {
-	HINT:"{LS} walk  ·  {L3} run  ·  {RS} look  ·  {A} jump, hold to fly  ·  {B} step out",
-	PERCH_HINT:"{LS} walk  ·  {RS} look  ·  Walk off the edge or hold {A} to fly  ·  {B} step out",
-	GLIDER_HINT:"{LS} walk  ·  {L3} run  ·  {RS} look  ·  {A} jump, hold to glide  ·  {B} step out",
-	GLIDER_PERCH_HINT:"{LS} walk  ·  {RS} look  ·  Walk off the edge or hold {A} to glide  ·  {B} step out",
-	BOARD_HINT:"{A} take off  ·  {LS} walk  ·  {RS} look  ·  {B} step out",
+	HINT:"{LS} run  ·  {RS} look  ·  {A} jump, again in the air to fly  ·  {B} step out",
+	PERCH_HINT:"{LS} run  ·  {RS} look  ·  {A} jump  ·  Off the edge or {A} again in the air to fly  ·  {B} step out",
+	GLIDER_HINT:"{LS} run  ·  {RS} look  ·  {A} jump, again in the air to glide  ·  {B} step out",
+	GLIDER_PERCH_HINT:"{LS} run  ·  {RS} look  ·  {A} jump  ·  Off the edge or {A} again in the air to glide  ·  {B} step out",
+	BOARD_HINT:"{A} take off  ·  {LS} run  ·  {RS} look  ·  {B} step out",
 	LANDING_HINT:"Coming in to land  ·  {RT}, {LB} {RB} or {Y} to fly on",
 	ROLLING_HINT:"{Y} to hop out",
 	PLANE_HINT:"{LS} steer  ·  {RS} look round  ·  {RT} boost  ·  {LT} brake  ·  {LB} {RB} barrel roll  ·  {Y} land  ·  {R3} camera  ·  {B} step out",
 	FLY_HINT:"{LS} turn and pitch  ·  {X} flap  ·  {LT} rise  ·  {RT} dive  ·  {Y} land  ·  {RS} look round  ·  {R3} camera  ·  {B} step out",
 }
-## The right stick's look while walking, radians a second at full tilt,
-## side to side and up and down.
+## The right stick's swing of the camera on foot, radians a second at full
+## tilt, round and up and down.
 const STICK_WALK_LOOK := Vector2(2.2,1.4)
 ## The plane's camera pan holds this many seconds after the mouse or the
 ## right stick last turned it, then swings back behind.
@@ -203,7 +232,8 @@ const PlaneLanding = preload("res://scripts/plane_landing.gd")
 ## The chase view's field of view at a cruise; the camera widens it with
 ## speed (GlideCamera `fov`).
 const CHASE_FOV := GlideCamera.FOV
-## Seconds the camera takes to swoop from the chase into the eyes on landing.
+## Seconds the camera takes to swoop from the chase down behind the pilot
+## on landing, or from the build view on stepping in.
 const SWOOP := 0.9
 ## The right stick's free look, radians a second at full tilt.
 const STICK_LOOK := 2.4
@@ -212,11 +242,6 @@ const LAND_SPEED := 10.0
 ## The islands stand hundreds of metres apart; the view reaches FLY_FAR m
 ## while gliding.
 const FLY_FAR := 3000.0
-## The jump: metres a second up, the fall's pull, and how long Space must be
-## held from the jump before the glide opens.
-const JUMP := 3.3
-const GRAVITY := 9.8
-const OPEN_AFTER := 0.2
 ## Ridge lift: where the wind blows up a slope, the air rises by RIDGE_GAIN
 ## times the wind's speed times the slope (sampled RIDGE_STEP m either way
 ## along the wind), up to RIDGE_MAX m/s, fading out by RIDGE_REACH m over the
@@ -243,11 +268,25 @@ var active := false
 ## The figure, parented to the terrain so it turns with the world.
 var figure: Node3D
 ## Terrain-local position of the figure's feet.
+## The feet, in the plate's frame (on an islet, `_perch_feet` in its own).
 var _feet := Vector3.ZERO
-var _eye_y := 0.0
+## The camera's yaw and tilt round the pilot (the scene's orbit's).
 var _yaw := 0.0
-var _polar := PI*0.5
+var _polar := CAM_POLAR
+## The run's velocity across the ground, metres a second (the motor's).
 var _pace := Vector2.ZERO
+var motor := PilotMotor.new()
+## The drawn pilot, on the figure.
+var body: Node3D
+## The look point's height over the frame, the camera's reach, and seconds
+## since the mouse or the stick last swung it.
+var _cam_y := 0.0
+## The look point across the ground (the motor's frame, x and z) and its
+## pace, following the feet.
+var cam_at := Vector2.ZERO
+var _cam_pace := Vector2.ZERO
+var _cam_distance := CAM_DISTANCE
+var _look_rest := 0.0
 var _before := {}
 var _returning := 0.0
 ## The orbit camera's field of view before stepping in.
@@ -255,9 +294,6 @@ var _fov_before := 45.0
 var _hint_time := 0.0
 var _layer: CanvasLayer
 var _hint: Label
-## A click of the left stick runs until the stick comes back to rest.
-var _run_latched := false
-var _dot: Control
 ## Obstacles in the plate plane: [Vector3(x, z, radius)], figure radius
 ## included, and what they were read from (`_obstacle_key`).
 var _obstacles := PackedVector3Array()
@@ -267,12 +303,12 @@ var _depths := PackedFloat32Array()
 ## Metres walked and seconds stood since the last disturbance.
 var _stride := 0.0
 var _still := 0.0
-## Steps walked (the fraction is the way through the current one), the bob's
-## depth now, and the eye's offset from it (terrain-local).
-var _steps := 0.0
-var _bob := 0.0
-var _bob_offset := Vector3.ZERO
 var steps: Node
+## The puffs at the feet, on the figure; the stick's push this frame (0 to
+## 1); skidding last frame.
+var puffs: Node3D
+var _asked := 0.0
+var _skid_was := false
 ## The glide (scripts/sky_glide.gd), the islands it flies between and the air
 ## round it; `flying` while it glides.
 var glide := SkyGlide.new()
@@ -318,17 +354,12 @@ var _flaps_heard := 0
 ## The plane's barrel roll asked for since the last step (-1 left, 1 right).
 var _roll_asked := 0.0
 var _far_before := 500.0
-## The jump: how high the feet are off the ground, how fast they rise, and
-## how long Space has been held since the jump (-1 once let go).
-var _hop := 0.0
-var _hop_rise := 0.0
-var _hop_held := -1.0
+## Space held last frame, for its press.
 var _jump_was := false
 ## Perched on an islet (scripts/sky_islets.gd): its record, empty when not;
-## the feet in its frame and the eye's height over them.
+## the feet in its frame.
 var perch := {}
 var _perch_feet := Vector3.ZERO
-var _perch_eye := EYE_HEIGHT
 ## Tree and rock crowns in the plate plane: (x, z, radius, top), terrain-local.
 var _crowns := PackedVector4Array()
 ## Each island's land middle for F's landing (`_land_middle`), by land.
@@ -376,13 +407,6 @@ func setup(owner_scene: Node3D) -> void:
 	_hint.offset_left = -640.0
 	_hint.offset_right = 640.0
 	_layer.add_child(_hint)
-	# A faint dot where the eye looks.
-	_dot = Control.new()
-	_dot.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_dot.draw.connect(func() -> void:
-		_dot.draw_circle(_dot.size*0.5,2.5,Color(1,1,1,0.55),true,-1.0,true))
-	_layer.add_child(_dot)
 	if glide_enabled:
 		if plane:
 			glide = SkyPlane.new()
@@ -414,13 +438,18 @@ func setup(owner_scene: Node3D) -> void:
 
 # --- The figure -------------------------------------------------------------------
 
-## Where the walker stands and faces, kept as a bare node: it is never drawn
-## (the parked plane shows where you came down), only remembered for the
-## next V and moved through the hop in and out of the plane.
+## Where the pilot stands and faces: drawn (scripts/pilot_figure.gd) while
+## on foot and hopping in and out of the plane, hidden while building and
+## flying, and remembered for the next V.
 func _build_figure() -> void:
 	figure = Node3D.new()
 	figure.name = "Wanderer"
+	figure.visible = false
 	editor.terrain.add_child(figure)
+	body = PilotFigure.new()
+	figure.add_child(body)
+	puffs = PilotPuffs.new()
+	figure.add_child(puffs)
 	if islands != null: islands.skip.append(figure)
 
 func _world_restored(state: Dictionary) -> void:
@@ -477,6 +506,7 @@ func place(local: Vector3) -> void:
 	_read_depths()
 	_feet = _clamped(_free_spot(_clamped(local)))
 	_yaw = scene.yaw
+	motor.reset(_feet,_yaw-_turn())
 	_sync_figure()
 	_disturb(PLACE_STRENGTH)
 
@@ -485,12 +515,15 @@ func place(local: Vector3) -> void:
 func _turn() -> float:
 	return editor.terrain.global_basis.get_euler().y
 
-## The scene's yaw points from the look target to the camera; the figure
-## faces the other way, down its local -Z, in the terrain's frame.
+## The figure where the motor's feet are, facing its way: in the terrain's
+## frame on the plate, an islet's (the world's, never turned) perched.
 func _sync_figure() -> void:
 	if not has_figure(): return
-	figure.position = _feet
-	figure.rotation = Vector3(0.0,_yaw-_turn(),0.0)
+	if perch.is_empty():
+		figure.position = _feet
+		figure.rotation = Vector3(0.0,motor.facing,0.0)
+	elif is_instance_valid(perch.node):
+		figure.global_transform = Transform3D(Basis(Vector3.UP,motor.facing),islands.islets.place(perch)+_perch_feet)
 
 # --- Obstacles and water ------------------------------------------------------------
 
@@ -691,24 +724,26 @@ func enter() -> void:
 		scene._sync_creation_ui()
 	active = true
 	_returning = 0.0
-	_swoop = 0.0
+	# The camera swoops down from the build view to behind the pilot.
+	_swoop = SWOOP
+	_swoop_from = {"target":scene.target,"yaw":scene.yaw,"polar":scene.polar,"distance":scene.distance}
 	_pace = Vector2.ZERO
 	# The mountain ring's skyline is worked out from here, so it stands
 	# whole by the time the glide opens (scripts/sky_ring.gd).
 	if islands != null: islands.warm_ring()
 	_yaw = figure.rotation.y+_turn()
-	_polar = PI*0.5
+	_polar = CAM_POLAR
 	_read_obstacles(true)
 	_read_depths()
 	_feet = _clamped(_free_spot(_clamped(_feet)))
-	_eye_y = _feet.y+EYE_HEIGHT
-	_steps = FIRST_STEP
-	_bob = 0.0
-	_bob_offset = Vector3.ZERO
+	motor.reset(_feet,figure.rotation.y)
+	_stand_camera()
 	scene._orbiting = false
 	scene._panning = false
 	scene._auto_orbit = false
-	figure.visible = false
+	figure.visible = true
+	body.settle()
+	_sync_figure()
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	_layer.visible = true
 	_hint.modulate.a = 1.0
@@ -718,11 +753,10 @@ func enter() -> void:
 
 func leave() -> void:
 	if not active: return
-	var eye := _eye_global()
+	# The orbit takes over where the camera is.
+	var eye := camera.global_position
 	if flying:
 		var at := glide.position
-		# From the chase the orbit takes over where the camera is.
-		eye = camera.global_position
 		# On the ground, mid landing or takeoff, the plane stays parked
 		# where it stands and the walker steps out beside it.
 		var grounded: bool = landing != null and landing.on_ground()
@@ -730,11 +764,12 @@ func leave() -> void:
 		_end_flight()
 		if grounded: _read_obstacles(true)
 		_feet = _clamped(_free_spot(_clamped(editor.terrain.to_local(at))))
-		_eye_y = _feet.y+EYE_HEIGHT
+	_feet = _clamped(_feet)
+	motor.reset(_feet,motor.facing)
 	active = false
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_layer.visible = false
-	figure.visible = true
+	figure.visible = false
 	_sync_figure()
 	if not bool(_before.looking): scene.select_brush(scene.brush)
 	scene._auto_orbit = bool(_before.auto)
@@ -748,8 +783,9 @@ func leave() -> void:
 static func _offset(yaw: float, polar: float) -> Vector3:
 	return Vector3(sin(polar)*sin(yaw),cos(polar),sin(polar)*cos(yaw))
 
+## Where the pilot's eyes are: where a flight from here leaves from.
 func _eye_global() -> Vector3:
-	return editor.terrain.to_global(Vector3(_feet.x,_eye_y,_feet.z)+_bob_offset)
+	return editor.terrain.to_global(_feet+Vector3.UP*EYE_HEIGHT)
 
 # --- Each frame -------------------------------------------------------------------
 
@@ -768,66 +804,170 @@ func _advance_eye(delta: float) -> void:
 	if flying:
 		_advance_flight(delta)
 		return
-	var want := _walk_input(delta)
-	_pace = _pace.lerp(want,_ease(EASE_PACE,delta))
-	# Walk in the terrain's frame: the scene's yaw is in world space, and the
-	# world may be turned under the camera.
-	var heading := _yaw-_turn()
-	var forward := -Vector3(sin(heading),0.0,cos(heading))
-	var right := forward.cross(Vector3.UP)
 	_read_obstacles(false)
 	_read_depths()
-	var move := right*_pace.x-forward*_pace.y
-	# Wading slows the walk as the water deepens.
-	move *= 1.0-WADE_SLOW*clampf(_depth(Vector2(_feet.x,_feet.z))/WADE,0.0,1.0)
-	var was := _feet
-	var walked := _walk(_feet,Vector2(move.x,move.z)*delta)
-	if glide_enabled and _off_plate(Vector2(walked.x,walked.z)):
-		_launch(move.length())
-		return
-	if _advance_jump(delta):
-		_launch(move.length(),false)
-		return
-	if _board_asked:
-		_board_asked = false
+	# Wading slows the run as the water deepens.
+	var top := _top()*(1.0-WADE_SLOW*clampf(_depth(Vector2(_feet.x,_feet.z))/WADE,0.0,1.0))
+	var jump := Input.is_action_pressed(&"walk_jump")
+	var pressed := jump and not _jump_was
+	_jump_was = jump
+	# By the parked plane, Space climbs in rather than jumping.
+	if pressed and motor.grounded and by_plane():
 		_board()
 		return
-	_feet = _clamped(walked)
-	var moved := Vector2(_feet.x-was.x,_feet.z-was.z).length()
+	var was := _feet
+	var want := _want(_yaw-_turn(),delta)
+	_asked = want.length()
+	var events := motor.step(delta,want,top,jump,_ground_at,_walk)
+	if glide_enabled and events.has("fly"):
+		_launch(motor.speed(),false)
+		return
+	if glide_enabled and _off_plate(Vector2(motor.feet.x,motor.feet.z)):
+		_launch(motor.speed())
+		return
+	if not glide_enabled:
+		var held := _clamped(motor.feet)
+		motor.feet = Vector3(held.x,maxf(motor.feet.y,held.y),held.z)
+	_feet = motor.feet
+	_pace = Vector2(motor.velocity.x,motor.velocity.z)
+	var moved := Vector2(_feet.x-was.x,_feet.z-was.z).length() if motor.grounded else 0.0
 	_notice_step(moved,delta)
-	_footfall(moved,delta,right)
-	_eye_y = lerpf(_eye_y,_feet.y+EYE_HEIGHT,_ease(EASE_HEIGHT,delta))
-	# Never below the ground right under the eye.
-	_eye_y = maxf(_eye_y,_feet.y+EYE_HEIGHT*0.6)
-	# The jump rides on top, unsmoothed.
-	_eye_y = maxf(_eye_y,_feet.y+EYE_HEIGHT+_hop) if _hop > 0.0 else _eye_y
-	var reach := 6.0
-	scene.yaw = _yaw
-	scene.polar = _polar
-	scene.target = _eye_global()-_offset(_yaw,_polar)*reach
-	scene.distance = reach
-	_swoop_in(delta)
-	scene._auto_orbit = false
-	scene._orbit_delta = Vector2.ZERO
-	scene._pan_delta = Vector2.ZERO
-	camera.fov = lerpf(camera.fov,FOV,_ease(EASE_FOV,delta))
-	# The figure keeps the eye's heading and place for when you step out.
 	_sync_figure()
+	_motor_events(events)
+	_body_events(body.drive(motor,delta),delta)
+	_frame_walker(delta,editor.terrain.global_transform,_turn(),func(p: Vector3) -> float:
+		var h: Variant = editor.data.ground_height(Vector2(p.x,p.z))
+		return float(h) if h != null else -INF)
+	camera.fov = lerpf(camera.fov,FOV,_ease(EASE_FOV,delta))
 	_hint_time += delta
 	_hint_plane()
 	_hint.modulate.a = clampf(1.0-(_hint_time-4.0)/1.5,0.0,1.0)
 
-## The walk this frame, metres a second in the eye's frame (x right, y
-## back): WASD, the arrows or the left stick, Shift or a stick click to run;
-## the right stick turns the eye as the mouse does.
-func _walk_input(delta: float) -> Vector2:
-	var want := Input.get_vector(&"move_left",&"move_right",&"move_forward",&"move_back")
-	if want == Vector2.ZERO: _run_latched = false
+## The run's ask this frame, the way in the motor's frame (the camera's
+## yaw `heading` in it): WASD, the arrows or the left stick, as far as it is
+## pushed; the right stick swings the camera as the mouse does.
+func _want(heading: float, delta: float) -> Vector2:
+	var stick := Input.get_vector(&"move_left",&"move_right",&"move_forward",&"move_back")
 	var look := Pad.curve(Pad.stick(&"look_left",&"look_right",&"look_up",&"look_down"),1.6)
 	if look != Vector2.ZERO:
 		_yaw -= look.x*STICK_WALK_LOOK.x*delta
 		_polar = clampf(_polar-look.y*STICK_WALK_LOOK.y*delta,POLAR.x,POLAR.y)
-	return want*(RUN if Input.is_action_pressed(&"walk_run") or _run_latched else WALK)
+		_look_rest = 0.0
+	var forward := PilotMotor.forward(heading)
+	var right := Vector2(-forward.y,forward.x)
+	return right*stick.x+forward*-stick.y
+
+## The pace a full stick asks: a run, always (there is no sprint); a light
+## touch on the stick walks.
+func _top() -> float:
+	return RUN
+
+## The ground under a plate point for the motor: a bridge's deck or the
+## terrain, or level with the feet off the map.
+func _ground_at(p: Vector2) -> float:
+	return _ground(Vector3(p.x,motor.feet.y,p.y))
+
+## The motor's jumps and landings: their sounds and puffs (a chained jump
+## pushes off in a ring of them, a landing hard enough comes down in one),
+## and the figure's squash.
+func _motor_events(events: Dictionary) -> void:
+	if events.has("jumped"):
+		steps.step(_surface(),0.3+0.15*float(events.jumped))
+		if int(events.jumped) > 1: puffs.burst(_puff_at(figure.global_position),_surface(),0.15*float(events.jumped))
+	if events.has("landed"):
+		var hard := float(events.landed)
+		steps.step(_surface(),clampf(hard/8.0,0.3,1.0))
+		body.land(hard)
+		if hard > PUFF_LAND: puffs.burst(_puff_at(figure.global_position),_surface(),(hard-PUFF_LAND)/PUFF_LAND_FULL)
+		if hard > 6.0: Pad.pulse(0.2,0.15,0.08)
+
+## What the drawn body did (scripts/pilot_figure.gd `drive`): each boot's
+## touchdown sounds a step and, at a run, kicks a puff back off its heel;
+## setting off hard pushes a few back, and whipping round out of a skid a
+## few more. Skidding, it scrapes once and sprays the ground ahead the while.
+func _body_events(out: Dictionary, delta: float) -> void:
+	var speed: float = motor.speed()
+	var effort := clampf((speed-WALK)/(RUN-WALK),0.0,1.0)
+	if out.has("footfall"):
+		var side := int(out.footfall)
+		steps.step(_surface(),effort,side)
+		puffs.footfall(_puff_at(body.boot(side)),-_world_way(motor.velocity),_surface(),effort)
+	if out.has("set_off") and _asked >= SET_OFF: puffs.burst(_puff_at(figure.global_position),_surface(),0.0,-_world_way(Vector3.ZERO))
+	if out.has("turned"): puffs.burst(_puff_at(figure.global_position),_surface(),0.1,-_world_way(Vector3.ZERO))
+	if motor.skidding:
+		var travel := _world_way(motor.velocity)
+		if not _skid_was: steps.slide(_surface(),speed/RUN)
+		puffs.spray(_puff_at(figure.global_position+travel*0.15),travel,_surface(),clampf(speed/RUN,0.3,1.0),delta)
+	_skid_was = motor.skidding
+
+## A way in the motor's frame (`way`, its x and z) as a flat unit way in the
+## world; none (too short) is the way the figure faces.
+func _world_way(way: Vector3) -> Vector3:
+	var flat := Vector3(way.x,0.0,way.z)
+	if flat.length_squared() < 0.01: flat = Vector3(PilotMotor.forward(motor.facing).x,0.0,PilotMotor.forward(motor.facing).y)
+	if perch.is_empty(): flat = editor.terrain.global_basis*flat
+	flat.y = 0.0
+	return flat.normalized()
+
+## A world point at the feet, lifted to the water's top where it wades, for
+## the puffs (a wade's droplets fly off the water).
+func _puff_at(at: Vector3) -> Vector3:
+	if perch.is_empty(): at.y += _depth(Vector2(_feet.x,_feet.z))
+	return at
+
+## Stood where the motor is: the look point at the pilot, the camera back
+## at its reach.
+func _stand_camera() -> void:
+	_cam_y = motor.feet.y+CAM_HEIGHT
+	cam_at = Vector2(motor.feet.x,motor.feet.z)
+	_cam_pace = Vector2.ZERO
+	_cam_distance = CAM_DISTANCE
+	_look_rest = 0.0
+
+## The camera behind the pilot, written into the scene's orbit: round a
+## point over the feet that follows them across the ground on a spring
+## (CAM_FOLLOW) and up and down (lagging in a jump), swung round behind the
+## run when left alone, and drawn in where the
+## ground behind would hide them. `frame` places the motor's frame in the
+## world, `turn` is its turn about up, and `ground` gives the ground's
+## height in the frame under a frame point (-INF for none).
+func _frame_walker(delta: float, frame: Transform3D, turn: float, ground: Callable) -> void:
+	var goal := motor.feet.y+CAM_HEIGHT
+	_cam_y = lerpf(_cam_y,goal,_ease(EASE_CAM_Y if motor.grounded else EASE_CAM_Y_AIR,delta))
+	# Never so far behind a fall that the pilot drops out of view.
+	_cam_y = clampf(_cam_y,goal-1.2,goal+1.2)
+	_look_rest += delta
+	var speed: float = motor.speed()
+	if speed > 0.3 and _look_rest > LOOK_REST:
+		var behind: float = motor.facing+turn
+		var at_camera := maxf(0.0,-PilotMotor.forward(_yaw).dot(PilotMotor.forward(behind)))
+		_yaw = lerp_angle(_yaw,behind,_ease(FOLLOW,delta)*clampf(speed/RUN,0.0,1.0)*(1.0-at_camera))
+	var feet := Vector2(motor.feet.x,motor.feet.z)
+	var w := TAU*CAM_FOLLOW
+	var left := minf(delta,0.25)
+	while left > 0.0:
+		var dt := minf(left,1.0/60.0)
+		_cam_pace += (w*w*(feet-cam_at)-2.0*w*_cam_pace)*dt
+		cam_at += _cam_pace*dt
+		left -= dt
+	if cam_at.distance_to(feet) > CAM_LAG: cam_at = feet+(cam_at-feet).normalized()*CAM_LAG
+	var pivot := Vector3(cam_at.x,_cam_y,cam_at.y)
+	# Drawn in until the camera is clear of the ground behind.
+	var out := frame.basis.inverse()*_offset(_yaw,_polar)
+	var reach := CAM_DISTANCE
+	while reach > CAM_NEAREST:
+		var at := pivot+out*reach
+		if at.y > float(ground.call(at))+CAM_CLEAR: break
+		reach -= 0.2
+	_cam_distance = reach if reach < _cam_distance else lerpf(_cam_distance,reach,_ease(EASE_CAM_OUT,delta))
+	scene.target = frame*pivot
+	scene.yaw = _yaw
+	scene.polar = _polar
+	scene.distance = _cam_distance
+	_swoop_in(delta)
+	scene._auto_orbit = false
+	scene._orbit_delta = Vector2.ZERO
+	scene._pan_delta = Vector2.ZERO
 
 ## Just landed from the chase: the camera swoops from where it was down
 ## into the eyes.
@@ -855,9 +995,7 @@ func _launch(pace: float, drop := true, start := Vector3.INF, towards := 0.0) ->
 	flying = true
 	_fly_look = Vector2.ZERO
 	_skim_time = 0.0
-	_hop = 0.0
-	_hop_rise = 0.0
-	_hop_held = -1.0
+	if has_figure(): figure.visible = false
 	# The sky stays as it was between glides.
 	if not islands.built(): islands.build()
 	if not perched: _far_before = camera.far
@@ -866,8 +1004,10 @@ func _launch(pace: float, drop := true, start := Vector3.INF, towards := 0.0) ->
 	if start != Vector3.INF:
 		glide.launch(start,towards,pace,drop)
 	else:
-		glide.launch(from,_yaw,pace,drop)
-		glide.pitch = clampf(_polar-PI*0.5,-0.6,0.3)
+		# Off the way the pilot faces, level, a jump lifting the nose.
+		var way: float = motor.facing+(0.0 if perched else _turn())
+		glide.launch(from,way,pace,drop)
+		glide.pitch = clampf(motor.velocity.y*0.06,-0.3,0.3)
 	_flap_asked = false
 	_flaps_heard = 0
 	_roll_asked = 0.0
@@ -1039,33 +1179,6 @@ func _solid(point: Vector3) -> bool:
 	var b := body as Vector2
 	return point.y < b.x+0.3 and point.y > b.y-0.3
 
-## Space (or the pad's A) jumps from the ground; held past OPEN_AFTER it
-## opens the glide. Returns true when it should open.
-func _advance_jump(delta: float) -> bool:
-	var down := Input.is_action_pressed(&"walk_jump")
-	var pressed := down and not _jump_was
-	_jump_was = down
-	# By the parked plane, Space climbs in rather than jumping.
-	if pressed and _hop <= 0.0 and perch.is_empty() and by_plane():
-		_board_asked = true
-		return false
-	if pressed and _hop <= 0.0:
-		_hop_rise = JUMP
-		_hop = 0.001
-		_hop_held = 0.0
-		steps.step(_surface(),0.3)
-	if _hop <= 0.0: return false
-	if _hop_held >= 0.0: _hop_held = _hop_held+delta if down else -1.0
-	if glide_enabled and _hop_held >= OPEN_AFTER: return true
-	_hop_rise -= GRAVITY*delta
-	_hop += _hop_rise*delta
-	if _hop <= 0.0:
-		_hop = 0.0
-		_hop_rise = 0.0
-		_hop_held = -1.0
-		steps.step(_surface(),0.5)
-	return false
-
 ## What the glide stands on: the islands as solids, Vector2(top, underside)
 ## (SkyIslands `body`), and over the plate the crowns of its trees and rocks.
 func _fly_ground(point: Vector3) -> Variant:
@@ -1111,26 +1224,28 @@ func _islet_ground_near(islet: Dictionary, point: Vector3) -> bool:
 	var local: Vector3 = point-islands.islets.place(islet)
 	return local.y-float(islet.shape.ground_at(Vector2(local.x,local.z))) < SkyGlide.SKIM+0.5
 
-## Touched down on an islet: the glide stops and the eye walks its top,
-## still out in the sky. It is pinned so it is never let go while stood on.
+## Touched down on an islet: the glide stops and the pilot runs on over
+## its top, still out in the sky. It is pinned so it is never let go while
+## stood on.
 func _perch(islet: Dictionary) -> void:
-	_swoop = 0.0 if chase.first_person else SWOOP
+	_swoop = SWOOP
 	_swoop_from = {"target":scene.target,"yaw":scene.yaw,"polar":scene.polar,"distance":scene.distance}
 	perch = islet
 	islands.islets.pinned = islet.node
 	var local: Vector3 = glide.position-islands.islets.place(islet)
 	var at := _perch_free(islet.shape,Vector2(local.x,local.z))
 	_perch_feet = Vector3(at.x,islet.shape.ground_at(at),at.y)
-	_perch_eye = maxf(local.y-_perch_feet.y,EYE_HEIGHT*0.6)
 	_yaw = glide.heading
-	_polar = PI*0.5
+	_polar = CAM_POLAR
 	glider.visible = false
 	scene.camera_roll = 0.0
 	# It lands at a run that eases off.
-	_pace = Vector2(0.0,-1.0)*RUN
-	_steps = FIRST_STEP
-	_bob = 0.0
-	_bob_offset = Vector3.ZERO
+	motor.reset(_perch_feet,glide.heading,RUN*0.7)
+	_stand_camera()
+	figure.visible = true
+	body.settle()
+	body.land(4.0)
+	_sync_figure()
 	steps.step("grass",1.0)
 	_hint.text = PERCH_HINT if plane else GLIDER_PERCH_HINT
 	_hint.modulate.a = 1.0
@@ -1153,76 +1268,75 @@ func _perch_free(shape: RefCounted, at: Vector2) -> Vector2:
 	return at
 
 func _perch_eye_global() -> Vector3:
-	return islands.islets.place(perch)+_perch_feet+Vector3.UP*_perch_eye+_bob_offset
+	return islands.islets.place(perch)+_perch_feet+Vector3.UP*EYE_HEIGHT
 
-## Walking an islet's top as the plate's: the same keys and pace, round
-## trunks and the pond; off the rim the glide opens, as off the plate's
-## edge, and Space held opens it from a jump.
+## Running over an islet's top as over the plate: the same keys, jumps and
+## camera, round trunks and the pond; off the rim, or Space again in the
+## air, the flight opens, as off the plate's edge.
 func _advance_perch(delta: float) -> void:
 	var node: Node3D = perch.node
 	if not is_instance_valid(node):
 		_launch(1.0)
 		return
 	var shape: RefCounted = perch.shape
-	var want := _walk_input(delta)
-	_pace = _pace.lerp(want,_ease(EASE_PACE,delta))
-	# Islets are never turned, so the eye's yaw is the islet's frame's too.
-	var forward := -Vector3(sin(_yaw),0.0,cos(_yaw))
-	var right := forward.cross(Vector3.UP)
-	var move := right*_pace.x-forward*_pace.y
-	var was := Vector2(_perch_feet.x,_perch_feet.z)
-	var step := Vector2(move.x,move.z)*delta
-	var next := was+step
-	if not shape.inside(next):
-		_launch(move.length())
+	var jump := Input.is_action_pressed(&"walk_jump")
+	_jump_was = jump
+	# Islets are never turned, so the camera's yaw is the islet's frame's too.
+	var want := _want(_yaw,delta)
+	_asked = want.length()
+	var events := motor.step(delta,want,_top(),jump,
+		func(p: Vector2) -> float: return float(shape.ground_at(p)) if shape.inside(p) else motor.feet.y,
+		func(feet: Vector3, step: Vector2) -> Vector3: return _perch_slide(shape,feet,step))
+	if events.has("fly") or not shape.inside(Vector2(motor.feet.x,motor.feet.z)):
+		_launch(maxf(motor.speed(),1.0),not events.has("fly"))
 		return
-	if _advance_jump(delta):
-		_launch(move.length(),false)
-		return
-	# Round what blocks the way: slide along one axis or stand.
-	if SkyIslets.blocked(shape,next):
-		next = was+Vector2(step.x,0.0)
-		if SkyIslets.blocked(shape,next) or not shape.inside(next): next = was+Vector2(0.0,step.y)
-		if SkyIslets.blocked(shape,next) or not shape.inside(next): next = was
-	_perch_feet = Vector3(next.x,shape.ground_at(next),next.y)
-	var moved := next.distance_to(was)
-	_footfall(moved,delta,right)
-	_perch_eye = lerpf(_perch_eye,EYE_HEIGHT,_ease(EASE_HEIGHT,delta))
-	_perch_eye = maxf(_perch_eye,EYE_HEIGHT+_hop) if _hop > 0.0 else _perch_eye
-	var eye := _perch_eye_global()
-	var reach := 6.0
-	scene.yaw = _yaw
-	scene.polar = _polar
-	scene.target = eye-_offset(_yaw,_polar)*reach
-	scene.distance = reach
-	_swoop_in(delta)
-	scene._auto_orbit = false
-	scene._orbit_delta = Vector2.ZERO
-	scene._pan_delta = Vector2.ZERO
+	_perch_feet = motor.feet
+	_pace = Vector2(motor.velocity.x,motor.velocity.z)
+	_sync_figure()
+	_motor_events(events)
+	_body_events(body.drive(motor,delta),delta)
+	var place: Vector3 = islands.islets.place(perch)
+	_frame_walker(delta,Transform3D(Basis.IDENTITY,place),0.0,func(p: Vector3) -> float:
+		return float(shape.ground_at(Vector2(p.x,p.z))) if shape.inside(Vector2(p.x,p.z)) else -INF)
 	camera.fov = lerpf(camera.fov,FOV,_ease(EASE_FOV,delta))
 	# The sky goes on round it: the islets bob, the clouds drift, the wind
 	# quietens.
+	var eye := _perch_eye_global()
 	sky.advance(delta,eye,islands.in_cloud(eye,scene._motion_time))
-	islands.advance(delta,eye,_yaw,sky.flight.w)
+	islands.advance(delta,eye,motor.facing,sky.flight.w)
 	air.advance(delta,Vector3.ZERO,0.0,0.0)
 	_hint_time += delta
 	_hint.modulate.a = clampf(1.0-(_hint_time-6.0)/1.5,0.0,1.0)
 
-## Down on the plate: back to walking where the glide touched.
+## A step over an islet: round what blocks the way, sliding along one axis
+## or standing. Off its rim is let through, for the flight to open.
+func _perch_slide(shape: RefCounted, feet: Vector3, step: Vector2) -> Vector3:
+	var was := Vector2(feet.x,feet.z)
+	var next := was+step
+	if not shape.inside(next): return Vector3(next.x,feet.y,next.y)
+	if SkyIslets.blocked(shape,next):
+		next = was+Vector2(step.x,0.0)
+		if SkyIslets.blocked(shape,next) or not shape.inside(next): next = was+Vector2(0.0,step.y)
+		if SkyIslets.blocked(shape,next) or not shape.inside(next): next = was
+	return Vector3(next.x,feet.y,next.y)
+
+## Down on the plate: back on foot where the glide touched.
 func _land() -> void:
 	var at := glide.position
-	_swoop = 0.0 if chase.first_person else SWOOP
+	_swoop = SWOOP
 	_swoop_from = {"target":scene.target,"yaw":scene.yaw,"polar":scene.polar,"distance":scene.distance}
 	_end_flight()
 	_yaw = glide.heading
-	_polar = PI*0.5
+	_polar = CAM_POLAR
 	_read_obstacles(true)
 	_read_depths()
 	_feet = _clamped(_free_spot(_clamped(editor.terrain.to_local(at))))
-	_eye_y = maxf(editor.terrain.to_local(at).y,_feet.y+EYE_HEIGHT*0.6)
 	# It lands at a run that eases off.
-	_pace = Vector2(0.0,-1.0)*RUN
-	_steps = FIRST_STEP
+	motor.reset(_feet,glide.heading-_turn(),RUN*0.7)
+	_stand_camera()
+	figure.visible = true
+	body.settle()
+	body.land(4.0)
 	steps.step(_surface(),1.0)
 	_disturb(PLACE_STRENGTH)
 	_sync_figure()
@@ -1237,20 +1351,6 @@ func _notice_step(moved: float, delta: float) -> void:
 	elif _still >= STILL_PING:
 		_still = 0.0
 		_disturb(STILL_STRENGTH)
-
-## The walk's rhythm: `moved` metres this frame count off steps, longer at a
-## run; each whole one sounds a footfall. The eye sits lowest at a footfall
-## and highest between, swaying toward each foot in turn along `right`.
-func _footfall(moved: float, delta: float, right: Vector3) -> void:
-	var speed := moved/maxf(delta,0.0001)
-	var effort := clampf((speed-WALK)/(RUN-WALK),0.0,1.0)
-	var before := _steps
-	_steps += moved/lerpf(STEP_WALK,STEP_RUN,effort)
-	if floorf(_steps) > floorf(before): steps.step(_surface(),effort)
-	var depth := lerpf(BOB_WALK,BOB_RUN,effort)*clampf(speed/WALK,0.0,1.0)
-	_bob = lerpf(_bob,depth,_ease(EASE_BOB,delta))
-	var phase := _steps-floorf(_steps)
-	_bob_offset = Vector3.UP*(-_bob*(0.5+0.5*cos(TAU*phase)))+right*(_bob*SWAY*sin(PI*_steps))
 
 ## What the feet are on (scripts/wanderer_steps.gd SURFACES), read as the
 ## terrain shades its faces (NativeTerrainData `rebuild_mesh`): a bridge's
@@ -1513,7 +1613,7 @@ func _advance_sequence(delta: float) -> void:
 	glide.engine = seq.engine
 	if seq.touched: _touchdown()
 	if not _taking_off and seq.phase == PlaneLanding.HOP_OUT and _hop_to == Vector3.INF: _begin_hop_out()
-	if seq.phase in [PlaneLanding.HOP_OUT,PlaneLanding.BOARD]: _hop_figure(seq.hop)
+	if seq.phase in [PlaneLanding.HOP_OUT,PlaneLanding.BOARD]: _hop_figure(seq.hop,delta)
 	elif has_figure(): figure.visible = false
 	if not _taking_off and seq.phase == PlaneLanding.TOUCHDOWN: _hint.text = ROLLING_HINT
 	sky.advance(delta,glide.position,islands.in_cloud(glide.position,scene._motion_time))
@@ -1618,8 +1718,9 @@ func _begin_hop_out() -> void:
 	_hop_to = _clamped(_free_spot(_clamped(spot)))
 	_hop_from = Vector3(local.x,local.y+0.1,local.z)
 
-## The walker mid-hop: `k` 0 in the cockpit, 1 on the ground beside it.
-func _hop_figure(k: float) -> void:
+## The pilot mid-hop: `k` 0 in the cockpit, 1 on the ground beside it,
+## rising and falling through the jump's pose.
+func _hop_figure(k: float, delta: float) -> void:
 	if not has_figure() or _hop_to == Vector3.INF: return
 	figure.visible = k > 0.02 and k < 0.999
 	var at := _hop_from.lerp(_hop_to,smoothstep(0.0,1.0,k))
@@ -1627,25 +1728,26 @@ func _hop_figure(k: float) -> void:
 	figure.position = at
 	var way := _hop_to-_hop_from
 	figure.rotation = Vector3(0.0,atan2(-way.x,-way.z),0.0)
+	body.hop(cos(PI*k),delta)
 
-## Down beside the parked plane: walking, facing it, the camera swooping
-## from the chase into the eyes.
+## Down beside the parked plane: on foot, facing it, the camera swooping
+## from the chase down behind the pilot.
 func _land_beside_plane() -> void:
 	if not has_parked(): _park_here()
 	if _hop_to == Vector3.INF: _begin_hop_out()
-	_swoop = 0.0 if chase.first_person else SWOOP
+	_swoop = SWOOP
 	_swoop_from = {"target":scene.target,"yaw":scene.yaw,"polar":scene.polar,"distance":scene.distance}
 	_end_flight()
 	_feet = _hop_to
 	var to := Vector2(_parked_at.x-_feet.x,_parked_at.y-_feet.z)
 	_yaw = atan2(-to.x,-to.y)+_turn()
-	_polar = PI*0.5-0.18
-	_eye_y = _feet.y+EYE_HEIGHT
+	_polar = CAM_POLAR
 	_pace = Vector2.ZERO
-	_steps = FIRST_STEP
-	_bob = 0.0
-	_bob_offset = Vector3.ZERO
-	figure.visible = false
+	motor.reset(_feet,_yaw-_turn())
+	_stand_camera()
+	figure.visible = true
+	body.settle()
+	body.land(3.0)
 	steps.step(_surface(),0.6)
 	_disturb(PLACE_STRENGTH)
 	_sync_figure()
@@ -1733,6 +1835,7 @@ func handle(event: InputEvent) -> bool:
 		if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not perch.is_empty():
 			_yaw -= event.relative.x*LOOK
 			_polar = clampf(_polar-event.relative.y*LOOK,POLAR.x,POLAR.y)
+			_look_rest = 0.0
 		elif Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and flying and (chase.free_held or plane):
 			chase.turn(Vector2(-event.relative.x,-event.relative.y)*LOOK)
 		elif Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and flying:
@@ -1740,6 +1843,7 @@ func handle(event: InputEvent) -> bool:
 		elif Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 			_yaw -= event.relative.x*LOOK
 			_polar = clampf(_polar-event.relative.y*LOOK,POLAR.x,POLAR.y)
+			_look_rest = 0.0
 		return true
 	if event is InputEventMouseButton:
 		# A click takes the mouse back if the window let it go.
@@ -1778,12 +1882,11 @@ func handle(event: InputEvent) -> bool:
 
 ## The pad's presses (its sticks and triggers are polled): B or View steps
 ## out, Y lands (or flies on, or hops out, as F), R3 swaps the camera, the
-## shoulders roll the plane, X flaps the glider, and a click of the left
-## stick runs. Menu is the scene's (scripts/pad_input.gd).
+## shoulders roll the plane and X flaps the glider. Menu is the scene's
+## (scripts/pad_input.gd).
 func _pad_event(event: InputEvent) -> void:
 	var airborne := flying and perch.is_empty()
 	if Pad.pressed(event,&"eye_leave"): leave()
-	elif Pad.pressed(event,&"walk_run_toggle") and not flying: _run_latched = true
 	elif airborne and Pad.pressed(event,&"fly_land"):
 		if plane: _land_key()
 		else: glide.approach = not glide.approach

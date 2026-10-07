@@ -48,9 +48,6 @@ const ACTIONS := {
 	"look_right":[["axis",JOY_AXIS_RIGHT_X,1.0]],
 	"look_up":[["axis",JOY_AXIS_RIGHT_Y,-1.0]],
 	"look_down":[["axis",JOY_AXIS_RIGHT_Y,1.0]],
-	"walk_run":[["key",KEY_SHIFT]],
-	# A click of the left stick runs until it comes back to rest.
-	"walk_run_toggle":[["button",JOY_BUTTON_LEFT_STICK]],
 	"walk_jump":[["key",KEY_SPACE],["button",JOY_BUTTON_A]],
 	"eye_leave":[["button",JOY_BUTTON_B],["button",JOY_BUTTON_BACK]],
 	"fly_boost":[["key",KEY_SPACE],["button",JOY_BUTTON_A],["axis",JOY_AXIS_TRIGGER_RIGHT,1.0]],

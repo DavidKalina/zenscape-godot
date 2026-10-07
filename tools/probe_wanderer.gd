@@ -56,6 +56,7 @@ func obstacle_at(at: Vector2) -> Variant:
 func face(at: Vector2, aside := 0.0) -> void:
 	var to := at-feet()
 	eye._yaw = atan2(-to.x,-to.y)+aside+eye._turn()
+	eye.motor.facing = eye._yaw-eye._turn()
 
 ## Holds W for `seconds`; returns the closest the feet came to `centre`.
 func walk(seconds: float, centre: Vector2) -> float:
@@ -237,6 +238,7 @@ func run() -> void:
 	eye.glide_enabled = false
 	eye._feet = eye._clamped(Vector3(eye.PLATE_REACH-0.3,0.0,0.0))
 	eye._yaw = atan2(-1.0,0.0)+eye._turn()
+	eye.motor.facing = eye._yaw-eye._turn()
 	await walk(1.5,Vector2.ZERO)
 	check("the plate clamp holds",absf(feet().x) <= eye.PLATE_REACH+0.001 and absf(feet().y) <= eye.PLATE_REACH+0.001,feet())
 

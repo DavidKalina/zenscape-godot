@@ -17,6 +17,15 @@ extends Node3D
 ##         bobbing up on every step, waddling foot to foot with the hips
 ##         turning and the arms swinging stiffly against the legs. Moved at
 ##         WALK_SPEED the boots stay planted on the ground.
+## Driven from outside (the pilot on foot, scripts/pilot_figure.gd):
+##   run   the walk sped up to a run as `pace` goes 0 to 1: longer strides,
+##         knees and arms pumping, leaning into it; the steps kept to
+##         `speed` (units a second it is moved at), so the boots plant;
+##   air   in a jump: rising (`rise` 1), a fist thrown up and a knee tucked;
+##         falling (`rise` -1), arms out and the legs reaching for the
+##         ground; `knees_up` pulls both knees up, for a flip;
+##   skid  leaning back on its heels, arms thrown forward.
+## `land` squashes it as hard as it came down.
 ## The scarf's tails lift as it falls and swing as it lands.
 ##
 ## Built at the pilot's size, its boots on its origin, facing -Z: scale it
@@ -24,7 +33,7 @@ extends Node3D
 
 const PersonKit = preload("res://scripts/person_kit.gd")
 const Spring = PersonKit.Spring
-const MOVES := ["idle","wave","jump","hail","walk"]
+const MOVES := ["idle","wave","jump","hail","walk","run","air","skid"]
 ## The hips over the ground standing, the hip joints on them, the feet's
 ## stance, the leg bones' lengths and the arm bones'.
 const HIPS := 0.17
@@ -54,6 +63,15 @@ const TWIST := 0.12
 const SWING := 0.05
 const STOOP := -0.08
 const WALK_SPEED := 2.0*STRIDE/STEP_CYCLE
+## The run at full pace: its stride, the foot's lift, the bob, the lean
+## and the arms' pump; and the most step cycles a second, past which the
+## boots skid a little rather than whirr.
+const RUN_STRIDE := 0.16
+const RUN_CADENCE := 4.2
+const RUN_LIFT := 0.06
+const RUN_BOB := 0.02
+const RUN_STOOP := -0.32
+const RUN_SWING := 0.085
 ## Seconds between idle looks, least and most.
 const LOOK_EVERY := Vector2(2.5,6.0)
 
@@ -84,6 +102,14 @@ var _rng := RandomNumberGenerator.new()
 var _look := Vector2.ZERO
 var _look_left := 0.0
 var _look_next := 2.0
+## What drives `run` and `air` (see the moves above).
+var pace := 0.0
+var speed := 0.0
+var rise := 0.0
+var knees_up := 0.0
+var _stride_phase := 0.0
+var _squash := Spring.new(3.2,0.3)
+var _impact := 0.0
 
 ## `scarf` colours the scarf.
 func _init(scarf := PersonKit.SCARF) -> void:
@@ -125,6 +151,10 @@ func _init(scarf := PersonKit.SCARF) -> void:
 		_tails.append(tail)
 		_swings.append(swings)
 	advance(0.0)
+
+## Came down `hard` metres a second: a squash that springs back.
+func land(hard: float) -> void:
+	_impact = clampf(hard/9.0,0.0,1.0)
 
 ## Starts a move, one of MOVES.
 func play(next: String) -> void:
@@ -214,6 +244,57 @@ func advance(delta: float) -> void:
 			stoop = STOOP
 			hands = [Vector3(-0.095,-0.02,SWING*cos(gait)),Vector3(0.095,-0.02,-SWING*cos(gait))]
 			look = Vector2(0.0,0.05)
+		"run":
+			var k := clampf(pace,0.0,1.0)
+			var stride := lerpf(STRIDE,RUN_STRIDE,k)
+			_stride_phase = fmod(_stride_phase+minf(speed/(2.0*stride),RUN_CADENCE)*delta,1.0)
+			var phase := _stride_phase
+			var foot_lift := lerpf(STEP_LIFT,RUN_LIFT,k)
+			for f in range(2):
+				var q := fmod(phase+0.5*f,1.0)
+				if q < 0.5:
+					steps[f] = Vector3(0.0,0.0,-stride*0.5+stride*q/0.5)
+				else:
+					var u := (q-0.5)/0.5
+					steps[f] = Vector3(0.0,foot_lift*sin(PI*u),stride*0.5-stride*smoothstep(0.0,1.0,u))
+					toes[f] = 0.3*sin(PI*u)
+			var beat := sin(PI*fmod(phase*2.0,1.0))
+			var gait := phase*TAU
+			bob = lerpf(BOB,RUN_BOB,k)*beat
+			squash = 0.4*(beat-0.5)
+			waddle = -WADDLE.x*(1.0-k)*sin(gait)
+			roll = WADDLE.y*(1.0-0.6*k)*sin(gait)
+			twist = -lerpf(TWIST,TWIST*1.4,k)*cos(gait)
+			stoop = lerpf(STOOP,RUN_STOOP,k)
+			var swing := lerpf(SWING,RUN_SWING,k)
+			var bent := lerpf(-0.02,0.02,k)
+			hands = [Vector3(-0.095,bent,swing*cos(gait)-0.02*k),Vector3(0.095,bent,-swing*cos(gait)-0.02*k)]
+			look = Vector2(0.0,0.05+0.1*k)
+		"air":
+			var up := clampf(rise*0.5+0.5,0.0,1.0)
+			var rising := [Vector3(-0.1,-0.02,0.07),Vector3(0.07,0.28,-0.02)]
+			var falling := [Vector3(-0.15,0.09,0.0),Vector3(0.15,0.09,0.0)]
+			hands = [(falling[0] as Vector3).lerp(rising[0],up),(falling[1] as Vector3).lerp(rising[1],up)]
+			# One knee up rising; both reaching down falling; both up tucked.
+			steps = [Vector3(0.0,0.06*up,-0.035*up),Vector3(0.0,0.012*up,0.03*up)]
+			var knees := clampf(knees_up,0.0,1.0)
+			steps[0] = (steps[0] as Vector3).lerp(Vector3(0.0,0.09,-0.03),knees)
+			steps[1] = (steps[1] as Vector3).lerp(Vector3(0.0,0.09,-0.03),knees)
+			toes = [0.3*up,-0.2*(1.0-up)]
+			stoop = -0.12*up+0.06*(1.0-up)
+			look = Vector2(0.0,0.25*up-0.2*(1.0-up))
+		"skid":
+			steps = [Vector3(0.0,0.0,-0.06),Vector3(0.0,0.0,0.01)]
+			toes = [-0.4,0.0]
+			stoop = 0.28
+			crouch = 0.02
+			hands = [Vector3(-0.1,0.06,-0.1),Vector3(0.1,0.06,-0.1)]
+			look = Vector2(0.0,-0.05)
+	# A landing's squash, springing back.
+	_impact = maxf(0.0,_impact-delta*6.0)
+	var landed := _squash.step(_impact,delta)
+	crouch += 0.05*maxf(landed,0.0)
+	squash -= 1.6*landed
 	# The body: lifted, crouched, squashed and stretched a touch.
 	var sway := _sway.step(sin(_clock*0.6)*0.006 if move == "idle" else 0.0,delta)
 	_hips.position = Vector3(sway+waddle,HIPS+lift-crouch+bob,0.0)

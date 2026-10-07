@@ -1,66 +1,94 @@
 extends Node
-## The wanderer's footsteps (scripts/wanderer_eye.gd): one soft step at each
-## footfall while you walk in its eyes. Its own feet, so not placed in the
-## world: a plain player on the Genesis bus (the Sound volume), a little
-## louder for a run. What it walks on (`wanderer_eye.gd` `_surface`) sets the
-## sound, and each is built from what that ground does under a sole:
-## - "grass": a hushed swish of blades and a faint soft thud;
-## - "earth": bare ground and worn paths, a muffled heel and a little grit;
-## - "stone": rock, a dry tap of heel then toe with a short scuff;
-## - "sand": a soft heel sinking into a fine dry hiss of grains;
-## - "snow": a slow packed crunch, grains squeaking as they give;
-## - "wood": a footbridge's planks, a short hollow knock;
-## - "water": wading, a soft slosh with a bubble or two.
+## The pilot's footsteps (scripts/wanderer_eye.gd): a light little pat at each
+## footfall the drawn body makes (scripts/pilot_figure.gd `drive`), so the
+## sound lands as the boot does: a pitter-patter, six a second at a run. Its
+## own feet, so not placed in the world: plain players on the Genesis bus (the
+## Sound volume), a little louder for a run, the left foot pitched a touch
+## under the right so the steps go pit-ter pat-ter. What it walks on
+## (`wanderer_eye.gd` `_surface`) sets the sound, each a short take of what
+## that ground does under a small quick sole:
+## - "grass": a soft pat and a crisp brush of blades;
+## - "earth": bare ground and worn paths, a dull pat and a little grit;
+## - "stone": rock, a dry tap and a tick of the toe;
+## - "sand": a soft pat in a quick hiss of grains;
+## - "snow": a short packed crunch;
+## - "wood": a footbridge's planks, a small hollow knock;
+## - "water": wading, a plip and a bubble.
 ## Each is VARIANTS takes, synthesized once and shared; a step never repeats
-## the take before it and is pitched a little apart.
+## the take before it and is pitched a little apart. A skid (`slide`) scrapes
+## the same ground for as long as one lasts.
 
 const Audio = preload("res://scripts/genesis_audio.gd")
 const SURFACES := ["grass","earth","stone","sand","snow","wood","water"]
 const RATE := 22050
 const VARIANTS := 4
-const SECONDS := 0.26
+## Seconds a step's take lasts, and a skid's.
+const SECONDS := 0.16
+const SLIDE_SECONDS := 0.42
 ## Linear gain at a walk and at a full run, before the Sound volume, and each
 ## surface's share of it: grass hushes a step, stone and planks carry it.
 const WALK_GAIN := 0.12
-const RUN_GAIN := 0.2
-const LEVEL := {"grass":0.75,"earth":0.9,"stone":0.85,"sand":0.8,"snow":0.9,"wood":1.0,"water":1.0}
-const PITCH := Vector2(0.9,1.1)
+const RUN_GAIN := 0.17
+const SLIDE_GAIN := 0.2
+const LEVEL := {"grass":0.8,"earth":0.9,"stone":0.85,"sand":0.8,"snow":0.9,"wood":1.0,"water":1.0}
+const PITCH := Vector2(0.97,1.03)
+## The left foot's pitch and the right's, and how much higher a run's are.
+const SIDE_PITCH := Vector2(0.95,1.05)
+const RUN_PITCH := 0.04
 
 static var _takes := {}
+static var _slides := {}
 
 var _players: Array[AudioStreamPlayer] = []
 var _next := 0
 var _last := -1
+var _slider: AudioStreamPlayer
 var _rng := RandomNumberGenerator.new()
 ## Steps sounded, for probes.
 var count := 0
+var slides := 0
 var last_surface := ""
 
 func _ready() -> void:
 	name = "WandererSteps"
 	Audio.ensure_buses()
 	_rng.randomize()
-	# Two players, so a step never cuts the last one's tail.
-	for i in range(2):
+	# Three players, so a quick step never cuts the last ones' tails.
+	for i in range(3):
 		var player := AudioStreamPlayer.new()
 		player.bus = Audio.BUS
 		add_child(player)
 		_players.append(player)
+	_slider = AudioStreamPlayer.new()
+	_slider.bus = Audio.BUS
+	add_child(_slider)
 
-## One footfall on `surface`, at `effort` (0 a stroll, 1 a full run).
-func step(surface: String, effort: float) -> void:
+## One footfall on `surface`, at `effort` (0 a stroll, 1 a full run), by the
+## left foot (`side` 0), the right (1), or either (-1: a jump, a landing).
+func step(surface: String, effort: float, side := -1) -> void:
 	var takes: Array = takes_for(surface)
 	var pick := _rng.randi_range(0,takes.size()-1)
 	if pick == _last: pick = (pick+1)%takes.size()
 	_last = pick
 	var player := _players[_next]
 	_next = (_next+1)%_players.size()
+	effort = clampf(effort,0.0,1.0)
+	var foot := 1.0 if side < 0 else (SIDE_PITCH.x if side == 0 else SIDE_PITCH.y)
 	player.stream = takes[pick]
-	player.pitch_scale = _rng.randf_range(PITCH.x,PITCH.y)
-	player.volume_db = linear_to_db(lerpf(WALK_GAIN,RUN_GAIN,clampf(effort,0.0,1.0))*float(LEVEL.get(surface,1.0)))
+	player.pitch_scale = foot*(1.0+RUN_PITCH*effort)*_rng.randf_range(PITCH.x,PITCH.y)
+	player.volume_db = linear_to_db(lerpf(WALK_GAIN,RUN_GAIN,effort)*float(LEVEL.get(surface,1.0)))
 	player.play()
 	count += 1
 	last_surface = surface
+
+## A skid's scrape over `surface`, from a run as fast as `effort` (0 to 1).
+func slide(surface: String, effort: float) -> void:
+	var takes: Array = slides_for(surface)
+	_slider.stream = takes[_rng.randi_range(0,takes.size()-1)]
+	_slider.pitch_scale = _rng.randf_range(PITCH.x,PITCH.y)
+	_slider.volume_db = linear_to_db(SLIDE_GAIN*lerpf(0.6,1.0,clampf(effort,0.0,1.0))*float(LEVEL.get(surface,1.0)))
+	_slider.play()
+	slides += 1
 
 static func takes_for(surface: String) -> Array:
 	if not _takes.has(surface):
@@ -68,6 +96,13 @@ static func takes_for(surface: String) -> Array:
 		for i in range(VARIANTS): takes.append(_synth(surface,7717+i*131+absi(surface.hash())%997))
 		_takes[surface] = takes
 	return _takes[surface]
+
+static func slides_for(surface: String) -> Array:
+	if not _slides.has(surface):
+		var takes := []
+		for i in range(2): takes.append(_synth_slide(surface,5303+i*173+absi(surface.hash())%991))
+		_slides[surface] = takes
+	return _slides[surface]
 
 ## Noise in three bands, one sample at a time: `low` (two poles at `low_k`),
 ## `band` (the difference of a fast and a slow pole) and `high` (white less
@@ -116,8 +151,9 @@ static func _grains(mix: PackedFloat32Array, noise: RandomNumberGenerator, count
 			var age := float(j)/RATE
 			mix[start+j] += loud*minf(1.0,age*RATE/2.0)*exp(-age*ring)*sin(TAU*pitch*age)
 
-## One take. Every layer starts with a few-sample attack and dies away inside
-## SECONDS, so nothing clicks.
+## One step's take. Every layer starts with a few-sample attack and dies
+## away inside SECONDS, so nothing clicks; all are quick, for a small sole
+## and a quick step.
 static func _synth(surface: String, seed: int) -> AudioStreamWAV:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed
@@ -127,71 +163,71 @@ static func _synth(surface: String, seed: int) -> AudioStreamWAV:
 	var noise := Bands.new(rng)
 	match surface:
 		"grass":
-			# Blades parting: a band of noise that swells over 20 ms and
-			# fades over a tenth of a second, over a faint soft thud.
-			noise.fast_k = 0.35
-			noise.slow_k = 0.05
-			noise.low_k = 0.04
-			var lean := rng.randf_range(0.0,0.02)
+			# A soft pat under a crisp brush of blades parting, both gone
+			# inside a tenth of a second.
+			noise.low_k = 0.08
+			noise.fast_k = 0.5
+			noise.slow_k = 0.1
+			var lean := rng.randf_range(0.0,0.006)
 			for i in range(total):
 				var t := float(i)/RATE
 				noise.next()
-				mix[i] = 0.9*_env(t,0.0,0.004,40.0)*noise.low+0.5*_env(t,0.01+lean,0.02,14.0)*noise.band+0.12*_env(t,0.03+lean,0.03,18.0)*noise.high
+				mix[i] = 1.0*_env(t,0.0,0.002,70.0)*noise.low+0.5*_env(t,0.004+lean,0.004,38.0)*noise.band+0.15*_env(t,0.008+lean,0.006,55.0)*noise.high
 		"earth":
-			# A muffled heel, then the sole's grit: a few dull ticks.
+			# A dull pat, then the sole's grit: a few dull ticks.
+			noise.low_k = 0.07
 			for i in range(total):
 				var t := float(i)/RATE
 				noise.next()
-				mix[i] = 2.2*_env(t,0.0,0.0014,30.0)*noise.low+0.12*_env(t,0.012,0.01,30.0)*noise.band
-			_grains(mix,rng,rng.randi_range(3,6),0.012,0.05,Vector2(900.0,2000.0),0.04,700.0)
+				mix[i] = 2.0*_env(t,0.0,0.0012,60.0)*noise.low+0.12*_env(t,0.01,0.006,45.0)*noise.band
+			_grains(mix,rng,rng.randi_range(2,4),0.008,0.035,Vector2(900.0,2000.0),0.04,800.0)
 		"stone":
-			# Heel then toe, each a dry tap: a short bright click with a
-			# little ring, a scrape of grit after, and only a touch of body.
-			var toe := rng.randf_range(0.05,0.08)
+			# A dry tap with a little ring, and a tick of the toe after.
+			var toe := rng.randf_range(0.025,0.04)
 			for i in range(total):
 				var t := float(i)/RATE
 				noise.next()
-				var tap := _env(t,0.0,0.001,160.0)+0.6*_env(t,toe,0.001,190.0)
-				mix[i] = 0.9*tap*noise.high+0.5*_env(t,0.0,0.002,70.0)*noise.low+0.08*_env(t,toe+0.01,0.01,25.0)*noise.band
+				var tap := _env(t,0.0,0.001,180.0)+0.4*_env(t,toe,0.001,200.0)
+				mix[i] = 0.9*tap*noise.high+0.5*_env(t,0.0,0.002,80.0)*noise.low
 			for strike: float in [0.0,toe]:
-				var ring := rng.randf_range(1900.0,3200.0)
+				var ring := rng.randf_range(2100.0,3400.0)
 				var from := int(strike*RATE)
-				for j in range(int(0.03*RATE)):
+				for j in range(int(0.025*RATE)):
 					if from+j >= total: break
 					var age := float(j)/RATE
-					mix[from+j] += 0.18*minf(1.0,age*RATE/2.0)*exp(-age*220.0)*sin(TAU*ring*age)
-			_grains(mix,rng,rng.randi_range(3,5),toe+0.01,0.06,Vector2(2500.0,4500.0),0.05,900.0)
+					mix[from+j] += 0.12*minf(1.0,age*RATE/2.0)*exp(-age*240.0)*sin(TAU*ring*age)
+			_grains(mix,rng,rng.randi_range(2,3),toe+0.005,0.04,Vector2(2500.0,4500.0),0.04,1000.0)
 		"sand":
-			# The heel sinks softly; the grains hiss and crunch fine and dense.
+			# A soft pat in a quick fine hiss of grains.
+			noise.low_k = 0.07
 			noise.fast_k = 0.7
 			noise.slow_k = 0.25
 			for i in range(total):
 				var t := float(i)/RATE
 				noise.next()
-				mix[i] = 1.2*_env(t,0.0,0.004,38.0)*noise.low+0.35*_env(t,0.008,0.012,20.0)*noise.band
-			_grains(mix,rng,rng.randi_range(40,70),0.006,0.11,Vector2(2200.0,5000.0),0.06,1400.0)
+				mix[i] = 1.1*_env(t,0.0,0.003,55.0)*noise.low+0.3*_env(t,0.006,0.008,32.0)*noise.band
+			_grains(mix,rng,rng.randi_range(25,40),0.004,0.07,Vector2(2200.0,5000.0),0.06,1600.0)
 		"snow":
-			# Packed snow: the crunch builds as the sole presses in and
-			# breaks off, grains squeaking low and many, over a muffled base.
-			noise.low_k = 0.05
+			# A short packed crunch, the grains squeaking low.
+			noise.low_k = 0.06
 			for i in range(total):
 				var t := float(i)/RATE
 				noise.next()
-				mix[i] = 1.0*_env(t,0.0,0.01,26.0)*noise.low+0.18*_env(t,0.02,0.05,16.0)*noise.band
-			_grains(mix,rng,rng.randi_range(45,70),0.015,0.14,Vector2(500.0,1500.0),0.09,350.0)
+				mix[i] = 0.9*_env(t,0.0,0.006,40.0)*noise.low+0.16*_env(t,0.01,0.03,26.0)*noise.band
+			_grains(mix,rng,rng.randi_range(30,45),0.008,0.09,Vector2(500.0,1500.0),0.09,400.0)
 		"wood":
-			# A plank's knock: two damped tones, the board's body and its
-			# rap, over a breath of grit.
-			var body := rng.randf_range(170.0,240.0)
-			var rap := rng.randf_range(650.0,1000.0)
+			# A small plank's knock: the board's body and its rap, over a
+			# breath of grit.
+			var body := rng.randf_range(200.0,280.0)
+			var rap := rng.randf_range(700.0,1100.0)
 			noise.slow_k = 0.1
 			for i in range(total):
 				var t := float(i)/RATE
 				noise.next()
 				var attack := minf(1.0,t*RATE/8.0)
-				mix[i] = attack*(0.8*exp(-t*38.0)*sin(TAU*body*t)+0.35*exp(-t*90.0)*sin(TAU*rap*t)+0.25*exp(-t*140.0)*noise.band)
+				mix[i] = attack*(0.8*exp(-t*50.0)*sin(TAU*body*t)+0.35*exp(-t*110.0)*sin(TAU*rap*t)+0.25*exp(-t*160.0)*noise.band)
 		"water":
-			# A slosh: low noise swelling and falling, and a bubble or two
+			# A plip: low noise swelling and falling quickly, and a bubble
 			# rising.
 			noise.low_k = 0.12
 			noise.fast_k = 0.45
@@ -199,16 +235,64 @@ static func _synth(surface: String, seed: int) -> AudioStreamWAV:
 			for i in range(total):
 				var t := float(i)/RATE
 				noise.next()
-				mix[i] = _env(t,0.0,0.02,14.0)*(1.6*noise.low+0.3*noise.band)
-			for b in range(rng.randi_range(1,2)):
-				var from := rng.randf_range(0.03,0.09)
-				var pitch := rng.randf_range(380.0,560.0)
-				var phase := 0.0
-				for i in range(int(from*RATE),total):
-					var age := float(i)/RATE-from
-					phase += TAU*pitch*(1.0+age*9.0)/RATE
-					mix[i] += 0.3*minf(1.0,age*RATE/6.0)*exp(-age*55.0)*sin(phase)
-	# The tail fades to nothing; the loudest moment at 0.9.
+				mix[i] = _env(t,0.0,0.008,28.0)*(1.4*noise.low+0.35*noise.band)
+			var from := rng.randf_range(0.015,0.04)
+			var pitch := rng.randf_range(500.0,750.0)
+			var phase := 0.0
+			for i in range(int(from*RATE),total):
+				var age := float(i)/RATE-from
+				phase += TAU*pitch*(1.0+age*10.0)/RATE
+				mix[i] += 0.3*minf(1.0,age*RATE/6.0)*exp(-age*70.0)*sin(phase)
+	return _wav(mix)
+
+## A skid's take: the sole dragged over the ground for SLIDE_SECONDS, juddering
+## as it catches and slips, swelling in and dying as it stops.
+static func _synth_slide(surface: String, seed: int) -> AudioStreamWAV:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed
+	var total := int(RATE*SLIDE_SECONDS)
+	var mix := PackedFloat32Array()
+	mix.resize(total)
+	var noise := Bands.new(rng)
+	var judder := rng.randf_range(22.0,30.0)
+	var at := rng.randf_range(0.0,TAU)
+	var shape := func(t: float) -> float: return _env(t,0.0,0.02,6.5)*(0.72+0.28*sin(TAU*judder*t+at))
+	match surface:
+		"grass", "wood":
+			# Blades (or boards) brushed flat: a long swish over a low rub.
+			noise.fast_k = 0.4 if surface == "grass" else 0.25
+			noise.slow_k = 0.06
+			noise.low_k = 0.06
+			for i in range(total):
+				var t := float(i)/RATE
+				noise.next()
+				mix[i] = shape.call(t)*(0.6*noise.band+0.5*noise.low+0.06*noise.high)
+		"water":
+			# A long slosh, a bubble or two.
+			noise.low_k = 0.12
+			noise.fast_k = 0.45
+			noise.slow_k = 0.08
+			for i in range(total):
+				var t := float(i)/RATE
+				noise.next()
+				mix[i] = shape.call(t)*(1.4*noise.low+0.4*noise.band)
+		_:
+			# Grit dragged: a scrape and a spray of grains through it.
+			noise.fast_k = 0.6
+			noise.slow_k = 0.15
+			var bright := 0.25 if surface == "stone" else 0.1
+			for i in range(total):
+				var t := float(i)/RATE
+				noise.next()
+				mix[i] = shape.call(t)*(0.5*noise.band+0.4*noise.low+bright*noise.high)
+			var tone := Vector2(500.0,1500.0) if surface == "snow" else Vector2(1500.0,4000.0)
+			_grains(mix,rng,rng.randi_range(40,70),0.01,SLIDE_SECONDS*0.7,tone,0.05,900.0)
+	return _wav(mix)
+
+## Samples as a 16-bit take: the tail faded to nothing, the loudest moment
+## at 0.9.
+static func _wav(mix: PackedFloat32Array) -> AudioStreamWAV:
+	var total := mix.size()
 	var tail := int(total*0.25)
 	for i in range(tail): mix[total-tail+i] *= cos(float(i)/tail*PI*0.5)
 	var peak := 0.0001
