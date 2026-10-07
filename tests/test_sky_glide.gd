@@ -225,7 +225,9 @@ func _currents() -> void:
 	var jets := currents.currents.filter(func(c: Dictionary) -> bool: return c.kind == "jet")
 	var thermals := currents.currents.filter(func(c: Dictionary) -> bool: return c.kind == "thermal")
 	check(jets.size() == 2 and thermals.size() >= slots.size()*2,"Two jet loops and thermals by every island (%d jets, %d thermals)" % [jets.size(),thermals.size()])
-	check(currents.wisp_count() > 1000,"The currents are drawn (%d wisps)" % currents.wisp_count())
+	# Drawn as ribbons (tests/test_jet_ribbons.gd): a few strokes a jet, a
+	# handful a thermal.
+	check(currents.wisp_count() >= jets.size()*3+thermals.size()*SkyCurrents.THERMAL_RIBBONS,"The currents are drawn (%d ribbons)" % currents.wisp_count())
 	check(currents.air_at(Vector3(0.0,300.0,0.0)).wind == Vector3.ZERO,"Out of the currents the air is still")
 	# Nowhere along either jet does the air stall: no crossing where the
 	# two loops cancel out, and the loops keep apart.
