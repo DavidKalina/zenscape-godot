@@ -19,7 +19,7 @@ const Builds = preload("res://scripts/showcase_builds.gd")
 const WaterFlowView = preload("res://scripts/water_flow_view.gd")
 
 ## The bunds' turf and earth, the moss's greens (sRGB).
-const TURF := Color("5f7d3c")
+const TURF := Color("74964a")
 const EARTH := Color("6b5640")
 const MOSS := [Color("4d6e2c"),Color("5b7d33"),Color("3f5f28"),Color("6a8a3a")]
 ## The plunge: its foam ring's size (m across), the mist's puffs (count,
@@ -27,13 +27,16 @@ const MOSS := [Color("4d6e2c"),Color("5b7d33"),Color("3f5f28"),Color("6a8a3a")]
 ## how far it fades out (m).
 const FOAM := 2.6
 const MIST := 9
-const MIST_SIZE := Vector2(0.45,0.95)
-const MIST_RISE := Vector2(1.2,2.8)
+const MIST_SIZE := Vector2(0.3,0.6)
+const MIST_RISE := Vector2(0.8,2.0)
 const MIST_LIFE := Vector2(3.5,6.0)
 const MIST_RANGE := 220.0
 const GLOW := Vector2(7.0,1.7)
 const FADE := 60.0
 const LIGHT_COLOR := Color("ffb36b")
+## The depth the paddies' water is drawn as (m; its tint and how much of
+## the bed shows through).
+const PADDY_SEEN := 0.45
 
 static var _foam_material: ShaderMaterial
 static var _mist_material: ShaderMaterial
@@ -127,8 +130,11 @@ static func _paddy_water(pads: Array) -> Array:
 					normals.append(Vector3.UP)
 					colors.append(tint)
 					var bank := minf(minf(p.x-rect.position.x,rect.end.x-p.x),minf(p.y-rect.position.y,rect.end.y-p.y))
-					uv.append(Vector2(minf(Falls.PADDY_DEPTH*2.5,bank),0.0))
-					uv2.append(Vector2(Falls.PADDY_DEPTH,0.0))
+					# Read as a little deeper than it is, so the water shows
+					# its own body and the sky over the mud rather than
+					# vanishing into it.
+					uv.append(Vector2(bank*3.0+0.3,0.0))
+					uv2.append(Vector2(PADDY_SEEN,0.0))
 					var runs := []
 					for d: Vector2 in order:
 						var run := 9.0
@@ -178,9 +184,9 @@ static func _bunds(pads: Array, seed_value: int) -> ArrayMesh:
 				var tone := TURF.darkened(rng.randf_range(0.0,0.14)) if rng.randf() < 0.8 else EARTH
 				var lift := rng.randf_range(-0.02,0.02)
 				var basis := Basis(Vector3.UP,-way.angle()+rng.randf_range(-0.02,0.02))
-				Builds.box(st,Vector3(mid.x,y+(high-0.25)*0.5+lift,mid.y),basis,Vector3(length,(high+0.25)*0.5,w*0.5),tone)
-				# A rounded crown: a narrower cap on top.
-				Builds.box(st,Vector3(mid.x,y+high+0.02+lift,mid.y),basis,Vector3(length*0.97,0.035,w*0.32),tone.lightened(0.06))
+				# A low ridge: a wide foot and a narrower crown over it.
+				Builds.box(st,Vector3(mid.x,y-0.1+lift,mid.y),basis,Vector3(length,0.12+Falls.PADDY_DEPTH*0.5,w*0.5),tone)
+				Builds.box(st,Vector3(mid.x,y+high*0.5+lift,mid.y),basis,Vector3(length*0.99,high*0.5+0.01,w*0.3),tone.lightened(0.04))
 	return Builds._end(st)
 
 # --- Moss ------------------------------------------------------------------------------
@@ -290,7 +296,7 @@ static func _shared() -> void:
 	_mist_material.shader = preload("res://shaders/sky_tepui_mist.gdshader")
 	_mist_material.render_priority = 3
 	_mist_material.set_shader_parameter("soft_depth",0.8)
-	_mist_material.set_shader_parameter("strength",1.25)
+	_mist_material.set_shader_parameter("strength",0.75)
 	_quad = QuadMesh.new()
 	_quad.size = Vector2.ONE
 

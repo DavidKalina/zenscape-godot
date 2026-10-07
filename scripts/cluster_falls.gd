@@ -49,6 +49,8 @@ const Footbridge = preload("res://scripts/footbridge.gd")
 const DROP := Vector2(3.6,5.4)
 const GAP := Vector2(1.7,2.5)
 const SUNK := 0.35
+## A terrace's fall is a fuller sheet than a lone islet's: its half width (m).
+const HALF := 0.7
 ## The pool: its radius (m), its middle this many radii (plus POOL_PAD m) in
 ## from the shore, its water this far under the islets' usual level.
 const POOL := Vector2(1.7,2.2)
@@ -88,12 +90,12 @@ const RIM_SAMPLES := 32
 const PADDIES := Vector2i(3,4)
 const PADDY_ACROSS := Vector2(1.9,2.5)
 const PADDY_ALONG := Vector2(1.1,1.4)
-const PADDY_GAP := 0.32
+const PADDY_GAP := 0.1
 const PADDY_STEP := 0.34
-const PADDY_DEPTH := 0.07
-const BUND := Vector2(0.24,0.1)
-const SHOOTS := 0.42
-const PLANTED := 0.55
+const PADDY_DEPTH := 0.09
+const BUND := Vector2(0.2,0.06)
+const SHOOTS := 0.5
+const PLANTED := 0.35
 ## Moss: cushions round a pond (count range), their radius and height (m);
 ## ferns among them.
 const MOSS := Vector2i(10,16)
@@ -331,10 +333,12 @@ static func _paddies(m: Dictionary, f: Dictionary, rng: RandomNumberGenerator) -
 			var y: float = top-PADDY_STEP*i
 			shape.claim(c,0.0,y-shape.ground_at(c),half)
 			pads.append({"rect":Rect2(c-half,half*2.0),"y":y,"planted":false})
+			# Its floor is tilled earth, the water over it a paddy's.
+			shape.soil.append(Rect2(c-half,half*2.0))
 		# Young shoots in rows in some, the rest open water.
 		for i in range(n):
 			var pad: Dictionary = pads[i]
-			if rng.randf() > PLANTED and i != 1: continue
+			if rng.randf() > PLANTED: continue
 			pad.planted = true
 			var rect: Rect2 = pad.rect
 			var z := rect.position.y+BUND.x+0.2
@@ -482,7 +486,7 @@ static func _edge_lanterns(m: Dictionary) -> bool:
 		var side := Vector2(-inflow.y,inflow.x)
 		for s: float in [-1.0,1.0]:
 			for reach: float in [1.35,1.6,1.9]:
-				var p: Vector2 = middle+(inflow*0.55+side*s).normalized()*float(water.radius)*reach
+				var p: Vector2 = middle+(inflow*0.3+side*s).normalized()*float(water.radius)*reach
 				if _post_ok(shape,p):
 					spots.append([p,middle-p])
 					break

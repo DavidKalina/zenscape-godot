@@ -127,8 +127,38 @@ func _shots(field: Node3D, s: Dictionary) -> Array:
 			{"label":"stones","eye":dock+Vector3(-14.0,3.0,13.0),"look":lead+Vector3(0.0,2.0,0.0)},
 			{"label":"point","eye":light+Vector3(26.0,6.0,18.0),"look":(light+mill)*0.5+Vector3(-6.0,2.0,0.0)},
 			{"label":"field","eye":lead+Vector3(14.0,4.5,-16.0),"look":lead+Vector3(-2.0,1.5,4.0)}]
-	return [{"label":"overview","eye":centre+(toward_home*1.3+side*0.9)*reach+Vector3.UP*reach*0.9,"look":centre+Vector3.DOWN*2.0},
+	var shots: Array = [{"label":"overview","eye":centre+(toward_home*1.3+side*0.9)*reach+Vector3.UP*reach*0.9,"look":centre+Vector3.DOWN*2.0},
 		{"label":"pass","eye":centre+(toward_home*0.9-side*0.9)*reach+Vector3.UP*4.0,"look":centre+Vector3.UP*2.0}]
+	if s.motif == "falls": shots.append_array(_falls_shots(field,s,stood))
+	return shots
+
+## The waterfall terraces close: beside the first fall, over the paddies,
+## and from a pool's bank up at the fall pouring into it.
+func _falls_shots(field: Node3D, s: Dictionary, stood: Dictionary) -> Array:
+	var plan: Dictionary = field.clusters[s.key].plan
+	var out: Array = []
+	for f: Dictionary in plan.get("falls",[]):
+		if not stood.has(f.from) or not stood.has(f.to): continue
+		var to: Dictionary = stood[f.from].shape.recipe.fall_to
+		var lip: Vector3 = stood[f.from].home+to.lip
+		var pool: Vector3 = stood[f.from].home+to.pool
+		var way := Vector3(to.out.x,0.0,to.out.z)
+		var across := way.cross(Vector3.UP).normalized()
+		var mid := (lip+pool)*0.5
+		out.append({"label":"cascade","eye":mid+across*11.0+way*2.0+Vector3.UP*1.5,"look":mid})
+		out.append({"label":"pool","eye":pool+way*4.2-across*1.6+Vector3.UP*1.7,"look":lip+Vector3.DOWN*1.0})
+		break
+	for m: Dictionary in plan.members:
+		for f: Dictionary in m.features:
+			if f.type != "paddies" or not stood.has(m.name): continue
+			var pads: Array = f.pads
+			var a: Rect2 = pads[0].rect
+			var b: Rect2 = pads[pads.size()-1].rect
+			var home: Vector3 = stood[m.name].home
+			var middle := home+Vector3((a.get_center().x+b.get_center().x)*0.5,float(pads[0].y),(a.get_center().y+b.get_center().y)*0.5)
+			var along := Vector3(b.get_center().x-a.get_center().x,0.0,b.get_center().y-a.get_center().y).normalized()
+			out.append({"label":"paddies","eye":middle+along*9.0+along.cross(Vector3.UP)*4.0+Vector3.UP*5.0,"look":middle})
+	return out
 
 func _view(local: Vector3) -> Vector3:
 	return _parent.to_local(_islets.to_global(local))

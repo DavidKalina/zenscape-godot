@@ -558,7 +558,7 @@ static func _fall_rings(shape: RefCounted) -> Dictionary:
 	# thrown to land in it, ending under its water, no thread on down.
 	if shape.recipe.has("fall_to"):
 		var to: Dictionary = shape.recipe.fall_to
-		return curtain(to.lip,to.out,float(to.drop),ClusterFalls.SUNK,SkyIslet.CHANNEL*0.6,overhang,FALL_STRENGTH,float(to.speed))
+		return curtain(to.lip,to.out,float(to.drop),ClusterFalls.SUNK,ClusterFalls.HALF,overhang,FALL_STRENGTH,float(to.speed))
 	return curtain(lip,out,shape.depth*FALL_DROP.x+FALL_DROP.y,FALL_TAIL,SkyIslet.CHANNEL*0.6,overhang,FALL_STRENGTH)
 
 func _fall(node: Node3D, shape: RefCounted, rings: Dictionary, thread: Dictionary = {}) -> void:
