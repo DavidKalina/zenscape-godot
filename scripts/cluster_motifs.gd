@@ -114,6 +114,39 @@ const MOTIFS := {
 				"features":[{"type":"dock"},{"type":"fisher","chance":0.8}],
 				"relation":{"type":"bridge","to":"keeper","gap":Vector2(5.0,10.0)}},
 		]},
+	# The forest hold: a real wood on a big islet, a hut in its glade and a
+	# platform up its hold tree, wooded islets round it on rope bridges;
+	# lanterns strung through the trees and along the bridges at night
+	# (scripts/woodland.gd plants it, scripts/forest_hold.gd lays the rest).
+	"forest": {
+		"label":"Forest hold","layout":"scatter",
+		"rock":{"palettes":["basalt","basalt_warm"],"tone":Vector2(0.84,1.02)},"keel":Vector2(1.5,2.0),
+		"night":{"windows":true,"lanterns":true,"beam":false,"canopy":true,"bridge_lanterns":true},
+		"roles":[
+			{"name":"hold","anchor":true,"kind":"grove","radius":Vector2(16.0,19.0),"height":Vector2(0.0,0.0),
+				"spec":{"dome":0.9,"trees":Vector2i(0,0),"drifts":Vector2i(0,0),"undergrowth":0.2,
+					"woodland":{"hold":true,"glades":Vector2i(1,2),"glade":Vector2(6.0,7.5),"giants":Vector2i(3,5),
+						"canopy_pool":{"tree":1.0,"birch":0.22,"redwood":0.07},"under_pool":{"tree":1.0,"juniper":0.45,"birch":0.25},
+						"edge_pool":{"birch":0.9,"tree":1.0,"juniper":0.45}}},
+				"features":[{"type":"hut"},{"type":"treehouse"},{"type":"lamps","count":Vector2i(1,2)},{"type":"bearer","chance":0.8},
+					{"type":"trail"},{"type":"canopy"}]},
+			{"name":"grove","kind":"grove","radius":Vector2(8.5,12.0),"height":Vector2(-2.0,2.0),"count":Vector2i(2,3),
+				"spec":{"dome":0.9,"trees":Vector2i(0,0),"drifts":Vector2i(0,0),"undergrowth":0.2,
+					"woodland":{"glades":Vector2i(0,1),"glade":Vector2(3.5,4.5),"giants":Vector2i(0,2),
+						"canopy_pool":{"tree":1.0,"birch":0.3,"redwood":0.06},"under_pool":{"tree":1.0,"juniper":0.5},
+						"edge_pool":{"birch":1.0,"tree":0.9,"juniper":0.5}}},
+				"features":[{"type":"trail"},{"type":"canopy"}],
+				"relation":{"type":"bridge","to":"hold","gap":Vector2(7.0,12.5)}},
+			{"name":"spring","kind":"grove","radius":Vector2(7.0,8.5),"height":Vector2(-2.5,1.0),"chance":0.6,"pond":1.0,
+				"spec":{"dome":0.6,"trees":Vector2i(0,0),"drifts":Vector2i(0,0),"undergrowth":0.3,
+					"woodland":{"glades":Vector2i(0,0),"giants":Vector2i(0,1),"fill":0.75,
+						"canopy_pool":{"tree":1.0,"birch":0.5},"under_pool":{"tree":1.0,"juniper":0.4},"edge_pool":{"birch":1.0,"tree":0.6}}},
+				"features":[{"type":"trail"},{"type":"canopy"}],
+				"relation":{"type":"bridge","to":"grove","gap":Vector2(6.5,11.0)}},
+			{"name":"knoll","kind":"hills","radius":Vector2(3.6,4.6),"height":Vector2(-1.5,1.5),"chance":0.6,
+				"spec":{"mounds":[],"dome":0.3,"trees":Vector2i(1,1),"tree_pool":{"redwood":1.0},"tree_size":Vector2(1.5,1.8),"undergrowth":1.5},
+				"relation":{"type":"stones","to":"hold","stones":Vector2i(2,3)}},
+		]},
 }
 
 ## The showcase (--showcase): the farmstead as first laid out by hand, its

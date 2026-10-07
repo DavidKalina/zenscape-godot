@@ -38,6 +38,7 @@ const Footbridge = preload("res://scripts/footbridge.gd")
 const Cabin = preload("res://scripts/cabin.gd")
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const MeadowTypes = preload("res://scripts/meadow_types.gd")
+const ForestHold = preload("res://scripts/forest_hold.gd")
 
 ## Rim to rim (m): any two members at least MIN_GAP; stepping stones
 ## STONE_GAP apart (a running jump is about 2.5 to 3 m; checked against
@@ -442,6 +443,8 @@ static func _feature(m: Dictionary, f: Dictionary, placed: Array, centre: Vector
 			var way := Vector2(b.x-a.x,b.z-a.z).normalized()
 			var at := Vector2(b.x,b.z)-way*0.45+Vector2(-way.y,way.x)*0.25
 			m.features.append({"type":"fisher","at":at,"angle":atan2(-way.x,-way.y),"deck_y":a.y})
+		"hut", "treehouse", "trail", "canopy":
+			ForestHold.feature(m,f,placed,rng,plan)
 
 static func _missing(m: Dictionary, f: Dictionary, plan: Dictionary) -> void:
 	if float(f.get("chance",1.0)) >= 1.0: plan.problems.append("no room for the %s on %s" % [f.type,m.name])
@@ -566,6 +569,8 @@ static func validate(plan: Dictionary) -> Array:
 						if _distance_to_rim({"offset":p.offset,"rim":rims[p.name]},q) < 2.0: problems.append("dock on %s runs into %s" % [m.name,p.name])
 				"fisher":
 					if shape.deck_y(f.at) == -INF: problems.append("fisher off the dock on %s" % m.name)
+				"treehouse", "canopy":
+					ForestHold.check(shape,f,m.name,problems)
 	return problems
 
 ## A footprint's ground: on the land, dry, in from the rim and level

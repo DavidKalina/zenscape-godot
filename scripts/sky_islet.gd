@@ -49,6 +49,7 @@ const Stands = preload("res://scripts/tree_stands.gd")
 const MeadowTypes = preload("res://scripts/meadow_types.gd")
 const Samples = preload("res://scripts/garden_instance_samples.gd")
 const Erosion = preload("res://scripts/terrain_erosion.gd")
+const Woodland = preload("res://scripts/woodland.gd")
 
 ## Kinds and how often each turns up.
 const KINDS := [["meadow",0.22],["grove",0.22],["hills",0.15],["crag",0.11],["spring",0.18],["shore",0.12]]
@@ -260,6 +261,8 @@ var flowers: Array[String] = []
 ##   drifts: Vector2i, how many flower drifts; apart: a multiplier on how
 ##     far apart the trees keep;
 ##   undergrowth: a multiplier on the kind's undergrowth;
+##   woodland: a real wood planted over it (scripts/woodland.gd: glades,
+##     giants, clumped canopy, the floor), on top of the trees above;
 ##   objects: Array of records ({asset, x, z, angle, scale, tint}) set as
 ##     they are, after the planting (a cabin, lamps, a field's rows);
 ##   blocks / crowns: extra walker blocks Vector3(x, z, radius) and glide
@@ -767,6 +770,8 @@ func _plant(rng: RandomNumberGenerator) -> void:
 		_add(tree,at,rng.randf()*TAU,size,tints[tree])
 		taken.append(Vector3(at.x,at.y,room*0.5))
 		if not tree in species: species.append(tree)
+	# A woodland (scripts/woodland.gd), when the recipe asks for one.
+	if recipe.has("woodland"): Woodland.plant(self,rng,taken)
 	# Flower drifts.
 	if rng.randf() < float(FLOWER_ODDS[kind]):
 		var kinds: Array[String] = []
