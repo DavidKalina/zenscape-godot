@@ -412,7 +412,14 @@ static func prepare(member: Dictionary, plan: Dictionary) -> Dictionary:
 				var part := SurfaceTool.new()
 				part.begin(Mesh.PRIMITIVE_TRIANGLES)
 				ForestBuilds.platform(part,float(f.height),float(f.inner),float(f.outer),int(member.seed) % 991)
-				st.append_from(part.commit(),0,pose)
+				# Copied over by hand: a committed mesh read back asks the
+				# renderer for its faces, which a worker must never wait on.
+				var arrays := part.commit_to_arrays()
+				var points: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+				var colours: PackedColorArray = arrays[Mesh.ARRAY_COLOR]
+				for k in range(points.size()):
+					st.set_color(colours[k])
+					st.add_vertex(pose*points[k])
 				for hook: Vector3 in ForestBuilds.eave_hooks(float(f.height),float(f.outer),EAVE_LANTERNS):
 					_hang(out,pose*hook,1.0,HALO_EAVE)
 				out.lights.append(pose*Vector3(0.0,float(f.height)+1.2,float(f.outer)))
