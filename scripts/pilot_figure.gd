@@ -7,7 +7,11 @@ extends Node3D
 ##         the stick, and starting and stopping;
 ##   run   the pace he goes by default, made for RUN_SPEED m/s;
 ##   skid  braking hard, leant back, a boot braced ahead (when the model has
-##         it).
+##         it);
+##   hang, shimmy_left, shimmy_right, climb  on a ledge (when the model has
+##         them): hanging by the mitts from a lip, swaying; hand over hand
+##         along it, made for SHIMMY_SPEED m/s; up onto it, one go of
+##         CLIMB_LENGTH s, which played back lowers him into the hang.
 ## Walk and run are played in step, both at one gait phase, and blended by
 ## the speed: the phase moves on by the distance covered over the stride the
 ## blend has (a walk's stride is shorter than a run's), so at either clip's
@@ -21,6 +25,15 @@ extends Node3D
 ## the third jump of a chain flips it head over heels about its hips. Thrown
 ## back at a run it skids, leaning back, and coming out of it whips round to
 ## face the new way with a little hop.
+##
+## On a ledge (the motor's `hold`) it plays the hang, blended into the
+## shimmy by its pace and in its step as the walk is (the gripping mitts stay
+## on the lip), and the climb at the motor's place in it. A catch in the air
+## fades in fast and jolts: the body stretches from the hands and swings
+## under them; turning on an edge to lower over it, it whips round on its
+## springs first. The climb and the lowering move the body in the clip, so
+## they cut in and out without a fade, the hang's first frame being the
+## climb's and the idle's first its last.
 ##
 ## Over the clips the body has a life of its own, on springs that overshoot
 ## and settle, as a cartoon hero's does: it dips taking off and stretches
@@ -48,6 +61,23 @@ const WALK_SPEED := 1.4
 const WALK_CYCLE := 0.5
 const RUN_SPEED := 4.0
 const RUN_CYCLE := 1.0/3.0
+const HANG_LENGTH := 4.0
+const SHIMMY_SPEED := 0.7
+const SHIMMY_CYCLE := 0.5
+const CLIMB_LENGTH := 0.9
+## Seconds the hang fades in catching a lip in the air, the climb fades in
+## from the hang, the hang back from the end of a lowering, and the
+## shimmy's turn of way.
+const GRAB_FADE := 0.08
+const CLIMB_FADE := 0.1
+const HUNG_FADE := 0.12
+const SHIMMY_TURN := 0.1
+## The catch's jolt: a kick to the stretch (hanging from the hands) and a
+## swing of the legs out from the wall (radians a second).
+const GRAB_KICK := 3.0
+const GRAB_SWING := -1.6
+## Where the hands grip, hanging (the body sways and stretches about them).
+const GRIP := Vector3(0.0,PilotMotor.HANG_DROP,-PilotMotor.HANG_OUT-0.03)
 ## The speeds (m/s) between which the walk gives way to the run.
 const BLEND_FROM := 1.6
 const BLEND_TO := 3.3
@@ -145,6 +175,18 @@ var _skidding_was := false
 ## The hop's seconds to go.
 var _hop := 0.0
 var _has_skid := false
+var _has_ledge := false
+## On a ledge: the motor's hold last frame, 0 to 1 onto the ledge's clips,
+## into the climb, into the shimmy, its way (0 left, 1 right) and its
+## phase, and the hang's own time.
+var _hold_was := ""
+var _ledge := 0.0
+var _climbing := 0.0
+var _shimmying := 0.0
+var _shimmy_way := 1.0
+var _shimmy_phase := 0.0
+var _hang_time := 0.0
+var _climb_at := 0.0
 var _idle_length := 1.0
 var _skeleton: Skeleton3D
 var _boots: Array[int] = []
@@ -170,6 +212,7 @@ func _init() -> void:
 	_dress()
 	var player := _model.find_child("AnimationPlayer",true,false) as AnimationPlayer
 	_has_skid = player.has_animation(&"skid")
+	_has_ledge = player.has_animation(&"hang") and player.has_animation(&"climb")
 	_idle_length = player.get_animation(&"idle").length
 	_skeleton = _model.find_children("*","Skeleton3D",true,false)[0]
 	_boots = [_skeleton.find_bone("foot.L"),_skeleton.find_bone("foot.R")]
@@ -184,9 +227,12 @@ func _init() -> void:
 		up = up.get_parent()
 	_to_skeleton = placed.basis.inverse()
 	_rng.randomize()
-	for clip: String in ["idle","walk","run","skid"] if _has_skid else ["idle","walk","run"]:
+	var clips: Array[String] = ["idle","walk","run"]
+	if _has_skid: clips.append("skid")
+	if _has_ledge: clips.append_array(["hang","shimmy_left","shimmy_right","climb"])
+	for clip: String in clips:
 		var animation := player.get_animation(clip)
-		animation.loop_mode = Animation.LOOP_LINEAR
+		animation.loop_mode = Animation.LOOP_NONE if clip == "climb" else Animation.LOOP_LINEAR
 		# Between the baked frames, smoothly.
 		for track in range(animation.get_track_count()):
 			animation.track_set_interpolation_type(track,Animation.INTERPOLATION_CUBIC)
@@ -214,9 +260,26 @@ func _init() -> void:
 		blend.connect_node(&"skid_at",0,&"skid_clip")
 		blend.connect_node(&"skid",0,&"move")
 		blend.connect_node(&"skid",1,&"skid_at")
-		blend.connect_node(&"output",0,&"skid")
+	var ground := &"skid" if _has_skid else &"move"
+	if _has_ledge:
+		for clip: StringName in [&"hang",&"shimmy_left",&"shimmy_right",&"climb"]:
+			var node := AnimationNodeAnimation.new()
+			node.animation = clip
+			blend.add_node(StringName(String(clip)+"_clip"),node)
+			blend.add_node(StringName(String(clip)+"_at"),AnimationNodeTimeSeek.new())
+			blend.connect_node(StringName(String(clip)+"_at"),0,StringName(String(clip)+"_clip"))
+		for mix: StringName in [&"shimmy_way",&"shimmy",&"climbing",&"ledge"]: blend.add_node(mix,AnimationNodeBlend2.new())
+		blend.connect_node(&"shimmy_way",0,&"shimmy_left_at")
+		blend.connect_node(&"shimmy_way",1,&"shimmy_right_at")
+		blend.connect_node(&"shimmy",0,&"hang_at")
+		blend.connect_node(&"shimmy",1,&"shimmy_way")
+		blend.connect_node(&"climbing",0,&"shimmy")
+		blend.connect_node(&"climbing",1,&"climb_at")
+		blend.connect_node(&"ledge",0,ground)
+		blend.connect_node(&"ledge",1,&"climbing")
+		blend.connect_node(&"output",0,&"ledge")
 	else:
-		blend.connect_node(&"output",0,&"move")
+		blend.connect_node(&"output",0,ground)
 	_tree = AnimationTree.new()
 	_tree.name = "Moves"
 	_tree.tree_root = blend
@@ -243,6 +306,9 @@ func _dress() -> void:
 ## "footfall" (0 the left boot touched down, 1 the right), "set_off" (moving
 ## from a stand), "turned" (whipped round out of a skid).
 func drive(motor: RefCounted, delta: float) -> Dictionary:
+	var hold: String = motor.hold if _has_ledge and "hold" in motor else ""
+	if hold != "" or _hold_was != "": return _drive_ledge(motor,hold,delta)
+	_ledge = move_toward(_ledge,0.0,delta/GRAB_FADE)
 	var out := {}
 	var turned := 0.0
 	if _facing_was != INF:
@@ -305,6 +371,92 @@ func drive(motor: RefCounted, delta: float) -> Dictionary:
 	_advance(delta)
 	return out
 
+## One frame on a ledge (and the one coming off it).
+func _drive_ledge(motor: RefCounted, hold: String, delta: float) -> Dictionary:
+	var was := _hold_was
+	_hold_was = hold
+	if was == "":
+		# Onto the ledge: the springs of the run let go of.
+		for spring: Spring in [_bank,_look,_nod,_arms,_hunch,_roll]:
+			spring.x = 0.0
+			spring.v = 0.0
+		_skid = 0.0
+		_skidding_was = false
+	if _facing_was != INF:
+		_yaw.x = wrapf(_yaw.x-angle_difference(_facing_was,motor.facing),-PI,PI)
+	_facing_was = motor.facing
+	match hold:
+		"":
+			if was == "climb":
+				# Up on top: the climb's last frame is the idle's first.
+				_ledge = 0.0
+				_climbing = 0.0
+				_moving = 0.0
+				_standing = true
+				_tree.set(&"parameters/idle_at/seek_request",0.0)
+				_still_springs()
+			# Let go, it fades back to the air's pose as it falls.
+		"catch":
+			# Turning round on the edge, standing.
+			if was == "": _tree.set(&"parameters/idle_at/seek_request",0.0)
+			_moving = move_toward(_moving,0.0,delta/FADE)
+		"lower", "climb":
+			if hold == "lower" or was == "lower" or was == "":
+				_ledge = 1.0
+				_climbing = 1.0
+				_still_springs()
+			_ledge = 1.0
+			_climbing = move_toward(_climbing,1.0,delta/CLIMB_FADE)
+			_climb_at = clampf(float(motor.hold_t),0.0,1.0)*CLIMB_LENGTH
+		"hang":
+			if was == "lower": _hang_time = 0.0
+			if was == "":
+				# Caught in the air: a jolt, hanging from the hands.
+				_stretch.v += GRAB_KICK
+				_lean.v += GRAB_SWING
+				_hang_time = 0.0
+			_ledge = move_toward(_ledge,1.0,delta/GRAB_FADE)
+			_climbing = move_toward(_climbing,0.0,delta/HUNG_FADE)
+			_hang_time = fmod(_hang_time+delta,HANG_LENGTH)
+			var pace := absf(float(motor.shimmy))
+			if pace > 0.01: _shimmy_way = move_toward(_shimmy_way,1.0 if float(motor.shimmy) > 0.0 else 0.0,delta/SHIMMY_TURN)
+			_shimmying = clampf(pace/(SHIMMY_SPEED*0.4),0.0,1.0)
+			_shimmy_phase = fmod(_shimmy_phase+pace/(SHIMMY_SPEED*SHIMMY_CYCLE)*delta,1.0)
+	var hanging := hold == "hang"
+	_stretch_to = 1.0
+	_nod_to = 0.0
+	_arms_to = 0.0
+	_look_to = 0.0
+	_hunch_to = 0.0
+	_roll_to = 0.0
+	_speed_was = 0.0
+	_grounded_was = hold == ""
+	_feet_was = Vector3.INF
+	var lean := _lean.step(0.0,delta)
+	var yaw := _yaw.step(0.0,delta)
+	_tilt.rotation = Vector3(lean,yaw,_bank.step(0.0,delta))
+	# Hanging, it sways, turns and stretches about the hands, otherwise about
+	# the feet (moving over as the hang fades in).
+	var about := GRIP*smoothstep(0.0,1.0,_ledge) if hanging else Vector3.ZERO
+	_tilt.position = about-_tilt.basis*about
+	_pivot.rotation = Vector3.ZERO
+	_advance(delta)
+	if hanging:
+		var stretch := _pivot.scale.y
+		_pivot.position = Vector3(0.0,about.y-(about.y-HIPS)*stretch,0.0)
+	return {}
+
+## The tilt and stretch at rest, at once (the body's origin jumps under a
+## clip that moves the body itself).
+func _still_springs() -> void:
+	for spring: Spring in [_bank,_lean,_yaw]:
+		spring.x = 0.0
+		spring.v = 0.0
+	_stretch.x = 1.0
+	_stretch.v = 0.0
+	_tilt.rotation = Vector3.ZERO
+	_tilt.position = Vector3.ZERO
+
 ## Where boot `side` (0 the left, 1 the right) stands, in the world: under
 ## its ankle, at the feet's height.
 func boot(side: int) -> Vector3:
@@ -358,6 +510,10 @@ func settle() -> void:
 	_nod_to = 0.0
 	_arms_to = 0.0
 	_tilt.rotation = Vector3.ZERO
+	_tilt.position = Vector3.ZERO
+	_hold_was = ""
+	_ledge = 0.0
+	_climbing = 0.0
 	_idle_anywhere()
 	_apply()
 	_tree.advance(0.0)
@@ -369,6 +525,15 @@ func _apply() -> void:
 	_tree.set(&"parameters/walk_at/seek_request",_phase*WALK_CYCLE)
 	_tree.set(&"parameters/run_at/seek_request",_phase*RUN_CYCLE)
 	if _has_skid: _tree.set(&"parameters/skid/blend_amount",smoothstep(0.0,1.0,_skid))
+	if _has_ledge:
+		_tree.set(&"parameters/ledge/blend_amount",smoothstep(0.0,1.0,_ledge))
+		_tree.set(&"parameters/climbing/blend_amount",smoothstep(0.0,1.0,_climbing))
+		_tree.set(&"parameters/shimmy/blend_amount",smoothstep(0.0,1.0,_shimmying))
+		_tree.set(&"parameters/shimmy_way/blend_amount",_shimmy_way)
+		_tree.set(&"parameters/hang_at/seek_request",_hang_time)
+		_tree.set(&"parameters/shimmy_left_at/seek_request",_shimmy_phase*SHIMMY_CYCLE)
+		_tree.set(&"parameters/shimmy_right_at/seek_request",_shimmy_phase*SHIMMY_CYCLE)
+		_tree.set(&"parameters/climb_at/seek_request",_climb_at)
 
 ## The idle taken up at a random moment of its loop.
 func _idle_anywhere() -> void:

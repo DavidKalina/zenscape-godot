@@ -31,7 +31,16 @@ run starting on the left boot's touchdown so the game can blend them in step:
   skid  SKID_LENGTH s, braking hard out of a run (the game slides the body
         and turns it round after): a held pose juddering, facing the way it
         ran, dropped low and leaning back, the left boot braced in front on
-        its heel, the arms flung back and out, the scarf tails thrown up.
+        its heel, the arms flung back and out, the scarf tails thrown up;
+  hang  HANG_LENGTH s hanging from a lip by both mitts (reached to it by
+        IK), the cap peeking over, swaying under the hands, legs dangling;
+  shimmy_left, shimmy_right  hand over hand along the lip, made for
+        SHIMMY_SPEED m/s, a gripping mitt fixed to the lip as the walk's
+        boots are to the ground;
+  climb CLIMB_LENGTH s, once (not a loop): from the hang's first frame up
+        over the lip (pull, press, a knee over, stand) to the idle's first
+        frame stood CLIMB_IN in on the top; the body moves in the clip.
+        Played back, it lowers him from the top into the hang.
 Walking and running, each planted boot stays fixed to the ground (touchdown,
 flat, rolling over the ball), so played at the right pace nothing slides;
 standing, a boot only moves lifted.
@@ -67,6 +76,10 @@ numbers:
 | IDLE_LENGTH            | the idle's loop (s), not kept by the game         |
 | SKID_LENGTH, SKID_DROP | the skid's loop (s) and its hips' drop (m), not kept by the game |
 | HIPS                   | the pelvis over the ground (m), standing          |
+| hang, shimmy_left, shimmy_right, climb | the ledge's clips; the climb doesn't loop |
+| HANG_DROP, HANG_OUT    | the lip over the feet and ahead of them, hanging (m) |
+| CLIMB_LENGTH, CLIMB_IN | the climb (s) and where it stands him in from the edge (m) |
+| SHIMMY_SPEED, SHIMMY_CYCLE, HANG_LENGTH | the shimmy's pace (m/s) and loop (s); the hang's loop |
 """
 import math
 import sys
@@ -96,6 +109,22 @@ RUN_STANCE = 0.3
 IDLE_LENGTH = 18.0
 SKID_LENGTH = 0.35
 SKID_DROP = 0.055      # m the hips drop skidding
+# The ledge (scripts/pilot_motor.gd keeps copies): hanging, the lip's edge
+# stands HANG_OUT ahead of the feet (the origin) and HANG_DROP over them; the
+# climb ends standing CLIMB_IN in from the edge, on the lip's height.
+HANG_DROP = 1.0
+HANG_OUT = 0.22
+HANG_LENGTH = 4.0
+SHIMMY_SPEED = 0.7     # m/s along the lip
+SHIMMY_CYCLE = 0.5     # seconds a full cycle, both hands
+SHIMMY_STANCE = 0.57   # the share of the cycle a hand grips
+CLIMB_LENGTH = 0.9
+CLIMB_IN = 0.3
+# Where the mitts grip: the wrists this far in over the edge and up off the
+# top, this far either side of the middle.
+GRIP_IN = 0.03
+GRIP_UP = 0.035
+GRIP_X = 0.17
 
 # ------------------------------------------------------------------ the body
 # Build units (person_kit.gd, islander_figure.gd) and the pilot's scale of
@@ -124,6 +153,8 @@ def G(x, y, z):
 # The same numbers in Blender metres, for posing.
 THIGH = LEG[0] * SCALE
 SHIN = LEG[1] * SCALE
+UPPER = ARM[0] * SCALE
+FORE = ARM[1] * SCALE
 ANKLE = ANKLE_BUILD * SCALE
 HIPS = HIPS_BUILD * SCALE + 0.005
 # The boot's sole: the heel behind the ankle and the ball before it, where
@@ -468,9 +499,13 @@ class Pose:
         self.hips_at = Vector((0, 0, HIPS))
         self.feet = {}      # side -> (ankle, the boot's turn)
         self.pole = {}      # side -> the knee's way
+        self.hands = {}     # side -> (wrist, the elbow's way, how much: 0 FK to 1 on the wrist)
 
 def solve(pose):
-    """Armature-space matrices for every bone, and the legs' worst reach."""
+    """Armature-space matrices for every bone, and the legs' worst reach.
+    An arm with a goal in `pose.hands` is reached to its wrist by two-bone
+    IK (the elbow out its way), mixed with its FK turns by the goal's
+    weight; its mitt rides on as FK."""
     P = {}
     for name in ORDER:
         if name.startswith(("thigh", "shin", "foot")):
@@ -484,6 +519,9 @@ def solve(pose):
             local.translation = rot3.inverted() @ (pose.hips_at - rest.translation)
         carried = rest if parent is None else P[parent] @ (REST[parent].inverted() @ rest)
         P[name] = carried @ local
+        side = name.split(".")[-1]
+        if name.startswith("forearm.") and side in pose.hands:
+            reach_arm(P, side, *pose.hands[side])
     reach = 0.0
     for n in SIDES:
         hip = (P["hips"] @ (REST["hips"].inverted() @ REST[f"thigh.{n}"])).translation
@@ -496,6 +534,28 @@ def solve(pose):
         foot.translation = ankle
         P[f"foot.{n}"] = foot
     return P, reach
+
+ARM_REACH = [0.0]
+
+def reach_arm(P, n, wrist, pole, weight):
+    """The arm on side `n` reached to `wrist` (its elbow out towards
+    `pole`), mixed `weight` of the way from its FK pose."""
+    upper, fore = f"upper_arm.{n}", f"forearm.{n}"
+    sh = P[upper].translation
+    elbow, reached, bend, r = two_bone(sh, wrist, UPPER, FORE, pole)
+    ARM_REACH[0] = max(ARM_REACH[0], r * weight)
+    # The bend's side is the forearm's fold, the bones' +Z as the legs'.
+    up_ik = matrix(sh, elbow - sh, -bend).to_quaternion()
+    fore_ik = matrix(elbow, reached - elbow, -bend).to_quaternion()
+    def mix(fk, ik):
+        if fk.dot(ik) < 0:
+            ik = -ik
+        return fk.slerp(ik, weight)
+    up_q = mix(P[upper].to_quaternion(), up_ik)
+    fore_q = mix(P[fore].to_quaternion(), fore_ik)
+    P[upper] = Matrix.Translation(sh) @ up_q.to_matrix().to_4x4()
+    at = sh + up_q @ Vector((0, UPPER, 0))
+    P[fore] = Matrix.Translation(at) @ fore_q.to_matrix().to_4x4()
 
 def basis(P):
     out = {}
@@ -774,6 +834,234 @@ def idle_pose(p):
                                                roll=-2.0 * w_late + 3.0 * s + 1.5 * breeze * sine(p, 7, lag))
     return pose
 
+# ------------------------------------------------------------------ the ledge
+# Hanging from a lip and climbing up onto it. The clip's frame: the feet (the
+# origin) hang HANG_DROP under the lip's top and HANG_OUT out from its edge,
+# facing it (+Y), the wall straight down from the edge. The mitts grip over
+# the edge (GRIP); the arms are reached to them by IK.
+def grip(s, along=0.0, lift=0.0, back=0.0):
+    """Where the mitt on side `s` grips: `along` the lip from its own
+    place, lifted `lift` off it and pulled `back` out from the edge."""
+    return Vector((s * GRIP_X + along, HANG_OUT + GRIP_IN - back, HANG_DROP + GRIP_UP + lift))
+
+def dangle(pose, n, s, hips, kick=0.0, out=0.0, toe=-28.0):
+    """A boot hanging under the hips, the knee a little bent, the toe
+    down; `kick` swings it forward, `out` to its side."""
+    ankle = hips + Vector((s * (0.075 + out), 0.03 + kick, -0.365))
+    pose.feet[n] = (ankle, qz(deg(-6.0 * s)) @ qx(deg(toe)))
+    pose.pole[n] = Vector((0.15 * s, 1.0, 0.1))
+
+HANG_HIPS = Vector((0.0, HANG_OUT - 0.17, HANG_DROP - 0.575))
+
+def hang_pose(p):
+    """Hanging by both mitts from the lip, the arms near straight up over
+    the head (the cap peeking over the edge), the elbows out; swaying a
+    little side to side and to and fro under the hands, the legs dangling
+    and swinging lazily after the body, a glance along the lip and back, a
+    breath; the scarf tails stirring down the back."""
+    pose = Pose()
+    sway = sine(p, 1)
+    swing = sine(p, 2, 0.1)
+    breath = -wave(p, 3)
+    hips = HANG_HIPS + Vector((0.014 * sway, 0.006 * swing, 0.003 * breath))
+    pose.hips_at = hips
+    # Swung out to a side, it hangs at a slant from the hands.
+    pose.turns["hips"] = turn(pitch=-1.0 - 1.5 * swing, roll=-3.0 * sway, yaw=2.0 * sine(p, 1, 0.3))
+    pose.turns["chest"] = turn(pitch=1.0 + 1.2 * breath, roll=1.5 * sway, yaw=-1.5 * sine(p, 1, 0.3))
+    glance = 14.0 * idle_like(p)
+    pose.turns["neck"] = turn(pitch=6.0, yaw=0.4 * glance)
+    pose.turns["head"] = turn(pitch=10.0 + 2.0 * swing, yaw=0.6 * glance, roll=-2.0 * sway)
+    for n, s in SIDES.items():
+        pose.hands[n] = (grip(s), Vector((0.9 * s, -0.5, -0.5)), 1.0)
+        pose.turns[f"hand.{n}"] = turn(pitch=-25.0)
+        late = 0.06 + (0.03 if n == "R" else 0.0)
+        dangle(pose, n, s, hips, kick=0.03 * sine(p, 2, 0.1 + late) - 0.01 * swing, out=0.006 * sine(p, 1, late))
+        scarf(pose, p, n, s, back=6.0, flutter=4.0, flap=4.0, beat=6)
+    return pose
+
+def idle_like(p):
+    """A glance along the lip and back once a loop, held a while each way."""
+    return periodic([(0.0, 0.0), (0.2, 0.0), (0.3, 1.0), (0.5, 1.0), (0.6, -0.6), (0.75, -0.6), (0.85, 0.0)])(p)
+
+SHIMMY = Gait(SHIMMY_SPEED, SHIMMY_CYCLE, SHIMMY_STANCE, lift=0.035, peak=0.45,
+              pitch=[(0.0, 0.0), (0.5, 0.0)], tangent=0.6)
+
+def shimmy_pose(p, way):
+    """Hand over hand along the lip, `way` 1 to the right, -1 to the left
+    (in place: the game moves the body): each mitt in turn lifts, reaches
+    on and grips, the other hanging on; the body rocks under the gripping
+    hand and lifts a touch as both grip, the legs trail the way and swing,
+    the head looks where it goes."""
+    pose = Pose()
+    rock = sine(p, 2, 0.05)
+    hips = HANG_HIPS + Vector((-way * 0.012 + 0.01 * rock, 0.0, 0.04 + 0.008 * wave(p, 2, 0.35)))
+    pose.hips_at = hips
+    pose.turns["hips"] = turn(pitch=-1.0, roll=way * 3.0 - 2.5 * rock, yaw=-way * 2.0)
+    pose.turns["chest"] = turn(pitch=1.0 + 1.0 * wave(p, 2, 0.2), roll=2.0 * rock, yaw=-way * 1.0)
+    pose.turns["neck"] = turn(pitch=5.0, yaw=-way * 8.0)
+    pose.turns["head"] = turn(pitch=8.0 - 2.0 * wave(p, 2, 0.3), yaw=-way * 14.0, roll=-1.5 * rock)
+    for n, s in SIDES.items():
+        q = (p + (0.0 if s == way else 0.5)) % 1.0
+        along, lift, _ = SHIMMY.at(q)
+        pose.hands[n] = (grip(s, way * along, lift, back=0.4 * lift), Vector((0.9 * s, -0.5, -0.5)), 1.0)
+        pose.turns[f"hand.{n}"] = turn(pitch=-25.0 + 120.0 * lift)
+        # The legs trail the way, swinging after the body.
+        late = 0.12 + (0.04 if n == "R" else 0.0)
+        dangle(pose, n, s, hips + Vector((-way * (0.03 + 0.012 * wave(p, 2, late)), 0, 0)),
+               kick=0.02 * sine(p, 2, late))
+        scarf(pose, p, n, s, back=8.0, flutter=5.0, flap=6.0)
+    return pose
+
+# The climb: keyed poses, every channel eased through them (flat at the
+# ends, so it leaves the hang and comes to the stand at rest). It starts as
+# the hang (its first frame) and ends as the idle's first frame, stood
+# CLIMB_IN in on the lip, so the game takes either up without a pop; played
+# backwards it lowers him from standing on the lip into the hang.
+TOP = Vector((0.0, HANG_OUT + CLIMB_IN, HANG_DROP))
+
+def channels(pose):
+    """A pose as flat channels of numbers (the quaternions as they are)."""
+    out = {"hips": list(pose.hips_at)}
+    for name in ORDER:
+        if not name.startswith(("thigh", "shin", "foot")):
+            out["turn:" + name] = list(pose.turns.get(name, Quaternion()))
+    for n in SIDES:
+        ankle, rot = pose.feet[n]
+        out["foot:" + n] = list(ankle) + list(rot)
+        out["pole:" + n] = list(pose.pole[n])
+        if n in pose.hands:
+            wrist, elbow, weight = pose.hands[n]
+            out["hand:" + n] = list(wrist) + list(elbow) + [weight]
+    return out
+
+def from_channels(c):
+    pose = Pose()
+    pose.hips_at = Vector(c["hips"])
+    for key, v in c.items():
+        if key.startswith("turn:"):
+            pose.turns[key[5:]] = Quaternion(v).normalized()
+    for n in SIDES:
+        v = c["foot:" + n]
+        pose.feet[n] = (Vector(v[:3]), Quaternion(v[3:]).normalized())
+        pose.pole[n] = Vector(c["pole:" + n])
+        v = c.get("hand:" + n)
+        if v and v[6] > 0.0005:
+            pose.hands[n] = (Vector(v[:3]), Vector(v[3:6]), min(v[6], 1.0))
+    return pose
+
+def eased(keys):
+    """A monotone cubic through (t, value) keys over [0, 1], flat at both
+    ends and wherever a key is a turning point."""
+    xs = [k[0] for k in keys]
+    ys = [k[1] for k in keys]
+    sec = [(ys[i + 1] - ys[i]) / (xs[i + 1] - xs[i]) for i in range(len(xs) - 1)]
+    tan = [0.0] * len(xs)
+    for i in range(1, len(xs) - 1):
+        a, b = sec[i - 1], sec[i]
+        h0, h1 = xs[i] - xs[i - 1], xs[i + 1] - xs[i]
+        tan[i] = 0.0 if a * b <= 0 else 3 * (h0 + h1) / ((2 * h1 + h0) / a + (h1 + 2 * h0) / b)
+    def f(t):
+        i = 0
+        while i < len(xs) - 2 and t > xs[i + 1]:
+            i += 1
+        h = xs[i + 1] - xs[i]
+        u = min(max((t - xs[i]) / h, 0.0), 1.0)
+        return ((2 * u ** 3 - 3 * u ** 2 + 1) * ys[i] + (u ** 3 - 2 * u ** 2 + u) * h * tan[i]
+                + (-2 * u ** 3 + 3 * u ** 2) * ys[i + 1] + (u ** 3 - u ** 2) * h * tan[i + 1])
+    return f
+
+def keyed(stages):
+    """A clip through `stages`, (t, Pose) from t 0 to 1: each channel eased
+    through its keys; a quaternion kept on the side of the one before it; a
+    hand let go of (no goal) keeps its last grip, unweighted."""
+    flat = [(t, channels(pose)) for t, pose in stages]
+    for i, (_, c) in enumerate(flat):
+        for n in SIDES:
+            if "hand:" + n not in c:
+                near = min((j for j in range(len(flat)) if "hand:" + n in flat[j][1]), key=lambda j: abs(j - i))
+                c["hand:" + n] = flat[near][1]["hand:" + n][:6] + [0.0]
+        if i:
+            for key, v in c.items():
+                if key.startswith("turn:") and sum(a * b for a, b in zip(v, flat[i - 1][1][key])) < 0:
+                    c[key] = [-x for x in v]
+                if key.startswith("foot:") and sum(a * b for a, b in zip(v[3:], flat[i - 1][1][key][3:])) < 0:
+                    c[key] = v[:3] + [-x for x in v[3:]]
+    curves = {key: [eased([(t, c[key][k]) for t, c in flat]) for k in range(len(v))] for key, v in flat[0][1].items()}
+    return lambda t: from_channels({key: [f(t) for f in fs] for key, fs in curves.items()})
+
+def lifted(pose, by):
+    """`pose` moved by `by` (the hips and the boots)."""
+    pose.hips_at = pose.hips_at + by
+    for n in SIDES:
+        ankle, rot = pose.feet[n]
+        pose.feet[n] = (ankle + by, rot)
+    return pose
+
+def climb_stage(hips, hips_turn, chest, head, feet, elbows, hands=1.0, hand_lift=0.0, hand_pitch=-25.0, tails=8.0):
+    """One of the climb's keyed poses: the hips' place and turn, the chest's
+    and head's pitch, each boot's (ankle, toe pitch, the knee's way) and the
+    elbows' way; the mitts on the lip by `hands` (lifted off it
+    `hand_lift`)."""
+    pose = Pose()
+    pose.hips_at = hips
+    pose.turns["hips"] = turn(pitch=hips_turn)
+    pose.turns["chest"] = turn(pitch=chest)
+    pose.turns["neck"] = turn(pitch=0.4 * head)
+    pose.turns["head"] = turn(pitch=0.6 * head)
+    for n, s in SIDES.items():
+        ankle, toe, knee = feet[n]
+        pose.feet[n] = (ankle, qz(deg(-6.0 * s)) @ qx(deg(toe)))
+        pose.pole[n] = Vector((knee[0] * s, knee[1], knee[2]))
+        if hands > 0.0:
+            pose.hands[n] = (grip(s, lift=hand_lift), Vector((elbows[0] * s, elbows[1], elbows[2])), hands)
+        pose.turns[f"hand.{n}"] = turn(pitch=hand_pitch)
+        scarf(pose, 0.0, n, s, back=tails, flutter=0.0, flap=0.0)
+    return pose
+
+FORWARD_KNEE = (0.15, 1.0, 0.1)
+# Dangling against the wall, the knees go out to the sides, not into it.
+WIDE_KNEE = (1.0, 0.25, 0.0)
+HIGH_KNEE = (0.35, 0.3, 1.0)
+
+def climb_clip():
+    """Up from the hang onto the lip: a gather (a dip, the knees drawn up),
+    the pull (the shoulders up to the lip, the elbows bending down and back),
+    the press up over the hands (the chest tipped over the lip, the elbows
+    up behind), the right knee swung up over the edge and its boot set on
+    the top, the left drawn up after it over the edge, stood up onto them as
+    the mitts let go, and settled into standing."""
+    stand = lifted(idle_pose(0.0), TOP)
+    right, left = stand.feet["R"][0], stand.feet["L"][0]
+    e = HANG_OUT
+    t = HANG_DROP
+    H = HANG_HIPS
+    gather = climb_stage(H + Vector((0, 0.01, 0.025)), -2.0, 2.0, 18.0,
+                         {"L": (H + Vector((-0.1, 0.03, -0.32)), -20.0, WIDE_KNEE), "R": (H + Vector((0.1, 0.04, -0.32)), -20.0, WIDE_KNEE)},
+                         (0.9, -0.5, -0.6))
+    pulled = climb_stage(Vector((0.0, e - 0.19, t - 0.3)), -4.0, -6.0, 22.0,
+                         {"L": (Vector((-0.1, e - 0.17, t - 0.64)), -25.0, WIDE_KNEE), "R": (Vector((0.11, e - 0.15, t - 0.58)), -15.0, WIDE_KNEE)},
+                         (0.7, -0.9, -0.9))
+    pressed = climb_stage(Vector((0.0, e - 0.16, t - 0.06)), -16.0, -30.0, 14.0,
+                          {"L": (Vector((-0.1, e - 0.15, t - 0.38)), -25.0, WIDE_KNEE), "R": (Vector((0.11, e - 0.14, t - 0.34)), -15.0, WIDE_KNEE)},
+                          (0.5, -1.0, 0.7))
+    swung = climb_stage(Vector((0.0, e - 0.12, t + 0.0)), -22.0, -30.0, 12.0,
+                        {"L": (Vector((-0.1, e - 0.15, t - 0.36)), -25.0, WIDE_KNEE), "R": (Vector((0.11, e - 0.1, t + 0.1)), 10.0, HIGH_KNEE)},
+                        (0.5, -1.0, 0.8))
+    planted = climb_stage(Vector((0.02, e - 0.02, t + 0.06)), -24.0, -26.0, 10.0,
+                          {"L": (Vector((-0.1, e - 0.14, t - 0.3)), -25.0, WIDE_KNEE), "R": (right, 0.0, HIGH_KNEE)},
+                          (0.5, -1.0, 0.8))
+    drawn = climb_stage(Vector((0.04, e + 0.04, t + 0.13)), -16.0, -16.0, 8.0,
+                        {"L": (Vector((-0.1, e - 0.05, t + 0.09)), 5.0, HIGH_KNEE), "R": (right, 0.0, HIGH_KNEE)},
+                        (0.5, -1.0, 0.6), hands=0.7, hand_lift=0.03)
+    risen = climb_stage(Vector((0.03, e + 0.22, t + 0.3)), -8.0, -8.0, 4.0,
+                        {"L": (left + Vector((0.0, -0.06, 0.05)), -6.0, FORWARD_KNEE), "R": (right, 0.0, FORWARD_KNEE)},
+                        (0.6, -1.0, 0.0), hands=0.3, hand_lift=0.1, hand_pitch=0.0, tails=12.0)
+    # The right boot plants as it stands at the end, and stays.
+    for st in (planted, drawn, risen):
+        st.feet["R"] = stand.feet["R"]
+    return keyed([(0.0, hang_pose(0.0)), (0.12, gather), (0.34, pulled), (0.5, pressed), (0.58, swung),
+                  (0.66, planted), (0.75, drawn), (0.85, risen), (1.0, stand)])
+
 # ================================================================== keying
 rig.animation_data_create()
 for pb in rig.pose.bones:
@@ -785,11 +1073,15 @@ def bake(name, length, pose_at):
     action.use_fake_user = True
     rig.animation_data.action = action
     worst, worst_at = 0.0, 0
+    arms, arms_at = 0.0, 0
     last = {}
     for f in range(frames + 1):
+        ARM_REACH[0] = 0.0
         P, reach = solve(pose_at(f / frames))
         if reach > worst:
             worst, worst_at = reach, f
+        if ARM_REACH[0] > arms:
+            arms, arms_at = ARM_REACH[0], f
         B = basis(P)
         for pb in rig.pose.bones:
             loc, rot, _ = B[pb.name].decompose()
@@ -804,18 +1096,27 @@ def bake(name, length, pose_at):
     action.frame_range = (0, frames)
     rig.animation_data.nla_tracks.new().strips.new(name, 0, action)
     rig.animation_data.action = None
-    print(f"PILOT_CLIP {name} frames={frames} seconds={frames / FPS:.3f} worst_reach={worst:.3f} at frame {worst_at}")
+    print(f"PILOT_CLIP {name} frames={frames} seconds={frames / FPS:.3f} worst_reach={worst:.3f} at frame {worst_at}"
+          + (f", the arms' {arms:.3f} at frame {arms_at}" if arms else ""))
 
 # The cycles must be whole frames: their lengths are what is baked.
-for value in (WALK_CYCLE, RUN_CYCLE, SKID_LENGTH):
+for value in (WALK_CYCLE, RUN_CYCLE, SKID_LENGTH, HANG_LENGTH, SHIMMY_CYCLE, CLIMB_LENGTH):
     assert abs(round(value * FPS) - value * FPS) < 1e-6, "a cycle must be whole frames"
 bake("idle", IDLE_LENGTH, idle_pose)
 bake("walk", WALK_CYCLE, walk_pose)
 bake("run", RUN_CYCLE, run_pose)
 bake("skid", SKID_LENGTH, skid_pose)
+bake("hang", HANG_LENGTH, hang_pose)
+bake("shimmy_left", SHIMMY_CYCLE, lambda p: shimmy_pose(p, -1.0))
+bake("shimmy_right", SHIMMY_CYCLE, lambda p: shimmy_pose(p, 1.0))
+bake("climb", CLIMB_LENGTH, climb_clip())
 for pb in rig.pose.bones:
     pb.location = (0, 0, 0)
     pb.rotation_quaternion = (1, 0, 0, 0)
+
+# The ledge's measures, for pilot_preview.py's block (not exported).
+for key in ("HANG_DROP", "HANG_OUT", "CLIMB_IN"):
+    rig[key] = globals()[key]
 
 # ================================================================== save, export
 bpy.ops.wm.save_as_mainfile(filepath=str(BLEND))
