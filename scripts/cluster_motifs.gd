@@ -40,12 +40,17 @@ extends RefCounted
 ## the anchor's), `seed` and `radius` exactly, and a stones relation
 ## `angle` and `swings`.
 ##
+## The floating mountain's data and its own features are in scripts/
+## cluster_mountain.gd.
+##
 ## Next (terrain motifs, not built yet): mountain (a spire role of a rock
 ## piece kind with a trail feature), lake (a role whose recipe sets its own
 ## water level), ravine (a role split by a cleft, a bridge relation within
 ## it), waterfall terraces (a fall relation onto a lower role's pool),
 ## forest hold, hermit's stack (the stack pattern). They fit as new kinds,
 ## features and relations; the format stays.
+
+const Mountain = preload("res://scripts/cluster_mountain.gd")
 
 const MOTIFS := {
 	"farmstead": {
@@ -114,6 +119,7 @@ const MOTIFS := {
 				"features":[{"type":"dock"},{"type":"fisher","chance":0.8}],
 				"relation":{"type":"bridge","to":"keeper","gap":Vector2(5.0,10.0)}},
 		]},
+	"mountain": Mountain.MOTIF,
 }
 
 ## The showcase (--showcase): the farmstead as first laid out by hand, its

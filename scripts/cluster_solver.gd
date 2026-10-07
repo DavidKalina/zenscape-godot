@@ -38,6 +38,7 @@ const Footbridge = preload("res://scripts/footbridge.gd")
 const Cabin = preload("res://scripts/cabin.gd")
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const MeadowTypes = preload("res://scripts/meadow_types.gd")
+const Mountain = preload("res://scripts/cluster_mountain.gd")
 
 ## Rim to rim (m): any two members at least MIN_GAP; stepping stones
 ## STONE_GAP apart (a running jump is about 2.5 to 3 m; checked against
@@ -434,6 +435,8 @@ static func _feature(m: Dictionary, f: Dictionary, placed: Array, centre: Vector
 			m.features.append({"type":"lamp","at":at+Vector2(0.5,0.3)})
 		"dock":
 			_dock(m,f,placed,outward,rng,plan)
+		"trail":
+			Mountain.lay(m,plan)
 		"fisher":
 			var dock := _find(m,"dock")
 			if dock.is_empty(): return
@@ -540,6 +543,7 @@ static func validate(plan: Dictionary) -> Array:
 		if absf(b.y-(to.shape.ground_at(Vector2(b.x-off.x,b.z-off.z))+off.y)) > 0.35: problems.append("bridge %s-%s: far end floats" % [br.from,br.to])
 	for m: Dictionary in members:
 		var shape: RefCounted = m.shape
+		problems.append_array(Mountain.problems(m))
 		for o: Dictionary in shape.objects:
 			var p := Vector2(o.x,o.z)
 			if not shape.on_land(p): problems.append("off the rim: %s on %s" % [o.asset,m.name])

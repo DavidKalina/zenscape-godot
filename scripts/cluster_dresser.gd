@@ -22,6 +22,7 @@ const Cabin = preload("res://scripts/cabin.gd")
 const StoneLamp = preload("res://scripts/stone_lamp.gd")
 const IslanderFigure = preload("res://scripts/islander_figure.gd")
 const SkyFolk = preload("res://scripts/sky_folk.gd")
+const Mountain = preload("res://scripts/cluster_mountain.gd")
 
 const WARM := Color("ffb466")
 const LIGHT_COLOR := Color("ffb36b")
@@ -69,6 +70,7 @@ static func _mats() -> Dictionary:
 ## Lets the shared pieces go (with the sky).
 static func release() -> void:
 	_shared = {}
+	Mountain.release()
 
 ## The night's glow on every cluster: 0 by day, 1 at full night.
 static func set_night(night: float) -> void:
@@ -106,6 +108,7 @@ static func prepare(member: Dictionary, plan: Dictionary) -> Dictionary:
 				out.features[i] = Builds.fence(corners,gate,func(p: Vector2) -> float: return shape.ground_at(p) if shape.inland(p) > 0.2 else -INF,int(member.seed) % 991)
 	for br: Dictionary in plan.bridges:
 		if br.from == member.name: out.bridges.append(Footbridge.build_mesh(br.a,br.b,hash(br.to) % 997))
+	if shape.get("spire") != null: out.mountain = Mountain.prepare(member)
 	return out
 
 ## Stands what stands on `member` under its islet's `node`; what moves or
@@ -227,12 +230,17 @@ static func furnish(node: Node3D, member: Dictionary, plan: Dictionary, made: Di
 				line.material_override = m.solid
 				line.position = figure.transform*(hand+Builds.rod_tip(2.6)/SkyFolk.SCALE)
 				node.add_child(line)
+			"star":
+				# A big warm point high up (a mountain hut's window), seen from far.
+				halos.append([f.at,f.get("halo",HALO_WINDOW)])
+				_light(node,f.at,float(f.get("reach",6.0)),float(f.get("energy",1.4)),FADE_BEACON,live)
 			"field":
 				var fence := MeshInstance3D.new()
 				fence.name = "Fence"
 				fence.mesh = made.features.get(i)
 				fence.material_override = m.solid
 				node.add_child(fence)
+	if made.has("mountain"): Mountain.furnish(node,made.mountain)
 	for mesh: Mesh in made.get("bridges",[]):
 		var bridge := MeshInstance3D.new()
 		bridge.name = "Footbridge"
