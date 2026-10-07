@@ -31,6 +31,10 @@ render_mode unshaded, blend_mix, cull_front, depth_draw_never, depth_test_disabl
 // pockets and holes, so glimpses of sky and sunlit cloud open and close
 // as it is flown through.
 //
+// A plane's tunnel through it (scripts/cloud_wakes.gd, `wake_*`, only the
+// points near this tower) is carved out of the density along the way, its
+// edge torn by the wisps, and the fog round an eye in the tunnel thins.
+//
 // Into the glide's haze by how far off the cloud the ray met is
 // (glide_haze.gdshaderinc, on a landform's gentler curve): its colour goes
 // to the dome's own along the ray (zsSkyBase, with the sun's aureole), so a
@@ -47,6 +51,7 @@ render_mode unshaded, blend_mix, cull_front, depth_draw_never, depth_test_disabl
 #include "res://shaders/glide_haze.gdshaderinc"
 #include "res://shaders/reference_sky_common.gdshaderinc"
 #include "res://shaders/cumulus_light.gdshaderinc"
+#include "res://shaders/cloud_wake.gdshaderinc"
 
 uniform sampler3D body : filter_linear, repeat_disable;
 // How far from the red stage to the green; how far it has waned (0 to 1);
@@ -66,6 +71,11 @@ uniform float strength = 1.0;
 uniform float haze_far = 1.0;
 uniform vec3 noise_shift = vec3(0.0);
 uniform sampler2D depth_texture : hint_depth_texture, filter_nearest, repeat_disable;
+// The planes' tunnels near it (CloudWakes `near_box`), global: how many,
+// and each point and its way.
+uniform int wake_count = 0;
+uniform vec4 wake_at[8];
+uniform vec4 wake_way[8];
 
 // How thick the cloud is (per metre at full density) seen from outside
 // and round an eye inside it, and how it is shaded along the sun.
@@ -101,6 +111,21 @@ float body_at(vec3 p) {
 // toward the crown (h, 0 at the sea to 1 at the top), and frayed.
 float cloud_at(float d, vec2 n, float h) {
 	return mix(0.45, 1.0, h) * SWELL * (n.r - 0.45) - d + (n.g - 0.5) * mix(8.0, 3.0, h);
+}
+
+// How much of the cloud a plane's tunnel leaves at a global point (1 none
+// cut), its edge torn by `rag` (0 to 1).
+float wake_keep(vec3 p, float rag) {
+	float keep = 1.0;
+	for (int i = 0; i < wake_count; i++) {
+		float age = zs_motion_time - wake_at[i].w;
+		float s = zs_wake_strength(age);
+		if (s <= 0.0) continue;
+		float rad = zs_wake_radius(wake_way[i].w, age);
+		float d = distance(p, zs_wake_nearest(p, wake_at[i].xyz, wake_way[i].xyz));
+		keep = min(keep, 1.0 - s * (1.0 - smoothstep(rad * 0.5, rad * 1.1, d + (rag - 0.5) * rad * 0.9)));
+	}
+	return keep;
 }
 
 void fragment() {
@@ -141,7 +166,9 @@ void fragment() {
 	float immersed = 0.0;
 	if (t_in <= 0.0) {
 		float h0 = clamp((ro.y - sea) / span, 0.0, 1.0);
-		immersed = smoothstep(-4.0, 24.0, cloud_at(body_at(ro), texture(cauliflower, (ro + boil) / TILE).rg, h0));
+		vec2 n0 = texture(cauliflower, (ro + boil) / TILE).rg;
+		immersed = smoothstep(-4.0, 24.0, cloud_at(body_at(ro), n0, h0));
+		if (wake_count > 0) immersed *= mix(0.35, 1.0, wake_keep(eye, n0.g));
 	}
 	vec3 glow_col = mix(vec3(0.95, 0.97, 1.0), sun_hue, 0.3) * GLOW;
 
@@ -188,6 +215,8 @@ void fragment() {
 		// Waning, the foot first: torn into rags along the wisps, thinner.
 		float gone = clamp(wane * 1.4 + (1.0 - h) * 0.4 - 0.4, 0.0, 1.0);
 		density *= smoothstep(gone * 0.75, gone * 0.75 + 0.2, n.g) * (1.0 - gone * gone);
+		// Torn through by a plane.
+		if (wake_count > 0 && density > 0.002) density *= wake_keep(p + frame, pocket);
 		if (density > 0.002) {
 			// Overhead and toward the sun, close by (while the ray still
 			// shows much): how much deeper in the cloud it gets, so a

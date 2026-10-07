@@ -1,8 +1,10 @@
 shader_type canvas_item;
 // The vapour over the glide's view (scripts/sky_flight.gd): deep in a cloud
-// or down in the cloud sea's top, the view goes softly white. Thickest at
-// the edges, ragged and drifting, so it reads as cloud streaming past and
-// never as a flat fade.
+// or down in the cloud sea's top, the view goes softly white. A soft fog,
+// thickest at the edges, rolling in slow, folded billows, a little brighter
+// overhead and cooler underfoot. It never streams out from the middle: the
+// cloud flying past is the mist round the eye (scripts/glide_air.gd), in
+// the world, so it moves as the eye does.
 #include "res://shaders/reference_globals.gdshaderinc"
 
 uniform float amount = 0.0;
@@ -18,16 +20,21 @@ float vapour_noise(vec2 p) {
 	return mix(mix(vapour_hash(i), vapour_hash(i + vec2(1.0, 0.0)), f.x),
 		mix(vapour_hash(i + vec2(0.0, 1.0)), vapour_hash(i + vec2(1.0, 1.0)), f.x), f.y);
 }
+float vapour_fbm(vec2 p) {
+	return vapour_noise(p) * 0.55 + vapour_noise(p * 2.03 + 1.7) * 0.3 + vapour_noise(p * 4.1 - 3.2) * 0.15;
+}
 
 void fragment() {
 	vec2 p = (UV - 0.5) * vec2(SCREEN_PIXEL_SIZE.y / SCREEN_PIXEL_SIZE.x, 1.0);
 	float t = zs_motion_time;
-	// Wisps streaming out from the middle, as if flown through.
-	float r = length(p);
-	vec2 flow = p / max(r, 1e-3) * t * 0.35;
-	float n = vapour_noise(p * 3.0 - flow) * 0.6 + vapour_noise(p * 7.0 - flow * 1.7 + 3.1) * 0.4;
-	float edge = smoothstep(0.15, 0.75, r);
-	float cover = clamp(amount * (0.55 + 0.45 * edge) + (n - 0.5) * 0.5 * amount, 0.0, 1.0);
-	vec3 white = min(zs_cloud_sky * 0.9 + zs_cloud_sun * 0.35, vec3(1.0));
-	COLOR = vec4(white, cover * 0.92);
+	// Billows folded over themselves, rolling slowly.
+	vec2 fold = vec2(vapour_fbm(p * 1.7 + vec2(t * 0.06, 0.0)), vapour_fbm(p * 1.7 + vec2(4.3, -t * 0.05)));
+	float n = vapour_fbm(p * 2.6 + fold * 1.6 + vec2(t * 0.03, t * 0.02));
+	float edge = smoothstep(0.1, 0.8, length(p));
+	float cover = clamp(amount * (0.4 + 0.45 * edge) + (n - 0.5) * 0.8 * amount, 0.0, 1.0);
+	// A sunlit cloud's heart: bright and faintly cool, never grey.
+	vec3 white = min(zs_cloud_sky * 0.95 + zs_cloud_sun * 0.5, vec3(1.0));
+	white = mix(white, vec3(0.97, 0.98, 1.0) * max(max(white.r, white.g), white.b), 0.45);
+	white *= mix(vec3(0.94, 0.96, 1.0), vec3(1.05), 1.0 - UV.y);
+	COLOR = vec4(min(white, vec3(1.0)), cover * 0.85);
 }
