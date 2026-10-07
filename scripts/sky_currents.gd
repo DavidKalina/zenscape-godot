@@ -13,11 +13,15 @@ extends Node3D
 ## sky between them. In one, the glide lifts at LIFT m/s. Islands that turn
 ## up later (scripts/sky_cells.gd) bring one of their own (`add_thermal`).
 ##
-## Both are drawn as soft wisps flowing along them
-## (shaders/sky_current.gdshader): long streaks down a jet, short ones
-## spiralling up a thermal. The paths go to the shader as a float texture,
-## one row per current (`_texture`), and the shader moves each wisp along
-## its row.
+## Both are drawn as the plate's breeze ribbons are (scripts/
+## breeze_ribbons.gd): painterly strokes, each the trace of a mote of air
+## (shaders/sky_jet_ribbon.gdshader). Down a jet a stroke rides downstream,
+## meandering round the core, swelling and sinking, now and then curling
+## through an eddy; up a thermal it rises spiralling round the column. The
+## paths go to the shader as a float texture, one row per current
+## (`_texture`), and the shader moves each stroke along its row. The old
+## fine streaks (shaders/sky_current.gdshader) are kept behind
+## `--old-currents`.
 ##
 ## Everything is laid out from the islands' slots (the plate at the origin,
 ## then each copy's offset), so the currents move with the world when the
@@ -50,14 +54,26 @@ const LIFT := 7.0
 const THERMAL_RADIUS := 7.0
 const THERMAL_FROM := -70.0
 const THERMAL_TO := 55.0
-## How the wisps fill each kind: per metre of jet and per thermal.
+## How the old streaks (`--old-currents`) fill each kind: per metre of jet
+## and per thermal.
 const JET_WISPS := 0.5
 const THERMAL_WISPS := 90
+## How the ribbons fill each kind: per metre of jet (a stroke and its tail
+## run about 80 m), and per thermal of the usual height. Each ribbon is a
+## strip of RIBBON_SEGMENTS down its length.
+const JET_RIBBONS := 1.0/55.0
+const THERMAL_RIBBONS := 5
+const RIBBON_SEGMENTS := 48
 
 ## Each current: {points: PackedVector3Array, closed, speed, radius, kind}.
 var currents := []
 var _wisps: MultiMeshInstance3D
 var _material: ShaderMaterial
+## The old fine streaks instead of the ribbons (`--old-currents`).
+var old_streaks := "--old-currents" in OS.get_cmdline_user_args()
+## Each stroke's instance data as last built (Colors, as the MultiMesh
+## holds them), for probes and tests.
+var stroke_data := []
 
 ## Lays out the currents round `slots` (global positions of the plate and
 ## every copy, the plate first) and builds their wisps.
@@ -281,16 +297,28 @@ func _build_wisps() -> void:
 	var custom := []
 	for row in range(currents.size()):
 		var current: Dictionary = currents[row]
-		var count := int(float(current.length)*JET_WISPS) if current.kind == "jet" else THERMAL_WISPS*maxi(1,roundi(float(current.length)/(THERMAL_TO-THERMAL_FROM)))
+		var jet: bool = current.kind == "jet"
+		var count := 0
+		if old_streaks:
+			count = int(float(current.length)*JET_WISPS) if jet else THERMAL_WISPS*maxi(1,roundi(float(current.length)/(THERMAL_TO-THERMAL_FROM)))
+		else:
+			count = maxi(3,roundi(float(current.length)*JET_RIBBONS)) if jet else THERMAL_RIBBONS*maxi(1,roundi(float(current.length)/(THERMAL_TO-THERMAL_FROM)))
 		for i in range(count):
-			# Row, where along it starts, a seed, a size.
-			custom.append(Color((row+0.5)/currents.size(),rng.randf(),rng.randf(),rng.randf()))
-	var quad := QuadMesh.new()
-	quad.size = Vector2.ONE
+			# Old streaks: row, where along it starts, a seed, a size.
+			# Ribbons: row, its share of the current's strokes (spread
+			# evenly), a seed, how many share it (/ 64).
+			if old_streaks: custom.append(Color((row+0.5)/currents.size(),rng.randf(),rng.randf(),rng.randf()))
+			else: custom.append(Color((row+0.5)/currents.size(),(i+rng.randf_range(0.2,0.8))/count,rng.randf(),count/64.0))
+	stroke_data = custom
 	var multimesh := MultiMesh.new()
 	multimesh.transform_format = MultiMesh.TRANSFORM_3D
 	multimesh.use_custom_data = true
-	multimesh.mesh = quad
+	if old_streaks:
+		var quad := QuadMesh.new()
+		quad.size = Vector2.ONE
+		multimesh.mesh = quad
+	else:
+		multimesh.mesh = ribbon_strip()
 	multimesh.instance_count = custom.size()
 	# Each wisp's transform (the identity: the shader places it) and custom
 	# data, in one buffer.
@@ -308,7 +336,13 @@ func _build_wisps() -> void:
 		buffer[at+15] = c.a
 	multimesh.buffer = buffer
 	_material = ShaderMaterial.new()
-	_material.shader = preload("res://shaders/sky_current.gdshader")
+	_material.shader = preload("res://shaders/sky_current.gdshader") if old_streaks else preload("res://shaders/sky_jet_ribbon.gdshader")
+	if not old_streaks:
+		for arg: String in OS.get_cmdline_user_args():
+			if arg.begins_with("--jet-opacity="): _material.set_shader_parameter("opacity",float(arg.get_slice("=",1)))
+			if arg.begins_with("--jet-width="): _material.set_shader_parameter("width_scale",float(arg.get_slice("=",1)))
+			if arg.begins_with("--jet-tail="): _material.set_shader_parameter("tail_scale",float(arg.get_slice("=",1)))
+			if arg.begins_with("--jet-glow="): _material.set_shader_parameter("glow",float(arg.get_slice("=",1)))
 	_material.set_shader_parameter("paths",_texture())
 	_material.set_shader_parameter("samples",SAMPLES)
 	_wisps = MultiMeshInstance3D.new()
@@ -319,6 +353,32 @@ func _build_wisps() -> void:
 	# The wisps are placed in the shader; never cull them.
 	_wisps.custom_aabb = AABB(Vector3.ONE*-1e5,Vector3.ONE*2e5)
 	add_child(_wisps)
+
+## A ribbon's strip: RIBBON_SEGMENTS long, two vertices across; x 0 at the
+## tail to 1 at the head, y 0 to 1 across (the shader lays it on the mote's
+## path and turns it to the eye).
+static func ribbon_strip() -> ArrayMesh:
+	var vertices := PackedVector3Array()
+	var indices := PackedInt32Array()
+	for i in range(RIBBON_SEGMENTS+1):
+		var x := float(i)/RIBBON_SEGMENTS
+		vertices.append(Vector3(x,0.0,0.0))
+		vertices.append(Vector3(x,1.0,0.0))
+		if i > 0:
+			var a := (i-1)*2
+			indices.append_array([a,a+1,a+3,a,a+3,a+2])
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = vertices
+	arrays[Mesh.ARRAY_INDEX] = indices
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
+	return mesh
+
+## The material the currents are drawn with (for tuning and tests).
+func wisp_material() -> ShaderMaterial:
+	_flush_wisps()
+	return _material
 
 func wisp_count() -> int:
 	_flush_wisps()
