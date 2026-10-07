@@ -9,6 +9,7 @@ extends SceneTree
 ##   Godot --windowed --path . --resolution 1280x720 -s res://tools/capture_clusters.gd \
 ##     -- --no-title --showcase --out=captures/clusters/try1 [--per=2] [--seed=7] [--hours=noon,night] [--only=showcase]
 const Motifs = preload("res://scripts/cluster_motifs.gd")
+const RavineShots = preload("res://tools/ravine_shots.gd")
 var scene: Node3D
 var eye: Node
 var out := "/private/tmp/zs-clusters"
@@ -127,8 +128,11 @@ func _shots(field: Node3D, s: Dictionary) -> Array:
 			{"label":"stones","eye":dock+Vector3(-14.0,3.0,13.0),"look":lead+Vector3(0.0,2.0,0.0)},
 			{"label":"point","eye":light+Vector3(26.0,6.0,18.0),"look":(light+mill)*0.5+Vector3(-6.0,2.0,0.0)},
 			{"label":"field","eye":lead+Vector3(14.0,4.5,-16.0),"look":lead+Vector3(-2.0,1.5,4.0)}]
-	return [{"label":"overview","eye":centre+(toward_home*1.3+side*0.9)*reach+Vector3.UP*reach*0.9,"look":centre+Vector3.DOWN*2.0},
+	var shots: Array = [{"label":"overview","eye":centre+(toward_home*1.3+side*0.9)*reach+Vector3.UP*reach*0.9,"look":centre+Vector3.DOWN*2.0},
 		{"label":"pass","eye":centre+(toward_home*0.9-side*0.9)*reach+Vector3.UP*4.0,"look":centre+Vector3.UP*2.0}]
+	var plan: Dictionary = field.clusters.get(s.key,{}).get("plan",{})
+	if plan.has("cleft"): shots.append_array(RavineShots.shots(plan,at))
+	return shots
 
 func _view(local: Vector3) -> Vector3:
 	return _parent.to_local(_islets.to_global(local))

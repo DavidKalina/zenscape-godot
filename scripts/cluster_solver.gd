@@ -38,6 +38,7 @@ const Footbridge = preload("res://scripts/footbridge.gd")
 const Cabin = preload("res://scripts/cabin.gd")
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const MeadowTypes = preload("res://scripts/meadow_types.gd")
+const RavineCut = preload("res://scripts/ravine_cut.gd")
 
 ## Rim to rim (m): any two members at least MIN_GAP; stepping stones
 ## STONE_GAP apart (a running jump is about 2.5 to 3 m; checked against
@@ -114,6 +115,7 @@ static func _solve(motif_name: String, seed_value: int, attempt: int) -> Diction
 			continue
 		var ok := false
 		if rel.type == "stones": ok = _lay_stones(m,parent,rel,placed,plan,rng)
+		elif rel.type in RavineCut.RELATIONS: ok = RavineCut.place(m,parent,rel,placed,plan,rng)
 		else:
 			for angle in _ways(motif,rel,m,parent,placed,rng,ring_base):
 				var gap: Vector2 = rel.get("gap",Vector2(6.0,12.0))
@@ -172,6 +174,7 @@ static func _member(motif: Dictionary, role: Dictionary, index: int, count: int,
 	if rng.randf() < float(role.get("pond",0.0)) and not spec.has("pond"):
 		spec.pond = {"toward":Vector2.from_angle(rng.randf()*TAU)}
 	var member_seed: int = int(role.get("seed",hash([seed_value,name]) & 0xffffff))
+	if spec.has("tear"): member_seed = RavineCut.share(spec,rng.seed,motif)
 	var shape: RefCounted = SkyIslet.author(member_seed,spec)
 	var y := rng.randf_range(height.x,height.y)
 	if role.has("offset"): y = (role.offset as Vector3).y
@@ -342,7 +345,7 @@ static func _lay_stones(m: Dictionary, parent: Dictionary, rel: Dictionary, plac
 # --- 3. Bridges ---------------------------------------------------------------------
 
 static func _bridge(parent: Dictionary, m: Dictionary, plan: Dictionary) -> void:
-	var ends := _bridge_ends(parent,m,m.offset)
+	var ends: Array = m.bridge_ends if m.has("bridge_ends") else _bridge_ends(parent,m,m.offset)
 	var a: Vector3 = ends[0]
 	var b: Vector3 = ends[1]
 	var span := Vector2(b.x-a.x,b.z-a.z).length()
@@ -434,6 +437,8 @@ static func _feature(m: Dictionary, f: Dictionary, placed: Array, centre: Vector
 			m.features.append({"type":"lamp","at":at+Vector2(0.5,0.3)})
 		"dock":
 			_dock(m,f,placed,outward,rng,plan)
+		"overlook", "lip_lanterns":
+			if not RavineCut.feature(m,f,placed,plan): _missing(m,f,plan)
 		"fisher":
 			var dock := _find(m,"dock")
 			if dock.is_empty(): return

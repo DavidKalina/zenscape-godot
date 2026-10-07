@@ -22,6 +22,7 @@ const Cabin = preload("res://scripts/cabin.gd")
 const StoneLamp = preload("res://scripts/stone_lamp.gd")
 const IslanderFigure = preload("res://scripts/islander_figure.gd")
 const SkyFolk = preload("res://scripts/sky_folk.gd")
+const RavineBuilds = preload("res://scripts/ravine_builds.gd")
 
 const WARM := Color("ffb466")
 const LIGHT_COLOR := Color("ffb36b")
@@ -90,7 +91,7 @@ static func prepare(member: Dictionary, plan: Dictionary) -> Dictionary:
 		var f: Dictionary = member.features[i]
 		match str(f.type):
 			"dock":
-				out.features[i] = Builds.dock(f.a,f.b,1.5,int(member.seed) % 997)
+				out.features[i] = RavineBuilds.overlook(f,int(member.seed) % 997) if f.has("lookout") else Builds.dock(f.a,f.b,1.5,int(member.seed) % 997)
 			"field":
 				var rect: Rect2 = f.rect
 				var corners := PackedVector2Array([rect.position+Vector2(-0.3,-0.3),Vector2(rect.end.x+0.3,rect.position.y-0.3),rect.end+Vector2(0.3,0.3),Vector2(rect.position.x-0.3,rect.end.y+0.3)])
@@ -209,7 +210,7 @@ static func furnish(node: Node3D, member: Dictionary, plan: Dictionary, made: Di
 				dock.mesh = made.features.get(i)
 				dock.material_override = m.solid
 				node.add_child(dock)
-				var hang := Builds.dock_lantern(f.a,f.b,1.5)
+				var hang := RavineBuilds.overlook_lantern(f) if f.has("lookout") else Builds.dock_lantern(f.a,f.b,1.5)
 				var lantern := _lantern(node,hang+Vector3.DOWN*0.34,1.0)
 				halos.append([hang+Vector3.DOWN*0.2,HALO_LANTERN])
 				_light(lantern,Vector3(0.0,0.12,0.0),4.0,0.9,FADE_SMALL,live)
