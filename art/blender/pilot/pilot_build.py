@@ -27,8 +27,8 @@ run starting on the left boot's touchdown so the game can blend them in step:
   run   the pace he goes by default, made for RUN_SPEED m/s (the motor's
         RUN): fairly upright, leaning in a little, knees up and heels kicked
         back, a moment in the air every step, the head steady, the arms
-        bent near square and pumping against the legs (mitts up to the
-        chest in front, back past the hip), the scarf streaming;
+        held out wide and bent sharp, pumping out at the sides against the
+        legs (Mario's in Odyssey), the scarf streaming;
   skid  SKID_LENGTH s, braking hard out of a run (the game slides the body
         and turns it round after): a held pose juddering, facing the way it
         ran, dropped low and leaning back, the left boot braced in front on
@@ -932,9 +932,9 @@ def run_pose(p):
     """A cartoon hero's run (Mario's, A Short Hike's): fairly upright,
     leaning in only a little, the knees driving up and the heels kicking
     back, low over each planted boot and up through the leap between, the
-    head steady and looking ahead; the arms bent near square at the elbow,
-    pumping against the legs, the mitt up in front of the chest on the
-    swing forward and back past the hip on the swing back."""
+    head steady and looking ahead; the arms held out wide from the body
+    and bent sharp at the elbow, pumping forward and back out at the sides
+    against the legs, the mitts loose about chest high."""
     pose = Pose()
     # Lowest over the planted boot, highest in the air between steps.
     bob = 0.03 * wave(p, 2, RUN_STANCE * 0.5 + 0.25)
@@ -952,15 +952,16 @@ def run_pose(p):
         y, lift, pitch = RUN.at(q)
         pose.feet[n] = boot_on(Vector((s * 0.09, y, 0.0)), lift, pitch, -5.0 * s)
         pose.pole[n] = qz(deg(-4.0 * s)) @ Vector((0, 1, 0.0))
-        # The arm pumps against its leg, close in by the body, the elbow
-        # bent near square (closing a little on the swing forward, opening
-        # on the swing back), the mitt coming up in front of the chest and
-        # in a little, then back past the hip.
+        # Mario's arms (Odyssey): held well out from the body, the elbow
+        # bent sharp so they read short, pumping forward and back out at
+        # the sides against the legs, the mitts about chest high and wide
+        # of the jacket, loose and lagging; flung out a little wider as the
+        # body comes down on each step.
         a = (q + 0.5) % 1.0
         swing = wave(a, 1, 0.06)
-        pose.turns[f"upper_arm.{n}"] = turn(pitch=-6.0 + 52.0 * swing, roll=-s * (10.0 - 4.0 * swing + 2.0 * wave(p, 2, 0.22)), yaw=-s * 10.0 * (0.5 + 0.5 * swing))
-        pose.turns[f"forearm.{n}"] = turn(pitch=90.0 + 12.0 * wave(a, 1, 0.1), yaw=s * 6.0)
-        pose.turns[f"hand.{n}"] = turn(pitch=-6.0 + 6.0 * wave(a, 1, 0.2))
+        pose.turns[f"upper_arm.{n}"] = turn(pitch=-4.0 + 36.0 * swing, roll=-s * (42.0 + 3.0 * swing + 4.0 * wave(p, 2, 0.22)))
+        pose.turns[f"forearm.{n}"] = turn(pitch=100.0 + 8.0 * wave(a, 1, 0.12), yaw=-s * 4.0)
+        pose.turns[f"hand.{n}"] = turn(pitch=-8.0 + 12.0 * wave(a, 1, 0.24), roll=-s * 4.0 * wave(p, 2, 0.3))
         scarf(pose, p, n, s, back=62.0, flutter=9.0, flap=10.0)
     return pose
 
