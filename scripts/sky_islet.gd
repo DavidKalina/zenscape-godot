@@ -233,6 +233,9 @@ var land := PackedInt32Array()
 var pond := Vector3.ZERO
 var lip := Vector2.ZERO
 var lip_out := Vector2.ZERO
+## The pond's water level (islet frame): WATER, or the recipe pond's own
+## `level` (a pool sunk under the rim, a pond held high).
+var water_level := WATER
 ## What grows: object records, as the plate's.
 var objects: Array[Dictionary] = []
 ## Trees and stones, for the glide and the walker: crowns (x, z, top over
@@ -248,8 +251,10 @@ var flowers: Array[String] = []
 ##   mounds / peaks: Array of Vector4(x, z, reach, height), smooth hill
 ##     mounds or the crag's ridged peaks, instead of the kind's own;
 ##   dome: how high the ground rises inland, instead of the kind's;
-##   pond: {at: Vector2, radius, toward: Vector2}, a pond whose channel
-##     leaves over the rim in the `toward` direction, on any kind;
+##   pond: {at: Vector2, radius, toward: Vector2, level}, a pond whose
+##     channel leaves over the rim in the `toward` direction (or at the
+##     shore point nearest `lip`), on any kind, its water at `level`
+##     (islet frame) instead of WATER;
 ##   pads: Array of Vector4(x, z, radius, lift), ground levelled to its
 ##     height at the middle (plus lift) for something to stand on, and kept
 ##     clear of plants;
@@ -542,6 +547,7 @@ func _cut_pond(rng: RandomNumberGenerator, inland: float) -> void:
 	var spec: Dictionary = recipe.get("pond",{})
 	if spec.has("at"): middle = spec.at
 	if spec.has("radius"): r = float(spec.radius)
+	if spec.has("level"): water_level = float(spec.level)
 	pond = Vector3(middle.x,middle.y,r)
 	# The lip: the shore point nearest the pond, a little seeded among the
 	# nearest few, so the channel is short; or, for a recipe's, the shore
@@ -551,9 +557,10 @@ func _cut_pond(rng: RandomNumberGenerator, inland: float) -> void:
 		var i := shore_edges[k]
 		var score := points[i].distance_to(middle)
 		if spec.has("toward"): score += 12.0*(1.0-(points[i]-middle).normalized().dot((spec.toward as Vector2).normalized()))
+		if spec.has("lip"): score = points[i].distance_to(spec.lip)
 		shore.append([score,i])
 	shore.sort()
-	var pick: int = shore[0 if spec.has("toward") else rng.randi_range(0,mini(2,shore.size()-1))][1]
+	var pick: int = shore[0 if spec.has("toward") or spec.has("lip") else rng.randi_range(0,mini(2,shore.size()-1))][1]
 	lip = points[pick]
 	var outward: Dictionary = IslandShore._outward(points,shore_edges)
 	lip_out = outward.get(pick,(lip-middle).normalized())
@@ -564,17 +571,17 @@ func _cut_pond(rng: RandomNumberGenerator, inland: float) -> void:
 		var d := p.distance_to(middle)/r
 		var cut := 1.0-smoothstep(CHANNEL*0.8,CHANNEL*1.45,_channel_distance(p))
 		# The bank stands over the water all round, but where the channel runs.
-		if d < 1.8 and cut <= 0.0: h = maxf(h,WATER+BANK*(1.0-smoothstep(1.2,1.8,d))+0.06)
+		if d < 1.8 and cut <= 0.0: h = maxf(h,water_level+BANK*(1.0-smoothstep(1.2,1.8,d))+0.06)
 		var bowl := 1.0-smoothstep(0.55,1.15,d)
-		h = minf(h,lerpf(h,WATER-BOWL,bowl))
-		h = minf(h,lerpf(h,WATER-0.14,cut))
+		h = minf(h,lerpf(h,water_level-BOWL,bowl))
+		h = minf(h,lerpf(h,water_level-0.14,cut))
 		heights[i] = h
 
 ## The pond's water in the islet frame: level, middle and radius, with the
 ## lip and the way out; empty if the islet has none.
 func water() -> Dictionary:
 	if pond.z <= 0.0: return {}
-	return {"level":WATER,"middle":Vector2(pond.x,pond.y),"radius":pond.z,"lip":lip,"out":lip_out}
+	return {"level":water_level,"middle":Vector2(pond.x,pond.y),"radius":pond.z,"lip":lip,"out":lip_out}
 
 func _channel_distance(p: Vector2) -> float:
 	if pond.z <= 0.0: return INF
@@ -1163,8 +1170,8 @@ func top_arrays(palette: Dictionary, shift := Vector3.ZERO) -> Array:
 			tone = gravel.lerp(earth,clampf(patch.get_noise_2d(at.x*3.0,at.y*3.0)*0.5+0.5,0.0,1.0))
 		elif _in_soil(at):
 			tone = earth.lerp(gravel,0.15)*lerpf(0.8,0.95,n)
-		elif pond.z > 0.0 and minf(a.y,minf(b.y,c.y)) < WATER+0.06 and (at.distance_to(Vector2(pond.x,pond.y)) < pond.z*1.5 or _channel_distance(at) < CHANNEL*1.5):
-			tone = sand*lerpf(1.0,0.72,clampf((WATER-middle.y)/BOWL,0.0,1.0))
+		elif pond.z > 0.0 and minf(a.y,minf(b.y,c.y)) < water_level+0.06 and (at.distance_to(Vector2(pond.x,pond.y)) < pond.z*1.5 or _channel_distance(at) < CHANNEL*1.5):
+			tone = sand*lerpf(1.0,0.72,clampf((water_level-middle.y)/BOWL,0.0,1.0))
 		elif kind == "shore":
 			var d := (shore_distance[ids[f*3]]+shore_distance[ids[f*3+1]]+shore_distance[ids[f*3+2]])/3.0
 			if d < BEACH*(0.8+0.4*n): tone = gravel if patch.get_noise_2d(at.x*2.0,at.y*2.0) > 0.25 else sand
@@ -1307,7 +1314,7 @@ func water_arrays(color := Color(0.25,0.57,0.59), shift := Vector3.ZERO) -> Arra
 	var rings := maxi(int(ceil(r/0.28)),4)
 	var segments := 36
 	var faces := []
-	var at := func(p: Vector2) -> Vector3: return Vector3(p.x,WATER,p.y)
+	var at := func(p: Vector2) -> Vector3: return Vector3(p.x,water_level,p.y)
 	var ring := func(k: int, s: int) -> Vector2: return middle+Vector2.from_angle(TAU*s/segments)*r*k/rings
 	for k in range(rings):
 		for s in range(segments):
@@ -1343,7 +1350,7 @@ func water_arrays(color := Color(0.25,0.57,0.59), shift := Vector3.ZERO) -> Arra
 	for f: Array in faces:
 		var v: Vector3 = f[0]
 		var p := Vector2(v.x,v.z)
-		var deep := maxf(WATER-ground_at(p),0.0)
+		var deep := maxf(water_level-ground_at(p),0.0)
 		vertices.append(v+shift)
 		normals.append(Vector3.UP)
 		colors.append(f[1])
