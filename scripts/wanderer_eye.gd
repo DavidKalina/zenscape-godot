@@ -66,6 +66,14 @@ extends Node
 ## they are polled; the hints name the pad's controls while it is in hand
 ## (scripts/pad_prompt.gd).
 ##
+## The island's rim (and an islet's) is a ledge (scripts/pilot_ledge.gd,
+## the motor's hold): stepping off it carefully (a walk, or the stick let
+## go or pulled back) the pilot turns and lowers himself to hang from it
+## (run off it and he flies, as ever); a step in the land too steep to walk
+## is caught falling past it. Hanging, the stick along the lip shimmies,
+## towards it or Space climbs up, away lets go (off the rim, into the
+## flight).
+##
 ## With `--glider` it glides under the old cloth wing instead
 ## (scripts/glider_figure.gd): a click (or E, or the pad's X) flaps for lift
 ## of its own, the right mouse button (or the right stick) looks round it,
@@ -81,6 +89,7 @@ const FIGURE_HEIGHT := 0.95
 const EYE_HEIGHT := 0.85
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const PilotFigure = preload("res://scripts/pilot_figure.gd")
+const PilotLedge = preload("res://scripts/pilot_ledge.gd")
 ## Jogging and running speed, in metres a second (the motor's).
 const WALK := PilotMotor.WALK
 const RUN := PilotMotor.RUN
@@ -181,6 +190,7 @@ const BOARD_HINT := "Space to take off  ·  WASD or arrows to run  ·  Mouse to 
 const LANDING_HINT := "Coming in to land  ·  Space, Q E or F to fly on"
 const ROLLING_HINT := "F to hop out"
 const NO_LANDING_HINT := "No island near enough to land on"
+const LEDGE_HINT := "A D or the arrows along the lip to shimmy  ·  Towards it or Space to climb up  ·  Away to let go"
 const PLANE_HINT := "A D to bank and turn  ·  W S to pitch  ·  Mouse to look round  ·  Space to boost  ·  Shift to brake  ·  Q E or click to barrel roll  ·  F to land  ·  C for the camera  ·  V or Esc to step out"
 ## The hints' forms for the pad (scripts/pad_prompt.gd `alternates`).
 const PAD_HINTS := {
@@ -191,6 +201,7 @@ const PAD_HINTS := {
 	BOARD_HINT:"{A} take off  ·  {LS} run  ·  {RS} look  ·  {B} step out",
 	LANDING_HINT:"Coming in to land  ·  {RT}, {LB} {RB} or {Y} to fly on",
 	ROLLING_HINT:"{Y} to hop out",
+	LEDGE_HINT:"{LS} along the lip to shimmy  ·  {LS} towards it or {A} to climb up  ·  {LS} away to let go",
 	PLANE_HINT:"{LS} steer  ·  {RS} look round  ·  {RT} boost  ·  {LT} brake  ·  {LB} {RB} barrel roll  ·  {Y} land  ·  {R3} camera  ·  {B} step out",
 	FLY_HINT:"{LS} turn and pitch  ·  {X} flap  ·  {LT} rise  ·  {RT} dive  ·  {Y} land  ·  {RS} look round  ·  {R3} camera  ·  {B} step out",
 }
@@ -519,11 +530,13 @@ func _turn() -> float:
 ## frame on the plate, an islet's (the world's, never turned) perched.
 func _sync_figure() -> void:
 	if not has_figure(): return
+	# On a ledge, where the motor draws the body (the climb's clip carries it).
+	var drawn := motor.origin() if motor.on_ledge() else (_feet if perch.is_empty() else _perch_feet)
 	if perch.is_empty():
-		figure.position = _feet
+		figure.position = drawn
 		figure.rotation = Vector3(0.0,motor.facing,0.0)
 	elif is_instance_valid(perch.node):
-		figure.global_transform = Transform3D(Basis(Vector3.UP,motor.facing),islands.islets.place(perch)+_perch_feet)
+		figure.global_transform = Transform3D(Basis(Vector3.UP,motor.facing),islands.islets.place(perch)+drawn)
 
 # --- Obstacles and water ------------------------------------------------------------
 
@@ -818,14 +831,15 @@ func _advance_eye(delta: float) -> void:
 	var was := _feet
 	var want := _want(_yaw-_turn(),delta)
 	_asked = want.length()
-	var events := motor.step(delta,want,top,jump,_ground_at,_walk)
+	var events := motor.step(delta,want,top,jump,_motor_ground,_walk,_lip)
 	if glide_enabled and events.has("fly"):
 		_launch(motor.speed(),false)
 		return
-	if glide_enabled and _off_plate(Vector2(motor.feet.x,motor.feet.z)):
+	if glide_enabled and not motor.on_ledge() and _off_plate(Vector2(motor.feet.x,motor.feet.z)):
 		_launch(motor.speed())
 		return
-	if not glide_enabled:
+	_ledge_events(events)
+	if not glide_enabled and not motor.on_ledge():
 		var held := _clamped(motor.feet)
 		motor.feet = Vector3(held.x,maxf(motor.feet.y,held.y),held.z)
 	_feet = motor.feet
@@ -866,6 +880,30 @@ func _top() -> float:
 ## terrain, or level with the feet off the map.
 func _ground_at(p: Vector2) -> float:
 	return _ground(Vector3(p.x,motor.feet.y,p.y))
+
+## The ground for the motor: as `_ground_at`, but none (-INF) off the
+## island's land, so its rim is an edge to fall from or catch.
+func _motor_ground(p: Vector2) -> float:
+	if not _on_land(p): return -INF
+	return _ground_at(p)
+
+## The lip near plate point `near` for the motor (scripts/pilot_ledge.gd):
+## the island's rim, or a step too steep to walk.
+func _lip(near: Vector2, y: float) -> Dictionary:
+	return PilotLedge.find(_motor_ground,near,y)
+
+## On a ledge: a grip and a climb sound as soft steps; hanging, the hint
+## says how to shimmy, climb and let go, and back on top the walk's again.
+func _ledge_events(events: Dictionary) -> void:
+	if events.has("grabbed") or events.has("climbed"): steps.step(_surface(),0.4)
+	if events.has("grabbed") and events.grabbed == "air": Pad.pulse(0.15,0.1,0.06)
+	if events.has("grabbed") or events.has("hung"):
+		if _hint.text != LEDGE_HINT:
+			_hint.text = LEDGE_HINT
+			_hint_time = 0.0
+			_hint.modulate.a = 1.0
+	if (events.has("climbed") or events.has("let_go")) and _hint.text == LEDGE_HINT:
+		_hint.text = _walk_hint() if perch.is_empty() else (PERCH_HINT if plane else GLIDER_PERCH_HINT)
 
 ## The motor's jumps and landings: their sounds and puffs (a chained jump
 ## pushes off in a ring of them, a landing hard enough comes down in one),
@@ -1284,12 +1322,14 @@ func _advance_perch(delta: float) -> void:
 	# Islets are never turned, so the camera's yaw is the islet's frame's too.
 	var want := _want(_yaw,delta)
 	_asked = want.length()
-	var events := motor.step(delta,want,_top(),jump,
-		func(p: Vector2) -> float: return float(shape.ground_at(p)) if shape.inside(p) else motor.feet.y,
-		func(feet: Vector3, step: Vector2) -> Vector3: return _perch_slide(shape,feet,step))
-	if events.has("fly") or not shape.inside(Vector2(motor.feet.x,motor.feet.z)):
+	var ground := func(p: Vector2) -> float: return float(shape.ground_at(p)) if shape.inside(p) else -INF
+	var events := motor.step(delta,want,_top(),jump,ground,
+		func(feet: Vector3, step: Vector2) -> Vector3: return _perch_slide(shape,feet,step),
+		func(near: Vector2, y: float) -> Dictionary: return PilotLedge.find(ground,near,y))
+	if events.has("fly") or (not motor.on_ledge() and not shape.inside(Vector2(motor.feet.x,motor.feet.z))):
 		_launch(maxf(motor.speed(),1.0),not events.has("fly"))
 		return
+	_ledge_events(events)
 	_perch_feet = motor.feet
 	_pace = Vector2(motor.velocity.x,motor.velocity.z)
 	_sync_figure()

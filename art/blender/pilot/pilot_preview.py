@@ -5,7 +5,7 @@ measures the planted boots in the game).
 
 Writes OUT_DIR/<clip>_<view>_<frame>.png (default /tmp/pilot_preview): about
 ten stills through each of walk, run and skid, the idle once a second
-through its length, and the model up close in its rest pose
+through its length, the ledge's clips against a block standing for the lip, and the model up close in its rest pose
 (model_<view>_000.png, to compare builds by). CLIP names limit it to those clips (`model` for
 the close-ups). Tile them with ffmpeg.
 """
@@ -90,5 +90,32 @@ if wanted("run"):
     render("run", range(0, last("run"), 2), ["side", "three", "front"])
 if wanted("skid"):
     render("skid", range(0, last("skid"), 3), ["side", "three", "front", "back"])
+# The ledge clips against a block standing for the lip: its edge HANG_OUT
+# ahead of the feet, its top HANG_DROP over them; no ground under the hang.
+LEDGE = ("hang", "shimmy_left", "shimmy_right", "climb")
+if any(wanted(c) for c in LEDGE) and "HANG_DROP" in rig:
+    drop, out = rig["HANG_DROP"], rig["HANG_OUT"]
+    bpy.ops.mesh.primitive_cube_add(size=1)
+    block = bpy.context.object
+    block.scale = (1.6, 1.0, 1.4)
+    block.location = (0, out + 0.5, drop - 0.7)
+    block.data.materials.append(bpy.data.materials.new("rock"))
+    block.data.materials[0].diffuse_color = (0.45, 0.42, 0.38, 1)
+    ground.hide_render = True
+    for v, (at, look, scale) in list(VIEWS.items()):
+        VIEWS["ledge" + v] = (at + Vector((0, 0, 0.4)), look + Vector((0, 0, 0.4)), scale + 0.3)
+    VIEWS["ledgeback"] = (Vector((0.6, -2.6, 1.3)), Vector((0, 0.1, 0.75)), 1.6)
+    VIEWS["ledgebackthree"] = (Vector((-1.9, -2.0, 1.7)), Vector((0, 0.1, 0.8)), 1.7)
+    VIEWS["climbside"] = (Vector((3.0, 0.3, 1.0)), Vector((0, 0.3, 1.0)), 2.1)
+    VIEWS["climbthree"] = (Vector((-2.2, -1.6, 2.0)), Vector((0, 0.3, 1.0)), 2.1)
+    if wanted("hang"):
+        render("hang", range(0, last("hang"), 60), ["ledgeside", "ledgeback", "ledgebackthree"])
+    for c in ("shimmy_left", "shimmy_right"):
+        if wanted(c):
+            render(c, range(0, last(c), 5), ["ledgeback", "ledgebackthree"])
+    if wanted("climb"):
+        render("climb", range(0, last("climb") + 1, 4), ["climbside", "climbthree"])
+    block.hide_render = True
+    ground.hide_render = False
 if wanted("idle"):
     render("idle", range(0, last("idle"), 60), ["three", "front"])
