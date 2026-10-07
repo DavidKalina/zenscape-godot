@@ -27,8 +27,8 @@ const MOTIF := {
 	"night":{"windows":true,"lanterns":true,"beam":false},
 	"roles":[
 		{"name":"peak","anchor":true,"kind":"meadow","radius":Vector2(26.0,31.0),"height":Vector2(0.0,0.0),
-			"spec":{"spire":{},"dome":0.3,"trees":Vector2i(2,5),"tree_pool":{"tree":1.0,"juniper":0.6,"birch":0.25},
-				"drifts":Vector2i(5,8),"undergrowth":0.8},
+			"spec":{"spire":{},"dome":0.3,"trees":Vector2i(6,10),"tree_pool":{"tree":1.0,"juniper":0.5,"birch":0.35},
+				"mixed":true,"drifts":Vector2i(8,12),"undergrowth":1.3},
 			"features":[{"type":"trail"},{"type":"bearer","chance":0.5}]},
 		{"name":"hold","kind":"hills","radius":Vector2(6.5,8.5),"height":Vector2(-3.4,-1.2),
 			"spec":{"mounds":[],"dome":0.45,"trees":Vector2i(2,4),"tree_pool":{"tree":1.0,"juniper":0.7}},
@@ -48,8 +48,8 @@ const FIRST_POST := 2.0
 const POST_OUT := 0.8
 ## The hut's star: its halo (m across near, strength), its light's reach
 ## (m) and energy, and how far over the window it burns (m).
-const STAR_HALO := Vector2(5.5,1.0)
-const STAR_REACH := 9.0
+const STAR_HALO := Vector2(8.0,1.0)
+const STAR_REACH := 12.0
 const STAR_ENERGY := 1.8
 ## The trail's steps: the run of one (m), its half width, its thickness, how
 ## far it stands proud of the bench, and the stone's tones.
