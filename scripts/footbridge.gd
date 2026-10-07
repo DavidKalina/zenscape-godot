@@ -16,12 +16,15 @@ extends Node3D
 ## drawn here, not by the garden's instance batches: each record is one
 ## faceted mesh in plate metres, a child of the terrain, rebuilt from the
 ## ground under its ends whenever the records or the land change. It changes
-## no height and holds no water: the live water runs under it untouched.
+## no height and holds no water: the live water runs under it untouched. A
+## rope bridge's mesh lives (scripts/rope_bridge.gd, `live`): it sags under
+## the walker, bounces and sways, and its deck (`deck_at`) moves with it.
 ##
 ## The planning half is static (`water`, `level_at`, `plan`) so probes and the
 ## editor read the same answer the ghost shows.
 
 const ClaySound = preload("res://scripts/clay_sound.gd")
+const RopeBridge = preload("res://scripts/rope_bridge.gd")
 
 ## The longest span (bank to bank, m), and the shortest worth a bridge. Past
 ## TIMBER_SPAN a bridge is hung on ropes rather than arched in timber.
@@ -86,6 +89,9 @@ var _ghost: MeshInstance3D
 var _ghost_key := PackedByteArray()
 static var _decks: Array[Dictionary] = []
 static var _decks_key := []
+## The live rope bridges' sims (scripts/rope_bridge.gd) by record id, for
+## the decks the walker reads.
+static var _sims := {}
 
 func _init() -> void:
 	name = "Footbridges"
@@ -393,17 +399,34 @@ func rebuild() -> void:
 			reused += 1
 		else:
 			if not entry.is_empty() and is_instance_valid(entry.node): entry.node.free()
-			var node := MeshInstance3D.new()
+			var node := _drawn(ends[0],ends[1],int(item.id))
 			node.name = "bridge_%d" % int(item.id)
-			node.mesh = build_mesh(ends[0],ends[1],int(item.id))
-			node.material_override = _material
 			add_child(node)
 			entry = {"node":node,"signature":signature}
 			rebuilt += 1
 		current[int(item.id)] = entry
+		if entry.node.get("sim") != null: _sims[int(item.id)] = entry.node.sim
 	for id: int in _entries:
 		if not current.has(id) and is_instance_valid(_entries[id].node): _entries[id].node.free()
+		if not current.has(id): _sims.erase(id)
 	_entries = current
+
+## A bridge from `a` to `b` drawn: a rope bridge alive (scripts/
+## rope_bridge.gd), a timber one as it is.
+func _drawn(a: Vector3, b: Vector3, seed: int) -> MeshInstance3D:
+	var mesh := build_mesh(a,b,seed)
+	var span := Vector2(b.x-a.x,b.z-a.z).length()
+	if roped(span): return live(mesh,a,b,seed)
+	var node := MeshInstance3D.new()
+	node.mesh = mesh
+	node.material_override = _material
+	return node
+
+## The rope bridge `build_mesh(a, b, seed)` made as `mesh`, alive (scripts/
+## rope_bridge.gd), its deck the walker reads `record` (or none).
+static func live(mesh: Mesh, a: Vector3, b: Vector3, seed: int, record := {}) -> MeshInstance3D:
+	var span := Vector2(b.x-a.x,b.z-a.z).length()
+	return RopeBridge.make(mesh,a,b,seed,bow(span),WIDTH,maxi(8,roundi(span/0.27)),record)
 
 ## A record's two ends on the ground (plate), or [] when one is off the land.
 static func ends_of(data: NativeTerrainData, item: Dictionary) -> PackedVector3Array:
@@ -431,7 +454,7 @@ static func decks(data: NativeTerrainData) -> Array[Dictionary]:
 		if ends.is_empty(): continue
 		var span := Vector2(ends[1].x-ends[0].x,ends[1].z-ends[0].z).length()
 		if span < 0.01: continue
-		_decks.append({"a":ends[0],"b":ends[1],"span":span,"rails":span >= RAILS_FROM})
+		_decks.append({"a":ends[0],"b":ends[1],"span":span,"rails":span >= RAILS_FROM,"sim":_sims.get(int(item.id))})
 	return _decks
 
 ## The deck under plate point `p` (the highest, where two cross): {"y" (the
@@ -447,8 +470,12 @@ static func deck_at(found: Array[Dictionary], p: Vector2) -> Dictionary:
 		var t := (p-from).dot(way)/way.length_squared()
 		if t < 0.0 or t > 1.0: continue
 		var side := (p-from).cross(way)/way.length()
+		# A live rope bridge (scripts/rope_bridge.gd) sways (its +side is
+		# this one's -side), rises and sinks.
+		var live: Variant = deck.get("sim")
+		if live != null: side += float(live.sway(t))
 		if absf(side) > WIDTH*0.5: continue
-		var y := lerpf(a.y,b.y,t)+lift(float(deck.span),t)
+		var y := lerpf(a.y,b.y,t)+lift(float(deck.span),t)+(float(live.drop(t,-side)) if live != null else 0.0)
 		if best.is_empty() or y > float(best.y): best = {"y":y,"t":t,"side":side,"deck":deck}
 	return best
 

@@ -632,10 +632,16 @@ func deck_y(p: Vector2) -> float:
 		var way := Vector2(b.x,b.z)-from
 		var t := (p-from).dot(way)/maxf(way.length_squared(),0.0001)
 		if t < 0.0 or t > 1.0: continue
-		if absf((p-from).cross(way)/way.length()) > float(deck.get("width",1.0))*0.5: continue
+		# A live rope bridge's deck (scripts/rope_bridge.gd) sways, rises and
+		# sinks; `side` is across it from where it has swayed to.
+		var live: Variant = deck.get("sim")
+		var side := -(p-from).cross(way)/way.length()
+		if live != null: side -= float(live.sway(t))
+		if absf(side) > float(deck.get("width",1.0))*0.5: continue
 		var bow := float(deck.get("bow",0.0))
 		var shape := sin(PI*t)
-		best = maxf(best,lerpf(a.y,b.y,t)+bow*(shape if bow > 0.0 else shape*shape))
+		var rise := float(live.drop(t,side)) if live != null else 0.0
+		best = maxf(best,lerpf(a.y,b.y,t)+bow*(shape if bow > 0.0 else shape*shape)+rise)
 	return best
 
 ## A per-point value at `p` on the faces it is drawn on, or `fallback` off
