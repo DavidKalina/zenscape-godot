@@ -117,6 +117,8 @@ var flora_source: Node
 ## The sides' materials made so far, by strata seed and depth.
 var _sides := {}
 var _water: Material
+## Steeped pond waters (`_pond_material` with tea), by tea in tenths.
+var _teas := {}
 var _since := CHECK
 var _clock := 0.0
 var _wanted: Array = []
@@ -160,6 +162,7 @@ func _exit_tree() -> void:
 func _release() -> void:
 	_sides.clear()
 	_water = null
+	_teas.clear()
 	_ground_material = null
 	_water_material = null
 	_tree_meshes.clear()
@@ -178,6 +181,7 @@ func reset(new_cells: SkyCells) -> void:
 	if _tree_meshes.is_empty(): _grow_trees()
 	if _catalog.is_empty(): catalog(flora_source)
 	_water = null
+	_teas.clear()
 	_sides.clear()
 	_pond_material()
 	cells = new_cells
@@ -404,7 +408,7 @@ func stand(node_name: String, home: Vector3, out: Dictionary) -> Dictionary:
 	if not (out.water as Array).is_empty():
 		var pond := MeshInstance3D.new()
 		pond.name = "Pond"
-		pond.mesh = _mesh_of(out,"water",_pond_material(),SkyIslet.WATER_FORMAT)
+		pond.mesh = _mesh_of(out,"water",_pond_material(float(shape.lake.get("tea",0.0))),SkyIslet.WATER_FORMAT)
 		pond.position = -OFF_MAP
 		pond.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		pond.set_meta("skip_reflection",true)
@@ -781,8 +785,11 @@ static func _grow_trees() -> void:
 ## (scripts/water_flow_view.gd), with everything tied to the plate's own
 ## ponds let go: the planar mirror (its plane is the plate's water level),
 ## the tea map, the falls' churn, the level fade and the algae film. Its sky reflection,
-## chop, glints and depth tint stay. Made once per sky (`reset`).
-func _pond_material() -> Material:
+## chop, glints and depth tint stay. Made once per sky (`reset`). With
+## `tea` (a lake steeped by what grows round it, IsletLake `steep`), the
+## same water steeped that much all over: a dark slate-blue tarn.
+func _pond_material(tea := 0.0) -> Material:
+	if tea >= 0.05: return _steeped(tea)
 	if _water != null: return _water
 	if water_source == null:
 		_water = _water_material
@@ -807,6 +814,19 @@ func _pond_material() -> Material:
 	water.set_shader_parameter("bed_absorb",WaterFlowView.BED_ABSORB)
 	_water = water
 	return _water
+
+func _steeped(tea: float) -> Material:
+	var key := clampi(roundi(tea*10.0),1,10)
+	if _teas.has(key): return _teas[key]
+	var plain := _pond_material()
+	if plain == _water_material: return plain
+	var water: ShaderMaterial = plain.duplicate()
+	var image := Image.create(1,1,false,Image.FORMAT_L8)
+	image.set_pixel(0,0,Color(key/10.0,key/10.0,key/10.0))
+	water.set_shader_parameter("tea_map",ImageTexture.create_from_image(image))
+	water.set_shader_parameter("tea_rect",Vector4(-100000.0,-100000.0,200000.0,200000.0))
+	_teas[key] = water
+	return water
 
 ## The plate's palette (scripts/native_terrain_palette.gd), for the ground.
 var palette_source: RefCounted
