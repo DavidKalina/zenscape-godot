@@ -14,7 +14,7 @@ extends Node
 ## is first laid out and again whenever it is laid out anew.
 ## tools/capture_landform.gd films them.
 ##
-## With --below the flag means the lower world's instead (scripts/
+## With the lower world on (the default in play) the flag means the lower world's instead (scripts/
 ## sky_archipelago.gd: those landforms stood near where the plane comes out
 ## under the cloud), and no preview stands in the sky.
 ##   godot --path . -- --no-title --landform=hills,cliffs
@@ -66,7 +66,7 @@ static func wanted() -> Array:
 	return out
 
 ## Adds a preview to `islands` (SkyIslands) when --landform asks for one,
-## unless the lower world takes the flag (--below).
+## unless the lower world takes the flag (it is on).
 static func attach(islands: Node3D) -> void:
 	if SkyBelow.on(): return
 	var names_wanted := wanted()
