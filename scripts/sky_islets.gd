@@ -45,6 +45,7 @@ const SkyFallThread = preload("res://scripts/sky_fall_thread.gd")
 const RockLooks = preload("res://scripts/rock_looks.gd")
 const ClusterFalls = preload("res://scripts/cluster_falls.gd")
 const FarTrees = preload("res://scripts/far_trees.gd")
+const MountainMassif = preload("res://scripts/mountain_massif.gd")
 
 ## The cells: size (m), the share holding an islet, how far its spot may sit
 ## from the cell's middle (share of the cell), and the height band (m).
@@ -357,6 +358,8 @@ static func _dress(shape: RefCounted, palette: Dictionary, plants: Dictionary, o
 	out.sides = shape.side_arrays()
 	out.water = shape.water_arrays(WaterFlowView.TINT.mid.srgb_to_linear(),OFF_MAP)
 	out.plants = shape.flora(plants)
+	# A mountain island's massif draws its own faces (scripts/mountain_massif.gd).
+	if shape.spire != null and shape.spire.has_method("bare"): out.massif = shape.spire.arrays(shape,OFF_MAP)
 	out.meshes = {"top":SkyIslet.mesh_from(out.top,null),"sides":SkyIslet.mesh_from(out.sides,null)}
 	if not (out.water as Array).is_empty():
 		if not meets_sea(shape):
@@ -422,6 +425,7 @@ func stand(node_name: String, home: Vector3, out: Dictionary) -> Dictionary:
 		pond.set_meta("skip_reflection",true)
 		node.add_child(pond)
 		if out.has("fall"): _fall(node,shape,out.fall,out.get("thread",{}))
+	if out.has("massif"): MountainMassif.stand(node,out.massif,shape,-OFF_MAP)
 	_plant(node,out.plants,float(shape.recipe.get("far_trees",0.0)))
 	var rng := RandomNumberGenerator.new()
 	rng.seed = shape.seed
@@ -432,7 +436,7 @@ func stand(node_name: String, home: Vector3, out: Dictionary) -> Dictionary:
 ## plants draw only near).
 func _fade(b: Dictionary) -> void:
 	var t := 1.0-smoothstep(0.0,1.0,clampf(float(b.get("age",FADE_IN))/FADE_IN,0.0,1.0))
-	for part in ["Body","Sides","Pond"]:
+	for part in ["Body","Sides","Pond","Massif"]:
 		var g := (b.node as Node3D).get_node_or_null(part) as GeometryInstance3D
 		if g != null: g.transparency = t
 

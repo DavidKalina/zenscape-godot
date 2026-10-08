@@ -58,6 +58,7 @@ const HillDowns = preload("res://scripts/hill_downs.gd")
 const SeaCliffs = preload("res://scripts/sea_cliffs.gd")
 const IsletStream = preload("res://scripts/islet_stream.gd")
 const ForestCanopy = preload("res://scripts/forest_canopy.gd")
+const MountainMassif = preload("res://scripts/mountain_massif.gd")
 
 ## Kinds and how often each turns up.
 const KINDS := [["meadow",0.22],["grove",0.22],["hills",0.15],["crag",0.11],["spring",0.18],["shore",0.12]]
@@ -337,7 +338,9 @@ var flowers: Array[String] = []
 ##     left open), and the bed is no ground (`inside` is the land's alone).
 ##   room: metres more of grid round the land (a sea cliff's stacks);
 ##   cliffs: a sea-cliff island (scripts/sea_cliffs.gd: its tableland,
-##     stacks, arch, cove and stratified walls).
+##     stacks, arch, cove and stratified walls);
+##   massif: a mountain island's massif (scripts/mountain_massif.gd), raised
+##     as a spire is and held in `spire`.
 var recipe := {}
 ## The recipe's decks, as it gives them.
 var decks: Array = []
@@ -424,6 +427,7 @@ func _shape(seed_value: int, forced: String) -> void:
 		var deeper := float(recipe.keel) if recipe.has("keel") else RockLooks.keel(radius,float(recipe.deep))
 		for i in range(keel.size()): keel[i] *= deeper
 	if recipe.has("spire"): spire = MountainSpire.raise(self)
+	elif recipe.has("massif"): spire = MountainMassif.raise_massif(self)
 	base = -(BASE.x+BASE.y*radius)
 	# A sea cliff's arch opens before the sea foot is laid, which leaves an
 	# underside raised over the water as it is.
@@ -1189,6 +1193,8 @@ func _ground_ok(p: Vector2, inset: float, steep: float, grassy: bool) -> bool:
 		if IsletLake.near(self,p,0.7): return false
 	elif pond.z > 0.0 and p.distance_to(Vector2(pond.x,pond.y)) < pond.z*1.25: return false
 	if _slope(f) > steep: return false
+	# A massif's bare rock, scree and snow grow nothing (MountainMassif `bare`).
+	if spire != null and spire.has_method("bare") and spire.bare(f): return false
 	if grassy and kind == "shore" and inland(p) < BEACH: return false
 	return true
 
