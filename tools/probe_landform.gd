@@ -7,6 +7,7 @@ extends SceneTree
 ## hills, to see what each does.
 ##   godot --headless --path . --script tools/probe_landform.gd -- [--landform=hills] [--seeds=3]
 const SkyIslet = preload("res://scripts/sky_islet.gd")
+const SkyIslets = preload("res://scripts/sky_islets.gd")
 const LANDFORMS := {"hills":preload("res://scripts/landform_hills.gd")}
 
 func _initialize() -> void:
@@ -16,6 +17,7 @@ func _initialize() -> void:
 		if a.begins_with("--landform="): landform = a.trim_prefix("--landform=")
 		elif a.begins_with("--seeds="): seeds = int(a.trim_prefix("--seeds="))
 	var script: GDScript = LANDFORMS[landform]
+	var catalog: Dictionary = SkyIslets.catalog().data
 	var across_range: Vector2 = script.ACROSS
 	for across in [across_range.x,lerpf(across_range.x,across_range.y,0.5),across_range.y]:
 		for s in range(seeds):
@@ -32,6 +34,10 @@ func _initialize() -> void:
 			var top: Array = shape.top_arrays(SkyIslet.plain_palette())
 			var sides: Array = shape.side_arrays()
 			var total := Time.get_ticks_usec()-t
+			var plants: Dictionary = shape.flora(catalog)
+			var dressed := Time.get_ticks_usec()-t
+			var instances := 0
+			for key: String in plants: instances += int(plants[key].count)
 			var low := INF
 			var high := -INF
 			for i in range(shape.points.size()):
@@ -50,6 +56,6 @@ func _initialize() -> void:
 				elif slope > 0.5: sloped += 1
 			var assets := {}
 			for o: Dictionary in shape.objects: assets[o.asset] = int(assets.get(o.asset,0))+1
-			print("%s %.0f m seed %d: step %.2f shape %.0f ms, with arrays %.0f ms; top %d faces, sides %d; heights %.1f to %.1f m; rock-steep %.0f%% (%d of %d at the coast), over 0.5 %.0f%%; %d records %s" % [landform,across,seed_value,shape.step,
-				shaped/1000.0,total/1000.0,(top[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()/3,(sides[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()/3,low,high,100.0*steep/shape.land.size(),coast_steep,steep,100.0*sloped/shape.land.size(),shape.objects.size(),str(assets)])
+			print("%s %.0f m seed %d: step %.2f shape %.0f ms, with arrays %.0f ms, with plants %.0f ms (%d batches, %d instances); top %d faces, sides %d; heights %.1f to %.1f m; rock-steep %.0f%% (%d of %d at the coast), over 0.5 %.0f%%; %d records %s" % [landform,across,seed_value,shape.step,
+				shaped/1000.0,total/1000.0,dressed/1000.0,plants.size(),instances,(top[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()/3,(sides[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()/3,low,high,100.0*steep/shape.land.size(),coast_steep,steep,100.0*sloped/shape.land.size(),shape.objects.size(),str(assets)])
 	quit()
