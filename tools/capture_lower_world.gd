@@ -11,7 +11,10 @@ extends SceneTree
 ##   golden: the cruise at golden hour;
 ##   night: the cruise at night;
 ##   open: low over open water, away from the islands, looking downwind;
-##   high: plane height (60 m) over a shelf, looking along the coast.
+##   high: plane height (60 m) over a shelf, looking along the coast;
+##   <landform>-plane, <landform>-low: with --landform=a,b, each landform's
+##     island laid ahead of the way down, from plane height off its shore
+##     and from low over the water by it.
 ## Rendered only when asked for (needs a window):
 ##   Godot --windowed --path . --resolution 1280x720 -s res://tools/capture_lower_world.gd \
 ##     -- --no-title --below --out=/private/tmp/zs-lower-world [--only=emerge,cruise] [--no-ocean] [--no-mirror]
@@ -104,6 +107,25 @@ func run() -> void:
 		{"label":"open","hour":noon,"eye":middle-away*(r+260.0)+Vector3.UP*(water-middle.y+9.0),"look":middle-away*(r+600.0)+side*80.0+Vector3.DOWN*(middle.y-water+30.0)},
 		{"label":"high","hour":noon,"eye":middle-away*(r+70.0)+side*40.0+Vector3.UP*(water-middle.y+60.0),"look":middle+side*(r*1.5)+Vector3.DOWN*(middle.y-water)},
 	]
+	# The landforms --landform= laid ahead of the way down (SkyArchipelago
+	# `arrive`): each from plane height off its shore and from low over the
+	# water by it.
+	for landform: String in arch.asked:
+		var lf: Dictionary = arch.forced_island(landform)
+		if lf.is_empty():
+			print("LOWER no %s island built" % landform)
+			continue
+		var at: Vector3 = arch.islets.place(lf)
+		var lr: float = lf.shape.reach
+		var high := 0.0
+		for i in range(lf.shape.points.size()):
+			if lf.shape.shore_distance[i] >= 0.0: high = maxf(high,lf.shape.heights[i])
+		var to := Vector3(at.x-start.x,0.0,at.z-start.z).normalized()
+		var across := Vector3(-to.z,0.0,to.x)
+		var sea := water-at.y
+		print("LOWER %s at %s: %.0f m across, its top %.1f m over the sea (%.1f m world)" % [landform,at,lr*2.0,high-sea,at.y+high])
+		shots.append({"label":"%s-plane" % landform,"hour":noon,"eye":at-to*(lr+80.0)+across*30.0+Vector3.UP*(sea+55.0),"look":at+Vector3.UP*(sea+(high-sea)*0.35)})
+		shots.append({"label":"%s-low" % landform,"hour":noon,"eye":at-to*(lr+28.0)+across*18.0+Vector3.UP*(sea+5.0),"look":at+Vector3.UP*(sea+(high-sea)*0.4)})
 	var first := true
 	for shot: Dictionary in shots:
 		if not only.is_empty() and shot.label not in only: continue
