@@ -54,6 +54,7 @@ const IsletLake = preload("res://scripts/islet_lake.gd")
 const Woodland = preload("res://scripts/woodland.gd")
 const RavineCut = preload("res://scripts/ravine_cut.gd")
 const MountainSpire = preload("res://scripts/mountain_spire.gd")
+const MountainMassif = preload("res://scripts/mountain_massif.gd")
 
 ## Kinds and how often each turns up.
 const KINDS := [["meadow",0.22],["grove",0.22],["hills",0.15],["crag",0.11],["spring",0.18],["shore",0.12]]
@@ -291,7 +292,11 @@ var flowers: Array[String] = []
 ##     (Footbridge `lift`'s shapes: up a sine, down a sine squared).
 ##   tear: a ravine's half, cut from a whole island along a jagged tear
 ##     (scripts/ravine_cut.gd: its side, the tear's shape, filled by
-##     `share`).
+##     `share`);
+##   step: the grid's step (m) instead of STEP, coarser for a big island
+##     (a mountain's, scripts/landform_mountains.gd), so its faces stay few;
+##   massif: a mountain island's massif (scripts/mountain_massif.gd), raised
+##     as a spire is and held in `spire`.
 var recipe := {}
 ## The recipe's decks, as it gives them.
 var decks: Array = []
@@ -310,6 +315,8 @@ var cleft := {}
 ## A recipe's `spire` (a Dictionary, may be empty): a real peak raised on the
 ## islet (scripts/mountain_spire.gd), which draws its own faces; null if none.
 var spire: RefCounted = null
+## The grid's step (m): STEP, or the recipe's `step`.
+var grid_step := STEP
 
 ## An islet laid out by hand from `spec` (see `recipe`), its kind
 ## `spec.kind`, the rest of it seeded by `seed_value` as any islet's is.
@@ -346,7 +353,8 @@ func _shape(seed_value: int, forced: String) -> void:
 	radius = rng.randf_range(across.x,across.y)*0.5
 	if recipe.has("radius"): radius = float(recipe.radius)
 	var area := PI*radius*radius
-	var grid := _grid(ceili((radius*REACH+MARGIN)/STEP))
+	grid_step = float(recipe.get("step",STEP))
+	var grid := _grid(ceili((radius*REACH+MARGIN)/grid_step),grid_step)
 	points = grid.points
 	ids = grid.ids
 	cells = grid.cells
@@ -367,6 +375,7 @@ func _shape(seed_value: int, forced: String) -> void:
 		var deeper := float(recipe.keel) if recipe.has("keel") else RockLooks.keel(radius,float(recipe.deep))
 		for i in range(keel.size()): keel[i] *= deeper
 	if recipe.has("spire"): spire = MountainSpire.raise(self)
+	elif recipe.has("massif"): spire = MountainMassif.raise_massif(self)
 	base = -(BASE.x+BASE.y*radius)
 	var deepest := 0.0
 	for k in keel: deepest = maxf(deepest,k)
@@ -376,24 +385,25 @@ func _shape(seed_value: int, forced: String) -> void:
 	for deck: Dictionary in decks:
 		for end: Vector3 in [deck.a,deck.b]: reach = maxf(reach,Vector2(end.x,end.z).length()+1.0)
 
-## The grid of `n` cells each way from the middle (2n a side), the plate's
-## own triangulation: [points, ids, cells a side, half width]. Cached, and
-## shared by every islet of its size (read only).
-static func _grid(n: int) -> Dictionary:
+## The grid of `n` cells each way from the middle (2n a side), `size` m a
+## cell, the plate's own triangulation: [points, ids, cells a side, half
+## width]. Cached, and shared by every islet of its size (read only).
+static func _grid(n: int, size := STEP) -> Dictionary:
+	var key: Variant = n if size == STEP else Vector2(n,size)
 	_grid_lock.lock()
-	var made: Variant = _grids.get(n)
+	var made: Variant = _grids.get(key)
 	_grid_lock.unlock()
 	if made != null: return made
 	var side := n*2
-	var span := float(n)*STEP
+	var span := float(n)*size
 	var at := PackedVector2Array()
 	var plain := PackedVector2Array()
 	at.resize((side+1)*(side+1))
 	plain.resize(at.size())
-	var reach := PlateMesh.NUDGE*STEP
+	var reach := PlateMesh.NUDGE*size
 	for j in range(side+1):
 		for i in range(side+1):
-			var p := Vector2(-span+i*STEP,-span+j*STEP)
+			var p := Vector2(-span+i*size,-span+j*size)
 			plain[j*(side+1)+i] = p
 			if i > 0 and j > 0 and i < side and j < side:
 				p += Vector2(PlateMesh._hash(i,j,1)*2.0-1.0,PlateMesh._hash(i,j,2)*2.0-1.0)*reach
@@ -413,7 +423,7 @@ static func _grid(n: int) -> Dictionary:
 		if not eased: break
 	made = {"points":at,"ids":faces,"cells":side,"half":span}
 	_grid_lock.lock()
-	_grids[n] = made
+	_grids[key] = made
 	_grid_lock.unlock()
 	return made
 
@@ -634,8 +644,8 @@ func wet(p: Vector2) -> bool:
 ## The land face holding `p`, as Vector4(face, weights a, b, c's first two),
 ## or face -1 off the land.
 func _locate(p: Vector2) -> Array:
-	var i := floori((p.x+grid_shift.x+half)/STEP)
-	var j := floori((p.y+grid_shift.y+half)/STEP)
+	var i := floori((p.x+grid_shift.x+half)/grid_step)
+	var j := floori((p.y+grid_shift.y+half)/grid_step)
 	for dj in [0,-1,1]:
 		for di in [0,-1,1]:
 			var ci: int = i+di
@@ -1061,6 +1071,8 @@ func _ground_ok(p: Vector2, inset: float, steep: float, grassy: bool) -> bool:
 		if IsletLake.near(self,p,0.7): return false
 	elif pond.z > 0.0 and p.distance_to(Vector2(pond.x,pond.y)) < pond.z*1.25: return false
 	if _slope(f) > steep: return false
+	# A massif's bare rock, scree and snow grow nothing (MountainMassif `bare`).
+	if spire != null and spire.has_method("bare") and spire.bare(f): return false
 	if grassy and kind == "shore" and inland(p) < BEACH: return false
 	return true
 
