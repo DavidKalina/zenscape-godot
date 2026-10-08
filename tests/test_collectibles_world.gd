@@ -3,9 +3,9 @@ extends SceneTree
 ## scripts/collectible_lines.gd): the same seed lays the same lines; every
 ## category turns up near the home in review mode; a bridge's tokens stand
 ## on its deck, an under line hangs under the rock, the air lines leave
-## the plane room, and the foot ones are out of the plane's reach (and an
-## open spot is not); the walker and the plane each pick up (the plane
-## from further, along its way); what is collected is kept and never
+## the plane room, and the foot ones stand on walkable ground in the
+## walker's reach; the walker and the plane each pick up (the plane from
+## further, along its way) but the plane passes through a foot token; what is collected is kept and never
 ## stands again; the readout shows.
 const SkyIslets = preload("res://scripts/sky_islets.gd")
 const SkyCells = preload("res://scripts/sky_cells.gd")
@@ -90,7 +90,6 @@ func _run() -> void:
 	var under_ok := true
 	var air_ok := true
 	var foot_ok := true
-	var open_reached := true
 	for entry: Array in tokens.all_lines():
 		var key: String = entry[0]
 		var l: Dictionary = entry[1]
@@ -109,31 +108,20 @@ func _run() -> void:
 				"air":
 					if key != "trails" and not Lines.plane_fits(solids,p): air_ok = false
 				"foot":
-					if Lines.plane_reaches(solids,p,Lines.PLANE_REACH+float(l.size)*0.5): foot_ok = false
-					# Standing room for the walker under it.
-					var s: Dictionary = _holding(solids,p)
-					var q := p-(s.off as Vector3)
-					if s.is_empty() or not s.shape.on_land(Vector2(q.x,q.z)) or s.shape.blocked(Vector2(q.x,q.z)): foot_ok = false
+					# On ground the walker stands on (its land or a deck),
+					# in his reach over it.
+					if not _walkable(solids,p):
+						foot_ok = false
+						print("  foot token at %s off walkable ground (%s)" % [p,l.kind])
 	check(bridge_ok,"Bridge tokens stand over a deck, a walker's height over its planks")
 	check(under_ok,"Under tokens hang under the rock, a plane's room below it")
 	check(air_ok,"Air tokens leave the plane's wings room")
-	check(foot_ok,"Foot tokens are out of the plane's reach and on ground the walker stands on")
-	# The check bites: an open spot in the middle of a meadow islet is the
-	# plane's.
-	for key: String in islets.built:
-		var b: Dictionary = islets.built[key]
-		if b.has("cluster"): continue
-		var solids := [Lines.solid(b.shape,Vector3.ZERO)]
-		var open_spot := Vector3.INF
-		for x in range(-4,5):
-			var p := Vector2(x,0.0)
-			if b.shape.on_land(p) and Lines._cover(solids[0],p,float(b.shape.ground_at(p))+Lines.FOOT_Y) == 0.0:
-				open_spot = Vector3(p.x,float(b.shape.ground_at(p))+Lines.FOOT_Y,p.y)
-				break
-		if open_spot != Vector3.INF:
-			open_reached = Lines.plane_reaches(solids,open_spot,Lines.PLANE_REACH+0.25)
-			break
-	check(open_reached,"A spot in the open on an islet is the plane's to reach")
+	check(foot_ok,"Foot tokens stand on walkable ground, in the walker's reach over it")
+	var foot_kinds := {}
+	for entry: Array in tokens.all_lines():
+		if entry[1].category == "foot": foot_kinds[entry[1].kind] = true
+	print("  foot kinds: %s" % str(foot_kinds.keys()))
+	check(foot_kinds.size() >= 2,"Foot lines of more than one kind (stones, decks, perches)")
 	# The trails keep off everything they must.
 	var trails_ok := true
 	for l: Dictionary in tokens.sources.get("trails",{}).get("lines",[]):
@@ -149,8 +137,13 @@ func _run() -> void:
 	if not walk_token.is_empty():
 		var holder: Node3D = walk_token.holder
 		var at := holder.global_position
-		tokens.touch_walker(at+Vector3(1.0,0.0,0.0))
-		check(not holder.taking,"The walker a metre off doesn't take a small token")
+		check(holder.calm,"A foot token stands calm (gentler, warmer: one to land for)")
+		tokens._last.clear()
+		tokens.touch_plane(at+Vector3(-3.0,0.0,0.0))
+		tokens.touch_plane(at+Vector3(3.0,0.0,0.0))
+		check(not holder.taking and not tokens.collected.has(walk_token.id),"The plane passes straight through a foot token without taking it")
+		tokens.touch_walker(at+Vector3(1.2,0.0,0.0))
+		check(not holder.taking,"The walker 1.2 m off doesn't take a small token")
 		tokens._last.clear()
 		tokens.touch_walker(at+Vector3(0.3,0.0,0.0))
 		check(holder.taking and tokens.collected.has(walk_token.id),"The walker walking through a token takes it")
@@ -272,6 +265,19 @@ func _holding(solids: Array, p: Vector3) -> Dictionary:
 		var q := p-(s.off as Vector3)
 		if s.shape.on_land(Vector2(q.x,q.z)): return s
 	return {}
+
+## True when `p` stands FOOT_Y over ground the walker can stand on: a
+## solid's land (not a trunk, a stone, the water) or a deck.
+func _walkable(solids: Array, p: Vector3) -> bool:
+	for s: Dictionary in solids:
+		var q := p-(s.off as Vector3)
+		var at := Vector2(q.x,q.z)
+		if s.shape.on_land(at) and not s.shape.blocked(at):
+			var g := float(s.shape._sample(s.shape.heights,at,0.0))
+			if absf(q.y-g-Lines.FOOT_Y) < 0.05: return true
+		var y := Lines.deck_y(s,at)
+		if y > -INF and absf(q.y-y-Lines.FOOT_Y) < 0.05: return true
+	return false
 
 ## True when `p` stands over some solid's deck, FOOT_Y over its planks.
 func _on_deck(solids: Array, p: Vector3) -> bool:

@@ -6,8 +6,11 @@ extends Node3D
 ## along rope bridges and footbridges (bridge), under islets' and islands'
 ## hanging rock (under), out in the open on a good flying line between
 ## islands, through a cluster's gaps, under its bridges and round a floating
-## mountain's peak (air), and tucked under the trees where only the pilot on
-## foot gets to them (foot). The same world seed always lays the same ones.
+## mountain's peak (air), and where only the pilot on foot gets to them:
+## stepping stones, stairs, docks, perches, ledges, under the trees (foot:
+## the walker's alone, the plane passes through them; they turn slower and
+## bob gentler in a warmer, wider halo, so they read as worth a landing).
+## The same world seed always lays the same ones.
 ##
 ## A source is a set of lines and the node they ride with (`add_source`):
 ## an islet, a cluster's anchor member (its members bob as one), an
@@ -198,6 +201,7 @@ func advance(_delta: float, eye: Vector3) -> void:
 		_stream(eye)
 		spent.survey = Time.get_ticks_usec()-began
 	_finish_task()
+	_light()
 	var stood := 0
 	while stood < STANDS and not _stand.is_empty() and SkyCommits.open():
 		var began := Time.get_ticks_usec()
@@ -277,13 +281,13 @@ func _finish_task(wait := false) -> void:
 	_task_key = ""
 	_start_next()
 
-## An islet's lines: under its rock and under its trees, as its hash says
+## An islet's lines: under its rock and on foot over it, as its hash says
 ## (forced near the home for review). {} (marked done) when it lays none.
 func _islet_job(skey: String, b: Dictionary) -> Dictionary:
 	var home: Vector3 = b.home
 	var force := near_home and _flat(home,Vector3.ZERO) < NEAR_HOME
 	var under := Lines.lays(seed_value,skey,"under_islet",force)
-	var foot := Lines.lays(seed_value,skey,"foot_islet",force) and (b.shape.crowns as Array).size() >= Lines.FOOT_CROWNS
+	var foot := Lines.lays(seed_value,skey,"foot_islet",force)
 	if not under and not foot:
 		add_source(skey,[],b.node)
 		return {}
@@ -302,8 +306,8 @@ func _islet_job(skey: String, b: Dictionary) -> Dictionary:
 		return out}
 
 ## A cluster's lines, in its anchor member's frame: along its bridges,
-## through its gaps, round its peak, under its anchor's rock and under the
-## trees of one member.
+## through its gaps, round its peak, under its anchor's rock, and on foot:
+## over one member, across its stepping stones, along its stairs and docks.
 func _cluster_job(skey: String, c: Dictionary) -> Dictionary:
 	var plan: Dictionary = c.plan
 	var members: Array = plan.members
@@ -333,12 +337,14 @@ func _cluster_job(skey: String, c: Dictionary) -> Dictionary:
 			var shape: RefCounted = anchor.shape
 			var l := Lines.under_line(skey+":under",func(p: Vector2) -> float: return Lines.islet_under(shape,p),Vector2.ZERO,float(shape.reach),lowest,seed)
 			if not l.is_empty(): out.append(l)
-		# Under the trees of one member: the hash's pick of those with
-		# crowns, the next if it has no room.
+		out.append_array(Lines.stone_lines(plan,offsets,host_off,skey,seed,force))
+		out.append_array(Lines.deck_lines(plan,solids,members.map(func(m: Dictionary) -> String: return m.name),skey,seed,force))
+		# On foot over one member: the hash's pick, the next if it has no
+		# room.
 		if Lines.lays(seed,skey,"foot_member",force):
 			var order: Array = []
 			for i in range(members.size()):
-				if not (members[i].shape.crowns as Array).is_empty(): order.append([Lines.roll(seed,skey,members[i].name),i])
+				order.append([Lines.roll(seed,skey,members[i].name),i])
 			order.sort_custom(func(a: Array, b: Array) -> bool: return a[0] < b[0])
 			for o: Array in order:
 				var l := Lines.foot_line("%s:foot:%s" % [skey,members[o[1]].name],solids,o[1],seed)
@@ -486,7 +492,8 @@ func _stand_token(s: Dictionary, l: Dictionary, k: int) -> void:
 	var id := "%s:%d" % [l.id,k]
 	var host: Variant = s.host
 	if collected.has(id) or s.live.has(id) or not is_instance_valid(host) or not sources.has(s.key): return
-	var holder := GlyphPickup.make(l.glyph,float(l.size),float(k)*0.6+Lines.roll(seed_value,l.id,"phase")*TAU)
+	var holder := GlyphPickup.make(l.glyph,float(l.size),float(k)*0.6+Lines.roll(seed_value,l.id,"phase")*TAU,l.category == "foot")
+	holder.glow_for(_night)
 	holder.position = (l.points as PackedVector3Array)[k]
 	holder.set_meta("token",id)
 	holder.set_meta("line",l.id)
@@ -505,7 +512,8 @@ func touch_plane(point: Vector3) -> void:
 	_touch("plane",point,Lines.PLANE_REACH)
 
 ## Takes every standing token within `reach` (plus half its size) of the
-## way `who` moved since its last touch.
+## way `who` moved since its last touch. The plane passes through foot
+## tokens: those are the walker's alone.
 func _touch(who: String, point: Vector3, reach: float) -> void:
 	var from: Vector3 = _last.get(who,point)
 	if from.distance_to(point) > JUMP: from = point
@@ -515,6 +523,7 @@ func _touch(who: String, point: Vector3, reach: float) -> void:
 		for id: String in (s.live as Dictionary).keys():
 			var holder: Variant = s.live[id]
 			if not is_instance_valid(holder) or holder.taking: continue
+			if who == "plane" and holder.calm: continue
 			var at: Vector3 = (holder as Node3D).global_position
 			var near := Geometry3D.get_closest_point_to_segment(at,from,point)
 			if near.distance_to(at) < reach+float(holder.size)*0.5: collect(s,id)
@@ -568,6 +577,19 @@ func load_state(state: Dictionary) -> void:
 				var holder: Variant = sources[key].live[id]
 				if is_instance_valid(holder): (holder as Node).queue_free()
 				sources[key].live.erase(id)
+
+## The night the tokens glow for (0 by day, 1 at full night): the
+## clusters' (SkyClusters `night`), and every standing token lit to match
+## as it changes.
+var _night := 0.0
+
+func _light() -> void:
+	var night: float = clusters.night if clusters != null else 0.0
+	if absf(night-_night) < 0.02: return
+	_night = night
+	for key in sources:
+		for holder: Variant in (sources[key].live as Dictionary).values():
+			if is_instance_valid(holder) and not holder.taking: holder.glow_for(_night)
 
 static func _flat(a: Vector3, b: Vector3) -> float:
 	return Vector2(a.x-b.x,a.z-b.z).length()

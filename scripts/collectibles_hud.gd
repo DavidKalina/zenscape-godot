@@ -25,11 +25,11 @@ const HOLD_LINE := 3.4
 const FADE := 0.9
 ## Design pixels: the icon, the count's type, the pips' radius and gap, the
 ## margin off the corner.
-const ICON := 34.0
-const TYPE := 20
-const PIP := 3.4
-const PIP_GAP := 10.0
-const MARGIN := 26.0
+const ICON := 46.0
+const TYPE := 27
+const PIP := 4.2
+const PIP_GAP := 13.0
+const MARGIN := 28.0
 ## The plate's darkness.
 const PLATE := 0.26
 ## The chime: its notes (Hz), length (s) and gain (linear, under the

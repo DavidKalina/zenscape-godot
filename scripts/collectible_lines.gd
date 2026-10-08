@@ -16,21 +16,20 @@ extends RefCounted
 ##     swoop between two islands (`trail_line`), a threading of a cluster's
 ##     gap between two members or under its bridge (`gap_lines`), an arc
 ##     round a floating mountain's peak (`spire_line`);
-##   foot: a few tucked where only the pilot on foot reaches them: under
-##     the trees and in nooks the plane can't get its wings into
-##     (`foot_line`), each checked against the plane's clearance
-##     (`plane_reaches`).
+##   foot: collected only on foot (the plane passes through them; scripts/
+##     sky_collectibles.gd), on ground the walker stands on, a walker's
+##     height over it: across a cluster's stepping stones (`stone_line`),
+##     along its stairs, docks and lookouts (`deck_lines`), and on an islet
+##     or member where it rewards a walk (`foot_line`): a high perch, a
+##     ledge by the rim, behind a cabin, under the trees.
 ##
 ## The plane's clearance is read as the glide flies (scripts/sky_glide.gd):
 ## it rides SkyGlide SKIM over whatever is under it (the ground, the tree
 ## crowns, the stones), keeps SkyGlide CLEAR under rock, and here also keeps
 ## its wings (WING, half its span with a little room) off every solid and
-## every standing build (a cabin, a windmill, a lighthouse). A token is the
-## walker's alone where no place the plane can be lies within its pickup
-## reach (PLANE_REACH). Open ground is never that: the plane skims every
-## islet, ledge, stair and stepping stone at under a metre. So foot tokens
-## stand under cover: tree crowns and the nooks they make with builds and
-## rock.
+## every standing build (a cabin, a windmill, a lighthouse). The air lines
+## are checked against it (`plane_fits`); `plane_reaches` says whether the
+## plane could come within reach of a point at all.
 ##
 ## Hosts are read through `solids`: an Array of {shape (scripts/
 ## sky_islet.gd), off (its middle in the host's frame), decks (its decks'
@@ -49,17 +48,18 @@ const DENSITY := 1.0
 ## The odds each host lays each kind of line at DENSITY 1: a rope bridge or
 ## footbridge; a cluster's gap (or the air under its bridge); a floating
 ## mountain's peak; under a seeded islet, a cluster's anchor, an island;
-## under the trees of an islet, of a cluster member (one at most a cluster);
-## a swoop between two neighbouring islands.
+## on foot on an islet, on a cluster member (one at most a cluster), across
+## a run of stepping stones, along a deck (a stair, a dock, a lookout); a
+## swoop between two neighbouring islands.
 const ODDS := {"bridge":0.6,"gap":0.55,"spire":1.0,"under_islet":0.07,"under_member":0.3,"under_island":0.45,
-	"foot_islet":0.4,"foot_member":0.8,"trail":0.35}
+	"foot_islet":0.08,"foot_member":0.7,"foot_stones":0.6,"foot_deck":0.5,"trail":0.35}
 ## The glyphs each category's lines draw from (scripts/hud_icons.gd): one
 ## glyph a line, by its hash.
 const GLYPHS := {"bridge":["lamp","heron"],"under":["crystal","moon"],"air":["feather","sun","rainbow","snow"],
 	"foot":["wildflower","oak","dandelion","sunflower","deer"]}
 ## The tokens' sizes (m across): the air's read from the chase camera, the
 ## walker's about his chest.
-const SIZES := {"bridge":0.55,"under":0.9,"air":1.0,"foot":0.55}
+const SIZES := {"bridge":0.7,"under":1.05,"air":1.2,"foot":0.7}
 ## Pickup reaches (m, from the walker's middle or the plane's, plus half the
 ## token): the plane's larger, so an air line is fair at speed.
 const WALKER_REACH := 0.6
@@ -120,15 +120,19 @@ const TRAIL_LOW := -24.0
 ## Islands this far apart at most count as neighbours (m).
 const TRAIL_REACH := 900.0
 ## Foot: candidates every FOOT_GRID m over the land, at least FOOT_IN in
-## from the rim; at most FOOT_TRIES checked for the plane; the line's
-## tokens FOOT_STEP apart (at least, at most), FOOT_COUNT of them.
+## from the rim; the FOOT_TRIES best joined into a line; its tokens
+## FOOT_STEP apart (at least, at most), FOOT_COUNT of them.
 const FOOT_GRID := 0.6
 const FOOT_IN := 0.7
 const FOOT_TRIES := 48
 const FOOT_STEP := Vector2(0.9,2.4)
-const FOOT_COUNT := Vector2i(2,4)
-## An islet tries for a foot line only with this many crowns or more.
-const FOOT_CROWNS := 4
+const FOOT_COUNT := Vector2i(3,5)
+## Ground steeper than this over 0.3 m isn't stood on; a line's tokens
+## climb no more than FOOT_RISE from one to the next (a jump).
+const FOOT_STEEP := 0.35
+const FOOT_RISE := 0.8
+## A cluster's decks lay this many lines at most.
+const DECK_LINES := 2
 ## The builds the plane's wings keep off: a feature's footprint radius (m)
 ## and height (m).
 const BUILDS := {"cabin":Vector2(1.5,3.3),"windmill":Vector2(1.6,7.5),"lighthouse":Vector2(1.5,9.5),"lamp":Vector2(0.3,1.2),"post":Vector2(0.15,2.0)}
@@ -356,45 +360,45 @@ static func _free_within(blocked: Array[Vector2], lo: float, hi: float) -> bool:
 
 # --- Foot ---------------------------------------------------------------------------
 
-## A short line only the walker reaches, on solid `index` of `solids` (in
-## the host's frame): places he can stand (on its land, FOOT_IN from the
-## rim, not in a trunk, a stone or the water) with cover over them (a crown
-## or a build within reach, standing well over his head), each checked
-## against the plane (`plane_reaches`), joined FOOT_STEP apart into a line
-## of FOOT_COUNT; or {} where too few are his alone.
+## A short line on foot on solid `index` of `solids` (in the host's frame):
+## places the walker stands (on its land, FOOT_IN from the rim, not in a
+## trunk, a stone or the water, the ground level enough to stand on), the
+## best by what makes a walk worth it (`_worth`: height over the rest of
+## the land, the rim's edge, a build's back, the trees' cover), joined
+## FOOT_STEP apart into a line of FOOT_COUNT; {} where there's no room.
 static func foot_line(id: String, solids: Array, index: int, seed_value: int) -> Dictionary:
 	var s: Dictionary = solids[index]
 	var shape: RefCounted = s.shape
 	var off: Vector3 = s.off
 	var reach := float(shape.reach)
-	var covered: Array = []
+	var places: Array = []
+	var low := INF
+	var high := -INF
 	var x := -reach
 	while x <= reach:
 		var z := -reach
 		while z <= reach:
 			var p := Vector2(x,z)
 			z += FOOT_GRID
-			if not shape.on_land(p) or float(shape.inland(p)) < FOOT_IN or shape.wet(p): continue
-			var trunk := false
-			for b: Vector3 in shape.blocks:
-				if p.distance_to(Vector2(b.x,b.y)) < b.z+0.15: trunk = true
-			if trunk: continue
-			var y := float(shape._sample(shape.heights,p,SkyIslet.RIM_HEIGHT))+FOOT_Y
-			var cover := _cover(s,p,y)
-			if cover > 0.0: covered.append([cover+roll(seed_value,id,"%d,%d" % [int(x*10.0),int(z*10.0)])*0.3,Vector3(p.x,y,p.y)])
+			if not _standable(shape,p): continue
+			var g := float(shape._sample(shape.heights,p,SkyIslet.RIM_HEIGHT))
+			low = minf(low,g)
+			high = maxf(high,g)
+			places.append([p,g])
 		x += FOOT_GRID
-	if covered.size() < FOOT_COUNT.x: return {}
-	covered.sort_custom(func(a: Array, b: Array) -> bool: return a[0] > b[0])
-	var reach_plane := PLANE_REACH+float(SIZES.foot)*0.5
+	if places.size() < FOOT_COUNT.x: return {}
+	# What each place is worth, its hash breaking ties, the best first.
+	var scored: Array = []
+	for e: Array in places:
+		var p: Vector2 = e[0]
+		var g: float = e[1]
+		var worth := _worth(s,p,g,low,high)+roll(seed_value,id,"%d,%d" % [int(p.x*10.0),int(p.y*10.0)])*0.6
+		scored.append([worth,Vector3(p.x,g+FOOT_Y,p.y)])
+	scored.sort_custom(func(a: Array, b: Array) -> bool: return a[0] > b[0])
 	var safe: Array[Vector3] = []
-	var cache := {}
-	for k in range(mini(covered.size(),FOOT_TRIES)):
-		var q: Vector3 = covered[k][1]
-		if not plane_reaches(solids,q+off,reach_plane,cache): safe.append(q)
-		if safe.size() >= FOOT_COUNT.y*3: break
-	if safe.size() < FOOT_COUNT.x: return {}
-	# The line: from the first (the best covered), on to the nearest safe
-	# place a step away that doesn't turn back on it.
+	for k in range(mini(scored.size(),FOOT_TRIES)): safe.append(scored[k][1])
+	# The line: from the best, on to the nearest place a step away that
+	# doesn't turn back on it.
 	var want := FOOT_COUNT.x+int(roll(seed_value,id,"count")*(FOOT_COUNT.y-FOOT_COUNT.x+1))
 	var points := PackedVector3Array([safe[0]+off])
 	var last := safe[0]
@@ -406,7 +410,7 @@ static func foot_line(id: String, solids: Array, index: int, seed_value: int) ->
 		for k in range(safe.size()):
 			if used.has(k): continue
 			var d := Vector2(safe[k].x-last.x,safe[k].z-last.z)
-			if d.length() < FOOT_STEP.x or d.length() > FOOT_STEP.y: continue
+			if d.length() < FOOT_STEP.x or d.length() > FOOT_STEP.y or absf(safe[k].y-last.y) > FOOT_RISE: continue
 			if heading != Vector2.ZERO and d.normalized().dot(heading) < 0.3: continue
 			if d.length() < best_d:
 				best_d = d.length()
@@ -418,6 +422,100 @@ static func foot_line(id: String, solids: Array, index: int, seed_value: int) ->
 		points.append(last+off)
 	if points.size() < FOOT_COUNT.x: return {}
 	return line(id,"foot","foot",points,seed_value)
+
+## True where the walker can stand at `p` (its own frame): on its land,
+## FOOT_IN from the rim, clear of trunks, stones and water, level enough.
+static func _standable(shape: RefCounted, p: Vector2) -> bool:
+	if not shape.on_land(p) or float(shape.inland(p)) < FOOT_IN or shape.wet(p): return false
+	if _trunk(shape,p): return false
+	var g := float(shape._sample(shape.heights,p,SkyIslet.RIM_HEIGHT))
+	for d: Vector2 in [Vector2(0.3,0.0),Vector2(-0.3,0.0),Vector2(0.0,0.3),Vector2(0.0,-0.3)]:
+		if not shape.on_land(p+d) or absf(float(shape._sample(shape.heights,p+d,SkyIslet.RIM_HEIGHT))-g) > FOOT_STEEP: return false
+	return true
+
+## True within a trunk's or a stone's block (and a little room) at `p`.
+static func _trunk(shape: RefCounted, p: Vector2) -> bool:
+	for b: Vector3 in shape.blocks:
+		if p.distance_to(Vector2(b.x,b.y)) < b.z+0.15: return true
+	return false
+
+## What makes a place worth walking to (0 for plain middle ground): how
+## high it stands over the rest of the land (a perch), how near the rim (a
+## ledge), how near the back of a build (behind a cabin), the trees' cover.
+static func _worth(s: Dictionary, p: Vector2, g: float, low: float, high: float) -> float:
+	var shape: RefCounted = s.shape
+	var worth := 0.0
+	if high-low > 0.8: worth += 2.0*(g-low)/(high-low)
+	worth += 1.2*clampf(1.0-(float(shape.inland(p))-FOOT_IN)/1.5,0.0,1.0)
+	for b: Vector4 in s.builds:
+		var d := p.distance_to(Vector2(b.x,b.y))
+		if b.w > 1.8 and d > b.z and d < b.z+1.6: worth += 1.0
+	return worth+minf(_cover(s,p,g+FOOT_Y),2.0)*0.5
+
+## A line across a cluster's stepping stones: one token on each stone of a
+## run (plan.routes, a stone being any member of the run but its ends), a
+## walker's height over its middle's ground. `offsets` by member name.
+static func stone_lines(plan: Dictionary, offsets: Dictionary, host_off: Vector3, key: String, seed_value: int, force := false) -> Array:
+	var out: Array = []
+	var shapes := {}
+	for m: Dictionary in plan.members: shapes[m.name] = m.shape
+	var routes: Array = plan.get("routes",[])
+	for i in range(routes.size()):
+		var route: Array = routes[i]
+		var id := "%s:stones%d" % [key,i]
+		if route.size() < 3 or not lays(seed_value,id,"foot_stones",force): continue
+		var points := PackedVector3Array()
+		for k in range(1,route.size()-1):
+			var shape: RefCounted = shapes.get(route[k])
+			if shape == null: continue
+			# The stone's best standing place near its middle.
+			var at := Vector2.INF
+			for ring in range(5):
+				for turn in range(8 if ring > 0 else 1):
+					var r := Vector2.from_angle(TAU*turn/8.0)*0.3*ring
+					if shape.on_land(r) and not shape.wet(r) and not _trunk(shape,r):
+						at = r
+						break
+				if at != Vector2.INF: break
+			if at == Vector2.INF: continue
+			var off: Vector3 = (offsets[route[k]] as Vector3)-host_off
+			points.append(Vector3(at.x,float(shape._sample(shape.heights,at,SkyIslet.RIM_HEIGHT))+FOOT_Y,at.y)+off)
+		if points.size() >= 2: out.append(line(id,"foot","stones",points,seed_value))
+	return out
+
+## Lines along a cluster's decks that are not its bridges: a stack's
+## stairs, a dock, a lookout's planks, each a walker's height over them.
+## Each solid's decks (`solids`), its offset its own.
+static func deck_lines(plan: Dictionary, solids: Array, names: Array, key: String, seed_value: int, force := false) -> Array:
+	var out: Array = []
+	for i in range(solids.size()):
+		var s: Dictionary = solids[i]
+		var decks: Array = s.decks
+		for j in range(decks.size()):
+			var d: Dictionary = decks[j]
+			var bridged := false
+			for br: Dictionary in plan.get("bridges",[]):
+				if (br.a as Vector3).is_equal_approx(d.a) and (br.b as Vector3).is_equal_approx(d.b): bridged = true
+			if bridged: continue
+			var id := "%s:deck:%s:%d" % [key,names[i],j]
+			if not lays(seed_value,id,"foot_deck",force): continue
+			var a: Vector3 = d.a
+			var b: Vector3 = d.b
+			var span := Vector2(b.x-a.x,b.z-a.z).length()
+			if span < 1.5: continue
+			var n := clampi(int(span/BRIDGE_STEP),1,3)
+			var points := PackedVector3Array()
+			for k in range(n):
+				var t := (k+0.5)/n
+				var p := Vector2(lerpf(a.x,b.x,t),lerpf(a.z,b.z,t))
+				var y := deck_y(s,p)
+				if y == -INF: continue
+				points.append(Vector3(p.x,y+FOOT_Y,p.y)+(s.off as Vector3))
+			if not points.is_empty(): out.append(line(id,"foot","deck",points,seed_value))
+	# A run of short decks (a stair's flights) reads as one line: kept to
+	# the hash's few, so a long stair isn't strung end to end.
+	out.sort_custom(func(p: Dictionary, q: Dictionary) -> bool: return roll(seed_value,p.id,"keep") < roll(seed_value,q.id,"keep"))
+	return out.slice(0,DECK_LINES)
 
 ## How well covered a walker's place is (0 none): the crowns and builds
 ## over it, each counted by how far in under it the place stands and only

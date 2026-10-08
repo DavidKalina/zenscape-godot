@@ -16,9 +16,25 @@ const GlyphPuff = preload("res://scripts/glyph_puff.gd")
 const HudIcons = preload("res://scripts/hud_icons.gd")
 const HALO_SHADER = preload("res://shaders/glyph_halo.gdshader")
 
-## The turn (rad/s) and the bob (m).
+## The turn (rad/s) and the bob (m, and its pace).
 const TURN := 0.7
 const BOB := 0.12
+const BOB_PACE := 1.3
+## A calm token (`calm`: one only the pilot on foot takes) turns and bobs
+## this share as much, at this share of the pace, in a halo this much
+## wider, warmed this far toward WARM: at rest, so it reads as one to land
+## for.
+const CALM := 0.45
+const CALM_PACE := 0.6
+const CALM_HALO := 1.25
+const CALM_WARM := 0.35
+const WARM := Color("ffd9a0")
+## The glow in the world (`glow_for`): the rim's glow and the halo's
+## strength by day and at full night, and the token's own faint inner
+## light at night, so it reads as a small lantern after dark.
+const GLOW := Vector2(0.5,0.95)
+const HALO := Vector2(0.28,0.55)
+const INNER_NIGHT := 0.16
 ## The pickup's spin: how long it winds up (s), how many turns it makes
 ## (each faster than the last) and how high it lifts (fraction of its size).
 const SPIN_TIME := 0.32
@@ -36,15 +52,22 @@ var phase := 0.0
 var turning := true
 ## True from the pickup on.
 var taking := false
+## True for a token only the pilot on foot takes: it turns and bobs
+## gentler, in a warmer, wider halo.
+var calm := false
+var _glow := 0.35
+var _halo_strength := 0.22
 ## The motes, so far ones can stop drifting (`motes_on`).
 var motes: CPUParticles3D
 var _spin: Node3D
 var _token: MeshInstance3D
 var _halo: MeshInstance3D
 
-## A holder for glyph `id`, `size` m across, its token turning in "Spin".
-static func make(glyph: String, token_size: float, bob_phase := 0.0) -> Node3D:
+## A holder for glyph `id`, `size` m across, its token turning in "Spin";
+## `calm` for one only the pilot on foot takes.
+static func make(glyph: String, token_size: float, bob_phase := 0.0, is_calm := false) -> Node3D:
 	var holder: Node3D = new()
+	holder.calm = is_calm
 	holder._build(glyph,token_size,bob_phase)
 	return holder
 
@@ -61,12 +84,14 @@ func _build(glyph: String, token_size: float, bob_phase: float) -> void:
 	_spin.add_child(_token)
 	_halo = MeshInstance3D.new()
 	var quad := QuadMesh.new()
-	quad.size = Vector2.ONE*size*1.9
+	quad.size = Vector2.ONE*size*1.9*(CALM_HALO if calm else 1.0)
 	_halo.mesh = quad
 	_halo.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var halo_material := ShaderMaterial.new()
 	halo_material.shader = HALO_SHADER
-	halo_material.set_shader_parameter("tint",Color(HudIcons.item(id).tint).lightened(0.5))
+	var halo_tint := Color(HudIcons.item(id).tint).lightened(0.5)
+	if calm: halo_tint = halo_tint.lerp(WARM,CALM_WARM)
+	halo_material.set_shader_parameter("tint",halo_tint)
 	_halo.material_override = halo_material
 	add_child(_halo)
 	motes = CPUParticles3D.new()
@@ -107,10 +132,22 @@ func spin() -> Node3D:
 func motes_on(on: bool) -> void:
 	if motes != null and motes.emitting != on: motes.emitting = on
 
+## Lit for the world's `night` (0 by day, 1 at full night): a little
+## brighter than the gallery's by day, a soft lantern after dark.
+func glow_for(night: float) -> void:
+	if taking: return
+	_glow = lerpf(GLOW.x,GLOW.y,night)
+	_halo_strength = lerpf(HALO.x,HALO.y,night)
+	var token_material := _token.material_override as ShaderMaterial
+	token_material.set_shader_parameter("glow",_glow)
+	token_material.set_shader_parameter("inner",INNER_NIGHT*night)
+	(_halo.material_override as ShaderMaterial).set_shader_parameter("strength",_halo_strength)
+
 func _process(delta: float) -> void:
 	if taking: return
-	if turning: _spin.rotation.y += TURN*delta
-	_spin.position.y = sin(Time.get_ticks_msec()/1000.0*1.3+phase)*BOB
+	var share := CALM if calm else 1.0
+	if turning: _spin.rotation.y += TURN*share*delta
+	_spin.position.y = sin(Time.get_ticks_msec()/1000.0*BOB_PACE*(CALM_PACE if calm else 1.0)+phase)*BOB*share
 
 ## The pickup: a short twist that winds faster as the token lifts a touch
 ## and brightens, then, still spinning, it shrinks away into a wisp left in
@@ -136,8 +173,8 @@ func take(seed_value: int, puff_parent: Node = null, free_after := true) -> Twee
 		_spin.position.y = from_y+SPIN_LIFT*size*u
 		_spin.scale = Vector3.ONE*maxf(0.01,(1.0+0.08*k)*(1.0-gone*gone))
 		_halo.scale = Vector3.ONE*maxf(0.01,1.0-gone)
-		token_material.set_shader_parameter("glow",lerpf(0.35,1.6,k*k))
-		halo_material.set_shader_parameter("strength",lerpf(0.22,0.5,k*k)),0.0,end,SPIN_TIME+SHRINK_TIME)
+		token_material.set_shader_parameter("glow",lerpf(_glow,1.6,k*k))
+		halo_material.set_shader_parameter("strength",lerpf(_halo_strength,maxf(0.5,_halo_strength),k*k)),0.0,end,SPIN_TIME+SHRINK_TIME)
 	var parent := puff_parent if puff_parent != null else get_parent()
 	tween.parallel().tween_callback(func() -> void:
 		if parent == null or not is_instance_valid(parent): return
