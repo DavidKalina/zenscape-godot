@@ -102,12 +102,23 @@ func run() -> void:
 		if not only.is_empty() and shot.label not in only: continue
 		await _hold(shot,240 if first else 90)
 		if "--no-ocean" in OS.get_cmdline_user_args(): eye.lower.ocean.visible = false
+		_hide_asked()
 		first = false
 		var timing := await _timing(30)
 		print("LOWER %s frame %.2f ms, gpu %.2f ms, below %s" % [shot.label,timing.x,timing.y,str(eye.below())])
 		await still(shot.label)
 	print("LOWER done")
 	quit(0)
+
+## --hide=Name,Name hides every node of those names, to find what draws
+## what in a still.
+func _hide_asked() -> void:
+	for argument: String in OS.get_cmdline_user_args():
+		if not argument.begins_with("--hide="): continue
+		for n: String in argument.trim_prefix("--hide=").split(","):
+			for node in scene.find_children(n,"",true,false):
+				if node is Node3D: (node as Node3D).visible = false
+				print("LOWER hid ",node.get_path())
 
 func _timing(count: int) -> Vector2:
 	await RenderingServer.frame_post_draw

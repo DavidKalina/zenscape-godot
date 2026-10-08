@@ -81,7 +81,7 @@ void fragment() {
 	float level = max(length(rd.xz), 1e-4);
 	float t_reach = reach / level;
 	float t_floor = rd.y < 0.0 ? (floor_y - eye.y) / rd.y : 1e9;
-	bool ground = cloud_sea > 0.0 && rd.y < 0.0 && t_floor < t_reach && t_floor < t_solid && T >= 0.03;
+	bool ground = cloud_sea > 0.0 && rd.y < 0.0 && t_floor > 0.0 && t_floor < t_reach && t_floor < t_solid && T >= 0.03;
 	if (!ground && cloud_a < 0.003) discard;
 
 	float pixel = max(length(fwidth(rd)), 1e-5);
