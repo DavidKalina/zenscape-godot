@@ -489,8 +489,9 @@ func _build_figure() -> void:
 	figure.add_child(puffs)
 	ripples = PilotRipples.new()
 	figure.add_child(ripples)
-	# The motor wades and swims in the plate's live water (none on an islet).
-	motor.water = func(p: Vector2) -> float: return _depth(p) if perch.is_empty() else 0.0
+	# The motor wades and swims in the plate's live water, and on an islet in
+	# a lake it may swim (SkyIslet `swim_depth`).
+	motor.water = func(p: Vector2) -> float: return _depth(p) if perch.is_empty() else _perch_depth(p)
 	# The low foliage parts round him and springs back (scripts/pilot_wake.gd).
 	var wake := PilotWake.new()
 	wake.name = "Wake"
@@ -992,7 +993,7 @@ func _body_events(out: Dictionary, delta: float) -> void:
 ## it, the drips off him (scripts/pilot_figure.gd `soak`) fall.
 func _water_events(events: Dictionary, drawn: Dictionary, delta: float) -> void:
 	for at in body.soak(motor,delta): puffs.drip(at,at.y-figure.global_position.y)
-	if not is_finite(motor.surface) or not perch.is_empty():
+	if not is_finite(motor.surface):
 		ripples.dry()
 		return
 	var top := figure.global_position+Vector3.UP*(motor.surface-motor.feet.y)
@@ -1036,6 +1037,7 @@ func _world_way(way: Vector3) -> Vector3:
 ## the puffs (a wade's droplets fly off the water).
 func _puff_at(at: Vector3) -> Vector3:
 	if perch.is_empty(): at.y += _depth(Vector2(_feet.x,_feet.z))
+	else: at.y += _perch_depth(Vector2(_perch_feet.x,_perch_feet.z))
 	return at
 
 ## Stood where the motor is: the look point at the pilot, the camera back
@@ -1482,6 +1484,12 @@ func _advance_perch(delta: float) -> void:
 	_hint_time += delta
 	_hint.modulate.a = clampf(1.0-(_hint_time-6.0)/1.5,0.0,1.0)
 
+## The water's depth at `p` in the perched islet's frame: a swimmable
+## lake's (SkyIslet `swim_depth`), else none.
+func _perch_depth(p: Vector2) -> float:
+	if perch.is_empty() or not perch.shape.has_method("swim_depth") or not perch.shape.inside(p): return 0.0
+	return float(perch.shape.swim_depth(p))
+
 ## The ground under `p` in the perched islet's frame: its own, or, in a
 ## group, a neighbour's (in this frame), or -INF.
 func _perch_ground(p: Vector2) -> float:
@@ -1581,7 +1589,7 @@ func _notice_step(moved: float, delta: float) -> void:
 ## bare ground and on a bare shore; grass where cover grows (GRASSY); else
 ## bare earth, as a worn path is.
 func _surface() -> String:
-	if not perch.is_empty(): return "grass"
+	if not perch.is_empty(): return "water" if _perch_depth(Vector2(_perch_feet.x,_perch_feet.z)) >= Footbridge.WET else "grass"
 	return _surface_at(Vector2(_feet.x,_feet.z))
 
 ## What stands at plate point `at`, as `_surface`.

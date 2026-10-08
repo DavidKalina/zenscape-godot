@@ -734,7 +734,7 @@ func water() -> Dictionary:
 	if pond.z <= 0.0: return {}
 	var w := {"level":water_level,"middle":Vector2(pond.x,pond.y),"radius":pond.z,"lip":lip,"out":lip_out}
 	# A lake pours off as a broader fall.
-	if not lake.is_empty(): w.half = IsletLake.FALL_HALF
+	if not lake.is_empty(): w.half = IsletLake.fall_half(self)
 	return w
 
 func _channel_distance(p: Vector2) -> float:
@@ -865,8 +865,13 @@ func rim_point(a: float) -> Vector2:
 func blocked(at: Vector2) -> bool:
 	for b in blocks:
 		if at.distance_to(Vector2(b.x,b.y)) < b.z: return true
-	# Out over the water only on a deck (a jetty).
-	return wet(at) and deck_y(at) == -INF
+	# Out over the water only on a deck (a jetty), or into a lake to swim.
+	return wet(at) and deck_y(at) == -INF and not lake.get("swim",false)
+
+## The water's depth a walker wades or swims at `p` (m): a swimmable
+## lake's (IsletLake `swim_depth`), else none.
+func swim_depth(p: Vector2) -> float:
+	return IsletLake.swim_depth(self,p) if not lake.is_empty() else 0.0
 
 static func _barycentric(p: Vector2, a: Vector2, b: Vector2, c: Vector2) -> Vector3:
 	var v0 := b-a
@@ -1500,7 +1505,7 @@ func _wall_rings(i: int, out: Vector2, slump: FastNoiseLite) -> Array:
 	var ring := Vector3(p.x+out.x*reach,ring_y,p.y+out.y*reach)
 	var mid_y := lerpf(ring_y,foot,0.45+0.2*PlateMesh._hash(i,seed % 7919,13))
 	var mid := Vector3(p.x+out.x*bulge,mid_y,p.y+out.y*bulge)
-	if pond.z > 0.0 and p.distance_to(lip) < 2.0:
+	if pond.z > 0.0 and p.distance_to(lip) < 2.0+maxf(float(lake.get("fall",0.0))-IsletLake.FALL_HALF,0.0):
 		ring = _behind_lip(ring)
 		mid = _behind_lip(mid)
 	return [ring,mid]
