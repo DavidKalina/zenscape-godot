@@ -8,6 +8,7 @@ extends SceneTree
 const SkyIslets = preload("res://scripts/sky_islets.gd")
 const SkyCells = preload("res://scripts/sky_cells.gd")
 const SkyClusters = preload("res://scripts/sky_clusters.gd")
+const SkyAirship = preload("res://scripts/sky_airship.gd")
 var failures := 0
 
 func _initialize() -> void:
@@ -78,6 +79,7 @@ func _run() -> void:
 		if group == "": group = b.group
 		elif b.group != group: fixed = false
 	check(fixed,"Its members are fixed, one group")
+	check(stood.values().all(func(b: Dictionary) -> bool: return not SkyAirship.lone(b)),"The airship never takes a cluster's member")
 	var lead: Dictionary = stood.get("lead",{})
 	check(not lead.is_empty() and islets.body(islets.place(lead)+Vector3.UP*30.0) is Vector2,"The glide reads its members as solids")
 	# Seeded islets keep off it.
