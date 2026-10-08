@@ -203,7 +203,7 @@ const LANDING_HINT := "Coming in to land  ·  Space, Q E or F to fly on"
 const ROLLING_HINT := "F to hop out"
 const NO_LANDING_HINT := "No island near enough to land on"
 const LEDGE_HINT := "A D or the arrows along the lip to shimmy  ·  Towards it or Space to climb up  ·  Away to let go"
-const PLANE_HINT := "A D to bank and turn  ·  W S to pitch  ·  Mouse to look round  ·  Space to boost  ·  Shift to brake  ·  Q E or click to barrel roll  ·  F to land  ·  C for the camera  ·  V or Esc to step out"
+const PLANE_HINT := "A D to bank and turn  ·  W S to pitch  ·  Mouse to look round  ·  Space to boost  ·  Shift to brake  ·  Hold Q E to knife-edge, twice quick or click to barrel roll  ·  F to land  ·  C for the camera  ·  V or Esc to step out"
 ## The hints' forms for the pad (scripts/pad_prompt.gd `alternates`).
 const PAD_HINTS := {
 	HINT:"{LS} run  ·  {RS} look  ·  {A} jump, again in the air to fly  ·  {B} step out",
@@ -214,7 +214,7 @@ const PAD_HINTS := {
 	LANDING_HINT:"Coming in to land  ·  {RT}, {LB} {RB} or {Y} to fly on",
 	ROLLING_HINT:"{Y} to hop out",
 	LEDGE_HINT:"{LS} along the lip to shimmy  ·  {LS} towards it or {A} to climb up  ·  {LS} away to let go",
-	PLANE_HINT:"{LS} steer  ·  {RS} look round  ·  {RT} boost  ·  {LT} brake  ·  {LB} {RB} barrel roll  ·  {Y} land  ·  {R3} camera  ·  {B} step out",
+	PLANE_HINT:"{LS} steer  ·  {RS} look round  ·  {RT} boost  ·  {LT} brake  ·  hold {LB} {RB} knife-edge, twice quick barrel roll  ·  {Y} land  ·  {R3} camera  ·  {B} step out",
 	FLY_HINT:"{LS} turn and pitch  ·  {X} flap  ·  {LT} rise  ·  {RT} dive  ·  {Y} land  ·  {RS} look round  ·  {R3} camera  ·  {B} step out",
 }
 ## The right stick's swing of the camera on foot, radians a second at full
@@ -381,8 +381,14 @@ var _swoop_from := {}
 ## and the glide's flaps when last heard.
 var _flap_asked := false
 var _flaps_heard := 0
+## Seconds between two lean presses that make a barrel roll.
+const DOUBLE_TAP := 0.3
 ## The plane's barrel roll asked for since the last step (-1 left, 1 right).
 var _roll_asked := 0.0
+## The last lean pressed (-1 left, 1 right) and when (ms), for a second
+## press within DOUBLE_TAP to ask for a barrel roll.
+var _tap_dir := 0.0
+var _tap_at := -100000
 var _far_before := 500.0
 ## Space held last frame, for its press.
 var _jump_was := false
@@ -1194,13 +1200,16 @@ func _fly_input() -> Dictionary:
 
 ## The plane's own input over the glide's: Space or the pad's right trigger
 ## (or A) boosts and Shift or its left trigger brakes, in place of Rise and
-## the dive; Q, E, a click or the pad's shoulders ask for a barrel roll.
+## the dive; Q and E or the pad's shoulders held tip it on a knife edge,
+## and pressed twice quick (or a click) ask for a barrel roll.
 func _plane_input(input: Dictionary) -> void:
 	input["boost"] = Input.get_action_strength(&"fly_boost")
 	input["brake"] = Input.get_action_strength(&"fly_brake")
 	input["rise"] = 0.0
 	input["dive"] = 0.0
 	input["flap"] = false
+	var keys := (1.0 if Input.is_key_pressed(KEY_E) else 0.0)-(1.0 if Input.is_key_pressed(KEY_Q) else 0.0)
+	input["lean"] = clampf(keys+Input.get_action_strength(&"fly_lean_right")-Input.get_action_strength(&"fly_lean_left"),-1.0,1.0)
 	input["roll"] = _roll_asked
 	if _roll_asked != 0.0: Pad.pulse(0.3,0.1,0.12)
 	_roll_asked = 0.0
@@ -1868,7 +1877,7 @@ func _roll_out() -> void:
 func _advance_sequence(delta: float) -> void:
 	var input := _fly_input()
 	var seq := landing
-	if seq.can_cancel() and (float(input.get("boost",0.0)) > 0.0 or float(input.get("roll",0.0)) != 0.0):
+	if seq.can_cancel() and (float(input.get("boost",0.0)) > 0.0 or float(input.get("roll",0.0)) != 0.0 or float(input.get("lean",0.0)) != 0.0):
 		# Flying on from the next frame; a roll asked for still rolls.
 		_fly_on()
 		_roll_asked = float(input.get("roll",0.0))
@@ -2130,7 +2139,7 @@ func handle(event: InputEvent) -> bool:
 		if event.pressed and not event.echo and event.keycode in [KEY_V,KEY_ESCAPE]:
 			leave()
 		elif event.pressed and not event.echo and event.keycode in [KEY_Q,KEY_E] and flying and perch.is_empty() and plane:
-			_roll_asked = -1.0 if event.keycode == KEY_Q else 1.0
+			_lean_tapped(-1.0 if event.keycode == KEY_Q else 1.0)
 		elif event.pressed and not event.echo and event.keycode == KEY_E and flying and perch.is_empty():
 			_flap_asked = true
 		elif event.pressed and not event.echo and event.keycode == KEY_F and flying and perch.is_empty() and plane:
@@ -2157,9 +2166,20 @@ func _pad_event(event: InputEvent) -> void:
 	elif airborne and Pad.pressed(event,&"fly_camera"):
 		chase.first_person = not chase.first_person
 		glider.visible = not chase.first_person
-	elif airborne and plane and Pad.pressed(event,&"fly_roll_left"): _roll_asked = -1.0
-	elif airborne and plane and Pad.pressed(event,&"fly_roll_right"): _roll_asked = 1.0
+	elif airborne and plane and Pad.pressed(event,&"fly_lean_left"): _lean_tapped(-1.0)
+	elif airborne and plane and Pad.pressed(event,&"fly_lean_right"): _lean_tapped(1.0)
 	elif airborne and not plane and Pad.pressed(event,&"glide_flap"): _flap_asked = true
+
+## A lean pressed: the second press the same way within DOUBLE_TAP asks for
+## a barrel roll that way.
+func _lean_tapped(dir: float) -> void:
+	var now := Time.get_ticks_msec()
+	if dir == _tap_dir and now-_tap_at <= int(DOUBLE_TAP*1000.0):
+		_roll_asked = dir
+		_tap_dir = 0.0
+	else:
+		_tap_dir = dir
+		_tap_at = now
 
 func _notification(what: int) -> void:
 	# Stepping out of the window lets the mouse go.

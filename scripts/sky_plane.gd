@@ -16,6 +16,11 @@ extends "res://scripts/sky_glide.gd"
 ## Climbing costs a little speed and diving gains some, but the engine
 ## always pulls it back to the throttle's speed.
 ##
+## Holding a lean (`lean`: -1 left, 1 right) tips it up on a wingtip,
+## KNIFE_BANK over, to slip through a gap narrower than its wings; the knife
+## edge does not turn it, so it flies on straight, and let go it rolls back
+## to its bank.
+##
 ## A barrel roll (`roll`: -1 left, 1 right, on the frame it is asked for)
 ## turns it a whole way round its length over ROLL_TIME seconds, with a
 ## little hop sideways, and it comes out level on the heading it went in
@@ -24,8 +29,8 @@ extends "res://scripts/sky_glide.gd"
 ## the view never spins with it. Each roll counts as a flap, for the whoosh.
 ##
 ## Coming in to land (`approach`) it throttles back to LANDING_SPEED and
-## comes down as the glide does; a touch slow enough lands, and Boost or a
-## roll calls it off. The wanderer's F lands it by its own sequence
+## comes down as the glide does; a touch slow enough lands, and Boost, a
+## lean or a roll calls it off. The wanderer's F lands it by its own sequence
 ## instead (scripts/plane_landing.gd), which flies it from outside and
 ## hands it back with `resume`; `engine` spins down when it is parked.
 
@@ -57,6 +62,10 @@ const MOUSE_BANK := 0.35
 const PITCH_SPEED := 1.4
 const PITCH_LIMIT := Vector2(-1.3,1.2)
 const EASE_LEVEL := 1.4
+## The knife edge: how far over a held lean tips it (radians) and how fast
+## it tips in and out (seconds).
+const KNIFE_BANK := PI*0.5
+const EASE_KNIFE := 0.12
 ## The barrel roll: seconds round, and the sideways hop (m/s at its middle).
 const ROLL_TIME := 0.7
 const JINK := 3.0
@@ -68,6 +77,8 @@ const CEILING_NOSE := -0.05
 var spin := 0.0
 var rolling := false
 var roll_dir := 0.0
+## How far it is tipped up on a wingtip, -1 left to 1 right.
+var knife := 0.0
 ## The throttle held now: 1 boosting, -1 braking, 0 cruising (for the
 ## figure's propeller and the hum).
 var throttle := 0.0
@@ -79,6 +90,8 @@ var engine := 1.0
 var _lean := 0.0
 var _mouse_rate := 0.0
 var _roll_time := 0.0
+## The bank the turn alone would give it, under the knife edge.
+var _free_bank := 0.0
 
 func launch(from: Vector3, towards: float, pace: float, drop := true) -> void:
 	super.launch(from,towards,pace,drop)
@@ -92,6 +105,8 @@ func launch(from: Vector3, towards: float, pace: float, drop := true) -> void:
 	_roll_time = 0.0
 	_lean = 0.0
 	_mouse_rate = 0.0
+	knife = 0.0
+	_free_bank = 0.0
 	velocity = forward()*speed
 
 ## Flying on from a pose set from outside (a landing called off, a
@@ -108,6 +123,8 @@ func resume(pace: float, nose: float) -> void:
 	engine = 1.0
 	_lean = 0.0
 	_mouse_rate = 0.0
+	knife = 0.0
+	_free_bank = 0.0
 	_roll_time = 0.0
 	velocity = forward()*speed
 
@@ -115,6 +132,7 @@ func resume(pace: float, nose: float) -> void:
 ##   turn, pitch: -1..1 held rates (keys, stick), right and nose-up positive;
 ##   look: Vector2 of radians to turn and pitch directly (the mouse);
 ##   boost, brake: bools (or 0..1 for triggers);
+##   lean: -1..1 held, a knife edge to that side;
 ##   roll: -1 or 1 on the frame a barrel roll is asked for, else 0.
 ## `ground` and `air` are as for the glide.
 func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) -> void:
@@ -131,7 +149,7 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 	var turn := clampf(float(input.get("turn",0.0)),-1.0,1.0)
 	var steer := clampf(float(input.get("pitch",0.0)),-1.0,1.0)
 	var asked := signf(float(input.get("roll",0.0)))
-	if approach and (boost > 0.0 or asked != 0.0): approach = false
+	if approach and (boost > 0.0 or asked != 0.0 or float(input.get("lean",0.0)) != 0.0): approach = false
 	# The barrel roll: once round, eased in and out, then level again.
 	if asked != 0.0 and not rolling:
 		rolling = true
@@ -154,7 +172,10 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 	_lean = lerpf(_lean,turn*BANK_HELD,_ease(EASE_ROLL_IN,delta))
 	heading += -_lean/BANK_HELD*TURN_RATE*delta-look.x+aim
 	_mouse_rate = lerpf(_mouse_rate,(look.x-aim)/maxf(delta,0.0001),_ease(EASE_TURN,delta))
-	bank = lerpf(bank,clampf(_lean+_mouse_rate*MOUSE_BANK,-BANK_TOP,BANK_TOP),_ease(EASE_TURN,delta))
+	_free_bank = lerpf(_free_bank,clampf(_lean+_mouse_rate*MOUSE_BANK,-BANK_TOP,BANK_TOP),_ease(EASE_TURN,delta))
+	# The knife edge tips it up on a wingtip over the turn's bank.
+	knife = lerpf(knife,clampf(float(input.get("lean",0.0)),-1.0,1.0),_ease(EASE_KNIFE,delta))
+	bank = lerpf(_free_bank,signf(knife)*KNIFE_BANK,absf(knife))
 	# Pitch: the stick and mouse steer it; let go, it eases level, or down
 	# the approach's slope; under the floor the cushion lifts the nose.
 	pitch += look.y+steer*PITCH_SPEED*delta

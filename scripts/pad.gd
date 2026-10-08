@@ -52,8 +52,8 @@ const ACTIONS := {
 	"eye_leave":[["button",JOY_BUTTON_B],["button",JOY_BUTTON_BACK]],
 	"fly_boost":[["key",KEY_SPACE],["button",JOY_BUTTON_A],["axis",JOY_AXIS_TRIGGER_RIGHT,1.0]],
 	"fly_brake":[["key",KEY_SHIFT],["axis",JOY_AXIS_TRIGGER_LEFT,1.0]],
-	"fly_roll_left":[["button",JOY_BUTTON_LEFT_SHOULDER]],
-	"fly_roll_right":[["button",JOY_BUTTON_RIGHT_SHOULDER]],
+	"fly_lean_left":[["button",JOY_BUTTON_LEFT_SHOULDER]],
+	"fly_lean_right":[["button",JOY_BUTTON_RIGHT_SHOULDER]],
 	"fly_land":[["button",JOY_BUTTON_Y]],
 	"fly_camera":[["button",JOY_BUTTON_RIGHT_STICK]],
 	# The old glider (--glider): rise and dive, and its flap.
