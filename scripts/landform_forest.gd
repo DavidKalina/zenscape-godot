@@ -8,10 +8,11 @@ extends RefCounted
 ##   the stream: on most, a brook rising between the hills and running
 ##     down a valley it has cut to the shore (scripts/islet_stream.gd),
 ##     a darker fold through the trees with water at its floor;
-##   the wood: scripts/forest_canopy.gd, dark spruce on the high ground,
-##     birch and mixed stands lower, birch and willow along the stream, a
-##     ragged edge of birch, young spruce and juniper meeting the shore,
-##     redwood giants standing over it (a grove of them on some), a
+##   the wood: scripts/forest_canopy.gd, a closed canopy of dark spruce in
+##     stands of deep, varied greens, birch only as accents (a few stands
+##     low down, the stream's banks with willow, the glades' rims, the
+##     ragged edge with young spruce and a little juniper), a couple of
+##     redwood giants standing over it (a small grove of them on some), a
 ##     clearing levelled to land in, a glade or more to see into;
 ##   the far trees: its trees drawn as cheap stand-ins past FAR m
 ##     (scripts/far_trees.gd), so many forested islands show at once.
@@ -42,8 +43,8 @@ const CLEARING := [Vector2(4.5,6.0),Vector2(7.5,10.0)]
 const GLADES := [Vector2i(1,2),Vector2i(2,4)]
 const GLADE := [Vector2(2.8,4.0),Vector2(4.0,6.5)]
 ## Giants, at the smallest and the biggest, and the odds of a grove.
-const GIANTS := [Vector2i(0,1),Vector2i(1,4)]
-const GROVE := Vector2(0.15,0.45)
+const GIANTS := [Vector2i(1,1),Vector2i(2,3)]
+const GROVE := Vector2(0.1,0.3)
 ## The erosion: its passes (the islets' 16) and its grid's cell (share of
 ## the island's grid step): under the trees its fine gullies hardly show,
 ## and on the plate's fine cell it is most of a big island's build.
