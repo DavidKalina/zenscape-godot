@@ -54,6 +54,7 @@ const IsletLake = preload("res://scripts/islet_lake.gd")
 const Woodland = preload("res://scripts/woodland.gd")
 const RavineCut = preload("res://scripts/ravine_cut.gd")
 const MountainSpire = preload("res://scripts/mountain_spire.gd")
+const HillDowns = preload("res://scripts/hill_downs.gd")
 
 ## Kinds and how often each turns up.
 const KINDS := [["meadow",0.22],["grove",0.22],["hills",0.15],["crag",0.11],["spring",0.18],["shore",0.12]]
@@ -224,7 +225,9 @@ var kind := "meadow"
 ## its land reaches from the middle.
 var radius := 5.0
 var reach := 5.0
-## The grid: its points, three ids a face, cells a side and half its width.
+## The grid: its step (m, STEP unless the recipe's `step`), its points,
+## three ids a face, cells a side and half its width.
+var step := STEP
 var points := PackedVector2Array()
 var ids := PackedInt32Array()
 var cells := 0
@@ -269,6 +272,8 @@ var flowers: Array[String] = []
 ## rock and `deep` (RockLooks `seeded`). What it may set, each optional,
 ## every place in the islet's frame (m):
 ##   radius: the land's radius, instead of the kind's range;
+##   step: the grid's step (m), coarser than the plate's STEP for a big
+##     island seen from the air (a landform's, scripts/landform_hills.gd);
 ##   mounds / peaks: Array of Vector4(x, z, reach, height), smooth hill
 ##     mounds or the crag's ridged peaks, instead of the kind's own;
 ##   dome: how high the ground rises inland, instead of the kind's;
@@ -285,7 +290,13 @@ var flowers: Array[String] = []
 ##     companion); tree_size: a multiplier range on each tree's size;
 ##   drifts: Vector2i, how many flower drifts; apart: a multiplier on how
 ##     far apart the trees keep;
-##   undergrowth: a multiplier on the kind's undergrowth;
+##   undergrowth: a multiplier on the kind's undergrowth; tufts, on its
+##     grass tufts;
+##   erode: the erosion's own strengths over the kind's (ERODE: detail, k,
+##     max_cut);
+##   downs: rolling hill country laid over it, 30 to 90 m across (scripts/
+##     hill_downs.gd: swells, cliffs and beaches, a glen to a cove, tors, a
+##     crest's trees, drifts in the hollows, the downs' own shading);
 ##   woodland: a real wood planted over it (scripts/woodland.gd: glades,
 ##     giants, clumped canopy, the floor), on top of the trees above;
 ##   objects: Array of records ({asset, x, z, angle, scale, tint}) set as
@@ -304,8 +315,6 @@ var flowers: Array[String] = []
 ##   tear: a ravine's half, cut from a whole island along a jagged tear
 ##     (scripts/ravine_cut.gd: its side, the tear's shape, filled by
 ##     `share`).
-##   step: the grid's step (m), coarser than the plate's STEP for a big
-##     island (the lower world's, scripts/sky_archipelago.gd);
 ##   sea_foot: {level, shelf, depth}, an island standing in the sea (the
 ##     lower world's) rather than hanging in the sky: the sea's surface at
 ##     `level` (islet frame, under the rim), the shore wall going on down
@@ -332,8 +341,6 @@ var cleft := {}
 ## A recipe's `spire` (a Dictionary, may be empty): a real peak raised on the
 ## islet (scripts/mountain_spire.gd), which draws its own faces; null if none.
 var spire: RefCounted = null
-## The grid's step (m): STEP, or a recipe's `step`.
-var step := STEP
 ## Under a recipe's `sea_foot`: each point's sea bed height (islet frame;
 ## on the land, the wall's foot under its shore), and how far off the land
 ## each point lies (m, 0 on it). Empty otherwise.
@@ -570,6 +577,7 @@ func _lay_ground(rng: RandomNumberGenerator) -> void:
 				h += m.w*(1.0-r*r)*(1.0-r*r)
 		# The lip wanders up and down, and slumps in places (`_rim_at`).
 		heights[i] = lerpf(_rim_at(p,lip_noise),h,smoothstep(0.0,ease,d))
+	if recipe.has("downs"): HillDowns.shape(self,rng,inland)
 	_erode()
 	if recipe.has("lake"): IsletLake.cut(self,rng,inland)
 	elif kind == "spring" or recipe.has("pond"): _cut_pond(rng,inland)
@@ -630,6 +638,7 @@ func _erode() -> void:
 			var w: Vector3 = hit[1]
 			base[j*n+i] = w.x*heights[ids[f*3]]+w.y*heights[ids[f*3+1]]+w.z*heights[ids[f*3+2]]
 	var settings: Dictionary = (ERODE[kind] as Dictionary).duplicate()
+	settings.merge(recipe.get("erode",{}),true)
 	settings.merge(ERODE_COMMON)
 	settings.merge({"size":n,"cell":cell,"origin":origin,"seed":(seed*7+53) & 0x7fffffff,"edge_inner":1.0e5,"edge_outer":1.0e5+1.0})
 	var delta := Erosion.erode(base,fixed,settings)
@@ -903,6 +912,7 @@ func _plant(rng: RandomNumberGenerator) -> void:
 		if not tree in species: species.append(tree)
 	# A woodland (scripts/woodland.gd), when the recipe asks for one.
 	if recipe.has("woodland"): Woodland.plant(self,rng,taken)
+	if recipe.has("downs"): HillDowns.plant(self,rng,taken)
 	# Flower drifts.
 	if rng.randf() < float(FLOWER_ODDS[kind]):
 		var kinds: Array[String] = []
@@ -975,7 +985,7 @@ func _plant(rng: RandomNumberGenerator) -> void:
 			if at == null: continue
 			_add("reeds" if rng.randf() < 0.5 else "bank_grass",at,rng.randf()*TAU,rng.randf_range(0.6,1.0))
 	# Grass tufts over the grass, thicker round trunks and stones.
-	for n in range(_count(rng,area*TUFTS)):
+	for n in range(_count(rng,area*TUFTS*float(recipe.get("tufts",1.0)))):
 		var at: Variant = _find(rng,0.25,TREE_STEEP,[],0.0,true)
 		if at == null: continue
 		_add("grass_tuft",at,rng.randf()*TAU,rng.randf_range(0.7,1.2))
@@ -1299,7 +1309,10 @@ func top_arrays(palette: Dictionary, shift := Vector3.ZERO) -> Array:
 		var slope := _slope(f)
 		var worn := (wear[ids[f*3]]+wear[ids[f*3+1]]+wear[ids[f*3+2]])/3.0 if wear.size() == points.size() else 0.0
 		var edge := (shore_distance[ids[f*3]]+shore_distance[ids[f*3+1]]+shore_distance[ids[f*3+2]])/3.0
-		if slope > rock_slope:
+		# Downs (scripts/hill_downs.gd) colour their own ground, rock and sand.
+		if recipe.has("downs"):
+			tone = HillDowns.tone(self,f,at,slope,palette)
+		elif slope > rock_slope:
 			tone = rock[0 if patch.get_noise_2d(at.x+71.0,at.y) > 0.0 else rock.size()-1]
 		elif (worn > SCREE.x and slope > SCREE.y) or (edge < 0.45 and slope > SCREE.y*2.0):
 			# Scree: a gully's floor or the crumbling lip, gravel and earth.
