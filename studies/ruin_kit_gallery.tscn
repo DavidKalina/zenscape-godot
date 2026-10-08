@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://studies/ruin_kit_gallery.gd" id="1"]
+
+[node name="RuinKitGallery" type="Node3D"]
+script = ExtResource("1")
