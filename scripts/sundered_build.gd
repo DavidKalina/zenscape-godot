@@ -49,6 +49,9 @@ const NEAR_FORGET := 480.0
 const CHUNK := 120
 ## The far detail's columns' sides.
 const FAR_SIDES := 8
+## The islands' outline: a rounded oblong (IslandOutline `form` square),
+## so the land stays wide under the hall to its torn ends.
+const SQUARE := 4.0
 ## The islands' grid step (m: coarser than an islet's, a big island).
 const ISLE_STEP := 1.0
 ## The bed: the hall's footprint across (half, m, to the podium's face)
@@ -96,11 +99,12 @@ static func solve(seed_value: int, yaw := 0.0) -> Dictionary:
 static func _isle(plan: Dictionary, piece: Dictionary) -> Dictionary:
 	var isle: Dictionary = piece.island
 	var half: Vector2 = isle.half
-	var r := sqrt(half.x*half.y)
+	# An oblong (a squared ellipse, SQUARE), its area as the oblong's.
+	var r := sqrt(half.x*half.y)*1.08
 	var rng := RandomNumberGenerator.new()
 	rng.seed = int(isle.seed)
 	var kind: String = KINDS.get(piece.act,"meadow")
-	var spec := {"kind":kind,"radius":r,"step":ISLE_STEP,"outline":{"aspect":half.x/half.y,"heading":0.0,"drift":0.0,"bays":0,"lobes":0.35},
+	var spec := {"kind":kind,"radius":r,"step":ISLE_STEP,"outline":{"aspect":half.x/half.y,"heading":0.0,"drift":0.0,"bays":0,"lobes":0.3,"square":SQUARE},
 		"room":maxf(0.0,half.x*1.15+4.0-r*SkyIslet.REACH-SkyIslet.MARGIN),"dome":rng.randf_range(0.6,1.2),
 		"trees":Vector2i(10,18),"tree_pool":{"tree":1.0,"birch":0.6,"broadleaf":0.5,"juniper":0.4},"mixed":true,"tree_size":Vector2(0.9,1.4),
 		"drifts":Vector2i(4,8),"far_trees":180.0,
@@ -585,6 +589,8 @@ static func furnish(node: Node3D, member: Dictionary, plan: Dictionary, made: Di
 ## NEAR_FORGET. `eye` in home coordinates (the islets' own frame, where
 ## their nodes stand).
 static func advance(lives: Array, plan: Dictionary, eye: Vector3) -> void:
+	# Held near everywhere (captures: plan "keep_near").
+	if plan.get("keep_near",false): return
 	var busy := false
 	for live: Dictionary in lives:
 		if int(live.task) >= 0: busy = true
