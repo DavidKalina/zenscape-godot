@@ -5,10 +5,13 @@ extends CanvasLayer
 ## many of that glyph are collected, and under them the token's line as a
 ## row of small pips, the taken ones filled in its tint. It comes up over
 ## RISE s, holds HOLD s and fades over FADE s; another pickup holds it up.
-## When a whole line is taken the pips swell and settle together, it holds a
-## little longer (HOLD_LINE) and a soft chime sounds, a two-note bell made
-## here (`_chime`) and played low on the world's sound bus. Nothing to press,
-## nothing to navigate: the pad and the keys never reach it.
+## Every pickup sounds a bright little blip (`_blip`), a quick grace note
+## leaping a fourth into a shimmering ring, pitched up the line's pentatonic
+## steps as its tokens are taken. When a whole line is taken the pips swell
+## and settle together, it holds a little longer (HOLD_LINE) and a sparkling
+## run (`_flourish`) climbs over the blip. Both are made here and played on
+## the world's sound bus. Nothing to press, nothing to navigate: the pad and
+## the keys never reach it.
 ##
 ## Drawn in the HUD's lantern look (scripts/lantern_style.gd): warm-white
 ## spaced figures with a dark rim over a soft dark plate, sizes in design
@@ -32,11 +35,15 @@ const PIP_GAP := 13.0
 const MARGIN := 28.0
 ## The plate's darkness.
 const PLATE := 0.26
-## The chime: its notes (Hz), length (s) and gain (linear, under the
-## world's sound volume).
-const NOTES := [880.0,1318.5]
-const CHIME := 1.4
-const CHIME_GAIN := 0.12
+## The sounds: the rate they're made at, the blip's grace and ringing notes
+## (Hz) and the flourish's run (Hz), their gains (linear, under the world's
+## sound volume), and the semitone steps a line's pickups climb.
+const RATE := 32000
+const BLIP_NOTES := [1046.5,1396.9]
+const RUN_NOTES := [1396.9,1568.0,1760.0,2093.0,2793.8]
+const BLIP_GAIN := 0.16
+const FLOURISH_GAIN := 0.12
+const STEPS := [0,2,4,7,9,12]
 
 var _box: PanelContainer
 var _icon: TextureRect
@@ -52,7 +59,8 @@ var _swell := 0.0
 var _t := INF
 var _hold := HOLD
 var _from := 0.0
-var _player: AudioStreamPlayer
+var _blip_player: AudioStreamPlayer
+var _flourish_player: AudioStreamPlayer
 var _icons := {}
 var _scale := 1.0
 
@@ -85,12 +93,9 @@ func _ready() -> void:
 	_pips.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_pips.draw.connect(_draw_pips)
 	column.add_child(_pips)
-	_player = AudioStreamPlayer.new()
 	Audio.ensure_buses()
-	_player.bus = Audio.BUS
-	_player.stream = _chime()
-	_player.volume_db = linear_to_db(CHIME_GAIN)
-	add_child(_player)
+	_blip_player = _sound_player(_blip(),BLIP_GAIN)
+	_flourish_player = _sound_player(_flourish(),FLOURISH_GAIN)
 	_layout()
 	get_viewport().size_changed.connect(_layout)
 	set_process(false)
@@ -108,9 +113,11 @@ func show_pickup(glyph: String, total: int, got: int, count: int) -> void:
 	_from = _box.modulate.a
 	_t = 0.0
 	_hold = HOLD_LINE if whole else HOLD
+	_blip_player.pitch_scale = pow(2.0,STEPS[clampi(got-1,0,STEPS.size()-1)]/12.0)
+	if _blip_player.is_inside_tree(): _blip_player.play()
 	if whole:
 		_swell = 1.0
-		if _player.is_inside_tree(): _player.play()
+		if _flourish_player.is_inside_tree(): _flourish_player.play()
 	_layout()
 	_pips.queue_redraw()
 	set_process(true)
@@ -161,26 +168,65 @@ func _draw_pips() -> void:
 		if k < _got: _pips.draw_circle(at,r,_tint.lightened(0.2))
 		else: _pips.draw_arc(at,r*0.8,0.0,TAU,16,Color(Style.LIGHT,0.55),1.2*_scale,true)
 
-## A soft two-note bell: each note a sine with a quieter octave, a quick
-## swell and a long fall, the second a beat after the first.
-static func _chime() -> AudioStreamWAV:
-	var rate := 22050
-	var n := int(CHIME*rate)
-	var data := PackedByteArray()
-	data.resize(n*2)
+func _sound_player(stream: AudioStreamWAV, gain: float) -> AudioStreamPlayer:
+	var player := AudioStreamPlayer.new()
+	player.bus = Audio.BUS
+	player.stream = stream
+	player.volume_db = linear_to_db(gain)
+	player.max_polyphony = 4
+	add_child(player)
+	return player
+
+## One shiny note at `f` Hz from `s` s into it: a sine pair detuned a hair
+## for shimmer, a soft square-ish edge of odd overtones that fades fast, a
+## bell's inharmonic glint at the strike, a 3 ms rise and a fall of `decay`.
+static func _note(f: float, s: float, decay: float) -> float:
+	if s < 0.0: return 0.0
+	var env := minf(s/0.003,1.0)*exp(-s*decay)
+	var v := 0.5*(sin(TAU*f*s)+sin(TAU*(f+2.5)*s))
+	v += (0.22*sin(TAU*f*3.0*s)+0.1*sin(TAU*f*5.0*s))*exp(-s*14.0)
+	v += 0.3*sin(TAU*f*2.76*s)*exp(-s*40.0)
+	return env*v
+
+## The pickup: a 45 ms grace note leaping a fourth into a note that rings
+## out and shimmers away, all in under half a second.
+static func _blip() -> AudioStreamWAV:
+	var n := int(0.45*RATE)
+	var data := PackedFloat32Array()
+	data.resize(n)
 	for i in range(n):
-		var t := float(i)/rate
+		var t := float(i)/RATE
+		var grace := _note(BLIP_NOTES[0],t,9.0)*clampf((0.05-t)/0.008,0.0,1.0)
+		data[i] = (grace+_note(BLIP_NOTES[1],t-0.045,7.5))
+	return _wav(data)
+
+## A whole line: a quick run up the pentatonic, starting under the blip's
+## ring so it follows at once, its top note left to sparkle out.
+static func _flourish() -> AudioStreamWAV:
+	var n := int(1.1*RATE)
+	var data := PackedFloat32Array()
+	data.resize(n)
+	for i in range(n):
+		var t := float(i)/RATE
 		var v := 0.0
-		for k in range(NOTES.size()):
-			var s := t-0.16*k
-			if s < 0.0: continue
-			var f: float = NOTES[k]
-			var env := minf(s/0.012,1.0)*exp(-s*3.2)
-			v += env*(sin(TAU*f*s)+0.25*sin(TAU*f*2.0*s)*exp(-s*6.0))*0.5
-		data.encode_s16(i*2,int(clampf(v,-1.0,1.0)*32000.0))
+		for k in range(RUN_NOTES.size()):
+			var last := k == RUN_NOTES.size()-1
+			v += _note(RUN_NOTES[k],t-0.07-0.055*k,3.5 if last else 11.0)*(0.8 if last else 0.6)
+		data[i] = v
+	return _wav(data)
+
+## 16-bit mono, its loudest sample brought to 0.9.
+static func _wav(samples: PackedFloat32Array) -> AudioStreamWAV:
+	var peak := 0.0
+	for v in samples: peak = maxf(peak,absf(v))
+	var gain := 0.9/peak if peak > 0.0 else 1.0
+	var data := PackedByteArray()
+	data.resize(samples.size()*2)
+	for i in range(samples.size()):
+		data.encode_s16(i*2,int(clampf(samples[i]*gain,-1.0,1.0)*32000.0))
 	var stream := AudioStreamWAV.new()
 	stream.format = AudioStreamWAV.FORMAT_16_BITS
-	stream.mix_rate = rate
+	stream.mix_rate = RATE
 	stream.stereo = false
 	stream.data = data
 	return stream
