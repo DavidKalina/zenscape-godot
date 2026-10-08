@@ -259,6 +259,7 @@ Pass these after the launcher, e.g. `./run-cozy-flow.command --resume`.
 - `--no-tray` hides the materials tray.
 - `--square-islands` makes every new plain the 28 m square island the plate used to be, in the middle of today's 48 m plate, as before islands had outlines; places already saved keep the shape they were saved with (places saved before the plate grew open as that square, or the outline they had, in its middle).
 - `--no-first-steps` leaves out the first-steps card and the field notes; `--first-steps` shows the card from the top whatever was found before, without saving.
+- `--below` (a prototype) opens the lower world under the cloud sea: dive the plane down into the sea and, deep in its white-out, you come out under an overcast cloud ceiling over an endless ocean, the mountain ranges standing down into it; climb back up through the cloud to the islands. Nothing lands or is claimed down there.
 
 ### Desert (held back for an update)
 

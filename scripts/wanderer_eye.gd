@@ -83,6 +83,11 @@ extends Node
 ## of its own, the right mouse button (or the right stick) looks round it,
 ## F comes in to land at the island's middle, and touching down slowly
 ## anywhere on the island lands, the camera swooping down behind the pilot.
+##
+## With `--below` (scripts/sky_below.gd) the cloud sea is a way down: dived
+## through, it comes out over the lower world's ocean, its floor just over
+## the water, and climbs back up through the cloud. Down there it claims no
+## island and lands nowhere.
 
 const Plate = preload("res://scripts/plate.gd")
 const Pad = preload("res://scripts/pad.gd")
@@ -239,6 +244,7 @@ const SkyWorld = preload("res://scripts/sky_world.gd")
 const SkyIslets = preload("res://scripts/sky_islets.gd")
 const GlideAir = preload("res://scripts/glide_air.gd")
 const SkyFlight = preload("res://scripts/sky_flight.gd")
+const SkyBelow = preload("res://scripts/sky_below.gd")
 const GlideCamera = preload("res://scripts/glide_camera.gd")
 const GliderFigure = preload("res://scripts/glider_figure.gd")
 const IslandFrame = preload("res://scripts/island_frame.gd")
@@ -336,6 +342,8 @@ var islands: Node3D
 var air: Node3D
 ## The sky's answer to the glide: the cloud sea and the vapour (scripts/sky_flight.gd).
 var sky: Node
+## The lower world under the cloud sea (`--below`, scripts/sky_below.gd), or null.
+var lower: Node3D = null
 var flying := false
 var glide_enabled := "--no-glide" not in OS.get_cmdline_user_args()
 ## Flying the little plane (the default), or the old glider (`--glider`).
@@ -444,6 +452,14 @@ func setup(owner_scene: Node3D) -> void:
 		sky = SkyFlight.new()
 		add_child(sky)
 		sky.setup(scene)
+		if SkyBelow.on():
+			lower = SkyBelow.new()
+			add_child(lower)
+			islands.skip.append(lower)
+			lower.peaks = islands.peaks
+			sky.lower = lower
+			glide.floor_y = SkyBelow.FLOOR
+			glide.water = SkyBelow.OCEAN
 		air = GlideAir.new()
 		add_child(air)
 		islands.skip.append(air)
@@ -1194,11 +1210,12 @@ func _advance_flight(delta: float) -> void:
 	var input := _fly_input()
 	_read_obstacles(false)
 	if glide.approach: glide.approach_target = _landing_spot()
-	if _landing_wait: _wait_to_land(delta,input)
+	if _landing_wait and not below(): _wait_to_land(delta,input)
 	glide.step(delta,input,_fly_ground,_fly_air)
 	RopeBridge.flown_by(islands.global_transform*glide.position,glide.velocity)
-	# Into another island's footprint, it becomes the plate.
-	if not islands.claiming:
+	# Into another island's footprint, it becomes the plate (not from under
+	# the cloud sea).
+	if not islands.claiming and not below():
 		var under: int = islands.copy_under(glide.position)
 		if under >= 0: _claim(under)
 	sky.advance(delta,glide.position,islands.in_cloud(glide.position,scene._motion_time))
@@ -1224,7 +1241,7 @@ func _advance_flight(delta: float) -> void:
 	var on_plate: bool = islands._height(glide.position) != null
 	var islet: Dictionary = {} if on_plate else islands.islets.islet_at(glide.position)
 	var on_islet := not islet.is_empty() and _islet_ground_near(islet,glide.position)
-	var landable: bool = glide.speed < LAND_SPEED and float(input.dive) < 0.5 and (on_plate or on_islet)
+	var landable: bool = glide.speed < LAND_SPEED and float(input.dive) < 0.5 and (on_plate or on_islet) and not below()
 	glider.update(delta,glide,float(input.dive),_fly_ground,landable,vapour.near,vapour.side)
 	_skim_time = _skim_time+delta if glide.skimming and landable else 0.0
 	if _skim_time >= LAND_TIME:
@@ -1282,8 +1299,10 @@ func _write_chase() -> void:
 	scene.polar = clampf(acos(clampf(dir.y,-1.0,1.0)),0.05,PI-0.05)
 	scene.camera_roll = chase.roll
 
-## True inside an island's rock or ground, for the camera to keep out of.
+## True inside an island's rock or ground, for the camera to keep out of,
+## or under the lower world's ocean.
 func _solid(point: Vector3) -> bool:
+	if lower != null and point.y < SkyBelow.OCEAN+0.3: return true
 	var body: Variant = _fly_ground(point)
 	if body == null: return false
 	var b := body as Vector2
@@ -1636,6 +1655,10 @@ func _land_key() -> void:
 	_hint.text = LANDING_HINT
 	_hint.modulate.a = 1.0
 	_hint_time = 0.0
+
+## True while the eye is under the cloud sea (`--below`).
+func below() -> bool:
+	return lower != null and lower.below
 
 ## Called off before the touch: back to flying from where it is.
 func _fly_on() -> void:

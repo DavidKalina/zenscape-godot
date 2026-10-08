@@ -8,6 +8,10 @@ shader_type canvas_item;
 #include "res://shaders/reference_globals.gdshaderinc"
 
 uniform float amount = 0.0;
+// Under --below (scripts/sky_below.gd) the sea's vapour closes whole at
+// its thickest, so the swap to the lower world is never seen: 0 leaves the
+// vapour as it was.
+uniform float whole = 0.0;
 
 float vapour_hash(vec2 p) {
 	vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -36,5 +40,6 @@ void fragment() {
 	vec3 white = min(zs_cloud_sky * 0.95 + zs_cloud_sun * 0.5, vec3(1.0));
 	white = mix(white, vec3(0.97, 0.98, 1.0) * max(max(white.r, white.g), white.b), 0.45);
 	white *= mix(vec3(0.94, 0.96, 1.0), vec3(1.05), 1.0 - UV.y);
-	COLOR = vec4(min(white, vec3(1.0)), cover * 0.85);
+	cover = max(cover, smoothstep(0.85, 1.0, amount) * whole);
+	COLOR = vec4(min(white, vec3(1.0)), cover * mix(0.85, 1.0, whole));
 }

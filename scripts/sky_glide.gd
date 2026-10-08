@@ -179,6 +179,11 @@ var approach_target := Vector3.INF
 var _flap_queued := false
 var _turn_rate := 0.0
 var _beat := 0.0
+## The floor the cushion lifts from (FLOOR, or under --below just over the
+## ocean: scripts/sky_below.gd), and the height of open water it skims as
+## it skims ground, never sinking in (-INF: none).
+var floor_y := FLOOR
+var water := -INF
 ## Callable(Vector3) -> bool, true where the solid at a point is giant
 ## stone (scripts/sky_peaks.gd `solid`); if not set, every solid is ground
 ## the eye can ride up.
@@ -229,7 +234,7 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 	var look: Vector2 = input.get("look",Vector2.ZERO)
 	# Under the floor the cloud cushion takes over: the dive lets go and the
 	# nose comes up, over CATCH_DEPTH metres.
-	var deep := clampf((FLOOR-position.y)/CATCH_DEPTH,0.0,1.0)
+	var deep := clampf((floor_y-position.y)/CATCH_DEPTH,0.0,1.0)
 	var dive := clampf(float(input.get("dive",0.0)),0.0,1.0)*(1.0-deep)
 	var rise := clampf(float(input.get("rise",0.0)),0.0,1.0)
 	var steer := clampf(float(input.get("pitch",0.0)),-1.0,1.0)
@@ -293,7 +298,7 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 		hang = 0.0
 	flap_lift *= exp(-delta/FLAP_FADE)
 	# The air: the cushion below the floor.
-	lift = clampf((FLOOR-position.y)*CUSHION,0.0,CUSHION_MAX)
+	lift = clampf((floor_y-position.y)*CUSHION,0.0,CUSHION_MAX)
 	# The drop off the edge.
 	var fall := FALL*minf(airborne,FALL_TIME)*(1.0-smoothstep(FALL_TIME,FALL_TIME+CATCH,airborne))
 	var sink := SINK*(1.0-HANG*hang)*(1.0-dive*0.5)
@@ -308,6 +313,7 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 	var was := position
 	position += velocity*delta
 	_skim(delta,ground,was)
+	_water(delta)
 
 ## The pitch the approach heads for: down at APPROACH_PITCH from
 ## APPROACH_HIGH up, easing level by the ground (the flare), and gentler
@@ -369,6 +375,10 @@ func _skim(delta: float, ground: Callable, was: Vector3) -> void:
 		_under(delta,body)
 	else:
 		_ride(delta,Vector3(position.x,body.x+SKIM,position.z))
+
+## Open water (`water`) is ridden as the ground is: never under it.
+func _water(delta: float) -> void:
+	if position.y < water+SKIM: _ride(delta,Vector3(position.x,water+SKIM,position.z))
 
 ## Sliding along under the solid `body`: kept CLEAR under it, the climb
 ## stops and the nose comes level.

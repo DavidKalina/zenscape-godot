@@ -71,6 +71,7 @@ const SkyHomes = preload("res://scripts/sky_homes.gd")
 ## far skyline (scripts/sky_ring.gd).
 const SkyWorld = preload("res://scripts/sky_world.gd")
 const SkyRing = preload("res://scripts/sky_ring.gd")
+const SkyBelow = preload("res://scripts/sky_below.gd")
 ## The ring's ranges stand in cells (RING_ROW, index): a row no real cell
 ## reaches (it would lie billions of metres off). Each is made within
 ## RING_BUILD of the eye and let go past RING_FORGET; past that its skyline
@@ -154,6 +155,8 @@ var built := {}
 var _making := {}
 var _since := CHECK
 var _material: Material
+## The lower world open (`open_sea`).
+var _open := false
 var kinds: Array[Node3D] = []
 static var _puff_material: ShaderMaterial
 static var _quad: QuadMesh
@@ -634,8 +637,8 @@ static func _make(seed_value: int, stature: float, grass: Array, rock: Array, gr
 	out.shape = shape
 	# The meshes made here, so standing the range up is only adding nodes
 	# (their material given then).
-	out.body = SkyPeak.mesh_from(shape.body_arrays(grass,rock,gravel,OFF_MAP,stride,snow),null)
-	out.far = SkyPeak.mesh_from(shape.body_arrays(grass,rock,gravel,OFF_MAP,stride*LOD_STRIDE,snow),null)
+	out.body = SkyPeak.mesh_from(shape.body_arrays(grass,rock,gravel,OFF_MAP,stride,snow,SkyPeak.face_floor()),null)
+	out.far = SkyPeak.mesh_from(shape.body_arrays(grass,rock,gravel,OFF_MAP,stride*LOD_STRIDE,snow,SkyPeak.face_floor()),null)
 
 ## The worker's range, stood up as nodes: its faces, the cloud at its foot,
 ## and the jet down its gorge.
@@ -704,6 +707,9 @@ func _ground() -> Material:
 		m.set_shader_parameter("base_color",Color.WHITE)
 	m.set_shader_parameter("sea_cut",SkyPeak.SEA)
 	m.set_shader_parameter("sea_fray",SEA_FRAY)
+	if SkyBelow.on():
+		m.set_shader_parameter("below_sink",Vector4(1.0,SkyPeak.SEA,SkyPeak.BASE,SkyBelow.FOOT))
+		m.set_shader_parameter("sea_open",_open)
 	m.set_shader_parameter("look_scale",LOOK_SCALE)
 	m.set_shader_parameter("facet_soft",FACET_SOFT)
 	# Bare basalt: the plate's grass field and geology stay off it.
@@ -715,6 +721,24 @@ func _ground() -> Material:
 	m.render_priority = FADE_PRIORITY
 	_material = m
 	return _material
+
+## The lower world (scripts/sky_below.gd) seen or not: open, the rock runs
+## on down past the sea's top, and the sea's summits, built only over the
+## sea, step aside.
+func open_sea(open: bool) -> void:
+	_open = open
+	if _material != null: (_material as ShaderMaterial).set_shader_parameter("sea_open",open)
+	for i in ring.summits:
+		var node: Variant = ring.summits[i].node
+		if node != null: (node as Node3D).visible = not open
+
+## A world height `at` on a range whose frame stands `top` at the sea's top
+## and `foot` at its foot (SkyPeak SEA and BASE, in the world), drawn down
+## under --below as reference_surface's `below_sink` draws it: from the
+## sea's top down, stretched so the foot lies at SkyBelow FOOT.
+static func sunk(at: float, top: float, foot: float) -> float:
+	if not SkyBelow.on() or at >= top or foot <= SkyBelow.FOOT: return at
+	return top-(top-at)*(top-SkyBelow.FOOT)/maxf(top-foot,1.0)
 
 ## The cloud wrapped round the foot: the glide's own cloud puffs
 ## (shaders/sky_cloud_puff.gdshader), held still, softened where they meet
@@ -835,7 +859,14 @@ func body(point: Vector3) -> Variant:
 		if h == null: continue
 		var scale: Vector3 = b.get("scale",Vector3.ONE)
 		var y := position.y+float(b.home.y)+lift(scale.y)
-		if found == null or float(h)*scale.y+y > (found as Vector2).x: found = Vector2(float(h)*scale.y+y,SkyPeak.BOTTOM*scale.y+y)
+		var top := float(h)*scale.y+y
+		var under := SkyPeak.BOTTOM*scale.y+y
+		# Under --below the flanks are drawn down to the ocean, and the
+		# underside is under it.
+		if SkyBelow.on():
+			top = sunk(top,SkyPeak.SEA*scale.y+y,SkyPeak.BASE*scale.y+y)
+			under = minf(under,SkyBelow.FOOT-SkyBelow.SINK)
+		if found == null or top > (found as Vector2).x: found = Vector2(top,under)
 	if found != null: return found
 	# The sea's summits (scripts/sky_ring.gd).
 	var summit: Variant = ring.summit_body(point)

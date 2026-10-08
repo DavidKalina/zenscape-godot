@@ -41,6 +41,9 @@ uniform vec4 overview_far = vec4(0.0);
 // (scripts/sky_haze.gd `publish`): x its strength, y its style (0 Opal,
 // 1 Storybook, 2 Mystic).
 uniform vec2 glide_sea = vec2(0.0);
+// Under the cloud sea (scripts/sky_below.gd), 1: the haze is the
+// overcast's own pearl (zsBelowAir), as the sky there is.
+uniform float glide_below = 0.0;
 
 // The air the cloud sea lifts into far off, below the horizon, in its own
 // style (shaders/sky_cloud_sea_*.gdshaderinc), from the horizon it is given:
@@ -94,6 +97,7 @@ vec3 zs_glide_horizon(vec3 ray) {
 	float deep = zs_night * zs_celestial_clear;
 	float veil = glide_sea.x * smoothstep(-0.02, -0.16, ray.y) * mix(1.0, smoothstep(-0.34, -0.66, ray.y), deep);
 	col = max(mix(col, sea, veil), vec3(0.0));
+	if (glide_below > 0.0) col = mix(col, zsBelowAir(ray), glide_below);
 	return col * 0.98 / max(max(max(col.r, col.g), col.b), 0.98);
 }
 

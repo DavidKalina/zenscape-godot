@@ -32,6 +32,7 @@ extends RefCounted
 
 const SkyIslands = preload("res://scripts/sky_islands.gd")
 const SkyIslets = preload("res://scripts/sky_islets.gd")
+const SkyBelow = preload("res://scripts/sky_below.gd")
 ## The falloff's scale and where it is whole (m), and the cloud sea's height
 ## (scripts/sky_flight.gd SEA_Y), where the air is thickest: up to THICK more
 ## over the last LOW metres above it.
@@ -169,11 +170,14 @@ static func emerging(islands: Node, eye: Vector3) -> Array:
 ## `blend` (studies/display_fog.gd) the cloud sea under it (`sea`, as in
 ## `horizon`), the rising islands' boxes and the standing ranges' spots
 ## (SkyPeaks `haze_spots`), and the world's middle (global) for the mountain
-## ring's curve, if it stands (`ring_spot`).
-static func publish(amount: float, blend: ShaderMaterial = null, sea := Vector2.ZERO, rising: Array = [], peaks: Array = [], ring := Vector4.ZERO) -> void:
-	RenderingServer.global_shader_parameter_set("zs_glide_haze",Vector4(amount,REACH,WHOLE,SEA))
+## ring's curve, if it stands (`ring_spot`). Under the cloud sea (`below`
+## 1, scripts/sky_below.gd) the air is thickest down by the ocean, not by
+## the sea overhead, and its colour is the overcast's pearl.
+static func publish(amount: float, blend: ShaderMaterial = null, sea := Vector2.ZERO, rising: Array = [], peaks: Array = [], ring := Vector4.ZERO, below := 0.0) -> void:
+	RenderingServer.global_shader_parameter_set("zs_glide_haze",Vector4(amount,REACH,WHOLE,thickest(below)))
 	if blend == null: return
 	blend.set_shader_parameter("glide_sea",sea)
+	blend.set_shader_parameter("glide_below",below)
 	var lows := PackedVector4Array()
 	var highs := PackedVector4Array()
 	for i in range(EMERGING):
@@ -187,6 +191,11 @@ static func publish(amount: float, blend: ShaderMaterial = null, sea := Vector2.
 	blend.set_shader_parameter("glide_peaks",spots)
 	blend.set_shader_parameter("glide_ring",ring)
 	blend.set_shader_parameter("glide_ring_inner",ring_inner())
+
+## Where the air is thickest (zs_glide_haze.w): over the cloud sea, or
+## under it (`below` 1) over the ocean.
+static func thickest(below: float) -> float:
+	return SkyBelow.OCEAN if below > 0.5 else SEA
 
 ## The build view's mountains (shaders/reference_surface_haze.gdshaderinc
 ## overview_far): past OVERVIEW_FROM to OVERVIEW_TO (m) from the plate's

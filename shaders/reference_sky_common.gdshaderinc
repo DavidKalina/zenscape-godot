@@ -166,6 +166,15 @@
     }
     return col;
   }
+  // The overcast under the cloud sea (scripts/sky_below.gd): a pale pearl
+  // grey as bright as the sky's own horizon, lighter overhead where the
+  // cloud's underside is lit through, dimmed with the night.
+  vec3 zsBelowAir(vec3 dir) {
+    vec2 seen = normalize(dir.xz + 1e-4);
+    float lum = max(dot(zsSkyBase(vec3(seen.x, 0.0, seen.y)), vec3(0.2126, 0.7152, 0.0722)), 0.04);
+    vec3 pearl = mix(vec3(0.80, 0.83, 0.87), vec3(0.93, 0.93, 0.95), smoothstep(-0.1, 0.6, dir.y));
+    return pearl * lum * mix(1.0, 0.4, zs_night * zs_celestial_clear);
+  }
   // The bow lies in the air in front of everything in the sky, hills included.
   vec3 zsApplyBow(vec3 col, vec3 dir) {
     if (zs_bow > 0.001) {
