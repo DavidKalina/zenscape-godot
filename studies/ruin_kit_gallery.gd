@@ -393,7 +393,7 @@ func _frame_piece(index: int) -> void:
 	if index < 0 or index >= _slots.size():
 		_frame = -1
 		_focus_goal = Vector3(_bounds.get_center().x,2.2,_bounds.get_center().y+1.5)
-		_distance_goal = maxf(_bounds.size.x,_bounds.size.y*1.4)*0.98
+		_distance_goal = maxf(_bounds.size.x,_bounds.size.y*1.4)*0.9
 		_pitch = 0.5
 		_yaw = 0.0
 	else:
