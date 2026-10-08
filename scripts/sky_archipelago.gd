@@ -68,6 +68,9 @@ const SHELF_DEPTH := 12.0
 ## over STEP_ACROSS, snapped down to one of STEPS (the hills landform's).
 const STEP_ACROSS := 40.0
 const STEPS := [SkyIslet.STEP,1.0,4.0/3.0,2.0]
+## How far off an island's trees draw (m): nearer than the sky islets',
+## for many islands stand in view at once.
+const TREE_RANGE := 260.0
 ## Built within VIEW of the eye, let go past FORGET; MAKING on workers at
 ## once, the cells looked over every CHECK seconds; a new one fades in
 ## over FADE_IN.
@@ -117,6 +120,7 @@ func _init() -> void:
 	islets = SkyIslets.new()
 	islets.name = "LowerIslets"
 	islets.owns_shared = false
+	islets.tree_range = TREE_RANGE
 	add_child(islets)
 	asked = forced_names()
 
@@ -349,6 +353,9 @@ static func dress_spec(spec: Dictionary, width: float, level: float, seed_value:
 		var t := clampf((width-25.0)/65.0,0.0,1.0)
 		spec.sea_foot = {"level":level,"shelf":lerpf(SHELF.x,SHELF.y,t),"depth":SHELF_DEPTH}
 	if not spec.has("step"): spec.step = step_for(width)
+	# Far trees as stand-ins (the forest landform's `far_trees`), where the
+	# islets draw them.
+	if not spec.has("far_trees"): spec.far_trees = true
 	if not spec.has("rock"):
 		var looks := RockLooks.seeded(seed_value)
 		spec.rock = looks.get("rock",looks)

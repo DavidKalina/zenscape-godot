@@ -604,6 +604,8 @@ func _erode() -> void:
 	# A big island on a coarse grid (a recipe's `step`) weathers on cells as
 	# coarse, its finer gullies being finer than its faces.
 	var cell := maxf(Erosion.CELL,step)
+	var erode: Variant = recipe.get("erode")
+	if erode is Dictionary and (erode as Dictionary).has("cell"): cell = float(erode.cell)
 	var n := ceili((reach+ERODE_MARGIN)*2.0/cell)+1
 	var origin := -float(n-1)*0.5*cell
 	var low := INF

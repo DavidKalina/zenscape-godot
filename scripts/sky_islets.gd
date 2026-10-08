@@ -153,6 +153,9 @@ func _init() -> void:
 ## second islets node sharing them (the lower world's, scripts/
 ## sky_archipelago.gd) leaves them to the sky's (`owns_shared` false).
 var owns_shared := true
+## How far off the trees and what is built still draw (m): TREE_RANGE, or
+## nearer for a sea thick with islands (the lower world's).
+var tree_range := TREE_RANGE
 func _exit_tree() -> void:
 	clear()
 	if owns_shared: _release()
@@ -351,8 +354,9 @@ static func _dress(shape: RefCounted, palette: Dictionary, plants: Dictionary, o
 	out.plants = shape.flora(plants)
 	out.meshes = {"top":SkyIslet.mesh_from(out.top,null),"sides":SkyIslet.mesh_from(out.sides,null)}
 	if not (out.water as Array).is_empty():
-		out.fall = _fall_rings(shape)
-		out.thread = _thread_plan(shape,out.fall,home_y)
+		if not meets_sea(shape):
+			out.fall = _fall_rings(shape)
+			out.thread = _thread_plan(shape,out.fall,home_y)
 		out.meshes.water = SkyIslet.mesh_from(out.water,null,SkyIslet.WATER_FORMAT)
 
 ## An authored islet's parts (SkyIslet `author`), as `_make` makes them,
@@ -412,7 +416,7 @@ func stand(node_name: String, home: Vector3, out: Dictionary) -> Dictionary:
 		pond.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		pond.set_meta("skip_reflection",true)
 		node.add_child(pond)
-		_fall(node,shape,out.fall,out.get("thread",{}))
+		if out.has("fall"): _fall(node,shape,out.fall,out.get("thread",{}))
 	_plant(node,out.plants)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = shape.seed
@@ -450,7 +454,7 @@ func _plant(node: Node3D, plants: Dictionary) -> void:
 		# islet part it ever saw.
 		batch.set_meta("skip_reflection",true)
 		var role: String = _catalog.roles.get(key,"plant")
-		batch.visibility_range_end = TREE_RANGE if role in ["tree","build"] else (STONE_RANGE if role == "stone" else PLANT_RANGE)
+		batch.visibility_range_end = tree_range if role in ["tree","build"] else (STONE_RANGE if role == "stone" else PLANT_RANGE)
 		batch.visibility_range_end_margin = 30.0
 		batch.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 		# Small plants cast no shadow worth drawing out here, but the tall
@@ -553,6 +557,15 @@ func _side_material(shape: RefCounted) -> Material:
 	if not rock.is_empty(): RockLooks.apply(m,str(rock.get("palette","basalt")),float(rock.get("tone",1.0)),float(rock.get("vary",0.5)))
 	_sides[key] = m
 	return m
+
+## True for an island in the sea (SkyIslet `sea_foot`) whose water leaves
+## at the sea's own height, or within SEA_FALL m of it: a stream that meets
+## the sea, with no fall.
+const SEA_FALL := 0.6
+static func meets_sea(shape: RefCounted) -> bool:
+	if not shape.recipe.has("sea_foot"): return false
+	var water: Dictionary = shape.water()
+	return not water.is_empty() and float(water.level)-float(shape.recipe.sea_foot.get("level",0.0)) < SEA_FALL
 
 ## The fall off a spring islet's lip: the waterfalls' strand on a course
 ## of its own, arcing off the rim and falling free until it breaks into
