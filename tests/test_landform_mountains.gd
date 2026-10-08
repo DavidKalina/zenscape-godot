@@ -4,8 +4,8 @@ extends SceneTree
 ## scripts/mountain_massif.gd): over a few seeds and sizes its recipe makes
 ## a sky islet (scripts/sky_islet.gd `author`) whose massif stands its main
 ## summit within SUMMIT over its rim, a pass between its two summits cut
-## deep under the lower one, snow only over its snow line (and none under
-## the treeline), conifers under the treeline, a level hut pad; the same
+## deep under the lower one, a snow cap on each of its two summits, snow
+## only over its snow floor (none under the treeline), conifers under the treeline, a level hut pad; the same
 ## seed and size make the same island; and each builds within BUDGET
 ## seconds, its parts' arrays (top, massif, sides) counted in triangles.
 ## Stood in the sky's islets (scripts/sky_islets.gd), the massif draws its
@@ -60,19 +60,26 @@ func _run() -> void:
 			var floor_y: float = massif.pass_floor(islet)
 			var lower := minf(tops[0],tops[1])
 			check(lower-floor_y > 8.0,"%s pass %.1f m under the lower summit" % [label,lower-floor_y])
-			# Snow only high: every snowy face (UV.x under 0) over the snow line
-			# less its rag and lingering, none under the treeline.
+			# Snow only high: every snowy face (UV.x under 0) over the snow
+			# floor, none under the treeline; and a cap on each summit, faces
+			# snowed in the upper third of its height near its top.
 			var uv: PackedVector2Array = peak[Mesh.ARRAY_TEX_UV]
 			var at: PackedVector3Array = peak[Mesh.ARRAY_VERTEX]
 			var lowest_snow := INF
 			var snowy := 0
+			var caps := [0,0]
 			for k in range(0,uv.size(),3):
 				if uv[k].x >= 0.0: continue
 				snowy += 1
-				lowest_snow = minf(lowest_snow,(at[k].y+at[k+1].y+at[k+2].y)/3.0)
+				var mid := (at[k]+at[k+1]+at[k+2])/3.0
+				lowest_snow = minf(lowest_snow,mid.y)
+				for s in range(2):
+					var summit: Vector3 = massif.summits[s]
+					if Vector2(mid.x,mid.z).distance_to(Vector2(summit.x,summit.y)) < islet.radius*0.3 and mid.y > tops[s]-summit.z*0.35: caps[s] += 1
 			check(snowy > 0,"%s has snow (%d faces)" % [label,snowy])
-			check(lowest_snow > float(massif.snowline)-massif.SNOW_LINGER-massif.SNOW_RAG*2.0-0.5 and lowest_snow > float(massif.treeline),
-				"%s snow from %.1f m (line %.1f, treeline %.1f)" % [label,lowest_snow,massif.snowline,massif.treeline])
+			check(caps[0] >= 6 and caps[1] >= 6,"%s caps both summits (%d and %d faces)" % [label,caps[0],caps[1]])
+			check(lowest_snow > float(massif.snow_floor)-0.5 and lowest_snow > float(massif.treeline),
+				"%s snow from %.1f m (floor %.1f, treeline %.1f)" % [label,lowest_snow,massif.snow_floor,massif.treeline])
 			# Conifers stand under the treeline (and its rag).
 			var conifers := 0
 			var highest := -INF
