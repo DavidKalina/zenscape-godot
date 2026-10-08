@@ -13,6 +13,11 @@ extends RefCounted
 ## It wears the part's own material and takes the same instance buffer, so
 ## every tree keeps its place, size, turn and tint, and the crowns sway as
 ## before. Made once a part, on the main thread, and shared.
+##
+## A spruce's crown is cheaper still (CONIFER_SIDES, CONIFER_BANDS, open
+## underneath: a cone seen from the air), and its trunk, hidden under its
+## skirts at that range, has no stand-in at all (`bare`), so a forest of
+## spruce costs a third of the faces and half the batches it would.
 
 ## The lathe: faces round a crown and a trunk (a trunk a plain prism
 ## tapering to half), bands up a crown, and the share of a band's vertices
@@ -26,6 +31,16 @@ const TRUNK_SHARE := 0.3
 ## over MARGIN m (the near trees' own margin, SkyIslets `_plant`).
 const RANGE := 1600.0
 const MARGIN := 30.0
+## A spruce's crown (its parts' keys start CONIFER): faces round and bands
+## up it.
+const CONIFER := "tree:spruce"
+const CONIFER_SIDES := 4
+const CONIFER_BANDS := 2
+
+## True for a part that draws no stand-in: a spruce's trunk, under its
+## crown's skirts.
+static func bare(key: String) -> bool:
+	return key.begins_with(CONIFER) and key.ends_with("-trunk")
 
 static var _proxies := {}
 
@@ -33,14 +48,16 @@ static var _proxies := {}
 static func proxy(key: String, mesh: Mesh) -> ArrayMesh:
 	if _proxies.has(key): return _proxies[key]
 	var trunk := "trunk" in key or key.ends_with("mesh-11")
-	var sides := TRUNK_SIDES if trunk else SIDES
+	var conifer := key.begins_with(CONIFER) and not trunk
+	var sides := TRUNK_SIDES if trunk else (CONIFER_SIDES if conifer else SIDES)
+	var bands := CONIFER_BANDS if conifer else BANDS
 	var box := mesh.get_aabb()
 	var axis := Vector2(box.get_center().x,box.get_center().z)
 	var bottom := box.position.y
 	var height := maxf(box.size.y,0.01)
 	var radii: Array = []
 	var colours: Array = []
-	for b in range(BANDS):
+	for b in range(bands):
 		radii.append([])
 		colours.append([Color(0,0,0,0),0])
 	for s in range(mesh.get_surface_count()):
@@ -49,7 +66,7 @@ static func proxy(key: String, mesh: Mesh) -> ArrayMesh:
 		var colors: Variant = arrays[Mesh.ARRAY_COLOR]
 		for i in range(vertices.size()):
 			var v := vertices[i]
-			var b := clampi(int((v.y-bottom)/height*BANDS),0,BANDS-1)
+			var b := clampi(int((v.y-bottom)/height*bands),0,bands-1)
 			(radii[b] as Array).append(Vector2(v.x,v.z).distance_to(axis))
 			if colors is PackedColorArray and (colors as PackedColorArray).size() == vertices.size():
 				colours[b][0] += (colors as PackedColorArray)[i]
@@ -57,7 +74,7 @@ static func proxy(key: String, mesh: Mesh) -> ArrayMesh:
 	# The outline: the foot, each band's middle, the top.
 	var profile: Array = []
 	var shades: Array = []
-	for b in range(BANDS):
+	for b in range(bands):
 		var list: Array = radii[b]
 		var r := 0.0
 		if not list.is_empty():
@@ -65,15 +82,15 @@ static func proxy(key: String, mesh: Mesh) -> ArrayMesh:
 			r = list[mini(int(list.size()*(TRUNK_SHARE if trunk else REACH_SHARE)),list.size()-1)]
 		var count := int(colours[b][1])
 		shades.append(Color(colours[b][0])/float(count) if count > 0 else Color.WHITE)
-		profile.append(Vector2(r,bottom+height*(b+0.5)/BANDS))
+		profile.append(Vector2(r,bottom+height*(b+0.5)/bands))
 	# Bands with no vertices take their neighbours' reach.
-	for b in range(BANDS):
-		if profile[b].x <= 0.0: profile[b].x = maxf(profile[maxi(b-1,0)].x,profile[mini(b+1,BANDS-1)].x)
+	for b in range(bands):
+		if profile[b].x <= 0.0: profile[b].x = maxf(profile[maxi(b-1,0)].x,profile[mini(b+1,bands-1)].x)
 	var foot := Vector2((profile[0] as Vector2).x*(1.0 if trunk else 0.55),bottom)
 	var tip := Vector2(foot.x*0.5 if trunk else 0.0,bottom+height)
 	# A trunk is a plain prism; a crown swells through its bands.
 	profile = [foot,tip] if trunk else [foot]+profile+[tip]
-	shades = [shades[0],shades[BANDS-1]] if trunk else [shades[0]]+shades+[shades[BANDS-1]]
+	shades = [shades[0],shades[bands-1]] if trunk else [shades[0]]+shades+[shades[bands-1]]
 	# Lathed round in flat faces, turned a little a ring so the facets
 	# stagger.
 	# (Plain arrays: a lambda holds a packed array by value.)
@@ -111,7 +128,8 @@ static func proxy(key: String, mesh: Mesh) -> ArrayMesh:
 			face.call(a,b,c,tone,out)
 			face.call(a,c,d,tone,out)
 	var under := Vector3(axis.x,bottom,axis.y)
-	for s in range(sides): face.call(under,ring.call(0,s),ring.call(0,s+1),shades[0],Vector3.DOWN)
+	if not conifer:
+		for s in range(sides): face.call(under,ring.call(0,s),ring.call(0,s+1),shades[0],Vector3.DOWN)
 	var out := []
 	out.resize(Mesh.ARRAY_MAX)
 	out[Mesh.ARRAY_VERTEX] = PackedVector3Array(vertices)
@@ -128,7 +146,7 @@ static func proxy(key: String, mesh: Mesh) -> ArrayMesh:
 ## `material_of` gives a part's material (SkyIslets `_plant_material`).
 static func stand(node: Node3D, plants: Dictionary, meshes: Dictionary, roles: Dictionary, material_of: Callable, far: float) -> void:
 	for key: String in plants:
-		if roles.get(key,"") != "tree" or not meshes.has(key): continue
+		if roles.get(key,"") != "tree" or not meshes.has(key) or bare(key): continue
 		var batch := MultiMeshInstance3D.new()
 		batch.name = "Far_"+key.replace(":","_")
 		var multimesh := MultiMesh.new()
@@ -150,4 +168,5 @@ static func stand(node: Node3D, plants: Dictionary, meshes: Dictionary, roles: D
 
 ## The triangles a part's stand-in draws (tests, the budget).
 static func triangles(key: String, mesh: Mesh) -> int:
+	if bare(key): return 0
 	return (proxy(key,mesh).surface_get_arrays(0)[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()/3

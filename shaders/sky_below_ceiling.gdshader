@@ -98,7 +98,11 @@ void fragment() {
 	// through their gaps, the brighter cloud over them, lit through from
 	// above (it is a sea, not a layer), and the open sky only where a rift
 	// goes right through.
-	vec3 open = zsBelowOpen(view, 1.0) * mix(0.9, 1.06, veil);
+	// Overhead the thin cloud parts here and there onto the sky's own blue,
+	// luminous pools between the heaps rather than a blank white; seen low,
+	// toward the horizon, it stays the sunlit cloud.
+	float pools = smoothstep(0.45, 0.85, view.y) * (1.0 - smoothstep(0.32, 0.72, veil));
+	vec3 open = zsBelowOpen(view, 1.0 - 0.7 * pools) * mix(0.9, 1.06, veil);
 	// The billows, two sizes, the small ones riding on the large.
 	vec2 big = billows(p / cell);
 	vec2 small = billows(p / (cell * 0.43) + 7.1);

@@ -16,27 +16,31 @@ extends RefCounted
 ##     clearing first) and "clearing";
 ##   the stands: the land split into irregular stands about STAND m across
 ##     (a cellular noise), each its own dominant species and a companion
-##     from its zone's pool, one crown tint a species a stand, so the
-##     canopy is a patchwork of greens; the zones:
+##     from its zone's pool, one crown tint a species a stand (the
+##     forest's own deep greens, FOREST_COLOURS), so the canopy is a
+##     patchwork of darker and lighter greens; the zones, spruce the mass
+##     and birch the accent (a leafy crown reads as broccoli from the air):
 ##       high: the upper ground (over `line` of the land's height range,
-##         the line wandering with the stands), dark spruce, the odd
+##         the line wandering with the stands), darker spruce, the odd
 ##         redwood;
-##       low: birch stands, and mixed ones of birch, spruce, a little
-##         broadleaf and layered tree (the broadleaf kept a minor share:
-##         from the air it reads as broccoli);
-##       bank: along the stream's valley, birch and willow, open at the
-##         water;
+##       low: mostly mixed stands, spruce with a little birch, and a few
+##         birch stands (BIRCH_STANDS);
+##       bank: along the stream's valley, birch, spruce and a willow, open
+##         at the water;
 ##       edge: the margin (a width wandering along the shore, so the wood's
 ##         edge is ragged: bare grass in places, trees to the rim in
-##         others), birch, young spruce and juniper, lower toward the rim;
+##         others), young spruce, some birch and juniper, lower toward the
+##         rim;
+##     and birch in the light at the glades' rims;
 ##   giants: redwoods standing well over the canopy on the high ground,
 ##     sometimes a grove of them (`grove` odds);
 ##   the canopy: a jittered grid (`step` m) taken at the odds of the cover
 ##     (clumps and gaps from a low noise, opening to nothing in a glade and
 ##     at the water), each tree kept off the others by its crown's reach,
 ##     its height from its zone, swelling and dipping over the land in a
-##     slow wave (TALL) so the canopy rolls; then an understory pass of
-##     small spruce and juniper under the crowns;
+##     slow wave (TALL) and stepping with its stand's age (AGE) so the
+##     canopy rolls in big shapes of light and shadow; then a sparse
+##     understory pass of small spruce and juniper under the crowns;
 ##   the floor: fern beds in the shade, fallen logs with mushrooms, stumps,
 ##     a snag or two on the high ground, shrubs at the glades' rims and the
 ##     wood's edge, reeds and stones in the stream.
@@ -48,19 +52,30 @@ const Stands = preload("res://scripts/tree_stands.gd")
 const MeadowTypes = preload("res://scripts/meadow_types.gd")
 const IsletStream = preload("res://scripts/islet_stream.gd")
 
-## The zones' pools (species: weight).
+## The zones' pools (species: weight). Spruce is the mass everywhere but
+## the stream's banks; birch an accent (a few stands of its own low down,
+## the banks, the edge, the glades' rims), its bright leafy crown kept a
+## small share so the wood never reads as broccoli from the air; no
+## broadleaf at all. Juniper is costly for its size (near a birch's
+## triangles), so the edge and the understory hold only a little.
 const POOLS := {
-	"high":{"tree":1.0,"redwood":0.05},
-	"birch":{"birch":1.0,"tree":0.35,"broadleaf":0.05},
-	"mixed":{"birch":0.8,"tree":0.8,"broadleaf":0.15,"layered_tree":0.15},
-	"bank":{"birch":1.0,"willow":0.7,"tree":0.25},
-	"edge":{"birch":0.9,"tree":1.0,"juniper":0.6},
-	"under":{"tree":1.0,"juniper":0.45},
+	"high":{"tree":1.0,"redwood":0.03},
+	"birch":{"birch":1.0,"tree":0.6},
+	"mixed":{"tree":1.0,"birch":0.12,"layered_tree":0.03},
+	"bank":{"birch":1.0,"tree":0.8,"willow":0.25},
+	"edge":{"tree":1.0,"birch":0.25,"juniper":0.2},
+	"under":{"tree":1.0,"juniper":0.12},
 }
+## The share of the low ground's stands that are birch stands (the rest
+## mixed, mostly spruce), and the odds of a birch at a glade's rim (within
+## RIM m of where its fade ends) off the high ground.
+const BIRCH_STANDS := 0.12
+const RIM := 3.0
+const RIM_BIRCH := 0.35
 ## The zones' heights (m): the canopy's by zone (birch and mixed share
 ## `low`), the understory's, the giants'.
-const HEIGHTS := {"high":Vector2(9.0,14.0),"low":Vector2(8.0,11.5),"bank":Vector2(5.5,8.0),"edge":Vector2(4.5,7.5),"under":Vector2(2.4,4.4)}
-const GIANT := Vector2(17.0,24.0)
+const HEIGHTS := {"high":Vector2(10.0,15.0),"low":Vector2(8.5,12.5),"bank":Vector2(5.5,8.0),"edge":Vector2(4.5,7.5),"under":Vector2(2.4,4.4)}
+const GIANT := Vector2(20.0,27.0)
 ## Some species stand lower than their zone's canopy (share of it).
 const LOWER := {"broadleaf":0.75,"layered_tree":0.85,"willow":0.7,"juniper":0.3}
 ## The stands: their size (m), a dominant's share, and the odds of a tree
@@ -74,18 +89,22 @@ const LINE := 0.5
 const LINE_WANDER := 0.35
 const HIGH_DIM := 0.85
 ## The canopy's slow swell: a noise (1/m) and how far it lifts or lowers
-## the trees (share).
+## the trees (share); and each stand's age, lifting or lowering all its
+## trees together (share), so the canopy steps up and down at the stands'
+## edges and catches the light and the shadow in big shapes.
 const TALL_WAVE := 0.035
-const TALL := 0.22
+const TALL := 0.3
+const AGE := 0.18
 ## The cover: clump noise (1/m), cover in a gap (share), the least cover
 ## for a tree, and how far crowns keep apart (share of the two reaches).
 const CLUMP := 0.08
 const GAP_COVER := 0.2
 const WOODED := 0.25
-const CROWN_KEEP := 0.75
+const CROWN_KEEP := 0.55
 const UNDER_KEEP := 0.5
-## The understory: the share of the grid's points that try for one.
-const UNDER_SHARE := 0.35
+## The understory: the share of the grid's points that try for one (few:
+## under the closed canopy it hardly shows from the air).
+const UNDER_SHARE := 0.2
 ## The edge's width (m in from the shore, wandering between these over
 ## EDGE_WAVE 1/m), and where it is widest, a bare grass margin up to
 ## MARGIN m.
@@ -103,7 +122,7 @@ const GLADE_EDGE := 2.4
 ## Giants keep this far apart (m); a grove's spread (m) and size.
 const GIANT_APART := 7.0
 const GROVE_SPREAD := 9.0
-const GROVE_SIZE := Vector2i(4,8)
+const GROVE_SIZE := Vector2i(3,5)
 ## The floor, a square metre: fern beds (and ferns a bed), logs, stumps;
 ## snags; shrubs a metre of a glade's rim or the shore.
 const FERN_BEDS := 0.008
@@ -118,9 +137,23 @@ const STREAM_REEDS := 0.18
 ## The floor under the crowns: its tone (linear), how far past a crown's
 ## reach its shade falls (share), and how far toward the tone the deepest
 ## shade goes.
-const FLOOR := Color(0.045,0.085,0.035)
-const SHADE_REACH := 1.25
-const FLOOR_SHARE := 0.7
+const FLOOR := Color(0.03,0.06,0.028)
+const SHADE_REACH := 1.4
+const FLOOR_SHARE := 0.85
+## The crowns' colours (sRGB hex: weight), the forest's own rather than the
+## gardens' (Stands TREE_COLOURS, which a species missing here falls back
+## to): deep spruce greens, some bluer, some olive, none of them lime; birch
+## and willow a muted sage, lighter than the spruce so they show as
+## accents but not yellow. One a species a stand, with the stand's light
+## (FOREST_LIGHT) over it, so the canopy is a patchwork of darker and
+## lighter stands.
+const FOREST_COLOURS := {
+	"tree":{"3a7244":1.0,"2f6440":0.8,"3f7062":0.45,"4b6c3c":0.4,"26553a":0.5,"335f4e":0.35},
+	"birch":{"7a9450":1.0,"6c8a4c":0.8,"86955f":0.45,"62824a":0.5},
+	"willow":{"72895a":1.0,"65805a":0.7},
+	"juniper":{"466c52":1.0,"4c6b5c":0.6,"566d45":0.4},
+}
+const FOREST_LIGHT := Vector2(0.78,1.1)
 const CLEARING_FLOWERS := {"oxeye_daisy":1.0,"buttercup":0.9,"lupine":0.7,"cosmos":0.4,"poppy":0.3}
 
 ## Plants the forest `shape.recipe.forest` asks for onto `shape`, keeping
@@ -198,6 +231,13 @@ static func plant(shape: RefCounted, rng: RandomNumberGenerator, taken: Array[Ve
 			var near: Dictionary = IsletStream._nearest(shape.stream,p)
 			if not near.is_empty(): open = minf(open,smoothstep(float(near.half)+WATER_KEEP*0.5,float(near.half)+WATER_KEEP*2.0,float(near.distance)))
 		return open
+	# How near a point lies to a glade's rim, where the light gets in.
+	var rim_at := func(p: Vector2) -> float:
+		var rim := 0.0
+		for o: Vector3 in glades:
+			var d := p.distance_to(Vector2(o.x,o.y))-o.z-GLADE_EDGE
+			rim = maxf(rim,1.0-smoothstep(0.0,RIM,absf(d)))
+		return rim
 	var cover := func(p: Vector2) -> float:
 		var c := smoothstep(-0.4,0.3,clump.get_noise_2dv(p))
 		return lerpf(float(spec.get("gap_cover",GAP_COVER)),1.0,c)*float(open_at.call(p))
@@ -213,7 +253,7 @@ static func plant(shape: RefCounted, rng: RandomNumberGenerator, taken: Array[Ve
 			var near: Dictionary = IsletStream._nearest(shape.stream,p)
 			if not near.is_empty() and float(near.distance) < valley*BANK_SHARE and a < line+0.15: return "bank"
 		if a+stand*LINE_WANDER > line: return "high"
-		return "birch" if stand > -0.1 else "mixed"
+		return "birch" if stand > 1.0-BIRCH_STANDS*2.0 else "mixed"
 	# Trees: [x, z, reach, species, scale] in a coarse hash for keeping apart.
 	var grid := {}
 	var trees: Array = []
@@ -309,9 +349,12 @@ static func plant(shape: RefCounted, rng: RandomNumberGenerator, taken: Array[Ve
 					var companion := _weighted(pool,fposmod(stand*13.7+0.37,1.0))
 					tree = dominant if pick < PURITY else companion
 					if rare < STRAY: tree = _weighted(pool,fposmod(rare*97.1,1.0))
+					# Birch in the light at a glade's rim.
+					if zone != "high" and fposmod(rare*31.7,1.0) < RIM_BIRCH*float(rim_at.call(p)): tree = "birch"
 					var band: Vector2 = HEIGHTS["low" if zone in ["birch","mixed"] else zone]
 					h = lerpf(band.x,band.y,tall)*float(LOWER.get(tree,1.0))
 					h *= 1.0+TALL*tall_wave.get_noise_2dv(p)
+					h *= 1.0+AGE*(fposmod(stand*53.9,1.0)*2.0-1.0)
 					if zone == "edge": h *= lerpf(0.7,1.0,clampf(inland/EDGE.y,0.0,1.0))
 				if tree == "juniper": h = minf(h,2.6)
 				var r := h*float(Woodland.REACH.get(tree,0.2))
@@ -448,9 +491,12 @@ static func _spot(shape: RefCounted, rng: RandomNumberGenerator, clear: Callable
 static func _weighted(pool: Dictionary, roll: float) -> String:
 	return Woodland._weighted(pool,roll)
 
-## A crown colour for `tree` (Stands TREE_COLOURS), dimmed by `dim`, as a
-## record tint.
+## A crown colour for `tree` (FOREST_COLOURS, else Stands TREE_COLOURS),
+## dimmed by `dim`, as a record tint.
 static func _tint(tree: String, rng: RandomNumberGenerator, dim: float) -> String:
+	if FOREST_COLOURS.has(tree):
+		var own := Color(_weighted(FOREST_COLOURS[tree],rng.randf())).srgb_to_linear()*rng.randf_range(FOREST_LIGHT.x,FOREST_LIGHT.y)*dim
+		return NativeObjectPose.encode_tint(Color(minf(own.r,1.0),minf(own.g,1.0),minf(own.b,1.0)))
 	if not Stands.TREE_COLOURS.has(tree): return ""
 	var options: Array = Stands.TREE_COLOURS[tree]
 	var pool := {}

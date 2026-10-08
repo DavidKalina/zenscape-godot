@@ -438,16 +438,24 @@ func _show() -> void:
 	if _whole_at >= 0:
 		fade = 1.0-clampf((Time.get_ticks_msec()-_whole_at)/(FADE*1000.0),0.0,1.0)
 		if fade <= 0.0: _whole_at = -1
+	var open: bool = peaks.get("_open") == true
 	for key in lines:
 		var node: Node3D = lines[key].node
 		if node == null: continue
 		var swap: float = peaks.swap_of(key)
 		node.visible = whole and swap < 1.0
 		(node.get_child(0) as GeometryInstance3D).transparency = maxf(fade,line_fade(swap))
+		# Under the cloud the swap is a cut, in the same frame as the range's
+		# (SkyPeaks `_fade_range`): a see-through skyline would go unhazed.
+		if open:
+			node.visible = whole and swap <= 0.0
+			(node.get_child(0) as GeometryInstance3D).transparency = 0.0
 	for i in summits:
 		var node: Node3D = summits[i].node
 		if node == null: continue
-		node.visible = whole
+		# Built only over the sea: out of the lower world (SkyPeaks
+		# `open_sea`), or it hangs under the cloud there, its foot frayed.
+		node.visible = whole and not open
 		(node.get_child(0) as GeometryInstance3D).transparency = fade
 
 ## How far a skyline is faded (its transparency) as the swap with its full

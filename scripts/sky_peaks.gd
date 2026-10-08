@@ -357,6 +357,12 @@ func _fade_leaving() -> void:
 ## in front of the skyline's); the cloud at its foot fading in all the way.
 func _fade_range(node: Node3D, swap: float) -> void:
 	var fade: float = SkyRing.range_fade(swap)
+	# Under the cloud a see-through face stands no depth, so the lower
+	# world's air (shaders/sky_below_air.gdshader), which goes by depth,
+	# would leave it unhazed: a brown band floating at the cloud's foot. So
+	# below, the swap is a cut, in the same frame as its skyline's (SkyRing
+	# `_show`), kilometres off in the haze.
+	if _open: fade = 0.0 if swap > 0.0 else 1.0
 	for child in node.get_children():
 		if child.name == "Wrap": (child as GeometryInstance3D).set_instance_shader_parameter("batch_fade",swap)
 		elif child is GeometryInstance3D: (child as GeometryInstance3D).transparency = fade
@@ -664,7 +670,7 @@ func _finish(cell: Vector2i, s: Vector4, out: Dictionary) -> void:
 		else: body.visibility_range_end = LOD_NEAR
 		body.visibility_range_begin_margin = 80.0
 		body.visibility_range_end_margin = 80.0
-		body.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+		body.visibility_range_fade_mode = _lod_fade()
 		# Kilometres off: never in the plate's water's mirror.
 		body.set_meta("skip_reflection",true)
 		node.add_child(body)
@@ -728,9 +734,20 @@ func _ground() -> Material:
 func open_sea(open: bool) -> void:
 	_open = open
 	if _material != null: (_material as ShaderMaterial).set_shader_parameter("sea_open",open)
+	# The near and far faces' crossfade, likewise a cut below (`_lod_fade`).
+	for group: Dictionary in [built,_leaving]:
+		for key in group:
+			for child in (group[key].node as Node3D).get_children():
+				if child.name == "Body" or child.name == "BodyFar": (child as GeometryInstance3D).visibility_range_fade_mode = _lod_fade()
+	_fade_leaving()
 	for i in ring.summits:
 		var node: Variant = ring.summits[i].node
 		if node != null: (node as Node3D).visible = not open
+
+## How a range's near and far faces hand over: crossfading, or under the
+## cloud a cut at LOD_NEAR (`_fade_range`), its margin a hysteresis.
+func _lod_fade() -> GeometryInstance3D.VisibilityRangeFadeMode:
+	return GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED if _open else GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 
 ## A world height `at` on a range whose frame stands `top` at the sea's top
 ## and `foot` at its foot (SkyPeak SEA and BASE, in the world), drawn down

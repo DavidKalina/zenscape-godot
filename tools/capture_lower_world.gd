@@ -21,7 +21,7 @@ extends SceneTree
 ##     and from low over the water by it.
 ## Rendered only when asked for (needs a window):
 ##   Godot --windowed --path . --resolution 1280x720 -s res://tools/capture_lower_world.gd \
-##     -- --no-title --below --out=/private/tmp/zs-lower-world [--only=emerge,cruise] [--no-ocean] [--no-mirror] [--hide=Name,Name]
+##     -- --no-title --below --out=/private/tmp/zs-lower-world [--only=emerge,cruise] [--no-ocean] [--no-mirror] [--hide=Name,Name] [--sea=name:value,...]
 var scene: Node3D
 var eye: Node
 var out := "/private/tmp/zs-lower-world"
@@ -150,6 +150,7 @@ func run() -> void:
 		await _hold(shot,240 if first else 90)
 		if "--no-ocean" in OS.get_cmdline_user_args(): eye.lower.ocean.visible = false
 		if "--no-mirror" in OS.get_cmdline_user_args(): eye.lower.water.set_shader_parameter("mirror_steps",0)
+		_set_asked()
 		_hide_asked()
 		if "--red-sky" in OS.get_cmdline_user_args():
 			scene._environment.background_mode = Environment.BG_COLOR
@@ -170,6 +171,15 @@ func _hide_asked() -> void:
 			for node in scene.find_children(n,"",true,false):
 				if node is Node3D: (node as Node3D).visible = false
 				print("LOWER hid ",node.get_path())
+
+## --sea=name:value,name:value sets the ocean's shader parameters (floats),
+## to try the water's look in a still.
+func _set_asked() -> void:
+	for argument: String in OS.get_cmdline_user_args():
+		if not argument.begins_with("--sea="): continue
+		for pair: String in argument.trim_prefix("--sea=").split(","):
+			var parts := pair.split(":")
+			if parts.size() == 2: eye.lower.water.set_shader_parameter(parts[0],float(parts[1]))
 
 func _timing(count: int) -> Vector2:
 	await RenderingServer.frame_post_draw
