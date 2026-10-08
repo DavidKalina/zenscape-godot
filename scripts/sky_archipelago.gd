@@ -43,6 +43,7 @@ const SkyPeaks = preload("res://scripts/sky_peaks.gd")
 const SkyCommits = preload("res://scripts/sky_commits.gd")
 const Landforms = preload("res://scripts/landforms.gd")
 const RockLooks = preload("res://scripts/rock_looks.gd")
+const IsletLod = preload("res://scripts/islet_lod.gd")
 
 ## The cells (m), how far an island may stand off its cell's middle (share
 ## of the cell), and the share of cells holding one, from the sparse sounds
@@ -79,9 +80,11 @@ const STEPS := [SkyIslet.STEP,1.0,4.0/3.0,2.0]
 const TREE_RANGE := 260.0
 ## Built within VIEW of the eye, let go past FORGET; MAKING on workers at
 ## once, the cells looked over every CHECK seconds; a new one fades in
-## over FADE_IN.
-const VIEW := 760.0
-const FORGET := 900.0
+## over FADE_IN. Down by the ocean the air (scripts/sky_haze.gd, thickest
+## there) has taken all but a hundredth of an island by VIEW, so none is
+## built that the haze would hide.
+const VIEW := 680.0
+const FORGET := 800.0
 const MAKING := 3
 const CHECK := 0.25
 ## Cells newly laid out a survey at most (`_cells_near`).
@@ -195,7 +198,7 @@ func advance(delta: float, eye: Vector3, origin: Vector3) -> void:
 		var b: Dictionary = built[key]
 		if float(b.get("age",FADE_IN)) < FADE_IN:
 			b.age = float(b.age)+delta
-			islets._fade(b)
+			_fade(b)
 	_since += delta
 	spent.survey = 0
 	spent.stand = 0
@@ -232,7 +235,7 @@ func flush() -> void:
 	_making.clear()
 	for key in built:
 		built[key].age = FADE_IN
-		islets._fade(built[key])
+		_fade(built[key])
 
 ## Builds every island within `reach` of `eye` (global) now (tests,
 ## probes, captures).
@@ -422,6 +425,8 @@ func _start(p: Dictionary) -> void:
 		var spec := Landforms.recipe(p.landform,rng,float(p.width))
 		dress_spec(spec,float(p.width),float(p.level),int(p.seed))
 		var made: Dictionary = SkyIslets.make(int(p.seed),spec,palette,(p.home as Vector3).y)
+		# Its coarse top, for far off (scripts/islet_lod.gd).
+		made.coarse = IsletLod.coarse(made.top,float(spec.step)*IsletLod.COARSE,IsletLod.levels_of(made.shape))
 		made.usec = Time.get_ticks_usec()-began
 		out.merge(made),false,"Lower island")
 	_making[p.key] = {"task":task,"plan":p,"out":out}
@@ -433,9 +438,20 @@ func _stand(p: Dictionary, out: Dictionary) -> void:
 	b.cell = p.cell
 	b.landform = p.landform
 	b.age = 0.0
+	# Drawn by distance: a coarse top far off, each plant kind to a range
+	# by its size, trees by their stand-ins past theirs (scripts/islet_lod.gd).
+	IsletLod.range_plants(b.node,out.plants,SkyIslets.catalog(),float(out.shape.reach))
+	IsletLod.stand_top(b.node,b.node.get_node("Body"),out.get("coarse",[]))
 	islets.built[p.key] = b
 	built[p.key] = b
+	_fade(b)
+
+## A new island's faces fade in (SkyIslets `_fade`), its coarse top too.
+func _fade(b: Dictionary) -> void:
 	islets._fade(b)
+	var far := (b.node as Node3D).get_node_or_null("BodyFar") as GeometryInstance3D
+	var body := (b.node as Node3D).get_node_or_null("Body") as GeometryInstance3D
+	if far != null and body != null: far.transparency = body.transparency
 
 func _forget(key: String) -> void:
 	var b: Dictionary = built.get(key,{})
