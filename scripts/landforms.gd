@@ -48,8 +48,8 @@ const ENTRIES := [
 	# ["mountains","res://scripts/landform_mountains.gd",1.0],
 ]
 ## The placeholders' widths (m), by kind.
-const PLACEHOLDER_ACROSS := {"meadow":Vector2(28.0,70.0),"grove":Vector2(30.0,80.0),"hills":Vector2(35.0,90.0),
-	"crag":Vector2(25.0,55.0),"spring":Vector2(30.0,70.0),"shore":Vector2(25.0,60.0)}
+const PLACEHOLDER_ACROSS := {"meadow":Vector2(35.0,90.0),"grove":Vector2(40.0,90.0),"hills":Vector2(40.0,90.0),
+	"crag":Vector2(30.0,75.0),"spring":Vector2(35.0,85.0),"shore":Vector2(30.0,80.0)}
 
 static var _table := {}
 static var _order: Array[String] = []

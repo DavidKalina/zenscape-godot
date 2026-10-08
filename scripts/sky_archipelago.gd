@@ -47,20 +47,26 @@ const RockLooks = preload("res://scripts/rock_looks.gd")
 ## The cells (m), how far an island may stand off its cell's middle (share
 ## of the cell), and the share of cells holding one, from the sparse sounds
 ## to the crowded straits, over a field FIELD m across.
-const CELL := 105.0
-const JITTER := 0.3
-const HOLDS := Vector2(0.6,0.97)
+const CELL := 95.0
+const JITTER := 0.08
+const HOLDS := Vector2(0.7,1.0)
 const FIELD := 840.0
 const SALT := 5300
+## In the crowded straits (where the field holds past SPLIT) a cell holds
+## two smaller islands at these odds.
+const SPLIT := 0.9
+const SPLIT_ODDS := 0.6
 ## Open water kept between two islands' land at least (m), and how far an
 ## island's lobes reach past its radius at most (SkyIslet `reach` over
 ## `radius`). An island squeezed narrower than NARROWEST is left out.
-const GAP := 10.0
+const GAP := 6.0
 const LOBE := 1.3
 const NARROWEST := 18.0
-## How high the rim stands over the water (m), the shelf's width (m, from a
-## narrow island's to a broad one's) and the bed's depth at its end (m).
-const FREEBOARD := Vector2(1.4,3.4)
+## How high the rim stands over the water (m): a low bank, so the shore
+## meets the sea in beaches and banks (a landform wanting cliffs sets its
+## own SEA); the shelf's width (m, from a narrow island's to a broad
+## one's) and the bed's depth at its end (m).
+const FREEBOARD := Vector2(0.12,0.3)
 const SHELF := Vector2(7.0,16.0)
 const SHELF_DEPTH := 12.0
 ## The grid's step: the plate's (SkyIslet STEP) for a small island, coarser
@@ -74,12 +80,12 @@ const TREE_RANGE := 260.0
 ## Built within VIEW of the eye, let go past FORGET; MAKING on workers at
 ## once, the cells looked over every CHECK seconds; a new one fades in
 ## over FADE_IN.
-const VIEW := 1000.0
-const FORGET := 1200.0
+const VIEW := 760.0
+const FORGET := 900.0
 const MAKING := 3
 const CHECK := 0.25
 ## Cells newly laid out a survey at most (`_cells_near`).
-const PLANS := 60
+const PLANS := 30
 const FADE_IN := 1.4
 ## The forced landforms (`arrive`): the first this far ahead of the plane,
 ## each next one this much further on, looked for within NEAR_REACH.
@@ -101,6 +107,8 @@ var built := {}
 var forced := {}
 ## Each cell's plan or null, as worked out (`plan`).
 var _plans := {}
+## Each cell's slots, as worked out (`slots`).
+var _slots := {}
 var _making := {}
 var _wanted: Array = []
 var _since := CHECK
@@ -171,6 +179,7 @@ func clear() -> void:
 	islets.built.clear()
 	_wanted.clear()
 	_plans.clear()
+	_slots.clear()
 	islets.pinned = null
 
 func island_count() -> int:
@@ -208,9 +217,9 @@ func advance(delta: float, eye: Vector3, origin: Vector3) -> void:
 		SkyCommits.spend("archipelago",spent.stand)
 		made += 1
 	while _making.size() < MAKING and not _wanted.is_empty():
-		var cell: Vector2i = _wanted.pop_front()
-		if built.has(_key(cell)) or _making.has(_key(cell)): continue
-		var p: Variant = plan(cell)
+		var slot: Vector3i = _wanted.pop_front()
+		if built.has(_key(slot)) or _making.has(_key(slot)): continue
+		var p: Variant = plan(slot)
 		if p != null: _start(p)
 
 ## Waits for every island being made and stands it up, whole (tests,
@@ -229,9 +238,9 @@ func flush() -> void:
 ## probes, captures).
 func build_near(eye: Vector3, reach := VIEW) -> void:
 	var home := eye-_origin
-	for cell: Vector2i in _cells_near(home,reach):
-		if built.has(_key(cell)) or _making.has(_key(cell)): continue
-		var p: Variant = plan(cell)
+	for slot: Vector3i in _cells_near(home,reach):
+		if built.has(_key(slot)) or _making.has(_key(slot)): continue
+		var p: Variant = plan(slot)
 		if p != null: _start(p)
 	flush()
 
@@ -249,7 +258,7 @@ func _survey(home: Vector3) -> void:
 		if b.node == islets.pinned: continue
 		if _flat(b.home,home) > FORGET: gone.append(key)
 	for key in gone: _forget(key)
-	_wanted = _cells_near(home,VIEW,PLANS).filter(func(c: Vector2i) -> bool: return not built.has(_key(c)) and not _making.has(_key(c)))
+	_wanted = _cells_near(home,VIEW,PLANS).filter(func(c: Vector3i) -> bool: return not built.has(_key(c)) and not _making.has(_key(c)))
 
 ## Cells whose plan stands within `reach` of `home`, nearest first. At
 ## most `budget` cells not planned before are planned now, nearest cells
@@ -267,15 +276,17 @@ func _cells_near(home: Vector3, reach: float, budget := 1000000) -> Array:
 	var found := []
 	for entry: Array in cells:
 		var cell: Vector2i = entry[1]
-		if not _plans.has(_key(cell)):
-			if budget <= 0: continue
-			budget -= 1
-		var p: Variant = plan(cell)
-		if p == null: continue
-		var d := _flat(p.home,home)
-		if d <= reach: found.append([d,cell])
+		if not _slots.has(cell): _slots[cell] = slots(cell)
+		for slot: Vector3i in _slots[cell]:
+			if not _plans.has(_key(slot)):
+				if budget <= 0: continue
+				budget -= 1
+			var p: Variant = plan(slot)
+			if p == null: continue
+			var d := _flat(p.home,home)
+			if d <= reach: found.append([d,slot])
 	found.sort_custom(func(a: Array, b: Array) -> bool: return a[0] < b[0])
-	return found.map(func(f: Array) -> Vector2i: return f[1])
+	return found.map(func(f: Array) -> Vector3i: return f[1])
 
 # --- The layout -------------------------------------------------------------------
 
@@ -293,55 +304,80 @@ static func holds(cell: Vector2i) -> float:
 	var v := lerpf(lerpf(a,b,f.x),lerpf(d,e,f.x),f.y)
 	return lerpf(HOLDS.x,HOLDS.y,smoothstep(0.2,0.8,v))
 
-## A cell's island middle (home xz) before any is left out, or null.
-static func raw(cell: Vector2i) -> Variant:
-	if SkyCells.noise(cell,SALT) >= holds(cell): return null
+## A cell's islands' middles (home xz) before any is left out: none, one
+## jittered in the cell, or in the crowded straits (where the field holds
+## past SPLIT) now and then two, each in a half of the cell, so the islands
+## there stand closer and smaller, coast to coast.
+static func spots(cell: Vector2i) -> Array:
+	if SkyCells.noise(cell,SALT) >= holds(cell): return []
 	var middle := (Vector2(cell)+Vector2.ONE*0.5)*CELL
-	return middle+Vector2(SkyCells.noise(cell,SALT+1)-0.5,SkyCells.noise(cell,SALT+2)-0.5)*2.0*JITTER*CELL
+	var off := Vector2(SkyCells.noise(cell,SALT+1)-0.5,SkyCells.noise(cell,SALT+2)-0.5)*2.0*JITTER*CELL
+	if holds(cell) < SPLIT or SkyCells.noise(cell,SALT+9) >= SPLIT_ODDS: return [middle+off]
+	var axis := Vector2.from_angle(SkyCells.noise(cell,SALT+10)*PI)*CELL*0.25
+	return [middle+axis+off*0.4,middle-axis-off*0.4]
 
-## The widest an island at `cell` may be (m): its lobes reach no further
+## A cell's island slots (Vector3i: the cell, and which of its islands).
+static func slots(cell: Vector2i) -> Array:
+	var out := []
+	for i in range(spots(cell).size()): out.append(Vector3i(cell.x,cell.y,i))
+	return out
+
+## A slot's island middle (home xz), or null.
+static func raw(slot: Vector3i) -> Variant:
+	var list := spots(Vector2i(slot.x,slot.y))
+	return list[slot.z] if slot.z < list.size() else null
+
+## The widest an island at `slot` may be (m): its lobes reach no further
 ## than half way to the nearest neighbour less GAP.
-static func room(cell: Vector2i) -> float:
-	var at: Variant = raw(cell)
+static func room(slot: Vector3i) -> float:
+	var at: Variant = raw(slot)
 	if at == null: return 0.0
 	var nearest := INF
 	for dx in range(-1,2):
 		for dz in range(-1,2):
-			if dx == 0 and dz == 0: continue
-			var other: Variant = raw(cell+Vector2i(dx,dz))
-			if other != null: nearest = minf(nearest,(at as Vector2).distance_to(other))
+			var others := spots(Vector2i(slot.x+dx,slot.y+dz))
+			for k in range(others.size()):
+				if dx == 0 and dz == 0 and k == slot.z: continue
+				nearest = minf(nearest,(at as Vector2).distance_to(others[k]))
 	if nearest == INF: nearest = CELL*2.0
 	return maxf(nearest*0.5-GAP*0.5,0.0)/LOBE*2.0
 
-## A cell's island: {cell, key, landform, width, level (the sea's height
+## The slot's own hash, 0 to 1, one per salt.
+static func _noise(slot: Vector3i, salt: int) -> float:
+	return SkyCells.noise(Vector2i(slot.x,slot.y),salt+slot.z*97)
+
+## A slot's island: {cell, slot, key, landform, width, level (the sea's height
 ## in its frame), seed, home
 ## (home coordinates, its middle's height in the world)}, or null. The
 ## same cell always gives the same one, unless a landform is forced on it.
-func plan(cell: Vector2i) -> Variant:
-	var key := _key(cell)
+func plan(slot: Vector3i) -> Variant:
+	var key := _key(slot)
 	if _plans.has(key): return _plans[key]
-	var made: Variant = _plan(cell,forced.get(key,""))
+	var made: Variant = _plan(slot,forced.get(key,""))
 	_plans[key] = made
 	return made
 
-func _plan(cell: Vector2i, landform: String) -> Variant:
-	var at: Variant = raw(cell)
+func _plan(slot: Vector3i, landform: String) -> Variant:
+	var at: Variant = raw(slot)
 	if at == null: return null
-	var widest := room(cell)
+	var widest := room(slot)
 	var home := Vector3(at.x,0.0,at.y)
 	if SkyPeaks.blocks(home,widest*0.5*LOBE+GAP): return null
-	if landform == "": landform = Landforms.pick(SkyCells.noise(cell,SALT+5))
+	if landform == "": landform = Landforms.pick(_noise(slot,SALT+5))
 	var across := Landforms.across(landform)
-	var width := minf(lerpf(across.x,across.y,SkyCells.noise(cell,SALT+6)),widest)
-	if width < NARROWEST and not forced.has(_key(cell)): return null
+	# Most islands broad, as broad as their neighbours leave room for, so
+	# coasts nearly touch across the channels.
+	var broad := 1.0-pow(1.0-_noise(slot,SALT+6),2.0)
+	var width := minf(lerpf(across.x,across.y,broad),widest)
+	if width < NARROWEST and not forced.has(_key(slot)): return null
 	width = maxf(width,minf(NARROWEST,across.x))
 	# The sea meets the landform's own SEA, or its rim stands a seeded
 	# freeboard over the water.
 	var level := Landforms.sea_level(landform)
-	if is_nan(level): level = SkyIslet.RIM_HEIGHT-lerpf(FREEBOARD.x,FREEBOARD.y,SkyCells.noise(cell,SALT+7))
+	if is_nan(level): level = SkyIslet.RIM_HEIGHT-lerpf(FREEBOARD.x,FREEBOARD.y,_noise(slot,SALT+7))
 	home.y = ocean-level
-	return {"cell":cell,"key":_key(cell),"landform":landform,"width":width,"level":level,
-		"seed":int(SkyCells.noise(cell,SALT+8)*16777216.0),"home":home}
+	return {"cell":Vector2i(slot.x,slot.y),"slot":slot,"key":_key(slot),"landform":landform,"width":width,"level":level,
+		"seed":int(_noise(slot,SALT+8)*16777216.0),"home":home}
 
 ## What makes a landform's recipe an island in the sea, unless it sets them
 ## itself: its radius, the sea foot (the water at `level` in its frame, the
@@ -391,7 +427,7 @@ func _start(p: Dictionary) -> void:
 
 func _stand(p: Dictionary, out: Dictionary) -> void:
 	if _home != Vector3.INF and _flat(p.home,_home) > FORGET: return
-	var b: Dictionary = islets.stand("Island_%d_%d_%s" % [p.cell.x,p.cell.y,p.landform],p.home,out)
+	var b: Dictionary = islets.stand("Island_%s_%s" % [str(p.key).replace(",","_"),p.landform],p.home,out)
 	b.fixed = true
 	b.cell = p.cell
 	b.landform = p.landform
@@ -426,14 +462,14 @@ func arrive(eye: Vector3, way: Vector2) -> void:
 		var hi := Vector2i(floori((target.x+NEAR_REACH)/CELL),floori((target.y+NEAR_REACH)/CELL))
 		for x in range(lo.x,hi.x+1):
 			for z in range(lo.y,hi.y+1):
-				var cell := Vector2i(x,z)
-				if taken.has(_key(cell)): continue
-				var at: Variant = raw(cell)
-				if at == null or SkyPeaks.blocks(Vector3(at.x,0.0,at.y),room(cell)*0.5*LOBE+GAP): continue
-				var d := (at as Vector2).distance_to(target)
-				if d < best_d:
-					best_d = d
-					best = cell
+				for slot: Vector3i in slots(Vector2i(x,z)):
+					if taken.has(_key(slot)): continue
+					var at: Vector2 = raw(slot)
+					if SkyPeaks.blocks(Vector3(at.x,0.0,at.y),room(slot)*0.5*LOBE+GAP): continue
+					var d := at.distance_to(target)
+					if d < best_d:
+						best_d = d
+						best = slot
 		if best == null:
 			push_warning("--landform: no island near the way down for %s" % asked[i])
 			continue
@@ -475,8 +511,8 @@ func nearest(point: Vector3, reach: float) -> Dictionary:
 			best = b
 	return best
 
-func _key(cell: Vector2i) -> String:
-	return "%d,%d" % [cell.x,cell.y]
+func _key(slot: Vector3i) -> String:
+	return "%d,%d,%d" % [slot.x,slot.y,slot.z]
 
 static func _flat(a: Vector3, b: Vector3) -> float:
 	return Vector2(a.x-b.x,a.z-b.z).length()

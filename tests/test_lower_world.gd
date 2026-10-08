@@ -367,10 +367,11 @@ func _layout() -> void:
 	var span := 12
 	for x in range(-span,span):
 		for z in range(-span,span):
-			var p: Variant = a.plan(Vector2i(x,z))
-			var q: Variant = b.plan(Vector2i(x,z))
-			if (p == null) != (q == null) or (p != null and (p.landform != q.landform or p.width != q.width or p.home != q.home)): same = false
-			if p != null: plans.append(p)
+			for slot: Vector3i in SkyArchipelago.slots(Vector2i(x,z)):
+				var p: Variant = a.plan(slot)
+				var q: Variant = b.plan(slot)
+				if (p == null) != (q == null) or (p != null and (p.landform != q.landform or p.width != q.width or p.home != q.home)): same = false
+				if p != null: plans.append(p)
 	check(same,"The same seed lays out the same islands")
 	var overlaps := 0
 	for i in range(plans.size()):
@@ -382,7 +383,24 @@ func _layout() -> void:
 	var widths := plans.map(func(p: Dictionary) -> float: return float(p.width))
 	var mean := 0.0
 	for w: float in widths: mean += w/maxf(widths.size(),1)
-	print("     %d islands over %.1f km^2 (%.0f a km^2), %.0f m across on average" % [plans.size(),area,plans.size()/area,mean])
+	# The share of the open sea (off the ranges) that is an island's land.
+	var probe := RandomNumberGenerator.new()
+	probe.seed = 9
+	var on_land := 0
+	var on_coast := 0
+	var open_sea := 0
+	for t in range(3000):
+		var at := Vector2(probe.randf_range(-span+1,span-1),probe.randf_range(-span+1,span-1))*SkyArchipelago.CELL
+		if SkyPeaks.blocks(Vector3(at.x,0.0,at.y)): continue
+		open_sea += 1
+		var nearest_shore := INF
+		for p: Dictionary in plans: nearest_shore = minf(nearest_shore,Vector2(p.home.x,p.home.z).distance_to(at)-float(p.width)*0.5)
+		if nearest_shore < 0.0: on_land += 1
+		if nearest_shore < 15.0: on_coast += 1
+	var cover := float(on_land)/maxf(open_sea,1)
+	var coast := float(on_coast)/maxf(open_sea,1)
+	print("     %d islands over %.1f km^2 (%.0f a km^2), %.0f m across on average; of the open sea %.0f%% land, %.0f%% land or within 15 m of a shore" % [plans.size(),area,plans.size()/area,mean,cover*100.0,coast*100.0])
+	check(cover > 0.2,"A sea thick with islands (%.0f%% land)" % (cover*100.0))
 	# From anywhere over the sea, land within a few hundred metres.
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 3
@@ -393,8 +411,8 @@ func _layout() -> void:
 		var nearest := INF
 		for p: Dictionary in plans: nearest = minf(nearest,Vector2(p.home.x,p.home.z).distance_to(at)-float(p.width)*0.5)
 		# The ranges standing in the sea are land too.
-		if nearest > 250.0 and not SkyPeaks.blocks(Vector3(at.x,0.0,at.y),150.0): far += 1
-	check(plans.size()/area > 15.0 and far <= tries/20,"Dense: land within 250 m of nearly anywhere (%d of %d spots further)" % [far,tries])
+		if nearest > 150.0 and not SkyPeaks.blocks(Vector3(at.x,0.0,at.y),150.0): far += 1
+	check(plans.size()/area > 15.0 and far <= tries/20,"Dense: land within 150 m of nearly anywhere (%d of %d spots further)" % [far,tries])
 	var in_rock := 0
 	for p: Dictionary in plans:
 		if SkyPeaks.blocks(p.home): in_rock += 1
@@ -438,7 +456,9 @@ func _streaming() -> void:
 	var top: Variant = arch.body(arch.islets.place(b)+Vector3.UP*5.0)
 	check(top != null and absf((top as Vector2).x-(arch.islets.place(b).y+float(b.shape.solid_top(Vector2.ZERO)))) < 0.01,"The glide reads its ground")
 	var water := SkyBelow.OCEAN
-	check(arch.islets.place(b).y+float(b.shape.ground_at(Vector2.ZERO)) > water+1.0,"Its land stands over the water")
+	var rim: Vector2 = b.shape.rim_point(0.7)*0.97
+	var rim_y: float = arch.islets.place(b).y+float(b.shape.ground_at(rim))
+	check(rim_y > water and rim_y < water+0.8,"Its shore meets the water low, a bank or beach (%.2f m over it)" % (rim_y-water))
 	# Flown far off, they go.
 	eye += Vector3(3000.0,0.0,0.0)
 	for i in range(60):
@@ -463,7 +483,7 @@ func _forced() -> void:
 	# On the way down towards open sea: a spot short of a laid-out island.
 	var eye := Vector3(400.0,-80.0,-200.0)
 	for x in range(-8,8):
-		var p: Variant = arch.plan(Vector2i(x,2))
+		var p: Variant = arch.plan(Vector3i(x,2,0))
 		if p != null:
 			eye = Vector3(p.home.x-way.x*200.0,-80.0,p.home.z-way.y*200.0)
 			break
@@ -472,7 +492,8 @@ func _forced() -> void:
 	var ahead := true
 	var order := []
 	for key in arch.forced:
-		var p: Variant = arch.plan(Vector2i(int(key.split(",")[0]),int(key.split(",")[1])))
+		var parts: PackedStringArray = key.split(",")
+		var p: Variant = arch.plan(Vector3i(int(parts[0]),int(parts[1]),int(parts[2])))
 		if p == null or p.landform != arch.forced[key]:
 			ahead = false
 			continue

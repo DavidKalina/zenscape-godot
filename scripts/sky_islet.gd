@@ -142,6 +142,10 @@ const BANK := 0.28
 const SEA_UNDER := 0.3
 const SEA_SHALLOW := 1.2
 const SEA_TONES := Vector4(0.3,2.5,3.0,9.0)
+## Its beach: sand this far in from the shore (m), where the ground stands
+## no higher than SEA_BEACH_HIGH over the water.
+const SEA_BEACH := 2.5
+const SEA_BEACH_HIGH := 0.9
 ## The water's arrays carry the fetch as two float vec4s.
 const WATER_FORMAT := (Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT) | (Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM1_SHIFT)
 ## Where the bowl's bank meets the water, as a share of the pond's radius.
@@ -1306,6 +1310,9 @@ func top_arrays(palette: Dictionary, shift := Vector3.ZERO) -> Array:
 			tone = IsletLake.bed_tone(self,sand,gravel,middle.y,at)
 		elif pond.z > 0.0 and minf(a.y,minf(b.y,c.y)) < water_level+0.06 and (at.distance_to(Vector2(pond.x,pond.y)) < pond.z*1.5 or _channel_distance(at) < CHANNEL*1.5):
 			tone = sand*lerpf(1.0,0.72,clampf((water_level-middle.y)/BOWL,0.0,1.0))
+		elif not sea_bed.is_empty() and edge < SEA_BEACH*(0.7+0.6*n) and middle.y < float(recipe.sea_foot.get("level",0.0))+SEA_BEACH_HIGH:
+			# An island in the sea: a beach where its low shore meets the water.
+			tone = gravel if patch.get_noise_2d(at.x*2.0,at.y*2.0) > 0.3 else sand
 		elif kind == "shore":
 			var d := (shore_distance[ids[f*3]]+shore_distance[ids[f*3+1]]+shore_distance[ids[f*3+2]])/3.0
 			if d < BEACH*(0.8+0.4*n): tone = gravel if patch.get_noise_2d(at.x*2.0,at.y*2.0) > 0.25 else sand
