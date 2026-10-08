@@ -1,35 +1,69 @@
 extends Node3D
-## Ruin kit gallery: the gothic ruin kit's thirteen pieces (scripts/
-## ruin_kit.gd) on a floating plate, each intact and weathered side by side,
-## laid close in three rows (the tall gable, arch and window at the back,
-## the turret, vault, buttress and pier in the middle, the low pieces in
-## front) so the whole view is ruins, not lawn. Lit as the game is: its sky,
+## Ruin kit gallery: the ruin kit's three families on one floating plate,
+## each piece intact and weathered side by side. In the middle the gothic
+## abbey's thirteen pieces (scripts/ruin_kit.gd), laid close in three rows
+## (the tall gable, arch and window at the back, the turret, vault,
+## buttress and pier in the middle, the low pieces in front) so the whole
+## view is ruins, not lawn; to its right the aqueduct (scripts/
+## ruin_kit_aqueduct.gd), its pieces in two rows before an assembled run
+## striding over a strip of water (the head, four spans, one broken and
+## spilling, stumps beyond); to its left the colossus hall (scripts/
+## ruin_kit_hall.gd), its pieces before two hall bays put together round
+## the medallion with the fallen mask beside them, dim under the roof, the
+## sun coming down through its gaps in shafts (volumetric fog in a box
+## round the hall, as the redwood mist does its rays). Lit as the game is: its sky,
 ## sun and grade (scripts/landscape_lighting.gd, studies/celestial.gd) and
 ## its look pass (scripts/look_pass.gd: the cloud sea and cloud volume under
 ## the plate, the hour's grade, the night style the player chose), at the
 ## game's own noon and midnight (the look tour's hours, tools/
 ## capture_look_tour.gd). The pilot on foot (scripts/pilot_figure.gd)
 ## stands about for scale and the plane (scripts/plane_figure.gd) hangs in
-## the pointed arch.
+## the pointed arch, under an aqueduct arch and inside the hall.
 ##   Drag            orbit          Wheel     zoom
-##   1-9 0 - = \     frame a piece  Left/Right the next piece
-##   Space or Tab    the whole layout
+##   F1 F2 F3        frame the gothic, aqueduct or hall family
+##   1-9 0 - = \     frame a piece of the family  Left/Right the next piece
+##   C               the family's centrepiece (the run, the hall)
+##   Space or Tab    the whole layout     L  light shafts in the hall
 ##   W               pairs, intact only, weathered only
 ##   R               reseed the weathering     N  day or night
-##   ./run-ruin-kit.command [--piece=2] [--night] [--show=intact|weathered] [--seed=3]
+##   ./run-ruin-kit.command [--family=hall] [--piece=2] [--centre] [--night] [--show=intact|weathered] [--seed=3] [--no-shafts]
 ##   godot --path . res://studies/ruin_kit_gallery.tscn -- --no-title --capture=out.png
 ## --capture=<png> waits for the sky to settle, saves the view and quits;
-## --yaw=, --pitch= and --distance= set the view for it.
+## --yaw=, --pitch= and --distance= set the view for it; --at=x,y,z puts
+## the eye there looking at --look=x,y,z (in the layout's frame, or with --centre in the centrepiece's).
 const RuinKit = preload("res://scripts/ruin_kit.gd")
+const Aqueduct = preload("res://scripts/ruin_kit_aqueduct.gd")
+const Hall = preload("res://scripts/ruin_kit_hall.gd")
 const PilotFigure = preload("res://scripts/pilot_figure.gd")
 const PlaneFigure = preload("res://scripts/plane_figure.gd")
 const LandscapeLighting = preload("res://scripts/landscape_lighting.gd")
 const Celestial = preload("res://studies/celestial.gd")
 const LookPass = preload("res://scripts/look_pass.gd")
 
-## The rows, back to front, and where each stands (z, m).
-const ROWS := [["rose_gable","arch","lancet_wall"],["turret","vault","buttress","pier"],["wall","stairs","fallen_pier","tomb_chest","floor","glyph_stone"]]
-const ROW_Z := [-13.0,-1.5,9.0]
+## The families left to right on the plate, their names, and each one's
+## rows, back to front, and where each row stands (z, m).
+const ORDER := ["hall","gothic","aqueduct"]
+const FAMILY_NAMES := {"gothic":"Gothic abbey","aqueduct":"Aqueduct","hall":"Colossus hall"}
+const ROWS := {"gothic":[["rose_gable","arch","lancet_wall"],["turret","vault","buttress","pier"],["wall","stairs","fallen_pier","tomb_chest","floor","glyph_stone"]],
+	"aqueduct":[["aqueduct_end","aqueduct_two_tier","aqueduct_span","aqueduct_broken","aqueduct_stump"]],
+	"hall":[["hall_bay","hall_column","hall_mask"],["hall_beam","hall_slab","hall_medallion"]]}
+const ROW_Z := {"gothic":[-13.0,-1.5,9.0],"aqueduct":[0.0],"hall":[-1.0,17.0]}
+## The room between families on the plate (m), and how far behind its rows
+## a family's centrepiece stands (to its middle).
+const FAMILY_GAP := 10.0
+const CENTRE_BACK := 22.0
+## The aqueduct run: spans, which one is broken, its weathering; the strip
+## of water under it (its half width, m) and the stumps standing in it past
+## its end.
+const RUN_SPANS := 4
+const RUN_BREAK := 2
+const RUN_WEATHERED := 0.55
+const SEA_HALF := 7.0
+## The hall's centrepiece weathering, and its light shafts: the fog's
+## density in the box round it and the sun's share in it.
+const HALL_WEATHERED := 0.8
+const SHAFT_FOG := 0.03
+const SHAFT_LIGHT := 2.6
 ## The room between a pair's two (m) and between pairs.
 const PAIR_GAP := 0.8
 const SLOT_GAP := 2.6
@@ -63,6 +97,7 @@ const DEPTH := 4.0
 const SIDE := 0.55
 const SHOWS := ["pairs","intact","weathered"]
 const KEYS := [KEY_1,KEY_2,KEY_3,KEY_4,KEY_5,KEY_6,KEY_7,KEY_8,KEY_9,KEY_0,KEY_MINUS,KEY_EQUAL,KEY_BACKSLASH]
+const FAMILY_KEYS := [KEY_F1,KEY_F2,KEY_F3]
 
 ## What the look pass reads off the scene it dresses (scripts/look_pass.gd).
 var _environment: Environment
@@ -92,11 +127,23 @@ var _pilots: Array[Node3D] = []
 var _sun: DirectionalLight3D
 var _layout_yaw := 0.0
 var _bounds := Rect2()
+## The family framed (its pieces numbered from 1) and each family's area:
+## {origin (its node's place), bounds (in the layout's frame), centre (the
+## centrepiece's frame: focus, distance, yaw, pitch)}.
+var _family := "gothic"
+var _areas := {}
+var _centred := false
+var _shafts := true
+var _fog: FogVolume
 
 func _ready() -> void:
 	var start_piece := -1
+	var start_centre := false
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--piece="): start_piece = int(arg.get_slice("=",1))-1
+		elif arg.begins_with("--family="): _family = arg.get_slice("=",1)
+		elif arg == "--centre": start_centre = true
+		elif arg == "--no-shafts": _shafts = false
 		elif arg == "--night": _night = true
 		elif arg.begins_with("--show="): _show = maxi(0,SHOWS.find(arg.get_slice("=",1)))
 		elif arg.begins_with("--seed="): _seed = int(arg.get_slice("=",1))
@@ -104,11 +151,23 @@ func _ready() -> void:
 	_build_world()
 	_set_night(_night)
 	_build_layout()
-	_frame_piece(start_piece)
+	if start_centre: _frame_centre()
+	elif start_piece >= 0: _frame_piece(_family_slot(start_piece))
+	elif Array(OS.get_cmdline_user_args()).any(func(a: String) -> bool: return a.begins_with("--family=")): _frame_family(_family)
+	else: _frame_piece(-1)
+	var eye := Vector3.INF
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--yaw="): _yaw = float(arg.get_slice("=",1))
 		elif arg.begins_with("--pitch="): _pitch = float(arg.get_slice("=",1))
 		elif arg.begins_with("--distance="): _distance_goal = float(arg.get_slice("=",1))
+		elif arg.begins_with("--at="): eye = _vec(arg.get_slice("=",1))+_centre_origin(start_centre)
+		elif arg.begins_with("--look="): _focus_goal = _vec(arg.get_slice("=",1))+_centre_origin(start_centre)
+	if eye != Vector3.INF:
+		# The eye at `eye` looking at the focus: the orbit that puts it there.
+		var off := eye-_focus_goal
+		_distance_goal = off.length()
+		_pitch = asin(clampf(off.y/maxf(_distance_goal,0.01),-1.0,1.0))
+		_yaw = atan2(off.x,off.z)
 	_distance = _distance_goal
 	_focus = _focus_goal
 	if not _capture.is_empty():
@@ -116,6 +175,17 @@ func _ready() -> void:
 		await RenderingServer.frame_post_draw
 		get_viewport().get_texture().get_image().save_png(_capture)
 		get_tree().quit()
+
+## Where the family's centrepiece stands (its middle on the ground), in
+## the layout's frame; the origin unless `on`.
+func _centre_origin(on: bool) -> Vector3:
+	if not on or not _areas.has(_family): return Vector3.ZERO
+	var rows: Array = ROW_Z[_family]
+	return (_areas[_family].origin as Vector3)+Vector3(0.0,0.0,float(rows[0])-CENTRE_BACK)
+
+func _vec(text: String) -> Vector3:
+	var p := text.split(",")
+	return Vector3(float(p[0]),float(p[1]),float(p[2]))
 
 func _build_world() -> void:
 	var source: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://assets/zen_reference/scene.json"))
@@ -155,7 +225,7 @@ func _build_world() -> void:
 	_label.add_theme_color_override("font_shadow_color",Color(0.0,0.0,0.0,0.4))
 	layer.add_child(_label)
 	var help := Label.new()
-	help.text = "Drag orbit · Wheel zoom · 1-9 0 - = \\ frame a piece · ←/→ next · Space/Tab whole layout · W intact/weathered · R reseed · N night"
+	help.text = "F1 Gothic · F2 Aqueduct · F3 Hall · 1-9 0 - = \\ frame a piece · C centrepiece · ←/→ next · Space/Tab whole layout · W intact/weathered · R reseed · N night · L shafts · Drag orbit · Wheel zoom"
 	help.add_theme_font_size_override("font_size",15)
 	help.add_theme_color_override("font_color",Color(1.0,0.98,0.92,0.5))
 	help.add_theme_color_override("font_shadow_color",Color(0.0,0.0,0.0,0.3))
@@ -164,7 +234,8 @@ func _build_world() -> void:
 	help.position = Vector2(24.0,-34.0)
 	layer.add_child(help)
 
-## The layout: every pair in its row, the labels, the plate under them all,
+## The layout: each family's pairs in their rows and its centrepiece behind
+## them, side by side on the plate; the labels, the plate under them all,
 ## the scale figures.
 func _build_layout() -> void:
 	if _layout != null: _layout.free()
@@ -174,12 +245,48 @@ func _build_layout() -> void:
 	add_child(_layout)
 	_slots.clear()
 	_pilots.clear()
+	_areas.clear()
+	var cursor := 0.0
+	for f in range(ORDER.size()):
+		var family: String = ORDER[f]
+		var area := Node3D.new()
+		area.name = family.capitalize()
+		_layout.add_child(area)
+		var local := _build_family(area,family)
+		area.position.x = cursor-local.position.x
+		cursor += local.size.x+FAMILY_GAP
+		_areas[family].local = local
+	# The gothic family stays round the layout's middle, as it was.
+	var gothic: Rect2 = _areas.gothic.local
+	var shift: float = -(float(_layout.get_node("Gothic").position.x)+gothic.get_center().x)
+	var bounds := Rect2()
+	for f in range(ORDER.size()):
+		var family: String = ORDER[f]
+		var area: Node3D = _layout.get_node(family.capitalize())
+		area.position.x += shift
+		var local: Rect2 = _areas[family].local
+		var placed := Rect2(local.position+Vector2(area.position.x,0.0),local.size)
+		_areas[family].origin = area.position
+		_areas[family].bounds = placed
+		bounds = placed if f == 0 else bounds.merge(placed)
+	_slots.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.index < b.index)
+	_bounds = bounds.grow(MARGIN)
+	_plate(_bounds)
+	_figures()
+	_shaft_fog()
+	_apply_show()
+
+## One family's pairs in their rows round its own origin, its centrepiece
+## behind; gives back its extent (x, z).
+func _build_family(area: Node3D, family: String) -> Rect2:
 	var index := {}
-	for i in range(RuinKit.PIECES.size()): index[RuinKit.PIECES[i]] = i
+	for i in range(RuinKit.ALL_PIECES.size()): index[RuinKit.ALL_PIECES[i]] = i
 	var bounds := Rect2()
 	var first := true
-	for r in range(ROWS.size()):
-		var row: Array = ROWS[r]
+	var rows: Array = ROWS[family]
+	var row_z: Array = ROW_Z[family]
+	for r in range(rows.size()):
+		var row: Array = rows[r]
 		var built: Array = []
 		var width := 0.0
 		for id: String in row:
@@ -199,29 +306,115 @@ func _build_layout() -> void:
 			var id: String = entry[0]
 			var pair: Array = entry[1]
 			var spans: Array = entry[2]
-			var slot := {"id":id,"index":int(index[id]),"pieces":pair,"x":x+float(entry[3])*0.5,"z":float(ROW_Z[r]),"width":float(entry[3]),"spans":spans,"homes":[]}
+			var slot := {"id":id,"index":int(index[id]),"family":family,"area":area,"pieces":pair,"x":x+float(entry[3])*0.5,"z":float(row_z[r]),"width":float(entry[3]),"spans":spans,"homes":[]}
 			var at := x
 			for k in range(2):
 				var node: Node3D = pair[k]
 				var box: AABB = spans[k]
-				var home := Vector3(at-box.position.x,0.0,float(ROW_Z[r]))
+				var home := Vector3(at-box.position.x,0.0,float(row_z[r]))
 				node.position = home
 				slot.homes.append(home)
-				_layout.add_child(node)
+				area.add_child(node)
 				var foot := Rect2(Vector2(home.x+box.position.x,home.z+box.position.z),Vector2(box.size.x,box.size.z))
 				bounds = foot if first else bounds.merge(foot)
 				first = false
-				_tag("intact" if k == 0 else "weathered",Vector3(home.x,0.02,home.z+box.end.z+0.5),0.5)
+				_tag(area,"intact" if k == 0 else "weathered",Vector3(home.x,0.02,home.z+box.end.z+0.5),0.5)
 				at += box.size.x+PAIR_GAP
 			var front := maxf((spans[0] as AABB).end.z,(spans[1] as AABB).end.z)
-			_tag("%d  %s" % [int(index[id])+1,RuinKit.NAMES[id]],Vector3(slot.x,0.02,float(ROW_Z[r])+front+1.2),1.0)
+			_tag(area,"%d  %s" % [(RuinKit.FAMILIES[family] as Array).find(id)+1,RuinKit.NAMES[id]],Vector3(slot.x,0.02,float(row_z[r])+front+1.2),1.0)
 			_slots.append(slot)
 			x += float(entry[3])+SLOT_GAP
-	_slots.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.index < b.index)
-	_bounds = bounds.grow(MARGIN)
-	_plate(_bounds)
-	_figures()
-	_apply_show()
+	_areas[family] = {"origin":Vector3.ZERO,"bounds":Rect2(),"local":Rect2(),"centre":{}}
+	var back: float = float(row_z[0])-CENTRE_BACK
+	var extra := Rect2()
+	match family:
+		"aqueduct": extra = _aqueduct_run(area,back)
+		"hall": extra = _hall_scene(area,back)
+	if extra.has_area(): bounds = bounds.merge(extra)
+	return bounds
+
+## The aqueduct's centrepiece: a run over a strip of water standing for the
+## sea between two islands, its head on the left, the third span broken and
+## spilling, the last dry, two stumps going on as stepping stones; at `z`.
+func _aqueduct_run(area: Node3D, z: float) -> Rect2:
+	var run := Aqueduct.run(_seed*31+5,RUN_WEATHERED,RUN_SPANS,RUN_BREAK)
+	var length := Aqueduct.SPAN*RUN_SPANS
+	var x0 := -length*0.5
+	run.position = Vector3(x0,0.0,z)
+	area.add_child(run)
+	_areas.aqueduct.run = run
+	var stumps: Array[Vector3] = [Vector3(length+3.6,0.0,0.6),Vector3(length+7.4,0.0,-0.9)]
+	for k in range(stumps.size()):
+		var stump := Aqueduct.stump(_seed*31+40+k,0.4+0.3*k)
+		stump.position = run.position+stumps[k]
+		stump.rotation.y = 0.3*(k*2-1)
+		area.add_child(stump)
+	var sea := Rect2(x0-2.0,z-SEA_HALF,length+13.0,SEA_HALF*2.0)
+	_sea(area,sea)
+	_tag(area,"The aqueduct run: its head, four spans, one broken",Vector3(0.0,0.02,z+SEA_HALF+1.0),1.0)
+	_areas.aqueduct.centre = {"focus":Vector3(x0+length*0.4,5.0,z),"distance":40.0,"yaw":0.55,"pitch":0.12}
+	return Rect2(x0-10.5,z-SEA_HALF,length+24.0,SEA_HALF*2.0+2.0)
+
+## A strip of still water on the plate (the sea between islands, here):
+## the aqueduct's pond water.
+func _sea(area: Node3D, rect: Rect2) -> void:
+	var v := PackedVector3Array()
+	var n := PackedVector3Array()
+	var c := [Vector3(rect.position.x,0.05,rect.position.y),Vector3(rect.end.x,0.05,rect.position.y),Vector3(rect.end.x,0.05,rect.end.y),Vector3(rect.position.x,0.05,rect.end.y)]
+	for t: Array in [[c[0],c[1],c[2]],[c[0],c[2],c[3]]]:
+		for p: Vector3 in t:
+			v.append(p)
+			n.append(Vector3.UP)
+	var holder := Node3D.new()
+	holder.name = "Sea"
+	area.add_child(holder)
+	Aqueduct._sheet(holder,v,n,"Water")
+
+## The hall's centrepiece: two bays side by side round the medallion, the
+## fallen mask half sunk beside them, at `z`.
+func _hall_scene(area: Node3D, z: float) -> Rect2:
+	var scene := Hall.hall(_seed*17+3,HALL_WEATHERED)
+	scene.position = Vector3(0.0,0.0,z)
+	area.add_child(scene)
+	var mask := Hall.mask(_seed*17+9,0.8)
+	mask.position = Vector3(-Hall.BAY-7.0,0.0,z+4.0)
+	mask.rotation.y = 0.75
+	area.add_child(mask)
+	_areas.hall.scene = scene
+	_areas.hall.mask = mask
+	_tag(area,"The colossus hall: two bays, the medallion, the fallen mask",Vector3(0.0,0.02,z+Hall.BAY*0.5+6.0),1.0)
+	_areas.hall.centre = {"focus":Vector3(0.0,3.0,z),"distance":30.0,"yaw":0.3,"pitch":0.2}
+	return Rect2(-Hall.BAY*1.5-12.0,z-Hall.BAY*0.5-4.0,Hall.BAY*3.0+16.0,Hall.BAY+12.0)
+
+## The shafts: Godot's volumetric fog in a box filling the roofed bay of the
+## hall's centrepiece (only there, so the air round it stays clear), and the sun, so its beams come down through
+## the roof's gaps (as scripts/redwood_biome_mist.gd's rays in the woods).
+func _shaft_fog() -> void:
+	_fog = FogVolume.new()
+	_fog.name = "HallFog"
+	var material := FogMaterial.new()
+	material.density = SHAFT_FOG
+	material.albedo = Color(0.92,0.9,0.85)
+	material.height_falloff = 0.08
+	material.edge_fade = 0.25
+	_fog.material = material
+	_fog.shape = RenderingServer.FOG_VOLUME_SHAPE_BOX
+	_fog.size = Vector3(Hall.BAY+1.0,Hall.COLUMN_H+0.6,Hall.BAY+1.0)
+	var centre: Dictionary = _areas.hall.centre
+	_layout.add_child(_fog)
+	_fog.position = Vector3((_areas.hall.origin as Vector3).x-Hall.BAY*0.5,_fog.size.y*0.5,(centre.focus as Vector3).z)
+	_set_shafts(_shafts)
+
+func _set_shafts(on: bool) -> void:
+	_shafts = on
+	_environment.volumetric_fog_enabled = on
+	_environment.volumetric_fog_density = 0.0
+	_environment.volumetric_fog_length = 90.0
+	_environment.volumetric_fog_anisotropy = 0.6
+	_environment.volumetric_fog_ambient_inject = 0.02
+	_sun.light_volumetric_fog_energy = SHAFT_LIGHT if on else 0.0
+	if _fog != null: _fog.visible = on
+	_say()
 
 ## A piece as the gallery shows it.
 func _piece(id: String, index: int, weathered: float) -> Node3D:
@@ -248,7 +441,7 @@ func _extent(node: Node3D) -> AABB:
 	# solid) never widens.
 	return shape_box.grow(0.3)
 
-func _tag(text: String, at: Vector3, size: float) -> void:
+func _tag(parent: Node3D, text: String, at: Vector3, size: float) -> void:
 	var label := Label3D.new()
 	label.text = text
 	label.font_size = 64
@@ -258,7 +451,7 @@ func _tag(text: String, at: Vector3, size: float) -> void:
 	label.modulate = Color(1.0,0.97,0.88,0.85 if size >= 1.0 else 0.6)
 	label.outline_size = 12
 	label.outline_modulate = Color(0.08,0.1,0.06,0.45)
-	_layout.add_child(label)
+	parent.add_child(label)
 
 ## The plate: faceted grass a touch uneven, triangle by triangle, under the
 ## pieces; dark rock sides hanging under it, so it floats as an islet does.
@@ -334,9 +527,13 @@ func _plate(rect: Rect2) -> void:
 	plate.material_override = RuinKit.materials().stone
 	_layout.add_child(plate)
 
+
 ## The pilot by the pier, on the wall's head, at the stair's foot, on the
 ## buttress's first set-off and in the weathered window's sill; the plane
-## in the pointed arch.
+## in the pointed arch. On the aqueduct: the pilot walking the channel and
+## on a stump, the plane threading an arch of the run. In the hall: the
+## pilot by a column's foot and on the medallion, the plane flying through
+## under the roof and a second one knife-edged in the back wall's slit.
 func _figures() -> void:
 	var slot := func(id: String) -> Dictionary:
 		for s in _slots:
@@ -353,11 +550,43 @@ func _figures() -> void:
 	var window: Dictionary = slot.call("lancet_wall")
 	_pilot(window,1,Vector3(-0.6,RuinKit.WINDOW.y,0.15),0.5)
 	var arch: Dictionary = slot.call("arch")
+	_plane(arch.pieces[0],Vector3(0.0,2.6,0.6),Vector3(0.0,0.35,-0.1))
+	# The aqueduct: on the span's channel, by the stump's foot, on its top;
+	# the plane through the run's first arch.
+	var span: Dictionary = slot.call("aqueduct_span")
+	_pilot(span,0,Vector3(-1.2,Aqueduct.DECK,0.0),-1.2)
+	var stump: Dictionary = slot.call("aqueduct_stump")
+	_pilot(stump,0,Vector3(0.2,float((stump.pieces[0] as Node3D).get_meta("height")),0.1),0.3)
+	_pilot(stump,1,Vector3(1.4,0.0,1.6),-0.4)
+	var run: Node3D = _areas.aqueduct.run
+	_plane(run,Vector3(Aqueduct.SPAN*1.5,3.4,0.8),Vector3(0.0,0.35,0.12))
+	var walker := PilotFigure.new()
+	run.add_child(walker)
+	walker.position = Vector3(Aqueduct.SPAN*0.7,Aqueduct.DECK,0.0)
+	walker.rotation.y = PI*0.5
+	walker.settle()
+	_pilots.append(walker)
+	# The hall: the pilot at a column's foot and by the medallion; the plane
+	# flying through under the roof, and one on a knife edge in the slit.
+	var column: Dictionary = slot.call("hall_column")
+	_pilot(column,0,Vector3(1.9,0.0,1.2),0.5)
+	var scene: Node3D = _areas.hall.scene
+	var inside := PilotFigure.new()
+	scene.add_child(inside)
+	inside.position = Vector3(Hall.BAY*0.5+1.6,0.0,1.4)
+	inside.rotation.y = 0.6
+	inside.settle()
+	_pilots.append(inside)
+	_plane(scene,Vector3(-Hall.BAY*0.25,2.6,-0.6),Vector3(0.02,PI*0.5+0.25,0.18))
+	var slit: Vector3 = scene.get_meta("slit")
+	_plane(scene,slit+Vector3(0.0,0.0,0.4),Vector3(0.0,0.0,PI*0.5))
+
+func _plane(parent: Node3D, at: Vector3, turn: Vector3) -> void:
 	var plane := PlaneFigure.new()
 	plane.name = "Plane"
-	(arch.pieces[0] as Node3D).add_child(plane)
-	plane.position = Vector3(0.0,2.6,0.6)
-	plane.rotation = Vector3(0.0,0.35,-0.1)
+	parent.add_child(plane)
+	plane.position = at
+	plane.rotation = turn
 	plane.show_pilot(true)
 	plane._mark.visible = false
 	plane._vapour.visible = false
@@ -377,8 +606,11 @@ func _apply_show() -> void:
 		for k in range(2):
 			var node: Node3D = slot.pieces[k]
 			var shown: bool = _show == 0 or _show-1 == k
-			# Framing one piece, the rows in front of it stand aside.
-			if _frame >= 0 and float(slot.z) > float(_slots[_frame].z)+0.5: shown = false
+			# Framing one piece, the rows in front of it in its family stand
+			# aside.
+			if _frame >= 0 and slot.family == _slots[_frame].family and float(slot.z) > float(_slots[_frame].z)+0.5: shown = false
+			# Framing a centrepiece, its family's pairs (in front of it) too.
+			if _centred and slot.family == _family: shown = false
 			node.visible = shown
 			node.process_mode = Node.PROCESS_MODE_INHERIT if shown else Node.PROCESS_MODE_DISABLED
 			var home: Vector3 = slot.homes[k]
@@ -388,29 +620,70 @@ func _apply_show() -> void:
 			node.position = home
 	_say()
 
+## The slot of the `n`th piece (from 0) of the family framed.
+func _family_slot(n: int) -> int:
+	var ids: Array = RuinKit.FAMILIES[_family]
+	if n < 0 or n >= ids.size(): return -1
+	for i in range(_slots.size()):
+		if _slots[i].id == ids[n]: return i
+	return -1
+
 func _frame_piece(index: int) -> void:
 	_frame = index
+	_centred = false
 	if index < 0 or index >= _slots.size():
 		_frame = -1
 		_focus_goal = Vector3(_bounds.get_center().x,2.2,_bounds.get_center().y+1.5)
-		_distance_goal = maxf(_bounds.size.x,_bounds.size.y*1.4)*0.9
+		_distance_goal = maxf(_bounds.size.x*0.75,_bounds.size.y*1.4)*0.9
 		_pitch = 0.5
 		_yaw = 0.0
 	else:
 		var slot := _slots[index]
+		_family = slot.family
 		var spans: Array = slot.spans
 		var tall := maxf((spans[0] as AABB).size.y,(spans[1] as AABB).size.y)
 		var across: float = slot.width if _show == 0 else (spans[_show-1] as AABB).size.x
-		_focus_goal = Vector3(slot.x,minf(tall*0.42,4.0),slot.z)
+		var origin: Vector3 = _areas[slot.family].origin
+		_focus_goal = origin+Vector3(slot.x,minf(tall*0.42,4.5),slot.z)
 		_distance_goal = maxf(across*1.25,tall*1.9)+3.0
 		_pitch = 0.3
 		_yaw = 0.0
 	if not _slots.is_empty(): _apply_show()
 
+## Frames a whole family: its rows and its centrepiece behind.
+func _frame_family(family: String) -> void:
+	_family = family
+	_frame = -1
+	_centred = false
+	var r: Rect2 = _areas[family].bounds
+	_focus_goal = Vector3(r.get_center().x,3.0,r.get_center().y+2.0)
+	_distance_goal = maxf(r.size.x*0.95,r.size.y*1.3)
+	_pitch = 0.42
+	_yaw = 0.0
+	_apply_show()
+
+## Frames the family's centrepiece: the aqueduct's run, the hall (the
+## gothic family has none: its whole layout).
+func _frame_centre() -> void:
+	var centre: Dictionary = _areas.get(_family,{}).get("centre",{})
+	if centre.is_empty():
+		_frame_family(_family)
+		return
+	_frame = -1
+	_centred = true
+	_focus_goal = (_areas[_family].origin as Vector3)+(centre.focus as Vector3)
+	_distance_goal = float(centre.distance)
+	_yaw = float(centre.yaw)
+	_pitch = float(centre.pitch)
+	_apply_show()
+
 func _say() -> void:
 	if _label == null: return
-	var what := "The gothic ruin kit" if _frame < 0 else "%d · %s" % [_frame+1,RuinKit.NAMES[_slots[_frame].id]]
-	_label.text = "%s   ·   %s   ·   %s   ·   seed %d" % [what,SHOWS[_show],"night" if _night else "day",_seed]
+	var what := "The ruin kit" if _frame < 0 else "%s %d · %s" % [FAMILY_NAMES[_slots[_frame].family],(RuinKit.FAMILIES[_slots[_frame].family] as Array).find(_slots[_frame].id)+1,RuinKit.NAMES[_slots[_frame].id]]
+	if _frame < 0 and _focus_goal != Vector3.ZERO and _areas.has(_family) and (_centred or _distance_goal < _bounds.size.x*0.5):
+		what = FAMILY_NAMES[_family]+(" · centrepiece" if _centred else "")
+	var keys := "F1 Gothic · F2 Aqueduct · F3 Hall"
+	_label.text = "%s   ·   %s   ·   %s   ·   shafts %s   ·   seed %d\n%s" % [what,SHOWS[_show],"night" if _night else "day","on" if _shafts else "off",_seed,keys]
 
 func _set_night(on: bool) -> void:
 	_night = on
@@ -442,6 +715,8 @@ func _process(delta: float) -> void:
 	_camera.look_at(frame*_focus)
 	RenderingServer.global_shader_parameter_set("zs_camera_position",_camera.global_position)
 	RenderingServer.global_shader_parameter_set("zs_motion_time",_motion_time)
+	# The channel's water ripples and the spill runs on the scene's clock.
+	RenderingServer.global_shader_parameter_set("zs_flow_time",_motion_time)
 	_look.update(_camera,_celestial)
 	RenderingServer.global_shader_parameter_set("zs_cloud",Vector4(_celestial.cloud,0.0,DECK.x,DECK.y))
 
@@ -451,21 +726,30 @@ func _unhandled_input(event: InputEvent) -> void:
 		_pitch = clampf(_pitch+event.relative.y*0.005,-0.1,1.4)
 	elif event is InputEventMouseButton and event.pressed:
 		if event.button_index == MOUSE_BUTTON_WHEEL_UP: _distance_goal = maxf(3.0,_distance_goal*0.9)
-		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN: _distance_goal = minf(250.0,_distance_goal*1.1)
+		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN: _distance_goal = minf(400.0,_distance_goal*1.1)
 	elif event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode in KEYS:
-			_frame_piece(KEYS.find(event.keycode))
+			var at := _family_slot(KEYS.find(event.keycode))
+			if at >= 0: _frame_piece(at)
+			return
+		if event.keycode in FAMILY_KEYS:
+			_frame_family(ORDER[[1,2,0][FAMILY_KEYS.find(event.keycode)]])
 			return
 		match event.keycode:
 			KEY_RIGHT: _frame_piece((_frame+1)%_slots.size())
 			KEY_LEFT: _frame_piece((_frame+_slots.size()-1)%_slots.size() if _frame >= 0 else _slots.size()-1)
 			KEY_SPACE, KEY_TAB: _frame_piece(-1)
+			KEY_C: _frame_centre()
+			KEY_L: _set_shafts(not _shafts)
 			KEY_R:
+				var framed := _frame
+				var centred := _centred
 				_seed += 1
 				_build_layout()
-				_frame_piece(_frame)
+				if centred: _frame_centre()
+				else: _frame_piece(framed)
 			KEY_W:
 				_show = (_show+1)%SHOWS.size()
 				_apply_show()
-				_frame_piece(_frame)
+				if _frame >= 0: _frame_piece(_frame)
 			KEY_N: _set_night(not _night)
