@@ -42,6 +42,31 @@ func _run() -> void:
 	var motifs := {}
 	for s: Dictionary in random: motifs[s.motif] = true
 	check(motifs.size() >= 2,"More than one motif turns up (%s)" % str(motifs.keys()))
+	# Every motif forced near the home (--motifs-near-home): one each, in
+	# reach of the home, apart, clear of the islands and of the showcase.
+	var names: Array = SkyClusters.Motifs.names()
+	var near: Array = field.near_spots(names,SkyClusters.NEAR_SEED,[{"at":SkyClusters.SHOWCASE_AT}])
+	var near_ok := near.size() == names.size()
+	var farthest := 0.0
+	for i in range(near.size()):
+		var at: Vector3 = near[i].at
+		farthest = maxf(farthest,Vector2(at.x,at.z).length())
+		if not cells.spots_near(at,SkyClusters.NEAR_ISLAND).is_empty(): near_ok = false
+		if Vector2(at.x-SkyClusters.SHOWCASE_AT.x,at.z-SkyClusters.SHOWCASE_AT.z).length() < SkyClusters.NEAR_GAP: near_ok = false
+		for j in range(i+1,near.size()):
+			if Vector2(at.x-near[j].at.x,at.z-near[j].at.z).length() < SkyClusters.NEAR_GAP: near_ok = false
+	check(near_ok and farthest < 700.0,"Every motif stands near the home, apart and clear (%d, farthest %.0f m)" % [near.size(),farthest])
+	var forced: Node3D = SkyClusters.new()
+	forced.islets = islets
+	forced.with_near = ["mountain","lake"]
+	forced.with_random = true
+	root.add_child(forced)
+	forced.reset(cells)
+	var keys: Array = (forced.spots as Array).map(func(s: Dictionary) -> String: return s.key)
+	var forced_at: Array = (forced.spots as Array).filter(func(s: Dictionary) -> bool: return str(s.key).begins_with("near:"))
+	var crowded := (forced.spots as Array).any(func(s: Dictionary) -> bool: return not str(s.key).begins_with("near:") and forced_at.any(func(f: Dictionary) -> bool: return Vector2(s.at.x-f.at.x,s.at.z-f.at.z).length() < SkyClusters.SPACING*0.5))
+	check("near:mountain" in keys and "near:lake" in keys and keys.size() > 2 and not crowded,"--motif stands its motifs near the home, the random ones as ever")
+	forced.queue_free()
 	# The showcase, stood.
 	field.plan_now("showcase")
 	var stood: Dictionary = field.members_of("showcase")

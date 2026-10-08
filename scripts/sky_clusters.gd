@@ -32,6 +32,20 @@ extends Node3D
 ## --showcase adds the hand-laid farmstead at SHOWCASE_AT, the first
 ## showcase's members exactly, laid with the same solver. --no-clusters
 ## leaves the random ones out.
+##
+## To visit a motif in the game: --motif=<name> (or several, comma
+## separated: --motif=lake,ravine) stands a cluster of that motif near the
+## home island, and --motifs-near-home one of every motif (Motifs `names`),
+## each on a ring round the home (NEAR_RING m out, wider for more), NEAR_GAP
+## apart, clear of the islands' spots (NEAR_ISLAND), the ranges, walls and
+## band, and the cumulus towers, so each is in view soon after take-off.
+## --motif-seed=N lays them from seed N (NEAR_SEED otherwise). The random
+## clusters stand as ever, but none in a cell's half round a forced one;
+## add --no-clusters for the forced ones alone. Their keys are
+## "near:<motif>" (the capture tool's --only=near:lake). The motifs:
+## farmstead, hamlet, reef, lake, falls, forest, stack, ravine, mountain.
+##   godot --path . -- --no-title --motif=mountain
+##   godot --path . -- --no-title --motifs-near-home --no-clusters
 
 const SkyIslets = preload("res://scripts/sky_islets.gd")
 const SkyCells = preload("res://scripts/sky_cells.gd")
@@ -74,6 +88,16 @@ const FORGET := 1450.0
 const CHECK := 0.5
 ## The hand-laid showcase's middle (home coordinates).
 const SHOWCASE_AT := Vector3(150.0,-6.0,60.0)
+## The forced motifs' ring round the home (--motif, --motifs-near-home):
+## its first radius (m), each wider try's step out, the least gap between
+## two forced clusters' middles, how far each keeps off an island's spot,
+## their height, and the seed they are laid from by default.
+const NEAR_RING := 200.0
+const NEAR_STEP := 40.0
+const NEAR_GAP := 190.0
+const NEAR_ISLAND := 170.0
+const NEAR_Y := 2.0
+const NEAR_SEED := 7
 ## The members' bob (the islets' BOB): one period for a cluster.
 const PERIOD := Vector2(8.0,11.0)
 ## Sails turn (rad/s), beams sweep (rad/s).
@@ -85,6 +109,26 @@ static func showcase_enabled() -> bool:
 
 static func random_enabled() -> bool:
 	return not "--no-clusters" in OS.get_cmdline_user_args()
+
+## The motifs forced near the home (--motif=a,b or --motifs-near-home),
+## known names only, in order.
+static func near_motifs() -> Array:
+	var names: Array = Motifs.names()
+	var out: Array = []
+	for a: String in OS.get_cmdline_user_args():
+		if a == "--motifs-near-home":
+			for n: String in names:
+				if not n in out: out.append(n)
+		elif a.begins_with("--motif="):
+			for n: String in a.trim_prefix("--motif=").split(",",false):
+				if n in names and not n in out: out.append(n)
+				elif not n in names: push_warning("--motif: no motif %s (%s)" % [n,", ".join(names)])
+	return out
+
+static func near_seed() -> int:
+	for a: String in OS.get_cmdline_user_args():
+		if a.begins_with("--motif-seed="): return int(a.trim_prefix("--motif-seed="))
+	return NEAR_SEED
 
 ## The islets (SkyIslets) the members stand in, and the scene (daylight).
 var islets: Node3D
@@ -101,6 +145,9 @@ var daylight_override := -1.0
 var night := 0.0
 var with_random := true
 var with_showcase := false
+## The motifs stood near the home (`near_motifs`), and their seed.
+var with_near: Array = []
+var near_seed_value := NEAR_SEED
 var _since := CHECK
 var _clock := 0.0
 var _palette := {}
@@ -109,6 +156,8 @@ func _init() -> void:
 	name = "SkyClusters"
 	with_random = random_enabled()
 	with_showcase = showcase_enabled()
+	with_near = near_motifs()
+	near_seed_value = near_seed()
 
 func _exit_tree() -> void:
 	clear()
@@ -140,13 +189,16 @@ func reset(new_cells: SkyCells) -> void:
 	Cabin.info()
 	Dresser._mats()
 	if with_showcase: spots.append({"key":"showcase","at":SHOWCASE_AT,"motif":"showcase","seed":1})
+	var forced: Array = spots.duplicate()
+	forced.append_array(near_spots(with_near,near_seed_value,forced))
+	spots = forced.duplicate()
 	if with_random:
 		var reach := ceili(4400.0/SPACING)
 		for x in range(-reach,reach+1):
 			for z in range(-reach,reach+1):
 				var s: Variant = spot_of(Vector2i(x,z))
 				if s == null: continue
-				if with_showcase and Vector2(s.at.x-SHOWCASE_AT.x,s.at.z-SHOWCASE_AT.z).length() < SPACING*0.5: continue
+				if forced.any(func(f: Dictionary) -> bool: return _flat(f.at,s.at) < SPACING*0.5): continue
 				spots.append(s)
 	var keep: Array[Vector3] = []
 	for s: Dictionary in spots: keep.append(Vector3(s.at.x,s.at.z,KEEP))
@@ -173,6 +225,34 @@ func spot_of(cell: Vector2i) -> Variant:
 	var names: Array = Motifs.names()
 	var motif: String = names[mini(int(SkyCells.noise(cell,SALT+4)*names.size()),names.size()-1)]
 	return {"key":"%d,%d" % [cell.x,cell.y],"at":at,"motif":motif,"seed":int(SkyCells.noise(cell,SALT+5)*16777216.0)}
+
+## The spots ({key, at, motif, seed}) of `names` stood near the home: each
+## tried round a ring from its own share of the turn, then a little either
+## way, then a ring further out, until one is clear of the islands' spots,
+## the ranges and walls, the towers and the haze, and NEAR_GAP off every
+## spot in `taken` and those already laid.
+func near_spots(names: Array, seed_value: int, taken: Array) -> Array:
+	var out: Array = []
+	if names.is_empty(): return out
+	var ring := maxf(NEAR_RING,NEAR_GAP*names.size()/TAU)
+	for i in range(names.size()):
+		var at: Variant = null
+		for step in range(12):
+			for k in range(16):
+				var turn := TAU*float(i)/names.size()+0.35+(0.13*ceilf(k/2.0)*(1.0 if k % 2 == 0 else -1.0))
+				var here := Vector3(cos(turn),0.0,sin(turn))*(ring+step*NEAR_STEP)+Vector3.UP*NEAR_Y
+				if (taken+out).any(func(f: Dictionary) -> bool: return _flat(f.at,here) < NEAR_GAP): continue
+				if cells != null and not cells.spots_near(here,NEAR_ISLAND).is_empty(): continue
+				if SkyPeaks.blocks(here,WALL_CLEAR) or SkyTowers.blocks(here,TOWER_CLEAR) or SkyForestIsles.blocks(here,WONDER_CLEAR): continue
+				if in_haze(here): continue
+				at = here
+				break
+			if at != null: break
+		if at == null:
+			push_warning("--motif: no clear room near the home for %s" % names[i])
+			continue
+		out.append({"key":"near:%s" % names[i],"at":at,"motif":names[i],"seed":seed_value})
+	return out
 
 ## True if a home point is on or within HAZE_CLEAR of the band's haze
 ## curve (SkyWorld `haze_share`), where the band's mist would veil it.
@@ -255,7 +335,7 @@ func _stand_some(home: Vector3) -> void:
 func _stand(c: Dictionary, m: Dictionary) -> void:
 	var made: Dictionary = c.out.made[m.name]
 	var home: Vector3 = (c.spot.at as Vector3)+(m.offset as Vector3)
-	var b: Dictionary = islets.stand("Cluster_%s_%s" % [str(c.spot.key).replace(",","_"),m.name],home,made)
+	var b: Dictionary = islets.stand("Cluster_%s_%s" % [str(c.spot.key).replace(",","_").replace(":","_"),m.name],home,made)
 	b.fixed = true
 	b.group = c.group
 	b.phase = c.phase

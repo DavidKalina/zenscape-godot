@@ -7,10 +7,15 @@ extends SceneTree
 ## from high to one side (overview), low in passing (pass) and close by a
 ## member's rock (rock), from 220 m off (far) and by a cabin from behind
 ## (cabin); then --lone=N of the seeded islets between them,
-## each from its side (lone), by day.
+## each from its side (lone), by day. Clusters forced near the home
+## (--motif=<name>, --motifs-near-home: scripts/sky_clusters.gd) are visited
+## as they stand, their motif and seed kept, before the random ones;
+## --per=0 leaves the random ones out, --shots=overview,far keeps those
+## views only, and --hours may name golden too.
 ## Rendered only when asked for (needs a window):
 ##   Godot --windowed --path . --resolution 1280x720 -s res://tools/capture_clusters.gd \
 ##     -- --no-title --showcase --out=captures/clusters/try1 [--per=2] [--seed=7] [--hours=noon,night] [--only=showcase] [--lone=3]
+##     [--motifs-near-home --per=0 --shots=overview --hours=golden,night]
 const Motifs = preload("res://scripts/cluster_motifs.gd")
 const RavineShots = preload("res://tools/ravine_shots.gd")
 var scene: Node3D
@@ -20,6 +25,7 @@ var per := 2
 var seed_base := 7
 var only := ""
 var lone := 0
+var shots_wanted: Array = []
 var hours_wanted: Array = ["noon","night"]
 var hours := {"noon": WorldClock.hour_for_phase(0.5), "golden": WorldClock.hour_for_phase(0.72), "night": WorldClock.hour_for_phase(0.02)}
 var _islets: Node3D
@@ -46,6 +52,7 @@ func run() -> void:
 		elif argument.begins_with("--seed="): seed_base = int(argument.trim_prefix("--seed="))
 		elif argument.begins_with("--only="): only = argument.trim_prefix("--only=")
 		elif argument.begins_with("--lone="): lone = int(argument.trim_prefix("--lone="))
+		elif argument.begins_with("--shots="): shots_wanted = Array(argument.trim_prefix("--shots=").split(","))
 		elif argument.begins_with("--hours="): hours_wanted = Array(argument.trim_prefix("--hours=").split(","))
 	if out.is_relative_path(): out = ProjectSettings.globalize_path("res://").path_join(out)
 	DirAccess.make_dir_recursive_absolute(out)
@@ -81,10 +88,10 @@ func run() -> void:
 	# The clusters to visit: the showcase, then the world's spots dealt out
 	# to the motifs in turn.
 	var visits: Array = []
-	var randoms: Array = (field.spots as Array).filter(func(s: Dictionary) -> bool: return s.key != "showcase")
+	var randoms: Array = (field.spots as Array).filter(func(s: Dictionary) -> bool: return s.key != "showcase" and not str(s.key).begins_with("near:"))
 	randoms.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return Vector2(a.at.x,a.at.z).length() < Vector2(b.at.x,b.at.z).length())
 	for s: Dictionary in field.spots:
-		if s.key == "showcase": visits.append(s)
+		if s.key == "showcase" or str(s.key).begins_with("near:"): visits.append(s)
 	var names: Array = Motifs.names()
 	var k := 0
 	for motif: String in names:
@@ -102,6 +109,7 @@ func run() -> void:
 		field.plan_now(s.key)
 		print("CLUSTERS %s at %s: %s" % [label,s.at,str((field.members_of(s.key) as Dictionary).keys())])
 		var shots := _shots(field,s)
+		if not shots_wanted.is_empty(): shots = shots.filter(func(shot: Dictionary) -> bool: return shot.label in shots_wanted)
 		for hour_name: String in hours_wanted:
 			for shot: Dictionary in shots:
 				await _hold_at(shot.eye,shot.look,hours[hour_name],60 if shot == shots[0] else 35)
