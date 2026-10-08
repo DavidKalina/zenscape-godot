@@ -32,7 +32,7 @@ const ACROSS := Vector2(30.0,90.0)
 ## under the rim, so in the lower world the lake (at about the rim's
 ## height, IsletLake LEVEL) stands that much over the sea and its fall
 ## pours down the bank into it, rather than meeting the sea level with it.
-const RISE := 1.0
+const RISE := 0.7
 const SEA := Genesis.RIM_HEIGHT-RISE
 ## The flavours and how often each turns up.
 const FLAVOURS := [["mere",0.45],["tarn",0.35],["isle",0.2]]
