@@ -53,9 +53,9 @@ const CLOUD := 0.14
 const DECK := Vector2(20.0,12.0)
 ## The plate: faceted grass, CELL m triangles, MARGIN round the pieces, its
 ## rock sides DEPTH deep.
-const GRASS := [Color("5a7540"),Color("57723d"),Color("5d7842"),Color("55703c")]
+const GRASS := [Color("54683f"),Color("52663c"),Color("566b41"),Color("50643b")]
 const ROCK := Color("4d4640")
-const CELL := 1.6
+const CELL := 2.2
 const MARGIN := 3.5
 const DEPTH := 4.0
 ## How far round from the light the layout is turned (radians): the sun over
