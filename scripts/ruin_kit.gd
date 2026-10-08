@@ -41,12 +41,23 @@ const STONE_SHADER = preload("res://shaders/ruin_stone.gdshader")
 const GLOW_SHADER = preload("res://shaders/ruin_glow.gdshader")
 const HALO_SHADER = preload("res://shaders/cluster_halo.gdshader")
 
-## The pieces, in the kit's order.
+## The pieces, in the kit's order: the gothic abbey's, here.
 const PIECES := ["pier","arch","lancet_wall","rose_gable","buttress","wall","stairs","turret","vault","fallen_pier","tomb_chest","floor","glyph_stone"]
+## The families: the gothic abbey (here), the aqueduct (scripts/
+## ruin_kit_aqueduct.gd) and the colossus hall (scripts/ruin_kit_hall.gd),
+## each its pieces in order; ALL_PIECES the lot.
+const AQUEDUCT_PIECES := ["aqueduct_span","aqueduct_two_tier","aqueduct_broken","aqueduct_stump","aqueduct_end"]
+const HALL_PIECES := ["hall_column","hall_beam","hall_slab","hall_bay","hall_medallion","hall_mask"]
+const FAMILIES := {"gothic":PIECES,"aqueduct":AQUEDUCT_PIECES,"hall":HALL_PIECES}
+const ALL_PIECES := PIECES+AQUEDUCT_PIECES+HALL_PIECES
 const NAMES := {"pier":"Clustered pier","arch":"Pointed arch","lancet_wall":"Lancet window wall",
 	"rose_gable":"Rose window gable","buttress":"Buttress","wall":"Wall","stairs":"Stair flight",
 	"turret":"Stair turret","vault":"Vault ribs","fallen_pier":"Fallen pier","tomb_chest":"Carved chest",
-	"floor":"Floor slabs","glyph_stone":"Glyph stone"}
+	"floor":"Floor slabs","glyph_stone":"Glyph stone",
+	"aqueduct_span":"Aqueduct span","aqueduct_two_tier":"Two-tier span","aqueduct_broken":"Broken span",
+	"aqueduct_stump":"Pier stump","aqueduct_end":"Aqueduct head",
+	"hall_column":"Colossus column","hall_beam":"Architrave beam","hall_slab":"Roof slabs",
+	"hall_bay":"Hall bay","hall_medallion":"Floor medallion","hall_mask":"Fallen colossus mask"}
 
 # --- Scale: what the pilot on foot and the plane can do drives these ---------
 # (scripts/pilot_motor.gd, scripts/plane_figure.gd, scripts/sky_glide.gd)
@@ -184,6 +195,9 @@ const UNDER := 0.72
 ## Lichen: pale and ochre, the odds a face takes it.
 const LICHEN := [Color("8e9180"),Color("8d7f5c"),Color("7f887a")]
 const LICHEN_ODDS := 0.05
+## Grass tufts at the feet of things (Build `tuft`): the gallery plate's
+## darker olive greens.
+const GRASS := [Color("4c6136"),Color("56693a"),Color("44582f"),Color("5f7240")]
 ## Moss on what looks up (sRGB), and its cushions.
 const MOSS := Color("374726")
 const MOSS_LIGHT := Color("4e612e")
@@ -220,6 +234,10 @@ const TRUE_OFF := Vector2(0.02,0.055)
 const SHIFT := Vector2(0.01,0.05)
 ## The sag of a long course (m at its middle), as old and at full ruin.
 const SAG := Vector2(0.03,0.09)
+## The thinnest block given a collision hull (m): Jolt's convex shapes need
+## a real volume (its margin is 0.04), and a sliver walks like the block
+## beside it anyway.
+const HULL_THIN := 0.06
 ## The glow's colour and the halo's size (m) at night.
 const GLOW := Color("9ff2e2")
 const HALO := 1.15
@@ -241,7 +259,17 @@ static func piece(id: String, seed_value: int, weathered := 0.0) -> Node3D:
 		"tomb_chest": return tomb_chest(seed_value,weathered)
 		"floor": return floor_slabs(seed_value,weathered)
 		"glyph_stone": return glyph_stone(seed_value,weathered)
+	# The other families, loaded when asked for (they build on this script).
+	if id in AQUEDUCT_PIECES: return load("res://scripts/ruin_kit_aqueduct.gd").piece(id,seed_value,weathered)
+	if id in HALL_PIECES: return load("res://scripts/ruin_kit_hall.gd").piece(id,seed_value,weathered)
 	return null
+
+## How thick a hull's points stand at their thinnest (m): their spread
+## along the least axis of their scatter (the covariance's smallest
+## eigenvector), 0 for a flat or degenerate one. Jolt cannot build a convex
+## shape from a sliver, so a block thinner than HULL_THIN gets no hull.
+static func hull_thickness(points: PackedVector3Array) -> float:
+	return Build.thickness(points)
 
 ## The shared materials: {stone, glow, halo}.
 static func materials() -> Dictionary:
@@ -1786,10 +1814,17 @@ static func _axial_prism_y(sides: int, r: float, h: float) -> Array[Plane]:
 ## looking +Z), centred at `centre`: the face round the glyph drawn as
 ## stone, the glyph's floor CARVE deep and its walls on the glow surface.
 ## The face is drawn over the niche only (the rest of it is behind stone).
-static func _carve(b: Build, pose: Transform3D, id: String, centre: Vector2, face_z: float) -> void:
+## `outline` (in the same frame) is the face to draw round it, the niche's
+## unless given; `size` the glyph's (m).
+static func _carve(b: Build, pose: Transform3D, id: String, centre: Vector2, face_z: float, outline := PackedVector2Array(), size := GLYPH) -> void:
 	var nw := NICHE.x*0.5+0.02
-	var outline := PackedVector2Array([Vector2(-nw,NICHE.y-0.3),Vector2(nw,NICHE.y-0.3),Vector2(nw,GLYPH_BLOCK.z),Vector2(-nw,GLYPH_BLOCK.z)])
-	var s := GLYPH/24.0
+	if outline.is_empty():
+		outline = PackedVector2Array([Vector2(-nw,NICHE.y-0.3),Vector2(nw,NICHE.y-0.3),Vector2(nw,GLYPH_BLOCK.z),Vector2(-nw,GLYPH_BLOCK.z)])
+	else:
+		var box := Rect2(outline[0],Vector2.ZERO)
+		for v in outline: box = box.expand(v)
+		nw = maxf(absf(box.position.x),absf(box.end.x))
+	var s := size/24.0
 	var shapes: Array[PackedVector2Array] = []
 	for p: PackedVector2Array in GlyphToken._trace(id):
 		var q := PackedVector2Array()
@@ -1883,6 +1918,9 @@ class Build extends RefCounted:
 	var hangs: Array = []
 	## Applied to every block (a piece turned or leaning as a whole).
 	var frame := Transform3D.IDENTITY
+	## Blocks are cut off level under this height (the piece's frame, y):
+	## what is sunk in the ground is not drawn. -INF, none.
+	var ground := -INF
 	static var _materials := {}
 
 	static func materials() -> Dictionary:
@@ -1926,6 +1964,41 @@ class Build extends RefCounted:
 		root = Node3D.new()
 		root.name = label
 
+	## How thick `points` stand at their thinnest (RuinKit `hull_thickness`).
+	static func thickness(points: PackedVector3Array) -> float:
+		if points.size() < 4: return 0.0
+		var mean := Vector3.ZERO
+		for p in points: mean += p
+		mean /= points.size()
+		var c := Basis(Vector3.ZERO,Vector3.ZERO,Vector3.ZERO)
+		for p in points:
+			var d := p-mean
+			c.x += d*d.x
+			c.y += d*d.y
+			c.z += d*d.z
+		# The two widest axes by power iteration, the least across them both.
+		var axes: Array[Vector3] = []
+		var m := c
+		for k in range(2):
+			var v := Vector3(0.577,0.577,0.577) if k == 0 else Vector3(-0.41,0.82,-0.41)
+			if not axes.is_empty(): v = (v-axes[0]*axes[0].dot(v))
+			for i in range(40):
+				var w := m*v
+				if not axes.is_empty(): w -= axes[0]*axes[0].dot(w)
+				if w.length_squared() < 1e-20: break
+				v = w.normalized()
+			if v.length_squared() < 1e-12: return 0.0
+			axes.append(v.normalized())
+		var least := axes[0].cross(axes[1])
+		if least.length_squared() < 1e-12: return 0.0
+		least = least.normalized()
+		var low := INF
+		var high := -INF
+		for p in points:
+			low = minf(low,least.dot(p))
+			high = maxf(high,least.dot(p))
+		return high-low
+
 	## Asks for a strand of ivy hanging free from the underside over `at`
 	## (x, z; from height `from`, or found by looking up), `length` m long.
 	func hang(at: Vector3, length: float, free := true, from := -1.0) -> void:
@@ -1940,10 +2013,11 @@ class Build extends RefCounted:
 		var cut: Array[Plane] = planes.duplicate()
 		for p in extra: cut.append(p)
 		if wear: cut = _wear(cut,rough,open)
+		var xf := frame*pose
+		if ground > -INF: cut.append(xf.affine_inverse()*Plane(Vector3.DOWN,-ground))
 		var points := _unique(Geometry3D.compute_convex_mesh_points(cut))
 		var open_face := PackedVector3Array()
 		if points.size() < 4: return open_face
-		var xf := frame*pose
 		var linear := colour.srgb_to_linear()
 		# The block's faces, and the biggest, so the small ones (worn
 		# arrises, chips) can be told.
@@ -1994,7 +2068,9 @@ class Build extends RefCounted:
 		if collide:
 			var hull := PackedVector3Array()
 			for q in points: hull.append(xf*q)
-			hulls.append(hull)
+			# A sliver (a block cut nearly away by a hole's line or a break)
+			# stays drawn but gets no hull: Jolt cannot build one so thin.
+			if thickness(hull) >= HULL_THIN: hulls.append(hull)
 		return open_face
 
 	## A flat polygon (`outline`: x and y in a frame at z `z`) facing
@@ -2251,6 +2327,25 @@ class Build extends RefCounted:
 		var light := clampf(face.y*0.5+0.5+rng.randf_range(-0.3,0.3),0.0,0.999)
 		var colour: Color = IVY[int(light*IVY.size())]
 		solid(planes,Transform3D(basis,at),colour,false,false,[],-1,1.0,false)
+
+	## A tuft of grass at `at` (on the ground or a ledge): `count` blades about
+	## `height` tall, each a thin cut sliver leaning its own way, in the
+	## plate's olive greens; never solid.
+	func tuft(at: Vector3, height: float, count := 7) -> void:
+		var keep := frame
+		frame = Transform3D.IDENTITY
+		for i in range(count):
+			var h := height*rng.randf_range(0.55,1.15)
+			var w := rng.randf_range(0.035,0.06)*(0.7+0.6*h)
+			var planes: Array[Plane] = [Plane(Vector3.BACK,0.012),Plane(Vector3.FORWARD,0.012),Plane(Vector3.DOWN,0.0)]
+			for s: float in [-1.0,1.0]:
+				var n := Vector3(s*h,w,0.0).normalized()
+				planes.append(Plane(n,n.dot(Vector3(s*w,0.0,0.0))))
+			var lean := Basis(Vector3.UP,rng.randf()*TAU)*Basis(Vector3.RIGHT,rng.randf_range(0.1,0.5))
+			var off := Vector3(rng.randf_range(-1,1),0.0,rng.randf_range(-1,1))*height*0.3
+			var colour: Color = GRASS[rng.randi()%GRASS.size()]*rng.randf_range(0.85,1.12)
+			solid(planes,Transform3D(lean,at+off-Vector3(0.0,0.02,0.0)),colour,false,false,[],-1,1.0,false)
+		frame = keep
 
 	## Moss cushions on mossy tops: low faceted mounds, not solid.
 	func _cushions() -> void:
