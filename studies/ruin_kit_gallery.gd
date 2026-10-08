@@ -84,6 +84,8 @@ const BUMP_KEEP := 0.55
 const FLY_LOOK := 0.0025
 ## The aqueduct across a valley (uneven ground): its spans.
 const VALLEY_SPANS := 6
+## The terrain demos' slopes down to the plate round their rims (m).
+const TERRAIN_FADE := 14.0
 ## The room between a pair's two (m) and between pairs.
 const PAIR_GAP := 0.8
 const SLOT_GAP := 2.6
@@ -209,6 +211,9 @@ func _ready() -> void:
 		elif arg.begins_with("--distance="): _distance_goal = float(arg.get_slice("=",1))
 		elif arg.begins_with("--at="): eye = _vec(arg.get_slice("=",1))+_centre_origin(start_centre)
 		elif arg.begins_with("--look="): _focus_goal = _vec(arg.get_slice("=",1))+_centre_origin(start_centre)
+		# In the long hall's path space (x along its nave, z across).
+		elif arg.begins_with("--hall-at="): eye = _hall_point(_vec(arg.get_slice("=",1)))
+		elif arg.begins_with("--hall-look="): _focus_goal = _hall_point(_vec(arg.get_slice("=",1)))
 	if eye != Vector3.INF:
 		# The eye at `eye` looking at the focus: the orbit that puts it there.
 		var off := eye-_focus_goal
@@ -233,6 +238,11 @@ func _centre_origin(on: bool) -> Vector3:
 	if not on or not _areas.has(_family): return Vector3.ZERO
 	var rows: Array = ROW_Z[_family]
 	return (_areas[_family].origin as Vector3)+Vector3(0.0,0.0,float(rows[0])-float(CENTRE_BACK[_family]))
+
+## A point of the long hall's path space in the layout's frame.
+func _hall_point(p: Vector3) -> Vector3:
+	var scene: Node3D = _areas.hall.scene
+	return (scene.get_parent() as Node3D).transform*(scene.transform*(scene.get_meta("path").point(p) as Vector3))
 
 func _vec(text: String) -> Vector3:
 	var p := text.split(",")
@@ -445,7 +455,7 @@ func _hall_scene(area: Node3D, z: float) -> Rect2:
 	area.add_child(feed)
 	_areas.hall.scene = scene
 	_areas.hall.feed = feed
-	_tag(area,"The long hall: %d bays, curving, its roof whole, broken and open, fed by an aqueduct (G flies it)" % HALL_BAYS,Vector3(0.0,0.02,z0+box.end.z+6.0),1.4)
+	_tag(area,"The long hall: %d bays, curving, its roof whole, broken and open, fed by an aqueduct (G flies it)" % HALL_BAYS,Vector3(0.0,0.02,z0+box.end.z+14.0),1.4)
 	_areas.hall.centre = {"focus":Vector3(0.0,4.0,z),"distance":150.0,"yaw":0.35,"pitch":0.55}
 	var rect := Rect2(x0+box.position.x-reach-6.0,z0+box.position.z-6.0,box.size.x+reach+12.0,box.size.z+12.0)
 	# The hall in the hillside, its far end buried in the slope.
@@ -457,8 +467,8 @@ func _hall_scene(area: Node3D, z: float) -> Rect2:
 	buried.position = Vector3(-hill_length*0.5,0.0,hz)
 	area.add_child(buried)
 	_areas.hall.hill = buried
-	var ground_rect := Rect2(-6.0,-Hall.WALL_Z-8.0,hill_length+22.0,Hall.WALL_Z*2.0+16.0)
-	_terrain(buried,ground_rect,hill)
+	var ground_rect := Rect2(-8.0,-Hall.WALL_Z-24.0,hill_length+40.0,Hall.WALL_Z*2.0+48.0)
+	_terrain(buried,ground_rect,hill,TERRAIN_FADE)
 	_tag(area,"A hall run into a hillside",Vector3(0.0,0.02,hz+Hall.WALL_Z+9.0),1.0)
 	return rect.merge(Rect2(ground_rect.position+Vector2(-hill_length*0.5,hz),ground_rect.size))
 
@@ -477,14 +487,16 @@ func _valley(area: Node3D, z: float) -> Rect2:
 	run.position = Vector3(-length*0.5,0.0,z)
 	area.add_child(run)
 	_areas.aqueduct.valley = run
-	var ground_rect := Rect2(-14.0,-12.0,length+22.0,24.0)
-	_terrain(run,ground_rect,valley)
+	var ground_rect := Rect2(-22.0,-24.0,length+38.0,48.0)
+	_terrain(run,ground_rect,valley,TERRAIN_FADE)
 	_tag(area,"Across a valley: tall piers in its middle, its head in the hill",Vector3(0.0,0.02,z+13.5),1.0)
 	return Rect2(ground_rect.position+Vector2(-length*0.5,z),ground_rect.size)
 
 ## A simple faceted ground under `parent` (in its frame) over `rect` (x, z)
-## from `ground`: grass on the gentle facets, rock on the steep.
-func _terrain(parent: Node3D, rect: Rect2, ground: Callable) -> void:
+## from `ground`: grass on the gentle facets, rock on the steep; within
+## `fade` of the rim it slopes down to the plate in rough facets (a hill,
+## not a block).
+func _terrain(parent: Node3D, rect: Rect2, ground: Callable, fade := 0.0) -> void:
 	var step := 2.0
 	var nx := int(ceil(rect.size.x/step))
 	var nz := int(ceil(rect.size.y/step))
@@ -497,7 +509,14 @@ func _terrain(parent: Node3D, rect: Rect2, ground: Callable) -> void:
 		var x := rect.position.x+i*rect.size.x/nx
 		var zz := rect.position.y+j*rect.size.y/nz
 		var edge := i == 0 or j == 0 or i == nx or j == nz
-		return Vector3(x,float(ground.call(x,zz))-(0.15 if edge else 0.0)+0.02,zz)
+		var y := float(ground.call(x,zz))
+		if fade > 0.0:
+			var rim := minf(minf(x-rect.position.x,rect.end.x-x),minf(zz-rect.position.y,rect.end.y-zz))
+			var t := clampf(rim/fade,0.0,1.0)
+			# Rough facets on the slope: each vertex a little off it.
+			var rough := sin(float(i)*12.9898+float(j)*78.233)*43758.5453
+			y = y*t*t*(3.0-2.0*t)+(rough-floorf(rough)-0.5)*0.9*t*(1.0-t)*minf(y,6.0)
+		return Vector3(x,y-(0.15 if edge else 0.0)+0.02,zz)
 	for i in range(nx):
 		for j in range(nz):
 			var a: Vector3 = at.call(i,j)

@@ -127,19 +127,21 @@ const BREACH_TOP := {"low":8.0,"arch":6.4,"collapse":8.0}
 const BREACH_OUT := 2.5
 ## The cost: the detail a hall is built at in the world (RuinKit
 ## `set_detail`), and the most triangles a 12-bay hall may draw there.
-const IN_WORLD := 0.3
+const IN_WORLD := 0.25
 const BUDGET := 100000
 ## Over an open bay, the sky from this height up (over the nave between the
 ## rows, clear of the bay lines' beams and ties).
 const OPEN_SKY := 4.6
+## The side walls' parapet over the roof (m, a range).
+const PARAPET := Vector2(0.6,1.8)
 ## A gable's rise over the roof beam's top.
-const GABLE_RISE := 5.0
+const GABLE_RISE := 6.5
 ## A wall course's height (colossal ashlar).
 const COURSE := 1.0
 ## A column's facets round (its drums, mouldings and capital).
 const SIDES := 12
 ## The roundels round a column's roundel band.
-const ROUNDELS := 8
+const ROUNDELS := 7
 
 # --- The pieces -----------------------------------------------------------------
 
@@ -318,7 +320,12 @@ static func bay(seed_value: int, weathered := 0.0, plan := {}, ground := Callabl
 					weave.gaps.append(AABB(Vector3(BEAM.y+0.25,soffit-0.2,z0),Vector3(BAY-2.0*BEAM.y-0.5,SLAB+0.6,z1-z0)))
 				continue
 			# Broken: a slab here and there tipped up on its neighbour.
-			_slab(b,0.0,BAY,float(edges[i]),float(edges[i+1]),soffit,roof == "broken" and b.rng.randf() < 0.3 and (i-1 in gaps or i+1 in gaps))
+			# Two slabs a strip, split at odds along the bay, so the roof reads
+			# as laid stone, not one sheet.
+			var cut := b.rng.randf_range(BAY*0.35,BAY*0.65)
+			var tip := roof == "broken" and b.rng.randf() < 0.3 and (i-1 in gaps or i+1 in gaps)
+			_slab(b,0.0,cut,float(edges[i]),float(edges[i+1]),soffit,false)
+			_slab(b,cut,BAY,float(edges[i]),float(edges[i+1]),soffit,tip)
 		if roof == "broken" and breach.x == 0:
 			# A slab or two of what fell, lying broken across the left of the
 			# nave (out of the lane).
@@ -334,14 +341,17 @@ static func bay(seed_value: int, weathered := 0.0, plan := {}, ground := Callabl
 		var s := -1.0 if k == 0 else 1.0
 		var kind: String = BREACHES[breach[k]]
 		var odds := lancets.x if s < 0.0 else lancets.y
-		var high := soffit-0.02
+		# Under a roof the wall stands on past it as a parapet (ragged as it
+		# weathers), so the roofline rises and falls along the hall.
+		var high := ROOF_TOP+b.rng.randf_range(PARAPET.x,PARAPET.y)
 		var low := soffit-3.0
+		var mid := b.floor_at(BAY*0.5,s*WALL_Z)
 		if roof == "open":
-			high = b.rng.randf_range(6.5,9.0)
-			low = b.rng.randf_range(2.8,4.0)
+			# Torn lower, over the ground where it stands (on a slope too).
+			high = minf(soffit,mid+b.rng.randf_range(6.5,9.0))
+			low = minf(high-0.5,mid+b.rng.randf_range(2.8,4.0))
 		var opening := LANCET if b.rng.randf() < odds and kind == "" and roof != "open" else Vector4.ZERO
 		var pose := Transform3D(Basis.IDENTITY,Vector3(BAY*0.5,0.0,s*WALL_Z))
-		var mid := b.floor_at(BAY*0.5,s*WALL_Z)
 		match kind:
 			"door": opening = DOOR
 			"arch": opening = ARCH
@@ -449,15 +459,15 @@ static func _shelter(p: Vector3, n: Vector3, roof: String) -> float:
 ## and at the mouths), its head ragged, so the hall's skyline rises and
 ## falls.
 static func _gable(b: Build, x: float) -> void:
-	var half := ROW_Z+0.6
+	var half := WALL_Z+0.4
 	var base := COLUMN_H+BEAM.x
 	var apex := base+GABLE_RISE*b.rng.randf_range(0.85,1.1)
 	var peak: Callable = func(zz: float) -> float: return base+(apex-base)*(1.0-absf(zz)/half)
 	var top := peak
 	if b.weathered > 0.2:
-		var ragged := RuinKit._ruin_line(b,-half,half,lerpf(apex,base+1.2,b.weathered),apex,b.weathered)
+		var ragged := RuinKit._ruin_line(b,-half,half,lerpf(apex,base+1.2,b.weathered*0.5),apex,b.weathered)
 		top = func(zz: float) -> float: return minf(float(peak.call(zz)),maxf(float(ragged.call(zz)),base+0.8))
-	RuinKit._courses(b,Transform3D(Basis(Vector3.UP,PI*0.5),Vector3(x,0.0,0.0)),-half,half,base,top,0.5,Callable(),COURSE)
+	RuinKit._courses(b,Transform3D(Basis(Vector3.UP,PI*0.5),Vector3(x,0.0,0.0)),-half,half,base,top,0.6,Callable(),COURSE)
 
 ## A plain buttress's stages [top, depth] over its foot at `base`: set-offs
 ## at the same heights over y 0 wherever it stands, those the ground has
@@ -808,14 +818,15 @@ static func _drum(b: Build, pose: Transform3D, kind: String, h: float, extra: Ar
 			b.solid(RuinKit._prism(SIDES,back,back,0.0,h),pose,tone*0.62,true,true,cut,-1,0.3)
 			b.solid(RuinKit._prism(SIDES,COLUMN_R+0.06,COLUMN_R+0.06,0.0,0.14),pose,tone*1.1,false,true,cut,-1,0.25)
 			b.solid(RuinKit._prism(SIDES,COLUMN_R+0.06,COLUMN_R+0.06,h-0.14,h),pose,tone*1.1,false,true,cut,-1,0.25)
-			var half := COLUMN_R*tan(PI/16.0)
-			for k in range(8):
-				var a := TAU*k/8.0
+			var niches := 6 if b.lean else 8
+			var half := COLUMN_R*tan(PI/(2.0*niches))
+			for k in range(niches):
+				var a := TAU*k/float(niches)
 				var r := Vector3(cos(a),0.0,sin(a))
 				var t := Vector3(-sin(a),0.0,cos(a))
 				var strip: Array[Plane] = [Plane(r,COLUMN_R),Plane(-r,-(back-0.02)),Plane(t,half*0.6),Plane(-t,half*0.6),Plane(Vector3.DOWN,-0.14),Plane(Vector3.UP,h-0.14)]
 				b.solid(strip,pose,tone*1.08,false,true,cut,-1,0.25)
-				var an := a+TAU/16.0
+				var an := a+PI/float(niches)
 				var rn := Vector3(cos(an),0.0,sin(an))
 				var tn := Vector3(-sin(an),0.0,cos(an))
 				var nw := half*1.42
@@ -916,7 +927,10 @@ static func _slab(b: Build, x0: float, x1: float, z0: float, z1: float, y: float
 			if tip and s > 0.0: pose = Transform3D(Basis(Vector3.BACK,0.5),at+Vector3(-0.3,0.55,0.0))
 			b.solid(planes,pose,RuinKit._stone(b,1.0),true,true,[],-1,0.7)
 	else:
-		b.solid(RuinKit._box(b,half,0.03),RuinKit._jiggle(b,Transform3D(Basis.IDENTITY,at),0.4),RuinKit._stone(b,1.0),true,true,[],-1,0.7)
+		# Settled out of level a little each (the roof's faces catch the sky
+		# each its own way, not one sheet).
+		var settled := Basis(Vector3(b.rng.randf_range(-1,1),0.0,b.rng.randf_range(-1,1)).normalized(),b.rng.randf_range(0.01,0.045)*(0.5+b.weathered))
+		b.solid(RuinKit._box(b,half,0.03),RuinKit._jiggle(b,Transform3D(settled,at),0.4),RuinKit._stone(b,1.0),true,true,[],-1,0.7)
 
 ## A wall at `pose` (along its X, `span` either side of its middle), from
 ## under the ground (FOUNDATION below its lowest ground) up to `high`:

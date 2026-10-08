@@ -203,7 +203,7 @@ const IVY_STRANDS := Vector2(0.2,1.3)
 const IVY_LENGTH := Vector2(0.9,4.2)
 const IVY_MOST := 46
 ## Lean stone's cap (Build `lean`: the halls, built by the dozen).
-const IVY_LEAN := 12
+const IVY_LEAN := 8
 ## The stone every piece has at weathered 0: AGE of the way to ruined in
 ## the wearing of its arrises and the wobble of its faces.
 const AGE := 0.32
@@ -1689,6 +1689,9 @@ static func _ruin_line(b: Build, x0: float, x1: float, low: float, high: float, 
 ## the bigger low, the smaller stacked up on them, within `reach` m; a
 ## climb's first steps as often as not.
 static func _drift(b: Build, at: Vector3, reach: float, count: int) -> void:
+	# Lean stone: fewer, the more so with less detail (a drift's few big
+	# stones still read).
+	if b.lean: count = int(ceil(count*(0.4+0.3*Build.detail)))
 	if count <= 0: return
 	at.y += b.floor_at(at.x,at.z)
 	var keep := b.frame
@@ -2395,8 +2398,9 @@ class Build extends RefCounted:
 				var r := rng.randf_range(CUSHION.x,CUSHION.y)*minf(1.0,sqrt(area))
 				var planes: Array[Plane] = [Plane(Vector3.DOWN,0.0),Plane(Vector3.UP,r*rng.randf_range(0.3,0.5))]
 				var turn := rng.randf()*TAU
-				for e in range(6):
-					var a := turn+TAU*e/6.0
+				var sides := 4 if lean else 6
+				for e in range(sides):
+					var a := turn+TAU*e/float(sides)
 					planes.append(Plane(Vector3(cos(a),0.0,sin(a)),r))
 					var n := Vector3(cos(a+0.5)*0.8,1.0,sin(a+0.5)*0.8).normalized()
 					planes.append(Plane(n,n.dot(Vector3(0.0,r*0.4,0.0))))
