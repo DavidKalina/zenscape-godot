@@ -398,11 +398,13 @@ static func mask(seed_value: int, weathered := 0.0, glyph := "") -> Node3D:
 	# the way to level as the mask lies, so the brow is a ledge.
 	var level := (lean.inverse()*Vector3.UP).normalized()
 	var tip := Vector3.UP.slerp(level,0.62)
+	var steepest := 0.0
 	for s: float in [-1.0,1.0]:
 		var outer := Vector2(s*2.02,brow_y+0.3)
 		var inner := Vector2(0.0,brow_y-0.08)
 		var along := Vector3(inner.x-outer.x,inner.y-outer.y,0.0).normalized()
 		var n := (tip-along*tip.dot(along)).normalized()
+		steepest = maxf(steepest,acos(clampf((face.basis*n).normalized().y,-1.0,1.0)))
 		var mid := Vector3((outer.x+inner.x)*0.5,(outer.y+inner.y)*0.5,0.0)
 		var brow: Array[Plane] = [Plane(Vector3.FORWARD,0.1),Plane(Vector3.BACK,BROW),Plane(Vector3(s,0.0,0.0),2.06),Plane(Vector3(-s,0.0,0.0),0.0)]
 		brow.append(Plane(n,n.dot(mid)))
@@ -437,7 +439,7 @@ static func mask(seed_value: int, weathered := 0.0, glyph := "") -> Node3D:
 		var flare := Vector3(s,0.0,0.9).normalized()
 		temple.append(Plane(flare,flare.dot(Vector3(s*1.75,0.0,0.4))))
 		_split(b,temple,face,RuinKit._stone(b,0.99),cracked,crack)
-		for wedge: Array in [[rim[0],rim[1],Vector2(s*0.4,brow_y-0.1)],[rim[1],rim[2],Vector2(s*0.4,brow_y-0.1)],[rim[4],rim[5],Vector2(s*0.42,eye_y-0.38)],[rim[5],rim[0],Vector2(s*0.4,eye_y-0.38)]]:
+		for wedge: Array in [[rim[0],rim[1],Vector2(s*0.4,brow_y-0.1)],[rim[1],rim[2],Vector2(s*0.4,brow_y-0.1)],[rim[5],rim[0],Vector2(s*0.4,eye_y-0.38)]]:
 			b.solid(_plate(wedge,-0.1,0.34,0.0),face,RuinKit._stone(b,0.95),false,true,[],-1,0.4)
 		var halo := MeshInstance3D.new()
 		halo.name = "Halo" if s < 0.0 else "Halo2"
@@ -474,6 +476,8 @@ static func mask(seed_value: int, weathered := 0.0, glyph := "") -> Node3D:
 	_feet(b,Vector3(0.0,0.0,0.3),2.6,int(4+weathered*8.0))
 	RuinKit._rubble(b,3.2,int(round(weathered*b.rng.randf_range(3.0,7.0))))
 	b.root.set_meta("glyph",glyph)
+	# How steep the brow's ledge lies (radians from level), for the walk.
+	b.root.set_meta("brow_slope",steepest)
 	return b.finish()
 
 # --- Parts ----------------------------------------------------------------------

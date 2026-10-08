@@ -2012,7 +2012,20 @@ class Build extends RefCounted:
 	func solid(planes: Array[Plane], pose: Transform3D, colour: Color, collide := true, wear := true, extra: Array[Plane] = [], open := -1, rough := 1.0, growable := true) -> PackedVector3Array:
 		var cut: Array[Plane] = planes.duplicate()
 		for p in extra: cut.append(p)
-		if wear: cut = _wear(cut,rough,open)
+		if wear:
+			# The wear's tilted faces never grow a block past where it stood
+			# unworn: a sliver whose sides tilt open would run on for metres.
+			var worn := _wear(cut,rough,open)
+			var base := Geometry3D.compute_convex_mesh_points(cut)
+			if base.size() >= 4:
+				var box := AABB(base[0],Vector3.ZERO)
+				for q in base: box = box.expand(q)
+				box = box.grow(maxf(0.15,box.get_longest_axis_size()*0.08))
+				for q in Geometry3D.compute_convex_mesh_points(worn):
+					if not box.has_point(q):
+						worn = cut
+						break
+			cut = worn
 		var xf := frame*pose
 		if ground > -INF: cut.append(xf.affine_inverse()*Plane(Vector3.DOWN,-ground))
 		var points := _unique(Geometry3D.compute_convex_mesh_points(cut))

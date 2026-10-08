@@ -180,7 +180,9 @@ func _piece(id: String, seed_value: int, weathered: float) -> void:
 			if level >= 3 and high > 0.1: top = true
 	check(hulls > 0,label+" has collision")
 	check(thin == 0,label+" has no flat or degenerate hull (%d)" % thin)
-	check(top,label+" has a top to stand on")
+	# The mask lies back: its ledge is the brow, near level but not quite.
+	if id == "hall_mask": check(float(node.get_meta("brow_slope",PI)) < deg_to_rad(30.0),label+" has a brow ledge to stand on")
+	else: check(top,label+" has a top to stand on")
 	if id in ["glyph_stone","hall_medallion","hall_mask"]:
 		check(ok and mesh.mesh.get_surface_count() == 2,label+" has its glow surface")
 		check(str(node.get_meta("glyph","")) in RuinKit.GLYPHS and node.get_node_or_null("Halo") is MeshInstance3D,label+" carries a glyph and its halo")
