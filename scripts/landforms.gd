@@ -23,8 +23,10 @@ extends RefCounted
 ## walls stop short of the water, and leaves an underside raised over it
 ## (an arch) open.
 ##
-## Until the landforms are merged, placeholders stand in: the sky islets'
-## own kinds (SkyIslet KINDS) grown to island size (`placeholder`).
+## Besides the landforms, a few of the sky islets' own kinds (SkyIslet
+## KINDS) stand in grown to island size (`placeholder`), for variety: low
+## sandy shores and small rocky skerries between the bigger islands. Any
+## other kind is still made as a placeholder when asked for by name.
 ##
 ## Adding one is one line in ENTRIES: [name, script path, weight]. An entry
 ## with a name already listed takes that one's place, so a real landform
@@ -32,24 +34,21 @@ extends RefCounted
 ## stands those near where the plane comes out under the cloud.
 
 ## [name, script path ("" for a placeholder of the SkyIslet kind of that
-## name), weight].
+## name), weight]. Hills and forest are the common ground of the sea, lakes
+## and sea cliffs turn up among them, and the mountains are rarer, the
+## landmarks seen from far across the water.
 const ENTRIES := [
-	["meadow","",1.0],
-	["grove","",1.0],
-	["hills","",0.8],
-	["crag","",0.6],
-	["spring","",0.6],
-	["shore","",0.8],
-	# --- The landforms, registered here as each is merged: ---------------------
-	# ["hills","res://scripts/landform_hills.gd",1.0],
-	# ["cliffs","res://scripts/landform_cliffs.gd",1.0],
-	# ["forest","res://scripts/landform_forest.gd",1.0],
-	# ["lake","res://scripts/landform_lake.gd",1.0],
-	# ["mountains","res://scripts/landform_mountains.gd",1.0],
+	["hills","res://scripts/landform_hills.gd",1.0],
+	["forest","res://scripts/landform_forest.gd",1.0],
+	["lake","res://scripts/landform_lake.gd",0.6],
+	["cliffs","res://scripts/landform_cliffs.gd",0.6],
+	["mountains","res://scripts/landform_mountains.gd",0.3],
+	["shore","",0.5],
+	["crag","",0.3],
 ]
-## The placeholders' widths (m), by kind.
+## The placeholders' widths (m), by kind: a crag a small skerry.
 const PLACEHOLDER_ACROSS := {"meadow":Vector2(35.0,90.0),"grove":Vector2(40.0,90.0),"hills":Vector2(40.0,90.0),
-	"crag":Vector2(30.0,75.0),"spring":Vector2(35.0,85.0),"shore":Vector2(30.0,80.0)}
+	"crag":Vector2(22.0,45.0),"spring":Vector2(35.0,85.0),"shore":Vector2(30.0,80.0)}
 
 static var _table := {}
 static var _order: Array[String] = []

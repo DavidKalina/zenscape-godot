@@ -951,6 +951,7 @@ func _plant(rng: RandomNumberGenerator) -> void:
 	# A woodland (scripts/woodland.gd), when the recipe asks for one.
 	if recipe.has("woodland"): Woodland.plant(self,rng,taken)
 	if recipe.has("downs"): HillDowns.plant(self,rng,taken)
+	if recipe.has("forest"): ForestCanopy.plant(self,rng,taken)
 	# Flower drifts.
 	if rng.randf() < float(FLOWER_ODDS[kind]):
 		var kinds: Array[String] = []

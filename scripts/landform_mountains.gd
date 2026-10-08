@@ -18,7 +18,9 @@ extends RefCounted
 ## thinner grass (TUFTS), the massif plants its own conifers.
 
 const NAME := "mountains"
-const ACROSS := Vector2(55.0,100.0)
+## At most 95 m, as every landform of the archipelago (its cells are 95 m,
+## scripts/sky_archipelago.gd CELL).
+const ACROSS := Vector2(55.0,95.0)
 ## The main summit's height over the rim (m): at least, at most. Its height
 ## is the island's radius times its stature, held within these; tune the
 ## most here to keep the summits clear of the cloud ceiling.
