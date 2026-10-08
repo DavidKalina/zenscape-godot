@@ -389,9 +389,10 @@ static func dress_spec(spec: Dictionary, width: float, level: float, seed_value:
 		var t := clampf((width-25.0)/65.0,0.0,1.0)
 		spec.sea_foot = {"level":level,"shelf":lerpf(SHELF.x,SHELF.y,t),"depth":SHELF_DEPTH}
 	if not spec.has("step"): spec.step = step_for(width)
-	# Far trees as stand-ins (the forest landform's `far_trees`), where the
-	# islets draw them.
-	if not spec.has("far_trees"): spec.far_trees = true
+	# Far trees as stand-ins (scripts/far_trees.gd) past where the islets
+	# draw their own (TREE_RANGE), unless the landform sets its own range
+	# (the forest's, nearer).
+	if not spec.has("far_trees"): spec.far_trees = TREE_RANGE
 	if not spec.has("rock"):
 		var looks := RockLooks.seeded(seed_value)
 		spec.rock = looks.get("rock",looks)

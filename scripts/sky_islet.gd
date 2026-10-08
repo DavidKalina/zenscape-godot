@@ -56,6 +56,8 @@ const RavineCut = preload("res://scripts/ravine_cut.gd")
 const MountainSpire = preload("res://scripts/mountain_spire.gd")
 const HillDowns = preload("res://scripts/hill_downs.gd")
 const SeaCliffs = preload("res://scripts/sea_cliffs.gd")
+const IsletStream = preload("res://scripts/islet_stream.gd")
+const ForestCanopy = preload("res://scripts/forest_canopy.gd")
 
 ## Kinds and how often each turns up.
 const KINDS := [["meadow",0.22],["grove",0.22],["hills",0.15],["crag",0.11],["spring",0.18],["shore",0.12]]
@@ -260,6 +262,8 @@ var lip_out := Vector2.ZERO
 var water_level := WATER
 ## A lake (scripts/islet_lake.gd), empty if none: the recipe's `lake`.
 var lake := {}
+## A stream (scripts/islet_stream.gd), empty if none: the recipe's `stream`.
+var stream := {}
 ## What grows: object records, as the plate's.
 var objects: Array[Dictionary] = []
 ## Trees and stones, for the glide and the walker: crowns (x, z, top over
@@ -294,10 +298,17 @@ var flowers: Array[String] = []
 ##   undergrowth: a multiplier on the kind's undergrowth; tufts, on its
 ##     grass tufts;
 ##   erode: the erosion's own strengths over the kind's (ERODE: detail, k,
-##     max_cut);
+##     max_cut), and over the common settings (iterations), and its grid's
+##     `cell` (m; unless given, Erosion CELL or the grid's step if coarser);
 ##   downs: rolling hill country laid over it, 30 to 90 m across (scripts/
 ##     hill_downs.gd: swells, cliffs and beaches, a glen to a cove, tors, a
 ##     crest's trees, drifts in the hollows, the downs' own shading);
+##   stream: a brook down a valley to the shore (scripts/islet_stream.gd);
+##   forest: a whole forest planted over it (scripts/forest_canopy.gd:
+##     conifers high, birch low, glades, a clearing, the stream's banks),
+##     its floor shaded under the crowns;
+##   far_trees: its trees drawn as far stand-ins past this many metres
+##     (SkyIslets `_plant`, scripts/far_trees.gd);
 ##   woodland: a real wood planted over it (scripts/woodland.gd: glades,
 ##     giants, clumped canopy, the floor), on top of the trees above;
 ##   objects: Array of records ({asset, x, z, angle, scale, tint}) set as
@@ -591,6 +602,7 @@ func _lay_ground(rng: RandomNumberGenerator) -> void:
 	if recipe.has("downs"): HillDowns.shape(self,rng,inland)
 	_erode()
 	if cliffs != null: cliffs.lift(self)
+	if recipe.has("stream"): IsletStream.cut(self,rng)
 	if recipe.has("lake"): IsletLake.cut(self,rng,inland)
 	elif kind == "spring" or recipe.has("pond"): _cut_pond(rng,inland)
 	_level_pads()
@@ -626,7 +638,9 @@ func _rim_at(p: Vector2, noise: FastNoiseLite) -> float:
 ## the scree it leaves.
 func _erode() -> void:
 	# A big island on a coarse grid (a recipe's `step`) weathers on cells as
-	# coarse, its finer gullies being finer than its faces.
+	# coarse, its finer gullies being finer than its faces; a recipe's erode
+	# may give its own cell (m). Erosion `sample` reads its grid as CELL
+	# apart, so the reads below are scaled to it.
 	var cell := maxf(Erosion.CELL,step)
 	var erode: Variant = recipe.get("erode")
 	if erode is Dictionary and (erode as Dictionary).has("cell"): cell = float(erode.cell)
@@ -660,7 +674,8 @@ func _erode() -> void:
 	for i in range(points.size()):
 		if shore_distance[i] < 0.0: continue
 		var p := points[i]
-		var cut := Erosion.sample(delta,p.x,p.y,n,origin)
+		var scale := Erosion.CELL/cell
+		var cut := Erosion.sample(delta,origin+(p.x-origin)*scale,origin+(p.y-origin)*scale,n,origin)
 		heights[i] += cut
 		wear[i] = maxf(-cut,0.0)
 
@@ -715,6 +730,7 @@ func _cut_pond(rng: RandomNumberGenerator, inland: float) -> void:
 ## The pond's water in the islet frame: level, middle and radius, with the
 ## lip and the way out; empty if the islet has none.
 func water() -> Dictionary:
+	if not stream.is_empty(): return IsletStream.water(self)
 	if pond.z <= 0.0: return {}
 	var w := {"level":water_level,"middle":Vector2(pond.x,pond.y),"radius":pond.z,"lip":lip,"out":lip_out}
 	# A lake pours off as a broader fall.
@@ -730,6 +746,7 @@ func _channel_distance(p: Vector2) -> float:
 
 ## True over the pond's water or its channel.
 func wet(p: Vector2) -> bool:
+	if not stream.is_empty() and IsletStream.wet(self,p): return true
 	if not lake.is_empty(): return IsletLake.wet(self,p)
 	if pond.z <= 0.0: return false
 	return p.distance_to(Vector2(pond.x,pond.y)) < pond.z*1.05 or _channel_distance(p) < CHANNEL
@@ -1334,6 +1351,8 @@ func top_arrays(palette: Dictionary, shift := Vector3.ZERO) -> Array:
 			tone = gravel.lerp(earth,clampf(patch.get_noise_2d(at.x*3.0,at.y*3.0)*0.5+0.5,0.0,1.0))
 		elif _in_soil(at):
 			tone = earth.lerp(gravel,0.15)*lerpf(0.8,0.95,n)
+		elif not stream.is_empty() and IsletStream.bed(self,at,minf(a.y,minf(b.y,c.y))):
+			tone = gravel.lerp(sand,0.35)*lerpf(0.78,0.95,n)
 		elif not lake.is_empty() and minf(a.y,minf(b.y,c.y)) < water_level+0.06:
 			tone = IsletLake.bed_tone(self,sand,gravel,middle.y,at)
 		elif pond.z > 0.0 and minf(a.y,minf(b.y,c.y)) < water_level+0.06 and (at.distance_to(Vector2(pond.x,pond.y)) < pond.z*1.5 or _channel_distance(at) < CHANNEL*1.5):
@@ -1344,6 +1363,7 @@ func top_arrays(palette: Dictionary, shift := Vector3.ZERO) -> Array:
 		elif kind == "shore":
 			var d := (shore_distance[ids[f*3]]+shore_distance[ids[f*3+1]]+shore_distance[ids[f*3+2]])/3.0
 			if d < BEACH*(0.8+0.4*n): tone = gravel if patch.get_noise_2d(at.x*2.0,at.y*2.0) > 0.25 else sand
+		if recipe.has("forest") and slope <= rock_slope: tone = ForestCanopy.floor_tone(self,f,tone)
 		tone = Color(tone.r+shimmer,tone.g+shimmer,tone.b+shimmer,1.0)
 		var corners := [a,b,c]
 		for k in range(3):
@@ -1525,6 +1545,7 @@ func build_water(material: Material, color := Color(0.25,0.57,0.59), shift := Ve
 ## The pond's surface arrays (`build_water`), empty with no pond; safe to
 ## make on a worker.
 func water_arrays(color := Color(0.25,0.57,0.59), shift := Vector3.ZERO) -> Array:
+	if not stream.is_empty(): return IsletStream.water_arrays(self,color,shift)
 	if not lake.is_empty(): return IsletLake.water_arrays(self,color,shift)
 	if pond.z <= 0.0: return []
 	var middle := Vector2(pond.x,pond.y)

@@ -44,6 +44,7 @@ const SkyForestIsles = preload("res://scripts/sky_forest_isles.gd")
 const SkyFallThread = preload("res://scripts/sky_fall_thread.gd")
 const RockLooks = preload("res://scripts/rock_looks.gd")
 const ClusterFalls = preload("res://scripts/cluster_falls.gd")
+const FarTrees = preload("res://scripts/far_trees.gd")
 
 ## The cells: size (m), the share holding an islet, how far its spot may sit
 ## from the cell's middle (share of the cell), and the height band (m).
@@ -417,7 +418,7 @@ func stand(node_name: String, home: Vector3, out: Dictionary) -> Dictionary:
 		pond.set_meta("skip_reflection",true)
 		node.add_child(pond)
 		if out.has("fall"): _fall(node,shape,out.fall,out.get("thread",{}))
-	_plant(node,out.plants)
+	_plant(node,out.plants,float(shape.recipe.get("far_trees",0.0)))
 	var rng := RandomNumberGenerator.new()
 	rng.seed = shape.seed
 	return {"node":node,"shape":shape,"home":home,"usec":out.get("usec",0),
@@ -433,8 +434,10 @@ func _fade(b: Dictionary) -> void:
 
 ## The plants: one batch a catalog part standing on this islet, drawn with
 ## the plate's own mesh and its material made safe for the sky. Trees draw
-## far, stones a little less, the small plants only near.
-func _plant(node: Node3D, plants: Dictionary) -> void:
+## far, stones a little less, the small plants only near. With `far` (a
+## recipe's `far_trees`), the trees draw to `far` m and cheap stand-ins
+## (scripts/far_trees.gd) take over from there.
+func _plant(node: Node3D, plants: Dictionary, far := 0.0) -> void:
 	var meshes: Dictionary = _catalog.meshes
 	for key: String in plants:
 		if not meshes.has(key): continue
@@ -455,6 +458,7 @@ func _plant(node: Node3D, plants: Dictionary) -> void:
 		batch.set_meta("skip_reflection",true)
 		var role: String = _catalog.roles.get(key,"plant")
 		batch.visibility_range_end = tree_range if role in ["tree","build"] else (STONE_RANGE if role == "stone" else PLANT_RANGE)
+		if far > 0.0 and role == "tree": batch.visibility_range_end = far
 		batch.visibility_range_end_margin = 30.0
 		batch.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 		# Small plants cast no shadow worth drawing out here, but the tall
@@ -462,6 +466,7 @@ func _plant(node: Node3D, plants: Dictionary) -> void:
 		if role == "plant" and MeadowFlowers.kind_of_part(key) != "sunflower":
 			batch.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		node.add_child(batch)
+	if far > 0.0: FarTrees.stand(node,plants,meshes,_catalog.roles,_plant_material,far)
 
 ## The plate's plant catalog, read once from its garden view (`source`, the
 ## live GardenView) or, without one, from an offline one: per part key its
