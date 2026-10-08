@@ -70,6 +70,8 @@ func _uniforms(path: String) -> Array:
 func _shaders() -> void:
 	var water := _uniforms("res://shaders/reference_water.gdshader")
 	check(water.has("depth_read") and water.has("below_sky"),"The islands' water compiles with the bed read per pixel and the cloud in its mirror")
+	var sea := _uniforms("res://shaders/sky_ocean.gdshader")
+	check(sea.has("tint_depths") and sea.has("mirror_steps") and sea.has("paws"),"The ocean's water compiles with its depth ramp, its mirror and its cat's paws")
 	check(_uniforms("res://shaders/sky_below_ceiling.gdshader").has("volume_reach"),"The cloud's underside compiles")
 	check(_uniforms("res://shaders/reference_sky.gdshader").has("below_world"),"The sky compiles with its overcast")
 	var rock := _uniforms("res://shaders/reference_surface.gdshader")
@@ -218,14 +220,13 @@ func _follows() -> void:
 	await process_frame
 
 ## The ocean's sheet: rings ever coarser out past REACH, no crack between
-## them (every edge of the sheet's inside shared by two faces), the chop's
-## fetch full near and calm far.
+## them (every edge of the sheet's inside shared by two faces), drawn with
+## the sea's own water (shaders/sky_ocean.gdshader), not the islands' ponds.
 func _sheet() -> void:
 	var mesh := SkyBelow._sheet()
 	var arrays := mesh.surface_get_arrays(0)
 	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
 	var faces: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
-	var fetch: PackedFloat32Array = arrays[Mesh.ARRAY_CUSTOM0]
 	var reach := 0.0
 	for v in vertices: reach = maxf(reach,maxf(absf(v.x),absf(v.z)))
 	print("     the sheet: %d vertices, %d triangles, out to %.0f m" % [vertices.size(),faces.size()/3,reach])
@@ -245,16 +246,9 @@ func _sheet() -> void:
 		# The sheet's own outer edge is open; any other is a crack.
 		if maxf(absf(a.x),absf(a.z)) < reach-0.01 or maxf(absf(b.x),absf(b.z)) < reach-0.01: open += 1
 	check(open == 0,"No cracks between its rings (%d open edges inside)" % open)
-	var near_fetch := 0.0
-	var far_fetch := 99.0
-	for i in range(vertices.size()):
-		var r := Vector2(vertices[i].x,vertices[i].z).length()
-		if r < 20.0: near_fetch = maxf(near_fetch,fetch[i*4])
-		if r > SkyBelow.CALM.y: far_fetch = minf(far_fetch,fetch[i*4])
-	check(near_fetch >= SkyBelow.OPEN_FETCH-0.01 and far_fetch < 0.01,"Its chop is full near (fetch %.1f m) and calm far out (%.2f m)" % [near_fetch,far_fetch])
 	var lower := SkyBelow.new()
 	var sea: ShaderMaterial = lower.ocean.material_override
-	check(sea.get_shader_parameter("depth_read") == true and is_equal_approx(float(sea.get_shader_parameter("below_sky")),1.0) and sea.get_shader_parameter("depth_tint") == true,"It is the islands' water, made a sea: the bed's depth per pixel, the cloud overhead in its mirror")
+	check(sea.shader.resource_path == "res://shaders/sky_ocean.gdshader" and is_equal_approx(float(sea.get_shader_parameter("below_sky")),1.0) and (sea.get_shader_parameter("tint_depths") as Vector3).is_equal_approx(SkyBelow.TINT_DEPTHS),"It is the sea's own water: its depth ramp, the cloud overhead in its mirror")
 	lower.archipelago.free()
 	lower.free()
 
@@ -525,7 +519,7 @@ func _live() -> void:
 	check(eye.sky.flight.w == 0.0,"The painted sea never parted")
 	var arch: Node3D = eye.lower.archipelago
 	check(arch.islets.ground_source != null and arch.taken_from == eye.islands.islets.ground_source and arch.islets.ground_source.get_shader_parameter("look_shift") == Vector3(0.0,SkyBelow.OCEAN,0.0),"The islands wear the sky islets' ground, its looks read from the ocean's height")
-	check(eye.lower.ocean.material_override.get_shader_parameter("depth_read") == true,"The ocean is the islands' water")
+	check((eye.lower.ocean.material_override as ShaderMaterial).shader.resource_path == "res://shaders/sky_ocean.gdshader","The ocean is the sea's own water")
 	# The islands round the plane, built now.
 	arch.build_near(eye.glide.position,500.0)
 	check(arch.island_count() > 3,"The archipelago stands round it (%d islands)" % arch.island_count())
