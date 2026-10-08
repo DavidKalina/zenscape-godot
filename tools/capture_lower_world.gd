@@ -8,8 +8,12 @@ extends SceneTree
 ##   shelf: looking down on an island's shelf and its shallows;
 ##   up: from low over the water, looking up at the cloud's underside;
 ##   island: on foot on an island's top, looking out to sea;
-##   golden: the cruise at golden hour;
-##   night: the cruise at night;
+##   golden, night: the cruise at golden hour and at night;
+##   up_golden, up_night: the look up at golden hour and at night;
+##   level, level_golden, level_night: level at cruise height out over open
+##     water to the horizon; level_sun: the same at golden hour into the sun;
+##   dive: on the way down, just out under the cloud, looking ahead and down;
+##   climb: on the way back up, under the cloud, looking up and ahead;
 ##   open: low over open water, away from the islands, looking downwind;
 ##   high: plane height (60 m) over a shelf, looking along the coast;
 ##   <landform>-plane, <landform>-low: with --landform=a,b, each landform's
@@ -17,7 +21,7 @@ extends SceneTree
 ##     and from low over the water by it.
 ## Rendered only when asked for (needs a window):
 ##   Godot --windowed --path . --resolution 1280x720 -s res://tools/capture_lower_world.gd \
-##     -- --no-title --below --out=/private/tmp/zs-lower-world [--only=emerge,cruise] [--no-ocean] [--no-mirror]
+##     -- --no-title --below --out=/private/tmp/zs-lower-world [--only=emerge,cruise] [--no-ocean] [--no-mirror] [--hide=Name,Name]
 var scene: Node3D
 var eye: Node
 var out := "/private/tmp/zs-lower-world"
@@ -112,6 +116,14 @@ func run() -> void:
 		{"label":"night","hour":night,"eye":middle-away*(r+90.0)+Vector3.UP*(water-middle.y+28.0),"look":middle+away*200.0+Vector3.DOWN*(middle.y-water),"chase":true},
 		{"label":"open","hour":noon,"eye":middle-away*(r+260.0)+Vector3.UP*(water-middle.y+9.0),"look":middle-away*(r+600.0)+side*80.0+Vector3.DOWN*(middle.y-water+30.0)},
 		{"label":"high","hour":noon,"eye":middle-away*(r+70.0)+side*40.0+Vector3.UP*(water-middle.y+60.0),"look":middle+side*(r*1.5)+Vector3.DOWN*(middle.y-water)},
+		{"label":"up_golden","hour":golden,"eye":middle-away*(r+60.0)+Vector3.UP*(water-middle.y+12.0),"look":middle-away*(r+60.0)+away*120.0+Vector3.UP*(-60.0-middle.y)},
+		{"label":"up_night","hour":night,"eye":middle-away*(r+60.0)+Vector3.UP*(water-middle.y+12.0),"look":middle-away*(r+60.0)+away*120.0+Vector3.UP*(-60.0-middle.y)},
+		{"label":"level","hour":noon,"eye":Vector3(start.x,water+30.0,start.z),"look":Vector3(start.x,water+30.0,start.z)-away*1000.0+Vector3.DOWN*25.0},
+		{"label":"level_golden","hour":golden,"eye":Vector3(start.x,water+30.0,start.z),"look":Vector3(start.x,water+30.0,start.z)-away*1000.0+Vector3.DOWN*25.0},
+		{"label":"level_night","hour":night,"eye":Vector3(start.x,water+30.0,start.z),"look":Vector3(start.x,water+30.0,start.z)-away*1000.0+Vector3.DOWN*25.0},
+		{"label":"level_sun","hour":golden,"eye":Vector3(start.x,water+30.0,start.z),"look":Vector3.ZERO,"sun":true},
+		{"label":"dive","hour":noon,"eye":Vector3(start.x,-152.0,start.z),"look":Vector3(start.x,-152.0,start.z)+away*400.0+Vector3.DOWN*220.0},
+		{"label":"climb","hour":noon,"eye":Vector3(start.x,-175.0,start.z),"look":Vector3(start.x,-175.0,start.z)+away*300.0+Vector3.UP*200.0},
 	]
 	# The landforms --landform= laid ahead of the way down (SkyArchipelago
 	# `arrive`): each from plane height off its shore and from low over the
@@ -138,6 +150,7 @@ func run() -> void:
 		await _hold(shot,240 if first else 90)
 		if "--no-ocean" in OS.get_cmdline_user_args(): eye.lower.ocean.visible = false
 		if "--no-mirror" in OS.get_cmdline_user_args(): eye.lower.water.set_shader_parameter("mirror_steps",0)
+		_hide_asked()
 		if "--red-sky" in OS.get_cmdline_user_args():
 			scene._environment.background_mode = Environment.BG_COLOR
 			scene._environment.background_color = Color.RED
@@ -147,6 +160,16 @@ func run() -> void:
 		await still(shot.label)
 	print("LOWER done")
 	quit(0)
+
+## --hide=Name,Name hides every node of those names, to find what draws
+## what in a still.
+func _hide_asked() -> void:
+	for argument: String in OS.get_cmdline_user_args():
+		if not argument.begins_with("--hide="): continue
+		for n: String in argument.trim_prefix("--hide=").split(","):
+			for node in scene.find_children(n,"",true,false):
+				if node is Node3D: (node as Node3D).visible = false
+				print("LOWER hid ",node.get_path())
 
 func _timing(count: int) -> Vector2:
 	await RenderingServer.frame_post_draw
@@ -183,6 +206,11 @@ func _hold(shot: Dictionary, count: int) -> void:
 		glide.position = at
 		scene.world_clock.running = false
 		scene.world_clock.set_time(scene.world_clock.day,hour)
+		if shot.get("sun",false):
+			var sun := Vector3.UP
+			var volume: Node = eye.lower.cloud_volume
+			if volume != null and volume.celestial != null: sun = volume.celestial.state.get("zs_sun_direction",Vector3.UP)
+			look = at+Vector3(sun.x,0.0,sun.z).normalized()*1000.0+Vector3.DOWN*12.0
 		var delta := 1.0/60.0
 		var view_eye := at
 		var view_look := look

@@ -7,21 +7,30 @@ extends Node3D
 ## The two worlds never show together. Above, the sea never parts under
 ## --below (scripts/sky_flight.gd); the swap is made deep in the sea's
 ## vapour (`band`), under a full white-out, with CROSS metres of play each
-## way so it never flickers at the line (`cross`). Below, the sky is the
-## overcast (shaders/reference_sky.gdshader `below_world`), the ranges' rock
-## runs on down past the sea (scripts/sky_peaks.gd `open_sea`), the haze is
-## the overcast's pearl and thickest by the water (scripts/sky_haze.gd), and
-## the ocean (`ocean`) lies OCEAN down, the glide's floor just over it
-## (SkyGlide `floor_y`, `water`).
+## way so it never flickers at the line (`cross`). Below, the sky past the
+## deck is the lower world's air (shaders/reference_sky.gdshader
+## `below_world`), the ranges' rock runs on down past the sea (scripts/
+## sky_peaks.gd `open_sea`), the haze is thickest by the water (scripts/
+## sky_haze.gd), and the ocean (`ocean`) lies OCEAN down, the glide's
+## floor just over it (SkyGlide `floor_y`, `water`).
 ##
 ## Overhead, the cloud sea is seen from beneath: the cloud volume (scripts/
 ## cloud_volume.gd), which marches its heaps from wherever the eye is, draws
 ## their undersides near, grey-blue over their hearts and lit through their
-## gaps; over them, a plane just over the swap (`ceiling`, shaders/
-## sky_below_ceiling.gdshader) is the light that shows through the gaps,
-## and out past the volume's reach it paints the undersides itself. Without
+## gaps, in the deck's colours from beneath (its `from_below`); over them,
+## a plane just over the swap (`ceiling`, shaders/sky_below_ceiling
+## .gdshader) is what shows through the gaps, the brighter cloud lit from
+## above and here and there a rift onto the open sky, and out past the
+## volume's reach it paints the undersides itself, settling far out to the
+## same mean as the volume's far heaps so the handover never shows. Without
 ## the volume (`--old-clouds`, or no RenderingDevice) the ceiling paints
-## them everywhere and the old near sea is put away while below.
+## them everywhere and the old near sea is put away while below. Over it
+## all lies the lower world's air (`air`, shaders/sky_below_air.gdshader):
+## the far islands and ranges in layers into it, rock fading up into the
+## cloud before it meets the deck, and the sun's shafts down through the
+## heaps' gaps, read off the volume's shade map. The air and the deck take
+## the hour: cool pearl by day, warm toward a low sun, soft blue at night
+## (shaders/reference_sky_common.gdshaderinc zsBelowAir, zsBelowDeck).
 ##
 ## The ocean is a sea of its own (shaders/sky_ocean.gdshader), not the
 ## islands' pond water, which stays as it is: smooth and glassy, its swell,
@@ -70,6 +79,8 @@ const BAND := Vector4(-65.0,-95.0,-115.0,-145.0)
 const PREPARE := -60.0
 ## Half the ceiling's span (m): SkyWorld VIEW_FAR.
 const REACH := 9000.0
+## The air's sheet draws after the see-through pass's water and cloud.
+const AIR_PRIORITY := 100
 ## The ocean's sheet (`_sheet`): its finest cells (m) and the inner
 ## square's half (in those cells).
 const SHEET_STEP := 2.0
@@ -104,6 +115,10 @@ var cloud_volume: Node3D
 var scene: Node
 var ocean: MeshInstance3D
 var ceiling: MeshInstance3D
+## The lower world's air (shaders/sky_below_air.gdshader): a sheet over the
+## screen that lays the air perspective, the rock going up into the cloud
+## and the light shafts through the heaps' gaps over the scene.
+var air: MeshInstance3D
 var archipelago: Node3D
 ## The ocean's water (`_sea_water`).
 var water: ShaderMaterial
@@ -133,6 +148,23 @@ func _init() -> void:
 	ceiling.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	ceiling.set_meta("skip_reflection",true)
 	add_child(ceiling)
+	air = MeshInstance3D.new()
+	air.name = "Air"
+	var quad := QuadMesh.new()
+	quad.size = Vector2(2.0,2.0)
+	air.mesh = quad
+	var haze := ShaderMaterial.new()
+	haze.shader = preload("res://shaders/sky_below_air.gdshader")
+	haze.render_priority = AIR_PRIORITY
+	haze.set_shader_parameter("ocean",OCEAN)
+	haze.set_shader_parameter("ceiling",CEILING)
+	air.material_override = haze
+	air.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	air.ignore_occlusion_culling = true
+	# Drawn over the whole screen wherever the camera looks: never culled.
+	air.custom_aabb = AABB(Vector3.ONE*-1e6,Vector3.ONE*2e6)
+	air.set_meta("skip_reflection",true)
+	add_child(air)
 	archipelago = SkyArchipelago.new()
 	archipelago.ocean = OCEAN
 	_show()
@@ -217,11 +249,14 @@ func landing_spot(point: Vector3, reach: float) -> Vector3:
 func _show() -> void:
 	ocean.visible = below
 	ceiling.visible = below
+	air.visible = below
 	archipelago.visible = below
 	if peaks != null and peaks.has_method("open_sea"): peaks.open_sea(below)
 	# The old near sea, seen from under its floor, is put away; the cloud
 	# volume draws the heaps from below itself.
 	if near_sea != null and cloud_volume == null: near_sea.visible = not below
+	# The cloud volume's heaps, seen from beneath, take the deck's colours.
+	if cloud_volume != null: (cloud_volume.get("material") as ShaderMaterial).set_shader_parameter("from_below",1.0 if below else 0.0)
 
 ## The cloud volume's reach (m, its near sea's), or 0 with none drawing.
 func _volume_reach() -> float:

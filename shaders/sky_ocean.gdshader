@@ -76,9 +76,11 @@ uniform float foam = 1.0;
 // step's length (m) and how much each grows.
 uniform int mirror_steps = 12;
 uniform vec2 mirror_march = vec2(2.5, 1.55);
-// How much of the hour's colour the pearl overcast lends the mirror.
-uniform float sky_warmth = 0.55;
-// 1 under the cloud sea: the sky mirrored is the overcast (zsBelowAir).
+// How much more of the hour's colour the mirror takes over what the air
+// and the deck already carry (zsBelowAir, zsBelowDeck take the hour).
+uniform float sky_warmth = 0.0;
+// 1 under the cloud sea: the sky mirrored is the lower world's air at a low
+// angle and the deck's underside overhead (zsBelowAir, zsBelowDeck).
 uniform float below_sky = 1.0;
 // How much of the sun's and moon's path shows through the overcast.
 uniform float glint_share = 0.35;
@@ -282,7 +284,7 @@ void fragment() {
 	reflected.y = abs(reflected.y);
 	vec3 sky = zsSkyGradient(reflected);
 	if (below_sky > 0.0) {
-		vec3 pearl = zsBelowAir(reflected);
+		vec3 pearl = mix(zsBelowAir(reflected), zsBelowDeck(reflected), smoothstep(0.15, 0.6, reflected.y));
 		vec3 hour = zsSkyBase(vec3(reflected.x, 0.05, reflected.z));
 		float hour_lum = max(dot(hour, vec3(0.2126, 0.7152, 0.0722)), 0.02);
 		vec3 warm = pearl * mix(vec3(1.0), clamp(hour / hour_lum, vec3(0.6), vec3(1.6)), sky_warmth);

@@ -166,14 +166,65 @@
     }
     return col;
   }
-  // The overcast under the cloud sea (scripts/sky_below.gd): a pale pearl
-  // grey as bright as the sky's own horizon, lighter overhead where the
-  // cloud's underside is lit through, dimmed with the night.
+  // Under the cloud sea (scripts/sky_below.gd) the light comes down through
+  // the deck and in under it from far off. How golden the hour is there
+  // (the sun low but up), and how much a bearing faces the sun (0 to 1).
+  float zsBelowGolden() {
+    return smoothstep(0.42, 0.06, zs_sun_direction.y) * smoothstep(-0.12, 0.02, zs_sun_direction.y);
+  }
+  float zsBelowToSun(vec3 dir) {
+    float s = dot(normalize(dir.xz + 1e-4), normalize(zs_sun_direction.xz + 1e-4)) * 0.5 + 0.5;
+    return s * s;
+  }
+  vec3 zsBelowSunHue() {
+    return max(zs_cloud_sun, vec3(1e-4)) / max(max(max(zs_cloud_sun.r, zs_cloud_sun.g), zs_cloud_sun.b), 1e-3);
+  }
+  // The air under the cloud sea: a pearl as bright as the sky's own
+  // horizon, cool and clean by day, lit warm toward the sun's bearing
+  // where its light comes in under the deck far off, more so at golden
+  // hour, with a lavender shade away from a low sun; at night a deep soft
+  // blue, a breath of violet in it.
   vec3 zsBelowAir(vec3 dir) {
     vec2 seen = normalize(dir.xz + 1e-4);
     float lum = max(dot(zsSkyBase(vec3(seen.x, 0.0, seen.y)), vec3(0.2126, 0.7152, 0.0722)), 0.04);
-    vec3 pearl = mix(vec3(0.80, 0.83, 0.87), vec3(0.93, 0.93, 0.95), smoothstep(-0.1, 0.6, dir.y));
-    return pearl * lum * mix(1.0, 0.4, zs_night * zs_celestial_clear);
+    float deep = zs_night * zs_celestial_clear;
+    float golden = zsBelowGolden();
+    float toward = zsBelowToSun(dir);
+    vec3 pearl = mix(vec3(0.79, 0.84, 0.91), vec3(0.92, 0.94, 0.98), smoothstep(-0.1, 0.6, dir.y));
+    pearl = mix(pearl, pearl * mix(vec3(1.0), zsBelowSunHue(), 0.25 + 0.5 * golden), toward * (1.0 - deep));
+    pearl = mix(pearl, pearl * vec3(0.93, 0.88, 1.03), (1.0 - toward) * golden);
+    pearl = mix(pearl, vec3(0.62, 0.66, 1.0), deep);
+    return pearl * max(lum * mix(1.0, 0.6, deep), 0.06 * deep) * (1.0 + 0.18 * toward * (1.0 - deep));
+  }
+  // The deck's underside seen from beneath, as a whole (what its billows
+  // average to far off, and the cloud volume's far heaps go into): the air
+  // a shade darker and cooler over, warmed toward a low sun, which lights
+  // the deck from under its edge.
+  vec3 zsBelowDeck(vec3 dir) {
+    vec3 air = zsBelowAir(vec3(dir.x, 0.15, dir.z));
+    float glow = zsBelowGolden() * zsBelowToSun(dir) * (1.0 - zs_night * zs_celestial_clear);
+    return air * mix(vec3(0.84, 0.86, 0.93), mix(vec3(1.0), zsBelowSunHue(), 0.7) * 1.06, glow * 0.75);
+  }
+  // What a rift in the deck opens on: the open sky over the cloud sea,
+  // its upper blue and the sun's glow, with the sunlit cloud's own white
+  // (`silver`, 0 to 1) round its edges.
+  vec3 zsBelowOpen(vec3 dir, float silver) {
+    float deep = zs_night * zs_celestial_clear;
+    vec3 up = normalize(vec3(dir.x, max(dir.y, 0.0) + 0.45, dir.z));
+    vec3 sky = zsSkyBase(up) * mix(1.0, 0.45, deep);
+    float sun_away = sqrt(max(2.0 * (1.0 - dot(normalize(dir), zs_sun_direction)), 0.0));
+    float day = smoothstep(-0.06, 0.04, zs_sun_direction.y) * zs_celestial_clear;
+    sky += zsBelowSunHue() * (exp(-sun_away / 0.2) * 0.45 + exp(-sun_away / 0.7) * 0.12) * day;
+    // The sunlit cloud: as bright as the light on it, its hue the sun's
+    // but softened toward white, warmest toward the sun's bearing; at night
+    // the moon's cool grey, and the sky between left to show through.
+    vec3 bright = min(zs_cloud_sky * 0.9 + zs_cloud_sun * 0.65, vec3(1.0));
+    float level = min(max(max(bright.r, bright.g), bright.b), 1.0);
+    float toward = zsBelowToSun(dir);
+    vec3 lit = level * mix(vec3(1.0), zsBelowSunHue(), mix(0.18, 0.5, toward) * (0.4 + 0.6 * zsBelowGolden()));
+    lit *= mix(0.97, 1.1, toward);
+    lit = mix(lit, vec3(0.78, 0.84, 1.0) * max(dot(bright, vec3(0.2126, 0.7152, 0.0722)), 0.12), deep * 0.6);
+    return mix(sky, max(lit, sky), silver * (1.0 - 0.75 * deep));
   }
   // The bow lies in the air in front of everything in the sky, hills included.
   vec3 zsApplyBow(vec3 col, vec3 dir) {

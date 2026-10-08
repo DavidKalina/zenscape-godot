@@ -73,6 +73,8 @@ func _shaders() -> void:
 	var sea := _uniforms("res://shaders/sky_ocean.gdshader")
 	check(sea.has("tint_depths") and sea.has("mirror_steps") and sea.has("paws"),"The ocean's water compiles with its depth ramp, its mirror and its cat's paws")
 	check(_uniforms("res://shaders/sky_below_ceiling.gdshader").has("volume_reach"),"The cloud's underside compiles")
+	check(_uniforms("res://shaders/sky_below_air.gdshader").has("ceiling"),"The lower world's air compiles")
+	check(_uniforms("res://shaders/cloud_volume_composite.gdshader").has("from_below"),"The cloud volume compiles with its look from beneath")
 	check(_uniforms("res://shaders/reference_sky.gdshader").has("below_world"),"The sky compiles with its overcast")
 	var rock := _uniforms("res://shaders/reference_surface.gdshader")
 	check(rock.has("sea_open") and rock.has("below_sink"),"The ranges' rock compiles with the lower world")
@@ -110,11 +112,13 @@ func _off() -> void:
 func _line() -> void:
 	var lower := SkyBelow.new()
 	check(not lower.below and not lower.ocean.visible and not lower.ceiling.visible and not lower.archipelago.visible,"It starts above, the ocean, the cloud's underside and the islands hidden")
+	check(not lower.air.visible,"And the lower world's air off")
 	check(SkyBelow.band(SkyBelow.SEA) == 1.0 and SkyBelow.band(-40.0) == 0.0 and SkyBelow.band(-200.0) == 0.0,"The vapour is whole at the line and clear well over and under it")
 	check(SkyBelow.CEILING > SkyBelow.SEA+SkyBelow.CROSS and SkyBelow.CEILING < SkyBelow.BAND.y,"The ceiling lies just over the swap, inside the whole white-out")
 	check(not lower.cross(SkyBelow.SEA-1.0) and not lower.below,"Just under the line it stays above")
 	check(lower.cross(SkyBelow.SEA-SkyBelow.CROSS-0.1) and lower.below,"Deeper it crosses below")
 	check(lower.ocean.visible and lower.ceiling.visible and lower.archipelago.visible,"Below, the ocean, the cloud's underside and the islands show")
+	check(lower.air.visible,"And the lower world's air is laid on")
 	var flips := 0
 	for i in range(600):
 		if lower.cross(SkyBelow.SEA+sin(i*0.37)*(SkyBelow.CROSS-0.2)): flips += 1
