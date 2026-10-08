@@ -213,7 +213,9 @@ var kind := "meadow"
 ## its land reaches from the middle.
 var radius := 5.0
 var reach := 5.0
-## The grid: its points, three ids a face, cells a side and half its width.
+## The grid: its step (m, STEP unless the recipe's `step`), its points,
+## three ids a face, cells a side and half its width.
+var step := STEP
 var points := PackedVector2Array()
 var ids := PackedInt32Array()
 var cells := 0
@@ -258,6 +260,8 @@ var flowers: Array[String] = []
 ## rock and `deep` (RockLooks `seeded`). What it may set, each optional,
 ## every place in the islet's frame (m):
 ##   radius: the land's radius, instead of the kind's range;
+##   step: the grid's step (m), coarser than the plate's STEP for a big
+##     island seen from the air (a landform's, scripts/landform_hills.gd);
 ##   mounds / peaks: Array of Vector4(x, z, reach, height), smooth hill
 ##     mounds or the crag's ridged peaks, instead of the kind's own;
 ##   dome: how high the ground rises inland, instead of the kind's;
@@ -274,7 +278,10 @@ var flowers: Array[String] = []
 ##     companion); tree_size: a multiplier range on each tree's size;
 ##   drifts: Vector2i, how many flower drifts; apart: a multiplier on how
 ##     far apart the trees keep;
-##   undergrowth: a multiplier on the kind's undergrowth;
+##   undergrowth: a multiplier on the kind's undergrowth; tufts, on its
+##     grass tufts;
+##   erode: the erosion's own strengths over the kind's (ERODE: detail, k,
+##     max_cut);
 ##   woodland: a real wood planted over it (scripts/woodland.gd: glades,
 ##     giants, clumped canopy, the floor), on top of the trees above;
 ##   objects: Array of records ({asset, x, z, angle, scale, tint}) set as
@@ -293,8 +300,6 @@ var flowers: Array[String] = []
 ##   tear: a ravine's half, cut from a whole island along a jagged tear
 ##     (scripts/ravine_cut.gd: its side, the tear's shape, filled by
 ##     `share`);
-##   step: the grid's step (m) instead of STEP, coarser for a big island
-##     (a mountain's, scripts/landform_mountains.gd), so its faces stay few;
 ##   massif: a mountain island's massif (scripts/mountain_massif.gd), raised
 ##     as a spire is and held in `spire`.
 var recipe := {}
@@ -315,8 +320,6 @@ var cleft := {}
 ## A recipe's `spire` (a Dictionary, may be empty): a real peak raised on the
 ## islet (scripts/mountain_spire.gd), which draws its own faces; null if none.
 var spire: RefCounted = null
-## The grid's step (m): STEP, or the recipe's `step`.
-var grid_step := STEP
 
 ## An islet laid out by hand from `spec` (see `recipe`), its kind
 ## `spec.kind`, the rest of it seeded by `seed_value` as any islet's is.
@@ -353,8 +356,8 @@ func _shape(seed_value: int, forced: String) -> void:
 	radius = rng.randf_range(across.x,across.y)*0.5
 	if recipe.has("radius"): radius = float(recipe.radius)
 	var area := PI*radius*radius
-	grid_step = float(recipe.get("step",STEP))
-	var grid := _grid(ceili((radius*REACH+MARGIN)/grid_step),grid_step)
+	step = float(recipe.get("step",STEP))
+	var grid := _grid(ceili((radius*REACH+MARGIN)/step),step)
 	points = grid.points
 	ids = grid.ids
 	cells = grid.cells
@@ -556,6 +559,7 @@ func _erode() -> void:
 			var w: Vector3 = hit[1]
 			base[j*n+i] = w.x*heights[ids[f*3]]+w.y*heights[ids[f*3+1]]+w.z*heights[ids[f*3+2]]
 	var settings: Dictionary = (ERODE[kind] as Dictionary).duplicate()
+	settings.merge(recipe.get("erode",{}),true)
 	settings.merge(ERODE_COMMON)
 	settings.merge({"size":n,"cell":cell,"origin":origin,"seed":(seed*7+53) & 0x7fffffff,"edge_inner":1.0e5,"edge_outer":1.0e5+1.0})
 	var delta := Erosion.erode(base,fixed,settings)
@@ -644,8 +648,8 @@ func wet(p: Vector2) -> bool:
 ## The land face holding `p`, as Vector4(face, weights a, b, c's first two),
 ## or face -1 off the land.
 func _locate(p: Vector2) -> Array:
-	var i := floori((p.x+grid_shift.x+half)/grid_step)
-	var j := floori((p.y+grid_shift.y+half)/grid_step)
+	var i := floori((p.x+grid_shift.x+half)/step)
+	var j := floori((p.y+grid_shift.y+half)/step)
 	for dj in [0,-1,1]:
 		for di in [0,-1,1]:
 			var ci: int = i+di
@@ -901,7 +905,7 @@ func _plant(rng: RandomNumberGenerator) -> void:
 			if at == null: continue
 			_add("reeds" if rng.randf() < 0.5 else "bank_grass",at,rng.randf()*TAU,rng.randf_range(0.6,1.0))
 	# Grass tufts over the grass, thicker round trunks and stones.
-	for n in range(_count(rng,area*TUFTS)):
+	for n in range(_count(rng,area*TUFTS*float(recipe.get("tufts",1.0)))):
 		var at: Variant = _find(rng,0.25,TREE_STEEP,[],0.0,true)
 		if at == null: continue
 		_add("grass_tuft",at,rng.randf()*TAU,rng.randf_range(0.7,1.2))

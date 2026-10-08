@@ -57,8 +57,8 @@ const APART := 0.42
 ## A summit's profile out to its reach: [share of the reach out, share of
 ## its height], summit to foot. A cliff band where the share drops fast,
 ## a ledge where it lingers; the lower third a long green apron.
-const PROFILE := [[0.0,1.0],[0.08,0.9],[0.18,0.72],[0.26,0.61],[0.34,0.5],[0.45,0.36],[0.56,0.24],
-	[0.68,0.13],[0.8,0.06],[0.9,0.02],[1.0,0.0]]
+const PROFILE := [[0.0,1.0],[0.06,0.9],[0.14,0.74],[0.2,0.64],[0.27,0.52],[0.36,0.4],[0.45,0.27],[0.55,0.17],
+	[0.66,0.1],[0.78,0.05],[0.9,0.015],[1.0,0.0]]
 ## How far a summit reaches (share of its room to the shore), how far its
 ## aretes push out (share) and how wide they are (radians), and how far
 ## the gullies between pull in.
@@ -75,9 +75,9 @@ const SHORE_EASE := 3.0
 ## COL_HALF_M) and how steeply its walls rise (rise over run, at least; more
 ## where a summit stands close, so the walls never cut a summit down).
 const COL := Vector2(0.4,0.48)
-const COL_HALF := 0.13
-const COL_HALF_M := Vector2(3.0,9.0)
-const COL_WALL := 1.8
+const COL_HALF := 0.16
+const COL_HALF_M := Vector2(4.0,10.0)
+const COL_WALL := 1.4
 ## The corrie: how far out on the main summit's flank (share of its reach),
 ## its floor's height (share of the height), its size (share of the
 ## radius) and its flat floor (share of its size), the height its headwall
@@ -85,9 +85,9 @@ const COL_WALL := 1.8
 ## close, so it never cuts the summit down); the glen falls from its floor
 ## to the shore.
 const CORRIE_OUT := Vector2(0.3,0.38)
-const CORRIE_FLOOR := Vector2(0.24,0.3)
-const CORRIE_SIZE := Vector2(0.22,0.28)
-const CORRIE_FLAT := 0.42
+const CORRIE_FLOOR := Vector2(0.2,0.26)
+const CORRIE_SIZE := Vector2(0.3,0.36)
+const CORRIE_FLAT := 0.48
 const CORRIE_WALL := 0.75
 ## The coarse solid's spacing (m, share of the radius held within COARSE_M),
 ## how far its points are jittered (share of the spacing) and their height
@@ -99,19 +99,19 @@ const LIFT_JITTER := 0.035
 const CREST_WEAVE := 0.12
 ## The bands: the treeline and the rock above it (shares of the height,
 ## ragged by BAND_RAG of the height), and the snow line (share).
-const TREELINE := Vector2(0.27,0.33)
-const ROCKLINE := 0.1
+const TREELINE := Vector2(0.22,0.28)
+const ROCKLINE := 0.08
 const BAND_RAG := 0.05
 const SNOWLINE := Vector2(0.54,0.62)
 ## Faces steeper than this are rock wherever they are; scree lies between
 ## SCREE_SLOPE and it under the rock line, in fans.
-const ROCK_SLOPE := 1.2
-const SCREE_SLOPE := 0.55
+const ROCK_SLOPE := 1.35
+const SCREE_SLOPE := 0.6
 const SCREE_FANS := 0.05
 ## The conifers: how many a square metre of forest band, at least and most,
 ## the steepest they stand on, their size, spacing (m, times their size),
 ## the odds of a juniper or (low down) a birch.
-const CONIFERS := 0.03
+const CONIFERS := 0.045
 const CONIFER_COUNT := Vector2i(30,160)
 const CONIFER_SLOPE := 1.5
 const CONIFER_SIZE := Vector2(0.9,1.4)
@@ -262,7 +262,8 @@ func _lay_out(islet: RefCounted, rng: RandomNumberGenerator) -> void:
 	glen = (-across).rotated(rng.randf_range(-0.35,0.35)) if summits.size() < 3 else across.rotated(rng.randf_range(-0.35,0.35))
 	var room := _room_from(islet,main,glen.angle())
 	var c := main+glen*room*rng.randf_range(CORRIE_OUT.x,CORRIE_OUT.y)
-	corrie = Vector3(c.x,c.y,radius*rng.randf_range(CORRIE_SIZE.x,CORRIE_SIZE.y))
+	# Its flat floor ends short of the summit, so the headwall stands under it.
+	corrie = Vector3(c.x,c.y,minf(radius*rng.randf_range(CORRIE_SIZE.x,CORRIE_SIZE.y),main.distance_to(c)/(CORRIE_FLAT+0.3)))
 	corrie_floor = height*rng.randf_range(CORRIE_FLOOR.x,CORRIE_FLOOR.y)
 	glen_length = _room_from(islet,c,glen.angle())+2.0
 	var flat := corrie.z*CORRIE_FLAT
@@ -624,7 +625,7 @@ func problems(islet: RefCounted, label: String) -> Array:
 		var low := INF
 		var high := -INF
 		# Read inside the pad by a grid face, where it is wholly level.
-		var inner := maxf(PAD-float(islet.grid_step)*1.2,0.8)
+		var inner := maxf(PAD-float(islet.step)*1.2,0.8)
 		for k in range(9):
 			var q := hut if k == 8 else hut+Vector2.from_angle(TAU*k/8.0)*inner
 			low = minf(low,float(islet.ground_at(q)))

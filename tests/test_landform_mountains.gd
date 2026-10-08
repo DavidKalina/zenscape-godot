@@ -1,4 +1,5 @@
 extends SceneTree
+## suite: serial
 ## Mountains, the lower world's landform (scripts/landform_mountains.gd,
 ## scripts/mountain_massif.gd): over a few seeds and sizes its recipe makes
 ## a sky islet (scripts/sky_islet.gd `author`) whose massif stands its main
