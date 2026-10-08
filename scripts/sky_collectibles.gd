@@ -33,8 +33,8 @@ extends Node3D
 ## token (CollectibleLines WALKER_REACH, PLANE_REACH: the plane's larger, so
 ## air lines are fair at speed; read along the way moved since the last
 ## frame, so a fast plane never skips one) takes it: its twist and wisp, a
-## quiet readout (scripts/collectibles_hud.gd), a soft chime when its line
-## is whole. Collected tokens are kept with the world (`save_state`, in
+## quiet readout (scripts/collectibles_hud.gd) and a bright blip, a sparkling
+## run over it when its line is whole. Collected tokens are kept with the world (`save_state`, in
 ## SkyIslands' state) and never stand again.
 ##
 ## --no-collectibles leaves them out. --collectibles-near-home lays every
