@@ -1522,14 +1522,18 @@ static func _courses(b: Build, pose: Transform3D, x0: float, x1: float, y0: floa
 	var k := 0
 	var cap := 0.2 if coping else 0.0
 	while y < most-cap-0.06:
-		var h := course*b.rng.randf_range(0.78,1.22)
+		# Courses of uneven height: mostly about `course`, now and then a
+		# thin one or a deep one, as old walling is.
+		var roll := b.rng.randf()
+		var h := course*(b.rng.randf_range(0.5,0.66) if roll < 0.15 else (b.rng.randf_range(1.3,1.55) if roll > 0.86 else b.rng.randf_range(0.8,1.18)))
 		if most-cap-(y+h) < course*0.45: h = most-cap-y
 		var ya := y
 		var yb := y+h
 		x = x0-(0.0 if k%2 == 0 else b.rng.randf_range(0.25,0.5))
 		while x < x1-0.02:
 			var xa := maxf(x,x0)
-			var xb := minf(x+b.rng.randf_range(0.6,1.35),x1)
+			var pick := b.rng.randf()
+			var xb := minf(x+(b.rng.randf_range(0.35,0.6) if pick < 0.22 else (b.rng.randf_range(1.45,2.0) if pick > 0.8 else b.rng.randf_range(0.7,1.3))),x1)
 			if x1-xb < 0.3: xb = x1
 			x = xb
 			var mid := (xa+xb)*0.5
