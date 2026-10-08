@@ -12,7 +12,10 @@ float sky_at(vec2 uv) {
 }
 
 void fragment() {
-	vec4 air = texture(air_color, SCREEN_UV);
+	// Under the cloud sea (glide_below) the plate's air, marched from the
+	// plate's ground up, would stand as a wall of fog three hundred metres
+	// thick over the lower world: there it is left out.
+	vec4 air = texture(air_color, SCREEN_UV) * (1.0 - glide_below);
 	vec3 color = air.rgb + zs_surface_haze(texture(scene_color, SCREEN_UV).rgb, SCREEN_UV) * (1.0 - air.a);
 	color += zs_look_rays(SCREEN_UV, SCREEN_PIXEL_SIZE, FRAGCOORD.xy, air.a);
 	color = zs_look_grade(color, SCREEN_UV, SCREEN_PIXEL_SIZE);

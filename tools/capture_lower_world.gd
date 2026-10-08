@@ -102,6 +102,9 @@ func run() -> void:
 		if not only.is_empty() and shot.label not in only: continue
 		await _hold(shot,240 if first else 90)
 		if "--no-ocean" in OS.get_cmdline_user_args(): eye.lower.ocean.visible = false
+		if "--red-sky" in OS.get_cmdline_user_args():
+			scene._environment.background_mode = Environment.BG_COLOR
+			scene._environment.background_color = Color.RED
 		first = false
 		var timing := await _timing(30)
 		print("LOWER %s frame %.2f ms, gpu %.2f ms, below %s" % [shot.label,timing.x,timing.y,str(eye.below())])
