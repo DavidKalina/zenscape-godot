@@ -44,9 +44,9 @@ const LookPass = preload("res://scripts/look_pass.gd")
 ## rows, back to front, and where each row stands (z, m).
 const ORDER := ["hall","gothic","aqueduct"]
 const FAMILY_NAMES := {"gothic":"Gothic abbey","aqueduct":"Aqueduct","hall":"Colossus hall"}
-const ROWS := {"gothic":[["rose_gable","arch","lancet_wall"],["turret","vault","buttress","pier"],["wall","stairs","fallen_pier","tomb_chest","floor","glyph_stone"]],
+const ROWS := {"gothic":[["rose_gable","arch","lancet_wall"],["turret","vault","buttress","pier"],["wall","stairs","fallen_pier","tomb_chest","floor"]],
 	"aqueduct":[["aqueduct_end","aqueduct_two_tier","aqueduct_span","aqueduct_broken","aqueduct_stump"]],
-	"hall":[["hall_bay","hall_column","hall_mask"],["hall_beam","hall_slab","hall_medallion"]]}
+	"hall":[["hall_bay","hall_column"],["hall_beam","hall_slab"]]}
 const ROW_Z := {"gothic":[-13.0,-1.5,9.0],"aqueduct":[0.0],"hall":[-1.0,17.0]}
 ## The room between families on the plate (m), and how far behind its rows
 ## a family's centrepiece stands (to its middle).
@@ -376,13 +376,8 @@ func _hall_scene(area: Node3D, z: float) -> Rect2:
 	var scene := Hall.hall(_seed*17+3,HALL_WEATHERED)
 	scene.position = Vector3(0.0,0.0,z)
 	area.add_child(scene)
-	var mask := Hall.mask(_seed*17+9,0.8)
-	mask.position = Vector3(-Hall.BAY-7.0,0.0,z+4.0)
-	mask.rotation.y = 0.75
-	area.add_child(mask)
 	_areas.hall.scene = scene
-	_areas.hall.mask = mask
-	_tag(area,"The colossus hall: two bays, the medallion, the fallen mask",Vector3(0.0,0.02,z+Hall.BAY*0.5+6.0),1.0)
+	_tag(area,"The colossus hall",Vector3(0.0,0.02,z+Hall.BAY*0.5+6.0),1.0)
 	_areas.hall.centre = {"focus":Vector3(0.0,3.0,z),"distance":30.0,"yaw":0.3,"pitch":0.2}
 	return Rect2(-Hall.BAY*1.5-12.0,z-Hall.BAY*0.5-4.0,Hall.BAY*3.0+16.0,Hall.BAY+12.0)
 
@@ -419,7 +414,6 @@ func _set_shafts(on: bool) -> void:
 ## A piece as the gallery shows it.
 func _piece(id: String, index: int, weathered: float) -> Node3D:
 	var seed_value := _seed*101+index
-	if id == "glyph_stone": return RuinKit.glyph_stone(seed_value,weathered,RuinKit.GLYPHS[(_seed+int(weathered)*3)%RuinKit.GLYPHS.size()])
 	return RuinKit.piece(id,seed_value,weathered)
 
 ## A piece's extent, its rubble's far strays left out (the stone near its
@@ -689,7 +683,6 @@ func _set_night(on: bool) -> void:
 	_night = on
 	_celestial.set_phase(NIGHT if on else DAY)
 	_face_sun()
-	RuinKit.set_night(1.0 if on else 0.0)
 	_say()
 
 ## Turns the layout so the sun (by night the moon) comes from over the

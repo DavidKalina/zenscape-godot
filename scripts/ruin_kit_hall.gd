@@ -1,17 +1,14 @@
 extends RefCounted
-## The ruin kit's colossus hall (scripts/ruin_kit.gd, the same stone, wear,
-## growth and glyph glow): a dim hypostyle hall, after the shrine halls of
+## The ruin kit's colossus hall (scripts/ruin_kit.gd, the same stone, wear
+## and growth): a dim hypostyle hall, after the shrine halls of
 ## Shadow of the Colossus, cut in the kit's facets. Massive drum columns far
 ## thicker than the abbey's clustered piers, on deep moulded bases, their
 ## drums carved in bands (a ring of roundels, a band of pointed niche
 ## panels with a boss in each) under a flared capital and a square abacus;
 ## deep architrave beams in two fasciae under a crown moulding, a row of
 ## roundels along them; heavy flat roof slabs laid over the beams, cracked,
-## the light coming in through the cracks and the gaps; a great carved
-## medallion in the floor with a glyph at its heart; and the fallen mask of
-## a colossus, a carved stone face-plate half sunk in the ground, its eye
-## sockets holding the glyph light. The carving is raised and sunk facets,
-## never fine detail.
+## the light coming in through the cracks and the gaps. The carving is
+## raised and sunk facets, never fine detail.
 ##
 ## Scale: columns BAY apart, their faces 5.7 m clear (THREAD and more), the
 ## beams' soffits COLUMN_H up: a plane flies through the hall under the
@@ -75,20 +72,6 @@ const LANCET := Vector4(1.8,1.4,2.8,1.0)
 ## slab leans from a heap at its foot up onto them: RAMP its slope.
 const SNAP := 3.4
 const RAMP := deg_to_rad(33.0)
-## The floor medallion: its radius, its rings' outer radii, its stones'
-## top (a little under the paving's), the glyph's size.
-const MEDALLION := 2.7
-const MEDALLION_RINGS := [0.75,1.45,1.75,2.45,2.7]
-const MEDALLION_TOP := 0.16
-const MEDALLION_GLYPH := 1.0
-## The mask: width, height and the face-plate's thickness (m); how far it
-## leans back (radians), how deep its chin is sunk (m); the brow ledge's
-## reach out of the face (STAND and more), the eye sockets' half size.
-const MASK := Vector3(4.4,6.0,0.9)
-const MASK_LEAN := deg_to_rad(50.0)
-const MASK_SINK := 0.9
-const BROW := 0.65
-const MASK_GLYPH := 0.62
 
 # --- The pieces -----------------------------------------------------------------
 
@@ -98,8 +81,6 @@ static func piece(id: String, seed_value: int, weathered := 0.0) -> Node3D:
 		"hall_beam": return beam(seed_value,weathered)
 		"hall_slab": return slabs(seed_value,weathered)
 		"hall_bay": return bay(seed_value,weathered)
-		"hall_medallion": return medallion(seed_value,weathered)
-		"hall_mask": return mask(seed_value,weathered)
 	return null
 
 ## 6. A colossus column: a deep moulded base, the shaft in drums (a plain
@@ -169,13 +150,12 @@ static func slabs(seed_value: int, weathered := 0.0) -> Node3D:
 ## 9. A hall bay: four columns BAY apart (`columns`: bit 0 the back left,
 ## 1 the back right, 2 the front left, 3 the front right; a bay set beside
 ## another leaves out the two it shares), the architraves on them and a
-## middle beam, the slab roof over all, a paved floor round the medallion
-## (`with_medallion`), and the back wall between the back columns, through
+## middle beam, the slab roof over all, a paved floor, and the back wall between the back columns, through
 ## it the knife-edge slit (`slit`). Weathered, the roof is gapped (the
 ## light comes down in shafts), the back wall's head torn down, the paving
 ## broken and grassed; `corner`: the front right column snapped and the
 ## roof over its corner come down, a slab leaning up onto the beams.
-static func bay(seed_value: int, weathered := 0.0, columns := 15, slit := true, with_medallion := true, corner := true) -> Node3D:
+static func bay(seed_value: int, weathered := 0.0, columns := 15, slit := true, corner := true) -> Node3D:
 	var b := Build.new(seed_value,weathered,"HallBay")
 	var h := BAY*0.5
 	var ruined := corner and weathered > 0.45 and (columns & 8) != 0
@@ -213,7 +193,7 @@ static func bay(seed_value: int, weathered := 0.0, columns := 15, slit := true, 
 	var gone: Array = []
 	if ruined: gone = [[2,0],[2,1],[1,1],[0,1]]
 	if weathered > 0.25:
-		var extra := [1,1] if with_medallion else [b.rng.randi_range(0,1),b.rng.randi_range(0,1)]
+		var extra := [b.rng.randi_range(0,2),b.rng.randi_range(0,1)]
 		if not extra in gone: gone.append(extra)
 	if weathered > 0.7 and b.rng.randf() < weathered:
 		var more := [0,b.rng.randi_range(0,1)]
@@ -222,22 +202,18 @@ static func bay(seed_value: int, weathered := 0.0, columns := 15, slit := true, 
 	var x1 := h+(BEAM.y if right else 0.0)
 	_roof(b,x0,x1,-h-BEAM.y,h+BEAM.y,soffit+BEAM.x,{"strips":3,"rows":2,"gone":gone,"tipped":false})
 	if slit or (columns & 3) == 3 or (columns & 3) == 2: _back_wall(b,-h,slit)
-	_paving(b,with_medallion,columns)
+	_paving(b,columns)
 	if ruined: _collapse(b)
 	for i in range(int(weathered*6.0)):
 		b.hang(Vector3(b.rng.randf_range(-h,h),0.0,b.rng.randf_range(-h,h)),b.rng.randf_range(0.8,2.6)*weathered,true)
 	RuinKit._rubble(b,h+1.5,int(round(weathered*b.rng.randf_range(4.0,8.0))))
 	var root := b.finish()
-	if with_medallion:
-		var disc := medallion(seed_value+1,weathered)
-		disc.name = "Medallion"
-		root.add_child(disc)
 	if slit: root.set_meta("slit",Vector3(0.0,KNIFE.y+KNIFE.z*0.5,-h))
 	root.set_meta("snapped",ruined)
 	return root
 
 ## The hall the gallery puts together: two bays side by side (BAY apart
-## along X), the left round the medallion with the knife-edge slit in its
+## along X), the left with the knife-edge slit in its
 ## back wall, the right its corner fallen; the left bay walled in, so it is
 ## dim and the light comes in as beams: an end wall at -X with a pointed
 ## gate through it (the plane's way in, THREAD wide and more, out through
@@ -253,232 +229,16 @@ static func hall(seed_value: int, weathered := 0.8) -> Node3D:
 	for i in range(int(weathered*5.0)):
 		walls.tuft(Vector3(-BAY+walls.rng.randf_range(0.6,1.4),0.0,walls.rng.randf_range(-3.0,3.0)),0.4,5)
 	root.add_child(walls.finish())
-	var left := bay(seed_value,weathered,15,true,true,false)
+	var left := bay(seed_value,weathered,15,true,false)
 	left.name = "LeftBay"
 	left.position.x = -BAY*0.5
 	root.add_child(left)
-	var right := bay(seed_value+7,weathered,10,false,false,true)
+	var right := bay(seed_value+7,weathered,10,false,true)
 	right.name = "RightBay"
 	right.position.x = BAY*0.5
 	root.add_child(right)
 	root.set_meta("slit",left.position+(left.get_meta("slit") as Vector3))
 	return root
-
-## 10. A floor medallion: a great disc of carved stones in rings, a glyph
-## cut in its heart giving the faint glow (`set_night`), eight radial
-## stones round it each pitched up to a ridge (radial facets), a raised
-## band, a ring of stones stepping up and down by turns, a moulded outer
-## rim. Weathered, one side sunk and tilted under a drift of rubble and
-## turf, stones gone, grass and moss in the joints.
-static func medallion(seed_value: int, weathered := 0.0, glyph := "") -> Node3D:
-	var b := Build.new(seed_value,weathered,"Medallion")
-	if glyph.is_empty(): glyph = RuinKit.GLYPHS[b.rng.randi()%RuinKit.GLYPHS.size()]
-	b.ground = -0.04
-	var rings: Array = MEDALLION_RINGS
-	var bury_angle := b.rng.randf()*TAU
-	var buried := Vector3(cos(bury_angle),0.0,sin(bury_angle))
-	var bed := 0.12
-	# The ring of each stone: its inner and outer radius, count, top, and
-	# whether it rides up to a ridge or steps.
-	var specs := [[rings[0]+0.03,rings[1],8,MEDALLION_TOP,"ridge"],[rings[1]+0.03,rings[2],16,MEDALLION_TOP+0.07,"band"],
-		[rings[2]+0.03,rings[3],16,MEDALLION_TOP,"step"],[rings[3]+0.03,rings[4],24,MEDALLION_TOP+0.05,"rim"]]
-	for spec: Array in specs:
-		var r0: float = spec[0]
-		var r1: float = spec[1]
-		var count: int = spec[2]
-		var top: float = spec[3]
-		var kind: String = spec[4]
-		var turn := b.rng.randf()*0.2
-		for k in range(count):
-			var a0 := turn+TAU*k/count
-			var a1 := turn+TAU*(k+1)/count
-			var am := (a0+a1)*0.5
-			var dm := Vector3(cos(am),0.0,sin(am))
-			# How buried this stone is: 1 on the buried side's edge.
-			var under := clampf(dm.dot(buried),0.0,1.0)*smoothstep(0.8,2.6,(r0+r1)*0.5)*weathered
-			if under > 0.35 and b.rng.randf() < under*0.8: continue
-			if weathered > 0.3 and b.rng.randf() < 0.06*weathered: continue
-			var t := top+(0.035 if kind == "step" and k%2 == 0 else 0.0)
-			var planes := _sector(b,r0,r1,a0,a1,t-bed,t,0.07 if kind == "ridge" else 0.0)
-			if kind == "rim":
-				var n := (dm+Vector3.UP*1.2).normalized()
-				planes.append(Plane(n,n.dot(dm*r1+Vector3.UP*(t-0.07))))
-			if kind == "band":
-				for s: float in [-1.0,1.0]:
-					var n := (dm*s+Vector3.UP*1.4).normalized()
-					var edge: float = r1 if s > 0.0 else r0
-					planes.append(Plane(n,n.dot(dm*edge+Vector3.UP*(t-0.035))))
-			var sink := under*b.rng.randf_range(0.08,0.2)
-			var tilt := Basis(dm.cross(Vector3.UP).normalized(),-under*b.rng.randf_range(0.05,0.15))
-			var pose := RuinKit._jiggle(b,Transform3D(tilt,Vector3(0.0,-sink,0.0)),0.25)
-			var tone := RuinKit._stone(b,1.06 if kind == "band" or kind == "rim" else 1.0)
-			b.solid(planes,pose,tone,true,true,[],-1,0.7)
-	# The heart: a sixteen-sided stone, the glyph cut in its top.
-	var heart: Array[Plane] = [Plane(Vector3.BACK,0.0),Plane(Vector3.FORWARD,bed+0.1)]
-	for k in range(16):
-		var a := TAU*k/16.0
-		heart.append(Plane(Vector3(cos(a),sin(a),0.0),rings[0]))
-	var face := Transform3D(Basis(Vector3.RIGHT,-PI*0.5),Vector3(0.0,MEDALLION_TOP+0.02,0.0))
-	var open := b.solid(heart,face,RuinKit._stone(b,0.98),true,true,[],0,0.4)
-	var outline := PackedVector2Array()
-	for p in open: outline.append(Vector2(p.x,p.y))
-	if outline.size() >= 3: RuinKit._carve(b,face,glyph,Vector2.ZERO,0.0,outline,MEDALLION_GLYPH)
-	# The bed it is laid in, dark between the joints.
-	var bed_planes: Array[Plane] = [Plane(Vector3.DOWN,0.0),Plane(Vector3.UP,MEDALLION_TOP-bed+0.01)]
-	for k in range(24):
-		var a := TAU*k/24.0
-		bed_planes.append(Plane(Vector3(cos(a),0.0,sin(a)),rings[4]+0.02))
-	b.solid(bed_planes,Transform3D.IDENTITY,Color(RuinKit.MOSS).lerp(Color("3c362d"),0.6),false,false,[],-1,1.0,false)
-	if weathered > 0.2:
-		# The drift and turf over its buried side.
-		var edge: Vector3 = buried*float(rings[4])
-		RuinKit._drift(b,edge+buried*0.2,1.3,3+int(weathered*6.0))
-		_turf(b,edge+buried*0.4,buried,1.6+1.2*weathered)
-	_feet(b,buried*(rings[4]+0.3),1.4,int(2+weathered*8.0))
-	for i in range(int(weathered*6.0)):
-		var a := b.rng.randf()*TAU
-		b.tuft(Vector3(cos(a),0.0,sin(a))*b.rng.randf_range(rings[1],rings[4]),0.3,3)
-	# The halo, low over the glyph at night.
-	var halo := MeshInstance3D.new()
-	halo.name = "Halo"
-	halo.mesh = Build.halo_quad()
-	halo.material_override = RuinKit.materials().halo
-	halo.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	halo.transform = Transform3D(Basis.from_scale(Vector3.ONE*RuinKit.HALO*1.6),Vector3(0.0,MEDALLION_TOP+0.35,0.0))
-	b.root.add_child(halo)
-	b.root.set_meta("glyph",glyph)
-	return b.finish()
-
-## 11. The fallen mask of a colossus: a great carved stone face-plate,
-## long, pointed at the chin, lying back half sunk in the ground and tipped
-## a little to one side, its horns broken. A forehead plate with a row of
-## studs and a roundel with a glyph cut in it; a heavy brow in a shallow
-## vee, its top near level as the mask lies (a ledge to stand on); slanted
-## six-sided eye sockets under it, their backs giving the glyph light
-## (faint by day, alive at night); a nose ridge; temple plates bevelled
-## back; cheek plates pitched into slopes that climb from the ground to
-## the sockets; a grill of bars at the mouth; a chin plate. Inanimate: a
-## relic. Weathered, cracked across, a cheek plate fallen beside it, mossed
-## over.
-static func mask(seed_value: int, weathered := 0.0, glyph := "") -> Node3D:
-	var b := Build.new(seed_value,weathered,"Mask")
-	if glyph.is_empty(): glyph = RuinKit.GLYPHS[b.rng.randi()%RuinKit.GLYPHS.size()]
-	b.ground = -0.05
-	var lean := Basis(Vector3.RIGHT,-MASK_LEAN-b.rng.randf_range(-0.03,0.05))
-	var roll := Basis(Vector3.BACK,b.rng.randf_range(0.08,0.16)*(-1.0 if b.rng.randf() < 0.5 else 1.0))
-	var face := Transform3D(roll*lean,Vector3(0.0,-MASK_SINK,-1.2))
-	var top := MASK.y
-	var crack := Plane()
-	var cracked := weathered > 0.35
-	if cracked:
-		var n := Vector3(1.0,b.rng.randf_range(-0.7,0.7),0.0).normalized()
-		crack = Plane(n,n.dot(Vector3(b.rng.randf_range(-0.5,0.5),b.rng.randf_range(1.6,4.6),0.0)))
-	# The plate behind it all: long, widest at the cheekbones, a pointed chin.
-	var shield := [Vector2(-1.55,top),Vector2(1.55,top),Vector2(2.05,top-0.65),Vector2(2.18,3.1),Vector2(1.35,0.9),Vector2(0.42,0.0),Vector2(-0.42,0.0),Vector2(-1.35,0.9),Vector2(-2.18,3.1),Vector2(-2.05,top-0.65)]
-	_split(b,_plate(shield,-MASK.z,0.0,0.0),face,RuinKit._stone(b,0.92),cracked,crack)
-	# The forehead plate, its studs, the roundel and the glyph.
-	var brow_y := 3.95
-	var forehead := [Vector2(-1.42,top-0.14),Vector2(1.42,top-0.14),Vector2(1.9,top-0.7),Vector2(1.98,brow_y+0.2),Vector2(-1.98,brow_y+0.2),Vector2(-1.9,top-0.7)]
-	_split(b,_plate(forehead,-0.1,0.22,0.08),face,RuinKit._stone(b,1.0),cracked,crack)
-	for k in range(7):
-		var x := (k-3.0)*0.42
-		_disc(b,face,Vector3(x,top-0.42,0.2),Vector3.BACK,0.09,0.08,6,RuinKit._stone(b,1.08))
-	var roundel_at := Vector3(0.0,brow_y+0.95,0.22)
-	_ring(b,face,roundel_at,0.48,0.6,0.12)
-	var disc: Array[Plane] = [Plane(Vector3.BACK,0.0),Plane(Vector3.FORWARD,0.12)]
-	for k in range(12):
-		var a := TAU*k/12.0
-		disc.append(Plane(Vector3(cos(a),sin(a),0.0),0.48))
-	var disc_pose := face*Transform3D(Basis.IDENTITY,roundel_at+Vector3(0.0,0.0,0.07))
-	var open := b.solid(disc,disc_pose,RuinKit._stone(b,0.96),true,true,[],0,0.4)
-	var round := PackedVector2Array()
-	for p in open: round.append(Vector2(p.x,p.y))
-	if round.size() >= 3: RuinKit._carve(b,disc_pose,glyph,Vector2.ZERO,0.0,round,MASK_GLYPH)
-	# The brow: two heavy stones in a shallow vee, their tops tipped most of
-	# the way to level as the mask lies, so the brow is a ledge.
-	var level := (lean.inverse()*Vector3.UP).normalized()
-	var tip := Vector3.UP.slerp(level,0.62)
-	var steepest := 0.0
-	for s: float in [-1.0,1.0]:
-		var outer := Vector2(s*2.02,brow_y+0.3)
-		var inner := Vector2(0.0,brow_y-0.08)
-		var along := Vector3(inner.x-outer.x,inner.y-outer.y,0.0).normalized()
-		var n := (tip-along*tip.dot(along)).normalized()
-		steepest = maxf(steepest,acos(clampf((face.basis*n).normalized().y,-1.0,1.0)))
-		var mid := Vector3((outer.x+inner.x)*0.5,(outer.y+inner.y)*0.5,0.0)
-		var brow: Array[Plane] = [Plane(Vector3.FORWARD,0.1),Plane(Vector3.BACK,BROW),Plane(Vector3(s,0.0,0.0),2.06),Plane(Vector3(-s,0.0,0.0),0.0)]
-		brow.append(Plane(n,n.dot(mid)))
-		brow.append(Plane(-n,-n.dot(mid)+0.38))
-		var chamfer := (Vector3.BACK-n*0.8).normalized()
-		brow.append(Plane(chamfer,chamfer.dot(mid+Vector3.BACK*BROW-n*0.12)))
-		var bevel := (Vector3.BACK+Vector3(s,0.0,0.0)).normalized()
-		brow.append(Plane(bevel,bevel.dot(Vector3(s*2.06,0.0,BROW-0.25))))
-		_split(b,brow,face,RuinKit._stone(b,1.05),cracked,crack)
-	# The nose: a ridge from between the brows down to the mouth.
-	var nose := _plate([Vector2(-0.36,brow_y),Vector2(0.36,brow_y),Vector2(0.42,1.45),Vector2(-0.42,1.45)],-0.1,0.6,0.0)
-	for s: float in [-1.0,1.0]:
-		var bevel := Vector3(s,0.0,0.95).normalized()
-		nose.append(Plane(bevel,bevel.dot(Vector3(s*0.12,0.0,0.6))))
-	var ridge := Vector3(0.0,0.14,1.0).normalized()
-	nose.append(Plane(ridge,ridge.dot(Vector3(0.0,1.45,0.6))))
-	_split(b,nose,face,RuinKit._stone(b,1.04),cracked,crack)
-	var eye_y := 2.95
-	for s: float in [-1.0,1.0]:
-		# The socket's rim: six points, the outer top drawn up and out (a
-		# slant), under the brow; its back the glow.
-		var rim := [Vector2(s*0.42,eye_y+0.2),Vector2(s*0.85,eye_y+0.42),Vector2(s*1.62,eye_y+0.5),Vector2(s*1.86,eye_y+0.05),Vector2(s*1.45,eye_y-0.4),Vector2(s*0.62,eye_y-0.36)]
-		var pane := PackedVector2Array()
-		for p: Vector2 in rim: pane.append(p)
-		if s > 0.0: pane.reverse()
-		b.flat(pane,0.015,face,Vector3.BACK,Color(0.5,0.5,0.5),true)
-		# The plates round it: under the eye, the temple, the corners filled
-		# out to the rim.
-		var under := _plate([Vector2(s*0.4,eye_y-0.36),Vector2(s*1.5,eye_y-0.4),Vector2(s*1.9,eye_y-0.66),Vector2(s*0.42,eye_y-0.7)],-0.1,0.36,0.08)
-		_split(b,under,face,RuinKit._stone(b,1.03),cracked,crack)
-		var temple := _plate([Vector2(s*1.86,eye_y+0.05),Vector2(s*1.62,eye_y+0.5),Vector2(s*2.08,eye_y+0.62),Vector2(s*2.16,eye_y-0.2),Vector2(s*1.9,eye_y-0.66),Vector2(s*1.5,eye_y-0.4)],-0.1,0.4,0.0)
-		var flare := Vector3(s,0.0,0.9).normalized()
-		temple.append(Plane(flare,flare.dot(Vector3(s*1.75,0.0,0.4))))
-		_split(b,temple,face,RuinKit._stone(b,0.99),cracked,crack)
-		for wedge: Array in [[rim[0],rim[1],Vector2(s*0.4,brow_y-0.1)],[rim[1],rim[2],Vector2(s*0.4,brow_y-0.1)],[rim[5],rim[0],Vector2(s*0.4,eye_y-0.38)]]:
-			b.solid(_plate(wedge,-0.1,0.34,0.0),face,RuinKit._stone(b,0.95),false,true,[],-1,0.4)
-		var halo := MeshInstance3D.new()
-		halo.name = "Halo" if s < 0.0 else "Halo2"
-		halo.mesh = Build.halo_quad()
-		halo.material_override = RuinKit.materials().halo
-		halo.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		halo.transform = Transform3D(Basis.from_scale(Vector3.ONE*RuinKit.HALO*1.4),face*Vector3(s*1.12,eye_y,0.4))
-		b.root.add_child(halo)
-		# The cheek: pitched from thick at its foot to thin under the eye, a
-		# slope to climb as the mask lies.
-		var cheek := _plate([Vector2(s*0.46,eye_y-0.72),Vector2(s*1.92,eye_y-0.7),Vector2(s*1.36,0.98),Vector2(s*0.5,1.12)],-0.1,0.95,0.08)
-		var pitch := Vector3(0.0,0.5,1.0).normalized()
-		cheek.append(Plane(pitch,pitch.dot(Vector3(0.0,eye_y-0.72,0.18))))
-		if weathered > 0.55 and s > 0.0 and b.rng.randf() < weathered:
-			# This one has fallen: lying beside the mask, cracked.
-			var lie := Transform3D(Basis(Vector3.UP,b.rng.randf_range(0.4,0.9))*Basis(Vector3.RIGHT,-PI*0.5+0.3),Vector3(2.9,0.45,0.6))
-			b.solid(cheek,lie*Transform3D(Basis.IDENTITY,Vector3(-s*1.15,-1.6,-0.2)),RuinKit._stone(b,1.0),true,true,[],-1,1.3)
-		else:
-			_split(b,cheek,face,RuinKit._stone(b,1.02),cracked,crack)
-		# A horn from the upper corner, out and up, broken off.
-		var horn_pose := face*Transform3D(Basis(Vector3.BACK,-s*0.75)*Basis(Vector3.RIGHT,-0.25),Vector3(s*1.85,top-0.35,-0.45))
-		var length := b.rng.randf_range(1.1,1.7) if s < 0.0 else b.rng.randf_range(0.5,0.9)
-		b.solid(RuinKit._prism(5,0.3,0.18,0.0,length,PI*0.1),horn_pose,RuinKit._stone(b,1.02),true,true,RuinKit._break(b,length,0.3,0.35,0.0),-1,1.2)
-	# The mouth's grill: bars across under the nose, between the cheeks.
-	for k in range(3):
-		var y := 0.42+k*0.32
-		var bar := _plate([Vector2(-0.48,y+0.11),Vector2(0.48,y+0.11),Vector2(0.48,y-0.11),Vector2(-0.48,y-0.11)],-0.1,0.3,0.05)
-		b.solid(bar,face,RuinKit._stone(b,1.04),true,true,[],-1,0.7)
-	_split(b,_plate([Vector2(-0.42,0.02),Vector2(0.42,0.02),Vector2(0.58,0.24),Vector2(-0.58,0.24)],-0.1,0.4,0.06),face,RuinKit._stone(b,1.0),false,crack)
-	# Round it: a drift where it struck, turf banked over its sunk chin.
-	var side := face.basis*Vector3.RIGHT
-	RuinKit._drift(b,Vector3(0.0,0.0,0.9)+side*2.2,1.3,3+int(weathered*6.0))
-	_turf(b,Vector3(0.0,0.0,0.8),Vector3.BACK,2.6)
-	_feet(b,Vector3(0.0,0.0,0.3),2.6,int(4+weathered*8.0))
-	RuinKit._rubble(b,3.2,int(round(weathered*b.rng.randf_range(3.0,7.0))))
-	b.root.set_meta("glyph",glyph)
-	# How steep the brow's ledge lies (radians from level), for the walk.
-	b.root.set_meta("brow_slope",steepest)
-	return b.finish()
 
 # --- Parts ----------------------------------------------------------------------
 
@@ -730,9 +490,9 @@ static func _wall(b: Build, pose: Transform3D, span: float, opening: Vector4, lo
 			b.solid(RuinKit._box(b,Vector3(w+0.3,0.08,WALL_THICK*0.5+0.05)),pose*RuinKit._settle(b,Vector3(0.0,opening.y-0.08,0.0),0.3),RuinKit._stone(b,1.06))
 
 ## The paving round the bay's middle: big worn slabs in rough rows, left
-## out round the columns' feet and the medallion; weathered, slabs gone to
+## out round the columns' feet; weathered, slabs gone to
 ## grass, heaved and tipped, tufts in the joints.
-static func _paving(b: Build, round_middle: bool, columns: int) -> void:
+static func _paving(b: Build, columns: int) -> void:
 	var h := BAY*0.5+0.4
 	var feet: Array[Vector2] = []
 	var corners := [Vector2(-1,-1),Vector2(1,-1),Vector2(-1,1),Vector2(1,1)]
@@ -750,7 +510,6 @@ static func _paving(b: Build, round_middle: bool, columns: int) -> void:
 			var clear := true
 			for f in feet:
 				if absf(mid.x-f.x) < PLINTH.y+0.5 and absf(mid.y-f.y) < PLINTH.y+0.5: clear = false
-			if round_middle and mid.length() < MEDALLION+0.6+PAVING.y*0.4: clear = false
 			if clear and b.rng.randf() > 0.4*b.weathered:
 				var lift := b.rng.randf_range(-0.04,0.0)+b.rng.randf_range(-0.04,0.03)*b.weathered
 				var tilt := Basis(Vector3(b.rng.randf_range(-1,1),0.0,b.rng.randf_range(-1,1)).normalized(),b.rng.randf_range(0.004,0.02)+b.rng.randf()*0.06*b.weathered)
@@ -781,110 +540,11 @@ static func _collapse(b: Build) -> void:
 		_drum(b,Transform3D(lie,Vector3(x,COLUMN_R*0.97,h+1.6+1.1*k)),"plain" if k == 0 else "roundel",0.8,[])
 		x += 0.7
 	_capital(b,Transform3D(Basis(Vector3.UP,0.5)*Basis(Vector3.RIGHT,PI-0.14),Vector3(h+1.2,0.92,h+3.4)))
-	# The other slab, broken on the floor inside the front, half on the
-	# medallion's edge where there is one.
+	# The other slab, broken on the floor inside the front.
 	for s: float in [-1.0,1.0]:
 		var piece := RuinKit._box(b,Vector3(1.2,SLAB*0.5,0.9),0.03)
 		var tilt := Basis(Vector3.UP,b.rng.randf_range(-0.4,0.4))*Basis(Vector3.RIGHT,s*0.2)*Basis(Vector3.BACK,b.rng.randf_range(-0.25,0.25))
 		b.solid(piece,Transform3D(tilt,Vector3(h-1.5+s*0.9,0.42,h-0.9+s*0.6)),RuinKit._stone(b,1.0),true,true,RuinKit._break(b,SLAB,1.0,0.5,0.0),-1,1.0)
-
-## A sector of a ring of stones: `r0` to `r1`, angles `a0` to `a1`, from
-## `y0` to `y1`, a hair of joint either side; `ridge` its top pitched up to
-## a ridge along its middle radius.
-static func _sector(b: Build, r0: float, r1: float, a0: float, a1: float, y0: float, y1: float, ridge := 0.0) -> Array[Plane]:
-	var am := (a0+a1)*0.5
-	var dm := Vector3(cos(am),0.0,sin(am))
-	var t := Vector3(-sin(am),0.0,cos(am))
-	var out: Array[Plane] = [Plane(Vector3.DOWN,-y0),Plane(Vector3(sin(a0),0.0,-cos(a0)),-0.006),Plane(Vector3(-sin(a1),0.0,cos(a1)),-0.006),Plane(-dm,-r0),Plane(dm,r1)]
-	if ridge > 0.0:
-		var hw := r1*sin((a1-a0)*0.5)
-		for s: float in [-1.0,1.0]:
-			var n := (Vector3.UP*hw+t*s*ridge).normalized()
-			out.append(Plane(n,n.dot(Vector3.UP*(y1+ridge))))
-		out.append(Plane(Vector3.UP,y1+ridge))
-	else:
-		out.append(Plane(Vector3.UP,y1))
-	return out
-
-## A carved plate: `outline`'s slab from `back` to `front`, its front
-## arrises bevelled `bevel` deep.
-static func _plate(outline: Array, back: float, front: float, bevel: float) -> Array[Plane]:
-	var out := _outline_planes(outline,back,front)
-	if bevel <= 0.0: return out
-	var centre := Vector2.ZERO
-	for p: Vector2 in outline: centre += p
-	centre /= outline.size()
-	for i in range(outline.size()):
-		var a: Vector2 = outline[i]
-		var c: Vector2 = outline[(i+1)%outline.size()]
-		var n2 := Vector2(c.y-a.y,a.x-c.x).normalized()
-		if n2.dot(a-centre) < 0.0: n2 = -n2
-		var n := Vector3(n2.x,n2.y,1.0).normalized()
-		out.append(Plane(n,n.dot(Vector3(a.x,a.y,front))-bevel*0.7))
-	return out
-
-## The planes of a slab whose face is the convex `outline` (x, y), from
-## `back` to `front` along Z.
-static func _outline_planes(outline: Array, back: float, front: float) -> Array[Plane]:
-	var out: Array[Plane] = [Plane(Vector3.BACK,front),Plane(Vector3.FORWARD,-back)]
-	var centre := Vector2.ZERO
-	for p: Vector2 in outline: centre += p
-	centre /= outline.size()
-	for i in range(outline.size()):
-		var a: Vector2 = outline[i]
-		var c: Vector2 = outline[(i+1)%outline.size()]
-		var n2 := Vector2(c.y-a.y,a.x-c.x).normalized()
-		if n2.dot(a-centre) < 0.0: n2 = -n2
-		var n := Vector3(n2.x,n2.y,0.0)
-		out.append(Plane(n,n.dot(Vector3(a.x,a.y,0.0))))
-	return out
-
-## A slab of the mask at `pose`, whole or (`cracked`) in two along `crack`
-## with the far part shifted down and out a little.
-static func _split(b: Build, planes: Array[Plane], pose: Transform3D, tone: Color, cracked: bool, crack: Plane) -> void:
-	if not cracked:
-		b.solid(planes,pose,tone,true,true,[],-1,0.7)
-		return
-	for s: float in [-1.0,1.0]:
-		var cut: Array[Plane] = [Plane(crack.normal*s,crack.d*s-0.025)]
-		var shift := Transform3D(Basis.IDENTITY,Vector3(0.0,-0.06,0.05)*float(s > 0.0))
-		b.solid(planes,pose*shift,tone,true,true,cut,-1,0.7)
-
-## A raised ring on a face at `pose`, round `centre` (z its foot), from
-## radius `r0` to `r1`, `depth` proud: twelve stones.
-static func _ring(b: Build, pose: Transform3D, centre: Vector3, r0: float, r1: float, depth: float) -> void:
-	for k in range(12):
-		var a0 := TAU*k/12.0
-		var a1 := TAU*(k+1)/12.0
-		var am := (a0+a1)*0.5
-		var dm := Vector3(cos(am),sin(am),0.0)
-		var planes: Array[Plane] = [Plane(Vector3.FORWARD,-centre.z),Plane(Vector3.BACK,centre.z+depth)]
-		planes.append(Plane(Vector3(sin(a0),-cos(a0),0.0),Vector3(sin(a0),-cos(a0),0.0).dot(centre)-0.005))
-		planes.append(Plane(Vector3(-sin(a1),cos(a1),0.0),Vector3(-sin(a1),cos(a1),0.0).dot(centre)-0.005))
-		planes.append(Plane(-dm,(-dm).dot(centre+dm*r0)))
-		planes.append(Plane(dm,dm.dot(centre+dm*r1)))
-		var bevel := (dm+Vector3.BACK).normalized()
-		planes.append(Plane(bevel,bevel.dot(centre+dm*r1+Vector3.BACK*depth)-0.04))
-		b.solid(planes,pose,RuinKit._stone(b,1.08),false,true,[],-1,0.5)
-
-## Turf banked over a sunk edge at `at`, toward `out`, `width` across: a
-## low cut wedge of the plate's grass, never solid.
-static func _turf(b: Build, at: Vector3, out: Vector3, width: float) -> void:
-	var side := out.cross(Vector3.UP).normalized()
-	var planes: Array[Plane] = [Plane(Vector3.DOWN,0.04)]
-	for s: float in [-1.0,1.0]:
-		planes.append(Plane(side*s,width*0.5))
-		var n := (side*s*0.5+Vector3.UP).normalized()
-		planes.append(Plane(n,n.dot(side*s*width*0.35+Vector3.UP*0.22)))
-	var back := (-out+Vector3.UP*0.8).normalized()
-	planes.append(Plane(back,back.dot(-out*0.6+Vector3.UP*0.04)))
-	var front := (out+Vector3.UP*2.2).normalized()
-	planes.append(Plane(front,front.dot(out*0.9+Vector3.UP*0.04)))
-	planes.append(Plane(Vector3.UP,0.26))
-	var keep := b.frame
-	b.frame = Transform3D.IDENTITY
-	b.solid(planes,Transform3D(Basis.IDENTITY,at),RuinKit.GRASS[0],false,true,[],-1,0.5,false)
-	b.frame = keep
 
 ## Grass tufts round a foot at `at`, `reach` out: `count` of them.
 static func _feet(b: Build, at: Vector3, reach: float, count: int) -> void:

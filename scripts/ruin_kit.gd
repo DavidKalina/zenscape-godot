@@ -29,35 +29,32 @@ extends RefCounted
 ##
 ## Each piece is a static func taking a seed and `weathered` (0 to 1) and
 ## giving a Node3D, its foot on y 0 round the origin, its front toward +Z:
-## "Mesh" (stone and growth; on the glyph stone a second surface, the glow,
-## and a "Halo") and "Body", a StaticBody3D of the blocks' hulls. `piece`
-## builds one by its PIECES id.
+## "Mesh" (stone and growth, one surface) and "Body", a StaticBody3D of the
+## blocks' hulls. `piece` builds one by its PIECES id. No ornament glows:
+## the ruins are stone and growth only.
 ##   ./run-ruin-kit.command
 
-const GlyphToken = preload("res://scripts/glyph_token.gd")
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const PlaneFigure = preload("res://scripts/plane_figure.gd")
 const STONE_SHADER = preload("res://shaders/ruin_stone.gdshader")
-const GLOW_SHADER = preload("res://shaders/ruin_glow.gdshader")
-const HALO_SHADER = preload("res://shaders/cluster_halo.gdshader")
 
 ## The pieces, in the kit's order: the gothic abbey's, here.
-const PIECES := ["pier","arch","lancet_wall","rose_gable","buttress","wall","stairs","turret","vault","fallen_pier","tomb_chest","floor","glyph_stone"]
+const PIECES := ["pier","arch","lancet_wall","rose_gable","buttress","wall","stairs","turret","vault","fallen_pier","tomb_chest","floor"]
 ## The families: the gothic abbey (here), the aqueduct (scripts/
 ## ruin_kit_aqueduct.gd) and the colossus hall (scripts/ruin_kit_hall.gd),
 ## each its pieces in order; ALL_PIECES the lot.
 const AQUEDUCT_PIECES := ["aqueduct_span","aqueduct_two_tier","aqueduct_broken","aqueduct_stump","aqueduct_end"]
-const HALL_PIECES := ["hall_column","hall_beam","hall_slab","hall_bay","hall_medallion","hall_mask"]
+const HALL_PIECES := ["hall_column","hall_beam","hall_slab","hall_bay"]
 const FAMILIES := {"gothic":PIECES,"aqueduct":AQUEDUCT_PIECES,"hall":HALL_PIECES}
 const ALL_PIECES := PIECES+AQUEDUCT_PIECES+HALL_PIECES
 const NAMES := {"pier":"Clustered pier","arch":"Pointed arch","lancet_wall":"Lancet window wall",
 	"rose_gable":"Rose window gable","buttress":"Buttress","wall":"Wall","stairs":"Stair flight",
 	"turret":"Stair turret","vault":"Vault ribs","fallen_pier":"Fallen pier","tomb_chest":"Carved chest",
-	"floor":"Floor slabs","glyph_stone":"Glyph stone",
+	"floor":"Floor slabs",
 	"aqueduct_span":"Aqueduct span","aqueduct_two_tier":"Two-tier span","aqueduct_broken":"Broken span",
 	"aqueduct_stump":"Pier stump","aqueduct_end":"Aqueduct head",
 	"hall_column":"Colossus column","hall_beam":"Architrave beam","hall_slab":"Roof slabs",
-	"hall_bay":"Hall bay","hall_medallion":"Floor medallion","hall_mask":"Fallen colossus mask"}
+	"hall_bay":"Hall bay"}
 
 # --- Scale: what the pilot on foot and the plane can do drives these ---------
 # (scripts/pilot_motor.gd, scripts/plane_figure.gd, scripts/sky_glide.gd)
@@ -157,16 +154,6 @@ const VAULT_STEPS := [4.2,2.75,1.4]
 const CHEST := Vector4(2.3,1.05,0.95,0.2)
 ## Floor slabs: the patch's side, a slab's rough size, thickness (stepped on).
 const FLOOR := Vector3(4.2,0.85,0.2)
-## The glyph stone: width, depth, height (caught from the ground, under
-## GRAB_TOP); the niche's width, sill and springing; the glyph's size and
-## the cut's depth.
-const GLYPH_BLOCK := Vector3(1.25,0.8,1.62)
-const NICHE := Vector3(0.82,0.42,1.12)
-const GLYPH := 0.58
-const CARVE := 0.07
-## The glyphs a stone may carry (scripts/hud_icons.gd).
-const GLYPHS := ["sun","moon","crystal","feather","snow","island","mountain","oak","heron","deer"]
-
 # --- Look --------------------------------------------------------------------
 
 ## The stone (sRGB): an umber charcoal gritstone and a cool slate-grey one,
@@ -238,9 +225,6 @@ const SAG := Vector2(0.03,0.09)
 ## a real volume (its margin is 0.04), and a sliver walks like the block
 ## beside it anyway.
 const HULL_THIN := 0.06
-## The glow's colour and the halo's size (m) at night.
-const GLOW := Color("9ff2e2")
-const HALO := 1.15
 
 
 ## The piece with PIECES id `id`.
@@ -258,7 +242,6 @@ static func piece(id: String, seed_value: int, weathered := 0.0) -> Node3D:
 		"fallen_pier": return fallen_pier(seed_value,weathered)
 		"tomb_chest": return tomb_chest(seed_value,weathered)
 		"floor": return floor_slabs(seed_value,weathered)
-		"glyph_stone": return glyph_stone(seed_value,weathered)
 	# The other families, loaded when asked for (they build on this script).
 	if id in AQUEDUCT_PIECES: return load("res://scripts/ruin_kit_aqueduct.gd").piece(id,seed_value,weathered)
 	if id in HALL_PIECES: return load("res://scripts/ruin_kit_hall.gd").piece(id,seed_value,weathered)
@@ -271,15 +254,17 @@ static func piece(id: String, seed_value: int, weathered := 0.0) -> Node3D:
 static func hull_thickness(points: PackedVector3Array) -> float:
 	return Build.thickness(points)
 
-## The shared materials: {stone, glow, halo}.
+## How much of the small growth and scatter pieces are built with from
+## now on: 1 (the default) all of it; 0.5 about half the ivy, moss
+## cushions, tufts and rubble; 0 none. The stone itself, its wear and its
+## collision never change, so a cheap or far ruin is the same ruin; a LOD
+## pass can build a piece at two details and swap them by distance.
+static func set_detail(amount: float) -> void:
+	Build.detail = clampf(amount,0.0,1.0)
+
+## The shared materials: {stone}.
 static func materials() -> Dictionary:
 	return Build.materials()
-
-## The night on every glyph stone's glow and halo: 0 by day, 1 at full night.
-static func set_night(night: float) -> void:
-	var m := materials()
-	(m.glow as ShaderMaterial).set_shader_parameter("night",clampf(night,0.0,1.0))
-	(m.halo as ShaderMaterial).set_shader_parameter("glow",clampf(night,0.0,1.0))
 
 # --- The pieces -----------------------------------------------------------------
 
@@ -1111,70 +1096,6 @@ static func floor_slabs(seed_value: int, weathered := 0.0) -> Node3D:
 		_drum_cluster(b,Transform3D(Basis.IDENTITY,at+Vector3(0.0,0.36,0.0)),0.4,_break(b,0.4,0.5,0.9,0.0))
 	return b.finish()
 
-## 13. A glyph stone: a block on a step, a pointed niche cut into its front
-## under a gablet, and in the niche one of the sky's glyphs (scripts/
-## hud_icons.gd, traced as scripts/glyph_token.gd does) cut into the stone,
-## giving a faint light that wakes at night (`set_night`). Its top is
-## caught from the ground. `glyph` picks the glyph; empty, the seed does.
-## Weathered, it leans, chipped, the gablet broken, ivy round it.
-static func glyph_stone(seed_value: int, weathered := 0.0, glyph := "") -> Node3D:
-	var b := Build.new(seed_value,weathered,"GlyphStone")
-	if glyph.is_empty(): glyph = GLYPHS[b.rng.randi()%GLYPHS.size()]
-	var step := 0.24
-	b.solid(_box(b,Vector3(GLYPH_BLOCK.x*0.5+0.28,step*0.5,GLYPH_BLOCK.y*0.5+0.34)),_settle(b,Vector3(0.0,step*0.5,0.0),0.3),_stone(b,0.9))
-	var lean := Basis(Vector3(1.0,0.0,b.rng.randf_range(-0.4,0.4)).normalized(),b.rng.randf_range(-1.0,1.0)*(0.012+0.06*weathered))
-	var pose := Transform3D(lean,Vector3(0.0,step,0.0))
-	var hw := GLYPH_BLOCK.x*0.5
-	var hd := GLYPH_BLOCK.y*0.5
-	var ht := GLYPH_BLOCK.z-step
-	var nw := NICHE.x*0.5
-	var sill := NICHE.y-step
-	var spring := NICHE.z-step
-	var apex := spring+nw*1.25
-	var back := hd-0.22
-	var tone := _stone(b,0.98)
-	# The back, its front the niche's floor (carved, left open to the carving).
-	var back_planes: Array[Plane] = [Plane(Vector3.BACK,back),Plane(Vector3.FORWARD,hd),Plane(Vector3.LEFT,hw),Plane(Vector3.RIGHT,hw),Plane(Vector3.DOWN,0.0),Plane(Vector3.UP,ht)]
-	b.solid(back_planes,pose,tone,true,true,[],0)
-	# Beside, below and over the niche, out to the front.
-	var front: Array = [[-hw,-nw,0.0,ht],[nw,hw,0.0,ht],[-nw,nw,0.0,sill]]
-	for f: Array in front:
-		var planes: Array[Plane] = [Plane(Vector3.BACK,hd),Plane(Vector3.FORWARD,-back),Plane(Vector3.LEFT,-f[0]),Plane(Vector3.RIGHT,f[1]),Plane(Vector3.DOWN,-f[2]),Plane(Vector3.UP,f[3])]
-		b.solid(_bevel(planes,Vector3((f[0]+f[1])*0.5,(f[2]+f[3])*0.5,(back+hd)*0.5),0.03),pose,tone*(1.0+b.rng.randf_range(-0.05,0.05)))
-	for h: float in [-1.0,1.0]:
-		var planes: Array[Plane] = [Plane(Vector3.BACK,hd),Plane(Vector3.FORWARD,-back),Plane(Vector3.UP,ht),Plane(Vector3(-h,0.0,0.0),0.0),Plane(Vector3(h,0.0,0.0),nw+0.001)]
-		# Above the niche's pointed head: the line from its springing at the
-		# side up to the apex in the middle.
-		var up := Vector3(h*(apex-spring),nw,0.0).normalized()
-		planes.append(Plane(-up,-up.dot(Vector3(h*nw,spring,0.0))))
-		b.solid(planes,pose,tone)
-	# The niche's outline: a moulded pointed frame proud of the face.
-	_carve(b,pose,glyph,Vector2(0.0,(sill+spring)*0.5+0.1),back)
-	for h: float in [-1.0,1.0]:
-		var planes: Array[Plane] = [Plane(Vector3.BACK,hd+0.06),Plane(Vector3.FORWARD,-hd+0.02),Plane(Vector3(-h,0.0,0.0),-0.0)]
-		var out := Vector3(h*(apex-spring),nw,0.0).normalized()
-		planes.append(Plane(out,out.dot(Vector3(h*nw,spring,0.0))+0.1))
-		planes.append(Plane(-out,-out.dot(Vector3(h*nw,spring,0.0))+0.01))
-		planes.append(Plane(Vector3.DOWN,-spring+0.04))
-		if weathered > 0.5 and b.rng.randf() < weathered*0.7: planes.append(Plane(Vector3(h*0.3,1.0,0.2).normalized(),apex-0.1-b.rng.randf()*0.3))
-		b.solid(planes,pose,_stone(b,1.06),false,true)
-	# The gablet over it all, on the head.
-	if not (weathered > 0.55 and b.rng.randf() < weathered*0.8):
-		_gablet(b,pose*Transform3D(Basis.IDENTITY,Vector3(0.0,ht,0.06)),hw+0.06,0.38,hd+0.1)
-	else:
-		b.solid(_box(b,Vector3(hw*0.6,0.12,hd*0.5)),Transform3D(Basis(Vector3.UP,0.7)*Basis(Vector3.BACK,0.3),Vector3(hw+0.7,0.12,0.4)),_stone(b))
-	# The halo, a soft light breathing out of the niche at night.
-	var halo := MeshInstance3D.new()
-	halo.name = "Halo"
-	halo.mesh = Build.halo_quad()
-	halo.material_override = materials().halo
-	halo.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	halo.transform = Transform3D(Basis.from_scale(Vector3.ONE*HALO),pose*Vector3(0.0,(sill+apex)*0.5,hd+0.15))
-	b.root.add_child(halo)
-	_rubble(b,1.4,int(round(weathered*b.rng.randf_range(1.0,3.0))))
-	b.root.set_meta("glyph",glyph)
-	return b.finish()
-
 # --- Parts --------------------------------------------------------------------
 
 ## A clustered pier at `pose`, `height` to its abacus top: sub-base, moulded
@@ -1702,6 +1623,7 @@ static func _drift(b: Build, at: Vector3, reach: float, count: int) -> void:
 ## within `reach` and a little beyond.
 static func _rubble(b: Build, reach: float, count: int) -> void:
 	if b.weathered <= 0.0: return
+	count = int(round(count*Build.detail))
 	for i in range(count):
 		var a := b.rng.randf()*TAU
 		var dist := reach+b.rng.randf_range(-0.3,1.0)
@@ -1808,95 +1730,9 @@ static func _axial_prism(sides: int, r: float, half_h: float) -> Array[Plane]:
 static func _axial_prism_y(sides: int, r: float, h: float) -> Array[Plane]:
 	return _prism(sides,r,r,0.0,h)
 
-# --- The carving ----------------------------------------------------------------
-
-## Cuts glyph `id` into the niche's back at `pose` (the face z = `face_z`,
-## looking +Z), centred at `centre`: the face round the glyph drawn as
-## stone, the glyph's floor CARVE deep and its walls on the glow surface.
-## The face is drawn over the niche only (the rest of it is behind stone).
-## `outline` (in the same frame) is the face to draw round it, the niche's
-## unless given; `size` the glyph's (m).
-static func _carve(b: Build, pose: Transform3D, id: String, centre: Vector2, face_z: float, outline := PackedVector2Array(), size := GLYPH) -> void:
-	var nw := NICHE.x*0.5+0.02
-	if outline.is_empty():
-		outline = PackedVector2Array([Vector2(-nw,NICHE.y-0.3),Vector2(nw,NICHE.y-0.3),Vector2(nw,GLYPH_BLOCK.z),Vector2(-nw,GLYPH_BLOCK.z)])
-	else:
-		var box := Rect2(outline[0],Vector2.ZERO)
-		for v in outline: box = box.expand(v)
-		nw = maxf(absf(box.position.x),absf(box.end.x))
-	var s := size/24.0
-	var shapes: Array[PackedVector2Array] = []
-	for p: PackedVector2Array in GlyphToken._trace(id):
-		var q := PackedVector2Array()
-		for v in p: q.append(Vector2((v.x-12.0)*s+centre.x,(12.0-v.y)*s+centre.y))
-		shapes.append(q)
-	var outers: Array[PackedVector2Array] = []
-	var holes: Array[PackedVector2Array] = []
-	for p in shapes:
-		var inside := false
-		for q in shapes:
-			if q != p and Geometry2D.is_point_in_polygon(p[0],q): inside = true
-		if inside: holes.append(p)
-		else: outers.append(p)
-	# Strips, so no shape lies whole inside one and leaves a hole.
-	var cuts: Array[float] = [-nw-0.01,nw+0.01]
-	var x := -nw
-	while x < nw:
-		cuts.append(x)
-		x += 0.1
-	for p in shapes:
-		var mid := Vector2.ZERO
-		for v in p: mid += v
-		cuts.append(mid.x/p.size())
-	cuts.sort()
-	var front := Vector3.BACK
-	var depth := CARVE*(1.0-0.3*b.weathered)
-	var tone := b._shade(pose*Vector3(0.0,centre.y,face_z),(pose.basis*front).normalized(),_stone(b,0.8).srgb_to_linear(),false)
-	for i in range(cuts.size()-1):
-		if cuts[i+1]-cuts[i] < 0.002: continue
-		var strip := PackedVector2Array([Vector2(cuts[i],-9.0),Vector2(cuts[i+1],-9.0),Vector2(cuts[i+1],9.0),Vector2(cuts[i],9.0)])
-		for base: PackedVector2Array in Geometry2D.intersect_polygons(outline,strip):
-			var turn := Geometry2D.is_polygon_clockwise(base)
-			var parts: Array = [base]
-			for o in outers:
-				var kept: Array = []
-				for part: PackedVector2Array in parts: kept.append_array(Geometry2D.clip_polygons(part,o))
-				parts = kept
-			for hole in holes: parts.append_array(Geometry2D.intersect_polygons(base,hole))
-			for part: PackedVector2Array in parts:
-				if Geometry2D.is_polygon_clockwise(part) != turn: continue
-				b.flat(part,face_z,pose,front,tone,false,false)
-			var floors: Array = []
-			for o in outers: floors.append_array(Geometry2D.intersect_polygons(base,o))
-			for hole in holes:
-				var kept: Array = []
-				for part: PackedVector2Array in floors: kept.append_array(Geometry2D.clip_polygons(part,hole))
-				floors = kept
-			for part: PackedVector2Array in floors:
-				if Geometry2D.is_polygon_clockwise(part) != turn: continue
-				b.flat(part,face_z-depth,pose,front,Color(1.0,1.0,1.0),true)
-	for p in shapes:
-		for i in range(p.size()):
-			var a := p[i]
-			var c := p[(i+1)%p.size()]
-			if a.distance_to(c) < 0.0005: continue
-			var mid := (a+c)*0.5
-			var n2 := Vector2(-(c-a).y,(c-a).x).normalized()
-			if not _in_glyph(mid+n2*0.004,outers,holes): n2 = -n2
-			var n := Vector3(n2.x,n2.y,0.0)
-			var quad := [Vector3(a.x,a.y,face_z),Vector3(c.x,c.y,face_z),Vector3(c.x,c.y,face_z-depth),Vector3(a.x,a.y,face_z-depth)]
-			b.quad(quad,pose,n,Color(0.35,0.35,0.35),true)
-
-static func _in_glyph(p: Vector2, outers: Array[PackedVector2Array], holes: Array[PackedVector2Array]) -> bool:
-	for h in holes:
-		if Geometry2D.is_point_in_polygon(p,h): return false
-	for o in outers:
-		if Geometry2D.is_point_in_polygon(p,o): return true
-	return false
-
 # --- Building -------------------------------------------------------------------
 
-## A piece being built: its stone (and growth) and glow faces, its blocks'
+## A piece being built: its stone (and growth) faces, its blocks'
 ## hulls, their planes (for the ivy to find the faces by), the tops that
 ## look up, the strands asked to hang free.
 class Build extends RefCounted:
@@ -1908,7 +1744,6 @@ class Build extends RefCounted:
 	var root: Node3D
 	var noise := FastNoiseLite.new()
 	var faces := Faces.new()
-	var glow := Faces.new()
 	var hulls: Array[PackedVector3Array] = []
 	## Every block's [AABB, planes] in the piece's frame, for the ivy.
 	var solids: Array = []
@@ -1922,6 +1757,10 @@ class Build extends RefCounted:
 	## what is sunk in the ground is not drawn. -INF, none.
 	var ground := -INF
 	static var _materials := {}
+	## How much of the small growth and scatter is built (RuinKit
+	## `set_detail`): 1 all of it; under 1 fewer ivy strands, moss
+	## cushions, tufts and rubble stones; 0 none (a far or cheap ruin).
+	static var detail := 1.0
 
 	static func materials() -> Dictionary:
 		if _materials.is_empty():
@@ -1930,28 +1769,8 @@ class Build extends RefCounted:
 			s.set_shader_parameter("fill",1.2)
 			s.set_shader_parameter("rim",0.14)
 			s.set_shader_parameter("roughness_value",0.95)
-			var g := ShaderMaterial.new()
-			g.shader = GLOW_SHADER
-			var h := ShaderMaterial.new()
-			h.shader = HALO_SHADER
-			h.set_shader_parameter("glow",0.0)
-			_materials = {"stone":s,"glow":g,"halo":h}
+			_materials = {"stone":s}
 		return _materials
-
-	## The halo's quad, coloured GLOW at its strength.
-	static func halo_quad() -> ArrayMesh:
-		var v := PackedVector3Array([Vector3(-0.5,-0.5,0.0),Vector3(0.5,0.5,0.0),Vector3(0.5,-0.5,0.0),Vector3(-0.5,-0.5,0.0),Vector3(-0.5,0.5,0.0),Vector3(0.5,0.5,0.0)])
-		var uv := PackedVector2Array([Vector2(0,1),Vector2(1,0),Vector2(1,1),Vector2(0,1),Vector2(0,0),Vector2(1,0)])
-		var c := PackedColorArray()
-		for i in range(6): c.append(Color(GLOW.r,GLOW.g,GLOW.b,0.22))
-		var arrays := []
-		arrays.resize(Mesh.ARRAY_MAX)
-		arrays[Mesh.ARRAY_VERTEX] = v
-		arrays[Mesh.ARRAY_TEX_UV] = uv
-		arrays[Mesh.ARRAY_COLOR] = c
-		var mesh := ArrayMesh.new()
-		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
-		return mesh
 
 	func _init(seed_value: int, amount: float, label: String) -> void:
 		rng.seed = hash([seed_value,label,"gothic"])
@@ -2086,26 +1905,6 @@ class Build extends RefCounted:
 			if thickness(hull) >= HULL_THIN: hulls.append(hull)
 		return open_face
 
-	## A flat polygon (`outline`: x and y in a frame at z `z`) facing
-	## `normal` (in that frame), stone or glow.
-	func flat(outline: PackedVector2Array, z: float, pose: Transform3D, normal: Vector3, colour: Color, glowing: bool, shaded := true) -> void:
-		var tris := Geometry2D.triangulate_polygon(outline)
-		var xf := frame*pose
-		var n := (xf.basis*normal).normalized()
-		var shade := colour if glowing or not shaded else _shade(xf*Vector3(outline[0].x,outline[0].y,z),n,colour.srgb_to_linear(),false)
-		for t in range(0,tris.size(),3):
-			var a := xf*Vector3(outline[tris[t]].x,outline[tris[t]].y,z)
-			var bb := xf*Vector3(outline[tris[t+1]].x,outline[tris[t+1]].y,z)
-			var c := xf*Vector3(outline[tris[t+2]].x,outline[tris[t+2]].y,z)
-			_wound(glow if glowing else faces,a,bb,c,n,shade)
-
-	func quad(corners: Array, pose: Transform3D, normal: Vector3, colour: Color, glowing: bool) -> void:
-		var xf := frame*pose
-		var n := (xf.basis*normal).normalized()
-		var target: Faces = glow if glowing else faces
-		_wound(target,xf*(corners[0] as Vector3),xf*(corners[1] as Vector3),xf*(corners[2] as Vector3),n,colour)
-		_wound(target,xf*(corners[0] as Vector3),xf*(corners[2] as Vector3),xf*(corners[3] as Vector3),n,colour)
-
 	## The piece: ivy and moss grown on it, then the mesh and the body.
 	func finish() -> Node3D:
 		frame = Transform3D.IDENTITY
@@ -2113,7 +1912,7 @@ class Build extends RefCounted:
 		_cushions()
 		var mesh := ArrayMesh.new()
 		var m := materials()
-		for part: Array in [[faces,m.stone],[glow,m.glow]]:
+		for part: Array in [[faces,m.stone]]:
 			var f: Faces = part[0]
 			if f.v.is_empty(): continue
 			var surface := []
@@ -2236,7 +2035,7 @@ class Build extends RefCounted:
 			if poly[0].y < 0.75: continue
 			high.append(t)
 			area += float(t[1])
-		var count := mini(IVY_MOST,int(area*lerpf(IVY_STRANDS.x,IVY_STRANDS.y,weathered)+rng.randf()))
+		var count := mini(IVY_MOST,int(area*lerpf(IVY_STRANDS.x,IVY_STRANDS.y,weathered)*detail+rng.randf()*detail))
 		var longest := lerpf(IVY_LENGTH.x,IVY_LENGTH.y,weathered)
 		for i in range(count):
 			if high.is_empty(): break
@@ -2269,7 +2068,10 @@ class Build extends RefCounted:
 					_leaf(on,Vector3.UP,rng.randf_range(IVY_LEAF.x,IVY_LEAF.y),0.0)
 				_strand(start,out,minf(mid.y,rng.randf_range(0.4,1.0)*longest),false)
 				break
-		for h: Array in hangs:
+		for hi in range(hangs.size()):
+			var h: Array = hangs[hi]
+			# Fewer free strands with less detail (by index: the seed's draw is kept).
+			if detail < 1.0 and fmod(hi*0.618,1.0) >= detail: continue
 			var at: Vector3 = h[0]
 			var from: float = h[3]
 			if from < 0.0:
@@ -2345,6 +2147,7 @@ class Build extends RefCounted:
 	## `height` tall, each a thin cut sliver leaning its own way, in the
 	## plate's olive greens; never solid.
 	func tuft(at: Vector3, height: float, count := 7) -> void:
+		count = int(round(count*detail))
 		var keep := frame
 		frame = Transform3D.IDENTITY
 		for i in range(count):
@@ -2362,11 +2165,12 @@ class Build extends RefCounted:
 
 	## Moss cushions on mossy tops: low faceted mounds, not solid.
 	func _cushions() -> void:
+		if detail <= 0.0: return
 		var found := tops.duplicate()
 		for t: Array in found:
 			var poly: PackedVector3Array = t[0]
 			var area: float = t[1]
-			var odds := (0.08+0.55*weathered)*minf(1.0,area*2.0)
+			var odds := (0.08+0.55*weathered)*minf(1.0,area*2.0)*detail
 			if rng.randf() > odds: continue
 			for j in range(1+int(area*2.0*weathered)):
 				var k := rng.randi()%poly.size()

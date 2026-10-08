@@ -4,9 +4,8 @@ extends SceneTree
 ## (weathered 0) and ruined (weathered 1) from a few seeds into a node with
 ## a "Mesh" (faces, normals, colours) and a "Body" of convex hulls, each
 ## with a real volume (Jolt cannot build a flat one), and a flat top a
-## walker can stand on; the same seed builds the same piece; the glyph
-## stone, the floor medallion and the colossus mask carry their glyph, its
-## glow surface and its halo; the plane's way stays clear through the
+## walker can stand on; the same seed builds the same piece; nothing glows
+## (one stone surface, no halo); the plane's way stays clear through the
 ## gothic arch and window, every aqueduct arch and the hall (and the hall's
 ## knife-edge slit lets a plane on its wingtip through, not a level one);
 ## and the scale constants still answer the pilot's and the plane's limits
@@ -28,8 +27,8 @@ func check(ok: bool, label: String) -> void:
 		print("FAIL "+label)
 
 func _run() -> void:
-	check(RuinKit.PIECES.size() == 13,"thirteen gothic pieces")
-	check(RuinKit.AQUEDUCT_PIECES.size() == 5 and RuinKit.HALL_PIECES.size() == 6,"five aqueduct pieces and six hall pieces")
+	check(RuinKit.PIECES.size() == 12,"twelve gothic pieces")
+	check(RuinKit.AQUEDUCT_PIECES.size() == 5 and RuinKit.HALL_PIECES.size() == 4,"five aqueduct pieces and four hall pieces")
 	for id: String in RuinKit.ALL_PIECES: check(RuinKit.NAMES.has(id),id+" is named")
 	for id: String in RuinKit.ALL_PIECES:
 		for seed_value: int in SEEDS:
@@ -105,7 +104,7 @@ func _scale() -> void:
 	check(RuinKit.SET_OFF < first_grab-0.2,"each set-off is caught with one jump")
 	check(RuinKit.WALL_HEIGHT > first_grab and RuinKit.WALL_HEIGHT < chain_grab-0.1,"a wall is caught from a running chain")
 	check(RuinKit.WINDOW.y < first_grab-0.2 and RuinKit.ARCH_DEPTH >= RuinKit.STAND,"a window's sill is caught and stood in")
-	check(RuinKit.CHEST.z < first_grab and RuinKit.GLYPH_BLOCK.z < first_grab,"the chest's and the glyph stone's tops are caught")
+	check(RuinKit.CHEST.z < first_grab,"the chest's top is caught")
 	check(RuinKit.WALL_THICK >= RuinKit.TOP_ROOM and RuinKit.ABACUS*2.0 >= RuinKit.TOP_ROOM,"wall and capital tops have room to walk")
 	var depth: Array = RuinKit.BUTTRESS_DEPTH
 	for i in range(depth.size()-1): check(float(depth[i])-float(depth[i+1]) >= RuinKit.STAND,"buttress tread %d is deep enough to stand on" % i)
@@ -134,12 +133,11 @@ func _scale() -> void:
 	check(Hall.BAY-2.0*Hall.PLINTH.y >= RuinKit.THREAD and Hall.BAY-2.0*Hall.ABACUS >= RuinKit.THREAD,"the plane flies between the hall's columns, at their bases and capitals")
 	check(Hall.COLUMN_H-Hall.CAPITAL_H > RuinKit.THREAD,"and under the capitals")
 	check(Hall.COLUMN_R > RuinKit.PIER_CORE+RuinKit.SHAFT_MAIN.y*1.5,"a colossus column is far heavier than a clustered pier")
-	check(Hall.PLINTH.x < PilotMotor.STEP_UP and Hall.PAVING.x < PilotMotor.STEP_UP and Hall.MEDALLION_TOP < PilotMotor.STEP_UP,"the column plinths, paving and medallion are stepped onto")
+	check(Hall.PLINTH.x < PilotMotor.STEP_UP and Hall.PAVING.x < PilotMotor.STEP_UP,"the column plinths and paving are stepped onto")
 	check(Hall.BEAM.y*2.0 >= RuinKit.TOP_ROOM and Hall.ABACUS*2.0 >= RuinKit.TOP_ROOM,"beam and abacus tops are walked")
 	check(Hall.RAMP < deg_to_rad(35.0) and atan2(Hall.COLUMN_H-Hall.SNAP,Hall.BAY) < deg_to_rad(30.0),"the fallen slab and the sagging beams are walked up")
 	check(Hall.KNIFE.x < PlaneFigure.SPAN and Hall.KNIFE.x >= 1.0 and Hall.KNIFE.z >= PlaneFigure.SPAN+1.2,"the slit is narrower than the wings, wider than the plane on its wingtip, and tall enough for it")
 	check(Hall.GATE.x >= RuinKit.THREAD,"the hall's gate clears the plane")
-	check(Hall.BROW >= RuinKit.STAND,"the mask's brow is stood on")
 
 func _piece(id: String, seed_value: int, weathered: float) -> void:
 	var node := RuinKit.piece(id,seed_value,weathered)
@@ -180,14 +178,10 @@ func _piece(id: String, seed_value: int, weathered: float) -> void:
 			if level >= 3 and high > 0.1: top = true
 	check(hulls > 0,label+" has collision")
 	check(thin == 0,label+" has no flat or degenerate hull (%d)" % thin)
-	# The mask lies back: its ledge is the brow, near level but not quite.
-	if id == "hall_mask": check(float(node.get_meta("brow_slope",PI)) < deg_to_rad(30.0),label+" has a brow ledge to stand on")
-	else: check(top,label+" has a top to stand on")
-	if id in ["glyph_stone","hall_medallion","hall_mask"]:
-		check(ok and mesh.mesh.get_surface_count() == 2,label+" has its glow surface")
-		check(str(node.get_meta("glyph","")) in RuinKit.GLYPHS and node.get_node_or_null("Halo") is MeshInstance3D,label+" carries a glyph and its halo")
-	if id == "hall_mask": check(node.get_node_or_null("Halo2") is MeshInstance3D,label+" has a halo in each eye")
-	if id == "hall_bay": check(node.get_node_or_null("Medallion") != null and node.has_meta("slit"),label+" has its medallion and its slit")
+	check(top,label+" has a top to stand on")
+	# No ornament glows: one stone surface, no halo.
+	check(ok and mesh.mesh.get_surface_count() == 1 and node.get_node_or_null("Halo") == null,label+" is stone and growth only, nothing glowing")
+	if id == "hall_bay": check(node.has_meta("slit"),label+" has its slit")
 	if id in ["aqueduct_span","aqueduct_two_tier","aqueduct_broken","aqueduct_end"]: check(node.get_node_or_null("Water") is MeshInstance3D,label+" carries water")
 	if id == "aqueduct_broken": check(node.get_node_or_null("Spill") is MeshInstance3D and node.get_node_or_null("Pool") is MeshInstance3D,label+" spills into a pool")
 	node.free()
