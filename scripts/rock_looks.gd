@@ -52,20 +52,30 @@ const LONE_KEEL := Vector2(1.35,1.85)
 ## Sets a look's colours (at `tone`, 1 as authored; `vary`, 0 to 1, its
 ## variant) on an earth sides material already given its strata (Strata
 ## `apply`); with `bed` (m), the rock's beds that high instead of the
-## strata's own (a sea cliff's, scripts/sea_cliffs.gd).
+## strata's own (a sea cliff's, scripts/sea_cliffs.gd), whose walls carry
+## their own colour face by face (`colour_of`; the shader's `side_painted`).
 static func apply(material: ShaderMaterial, look: String, tone := 1.0, vary := 0.5, bed := 0.0) -> void:
 	var colours: Dictionary = LOOKS.get(look,LOOKS.basalt)
-	var lean := (step_of(vary)-0.5)*2.0*LEAN
-	var tint := Color(1.0+lean,1.0,1.0-lean)*COOL
 	for key: String in colours:
-		var c := Color(colours[key])*tone*LIFT*tint
-		c = Color(minf(c.r,1.0),minf(c.g,1.0),minf(c.b,1.0)).srgb_to_linear()
+		var c := colour_of(look,key,tone,vary)
 		material.set_shader_parameter("strata_"+key,Vector3(c.r,c.g,c.b))
 	var shift := (step_of(vary)-0.5)*2.0*SHIFT
 	material.set_shader_parameter("strata_floors",FLOORS+Vector4.ONE*shift)
 	material.set_shader_parameter("side_facets",FACETS)
 	material.set_shader_parameter("side_own",true)
-	if bed > 0.0: material.set_shader_parameter("strata_core",Vector4(Strata.CORE_FROM,Strata.CORE_BASE,bed,Strata.SHALE_BED))
+	if bed > 0.0:
+		material.set_shader_parameter("strata_core",Vector4(Strata.CORE_FROM,Strata.CORE_BASE,bed,Strata.SHALE_BED))
+		material.set_shader_parameter("side_painted",true)
+
+## A look's band `key` (topsoil, clay, ... core_c) as `apply` sets it, at
+## `tone` and `vary`: lifted, cooled, leaned; linear. For faces that carry
+## their own colour in the look (a sea cliff's walls, scripts/sea_cliffs.gd).
+static func colour_of(look: String, key: String, tone := 1.0, vary := 0.5) -> Color:
+	var colours: Dictionary = LOOKS.get(look,LOOKS.basalt)
+	var lean := (step_of(vary)-0.5)*2.0*LEAN
+	var tint := Color(1.0+lean,1.0,1.0-lean)*COOL
+	var c := Color(colours.get(key,colours.bedrock))*tone*LIFT*tint
+	return Color(minf(c.r,1.0),minf(c.g,1.0),minf(c.b,1.0)).srgb_to_linear()
 
 ## `vary` snapped to its VARIANTS steps (so islets share materials).
 static func step_of(vary: float) -> float:

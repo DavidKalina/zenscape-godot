@@ -6,12 +6,15 @@ extends "res://scripts/mountain_spire.gd"
 ## floating mountain's peak (scripts/mountain_spire.gd) grown into a range,
 ## and draws as that peak does, in the basalt ring's look: green lower
 ## slopes, a band of conifers to a ragged treeline, scree, then dark faceted
-## basalt with its lava beds stepping the cliffs, snow over a ragged line.
+## basalt with its lava beds stepping the cliffs, and a snow cap on each
+## summit (`_snow_faces`): down its ridges, gentler faces, gullies and the
+## corrie, ragged at its foot, the steepest faces left rock.
 ##
 ## Its shape, all in the islet's frame:
 ##   two summits on a ridge across the island (the main and a lower second,
 ##     sometimes a third, a shoulder off the ridge), each a stepped cone
-##     (PROFILE: cliff bands and ledges) whose reach round it runs to the
+##     (PROFILE: cliff bands and ledges; a tall one broadened at its head,
+##     BROAD) whose reach round it runs to the
 ##     shore, pushed out along aretes that radiate from it and pulled in
 ##     along the gullies between;
 ##   a col between the two, a flat-floored notch cut down to COL of the
@@ -121,6 +124,34 @@ const CONIFER_BIRCH := 0.18
 ## Boulders on the scree.
 const STONES_ON_SCREE := Vector2i(10,22)
 const STONE_SIZE := Vector2(0.5,1.5)
+## A summit standing more than BROAD.x times as high as its mean reach
+## reads its profile at x to the power p, p rising to BROAD.z at BROAD.y
+## times, so a small island's summit stands as a broad head over its
+## cliffs, not a needle.
+const BROAD := Vector3(0.7,1.5,1.9)
+## The snow, cap by cap (`_snow_faces`): each summit's line CAP of the way
+## the islet's snow line stands up the main one, on its own height; ragged
+## by CAP_RAG of the height over waves 1/CAP_RAG_WAVE m; down into hollows
+## by up to HOLLOW_SNOW of the height (full at HOLLOW_FULL m a metre,
+## read over HOLLOW_M) and on crests by CREST_SNOW; the corrie's bowl
+## snowed to CORRIE_SNOW of the height over its floor. Snow holds on faces
+## up to HOLD.x steep at its line, HOLD.y toward the summit, HOLD_HOLLOW
+## more in a hollow, and on ledges gentler than LEDGE_SNOW a little under
+## the line; never under the treeline's SNOW_FLOOR m over it. A snowy
+## face's lie for the shader's flutes is leaned up by CAP_LIE.
+const CAP := 0.9
+const CAP_RAG := 0.07
+const CAP_RAG_WAVE := Vector2(0.06,0.22)
+const HOLLOW_SNOW := 0.16
+const HOLLOW_FULL := 0.25
+const HOLLOW_M := 4.0
+const CREST_SNOW := 0.05
+const CORRIE_SNOW := 0.12
+const HOLD := Vector2(1.2,3.6)
+const HOLD_HOLLOW := 0.7
+const LEDGE_SNOW := 0.75
+const SNOW_FLOOR := 4.0
+const CAP_LIE := 1.8
 
 ## The summits, Vector3(x, z, lift over the foot), main first; the ridge's
 ## way (main to second), the col (x, z, its floor's lift) and the way
@@ -140,6 +171,10 @@ var glen_length := 10.0
 ## The treeline (islet frame y) and each summit's room to the shore by
 ## angle (ROOM_ANGLES of them) and its arete angles.
 var treeline := 0.0
+## The lowest any snow lies (islet frame y), and each summit's profile
+## power (BROAD).
+var snow_floor := 0.0
+var _broad := PackedFloat32Array()
 var _rooms: Array = []
 var _aretes: Array = []
 var _raggy: FastNoiseLite
@@ -177,6 +212,7 @@ func _raise_massif(islet: RefCounted) -> void:
 	# Snow lingering on ledges under the line (MountainSpire `arrays`)
 	# never reaches down to the trees.
 	snowline = maxf(snowline,treeline+SNOW_LINGER+SNOW_RAG*2.0+1.0)
+	snow_floor = treeline+SNOW_FLOOR
 	if with_trail: _place_hut(islet)
 	_carve(islet)
 	_deepen(islet)
@@ -257,6 +293,14 @@ func _lay_out(islet: RefCounted, rng: RandomNumberGenerator) -> void:
 	for k in range(2):
 		var run := absf((Vector2(summits[k].x,summits[k].y)-at_col).dot(axis))-col_half
 		col_walls[k] = maxf(COL_WALL,(summits[k].z*1.08-col.z)/maxf(run,1.0))
+	# The summits broadened (BROAD) once the col is found on their plain
+	# cones, so a broad head never fills the pass.
+	_broad.clear()
+	for k in range(summits.size()):
+		var mean := 0.0
+		for room: float in (_rooms[k] as PackedFloat32Array): mean += room
+		mean /= ROOM_ANGLES
+		_broad.append(lerpf(1.0,BROAD.z,clampf((summits[k].z/maxf(mean,1.0)-BROAD.x)/(BROAD.y-BROAD.x),0.0,1.0)))
 	# The corrie under the main summit, opening down the far flank from
 	# the shoulder; its glen out to the shore.
 	glen = (-across).rotated(rng.randf_range(-0.35,0.35)) if summits.size() < 3 else across.rotated(rng.randf_range(-0.35,0.35))
@@ -300,7 +344,7 @@ func _cone(k: int, p: Vector2) -> float:
 	var reach := room*(1.0+ARETE_OUT*push-GULLY_IN*(1.0-push))
 	var x := r/maxf(reach,1.0)
 	if x >= 1.0: return 0.0
-	return s.z*_profile(x)
+	return s.z*_profile(pow(x,_broad[k]) if k < _broad.size() else x)
 
 static func _profile(x: float) -> float:
 	for k in range(1,PROFILE.size()):
@@ -583,6 +627,157 @@ func _dress(islet: RefCounted, rng: RandomNumberGenerator) -> void:
 		objects.append({"asset":"cabin","x":hut.x,"z":hut.y,"angle":atan2(hut_out.x,hut_out.y),"scale":1.0,"inset":0.4})
 	recipe.objects = objects
 	recipe.clear = clear
+
+# --- The snow -----------------------------------------------------------------------
+
+## Which drawn faces are snowed, and each one's own snow line (islet frame
+## y): {face: line}. Each summit carries its own cap (CAP of its height, as
+## the islet's draw puts the main one's), the line ragged over two scales
+## (CAP_RAG), brought down into the hollows (gullies, the corrie: HOLLOW_SNOW)
+## and a little on the crests (CREST_SNOW); snow holds on faces up to HOLD
+## steep at its line and steeper toward the summit or in a hollow, and on
+## ledges (LEDGE_SNOW) a little under it; never under `snow_floor`. Lone
+## flakes on the rock are let go and lone rock in a snowfield filled, so it
+## reads as caps and tongues, never speckle.
+func _snow_faces(islet: RefCounted) -> Dictionary:
+	var ids: PackedInt32Array = islet.ids
+	var points: PackedVector2Array = islet.points
+	var heights: PackedFloat32Array = islet.heights
+	var hollows := _hollows(islet)
+	var share := (snowline-ground)/maxf(height,1.0)*CAP
+	var coarse_rag := _noise(73,CAP_RAG_WAVE.x)
+	var fine_rag := _noise(79,CAP_RAG_WAVE.y)
+	var corrie_at := Vector2(corrie.x,corrie.y)
+	var lines := {}
+	var steep := {}
+	for f in (islet.land as PackedInt32Array):
+		var kind := drawn[f] if f < drawn.size() else 0
+		if kind != 1 and kind != 3: continue
+		var a := ids[f*3]
+		var b := ids[f*3+1]
+		var c := ids[f*3+2]
+		var mid: Vector2 = (points[a]+points[b]+points[c])/3.0
+		var y := (heights[a]+heights[b]+heights[c])/3.0
+		if y < snow_floor: continue
+		var owner := 0
+		var best := -INF
+		for k in range(summits.size()):
+			var up := _cone(k,mid)
+			if up > best:
+				best = up
+				owner = k
+		var rag := (coarse_rag.get_noise_2d(mid.x,mid.y)*0.65+fine_rag.get_noise_2d(mid.x,mid.y)*0.35)*height*CAP_RAG
+		var line := ground+summits[owner].z*share+rag
+		var hollow := clampf((hollows[a]+hollows[b]+hollows[c])/3.0/HOLLOW_FULL,-1.0,1.0)
+		line -= maxf(hollow,0.0)*height*HOLLOW_SNOW+maxf(-hollow,0.0)*height*CREST_SNOW
+		# The corrie's bowl holds its snow down toward its floor.
+		if mid.distance_to(corrie_at) < corrie.z*1.15: line = minf(line,ground+corrie_floor+height*CORRIE_SNOW+rag*0.5)
+		line = maxf(line,snow_floor)
+		var slope: float = islet._slope(f)
+		var hold := lerpf(HOLD.x,HOLD.y,clampf((y-line)/(height*0.3),0.0,1.0))+maxf(hollow,0.0)*HOLD_HOLLOW
+		if (y > line and slope < hold) or (y > line-SNOW_LINGER*0.5 and slope < LEDGE_SNOW):
+			lines[f] = line
+		elif y > line: steep[f] = line
+	# Tidied twice over, as `_tidy` does the rock: a flake with no snowy
+	# neighbour goes (not on the summits' heads), a gap in the snow with two
+	# snowy neighbours and not too steep fills.
+	var cells: int = islet.cells
+	for pass_index in range(2):
+		var next := lines.duplicate()
+		for f in (islet.land as PackedInt32Array):
+			var white := lines.has(f)
+			if not white and not steep.has(f): continue
+			var cell := f/2
+			var ci := cell%cells
+			var cj := cell/cells
+			var near: Array[int] = []
+			if f%2 == 0:
+				near = [f+1,((cj-1)*cells+ci)*2+1 if cj > 0 else -1,(cj*cells+ci-1)*2+1 if ci > 0 else -1]
+			else:
+				near = [f-1,(cj*cells+ci+1)*2 if ci < cells-1 else -1,((cj+1)*cells+ci)*2 if cj < cells-1 else -1]
+			var snowy := 0
+			for g in near:
+				if g >= 0 and lines.has(g): snowy += 1
+			if white and snowy == 0 and _face_y(islet,f) < float(lines[f])+height*0.12: next.erase(f)
+			elif not white and snowy >= 2 and float(islet._slope(f)) < HOLD.y+HOLD_HOLLOW: next[f] = steep[f]
+		lines = next
+	return lines
+
+## How hollow the ground lies at each grid point (m a metre, over
+## HOLLOW_M): the mean of the points HOLLOW_M off each way less its own,
+## over 0 in a gully or a bowl, under it on a crest.
+func _hollows(islet: RefCounted) -> PackedFloat32Array:
+	var heights: PackedFloat32Array = islet.heights
+	var side: int = int(islet.cells)+1
+	var r := maxi(roundi(HOLLOW_M/float(islet.step)),1)
+	var run := r*float(islet.step)
+	var out := PackedFloat32Array()
+	out.resize(heights.size())
+	for k in range(heights.size()):
+		var i := k%side
+		var j := k/side
+		if i < r or j < r or i >= side-r or j >= side-r: continue
+		var around := heights[k-r]+heights[k+r]+heights[k-r*side]+heights[k+r*side]
+		out[k] = (around*0.25-heights[k])/run
+	return out
+
+## The massif's faces (`drawn`) as surface arrays for the peak material, as
+## MountainSpire `arrays` lays them, but snowed by its own caps
+## (`_snow_faces`) and its snow's lie leaned up the further (CAP_LIE), so
+## the shader's flutes break only the steepest snowfields.
+func arrays(islet: RefCounted, shift := Vector3.ZERO) -> Array:
+	var ids: PackedInt32Array = islet.ids
+	var land: PackedInt32Array = islet.land
+	var patch := _noise(67,0.08)
+	var snow := _snow_faces(islet) if snowy else {}
+	var vertices := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var colours := PackedColorArray()
+	var uv := PackedVector2Array()
+	var uv2 := PackedVector2Array()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed*31+7
+	for f in land:
+		var kind := drawn[f] if f < drawn.size() else 0
+		if kind == 0: continue
+		var a: Vector3 = islet._vertex(ids[f*3])
+		var b: Vector3 = islet._vertex(ids[f*3+1])
+		var c: Vector3 = islet._vertex(ids[f*3+2])
+		var n := (c-a).cross(b-a).normalized()
+		if n.y < 0.0: n = -n
+		var mid := (a+b+c)/3.0
+		var slope := sqrt(maxf(0.0,1.0-n.y*n.y))/maxf(n.y,0.001)
+		var jitter := 1.0+rng.randf_range(-0.03,0.03)
+		var tone: Color
+		var need := SNOW_NEVER
+		var shade := 16.0
+		var lie := n
+		if kind == 2:
+			tone = PATH*(1.0+0.08*patch.get_noise_2d(mid.x*3.0,mid.z*3.0))*jitter
+		elif kind == 3:
+			tone = (BASALT[2] as Color).lerp(PATH,0.45)*(1.0+0.1*patch.get_noise_2d(mid.x*2.0,mid.z*2.0))*jitter
+		else:
+			tone = _rock(mid,slope,patch)*jitter
+		var nudge := rng.randf_range(-SNOW_JITTER,SNOW_JITTER)
+		if snow.has(f):
+			var line: float = snow[f]
+			need = -(SNOW_NEED+maxf(mid.y-line,0.0)*SNOW_NEED_RISE)
+			shade = _snow_pack(clampf(1.0-n.y,0.0,1.0)*0.6,nudge)
+			lie = (n+Vector3.UP*CAP_LIE).normalized()
+		for q: Vector3 in [a,b,c]:
+			vertices.append(q+shift)
+			normals.append(lie)
+			colours.append(tone)
+			uv.append(Vector2(need,1.0))
+			uv2.append(Vector2(shade,q.y))
+	var out := []
+	out.resize(Mesh.ARRAY_MAX)
+	out[Mesh.ARRAY_VERTEX] = vertices
+	out[Mesh.ARRAY_NORMAL] = normals
+	out[Mesh.ARRAY_COLOR] = colours
+	out[Mesh.ARRAY_TEX_UV] = uv
+	out[Mesh.ARRAY_TEX_UV2] = uv2
+	return out
 
 # --- Checks -------------------------------------------------------------------------
 

@@ -231,6 +231,10 @@ uniform float side_facets = 0.14;
 // the sky islets' basalt (scripts/rock_looks.gd), as a sky peak's rock is
 // its own (`peak_rock`), so it reads as the peaks' family in every region.
 uniform bool side_own = false;
+// The earth sides' colour carried face by face in the vertex colour, not
+// the strata's bands: a sea cliff's walls (scripts/sea_cliffs.gd), whose
+// beds dip, wave and pinch out and whose rock weathers by its own rules.
+uniform bool side_painted = false;
 uniform float earth_sides_top = 2.6;
 uniform float earth_sides_base = -2.8;
 // The earth sides' depth below the rim, the rim's rise, height above the
@@ -738,7 +742,7 @@ void fragment() {
 		side_mist = 1.0 - smoothstep(0.0, 1.6, earth_side.z);
 		// The same strata and ground palette as cut ground (scripts/strata.gd).
 		vec3 plate = (inverse(MODEL_MATRIX) * vec4(world_position, 1.0)).xyz + strata_offset;
-		tint = base_color.rgb * zs_strata(plate, plate.y + earth_side.x)
+		tint = base_color.rgb * (side_painted ? COLOR.rgb : zs_strata(plate, plate.y + earth_side.x))
 			* (1.0 + side_facets * jitter) * mix(1.0, 0.5, side_mist);
 		if (!side_own) tint = scene_palette_ground(tint);
 	}
