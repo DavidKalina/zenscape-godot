@@ -87,7 +87,7 @@ const ROOF_TOP := COLUMN_H+1.1+0.5
 ## top LANE_Y.y and more under it; flown over: room to the roof beams) and
 ## a high one's (hopped over: 2 m and more over its top), their depth.
 const TIE_LOW := 4.0
-const TIE_HIGH := 6.4
+const TIE_HIGH := 6.0
 const TIE_DEPTH := 0.9
 ## The generous line: its z range (between the inner columns at +INNER_Z
 ## and the outer row) and the heights it is clear between.
@@ -243,7 +243,11 @@ static func bay(seed_value: int, weathered := 0.0, plan := {}, ground := Callabl
 	var soffit := COLUMN_H+BEAM.x
 	for i in range(edges.size()-1):
 		if i in gaps:
-			weave.gaps.append(AABB(Vector3(0.3,soffit-0.2,float(edges[i])+0.2),Vector3(BAY-0.6,SLAB+0.6,float(edges[i+1])-float(edges[i])-0.4)))
+			# The opening: clear of the roof beams at the bay lines and of the
+			# architraves along the rows.
+			var z0: float = float(edges[i])+(BEAM.y+0.18 if absf(float(edges[i])) > ROW_Z-0.1 else 0.12)
+			var z1: float = float(edges[i+1])-(BEAM.y+0.18 if absf(float(edges[i+1])) > ROW_Z-0.1 else 0.12)
+			weave.gaps.append(AABB(Vector3(BEAM.y+0.25,soffit-0.2,z0),Vector3(BAY-2.0*BEAM.y-0.5,SLAB+0.6,z1-z0)))
 			continue
 		_slab(b,0.0,BAY,float(edges[i]),float(edges[i+1]),soffit,false)
 	# The side walls, a lancet in each at the plan's odds.
@@ -265,7 +269,7 @@ static func bay(seed_value: int, weathered := 0.0, plan := {}, ground := Callabl
 	# on the floor toward the middle: a ramp up onto the tie (RAMP).
 	if bool(plan.get("fallen",false)) and tie == "low":
 		var head := Vector3(0.55,TIE_LOW+TIE_DEPTH+0.02,-7.0)
-		var rise := head.y-b.floor_at(5.0,-1.6)-BEAM.x*0.5
+		var rise := head.y-b.floor_at(5.0,-1.6)-BEAM.x*0.8
 		var run := rise/tan(RAMP)
 		var way := Vector3(0.66,0.0,0.75).normalized()
 		var foot := head+way*run+Vector3.DOWN*rise
@@ -280,11 +284,13 @@ static func bay(seed_value: int, weathered := 0.0, plan := {}, ground := Callabl
 	# walls read in bays from outside.
 	if plan.get("right_buttress",false):
 		var foot := b.floor_at(0.0,WALL_Z+WALL_THICK*0.5+1.0)
-		RuinKit._buttress(b,Transform3D(Basis.IDENTITY,Vector3(0.0,foot-0.3,WALL_Z+WALL_THICK*0.5-0.05)),[[3.4,2.4],[6.8,1.6],[9.6,0.9]],1.5,b.weathered > 0.5 and b.rng.randf() < 0.5,true)
-		feet.append(Vector3(0.0,foot-0.3,WALL_Z+1.4))
+		var sunk := 0.3 if b.terrain.is_valid() else 0.0
+		RuinKit._buttress(b,Transform3D(Basis.IDENTITY,Vector3(0.0,foot-sunk,WALL_Z+WALL_THICK*0.5-0.05)),[[3.4,2.4],[6.8,1.6],[9.6,0.9]],1.5,b.weathered > 0.5 and b.rng.randf() < 0.5,true)
+		feet.append(Vector3(0.0,foot-sunk,WALL_Z+1.4))
 	if buttress != "":
 		var foot := b.floor_at(0.0,-WALL_Z-WALL_THICK*0.5-1.0)
-		var pose := Transform3D(Basis(Vector3.UP,PI),Vector3(0.0,foot-0.3,-WALL_Z-WALL_THICK*0.5+0.05))
+		var sunk := 0.3 if b.terrain.is_valid() else 0.0
+		var pose := Transform3D(Basis(Vector3.UP,PI),Vector3(0.0,foot-sunk,-WALL_Z-WALL_THICK*0.5+0.05))
 		var stages: Array = []
 		if buttress == "stair":
 			var count := int(ceil((ROOF_TOP-0.4-foot)/RuinKit.SET_OFF))
@@ -293,7 +299,7 @@ static func bay(seed_value: int, weathered := 0.0, plan := {}, ground := Callabl
 		else:
 			stages = [[3.4,2.4],[6.8,1.6],[9.6,0.9]]
 		RuinKit._buttress(b,pose,stages,1.5,b.weathered > 0.5 and b.rng.randf() < 0.5,buttress == "plain")
-		feet.append(Vector3(0.0,foot-0.3,-WALL_Z-1.4))
+		feet.append(Vector3(0.0,foot-sunk,-WALL_Z-1.4))
 	_paving(b,plan)
 	for i in range(int(b.weathered*5.0)):
 		b.hang(Vector3(b.rng.randf_range(0.5,BAY-0.5),0.0,b.rng.randf_range(-ROW_Z,ROW_Z)),b.rng.randf_range(0.8,2.6)*b.weathered,true)
@@ -429,9 +435,13 @@ static func _lane(x0: float, x1: float, ground: Callable) -> AABB:
 				end = x
 				top = maxf(top,g)
 			clear = ok
-			if not ok and top > -INF: break
+			if not ok and top > -INF:
+				# Stopped by the ground: a slab's length short of it, as the
+				# paving and rubble on the slope stand up into it.
+				end -= PAVING.y*1.5
+				break
 			x += 0.5
-		if top == -INF: return AABB()
+		if top == -INF or end <= start: return AABB()
 	else:
 		top = 0.0
 	return AABB(Vector3(start,top+LANE_Y.x,LANE.x),Vector3(end-start,LANE_Y.y-LANE_Y.x,LANE.y-LANE.x))

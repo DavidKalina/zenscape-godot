@@ -60,35 +60,20 @@ func _run() -> void:
 			check(_clear(tiers,AABB(Vector3(-half,1.2,-3.5),Vector3(half*2.0,Aqueduct.LOWER_SPRING+1.2-1.2,7.0))),"the plane threads the two-tier's lower arch, "+tag)
 			check(_clear(tiers,AABB(Vector3(-half,Aqueduct.MID+0.6,-3.5),Vector3(half*2.0,Aqueduct.UPPER_RISE+1.2-0.6,7.0))),"the plane threads the two-tier's upper arch, "+tag)
 			tiers.free()
-			# Through the hall bay under its roof, along X (its ruined corner
-			# included), and through the assembled hall's gate.
-			var corridor := AABB(Vector3(-Hall.BAY*0.5-3.0,1.2,-2.3),Vector3(Hall.BAY+6.0,2.2,3.5))
-			var bay := Hall.bay(seed_value,weathered)
-			check(_clear(bay,corridor),"the plane flies through the hall bay, "+tag)
-			check(weathered < 0.5 or bool(bay.get_meta("snapped")),"the ruined bay's corner has come down, "+tag)
-			# The knife-edge slit: a plane on its wingtip (as tall as its span,
-			# as wide as its body) passes; a level one (its span across) does not.
-			var slit: Vector3 = bay.get_meta("slit")
-			var edge := AABB(slit+Vector3(-0.48,-PlaneFigure.SPAN*0.5-0.3,-1.5),Vector3(0.96,PlaneFigure.SPAN+0.6,3.0))
-			check(_clear(bay,edge),"a knife-edged plane slips through the slit, "+tag)
-			check(not _clear(bay,AABB(slit+Vector3(-PlaneFigure.SPAN*0.5,-0.15,-0.3),Vector3(PlaneFigure.SPAN,0.3,0.6)),false),"a level plane cannot pass the slit, "+tag)
-			bay.free()
-			if weathered > 0.5:
-				var hall := Hall.hall(seed_value,weathered)
-				var through := AABB(Vector3(-Hall.BAY-3.0,1.2,-2.3),Vector3(Hall.BAY*2.0+6.0,2.2,3.5))
-				var ok := true
-				for child in hall.get_children(): ok = ok and _clear(child,through,true,child.position)
-				check(ok,"the plane flies through the assembled hall, its gate to its fallen end, "+tag)
-				hall.free()
 	# A run: the head, spans SPAN apart, one broken; dry past the break.
 	var run := Aqueduct.run(5,0.5,4,2)
-	check(run.get_child_count() == 5,"a run is its head and its four spans")
+	var parts := _pieces(run)
+	check(parts.size() == 5,"a run is its head and its four spans")
 	var wet := 0
-	for child in run.get_children():
+	for child in parts:
 		if child.get_node_or_null("Water") != null: wet += 1
-	check(wet == 4 and run.get_child(3).get_node_or_null("Spill") != null,"the run carries water to the break and spills there, dry past it")
-	check(is_equal_approx((run.get_child(2) as Node3D).position.x-(run.get_child(1) as Node3D).position.x,Aqueduct.SPAN),"spans stand SPAN apart")
+	check(wet == 4 and parts[3].get_node_or_null("Spill") != null,"the run carries water to the break and spills there, dry past it")
+	check(is_equal_approx((parts[2] as Node3D).position.x-(parts[1] as Node3D).position.x,Aqueduct.SPAN),"spans stand SPAN apart")
+	check(run.get_node_or_null("Mesh") is MeshInstance3D and run.get_node_or_null("Body") is StaticBody3D,"a run is merged into one mesh and one body")
 	run.free()
+	_long_hall()
+	_terrain()
+	_connections()
 	_scale()
 	print("PASS: ruin kit" if failures == 0 else "FAIL: ruin kit (%d)" % failures)
 	quit(1 if failures else 0)
@@ -130,14 +115,17 @@ func _scale() -> void:
 	check(Aqueduct.ABUTMENT_TREAD >= RuinKit.STAND and RuinKit.SET_OFF < first_grab-0.2,"the head's treads are stood on, each a jump over the last")
 	check(Aqueduct.STUMP.y < chain_grab and Aqueduct.STUMP.x < first_grab,"a stump is climbed from the water")
 	# The hall.
-	check(Hall.BAY-2.0*Hall.PLINTH.y >= RuinKit.THREAD and Hall.BAY-2.0*Hall.ABACUS >= RuinKit.THREAD,"the plane flies between the hall's columns, at their bases and capitals")
-	check(Hall.COLUMN_H-Hall.CAPITAL_H > RuinKit.THREAD,"and under the capitals")
+	check(Hall.LANE.y-Hall.LANE.x >= RuinKit.THREAD and Hall.LANE.x >= Hall.INNER_Z+Hall.COLUMN_R and Hall.LANE.y <= Hall.ROW_Z-Hall.COLUMN_R,"the lane is THREAD wide and more, between the inner columns and the outer row")
+	check(Hall.LANE_Y.y < Hall.TIE_LOW-0.2 and Hall.LANE_Y.y-Hall.LANE_Y.x >= 2.0,"the lane runs under every tie, and is tall enough")
+	check(Hall.COLUMN_H-Hall.CAPITAL_H-(Hall.TIE_HIGH+Hall.TIE_DEPTH) >= 2.0 and Hall.COLUMN_H-Hall.CAPITAL_H-(Hall.TIE_LOW+Hall.TIE_DEPTH) >= 3.5,"over a tie there is room to hop it, under the capitals")
+	check(Hall.ROW_Z*2.0-2.0*Hall.COLUMN_R > RuinKit.THREAD*3.0,"the nave is wide enough to weave")
 	check(Hall.COLUMN_R > RuinKit.PIER_CORE+RuinKit.SHAFT_MAIN.y*1.5,"a colossus column is far heavier than a clustered pier")
 	check(Hall.PLINTH.x < PilotMotor.STEP_UP and Hall.PAVING.x < PilotMotor.STEP_UP,"the column plinths and paving are stepped onto")
-	check(Hall.BEAM.y*2.0 >= RuinKit.TOP_ROOM and Hall.ABACUS*2.0 >= RuinKit.TOP_ROOM,"beam and abacus tops are walked")
-	check(Hall.RAMP < deg_to_rad(35.0) and atan2(Hall.COLUMN_H-Hall.SNAP,Hall.BAY) < deg_to_rad(30.0),"the fallen slab and the sagging beams are walked up")
-	check(Hall.KNIFE.x < PlaneFigure.SPAN and Hall.KNIFE.x >= 1.0 and Hall.KNIFE.z >= PlaneFigure.SPAN+1.2,"the slit is narrower than the wings, wider than the plane on its wingtip, and tall enough for it")
-	check(Hall.GATE.x >= RuinKit.THREAD,"the hall's gate clears the plane")
+	check(Hall.BEAM.y*2.0 >= RuinKit.TOP_ROOM and Hall.ABACUS*2.0 >= RuinKit.TOP_ROOM,"beam, tie and abacus tops are walked")
+	check(Hall.RAMP < deg_to_rad(35.0),"a fallen beam is walked up onto its tie")
+	check(Hall.TREAD >= RuinKit.STAND,"the buttress's treads are stood on, each a jump over the last")
+	check(Hall.KNIFE.x < PlaneFigure.SPAN and Hall.KNIFE.x >= 1.0 and Hall.KNIFE.z >= PlaneFigure.SPAN+1.2,"a slit is narrower than the wings, wider than the plane on its wingtip, and tall enough for it")
+	check(Aqueduct.FOOTING > 0.0 and Hall.FOUNDATION > 0.0,"feet reach below the ground")
 
 func _piece(id: String, seed_value: int, weathered: float) -> void:
 	var node := RuinKit.piece(id,seed_value,weathered)
@@ -153,7 +141,7 @@ func _piece(id: String, seed_value: int, weathered: float) -> void:
 	check(ok,label+" has a mesh")
 	if ok:
 		var box := mesh.mesh.get_aabb()
-		check(box.position.y > -0.5 and box.size.length() > 0.5 and box.size.length() < 30.0,label+" stands on the ground at a sane size: "+str(box))
+		check(box.position.y > -0.5 and box.size.length() > 0.5 and box.size.length() < (45.0 if id == "hall_bay" else 30.0),label+" stands on the ground at a sane size: "+str(box))
 	var body := node.get_node_or_null("Body") as StaticBody3D
 	var hulls := 0
 	var thin := 0
@@ -182,6 +170,8 @@ func _piece(id: String, seed_value: int, weathered: float) -> void:
 	# No ornament glows: one stone surface, no halo.
 	check(ok and mesh.mesh.get_surface_count() == 1 and node.get_node_or_null("Halo") == null,label+" is stone and growth only, nothing glowing")
 	if id == "hall_bay": check(node.has_meta("slit"),label+" has its slit")
+	for key: String in ["bounds","feet","corridors","walk"]:
+		if id.begins_with("aqueduct") or id == "hall_bay": check(node.has_meta(key),label+" gives its "+key)
 	if id in ["aqueduct_span","aqueduct_two_tier","aqueduct_broken","aqueduct_end"]: check(node.get_node_or_null("Water") is MeshInstance3D,label+" carries water")
 	if id == "aqueduct_broken": check(node.get_node_or_null("Spill") is MeshInstance3D and node.get_node_or_null("Pool") is MeshInstance3D,label+" spills into a pool")
 	node.free()
@@ -199,6 +189,146 @@ func _clear(node: Node, box: AABB, say := true, offset := Vector3.ZERO) -> bool:
 			if say: print("  in the way of %s: %s" % [node.name,hull])
 			return false
 	return true
+
+## A run's or a hall's built pieces (its children with their metadata).
+func _pieces(root: Node) -> Array:
+	return root.get_children().filter(func(c: Node) -> bool: return c.has_meta("feet"))
+
+## The long hall: a lane clear end to end, THREAD wide and more; the weave
+## it promises (low ties dived under and flown over, high ones hopped,
+## beams fallen across, roof gaps flown out of, slits a knife-edged plane
+## threads and a level one does not, the middle narrowed), each where it
+## says; merged into one mesh and body; its ends at its mouths.
+func _long_hall() -> void:
+	var half := PlaneFigure.SPAN*0.5
+	for seed_value: int in [1,77]:
+		for weathered: float in [0.25,0.85]:
+			var tag := "seed %d weathered %.2f" % [seed_value,weathered]
+			var hall := Hall.hall(seed_value,weathered,12)
+			var length: float = hall.get_meta("length")
+			check(is_equal_approx(length,Hall.BAY*12.0),"a 12-bay hall is 12 bays long, "+tag)
+			check(hall.get_node_or_null("Mesh") is MeshInstance3D and hall.get_node_or_null("Body") is StaticBody3D,"the hall is merged into one mesh and one body, "+tag)
+			var lane: AABB = (hall.get_meta("corridors") as Array)[0]
+			check(lane.position.x <= 0.01 and lane.end.x >= length-0.01 and lane.size.z >= RuinKit.THREAD and lane.size.y >= 2.0,"the lane runs end to end, THREAD wide, "+tag)
+			check(_clear(hall,lane.grow(-0.02)),"nothing stands in the lane, end to end, "+tag)
+			var weave: Dictionary = hall.get_meta("weave")
+			check((weave.low_ties as Array).size() >= 2 and (weave.high_ties as Array).size() >= 2,"low and high ties, at least two of each, "+tag)
+			for tie: Vector3 in weave.low_ties:
+				var over := AABB(Vector3(tie.x-1.0,Hall.TIE_LOW+Hall.TIE_DEPTH+0.3,Hall.LANE.x),Vector3(2.0,Hall.COLUMN_H-Hall.CAPITAL_H-0.1-(Hall.TIE_LOW+Hall.TIE_DEPTH+0.3),Hall.LANE.y-Hall.LANE.x))
+				check(_clear(hall,over),"over a low tie there is room to fly, "+tag)
+			for tie: Vector3 in weave.high_ties:
+				var hop := AABB(Vector3(tie.x-1.0,Hall.TIE_HIGH+Hall.TIE_DEPTH+0.2,Hall.LANE.x),Vector3(2.0,Hall.COLUMN_H-Hall.CAPITAL_H-0.1-(Hall.TIE_HIGH+Hall.TIE_DEPTH+0.2),Hall.LANE.y-Hall.LANE.x))
+				check(_clear(hall,hop),"a high tie is hopped under the roof, "+tag)
+			if weathered > 0.3:
+				check(not (weave.fallen as Array).is_empty(),"a beam lies fallen across the nave, "+tag)
+			for f: Array in weave.fallen:
+				var head: Vector3 = f[0]
+				var foot: Vector3 = f[1]
+				check(atan2(head.y-foot.y,Vector2(head.x-foot.x,head.z-foot.z).length()) < deg_to_rad(35.0),"a fallen beam is a walkable ramp, "+tag)
+				check(maxf(head.z,foot.z) < Hall.LANE.x,"a fallen beam stays out of the lane, "+tag)
+			check(not (weave.gaps as Array).is_empty(),"the roof has a gap to fly out of, "+tag)
+			for gap: AABB in weave.gaps:
+				check(gap.size.x >= RuinKit.THREAD and gap.size.z >= RuinKit.THREAD and _clear(hall,gap),"a roof gap is open and wide enough, "+tag)
+			check(not (weave.slits as Array).is_empty() and not (weave.narrows as Array).is_empty(),"slits and narrows to pick a line through, "+tag)
+			for slit: Vector3 in weave.slits:
+				var edge := AABB(slit+Vector3(-1.5,-half-0.3,-0.48),Vector3(3.0,PlaneFigure.SPAN+0.6,0.96))
+				check(_clear(hall,edge),"a knife-edged plane slips through a slit, "+tag)
+				check(not _clear(hall,AABB(slit+Vector3(-0.3,-0.15,-half),Vector3(0.6,0.3,PlaneFigure.SPAN)),false),"a level plane cannot pass a slit, "+tag)
+			var ends: Array = hall.get_meta("ends")
+			check(ends.size() == 2 and is_equal_approx((ends[0].at as Vector3).x,0.0) and is_equal_approx((ends[1].at as Vector3).x,length) and bool(ends[0].open) and bool(ends[1].open),"the hall's ends are its two open mouths, "+tag)
+			hall.free()
+
+## On uneven ground: piers grow down to a slope and a valley (tall in its
+## middle), a hall's columns and walls reach below a slope (nothing floats),
+## and a hall run into a hillside is buried at its far end, its lane cut
+## short there and that mouth shut.
+func _terrain() -> void:
+	var slope := func(x: float, z: float) -> float: return 0.45*x+0.1*z+1.0
+	var span := Aqueduct.span(3,0.6,3,true,slope)
+	_grounded(span,slope,"the span's piers")
+	span.free()
+	var stump := Aqueduct.stump(3,0.6,slope)
+	_grounded(stump,slope,"the stump")
+	stump.free()
+	var length := Aqueduct.SPAN*5
+	var valley := func(x: float, z: float) -> float: return 8.0*absf(x/length-0.5)*2.0
+	var run := Aqueduct.run(4,0.4,5,-1,false,valley)
+	var feet: Array = run.get_meta("feet")
+	feet.sort_custom(func(a: Vector3, b: Vector3) -> bool: return a.x < b.x)
+	var middle: Vector3 = feet[feet.size()/2]
+	check(middle.y < (feet[0] as Vector3).y-4.0 and middle.y < (feet[-1] as Vector3).y-4.0,"across a valley the piers are tall in its middle, short at its ends")
+	_grounded(run,valley,"the valley run's piers")
+	run.free()
+	var hill := func(x: float, z: float) -> float: return 0.12*x+0.08*z
+	var bay := Hall.bay(5,0.5,{},hill)
+	_grounded(bay,hill,"the bay's columns and walls")
+	bay.free()
+	var bays := 5
+	var buried := func(x: float, z: float) -> float: return clampf((x-Hall.BAY*bays*0.5)*0.6,0.0,14.0)
+	var hall := Hall.hall(6,0.5,bays,buried)
+	var lane: AABB = (hall.get_meta("corridors") as Array)[0]
+	var ends: Array = hall.get_meta("ends")
+	check(lane.end.x < Hall.BAY*bays-4.0 and bool(ends[0].open) and not bool(ends[1].open),"a hall run into a hillside: its lane stops at the slope, its far mouth is buried")
+	check(_clear(hall,lane.grow(-0.02)),"the buried hall's lane is clear as far as it goes")
+	_grounded(hall,buried,"the buried hall's columns and walls")
+	hall.free()
+
+## Each foot `node` gives lies below the ground there, and stone reaches
+## down to it: the lowest hull point within a pace of each foot is under
+## the ground (nothing floats).
+func _grounded(node: Node3D, ground: Callable, label: String) -> void:
+	var feet: Array = node.get_meta("feet")
+	check(not feet.is_empty(),label+": feet given")
+	var hulls: Array = []
+	for body in [node.get_node_or_null("Body")]+_pieces(node).map(func(c: Node) -> Node: return c.get_node_or_null("Body")):
+		if body == null: continue
+		var at: Vector3 = (body.get_parent() as Node3D).position if body.get_parent() != node else Vector3.ZERO
+		for holder in body.get_children():
+			var pts := PackedVector3Array()
+			for p in ((holder as CollisionShape3D).shape as ConvexPolygonShape3D).points: pts.append(p+at)
+			hulls.append(pts)
+	var floating := 0
+	for foot: Vector3 in feet:
+		var g := float(ground.call(foot.x,foot.z))
+		# The lowest stone standing over the foot: hulls whose plan covers it.
+		var low := INF
+		for pts: PackedVector3Array in hulls:
+			var box := AABB(pts[0],Vector3.ZERO)
+			for p in pts: box = box.expand(p)
+			if foot.x > box.position.x-0.1 and foot.x < box.end.x+0.1 and foot.z > box.position.z-0.1 and foot.z < box.end.z+0.1:
+				low = minf(low,box.position.y)
+		if foot.y > g-0.05 or low > g:
+			floating += 1
+			print("  afloat: foot %s ground %.2f lowest stone %.2f" % [foot,g,low])
+	check(floating == 0,label+" reach below the ground (%d not)" % floating)
+
+## The connection points sit where the geometry is: a run's far end on its
+## deck (a hull's top at DECK there), its head's at its abutment; a hall's
+## mouths at its floor between its first and last outer columns.
+func _connections() -> void:
+	var run := Aqueduct.run(8,0.3,3)
+	var ends: Array = run.get_meta("ends")
+	check(ends.size() == 2 and ends[0].kind == "abutment" and ends[1].kind == "channel","a run's ends: its head's abutment, its channel's far end")
+	check(_top_near(run,(ends[1].at as Vector3)+Vector3(-0.4,0.0,0.0),Aqueduct.DECK),"the run's far end sits on its deck")
+	check(_top_near(run,(ends[0].at as Vector3)+Vector3(0.6,0.0,0.0),Aqueduct.DECK),"the run's head end sits on the cistern's floor")
+	run.free()
+	var hall := Hall.hall(9,0.4,4)
+	var mouths: Array = hall.get_meta("ends")
+	for m: Dictionary in mouths:
+		var at: Vector3 = m.at
+		check(is_equal_approx(at.y,float(m.height)) and not _clear(hall,AABB(Vector3(at.x-0.5,1.0,Hall.ROW_Z-0.5),Vector3(1.0,1.0,1.0)),false),"a hall's mouth sits at its floor by its end columns")
+	hall.free()
+
+## Whether a hull of `node` has a top within 0.2 m of `height` over `at`.
+func _top_near(node: Node3D, at: Vector3, height: float) -> bool:
+	for body in [node.get_node_or_null("Body")]:
+		if body == null: continue
+		for holder in body.get_children():
+			var pts := ((holder as CollisionShape3D).shape as ConvexPolygonShape3D).points
+			var box := AABB(pts[0],Vector3.ZERO)
+			for p in pts: box = box.expand(p)
+			if box.has_point(Vector3(at.x,box.position.y+0.01,at.z)) and absf(box.end.y-height) < 0.2: return true
+	return false
 
 func _mesh(node: Node3D) -> MeshInstance3D:
 	return node.get_node_or_null("Mesh") as MeshInstance3D
