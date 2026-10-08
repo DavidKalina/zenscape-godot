@@ -8,7 +8,12 @@ extends SceneTree
 ##   shelf: looking down on an island's shelf and its shallows;
 ##   up: from low over the water, looking up at the cloud's underside;
 ##   island: on foot on an island's top, looking out to sea;
-##   golden: the cruise at golden hour.
+##   golden, night: the cruise at golden hour and at night;
+##   up_golden, up_night: the look up at golden hour and at night;
+##   level, level_golden, level_night: level at cruise height out over open
+##     water to the horizon; level_sun: the same at golden hour into the sun;
+##   dive: on the way down, just out under the cloud, looking ahead and down;
+##   climb: on the way back up, under the cloud, looking up and ahead.
 ## Rendered only when asked for (needs a window):
 ##   Godot --windowed --path . --resolution 1280x720 -s res://tools/capture_lower_world.gd \
 ##     -- --no-title --below --out=/private/tmp/zs-lower-world [--only=emerge,cruise] [--no-ocean]
@@ -18,6 +23,7 @@ var out := "/private/tmp/zs-lower-world"
 var only: Array = []
 var noon := WorldClock.hour_for_phase(0.5)
 var golden := WorldClock.hour_for_phase(0.72)
+var night := WorldClock.hour_for_phase(0.02)
 
 func _initialize() -> void:
 	run.call_deferred()
@@ -96,6 +102,15 @@ func run() -> void:
 		{"label":"up","hour":noon,"eye":middle-away*(r+60.0)+Vector3.UP*(water-middle.y+12.0),"look":middle-away*(r+60.0)+away*120.0+Vector3.UP*(-60.0-middle.y)},
 		{"label":"island","hour":noon,"eye":Vector3(middle.x,ground+1.6,middle.z),"look":middle+away*200.0+Vector3.DOWN*(middle.y-water-4.0)},
 		{"label":"golden","hour":golden,"eye":middle-away*(r+90.0)+Vector3.UP*(water-middle.y+28.0),"look":middle+away*200.0+Vector3.DOWN*(middle.y-water),"chase":true},
+		{"label":"night","hour":night,"eye":middle-away*(r+90.0)+Vector3.UP*(water-middle.y+28.0),"look":middle+away*200.0+Vector3.DOWN*(middle.y-water),"chase":true},
+		{"label":"up_golden","hour":golden,"eye":middle-away*(r+60.0)+Vector3.UP*(water-middle.y+12.0),"look":middle-away*(r+60.0)+away*120.0+Vector3.UP*(-60.0-middle.y)},
+		{"label":"up_night","hour":night,"eye":middle-away*(r+60.0)+Vector3.UP*(water-middle.y+12.0),"look":middle-away*(r+60.0)+away*120.0+Vector3.UP*(-60.0-middle.y)},
+		{"label":"level","hour":noon,"eye":Vector3(start.x,water+30.0,start.z),"look":Vector3(start.x,water+30.0,start.z)-away*1000.0+Vector3.DOWN*25.0},
+		{"label":"level_golden","hour":golden,"eye":Vector3(start.x,water+30.0,start.z),"look":Vector3(start.x,water+30.0,start.z)-away*1000.0+Vector3.DOWN*25.0},
+		{"label":"level_night","hour":night,"eye":Vector3(start.x,water+30.0,start.z),"look":Vector3(start.x,water+30.0,start.z)-away*1000.0+Vector3.DOWN*25.0},
+		{"label":"level_sun","hour":golden,"eye":Vector3(start.x,water+30.0,start.z),"look":Vector3.ZERO,"sun":true},
+		{"label":"dive","hour":noon,"eye":Vector3(start.x,-152.0,start.z),"look":Vector3(start.x,-152.0,start.z)+away*400.0+Vector3.DOWN*220.0},
+		{"label":"climb","hour":noon,"eye":Vector3(start.x,-175.0,start.z),"look":Vector3(start.x,-175.0,start.z)+away*300.0+Vector3.UP*200.0},
 	]
 	var first := true
 	for shot: Dictionary in shots:
@@ -154,6 +169,9 @@ func _hold(shot: Dictionary, count: int) -> void:
 		glide.position = at
 		scene.world_clock.running = false
 		scene.world_clock.set_time(scene.world_clock.day,hour)
+		if shot.get("sun",false):
+			var sun: Vector3 = RenderingServer.global_shader_parameter_get("zs_sun_direction")
+			look = at+Vector3(sun.x,0.0,sun.z).normalized()*1000.0+Vector3.DOWN*12.0
 		var delta := 1.0/60.0
 		var view_eye := at
 		var view_look := look
