@@ -60,6 +60,7 @@ const Motifs = preload("res://scripts/cluster_motifs.gd")
 const Dresser = preload("res://scripts/cluster_dresser.gd")
 const StoneLampLights = preload("res://scripts/stone_lamp_lights.gd")
 const Cabin = preload("res://scripts/cabin.gd")
+const SkyPierced = preload("res://scripts/sky_pierced.gd")
 
 ## The density: a cluster's cell (m), and the share of cells holding one.
 const SPACING := 850.0
@@ -222,6 +223,7 @@ func spot_of(cell: Vector2i) -> Variant:
 		if Vector2(here.x,here.z).length() < ISLAND_CLEAR: continue
 		if cells != null and not cells.spots_near(here,ISLAND_CLEAR).is_empty(): continue
 		if SkyPeaks.blocks(here,WALL_CLEAR) or SkyTowers.blocks(here,TOWER_CLEAR) or SkyForestIsles.blocks(here,WONDER_CLEAR): continue
+		if SkyPierced.blocks(here): continue
 		if in_haze(here): continue
 		at = here
 		break
@@ -249,6 +251,7 @@ func near_spots(names: Array, seed_value: int, taken: Array) -> Array:
 				if (taken+out).any(func(f: Dictionary) -> bool: return _flat(f.at,here) < NEAR_GAP): continue
 				if cells != null and not cells.spots_near(here,NEAR_ISLAND).is_empty(): continue
 				if SkyPeaks.blocks(here,WALL_CLEAR) or SkyTowers.blocks(here,TOWER_CLEAR) or SkyForestIsles.blocks(here,WONDER_CLEAR): continue
+				if SkyPierced.blocks(here): continue
 				if in_haze(here): continue
 				at = here
 				break

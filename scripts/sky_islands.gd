@@ -79,6 +79,7 @@ const SkyPeaks = preload("res://scripts/sky_peaks.gd")
 const SkyTowers = preload("res://scripts/sky_towers.gd")
 const CloudWakes = preload("res://scripts/cloud_wakes.gd")
 const SkyForestIsles = preload("res://scripts/sky_forest_isles.gd")
+const SkyPierced = preload("res://scripts/sky_pierced.gd")
 const SkyHomes = preload("res://scripts/sky_homes.gd")
 const SkyFolk = preload("res://scripts/sky_folk.gd")
 ## The world's seed, bounds, ring and edge (scripts/sky_world.gd).
@@ -161,6 +162,9 @@ var isles: Node3D
 var folk: Node3D
 ## The clusters of islets that read as places (scripts/sky_clusters.gd).
 var clusters: Node3D
+## The pierced isles, big masses with holes to fly through (scripts/
+## sky_pierced.gd).
+var pierced: Node3D
 ## Now and then an airship towing a lone islet away (scripts/sky_airship.gd).
 var airship: Node3D
 ## The collectible tokens (scripts/sky_collectibles.gd), or null with
@@ -244,6 +248,10 @@ func setup(owner_scene: Node3D) -> void:
 	folk.islands = self
 	add_child(folk)
 	skip.append(folk)
+	pierced = SkyPierced.new()
+	pierced.islets = islets
+	add_child(pierced)
+	skip.append(pierced)
 	clusters = SkyClusters.new()
 	clusters.islets = islets
 	clusters.scene = scene
@@ -300,6 +308,7 @@ func build() -> void:
 	isles.side_source = editor._skirt_mesh.surface_get_material(0) if editor._skirt_mesh != null else null
 	isles.canopy_tint = SkyIslets._canopy_tint
 	isles.reset(cells)
+	pierced.reset(cells)
 	clusters.reset(cells)
 	if collectibles != null: collectibles.reset(cells)
 
@@ -315,6 +324,7 @@ func clear() -> void:
 	if currents != null: currents.drop_added()
 	if collectibles != null: collectibles.clear()
 	if clusters != null: clusters.clear()
+	if pierced != null: pierced.clear()
 	if airship != null: airship.clear()
 	if islets != null: islets.clear()
 	if peaks != null: peaks.clear()
@@ -363,6 +373,7 @@ func advance(delta: float, eye: Vector3, heading: float, parted: float) -> void:
 	t = Time.get_ticks_usec()
 	islets.advance(delta,eye)
 	clusters.advance(delta,eye)
+	pierced.advance(delta,eye)
 	spent.islets = Time.get_ticks_usec()-t
 	if collectibles != null:
 		t = Time.get_ticks_usec()
@@ -376,7 +387,7 @@ func advance(delta: float, eye: Vector3, heading: float, parted: float) -> void:
 	isles.advance(delta,eye)
 	spent.towers = Time.get_ticks_usec()-t
 	clouds.screen(towers.screens(eye),towers.fade(eye)*0.9)
-	var keep: Array = peaks.keep_spots(eye)+isles.keep_spots(eye)
+	var keep: Array = peaks.keep_spots(eye)+isles.keep_spots(eye)+pierced.keep_spots(eye)
 	keep.sort_custom(func(a: Vector4, b: Vector4) -> bool: return Vector2(a.x-eye.x,a.y-eye.z).length() < Vector2(b.x-eye.x,b.y-eye.z).length())
 	clouds.keep_off(keep)
 	clouds.follow(eye)

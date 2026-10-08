@@ -1226,6 +1226,9 @@ func _advance_flight(delta: float) -> void:
 	if glide.approach: glide.approach_target = _landing_spot()
 	if _landing_wait and not below(): _wait_to_land(delta,input)
 	glide.step(delta,input,_fly_ground,_fly_air)
+	# The pierced isles' rock and ruins (scripts/sky_pierced.gd): bump and
+	# recover.
+	if not below() and islands.pierced != null and islands.pierced.bump(glide,islands.global_transform): Pad.pulse(0.5,0.2,0.12)
 	RopeBridge.flown_by(islands.global_transform*glide.position,glide.velocity)
 	# Tokens the plane flies through (scripts/sky_collectibles.gd).
 	if islands.collectibles != null: islands.collectibles.touch_plane(islands.global_transform*glide.position)
@@ -1322,6 +1325,7 @@ func _write_chase() -> void:
 ## or under the lower world's ocean.
 func _solid(point: Vector3) -> bool:
 	if lower != null and point.y < SkyBelow.OCEAN+0.3: return true
+	if not below() and islands.pierced != null and islands.pierced.solid(point): return true
 	var body: Variant = _fly_ground(point)
 	if body == null: return false
 	var b := body as Vector2
