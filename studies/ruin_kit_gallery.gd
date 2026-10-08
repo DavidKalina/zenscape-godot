@@ -39,6 +39,9 @@ const PlaneFigure = preload("res://scripts/plane_figure.gd")
 const LandscapeLighting = preload("res://scripts/landscape_lighting.gd")
 const Celestial = preload("res://studies/celestial.gd")
 const LookPass = preload("res://scripts/look_pass.gd")
+const SkyPlane = preload("res://scripts/sky_plane.gd")
+const GlideCamera = preload("res://scripts/glide_camera.gd")
+const Pad = preload("res://scripts/pad.gd")
 
 ## The families left to right on the plate, their names, and each one's
 ## rows, back to front, and where each row stands (z, m).
@@ -46,12 +49,12 @@ const ORDER := ["hall","gothic","aqueduct"]
 const FAMILY_NAMES := {"gothic":"Gothic abbey","aqueduct":"Aqueduct","hall":"Colossus hall"}
 const ROWS := {"gothic":[["rose_gable","arch","lancet_wall"],["turret","vault","buttress","pier"],["wall","stairs","fallen_pier","tomb_chest","floor"]],
 	"aqueduct":[["aqueduct_end","aqueduct_two_tier","aqueduct_span","aqueduct_broken","aqueduct_stump"]],
-	"hall":[["hall_bay","hall_column"],["hall_beam","hall_slab"]]}
-const ROW_Z := {"gothic":[-13.0,-1.5,9.0],"aqueduct":[0.0],"hall":[-1.0,17.0]}
+	"hall":[["hall_bay"],["hall_column","hall_beam","hall_slab"]]}
+const ROW_Z := {"gothic":[-13.0,-1.5,9.0],"aqueduct":[0.0],"hall":[0.0,27.0]}
 ## The room between families on the plate (m), and how far behind its rows
 ## a family's centrepiece stands (to its middle).
 const FAMILY_GAP := 10.0
-const CENTRE_BACK := 22.0
+const CENTRE_BACK := {"gothic":22.0,"aqueduct":22.0,"hall":44.0}
 ## The aqueduct run: spans, which one is broken, its weathering; the strip
 ## of water under it (its half width, m) and the stumps standing in it past
 ## its end.
@@ -61,9 +64,17 @@ const RUN_WEATHERED := 0.55
 const SEA_HALF := 7.0
 ## The hall's centrepiece weathering, and its light shafts: the fog's
 ## density in the box round it and the sun's share in it.
-const HALL_WEATHERED := 0.8
-const SHAFT_FOG := 0.045
-const SHAFT_LIGHT := 3.6
+const HALL_WEATHERED := 0.6
+const HALL_BAYS := 12
+const SHAFT_FOG := 0.02
+const SHAFT_LIGHT := 4.0
+## Fly mode: the plane's body for the bump (m), the share of its speed a
+## bump keeps, the mouse's turn (radians a pixel, the game's LOOK).
+const BUMP_RADIUS := 0.55
+const BUMP_KEEP := 0.55
+const FLY_LOOK := 0.0025
+## The aqueduct across a valley (uneven ground): its spans.
+const VALLEY_SPANS := 6
 ## The room between a pair's two (m) and between pairs.
 const PAIR_GAP := 0.8
 const SLOT_GAP := 2.6
@@ -135,6 +146,20 @@ var _areas := {}
 var _centred := false
 var _shafts := true
 var _fog: FogVolume
+## Fly mode: on, the plane's flight (a SkyPlane), its figure, the chase
+## camera, the mouse's look and the barrel roll asked since the last step,
+## the bumps so far.
+var _flying := false
+var _plane_flight
+var _fly_figure
+var _chase
+var _fly_look := Vector2.ZERO
+var _roll_asked := 0.0
+var _bumps := 0
+## --fly[=seconds]: start flying (for a capture: on autopilot down the lane
+## that many seconds, weaving a little).
+var _fly_at := -1.0
+var _autopilot := 0.0
 
 func _ready() -> void:
 	var start_piece := -1
@@ -144,6 +169,7 @@ func _ready() -> void:
 		elif arg.begins_with("--family="): _family = arg.get_slice("=",1)
 		elif arg == "--centre": start_centre = true
 		elif arg == "--no-shafts": _shafts = false
+		elif arg.begins_with("--fly"): _fly_at = float(arg.get_slice("=",1)) if "=" in arg else 0.0
 		elif arg == "--night": _night = true
 		elif arg.begins_with("--show="): _show = maxi(0,SHOWS.find(arg.get_slice("=",1)))
 		elif arg.begins_with("--seed="): _seed = int(arg.get_slice("=",1))
@@ -170,6 +196,9 @@ func _ready() -> void:
 		_yaw = atan2(off.x,off.z)
 	_distance = _distance_goal
 	_focus = _focus_goal
+	if _fly_at >= 0.0:
+		_fly(true)
+		_autopilot = _fly_at
 	if not _capture.is_empty():
 		await get_tree().create_timer(4.0).timeout
 		await RenderingServer.frame_post_draw
@@ -181,7 +210,7 @@ func _ready() -> void:
 func _centre_origin(on: bool) -> Vector3:
 	if not on or not _areas.has(_family): return Vector3.ZERO
 	var rows: Array = ROW_Z[_family]
-	return (_areas[_family].origin as Vector3)+Vector3(0.0,0.0,float(rows[0])-CENTRE_BACK)
+	return (_areas[_family].origin as Vector3)+Vector3(0.0,0.0,float(rows[0])-float(CENTRE_BACK[_family]))
 
 func _vec(text: String) -> Vector3:
 	var p := text.split(",")
@@ -225,7 +254,7 @@ func _build_world() -> void:
 	_label.add_theme_color_override("font_shadow_color",Color(0.0,0.0,0.0,0.4))
 	layer.add_child(_label)
 	var help := Label.new()
-	help.text = "F1 Gothic · F2 Aqueduct · F3 Hall · 1-9 0 - = \\ frame a piece · C centrepiece · ←/→ next · Space/Tab whole layout · W intact/weathered · R reseed · N night · L shafts · Drag orbit · Wheel zoom"
+	help.text = "F1 Gothic · F2 Aqueduct · F3 Hall · 1-9 0 - = \\ frame a piece · C centrepiece · G fly the long hall · ←/→ next · Space/Tab whole layout · W intact/weathered · R reseed · N night · L shafts · Drag orbit · Wheel zoom"
 	help.add_theme_font_size_override("font_size",15)
 	help.add_theme_color_override("font_color",Color(1.0,0.98,0.92,0.5))
 	help.add_theme_color_override("font_shadow_color",Color(0.0,0.0,0.0,0.3))
@@ -325,10 +354,12 @@ func _build_family(area: Node3D, family: String) -> Rect2:
 			_slots.append(slot)
 			x += float(entry[3])+SLOT_GAP
 	_areas[family] = {"origin":Vector3.ZERO,"bounds":Rect2(),"local":Rect2(),"centre":{}}
-	var back: float = float(row_z[0])-CENTRE_BACK
+	var back: float = float(row_z[0])-float(CENTRE_BACK[family])
 	var extra := Rect2()
 	match family:
-		"aqueduct": extra = _aqueduct_run(area,back)
+		"aqueduct":
+			extra = _aqueduct_run(area,back)
+			extra = extra.merge(_valley(area,back-36.0))
 		"hall": extra = _hall_scene(area,back)
 	if extra.has_area(): bounds = bounds.merge(extra)
 	return bounds
@@ -370,43 +401,160 @@ func _sea(area: Node3D, rect: Rect2) -> void:
 	area.add_child(holder)
 	Aqueduct._sheet(holder,v,n,"Water")
 
-## The hall's centrepiece: two bays side by side round the medallion, the
-## fallen mask half sunk beside them, at `z`.
+## The hall's centrepiece: a long hall of HALL_BAYS bays along X, centred,
+## at `z`; behind it, a shorter hall run into a hillside.
 func _hall_scene(area: Node3D, z: float) -> Rect2:
-	var scene := Hall.hall(_seed*17+3,HALL_WEATHERED)
-	scene.position = Vector3(0.0,0.0,z)
+	var scene := Hall.hall(_seed*17+3,HALL_WEATHERED,HALL_BAYS)
+	var length: float = scene.get_meta("length")
+	scene.position = Vector3(-length*0.5,0.0,z)
 	area.add_child(scene)
 	_areas.hall.scene = scene
-	_tag(area,"The colossus hall",Vector3(0.0,0.02,z+Hall.BAY*0.5+6.0),1.0)
-	_areas.hall.centre = {"focus":Vector3(0.0,3.0,z),"distance":30.0,"yaw":0.3,"pitch":0.2}
-	return Rect2(-Hall.BAY*1.5-12.0,z-Hall.BAY*0.5-4.0,Hall.BAY*3.0+16.0,Hall.BAY+12.0)
+	_tag(area,"The long hall: %d bays to weave through (G flies it)" % HALL_BAYS,Vector3(0.0,0.02,z+Hall.WALL_Z+6.5),1.4)
+	_areas.hall.centre = {"focus":Vector3(0.0,4.0,z),"distance":95.0,"yaw":0.55,"pitch":0.32}
+	var rect := Rect2(-length*0.5-6.0,z-Hall.WALL_Z-7.0,length+12.0,Hall.WALL_Z*2.0+14.0)
+	# The hall in the hillside, its far end buried in the slope.
+	var hz := z-Hall.WALL_Z*2.0-34.0
+	var bays := 5
+	var hill_length := Hall.BAY*bays
+	var hill := func(x: float, zz: float) -> float: return clampf((x-hill_length*0.5)*0.55+0.02*absf(zz)*maxf(0.0,x-hill_length*0.5),0.0,Hall.ROOF_TOP+1.5)
+	var buried := Hall.hall(_seed*17+11,0.6,bays,hill)
+	buried.position = Vector3(-hill_length*0.5,0.0,hz)
+	area.add_child(buried)
+	_areas.hall.hill = buried
+	var ground_rect := Rect2(-6.0,-Hall.WALL_Z-8.0,hill_length+22.0,Hall.WALL_Z*2.0+16.0)
+	_terrain(buried,ground_rect,hill)
+	_tag(area,"A hall run into a hillside",Vector3(0.0,0.02,hz+Hall.WALL_Z+9.0),1.0)
+	return rect.merge(Rect2(ground_rect.position+Vector2(-hill_length*0.5,hz),ground_rect.size))
 
-## The shafts: Godot's volumetric fog in a box filling the roofed bay of the
-## hall's centrepiece (only there, so the air round it stays clear), and the sun, so its beams come down through
-## the roof's gaps (as scripts/redwood_biome_mist.gd's rays in the woods).
+## The aqueduct over a valley: a run of VALLEY_SPANS spans from its head,
+## butted into the hill at the left, across to the hill at the right, its
+## piers tall in the valley's middle and short up its sides; at `z`.
+func _valley(area: Node3D, z: float) -> Rect2:
+	var length := Aqueduct.SPAN*VALLEY_SPANS
+	var deck := Aqueduct.DECK-Aqueduct.FLOOR
+	var valley := func(x: float, zz: float) -> float:
+		var t := x/length
+		var sides := deck*0.92*(1.0-smoothstep(0.0,0.36,t))+deck*0.9*smoothstep(0.66,1.0,t)
+		if x < 0.0: sides = deck+0.4+minf(-x*0.05,1.0)
+		return maxf(0.0,sides+0.06*zz*(1.0 if t < 0.5 else -1.0))
+	var run := Aqueduct.run(_seed*31+77,0.45,VALLEY_SPANS,-1,true,valley)
+	run.position = Vector3(-length*0.5,0.0,z)
+	area.add_child(run)
+	_areas.aqueduct.valley = run
+	var ground_rect := Rect2(-14.0,-12.0,length+22.0,24.0)
+	_terrain(run,ground_rect,valley)
+	_tag(area,"Across a valley: tall piers in its middle, its head in the hill",Vector3(0.0,0.02,z+13.5),1.0)
+	return Rect2(ground_rect.position+Vector2(-length*0.5,z),ground_rect.size)
+
+## A simple faceted ground under `parent` (in its frame) over `rect` (x, z)
+## from `ground`: grass on the gentle facets, rock on the steep.
+func _terrain(parent: Node3D, rect: Rect2, ground: Callable) -> void:
+	var step := 2.0
+	var nx := int(ceil(rect.size.x/step))
+	var nz := int(ceil(rect.size.y/step))
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 911
+	var v := PackedVector3Array()
+	var n := PackedVector3Array()
+	var c := PackedColorArray()
+	var at := func(i: int, j: int) -> Vector3:
+		var x := rect.position.x+i*rect.size.x/nx
+		var zz := rect.position.y+j*rect.size.y/nz
+		var edge := i == 0 or j == 0 or i == nx or j == nz
+		return Vector3(x,float(ground.call(x,zz))-(0.15 if edge else 0.0)+0.02,zz)
+	for i in range(nx):
+		for j in range(nz):
+			var a: Vector3 = at.call(i,j)
+			var b: Vector3 = at.call(i+1,j)
+			var d: Vector3 = at.call(i,j+1)
+			var e: Vector3 = at.call(i+1,j+1)
+			for t: Array in [[a,d,b],[b,d,e]]:
+				var p0: Vector3 = t[0]
+				var p1: Vector3 = t[1]
+				var p2: Vector3 = t[2]
+				var normal := (p1-p0).cross(p2-p0).normalized()
+				if normal.y < 0.0:
+					normal = -normal
+					var swap := p1
+					p1 = p2
+					p2 = swap
+				var tone: Color = GRASS[rng.randi()%GRASS.size()]*rng.randf_range(0.92,1.06)
+				if normal.y < 0.8: tone = tone.lerp(ROCK,smoothstep(0.8,0.55,normal.y))
+				for p: Vector3 in [p0,p2,p1]:
+					v.append(p)
+					n.append(normal)
+					c.append(tone.srgb_to_linear())
+	# Its sides: rock faces down to the plate round the rim.
+	var rim: Array[Vector3] = []
+	for i in range(nx): rim.append(at.call(i,0))
+	for j in range(nz): rim.append(at.call(nx,j))
+	for i in range(nx,0,-1): rim.append(at.call(i,nz))
+	for j in range(nz,0,-1): rim.append(at.call(0,j))
+	var middle := Vector3(rect.get_center().x,0.0,rect.get_center().y)
+	for k in range(rim.size()):
+		var p0: Vector3 = rim[k]
+		var p1: Vector3 = rim[(k+1)%rim.size()]
+		if p0.y < 0.05 and p1.y < 0.05: continue
+		var q0 := Vector3(p0.x,-0.1,p0.z)
+		var q1 := Vector3(p1.x,-0.1,p1.z)
+		var out := ((p0+p1)*0.5-middle)*Vector3(1.0,0.0,1.0)
+		for t: Array in [[p0,q0,p1],[p1,q0,q1]]:
+			var a0: Vector3 = t[0]
+			var a1: Vector3 = t[1]
+			var a2: Vector3 = t[2]
+			var normal := (a1-a0).cross(a2-a0).normalized()
+			if normal.dot(out) < 0.0:
+				normal = -normal
+				var swap := a1
+				a1 = a2
+				a2 = swap
+			for p: Vector3 in [a0,a2,a1]:
+				v.append(p)
+				n.append(normal)
+				c.append((ROCK*rng.randf_range(0.85,1.1)).srgb_to_linear())
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = v
+	arrays[Mesh.ARRAY_NORMAL] = n
+	arrays[Mesh.ARRAY_COLOR] = c
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
+	var ground_node := MeshInstance3D.new()
+	ground_node.name = "Ground"
+	ground_node.mesh = mesh
+	ground_node.material_override = RuinKit.materials().stone
+	parent.add_child(ground_node)
+
+## The shafts: Godot's volumetric fog, thin and tight, filling only the
+## long hall's inside (so the air round it stays clear and the inside
+## stays dark where the sun does not reach), and the sun lighting it, so
+## its beams come down crisp through the roof's gaps and the lancets (as
+## scripts/redwood_biome_mist.gd's rays in the woods). No ambient light in
+## the fog: unlit air is dark.
 func _shaft_fog() -> void:
 	_fog = FogVolume.new()
 	_fog.name = "HallFog"
 	var material := FogMaterial.new()
 	material.density = SHAFT_FOG
-	material.albedo = Color(0.92,0.9,0.85)
-	material.height_falloff = 0.08
-	material.edge_fade = 0.25
+	material.albedo = Color(0.95,0.92,0.86)
+	material.edge_fade = 0.05
 	_fog.material = material
 	_fog.shape = RenderingServer.FOG_VOLUME_SHAPE_BOX
-	_fog.size = Vector3(Hall.BAY+1.0,Hall.COLUMN_H+0.6,Hall.BAY+1.0)
-	var centre: Dictionary = _areas.hall.centre
-	_layout.add_child(_fog)
-	_fog.position = Vector3((_areas.hall.origin as Vector3).x-Hall.BAY*0.5,_fog.size.y*0.5,(centre.focus as Vector3).z)
+	var scene: Node3D = _areas.hall.scene
+	var length: float = scene.get_meta("length")
+	_fog.size = Vector3(length-1.0,Hall.COLUMN_H+0.9,(Hall.WALL_Z-Hall.WALL_THICK*0.5)*2.0-0.4)
+	scene.add_child(_fog)
+	_fog.position = Vector3(length*0.5,_fog.size.y*0.5,0.0)
 	_set_shafts(_shafts)
 
 func _set_shafts(on: bool) -> void:
 	_shafts = on
 	_environment.volumetric_fog_enabled = on
 	_environment.volumetric_fog_density = 0.0
-	_environment.volumetric_fog_length = 90.0
-	_environment.volumetric_fog_anisotropy = 0.6
-	_environment.volumetric_fog_ambient_inject = 0.02
+	_environment.volumetric_fog_length = 120.0
+	_environment.volumetric_fog_detail_spread = 1.5
+	_environment.volumetric_fog_anisotropy = 0.72
+	_environment.volumetric_fog_ambient_inject = 0.0
 	_sun.light_volumetric_fog_energy = SHAFT_LIGHT if on else 0.0
 	if _fog != null: _fog.visible = on
 	_say()
@@ -560,20 +708,32 @@ func _figures() -> void:
 	walker.rotation.y = PI*0.5
 	walker.settle()
 	_pilots.append(walker)
-	# The hall: the pilot at a column's foot and by the medallion; the plane
-	# flying through under the roof, and one on a knife edge in the slit.
+	# The hall: the pilot at a column's foot, and in the long hall on the
+	# nave's floor and up on a low tie; the plane cruising down the lane, a
+	# second on a knife edge in a screen's slit.
 	var column: Dictionary = slot.call("hall_column")
-	_pilot(column,0,Vector3(1.9,0.0,1.2),0.5)
+	_pilot(column,0,Vector3(2.0,0.0,1.4),0.5)
 	var scene: Node3D = _areas.hall.scene
-	var inside := PilotFigure.new()
-	scene.add_child(inside)
-	inside.position = Vector3(Hall.BAY*0.5+1.6,0.0,1.4)
-	inside.rotation.y = 0.6
-	inside.settle()
-	_pilots.append(inside)
-	_plane(scene,Vector3(-Hall.BAY*0.25,2.6,-0.6),Vector3(0.02,PI*0.5+0.25,0.18))
-	var slit: Vector3 = scene.get_meta("slit")
-	_plane(scene,slit+Vector3(0.0,0.0,0.4),Vector3(0.0,0.0,PI*0.5))
+	var weave: Dictionary = scene.get_meta("weave")
+	var floor_pilot := PilotFigure.new()
+	scene.add_child(floor_pilot)
+	floor_pilot.position = Vector3(Hall.BAY*1.5,0.0,2.0)
+	floor_pilot.rotation.y = 0.6
+	floor_pilot.settle()
+	_pilots.append(floor_pilot)
+	if not (weave.low_ties as Array).is_empty():
+		var tie: Vector3 = weave.low_ties[0]
+		var up := PilotFigure.new()
+		scene.add_child(up)
+		up.position = Vector3(tie.x,Hall.TIE_LOW+Hall.TIE_DEPTH,-5.0)
+		up.rotation.y = 1.2
+		up.settle()
+		_pilots.append(up)
+	# Heading +X: SkyGlide's forward is (-sin h, 0, -cos h), so h -PI/2.
+	_plane(scene,Vector3(Hall.BAY*2.4,2.6,6.0),Vector3(0.0,-PI*0.5+0.12,0.3))
+	if scene.has_meta("slit"):
+		var slit: Vector3 = scene.get_meta("slit")
+		_plane(scene,slit+Vector3(0.6,0.0,0.0),Vector3(0.0,-PI*0.5,PI*0.5))
 
 func _plane(parent: Node3D, at: Vector3, turn: Vector3) -> void:
 	var plane := PlaneFigure.new()
@@ -676,7 +836,10 @@ func _say() -> void:
 	var what := "The ruin kit" if _frame < 0 else "%s %d · %s" % [FAMILY_NAMES[_slots[_frame].family],(RuinKit.FAMILIES[_slots[_frame].family] as Array).find(_slots[_frame].id)+1,RuinKit.NAMES[_slots[_frame].id]]
 	if _frame < 0 and _focus_goal != Vector3.ZERO and _areas.has(_family) and (_centred or _distance_goal < _bounds.size.x*0.5):
 		what = FAMILY_NAMES[_family]+(" · centrepiece" if _centred else "")
-	var keys := "F1 Gothic · F2 Aqueduct · F3 Hall"
+	var keys := "F1 Gothic · F2 Aqueduct · F3 Hall · G fly the long hall"
+	if _flying:
+		_label.text = "Flying the long hall   ·   %.0f m/s   ·   bumps %d   ·   shafts %s\nA D bank and turn · W S pitch (W nose down) · mouse steers · Space boost · Shift brake · Q E barrel roll · hold right mouse to look round · L shafts · N night · G or Esc to stop flying" % [float(_plane_flight.speed),_bumps,"on" if _shafts else "off"]
+		return
 	_label.text = "%s   ·   %s   ·   %s   ·   shafts %s   ·   seed %d\n%s" % [what,SHOWS[_show],"night" if _night else "day","on" if _shafts else "off",_seed,keys]
 
 func _set_night(on: bool) -> void:
@@ -700,12 +863,16 @@ func _process(delta: float) -> void:
 	_celestial.advance(delta,true)
 	for pilot in _pilots:
 		if pilot.is_visible_in_tree(): pilot._advance(delta)
-	var ease := minf(1.0,delta*4.0)
-	_focus = _focus.lerp(_focus_goal,ease)
-	_distance = lerpf(_distance,_distance_goal,ease)
-	var frame := Transform3D(Basis(Vector3.UP,_layout_yaw),Vector3.ZERO)
-	_camera.position = frame*(_focus+Vector3(sin(_yaw)*cos(_pitch),sin(_pitch),cos(_yaw)*cos(_pitch))*_distance)
-	_camera.look_at(frame*_focus)
+	if _flying:
+		_fly_step(minf(delta,0.05))
+		if Engine.get_process_frames()%15 == 0: _say()
+	else:
+		var ease := minf(1.0,delta*4.0)
+		_focus = _focus.lerp(_focus_goal,ease)
+		_distance = lerpf(_distance,_distance_goal,ease)
+		var frame := Transform3D(Basis(Vector3.UP,_layout_yaw),Vector3.ZERO)
+		_camera.position = frame*(_focus+Vector3(sin(_yaw)*cos(_pitch),sin(_pitch),cos(_yaw)*cos(_pitch))*_distance)
+		_camera.look_at(frame*_focus)
 	RenderingServer.global_shader_parameter_set("zs_camera_position",_camera.global_position)
 	RenderingServer.global_shader_parameter_set("zs_motion_time",_motion_time)
 	# The channel's water ripples and the spill runs on the scene's clock.
@@ -714,6 +881,19 @@ func _process(delta: float) -> void:
 	RenderingServer.global_shader_parameter_set("zs_cloud",Vector4(_celestial.cloud,0.0,DECK.x,DECK.y))
 
 func _unhandled_input(event: InputEvent) -> void:
+	if _flying:
+		if event is InputEventMouseMotion:
+			_fly_look += Vector2(event.relative.x,-event.relative.y)*FLY_LOOK
+		elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT:
+			_chase.free_held = event.pressed
+		elif event is InputEventKey and event.pressed and not event.echo:
+			match event.keycode:
+				KEY_G, KEY_ESCAPE: _fly(false)
+				KEY_Q: _roll_asked = -1.0
+				KEY_E: _roll_asked = 1.0
+				KEY_N: _set_night(not _night)
+				KEY_L: _set_shafts(not _shafts)
+		return
 	if event is InputEventMouseMotion and event.button_mask & MOUSE_BUTTON_MASK_LEFT:
 		_yaw -= event.relative.x*0.006
 		_pitch = clampf(_pitch+event.relative.y*0.005,-0.1,1.4)
@@ -733,6 +913,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_LEFT: _frame_piece((_frame+_slots.size()-1)%_slots.size() if _frame >= 0 else _slots.size()-1)
 			KEY_SPACE, KEY_TAB: _frame_piece(-1)
 			KEY_C: _frame_centre()
+			KEY_G: _fly(true)
 			KEY_L: _set_shafts(not _shafts)
 			KEY_R:
 				var framed := _frame
@@ -746,3 +927,109 @@ func _unhandled_input(event: InputEvent) -> void:
 				_apply_show()
 				if _frame >= 0: _frame_piece(_frame)
 			KEY_N: _set_night(not _night)
+
+# --- Fly mode (G) ---------------------------------------------------------------
+
+## Fly mode: the game's own plane (scripts/sky_plane.gd) flown with the
+## game's controls, under its chase camera (scripts/glide_camera.gd), into
+## the long hall's mouth. The ruins' bodies are solid: touching stone
+## bumps the plane back out along the face, turned along it and slowed,
+## and it flies on (bump and recover, never a crash).
+func _fly(on: bool) -> void:
+	if on == _flying: return
+	_flying = on
+	if not on:
+		if _fly_figure != null: _fly_figure.queue_free()
+		_fly_figure = null
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		_camera.fov = 40.0
+		_say()
+		return
+	Pad.ensure()
+	var scene: Node3D = _areas.hall.scene
+	var mouth: Dictionary = (scene.get_meta("ends") as Array)[0]
+	var at := scene.global_transform*((mouth.at as Vector3)+Vector3(-18.0,3.2,(Hall.LANE.x+Hall.LANE.y)*0.5))
+	var way := (scene.global_transform.basis*Vector3.RIGHT).normalized()
+	_plane_flight = SkyPlane.new()
+	_plane_flight.floor_y = -100.0
+	_plane_flight.launch(at,atan2(-way.x,-way.z),SkyPlane.CRUISE_SPEED,false)
+	_fly_figure = PlaneFigure.new()
+	_fly_figure.name = "Flying"
+	add_child(_fly_figure)
+	_fly_figure.show_pilot(true)
+	_chase = GlideCamera.new()
+	_chase.reset(_plane_flight,at-way*6.0+Vector3.UP*1.6)
+	_fly_look = Vector2.ZERO
+	_bumps = 0
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	_say()
+
+## The plate's top under a point, or open air off it.
+func _fly_ground(p: Vector3) -> Variant:
+	var local := _layout.global_transform.affine_inverse()*p
+	if _bounds.has_point(Vector2(local.x,local.z)): return 0.0
+	return null
+
+func _fly_step(delta: float) -> void:
+	var stick := Input.get_vector(&"move_left",&"move_right",&"move_forward",&"move_back")
+	if _autopilot > 0.0:
+		# Down the lane, weaving a little either side of its middle, at
+		# the height of a low run (in the hall's frame: +X down the nave).
+		_autopilot -= delta
+		var scene: Node3D = _areas.hall.scene
+		var inv: Transform3D = scene.global_transform.affine_inverse()
+		var local: Vector3 = inv*(_plane_flight.position as Vector3)
+		var moving: Vector3 = inv.basis*(_plane_flight.velocity as Vector3)
+		var want := (Hall.LANE.x+Hall.LANE.y)*0.5+1.1*sin(_motion_time*0.9)
+		stick = Vector2(clampf(-(local.z-want)*0.35-moving.z*0.3,-0.7,0.7),clampf((2.8-local.y)*0.4-moving.y*0.25,-0.6,0.6))
+	var input := {"turn":stick.x,"pitch":stick.y,"look":_fly_look,
+		"boost":Input.get_action_strength(&"fly_boost"),"brake":Input.get_action_strength(&"fly_brake"),"roll":_roll_asked}
+	_fly_look = Vector2.ZERO
+	_roll_asked = 0.0
+	var was: Vector3 = _plane_flight.position
+	_plane_flight.step(delta,input,_fly_ground)
+	_bump(was)
+	_fly_figure.update(delta,_plane_flight,0.0,_fly_ground,false)
+	_fly_figure._mark.visible = false
+	_chase.step(delta,_plane_flight,0.0,_inside_stone)
+	_camera.global_position = _chase.eye
+	_camera.look_at(_chase.look,Vector3.UP)
+	_camera.rotate_object_local(Vector3.FORWARD,_chase.roll)
+	_camera.fov = _chase.fov
+
+## Bump and recover: if the plane's body (a ball BUMP_RADIUS round it)
+## sits in stone, it is put back out along the face it hit (the way it
+## came, failing that), its heading turned along the face and its pitch
+## eased level, a share of its speed lost; the camera shakes a little.
+func _bump(was: Vector3) -> void:
+	var space := get_world_3d().direct_space_state
+	var query := PhysicsShapeQueryParameters3D.new()
+	var ball := SphereShape3D.new()
+	ball.radius = BUMP_RADIUS
+	query.shape = ball
+	query.transform = Transform3D(Basis.IDENTITY,_plane_flight.position)
+	var rest := space.get_rest_info(query)
+	if rest.is_empty(): return
+	_bumps += 1
+	var normal: Vector3 = rest.get("normal",Vector3.ZERO)
+	if normal.length() < 0.5: normal = (was-_plane_flight.position).normalized()
+	# Back out: to where it was, then a little off the face.
+	_plane_flight.position = was+normal*0.15
+	query.transform = Transform3D(Basis.IDENTITY,_plane_flight.position)
+	if not space.get_rest_info(query).is_empty(): _plane_flight.position = was+normal*0.6
+	# Turned along the face, eased level against a floor or ceiling.
+	var way: Vector3 = _plane_flight.forward()
+	var along := way-normal*way.dot(normal)
+	if along.length() > 0.05:
+		along = along.normalized()
+		var flat := Vector2(along.x,along.z)
+		if flat.length() > 0.05: _plane_flight.heading = atan2(-flat.x,-flat.y)
+		_plane_flight.pitch = clampf(asin(clampf(along.y,-1.0,1.0)),-0.6,0.6)
+	_plane_flight.speed = maxf(SkyPlane.SLOW,float(_plane_flight.speed)*BUMP_KEEP)
+	_plane_flight.velocity = _plane_flight.forward()*float(_plane_flight.speed)
+
+## Whether a point is inside stone (the camera stays out of it).
+func _inside_stone(p: Vector3) -> bool:
+	var query := PhysicsPointQueryParameters3D.new()
+	query.position = p
+	return not get_world_3d().direct_space_state.intersect_point(query,1).is_empty()

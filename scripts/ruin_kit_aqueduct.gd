@@ -20,6 +20,27 @@ extends RefCounted
 ## sky islets lay theirs, scripts/sky_islets.gd `curtain`): crafted, not
 ## the live water's. Spans past a break are dry. The channel's water is the
 ## islets' small pond water (shaders/islet_pond.gdshader).
+##
+## Contract for a layout pass (the landforms to come, aqueducts striding
+## over real terrain between the halls):
+## - `ground`: an optional Callable(x, z) -> y in the piece's (or run's)
+##   frame; flat y 0 if absent. The deck stays level at DECK; each pier
+##   grows down to meet the ground and FOOTING below it, so a run across a
+##   valley has tall piers in the middle and short ones at the ends, and a
+##   pier the ground stands over is buried in it. The head's abutment steps
+##   down the slope into the hillside it butts against (its treads under
+##   the ground are left out).
+## - Metadata on each piece and on a run, in its frame: "bounds" AABB;
+##   "feet" Array of Vector3 (each pier's foot, under the ground there);
+##   "walk" Array of {from, to, width} (the channel); "corridors" Array of
+##   AABB (under each arch, THREAD wide, from over the ground there to over
+##   the springing: keep terrain out of them); "ends" Array of {at,
+##   heading, height, kind} (the channel's two ends at the deck: "channel"
+##   where another span or a hall chains on, "abutment" where the head
+##   butts into the land).
+## - Cost: a run is merged into one mesh and one body (RuinKit `merge`;
+##   water and the spill stay their own); RuinKit `set_detail` thins its
+##   growth and scatter.
 ##   ./run-ruin-kit.command  (F2 frames the aqueduct)
 
 const RuinKit = preload("res://scripts/ruin_kit.gd")
@@ -77,6 +98,8 @@ const CISTERN_LIP := 0.44
 ## share of the abbey's (RuinKit Build `settle`): heavy coursed arcades
 ## stay in line, so a ruined run reads settled, not shaken.
 const SETTLE := 0.35
+## How far a pier's footing reaches below the ground under it (m).
+const FOOTING := 0.6
 ## The pier stump: its height range (m), stepping stones in the sea.
 const STUMP := Vector2(1.1,2.3)
 
@@ -97,10 +120,11 @@ static func piece(id: String, seed_value: int, weathered := 0.0) -> Node3D:
 ## Weathered: the parapets broken and gone in runs, the hood mould and the
 ## outer order gapped, cutwater caps and corbels broken, moss over the deck,
 ## ivy hanging off it and from the arch; the channel still whole.
-static func span(seed_value: int, weathered := 0.0, piers := 3, wet := true) -> Node3D:
+static func span(seed_value: int, weathered := 0.0, piers := 3, wet := true, ground := Callable()) -> Node3D:
 	var b := Build.new(seed_value,weathered,"AqueductSpan")
 	b.settle = SETTLE
-	_arcade(b,0.0,SPRING,DECK-FLOOR,PIER,CLEAR*0.5,1.0,piers,CUTWATER.y)
+	b.terrain = ground
+	_arcade(b,0.0,SPRING,DECK-FLOOR,PIER,CLEAR*0.5,1.0,piers,CUTWATER.y,true,true)
 	_deck(b,-SPAN*0.5,SPAN*0.5,DECK,Callable())
 	if wet: _water(b.root,-SPAN*0.5,SPAN*0.5,DECK+WATER)
 	_hang(b,DECK)
@@ -109,16 +133,17 @@ static func span(seed_value: int, weathered := 0.0, piers := 3, wet := true) -> 
 			RuinKit._drift(b,Vector3(side*SPAN*0.5+b.rng.randf_range(-0.4,0.4),0.0,PIER.y*0.5+CUTWATER.x+0.4),1.0,int(weathered*4.0))
 	RuinKit._rubble(b,SPAN*0.5,int(round(weathered*b.rng.randf_range(3.0,6.0))))
 	b.root.set_meta("span",SPAN)
-	return b.finish()
+	return _finish(b,DECK,piers,[[CLEAR*0.5,SPRING]])
 
 ## 2. A two-tier span for a deep gap: a lower arcade on cutwatered piers, a
 ## gallery course over it (a ledge to walk along), and an upper arcade of
 ## lighter piers and drop arches carrying the channel. Weathered as a span,
 ## the gallery course broken in places.
-static func two_tier(seed_value: int, weathered := 0.0, piers := 3, wet := true) -> Node3D:
+static func two_tier(seed_value: int, weathered := 0.0, piers := 3, wet := true, ground := Callable()) -> Node3D:
 	var b := Build.new(seed_value,weathered,"AqueductTwoTier")
 	b.settle = SETTLE
-	_arcade(b,0.0,LOWER_SPRING,MID-FLOOR,PIER,CLEAR*0.5,1.0,piers,CUTWATER.y)
+	b.terrain = ground
+	_arcade(b,0.0,LOWER_SPRING,MID-FLOOR,PIER,CLEAR*0.5,1.0,piers,CUTWATER.y,true,true)
 	# The gallery course: long slabs standing out either side, a ledge.
 	var x := -SPAN*0.5
 	while x < SPAN*0.5-0.05:
@@ -141,7 +166,7 @@ static func two_tier(seed_value: int, weathered := 0.0, piers := 3, wet := true)
 	RuinKit._drift(b,Vector3(-SPAN*0.5+0.6,0.0,PIER.y*0.5+CUTWATER.x+0.5),1.0,int(weathered*4.0))
 	RuinKit._rubble(b,SPAN*0.5,int(round(weathered*b.rng.randf_range(3.0,6.0))))
 	b.root.set_meta("span",SPAN)
-	return b.finish()
+	return _finish(b,DECK_HIGH,piers,[[CLEAR*0.5,LOWER_SPRING],[upper_half,MID+UPPER_RISE]])
 
 ## 3. A broken span: its left pier standing with the arch's first stones
 ## and a stub of spandrel and channel snapped off in mid-air past it, the
@@ -150,9 +175,10 @@ static func two_tier(seed_value: int, weathered := 0.0, piers := 3, wet := true)
 ## `right`: "stump", the right pier fallen to a broken stump (a piece on its
 ## own); "pier", standing; "none", another span's pier stands there (in a
 ## run). Weathered, the stub is shorter and the rubble deeper.
-static func broken(seed_value: int, weathered := 0.0, left := true, right := "stump", wet := true) -> Node3D:
+static func broken(seed_value: int, weathered := 0.0, left := true, right := "stump", wet := true, ground := Callable()) -> Node3D:
 	var b := Build.new(seed_value,weathered,"AqueductBroken")
 	b.settle = SETTLE
+	b.terrain = ground
 	var hx := PIER.x*0.5
 	var deck_foot := DECK-FLOOR
 	var h := CLEAR*0.5
@@ -170,9 +196,11 @@ static func broken(seed_value: int, weathered := 0.0, left := true, right := "st
 		var r := -INF
 		if right_side: r = right_high if x > right_from else right_high-(right_from-x)*2.4
 		return maxf(l,r)+((float(ragged.call(x))-0.5)*0.5 if x > full else 0.0)
-	if left: _pier(b,-SPAN*0.5,0.0,SPRING,deck_foot,PIER,CUTWATER.y)
-	if right == "pier": _pier(b,SPAN*0.5,0.0,SPRING,right_high,PIER,CUTWATER.y)
-	elif right == "stump": _pier(b,SPAN*0.5,0.0,SPRING,0.0,PIER,CUTWATER.y,b.rng.randf_range(STUMP.x,STUMP.y)+0.6)
+	var lg := _pier_foot(b,-SPAN*0.5)
+	var rg := _pier_foot(b,SPAN*0.5)
+	if left: _pier(b,-SPAN*0.5,lg,SPRING,deck_foot,PIER,CUTWATER.y+_sunk(b))
+	if right == "pier": _pier(b,SPAN*0.5,rg,SPRING,right_high,PIER,CUTWATER.y+_sunk(b))
+	elif right == "stump": _pier(b,SPAN*0.5,rg,SPRING,0.0,PIER,CUTWATER.y+_sunk(b),b.floor_at(SPAN*0.5,0.0)+b.rng.randf_range(STUMP.x,STUMP.y)+0.6)
 	# The arch's stones that still stand: the left side's first few, the
 	# right's springers.
 	var keep_left := lerpf(-h+2.1,-h+1.3,weathered)
@@ -196,7 +224,7 @@ static func broken(seed_value: int, weathered := 0.0, left := true, right := "st
 	if wet:
 		_water(b.root,-SPAN*0.5,snap-0.12,DECK+WATER)
 		var lip := Vector3(snap-0.1,DECK+WATER-0.02,0.0)
-		var pool := _spill(b.root,lip,Vector3.RIGHT,seed_value)
+		var pool := _spill(b.root,lip,Vector3.RIGHT,seed_value,b.floor_at(lip.x+1.8,0.0))
 		_pool(b,pool,1.25)
 	# The fallen: a deep drift under the gap, a length of channel lying in
 	# it, voussoirs and coping strewn.
@@ -211,29 +239,42 @@ static func broken(seed_value: int, weathered := 0.0, left := true, right := "st
 		var stone := Vector3(b.rng.randf_range(0.3,0.42),b.rng.randf_range(0.22,0.3),d*b.rng.randf_range(0.45,0.8))
 		b.solid(RuinKit._box(b,stone),Transform3D(tumble,heap+Vector3(b.rng.randf_range(-2.4,2.4),stone.y*0.8,b.rng.randf_range(-2.0,2.0))),RuinKit._stone(b,1.02),true,true,[],-1,1.5)
 	for i in range(3+int(weathered*5.0)):
-		b.tuft(heap+Vector3(b.rng.randf_range(-2.8,2.8),0.0,b.rng.randf_range(-1.8,2.2)),0.45)
+		var spot := heap+Vector3(b.rng.randf_range(-2.8,2.8),0.0,b.rng.randf_range(-1.8,2.2))
+		spot.y = b.floor_at(spot.x,spot.z)
+		b.tuft(spot,0.45)
 	_hang(b,DECK,full)
 	RuinKit._rubble(b,SPAN*0.5,4+int(round(weathered*b.rng.randf_range(3.0,6.0))))
 	b.root.set_meta("span",SPAN)
-	return b.finish()
+	var node := _finish(b,DECK,(1 if left else 0)|(2 if right != "none" else 0),[])
+	# The channel breaks off at `snap`: its far end is no connection.
+	node.set_meta("ends",[(node.get_meta("ends") as Array)[0]])
+	node.set_meta("walk",[{"from":Vector3(-SPAN*0.5,DECK,0.0),"to":Vector3(snap,DECK,0.0),"width":CHANNEL}])
+	return node
 
 ## 4. A pier stump: a pier broken off STUMP high, standing alone in the
 ## sea or the grass, its cutwaters still on it, its top a course of whole
 ## stones to stand on: a stepping stone (one jump from the next, or up out
 ## of the water). Weathered, lower, its head more broken, mossed over.
-static func stump(seed_value: int, weathered := 0.0) -> Node3D:
+static func stump(seed_value: int, weathered := 0.0, ground := Callable()) -> Node3D:
 	var b := Build.new(seed_value,weathered,"AqueductStump")
 	b.settle = SETTLE
+	b.terrain = ground
 	var height := lerpf(STUMP.y,STUMP.x,weathered*b.rng.randf_range(0.5,1.0))
 	if weathered < 0.05: height = STUMP.y
-	_pier(b,0.0,0.0,SPRING,0.0,PIER,CUTWATER.y,height)
+	var g := _pier_foot(b,0.0)
+	height += b.floor_at(0.0,0.0)
+	_pier(b,0.0,g,SPRING,0.0,PIER,CUTWATER.y+_sunk(b),height)
 	RuinKit._drift(b,Vector3(b.rng.randf_range(-0.8,0.8),0.0,PIER.y*0.5+0.8),1.1,1+int(weathered*4.0))
 	for i in range(int(2+weathered*4.0)):
 		var a := b.rng.randf()*TAU
-		b.tuft(Vector3(cos(a)*1.4,0.0,sin(a)*1.9),0.4)
+		b.tuft(Vector3(cos(a)*1.4,b.floor_at(cos(a)*1.4,sin(a)*1.9),sin(a)*1.9),0.4)
 	RuinKit._rubble(b,1.8,int(round(weathered*b.rng.randf_range(2.0,5.0))))
 	b.root.set_meta("height",height)
-	return b.finish()
+	var node := _finish(b,height,0,[])
+	node.set_meta("feet",[Vector3(0.0,g,0.0)])
+	node.set_meta("ends",[])
+	node.set_meta("walk",[{"from":Vector3(-0.5,height,0.0),"to":Vector3(0.5,height,0.0),"width":PIER.x}])
+	return node
 
 ## 5. The head: where the channel meets the land. A stepped abutment of
 ## coursed walling (`raised`: its treads each a jump over the last, the way
@@ -243,9 +284,11 @@ static func stump(seed_value: int, weathered := 0.0) -> Node3D:
 ## arch under a gablet. Its +X face (x 0) is where the first span's left
 ## end meets it: the abutment stands in for that span's left pier.
 ## Weathered, the gablet and lip broken, ivy down the abutment.
-static func head(seed_value: int, weathered := 0.0, raised := true, wet := true) -> Node3D:
+static func head(seed_value: int, weathered := 0.0, raised := true, wet := true, ground := Callable()) -> Node3D:
 	var b := Build.new(seed_value,weathered,"AqueductEnd")
 	b.settle = SETTLE
+	b.terrain = ground
+	var feet: Array = []
 	var hx := PIER.x*0.5
 	var hz := CISTERN.y*0.5+0.5
 	var deck_foot := DECK-FLOOR
@@ -264,9 +307,18 @@ static func head(seed_value: int, weathered := 0.0, raised := true, wet := true)
 		for i in range(tops.size()):
 			var x0 := back if i == 0 else x1-ABUTMENT_TREAD
 			var high: float = tops[i]
+			# On the ground, each section from under its lowest ground; a
+			# tread the hillside stands over is buried and left out.
+			var low := minf(minf(b.floor_at(x0,-hz),b.floor_at(x0,hz)),minf(b.floor_at(x1,-hz),b.floor_at(x1,hz)))
+			var crest := maxf(maxf(b.floor_at(x0,-hz),b.floor_at(x0,hz)),maxf(b.floor_at(x1,-hz),b.floor_at(x1,hz)))
+			if b.terrain.is_valid() and crest > high+0.3 and i > 0:
+				x1 = x0
+				continue
+			var y0 := (low-FOOTING) if b.terrain.is_valid() else RuinKit.PLINTH_COURSE.x
 			var line := RuinKit._worn_top(b,x0,x1,high,0.3) if i > 0 else func(_x: float) -> float: return high
-			RuinKit._plinth_course(b,Transform3D(Basis.IDENTITY,Vector3((x0+x1)*0.5,0.0,0.0)),(x1-x0)*0.5,hz-0.1)
-			RuinKit._courses(b,Transform3D.IDENTITY,x0,x1,RuinKit.PLINTH_COURSE.x,line,hz-0.1-0.03*i,Callable(),0.55)
+			if not b.terrain.is_valid(): RuinKit._plinth_course(b,Transform3D(Basis.IDENTITY,Vector3((x0+x1)*0.5,0.0,0.0)),(x1-x0)*0.5,hz-0.1)
+			RuinKit._courses(b,Transform3D.IDENTITY,x0,x1,y0,line,hz-0.1-0.03*i,Callable(),0.55)
+			feet.append(Vector3((x0+x1)*0.5,y0 if b.terrain.is_valid() else 0.0,0.0))
 			if i > 0:
 				# A tread's coping, paler, so the way up reads.
 				var t := RuinKit._box(b,Vector3((x1-x0)*0.5+0.02,0.09,hz-0.08))
@@ -293,33 +345,64 @@ static func head(seed_value: int, weathered := 0.0, raised := true, wet := true)
 	for i in range(int(1+weathered*4.0)):
 		b.tuft(Vector3(b.rng.randf_range(back,0.0),DECK,b.rng.randf_range(-1.0,1.0)*CISTERN.y*0.5),0.3,4)
 	RuinKit._rubble(b,3.4,int(round(weathered*b.rng.randf_range(3.0,6.0))))
-	return b.finish()
+	var node := b.finish()
+	var lift := 0.0 if raised else -DECK
+	node.set_meta("bounds",(node.get_node("Mesh") as MeshInstance3D).mesh.get_aabb())
+	node.set_meta("feet",feet)
+	node.set_meta("corridors",[])
+	node.set_meta("walk",[{"from":Vector3(back+0.4,DECK+lift,0.0),"to":Vector3(0.0,DECK+lift,0.0),"width":CHANNEL}])
+	node.set_meta("ends",[{"at":Vector3(back,DECK+lift,0.0),"heading":Vector3.LEFT,"height":DECK+lift,"kind":"abutment"},{"at":Vector3(0.0,DECK+lift,0.0),"heading":Vector3.RIGHT,"height":DECK+lift,"kind":"channel"}])
+	return node
 
 ## A run: the head at x 0 (unless `with_head` is off), then `count` spans
 ## SPAN apart along +X, the one at `break_at` broken (-1, none) and those
 ## past it dry; each span `weathered` give or take. The spans are its
 ## children, so later code can lay one between two islands.
-static func run(seed_value: int, weathered: float, count: int, break_at := -1, with_head := true) -> Node3D:
+static func run(seed_value: int, weathered: float, count: int, break_at := -1, with_head := true, ground := Callable(), merged := true) -> Node3D:
 	var root := Node3D.new()
 	root.name = "AqueductRun"
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([seed_value,"aqueduct run"])
-	if with_head: root.add_child(head(seed_value,clampf(weathered+rng.randf_range(-0.1,0.1),0.0,1.0)))
+	var shift := func(dx: float) -> Callable:
+		if not ground.is_valid(): return Callable()
+		return func(x: float, z: float) -> float: return float(ground.call(x+dx,z))
+	if with_head: root.add_child(head(seed_value,clampf(weathered+rng.randf_range(-0.1,0.1),0.0,1.0),true,true,shift.call(0.0)))
 	var wet := true
 	for i in range(count):
 		var w := clampf(weathered+rng.randf_range(-0.15,0.15),0.0,1.0)
+		var x := SPAN*0.5+SPAN*i
 		var node: Node3D
 		if i == break_at:
-			node = broken(seed_value+i,w,i == 0 and not with_head,"none" if i < count-1 else "stump",wet)
+			node = broken(seed_value+i,w,i == 0 and not with_head,"none" if i < count-1 else "stump",wet,shift.call(x))
 			wet = false
 		else:
 			# Each span stands its right pier; its left is the last span's
 			# (or the head's abutment), but past a break it stands its own.
 			var piers := 2
 			if (i == 0 and not with_head) or (break_at >= 0 and i == break_at+1): piers |= 1
-			node = span(seed_value+i,w,piers,wet)
-		node.position = Vector3(SPAN*0.5+SPAN*i,0.0,0.0)
+			node = span(seed_value+i,w,piers,wet,shift.call(x))
+		node.position = Vector3(x,0.0,0.0)
 		root.add_child(node)
+	# The run's metadata: its children's, in its frame.
+	var feet: Array = []
+	var corridors: Array = []
+	for child in root.get_children():
+		var at: Vector3 = (child as Node3D).position
+		for p: Vector3 in child.get_meta("feet",[]): feet.append(p+at)
+		for c: AABB in child.get_meta("corridors",[]): corridors.append(AABB(c.position+at,c.size))
+	var length := SPAN*count
+	var start := {"at":Vector3(0.0,DECK,0.0),"heading":Vector3.LEFT,"height":DECK,"kind":"channel"}
+	if with_head: start = (root.get_child(0).get_meta("ends") as Array)[0]
+	var ends: Array = [start]
+	if break_at < 0 or break_at < count-1: ends.append({"at":Vector3(length,DECK,0.0),"heading":Vector3.RIGHT,"height":DECK,"kind":"channel"})
+	root.set_meta("feet",feet)
+	root.set_meta("corridors",corridors)
+	root.set_meta("ends",ends)
+	root.set_meta("walk",[{"from":(start.at as Vector3),"to":Vector3(length,DECK,0.0),"width":CHANNEL}])
+	root.set_meta("length",length)
+	if merged: RuinKit.merge(root)
+	var mesh := root.get_node_or_null("Mesh") as MeshInstance3D
+	root.set_meta("bounds",mesh.mesh.get_aabb() if mesh != null else AABB())
 	return root
 
 # --- Parts ----------------------------------------------------------------------
@@ -329,11 +412,14 @@ static func run(seed_value: int, weathered: float, count: int, break_at := -1, w
 ## springing at `spring`, the spandrels coursed up to `wall_top`;
 ## `cutwater` the piers' cutwaters' height (0, none); `impost_strips`
 ## the buttress strips up the piers' faces.
-static func _arcade(b: Build, y0: float, spring: float, wall_top: float, size: Vector2, h: float, pitch: float, piers: int, cutwater: float, strips := true) -> void:
+static func _arcade(b: Build, y0: float, spring: float, wall_top: float, size: Vector2, h: float, pitch: float, piers: int, cutwater: float, strips := true, on_ground := false) -> void:
 	var d := DECK_WIDTH*0.5-0.06
 	for side: float in [-1.0,1.0]:
 		if piers & (1 if side < 0.0 else 2):
-			_pier(b,side*SPAN*0.5,y0,spring,wall_top if strips else 0.0,size,cutwater)
+			# On the ground, a pier grows down to it (its cutwaters stand as
+			# high over the ground as ever).
+			var foot := _pier_foot(b,side*SPAN*0.5) if on_ground else y0
+			_pier(b,side*SPAN*0.5,foot,spring,wall_top if strips else 0.0,size,cutwater+_sunk(b) if on_ground and cutwater > 0.0 else cutwater)
 	var radius := h*2.0*pitch
 	var lost_side := -1.0 if b.rng.randf() < 0.5 else 1.0
 	RuinKit._arch_ring(b,Transform3D.IDENTITY,0.0,spring,h,radius,d,true,0,lost_side)
@@ -354,6 +440,44 @@ static func _arcade(b: Build, y0: float, spring: float, wall_top: float, size: V
 				planes.append(Plane(n,n.dot(Vector3(0.0,-0.13,s*0.0))))
 				b.solid(planes,RuinKit._settle(b,Vector3(x,wall_top-0.15,s*(d+0.07)),0.5),RuinKit._stone(b,1.04),false,true)
 			x += 0.62
+
+## Where a pier at `x` stands its foot: FOOTING under the ground's lowest
+## under it (on terrain), or y 0.
+static func _pier_foot(b: Build, x: float) -> float:
+	if not b.terrain.is_valid(): return 0.0
+	var low := INF
+	for dx: float in [-PIER.x*0.5,PIER.x*0.5]:
+		for dz: float in [-PIER.y*0.5-CUTWATER.x,PIER.y*0.5+CUTWATER.x]:
+			low = minf(low,b.floor_at(x+dx,dz))
+	return low-FOOTING
+
+## How far under the ground a pier's foot is (its footing), on terrain.
+static func _sunk(b: Build) -> float:
+	return FOOTING if b.terrain.is_valid() else 0.0
+
+## A piece's finish: the build and its metadata (see the header): its deck
+## at `deck`, its piers (`piers` mask) for its feet, `arches` [half clear
+## span, springing] for its corridors.
+static func _finish(b: Build, deck: float, piers: int, arches: Array) -> Node3D:
+	var node := b.finish()
+	node.set_meta("bounds",(node.get_node("Mesh") as MeshInstance3D).mesh.get_aabb())
+	var feet: Array = []
+	for side: float in [-1.0,1.0]:
+		if piers & (1 if side < 0.0 else 2): feet.append(Vector3(side*SPAN*0.5,_pier_foot(b,side*SPAN*0.5),0.0))
+	node.set_meta("feet",feet)
+	var corridors: Array = []
+	var half := RuinKit.THREAD*0.5
+	for arch: Array in arches:
+		var low := -INF
+		for x: float in [-half,0.0,half]:
+			for z: float in [-DECK_WIDTH,0.0,DECK_WIDTH]: low = maxf(low,b.floor_at(x,z))
+		var bottom := maxf(low,0.0 if not b.terrain.is_valid() else low)+1.2
+		var top := float(arch[1])+1.5
+		if top-bottom >= 2.0: corridors.append(AABB(Vector3(-half,bottom,-DECK_WIDTH*1.5),Vector3(half*2.0,top-bottom,DECK_WIDTH*3.0)))
+	node.set_meta("corridors",corridors)
+	node.set_meta("walk",[{"from":Vector3(-SPAN*0.5,deck,0.0),"to":Vector3(SPAN*0.5,deck,0.0),"width":CHANNEL}])
+	node.set_meta("ends",[{"at":Vector3(-SPAN*0.5,deck,0.0),"heading":Vector3.LEFT,"height":deck,"kind":"channel"},{"at":Vector3(SPAN*0.5,deck,0.0),"heading":Vector3.RIGHT,"height":deck,"kind":"channel"}])
+	return node
 
 ## A pier with its middle at `x`, from `y0` up to its impost at `spring`,
 ## `size` (width along the run, depth across): a footing course standing
@@ -593,11 +717,11 @@ static func _sheet(root: Node3D, v: PackedVector3Array, n: PackedVector3Array, l
 ## out along `out`: the waterfalls' strand thrown off and falling to a pool
 ## on the ground (scripts/sky_islets.gd `curtain`, its look and settings);
 ## gives back where it lands.
-static func _spill(root: Node3D, lip: Vector3, out: Vector3, seed_value: int) -> Vector3:
+static func _spill(root: Node3D, lip: Vector3, out: Vector3, seed_value: int, ground_y := 0.0) -> Vector3:
 	var SkyIslets: GDScript = load("res://scripts/sky_islets.gd")
 	var FlowFalls: GDScript = load("res://scripts/flow_falls.gd")
 	var half := CHANNEL*0.32
-	var rings: Dictionary = SkyIslets.curtain(lip,out,lip.y-0.35,0.3,half,0.12,0.4,0.9)
+	var rings: Dictionary = SkyIslets.curtain(lip,out,lip.y-ground_y-0.35,0.3,half,0.12,0.4,0.9)
 	if _fall_mesh == null: _fall_mesh = FlowFalls._build_ring_mesh(SkyIslets.FALL_RINGS)
 	var fall := MeshInstance3D.new()
 	fall.name = "Spill"
@@ -625,7 +749,7 @@ static func _spill(root: Node3D, lip: Vector3, out: Vector3, seed_value: int) ->
 	root.add_child(fall)
 	var points: PackedVector3Array = rings.points
 	var foot := points[points.size()-1]
-	return Vector3(foot.x,0.0,foot.z)
+	return Vector3(foot.x,ground_y,foot.z)
 
 ## A pool where a spill lands at `at`: an uneven ring of sunk stones round
 ## a sheet of water `radius` across.
@@ -639,7 +763,7 @@ static func _pool(b: Build, at: Vector3, radius: float) -> void:
 		var a0 := TAU*k/sides
 		var a1 := TAU*(k+1)/sides
 		for p in [at,at+Vector3(cos(a0),0.0,sin(a0))*r[k],at+Vector3(cos(a1),0.0,sin(a1))*r[(k+1)%sides]]:
-			v.append((p as Vector3)+Vector3(0.0,0.035,0.0))
+			v.append((p as Vector3)+Vector3(0.0,0.035+b.floor_at((p as Vector3).x,(p as Vector3).z)-at.y,0.0))
 			n.append(Vector3.UP)
 	_sheet(b.root,v,n,"Pool")
 	for k in range(sides+3):

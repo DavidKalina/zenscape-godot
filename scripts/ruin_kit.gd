@@ -262,6 +262,68 @@ static func hull_thickness(points: PackedVector3Array) -> float:
 static func set_detail(amount: float) -> void:
 	Build.detail = clampf(amount,0.0,1.0)
 
+## Merges the stone of `root`'s built children (each a piece: "Mesh" and
+## "Body") into one "Mesh" of one surface and one "Body" on `root`, so a
+## run or a long hall draws as one mesh and collides as one body; the
+## children stay (as empty frames, with their water, spill and metadata).
+## A later LOD pass can swap the merged mesh as a whole.
+static func merge(root: Node3D) -> void:
+	var v := PackedVector3Array()
+	var n := PackedVector3Array()
+	var c := PackedColorArray()
+	var body := StaticBody3D.new()
+	body.name = "Body"
+	for child in root.get_children():
+		if not child is Node3D: continue
+		var xf: Transform3D = (child as Node3D).transform
+		var mesh := child.get_node_or_null("Mesh") as MeshInstance3D
+		if mesh != null and mesh.mesh != null and mesh.mesh.get_surface_count() > 0:
+			var arrays := mesh.mesh.surface_get_arrays(0)
+			var mv: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+			var mn: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+			var mc: PackedColorArray = arrays[Mesh.ARRAY_COLOR]
+			for i in range(mv.size()):
+				v.append(xf*mv[i])
+				n.append((xf.basis*mn[i]).normalized())
+			c.append_array(mc)
+			mesh.free()
+		var old := child.get_node_or_null("Body")
+		if old != null:
+			for holder in old.get_children():
+				var shape := (holder as CollisionShape3D).shape as ConvexPolygonShape3D
+				var points := PackedVector3Array()
+				for p in shape.points: points.append(xf*p)
+				var moved := ConvexPolygonShape3D.new()
+				moved.points = points
+				var h := CollisionShape3D.new()
+				h.shape = moved
+				body.add_child(h)
+			old.free()
+	if v.is_empty(): return
+	var surface := []
+	surface.resize(Mesh.ARRAY_MAX)
+	surface[Mesh.ARRAY_VERTEX] = v
+	surface[Mesh.ARRAY_NORMAL] = n
+	surface[Mesh.ARRAY_COLOR] = c
+	var merged := ArrayMesh.new()
+	merged.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,surface)
+	merged.surface_set_material(0,materials().stone)
+	var instance := MeshInstance3D.new()
+	instance.name = "Mesh"
+	instance.mesh = merged
+	root.add_child(instance)
+	root.move_child(instance,0)
+	root.add_child(body)
+
+## The triangles a built ruin draws (its own "Mesh" and its children's).
+static func triangles(root: Node) -> int:
+	var count := 0
+	for node in [root]+root.get_children():
+		var mesh := (node as Node).get_node_or_null("Mesh") as MeshInstance3D
+		if mesh == null or mesh.mesh == null: continue
+		for s in range(mesh.mesh.get_surface_count()): count += mesh.mesh.surface_get_array_len(s)/3
+	return count
+
 ## The shared materials: {stone}.
 static func materials() -> Dictionary:
 	return Build.materials()
@@ -1609,6 +1671,7 @@ static func _ruin_line(b: Build, x0: float, x1: float, low: float, high: float, 
 ## climb's first steps as often as not.
 static func _drift(b: Build, at: Vector3, reach: float, count: int) -> void:
 	if count <= 0: return
+	at.y += b.floor_at(at.x,at.z)
 	var keep := b.frame
 	for i in range(count):
 		var s := Vector3(b.rng.randf_range(0.28,0.6),b.rng.randf_range(0.16,0.3),b.rng.randf_range(0.22,0.42))*(1.0-0.4*float(i)/count)
@@ -1628,7 +1691,7 @@ static func _rubble(b: Build, reach: float, count: int) -> void:
 		var a := b.rng.randf()*TAU
 		var dist := reach+b.rng.randf_range(-0.3,1.0)
 		var s := Vector3(b.rng.randf_range(0.1,0.26),b.rng.randf_range(0.07,0.16),b.rng.randf_range(0.1,0.24))
-		var pose := Transform3D(Basis(Vector3.UP,b.rng.randf()*TAU)*Basis(Vector3.RIGHT,b.rng.randf_range(-0.3,0.3)),Vector3(cos(a)*dist,s.y*0.8,sin(a)*dist))
+		var pose := Transform3D(Basis(Vector3.UP,b.rng.randf()*TAU)*Basis(Vector3.RIGHT,b.rng.randf_range(-0.3,0.3)),Vector3(cos(a)*dist,s.y*0.8+b.floor_at(cos(a)*dist,sin(a)*dist),sin(a)*dist))
 		b.solid(_box(b,s),pose,_stone(b),false,true,[],-1,2.0)
 
 ## Planes cutting a drum's head (`h` tall, radius `r`) in a ragged break
@@ -1760,6 +1823,10 @@ class Build extends RefCounted:
 	## of the abbey's (1): a heavy arcade or a hall's walls settle less, so
 	## a ruin of them reads settled, not shaken.
 	var settle := 1.0
+	## The ground the piece stands on: a Callable(x, z) -> y in the piece's
+	## frame, or none (flat, y 0). Feet, footings and walls reach down to it
+	## and below; drifts and rubble lie on it.
+	var terrain := Callable()
 	static var _materials := {}
 	## How much of the small growth and scatter is built (RuinKit
 	## `set_detail`): 1 all of it; under 1 fewer ivy strands, moss
@@ -1775,6 +1842,10 @@ class Build extends RefCounted:
 			s.set_shader_parameter("roughness_value",0.95)
 			_materials = {"stone":s}
 		return _materials
+
+	## The ground's height at (x, z) in the piece's frame: 0 with no terrain.
+	func floor_at(x: float, z: float) -> float:
+		return float(terrain.call(x,z)) if terrain.is_valid() else 0.0
 
 	func _init(seed_value: int, amount: float, label: String) -> void:
 		rng.seed = hash([seed_value,label,"gothic"])
