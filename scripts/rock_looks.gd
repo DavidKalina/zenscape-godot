@@ -17,6 +17,8 @@ extends RefCounted
 ## peaks' basalt does; and its colours are its own, never the world's
 ## ground palette (the shader's `side_own`), as the peaks' are.
 
+const Strata = preload("res://scripts/strata.gd")
+
 const LOOKS := {
 	"basalt": {"topsoil":"352c27","clay":"393735","sand":"36373a","shale":"2c2c2f","shale_dark":"222226",
 		"bedrock":"313236","core_a":"46474b","core_b":"515257","core_c":"3a3b3f"},
@@ -49,8 +51,9 @@ const LONE_KEEL := Vector2(1.35,1.85)
 
 ## Sets a look's colours (at `tone`, 1 as authored; `vary`, 0 to 1, its
 ## variant) on an earth sides material already given its strata (Strata
-## `apply`).
-static func apply(material: ShaderMaterial, look: String, tone := 1.0, vary := 0.5) -> void:
+## `apply`); with `bed` (m), the rock's beds that high instead of the
+## strata's own (a sea cliff's, scripts/sea_cliffs.gd).
+static func apply(material: ShaderMaterial, look: String, tone := 1.0, vary := 0.5, bed := 0.0) -> void:
 	var colours: Dictionary = LOOKS.get(look,LOOKS.basalt)
 	var lean := (step_of(vary)-0.5)*2.0*LEAN
 	var tint := Color(1.0+lean,1.0,1.0-lean)*COOL
@@ -62,6 +65,7 @@ static func apply(material: ShaderMaterial, look: String, tone := 1.0, vary := 0
 	material.set_shader_parameter("strata_floors",FLOORS+Vector4.ONE*shift)
 	material.set_shader_parameter("side_facets",FACETS)
 	material.set_shader_parameter("side_own",true)
+	if bed > 0.0: material.set_shader_parameter("strata_core",Vector4(Strata.CORE_FROM,Strata.CORE_BASE,bed,Strata.SHALE_BED))
 
 ## `vary` snapped to its VARIANTS steps (so islets share materials).
 static func step_of(vary: float) -> float:

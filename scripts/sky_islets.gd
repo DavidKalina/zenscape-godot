@@ -537,7 +537,7 @@ func _side_material(shape: RefCounted) -> Material:
 	var strata := posmod(int(shape.seed),STRATA_SEEDS)
 	var rock: Dictionary = shape.recipe.get("rock",{})
 	var key: Variant = Vector2i(strata,roundi(float(shape.depth)*2.0))
-	if not rock.is_empty(): key = [key,str(rock.get("palette","basalt")),snappedf(float(rock.get("tone",1.0)),0.05),RockLooks.step_of(float(rock.get("vary",0.5)))]
+	if not rock.is_empty(): key = [key,str(rock.get("palette","basalt")),snappedf(float(rock.get("tone",1.0)),0.05),RockLooks.step_of(float(rock.get("vary",0.5))),snappedf(float(rock.get("bed",0.0)),0.1)]
 	if _sides.has(key): return _sides[key]
 	var m: ShaderMaterial
 	if side_source is ShaderMaterial: m = side_source.duplicate()
@@ -554,7 +554,7 @@ func _side_material(shape: RefCounted) -> Material:
 	Strata.new(strata).apply(m,Vector3.ZERO)
 	# Every islet wears a rock look (scripts/rock_looks.gd): a cluster's
 	# member its motif's, a lone one its seed's.
-	if not rock.is_empty(): RockLooks.apply(m,str(rock.get("palette","basalt")),float(rock.get("tone",1.0)),float(rock.get("vary",0.5)))
+	if not rock.is_empty(): RockLooks.apply(m,str(rock.get("palette","basalt")),float(rock.get("tone",1.0)),float(rock.get("vary",0.5)),snappedf(float(rock.get("bed",0.0)),0.1))
 	_sides[key] = m
 	return m
 

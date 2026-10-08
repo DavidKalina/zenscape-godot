@@ -55,6 +55,7 @@ const Woodland = preload("res://scripts/woodland.gd")
 const RavineCut = preload("res://scripts/ravine_cut.gd")
 const MountainSpire = preload("res://scripts/mountain_spire.gd")
 const HillDowns = preload("res://scripts/hill_downs.gd")
+const SeaCliffs = preload("res://scripts/sea_cliffs.gd")
 
 ## Kinds and how often each turns up.
 const KINDS := [["meadow",0.22],["grove",0.22],["hills",0.15],["crag",0.11],["spring",0.18],["shore",0.12]]
@@ -323,6 +324,9 @@ var flowers: Array[String] = []
 ##     `shelf` m out (`sea_bed`), drawn with the top; no rock hangs under
 ##     it but where its own underside stands over the water (an arch,
 ##     left open), and the bed is no ground (`inside` is the land's alone).
+##   room: metres more of grid round the land (a sea cliff's stacks);
+##   cliffs: a sea-cliff island (scripts/sea_cliffs.gd: its tableland,
+##     stacks, arch, cove and stratified walls).
 var recipe := {}
 ## The recipe's decks, as it gives them.
 var decks: Array = []
@@ -346,6 +350,9 @@ var spire: RefCounted = null
 ## each point lies (m, 0 on it). Empty otherwise.
 var sea_bed := PackedFloat32Array()
 var sea_out := PackedFloat32Array()
+## A recipe's `cliffs`: the sea cliffs (scripts/sea_cliffs.gd), which shape
+## its outline, ground, rock and walls; null if none.
+var cliffs: RefCounted = null
 
 ## An islet laid out by hand from `spec` (see `recipe`), its kind
 ## `spec.kind`, the rest of it seeded by `seed_value` as any islet's is.
@@ -384,7 +391,7 @@ func _shape(seed_value: int, forced: String) -> void:
 	var area := PI*radius*radius
 	step = float(recipe.get("step",STEP))
 	var sea: Dictionary = recipe.get("sea_foot",{})
-	var grid := _grid(ceili((radius*REACH+MARGIN+float(sea.get("shelf",0.0)))/step),step)
+	var grid := _grid(ceili((radius*REACH+MARGIN+float(sea.get("shelf",0.0))+float(recipe.get("room",0.0)))/step),step)
 	points = grid.points
 	ids = grid.ids
 	cells = grid.cells
@@ -393,6 +400,7 @@ func _shape(seed_value: int, forced: String) -> void:
 	shore_distance = IslandOutline.shore_distance(points,ids,outline)
 	shore_edges = IslandOutline.shore_edges(ids,outline)
 	if recipe.has("tear"): RavineCut.cut(self)
+	if recipe.has("cliffs"): cliffs = SeaCliffs.carve(self)
 	land.clear()
 	for f in range(outline.size()):
 		if outline[f] == 0: land.append(f)
@@ -406,6 +414,9 @@ func _shape(seed_value: int, forced: String) -> void:
 		for i in range(keel.size()): keel[i] *= deeper
 	if recipe.has("spire"): spire = MountainSpire.raise(self)
 	base = -(BASE.x+BASE.y*radius)
+	# A sea cliff's arch opens before the sea foot is laid, which leaves an
+	# underside raised over the water as it is.
+	if cliffs != null: cliffs.hollow(self)
 	if not sea.is_empty(): _lay_sea_bed(sea)
 	var deepest := 0.0
 	for k in keel: deepest = maxf(deepest,k)
@@ -579,6 +590,7 @@ func _lay_ground(rng: RandomNumberGenerator) -> void:
 		heights[i] = lerpf(_rim_at(p,lip_noise),h,smoothstep(0.0,ease,d))
 	if recipe.has("downs"): HillDowns.shape(self,rng,inland)
 	_erode()
+	if cliffs != null: cliffs.lift(self)
 	if recipe.has("lake"): IsletLake.cut(self,rng,inland)
 	elif kind == "spring" or recipe.has("pond"): _cut_pond(rng,inland)
 	_level_pads()
@@ -1312,6 +1324,9 @@ func top_arrays(palette: Dictionary, shift := Vector3.ZERO) -> Array:
 		# Downs (scripts/hill_downs.gd) colour their own ground, rock and sand.
 		if recipe.has("downs"):
 			tone = HillDowns.tone(self,f,at,slope,palette)
+		# Sea cliffs paint their own beach and steep grass (scripts/sea_cliffs.gd).
+		elif cliffs != null and cliffs.paints(at,middle.y,slope,rock_slope):
+			tone = cliffs.paint(at,middle.y,slope,tone,palette)
 		elif slope > rock_slope:
 			tone = rock[0 if patch.get_noise_2d(at.x+71.0,at.y) > 0.0 else rock.size()-1]
 		elif (worn > SCREE.x and slope > SCREE.y) or (edge < 0.45 and slope > SCREE.y*2.0):
@@ -1396,6 +1411,7 @@ func _bed_faces(palette: Dictionary, patch: FastNoiseLite, shift: Vector3, verti
 ## sea foot, the wall down to the bed and no rock under. For the earth
 ## sides' material: each wall vertex carries its rim top in UV.
 func side_arrays() -> Array:
+	if cliffs != null: return cliffs.side_arrays(self)
 	var into := Transform3D.IDENTITY
 	var vertices := PackedVector3Array()
 	var uvs := PackedVector2Array()
