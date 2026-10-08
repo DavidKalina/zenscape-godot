@@ -81,16 +81,17 @@ const LIGHT := 2.1
 const LAMP := 0.45
 
 static func solve(motif_name: String, seed_value: int) -> Dictionary:
-	# A plan that could not lay all it must is laid again from the next
-	# draw, a few times at most: still the same plan for the same seed.
+	# A plan that could not lay all it must, or that the validator faults
+	# (a few per cent of a plan's time), is laid again from the next draw,
+	# a few times at most: still the same plan for the same seed.
 	var plan := {}
 	for attempt in range(ATTEMPTS):
 		plan = _solve(motif_name,seed_value,attempt)
-		if (plan.problems as Array).is_empty(): break
+		if (plan.problems as Array).is_empty() and validate(plan).is_empty(): break
 	return plan
 
 ## Draws a plan is laid from before it is given up on.
-const ATTEMPTS := 4
+const ATTEMPTS := 6
 
 static func _solve(motif_name: String, seed_value: int, attempt: int) -> Dictionary:
 	var motif: Dictionary = Motifs.motif(motif_name)
