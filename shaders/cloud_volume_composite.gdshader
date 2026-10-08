@@ -19,6 +19,7 @@ render_mode unshaded, blend_mix, cull_disabled, depth_draw_never, depth_test_dis
 #define ZS_CLOUD_SEA_SHADE
 #include "res://shaders/sky_cloud_sea.gdshaderinc"
 #include "res://shaders/glide_haze.gdshaderinc"
+#include "res://shaders/reference_display.gdshaderinc"
 
 uniform sampler2D cloud_light : filter_nearest, repeat_disable;
 uniform sampler2D cloud_shape : filter_nearest, repeat_disable;
@@ -52,12 +53,16 @@ const vec3 BOUNCE_TINT = vec3(0.92, 0.96, 1.0);
 const float TOWER_HAZE_FAR = 1.0;
 // From beneath: the heaps' hearts and rims against the deck's mean, and the
 // distance (m) over which they settle into it.
-const float BELOW_HEART = 0.54;
-const float BELOW_RIM = 1.2;
+const float BELOW_HEART = 0.7;
+const float BELOW_RIM = 1.12;
 // At night the hearts are softly lit, the moon through the thin cloud.
-const float BELOW_NIGHT_HEART = 0.72;
+const float BELOW_NIGHT_HEART = 0.8;
 const vec3 BELOW_NIGHT_GLOW = vec3(0.022, 0.018, 0.04);
 const float BELOW_AIR = 1600.0;
+// The lowest hanging hearts' hue, cool and a breath of violet, and the thin
+// rims' light lit through, against the deck's mean.
+const vec3 BELOW_HEART_HUE = vec3(0.9, 0.9, 1.06);
+const float BELOW_SILVER = 1.25;
 
 // The glide's haze on a tower (glide_haze.gdshaderinc zs_glide_fog_far at
 // the towers' TOWER_HAZE_FAR), its low-down thickening written with the
@@ -225,20 +230,43 @@ void fragment() {
 	}
 	if (from_below > 0.0) {
 		// From beneath: the heaps' undersides take the deck's own colours,
-		// their hearts its cool shade, their thinner rims lit through,
-		// warm toward a low sun, and their far ones settle into the deck's
-		// mean as the painted deck past them does (shaders/
-		// sky_below_ceiling.gdshader), so the handover never shows.
+		// their far ones settling into the deck's mean as the painted deck
+		// past them does (shaders/sky_below_ceiling.gdshader), so the
+		// handover never shows. Near, they have shape: the lobes hanging
+		// lowest are the thickest cloud over the eye and the darkest, cool
+		// and a little violet in their hearts; they lighten as they rise
+		// toward the gaps, and their thin rims are lit through, silver,
+		// warm toward a low sun and faintly pearled, so each gap is ringed
+		// with light.
 		const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
 		vec3 deck = zsBelowDeck(rd);
-		float v = smoothstep(0.3, 1.1, dot(col, LUMA) / max(dot(lit_col, LUMA), 1e-3));
-		float toward = zsBelowToSun(rd) * (1.0 - zs_night * zs_celestial_clear);
-		vec3 rims = deck * BELOW_RIM * mix(vec3(1.0), mix(vec3(1.0), zsBelowSunHue(), 0.65) * 1.08, (0.2 + 0.6 * zsBelowGolden()) * toward);
-		float heart = mix(BELOW_HEART, BELOW_NIGHT_HEART, zs_night * zs_celestial_clear);
-		vec3 under = mix(deck * heart * vec3(0.95, 0.96, 1.04), rims, v);
+		float deep = zs_night * zs_celestial_clear;
+		float v = smoothstep(0.12, 1.0, dot(col, LUMA) / max(dot(lit_col, LUMA), 1e-3));
+		float toward = zsBelowToSun(rd) * (1.0 - deep);
+		float golden_below = zsBelowGolden();
+		// How low the underside hangs where it is seen (1 its lowest, at the
+		// heaps' feet), and how thin the cloud is there (its rims).
+		float hang = 1.0 - smoothstep(floor_y + 5.0, SEA - 15.0, eye.y + rd.y * met);
+		float thin = 1.0 - smoothstep(0.3, 0.97, cloud_a);
+		float heart = mix(BELOW_HEART, BELOW_NIGHT_HEART, deep) * mix(1.08, 0.86, hang);
+		vec3 hearts = deck * heart * mix(vec3(0.95, 0.96, 1.04), BELOW_HEART_HUE, hang * (0.5 + 0.5 * golden_below));
+		vec3 sunlit = mix(vec3(1.0), mix(vec3(1.0), zsBelowSunHue(), 0.65) * 1.08, (0.2 + 0.6 * golden_below) * toward);
+		vec3 rims = deck * BELOW_RIM * sunlit;
+		// The rims' pearl: a slow play of hue along them, lavender to a cool
+		// sea-green, never strong.
+		float play = met * 0.0011 + dot(flat_dir, bearing) * 0.8 + rd.y * 1.7 + zs_motion_time * 0.004;
+		vec3 pearl_tint = mix(vec3(1.025, 0.985, 1.035), vec3(0.97, 1.025, 1.02), 0.5 + 0.5 * sin(play * 6.2832));
+		vec3 silver = deck * BELOW_SILVER * sunlit * mix(vec3(1.0), pearl_tint, 1.0 - 0.5 * deep);
+		vec3 under = mix(hearts, rims, max(v, (1.0 - hang) * 0.45));
+		under = mix(under, silver, thin * (1.0 - deep * 0.4));
 		// At night the thin rims hold a faint violet glow, the deck's own.
-		under += BELOW_NIGHT_GLOW * v * zs_night * zs_celestial_clear;
+		under += BELOW_NIGHT_GLOW * max(v, thin) * deep;
 		under = mix(under, deck, 1.0 - exp(-met / BELOW_AIR));
+		// Overhead, the bellies are seen as the display's own colours, as
+		// the painted deck writes them, so the hearts keep their shade; seen
+		// low, the heaps' flanks stay as light as the air they stand in.
+		float belly = smoothstep(0.3, 0.75, rd.y) * (1.0 - 0.6 * deep);
+		under = mix(under, scene_linear_for_display(clamp(under, vec3(0.0), vec3(0.98))), belly);
 		col = mix(col, under, from_below);
 		haze_col = mix(haze_col, deck, from_below);
 	}
