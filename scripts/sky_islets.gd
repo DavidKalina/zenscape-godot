@@ -126,6 +126,12 @@ var _making := {}
 ## within: room kept for the clusters (scripts/sky_clusters.gd), whose members
 ## stand in `built` as `fixed` and are never let go.
 var keep_clear: Array[Vector3] = []
+## Islets an airship has moved this session (scripts/sky_airship.gd), by
+## cell key: the home it was moored at, or null for one carried off. Kept
+## over `reset` and `clear`; a new world forgets them.
+var moved := {}
+## And the turn (radians about up) each moved one was left at, by cell key.
+var turned := {}
 
 static var _ground_material: ShaderMaterial
 static var _water_material: ShaderMaterial
@@ -277,6 +283,7 @@ func _survey(home: Vector3) -> void:
 ## in the cell, at a height in the band, unless an island's spot is too near.
 func spot(cell: Vector2i) -> Variant:
 	var key := _key(cell)
+	if moved.has(key): return moved[key]
 	if _spots.has(key): return _spots[key]
 	var here: Variant = raw(cell)
 	if here != null and cells != null and not cells.spots_near(here,CLEAR).is_empty(): here = null
@@ -370,6 +377,7 @@ static func _mesh_of(out: Dictionary, part: String, material: Material, format :
 func _finish(cell: Vector2i, home: Vector3, out: Dictionary) -> void:
 	var b := stand("Islet_%d_%d" % [cell.x,cell.y],home,out)
 	b.cell = cell
+	if turned.has(_key(cell)): turn(b,float(turned[_key(cell)]))
 	built[_key(cell)] = b
 	_fade(b)
 
@@ -810,6 +818,25 @@ var palette_source: RefCounted
 func place(b: Dictionary) -> Vector3:
 	return position+(b.node as Node3D).position
 
+## An islet's turn about up (radians): 0 for all but one an airship has
+## let spin (scripts/sky_airship.gd), its node turned to match.
+static func yaw_of(b: Dictionary) -> float:
+	return float(b.get("yaw",0.0))
+
+## Turns a built islet to `yaw` about its middle: its record and its node.
+static func turn(b: Dictionary, yaw: float) -> void:
+	b.yaw = yaw
+	if is_instance_valid(b.get("node")): (b.node as Node3D).rotation = Vector3(0.0,yaw,0.0)
+
+## The islet's own frame in the islands' frame: its place, turned by its
+## yaw. Everything read off its shape is read in this frame.
+func frame(b: Dictionary) -> Transform3D:
+	return Transform3D(Basis(Vector3.UP,yaw_of(b)),place(b))
+
+## A point of the islands' frame in the islet's own (its shape's) frame.
+func local_of(b: Dictionary, point: Vector3) -> Vector3:
+	return Basis(Vector3.UP,-yaw_of(b))*(point-place(b))
+
 ## The islet whose top holds a global point (plate plane), as its built
 ## record, or {}. Where islets stand over one another (a cluster's stack,
 ## scripts/cluster_stack.gd), the one the point is in, else the highest
@@ -820,14 +847,18 @@ func islet_at(point: Vector3) -> Dictionary:
 		var b: Dictionary = built[key]
 		var local := point-place(b)
 		var shape: RefCounted = b.shape
-		if absf(local.x) > shape.reach+0.5 or absf(local.z) > shape.reach+0.5: continue
+		# Read through the islet's own frame (its yaw, scripts/sky_airship.gd).
+		var far: float = shape.reach+0.5
+		if absf(local.x) > far*1.42 or absf(local.z) > far*1.42: continue
+		if yaw_of(b) != 0.0: local = local_of(b,point)
+		elif absf(local.x) > far or absf(local.z) > far: continue
 		if shape.inside(Vector2(local.x,local.z)): hits.append(b)
 	if hits.size() < 2: return hits[0] if not hits.is_empty() else {}
 	var best: Dictionary = {}
 	var best_top := -INF
 	var lowest: Dictionary = hits[0]
 	for b: Dictionary in hits:
-		var local := point-place(b)
+		var local := local_of(b,point)
 		var at := Vector2(local.x,local.z)
 		var top: float = b.shape.ground_at(at)
 		if local.y <= top+0.5 and local.y >= float(b.shape.underside(at)): return b
@@ -843,10 +874,9 @@ func body(point: Vector3) -> Variant:
 	var b := islet_at(point)
 	if b.is_empty(): return null
 	var shape: RefCounted = b.shape
-	var origin := place(b)
-	var local := point-origin
+	var local := local_of(b,point)
 	var at := Vector2(local.x,local.z)
-	var y := origin.y
+	var y := place(b).y
 	return Vector2(shape.solid_top(at)+y,shape.underside(at)+y)
 
 ## The ground a walker stands on, at a point in the islet's frame, or null
