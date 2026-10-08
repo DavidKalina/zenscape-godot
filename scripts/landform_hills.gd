@@ -11,8 +11,9 @@ extends RefCounted
 ## `recipe` gives a SkyIslet recipe (SkyIslet `author`) for an island
 ## `across` m wide. Big islands take a coarser grid (STEPS), so many can
 ## stand in view at once: the plate's 0.67 m step would make a 90 m island
-## some 60 000 faces and two seconds' work; at 2 m it is some 7 000 and a
-## fifth of a second.
+## some 60 000 faces (top and sides) and 0.7 s of a worker's time with the
+## native erosion kernel; at 2 m it is some 7 500 and a fifth of a second
+## (tools/probe_landform.gd).
 ##   godot --path . -- --no-title --landform=hills   (scripts/landform_preview.gd)
 
 const NAME := "hills"
