@@ -76,6 +76,8 @@ uniform float foam = 1.0;
 // step's length (m) and how much each grows.
 uniform int mirror_steps = 12;
 uniform vec2 mirror_march = vec2(2.5, 1.55);
+// How much of the waves' slope the march's ray takes (1 all of it).
+uniform float mirror_calm = 0.4;
 // How much more of the hour's colour the mirror takes over what the air
 // and the deck already carry (zsBelowAir, zsBelowDeck take the hour).
 uniform float sky_warmth = 0.0;
@@ -195,6 +197,9 @@ void vertex() {
 
 // Where nothing lies behind the water, its depth (m).
 const float DEEP = 1.0e4;
+// The air's reach (m) over what the water mirrors under the cloud: the air
+// pass's own (shaders/sky_below_air.gdshader REACH).
+const float MIRROR_AIR = 3000.0;
 
 void fragment() {
 	vec3 eye = normalize(CAMERA_POSITION_WORLD - world_position);
@@ -294,8 +299,19 @@ void fragment() {
 	float mirrored = 0.0;
 	vec3 mirror = vec3(0.0);
 	if (mirror_steps > 0 && fresnel > 0.04) {
+		// The march goes along a calmer ray than the sky's: off the swell's
+		// and chop's slopes only in part (`mirror_calm`), so what is mirrored
+		// lies as one rippled image under what stands there, rather than
+		// coming and going patch by patch where the swell tips the ray at a
+		// low angle onto something far off or just past it.
+		vec3 ray = reflect(-eye, normalize(mix(vec3(0.0, 1.0, 0.0), normal, mirror_calm)));
+		ray.y = abs(ray.y);
 		mat4 to_clip = PROJECTION_MATRIX * VIEW_MATRIX;
 		float step_length = mirror_march.x * (1.0 + distance_to * 0.01);
+		// How far the march reaches in all: a hit near its end fades into the
+		// sky, so where the swell tips the ray just short of something or
+		// just onto it the mirror never cuts out in a hard-edged patch.
+		float reach = step_length * (pow(mirror_march.y, float(mirror_steps)) - 1.0) / max(mirror_march.y - 1.0, 1e-3);
 		float travelled = 0.0;
 		float before = 0.0;
 		for (int i = 0; i < 32; i++) {
@@ -303,7 +319,7 @@ void fragment() {
 			before = travelled;
 			travelled += step_length;
 			step_length *= mirror_march.y;
-			vec3 q = world_position + reflected * travelled;
+			vec3 q = world_position + ray * travelled;
 			vec4 clip = to_clip * vec4(q, 1.0);
 			if (clip.w <= 0.0) break;
 			vec3 ndc = clip.xyz / clip.w;
@@ -321,15 +337,37 @@ void fragment() {
 					float lo = before, hi = travelled;
 					for (int r = 0; r < 4; r++) {
 						float mid = (lo + hi) * 0.5;
-						vec4 c = to_clip * vec4(world_position + reflected * mid, 1.0);
+						vec4 c = to_clip * vec4(world_position + ray * mid, 1.0);
 						vec3 n = c.xyz / c.w;
 						if (texture(sea_depth, n.xy * 0.5 + 0.5).r > n.z) hi = mid; else lo = mid;
 					}
-					vec4 c = to_clip * vec4(world_position + reflected * hi, 1.0);
+					vec4 c = to_clip * vec4(world_position + ray * hi, 1.0);
 					vec2 found = c.xy / c.w * 0.5 + 0.5;
 					vec2 edge = smoothstep(vec2(0.0), vec2(0.06), found) * (1.0 - smoothstep(vec2(0.94), vec2(1.0), found));
 					mirror = zs_scene_to_display(textureLod(sea_screen, found, 0.0).rgb);
 					mirrored = edge.x * edge.y * (1.0 - smoothstep(0.15, 0.45, roughness));
+					mirrored *= 1.0 - smoothstep(0.45, 1.0, hi / reach);
+					// Only where the ray meets the surface there, not where it
+					// passed behind something standing in front of it (an
+					// island's flank across the march's long far steps), which
+					// would lay a dark patch of it out on the open water.
+					vec3 surface = zs_sea_receiver(found, texture(sea_depth, found).r, INV_PROJECTION_MATRIX, INV_VIEW_MATRIX);
+					float behind = length(world_position + ray * hi - CAMERA_POSITION_WORLD) - length(surface - CAMERA_POSITION_WORLD);
+					float thick = max(3.0, (travelled - before) * 0.125 + hi * 0.02);
+					mirrored *= 1.0 - smoothstep(thick, thick * 2.0, behind);
+					// Under the cloud the screen holds what stands there before
+					// the air is laid on (shaders/sky_below_air.gdshader): what is
+					// mirrored takes the air over its way to the water, and rock
+					// going up into the cloud the deck, as the air does, or the
+					// far ranges mirror as dark rock on a pale sea.
+					if (below_sky > 0.0) {
+						vec3 hit_point = world_position + ray * hi;
+						float layered = (1.0 - exp(-hi / MIRROR_AIR)) * 0.72;
+						float into = smoothstep(-205.0, -118.0, hit_point.y) * 0.9;
+						vec3 air_seen = clamp(zsBelowAir(ray), vec3(0.0), vec3(0.98));
+						vec3 deck_seen = clamp(zsBelowDeck(ray), vec3(0.0), vec3(0.98));
+						mirror = mix(mix(mirror, air_seen, layered * below_sky), deck_seen, into * below_sky);
+					}
 					break;
 				}
 			}
