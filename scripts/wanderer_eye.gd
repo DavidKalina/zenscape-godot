@@ -237,6 +237,8 @@ const SkyIslands = preload("res://scripts/sky_islands.gd")
 ## the whole world (VIEW_FAR), so the ring stands as a skyline.
 const SkyWorld = preload("res://scripts/sky_world.gd")
 const SkyIslets = preload("res://scripts/sky_islets.gd")
+## Where the walker reaches a token from (scripts/collectible_lines.gd).
+const CollectibleLines = preload("res://scripts/collectible_lines.gd")
 const GlideAir = preload("res://scripts/glide_air.gd")
 const SkyFlight = preload("res://scripts/sky_flight.gd")
 const GlideCamera = preload("res://scripts/glide_camera.gd")
@@ -1197,6 +1199,8 @@ func _advance_flight(delta: float) -> void:
 	if _landing_wait: _wait_to_land(delta,input)
 	glide.step(delta,input,_fly_ground,_fly_air)
 	RopeBridge.flown_by(islands.global_transform*glide.position,glide.velocity)
+	# Tokens the plane flies through (scripts/sky_collectibles.gd).
+	if islands.collectibles != null: islands.collectibles.touch_plane(islands.global_transform*glide.position)
 	# Into another island's footprint, it becomes the plate.
 	if not islands.claiming:
 		var under: int = islands.copy_under(glide.position)
@@ -1450,6 +1454,9 @@ func _advance_perch(delta: float) -> void:
 	camera.fov = lerpf(camera.fov,FOV,_ease(EASE_FOV,delta))
 	# The sky goes on round it: the islets bob, the clouds drift, the wind
 	# quietens.
+	# Tokens the pilot walks through (scripts/sky_collectibles.gd).
+	if islands.collectibles != null:
+		islands.collectibles.touch_walker(islands.global_transform*(islands.islets.frame(perch)*(_perch_feet+Vector3.UP*CollectibleLines.WALKER_MIDDLE)))
 	var eye := _perch_eye_global()
 	sky.advance(delta,eye,islands.in_cloud(eye,scene._motion_time))
 	islands.advance(delta,eye,motor.facing,sky.flight.w)
