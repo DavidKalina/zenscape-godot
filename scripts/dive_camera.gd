@@ -18,14 +18,16 @@ const SkyDive = preload("res://scripts/sky_dive.gd")
 
 ## Falling: metres back and up from the pilot, and how far ahead and down
 ## it looks. Under the canopy: the same.
-const FALL_BACK := 2.4
-const FALL_UP := 3.6
-const FALL_AHEAD := 2.0
-const FALL_DOWN := 6.0
-const CANOPY_BACK := 5.8
-const CANOPY_UP := 0.6
-const CANOPY_AHEAD := 6.0
-const CANOPY_DOWN := 2.4
+const FALL_BACK := 3.4
+const FALL_UP := 2.4
+const FALL_AHEAD := 3.5
+const FALL_DOWN := 3.0
+## How much closer it draws in, tucked.
+const TUCK_IN := 0.3
+const CANOPY_BACK := 7.0
+const CANOPY_UP := 2.0
+const CANOPY_AHEAD := 4.0
+const CANOPY_DOWN := 1.0
 ## The spring it hangs on (radians a second), and how fast its sense of
 ## the pilot's way follows a turn (s).
 const SPRING := 4.0
@@ -33,7 +35,7 @@ const EASE_WAY := 0.35
 ## The field of view (degrees): at rest, the most the fall widens it by
 ## (at FAST m/s), under the canopy; how fast it follows (s).
 const FOV := 66.0
-const FOV_FAST := 22.0
+const FOV_FAST := 14.0
 const FAST := 34.0
 const FOV_CANOPY := 64.0
 const EASE_FOV := 0.4
@@ -93,8 +95,10 @@ func step(delta: float, dive: RefCounted, solid := Callable()) -> void:
 	_since_turn += delta
 	if not free_held and _since_turn >= linger: free = free.lerp(Vector2.ZERO,_ease(EASE_BACK,delta))
 	var forward := Vector3(-sin(_way),0.0,-cos(_way))
-	var back := lerpf(FALL_BACK,CANOPY_BACK,_canopy)
-	var up := lerpf(FALL_UP,CANOPY_UP,_canopy)
+	# Tucked into a dive it draws in closer over the shoulders.
+	var close := 1.0-TUCK_IN*clampf(float(dive.posture),0.0,1.0)*(1.0-_canopy)
+	var back := lerpf(FALL_BACK*close,CANOPY_BACK,_canopy)
+	var up := lerpf(FALL_UP*close,CANOPY_UP,_canopy)
 	var goal := (-forward*back+Vector3.UP*up).rotated(Vector3.UP,free.x)
 	var side := forward.cross(Vector3.UP).rotated(Vector3.UP,free.x).normalized()
 	goal = goal.rotated(side,free.y)

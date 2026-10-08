@@ -2006,7 +2006,7 @@ func _touchdown() -> void:
 ## A soft puff at a global point: grass-green and pale on grass, warm dust
 ## on earth and sand, snow on snow, spray on water; a few soft balls that
 ## swell, drift up and fade.
-func _puff(at: Vector3, surface: String) -> void:
+func _puff(at: Vector3, surface: String, size := 1.0) -> void:
 	var tints := {"grass":Color("d6dcb4"),"snow":Color("f4f6f8"),"water":Color("e8f2f4"),"stone":Color("cfc8bc"),"wood":Color("d8c4a4")}
 	var tint: Color = tints.get(surface,Color("d8c39c"))
 	var rng := RandomNumberGenerator.new()
@@ -2029,11 +2029,11 @@ func _puff(at: Vector3, surface: String) -> void:
 		ball.name = "PlanePuff"
 		add_child(ball)
 		var side := Vector3(rng.randf_range(-1.0,1.0),0.0,rng.randf_range(-1.0,1.0))
-		ball.global_position = at+side*0.25+Vector3.UP*0.1
-		ball.scale = Vector3.ONE*0.18
+		ball.global_position = at+side*0.25*size+Vector3.UP*0.1*size
+		ball.scale = Vector3.ONE*0.18*size
 		var tween := ball.create_tween().set_parallel(true)
-		tween.tween_property(ball,"scale",Vector3.ONE*rng.randf_range(0.55,0.9),1.1).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
-		tween.tween_property(ball,"global_position",ball.global_position+side*0.7+Vector3.UP*rng.randf_range(0.25,0.55),1.1).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+		tween.tween_property(ball,"scale",Vector3.ONE*rng.randf_range(0.55,0.9)*size,1.1).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+		tween.tween_property(ball,"global_position",ball.global_position+(side*0.7+Vector3.UP*rng.randf_range(0.25,0.55))*size,1.1).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
 		tween.tween_property(material,"albedo_color:a",0.0,1.1).set_ease(Tween.EASE_IN)
 		tween.chain().tween_callback(ball.queue_free)
 
@@ -2211,7 +2211,7 @@ func eject() -> bool:
 		figure.visible = true
 		body.settle()
 		_pose_diver(0.0)
-	_puff(cockpit,"snow")
+	_puff(cockpit,"snow",0.3)
 	air.flap()
 	Pad.pulse(0.4,0.25,0.15)
 	_hint.text = DIVE_HINT
@@ -2237,12 +2237,24 @@ func _dive_input() -> Dictionary:
 	dive_camera.free_held = Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) or right != Vector2.ZERO
 	return input
 
-## What the dive falls onto: the islands as solids (no tree crowns: the
-## pilot comes down beside a trunk, not on its top), or under the cloud the
-## lower world's.
+## What the dive falls onto: the islands as solids, or under the cloud the
+## lower world's. No tree crowns or stones: on the plate they are not in
+## the islands' solid, and on an islet (or a lower world's island) its
+## ground stands in for its solid top, so the pilot comes down beside a
+## trunk, not on its crown.
 func _dive_ground(point: Vector3) -> Variant:
-	if below(): return lower.body(point)
-	return islands.body(point)
+	var body: Variant = lower.body(point) if below() else islands.body(point)
+	if body == null: return null
+	var islets := _islets()
+	var islet: Dictionary = islets.islet_at(point)
+	if islet.is_empty(): return body
+	var local: Vector3 = islets.local_of(islet,point)
+	var at := Vector2(local.x,local.z)
+	var y: float = islets.place(islet).y
+	var ground := Vector2(float(islet.shape.ground_at(at))+y,float(islet.shape.underside(at))+y)
+	# Only where it is the islet that is the solid there.
+	if absf((body as Vector2).y-ground.y) < 0.01: return ground
+	return body
 
 ## One frame of the dive: falling or under the canopy, the sky and the
 ## sound following, the plane circling, the camera over the pilot; touched

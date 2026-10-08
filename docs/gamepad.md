@@ -62,11 +62,23 @@ Walking is already first person, so there is nothing for C, and Y does nothing w
 | LT | Brake | Shift |
 | LB / RB | Barrel roll | Q / E, click |
 | Y | Land. Again before the touch flies on; after it, hops out. | F |
+| X | Eject (the skydive, docs/skydive.md) | X |
 | R3 | Chase / first-person camera | C |
 | B or View | Step out | V / Esc |
 | Menu | Pause | — |
 
 During the landing, RT, a roll or Y flies on, as Boost, Q/E or F do.
+
+### Skydiving (out of the plane)
+
+| Pad | Does | Keys / mouse |
+|---|---|---|
+| X | Open the canopy (it also opens by itself near the ground) | X |
+| Left stick | Falling: turn, forward tracks, back slides. Under the canopy: steer, forward for speed, back to brake | A D, W S |
+| RT or A | Falling: tuck and dive faster | Space |
+| LT | Falling: spread and slow. Under the canopy: brake and float | Shift |
+| Right stick | Look round | Mouse |
+| B or View | Step out | V / Esc |
 
 The old glider (`--glider`) keeps its own controls:
 - LT or A rises and RT dives.
@@ -116,6 +128,7 @@ Keys sit in the same action where the code polls them:
 - `move_*`
 - `walk_run` and `walk_jump`
 - `fly_boost` and `fly_brake`
+- `fly_eject` (the pad's X: eject, then open the canopy; the X key is the same verb, read as an event)
 - `glide_rise` and `glide_dive`
 
 Keys read as events keep their own handlers.

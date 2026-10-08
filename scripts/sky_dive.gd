@@ -222,6 +222,25 @@ func fall(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 	var out := {}
 	touched = {}
 	if phase == DOWN or delta <= 0.0: return out
+	# In steps of at most STEP, so a long frame never throws the springs.
+	var steps := ceili(delta/STEP)
+	for i in range(steps):
+		var one := _fall(delta/steps,input if i == 0 else _held(input),ground,air)
+		out.merge(one,true)
+		if phase == DOWN: break
+	return out
+
+## The longest step the dive takes at once (s).
+const STEP := 1.0/90.0
+
+## `input` as held on: the open asked once, not again.
+static func _held(input: Dictionary) -> Dictionary:
+	var held := input.duplicate()
+	held["open"] = false
+	return held
+
+func _fall(delta: float, input: Dictionary, ground: Callable, air: Callable) -> Dictionary:
+	var out := {}
 	airborne += delta
 	time += delta
 	var here: Dictionary = air.call(position) if air.is_valid() else {}
@@ -341,7 +360,8 @@ func _probe(ground: Callable) -> void:
 	under = ""
 	var feet := position.y-HIPS
 	var body := _solid(ground,position)
-	if body != Vector2.INF and position.y > body.y:
+	# (Not a top over the feet: beside a cliff the land under it is lower.)
+	if body != Vector2.INF and position.y > body.y and feet >= body.x-LIP:
 		height = feet-body.x
 		under = "ground"
 	if is_finite(water) and feet-water < height:
@@ -357,14 +377,15 @@ func _land(ground: Callable, was: Vector3, out: Dictionary) -> void:
 	if body != Vector2.INF and position.y > body.y-CLEAR:
 		var before := _solid(ground,was)
 		if feet < body.x and (before == Vector2.INF or was.y-HIPS < before.x-LIP) and was.y > body.y:
-			# At its side, under its rim: held off the face, falling on.
+			# At its side, under its rim: held off the face, falling on (onto
+			# the water at its foot, if any).
 			position.x = was.x
 			position.z = was.z
 			drift = Vector3.ZERO
 			velocity.x = 0.0
 			velocity.z = 0.0
-			return
-		top = body.x
+		else:
+			top = body.x
 	if is_finite(water) and water > top:
 		top = water
 		on_water = true

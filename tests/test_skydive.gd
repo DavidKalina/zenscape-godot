@@ -122,6 +122,7 @@ func _plane_comes_back() -> void:
 	while not eye.has_parked() and (Time.get_ticks_msec()-began)/1000.0*Engine.time_scale < 60.0:
 		if eye._drone_landing != null: came_in = true
 		await process_frame
+	if not came_in: print("     the plane: drone %s, landing %s, flying %s, glider shown %s" % [eye.drone,eye._drone_landing,eye.flying,eye.glider.visible])
 	check(came_in,"The plane comes in to land near the pilot")
 	check(eye.has_parked() and eye.drone == null,"And parks")
 	if not eye.has_parked(): return
@@ -187,22 +188,47 @@ func _lake() -> void:
 	eye.motor.water = real
 	await frames(5)
 
+## A point `up` m high over open sky, nothing under it from there to the
+## cloud sea (nor, under --below, down to the lower world's ocean).
+func _open_sky(up: float) -> Vector3:
+	for ring in range(4,40):
+		for k in range(16):
+			var a := TAU*k/16.0
+			var p := Vector3(cos(a),0.0,sin(a))*ring*60.0
+			var clear := true
+			for y in range(int(up),-300,-10):
+				var q := Vector3(p.x,y,p.z)
+				if eye.islands.body(q) != null or eye.islands.islets.islet_at(q).size() > 0: clear = false
+				if eye.lower != null and eye.lower.body(q) != null: clear = false
+				if not clear: break
+			if clear: return Vector3(p.x,up,p.z)
+	return Vector3(2400.0,up,2400.0)
+
 func _past_everything() -> void:
 	if eye.perch.is_empty() and not eye.flying: await _fly_over(40.0)
 	# Far out from every island, over the open cloud sea.
-	var far := Vector3(2400.0,30.0,2400.0)
+	var far := _open_sky(30.0)
 	eye._launch(SkyPlane.CRUISE_SPEED,false,far,0.0)
 	await frames(3)
 	eye.eject()
 	var seen: Array = await _until_down(90.0)
-	print("     phases: %s" % " > ".join(seen))
+	print("     phases: %s; below: %s, diving: %s, perched: %s, at %s, water %s, under %s, ground %s" % [" > ".join(seen),eye.below(),eye.diving,not eye.perch.is_empty(),eye.glide.position,eye.glide.water,eye.glide.get("under"),eye._dive_ground(eye.glide.position)])
+	if eye.lower != null:
+		# Under the cloud sea (--below) the fall carries on into the lower
+		# world: down on one of its islands, or the plane picks the pilot
+		# up off its ocean.
+		check(not eye.diving and eye.flying and eye.glide is SkyPlane and eye.below(),"Fallen through the cloud sea into the lower world, and down there (%s)" % ("on an island" if not eye.perch.is_empty() else "picked up off the ocean"))
+		if not eye.perch.is_empty():
+			eye._launch(SkyPlane.CRUISE_SPEED,false,eye.glide.position+Vector3.UP*20.0,0.0)
+			await frames(3)
+		return
 	check(not eye.diving and eye.flying and eye.glide is SkyPlane and eye.perch.is_empty(),"Fallen past everything into the cloud sea, the plane catches the pilot and flies on")
 	check(eye._hint.text == eye.PICKUP_HINT and eye.glider.visible and eye.glider._pilot[0].visible,"Back in the cockpit")
 	await frames(30)
 	check(eye.glide.position.y > -60.0 or eye.glide.velocity.y > -2.0,"Climbing out, not falling")
 
 func _open_water() -> void:
-	eye._launch(SkyPlane.CRUISE_SPEED,false,Vector3(2400.0,0.0,2400.0),0.0)
+	eye._launch(SkyPlane.CRUISE_SPEED,false,_open_sky(0.0),0.0)
 	await frames(3)
 	eye.eject()
 	eye.dive.water = eye.dive.position.y-25.0
