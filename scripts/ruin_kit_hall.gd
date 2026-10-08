@@ -254,9 +254,11 @@ static func hall(seed_value: int, weathered := 0.8) -> Node3D:
 		walls.tuft(Vector3(-BAY+walls.rng.randf_range(0.6,1.4),0.0,walls.rng.randf_range(-3.0,3.0)),0.4,5)
 	root.add_child(walls.finish())
 	var left := bay(seed_value,weathered,15,true,true,false)
+	left.name = "LeftBay"
 	left.position.x = -BAY*0.5
 	root.add_child(left)
 	var right := bay(seed_value+7,weathered,10,false,false,true)
+	right.name = "RightBay"
 	right.position.x = BAY*0.5
 	root.add_child(right)
 	root.set_meta("slit",left.position+(left.get_meta("slit") as Vector3))
