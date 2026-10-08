@@ -10,6 +10,6 @@ render_mode diffuse_lambert, specular_schlick_ggx;
 // shelter in its vertex alpha): the light from outside bouncing round under
 // the roof, so the inside is dim but its stone reads.
 #define ZS_SHELTER_BOUNCE
-uniform float shelter_fill = 2.2;
-uniform vec3 shelter_tint : source_color = vec3(1.0, 0.86, 0.68);
+uniform float shelter_fill = 4.5;
+uniform vec3 shelter_tint : source_color = vec3(1.0, 0.82, 0.6);
 #include "res://shaders/folk_surface.gdshaderinc"

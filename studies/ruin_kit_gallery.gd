@@ -36,6 +36,7 @@ const Aqueduct = preload("res://scripts/ruin_kit_aqueduct.gd")
 const Hall = preload("res://scripts/ruin_kit_hall.gd")
 const PilotFigure = preload("res://scripts/pilot_figure.gd")
 const PlaneFigure = preload("res://scripts/plane_figure.gd")
+const WandererEye = preload("res://scripts/wanderer_eye.gd")
 const LandscapeLighting = preload("res://scripts/landscape_lighting.gd")
 const Celestial = preload("res://studies/celestial.gd")
 const LookPass = preload("res://scripts/look_pass.gd")
@@ -65,12 +66,20 @@ const SEA_HALF := 7.0
 ## The hall's centrepiece weathering, and its light shafts: the fog's
 ## density in the box round it and the sun's share in it.
 const HALL_WEATHERED := 0.6
-const HALL_BAYS := 12
+## The long hall's plan: straight, a long curve to the left, straight on
+## (scripts/ruin_kit_hall.gd `hall` layout), its bays in all.
+const HALL_LAYOUT := [{"bays":4,"turn":0.0},{"bays":6,"turn":0.85},{"bays":6,"turn":0.0}]
+const HALL_BAYS := 16
+## The aqueduct that feeds the hall: its spans, chained to the hall's first
+## mouth (its channel's far end a little short of it, on the hall's axis).
+const FEED_SPANS := 4
 const SHAFT_FOG := 0.02
 const SHAFT_LIGHT := 4.0
-## Fly mode: the plane's body for the bump (m), the share of its speed a
+## Fly mode: the plane's body for the bump (m: its wings' span across, a
+## thin slab, its length; turned with its bank, so on a knife edge it slips
+## through a gap its level wings would not), the share of its speed a
 ## bump keeps, the mouse's turn (radians a pixel, the game's LOOK).
-const BUMP_RADIUS := 0.55
+const BUMP_BODY := Vector3(PlaneFigure.SPAN,0.3,1.2)
 const BUMP_KEEP := 0.55
 const FLY_LOOK := 0.0025
 ## The aqueduct across a valley (uneven ground): its spans.
@@ -155,11 +164,21 @@ var _fly_figure
 var _chase
 var _fly_look := Vector2.ZERO
 var _roll_asked := 0.0
+## The last lean pressed and when (ms): pressed twice within the game's
+## DOUBLE_TAP, a barrel roll (scripts/wanderer_eye.gd `_lean_tapped`).
+var _tap_dir := 0.0
+var _tap_at := -100000
 var _bumps := 0
+## The planes standing for scale in the long hall (hidden while flying it).
+var _hall_planes: Array = []
 ## --fly[=seconds]: start flying (for a capture: on autopilot down the lane
 ## that many seconds, weaving a little).
 var _fly_at := -1.0
 var _autopilot := 0.0
+## A lean the autopilot holds (for captures: --lean=-1..1).
+var _autopilot_lean := 0.0
+## The height it holds over the floor (--height=, m).
+var _autopilot_height := 2.8
 
 func _ready() -> void:
 	var start_piece := -1
@@ -170,6 +189,8 @@ func _ready() -> void:
 		elif arg == "--centre": start_centre = true
 		elif arg == "--no-shafts": _shafts = false
 		elif arg.begins_with("--fly"): _fly_at = float(arg.get_slice("=",1)) if "=" in arg else 0.0
+		elif arg.begins_with("--lean="): _autopilot_lean = float(arg.get_slice("=",1))
+		elif arg.begins_with("--height="): _autopilot_height = float(arg.get_slice("=",1))
 		elif arg == "--night": _night = true
 		elif arg.begins_with("--show="): _show = maxi(0,SHOWS.find(arg.get_slice("=",1)))
 		elif arg.begins_with("--seed="): _seed = int(arg.get_slice("=",1))
@@ -198,9 +219,10 @@ func _ready() -> void:
 	_focus = _focus_goal
 	if _fly_at >= 0.0:
 		_fly(true)
-		_autopilot = _fly_at
+		# On autopilot past the capture, so the frame is taken mid-flight.
+		_autopilot = _fly_at+2.0
 	if not _capture.is_empty():
-		await get_tree().create_timer(4.0).timeout
+		await get_tree().create_timer(_fly_at if _fly_at > 0.0 else 4.0).timeout
 		await RenderingServer.frame_post_draw
 		get_viewport().get_texture().get_image().save_png(_capture)
 		get_tree().quit()
@@ -404,16 +426,30 @@ func _sea(area: Node3D, rect: Rect2) -> void:
 ## The hall's centrepiece: a long hall of HALL_BAYS bays along X, centred,
 ## at `z`; behind it, a shorter hall run into a hillside.
 func _hall_scene(area: Node3D, z: float) -> Rect2:
-	var scene := Hall.hall(_seed*17+3,HALL_WEATHERED,HALL_BAYS)
-	var length: float = scene.get_meta("length")
-	scene.position = Vector3(-length*0.5,0.0,z)
+	var scene := Hall.hall(_seed*17+3,HALL_WEATHERED,HALL_BAYS,Callable(),true,HALL_LAYOUT)
+	var box: AABB = scene.get_meta("bounds")
+	# The aqueduct that feeds it, chained on at its first mouth: the run's
+	# channel end (its "ends"[1]) set just short of the hall's ("ends"[0]).
+	var feed := Aqueduct.run(_seed*31+9,0.5,FEED_SPANS,-1)
+	var mouth: Vector3 = (scene.get_meta("ends") as Array)[0].at
+	var channel: Vector3 = (feed.get_meta("ends") as Array)[1].at
+	var feed_at := Vector3(mouth.x-1.2-channel.x,0.0,mouth.z)
+	var reach := -feed_at.x+Aqueduct.SPAN
+	# The whole, centred on the plate: the feed's head on the left.
+	var x0 := -(box.position.x-reach+box.end.x)*0.5
+	# Its front where a straight hall's stood (the pieces' rows before it).
+	var z0 := z+Hall.WALL_Z+1.0-box.end.z
+	scene.position = Vector3(x0,0.0,z0)
 	area.add_child(scene)
+	feed.position = scene.position+feed_at
+	area.add_child(feed)
 	_areas.hall.scene = scene
-	_tag(area,"The long hall: %d bays to weave through (G flies it)" % HALL_BAYS,Vector3(0.0,0.02,z+Hall.WALL_Z+6.5),1.4)
-	_areas.hall.centre = {"focus":Vector3(0.0,4.0,z),"distance":95.0,"yaw":0.55,"pitch":0.32}
-	var rect := Rect2(-length*0.5-6.0,z-Hall.WALL_Z-7.0,length+12.0,Hall.WALL_Z*2.0+14.0)
+	_areas.hall.feed = feed
+	_tag(area,"The long hall: %d bays, curving, its roof whole, broken and open, fed by an aqueduct (G flies it)" % HALL_BAYS,Vector3(0.0,0.02,z0+box.end.z+6.0),1.4)
+	_areas.hall.centre = {"focus":Vector3(0.0,4.0,z),"distance":150.0,"yaw":0.35,"pitch":0.55}
+	var rect := Rect2(x0+box.position.x-reach-6.0,z0+box.position.z-6.0,box.size.x+reach+12.0,box.size.z+12.0)
 	# The hall in the hillside, its far end buried in the slope.
-	var hz := z-Hall.WALL_Z*2.0-34.0
+	var hz := rect.position.y-Hall.WALL_Z-26.0
 	var bays := 5
 	var hill_length := Hall.BAY*bays
 	var hill := func(x: float, zz: float) -> float: return clampf((x-hill_length*0.5)*0.55+0.02*absf(zz)*maxf(0.0,x-hill_length*0.5),0.0,Hall.ROOF_TOP+1.5)
@@ -538,13 +574,21 @@ func _shaft_fog() -> void:
 	material.density = SHAFT_FOG
 	material.albedo = Color(0.95,0.92,0.86)
 	material.edge_fade = 0.05
-	_fog.material = material
-	_fog.shape = RenderingServer.FOG_VOLUME_SHAPE_BOX
 	var scene: Node3D = _areas.hall.scene
-	var length: float = scene.get_meta("length")
-	_fog.size = Vector3(length-1.0,Hall.COLUMN_H+0.9,(Hall.WALL_Z-Hall.WALL_THICK*0.5)*2.0-0.4)
+	var path = scene.get_meta("path")
+	var plans: Array = scene.get_meta("plans")
 	scene.add_child(_fog)
-	_fog.position = Vector3(length*0.5,_fog.size.y*0.5,0.0)
+	# A box a bay under each roof (none under the open sky: no haze there),
+	# turned along the hall's path.
+	for i in range(plans.size()):
+		if plans[i].roof == "open": continue
+		var box := FogVolume.new()
+		box.material = material
+		box.shape = RenderingServer.FOG_VOLUME_SHAPE_BOX
+		box.size = Vector3(Hall.BAY+0.05,Hall.COLUMN_H+0.9,(Hall.WALL_Z-Hall.WALL_THICK*0.5)*2.0-0.4)
+		var frame: Transform3D = path.xform(Hall.BAY*(i+0.5))
+		box.transform = Transform3D(frame.basis,frame.origin+Vector3.UP*box.size.y*0.5)
+		_fog.add_child(box)
 	_set_shafts(_shafts)
 
 func _set_shafts(on: bool) -> void:
@@ -725,17 +769,20 @@ func _figures() -> void:
 		var tie: Vector3 = weave.low_ties[0]
 		var up := PilotFigure.new()
 		scene.add_child(up)
-		up.position = Vector3(tie.x,Hall.TIE_LOW+Hall.TIE_DEPTH,-5.0)
-		up.rotation.y = 1.2
+		var path = scene.get_meta("path")
+		up.position = path.point(Vector3(tie.x,Hall.TIE_LOW+Hall.TIE_DEPTH,-5.0))
+		up.rotation.y = 1.2+atan2(-(path.tangent(tie.x) as Vector3).z,(path.tangent(tie.x) as Vector3).x)
 		up.settle()
 		_pilots.append(up)
 	# Heading +X: SkyGlide's forward is (-sin h, 0, -cos h), so h -PI/2.
-	_plane(scene,Vector3(Hall.BAY*2.4,2.6,6.0),Vector3(0.0,-PI*0.5+0.12,0.3))
-	if scene.has_meta("slit"):
+	_hall_planes = [_plane(scene,Vector3(Hall.BAY*2.4,2.6,6.0),Vector3(0.0,-PI*0.5+0.12,0.3))]
+	# (The slit's plane only on the first straight stretch: path space is the
+	# hall's frame there.)
+	if scene.has_meta("slit") and (scene.get_meta("slit") as Vector3).x < Hall.BAY*float(HALL_LAYOUT[0].bays):
 		var slit: Vector3 = scene.get_meta("slit")
-		_plane(scene,slit+Vector3(0.6,0.0,0.0),Vector3(0.0,-PI*0.5,PI*0.5))
+		_hall_planes.append(_plane(scene,slit+Vector3(0.6,0.0,0.0),Vector3(0.0,-PI*0.5,PI*0.5)))
 
-func _plane(parent: Node3D, at: Vector3, turn: Vector3) -> void:
+func _plane(parent: Node3D, at: Vector3, turn: Vector3) -> Node3D:
 	var plane := PlaneFigure.new()
 	plane.name = "Plane"
 	parent.add_child(plane)
@@ -744,6 +791,7 @@ func _plane(parent: Node3D, at: Vector3, turn: Vector3) -> void:
 	plane.show_pilot(true)
 	plane._mark.visible = false
 	plane._vapour.visible = false
+	return plane
 
 func _pilot(slot: Dictionary, k: int, at: Vector3, turn: float) -> void:
 	var pilot := PilotFigure.new()
@@ -838,7 +886,7 @@ func _say() -> void:
 		what = FAMILY_NAMES[_family]+(" · centrepiece" if _centred else "")
 	var keys := "F1 Gothic · F2 Aqueduct · F3 Hall · G fly the long hall"
 	if _flying:
-		_label.text = "Flying the long hall   ·   %.0f m/s   ·   bumps %d   ·   shafts %s\nA D bank and turn · W S pitch (W nose down) · mouse steers · Space boost · Shift brake · Q E barrel roll · hold right mouse to look round · R or pad Back restart at the entrance · L shafts · N night · G or Esc to stop flying" % [float(_plane_flight.speed),_bumps,"on" if _shafts else "off"]
+		_label.text = "Flying the long hall   ·   %.0f m/s   ·   bumps %d   ·   shafts %s\nA D bank and turn · W S pitch (W nose down) · mouse steers · Space boost · Shift brake · hold Q E or LB RB knife-edge, twice quick or click barrel roll · hold right mouse to look round · R or pad Back restart at the entrance · L shafts · N night · G or Esc to stop flying" % [float(_plane_flight.speed),_bumps,"on" if _shafts else "off"]
 		return
 	_label.text = "%s   ·   %s   ·   %s   ·   shafts %s   ·   seed %d\n%s" % [what,SHOWS[_show],"night" if _night else "day","on" if _shafts else "off",_seed,keys]
 
@@ -886,14 +934,19 @@ func _unhandled_input(event: InputEvent) -> void:
 			_fly_look += Vector2(event.relative.x,-event.relative.y)*FLY_LOOK
 		elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT:
 			_chase.free_held = event.pressed
+		elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+			# A click rolls the way it is turning, or right flying straight.
+			_roll_asked = -1.0 if float(_plane_flight.bank) < -0.05 else 1.0
 		elif event is InputEventJoypadButton and event.pressed and event.button_index == JOY_BUTTON_BACK:
 			_fly_launch()
+		elif Pad.pressed(event,&"fly_lean_left"): _lean_tapped(-1.0)
+		elif Pad.pressed(event,&"fly_lean_right"): _lean_tapped(1.0)
 		elif event is InputEventKey and event.pressed and not event.echo:
 			match event.keycode:
 				KEY_G, KEY_ESCAPE: _fly(false)
 				KEY_R: _fly_launch()
-				KEY_Q: _roll_asked = -1.0
-				KEY_E: _roll_asked = 1.0
+				KEY_Q: _lean_tapped(-1.0)
+				KEY_E: _lean_tapped(1.0)
 				KEY_N: _set_night(not _night)
 				KEY_L: _set_shafts(not _shafts)
 		return
@@ -941,6 +994,8 @@ func _unhandled_input(event: InputEvent) -> void:
 func _fly(on: bool) -> void:
 	if on == _flying: return
 	_flying = on
+	for plane: Node3D in _hall_planes:
+		if is_instance_valid(plane): plane.visible = not on
 	if not on:
 		if _fly_figure != null: _fly_figure.queue_free()
 		_fly_figure = null
@@ -949,6 +1004,7 @@ func _fly(on: bool) -> void:
 		_say()
 		return
 	Pad.ensure()
+	if _night: _set_night(false)
 	_fly_figure = PlaneFigure.new()
 	_fly_figure.name = "Flying"
 	add_child(_fly_figure)
@@ -986,13 +1042,21 @@ func _fly_step(delta: float) -> void:
 		# Down the lane, weaving a little either side of its middle, at
 		# the height of a low run (in the hall's frame: +X down the nave).
 		_autopilot -= delta
+		# In the hall's path space, so it follows the curve.
 		var scene: Node3D = _areas.hall.scene
+		var path = scene.get_meta("path")
 		var inv: Transform3D = scene.global_transform.affine_inverse()
-		var local: Vector3 = inv*(_plane_flight.position as Vector3)
-		var moving: Vector3 = inv.basis*(_plane_flight.velocity as Vector3)
+		var local: Vector3 = path.locate(inv*(_plane_flight.position as Vector3))
+		var frame: Transform3D = path.xform(local.x)
+		var moving: Vector3 = frame.basis.inverse()*(inv.basis*(_plane_flight.velocity as Vector3))
 		var want := (Hall.LANE.x+Hall.LANE.y)*0.5+1.1*sin(_motion_time*0.9)
-		stick = Vector2(clampf(-(local.z-want)*0.35-moving.z*0.3,-0.7,0.7),clampf((2.8-local.y)*0.4-moving.y*0.25,-0.6,0.6))
-	var input := {"turn":stick.x,"pitch":stick.y,"look":_fly_look,
+		var height := _autopilot_height
+		stick = Vector2(clampf(-(local.z-want)*0.35-moving.z*0.3,-0.7,0.7),clampf((height-local.y)*0.4-moving.y*0.25,-0.6,0.6))
+	# Q E or the shoulders held: the knife edge (as the game's plane).
+	var keys := (1.0 if Input.is_key_pressed(KEY_E) else 0.0)-(1.0 if Input.is_key_pressed(KEY_Q) else 0.0)
+	var lean := clampf(keys+Input.get_action_strength(&"fly_lean_right")-Input.get_action_strength(&"fly_lean_left"),-1.0,1.0)
+	if _autopilot_lean != 0.0: lean = _autopilot_lean
+	var input := {"turn":stick.x,"pitch":stick.y,"look":_fly_look,"lean":lean,
 		"boost":Input.get_action_strength(&"fly_boost"),"brake":Input.get_action_strength(&"fly_brake"),"roll":_roll_asked}
 	_fly_look = Vector2.ZERO
 	_roll_asked = 0.0
@@ -1007,17 +1071,29 @@ func _fly_step(delta: float) -> void:
 	_camera.rotate_object_local(Vector3.FORWARD,_chase.roll)
 	_camera.fov = _chase.fov
 
-## Bump and recover: if the plane's body (a ball BUMP_RADIUS round it)
-## sits in stone, it is put back out along the face it hit (the way it
+## A lean pressed: the second press the same way within the game's
+## DOUBLE_TAP asks for a barrel roll that way.
+func _lean_tapped(dir: float) -> void:
+	var now := Time.get_ticks_msec()
+	if dir == _tap_dir and now-_tap_at <= int(WandererEye.DOUBLE_TAP*1000.0):
+		_roll_asked = dir
+		_tap_dir = 0.0
+	else:
+		_tap_dir = dir
+		_tap_at = now
+
+## Bump and recover: if the plane's body (BUMP_BODY, turned with its
+## heading, pitch, bank and roll) sits in stone, it is put back out along the face it hit (the way it
 ## came, failing that), its heading turned along the face and its pitch
 ## eased level, a share of its speed lost; the camera shakes a little.
 func _bump(was: Vector3) -> void:
 	var space := get_world_3d().direct_space_state
 	var query := PhysicsShapeQueryParameters3D.new()
-	var ball := SphereShape3D.new()
-	ball.radius = BUMP_RADIUS
-	query.shape = ball
-	query.transform = Transform3D(Basis.IDENTITY,_plane_flight.position)
+	var body := BoxShape3D.new()
+	body.size = BUMP_BODY
+	query.shape = body
+	var turn := PlaneFigure.pose(Vector3.ZERO,float(_plane_flight.heading),float(_plane_flight.pitch),float(_plane_flight.bank)+float(_plane_flight.spin)).basis
+	query.transform = Transform3D(turn,_plane_flight.position)
 	var rest := space.get_rest_info(query)
 	if rest.is_empty(): return
 	_bumps += 1
@@ -1025,7 +1101,7 @@ func _bump(was: Vector3) -> void:
 	if normal.length() < 0.5: normal = (was-_plane_flight.position).normalized()
 	# Back out: to where it was, then a little off the face.
 	_plane_flight.position = was+normal*0.15
-	query.transform = Transform3D(Basis.IDENTITY,_plane_flight.position)
+	query.transform = Transform3D(turn,_plane_flight.position)
 	if not space.get_rest_info(query).is_empty(): _plane_flight.position = was+normal*0.6
 	# Turned along the face, eased level against a floor or ceiling.
 	var way: Vector3 = _plane_flight.forward()
