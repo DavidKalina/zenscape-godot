@@ -285,7 +285,8 @@ static func bay(seed_value: int, weathered := 0.0, plan := {}, ground := Callabl
 	if plan.get("right_buttress",false):
 		var foot := b.floor_at(0.0,WALL_Z+WALL_THICK*0.5+1.0)
 		var sunk := 0.3 if b.terrain.is_valid() else 0.0
-		RuinKit._buttress(b,Transform3D(Basis.IDENTITY,Vector3(0.0,foot-sunk,WALL_Z+WALL_THICK*0.5-0.05)),[[3.4,2.4],[6.8,1.6],[9.6,0.9]],1.5,b.weathered > 0.5 and b.rng.randf() < 0.5,true)
+		var stages := _plain_stages(foot-sunk)
+		if not stages.is_empty(): RuinKit._buttress(b,Transform3D(Basis.IDENTITY,Vector3(0.0,foot-sunk,WALL_Z+WALL_THICK*0.5-0.05)),stages,1.5,b.weathered > 0.5 and b.rng.randf() < 0.5,true)
 		feet.append(Vector3(0.0,foot-sunk,WALL_Z+1.4))
 	if buttress != "":
 		var foot := b.floor_at(0.0,-WALL_Z-WALL_THICK*0.5-1.0)
@@ -297,8 +298,8 @@ static func bay(seed_value: int, weathered := 0.0, plan := {}, ground := Callabl
 			for k in range(count):
 				stages.append([minf(RuinKit.SET_OFF*(k+1)+0.3,ROOF_TOP-0.3-foot+0.3),TREAD*(count-k)+0.5])
 		else:
-			stages = [[3.4,2.4],[6.8,1.6],[9.6,0.9]]
-		RuinKit._buttress(b,pose,stages,1.5,b.weathered > 0.5 and b.rng.randf() < 0.5,buttress == "plain")
+			stages = _plain_stages(foot-sunk)
+		if not stages.is_empty(): RuinKit._buttress(b,pose,stages,1.5,b.weathered > 0.5 and b.rng.randf() < 0.5,buttress == "plain")
 		feet.append(Vector3(0.0,foot-sunk,-WALL_Z-1.4))
 	_paving(b,plan)
 	for i in range(int(b.weathered*5.0)):
@@ -314,6 +315,15 @@ static func bay(seed_value: int, weathered := 0.0, plan := {}, ground := Callabl
 	root.set_meta("walk",[{"from":Vector3(0.0,ROOF_TOP,0.0),"to":Vector3(BAY,ROOF_TOP,0.0),"width":WALL_Z*2.0}])
 	if not weave.slits.is_empty(): root.set_meta("slit",weave.slits[0])
 	return root
+
+## A plain buttress's stages [top, depth] over its foot at `base`: set-offs
+## at the same heights over y 0 wherever it stands, those the ground has
+## buried left out, so on a slope it never stands over the roof.
+static func _plain_stages(base: float) -> Array:
+	var out: Array = []
+	for st: Array in [[3.4,2.4],[6.8,1.6],[9.6,0.9]]:
+		if float(st[0])-base > 0.6: out.append([float(st[0])-base,st[1]])
+	return out
 
 ## Whether a plan stands two inner columns together at its bay line.
 static func inner_pair(plan: Dictionary) -> bool:
