@@ -334,7 +334,9 @@ func near_hall_spot(seed_value: int) -> Variant:
 			for j in range(HALL_TURNS):
 				var yaw := out+TAU*ceilf(j/2.0)/HALL_TURNS*(1.0 if j % 2 == 0 else -1.0)
 				var s: Variant = _hall_at("near:sundered",way*ring+Vector3.UP*NEAR_Y,seed_value,yaw,flat)
-				if s != null: return s
+				if s != null:
+					print("Sundered hall: its gate %.0f m from the home toward %s (home coordinates), seed %d" % [ring,str((way*ring).snapped(Vector3.ONE)),seed_value])
+					return s
 	push_warning("--motif: no clear room near the home for sundered")
 	return null
 
