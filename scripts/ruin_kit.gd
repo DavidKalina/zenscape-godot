@@ -791,13 +791,17 @@ static func _turret_cap(b: Build, height: float, outer: float, shell: Callable) 
 			ring += 1
 
 ## 9. Vault ribs: the corner of a bay, two walls meeting, a respond of three
-## shafts in the corner and from its capital three ribs springing (two along
-## the walls, one across the bay) that break off in mid-air. The walls step
-## down from the corner (VAULT_STEPS: a way up to the springing). Weathered,
-## the ribs are shorter, the walls lower and more ragged.
+## shafts in the corner and on its capital a solid springer, from which three
+## heavy ribs spring (two along the walls, one across the bay), the vault's
+## web laid in thin courses between them, the whole breaking off in mid-air.
+## The walls step down from the corner (VAULT_STEPS: a way up to the
+## springing). Weathered, ribs and web are shorter, the walls lower and more
+## ragged.
 static func vault(seed_value: int, weathered := 0.0) -> Node3D:
 	var b := Build.new(seed_value,weathered,"Vault")
-	b.frame = Transform3D(Basis(Vector3.UP,-PI*0.25),Vector3(0.0,0.0,-1.3))
+	# The corner at the back left, the bay opening toward the front right, so
+	# the back wall's rib is seen whole and the diagonal across.
+	b.frame = Transform3D(Basis.IDENTITY,Vector3(-1.4,0.0,-1.1))
 	var t := 0.9
 	var steps: Array = VAULT_STEPS
 	for wall_i in range(2):
@@ -812,41 +816,123 @@ static func vault(seed_value: int, weathered := 0.0) -> Node3D:
 		if weathered > 0.05:
 			var ragged := _ruin_line(b,-t,length,0.0,6.0,weathered*0.5)
 			top = func(x: float) -> float: return minf(line.call(x),maxf(ragged.call(x)+0.6,line.call(x)-0.6*weathered))
-		_courses(b,pose*Transform3D(Basis.IDENTITY,Vector3(0.0,0.0,-t*0.5)),-t if wall_i == 0 else 0.0,length,0.0,top,t*0.5,Callable(),0.5)
+		# Each wall's inner face on the corner's lines (x 0 and z 0), its body
+		# outside them.
+		var inward := -t*0.5 if wall_i == 0 else t*0.5
+		_courses(b,pose*Transform3D(Basis.IDENTITY,Vector3(0.0,0.0,inward)),-t if wall_i == 0 else 0.0,length,0.0,top,t*0.5,Callable(),0.5)
 	# The respond: three shafts in the corner, a capital on them.
 	var corner := Vector3(0.24,0.0,0.24)
+	var offsets: Array[Vector3] = [Vector3(0.12,0.0,0.12),Vector3(0.36,0.0,0.0),Vector3(0.0,0.0,0.36)]
 	for k in range(3):
-		var offsets: Array[Vector3] = [Vector3(0.12,0.0,0.12),Vector3(0.34,0.0,0.0),Vector3(0.0,0.0,0.34)]
 		var at: Vector3 = corner+offsets[k]
 		var y := 0.0
 		while y < VAULT_SPRING-0.6:
 			var y1 := minf(VAULT_SPRING-0.55,y+b.rng.randf_range(0.6,0.9))
-			b.solid(_prism(8,0.13 if k == 0 else 0.1,0.13 if k == 0 else 0.1,0.0,y1-y),_settle(b,at+Vector3(0.0,y,0.0),0.4),_stone(b,1.0))
+			b.solid(_prism(8,0.15 if k == 0 else 0.11,0.15 if k == 0 else 0.11,0.0,y1-y),_settle(b,at+Vector3(0.0,y,0.0),0.4),_stone(b,1.0))
 			y = y1
-	b.solid(_prism(8,0.36,0.36,0.0,0.18),Transform3D(Basis.IDENTITY,corner+Vector3(0.14,0.0,0.14)),_stone(b,0.95))
-	_bell(b,Transform3D(Basis.IDENTITY,corner+Vector3(0.12,VAULT_SPRING-0.55,0.12)),0.28,0.5,0.4,7)
-	# The ribs: two wall ribs and the diagonal, each a pointed arc broken off.
+	b.solid(_prism(8,0.4,0.36,0.0,0.2),Transform3D(Basis.IDENTITY,corner+Vector3(0.14,0.0,0.14)),_stone(b,0.95))
+	_bell(b,Transform3D(Basis.IDENTITY,corner+Vector3(0.12,VAULT_SPRING-0.55,0.12)),0.3,0.56,0.42,7)
+	# The ribs: two wall ribs and the diagonal, heavy, each a pointed arc.
 	var spring := corner+Vector3(0.12,VAULT_SPRING,0.12)
-	var ribs := [[Vector3(1.0,0.0,0.0),BAY*0.5,7,5],[Vector3(0.0,0.0,1.0),BAY*0.5,7,5],[Vector3(1.0,0.0,1.0).normalized(),BAY*0.707,9,8]]
-	for r: Array in ribs:
+	var depth := 0.5
+	var specs := [[Vector3(1.0,0.0,0.0),BAY*0.5,7,7],[Vector3(1.0,0.0,1.0).normalized(),BAY*0.707,9,8],[Vector3(0.0,0.0,1.0),BAY*0.5,7,6]]
+	var curves: Array = []
+	for r: Array in specs:
 		var dir: Vector3 = r[0]
 		var half: float = r[1]
 		var stones: int = r[2]
 		var keep: int = r[3]
-		if weathered > 0.0: keep = maxi(2,keep-int(round(weathered*b.rng.randf_range(1.0,3.0))))
+		if weathered > 0.0: keep = maxi(3,keep-int(round(weathered*b.rng.randf_range(1.5,3.5))))
 		var basis := Basis(dir,Vector3.UP,dir.cross(Vector3.UP))
 		var at := spring
-		if dir.x < 0.5: at += Vector3(0.0,0.0,0.18)
-		elif dir.z < 0.5: at += Vector3(0.18,0.0,0.0)
-		_rib(b,Transform3D(basis,at),half,half*1.12,0.42,0.19,stones,keep)
-		# A web's lowest courses filling the springing between the ribs.
-	b.solid(_prism(8,0.34,0.5,0.0,0.7),Transform3D(Basis.IDENTITY,spring+Vector3(0.12,-0.05,0.12)),_stone(b,0.98))
+		if dir.x < 0.5: at += Vector3(0.0,0.0,0.16)
+		elif dir.z < 0.5: at += Vector3(0.16,0.0,0.0)
+		var radius := half*1.12
+		_rib(b,Transform3D(basis,at),half,radius,depth,0.24,stones,keep)
+		# How high its kept stones reach, for the web.
+		var apex := acos(clampf((radius-half)/radius,-1.0,1.0))
+		var reach := radius*sin(PI-apex*float(keep-1)/stones) if keep < stones else radius*sin(apex)
+		curves.append([at,dir,radius,reach])
+	# The springer: the ribs' lowest courses laid solid as one, stepping out
+	# from the corner along both walls, before they part.
+	for k in range(2):
+		var y0 := VAULT_SPRING-0.12+0.36*k
+		var reach := 0.95-0.25*k
+		var planes: Array[Plane] = [Plane(Vector3.DOWN,-y0),Plane(Vector3.UP,y0+0.36),Plane(Vector3.LEFT,-0.05),Plane(Vector3.FORWARD,-0.05)]
+		var n := Vector3(1.0,0.0,1.0).normalized()
+		planes.append(Plane(n,n.dot(corner+Vector3(reach,0.0,reach)*0.62)))
+		planes.append(Plane(Vector3.RIGHT,corner.x+reach))
+		planes.append(Plane(Vector3.BACK,corner.z+reach))
+		b.solid(planes,_settle(b,Vector3.ZERO,0.3),_stone(b,0.98))
+	# The web: between each wall rib and the diagonal, thin courses resting on
+	# the ribs' backs, up as far as both ribs still stand (less, ruined).
+	var web := 0.2
+	for pair: Array in [[0,1],[2,1]]:
+		var c0: Array = curves[pair[0]]
+		var c1: Array = curves[pair[1]]
+		var top := minf(float(c0[3]),float(c1[3]))-0.2-0.5*weathered*b.rng.randf()
+		var y := 0.62
+		var course := 0
+		while y < top-0.1:
+			var y1 := minf(top,y+0.34)
+			if b.rng.randf() < 0.18*weathered and course > 0: break
+			var pts := PackedVector3Array()
+			for c: Array in [c0,c1]:
+				for h: float in [y,y1]:
+					var p := _rib_point(c,h,depth*0.5)
+					pts.append(p)
+					pts.append(p+Vector3.UP*web)
+			var planes := _planes_round(pts)
+			if not planes.is_empty():
+				b.solid(planes,Transform3D.IDENTITY,_stone(b,0.92+0.06*float(course%2)),true,true,[],-1,0.5)
+			y = y1
+			course += 1
 	for i in range(int(1+weathered*3.0)):
 		var f := b.rng.randf_range(0.6,2.0)
 		b.hang(Vector3(f,0.0,f),b.rng.randf_range(0.4,1.4),true,VAULT_SPRING+0.6+f*0.35)
 	_drift(b,Vector3(1.6,0.0,1.6),1.4,int(1+weathered*6.0))
 	_rubble(b,2.6,int(round(weathered*b.rng.randf_range(3.0,6.0))))
 	return b.finish()
+
+## The point on a rib (`curve`: [springing, way, radius, reach]) at `h` over
+## its springing, `inset` in from its back.
+static func _rib_point(curve: Array, h: float, inset: float) -> Vector3:
+	var at: Vector3 = curve[0]
+	var dir: Vector3 = curve[1]
+	var radius: float = curve[2]
+	var r := radius-inset
+	var theta := PI-asin(clampf(h/r,-1.0,1.0))
+	return at+dir*(radius+r*cos(theta))+Vector3.UP*(r*sin(theta))
+
+## The planes of the convex hull round `points` (outward), from every face
+## three of them make with all the rest behind it.
+static func _planes_round(points: PackedVector3Array) -> Array[Plane]:
+	var out: Array[Plane] = []
+	var n := points.size()
+	var centre := Vector3.ZERO
+	for p in points: centre += p
+	centre /= n
+	for i in range(n):
+		for j in range(i+1,n):
+			for k in range(j+1,n):
+				var normal := (points[j]-points[i]).cross(points[k]-points[i])
+				if normal.length_squared() < 1e-8: continue
+				normal = normal.normalized()
+				if normal.dot(centre-points[i]) > 0.0: normal = -normal
+				var d := normal.dot(points[i])
+				var ok := true
+				for p in points:
+					if normal.dot(p) > d+1e-4:
+						ok = false
+						break
+				if not ok: continue
+				var seen := false
+				for q in out:
+					if q.normal.dot(normal) > 0.9999 and absf(q.d-d) < 1e-4:
+						seen = true
+						break
+				if not seen: out.append(Plane(normal,d))
+	return out
 
 ## 10. A fallen pier: the shaft lying along X in three clustered drums,
 ## parted and rolled; its capital toppled past one end, its base still on
