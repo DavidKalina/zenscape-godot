@@ -139,6 +139,10 @@ const OPEN_SKY := 4.6
 const PARAPET := Vector2(0.6,1.8)
 ## A gable's rise over the roof beam's top.
 const GABLE_RISE := 6.5
+## A torn bay line's columns snap this high (m), and a torn bay's walls
+## stand at most this high.
+const TORN_SNAP := Vector2(2.2,7.5)
+const TORN_WALL := Vector2(2.6,5.5)
 ## A wall course's height (colossal ashlar).
 const COURSE := 1.25
 ## A column's facets round (its drums, mouldings and capital).
@@ -267,6 +271,10 @@ static func bay(seed_value: int, weathered := 0.0, plan := {}, ground := Callabl
 	var roof: String = plan.get("roof","whole")
 	var breach: Vector2i = plan.get("breach",Vector2i.ZERO)
 	var soffit := COLUMN_H+BEAM.x
+	# A torn bay line (a sundered hall's broken end, scripts/sundered_hall.gd):
+	# 1 the line at x 0, 2 the closing one; its columns snapped, no beam or
+	# gable over it, the bay's walls torn down low.
+	var torn: int = plan.get("torn",0)
 	b.shelter = func(p: Vector3, n: Vector3) -> float: return _shelter(p,n,roof)
 	var weave := {"low_ties":[],"high_ties":[],"fallen":[],"gaps":[],"slits":[],"narrows":[],"breaches":[],"doors":[],"open":[]}
 	var feet: Array = []
@@ -275,15 +283,16 @@ static func bay(seed_value: int, weathered := 0.0, plan := {}, ground := Callabl
 	if bool(plan.get("last",false)): lines.append(BAY)
 	for x: float in lines:
 		var inner: Array = plan.get("inner",[]) if x == 0.0 else []
+		var torn_line := (x == 0.0 and torn & 1 != 0) or (x > 0.0 and torn & 2 != 0)
 		for z: float in [-ROW_Z,ROW_Z]+inner:
 			var foot := b.floor_at(x,z)
 			b.rigid = true
-			_column(b,Transform3D(Basis.IDENTITY,Vector3(x,foot,z)),COLUMN_H-foot)
+			_column(b,Transform3D(Basis.IDENTITY,Vector3(x,foot,z)),COLUMN_H-foot,b.rng.randf_range(TORN_SNAP.x,TORN_SNAP.y) if torn_line else INF)
 			b.rigid = false
 			feet.append(Vector3(x,foot-(FOUNDATION if b.terrain.is_valid() else 0.0),z))
 		# The roof beam across, wall to wall, in three stones resting on the
 		# outer columns (and the inner ones, which it passes over).
-		if bool(plan.get("beam",true)) or x > 0.0:
+		if (bool(plan.get("beam",true)) or x > 0.0) and not torn_line:
 			var turn := Basis(Vector3.UP,PI*0.5)
 			for span: Vector2 in [Vector2(-WALL_Z+0.2,-ROW_Z),Vector2(-ROW_Z,ROW_Z),Vector2(ROW_Z,WALL_Z-0.2)]:
 				_beam(b,Transform3D(turn,Vector3(x,COLUMN_H,(span.x+span.y)*0.5)),absf(span.y-span.x))
@@ -355,6 +364,9 @@ static func bay(seed_value: int, weathered := 0.0, plan := {}, ground := Callabl
 			# Torn lower, over the ground where it stands (on a slope too).
 			high = minf(soffit,mid+b.rng.randf_range(6.5,9.0))
 			low = minf(high-0.5,mid+b.rng.randf_range(2.8,4.0))
+		if torn != 0:
+			high = minf(high,mid+b.rng.randf_range(TORN_WALL.x,TORN_WALL.y))
+			low = minf(high-0.5,mid+0.6)
 		var opening := LANCET if b.rng.randf() < odds and kind == "" and roof != "open" else Vector4.ZERO
 		var pose := Transform3D(Basis.IDENTITY,Vector3(BAY*0.5,0.0,s*WALL_Z))
 		match kind:

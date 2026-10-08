@@ -272,7 +272,9 @@ static func set_detail(amount: float) -> void:
 ## "Body") into one "Mesh" of one surface and one "Body" on `root`, so a
 ## run or a long hall draws as one mesh and collides as one body; the
 ## children stay (as empty frames, with their water, spill and metadata).
-## A later LOD pass can swap the merged mesh as a whole.
+## A later LOD pass can swap the merged mesh as a whole. Safe on a worker:
+## a built mesh keeps its arrays (meta "arrays") so they are never read
+## back from the renderer; `forget_arrays` lets them go once merged.
 static func merge(root: Node3D) -> void:
 	var v := PackedVector3Array()
 	var n := PackedVector3Array()
@@ -284,7 +286,7 @@ static func merge(root: Node3D) -> void:
 		var xf: Transform3D = (child as Node3D).transform
 		var mesh := child.get_node_or_null("Mesh") as MeshInstance3D
 		if mesh != null and mesh.mesh != null and mesh.mesh.get_surface_count() > 0:
-			var arrays := mesh.mesh.surface_get_arrays(0)
+			var arrays: Array = mesh.mesh.get_meta("arrays") if mesh.mesh.has_meta("arrays") else mesh.mesh.surface_get_arrays(0)
 			var mv: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
 			var mn: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
 			var mc: PackedColorArray = arrays[Mesh.ARRAY_COLOR]
@@ -313,6 +315,7 @@ static func merge(root: Node3D) -> void:
 	surface[Mesh.ARRAY_COLOR] = c
 	var merged := ArrayMesh.new()
 	merged.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,surface)
+	merged.set_meta("arrays",surface)
 	merged.surface_set_material(0,materials().stone)
 	var instance := MeshInstance3D.new()
 	instance.name = "Mesh"
@@ -320,6 +323,13 @@ static func merge(root: Node3D) -> void:
 	root.add_child(instance)
 	root.move_child(instance,0)
 	root.add_child(body)
+
+## Lets go of the arrays a built ruin's meshes keep for `merge` (its own
+## "Mesh" and its children's).
+static func forget_arrays(root: Node) -> void:
+	for node in [root]+root.get_children():
+		var mesh := (node as Node).get_node_or_null("Mesh") as MeshInstance3D
+		if mesh != null and mesh.mesh != null and mesh.mesh.has_meta("arrays"): mesh.mesh.remove_meta("arrays")
 
 ## The triangles a built ruin draws (its own "Mesh" and its children's).
 static func triangles(root: Node) -> int:
@@ -2058,6 +2068,9 @@ class Build extends RefCounted:
 			surface[Mesh.ARRAY_COLOR] = f.c
 			mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,surface)
 			mesh.surface_set_material(mesh.get_surface_count()-1,part[1])
+			# Kept for `merge`, which may run on a worker, where reading a
+			# mesh's arrays back waits on the renderer (and the main thread).
+			mesh.set_meta("arrays",surface)
 		var instance := MeshInstance3D.new()
 		instance.name = "Mesh"
 		instance.mesh = mesh
