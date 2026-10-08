@@ -1,4 +1,5 @@
 extends SceneTree
+## suite: slow
 ## The sky clusters' motifs (scripts/cluster_motifs.gd) laid out by the
 ## solver (scripts/cluster_solver.gd): a seed always lays the same plan;
 ## every motif's plans, over SEEDS seeds each, pass the validator (no
