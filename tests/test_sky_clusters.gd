@@ -55,7 +55,7 @@ func _run() -> void:
 		if Vector2(at.x-SkyClusters.SHOWCASE_AT.x,at.z-SkyClusters.SHOWCASE_AT.z).length() < SkyClusters.NEAR_GAP: near_ok = false
 		for j in range(i+1,near.size()):
 			if Vector2(at.x-near[j].at.x,at.z-near[j].at.z).length() < SkyClusters.NEAR_GAP: near_ok = false
-	check(near_ok and farthest < 700.0,"Every motif stands near the home, apart and clear (%d, farthest %.0f m)" % [near.size(),farthest])
+	check(near_ok and farthest < 800.0,"Every motif stands near the home, apart and clear (%d, farthest %.0f m)" % [near.size(),farthest])
 	var forced: Node3D = SkyClusters.new()
 	forced.islets = islets
 	forced.with_near = ["mountain","lake"]

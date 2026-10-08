@@ -36,13 +36,14 @@ extends Node3D
 ## To visit a motif in the game: --motif=<name> (or several, comma
 ## separated: --motif=lake,ravine) stands a cluster of that motif near the
 ## home island, and --motifs-near-home one of every motif (Motifs `names`),
-## each on a ring round the home (NEAR_RING m out, wider for more), NEAR_GAP
-## apart, clear of the islands' spots (NEAR_ISLAND), the ranges, walls and
-## band, and the cumulus towers, so each is in view soon after take-off.
+## each on a ring round the home (NEAR_RING m out, wider for more, further
+## out where the near rings are taken), NEAR_GAP apart, clear of the
+## islands' spots (NEAR_ISLAND), the ranges, walls and band, and the
+## cumulus towers, so each is in view soon after take-off.
 ## --motif-seed=N lays them from seed N (NEAR_SEED otherwise). The random
 ## clusters stand as ever, but none in a cell's half round a forced one;
 ## add --no-clusters for the forced ones alone. Their keys are
-## "near:<motif>" (the capture tool's --only=near:lake). The motifs:
+## "near:<motif>" (tools/capture_clusters.gd visits them). The motifs:
 ## farmstead, hamlet, reef, lake, falls, forest, stack, ravine, mountain.
 ##   godot --path . -- --no-title --motif=mountain
 ##   godot --path . -- --no-title --motifs-near-home --no-clusters
@@ -94,6 +95,9 @@ const SHOWCASE_AT := Vector3(150.0,-6.0,60.0)
 ## their height, and the seed they are laid from by default.
 const NEAR_RING := 200.0
 const NEAR_STEP := 40.0
+## Rings tried out from NEAR_RING, and places tried round each.
+const NEAR_STEPS := 14
+const NEAR_TURNS := 48
 const NEAR_GAP := 190.0
 const NEAR_ISLAND := 170.0
 const NEAR_Y := 2.0
@@ -227,8 +231,8 @@ func spot_of(cell: Vector2i) -> Variant:
 	return {"key":"%d,%d" % [cell.x,cell.y],"at":at,"motif":motif,"seed":int(SkyCells.noise(cell,SALT+5)*16777216.0)}
 
 ## The spots ({key, at, motif, seed}) of `names` stood near the home: each
-## tried round a ring from its own share of the turn, then a little either
-## way, then a ring further out, until one is clear of the islands' spots,
+## tried round a ring from its own share of the turn, then further either
+## way all round, then a ring further out, until one is clear of the islands' spots,
 ## the ranges and walls, the towers and the haze, and NEAR_GAP off every
 ## spot in `taken` and those already laid.
 func near_spots(names: Array, seed_value: int, taken: Array) -> Array:
@@ -237,9 +241,10 @@ func near_spots(names: Array, seed_value: int, taken: Array) -> Array:
 	var ring := maxf(NEAR_RING,NEAR_GAP*names.size()/TAU)
 	for i in range(names.size()):
 		var at: Variant = null
-		for step in range(12):
-			for k in range(16):
-				var turn := TAU*float(i)/names.size()+0.35+(0.13*ceilf(k/2.0)*(1.0 if k % 2 == 0 else -1.0))
+		for step in range(NEAR_STEPS):
+			for k in range(NEAR_TURNS):
+				# Its own share of the turn first, then further either way.
+				var turn := TAU*float(i)/names.size()+0.35+(TAU/NEAR_TURNS*ceilf(k/2.0)*(1.0 if k % 2 == 0 else -1.0))
 				var here := Vector3(cos(turn),0.0,sin(turn))*(ring+step*NEAR_STEP)+Vector3.UP*NEAR_Y
 				if (taken+out).any(func(f: Dictionary) -> bool: return _flat(f.at,here) < NEAR_GAP): continue
 				if cells != null and not cells.spots_near(here,NEAR_ISLAND).is_empty(): continue
