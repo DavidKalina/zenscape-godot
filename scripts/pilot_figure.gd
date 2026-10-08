@@ -266,6 +266,12 @@ var _thighs: Array[int] = []
 var _shins: Array[int] = []
 var _hands: Array[int] = []
 var _forearms: Array[int] = []
+## Skydiving (`dive`): the pose eased to, as Vector4s of (upper arms out,
+## elbows bent, thighs forward, shins tucked) and (legs apart, head up,
+## unused, unused); seconds into the pop's flail.
+var _dive_a := Vector4.ZERO
+var _dive_b := Vector4.ZERO
+var _dive_time := 0.0
 
 func _init() -> void:
 	name = "Pilot"
@@ -675,6 +681,68 @@ func mitt(side: int) -> Vector3:
 ## running.
 static func stride(running: float) -> float:
 	return lerpf(WALK_SPEED*WALK_CYCLE,RUN_SPEED*RUN_CYCLE,running)
+
+## Skydiving (scripts/sky_dive.gd), posed over the idle by the dive's own
+## state: `spread` and `tuck` (0 to 1 each) falling, `canopy` (0 falling to
+## 1 hanging under it), `flare` (0 to 1) and `pop` (1 just out of the
+## plane, flailing). Falling belly-down it is the classic box: arms out
+## and bent up at the elbows, knees bent and boots up behind, head up to
+## look ahead; spread, wider; tucked, arms swept back along the body and
+## legs straight for the dive. Under the canopy his mitts are up on the
+## toggles and his legs hang, a little forward as if sat in the harness;
+## in the flare he pulls the toggles down and puts his boots out ahead
+## for the touch. The walker turns the whole figure (onto the belly, on its
+## lines): this is the limbs alone.
+func dive(spread: float, tuck: float, canopy: float, flare: float, pop: float, delta: float) -> void:
+	_moving = move_toward(_moving,0.0,delta/FADE)
+	_swim = move_toward(_swim,0.0,delta/SWIM_FADE)
+	_swimming_was = false
+	_skid = 0.0
+	_ledge = 0.0
+	_climbing = 0.0
+	_hold_was = ""
+	_tilt.rotation = Vector3.ZERO
+	_tilt.position = Vector3.ZERO
+	_pivot.rotation = Vector3.ZERO
+	_stretch_to = 1.0
+	_look_to = 0.0
+	_nod_to = 0.0
+	_arms_to = 0.0
+	_hunch_to = 0.0
+	_roll_to = 0.0
+	_feet_was = Vector3.INF
+	_grounded_was = false
+	_dive_time = _dive_time+delta if pop > 0.0 else 0.0
+	# Falling: the box, widened by the spread, swept back by the tuck.
+	var box := Vector4(1.35,1.1,-0.15,-1.25)
+	box = box.lerp(Vector4(1.6,0.6,-0.1,-0.75),spread)
+	box = box.lerp(Vector4(0.3,0.05,0.0,-0.15),tuck)
+	var box_b := Vector4(0.25,-0.55,0.0,0.0).lerp(Vector4(0.45,-0.6,0.0,0.0),spread).lerp(Vector4(0.02,-0.3,0.0,0.0),tuck)
+	# Under the canopy: mitts up on the toggles, then down in the flare.
+	var hang := Vector4(2.55,0.35,0.3,-0.25).lerp(Vector4(0.55,0.9,0.75,-0.35),flare)
+	var hang_b := Vector4(0.06,0.0,0.0,0.0)
+	var want := box.lerp(hang,canopy)
+	var want_b := box_b.lerp(hang_b,canopy)
+	if pop > 0.0:
+		# Just out: flailing, arms up, a kick of the legs.
+		var t := _dive_time
+		want = want.lerp(Vector4(2.1+0.35*sin(t*13.0),0.5,0.35*sin(t*11.0),-0.6),pop)
+	var k := 1.0-exp(-delta/0.18)
+	_dive_a = _dive_a.lerp(want,k)
+	_dive_b = _dive_b.lerp(want_b,k)
+	_advance(delta)
+	if _upper_arms.has(-1) or _thighs.has(-1) or _shins.has(-1): return
+	_turn_bone(_upper_arms[0],Vector3.BACK,-_dive_a.x)
+	_turn_bone(_upper_arms[1],Vector3.BACK,_dive_a.x)
+	if not _forearms.has(-1):
+		_turn_bone(_forearms[0],Vector3.BACK,-_dive_a.y)
+		_turn_bone(_forearms[1],Vector3.BACK,_dive_a.y)
+	for side in range(2):
+		_turn_bone(_thighs[side],Vector3.RIGHT,_dive_a.z)
+		_turn_bone(_shins[side],Vector3.RIGHT,_dive_a.w)
+	_turn_bone(_thighs[0],Vector3.BACK,-_dive_b.x)
+	_turn_bone(_thighs[1],Vector3.BACK,_dive_b.x)
+	if _head >= 0: _turn_bone(_head,Vector3.RIGHT,_dive_b.y)
 
 ## A hop not driven by the motor (in and out of the plane): `rise` 1 going
 ## up to -1 coming down.

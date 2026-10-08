@@ -26,7 +26,9 @@ extends "res://scripts/sky_glide.gd"
 ##             into a turn. Over FLARE_FROM metres off whatever is under it
 ##             it flares by itself, the sink and the way all but gone, so
 ##             every landing is soft. The wind carries it, and air rising
-##             (a thermal, a ridge) holds it up.
+##             (a thermal, a ridge) holds it up. Left alone it turns
+##             towards the nearest island (`approach_target`, ASSIST), so
+##             a hands-off float comes down on land.
 ##   DOWN      touched (`touched` on that step): the wanderer takes over.
 ##
 ## Nobody splats: falling, the canopy opens by itself AUTO_OPEN metres
@@ -78,9 +80,9 @@ const EASE_OPEN := 0.3
 ## the sink with each; how fast they follow (s); the turn (radians a
 ## second at full stick); the share of the wind that carries it; how much
 ## of the air's rise holds it up.
-const FLY := 5.0
-const FLY_FAST := 7.5
-const FLY_SLOW := 2.4
+const FLY := 3.4
+const FLY_FAST := 6.0
+const FLY_SLOW := 1.4
 const SINK_CANOPY := 2.4
 const SINK_FAST := 3.6
 const SINK_BRAKE := 1.6
@@ -88,6 +90,10 @@ const EASE_CANOPY := 0.6
 const TURN_CANOPY := 1.2
 const WIND_CANOPY := 0.8
 const HELD_UP := 0.6
+## Left alone under the canopy (no turn held), it eases round over ASSIST
+## seconds towards `approach_target` (the nearest island's middle, set by
+## the wanderer), so a hands-off float comes down on land, circling it.
+const ASSIST := 1.4
 ## The flare: from FLARE_FROM metres over the ground it eases in, to a
 ## sink of FLARE_SINK and a way of FLARE_FLY at the touch.
 const FLARE_FROM := 3.2
@@ -290,6 +296,9 @@ func _canopy(delta: float, turn: float, stick: float, brake: float, out: Diction
 		_tilt_to(PI*0.5,delta)
 		return
 	heading += -turn*TURN_CANOPY*delta
+	if absf(turn) < 0.05 and approach_target != Vector3.INF:
+		var to := Vector2(approach_target.x-position.x,approach_target.z-position.z)
+		if to.length() > AIM_NEAR: heading = lerp_angle(heading,atan2(-to.x,-to.y),_ease(ASSIST,delta))
 	var ahead := maxf(-stick,0.0)
 	var slow := maxf(maxf(stick,0.0),brake)
 	var fly := FLY+(FLY_FAST-FLY)*ahead-(FLY-FLY_SLOW)*slow

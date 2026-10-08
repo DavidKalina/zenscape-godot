@@ -94,8 +94,8 @@ func update(delta: float, dive: RefCounted, shoulders := Vector3.INF) -> void:
 		_fold(delta)
 		return
 	var open := float(dive.open)
-	if not dive.under_canopy(): _spent = false
-	visible = dive.under_canopy() and open > 0.0 and not _spent
+	if dive.falling(): _spent = false
+	visible = not dive.falling() and open > 0.0 and not _spent
 	if not visible:
 		_line_mesh.clear_surfaces()
 		return
