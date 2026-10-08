@@ -160,8 +160,33 @@ const MIST_UP := 30.0
 ## The shelter's rays: their steps out (m) and reach.
 const SHELTER_STEPS := [2.0,4.5,8.0,13.0,20.0,30.0]
 const SHELTER_REACH := 32.0
+## The dive comes in this high over the skylight's ground (m).
+const DIVE_HIGH := 32.0
+## The ruins (`_lay_ruins`, built by scripts/pierced_ruins.gd): how
+## weathered; the feed (the aqueduct over the top to the skylight's lip):
+## its spans, how far back from the hole's edge its last pier stands (m),
+## how far inland its run keeps (m) and how much the ground may climb along
+## it (m); the hall: its bays, how far its mouth stands back from the
+## hole's edge (m); the cavern's run.
+const WEATHERED := Vector2(0.55,0.85)
+const FEED_SPANS := Vector2i(3,4)
+const FEED_EDGE := 1.2
+const FEED_INLAND := 4.0
+const FEED_CLIMB := 6.0
+## The spout past the last pier (scripts/pierced_ruins.gd SPOUT) and the
+## least fall the feed's water takes down the shaft (m).
+const FEED_SPOUT := 1.8
+const FEED_DROP := 24.0
+const HALL_BAYS := 3
+## The cavern's run: at most this many spans.
+const RUN_SPANS := 3
+const HALL_BACK := 12.0
+## The turns (rad) off the dive's way a hall is tried at, in order.
+const HALL_TURNS := [0.0,0.35,-0.35,0.7,-0.7]
+## The gate stands this far in from the tight window's mouth (m).
+const GATE_IN := 2.5
 ## Layouts tried for a seed before its last is kept, problems and all.
-const DRAWS := 6
+const DRAWS := 8
 ## Tries per hole before it is given up.
 const TRIES := 40
 
@@ -192,8 +217,9 @@ var routes: Array[Dictionary] = []
 ## The ruins' places (scripts/pierced_ruins.gd lays them): each {kind, at
 ## (Transform3D, lid frame), and its own}.
 var ruins: Array[Dictionary] = []
-## Boxes kept clear of routes (the ruins'), lid frame.
-var blockers: Array[AABB] = []
+## The ruins' bulk, kept clear of routes: each {xform (its middle and turn,
+## lid frame), half (its half size)}.
+var blockers: Array[Dictionary] = []
 var problems: Array[String] = []
 var _lump: FastNoiseLite
 var _crag: FastNoiseLite
@@ -201,6 +227,9 @@ var _rough: FastNoiseLite
 var _ledge: FastNoiseLite
 var _flute: FastNoiseLite
 var _tones := PackedColorArray()
+## Ground the ruins keep the trees off and level (into the recipe).
+var _clear: Array[Vector3] = []
+var _pads: Array[Vector4] = []
 var _taper_k := 0.0
 ## The holes' segments, flat for the field: per hole its first segment and
 ## count, and per segment a, b.
@@ -234,9 +263,16 @@ func _lay(seed_value: int, draw_value := 0) -> void:
 	_taper_k = (inner_max-INSET)/pow(depth-band,TAPER)
 	_lay_lobes(rng)
 	_lay_holes(rng)
+	# The hall first, so the hills keep off it and the skylight.
+	ruins.clear()
+	blockers.clear()
+	_pads.clear()
+	_clear.clear()
+	_lay_hall_first(rng)
 	_lay_mounds(rng)
-	_lay_routes()
+	_lay_ruins(rng)
 	_lay_recipe(rng)
+	_lay_routes()
 	verify()
 
 func _noises() -> void:
@@ -467,17 +503,59 @@ func lid_top(x: float, z: float) -> float:
 func lid_solid(p: Vector3) -> bool:
 	if p.y < base or p.y > lid_top(p.x,p.z): return false
 	if outline_sd(p.x,p.z) > 0.5: return false
-	for h: Vector3 in recipe.get("holes",[]):
-		if Vector2(p.x-h.x,p.z-h.y).length() < h.z+0.6: return false
+	for h: Dictionary in holes:
+		if h.kind != "shaft": continue
+		var top: Vector3 = (h.points as PackedVector3Array)[0]
+		if Vector2(p.x-top.x,p.z-top.z).length() < float(h.lid)+0.6: return false
 	return true
 
 ## True where anything solid stands (the rock, the lid, a ruin's box).
 func solid(p: Vector3, margin := 0.0) -> bool:
 	if field(p) < margin: return true
 	if lid_solid(p): return true
-	for box: AABB in blockers:
-		if box.grow(margin).has_point(p): return true
+	for box: Dictionary in blockers:
+		var q: Vector3 = (box.xform as Transform3D).affine_inverse()*p
+		var half: Vector3 = box.half
+		if absf(q.x) < half.x+margin and absf(q.y) < half.y+margin and absf(q.z) < half.z+margin: return true
 	return false
+
+## A ruin's bulk kept clear of the routes: the box `half` about `centre`,
+## both in the frame `frame` (lid frame).
+func block(frame: Transform3D, centre: Vector3, half: Vector3) -> void:
+	blockers.append({"xform":frame*Transform3D(Basis.IDENTITY,centre),"half":half,"ruin":ruins.size()-1})
+
+## The ruins stood on the lid's real ground (`lid`, its SkyIslet shape, once
+## made): each ruin's height from the ground under it (the plan laid them
+## on its estimate), its bulk moved with it, the routes laid again.
+func settle(lid: RefCounted) -> void:
+	for i in range(ruins.size()):
+		var r: Dictionary = ruins[i]
+		var at: Transform3D = r.at
+		var y := at.origin.y
+		match str(r.kind):
+			"hall":
+				y = lid.ground_at(r.foot)
+			"feed":
+				y = -INF
+				var head := Vector2(at.origin.x,at.origin.z)
+				var edge := head+Vector2(at.basis.x.x,at.basis.x.z)*float(r.spans)*6.4
+				for k in range(13):
+					var p := head.lerp(edge,k/12.0)
+					if lid.inside(p): y = maxf(y,lid.ground_at(p))
+				if y == -INF: y = at.origin.y
+				y -= 0.6
+			_:
+				continue
+		var dy := y-at.origin.y
+		at.origin.y = y
+		r.at = at
+		if r.has("lane"):
+			var lane: PackedVector3Array = r.lane
+			for k in range(lane.size()): lane[k].y += dy
+			r.lane = lane
+		for box: Dictionary in blockers:
+			if int(box.ruin) == i: box.xform = (box.xform as Transform3D).translated(Vector3(0.0,dy,0.0))
+	_lay_routes()
 
 # --- Laying it out ------------------------------------------------------------------
 
@@ -488,23 +566,27 @@ func _lay_mounds(rng: RandomNumberGenerator) -> void:
 	var sky := Vector3.INF
 	var shaft := hole("shaft")
 	if not shaft.is_empty(): sky = Vector3((shaft.points as PackedVector3Array)[0].x,(shaft.points as PackedVector3Array)[0].z,float(shaft.lid))
+	var hall := ruin("hall")
+	var keep: Array[Vector3] = []
+	if sky != Vector3.INF: keep.append(sky)
+	if not hall.is_empty(): keep.append(Vector3((hall.foot as Vector2).x,(hall.foot as Vector2).y,float(hall.reach)))
 	for k in range(rng.randi_range(2,3)):
 		var r := rng.randf_range(24.0,38.0)
-		var at := _inland_point(rng,inner_max*0.3,sky,r*0.75)
+		var at := _inland_point(rng,inner_max*0.3,keep,r*0.75)
 		mounds.append(Vector4(at.x,at.y,r,rng.randf_range(5.0,11.0)))
 	var summit_r := rng.randf_range(20.0,28.0)
-	var summit := _inland_point(rng,inner_max*0.45,sky,summit_r)
+	var summit := _inland_point(rng,inner_max*0.45,keep,summit_r)
 	mounds.append(Vector4(summit.x,summit.y,summit_r,rng.randf_range(13.0,19.0)))
 
 ## A seeded point at least `least` m inland, and `room` m clear of the
 ## skylight's rim (`sky`: x, z, radius) if it can be.
-func _inland_point(rng: RandomNumberGenerator, least: float, sky := Vector3.INF, room := 0.0) -> Vector2:
+func _inland_point(rng: RandomNumberGenerator, least: float, keep: Array[Vector3] = [], room := 0.0) -> Vector2:
 	var fallback := Vector2.INF
 	for k in range(300):
 		var p := inner+Vector2.from_angle(rng.randf()*TAU)*rng.randf_range(0.0,inner_max*1.2)
 		if -outline_sd(p.x,p.y) < least: continue
 		if fallback == Vector2.INF: fallback = p
-		if sky != Vector3.INF and p.distance_to(Vector2(sky.x,sky.y)) < sky.z+room+6.0: continue
+		if keep.any(func(c: Vector3) -> bool: return p.distance_to(Vector2(c.x,c.y)) < c.z+room+6.0): continue
 		return p
 	return fallback if fallback != Vector2.INF else inner
 
@@ -888,12 +970,22 @@ func _lay_routes() -> void:
 		var wp: PackedVector3Array = out.points
 		var dir: Vector3 = out.dir
 		var top := sp[0]
-		var high := maxf(top.y,_highest_top()+14.0)
-		var start := Vector3(top.x,high,top.z)-dir*70.0
-		var over := Vector3(top.x,high-2.0,top.z)-dir*22.0
-		var lip := Vector3(top.x,lid_top(top.x,top.z)+6.0,top.z)-dir*4.0
+		var ground := lid_top(top.x,top.z)
+		var high := maxf(ground+DIVE_HIGH,_highest_top()+8.0)
+		var start := Vector3(top.x,high,top.z)-dir*90.0
+		var over := Vector3(top.x,high,top.z)-dir*28.0
+		var lip := Vector3(top.x,ground+6.0,top.z)-dir*5.0
 		var low := Vector3(mid.x,wp[0].y,mid.z)
-		routes.append({"name":"dive","points":PackedVector3Array([start,over,lip,sp[1],sp[2],low,wp[1],wp[1]+dir*LEAD]),"holes":["shaft","cavern",out.name]})
+		var tail := PackedVector3Array([sp[1],sp[2],low,wp[1],wp[1]+dir*LEAD])
+		routes.append({"name":"dive","points":PackedVector3Array([start,over,lip])+tail,"holes":["shaft","cavern",out.name]})
+		# The grand line: in low through the hall's lane, out over the lip
+		# and straight down the skylight (flown over the lid's real ground,
+		# so checked in flight, not here: `low`).
+		for r: Dictionary in ruins:
+			if r.kind != "hall": continue
+			var lane: PackedVector3Array = r.lane
+			var lip_low := Vector3(top.x,lane[1].y+0.5,top.z)-dir*(float(shaft.lid)-1.0)
+			routes.append({"name":"grand","points":PackedVector3Array([lane[0]-dir*LEAD,lane[0],lane[1],lip_low])+tail,"holes":["hall","shaft","cavern",out.name],"low":true})
 	# The thread: in by one window, out by the one most nearly opposite.
 	var best := []
 	var best_dot := 1.0
@@ -926,6 +1018,7 @@ func route(name_: String) -> Dictionary:
 ## What blocks route `r`'s corridor (ROUTE_CLEAR round its line), or "".
 ## Corners are eased as a flight takes them (a plane turns in about 9 m).
 func route_problem(r: Dictionary) -> String:
+	if bool(r.get("low",false)): return ""
 	var points: PackedVector3Array = r.points
 	for i in range(points.size()-1):
 		var a := points[i]
@@ -968,15 +1061,223 @@ func _lay_recipe(rng: RandomNumberGenerator) -> void:
 		"mixed":true,"tree_size":Vector2(0.9,1.6),"apart":1.0,"drifts":Vector2i(8,12),"undergrowth":0.4,"tufts":0.3,
 		"erode":{"detail":0.06,"k":0.014,"max_cut":0.5},
 		"rock":{"palette":palette,"tone":rng.randf_range(0.9,1.08),"vary":rng.randf()},
-		"holes":lid_holes,"clear":clear,"pads":[]}
+		"holes":lid_holes,"clear":clear+_clear,"pads":_pads.duplicate()}
 
 ## Ground the lid's planting keeps off (a ruin's footprint): x, z, radius.
 func keep_clear(at: Vector2, r: float) -> void:
-	(recipe.clear as Array).append(Vector3(at.x,at.y,r))
+	_clear.append(Vector3(at.x,at.y,r))
 
 ## A level pad on the lid (a ruin stands on it): x, z, radius, lift.
 func level(at: Vector2, r: float, lift := 0.0) -> void:
-	(recipe.pads as Array).append(Vector4(at.x,at.y,r,lift))
+	_pads.append(Vector4(at.x,at.y,r,lift))
+
+# --- The ruins ----------------------------------------------------------------------
+
+## The ruins, each a record for scripts/pierced_ruins.gd: {kind, at (its
+## frame, lid frame, y estimated: the builder reads the real ground), seed,
+## weathered, and its own}:
+##   feed: an aqueduct over the top from its head to the skylight's lip,
+##     its water spilling down the shaft into the cavern;
+##   gate: a gothic arch standing in the tight window, its opening the way
+##     through (the window's tube centred on it);
+##   hall: a short colossus hall on the top, its lane lined up with the
+##     skylight, so a flight comes out of the nave and dives;
+##   run: an aqueduct across the cavern's flat floor, under the flights.
+## Each keeps the lid's trees off its ground and its bulk off the routes.
+func _lay_ruins(rng: RandomNumberGenerator) -> void:
+	var shaft := hole("shaft")
+	var out := _dive_window()
+	if shaft.is_empty() or out.is_empty(): return
+	var sp: PackedVector3Array = shaft.points
+	var sky := Vector2(sp[0].x,sp[0].z)
+	var lid_r := float(shaft.lid)
+	var dive := Vector2((out.dir as Vector3).x,(out.dir as Vector3).z).normalized()
+	_lay_feed(rng,sky,lid_r,dive)
+	_lay_gate(rng)
+	_lay_run(rng)
+
+## The hall, laid before the hills (they keep off it).
+func _lay_hall_first(rng: RandomNumberGenerator) -> void:
+	var shaft := hole("shaft")
+	var out := _dive_window()
+	if shaft.is_empty() or out.is_empty(): return
+	var sp: PackedVector3Array = shaft.points
+	_lay_hall(rng,Vector2(sp[0].x,sp[0].z),float(shaft.lid),Vector2((out.dir as Vector3).x,(out.dir as Vector3).z).normalized())
+
+## The frame turned so +X runs along `way` (x, z), at `at`.
+static func frame_along(way: Vector2, at: Vector3) -> Transform3D:
+	return Transform3D(Basis(Vector3.UP,atan2(-way.y,way.x)),at)
+
+## True if the ground along a line (x, z) from `a` to `b`, `half` m either
+## side, is land at least `inland` m in, climbing no more than `climb` m.
+func _ground_ok(a: Vector2, b: Vector2, half: float, inland: float, climb: float) -> bool:
+	var way := (b-a).normalized()
+	var side := Vector2(-way.y,way.x)
+	var lo := INF
+	var hi := -INF
+	var n := maxi(1,ceili(a.distance_to(b)/2.0))
+	for i in range(n+1):
+		for k: float in [-1.0,0.0,1.0]:
+			var p := a.lerp(b,float(i)/n)+side*half*k
+			if -outline_sd(p.x,p.y) < inland: return false
+			var y := lid_top(p.x,p.y)
+			lo = minf(lo,y)
+			hi = maxf(hi,y)
+	return hi-lo <= climb
+
+## True if a box (centre and half, x z) keeps `room` m off every ruin laid.
+func _ruin_room(centre: Vector2, half: float, room: float) -> bool:
+	for r: Dictionary in ruins:
+		var c: Vector2 = r.foot
+		if c.distance_to(centre) < float(r.reach)+half+room: return false
+	return true
+
+## The hall: HALL_BAYS bays on the top, its lane's middle line running on
+## through the skylight's middle along the dive's way, its far mouth
+## HALL_BACK m short of the hole.
+func _lay_hall(rng: RandomNumberGenerator, sky: Vector2, lid_r: float, dive: Vector2) -> void:
+	const Hall = preload("res://scripts/ruin_kit_hall.gd")
+	var lane_z := (Hall.LANE.x+Hall.LANE.y)*0.5
+	# Along the dive's way in, or turned a little off it (the flight bends
+	# into the dive), its full bays or one fewer: the first that stands on
+	# land.
+	var found := false
+	var way := dive
+	var bays := HALL_BAYS
+	var origin := Vector2.ZERO
+	var centre := Vector2.ZERO
+	for tried_bays: int in [HALL_BAYS,HALL_BAYS-1]:
+		for turn: float in HALL_TURNS:
+			way = dive.rotated(turn)
+			var length_try := Hall.BAY*tried_bays
+			# +Z in the hall's frame (its right, looking down the nave).
+			var r3: Vector3 = Basis(Vector3.UP,atan2(-way.y,way.x))*Vector3.BACK
+			var right := Vector2(r3.x,r3.z)
+			var end_lane := sky-way*(lid_r+HALL_BACK)
+			origin = end_lane-way*length_try-right*lane_z
+			centre = origin+way*length_try*0.5
+			if _ground_ok(origin-way*2.0,origin+way*(length_try+2.0),Hall.WALL_Z+2.0,3.0,4.0):
+				found = true
+				bays = tried_bays
+				break
+		if found: break
+	if not found: return
+	var length := Hall.BAY*bays
+	var y := lid_top(centre.x,centre.y)
+	var at := frame_along(way,Vector3(origin.x,y,origin.y))
+	var r := {"kind":"hall","at":at,"seed":rng.randi(),"weathered":rng.randf_range(WEATHERED.x,WEATHERED.y),"bays":bays,
+		"foot":centre,"reach":length*0.5+Hall.WALL_Z,
+		"lane":PackedVector3Array([at*Vector3(0.0,Hall.LANE_Y.x+1.3,lane_z),at*Vector3(length,Hall.LANE_Y.x+1.3,lane_z)])}
+	ruins.append(r)
+	level(centre,length*0.5+4.0)
+	keep_clear(centre,length*0.5+Hall.WALL_Z)
+	# Its bulk: the walls, columns and roof either side of the lane and
+	# over it; the lane itself open.
+	var top := Hall.ROOF_TOP+Hall.GABLE_RISE
+	block(at,Vector3(length*0.5,top*0.5,(-Hall.WALL_Z-1.0+Hall.LANE.x-0.2)*0.5),Vector3(length*0.5+0.5,top*0.5+1.0,(Hall.WALL_Z+1.0+Hall.LANE.x-0.2)*0.5))
+	block(at,Vector3(length*0.5,top*0.5,(Hall.WALL_Z+1.0+Hall.LANE.y+0.2)*0.5),Vector3(length*0.5+0.5,top*0.5+1.0,(Hall.WALL_Z+1.0-Hall.LANE.y-0.2)*0.5))
+	block(at,Vector3(length*0.5,(Hall.LANE_Y.y+0.2+top)*0.5,lane_z),Vector3(length*0.5+0.5,(top-Hall.LANE_Y.y-0.2)*0.5+1.0,(Hall.LANE.y-Hall.LANE.x)*0.5+0.2))
+
+## The feed: an aqueduct from its head over the top to the skylight's lip,
+## coming in from the side (never down the dive's way in, nor along the
+## hall), its last pier FEED_EDGE m back from the hole's edge; its water
+## spills off the channel's end into the shaft.
+func _lay_feed(rng: RandomNumberGenerator, sky: Vector2, lid_r: float, dive: Vector2) -> void:
+	const Aqueduct = preload("res://scripts/ruin_kit_aqueduct.gd")
+	for k in range(TRIES):
+		var n := rng.randi_range(FEED_SPANS.x,FEED_SPANS.y)
+		# From the side: 70 to 160 degrees off the dive's way.
+		var turn := rng.randf_range(deg_to_rad(70.0),deg_to_rad(160.0))*(1.0 if rng.randf() < 0.5 else -1.0)
+		var way := dive.rotated(turn)
+		var edge := sky-way*(lid_r+FEED_EDGE)
+		var head := edge-way*Aqueduct.SPAN*n
+		if not _ground_ok(head-way*6.0,edge-way*1.5,Aqueduct.DECK_WIDTH,FEED_INLAND,FEED_CLIMB): continue
+		var foot := (head+edge)*0.5
+		if not _ruin_room(foot,Aqueduct.SPAN*n*0.5,6.0): continue
+		# Its water falls clear down the shaft, a long way.
+		var lip := edge+way*(Aqueduct.PIER.x*0.5+FEED_SPOUT)
+		var lip_y := lid_top(edge.x,edge.y)+Aqueduct.DECK
+		if lip_y-fall_from(Vector3(lip.x,lip_y,lip.y)).y < FEED_DROP: continue
+		var top := -INF
+		var steps := ceili(head.distance_to(edge)/2.0)
+		for i in range(steps+1):
+			var p := head.lerp(edge,float(i)/steps)
+			top = maxf(top,lid_top(p.x,p.y))
+		var at := frame_along(way,Vector3(head.x,top,head.y))
+		ruins.append({"kind":"feed","at":at,"seed":rng.randi(),"weathered":rng.randf_range(WEATHERED.x,WEATHERED.y),"spans":n,
+			"foot":foot,"reach":Aqueduct.SPAN*n*0.5+4.0,"floor":float(hole("cavern").get("floor",base-40.0))})
+		for i in range(steps+1):
+			keep_clear(head.lerp(edge,float(i)/steps),3.5)
+		keep_clear(head-way*3.0,5.0)
+		var length := Aqueduct.SPAN*n
+		block(at,Vector3(length*0.5-2.0,(Aqueduct.DECK+1.0)*0.5,0.0),Vector3(length*0.5+4.0,(Aqueduct.DECK+1.0)*0.5+1.0,Aqueduct.PIER.y*0.5+Aqueduct.CUTWATER.x))
+		return
+
+## The gate: a gothic arch standing a little in from the tight window's
+## mouth on its flat floor, facing out, its opening on the window's middle.
+func _lay_gate(rng: RandomNumberGenerator) -> void:
+	const RuinKit = preload("res://scripts/ruin_kit.gd")
+	for h: Dictionary in holes:
+		if h.kind != "window" or not bool(h.get("tight",false)): continue
+		var p: PackedVector3Array = h.points
+		var dir: Vector3 = h.dir
+		# The mouth: where the line leaves the rock for good, walking in.
+		var mouth := p[1]
+		var d := 0.0
+		var length := p[0].distance_to(p[1])
+		while d < length:
+			if body(p[1]-dir*d) < 0.0:
+				mouth = p[1]-dir*d
+				break
+			d += 0.5
+		var at_line := mouth-dir*GATE_IN
+		var at := Transform3D(Basis(Vector3.UP.cross(dir).normalized(),Vector3.UP,dir),Vector3(at_line.x,float(h.floor),at_line.z))
+		ruins.append({"kind":"gate","at":at,"seed":rng.randi(),"weathered":rng.randf_range(0.35,0.6),"foot":Vector2(at_line.x,at_line.z),"reach":6.0,"window":h.name})
+		h.gate = true
+		var half := RuinKit.ARCH_SPAN*0.5
+		var crown := RuinKit.SPRING+half*1.732
+		var depth := RuinKit.ARCH_DEPTH*0.5+0.6
+		# Its piers and buttresses either side of the opening, and the head
+		# over it (the pointed arch narrows from its springing).
+		for side: float in [-1.0,1.0]:
+			block(at,Vector3(side*(half+3.0),crown*0.5+1.0,0.0),Vector3(3.0,crown*0.5+2.5,depth))
+			block(at,Vector3(side*(half-0.2),(RuinKit.SPRING+1.6+crown+4.0)*0.5,0.0),Vector3(0.6,(crown+4.0-RuinKit.SPRING-1.6)*0.5,depth))
+		block(at,Vector3(0.0,crown+2.0,0.0),Vector3(half+3.0,2.0,depth))
+
+## The run: an aqueduct across the cavern's flat floor along its length,
+## its deck under the flights through the cavern.
+func _lay_run(rng: RandomNumberGenerator) -> void:
+	const Aqueduct = preload("res://scripts/ruin_kit_aqueduct.gd")
+	var cav := hole("cavern")
+	if cav.is_empty(): return
+	var cp: PackedVector3Array = cav.points
+	var way3 := (cp[1]-cp[0]).normalized()
+	var way := Vector2(way3.x,way3.z).normalized()
+	var mid := (cp[0]+cp[1])*0.5
+	var floor_y := float(cav.floor)
+	var long := cp[0].distance_to(cp[1])+float(cav.r)*0.9
+	var n := clampi(floori(long/Aqueduct.SPAN),2,RUN_SPANS)
+	var length := Aqueduct.SPAN*n
+	var origin := Vector2(mid.x,mid.z)-way*length*0.5
+	var at := frame_along(way,Vector3(origin.x,floor_y,origin.y))
+	ruins.append({"kind":"run","at":at,"seed":rng.randi(),"weathered":rng.randf_range(WEATHERED.x,WEATHERED.y),"spans":n,
+		"foot":Vector2(mid.x,mid.z),"reach":length*0.5})
+	block(at,Vector3(length*0.5,(Aqueduct.DECK+1.0)*0.5,0.0),Vector3(length*0.5+1.0,(Aqueduct.DECK+1.0)*0.5+0.3,Aqueduct.PIER.y*0.5+Aqueduct.CUTWATER.x))
+
+## Where water poured from `lip` (lid frame) lands: straight down to the
+## first rock (or the keel's tip).
+func fall_from(lip: Vector3) -> Vector3:
+	var p := lip
+	while p.y > tip_y:
+		p.y -= 1.0
+		if field(p) < 0.0 or lid_solid(p): return p+Vector3.UP*0.5
+	return p
+
+## The ruin of `kind`, or {}.
+func ruin(kind: String) -> Dictionary:
+	for r: Dictionary in ruins:
+		if r.kind == kind: return r
+	return {}
 
 # --- Its colour ---------------------------------------------------------------------
 

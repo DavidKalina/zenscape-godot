@@ -77,7 +77,16 @@ func run() -> void:
 	await _hold_at(s.at+Vector3(0.0,60.0,300.0),s.at,hours.noon,5)
 	var began := Time.get_ticks_usec()
 	field.plan_now(s.key)
-	var stood: Dictionary = field.isles[s.key]
+	# Shoot only once it stands: its lid among the islets, its rock and
+	# ruins under it; framed from where it really stands.
+	var standing: Dictionary = field.standing()
+	if not standing.has(s.key) or not is_instance_valid(standing[s.key].b.node) or standing[s.key].get("rock") == null:
+		print("PIERCED the isle did not stand; no stills")
+		quit(1)
+		return
+	var stood: Dictionary = standing[s.key]
+	s = s.duplicate()
+	s.at = stood.b.home
 	var plan: RefCounted = stood.plan
 	print("PIERCED seed %d draw %d at %s, %.1f s; holes %s; problems %s; stats %s" % [int(s.seed),plan.draw,s.at,(Time.get_ticks_usec()-began)/1.0e6,str(plan.summary()),str(plan.problems),str(stood.out.get("stats",{}))])
 	var shots := _shots(plan,s.at)
@@ -127,6 +136,22 @@ func _shots(plan: RefCounted, at: Vector3) -> Array:
 			if shots.any(func(sh: Dictionary) -> bool: return sh.label == label): continue
 			shots.append({"label":label,"eye":at+wp[0]+dir*(float(cav.r)*0.6),"look":at+wp[1]+dir*20.0})
 			shots.append({"label":label+"-out","eye":at+wp[1]+dir*36.0+Vector3.UP*5.0,"look":at+wp[1]-dir*6.0})
+	# The ruins.
+	for r: Dictionary in plan.ruins:
+		var f: Transform3D = r.at
+		match str(r.kind):
+			"feed":
+				var length := 6.4*int(r.spans)
+				shots.append({"label":"feed","eye":at+f*Vector3(length*0.35,6.0,22.0),"look":at+f*Vector3(length*0.6,7.0,0.0)})
+				shots.append({"label":"spill","eye":at+f*Vector3(length+16.0,-14.0,10.0),"look":at+f*Vector3(length+2.0,-10.0,0.0)})
+			"hall":
+				var length := 8.0*int(r.bays)
+				shots.append({"label":"hall","eye":at+f*Vector3(-26.0,7.0,-20.0),"look":at+f*Vector3(length*0.5,4.0,0.0)})
+				shots.append({"label":"hall-lane","eye":at+f*Vector3(-10.0,2.4,6.0),"look":at+f*Vector3(length,2.4,6.0)})
+			"run":
+				shots.append({"label":"run","eye":at+f*Vector3(-6.0,9.0,9.0),"look":at+f*Vector3(16.0,6.0,0.0)})
+			"gate":
+				shots.append({"label":"gate-front","eye":at+f*Vector3(2.0,4.0,22.0),"look":at+f*Vector3(0.0,3.4,0.0)})
 	var eye_hole: Dictionary = plan.hole("eye")
 	if not eye_hole.is_empty():
 		var p: PackedVector3Array = eye_hole.points

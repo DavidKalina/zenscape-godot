@@ -362,7 +362,9 @@ func _fade(s: Dictionary) -> void:
 		var g: Variant = s.get(part)
 		if g is GeometryInstance3D and is_instance_valid(g): (g as GeometryInstance3D).transparency = t
 
-## Stands every planned isle whole at once (tests, probes, captures).
+## Stands every planned isle whole at once (tests, probes, captures). Never
+## while a worker is still making one in a run that draws no frames (see
+## `plan_now`).
 func flush() -> void:
 	for key in isles:
 		var s: Dictionary = isles[key]
@@ -377,9 +379,19 @@ func flush() -> void:
 	islets.flush()
 
 ## Plans (now, on this thread's wait) the isle at `key` and stands it.
+##
+## Made here on this thread, not on a worker: the ruins' merge reads their
+## meshes back from the rendering server, which a worker can only do while
+## the main thread goes on drawing frames, so a main thread blocked waiting
+## on that worker would never let it finish.
 func plan_now(key: String) -> void:
 	for s: Dictionary in spots:
-		if s.key == key and not isles.has(key): _plan(s)
+		if s.key != key: continue
+		if isles.has(key) and int(isles[key].get("task",-1)) >= 0: _forget(key)
+		if isles.has(key): break
+		var out := {}
+		make(int(s.seed),_palette,(s.at as Vector3).y,out)
+		isles[key] = {"spot":s,"task":-1,"out":out,"plan":out.plan,"stage":["lid","rock","far","ruins"],"age":FADE_IN}
 	flush()
 
 func _forget(key: String) -> void:
