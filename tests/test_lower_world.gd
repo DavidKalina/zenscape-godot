@@ -271,8 +271,19 @@ func _ranges() -> void:
 	var rock: ShaderMaterial = peaks._ground()
 	check(rock.get_shader_parameter("below_sink") == Vector4(1.0,SkyPeak.SEA,SkyPeak.BASE,SkyBelow.FOOT),"The rock is drawn down in the shader the same way")
 	check(rock.get_shader_parameter("sea_open") == false,"Above, the rock is cut at the sea as before")
+	var range_node := Node3D.new()
+	var body := MeshInstance3D.new()
+	body.name = "Body"
+	range_node.add_child(body)
+	peaks._fade_range(range_node,0.2)
+	check(body.transparency > 0.0 and peaks._lod_fade() == GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF,"Above, a range fades in over its skyline and its near and far faces crossfade")
 	peaks.open_sea(true)
 	check(rock.get_shader_parameter("sea_open") == true,"Below, it runs on down")
+	# A see-through face stands no depth, so the lower world's air would
+	# leave it unhazed: below, both are cuts.
+	peaks._fade_range(range_node,0.2)
+	check(body.transparency == 0.0 and peaks._lod_fade() == GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED,"Below, it never stands see-through: its swap and its faces' handover are cuts")
+	range_node.free()
 	peaks.free()
 
 func _haze() -> void:
