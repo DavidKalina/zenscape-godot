@@ -173,7 +173,9 @@ func _hold(shot: Dictionary, count: int) -> void:
 		scene.world_clock.running = false
 		scene.world_clock.set_time(scene.world_clock.day,hour)
 		if shot.get("sun",false):
-			var sun: Vector3 = RenderingServer.global_shader_parameter_get("zs_sun_direction")
+			var sun := Vector3.UP
+			var volume: Node = eye.lower.cloud_volume
+			if volume != null and volume.celestial != null: sun = volume.celestial.state.get("zs_sun_direction",Vector3.UP)
 			look = at+Vector3(sun.x,0.0,sun.z).normalized()*1000.0+Vector3.DOWN*12.0
 		var delta := 1.0/60.0
 		var view_eye := at
