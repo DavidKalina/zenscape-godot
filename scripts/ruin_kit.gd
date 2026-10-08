@@ -393,7 +393,8 @@ static func rose_gable(seed_value: int, weathered := 0.0) -> Node3D:
 	var gable := func(x: float) -> float: return minf(GABLE.z,GABLE.y+(GABLE.z-GABLE.y)*(1.0-absf(x)/half))
 	var top: Callable = gable
 	if weathered > 0.05:
-		var ragged := _ruin_line(b,-half,half,lerpf(GABLE.z,ROSE.x-0.4,weathered),GABLE.z,weathered)
+		# Never down past the rose's middle: its lower half stands, a horseshoe.
+		var ragged := _ruin_line(b,-half,half,lerpf(GABLE.z,ROSE.x+0.3,weathered),GABLE.z,weathered)
 		top = func(x: float) -> float: return minf(gable.call(x),ragged.call(x))
 	_plinth_course(b,Transform3D.IDENTITY,half,d)
 	var dw := DOOR.x*0.5
@@ -409,17 +410,17 @@ static func rose_gable(seed_value: int, weathered := 0.0) -> Node3D:
 	_courses(b,Transform3D.IDENTITY,-half,half,PLINTH_COURSE.x,top,d,hole,0.5)
 	_jambs(b,Transform3D.IDENTITY,dw,0.0,DOOR.y,d,top)
 	_arch_ring(b,Transform3D.IDENTITY,0.0,DOOR.y,dw,DOOR.x,d,true,0,1.0,top)
-	_rake(b,Transform3D.IDENTITY,half,GABLE.y,GABLE.z,d,top,true)
+	_rake(b,Transform3D.IDENTITY,half,GABLE.y,GABLE.z,d,top,true,INF if weathered < 0.3 else ROSE.x)
 	# The rose: the frame, an inner ring, hub and spokes.
 	var centre := Vector2(0.0,ROSE.x)
 	var inner := ROSE.y-ROSE.z
 	var ruin := clampf((weathered-0.15)*1.4,0.0,1.0)
 	_circle_ring(b,Transform3D.IDENTITY,centre,ROSE.y-ROSE.z*0.5,ROSE.z*0.5,d+0.02,16,0.0,top)
-	_circle_ring(b,Transform3D.IDENTITY,centre,inner-0.08,0.08,d-0.14,16,ruin*0.3,top)
+	if ruin < 0.4: _circle_ring(b,Transform3D.IDENTITY,centre,inner-0.08,0.08,d-0.14,16,ruin*0.3,top)
 	# Ruined, the hub has fallen (it lies in the drift below).
 	var hub := ruin < 0.3
 	var mid_r := inner*0.62
-	_circle_ring(b,Transform3D.IDENTITY,centre,mid_r,0.07,0.15,14,ruin*0.85,top)
+	if ruin < 0.3: _circle_ring(b,Transform3D.IDENTITY,centre,mid_r,0.07,0.15,14,ruin,top)
 	if hub: b.solid(_axial_prism(8,0.34,0.26),Transform3D(Basis(Vector3.RIGHT,PI*0.5),Vector3(0.0,ROSE.x,0.26)),_stone(b,1.05))
 	var spokes := 12
 	for k in range(spokes):
@@ -429,10 +430,10 @@ static func rose_gable(seed_value: int, weathered := 0.0) -> Node3D:
 		var r1 := inner-0.12
 		if ruin > 0.0:
 			var roll := b.rng.randf()
-			if roll < ruin*0.55: continue
+			if roll < ruin*0.7: continue
 			elif roll < ruin*0.95 or not hub:
 				# A stub from the frame, broken off a short way in.
-				r0 = r1-b.rng.randf_range(0.25,0.75)
+				r0 = r1-b.rng.randf_range(0.25,0.55)
 		var mid := Vector3(centre.x,centre.y,0.0)+dir*(r0+r1)*0.5
 		if top.call(mid.x) < mid.y+0.2: continue
 		var pose := Transform3D(Basis(Vector3.BACK,a-PI*0.5),mid)
@@ -465,24 +466,43 @@ static func rose_gable(seed_value: int, weathered := 0.0) -> Node3D:
 ## weathered set-off (each SET_OFF higher, each tread STAND deep: a way up),
 ## a gablet and a crocketed pinnacle on top. Weathered, the pinnacle is
 ## snapped, the wall stub torn down, and a flying buttress's arm leaps from
-## its head back over the wall and breaks off in mid-air.
+## its head back over the wall and breaks off in mid-air. Built standing
+## out toward +X (its profile to the front), the wall's stub along Z.
 static func buttress(seed_value: int, weathered := 0.0) -> Node3D:
 	var b := Build.new(seed_value,weathered,"Buttress")
+	# Turned side on: its stepped profile and the flyer read from the front.
+	b.frame = Transform3D(Basis(Vector3.UP,PI*0.5),Vector3(-0.3,0.0,0.0))
 	var depth: Array = BUTTRESS_DEPTH
 	var stages := [[SET_OFF,depth[0]],[SET_OFF*2.0,depth[1]],[SET_OFF*3.0,depth[2]]]
 	var wall_z := -1.2
 	var top: Callable = _worn_top(b,-1.7,1.7,6.2,0.5)
-	if weathered > 0.05: top = _ruin_line(b,-1.7,1.7,lerpf(6.2,3.0,weathered),6.2,weathered)
+	var flyer := weathered > 0.4
+	if weathered > 0.05:
+		var ragged := _ruin_line(b,-1.7,1.7,lerpf(6.2,3.0,weathered),6.2,weathered)
+		# Under the flyer's arm the wall is down, so the arm leaps clear.
+		top = func(x: float) -> float: return minf(float(ragged.call(x)),4.1 if flyer and absf(x) < 0.9 else 99.0)
 	_courses(b,Transform3D(Basis.IDENTITY,Vector3(0.0,0.0,wall_z+0.5)),-1.7,1.7,0.0,top,0.5,Callable(),0.5)
 	var snapped := weathered > 0.3 and b.rng.randf() < 0.4+weathered*0.6
 	_buttress(b,Transform3D(Basis.IDENTITY,Vector3(0.0,0.0,wall_z+1.0)),stages,BUTTRESS_WIDTH,snapped,true)
-	if weathered > 0.4:
-		# The flying arm: a quarter of a pointed arch from the pinnacle's
-		# foot, rising over the front, broken off after a few stones.
-		var spring := Vector3(BUTTRESS_WIDTH*0.5-0.1,SET_OFF*3.0-0.35,wall_z+1.0+float(depth[2])*0.5)
-		var pose := Transform3D(Basis.IDENTITY,spring)
-		var keep := 3+int(b.rng.randf()*2.0*weathered)
-		_rib(b,pose,2.4,2.7,0.42,0.26,7,keep)
+	if flyer:
+		# The flyer: a straight sloping arm of long stones under a coping,
+		# leaping from the pinnacle's foot back over the wall toward the
+		# nave that is gone, broken off in mid-air after a few stones.
+		var slope := deg_to_rad(32.0)
+		var way := Vector3(0.0,sin(slope),-cos(slope))
+		var lift := Basis(Vector3.RIGHT,slope)
+		var at := Vector3(0.0,SET_OFF*3.0+0.1,wall_z+1.0+0.2)
+		var keep := 3+int(b.rng.randf()*1.5*weathered)
+		for i in range(keep):
+			var half := Vector3(0.26,0.24,0.38)
+			var middle := at+way*(half.z*2.0*i+half.z)
+			var extra: Array[Plane] = []
+			if i == keep-1:
+				var m := (Vector3.FORWARD+Vector3(b.rng.randf_range(-0.6,0.6),b.rng.randf_range(-0.5,0.5),0.0)).normalized()
+				extra.append(Plane(m,b.rng.randf_range(0.0,0.15)))
+			b.solid(_box(b,half),Transform3D(lift,middle),_stone(b,1.03),true,true,extra)
+			if i < keep-1:
+				b.solid(_box(b,Vector3(0.32,0.07,0.38)),Transform3D(lift,middle+lift*Vector3(0.0,0.3,0.0)),_stone(b,1.08),true,true)
 	_drift(b,Vector3(b.rng.randf_range(-1.0,1.0),0.0,1.8),1.3,int(weathered*6.0))
 	_rubble(b,2.2,int(round(weathered*b.rng.randf_range(3.0,6.0))))
 	return b.finish()
@@ -1368,7 +1388,7 @@ static func _circle_ring(b: Build, pose: Transform3D, centre: Vector2, r_mid: fl
 		var am := (a0+a1)*0.5
 		var dm := Vector3(cos(am),sin(am),0.0)
 		var mid := c+dm*r_mid
-		if top.is_valid() and float(top.call(mid.x)) < mid.y+0.1: continue
+		if top.is_valid() and float(top.call(mid.x)) < mid.y+0.1+0.3*b.weathered: continue
 		if ruin > 0.0 and b.rng.randf() < ruin*(0.5+0.5*maxf(0.0,dm.y)): continue
 		var planes: Array[Plane] = [Plane(Vector3.BACK,d),Plane(Vector3.FORWARD,d)]
 		planes.append(Plane(Vector3(sin(a0),-cos(a0),0.0),Vector3(sin(a0),-cos(a0),0.0).dot(c)-0.004))
@@ -1454,7 +1474,7 @@ static func _plinth_course(b: Build, pose: Transform3D, half_len: float, d: floa
 ## (`eave` at `half` out) to the apex, with crockets, a finial at the apex;
 ## only where the gable stands whole under `top`. `wide`: the gable's own
 ## wall, so the coping overhangs it.
-static func _rake(b: Build, pose: Transform3D, half: float, eave: float, apex: float, d: float, top: Callable, finial := true) -> void:
+static func _rake(b: Build, pose: Transform3D, half: float, eave: float, apex: float, d: float, top: Callable, finial := true, highest := INF) -> void:
 	var slope := atan2(apex-eave,half)
 	var length := half/cos(slope)
 	var count := maxi(3,int(length/1.0))
@@ -1468,7 +1488,7 @@ static func _rake(b: Build, pose: Transform3D, half: float, eave: float, apex: f
 			var ya := eave+(apex-eave)*t0
 			var yb := eave+(apex-eave)*t1
 			var mid := Vector3((xa+xb)*0.5,(ya+yb)*0.5,0.0)
-			if float(top.call(mid.x)) < mid.y-0.05: continue
+			if float(top.call(mid.x)) < mid.y-0.05 or mid.y > highest: continue
 			if k == count-1: whole += 1
 			var basis := Basis(Vector3.BACK,side*-slope)
 			var half_ext := Vector3(length/count*0.5-0.01,0.12,d+0.08)

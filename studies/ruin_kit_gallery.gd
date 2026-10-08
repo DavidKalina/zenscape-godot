@@ -349,7 +349,7 @@ func _figures() -> void:
 	var stairs: Dictionary = slot.call("stairs")
 	_pilot(stairs,0,Vector3(0.3,0.0,3.2),0.2)
 	var buttress: Dictionary = slot.call("buttress")
-	_pilot(buttress,0,Vector3(0.0,RuinKit.SET_OFF,1.4),0.0)
+	_pilot(buttress,0,Vector3(1.9,RuinKit.SET_OFF,0.0),0.0)
 	var window: Dictionary = slot.call("lancet_wall")
 	_pilot(window,1,Vector3(-0.6,RuinKit.WINDOW.y,0.15),0.5)
 	var arch: Dictionary = slot.call("arch")
