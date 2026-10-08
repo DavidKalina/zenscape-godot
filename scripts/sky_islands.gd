@@ -38,6 +38,11 @@ extends Node3D
 ## On every island but the plate's first home live a few sky folk (scripts/
 ## sky_folk.gd), the same ones each time, who go with their island.
 ##
+## Through it all, in short lines, the collectible tokens (scripts/
+## sky_collectibles.gd): on the clusters' bridges, under the islands' and
+## islets' rock, out on good flying lines and under the trees; what the
+## pilot has collected is kept with the world (`save_state`).
+##
 ## Flying into a chunk claims it (`claim`): the island left behind is kept
 ## (its land document, in `built_islands`, saved with the world) and its look baked
 ## where it stands; the plate is formed as the chunk's plain (or, for an
@@ -68,6 +73,7 @@ const IslandShore = preload("res://scripts/island_shore.gd")
 const SkyIslets = preload("res://scripts/sky_islets.gd")
 const SkyClusters = preload("res://scripts/sky_clusters.gd")
 const SkyAirship = preload("res://scripts/sky_airship.gd")
+const SkyCollectibles = preload("res://scripts/sky_collectibles.gd")
 const SkyPeaks = preload("res://scripts/sky_peaks.gd")
 const SkyTowers = preload("res://scripts/sky_towers.gd")
 const CloudWakes = preload("res://scripts/cloud_wakes.gd")
@@ -156,6 +162,9 @@ var folk: Node3D
 var clusters: Node3D
 ## Now and then an airship towing a lone islet away (scripts/sky_airship.gd).
 var airship: Node3D
+## The collectible tokens (scripts/sky_collectibles.gd), or null with
+## --no-collectibles.
+var collectibles: Node3D
 ## The islands built and left, by home key (`_key`): {home, label, document}.
 var built_islands := {}
 ## The swaps' shifts added up: the plate's own home is -origin.
@@ -244,6 +253,17 @@ func setup(owner_scene: Node3D) -> void:
 	airship.scene = scene
 	add_child(airship)
 	skip.append(airship)
+	if SkyCollectibles.enabled():
+		collectibles = SkyCollectibles.new()
+		collectibles.islands = self
+		collectibles.islets = islets
+		collectibles.clusters = clusters
+		collectibles.scene = scene
+		add_child(collectibles)
+		skip.append(collectibles)
+		claimed.connect(collectibles.on_claimed)
+		# Review: every kind laid near the home, on clusters stood there.
+		if collectibles.near_home and clusters.with_near.is_empty(): clusters.with_near = SkyCollectibles.NEAR_MOTIFS.duplicate()
 	show_air(false)
 
 ## Sets an island at every fixed slot and every island built, except the
@@ -278,6 +298,7 @@ func build() -> void:
 	isles.canopy_tint = SkyIslets._canopy_tint
 	isles.reset(cells)
 	clusters.reset(cells)
+	if collectibles != null: collectibles.reset(cells)
 
 func clear() -> void:
 	for island in _copies: island.queue_free()
@@ -289,6 +310,7 @@ func clear() -> void:
 	seeds.clear()
 	_newest = Vector3.INF
 	if currents != null: currents.drop_added()
+	if collectibles != null: collectibles.clear()
 	if clusters != null: clusters.clear()
 	if airship != null: airship.clear()
 	if islets != null: islets.clear()
@@ -339,6 +361,10 @@ func advance(delta: float, eye: Vector3, heading: float, parted: float) -> void:
 	islets.advance(delta,eye)
 	clusters.advance(delta,eye)
 	spent.islets = Time.get_ticks_usec()-t
+	if collectibles != null:
+		t = Time.get_ticks_usec()
+		collectibles.advance(delta,eye)
+		spent.collectibles = Time.get_ticks_usec()-t
 	t = Time.get_ticks_usec()
 	peaks.advance(delta,eye)
 	spent.peaks = Time.get_ticks_usec()-t
@@ -901,12 +927,19 @@ func _show_plate(hidden: Dictionary) -> void:
 		if is_instance_valid(part): (part as GeometryInstance3D).layers = hidden[part]
 
 ## What the world's save keeps of the sky: where the plate stands, what it
-## was claimed as, and the islands built and left.
+## was claimed as, the islands built and left, and the tokens collected.
 func save_state() -> Dictionary:
 	var kept := []
 	for entry: Dictionary in built_islands.values():
 		kept.append({"home":[entry.home.x,entry.home.y,entry.home.z],"label":entry.label,"document":entry.document})
-	return {"origin":[origin.x,origin.y,origin.z],"plate_seed":plate_seed,"built":kept,"seed":SkyWorld.seed}
+	var state := {"origin":[origin.x,origin.y,origin.z],"plate_seed":plate_seed,"built":kept,"seed":SkyWorld.seed}
+	if collectibles != null: state.collectibles = collectibles.save_state()
+	elif _collected_kept is Dictionary: state.collectibles = _collected_kept
+	return state
+
+## The tokens a world saved, kept as they were with --no-collectibles so a
+## save never drops them.
+var _collected_kept: Variant = null
 
 ## Takes a world's saved sky (`save_state`), or none for a new world. The
 ## islands stand again at the next glide.
@@ -929,6 +962,8 @@ func load_state(state: Dictionary) -> void:
 	SkyWorld.settle()
 	SkyWorld.seed = int(state.get("seed",SkyWorld.LEGACY_SEED))
 	if SkyWorld.seed_flag() >= 0: SkyWorld.seed = SkyWorld.seed_flag()
+	_collected_kept = state.get("collectibles")
+	if collectibles != null: collectibles.load_state(state.get("collectibles",{}) if state.get("collectibles") is Dictionary else {})
 	_keep()
 	# The world's layout worked out on a worker from here, as the world
 	# starts (SkyWorld `prepare`); the build view stands its ranges once it
@@ -1145,6 +1180,7 @@ func show_air(on: bool) -> void:
 	clouds.visible = on
 	islets.visible = on
 	if airship != null: airship.visible = on
+	if collectibles != null: collectibles.visible = on
 	peaks.visible = on or SkyWorld.ring_on()
 	if not on: peaks.let_go()
 	towers.visible = on
