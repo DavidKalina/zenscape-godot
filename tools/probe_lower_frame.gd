@@ -121,6 +121,8 @@ func run() -> void:
 			await RenderingServer.frame_post_draw
 			var image := root.get_texture().get_image()
 			image.save_png(shots.path_join(v.label+".png"))
+		if "--top" in OS.get_cmdline_user_args(): _top(v.label)
+		if "--islands" in OS.get_cmdline_user_args(): _islands(v.label)
 		if "--no-split" in OS.get_cmdline_user_args(): continue
 		for kind: String in KINDS:
 			var hidden := _nodes(kind)
@@ -162,6 +164,58 @@ func _measure(count: int) -> Dictionary:
 	for k in sum: out[k] = sum[k]/count
 	out.frame = float(Time.get_ticks_usec()-from)/count/1000.0
 	return out
+
+## Each island in view: where it stands on screen, its landform and how
+## far (--islands).
+func _islands(label: String) -> void:
+	var camera := root.get_viewport().get_camera_3d()
+	for key in eye.lower.archipelago.built:
+		var b: Dictionary = eye.lower.archipelago.built[key]
+		var node := b.node as Node3D
+		var at := node.global_position
+		if camera.is_position_behind(at): continue
+		var px := camera.unproject_position(at)
+		if px.x < 0 or px.y < 0 or px.x > 1280 or px.y > 720: continue
+		var far := node.get_node_or_null("BodyFar") as GeometryInstance3D
+		var info := "none"
+		if far != null:
+			var body := node.get_node("Body") as MeshInstance3D
+			var fbox := far.global_transform*far.get_aabb()
+			info = "%d tris vis %s tr %.2f mat %s aabb d %.0f; body tr %.2f mat %s aabb d %.0f" % [(far as MeshInstance3D).mesh.get_faces().size()/3,far.is_visible_in_tree(),far.transparency,(far as MeshInstance3D).mesh.surface_get_material(0),camera.global_position.distance_to(fbox.get_center()),body.transparency,body.mesh.surface_get_material(0),camera.global_position.distance_to((body.global_transform*body.get_aabb()).get_center())]
+		print("PROBE   %s island %s %s at (%.0f,%.0f) d %.0f far %s" % [label,key,b.landform,px.x,px.y,camera.global_position.distance_to(at),info])
+
+## The plant batches drawing the most triangles (count times the mesh's),
+## within their range of the camera and in its view (--top).
+func _top(label: String) -> void:
+	var camera := root.get_viewport().get_camera_3d()
+	var frustum := camera.get_frustum()
+	var list := []
+	var seen_sum := 0
+	var all_sum := 0
+	for island: Node in eye.lower.archipelago.islets.get_children():
+		for child: Node in island.get_children():
+			if not child is MultiMeshInstance3D: continue
+			var batch := child as MultiMeshInstance3D
+			var box := batch.global_transform*batch.get_aabb()
+			var d := camera.global_position.distance_to(box.get_center())
+			if d > batch.visibility_range_end or d < batch.visibility_range_begin: continue
+			var inside := true
+			for plane: Plane in frustum:
+				var corner := box.get_support(-plane.normal)
+				if plane.is_point_over(corner): inside = false
+			var mesh := batch.multimesh.mesh
+			var tris := 0
+			for s in range(mesh.get_surface_count()):
+				var a := mesh.surface_get_arrays(s)
+				var ind: Variant = a[Mesh.ARRAY_INDEX]
+				tris += (ind as PackedInt32Array).size()/3 if ind is PackedInt32Array and (ind as PackedInt32Array).size() > 0 else (a[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()/3
+			if inside: seen_sum += tris*batch.multimesh.instance_count
+			else: all_sum += tris*batch.multimesh.instance_count
+			if not inside: continue
+			list.append([tris*batch.multimesh.instance_count,"%s/%s x%d d %.0f range %.0f-%.0f" % [island.name,batch.name,batch.multimesh.instance_count,d,batch.visibility_range_begin,batch.visibility_range_end]])
+	print("PROBE   %s plants in range: %d in view, %d out of it" % [label,seen_sum,all_sum])
+	list.sort_custom(func(a: Array, b: Array) -> bool: return a[0] > b[0])
+	for i in range(mini(20,list.size())): print("PROBE   %s top %8d %s" % [label,list[i][0],list[i][1]])
 
 ## The visible nodes of a kind (see KINDS), to hide.
 func _nodes(kind: String) -> Array:
