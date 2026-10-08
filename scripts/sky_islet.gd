@@ -54,6 +54,11 @@ const IsletLake = preload("res://scripts/islet_lake.gd")
 const Woodland = preload("res://scripts/woodland.gd")
 const RavineCut = preload("res://scripts/ravine_cut.gd")
 const MountainSpire = preload("res://scripts/mountain_spire.gd")
+const HillDowns = preload("res://scripts/hill_downs.gd")
+const SeaCliffs = preload("res://scripts/sea_cliffs.gd")
+const IsletStream = preload("res://scripts/islet_stream.gd")
+const ForestCanopy = preload("res://scripts/forest_canopy.gd")
+const MountainMassif = preload("res://scripts/mountain_massif.gd")
 
 ## Kinds and how often each turns up.
 const KINDS := [["meadow",0.22],["grove",0.22],["hills",0.15],["crag",0.11],["spring",0.18],["shore",0.12]]
@@ -134,6 +139,18 @@ const BOWL := 0.55
 const WATER := RIM_HEIGHT-0.1
 const CHANNEL := 0.75
 const BANK := 0.28
+## An island in the sea (a recipe's `sea_foot`): the wall's foot stands
+## SEA_UNDER m under the water at the shore, the shelf stays within
+## SEA_SHALLOW m of the surface over its first half before falling away to
+## its depth, and the bed's colours go from sand to gravel to dark stone
+## by depth (m, SEA_TONES).
+const SEA_UNDER := 0.3
+const SEA_SHALLOW := 1.2
+const SEA_TONES := Vector4(0.3,2.5,3.0,9.0)
+## Its beach: sand this far in from the shore (m), where the ground stands
+## no higher than SEA_BEACH_HIGH over the water.
+const SEA_BEACH := 2.5
+const SEA_BEACH_HIGH := 0.9
 ## The water's arrays carry the fetch as two float vec4s.
 const WATER_FORMAT := (Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT) | (Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM1_SHIFT)
 ## Where the bowl's bank meets the water, as a share of the pond's radius.
@@ -212,7 +229,9 @@ var kind := "meadow"
 ## its land reaches from the middle.
 var radius := 5.0
 var reach := 5.0
-## The grid: its points, three ids a face, cells a side and half its width.
+## The grid: its step (m, STEP unless the recipe's `step`), its points,
+## three ids a face, cells a side and half its width.
+var step := STEP
 var points := PackedVector2Array()
 var ids := PackedInt32Array()
 var cells := 0
@@ -244,6 +263,8 @@ var lip_out := Vector2.ZERO
 var water_level := WATER
 ## A lake (scripts/islet_lake.gd), empty if none: the recipe's `lake`.
 var lake := {}
+## A stream (scripts/islet_stream.gd), empty if none: the recipe's `stream`.
+var stream := {}
 ## What grows: object records, as the plate's.
 var objects: Array[Dictionary] = []
 ## Trees and stones, for the glide and the walker: crowns (x, z, top over
@@ -257,6 +278,8 @@ var flowers: Array[String] = []
 ## rock and `deep` (RockLooks `seeded`). What it may set, each optional,
 ## every place in the islet's frame (m):
 ##   radius: the land's radius, instead of the kind's range;
+##   step: the grid's step (m), coarser than the plate's STEP for a big
+##     island seen from the air (a landform's, scripts/landform_hills.gd);
 ##   mounds / peaks: Array of Vector4(x, z, reach, height), smooth hill
 ##     mounds or the crag's ridged peaks, instead of the kind's own;
 ##   dome: how high the ground rises inland, instead of the kind's;
@@ -273,7 +296,20 @@ var flowers: Array[String] = []
 ##     companion); tree_size: a multiplier range on each tree's size;
 ##   drifts: Vector2i, how many flower drifts; apart: a multiplier on how
 ##     far apart the trees keep;
-##   undergrowth: a multiplier on the kind's undergrowth;
+##   undergrowth: a multiplier on the kind's undergrowth; tufts, on its
+##     grass tufts;
+##   erode: the erosion's own strengths over the kind's (ERODE: detail, k,
+##     max_cut), and over the common settings (iterations), and its grid's
+##     `cell` (m; unless given, Erosion CELL or the grid's step if coarser);
+##   downs: rolling hill country laid over it, 30 to 90 m across (scripts/
+##     hill_downs.gd: swells, cliffs and beaches, a glen to a cove, tors, a
+##     crest's trees, drifts in the hollows, the downs' own shading);
+##   stream: a brook down a valley to the shore (scripts/islet_stream.gd);
+##   forest: a whole forest planted over it (scripts/forest_canopy.gd:
+##     conifers high, birch low, glades, a clearing, the stream's banks),
+##     its floor shaded under the crowns;
+##   far_trees: its trees drawn as far stand-ins past this many metres
+##     (SkyIslets `_plant`, scripts/far_trees.gd);
 ##   woodland: a real wood planted over it (scripts/woodland.gd: glades,
 ##     giants, clumped canopy, the floor), on top of the trees above;
 ##   objects: Array of records ({asset, x, z, angle, scale, tint}) set as
@@ -292,6 +328,19 @@ var flowers: Array[String] = []
 ##   tear: a ravine's half, cut from a whole island along a jagged tear
 ##     (scripts/ravine_cut.gd: its side, the tear's shape, filled by
 ##     `share`).
+##   sea_foot: {level, shelf, depth}, an island standing in the sea (the
+##     lower world's) rather than hanging in the sky: the sea's surface at
+##     `level` (islet frame, under the rim), the shore wall going on down
+##     into it to the bed, and round the land a shelf of sea bed falling
+##     from just under the water at the shore to `depth` m under it
+##     `shelf` m out (`sea_bed`), drawn with the top; no rock hangs under
+##     it but where its own underside stands over the water (an arch,
+##     left open), and the bed is no ground (`inside` is the land's alone).
+##   room: metres more of grid round the land (a sea cliff's stacks);
+##   cliffs: a sea-cliff island (scripts/sea_cliffs.gd: its tableland,
+##     stacks, arch, cove and stratified walls);
+##   massif: a mountain island's massif (scripts/mountain_massif.gd), raised
+##     as a spire is and held in `spire`.
 var recipe := {}
 ## The recipe's decks, as it gives them.
 var decks: Array = []
@@ -310,6 +359,14 @@ var cleft := {}
 ## A recipe's `spire` (a Dictionary, may be empty): a real peak raised on the
 ## islet (scripts/mountain_spire.gd), which draws its own faces; null if none.
 var spire: RefCounted = null
+## Under a recipe's `sea_foot`: each point's sea bed height (islet frame;
+## on the land, the wall's foot under its shore), and how far off the land
+## each point lies (m, 0 on it). Empty otherwise.
+var sea_bed := PackedFloat32Array()
+var sea_out := PackedFloat32Array()
+## A recipe's `cliffs`: the sea cliffs (scripts/sea_cliffs.gd), which shape
+## its outline, ground, rock and walls; null if none.
+var cliffs: RefCounted = null
 
 ## An islet laid out by hand from `spec` (see `recipe`), its kind
 ## `spec.kind`, the rest of it seeded by `seed_value` as any islet's is.
@@ -346,7 +403,9 @@ func _shape(seed_value: int, forced: String) -> void:
 	radius = rng.randf_range(across.x,across.y)*0.5
 	if recipe.has("radius"): radius = float(recipe.radius)
 	var area := PI*radius*radius
-	var grid := _grid(ceili((radius*REACH+MARGIN)/STEP))
+	step = float(recipe.get("step",STEP))
+	var sea: Dictionary = recipe.get("sea_foot",{})
+	var grid := _grid(ceili((radius*REACH+MARGIN+float(sea.get("shelf",0.0))+float(recipe.get("room",0.0)))/step),step)
 	points = grid.points
 	ids = grid.ids
 	cells = grid.cells
@@ -355,6 +414,7 @@ func _shape(seed_value: int, forced: String) -> void:
 	shore_distance = IslandOutline.shore_distance(points,ids,outline)
 	shore_edges = IslandOutline.shore_edges(ids,outline)
 	if recipe.has("tear"): RavineCut.cut(self)
+	if recipe.has("cliffs"): cliffs = SeaCliffs.carve(self)
 	land.clear()
 	for f in range(outline.size()):
 		if outline[f] == 0: land.append(f)
@@ -367,7 +427,12 @@ func _shape(seed_value: int, forced: String) -> void:
 		var deeper := float(recipe.keel) if recipe.has("keel") else RockLooks.keel(radius,float(recipe.deep))
 		for i in range(keel.size()): keel[i] *= deeper
 	if recipe.has("spire"): spire = MountainSpire.raise(self)
+	elif recipe.has("massif"): spire = MountainMassif.raise_massif(self)
 	base = -(BASE.x+BASE.y*radius)
+	# A sea cliff's arch opens before the sea foot is laid, which leaves an
+	# underside raised over the water as it is.
+	if cliffs != null: cliffs.hollow(self)
+	if not sea.is_empty(): _lay_sea_bed(sea)
 	var deepest := 0.0
 	for k in keel: deepest = maxf(deepest,k)
 	depth = -base+deepest
@@ -376,24 +441,72 @@ func _shape(seed_value: int, forced: String) -> void:
 	for deck: Dictionary in decks:
 		for end: Vector3 in [deck.a,deck.b]: reach = maxf(reach,Vector2(end.x,end.z).length()+1.0)
 
-## The grid of `n` cells each way from the middle (2n a side), the plate's
-## own triangulation: [points, ids, cells a side, half width]. Cached, and
-## shared by every islet of its size (read only).
-static func _grid(n: int) -> Dictionary:
+## An island in the sea (`sea_foot`): how far off the land each point lies
+## (the nearest land point's distance, carried over the grid in two sweeps
+## each way), the bed falling from SEA_UNDER under the water at the shore
+## to the shelf's depth at its end and on down past it, the wall's foot
+## at the shore, and no rock hanging under the land.
+func _lay_sea_bed(sea: Dictionary) -> void:
+	var level := float(sea.get("level",RIM_HEIGHT-2.0))
+	var shelf := maxf(float(sea.get("shelf",10.0)),1.0)
+	var deep := maxf(float(sea.get("depth",12.0)),SEA_SHALLOW+1.0)
+	var side := cells+1
+	var nearest := PackedInt32Array()
+	nearest.resize(points.size())
+	nearest.fill(-1)
+	for i in range(points.size()):
+		if shore_distance[i] >= 0.0: nearest[i] = i
+	var forward := [Vector2i(-1,-1),Vector2i(0,-1),Vector2i(1,-1),Vector2i(-1,0)]
+	var backward := [Vector2i(1,1),Vector2i(0,1),Vector2i(-1,1),Vector2i(1,0)]
+	for pass_ in range(2):
+		for k in range(points.size()):
+			var at := k if pass_ == 0 else points.size()-1-k
+			var i := at % side
+			var j := at/side
+			for d: Vector2i in (forward if pass_ == 0 else backward):
+				var ni := i+d.x
+				var nj := j+d.y
+				if ni < 0 or nj < 0 or ni >= side or nj >= side: continue
+				var seed_at := nearest[nj*side+ni]
+				if seed_at < 0: continue
+				if nearest[at] < 0 or points[at].distance_squared_to(points[seed_at]) < points[at].distance_squared_to(points[nearest[at]]): nearest[at] = seed_at
+	sea_out.resize(points.size())
+	sea_bed.resize(points.size())
+	# Where the land's own underside stands over the water (a cliffs
+	# landform's arch, raised under its rock bridge), it is left as it is,
+	# so the arch stays open; everywhere else the wall goes down to the bed
+	# and nothing hangs under it.
+	var undersides := PackedFloat32Array()
+	undersides.resize(points.size())
+	for i in range(points.size()): undersides[i] = base-keel[i]
+	base = level-SEA_UNDER
+	for i in range(points.size()):
+		var out := 0.0 if shore_distance[i] >= 0.0 or nearest[i] < 0 else points[i].distance_to(points[nearest[i]])
+		sea_out[i] = out
+		var t := out/shelf
+		var below := SEA_UNDER+(SEA_SHALLOW-SEA_UNDER)*smoothstep(0.0,0.5,t)+(deep-SEA_SHALLOW)*smoothstep(0.4,1.0,t)+deep*0.5*maxf(t-1.0,0.0)
+		sea_bed[i] = level-below
+	for i in range(points.size()): keel[i] = base-undersides[i] if undersides[i] > level else 0.0
+
+## The grid of `n` cells each way from the middle (2n a side), `spacing`
+## apart, the plate's own triangulation: [points, ids, cells a side, half
+## width]. Cached, and shared by every islet of its size (read only).
+static func _grid(n: int, spacing := STEP) -> Dictionary:
+	var key := Vector2i(n,roundi(spacing*1000.0))
 	_grid_lock.lock()
-	var made: Variant = _grids.get(n)
+	var made: Variant = _grids.get(key)
 	_grid_lock.unlock()
 	if made != null: return made
 	var side := n*2
-	var span := float(n)*STEP
+	var span := float(n)*spacing
 	var at := PackedVector2Array()
 	var plain := PackedVector2Array()
 	at.resize((side+1)*(side+1))
 	plain.resize(at.size())
-	var reach := PlateMesh.NUDGE*STEP
+	var reach := PlateMesh.NUDGE*spacing
 	for j in range(side+1):
 		for i in range(side+1):
-			var p := Vector2(-span+i*STEP,-span+j*STEP)
+			var p := Vector2(-span+i*spacing,-span+j*spacing)
 			plain[j*(side+1)+i] = p
 			if i > 0 and j > 0 and i < side and j < side:
 				p += Vector2(PlateMesh._hash(i,j,1)*2.0-1.0,PlateMesh._hash(i,j,2)*2.0-1.0)*reach
@@ -413,7 +526,7 @@ static func _grid(n: int) -> Dictionary:
 		if not eased: break
 	made = {"points":at,"ids":faces,"cells":side,"half":span}
 	_grid_lock.lock()
-	_grids[n] = made
+	_grids[key] = made
 	_grid_lock.unlock()
 	return made
 
@@ -490,7 +603,10 @@ func _lay_ground(rng: RandomNumberGenerator) -> void:
 				h += m.w*(1.0-r*r)*(1.0-r*r)
 		# The lip wanders up and down, and slumps in places (`_rim_at`).
 		heights[i] = lerpf(_rim_at(p,lip_noise),h,smoothstep(0.0,ease,d))
+	if recipe.has("downs"): HillDowns.shape(self,rng,inland)
 	_erode()
+	if cliffs != null: cliffs.lift(self)
+	if recipe.has("stream"): IsletStream.cut(self,rng)
 	if recipe.has("lake"): IsletLake.cut(self,rng,inland)
 	elif kind == "spring" or recipe.has("pond"): _cut_pond(rng,inland)
 	_level_pads()
@@ -525,7 +641,13 @@ func _rim_at(p: Vector2, noise: FastNoiseLite) -> float:
 ## ridged detail roughens the slopes. Each point's cut is kept (`wear`) for
 ## the scree it leaves.
 func _erode() -> void:
-	var cell := Erosion.CELL
+	# A big island on a coarse grid (a recipe's `step`) weathers on cells as
+	# coarse, its finer gullies being finer than its faces; a recipe's erode
+	# may give its own cell (m). Erosion `sample` reads its grid as CELL
+	# apart, so the reads below are scaled to it.
+	var cell := maxf(Erosion.CELL,step)
+	var erode: Variant = recipe.get("erode")
+	if erode is Dictionary and (erode as Dictionary).has("cell"): cell = float(erode.cell)
 	var n := ceili((reach+ERODE_MARGIN)*2.0/cell)+1
 	var origin := -float(n-1)*0.5*cell
 	var low := INF
@@ -546,6 +668,7 @@ func _erode() -> void:
 			var w: Vector3 = hit[1]
 			base[j*n+i] = w.x*heights[ids[f*3]]+w.y*heights[ids[f*3+1]]+w.z*heights[ids[f*3+2]]
 	var settings: Dictionary = (ERODE[kind] as Dictionary).duplicate()
+	settings.merge(recipe.get("erode",{}),true)
 	settings.merge(ERODE_COMMON)
 	settings.merge({"size":n,"cell":cell,"origin":origin,"seed":(seed*7+53) & 0x7fffffff,"edge_inner":1.0e5,"edge_outer":1.0e5+1.0})
 	var delta := Erosion.erode(base,fixed,settings)
@@ -555,7 +678,8 @@ func _erode() -> void:
 	for i in range(points.size()):
 		if shore_distance[i] < 0.0: continue
 		var p := points[i]
-		var cut := Erosion.sample(delta,p.x,p.y,n,origin)
+		var scale := Erosion.CELL/cell
+		var cut := Erosion.sample(delta,origin+(p.x-origin)*scale,origin+(p.y-origin)*scale,n,origin)
 		heights[i] += cut
 		wear[i] = maxf(-cut,0.0)
 
@@ -610,10 +734,11 @@ func _cut_pond(rng: RandomNumberGenerator, inland: float) -> void:
 ## The pond's water in the islet frame: level, middle and radius, with the
 ## lip and the way out; empty if the islet has none.
 func water() -> Dictionary:
+	if not stream.is_empty(): return IsletStream.water(self)
 	if pond.z <= 0.0: return {}
 	var w := {"level":water_level,"middle":Vector2(pond.x,pond.y),"radius":pond.z,"lip":lip,"out":lip_out}
 	# A lake pours off as a broader fall.
-	if not lake.is_empty(): w.half = IsletLake.FALL_HALF
+	if not lake.is_empty(): w.half = IsletLake.fall_half(self)
 	return w
 
 func _channel_distance(p: Vector2) -> float:
@@ -625,6 +750,7 @@ func _channel_distance(p: Vector2) -> float:
 
 ## True over the pond's water or its channel.
 func wet(p: Vector2) -> bool:
+	if not stream.is_empty() and IsletStream.wet(self,p): return true
 	if not lake.is_empty(): return IsletLake.wet(self,p)
 	if pond.z <= 0.0: return false
 	return p.distance_to(Vector2(pond.x,pond.y)) < pond.z*1.05 or _channel_distance(p) < CHANNEL
@@ -634,8 +760,8 @@ func wet(p: Vector2) -> bool:
 ## The land face holding `p`, as Vector4(face, weights a, b, c's first two),
 ## or face -1 off the land.
 func _locate(p: Vector2) -> Array:
-	var i := floori((p.x+grid_shift.x+half)/STEP)
-	var j := floori((p.y+grid_shift.y+half)/STEP)
+	var i := floori((p.x+grid_shift.x+half)/step)
+	var j := floori((p.y+grid_shift.y+half)/step)
 	for dj in [0,-1,1]:
 		for di in [0,-1,1]:
 			var ci: int = i+di
@@ -730,10 +856,10 @@ func share(p: Vector2) -> float:
 func rim_radius(a: float) -> float:
 	var dir := Vector2.from_angle(a)
 	var r := 0.0
-	var step := 0.15
+	var stride := 0.15
 	while r < reach+1.0:
-		if not on_land(dir*(r+step)): break
-		r += step
+		if not on_land(dir*(r+stride)): break
+		r += stride
 	return maxf(r,0.05)
 
 func rim_point(a: float) -> Vector2:
@@ -743,8 +869,13 @@ func rim_point(a: float) -> Vector2:
 func blocked(at: Vector2) -> bool:
 	for b in blocks:
 		if at.distance_to(Vector2(b.x,b.y)) < b.z: return true
-	# Out over the water only on a deck (a jetty).
-	return wet(at) and deck_y(at) == -INF
+	# Out over the water only on a deck (a jetty), or into a lake to swim.
+	return wet(at) and deck_y(at) == -INF and not lake.get("swim",false)
+
+## The water's depth a walker wades or swims at `p` (m): a swimmable
+## lake's (IsletLake `swim_depth`), else none.
+func swim_depth(p: Vector2) -> float:
+	return IsletLake.swim_depth(self,p) if not lake.is_empty() else 0.0
 
 static func _barycentric(p: Vector2, a: Vector2, b: Vector2, c: Vector2) -> Vector3:
 	var v0 := b-a
@@ -819,6 +950,8 @@ func _plant(rng: RandomNumberGenerator) -> void:
 		if not tree in species: species.append(tree)
 	# A woodland (scripts/woodland.gd), when the recipe asks for one.
 	if recipe.has("woodland"): Woodland.plant(self,rng,taken)
+	if recipe.has("downs"): HillDowns.plant(self,rng,taken)
+	if recipe.has("forest"): ForestCanopy.plant(self,rng,taken)
 	# Flower drifts.
 	if rng.randf() < float(FLOWER_ODDS[kind]):
 		var kinds: Array[String] = []
@@ -891,7 +1024,7 @@ func _plant(rng: RandomNumberGenerator) -> void:
 			if at == null: continue
 			_add("reeds" if rng.randf() < 0.5 else "bank_grass",at,rng.randf()*TAU,rng.randf_range(0.6,1.0))
 	# Grass tufts over the grass, thicker round trunks and stones.
-	for n in range(_count(rng,area*TUFTS)):
+	for n in range(_count(rng,area*TUFTS*float(recipe.get("tufts",1.0)))):
 		var at: Variant = _find(rng,0.25,TREE_STEEP,[],0.0,true)
 		if at == null: continue
 		_add("grass_tuft",at,rng.randf()*TAU,rng.randf_range(0.7,1.2))
@@ -922,14 +1055,14 @@ func find_spot(radius: float, rim: float, flat: float, avoid: Array = [], prefer
 	var best: Variant = null
 	var best_score := -INF
 	var toward: Vector2 = (prefer.get("toward",Vector2.ZERO) as Vector2).normalized()
-	var step := maxf(0.6,reach/28.0)
+	var stride := maxf(0.6,reach/28.0)
 	var span := reach
 	var x := -span
 	while x <= span:
 		var z := -span
 		while z <= span:
 			var p := Vector2(x,z)
-			z += step
+			z += stride
 			if not on_land(p) or inland(p) < rim+reach_of: continue
 			if _blocked_by(p,reach_of,avoid): continue
 			var spread := _spread(p,radius,rect,wet_room)
@@ -943,7 +1076,7 @@ func find_spot(radius: float, rim: float, flat: float, avoid: Array = [], prefer
 			if score > best_score:
 				best_score = score
 				best = p
-		x += step
+		x += stride
 	return best
 
 ## A circle of the land's area's radius (m).
@@ -1061,6 +1194,8 @@ func _ground_ok(p: Vector2, inset: float, steep: float, grassy: bool) -> bool:
 		if IsletLake.near(self,p,0.7): return false
 	elif pond.z > 0.0 and p.distance_to(Vector2(pond.x,pond.y)) < pond.z*1.25: return false
 	if _slope(f) > steep: return false
+	# A massif's bare rock, scree and snow grow nothing (MountainMassif `bare`).
+	if spire != null and spire.has_method("bare") and spire.bare(f): return false
 	if grassy and kind == "shore" and inland(p) < BEACH: return false
 	return true
 
@@ -1215,20 +1350,32 @@ func top_arrays(palette: Dictionary, shift := Vector3.ZERO) -> Array:
 		var slope := _slope(f)
 		var worn := (wear[ids[f*3]]+wear[ids[f*3+1]]+wear[ids[f*3+2]])/3.0 if wear.size() == points.size() else 0.0
 		var edge := (shore_distance[ids[f*3]]+shore_distance[ids[f*3+1]]+shore_distance[ids[f*3+2]])/3.0
-		if slope > rock_slope:
+		# Downs (scripts/hill_downs.gd) colour their own ground, rock and sand.
+		if recipe.has("downs"):
+			tone = HillDowns.tone(self,f,at,slope,palette)
+		# Sea cliffs paint their own beach and steep grass (scripts/sea_cliffs.gd).
+		elif cliffs != null and cliffs.paints(at,middle.y,slope,rock_slope):
+			tone = cliffs.paint(at,middle.y,slope,tone,palette)
+		elif slope > rock_slope:
 			tone = rock[0 if patch.get_noise_2d(at.x+71.0,at.y) > 0.0 else rock.size()-1]
 		elif (worn > SCREE.x and slope > SCREE.y) or (edge < 0.45 and slope > SCREE.y*2.0):
 			# Scree: a gully's floor or the crumbling lip, gravel and earth.
 			tone = gravel.lerp(earth,clampf(patch.get_noise_2d(at.x*3.0,at.y*3.0)*0.5+0.5,0.0,1.0))
 		elif _in_soil(at):
 			tone = earth.lerp(gravel,0.15)*lerpf(0.8,0.95,n)
+		elif not stream.is_empty() and IsletStream.bed(self,at,minf(a.y,minf(b.y,c.y))):
+			tone = gravel.lerp(sand,0.35)*lerpf(0.78,0.95,n)
 		elif not lake.is_empty() and minf(a.y,minf(b.y,c.y)) < water_level+0.06:
 			tone = IsletLake.bed_tone(self,sand,gravel,middle.y,at)
 		elif pond.z > 0.0 and minf(a.y,minf(b.y,c.y)) < water_level+0.06 and (at.distance_to(Vector2(pond.x,pond.y)) < pond.z*1.5 or _channel_distance(at) < CHANNEL*1.5):
 			tone = sand*lerpf(1.0,0.72,clampf((water_level-middle.y)/BOWL,0.0,1.0))
+		elif not sea_bed.is_empty() and edge < SEA_BEACH*(0.7+0.6*n) and middle.y < float(recipe.sea_foot.get("level",0.0))+SEA_BEACH_HIGH:
+			# An island in the sea: a beach where its low shore meets the water.
+			tone = gravel if patch.get_noise_2d(at.x*2.0,at.y*2.0) > 0.3 else sand
 		elif kind == "shore":
 			var d := (shore_distance[ids[f*3]]+shore_distance[ids[f*3+1]]+shore_distance[ids[f*3+2]])/3.0
 			if d < BEACH*(0.8+0.4*n): tone = gravel if patch.get_noise_2d(at.x*2.0,at.y*2.0) > 0.25 else sand
+		if recipe.has("forest") and slope <= rock_slope: tone = ForestCanopy.floor_tone(self,f,tone)
 		tone = Color(tone.r+shimmer,tone.g+shimmer,tone.b+shimmer,1.0)
 		var corners := [a,b,c]
 		for k in range(3):
@@ -1245,6 +1392,7 @@ func top_arrays(palette: Dictionary, shift := Vector3.ZERO) -> Array:
 		colors.resize(v)
 		uv.resize(v)
 		uv2.resize(v)
+	if not sea_bed.is_empty(): _bed_faces(palette,patch,shift,vertices,normals,colors,uv,uv2)
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = vertices
@@ -1254,12 +1402,48 @@ func top_arrays(palette: Dictionary, shift := Vector3.ZERO) -> Array:
 	arrays[Mesh.ARRAY_TEX_UV2] = uv2
 	return arrays
 
+## The sea bed's faces round an island in the sea (`sea_foot`), appended
+## to the top's arrays: every face off the land out to the shelf's end, at
+## the bed's heights, sand by the shore going to gravel and dark stone as it
+## deepens; past the shelf the water hides it, so it is left out.
+func _bed_faces(palette: Dictionary, patch: FastNoiseLite, shift: Vector3, vertices: PackedVector3Array, normals: PackedVector3Array,
+		colors: PackedColorArray, uv: PackedVector2Array, uv2: PackedVector2Array) -> void:
+	var shelf := float((recipe.get("sea_foot",{}) as Dictionary).get("shelf",10.0))
+	var level := float((recipe.get("sea_foot",{}) as Dictionary).get("level",RIM_HEIGHT-2.0))
+	var sand: Color = palette.sand
+	var gravel: Color = palette.gravel
+	var stone: Color = (palette.rock as Array)[(palette.rock as Array).size()-1]*0.75
+	for f in range(outline.size()):
+		if outline[f] == 0: continue
+		var ia := ids[f*3]
+		var ib := ids[f*3+1]
+		var ic := ids[f*3+2]
+		if sea_out[ia] > shelf and sea_out[ib] > shelf and sea_out[ic] > shelf: continue
+		var a := Vector3(points[ia].x,sea_bed[ia],points[ia].y)
+		var b := Vector3(points[ib].x,sea_bed[ib],points[ib].y)
+		var c := Vector3(points[ic].x,sea_bed[ic],points[ic].y)
+		var middle := (a+b+c)/3.0
+		var under := level-middle.y
+		var n := patch.get_noise_2d(middle.x*1.7,middle.z*1.7)*0.5+0.5
+		var tone := sand.lerp(gravel,clampf(smoothstep(SEA_TONES.x,SEA_TONES.y,under)+(n-0.5)*0.4,0.0,1.0))
+		tone = tone.lerp(stone,smoothstep(SEA_TONES.z,SEA_TONES.w,under))
+		var normal := (c-a).cross(b-a).normalized()
+		if normal.y < 0.0: normal = -normal
+		for p: Vector3 in [a,b,c]:
+			vertices.append(p+shift)
+			normals.append(normal)
+			colors.append(tone)
+			uv.append(Vector2(0.0,1.0))
+			uv2.append(Vector2(0.5,p.y+shift.y))
+
 ## The sides' surface arrays, safe on a worker: the islands' shore wall
 ## (scripts/island_shore.gd `build`) hung under every shore edge, from the
 ## land's edge through a faceted ring to the foot, and under the land the
-## rock hanging from it (`keel`), one face under each land face. For the
-## earth sides' material: each wall vertex carries its rim top in UV.
+## rock hanging from it (`keel`), one face under each land face; under a
+## sea foot, the wall down to the bed and no rock under. For the earth
+## sides' material: each wall vertex carries its rim top in UV.
 func side_arrays() -> Array:
+	if cliffs != null: return cliffs.side_arrays(self)
 	var into := Transform3D.IDENTITY
 	var vertices := PackedVector3Array()
 	var uvs := PackedVector2Array()
@@ -1288,7 +1472,10 @@ func side_arrays() -> Array:
 		for r in range(wall_a.size()-1):
 			IslandShore._add(vertices,uvs,into,[wall_a[r],wall_b[r],wall_b[r+1]],face,[ha,hb,hb],0.0)
 			IslandShore._add(vertices,uvs,into,[wall_a[r],wall_b[r+1],wall_a[r+1]],face,[ha,hb,ha],0.0)
+	# Under a sea foot the land stands on the bed, with no underside to see
+	# but where it is raised over the water (an arch's).
 	for f in land:
+		if not sea_bed.is_empty() and (keel[ids[f*3]] >= 0.0 or keel[ids[f*3+1]] >= 0.0 or keel[ids[f*3+2]] >= 0.0): continue
 		var tri := []
 		for k in range(3):
 			var i := ids[f*3+k]
@@ -1325,7 +1512,7 @@ func _wall_rings(i: int, out: Vector2, slump: FastNoiseLite) -> Array:
 	var ring := Vector3(p.x+out.x*reach,ring_y,p.y+out.y*reach)
 	var mid_y := lerpf(ring_y,foot,0.45+0.2*PlateMesh._hash(i,seed % 7919,13))
 	var mid := Vector3(p.x+out.x*bulge,mid_y,p.y+out.y*bulge)
-	if pond.z > 0.0 and p.distance_to(lip) < 2.0:
+	if pond.z > 0.0 and p.distance_to(lip) < 2.0+maxf(float(lake.get("fall",0.0))-IsletLake.FALL_HALF,0.0):
 		ring = _behind_lip(ring)
 		mid = _behind_lip(mid)
 	return [ring,mid]
@@ -1370,6 +1557,7 @@ func build_water(material: Material, color := Color(0.25,0.57,0.59), shift := Ve
 ## The pond's surface arrays (`build_water`), empty with no pond; safe to
 ## make on a worker.
 func water_arrays(color := Color(0.25,0.57,0.59), shift := Vector3.ZERO) -> Array:
+	if not stream.is_empty(): return IsletStream.water_arrays(self,color,shift)
 	if not lake.is_empty(): return IsletLake.water_arrays(self,color,shift)
 	if pond.z <= 0.0: return []
 	var middle := Vector2(pond.x,pond.y)

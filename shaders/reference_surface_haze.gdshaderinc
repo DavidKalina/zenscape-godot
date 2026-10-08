@@ -41,6 +41,9 @@ uniform vec4 overview_far = vec4(0.0);
 // (scripts/sky_haze.gd `publish`): x its strength, y its style (0 Opal,
 // 1 Storybook, 2 Mystic).
 uniform vec2 glide_sea = vec2(0.0);
+// Under the cloud sea (scripts/sky_below.gd), 1: the haze is the
+// overcast's own pearl (zsBelowAir), as the sky there is.
+uniform float glide_below = 0.0;
 
 // The air the cloud sea lifts into far off, below the horizon, in its own
 // style (shaders/sky_cloud_sea_*.gdshaderinc), from the horizon it is given:
@@ -94,6 +97,7 @@ vec3 zs_glide_horizon(vec3 ray) {
 	float deep = zs_night * zs_celestial_clear;
 	float veil = glide_sea.x * smoothstep(-0.02, -0.16, ray.y) * mix(1.0, smoothstep(-0.34, -0.66, ray.y), deep);
 	col = max(mix(col, sea, veil), vec3(0.0));
+	if (glide_below > 0.0) col = mix(col, zsBelowAir(ray), glide_below);
 	return col * 0.98 / max(max(max(col.r, col.g), col.b), 0.98);
 }
 
@@ -164,7 +168,10 @@ vec3 zs_surface_haze(vec3 color, vec2 uv) {
 		float sun = max(dot(ray, zs_cloud_direction), 0.0);
 		fog_color = mix(fog_color, aerial_sun_color, (pow(sun, 4.0) * 0.7 + sun * 0.3) * aerial_gain);
 	}
-	float d = surface_density * view_depth * multiplier;
+	// Under the cloud sea (glide_below) the plate's own haze, thickening
+	// with depth under its summit, would bury the lower world's islands
+	// three hundred metres down; there the glide's haze is the air alone.
+	float d = surface_density * view_depth * multiplier * (1.0 - glide_below);
 	vec3 result = mix(color, fog_color, 1.0 - exp(-d * d));
 	if (surface_inversion_enabled) {
 		float inversion = zs_inversion_surface_amount(zs_camera_position + offset);
@@ -178,6 +185,8 @@ vec3 zs_surface_haze(vec3 color, vec2 uv) {
 	// Gliding, the plate's haze gives way to the sky's own colour with
 	// distance (glide_haze.gdshaderinc), the aerial perspective that ties
 	// near islands, far ones and the sky together.
+	// Under the cloud sea the lower world's air is laid on by its own pass
+	// (shaders/sky_below_air.gdshader), whether this blend draws or not.
 	if (zs_glide_haze.x > 0.0) {
 		vec3 point = ray_origin + offset;
 		// A range's rock keeps the landform's gentler curve.
@@ -185,7 +194,7 @@ vec3 zs_surface_haze(vec3 color, vec2 uv) {
 		// The ring's rock keeps its skyline's curve.
 		glide = mix(glide, min(glide, zs_glide_fog_ring(ray_length, point.y)), zs_glide_ring(point));
 		glide = max(glide, zs_glide_emerge(point));
-		result = mix(result, mix(color, zs_glide_horizon(ray), glide), zs_glide_haze.x);
+		result = mix(result, mix(color, zs_glide_horizon(ray), glide), zs_glide_haze.x * (1.0 - step(0.5, glide_below)));
 	}
 	return mix(color, result, depth_sample.g);
 }

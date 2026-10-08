@@ -26,10 +26,20 @@ extends RefCounted
 ##
 ## The recipe's lake: {bank: Vector2 (m), shelf: Vector2 (m), depth:
 ## Vector2 (m), level: Vector2 (m over Genesis RIM_HEIGHT), isle: odds,
-## toward: Vector2 (spill now, that way)}; each optional.
+## toward: Vector2 (spill now, that way)}; each optional. A big lake (the
+## lower world's, scripts/landform_lake.gd) may also give: copses:
+## Vector2i, stands of trees round it (COPSE) from copse_pool (else the
+## recipe's tree_pool); beach: how far up from the waterline the bank
+## eases (m, BEACH); isle_radius:
+## Vector2 (m); channel: the spill channel's half width (m) and fall: its
+## fall's (m), for a wide curtain; reeds: a multiplier on the reeds and
+## bank grass; tea: true to steep the water by what grows round it
+## (`steep`), or the most it may steep (0 to 1).
 
 const Genesis = preload("res://scripts/genesis_canvas.gd")
 const IslandShore = preload("res://scripts/island_shore.gd")
+const LakeTea = preload("res://scripts/lake_tea.gd")
+const Emergence = preload("res://scripts/emergence.gd")
 
 ## The bank's width in from the shore (m, wandering over BANK_WAVE 1/m),
 ## and the beach: how far up from the waterline the bank eases (m), how
@@ -65,6 +75,13 @@ const REED_CLUMPS := Vector2i(6,11)
 const REED_CLUMP := Vector2i(4,9)
 const REED_SPREAD := 0.45
 const BANK_GRASS := Vector2i(10,18)
+## Copses (a recipe's `copses`): stands of one species round the lake, each
+## COPSE trees, spread COPSE_SPREAD m, its middle this far from the water
+## (m), the trees kept COPSE_APART m apart (times their record scale).
+const COPSE := Vector2i(3,7)
+const COPSE_SPREAD := 2.2
+const COPSE_WATER := Vector2(1.5,9.0)
+const COPSE_APART := 1.6
 ## The fetch (open water upwind) is read this far at most (m).
 const FETCH := 9.0
 ## The bed's colours: the beach sand, the shelf's weed-dark sand (WEED of
@@ -87,6 +104,7 @@ static func cut(islet: RefCounted, rng: RandomNumberGenerator, inland: float) ->
 	var level: float = Genesis.RIM_HEIGHT+rng.randf_range(level_range.x,level_range.y)
 	var shelf := rng.randf_range(shelf_range.x,shelf_range.y)
 	var depth := rng.randf_range(depth_range.x,depth_range.y)
+	var beach := float(spec.get("beach",BEACH))
 	islet.water_level = level
 	var wander := FastNoiseLite.new()
 	wander.seed = islet.seed+71
@@ -120,7 +138,8 @@ static func cut(islet: RefCounted, rng: RandomNumberGenerator, inland: float) ->
 	var isle := Vector3.ZERO
 	var spec_isle := float(spec.get("isle",ISLE))
 	if rng.randf() < spec_isle:
-		var r := rng.randf_range(ISLE_RADIUS.x,ISLE_RADIUS.y)
+		var isle_radius: Vector2 = spec.get("isle_radius",ISLE_RADIUS)
+		var r := rng.randf_range(isle_radius.x,isle_radius.y)
 		var choices := []
 		for i in range(points.size()):
 			if into[i] > r+ISLE_IN+shelf: choices.append(points[i])
@@ -136,7 +155,7 @@ static func cut(islet: RefCounted, rng: RandomNumberGenerator, inland: float) ->
 			# The bank: over the water all round, easing down to it.
 			var land := maxf(h,level+LAND_OVER)
 			var shore_top := maxf(h,level+BEACH_TOP)
-			h = land if t < -BEACH else lerpf(level+EDGE,shore_top,smoothstep(0.0,1.0,-t/BEACH))
+			h = land if t < -beach else lerpf(level+EDGE,shore_top,smoothstep(0.0,1.0,-t/beach))
 		else:
 			var bed := level-lerpf(0.05,SHELF_DEPTH,smoothstep(0.0,0.6,t))-0.06*clampf(t/shelf,0.0,1.0)
 			var deep := level-depth+swell.get_noise_2d(p.x,p.y)*BED_SWELL
@@ -150,9 +169,10 @@ static func cut(islet: RefCounted, rng: RandomNumberGenerator, inland: float) ->
 	var area := 0.0
 	for f in islet.land:
 		var a: Vector2 = points[islet.ids[f*3]]
-		var c := (a+points[islet.ids[f*3+1]]+points[islet.ids[f*3+2]])/3.0
-		if _raw(islet,c) < level: area += absf((points[islet.ids[f*3+1]]-a).cross(points[islet.ids[f*3+2]]-a))*0.5
-	islet.lake = {"level":level,"shelf":shelf,"depth":depth,"isle":isle,"deep":deep_at,"area":area,"spilled":false}
+		var mean: float = (islet.heights[islet.ids[f*3]]+islet.heights[islet.ids[f*3+1]]+islet.heights[islet.ids[f*3+2]])/3.0
+		if mean < level: area += absf((points[islet.ids[f*3+1]]-a).cross(points[islet.ids[f*3+2]]-a))*0.5
+	islet.lake = {"level":level,"shelf":shelf,"depth":depth,"isle":isle,"deep":deep_at,"area":area,"spilled":false,
+		"channel":float(spec.get("channel",_channel(islet))),"fall":float(spec.get("fall",FALL_HALF)),"swim":bool(spec.get("swim",false))}
 	# Until it spills the pond's circle stands at the deepest water: the
 	# islet's water (`water`) and channel read it.
 	islet.pond = Vector3(deep_at.x,deep_at.y,sqrt(maxf(area,1.0)/PI))
@@ -221,7 +241,7 @@ static func build_field(islet: RefCounted) -> void:
 	for j in range(n):
 		for i in range(n):
 			var q := Vector2(origin+i*FIELD,origin+j*FIELD)
-			dist[j*n+i] = 0.0 if islet.on_land(q) and _raw(islet,q) < level-0.005 else INF
+			dist[j*n+i] = 0.0 if _land_height(islet,q) < level-0.005 else INF
 	# A two-pass chamfer: near enough a distance for a spot finder.
 	var diag := FIELD*sqrt(2.0)
 	for j in range(n):
@@ -251,6 +271,17 @@ static func build_field(islet: RefCounted) -> void:
 ## The ground's own height at `p` (no decks), the rim's off the land.
 static func _raw(islet: RefCounted, p: Vector2) -> float:
 	return islet._sample(islet.heights,p,Genesis.RIM_HEIGHT)
+
+## The ground's own height at `p` on the land, INF off it: one lookup for
+## both (`_raw`, `on_land`).
+static func _land_height(islet: RefCounted, p: Vector2) -> float:
+	var hit: Array = islet._locate(p)
+	var f: int = hit[0]
+	if f < 0: return INF
+	var w: Vector3 = hit[1]
+	var ids: PackedInt32Array = islet.ids
+	var heights: PackedFloat32Array = islet.heights
+	return w.x*heights[ids[f*3]]+w.y*heights[ids[f*3+1]]+w.z*heights[ids[f*3+2]]
 
 ## How far `p` is from the water (m, 0 over it), from the field.
 static func distance(islet: RefCounted, p: Vector2) -> float:
@@ -290,7 +321,8 @@ static func bed_tone(islet: RefCounted, sand: Color, gravel: Color, y: float, at
 static func plant(islet: RefCounted, rng: RandomNumberGenerator) -> void:
 	var level: float = islet.water_level
 	var reach: float = islet.reach
-	var clumps := rng.randi_range(REED_CLUMPS.x,REED_CLUMPS.y)
+	var more := float((islet.recipe.get("lake",{}) as Dictionary).get("reeds",1.0))
+	var clumps := roundi(rng.randi_range(REED_CLUMPS.x,REED_CLUMPS.y)*more)
 	var made := 0
 	for attempt in range(clumps*12):
 		if made >= clumps: break
@@ -305,7 +337,7 @@ static func plant(islet: RefCounted, rng: RandomNumberGenerator) -> void:
 			if d > SHELF_DEPTH+0.08 or not islet.on_land(q) or _in_spill(islet,q,2.0): continue
 			if d <= 0.0 and distance(islet,q) > 0.8: continue
 			islet._add("reeds",q,rng.randf()*TAU,rng.randf_range(0.75,1.15))
-	for n in range(rng.randi_range(BANK_GRASS.x,BANK_GRASS.y)):
+	for n in range(roundi(rng.randi_range(BANK_GRASS.x,BANK_GRASS.y)*more)):
 		for attempt in range(10):
 			var p := Vector2(rng.randf_range(-reach,reach),rng.randf_range(-reach,reach))
 			if not islet.on_land(p) or depth_at(islet,p) > 0.0 or distance(islet,p) > 0.9 or _in_spill(islet,p,1.5): continue
@@ -318,11 +350,69 @@ static func plant(islet: RefCounted, rng: RandomNumberGenerator) -> void:
 		var tree: String = ["willow","birch","juniper"][rng.randi() % 3]
 		islet._add(tree,top+Vector2.from_angle(rng.randf()*TAU)*0.2,rng.randf()*TAU,rng.randf_range(0.7,0.95))
 		if not tree in islet.species: islet.species.append(tree)
-		for k in range(rng.randi_range(4,8)):
+		# A bigger isle (a big lake's) holds a small stand round it.
+		for k in range(floori(maxf(isle.z-ISLE_RADIUS.y,0.0)/1.2)):
+			var q := top+Vector2.from_angle(rng.randf()*TAU)*isle.z*rng.randf_range(0.25,0.55)
+			if depth_at(islet,q) > 0.0: continue
+			islet._add(tree,q,rng.randf()*TAU,rng.randf_range(0.6,0.85))
+		for k in range(roundi(rng.randi_range(4,8)*maxf(isle.z/ISLE_RADIUS.y,1.0))):
 			var q := top+Vector2.from_angle(rng.randf()*TAU)*isle.z*rng.randf_range(0.55,0.95)
 			var d := depth_at(islet,q)
 			if d > 0.2: continue
 			islet._add("reeds" if d > 0.0 else "bank_grass",q,rng.randf()*TAU,rng.randf_range(0.6,0.95))
+	_copses(islet,rng)
+	var tea: Variant = (islet.recipe.get("lake",{}) as Dictionary).get("tea",false)
+	if tea is float: islet.lake.tea = minf(steep(islet),tea)
+	elif tea: islet.lake.tea = steep(islet)
+
+## A recipe's copses: each a stand of one species and tint on the bank,
+## its middle a little way from the water, clear of what already stands.
+static func _copses(islet: RefCounted, rng: RandomNumberGenerator) -> void:
+	var spec: Dictionary = islet.recipe.get("lake",{})
+	var count: Vector2i = spec.get("copses",Vector2i.ZERO)
+	if count.y <= 0: return
+	var pool: Dictionary = spec.get("copse_pool",islet.recipe.get("tree_pool",{"birch":1.0}))
+	var taken: Array[Vector3] = []
+	for item: Dictionary in islet.objects:
+		if Emergence.KIND_SIZE.has(item.asset) or str(item.asset) == "tree" or str(item.asset) in islet.BOULDERS:
+			taken.append(Vector3(float(item.x),float(item.z),COPSE_APART*0.5*float(item.scale)))
+	var reach: float = islet.reach
+	for c in range(rng.randi_range(count.x,count.y)):
+		var middle := Vector2.INF
+		for attempt in range(30):
+			var p := Vector2(rng.randf_range(-reach,reach),rng.randf_range(-reach,reach))
+			var off := distance(islet,p)
+			if off < COPSE_WATER.x or off > COPSE_WATER.y: continue
+			if not islet._ground_ok(p,1.2,islet.TREE_STEEP,true) or _in_spill(islet,p,3.0): continue
+			middle = p
+			break
+		if middle == Vector2.INF: continue
+		var tree: String = islet._weighted(pool,rng.randf())
+		var tint: String = islet._tree_tint(tree,rng)
+		for k in range(rng.randi_range(COPSE.x,COPSE.y)):
+			var q := middle+Vector2(rng.randfn(0.0,COPSE_SPREAD),rng.randfn(0.0,COPSE_SPREAD))
+			var size := rng.randf_range(Emergence.TREE_SIZE.x,Emergence.TREE_SIZE.y)*float(Emergence.KIND_SIZE.get(tree,1.0))
+			if not islet._ground_ok(q,1.0,islet.TREE_STEEP,true) or _in_spill(islet,q,2.0) or islet._near(q,taken,COPSE_APART*0.5*size): continue
+			islet._add(tree,q,rng.randf()*TAU,size,tint)
+			taken.append(Vector3(q.x,q.y,COPSE_APART*0.5*size))
+			if not tree in islet.species: islet.species.append(tree)
+
+## How steeped the lake is (0 clear to 1 a dark tarn) by what grows round
+## it, as the plate's lakes are (scripts/lake_tea.gd `target`): each thing
+## within its SHORE_REACH of the water weighs its STEEP, over the lake's
+## size.
+static func steep(islet: RefCounted) -> float:
+	var total := 0.0
+	for item: Dictionary in islet.objects:
+		var weight: float = LakeTea.STEEP.get(str(item.asset),0.0)
+		if weight > 0.0 and near(islet,Vector2(float(item.x),float(item.z)),LakeTea.SHORE_REACH): total += weight
+	return clampf(total/(1.0+sqrt(maxf(float(islet.lake.area),0.0))/LakeTea.AREA_SPAN),0.0,1.0)
+
+## The water's depth at `p` for a walker (m): the lake's where its recipe
+## lets the pilot wade and swim it (`swim`), else none.
+static func swim_depth(islet: RefCounted, p: Vector2) -> float:
+	if not islet.lake.get("swim",false): return 0.0
+	return depth_at(islet,p)
 
 ## Near the spill's channel (once it has spilled: until then what grows in
 ## its way is cleared as it is cut).
@@ -330,8 +420,13 @@ static func _in_spill(islet: RefCounted, p: Vector2, room: float) -> bool:
 	if not islet.lake.get("spilled",false): return false
 	return islet._channel_distance(p) < _channel(islet)+room*0.5
 
+## The spill channel's half width (m): the lake's own, else the islet's.
 static func _channel(islet: RefCounted) -> float:
-	return float(islet.get_script().CHANNEL)
+	return float(islet.lake.get("channel",islet.get_script().CHANNEL))
+
+## The fall's half width off the lip (m).
+static func fall_half(islet: RefCounted) -> float:
+	return float(islet.lake.get("fall",FALL_HALF))
 
 # --- The water's sheet ------------------------------------------------------------------
 
@@ -346,14 +441,33 @@ static func water_arrays(islet: RefCounted, color: Color, shift: Vector3) -> Arr
 	var n := ceili((float(islet.reach)+1.0)*2.0/FIELD)+1
 	var deep := PackedFloat32Array()
 	deep.resize(n*n)
+	var wet := PackedByteArray()
+	wet.resize(n*n)
 	for j in range(n):
 		for i in range(n):
-			var q := Vector2(origin+i*FIELD,origin+j*FIELD)
-			deep[j*n+i] = level-_raw(islet,q) if islet.on_land(q) else -1.0
-	var wet_at := func(i: int, j: int) -> bool:
-		return i >= 0 and j >= 0 and i < n and j < n and deep[j*n+i] > 0.0
+			var h := _land_height(islet,Vector2(origin+i*FIELD,origin+j*FIELD))
+			deep[j*n+i] = level-h if h < INF else -1.0
+			wet[j*n+i] = 1 if deep[j*n+i] > 0.0 else 0
+	# The fetch, eight ways (+x, +x+z, +z, -x+z, then the opposites): each
+	# cell's run of open water that way, FETCH at most, swept from the far
+	# side so each reads its neighbour's.
 	var dirs: Array[Vector2i] = [Vector2i(1,0),Vector2i(1,1),Vector2i(0,1),Vector2i(-1,1),Vector2i(-1,0),Vector2i(-1,-1),Vector2i(0,-1),Vector2i(1,-1)]
-	var fetch := {}
+	var runs: Array[PackedFloat32Array] = []
+	for d: Vector2i in dirs:
+		var run := PackedFloat32Array()
+		run.resize(n*n)
+		var step := FIELD*Vector2(d).length()
+		var js := range(n-1,-1,-1) if d.y > 0 else range(n)
+		var is_ := range(n-1,-1,-1) if d.x > 0 else range(n)
+		for j: int in js:
+			var nj := j+d.y
+			if nj < 0 or nj >= n: continue
+			for i: int in is_:
+				var ni := i+d.x
+				if ni < 0 or ni >= n: continue
+				var next := nj*n+ni
+				if wet[next] == 1: run[j*n+i] = minf(step+run[next],FETCH)
+		runs.append(run)
 	var vertices := PackedVector3Array()
 	var normals := PackedVector3Array()
 	var colors := PackedColorArray()
@@ -361,37 +475,24 @@ static func water_arrays(islet: RefCounted, color: Color, shift: Vector3) -> Arr
 	var uv2 := PackedVector2Array()
 	var fetch_a := PackedFloat32Array()
 	var fetch_b := PackedFloat32Array()
-	var corner := func(i: int, j: int) -> void:
-		var k := j*n+i
-		if not fetch.has(k):
-			var runs := []
-			for d: Vector2i in dirs:
-				var step := FIELD*Vector2(d).length()
-				var run := 0.0
-				var ci := i
-				var cj := j
-				while run < FETCH:
-					ci += d.x
-					cj += d.y
-					if not wet_at.call(ci,cj): break
-					run += step
-				runs.append(minf(run,FETCH))
-			fetch[k] = runs
-		var r: Array = fetch[k]
-		var under := maxf(deep[k],0.0)
-		vertices.append(Vector3(origin+i*FIELD,level,origin+j*FIELD)+shift)
-		normals.append(Vector3.UP)
-		colors.append(color)
-		uv.append(Vector2(under*2.5,0.0))
-		uv2.append(Vector2(under,0.0))
-		fetch_a.append_array([r[0],r[1],r[2],r[3]])
-		fetch_b.append_array([r[4],r[5],r[6],r[7]])
+	# Up-facing in Godot's winding (as SkyIslet `_tri`).
+	var corners: Array[Vector2i] = [Vector2i(0,0),Vector2i(1,0),Vector2i(1,1),Vector2i(0,0),Vector2i(1,1),Vector2i(0,1)]
 	for j in range(n-1):
 		for i in range(n-1):
-			if not (wet_at.call(i,j) or wet_at.call(i+1,j) or wet_at.call(i,j+1) or wet_at.call(i+1,j+1)): continue
-			# Up-facing in Godot's winding (as SkyIslet `_tri`).
-			for c: Vector2i in [Vector2i(i,j),Vector2i(i+1,j),Vector2i(i+1,j+1),Vector2i(i,j),Vector2i(i+1,j+1),Vector2i(i,j+1)]:
-				corner.call(c.x,c.y)
+			var k := j*n+i
+			if wet[k] == 0 and wet[k+1] == 0 and wet[k+n] == 0 and wet[k+n+1] == 0: continue
+			for c: Vector2i in corners:
+				var ci := i+c.x
+				var cj := j+c.y
+				var at := cj*n+ci
+				var under := maxf(deep[at],0.0)
+				vertices.append(Vector3(origin+ci*FIELD,level,origin+cj*FIELD)+shift)
+				normals.append(Vector3.UP)
+				colors.append(color)
+				uv.append(Vector2(under*2.5,0.0))
+				uv2.append(Vector2(under,0.0))
+				fetch_a.append_array([runs[0][at],runs[1][at],runs[2][at],runs[3][at]])
+				fetch_b.append_array([runs[4][at],runs[5][at],runs[6][at],runs[7][at]])
 	if vertices.is_empty(): return []
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)

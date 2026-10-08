@@ -29,6 +29,10 @@ uniform float floor_y = -150.0;
 uniform float reach = 2400.0;
 // The light the cloud's lit side faces (the sun, the moon at night).
 uniform vec3 key_light = vec3(0.0, 1.0, 0.0);
+// 1 under the cloud sea (scripts/sky_below.gd): the heaps are seen from
+// beneath, in the lower world's deck colours (zsBelowDeck); 0 leaves them
+// as they are above.
+uniform float from_below = 0.0;
 
 const float SEA = -105.0;
 const float CELL = 72.0;
@@ -46,6 +50,14 @@ const float GLOW = 1.4;
 const vec3 BOUNCE_TINT = vec3(0.92, 0.96, 1.0);
 // The towers' haze reach (scripts/sky_towers.gd HAZE_FAR).
 const float TOWER_HAZE_FAR = 1.0;
+// From beneath: the heaps' hearts and rims against the deck's mean, and the
+// distance (m) over which they settle into it.
+const float BELOW_HEART = 0.54;
+const float BELOW_RIM = 1.2;
+// At night the hearts are softly lit, the moon through the thin cloud.
+const float BELOW_NIGHT_HEART = 0.72;
+const vec3 BELOW_NIGHT_GLOW = vec3(0.022, 0.018, 0.04);
+const float BELOW_AIR = 1600.0;
 
 // The glide's haze on a tower (glide_haze.gdshaderinc zs_glide_fog_far at
 // the towers' TOWER_HAZE_FAR), its low-down thickening written with the
@@ -81,7 +93,10 @@ void fragment() {
 	float level = max(length(rd.xz), 1e-4);
 	float t_reach = reach / level;
 	float t_floor = rd.y < 0.0 ? (floor_y - eye.y) / rd.y : 1e9;
-	bool ground = cloud_sea > 0.0 && rd.y < 0.0 && t_floor < t_reach && t_floor < t_solid && T >= 0.03;
+	// The dome's land through the gaps only from over the heaps' feet: from
+	// under them (the lower world, scripts/sky_below.gd) the floor is behind
+	// the eye and what lies below is real.
+	bool ground = cloud_sea > 0.0 && rd.y < 0.0 && t_floor > 0.0 && t_floor < t_reach && t_floor < t_solid && T >= 0.03;
 	if (!ground && cloud_a < 0.003) discard;
 
 	float pixel = max(length(fwidth(rd)), 1e-5);
@@ -208,8 +223,27 @@ void fragment() {
 		float play = crown * 1.7 + dot(flat_dir, bearing) * 0.3 + rd.y * 1.1 + met * 0.0006 + zs_motion_time * 0.002;
 		col *= mix(vec3(1.0), zs_opal_sea_opal(play), SEA_OPAL * (0.35 + 0.4 * crown + 0.65 * min(lining, 1.0)) * mix(1.0, 0.35, dull));
 	}
+	if (from_below > 0.0) {
+		// From beneath: the heaps' undersides take the deck's own colours,
+		// their hearts its cool shade, their thinner rims lit through,
+		// warm toward a low sun, and their far ones settle into the deck's
+		// mean as the painted deck past them does (shaders/
+		// sky_below_ceiling.gdshader), so the handover never shows.
+		const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
+		vec3 deck = zsBelowDeck(rd);
+		float v = smoothstep(0.3, 1.1, dot(col, LUMA) / max(dot(lit_col, LUMA), 1e-3));
+		float toward = zsBelowToSun(rd) * (1.0 - zs_night * zs_celestial_clear);
+		vec3 rims = deck * BELOW_RIM * mix(vec3(1.0), mix(vec3(1.0), zsBelowSunHue(), 0.65) * 1.08, (0.2 + 0.6 * zsBelowGolden()) * toward);
+		float heart = mix(BELOW_HEART, BELOW_NIGHT_HEART, zs_night * zs_celestial_clear);
+		vec3 under = mix(deck * heart * vec3(0.95, 0.96, 1.04), rims, v);
+		// At night the thin rims hold a faint violet glow, the deck's own.
+		under += BELOW_NIGHT_GLOW * v * zs_night * zs_celestial_clear;
+		under = mix(under, deck, 1.0 - exp(-met / BELOW_AIR));
+		col = mix(col, under, from_below);
+		haze_col = mix(haze_col, deck, from_below);
+	}
 	// Air between the eye and the far heaps, by the metre.
-	col = mix(col, haze_col, (1.0 - exp(-met / AIR)) * 0.85);
+	col = mix(col, haze_col, (1.0 - exp(-met / AIR)) * 0.85 * (1.0 - from_below));
 	// The towers in their own air (shaders/sky_tower.gdshader): the glide's
 	// haze toward the dome's colour along the ray, the sun's aureole round
 	// it, and gone where the haze is whole.

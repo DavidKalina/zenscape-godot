@@ -197,7 +197,10 @@ func warm(owner: Node3D) -> void:
 ## stature, gorge, height (the snow line's floor), its grid's stride, the
 ## world's palette baked into its colours and where it is laid off the map.
 func inputs(cell: Vector2i) -> Array:
-	return [peaks.seed_of(cell),peaks.stature_of(cell),peaks.gorge_of(cell),peaks.scale_of(cell).y,stride_of(cell),peaks._palette("grass"),peaks._palette("rock"),peaks._gravel(),peaks._snow(),_off_map()]
+	var made := [peaks.seed_of(cell),peaks.stature_of(cell),peaks.gorge_of(cell),peaks.scale_of(cell).y,stride_of(cell),peaks._palette("grass"),peaks._palette("rock"),peaks._gravel(),peaks._snow(),_off_map()]
+	# Under --below, built on down for the lower world (SkyPeak `face_floor`).
+	if SkyPeak.SkyBelow.on(): made.append(SkyPeak.face_floor())
+	return made
 
 ## All a sea's summit is made from (SkyCache `key`, kind "summit"): its
 ## seed, how much of it shows, the palette and where it is laid.
@@ -218,7 +221,7 @@ static func _make(made: Array, cache_key: String, out: Dictionary) -> void:
 static func _shape(made: Array) -> Array:
 	var shape: RefCounted = SkyPeak.make(int(made[0]),float(made[1]),bool(made[2]))
 	shape.snowline = maxf(shape.snowline,SkyPeak.snow_floor(float(made[3])))
-	return shape.body_arrays(made[5],made[6],made[7],made[9],int(made[4]),made[8])
+	return shape.body_arrays(made[5],made[6],made[7],made[9],int(made[4]),made[8],float(made[10]) if made.size() > 10 else SkyPeak.CUT)
 
 ## A sea's summit (SkyWorld `_summits`): its range made (its gorge uncut),
 ## sunk `show` m under its top; its faces over the sea, its snow, how far
@@ -376,6 +379,8 @@ func _stand_summit(i: int) -> void:
 	var summit: Dictionary = summits[i]
 	var node := Node3D.new()
 	node.name = "Summit_%d" % i
+	# Built only over the sea: out of the lower world (SkyPeaks `open_sea`).
+	node.visible = peaks.get("_open") != true
 	node.position = Vector3(laid[i].at.x,float(summit.sink),laid[i].at.z)
 	node.rotation.y = float(laid[i].turn)
 	var body := MeshInstance3D.new()

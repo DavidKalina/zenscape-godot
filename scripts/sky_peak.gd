@@ -53,6 +53,11 @@ const SEA := -105.0
 const BASE := -280.0
 const CUT := SEA-45.0
 const BOTTOM := -400.0
+## Under --below (scripts/sky_below.gd) the faces are built on down to
+## just over BASE (`face_floor`), for the lower world to see them meet the
+## ocean.
+const BELOW_CUT := BASE+2.0
+const SkyBelow = preload("res://scripts/sky_below.gd")
 ## The heightfield's half extents (m: along the crest, across it), the mesh
 ## grid's spacing, and the erosion grid's points a side.
 const HALF := Vector2(830.0,760.0)
@@ -1166,6 +1171,11 @@ func _noise(salt: int, frequency: float, octaves: int, fractal: int) -> FastNois
 	return n
 
 # --- The mesh -----------------------------------------------------------------------
+
+## The height under which a range's faces are left out: CUT, or under
+## --below BELOW_CUT.
+static func face_floor() -> float:
+	return BELOW_CUT if SkyBelow.on() else CUT
 
 ## The range's faces as surface arrays for the plate's ground material
 ## (as SkyPeaks `_ground` sets it for bare rock), coloured per face in

@@ -83,6 +83,11 @@ extends Node
 ## of its own, the right mouse button (or the right stick) looks round it,
 ## F comes in to land at the island's middle, and touching down slowly
 ## anywhere on the island lands, the camera swooping down behind the pilot.
+##
+## With `--below` (scripts/sky_below.gd) the cloud sea is a way down: dived
+## through, it comes out over the lower world's ocean, its floor just over
+## the water, and climbs back up through the cloud. Down there it claims no
+## island and lands nowhere.
 
 const Plate = preload("res://scripts/plate.gd")
 const Pad = preload("res://scripts/pad.gd")
@@ -241,6 +246,7 @@ const SkyIslets = preload("res://scripts/sky_islets.gd")
 const CollectibleLines = preload("res://scripts/collectible_lines.gd")
 const GlideAir = preload("res://scripts/glide_air.gd")
 const SkyFlight = preload("res://scripts/sky_flight.gd")
+const SkyBelow = preload("res://scripts/sky_below.gd")
 const GlideCamera = preload("res://scripts/glide_camera.gd")
 const GliderFigure = preload("res://scripts/glider_figure.gd")
 const IslandFrame = preload("res://scripts/island_frame.gd")
@@ -338,6 +344,8 @@ var islands: Node3D
 var air: Node3D
 ## The sky's answer to the glide: the cloud sea and the vapour (scripts/sky_flight.gd).
 var sky: Node
+## The lower world under the cloud sea (`--below`, scripts/sky_below.gd), or null.
+var lower: Node3D = null
 var flying := false
 var glide_enabled := "--no-glide" not in OS.get_cmdline_user_args()
 ## Flying the little plane (the default), or the old glider (`--glider`).
@@ -446,6 +454,15 @@ func setup(owner_scene: Node3D) -> void:
 		sky = SkyFlight.new()
 		add_child(sky)
 		sky.setup(scene)
+		if SkyBelow.on():
+			lower = SkyBelow.new()
+			lower.scene = scene
+			add_child(lower)
+			islands.skip.append(lower)
+			lower.attach(islands)
+			sky.lower = lower
+			glide.floor_y = SkyBelow.FLOOR
+			glide.water = SkyBelow.OCEAN
 		air = GlideAir.new()
 		add_child(air)
 		islands.skip.append(air)
@@ -474,8 +491,9 @@ func _build_figure() -> void:
 	figure.add_child(puffs)
 	ripples = PilotRipples.new()
 	figure.add_child(ripples)
-	# The motor wades and swims in the plate's live water (none on an islet).
-	motor.water = func(p: Vector2) -> float: return _depth(p) if perch.is_empty() else 0.0
+	# The motor wades and swims in the plate's live water, and on an islet in
+	# a lake it may swim (SkyIslet `swim_depth`).
+	motor.water = func(p: Vector2) -> float: return _depth(p) if perch.is_empty() else _perch_depth(p)
 	# The low foliage parts round him and springs back (scripts/pilot_wake.gd).
 	var wake := PilotWake.new()
 	wake.name = "Wake"
@@ -558,7 +576,7 @@ func _sync_figure() -> void:
 	elif is_instance_valid(perch.node):
 		# In the islet's own frame, which an airship's islet may turn
 		# (scripts/sky_airship.gd): the pilot goes round with it.
-		figure.global_transform = islands.islets.frame(perch)*Transform3D(Basis(Vector3.UP,motor.facing),drawn)
+		figure.global_transform = _islets().frame(perch)*Transform3D(Basis(Vector3.UP,motor.facing),drawn)
 
 # --- Obstacles and water ------------------------------------------------------------
 
@@ -977,7 +995,7 @@ func _body_events(out: Dictionary, delta: float) -> void:
 ## it, the drips off him (scripts/pilot_figure.gd `soak`) fall.
 func _water_events(events: Dictionary, drawn: Dictionary, delta: float) -> void:
 	for at in body.soak(motor,delta): puffs.drip(at,at.y-figure.global_position.y)
-	if not is_finite(motor.surface) or not perch.is_empty():
+	if not is_finite(motor.surface):
 		ripples.dry()
 		return
 	var top := figure.global_position+Vector3.UP*(motor.surface-motor.feet.y)
@@ -1021,6 +1039,7 @@ func _world_way(way: Vector3) -> Vector3:
 ## the puffs (a wade's droplets fly off the water).
 func _puff_at(at: Vector3) -> Vector3:
 	if perch.is_empty(): at.y += _depth(Vector2(_feet.x,_feet.z))
+	else: at.y += _perch_depth(Vector2(_perch_feet.x,_perch_feet.z))
 	return at
 
 ## Stood where the motor is: the look point at the pilot, the camera back
@@ -1196,13 +1215,14 @@ func _advance_flight(delta: float) -> void:
 	var input := _fly_input()
 	_read_obstacles(false)
 	if glide.approach: glide.approach_target = _landing_spot()
-	if _landing_wait: _wait_to_land(delta,input)
+	if _landing_wait and not below(): _wait_to_land(delta,input)
 	glide.step(delta,input,_fly_ground,_fly_air)
 	RopeBridge.flown_by(islands.global_transform*glide.position,glide.velocity)
 	# Tokens the plane flies through (scripts/sky_collectibles.gd).
 	if islands.collectibles != null: islands.collectibles.touch_plane(islands.global_transform*glide.position)
-	# Into another island's footprint, it becomes the plate.
-	if not islands.claiming:
+	# Into another island's footprint, it becomes the plate (not from under
+	# the cloud sea).
+	if not islands.claiming and not below():
 		var under: int = islands.copy_under(glide.position)
 		if under >= 0: _claim(under)
 	sky.advance(delta,glide.position,islands.in_cloud(glide.position,scene._motion_time))
@@ -1225,8 +1245,10 @@ func _advance_flight(delta: float) -> void:
 	_hint.modulate.a = clampf(1.0-(_hint_time-6.0)/1.5,0.0,1.0)
 	# Touching down slowly anywhere on the plate lands; on an islet's ground
 	# (not its crowns or spire) it perches.
-	var on_plate: bool = islands._height(glide.position) != null
-	var islet: Dictionary = {} if on_plate else islands.islets.islet_at(glide.position)
+	# Under the cloud (--below) there is no plate, only the archipelago's
+	# islands, perched on as islets are.
+	var on_plate: bool = not below() and islands._height(glide.position) != null
+	var islet: Dictionary = {} if on_plate else _islets().islet_at(glide.position)
 	var on_islet := not islet.is_empty() and _islet_ground_near(islet,glide.position)
 	var landable: bool = glide.speed < LAND_SPEED and float(input.dive) < 0.5 and (on_plate or on_islet)
 	glider.update(delta,glide,float(input.dive),_fly_ground,landable,vapour.near,vapour.side)
@@ -1240,6 +1262,7 @@ func _advance_flight(delta: float) -> void:
 ## LANDING_REACH, or INF. An island's land need not sit in the middle of its
 ## plate, nor hold its own middle (scripts/island_frame.gd `middle`).
 func _landing_spot() -> Vector3:
+	if below(): return lower.landing_spot(glide.position,LANDING_REACH)
 	var best := Vector3.INF
 	var nearest := LANDING_REACH
 	var middles: Array[Vector3] = [editor.terrain.global_position+_land_middle(editor.data)]
@@ -1286,8 +1309,10 @@ func _write_chase() -> void:
 	scene.polar = clampf(acos(clampf(dir.y,-1.0,1.0)),0.05,PI-0.05)
 	scene.camera_roll = chase.roll
 
-## True inside an island's rock or ground, for the camera to keep out of.
+## True inside an island's rock or ground, for the camera to keep out of,
+## or under the lower world's ocean.
 func _solid(point: Vector3) -> bool:
+	if lower != null and point.y < SkyBelow.OCEAN+0.3: return true
 	var body: Variant = _fly_ground(point)
 	if body == null: return false
 	var b := body as Vector2
@@ -1296,6 +1321,8 @@ func _solid(point: Vector3) -> bool:
 ## What the glide stands on: the islands as solids, Vector2(top, underside)
 ## (SkyIslands `body`), and over the plate the crowns of its trees and rocks.
 func _fly_ground(point: Vector3) -> Variant:
+	# Under the cloud only the lower world is solid.
+	if below(): return lower.body(point)
 	var body: Variant = islands.body(point)
 	if body == null or islands._height(point) == null: return body
 	var local := editor.terrain.to_local(point)
@@ -1340,7 +1367,7 @@ var _perch_floor := 0.0
 ## True when a point over an islet is down near its ground, not riding over
 ## a crown or the spire.
 func _islet_ground_near(islet: Dictionary, point: Vector3) -> bool:
-	var local: Vector3 = islands.islets.local_of(islet,point)
+	var local: Vector3 = _islets().local_of(islet,point)
 	return local.y-float(islet.shape.ground_at(Vector2(local.x,local.z))) < SkyGlide.SKIM+0.5
 
 ## Touched down on an islet: the glide stops and the pilot runs on over
@@ -1350,8 +1377,8 @@ func _perch(islet: Dictionary) -> void:
 	_swoop = SWOOP
 	_swoop_from = {"target":scene.target,"yaw":scene.yaw,"polar":scene.polar,"distance":scene.distance}
 	perch = islet
-	islands.islets.pinned = islet.node
-	var local: Vector3 = islands.islets.local_of(islet,glide.position)
+	_islets().pinned = islet.node
+	var local: Vector3 = _islets().local_of(islet,glide.position)
 	var at := _perch_free(islet.shape,Vector2(local.x,local.z))
 	_perch_feet = Vector3(at.x,islet.shape.ground_at(at),at.y)
 	_perch_floor = _perch_feet.y
@@ -1375,7 +1402,7 @@ func _perch(islet: Dictionary) -> void:
 func _unperch() -> void:
 	if perch.is_empty(): return
 	perch = {}
-	if islands != null: islands.islets.pinned = null
+	if islands != null: _islets().pinned = null
 
 ## The nearest point to `at` (islet frame) a walker can stand on: inside,
 ## clear of trunks, the spire and the water.
@@ -1389,7 +1416,7 @@ func _perch_free(shape: RefCounted, at: Vector2) -> Vector2:
 	return at
 
 func _perch_eye_global() -> Vector3:
-	return islands.islets.frame(perch)*(_perch_feet+Vector3.UP*EYE_HEIGHT)
+	return _islets().frame(perch)*(_perch_feet+Vector3.UP*EYE_HEIGHT)
 
 ## The perched islet's turn when last read: as it turns (an airship's islet
 ## let spin, scripts/sky_airship.gd) the camera turns with the pilot.
@@ -1449,7 +1476,7 @@ func _advance_perch(delta: float) -> void:
 	_perch_feet = motor.feet
 	_body_events(drawn,delta)
 	_water_events(events,drawn,delta)
-	_frame_walker(delta,islands.islets.frame(perch),turn,func(p: Vector3) -> float: return _perch_ground(Vector2(p.x,p.z)))
+	_frame_walker(delta,_islets().frame(perch),turn,func(p: Vector3) -> float: return _perch_ground(Vector2(p.x,p.z)))
 	if not perch.get("towed",false) and _polar > POLAR.y: _polar = lerpf(_polar,POLAR.y,_ease(0.4,delta))
 	camera.fov = lerpf(camera.fov,FOV,_ease(EASE_FOV,delta))
 	# The sky goes on round it: the islets bob, the clouds drift, the wind
@@ -1463,6 +1490,12 @@ func _advance_perch(delta: float) -> void:
 	air.advance(delta,Vector3.ZERO,0.0,0.0)
 	_hint_time += delta
 	_hint.modulate.a = clampf(1.0-(_hint_time-6.0)/1.5,0.0,1.0)
+
+## The water's depth at `p` in the perched islet's frame: a swimmable
+## lake's (SkyIslet `swim_depth`), else none.
+func _perch_depth(p: Vector2) -> float:
+	if perch.is_empty() or not perch.shape.has_method("swim_depth") or not perch.shape.inside(p): return 0.0
+	return float(perch.shape.swim_depth(p))
 
 ## The ground under `p` in the perched islet's frame: its own, or, in a
 ## group, a neighbour's (in this frame), or -INF.
@@ -1479,11 +1512,11 @@ func _perch_ground(p: Vector2) -> float:
 ## feet, else the lowest.
 func _perch_neighbour(p: Vector2) -> Dictionary:
 	if not perch.has("group") or islands == null: return {}
-	var here: Vector3 = islands.islets.place(perch)
+	var here: Vector3 = _islets().place(perch)
 	var best := {}
-	for b: Dictionary in islands.islets.built.values():
+	for b: Dictionary in _islets().built.values():
 		if b.get("group","") != perch.group or b.node == perch.node: continue
-		var off: Vector3 = islands.islets.place(b)-here
+		var off: Vector3 = _islets().place(b)-here
 		var q := p-Vector2(off.x,off.z)
 		if not b.shape.inside(q): continue
 		var hit := {"islet":b,"off":off,"ground":float(b.shape.ground_at(q))+off.y}
@@ -1498,7 +1531,7 @@ func _perch_neighbour(p: Vector2) -> Dictionary:
 func _perch_move(next: Dictionary) -> void:
 	var off: Vector3 = next.off
 	perch = next.islet
-	islands.islets.pinned = perch.node
+	_islets().pinned = perch.node
 	motor.feet -= off
 	motor.ground_y -= off.y
 	_perch_floor -= off.y
@@ -1563,7 +1596,7 @@ func _notice_step(moved: float, delta: float) -> void:
 ## bare ground and on a bare shore; grass where cover grows (GRASSY); else
 ## bare earth, as a worn path is.
 func _surface() -> String:
-	if not perch.is_empty(): return "grass"
+	if not perch.is_empty(): return "water" if _perch_depth(Vector2(_perch_feet.x,_perch_feet.z)) >= Footbridge.WET else "grass"
 	return _surface_at(Vector2(_feet.x,_feet.z))
 
 ## What stands at plate point `at`, as `_surface`.
@@ -1630,6 +1663,9 @@ func by_plane() -> bool:
 
 ## F in the plane: lands; mid line-up, flies on; rolling out, hops out now.
 func _land_key() -> void:
+	if below():
+		_land_below()
+		return
 	if landing != null:
 		if _taking_off: return
 		if landing.can_cancel(): _fly_on()
@@ -1641,6 +1677,30 @@ func _land_key() -> void:
 		return
 	_landing_wait = true
 	_hint.text = LANDING_HINT
+	_hint.modulate.a = 1.0
+	_hint_time = 0.0
+
+## True while the eye is under the cloud sea (`--below`).
+func below() -> bool:
+	return lower != null and lower.below
+
+## The islets the eye perches on: the sky's (scripts/sky_islets.gd), or
+## under the cloud the archipelago's (scripts/sky_archipelago.gd).
+func _islets() -> Node3D:
+	return lower.islets() if below() else islands.islets
+
+## F under the cloud: the plane comes in to the nearest island within
+## LANDING_REACH (SkyGlide `approach`: it turns to the island's middle,
+## throttles back and glides down), and touching down slowly on its ground
+## perches there; F again, boost or a roll flies on.
+func _land_below() -> void:
+	if glide.approach:
+		glide.approach = false
+		_hint.text = PLANE_HINT
+	else:
+		glide.approach_target = _landing_spot()
+		glide.approach = glide.approach_target != Vector3.INF
+		_hint.text = LANDING_HINT if glide.approach else NO_LANDING_HINT
 	_hint.modulate.a = 1.0
 	_hint_time = 0.0
 

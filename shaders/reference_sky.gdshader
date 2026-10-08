@@ -47,6 +47,9 @@ render_mode use_half_res_pass;
         // The stars are real objects in the room (scripts/sky_objects.gd), so
         // the dome leaves out its painted ones. --shader-stars keeps them.
         uniform bool real_stars = false;
+        // Under the cloud sea (scripts/sky_below.gd, `--below`) the whole
+        // sky is its overcast (zsBelowAir): 0 leaves the sky as it was.
+        uniform float below_world = 0.0;
         // Star colour by temperature, t in 0..1: hot blue-white through white
         // and yellow to orange and a rare ember red. Weighted toward white.
         vec3 star_tint(float t) {
@@ -392,6 +395,10 @@ render_mode use_half_res_pass;
           // their billows stay crisp-soft (upscaled, they went soft and muddy).
           if (!AT_CUBEMAP_PASS && (!half_res_clouds || !zs_sea_half_res())) cloud += cloud_sea_at(dir) * (1.0 - cloud.a);
           col = col * (1.0 - cloud.a) + cloud.rgb;
+          if (below_world > 0.0) {
+            col = mix(col, zsBelowAir(dir), below_world);
+            cloud.a = mix(cloud.a, 1.0, below_world);
+          }
           // Keep the hue where light overflows: scale the colour down to fit
           // rather than clipping each channel, which bleached the sun white.
           col = max(col, vec3(0.0));

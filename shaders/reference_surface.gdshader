@@ -176,6 +176,15 @@ uniform vec2 object_fire = vec2(0.0);
 // touches nothing else.
 uniform float sea_cut = -1.0e9;
 uniform vec2 sea_fray = vec2(10.0, 40.0);
+// Under --below (scripts/sky_below.gd) the lower world: open (`sea_open`,
+// while the eye is under the cloud), the rock runs on down past the sea's
+// top, misting into the cloud only as it nears it from below. And every
+// range's flanks under the sea are drawn out (`below_sink`: x on, y the
+// sea's top and z the foot in the range's own heights, w the world height
+// the foot is drawn down to), so its foot is under the ocean (scripts/
+// sky_peaks.gd `sunk`, the same on the CPU). Zero leaves the rock as it was.
+uniform bool sea_open = false;
+uniform vec4 below_sink = vec4(0.0);
 // A sky peak's rock reads the plate's look (the field's patches, the rock's
 // world-space strata, terrain_geology) this many times larger, so a range
 // a few hundred metres high is the plate's mountain grown, not pinstriped.
@@ -601,6 +610,16 @@ void vertex() {
 		// Trunks, deadwood and stone char but never curl or thin.
 		zs_char_curl(VERTEX, char_state.x, char_clump, palette_role != 3 && palette_role != 4);
 		play_deform(VERTEX, NORMAL);
+		if (below_sink.x > 0.5) {
+			// The range is turned only about the vertical, so a height maps
+			// to the world by its frame's y and scale alone.
+			float lift = MODEL_MATRIX[3].y;
+			float tall = max(MODEL_MATRIX[1].y, 1e-3);
+			float top = lift + below_sink.y * tall;
+			float foot = lift + below_sink.z * tall;
+			float at = lift + VERTEX.y * tall;
+			if (at < top && foot > below_sink.w) VERTEX.y = (top - (top - at) * (top - below_sink.w) / max(top - foot, 1.0) - lift) / tall;
+		}
 		world_position = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 		world_normal = normalize(MODEL_NORMAL_MATRIX * NORMAL);
 		if (zs_is_ground()) {
@@ -630,7 +649,11 @@ void fragment() {
 	float sea_mist = 0.0;
 	// A sky peak's point in its range's own frame (sky_peak_look).
 	vec3 peak_rel = vec3(0.0);
-	if (sea_cut > -1.0e8) {
+	if (sea_cut > -1.0e8 && sea_open) {
+		// Seen from under the cloud sea (--below), the rock runs on down,
+		// misting into the cloud only as it nears it from below.
+		sea_mist = 1.0 - smoothstep(0.0, sea_fray.y, sea_cut - world_position.y);
+	} else if (sea_cut > -1.0e8) {
 		float wander = zs_noise(world_position.xz * 0.021) * 0.7 + zs_noise(world_position.xz * 0.057 + 31.0) * 0.3;
 		float above = world_position.y - sea_cut - wander * sea_fray.x;
 		if (above < 0.0) discard;

@@ -17,6 +17,12 @@ extends Node
 ## flying, and eases off with the sea once it ends, so the build view's own
 ## haze comes back as it was. It reads the rising islands off the islands
 ## (scripts/sky_islands.gd), which the eye that owns this keeps as `islands`.
+##
+## Under --below (scripts/sky_below.gd, `lower`) the sea never parts: falling
+## into it the vapour whitens whole (SkyBelow `band`), and deep in it the
+## eye crosses to the lower world and back, the sky turned overcast while
+## it is there (reference_sky's `below_world`) and the stars and planet put
+## away.
 
 ## The cloud sea's height in the world, in metres.
 const SEA_Y := -105.0
@@ -30,6 +36,7 @@ const VAPOUR_FULL := -100.0
 const SETTLE := 1.2
 const EASE := 0.15
 const SkyHaze = preload("res://scripts/sky_haze.gd")
+const SkyBelow = preload("res://scripts/sky_below.gd")
 
 var scene: Node3D
 ## Where the eye stepped off, moved with the islands' swaps, and its height
@@ -44,6 +51,8 @@ var vapour := 0.0
 ## How much of the glide's haze is on (0 to 1).
 var haze := 0.0
 var _settling := 0.0
+## The lower world, under --below (scripts/sky_below.gd), or null.
+var lower: Node3D = null
 var _layer: CanvasLayer
 var _veil: ColorRect
 
@@ -73,6 +82,9 @@ func start(eye: Vector3) -> void:
 	# On at once: the islands bake in over the next frames, out where the
 	# haze must already hide them, and near the plate it is all but clear.
 	haze = 1.0
+	if lower != null:
+		lower.reset()
+		if _veil != null: (_veil.material as ShaderMaterial).set_shader_parameter("whole",1.0)
 	_publish()
 
 ## The islands swapped: the world moved by `by`, the eye with it.
@@ -82,6 +94,7 @@ func move(by: Vector3) -> void:
 func stop() -> void:
 	active = false
 	_settling = SETTLE
+	if lower != null: lower.reset()
 
 ## Each frame of the glide: the eye's place, and how deep it is in a cloud.
 func advance(delta: float, eye: Vector3, in_cloud: float) -> void:
@@ -90,11 +103,17 @@ func advance(delta: float, eye: Vector3, in_cloud: float) -> void:
 	var yaw: float = scene._celestial.room_yaw if scene.get("_celestial") != null else 0.0
 	var room := Vector2(cos(yaw)*flown.x-sin(yaw)*flown.y,sin(yaw)*flown.x+cos(yaw)*flown.y)
 	var height := maxf(eye.y-SEA_Y,2.0)/rest_height
-	var part := smoothstep(PART_FROM,PART_FULL,eye.y)
+	var part := smoothstep(PART_FROM,PART_FULL,eye.y) if lower == null else 0.0
 	var k := 1.0-exp(-delta/EASE)
 	flight = Vector4(room.x,room.y,height,lerpf(flight.w,part,k))
-	var sea_vapour := smoothstep(VAPOUR_FROM,VAPOUR_FULL,eye.y)*(1.0-0.6*part)
+	var sea_vapour: float = smoothstep(VAPOUR_FROM,VAPOUR_FULL,eye.y)*(1.0-0.6*part) if lower == null else SkyBelow.band(eye.y)
 	vapour = lerpf(vapour,clampf(maxf(in_cloud,sea_vapour),0.0,1.0),k)
+	if lower != null:
+		# Across the line only ever under a white-out.
+		if lower.cross(eye.y): vapour = maxf(vapour,SkyBelow.SNAP)
+		var islands: Node = get_parent().get("islands") if get_parent() != null else null
+		var swaps: Variant = islands.get("origin") if islands != null else null
+		lower.follow(eye,swaps if swaps is Vector3 else Vector3.ZERO,delta)
 	_publish()
 
 ## While no glide is on: the sea eases back to rest and the vapour clears.
@@ -149,7 +168,17 @@ func _publish() -> void:
 	# The world's middle, for the mountain ring's skyline (scripts/sky_world.gd).
 	var middle: Variant = islands.get("origin") if islands != null else null
 	var ring := SkyHaze.ring_spot(middle) if middle is Vector3 else Vector4.ZERO
-	SkyHaze.publish(haze,blend,sea,SkyHaze.emerging(islands,eye) if islands != null and haze > 0.0 else [],spots,ring)
+	var below := 1.0 if lower != null and lower.below else 0.0
+	SkyHaze.publish(haze,blend,sea,SkyHaze.emerging(islands,eye) if islands != null and haze > 0.0 else [],spots,ring,below)
+	if lower != null: _overcast(sky,below)
 	if _veil == null: return
 	_veil.visible = vapour > 0.003
 	(_veil.material as ShaderMaterial).set_shader_parameter("amount",vapour)
+
+## Under the cloud (`below` 1) the sky is the overcast, and the stars and
+## the planet (scripts/sky_objects.gd) are put away.
+func _overcast(sky: ShaderMaterial, below: float) -> void:
+	if sky != null: sky.set_shader_parameter("below_world",below)
+	var lighting: Variant = scene.get("_lighting") if scene != null else null
+	var objects: Variant = lighting.get("sky_objects") if lighting is Object else null
+	if objects is Node3D: (objects as Node3D).visible = below < 0.5

@@ -124,7 +124,7 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 	in_jet = float(here.get("jet",0.0))
 	in_thermal = float(here.get("thermal",0.0))
 	var look: Vector2 = input.get("look",Vector2.ZERO)
-	var deep := clampf((FLOOR-position.y)/CATCH_DEPTH,0.0,1.0)
+	var deep := clampf((floor_y-position.y)/CATCH_DEPTH,0.0,1.0)
 	var boost := clampf(float(input.get("boost",0.0)),0.0,1.0)
 	var brake := clampf(float(input.get("brake",0.0)),0.0,1.0)
 	throttle = boost-brake
@@ -169,7 +169,7 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 	if approach: target = minf(target,LANDING_SPEED)
 	speed += (-SWING*sin(pitch)-THROTTLE*(speed-target))*delta
 	speed = clampf(speed,SLOW,FAST)
-	lift = clampf((FLOOR-position.y)*CUSHION,0.0,CUSHION_MAX)
+	lift = clampf((floor_y-position.y)*CUSHION,0.0,CUSHION_MAX)
 	var fall := FALL*minf(airborne,FALL_TIME)*(1.0-smoothstep(FALL_TIME,FALL_TIME+CATCH,airborne))
 	var drop := approach_drop(ground) if approach else 0.0
 	var side := Vector3(cos(heading),0.0,-sin(heading))
@@ -177,4 +177,5 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 	var was := position
 	position += velocity*delta
 	_skim(delta,ground,was)
+	_water(delta)
 	speed = maxf(speed,SLOW)

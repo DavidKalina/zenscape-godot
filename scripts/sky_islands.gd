@@ -72,6 +72,7 @@ const Genesis = preload("res://scripts/genesis_canvas.gd")
 const IslandShore = preload("res://scripts/island_shore.gd")
 const SkyIslets = preload("res://scripts/sky_islets.gd")
 const SkyClusters = preload("res://scripts/sky_clusters.gd")
+const LandformPreview = preload("res://scripts/landform_preview.gd")
 const SkyAirship = preload("res://scripts/sky_airship.gd")
 const SkyCollectibles = preload("res://scripts/sky_collectibles.gd")
 const SkyPeaks = preload("res://scripts/sky_peaks.gd")
@@ -264,6 +265,8 @@ func setup(owner_scene: Node3D) -> void:
 		claimed.connect(collectibles.on_claimed)
 		# Review: every kind laid near the home, on clusters stood there.
 		if collectibles.near_home and clusters.with_near.is_empty(): clusters.with_near = SkyCollectibles.NEAR_MOTIFS.duplicate()
+	# --landform=<name>: the lower world's landforms stood near the home.
+	LandformPreview.attach(self)
 	show_air(false)
 
 ## Sets an island at every fixed slot and every island built, except the

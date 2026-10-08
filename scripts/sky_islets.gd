@@ -44,6 +44,8 @@ const SkyForestIsles = preload("res://scripts/sky_forest_isles.gd")
 const SkyFallThread = preload("res://scripts/sky_fall_thread.gd")
 const RockLooks = preload("res://scripts/rock_looks.gd")
 const ClusterFalls = preload("res://scripts/cluster_falls.gd")
+const FarTrees = preload("res://scripts/far_trees.gd")
+const MountainMassif = preload("res://scripts/mountain_massif.gd")
 
 ## The cells: size (m), the share holding an islet, how far its spot may sit
 ## from the cell's middle (share of the cell), and the height band (m).
@@ -117,6 +119,8 @@ var flora_source: Node
 ## The sides' materials made so far, by strata seed and depth.
 var _sides := {}
 var _water: Material
+## Steeped pond waters (`_pond_material` with tea), by tea in tenths.
+var _teas := {}
 var _since := CHECK
 var _clock := 0.0
 var _wanted: Array = []
@@ -149,10 +153,16 @@ func _init() -> void:
 	name = "SkyIslets"
 
 ## The shared pieces are static, so they would outlive the scene and show as
-## leaks at exit; they go with the islets and are made again if wanted.
+## leaks at exit; they go with the islets and are made again if wanted. A
+## second islets node sharing them (the lower world's, scripts/
+## sky_archipelago.gd) leaves them to the sky's (`owns_shared` false).
+var owns_shared := true
+## How far off the trees and what is built still draw (m): TREE_RANGE, or
+## nearer for a sea thick with islands (the lower world's).
+var tree_range := TREE_RANGE
 func _exit_tree() -> void:
 	clear()
-	_release()
+	if owns_shared: _release()
 
 ## Everything the islets hold that would outlive them: their materials, and
 ## the shared pieces in static vars (the catalog, the grids, the trees, the
@@ -160,6 +170,7 @@ func _exit_tree() -> void:
 func _release() -> void:
 	_sides.clear()
 	_water = null
+	_teas.clear()
 	_ground_material = null
 	_water_material = null
 	_tree_meshes.clear()
@@ -178,6 +189,7 @@ func reset(new_cells: SkyCells) -> void:
 	if _tree_meshes.is_empty(): _grow_trees()
 	if _catalog.is_empty(): catalog(flora_source)
 	_water = null
+	_teas.clear()
 	_sides.clear()
 	_pond_material()
 	cells = new_cells
@@ -346,10 +358,13 @@ static func _dress(shape: RefCounted, palette: Dictionary, plants: Dictionary, o
 	out.sides = shape.side_arrays()
 	out.water = shape.water_arrays(WaterFlowView.TINT.mid.srgb_to_linear(),OFF_MAP)
 	out.plants = shape.flora(plants)
+	# A mountain island's massif draws its own faces (scripts/mountain_massif.gd).
+	if shape.spire != null and shape.spire.has_method("bare"): out.massif = shape.spire.arrays(shape,OFF_MAP)
 	out.meshes = {"top":SkyIslet.mesh_from(out.top,null),"sides":SkyIslet.mesh_from(out.sides,null)}
 	if not (out.water as Array).is_empty():
-		out.fall = _fall_rings(shape)
-		out.thread = _thread_plan(shape,out.fall,home_y)
+		if not meets_sea(shape):
+			out.fall = _fall_rings(shape)
+			out.thread = _thread_plan(shape,out.fall,home_y)
 		out.meshes.water = SkyIslet.mesh_from(out.water,null,SkyIslet.WATER_FORMAT)
 
 ## An authored islet's parts (SkyIslet `author`), as `_make` makes them,
@@ -404,13 +419,14 @@ func stand(node_name: String, home: Vector3, out: Dictionary) -> Dictionary:
 	if not (out.water as Array).is_empty():
 		var pond := MeshInstance3D.new()
 		pond.name = "Pond"
-		pond.mesh = _mesh_of(out,"water",_pond_material(),SkyIslet.WATER_FORMAT)
+		pond.mesh = _mesh_of(out,"water",_pond_material(float(shape.lake.get("tea",0.0))),SkyIslet.WATER_FORMAT)
 		pond.position = -OFF_MAP
 		pond.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		pond.set_meta("skip_reflection",true)
 		node.add_child(pond)
-		_fall(node,shape,out.fall,out.get("thread",{}))
-	_plant(node,out.plants)
+		if out.has("fall"): _fall(node,shape,out.fall,out.get("thread",{}))
+	if out.has("massif"): MountainMassif.stand(node,out.massif,shape,-OFF_MAP)
+	_plant(node,out.plants,float(shape.recipe.get("far_trees",0.0)))
 	var rng := RandomNumberGenerator.new()
 	rng.seed = shape.seed
 	return {"node":node,"shape":shape,"home":home,"usec":out.get("usec",0),
@@ -420,14 +436,16 @@ func stand(node_name: String, home: Vector3, out: Dictionary) -> Dictionary:
 ## plants draw only near).
 func _fade(b: Dictionary) -> void:
 	var t := 1.0-smoothstep(0.0,1.0,clampf(float(b.get("age",FADE_IN))/FADE_IN,0.0,1.0))
-	for part in ["Body","Sides","Pond"]:
+	for part in ["Body","Sides","Pond","Massif"]:
 		var g := (b.node as Node3D).get_node_or_null(part) as GeometryInstance3D
 		if g != null: g.transparency = t
 
 ## The plants: one batch a catalog part standing on this islet, drawn with
 ## the plate's own mesh and its material made safe for the sky. Trees draw
-## far, stones a little less, the small plants only near.
-func _plant(node: Node3D, plants: Dictionary) -> void:
+## far, stones a little less, the small plants only near. With `far` (a
+## recipe's `far_trees`), the trees draw to `far` m and cheap stand-ins
+## (scripts/far_trees.gd) take over from there.
+func _plant(node: Node3D, plants: Dictionary, far := 0.0) -> void:
 	var meshes: Dictionary = _catalog.meshes
 	for key: String in plants:
 		if not meshes.has(key): continue
@@ -447,7 +465,8 @@ func _plant(node: Node3D, plants: Dictionary) -> void:
 		# islet part it ever saw.
 		batch.set_meta("skip_reflection",true)
 		var role: String = _catalog.roles.get(key,"plant")
-		batch.visibility_range_end = TREE_RANGE if role in ["tree","build"] else (STONE_RANGE if role == "stone" else PLANT_RANGE)
+		batch.visibility_range_end = tree_range if role in ["tree","build"] else (STONE_RANGE if role == "stone" else PLANT_RANGE)
+		if far > 0.0 and role == "tree": batch.visibility_range_end = far
 		batch.visibility_range_end_margin = 30.0
 		batch.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 		# Small plants cast no shadow worth drawing out here, but the tall
@@ -455,6 +474,7 @@ func _plant(node: Node3D, plants: Dictionary) -> void:
 		if role == "plant" and MeadowFlowers.kind_of_part(key) != "sunflower":
 			batch.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		node.add_child(batch)
+	if far > 0.0: FarTrees.stand(node,plants,meshes,_catalog.roles,_plant_material,far)
 
 ## The plate's plant catalog, read once from its garden view (`source`, the
 ## live GardenView) or, without one, from an offline one: per part key its
@@ -530,7 +550,7 @@ func _side_material(shape: RefCounted) -> Material:
 	var strata := posmod(int(shape.seed),STRATA_SEEDS)
 	var rock: Dictionary = shape.recipe.get("rock",{})
 	var key: Variant = Vector2i(strata,roundi(float(shape.depth)*2.0))
-	if not rock.is_empty(): key = [key,str(rock.get("palette","basalt")),snappedf(float(rock.get("tone",1.0)),0.05),RockLooks.step_of(float(rock.get("vary",0.5)))]
+	if not rock.is_empty(): key = [key,str(rock.get("palette","basalt")),snappedf(float(rock.get("tone",1.0)),0.05),RockLooks.step_of(float(rock.get("vary",0.5))),snappedf(float(rock.get("bed",0.0)),0.1)]
 	if _sides.has(key): return _sides[key]
 	var m: ShaderMaterial
 	if side_source is ShaderMaterial: m = side_source.duplicate()
@@ -547,9 +567,18 @@ func _side_material(shape: RefCounted) -> Material:
 	Strata.new(strata).apply(m,Vector3.ZERO)
 	# Every islet wears a rock look (scripts/rock_looks.gd): a cluster's
 	# member its motif's, a lone one its seed's.
-	if not rock.is_empty(): RockLooks.apply(m,str(rock.get("palette","basalt")),float(rock.get("tone",1.0)),float(rock.get("vary",0.5)))
+	if not rock.is_empty(): RockLooks.apply(m,str(rock.get("palette","basalt")),float(rock.get("tone",1.0)),float(rock.get("vary",0.5)),snappedf(float(rock.get("bed",0.0)),0.1))
 	_sides[key] = m
 	return m
+
+## True for an island in the sea (SkyIslet `sea_foot`) whose water leaves
+## at the sea's own height, or within SEA_FALL m of it: a stream that meets
+## the sea, with no fall.
+const SEA_FALL := 0.6
+static func meets_sea(shape: RefCounted) -> bool:
+	if not shape.recipe.has("sea_foot"): return false
+	var water: Dictionary = shape.water()
+	return not water.is_empty() and float(water.level)-float(shape.recipe.sea_foot.get("level",0.0)) < SEA_FALL
 
 ## The fall off a spring islet's lip: the waterfalls' strand on a course
 ## of its own, arcing off the rim and falling free until it breaks into
@@ -568,6 +597,11 @@ static func _fall_rings(shape: RefCounted) -> Dictionary:
 	if shape.recipe.has("fall_to"):
 		var to: Dictionary = shape.recipe.fall_to
 		return curtain(to.lip,to.out,float(to.drop),ClusterFalls.SUNK,ClusterFalls.HALF,overhang,FALL_STRENGTH,float(to.speed))
+	# An island in the sea (SkyIslet `sea_foot`): down its wall into the sea,
+	# ending just under the water.
+	if shape.recipe.has("sea_foot"):
+		var level := float(shape.recipe.sea_foot.get("level",0.0))
+		return curtain(lip,out,maxf(lip.y-level,0.3),ClusterFalls.SUNK,float(water.get("half",SkyIslet.CHANNEL*0.6)),overhang,FALL_STRENGTH)
 	return curtain(lip,out,shape.depth*FALL_DROP.x+FALL_DROP.y,FALL_TAIL,float(water.get("half",SkyIslet.CHANNEL*0.6)),overhang,FALL_STRENGTH)
 
 func _fall(node: Node3D, shape: RefCounted, rings: Dictionary, thread: Dictionary = {}) -> void:
@@ -622,7 +656,7 @@ func _fall(node: Node3D, shape: RefCounted, rings: Dictionary, thread: Dictionar
 ## The fall's thread on down to the cloud sea (SkyFallThread `plan`), for
 ## an islet whose middle stands at `home_y`.
 static func _thread_plan(shape: RefCounted, rings: Dictionary, home_y: float) -> Dictionary:
-	if shape.recipe.has("fall_to"): return {}
+	if shape.recipe.has("fall_to") or shape.recipe.has("sea_foot"): return {}
 	var water: Dictionary = shape.water()
 	var out := Vector3(water.out.x,0.0,water.out.y)
 	var lip := Vector3(water.lip.x,water.level,water.lip.y)
@@ -781,8 +815,11 @@ static func _grow_trees() -> void:
 ## (scripts/water_flow_view.gd), with everything tied to the plate's own
 ## ponds let go: the planar mirror (its plane is the plate's water level),
 ## the tea map, the falls' churn, the level fade and the algae film. Its sky reflection,
-## chop, glints and depth tint stay. Made once per sky (`reset`).
-func _pond_material() -> Material:
+## chop, glints and depth tint stay. Made once per sky (`reset`). With
+## `tea` (a lake steeped by what grows round it, IsletLake `steep`), the
+## same water steeped that much all over: a dark slate-blue tarn.
+func _pond_material(tea := 0.0) -> Material:
+	if tea >= 0.05: return _steeped(tea)
 	if _water != null: return _water
 	if water_source == null:
 		_water = _water_material
@@ -807,6 +844,19 @@ func _pond_material() -> Material:
 	water.set_shader_parameter("bed_absorb",WaterFlowView.BED_ABSORB)
 	_water = water
 	return _water
+
+func _steeped(tea: float) -> Material:
+	var key := clampi(roundi(tea*10.0),1,10)
+	if _teas.has(key): return _teas[key]
+	var plain := _pond_material()
+	if plain == _water_material: return plain
+	var water: ShaderMaterial = plain.duplicate()
+	var image := Image.create(1,1,false,Image.FORMAT_L8)
+	image.set_pixel(0,0,Color(key/10.0,key/10.0,key/10.0))
+	water.set_shader_parameter("tea_map",ImageTexture.create_from_image(image))
+	water.set_shader_parameter("tea_rect",Vector4(-100000.0,-100000.0,200000.0,200000.0))
+	_teas[key] = water
+	return water
 
 ## The plate's palette (scripts/native_terrain_palette.gd), for the ground.
 var palette_source: RefCounted
