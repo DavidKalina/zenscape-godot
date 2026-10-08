@@ -98,6 +98,10 @@ func _render_callback(_type: int, data: RenderData) -> void:
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_PREDELETE and _rd != null:
+		# Let go of the copy before freeing it: a material still reading it
+		# (the display fog's, the grade's, a fall's mist) would otherwise
+		# rebuild its uniforms on a freed texture as the scene goes.
+		texture.texture_rd_rid = RID()
 		for resource in _shaders + [_sampler, _depth]:
 			if resource.is_valid():
 				_rd.free_rid(resource)
