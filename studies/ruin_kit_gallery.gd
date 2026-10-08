@@ -62,8 +62,8 @@ const SEA_HALF := 7.0
 ## The hall's centrepiece weathering, and its light shafts: the fog's
 ## density in the box round it and the sun's share in it.
 const HALL_WEATHERED := 0.8
-const SHAFT_FOG := 0.03
-const SHAFT_LIGHT := 2.6
+const SHAFT_FOG := 0.045
+const SHAFT_LIGHT := 3.6
 ## The room between a pair's two (m) and between pairs.
 const PAIR_GAP := 0.8
 const SLOT_GAP := 2.6
@@ -634,8 +634,8 @@ func _frame_piece(index: int) -> void:
 	if index < 0 or index >= _slots.size():
 		_frame = -1
 		_focus_goal = Vector3(_bounds.get_center().x,2.2,_bounds.get_center().y+1.5)
-		_distance_goal = maxf(_bounds.size.x*0.75,_bounds.size.y*1.4)*0.9
-		_pitch = 0.5
+		_distance_goal = maxf(_bounds.size.x*0.92,_bounds.size.y*1.6)
+		_pitch = 0.75
 		_yaw = 0.0
 	else:
 		var slot := _slots[index]

@@ -121,8 +121,8 @@ static func column(seed_value: int, weathered := 0.0) -> Node3D:
 			var at := Basis(Vector3.UP,yaw)*Vector3(x,0.0,1.1)+Vector3(0.0,COLUMN_R*0.96,0.0)
 			_drum(b,Transform3D(lie,at),str(drum[0]),float(drum[1]),RuinKit._break(b,float(drum[1]),COLUMN_R,0.2,0.0) if b.rng.randf() < 0.4 else [])
 			x += float(drum[1])+b.rng.randf_range(0.1,0.4)
-		var tip := Basis(Vector3.UP,b.rng.randf()*TAU)*Basis(Vector3.RIGHT,b.rng.randf_range(1.3,1.6))
-		_capital(b,Transform3D(tip,Vector3(-2.0,ABACUS*0.98,1.6)))
+		# Upside down on its abacus, a little askew, as a capital comes to rest.
+		_capital(b,Transform3D(Basis(Vector3.UP,b.rng.randf()*TAU)*Basis(Vector3.RIGHT,PI-b.rng.randf_range(0.08,0.2)),Vector3(-2.2,0.92,1.8)))
 		RuinKit._drift(b,Vector3(-1.4,0.0,-1.0),1.2,3+int(weathered*4.0))
 	_feet(b,Vector3.ZERO,PLINTH.y+0.3,int(2+weathered*6.0))
 	RuinKit._rubble(b,2.2,int(round(weathered*b.rng.randf_range(3.0,6.0))))
@@ -780,7 +780,7 @@ static func _collapse(b: Build) -> void:
 		var lie := Basis(Vector3.UP,0.3+0.4*k)*Basis(Vector3.BACK,-PI*0.5)
 		_drum(b,Transform3D(lie,Vector3(x,COLUMN_R*0.97,h+1.6+1.1*k)),"plain" if k == 0 else "roundel",0.8,[])
 		x += 0.7
-	_capital(b,Transform3D(Basis(Vector3.UP,0.5)*Basis(Vector3.RIGHT,1.45),Vector3(h+1.0,ABACUS*0.98,h+3.6)))
+	_capital(b,Transform3D(Basis(Vector3.UP,0.5)*Basis(Vector3.RIGHT,PI-0.14),Vector3(h+1.2,0.92,h+3.4)))
 	# The other slab, broken on the floor inside the front, half on the
 	# medallion's edge where there is one.
 	for s: float in [-1.0,1.0]:
