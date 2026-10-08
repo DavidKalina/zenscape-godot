@@ -23,16 +23,17 @@ extends Node3D
 ## the volume (`--old-clouds`, or no RenderingDevice) the ceiling paints
 ## them everywhere and the old near sea is put away while below.
 ##
-## The ocean is the islands' own water (the plate's still water as the islet
-## ponds draw it, scripts/sky_islets.gd `_pond_material`): its wind chop,
-## the gusts' cat's paws, glints and the shore's foam, made a sea (its
-## marine chop and ripples), its colour deepening with the true depth of the
-## bed under each pixel (`depth_read`): pale and clear over an island's
-## shelf, deep blue off it, and mirroring the cloud overhead (`below_sky`).
-## It is one sheet kept under the eye (`_sheet`): fine near, coarser ring by
-## ring out to REACH, laid on its own lattice as it moves so the water never
-## swims, its chop calming with distance (the fetch it is given) so the far
-## water lies glassy.
+## The ocean is a sea of its own (shaders/sky_ocean.gdshader), not the
+## islands' pond water, which stays as it is: smooth and glassy, its swell,
+## chop and ripples worked out per pixel and each faded where finer than a
+## pixel, so it never shimmers into a checker from the plane; its chop
+## standing up in cat's paws that roll downwind on the air's travel; its
+## colour from the water between the surface and the bed behind each pixel,
+## luminous turquoise over an island's shelf, deep blue off it, foaming and
+## washing at the shore; and mirroring the overcast, the islands and the
+## ranges at a low angle. It is one sheet kept under the eye (`_sheet`):
+## fine near, coarser ring by ring out to REACH, laid on its own lattice as
+## it moves so the water never swims; only the near rings heave to the swell.
 ##
 ## OCEAN is -300: the ring's runs (most of the ranges, scripts/sky_world.gd
 ## `layout`) end at about BASE (-280) in their own heights and stand about
@@ -43,8 +44,6 @@ extends Node3D
 ## clear metres between the cloud and the water to fly in.
 
 const SkyArchipelago = preload("res://scripts/sky_archipelago.gd")
-const SkyIslet = preload("res://scripts/sky_islet.gd")
-const WaterFlowView = preload("res://scripts/water_flow_view.gd")
 
 ## The cloud sea's top (scripts/sky_flight.gd SEA_Y), where the swap is.
 const SEA := -105.0
@@ -71,20 +70,19 @@ const BAND := Vector4(-65.0,-95.0,-115.0,-145.0)
 const PREPARE := -60.0
 ## Half the ceiling's span (m): SkyWorld VIEW_FAR.
 const REACH := 9000.0
-## The ocean's sheet (`_sheet`): its finest cells (m), the inner square's
-## half (in those cells), and the distance over which its chop calms (m).
+## The ocean's sheet (`_sheet`): its finest cells (m) and the inner
+## square's half (in those cells).
 const SHEET_STEP := 2.0
 const SHEET_CELLS := 40
-const CALM := Vector2(180.0,700.0)
-## The fetch an open sea gives every way (the lake chop's full, 9 m and up).
-const OPEN_FETCH := 9.0
-## The ocean's depth ramp (the water body's `tint_*`): sea-sized, so a
-## shelf a metre deep is pale and clear and the water is deep blue by about
-## TINT_DEPTHS.y and nearly black-blue by ABYSS_DEPTHS.y.
-const TINT_DEPTHS := Vector3(0.9,3.2,0.9)
-const ABYSS_DEPTHS := Vector2(3.5,11.0)
-const TINT_SHALLOW := Color(0.36,0.72,0.66)
-const TINT_ABYSS := Color(0.05,0.17,0.27)
+## The ocean's colour by depth (shaders/sky_ocean.gdshader `tint_*`): a
+## shelf a metre deep luminous turquoise, clear teal by TINT_DEPTHS.x, deep
+## blue by .y and the abyss's dark blue by .z (m), short of the shelf's
+## end (SkyArchipelago SHELF_DEPTH), so its foot's wall never shows.
+const TINT_SHALLOW := Color(0.30,0.86,0.80)
+const TINT_MID := Color(0.10,0.56,0.62)
+const TINT_DEEP := Color(0.04,0.26,0.42)
+const TINT_ABYSS := Color(0.03,0.14,0.25)
+const TINT_DEPTHS := Vector3(1.6,5.0,9.5)
 
 ## Whether this run has the lower world: `--below`.
 static var _on := -1
@@ -107,7 +105,7 @@ var scene: Node
 var ocean: MeshInstance3D
 var ceiling: MeshInstance3D
 var archipelago: Node3D
-## The ocean's water: the islets' pond material made a sea (`_sea_water`).
+## The ocean's water (`_sea_water`).
 var water: ShaderMaterial
 var _arrived := false
 var _last_eye := Vector3.INF
@@ -121,7 +119,7 @@ func _init() -> void:
 	ocean.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	ocean.custom_aabb = AABB(Vector3(-REACH,-2.0,-REACH),Vector3(REACH*2.0,4.0,REACH*2.0))
 	ocean.set_meta("skip_reflection",true)
-	water = _sea_water(null)
+	water = _sea_water()
 	ocean.material_override = water
 	add_child(ocean)
 	var plane := PlaneMesh.new()
@@ -240,55 +238,33 @@ func _take_clouds() -> void:
 	_show()
 
 ## The islets' materials, once the sky is built (SkyIslands `build`): the
-## archipelago's look and the ocean's water are theirs.
+## archipelago's look is theirs.
 func _take_materials() -> void:
 	if islands == null: return
 	var source: Node3D = islands.get("islets")
 	if source == null or source.get("ground_source") == null: return
-	if not archipelago.take_materials(source): return
-	water = _sea_water(source._pond_material())
-	ocean.material_override = water
+	archipelago.take_materials(source)
 
-## The islets' pond water (`pond`, or the plate's still water's shader with
-## no pond to copy) made a sea: the marine chop and ripples, the depth read
-## per pixel off the bed under it, a sea's depth ramp, the shore's foam
-## where it meets the bed, and the cloud overhead in its mirror.
-static func _sea_water(pond: Material) -> ShaderMaterial:
-	var sea: ShaderMaterial
-	if pond is ShaderMaterial: sea = (pond as ShaderMaterial).duplicate()
-	else:
-		sea = ShaderMaterial.new()
-		sea.shader = preload("res://shaders/reference_water.gdshader")
-		sea.set_shader_parameter("planar_enabled",false)
-		sea.set_shader_parameter("depth_tint",true)
-		sea.set_shader_parameter("tint_mid",WaterFlowView.TINT.mid)
-		sea.set_shader_parameter("tint_deep",WaterFlowView.TINT.deep)
-	sea.set_shader_parameter("depth_read",true)
+## The ocean's water: the sea's own shader with the depth ramp above.
+static func _sea_water() -> ShaderMaterial:
+	var sea := ShaderMaterial.new()
+	sea.shader = preload("res://shaders/sky_ocean.gdshader")
 	sea.set_shader_parameter("below_sky",1.0)
-	sea.set_shader_parameter("shore_distance",true)
-	sea.set_shader_parameter("live_level",false)
-	sea.set_shader_parameter("shallow_clear",0.0)
-	sea.set_shader_parameter("lake_marine_chop",1.0)
-	sea.set_shader_parameter("lake_marine_ripples",1.0)
 	sea.set_shader_parameter("tint_shallow",TINT_SHALLOW)
+	sea.set_shader_parameter("tint_mid",TINT_MID)
+	sea.set_shader_parameter("tint_deep",TINT_DEEP)
 	sea.set_shader_parameter("tint_abyss",TINT_ABYSS)
 	sea.set_shader_parameter("tint_depths",TINT_DEPTHS)
-	sea.set_shader_parameter("tint_abyss_depths",ABYSS_DEPTHS)
 	return sea
 
 ## The ocean's sheet, made once: a square of SHEET_STEP cells SHEET_CELLS
 ## each way of the middle, then rings each twice as coarse and twice as
 ## wide as the last, out past REACH; where a ring meets the finer one
 ## inside it, its cells take the finer one's midpoints, so the sheet has no
-## cracks. Every vertex carries what the pond water reads (SkyIslet
-## `water_arrays`): a depth for the chop (UV2.x), no run to a bank (UV.x 0,
-## the shore's foam then following the bed read per pixel), and the open
-## sea's fetch every way, calming over CALM from the middle.
+## cracks. Bare positions: the sea's shader works out the rest.
 static func _sheet() -> ArrayMesh:
 	if _sheet_mesh != null: return _sheet_mesh
 	var vertices := PackedVector3Array()
-	var fetch_a := PackedFloat32Array()
-	var fetch_b := PackedFloat32Array()
 	var index := {}
 	var faces := PackedInt32Array()
 	var unit := SHEET_STEP*0.5
@@ -297,10 +273,6 @@ static func _sheet() -> ArrayMesh:
 		if index.has(key): return index[key]
 		var id := vertices.size()
 		vertices.append(Vector3(p.x,0.0,p.y))
-		var f := OPEN_FETCH*(1.0-smoothstep(CALM.x,CALM.y,p.length()))
-		for k in range(4):
-			fetch_a.append(f)
-			fetch_b.append(f)
 		index[key] = id
 		return id
 	var n := SHEET_CELLS
@@ -326,30 +298,16 @@ static func _sheet() -> ArrayMesh:
 		if n*size >= REACH: break
 		level += 1
 		size *= 2.0
-	var count := vertices.size()
 	var normals := PackedVector3Array()
-	normals.resize(count)
+	normals.resize(vertices.size())
 	normals.fill(Vector3.UP)
-	var uv := PackedVector2Array()
-	uv.resize(count)
-	var uv2 := PackedVector2Array()
-	uv2.resize(count)
-	uv2.fill(Vector2(3.0,0.0))
-	var colors := PackedColorArray()
-	colors.resize(count)
-	colors.fill(WaterFlowView.TINT.mid.srgb_to_linear())
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = vertices
 	arrays[Mesh.ARRAY_NORMAL] = normals
-	arrays[Mesh.ARRAY_COLOR] = colors
-	arrays[Mesh.ARRAY_TEX_UV] = uv
-	arrays[Mesh.ARRAY_TEX_UV2] = uv2
-	arrays[Mesh.ARRAY_CUSTOM0] = fetch_a
-	arrays[Mesh.ARRAY_CUSTOM1] = fetch_b
 	arrays[Mesh.ARRAY_INDEX] = faces
 	_sheet_mesh = ArrayMesh.new()
-	_sheet_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays,[],{},SkyIslet.WATER_FORMAT)
+	_sheet_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
 	return _sheet_mesh
 
 ## True if the edge from `a` to `b` lies on the border of the square hole

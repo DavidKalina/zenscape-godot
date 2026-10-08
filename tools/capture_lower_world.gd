@@ -8,16 +8,20 @@ extends SceneTree
 ##   shelf: looking down on an island's shelf and its shallows;
 ##   up: from low over the water, looking up at the cloud's underside;
 ##   island: on foot on an island's top, looking out to sea;
-##   golden: the cruise at golden hour.
+##   golden: the cruise at golden hour;
+##   night: the cruise at night;
+##   open: low over open water, away from the islands, looking downwind;
+##   high: plane height (60 m) over a shelf, looking along the coast.
 ## Rendered only when asked for (needs a window):
 ##   Godot --windowed --path . --resolution 1280x720 -s res://tools/capture_lower_world.gd \
-##     -- --no-title --below --out=/private/tmp/zs-lower-world [--only=emerge,cruise] [--no-ocean]
+##     -- --no-title --below --out=/private/tmp/zs-lower-world [--only=emerge,cruise] [--no-ocean] [--no-mirror]
 var scene: Node3D
 var eye: Node
 var out := "/private/tmp/zs-lower-world"
 var only: Array = []
 var noon := WorldClock.hour_for_phase(0.5)
 var golden := WorldClock.hour_for_phase(0.72)
+var night := WorldClock.hour_for_phase(0.02)
 
 func _initialize() -> void:
 	run.call_deferred()
@@ -96,12 +100,16 @@ func run() -> void:
 		{"label":"up","hour":noon,"eye":middle-away*(r+60.0)+Vector3.UP*(water-middle.y+12.0),"look":middle-away*(r+60.0)+away*120.0+Vector3.UP*(-60.0-middle.y)},
 		{"label":"island","hour":noon,"eye":Vector3(middle.x,ground+1.6,middle.z),"look":middle+away*200.0+Vector3.DOWN*(middle.y-water-4.0)},
 		{"label":"golden","hour":golden,"eye":middle-away*(r+90.0)+Vector3.UP*(water-middle.y+28.0),"look":middle+away*200.0+Vector3.DOWN*(middle.y-water),"chase":true},
+		{"label":"night","hour":night,"eye":middle-away*(r+90.0)+Vector3.UP*(water-middle.y+28.0),"look":middle+away*200.0+Vector3.DOWN*(middle.y-water),"chase":true},
+		{"label":"open","hour":noon,"eye":middle-away*(r+260.0)+Vector3.UP*(water-middle.y+9.0),"look":middle-away*(r+600.0)+side*80.0+Vector3.DOWN*(middle.y-water+30.0)},
+		{"label":"high","hour":noon,"eye":middle-away*(r+70.0)+side*40.0+Vector3.UP*(water-middle.y+60.0),"look":middle+side*(r*1.5)+Vector3.DOWN*(middle.y-water)},
 	]
 	var first := true
 	for shot: Dictionary in shots:
 		if not only.is_empty() and shot.label not in only: continue
 		await _hold(shot,240 if first else 90)
 		if "--no-ocean" in OS.get_cmdline_user_args(): eye.lower.ocean.visible = false
+		if "--no-mirror" in OS.get_cmdline_user_args(): eye.lower.water.set_shader_parameter("mirror_steps",0)
 		if "--red-sky" in OS.get_cmdline_user_args():
 			scene._environment.background_mode = Environment.BG_COLOR
 			scene._environment.background_color = Color.RED
@@ -119,6 +127,7 @@ func _timing(count: int) -> Vector2:
 	var rd := RenderingServer.get_rendering_device()
 	for i in range(count):
 		await RenderingServer.frame_post_draw
+		gpu += RenderingServer.viewport_get_measured_render_time_gpu(root.get_viewport_rid())
 		if rd == null: continue
 		var n := rd.get_captured_timestamps_count()
 		if n < 2: continue
