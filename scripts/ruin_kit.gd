@@ -1466,7 +1466,7 @@ static func _courses(b: Build, pose: Transform3D, x0: float, x1: float, y0: floa
 		most = maxf(most,float(top.call(x)))
 		x += 0.2
 	most = maxf(most,float(top.call(x1)))
-	var sag := SAG.x+(SAG.y-SAG.x)*b.weathered
+	var sag := SAG.x+(SAG.y-SAG.x)*b.weathered*b.settle
 	var y := y0
 	var k := 0
 	var cap := 0.2 if coping else 0.0
@@ -1655,8 +1655,8 @@ static func _settle(b: Build, at: Vector3, loose: float) -> Transform3D:
 	return _jiggle(b,Transform3D(Basis.IDENTITY,at),loose)
 
 static func _jiggle(b: Build, pose: Transform3D, loose: float) -> Transform3D:
-	var tilt := (TRUE_OFF.x+(TRUE_OFF.y-TRUE_OFF.x)*b.weathered)*loose
-	var shift := (SHIFT.x+(SHIFT.y-SHIFT.x)*b.weathered)*loose
+	var tilt := (TRUE_OFF.x+(TRUE_OFF.y-TRUE_OFF.x)*b.weathered*b.settle)*loose
+	var shift := (SHIFT.x+(SHIFT.y-SHIFT.x)*b.weathered*b.settle)*loose
 	var axis := Vector3(b.rng.randf_range(-1,1),b.rng.randf_range(-0.3,0.3),b.rng.randf_range(-1,1)).normalized()
 	var move := Vector3(b.rng.randf_range(-1,1),b.rng.randf_range(-0.3,0.1),b.rng.randf_range(-1,1))*shift
 	return Transform3D(Basis(axis,b.rng.randf_range(0.3,1.0)*tilt)*pose.basis,pose.origin+move)
@@ -1756,6 +1756,10 @@ class Build extends RefCounted:
 	## Blocks are cut off level under this height (the piece's frame, y):
 	## what is sunk in the ground is not drawn. -INF, none.
 	var ground := -INF
+	## How far its stones have moved out of true as it weathered, as a share
+	## of the abbey's (1): a heavy arcade or a hall's walls settle less, so
+	## a ruin of them reads settled, not shaken.
+	var settle := 1.0
 	static var _materials := {}
 	## How much of the small growth and scatter is built (RuinKit
 	## `set_detail`): 1 all of it; under 1 fewer ivy strands, moss

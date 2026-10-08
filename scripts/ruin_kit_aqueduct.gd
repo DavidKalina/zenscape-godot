@@ -73,6 +73,10 @@ const DECK_HIGH := 14.8
 const ABUTMENT_TREAD := 0.8
 const CISTERN := Vector2(2.4,2.6)
 const CISTERN_LIP := 0.44
+## How far the aqueduct's stones have moved out of true, weathered, as a
+## share of the abbey's (RuinKit Build `settle`): heavy coursed arcades
+## stay in line, so a ruined run reads settled, not shaken.
+const SETTLE := 0.35
 ## The pier stump: its height range (m), stepping stones in the sea.
 const STUMP := Vector2(1.1,2.3)
 
@@ -95,6 +99,7 @@ static func piece(id: String, seed_value: int, weathered := 0.0) -> Node3D:
 ## ivy hanging off it and from the arch; the channel still whole.
 static func span(seed_value: int, weathered := 0.0, piers := 3, wet := true) -> Node3D:
 	var b := Build.new(seed_value,weathered,"AqueductSpan")
+	b.settle = SETTLE
 	_arcade(b,0.0,SPRING,DECK-FLOOR,PIER,CLEAR*0.5,1.0,piers,CUTWATER.y)
 	_deck(b,-SPAN*0.5,SPAN*0.5,DECK,Callable())
 	if wet: _water(b.root,-SPAN*0.5,SPAN*0.5,DECK+WATER)
@@ -112,6 +117,7 @@ static func span(seed_value: int, weathered := 0.0, piers := 3, wet := true) -> 
 ## the gallery course broken in places.
 static func two_tier(seed_value: int, weathered := 0.0, piers := 3, wet := true) -> Node3D:
 	var b := Build.new(seed_value,weathered,"AqueductTwoTier")
+	b.settle = SETTLE
 	_arcade(b,0.0,LOWER_SPRING,MID-FLOOR,PIER,CLEAR*0.5,1.0,piers,CUTWATER.y)
 	# The gallery course: long slabs standing out either side, a ledge.
 	var x := -SPAN*0.5
@@ -146,6 +152,7 @@ static func two_tier(seed_value: int, weathered := 0.0, piers := 3, wet := true)
 ## run). Weathered, the stub is shorter and the rubble deeper.
 static func broken(seed_value: int, weathered := 0.0, left := true, right := "stump", wet := true) -> Node3D:
 	var b := Build.new(seed_value,weathered,"AqueductBroken")
+	b.settle = SETTLE
 	var hx := PIER.x*0.5
 	var deck_foot := DECK-FLOOR
 	var h := CLEAR*0.5
@@ -216,6 +223,7 @@ static func broken(seed_value: int, weathered := 0.0, left := true, right := "st
 ## of the water). Weathered, lower, its head more broken, mossed over.
 static func stump(seed_value: int, weathered := 0.0) -> Node3D:
 	var b := Build.new(seed_value,weathered,"AqueductStump")
+	b.settle = SETTLE
 	var height := lerpf(STUMP.y,STUMP.x,weathered*b.rng.randf_range(0.5,1.0))
 	if weathered < 0.05: height = STUMP.y
 	_pier(b,0.0,0.0,SPRING,0.0,PIER,CUTWATER.y,height)
@@ -237,6 +245,7 @@ static func stump(seed_value: int, weathered := 0.0) -> Node3D:
 ## Weathered, the gablet and lip broken, ivy down the abutment.
 static func head(seed_value: int, weathered := 0.0, raised := true, wet := true) -> Node3D:
 	var b := Build.new(seed_value,weathered,"AqueductEnd")
+	b.settle = SETTLE
 	var hx := PIER.x*0.5
 	var hz := CISTERN.y*0.5+0.5
 	var deck_foot := DECK-FLOOR
