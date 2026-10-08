@@ -2311,7 +2311,7 @@ class Build extends RefCounted:
 		var along := Vector3(-out.z,0.0,out.x)
 		var p := start
 		var travelled := 0.0
-		var size := rng.randf_range(IVY_LEAF.x,IVY_LEAF.y)*(1.7 if lean else 1.15)
+		var size := rng.randf_range(IVY_LEAF.x,IVY_LEAF.y)*(1.45 if lean else 1.15)
 		var in_air := 0.0
 		while travelled < length:
 			var taper := 1.0-0.55*smoothstep(length*0.55,length,travelled)
@@ -2387,7 +2387,7 @@ class Build extends RefCounted:
 		for t: Array in found:
 			var poly: PackedVector3Array = t[0]
 			var area: float = t[1]
-			var odds := (0.08+0.55*weathered)*minf(1.0,area*2.0)*detail
+			var odds := (0.08+0.55*weathered)*minf(1.0,area*2.0)*detail*(0.5 if lean else 1.0)
 			if rng.randf() > odds: continue
 			for j in range(1+int(area*2.0*weathered)):
 				var k := rng.randi()%poly.size()

@@ -137,7 +137,7 @@ const PARAPET := Vector2(0.6,1.8)
 ## A gable's rise over the roof beam's top.
 const GABLE_RISE := 6.5
 ## A wall course's height (colossal ashlar).
-const COURSE := 1.0
+const COURSE := 1.25
 ## A column's facets round (its drums, mouldings and capital).
 const SIDES := 12
 ## The roundels round a column's roundel band.
@@ -259,6 +259,8 @@ static func bay(seed_value: int, weathered := 0.0, plan := {}, ground := Callabl
 	b.cull = true
 	b.terrain = ground
 	b.path = path
+	# On flat ground nothing is drawn far under it (a fallen beam's buried end).
+	if not ground.is_valid(): b.ground = -0.3
 	var roof: String = plan.get("roof","whole")
 	var breach: Vector2i = plan.get("breach",Vector2i.ZERO)
 	var soffit := COLUMN_H+BEAM.x
@@ -317,7 +319,7 @@ static func bay(seed_value: int, weathered := 0.0, plan := {}, ground := Callabl
 				if i >= 1 and i <= 4:
 					var z0: float = float(edges[i])+(BEAM.y+0.18 if absf(float(edges[i])) > ROW_Z-0.1 else 0.12)
 					var z1: float = float(edges[i+1])-(BEAM.y+0.18 if absf(float(edges[i+1])) > ROW_Z-0.1 else 0.12)
-					weave.gaps.append(AABB(Vector3(BEAM.y+0.25,soffit-0.2,z0),Vector3(BAY-2.0*BEAM.y-0.5,SLAB+0.6,z1-z0)))
+					weave.gaps.append(AABB(Vector3(BEAM.y+0.4,soffit-0.2,z0),Vector3(BAY-2.0*BEAM.y-0.8,SLAB+0.6,z1-z0)))
 				continue
 			# Broken: a slab here and there tipped up on its neighbour.
 			# Two slabs a strip, split at odds along the bay, so the roof reads
@@ -780,10 +782,12 @@ static func _base(b: Build, pose: Transform3D) -> void:
 	var r := COLUMN_R
 	# [bottom radius, top radius, height]: the mouldings, crisp.
 	var mouldings := [[r+0.3,r+0.38,0.14],[r+0.38,r+0.26,0.14],[r+0.06,r+0.06,0.16],[r+0.12,r+0.2,0.11],[r+0.2,r+0.1,0.11],[r+0.04,r+0.04,0.08]]
+	var bright := [1,4]
+	var solid := [0,2,5]
 	for k in range(mouldings.size()):
 		var m: Array = mouldings[k]
-		var tone := RuinKit._stone(b,1.08 if k in [1,4] else (0.8 if k == 2 else 0.97))
-		b.solid(RuinKit._prism(SIDES,float(m[0]),float(m[1]),0.0,float(m[2])),pose*Transform3D(Basis.IDENTITY,Vector3(0.0,y,0.0)),tone,k in [0,2,5],true,[],-1,0.35)
+		var tone := RuinKit._stone(b,1.08 if k in bright else (0.8 if k == 2 else 0.97))
+		b.solid(RuinKit._prism(SIDES,float(m[0]),float(m[1]),0.0,float(m[2])),pose*Transform3D(Basis.IDENTITY,Vector3(0.0,y,0.0)),tone,k in solid,true,[],-1,0.35)
 		y += float(m[2])
 
 ## One drum from its foot at `pose`, `h` tall: plain, the roundel band or
