@@ -597,104 +597,111 @@ static func stairs(seed_value: int, weathered := 0.0) -> Node3D:
 	_rubble(b,half_width+1.0,int(round(weathered*b.rng.randf_range(3.0,6.0))))
 	return b.finish()
 
-## 8. A stair turret: an octagonal shell of coursed stone with a door at
-## its foot and slit windows, round a newel the steps wind up (TURRET_STEPS
-## a turn, RISER each, the stairway to the clouds to come), out onto a
-## landing at its head. Weathered, the shell is torn open down one side,
-## the steps going on up past it into the air.
+## 8. A stair turret: an octagonal shell on a battered plinth, laid in
+## courses two or three stones a side, a string course, slit windows up the
+## sides, a pointed door at its foot; round a newel the steps wind up
+## (TURRET_STEPS a turn, RISER each, the stairway to the clouds to come) to
+## a landing under a corbel table and an octagonal stone cone, its tip
+## snapped and a bite gone from one side, centuries old. Weathered, the
+## shell is torn down across its front, the spiral of steps laid open and
+## going on up past the broken walls, the cone fallen but for a stub.
 static func turret(seed_value: int, weathered := 0.0) -> Node3D:
 	var b := Build.new(seed_value,weathered,"Turret")
 	var outer := TURRET.x
 	var inner := TURRET.y
 	var count := int(TURRET_STEPS*TURRET_TURNS)
-	var height := count*RISER+0.55
-	var open_at := b.rng.randf_range(-0.35,0.35)+PI*0.5
-	# The shell's height by angle: whole, or torn down round `open_at`.
+	var height := count*RISER+0.4
+	var door_side := 2
+	# The tear faces the front (+Z), a little to one side.
+	var open_at := PI*0.5+b.rng.randf_range(-0.3,0.3)
+	var tear_floor := lerpf(height,0.55,clampf(weathered*1.25,0.0,1.0))
+	var ragged := _ruin_line(b,-PI,PI,0.0,1.0,1.0)
+	# The shell's height by angle: whole, or torn down round `open_at` in a
+	# ragged vee, lowest at its middle.
 	var shell := func(a: float) -> float:
 		if weathered <= 0.05: return height
 		var off := absf(wrapf(a-open_at,-PI,PI))
-		var tear := clampf(1.0-off/(PI*0.55),0.0,1.0)
-		return height-tear*(height-1.0)*clampf(weathered*1.3,0.0,1.0)
-	# The shell, side by side and course by course.
+		var tear := clampf(1.0-off/(PI*0.8),0.0,1.0)
+		var line := lerpf(height,tear_floor,smoothstep(0.0,0.55,tear))
+		return minf(height,line+float(ragged.call(wrapf(a,-PI,PI)))*0.8*weathered)
+	var batter := 0.12
 	for side in range(8):
 		var a := TAU*side/8.0
-		var n := Vector3(cos(a),0.0,sin(a))
-		var s0 := Vector3(cos(a-PI/8.0),0.0,sin(a-PI/8.0))
-		var s1 := Vector3(cos(a+PI/8.0),0.0,sin(a+PI/8.0))
-		var y := 0.0
-		var k := 0
-		var door := side == 2
-		while y < height-0.02:
-			var y1 := minf(height,y+b.rng.randf_range(0.4,0.56))
-			var standing: float = shell.call(a)
-			var standing_l: float = shell.call(a-PI/8.0)
-			var standing_r: float = shell.call(a+PI/8.0)
-			var low := minf(standing,minf(standing_l,standing_r))
-			if y+0.15 > maxf(standing,maxf(standing_l,standing_r)): break
-			var skip := door and y < 2.3
-			# A slit window on every other side, high up.
-			if not skip and side%3 == 0 and y > 2.0 and y < 3.6 and k%2 == 0: skip = true
-			if not skip:
-				var planes: Array[Plane] = [Plane(n,outer),Plane(-n,-inner),Plane(Vector3.DOWN,-y),Plane(Vector3.UP,y1)]
-				# The side planes, with a hair of joint between neighbours.
-				planes.append(Plane(-s0.cross(Vector3.UP).normalized(),0.006))
-				planes.append(Plane(s1.cross(Vector3.UP).normalized(),0.006))
-				if y1 > low:
-					var dl: float = standing_l
-					var dr: float = standing_r
-					var t := (Vector3(0.0,dr,0.0)-Vector3(0.0,dl,0.0))
-					var along := (s1-s0).normalized()
-					var m := (Vector3.UP*1.0-along*(dr-dl)/(outer*0.83)).normalized()
-					m = (m+Vector3(b.rng.randf_range(-0.3,0.3),0.0,b.rng.randf_range(-0.3,0.3))).normalized()
-					planes.append(Plane(m,m.dot(n*outer*0.95+Vector3(0.0,(dl+dr)*0.5,0.0))))
-					if y+0.2 > (dl+dr)*0.5: break
-				b.solid(_bevel(planes,n*(outer+inner)*0.5+Vector3(0.0,(y+y1)*0.5,0.0),0.035),_settle(b,Vector3.ZERO,0.2),_stone(b))
-			elif door and y < 2.3 and y1 >= 2.3:
-				pass
-			y = y1
-			k += 1
-		if door:
-			# The door's head: a pointed lintel stone, two slanting halves.
-			for h: float in [-1.0,1.0]:
-				var planes: Array[Plane] = [Plane(n,outer+0.04),Plane(-n,-inner+0.04),Plane(Vector3.UP,2.8)]
-				var along := (s1-s0).normalized()*h
-				planes.append(Plane(along,along.dot(n*outer*0.95)+outer*0.42))
-				planes.append(Plane(-along,0.0))
-				# The pointed underside: high at the middle, down toward the jambs.
-				var slant := Vector3.DOWN-along*0.74
-				planes.append(Plane(slant.normalized(),-2.55/slant.length()))
-				b.solid(planes,Transform3D.IDENTITY,_stone(b,1.04))
-	# The head, where the shell stands whole: a corbel table standing out on
-	# little corbels, and on it a crenellated parapet, two merlons a side.
-	for side in range(8):
-		var a := TAU*side/8.0
-		if float(shell.call(a)) < height-0.05 or float(shell.call(a-PI/8.0)) < height-0.05 or float(shell.call(a+PI/8.0)) < height-0.05: continue
 		var n := Vector3(cos(a),0.0,sin(a))
 		var along := Vector3(-sin(a),0.0,cos(a))
 		var s0 := Vector3(cos(a-PI/8.0),0.0,sin(a-PI/8.0))
 		var s1 := Vector3(cos(a+PI/8.0),0.0,sin(a+PI/8.0))
 		var left := Plane(-s0.cross(Vector3.UP).normalized(),0.006)
 		var right := Plane(s1.cross(Vector3.UP).normalized(),0.006)
-		var corbel: Array[Plane] = [Plane(n,outer+0.16),Plane(-n,-(inner+0.15)),Plane(Vector3.DOWN,-height),Plane(Vector3.UP,height+0.24),left,right]
-		b.solid(corbel,Transform3D.IDENTITY,_stone(b,1.05))
 		var half_side := outer*tan(PI/8.0)
-		for k in range(3):
-			var x := (k-1.0)*half_side*0.6
-			b.solid(_box(b,Vector3(0.08,0.1,0.08),0.015),Transform3D(Basis(Vector3.UP,-a),n*(outer+0.06)+along*x+Vector3(0.0,height-0.1,0.0)),_stone(b,0.95),false,true)
-		for m: float in [-1.0,1.0]:
-			if b.rng.randf() < 0.12: continue
-			var merlon: Array[Plane] = [Plane(n,outer+0.14),Plane(-n,-(outer-0.26)),Plane(Vector3.DOWN,-(height+0.24)),Plane(Vector3.UP,height+0.24+b.rng.randf_range(0.6,0.74))]
-			merlon.append(right if m > 0.0 else left)
-			merlon.append(Plane(-along*m,-half_side*0.24))
-			b.solid(merlon,_settle(b,Vector3.ZERO,0.3),_stone(b,1.02))
-	# The newel, in drums.
+		var door := side == door_side
+		var slits := side in [0,4,5,7]
+		var y := 0.0
+		var k := 0
+		while y < height-0.02:
+			var plinth := y < 0.5
+			var y1 := minf(height,y+(0.5 if plinth else b.rng.randf_range(0.3,0.44)))
+			if height-y1 < 0.15: y1 = height
+			var standing := minf(float(shell.call(a)),minf(float(shell.call(a-PI/8.0)),float(shell.call(a+PI/8.0))))
+			var most := maxf(float(shell.call(a)),maxf(float(shell.call(a-PI/8.0)),float(shell.call(a+PI/8.0))))
+			if y+0.12 > most: break
+			# Where the course is cut along its side: two or three stones,
+			# their joints staggered course by course; a slit window a gap.
+			var cuts: Array[float] = [-1.0]
+			var slit := slits and y > 1.6+0.6*float(side%2) and y < 3.4+0.6*float(side%2)
+			if slit: cuts.append_array([-0.11,0.11])
+			elif k%2 == 0: cuts.append(b.rng.randf_range(-0.35,0.35))
+			else: cuts.append_array([-0.42+b.rng.randf_range(-0.08,0.08),0.38+b.rng.randf_range(-0.08,0.08)])
+			cuts.append(1.0)
+			for c in range(cuts.size()-1):
+				if slit and c == 1: continue
+				var u0 := cuts[c]*half_side*1.3
+				var u1 := cuts[c+1]*half_side*1.3
+				var mid := (u0+u1)*0.5
+				if door and y < 2.35 and absf(mid) < half_side*0.75: continue
+				var out := outer+(batter*(1.0-y/0.5) if plinth else 0.0)
+				var planes: Array[Plane] = [Plane(n,out),Plane(-n,-inner),Plane(Vector3.DOWN,-y),Plane(Vector3.UP,y1)]
+				planes.append(left if c == 0 else Plane(-along,-u0-0.006))
+				planes.append(right if c == cuts.size()-2 else Plane(along,u1-0.006))
+				if plinth:
+					# The plinth's sloped weathering at its top.
+					var m := (n+Vector3.UP*1.4).normalized()
+					planes.append(Plane(m,m.dot(n*outer+Vector3.UP*y1)))
+				var here := minf(standing,float(shell.call(a+mid/outer)))
+				var extra: Array[Plane] = []
+				if y1 > here:
+					if y+0.18 > here: continue
+					var m := (Vector3.UP+n*b.rng.randf_range(-0.4,0.4)+along*b.rng.randf_range(-0.7,0.7)).normalized()
+					extra.append(Plane(m,m.dot(n*outer+along*mid+Vector3.UP*here)))
+				b.solid(planes,_settle(b,Vector3.ZERO,0.15),_stone(b),true,true,extra)
+			y = y1
+			k += 1
+		# The door's head: a pointed lintel, two slanting halves.
+		if door and float(shell.call(a)) > 2.9:
+			for h: float in [-1.0,1.0]:
+				var hd := along*h
+				var planes: Array[Plane] = [Plane(n,outer+0.04),Plane(-n,-inner+0.04),Plane(Vector3.UP,2.75)]
+				planes.append(Plane(hd,half_side*0.78))
+				planes.append(Plane(-hd,0.0))
+				var slant := Vector3.DOWN-hd*0.9
+				planes.append(Plane(slant.normalized(),-2.6/slant.length()))
+				b.solid(planes,Transform3D.IDENTITY,_stone(b,1.06))
+		# A string course round the middle, standing out, where it stands.
+		var band := 2.6
+		if float(shell.call(a)) > band+0.4 and float(shell.call(a-PI/8.0)) > band+0.2 and float(shell.call(a+PI/8.0)) > band+0.2:
+			var planes: Array[Plane] = [Plane(n,outer+0.09),Plane(-n,-(outer-0.2)),Plane(Vector3.DOWN,-band),Plane(Vector3.UP,band+0.14),left,right]
+			var m := (n+Vector3.UP*1.2).normalized()
+			planes.append(Plane(m,m.dot(n*(outer+0.02)+Vector3.UP*(band+0.14))))
+			b.solid(planes,Transform3D.IDENTITY,_stone(b,1.06))
+	# The newel, in drums, up to the last step.
 	var y := 0.0
-	while y < count*RISER+0.1:
-		var y1 := minf(count*RISER+0.3,y+0.6)
+	while y < count*RISER:
+		var y1 := minf(count*RISER+0.25,y+b.rng.randf_range(0.5,0.7))
 		b.solid(_prism(8,TURRET.z,TURRET.z,y,y1),Transform3D.IDENTITY,_stone(b,0.95))
 		y = y1
-	# The steps: wedges round the newel from the door, rising anticlockwise.
-	var start := TAU*2.0/8.0+PI/8.0+0.1
+	# The steps: wedges round the newel from the door, rising anticlockwise,
+	# their nosings worn; a little lighter than the shell, so the spiral reads.
+	var start := TAU*door_side/8.0+PI/8.0+0.1
 	var gone := -1
 	if weathered > 0.6: gone = b.rng.randi_range(int(count*0.6),count-2)
 	for i in range(count):
@@ -702,27 +709,86 @@ static func turret(seed_value: int, weathered := 0.0) -> Node3D:
 		var a0 := start+TAU*i/TURRET_STEPS
 		var a1 := a0+TAU/TURRET_STEPS+0.02
 		var top := (i+1)*RISER-b.rng.randf_range(0.0,0.03)*weathered
-		var planes: Array[Plane] = [Plane(Vector3.UP,top),Plane(Vector3.DOWN,-(top-0.34))]
-		planes.append(Plane(Vector3(-sin(a0),0.0,cos(a0))*-1.0,0.0))
-		planes.append(Plane(Vector3(-sin(a1),0.0,cos(a1)),0.0))
 		var mid := (a0+a1)*0.5
-		planes.append(Plane(Vector3(cos(mid),0.0,sin(mid)),inner+0.06))
-		var wedge := Transform3D(Basis(Vector3(cos(mid),0.0,sin(mid)),b.rng.randf_range(-0.015,0.015)*(0.4+weathered)),Vector3.ZERO)
-		b.solid(planes,wedge,_stone(b,1.03),true,true,[],-1,0.7)
-	# The landing at the head: half the floor, the stair coming up through
-	# the other half.
+		var radial := Vector3(cos(mid),0.0,sin(mid))
+		var planes: Array[Plane] = [Plane(Vector3.UP,top),Plane(Vector3.DOWN,-(top-0.3))]
+		planes.append(Plane(Vector3(sin(a0),0.0,-cos(a0)),0.0))
+		planes.append(Plane(Vector3(-sin(a1),0.0,cos(a1)),0.0))
+		planes.append(Plane(radial,inner+0.05))
+		# The nosing: the leading edge (at a1, where the next step rises from
+		# a0... the lower edge) worn back.
+		var lead := Vector3(sin(a0),0.0,-cos(a0))
+		var nose := (lead+Vector3.UP).normalized()
+		planes.append(Plane(nose,nose.dot(Vector3(0.0,top,0.0))-0.04))
+		var wedge := Transform3D(Basis(radial,b.rng.randf_range(-0.01,0.01)),Vector3.ZERO)
+		# Kept clear of ivy and moss (walked on), so the spiral reads.
+		b.solid(planes,wedge,_stone(b,1.14),true,true,[],-1,0.5,false)
+	# The landing at the head: the floor but where the stair comes up.
 	var land := count*RISER
 	var la := start+TAU*count/TURRET_STEPS
-	var planes: Array[Plane] = [Plane(Vector3.UP,land+0.02),Plane(Vector3.DOWN,-(land-0.3))]
-	for k in range(8):
-		var a := TAU*k/8.0
-		planes.append(Plane(Vector3(cos(a),0.0,sin(a)),inner+0.05))
-	var cut_dir := Vector3(cos(la),0.0,sin(la))
-	planes.append(Plane(-cut_dir.cross(Vector3.UP).normalized(),0.15))
-	b.solid(planes,Transform3D.IDENTITY,_stone(b,1.02))
-	_drift(b,Vector3(cos(open_at),0.0,sin(open_at))*(outer+0.9),1.4,int(weathered*7.0))
-	_rubble(b,outer+0.8,int(round(weathered*b.rng.randf_range(3.0,6.0))))
+	if weathered < 0.3:
+		var planes: Array[Plane] = [Plane(Vector3.UP,land+0.02),Plane(Vector3.DOWN,-(land-0.25))]
+		for k in range(8):
+			var a := TAU*k/8.0
+			planes.append(Plane(Vector3(cos(a),0.0,sin(a)),inner+0.05))
+		var cut_dir := Vector3(cos(la),0.0,sin(la))
+		planes.append(Plane(-cut_dir.cross(Vector3.UP).normalized(),0.15))
+		b.solid(planes,Transform3D.IDENTITY,_stone(b,1.04))
+	_turret_cap(b,height,outer,shell)
+	# The fallen: in drifts to either side of the tear, the way into the
+	# stair left clear.
+	for s: float in [-1.0,1.0]:
+		var d := Vector3(cos(open_at+s*1.1),0.0,sin(open_at+s*1.1))*(outer+0.8)
+		_drift(b,d,1.1,int(weathered*4.0))
+	_rubble(b,outer+0.9,int(round(weathered*b.rng.randf_range(3.0,6.0))))
 	return b.finish()
+
+## The turret's head over `height`: a corbel table on little corbels, and on
+## it an octagonal cone of stone in stepping rings, its tip snapped and a
+## bite gone from one side; ruined, only its lowest rings, where the shell
+## under them still stands.
+static func _turret_cap(b: Build, height: float, outer: float, shell: Callable) -> void:
+	var eave := height+0.22
+	var rise := 3.9
+	var base := outer+0.06
+	var bite := b.rng.randf()*TAU
+	var snap := rise*b.rng.randf_range(0.62,0.8)
+	var keep_rings := 99 if b.weathered < 0.35 else int(2.0*(1.0-b.weathered)+b.rng.randf())
+	for side in range(8):
+		var a := TAU*side/8.0
+		var whole := float(shell.call(a)) >= height-0.05 and float(shell.call(a-PI/8.0)) >= height-0.05 and float(shell.call(a+PI/8.0)) >= height-0.05
+		if not whole: continue
+		var n := Vector3(cos(a),0.0,sin(a))
+		var along := Vector3(-sin(a),0.0,cos(a))
+		var s0 := Vector3(cos(a-PI/8.0),0.0,sin(a-PI/8.0))
+		var s1 := Vector3(cos(a+PI/8.0),0.0,sin(a+PI/8.0))
+		var left := Plane(-s0.cross(Vector3.UP).normalized(),0.006)
+		var right := Plane(s1.cross(Vector3.UP).normalized(),0.006)
+		b.solid([Plane(n,outer+0.16),Plane(-n,-(outer-0.45)),Plane(Vector3.DOWN,-height),Plane(Vector3.UP,eave),left,right],Transform3D.IDENTITY,_stone(b,1.05))
+		var half_side := outer*tan(PI/8.0)
+		for k in range(3):
+			var x := (k-1.0)*half_side*0.62
+			b.solid(_box(b,Vector3(0.08,0.1,0.09),0.015),Transform3D(Basis(Vector3.UP,-a),n*(outer+0.07)+along*x+Vector3(0.0,height-0.1,0.0)),_stone(b,0.95),false,true)
+		# The cone's rings on this side: each a sloped stone, stepping in.
+		var slope := (n*rise+Vector3.UP*base).normalized()
+		var y := 0.0
+		var ring := 0
+		while y < rise-0.1 and ring < keep_rings:
+			var y1 := minf(rise,y+0.42)
+			var at := Vector3(0.0,eave,0.0)
+			var off := absf(wrapf(a-bite,-PI,PI))
+			var bitten := off < 0.5 and y > rise*0.35
+			if y > snap or bitten: break
+			var r_in := maxf(0.0,base*(1.0-y1/rise)-0.32)
+			var planes: Array[Plane] = [Plane(slope,slope.dot(at+n*base)),Plane(Vector3.DOWN,-(eave+y)),Plane(Vector3.UP,eave+y1),left,right]
+			if r_in > 0.05: planes.append(Plane(-n,-r_in))
+			var extra: Array[Plane] = []
+			if y1 > snap-0.05 or (off < 0.9 and y1 > rise*0.35):
+				var m := (Vector3.UP+n*b.rng.randf_range(-0.5,0.5)+along*b.rng.randf_range(-0.6,0.6)).normalized()
+				extra.append(Plane(m,m.dot(at+Vector3.UP*(y+(y1-y)*0.4)+n*base*0.5)))
+			b.solid(planes,_settle(b,Vector3.ZERO,0.2),_stone(b,1.0+0.04*float(ring%2)),true,true,extra)
+			y = y1
+			ring += 1
 
 ## 9. Vault ribs: the corner of a bay, two walls meeting, a respond of three
 ## shafts in the corner and from its capital three ribs springing (two along
