@@ -84,6 +84,7 @@ const SurfaceSamples = preload("res://scripts/native_surface_samples.gd")
 const GroundShade = preload("res://scripts/ground_shade.gd")
 const Variety = preload("res://scripts/seeded_variety.gd")
 const MeadowFlowers = preload("res://scripts/meadow_flower_mesh.gd")
+const LandformPreview = preload("res://scripts/landform_preview.gd")
 ## How far off a far island's small plants (the meadow's tufts and flowers,
 ## ferns, shrubs) still draw, fading out over the margin (m); its trees and
 ## stones draw as far as the island does.
@@ -278,6 +279,7 @@ func build() -> void:
 	isles.canopy_tint = SkyIslets._canopy_tint
 	isles.reset(cells)
 	clusters.reset(cells)
+	LandformPreview.attach(self)
 
 func clear() -> void:
 	for island in _copies: island.queue_free()

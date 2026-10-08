@@ -54,6 +54,7 @@ const IsletLake = preload("res://scripts/islet_lake.gd")
 const Woodland = preload("res://scripts/woodland.gd")
 const RavineCut = preload("res://scripts/ravine_cut.gd")
 const MountainSpire = preload("res://scripts/mountain_spire.gd")
+const SeaCliffs = preload("res://scripts/sea_cliffs.gd")
 
 ## Kinds and how often each turns up.
 const KINDS := [["meadow",0.22],["grove",0.22],["hills",0.15],["crag",0.11],["spring",0.18],["shore",0.12]]
@@ -292,6 +293,10 @@ var flowers: Array[String] = []
 ##   tear: a ravine's half, cut from a whole island along a jagged tear
 ##     (scripts/ravine_cut.gd: its side, the tear's shape, filled by
 ##     `share`).
+##   step: the grid's step (m), instead of STEP, for a big island (a
+##     coarser grid, fewer faces); room: metres more of grid round it;
+##   cliffs: a sea-cliff island (scripts/sea_cliffs.gd: its tableland,
+##     stacks, arch, cove and stratified walls).
 var recipe := {}
 ## The recipe's decks, as it gives them.
 var decks: Array = []
@@ -310,6 +315,11 @@ var cleft := {}
 ## A recipe's `spire` (a Dictionary, may be empty): a real peak raised on the
 ## islet (scripts/mountain_spire.gd), which draws its own faces; null if none.
 var spire: RefCounted = null
+## A recipe's `cliffs`: the sea cliffs (scripts/sea_cliffs.gd), which shape
+## its outline, ground, rock and walls; null if none.
+var cliffs: RefCounted = null
+## The grid's step (m): STEP, or a recipe's own.
+var step := STEP
 
 ## An islet laid out by hand from `spec` (see `recipe`), its kind
 ## `spec.kind`, the rest of it seeded by `seed_value` as any islet's is.
@@ -346,7 +356,8 @@ func _shape(seed_value: int, forced: String) -> void:
 	radius = rng.randf_range(across.x,across.y)*0.5
 	if recipe.has("radius"): radius = float(recipe.radius)
 	var area := PI*radius*radius
-	var grid := _grid(ceili((radius*REACH+MARGIN)/STEP))
+	step = float(recipe.get("step",STEP))
+	var grid := _grid(ceili((radius*REACH+MARGIN+float(recipe.get("room",0.0)))/step),step)
 	points = grid.points
 	ids = grid.ids
 	cells = grid.cells
@@ -355,6 +366,7 @@ func _shape(seed_value: int, forced: String) -> void:
 	shore_distance = IslandOutline.shore_distance(points,ids,outline)
 	shore_edges = IslandOutline.shore_edges(ids,outline)
 	if recipe.has("tear"): RavineCut.cut(self)
+	if recipe.has("cliffs"): cliffs = SeaCliffs.carve(self)
 	land.clear()
 	for f in range(outline.size()):
 		if outline[f] == 0: land.append(f)
@@ -368,6 +380,7 @@ func _shape(seed_value: int, forced: String) -> void:
 		for i in range(keel.size()): keel[i] *= deeper
 	if recipe.has("spire"): spire = MountainSpire.raise(self)
 	base = -(BASE.x+BASE.y*radius)
+	if cliffs != null: cliffs.hollow(self)
 	var deepest := 0.0
 	for k in keel: deepest = maxf(deepest,k)
 	depth = -base+deepest
@@ -376,24 +389,25 @@ func _shape(seed_value: int, forced: String) -> void:
 	for deck: Dictionary in decks:
 		for end: Vector3 in [deck.a,deck.b]: reach = maxf(reach,Vector2(end.x,end.z).length()+1.0)
 
-## The grid of `n` cells each way from the middle (2n a side), the plate's
-## own triangulation: [points, ids, cells a side, half width]. Cached, and
-## shared by every islet of its size (read only).
-static func _grid(n: int) -> Dictionary:
+## The grid of `n` cells each way from the middle (2n a side), `size` m
+## apart, the plate's own triangulation: [points, ids, cells a side, half
+## width]. Cached, and shared by every islet of its size (read only).
+static func _grid(n: int, size := STEP) -> Dictionary:
+	var key: Variant = n if size == STEP else Vector2(n,size)
 	_grid_lock.lock()
-	var made: Variant = _grids.get(n)
+	var made: Variant = _grids.get(key)
 	_grid_lock.unlock()
 	if made != null: return made
 	var side := n*2
-	var span := float(n)*STEP
+	var span := float(n)*size
 	var at := PackedVector2Array()
 	var plain := PackedVector2Array()
 	at.resize((side+1)*(side+1))
 	plain.resize(at.size())
-	var reach := PlateMesh.NUDGE*STEP
+	var reach := PlateMesh.NUDGE*size
 	for j in range(side+1):
 		for i in range(side+1):
-			var p := Vector2(-span+i*STEP,-span+j*STEP)
+			var p := Vector2(-span+i*size,-span+j*size)
 			plain[j*(side+1)+i] = p
 			if i > 0 and j > 0 and i < side and j < side:
 				p += Vector2(PlateMesh._hash(i,j,1)*2.0-1.0,PlateMesh._hash(i,j,2)*2.0-1.0)*reach
@@ -413,7 +427,7 @@ static func _grid(n: int) -> Dictionary:
 		if not eased: break
 	made = {"points":at,"ids":faces,"cells":side,"half":span}
 	_grid_lock.lock()
-	_grids[n] = made
+	_grids[key] = made
 	_grid_lock.unlock()
 	return made
 
@@ -491,6 +505,7 @@ func _lay_ground(rng: RandomNumberGenerator) -> void:
 		# The lip wanders up and down, and slumps in places (`_rim_at`).
 		heights[i] = lerpf(_rim_at(p,lip_noise),h,smoothstep(0.0,ease,d))
 	_erode()
+	if cliffs != null: cliffs.lift(self)
 	if recipe.has("lake"): IsletLake.cut(self,rng,inland)
 	elif kind == "spring" or recipe.has("pond"): _cut_pond(rng,inland)
 	_level_pads()
@@ -634,8 +649,8 @@ func wet(p: Vector2) -> bool:
 ## The land face holding `p`, as Vector4(face, weights a, b, c's first two),
 ## or face -1 off the land.
 func _locate(p: Vector2) -> Array:
-	var i := floori((p.x+grid_shift.x+half)/STEP)
-	var j := floori((p.y+grid_shift.y+half)/STEP)
+	var i := floori((p.x+grid_shift.x+half)/step)
+	var j := floori((p.y+grid_shift.y+half)/step)
 	for dj in [0,-1,1]:
 		for di in [0,-1,1]:
 			var ci: int = i+di
@@ -1215,7 +1230,9 @@ func top_arrays(palette: Dictionary, shift := Vector3.ZERO) -> Array:
 		var slope := _slope(f)
 		var worn := (wear[ids[f*3]]+wear[ids[f*3+1]]+wear[ids[f*3+2]])/3.0 if wear.size() == points.size() else 0.0
 		var edge := (shore_distance[ids[f*3]]+shore_distance[ids[f*3+1]]+shore_distance[ids[f*3+2]])/3.0
-		if slope > rock_slope:
+		# Sea cliffs paint their own beach and steep grass (scripts/sea_cliffs.gd).
+		if cliffs != null and cliffs.paints(at,middle.y,slope,rock_slope): tone = cliffs.paint(at,middle.y,slope,tone,palette)
+		elif slope > rock_slope:
 			tone = rock[0 if patch.get_noise_2d(at.x+71.0,at.y) > 0.0 else rock.size()-1]
 		elif (worn > SCREE.x and slope > SCREE.y) or (edge < 0.45 and slope > SCREE.y*2.0):
 			# Scree: a gully's floor or the crumbling lip, gravel and earth.
@@ -1260,6 +1277,7 @@ func top_arrays(palette: Dictionary, shift := Vector3.ZERO) -> Array:
 ## rock hanging from it (`keel`), one face under each land face. For the
 ## earth sides' material: each wall vertex carries its rim top in UV.
 func side_arrays() -> Array:
+	if cliffs != null: return cliffs.side_arrays(self)
 	var into := Transform3D.IDENTITY
 	var vertices := PackedVector3Array()
 	var uvs := PackedVector2Array()
