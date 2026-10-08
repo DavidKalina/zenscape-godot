@@ -37,11 +37,14 @@ extends RefCounted
 ##   "bounds" AABB; "feet" Array of Vector3 (each column and wall foot,
 ##   its y below the ground there); "walk" Array of {from, to, width}
 ##   (the roof's ridge, the ties' tops, the nave floor); "corridors" Array
-##   of AABB to keep terrain and props out of (the lane, end to end, or as
-##   far as the ground lets it); "ends" Array of {at, heading, height,
-##   open} (the nave's two mouths: where a hall or an aqueduct chains on);
+##   of {kind, box, points, width, height} to keep terrain and props out
+##   of (the lane, end to end or as far as the ground lets it, and each
+##   flyable breach, from the lane out past the wall; `hall`'s doc says
+##   which frame each is in); "ends" Array of {at, heading, height, open}
+##   (the nave's two mouths: where a hall or an aqueduct chains on);
 ##   "weave" Dictionary of what there is to weave (low and high ties,
-##   fallen beams, roof gaps, slits, narrows, as positions or boxes).
+##   fallen beams, roof gaps, slits, narrows, breaches, doors, open bays,
+##   as positions or boxes); a hall's "path" (HallPath) and "layout".
 ## - Cost: a built hall is merged into one mesh and one body
 ##   (RuinKit `merge`); RuinKit `set_detail` thins its growth and scatter.
 ##   ./run-ruin-kit.command  (F3 frames the hall, G flies it)
@@ -436,7 +439,7 @@ static func bay(seed_value: int, weathered := 0.0, plan := {}, ground := Callabl
 	root.set_meta("feet",feet)
 	root.set_meta("weave",weave)
 	root.set_meta("ends",[{"at":Vector3(0.0,b.floor_at(0.0,0.0),0.0),"heading":Vector3.LEFT,"height":b.floor_at(0.0,0.0),"open":true},{"at":Vector3(BAY,b.floor_at(BAY,0.0),0.0),"heading":Vector3.RIGHT,"height":b.floor_at(BAY,0.0),"open":true}])
-	root.set_meta("corridors",[_lane(0.0,BAY,ground)])
+	root.set_meta("corridors",[corridor(HallPath.make([{"bays":1,"turn":0.0}],BAY),_lane(0.0,BAY,ground),"lane")])
 	root.set_meta("walk",[{"from":Vector3(0.0,ROOF_TOP,0.0),"to":Vector3(BAY,ROOF_TOP,0.0),"width":WALL_Z*2.0}])
 	if not weave.slits.is_empty(): root.set_meta("slit",weave.slits[0])
 	return root
