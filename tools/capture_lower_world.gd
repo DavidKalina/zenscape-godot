@@ -86,6 +86,12 @@ func run() -> void:
 	var start := Vector3(260.0,-200.0,-180.0)
 	await _hold({"hour":noon,"eye":start,"look":start+Vector3(100.0,-20.0,0.0)},30)
 	var arch: Node3D = eye.lower.archipelago
+	# The landforms asked for laid along a way down clear of the ranges, so
+	# every one has its island.
+	if not arch.asked.is_empty() and arch.forced.size() < arch.asked.size():
+		for k in range(16):
+			arch.arrive(start,Vector2.from_angle(TAU*k/16.0))
+			if arch.forced.size() == arch.asked.size(): break
 	arch.build_near(start,1100.0)
 	print("LOWER islands built: %d" % arch.island_count())
 	var b: Dictionary = arch.nearest(start+Vector3(150.0,0.0,0.0),600.0)
