@@ -67,6 +67,7 @@ const Genesis = preload("res://scripts/genesis_canvas.gd")
 const IslandShore = preload("res://scripts/island_shore.gd")
 const SkyIslets = preload("res://scripts/sky_islets.gd")
 const SkyClusters = preload("res://scripts/sky_clusters.gd")
+const LandformPreview = preload("res://scripts/landform_preview.gd")
 const SkyAirship = preload("res://scripts/sky_airship.gd")
 const SkyPeaks = preload("res://scripts/sky_peaks.gd")
 const SkyTowers = preload("res://scripts/sky_towers.gd")
@@ -244,6 +245,8 @@ func setup(owner_scene: Node3D) -> void:
 	airship.scene = scene
 	add_child(airship)
 	skip.append(airship)
+	# --landform=<name>: the lower world's landforms stood near the home.
+	LandformPreview.attach(self)
 	show_air(false)
 
 ## Sets an island at every fixed slot and every island built, except the
