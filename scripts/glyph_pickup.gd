@@ -1,0 +1,153 @@
+extends Node3D
+## A collectible glyph token as it stands in the world (scripts/
+## glyph_token.gd): the token turning slowly and bobbing in a holder, a soft
+## halo behind it (shaders/glyph_halo.gdshader) and a few motes drifting up
+## round it; and its pickup (`take`): a short twist that winds faster as the
+## token lifts a touch and brightens, then, still spinning, it shrinks away
+## into a small wisp (scripts/glyph_puff.gd). Light enough to pick up a line
+## of them in a row. The collectible gallery (studies/collectible_gallery.gd)
+## and the sky's tokens (scripts/sky_collectibles.gd) both stand these.
+##   var holder := GlyphPickup.make("sun",1.1)
+##   parent.add_child(holder)
+##   ...
+##   holder.take(seed)   # frees itself when done
+const GlyphToken = preload("res://scripts/glyph_token.gd")
+const GlyphPuff = preload("res://scripts/glyph_puff.gd")
+const HudIcons = preload("res://scripts/hud_icons.gd")
+const HALO_SHADER = preload("res://shaders/glyph_halo.gdshader")
+
+## The turn (rad/s) and the bob (m).
+const TURN := 0.7
+const BOB := 0.12
+## The pickup's spin: how long it winds up (s), how many turns it makes
+## (each faster than the last) and how high it lifts (fraction of its size).
+const SPIN_TIME := 0.32
+const SPIN_TURNS := 1.5
+const SPIN_LIFT := 0.08
+## How long it keeps spinning as it shrinks away into the wisp (s).
+const SHRINK_TIME := 0.18
+
+## The glyph (HudIcons id) and the token's size (m across its box).
+var id := "sun"
+var size := 1.0
+## Its bob's phase (rad), so a line of them doesn't bob in step.
+var phase := 0.0
+## False holds the turn still (the gallery's freeze).
+var turning := true
+## True from the pickup on.
+var taking := false
+## The motes, so far ones can stop drifting (`motes_on`).
+var motes: CPUParticles3D
+var _spin: Node3D
+var _token: MeshInstance3D
+var _halo: MeshInstance3D
+
+## A holder for glyph `id`, `size` m across, its token turning in "Spin".
+static func make(glyph: String, token_size: float, bob_phase := 0.0) -> Node3D:
+	var holder: Node3D = new()
+	holder._build(glyph,token_size,bob_phase)
+	return holder
+
+func _build(glyph: String, token_size: float, bob_phase: float) -> void:
+	id = glyph
+	size = token_size
+	phase = bob_phase
+	name = "Token_"+id
+	set_meta("phase",phase)
+	_spin = Node3D.new()
+	_spin.name = "Spin"
+	add_child(_spin)
+	_token = GlyphToken.token(id,size)
+	_spin.add_child(_token)
+	_halo = MeshInstance3D.new()
+	var quad := QuadMesh.new()
+	quad.size = Vector2.ONE*size*1.9
+	_halo.mesh = quad
+	_halo.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var halo_material := ShaderMaterial.new()
+	halo_material.shader = HALO_SHADER
+	halo_material.set_shader_parameter("tint",Color(HudIcons.item(id).tint).lightened(0.5))
+	_halo.material_override = halo_material
+	add_child(_halo)
+	motes = CPUParticles3D.new()
+	motes.amount = 10
+	motes.lifetime = 2.6
+	motes.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+	motes.emission_sphere_radius = size*0.55
+	motes.direction = Vector3.UP
+	motes.spread = 30.0
+	motes.gravity = Vector3(0.0,0.06,0.0)
+	motes.initial_velocity_min = 0.05
+	motes.initial_velocity_max = 0.15
+	var mote := SphereMesh.new()
+	mote.radius = 0.018*size
+	mote.height = 0.036*size
+	mote.radial_segments = 4
+	mote.rings = 2
+	var mote_material := StandardMaterial3D.new()
+	mote_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mote_material.albedo_color = Color(HudIcons.item(id).tint).lightened(0.6)
+	mote_material.emission_enabled = true
+	mote_material.emission = mote_material.albedo_color
+	mote_material.emission_energy_multiplier = 2.0
+	mote.material = mote_material
+	motes.mesh = mote
+	var fade := Curve.new()
+	fade.add_point(Vector2(0.0,0.0))
+	fade.add_point(Vector2(0.2,1.0))
+	fade.add_point(Vector2(1.0,0.0))
+	motes.scale_amount_curve = fade
+	add_child(motes)
+
+## The turning part (the token in it).
+func spin() -> Node3D:
+	return _spin
+
+## Lets the motes drift or stills them (far off, where nobody sees them).
+func motes_on(on: bool) -> void:
+	if motes != null and motes.emitting != on: motes.emitting = on
+
+func _process(delta: float) -> void:
+	if taking: return
+	if turning: _spin.rotation.y += TURN*delta
+	_spin.position.y = sin(Time.get_ticks_msec()/1000.0*1.3+phase)*BOB
+
+## The pickup: a short twist that winds faster as the token lifts a touch
+## and brightens, then, still spinning, it shrinks away into a wisp left in
+## `puff_parent` (this holder's parent if null). Returns the tween, so the
+## caller can chain what follows; with `free_after` the holder frees itself
+## once the wisp is out.
+func take(seed_value: int, puff_parent: Node = null, free_after := true) -> Tween:
+	taking = true
+	set_meta("taking",true)
+	var token_material := _token.material_override as ShaderMaterial
+	var halo_material := _halo.material_override as ShaderMaterial
+	var from_yaw := _spin.rotation.y
+	var from_y := _spin.position.y
+	# One clock through the twist and the shrink, so the spin never stops:
+	# u runs 0 to 1 over the twist and on past 1 while the token shrinks
+	# into its wisp, still turning faster and faster.
+	var end := 1.0+SHRINK_TIME/SPIN_TIME
+	var tween := create_tween()
+	tween.tween_method(func(u: float) -> void:
+		var k := minf(u,1.0)
+		var gone := clampf((u-1.0)/(end-1.0),0.0,1.0)
+		_spin.rotation.y = from_yaw+TAU*SPIN_TURNS*u*u
+		_spin.position.y = from_y+SPIN_LIFT*size*u
+		_spin.scale = Vector3.ONE*maxf(0.01,(1.0+0.08*k)*(1.0-gone*gone))
+		_halo.scale = Vector3.ONE*maxf(0.01,1.0-gone)
+		token_material.set_shader_parameter("glow",lerpf(0.35,1.6,k*k))
+		halo_material.set_shader_parameter("strength",lerpf(0.22,0.5,k*k)),0.0,end,SPIN_TIME+SHRINK_TIME)
+	var parent := puff_parent if puff_parent != null else get_parent()
+	tween.parallel().tween_callback(func() -> void:
+		if parent == null or not is_instance_valid(parent): return
+		var puff := GlyphPuff.new()
+		puff.size = size
+		puff.tint = Color(HudIcons.item(id).tint)
+		puff.seed = seed_value
+		parent.add_child(puff)
+		puff.global_position = _spin.global_position).set_delay(SPIN_TIME)
+	if free_after:
+		if motes != null: motes.emitting = false
+		tween.tween_callback(queue_free)
+	return tween
