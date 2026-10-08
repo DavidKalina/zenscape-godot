@@ -168,7 +168,10 @@ vec3 zs_surface_haze(vec3 color, vec2 uv) {
 		float sun = max(dot(ray, zs_cloud_direction), 0.0);
 		fog_color = mix(fog_color, aerial_sun_color, (pow(sun, 4.0) * 0.7 + sun * 0.3) * aerial_gain);
 	}
-	float d = surface_density * view_depth * multiplier;
+	// Under the cloud sea (glide_below) the plate's own haze, thickening
+	// with depth under its summit, would bury the lower world's islands
+	// three hundred metres down; there the glide's haze is the air alone.
+	float d = surface_density * view_depth * multiplier * (1.0 - glide_below);
 	vec3 result = mix(color, fog_color, 1.0 - exp(-d * d));
 	if (surface_inversion_enabled) {
 		float inversion = zs_inversion_surface_amount(zs_camera_position + offset);

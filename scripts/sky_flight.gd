@@ -113,7 +113,7 @@ func advance(delta: float, eye: Vector3, in_cloud: float) -> void:
 		if lower.cross(eye.y): vapour = maxf(vapour,SkyBelow.SNAP)
 		var islands: Node = get_parent().get("islands") if get_parent() != null else null
 		var swaps: Variant = islands.get("origin") if islands != null else null
-		lower.follow(eye,swaps if swaps is Vector3 else Vector3.ZERO)
+		lower.follow(eye,swaps if swaps is Vector3 else Vector3.ZERO,delta)
 	_publish()
 
 ## While no glide is on: the sea eases back to rest and the vapour clears.

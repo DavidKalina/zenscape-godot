@@ -129,6 +129,15 @@ uniform vec3 shallow_body : source_color = vec3(0.03, 0.15, 0.16);
 // whiten it where they tip over: x, z, radius, strength each.
 uniform vec4 fall_foam[8];
 uniform int fall_foam_count = 0;
+// Water with no planar view of its own (the lower world's ocean, scripts/
+// sky_below.gd): with `depth_read` the bed behind each pixel is read from
+// the depth buffer, so its depth tint, the bed showing through and the
+// shore foam follow the true bed per pixel, as under the planar view, while
+// the reflection stays the sky's. Where nothing lies under it, it is deep.
+uniform bool depth_read = false;
+// Under the cloud sea (scripts/sky_below.gd), 1: the sky it mirrors is the
+// cloud's underside (zsBelowAir), not the open sky's gradient.
+uniform float below_sky = 0.0;
 uniform sampler2D pond_screen : hint_screen_texture, filter_linear_mipmap;
 uniform sampler2D pond_depth : hint_depth_texture, filter_nearest, repeat_disable;
 uniform float caustics_strength = 0.0;
@@ -260,6 +269,7 @@ void fragment() {
 		tint_alpha = mix(0.18, 0.97, smoothstep(0.0, 0.9, 1.0 - dot(seen, vec3(0.3, 0.4, 0.3))));
 	}
 	vec3 reflection = scene_linear_for_display(clamp(zsSkyGradient(vec3(reflected.x, abs(reflected.y), reflected.z)), vec3(0.0), vec3(0.98)));
+	if (below_sky > 0.0) reflection = mix(reflection, scene_linear_for_display(clamp(zsBelowAir(vec3(reflected.x, abs(reflected.y), reflected.z)), vec3(0.0), vec3(0.98))), below_sky);
 	// Depth for the shoreline foam: the mesh's own, or where the planar path
 	// reads the bed behind each pixel, the true per-pixel depth.
 	float shore_depth = water_depth;
@@ -301,6 +311,17 @@ void fragment() {
 		reflection = mix(plain_reflection, reflection, planar_weight);
 		body = mix(plain_body, body, planar_weight);
 		shore_depth = mix(plain_shore, shore_depth, planar_weight);
+	} else if (depth_read && tinted) {
+		float depth = texture(pond_depth, SCREEN_UV).r;
+		vec4 receiver_view = INV_PROJECTION_MATRIX * vec4(SCREEN_UV * 2.0 - 1.0, depth, 1.0);
+		vec3 receiver = (INV_VIEW_MATRIX * vec4(receiver_view.xyz / receiver_view.w, 1.0)).xyz;
+		float bed_depth = depth > 0.0 ? max(world_position.y - receiver.y, 0.0) : 1.0e4;
+		vec3 seen = zs_depth_tint_bed(bed_depth, lake_tea) * (1.0 - zs_ice);
+		vec3 hue = mix(tint_shallow / max(tint_shallow.g, 0.01), tea_shallow / max(tea_shallow.r, 0.01), lake_tea);
+		vec3 tinted_bed = textureLod(pond_screen, SCREEN_UV, 0.0).rgb * mix(vec3(1.0), hue, 0.5);
+		body = mix(zs_depth_tint(bed_depth, lake_tea) * zs_palette_water, tinted_bed, seen);
+		tint_alpha = 0.97 * smoothstep(0.0, 0.05, bed_depth);
+		shore_depth = min(shore_depth, bed_depth);
 	}
 	// Clear shallows: how clear this pixel is, by its per-pixel depth where the
 	// planar view reads the bed, else the mesh's.

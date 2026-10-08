@@ -134,6 +134,14 @@ const BOWL := 0.55
 const WATER := RIM_HEIGHT-0.1
 const CHANNEL := 0.75
 const BANK := 0.28
+## An island in the sea (a recipe's `sea_foot`): the wall's foot stands
+## SEA_UNDER m under the water at the shore, the shelf stays within
+## SEA_SHALLOW m of the surface over its first half before falling away to
+## its depth, and the bed's colours go from sand to gravel to dark stone
+## by depth (m, SEA_TONES).
+const SEA_UNDER := 0.3
+const SEA_SHALLOW := 1.2
+const SEA_TONES := Vector4(0.3,2.5,3.0,9.0)
 ## The water's arrays carry the fetch as two float vec4s.
 const WATER_FORMAT := (Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT) | (Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM1_SHIFT)
 ## Where the bowl's bank meets the water, as a share of the pond's radius.
@@ -292,6 +300,16 @@ var flowers: Array[String] = []
 ##   tear: a ravine's half, cut from a whole island along a jagged tear
 ##     (scripts/ravine_cut.gd: its side, the tear's shape, filled by
 ##     `share`).
+##   step: the grid's step (m), coarser than the plate's STEP for a big
+##     island (the lower world's, scripts/sky_archipelago.gd);
+##   sea_foot: {level, shelf, depth}, an island standing in the sea (the
+##     lower world's) rather than hanging in the sky: the sea's surface at
+##     `level` (islet frame, under the rim), the shore wall going on down
+##     into it to the bed, and round the land a shelf of sea bed falling
+##     from just under the water at the shore to `depth` m under it
+##     `shelf` m out (`sea_bed`), drawn with the top; no rock hangs under
+##     it but where its own underside stands over the water (an arch,
+##     left open), and the bed is no ground (`inside` is the land's alone).
 var recipe := {}
 ## The recipe's decks, as it gives them.
 var decks: Array = []
@@ -310,6 +328,13 @@ var cleft := {}
 ## A recipe's `spire` (a Dictionary, may be empty): a real peak raised on the
 ## islet (scripts/mountain_spire.gd), which draws its own faces; null if none.
 var spire: RefCounted = null
+## The grid's step (m): STEP, or a recipe's `step`.
+var step := STEP
+## Under a recipe's `sea_foot`: each point's sea bed height (islet frame;
+## on the land, the wall's foot under its shore), and how far off the land
+## each point lies (m, 0 on it). Empty otherwise.
+var sea_bed := PackedFloat32Array()
+var sea_out := PackedFloat32Array()
 
 ## An islet laid out by hand from `spec` (see `recipe`), its kind
 ## `spec.kind`, the rest of it seeded by `seed_value` as any islet's is.
@@ -346,7 +371,9 @@ func _shape(seed_value: int, forced: String) -> void:
 	radius = rng.randf_range(across.x,across.y)*0.5
 	if recipe.has("radius"): radius = float(recipe.radius)
 	var area := PI*radius*radius
-	var grid := _grid(ceili((radius*REACH+MARGIN)/STEP))
+	step = float(recipe.get("step",STEP))
+	var sea: Dictionary = recipe.get("sea_foot",{})
+	var grid := _grid(ceili((radius*REACH+MARGIN+float(sea.get("shelf",0.0)))/step),step)
 	points = grid.points
 	ids = grid.ids
 	cells = grid.cells
@@ -368,6 +395,7 @@ func _shape(seed_value: int, forced: String) -> void:
 		for i in range(keel.size()): keel[i] *= deeper
 	if recipe.has("spire"): spire = MountainSpire.raise(self)
 	base = -(BASE.x+BASE.y*radius)
+	if not sea.is_empty(): _lay_sea_bed(sea)
 	var deepest := 0.0
 	for k in keel: deepest = maxf(deepest,k)
 	depth = -base+deepest
@@ -376,24 +404,72 @@ func _shape(seed_value: int, forced: String) -> void:
 	for deck: Dictionary in decks:
 		for end: Vector3 in [deck.a,deck.b]: reach = maxf(reach,Vector2(end.x,end.z).length()+1.0)
 
-## The grid of `n` cells each way from the middle (2n a side), the plate's
-## own triangulation: [points, ids, cells a side, half width]. Cached, and
-## shared by every islet of its size (read only).
-static func _grid(n: int) -> Dictionary:
+## An island in the sea (`sea_foot`): how far off the land each point lies
+## (the nearest land point's distance, carried over the grid in two sweeps
+## each way), the bed falling from SEA_UNDER under the water at the shore
+## to the shelf's depth at its end and on down past it, the wall's foot
+## at the shore, and no rock hanging under the land.
+func _lay_sea_bed(sea: Dictionary) -> void:
+	var level := float(sea.get("level",RIM_HEIGHT-2.0))
+	var shelf := maxf(float(sea.get("shelf",10.0)),1.0)
+	var deep := maxf(float(sea.get("depth",12.0)),SEA_SHALLOW+1.0)
+	var side := cells+1
+	var nearest := PackedInt32Array()
+	nearest.resize(points.size())
+	nearest.fill(-1)
+	for i in range(points.size()):
+		if shore_distance[i] >= 0.0: nearest[i] = i
+	var forward := [Vector2i(-1,-1),Vector2i(0,-1),Vector2i(1,-1),Vector2i(-1,0)]
+	var backward := [Vector2i(1,1),Vector2i(0,1),Vector2i(-1,1),Vector2i(1,0)]
+	for pass_ in range(2):
+		for k in range(points.size()):
+			var at := k if pass_ == 0 else points.size()-1-k
+			var i := at % side
+			var j := at/side
+			for d: Vector2i in (forward if pass_ == 0 else backward):
+				var ni := i+d.x
+				var nj := j+d.y
+				if ni < 0 or nj < 0 or ni >= side or nj >= side: continue
+				var seed_at := nearest[nj*side+ni]
+				if seed_at < 0: continue
+				if nearest[at] < 0 or points[at].distance_squared_to(points[seed_at]) < points[at].distance_squared_to(points[nearest[at]]): nearest[at] = seed_at
+	sea_out.resize(points.size())
+	sea_bed.resize(points.size())
+	# Where the land's own underside stands over the water (a cliffs
+	# landform's arch, raised under its rock bridge), it is left as it is,
+	# so the arch stays open; everywhere else the wall goes down to the bed
+	# and nothing hangs under it.
+	var undersides := PackedFloat32Array()
+	undersides.resize(points.size())
+	for i in range(points.size()): undersides[i] = base-keel[i]
+	base = level-SEA_UNDER
+	for i in range(points.size()):
+		var out := 0.0 if shore_distance[i] >= 0.0 or nearest[i] < 0 else points[i].distance_to(points[nearest[i]])
+		sea_out[i] = out
+		var t := out/shelf
+		var below := SEA_UNDER+(SEA_SHALLOW-SEA_UNDER)*smoothstep(0.0,0.5,t)+(deep-SEA_SHALLOW)*smoothstep(0.4,1.0,t)+deep*0.5*maxf(t-1.0,0.0)
+		sea_bed[i] = level-below
+	for i in range(points.size()): keel[i] = base-undersides[i] if undersides[i] > level else 0.0
+
+## The grid of `n` cells each way from the middle (2n a side), `spacing`
+## apart, the plate's own triangulation: [points, ids, cells a side, half
+## width]. Cached, and shared by every islet of its size (read only).
+static func _grid(n: int, spacing := STEP) -> Dictionary:
+	var key := Vector2i(n,roundi(spacing*1000.0))
 	_grid_lock.lock()
-	var made: Variant = _grids.get(n)
+	var made: Variant = _grids.get(key)
 	_grid_lock.unlock()
 	if made != null: return made
 	var side := n*2
-	var span := float(n)*STEP
+	var span := float(n)*spacing
 	var at := PackedVector2Array()
 	var plain := PackedVector2Array()
 	at.resize((side+1)*(side+1))
 	plain.resize(at.size())
-	var reach := PlateMesh.NUDGE*STEP
+	var reach := PlateMesh.NUDGE*spacing
 	for j in range(side+1):
 		for i in range(side+1):
-			var p := Vector2(-span+i*STEP,-span+j*STEP)
+			var p := Vector2(-span+i*spacing,-span+j*spacing)
 			plain[j*(side+1)+i] = p
 			if i > 0 and j > 0 and i < side and j < side:
 				p += Vector2(PlateMesh._hash(i,j,1)*2.0-1.0,PlateMesh._hash(i,j,2)*2.0-1.0)*reach
@@ -413,7 +489,7 @@ static func _grid(n: int) -> Dictionary:
 		if not eased: break
 	made = {"points":at,"ids":faces,"cells":side,"half":span}
 	_grid_lock.lock()
-	_grids[n] = made
+	_grids[key] = made
 	_grid_lock.unlock()
 	return made
 
@@ -525,7 +601,9 @@ func _rim_at(p: Vector2, noise: FastNoiseLite) -> float:
 ## ridged detail roughens the slopes. Each point's cut is kept (`wear`) for
 ## the scree it leaves.
 func _erode() -> void:
-	var cell := Erosion.CELL
+	# A big island on a coarse grid (a recipe's `step`) weathers on cells as
+	# coarse, its finer gullies being finer than its faces.
+	var cell := maxf(Erosion.CELL,step)
 	var n := ceili((reach+ERODE_MARGIN)*2.0/cell)+1
 	var origin := -float(n-1)*0.5*cell
 	var low := INF
@@ -634,8 +712,8 @@ func wet(p: Vector2) -> bool:
 ## The land face holding `p`, as Vector4(face, weights a, b, c's first two),
 ## or face -1 off the land.
 func _locate(p: Vector2) -> Array:
-	var i := floori((p.x+grid_shift.x+half)/STEP)
-	var j := floori((p.y+grid_shift.y+half)/STEP)
+	var i := floori((p.x+grid_shift.x+half)/step)
+	var j := floori((p.y+grid_shift.y+half)/step)
 	for dj in [0,-1,1]:
 		for di in [0,-1,1]:
 			var ci: int = i+di
@@ -730,10 +808,10 @@ func share(p: Vector2) -> float:
 func rim_radius(a: float) -> float:
 	var dir := Vector2.from_angle(a)
 	var r := 0.0
-	var step := 0.15
+	var stride := 0.15
 	while r < reach+1.0:
-		if not on_land(dir*(r+step)): break
-		r += step
+		if not on_land(dir*(r+stride)): break
+		r += stride
 	return maxf(r,0.05)
 
 func rim_point(a: float) -> Vector2:
@@ -922,14 +1000,14 @@ func find_spot(radius: float, rim: float, flat: float, avoid: Array = [], prefer
 	var best: Variant = null
 	var best_score := -INF
 	var toward: Vector2 = (prefer.get("toward",Vector2.ZERO) as Vector2).normalized()
-	var step := maxf(0.6,reach/28.0)
+	var stride := maxf(0.6,reach/28.0)
 	var span := reach
 	var x := -span
 	while x <= span:
 		var z := -span
 		while z <= span:
 			var p := Vector2(x,z)
-			z += step
+			z += stride
 			if not on_land(p) or inland(p) < rim+reach_of: continue
 			if _blocked_by(p,reach_of,avoid): continue
 			var spread := _spread(p,radius,rect,wet_room)
@@ -943,7 +1021,7 @@ func find_spot(radius: float, rim: float, flat: float, avoid: Array = [], prefer
 			if score > best_score:
 				best_score = score
 				best = p
-		x += step
+		x += stride
 	return best
 
 ## A circle of the land's area's radius (m).
@@ -1245,6 +1323,7 @@ func top_arrays(palette: Dictionary, shift := Vector3.ZERO) -> Array:
 		colors.resize(v)
 		uv.resize(v)
 		uv2.resize(v)
+	if not sea_bed.is_empty(): _bed_faces(palette,patch,shift,vertices,normals,colors,uv,uv2)
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = vertices
@@ -1254,11 +1333,46 @@ func top_arrays(palette: Dictionary, shift := Vector3.ZERO) -> Array:
 	arrays[Mesh.ARRAY_TEX_UV2] = uv2
 	return arrays
 
+## The sea bed's faces round an island in the sea (`sea_foot`), appended
+## to the top's arrays: every face off the land out to the shelf's end, at
+## the bed's heights, sand by the shore going to gravel and dark stone as it
+## deepens; past the shelf the water hides it, so it is left out.
+func _bed_faces(palette: Dictionary, patch: FastNoiseLite, shift: Vector3, vertices: PackedVector3Array, normals: PackedVector3Array,
+		colors: PackedColorArray, uv: PackedVector2Array, uv2: PackedVector2Array) -> void:
+	var shelf := float((recipe.get("sea_foot",{}) as Dictionary).get("shelf",10.0))
+	var level := float((recipe.get("sea_foot",{}) as Dictionary).get("level",RIM_HEIGHT-2.0))
+	var sand: Color = palette.sand
+	var gravel: Color = palette.gravel
+	var stone: Color = (palette.rock as Array)[(palette.rock as Array).size()-1]*0.75
+	for f in range(outline.size()):
+		if outline[f] == 0: continue
+		var ia := ids[f*3]
+		var ib := ids[f*3+1]
+		var ic := ids[f*3+2]
+		if sea_out[ia] > shelf and sea_out[ib] > shelf and sea_out[ic] > shelf: continue
+		var a := Vector3(points[ia].x,sea_bed[ia],points[ia].y)
+		var b := Vector3(points[ib].x,sea_bed[ib],points[ib].y)
+		var c := Vector3(points[ic].x,sea_bed[ic],points[ic].y)
+		var middle := (a+b+c)/3.0
+		var under := level-middle.y
+		var n := patch.get_noise_2d(middle.x*1.7,middle.z*1.7)*0.5+0.5
+		var tone := sand.lerp(gravel,clampf(smoothstep(SEA_TONES.x,SEA_TONES.y,under)+(n-0.5)*0.4,0.0,1.0))
+		tone = tone.lerp(stone,smoothstep(SEA_TONES.z,SEA_TONES.w,under))
+		var normal := (c-a).cross(b-a).normalized()
+		if normal.y < 0.0: normal = -normal
+		for p: Vector3 in [a,b,c]:
+			vertices.append(p+shift)
+			normals.append(normal)
+			colors.append(tone)
+			uv.append(Vector2(0.0,1.0))
+			uv2.append(Vector2(0.5,p.y+shift.y))
+
 ## The sides' surface arrays, safe on a worker: the islands' shore wall
 ## (scripts/island_shore.gd `build`) hung under every shore edge, from the
 ## land's edge through a faceted ring to the foot, and under the land the
-## rock hanging from it (`keel`), one face under each land face. For the
-## earth sides' material: each wall vertex carries its rim top in UV.
+## rock hanging from it (`keel`), one face under each land face; under a
+## sea foot, the wall down to the bed and no rock under. For the earth
+## sides' material: each wall vertex carries its rim top in UV.
 func side_arrays() -> Array:
 	var into := Transform3D.IDENTITY
 	var vertices := PackedVector3Array()
@@ -1288,7 +1402,10 @@ func side_arrays() -> Array:
 		for r in range(wall_a.size()-1):
 			IslandShore._add(vertices,uvs,into,[wall_a[r],wall_b[r],wall_b[r+1]],face,[ha,hb,hb],0.0)
 			IslandShore._add(vertices,uvs,into,[wall_a[r],wall_b[r+1],wall_a[r+1]],face,[ha,hb,ha],0.0)
+	# Under a sea foot the land stands on the bed, with no underside to see
+	# but where it is raised over the water (an arch's).
 	for f in land:
+		if not sea_bed.is_empty() and (keel[ids[f*3]] >= 0.0 or keel[ids[f*3+1]] >= 0.0 or keel[ids[f*3+2]] >= 0.0): continue
 		var tri := []
 		for k in range(3):
 			var i := ids[f*3+k]

@@ -149,10 +149,13 @@ func _init() -> void:
 	name = "SkyIslets"
 
 ## The shared pieces are static, so they would outlive the scene and show as
-## leaks at exit; they go with the islets and are made again if wanted.
+## leaks at exit; they go with the islets and are made again if wanted. A
+## second islets node sharing them (the lower world's, scripts/
+## sky_archipelago.gd) leaves them to the sky's (`owns_shared` false).
+var owns_shared := true
 func _exit_tree() -> void:
 	clear()
-	_release()
+	if owns_shared: _release()
 
 ## Everything the islets hold that would outlive them: their materials, and
 ## the shared pieces in static vars (the catalog, the grids, the trees, the
@@ -568,6 +571,11 @@ static func _fall_rings(shape: RefCounted) -> Dictionary:
 	if shape.recipe.has("fall_to"):
 		var to: Dictionary = shape.recipe.fall_to
 		return curtain(to.lip,to.out,float(to.drop),ClusterFalls.SUNK,ClusterFalls.HALF,overhang,FALL_STRENGTH,float(to.speed))
+	# An island in the sea (SkyIslet `sea_foot`): down its wall into the sea,
+	# ending just under the water.
+	if shape.recipe.has("sea_foot"):
+		var level := float(shape.recipe.sea_foot.get("level",0.0))
+		return curtain(lip,out,maxf(lip.y-level,0.3),ClusterFalls.SUNK,float(water.get("half",SkyIslet.CHANNEL*0.6)),overhang,FALL_STRENGTH)
 	return curtain(lip,out,shape.depth*FALL_DROP.x+FALL_DROP.y,FALL_TAIL,float(water.get("half",SkyIslet.CHANNEL*0.6)),overhang,FALL_STRENGTH)
 
 func _fall(node: Node3D, shape: RefCounted, rings: Dictionary, thread: Dictionary = {}) -> void:
@@ -622,7 +630,7 @@ func _fall(node: Node3D, shape: RefCounted, rings: Dictionary, thread: Dictionar
 ## The fall's thread on down to the cloud sea (SkyFallThread `plan`), for
 ## an islet whose middle stands at `home_y`.
 static func _thread_plan(shape: RefCounted, rings: Dictionary, home_y: float) -> Dictionary:
-	if shape.recipe.has("fall_to"): return {}
+	if shape.recipe.has("fall_to") or shape.recipe.has("sea_foot"): return {}
 	var water: Dictionary = shape.water()
 	var out := Vector3(water.out.x,0.0,water.out.y)
 	var lip := Vector3(water.lip.x,water.level,water.lip.y)
