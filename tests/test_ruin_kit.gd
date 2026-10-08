@@ -72,6 +72,8 @@ func _run() -> void:
 	check(run.get_node_or_null("Mesh") is MeshInstance3D and run.get_node_or_null("Body") is StaticBody3D,"a run is merged into one mesh and one body")
 	run.free()
 	_long_hall()
+	_curved_hall()
+	_budget()
 	_terrain()
 	_connections()
 	_scale()
@@ -208,7 +210,7 @@ func _long_hall() -> void:
 			var length: float = hall.get_meta("length")
 			check(is_equal_approx(length,Hall.BAY*12.0),"a 12-bay hall is 12 bays long, "+tag)
 			check(hall.get_node_or_null("Mesh") is MeshInstance3D and hall.get_node_or_null("Body") is StaticBody3D,"the hall is merged into one mesh and one body, "+tag)
-			var lane: AABB = (hall.get_meta("corridors") as Array)[0]
+			var lane: AABB = (hall.get_meta("corridors") as Array)[0].box
 			check(lane.position.x <= 0.01 and lane.end.x >= length-0.01 and lane.size.z >= RuinKit.THREAD and lane.size.y >= 2.0,"the lane runs end to end, THREAD wide, "+tag)
 			check(_clear(hall,lane.grow(-0.02)),"nothing stands in the lane, end to end, "+tag)
 			var weave: Dictionary = hall.get_meta("weave")
@@ -234,9 +236,106 @@ func _long_hall() -> void:
 				var edge := AABB(slit+Vector3(-1.5,-half-0.3,-0.48),Vector3(3.0,PlaneFigure.SPAN+0.6,0.96))
 				check(_clear(hall,edge),"a knife-edged plane slips through a slit, "+tag)
 				check(not _clear(hall,AABB(slit+Vector3(-0.3,-0.15,-half),Vector3(0.6,0.3,PlaneFigure.SPAN)),false),"a level plane cannot pass a slit, "+tag)
+			_breaks(hall,tag)
 			var ends: Array = hall.get_meta("ends")
 			check(ends.size() == 2 and is_equal_approx((ends[0].at as Vector3).x,0.0) and is_equal_approx((ends[1].at as Vector3).x,length) and bool(ends[0].open) and bool(ends[1].open),"the hall's ends are its two open mouths, "+tag)
 			hall.free()
+
+## What the roof and walls have lost: stretches of whole roof, broken roof
+## and open sky (open bays open to the sky over the nave); breaches in the
+## side walls, each flyable one a corridor from the lane inside to the
+## open air outside (clear of stone), on both sides; a door. `path`-space
+## boxes, checked through the hall's path (so on curves too).
+func _breaks(hall: Node3D, tag: String) -> void:
+	var path = hall.get_meta("path")
+	var plans: Array = hall.get_meta("plans")
+	var roofs := {}
+	for p: Dictionary in plans: roofs[p.roof] = true
+	check(roofs.has("whole") and roofs.has("broken") and roofs.has("open"),"the roof is whole, broken and open in stretches, "+tag)
+	var weave: Dictionary = hall.get_meta("weave")
+	check((weave.open as Array).size() == plans.filter(func(p: Dictionary) -> bool: return p.roof == "open").size(),"each open bay gives its sky, "+tag)
+	for box: AABB in weave.open:
+		check(_clear_along(hall,path,box),"an open bay is open to the sky over the nave, "+tag)
+	var sides := {-1:0,1:0}
+	for item: Dictionary in weave.breaches:
+		var box: AABB = item.box
+		sides[int(item.side)] += 1
+		check(box.size.x >= RuinKit.THREAD and box.size.y >= 2.0,"a breach is wide and tall enough to fly, "+tag)
+		# From the lane (inside) to beyond the wall (outside).
+		var reaches := box.position.z <= Hall.LANE.y and box.end.z >= Hall.LANE.x and (box.end.z > Hall.WALL_Z+Hall.WALL_THICK if int(item.side) > 0 else box.position.z < -Hall.WALL_Z-Hall.WALL_THICK)
+		check(reaches,"a breach's corridor runs from the lane out past the wall, "+tag)
+		check(_clear_along(hall,path,box),"a %s breach is open from the lane to the outside, %s" % [item.kind,tag])
+	check(sides[1] >= 2 and sides[-1] >= 1,"flyable breaches on both sides, "+tag)
+	check(not (weave.doors as Array).is_empty(),"a door to walk out of, "+tag)
+	var corridors: Array = hall.get_meta("corridors")
+	check(corridors.size() == 1+(weave.breaches as Array).size(),"the lane and each breach are corridors, "+tag)
+
+## A curved hall: a plan of straight and curved stretches. Its lane runs
+## clear through the curve (path space), its breaches and open bays as on
+## a straight one; the metadata sits on the geometry: the ends at the
+## path's ends, heading along it, an outer column there; the lane's
+## corridor line along the lane's middle, over its floor.
+func _curved_hall() -> void:
+	for seed_value: int in [3,41]:
+		for turn: float in [0.9,-0.7]:
+			var tag := "curved seed %d turn %.1f" % [seed_value,turn]
+			var hall := Hall.hall(seed_value,0.6,12,Callable(),true,[{"bays":3,"turn":0.0},{"bays":5,"turn":turn},{"bays":4,"turn":0.0}])
+			var path = hall.get_meta("path")
+			check(path.curved() and is_equal_approx(float(path.length),Hall.BAY*12.0),"a curved hall's path, "+tag)
+			var lane: AABB = (hall.get_meta("corridors") as Array)[0].box
+			check(lane.position.x <= 0.01 and lane.end.x >= Hall.BAY*12.0-0.01 and lane.size.z >= RuinKit.THREAD,"the curved lane runs end to end, "+tag)
+			check(_clear_along(hall,path,lane.grow(-0.02)),"nothing stands in the lane through the curve, "+tag)
+			_breaks(hall,tag)
+			# The bend is real: the far end turned by the turn.
+			var ends: Array = hall.get_meta("ends")
+			var far: Vector3 = ends[1].heading
+			check(absf(wrapf(atan2(-far.z,far.x)-turn,-PI,PI)) < 0.01,"the far end heads round the curve, "+tag)
+			for k in range(2):
+				var e: Dictionary = ends[k]
+				var s := 0.0 if k == 0 else Hall.BAY*12.0
+				check((e.at as Vector3).distance_to(path.point(Vector3(s,0.0,0.0))) < 0.01,"an end sits at its path's end, "+tag)
+				for side: float in [-1.0,1.0]:
+					var column: Vector3 = path.point(Vector3(s,2.0,side*Hall.ROW_Z))
+					check(not _clear(hall,AABB(column-Vector3(0.3,0.3,0.3),Vector3(0.6,0.6,0.6)),false),"an outer column stands at the mouth, "+tag)
+			var line: Dictionary = (hall.get_meta("corridors") as Array)[0]
+			var ok := true
+			for p: Vector3 in line.points:
+				var back: Vector3 = path.locate(p)
+				if absf(back.z-lane.get_center().z) > 0.05 or absf(p.y-lane.position.y) > 0.05: ok = false
+			check(ok and is_equal_approx(float(line.width),lane.size.z),"the lane's line follows the curve along its middle, "+tag)
+			hall.free()
+
+## The cost: a 12-bay hall, as the world builds it (IN_WORLD detail), under
+## BUDGET triangles.
+func _budget() -> void:
+	RuinKit.set_detail(Hall.IN_WORLD)
+	for weathered: float in [0.0,0.6]:
+		var hall := Hall.hall(12,weathered,12)
+		var count := RuinKit.triangles(hall)
+		check(count < Hall.BUDGET,"a 12-bay hall at weathered %.1f is under budget: %d < %d" % [weathered,count,Hall.BUDGET])
+		hall.free()
+	RuinKit.set_detail(1.0)
+
+## No hull of `node` reaches into `box` (in `path`'s space): each hull's
+## points carried back into path space.
+func _clear_along(node: Node, path, box: AABB, say := true) -> bool:
+	var body := node.get_node_or_null("Body")
+	if body == null: return true
+	var grown := box.grow(3.0)
+	for child in body.get_children():
+		var shape := (child as CollisionShape3D).shape as ConvexPolygonShape3D
+		var first: Vector3 = path.locate(shape.points[0])
+		if not grown.has_point(first) and not path.curved():
+			# A quick reject on a straight hall (path space is the frame).
+			var raw := AABB(shape.points[0],Vector3.ZERO)
+			for p in shape.points: raw = raw.expand(p)
+			if not raw.intersects(box): continue
+		var hull := AABB(first,Vector3.ZERO)
+		for p in shape.points: hull = hull.expand(path.locate(p))
+		if hull.intersects(box):
+			if say: print("  in the way of %s: %s (path space)" % [node.name,hull])
+			return false
+	return true
 
 ## On uneven ground: piers grow down to a slope and a valley (tall in its
 ## middle), a hall's columns and walls reach below a slope (nothing floats),
@@ -266,7 +365,7 @@ func _terrain() -> void:
 	var bays := 5
 	var buried := func(x: float, z: float) -> float: return clampf((x-Hall.BAY*bays*0.5)*0.6,0.0,14.0)
 	var hall := Hall.hall(6,0.5,bays,buried)
-	var lane: AABB = (hall.get_meta("corridors") as Array)[0]
+	var lane: AABB = (hall.get_meta("corridors") as Array)[0].box
 	var ends: Array = hall.get_meta("ends")
 	check(lane.end.x < Hall.BAY*bays-4.0 and bool(ends[0].open) and not bool(ends[1].open),"a hall run into a hillside: its lane stops at the slope, its far mouth is buried")
 	check(_clear(hall,lane.grow(-0.02)),"the buried hall's lane is clear as far as it goes")

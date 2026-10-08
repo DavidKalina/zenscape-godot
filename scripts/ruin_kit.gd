@@ -202,6 +202,8 @@ const IVY_LEAF := Vector2(0.15,0.27)
 const IVY_STRANDS := Vector2(0.2,1.3)
 const IVY_LENGTH := Vector2(0.9,4.2)
 const IVY_MOST := 46
+## Lean stone's cap (Build `lean`: the halls, built by the dozen).
+const IVY_LEAN := 12
 ## The stone every piece has at weathered 0: AGE of the way to ruined in
 ## the wearing of its arrises and the wobble of its faces.
 const AGE := 0.32
@@ -225,6 +227,10 @@ const SAG := Vector2(0.03,0.09)
 ## a real volume (its margin is 0.04), and a sliver walks like the block
 ## beside it anyway.
 const HULL_THIN := 0.06
+## Hidden-face culling (Build `cull`): how far off a face its probes stand
+## (m; a joint thinner than this is closed) and the occluders' grid (m).
+const CULL_OFF := 0.03
+const CELL_CULL := 2.0
 
 
 ## The piece with PIECES id `id`.
@@ -1251,11 +1257,12 @@ static func _buttress(b: Build, pose: Transform3D, stages: Array, width: float, 
 		var cy := y
 		var k := 0
 		while cy < top-0.08:
-			var y1 := minf(top,cy+b.rng.randf_range(0.42,0.58))
+			var y1 := minf(top,cy+b.rng.randf_range(0.42,0.58)*(2.0 if b.lean else 1.0))
 			if top-y1 < 0.2: y1 = top
 			# In two blocks, front and back, the joint staggered course by course.
 			var split := depth*(0.45 if k%2 == 0 else 0.62)
-			for part: Vector2 in [Vector2(-0.05,split),Vector2(split,depth)]:
+			# Lean stone: one block a course, front to back.
+			for part: Vector2 in ([Vector2(-0.05,depth)] if b.lean else [Vector2(-0.05,split),Vector2(split,depth)]):
 				if part.y-part.x < 0.2: continue
 				var half := Vector3(hx-0.004,(y1-cy)*0.5-0.004,(part.y-part.x)*0.5-0.004)
 				var at := Vector3(0.0,(cy+y1)*0.5,(part.x+part.y)*0.5)
@@ -1307,7 +1314,7 @@ static func _spire(b: Build, pose: Transform3D, r: float, h: float, snapped: boo
 	for k in range(3):
 		var t := (k+0.6)/3.6
 		var yy := lerpf(shaft,h,t)
-		if yy > cut-0.1: break
+		if yy > (cut*0.7 if cut < h else cut-0.1): break
 		var rr := lerpf(r*1.05,0.02,t)*1.414
 		for e in range(4):
 			if b.rng.randf() < 0.3*b.weathered: continue
@@ -1538,13 +1545,23 @@ static func _courses(b: Build, pose: Transform3D, x0: float, x1: float, y0: floa
 		var roll := b.rng.randf()
 		var h := course*(b.rng.randf_range(0.5,0.66) if roll < 0.15 else (b.rng.randf_range(1.3,1.55) if roll > 0.86 else b.rng.randf_range(0.8,1.18)))
 		if most-cap-(y+h) < course*0.45: h = most-cap-y
+		if hole.is_valid() and (hole.call(y+0.001) as Vector2).y < 0.0 and (hole.call(y+h-0.001) as Vector2).y >= 0.0:
+			# A hole's sill inside the course: the course ends at it, so no
+			# stone straddles the sill and juts into the hole.
+			var a := y
+			var c := y+h
+			for i in range(14):
+				var m := (a+c)*0.5
+				if (hole.call(m) as Vector2).y < 0.0: a = m
+				else: c = m
+			if c-y > 0.12: h = c-y
 		var ya := y
 		var yb := y+h
 		x = x0-(0.0 if k%2 == 0 else b.rng.randf_range(0.25,0.5))
 		while x < x1-0.02:
 			var xa := maxf(x,x0)
 			var pick := b.rng.randf()
-			var xb := minf(x+(b.rng.randf_range(0.35,0.6) if pick < 0.22 else (b.rng.randf_range(1.45,2.0) if pick > 0.8 else b.rng.randf_range(0.7,1.3))),x1)
+			var xb := minf(x+(b.rng.randf_range(0.35,0.6) if pick < 0.22 else (b.rng.randf_range(1.45,2.0) if pick > 0.8 else b.rng.randf_range(0.7,1.3)))*(2.2 if b.lean else 1.0),x1)
 			if x1-xb < 0.3: xb = x1
 			x = xb
 			var mid := (xa+xb)*0.5
@@ -1589,7 +1606,9 @@ static func _courses(b: Build, pose: Transform3D, x0: float, x1: float, y0: floa
 				# The sag: the course dips toward the middle of the run.
 				var t := clampf(((sa+sb)*0.5-x0)/maxf(x1-x0,0.1),0.0,1.0)
 				centre.y -= sag*sin(PI*t)*clampf((ya-y0)/2.0,0.2,1.0)
-				var half := Vector3((sb-sa)*0.5-0.006,(yb-ya)*0.5-0.006,d+b.rng.randf_range(-0.045,0.02))
+				# Lean stone overlaps a little, so its hidden joints close (Build `cull`).
+				var joint := -0.012 if b.lean else 0.006
+				var half := Vector3((sb-sa)*0.5-joint,(yb-ya)*0.5-joint,d+b.rng.randf_range(-0.045,0.02))
 				var planes := _box(b,half)
 				var local := Transform3D(Basis.IDENTITY,centre)
 				var inv := local.affine_inverse()
@@ -1744,10 +1763,14 @@ static func _box(b: Build, half: Vector3, c := -1.0) -> Array[Plane]:
 			out.append(Plane(n,half[axis]))
 	var base := c if c >= 0.0 else CHAMFER*(1.0+ARRIS*b.age)
 	var least := minf(half.x,minf(half.y,half.z))
+	var longest := 0 if half.x >= maxf(half.y,half.z) else (1 if half.y >= half.z else 2)
 	for a in range(3):
 		var e := (a+1)%3
+		if b.lean and c < 0.0 and 3-a-e != longest: continue
 		for sa: float in [-1.0,1.0]:
 			for se: float in [-1.0,1.0]:
+				# Lean: only the upper arrises (the lower meet the course below).
+				if b.lean and c < 0.0 and ((a == 1 and sa < 0.0) or (e == 1 and se < 0.0)): continue
 				var cc := minf(base*b.rng.randf_range(0.45,1.9),least*0.45)
 				var n := Vector3.ZERO
 				n[a] = sa
@@ -1827,6 +1850,31 @@ class Build extends RefCounted:
 	## frame, or none (flat, y 0). Feet, footings and walls reach down to it
 	## and below; drifts and rubble lie on it.
 	var terrain := Callable()
+	## Cheap stone (the colossus halls, built by the dozen into landforms):
+	## a box's arrises chamfered only along its length, a third of the chips.
+	var lean := false
+	## Faces hidden inside other blocks (course joints, stacked drums, wall
+	## cores) or buried under the ground are left out of the mesh.
+	var cull := false
+	## A bend (a hall laid along a curve): an object with `xform(s) ->
+	## Transform3D`, the frame at distance s along it (X along, Y up, Z
+	## across). Every block is built straight (x along the bend) and drawn
+	## bent: each corner to xform(x) * (0, y, z); a block built while
+	## `rigid` is on (a column, a fallen beam) is carried whole instead, by
+	## the frame at its middle, so it stays round and true.
+	var path: Variant = null
+	var rigid := false
+	## How sheltered a face is, 0 (open air) to 1 (deep under a roof): a
+	## Callable(middle, normal) -> float (straight), drawn into the vertex
+	## alpha for the stone shader's bounce (shaders/ruin_stone.gdshader);
+	## none, open air.
+	var shelter := Callable()
+	## The faces as built (straight), drawn at `finish`: [corners, normal,
+	## colour, occluder (its block's index in `solids`, or -1), anchor (a
+	## rigid block's middle x, or NAN)].
+	var pending: Array = []
+	## Each hull's anchor (as `pending`'s), side by side with `hulls`.
+	var hull_anchors: PackedFloat32Array = []
 	static var _materials := {}
 	## How much of the small growth and scatter is built (RuinKit
 	## `set_detail`): 1 all of it; under 1 fewer ivy strands, moss
@@ -1953,6 +2001,12 @@ class Build extends RefCounted:
 			for k in range(1,on.size()-1): area += (on[k]-on[0]).cross(on[k+1]-on[0]).length()*0.5
 			biggest = maxf(biggest,area)
 			polys.append([on,plane.normal,mid,area])
+		var occluder := solids.size() if growable else -1
+		var anchor := NAN
+		if rigid and path != null:
+			var middle := Vector3.ZERO
+			for q in points: middle += xf*q
+			anchor = middle.x/points.size()
 		for p: Array in polys:
 			var on: Array[Vector3] = p[0]
 			var normal := (xf.basis*(p[1] as Vector3)).normalized()
@@ -1960,8 +2014,9 @@ class Build extends RefCounted:
 			var small := wear and float(p[3]) < biggest*0.16
 			var shade := _shade(mid,normal,linear,small) if growable else linear*(1.0+rng.randf_range(-0.06,0.06))
 			if not growable: shade.a = 1.0
-			for k in range(1,on.size()-1):
-				_wound(faces,xf*on[0],xf*on[k],xf*on[k+1],normal,shade)
+			var corners := PackedVector3Array()
+			for q in on: corners.append(xf*q)
+			pending.append([corners,normal,shade,occluder,anchor])
 			if growable and normal.y > 0.8 and float(p[3]) > 0.03:
 				var poly := PackedVector3Array()
 				for q in on: poly.append(xf*q)
@@ -1977,7 +2032,9 @@ class Build extends RefCounted:
 			for q in points: hull.append(xf*q)
 			# A sliver (a block cut nearly away by a hole's line or a break)
 			# stays drawn but gets no hull: Jolt cannot build one so thin.
-			if thickness(hull) >= HULL_THIN: hulls.append(hull)
+			if thickness(hull) >= HULL_THIN:
+				hulls.append(hull)
+				hull_anchors.append(anchor)
 		return open_face
 
 	## The piece: ivy and moss grown on it, then the mesh and the body.
@@ -1985,6 +2042,7 @@ class Build extends RefCounted:
 		frame = Transform3D.IDENTITY
 		_ivy()
 		_cushions()
+		_draw()
 		var mesh := ArrayMesh.new()
 		var m := materials()
 		for part: Array in [[faces,m.stone]]:
@@ -2004,7 +2062,12 @@ class Build extends RefCounted:
 		root.move_child(instance,0)
 		var body := StaticBody3D.new()
 		body.name = "Body"
-		for hull in hulls:
+		for i in range(hulls.size()):
+			var hull := hulls[i]
+			if path != null:
+				var bent := PackedVector3Array()
+				for q in hull: bent.append(bend(q,hull_anchors[i]))
+				hull = bent
 			var shape := ConvexPolygonShape3D.new()
 			shape.points = hull
 			var holder := CollisionShape3D.new()
@@ -2013,6 +2076,79 @@ class Build extends RefCounted:
 		root.add_child(body)
 		root.set_meta("weathered",weathered)
 		return root
+
+	## Where straight point `p` is drawn: along the bend (by its own x, or
+	## a rigid block's `anchor`), or where it is with no bend.
+	func bend(p: Vector3, anchor := NAN) -> Vector3:
+		if path == null: return p
+		if is_nan(anchor): return path.xform(p.x)*Vector3(0.0,p.y,p.z)
+		return path.xform(anchor)*(p-Vector3(anchor,0.0,0.0))
+
+	## The faces built so far into the mesh: those hidden (with `cull`)
+	## left out, the rest bent along `path`.
+	func _draw() -> void:
+		var grid := {}
+		if cull:
+			for i in range(solids.size()):
+				var box: AABB = solids[i][0]
+				for cx in range(floori(box.position.x/CELL_CULL),floori(box.end.x/CELL_CULL)+1):
+					for cy in range(floori(box.position.y/CELL_CULL),floori(box.end.y/CELL_CULL)+1):
+						for cz in range(floori(box.position.z/CELL_CULL),floori(box.end.z/CELL_CULL)+1):
+							var key := Vector3i(cx,cy,cz)
+							if not grid.has(key): grid[key] = PackedInt32Array()
+							grid[key].append(i)
+		for face: Array in pending:
+			var corners: PackedVector3Array = face[0]
+			var normal: Vector3 = face[1]
+			if cull and _hidden(corners,normal,int(face[3]),grid): continue
+			var anchor: float = face[4]
+			var shade: Color = face[2]
+			if shelter.is_valid():
+				var mid := Vector3.ZERO
+				for q in corners: mid += q
+				shade.a = 1.0-clampf(float(shelter.call(mid/corners.size(),normal)),0.0,1.0)
+			if path != null:
+				var middle := Vector3.ZERO
+				for q in corners: middle += q
+				middle /= corners.size()
+				var at: float = middle.x if is_nan(anchor) else anchor
+				normal = ((path.xform(at) as Transform3D).basis*normal).normalized()
+				var bent := PackedVector3Array()
+				for q in corners: bent.append(bend(q,anchor))
+				corners = bent
+			for k in range(1,corners.size()-1):
+				_wound(faces,corners[0],corners[k],corners[k+1],normal,shade)
+		pending.clear()
+
+	## Whether a face (its corners, straight) is hidden: every corner (drawn
+	## in a little toward its middle) and its middle, stood a little off the
+	## face, lie inside another block or under the ground.
+	func _hidden(corners: PackedVector3Array, normal: Vector3, own: int, grid: Dictionary) -> bool:
+		var middle := Vector3.ZERO
+		for q in corners: middle += q
+		middle /= corners.size()
+		var probes := PackedVector3Array([middle])
+		for q in corners: probes.append(q.lerp(middle,0.1))
+		for q in probes:
+			var p := q+normal*CULL_OFF
+			if p.y < floor_at(p.x,p.z)-0.01 or p.y < ground-0.01: continue
+			var key := Vector3i(floori(p.x/CELL_CULL),floori(p.y/CELL_CULL),floori(p.z/CELL_CULL))
+			if not grid.has(key): return false
+			var found := false
+			for i in grid[key]:
+				if i == own: continue
+				var s: Array = solids[i]
+				if not (s[0] as AABB).has_point(p): continue
+				var inside := true
+				for plane: Plane in s[1]:
+					if plane.distance_to(p) > 0.0:
+						inside = false
+						break
+				if inside:
+					found = true
+					break
+			if not found: return false
+		return true
 
 	## The weathering's cuts on one block: every face's wobble (some even as
 	## built), corners chipped (a few even as built, more as it weathers),
@@ -2024,7 +2160,8 @@ class Build extends RefCounted:
 		var wobble := WOBBLE.x+(WOBBLE.y-WOBBLE.x)*w
 		for i in range(planes.size()):
 			var p := planes[i]
-			if i == keep:
+			# Lean stone keeps its tops level (walked, and stacked flush).
+			if i == keep or (lean and p.normal.y > 0.99):
 				out.append(p)
 				continue
 			var tilt := Vector3(rng.randf_range(-1,1),rng.randf_range(-1,1),rng.randf_range(-1,1))*wobble
@@ -2038,7 +2175,7 @@ class Build extends RefCounted:
 		var box := AABB(points[0],Vector3.ZERO)
 		for q in points: box = box.expand(q)
 		var least := minf(box.size.x,minf(box.size.y,box.size.z))*0.5
-		var chips := int(round((CHIPS.x*rough+CHIPS.y*w)*rng.randf_range(0.3,1.0)))
+		var chips := int(round((CHIPS.x*rough+CHIPS.y*w)*rng.randf_range(0.3,1.0)*(0.15 if lean else 1.0)))
 		for c in range(chips):
 			var corner := points[rng.randi()%points.size()]
 			if keep >= 0 and absf(planes[keep].distance_to(corner)) < 0.01: continue
@@ -2046,7 +2183,7 @@ class Build extends RefCounted:
 			var reach := -INF
 			for q in points: reach = maxf(reach,n.dot(q))
 			out.append(Plane(n,reach-least*rng.randf_range(CHIP.x,CHIP.y)*(0.35+0.65*a)))
-		if rng.randf() < CHUNK_ODDS*w+0.05*minf(rough,1.0):
+		if rng.randf() < (CHUNK_ODDS*w+0.05*minf(rough,1.0))*(0.5 if lean else 1.0):
 			var n := Vector3(rng.randf_range(-1,1),rng.randf_range(0.0,1.0),rng.randf_range(-1,1)).normalized()
 			var reach := -INF
 			var low := INF
@@ -2110,7 +2247,9 @@ class Build extends RefCounted:
 			if poly[0].y < 0.75: continue
 			high.append(t)
 			area += float(t[1])
-		var count := mini(IVY_MOST,int(area*lerpf(IVY_STRANDS.x,IVY_STRANDS.y,weathered)*detail+rng.randf()*detail))
+		# As many strands as the tops' area asks, capped (lean stone, fewer),
+		# then thinned by the detail (so a big ruin thins too).
+		var count := int(mini(IVY_LEAN if lean else IVY_MOST,int(area*lerpf(IVY_STRANDS.x,IVY_STRANDS.y,weathered)+rng.randf()))*detail)
 		var longest := lerpf(IVY_LENGTH.x,IVY_LENGTH.y,weathered)
 		for i in range(count):
 			if high.is_empty(): break
@@ -2169,14 +2308,14 @@ class Build extends RefCounted:
 		var along := Vector3(-out.z,0.0,out.x)
 		var p := start
 		var travelled := 0.0
-		var size := rng.randf_range(IVY_LEAF.x,IVY_LEAF.y)*1.15
+		var size := rng.randf_range(IVY_LEAF.x,IVY_LEAF.y)*(1.7 if lean else 1.15)
 		var in_air := 0.0
 		while travelled < length:
 			var taper := 1.0-0.55*smoothstep(length*0.55,length,travelled)
-			for j in range(2+int(rng.randf() < 0.5)):
+			for j in range((1 if lean else 2)+int(rng.randf() < 0.5)):
 				var off := along*rng.randf_range(-0.16,0.16)+Vector3(0.0,rng.randf_range(-0.05,0.05),0.0)+out*rng.randf_range(0.0,0.05)
 				_leaf(p+off,out,size*taper*rng.randf_range(0.75,1.1),0.5)
-			var step := rng.randf_range(0.11,0.17)
+			var step := rng.randf_range(0.11,0.17)*(1.8 if lean else 1.0)
 			var next := p+Vector3.DOWN*step+along*rng.randf_range(-0.05,0.05)*(0.4 if free else 1.0)
 			if not free:
 				var pushed := 0.0
@@ -2209,8 +2348,8 @@ class Build extends RefCounted:
 		var basis := Basis(side,face,side.cross(face)).orthonormalized()
 		var planes: Array[Plane] = [Plane(Vector3.DOWN,0.0)]
 		var turn := rng.randf()*TAU
-		for k in range(5):
-			var a := turn+TAU*k/5.0+rng.randf_range(-0.2,0.2)
+		for k in range(3 if lean else 5):
+			var a := turn+TAU*k/(3.0 if lean else 5.0)+rng.randf_range(-0.2,0.2)
 			planes.append(Plane(Vector3(cos(a),0.0,sin(a)),size*rng.randf_range(0.42,0.55)))
 			var n := Vector3(cos(a+0.6)*0.9,1.0,sin(a+0.6)*0.9).normalized()
 			planes.append(Plane(n,n.dot(Vector3(0.0,size*0.32,0.0))))
@@ -2222,7 +2361,7 @@ class Build extends RefCounted:
 	## `height` tall, each a thin cut sliver leaning its own way, in the
 	## plate's olive greens; never solid.
 	func tuft(at: Vector3, height: float, count := 7) -> void:
-		count = int(round(count*detail))
+		count = int(round(count*detail*(0.5 if lean else 1.0)))
 		var keep := frame
 		frame = Transform3D.IDENTITY
 		for i in range(count):
