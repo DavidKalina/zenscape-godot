@@ -838,7 +838,7 @@ func _say() -> void:
 		what = FAMILY_NAMES[_family]+(" · centrepiece" if _centred else "")
 	var keys := "F1 Gothic · F2 Aqueduct · F3 Hall · G fly the long hall"
 	if _flying:
-		_label.text = "Flying the long hall   ·   %.0f m/s   ·   bumps %d   ·   shafts %s\nA D bank and turn · W S pitch (W nose down) · mouse steers · Space boost · Shift brake · Q E barrel roll · hold right mouse to look round · L shafts · N night · G or Esc to stop flying" % [float(_plane_flight.speed),_bumps,"on" if _shafts else "off"]
+		_label.text = "Flying the long hall   ·   %.0f m/s   ·   bumps %d   ·   shafts %s\nA D bank and turn · W S pitch (W nose down) · mouse steers · Space boost · Shift brake · Q E barrel roll · hold right mouse to look round · R or pad Back restart at the entrance · L shafts · N night · G or Esc to stop flying" % [float(_plane_flight.speed),_bumps,"on" if _shafts else "off"]
 		return
 	_label.text = "%s   ·   %s   ·   %s   ·   shafts %s   ·   seed %d\n%s" % [what,SHOWS[_show],"night" if _night else "day","on" if _shafts else "off",_seed,keys]
 
@@ -886,9 +886,12 @@ func _unhandled_input(event: InputEvent) -> void:
 			_fly_look += Vector2(event.relative.x,-event.relative.y)*FLY_LOOK
 		elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT:
 			_chase.free_held = event.pressed
+		elif event is InputEventJoypadButton and event.pressed and event.button_index == JOY_BUTTON_BACK:
+			_fly_launch()
 		elif event is InputEventKey and event.pressed and not event.echo:
 			match event.keycode:
 				KEY_G, KEY_ESCAPE: _fly(false)
+				KEY_R: _fly_launch()
 				KEY_Q: _roll_asked = -1.0
 				KEY_E: _roll_asked = 1.0
 				KEY_N: _set_night(not _night)
@@ -946,6 +949,19 @@ func _fly(on: bool) -> void:
 		_say()
 		return
 	Pad.ensure()
+	_fly_figure = PlaneFigure.new()
+	_fly_figure.name = "Flying"
+	add_child(_fly_figure)
+	_fly_figure.show_pilot(true)
+	_chase = GlideCamera.new()
+	_fly_launch()
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	_say()
+
+## (Re)starts the run: the plane short of the long hall's first mouth,
+## flying in down the lane, the chase camera behind it (R or the pad's
+## Back/View restarts it at once).
+func _fly_launch() -> void:
 	var scene: Node3D = _areas.hall.scene
 	var mouth: Dictionary = (scene.get_meta("ends") as Array)[0]
 	var at := scene.global_transform*((mouth.at as Vector3)+Vector3(-18.0,3.2,(Hall.LANE.x+Hall.LANE.y)*0.5))
@@ -953,16 +969,10 @@ func _fly(on: bool) -> void:
 	_plane_flight = SkyPlane.new()
 	_plane_flight.floor_y = -100.0
 	_plane_flight.launch(at,atan2(-way.x,-way.z),SkyPlane.CRUISE_SPEED,false)
-	_fly_figure = PlaneFigure.new()
-	_fly_figure.name = "Flying"
-	add_child(_fly_figure)
-	_fly_figure.show_pilot(true)
-	_chase = GlideCamera.new()
 	_chase.reset(_plane_flight,at-way*6.0+Vector3.UP*1.6)
 	_fly_look = Vector2.ZERO
+	_roll_asked = 0.0
 	_bumps = 0
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-	_say()
 
 ## The plate's top under a point, or open air off it.
 func _fly_ground(p: Vector3) -> Variant:
