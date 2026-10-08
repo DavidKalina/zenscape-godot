@@ -49,6 +49,11 @@ const Stands = preload("res://scripts/tree_stands.gd")
 const MeadowTypes = preload("res://scripts/meadow_types.gd")
 const Samples = preload("res://scripts/garden_instance_samples.gd")
 const Erosion = preload("res://scripts/terrain_erosion.gd")
+const RockLooks = preload("res://scripts/rock_looks.gd")
+const IsletLake = preload("res://scripts/islet_lake.gd")
+const Woodland = preload("res://scripts/woodland.gd")
+const RavineCut = preload("res://scripts/ravine_cut.gd")
+const MountainSpire = preload("res://scripts/mountain_spire.gd")
 
 ## Kinds and how often each turns up.
 const KINDS := [["meadow",0.22],["grove",0.22],["hills",0.15],["crag",0.11],["spring",0.18],["shore",0.12]]
@@ -61,6 +66,8 @@ const REACH := 1.45
 const MARGIN := 3.2
 ## The grid's step and nudge: the plate's (scripts/plate_mesh.gd).
 const STEP := Plate.POINT_STEP
+## Claimed ground eases back to the land round it over this many metres.
+const LEVEL_EASE := 1.6
 ## The shore's ease: the ground meets RIM_HEIGHT this far in (m), at most
 ## a share of the islet's radius.
 const RIM_HEIGHT := Genesis.RIM_HEIGHT
@@ -231,6 +238,12 @@ var land := PackedInt32Array()
 var pond := Vector3.ZERO
 var lip := Vector2.ZERO
 var lip_out := Vector2.ZERO
+## The water's level (islet frame): WATER for a pond, unless the recipe
+## pond gives its own `level` (a pool sunk under the rim, a pond held
+## high), or a lake's own (scripts/islet_lake.gd).
+var water_level := WATER
+## A lake (scripts/islet_lake.gd), empty if none: the recipe's `lake`.
+var lake := {}
 ## What grows: object records, as the plate's.
 var objects: Array[Dictionary] = []
 ## Trees and stones, for the glide and the walker: crowns (x, z, top over
@@ -240,11 +253,78 @@ var blocks: Array[Vector3] = []
 ## The tree species and flower kinds standing on it, for the curious.
 var species: Array[String] = []
 var flowers: Array[String] = []
+## An authored islet's recipe (`author`); a seeded one's holds only its
+## rock and `deep` (RockLooks `seeded`). What it may set, each optional,
+## every place in the islet's frame (m):
+##   radius: the land's radius, instead of the kind's range;
+##   mounds / peaks: Array of Vector4(x, z, reach, height), smooth hill
+##     mounds or the crag's ridged peaks, instead of the kind's own;
+##   dome: how high the ground rises inland, instead of the kind's;
+##   pond: {at: Vector2, radius, toward: Vector2, level}, a pond whose
+##     channel leaves over the rim in the `toward` direction (or at the
+##     shore point nearest `lip`), on any kind, its water at `level`
+##     (islet frame) instead of WATER;
+##   pads: Array of Vector4(x, z, radius, lift), ground levelled to its
+##     height at the middle (plus lift) for something to stand on, and kept
+##     clear of plants;
+##   clear: Array of Vector3(x, z, radius) kept clear of plants;
+##   trees: Vector2i, the trees' count, and tree_pool: the species pool;
+##     mixed: each tree drawn from the whole pool (not a dominant and a
+##     companion); tree_size: a multiplier range on each tree's size;
+##   drifts: Vector2i, how many flower drifts; apart: a multiplier on how
+##     far apart the trees keep;
+##   undergrowth: a multiplier on the kind's undergrowth;
+##   woodland: a real wood planted over it (scripts/woodland.gd: glades,
+##     giants, clumped canopy, the floor), on top of the trees above;
+##   objects: Array of records ({asset, x, z, angle, scale, tint}) set as
+##     they are, after the planting (a cabin, lamps, a field's rows);
+##   blocks / crowns: extra walker blocks Vector3(x, z, radius) and glide
+##     crowns Vector4(x, z, top, reach), for what stands on it;
+##   keel: a multiplier on how deep the rock hangs under it; or deep, the
+##     same by its size (RockLooks `keel`);
+##   rock: the look of its earth sides (scripts/rock_looks.gd, SkyIslets
+##     `_side_material`): {"palette": name, "tone": brightness, "vary": its
+##     variant, 0 to 1};
+##   decks: Array of {a: Vector3, b: Vector3, width, bow}, planked ways a
+##     walker and the glide treat as land, reaching off the rim (a dock, a
+##     footbridge's deck): straight from a to b, bowed `bow` m at the middle
+##     (Footbridge `lift`'s shapes: up a sine, down a sine squared).
+##   tear: a ravine's half, cut from a whole island along a jagged tear
+##     (scripts/ravine_cut.gd: its side, the tear's shape, filled by
+##     `share`).
+var recipe := {}
+## The recipe's decks, as it gives them.
+var decks: Array = []
+## Ground claimed after it was shaped (`claim`), for something to stand on:
+## Vector4(x, z, radius, 0) circles and Vector4(x, z, half x, half z) with
+## w > 0 rectangles. `find_spot` keeps off them.
+var claims: Array[Vector4] = []
+## Rectangles (Rect2) of tilled earth, drawn in the earth's colour.
+var soil: Array[Rect2] = []
+## A ravine's half (a recipe's `tear`, scripts/ravine_cut.gd `cut`): the
+## grid's points stand `grid_shift` off its own middle (the whole island's
+## frame to the half's), and `cleft` holds the whole's keel, the tear's
+## shore edges and the half's middle in the whole's frame.
+var grid_shift := Vector2.ZERO
+var cleft := {}
+## A recipe's `spire` (a Dictionary, may be empty): a real peak raised on the
+## islet (scripts/mountain_spire.gd), which draws its own faces; null if none.
+var spire: RefCounted = null
+
+## An islet laid out by hand from `spec` (see `recipe`), its kind
+## `spec.kind`, the rest of it seeded by `seed_value` as any islet's is.
+static func author(seed_value: int, spec: Dictionary) -> RefCounted:
+	var islet: RefCounted = new()
+	islet.recipe = spec
+	islet._shape(seed_value,str(spec.get("kind","")))
+	return islet
 
 ## The islet for `seed` (a hash from its cell), of `kind` if given, or one
 ## drawn by the seed.
 static func make(seed_value: int, forced := "") -> RefCounted:
 	var islet: RefCounted = new()
+	# Its rock as the clusters' is (scripts/rock_looks.gd), by its seed.
+	islet.recipe = RockLooks.seeded(seed_value)
 	islet._shape(seed_value,forced)
 	return islet
 
@@ -264,6 +344,7 @@ func _shape(seed_value: int, forced: String) -> void:
 	kind = forced if forced != "" else pick_kind(rng)
 	var across: Vector2 = ACROSS[kind]
 	radius = rng.randf_range(across.x,across.y)*0.5
+	if recipe.has("radius"): radius = float(recipe.radius)
 	var area := PI*radius*radius
 	var grid := _grid(ceili((radius*REACH+MARGIN)/STEP))
 	points = grid.points
@@ -273,6 +354,7 @@ func _shape(seed_value: int, forced: String) -> void:
 	outline = IslandOutline.mask(points,ids,seed_value,-1.0,half,area)
 	shore_distance = IslandOutline.shore_distance(points,ids,outline)
 	shore_edges = IslandOutline.shore_edges(ids,outline)
+	if recipe.has("tear"): RavineCut.cut(self)
 	land.clear()
 	for f in range(outline.size()):
 		if outline[f] == 0: land.append(f)
@@ -280,12 +362,19 @@ func _shape(seed_value: int, forced: String) -> void:
 	for i in range(points.size()):
 		if shore_distance[i] >= 0.0: reach = maxf(reach,points[i].length())
 	_lay_ground(rng)
-	keel = IslandShore.keel(points,ids,outline,shore_distance)
+	keel = IslandShore.keel(points,ids,outline,shore_distance) if cleft.is_empty() else cleft.keel
+	if recipe.has("keel") or recipe.has("deep"):
+		var deeper := float(recipe.keel) if recipe.has("keel") else RockLooks.keel(radius,float(recipe.deep))
+		for i in range(keel.size()): keel[i] *= deeper
+	if recipe.has("spire"): spire = MountainSpire.raise(self)
 	base = -(BASE.x+BASE.y*radius)
 	var deepest := 0.0
 	for k in keel: deepest = maxf(deepest,k)
 	depth = -base+deepest
 	_plant(rng)
+	decks = recipe.get("decks",[])
+	for deck: Dictionary in decks:
+		for end: Vector3 in [deck.a,deck.b]: reach = maxf(reach,Vector2(end.x,end.z).length()+1.0)
 
 ## The grid of `n` cells each way from the middle (2n a side), the plate's
 ## own triangulation: [points, ids, cells a side, half width]. Cached, and
@@ -358,7 +447,13 @@ func _lay_ground(rng: RandomNumberGenerator) -> void:
 	for d in shore_distance: inland = maxf(inland,d)
 	# The kind's shapes: mounds (hills), a peak and its knob (crag).
 	var mounds: Array[Vector4] = []
-	if kind == "hills":
+	# A recipe's own: smooth mounds, then ridged peaks (`peaked` from).
+	var peaked := 1000000
+	if recipe.has("mounds") or recipe.has("peaks"):
+		for m: Vector4 in recipe.get("mounds",[]): mounds.append(m)
+		peaked = mounds.size()
+		for m: Vector4 in recipe.get("peaks",[]): mounds.append(m)
+	elif kind == "hills":
 		for k in range(rng.randi_range(MOUNDS.x,MOUNDS.y)):
 			var at := _inland_point(rng,inland*0.35)
 			mounds.append(Vector4(at.x,at.y,radius*rng.randf_range(MOUND_SIZE.x,MOUND_SIZE.y),rng.randf_range(MOUND.x,MOUND.y)))
@@ -381,13 +476,14 @@ func _lay_ground(rng: RandomNumberGenerator) -> void:
 			continue
 		var p := points[i]
 		var roll := swell.get_noise_2d(p.x,p.y)*SWELL.x+ripple.get_noise_2d(p.x,p.y)*RIPPLE.x
-		var dome := float(DOME[kind])*smoothstep(0.0,1.0,d/inland)
+		var dome := float(recipe.get("dome",DOME[kind]))*smoothstep(0.0,1.0,d/inland)
 		# A beach lies low and nearly flat.
 		var h := RIM_HEIGHT+0.05+roll*0.3+dome if kind == "shore" else GROUND+roll+dome
-		for m in mounds:
+		for mi in range(mounds.size()):
+			var m := mounds[mi]
 			var r := p.distance_to(Vector2(m.x,m.y))/m.z
 			if r >= 1.0: continue
-			if kind == "crag":
+			if mi >= peaked or (peaked > mounds.size() and kind == "crag"):
 				var fall := pow(1.0-r,1.2)
 				h += m.w*fall+RIDGE*fall*(ridge.get_noise_2d(p.x,p.y)*0.5+0.5)
 			else:
@@ -395,7 +491,24 @@ func _lay_ground(rng: RandomNumberGenerator) -> void:
 		# The lip wanders up and down, and slumps in places (`_rim_at`).
 		heights[i] = lerpf(_rim_at(p,lip_noise),h,smoothstep(0.0,ease,d))
 	_erode()
-	if kind == "spring": _cut_pond(rng,inland)
+	if recipe.has("lake"): IsletLake.cut(self,rng,inland)
+	elif kind == "spring" or recipe.has("pond"): _cut_pond(rng,inland)
+	_level_pads()
+
+## A recipe's pads: the ground eased to the height at each pad's middle
+## (plus its lift) over its radius, fading back over half as much again.
+func _level_pads() -> void:
+	var pads: Array = recipe.get("pads",[])
+	if pads.is_empty(): return
+	var targets := []
+	for pad: Vector4 in pads: targets.append(ground_at(Vector2(pad.x,pad.y))+pad.w)
+	for i in range(points.size()):
+		if shore_distance[i] < 0.0: continue
+		for k in range(pads.size()):
+			var pad: Vector4 = pads[k]
+			var d := points[i].distance_to(Vector2(pad.x,pad.y))
+			var t := 1.0-smoothstep(pad.z,pad.z*1.5+0.5,d)
+			if t > 0.0: heights[i] = lerpf(heights[i],float(targets[k]),t)
 
 ## The rim's height at shore point `p`: RIM_HEIGHT wandering by LIP.x, and
 ## slumped down by up to LIP.y where the lip has broken away.
@@ -461,15 +574,23 @@ func _inland_point(rng: RandomNumberGenerator, inside: float) -> Vector2:
 func _cut_pond(rng: RandomNumberGenerator, inland: float) -> void:
 	var middle := _inland_point(rng,inland*0.85)
 	var r := clampf(inland*0.6,POND.x,minf(POND.y,radius*POND_SHARE))
+	var spec: Dictionary = recipe.get("pond",{})
+	if spec.has("at"): middle = spec.at
+	if spec.has("radius"): r = float(spec.radius)
+	if spec.has("level"): water_level = float(spec.level)
 	pond = Vector3(middle.x,middle.y,r)
 	# The lip: the shore point nearest the pond, a little seeded among the
-	# nearest few, so the channel is short.
+	# nearest few, so the channel is short; or, for a recipe's, the shore
+	# point the way it says, near.
 	var shore := []
 	for k in range(0,shore_edges.size(),3):
 		var i := shore_edges[k]
-		shore.append([points[i].distance_to(middle),i])
+		var score := points[i].distance_to(middle)
+		if spec.has("toward"): score += 12.0*(1.0-(points[i]-middle).normalized().dot((spec.toward as Vector2).normalized()))
+		if spec.has("lip"): score = points[i].distance_to(spec.lip)
+		shore.append([score,i])
 	shore.sort()
-	var pick: int = shore[rng.randi_range(0,mini(2,shore.size()-1))][1]
+	var pick: int = shore[0 if spec.has("toward") or spec.has("lip") else rng.randi_range(0,mini(2,shore.size()-1))][1]
 	lip = points[pick]
 	var outward: Dictionary = IslandShore._outward(points,shore_edges)
 	lip_out = outward.get(pick,(lip-middle).normalized())
@@ -480,17 +601,20 @@ func _cut_pond(rng: RandomNumberGenerator, inland: float) -> void:
 		var d := p.distance_to(middle)/r
 		var cut := 1.0-smoothstep(CHANNEL*0.8,CHANNEL*1.45,_channel_distance(p))
 		# The bank stands over the water all round, but where the channel runs.
-		if d < 1.8 and cut <= 0.0: h = maxf(h,WATER+BANK*(1.0-smoothstep(1.2,1.8,d))+0.06)
+		if d < 1.8 and cut <= 0.0: h = maxf(h,water_level+BANK*(1.0-smoothstep(1.2,1.8,d))+0.06)
 		var bowl := 1.0-smoothstep(0.55,1.15,d)
-		h = minf(h,lerpf(h,WATER-BOWL,bowl))
-		h = minf(h,lerpf(h,WATER-0.14,cut))
+		h = minf(h,lerpf(h,water_level-BOWL,bowl))
+		h = minf(h,lerpf(h,water_level-0.14,cut))
 		heights[i] = h
 
 ## The pond's water in the islet frame: level, middle and radius, with the
 ## lip and the way out; empty if the islet has none.
 func water() -> Dictionary:
 	if pond.z <= 0.0: return {}
-	return {"level":WATER,"middle":Vector2(pond.x,pond.y),"radius":pond.z,"lip":lip,"out":lip_out}
+	var w := {"level":water_level,"middle":Vector2(pond.x,pond.y),"radius":pond.z,"lip":lip,"out":lip_out}
+	# A lake pours off as a broader fall.
+	if not lake.is_empty(): w.half = IsletLake.FALL_HALF
+	return w
 
 func _channel_distance(p: Vector2) -> float:
 	if pond.z <= 0.0: return INF
@@ -501,6 +625,7 @@ func _channel_distance(p: Vector2) -> float:
 
 ## True over the pond's water or its channel.
 func wet(p: Vector2) -> bool:
+	if not lake.is_empty(): return IsletLake.wet(self,p)
 	if pond.z <= 0.0: return false
 	return p.distance_to(Vector2(pond.x,pond.y)) < pond.z*1.05 or _channel_distance(p) < CHANNEL
 
@@ -509,8 +634,8 @@ func wet(p: Vector2) -> bool:
 ## The land face holding `p`, as Vector4(face, weights a, b, c's first two),
 ## or face -1 off the land.
 func _locate(p: Vector2) -> Array:
-	var i := floori((p.x+half)/STEP)
-	var j := floori((p.y+half)/STEP)
+	var i := floori((p.x+grid_shift.x+half)/STEP)
+	var j := floori((p.y+grid_shift.y+half)/STEP)
 	for dj in [0,-1,1]:
 		for di in [0,-1,1]:
 			var ci: int = i+di
@@ -525,7 +650,34 @@ func _locate(p: Vector2) -> Array:
 
 func inside(p: Vector2) -> bool:
 	if absf(p.x) > reach+0.5 or absf(p.y) > reach+0.5: return false
+	return int(_locate(p)[0]) >= 0 or deck_y(p) > -INF
+
+## True on the land itself (not a deck).
+func on_land(p: Vector2) -> bool:
 	return int(_locate(p)[0]) >= 0
+
+## The planks' top over `p` on a deck (the highest, where two cross), or
+## -INF off every deck.
+func deck_y(p: Vector2) -> float:
+	var best := -INF
+	for deck: Dictionary in decks:
+		var a: Vector3 = deck.a
+		var b: Vector3 = deck.b
+		var from := Vector2(a.x,a.z)
+		var way := Vector2(b.x,b.z)-from
+		var t := (p-from).dot(way)/maxf(way.length_squared(),0.0001)
+		if t < 0.0 or t > 1.0: continue
+		# A live rope bridge's deck (scripts/rope_bridge.gd) sways, rises and
+		# sinks; `side` is across it from where it has swayed to.
+		var live: Variant = deck.get("sim")
+		var side := -(p-from).cross(way)/way.length()
+		if live != null: side -= float(live.sway(t))
+		if absf(side) > float(deck.get("width",1.0))*0.5: continue
+		var bow := float(deck.get("bow",0.0))
+		var shape := sin(PI*t)
+		var rise := float(live.drop(t,side)) if live != null else 0.0
+		best = maxf(best,lerpf(a.y,b.y,t)+bow*(shape if bow > 0.0 else shape*shape)+rise)
+	return best
 
 ## A per-point value at `p` on the faces it is drawn on, or `fallback` off
 ## the land.
@@ -539,7 +691,10 @@ func _sample(values: PackedFloat32Array, p: Vector2, fallback: float) -> float:
 ## The ground's height as drawn, at a point inside (islet frame); off the
 ## land, the rim's height.
 func ground_at(p: Vector2) -> float:
-	return _sample(heights,p,RIM_HEIGHT)
+	if decks.is_empty(): return _sample(heights,p,RIM_HEIGHT)
+	var deck := deck_y(p)
+	if not on_land(p) and deck > -INF: return deck
+	return maxf(_sample(heights,p,RIM_HEIGHT),deck)
 
 func top(p: Vector2) -> float:
 	return ground_at(p)
@@ -550,6 +705,9 @@ func inland(p: Vector2) -> float:
 
 ## The rock's underside under a point inside.
 func underside(p: Vector2) -> float:
+	if not decks.is_empty() and not on_land(p):
+		var deck := deck_y(p)
+		if deck > -INF: return deck-0.4
 	return base-_sample(keel,p,0.0)
 
 ## The height the glide rides over: the ground, the crowns, the stones.
@@ -557,6 +715,8 @@ func solid_top(p: Vector2) -> float:
 	var h := ground_at(p)
 	for c in crowns:
 		if p.distance_to(Vector2(c.x,c.y)) < c.w: h = maxf(h,ground_at(Vector2(c.x,c.y))+c.z)
+	# A lake's water is a surface to skim and come down on.
+	if not lake.is_empty() and wet(p): h = maxf(h,water_level)
 	return h
 
 ## How far out toward the rim a point is along its ray from the middle: 0 at
@@ -572,7 +732,7 @@ func rim_radius(a: float) -> float:
 	var r := 0.0
 	var step := 0.15
 	while r < reach+1.0:
-		if not inside(dir*(r+step)): break
+		if not on_land(dir*(r+step)): break
 		r += step
 	return maxf(r,0.05)
 
@@ -583,7 +743,8 @@ func rim_point(a: float) -> Vector2:
 func blocked(at: Vector2) -> bool:
 	for b in blocks:
 		if at.distance_to(Vector2(b.x,b.y)) < b.z: return true
-	return wet(at)
+	# Out over the water only on a deck (a jetty).
+	return wet(at) and deck_y(at) == -INF
 
 static func _barycentric(p: Vector2, a: Vector2, b: Vector2, c: Vector2) -> Vector3:
 	var v0 := b-a
@@ -624,6 +785,8 @@ func _plant(rng: RandomNumberGenerator) -> void:
 	flowers.clear()
 	var area := land_area()
 	var taken: Array[Vector3] = []
+	for c: Vector3 in recipe.get("clear",[]): taken.append(c)
+	for pad: Vector4 in recipe.get("pads",[]): taken.append(Vector3(pad.x,pad.y,pad.z))
 	# Stones first: the trees and flowers go round them.
 	var stones: Vector2i = STONES[kind]
 	for n in range(rng.randi_range(stones.x,stones.y)):
@@ -634,23 +797,28 @@ func _plant(rng: RandomNumberGenerator) -> void:
 		_add(asset,at,rng.randf()*TAU,size)
 		taken.append(Vector3(at.x,at.y,size*0.6))
 	# Trees: a dominant species and a companion.
-	var pool: Dictionary = TREE_POOLS[kind]
+	var pool: Dictionary = recipe.get("tree_pool",TREE_POOLS[kind])
 	var dominant := _weighted(pool,rng.randf())
 	var companion := _weighted(pool,rng.randf())
 	var purity := rng.randf_range(PURITY.x,PURITY.y)
-	var bounds: Vector2i = TREE_COUNT[kind]
+	var bounds: Vector2i = recipe.get("trees",TREE_COUNT[kind])
 	var want := clampi(roundi(area*float(TREE_DENSITY[kind])*rng.randf_range(0.7,1.3)),bounds.x,bounds.y)
+	if recipe.has("trees"): want = rng.randi_range(bounds.x,bounds.y)
 	var tints := {}
 	for n in range(want):
 		var tree := dominant if rng.randf() < purity else companion
+		if recipe.get("mixed",false): tree = _weighted(pool,rng.randf())
 		var size := rng.randf_range(Emergence.TREE_SIZE.x,Emergence.TREE_SIZE.y)*float(Emergence.KIND_SIZE.get(tree,1.0))
-		var room := TREE_APART*maxf(size,0.6)*(1.6 if tree in ["layered_tree","broadleaf","willow"] else 1.0)
+		if recipe.has("tree_size"): size *= rng.randf_range((recipe.tree_size as Vector2).x,(recipe.tree_size as Vector2).y)
+		var room := TREE_APART*maxf(size,0.6)*(1.6 if tree in ["layered_tree","broadleaf","willow"] else 1.0)*float(recipe.get("apart",1.0))
 		var at: Variant = _find(rng,TREE_IN,TREE_STEEP,taken,room*0.5,true)
 		if at == null: continue
 		if not tints.has(tree): tints[tree] = _tree_tint(tree,rng)
 		_add(tree,at,rng.randf()*TAU,size,tints[tree])
 		taken.append(Vector3(at.x,at.y,room*0.5))
 		if not tree in species: species.append(tree)
+	# A woodland (scripts/woodland.gd), when the recipe asks for one.
+	if recipe.has("woodland"): Woodland.plant(self,rng,taken)
 	# Flower drifts.
 	if rng.randf() < float(FLOWER_ODDS[kind]):
 		var kinds: Array[String] = []
@@ -660,7 +828,7 @@ func _plant(rng: RandomNumberGenerator) -> void:
 			var k := _weighted(choices,rng.randf())
 			choices.erase(k)
 			kinds.append(k)
-		var drifts: Vector2i = DRIFTS[kind]
+		var drifts: Vector2i = recipe.get("drifts",DRIFTS[kind])
 		for d in range(rng.randi_range(drifts.x,drifts.y)):
 			var flower: String = kinds[d % kinds.size()]
 			var middle: Variant = _find(rng,0.6,TREE_STEEP,taken,0.0,true)
@@ -679,7 +847,7 @@ func _plant(rng: RandomNumberGenerator) -> void:
 			if placed > 0 and not flower in flowers: flowers.append(flower)
 	# Undergrowth.
 	for entry: Array in UNDERGROWTH[kind]:
-		var count := _count(rng,area*float(entry[1]))
+		var count := _count(rng,area*float(entry[1])*float(recipe.get("undergrowth",1.0)))
 		var sizes: Vector2 = entry[2]
 		for n in range(count):
 			var asset: String = entry[0]
@@ -710,7 +878,8 @@ func _plant(rng: RandomNumberGenerator) -> void:
 			taken.append(Vector3(p.x,p.y,0.3))
 			placed += 1
 	# Reeds and bank grass round the pond's water, and along a beach.
-	if pond.z > 0.0:
+	if not lake.is_empty(): IsletLake.plant(self,rng)
+	elif pond.z > 0.0:
 		for n in range(rng.randi_range(REEDS.x,REEDS.y)):
 			var a := rng.randf()*TAU
 			var p := Vector2(pond.x,pond.y)+Vector2.from_angle(a)*pond.z*rng.randf_range(0.95,1.3)
@@ -730,6 +899,132 @@ func _plant(rng: RandomNumberGenerator) -> void:
 		for n in range(rng.randi_range(1,3)):
 			var p := Vector2(t.x,t.y)+Vector2.from_angle(rng.randf()*TAU)*(t.z*rng.randf_range(0.5,0.9)+0.2)
 			if _ground_ok(p,0.25,TREE_STEEP,true): _add("grass_tuft",p,rng.randf()*TAU,rng.randf_range(0.6,1.0))
+	# What the recipe sets as it is: a cabin, lamps, a field's rows.
+	for item: Dictionary in recipe.get("objects",[]):
+		# Only on the land, a little in from the rim (a field's rows stop
+		# at the shore).
+		if inland(Vector2(item.x,item.z)) < float(item.get("inset",0.4)): continue
+		_add(item.asset,Vector2(item.x,item.z),float(item.get("angle",0.0)),float(item.get("scale",1.0)),str(item.get("tint","")))
+
+# --- Claiming ground ----------------------------------------------------------------
+
+## A spot on the land for something `radius` m round (or, with `rect` set,
+## a rectangle of those half extents, axis-aligned), at least `rim` m in
+## from the shore past its own reach, dry with `wet_room` m to spare,
+## whose ground varies by at most `flat` m over it, clear of what is
+## claimed and of `avoid` (Vector3(x, z, radius)). Scored by `prefer`:
+## {"toward": Vector2 a way to lean to, "high": weight on height, "middle":
+## weight on staying central, "near": Vector2 a place to stay near}; null
+## if none suits. Scanned on a STEP grid, so the same islet and asks give
+## the same spot.
+func find_spot(radius: float, rim: float, flat: float, avoid: Array = [], prefer: Dictionary = {}, rect := Vector2.ZERO, wet_room := 1.0) -> Variant:
+	var reach_of := rect.length() if rect != Vector2.ZERO else radius
+	var best: Variant = null
+	var best_score := -INF
+	var toward: Vector2 = (prefer.get("toward",Vector2.ZERO) as Vector2).normalized()
+	var step := maxf(0.6,reach/28.0)
+	var span := reach
+	var x := -span
+	while x <= span:
+		var z := -span
+		while z <= span:
+			var p := Vector2(x,z)
+			z += step
+			if not on_land(p) or inland(p) < rim+reach_of: continue
+			if _blocked_by(p,reach_of,avoid): continue
+			var spread := _spread(p,radius,rect,wet_room)
+			if spread < 0.0 or spread > flat: continue
+			var score := -spread*2.0
+			if toward != Vector2.ZERO: score += p.dot(toward)/maxf(radius_of_land(),1.0)*float(prefer.get("toward_weight",3.0))
+			score += ground_at(p)*float(prefer.get("high",0.0))
+			score -= p.length()/maxf(radius_of_land(),1.0)*float(prefer.get("middle",0.0))
+			if prefer.has("near"): score -= p.distance_to(prefer.near)*float(prefer.get("near_weight",0.3))
+			score += _hash01(p)*0.05
+			if score > best_score:
+				best_score = score
+				best = p
+		x += step
+	return best
+
+## A circle of the land's area's radius (m).
+func radius_of_land() -> float:
+	if _land_radius < 0.0: _land_radius = sqrt(maxf(land_area(),1.0)/PI)
+	return _land_radius
+
+var _land_radius := -1.0
+
+## How much the ground varies over a footprint at `p` (circle `radius`, or
+## a `rect` of half extents), -1 where any of it is off the land or wet.
+func _spread(p: Vector2, radius: float, rect: Vector2, wet_room: float) -> float:
+	var low := INF
+	var high := -INF
+	var samples: Array[Vector2] = [p]
+	if rect != Vector2.ZERO:
+		for i in range(-2,3):
+			for j in range(-2,3): samples.append(p+Vector2(rect.x*i/2.0,rect.y*j/2.0))
+	else:
+		for k in range(8): samples.append(p+Vector2.from_angle(TAU*k/8.0)*radius)
+		for k in range(4): samples.append(p+Vector2.from_angle(TAU*k/4.0+0.4)*radius*0.5)
+	for q in samples:
+		if not on_land(q): return -1.0
+		if wet(q): return -1.0
+		if not lake.is_empty():
+			if IsletLake.near(self,q,wet_room): return -1.0
+		elif pond.z > 0.0 and q.distance_to(Vector2(pond.x,pond.y)) < pond.z+wet_room: return -1.0
+		if pond.z > 0.0 and _channel_distance(q) < CHANNEL+wet_room: return -1.0
+		var h := ground_at(q)
+		low = minf(low,h)
+		high = maxf(high,h)
+	return high-low
+
+func _blocked_by(p: Vector2, room: float, avoid: Array) -> bool:
+	for c in claims:
+		var r := Vector2(c.z,c.w).length() if c.w > 0.0 else c.z
+		if p.distance_to(Vector2(c.x,c.y)) < r+room+0.4: return true
+	for a: Vector3 in avoid:
+		if p.distance_to(Vector2(a.x,a.y)) < a.z+room: return true
+	return false
+
+static func _hash01(p: Vector2) -> float:
+	return fposmod(sin(p.x*12.9898+p.y*78.233)*43758.5453,1.0)
+
+## Claims ground for something to stand on: the ground levelled to its
+## height at `at` (plus `lift`) over a circle of `radius` (or a `rect` of
+## half extents), easing back over LEVEL_EASE m; whatever grew on it or on
+## the ease is cleared. Done before `flora` and the meshes.
+func claim(at: Vector2, radius: float, lift := 0.0, rect := Vector2.ZERO) -> void:
+	var target := ground_at(at)+lift
+	for i in range(points.size()):
+		if shore_distance[i] < 0.0: continue
+		# Ground claimed before keeps its level.
+		if _claimed(points[i]): continue
+		var d := _footprint_distance(points[i]-at,radius,rect)
+		var t := 1.0-smoothstep(0.0,LEVEL_EASE,d)
+		if t > 0.0: heights[i] = lerpf(heights[i],target,t)
+	objects = objects.filter(func(o: Dictionary) -> bool:
+		return _footprint_distance(Vector2(o.x,o.z)-at,radius,rect) > LEVEL_EASE*0.5+0.3)
+	claims.append(Vector4(at.x,at.y,rect.x,rect.y) if rect != Vector2.ZERO else Vector4(at.x,at.y,radius,0.0))
+
+## True on ground already claimed (within its footprint, a little past).
+func _claimed(p: Vector2) -> bool:
+	for c in claims:
+		var d := _footprint_distance(p-Vector2(c.x,c.y),c.z,Vector2(c.z,c.w) if c.w > 0.0 else Vector2.ZERO)
+		if d < 0.05: return true
+	return false
+
+## How far `d` (from a footprint's middle) lies outside it: 0 inside.
+static func _footprint_distance(d: Vector2, radius: float, rect: Vector2) -> float:
+	if rect != Vector2.ZERO: return Vector2(maxf(absf(d.x)-rect.x,0.0),maxf(absf(d.y)-rect.y,0.0)).length()
+	return maxf(d.length()-radius,0.0)
+
+func _in_soil(p: Vector2) -> bool:
+	for r in soil:
+		if r.has_point(p): return true
+	return false
+
+## Sets a record (a cabin, a lamp, a row's wheat) as it is.
+func add_record(asset: String, at: Vector2, angle: float, size := 1.0, tint := "") -> void:
+	_add(asset,at,angle,size,tint)
 
 ## A seeded count round a mean: its whole part, and one more at the odds of
 ## the rest.
@@ -762,7 +1057,9 @@ func _ground_ok(p: Vector2, inset: float, steep: float, grassy: bool) -> bool:
 	var f: int = hit[0]
 	if f < 0: return false
 	if inland(p) < inset or wet(p): return false
-	if pond.z > 0.0 and p.distance_to(Vector2(pond.x,pond.y)) < pond.z*1.25: return false
+	if not lake.is_empty():
+		if IsletLake.near(self,p,0.7): return false
+	elif pond.z > 0.0 and p.distance_to(Vector2(pond.x,pond.y)) < pond.z*1.25: return false
 	if _slope(f) > steep: return false
 	if grassy and kind == "shore" and inland(p) < BEACH: return false
 	return true
@@ -850,6 +1147,8 @@ func flora(catalog: Dictionary, shift := Vector3.ZERO) -> Dictionary:
 		else:
 			crowns.append(Vector4(item.x,item.z,top,spread*0.9))
 			blocks.append(Vector3(item.x,item.z,spread*STONE_BLOCK))
+	for b: Vector3 in recipe.get("blocks",[]): blocks.append(b)
+	for c: Vector4 in recipe.get("crowns",[]): crowns.append(c)
 	var out := {}
 	for key: String in transforms:
 		var list: Array = transforms[key]
@@ -903,6 +1202,8 @@ func top_arrays(palette: Dictionary, shift := Vector3.ZERO) -> Array:
 	uv2.resize(count)
 	var v := 0
 	for f in land:
+		# A spire's faces are its own (MountainSpire `arrays`).
+		if spire != null and spire.drawn[f] != 0: continue
 		var a := _vertex(ids[f*3])
 		var b := _vertex(ids[f*3+1])
 		var c := _vertex(ids[f*3+2])
@@ -919,8 +1220,12 @@ func top_arrays(palette: Dictionary, shift := Vector3.ZERO) -> Array:
 		elif (worn > SCREE.x and slope > SCREE.y) or (edge < 0.45 and slope > SCREE.y*2.0):
 			# Scree: a gully's floor or the crumbling lip, gravel and earth.
 			tone = gravel.lerp(earth,clampf(patch.get_noise_2d(at.x*3.0,at.y*3.0)*0.5+0.5,0.0,1.0))
-		elif pond.z > 0.0 and minf(a.y,minf(b.y,c.y)) < WATER+0.06 and (at.distance_to(Vector2(pond.x,pond.y)) < pond.z*1.5 or _channel_distance(at) < CHANNEL*1.5):
-			tone = sand*lerpf(1.0,0.72,clampf((WATER-middle.y)/BOWL,0.0,1.0))
+		elif _in_soil(at):
+			tone = earth.lerp(gravel,0.15)*lerpf(0.8,0.95,n)
+		elif not lake.is_empty() and minf(a.y,minf(b.y,c.y)) < water_level+0.06:
+			tone = IsletLake.bed_tone(self,sand,gravel,middle.y,at)
+		elif pond.z > 0.0 and minf(a.y,minf(b.y,c.y)) < water_level+0.06 and (at.distance_to(Vector2(pond.x,pond.y)) < pond.z*1.5 or _channel_distance(at) < CHANNEL*1.5):
+			tone = sand*lerpf(1.0,0.72,clampf((water_level-middle.y)/BOWL,0.0,1.0))
 		elif kind == "shore":
 			var d := (shore_distance[ids[f*3]]+shore_distance[ids[f*3+1]]+shore_distance[ids[f*3+2]])/3.0
 			if d < BEACH*(0.8+0.4*n): tone = gravel if patch.get_noise_2d(at.x*2.0,at.y*2.0) > 0.25 else sand
@@ -934,6 +1239,12 @@ func top_arrays(palette: Dictionary, shift := Vector3.ZERO) -> Array:
 			uv[v] = Vector2(0.0,1.0)
 			uv2[v] = Vector2(0.5,p.y+shift.y)
 			v += 1
+	if v < count:
+		vertices.resize(v)
+		normals.resize(v)
+		colors.resize(v)
+		uv.resize(v)
+		uv2.resize(v)
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = vertices
@@ -962,6 +1273,7 @@ func side_arrays() -> Array:
 		for i in [shore_edges[k],shore_edges[k+1]]:
 			if not rings.has(i): rings[i] = _wall_rings(i,outward[i],slump)
 	for k in range(0,shore_edges.size(),3):
+		if not cleft.is_empty() and cleft.edges[k/3] == 1: continue
 		var a := shore_edges[k]
 		var b := shore_edges[k+1]
 		var pa := points[a]
@@ -982,6 +1294,7 @@ func side_arrays() -> Array:
 			var i := ids[f*3+k]
 			tri.append(Vector3(points[i].x,base-keel[i],points[i].y))
 		IslandShore._add(vertices,uvs,into,tri,Vector3.DOWN,[],0.0)
+	if not cleft.is_empty(): RavineCut.wall(self,vertices,uvs)
 	var normals := PackedVector3Array()
 	normals.resize(vertices.size())
 	for i in range(0,vertices.size(),3):
@@ -1057,13 +1370,14 @@ func build_water(material: Material, color := Color(0.25,0.57,0.59), shift := Ve
 ## The pond's surface arrays (`build_water`), empty with no pond; safe to
 ## make on a worker.
 func water_arrays(color := Color(0.25,0.57,0.59), shift := Vector3.ZERO) -> Array:
+	if not lake.is_empty(): return IsletLake.water_arrays(self,color,shift)
 	if pond.z <= 0.0: return []
 	var middle := Vector2(pond.x,pond.y)
 	var r := pond.z*1.1
 	var rings := maxi(int(ceil(r/0.28)),4)
 	var segments := 36
 	var faces := []
-	var at := func(p: Vector2) -> Vector3: return Vector3(p.x,WATER,p.y)
+	var at := func(p: Vector2) -> Vector3: return Vector3(p.x,water_level,p.y)
 	var ring := func(k: int, s: int) -> Vector2: return middle+Vector2.from_angle(TAU*s/segments)*r*k/rings
 	for k in range(rings):
 		for s in range(segments):
@@ -1099,7 +1413,7 @@ func water_arrays(color := Color(0.25,0.57,0.59), shift := Vector3.ZERO) -> Arra
 	for f: Array in faces:
 		var v: Vector3 = f[0]
 		var p := Vector2(v.x,v.z)
-		var deep := maxf(WATER-ground_at(p),0.0)
+		var deep := maxf(water_level-ground_at(p),0.0)
 		vertices.append(v+shift)
 		normals.append(Vector3.UP)
 		colors.append(f[1])

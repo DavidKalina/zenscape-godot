@@ -66,6 +66,8 @@ const SkyCells = preload("res://scripts/sky_cells.gd")
 const Genesis = preload("res://scripts/genesis_canvas.gd")
 const IslandShore = preload("res://scripts/island_shore.gd")
 const SkyIslets = preload("res://scripts/sky_islets.gd")
+const SkyClusters = preload("res://scripts/sky_clusters.gd")
+const SkyAirship = preload("res://scripts/sky_airship.gd")
 const SkyPeaks = preload("res://scripts/sky_peaks.gd")
 const SkyTowers = preload("res://scripts/sky_towers.gd")
 const CloudWakes = preload("res://scripts/cloud_wakes.gd")
@@ -150,6 +152,10 @@ var wakes: Node3D
 var isles: Node3D
 ## The people on the islands (scripts/sky_folk.gd).
 var folk: Node3D
+## The clusters of islets that read as places (scripts/sky_clusters.gd).
+var clusters: Node3D
+## Now and then an airship towing a lone islet away (scripts/sky_airship.gd).
+var airship: Node3D
 ## The islands built and left, by home key (`_key`): {home, label, document}.
 var built_islands := {}
 ## The swaps' shifts added up: the plate's own home is -origin.
@@ -228,6 +234,16 @@ func setup(owner_scene: Node3D) -> void:
 	folk.islands = self
 	add_child(folk)
 	skip.append(folk)
+	clusters = SkyClusters.new()
+	clusters.islets = islets
+	clusters.scene = scene
+	add_child(clusters)
+	skip.append(clusters)
+	airship = SkyAirship.new()
+	airship.islets = islets
+	airship.scene = scene
+	add_child(airship)
+	skip.append(airship)
 	show_air(false)
 
 ## Sets an island at every fixed slot and every island built, except the
@@ -261,6 +277,7 @@ func build() -> void:
 	isles.side_source = editor._skirt_mesh.surface_get_material(0) if editor._skirt_mesh != null else null
 	isles.canopy_tint = SkyIslets._canopy_tint
 	isles.reset(cells)
+	clusters.reset(cells)
 
 func clear() -> void:
 	for island in _copies: island.queue_free()
@@ -272,6 +289,8 @@ func clear() -> void:
 	seeds.clear()
 	_newest = Vector3.INF
 	if currents != null: currents.drop_added()
+	if clusters != null: clusters.clear()
+	if airship != null: airship.clear()
 	if islets != null: islets.clear()
 	if peaks != null: peaks.clear()
 	if towers != null: towers.clear()
@@ -318,6 +337,7 @@ func advance(delta: float, eye: Vector3, heading: float, parted: float) -> void:
 	spent.islands = Time.get_ticks_usec()-t
 	t = Time.get_ticks_usec()
 	islets.advance(delta,eye)
+	clusters.advance(delta,eye)
 	spent.islets = Time.get_ticks_usec()-t
 	t = Time.get_ticks_usec()
 	peaks.advance(delta,eye)
@@ -892,6 +912,7 @@ func save_state() -> Dictionary:
 ## islands stand again at the next glide.
 func load_state(state: Dictionary) -> void:
 	clear()
+	if airship != null: airship.forget_session()
 	built_islands = {}
 	origin = Vector3.ZERO
 	plate_seed = -1
@@ -1123,6 +1144,7 @@ func show_air(on: bool) -> void:
 	if traffic != null: traffic.show(on)
 	clouds.visible = on
 	islets.visible = on
+	if airship != null: airship.visible = on
 	peaks.visible = on or SkyWorld.ring_on()
 	if not on: peaks.let_go()
 	towers.visible = on
@@ -1206,6 +1228,8 @@ func ground(point: Vector3) -> Variant:
 		if h != null: return float(h)+offset.y
 	var islet: Variant = islets.body(point)
 	if islet != null: return (islet as Vector2).x
+	var ship: Variant = airship.body(point) if airship != null else null
+	if ship != null: return (ship as Vector2).x
 	var isle: Variant = isles.ground(point)
 	if isle != null: return isle
 	return peaks.ground(point)
@@ -1224,6 +1248,8 @@ func body(point: Vector3) -> Variant:
 		if b != null: return (b as Vector2)+Vector2(offset.y,offset.y)
 	var islet: Variant = islets.body(point)
 	if islet != null: return islet
+	var ship: Variant = airship.body(point) if airship != null else null
+	if ship != null: return ship
 	var isle: Variant = isles.body(point)
 	if isle != null: return isle
 	return peaks.body(point)

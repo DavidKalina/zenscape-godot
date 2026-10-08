@@ -42,6 +42,8 @@ const SkyPeaks = preload("res://scripts/sky_peaks.gd")
 const SkyTowers = preload("res://scripts/sky_towers.gd")
 const SkyForestIsles = preload("res://scripts/sky_forest_isles.gd")
 const SkyFallThread = preload("res://scripts/sky_fall_thread.gd")
+const RockLooks = preload("res://scripts/rock_looks.gd")
+const ClusterFalls = preload("res://scripts/cluster_falls.gd")
 
 ## The cells: size (m), the share holding an islet, how far its spot may sit
 ## from the cell's middle (share of the cell), and the height band (m).
@@ -120,6 +122,16 @@ var _clock := 0.0
 var _wanted: Array = []
 ## Islets being worked out on workers, by cell key: {task, cell, home, out}.
 var _making := {}
+## Places in the sky (home x, z and radius, Vector3) no seeded islet stands
+## within: room kept for the clusters (scripts/sky_clusters.gd), whose members
+## stand in `built` as `fixed` and are never let go.
+var keep_clear: Array[Vector3] = []
+## Islets an airship has moved this session (scripts/sky_airship.gd), by
+## cell key: the home it was moored at, or null for one carried off. Kept
+## over `reset` and `clear`; a new world forgets them.
+var moved := {}
+## And the turn (radians about up) each moved one was left at, by cell key.
+var turned := {}
 
 static var _ground_material: ShaderMaterial
 static var _water_material: ShaderMaterial
@@ -249,7 +261,7 @@ func _survey(home: Vector3) -> void:
 	var gone := []
 	for key in built:
 		var b: Dictionary = built[key]
-		if b.node == pinned: continue
+		if b.node == pinned or b.get("fixed",false): continue
 		if _flat(b.home,home) > FORGET: gone.append(key)
 	for key in gone:
 		(built[key].node as Node3D).queue_free()
@@ -271,11 +283,17 @@ func _survey(home: Vector3) -> void:
 ## in the cell, at a height in the band, unless an island's spot is too near.
 func spot(cell: Vector2i) -> Variant:
 	var key := _key(cell)
+	if moved.has(key): return moved[key]
 	if _spots.has(key): return _spots[key]
 	var here: Variant = raw(cell)
 	if here != null and cells != null and not cells.spots_near(here,CLEAR).is_empty(): here = null
 	if here != null and (SkyPeaks.blocks(here) or SkyTowers.blocks(here)): here = null
 	if here != null and SkyForestIsles.blocks(here,CLEAR*0.3): here = null
+	if here != null:
+		for k in keep_clear:
+			if Vector2(here.x-k.x,here.z-k.y).length() < k.z:
+				here = null
+				break
 	_spots[key] = here
 	return here
 
@@ -307,9 +325,22 @@ func _start(cell: Vector2i, home: Vector3) -> void:
 ## On a worker: the islet's shape, its meshes (their materials are set as
 ## it stands up, `_finish`), its plants' buffers, and its fall's rings and
 ## thread, for an islet whose middle stands at `home_y`.
-static func _make(seed_value: int, palette: Dictionary, plants: Dictionary, out: Dictionary, home_y := 0.0) -> void:
+static func _make(seed_value: int, palette: Dictionary, plants: Dictionary, out: Dictionary, home_y := 0.0, spec := {}) -> void:
 	var began := Time.get_ticks_usec()
-	var shape: RefCounted = SkyIslet.make(seed_value)
+	var shape: RefCounted = SkyIslet.author(seed_value,spec) if not spec.is_empty() else SkyIslet.make(seed_value)
+	_dress(shape,palette,plants,out,home_y)
+	out.usec = Time.get_ticks_usec()-began
+
+## An islet's shape (made, and perhaps claimed on and furnished with
+## records) given its arrays, meshes, plants and fall, into `out`, as
+## `_make` gives them, for `stand`. Safe on a worker once
+## `prepare_authored` has run.
+static func dress(shape: RefCounted, palette: Dictionary, home_y: float) -> Dictionary:
+	var out := {}
+	_dress(shape,palette,_catalog.data,out,home_y)
+	return out
+
+static func _dress(shape: RefCounted, palette: Dictionary, plants: Dictionary, out: Dictionary, home_y: float) -> void:
 	out.shape = shape
 	out.top = shape.top_arrays(palette,OFF_MAP)
 	out.sides = shape.side_arrays()
@@ -320,7 +351,19 @@ static func _make(seed_value: int, palette: Dictionary, plants: Dictionary, out:
 		out.fall = _fall_rings(shape)
 		out.thread = _thread_plan(shape,out.fall,home_y)
 		out.meshes.water = SkyIslet.mesh_from(out.water,null,SkyIslet.WATER_FORMAT)
-	out.usec = Time.get_ticks_usec()-began
+
+## An authored islet's parts (SkyIslet `author`), as `_make` makes them,
+## for `stand`; safe on a worker once `prepare_authored` has run.
+static func make(seed_value: int, spec: Dictionary, palette: Dictionary, home_y: float) -> Dictionary:
+	var out := {}
+	_make(seed_value,palette,_catalog.data,out,home_y,spec)
+	return out
+
+## The shared pieces `make` needs, made on the main thread.
+func prepare_authored() -> Dictionary:
+	_prepare()
+	if _catalog.is_empty(): catalog(flora_source)
+	return _ground_palette()
 
 ## A part's mesh as the worker made it (`_make`), wearing `material`, or
 ## made here from its arrays.
@@ -332,9 +375,19 @@ static func _mesh_of(out: Dictionary, part: String, material: Material, format :
 
 ## The worker's islet, stood up as nodes.
 func _finish(cell: Vector2i, home: Vector3, out: Dictionary) -> void:
+	var b := stand("Islet_%d_%d" % [cell.x,cell.y],home,out)
+	b.cell = cell
+	if turned.has(_key(cell)): turn(b,float(turned[_key(cell)]))
+	built[_key(cell)] = b
+	_fade(b)
+
+## An islet made by `make` (or `_make`) stood up as nodes at `home`, as its
+## built record: {node, shape, home, phase, period, age, usec}. Not yet in
+## `built`.
+func stand(node_name: String, home: Vector3, out: Dictionary) -> Dictionary:
 	var shape: RefCounted = out.shape
 	var node := Node3D.new()
-	node.name = "Islet_%d_%d" % [cell.x,cell.y]
+	node.name = node_name
 	node.position = home
 	add_child(node)
 	var body := MeshInstance3D.new()
@@ -360,9 +413,8 @@ func _finish(cell: Vector2i, home: Vector3, out: Dictionary) -> void:
 	_plant(node,out.plants)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = shape.seed
-	built[_key(cell)] = {"node":node,"shape":shape,"home":home,"cell":cell,"usec":out.get("usec",0),
+	return {"node":node,"shape":shape,"home":home,"usec":out.get("usec",0),
 		"phase":rng.randf()*TAU,"period":rng.randf_range(BOB_PERIOD.x,BOB_PERIOD.y),"age":0.0}
-	_fade(built[_key(cell)])
 
 ## A new islet's faces fade in over FADE_IN (its body, sides and pond: the
 ## plants draw only near).
@@ -395,7 +447,7 @@ func _plant(node: Node3D, plants: Dictionary) -> void:
 		# islet part it ever saw.
 		batch.set_meta("skip_reflection",true)
 		var role: String = _catalog.roles.get(key,"plant")
-		batch.visibility_range_end = TREE_RANGE if role == "tree" else (STONE_RANGE if role == "stone" else PLANT_RANGE)
+		batch.visibility_range_end = TREE_RANGE if role in ["tree","build"] else (STONE_RANGE if role == "stone" else PLANT_RANGE)
 		batch.visibility_range_end_margin = 30.0
 		batch.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 		# Small plants cast no shadow worth drawing out here, but the tall
@@ -435,6 +487,10 @@ static func catalog(source: Node = null) -> Dictionary:
 	for stone: String in SkyIslet.BOULDERS+["rock_variants"]:
 		for key: String in parts.get(stone,[]): roles[key] = "stone"
 	roles["rock"] = "stone"
+	# What is built (an authored islet's cabin and lamps) draws as far as
+	# the trees.
+	for built_key in ["cabin","stone_lamp"]:
+		for key: String in parts.get(built_key,[]): roles[key] = "build"
 	_catalog = {"meshes":meshes,"materials":materials,"roles":roles,
 		"data":{"parts":parts,"poses":poses,"tints":tints,"boxes":boxes,"world":Variety.world({})}}
 	return _catalog
@@ -472,7 +528,9 @@ func _ground_palette() -> Dictionary:
 ## one strata seed and about one depth (`_sides`).
 func _side_material(shape: RefCounted) -> Material:
 	var strata := posmod(int(shape.seed),STRATA_SEEDS)
-	var key := Vector2i(strata,roundi(float(shape.depth)*2.0))
+	var rock: Dictionary = shape.recipe.get("rock",{})
+	var key: Variant = Vector2i(strata,roundi(float(shape.depth)*2.0))
+	if not rock.is_empty(): key = [key,str(rock.get("palette","basalt")),snappedf(float(rock.get("tone",1.0)),0.05),RockLooks.step_of(float(rock.get("vary",0.5)))]
 	if _sides.has(key): return _sides[key]
 	var m: ShaderMaterial
 	if side_source is ShaderMaterial: m = side_source.duplicate()
@@ -483,10 +541,13 @@ func _side_material(shape: RefCounted) -> Material:
 		m.set_shader_parameter("base_color",Color.WHITE)
 	m.set_shader_parameter("earth_sides",true)
 	m.set_shader_parameter("earth_sides_top",SkyIslet.RIM_HEIGHT)
-	m.set_shader_parameter("earth_sides_base",-float(key.y)*0.5+MIST)
+	m.set_shader_parameter("earth_sides_base",-roundf(float(shape.depth)*2.0)*0.5+MIST)
 	# Made here, not through Strata's own cache, which is static and would
 	# hold the islets' strata past the scene's end.
 	Strata.new(strata).apply(m,Vector3.ZERO)
+	# Every islet wears a rock look (scripts/rock_looks.gd): a cluster's
+	# member its motif's, a lone one its seed's.
+	if not rock.is_empty(): RockLooks.apply(m,str(rock.get("palette","basalt")),float(rock.get("tone",1.0)),float(rock.get("vary",0.5)))
 	_sides[key] = m
 	return m
 
@@ -502,7 +563,12 @@ static func _fall_rings(shape: RefCounted) -> Dictionary:
 	var lip := Vector3(water.lip.x,water.level,water.lip.y)
 	var out := Vector3(water.out.x,0.0,water.out.y)
 	var overhang := IslandShore.RING_OUT.y+0.05
-	return curtain(lip,out,shape.depth*FALL_DROP.x+FALL_DROP.y,FALL_TAIL,SkyIslet.CHANNEL*0.6,overhang,FALL_STRENGTH)
+	# A cluster's fall onto a lower member's pool (scripts/cluster_falls.gd):
+	# thrown to land in it, ending under its water, no thread on down.
+	if shape.recipe.has("fall_to"):
+		var to: Dictionary = shape.recipe.fall_to
+		return curtain(to.lip,to.out,float(to.drop),ClusterFalls.SUNK,ClusterFalls.HALF,overhang,FALL_STRENGTH,float(to.speed))
+	return curtain(lip,out,shape.depth*FALL_DROP.x+FALL_DROP.y,FALL_TAIL,float(water.get("half",SkyIslet.CHANNEL*0.6)),overhang,FALL_STRENGTH)
 
 func _fall(node: Node3D, shape: RefCounted, rings: Dictionary, thread: Dictionary = {}) -> void:
 	var water: Dictionary = shape.water()
@@ -551,11 +617,12 @@ func _fall(node: Node3D, shape: RefCounted, rings: Dictionary, thread: Dictionar
 	# strand breaks up (scripts/sky_fall_thread.gd), planned on the worker
 	# (`_make`) when it could be.
 	if thread.is_empty(): thread = _thread_plan(shape,rings,node.position.y)
-	node.add_child(SkyFallThread.node_from(thread))
+	if not thread.is_empty(): node.add_child(SkyFallThread.node_from(thread))
 
 ## The fall's thread on down to the cloud sea (SkyFallThread `plan`), for
 ## an islet whose middle stands at `home_y`.
 static func _thread_plan(shape: RefCounted, rings: Dictionary, home_y: float) -> Dictionary:
+	if shape.recipe.has("fall_to"): return {}
 	var water: Dictionary = shape.water()
 	var out := Vector3(water.out.x,0.0,water.out.y)
 	var lip := Vector3(water.lip.x,water.level,water.lip.y)
@@ -566,7 +633,8 @@ static func _thread_plan(shape: RefCounted, rings: Dictionary, home_y: float) ->
 ## `lip` (on the rim, at the water's level) out along `out`, clearing the
 ## grass lip's `overhang`, falling `drop` m as a sheet and `tail` m more as
 ## it breaks up. As scripts/edge_falls.gd `_rings`, with no face to hug.
-static func curtain(lip: Vector3, out: Vector3, drop: float, tail: float, half: float, overhang: float, strength: float) -> Dictionary:
+## `speed`: the water's speed off the lip (m/s), FALL_SPEED unless given.
+static func curtain(lip: Vector3, out: Vector3, drop: float, tail: float, half: float, overhang: float, strength: float, speed := FALL_SPEED) -> Dictionary:
 	var bend_rings := 4
 	var face_rings := 12
 	var bend := [0.0,0.06,0.2,0.45]
@@ -585,7 +653,7 @@ static func curtain(lip: Vector3, out: Vector3, drop: float, tail: float, half: 
 		var y := lip.y-drops[r]
 		var away := -0.1
 		if r > 0:
-			var thrown := FALL_SPEED*sqrt(2.0*drops[r]/9.81)
+			var thrown := speed*sqrt(2.0*drops[r]/9.81)
 			# Clear of the grass lip that juts past the rim.
 			away = maxf(thrown,overhang+thick[r]+0.1)
 		points.append(lip+out*away+Vector3.UP*(y-lip.y))
@@ -750,16 +818,55 @@ var palette_source: RefCounted
 func place(b: Dictionary) -> Vector3:
 	return position+(b.node as Node3D).position
 
+## An islet's turn about up (radians): 0 for all but one an airship has
+## let spin (scripts/sky_airship.gd), its node turned to match.
+static func yaw_of(b: Dictionary) -> float:
+	return float(b.get("yaw",0.0))
+
+## Turns a built islet to `yaw` about its middle: its record and its node.
+static func turn(b: Dictionary, yaw: float) -> void:
+	b.yaw = yaw
+	if is_instance_valid(b.get("node")): (b.node as Node3D).rotation = Vector3(0.0,yaw,0.0)
+
+## The islet's own frame in the islands' frame: its place, turned by its
+## yaw. Everything read off its shape is read in this frame.
+func frame(b: Dictionary) -> Transform3D:
+	return Transform3D(Basis(Vector3.UP,yaw_of(b)),place(b))
+
+## A point of the islands' frame in the islet's own (its shape's) frame.
+func local_of(b: Dictionary, point: Vector3) -> Vector3:
+	return Basis(Vector3.UP,-yaw_of(b))*(point-place(b))
+
 ## The islet whose top holds a global point (plate plane), as its built
-## record, or {}.
+## record, or {}. Where islets stand over one another (a cluster's stack,
+## scripts/cluster_stack.gd), the one the point is in, else the highest
+## under it, else the lowest.
 func islet_at(point: Vector3) -> Dictionary:
+	var hits: Array = []
 	for key in built:
 		var b: Dictionary = built[key]
 		var local := point-place(b)
 		var shape: RefCounted = b.shape
-		if absf(local.x) > shape.reach+0.5 or absf(local.z) > shape.reach+0.5: continue
-		if shape.inside(Vector2(local.x,local.z)): return b
-	return {}
+		# Read through the islet's own frame (its yaw, scripts/sky_airship.gd).
+		var far: float = shape.reach+0.5
+		if absf(local.x) > far*1.42 or absf(local.z) > far*1.42: continue
+		if yaw_of(b) != 0.0: local = local_of(b,point)
+		elif absf(local.x) > far or absf(local.z) > far: continue
+		if shape.inside(Vector2(local.x,local.z)): hits.append(b)
+	if hits.size() < 2: return hits[0] if not hits.is_empty() else {}
+	var best: Dictionary = {}
+	var best_top := -INF
+	var lowest: Dictionary = hits[0]
+	for b: Dictionary in hits:
+		var local := local_of(b,point)
+		var at := Vector2(local.x,local.z)
+		var top: float = b.shape.ground_at(at)
+		if local.y <= top+0.5 and local.y >= float(b.shape.underside(at)): return b
+		if top < local.y and place(b).y+top > best_top:
+			best_top = place(b).y+top
+			best = b
+		if place(b).y < place(lowest).y: lowest = b
+	return best if not best.is_empty() else lowest
 
 ## The islet under a global point as a solid, Vector2(top, underside) in
 ## global metres (the crowns and the stones count as top), or null.
@@ -767,10 +874,9 @@ func body(point: Vector3) -> Variant:
 	var b := islet_at(point)
 	if b.is_empty(): return null
 	var shape: RefCounted = b.shape
-	var origin := place(b)
-	var local := point-origin
+	var local := local_of(b,point)
 	var at := Vector2(local.x,local.z)
-	var y := origin.y
+	var y := place(b).y
 	return Vector2(shape.solid_top(at)+y,shape.underside(at)+y)
 
 ## The ground a walker stands on, at a point in the islet's frame, or null

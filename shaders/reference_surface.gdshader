@@ -214,6 +214,14 @@ varying float contact_height;
 // 1 when written; an unwritten mesh uses `earth_sides_top`. Local space, so
 // the flip's copy of the sides paints the same.
 uniform bool earth_sides = false;
+// How far each of the earth sides' facets stands lighter or darker than
+// the next (a share, half of it either way): soft on the plate's, stronger
+// on the sky islets' basalt (scripts/rock_looks.gd FACETS).
+uniform float side_facets = 0.14;
+// The earth sides' strata as given, not through the world's ground palette:
+// the sky islets' basalt (scripts/rock_looks.gd), as a sky peak's rock is
+// its own (`peak_rock`), so it reads as the peaks' family in every region.
+uniform bool side_own = false;
 uniform float earth_sides_top = 2.6;
 uniform float earth_sides_base = -2.8;
 // The earth sides' depth below the rim, the rim's rise, height above the
@@ -707,8 +715,9 @@ void fragment() {
 		side_mist = 1.0 - smoothstep(0.0, 1.6, earth_side.z);
 		// The same strata and ground palette as cut ground (scripts/strata.gd).
 		vec3 plate = (inverse(MODEL_MATRIX) * vec4(world_position, 1.0)).xyz + strata_offset;
-		tint = scene_palette_ground(base_color.rgb * zs_strata(plate, plate.y + earth_side.x)
-			* (1.0 + 0.14 * jitter) * mix(1.0, 0.5, side_mist));
+		tint = base_color.rgb * zs_strata(plate, plate.y + earth_side.x)
+			* (1.0 + side_facets * jitter) * mix(1.0, 0.5, side_mist);
+		if (!side_own) tint = scene_palette_ground(tint);
 	}
 	if (grass_blades) {
 		// The family's grass leaned to living green, dark at the root and
