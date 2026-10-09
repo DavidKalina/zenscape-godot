@@ -5,7 +5,8 @@ extends SceneTree
 ## everything the plane was given); a run saves and reads back as JSON; and
 ## a short bench of the gentle arc lands it in a band and writes the bands
 ## file the study's report reads; the Sundered hall station stands and the
-## sharp bot clears it.
+## sharp bot clears it; so does the flowing hall (sundered_flow), whose
+## reference line hardly ever flies straight.
 ##   godot --headless --path . --script tests/test_flight_bench.gd
 const Course = preload("res://scripts/flight_course.gd")
 const Run = preload("res://scripts/flight_run.gd")
@@ -69,5 +70,21 @@ func run() -> void:
 	check(hm.cleared,"The sharp bot clears the Sundered hall (%d/%d in %.2f s, %d bumps)" % [hm.collected,hm.total,hm.duration,hm.bumps])
 	check(float(hm.duration) > 10.0 and float(hm.duration) < 20.0,"It takes 10-20 s (%.2f s)" % hm.duration)
 	check(float(hm.threading_share) > 0.25,"Most of the hall is threaded (%.2f of the run)" % hm.threading_share)
+	# The flowing hall: stands, the sharp bot clears it, and it keeps
+	# swinging (the perfect line's still share and longest straight).
+	var flow := Course.station("sundered_flow")
+	var flowing := Course.build(flow,stage)
+	check(flowing.get_child_count() == Course.solids(flow).size() and flowing.get_child_count() > 100,"The flowing hall stands (%d solids)" % flowing.get_child_count())
+	check(Course.station_by_key(0) == flow,"Key 0 is the flowing hall")
+	await physics_frame
+	await physics_frame
+	var swept := Bench.fly(flow,"sharp",Bot.skill("sharp"),3,space)
+	var fm: Dictionary = swept.metrics
+	check(fm.cleared,"The sharp bot clears the flowing hall (%d/%d in %.2f s, %d bumps)" % [fm.collected,fm.total,fm.duration,fm.bumps])
+	check(float(fm.duration) > 10.0 and float(fm.duration) < 20.0,"It takes 10-20 s (%.2f s)" % fm.duration)
+	var params := Bot.skill("perfect")
+	params.look = 7.0
+	var ref: Dictionary = Bench.fly(flow,"perfect",params,0,space).metrics
+	check(float(ref.still_share) <= 0.1 and float(ref.longest_straight) < 0.5,"The perfect line hardly flies straight (still %.2f, longest %.2f s)" % [ref.still_share,ref.longest_straight])
 	print("flight bench: %d failure(s)" % failures)
 	quit(1 if failures > 0 else 0)

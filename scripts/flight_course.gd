@@ -165,6 +165,30 @@ const STATIONS := [
 		# Up out of the apse's open roof to the sky.
 		Vector3(8.0,-2.0,-136.0),Vector3(8.0,3.0,-144.0),Vector3(8.0,8.0,-154.0),Vector3(8.0,11.0,-166.0),
 	]},
+	{"id":"sundered_flow","key":0,"name":"Sundered hall, flowing (corkscrew nave, swoop, climbing turn)","intent":"medium","parts":[
+		["bay",Vector3(6.37,-2.40,-14.66),-0.3005,{"roof":"whole","inner":[]}],
+		["bay",Vector3(8.73,-2.40,-22.30),-0.2278,{"roof":"whole","tie":"high","inner":[]}],
+		["bay",Vector3(10.54,-2.40,-30.09),-0.1551,{"roof":"broken","gaps":[3,4],"inner":[0.0]}],
+		["bay",Vector3(11.78,-2.40,-38.00),-0.0823,{"roof":"whole","inner":[0.0]}],
+		["bay",Vector3(12.43,-2.40,-45.97),-0.0096,{"roof":"whole","tie":"low","inner":[]}],
+		["bay",Vector3(12.51,-2.40,-53.97),0.0631,{"roof":"broken","gaps":[2,3],"inner":[0.0]}],
+		["bay",Vector3(12.01,-2.40,-61.95),0.1358,{"roof":"open","inner":[0.0],"breach":["arch",""]}],
+		["bay",Vector3(10.92,-2.40,-69.87),0.2086,{"roof":"open","tie":"high","inner":[]}],
+		["bay",Vector3(9.27,-2.40,-77.70),0.2813,{"roof":"open","beam":false,"torn":2,"last":true,"inner":[0.0]}],
+		["bay",Vector3(11.84,-7.40,-112.18),-0.4823,{"roof":"open","torn":1,"inner":[]}],
+		["bay",Vector3(15.55,-7.40,-119.26),-0.5823,{"roof":"whole","tie":"low","inner":[]}],
+		["bay",Vector3(19.95,-7.40,-125.94),-0.6823,{"roof":"broken","gaps":[1,2],"screen":true,"inner":[-2.6]}],
+		["bay",Vector3(24.99,-7.40,-132.15),-0.7823,{"roof":"whole","screen":true,"inner":[-2.6]}],
+		["bay",Vector3(30.63,-7.40,-137.82),-0.8823,{"roof":"open","tie":"high","beam":false,"inner":[]}],
+		["bay",Vector3(36.81,-7.40,-142.90),-0.9823,{"roof":"open","beam":false,"torn":2,"last":true,"inner":[]}],
+	],"tokens":[
+		Vector3(3.10,4.50,-15.81),Vector3(8.73,6.00,-22.30),Vector3(13.94,4.50,-29.44),Vector3(15.22,1.50,-37.59),
+		Vector3(12.43,0.00,-45.97),Vector3(9.05,1.50,-53.87),Vector3(8.56,4.50,-61.60),Vector3(10.92,6.00,-69.87),
+		Vector3(12.63,4.50,-78.54),Vector3(10.34,1.50,-86.46),Vector3(7.46,0.52,-92.48),Vector3(5.81,0.46,-99.22),
+		Vector3(5.59,-0.50,-105.89),Vector3(8.70,-3.50,-113.63),Vector3(15.55,-5.00,-119.26),Vector3(22.75,-4.22,-123.90),
+		Vector3(27.57,-2.01,-129.83),Vector3(30.63,1.30,-137.82),Vector3(34.74,5.20,-145.68),Vector3(41.68,9.10,-150.31),
+		Vector3(50.52,12.41,-151.09),
+	]},
 ]
 
 ## The station with `id`, or {}.
