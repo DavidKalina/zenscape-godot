@@ -337,6 +337,8 @@ var flowers: Array[String] = []
 ##     it but where its own underside stands over the water (an arch,
 ##     left open), and the bed is no ground (`inside` is the land's alone).
 ##   room: metres more of grid round the land (a sea cliff's stacks);
+##   outline: the outline's ellipse fixed (IslandOutline `mask` `form`:
+##     aspect, heading, drift, bays), a long ridge island;
 ##   cliffs: a sea-cliff island (scripts/sea_cliffs.gd: its tableland,
 ##     stacks, arch, cove and stratified walls);
 ##   massif: a mountain island's massif (scripts/mountain_massif.gd), raised
@@ -410,7 +412,7 @@ func _shape(seed_value: int, forced: String) -> void:
 	ids = grid.ids
 	cells = grid.cells
 	half = grid.half
-	outline = IslandOutline.mask(points,ids,seed_value,-1.0,half,area)
+	outline = IslandOutline.mask(points,ids,seed_value,-1.0,half,area,recipe.get("outline",{}))
 	shore_distance = IslandOutline.shore_distance(points,ids,outline)
 	shore_edges = IslandOutline.shore_edges(ids,outline)
 	if recipe.has("tear"): RavineCut.cut(self)

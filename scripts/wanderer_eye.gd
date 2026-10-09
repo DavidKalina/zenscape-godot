@@ -278,6 +278,7 @@ const SKYDIVE_BACK := 50.0
 ## A fall into the cloud sea with no lower world under it is caught this
 ## far under the glide's floor.
 const DIVE_CATCH := 4.0
+const RuinBump = preload("res://scripts/ruin_bump.gd")
 ## The chase view's field of view at a cruise; the camera widens it with
 ## speed (GlideCamera `fov`).
 const CHASE_FOV := GlideCamera.FOV
@@ -1284,7 +1285,11 @@ func _advance_flight(delta: float) -> void:
 	_read_obstacles(false)
 	if glide.approach: glide.approach_target = _landing_spot()
 	if _landing_wait and not below(): _wait_to_land(delta,input)
+	var was: Vector3 = glide.position
 	glide.step(delta,input,_fly_ground,_fly_air)
+	# The ruins' stone (the Sundered hall, scripts/ruin_bump.gd): bump and
+	# recover, never a crash.
+	if plane and not below() and islands is Node3D: RuinBump.bump((islands as Node3D).get_world_3d().direct_space_state,glide,was,(islands as Node3D).global_transform)
 	RopeBridge.flown_by(islands.global_transform*glide.position,glide.velocity)
 	# Tokens the plane flies through (scripts/sky_collectibles.gd).
 	if islands.collectibles != null: islands.collectibles.touch_plane(islands.global_transform*glide.position)
