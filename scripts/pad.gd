@@ -52,10 +52,12 @@ const ACTIONS := {
 	"eye_leave":[["button",JOY_BUTTON_B],["button",JOY_BUTTON_BACK]],
 	"fly_boost":[["key",KEY_SPACE],["button",JOY_BUTTON_A],["axis",JOY_AXIS_TRIGGER_RIGHT,1.0]],
 	"fly_brake":[["key",KEY_SHIFT],["axis",JOY_AXIS_TRIGGER_LEFT,1.0]],
-	"fly_roll_left":[["button",JOY_BUTTON_LEFT_SHOULDER]],
-	"fly_roll_right":[["button",JOY_BUTTON_RIGHT_SHOULDER]],
+	"fly_lean_left":[["button",JOY_BUTTON_LEFT_SHOULDER]],
+	"fly_lean_right":[["button",JOY_BUTTON_RIGHT_SHOULDER]],
 	"fly_land":[["button",JOY_BUTTON_Y]],
 	"fly_camera":[["button",JOY_BUTTON_RIGHT_STICK]],
+	# Out of the plane (and, falling, the canopy open): X on both.
+	"fly_eject":[["key",KEY_X],["button",JOY_BUTTON_X]],
 	# The old glider (--glider): rise and dive, and its flap.
 	"glide_rise":[["key",KEY_SPACE],["button",JOY_BUTTON_A],["axis",JOY_AXIS_TRIGGER_LEFT,1.0]],
 	"glide_dive":[["key",KEY_SHIFT],["axis",JOY_AXIS_TRIGGER_RIGHT,1.0]],

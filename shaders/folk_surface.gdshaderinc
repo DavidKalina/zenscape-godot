@@ -74,5 +74,15 @@ void fragment() {
 	float edge = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 3.0);
 	vec3 diffuse = base * (1.0 - metallic_value);
 	EMISSION = diffuse * hemi * fill + mix(diffuse, vec3(0.5), 0.4) * zs_hemi_sky * zs_hemi_energy * edge * rim;
+#ifdef ZS_SHELTER_BOUNCE
+	// Under a roof (the ruins' halls): the vertex colour's alpha carries how
+	// sheltered a face is (1 open air, 0 deep under the roof). The sky
+	// that falls in through the gaps and the sunlit floor bounce round the
+	// stone: a soft warm fill, strongest on faces that look down or across
+	// (the undersides of beams, the columns' sides), so the carving reads.
+	float shelter = 1.0 - COLOR.a;
+	float facing = 0.75 + 0.45 * clamp(-normal.y, 0.0, 1.0) - 0.3 * clamp(normal.y, 0.0, 1.0);
+	EMISSION += diffuse * mix(zs_hemi_sky, shelter_tint, 0.65) * zs_hemi_energy / PI * shelter_fill * facing * shelter;
+#endif
 }
 #endif

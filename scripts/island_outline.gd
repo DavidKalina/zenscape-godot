@@ -98,7 +98,13 @@ static func first_size() -> float:
 ## (`size_for`). A smaller grid than the plate's (the sky islets, scripts/
 ## sky_islet.gd) gives its own `half` (its rim, m from the middle) and asks
 ## for its land in m^2 (`area`), which then stands for `size`.
-static func mask(points: PackedVector2Array, ids: PackedInt32Array, seed_value: int, size := -1.0, half := HALF, area := -1.0) -> PackedByteArray:
+## `form` may fix the share field's ellipse: {aspect (long half against
+## short), heading (radians, the long axis's angle from +X), drift (a share
+## of the radius, 0 keeps it centred), bays (how many bitten in), lobes (their
+## depth, a share of their own), square (the norm's power: 2 an ellipse,
+## 4 a rounded oblong)}; a long
+## ridge island (scripts/sundered_hall.gd) asks for one along +X.
+static func mask(points: PackedVector2Array, ids: PackedInt32Array, seed_value: int, size := -1.0, half := HALF, area := -1.0, form := {}) -> PackedByteArray:
 	if area > 0.0: size = size_of(area)
 	elif size < 0.0: size = size_for(seed_value)
 	var faces := ids.size()/3
@@ -117,7 +123,7 @@ static func mask(points: PackedVector2Array, ids: PackedInt32Array, seed_value: 
 	# Never more than the plate inside its rim's band can hold.
 	var goal := minf(area if area > 0.0 else area_for(size),total*0.6)
 	var radius := sqrt(goal/PI)
-	var field := _Field.new(seed_value,radius,1.0+BOLD*size_of(goal))
+	var field := _Field.new(seed_value,radius,1.0+BOLD*size_of(goal),form)
 	var rim := _Rim.new(seed_value,half)
 	var near_rim := rim.faces(points,ids)
 	# The level: faces taken lowest share first until the island's area,
@@ -236,6 +242,8 @@ static func shore_edges(ids: PackedInt32Array, outline: PackedByteArray) -> Pack
 ## wherever the area's level falls.
 class _Field:
 	var aspect := 1.0
+	## The norm's power: 2 an ellipse, more a squarer one (`form` square).
+	var square := 2.0
 	var heading := 0.0
 	var drift := Vector2.ZERO
 	var lobes := PackedVector3Array()
@@ -246,14 +254,21 @@ class _Field:
 
 	## `radius`: the island's, as a circle of its area (m); `bold` deepens
 	## its lobes and bays.
-	func _init(seed_value: int, radius: float, bold: float) -> void:
+	func _init(seed_value: int, radius: float, bold: float, form := {}) -> void:
 		var rng := RandomNumberGenerator.new()
 		rng.seed = hash([seed_value,"island outline"])
 		aspect = rng.randf_range(ASPECT.x,ASPECT.y)
 		heading = rng.randf()*TAU
 		drift = Vector2.from_angle(rng.randf()*TAU)*rng.randf()*DRIFT*radius
-		for l: Array in LOBES: lobes.append(Vector3(float(l[0]),float(l[1])*rng.randf_range(0.6,1.3)*bold,rng.randf()*TAU))
-		for i in range(rng.randi_range(BAYS.x,BAYS.y)):
+		if form.has("aspect"): aspect = float(form.aspect)
+		if form.has("heading"): heading = float(form.heading)
+		if form.has("drift"): drift *= float(form.drift)/DRIFT
+		square = maxf(float(form.get("square",2.0)),1.0)
+		var lobed := float(form.get("lobes",1.0))
+		for l: Array in LOBES: lobes.append(Vector3(float(l[0]),float(l[1])*rng.randf_range(0.6,1.3)*bold*lobed,rng.randf()*TAU))
+		var bay_count := rng.randi_range(BAYS.x,BAYS.y)
+		if form.has("bays"): bay_count = int(form.bays)
+		for i in range(bay_count):
 			bays.append(Vector3(rng.randf()*TAU,rng.randf_range(BAY_DEEP.x,BAY_DEEP.y)*bold,rng.randf_range(BAY_WIDE.x,BAY_WIDE.y)))
 		warp.seed = rng.randi()
 		warp.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
@@ -270,7 +285,8 @@ class _Field:
 		var out := 1.0
 		for l in lobes: out += l.y*sin(l.x*t+l.z)
 		for b in bays: out -= b.y*exp(-pow(angle_difference(t,b.x)/b.z,2.0))
-		return q.length()/maxf(out,0.2)
+		var reach := q.length() if square == 2.0 else pow(pow(absf(q.x),square)+pow(absf(q.y),square),1.0/square)
+		return reach/maxf(out,0.2)
 
 ## The band along the plate's rim that is never land (RIM), and the push
 ## that leans the shore away from it before it gets there (RIM_SOFT), so a

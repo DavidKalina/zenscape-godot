@@ -337,6 +337,8 @@ var flowers: Array[String] = []
 ##     it but where its own underside stands over the water (an arch,
 ##     left open), and the bed is no ground (`inside` is the land's alone).
 ##   room: metres more of grid round the land (a sea cliff's stacks);
+##   outline: the outline's ellipse fixed (IslandOutline `mask` `form`:
+##     aspect, heading, drift, bays), a long ridge island;
 ##   cliffs: a sea-cliff island (scripts/sea_cliffs.gd: its tableland,
 ##     stacks, arch, cove and stratified walls);
 ##   massif: a mountain island's massif (scripts/mountain_massif.gd), raised
@@ -410,7 +412,10 @@ func _shape(seed_value: int, forced: String) -> void:
 	ids = grid.ids
 	cells = grid.cells
 	half = grid.half
-	outline = IslandOutline.mask(points,ids,seed_value,-1.0,half,area)
+	outline = IslandOutline.mask(points,ids,seed_value,-1.0,half,area,recipe.get("outline",{}))
+	# Holes right through the land (a recipe's `holes`, x z radius: the
+	# pierced isle's skylight, scripts/pierced_isle.gd).
+	for h: Vector3 in recipe.get("holes",[]): _punch(h)
 	shore_distance = IslandOutline.shore_distance(points,ids,outline)
 	shore_edges = IslandOutline.shore_edges(ids,outline)
 	if recipe.has("tear"): RavineCut.cut(self)
@@ -429,6 +434,9 @@ func _shape(seed_value: int, forced: String) -> void:
 	if recipe.has("spire"): spire = MountainSpire.raise(self)
 	elif recipe.has("massif"): spire = MountainMassif.raise_massif(self)
 	base = -(BASE.x+BASE.y*radius)
+	# A recipe's own foot (m under the rim): the pierced isle's thin lid,
+	# its rock drawn on below it (scripts/pierced_isle.gd).
+	if recipe.has("base"): base = -float(recipe.base)
 	# A sea cliff's arch opens before the sea foot is laid, which leaves an
 	# underside raised over the water as it is.
 	if cliffs != null: cliffs.hollow(self)
@@ -440,6 +448,13 @@ func _shape(seed_value: int, forced: String) -> void:
 	decks = recipe.get("decks",[])
 	for deck: Dictionary in decks:
 		for end: Vector3 in [deck.a,deck.b]: reach = maxf(reach,Vector2(end.x,end.z).length()+1.0)
+
+## Every face whose middle lies within `h.z` of (h.x, h.y) taken off the
+## land: a hole through it, its edge a shore like the rim.
+func _punch(h: Vector3) -> void:
+	for f in range(outline.size()):
+		var middle := (points[ids[f*3]]+points[ids[f*3+1]]+points[ids[f*3+2]])/3.0
+		if middle.distance_to(Vector2(h.x,h.y)) < h.z: outline[f] = 1
 
 ## An island in the sea (`sea_foot`): how far off the land each point lies
 ## (the nearest land point's distance, carried over the grid in two sweeps

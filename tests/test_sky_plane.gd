@@ -3,7 +3,8 @@ extends SceneTree
 ## like a toy: it never stalls with the nose held up; Boost speeds it up and
 ## Brake slows it, never under SLOW; a held bank turns it and it rolls level
 ## when let go; a barrel roll goes all the way round in ROLL_TIME and comes
-## out level on its heading; it skims the ground, slides under an island and
+## out level on its heading; a held lean tips it up on a knife edge without
+## turning it, and it rolls back when let go; it skims the ground, slides under an island and
 ## a long fall is caught. Its figure (scripts/plane_figure.gd) builds and
 ## follows it through a roll, and the chase camera (scripts/glide_camera.gd)
 ## stays steady and leans no further than ROLL_MAX through one.
@@ -19,6 +20,7 @@ func _initialize() -> void:
 	_throttle()
 	_turns()
 	_barrel_roll()
+	_knife_edge()
 	_skim()
 	_under_island()
 	_caught()
@@ -99,6 +101,22 @@ func _turns() -> void:
 	var mouse := flying()
 	mouse.step(DT,{"look":Vector2(0.05,0.0)},air)
 	check(mouse.heading < 0.0,"Mouse right turns right")
+
+## A held lean tips it up on a wingtip, KNIFE_BANK over, flying on
+## straight; let go, it rolls back level.
+func _knife_edge() -> void:
+	for dir: float in [1.0,-1.0]:
+		var plane := flying()
+		var from := plane.heading
+		fly(plane,0.6,{"lean":dir})
+		check(absf(plane.bank-dir*SkyPlane.KNIFE_BANK) < 0.08,"Held, it tips up on a knife edge (%.2f rad)" % plane.bank)
+		check(absf(angle_difference(from,plane.heading)) < 0.02,"And flies on straight (%.3f rad)" % angle_difference(from,plane.heading))
+		check(not plane.rolling,"A lean is not a roll")
+		fly(plane,1.0,{})
+		check(absf(plane.bank) < 0.05,"Let go, it rolls back level (%.2f rad)" % plane.bank)
+	var turning := flying()
+	fly(turning,0.6,{"turn":1.0,"lean":1.0})
+	check(turning.bank > 1.4,"A lean holds over a turn's bank (%.2f rad)" % turning.bank)
 
 ## A roll goes all the way round in ROLL_TIME, hops sideways a little, and
 ## comes out level on the heading it went in on.

@@ -47,6 +47,8 @@ extends Node3D
 ## farmstead, hamlet, reef, lake, falls, forest, stack, ravine, mountain.
 ##   godot --path . -- --no-title --motif=mountain
 ##   godot --path . -- --no-title --motifs-near-home --no-clusters
+## The Sundered hall (--motif=sundered, `hall_spot`) is laid apart from the
+## cells: see SPECIAL.
 
 const SkyIslets = preload("res://scripts/sky_islets.gd")
 const SkyCells = preload("res://scripts/sky_cells.gd")
@@ -60,6 +62,9 @@ const Motifs = preload("res://scripts/cluster_motifs.gd")
 const Dresser = preload("res://scripts/cluster_dresser.gd")
 const StoneLampLights = preload("res://scripts/stone_lamp_lights.gd")
 const Cabin = preload("res://scripts/cabin.gd")
+const Sundered = preload("res://scripts/sundered_hall.gd")
+const SunderedBuild = preload("res://scripts/sundered_build.gd")
+const SkyPierced = preload("res://scripts/sky_pierced.gd")
 
 ## The density: a cluster's cell (m), and the share of cells holding one.
 const SPACING := 850.0
@@ -102,6 +107,31 @@ const NEAR_GAP := 190.0
 const NEAR_ISLAND := 170.0
 const NEAR_Y := 2.0
 const NEAR_SEED := 7
+## The Sundered hall (scripts/sundered_hall.gd): a motif of its own, too
+## long (about a kilometre of line) for a cell, so it never stands in one.
+## At most one a world, and only in HALL_ODDS of worlds: tried at HALL_TRIES
+## places HALL_RING m out from the home, each try's whole footprint (its
+## islands' capsules) kept clear of the islands' spots, the ranges, walls
+## and band, the haze and the cumulus (HALL_ISLAND, HALL_TOWER: closer
+## than a cluster's middle keeps, since the hall is long and narrow). The random
+## clusters and the seeded islets keep HALL_KEEP off its footprint.
+## --motif=sundered stands it NEAR_HALL m out, heading away from the home.
+const SPECIAL := ["sundered"]
+const HALL_ODDS := 0.55
+const HALL_TRIES := 48
+const HALL_RING := Vector2(900.0,3400.0)
+const HALL_KEEP := 140.0
+const HALL_BAND := Vector2(-4.0,16.0)
+const NEAR_HALL := Vector2(240.0,900.0)
+const HALL_SALT := 3900
+## The hall's headings tried at a place, and what its footprint keeps clear
+## of (m past its islands' reach): an island's spot (the islands are 48 m
+## plates; a hall is long, and the sky between the islands' 450 m cells is
+## where it threads), a cumulus tower past its keep, the home's spot.
+const HALL_TURNS := 12
+const HALL_ISLAND := 75.0
+const HALL_TOWER := 60.0
+const HALL_HOME := 150.0
 ## The members' bob (the islets' BOB): one period for a cluster.
 const PERIOD := Vector2(8.0,11.0)
 ## Sails turn (rad/s), beams sweep (rad/s).
@@ -121,12 +151,12 @@ static func near_motifs() -> Array:
 	var out: Array = []
 	for a: String in OS.get_cmdline_user_args():
 		if a == "--motifs-near-home":
-			for n: String in names:
+			for n: String in names+SPECIAL:
 				if not n in out: out.append(n)
 		elif a.begins_with("--motif="):
 			for n: String in a.trim_prefix("--motif=").split(",",false):
-				if n in names and not n in out: out.append(n)
-				elif not n in names: push_warning("--motif: no motif %s (%s)" % [n,", ".join(names)])
+				if (n in names or n in SPECIAL) and not n in out: out.append(n)
+				elif not (n in names or n in SPECIAL): push_warning("--motif: no motif %s (%s)" % [n,", ".join(names+SPECIAL)])
 	return out
 
 static func near_seed() -> int:
@@ -173,6 +203,7 @@ func _notification(what: int) -> void:
 func _wait_all() -> void:
 	for key in clusters:
 		var c: Dictionary = clusters[key]
+		if c.has("halls"): SunderedBuild.release(c.halls)
 		if int(c.get("task",-1)) >= 0:
 			WorkerThreadPool.wait_for_task_completion(c.task)
 			c.task = -1
@@ -192,9 +223,15 @@ func reset(new_cells: SkyCells) -> void:
 	# Read on this thread before any worker needs them.
 	Cabin.info()
 	Dresser._mats()
+	SunderedBuild.RuinKit.materials()
 	if with_showcase: spots.append({"key":"showcase","at":SHOWCASE_AT,"motif":"showcase","seed":1})
+	# The hall first: its footprint is long, and the rest keep off it.
+	var hall: Variant = null
+	if "sundered" in with_near: hall = near_hall_spot(near_seed_value)
+	elif with_random: hall = hall_spot()
+	if hall != null: spots.append(hall)
 	var forced: Array = spots.duplicate()
-	forced.append_array(near_spots(with_near,near_seed_value,forced))
+	forced.append_array(near_spots(with_near.filter(func(n: String) -> bool: return not n in SPECIAL),near_seed_value,forced))
 	spots = forced.duplicate()
 	if with_random:
 		var reach := ceili(4400.0/SPACING)
@@ -202,10 +239,14 @@ func reset(new_cells: SkyCells) -> void:
 			for z in range(-reach,reach+1):
 				var s: Variant = spot_of(Vector2i(x,z))
 				if s == null: continue
-				if forced.any(func(f: Dictionary) -> bool: return _flat(f.at,s.at) < SPACING*0.5): continue
+				if forced.any(func(f: Dictionary) -> bool: return f.get("motif","") != "sundered" and _flat(f.at,s.at) < SPACING*0.5): continue
+				if hall_blocks(s.at,KEEP+HALL_KEEP): continue
 				spots.append(s)
 	var keep: Array[Vector3] = []
-	for s: Dictionary in spots: keep.append(Vector3(s.at.x,s.at.z,KEEP))
+	for s: Dictionary in spots:
+		if s.motif == "sundered":
+			for f: Vector3 in s.footprint: keep.append(Vector3(s.at.x+f.x,s.at.z+f.y,f.z+HALL_KEEP))
+		else: keep.append(Vector3(s.at.x,s.at.z,KEEP))
 	islets.keep_clear.append_array(keep)
 	_since = CHECK
 
@@ -222,6 +263,7 @@ func spot_of(cell: Vector2i) -> Variant:
 		if Vector2(here.x,here.z).length() < ISLAND_CLEAR: continue
 		if cells != null and not cells.spots_near(here,ISLAND_CLEAR).is_empty(): continue
 		if SkyPeaks.blocks(here,WALL_CLEAR) or SkyTowers.blocks(here,TOWER_CLEAR) or SkyForestIsles.blocks(here,WONDER_CLEAR): continue
+		if SkyPierced.blocks(here): continue
 		if in_haze(here): continue
 		at = here
 		break
@@ -246,9 +288,11 @@ func near_spots(names: Array, seed_value: int, taken: Array) -> Array:
 				# Its own share of the turn first, then further either way.
 				var turn := TAU*float(i)/names.size()+0.35+(TAU/NEAR_TURNS*ceilf(k/2.0)*(1.0 if k % 2 == 0 else -1.0))
 				var here := Vector3(cos(turn),0.0,sin(turn))*(ring+step*NEAR_STEP)+Vector3.UP*NEAR_Y
-				if (taken+out).any(func(f: Dictionary) -> bool: return _flat(f.at,here) < NEAR_GAP): continue
+				if (taken+out).any(func(f: Dictionary) -> bool: return f.get("motif","") != "sundered" and _flat(f.at,here) < NEAR_GAP): continue
+				if hall_blocks(here,NEAR_GAP*0.5+HALL_KEEP*0.5): continue
 				if cells != null and not cells.spots_near(here,NEAR_ISLAND).is_empty(): continue
 				if SkyPeaks.blocks(here,WALL_CLEAR) or SkyTowers.blocks(here,TOWER_CLEAR) or SkyForestIsles.blocks(here,WONDER_CLEAR): continue
+				if SkyPierced.blocks(here): continue
 				if in_haze(here): continue
 				at = here
 				break
@@ -258,6 +302,79 @@ func near_spots(names: Array, seed_value: int, taken: Array) -> Array:
 			continue
 		out.append({"key":"near:%s" % names[i],"at":at,"motif":names[i],"seed":seed_value})
 	return out
+
+## The Sundered hall's spot for this world ({key, at, motif, seed, yaw,
+## footprint}), or null: in HALL_ODDS of worlds, the first of HALL_TRIES
+## places round the home (each tried at HALL_TURNS headings) whose whole
+## footprint is clear.
+func hall_spot() -> Variant:
+	var cell := Vector2i(17,-23)
+	if SkyCells.noise(cell,HALL_SALT) >= HALL_ODDS: return null
+	var seed_value := int(SkyCells.noise(cell,HALL_SALT+1)*16777216.0)
+	var flat := _hall_footprint(seed_value)
+	if flat.is_empty(): return null
+	for k in range(HALL_TRIES):
+		var turn := SkyCells.noise(cell,HALL_SALT+10+k*3)*TAU
+		var ring := lerpf(HALL_RING.x,HALL_RING.y,SkyCells.noise(cell,HALL_SALT+11+k*3))
+		var yaw0 := SkyCells.noise(cell,HALL_SALT+12+k*3)*TAU
+		var at := Vector3(cos(turn)*ring,lerpf(HALL_BAND.x,HALL_BAND.y,SkyCells.noise(cell,HALL_SALT+2)),sin(turn)*ring)
+		for j in range(HALL_TURNS):
+			var s: Variant = _hall_at("sundered",at,seed_value,yaw0+TAU*j/HALL_TURNS,flat)
+			if s != null: return s
+	return null
+
+## The hall stood near the home (--motif=sundered): its gate NEAR_HALL out,
+## heading away from the home if it can, else any way round, the first
+## clear one.
+func near_hall_spot(seed_value: int) -> Variant:
+	var flat := _hall_footprint(seed_value)
+	for step in range(NEAR_STEPS):
+		var ring := lerpf(NEAR_HALL.x,NEAR_HALL.y,float(step)/maxf(NEAR_STEPS-1,1))
+		for k in range(NEAR_TURNS):
+			var turn := 0.35+TAU/NEAR_TURNS*ceilf(k/2.0)*(1.0 if k % 2 == 0 else -1.0)
+			var way := Vector3(cos(turn),0.0,sin(turn))
+			var out := atan2(-way.z,way.x)
+			for j in range(HALL_TURNS):
+				var yaw := out+TAU*ceilf(j/2.0)/HALL_TURNS*(1.0 if j % 2 == 0 else -1.0)
+				var s: Variant = _hall_at("near:sundered",way*ring+Vector3.UP*NEAR_Y,seed_value,yaw,flat)
+				if s != null:
+					print("Sundered hall: its gate %.0f m from the home toward %s (home coordinates), seed %d" % [ring,str((way*ring).snapped(Vector3.ONE)),seed_value])
+					return s
+	push_warning("--motif: no clear room near the home for sundered")
+	return null
+
+## The hall's footprint laid at heading 0 (Sundered `footprint`): a hall
+## laid at another heading is the same turned (the layout turns with it).
+static func _hall_footprint(seed_value: int) -> Array:
+	var layout := Sundered.layout(seed_value,0.0)
+	if not Sundered.validate(layout).is_empty(): return []
+	return Sundered.footprint(layout)
+
+## The hall laid at `at` heading `yaw`, if its whole footprint (`flat`, at
+## heading 0) is clear: of the islands' spots (HALL_ISLAND), the ranges,
+## walls and band, the cumulus (HALL_TOWER), the forested isles, the pierced
+## isles (their KEEP), the haze and the home.
+func _hall_at(key: String, at: Vector3, seed_value: int, yaw: float, flat: Array) -> Variant:
+	var footprint: Array = []
+	for f: Vector3 in flat:
+		var p := Vector2(f.x,f.y).rotated(-yaw)
+		footprint.append(Vector3(p.x,p.y,f.z))
+		var here := at+Vector3(p.x,0.0,p.y)
+		if Vector2(here.x,here.z).length() < HALL_HOME+f.z: return null
+		if cells != null and not cells.spots_near(here,HALL_ISLAND+f.z).is_empty(): return null
+		if SkyPeaks.blocks(here,WALL_CLEAR+f.z) or SkyTowers.blocks(here,HALL_TOWER+f.z) or SkyForestIsles.blocks(here,WONDER_CLEAR+f.z): return null
+		# The pierced isles (laid first, scripts/sky_pierced.gd) keep it off.
+		if SkyPierced.blocks(here,f.z): return null
+		if in_haze(here): return null
+	return {"key":key,"at":at,"motif":"sundered","seed":seed_value,"yaw":yaw,"footprint":footprint}
+
+## True within `margin` of a laid hall's footprint.
+func hall_blocks(home: Vector3, margin: float) -> bool:
+	for s: Dictionary in spots:
+		if s.motif != "sundered": continue
+		for f: Vector3 in s.footprint:
+			if Vector2(home.x-s.at.x-f.x,home.z-s.at.z-f.y).length() < f.z+margin: return true
+	return false
 
 ## True if a home point is on or within HAZE_CLEAR of the band's haze
 ## curve (SkyWorld `haze_share`), where the band's mist would veil it.
@@ -278,6 +395,9 @@ func advance(delta: float, eye: Vector3) -> void:
 		_since = 0.0
 		_survey(home)
 	_stand_some(home)
+	for key in clusters:
+		var c: Dictionary = clusters[key]
+		if c.has("halls") and c.has("plan"): SunderedBuild.advance(c.halls,c.plan,home)
 	_animate(delta)
 
 func _survey(home: Vector3) -> void:
@@ -304,11 +424,12 @@ func _plan(s: Dictionary) -> void:
 	var out := {}
 	var palette := _palette
 	var task := WorkerThreadPool.add_task(func() -> void:
-		var plan := Solver.solve(s.motif,int(s.seed))
+		var hall: bool = s.motif == "sundered"
+		var plan := SunderedBuild.solve(int(s.seed),float(s.yaw)) if hall else Solver.solve(s.motif,int(s.seed))
 		var made := {}
 		for m: Dictionary in plan.members:
 			var dressed := SkyIslets.dress(m.shape,palette,(s.at as Vector3).y+(m.offset as Vector3).y)
-			dressed.extra = Dresser.prepare(m,plan)
+			dressed.extra = SunderedBuild.prepare(m,plan) if hall else Dresser.prepare(m,plan)
 			made[m.name] = dressed
 		out.plan = plan
 		out.made = made,false,"Sky cluster")
@@ -350,6 +471,10 @@ func _stand(c: Dictionary, m: Dictionary) -> void:
 	b.cluster = c.spot.key
 	islets.built["cluster:%s:%s" % [c.spot.key,m.name]] = b
 	c.stood[m.name] = b
+	if m.has("yaw"): SkyIslets.turn(b,float(m.yaw))
+	if c.plan.get("motif","") == "sundered":
+		(c.get_or_add("halls",[]) as Array).append(SunderedBuild.furnish(b.node,m,c.plan,made.extra,(c.spot.at as Vector3).y))
+		return
 	var live := Dresser.furnish(b.node,m,c.plan,made.extra)
 	for k in ["sails","beams","lights"]: (c.live[k] as Array).append_array(live[k])
 
@@ -376,6 +501,7 @@ func plan_now(key: String) -> void:
 func _forget(key: String) -> void:
 	var c: Dictionary = clusters[key]
 	if int(c.get("task",-1)) >= 0: WorkerThreadPool.wait_for_task_completion(c.task)
+	if c.has("halls"): SunderedBuild.release(c.halls)
 	for name_: String in c.stood:
 		var b: Dictionary = c.stood[name_]
 		if is_instance_valid(b.node): (b.node as Node3D).queue_free()
