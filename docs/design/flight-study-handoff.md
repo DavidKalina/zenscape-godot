@@ -460,3 +460,258 @@ and columns passed as openings, not just the spells.
   (3/3 pass) only, not the full suite.
 - The first round-2 commit's bench test reads `threading_share`, which
   only lands in the second commit. Check out both together.
+
+# Round 3: flow, and a hall built for it
+
+The user: "I like it when there's continuous movement. I don't like it when
+you go straight for a bit and then you go up and then you go straight for a
+bit and then you go down... Continuous movement is the way to go, so the
+levels need to be designed [for it]." Measured on `sundered`'s perfect line,
+29% of the run is flying straight, and only 43% of the swing is sideways.
+The rest is pitching over and under ties, with flats in between, which is
+the step feel. Round 3 adds a number for this and a second hall built
+round a line that doesn't settle.
+
+## Launch
+
+    ./run-flight-study.command --station=sundered_flow        # key 0
+    ./run-flight-study.command --station=sundered             # key 9, unchanged, for A/B
+    godot --headless --path . -s tools/flight_bench.gd -- --station sundered,sundered_flow --runs 20
+    python3 tools/flight_movement.py --station all --timeline # where the straights are, per run
+
+## Flow metric (`FlightMetrics.flow`, `swing_rates`)
+
+Flow is read off the flown direction (the heading and pitch in the ticks),
+not the stick, so stick noise the plane doesn't follow doesn't count.
+
+- **swing** (deg/s): how fast the flight direction swings. The change of
+  heading and of pitch over the last **0.25 s** (`FLOW_SMOOTH`), divided by
+  that time, combined as sqrt(yaw² + pitch²). It's measured over less time
+  at the start, and is 0 on the first tick.
+- **still_share**: the share of ticks swinging under **6 deg/s**
+  (`FLOW_STILL`), which is flying straight. A curve wider than about 130 m
+  at cruise reads as straight. A steady climb at a fixed pitch is straight
+  too.
+- **straights**: still spells of **0.5 s** or more (`FLOW_STRAIGHT`).
+  **longest_straight**: the longest still spell, in seconds. A spell runs
+  from its first calm tick to the first tick that isn't calm.
+- **swing_mean** (deg/s), and **yaw_share** = Σ|yaw rate| / (Σ|yaw| +
+  Σ|pitch|), the sideways share of the swing.
+- **swing_reversals_per_s**, the jerkiness guard: sign changes of the yaw
+  rate and of the pitch rate past **10 deg/s** (`FLOW_REVERSE`), per
+  second. A weave reverses about once per token. A wobble reverses far
+  more: the sloppy bot on `sundered` reverses 4.4 /s against the perfect
+  line's 0.55. So a sloppy pilot's low still share isn't flow.
+- **A station's flow is its perfect reference run's.** The bench prints
+  each skill's still share and reversals next to it, so a wobble shows.
+
+Where flow shows up:
+
+- **Run JSON**: `metrics.still_share`, `straights`, `longest_straight`,
+  `swing_mean`, `yaw_share` and `swing_reversals_per_s`.
+- **F1**: a compact line, `flow: still 28% · longest 1.2 s`, which adds
+  `· straight NOW` while you've been straight for 0.5 s.
+- **End-of-run panel**: one Flow line.
+- **Bench**: `still` and `longst` columns, plus a separate flow table.
+- **`flight_report.py`**: the overview (the reference's still and longest
+  straight, and the people's still), the per-skill bot table, the people
+  table, and the rated-runs table, now titled "Threading and flow vs fun",
+  with Pearson r for still share and longest straight.
+- **`tools/flight_movement.py`** (the user's script, refactored): it
+  recomputes flow the same way from the ticks, with `--dir`, and prints a
+  timeline with one character per 0.25 s and a space for straight.
+
+**Backfill**: `tools/flight_threading.gd` now also writes
+`flow_backfill.json` next to the runs. Flow needs only a run's own ticks,
+so it is measured for stale layouts too. The run files are only read. The
+user's 14 `_human_` files were checked byte for byte (md5) before and after,
+and are unchanged. `flight_report.py` runs the backfill when a run lacks
+either number. 563 old runs were backfilled.
+
+### Flow vs the user's ratings so far (9 rated runs, backfilled)
+
+Pearson r with fun: still share **0.05**, longest straight −0.26
+(openings/s is still 0.80). So on the round-1 stations, flow doesn't track
+fun yet. That's not surprising: none of those stations was built to test
+it, and climb_rings (fun 4) is 21% still for the person and 71% for the
+perfect line, because it's a steady climb. The A/B below is the real test.
+
+## The station (`sundered_flow`, key 0, hash 2a22c9b41180)
+
+It uses the same hall vocabulary and dimensions as `sundered`:
+`ruin_kit_hall` bays at 8 m, rows at ±9.4, walls at ±12.4, ties with
+soffits at 4 m and 6 m, inner columns, screens with knife-edge slits, torn
+ends, broken and open roofs, and an arch breach. It is 15 bays, 21 tokens
+and about 190 m of line. The perfect bot flies it in 13.4 s. The difference
+is that **the line was designed first and the hall stood round it**. The
+layout comes from `tools/flight_flow_layout.py`, which prints the
+`STATIONS` entry. Its header holds the formulas, and its constants are the
+knobs.
+
+- **Piece A, 9 bays, curving left (radius 110 m).** Inside it, the line is
+  a slow corkscrew in the nave's own frame:
+  - across = ±4 m sin(πs/24), and up = 5.4 + 3 cos(πs/24) m over the floor.
+  - One tie leads to the next every 3 bays. The ties are high, low and
+    high, at bay lines 1, 4 and 7. You fly over a high tie 1.5 m clear,
+    under its beam 1.6 m clear, and under a low tie 1.6 m clear.
+  - The ties sit where the line crosses the nave's middle. There the
+    climb's curve is strongest and the sideways curve is zero. Out at the
+    sides, where the height levels off, the sideways curve is strongest. So
+    the up-down and the side-to-side hand over to each other instead of
+    alternating with flats. That's the "sine, not steps" idea, with the
+    two axes 90° out of phase.
+  - The nave's own curve keeps the direction turning even at the hand-over
+    points.
+  - Inner columns stand at the bay lines where the line is out to a side,
+    so it weaves round them: right of the middle columns, then left.
+  - The entry sits at the corkscrew's low point, and the whole station is
+    turned so the line leaves the entry heading north and level, as the
+    plane is spawned. Before this, the first token was 3.6 m up and 10 m
+    out, and the decent bot missed it every time.
+- **Gap**: there's no flat gap. A cubic Hermite swoop, about 20 m, runs
+  from A's torn end to 8 m before B's mouth. It turns right by about 0.75
+  rad while it drops (the floors step down 5 m; the line drops about 2 m).
+  A curves left and the swoop curves right, so the hall as a whole is one
+  big S.
+- **Piece B, 6 bays, curving right (radius 80 m).**
+  - It starts at a torn mouth, and a low tie is flown under.
+  - Next is the slit act. Screens with knife-edge slits stand on the left
+    at bay lines 2 and 3, and the corkscrew carries the line out right of
+    them.
+  - Then a high tie, and the apse. From the low tie on, the height is a
+    half-cosine climb of 20.4 m, so the line rises over the high tie and
+    out through the apse's open roof while it still weaves and the nave
+    still curves. The climb happens inside the turn, not between flats.
+  - The high tie's bay line has **no roof beam** (`beam: false`). With
+    the beam, the climbing line passed 0.1 m from it, which was the room
+    minimum.
+- The tokens are at every bay line (8 m apart), plus 2 in the swoop. There's
+  still no token in a slit (same reason as round 2).
+- Curved bays are separate boxes, each turned 0.07 rad (A) or 0.1 rad (B)
+  from the last. On the outside of the curve, that leaves wedge-shaped
+  chinks up to about 0.9 m (A) and 1.2 m (B) in the walls and roof. On
+  the inside, the boxes overlap. It's greybox, and has not been seen.
+
+### A/B bench (VERSION 1 bots, 20 runs; reference = perfect bot's best)
+
+| station | band | clear sl/de/sh/pf | ref time s | demand peak | mean | spike | room min m | threading | openings/s | **still** | **straights ≥0.5 s** | **longest s** | swing °/s | yaw share | swing rev/s |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| sundered | hard | 0.0/0.1/0.9/1.0 | 12.65 | 1.11 | 0.45 | 0.70 | 0.40 | 40% | 0.24 | **29%** | 2 | **1.25** | 18.8 | 43% | 0.55 |
+| sundered_flow | **medium** | 0.0/0.9/1.0/1.0 | 13.37 | **0.67** | 0.42 | 0.25 | 0.59 | 37% | **0.45** | **4%** | **0** | **0.32** | 27.3 | **65%** | 0.75 |
+
+The targets are met: still is 4% against a target of ≤ 10%, and the
+longest straight is 0.32 s against a target under 0.5 s. **Flow wasn't
+bought with demand**:
+
+- Peak demand fell from 1.11 to 0.67, and the mean is about the same
+  (0.42 against 0.45).
+- The band dropped from hard to medium: decent clears 90%.
+- The swing per second is higher (27 against 19 deg/s), but only because
+  `sundered` spends 29% of its time not swinging. While swinging, the two
+  are about the same: 28 deg/s here against 26.5 there.
+- Swing reversals are 0.75 /s against 0.55, which is roughly one per weave
+  and not a wobble. The sloppy, decent and sharp bots stay at 0.9-1.1 /s
+  on it.
+- Openings per second nearly doubled (0.45 against 0.24), because the
+  roofed and open bays alternate along the corkscrew.
+
+Sloppy clears neither station. On `sundered_flow` it takes 13-18 of 21:
+its misses are spread out, with almost no bumps. There is never a flat to
+recover on, which is the cost of continuous demand.
+
+Timelines, one character per 0.25 s (a space means straight; `. : - = + *
+#` mean swinging harder):
+
+    sundered       perfect  |     :::..-==:.::=++=-**+-.:.::...  :::::: . .::.  |
+    sundered_flow  perfect  |=--:::::-------:::--:::---::.::--===-::---:..::----:. |
+
+### Flow per station (perfect reference)
+
+| station | time s | demand peak | mean | still | straights | longest s | swing °/s | yaw share | swing rev/s | openings/s |
+|---|---|---|---|---|---|---|---|---|---|---|
+| gentle_arc | 6.22 | 0.20 | 0.17 | 23% | 1 | 1.18 | 13.5 | 100% | 0.00 | 0.00 |
+| slalom | 8.07 | 0.63 | 0.55 | 26% | 1 | 0.50 | 23.3 | 100% | 0.50 | 0.00 |
+| hidden_turn | 6.78 | 0.71 | 0.33 | 28% | 2 | 0.70 | 20.6 | 100% | 0.15 | 0.15 |
+| tight_slot | 5.37 | 0.32 | 0.23 | 42% | 2 | 1.05 | 8.3 | 100% | 0.19 | 0.19 |
+| climb_rings | 8.10 | 0.28 | 0.14 | 71% | 3 | 4.00 | 4.3 | 0% | 0.00 | 0.62 |
+| dive_arch | 6.50 | 0.51 | 0.33 | 17% | 1 | 0.70 | 19.9 | 0% | 0.15 | 0.15 |
+| open_swoop | 9.33 | 0.24 | 0.18 | 14% | 1 | 0.57 | 12.9 | 73% | 0.11 | 0.00 |
+| mixed_spike | 6.68 | 0.79 | 0.38 | 55% | 2 | 2.87 | 19.6 | 83% | 0.45 | 0.00 |
+| sundered | 12.65 | 1.11 | 0.45 | 29% | 2 | 1.25 | 18.8 | 43% | 0.55 | 0.24 |
+| sundered_flow | 13.37 | 0.67 | 0.42 | **4%** | **0** | **0.32** | 27.3 | 65% | 0.75 | 0.45 |
+
+- **Every round-1 station starts with a straight.** Each first token is
+  dead ahead, 10-14 m from the spawn, so there's about 0.7 s of still
+  flying before anything happens. That alone is 8-12% of a 6-8 s station.
+- After `sundered_flow`, the best flowing old stations are open_swoop (14%)
+  and dive_arch (17%). climb_rings is the stillest at 71%: it's a steady
+  climb in a line, the straightest flying there is. Yet the user rated it
+  most fun (4). So flow alone doesn't make fun. Going through things does
+  too, and the flowing hall is meant to test both at once.
+
+## Files changed (round 3)
+
+- `scripts/flight_metrics.gd`: `flow`, `swing_rates`, the `FLOW_*`
+  constants and `FLOW_KEYS`, and `summarise` merges the flow numbers in.
+- `scripts/flight_run.gd`: live flow (`still`, `longest_straight`,
+  `straight_now` in `live()`).
+- `studies/flight_study.gd`: the F1 flow line, the panel's Flow line, and
+  key 0 (the hints now say 0-9).
+- `scripts/flight_course.gd`: the `sundered_flow` station. The other nine
+  keep their hashes, and `sundered`'s is now pinned in the test as well.
+- `tools/flight_flow_layout.py` (new): the layout generator.
+- `tools/flight_bench.gd`: the flow columns, `flow_table`, and per-skill
+  flow stats.
+- `tools/flight_threading.gd`: `backfill_flow`, which writes
+  `flow_backfill.json`.
+- `tools/flight_report.py`: the flow columns, the flow side file, and the
+  flow-vs-fun r.
+- `tools/flight_movement.py`: the user's script, committed and aligned to
+  the GDScript definition, with `--dir`.
+- Tests:
+  - `test_flight_metrics.gd`: flow on a straight, turn, straight fake run
+    (still about 45%, two straights, the longest about 1.05 s, all
+    sideways, no reversals), and the wobble guard (not still, about 4
+    reversals/s).
+  - `test_flight_bench.gd`: the flowing hall stands, key 0 maps to it, the
+    sharp bot clears it in 10-20 s, and the perfect line (look 7) has
+    still ≤ 10% and its longest straight under 0.5 s.
+
+## Unverified (round 3)
+
+- **No window was opened.** Nobody has seen the curved hall, the wedge
+  chinks between the curved bays, the camera inside a curving nave, or
+  the F1 flow line.
+- **Nobody has flown `sundered_flow`.** Whether the corkscrew feels like
+  "continuous movement" or like being stirred (monotone, or seasick) is
+  the open question. It has one rhythm, 3.4 s per full weave, the whole way
+  through.
+- The definitions are guesses: the 6 deg/s still threshold, the 0.25 s
+  window and the 0.5 s straight. Nothing fits them to ratings yet, and on
+  the 9 old rated runs still share doesn't track fun (r 0.05).
+- The beam left off at B's high tie, and the bays turned at a constant
+  curve, depart from the real hall. The real hall's pieces curve too
+  (radius ≥ 70 m), but I haven't checked whether a real bay can drop its
+  beam.
+- Tests: I ran the headless import check and
+  `run_tests.py --tests 'test_flight_*.gd'` (3/3 pass), not the full
+  suite.
+
+## Suggested round 4
+
+1. **Fly the A/B**, key 9 then key 0, and rate both. If flow wins, the
+   numbers to keep are still share and longest straight. Use them as
+   filters (still ≤ 10%, no straight over 0.5 s) for generated set pieces,
+   next to openings/s.
+2. If the corkscrew reads as monotone, vary its period and amplitude per
+   act (`HALF`, `SIDE`, `RISE` in the layout tool). For example, a tight
+   weave through the slit act and a long lazy swoop through the cloister,
+   keeping the hand-over between the axes.
+3. Spawn every station into its line's tangent (the round-1 stations all
+   start with a 0.7 s straight). Do that as new layouts, since changing
+   them would change their hashes.
+4. Add a knife-edge bot and optional tokens, so the slits can carry a
+   token.
+5. Generalise `flight_flow_layout.py` into the station generator from
+   round 1's list: a curve (pieces, gaps, corkscrew parameters) in,
+   bays and tokens out, benched and filtered on band, demand and flow.
