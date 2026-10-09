@@ -7,8 +7,9 @@ extends SceneTree
 ## the perfect reference flies once at each of FlightBot PERFECT_LOOKS and
 ## its best run is kept (the reference line in the report).
 ##
-##   godot --headless --path . -s tools/flight_bench.gd -- --station all --runs 5
-##   options: --station id[,id] | all   --runs N   --skills sloppy,decent,...
+##   godot --headless --path . -s tools/flight_bench.gd -- --station all --runs 10
+##   options: --station id[,id] | all   --runs N (default 10; 20 gives
+##            steadier bands, about 7 s)   --skills sloppy,decent,...
 ##            --out user://dir (default user://flight_runs)   --no-save (no run files)
 ##
 ## Writes each run's JSON, a summary (bench_<when>.json) and the bands
@@ -29,7 +30,7 @@ func _initialize() -> void:
 	run.call_deferred()
 
 func _args() -> Dictionary:
-	var out := {"station":"all","runs":5,"skills":",".join(Metrics.SKILLS),"out":Log.DIR,"save":true}
+	var out := {"station":"all","runs":10,"skills":",".join(Metrics.SKILLS),"out":Log.DIR,"save":true}
 	var args := OS.get_cmdline_user_args()
 	var i := 0
 	while i < args.size():

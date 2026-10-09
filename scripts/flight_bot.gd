@@ -22,7 +22,7 @@ const SkyPlane = preload("res://scripts/sky_plane.gd")
 const Metrics = preload("res://scripts/flight_metrics.gd")
 
 const SKILLS := {
-	"sloppy":{"reaction":0.45,"lag":0.12,"look":4.0,"noise":0.16,"drift":0.35,"gain":2.0,"brake":false},
+	"sloppy":{"reaction":0.45,"lag":0.12,"look":4.0,"noise":0.12,"drift":0.35,"gain":2.0,"brake":false},
 	"decent":{"reaction":0.3,"lag":0.08,"look":6.0,"noise":0.08,"drift":0.35,"gain":2.6,"brake":true},
 	"sharp":{"reaction":0.18,"lag":0.04,"look":8.0,"noise":0.03,"drift":0.35,"gain":3.2,"brake":true},
 	"perfect":{"reaction":0.0,"lag":0.0,"look":8.0,"noise":0.0,"drift":0.35,"gain":3.5,"brake":true,"knows_all":true},
@@ -33,6 +33,9 @@ const PERFECT_LOOKS := [3.0,5.0,7.0,9.0,12.0]
 ## The stick wanders less up and down than across (a share of `noise`).
 const PITCH_NOISE := 0.5
 const BRAKE_OFF := 0.6
+## Bumped whenever SKILLS or the steering change, so the report keeps runs
+## of different bots apart.
+const VERSION := 1
 const BRAKE_NEAR := 30.0
 
 var params := {}
@@ -44,8 +47,11 @@ func _init(skill: Dictionary, seed_value := 0) -> void:
 	params = skill
 	rng.seed = seed_value
 
+## Skill `name`'s numbers, stamped with VERSION.
 static func skill(name: String) -> Dictionary:
-	return (SKILLS.get(name,{}) as Dictionary).duplicate()
+	var out := (SKILLS.get(name,{}) as Dictionary).duplicate()
+	out["version"] = VERSION
+	return out
 
 ## This tick's input for `run`'s plane.
 func input(run: RefCounted, delta: float) -> Dictionary:
