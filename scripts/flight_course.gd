@@ -392,7 +392,7 @@ static func solids(s: Dictionary) -> Array:
 ##   breach  [left, right]: "", "low", "collapse" (the wall torn down) or
 ##           "arch" (an ARCH opening through it)
 ##   screen  a screen across the left of the nave at the bay line, a
-##           knife-edge slit (KNIFE) through it
+##           knife-edge slit (KNIFE) through it ("right": across the right)
 ##   torn    1 the bay line torn (columns snapped, no beam), 2 the far end
 ##           torn; either way the bay's walls stand low
 ##   beam    false: no roof beam at the bay line (an open bay after an
@@ -467,9 +467,10 @@ static func _bay(at: Vector3, yaw: float, plan: Dictionary) -> Array:
 			put.call(Vector3(bay*0.5,(top+high)*0.5,z),Vector3(w,high-top,Hall.WALL_THICK))
 		else:
 			put.call(Vector3(bay*0.5,high*0.5,z),size)
-	# The screen across the left of the nave, its knife-edge slit.
-	if bool(plan.get("screen",false)):
-		var z := -(Hall.ROW_Z+Hall.INNER_Z)*0.5
+	# The screen across the left (or right) of the nave, its knife-edge slit.
+	var screen: Variant = plan.get("screen",false)
+	if screen is String or bool(screen):
+		var z := (1.0 if str(screen) == "right" else -1.0)*(Hall.ROW_Z+Hall.INNER_Z)*0.5
 		var span := (Hall.ROW_Z-Hall.INNER_Z)*0.5-Hall.COLUMN_R+0.06
 		var high := (Hall.TIE_LOW if tie == "low" else (Hall.TIE_HIGH if tie == "high" else 7.0))-0.02
 		var half := Hall.KNIFE.x*0.5

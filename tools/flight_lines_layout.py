@@ -40,7 +40,7 @@ from flight_flow_layout import BAY, CRUISE, TURN_RATE, PITCH_SPEED, Nave, fwd, g
 
 WALL_Z = 12.4
 ROW_Z = 9.4
-COLLAPSE_REACH = 7.0
+COLLAPSE_REACH = 9.0
 ROW_REACH = 7.0
 ARCH_ROW_REACH = 4.5
 LINES = ("green", "yellow", "red")
@@ -71,8 +71,41 @@ def merge(base, replace):
 	return sorted([b for b in base if b[0] < lo or b[0] > hi] + list(replace))
 
 
+def mirrored(spec):
+	"""`spec` left for right (`mirror`): across, curvature, spires, gates,
+	screens and inner columns flipped, so a layout can turn away from its
+	neighbour without being laid out again."""
+	out = dict(spec)
+	out["mirror"] = False
+	flip = lambda beats: [(s, -a) for s, a in beats]
+	out["kappa"] = [(s, -k) for s, k in spec["kappa"]]
+	lines = {}
+	for name, ln in spec["lines"].items():
+		ln = dict(ln)
+		if "across" in ln:
+			ln["across"] = flip(ln["across"]) if name == "green" else [flip(r) for r in ln["across"]]
+		lines[name] = ln
+	out["lines"] = lines
+	out["spires"] = [(s, -a, r) for s, a, r in spec.get("spires", [])]
+	out["gates"] = [(s, -a, sill, w, h) for s, a, sill, w, h in spec.get("gates", [])]
+	plans = {}
+	for i, plan in spec.get("plans", {}).items():
+		plan = dict(plan)
+		if "screen" in plan:
+			plan["screen"] = True if plan["screen"] == "right" else "right"
+		if "inner" in plan:
+			plan["inner"] = [-z for z in plan["inner"]]
+		if "gaps" in plan:
+			plan["gaps"] = [5 - g for g in plan["gaps"]]
+		plans[i] = plan
+	out["plans"] = plans
+	return out
+
+
 class Station:
 	def __init__(self, spec):
+		if spec.get("mirror"):
+			spec = mirrored(spec)
 		self.spec = spec
 		self.floor = cosine_beats(spec["floor"])
 		self.lines = {}
@@ -163,6 +196,12 @@ class Station:
 			plan.update(self.spec["plans"].get(i, {}))
 			plan.setdefault("roof", "whole")
 			plan.setdefault("inner", [])
+			for i0, i1 in self.spec.get("open_roof", []):
+				if i0 <= i <= i1:
+					plan["roof"] = "open"
+					plan.pop("gaps", None)
+					if i > i0:
+						plan["beam"] = False
 			if abs(pitch) > 1e-4:
 				plan["pitch"] = round(pitch, 4)
 			if i == self.spec["bays"] - 1:
@@ -234,6 +273,16 @@ class Station:
 			out.append(((p[0], p[2]), r))
 		return out
 
+	def gates(self):
+		"""Gates (FlightCourse "gate": posts, lintel and sill round a w x h
+		opening) standing on the roof: [(middle, w, h, yaw)], each given as
+		(s, across, sill height over the floor, w, h), square to the nave."""
+		out = []
+		for s, a, sill, w, h in self.spec.get("gates", []):
+			_, yaw = self.nave.frame(s)
+			out.append((self.nave.point(s, a, self.floor(s) + sill + 1.0 + h * 0.5), w, h, yaw))
+		return out
+
 
 def gd_plan_sorted(plan):
 	keys = ["roof", "gaps", "tie", "inner", "rows", "breach", "screen", "torn", "beam", "last", "pitch"]
@@ -262,6 +311,8 @@ def station_text(st):
 		out.append(f'\t\t["bay",{v3(at)},{yaw:.4f},{gd_plan_sorted(plan)}],')
 	for (x, z), r in st.pillars():
 		out.append(f'\t\t["pillar",Vector2({x:.2f},{z:.2f}),{r:.1f}],')
+	for mid, w, h, yaw in st.gates():
+		out.append(f'\t\t["gate",{v3(mid)},{w:.2f},{h:.2f},{yaw:.4f}],')
 	out.append('\t],"tokens":[')
 	out += gd_tokens(st.tokens("green"), "\t\t")
 	out.append('\t],"lines":{')
@@ -361,13 +412,13 @@ def write(stations, path=PACK_FILE):
 # a low tie, through a knife-edge slit, a hard swing right and back, and a
 # second slit.
 BEND = {
-	"id": "lines_bend", "name": "Bending nave: three lines (crest exit, spires, re-entry)",
+	"id": "lines_bend", "name": "Bending nave: three lines (crest exit, spires, re-entry)", "mirror": True,
 	"bays": 27, "entry": -16.0, "first_token": 0.0, "token_step": 12.0, "out": 222.0,
-	"kappa": [(-99.0, 1.0 / 120.0), (156.0, -1.0 / 100.0)],
+	"kappa": [(-99.0, 1.0 / 120.0), (124.0, -1.0 / 70.0)],
 	"floor": [(0.0, 0.0), (64.0, 11.0), (152.0, -5.0)],
 	"lines": {
 		"green": {"intent": "easy", "ease": 1.3,
-			"across": [(-16.0, 0.0), (8.0, 2.5), (32.0, -2.5), (52.0, 2.0), (108.0, -18.5), (164.0, 3.5), (186.0, 0.8), (208.0, 4.0), (230.0, 1.0), (252.0, 3.0)],
+			"across": [(-16.0, 0.0), (8.0, 1.5), (32.0, -2.5), (52.0, 2.0), (108.0, -18.5), (164.0, 3.5), (186.0, 1.8), (208.0, 4.0), (230.0, 2.0), (252.0, 3.0)],
 			"up": [(-16.0, 5.0), (20.0, 4.2), (44.0, 5.6), (68.0, 4.4), (96.0, 3.0), (124.0, 4.4), (150.0, 5.4), (176.0, 4.2), (200.0, 5.4), (226.0, 4.4), (250.0, 5.2)]},
 		"yellow": {"intent": "medium",
 			"across": [[(32.0, -2.5), (64.0, -17.0), (100.0, -28.5), (164.0, 3.5)]],
@@ -387,9 +438,82 @@ BEND = {
 		20: {"roof": "whole", "screen": True, "inner": [-2.6]},
 		23: {"roof": "broken", "gaps": [3, 4]},
 	},
-	"spires": [(78.0, -25.5, 2.0), (104.0, -23.5, 2.0)],
+	"spires": [(78.0, -25.5, 2.0), (104.0, -24.5, 2.0)],
 }
-LAYOUTS = [BEND]
+# 2. The stitching hall: a long hall climbing gently (9 m over 160 m) and
+# curving a little right, with its walls broken through on both sides.
+# Green stitches through them in one big flowing S: out the left wall, in
+# again, across the nave and out the right, in, out the left and home,
+# passing inside a spire every time it is out. Yellow takes the same breaches
+# but swings wide round the far side of the second and third spires. Red
+# stays in and threads three knife-edge slits, left, right, left, swinging
+# across the nave between them while the others are outside.
+STITCH = {
+	"id": "lines_stitch", "name": "Stitching hall: three lines (out and in through both walls)",
+	"bays": 27, "entry": -16.0, "first_token": 0.0, "token_step": 12.0, "out": 214.0,
+	"kappa": [(-99.0, -1.0 / 110.0), (100.0, 1.0 / 110.0)],
+	"floor": [(8.0, 0.0), (64.0, 6.0), (120.0, 0.0), (176.0, 6.0)],
+	"lines": {
+		"green": {"intent": "easy", "ease": 1.3,
+			"across": [(-16.0, 0.0), (36.0, -17.0), (92.0, 17.0), (148.0, -17.0), (200.0, 0.0), (228.0, 2.5)],
+			"up": [(-16.0, 5.0), (16.0, 4.2), (44.0, 5.4), (72.0, 4.0), (100.0, 5.4), (128.0, 4.0), (156.0, 5.4), (184.0, 4.2), (212.0, 5.2), (240.0, 4.4)]},
+		"yellow": {"intent": "medium",
+			"across": [[(36.0, -17.0), (92.0, 29.0), (148.0, -29.0), (200.0, 0.0)]]},
+		"red": {"intent": "hard", "ease": 0.75,
+			"across": [[(-16.0, 0.0), (10.0, 2.5), (36.0, -6.0), (44.0, -6.0), (92.0, 6.0), (100.0, 6.0), (148.0, -6.0), (156.0, -6.0), (200.0, 0.0)]],
+			"up": [[(-16.0, 5.0), (40.0, 2.65), (68.0, 4.6), (96.0, 2.65), (124.0, 4.6), (152.0, 2.65), (184.0, 4.2)]],
+			"tokens_at": [40.0, 96.0, 152.0]},
+	},
+	"openings": [("green", "collapse"), ("yellow", "collapse")],
+	"plans": {
+		0: {"roof": "whole"},
+		5: {"roof": "whole", "screen": True, "inner": [-2.6]},
+		9: {"roof": "broken", "gaps": [2, 3]},
+		12: {"roof": "whole", "screen": "right", "inner": [2.6]},
+		16: {"roof": "broken", "gaps": [3, 4]},
+		19: {"roof": "whole", "screen": True, "inner": [-2.6]},
+		23: {"roof": "broken", "gaps": [2, 3]},
+	},
+	"spires": [(36.0, -23.5, 2.0), (92.0, 23.5, 2.0), (148.0, -23.5, 2.0)],
+}
+# 3. Over the crest: a hall arched like a bridge, its floor rising 8 m to a
+# crest and falling again, curving a little right. Green climbs out through
+# the open roof as the hall rises, flies over the roofed crest through three
+# big gates standing on the roof (the climb rings, on top of a building),
+# and dives back in through the open roof on the far side. Yellow stays in
+# under the roof, weaving round inner columns over the hump. Red goes over
+# the roof with green but beside it, on its knife edge through the slit
+# gates that flank the big ones.
+CREST = {
+	"id": "lines_crest", "name": "Over the crest: three lines (out the roof through gates, back in)",
+	"bays": 21, "entry": -16.0, "first_token": 0.0, "token_step": 12.0, "out": 180.0,
+	"kappa": [(-99.0, 1.0 / 200.0), (48.0, -1.0 / 80.0), (112.0, 1.0 / 200.0)],
+	"floor": [(0.0, 0.0), (80.0, 8.0), (160.0, 0.0)],
+	"lines": {
+		"green": {"intent": "easy", "ease": 1.3,
+			"across": [(-16.0, 0.0), (8.0, 2.0), (36.0, -1.5), (64.0, 0.0), (96.0, 0.0), (124.0, 1.5), (152.0, -2.0), (176.0, 1.5), (200.0, -1.0)],
+			"up": [(-16.0, 5.0), (12.0, 4.4), (62.0, 15.3), (98.0, 15.3), (148.0, 4.4), (176.0, 5.2), (204.0, 4.6)]},
+		"yellow": {"intent": "medium",
+			"across": [[(36.0, -1.5), (56.0, 3.5), (80.0, -3.5), (104.0, 3.5), (124.0, 1.5)]],
+			"up": [[(12.0, 4.4), (40.0, 6.0), (68.0, 3.6), (92.0, 6.0), (120.0, 3.8), (148.0, 4.4)]]},
+		"red": {"intent": "hard", "ease": 0.75,
+			"across": [[(36.0, -1.5), (58.0, -6.0), (102.0, -6.0), (124.0, 1.5)]],
+			"up": [[(12.0, 4.4), (62.0, 14.25), (98.0, 14.25), (148.0, 4.4)]],
+			"tokens_at": [64.0, 80.0, 96.0]},
+	},
+	"plans": {
+		0: {"roof": "whole"},
+		2: {"roof": "broken", "gaps": [2, 3]},
+		7: {"roof": "whole", "inner": [0.0]},
+		10: {"roof": "whole", "inner": [0.0]},
+		13: {"roof": "whole", "inner": [0.0]},
+		17: {"roof": "broken", "gaps": [3, 4]},
+	},
+	"open_roof": [(3, 6), (13, 16)],
+	"gates": [(64.0, 0.0, 11.6, 7.0, 5.5), (80.0, 0.0, 11.6, 7.0, 5.5), (96.0, 0.0, 11.6, 7.0, 5.5),
+		(64.0, -6.0, 11.6, 1.15, 3.3), (80.0, -6.0, 11.6, 1.15, 3.3), (96.0, -6.0, 11.6, 1.15, 3.3)],
+}
+LAYOUTS = [BEND, STITCH, CREST]
 
 
 def stations(only=None):
