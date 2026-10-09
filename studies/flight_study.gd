@@ -18,14 +18,23 @@ extends Node3D
 ## game's ruins (scripts/ruin_bump.gd). The camera is the game's chase
 ## (scripts/glide_camera.gd); the mouse or right stick looks round.
 ##
+## Packs (scripts/flight_pack_lines.gd, _nature, _sky, _tokens; see
+## docs/design/flight-study-packs.md): their stations have no digit key;
+## reach them with N, --station=<id> (a line flown as id@yellow), or
+## --pack=<name>, which starts at the pack's first station and keeps N
+## inside the pack. A lines station draws its flown line in its colour and
+## the others faint; a tokens station's guides aren't drawn and its bonus
+## tokens (optional, never missed) are drawn in BONUS.
+##
 ## Keys: 1-9, 0 and - the stations, R restart the station, N the next one, B cycles
 ## who flies (you, then the sloppy, decent, sharp and perfect bots), L the
 ## next token line on a station that has several (green, yellow, red:
 ## FlightCourse `flown`), F1 the live numbers, Esc lets the mouse go. After a
 ## station: 1-5 rates felt difficulty, then 1-5 fun (Enter skips).
 ##   ./run-flight-study.command
+##   ./run-flight-packs.command   (every station, the packs' too, on N)
 ##   godot --path . res://studies/flight_study.tscn -- --no-title [--station=slalom] [--bot=sharp]
-##   ... -- --no-title --pack=lines [--line=red]   (starts on the pack, N cycles within it)
+##   ... -- --no-title --pack=lines|nature|sky|tokens [--line=red]   (starts on the pack, N cycles within it)
 
 const Course = preload("res://scripts/flight_course.gd")
 const Run = preload("res://scripts/flight_run.gd")
@@ -51,6 +60,8 @@ const LINE_MISSED := Color(0.32,0.32,0.36)
 const GHOST := 0.45
 const TAKEN := Color(0.4,0.9,0.5)
 const MISSED := Color(0.85,0.3,0.25)
+## A pack's bonus tokens (optional, off the line).
+const BONUS := Color(0.45,0.8,1.0)
 ## Who flies, in B's order.
 const PILOTS := ["human","sloppy","decent","sharp","perfect"]
 
@@ -68,8 +79,6 @@ var pack := ""
 var run: Run
 var bot: Bot
 var pilot := "human"
-## The pack N cycles within ("" all the stations).
-var pack := ""
 var figure: Node3D
 var chase := GlideCamera.new()
 var camera: Camera3D
@@ -79,6 +88,7 @@ var last_run := {}
 var last_path := ""
 var asking := ""
 var _token_nodes: Array[MeshInstance3D] = []
+var _bonus_nodes: Array[MeshInstance3D] = []
 var _token_materials := {}
 var _materials := {}
 var _hud: Control
@@ -92,8 +102,6 @@ var _tap_dir := 0.0
 var _tap_at := 0
 var _space: PhysicsDirectSpaceState3D
 var _solids := []
-## The pack N cycles within (--pack=name), or "" for every station.
-var pack := ""
 var _ghosts: Array[MeshInstance3D] = []
 
 func _ready() -> void:
@@ -168,12 +176,18 @@ func _material(kind: String) -> Material:
 
 ## The floor, every station's solids, tokens and sign.
 func _build_course() -> void:
-	var count := Course.STATIONS.size()
+	# Under every station's entry, the packs' rows too (their own origins).
+	var low := Vector2(INF,INF)
+	var high := Vector2(-INF,-INF)
+	for s: Dictionary in Course.STATIONS:
+		var at := Course.origin(s)
+		low = Vector2(minf(low.x,at.x),minf(low.y,at.z))
+		high = Vector2(maxf(high.x,at.x),maxf(high.y,at.z))
 	var floor_mesh := MeshInstance3D.new()
 	var slab := BoxMesh.new()
-	slab.size = Vector3(Course.SPACING*count+400.0,1.0,700.0)
+	slab.size = Vector3(high.x-low.x+400.0,1.0,high.y-low.y+700.0)
 	floor_mesh.mesh = slab
-	floor_mesh.position = Vector3(Course.SPACING*(count-1)*0.5,Course.floor_y()-0.5,-150.0)
+	floor_mesh.position = Vector3((low.x+high.x)*0.5,Course.floor_y()-0.5,(low.y+high.y)*0.5-150.0)
 	floor_mesh.material_override = _material("floor")
 	add_child(floor_mesh)
 	for s: Dictionary in Course.STATIONS:
@@ -218,11 +232,18 @@ func _token_material(colour: Color) -> StandardMaterial3D:
 ## flown line's in its colour and the other lines' (where they leave it)
 ## small and faint, never taken.
 func _show_tokens() -> void:
-	for n in _token_nodes+_ghosts: n.queue_free()
+	for n in _token_nodes+_ghosts+_bonus_nodes: n.queue_free()
 	_token_nodes.clear()
 	_ghosts.clear()
+	_bonus_nodes.clear()
 	var mine := Course.tokens(station)
-	for p in mine: _token_nodes.append(_ball(p,1.0,_token_material(_colour())))
+	var guides := Course.guides(station)
+	for i in range(mine.size()):
+		var node := _ball(mine[i],1.0,_token_material(_colour()))
+		# A guide is only a point of the line: never drawn.
+		if i in guides: node.visible = false
+		_token_nodes.append(node)
+	for p in Course.bonus(station): _bonus_nodes.append(_ball(p,1.0,_token_material(BONUS)))
 	var base := Course.base_of(station)
 	if not base.has("lines"): return
 	for line in Course.line_names(base):
@@ -280,7 +301,9 @@ func restart() -> void:
 ## The next station (within `pack` if one was asked for), on the same token
 ## line if it has it.
 func next_station() -> void:
-	var all: Array = Course.pack(pack) if pack != "" else Course.STATIONS
+	var all: Array = Course.pack(pack)
+	# A station picked outside the pack (--station) cycles through them all.
+	if not Course.base_of(station) in all: all = Course.STATIONS
 	var i := all.find(Course.base_of(station))
 	var s: Dictionary = all[(i+1)%all.size()]
 	var on := Course.flown(s,Course.line_of(station))
@@ -307,10 +330,12 @@ func tick(delta: float) -> void:
 		run.plane.step(delta,input,Callable(Course,"ground"))
 		if _space != null: Run.RuinBump.bump(_space,run.plane,was)
 	for i in range(_token_nodes.size()):
+		if run.guide[i] == 1: continue
 		var s := run.state[i]
 		_token_nodes[i].visible = s != Run.TAKEN
 		var missed := MISSED if _colour() == TOKEN else LINE_MISSED
 		_token_nodes[i].material_override = _token_material(missed if s == Run.MISSED else _colour())
+	for i in range(_bonus_nodes.size()): _bonus_nodes[i].visible = run.bonus_state[i] == 0
 	figure.update(delta,run.plane,0.0,Callable(Course,"ground"),false)
 	_frame(delta)
 	_show_hud()
@@ -426,7 +451,8 @@ func _show_hud() -> void:
 	var since := "-" if is_nan(float(live.since)) else "%.1f s ago" % float(live.since)
 	_hud_label.text = "\n".join(PackedStringArray([
 		"%s · %s · %s" % [station.name,run.pilot,"done" if run.done else "flying"],
-		"time %.2f s · tokens %d/%d · bumps %d · speed %.1f m/s" % [float(live.t),int(live.collected),int(live.total),int(live.bumps),run.plane.speed],
+		"time %.2f s · tokens %d/%d%s · bumps %d · speed %.1f m/s" % [float(live.t),int(live.collected),int(live.total),
+			" · bonus %d/%d" % [int(live.bonus),int(live.bonus_total)] if int(live.bonus_total) > 0 else "",int(live.bumps),run.plane.speed],
 		"next token seen %s" % since,
 		"reversals %.2f /s · effort %.2f /s · full stick %d%%" % [float(live.reversals),float(live.effort),roundi(float(live.full)*100.0)],
 		"threading %s · %d%% of the run · openings %d (%.2f /s)" % ["NOW" if live.threading_now else "open air",roundi(float(live.threading)*100.0),int(live.openings),float(live.openings_per_s)],
@@ -496,6 +522,8 @@ func _show_report() -> void:
 	var lines := PackedStringArray()
 	lines.append("%s · %s" % [station.name,last_run.get("pilot","")])
 	lines.append("Time %.2f s · tokens %d/%d%s · bumps %d" % [float(m.duration),int(m.collected),int(m.total),"  CLEARED" if m.cleared else "",int(m.bumps)])
+	if m.has("bonus_total"):
+		lines.append("Bonus tokens %d/%d (seen %d)" % [int(m.bonus_taken),int(m.bonus_total),int(m.bonus_seen)])
 	var band: Dictionary = _bands.get(station.id,{})
 	if band.is_empty() or str(band.get("hash","")) != Course.station_hash(station):
 		lines.append("Bot band: not benched for this layout (tools/flight_bench.gd)")

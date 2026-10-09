@@ -39,7 +39,7 @@ func run() -> void:
 		var r: Dictionary = Bench.fly(s,skill,p,hash([id,skill,n]),space)
 		var m: Dictionary = r.metrics
 		var ev := []
-		for e: Dictionary in r.events: ev.append("%s%s@%.2f" % [e.kind,str(e.get("token","")),e.t])
+		for e: Dictionary in r.events: ev.append("%s%s@%.2f" % [e.kind,str(e.get("token",e.get("bonus",""))),e.t])
 		print("%s %s: %d/%d bumps %d time %.2f ended %s | %s" % [id,skill,m.collected,m.total,m.bumps,m.duration,r.result.ended," ".join(ev)])
 		if args.size() > 4:
 			var tk: Dictionary = r.ticks

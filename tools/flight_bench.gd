@@ -8,12 +8,14 @@ extends SceneTree
 ## its best run is kept (the reference line in the report).
 ##
 ##   godot --headless --path . -s tools/flight_bench.gd -- --station all --runs 10
-##   options: --station id[,id] | all   --pack sky (a pack's stations)   --runs N (default 10; 20 gives
+##   options: --station id[,id] | all   --runs N (default 10; 20 gives
 ##            steadier bands, about 7 s)   --skills sloppy,decent,...
-##            --pack name (every station of a pack, scripts/flight_pack_*.gd)
+##            --pack lines|nature|sky|tokens (every station of a pack,
+##            scripts/flight_pack_*.gd; docs/design/flight-study-packs.md)
+##            --out user://dir (default user://flight_runs)   --no-save (no run files)
+##            --no-bonus (bots ignore bonus tokens: the main line alone)
 ##   A station with token lines (FlightCourse `flown`) is benched per line:
 ##   id@yellow flies its yellow line; `all` and --pack take every line.
-##            --out user://dir (default user://flight_runs)   --no-save (no run files)
 ##
 ## Writes each run's JSON, a summary (bench_<when>.json) and the bands
 ## (bands.json, read by the study's end-of-run report), and prints a table.
@@ -39,6 +41,7 @@ func _args() -> Dictionary:
 	while i < args.size():
 		var a := args[i]
 		if a == "--no-save": out.save = false
+		elif a == "--no-bonus": out["bonus"] = false
 		elif a.begins_with("--") and i+1 < args.size():
 			var key := a.substr(2)
 			var value := args[i+1]
@@ -75,7 +78,7 @@ func run() -> void:
 	await physics_frame
 	await physics_frame
 	var space := stage.get_world_3d().direct_space_state
-	summary = bench(ids,skills,int(args.runs),space,str(args.out),bool(args.save))
+	summary = bench(ids,skills,int(args.runs),space,str(args.out),bool(args.save),bool(args.get("bonus",true)))
 	quit(0)
 
 ## `ids` with every token line of each station that has more than one
@@ -92,7 +95,7 @@ static func with_lines(ids: PackedStringArray) -> PackedStringArray:
 	return out
 
 ## Flies every station in `ids` with every skill; returns the summary.
-static func bench(ids: PackedStringArray, skills: PackedStringArray, runs: int, space: PhysicsDirectSpaceState3D, dir: String, save: bool) -> Dictionary:
+static func bench(ids: PackedStringArray, skills: PackedStringArray, runs: int, space: PhysicsDirectSpaceState3D, dir: String, save: bool, bonus := true) -> Dictionary:
 	var began := Time.get_ticks_msec()
 	var stations := {}
 	var bands := {}
@@ -107,12 +110,15 @@ static func bench(ids: PackedStringArray, skills: PackedStringArray, runs: int, 
 				for look: float in Bot.PERFECT_LOOKS:
 					var params := Bot.skill("perfect")
 					params.look = look
+					if not bonus: params["bonus"] = false
 					var r := fly(s,"perfect",params,0,space)
 					if best.is_empty() or _better(r,best): best = r
 				flown.append(best)
 			else:
 				for n in range(runs):
-					flown.append(fly(s,name,Bot.skill(name),hash([id,name,n]),space))
+					var params := Bot.skill(name)
+					if not bonus: params["bonus"] = false
+					flown.append(fly(s,name,params,hash([id,name,n]),space))
 			if save:
 				for r: Dictionary in flown: Log.save(r,dir)
 			var stats := _stats(flown)
@@ -135,6 +141,8 @@ static func bench(ids: PackedStringArray, skills: PackedStringArray, runs: int, 
 	print(table(out))
 	print(flow_table(out))
 	print(knife_table(out))
+	var tokens := pack_table(out)
+	if tokens != "": print(tokens)
 	return out
 
 ## One bot run of station `s`.
@@ -155,7 +163,7 @@ static func _better(a: Dictionary, b: Dictionary) -> bool:
 	return float(ma.duration) < float(mb.duration)
 
 static func _stats(flown: Array) -> Dictionary:
-	var keys := ["duration","collected","bumps","demand_peak","demand_mean","turn_flown_peak","pitch_flown_peak","reversals_per_s","effort","full_share","threading_share","openings_per_s"]+Metrics.FLOW_KEYS+["knife_clean","on_edge_s","edge_spells"]
+	var keys := ["duration","collected","bumps","demand_peak","demand_mean","turn_flown_peak","pitch_flown_peak","reversals_per_s","effort","full_share","threading_share","openings_per_s"]+Metrics.FLOW_KEYS+["knife_clean","on_edge_s","edge_spells","total","bonus_taken","bonus_seen","bonus_total"]
 	var sums := {}
 	for k: String in keys: sums[k] = 0.0
 	var cleared := 0
@@ -232,3 +240,32 @@ static func knife_table(out: Dictionary) -> String:
 			num.call(ref.get("knife_lead")),per.call("knife_clean"),per.call("on_edge_s")])
 	if not any: lines.append("(no station with knife zones)")
 	return "\n".join(lines)
+
+## The token-placement comparison, for the tokens pack's stations
+## (scripts/flight_pack_tokens.gd): per station its style, tokens to take
+## (guides not counted) and bonus tokens, the clear rate per skill, the
+## perfect reference's threading, flow and demand, and per skill the mean
+## bonus tokens seen and taken, and bumps. "" when no station in the bench
+## is the tokens pack's.
+static func pack_table(out: Dictionary) -> String:
+	var lines := PackedStringArray(["token placement (reference = perfect; per skill sl/de/sh/pf)"])
+	lines.append("%-14s %-8s %4s %4s  %-19s %6s %6s %6s %6s %6s %6s %6s  %-15s %-15s %-19s" % ["station","style","req","bon","clear","time","thread","open/s","still","longst","dPeak","dMean","bonus taken","bonus seen","bumps"])
+	var any := false
+	for id: String in out.stations:
+		var s := Course.station(id)
+		if str(s.get("pack","")) != "tokens": continue
+		any = true
+		var row: Dictionary = out.stations[id]
+		var ref: Dictionary = row.get("reference",{})
+		var per := func(key: String, fmt: String) -> String:
+			var bits := PackedStringArray()
+			for k: String in Metrics.SKILLS:
+				bits.append((fmt % float(row.skills[k].get(key,0.0))) if row.skills.has(k) else "-")
+			return "/".join(bits)
+		var bonus := (s.get("bonus",[]) as Array).size()
+		lines.append("%-14s %-8s %4d %4d  %-19s %6.2f %5d%% %6.2f %5d%% %6.2f %6.2f %6.2f  %-15s %-15s %-19s" % [id.trim_prefix("tokens_"),str(s.get("style","")),
+			(s.tokens as Array).size()-(s.get("guides",[]) as Array).size(),bonus,per.call("clear_rate","%.2f"),float(ref.get("duration",0.0)),
+			roundi(float(ref.get("threading_share",0.0))*100.0),float(ref.get("openings_per_s",0.0)),roundi(float(ref.get("still_share",0.0))*100.0),
+			float(ref.get("longest_straight",0.0)),float(ref.get("demand_peak",0.0)),float(ref.get("demand_mean",0.0)),
+			per.call("bonus_taken","%.1f") if bonus > 0 else "-",per.call("bonus_seen","%.1f") if bonus > 0 else "-",per.call("bumps","%.1f")])
+	return "\n".join(lines) if any else ""

@@ -29,11 +29,24 @@ extends RefCounted
 ## lean at all (its own random stream, so stations with no slit fly as in
 ## VERSION 1).
 ##
+## Bonus tokens (a pack's optional tokens off the line, scripts/flight_run.gd):
+## once it has seen one for its reaction time (the perfect reference knows
+## them all, as on a second pass), and it lies ahead within BONUS_CONE of its
+## nose, within BONUS_RANGE m, with a clear line to it, and nearer than the
+## next token it needs (it never trades a token for a bonus; guides don't
+## count), the bot goes for it: it chases it before the rest of its route. For a tight one (FlightCourse
+## `tight`, a slit or a gap only a plane on edge fits) it leans on edge
+## `knife_lead` s before it gets there (or forgets to, `knife_forget`). It
+## gives a bonus up once it is taken or off past BONUS_GIVE_UP. With
+## `"bonus": false` in its params (tools/flight_bench.gd --no-bonus) it
+## ignores them. A station with no bonus tokens flies as before.
+##
 ## A skill is a dictionary of those numbers (SKILLS); a station's band is
 ## the least skill that clears it (FlightMetrics `band`).
 
 const SkyPlane = preload("res://scripts/sky_plane.gd")
 const Metrics = preload("res://scripts/flight_metrics.gd")
+const Course = preload("res://scripts/flight_course.gd")
 
 const SKILLS := {
 	"sloppy":{"reaction":0.45,"lag":0.12,"look":4.0,"noise":0.12,"drift":0.35,"gain":2.0,"brake":false,
@@ -59,8 +72,17 @@ const BRAKE_NEAR := 30.0
 ## plane's length), and line up this long (s) before leaning.
 const KNIFE_CLEAR := 1.2
 const LINE_UP := 1.5
+## Bonus tokens: how far off the nose (rad) and how far away (m) one may
+## be for the bot to go for it, and how far off the nose it gives it up.
+const BONUS_CONE := deg_to_rad(45.0)
+const BONUS_RANGE := 30.0
+const BONUS_GIVE_UP := deg_to_rad(100.0)
 
 var params := {}
+## The bonus token it is going for (-1 none), and its plan per tight one
+## ({forget}).
+var _bonus := -1
+var _bonus_plan := {}
 var rng := RandomNumberGenerator.new()
 ## The knife edge's own random stream, its plan per zone ({lead, forget,
 ## side}), the zone it is on, and where on the line it last was.
@@ -104,6 +126,9 @@ func input(run: RefCounted, delta: float) -> Dictionary:
 	var k := delta/maxf(drift,0.001)
 	var sigma := float(params.get("noise",0.0))
 	_noise += -_noise*k+Vector2(rng.randfn(),rng.randfn()*PITCH_NOISE)*sigma*sqrt(2.0*k)
+	var chasing := _bonus_target(run,me)
+	# Chasing a bonus it aims at that alone (its look-ahead would cut past it).
+	if chasing >= 0: known = [run.bonus[chasing]]
 	if known.is_empty():
 		out.turn = clampf(_noise.x,-1.0,1.0)
 		out.pitch = clampf(_noise.y,-1.0,1.0)
@@ -112,6 +137,9 @@ func input(run: RefCounted, delta: float) -> Dictionary:
 	var aim := _ahead(at,known,float(params.get("look",6.0)))
 	var knife := _knife(run,plane,at)
 	out.lean = knife.lean
+	if chasing >= 0:
+		knife.line_up = false
+		out.lean = _bonus_lean(run,plane,chasing)
 	var gain := float(params.get("gain",3.0))
 	if knife.line_up:
 		var track := _track(run,at,float(me.h),float(me.pitch),float(plane.speed),gain*float(params.get("gain_line",1.0)))
@@ -127,6 +155,45 @@ func input(run: RefCounted, delta: float) -> Dictionary:
 		var off_token := absf(angle_difference(float(me.h),Metrics.angles(to_token).x))
 		if off_token > BRAKE_OFF and to_token.length() < BRAKE_NEAR: out.brake = 1.0
 	return out
+
+## The bonus token to go for this tick (see the header), or -1.
+func _bonus_target(run: RefCounted, me: Dictionary) -> int:
+	var bonus: Array = run.get("bonus") if run.get("bonus") != null else []
+	if bonus.is_empty() or not bool(params.get("bonus",true)): return -1
+	var at: Vector3 = me.p
+	var nose := Metrics.forward(float(me.h),float(me.pitch))
+	# It never trades a token it needs for a bonus: one is only worth going
+	# for while it is nearer than the next standing token (guides aside).
+	var need := INF
+	for i in range(maxi(run.next_token(),0),run.tokens.size()):
+		if run.state[i] == run.STANDING and run.guide[i] == 0:
+			need = at.distance_to(run.tokens[i])
+			break
+	if _bonus >= 0:
+		var d: Vector3 = (bonus[_bonus] as Vector3)-at
+		if run.bonus_state[_bonus] != 0 or nose.angle_to(d) > BONUS_GIVE_UP or d.length() >= need: _bonus = -1
+		else: return _bonus
+	var reaction := float(params.get("reaction",0.0))
+	var knows_all := bool(params.get("knows_all",false))
+	var best := INF
+	for i in range(bonus.size()):
+		if run.bonus_state[i] != 0: continue
+		if not knows_all and (run.bonus_seen[i] < 0.0 or run.t-run.bonus_seen[i] < reaction): continue
+		var d: Vector3 = (bonus[i] as Vector3)-at
+		if d.length() > BONUS_RANGE or d.length() >= need or nose.angle_to(d) > BONUS_CONE or d.length() >= best: continue
+		if not Course.line_clear(run.space,at,bonus[i]): continue
+		best = d.length()
+		_bonus = i
+	return _bonus
+
+## The lean for bonus token `i`: on edge (to the right) from `knife_lead` s
+## before a tight one, unless this pilot forgets; level otherwise.
+func _bonus_lean(run: RefCounted, plane: RefCounted, i: int) -> float:
+	if run.bonus_tight[i] == 0 or float(params.get("knife_lead",0.0)) <= 0.0: return 0.0
+	if not _bonus_plan.has(i): _bonus_plan[i] = {"forget":knife_rng.randf() < float(params.get("knife_forget",0.0))}
+	if bool(_bonus_plan[i].forget): return 0.0
+	var to_go := (run.bonus[i] as Vector3).distance_to(plane.position)/maxf(float(plane.speed),1.0)
+	return 1.0 if to_go <= float(params.get("knife_lead",0.0))+0.15 else 0.0
 
 ## The point `look` m on along the path from `at` through `known`.
 static func _ahead(at: Vector3, known: Array[Vector3], look: float) -> Vector3:
