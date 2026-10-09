@@ -62,6 +62,9 @@ var scripted := false
 ## Where runs are saved.
 var log_dir := Log.DIR
 var station := {}
+## With --pack=<name>: the study starts at that pack's first station and N
+## cycles inside it ("" every station).
+var pack := ""
 var run: Run
 var bot: Bot
 var pilot := "human"

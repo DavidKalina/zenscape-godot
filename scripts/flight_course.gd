@@ -20,6 +20,9 @@ extends RefCounted
 ##       scripts/ruin_kit_hall.gd: `at` is its bay line's middle on its
 ##       floor, the nave running north (-Z) at yaw 0; see `_bay` for the
 ##       plan's keys)
+##   ["wall", ...], ["stack", ...], ["arch", ...]   the nature pack's
+##       landforms (scripts/flight_pack_nature.gd `part_solids`)
+## Packs append their stations after these (key -1: no digit key).
 ## Each expands into world-space solids (`solids`): {"kind":"box","middle",
 ## "size","basis"} or {"kind":"cyl","middle","radius","height"}, which the
 ## study draws and gives colliders on the ruins' layer (scripts/ruin_bump.gd
@@ -32,8 +35,10 @@ const PlaneFigure = preload("res://scripts/plane_figure.gd")
 const Hall = preload("res://scripts/ruin_kit_hall.gd")
 const RuinBump = preload("res://scripts/ruin_bump.gd")
 const Lines = preload("res://scripts/collectible_lines.gd")
-## Station packs, appended after the hand-placed stations (each its own file).
+## Station packs, appended after the hand-placed stations in this order
+## (each its own file, its stations keyless: NO_KEY, a "pack" name).
 const PackLines = preload("res://scripts/flight_pack_lines.gd")
+const PackNature = preload("res://scripts/flight_pack_nature.gd")
 
 ## The stations stand ALT metres over the floor (y 0), SPACING metres apart
 ## along x; pillars rise to TOP over the entry.
@@ -231,7 +236,7 @@ const STATIONS := [
 		Vector3(79.42,-6.74,-220.48),Vector3(83.63,-6.29,-221.59),Vector3(92.57,-4.60,-220.60),Vector3(101.19,-2.35,-219.06),
 	]},
 	# <<< sundered_mix
-]+PackLines.STATIONS
+]+PackLines.STATIONS+PackNature.STATIONS
 
 ## The station with `id`, or {}. "id@line" is station id flown on one of
 ## its token lines (`flown`).
@@ -260,8 +265,10 @@ static func station_by_key(key: int) -> Dictionary:
 		if int(s.key) == key: return s
 	return {}
 
-## The stations of pack `name` (their "pack"), in order.
+## The stations of pack `name` (their "pack"), in order; every station
+## for "".
 static func pack(name: String) -> Array:
+	if name == "": return STATIONS.duplicate()
 	return STATIONS.filter(func(s: Dictionary) -> bool: return str(s.get("pack","")) == name)
 
 ## Token lines: a station may carry more than one trail of tokens through
@@ -376,6 +383,8 @@ static func solids(s: Dictionary) -> Array:
 					out.append(_box(mid+spin*Vector3(r+BAR*0.5,0.0,0.0),Vector3(BAR,length,BAR),spin))
 			"bay":
 				out.append_array(_bay(at+(part[1] as Vector3),float(part[2]),part[3]))
+			"wall","stack","arch":
+				out.append_array(PackNature.part_solids(part,at,-ALT))
 	return out
 
 ## One greybox bay of the Sundered hall's nave, in the hall's own frame

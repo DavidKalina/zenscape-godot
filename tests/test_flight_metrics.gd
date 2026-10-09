@@ -144,6 +144,11 @@ func run() -> void:
 		"sundered_flow":"2a22c9b41180","sundered_mix":"db59c1bb79c5"}
 	for id: String in pinned:
 		check(Course.station_hash(Course.station(id)) == pinned[id],"%s keeps its hash %s" % [id,pinned[id]])
+	# The nature pack (scripts/flight_pack_nature.gd).
+	var nature_pins := {"nature_canyon":"9ccee47628b3","nature_stacks":"70f8a5630bc8","nature_cove":"ea9f8c1d807f",
+		"nature_ridge":"7dc1b3277775","nature_cave":"c3f1c938a98b"}
+	for id: String in nature_pins:
+		check(Course.station_hash(Course.station(id)) == nature_pins[id],"%s keeps its hash %s" % [id,nature_pins[id]])
 	# Threading on a made-up run: 4 s north at 14 m/s past two walls either
 	# side (z -14 to -28, 2.5 m off: 1 s), a lintel overhead (1 m deep, at
 	# z -42: a few ticks) and a pillar on one side only (never).
