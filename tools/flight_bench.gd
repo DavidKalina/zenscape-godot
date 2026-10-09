@@ -112,6 +112,7 @@ static func bench(ids: PackedStringArray, skills: PackedStringArray, runs: int, 
 		print("flight bench saved: %s" % ProjectSettings.globalize_path("%s/bench_%s.json" % [dir,stamp]))
 	print(table(out))
 	print(flow_table(out))
+	print(knife_table(out))
 	return out
 
 ## One bot run of station `s`.
@@ -132,7 +133,7 @@ static func _better(a: Dictionary, b: Dictionary) -> bool:
 	return float(ma.duration) < float(mb.duration)
 
 static func _stats(flown: Array) -> Dictionary:
-	var keys := ["duration","collected","bumps","demand_peak","demand_mean","turn_flown_peak","pitch_flown_peak","reversals_per_s","effort","full_share","threading_share","openings_per_s"]+Metrics.FLOW_KEYS
+	var keys := ["duration","collected","bumps","demand_peak","demand_mean","turn_flown_peak","pitch_flown_peak","reversals_per_s","effort","full_share","threading_share","openings_per_s"]+Metrics.FLOW_KEYS+["knife_clean","on_edge_s","edge_spells"]
 	var sums := {}
 	for k: String in keys: sums[k] = 0.0
 	var cleared := 0
@@ -184,4 +185,28 @@ static func flow_table(out: Dictionary) -> String:
 			float(ref.get("demand_mean",0.0)),roundi(float(ref.get("still_share",0.0))*100.0),int(ref.get("straights",0)),float(ref.get("longest_straight",0.0)),
 			float(ref.get("swing_mean",0.0)),roundi(float(ref.get("yaw_share",0.0))*100.0),float(ref.get("swing_reversals_per_s",0.0)),float(ref.get("openings_per_s",0.0)),
 			per.call("still_share","%.2f"),per.call("swing_reversals_per_s","%.1f")])
+	return "\n".join(lines)
+
+## The knife edge per station with knife zones (FlightMetrics `knife`): the
+## zones, the perfect reference's warning before them and how long it was
+## on edge on arrival, then each skill's mean zones passed clean and time on
+## edge.
+static func knife_table(out: Dictionary) -> String:
+	var lines := PackedStringArray(["knife edge (perfect reference; clean zones and s on edge per skill sl/de/sh/pf)"])
+	lines.append("%-13s %6s %7s %7s %6s  %-23s %-23s" % ["station","zones","warnMn","warnAv","lead","clean sl/de/sh/pf","on edge s sl/de/sh/pf"])
+	var any := false
+	for id: String in out.stations:
+		var row: Dictionary = out.stations[id]
+		var ref: Dictionary = row.get("reference",{})
+		if int(ref.get("knife_moments",0)) == 0: continue
+		any = true
+		var per := func(key: String) -> String:
+			var bits := PackedStringArray()
+			for k: String in Metrics.SKILLS:
+				bits.append(("%.2f" % float(row.skills[k][key])) if row.skills.has(k) else "-")
+			return "/".join(bits)
+		var num := func(v: Variant) -> String: return ("%.2f" % float(v)) if v != null else "-"
+		lines.append("%-13s %6d %7s %7s %6s  %-23s %-23s" % [id,int(ref.knife_moments),num.call(ref.get("knife_warning_min")),num.call(ref.get("knife_warning_mean")),
+			num.call(ref.get("knife_lead")),per.call("knife_clean"),per.call("on_edge_s")])
+	if not any: lines.append("(no station with knife zones)")
 	return "\n".join(lines)

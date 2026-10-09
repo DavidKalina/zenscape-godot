@@ -6,13 +6,16 @@ extends SceneTree
 ## a short bench of the gentle arc lands it in a band and writes the bands
 ## file the study's report reads; the Sundered hall station stands and the
 ## sharp bot clears it; so does the flowing hall (sundered_flow), whose
-## reference line hardly ever flies straight.
+## reference line hardly ever flies straight; the knife-edge bot threads a
+## lone slit on edge (and bumps it held level); the mixed hall
+## (sundered_mix) stands on the - key and the sharp bot clears it.
 ##   godot --headless --path . --script tests/test_flight_bench.gd
 const Course = preload("res://scripts/flight_course.gd")
 const Run = preload("res://scripts/flight_run.gd")
 const Bot = preload("res://scripts/flight_bot.gd")
 const Log = preload("res://scripts/flight_log.gd")
 const Bench = preload("res://tools/flight_bench.gd")
+const Metrics = preload("res://scripts/flight_metrics.gd")
 const DIR := "user://flight_runs_test"
 var failures := 0
 
@@ -86,5 +89,44 @@ func run() -> void:
 	params.look = 7.0
 	var ref: Dictionary = Bench.fly(flow,"perfect",params,0,space).metrics
 	check(float(ref.still_share) <= 0.1 and float(ref.longest_straight) < 0.5,"The perfect line hardly flies straight (still %.2f, longest %.2f s)" % [ref.still_share,ref.longest_straight])
+	# The knife edge on a tiny layout: one hall bay whose screen stands
+	# across the way, the middle token in its 1.15 m slit. The line there is
+	# a knife zone; the sharp bot leans on edge in time and threads it
+	# clean; told never to lean, it bumps the screen (the bump's slab turns
+	# with the bank, so only a plane on edge fits).
+	var slit := {"id":"knife_test","key":-1,"name":"One slit","intent":"","parts":[
+		["bay",Vector3(6.0,-2.65,-24.0),0.0,{"roof":"open","screen":true,"inner":[-2.6]}],
+	],"tokens":[Vector3(0.0,0.0,-12.0),Vector3(0.0,0.0,-24.0),Vector3(0.0,0.0,-36.0)]}
+	Course.build(slit,stage)
+	await physics_frame
+	await physics_frame
+	var slit_line := Metrics.line(Course.origin(slit),0.0,Course.tokens(slit))
+	var zones := Course.knife_zones(slit,slit_line)
+	check(zones.size() == 1 and int(zones[0].gap) == 1,"The slit is one knife zone, in the gap to the middle token (%d)" % zones.size())
+	var edge := Bench.fly(slit,"sharp",Bot.skill("sharp"),1,space)
+	var em: Dictionary = edge.metrics
+	check(em.cleared and int(em.bumps) == 0 and int(em.knife_clean) == 1,"The sharp bot threads the slit on edge (%d/%d, %d bumps, %d clean)" % [em.collected,em.total,em.bumps,em.knife_clean])
+	check(em.knife_lead != null and float(em.knife_lead) > 0.2 and float(em.on_edge_s) > 0.3,"It was on edge before it got there (%s s ahead, %.2f s on edge)" % [str(em.knife_lead),em.on_edge_s])
+	var level := Bot.skill("sharp")
+	level.knife_lead = 0.0
+	var lm: Dictionary = Bench.fly(slit,"sharp",level,1,space).metrics
+	check(int(lm.bumps) > 0 and int(lm.knife_clean) == 0,"Held level the same bot bumps the screen (%d bumps)" % lm.bumps)
+	# The mixed hall: stands, `-` is its key, the sharp bot clears it, and
+	# its perfect line keeps swinging, mostly sideways, through both slits.
+	var mix := Course.station("sundered_mix")
+	var mixed := Course.build(mix,stage)
+	check(mixed.get_child_count() == Course.solids(mix).size() and mixed.get_child_count() > 200,"The mixed hall stands (%d solids)" % mixed.get_child_count())
+	check(Course.station_by_key(Course.MINUS_KEY) == mix and Course.key_name(mix) == "-","The - key is the mixed hall")
+	await physics_frame
+	await physics_frame
+	var mm: Dictionary = Bench.fly(mix,"sharp",Bot.skill("sharp"),3,space).metrics
+	check(mm.cleared and int(mm.knife_clean) == 2,"The sharp bot clears the mixed hall, both slits on edge (%d/%d in %.2f s, %d bumps)" % [mm.collected,mm.total,mm.duration,mm.bumps])
+	var mix_params := Bot.skill("perfect")
+	mix_params.look = 7.0
+	var mref: Dictionary = Bench.fly(mix,"perfect",mix_params,0,space).metrics
+	check(float(mref.still_share) <= 0.08 and float(mref.longest_straight) <= 0.5 and float(mref.yaw_share) >= 0.68,
+		"Its perfect line hardly flies straight and swings mostly sideways (still %.2f, longest %.2f s, sideways %.2f)" % [mref.still_share,mref.longest_straight,mref.yaw_share])
+	check(int(mref.knife_moments) == 2 and int(mref.knife_clean) == 2 and float(mref.duration) > 15.0 and float(mref.duration) < 22.0,
+		"Two knife slits, both threaded, in %.1f s" % mref.duration)
 	print("flight bench: %d failure(s)" % failures)
 	quit(1 if failures > 0 else 0)

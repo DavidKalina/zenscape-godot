@@ -189,6 +189,42 @@ const STATIONS := [
 		Vector3(27.57,-2.01,-129.83),Vector3(30.63,1.30,-137.82),Vector3(34.74,5.20,-145.68),Vector3(41.68,9.10,-150.31),
 		Vector3(50.52,12.41,-151.09),
 	]},
+	# >>> sundered_mix: written by tools/flight_flow_layout.py --station mix --write
+	{"id":"sundered_mix","key":10,"name":"Sundered hall, mixed moves (weave, corkscrew, knife slits, wave, climbing turn)","intent":"medium","parts":[
+		["bay",Vector3(5.05,-4.50,-19.36),0.1147,{"roof":"whole","inner":[]}],
+		["bay",Vector3(4.14,-4.50,-27.31),0.0004,{"roof":"broken","gaps":[2,3],"inner":[0.0,-2.6]}],
+		["bay",Vector3(4.14,-4.50,-35.30),-0.1139,{"roof":"whole","tie":"high","inner":[0.0,-2.6]}],
+		["bay",Vector3(5.04,-4.50,-43.24),-0.2282,{"roof":"open","inner":[]}],
+		["bay",Vector3(6.85,-4.50,-51.03),-0.3425,{"roof":"broken","gaps":[3,4],"tie":"high","inner":[]}],
+		["bay",Vector3(9.54,-4.50,-58.56),-0.4568,{"roof":"whole","inner":[0.0]}],
+		["bay",Vector3(13.06,-4.50,-65.74),-0.5710,{"roof":"whole","inner":[]}],
+		["bay",Vector3(17.39,-4.50,-72.47),-0.6853,{"roof":"broken","gaps":[2,3],"inner":[]}],
+		["bay",Vector3(22.45,-4.50,-78.66),-0.7996,{"roof":"whole","tie":"high","inner":[0.0,2.6]}],
+		["bay",Vector3(28.18,-4.50,-84.23),-0.9139,{"roof":"open","inner":[0.0,2.6]}],
+		["bay",Vector3(34.51,-4.50,-89.11),-1.0282,{"roof":"broken","gaps":[3,4],"screen":true,"inner":[-2.6],"torn":2,"last":true}],
+		["bay",Vector3(39.42,-9.50,-127.40),0.2575,{"roof":"whole","inner":[],"torn":1}],
+		["bay",Vector3(37.38,-9.50,-135.13),0.1432,{"roof":"broken","gaps":[2,3],"tie":"low","inner":[]}],
+		["bay",Vector3(36.24,-9.50,-143.04),0.0290,{"roof":"whole","tie":"low","inner":[]}],
+		["bay",Vector3(36.01,-9.50,-151.04),-0.0853,{"roof":"open","inner":[]}],
+		["bay",Vector3(36.69,-9.50,-159.00),-0.1996,{"roof":"broken","gaps":[3,4],"inner":[]}],
+		["bay",Vector3(38.27,-9.50,-166.84),-0.3139,{"roof":"whole","inner":[]}],
+		["bay",Vector3(40.74,-9.50,-174.44),-0.4282,{"roof":"whole","inner":[]}],
+		["bay",Vector3(44.06,-9.50,-181.72),-0.5425,{"roof":"broken","gaps":[2,3],"inner":[0.0,2.6]}],
+		["bay",Vector3(48.19,-9.50,-188.57),-0.6568,{"roof":"whole","tie":"high","inner":[0.0,2.6]}],
+		["bay",Vector3(53.07,-9.50,-194.90),-0.7710,{"roof":"open","screen":true,"inner":[-2.6]}],
+		["bay",Vector3(58.64,-9.50,-200.63),-0.8853,{"roof":"open","tie":"high","inner":[0.0,2.6],"torn":2,"last":true}],
+	],"tokens":[
+		Vector3(4.82,1.13,-19.32),Vector3(7.70,0.62,-27.51),Vector3(7.97,-0.41,-35.08),Vector3(5.47,-0.90,-43.17),
+		Vector3(3.84,-0.13,-51.92),Vector3(6.32,1.09,-59.92),Vector3(11.41,1.60,-66.67),Vector3(15.88,1.06,-73.56),
+		Vector3(19.52,-0.04,-81.34),Vector3(24.35,-1.18,-88.65),Vector3(27.58,-1.61,-91.55),Vector3(31.13,-1.85,-94.07),
+		Vector3(34.77,-1.86,-96.42),Vector3(38.63,-1.65,-98.42),Vector3(44.58,-0.63,-104.41),Vector3(47.17,0.09,-113.43),
+		Vector3(45.51,-1.40,-121.41),Vector3(41.40,-4.61,-128.04),Vector3(37.89,-6.82,-135.23),Vector3(35.44,-7.01,-142.97),
+		Vector3(34.53,-5.08,-151.08),Vector3(35.39,-2.69,-159.19),Vector3(37.14,-1.63,-167.14),Vector3(38.65,-2.36,-175.26),
+		Vector3(40.23,-4.07,-183.74),Vector3(43.36,-5.86,-191.87),Vector3(45.80,-6.51,-195.45),Vector3(48.54,-6.85,-198.83),
+		Vector3(51.37,-6.76,-202.13),Vector3(54.69,-6.15,-204.94),Vector3(63.33,-3.85,-207.76),Vector3(71.88,-0.85,-210.17),
+		Vector3(77.30,2.15,-216.91),Vector3(76.73,4.35,-225.73),
+	]},
+	# <<< sundered_mix
 ]
 
 ## The station with `id`, or {}.
@@ -196,6 +232,13 @@ static func station(id: String) -> Dictionary:
 	for s: Dictionary in STATIONS:
 		if s.id == id: return s
 	return {}
+
+## The `-` key's station key (keys 0-9 are their digits).
+const MINUS_KEY := 10
+
+## The key that jumps to station `s` in the study: its digit, or "-".
+static func key_name(s: Dictionary) -> String:
+	return "-" if int(s.key) == MINUS_KEY else str(int(s.key))
 
 static func station_by_key(key: int) -> Dictionary:
 	for s: Dictionary in STATIONS:
@@ -436,17 +479,96 @@ static func line_clear(space: PhysicsDirectSpaceState3D, from: Vector3, to: Vect
 ## or the token before): the least clearance (m, from the line's middle to
 ## the nearest solid, less half the wingspan) along the smooth line through
 ## the tokens (FlightMetrics `line`), and the room for error: that, capped
-## by the token's reach.
+## by the token's reach. Where level wings don't fit but the plane on a
+## knife edge does (`survey`), the room is the knife edge's, and the gap is
+## marked `knife`.
 static func rooms(s: Dictionary, line: Array) -> Array:
+	return survey(s,line).rooms
+
+## The knife-edge zones on the line (`survey`): [{"gap", "start", "end",
+## "mid" (world Vector3), "way" (unit, start to end), "length", "room"}].
+static func knife_zones(s: Dictionary, line: Array) -> Array:
+	return survey(s,line).zones
+
+## The plane's half thickness (m): on a knife edge all the width it needs
+## (RuinBump BODY.y, the slab it bumps with, which turns with its bank, so
+## the bump already lets a plane on edge through a gap its wings would not).
+const HALF_THICK := 0.15
+## How many points along the wings `wing_room` tests, tip to tip.
+const WING_POINTS := 5
+## A sample of the line needs the knife edge where level wings don't fit
+## and on edge the plane has at least KNIFE_BETTER m more room.
+const KNIFE_BETTER := 0.2
+static var _surveys := {}
+
+## The room (m) round a plane at `p` with its wings along `wings` (unit):
+## the least clearance of WING_POINTS points from tip to tip, less
+## HALF_THICK.
+static func wing_room(all: Array, p: Vector3, wings: Vector3) -> float:
+	var least := INF
+	for i in range(WING_POINTS):
+		var k := lerpf(-SPAN*0.5,SPAN*0.5,float(i)/(WING_POINTS-1))
+		least = minf(least,clearance(all,p+wings*k))
+	return least-HALF_THICK
+
+## The line surveyed, once per station and line (cached): per gap its least
+## clearance and room (`rooms`), and the knife zones (`knife_zones`). A
+## sample's room is the sphere's (clearance less half the span, as round 1
+## measured it); where that is under 0 it is the better of level wings and
+## on edge (`wing_room`), and where on edge is KNIFE_BETTER better than
+## level, the sample is a knife sample. Runs of knife samples are the zones.
+static func survey(s: Dictionary, line: Array) -> Dictionary:
+	var key := station_hash(s)+":"+str(line.size())
+	if _surveys.has(key): return _surveys[key]
 	var all := solids(s)
+	var count := int(s.tokens.size())
 	var least := []
-	least.resize(int(s.tokens.size()))
+	least.resize(count)
 	least.fill(INF)
-	for sample: Dictionary in line:
+	var knife := []
+	knife.resize(count)
+	knife.fill(false)
+	var zones := []
+	var zone := {}
+	for i in range(line.size()):
+		var sample: Dictionary = line[i]
 		var g := int(sample.gap)
-		if g < 0 or g >= least.size(): continue
-		least[g] = minf(float(least[g]),clearance(all,sample.p)-SPAN*0.5)
+		var p: Vector3 = sample.p
+		var room := clearance(all,p)-SPAN*0.5
+		var on_edge := false
+		var edge_room := room
+		if room < 0.0:
+			var a: Vector3 = (line[maxi(i-1,0)].p as Vector3)
+			var b: Vector3 = (line[mini(i+1,line.size()-1)].p as Vector3)
+			var way := (b-a).normalized() if a.distance_to(b) > 0.0001 else Vector3.FORWARD
+			var level := way.cross(Vector3.UP)
+			level = level.normalized() if level.length() > 0.01 else Vector3.RIGHT
+			var edge := level.cross(way).normalized()
+			var flat := wing_room(all,p,level)
+			edge_room = wing_room(all,p,edge)
+			on_edge = flat < 0.0 and edge_room >= flat+KNIFE_BETTER
+			room = maxf(room,maxf(flat,edge_room))
+		if g >= 0 and g < count:
+			least[g] = minf(float(least[g]),room)
+			if on_edge: knife[g] = true
+		if on_edge:
+			if zone.is_empty() or i-int(zone.last) > 2:
+				if not zone.is_empty(): zones.append(_zone(zone))
+				zone = {"gap":g,"start":p,"end":p,"first":i,"last":i,"room":edge_room}
+			zone.end = p
+			zone.last = i
+			zone.room = minf(float(zone.room),edge_room)
+	if not zone.is_empty(): zones.append(_zone(zone))
 	var out := []
-	for g in range(least.size()):
-		out.append({"clearance":least[g],"room":minf(REACH,float(least[g]))})
-	return out
+	for g in range(count):
+		var r := {"clearance":least[g],"room":minf(REACH,float(least[g]))}
+		if knife[g]: r["knife"] = true
+		out.append(r)
+	_surveys[key] = {"rooms":out,"zones":zones}
+	return _surveys[key]
+
+static func _zone(z: Dictionary) -> Dictionary:
+	var a: Vector3 = z.start
+	var b: Vector3 = z.end
+	var way := (b-a).normalized() if a.distance_to(b) > 0.01 else Vector3.FORWARD
+	return {"gap":z.gap,"start":a,"end":b,"mid":(a+b)*0.5,"way":way,"length":a.distance_to(b),"room":z.room,"first":z.first,"last":z.last}

@@ -48,12 +48,21 @@ SUMMARY_KEYS = [
     "reach", "room_min", "demand_peak", "demand_mean", "demand_spike", "grade",
     "threading_share", "openings", "openings_per_s",
     "still_share", "straights", "longest_straight", "swing_mean", "yaw_share", "swing_reversals_per_s",
+    "knife_moments", "knife_clean", "knife_warning_min", "knife_warning_mean", "knife_lead", "on_edge_s", "edge_spells",
 ]
 THREAD_KEYS = ["threading_share", "openings", "openings_per_s", "threading_s"]
 FLOW_KEYS = ["still_share", "straights", "longest_straight", "swing_mean", "yaw_share", "swing_reversals_per_s"]
 SIDE = "threading_backfill.json"
 FLOW_SIDE = "flow_backfill.json"
 DEFAULT_GODOT = Path.home() / "Applications" / "Godot.app" / "Contents" / "MacOS" / "Godot"
+
+
+def knife_cell(clean, moments) -> str:
+    """Knife zones passed clean out of the station's, or '-' with none (or
+    a run from before round 4)."""
+    if not moments:
+        return "-"
+    return f"{num(clean, 1)}/{int(moments)}"
 
 
 def user_dir() -> Path:
@@ -257,7 +266,8 @@ def build(folder: Path, out: Path) -> tuple[Path, Path, Path]:
                              num(mean([m["effort"] for m in ms])), num(mean([m["bumps"] for m in ms]), 1),
                              pct(mean([m.get("threading_share") for m in ms])), num(mean([m.get("openings_per_s") for m in ms])),
                              pct(mean([m.get("still_share") for m in ms])), num(mean([m.get("longest_straight") for m in ms])),
-                             num(mean([m.get("swing_mean") for m in ms]), 1), num(mean([m.get("swing_reversals_per_s") for m in ms]))])
+                             num(mean([m.get("swing_mean") for m in ms]), 1), num(mean([m.get("swing_reversals_per_s") for m in ms])),
+                             knife_cell(mean([m.get("knife_clean") for m in ms]), ms[0].get("knife_moments")), num(mean([m.get("on_edge_s") for m in ms]))])
         person_rows = []
         for r in people:
             m = r["metrics"]
@@ -268,16 +278,17 @@ def build(folder: Path, out: Path) -> tuple[Path, Path, Path]:
                                 num(m["reversals_per_s"]), num(m["effort"]), f'{round(m["full_share"] * 100)}%',
                                 pct(m.get("threading_share")), num(m.get("openings_per_s")),
                                 pct(m.get("still_share")), num(m.get("longest_straight")), num(m.get("swing_mean"), 1), pct(m.get("yaw_share")),
+                                knife_cell(m.get("knife_clean"), m.get("knife_moments")), num(m.get("on_edge_s")),
                                 num(rating.get("difficulty"), 0), num(rating.get("fun"), 0)])
         gap_rows = []
         for g in ref.get("gaps", []):
             gap_rows.append([str(g["token"]), num(g["length"], 1), num(g["turn"]), num(g["pitch"]), num(g["commit"]),
                              num(g.get("warning")), num(g["room"]), num(g["demand"])])
         bot_head = ["skill", "runs", "clear rate", "time s", "tokens", "demand peak", "demand mean", "turn flown", "rev/s", "effort/s", "bumps",
-                    "threading", "openings/s", "still", "longest straight s", "swing °/s", "swing rev/s"]
+                    "threading", "openings/s", "still", "longest straight s", "swing °/s", "swing rev/s", "knife clean", "on edge s"]
         person_head = ["flown", "time s", "tokens", "bumps", "demand peak", "mean", "spike", "grade", "turn need", "turn flown",
                        "warning min s", "room min m", "rev/s", "effort/s", "full", "threading", "openings/s",
-                       "still", "longest straight s", "swing °/s", "sideways", "felt diff", "fun"]
+                       "still", "longest straight s", "swing °/s", "sideways", "knife clean", "on edge s", "felt diff", "fun"]
         gap_head = ["token", "length m", "turn", "pitch", "commit s", "warning s", "room m", "demand"]
         md += [f"## {name} (`{station}` {digest})", "", f"Intent **{intent}** · bot band **{band or 'not benched'}**", ""]
         for head, rows, title in ((bot_head, bot_rows, "Bots"), (person_head, person_rows, "People"), (gap_head, gap_rows, "Reference line per gap (perfect bot)")):

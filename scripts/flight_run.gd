@@ -18,6 +18,14 @@ extends RefCounted
 ## The run ends with every token taken or missed, after TIME_LIMIT, or once
 ## the plane strays LOST m from the next one.
 ##
+## The knife edge: the station's knife zones (FlightCourse `knife_zones`,
+## where the line threads a gap only a plane on edge fits) are tracked like
+## tokens: `knife_seen` the first tick the point KNIFE_SEE m before a zone
+## is in view (as a token is seen), `knife_in` when the plane reaches it
+## (its bank then, and whether it is on edge, |bank| >= Metrics KNIFE_ON),
+## `knife_out` when it is past it (`clean`: on edge all through and no
+## bump), or `knife_skip` if it went by without coming within KNIFE_NEAR m.
+##
 ## `finish` returns the run as plain data (FlightMetrics `summarise` reads
 ## it; scripts/flight_log.gd saves it).
 
@@ -32,6 +40,8 @@ const CONE := deg_to_rad(40.0)
 const PAST := 3.0
 const TIME_LIMIT := 40.0
 const LOST := 120.0
+const KNIFE_SEE := 1.5
+const KNIFE_NEAR := 4.0
 ## Standing, taken, missed.
 enum {STANDING,TAKEN,MISSED}
 
@@ -58,6 +68,17 @@ var gaps := []
 var rooms := []
 var entry := {}
 var started := ""
+## The smooth line through the tokens (FlightMetrics `line`) and the knife
+## zones on it; per zone: when seen, when reached (or -1), its state (0
+## ahead, 1 in it, 2 done), the least |bank| and whether it bumped in it.
+var line := []
+var zones := []
+var knife_seen := PackedFloat32Array()
+var knife_in := PackedFloat32Array()
+var knife_state := PackedInt32Array()
+var _knife_bank := PackedFloat32Array()
+var _knife_bump := []
+var edge_ticks := 0
 ## Live numbers for the overlay: the smoothed flown turn and pitch shares,
 ## stick travel and reversals so far.
 var live_turn := 0.0
@@ -95,9 +116,20 @@ func _init(s: Dictionary, who := "human", params := {}, physics: PhysicsDirectSp
 	state.fill(STANDING)
 	seen_at.resize(tokens.size())
 	seen_at.fill(-1.0)
-	var line := Metrics.line(entry.position,entry.heading,tokens)
+	line = Metrics.line(entry.position,entry.heading,tokens)
 	gaps = Metrics.profile(line,tokens.size())
 	rooms = Course.rooms(s,line)
+	zones = Course.knife_zones(s,line)
+	knife_seen.resize(zones.size())
+	knife_seen.fill(-1.0)
+	knife_in.resize(zones.size())
+	knife_in.fill(-1.0)
+	_knife_bank.resize(zones.size())
+	_knife_bank.fill(-1.0)
+	knife_state.resize(zones.size())
+	knife_state.fill(0)
+	_knife_bump.resize(zones.size())
+	_knife_bump.fill(false)
 	solids = Course.solids(s)
 	for i in range(tokens.size()):
 		var before: Vector3 = entry.position if i == 0 else tokens[i-1]
@@ -133,6 +165,7 @@ func tick(delta: float, input: Dictionary) -> void:
 	bumping = bumped
 	_tokens(was)
 	_look()
+	_knife()
 	_live(delta,input)
 	_thread()
 	_flow()
@@ -167,6 +200,39 @@ func _look() -> void:
 		if not Course.line_clear(space,plane.position,tokens[i]): continue
 		seen_at[i] = t
 		events.append({"t":snappedf(t,0.0001),"token":i,"kind":"seen"})
+
+func _knife() -> void:
+	var on_edge := absf(plane.bank) >= Metrics.KNIFE_ON
+	if on_edge: edge_ticks += 1
+	var way := plane.velocity.normalized() if plane.velocity.length() > 0.5 else plane.forward()
+	for k in range(zones.size()):
+		if knife_state[k] == 2: continue
+		var z: Dictionary = zones[k]
+		var at := plane.position
+		if knife_seen[k] < 0.0:
+			var spot: Vector3 = (z.start as Vector3)-(z.way as Vector3)*KNIFE_SEE
+			var d := spot-at
+			if d.length() < 0.5 or (d.length() <= SIGHT and way.angle_to(d) <= CONE and Course.line_clear(space,at,spot)):
+				knife_seen[k] = t
+				events.append({"t":snappedf(t,0.0001),"zone":k,"kind":"knife_seen"})
+		var into := (at-(z.start as Vector3)).dot(z.way)
+		var past := (at-(z.end as Vector3)).dot(z.way)
+		var near := Geometry3D.get_closest_point_to_segment(at,z.start,z.end).distance_to(at) < KNIFE_NEAR
+		if knife_state[k] == 0 and into >= -0.6 and near:
+			knife_state[k] = 1
+			knife_in[k] = t
+			_knife_bank[k] = absf(plane.bank)
+			events.append({"t":snappedf(t,0.0001),"zone":k,"kind":"knife_in","bank":snappedf(absf(plane.bank),0.001),"edge":on_edge})
+		if knife_state[k] == 1:
+			_knife_bank[k] = minf(_knife_bank[k],absf(plane.bank))
+			if bumping: _knife_bump[k] = true
+			if past > 0.6 or not near:
+				knife_state[k] = 2
+				var clean: bool = _knife_bank[k] >= Metrics.KNIFE_ON and not bool(_knife_bump[k])
+				events.append({"t":snappedf(t,0.0001),"zone":k,"kind":"knife_out","clean":clean,"bank_min":snappedf(_knife_bank[k],0.001)})
+		elif knife_state[k] == 0 and past > 3.0:
+			knife_state[k] = 2
+			events.append({"t":snappedf(t,0.0001),"zone":k,"kind":"knife_skip"})
 
 func _live(delta: float, input: Dictionary) -> void:
 	var k := 1.0-exp(-delta/Metrics.SMOOTH)
@@ -244,7 +310,25 @@ func live() -> Dictionary:
 		"demand":demand,"need_turn":float(gaps[i].turn_peak) if i >= 0 else 0.0,"need_pitch":float(gaps[i].pitch_peak) if i >= 0 else 0.0,
 		"reversals":reversals/span,"effort":travel/span,"full":float(full_ticks)/maxf(ticks.t.size(),1),"bumps":bumps,
 		"threading":float(thread_ticks)/maxf(ticks.t.size(),1),"threading_now":threading_now,"openings":openings,"openings_per_s":openings/span,
-		"still":float(still_ticks)/maxf(ticks.t.size(),1),"longest_straight":longest_straight,"straight_now":straight_from >= 0.0 and t-straight_from >= Metrics.FLOW_STRAIGHT}
+		"still":float(still_ticks)/maxf(ticks.t.size(),1),"longest_straight":longest_straight,"straight_now":straight_from >= 0.0 and t-straight_from >= Metrics.FLOW_STRAIGHT,
+		"knife_moments":zones.size(),"knife_clean":_knife_clean(),"knife_done":Array(knife_state).count(2),"on_edge_s":edge_ticks*t/maxf(ticks.t.size()-1,1),
+		"on_edge":absf(plane.bank) >= Metrics.KNIFE_ON,"knife_next":_knife_next()}
+
+## Knife zones passed clean so far.
+func _knife_clean() -> int:
+	var n := 0
+	for e: Dictionary in events:
+		if str(e.kind) == "knife_out" and bool(e.clean): n += 1
+	return n
+
+## Seconds to the next knife zone not yet reached, once it has been seen
+## (NAN otherwise).
+func _knife_next() -> float:
+	for k in range(zones.size()):
+		if knife_state[k] != 0: continue
+		if knife_seen[k] < 0.0: return NAN
+		return maxf(0.0,((zones[k].start as Vector3)-plane.position).dot(zones[k].way))/maxf(plane.speed,1.0)
+	return NAN
 
 ## The run as plain data, its numbers included.
 func finish() -> Dictionary:
@@ -252,12 +336,18 @@ func finish() -> Dictionary:
 	var token_list := []
 	for p in tokens: token_list.append(Metrics.arr(p))
 	var room_list := []
-	for r: Dictionary in rooms: room_list.append({"clearance":snappedf(float(r.clearance),0.001) if is_finite(float(r.clearance)) else 1.0e6,"room":snappedf(float(r.room),0.001)})
+	for r: Dictionary in rooms:
+		var row := {"clearance":snappedf(float(r.clearance),0.001) if is_finite(float(r.clearance)) else 1.0e6,"room":snappedf(float(r.room),0.001)}
+		if r.get("knife",false): row["knife"] = true
+		room_list.append(row)
+	var zone_list := []
+	for z: Dictionary in zones:
+		zone_list.append({"gap":z.gap,"start":Metrics.arr(z.start),"end":Metrics.arr(z.end),"room":snappedf(float(z.room),0.001)})
 	var run := {
 		"format":FORMAT,"station":station.id,"station_hash":Course.station_hash(station),"station_name":station.name,"intent":station.intent,
 		"pilot":pilot,"skill":skill,"started":started,"dt":snappedf(t/maxf(ticks.t.size()-1,1),0.00001),
 		"entry":{"position":Metrics.arr(entry.position),"heading":entry.heading},
-		"tokens":token_list,"reach":snappedf(Course.REACH,0.001),"span":Course.SPAN,"rooms":room_list,
+		"tokens":token_list,"reach":snappedf(Course.REACH,0.001),"span":Course.SPAN,"rooms":room_list,"knife":zone_list,
 		"ticks":ticks,"events":events,
 		"result":{"duration":snappedf(t,0.001),"collected":collected(),"total":tokens.size(),"cleared":collected() == tokens.size(),"ended":ended},
 	}

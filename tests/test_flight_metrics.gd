@@ -4,8 +4,8 @@ extends SceneTree
 ## pattern; the line's needed turn on a straight trail (none) and round a
 ## circle (cruise over the radius); the warning of a token seen long before
 ## versus one seen only on arrival; the demand formula's ends; the bands;
-## the live slack; the course's signed distances and its hash (stations
-## 1-9 pinned); threading past walls, under a lintel and by a lone pillar;
+## the live slack; the course's signed distances and its hash (every
+## station pinned); threading past walls, under a lintel and by a lone pillar;
 ## flow on a run that flies straight, turns, then flies straight again, and
 ## on a wobble.
 ##   godot --headless --path . --script tests/test_flight_metrics.gd
@@ -137,9 +137,11 @@ func run() -> void:
 	var mid := Course.clearance(Course.solids(slot),Course.tokens(slot)[3])-Course.SPAN*0.5
 	check(near(mid,0.5,0.001),"The 2.4 m slot leaves level wings 0.5 m a side (%.3f)" % mid)
 	check(float(rooms[3].room) <= 0.5 and float(rooms[3].room) > 0.3,"The line through it has that room, give or take its curve (%.3f)" % rooms[3].room)
-	# Stations 1-9 keep the hashes the user's rated runs were flown on.
+	# Every station keeps the hash its runs (the user's rated ones among
+	# them) were flown on.
 	var pinned := {"gentle_arc":"ef5c73b6ecd3","slalom":"9e140f831e10","hidden_turn":"08b17c0ca386","tight_slot":"9b4941fb9a24",
-		"climb_rings":"4ed82e139779","dive_arch":"005a5bfc75b1","open_swoop":"fe3d869879c8","mixed_spike":"66cc6ea3502b","sundered":"72a9caa4ed86"}
+		"climb_rings":"4ed82e139779","dive_arch":"005a5bfc75b1","open_swoop":"fe3d869879c8","mixed_spike":"66cc6ea3502b","sundered":"72a9caa4ed86",
+		"sundered_flow":"2a22c9b41180","sundered_mix":"0ced8a69e2e0"}
 	for id: String in pinned:
 		check(Course.station_hash(Course.station(id)) == pinned[id],"%s keeps its hash %s" % [id,pinned[id]])
 	# Threading on a made-up run: 4 s north at 14 m/s past two walls either

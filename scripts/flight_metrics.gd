@@ -66,6 +66,18 @@ extends RefCounted
 ##                  reverses far more, so a sloppy bot's low still share
 ##                  isn't flow. The station's own flow is its perfect
 ##                  reference run's.
+## The knife edge (`knife`), read off the run's knife zones (FlightCourse
+## `knife_zones`: where only a plane on edge fits, a slit), their events
+## (scripts/flight_run.gd) and the ticks' bank:
+##   knife_moments  = the station's knife zones; knife_clean = those passed
+##                    on edge (|bank| >= KNIFE_ON all through) without a bump
+##   knife_warning  = per zone: reached less first seen (s); min and mean
+##   knife_lead     = per zone reached on edge: how long it had been on edge
+##                    when it got there (s), mean
+##   on_edge_s      = time on edge in all (|bank| >= KNIFE_ON), and
+##                    edge_spells, how many times it went on edge
+## A gap marked `knife` in the rooms needs KNIFE_IN s more to commit (the
+## roll up on edge).
 
 const SkyPlane = preload("res://scripts/sky_plane.gd")
 
@@ -117,6 +129,12 @@ const FLOW_STILL := 6.0
 const FLOW_STRAIGHT := 0.5
 const FLOW_REVERSE := 10.0
 ## The flow numbers' keys (bench, backfill, report).
+## On a knife edge: |bank| at least this (rad, about 70 degrees; the slab
+## RuinBump bumps with is then under 0.8 m across, against a 1.15 m slit).
+const KNIFE_ON := 1.2
+## The roll up on edge, added to a knife gap's commit (2 x SkyPlane EASE_KNIFE).
+const KNIFE_IN := 2.0*SkyPlane.EASE_KNIFE
+const KNIFE_KEYS := ["knife_moments","knife_clean","knife_warning_min","knife_warning_mean","knife_lead","on_edge_s","edge_spells"]
 const FLOW_KEYS := ["still_share","straights","longest_straight","swing_mean","yaw_share","swing_reversals_per_s"]
 
 ## A Vector3 from a JSON array or a Vector3.
@@ -355,6 +373,7 @@ static func summarise(run: Dictionary, solids := []) -> Dictionary:
 			room = float(rooms[g].room)
 			clear = float(rooms[g].clearance)
 		var commit := commit_time(p)
+		if g < rooms.size() and bool(rooms[g].get("knife",false)): commit += KNIFE_IN
 		var warning: Variant = null
 		if reached[g] != null:
 			var saw: float = seen[g] if seen[g] != null else float(reached[g])
@@ -419,7 +438,51 @@ static func summarise(run: Dictionary, solids := []) -> Dictionary:
 		"demand_peak":snappedf(peak,0.001),"demand_mean":snappedf(weighted/timed if timed > 0.0 else 0.0,0.001),
 		"demand_spike":snappedf(peak-median,0.001),"grade":grade(peak),
 		"gaps":out_gaps,"curve":curve(run,out_gaps,yaw,pit),
-	}.merged(flow(tk,duration)).merged(threading(tk,solids,duration) if not solids.is_empty() else {})
+	}.merged(flow(tk,duration)).merged(knife(run)).merged(threading(tk,solids,duration) if not solids.is_empty() else {})
+
+## A run's knife-edge numbers (see the header): {knife_moments,
+## knife_clean, knife_warning_min, knife_warning_mean (s, or null),
+## knife_lead (s, or null), on_edge_s, edge_spells}.
+static func knife(run: Dictionary) -> Dictionary:
+	var tk: Dictionary = run.get("ticks",{})
+	var t: Array = tk.get("t",[])
+	var bank: Array = tk.get("bank",[])
+	var zones: Array = run.get("knife",[])
+	var seen := {}
+	var reached := {}
+	var clean := 0
+	for e: Dictionary in run.get("events",[]):
+		match str(e.kind):
+			"knife_seen": seen[int(e.zone)] = float(e.t)
+			"knife_in": reached[int(e.zone)] = float(e.t)
+			"knife_out": if bool(e.get("clean",false)): clean += 1
+	# Time on edge and its spells.
+	var n := mini(t.size(),bank.size())
+	var on_edge := 0.0
+	var spells := 0
+	var was := false
+	for i in range(n):
+		var now := absf(float(bank[i])) >= KNIFE_ON
+		if now and i > 0: on_edge += float(t[i])-float(t[i-1])
+		if now and not was: spells += 1
+		was = now
+	var warnings := []
+	var leads := []
+	for k: int in reached:
+		var at: float = reached[k]
+		warnings.append(at-float(seen.get(k,at)))
+		# The spell it reached the zone in, if on edge then.
+		var i := mini(t.bsearch(at),n-1)
+		if i >= 0 and absf(float(bank[i])) >= KNIFE_ON:
+			var from := at
+			while i > 0 and absf(float(bank[i-1])) >= KNIFE_ON:
+				i -= 1
+				from = float(t[i])
+			leads.append(at-from)
+	var mean := func(a: Array) -> Variant: return snappedf(a.reduce(func(x: float, y: float) -> float: return x+y,0.0)/a.size(),0.001) if not a.is_empty() else null
+	return {"knife_moments":zones.size(),"knife_clean":clean,
+		"knife_warning_min":(snappedf(warnings.min(),0.001) if not warnings.is_empty() else null),"knife_warning_mean":mean.call(warnings),
+		"knife_lead":mean.call(leads),"on_edge_s":snappedf(on_edge,0.001),"edge_spells":spells}
 
 ## The demand curve: every CURVE_STEP s, [t, the gap's demand, flown turn
 ## share, flown pitch share, the stick held (the larger of turn and pitch)].
