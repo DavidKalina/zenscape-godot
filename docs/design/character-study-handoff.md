@@ -3,9 +3,11 @@
 Branches: `study/character` (round 1: the greybox room, the physics bridge,
 live feel tuning) and `study/character-moves` (round 2: faster, the pump,
 the long jump, wall slide and wall jump, exact jump arcs, every grabbable lip
-climbable), and `study/character-moves-3` (round 3: the twirl, slopes and
-the boot-surf, the slide jump, the side flip, jump poses, a quicker climb).
-Round 3 is described first, then round 2; round 1's notes follow, with the
+climbable), `study/character-moves-3` (round 3: the twirl, slopes and
+the boot-surf, the slide jump, the side flip, jump poses, a quicker climb),
+and `study/character-momentum` (round 4: carried pace, chained long jumps,
+the flat slide, faster surfs, a stretching twirl, the momentum field).
+Round 4 is described first, then 3 and 2; round 1's notes follow, with the
 numbers that changed marked.
 
 ## Launch
@@ -14,13 +16,192 @@ numbers that changed marked.
     godot --path . res://studies/character_study.tscn -- --no-title
 
 The room is walkable about 1.0 to 1.4 s after launch. Keys: WASD/stick run,
-Space/A jump, Shift, C or LT crouch, mouse/right stick look, 1-9, 0, - and =
-teleport to a station, R back to start, F1 toggles the numbers, F2 opens the feel
+Space/A jump, Shift, C or LT crouch, mouse/right stick look, 1-9, 0, -, =,
+[, ] and \ teleport to a station, R back to start, F1 toggles the numbers, F2 opens the feel
 panel (Print copies the set as `const` lines; Defaults restores), Esc
 releases the mouse and a click captures it again.
 
 Tests: `python3 tools/run_tests.py --tests 'test_character_*.gd' --tests
 'test_pilot_*.gd'`.
+
+## Round 4: momentum
+
+Branch `study/character-momentum` (from main at ce50f324). The user asked
+for Mario-style momentum: speed you earn is kept and built on by timing,
+the slide and the long jump go further, long jumps chain, a crouched slide
+down a big slope gains well past the run, and the twirl stretches a jump.
+Try first: `]` (chain the long jumps over the five pits), then `\` (surf the
+big slope and long-jump the 6 m gap), then `[` (the 100 m runway).
+
+### Inputs
+
+- **Slide**: crouch at a run (at least LONG_PACE 3.0 m/s) on the flat. He
+  drops onto his boots (move "slide", the surf's pose) and runs on. Crouch
+  at a stand is still the plain crouch. The crouched flat slide doesn't
+  steer, as the round-2 crouch didn't; uncrouched (off a slope) it does.
+- **Long jump**: Jump while crouched at a run or sliding on the flat
+  (under SLIDE_FROM 10°). On a slope, or uncrouched on the flat, Jump out of
+  a surf is still the slide jump.
+- **Chain**: keep crouch held, and press Jump on each landing (within
+  LONG_CHAIN 0.2 s after the touch, or in the 0.15 s BUFFER before it). Each
+  chained long jump adds LONG_ADD to the pace. Pressed later, the long jump
+  still keeps his pace, but adds nothing, and the slide has bled some away.
+- **Twirl**: as before (crouch pressed in the air), now with a push along
+  the stick and stronger steering. In a chain, let go of crouch in the air
+  and press it again to twirl. A twirled long jump still chains.
+
+### Numbers (all consts in `scripts/pilot_motor.gd`, each on F2)
+
+| | before | now |
+|---|---|---|
+| carried pace: CARRY_HOLD (stick held on) / CARRY_DECAY (otherwise) | cut to the run at BRAKE 18 | 2.5 / 8 m/s² |
+| LONG_SPEED (least) | 6.4 fixed | 7.6, or his pace if faster |
+| LONG_HEIGHT | 0.6 | 0.7 |
+| LONG_CHAIN / LONG_ADD / LONG_TOP | - | 0.2 s / 1.4 m/s / 12 m/s |
+| flat slide: SLIDE_RUNOUT + SLIDE_AIR·v² | crouch stop 7, run-out 9 | 2.4 + 0.035·v² |
+| surf: pull 18·sin - SLIDE_DRAG 1 - SLIDE_AIR·v² | flat cap 11 | slope's own top, under SLIDE_TOP 20 |
+| TWIRL_PUSH / TWIRL_TOP / TWIRL_STEER | - / - / air 6 | 2 m/s / 9 m/s / 12 m/s² |
+
+Letting go of the stick still brakes at BRAKE 18. Wading still slows him
+at once (no carry in water). The air drag gives each slope its own top
+speed: about 15.6 m/s on 32°, 16.3 on 35° and 19 on 50°. Steeper slopes gain
+faster and top out higher.
+
+**Caps.** Only three things add pace: a slope (to SLIDE_TOP 20), a timed
+long jump (to LONG_TOP 12; above that a long jump keeps his pace but adds
+nothing), and the twirl (to TWIRL_TOP 9, once an airtime; faster, it only
+keeps his pace). The run, the air steer and the carry never add, and no
+pace turns into height (every jump height is fixed). So the fastest he can
+ever go is 20 m/s, and only down a long steep slope.
+
+### Measured (headless, 60 fps, scripted input)
+
+From `tests/test_pilot_momentum.gd` (heightfield) and
+`tests/test_character_momentum.gd` (the study, through the bridge). The
+"before" numbers are the same measurements on main's motor.
+
+- **One long jump from a run**: 4.31 m level (before 3.31), 0.70 m up.
+  Onto a top level with the takeoff it crosses 4.5 m gaps and falls short
+  at 5.0 (before 3.5 and 4.0).
+- **Five long jumps, timed on each landing**: 7.6, 8.93, 10.24, 11.54,
+  12.0 m/s; 28.5 m in 2.83 s, 10.1 m/s on average (running for the same
+  time covers 13.6 m). Pressed in the buffer before each touch, the same.
+  Twelve timed: never past 12.0.
+- **Five long jumps, pressed 0.35 s late**: 7.6 m/s every time; 31.1 m in
+  4.23 s, 7.35 m/s on average. Before this round, timed or late, every long
+  jump was 6.4 m/s (16.5 m in 2.58 s timed).
+- **Carried pace**: landed at 10 m/s, back to the run in 2.07 s with the
+  stick held on, 0.65 s at half stick, 0.30 s let go (before: 0.30 s in
+  every case).
+- **Flat slide from a run**: 4.01 m over 1.6 s (before: the crouch stopped
+  him in 1.61 m).
+- **Big slope (35°, 20 m drop, 28.6 m along the ground), crouched from the
+  top**: 14.9 m/s at the foot after 2.9 s (before 10.9, held at the
+  11 m/s cap). Crouched, it runs out 20.5 m along the flat to a stop (before
+  6.6). Uncrouched at the foot, he surfs 16.5 m out and runs on at 4.8 m/s
+  (before 5.4 m). In the study: 15.0 m/s at the foot, 20.7 m run-out.
+- **Long jump out of the slide** 1 m past the big slope's foot: 14.0 m/s,
+  7.7 m level (before 9.8 m/s, 4.9 m). In the study, taken 0.4 m short of
+  the 6 m pit at 13.4 m/s, he comes down 0.95 m past its far edge.
+- **10 m of 32°**: 10.8 m/s at the foot (the same as before), runs out
+  14.1 m. As long a run of 50°: 13.3 m/s (before 11.0).
+- **Twirl at a held running jump's top**: 5.39 m against 2.24 m without it,
+  +3.15 m (before +1.92). **At a long jump's end** (pressed under 0.3 m on
+  the way down): 8.60 m against 4.31 m, +4.29 m (before +2.99 on a 3.31 m
+  jump).
+- **Chain course in the study**: timed, he takes off at x -19.17 and
+  comes down at -14.99, -9.93, -4.13, 2.41 and 9.21: about 1.0 m onto each
+  strip and the far deck. Pressed 0.35 s late, he slides off the first strip
+  into the second pit.
+
+### The momentum field (studies/character_study.gd)
+
+A new field north of the room (FIELD, 130 x 41 m, walled, reached only by
+teleport):
+
+- **[ Runway**: 100 m of metre ticks, labelled every 10 m.
+- **] Long jump chain**: a 9 m run-up, then five pits 1 m deep widening
+  3.0, 3.1, 3.8, 4.5 and 4.8 m between green strips 2 m long, and a far deck.
+  The strips sit where a chain timed on each landing comes down. That
+  leaves about 1 m (0.1 s at the pace) after each touch, so a late press
+  slides off into the next pit. The first edge is at x -19. Crouch about
+  2 m before it and Jump at it.
+- **\ Big slope**: a 20 m platform, a 35° slope 8 m wide, then a ticked
+  flat on its south half and a 6 m pit 1 m deep on its north half, starting
+  3 m past the foot. Walk off the platform's edge and hold crouch.
+
+F1 adds "long chain N · fastest X m/s" (a long jump faster than the last
+counts as chained). F2 adds carry_hold, carry_decay, long_pace, long_chain,
+long_add, long_top, slide_air, twirl_push, twirl_top and twirl_steer.
+long_speed now goes to 16 and slide_top to 30. The help line names the
+slide and the chain.
+
+### Tests
+
+- New: `tests/test_pilot_momentum.gd` (heightfield; it prints every
+  MEASURE line above) and `tests/test_character_momentum.gd` (the three
+  stations in the study).
+- Expected numbers I changed on purpose:
+  - `test_pilot_moves`: the long jump now crosses 4.0 and 4.5 m and falls
+    short at 5.0 (it was 3.5 and short of 4.0). The crouch at a run now
+    slides on, so the test runs 2.5 s instead of 1 and also asks for
+    more than 3.5 m.
+  - `test_pilot_tricks`: the surf passes 11 m/s in 12 m of 32° (it was "to
+    SLIDE_TOP 11"). The run-out after the slope is 7 to 14 m (it was under
+    7). The slide-jump case lets go of crouch at the slope's foot, because
+    crouched on the flat Jump is now the long jump.
+  - `test_character_tricks`: the ramp's surf passes 10.5 m/s (it was
+    SLIDE_TOP - 1). Before the slot, he now stops for 0.75 s, because he
+    lands from the slide jump carrying 11 m/s and would run through the
+    5 m slot.
+  - `test_character_study`: the long jump now crosses the 4.0 m gap.
+- Passing, headless: the import check, and all 13 of `--tests
+  'test_character_*.gd' --tests 'test_pilot_*.gd'` (character climb,
+  momentum, study, tricks; pilot figure, footfalls, ledge, momentum, motor,
+  moves, tricks, wake, water). Nothing was added to known_failures. As told,
+  I didn't run the full suite or the game's walker guards (test_cluster_stack,
+  test_walk_island, test_skydive, test_test_island, test_gamepad).
+
+### Unverified
+
+- Nothing was played by hand and no captures were taken. The feel is
+  unjudged: the chain window (0.2 s), the 1 m strip margin on the chain
+  course, how far the slide and the surf's run-out go, and whether 15 to
+  19 m/s surfs read well under the camera. The camera spring is capped at a
+  1.6 m lag, so at high pace it will trail at its cap.
+- The run clip is baked for 4.8 m/s. Carried pace above that plays the run
+  faster, and how that looks is unchecked. The flat slide uses the surf
+  clip, with the body tipped by the slope (none on the flat).
+- The game's walker gets all of this through the shared motor. Steep
+  terrain now surfs him faster (up to about 19 m/s on 50° islet flanks), and
+  he lands from long jumps carrying pace. I haven't checked it in the game.
+  `scripts/wanderer_eye.gd` scales the surf spray by SLIDE_TOP, which is now
+  20, so the spray is lighter at the same pace. I left that file alone, as
+  the solid-props branch is editing it.
+
+### Known limits
+
+- The long jump chain counts only landings from a long jump. A slide jump
+  or a pump into a long jump keeps its pace but adds nothing.
+- The air drag on the flat slide grows with pace, so most of a fast slide's
+  speed goes in its first few metres (14.9 m/s falls to about 12.9 m/s
+  3 m out).
+- Carry decays at a fixed rate. There is no extra speed from running
+  downhill without crouching.
+- docs/gamepad.md and the walker's hints don't mention the slide or the
+  chain.
+
+### Next steps
+
+1. Play `]` and `\` and tune long_chain, long_add, slide_runout and
+   slide_air on F2. Widen the chain strips if a buffered press feels too
+   tight.
+2. A dive (Odyssey-style) out of a long jump or a twirl, as a chain ender
+   or linker, and a roll on landing to keep pace without crouch.
+3. A camera that pulls back a little and lags less at high pace.
+4. A run clip, or a stride-length blend, for 6 to 12 m/s.
+5. Check the walker on islet flanks and stairs (test_cluster_stack,
+   test_walk_island) before merging.
 
 ## Round 3: the tricks
 
