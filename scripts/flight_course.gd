@@ -15,6 +15,11 @@ extends RefCounted
 ##   ["gate", middle Vector3, width, height, yaw]   (posts, lintel and sill
 ##       round a width x height opening, BAR thick)
 ##   ["ring", middle Vector3, inner radius, yaw]   (RING_SEGMENTS boxes)
+##   ["bay", at Vector3, yaw, plan Dictionary]   (one bay of the Sundered
+##       hall's nave in greybox, at the real hall's dimensions,
+##       scripts/ruin_kit_hall.gd: `at` is its bay line's middle on its
+##       floor, the nave running north (-Z) at yaw 0; see `_bay` for the
+##       plan's keys)
 ## Each expands into world-space solids (`solids`): {"kind":"box","middle",
 ## "size","basis"} or {"kind":"cyl","middle","radius","height"}, which the
 ## study draws and gives colliders on the ruins' layer (scripts/ruin_bump.gd
@@ -24,6 +29,7 @@ extends RefCounted
 ## give the room round the line.
 
 const PlaneFigure = preload("res://scripts/plane_figure.gd")
+const Hall = preload("res://scripts/ruin_kit_hall.gd")
 const RuinBump = preload("res://scripts/ruin_bump.gd")
 const Lines = preload("res://scripts/collectible_lines.gd")
 
@@ -32,6 +38,13 @@ const Lines = preload("res://scripts/collectible_lines.gd")
 const ALT := 40.0
 const SPACING := 260.0
 const TOP := 30.0
+## A greybox hall bay: how high a torn line's columns stand and a torn
+## bay's walls (m over its floor: the low ends of Hall TORN_SNAP and
+## TORN_WALL), an open bay's walls, a low breach's and a collapse's.
+const TORN_SNAP := 3.0
+const TORN_WALL := 3.0
+const OPEN_WALL := 7.5
+const BREACH_WALL := {"low":1.4,"collapse":0.8}
 ## A gate's frame and a ring's bar (m thick), the ring's segments.
 const BAR := 1.0
 const RING_SEGMENTS := 12
@@ -113,6 +126,45 @@ const STATIONS := [
 		Vector3(7.0,2.0,-56.0),
 		Vector3(0.0,0.0,-68.0),Vector3(0.0,0.0,-80.0),Vector3(0.0,0.0,-92.0),
 	]},
+	# The Sundered hall (scripts/sundered_hall.gd), greyboxed: four of its
+	# acts squeezed into two pieces, at the real hall's dimensions
+	# (scripts/ruin_kit_hall.gd). Piece A, 8 bays: the gate's roofed mouth,
+	# a low tie flown under, a high tie hopped over, shafts of broken roof,
+	# then a cloister's open bays and out right between the row's columns,
+	# over a low breach, past the torn end. A 22 m gap stepping down 5 m.
+	# Piece B, 6 bays, 8 m right of A so the way out runs on into its lane:
+	# the slit act (screens with knife-edge slits on the left, the lane open
+	# on the right, a low tie under), then the apse's open roof, climbing
+	# out to the sky. Each bay: ["bay", its bay line's middle on its floor,
+	# yaw, plan]. A's lane (hall z LANE_MID) runs at x 0, B's at x 8.
+	{"id":"sundered","key":9,"name":"Sundered hall (gate, cloister, slit, apse)","intent":"hard","parts":[
+		["bay",Vector3(-6.0,-2.3,-14.0),0.0,{"roof":"whole","inner":[]}],
+		["bay",Vector3(-6.0,-2.3,-22.0),0.0,{"roof":"whole","tie":"low","inner":[-2.6]}],
+		["bay",Vector3(-6.0,-2.3,-30.0),0.0,{"roof":"broken","gaps":[3,4],"inner":[0.0]}],
+		["bay",Vector3(-6.0,-2.3,-38.0),0.0,{"roof":"whole","tie":"high","inner":[-2.6,2.6]}],
+		["bay",Vector3(-6.0,-2.3,-46.0),0.0,{"roof":"broken","gaps":[2,3],"inner":[-2.6]}],
+		["bay",Vector3(-6.0,-2.3,-54.0),0.0,{"roof":"whole","inner":[0.0]}],
+		["bay",Vector3(-6.0,-2.3,-62.0),0.0,{"roof":"open","inner":[-2.6],"breach":["","low"]}],
+		["bay",Vector3(-6.0,-2.3,-70.0),0.0,{"roof":"open","beam":false,"torn":2,"last":true,"inner":[]}],
+		["bay",Vector3(2.0,-7.3,-100.0),0.0,{"roof":"open","torn":1,"inner":[]}],
+		["bay",Vector3(2.0,-7.3,-108.0),0.0,{"roof":"whole","tie":"high","screen":true,"inner":[-2.6,2.6]}],
+		["bay",Vector3(2.0,-7.3,-116.0),0.0,{"roof":"broken","gaps":[1,2],"tie":"low","inner":[0.0]}],
+		["bay",Vector3(2.0,-7.3,-124.0),0.0,{"roof":"whole","tie":"high","screen":true,"inner":[-2.6,2.6]}],
+		["bay",Vector3(2.0,-7.3,-132.0),0.0,{"roof":"open","inner":[-2.6]}],
+		["bay",Vector3(2.0,-7.3,-140.0),0.0,{"roof":"open","beam":false,"torn":2,"last":true,"inner":[]}],
+	],"tokens":[
+		# In at the gate, under the low tie, up over the high tie.
+		Vector3(0.0,0.0,-10.0),Vector3(0.0,0.4,-22.0),Vector3(0.0,5.9,-38.0),
+		# Down the nave under the broken roof, then out right between the
+		# row's columns, over the low breach, past the torn end.
+		Vector3(0.0,1.5,-52.0),Vector3(-0.8,1.0,-60.0),Vector3(3.4,2.0,-66.0),Vector3(9.0,2.0,-73.0),
+		# Across the gap, stepping down into B's torn mouth.
+		Vector3(8.5,-1.5,-87.0),Vector3(8.0,-4.5,-100.0),
+		# Along the lane past the screens and under the low tie.
+		Vector3(8.0,-5.0,-110.0),Vector3(8.0,-5.0,-120.0),Vector3(8.0,-5.0,-128.0),
+		# Up out of the apse's open roof to the sky.
+		Vector3(8.0,-2.0,-136.0),Vector3(8.0,3.0,-144.0),Vector3(8.0,8.0,-154.0),Vector3(8.0,11.0,-166.0),
+	]},
 ]
 
 ## The station with `id`, or {}.
@@ -185,6 +237,102 @@ static func solids(s: Dictionary) -> Array:
 					var a := TAU*float(i)/RING_SEGMENTS
 					var spin := turn*Basis(Vector3.BACK,a)
 					out.append(_box(mid+spin*Vector3(r+BAR*0.5,0.0,0.0),Vector3(BAR,length,BAR),spin))
+			"bay":
+				out.append_array(_bay(at+(part[1] as Vector3),float(part[2]),part[3]))
+	return out
+
+## One greybox bay of the Sundered hall's nave, in the hall's own frame
+## (Hall: x along the nave from its bay line at 0 to BAY, y up from the
+## floor, z across, +z the right, where the lane runs) turned so the nave
+## runs north at yaw 0. The plan, every key optional:
+##   roof    "whole", "broken" (whole but `gaps`) or "open" (no slabs, no
+##           architraves)
+##   gaps    the roof strips left out (0-5 across, as Hall's: 0 and 5 the
+##           aisles, 1-4 over the nave)
+##   tie     "", "low" or "high": a tie across the nave at the bay line,
+##           its soffit TIE_LOW or TIE_HIGH over the floor
+##   inner   the inner columns' z at the bay line
+##   breach  [left, right]: "", "low", "collapse" (the wall torn down) or
+##           "arch" (an ARCH opening through it)
+##   screen  a screen across the left of the nave at the bay line, a
+##           knife-edge slit (KNIFE) through it
+##   torn    1 the bay line torn (columns snapped, no beam), 2 the far end
+##           torn; either way the bay's walls stand low
+##   beam    false: no roof beam at the bay line (an open bay after an
+##           open bay)
+##   last    the bay closes the piece: a column line at x BAY too
+## Simplified from the real bay: plain boxes and drums, no gables, lancets,
+## doors, buttresses, fallen beams, rubble or parapets; one height for
+## torn and open walls.
+static func _bay(at: Vector3, yaw: float, plan: Dictionary) -> Array:
+	var turn := Basis(Vector3.UP,yaw+PI*0.5)
+	var out := []
+	var put := func(middle: Vector3, size: Vector3) -> void: out.append(_box(at+turn*middle,size,turn))
+	var bay := Hall.BAY
+	var torn := int(plan.get("torn",0))
+	var roof: String = plan.get("roof","whole")
+	var soffit := Hall.COLUMN_H+Hall.BEAM.x
+	# The floor: the podium's top at y 0.
+	put.call(Vector3(bay*0.5,-1.0,0.0),Vector3(bay,2.0,2.0*Hall.WALL_Z+Hall.WALL_THICK))
+	# The column lines, each with its roof beam across, wall to wall.
+	var lines := [0.0]
+	if bool(plan.get("last",false)): lines.append(bay)
+	for x: float in lines:
+		var snapped := (x == 0.0 and torn & 1 != 0) or (x > 0.0 and torn & 2 != 0)
+		var h := TORN_SNAP if snapped else Hall.COLUMN_H
+		var zs: Array = [-Hall.ROW_Z,Hall.ROW_Z]
+		if x == 0.0: zs.append_array(plan.get("inner",[]))
+		for z: float in zs:
+			out.append({"kind":"cyl","middle":at+turn*Vector3(x,h*0.5,z),"radius":Hall.COLUMN_R,"height":h})
+		if not snapped and (x > 0.0 or bool(plan.get("beam",true))):
+			put.call(Vector3(x,Hall.COLUMN_H+Hall.BEAM.x*0.5,0.0),Vector3(Hall.BEAM.y*2.0,Hall.BEAM.x,2.0*Hall.WALL_Z))
+	# The tie across the nave at the bay line.
+	var tie: String = plan.get("tie","")
+	if tie != "":
+		var tie_y := Hall.TIE_LOW if tie == "low" else Hall.TIE_HIGH
+		put.call(Vector3(0.0,tie_y+Hall.TIE_DEPTH*0.5,0.0),Vector3(Hall.BEAM.y*2.0,Hall.TIE_DEPTH,2.0*Hall.ROW_Z))
+	# The architraves along the rows and the roof's six strips.
+	if roof != "open" and torn == 0:
+		for k: float in [-1.0,1.0]:
+			put.call(Vector3(bay*0.5,Hall.COLUMN_H+Hall.BEAM.x*0.5,k*Hall.ROW_Z),Vector3(bay,Hall.BEAM.x,Hall.BEAM.y*2.0))
+		var edges := [-Hall.WALL_Z-0.5,-Hall.ROW_Z,-Hall.ROW_Z*0.5,0.0,Hall.ROW_Z*0.5,Hall.ROW_Z,Hall.WALL_Z+0.5]
+		var gaps: Array = plan.get("gaps",[])
+		for i in range(edges.size()-1):
+			if i in gaps: continue
+			put.call(Vector3(bay*0.5,soffit+Hall.SLAB*0.5,(float(edges[i])+float(edges[i+1]))*0.5),Vector3(bay,Hall.SLAB,float(edges[i+1])-float(edges[i])))
+	# The side walls: under a roof up to its top and a parapet, open or torn
+	# lower, breached to their stumps or through an arch.
+	var breach: Array = plan.get("breach",["",""])
+	for k in range(2):
+		var side := -1.0 if k == 0 else 1.0
+		var kind: String = breach[k]
+		var high := Hall.ROOF_TOP+1.0
+		if roof == "open": high = OPEN_WALL
+		if torn != 0: high = minf(high,TORN_WALL)
+		if BREACH_WALL.has(kind): high = BREACH_WALL[kind]
+		var z := side*Hall.WALL_Z
+		var size := Vector3(bay,high,Hall.WALL_THICK)
+		if kind == "arch":
+			var w := Hall.ARCH.x
+			var top := Hall.ARCH.z
+			var jamb := (bay-w)*0.5
+			put.call(Vector3(jamb*0.5,high*0.5,z),Vector3(jamb,high,Hall.WALL_THICK))
+			put.call(Vector3(bay-jamb*0.5,high*0.5,z),Vector3(jamb,high,Hall.WALL_THICK))
+			put.call(Vector3(bay*0.5,(top+high)*0.5,z),Vector3(w,high-top,Hall.WALL_THICK))
+		else:
+			put.call(Vector3(bay*0.5,high*0.5,z),size)
+	# The screen across the left of the nave, its knife-edge slit.
+	if bool(plan.get("screen",false)):
+		var z := -(Hall.ROW_Z+Hall.INNER_Z)*0.5
+		var span := (Hall.ROW_Z-Hall.INNER_Z)*0.5-Hall.COLUMN_R+0.06
+		var high := (Hall.TIE_LOW if tie == "low" else (Hall.TIE_HIGH if tie == "high" else 7.0))-0.02
+		var half := Hall.KNIFE.x*0.5
+		var head := Hall.KNIFE.y+Hall.KNIFE.z
+		var thick := 0.9
+		put.call(Vector3(0.0,high*0.5,(z-span+z-half)*0.5),Vector3(thick,high,span-half))
+		put.call(Vector3(0.0,high*0.5,(z+half+z+span)*0.5),Vector3(thick,high,span-half))
+		put.call(Vector3(0.0,Hall.KNIFE.y*0.5,z),Vector3(thick,Hall.KNIFE.y,Hall.KNIFE.x))
+		put.call(Vector3(0.0,(head+high)*0.5,z),Vector3(thick,high-head,Hall.KNIFE.x))
 	return out
 
 static func _box(middle: Vector3, size: Vector3, basis: Basis) -> Dictionary:
