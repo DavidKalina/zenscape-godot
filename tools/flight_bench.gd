@@ -8,7 +8,7 @@ extends SceneTree
 ## its best run is kept (the reference line in the report).
 ##
 ##   godot --headless --path . -s tools/flight_bench.gd -- --station all --runs 10
-##   options: --station id[,id] | all   --runs N (default 10; 20 gives
+##   options: --station id[,id] | all   --pack sky (a pack's stations)   --runs N (default 10; 20 gives
 ##            steadier bands, about 7 s)   --skills sloppy,decent,...
 ##            --out user://dir (default user://flight_runs)   --no-save (no run files)
 ##
@@ -53,6 +53,9 @@ func _args() -> Dictionary:
 func run() -> void:
 	var args := _args()
 	var ids: PackedStringArray = Course.ids() if str(args.station) == "all" else str(args.station).split(",")
+	if args.has("pack"):
+		ids = PackedStringArray()
+		for s: Dictionary in Course.pack(str(args.pack)): ids.append(s.id)
 	var skills := str(args.skills).split(",")
 	var stage := Node3D.new()
 	root.add_child(stage)

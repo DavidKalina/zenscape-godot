@@ -21,9 +21,12 @@ extends Node3D
 ## Keys: 1-9, 0 and - the stations, R restart the station, N the next one, B cycles
 ## who flies (you, then the sloppy, decent, sharp and perfect bots), F1 the
 ## live numbers, Esc lets the mouse go. After a station: 1-5 rates felt
-## difficulty, then 1-5 fun (Enter skips).
+## difficulty, then 1-5 fun (Enter skips). A pack's stations (the sky pack,
+## scripts/flight_pack_sky.gd) have no digit key: `--pack=sky` starts at its
+## first and keeps N cycling within it.
 ##   ./run-flight-study.command
-##   godot --path . res://studies/flight_study.tscn -- --no-title [--station=slalom] [--bot=sharp]
+##   ./run-flight-sky.command
+##   godot --path . res://studies/flight_study.tscn -- --no-title [--station=slalom] [--bot=sharp] [--pack=sky]
 
 const Course = preload("res://scripts/flight_course.gd")
 const Run = preload("res://scripts/flight_run.gd")
@@ -58,6 +61,8 @@ var station := {}
 var run: Run
 var bot: Bot
 var pilot := "human"
+## The pack N cycles within ("" all the stations).
+var pack := ""
 var figure: Node3D
 var chase := GlideCamera.new()
 var camera: Camera3D
@@ -93,6 +98,10 @@ func _ready() -> void:
 	_space = get_world_3d().direct_space_state
 	_bands = Log.bands(log_dir)
 	var first := Course.STATIONS[0] as Dictionary
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--pack=") and not Course.pack(arg.substr(7)).is_empty():
+			pack = arg.substr(7)
+			first = Course.pack(pack)[0]
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--station="): first = Course.station(arg.substr(10)) if not Course.station(arg.substr(10)).is_empty() else first
 		if arg.begins_with("--bot=") and arg.substr(6) in PILOTS: pilot = arg.substr(6)
@@ -157,7 +166,7 @@ func _build_course() -> void:
 	for s: Dictionary in Course.STATIONS:
 		Course.build(s,self,_material)
 		var at := Course.origin(s)
-		_label(at+Vector3(-8.0,7.0,-4.0),"%s  %s" % [Course.key_name(s),s.name],96)
+		_label(at+Vector3(-8.0,7.0,-4.0),("%s  %s" % [Course.key_name(s),s.name]) if Course.key_name(s) != "" else str(s.name),96)
 		# A post under the entry, so its height reads against the floor.
 		var post := MeshInstance3D.new()
 		var cyl := CylinderMesh.new()
@@ -227,8 +236,10 @@ func restart() -> void:
 	start(station)
 
 func next_station() -> void:
-	var i := Course.STATIONS.find(station)
-	start(Course.STATIONS[(i+1)%Course.STATIONS.size()])
+	var cycle: Array = Course.pack(pack) if pack != "" else Course.STATIONS
+	if not station in cycle: cycle = Course.STATIONS
+	var i := cycle.find(station)
+	start(cycle[(i+1)%cycle.size()])
 
 func _physics_process(delta: float) -> void:
 	if flight_ready and not scripted: tick(delta)

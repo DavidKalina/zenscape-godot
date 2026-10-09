@@ -20,6 +20,9 @@ extends RefCounted
 ##       scripts/ruin_kit_hall.gd: `at` is its bay line's middle on its
 ##       floor, the nave running north (-Z) at yaw 0; see `_bay` for the
 ##       plan's keys)
+##   any other kind: the sky pack's (scripts/flight_pack_sky.gd: "rock",
+##       "isle", "span", "bore", "slab"), whose stations are appended to
+##       STATIONS
 ## Each expands into world-space solids (`solids`): {"kind":"box","middle",
 ## "size","basis"} or {"kind":"cyl","middle","radius","height"}, which the
 ## study draws and gives colliders on the ruins' layer (scripts/ruin_bump.gd
@@ -32,6 +35,9 @@ const PlaneFigure = preload("res://scripts/plane_figure.gd")
 const Hall = preload("res://scripts/ruin_kit_hall.gd")
 const RuinBump = preload("res://scripts/ruin_bump.gd")
 const Lines = preload("res://scripts/collectible_lines.gd")
+## The sky pack's stations, appended after the course's own (scripts/
+## flight_pack_sky.gd); `solids` hands it any part kind it doesn't know.
+const SkyPack = preload("res://scripts/flight_pack_sky.gd")
 
 ## The stations stand ALT metres over the floor (y 0), SPACING metres apart
 ## along x; pillars rise to TOP over the entry.
@@ -229,7 +235,7 @@ const STATIONS := [
 		Vector3(79.42,-6.74,-220.48),Vector3(83.63,-6.29,-221.59),Vector3(92.57,-4.60,-220.60),Vector3(101.19,-2.35,-219.06),
 	]},
 	# <<< sundered_mix
-]
+]+SkyPack.STATIONS
 
 ## The station with `id`, or {}.
 static func station(id: String) -> Dictionary:
@@ -240,11 +246,14 @@ static func station(id: String) -> Dictionary:
 ## The `-` key's station key (keys 0-9 are their digits).
 const MINUS_KEY := 10
 
-## The key that jumps to station `s` in the study: its digit, or "-".
+## The key that jumps to station `s` in the study: its digit, or "-"; ""
+## for a pack's station, which has none (SkyPack.NO_KEY).
 static func key_name(s: Dictionary) -> String:
+	if int(s.key) == SkyPack.NO_KEY: return ""
 	return "-" if int(s.key) == MINUS_KEY else str(int(s.key))
 
 static func station_by_key(key: int) -> Dictionary:
+	if key == SkyPack.NO_KEY: return {}
 	for s: Dictionary in STATIONS:
 		if int(s.key) == key: return s
 	return {}
@@ -252,6 +261,13 @@ static func station_by_key(key: int) -> Dictionary:
 static func ids() -> PackedStringArray:
 	var out := PackedStringArray()
 	for s: Dictionary in STATIONS: out.append(s.id)
+	return out
+
+## The stations of pack `name` (their `pack`, as "sky"), in order.
+static func pack(name: String) -> Array:
+	var out := []
+	for s: Dictionary in STATIONS:
+		if str(s.get("pack","")) == name: out.append(s)
 	return out
 
 ## Where station `s` stands in the world: its entry point.
@@ -279,6 +295,7 @@ static func floor_y() -> float:
 static func station_hash(s: Dictionary) -> String:
 	var shape := [VERSION,REACH,s.parts,s.tokens]
 	if s.has("ease"): shape.append(s.ease)
+	if s.has("miss_near"): shape.append(s.miss_near)
 	return var_to_str(shape).md5_text().substr(0,12)
 
 ## Station `s`'s token reach: REACH, widened by its `ease` if it has one.
@@ -316,6 +333,8 @@ static func solids(s: Dictionary) -> Array:
 					out.append(_box(mid+spin*Vector3(r+BAR*0.5,0.0,0.0),Vector3(BAR,length,BAR),spin))
 			"bay":
 				out.append_array(_bay(at+(part[1] as Vector3),float(part[2]),part[3]))
+			_:
+				out.append_array(SkyPack.solids_of(part,at))
 	return out
 
 ## One greybox bay of the Sundered hall's nave, in the hall's own frame
