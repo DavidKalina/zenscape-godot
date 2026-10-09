@@ -203,7 +203,11 @@ const LANDING_HINT := "Coming in to land  ·  Space, Q E or F to fly on"
 const ROLLING_HINT := "F to hop out"
 const NO_LANDING_HINT := "No island near enough to land on"
 const LEDGE_HINT := "A D or the arrows along the lip to shimmy  ·  Towards it or Space to climb up  ·  Away to let go"
-const PLANE_HINT := "A D to bank and turn  ·  W S to pitch  ·  Mouse to look round  ·  Space to boost  ·  Shift to brake  ·  Hold Q E to knife-edge, twice quick or click to barrel roll  ·  F to land  ·  C for the camera  ·  V or Esc to step out"
+const PLANE_HINT := "A D to bank and turn  ·  W S to pitch  ·  Mouse to look round  ·  Space to boost  ·  Shift to brake  ·  Hold Q E to knife-edge, twice quick or click to barrel roll  ·  F to land  ·  X to eject  ·  C for the camera  ·  V or Esc to step out"
+## Out of the plane (scripts/sky_dive.gd): falling, and under the canopy.
+const DIVE_HINT := "X to open the canopy  ·  A D to turn  ·  W to track forward  ·  Space to tuck and dive  ·  Shift to spread and slow  ·  Mouse to look round"
+const CANOPY_HINT := "A D to steer  ·  W for speed  ·  S or Shift to brake and float  ·  It flares by itself over the ground"
+const PICKUP_HINT := "Your plane swoops in and picks you up"
 ## The hints' forms for the pad (scripts/pad_prompt.gd `alternates`).
 const PAD_HINTS := {
 	HINT:"{LS} run  ·  {RS} look  ·  {A} jump, again in the air to fly  ·  {B} step out",
@@ -214,7 +218,9 @@ const PAD_HINTS := {
 	LANDING_HINT:"Coming in to land  ·  {RT}, {LB} {RB} or {Y} to fly on",
 	ROLLING_HINT:"{Y} to hop out",
 	LEDGE_HINT:"{LS} along the lip to shimmy  ·  {LS} towards it or {A} to climb up  ·  {LS} away to let go",
-	PLANE_HINT:"{LS} steer  ·  {RS} look round  ·  {RT} boost  ·  {LT} brake  ·  hold {LB} {RB} knife-edge, twice quick barrel roll  ·  {Y} land  ·  {R3} camera  ·  {B} step out",
+	PLANE_HINT:"{LS} steer  ·  {RS} look round  ·  {RT} boost  ·  {LT} brake  ·  hold {LB} {RB} knife-edge, twice quick barrel roll  ·  {Y} land  ·  {X} eject  ·  {R3} camera  ·  {B} step out",
+	DIVE_HINT:"{X} open the canopy  ·  {LS} turn and track  ·  {RT} tuck and dive  ·  {LT} spread and slow  ·  {RS} look round",
+	CANOPY_HINT:"{LS} steer, forward for speed, back to brake  ·  {LT} brake and float  ·  It flares by itself over the ground",
 	FLY_HINT:"{LS} turn and pitch  ·  {X} flap  ·  {LT} rise  ·  {RT} dive  ·  {Y} land  ·  {RS} look round  ·  {R3} camera  ·  {B} step out",
 }
 ## The right stick's swing of the camera on foot, radians a second at full
@@ -255,6 +261,23 @@ const SkyPlane = preload("res://scripts/sky_plane.gd")
 const PlaneFigure = preload("res://scripts/plane_figure.gd")
 const PlaneStrip = preload("res://scripts/plane_strip.gd")
 const PlaneLanding = preload("res://scripts/plane_landing.gd")
+const SkyDive = preload("res://scripts/sky_dive.gd")
+const DiveCamera = preload("res://scripts/dive_camera.gd")
+const CanopyFigure = preload("res://scripts/canopy_figure.gd")
+## The plane left to itself after an eject circles the pilot ORBIT m out
+## and ORBIT_OVER m over them, never under ORBIT_CLEAR m over the ground;
+## further than ORBIT_FAR it is brought round near.
+const ORBIT := 26.0
+const ORBIT_OVER := 14.0
+const ORBIT_CLEAR := 10.0
+const ORBIT_FAR := 500.0
+## `--skydive`: the plane starts SKYDIVE_HEIGHT m over the home island,
+## SKYDIVE_BACK m short of its middle, flying towards it.
+const SKYDIVE_HEIGHT := 110.0
+const SKYDIVE_BACK := 50.0
+## A fall into the cloud sea with no lower world under it is caught this
+## far under the glide's floor.
+const DIVE_CATCH := 4.0
 ## The chase view's field of view at a cruise; the camera widens it with
 ## speed (GlideCamera `fov`).
 const CHASE_FOV := GlideCamera.FOV
@@ -355,6 +378,20 @@ var plane := flies_plane(OS.get_cmdline_user_args())
 var landing: RefCounted = null
 var _taking_off := false
 var _landing_wait := false
+## The skydive (scripts/sky_dive.gd): the dive under way, while `diving`
+## (it is the eye's `glide` then; the plane's own flight is kept in
+## `_plane_flight`), its camera and the canopy drawn. After an eject the
+## plane flies itself (`drone`, drawn by `glider` without its pilot): it
+## circles the pilot, and once they are down on the plate it comes in to
+## land near them (`_drone_landing`, scripts/plane_landing.gd) and parks.
+var dive: RefCounted = null
+var diving := false
+var dive_camera := DiveCamera.new()
+var canopy: Node3D
+var drone: RefCounted = null
+var _drone_landing: RefCounted = null
+var _plane_flight: RefCounted = null
+var _open_asked := false
 ## The plane parked on the plate (a PlaneFigure under the terrain), where
 ## its flight position stands (plate XZ) and its heading (plate yaw).
 var parked: Node3D = null
@@ -446,6 +483,7 @@ func setup(owner_scene: Node3D) -> void:
 	if glide_enabled:
 		if plane:
 			glide = SkyPlane.new()
+			_plane_flight = glide
 			chase.linger = PLANE_LINGER
 		islands = SkyIslands.new()
 		islands.setup(scene)
@@ -477,6 +515,11 @@ func setup(owner_scene: Node3D) -> void:
 		glider.visible = false
 		add_child(glider)
 		islands.skip.append(glider)
+		if plane:
+			canopy = CanopyFigure.new()
+			add_child(canopy)
+			islands.skip.append(canopy)
+			if skydive_start(OS.get_cmdline_user_args()) != "": _skydive_start.call_deferred(skydive_start(OS.get_cmdline_user_args()))
 		# The mountains stand round the plate in the build view too
 		# (SkyIslands `_process`): the view reaches them.
 		if SkyWorld.ring_on(): camera.far = maxf(camera.far,SkyWorld.VIEW_FAR)
@@ -516,6 +559,7 @@ func _world_restored(state: Dictionary) -> void:
 ## new one down.
 func forget() -> void:
 	if active: leave()
+	_drop_drone()
 	if has_figure(): figure.queue_free()
 	figure = null
 	_unpark(false)
@@ -808,6 +852,11 @@ func leave() -> void:
 	if not active: return
 	# The orbit takes over where the camera is.
 	var eye := camera.global_position
+	# Out of a dive: the canopy packed, the plane parked if it can be.
+	if diving:
+		_end_dive()
+		if canopy != null: canopy.reset()
+	_settle_drone()
 	if flying:
 		var at := glide.position
 		# On the ground, mid landing or takeoff, the plane stays parked
@@ -855,6 +904,8 @@ func _eye_global() -> Vector3:
 # --- Each frame -------------------------------------------------------------------
 
 func _process(delta: float) -> void:
+	# A canopy landed on folds down whatever comes next.
+	if canopy != null and canopy.collapsing(): canopy.update(delta,dive)
 	if active: _advance_eye(delta)
 	elif _returning > 0.0: _advance_return(delta)
 	else: set_process(false)
@@ -869,6 +920,7 @@ func _advance_eye(delta: float) -> void:
 	if flying:
 		_advance_flight(delta)
 		return
+	_fly_drone(delta)
 	_read_obstacles(false)
 	_read_depths()
 	var top := _top()
@@ -1118,6 +1170,10 @@ func _swoop_in(delta: float) -> void:
 ## Off the edge: the plate is copied out into the sky and the glide takes the eye.
 ## Off an islet the sky is already out, and the glide leaves from its top.
 func _launch(pace: float, drop := true, start := Vector3.INF, towards := 0.0) -> void:
+	# Out of a dive, or with the plane flying itself, it is the plane again
+	# (there is only the one).
+	if diving: _end_dive()
+	_drop_drone()
 	var from := _eye_global()
 	var perched := not perch.is_empty()
 	var perch_turn := 0.0
@@ -1215,6 +1271,9 @@ func _plane_input(input: Dictionary) -> void:
 	_roll_asked = 0.0
 
 func _advance_flight(delta: float) -> void:
+	if diving:
+		_advance_dive(delta)
+		return
 	if not perch.is_empty():
 		_advance_perch(delta)
 		return
@@ -1302,6 +1361,7 @@ func _claim(index: int) -> void:
 	var shift: Vector3 = await islands.claim(index)
 	if not flying or shift == Vector3.ZERO: return
 	glide.position += shift
+	if drone != null and drone != glide: drone.position += shift
 	sky.move(shift)
 	glider.shift(shift)
 	chase.eye += shift
@@ -1445,6 +1505,7 @@ func _advance_perch(delta: float) -> void:
 	if not is_instance_valid(node):
 		_launch(1.0)
 		return
+	_fly_drone(delta)
 	var shape: RefCounted = perch.shape
 	var jump := Input.is_action_pressed(&"walk_jump")
 	_jump_was = jump
@@ -1945,7 +2006,7 @@ func _touchdown() -> void:
 ## A soft puff at a global point: grass-green and pale on grass, warm dust
 ## on earth and sand, snow on snow, spray on water; a few soft balls that
 ## swell, drift up and fade.
-func _puff(at: Vector3, surface: String) -> void:
+func _puff(at: Vector3, surface: String, size := 1.0) -> void:
 	var tints := {"grass":Color("d6dcb4"),"snow":Color("f4f6f8"),"water":Color("e8f2f4"),"stone":Color("cfc8bc"),"wood":Color("d8c4a4")}
 	var tint: Color = tints.get(surface,Color("d8c39c"))
 	var rng := RandomNumberGenerator.new()
@@ -1968,11 +2029,11 @@ func _puff(at: Vector3, surface: String) -> void:
 		ball.name = "PlanePuff"
 		add_child(ball)
 		var side := Vector3(rng.randf_range(-1.0,1.0),0.0,rng.randf_range(-1.0,1.0))
-		ball.global_position = at+side*0.25+Vector3.UP*0.1
-		ball.scale = Vector3.ONE*0.18
+		ball.global_position = at+side*0.25*size+Vector3.UP*0.1*size
+		ball.scale = Vector3.ONE*0.18*size
 		var tween := ball.create_tween().set_parallel(true)
-		tween.tween_property(ball,"scale",Vector3.ONE*rng.randf_range(0.55,0.9),1.1).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
-		tween.tween_property(ball,"global_position",ball.global_position+side*0.7+Vector3.UP*rng.randf_range(0.25,0.55),1.1).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+		tween.tween_property(ball,"scale",Vector3.ONE*rng.randf_range(0.55,0.9)*size,1.1).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+		tween.tween_property(ball,"global_position",ball.global_position+(side*0.7+Vector3.UP*rng.randf_range(0.25,0.55))*size,1.1).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
 		tween.tween_property(material,"albedo_color:a",0.0,1.1).set_ease(Tween.EASE_IN)
 		tween.chain().tween_callback(ball.queue_free)
 
@@ -2090,6 +2151,377 @@ func _board() -> void:
 	_hop_to = hop_to
 	_hint.text = PLANE_HINT
 
+# --- The skydive -------------------------------------------------------------------
+
+## The start `--skydive` asks for: "plane" (in the plane, high over home),
+## "fall" (already out of it, falling), or "" (none).
+static func skydive_start(args: PackedStringArray) -> String:
+	for arg in args:
+		if arg == "--skydive": return "plane"
+		if arg.begins_with("--skydive="): return "fall" if arg.trim_prefix("--skydive=") == "fall" else "plane"
+	return ""
+
+## `--skydive`: once the world is up, into the eyes and up in the plane
+## SKYDIVE_HEIGHT m over home, flying towards its middle; with `fall`,
+## out of it at once.
+func _skydive_start(how: String) -> void:
+	while not can_enter(): await get_tree().process_frame
+	await get_tree().create_timer(0.3).timeout
+	if not can_enter(): return
+	if not has_figure(): place(Vector3.ZERO)
+	enter()
+	var middle := editor.terrain.global_position+_land_middle(editor.data)
+	var floor_y := _floor_global(Vector2(middle.x,middle.z))
+	if not is_nan(floor_y): middle.y = floor_y
+	var heading := 0.0
+	var forward := Vector3(-sin(heading),0.0,-cos(heading))
+	var start := middle+Vector3.UP*SKYDIVE_HEIGHT-forward*SKYDIVE_BACK
+	_launch(SkyPlane.CRUISE_SPEED,false,start,heading)
+	chase.reset(glide,start-forward*6.0+Vector3.UP*2.0,camera.fov)
+	if how == "fall":
+		await get_tree().create_timer(0.6).timeout
+		eject()
+
+## X in the plane (the pad's X): the pilot pops out of the cockpit and
+## falls; the plane flies on by itself. Not while a landing or takeoff has
+## the controls, nor perched.
+func eject() -> bool:
+	if not flying or diving or not plane or not perch.is_empty() or landing != null or canopy == null: return false
+	_landing_wait = false
+	glide.approach = false
+	_plane_flight = glide
+	drone = glide
+	_drone_landing = null
+	var out := SkyDive.new()
+	out.stone = glide.stone
+	out.floor_y = glide.floor_y
+	out.water = glide.water
+	var cockpit: Vector3 = glide.position+Vector3.UP*0.3
+	out.eject(cockpit,glide.velocity,glide.heading)
+	dive = out
+	glide = out
+	diving = true
+	_open_asked = false
+	glider.show_pilot(false)
+	glider.visible = true
+	canopy.reset()
+	chase.first_person = false
+	dive_camera.reset(dive,camera.global_position,camera.fov)
+	if has_figure():
+		figure.visible = true
+		body.settle()
+		_pose_diver(0.0)
+	_puff(cockpit,"snow",0.3)
+	air.flap()
+	Pad.pulse(0.4,0.25,0.15)
+	_hint.text = DIVE_HINT
+	_hint.modulate.a = 1.0
+	_hint_time = 0.0
+	return true
+
+## The dive's input this frame: the stick (or WASD) turns and tracks, or
+## steers the canopy; Boost tucks and Brake spreads (or brakes the canopy);
+## X opens it. The right stick (or the mouse) looks round.
+func _dive_input() -> Dictionary:
+	var stick := Input.get_vector(&"move_left",&"move_right",&"move_forward",&"move_back")
+	var input := {
+		"turn":stick.x,
+		"pitch":stick.y,
+		"boost":Input.get_action_strength(&"fly_boost"),
+		"brake":Input.get_action_strength(&"fly_brake"),
+		"open":_open_asked,
+	}
+	_open_asked = false
+	var right := Pad.stick(&"look_left",&"look_right",&"look_up",&"look_down")
+	if right != Vector2.ZERO: dive_camera.turn(Vector2(-right.x,-right.y)*STICK_LOOK*get_process_delta_time())
+	dive_camera.free_held = Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) or right != Vector2.ZERO
+	return input
+
+## What the dive falls onto: the islands as solids, or under the cloud the
+## lower world's. No tree crowns or stones: on the plate they are not in
+## the islands' solid, and on an islet (or a lower world's island) its
+## ground stands in for its solid top, so the pilot comes down beside a
+## trunk, not on its crown.
+func _dive_ground(point: Vector3) -> Variant:
+	var body: Variant = lower.body(point) if below() else islands.body(point)
+	if body == null: return null
+	var islets := _islets()
+	var islet: Dictionary = islets.islet_at(point)
+	if islet.is_empty(): return body
+	var local: Vector3 = islets.local_of(islet,point)
+	var at := Vector2(local.x,local.z)
+	var y: float = islets.place(islet).y
+	var ground := Vector2(float(islet.shape.ground_at(at))+y,float(islet.shape.underside(at))+y)
+	# Only where it is the islet that is the solid there.
+	if absf((body as Vector2).y-ground.y) < 0.01: return ground
+	return body
+
+## One frame of the dive: falling or under the canopy, the sky and the
+## sound following, the plane circling, the camera over the pilot; touched
+## down, on foot (or swimming), or the plane picks the pilot up.
+func _advance_dive(delta: float) -> void:
+	var input := _dive_input()
+	# Over another island, it becomes the plate before the touch (as the
+	# plane's flight does), and the touch waits on the claim.
+	if not islands.claiming and not below():
+		var copy: int = islands.copy_under(dive.position)
+		if copy >= 0: _claim(copy)
+	var hold: bool = islands.claiming and dive.under_canopy() and dive.height < 4.0
+	# Under the canopy, left alone, it drifts round towards the nearest land.
+	dive.approach_target = _landing_spot() if dive.under_canopy() else Vector3.INF
+	var was_falling: bool = dive.falling()
+	var out: Dictionary = {} if hold else dive.fall(delta,input,_dive_ground,_fly_air)
+	if was_falling and dive.under_canopy():
+		air.flap()
+		_hint.text = CANOPY_HINT
+		_hint.modulate.a = 1.0
+		_hint_time = 0.0
+	if out.has("opened"):
+		dive_camera.kick()
+		air.flap()
+		Pad.pulse(0.5,0.3,0.2)
+	# Into the cloud sea with no world under it: the plane catches.
+	if lower == null and dive.position.y < dive.floor_y-DIVE_CATCH:
+		_pickup(false)
+		return
+	sky.advance(delta,dive.position,islands.in_cloud(dive.position,scene._motion_time))
+	islands.advance(delta,dive.position,dive.heading,sky.flight.w)
+	islands.wake(dive.position,dive.velocity,delta)
+	if islands.collectibles != null: islands.collectibles.touch_plane(islands.global_transform*dive.position)
+	air.advance(delta,dive.velocity,0.0,clampf(dive.posture,0.0,1.0),0.0,islands.cloud_body(camera.global_position))
+	_fly_drone(delta)
+	if drone != null:
+		# The plane's hum, from as near as it is.
+		var near: float = 1.0-clampf(dive.position.distance_to(drone.position)/80.0,0.0,1.0)
+		air.engine(drone.speed,0.0,0.15+0.6*near)
+	else:
+		air.engine(0.0,0.0,0.0)
+	_pose_diver(delta)
+	canopy.update(delta,dive,_shoulders())
+	dive_camera.step(delta,dive,_solid)
+	chase.eye = dive_camera.eye
+	chase.look = dive_camera.look
+	chase.roll = dive_camera.roll
+	_write_chase()
+	scene._auto_orbit = false
+	scene._orbit_delta = Vector2.ZERO
+	scene._pan_delta = Vector2.ZERO
+	camera.fov = dive_camera.fov
+	_hint_time += delta
+	_hint.modulate.a = clampf(1.0-(_hint_time-6.0)/1.5,0.0,1.0)
+	if out.has("touched"): _dive_down(out.touched)
+
+## The pilot drawn where the dive is: turned onto the belly falling, on
+## the lines under the canopy, the limbs posed (PilotFigure `dive`).
+func _pose_diver(delta: float) -> void:
+	if not has_figure(): return
+	figure.visible = true
+	var b: Basis = dive.body_basis()
+	figure.global_transform = Transform3D(b,dive.position-b*Vector3(0.0,SkyDive.HIPS,0.0))
+	var hanging: float = smoothstep(0.3,0.75,float(dive.open)) if dive.under_canopy() else 0.0
+	var pop: float = 1.0-clampf(float(dive.time)/SkyDive.POP_TIME,0.0,1.0) if dive.phase == SkyDive.POP else 0.0
+	body.dive(clampf(-float(dive.posture),0.0,1.0),clampf(float(dive.posture),0.0,1.0),hanging,float(dive.flare),pop,delta)
+
+## The pilot's shoulders (global), where the canopy's lines come down.
+func _shoulders() -> Vector3:
+	if not has_figure(): return Vector3.INF
+	return figure.global_transform*Vector3(0.0,0.72,0.0)
+
+## Out of the dive: the plane's flight is the eye's again.
+func _end_dive() -> void:
+	diving = false
+	if _plane_flight != null: glide = _plane_flight
+	scene.camera_roll = 0.0
+
+## Touched down: on the plate or an islet (or a lower world's island) on
+## foot, or in its water swimming; on anything else (open sea, a mountain's
+## rock, a forested isle), the plane picks the pilot up.
+func _dive_down(touch: Dictionary) -> void:
+	var feet: Vector3 = dive.position-Vector3.UP*SkyDive.HIPS
+	canopy.collapse(feet.y)
+	if bool(touch.get("water",false)):
+		_pickup(true)
+		return
+	var on_plate: bool = not below() and islands._height(feet+Vector3.UP*0.5) != null
+	var islet: Dictionary = {} if on_plate else _islets().islet_at(feet)
+	if on_plate: _dive_land_plate(touch)
+	elif not islet.is_empty() and _islet_ground_near(islet,feet): _dive_land_islet(islet,touch)
+	else: _pickup(false)
+
+## Down on the plate: on foot where the feet touched (round any trunk),
+## the camera swooping in behind; in its water, swimming. Then the plane
+## comes in to land near.
+func _dive_land_plate(touch: Dictionary) -> void:
+	var at: Vector3 = dive.position-Vector3.UP*SkyDive.HIPS
+	var heading: float = dive.heading
+	var across: float = Vector2(dive.velocity.x,dive.velocity.z).length()
+	var hard: bool = touch.get("hard",false)
+	_swoop = SWOOP
+	_swoop_from = {"target":scene.target,"yaw":scene.yaw,"polar":scene.polar,"distance":scene.distance}
+	_end_dive()
+	_end_flight()
+	_yaw = heading
+	_polar = CAM_POLAR
+	_read_obstacles(true)
+	_read_depths()
+	var local := editor.terrain.to_local(at)
+	var spot := _pushed_out(Vector2(local.x,local.z))
+	_feet = _clamped(Vector3(spot.x,local.y,spot.y))
+	motor.reset(_feet,heading-_turn(),minf(across,RUN*0.6))
+	_into_water(float(motor.water.call(Vector2(_feet.x,_feet.z))) if motor.water.is_valid() else 0.0)
+	_down_on_foot(hard)
+	_drone_come_in()
+
+## Down on an islet (or one of the lower world's islands): on foot over its
+## top, as a flight perches there; in its lake, swimming.
+func _dive_land_islet(islet: Dictionary, touch: Dictionary) -> void:
+	var at: Vector3 = dive.position
+	var across: float = Vector2(dive.velocity.x,dive.velocity.z).length()
+	var local: Vector3 = _islets().local_of(islet,at-Vector3.UP*SkyDive.HIPS)
+	_perch(islet)
+	_end_dive()
+	var spot := Vector2(local.x,local.z)
+	var deep: float = float(motor.water.call(spot)) if motor.water.is_valid() else 0.0
+	if deep > PilotMotor.SWIM_IN:
+		_perch_feet = Vector3(spot.x,islet.shape.ground_at(spot),spot.y)
+	motor.reset(_perch_feet,motor.facing,minf(across,RUN*0.6))
+	_into_water(deep)
+	glider.visible = drone != null
+	_down_on_foot(touch.get("hard",false))
+
+## Landing in water deeper than a wade: the feet just over its top, so the
+## motor's next step goes in with a splash and swims.
+func _into_water(depth: float) -> void:
+	if depth <= PilotMotor.SWIM_IN: return
+	motor.feet.y += depth+0.25
+	motor.ground_y = motor.feet.y-depth-0.25
+	motor.grounded = false
+	motor.velocity.y = -2.5
+
+## On foot after the touch: the figure drawn, squashed as it came down
+## (a bump if the canopy had not filled), its sound and puff, the walk's
+## hint.
+func _down_on_foot(hard: bool) -> void:
+	_stand_camera()
+	figure.visible = true
+	body.settle()
+	body.land(9.0 if hard else 3.0)
+	if motor.grounded:
+		steps.step(_surface(),1.0 if hard else 0.6)
+		puffs.burst(_puff_at(figure.global_position),_surface(),0.6 if hard else 0.15)
+	if hard: Pad.pulse(0.5,0.3,0.2)
+	_disturb(PLACE_STRENGTH)
+	_sync_figure()
+	_hint.text = _walk_hint() if perch.is_empty() else PERCH_HINT
+	_hint.modulate.a = 1.0
+	_hint_time = 0.0
+
+## Nowhere to stand (open sea, a mountain's rock, the cloud sea with no
+## world under it): the plane swoops in under the pilot and flies on with
+## them aboard, nose up. Never a fall that ends badly.
+func _pickup(wet: bool) -> void:
+	var at: Vector3 = dive.position
+	var heading: float = dive.heading
+	if wet:
+		_puff(at-Vector3.UP*SkyDive.HIPS,"water")
+		steps.step("water",1.0)
+	if canopy != null and not canopy.collapsing(): canopy.reset()
+	_end_dive()
+	drone = null
+	_drone_landing = null
+	if has_figure(): figure.visible = false
+	glide.position = at+Vector3.UP*1.2
+	glide.heading = heading
+	glide.resume(SkyPlane.CRUISE_SPEED,0.35)
+	glider.reset(glide)
+	glider.show_pilot(true)
+	glider.visible = not chase.first_person
+	chase.reset(glide,camera.global_position,camera.fov)
+	air.flap()
+	Pad.pulse(0.35,0.2,0.14)
+	_hint.text = PICKUP_HINT
+	_hint.modulate.a = 1.0
+	_hint_time = 0.0
+
+## The plane flying itself after an eject: circling the pilot (falling,
+## floating or on foot), or coming in to land near them on the plate and
+## parking there.
+func _fly_drone(delta: float) -> void:
+	if drone == null or not glide_enabled: return
+	if _drone_landing != null:
+		_drone_landing.step(delta)
+		drone.engine = _drone_landing.engine
+		glider.update(delta,drone,0.0,_fly_ground,false)
+		if _drone_landing.phase >= PlaneLanding.BEAT and _drone_landing.phase <= PlaneLanding.DONE:
+			_park_here_from(drone)
+			_drop_drone()
+		return
+	var centre := _pilot_global()
+	var to := Vector2(centre.x-drone.position.x,centre.z-drone.position.z)
+	var gap := to.length()
+	if gap > ORBIT_FAR:
+		# Brought round near, out of sight.
+		drone.position = centre+Vector3(-to.x,0.0,-to.y).normalized()*ORBIT*2.0+Vector3.UP*ORBIT_OVER
+		to = Vector2(centre.x-drone.position.x,centre.z-drone.position.z)
+		gap = to.length()
+	var radial := to/maxf(gap,0.001)
+	var round_way := Vector2(-radial.y,radial.x)
+	var want := (round_way+radial*clampf((gap-ORBIT)/ORBIT,-1.0,1.0)).normalized()
+	var err := angle_difference(float(drone.heading),atan2(-want.x,-want.y))
+	var height := centre.y+ORBIT_OVER
+	var under: Variant = _fly_ground(drone.position)
+	if under != null: height = maxf(height,(under as Vector2).x+ORBIT_CLEAR)
+	var climb := clampf((height-drone.position.y)*0.06-float(drone.pitch)*0.8,-1.0,1.0)
+	drone.step(delta,{"turn":clampf(-err*1.6,-1.0,1.0),"pitch":climb,"boost":1.0 if gap > ORBIT*3.0 else 0.0},_fly_ground,_fly_air)
+	glider.update(delta,drone,0.0,_fly_ground,false)
+
+## Where the pilot is, global: the dive's place, or the feet on foot.
+func _pilot_global() -> Vector3:
+	if diving and dive != null: return dive.position
+	if has_figure(): return figure.global_position
+	return drone.position
+
+## The pilot down on the plate: the plane comes in to land on the best
+## strip it finds near them (PlaneStrip, as F's landing picks one), drawn
+## pilotless, and parks where it stops.
+func _drone_come_in() -> void:
+	if drone == null or below() or not has_figure(): return
+	var map := _strip_map()
+	var way: Vector3 = editor.terrain.global_basis.inverse()*drone.forward()
+	var strips := []
+	for strip in PlaneStrip.candidates(map,_wind_way(),Vector2(_feet.x,_feet.z),Vector2(way.x,way.z)): strips.append(_strip_global(strip))
+	var seq := PlaneLanding.new()
+	var chosen: Dictionary = seq.choose(drone,strips,_fly_ground)
+	if chosen.is_empty():
+		_settle_drone()
+		return
+	seq.land(drone,chosen,_fly_ground,_floor_global)
+	_drone_landing = seq
+	glider.visible = true
+
+## Parks the plane where `flight` stands (on the plate).
+func _park_here_from(flight: RefCounted) -> void:
+	var local := editor.terrain.to_local(flight.position)
+	_park(Vector2(local.x,local.z),float(flight.heading)-_turn())
+	glider.visible = false
+	_obstacle_key = []
+
+## The plane flying itself is let go of now: parked on the plate near the
+## pilot if they are on it (a puff where it sets down), else simply gone
+## (the next flight brings it, as ever).
+func _settle_drone() -> void:
+	if drone == null: return
+	if not diving and perch.is_empty() and has_figure() and not below() and not flying:
+		var spot := _clamped(_free_spot(_clamped(_feet+Vector3(2.5,0.0,1.5))))
+		_park(Vector2(spot.x,spot.z),motor.facing)
+		if has_parked() and is_inside_tree(): _puff(parked.global_position,"grass")
+	_drop_drone()
+
+func _drop_drone() -> void:
+	drone = null
+	_drone_landing = null
+	if glider != null and not flying: glider.visible = false
+
 # --- Input ------------------------------------------------------------------------
 
 func _input(event: InputEvent) -> void:
@@ -2105,7 +2537,9 @@ func handle(event: InputEvent) -> bool:
 			return true
 		return false
 	if event is InputEventMouseMotion:
-		if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not perch.is_empty():
+		if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and diving:
+			dive_camera.turn(Vector2(-event.relative.x,-event.relative.y)*LOOK)
+		elif Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not perch.is_empty():
 			_yaw -= event.relative.x*LOOK
 			_polar = clampf(_polar-event.relative.y*LOOK,POLAR.x,_polar_most())
 			_look_rest = 0.0
@@ -2122,6 +2556,9 @@ func handle(event: InputEvent) -> bool:
 		# A click takes the mouse back if the window let it go.
 		if event.pressed and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		if diving:
+			if event.button_index == MOUSE_BUTTON_RIGHT: dive_camera.free_held = event.pressed
+			return true
 		if event.button_index == MOUSE_BUTTON_RIGHT and flying: chase.free_held = event.pressed
 		elif event.button_index == MOUSE_BUTTON_LEFT and event.pressed and flying and perch.is_empty() and plane:
 			# A click rolls the way it is turning, or right flying straight.
@@ -2138,6 +2575,10 @@ func handle(event: InputEvent) -> bool:
 		if event.ctrl_pressed or event.meta_pressed: return false
 		if event.pressed and not event.echo and event.keycode in [KEY_V,KEY_ESCAPE]:
 			leave()
+		elif diving:
+			if event.pressed and not event.echo and event.keycode == KEY_X: _open_asked = true
+		elif event.pressed and not event.echo and event.keycode == KEY_X and flying and perch.is_empty() and plane:
+			eject()
 		elif event.pressed and not event.echo and event.keycode in [KEY_Q,KEY_E] and flying and perch.is_empty() and plane:
 			_lean_tapped(-1.0 if event.keycode == KEY_Q else 1.0)
 		elif event.pressed and not event.echo and event.keycode == KEY_E and flying and perch.is_empty():
@@ -2158,8 +2599,10 @@ func handle(event: InputEvent) -> bool:
 ## shoulders roll the plane and X flaps the glider. Menu is the scene's
 ## (scripts/pad_input.gd).
 func _pad_event(event: InputEvent) -> void:
-	var airborne := flying and perch.is_empty()
+	var airborne := flying and perch.is_empty() and not diving
 	if Pad.pressed(event,&"eye_leave"): leave()
+	elif diving and Pad.pressed(event,&"fly_eject"): _open_asked = true
+	elif airborne and plane and Pad.pressed(event,&"fly_eject"): eject()
 	elif airborne and Pad.pressed(event,&"fly_land"):
 		if plane: _land_key()
 		else: glide.approach = not glide.approach
