@@ -1290,6 +1290,9 @@ func _advance_flight(delta: float) -> void:
 	# The ruins' stone (the Sundered hall, scripts/ruin_bump.gd): bump and
 	# recover, never a crash.
 	if plane and not below() and islands is Node3D: RuinBump.bump((islands as Node3D).get_world_3d().direct_space_state,glide,was,(islands as Node3D).global_transform)
+	# The pierced isles' rock and ruins (scripts/sky_pierced.gd): bump and
+	# recover.
+	if not below() and islands.pierced != null and islands.pierced.bump(glide,islands.global_transform): Pad.pulse(0.5,0.2,0.12)
 	RopeBridge.flown_by(islands.global_transform*glide.position,glide.velocity)
 	# Tokens the plane flies through (scripts/sky_collectibles.gd).
 	if islands.collectibles != null: islands.collectibles.touch_plane(islands.global_transform*glide.position)
@@ -1387,6 +1390,7 @@ func _write_chase() -> void:
 ## or under the lower world's ocean.
 func _solid(point: Vector3) -> bool:
 	if lower != null and point.y < SkyBelow.OCEAN+0.3: return true
+	if not below() and islands.pierced != null and islands.pierced.solid(point): return true
 	var body: Variant = _fly_ground(point)
 	if body == null: return false
 	var b := body as Vector2

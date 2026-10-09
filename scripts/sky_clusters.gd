@@ -64,6 +64,7 @@ const StoneLampLights = preload("res://scripts/stone_lamp_lights.gd")
 const Cabin = preload("res://scripts/cabin.gd")
 const Sundered = preload("res://scripts/sundered_hall.gd")
 const SunderedBuild = preload("res://scripts/sundered_build.gd")
+const SkyPierced = preload("res://scripts/sky_pierced.gd")
 
 ## The density: a cluster's cell (m), and the share of cells holding one.
 const SPACING := 850.0
@@ -262,6 +263,7 @@ func spot_of(cell: Vector2i) -> Variant:
 		if Vector2(here.x,here.z).length() < ISLAND_CLEAR: continue
 		if cells != null and not cells.spots_near(here,ISLAND_CLEAR).is_empty(): continue
 		if SkyPeaks.blocks(here,WALL_CLEAR) or SkyTowers.blocks(here,TOWER_CLEAR) or SkyForestIsles.blocks(here,WONDER_CLEAR): continue
+		if SkyPierced.blocks(here): continue
 		if in_haze(here): continue
 		at = here
 		break
@@ -290,6 +292,7 @@ func near_spots(names: Array, seed_value: int, taken: Array) -> Array:
 				if hall_blocks(here,NEAR_GAP*0.5+HALL_KEEP*0.5): continue
 				if cells != null and not cells.spots_near(here,NEAR_ISLAND).is_empty(): continue
 				if SkyPeaks.blocks(here,WALL_CLEAR) or SkyTowers.blocks(here,TOWER_CLEAR) or SkyForestIsles.blocks(here,WONDER_CLEAR): continue
+				if SkyPierced.blocks(here): continue
 				if in_haze(here): continue
 				at = here
 				break
@@ -349,8 +352,8 @@ static func _hall_footprint(seed_value: int) -> Array:
 
 ## The hall laid at `at` heading `yaw`, if its whole footprint (`flat`, at
 ## heading 0) is clear: of the islands' spots (HALL_ISLAND), the ranges,
-## walls and band, the cumulus (HALL_TOWER), the forested isles, the haze
-## and the home.
+## walls and band, the cumulus (HALL_TOWER), the forested isles, the pierced
+## isles (their KEEP), the haze and the home.
 func _hall_at(key: String, at: Vector3, seed_value: int, yaw: float, flat: Array) -> Variant:
 	var footprint: Array = []
 	for f: Vector3 in flat:
@@ -360,6 +363,8 @@ func _hall_at(key: String, at: Vector3, seed_value: int, yaw: float, flat: Array
 		if Vector2(here.x,here.z).length() < HALL_HOME+f.z: return null
 		if cells != null and not cells.spots_near(here,HALL_ISLAND+f.z).is_empty(): return null
 		if SkyPeaks.blocks(here,WALL_CLEAR+f.z) or SkyTowers.blocks(here,HALL_TOWER+f.z) or SkyForestIsles.blocks(here,WONDER_CLEAR+f.z): return null
+		# The pierced isles (laid first, scripts/sky_pierced.gd) keep it off.
+		if SkyPierced.blocks(here,f.z): return null
 		if in_haze(here): return null
 	return {"key":key,"at":at,"motif":"sundered","seed":seed_value,"yaw":yaw,"footprint":footprint}
 

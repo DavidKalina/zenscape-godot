@@ -13,6 +13,7 @@ extends SceneTree
 ##   - V mid-dive steps out cleanly.
 ##   godot --headless --path . --script tests/test_skydive.gd
 ## suite: slow
+## suite: serial
 const SkyPlane = preload("res://scripts/sky_plane.gd")
 const SkyDive = preload("res://scripts/sky_dive.gd")
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
