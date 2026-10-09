@@ -894,8 +894,9 @@ are from that run.
 | 16.2-18.7 | **knife slit 2**: swing left into it, on edge through it at 18.1 |
 | 18.1-20.0 | **climbing turn**: up out of the torn end while turning |
 
-It stands at x 2600, 30 m clear of `sundered_flow`'s footprint. My first
-layout curved left, came back past `sundered_flow`, and its last tokens'
+It stands at x 2600 and bends east, away from `sundered_flow` (its
+nearest solid is about 180 m from that station's). My first layout curved
+left, came within about 30 m of `sundered_flow`, and its last tokens'
 way pointed back at the entry, so the run's "3 m past it" rule missed them
 on the first tick. See the surprises below.
 
