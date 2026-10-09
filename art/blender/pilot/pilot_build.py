@@ -46,7 +46,9 @@ run starting on the left boot's touchdown so the game can blend them in step:
         frame stood CLIMB_IN in on the top; the body moves in the clip.
         Played back, it lowers him from the top into the hang.
   crouch, long_jump, wall_slide, wall_kick, pump  the moves beyond running
-        and jumping (see "the moves" below).
+        and jumping (see "the moves" below);
+  jump_rise, jump_fall, twirl, slide, side_flip  the air and the tricks
+        (see "round three" below).
 Walking and running, each planted boot stays fixed to the ground (touchdown,
 flat, rolling over the ball), so played at the right pace nothing slides;
 standing, a boot only moves lifted.
@@ -88,6 +90,8 @@ numbers:
 | SHIMMY_SPEED, SHIMMY_CYCLE, HANG_LENGTH | the shimmy's pace (m/s) and loop (s); the hang's loop |
 | crouch, long_jump, wall_slide, wall_kick, pump | the moves' clips (see "the moves"); wall_kick and pump don't loop |
 | CROUCH_LENGTH, LONG_LENGTH, WALL_LENGTH, KICK_LENGTH, PUMP_LENGTH | their lengths (s) |
+| jump_rise, jump_fall, twirl, slide, side_flip | the air's and the tricks' clips; side_flip doesn't loop |
+| JUMP_LENGTH, TWIRL_LENGTH, SLIDE_LENGTH, FLIP_LENGTH | their lengths (s) |
 | WALL_GAP               | the wall ahead of the feet, sliding down it (m)   |
 """
 import math
@@ -127,7 +131,7 @@ HANG_LENGTH = 4.0
 SHIMMY_SPEED = 0.7     # m/s along the lip
 SHIMMY_CYCLE = 0.5     # seconds a full cycle, both hands
 SHIMMY_STANCE = 0.57   # the share of the cycle a hand grips
-CLIMB_LENGTH = 0.9
+CLIMB_LENGTH = 0.4     # Mario quick: was 0.9
 CLIMB_IN = 0.3
 # Where the mitts grip: the wrists this far in over the edge and up off the
 # top, this far either side of the middle.
@@ -1342,8 +1346,11 @@ def climb_clip():
     # The right boot plants as it stands at the end, and stays.
     for st in (planted, drawn, risen):
         st.feet["R"] = stand.feet["R"]
-    return keyed([(0.0, hang_pose(0.0)), (0.12, gather), (0.34, pulled), (0.5, pressed), (0.58, swung),
-                  (0.66, planted), (0.75, drawn), (0.85, risen), (1.0, stand)])
+    # Keyed by how far the body goes between them, so the quick climb
+    # (CLIMB_LENGTH) never darts: a short gather, then the pull and the stand
+    # each given their share.
+    return keyed([(0.0, hang_pose(0.0)), (0.08, gather), (0.26, pulled), (0.4, pressed), (0.47, swung),
+                  (0.53, planted), (0.65, drawn), (0.84, risen), (1.0, stand)])
 
 # ------------------------------------------------------------------ the moves
 # The moves beyond running and jumping (scripts/pilot_motor.gd `move`,
@@ -1506,6 +1513,148 @@ def pump_clip():
     punched.turns["hand.R"] = turn(pitch=10.0)
     return keyed([(0.0, gather), (0.32, punched), (0.62, punched), (1.0, wide)])
 
+# ------------------------------------------------------------------ round three
+# The air and the tricks (scripts/pilot_motor.gd "jump", "twirl", "slide",
+# "flip"; scripts/pilot_figure.gd blends them and keeps copies of the
+# lengths):
+#   jump_rise  JUMP_LENGTH s, a loop: going up, stretched, the right knee
+#              driven up and the left leg trailing, the arms swept up and
+#              out ahead, the head up, the scarf streaming down;
+#   jump_fall  JUMP_LENGTH s, a loop: coming down, the arms up and out wide
+#              and paddling the air, the legs a little apart and bent,
+#              reaching for the ground, looking down at it, the scarf blown
+#              up; the game blends the two by the rise, so the top of a
+#              jump is half of each;
+#   twirl      TWIRL_LENGTH s, a loop: spun round (the game turns the body),
+#              upright and stretched, the arms flung straight out to the
+#              sides, the legs together and crossed at the ankle, toes
+#              pointed, the scarf thrown out flat;
+#   slide      SLIDE_LENGTH s, a loop: boot-surfing down a slope, standing,
+#              the knees bent, the boots apart and pointed down the fall
+#              line, the left a little ahead, the hips turned a touch side
+#              on, the arms out for balance (the left ahead, the right
+#              back), wobbling, the scarf streaming;
+#   side_flip  FLIP_LENGTH s, once: the side flip's shape (the game rolls
+#              the body over): sprung up straight, the arms up; tucked
+#              tight, the knees to the chest and the mitts on the shins;
+#              opened out, the legs down for the landing and the arms wide.
+JUMP_LENGTH = 0.5
+TWIRL_LENGTH = 0.4
+SLIDE_LENGTH = 0.8
+FLIP_LENGTH = 0.7
+
+def jump_rise_pose(p):
+    pose = Pose()
+    stir = sine(p, 1)
+    pose.hips_at = Vector((0.0, 0.0, 0.46 + 0.004 * stir))
+    pose.turns["hips"] = turn(pitch=-6.0 + 1.0 * stir, roll=-2.0, yaw=6.0)
+    pose.turns["chest"] = turn(pitch=-2.0, roll=2.0, yaw=-8.0)
+    pose.turns["neck"] = turn(pitch=8.0)
+    pose.turns["head"] = turn(pitch=12.0 + 1.5 * sine(p, 1, 0.1))
+    pose.feet["R"] = (Vector((0.12, 0.12, 0.27 + 0.006 * stir)), qz(deg(-6.0)) @ qx(deg(-25.0)))
+    pose.feet["L"] = (Vector((-0.1, -0.08, 0.1 - 0.004 * stir)), qz(deg(6.0)) @ qx(deg(-55.0)))
+    pose.pole["R"] = Vector((0.2, 1.0, 0.4))
+    pose.pole["L"] = Vector((-0.15, 1.0, -0.1))
+    for n, s in SIDES.items():
+        late = 0.08 if n == "R" else 0.0
+        pose.turns[f"upper_arm.{n}"] = turn(pitch=(70.0 if n == "L" else 40.0) + 5.0 * sine(p, 1, late), roll=-s * (42.0 + 3.0 * sine(p, 1, 0.2 + late)))
+        pose.turns[f"forearm.{n}"] = turn(pitch=30.0 + 4.0 * sine(p, 1, 0.15 + late))
+        pose.turns[f"hand.{n}"] = turn(pitch=-8.0)
+        scarf(pose, p, n, s, back=-30.0, flutter=6.0, flap=6.0, beat=2)
+    return pose
+
+def jump_fall_pose(p):
+    pose = Pose()
+    paddle = sine(p, 1)
+    pose.hips_at = Vector((0.0, 0.0, 0.45 + 0.005 * paddle))
+    pose.turns["hips"] = turn(pitch=2.0 + 1.5 * paddle, roll=1.5 * sine(p, 1, 0.25))
+    pose.turns["chest"] = turn(pitch=4.0, roll=-1.5 * sine(p, 1, 0.25))
+    pose.turns["neck"] = turn(pitch=-6.0)
+    pose.turns["head"] = turn(pitch=-10.0 + 2.0 * sine(p, 1, 0.3))
+    for n, s in SIDES.items():
+        late = 0.25 if n == "R" else 0.0
+        kick = 0.02 * sine(p, 1, 0.1 + late)
+        pose.feet[n] = (Vector((s * 0.14, 0.04 + kick, 0.1 - kick)), qz(deg(-8.0 * s)) @ qx(deg(-22.0)))
+        pose.pole[n] = Vector((0.45 * s, 1.0, 0.2))
+        flap = sine(p, 1, late)
+        pose.turns[f"upper_arm.{n}"] = turn(pitch=95.0 + 10.0 * flap, roll=-s * (62.0 + 8.0 * sine(p, 1, 0.2 + late)))
+        pose.turns[f"forearm.{n}"] = turn(pitch=25.0 + 10.0 * flap)
+        pose.turns[f"hand.{n}"] = turn(pitch=-15.0 + 12.0 * sine(p, 1, 0.3 + late))
+        for i in range(3):
+            flick = sine(p, 2, 0.2 + 0.08 * i + (0.05 if n == "R" else 0.0))
+            pose.turns[f"tail.{n}.{i}"] = turn(
+                pitch=(-145.0 if i == 0 else -14.0) + 10.0 * flick,
+                roll=-s * (16.0 if i == 0 else 4.0) + 4.0 * sine(p, 3, 0.1 * i),
+                yaw=3.0 * flick)
+    return pose
+
+def twirl_pose(p):
+    pose = Pose()
+    stir = sine(p, 1)
+    pose.hips_at = Vector((0.0, 0.0, 0.45 + 0.004 * stir))
+    pose.turns["hips"] = turn(pitch=2.0, roll=1.0 * stir)
+    pose.turns["chest"] = turn(pitch=5.0, roll=-1.5 * stir)
+    pose.turns["neck"] = turn(pitch=6.0)
+    pose.turns["head"] = turn(pitch=12.0, roll=3.0 * sine(p, 1, 0.2))
+    # The legs together, the right ankle crossed over the left's front.
+    pose.feet["L"] = (Vector((-0.045, -0.01, 0.1)), qz(deg(4.0)) @ qx(deg(-48.0)))
+    pose.feet["R"] = (Vector((0.01, 0.035, 0.15)), qz(deg(-14.0)) @ qx(deg(-40.0)))
+    pose.pole["L"] = Vector((-0.2, 1.0, 0.0))
+    pose.pole["R"] = Vector((0.1, 1.0, 0.25))
+    for n, s in SIDES.items():
+        late = 0.1 if n == "R" else 0.0
+        pose.turns[f"upper_arm.{n}"] = turn(pitch=8.0 + 4.0 * sine(p, 1, late), roll=-s * (72.0 + 3.0 * sine(p, 2, 0.2 + late)))
+        pose.turns[f"forearm.{n}"] = turn(pitch=6.0, yaw=-s * 8.0)
+        pose.turns[f"hand.{n}"] = turn(pitch=-4.0, roll=-s * 10.0)
+        for i in range(3):
+            flick = sine(p, 2, 0.15 + 0.08 * i + (0.05 if n == "R" else 0.0))
+            pose.turns[f"tail.{n}.{i}"] = turn(
+                pitch=(-80.0 if i == 0 else -10.0) + 8.0 * flick,
+                roll=-s * (60.0 if i == 0 else 8.0) + 6.0 * sine(p, 2, 0.1 * i),
+                yaw=4.0 * flick)
+    return pose
+
+def slide_pose(p):
+    pose = Pose()
+    wobble = 0.6 * sine(p, 1) + 0.4 * sine(p, 2, 0.15)
+    chatter = (0.5 + 0.5 * sine(p, 3, 0.05)) ** 2
+    pose.hips_at = Vector((0.01 * wobble, -0.02, 0.35 + 0.006 * wobble))
+    # A touch side on, the left leading, leant in over the bent knees.
+    pose.turns["hips"] = turn(pitch=-14.0 + 1.5 * wobble, roll=2.0 * wobble, yaw=-22.0)
+    pose.turns["chest"] = turn(pitch=-4.0, roll=-3.0 * wobble, yaw=12.0 + 2.0 * sine(p, 1, 0.1))
+    pose.turns["neck"] = turn(pitch=8.0, yaw=5.0)
+    pose.turns["head"] = turn(pitch=12.0 + 1.5 * sine(p, 2, 0.2), yaw=5.0, roll=-2.0 * wobble)
+    # The boots apart, pointed down the fall line, the left ahead.
+    pose.feet["L"] = boot_on(Vector((-0.13, 0.1, 0.0)), 0.003 * chatter, -2.0, 8.0)
+    pose.feet["R"] = boot_on(Vector((0.13, -0.1, 0.0)), 0.0, 2.0, -6.0)
+    pose.pole["L"] = Vector((-0.3, 1.0, 0.1))
+    pose.pole["R"] = Vector((0.45, 1.0, 0.1))
+    flail = sine(p, 1, 0.1)
+    pose.turns["upper_arm.L"] = turn(pitch=40.0 + 6.0 * flail, roll=55.0 + 5.0 * sine(p, 2, 0.2))
+    pose.turns["forearm.L"] = turn(pitch=25.0 + 5.0 * flail)
+    pose.turns["hand.L"] = turn(pitch=-10.0)
+    pose.turns["upper_arm.R"] = turn(pitch=-35.0 - 6.0 * flail, roll=-(58.0 + 5.0 * sine(p, 2, 0.4)))
+    pose.turns["forearm.R"] = turn(pitch=30.0 - 5.0 * flail)
+    pose.turns["hand.R"] = turn(pitch=-10.0)
+    for n, s in SIDES.items():
+        scarf(pose, p, n, s, back=80.0, flutter=12.0, flap=10.0, beat=3)
+    return pose
+
+def side_flip_clip():
+    sprung = move_stage(Vector((0.0, 0.0, 0.45)), (2.0, 0.0, 0.0), 6.0, 14.0,
+                        {"L": (Vector((-0.08, 0.0, 0.1)), -45.0, (0.2, 1.0, 0.0)),
+                         "R": (Vector((0.08, 0.0, 0.1)), -45.0, (0.2, 1.0, 0.0))},
+                        {"L": (165.0, 18.0, 6.0), "R": (165.0, 18.0, 6.0)}, tails=-60.0)
+    tucked = move_stage(Vector((0.0, 0.03, 0.5)), (-18.0, 0.0, 0.0), -28.0, -12.0,
+                        {"L": (Vector((-0.09, 0.1, 0.33)), -35.0, (0.3, 1.0, 0.6)),
+                         "R": (Vector((0.09, 0.1, 0.33)), -35.0, (0.3, 1.0, 0.6))},
+                        {"L": (55.0, 14.0, 75.0), "R": (55.0, 14.0, 75.0)}, tails=-20.0)
+    opened = move_stage(Vector((0.0, 0.0, 0.45)), (-2.0, 0.0, 0.0), 2.0, -6.0,
+                        {"L": (Vector((-0.13, 0.04, 0.08)), -12.0, (0.4, 1.0, 0.2)),
+                         "R": (Vector((0.13, 0.04, 0.08)), -12.0, (0.4, 1.0, 0.2))},
+                        {"L": (80.0, 70.0, 20.0), "R": (80.0, 70.0, 20.0)}, tails=-120.0)
+    return keyed([(0.0, sprung), (0.12, sprung), (0.32, tucked), (0.6, tucked), (0.82, opened), (1.0, opened)])
+
 # ------------------------------------------------------------------ the water
 # Afloat in deep water (scripts/pilot_motor.gd swims him, scripts/
 # pilot_figure.gd keeps copies of the numbers): the feet (the origin) stand
@@ -1658,6 +1807,13 @@ bake("long_jump", LONG_LENGTH, long_jump_pose)
 bake("wall_slide", WALL_LENGTH, wall_slide_pose)
 bake("wall_kick", KICK_LENGTH, wall_kick_clip())
 bake("pump", PUMP_LENGTH, pump_clip())
+for value in (JUMP_LENGTH, TWIRL_LENGTH, SLIDE_LENGTH, FLIP_LENGTH):
+    assert abs(round(value * FPS) - value * FPS) < 1e-6, "a cycle must be whole frames"
+bake("jump_rise", JUMP_LENGTH, jump_rise_pose)
+bake("jump_fall", JUMP_LENGTH, jump_fall_pose)
+bake("twirl", TWIRL_LENGTH, twirl_pose)
+bake("slide", SLIDE_LENGTH, slide_pose)
+bake("side_flip", FLIP_LENGTH, side_flip_clip())
 for value in (SWIM_CYCLE, TREAD_LENGTH):
     assert abs(round(value * FPS) - value * FPS) < 1e-6, "a cycle must be whole frames"
 bake("swim", SWIM_CYCLE, swim_pose)

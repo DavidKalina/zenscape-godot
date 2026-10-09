@@ -2,7 +2,8 @@ extends Node3D
 ## Puffs round the pilot's feet (scripts/wanderer_eye.gd), as a platformer's
 ## hero kicks them up: a little cloud off the heel at a run's footfalls
 ## (`footfall`), a ring of them landing and a push of them setting off or
-## jumping (`burst`), a spray thrown ahead the whole of a skid (`spray`). Each
+## jumping (`burst`), a spray thrown ahead the whole of a skid (`spray`), a
+## ring of little white wisps whirled round him by a twirl (`swirl`). Each
 ## is a little cloud of LOBES faceted balls, cut as the trees' crowns and the
 ## rocks are; it swells in a blink, billows as its throw dies and it rises,
 ## turning slowly, and shrinks away: it never fades, so nothing is
@@ -47,7 +48,14 @@ const KINDS := {
 	"snow":{"colour":Color(0.95,0.96,0.98),"size":0.24},
 	"wood":{"colour":Color(0.82,0.77,0.67),"size":0.14},
 	"water":{"colour":Color(0.84,0.92,0.96),"size":0.06,"drops":true},
+	"air":{"colour":Color(0.96,0.97,1.0),"size":0.11},
 }
+## A twirl's swirl: its wisps, their ring's radius (m) and their whirl and
+## throw out (m/s).
+const SWIRL := 8
+const SWIRL_RADIUS := 0.32
+const SWIRL_WHIRL := 3.2
+const SWIRL_OUT := 0.8
 
 var _mesh: MultiMeshInstance3D
 var _at := PackedVector3Array()
@@ -135,6 +143,18 @@ func burst(at: Vector3, surface: String, strength: float, back := Vector3.ZERO) 
 			_spawn(at+way*0.12,way*_rng.randf_range(0.5,1.2)+back*0.8+Vector3.UP*_rng.randf_range(1.8,3.0)*(0.6+0.4*strength),kind,1.0,true)
 		else:
 			_cloud(at+way*0.1+Vector3.UP*0.05,(way*_rng.randf_range(1.0,1.6)+back*0.9)*(0.6+0.6*strength)+Vector3.UP*_rng.randf_range(0.1,0.3),kind,(0.75+0.4*strength)*_rng.randf_range(0.85,1.15),2)
+
+## A twirl's swirl round `at` (his middle), turning `way` (1 the way a
+## positive yaw turns, -1 the other): little wisps whirled round and out,
+## `strength` 0 to 1.
+func swirl(at: Vector3, way: float, strength: float) -> void:
+	var kind: Dictionary = KINDS.air
+	var turn := _rng.randf_range(0.0,TAU)
+	for i in range(SWIRL):
+		var out := Vector3.FORWARD.rotated(Vector3.UP,turn+TAU*float(i)/SWIRL)
+		var whirl := out.cross(Vector3.UP)*-way
+		var lift := Vector3.UP*_rng.randf_range(-0.15,0.15)*(1.0 if i%2 else -1.0)
+		_cloud(at+out*SWIRL_RADIUS+lift,(whirl*SWIRL_WHIRL+out*SWIRL_OUT)*(0.6+0.4*strength),kind,(0.7+0.3*strength)*_rng.randf_range(0.85,1.15),2)
 
 ## A skid's spray from `at` over `delta` s, thrown the way it slides (`way`,
 ## flat) and up, as fast as `effort` (0 to 1) of a run.

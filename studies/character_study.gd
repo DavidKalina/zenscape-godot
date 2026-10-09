@@ -19,13 +19,18 @@ extends Node3D
 ## keys teleport to them: 1 the run lane, 2 the step ladder, 3 the gap jumps,
 ## 4 the ledge wall and the pit, 5 the slopes, 6 the pool, 7 the collision
 ## bits (pillars, doorways, the low bridge), 8 the tower, 9 the wall-jump
-## shaft. Space jumps (again on landing, the pump), Shift, C or LT crouches
-## (at a run, then Space: the long jump); into a wall in the air he slides
-## down it, and Space kicks off it. R sets him back at the start, F1 shows
-## the numbers (speed, state, the jump, the height over the ground, the last
-## jump's kind, peak and reach, the long jump's reach), F2 the feel's
-## sliders (the motor's own vars, changed live; Print copies the set). Esc
-## lets the mouse go, a click takes it back.
+## shaft; in the east hall, 0 the slide run (a 32° ramp, a 4 m gap to jump
+## out over, a wall-jump slot), - the chutes (50°, which surfs him on its
+## own, and 40°), = the side-flip ledges (1.8 and 2.0 m behind a run lane).
+## Space jumps (again on landing, the pump; in a skid, the side flip), Shift,
+## C or LT crouches (at a run, then Space: the long jump; on a slope, the
+## surf; in the air, the twirl); into a wall in the air he slides down it,
+## and Space kicks off it. R sets him back at the start, F1 shows the
+## numbers (speed, state, the jump, the height over the ground, the slope,
+## the last jump's kind, peak and reach, the long jump's reach, the surf's
+## pace, the last side flip's height and reach, the last twirl's airtime),
+## F2 the feel's sliders (the motor's own vars, changed live; Print copies
+## the set). Esc lets the mouse go, a click takes it back.
 ##   ./run-character-study.command
 ##   godot --path . res://studies/character_study.tscn -- --no-title
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
@@ -63,8 +68,10 @@ const PUFF_LAND := 5.0
 const PUFF_LAND_FULL := 10.0
 const SET_OFF := 0.7
 
-## The room: its half width (m), the walls' height and the floor's depth.
+## The room: its half width (m), the walls' height and the floor's depth;
+## the east hall beyond it (m east of its east wall), open to it.
 const HALF := 32.0
+const HALL := 30.0
 const WALL := 4.0
 const FLOOR_DEPTH := 4.0
 ## Where he starts, and the way he faces (x, z).
@@ -80,8 +87,9 @@ const COLOURS := {
 }
 const WATER := Color(0.22,0.5,0.86,0.5)
 
-## The stations. Each: its key, name, where it is set down (spawn) and the
-## way faced, where its sign stands, and its parts:
+## The stations. Each: its key (10 is 0, 11 minus, 12 equals), name, where
+## it is set down (spawn) and the way faced, where its sign stands, and its
+## parts:
 ##   ["box", Rect2 x z, bottom, top, colour]   ("lip" caps a grey box orange)
 ##   ["cyl", Vector2 middle, radius, bottom, top, colour]
 ##   ["ramp", Vector3 low middle edge, Vector3 high middle edge, width, colour]
@@ -207,6 +215,39 @@ const STATIONS := [
 		["label",Vector3(-9.6,0.4,-6.0),"into a wall in the air: slide · Space: kick off"],
 		["label",Vector3(-11.3,6.4,-10.0),"6 m lip"],
 	]},
+	{"key":10,"name":"Slide run · 32° ramp, 4 m gap, wall-jump slot","spawn":Vector3(40.0,6.0,28.5),"face":Vector2(0.0,-1.0),"sign":Vector3(46.0,8.0,27.0),"parts":[
+		# A 6 m platform, the ramp down from it at 32° (9.6 m along the
+		# ground), 2.5 m of floor, then a pit 4 m across and 2 m deep (steps
+		# out at its east end), then the slot: two walls 2.8 m apart, the
+		# west one's top a lip with a deck behind it.
+		["box",Rect2(38.0,26.0,4.0,4.0),0.0,6.0,"grey"],
+		["ramp",Vector3(40.0,0.0,16.4),Vector3(40.0,6.0,26.0),4.0,"grey"],
+		["label",Vector3(42.6,3.6,21.0),"32° · hold crouch to surf"],
+		["ticks",Vector2(40.0,16.4),Vector2(40.0,4.4),4.0,2],
+		["hole",Rect2(33.0,9.9,13.0,4.0)],
+		["box",Rect2(33.0,9.9,13.0,4.0),-FLOOR_DEPTH,-2.0,"dark"],
+		["box",Rect2(44.0,9.9,0.5,4.0),-2.0,-1.55,"grey"],["box",Rect2(44.5,9.9,0.5,4.0),-2.0,-1.1,"grey"],
+		["box",Rect2(45.0,9.9,0.5,4.0),-2.0,-0.65,"grey"],["box",Rect2(45.5,9.9,0.5,4.0),-2.0,-0.2,"grey"],
+		["label",Vector3(40.0,0.6,12.0),"gap 4 m · jump out of the surf"],
+		["box",Rect2(34.6,0.0,4.0,5.0),0.0,5.5,"lip"],
+		["box",Rect2(41.4,0.0,1.0,5.0),0.0,6.0,"grey"],
+		["label",Vector3(40.0,0.5,5.4),"slot 2.8 m · into a side wall, Space: kick"],
+		["label",Vector3(36.6,5.9,2.5),"5.5 m lip"],
+	]},
+	{"key":11,"name":"Chutes · 50° surfs on its own, 40° stands","spawn":Vector3(52.0,5.0,27.5),"face":Vector2(0.0,-1.0),"sign":Vector3(54.0,7.5,27.0),"parts":[
+		["box",Rect2(50.0,25.0,4.0,5.0),0.0,5.0,"grey"],
+		["ramp",Vector3(52.0,0.0,20.805),Vector3(52.0,5.0,25.0),4.0,"grey"],["label",Vector3(52.0,3.2,22.0),"50°"],
+		["box",Rect2(55.0,25.0,4.0,5.0),0.0,5.0,"grey"],
+		["ramp",Vector3(57.0,0.0,19.041),Vector3(57.0,5.0,25.0),4.0,"grey"],["label",Vector3(57.0,3.2,21.5),"40°"],
+	]},
+	{"key":12,"name":"Side-flip ledges · 1.8 and 2.0 m","spawn":Vector3(54.5,0.0,-23.0),"face":Vector2(0.0,1.0),"sign":Vector3(53.0,4.0,-27.0),"parts":[
+		# Two ledges behind the lane: run out along it, throw the stick back,
+		# and Space in the skid flips him up onto them.
+		["box",Rect2(50.0,-30.0,3.0,6.0),0.0,1.8,"lip"],["label",Vector3(51.5,2.2,-23.8),"1.8 m"],
+		["box",Rect2(53.0,-30.0,3.0,6.0),0.0,2.0,"lip"],["label",Vector3(54.5,2.4,-23.8),"2.0 m"],
+		["ticks",Vector2(53.0,-24.0),Vector2(53.0,-12.0),6.0,2],
+		["label",Vector3(53.0,0.6,-19.0),"run out, stick back, Space in the skid: side flip"],
+	]},
 ]
 
 signal ready_to_walk
@@ -228,9 +269,16 @@ var script_want := Vector2.ZERO
 var script_jump := false
 var script_crouch := false
 ## The last jump, measured: its number, peak over the takeoff, reach across
-## the ground, the drop to where it came down; the one in the air now.
+## the ground, the drop to where it came down; the one in the air now; the
+## last side flip's; the surf's fastest pace now (or last); the last twirl's
+## airtime from its start to its end (s).
 var last_jump := {}
 var _jump := {}
+var last_flip := {}
+var slide_top := 0.0
+var last_twirl := 0.0
+var _twirl_from := -1.0
+var _clock := 0.0
 var _yaw := 0.0
 var _polar := CAM_POLAR
 var _cam_y := 0.0
@@ -301,15 +349,17 @@ func _build_room() -> void:
 	for station: Dictionary in STATIONS:
 		for part: Array in station.parts:
 			if part[0] == "hole": _holes.append(part[1])
-	for rect in _floor_rects(Rect2(-HALF,-HALF,HALF*2.0,HALF*2.0),_holes):
+	for rect in _floor_rects(Rect2(-HALF,-HALF,HALF*2.0+HALL,HALF*2.0),_holes):
 		_box(rect,-FLOOR_DEPTH,0.0,"floor")
-	for side in range(4):
-		var r: Rect2 = [Rect2(-HALF-1.0,-HALF-1.0,HALF*2.0+2.0,1.0),Rect2(-HALF-1.0,HALF,HALF*2.0+2.0,1.0),
-			Rect2(-HALF-1.0,-HALF,1.0,HALF*2.0),Rect2(HALF,-HALF,1.0,HALF*2.0)][side]
+	# Round the room and the hall; between them, the room's east wall but for
+	# a wide door.
+	for r: Rect2 in [Rect2(-HALF-1.0,-HALF-1.0,HALF*2.0+HALL+2.0,1.0),Rect2(-HALF-1.0,HALF,HALF*2.0+HALL+2.0,1.0),
+			Rect2(-HALF-1.0,-HALF,1.0,HALF*2.0),Rect2(HALF+HALL,-HALF,1.0,HALF*2.0),
+			Rect2(HALF,-HALF,1.0,HALF-6.0),Rect2(HALF,6.0,1.0,HALF-6.0)]:
 		_box(r,-FLOOR_DEPTH,WALL,"wall")
 	for station: Dictionary in STATIONS:
 		for part: Array in station.parts: _part(part)
-		_label(station.sign,"%d  %s" % [station.key,station.name],64)
+		_label(station.sign,"%s  %s" % [key_name(station.key),station.name],64)
 	_label(START+Vector3(1.6,0.4,0.0),"START · R",36)
 
 ## The rect `room` less every hole, as rects: cut into slabs across x at
@@ -507,7 +557,11 @@ func place(at: Vector3, face: Vector2) -> void:
 func respawn() -> void:
 	place(START,START_FACE)
 
-## Teleported to station `key` (1 to 9).
+## A station key's name: 1 to 9, 0 (10), - (11), = (12).
+static func key_name(key: int) -> String:
+	return {10:"0",11:"-",12:"="}.get(key,str(key))
+
+## Teleported to station `key` (1 to 12).
 func go_to(key: int) -> void:
 	for station: Dictionary in STATIONS:
 		if station.key == key: place(station.spawn,station.face)
@@ -533,6 +587,7 @@ func tick(delta: float) -> void:
 		respawn()
 		return
 	_measure(events,was)
+	_measure_tricks(events,delta)
 	_sync_figure()
 	if events.has("grabbed") or events.has("climbed"): steps.step(_surface(),0.4)
 	_motor_events(events)
@@ -567,7 +622,7 @@ func _measure(events: Dictionary, was: Vector3) -> void:
 	if events.has("jumped"):
 		if not _jump.is_empty(): _jump_done("jumped",was)
 		_jump_number = int(events.jumped)
-		var kind := "long" if events.has("long") else ("kick" if events.has("wall_jump") else ("pump" if _jump_number > 1 else "jump"))
+		var kind := "long" if events.has("long") else ("kick" if events.has("wall_jump") else ("flip" if events.has("side_flip") else ("slide jump" if events.has("slide_jump") else ("pump" if _jump_number > 1 else "jump"))))
 		_jump = {"n":_jump_number,"kind":kind,"from":was,"peak":was.y}
 	if _jump.is_empty(): return
 	_jump.peak = maxf(float(_jump.peak),motor.feet.y)
@@ -582,7 +637,18 @@ func _jump_done(done: String, at: Vector3) -> void:
 	var from: Vector3 = _jump.from
 	last_jump = {"n":_jump.n,"kind":_jump.kind,"peak":maxf(float(_jump.peak),at.y)-from.y,"reach":Vector2(at.x-from.x,at.z-from.z).length(),
 		"drop":at.y-from.y,"end":done}
+	if _jump.kind == "flip": last_flip = last_jump
 	_jump = {}
+
+## The surf's pace and the twirl's airtime, measured.
+func _measure_tricks(events: Dictionary, delta: float) -> void:
+	_clock += delta
+	if events.get("slide",false): slide_top = 0.0
+	if motor.move == "slide": slide_top = maxf(slide_top,motor.speed())
+	if events.has("twirl"): _twirl_from = _clock
+	if _twirl_from >= 0.0 and (motor.grounded or motor.on_ledge() or motor.swimming or motor.move == "wall"):
+		last_twirl = _clock-_twirl_from
+		_twirl_from = -1.0
 
 ## What the feet are on, for the steps and puffs.
 func _surface() -> String:
@@ -599,18 +665,26 @@ func _world_way(way: Vector3) -> Vector3:
 		flat = Vector3(f.x,0.0,f.y)
 	return flat.normalized()
 
-## As the walker's: jumps and landings sound and puff (the pump in a ring,
-## the long jump back off the heels, a wall kick off the wall), the body
-## squashes; taking hold of a wall slaps it, sliding down it scrapes and
-## sprays.
+## As the walker's: jumps and landings sound and puff (the pump and the side
+## flip in a ring, the long jump and the slide jump back off the heels, a
+## wall kick off the wall), the body squashes; taking hold of a wall slaps
+## it, sliding down it scrapes and sprays; a twirl whirls a swirl of wisps
+## round him; a surf scrapes as it starts and sprays the while.
 func _motor_events(events: Dictionary) -> void:
 	if events.has("jumped"):
 		steps.step(_surface(),0.3+0.15*float(events.jumped))
 		var at := _puff_at(figure.global_position)
 		var way := _world_way(motor.velocity)
 		if events.has("wall_jump"): puffs.burst(at+Vector3.UP*0.5-way*0.3,_surface(),0.35,way)
-		elif events.has("long"): puffs.burst(at,_surface(),0.3,-way)
-		elif int(events.jumped) > 1: puffs.burst(at,_surface(),0.45)
+		elif events.has("long") or events.has("slide_jump"): puffs.burst(at,_surface(),0.3,-way)
+		elif int(events.jumped) > 1 or events.has("side_flip"): puffs.burst(at,_surface(),0.45)
+	if events.has("twirl"):
+		steps.step(_surface(),0.25)
+		puffs.swirl(figure.global_position+Vector3.UP*0.55,1.0,0.8)
+	if events.get("slide",false): steps.slide(_surface(),clampf(motor.speed()/PilotMotor.RUN,0.4,1.0))
+	if motor.move == "slide" and motor.speed() > 1.0:
+		var travel := _world_way(motor.velocity)
+		puffs.spray(_puff_at(figure.global_position+travel*0.2),travel,_surface(),clampf(motor.speed()/PilotMotor.SLIDE_TOP,0.3,1.0),get_process_delta_time())
 	if events.get("wall",false):
 		steps.step(_surface(),0.35)
 		steps.slide(_surface(),0.3)
@@ -710,7 +784,9 @@ const TUNABLE := [["walk",0.5,6.0],["run",1.0,10.0],["accel",2.0,60.0],["brake",
 	["terminal",5.0,40.0],["jumps:0",0.2,3.0],["jumps:1",0.2,3.0],["skid_speed",0.5,8.0],
 	["skid_brake",2.0,40.0],["coyote",0.0,0.4],["buffer",0.0,0.4],["chain_window",0.0,0.6],
 	["long_height",0.1,2.0],["long_speed",2.0,12.0],["long_gravity",5.0,40.0],["wall_slide",0.3,6.0],
-	["wall_jump",0.3,3.0],["wall_kick",1.0,10.0],["wall_lock",0.0,0.8]]
+	["wall_jump",0.3,3.0],["wall_kick",1.0,10.0],["wall_lock",0.0,0.8],["twirl_rise",0.0,8.0],["twirl_time",0.1,1.0],
+	["twirl_gravity",0.1,1.0],["slide_auto",25.0,70.0],["slide_pull",4.0,40.0],["slide_top",4.0,20.0],["slide_runout",1.0,30.0],
+	["slide_jump",0.2,2.5],["side_flip",0.5,3.5],["side_speed",0.0,8.0],["climb_time",0.15,1.2]]
 
 func _build_ui() -> void:
 	var layer := CanvasLayer.new()
@@ -724,25 +800,31 @@ func _build_ui() -> void:
 	_hud.add_theme_constant_override("shadow_offset_y",1)
 	layer.add_child(_hud)
 	var hint := Label.new()
-	hint.text = "WASD run · Space jump (again on landing: pump) · Shift/C crouch, at a run + Space: long jump · into a wall: slide, Space: kick · 1-9 stations · R start · F1 numbers · F2 feel · Esc mouse"
+	hint.text = "WASD run · Space jump (on landing: pump; in a skid: side flip) · Shift/C crouch: at a run + Space long jump, on a slope surf, in the air twirl · into a wall: slide, Space: kick · 1-9 0 - = stations · R start · F1 numbers · F2 feel · Esc mouse"
 	hint.add_theme_font_size_override("font_size",14)
 	hint.add_theme_color_override("font_color",Color("fbf6ea"))
 	hint.add_theme_color_override("font_shadow_color",Color(0,0,0,0.7))
 	hint.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
 	hint.offset_top = -36.0
-	hint.offset_left = -480.0
-	hint.offset_right = 480.0
+	hint.offset_left = -640.0
+	hint.offset_right = 640.0
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	layer.add_child(hint)
 	_tune = PanelContainer.new()
 	_tune.visible = false
-	_tune.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-	_tune.offset_left = -360.0
+	_tune.set_anchors_and_offsets_preset(Control.PRESET_RIGHT_WIDE)
+	_tune.offset_left = -372.0
 	_tune.offset_right = -12.0
 	_tune.offset_top = 12.0
+	_tune.offset_bottom = -48.0
 	layer.add_child(_tune)
+	# More numbers than fit: a scroll.
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_tune.add_child(scroll)
 	_tune_box = VBoxContainer.new()
-	_tune.add_child(_tune_box)
+	_tune_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(_tune_box)
 	for spec: Array in TUNABLE:
 		var row := HBoxContainer.new()
 		var name_label := Label.new()
@@ -828,7 +910,7 @@ func state() -> String:
 	if motor.on_ledge(): return motor.hold
 	if motor.swimming: return "swim"
 	if motor.skidding: return "skid"
-	if motor.move in ["wall","crouch","long","kick"]: return motor.move
+	if motor.move in ["wall","crouch","long","kick","slide","twirl","flip"]: return motor.move
 	if motor.grounded: return "wade" if motor.wade > PilotMotor.WADE_FROM else "ground"
 	return "air"
 
@@ -845,6 +927,10 @@ func _show_hud() -> void:
 	if not last_jump.is_empty():
 		lines.append("last %s: peak %.2f m · reach %.2f m · drop %+.2f m (%s)" % [last_jump.kind,last_jump.peak,last_jump.reach,last_jump.drop,last_jump.end])
 	lines.append("long jump %.2f m level (%.2f m up)" % [long_reach(),motor.long_height])
+	lines.append("slope     %.0f°" % motor.steepness() if motor.grounded else "slope     -")
+	lines.append("surf      %.2f m/s%s · top %.2f m/s" % [motor.speed() if motor.move == "slide" else 0.0,"  (surfing)" if motor.move == "slide" else "",slide_top])
+	if not last_flip.is_empty(): lines.append("side flip peak %.2f m · reach %.2f m" % [last_flip.peak,last_flip.reach])
+	if last_twirl > 0.0: lines.append("twirl     %.2f s in the air from it" % last_twirl)
 	if motor.wade > 0.0 or motor.swimming: lines.append("water     %.2f m over the feet" % motor.wade)
 	_hud.text = "\n".join(lines)
 
@@ -864,5 +950,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_F2:
 				_tune.visible = not _tune.visible
 				Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if _tune.visible else Input.MOUSE_MODE_CAPTURED
+			KEY_0: go_to(10)
+			KEY_MINUS: go_to(11)
+			KEY_EQUAL: go_to(12)
 			_:
 				if key >= KEY_1 and key <= KEY_9: go_to(key-KEY_0)

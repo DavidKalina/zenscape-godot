@@ -29,6 +29,32 @@ extends RefCounted
 ## out (WALL_KICK), turned round, the stick not steering for WALL_LOCK, so he
 ## can kick up between two walls facing each other.
 ##
+## The twirl: `crouch` pressed in the air (anywhere in it, at any moment)
+## spins him round with his arms out, kicked up to at least TWIRL_RISE and
+## then, for TWIRL_TIME, on a share of his gravity (TWIRL_GRAVITY) and
+## falling no faster than TWIRL_FALL: a little more airtime to reach a ledge
+## or fix a landing. Once an airtime; landing, taking hold of a wall or a
+## ledge, or swimming gives it back. Crouch held on the ground (for the long
+## jump, or the slide) does nothing in the air until it is pressed again.
+##
+## Slopes (the ground's own fall, `_gradient`, read from heights around the
+## feet, so a step's edge is no slope): running up one steeper than
+## SLOPE_SLOW he slows, to SLOPE_SLOWEST of his pace at SLIDE_AUTO. On one
+## steeper than SLIDE_AUTO he can't stand: he boot-surfs down it (move
+## "slide"), as he does on any steeper than SLIDE_FROM with `crouch` held
+## (pressed there, or landed on it with it held). Surfing, standing on his
+## boots, the slope pulls him down its fall line (SLIDE_PULL by the slope's
+## sine, less SLIDE_DRAG), the stick steering across it (SLIDE_STEER) or
+## braking against it (SLIDE_BRAKE), no faster than SLIDE_TOP. Onto flat
+## ground (under SLIDE_END) he keeps his pace and slows at SLIDE_RUNOUT,
+## running on again at his run's pace (held crouched, sliding to a crouch).
+## Jump surfing is the slide jump: SLIDE_JUMP high with all the slide's pace.
+##
+## The side flip: Jump while skidding round (or SIDE_GRACE after it) flips
+## him high (SIDE_FLIP, higher than the pump) the way the stick now points,
+## slowly along (SIDE_SPEED), the button's hold not cutting it: up onto a
+## ledge rather than across a gap.
+##
 ## Pressed again in the air on the way up, or falling from high enough
 ## (FLY_CLEAR), with no wall at hand, it asks to fly (`step` returns "fly").
 ##
@@ -140,19 +166,58 @@ const WALL_TOUCH := 0.1
 const WALL_JUMP := 1.4
 const WALL_KICK := 5.2
 const WALL_LOCK := 0.28
+## The twirl: the least rise it kicks him to (m/s), its seconds, the share
+## of gravity he rises and falls on through it, and its fastest fall (m/s).
+## Pressed at a jump's top it gives about 0.4 s more in the air.
+const TWIRL_RISE := 2.8
+const TWIRL_TIME := 0.45
+const TWIRL_GRAVITY := 0.5
+const TWIRL_FALL := 2.0
+## Slopes, degrees: from SLOPE_SLOW up he runs up slower, to SLOPE_SLOWEST
+## of his pace at SLIDE_AUTO, past which he can't stand and surfs down; from
+## SLIDE_FROM a crouch surfs; under SLIDE_END is flat. Surfing: the pull
+## down the fall line (m/s² on a sheer drop, by the slope's sine), the drag
+## against it, the stick's steer across it and brake against it (m/s²), the
+## fastest (m/s), the slowing on flat ground (m/s²) and the pace under which
+## a crouched surf stops (m/s); the slide jump's height (m). A 32° slope
+## takes him from a stand to SLIDE_TOP in about 1.4 s and 7.5 m.
+const SLOPE_SLOW := 22.0
+const SLOPE_SLOWEST := 0.45
+const SLIDE_AUTO := 44.0
+const SLIDE_FROM := 10.0
+const SLIDE_END := 6.0
+const SLIDE_PULL := 18.0
+const SLIDE_DRAG := 1.0
+const SLIDE_STEER := 7.0
+const SLIDE_BRAKE := 4.0
+const SLIDE_TOP := 11.0
+const SLIDE_RUNOUT := 9.0
+const SLIDE_STOP := 0.8
+const SLIDE_JUMP := 0.9
+## The side flip: its height (m), its pace along (m/s), and the seconds
+## after a skid it is still taken.
+const SIDE_FLIP := 1.9
+const SIDE_SPEED := 3.0
+const SIDE_GRACE := 0.12
+## How far either side of the feet the ground is read for its slope (m),
+## near and further, and how far up and down it a slope too steep to stand
+## on must go on.
+const SLOPE_NEAR := 0.05
+const SLOPE_PROBE := 0.2
+const SLOPE_FAR := 1.0
 ## The ledge, as art/blender/pilot/pilot_build.py made the clips: hanging,
 ## the lip's top HANG_DROP over the feet and its edge HANG_OUT ahead; the
-## climb (CLIMB_TIME s) ends stood CLIMB_IN in from the edge; the shimmy's
-## pace, m/s along the lip.
+## climb (CLIMB_TIME s, Mario quick) ends stood CLIMB_IN in from the edge;
+## the shimmy's pace, m/s along the lip.
 const HANG_DROP := 0.825
 const HANG_OUT := 0.22
 const CLIMB_IN := 0.3
-const CLIMB_TIME := 0.9
+const CLIMB_TIME := 0.4
 const SHIMMY := 0.7
 ## Seconds turning round on the edge before lowering over it, and the
-## lowering (the climb played back, a little quicker).
-const CATCH_TURN := 0.18
-const LOWER_TIME := 0.7
+## lowering (the climb played back, a little slower).
+const CATCH_TURN := 0.15
+const LOWER_TIME := 0.5
 ## Stepping off an edge under this pace (m/s), or pushing out over it less
 ## than CATCH_PUSH of the stick, he catches it.
 const CATCH_PACE := 2.6
@@ -167,14 +232,15 @@ const GRAB_HIGH := 0.35
 const GRAB_FACING := 0.5
 const GRAB_RISE := 1.0
 const GRAB_SNAP := 0.1
-## Hanging: seconds before a climb is taken; the stick's share towards or
-## away that counts, and seconds it is held to climb or to let go; seconds
+## Hanging: seconds before a climb is taken (a press in them is kept for
+## it); the stick's share towards or away that counts, and seconds it is
+## held to climb or to let go; seconds
 ## after letting go before another catch; the shimmy's pick-up (m/s²), the
 ## turn following the lip (radians a second), the sharpest bend it follows
 ## (radians a metre) and the steepest step along it.
-const HANG_SETTLE := 0.2
+const HANG_SETTLE := 0.08
 const PUSH := 0.5
-const CLIMB_HOLD := 0.25
+const CLIMB_HOLD := 0.08
 const DROP_HOLD := 0.12
 const REGRAB := 0.4
 const SHIMMY_ACCEL := 6.0
@@ -230,6 +296,17 @@ var wall_slide := WALL_SLIDE
 var wall_jump := WALL_JUMP
 var wall_kick := WALL_KICK
 var wall_lock := WALL_LOCK
+var twirl_rise := TWIRL_RISE
+var twirl_time := TWIRL_TIME
+var twirl_gravity := TWIRL_GRAVITY
+var slide_auto := SLIDE_AUTO
+var slide_pull := SLIDE_PULL
+var slide_top := SLIDE_TOP
+var slide_runout := SLIDE_RUNOUT
+var slide_jump := SLIDE_JUMP
+var side_flip := SIDE_FLIP
+var side_speed := SIDE_SPEED
+var climb_time := CLIMB_TIME
 
 ## The feet, in the frame.
 var feet := Vector3.ZERO
@@ -243,10 +320,14 @@ var skidding := false
 var chain := 0
 ## What he is doing beyond running and jumping: "" (nothing), "jump",
 ## "pump", "long" (the long jump), "kick" (off a wall), "wall" (sliding down
-## one), "crouch".
+## one), "crouch", "twirl", "slide" (boot-surfing down a slope), "flip" (the
+## side flip).
 var move := ""
 ## Held by the caller: the crouch button.
 var crouch := false
+## The ground's slope under the feet, its rise a metre (x, z), as last read
+## standing on it.
+var slope := Vector2.ZERO
 ## A wall's answer (see above), or none (the ground's rise).
 var wall := Callable()
 ## Sliding down a wall: the way off it (x, z).
@@ -286,6 +367,14 @@ var _wall_since := 99.0
 var _wall_seen := Vector2.ZERO
 var _wall_off := 0.0
 var _lock := 0.0
+## The crouch last step; the twirl's seconds left, and whether this airtime's
+## is spent; seconds left after a skid that a jump is the side flip; a press
+## hanging, kept for the climb.
+var _crouch_was := false
+var _twirl := 0.0
+var _twirled := false
+var _skid_left := 0.0
+var _hang_press := false
 ## Water (see above): its depth for a frame point, or none; swimming; the
 ## water over the feet (m, 0 dry) and its top (the frame's height, -INF dry).
 var water := Callable()
@@ -320,6 +409,11 @@ func reset(at: Vector3, towards: float, speed := 0.0) -> void:
 	hold_t = 0.0
 	shimmy = 0.0
 	_regrab = 0.0
+	slope = Vector2.ZERO
+	_twirl = 0.0
+	_twirled = false
+	_skid_left = 0.0
+	_hang_press = false
 	swimming = false
 	wade = 0.0
 	surface = -INF
@@ -341,7 +435,8 @@ func speed() -> float:
 ## set before, whether the crouch is). `ground` takes a point (x, z) and
 ## gives its height; `slide` takes the feet and a step (x, z) and gives back
 ## the feet moved. Returns what happened: "jumped" (1 a jump, 2 the pump),
-## with "long" or "wall_jump" for those, "landed" (how hard, metres a
+## with "long", "wall_jump", "slide_jump" or "side_flip" for those, "twirl",
+## "slide" (true onto a surf, false off it), "landed" (how hard, metres a
 ## second), "fly", "wall" (true onto a wall, false off it); on a ledge
 ## (`ledge`: a point (x, z) and a height near the lip, giving {"at", "out"}
 ## or {}), "grabbed" ("air" or "step"), "hung", "climbed", "let_go",
@@ -353,6 +448,8 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 	if want.length() > 1.0: want = want.normalized()
 	var pressed := jump and not _held
 	_held = jump
+	var crouch_pressed := crouch and not _crouch_was
+	_crouch_was = crouch
 	_regrab = maxf(0.0,_regrab-delta)
 	if hold != "": return _hold_step(delta,want,pressed,ground,slide,ledge)
 	if swimming: return _swim_step(delta,want,pressed,ground,slide)
@@ -371,14 +468,48 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 	else: _since_ground += delta
 	if _since_land > chain_window: _last_chain = 0
 	var crouched := grounded and crouch and wade < SWIM_IN*0.5
-	if grounded: move = "crouch" if crouched else ""
+	var surfing := false
+	var surfed := move == "slide"
+	if grounded:
+		slope = _gradient(ground,Vector2(feet.x,feet.z))
+		surfing = _surfing(crouched,ground)
+		move = "slide" if surfing else ("crouch" if crouched else "")
+		_skid_left = SIDE_GRACE if skidding else maxf(0.0,_skid_left-delta)
 	var h := Vector2(velocity.x,velocity.z)
-	if grounded: h = _crouch_slide(h,want,delta) if crouched else _run(h,want,top,delta)
-	elif move != "wall": h = _steer(h,Vector2.ZERO if _lock > 0.0 else want,top,delta)
-	# The jump: from the ground, or just off it; from a crouch at a run, the
-	# long jump; off a wall.
+	if grounded:
+		if surfing: h = _surf(h,want,top,delta)
+		elif crouched: h = _crouch_slide(h,want,delta)
+		else: h = _run(h,want,top,delta)
+		surfing = move == "slide"
+		if surfing != surfed: out["slide"] = surfing
+	elif move != "wall": h = _steer(h,Vector2.ZERO if _lock > 0.0 else want,side_speed if move == "flip" else top,delta)
+	# The jump: from the ground, or just off it; out of a skid, the side flip;
+	# surfing, the slide jump; from a crouch at a run, the long jump; off a
+	# wall.
 	if _buffer > 0.0 and (grounded or (_since_ground < coyote and not _jumped)):
-		if crouched and h.length() >= LONG_PACE:
+		if grounded and (skidding or _skid_left > 0.0) and not crouched and not surfing:
+			var way := want.normalized() if want.length() > 0.2 else (-h.normalized() if h.length() > 0.1 else forward(facing))
+			chain = 0
+			move = "flip"
+			_light = false
+			_no_cut = true
+			velocity.y = sqrt(2.0*gravity*side_flip)
+			h = way*side_speed
+			facing = facing_of(way)
+			_skid_left = 0.0
+			out["side_flip"] = true
+			out["jumped"] = 1
+		elif surfing:
+			chain = 1
+			move = "jump"
+			_light = false
+			_no_cut = false
+			velocity.y = sqrt(2.0*gravity*slide_jump)
+			if h.length() > 0.3: facing = facing_of(h)
+			out["slide"] = false
+			out["slide_jump"] = true
+			out["jumped"] = 1
+		elif crouched and h.length() >= LONG_PACE:
 			chain = 0
 			move = "long"
 			_light = true
@@ -405,6 +536,15 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 			and _wall_near(want,h,ground,WALL_PROBE+0.8) == Vector2.ZERO:
 		_buffer = 0.0
 		out["fly"] = true
+	# The twirl: crouch pressed anywhere in the air, once an airtime.
+	if crouch_pressed and not grounded and not _twirled and move != "wall":
+		_twirled = true
+		_twirl = twirl_time
+		move = "twirl"
+		_light = false
+		_no_cut = true
+		velocity.y = maxf(velocity.y,twirl_rise)
+		out["twirl"] = true
 	var moved: Vector3 = slide.call(feet,h*delta)
 	var under: float = ground.call(Vector2(moved.x,moved.z))
 	if grounded and under > feet.y+STEP_UP:
@@ -413,11 +553,13 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 		moved = feet
 		under = ground.call(Vector2(feet.x,feet.z))
 	if grounded:
-		if under < feet.y-SNAP-h.length()*delta:
-			if ledge.is_valid() and not crouched and _careful(h,want) and _catch(ledge,ground,slide):
+		# Down a slope the ground falls away faster than the run goes.
+		if under < feet.y-SNAP-h.length()*delta*maxf(1.0,slope.length()*1.3):
+			if ledge.is_valid() and not crouched and not surfing and _careful(h,want) and _catch(ledge,ground,slide):
 				out["grabbed"] = "step"
 				return out
 			# Off a ledge: falling, the run kept.
+			if surfing: out["slide"] = false
 			grounded = false
 			_jumped = false
 			_light = false
@@ -429,6 +571,9 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 			feet = Vector3(moved.x,under,moved.z)
 			ground_y = under
 	else:
+		if _twirl > 0.0:
+			_twirl = maxf(0.0,_twirl-delta)
+			if _twirl <= 0.0 and move == "twirl": move = ""
 		var going := h
 		if under > feet.y+STEP_UP:
 			# A wall in the air: stopped against it.
@@ -466,6 +611,8 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 			_since_land = 0.0
 			_jumped = false
 			_from_water = false
+			_twirl = 0.0
+			_twirled = false
 		elif y < under:
 			y = under
 		feet = Vector3(moved.x,y,moved.z)
@@ -480,21 +627,22 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 ## The rise or the fall over `delta` (m, up), velocity.y carried on: worked
 ## out exactly for each part of the step's own gravity (rising, then past
 ## the top falling; the long jump's lighter one throughout; a wall slide's
-## gentle one, to its pace), so a jump peaks at its height at any frame
-## rate.
+## gentle one, to its pace; a twirl's, to its slow fall), so a jump peaks
+## at its height at any frame rate.
 func _arc(delta: float, jump: bool) -> float:
 	var dy := 0.0
 	var left := delta
 	for i in range(4):
 		if left <= 0.0: break
 		var v := velocity.y
-		var low := -wall_slide if move == "wall" else -terminal
+		var low := -wall_slide if move == "wall" else (-TWIRL_FALL if move == "twirl" else -terminal)
 		if v < low:
 			# Faster down than it may go: held to it.
 			velocity.y = low
 			continue
 		var g := gravity
 		if move == "wall": g = WALL_GRAVITY
+		elif move == "twirl": g *= twirl_gravity
 		elif _light: g = long_gravity
 		elif v <= 0.0: g *= fall
 		elif not jump and not _no_cut: g *= cut
@@ -523,6 +671,8 @@ func _kick_off(out: Dictionary) -> Vector2:
 	_buffer = 0.0
 	_wall_since = 99.0
 	_lock = wall_lock
+	_twirl = 0.0
+	_twirled = false
 	velocity.y = sqrt(2.0*gravity*wall_jump)
 	facing = facing_of(away)
 	out["jumped"] = 1
@@ -589,6 +739,7 @@ func _on_wall(delta: float, want: Vector2, h: Vector2, going: Vector2, ground: C
 		move = "wall"
 		wall_out = n
 		chain = 0
+		_twirl = 0.0
 		velocity.y = maxf(velocity.y,-WALL_CATCH)
 		_light = false
 		_lock = 0.0
@@ -703,6 +854,9 @@ func _still() -> void:
 	chain = 0
 	move = ""
 	shimmy = 0.0
+	_twirl = 0.0
+	_twirled = false
+	_hang_press = false
 
 ## One step on a ledge.
 func _hold_step(delta: float, want: Vector2, pressed: bool, ground: Callable, slide: Callable, ledge: Callable) -> Dictionary:
@@ -727,7 +881,7 @@ func _hold_step(delta: float, want: Vector2, pressed: bool, ground: Callable, sl
 				_away = 0.0
 				out["hung"] = true
 		"climb":
-			hold_t = minf(1.0,hold_t+delta/CLIMB_TIME)
+			hold_t = minf(1.0,hold_t+delta/climb_time)
 			feet = _climbing_feet()
 			if hold_t >= 1.0:
 				hold = ""
@@ -749,8 +903,10 @@ func _hang_step(delta: float, want: Vector2, pressed: bool, ground: Callable, sl
 	var push := want.dot(toward)
 	_toward = _toward+delta if push > PUSH and absf(along) < push else 0.0
 	_away = _away+delta if -push > PUSH and absf(along) < -push else 0.0
-	if _hold_time >= HANG_SETTLE and (pressed or _toward >= CLIMB_HOLD) and _climb(ground,slide):
+	if pressed: _hang_press = true
+	if _hold_time >= HANG_SETTLE and (_hang_press or _toward >= CLIMB_HOLD) and _climb(ground,slide):
 		return
+	_hang_press = _hang_press and _hold_time < HANG_SETTLE
 	if _away >= DROP_HOLD:
 		# Let go: falling, a touch out from the wall.
 		hold = ""
@@ -796,6 +952,7 @@ func _climb(ground: Callable, slide: Callable) -> bool:
 	hold = "climb"
 	hold_t = 0.0
 	shimmy = 0.0
+	_hang_press = false
 	velocity = Vector3.ZERO
 	_snap = Vector3.ZERO
 	return true
@@ -853,6 +1010,8 @@ func _float_in(hard: float, out: Dictionary) -> void:
 	skidding = false
 	chain = 0
 	move = ""
+	_twirl = 0.0
+	_twirled = false
 	_jumped = false
 	_from_water = false
 	_buffer = 0.0
@@ -951,9 +1110,84 @@ func _run(h: Vector2, want: Vector2, top: float, delta: float) -> Vector2:
 	var rate := lerpf(turn,turn_run,clampf(pace/run,0.0,1.0))
 	facing = rotate_toward(facing,facing_of(way),rate*delta)
 	var f := forward(facing)
-	var goal := want.length()*top*(0.5+0.5*maxf(f.dot(way),0.0))
+	var goal := want.length()*top*(0.5+0.5*maxf(f.dot(way),0.0))*_uphill(f)
 	pace = move_toward(pace,goal,(accel if pace < goal else brake)*delta)
 	return f*pace
+
+## The share of his pace kept running along `f` up the slope underfoot.
+func _uphill(f: Vector2) -> float:
+	var rise := slope.length()
+	if rise < 1e-4: return 1.0
+	var up := maxf(f.dot(slope/rise),0.0)
+	return 1.0-(1.0-SLOPE_SLOWEST)*clampf((steepness()-SLOPE_SLOW)/(slide_auto-SLOPE_SLOW),0.0,1.0)*up
+
+## The ground's slope at frame point `p`, its rise a metre (x, z): along
+## each axis the gentlest of its rise either side of `p`, near (SLOPE_NEAR)
+## and further (SLOPE_PROBE) (none where they rise opposite ways or any is
+## missing), so a plane is its slope, and a step's edge, a stair's tread, a
+## ridge or a gully is flat.
+func _gradient(ground: Callable, p: Vector2) -> Vector2:
+	var c := float(ground.call(p))
+	if not is_finite(c): return Vector2.ZERO
+	var g := Vector2.ZERO
+	for axis in range(2):
+		var rises := []
+		for reach: float in [SLOPE_NEAR,SLOPE_PROBE]:
+			var d := Vector2(reach,0.0) if axis == 0 else Vector2(0.0,reach)
+			rises.append((float(ground.call(p+d))-c)/reach)
+			rises.append((c-float(ground.call(p-d)))/reach)
+		var least: float = rises[0]
+		for r: float in rises:
+			if not is_finite(r) or r*least <= 0.0:
+				least = 0.0
+				break
+			if absf(r) < absf(least): least = r
+		g[axis] = least
+	return g
+
+## The slope underfoot, degrees.
+func steepness() -> float:
+	return rad_to_deg(atan(slope.length()))
+
+## Whether he surfs this step: already surfing (`_surf` ends it), crouched
+## on a slope over SLIDE_FROM, or on one too steep to stand on that goes on
+## SLOPE_FAR either way down its fall line (a short steep patch, a stair's
+## foot on a rough bank, is climbed).
+func _surfing(crouched: bool, ground: Callable) -> bool:
+	if wade > SWIM_IN*0.5: return false
+	var steep := steepness()
+	if move == "slide" or (crouched and steep >= SLIDE_FROM): return true
+	if steep <= slide_auto: return false
+	var p := Vector2(feet.x,feet.z)
+	var fall := -slope.normalized()
+	var up := (float(ground.call(p-fall*SLOPE_FAR))-feet.y)/SLOPE_FAR
+	var down := (feet.y-float(ground.call(p+fall*SLOPE_FAR)))/SLOPE_FAR
+	return is_finite(up) and is_finite(down) and rad_to_deg(atan(minf(up,down))) > slide_auto
+
+## Boot-surfing: pulled down the fall line, steered across it, braked
+## against it, no faster than slide_top, turning to face the way he goes; on
+## flat ground slowing, and once down to the pace the stick asks (crouched,
+## to a stop) on his feet again; stopped on a slope he can stand on, too.
+## The run's new pace.
+func _surf(h: Vector2, want: Vector2, top: float, delta: float) -> Vector2:
+	skidding = false
+	var rise := slope.length()
+	var steep := steepness()
+	var fall := -slope/rise if rise > 1e-4 else Vector2.ZERO
+	h += fall*slide_pull*sin(atan(rise))*delta
+	var way := h.normalized() if h.length() > 0.3 else (fall if fall != Vector2.ZERO else forward(facing))
+	var side := Vector2(-way.y,way.x)
+	h += side*want.dot(side)*SLIDE_STEER*delta
+	var drag := SLIDE_DRAG if steep >= SLIDE_END else slide_runout
+	if want.dot(way) < -0.5: drag += SLIDE_BRAKE
+	var pace := minf(move_toward(h.length(),0.0,drag*delta),slide_top)
+	h = h.normalized()*pace if h.length() > 1e-4 else Vector2.ZERO
+	if pace > 0.3: facing = rotate_toward(facing,facing_of(h),TURN_RUN*1.5*delta)
+	if steep > slide_auto: return h
+	var flat := steep < SLIDE_END
+	var done := (flat and pace <= SLIDE_STOP) if crouch else pace <= (maxf(top*want.length(),SLIDE_STOP) if flat else SLIDE_STOP)
+	if done: move = "crouch" if crouch else ""
+	return h
 
 ## In the air: the run kept, steered a little.
 func _steer(h: Vector2, want: Vector2, top: float, delta: float) -> Vector2:

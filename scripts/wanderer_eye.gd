@@ -8,9 +8,12 @@ extends Node
 ## (scripts/pilot_figure.gd) moves like a platformer's hero
 ## (scripts/pilot_motor.gd): turning to run the way asked, skidding on a
 ## hard reversal, jumping as high as Space is held, jumped again on landing
-## the higher pump; crouched (Shift, C or LT) sliding to a stop, and from a
-## crouch at a run the long jump; into a cliff in the air sliding down it,
-## Space kicking off it. The camera eases round behind the
+## the higher pump, jumped in a skid the side flip; crouched (Shift, C or
+## LT) sliding to a stop, and from a crouch at a run the long jump; crouched
+## on a slope (or on any too steep to stand on) boot-surfing down it, Space
+## jumping out at its pace; crouch pressed in the air twirling; slowed
+## running up steep ground; into a cliff in the air sliding down it, Space
+## kicking off it. The camera eases round behind the
 ## run when the mouse is left alone. V or Esc steps back out to building,
 ## and the camera glides back to where it was; the pilot is hidden there
 ## and kept where you walked them. Each footfall sounds
@@ -1016,19 +1019,27 @@ func _ledge_events(events: Dictionary) -> void:
 	if (events.has("climbed") or events.has("let_go")) and _hint.text == LEDGE_HINT:
 		_hint.text = _walk_hint() if perch.is_empty() else (PERCH_HINT if plane else GLIDER_PERCH_HINT)
 
-## The motor's jumps and landings: their sounds and puffs (the pump pushes
-## off in a ring of them, the long jump back off the heels, a wall kick off
-## the wall; a landing hard enough comes down in one), and the figure's
-## squash; taking hold of a wall slaps it, sliding down it scrapes and
-## sprays.
+## The motor's jumps and landings: their sounds and puffs (the pump and the
+## side flip push off in a ring of them, the long jump and the slide jump
+## back off the heels, a wall kick off the wall; a landing hard enough comes
+## down in one), and the figure's squash; taking hold of a wall slaps it,
+## sliding down it scrapes and sprays; a twirl whirls a swirl of wisps round
+## him; a surf down a slope scrapes as it starts and sprays the while.
 func _motor_events(events: Dictionary) -> void:
 	if events.has("jumped"):
 		steps.step(_surface(),0.3+0.15*float(events.jumped))
 		var at := _puff_at(figure.global_position)
 		var way := _world_way(motor.velocity)
 		if events.has("wall_jump"): puffs.burst(at+Vector3.UP*0.5-way*0.3,_surface(),0.35,way)
-		elif events.has("long"): puffs.burst(at,_surface(),0.3,-way)
-		elif int(events.jumped) > 1: puffs.burst(at,_surface(),0.45)
+		elif events.has("long") or events.has("slide_jump"): puffs.burst(at,_surface(),0.3,-way)
+		elif int(events.jumped) > 1 or events.has("side_flip"): puffs.burst(at,_surface(),0.45)
+	if events.has("twirl"):
+		steps.step(_surface(),0.25)
+		puffs.swirl(figure.global_position+figure.global_transform.basis.y*0.55,1.0,0.8)
+	if events.get("slide",false): steps.slide(_surface(),clampf(motor.speed()/RUN,0.4,1.0))
+	if motor.move == "slide" and motor.speed() > 1.0:
+		var travel := _world_way(motor.velocity)
+		puffs.spray(_puff_at(figure.global_position+travel*0.2),travel,_surface(),clampf(motor.speed()/PilotMotor.SLIDE_TOP,0.3,1.0),get_process_delta_time())
 	if events.get("wall",false):
 		steps.step(_surface(),0.35)
 		steps.slide(_surface(),0.3)

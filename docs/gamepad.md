@@ -45,8 +45,8 @@ The layout follows cozy builders on a pad, such as Townscaper and Tiny Glade on 
 |---|---|---|
 | Left stick | Walk, analog | WASD / arrows |
 | Right stick | Look | Mouse |
-| A | Jump; again on landing, the higher pump; on a wall (or just after touching one in the air), kick off it; again in the air to fly; beside the plane, take off | Space |
-| LT (held) | Crouch; at a run, then A, the long jump | Shift or C |
+| A | Jump; again on landing, the higher pump; in a skid, the side flip; surfing a slope, the slide jump; on a wall (or just after touching one in the air), kick off it; again in the air to fly; beside the plane, take off | Space |
+| LT (held) | Crouch; at a run, then A, the long jump; on a slope, surf down it; pressed in the air, twirl | Shift or C |
 | B or View | Step back out to building | V / Esc |
 | Menu | Pause (steps out) | — |
 

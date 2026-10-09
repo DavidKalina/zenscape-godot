@@ -14,10 +14,15 @@ extends Node3D
 ##         CLIMB_LENGTH s, which played back lowers him into the hang;
 ##   swim, tread  in deep water (when the model has them): a doggy paddle
 ##         made for SWIM_SPEED m/s, and treading water (TREAD_LENGTH s);
-##   crouch, long_jump, wall_slide, wall_kick, pump  the motor's moves (when
-##         the model has them): crouched low; diving out flat in the long
-##         jump; a hand on the wall, boots braced, sliding down it; kicked
-##         off it (once); the pump's fist punched up (once).
+##   crouch, long_jump, wall_slide, wall_kick, pump, slide, twirl, side_flip
+##         the motor's moves (when the model has them): crouched low; diving
+##         out flat in the long jump; a hand on the wall, boots braced,
+##         sliding down it; kicked off it (once); the pump's fist punched up
+##         (once); boot-surfing down a slope, knees bent, arms out; twirling,
+##         arms flung out; the side flip's spring, tuck and opening (once);
+##   jump_rise, jump_fall  in the air (when the model has them): going up,
+##         a knee driven up, and coming down, arms up and paddling, legs
+##         reaching for the ground.
 ## Walk and run are played in step, both at one gait phase, and blended by
 ## the speed: the phase moves on by the distance covered over the stride the
 ## blend has (a walk's stride is shorter than a run's), so at either clip's
@@ -27,12 +32,17 @@ extends Node3D
 ## cross-fades to idle, taken up at a random moment of its long loop so no
 ## two stops stand alike.
 ##
-## In the air the stride holds where it was (a plain jump has no clip yet).
-## The motor's moves (its `move`) fade their clips in over everything on the
-## ground and in the air, each with a kick to the springs as it starts: the
-## pump dips deeper and stretches further, a crouch squashes and settles, the
-## long jump tips forward, a wall slaps him flat against it, and a kick off
-## it stretches him as he whips round. Thrown back at a run it skids,
+## In the air the rise blends into the fall by how fast he goes up or down
+## (the top of a jump half of each), faded in leaving the ground and out
+## quickly landing. The motor's moves (its `move`) fade their clips in over
+## everything on the ground and in the air, each with a kick to the springs
+## as it starts: the pump dips deeper and stretches further, a crouch
+## squashes and settles, the long jump tips forward, a wall slaps him flat
+## against it, a kick off it stretches him as he whips round, a surf squats
+## him onto his boots and tips him down the slope (SLIDE_TILT of it), a
+## twirl stretches him and spins him round TWIRL_TURNS times about his
+## middle over TWIRL_SPIN s, and the side flip springs him up and rolls him
+## over sideways once over FLIP_SPIN s. Thrown back at a run it skids,
 ## leaning back, and coming out of it whips round to face the new way with
 ## a little hop.
 ##
@@ -85,7 +95,7 @@ const RUN_CYCLE := 0.3
 const HANG_LENGTH := 4.0
 const SHIMMY_SPEED := 0.7
 const SHIMMY_CYCLE := 0.5
-const CLIMB_LENGTH := 0.9
+const CLIMB_LENGTH := 0.4
 ## Seconds the hang fades in catching a lip in the air, the climb fades in
 ## from the hang, the hang back from the end of a lowering, and the
 ## shimmy's turn of way.
@@ -143,7 +153,10 @@ const WET_MOST := 0.8
 ## springs' kicks as one starts (a second): the pump's deeper dip and its
 ## stretch, a crouch's squash, the long jump's tip forward (and the lean it
 ## holds, radians), the slap onto a wall, the stretch of a kick off it.
-const MOVE_CLIPS := {"crouch":["crouch",1.0],"long":["long_jump",0.5],"wall":["wall_slide",0.5],"kick":["wall_kick",0.4],"pump":["pump",0.5]}
+const MOVE_CLIPS := {"crouch":["crouch",1.0],"long":["long_jump",0.5],"wall":["wall_slide",0.5],"kick":["wall_kick",0.4],"pump":["pump",0.5],
+	"slide":["slide",0.8],"twirl":["twirl",0.4],"flip":["side_flip",0.7]}
+## The moves' clips played once (held on their last frame).
+const ONCE := ["kick","pump","flip"]
 const MOVE_IN := 0.07
 const MOVE_OUT := 0.15
 const PUMP_DIP := 3.0
@@ -153,6 +166,28 @@ const LONG_TIP := 2.5
 const LONG_LEAN := -0.12
 const WALL_SLAP := 5.0
 const KICK_STRETCH := 4.0
+## The tricks: the surf's squash onto the boots and its tip down the slope
+## (a share of the slope's angle, the most forward); the twirl's stretch,
+## its turns and seconds (fast, then easing); the side flip's spring, and
+## its one roll's seconds (the tuck at its middle).
+const SLIDE_SQUASH := 3.0
+const SLIDE_TILT := 0.5
+const SLIDE_TIP_MOST := 0.45
+const TWIRL_STRETCH := 3.0
+const TWIRL_TURNS := 2.0
+const TWIRL_SPIN := 0.4
+const FLIP_STRETCH := 5.0
+const FLIP_SPIN := 0.55
+## The air's clips (pilot_build.py JUMP_LENGTH), seconds they fade in leaving
+## the ground and out landing, the rise (m/s) by which the fall has taken
+## over (and from which the rise has), and the arms' spring's share in the
+## air over them.
+const AIR_LENGTH := 0.5
+const AIR_IN := 0.1
+const AIR_OUT := 0.06
+const AIR_RISEN := 1.5
+const AIR_FALLEN := -2.0
+const AIR_ARMS := 0.3
 ## The pelvis over the feet (pilot_build.py HIPS).
 const HIPS := 0.4329
 ## Radians of bank per radian a second of turn at a full run, and the most.
@@ -252,6 +287,17 @@ var _has_moves := false
 var _move_weights := {}
 var _move_times := {}
 var _move_was := ""
+## The air: the model has its clips; 0 to 1 into them, the fall's share over
+## the rise, and the loops' time. The spins: the yaw's and the roll's angle
+## now, where each started, its seconds in and its whole (turns, seconds).
+var _has_air := false
+var _air := 0.0
+var _air_fall := 0.0
+var _air_time := 0.0
+var _spin := Vector2.ZERO
+var _spin_from := Vector2.ZERO
+var _spin_t := Vector2(INF,INF)
+var _spin_of := Vector4.ZERO
 ## On a ledge: the motor's hold last frame, 0 to 1 onto the ledge's clips,
 ## into the climb, into the shimmy, its way (0 left, 1 right) and its
 ## phase, and the hang's own time.
@@ -319,6 +365,7 @@ func _init() -> void:
 	_has_ledge = player.has_animation(&"hang") and player.has_animation(&"climb")
 	_has_swim = player.has_animation(&"swim") and player.has_animation(&"tread")
 	_has_moves = MOVE_CLIPS.values().all(func(c: Array) -> bool: return player.has_animation(StringName(c[0])))
+	_has_air = player.has_animation(&"jump_rise") and player.has_animation(&"jump_fall")
 	_idle_length = player.get_animation(&"idle").length
 	_skeleton = _model.find_children("*","Skeleton3D",true,false)[0]
 	_boots = [_skeleton.find_bone("foot.L"),_skeleton.find_bone("foot.R")]
@@ -343,9 +390,10 @@ func _init() -> void:
 	if _has_swim: clips.append_array(["swim","tread"])
 	if _has_moves:
 		for move: String in MOVE_CLIPS: clips.append(MOVE_CLIPS[move][0])
+	if _has_air: clips.append_array(["jump_rise","jump_fall"])
 	for clip: String in clips:
 		var animation := player.get_animation(clip)
-		animation.loop_mode = Animation.LOOP_NONE if clip in ["climb","wall_kick","pump"] else Animation.LOOP_LINEAR
+		animation.loop_mode = Animation.LOOP_NONE if clip in ["climb","wall_kick","pump","side_flip"] else Animation.LOOP_LINEAR
 		# Between the baked frames, smoothly.
 		for track in range(animation.get_track_count()):
 			animation.track_set_interpolation_type(track,Animation.INTERPOLATION_CUBIC)
@@ -374,6 +422,21 @@ func _init() -> void:
 		blend.connect_node(&"skid",0,&"move")
 		blend.connect_node(&"skid",1,&"skid_at")
 	var ground := &"skid" if _has_skid else &"move"
+	if _has_air:
+		# In the air: the rise blended into the fall, over the ground's.
+		for clip: StringName in [&"jump_rise",&"jump_fall"]:
+			var node := AnimationNodeAnimation.new()
+			node.animation = clip
+			blend.add_node(StringName(String(clip)+"_clip"),node)
+			blend.add_node(StringName(String(clip)+"_at"),AnimationNodeTimeSeek.new())
+			blend.connect_node(StringName(String(clip)+"_at"),0,StringName(String(clip)+"_clip"))
+		blend.add_node(&"air_way",AnimationNodeBlend2.new())
+		blend.add_node(&"air",AnimationNodeBlend2.new())
+		blend.connect_node(&"air_way",0,&"jump_rise_at")
+		blend.connect_node(&"air_way",1,&"jump_fall_at")
+		blend.connect_node(&"air",0,ground)
+		blend.connect_node(&"air",1,&"air_way")
+		ground = &"air"
 	if _has_moves:
 		# Each move's clip blended in over what comes before it.
 		for move: String in MOVE_CLIPS:
@@ -480,7 +543,7 @@ func drive(motor: RefCounted, delta: float) -> Dictionary:
 		_lean.v += SKID_KICK
 	_skidding_was = motor.skidding
 	var speed: float = motor.speed()
-	if motor.grounded and not motor.skidding and move != "crouch":
+	if motor.grounded and not motor.skidding and move != "crouch" and move != "slide":
 		var moving := speed > STILL
 		_moving = move_toward(_moving,1.0 if moving else 0.0,delta/FADE)
 		if moving:
@@ -500,29 +563,62 @@ func drive(motor: RefCounted, delta: float) -> Dictionary:
 	_speed_was = speed
 	var tip := -minf(absf(accel)*(TIP_GO if accel > 0.0 else TIP_STOP),TIP_MOST)
 	var pace := clampf(speed/RUN_SPEED,0.0,1.0)
+	var feet: Vector3 = motor.feet
+	var across := Vector2(feet.x-_feet_was.x,feet.z-_feet_was.z).length() if _feet_was.is_finite() else 0.0
+	var climb := clampf((feet.y-_feet_was.y)/across,-1.5,1.5) if motor.grounded and across > 0.001 else 0.0
+	_feet_was = feet
 	var bank := _bank.step(clampf(turned*BANK*pace,-BANK_MOST,BANK_MOST) if motor.grounded else 0.0,delta)
-	var lean := _lean.step((0.0 if _has_skid else SKID_LEAN) if motor.skidding else (LONG_LEAN if move == "long" else tip),delta)
+	var lean_to := tip
+	if motor.skidding: lean_to = 0.0 if _has_skid else SKID_LEAN
+	elif move == "long": lean_to = LONG_LEAN
+	elif move == "slide": lean_to = clampf(atan(climb)*SLIDE_TILT,-SLIDE_TIP_MOST,0.15)
+	var lean := _lean.step(lean_to,delta)
 	_tilt.rotation = Vector3(lean,_yaw.step(0.0,delta),bank)
-	_pivot.rotation = Vector3.ZERO
 	# Off the ground: a dip taking off, then stretched along the way it
-	# goes; the head nods with it and the arms fly out.
+	# goes; the head nods with it and the arms fly out (the air's clips
+	# throw them most of the way).
 	var rise: float = motor.velocity.y
 	if not motor.grounded and _grounded_was and rise > 0.0: _stretch.v -= TAKE_OFF_DIP
 	_grounded_was = motor.grounded
+	var aloft: bool = not motor.grounded and (move == "" or move == "jump")
+	_air = move_toward(_air,1.0 if aloft else 0.0,delta/(AIR_IN if aloft else AIR_OUT))
+	_air_fall = move_toward(_air_fall,clampf((AIR_RISEN-rise)/(AIR_RISEN-AIR_FALLEN),0.0,1.0),delta*5.0)
+	_air_time = fmod(_air_time+delta,AIR_LENGTH)
 	_stretch_to = 1.0 if motor.grounded else 1.0+AIR_STRETCH*clampf(absf(rise)/AIR_FAST,0.0,1.0)
 	_nod_to = 0.0 if motor.grounded else clampf(rise*NOD,-NOD_MOST,NOD_MOST)
-	_arms_to = 0.0 if motor.grounded or (_has_moves and move != "" and move != "jump") else 1.0
+	_arms_to = 0.0 if motor.grounded or (_has_moves and not aloft) else (AIR_ARMS if _has_air else 1.0)
 	_look_to = clampf(turned*LOOK,-LOOK_MOST,LOOK_MOST) if motor.grounded else 0.0
 	# The chest leans into the run and the slope climbed, and rolls into a
 	# turn.
-	var feet: Vector3 = motor.feet
-	var across := Vector2(feet.x-_feet_was.x,feet.z-_feet_was.z).length() if _feet_was.is_finite() else 0.0
-	var climb := clampf((feet.y-_feet_was.y)/across,-1.0,1.0) if motor.grounded and across > 0.001 else 0.0
-	_feet_was = feet
-	_hunch_to = -(RUN_LEAN*pace*_running+clampf(climb*SLOPE_LEAN,-SLOPE_MOST,SLOPE_MOST)) if motor.grounded and not motor.skidding and move != "crouch" else 0.0
+	_hunch_to = -(RUN_LEAN*pace*_running+clampf(climb*SLOPE_LEAN,-SLOPE_MOST,SLOPE_MOST)) if motor.grounded and not motor.skidding and move != "crouch" and move != "slide" else 0.0
 	_roll_to = clampf(turned*CHEST_BANK*pace,-CHEST_BANK_MOST,CHEST_BANK_MOST) if motor.grounded else 0.0
+	_pivot.rotation = _spun(delta)
 	_advance(delta)
 	return out
+
+## The spins this frame (a twirl's about up, a side flip's about forward),
+## each run through to its whole turns whatever the motor does meanwhile:
+## the pivot's turn.
+func _spun(delta: float) -> Vector3:
+	for i in range(2):
+		if _spin_t[i] == INF: continue
+		_spin_t[i] += delta
+		var u := clampf(_spin_t[i]/_spin_of[i*2+1],0.0,1.0)
+		# The twirl whips round and eases; the flip springs, tucks and opens.
+		var eased := 1.0-(1.0-u)*(1.0-u) if i == 0 else smoothstep(0.0,1.0,u)
+		_spin[i] = _spin_from[i]+TAU*_spin_of[i*2]*eased
+		if u >= 1.0:
+			_spin[i] = 0.0
+			_spin_t[i] = INF
+	return Vector3(0.0,_spin.x,_spin.y)
+
+## A spin started: about up (0) or forward (1), `turns` round (the way by
+## its sign) over `seconds`.
+func _spin_up(i: int, turns: float, seconds: float) -> void:
+	_spin_from[i] = fposmod(_spin[i],TAU)
+	_spin_t[i] = 0.0
+	_spin_of[i*2] = turns
+	_spin_of[i*2+1] = seconds
 
 ## The moves' clips faded to `move` (the motor's), each kicking the springs
 ## as it starts.
@@ -530,6 +626,13 @@ func _moves(move: String, delta: float) -> void:
 	if move != _move_was:
 		if _move_times.has(move): _move_times[move] = 0.0
 		match move:
+			"slide": _stretch.v -= SLIDE_SQUASH
+			"twirl":
+				_stretch.v += TWIRL_STRETCH
+				_spin_up(0,TWIRL_TURNS,TWIRL_SPIN)
+			"flip":
+				_stretch.v += FLIP_STRETCH
+				_spin_up(1,-1.0,FLIP_SPIN)
 			"pump": _stretch.v += PUMP_STRETCH-PUMP_DIP
 			"crouch": _stretch.v -= CROUCH_SQUASH
 			"long": _lean.v -= LONG_TIP
@@ -556,6 +659,8 @@ func _drive_swim(motor: RefCounted, delta: float) -> Dictionary:
 		_skid = 0.0
 		_skidding_was = false
 		_hold_was = ""
+		_spin_t = Vector2(INF,INF)
+		_air = 0.0
 		_tread_time = _rng.randf()*TREAD_LENGTH
 	_swimming_was = true
 	_ledge = move_toward(_ledge,0.0,delta/GRAB_FADE)
@@ -652,12 +757,14 @@ func _drive_ledge(motor: RefCounted, hold: String, delta: float) -> Dictionary:
 	var was := _hold_was
 	_hold_was = hold
 	if was == "":
-		# Onto the ledge: the springs of the run let go of.
+		# Onto the ledge: the springs of the run let go of, a spin ended.
 		for spring: Spring in [_bank,_look,_nod,_arms,_hunch,_roll]:
 			spring.x = 0.0
 			spring.v = 0.0
 		_skid = 0.0
 		_skidding_was = false
+		_spin_t = Vector2(INF,INF)
+		_air = 0.0
 	if _facing_was != INF:
 		_yaw.x = wrapf(_yaw.x-angle_difference(_facing_was,motor.facing),-PI,PI)
 	_facing_was = motor.facing
@@ -861,6 +968,10 @@ func settle() -> void:
 		_move_weights[key] = 0.0
 		_move_times[key] = 0.0
 	_move_was = ""
+	_air = 0.0
+	_spin = Vector2.ZERO
+	_spin_t = Vector2(INF,INF)
+	_pivot.rotation = Vector3.ZERO
 	_idle_anywhere()
 	_apply()
 	_tree.advance(0.0)
@@ -885,7 +996,12 @@ func _apply() -> void:
 		var length: float = MOVE_CLIPS[key][1]
 		var t: float = _move_times[key]
 		_tree.set(StringName("parameters/%s_mix/blend_amount" % key),smoothstep(0.0,1.0,_move_weights[key]))
-		_tree.set(StringName("parameters/%s_at/seek_request" % key),minf(t,length-0.001) if key in ["kick","pump"] else fmod(t,length))
+		_tree.set(StringName("parameters/%s_at/seek_request" % key),minf(t,length-0.001) if key in ONCE else fmod(t,length))
+	if _has_air:
+		_tree.set(&"parameters/air/blend_amount",smoothstep(0.0,1.0,_air))
+		_tree.set(&"parameters/air_way/blend_amount",smoothstep(0.0,1.0,_air_fall))
+		_tree.set(&"parameters/jump_rise_at/seek_request",_air_time)
+		_tree.set(&"parameters/jump_fall_at/seek_request",_air_time)
 	if _has_swim:
 		_tree.set(&"parameters/water/blend_amount",smoothstep(0.0,1.0,_swim))
 		_tree.set(&"parameters/paddle/blend_amount",smoothstep(0.0,1.0,_paddle))

@@ -1,7 +1,9 @@
 extends SceneTree
 ## Stills of the pilot's moves in the character study (studies/
 ## character_study.tscn): crouched, mid long jump, sliding down the shaft's
-## wall, kicking off it, and the pump. Needs a renderer (opens a window).
+## wall, kicking off it, the pump; a plain jump rising and falling, the
+## twirl, surfing the slide ramp, the side flip's tuck, and the climb half
+## way. Needs a renderer (opens a window).
 ##   godot --path . --script tools/capture_character_moves.gd -- --no-title [OUT_DIR]
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const DT := 1.0/60.0
@@ -60,4 +62,42 @@ func run() -> void:
 	tick(Vector2(-1.0,0.0),true)
 	for i in range(8): tick(Vector2(1.0,0.0),true)
 	await shot("wall_kick")
+	# A plain jump, going up and coming down.
+	study.place(Vector3(0.0,0.0,2.0),Vector2(0.0,-1.0))
+	for i in range(10): tick(Vector2.ZERO,false)
+	for i in range(8): tick(Vector2(0.0,-0.3),true)
+	await shot("jump_rise")
+	for i in range(14): tick(Vector2(0.0,-0.3),true)
+	await shot("jump_fall")
+	for i in range(30): tick(Vector2.ZERO,false)
+	# The twirl at a jump's top.
+	for i in range(14): tick(Vector2.ZERO,true)
+	tick(Vector2.ZERO,true,true)
+	for i in range(6): tick(Vector2.ZERO,true)
+	await shot("twirl")
+	for i in range(60): tick(Vector2.ZERO,false)
+	# Surfing the slide ramp.
+	study.go_to(10)
+	for i in range(90):
+		tick(Vector2(0.0,-1.0),false,m.feet.z < 26.0)
+		if m.move == "slide" and m.feet.z < 20.0: break
+	await shot("slide")
+	# The side flip, tucked.
+	study.place(Vector3(54.5,0.0,-23.0),Vector2(0.0,1.0))
+	var flipped := 0
+	for i in range(120):
+		var back := i >= 18
+		tick(Vector2(0.0,-1.0) if back else Vector2(0.0,1.0),back and m.skidding and flipped == 0)
+		if m.move == "flip": flipped += 1
+		if flipped >= 16: break
+	await shot("side_flip")
+	# Climbing up a catch wall, half way.
+	study.place(Vector3(6.0,0.0,-27.4),Vector2(0.0,-1.0))
+	for i in range(60):
+		tick(Vector2(0.0,-0.3),i < 20)
+		if m.hold == "hang": break
+	for i in range(10): tick(Vector2.ZERO,false)
+	tick(Vector2.ZERO,true)
+	for i in range(11): tick(Vector2.ZERO,false)
+	await shot("climb")
 	quit()

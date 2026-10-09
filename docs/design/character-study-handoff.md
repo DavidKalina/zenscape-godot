@@ -3,7 +3,9 @@
 Branches: `study/character` (round 1: the greybox room, the physics bridge,
 live feel tuning) and `study/character-moves` (round 2: faster, the pump,
 the long jump, wall slide and wall jump, exact jump arcs, every grabbable lip
-climbable). Round 2 is described first; round 1's notes follow, with the
+climbable), and `study/character-moves-3` (round 3: the twirl, slopes and
+the boot-surf, the slide jump, the side flip, jump poses, a quicker climb).
+Round 3 is described first, then round 2; round 1's notes follow, with the
 numbers that changed marked.
 
 ## Launch
@@ -12,13 +14,201 @@ numbers that changed marked.
     godot --path . res://studies/character_study.tscn -- --no-title
 
 The room is walkable about 1.0 to 1.4 s after launch. Keys: WASD/stick run,
-Space/A jump, Shift, C or LT crouch, mouse/right stick look, 1-9 teleport
-to a station, R back to start, F1 toggles the numbers, F2 opens the feel
+Space/A jump, Shift, C or LT crouch, mouse/right stick look, 1-9, 0, - and =
+teleport to a station, R back to start, F1 toggles the numbers, F2 opens the feel
 panel (Print copies the set as `const` lines; Defaults restores), Esc
 releases the mouse and a click captures it again.
 
-Tests: `python3 tools/run_tests.py --tests test_character_study.gd --tests
-test_character_climb.gd --tests 'test_pilot_*.gd'`.
+Tests: `python3 tools/run_tests.py --tests 'test_character_*.gd' --tests
+'test_pilot_*.gd'`.
+
+## Round 3: the tricks
+
+Branch `study/character-moves-3` (from `study/character-moves`). Try first:
+station 0 (the slide run), then = (the side-flip ledges), then a twirl off
+the top of any jump. Teleport keys are now 1-9, 0, - and =.
+
+### The moves, their inputs and numbers
+
+All are in `scripts/pilot_motor.gd` (its header describes them), so the
+game's walker has them too. Each number is a `const` with a matching
+per-instance var on the F2 panel.
+
+- **Twirl**: press `walk_crouch` (Shift, C or LT) in the air, at any
+  moment. It is a rising-edge press, so a crouch held from the ground (for
+  the long jump or the slide) never twirls. He is kicked up to at least
+  TWIRL_RISE 2.8 m/s. For TWIRL_TIME 0.45 s he then rises and falls on
+  TWIRL_GRAVITY 0.5 of his gravity, falling no faster than TWIRL_FALL
+  2.0 m/s, and the button's hold doesn't cut it. There is one per airtime.
+  Landing, catching a ledge, swimming or a wall kick gives it back. Taking
+  hold of a wall ends a twirl but doesn't give it back; otherwise
+  twirl, grab, let go and twirl again climbs any wall about 0.5 m a cycle.
+  The second Jump press in the air still asks to fly, twirling or not. The
+  figure spins TWIRL_TURNS 2 times over 0.4 s (fast, then easing), with
+  its arms flung out, its ankles crossed and its scarf thrown out flat.
+  The stretch spring is kicked, a ring of white wisps whirls round him
+  (`PilotPuffs.swirl`, a new "air" kind) and a soft step sounds. No whoosh
+  sound could be reused: glide_air's flap is built into the glide's own
+  audio stream.
+- **Slopes**: the motor reads the slope under the feet from the `ground`
+  callable alone (`_gradient`), so heightfields and the physics bridge both
+  work and no call site changed. For each axis it takes the gentlest of
+  the one-sided rises at 0.05 m and 0.2 m either side, and none if they
+  rise opposite ways. So a plane reads as its slope, and a step's edge, a
+  stair's tread, a ridge or a crease reads flat. `motor.slope` (rise per
+  metre) and `motor.steepness()` (degrees) are public. Running up a slope
+  over SLOPE_SLOW 22° he slows, down to SLOPE_SLOWEST 0.45 of his pace at
+  SLIDE_AUTO 44° (3.6 m/s up 32°).
+- **Boot-surf** (move "slide"): he surfs standing, knees bent, the boots
+  pointed down the fall line. It starts in three ways: holding crouch on
+  any slope of SLIDE_FROM 10° or more (pressed there, or landed on it with
+  crouch held), or on its own on a slope over SLIDE_AUTO 44° that goes on
+  SLOPE_FAR 1.0 m both up and down its fall line. The pull is SLIDE_PULL
+  18 m/s² times sin(slope), less SLIDE_DRAG 1. The stick steers across the
+  fall line (SLIDE_STEER 7 m/s²) and brakes when pulled back (SLIDE_BRAKE 4).
+  His top speed is SLIDE_TOP 11 m/s. On flat ground (under SLIDE_END 6°)
+  he keeps his pace and slows at SLIDE_RUNOUT 9 m/s². He runs again once
+  he is down to the pace the stick asks for. With crouch still held he
+  slides on to a crouch instead. With no crouch, a surf that stops on a
+  slope he can stand on ends.
+- **Slide jump**: Jump while surfing gives a SLIDE_JUMP 0.9 m jump that
+  keeps all of the surf's pace. The air steering never slows it, because
+  `_steer` keeps the larger of the run's pace and the current pace.
+- **Side flip**: Jump while skidding, or within SIDE_GRACE 0.12 s after a
+  skid, or on its first frame, gives a SIDE_FLIP 1.9 m flip. Releasing the
+  button doesn't cut it. He goes SIDE_SPEED 3.0 m/s along the way the
+  stick now points, and the air steering is capped at that pace. The
+  figure rolls him over sideways once over 0.55 s (smoothstepped), and the
+  `side_flip` clip springs him up with his arms raised, tucks him (knees to
+  chest, mitts on shins), then opens out for the landing. It throws the
+  pump's ring of puffs.
+- **Jump pose**: the new clips `jump_rise` (a knee driven up, arms swept
+  up and out) and `jump_fall` (arms up and paddling, legs reaching down)
+  blend by rise speed (all rise at +1.5 m/s and up, all fall at -2 m/s and
+  below, so a jump's top is half of each). They fade in over 0.1 s on
+  leaving the ground and out over 0.06 s on landing, under every move clip
+  and over the gait. The take-off dip and landing squash springs are
+  unchanged. The arms spring now adds only 0.3 of its flare in the air.
+- **Faster climb-up** (the user's "the getup takes too long"):
+
+  | | before | now |
+  |---|---|---|
+  | CLIMB_TIME / CLIMB_LENGTH | 0.9 s | 0.4 s |
+  | HANG_SETTLE | 0.2 s | 0.08 s |
+  | CLIMB_HOLD (stick held at the wall) | 0.25 s | 0.08 s |
+  | CATCH_TURN | 0.18 s | 0.15 s |
+  | LOWER_TIME | 0.7 s | 0.5 s |
+
+  From the moment of input to standing: Jump takes 0.43 s (it was about
+  0.93 s) and the stick takes about 0.48 s (it was about 1.15 s). A Jump
+  pressed while the catch settles is now kept for the climb, so pressing
+  as he grabs works. The climb clip was rebaked at 0.4 s with its keys
+  re-spaced by how far the body travels between them. That keeps the
+  quick climb from darting: the worst per-frame body pop in
+  test_pilot_ledge is 0.059 m, under its 0.08 m bound, which was not
+  changed. The motor and the figure read the same 0..1 `hold_t`, so the F2
+  `climb_time` slider retimes both. I found no other slow recovery: a hard
+  landing has no lag, and standing up out of water is immediate.
+
+### Measured feel (headless, 60 fps)
+
+- Twirl at a jump's top: 0.87 s in the air against a plain jump's 0.45 s,
+  a gain of 0.42 s. Pressed late while falling, the gain is 0.53 s. In the
+  study, F1 shows 0.60 s from the twirl to the landing.
+- Surf from a stand on 32°: 0.1, 3.0, 5.8, 8.7, 11.0 m/s at 1/3 s
+  intervals. That is top speed in about 1.4 s and 7.5 m. Coming off the
+  ramp at 11 m/s, he runs again 5.4 m out onto the flat, at 4.8 m/s.
+- Slide jump: 0.9 m up. Taken at 10.25 m/s it goes 4.78 m level
+  (heightfield test). In the study, taken 0.7 m before the 4 m pit at
+  9.35 m/s, it goes 4.60 m. A run jump from the same edge falls short.
+- Side flip: peak 1.90 m (the pump is 1.5) and 2.07 m along level (the
+  pump at a run goes about 2.96 m). From 0.8 m in front of the 1.8 m and
+  2.0 m ledges he gets up onto both. Onto the 2.0 m one he catches the lip
+  on the way down and climbs.
+- Climb: Jump to standing in 0.43 s.
+
+### Study stations (east hall)
+
+The room now has a 30 m hall east of it, reached through a 12 m doorway in
+the old east wall (HALL). The room's other walls are where they were.
+
+- **0, the slide run**: from a 6 m platform, a 32° ramp (9.6 m along the
+  ground), then 2.5 m of floor, then a pit 4 m across and 2 m deep with
+  steps out at its east end, then a wall-jump slot. The slot's walls are
+  2.8 m apart: the west one is 5.5 m with a lip and a deck behind, the east
+  one 6 m. Metre ticks run from the foot of the ramp. Walk to the edge of
+  the platform, hold crouch, and jump near the pit's edge.
+- **-, the chutes**: a 50° chute that surfs him without crouch, and a 40°
+  one beside it that he walks down until he crouches.
+- **=, the side-flip ledges**: 1.8 m and 2.0 m ledges behind a 12 m run
+  lane with ticks. Run out, throw the stick back, and press Space in the
+  skid.
+
+F1 adds the slope underfoot, the surf's pace now and its top, the last side
+flip's peak and reach, and the last twirl's airtime. Last-jump kinds now
+include "flip" and "slide jump". F2 adds twirl_rise, twirl_time,
+twirl_gravity, slide_auto, slide_pull, slide_top, slide_runout, slide_jump,
+side_flip, side_speed and climb_time, and the panel now scrolls.
+
+### What changed for the game's walker
+
+- It gets everything above through the shared motor. Steep terrain now
+  matters: over 44° (and over a metre of it) he surfs down, and running up
+  steep hills is slower. Islet rims and mountain flanks will throw him
+  down them. That is intended, but I haven't checked it in the game.
+- `_motor_events` handles the twirl (swirl and step), the surf (a scrape
+  as it starts and a spray while it runs), the slide jump (puffs back off
+  the heels) and the side flip (a ring of puffs). The header comment and
+  docs/gamepad.md (the A and LT rows) describe the new moves.
+- I ran test_cluster_stack, which walks every generated stair, as a guard.
+  The first slope rule stopped him on steep islet banks at stair heads,
+  where steep patches run up to 0.77 m. The two-scale slope reading and
+  the 1 m SLOPE_FAR fixed it, and all 84 walks pass. test_walk_island,
+  test_skydive, test_test_island and test_gamepad also pass.
+
+### Tests
+
+- New: `tests/test_pilot_tricks.gd` runs on heightfields. It covers the
+  twirl (the gain at the top and late, once an airtime, back after
+  landing, none from a held crouch, fly still asked), the surf (starting,
+  speeding up to the cap, steering, standing uncrouched on 32°, slowing
+  uphill, surfing on its own on 50°, the run-out back to a run, the slide
+  jump's pace and its 4.5 m gap against a run jump), the side flip
+  (height, reach and way, the landing, up onto a 1.9 m ledge, a plain jump
+  at a run is not a flip) and the climb (0.43 s, the press kept).
+- New: `tests/test_character_tricks.gd` runs in the study, through the
+  bridge. It covers the slide run (surf, F1 top, slide jump across the 4 m
+  pit, kicks up the slot to its lip), the chutes (50° on its own, 40° not
+  until crouched), side flips onto 2.0 m and 1.8 m, the twirl, and the F1
+  lines.
+- Passing: the import check, test_character_study, test_character_climb,
+  test_character_tricks, every test_pilot_*, test_ruin_kit, and (as guards)
+  test_cluster_stack, test_walk_island, test_skydive, test_test_island and
+  test_gamepad. No assertions were changed and nothing was added to
+  known_failures.
+- `tools/capture_character_moves.gd` also takes stills of jump_rise,
+  jump_fall, twirl, slide, side_flip and the climb. I took them once with
+  `--no-title`, and every pose reads.
+
+### Remaining limits
+
+- The surf's pose doesn't fit its feet to the slope. The whole body tips
+  SLIDE_TILT 0.5 of the slope's angle down the hill, so on a steep chute
+  the boots float a little off the high side.
+- The slope reading is a heightfield idea: an overhang or a narrow ramp
+  under 0.2 m wide reads oddly. There is no normal from the bridge.
+- Auto-surf needs 1 m of steep ground either way, so the first metre onto
+  a chute is walked. Short steep patches (cliffs with carved stairs) never
+  throw him.
+- The slide jump is the plain jump's arc with more pace. It has no clip of
+  its own (it uses jump_rise and jump_fall).
+- The twirl gives a good half second, which may be generous. Tune
+  twirl_rise and twirl_gravity on F2.
+- The side flip needs a skid, so a run of at least SKID_SPEED 3.4 m/s.
+  There is no stand-still backflip yet.
+- I took only stills; nothing was played by hand. Judge SIDE_GRACE, the
+  surf's steer and the twirl's float by playing.
+
 
 ## Round 2: the moves
 
