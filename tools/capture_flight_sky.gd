@@ -39,7 +39,7 @@ func run() -> void:
 	current_scene = study
 	while not study.flight_ready: await process_frame
 	study._hint.visible = false
-	for s: Dictionary in Course.pack(Course.SkyPack.PACK):
+	for s: Dictionary in Course.pack(Course.PackSky.PACK):
 		if only != "" and s.id != only: continue
 		study.pilot = "perfect"
 		study.start(s)

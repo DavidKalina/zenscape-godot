@@ -26,7 +26,7 @@ func run() -> void:
 	check(Course.STATIONS[10].id == "sundered_mix" and Course.STATIONS.find(pack[0]) > 10,"They come after the course's own, which keep their places")
 	for s: Dictionary in pack:
 		check(str(s.id).begins_with("sky_") and Course.key_name(s) == "","%s: a sky_ id and no digit key" % s.id)
-	check(Course.station_by_key(Course.SkyPack.NO_KEY).is_empty(),"No key reaches a pack's station")
+	check(Course.station_by_key(Course.PackSky.NO_KEY).is_empty(),"No key reaches a pack's station")
 	var pinned := {"sky_weave":"96e136265314","sky_spire":"848860adf76c","sky_spans":"05b9767b3537","sky_pierced":"14e3dda676fe"}
 	for id: String in pinned:
 		check(Course.station_hash(Course.station(id)) == pinned[id],"%s keeps its hash %s (%s)" % [id,pinned[id],Course.station_hash(Course.station(id))])

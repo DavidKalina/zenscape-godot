@@ -102,8 +102,9 @@ func run() -> void:
 	var shown: int = study._token_nodes.filter(func(n: MeshInstance3D) -> bool: return n.visible).size()
 	check(shown == 9 and study._bonus_nodes.size() == 5,"Only the 9 tokens and the 5 bonus are drawn (%d shown)" % shown)
 	study.pack = ""
-	study.start(Course.station("sundered_mix"))
+	# Packs follow the main stations (lines, nature, sky, then tokens).
+	study.start(Course.STATIONS[Course.STATIONS.find(pack[0])-1])
 	study.next_station()
-	check(study.station == pack[0],"Without --pack, N goes on from the main stations into the pack")
+	check(study.station == pack[0],"Without --pack, N goes on from the stations before it into the pack")
 	print("flight tokens: %d failure(s)" % failures)
 	quit(1 if failures > 0 else 0)
