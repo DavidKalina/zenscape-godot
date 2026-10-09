@@ -43,10 +43,20 @@ static func find(height: Callable, near: Vector2, y: float) -> Dictionary:
 		inward += way*(h-y)
 	if high-low < DROP or inward.length() < 0.001: return {}
 	inward = inward.normalized()
+	# The top: in from the point, nearer and nearer (a beam's is narrower
+	# than the ring).
 	var inner := near+inward*ACROSS
 	var outer := near-inward*ACROSS
-	var top := float(height.call(inner))
-	if not is_finite(top) or absf(top-y) > 1.0: top = float(height.call(near+inward*RING))
+	var top := NAN
+	for d: float in [ACROSS,RING,0.25,0.12]:
+		var h := float(height.call(near+inward*d))
+		if is_finite(h) and absf(h-y) <= 1.0:
+			top = h
+			inner = near+inward*d
+			break
+	if is_nan(top):
+		inner = near+inward*RING
+		top = float(height.call(inner))
 	if not is_finite(top): return {}
 	if _at(height,outer,top) > top-DROP: return {}
 	# The edge: between the outer (low) point and the inner (top), the last

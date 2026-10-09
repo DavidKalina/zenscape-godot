@@ -2,8 +2,9 @@ extends SceneTree
 ## The pilot on foot (scripts/pilot_motor.gd, drawn by scripts/pilot_figure.gd):
 ## the stick runs it up to its pace and turns it to face the way; let go it
 ## stops; thrown back at a run it skids, then turns; a tap jumps lower than a
-## held jump, which reaches the first of JUMPS; jumps chained at a run go
-## higher, the third with a flip; a press just before landing is kept, one
+## held jump, which reaches the first of JUMPS; jumped again on landing it
+## is the pump, higher, and the pump again stays that high (no third, no
+## flip); a press just before landing is kept, one
 ## just after a ledge still jumps; a ledge drops it, a wall in the air stops
 ## it; Space again on the way up asks to fly, near the ground falling it does
 ## not. The drawn pilot follows it through every state without its pose
@@ -41,11 +42,11 @@ func _initialize() -> void:
 	var tapped := _jump_height(m,figure,3)
 	check(absf(held-float(PilotMotor.JUMPS[0])) < 0.08,"A held jump reaches the first height (%.2f m)" % held)
 	check(tapped < held*0.75,"A tap jumps lower (%.2f m)" % tapped)
-	# The chain.
+	# The pump.
 	m.reset(Vector3.ZERO,PilotMotor.facing_of(Vector2(0.0,1.0)))
 	_run(m,figure,Vector2(0.0,1.0),PilotMotor.RUN,false,40)
 	var chained := []
-	var flipped := false
+	var peaks := []
 	var jump := false
 	for i in range(600):
 		# Held through each jump; let go just before landing and pressed
@@ -53,11 +54,13 @@ func _initialize() -> void:
 		jump = not (m.velocity.y < 0.0 and m.feet.y < 0.3) if not m.grounded else not jump
 		var out := m.step(DT,Vector2(0.0,1.0),PilotMotor.RUN,jump,ground,slide)
 		figure.drive(m,DT)
-		if out.has("jumped"): chained.append(out.jumped)
-		flipped = flipped or m.flip > 0.5
+		if out.has("jumped"):
+			chained.append(out.jumped)
+			peaks.append(0.0)
+		if not peaks.is_empty(): peaks[-1] = maxf(peaks[-1],m.feet.y)
 		if chained.size() == 3 and m.grounded: break
-	check(chained == [1,2,3],"Chained at a run, the jumps go 1, 2, 3: %s" % [chained])
-	check(flipped,"The third flips")
+	check(chained == [1,2,2],"Jumped again on each landing, the jumps go 1, 2, 2: %s" % [chained])
+	check(peaks.size() == 3 and peaks[1] > peaks[0]+0.5 and absf(peaks[2]-peaks[1]) < 0.03,"The pump goes higher, and stays that high: %s" % [peaks])
 	# The ledge, coyote time and the buffer.
 	m.reset(Vector3(9.5,0.0,0.0),PilotMotor.facing_of(Vector2(1.0,0.0)),PilotMotor.WALK)
 	var fell := false

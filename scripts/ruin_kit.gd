@@ -68,10 +68,10 @@ const STAND := PilotMotor.CLIMB_IN+BODY
 const TOP_ROOM := 2.0*STAND
 ## The highest lip one plain jump catches: the first jump's height (JUMPS[0]
 ## 0.8) plus the hands over the feet hanging (HANG_DROP) plus the slack under
-## the lip a catch allows (GRAB_LOW): 1.875. The third jump of a running
-## chain (JUMPS[2] 1.55) catches CHAIN_TOP, 2.625.
+## the lip a catch allows (GRAB_LOW): 1.875. The pump, jumped again on
+## landing (JUMPS[1] 1.5), catches CHAIN_TOP, 2.575.
 const GRAB_TOP := 0.8+PilotMotor.HANG_DROP+PilotMotor.GRAB_LOW
-const CHAIN_TOP := 1.55+PilotMotor.HANG_DROP+PilotMotor.GRAB_LOW
+const CHAIN_TOP := 1.5+PilotMotor.HANG_DROP+PilotMotor.GRAB_LOW
 ## The rise between one standing place and the next on a climbing route (a
 ## buttress's set-offs, a vault wall's broken steps), a margin under GRAB_TOP.
 const SET_OFF := 1.6
@@ -87,7 +87,7 @@ const LANDING := 1.0
 ## nosings; the newel post at their foot.
 const CHEEK := Vector2(0.42,0.34)
 const NEWEL := Vector2(0.56,0.95)
-## A plain wall: over GRAB_TOP and under CHAIN_TOP (a running chain catches
+## A plain wall: over GRAB_TOP and under CHAIN_TOP (the pump catches
 ## it; broken, its low runs are caught with one jump), thick enough to walk.
 const WALL_HEIGHT := 2.4
 const WALL_THICK := 1.2

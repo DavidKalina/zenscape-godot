@@ -29,6 +29,10 @@ class Motor:
 	var velocity := Vector3.ZERO
 	var feet := Vector3.ZERO
 	var pace := 0.0
+	var move := ""
+	var hold := ""
+	var hold_t := 0.0
+	var shimmy := 0.0
 	func speed() -> float: return pace
 
 func _initialize() -> void:
@@ -112,8 +116,34 @@ func run() -> void:
 	check(skid.length > 0.2 and skid.length < 0.6,"The skid loops short (%.2f s)" % skid.length)
 	check(high < 0.09,"Skidding, both boots stay down (ankles at most %.3f m up)" % high)
 	check(ahead > 0.15,"Skidding, a boot is braced well ahead of the hips (%.2f m at least)" % ahead)
+	var fresh := PilotFigure.new()
+	root.add_child(fresh)
+	_flip_caught(fresh,Motor.new())
 	print("PASS: pilot figure" if failures == 0 else "FAIL: pilot figure")
 	quit(1 if failures else 0)
+
+## A side flip caught on a ledge part way round (a pillar's lip, early in
+## the roll), hung from and climbed: stood again he is upright, the roll the
+## grab cut short not taken up again.
+func _flip_caught(figure: Node3D, motor: Motor) -> void:
+	var pivot: Node3D = figure._pivot
+	motor.grounded = false
+	motor.velocity = Vector3(0.0,6.0,3.0)
+	motor.move = "flip"
+	for i in range(12): figure.drive(motor,DT)
+	var rolled := absf(pivot.rotation.z)
+	motor.move = ""
+	motor.hold = "hang"
+	for i in range(30): figure.drive(motor,DT)
+	motor.hold = "climb"
+	for i in range(30):
+		motor.hold_t = i*DT
+		figure.drive(motor,DT)
+	motor.hold = ""
+	motor.grounded = true
+	motor.velocity = Vector3.ZERO
+	for i in range(3): figure.drive(motor,DT)
+	check(rolled > 0.3 and pivot.rotation.length() < 0.01,"A side flip caught on a ledge part way round (rolled %.2f) stands upright after the climb (%s)" % [rolled,pivot.rotation])
 
 ## `clip` played by itself on a fresh model, every frame of it: its length,
 ## the ankles [left, right] and the hips, in the model's frame.

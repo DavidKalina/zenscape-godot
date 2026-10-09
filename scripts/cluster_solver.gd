@@ -49,7 +49,7 @@ const Mountain = preload("res://scripts/cluster_mountain.gd")
 ## Rim to rim (m): any two members at least MIN_GAP; stepping stones
 ## STONE_GAP apart (a running jump is about 2.5 to 3 m; checked against
 ## STONE_MAX), each at most STONE_RISE up or down from the last (a jump
-## lifts PilotMotor JUMPS[1]).
+## lifts PilotMotor JUMPS[1], the pump).
 const MIN_GAP := 1.5
 const STONE_GAP := Vector2(1.1,1.7)
 const STONE_MAX := 2.2

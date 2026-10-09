@@ -49,6 +49,8 @@ const ACTIONS := {
 	"look_up":[["axis",JOY_AXIS_RIGHT_Y,-1.0]],
 	"look_down":[["axis",JOY_AXIS_RIGHT_Y,1.0]],
 	"walk_jump":[["key",KEY_SPACE],["button",JOY_BUTTON_A]],
+	# On foot, held: crouch; crouched at a run, Jump is the long jump.
+	"walk_crouch":[["key",KEY_SHIFT],["key",KEY_C],["axis",JOY_AXIS_TRIGGER_LEFT,1.0]],
 	"eye_leave":[["button",JOY_BUTTON_B],["button",JOY_BUTTON_BACK]],
 	"fly_boost":[["key",KEY_SPACE],["button",JOY_BUTTON_A],["axis",JOY_AXIS_TRIGGER_RIGHT,1.0]],
 	"fly_brake":[["key",KEY_SHIFT],["axis",JOY_AXIS_TRIGGER_LEFT,1.0]],

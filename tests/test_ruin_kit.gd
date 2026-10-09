@@ -83,13 +83,13 @@ func _run() -> void:
 ## The scale, against the limits it was set by.
 func _scale() -> void:
 	var first_grab: float = PilotMotor.JUMPS[0]+PilotMotor.HANG_DROP+PilotMotor.GRAB_LOW
-	var chain_grab: float = PilotMotor.JUMPS[2]+PilotMotor.HANG_DROP+PilotMotor.GRAB_LOW
+	var chain_grab: float = PilotMotor.JUMPS[1]+PilotMotor.HANG_DROP+PilotMotor.GRAB_LOW
 	check(is_equal_approx(RuinKit.GRAB_TOP,first_grab) and is_equal_approx(RuinKit.CHAIN_TOP,chain_grab),"GRAB_TOP and CHAIN_TOP follow the jumps")
 	check(is_equal_approx(RuinKit.STAND,PilotMotor.CLIMB_IN+RuinKit.BODY),"STAND follows the climb")
 	check(RuinKit.RISER < PilotMotor.STEP_UP-0.1,"a riser is walked up")
 	check(RuinKit.PLINTH_COURSE.x < PilotMotor.STEP_UP and RuinKit.SUB_BASE.x < PilotMotor.STEP_UP and RuinKit.FLOOR.z < PilotMotor.STEP_UP,"plinth courses, pier bases and slabs are stepped onto")
 	check(RuinKit.SET_OFF < first_grab-0.2,"each set-off is caught with one jump")
-	check(RuinKit.WALL_HEIGHT > first_grab and RuinKit.WALL_HEIGHT < chain_grab-0.1,"a wall is caught from a running chain")
+	check(RuinKit.WALL_HEIGHT > first_grab and RuinKit.WALL_HEIGHT < chain_grab-0.1,"a wall is caught from the pump")
 	check(RuinKit.WINDOW.y < first_grab-0.2 and RuinKit.ARCH_DEPTH >= RuinKit.STAND,"a window's sill is caught and stood in")
 	check(RuinKit.CHEST.z < first_grab,"the chest's top is caught")
 	check(RuinKit.WALL_THICK >= RuinKit.TOP_ROOM and RuinKit.ABACUS*2.0 >= RuinKit.TOP_ROOM,"wall and capital tops have room to walk")
