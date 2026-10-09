@@ -35,6 +35,18 @@ extends RefCounted
 ##            full swing and no warning
 ##   tight  = 1 - clamp(room / ROOM_EASY)       0 wide open, 1 grazing
 ## The demand curve is each moment's gap demand over the run's time.
+## Threading (the user's fun hypothesis: flying through things beats open
+## air), read off the ticks and the station's solids (`threading`):
+##   a tick threads when a solid lies within THREAD_SIDE m both to the left
+##   and to the right (level rays square to the heading), or within
+##   THREAD_UP m straight above (a roof, a lintel, a tie, a ring's top);
+##   the floor 40 m down never counts, a hall's own floor (below) does not
+##   either
+##   threading_share = threading ticks / ticks
+##   openings        = spells of threading (spells less than THREAD_JOIN s
+##                     apart joined), so each ring, gate, slot or roofed
+##                     stretch passed counts once; openings_per_s over the
+##                     run's duration
 
 const SkyPlane = preload("res://scripts/sky_plane.gd")
 
@@ -71,6 +83,12 @@ const SKILLS := ["sloppy","decent","sharp","perfect"]
 const BANDS := {"sloppy":"easy","decent":"medium","sharp":"hard","perfect":"expert"}
 ## A skill clears a station when this share of its runs take every token.
 const CLEAR_SHARE := 0.6
+
+## Threading: the rays' reach to the sides and up (m), and spells closer
+## than THREAD_JOIN s count as one opening.
+const THREAD_SIDE := 8.0
+const THREAD_UP := 12.0
+const THREAD_JOIN := 0.2
 
 ## A Vector3 from a JSON array or a Vector3.
 static func v3(x: Variant) -> Vector3:
@@ -247,7 +265,9 @@ static func _peak_mean(values: PackedFloat32Array, scale: float) -> Vector2:
 
 ## Every number for a run (see the header). `run` needs "entry", "tokens",
 ## "ticks", "events"; "rooms" (per gap) if known, else the token's reach.
-static func summarise(run: Dictionary) -> Dictionary:
+## With the station's `solids` (FlightCourse `solids`), the threading numbers
+## too.
+static func summarise(run: Dictionary, solids := []) -> Dictionary:
 	var entry: Dictionary = run.entry
 	var tokens: Array = run.tokens
 	var count := tokens.size()
@@ -370,7 +390,7 @@ static func summarise(run: Dictionary) -> Dictionary:
 		"demand_peak":snappedf(peak,0.001),"demand_mean":snappedf(weighted/timed if timed > 0.0 else 0.0,0.001),
 		"demand_spike":snappedf(peak-median,0.001),"grade":grade(peak),
 		"gaps":out_gaps,"curve":curve(run,out_gaps,yaw,pit),
-	}
+	}.merged(threading(tk,solids,duration) if not solids.is_empty() else {})
 
 ## The demand curve: every CURVE_STEP s, [t, the gap's demand, flown turn
 ## share, flown pitch share, the stick held (the larger of turn and pitch)].
@@ -411,3 +431,91 @@ static func slack(position: Vector3, heading: float, pitch: float, speed: float,
 	var turn := absf(angle_difference(heading,want.x))
 	var climb := absf(want.y-pitch)
 	return d.length()/maxf(speed,1.0)-(turn/TURN_RATE+climb/PITCH_SPEED+(ROLL_IN if turn > 0.05 else 0.0))
+
+# --- Threading -----------------------------------------------------------------------
+
+## Does a ray from `from` along unit `dir` meet solid `s` within `length` m?
+## Exact for the course's boxes and upright cylinders.
+static func ray_hits(s: Dictionary, from: Vector3, dir: Vector3, length: float) -> bool:
+	var lo := 0.0
+	var hi := length
+	if s.kind == "box":
+		var b: Basis = s.basis
+		var inv := b.transposed()
+		var o: Vector3 = inv*(from-(s.middle as Vector3))
+		var d: Vector3 = inv*dir
+		var half: Vector3 = (s.size as Vector3)*0.5
+		for a in range(3):
+			if absf(d[a]) < 1.0e-9:
+				if absf(o[a]) > half[a]: return false
+				continue
+			var t0 := (-half[a]-o[a])/d[a]
+			var t1 := (half[a]-o[a])/d[a]
+			lo = maxf(lo,minf(t0,t1))
+			hi = minf(hi,maxf(t0,t1))
+			if lo > hi: return false
+		return true
+	var m: Vector3 = s.middle
+	var r := float(s.radius)
+	var half_h := float(s.height)*0.5
+	# Up and down: the slab between its caps.
+	if absf(dir.y) < 1.0e-9:
+		if absf(from.y-m.y) > half_h: return false
+	else:
+		var t0 := (m.y-half_h-from.y)/dir.y
+		var t1 := (m.y+half_h-from.y)/dir.y
+		lo = maxf(lo,minf(t0,t1))
+		hi = minf(hi,maxf(t0,t1))
+		if lo > hi: return false
+	# Across: the circle.
+	var o := Vector2(from.x-m.x,from.z-m.z)
+	var d := Vector2(dir.x,dir.z)
+	var a := d.length_squared()
+	if a < 1.0e-12: return o.length() <= r
+	var bq := o.dot(d)
+	var c := o.length_squared()-r*r
+	var disc := bq*bq-a*c
+	if disc < 0.0: return false
+	var root := sqrt(disc)
+	lo = maxf(lo,(-bq-root)/a)
+	hi = minf(hi,(-bq+root)/a)
+	return lo <= hi
+
+## Is the plane at `p`, heading `heading`, threading (see the header)?
+static func threading_at(solids: Array, p: Vector3, heading: float) -> bool:
+	var ahead := forward(heading,0.0)
+	var right := ahead.cross(Vector3.UP).normalized()
+	var reach := maxf(THREAD_SIDE,THREAD_UP)
+	var left_hit := false
+	var right_hit := false
+	for s: Dictionary in solids:
+		# Far solids skipped: their bounding sphere out of reach.
+		var bound := (s.size as Vector3).length()*0.5 if s.kind == "box" else Vector2(float(s.radius),float(s.height)*0.5).length()
+		if p.distance_to(s.middle) > bound+reach: continue
+		if ray_hits(s,p,Vector3.UP,THREAD_UP): return true
+		if not left_hit and ray_hits(s,p,-right,THREAD_SIDE): left_hit = true
+		if not right_hit and ray_hits(s,p,right,THREAD_SIDE): right_hit = true
+		if left_hit and right_hit: return true
+	return false
+
+## A run's threading from its ticks (columns "t", "x", "y", "z", "heading")
+## and the station's solids: {threading_share, openings, openings_per_s,
+## threading_s}.
+static func threading(ticks: Dictionary, solids: Array, duration := -1.0) -> Dictionary:
+	var t: Array = ticks.get("t",[])
+	var n := t.size()
+	var inside := 0
+	var openings := 0
+	var last_in := -INF
+	var span := 0.0
+	for i in range(n):
+		var p := Vector3(float(ticks.x[i]),float(ticks.y[i]),float(ticks.z[i]))
+		if threading_at(solids,p,float(ticks.heading[i])):
+			inside += 1
+			var at := float(t[i])
+			if at-last_in > THREAD_JOIN: openings += 1
+			last_in = at
+	if duration < 0.0: duration = (float(t[n-1])-float(t[0])) if n > 1 else 0.0
+	var share := float(inside)/n if n > 0 else 0.0
+	return {"threading_share":snappedf(share,0.001),"openings":openings,"openings_per_s":snappedf(openings/maxf(duration,0.0001),0.001),
+		"threading_s":snappedf(share*duration,0.001)}

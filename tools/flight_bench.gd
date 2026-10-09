@@ -131,14 +131,14 @@ static func _better(a: Dictionary, b: Dictionary) -> bool:
 	return float(ma.duration) < float(mb.duration)
 
 static func _stats(flown: Array) -> Dictionary:
-	var keys := ["duration","collected","bumps","demand_peak","demand_mean","turn_flown_peak","pitch_flown_peak","reversals_per_s","effort","full_share"]
+	var keys := ["duration","collected","bumps","demand_peak","demand_mean","turn_flown_peak","pitch_flown_peak","reversals_per_s","effort","full_share","threading_share","openings_per_s"]
 	var sums := {}
 	for k: String in keys: sums[k] = 0.0
 	var cleared := 0
 	for r: Dictionary in flown:
 		var m: Dictionary = r.metrics
 		if m.cleared: cleared += 1
-		for k: String in keys: sums[k] += float(m[k])
+		for k: String in keys: sums[k] += float(m.get(k,0.0))
 	var out := {"runs":flown.size(),"clear_rate":snappedf(float(cleared)/maxf(flown.size(),1),0.001)}
 	for k: String in keys: out[k] = snappedf(sums[k]/maxf(flown.size(),1),0.001)
 	if flown.size() == 1 and flown[0].skill.has("look"): out["look"] = flown[0].skill.look
@@ -153,13 +153,14 @@ static func _reference(r: Dictionary) -> Dictionary:
 ## The bench as a plain-text table.
 static func table(out: Dictionary) -> String:
 	var lines := PackedStringArray()
-	lines.append("%-12s %-7s %-8s  %-23s  %6s %6s %6s %6s %6s %6s" % ["station","intent","band","clear sl/de/sh/pf","time","dPeak","dMean","spike","warnMn","room"])
+	lines.append("%-12s %-7s %-8s  %-23s  %6s %6s %6s %6s %6s %6s %6s %6s" % ["station","intent","band","clear sl/de/sh/pf","time","dPeak","dMean","spike","warnMn","room","thread","open/s"])
 	for id: String in out.stations:
 		var row: Dictionary = out.stations[id]
 		var c: Dictionary = row.clears
 		var ref: Dictionary = row.get("reference",{})
-		lines.append("%-12s %-7s %-8s  %-23s  %6.2f %6.2f %6.2f %6.2f %6s %6.2f" % [id,row.intent,row.band,
+		lines.append("%-12s %-7s %-8s  %-23s  %6.2f %6.2f %6.2f %6.2f %6s %6.2f %6.2f %6.2f" % [id,row.intent,row.band,
 			"/".join(Metrics.SKILLS.map(func(k: String) -> String: return ("%.1f" % float(c[k])) if c.has(k) else "-")),
 			float(ref.get("duration",0.0)),float(ref.get("demand_peak",0.0)),float(ref.get("demand_mean",0.0)),float(ref.get("demand_spike",0.0)),
-			("%.2f" % float(ref.warning_min)) if ref.get("warning_min") != null else "-",float(ref.get("room_min",0.0)) if ref.get("room_min") != null else 0.0])
+			("%.2f" % float(ref.warning_min)) if ref.get("warning_min") != null else "-",float(ref.get("room_min",0.0)) if ref.get("room_min") != null else 0.0,
+			float(ref.get("threading_share",0.0)),float(ref.get("openings_per_s",0.0))])
 	return "\n".join(lines)

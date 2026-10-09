@@ -69,6 +69,13 @@ var _rev_sign := Vector2.ZERO
 var reversals := 0
 var _last_heading := 0.0
 var _last_pitch := 0.0
+## Threading so far (FlightMetrics `threading_at`): the station's solids,
+## ticks threading, openings passed, and whether this tick threads.
+var solids := []
+var thread_ticks := 0
+var openings := 0
+var threading_now := false
+var _thread_last := -INF
 
 func _init(s: Dictionary, who := "human", params := {}, physics: PhysicsDirectSpaceState3D = null) -> void:
 	station = s
@@ -84,6 +91,7 @@ func _init(s: Dictionary, who := "human", params := {}, physics: PhysicsDirectSp
 	var line := Metrics.line(entry.position,entry.heading,tokens)
 	gaps = Metrics.profile(line,tokens.size())
 	rooms = Course.rooms(s,line)
+	solids = Course.solids(s)
 	for i in range(tokens.size()):
 		var before: Vector3 = entry.position if i == 0 else tokens[i-1]
 		var after: Vector3 = tokens[i+1] if i+1 < tokens.size() else tokens[i]+(tokens[i]-before)
@@ -119,6 +127,7 @@ func tick(delta: float, input: Dictionary) -> void:
 	_tokens(was)
 	_look()
 	_live(delta,input)
+	_thread()
 	_record(input)
 	if next_token() < 0: _end("done")
 	elif t >= TIME_LIMIT: _end("timeout")
@@ -167,6 +176,13 @@ func _live(delta: float, input: Dictionary) -> void:
 		if _rev_sign[a] != 0.0 and signf(v) != _rev_sign[a]: reversals += 1
 		_rev_sign[a] = signf(v)
 
+func _thread() -> void:
+	threading_now = Metrics.threading_at(solids,plane.position,plane.heading)
+	if not threading_now: return
+	thread_ticks += 1
+	if t-_thread_last > Metrics.THREAD_JOIN: openings += 1
+	_thread_last = t
+
 func _record(input: Dictionary) -> void:
 	var p := plane.position
 	var row := [snappedf(t,0.0001),snappedf(p.x,0.001),snappedf(p.y,0.001),snappedf(p.z,0.001),snappedf(plane.heading,0.0001),snappedf(plane.pitch,0.0001),
@@ -204,7 +220,8 @@ func live() -> Dictionary:
 	var span := maxf(t,0.001)
 	return {"t":t,"collected":collected(),"total":tokens.size(),"next":i,"slack":slack,"since":since,"turn":live_turn,"pitch":live_pitch,
 		"demand":demand,"need_turn":float(gaps[i].turn_peak) if i >= 0 else 0.0,"need_pitch":float(gaps[i].pitch_peak) if i >= 0 else 0.0,
-		"reversals":reversals/span,"effort":travel/span,"full":float(full_ticks)/maxf(ticks.t.size(),1),"bumps":bumps}
+		"reversals":reversals/span,"effort":travel/span,"full":float(full_ticks)/maxf(ticks.t.size(),1),"bumps":bumps,
+		"threading":float(thread_ticks)/maxf(ticks.t.size(),1),"threading_now":threading_now,"openings":openings,"openings_per_s":openings/span}
 
 ## The run as plain data, its numbers included.
 func finish() -> Dictionary:
@@ -221,5 +238,5 @@ func finish() -> Dictionary:
 		"ticks":ticks,"events":events,
 		"result":{"duration":snappedf(t,0.001),"collected":collected(),"total":tokens.size(),"cleared":collected() == tokens.size(),"ended":ended},
 	}
-	run["metrics"] = Metrics.summarise(run)
+	run["metrics"] = Metrics.summarise(run,solids)
 	return run

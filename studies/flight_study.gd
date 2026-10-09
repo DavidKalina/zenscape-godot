@@ -18,7 +18,7 @@ extends Node3D
 ## game's ruins (scripts/ruin_bump.gd). The camera is the game's chase
 ## (scripts/glide_camera.gd); the mouse or right stick looks round.
 ##
-## Keys: 1-8 the stations, R restart the station, N the next one, B cycles
+## Keys: 1-9 the stations, R restart the station, N the next one, B cycles
 ## who flies (you, then the sloppy, decent, sharp and perfect bots), F1 the
 ## live numbers, Esc lets the mouse go. After a station: 1-5 rates felt
 ## difficulty, then 1-5 fun (Enter skips).
@@ -320,7 +320,7 @@ func _build_ui() -> void:
 	add_child(layer)
 	_hud = Control.new()
 	_hud.position = Vector2(16.0,12.0)
-	_hud.size = Vector2(430.0,330.0)
+	_hud.size = Vector2(430.0,355.0)
 	_hud.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_hud.draw.connect(_draw_bars)
 	layer.add_child(_hud)
@@ -329,7 +329,7 @@ func _build_ui() -> void:
 	_hud_label.position = Vector2(16.0,240.0)
 	_hud.add_child(_hud_label)
 	_hint = Label.new()
-	_hint.text = "WASD/stick turn and pitch (W noses down) · Space/RT boost · Shift/LT brake · Q/E lean, twice: roll · 1-8 stations · R restart · N next · B who flies · F1 numbers · Esc mouse"
+	_hint.text = "WASD/stick turn and pitch (W noses down) · Space/RT boost · Shift/LT brake · Q/E lean, twice: roll · 1-9 stations · R restart · N next · B who flies · F1 numbers · Esc mouse"
 	_style(_hint,14)
 	_hint.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
 	_hint.offset_top = -36.0
@@ -341,8 +341,8 @@ func _build_ui() -> void:
 	_report.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
 	_report.offset_left = -330.0
 	_report.offset_right = 330.0
-	_report.offset_top = -170.0
-	_report.offset_bottom = 170.0
+	_report.offset_top = -185.0
+	_report.offset_bottom = 185.0
 	_report.visible = false
 	layer.add_child(_report)
 	_report_label = Label.new()
@@ -366,6 +366,7 @@ func _show_hud() -> void:
 		"time %.2f s · tokens %d/%d · bumps %d · speed %.1f m/s" % [float(live.t),int(live.collected),int(live.total),int(live.bumps),run.plane.speed],
 		"next token seen %s" % since,
 		"reversals %.2f /s · effort %.2f /s · full stick %d%%" % [float(live.reversals),float(live.effort),roundi(float(live.full)*100.0)],
+		"threading %s · %d%% of the run · openings %d (%.2f /s)" % ["NOW" if live.threading_now else "open air",roundi(float(live.threading)*100.0),int(live.openings),float(live.openings_per_s)],
 	]))
 
 ## The live bars: flown turn and pitch against what the line needs here
@@ -380,7 +381,7 @@ func _draw_bars() -> void:
 		["demand",float(live.demand),-1.0,1.2,"%.2f %s" % [float(live.demand),Metrics.grade(float(live.demand))]],
 		["slack",0.0 if is_nan(float(live.slack)) else float(live.slack),-1.0,3.0,"not seen" if is_nan(float(live.slack)) else "%.2f s" % float(live.slack)],
 	]
-	_hud.draw_rect(Rect2(-8.0,-6.0,440.0,330.0),Color(0.0,0.0,0.0,0.35))
+	_hud.draw_rect(Rect2(-8.0,-6.0,440.0,355.0),Color(0.0,0.0,0.0,0.35))
 	var y := 6.0
 	for row: Array in rows:
 		_hud.draw_string(font,Vector2(0.0,y+14.0),row[0],HORIZONTAL_ALIGNMENT_LEFT,-1,15,Color("fbf6ea"))
@@ -433,11 +434,12 @@ func _show_report() -> void:
 	lines.append("Turn: line needs %.2f, you flew %.2f peak · pitch needs %.2f, flew %.2f" % [float(m.turn_need_peak),float(m.turn_flown_peak),float(m.pitch_need_peak),float(m.pitch_flown_peak)])
 	lines.append("Warning least %s · room least %s" % ["-" if m.warning_min == null else "%.2f s" % float(m.warning_min),"-" if m.room_min == null else "%.2f m" % float(m.room_min)])
 	lines.append("Reversals %.2f /s · effort %.2f /s · full stick %d%%" % [float(m.reversals_per_s),float(m.effort),roundi(float(m.full_share)*100.0)])
+	lines.append("Threading %d%% of the run · openings %d (%.2f /s)" % [roundi(float(m.get("threading_share",0.0))*100.0),int(m.get("openings",0)),float(m.get("openings_per_s",0.0))])
 	var rating: Dictionary = last_run.get("rating",{})
 	if asking == "difficulty": lines.append("\nHow hard did it feel? 1 (easy) - 5 (hard)   · Enter skips")
 	elif asking == "fun": lines.append("\nDifficulty %d. How fun? 1 - 5   · Enter skips" % int(rating.difficulty))
 	elif not rating.is_empty(): lines.append("\nRated: difficulty %s · fun %s" % [str(rating.get("difficulty","-")),str(rating.get("fun","-"))])
-	lines.append("R again · N next · 1-8 a station")
+	lines.append("R again · N next · 1-9 a station")
 	_report_label.text = "\n".join(lines)
 
 func _unhandled_input(event: InputEvent) -> void:

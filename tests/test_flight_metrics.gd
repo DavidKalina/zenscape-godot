@@ -4,7 +4,8 @@ extends SceneTree
 ## pattern; the line's needed turn on a straight trail (none) and round a
 ## circle (cruise over the radius); the warning of a token seen long before
 ## versus one seen only on arrival; the demand formula's ends; the bands;
-## the live slack; the course's signed distances and its hash.
+## the live slack; the course's signed distances and its hash (stations
+## 1-8 pinned); threading past walls, under a lintel and by a lone pillar.
 ##   godot --headless --path . --script tests/test_flight_metrics.gd
 const Metrics = preload("res://scripts/flight_metrics.gd")
 const Course = preload("res://scripts/flight_course.gd")
@@ -134,5 +135,26 @@ func run() -> void:
 	var mid := Course.clearance(Course.solids(slot),Course.tokens(slot)[3])-Course.SPAN*0.5
 	check(near(mid,0.5,0.001),"The 2.4 m slot leaves level wings 0.5 m a side (%.3f)" % mid)
 	check(float(rooms[3].room) <= 0.5 and float(rooms[3].room) > 0.3,"The line through it has that room, give or take its curve (%.3f)" % rooms[3].room)
+	# Stations 1-8 keep the hashes the user's rated runs were flown on.
+	var pinned := {"gentle_arc":"ef5c73b6ecd3","slalom":"9e140f831e10","hidden_turn":"08b17c0ca386","tight_slot":"9b4941fb9a24",
+		"climb_rings":"4ed82e139779","dive_arch":"005a5bfc75b1","open_swoop":"fe3d869879c8","mixed_spike":"66cc6ea3502b"}
+	for id: String in pinned:
+		check(Course.station_hash(Course.station(id)) == pinned[id],"%s keeps its hash %s" % [id,pinned[id]])
+	# Threading on a made-up run: 4 s north at 14 m/s past two walls either
+	# side (z -14 to -28, 2.5 m off: 1 s), a lintel overhead (1 m deep, at
+	# z -42: a few ticks) and a pillar on one side only (never).
+	var walk := straight_run(4.0,1.0/60.0,[0.0],4,[0.0,0.0,0.0,0.0])
+	var walls := [
+		{"kind":"box","middle":Vector3(-3.0,40.0,-21.0),"size":Vector3(1.0,10.0,14.0),"basis":Basis.IDENTITY},
+		{"kind":"box","middle":Vector3(3.0,40.0,-21.0),"size":Vector3(1.0,10.0,14.0),"basis":Basis.IDENTITY},
+		{"kind":"box","middle":Vector3(0.0,45.0,-42.0),"size":Vector3(6.0,1.0,1.0),"basis":Basis.IDENTITY},
+		{"kind":"cyl","middle":Vector3(4.0,40.0,-50.0),"radius":1.0,"height":20.0},
+	]
+	var th := Metrics.summarise(walk,walls)
+	check(int(th.openings) == 2 and near(float(th.openings_per_s),0.5,0.001),"Threading: the walls and the lintel are two openings, 0.5 /s (%d)" % th.openings)
+	check(near(float(th.threading_share),66.0/241.0,0.01),"Threading: about 1.07 s of 4 s between walls or under the lintel (%.3f)" % th.threading_share)
+	check(not Metrics.threading_at(walls,Vector3(0.0,40.0,-50.0),0.0) and Metrics.threading_at(walls,Vector3(0.0,40.0,-21.0),0.0),"A pillar on one side alone isn't threading; walls both sides are")
+	check(not Metrics.threading_at(walls,Vector3(0.0,40.0,-21.0),PI*0.5),"Heading along the walls' normal, the side rays run along them: not threading")
+	check(not Metrics.summarise(walk).has("threading_share"),"Without solids, no threading numbers")
 	print("flight metrics: %d failure(s)" % failures)
 	quit(1 if failures > 0 else 0)
