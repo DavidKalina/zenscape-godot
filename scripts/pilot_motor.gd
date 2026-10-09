@@ -15,10 +15,23 @@ extends RefCounted
 ## pump: higher (JUMPS), and every timed jump after it stays that high. In
 ## the air he keeps his run and steers only a little.
 ##
-## Crouching (`crouch` held on the ground) he stops where he stands, sliding
-## to a stop from a run (CROUCH_BRAKE); jumped from a crouch at a run (over
-## LONG_PACE) it is the long jump: low (LONG_HEIGHT), fast (LONG_SPEED) and
-## far, on its own lighter gravity, the hold of the button not cutting it.
+## Momentum: pace over his run (from a long jump, a slide, a kick, a slope)
+## is not cut back to the run as he lands or steers. On the ground it bleeds
+## away at CARRY_HOLD with the stick held on along his way, faster
+## (CARRY_DECAY) with it pointing elsewhere; let go, he brakes as ever. In
+## the air it is all kept.
+##
+## Crouching (`crouch` held on the ground) at a stand he stays where he
+## stands (CROUCH_BRAKE); at a run (over LONG_PACE) he drops into a slide
+## on his boots (move "slide", as the surf below) that runs on along the
+## flat, slowing at SLIDE_RUNOUT and the air's SLIDE_AIR, not steered.
+## Jumped crouched at a run or sliding on the flat, it is the long jump: low
+## (LONG_HEIGHT), on its own lighter gravity, the hold of the button not
+## cutting it, at his pace and never under LONG_SPEED. Long-jumped again
+## within LONG_CHAIN of landing one (crouch held, Jump pressed on the touch
+## or in the BUFFER before it) it adds LONG_ADD to his pace, up to LONG_TOP:
+## a string of them, each timed, goes faster and further; late, the slide
+## has eaten some pace and nothing is added.
 ##
 ## Walls (`wall`, or the ground's own rise where none is given): in the air,
 ## against one standing WALL_TALL over the feet, the stick held into it and
@@ -33,7 +46,9 @@ extends RefCounted
 ## spins him round with his arms out, kicked up to at least TWIRL_RISE and
 ## then, for TWIRL_TIME, on a share of his gravity (TWIRL_GRAVITY) and
 ## falling no faster than TWIRL_FALL: a little more airtime to reach a ledge
-## or fix a landing. Once an airtime; landing, taking hold of a wall or a
+## or fix a landing. His pace is kept through it, pushed on TWIRL_PUSH along
+## the stick (never past TWIRL_TOP by it), and steered at TWIRL_STEER, so a
+## twirl at the end of a long jump stretches it. Once an airtime; landing, taking hold of a wall or a
 ## ledge, or swimming gives it back. Crouch held on the ground (for the long
 ## jump, or the slide) does nothing in the air until it is pressed again.
 ##
@@ -44,16 +59,23 @@ extends RefCounted
 ## "slide"), as he does on any steeper than SLIDE_FROM with `crouch` held
 ## (pressed there, or landed on it with it held). Surfing, standing on his
 ## boots, the slope pulls him down its fall line (SLIDE_PULL by the slope's
-## sine, less SLIDE_DRAG), the stick steering across it (SLIDE_STEER) or
-## braking against it (SLIDE_BRAKE), no faster than SLIDE_TOP. Onto flat
-## ground (under SLIDE_END) he keeps his pace and slows at SLIDE_RUNOUT,
-## running on again at his run's pace (held crouched, sliding to a crouch).
-## Jump surfing is the slide jump: SLIDE_JUMP high with all the slide's pace.
+## sine, less SLIDE_DRAG and the air's SLIDE_AIR by his pace squared, so the
+## steeper the faster he gains and the faster he can go), the stick steering
+## across it (SLIDE_STEER) or braking against it (SLIDE_BRAKE), never faster
+## than SLIDE_TOP. Onto flat ground (under SLIDE_END) he slides on, slowing
+## at SLIDE_RUNOUT and the air's drag, running on again at his run's pace
+## (held crouched, sliding to a crouch). Jump surfing on a slope, or
+## uncrouched on the flat, is the slide jump: SLIDE_JUMP high with all the
+## slide's pace; crouched on the flat it is the long jump.
 ##
 ## The side flip: Jump while skidding round (or SIDE_GRACE after it) flips
 ## him high (SIDE_FLIP, higher than the pump) the way the stick now points,
 ## slowly along (SIDE_SPEED), the button's hold not cutting it: up onto a
 ## ledge rather than across a gap.
+##
+## Every gain has its cap: nothing adds pace but a slope (to SLIDE_TOP), a
+## timed long jump (to LONG_TOP) and the twirl (to TWIRL_TOP, once an
+## airtime); no pace turns into height.
 ##
 ## Pressed again in the air on the way up, or falling from high enough
 ## (FLY_CLEAR), with no wall at hand, it asks to fly (`step` returns "fly").
@@ -130,18 +152,29 @@ const SNAP := 0.3
 const STEP_UP := 0.45
 ## Over this, metres above the ground, a press falling asks to fly.
 const FLY_CLEAR := 1.6
-## Crouching: how fast he slides to a stop from a run (m/s²). The long
-## jump: the least pace (m/s) it is taken from, its height (m), its pace
-## along (m/s) and its gravity (m/s², rising and falling alike). Level, it
-## goes LONG_SPEED*2*sqrt(2*LONG_HEIGHT/LONG_GRAVITY), 3.3 m; onto a top
-## level with the takeoff a little more, as a landing steps up onto a top
-## up to STEP_UP over the feet: about 3.9 m, over a 3.5 m gap from near
-## the edge and short of 4.
+## Carried pace over the run, bleeding away on the ground (m/s²): with the
+## stick held on along his way (within about 25°), and without. From a
+## 10 m/s landing, held on, about 2 s back to the run; turned, about 0.65 s.
+const CARRY_HOLD := 2.5
+const CARRY_DECAY := 8.0
+## Crouching: how fast he stops crouched under LONG_PACE (m/s²). The long
+## jump: the least pace (m/s) it, and the flat slide, are taken from; its
+## height (m), its least pace along (m/s) and its gravity (m/s², rising and
+## falling alike). Level, from a run, it goes
+## LONG_SPEED*2*sqrt(2*LONG_HEIGHT/LONG_GRAVITY), 4.2 m (it was 3.3);
+## onto a top level with the takeoff a little more, as a landing steps up
+## onto a top up to STEP_UP over the feet. Chained: the seconds after a long
+## jump's landing another is chained, the pace it adds (m/s) and the most
+## it adds to (m/s): about 7.6, 9, 10.4, 11.8, 12 m/s down a string, 4.2 m
+## a jump to 6.7.
 const CROUCH_BRAKE := 7.0
 const LONG_PACE := 3.0
-const LONG_HEIGHT := 0.6
-const LONG_SPEED := 6.4
+const LONG_HEIGHT := 0.7
+const LONG_SPEED := 7.6
 const LONG_GRAVITY := 18.0
+const LONG_CHAIN := 0.2
+const LONG_ADD := 1.4
+const LONG_TOP := 12.0
 ## Walls: the least height one stands over the feet to be slid down or
 ## kicked from, and how far ahead (m, from the feet) one is felt; the feet's
 ## least height over the ground to take hold; the stick's share into it that
@@ -168,19 +201,26 @@ const WALL_KICK := 5.2
 const WALL_LOCK := 0.28
 ## The twirl: the least rise it kicks him to (m/s), its seconds, the share
 ## of gravity he rises and falls on through it, and its fastest fall (m/s).
-## Pressed at a jump's top it gives about 0.4 s more in the air.
+## Pressed at a jump's top it gives about 0.4 s more in the air. Its push
+## along the stick (m/s), the pace the push stops at (m/s; faster, he keeps
+## his own) and its air steer (m/s²).
 const TWIRL_RISE := 2.8
 const TWIRL_TIME := 0.45
 const TWIRL_GRAVITY := 0.5
 const TWIRL_FALL := 2.0
+const TWIRL_PUSH := 2.0
+const TWIRL_TOP := 9.0
+const TWIRL_STEER := 12.0
 ## Slopes, degrees: from SLOPE_SLOW up he runs up slower, to SLOPE_SLOWEST
 ## of his pace at SLIDE_AUTO, past which he can't stand and surfs down; from
 ## SLIDE_FROM a crouch surfs; under SLIDE_END is flat. Surfing: the pull
 ## down the fall line (m/s² on a sheer drop, by the slope's sine), the drag
 ## against it, the stick's steer across it and brake against it (m/s²), the
-## fastest (m/s), the slowing on flat ground (m/s²) and the pace under which
-## a crouched surf stops (m/s); the slide jump's height (m). A 32° slope
-## takes him from a stand to SLIDE_TOP in about 1.4 s and 7.5 m.
+## fastest ever (m/s), the slowing on flat ground (m/s²), the air's drag
+## (m/s² by the pace squared, on slopes and flat alike) and the pace under
+## which a crouched surf stops (m/s); the slide jump's height (m). The air's
+## drag gives each slope its own top: about 15.6 m/s on 32°, 16.3 on 35°,
+## 19 on 50°, all under SLIDE_TOP (it was a flat 11 on any slope).
 const SLOPE_SLOW := 22.0
 const SLOPE_SLOWEST := 0.45
 const SLIDE_AUTO := 44.0
@@ -190,8 +230,9 @@ const SLIDE_PULL := 18.0
 const SLIDE_DRAG := 1.0
 const SLIDE_STEER := 7.0
 const SLIDE_BRAKE := 4.0
-const SLIDE_TOP := 11.0
-const SLIDE_RUNOUT := 9.0
+const SLIDE_TOP := 20.0
+const SLIDE_RUNOUT := 2.4
+const SLIDE_AIR := 0.035
 const SLIDE_STOP := 0.8
 const SLIDE_JUMP := 0.9
 ## The side flip: its height (m), its pace along (m/s), and the seconds
@@ -289,9 +330,15 @@ var skid_brake := SKID_BRAKE
 var coyote := COYOTE
 var buffer := BUFFER
 var chain_window := CHAIN_WINDOW
+var carry_hold := CARRY_HOLD
+var carry_decay := CARRY_DECAY
+var long_pace := LONG_PACE
 var long_height := LONG_HEIGHT
 var long_speed := LONG_SPEED
 var long_gravity := LONG_GRAVITY
+var long_chain := LONG_CHAIN
+var long_add := LONG_ADD
+var long_top := LONG_TOP
 var wall_slide := WALL_SLIDE
 var wall_jump := WALL_JUMP
 var wall_kick := WALL_KICK
@@ -299,10 +346,14 @@ var wall_lock := WALL_LOCK
 var twirl_rise := TWIRL_RISE
 var twirl_time := TWIRL_TIME
 var twirl_gravity := TWIRL_GRAVITY
+var twirl_push := TWIRL_PUSH
+var twirl_top := TWIRL_TOP
+var twirl_steer := TWIRL_STEER
 var slide_auto := SLIDE_AUTO
 var slide_pull := SLIDE_PULL
 var slide_top := SLIDE_TOP
 var slide_runout := SLIDE_RUNOUT
+var slide_air := SLIDE_AIR
 var slide_jump := SLIDE_JUMP
 var side_flip := SIDE_FLIP
 var side_speed := SIDE_SPEED
@@ -375,6 +426,9 @@ var _twirl := 0.0
 var _twirled := false
 var _skid_left := 0.0
 var _hang_press := false
+## In the air from a long jump; landed from one (for the chain).
+var _long_air := false
+var _long_landed := false
 ## Water (see above): its depth for a frame point, or none; swimming; the
 ## water over the feet (m, 0 dry) and its top (the frame's height, -INF dry).
 var water := Callable()
@@ -414,6 +468,8 @@ func reset(at: Vector3, towards: float, speed := 0.0) -> void:
 	_twirled = false
 	_skid_left = 0.0
 	_hang_press = false
+	_long_air = false
+	_long_landed = false
 	swimming = false
 	wade = 0.0
 	surface = -INF
@@ -482,7 +538,7 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 		else: h = _run(h,want,top,delta)
 		surfing = move == "slide"
 		if surfing != surfed: out["slide"] = surfing
-	elif move != "wall": h = _steer(h,Vector2.ZERO if _lock > 0.0 else want,side_speed if move == "flip" else top,delta)
+	elif move != "wall": h = _steer(h,Vector2.ZERO if _lock > 0.0 else want,side_speed if move == "flip" else top,delta,twirl_steer if move == "twirl" else air_accel)
 	# The jump: from the ground, or just off it; out of a skid, the side flip;
 	# surfing, the slide jump; from a crouch at a run, the long jump; off a
 	# wall.
@@ -497,29 +553,37 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 			h = way*side_speed
 			facing = facing_of(way)
 			_skid_left = 0.0
+			_long_air = false
 			out["side_flip"] = true
+			out["jumped"] = 1
+		elif crouched and h.length() >= long_pace and steepness() < SLIDE_FROM:
+			# Chained on the touch of the last, faster; else at his pace.
+			var pace := maxf(long_speed,h.length())
+			if _long_landed and _since_land <= long_chain: pace = maxf(pace,minf(h.length()+long_add,long_top))
+			chain = 0
+			move = "long"
+			_light = true
+			_no_cut = true
+			_long_air = true
+			velocity.y = sqrt(2.0*long_gravity*long_height)
+			h = h.normalized()*pace
+			facing = facing_of(h)
+			if surfing: out["slide"] = false
+			out["long"] = true
 			out["jumped"] = 1
 		elif surfing:
 			chain = 1
 			move = "jump"
 			_light = false
 			_no_cut = false
+			_long_air = false
 			velocity.y = sqrt(2.0*gravity*slide_jump)
 			if h.length() > 0.3: facing = facing_of(h)
 			out["slide"] = false
 			out["slide_jump"] = true
 			out["jumped"] = 1
-		elif crouched and h.length() >= LONG_PACE:
-			chain = 0
-			move = "long"
-			_light = true
-			_no_cut = true
-			velocity.y = sqrt(2.0*long_gravity*long_height)
-			h = h.normalized()*maxf(long_speed,h.length())
-			facing = facing_of(h)
-			out["long"] = true
-			out["jumped"] = 1
 		else:
+			_long_air = false
 			chain = mini(_last_chain+1,jumps.size()) if _last_chain > 0 else 1
 			move = "pump" if chain > 1 else "jump"
 			_light = false
@@ -544,6 +608,10 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 		_light = false
 		_no_cut = true
 		velocity.y = maxf(velocity.y,twirl_rise)
+		# Pushed on along the stick (or the way he goes), his own pace kept
+		# past TWIRL_TOP.
+		var on := want.normalized() if want.length() > 0.2 else (h.normalized() if h.length() > 0.3 else forward(facing))
+		h = (h+on*twirl_push).limit_length(maxf(h.length(),twirl_top))
 		out["twirl"] = true
 	var moved: Vector3 = slide.call(feet,h*delta)
 	var under: float = ground.call(Vector2(moved.x,moved.z))
@@ -603,6 +671,8 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 			grounded = true
 			velocity.y = 0.0
 			_last_chain = chain
+			_long_landed = _long_air
+			_long_air = false
 			chain = 0
 			move = ""
 			_light = false
@@ -673,6 +743,7 @@ func _kick_off(out: Dictionary) -> Vector2:
 	_lock = wall_lock
 	_twirl = 0.0
 	_twirled = false
+	_long_air = false
 	velocity.y = sqrt(2.0*gravity*wall_jump)
 	facing = facing_of(away)
 	out["jumped"] = 1
@@ -857,6 +928,7 @@ func _still() -> void:
 	_twirl = 0.0
 	_twirled = false
 	_hang_press = false
+	_long_air = false
 
 ## One step on a ledge.
 func _hold_step(delta: float, want: Vector2, pressed: bool, ground: Callable, slide: Callable, ledge: Callable) -> Dictionary:
@@ -1012,6 +1084,7 @@ func _float_in(hard: float, out: Dictionary) -> void:
 	move = ""
 	_twirl = 0.0
 	_twirled = false
+	_long_air = false
 	_jumped = false
 	_from_water = false
 	_buffer = 0.0
@@ -1111,7 +1184,13 @@ func _run(h: Vector2, want: Vector2, top: float, delta: float) -> Vector2:
 	facing = rotate_toward(facing,facing_of(way),rate*delta)
 	var f := forward(facing)
 	var goal := want.length()*top*(0.5+0.5*maxf(f.dot(way),0.0))*_uphill(f)
-	pace = move_toward(pace,goal,(accel if pace < goal else brake)*delta)
+	if pace > top and pace > goal and wade < WADE_FROM:
+		# Carried pace over the run (dry: wading slows as ever): bleeding
+		# away, slower held on.
+		var on := want.length() > 0.7 and f.dot(way) > 0.9
+		pace = maxf(pace-(carry_hold if on else carry_decay)*delta,maxf(goal,top))
+	else:
+		pace = move_toward(pace,goal,(accel if pace < goal else brake)*delta)
 	return f*pace
 
 ## The share of his pace kept running along `f` up the slope underfoot.
@@ -1150,13 +1229,15 @@ func steepness() -> float:
 	return rad_to_deg(atan(slope.length()))
 
 ## Whether he surfs this step: already surfing (`_surf` ends it), crouched
-## on a slope over SLIDE_FROM, or on one too steep to stand on that goes on
+## on a slope over SLIDE_FROM or at a run (over long_pace: the flat slide,
+## not out of a crouch already stopped), or on one too steep to stand on that goes on
 ## SLOPE_FAR either way down its fall line (a short steep patch, a stair's
 ## foot on a rough bank, is climbed).
 func _surfing(crouched: bool, ground: Callable) -> bool:
 	if wade > SWIM_IN*0.5: return false
 	var steep := steepness()
 	if move == "slide" or (crouched and steep >= SLIDE_FROM): return true
+	if crouched and move != "crouch" and Vector2(velocity.x,velocity.z).length() >= long_pace: return true
 	if steep <= slide_auto: return false
 	var p := Vector2(feet.x,feet.z)
 	var fall := -slope.normalized()
@@ -1164,9 +1245,10 @@ func _surfing(crouched: bool, ground: Callable) -> bool:
 	var down := (feet.y-float(ground.call(p+fall*SLOPE_FAR)))/SLOPE_FAR
 	return is_finite(up) and is_finite(down) and rad_to_deg(atan(minf(up,down))) > slide_auto
 
-## Boot-surfing: pulled down the fall line, steered across it, braked
-## against it, no faster than slide_top, turning to face the way he goes; on
-## flat ground slowing, and once down to the pace the stick asks (crouched,
+## Boot-surfing: pulled down the fall line, steered across it (on the flat
+## only uncrouched: the crouched slide runs straight), braked against it,
+## slowed by the air, no faster than slide_top, turning to face the way he
+## goes; on flat ground slowing, and once down to the pace the stick asks (crouched,
 ## to a stop) on his feet again; stopped on a slope he can stand on, too.
 ## The run's new pace.
 func _surf(h: Vector2, want: Vector2, top: float, delta: float) -> Vector2:
@@ -1177,8 +1259,8 @@ func _surf(h: Vector2, want: Vector2, top: float, delta: float) -> Vector2:
 	h += fall*slide_pull*sin(atan(rise))*delta
 	var way := h.normalized() if h.length() > 0.3 else (fall if fall != Vector2.ZERO else forward(facing))
 	var side := Vector2(-way.y,way.x)
-	h += side*want.dot(side)*SLIDE_STEER*delta
-	var drag := SLIDE_DRAG if steep >= SLIDE_END else slide_runout
+	if steep >= SLIDE_END or not crouch: h += side*want.dot(side)*SLIDE_STEER*delta
+	var drag := (SLIDE_DRAG if steep >= SLIDE_END else slide_runout)+slide_air*h.length_squared()
 	if want.dot(way) < -0.5: drag += SLIDE_BRAKE
 	var pace := minf(move_toward(h.length(),0.0,drag*delta),slide_top)
 	h = h.normalized()*pace if h.length() > 1e-4 else Vector2.ZERO
@@ -1189,9 +1271,9 @@ func _surf(h: Vector2, want: Vector2, top: float, delta: float) -> Vector2:
 	if done: move = "crouch" if crouch else ""
 	return h
 
-## In the air: the run kept, steered a little.
-func _steer(h: Vector2, want: Vector2, top: float, delta: float) -> Vector2:
+## In the air: the run kept, steered a little (at `rate`, m/s²).
+func _steer(h: Vector2, want: Vector2, top: float, delta: float, rate: float) -> Vector2:
 	if want == Vector2.ZERO: return h
 	facing = rotate_toward(facing,facing_of(want.normalized()),air_turn*delta)
 	var goal := want*maxf(top,h.length())
-	return h.move_toward(goal,air_accel*delta)
+	return h.move_toward(goal,rate*delta)

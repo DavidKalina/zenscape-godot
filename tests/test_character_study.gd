@@ -105,7 +105,7 @@ func run() -> void:
 	drive(Vector2(0.0,-0.3),true,40,func(mm: PilotMotor) -> void: if mm.on_ledge(): caught[0] = true)
 	check(caught[0],"A jump at the 1.7 m wall catches its lip (%s)" % m.hold)
 	# The long jump across the gaps: from 0.2 m short of the deck's edge.
-	for gap: Array in [[3.5,9.0,true],[4.0,12.0,false]]:
+	for gap: Array in [[3.5,9.0,true],[4.0,12.0,true]]:
 		study.place(Vector3(-29.5,1.2,gap[1]),Vector2(1.0,0.0))
 		var went := [false,false]
 		study.script_want = Vector2(1.0,0.0)

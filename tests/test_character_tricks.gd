@@ -1,7 +1,7 @@
 extends SceneTree
 ## The tricks in the character study (studies/character_study.tscn), headless,
 ## through the physics bridge (scripts/pilot_physics_ground.gd): at the slide
-## run (0) he surfs the 32° ramp crouched, up to near SLIDE_TOP, jumps out
+## run (0) he surfs the 32° ramp crouched, past 10.5 m/s, jumps out
 ## over the 4 m gap and lands across, then kicks up the slot to its lip and
 ## climbs out; the 50° chute (-) surfs him on its own, the 40° one doesn't
 ## until he crouches; at the side-flip ledges (=) a flip out of a skid gets
@@ -66,11 +66,13 @@ func _slide_run(m: PilotMotor) -> void:
 		if m.feet.y < -1.0 or m.on_ledge(): break
 	study.script_jump = false
 	study.script_crouch = false
-	check(surfed and top > PilotMotor.SLIDE_TOP-1.0,"Crouched down the 32° ramp he surfs, up to %.2f m/s" % top)
+	check(surfed and top > 10.5,"Crouched down the 32° ramp he surfs, up to %.2f m/s" % top)
 	check(absf(study.slide_top-top) < 0.01,"F1's surf top reads it (%.2f)" % study.slide_top)
 	check(landed and study.last_jump.get("kind","") == "slide jump","Jumped out at the pit's edge he lands across the 4 m gap (%s, z %.2f)" % [study.last_jump,m.feet.z])
 	# On into the slot and up it: into the west wall, kicked to the east, and
-	# on up to the 5.5 m lip.
+	# on up to the 5.5 m lip. Stopped first: he lands with the slide's pace
+	# carried, which would run him through the 5 m slot.
+	drive(Vector2.ZERO,false,false,45)
 	var side := Vector2(-1.0,0.0)
 	var on_wall := 0
 	var out_top := false
