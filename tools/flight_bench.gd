@@ -1,0 +1,164 @@
+extends SceneTree
+## The flight study's bench: CPU pilots (scripts/flight_bot.gd) fly the
+## stations (scripts/flight_course.gd), headless, every run recorded and
+## measured as a person's is (scripts/flight_run.gd), and each station gets
+## its band: the least skill that clears it (FlightMetrics `band`). Each
+## skill but the perfect reference flies `--runs` times with its own noise;
+## the perfect reference flies once at each of FlightBot PERFECT_LOOKS and
+## its best run is kept (the reference line in the report).
+##
+##   godot --headless --path . -s tools/flight_bench.gd -- --station all --runs 5
+##   options: --station id[,id] | all   --runs N   --skills sloppy,decent,...
+##            --out user://dir (default user://flight_runs)   --no-save (no run files)
+##
+## Writes each run's JSON, a summary (bench_<when>.json) and the bands
+## (bands.json, read by the study's end-of-run report), and prints a table.
+
+const Course = preload("res://scripts/flight_course.gd")
+const Run = preload("res://scripts/flight_run.gd")
+const Bot = preload("res://scripts/flight_bot.gd")
+const Metrics = preload("res://scripts/flight_metrics.gd")
+const Log = preload("res://scripts/flight_log.gd")
+
+const DT := 1.0/60.0
+
+## The last bench's summary, for tests.
+var summary := {}
+
+func _initialize() -> void:
+	run.call_deferred()
+
+func _args() -> Dictionary:
+	var out := {"station":"all","runs":5,"skills":",".join(Metrics.SKILLS),"out":Log.DIR,"save":true}
+	var args := OS.get_cmdline_user_args()
+	var i := 0
+	while i < args.size():
+		var a := args[i]
+		if a == "--no-save": out.save = false
+		elif a.begins_with("--") and i+1 < args.size():
+			var key := a.substr(2)
+			var value := args[i+1]
+			if a.contains("="):
+				key = a.substr(2,a.find("=")-2)
+				value = a.substr(a.find("=")+1)
+			else:
+				i += 1
+			out[key] = value
+		elif a.begins_with("--") and a.contains("="):
+			out[a.substr(2,a.find("=")-2)] = a.substr(a.find("=")+1)
+		i += 1
+	return out
+
+func run() -> void:
+	var args := _args()
+	var ids: PackedStringArray = Course.ids() if str(args.station) == "all" else str(args.station).split(",")
+	var skills := str(args.skills).split(",")
+	var stage := Node3D.new()
+	root.add_child(stage)
+	for id in ids:
+		var s := Course.station(id)
+		if s.is_empty():
+			push_error("no station %s" % id)
+			quit(1)
+			return
+		Course.build(s,stage)
+	await physics_frame
+	await physics_frame
+	var space := stage.get_world_3d().direct_space_state
+	summary = bench(ids,skills,int(args.runs),space,str(args.out),bool(args.save))
+	quit(0)
+
+## Flies every station in `ids` with every skill; returns the summary.
+static func bench(ids: PackedStringArray, skills: PackedStringArray, runs: int, space: PhysicsDirectSpaceState3D, dir: String, save: bool) -> Dictionary:
+	var began := Time.get_ticks_msec()
+	var stations := {}
+	var bands := {}
+	for id in ids:
+		var s := Course.station(id)
+		var row := {"id":id,"name":s.name,"intent":s.intent,"hash":Course.station_hash(s),"skills":{}}
+		var clears := {}
+		for name in skills:
+			var flown := []
+			if name == "perfect":
+				var best := {}
+				for look: float in Bot.PERFECT_LOOKS:
+					var params := Bot.skill("perfect")
+					params.look = look
+					var r := fly(s,"perfect",params,0,space)
+					if best.is_empty() or _better(r,best): best = r
+				flown.append(best)
+			else:
+				for n in range(runs):
+					flown.append(fly(s,name,Bot.skill(name),hash([id,name,n]),space))
+			if save:
+				for r: Dictionary in flown: Log.save(r,dir)
+			var stats := _stats(flown)
+			row.skills[name] = stats
+			clears[name] = stats.clear_rate
+			if name == "perfect": row["reference"] = _reference(flown[0])
+		row["band"] = Metrics.band(clears)
+		row["clears"] = clears
+		stations[id] = row
+		bands[id] = {"hash":row.hash,"band":row.band,"clears":clears,"when":Time.get_datetime_string_from_system(true)+"Z",
+			"reference":row.get("reference",{})}
+	var out := {"kind":"bench","when":Time.get_datetime_string_from_system(true)+"Z","runs":runs,"skills":Array(skills),"stations":stations,
+		"seconds":snappedf((Time.get_ticks_msec()-began)/1000.0,0.01)}
+	if save:
+		var stamp := str(out.when).replace(":","").replace("-","").replace("Z","")
+		DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(dir))
+		Log.write("%s/bench_%s.json" % [dir,stamp],out)
+		Log.save_bands(bands,dir)
+		print("flight bench saved: %s" % ProjectSettings.globalize_path("%s/bench_%s.json" % [dir,stamp]))
+	print(table(out))
+	return out
+
+## One bot run of station `s`.
+static func fly(s: Dictionary, name: String, params: Dictionary, seed_value: int, space: PhysicsDirectSpaceState3D) -> Dictionary:
+	var r := Run.new(s,"bot:"+name,params,space)
+	var bot := Bot.new(params,seed_value)
+	while not r.done: r.tick(DT,bot.input(r,DT))
+	var out := r.finish()
+	out["seed"] = seed_value
+	return out
+
+## Is run `a` better than `b`: cleared, more tokens, fewer bumps, quicker.
+static func _better(a: Dictionary, b: Dictionary) -> bool:
+	var ma: Dictionary = a.metrics
+	var mb: Dictionary = b.metrics
+	if int(ma.collected) != int(mb.collected): return int(ma.collected) > int(mb.collected)
+	if int(ma.bumps) != int(mb.bumps): return int(ma.bumps) < int(mb.bumps)
+	return float(ma.duration) < float(mb.duration)
+
+static func _stats(flown: Array) -> Dictionary:
+	var keys := ["duration","collected","bumps","demand_peak","demand_mean","turn_flown_peak","pitch_flown_peak","reversals_per_s","effort","full_share"]
+	var sums := {}
+	for k: String in keys: sums[k] = 0.0
+	var cleared := 0
+	for r: Dictionary in flown:
+		var m: Dictionary = r.metrics
+		if m.cleared: cleared += 1
+		for k: String in keys: sums[k] += float(m[k])
+	var out := {"runs":flown.size(),"clear_rate":snappedf(float(cleared)/maxf(flown.size(),1),0.001)}
+	for k: String in keys: out[k] = snappedf(sums[k]/maxf(flown.size(),1),0.001)
+	if flown.size() == 1 and flown[0].skill.has("look"): out["look"] = flown[0].skill.look
+	return out
+
+## The perfect run's numbers, without its ticks.
+static func _reference(r: Dictionary) -> Dictionary:
+	var m: Dictionary = r.metrics.duplicate()
+	m["look"] = r.skill.get("look",0.0)
+	return m
+
+## The bench as a plain-text table.
+static func table(out: Dictionary) -> String:
+	var lines := PackedStringArray()
+	lines.append("%-12s %-7s %-8s  %-23s  %6s %6s %6s %6s %6s %6s" % ["station","intent","band","clear sl/de/sh/pf","time","dPeak","dMean","spike","warnMn","room"])
+	for id: String in out.stations:
+		var row: Dictionary = out.stations[id]
+		var c: Dictionary = row.clears
+		var ref: Dictionary = row.get("reference",{})
+		lines.append("%-12s %-7s %-8s  %-23s  %6.2f %6.2f %6.2f %6.2f %6s %6.2f" % [id,row.intent,row.band,
+			"/".join(Metrics.SKILLS.map(func(k: String) -> String: return ("%.1f" % float(c[k])) if c.has(k) else "-")),
+			float(ref.get("duration",0.0)),float(ref.get("demand_peak",0.0)),float(ref.get("demand_mean",0.0)),float(ref.get("demand_spike",0.0)),
+			("%.2f" % float(ref.warning_min)) if ref.get("warning_min") != null else "-",float(ref.get("room_min",0.0)) if ref.get("room_min") != null else 0.0])
+	return "\n".join(lines)

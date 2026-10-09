@@ -1,0 +1,225 @@
+extends RefCounted
+## One run of the flight study (studies/flight_study.gd, tools/flight_bench.gd):
+## the game's plane (scripts/sky_plane.gd) flown through one station
+## (scripts/flight_course.gd) by whoever fills its input dict, a person at
+## the keys or the bot (scripts/flight_bot.gd), stepped the same way, and
+## everything recorded: each tick's time, pose, speed and input, and the
+## events (a token first seen, taken or missed; a bump off a solid).
+##
+## The plane is the game's own, stepped as the wanderer steps it
+## (scripts/wanderer_eye.gd `_advance_flight`): SkyPlane.step over the
+## floor, then RuinBump.bump off the station's solids, which stand on the
+## ruins' collision layer. A token is taken as the game's are
+## (scripts/sky_collectibles.gd `_touch`): the plane's path this tick passes
+## within REACH of it. Taking a later token misses every one still standing
+## before it, and a token is missed once the plane is PAST m beyond it along
+## the line's way there. A token is seen the first tick it lies within CONE
+## of the way the plane is going, within SIGHT, with a clear line to it.
+## The run ends with every token taken or missed, after TIME_LIMIT, or once
+## the plane strays LOST m from the next one.
+##
+## `finish` returns the run as plain data (FlightMetrics `summarise` reads
+## it; scripts/flight_log.gd saves it).
+
+const SkyPlane = preload("res://scripts/sky_plane.gd")
+const RuinBump = preload("res://scripts/ruin_bump.gd")
+const Course = preload("res://scripts/flight_course.gd")
+const Metrics = preload("res://scripts/flight_metrics.gd")
+
+const FORMAT := 1
+const SIGHT := 160.0
+const CONE := deg_to_rad(40.0)
+const PAST := 3.0
+const TIME_LIMIT := 40.0
+const LOST := 120.0
+## Standing, taken, missed.
+enum {STANDING,TAKEN,MISSED}
+
+var station: Dictionary
+var pilot := "human"
+## The bot's skill parameters, for the record (empty for a person).
+var skill := {}
+var plane := SkyPlane.new()
+var space: PhysicsDirectSpaceState3D
+var t := 0.0
+var tokens: Array[Vector3] = []
+var state := PackedInt32Array()
+## When each token was first seen (s), or -1.
+var seen_at := PackedFloat32Array()
+var events := []
+var ticks := {}
+var done := false
+var ended := ""
+var bumping := false
+var bumps := 0
+## The line's way through each token, the line's needs per gap, the room.
+var ways: Array[Vector3] = []
+var gaps := []
+var rooms := []
+var entry := {}
+var started := ""
+## Live numbers for the overlay: the smoothed flown turn and pitch shares,
+## stick travel and reversals so far.
+var live_turn := 0.0
+var live_pitch := 0.0
+var travel := 0.0
+var full_ticks := 0
+var _last_in := Vector2.ZERO
+var _rev_sign := Vector2.ZERO
+var reversals := 0
+var _last_heading := 0.0
+var _last_pitch := 0.0
+
+func _init(s: Dictionary, who := "human", params := {}, physics: PhysicsDirectSpaceState3D = null) -> void:
+	station = s
+	pilot = who
+	skill = params
+	space = physics
+	entry = Course.entry(s)
+	tokens = Course.tokens(s)
+	state.resize(tokens.size())
+	state.fill(STANDING)
+	seen_at.resize(tokens.size())
+	seen_at.fill(-1.0)
+	var line := Metrics.line(entry.position,entry.heading,tokens)
+	gaps = Metrics.profile(line,tokens.size())
+	rooms = Course.rooms(s,line)
+	for i in range(tokens.size()):
+		var before: Vector3 = entry.position if i == 0 else tokens[i-1]
+		var after: Vector3 = tokens[i+1] if i+1 < tokens.size() else tokens[i]+(tokens[i]-before)
+		ways.append((after-before).normalized())
+	for key: String in ["t","x","y","z","heading","pitch","bank","speed","in_turn","in_pitch","in_boost","in_brake","in_lean","in_roll","bump"]:
+		ticks[key] = []
+	started = Time.get_datetime_string_from_system(true)+"Z"
+	plane.launch(entry.position,entry.heading,SkyPlane.CRUISE_SPEED,false)
+	_last_heading = plane.heading
+	_last_pitch = plane.pitch
+	_record({})
+
+## The first standing token, or -1.
+func next_token() -> int:
+	for i in range(state.size()):
+		if state[i] == STANDING: return i
+	return -1
+
+func collected() -> int:
+	return Array(state).count(TAKEN)
+
+## One tick of `delta` s with `input` (SkyPlane.step's dict).
+func tick(delta: float, input: Dictionary) -> void:
+	if done: return
+	t += delta
+	var was := plane.position
+	plane.step(delta,input,Callable(Course,"ground"))
+	var bumped := RuinBump.bump(space,plane,was) if space != null else false
+	if bumped and not bumping:
+		bumps += 1
+		events.append({"t":snappedf(t,0.0001),"kind":"bump"})
+	bumping = bumped
+	_tokens(was)
+	_look()
+	_live(delta,input)
+	_record(input)
+	if next_token() < 0: _end("done")
+	elif t >= TIME_LIMIT: _end("timeout")
+	elif plane.position.distance_to(tokens[next_token()]) > LOST: _end("lost")
+
+func _tokens(was: Vector3) -> void:
+	var at := plane.position
+	for i in range(tokens.size()):
+		if state[i] != STANDING: continue
+		var near := Geometry3D.get_closest_point_to_segment(tokens[i],was,at)
+		if near.distance_to(tokens[i]) < Course.REACH:
+			for k in range(i):
+				if state[k] == STANDING: _resolve(k,MISSED)
+			_resolve(i,TAKEN)
+	for i in range(tokens.size()):
+		if state[i] == STANDING and ways[i].dot(at-tokens[i]) > PAST: _resolve(i,MISSED)
+
+func _resolve(i: int, how: int) -> void:
+	state[i] = how
+	events.append({"t":snappedf(t,0.0001),"token":i,"kind":"hit" if how == TAKEN else "miss"})
+
+## Tokens coming into view.
+func _look() -> void:
+	var way := plane.velocity.normalized() if plane.velocity.length() > 0.5 else plane.forward()
+	for i in range(tokens.size()):
+		if state[i] != STANDING or seen_at[i] >= 0.0: continue
+		var d := tokens[i]-plane.position
+		if d.length() > SIGHT or way.angle_to(d) > CONE: continue
+		if not Course.line_clear(space,plane.position,tokens[i]): continue
+		seen_at[i] = t
+		events.append({"t":snappedf(t,0.0001),"token":i,"kind":"seen"})
+
+func _live(delta: float, input: Dictionary) -> void:
+	var k := 1.0-exp(-delta/Metrics.SMOOTH)
+	live_turn = lerpf(live_turn,absf(angle_difference(_last_heading,plane.heading))/delta/Metrics.TURN_RATE,k)
+	live_pitch = lerpf(live_pitch,absf(plane.pitch-_last_pitch)/delta/Metrics.PITCH_SPEED,k)
+	_last_heading = plane.heading
+	_last_pitch = plane.pitch
+	var now := Vector2(float(input.get("turn",0.0)),float(input.get("pitch",0.0)))
+	travel += absf(now.x-_last_in.x)+absf(now.y-_last_in.y)
+	_last_in = now
+	if maxf(absf(now.x),absf(now.y)) > Metrics.FULL: full_ticks += 1
+	for a in range(2):
+		var v := now[a]
+		if absf(v) < Metrics.REVERSE_DEAD: continue
+		if _rev_sign[a] != 0.0 and signf(v) != _rev_sign[a]: reversals += 1
+		_rev_sign[a] = signf(v)
+
+func _record(input: Dictionary) -> void:
+	var p := plane.position
+	var row := [snappedf(t,0.0001),snappedf(p.x,0.001),snappedf(p.y,0.001),snappedf(p.z,0.001),snappedf(plane.heading,0.0001),snappedf(plane.pitch,0.0001),
+		snappedf(plane.bank,0.0001),snappedf(plane.speed,0.001),snappedf(float(input.get("turn",0.0)),0.001),snappedf(float(input.get("pitch",0.0)),0.001),
+		snappedf(float(input.get("boost",0.0)),0.001),snappedf(float(input.get("brake",0.0)),0.001),snappedf(float(input.get("lean",0.0)),0.001),
+		float(input.get("roll",0.0)),1 if bumping else 0]
+	var keys := ["t","x","y","z","heading","pitch","bank","speed","in_turn","in_pitch","in_boost","in_brake","in_lean","in_roll","bump"]
+	for i in range(keys.size()): ticks[keys[i]].append(row[i])
+
+func _end(why: String) -> void:
+	for i in range(state.size()):
+		if state[i] == STANDING: _resolve(i,MISSED)
+	ended = why
+	done = true
+
+## Ends the run now (a person restarting): what stands is missed.
+func abandon() -> void:
+	if not done: _end("abandoned")
+
+## The live numbers: time, tokens, the next token's slack (s, or NAN if not
+## seen yet) and when it was seen, the flown turn and pitch shares, the
+## line's demand on this gap, reversals a second, stick travel a second and
+## the share at full stick.
+func live() -> Dictionary:
+	var i := next_token()
+	var slack := NAN
+	var since := NAN
+	var demand := 0.0
+	if i >= 0:
+		if seen_at[i] >= 0.0:
+			slack = Metrics.slack(plane.position,plane.heading,plane.pitch,plane.speed,tokens[i])
+			since = t-seen_at[i]
+		var g: Dictionary = gaps[i]
+		demand = Metrics.gap_demand(g.turn_peak,g.pitch_peak,slack if not is_nan(slack) else 0.0,float(rooms[i].room),Metrics.commit_time(g))
+	var span := maxf(t,0.001)
+	return {"t":t,"collected":collected(),"total":tokens.size(),"next":i,"slack":slack,"since":since,"turn":live_turn,"pitch":live_pitch,
+		"demand":demand,"need_turn":float(gaps[i].turn_peak) if i >= 0 else 0.0,"need_pitch":float(gaps[i].pitch_peak) if i >= 0 else 0.0,
+		"reversals":reversals/span,"effort":travel/span,"full":float(full_ticks)/maxf(ticks.t.size(),1),"bumps":bumps}
+
+## The run as plain data, its numbers included.
+func finish() -> Dictionary:
+	if not done: abandon()
+	var token_list := []
+	for p in tokens: token_list.append(Metrics.arr(p))
+	var room_list := []
+	for r: Dictionary in rooms: room_list.append({"clearance":snappedf(float(r.clearance),0.001) if is_finite(float(r.clearance)) else 1.0e6,"room":snappedf(float(r.room),0.001)})
+	var run := {
+		"format":FORMAT,"station":station.id,"station_hash":Course.station_hash(station),"station_name":station.name,"intent":station.intent,
+		"pilot":pilot,"skill":skill,"started":started,"dt":snappedf(t/maxf(ticks.t.size()-1,1),0.00001),
+		"entry":{"position":Metrics.arr(entry.position),"heading":entry.heading},
+		"tokens":token_list,"reach":snappedf(Course.REACH,0.001),"span":Course.SPAN,"rooms":room_list,
+		"ticks":ticks,"events":events,
+		"result":{"duration":snappedf(t,0.001),"collected":collected(),"total":tokens.size(),"cleared":collected() == tokens.size(),"ended":ended},
+	}
+	run["metrics"] = Metrics.summarise(run)
+	return run

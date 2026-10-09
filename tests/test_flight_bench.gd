@@ -1,0 +1,61 @@
+extends SceneTree
+## The flight study's bench (tools/flight_bench.gd), headless: the sharp bot
+## clears the gentle arc; a run's recorded inputs, fed back through a fresh
+## run as a person's keys would be, fly the same line (the recorder keeps
+## everything the plane was given); a run saves and reads back as JSON; and
+## a short bench of the gentle arc lands it in a band and writes the bands
+## file the study's report reads.
+##   godot --headless --path . --script tests/test_flight_bench.gd
+const Course = preload("res://scripts/flight_course.gd")
+const Run = preload("res://scripts/flight_run.gd")
+const Bot = preload("res://scripts/flight_bot.gd")
+const Log = preload("res://scripts/flight_log.gd")
+const Bench = preload("res://tools/flight_bench.gd")
+const DIR := "user://flight_runs_test"
+var failures := 0
+
+func _initialize() -> void:
+	run.call_deferred()
+
+func check(ok: bool, label: String) -> void:
+	if not ok: failures += 1
+	print(("OK   " if ok else "FAIL ")+label)
+
+func run() -> void:
+	create_timer(120.0).timeout.connect(func() -> void: push_error("flight bench test timed out"); quit(2))
+	var stage := Node3D.new()
+	root.add_child(stage)
+	var arc := Course.station("gentle_arc")
+	Course.build(arc,stage)
+	await physics_frame
+	await physics_frame
+	var space := stage.get_world_3d().direct_space_state
+	# The sharp bot clears the gentle arc.
+	var sharp := Bench.fly(arc,"sharp",Bot.skill("sharp"),7,space)
+	var m: Dictionary = sharp.metrics
+	check(m.cleared and int(m.collected) == arc.tokens.size(),"The sharp bot clears the gentle arc (%d/%d in %.2f s)" % [m.collected,m.total,m.duration])
+	check(float(m.duration) > 4.0 and float(m.duration) < 10.0,"It takes a few seconds (%.2f s)" % m.duration)
+	check(sharp.ticks.t.size() == sharp.ticks.in_turn.size() and sharp.ticks.t.size() > 200,"Every tick is recorded (%d)" % sharp.ticks.t.size())
+	check(float(m.turn_need_peak) > 0.1 and float(m.turn_need_peak) < 0.6,"The arc asks a gentle turn of the line (%.2f of TURN_RATE)" % m.turn_need_peak)
+	# Replayed through a fresh run as plain input dicts, the same line.
+	var replay := Run.new(arc,"human",{},space)
+	var tk: Dictionary = sharp.ticks
+	for i in range(1,tk.t.size()):
+		var dt := float(tk.t[i])-float(tk.t[i-1])
+		replay.tick(dt,{"turn":tk.in_turn[i],"pitch":tk.in_pitch[i],"boost":tk.in_boost[i],"brake":tk.in_brake[i],"lean":tk.in_lean[i],"roll":tk.in_roll[i]})
+	var end := Vector3(tk.x.back(),tk.y.back(),tk.z.back())
+	check(replay.plane.position.distance_to(end) < 0.3 and replay.collected() == int(m.collected),"Its inputs replayed fly the same line (%.3f m apart, %d tokens)" % [replay.plane.position.distance_to(end),replay.collected()])
+	# Saved and read back.
+	var path := Log.save(sharp,DIR)
+	var back := Log.read(path)
+	check(str(back.get("station","")) == "gentle_arc" and str(back.get("pilot","")) == "bot:sharp" and str(back.get("station_hash","")) == Course.station_hash(arc),"A run saves as JSON and reads back (%s)" % path.get_file())
+	check((back.ticks.t as Array).size() == tk.t.size() and back.metrics.has("curve") and back.has("started"),"With its ticks, its numbers and when it was flown")
+	# A short bench: a band, and the bands file.
+	var bench: Dictionary = Bench.bench(PackedStringArray(["gentle_arc"]),PackedStringArray(["sloppy","sharp","perfect"]),2,space,DIR,true)
+	var row: Dictionary = bench.stations.gentle_arc
+	check(str(row.band) in ["easy","medium","hard"],"The gentle arc lands in a band a bot clears (%s)" % row.band)
+	check(float(row.clears.sharp) >= 1.0 and float(row.clears.perfect) >= 1.0,"Sharp and perfect clear it every time")
+	var bands := Log.bands(DIR)
+	check(bands.has("gentle_arc") and str(bands.gentle_arc.hash) == Course.station_hash(arc),"The bands file keeps it by the station's hash")
+	print("flight bench: %d failure(s)" % failures)
+	quit(1 if failures > 0 else 0)
