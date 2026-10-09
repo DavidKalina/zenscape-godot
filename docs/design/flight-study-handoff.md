@@ -715,3 +715,304 @@ Timelines, one character per 0.25 s (a space means straight; `. : - = + *
 5. Generalise `flight_flow_layout.py` into the station generator from
    round 1's list: a curve (pieces, gaps, corkscrew parameters) in,
    bays and tokens out, benched and filtered on band, demand and flow.
+
+# Round 4: a mix of moves, and the knife edge
+
+`sundered_flow` got the first fun 5 (difficulty 4; flown 21/21, 5% still,
+longest straight 0.25 s). The user: "there needs to be more side-to-side,
+like left and right. The corkscrew is great but I want a mix of up and
+down, left or right, corkscrew, having to do the [knife edge] when you
+press Q and E." Round 4 keeps the line that never settles but changes the
+move every few seconds, and puts tokens through two knife-edge slits.
+
+## Launch
+
+    ./run-flight-study.command --station=sundered_mix          # key -
+    ./run-flight-study.command --station=sundered_mix --bot=sharp
+    godot --headless --path . -s tools/flight_bench.gd -- --station sundered_flow,sundered_mix --runs 20
+    python3 tools/flight_flow_layout.py --station mix --check   # the line's needs, beats, slits
+    python3 tools/flight_flow_layout.py --station mix --write   # rewrite the station in flight_course.gd
+
+The `-` key (after 0) jumps to it; N reaches it after `sundered_flow`. Every
+other station, `sundered` (9) and `sundered_flow` (0) included, keeps its
+layout and hash (all 11 now pinned in `test_flight_metrics.gd`).
+
+## Collision on a knife edge
+
+- **The bump already honoured it.** `RuinBump` bumps a slab of
+  `PlaneFigure.SPAN` × 0.3 × 1.2 m (span × thickness × length), turned by
+  heading, pitch, bank and roll. On edge (bank ±π/2) the slab is 1.4 m tall
+  and 0.3 m wide, so it fits the 1.15 m slit with 0.42 m a side and 0.95 m
+  above and below. Level, its wings don't fit. The tiny-layout test shows
+  both: the knife-edge bot threads a lone slit clean, and the same bot told
+  never to lean bumps the screen.
+- **The room metric didn't honour it.** It was a sphere (clearance less
+  half the span), so a slit read as negative room. Now `FlightCourse.survey`
+  keeps the sphere wherever that is ≥ 0, so every older station's rooms are
+  unchanged. Where it is < 0, it tests the wing line both ways
+  (`wing_room`: 5 points tip to tip, less the 0.15 m half thickness): level
+  (across the way) and on edge (square to the way and to level).
+  - The room is the better of the two.
+  - Where on edge beats level by ≥ 0.2 m and level doesn't fit, the sample
+    is a **knife sample**.
+  - Runs of knife samples are **knife zones** (`knife_zones`): gap, start,
+    end, way and room. In `sundered_mix` each is about 1 m long with 0.4 m
+    of room on edge.
+  - The rooms in the run JSON mark that gap `"knife": true`, and its commit
+    time gets `KNIFE_IN` (2 × EASE_KNIFE, 0.24 s) for the roll.
+  - The survey is cached per station hash, so benches don't redo it.
+
+## Knife-edge bot (`scripts/flight_bot.gd`, VERSION 2)
+
+Still the same input dict: it only fills `lean` (−1..1), which it never did
+before. On a station with no knife zones a v2 bot flies exactly as v1 did.
+The knife's randomness has its own RNG, and every v1 station's bench
+numbers came out identical. VERSION went to 2 because SKILLS changed, so
+the report lists v2 bots separately.
+
+- **Detects:** the run's knife zones (above). It knows a zone once it has
+  seen it for its `reaction` time (the run's `knife_seen`; the perfect bot
+  knows all). This uses the slit, not the token, because the token in a
+  slit is often hidden behind the screen until you're lined up.
+- **Lines up:** from `LINE_UP` (1.5 s) before it means to lean, it stops
+  cutting between tokens and holds the smooth line itself (`_track`). It
+  steers for the line's way a little ahead (the bank's lag) and corrects
+  the sideways and up/down miss over `knife_look` (6 m). It adds half the
+  line's own turn and climb rate as feed-forward (`track_ff` 0.5). Pure
+  pursuit with a 4 m look cut the curve by 0.3-0.4 m, enough to clip the
+  screen's jamb. Full feed-forward overshot. 0.5 cleared every sharp run
+  in a sweep.
+- **Leans:** `knife_lead` s before the zone (at its speed), it holds `lean`
+  toward the side the line turns next (right if straight on). It lets go
+  1.2 m past the zone's end. Per zone, the lead wanders by
+  `knife_jitter` (gaussian), and with chance `knife_forget` it doesn't lean
+  at all.
+
+| skill | knife_lead s | jitter s | forget | (plus its usual lag, noise, gain) |
+|---|---|---|---|---|
+| sloppy | 0.25 | 0.15 | 25% | lag 0.12, noise 0.12 |
+| decent | 0.40 | 0.10 | 5% | lag 0.08, noise 0.08 |
+| sharp | 0.50 | 0.05 | 0 | lag 0.04, noise 0.03 |
+| perfect | 0.60 | 0 | 0 | none |
+
+## Knife metrics (`FlightMetrics.knife`, merged into `summarise`)
+
+The run tracks each zone like a token:
+
+- **`knife_seen`**: the point 1.5 m before the zone comes into view (the
+  same cone, range and clear line as a token).
+- **`knife_in`**: the plane reaches the zone, with its |bank| then and
+  whether it is on edge (|bank| ≥ `KNIFE_ON` 1.2 rad, about 70°, where the
+  slab is under 0.8 m across).
+- **`knife_out`**: it leaves, `clean` if it stayed on edge all through
+  with no bump. **`knife_skip`**: it went by without coming within 4 m.
+
+From these, every run gets:
+
+- `knife_moments` (zones on the station) and `knife_clean`.
+- `knife_warning_min` / `_mean`: reached less seen, in seconds.
+- `knife_lead`: how long it had been on edge when it got there, mean over
+  zones reached on edge.
+- `on_edge_s` and `edge_spells`.
+
+The run JSON gets a `knife` list of the zones. These show on F1 ("knife:
+1/2 slits clean · on edge 0.8 s · ON EDGE · next slit 1.2 s"), on the end
+panel, in a separate bench `knife_table`, and in the report's bot and
+people tables ("knife clean", "on edge s") and its CSV.
+
+## Move segments (`tools/flight_flow_layout.py --station mix`)
+
+A piece's line is a list of segments. Each move works the same way: a pair
+of alternating **beats** in the nave's own frame.
+
+- `across` swings between +side and −side, `half` m apart.
+- `up` swings round `mid` by `rise`, half a beat later, so one axis turns
+  hardest where the other has levelled off.
+- A natural cubic spline through each axis's beats joins the segments with
+  no corner and no flat. A new segment only changes the size and spacing of
+  the beats that follow.
+
+| move | what | params used |
+|---|---|---|
+| weave | side to side between the columns: big side, a bob of 0.5-0.6 m so the line keeps moving where the weave crosses | half 16-20, side 3-4.2 |
+| corkscrew | both axes, as round 3 | half 20, side 3.6, rise 1.6 |
+| wave | over and under the ties: big rise, a 1.5 m sway | half 22.5, rise 2.9 (2.5 → 8.3 m: under a low tie, over a high one) |
+| knife | see below | approach 26-28, hold 8 |
+| swoop | between the pieces, round 3's Hermite: a banked turn | turn −1.4 rad (left), gap 24 m, drop 5 m |
+| climb | from the slit's trough, the height rises `top` in a half cosine over `len`, while the beats go on and the nave tightens past the hall's end (radius 30): the climbing turn out | top 9, len 48 |
+
+**The knife segment.** The slit is on the left of the nave, on a bay line,
+as in the kit (across −6.0, 2.65 m up).
+
+- The segment before it runs until `approach` m before the slit.
+- The beat there is a high one, capped at `side_in`. A low beat too close
+  is dropped, or a high one is added.
+- The line then swings left into the slit at the bottom of an up/down dip.
+- It runs in line with the slit for `hold` m either side, with beats 0.15 m
+  off its line so the spline lies flat.
+- Then it swings out.
+
+The hold is what makes it threadable. With the slit at the peak of a swing
+(my first try), the line was still turning at 0.8 × TURN_RATE inside the
+slit. Even the perfect bot clipped a jamb, and decent and sharp missed it
+most of the time. With the hold, the dip through the slit keeps the pitch
+swinging (about 10°/s), so it doesn't read as a straight. The perfect line's
+longest straight is still 0.33 s.
+
+**Bays follow the line** (`auto_plan`), using the same plan keys as before:
+
+- A screen with inner columns at −2.6 where it threads a slit.
+- A low tie where it dips under 2.7 m.
+- A high tie where it crests over 8.2 m (flown over), or ducks under 4.7 m
+  (flown under, every other bay line).
+- Inner columns at 0 (and ±2.6) on bay lines it swings at least 3 m wide of.
+- Roofs follow a whole/broken/open rhythm, open where it climbs out.
+- A torn end on each piece.
+- `plans` per piece overrides any bay.
+
+The whole layout is the `MIX` dict, so a later round can emit variants:
+change the segments, beats or curvature and `--write`. The tool rewrites
+the block between the `# >>> sundered_mix` and `# <<< sundered_mix` markers
+in `flight_course.gd`. `segment_marks()` gives where each move starts.
+
+## The station (`sundered_mix`, key -, hash db59c1bb79c5)
+
+There are 26 bays at the real hall dimensions: piece A has 11 and curves
+right (R 70), and piece B has 15 and curves right (R 70). It has 329
+solids, 36 tokens (one every bay line, plus 4 m either side of each slit)
+and 290 m of line. The perfect bot flies it in **19.95 s**. Times below
+are from that run.
+
+| t (s) | move |
+|---|---|
+| 0.0-3.2 | **weave**: wide (±4.2 m), round the middle columns, in from the gate |
+| 3.2-5.3 | **corkscrew** under two high ties |
+| 5.3-8.1 | **knife slit 1**: swing left, dip, on edge through the slit at 7.4, out over A's torn end |
+| 8.1-9.9 | **swoop**: banked left turn, dropping to B |
+| 9.9-13.2 | **wave**: under two low ties, up over a high tie (8.3 m) |
+| 13.2-16.2 | **weave**: quicker (half 16 m), round columns |
+| 16.2-18.7 | **knife slit 2**: swing left into it, on edge through it at 18.1 |
+| 18.1-20.0 | **climbing turn**: up out of the torn end while turning |
+
+It stands at x 2600, 30 m clear of `sundered_flow`'s footprint. My first
+layout curved left, came back past `sundered_flow`, and its last tokens'
+way pointed back at the entry, so the run's "3 m past it" rule missed them
+on the first tick. See the surprises below.
+
+### Bench (VERSION 2 bots, 20 runs; reference = perfect bot's best)
+
+| station | band | clear sl/de/sh/pf | ref time s | demand peak | mean | spike | room min m | threading | openings/s | still | longest s | swing °/s | yaw share | swing rev/s |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| sundered_flow | medium | 0.0/0.9/1.0/1.0 | 13.37 | 0.67 | 0.42 | 0.25 | 0.59 | 37% | 0.45 | 4% | 0.32 | 27.3 | 65% | 0.75 |
+| sundered_mix | **hard** | 0.0/0.45/1.0/1.0 | 19.95 | 0.66 | 0.38 | 0.25 | 0.12 | 49% | **0.55** | 5% | 0.33 | 26.1 | **71%** | 0.80 |
+
+Knife moments on `sundered_mix` (2 slits, tokens through both):
+
+| skill | slit 1 reached / clean | slit 2 reached / clean | knife warning min s (mean) | on edge s | lead s (on edge before arriving) | edge spells |
+|---|---|---|---|---|---|---|
+| sloppy | 4 / 2 of 20 | 1 / 0 of 20 | 7.6 | 0.82 | 0.26 | 1.1 |
+| decent | 13 / 9 of 20 | 14 / 14 of 20 | 4.5 | 1.42 | 0.22 | 1.9 |
+| sharp | 20 / 20 | 20 / 20 | 3.7 | 0.98 | 0.27 | 2.0 |
+| perfect | 1 / 1 | 1 / 1 | 3.5 (mean 4.8) | 1.35 | 0.42 | 2.0 |
+
+How it compares with the targets:
+
+- Sideways share is 71%, against 65% on `sundered_flow` (the bots fly
+  72-79%).
+- Still is 5% and the longest straight 0.33 s.
+- Demand peaks at 0.66, about the same as `sundered_flow`'s 0.67.
+- Openings rose to 0.55 /s.
+- Sharp threads both slits in every run, so I didn't widen anything. The
+  slit stays 1.15 m.
+- **The band is hard, not medium.** Decent clears 45% (on
+  `sundered_flow`, 90%). The demand number doesn't see this, because the
+  difficulty is the knife edge, not the line.
+  - Decent's misses are almost all at slit 1: it reached it in 13 of 20
+    runs and was clean in 9. It threads slit 2 whenever it reaches it.
+  - It arrives up to a metre off the line. With an 0.08 s lag and that
+    stick noise, its line-up oscillates. It bumps a jamb, the bump turns
+    it along the screen, and it never gets in.
+  - Slit 1 comes straight out of the corkscrew. Slit 2 comes after a calm
+    weave.
+  - I tried a longer hold (11 m). It made the swings in and out steeper,
+    and decent fell to 30%.
+- **Sloppy clears neither station.**
+
+## Surprises
+
+- **The "3 m past it" miss rule depends on the layout's shape.** A token is
+  missed once the plane is 3 m past it along the line's way there, however
+  far away the plane is. A course that turns past ~100° and comes back
+  toward the entry misses its late tokens on the first tick. I changed the
+  layout rather than the rule, so older runs stay comparable. A
+  generator must either avoid this or add "and within N m" to the rule
+  (`flight_run.gd` `_tokens`).
+- **Slits are seen early.** Through open bays and the hall's curve,
+  slit 2 is in view (cone and clear ray) about 6 s before it's reached, so
+  its warning is long. The cone is still a stand-in for the camera.
+- **Wall scrapes** (round 1) show up again in the failed decent runs: up
+  to 400 bumps against a screen, ending in a timeout.
+- **The perfect bot's best look-ahead is now 9 m**, picked from
+  PERFECT_LOOKS, as before.
+
+## Files changed (round 4)
+
+- `scripts/flight_course.gd`: `survey`, `wing_room`, `knife_zones`, the
+  knife-aware `rooms`, `MINUS_KEY` and `key_name`, and the generated
+  `sundered_mix` block.
+- `scripts/flight_bot.gd`: VERSION 2, the knife skills, `_knife`, `_side`,
+  `_track` and `_nearest`.
+- `scripts/flight_run.gd`: `line`, `zones`, the `knife_*` tracking and
+  events, the live knife numbers, and `knife` in the run JSON.
+- `scripts/flight_metrics.gd`: `KNIFE_ON`, `KNIFE_IN`, `KNIFE_KEYS`,
+  `knife()`, and the commit time on knife gaps.
+- `studies/flight_study.gd`: the `-` key, the F1 knife line, and the panel's
+  Knife edge line.
+- `tools/flight_bench.gd`: `knife_table` and the per-skill knife stats.
+- `tools/flight_report.py`: the knife columns and CSV keys.
+- `tools/flight_flow_layout.py`: the move segments, `MIX`, `--station mix`,
+  `--write` and `segment_marks`. `sundered_flow`'s output is byte-identical.
+- Tests:
+  - `test_flight_bench.gd`: a one-slit layout is one knife zone; the sharp
+    bot threads it on edge, 0 bumps, already on edge when it gets there;
+    held level, it bumps. Also: `sundered_mix` stands on `-`, sharp clears
+    it with both slits clean, and the perfect line has still ≤ 8%, longest
+    straight ≤ 0.5 s, sideways ≥ 68%, 2/2 slits, in 15-22 s.
+  - `test_flight_metrics.gd`: all 11 hashes pinned.
+
+## Unverified (round 4)
+
+- **No window was opened.** Nobody has seen the mixed hall, the slits from
+  the chase camera, the F1 knife line or the panel line. Whether the camera
+  shows a slit early enough to roll in time is the big open question. The
+  bot's seen rule is a cone, not the camera.
+- **Nobody has flown it.** Q/E through a 1.15 m slit with the real input,
+  as a person, is untested. The bot needs about 0.4 s on edge before the
+  slit, and the slab clears 0.42 m a side.
+- The knife-edge visuals (the plane drawn on edge) are the game's own. I
+  haven't checked them here.
+- Decent's 45% is with my line-up controller. A person lines up differently,
+  so the band is the bots' measure, not a prediction.
+- Tests: I ran the headless import check and
+  `run_tests.py --tests 'test_flight_*.gd'` (3/3 pass) only, not the full
+  suite. The user's 38 `_human_` run files were checked by md5 before and
+  after the saved bench, and are unchanged.
+
+## Suggested round 5
+
+1. **Fly `-` and rate it**, next to `0`. Say whether slit 1 (straight
+   out of the corkscrew) or slit 2 (after a calm weave) felt fair. That
+   answers how much calm a knife moment needs before it.
+2. If the slits feel too hard, lengthen the swing in (`approach`), not the
+   slit. If they feel trivial, cut `hold`. The cut is the lever the bots
+   are sensitive to.
+3. **Generate variants.** Build segment orders from the vocabulary in
+   `MIX` (weave/wave/corkscrew/knife and their half, side and rise). Bench
+   each, and keep those with still ≤ 8%, longest straight ≤ 0.5 s, sideways
+   share 65-80%, demand peak ≤ 0.7, sharp clearing 100%, and a band the
+   user picks.
+4. Add "within N m" to the token miss rule before generating layouts that
+   curl back (see Surprises). It changes no existing station's numbers
+   unless a bot strays.
+5. A bot that flies the knife with keys, bang-bang Q/E plus a turn, would
+   give a band closer to how people fly.
