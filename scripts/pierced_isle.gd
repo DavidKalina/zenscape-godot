@@ -122,7 +122,7 @@ const SHAFT_TOP := 60.0
 const WINDOWS := 3
 const WINDOW_R := Vector2(7.6,9.0)
 const TIGHT_R := 5.4
-const WINDOW_UP := Vector2(4.0,6.5)
+const WINDOW_UP := Vector2(6.5,8.5)
 ## The eye: carved radius, the rock kept under it to the keel's tip and
 ## round it (m).
 const EYE_R := Vector2(8.0,9.5)
@@ -180,6 +180,8 @@ const FEED_DROP := 24.0
 const HALL_BAYS := 3
 ## The cavern's run: at most this many spans.
 const RUN_SPANS := 3
+## The run keeps this far (m, flat) off the dive's pull-out line.
+const RUN_CLEAR := 6.0
 const HALL_BACK := 12.0
 ## The turns (rad) off the dive's way a hall is tried at, in order.
 const HALL_TURNS := [0.0,0.35,-0.35,0.7,-0.7]
@@ -975,7 +977,7 @@ func _lay_routes() -> void:
 		var start := Vector3(top.x,high,top.z)-dir*90.0
 		var over := Vector3(top.x,high,top.z)-dir*28.0
 		var lip := Vector3(top.x,ground+6.0,top.z)-dir*5.0
-		var low := Vector3(mid.x,wp[0].y,mid.z)
+		var low := Vector3(mid.x,wp[0].y+1.0,mid.z)
 		var tail := PackedVector3Array([sp[1],sp[2],low,wp[1],wp[1]+dir*LEAD])
 		routes.append({"name":"dive","points":PackedVector3Array([start,over,lip])+tail,"holes":["shaft","cavern",out.name]})
 		# The grand line: in low through the hall's lane, out over the lip
@@ -1249,20 +1251,46 @@ func _lay_gate(rng: RandomNumberGenerator) -> void:
 func _lay_run(rng: RandomNumberGenerator) -> void:
 	const Aqueduct = preload("res://scripts/ruin_kit_aqueduct.gd")
 	var cav := hole("cavern")
-	if cav.is_empty(): return
+	var shaft := hole("shaft")
+	var out := _dive_window()
+	if cav.is_empty() or shaft.is_empty() or out.is_empty(): return
 	var cp: PackedVector3Array = cav.points
 	var way3 := (cp[1]-cp[0]).normalized()
 	var way := Vector2(way3.x,way3.z).normalized()
+	var across := Vector2(-way.y,way.x)
 	var mid := (cp[0]+cp[1])*0.5
 	var floor_y := float(cav.floor)
 	var long := cp[0].distance_to(cp[1])+float(cav.r)*0.9
-	var n := clampi(floori(long/Aqueduct.SPAN),2,RUN_SPANS)
-	var length := Aqueduct.SPAN*n
-	var origin := Vector2(mid.x,mid.z)-way*length*0.5
-	var at := frame_along(way,Vector3(origin.x,floor_y,origin.y))
-	ruins.append({"kind":"run","at":at,"seed":rng.randi(),"weathered":rng.randf_range(WEATHERED.x,WEATHERED.y),"spans":n,
-		"foot":Vector2(mid.x,mid.z),"reach":length*0.5})
-	block(at,Vector3(length*0.5,(Aqueduct.DECK+1.0)*0.5,0.0),Vector3(length*0.5+1.0,(Aqueduct.DECK+1.0)*0.5+0.3,Aqueduct.PIER.y*0.5+Aqueduct.CUTWATER.x))
+	# The dive comes down the shaft into the cavern and pulls out toward its
+	# window: the run keeps RUN_CLEAR off that line (flat), so a plane
+	# pulling out of the dive never meets its deck.
+	var bottom: Vector3 = (shaft.points as PackedVector3Array)[2]
+	var dive := Vector2((out.dir as Vector3).x,(out.dir as Vector3).z).normalized()
+	var d0 := Vector2(bottom.x,bottom.z)-dive*6.0
+	var d1 := Vector2(mid.x,mid.z)+dive*float(cav.r)
+	for n in range(clampi(floori(long/Aqueduct.SPAN),2,RUN_SPANS),1,-1):
+		var length := Aqueduct.SPAN*n
+		var slack := maxf(long-length,0.0)*0.5
+		for shift: Vector2 in [Vector2.ZERO,Vector2(slack,0.0),Vector2(-slack,0.0),Vector2(slack,3.0),Vector2(-slack,-3.0),Vector2(slack,-3.0),Vector2(-slack,3.0)]:
+			var centre := Vector2(mid.x,mid.z)+way*shift.x+across*shift.y
+			var a := centre-way*length*0.5
+			var b := centre+way*length*0.5
+			if _flat_gap(a,b,d0,d1) < RUN_CLEAR: continue
+			var at := frame_along(way,Vector3(a.x,floor_y,a.y))
+			ruins.append({"kind":"run","at":at,"seed":rng.randi(),"weathered":rng.randf_range(WEATHERED.x,WEATHERED.y),"spans":n,
+				"foot":centre,"reach":length*0.5})
+			block(at,Vector3(length*0.5,(Aqueduct.DECK+1.0)*0.5,0.0),Vector3(length*0.5+1.0,(Aqueduct.DECK+1.0)*0.5+0.3,Aqueduct.PIER.y*0.5+Aqueduct.CUTWATER.x))
+			return
+
+## The least distance between two flat segments (sampled).
+static func _flat_gap(a0: Vector2, a1: Vector2, b0: Vector2, b1: Vector2) -> float:
+	var best := INF
+	for i in range(21):
+		var p := a0.lerp(a1,i/20.0)
+		var ab := b1-b0
+		var k := clampf((p-b0).dot(ab)/maxf(ab.length_squared(),0.0001),0.0,1.0)
+		best = minf(best,p.distance_to(b0+ab*k))
+	return best
 
 ## Where water poured from `lip` (lid frame) lands: straight down to the
 ## first rock (or the keel's tip).

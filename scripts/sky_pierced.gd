@@ -461,12 +461,11 @@ func bump(glide: RefCounted, frame := Transform3D.IDENTITY) -> bool:
 	if s.is_empty(): return false
 	var plan: RefCounted = s.plan
 	var place: Vector3 = islets.place(s.b)
-	var turn := PlaneFigure.pose(Vector3.ZERO,float(glide.heading),float(glide.pitch),float(glide.bank)+float(glide.get("spin") if glide.get("spin") != null else 0.0)).basis
+	var turn := body_turn(glide)
 	var at: Vector3 = glide.position
 	var worst := INF
 	var worst_at := at
-	for probe: Vector3 in [Vector3.ZERO,Vector3(BUMP_BODY.x*0.5,0,0),Vector3(-BUMP_BODY.x*0.5,0,0),Vector3(0,0,-BUMP_BODY.z*0.5),Vector3(0,0,BUMP_BODY.z*0.5)]:
-		var p: Vector3 = at+turn*probe
+	for p: Vector3 in probes(glide):
 		var f: float = plan.field(p-place)
 		if f < worst:
 			worst = f
@@ -496,6 +495,21 @@ func bump(glide: RefCounted, frame := Transform3D.IDENTITY) -> bool:
 	glide.speed = maxf(least,float(glide.speed)*BUMP_KEEP)
 	glide.velocity = glide.forward()*float(glide.speed)
 	return true
+
+## The plane's body turned as it flies: heading, pitch, bank and roll.
+static func body_turn(glide: RefCounted) -> Basis:
+	var spin: Variant = glide.get("spin")
+	return PlaneFigure.pose(Vector3.ZERO,float(glide.heading),float(glide.pitch),float(glide.bank)+(float(spin) if spin != null else 0.0)).basis
+
+## Where the plane's body is probed against the rock: its middle, its
+## wingtips, its nose and its tail (the glide's frame).
+static func probes(glide: RefCounted) -> Array[Vector3]:
+	var turn := body_turn(glide)
+	var at: Vector3 = glide.position
+	var out: Array[Vector3] = []
+	for probe: Vector3 in [Vector3.ZERO,Vector3(BUMP_BODY.x*0.5,0,0),Vector3(-BUMP_BODY.x*0.5,0,0),Vector3(0,0,-BUMP_BODY.z*0.5),Vector3(0,0,BUMP_BODY.z*0.5)]:
+		out.append(at+turn*probe)
+	return out
 
 ## The ruins' hull the plane's body (BUMP_BODY at `at`, turned by `turn`, in
 ## the islands' frame) sits in: {normal (world)} or {}.
