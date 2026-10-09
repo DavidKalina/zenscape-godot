@@ -660,6 +660,7 @@ func _drive_swim(motor: RefCounted, delta: float) -> Dictionary:
 		_skidding_was = false
 		_hold_was = ""
 		_spin_t = Vector2(INF,INF)
+		_spin = Vector2.ZERO
 		_air = 0.0
 		_tread_time = _rng.randf()*TREAD_LENGTH
 	_swimming_was = true
@@ -764,6 +765,7 @@ func _drive_ledge(motor: RefCounted, hold: String, delta: float) -> Dictionary:
 		_skid = 0.0
 		_skidding_was = false
 		_spin_t = Vector2(INF,INF)
+		_spin = Vector2.ZERO
 		_air = 0.0
 	if _facing_was != INF:
 		_yaw.x = wrapf(_yaw.x-angle_difference(_facing_was,motor.facing),-PI,PI)
