@@ -176,10 +176,11 @@ func tick(delta: float, input: Dictionary) -> void:
 
 func _tokens(was: Vector3) -> void:
 	var at := plane.position
+	var reach := Course.reach(station)
 	for i in range(tokens.size()):
 		if state[i] != STANDING: continue
 		var near := Geometry3D.get_closest_point_to_segment(tokens[i],was,at)
-		if near.distance_to(tokens[i]) < Course.REACH:
+		if near.distance_to(tokens[i]) < reach:
 			for k in range(i):
 				if state[k] == STANDING: _resolve(k,MISSED)
 			_resolve(i,TAKEN)
@@ -347,7 +348,7 @@ func finish() -> Dictionary:
 		"format":FORMAT,"station":station.id,"station_hash":Course.station_hash(station),"station_name":station.name,"intent":station.intent,
 		"pilot":pilot,"skill":skill,"started":started,"dt":snappedf(t/maxf(ticks.t.size()-1,1),0.00001),
 		"entry":{"position":Metrics.arr(entry.position),"heading":entry.heading},
-		"tokens":token_list,"reach":snappedf(Course.REACH,0.001),"span":Course.SPAN,"rooms":room_list,"knife":zone_list,
+		"tokens":token_list,"reach":snappedf(Course.reach(station),0.001),"span":Course.SPAN,"rooms":room_list,"knife":zone_list,
 		"ticks":ticks,"events":events,
 		"result":{"duration":snappedf(t,0.001),"collected":collected(),"total":tokens.size(),"cleared":collected() == tokens.size(),"ended":ended},
 	}

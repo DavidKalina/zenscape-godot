@@ -137,7 +137,7 @@ const STATIONS := [
 	# on the right, a low tie under), then the apse's open roof, climbing
 	# out to the sky. Each bay: ["bay", its bay line's middle on its floor,
 	# yaw, plan]. A's lane (hall z LANE_MID) runs at x 0, B's at x 8.
-	{"id":"sundered","key":9,"name":"Sundered hall (gate, cloister, slit, apse)","intent":"hard","parts":[
+	{"id":"sundered","key":9,"name":"Sundered hall (gate, cloister, slit, apse)","intent":"hard","ease":1.05,"parts":[
 		["bay",Vector3(-6.0,-2.3,-14.0),0.0,{"roof":"whole","inner":[]}],
 		["bay",Vector3(-6.0,-2.3,-22.0),0.0,{"roof":"whole","tie":"low","inner":[-2.6]}],
 		["bay",Vector3(-6.0,-2.3,-30.0),0.0,{"roof":"broken","gaps":[3,4],"inner":[0.0]}],
@@ -277,7 +277,13 @@ static func floor_y() -> float:
 ## the reach and the format), so runs of the same station accumulate across
 ## sessions and a changed station starts a new record.
 static func station_hash(s: Dictionary) -> String:
-	return var_to_str([VERSION,REACH,s.parts,s.tokens]).md5_text().substr(0,12)
+	var shape := [VERSION,REACH,s.parts,s.tokens]
+	if s.has("ease"): shape.append(s.ease)
+	return var_to_str(shape).md5_text().substr(0,12)
+
+## Station `s`'s token reach: REACH, widened by its `ease` if it has one.
+static func reach(s: Dictionary) -> float:
+	return REACH*float(s.get("ease",1.0))
 
 ## Every solid of station `s`, in world space.
 static func solids(s: Dictionary) -> Array:
@@ -565,7 +571,7 @@ static func survey(s: Dictionary, line: Array) -> Dictionary:
 	if not zone.is_empty(): zones.append(_zone(zone))
 	var out := []
 	for g in range(count):
-		var r := {"clearance":least[g],"room":minf(REACH,float(least[g]))}
+		var r := {"clearance":least[g],"room":minf(reach(s),float(least[g]))}
 		if knife[g]: r["knife"] = true
 		out.append(r)
 	_surveys[key] = {"rooms":out,"zones":zones}
