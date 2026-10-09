@@ -19,11 +19,13 @@ extends Node3D
 ## (scripts/glide_camera.gd); the mouse or right stick looks round.
 ##
 ## Keys: 1-9, 0 and - the stations, R restart the station, N the next one, B cycles
-## who flies (you, then the sloppy, decent, sharp and perfect bots), F1 the
-## live numbers, Esc lets the mouse go. After a station: 1-5 rates felt
-## difficulty, then 1-5 fun (Enter skips).
+## who flies (you, then the sloppy, decent, sharp and perfect bots), L the
+## next token line on a station that has several (green, yellow, red:
+## FlightCourse `flown`), F1 the live numbers, Esc lets the mouse go. After a
+## station: 1-5 rates felt difficulty, then 1-5 fun (Enter skips).
 ##   ./run-flight-study.command
 ##   godot --path . res://studies/flight_study.tscn -- --no-title [--station=slalom] [--bot=sharp]
+##   ... -- --no-title --pack=lines [--line=red]   (starts on the pack, N cycles within it)
 
 const Course = preload("res://scripts/flight_course.gd")
 const Run = preload("res://scripts/flight_run.gd")
@@ -42,6 +44,11 @@ const STICK_LOOK := 2.4
 const DOUBLE_TAP := 0.3
 const COLOURS := {"floor":Color(0.64,0.64,0.62),"box":Color(0.55,0.57,0.6),"cyl":Color(0.6,0.58,0.55)}
 const TOKEN := Color(1.0,0.82,0.3)
+## A token line's colour (FlightCourse `line_names`); the other lines'
+## tokens are drawn small and faint (GHOST of a token) so the branches read.
+const LINE_COLOURS := {"green":Color(0.3,0.88,0.38),"yellow":Color(1.0,0.82,0.2),"red":Color(1.0,0.28,0.22)}
+const LINE_MISSED := Color(0.32,0.32,0.36)
+const GHOST := 0.45
 const TAKEN := Color(0.4,0.9,0.5)
 const MISSED := Color(0.85,0.3,0.25)
 ## Who flies, in B's order.
@@ -80,6 +87,9 @@ var _tap_dir := 0.0
 var _tap_at := 0
 var _space: PhysicsDirectSpaceState3D
 var _solids := []
+## The pack N cycles within (--pack=name), or "" for every station.
+var pack := ""
+var _ghosts: Array[MeshInstance3D] = []
 
 func _ready() -> void:
 	Pad.ensure()
@@ -93,9 +103,16 @@ func _ready() -> void:
 	_space = get_world_3d().direct_space_state
 	_bands = Log.bands(log_dir)
 	var first := Course.STATIONS[0] as Dictionary
+	var line := ""
+	var asked := ""
 	for arg in OS.get_cmdline_user_args():
-		if arg.begins_with("--station="): first = Course.station(arg.substr(10)) if not Course.station(arg.substr(10)).is_empty() else first
+		if arg.begins_with("--station="): asked = arg.substr(10)
+		if arg.begins_with("--pack=") and not Course.pack(arg.substr(7)).is_empty(): pack = arg.substr(7)
+		if arg.begins_with("--line="): line = arg.substr(7)
 		if arg.begins_with("--bot=") and arg.substr(6) in PILOTS: pilot = arg.substr(6)
+	if pack != "": first = Course.pack(pack)[0]
+	if not Course.station(asked).is_empty(): first = Course.station(asked)
+	if line != "" and not Course.flown(first,line).is_empty(): first = Course.flown(first,line)
 	start(first)
 	flight_ready = true
 	ready_to_fly.emit()
@@ -157,7 +174,8 @@ func _build_course() -> void:
 	for s: Dictionary in Course.STATIONS:
 		Course.build(s,self,_material)
 		var at := Course.origin(s)
-		_label(at+Vector3(-8.0,7.0,-4.0),"%s  %s" % [Course.key_name(s),s.name],96)
+		var key := Course.key_name(s)
+		_label(at+Vector3(-8.0,7.0,-4.0),"%s  %s" % [key,s.name] if key != "" else str(s.name),96)
 		# A post under the entry, so its height reads against the floor.
 		var post := MeshInstance3D.new()
 		var cyl := CylinderMesh.new()
@@ -191,20 +209,48 @@ func _token_material(colour: Color) -> StandardMaterial3D:
 		_token_materials[colour] = m
 	return _token_materials[colour]
 
-## The station's tokens, drawn afresh.
+## The station's tokens, drawn afresh: on a station with token lines, the
+## flown line's in its colour and the other lines' (where they leave it)
+## small and faint, never taken.
 func _show_tokens() -> void:
-	for n in _token_nodes: n.queue_free()
+	for n in _token_nodes+_ghosts: n.queue_free()
 	_token_nodes.clear()
-	for p in Course.tokens(station):
-		var node := MeshInstance3D.new()
-		var ball := SphereMesh.new()
-		ball.radius = Course.TOKEN_SIZE*0.5
-		ball.height = Course.TOKEN_SIZE
-		node.mesh = ball
-		node.position = p
-		node.material_override = _token_material(TOKEN)
-		add_child(node)
-		_token_nodes.append(node)
+	_ghosts.clear()
+	var mine := Course.tokens(station)
+	for p in mine: _token_nodes.append(_ball(p,1.0,_token_material(_colour())))
+	var base := Course.base_of(station)
+	if not base.has("lines"): return
+	for line in Course.line_names(base):
+		if line == Course.line_of(station): continue
+		for p in Course.tokens(Course.flown(base,line)):
+			if mine.any(func(q: Vector3) -> bool: return q.distance_to(p) < 0.3): continue
+			_ghosts.append(_ball(p,GHOST,_ghost_material(LINE_COLOURS.get(line,TOKEN))))
+
+func _ball(p: Vector3, scale: float, material: Material) -> MeshInstance3D:
+	var node := MeshInstance3D.new()
+	var ball := SphereMesh.new()
+	ball.radius = Course.TOKEN_SIZE*0.5*scale
+	ball.height = Course.TOKEN_SIZE*scale
+	node.mesh = ball
+	node.position = p
+	node.material_override = material
+	add_child(node)
+	return node
+
+## The flown line's token colour (gold on a station with one line).
+func _colour() -> Color:
+	if not Course.base_of(station).has("lines"): return TOKEN
+	return LINE_COLOURS.get(Course.line_of(station),TOKEN)
+
+func _ghost_material(colour: Color) -> StandardMaterial3D:
+	var key := Color(colour,0.35)
+	if not _token_materials.has(key):
+		var m := StandardMaterial3D.new()
+		m.albedo_color = key
+		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		_token_materials[key] = m
+	return _token_materials[key]
 
 # --- Flying --------------------------------------------------------------------------
 
@@ -226,9 +272,20 @@ func start(s: Dictionary) -> void:
 func restart() -> void:
 	start(station)
 
+## The next station (within `pack` if one was asked for), on the same token
+## line if it has it.
 func next_station() -> void:
-	var i := Course.STATIONS.find(station)
-	start(Course.STATIONS[(i+1)%Course.STATIONS.size()])
+	var all: Array = Course.pack(pack) if pack != "" else Course.STATIONS
+	var i := all.find(Course.base_of(station))
+	var s: Dictionary = all[(i+1)%all.size()]
+	var on := Course.flown(s,Course.line_of(station))
+	start(on if not on.is_empty() else s)
+
+## The station's next token line (green, yellow, red, round again).
+func next_line() -> void:
+	var base := Course.base_of(station)
+	var names := Course.line_names(base)
+	start(Course.flown(base,names[(names.find(Course.line_of(station))+1)%names.size()]))
 
 func _physics_process(delta: float) -> void:
 	if flight_ready and not scripted: tick(delta)
@@ -247,7 +304,8 @@ func tick(delta: float) -> void:
 	for i in range(_token_nodes.size()):
 		var s := run.state[i]
 		_token_nodes[i].visible = s != Run.TAKEN
-		_token_nodes[i].material_override = _token_material(MISSED if s == Run.MISSED else TOKEN)
+		var missed := MISSED if _colour() == TOKEN else LINE_MISSED
+		_token_nodes[i].material_override = _token_material(missed if s == Run.MISSED else _colour())
 	figure.update(delta,run.plane,0.0,Callable(Course,"ground"),false)
 	_frame(delta)
 	_show_hud()
@@ -329,7 +387,7 @@ func _build_ui() -> void:
 	_hud_label.position = Vector2(16.0,240.0)
 	_hud.add_child(_hud_label)
 	_hint = Label.new()
-	_hint.text = "WASD/stick turn and pitch (W noses down) · Space/RT boost · Shift/LT brake · Q/E lean (knife edge), twice: roll · 0-9, - stations · R restart · N next · B who flies · F1 numbers · Esc mouse"
+	_hint.text = "WASD/stick turn and pitch (W noses down) · Space/RT boost · Shift/LT brake · Q/E lean (knife edge), twice: roll · 0-9, - stations · R restart · N next · L line · B who flies · F1 numbers · Esc mouse"
 	_style(_hint,14)
 	_hint.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
 	_hint.offset_top = -36.0
@@ -452,7 +510,7 @@ func _show_report() -> void:
 	if asking == "difficulty": lines.append("\nHow hard did it feel? 1 (easy) - 5 (hard)   · Enter skips")
 	elif asking == "fun": lines.append("\nDifficulty %d. How fun? 1 - 5   · Enter skips" % int(rating.difficulty))
 	elif not rating.is_empty(): lines.append("\nRated: difficulty %s · fun %s" % [str(rating.get("difficulty","-")),str(rating.get("fun","-"))])
-	lines.append("R again · N next · 0-9, - a station")
+	lines.append("R again · N next%s · 0-9, - a station" % (" · L next line" if Course.base_of(station).has("lines") else ""))
 	_report_label.text = "\n".join(lines)
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -475,6 +533,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				if _report.visible: _show_report()
 			KEY_R: restart()
 			KEY_N: next_station()
+			KEY_L: next_line()
 			KEY_B:
 				pilot = PILOTS[(PILOTS.find(pilot)+1)%PILOTS.size()]
 				restart()

@@ -32,6 +32,8 @@ const PlaneFigure = preload("res://scripts/plane_figure.gd")
 const Hall = preload("res://scripts/ruin_kit_hall.gd")
 const RuinBump = preload("res://scripts/ruin_bump.gd")
 const Lines = preload("res://scripts/collectible_lines.gd")
+## Station packs, appended after the hand-placed stations (each its own file).
+const PackLines = preload("res://scripts/flight_pack_lines.gd")
 
 ## The stations stand ALT metres over the floor (y 0), SPACING metres apart
 ## along x; pillars rise to TOP over the entry.
@@ -229,25 +231,81 @@ const STATIONS := [
 		Vector3(79.42,-6.74,-220.48),Vector3(83.63,-6.29,-221.59),Vector3(92.57,-4.60,-220.60),Vector3(101.19,-2.35,-219.06),
 	]},
 	# <<< sundered_mix
-]
+]+PackLines.STATIONS
 
-## The station with `id`, or {}.
+## The station with `id`, or {}. "id@line" is station id flown on one of
+## its token lines (`flown`).
 static func station(id: String) -> Dictionary:
+	var at := id.find(LINE_SEP)
+	if at >= 0:
+		var base := station(id.substr(0,at))
+		return {} if base.is_empty() else flown(base,id.substr(at+1))
 	for s: Dictionary in STATIONS:
 		if s.id == id: return s
 	return {}
 
-## The `-` key's station key (keys 0-9 are their digits).
+## The `-` key's station key (keys 0-9 are their digits); a station with no
+## key (a pack's: reached with N, --station or --pack) has NO_KEY.
 const MINUS_KEY := 10
+const NO_KEY := -1
 
-## The key that jumps to station `s` in the study: its digit, or "-".
+## The key that jumps to station `s` in the study: its digit, "-", or "".
 static func key_name(s: Dictionary) -> String:
+	if int(s.key) == NO_KEY: return ""
 	return "-" if int(s.key) == MINUS_KEY else str(int(s.key))
 
 static func station_by_key(key: int) -> Dictionary:
+	if key == NO_KEY: return {}
 	for s: Dictionary in STATIONS:
 		if int(s.key) == key: return s
 	return {}
+
+## The stations of pack `name` (their "pack"), in order.
+static func pack(name: String) -> Array:
+	return STATIONS.filter(func(s: Dictionary) -> bool: return str(s.get("pack","")) == name)
+
+## Token lines: a station may carry more than one trail of tokens through
+## the same solids. Its own `tokens` are the green line (the forgiving main
+## one); `lines` holds the others, {name: {"intent", "tokens"}}, e.g. yellow
+## (branches off for more threading and rejoins) and red (the tight mastery
+## line). Flying one line is flying a station whose tokens are that line's
+## (`flown`): its id is "id@line", so its runs, hash and band are its own.
+const LINE_SEP := "@"
+const GREEN := "green"
+
+## The lines of station `s` (its base's), green first.
+static func line_names(s: Dictionary) -> PackedStringArray:
+	var out := PackedStringArray([GREEN])
+	for name: String in (s.get("lines",{}) as Dictionary): out.append(name)
+	return out
+
+## Which line station `s` flies: green unless it is a line flown (`flown`).
+static func line_of(s: Dictionary) -> String:
+	return str(s.get("line",GREEN))
+
+## The station `s` stands for: itself, or the station a line flown is of.
+static func base_of(s: Dictionary) -> Dictionary:
+	return station(str(s.base)) if s.has("base") else s
+
+## Station `s` flown on its line `line`: the same station with that line's
+## tokens, intent and `ease` (none unless the line has its own), id
+## "id@line" (green is the station itself). {} if it has no such line.
+static func flown(s: Dictionary, line: String) -> Dictionary:
+	var base := base_of(s)
+	if line == GREEN: return base
+	var lines: Dictionary = base.get("lines",{})
+	if not lines.has(line): return {}
+	var out := base.duplicate()
+	out.erase("lines")
+	out["id"] = str(base.id)+LINE_SEP+line
+	out["name"] = "%s (%s line)" % [base.name,line]
+	out["intent"] = str(lines[line].get("intent",base.intent))
+	out["tokens"] = lines[line].tokens
+	out.erase("ease")
+	if lines[line].has("ease"): out["ease"] = lines[line].ease
+	out["base"] = base.id
+	out["line"] = line
+	return out
 
 static func ids() -> PackedStringArray:
 	var out := PackedStringArray()
@@ -256,7 +314,9 @@ static func ids() -> PackedStringArray:
 
 ## Where station `s` stands in the world: its entry point.
 static func origin(s: Dictionary) -> Vector3:
-	return Vector3(float(STATIONS.find(s))*SPACING,ALT,0.0)
+	var i := STATIONS.find(s)
+	if i < 0 and s.has("base"): i = STATIONS.find(base_of(s))
+	return Vector3(float(i)*SPACING,ALT,0.0)
 
 ## The entry: where the plane is set down and its heading (north).
 static func entry(s: Dictionary) -> Dictionary:
@@ -332,17 +392,24 @@ static func solids(s: Dictionary) -> Array:
 ##   breach  [left, right]: "", "low", "collapse" (the wall torn down) or
 ##           "arch" (an ARCH opening through it)
 ##   screen  a screen across the left of the nave at the bay line, a
-##           knife-edge slit (KNIFE) through it
+##           knife-edge slit (KNIFE) through it ("right": across the right)
 ##   torn    1 the bay line torn (columns snapped, no beam), 2 the far end
 ##           torn; either way the bay's walls stand low
 ##   beam    false: no roof beam at the bay line (an open bay after an
 ##           open bay)
 ##   last    the bay closes the piece: a column line at x BAY too
+##   pitch   the bay tilted along the nave (rad, + rising toward its far
+##           bay line), for a hall that bends up and down along its length;
+##           its columns stay upright on its tilted floor
+##   rows    which outer rows have a column at the bay line: -1 the left,
+##           1 the right (default both; a fallen column opens a breach wide)
 ## Simplified from the real bay: plain boxes and drums, no gables, lancets,
 ## doors, buttresses, fallen beams, rubble or parapets; one height for
 ## torn and open walls.
 static func _bay(at: Vector3, yaw: float, plan: Dictionary) -> Array:
 	var turn := Basis(Vector3.UP,yaw+PI*0.5)
+	var tilt := float(plan.get("pitch",0.0))
+	if tilt != 0.0: turn = turn*Basis(Vector3.BACK,tilt)
 	var out := []
 	var put := func(middle: Vector3, size: Vector3) -> void: out.append(_box(at+turn*middle,size,turn))
 	var bay := Hall.BAY
@@ -357,10 +424,12 @@ static func _bay(at: Vector3, yaw: float, plan: Dictionary) -> Array:
 	for x: float in lines:
 		var snapped := (x == 0.0 and torn & 1 != 0) or (x > 0.0 and torn & 2 != 0)
 		var h := TORN_SNAP if snapped else Hall.COLUMN_H
-		var zs: Array = [-Hall.ROW_Z,Hall.ROW_Z]
+		var zs: Array = []
+		for row: int in (plan.get("rows",[-1,1]) if x == 0.0 else [-1,1]): zs.append(float(row)*Hall.ROW_Z)
 		if x == 0.0: zs.append_array(plan.get("inner",[]))
 		for z: float in zs:
-			out.append({"kind":"cyl","middle":at+turn*Vector3(x,h*0.5,z),"radius":Hall.COLUMN_R,"height":h})
+			var middle := at+turn*Vector3(x,h*0.5,z) if tilt == 0.0 else at+turn*Vector3(x,0.0,z)+Vector3.UP*h*0.5
+			out.append({"kind":"cyl","middle":middle,"radius":Hall.COLUMN_R,"height":h})
 		if not snapped and (x > 0.0 or bool(plan.get("beam",true))):
 			put.call(Vector3(x,Hall.COLUMN_H+Hall.BEAM.x*0.5,0.0),Vector3(Hall.BEAM.y*2.0,Hall.BEAM.x,2.0*Hall.WALL_Z))
 	# The tie across the nave at the bay line.
@@ -398,9 +467,10 @@ static func _bay(at: Vector3, yaw: float, plan: Dictionary) -> Array:
 			put.call(Vector3(bay*0.5,(top+high)*0.5,z),Vector3(w,high-top,Hall.WALL_THICK))
 		else:
 			put.call(Vector3(bay*0.5,high*0.5,z),size)
-	# The screen across the left of the nave, its knife-edge slit.
-	if bool(plan.get("screen",false)):
-		var z := -(Hall.ROW_Z+Hall.INNER_Z)*0.5
+	# The screen across the left (or right) of the nave, its knife-edge slit.
+	var screen: Variant = plan.get("screen",false)
+	if screen is String or bool(screen):
+		var z := (1.0 if str(screen) == "right" else -1.0)*(Hall.ROW_Z+Hall.INNER_Z)*0.5
 		var span := (Hall.ROW_Z-Hall.INNER_Z)*0.5-Hall.COLUMN_R+0.06
 		var high := (Hall.TIE_LOW if tie == "low" else (Hall.TIE_HIGH if tie == "high" else 7.0))-0.02
 		var half := Hall.KNIFE.x*0.5
