@@ -7,7 +7,8 @@ Writes OUT_DIR/<clip>_<view>_<frame>.png (default /tmp/pilot_preview): about
 ten stills through each of walk, run and skid, the idle once a second
 through its length, the ledge's clips against a block standing for the lip, and the model up close in its rest pose
 (model_<view>_000.png, to compare builds by), the water's clips dry and in a
-pool (swim, tread). CLIP names limit it to those clips (`model` for
+pool (swim, tread), and the moves (crouch, long_jump, pump, wall_kick, and
+wall_slide against a wall). CLIP names limit it to those clips (`model` for
 the close-ups). Tile them with ffmpeg.
 """
 import sys
@@ -120,6 +121,23 @@ if any(wanted(c) for c in LEDGE) and "HANG_DROP" in rig:
     ground.hide_render = False
 if wanted("idle"):
     render("idle", range(0, last("idle"), 60), ["three", "front"])
+# The moves: the crouch, the long jump, the pump and the wall kick on their
+# own; the wall slide against a wall standing WALL_GAP ahead of the feet.
+for c, step in (("crouch", 30), ("long_jump", 10), ("pump", 6), ("wall_kick", 6)):
+    if wanted(c):
+        render(c, range(0, last(c) + 1, step), ["side", "three", "front"])
+if wanted("wall_slide") and "WALL_GAP" in rig:
+    bpy.ops.mesh.primitive_cube_add(size=1)
+    wall = bpy.context.object
+    wall.scale = (1.6, 0.4, 2.4)
+    wall.location = (0, rig["WALL_GAP"] + 0.2, 0.9)
+    wall.data.materials.append(bpy.data.materials.new("wall"))
+    wall.data.materials[0].diffuse_color = (0.5, 0.5, 0.52, 1)
+    VIEWS["wallside"] = (Vector((3.0, 0.0, 0.7)), Vector((0, 0.1, 0.7)), 1.6)
+    VIEWS["wallback"] = (Vector((-1.8, -2.6, 1.4)), Vector((0, 0.1, 0.7)), 1.6)
+    VIEWS["wallthree"] = (Vector((2.4, -1.6, 1.3)), Vector((0, 0.1, 0.7)), 1.6)
+    render("wall_slide", range(0, last("wall_slide"), 15), ["wallside", "wallback", "wallthree"])
+    wall.hide_render = True
 # The water's clips, dry (the whole body) and in a pool standing for the
 # water, its top SWIM_DRAFT over the feet (pilot_build.py), the ground
 # hidden: what shows above it.

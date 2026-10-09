@@ -45,6 +45,8 @@ run starting on the left boot's touchdown so the game can blend them in step:
         over the lip (pull, press, a knee over, stand) to the idle's first
         frame stood CLIMB_IN in on the top; the body moves in the clip.
         Played back, it lowers him from the top into the hang.
+  crouch, long_jump, wall_slide, wall_kick, pump  the moves beyond running
+        and jumping (see "the moves" below).
 Walking and running, each planted boot stays fixed to the ground (touchdown,
 flat, rolling over the ball), so played at the right pace nothing slides;
 standing, a boot only moves lifted.
@@ -84,6 +86,9 @@ numbers:
 | HANG_DROP, HANG_OUT    | the lip over the feet and ahead of them, hanging (m) |
 | CLIMB_LENGTH, CLIMB_IN | the climb (s) and where it stands him in from the edge (m) |
 | SHIMMY_SPEED, SHIMMY_CYCLE, HANG_LENGTH | the shimmy's pace (m/s) and loop (s); the hang's loop |
+| crouch, long_jump, wall_slide, wall_kick, pump | the moves' clips (see "the moves"); wall_kick and pump don't loop |
+| CROUCH_LENGTH, LONG_LENGTH, WALL_LENGTH, KICK_LENGTH, PUMP_LENGTH | their lengths (s) |
+| WALL_GAP               | the wall ahead of the feet, sliding down it (m)   |
 """
 import math
 import sys
@@ -107,9 +112,9 @@ FPS = 60
 WALK_SPEED = 1.4       # m/s
 WALK_CYCLE = 0.5       # seconds a full cycle, both feet
 WALK_STANCE = 0.58     # the share of the cycle a boot is planted
-RUN_SPEED = 4.0        # m/s, scripts/pilot_motor.gd RUN
-RUN_CYCLE = 0.3333333333333333
-RUN_STANCE = 0.3
+RUN_SPEED = 4.8        # m/s, scripts/pilot_motor.gd RUN
+RUN_CYCLE = 0.3
+RUN_STANCE = 0.28
 IDLE_LENGTH = 18.0
 SKID_LENGTH = 0.35
 SKID_DROP = 0.055      # m the hips drop skidding
@@ -1340,6 +1345,167 @@ def climb_clip():
     return keyed([(0.0, hang_pose(0.0)), (0.12, gather), (0.34, pulled), (0.5, pressed), (0.58, swung),
                   (0.66, planted), (0.75, drawn), (0.85, risen), (1.0, stand)])
 
+# ------------------------------------------------------------------ the moves
+# The moves beyond running and jumping (scripts/pilot_motor.gd `move`,
+# scripts/pilot_figure.gd blends them over the rest and keeps copies of the
+# lengths): held poses alive with a little motion, and two once-through
+# leaps. Never stiff: each leans into what it does, and the game's springs
+# overshoot and settle on top.
+#   crouch     CROUCH_LENGTH s, a loop: dropped low on bent knees, set wide,
+#              leant forward, the head up to look ahead, the mitts down
+#              between the knees, breathing;
+#   long_jump  LONG_LENGTH s, a loop: Mario's long jump, stretched out flat
+#              and diving forward, the arms reaching out ahead over the
+#              head, the legs trailing straight behind, toes pointed, the
+#              scarf streaming;
+#   wall_slide WALL_LENGTH s, a loop: facing the wall (WALL_GAP ahead of the
+#              feet), turned a little side on to it, the right mitt flat on
+#              it at the head's height, the boots braced against it, the
+#              left arm out for balance, looking down over the left
+#              shoulder at the ground coming, juddering as he slides, the
+#              scarf blown up;
+#   wall_kick  KICK_LENGTH s, once: kicked off the wall now behind him (the
+#              game turns him round as it starts): gathered against it, the
+#              legs driving back off it and the arms flung up and forward,
+#              then spread wide, rising;
+#   pump       PUMP_LENGTH s, once: the pump's "yahoo": a gather, then
+#              stretched up, the right fist punched high, the left arm out,
+#              the right knee drawn up, then both arms up and wide.
+CROUCH_LENGTH = 1.0
+LONG_LENGTH = 0.5
+WALL_LENGTH = 0.5
+WALL_GAP = 0.3
+KICK_LENGTH = 0.4
+PUMP_LENGTH = 0.5
+
+def crouch_pose(p):
+    pose = Pose()
+    breath = -wave(p, 1)
+    pose.hips_at = Vector((0.0, -0.035, 0.3 + 0.006 * breath))
+    pose.turns["hips"] = turn(pitch=-22.0 - 1.0 * breath, roll=1.0 * sine(p, 1, 0.2))
+    pose.turns["chest"] = turn(pitch=-12.0 - 2.0 * breath, roll=-1.0 * sine(p, 1, 0.2))
+    pose.turns["neck"] = turn(pitch=14.0)
+    pose.turns["head"] = turn(pitch=16.0 + 1.5 * breath, yaw=4.0 * sine(p, 1, 0.3))
+    for n, s in SIDES.items():
+        pose.feet[n] = boot_on(Vector((s * 0.15, 0.03, 0.0)), 0.0, 0.0, -12.0 * s)
+        pose.pole[n] = Vector((0.45 * s, 1.0, 0.15))
+        pose.turns[f"upper_arm.{n}"] = turn(pitch=38.0 + 2.0 * breath, roll=-s * 6.0)
+        pose.turns[f"forearm.{n}"] = turn(pitch=28.0, yaw=-s * 6.0)
+        pose.turns[f"hand.{n}"] = turn(pitch=12.0)
+        scarf(pose, p, n, s, back=10.0, flutter=3.0, flap=3.0)
+    return pose
+
+def long_jump_pose(p):
+    pose = Pose()
+    flutter = sine(p, 1)
+    pose.hips_at = Vector((0.0, 0.0, 0.46 + 0.006 * flutter))
+    pose.turns["hips"] = turn(pitch=-58.0 + 1.5 * flutter, roll=1.5 * sine(p, 1, 0.25))
+    pose.turns["chest"] = turn(pitch=-8.0, roll=-1.5 * sine(p, 1, 0.25))
+    # The head held up out of the dive, looking ahead.
+    pose.turns["neck"] = turn(pitch=28.0)
+    pose.turns["head"] = turn(pitch=30.0 + 2.0 * sine(p, 1, 0.1))
+    for n, s in SIDES.items():
+        late = 0.08 if n == "R" else 0.0
+        pose.turns[f"upper_arm.{n}"] = turn(pitch=150.0 + 4.0 * sine(p, 1, late), roll=-s * (14.0 + 3.0 * sine(p, 1, 0.2 + late)))
+        pose.turns[f"forearm.{n}"] = turn(pitch=8.0)
+        pose.turns[f"hand.{n}"] = turn(pitch=-6.0)
+        kick = 0.02 * sine(p, 1, 0.1 + 0.5 * (n == "R"))
+        pose.feet[n] = (Vector((s * 0.1, -0.34 + kick, 0.27 - kick)), qz(deg(-4.0 * s)) @ qx(deg(-95.0)))
+        pose.pole[n] = Vector((0.15 * s, 0.2, -1.0))
+        scarf(pose, p, n, s, back=88.0, flutter=12.0, flap=10.0, beat=3)
+    return pose
+
+def wall_slide_pose(p):
+    pose = Pose()
+    shake = 0.6 * sine(p, 2) + 0.4 * sine(p, 3, 0.15)
+    chatter = (0.5 + 0.5 * sine(p, 3, 0.05)) ** 2
+    w = WALL_GAP
+    pose.hips_at = Vector((0.02, -0.04, 0.43 + 0.004 * shake))
+    # Turned side on, the right shoulder to the wall, leant back off it from
+    # the hips, the chest into it.
+    pose.turns["hips"] = turn(pitch=8.0 + 1.0 * shake, roll=-3.0, yaw=28.0)
+    pose.turns["chest"] = turn(pitch=-14.0, roll=4.0, yaw=8.0 + 1.5 * sine(p, 2, 0.1))
+    pose.turns["neck"] = turn(pitch=-8.0, yaw=-22.0)
+    pose.turns["head"] = turn(pitch=-16.0 + 2.0 * sine(p, 3, 0.2), yaw=-26.0, roll=-5.0)
+    # The boots braced flat on the wall, the right higher.
+    pose.feet["R"] = (Vector((0.13, w - 0.08, 0.3 + 0.004 * chatter)), qz(deg(-10.0)) @ qx(deg(72.0 + 3.0 * shake)))
+    pose.feet["L"] = (Vector((-0.1, w - 0.12, 0.2 + 0.004 * chatter)), qz(deg(8.0)) @ qx(deg(48.0)))
+    pose.pole["R"] = Vector((0.5, 1.0, 0.4))
+    pose.pole["L"] = Vector((-0.3, 1.0, 0.0))
+    # The right mitt on the wall, the left out for balance.
+    pose.hands["R"] = (Vector((0.16, w - 0.035, 0.83 + 0.006 * shake)), Vector((0.9, -0.2, -0.6)), 1.0)
+    pose.turns["hand.R"] = turn(pitch=-70.0, roll=-10.0)
+    flail = sine(p, 2, 0.1)
+    pose.turns["upper_arm.L"] = turn(pitch=-25.0 + 6.0 * flail, roll=58.0 + 4.0 * sine(p, 3, 0.2))
+    pose.turns["forearm.L"] = turn(pitch=35.0 + 6.0 * flail)
+    pose.turns["hand.L"] = turn(pitch=-10.0)
+    for n, s in SIDES.items():
+        for i in range(3):
+            flick = sine(p, 2, 0.2 + 0.08 * i + (0.05 if n == "R" else 0.0))
+            pose.turns[f"tail.{n}.{i}"] = turn(
+                pitch=(-150.0 if i == 0 else -16.0) + 12.0 * flick,
+                roll=-s * (18.0 if i == 0 else 5.0) + 5.0 * sine(p, 3, 0.1 * i),
+                yaw=3.0 * flick)
+    return pose
+
+def no_hands(pose):
+    """No reach for either mitt (the arms are FK); `keyed` needs the channel."""
+    for n, s in SIDES.items():
+        pose.hands[n] = (Vector((s * 0.2, 0.0, 0.5)), Vector((s, 0.0, 0.0)), 0.0)
+    return pose
+
+def move_stage(hips, hips_turn, chest, head, feet, arms, tails=40.0):
+    """One keyed pose of a leap: the hips' place and turn (pitch, roll, yaw),
+    the chest's pitch and the head's, each boot's (ankle, toe pitch, the
+    knee's way), each arm's (upper pitch, roll out, forearm pitch)."""
+    pose = Pose()
+    pose.hips_at = hips
+    pose.turns["hips"] = turn(*hips_turn)
+    pose.turns["chest"] = turn(pitch=chest)
+    pose.turns["neck"] = turn(pitch=0.4 * head)
+    pose.turns["head"] = turn(pitch=0.6 * head)
+    for n, s in SIDES.items():
+        ankle, toe, knee = feet[n]
+        pose.feet[n] = (ankle, qz(deg(-6.0 * s)) @ qx(deg(toe)))
+        pose.pole[n] = Vector((knee[0] * s, knee[1], knee[2]))
+        up, out, fore = arms[n]
+        pose.turns[f"upper_arm.{n}"] = turn(pitch=up, roll=-s * out)
+        pose.turns[f"forearm.{n}"] = turn(pitch=fore)
+        pose.turns[f"hand.{n}"] = turn(pitch=-5.0)
+        scarf(pose, 0.0, n, s, back=tails, flutter=0.0, flap=0.0)
+    return no_hands(pose)
+
+def wall_kick_clip():
+    gathered = move_stage(Vector((0.0, 0.04, 0.4)), (-24.0, 0.0, 0.0), -10.0, 16.0,
+                          {"L": (Vector((-0.12, -0.24, 0.2)), -60.0, (0.3, 0.2, -1.0)),
+                           "R": (Vector((0.12, -0.24, 0.26)), -60.0, (0.3, 0.2, -1.0))},
+                          {"L": (-40.0, 25.0, 30.0), "R": (-40.0, 25.0, 30.0)}, tails=-20.0)
+    driven = move_stage(Vector((0.0, 0.02, 0.44)), (-12.0, 0.0, 0.0), -2.0, 18.0,
+                        {"L": (Vector((-0.11, -0.24, 0.16)), -75.0, (0.2, 0.1, -1.0)),
+                         "R": (Vector((0.11, -0.22, 0.2)), -75.0, (0.2, 0.1, -1.0))},
+                        {"L": (125.0, 35.0, 15.0), "R": (125.0, 35.0, 15.0)}, tails=-60.0)
+    spread = move_stage(Vector((0.0, 0.02, 0.46)), (-4.0, 0.0, 0.0), 2.0, 12.0,
+                        {"L": (Vector((-0.13, -0.08, 0.16)), -30.0, (0.3, 1.0, 0.1)),
+                         "R": (Vector((0.13, -0.04, 0.2)), -25.0, (0.3, 1.0, 0.1))},
+                        {"L": (70.0, 62.0, 25.0), "R": (70.0, 62.0, 25.0)}, tails=-40.0)
+    return keyed([(0.0, gathered), (0.3, driven), (0.65, spread), (1.0, spread)])
+
+def pump_clip():
+    gather = move_stage(Vector((0.0, 0.0, 0.38)), (-12.0, 0.0, 0.0), -8.0, 6.0,
+                        {"L": (Vector((-0.13, 0.0, 0.06)), -10.0, (0.3, 1.0, 0.1)),
+                         "R": (Vector((0.13, 0.0, 0.06)), -10.0, (0.3, 1.0, 0.1))},
+                        {"L": (-35.0, 20.0, 25.0), "R": (-35.0, 20.0, 25.0)}, tails=20.0)
+    punched = move_stage(Vector((0.0, 0.0, 0.47)), (4.0, -3.0, 6.0), 6.0, 20.0,
+                         {"L": (Vector((-0.11, -0.06, 0.1)), -45.0, (0.2, 1.0, 0.0)),
+                          "R": (Vector((0.13, 0.1, 0.24)), -20.0, (0.2, 1.0, 0.3))},
+                         {"L": (-5.0, 55.0, 30.0), "R": (155.0, 32.0, 4.0)}, tails=-50.0)
+    wide = move_stage(Vector((0.0, 0.0, 0.46)), (0.0, 0.0, 0.0), 2.0, 14.0,
+                      {"L": (Vector((-0.13, 0.02, 0.18)), -28.0, (0.3, 1.0, 0.2)),
+                       "R": (Vector((0.13, 0.04, 0.2)), -25.0, (0.3, 1.0, 0.2))},
+                      {"L": (125.0, 45.0, 20.0), "R": (135.0, 40.0, 15.0)}, tails=-35.0)
+    punched.turns["hand.R"] = turn(pitch=10.0)
+    return keyed([(0.0, gather), (0.32, punched), (0.62, punched), (1.0, wide)])
+
 # ------------------------------------------------------------------ the water
 # Afloat in deep water (scripts/pilot_motor.gd swims him, scripts/
 # pilot_figure.gd keeps copies of the numbers): the feet (the origin) stand
@@ -1476,7 +1642,8 @@ def bake(name, length, pose_at):
           + (f", the arms' {arms:.3f} at frame {arms_at}" if arms else ""))
 
 # The cycles must be whole frames: their lengths are what is baked.
-for value in (WALK_CYCLE, RUN_CYCLE, SKID_LENGTH, HANG_LENGTH, SHIMMY_CYCLE, CLIMB_LENGTH):
+for value in (WALK_CYCLE, RUN_CYCLE, SKID_LENGTH, HANG_LENGTH, SHIMMY_CYCLE, CLIMB_LENGTH,
+              CROUCH_LENGTH, LONG_LENGTH, WALL_LENGTH, KICK_LENGTH, PUMP_LENGTH):
     assert abs(round(value * FPS) - value * FPS) < 1e-6, "a cycle must be whole frames"
 bake("idle", IDLE_LENGTH, idle_pose)
 bake("walk", WALK_CYCLE, walk_pose)
@@ -1486,6 +1653,11 @@ bake("hang", HANG_LENGTH, hang_pose)
 bake("shimmy_left", SHIMMY_CYCLE, lambda p: shimmy_pose(p, -1.0))
 bake("shimmy_right", SHIMMY_CYCLE, lambda p: shimmy_pose(p, 1.0))
 bake("climb", CLIMB_LENGTH, climb_clip())
+bake("crouch", CROUCH_LENGTH, crouch_pose)
+bake("long_jump", LONG_LENGTH, long_jump_pose)
+bake("wall_slide", WALL_LENGTH, wall_slide_pose)
+bake("wall_kick", KICK_LENGTH, wall_kick_clip())
+bake("pump", PUMP_LENGTH, pump_clip())
 for value in (SWIM_CYCLE, TREAD_LENGTH):
     assert abs(round(value * FPS) - value * FPS) < 1e-6, "a cycle must be whole frames"
 bake("swim", SWIM_CYCLE, swim_pose)
@@ -1501,7 +1673,7 @@ for pb in rig.pose.bones:
     pb.rotation_quaternion = (1, 0, 0, 0)
 
 # The ledge's measures, for pilot_preview.py's block (not exported).
-for key in ("HANG_DROP", "HANG_OUT", "CLIMB_IN"):
+for key in ("HANG_DROP", "HANG_OUT", "CLIMB_IN", "WALL_GAP"):
     rig[key] = globals()[key]
 
 # ================================================================== save, export

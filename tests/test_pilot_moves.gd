@@ -187,6 +187,7 @@ func _wall_slide() -> void:
 		fastest = maxf(fastest,-m.velocity.y)
 	check(m.move == "wall" and fastest <= PilotMotor.WALL_SLIDE+0.01 and m.feet.y < high,"He slides down it, no faster than %.1f m/s (%.2f)" % [PilotMotor.WALL_SLIDE,fastest])
 	check(PilotMotor.forward(m.facing).dot(Vector2(1.0,0.0)) > 0.9,"Facing the wall")
+	check(figure._has_moves and float(figure._move_weights["wall"]) > 0.99,"The drawn pilot has the moves' clips and slides down the wall in its own")
 	var off := -1
 	for i in range(30):
 		var out := _step(m,1.0/60.0,Vector2.ZERO,false,one_wall)
