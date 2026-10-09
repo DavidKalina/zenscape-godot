@@ -143,6 +143,28 @@ const SWIM_DAMP := 0.6
 const SWIM_ENTRY := 0.35
 const SWIM_HOP := 0.9
 
+## The feel, this motor's own: each starts as its constant above, which the
+## game keeps; a study (studies/character_study.gd) may turn them live. The
+## constants stay what other scripts read.
+var walk := WALK
+var run := RUN
+var accel := ACCEL
+var brake := BRAKE
+var air_accel := AIR_ACCEL
+var turn := TURN
+var turn_run := TURN_RUN
+var air_turn := AIR_TURN
+var gravity := GRAVITY
+var fall := FALL
+var cut := CUT
+var terminal := TERMINAL
+var jumps: Array = JUMPS.duplicate()
+var skid_speed := SKID_SPEED
+var skid_brake := SKID_BRAKE
+var coyote := COYOTE
+var buffer := BUFFER
+var chain_window := CHAIN_WINDOW
+
 ## The feet, in the frame.
 var feet := Vector3.ZERO
 var velocity := Vector3.ZERO
@@ -248,25 +270,25 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 		return _swim_step(delta,want,false,ground,slide,out)
 	# Wading, slowed by the water over the boots.
 	if grounded: top *= 1.0-WADE_SLOW*clampf((wade-WADE_FROM)/(SWIM_IN-WADE_FROM),0.0,1.0)
-	_buffer = BUFFER if pressed else maxf(0.0,_buffer-delta)
+	_buffer = buffer if pressed else maxf(0.0,_buffer-delta)
 	_since_land += delta
 	if grounded: _since_ground = 0.0
 	else: _since_ground += delta
-	if _since_land > CHAIN_WINDOW: _last_chain = 0
+	if _since_land > chain_window: _last_chain = 0
 	var h := Vector2(velocity.x,velocity.z)
 	if grounded: h = _run(h,want,top,delta)
 	else: h = _steer(h,want,top,delta)
 	# The jump: from the ground, or just off it.
-	if _buffer > 0.0 and (grounded or (_since_ground < COYOTE and not _jumped)):
+	if _buffer > 0.0 and (grounded or (_since_ground < coyote and not _jumped)):
 		var next := 1
-		if _last_chain > 0 and _last_chain < JUMPS.size() and h.length() >= CHAIN_PACE*RUN: next = _last_chain+1
+		if _last_chain > 0 and _last_chain < jumps.size() and h.length() >= CHAIN_PACE*run: next = _last_chain+1
 		chain = next
-		velocity.y = sqrt(2.0*GRAVITY*float(JUMPS[next-1]))
+		velocity.y = sqrt(2.0*gravity*float(jumps[next-1]))
 		grounded = false
 		skidding = false
 		_jumped = true
 		_buffer = 0.0
-		flip = 0.0 if next == JUMPS.size() else -1.0
+		flip = 0.0 if next == jumps.size() else -1.0
 		out["jumped"] = next
 	elif pressed and not grounded and not _from_water and (velocity.y > 0.0 or feet.y-ground_y > FLY_CLEAR):
 		_buffer = 0.0
@@ -298,10 +320,10 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 			h = Vector2.ZERO
 			under = ground.call(Vector2(feet.x,feet.z))
 			moved = feet
-		var g := GRAVITY
-		if velocity.y < 0.0: g *= FALL
-		elif not jump and chain < JUMPS.size(): g *= CUT
-		velocity.y = maxf(velocity.y-g*delta,-TERMINAL)
+		var g := gravity
+		if velocity.y < 0.0: g *= fall
+		elif not jump and chain < jumps.size(): g *= cut
+		velocity.y = maxf(velocity.y-g*delta,-terminal)
 		var y := feet.y+velocity.y*delta
 		ground_y = under
 		var deep := _depth(Vector2(moved.x,moved.z))
@@ -486,7 +508,7 @@ func _hang_step(delta: float, want: Vector2, pressed: bool, ground: Callable, sl
 		velocity = Vector3(lip_out.x,0.0,lip_out.y)*0.6
 		_regrab = REGRAB
 		_jumped = true
-		_since_ground = COYOTE
+		_since_ground = coyote
 		out["let_go"] = true
 		return
 	var goal := 0.0
@@ -550,8 +572,8 @@ func _wet_at(p: Vector2, ground: Callable) -> void:
 	surface = float(ground.call(p))+d
 	wade = maxf(0.0,surface-feet.y) if is_finite(surface) else 0.0
 
-## Into a swim, coming in at `fall` m/s.
-func _float_in(fall: float, out: Dictionary) -> void:
+## Into a swim, coming in at `hard` m/s.
+func _float_in(hard: float, out: Dictionary) -> void:
 	swimming = true
 	grounded = false
 	skidding = false
@@ -560,7 +582,7 @@ func _float_in(fall: float, out: Dictionary) -> void:
 	_jumped = false
 	_from_water = false
 	_buffer = 0.0
-	out["swam"] = fall
+	out["swam"] = hard
 
 ## One step afloat: the stick paddles him its way, slower and floatier than
 ## on foot, his way drifting after his turn; the float bobs him to
@@ -592,9 +614,9 @@ func _swim_step(delta: float, want: Vector2, pressed: bool, ground: Callable, sl
 		chain = 1
 		_jumped = true
 		_from_water = true
-		_since_ground = COYOTE
+		_since_ground = coyote
 		feet = Vector3(moved.x,maxf(feet.y,bed),moved.z)
-		velocity = Vector3(h.x,sqrt(2.0*GRAVITY*SWIM_HOP),h.y)
+		velocity = Vector3(h.x,sqrt(2.0*gravity*SWIM_HOP),h.y)
 		ground_y = bed
 		_wet_at(at,ground)
 		out["jumped"] = 1
@@ -631,26 +653,26 @@ func _run(h: Vector2, want: Vector2, top: float, delta: float) -> Vector2:
 	var pace := h.length()
 	if want == Vector2.ZERO:
 		skidding = false
-		pace = move_toward(pace,0.0,BRAKE*delta)
+		pace = move_toward(pace,0.0,brake*delta)
 		return h.normalized()*pace if h != Vector2.ZERO else Vector2.ZERO
 	var way := want.normalized()
-	if pace > SKID_SPEED and h.normalized().dot(way) < -0.6: skidding = true
+	if pace > skid_speed and h.normalized().dot(way) < -0.6: skidding = true
 	if skidding:
-		pace = move_toward(pace,0.0,SKID_BRAKE*delta)
+		pace = move_toward(pace,0.0,skid_brake*delta)
 		if pace < 0.4:
 			skidding = false
 			facing = facing_of(way)
 		return h.normalized()*pace if h != Vector2.ZERO else Vector2.ZERO
-	var rate := lerpf(TURN,TURN_RUN,clampf(pace/RUN,0.0,1.0))
+	var rate := lerpf(turn,turn_run,clampf(pace/run,0.0,1.0))
 	facing = rotate_toward(facing,facing_of(way),rate*delta)
 	var f := forward(facing)
 	var goal := want.length()*top*(0.5+0.5*maxf(f.dot(way),0.0))
-	pace = move_toward(pace,goal,(ACCEL if pace < goal else BRAKE)*delta)
+	pace = move_toward(pace,goal,(accel if pace < goal else brake)*delta)
 	return f*pace
 
 ## In the air: the run kept, steered a little.
 func _steer(h: Vector2, want: Vector2, top: float, delta: float) -> Vector2:
 	if want == Vector2.ZERO: return h
-	facing = rotate_toward(facing,facing_of(want.normalized()),AIR_TURN*delta)
+	facing = rotate_toward(facing,facing_of(want.normalized()),air_turn*delta)
 	var goal := want*maxf(top,h.length())
-	return h.move_toward(goal,AIR_ACCEL*delta)
+	return h.move_toward(goal,air_accel*delta)
