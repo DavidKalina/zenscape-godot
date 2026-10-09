@@ -104,6 +104,7 @@ const EYE_HEIGHT := 0.85
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const PilotFigure = preload("res://scripts/pilot_figure.gd")
 const PilotLedge = preload("res://scripts/pilot_ledge.gd")
+const SolidProps = preload("res://scripts/solid_props.gd")
 ## Jogging and running speed, in metres a second (the motor's).
 const WALK := PilotMotor.WALK
 const RUN := PilotMotor.RUN
@@ -151,12 +152,16 @@ const RETURN := 0.7
 ## The figure's own radius in the plate plane, with room for the eye's near
 ## plane, so trunks and rocks never fill the view.
 const RADIUS := 0.28
-## What stops the figure: trees, rocks and the other solid props. Only their
-## geometry between STEP and HEAD above their ground counts, so a crown that
-## sweeps low (a spruce) keeps the eye out of it, a broadleaf's high crown
-## does not, and anything lower than STEP is stepped over.
+## What stops the figure: trees, rocks, cabins and the other solid props.
+## Only their geometry between STEP and HEAD above the feet counts, so a
+## crown that sweeps low (a spruce) keeps the eye out of it, a broadleaf's
+## high crown does not, and anything lower than STEP is stepped over. They
+## have tops and heights (scripts/solid_props.gd, `solids`): a rock, log,
+## stump, boulder or cabin is ground to stand on once the feet are within a
+## step of its top, and trunks, tall rocks and cabin walls are walls to
+## slide down and kick off.
 const SOLID := ["tree","layered_tree","redwood","broadleaf","bigfoot_tree","snag","birch","willow","juniper","joshua","cactus",
-	"rock","log","stump","boulder_1","boulder_2","boulder_3","boulder_4"]
+	"rock","log","stump","boulder_1","boulder_2","boulder_3","boulder_4","cabin"]
 const STEP := 0.2
 const HEAD := FIGURE_HEIGHT+0.2
 ## Bands each part's mesh is cut into for its footprint (`_profile`).
@@ -352,6 +357,8 @@ var _hint: Label
 ## Obstacles in the plate plane: [Vector3(x, z, radius)], figure radius
 ## included, and what they were read from (`_obstacle_key`).
 var _obstacles := PackedVector3Array()
+## The same props with their heights, for the walk, the ground and the walls.
+var solids := SolidProps.new(RADIUS,STEP,HEAD)
 var _obstacle_key := []
 ## Live water depths, read once a frame while walking.
 var _depths := PackedFloat32Array()
@@ -548,7 +555,9 @@ func _build_figure() -> void:
 	figure.add_child(ripples)
 	# The motor wades and swims in the plate's live water, and on an islet in
 	# a lake it may swim (SkyIslet `swim_depth`).
-	motor.water = func(p: Vector2) -> float: return _depth(p) if perch.is_empty() else _perch_depth(p)
+	motor.water = func(p: Vector2) -> float: return _prop_depth(p) if perch.is_empty() else _perch_depth(p)
+	# Walls: the props' trunks, rocks and cabin walls, else the ground's rise.
+	motor.wall = _wall
 	# The low foliage parts round him and springs back (scripts/pilot_wake.gd).
 	var wake := PilotWake.new()
 	wake.name = "Wake"
@@ -650,8 +659,12 @@ func _read_obstacles(force: bool) -> void:
 	_obstacle_key = key
 	_obstacles = PackedVector3Array()
 	_crowns = PackedVector4Array()
+	solids.clear()
 	# The parked plane: the walker steps round it.
-	if has_parked(): _obstacles.append(Vector3(_parked_at.x,_parked_at.y,PARKED_ROOM+RADIUS))
+	if has_parked():
+		_obstacles.append(Vector3(_parked_at.x,_parked_at.y,PARKED_ROOM+RADIUS))
+		var under := _ground(Vector3(_parked_at.x,0.0,_parked_at.y))
+		solids.add_column(_parked_at,under-1.0,1000.0,PARKED_ROOM)
 	var to_plate: Transform3D = editor.terrain.global_transform.affine_inverse()
 	for batch: MultiMeshInstance3D in batches:
 		if not is_instance_valid(batch) or batch.multimesh == null or batch.multimesh.mesh == null: continue
@@ -661,7 +674,9 @@ func _read_obstacles(force: bool) -> void:
 			if item == null or not str(item.asset) in SOLID: continue
 			var placed: Variant = content._instance_transform(source)
 			if placed == null: continue
-			_add_obstacle(batch.multimesh.mesh,to_plate*batch.global_transform*(placed as Transform3D),item)
+			var at: Transform3D = to_plate*batch.global_transform*(placed as Transform3D)
+			_add_obstacle(batch.multimesh.mesh,at,item)
+			solids.add_mesh(str(item.asset),str(batch.get_meta("part")),batch.multimesh.mesh,at,item.id)
 	# The encounter tree is a landmark of its own, not a batch.
 	var landmarks: Node = editor.get("landmarks")
 	if landmarks == null: return
@@ -670,7 +685,9 @@ func _read_obstacles(force: bool) -> void:
 		var node := landmarks.get_node_or_null("%s_%d" % [item.asset,item.id])
 		if node == null: continue
 		for mesh: MeshInstance3D in node.find_children("*","MeshInstance3D",true,false):
-			if mesh.mesh != null: _add_obstacle(mesh.mesh,to_plate*mesh.global_transform,item)
+			if mesh.mesh == null: continue
+			_add_obstacle(mesh.mesh,to_plate*mesh.global_transform,item)
+			solids.add_mesh(str(item.asset),str(mesh.name),mesh.mesh,to_plate*mesh.global_transform,item.id)
 
 func _add_obstacle(mesh: Mesh, placed: Transform3D, item: Dictionary) -> void:
 	var profile := _profile(mesh)
@@ -738,24 +755,17 @@ func _blocked(point: Vector2) -> bool:
 		if point.distance_squared_to(Vector2(o.x,o.y)) < o.z*o.z-0.0001: return true
 	return _wet(point)
 
-## One step of the walk: into the obstacles, then pushed back out along
-## their normals, which keeps the part of the step along them, so the figure
-## slides round a trunk. Walked square into one it is turned a little aside,
-## so it never stops dead. Deep water is no wall: he swims it.
+## One step of the walk: into the props, then pushed back out along their
+## normals (scripts/solid_props.gd `push`), which keeps the part of the step
+## along them, so the figure slides round a trunk or along a cabin's wall.
+## Walked square into a trunk it is turned a little aside, so it never stops
+## dead. A prop whose top is within a step of the feet does not push: it is
+## ground (`_motor_ground`), stepped or landed on. Deep water is no wall: he
+## swims it.
 func _walk(feet: Vector3, step: Vector2) -> Vector3:
 	if step.length_squared() < 1e-10: return feet
 	var from := Vector2(feet.x,feet.z)
-	var to := from+step
-	for o in _obstacles:
-		var centre := Vector2(o.x,o.y)
-		var away := to-centre
-		if away.length() >= o.z: continue
-		var normal := (from-centre).normalized() if from.distance_to(centre) > 0.0001 else -step.normalized()
-		# Square on: lean the step round the trunk on the side it is already on.
-		if step.normalized().dot(-normal) > 0.97:
-			var side := signf(normal.cross(step)) if absf(normal.cross(step)) > 1e-6 else 1.0
-			to += Vector2(-normal.y,normal.x)*side*step.length()*0.6
-	to = _pushed_out(to)
+	var to := solids.push(feet,step,motor.grounded)
 	# A bridge with hand rails keeps the walker on it; one without lets them
 	# step off its side, where the water allows.
 	to = RopeBridge.hold(editor.terrain,feet,to)
@@ -996,10 +1006,30 @@ func _ground_at(p: Vector2) -> float:
 	return _ground(Vector3(p.x,motor.feet.y,p.y))
 
 ## The ground for the motor: as `_ground_at`, but none (-INF) off the
-## island's land, so its rim is an edge to fall from or catch.
+## island's land, so its rim is an edge to fall from or catch; and over a
+## rock, log, stump, boulder or cabin its top (scripts/solid_props.gd
+## `top`), so it is landed and stood on, stepped up onto when low, and its
+## lip is a ledge to catch as the rim's is.
 func _motor_ground(p: Vector2) -> float:
-	if not _on_land(p): return -INF
-	return _ground_at(p)
+	var on := solids.top(p)
+	if not _on_land(p): return on
+	return maxf(_ground_at(p),on)
+
+## The way off a wall for the motor (scripts/pilot_motor.gd `wall`): a
+## prop's (scripts/solid_props.gd `wall`), else the ground's rise; perched
+## on an islet, its ground's.
+func _wall(feet: Vector3, way: Vector2, reach: float) -> Vector2:
+	if not perch.is_empty(): return PilotMotor.heightfield_wall(func(p: Vector2) -> float: return _perch_ground(p),feet,way,reach)
+	var off := solids.wall(feet,way,reach)
+	return off if off != Vector2.ZERO else PilotMotor.heightfield_wall(_motor_ground,feet,way,reach)
+
+## Live water depth over what is stood on: over a prop's top, less by its
+## height over the ground.
+func _prop_depth(p: Vector2) -> float:
+	var deep := _depth(p)
+	if deep <= 0.0: return deep
+	var on := solids.top(p)
+	return deep if not is_finite(on) else maxf(0.0,_ground_at(p)+deep-on)
 
 ## The lip near plate point `near` for the motor (scripts/pilot_ledge.gd):
 ## the island's rim, or a step too steep to walk.
