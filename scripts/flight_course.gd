@@ -22,6 +22,9 @@ extends RefCounted
 ##       plan's keys)
 ##   ["wall", ...], ["stack", ...], ["arch", ...]   the nature pack's
 ##       landforms (scripts/flight_pack_nature.gd `part_solids`)
+##   ["rock", ...], ["isle", ...], ["span", ...], ["bore", ...], ["slab", ...]
+##       the sky pack's floating islands (scripts/flight_pack_sky.gd
+##       `solids_of`)
 ## Packs append their stations after these (key -1: no digit key).
 ## Each expands into world-space solids (`solids`): {"kind":"box","middle",
 ## "size","basis"} or {"kind":"cyl","middle","radius","height"}, which the
@@ -39,6 +42,7 @@ const Lines = preload("res://scripts/collectible_lines.gd")
 ## (each its own file, its stations keyless: NO_KEY, a "pack" name).
 const PackLines = preload("res://scripts/flight_pack_lines.gd")
 const PackNature = preload("res://scripts/flight_pack_nature.gd")
+const PackSky = preload("res://scripts/flight_pack_sky.gd")
 
 ## The stations stand ALT metres over the floor (y 0), SPACING metres apart
 ## along x; pillars rise to TOP over the entry.
@@ -236,7 +240,7 @@ const STATIONS := [
 		Vector3(79.42,-6.74,-220.48),Vector3(83.63,-6.29,-221.59),Vector3(92.57,-4.60,-220.60),Vector3(101.19,-2.35,-219.06),
 	]},
 	# <<< sundered_mix
-]+PackLines.STATIONS+PackNature.STATIONS
+]+PackLines.STATIONS+PackNature.STATIONS+PackSky.STATIONS
 
 ## The station with `id`, or {}. "id@line" is station id flown on one of
 ## its token lines (`flown`).
@@ -346,6 +350,7 @@ static func floor_y() -> float:
 static func station_hash(s: Dictionary) -> String:
 	var shape := [VERSION,REACH,s.parts,s.tokens]
 	if s.has("ease"): shape.append(s.ease)
+	if s.has("miss_near"): shape.append(s.miss_near)
 	return var_to_str(shape).md5_text().substr(0,12)
 
 ## Station `s`'s token reach: REACH, widened by its `ease` if it has one.
@@ -385,6 +390,8 @@ static func solids(s: Dictionary) -> Array:
 				out.append_array(_bay(at+(part[1] as Vector3),float(part[2]),part[3]))
 			"wall","stack","arch":
 				out.append_array(PackNature.part_solids(part,at,-ALT))
+			"rock","isle","span","bore","slab":
+				out.append_array(PackSky.solids_of(part,at))
 	return out
 
 ## One greybox bay of the Sundered hall's nave, in the hall's own frame

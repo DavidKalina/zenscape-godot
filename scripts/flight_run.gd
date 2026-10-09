@@ -13,7 +13,8 @@ extends RefCounted
 ## (scripts/sky_collectibles.gd `_touch`): the plane's path this tick passes
 ## within REACH of it. Taking a later token misses every one still standing
 ## before it, and a token is missed once the plane is PAST m beyond it along
-## the line's way there. A token is seen the first tick it lies within CONE
+## the line's way there (and, on a station with `miss_near`, within that
+## many m of it). A token is seen the first tick it lies within CONE
 ## of the way the plane is going, within SIGHT, with a clear line to it.
 ## The run ends with every token taken or missed, after TIME_LIMIT, or once
 ## the plane strays LOST m from the next one.
@@ -177,6 +178,9 @@ func tick(delta: float, input: Dictionary) -> void:
 func _tokens(was: Vector3) -> void:
 	var at := plane.position
 	var reach := Course.reach(station)
+	# A station that curls back on itself (a spiral) misses a token by
+	# passing it only within its `miss_near` m.
+	var near_miss := float(station.get("miss_near",0.0))
 	for i in range(tokens.size()):
 		if state[i] != STANDING: continue
 		var near := Geometry3D.get_closest_point_to_segment(tokens[i],was,at)
@@ -185,7 +189,8 @@ func _tokens(was: Vector3) -> void:
 				if state[k] == STANDING: _resolve(k,MISSED)
 			_resolve(i,TAKEN)
 	for i in range(tokens.size()):
-		if state[i] == STANDING and ways[i].dot(at-tokens[i]) > PAST: _resolve(i,MISSED)
+		if state[i] == STANDING and ways[i].dot(at-tokens[i]) > PAST and (near_miss <= 0.0 or at.distance_to(tokens[i]) < near_miss):
+			_resolve(i,MISSED)
 
 func _resolve(i: int, how: int) -> void:
 	state[i] = how

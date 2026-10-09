@@ -8,7 +8,7 @@ extends SceneTree
 ## its best run is kept (the reference line in the report).
 ##
 ##   godot --headless --path . -s tools/flight_bench.gd -- --station all --runs 10
-##   options: --station id[,id] | all   --runs N (default 10; 20 gives
+##   options: --station id[,id] | all   --pack sky (a pack's stations)   --runs N (default 10; 20 gives
 ##            steadier bands, about 7 s)   --skills sloppy,decent,...
 ##            --pack name (every station of a pack, scripts/flight_pack_*.gd)
 ##   A station with token lines (FlightCourse `flown`) is benched per line:

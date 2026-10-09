@@ -68,6 +68,8 @@ var pack := ""
 var run: Run
 var bot: Bot
 var pilot := "human"
+## The pack N cycles within ("" all the stations).
+var pack := ""
 var figure: Node3D
 var chase := GlideCamera.new()
 var camera: Camera3D
