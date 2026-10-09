@@ -18,11 +18,14 @@ extends Node3D
 ## Stations (STATIONS, one entry each, so a new one is a new entry), number
 ## keys teleport to them: 1 the run lane, 2 the step ladder, 3 the gap jumps,
 ## 4 the ledge wall and the pit, 5 the slopes, 6 the pool, 7 the collision
-## bits (pillars, doorways, the low bridge), 8 the tower. R sets him back at
-## the start, F1 shows the numbers (speed, state, the chain, the height over
-## the ground, the last jump's peak and reach), F2 the feel's sliders (the
-## motor's own vars, changed live; Print copies the set). Esc lets the mouse
-## go, a click takes it back.
+## bits (pillars, doorways, the low bridge), 8 the tower, 9 the wall-jump
+## shaft. Space jumps (again on landing, the pump), Shift, C or LT crouches
+## (at a run, then Space: the long jump); into a wall in the air he slides
+## down it, and Space kicks off it. R sets him back at the start, F1 shows
+## the numbers (speed, state, the jump, the height over the ground, the last
+## jump's kind, peak and reach, the long jump's reach), F2 the feel's
+## sliders (the motor's own vars, changed live; Print copies the set). Esc
+## lets the mouse go, a click takes it back.
 ##   ./run-character-study.command
 ##   godot --path . res://studies/character_study.tscn -- --no-title
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
@@ -94,9 +97,9 @@ const STATIONS := [
 		["box",Rect2(7.0,25.5,2.0,3.0),0.0,0.25,"grey"],["label",Vector3(8.0,0.65,25.2),"0.25 m"],
 		["box",Rect2(10.0,25.5,2.0,3.0),0.0,0.45,"grey"],["label",Vector3(11.0,0.85,25.2),"0.45 m · STEP_UP"],
 		["box",Rect2(13.0,25.5,2.0,3.0),0.0,0.6,"grey"],["label",Vector3(14.0,1.0,25.2),"0.6 m"],
-		["box",Rect2(16.0,25.5,2.0,3.0),0.0,0.8,"lip"],["label",Vector3(17.0,1.2,25.2),"0.8 m · jump 1"],
-		["box",Rect2(19.0,25.5,2.0,3.0),0.0,1.1,"lip"],["label",Vector3(20.0,1.5,25.2),"1.1 m · jump 2"],
-		["box",Rect2(22.0,25.5,2.0,3.0),0.0,1.55,"lip"],["label",Vector3(23.0,1.95,25.2),"1.55 m · jump 3"],
+		["box",Rect2(16.0,25.5,2.0,3.0),0.0,0.8,"lip"],["label",Vector3(17.0,1.2,25.2),"0.8 m · jump"],
+		["box",Rect2(19.0,25.5,2.0,3.0),0.0,1.1,"lip"],["label",Vector3(20.0,1.5,25.2),"1.1 m"],
+		["box",Rect2(22.0,25.5,2.0,3.0),0.0,1.5,"lip"],["label",Vector3(23.0,1.9,25.2),"1.5 m · pump"],
 		["box",Rect2(25.0,25.5,2.0,3.0),0.0,2.0,"lip"],["label",Vector3(26.0,2.4,25.2),"2.0 m"],
 		["box",Rect2(28.0,25.5,2.0,3.0),0.0,2.4,"lip"],["label",Vector3(29.0,2.8,25.2),"2.4 m"],
 	]},
@@ -141,10 +144,11 @@ const STATIONS := [
 		["box",Rect2(-15.15,-23.0,0.3,6.0),-0.3,0.0,"lip"],["label",Vector3(-15.0,0.5,-17.6),"beam 0.3 m"],
 		["box",Rect2(-12.3,-23.0,0.6,6.0),-0.3,0.0,"lip"],["label",Vector3(-12.0,0.5,-17.6),"beam 0.6 m"],
 		["label",Vector3(-17.0,0.6,-22.2),"pit 3 m · walk off slowly to hang"],
-		# Catch walls: from a stand, jump 1, 2, 3 reach the lip, or none.
-		["box",Rect2(4.0,-31.0,4.0,3.0),0.0,1.7,"lip"],["label",Vector3(6.0,2.1,-27.8),"1.7 m · catch jump 1"],
-		["box",Rect2(9.0,-31.0,4.0,3.0),0.0,2.1,"lip"],["label",Vector3(11.0,2.5,-27.8),"2.1 m · catch jump 2"],
-		["box",Rect2(14.0,-31.0,4.0,3.0),0.0,2.5,"lip"],["label",Vector3(16.0,2.9,-27.8),"2.5 m · catch jump 3"],
+		# Catch walls: the jump reaches the first lip, the pump the next two,
+		# none the last.
+		["box",Rect2(4.0,-31.0,4.0,3.0),0.0,1.7,"lip"],["label",Vector3(6.0,2.1,-27.8),"1.7 m · catch the jump"],
+		["box",Rect2(9.0,-31.0,4.0,3.0),0.0,2.1,"lip"],["label",Vector3(11.0,2.5,-27.8),"2.1 m · catch the pump"],
+		["box",Rect2(14.0,-31.0,4.0,3.0),0.0,2.5,"lip"],["label",Vector3(16.0,2.9,-27.8),"2.5 m · catch the pump"],
 		["box",Rect2(19.0,-31.0,4.0,3.0),0.0,3.0,"lip"],["label",Vector3(21.0,3.4,-27.8),"3.0 m · none"],
 	]},
 	{"key":5,"name":"Slopes · up to 2 m","spawn":Vector3(17.0,0.0,-11.5),"face":Vector2(1.0,0.0),"sign":Vector3(24.0,4.2,-11.5),"parts":[
@@ -195,6 +199,14 @@ const STATIONS := [
 		["box",Rect2(7.0,-12.5,2.0,2.0),0.0,4.6,"lip"],["label",Vector3(8.0,5.0,-11.5),"+1.3"],
 		["label",Vector3(8.0,6.4,-8.0),"+1.4 · the top"],
 	]},
+	{"key":9,"name":"Wall-jump shaft · 6 m","spawn":Vector3(-9.6,0.0,-6.5),"face":Vector2(0.0,-1.0),"sign":Vector3(-9.6,7.4,-10.0),"parts":[
+		# Two walls 2.8 m apart, 6 m tall; the west one's top a lip with a
+		# deck behind it, the east one a little taller.
+		["box",Rect2(-15.0,-12.0,4.0,4.0),0.0,6.0,"lip"],
+		["box",Rect2(-8.2,-12.0,1.0,4.0),0.0,6.5,"grey"],
+		["label",Vector3(-9.6,0.4,-6.0),"into a wall in the air: slide · Space: kick off"],
+		["label",Vector3(-11.3,6.4,-10.0),"6 m lip"],
+	]},
 ]
 
 signal ready_to_walk
@@ -214,6 +226,7 @@ var camera: Camera3D
 var scripted := false
 var script_want := Vector2.ZERO
 var script_jump := false
+var script_crouch := false
 ## The last jump, measured: its number, peak over the takeoff, reach across
 ## the ground, the drop to where it came down; the one in the air now.
 var last_jump := {}
@@ -463,6 +476,7 @@ func _label(at: Vector3, text: String, size: int) -> void:
 func _build_pilot() -> void:
 	ground = PhysicsGround.new(get_world_3d().direct_space_state,motor)
 	motor.water = ground.water_callable()
+	motor.wall = ground.wall_callable()
 	figure = Node3D.new()
 	figure.name = "Pilot"
 	add_child(figure)
@@ -493,7 +507,7 @@ func place(at: Vector3, face: Vector2) -> void:
 func respawn() -> void:
 	place(START,START_FACE)
 
-## Teleported to station `key` (1 to 8).
+## Teleported to station `key` (1 to 9).
 func go_to(key: int) -> void:
 	for station: Dictionary in STATIONS:
 		if station.key == key: place(station.spawn,station.face)
@@ -506,9 +520,11 @@ func _process(delta: float) -> void:
 func tick(delta: float) -> void:
 	var want := script_want
 	var jump := script_jump
+	motor.crouch = script_crouch
 	if not scripted:
 		want = _want(delta)
 		jump = Input.is_action_pressed(&"walk_jump") and not _tuning()
+		motor.crouch = Input.is_action_pressed(&"walk_crouch") and not _tuning()
 	_asked = want.length()
 	ground.head(delta)
 	var was := motor.feet
@@ -545,21 +561,27 @@ func _sync_figure() -> void:
 	figure.rotation = Vector3(0.0,motor.facing,0.0)
 
 ## The jump measured from takeoff to where it came down (a landing, a
-## catch, a splash).
+## catch, a splash, a wall taken hold of, another jump): its kind ("jump",
+## "pump", "long", "kick"), number, peak over the takeoff and reach.
 func _measure(events: Dictionary, was: Vector3) -> void:
 	if events.has("jumped"):
+		if not _jump.is_empty(): _jump_done("jumped",was)
 		_jump_number = int(events.jumped)
-		_jump = {"n":_jump_number,"from":was,"peak":was.y}
+		var kind := "long" if events.has("long") else ("kick" if events.has("wall_jump") else ("pump" if _jump_number > 1 else "jump"))
+		_jump = {"n":_jump_number,"kind":kind,"from":was,"peak":was.y}
 	if _jump.is_empty(): return
 	_jump.peak = maxf(float(_jump.peak),motor.feet.y)
 	var done := ""
 	for key: String in ["landed","grabbed","swam"]:
 		if events.has(key): done = key
+	if events.get("wall",false): done = "wall"
 	if done == "" and motor.grounded: done = "landed"
-	if done == "": return
+	if done != "": _jump_done(done,motor.feet)
+
+func _jump_done(done: String, at: Vector3) -> void:
 	var from: Vector3 = _jump.from
-	last_jump = {"n":_jump.n,"peak":float(_jump.peak)-from.y,"reach":Vector2(motor.feet.x-from.x,motor.feet.z-from.z).length(),
-		"drop":motor.feet.y-from.y,"end":done}
+	last_jump = {"n":_jump.n,"kind":_jump.kind,"peak":maxf(float(_jump.peak),at.y)-from.y,"reach":Vector2(at.x-from.x,at.z-from.z).length(),
+		"drop":at.y-from.y,"end":done}
 	_jump = {}
 
 ## What the feet are on, for the steps and puffs.
@@ -577,11 +599,24 @@ func _world_way(way: Vector3) -> Vector3:
 		flat = Vector3(f.x,0.0,f.y)
 	return flat.normalized()
 
-## As the walker's: jumps and landings sound and puff, the body squashes.
+## As the walker's: jumps and landings sound and puff (the pump in a ring,
+## the long jump back off the heels, a wall kick off the wall), the body
+## squashes; taking hold of a wall slaps it, sliding down it scrapes and
+## sprays.
 func _motor_events(events: Dictionary) -> void:
 	if events.has("jumped"):
 		steps.step(_surface(),0.3+0.15*float(events.jumped))
-		if int(events.jumped) > 1: puffs.burst(_puff_at(figure.global_position),_surface(),0.15*float(events.jumped))
+		var at := _puff_at(figure.global_position)
+		var way := _world_way(motor.velocity)
+		if events.has("wall_jump"): puffs.burst(at+Vector3.UP*0.5-way*0.3,_surface(),0.35,way)
+		elif events.has("long"): puffs.burst(at,_surface(),0.3,-way)
+		elif int(events.jumped) > 1: puffs.burst(at,_surface(),0.45)
+	if events.get("wall",false):
+		steps.step(_surface(),0.35)
+		steps.slide(_surface(),0.3)
+	if motor.move == "wall":
+		var off := Vector3(motor.wall_out.x,0.0,motor.wall_out.y)
+		puffs.spray(figure.global_position-off*0.25+Vector3.UP*0.15,Vector3.UP,_surface(),0.35,get_process_delta_time())
 	if events.has("landed"):
 		var hard := float(events.landed)
 		steps.step(_surface(),clampf(hard/8.0,0.3,1.0))
@@ -672,8 +707,10 @@ func _ease(rate: float, delta: float) -> float:
 ## The feel's numbers on the F2 panel: the motor's var, its slider's range.
 const TUNABLE := [["walk",0.5,6.0],["run",1.0,10.0],["accel",2.0,60.0],["brake",2.0,60.0],["air_accel",0.0,30.0],
 	["turn",1.0,40.0],["turn_run",1.0,30.0],["air_turn",0.0,20.0],["gravity",5.0,80.0],["fall",0.5,4.0],["cut",1.0,6.0],
-	["terminal",5.0,40.0],["jumps:0",0.2,3.0],["jumps:1",0.2,3.0],["jumps:2",0.2,4.0],["skid_speed",0.5,8.0],
-	["skid_brake",2.0,40.0],["coyote",0.0,0.4],["buffer",0.0,0.4],["chain_window",0.0,0.6]]
+	["terminal",5.0,40.0],["jumps:0",0.2,3.0],["jumps:1",0.2,3.0],["skid_speed",0.5,8.0],
+	["skid_brake",2.0,40.0],["coyote",0.0,0.4],["buffer",0.0,0.4],["chain_window",0.0,0.6],
+	["long_height",0.1,2.0],["long_speed",2.0,12.0],["long_gravity",5.0,40.0],["wall_slide",0.3,6.0],
+	["wall_jump",0.3,3.0],["wall_kick",1.0,10.0],["wall_lock",0.0,0.8]]
 
 func _build_ui() -> void:
 	var layer := CanvasLayer.new()
@@ -687,7 +724,7 @@ func _build_ui() -> void:
 	_hud.add_theme_constant_override("shadow_offset_y",1)
 	layer.add_child(_hud)
 	var hint := Label.new()
-	hint.text = "WASD run · Space jump · mouse look · 1-8 stations · R start · F1 numbers · F2 feel · Esc mouse"
+	hint.text = "WASD run · Space jump (again on landing: pump) · Shift/C crouch, at a run + Space: long jump · into a wall: slide, Space: kick · 1-9 stations · R start · F1 numbers · F2 feel · Esc mouse"
 	hint.add_theme_font_size_override("font_size",14)
 	hint.add_theme_color_override("font_color",Color("fbf6ea"))
 	hint.add_theme_color_override("font_shadow_color",Color(0,0,0,0.7))
@@ -782,11 +819,16 @@ func default_feel() -> void:
 			if child is HSlider: (child as HSlider).set_value_no_signal(_feel(child.get_meta("feel")))
 			if child is Label and row.get_child_count() == 3 and child == row.get_child(2): (child as Label).text = "%.2f" % _feel(row.get_child(1).get_meta("feel"))
 
+## The long jump's reach, level, from the motor's feel now.
+func long_reach() -> float:
+	return motor.long_speed*2.0*sqrt(2.0*motor.long_height/motor.long_gravity)
+
 ## What the motor is doing, in a word.
 func state() -> String:
 	if motor.on_ledge(): return motor.hold
 	if motor.swimming: return "swim"
 	if motor.skidding: return "skid"
+	if motor.move in ["wall","crouch","long","kick"]: return motor.move
 	if motor.grounded: return "wade" if motor.wade > PilotMotor.WADE_FROM else "ground"
 	return "air"
 
@@ -796,12 +838,13 @@ func _show_hud() -> void:
 	var lines := PackedStringArray([
 		"speed     %.2f m/s" % motor.speed(),
 		"state     %s" % state(),
-		"jump      %d%s" % [_jump_number,"  (in the air)" if not _jump.is_empty() else ""],
+		"jump      %s%s" % [_jump.get("kind",last_jump.get("kind","-")),"  (in the air)" if not _jump.is_empty() else ""],
 		"height    %s" % ("%.2f m" % (motor.feet.y-under) if is_finite(under) else "-"),
 		"feet      %.1f, %.2f, %.1f" % [motor.feet.x,motor.feet.y,motor.feet.z],
 	])
 	if not last_jump.is_empty():
-		lines.append("last jump %d: peak %.2f m · reach %.2f m · drop %+.2f m (%s)" % [last_jump.n,last_jump.peak,last_jump.reach,last_jump.drop,last_jump.end])
+		lines.append("last %s: peak %.2f m · reach %.2f m · drop %+.2f m (%s)" % [last_jump.kind,last_jump.peak,last_jump.reach,last_jump.drop,last_jump.end])
+	lines.append("long jump %.2f m level (%.2f m up)" % [long_reach(),motor.long_height])
 	if motor.wade > 0.0 or motor.swimming: lines.append("water     %.2f m over the feet" % motor.wade)
 	_hud.text = "\n".join(lines)
 
@@ -822,4 +865,4 @@ func _unhandled_input(event: InputEvent) -> void:
 				_tune.visible = not _tune.visible
 				Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if _tune.visible else Input.MOUSE_MODE_CAPTURED
 			_:
-				if key >= KEY_1 and key <= KEY_8: go_to(key-KEY_0)
+				if key >= KEY_1 and key <= KEY_9: go_to(key-KEY_0)

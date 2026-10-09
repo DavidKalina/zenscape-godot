@@ -5,8 +5,10 @@ extends SceneTree
 ## and stops at it (and slides along it), walks under the low bridge and,
 ## up its ramp, on top of it, bumps his head jumping under it, wades into
 ## the pool and swims where it is deep, and walked slowly off the pit's edge
-## lowers himself to hang from it. The motor's feel, turned live, starts as
-## its constants.
+## lowers himself to hang from it; long-jumped at the gap station he
+## crosses 3.5 m and not 4; kicked up the wall-jump shaft he reaches its
+## lip and climbs out. The motor's feel, turned live, starts as its
+## constants.
 ##   godot --headless --path . --script tests/test_character_study.gd
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const DT := 1.0/60.0
@@ -49,7 +51,7 @@ func run() -> void:
 	drive(Vector2.ZERO,true,40)
 	drive(Vector2.ZERO,false,40)
 	var jumped: Dictionary = study.last_jump
-	check(not jumped.is_empty() and absf(float(jumped.peak)-float(PilotMotor.JUMPS[0])) < 0.08 and m.grounded,"A held jump from a stand peaks at %.2f m (JUMPS[0] less a frame's step) and lands" % float(jumped.get("peak",0.0)))
+	check(not jumped.is_empty() and absf(float(jumped.peak)-float(PilotMotor.JUMPS[0])) < 0.01 and m.grounded,"A held jump from a stand peaks at %.3f m (JUMPS[0]) and lands" % float(jumped.get("peak",0.0)))
 	# The room's wall.
 	study.place(Vector3(0.0,0.0,29.5),Vector2(0.0,1.0))
 	drive(Vector2(0.0,1.0),false,120)
@@ -102,5 +104,42 @@ func run() -> void:
 	var caught := [false]
 	drive(Vector2(0.0,-0.3),true,40,func(mm: PilotMotor) -> void: if mm.on_ledge(): caught[0] = true)
 	check(caught[0],"A jump at the 1.7 m wall catches its lip (%s)" % m.hold)
+	# The long jump across the gaps: from 0.2 m short of the deck's edge.
+	for gap: Array in [[3.5,9.0,true],[4.0,12.0,false]]:
+		study.place(Vector3(-29.5,1.2,gap[1]),Vector2(1.0,0.0))
+		var went := [false,false]
+		study.script_want = Vector2(1.0,0.0)
+		for i in range(240):
+			study.script_crouch = m.grounded and m.feet.x > -25.8
+			study.script_jump = m.feet.x > -25.2
+			study.tick(DT)
+			if m.move == "long": went[0] = true
+			if went[0] and (m.grounded or m.on_ledge()):
+				went[1] = m.grounded and m.feet.y > 1.19 and m.feet.x > -25.0+float(gap[0])
+				break
+		study.script_crouch = false
+		check(went[0] and went[1] == gap[2],"Long-jumped at the %.1f m gap, he %s (%s)" % [gap[0],"lands across" if gap[2] else "falls short",study.last_jump])
+	# Up the wall-jump shaft: into a wall, kicked off it to the other, and up.
+	study.go_to(9)
+	study.place(Vector3(-9.6,0.0,-10.0),Vector2(-1.0,0.0))
+	var way := Vector2(-1.0,0.0)
+	var on_wall := 0
+	var was := ""
+	var kicks := []
+	var out_top := false
+	for i in range(1200):
+		on_wall = on_wall+1 if m.move == "wall" else 0
+		study.script_want = way
+		study.script_jump = (m.move != "wall" and m.velocity.y > 0.0) or on_wall >= 5 or (m.grounded and m.feet.x < -10.2) or (m.on_ledge() and i%20 < 3)
+		study.tick(DT)
+		if m.move == "kick" and was != "kick":
+			kicks.append(snappedf(m.feet.y,0.01))
+			way = -way
+		was = m.move
+		if m.grounded and m.feet.y > 5.9:
+			out_top = true
+			break
+	study.script_jump = false
+	check(out_top and kicks.size() >= 3,"Kicked between the shaft's walls he reaches its 6 m lip and climbs out (kicks at %s m)" % [kicks])
 	print("character study: %d failure(s)" % failures)
 	quit(1 if failures > 0 else 0)

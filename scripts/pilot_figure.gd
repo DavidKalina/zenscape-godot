@@ -453,8 +453,7 @@ func drive(motor: RefCounted, delta: float) -> Dictionary:
 	var bank := _bank.step(clampf(turned*BANK*pace,-BANK_MOST,BANK_MOST) if motor.grounded else 0.0,delta)
 	var lean := _lean.step((0.0 if _has_skid else SKID_LEAN) if motor.skidding else tip,delta)
 	_tilt.rotation = Vector3(lean,_yaw.step(0.0,delta),bank)
-	var flip := -TAU*smoothstep(0.0,1.0,motor.flip) if motor.flip >= 0.0 else 0.0
-	_pivot.rotation = Vector3(flip,0.0,0.0)
+	_pivot.rotation = Vector3.ZERO
 	# Off the ground: a dip taking off, then stretched along the way it
 	# goes; the head nods with it and the arms fly out.
 	var rise: float = motor.velocity.y

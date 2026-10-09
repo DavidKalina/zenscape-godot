@@ -20,8 +20,15 @@ extends RefCounted
 ## move, to come out, but not further in. Rising, `head` stops a jump against a ceiling.
 ##
 ## Ledges are PilotLedge.find over the same rays cast from the lip's height
-## hint. Water is a list of flat pools, {"rect": Rect2 (x, z), "top": the
-## surface's height}: the depth at a point is the top over the ground there.
+## hint, but where a ray starts inside something the lip finder is given
+## its real top, looked for from TOWER over the hint (the ground's "a wall
+## too tall to matter" would be a step at the ray's start, a lip partway up
+## a tall wall that could be hung from and never climbed). Walls (`wall`)
+## are two rays along the way asked, at the chest (WALL_CHEST) and at the
+## wall's least height (PilotMotor.WALL_TALL) over the feet: both hitting
+## within the reach, the wall's way off is the chest's hit's. Water is a
+## list of flat pools, {"rect": Rect2 (x, z), "top": the surface's height}:
+## the depth at a point is the top over the ground there.
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const PilotLedge = preload("res://scripts/pilot_ledge.gd")
 
@@ -39,6 +46,10 @@ const BODY_LOW := PilotMotor.STEP_UP+0.05
 const HEAD := 1.12
 const SKIN := 0.01
 const SLIDES := 3
+## A wall's ray at the chest, over the feet; how high over a lip's hint the
+## real top of a tall wall is looked for from.
+const WALL_CHEST := 0.75
+const TOWER := 40.0
 
 var space: PhysicsDirectSpaceState3D
 ## The motor whose feet the ground is looked for from.
@@ -81,6 +92,9 @@ func ledge_callable() -> Callable:
 
 func water_callable() -> Callable:
 	return depth
+
+func wall_callable() -> Callable:
+	return wall
 
 ## The ground under plate point `p` as the motor sees it from its feet.
 func ground(p: Vector2) -> float:
@@ -157,7 +171,29 @@ func head(delta: float) -> bool:
 
 ## The lip near `near`, its top about `y`, as PilotLedge `find` gives it.
 func ledge(near: Vector2, y: float) -> Dictionary:
-	return PilotLedge.find(func(p: Vector2) -> float: return height_from(p,y-PilotMotor.STEP_UP*0.5),near,y)
+	return PilotLedge.find(func(p: Vector2) -> float: return top_from(p,y-PilotMotor.STEP_UP*0.5),near,y)
+
+## As `height_from`, but a wall too tall to matter is its real top, looked
+## for from TOWER over `y`.
+func top_from(p: Vector2, y: float) -> float:
+	var h := height_from(p,y)
+	if h != y+PilotMotor.STEP_UP+LOOK_OVER: return h
+	var top := _down(p,y+TOWER)
+	return top if is_finite(top) else h
+
+## The way off a wall standing PilotMotor.WALL_TALL over `feet`, within
+## `reach` of them along `way` (x, z); Vector2.ZERO if there is none.
+func wall(feet: Vector3, way: Vector2, reach: float) -> Vector2:
+	var along := Vector3(way.x,0.0,way.y).normalized()*reach
+	var normal := Vector3.ZERO
+	for up: float in [WALL_CHEST,PilotMotor.WALL_TALL]:
+		_ray.from = feet+Vector3.UP*up
+		_ray.to = _ray.from+along
+		var hit := space.intersect_ray(_ray)
+		if hit.is_empty() or (hit.normal as Vector3) == Vector3.ZERO: return Vector2.ZERO
+		if up == WALL_CHEST: normal = hit.normal
+	if absf(normal.y) > 0.35: return Vector2.ZERO
+	return Vector2(normal.x,normal.z).normalized()
 
 ## The water's depth over the ground at `p`, 0 out of every pool.
 func depth(p: Vector2) -> float:

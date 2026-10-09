@@ -44,9 +44,9 @@ The layout follows cozy builders on a pad, such as Townscaper and Tiny Glade on 
 | Pad | Does | Keys / mouse |
 |---|---|---|
 | Left stick | Walk, analog | WASD / arrows |
-| L3 (click) | Run until the stick comes back to rest | Shift |
 | Right stick | Look | Mouse |
-| A | Jump; hold to fly; beside the plane, take off | Space |
+| A | Jump; again on landing, the higher pump; on a wall (or just after touching one in the air), kick off it; again in the air to fly; beside the plane, take off | Space |
+| LT (held) | Crouch; at a run, then A, the long jump | Shift or C |
 | B or View | Step back out to building | V / Esc |
 | Menu | Pause (steps out) | — |
 
@@ -126,7 +126,7 @@ Every pad read goes through a named action in the InputMap (`Pad.ACTIONS`). `Pad
 
 Keys sit in the same action where the code polls them:
 - `move_*`
-- `walk_run` and `walk_jump`
+- `walk_jump` and `walk_crouch`
 - `fly_boost` and `fly_brake`
 - `fly_eject` (the pad's X: eject, then open the canopy; the X key is the same verb, read as an event)
 - `glide_rise` and `glide_dive`

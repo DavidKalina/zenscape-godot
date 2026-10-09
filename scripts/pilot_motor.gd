@@ -6,14 +6,31 @@ extends RefCounted
 ## first and turns on the spot. Let go, he slows to a stand.
 ##
 ## Jumps go as high as the button is held: let go on the way up and he
-## falls sooner, and he falls faster than he rose. Pressed a moment before
+## falls sooner, and he falls faster than he rose. The arc is worked out
+## exactly for each step's gravity (to the top, and past it), so the heights
+## set are the heights reached at any frame rate. Pressed a moment before
 ## landing (BUFFER) the jump is kept for the touch; pressed a moment after
-## running off a ledge (COYOTE) it still jumps. Jumped again on landing
-## (within CHAIN_WINDOW) at a run, the jumps chain, each higher (JUMPS), the
-## third with a flip. In the air he keeps his run and steers only a little.
+## running off a ledge (COYOTE) it still jumps. Jumped again within
+## CHAIN_WINDOW of landing (the buffer before it counting too), it is the
+## pump: higher (JUMPS), and every timed jump after it stays that high. In
+## the air he keeps his run and steers only a little.
+##
+## Crouching (`crouch` held on the ground) he stops where he stands, sliding
+## to a stop from a run (CROUCH_BRAKE); jumped from a crouch at a run (over
+## LONG_PACE) it is the long jump: low (LONG_HEIGHT), fast (LONG_SPEED) and
+## far, on its own lighter gravity, the hold of the button not cutting it.
+##
+## Walls (`wall`, or the ground's own rise where none is given): in the air,
+## against one standing WALL_TALL over the feet, the stick held into it and
+## not rising faster than WALL_RISE, he slides down it with a hand on it, no
+## faster than WALL_SLIDE; the stick let go of or pulled away (WALL_LET), the
+## wall ending or the ground reached, he leaves it. Jump on it, or just
+## after touching one in the air (WALL_TOUCH), kicks him up (WALL_JUMP) and
+## out (WALL_KICK), turned round, the stick not steering for WALL_LOCK, so he
+## can kick up between two walls facing each other.
 ##
 ## Pressed again in the air on the way up, or falling from high enough
-## (FLY_CLEAR), it asks to fly (`step` returns "fly").
+## (FLY_CLEAR), with no wall at hand, it asks to fly (`step` returns "fly").
 ##
 ## Ledges (`ledge`, a lip finder as scripts/pilot_ledge.gd's `find`): falling
 ## past a lip he faces, hands come down to it, he catches it; stepping off
@@ -23,6 +40,15 @@ extends RefCounted
 ## following its curve and turning to stay facing the wall, stopping where
 ## it bends too sharply, steps or ends; held towards the wall (CLIMB_HOLD) or
 ## Jump, he climbs up onto it; held away (DROP_HOLD) he lets go and falls.
+## Only a lip with a top to stand on is caught (`_stand_on`): CLIMB_IN in
+## from its edge, or the middle of a narrower top, with room for the body
+## over it; so whatever he hangs from, he can climb.
+##
+## Walls are anything `wall` answers: it takes the feet, a way and a reach
+## and gives back the way off a wall standing at least WALL_TALL over the
+## feet within that reach (x, z), or Vector2.ZERO. Without one, the ground's
+## own rise is the wall (`heightfield_wall`: ground over WALL_TALL above the
+## feet WALL_PROBE ahead, its way off down the ground's slope).
 ##
 ## Ground is anything `ground` answers, a height for a point of the frame;
 ## running off ground that drops away by more than SNAP he falls. Moving
@@ -43,9 +69,9 @@ extends RefCounted
 ## asks to fly. Never drowning, never hurt.
 
 ## Speeds, metres a second, and how fast they are reached and lost.
-const WALK := 2.0
-const RUN := 4.0
-const ACCEL := 14.0
+const WALK := 2.4
+const RUN := 4.8
+const ACCEL := 17.0
 const BRAKE := 18.0
 const AIR_ACCEL := 6.0
 ## Radians a second he turns towards the stick: at a stand, at a full run,
@@ -56,22 +82,21 @@ const AIR_TURN := 4.0
 ## Thrown back against a run faster than this, he skids, braking at
 ## SKID_BRAKE: from a full run a slide of about 0.3 s and 0.6 m, long enough
 ## to read.
-const SKID_SPEED := 2.8
-const SKID_BRAKE := 13.0
+const SKID_SPEED := 3.4
+const SKID_BRAKE := 15.0
 ## Gravity rising, the share more falling, and the share more rising with
 ## the button let go; the fastest fall.
 const GRAVITY := 26.0
 const FALL := 1.5
 const CUT := 2.8
 const TERMINAL := 18.0
-## The chain's jump heights, metres.
-const JUMPS := [0.8,1.1,1.55]
-## Seconds after a landing the next jump chains, and the pace (of RUN) it
-## needs.
-const CHAIN_WINDOW := 0.22
-const CHAIN_PACE := 0.5
+## The jump's height and the pump's, metres.
+const JUMPS := [0.8,1.5]
+## Seconds after a landing a jump is the pump (a press up to BUFFER before
+## the landing counts too).
+const CHAIN_WINDOW := 0.3
 const COYOTE := 0.1
-const BUFFER := 0.13
+const BUFFER := 0.15
 ## Ground falling away more than this under a step (plus the step's own
 ## run) is a ledge to fall from; ground rising more than STEP_UP in a step
 ## is a wall.
@@ -79,8 +104,42 @@ const SNAP := 0.3
 const STEP_UP := 0.45
 ## Over this, metres above the ground, a press falling asks to fly.
 const FLY_CLEAR := 1.6
-## Seconds the third jump's flip takes.
-const FLIP_TIME := 0.55
+## Crouching: how fast he slides to a stop from a run (m/s²). The long
+## jump: the least pace (m/s) it is taken from, its height (m), its pace
+## along (m/s) and its gravity (m/s², rising and falling alike). Level, it
+## goes LONG_SPEED*2*sqrt(2*LONG_HEIGHT/LONG_GRAVITY), 3.3 m; onto a top
+## level with the takeoff a little more, as a landing steps up onto a top
+## up to STEP_UP over the feet: about 3.9 m, over a 3.5 m gap from near
+## the edge and short of 4.
+const CROUCH_BRAKE := 7.0
+const LONG_PACE := 3.0
+const LONG_HEIGHT := 0.6
+const LONG_SPEED := 6.4
+const LONG_GRAVITY := 18.0
+## Walls: the least height one stands over the feet to be slid down or
+## kicked from, and how far ahead (m, from the feet) one is felt; the feet's
+## least height over the ground to take hold; the stick's share into it that
+## holds on; the fastest rise (m/s) it is taken at; a fall caught to at
+## most WALL_CATCH (m/s) as the hand goes on, then gathering at WALL_GRAVITY
+## (m/s²) up to the slide's fastest, WALL_SLIDE; seconds the stick may be
+## off it before he lets go; seconds after touching one in the air a press
+## still kicks off it.
+const WALL_TALL := 1.2
+const WALL_PROBE := 0.45
+const WALL_CLEAR := 0.5
+const WALL_HOLD := 0.3
+const WALL_RISE := 1.5
+const WALL_CATCH := 0.5
+const WALL_GRAVITY := 8.0
+const WALL_SLIDE := 1.8
+const WALL_LET := 0.12
+const WALL_TOUCH := 0.1
+## The wall jump: its height (m), its pace out from the wall (m/s), seconds
+## the stick does not steer after it. Between walls 2.8 m apart it gains
+## about a metre a kick.
+const WALL_JUMP := 1.4
+const WALL_KICK := 5.2
+const WALL_LOCK := 0.28
 ## The ledge, as art/blender/pilot/pilot_build.py made the clips: hanging,
 ## the lip's top HANG_DROP over the feet and its edge HANG_OUT ahead; the
 ## climb (CLIMB_TIME s) ends stood CLIMB_IN in from the edge; the shimmy's
@@ -96,7 +155,7 @@ const CATCH_TURN := 0.18
 const LOWER_TIME := 0.7
 ## Stepping off an edge under this pace (m/s), or pushing out over it less
 ## than CATCH_PUSH of the stick, he catches it.
-const CATCH_PACE := 2.2
+const CATCH_PACE := 2.6
 const CATCH_PUSH := 0.35
 ## Catching a lip in the air: looked for GRAB_REACH m ahead; the hands
 ## (HANG_DROP over the feet) within GRAB_LOW under it to GRAB_HIGH over it;
@@ -130,7 +189,7 @@ const SHIMMY_SLOPE := 1.0
 ## float's spring (Hz, damping) and the share of a fall's speed kept going
 ## in; the hop out (m).
 const WADE_FROM := 0.08
-const WADE_SLOW := 0.6
+const WADE_SLOW := 0.67
 const SWIM_IN := 0.55
 const SWIM_OUT := 0.45
 const SWIM_DRAFT := 0.58
@@ -164,6 +223,13 @@ var skid_brake := SKID_BRAKE
 var coyote := COYOTE
 var buffer := BUFFER
 var chain_window := CHAIN_WINDOW
+var long_height := LONG_HEIGHT
+var long_speed := LONG_SPEED
+var long_gravity := LONG_GRAVITY
+var wall_slide := WALL_SLIDE
+var wall_jump := WALL_JUMP
+var wall_kick := WALL_KICK
+var wall_lock := WALL_LOCK
 
 ## The feet, in the frame.
 var feet := Vector3.ZERO
@@ -172,10 +238,19 @@ var velocity := Vector3.ZERO
 var facing := 0.0
 var grounded := true
 var skidding := false
-## The jump in the chain he is in (1 to 3), 0 on the ground.
+## The jump in the chain he is in (1 the jump, 2 the pump), 0 on the ground
+## or in any other leap.
 var chain := 0
-## The third jump's flip, 0 to 1, or -1.
-var flip := -1.0
+## What he is doing beyond running and jumping: "" (nothing), "jump",
+## "pump", "long" (the long jump), "kick" (off a wall), "wall" (sliding down
+## one), "crouch".
+var move := ""
+## Held by the caller: the crouch button.
+var crouch := false
+## A wall's answer (see above), or none (the ground's rise).
+var wall := Callable()
+## Sliding down a wall: the way off it (x, z).
+var wall_out := Vector2.ZERO
 ## The ground under the feet last step.
 var ground_y := 0.0
 ## On a ledge: "" (not), "catch" (turning round on the edge), "lower"
@@ -201,6 +276,16 @@ var _since_ground := 0.0
 var _buffer := 0.0
 var _held := false
 var _jumped := false
+## The arc's own: no cut for letting go (a long jump, a wall jump), and the
+## long jump's gravity.
+var _no_cut := false
+var _light := false
+## Walls: seconds since one was touched in the air and its way off; seconds
+## the stick has been off the wall slid down; seconds left not steering.
+var _wall_since := 99.0
+var _wall_seen := Vector2.ZERO
+var _wall_off := 0.0
+var _lock := 0.0
 ## Water (see above): its depth for a frame point, or none; swimming; the
 ## water over the feet (m, 0 dry) and its top (the frame's height, -INF dry).
 var water := Callable()
@@ -219,7 +304,13 @@ func reset(at: Vector3, towards: float, speed := 0.0) -> void:
 	grounded = true
 	skidding = false
 	chain = 0
-	flip = -1.0
+	move = ""
+	wall_out = Vector2.ZERO
+	_no_cut = false
+	_light = false
+	_wall_since = 99.0
+	_wall_off = 0.0
+	_lock = 0.0
 	_last_chain = 0
 	_since_land = 99.0
 	_since_ground = 0.0
@@ -246,15 +337,17 @@ func speed() -> float:
 	return Vector2(velocity.x,velocity.z).length()
 
 ## One step. `want` is the way asked, at most 1 long; `top` the pace it
-## asks for at full stick; `jump` whether the jump is held. `ground` takes a
-## point (x, z) and gives its height; `slide` takes the feet and a step
-## (x, z) and gives back the feet moved. Returns what happened:
-## "jumped" (the chain's number), "landed" (how hard, metres a second),
-## "fly"; on a ledge (`ledge`: a point (x, z) and a height near the lip,
-## giving {"at", "out"} or {}), "grabbed" ("air" or "step"), "hung",
-## "climbed", "let_go", "stopped" (a shimmy that can't go on); in water
-## (`water`), "swam" (gone in deep enough to swim, how hard he fell in,
-## m/s), "stood" (out of a swim onto his feet), "hopped" (out of the water).
+## asks for at full stick; `jump` whether the jump is held (and `crouch`,
+## set before, whether the crouch is). `ground` takes a point (x, z) and
+## gives its height; `slide` takes the feet and a step (x, z) and gives back
+## the feet moved. Returns what happened: "jumped" (1 a jump, 2 the pump),
+## with "long" or "wall_jump" for those, "landed" (how hard, metres a
+## second), "fly", "wall" (true onto a wall, false off it); on a ledge
+## (`ledge`: a point (x, z) and a height near the lip, giving {"at", "out"}
+## or {}), "grabbed" ("air" or "step"), "hung", "climbed", "let_go",
+## "stopped" (a shimmy that can't go on); in water (`water`), "swam" (gone in
+## deep enough to swim, how hard he fell in, m/s), "stood" (out of a swim
+## onto his feet), "hopped" (out of the water).
 func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable, slide: Callable, ledge := Callable()) -> Dictionary:
 	var out := {}
 	if want.length() > 1.0: want = want.normalized()
@@ -272,28 +365,46 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 	if grounded: top *= 1.0-WADE_SLOW*clampf((wade-WADE_FROM)/(SWIM_IN-WADE_FROM),0.0,1.0)
 	_buffer = buffer if pressed else maxf(0.0,_buffer-delta)
 	_since_land += delta
+	_wall_since += delta
+	_lock = maxf(0.0,_lock-delta)
 	if grounded: _since_ground = 0.0
 	else: _since_ground += delta
 	if _since_land > chain_window: _last_chain = 0
+	var crouched := grounded and crouch and wade < SWIM_IN*0.5
+	if grounded: move = "crouch" if crouched else ""
 	var h := Vector2(velocity.x,velocity.z)
-	if grounded: h = _run(h,want,top,delta)
-	else: h = _steer(h,want,top,delta)
-	# The jump: from the ground, or just off it.
+	if grounded: h = _crouch_slide(h,want,delta) if crouched else _run(h,want,top,delta)
+	elif move != "wall": h = _steer(h,Vector2.ZERO if _lock > 0.0 else want,top,delta)
+	# The jump: from the ground, or just off it; from a crouch at a run, the
+	# long jump; off a wall.
 	if _buffer > 0.0 and (grounded or (_since_ground < coyote and not _jumped)):
-		var next := 1
-		if _last_chain > 0 and _last_chain < jumps.size() and h.length() >= CHAIN_PACE*run: next = _last_chain+1
-		chain = next
-		velocity.y = sqrt(2.0*gravity*float(jumps[next-1]))
+		if crouched and h.length() >= LONG_PACE:
+			chain = 0
+			move = "long"
+			_light = true
+			_no_cut = true
+			velocity.y = sqrt(2.0*long_gravity*long_height)
+			h = h.normalized()*maxf(long_speed,h.length())
+			facing = facing_of(h)
+			out["long"] = true
+			out["jumped"] = 1
+		else:
+			chain = mini(_last_chain+1,jumps.size()) if _last_chain > 0 else 1
+			move = "pump" if chain > 1 else "jump"
+			_light = false
+			_no_cut = false
+			velocity.y = sqrt(2.0*gravity*float(jumps[chain-1]))
+			out["jumped"] = chain
 		grounded = false
 		skidding = false
 		_jumped = true
 		_buffer = 0.0
-		flip = 0.0 if next == jumps.size() else -1.0
-		out["jumped"] = next
-	elif pressed and not grounded and not _from_water and (velocity.y > 0.0 or feet.y-ground_y > FLY_CLEAR):
+	elif _buffer > 0.0 and not grounded and (move == "wall" or _wall_since <= WALL_TOUCH):
+		h = _kick_off(out)
+	elif pressed and not grounded and not _from_water and (velocity.y > 0.0 or feet.y-ground_y > FLY_CLEAR) \
+			and _wall_near(want,h,ground,WALL_PROBE+0.8) == Vector2.ZERO:
 		_buffer = 0.0
 		out["fly"] = true
-	if flip >= 0.0: flip = minf(1.0,flip+delta/FLIP_TIME)
 	var moved: Vector3 = slide.call(feet,h*delta)
 	var under: float = ground.call(Vector2(moved.x,moved.z))
 	if grounded and under > feet.y+STEP_UP:
@@ -303,28 +414,32 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 		under = ground.call(Vector2(feet.x,feet.z))
 	if grounded:
 		if under < feet.y-SNAP-h.length()*delta:
-			if ledge.is_valid() and _careful(h,want) and _catch(ledge,ground):
+			if ledge.is_valid() and not crouched and _careful(h,want) and _catch(ledge,ground,slide):
 				out["grabbed"] = "step"
 				return out
 			# Off a ledge: falling, the run kept.
 			grounded = false
 			_jumped = false
+			_light = false
+			_no_cut = false
+			move = ""
 			velocity.y = 0.0
 			feet = Vector3(moved.x,feet.y,moved.z)
 		else:
 			feet = Vector3(moved.x,under,moved.z)
 			ground_y = under
 	else:
+		var going := h
 		if under > feet.y+STEP_UP:
 			# A wall in the air: stopped against it.
 			h = Vector2.ZERO
 			under = ground.call(Vector2(feet.x,feet.z))
 			moved = feet
-		var g := gravity
-		if velocity.y < 0.0: g *= fall
-		elif not jump and chain < jumps.size(): g *= cut
-		velocity.y = maxf(velocity.y-g*delta,-terminal)
-		var y := feet.y+velocity.y*delta
+		h = _on_wall(delta,want,h,going,ground,under,out)
+		if move == "wall":
+			moved = feet
+			under = ground.call(Vector2(feet.x,feet.z))
+		var y := feet.y+_arc(delta,jump)
 		ground_y = under
 		var deep := _depth(Vector2(moved.x,moved.z))
 		if deep > SWIM_IN and is_finite(under) and velocity.y <= 0.0 and y <= under+deep-SWIM_DRAFT:
@@ -338,24 +453,149 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 			return out
 		if y <= under and velocity.y <= 0.0:
 			out["landed"] = -velocity.y
+			if move == "wall": out["wall"] = false
 			y = under
 			grounded = true
 			velocity.y = 0.0
 			_last_chain = chain
 			chain = 0
-			flip = -1.0
+			move = ""
+			_light = false
+			_no_cut = false
+			_lock = 0.0
 			_since_land = 0.0
 			_jumped = false
 			_from_water = false
 		elif y < under:
 			y = under
 		feet = Vector3(moved.x,y,moved.z)
-		if not grounded and ledge.is_valid() and _grab(ledge,ground):
+		if not grounded and ledge.is_valid() and _grab(ledge,ground,slide):
+			if move == "wall": out["wall"] = false
 			out["grabbed"] = "air"
 			return out
 	velocity.x = h.x
 	velocity.z = h.y
 	return out
+
+## The rise or the fall over `delta` (m, up), velocity.y carried on: worked
+## out exactly for each part of the step's own gravity (rising, then past
+## the top falling; the long jump's lighter one throughout; a wall slide's
+## gentle one, to its pace), so a jump peaks at its height at any frame
+## rate.
+func _arc(delta: float, jump: bool) -> float:
+	var dy := 0.0
+	var left := delta
+	for i in range(4):
+		if left <= 0.0: break
+		var v := velocity.y
+		var low := -wall_slide if move == "wall" else -terminal
+		if v < low:
+			# Faster down than it may go: held to it.
+			velocity.y = low
+			continue
+		var g := gravity
+		if move == "wall": g = WALL_GRAVITY
+		elif _light: g = long_gravity
+		elif v <= 0.0: g *= fall
+		elif not jump and not _no_cut: g *= cut
+		var t := left
+		if v > 0.0: t = minf(t,v/g)
+		if v-g*t < low: t = minf(t,(v-low)/g)
+		dy += v*t-0.5*g*t*t
+		velocity.y = v-g*t
+		left -= t
+		if velocity.y <= low+1e-6:
+			velocity.y = maxf(velocity.y,low)
+			dy += velocity.y*left
+			left = 0.0
+	return dy
+
+## Off a wall (slid down, or just touched): up and out, turned round, the
+## stick not steering a while. The run's new pace.
+func _kick_off(out: Dictionary) -> Vector2:
+	var away := wall_out if move == "wall" else _wall_seen
+	if move == "wall": out["wall"] = false
+	move = "kick"
+	chain = 0
+	_light = false
+	_no_cut = true
+	_jumped = true
+	_buffer = 0.0
+	_wall_since = 99.0
+	_lock = wall_lock
+	velocity.y = sqrt(2.0*gravity*wall_jump)
+	facing = facing_of(away)
+	out["jumped"] = 1
+	out["wall_jump"] = true
+	return away*wall_kick
+
+## The way off a tall wall within `reach` of the feet, the way looked being
+## the stick's (pushed; the run's while it does not steer), else the run's,
+## else the facing; Vector2.ZERO if none.
+func _wall_near(want: Vector2, h: Vector2, ground: Callable, reach := WALL_PROBE) -> Vector2:
+	var way := forward(facing)
+	if _lock > 0.0 and h.length() > 0.5: way = h.normalized()
+	elif want.length() > WALL_HOLD: way = want.normalized()
+	elif h.length() > 0.5: way = h.normalized()
+	var n := _wall_at(way,ground,reach)
+	return n if n.dot(way) < -0.3 else Vector2.ZERO
+
+## The way off a tall wall `reach` along `way` from the feet: `wall`'s
+## answer, or the ground's rise.
+func _wall_at(way: Vector2, ground: Callable, reach: float) -> Vector2:
+	if wall.is_valid(): return wall.call(feet,way,reach)
+	return heightfield_wall(ground,feet,way,reach)
+
+## A wall from heights alone: the ground `reach` along `way` from `at`'s
+## feet standing over WALL_TALL above them; its way off, down the ground's
+## slope there (the way back along `way` where the slope is flat or
+## pointing on).
+static func heightfield_wall(ground: Callable, at: Vector3, way: Vector2, reach: float) -> Vector2:
+	var p := Vector2(at.x,at.z)+way*reach
+	var h := float(ground.call(p))
+	if not is_finite(h) or h < at.y+WALL_TALL: return Vector2.ZERO
+	var heights := []
+	for d: Vector2 in [Vector2(0.15,0.0),Vector2(-0.15,0.0),Vector2(0.0,0.15),Vector2(0.0,-0.15)]:
+		var s := float(ground.call(p+d))
+		heights.append(s if is_finite(s) else at.y)
+	var slope := Vector2(heights[0]-heights[1],heights[2]-heights[3])
+	if slope.length() < 0.01 or slope.normalized().dot(way) < 0.3: return -way
+	return -slope.normalized()
+
+## In the air by a wall: touched (for a kick), taken hold of and slid down,
+## or let go of. `going` is the run's pace before a wall stopped it, `h`
+## after. The run's pace (none on the wall, pressed to it).
+func _on_wall(delta: float, want: Vector2, h: Vector2, going: Vector2, ground: Callable, under: float, out: Dictionary) -> Vector2:
+	if move == "wall":
+		var still := _wall_at(-wall_out,ground,WALL_PROBE)
+		var into := want.dot(-wall_out)
+		_wall_off = _wall_off+delta if into < WALL_HOLD*0.5 else 0.0
+		if still == Vector2.ZERO or _wall_off >= WALL_LET or feet.y-under < 0.05:
+			# Let go of, or run out: dropping off it, a touch out.
+			move = ""
+			out["wall"] = false
+			_wall_since = 0.0 if still != Vector2.ZERO else 99.0
+			return wall_out*0.6
+		wall_out = still
+		facing = rotate_toward(facing,facing_of(-wall_out),TURN*delta)
+		return Vector2.ZERO
+	var n := _wall_near(want,going,ground)
+	if n == Vector2.ZERO: return h
+	_wall_since = 0.0
+	_wall_seen = n
+	var kicked := _lock > 0.0 and going.dot(-n) > 1.0
+	if (want.dot(-n) > WALL_HOLD or kicked) and velocity.y < WALL_RISE and feet.y-under > WALL_CLEAR:
+		# Arriving from a kick, a beat longer to turn the stick round.
+		move = "wall"
+		wall_out = n
+		chain = 0
+		velocity.y = maxf(velocity.y,-WALL_CATCH)
+		_light = false
+		_lock = 0.0
+		_wall_off = -WALL_LET if kicked else 0.0
+		out["wall"] = true
+		return Vector2.ZERO
+	return h
 
 ## Whether he is on a ledge (catching, hanging, climbing).
 func on_ledge() -> bool:
@@ -379,11 +619,12 @@ func _careful(h: Vector2, want: Vector2) -> bool:
 
 ## Stepping off the lip at the feet: turned round to face it, to lower over
 ## it. False if there is no lip there with room to hang under.
-func _catch(ledge: Callable, ground: Callable) -> bool:
+func _catch(ledge: Callable, ground: Callable, slide: Callable) -> bool:
 	if _regrab > 0.0: return false
 	var found: Dictionary = ledge.call(Vector2(feet.x,feet.z),feet.y)
 	if found.is_empty() or absf(found.at.y-feet.y) > SNAP+0.1: return false
 	if not _room_under(found,ground) or _deep_under(found): return false
+	if not _stand_on(found,ground,slide).is_finite(): return false
 	lip = found.at
 	lip_out = found.out
 	hold = "catch"
@@ -392,28 +633,37 @@ func _catch(ledge: Callable, ground: Callable) -> bool:
 	_still()
 	return true
 
-## Falling past a lip ahead, the hands coming down to it: caught.
-func _grab(ledge: Callable, ground: Callable) -> bool:
+## Falling past a lip ahead, the hands coming down to it: caught, if there
+## is room to hang under it and to climb onto it. Looked for at arm's reach,
+## and nearer (a top too narrow to find past its edge).
+func _grab(ledge: Callable, ground: Callable, slide: Callable) -> bool:
 	if _regrab > 0.0 or velocity.y > GRAB_RISE: return false
 	var f := forward(facing)
 	var at := Vector2(feet.x,feet.z)
-	var found: Dictionary = ledge.call(at+f*GRAB_REACH,feet.y+HANG_DROP)
-	if found.is_empty(): return false
+	for reach: float in [GRAB_REACH,HANG_OUT]:
+		var found: Dictionary = ledge.call(at+f*reach,feet.y+HANG_DROP)
+		if found.is_empty() or not _grabbable(found,at,f,ground,slide): continue
+		var was := feet
+		_hang_on(found)
+		_snap = was-feet
+		feet = was
+		return true
+	return false
+
+## Whether the lip `found` is in reach of the hands of feet at `at` facing
+## `f`, faced, with room to hang under it and to climb onto it.
+func _grabbable(found: Dictionary, at: Vector2, f: Vector2, ground: Callable, slide: Callable) -> bool:
 	var hands: float = found.at.y-feet.y-HANG_DROP
 	if hands < -GRAB_LOW or hands > GRAB_HIGH: return false
 	var out_way: Vector2 = found.out
 	if f.dot(-out_way) < GRAB_FACING: return false
 	var off := (at-Vector2(found.at.x,found.at.z)).dot(out_way)
 	if off < -0.15 or off > GRAB_REACH+0.15: return false
-	if not _room_under(found,ground) or _deep_under(found): return false
 	# Only a lip in reach of the hands, not one round a corner.
 	var hang := Vector2(found.at.x,found.at.z)+out_way*HANG_OUT
 	if hang.distance_to(at) > GRAB_REACH: return false
-	var was := feet
-	_hang_on(found)
-	_snap = was-feet
-	feet = was
-	return true
+	if not _room_under(found,ground) or _deep_under(found): return false
+	return _stand_on(found,ground,slide).is_finite()
 
 ## Whether a body hangs under `found` clear of the ground below it.
 func _room_under(found: Dictionary, ground: Callable) -> bool:
@@ -451,7 +701,7 @@ func _still() -> void:
 	grounded = false
 	skidding = false
 	chain = 0
-	flip = -1.0
+	move = ""
 	shimmy = 0.0
 
 ## One step on a ledge.
@@ -539,21 +789,45 @@ func _hang_step(delta: float, want: Vector2, pressed: bool, ground: Callable, sl
 
 ## Up onto the lip, if there is room to stand on it.
 func _climb(ground: Callable, slide: Callable) -> bool:
-	var edge := Vector2(lip.x,lip.z)
-	var stand := edge-lip_out*CLIMB_IN
-	var h := float(ground.call(stand))
-	if not is_finite(h) or absf(h-lip.y) > 0.5: return false
-	var on := edge-lip_out*0.05
-	var reached: Vector3 = slide.call(Vector3(on.x,lip.y,on.y),stand-on)
-	if Vector2(reached.x,reached.z).distance_to(stand) > 0.1: return false
+	var stand := _stand_on({"at":lip,"out":lip_out},ground,slide)
+	if not stand.is_finite(): return false
 	_hang_feet = _hang_at()
-	_correct = Vector3(stand.x,h,stand.y)-_top_of(_hang_feet)
+	_correct = stand-_top_of(_hang_feet)
 	hold = "climb"
 	hold_t = 0.0
 	shimmy = 0.0
 	velocity = Vector3.ZERO
 	_snap = Vector3.ZERO
 	return true
+
+## Where a climb onto `found` stands him: CLIMB_IN in from its edge, or the
+## middle of a top narrower than twice that (a beam), where the top's height
+## is within 0.5 m of the lip's and the body goes in over the edge to it;
+## Vector3.INF if there is no such place. The ground is looked at as from
+## the top (the feet held at the lip's height while it is asked: a ground
+## answered from the feet, as scripts/pilot_physics_ground.gd's, would see
+## under a bridge's deck from a hang under it).
+func _stand_on(found: Dictionary, ground: Callable, slide: Callable) -> Vector3:
+	var edge := Vector2(found.at.x,found.at.z)
+	var out_way: Vector2 = found.out
+	var y: float = found.at.y
+	var was := feet
+	feet.y = y
+	var deep := CLIMB_IN*2.0
+	for k in range(1,7):
+		var d := CLIMB_IN*2.0*k/6.0
+		var h := float(ground.call(edge-out_way*d))
+		if not is_finite(h) or absf(h-y) > 0.3:
+			deep = d-CLIMB_IN/6.0
+			break
+	var stand := edge-out_way*minf(CLIMB_IN,deep*0.5)
+	var h := float(ground.call(stand))
+	var on := edge-out_way*0.05
+	var reached: Vector3 = slide.call(Vector3(on.x,y,on.y),stand-on)
+	feet = was
+	if deep < 0.15 or not is_finite(h) or absf(h-y) > 0.5: return Vector3.INF
+	if Vector2(reached.x,reached.z).distance_to(stand) > 0.1: return Vector3.INF
+	return Vector3(stand.x,h,stand.y)
 
 ## The water's depth at a frame point (0 without `water`).
 func _depth(p: Vector2) -> float:
@@ -578,7 +852,7 @@ func _float_in(hard: float, out: Dictionary) -> void:
 	grounded = false
 	skidding = false
 	chain = 0
-	flip = -1.0
+	move = ""
 	_jumped = false
 	_from_water = false
 	_buffer = 0.0
@@ -612,6 +886,9 @@ func _swim_step(delta: float, want: Vector2, pressed: bool, ground: Callable, sl
 		swimming = false
 		grounded = false
 		chain = 1
+		move = "jump"
+		_light = false
+		_no_cut = false
 		_jumped = true
 		_from_water = true
 		_since_ground = coyote
@@ -647,6 +924,14 @@ func _swim_step(delta: float, want: Vector2, pressed: bool, ground: Callable, sl
 	velocity.z = h.y
 	_wet_at(at,ground)
 	return out
+
+## Crouched on the ground: no running, a run slid to a stop; standing, he
+## still turns to the stick.
+func _crouch_slide(h: Vector2, want: Vector2, delta: float) -> Vector2:
+	skidding = false
+	var pace := move_toward(h.length(),0.0,CROUCH_BRAKE*delta)
+	if pace < 0.3 and want != Vector2.ZERO: facing = rotate_toward(facing,facing_of(want.normalized()),turn*delta)
+	return h.normalized()*pace if h != Vector2.ZERO else Vector2.ZERO
 
 ## On the ground: turn to the stick and run up to its pace, or skid.
 func _run(h: Vector2, want: Vector2, top: float, delta: float) -> Vector2:
