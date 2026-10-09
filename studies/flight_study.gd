@@ -18,12 +18,17 @@ extends Node3D
 ## game's ruins (scripts/ruin_bump.gd). The camera is the game's chase
 ## (scripts/glide_camera.gd); the mouse or right stick looks round.
 ##
+## Packs (scripts/flight_pack_tokens.gd): their stations have no key; reach
+## them with N, --station=<id>, or --pack=<name>, which starts at the pack's
+## first station and keeps N inside the pack. Guides aren't drawn; bonus
+## tokens (optional, never missed) are drawn in BONUS.
+##
 ## Keys: 1-9, 0 and - the stations, R restart the station, N the next one, B cycles
 ## who flies (you, then the sloppy, decent, sharp and perfect bots), F1 the
 ## live numbers, Esc lets the mouse go. After a station: 1-5 rates felt
 ## difficulty, then 1-5 fun (Enter skips).
 ##   ./run-flight-study.command
-##   godot --path . res://studies/flight_study.tscn -- --no-title [--station=slalom] [--bot=sharp]
+##   godot --path . res://studies/flight_study.tscn -- --no-title [--station=slalom] [--bot=sharp] [--pack=tokens]
 
 const Course = preload("res://scripts/flight_course.gd")
 const Run = preload("res://scripts/flight_run.gd")
@@ -44,6 +49,8 @@ const COLOURS := {"floor":Color(0.64,0.64,0.62),"box":Color(0.55,0.57,0.6),"cyl"
 const TOKEN := Color(1.0,0.82,0.3)
 const TAKEN := Color(0.4,0.9,0.5)
 const MISSED := Color(0.85,0.3,0.25)
+## A pack's bonus tokens (optional, off the line).
+const BONUS := Color(0.45,0.8,1.0)
 ## Who flies, in B's order.
 const PILOTS := ["human","sloppy","decent","sharp","perfect"]
 
@@ -67,6 +74,9 @@ var last_run := {}
 var last_path := ""
 var asking := ""
 var _token_nodes: Array[MeshInstance3D] = []
+var _bonus_nodes: Array[MeshInstance3D] = []
+## The pack N keeps to (--pack=<name>), or "".
+var pack := ""
 var _token_materials := {}
 var _materials := {}
 var _hud: Control
@@ -96,6 +106,9 @@ func _ready() -> void:
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--station="): first = Course.station(arg.substr(10)) if not Course.station(arg.substr(10)).is_empty() else first
 		if arg.begins_with("--bot=") and arg.substr(6) in PILOTS: pilot = arg.substr(6)
+		if arg.begins_with("--pack=") and not Course.pack(arg.substr(7)).is_empty():
+			pack = arg.substr(7)
+			if not str(first.get("pack","")) == pack: first = Course.pack(pack)[0]
 	start(first)
 	flight_ready = true
 	ready_to_fly.emit()
@@ -146,18 +159,24 @@ func _material(kind: String) -> Material:
 
 ## The floor, every station's solids, tokens and sign.
 func _build_course() -> void:
-	var count := Course.STATIONS.size()
+	# Under every station's entry, the packs' rows too (their own origins).
+	var low := Vector2(INF,INF)
+	var high := Vector2(-INF,-INF)
+	for s: Dictionary in Course.STATIONS:
+		var at := Course.origin(s)
+		low = Vector2(minf(low.x,at.x),minf(low.y,at.z))
+		high = Vector2(maxf(high.x,at.x),maxf(high.y,at.z))
 	var floor_mesh := MeshInstance3D.new()
 	var slab := BoxMesh.new()
-	slab.size = Vector3(Course.SPACING*count+400.0,1.0,700.0)
+	slab.size = Vector3(high.x-low.x+400.0,1.0,high.y-low.y+700.0)
 	floor_mesh.mesh = slab
-	floor_mesh.position = Vector3(Course.SPACING*(count-1)*0.5,Course.floor_y()-0.5,-150.0)
+	floor_mesh.position = Vector3((low.x+high.x)*0.5,Course.floor_y()-0.5,(low.y+high.y)*0.5-150.0)
 	floor_mesh.material_override = _material("floor")
 	add_child(floor_mesh)
 	for s: Dictionary in Course.STATIONS:
 		Course.build(s,self,_material)
 		var at := Course.origin(s)
-		_label(at+Vector3(-8.0,7.0,-4.0),"%s  %s" % [Course.key_name(s),s.name],96)
+		_label(at+Vector3(-8.0,7.0,-4.0),("%s  %s" % [Course.key_name(s),s.name]).strip_edges(),96)
 		# A post under the entry, so its height reads against the floor.
 		var post := MeshInstance3D.new()
 		var cyl := CylinderMesh.new()
@@ -193,18 +212,28 @@ func _token_material(colour: Color) -> StandardMaterial3D:
 
 ## The station's tokens, drawn afresh.
 func _show_tokens() -> void:
-	for n in _token_nodes: n.queue_free()
+	for n in _token_nodes+_bonus_nodes: n.queue_free()
 	_token_nodes.clear()
-	for p in Course.tokens(station):
-		var node := MeshInstance3D.new()
-		var ball := SphereMesh.new()
-		ball.radius = Course.TOKEN_SIZE*0.5
-		ball.height = Course.TOKEN_SIZE
-		node.mesh = ball
-		node.position = p
-		node.material_override = _token_material(TOKEN)
-		add_child(node)
+	_bonus_nodes.clear()
+	var guides := Course.guides(station)
+	var tokens := Course.tokens(station)
+	for i in range(tokens.size()):
+		var node := _ball(tokens[i],TOKEN)
+		# A guide is only a point of the line: never drawn.
+		if i in guides: node.visible = false
 		_token_nodes.append(node)
+	for p in Course.bonus(station): _bonus_nodes.append(_ball(p,BONUS))
+
+func _ball(p: Vector3, colour: Color) -> MeshInstance3D:
+	var node := MeshInstance3D.new()
+	var ball := SphereMesh.new()
+	ball.radius = Course.TOKEN_SIZE*0.5
+	ball.height = Course.TOKEN_SIZE
+	node.mesh = ball
+	node.position = p
+	node.material_override = _token_material(colour)
+	add_child(node)
+	return node
 
 # --- Flying --------------------------------------------------------------------------
 
@@ -226,9 +255,11 @@ func start(s: Dictionary) -> void:
 func restart() -> void:
 	start(station)
 
+## The next station: in STATIONS' order, or inside the pack with --pack.
 func next_station() -> void:
-	var i := Course.STATIONS.find(station)
-	start(Course.STATIONS[(i+1)%Course.STATIONS.size()])
+	var list: Array = Course.pack(pack) if pack != "" else Course.STATIONS
+	var i := list.find(station)
+	start(list[(i+1)%list.size()])
 
 func _physics_process(delta: float) -> void:
 	if flight_ready and not scripted: tick(delta)
@@ -245,9 +276,11 @@ func tick(delta: float) -> void:
 		run.plane.step(delta,input,Callable(Course,"ground"))
 		if _space != null: Run.RuinBump.bump(_space,run.plane,was)
 	for i in range(_token_nodes.size()):
+		if run.guide[i] == 1: continue
 		var s := run.state[i]
 		_token_nodes[i].visible = s != Run.TAKEN
 		_token_nodes[i].material_override = _token_material(MISSED if s == Run.MISSED else TOKEN)
+	for i in range(_bonus_nodes.size()): _bonus_nodes[i].visible = run.bonus_state[i] == 0
 	figure.update(delta,run.plane,0.0,Callable(Course,"ground"),false)
 	_frame(delta)
 	_show_hud()
@@ -363,7 +396,8 @@ func _show_hud() -> void:
 	var since := "-" if is_nan(float(live.since)) else "%.1f s ago" % float(live.since)
 	_hud_label.text = "\n".join(PackedStringArray([
 		"%s · %s · %s" % [station.name,run.pilot,"done" if run.done else "flying"],
-		"time %.2f s · tokens %d/%d · bumps %d · speed %.1f m/s" % [float(live.t),int(live.collected),int(live.total),int(live.bumps),run.plane.speed],
+		"time %.2f s · tokens %d/%d%s · bumps %d · speed %.1f m/s" % [float(live.t),int(live.collected),int(live.total),
+			" · bonus %d/%d" % [int(live.bonus),int(live.bonus_total)] if int(live.bonus_total) > 0 else "",int(live.bumps),run.plane.speed],
 		"next token seen %s" % since,
 		"reversals %.2f /s · effort %.2f /s · full stick %d%%" % [float(live.reversals),float(live.effort),roundi(float(live.full)*100.0)],
 		"threading %s · %d%% of the run · openings %d (%.2f /s)" % ["NOW" if live.threading_now else "open air",roundi(float(live.threading)*100.0),int(live.openings),float(live.openings_per_s)],
@@ -433,6 +467,8 @@ func _show_report() -> void:
 	var lines := PackedStringArray()
 	lines.append("%s · %s" % [station.name,last_run.get("pilot","")])
 	lines.append("Time %.2f s · tokens %d/%d%s · bumps %d" % [float(m.duration),int(m.collected),int(m.total),"  CLEARED" if m.cleared else "",int(m.bumps)])
+	if m.has("bonus_total"):
+		lines.append("Bonus tokens %d/%d (seen %d)" % [int(m.bonus_taken),int(m.bonus_total),int(m.bonus_seen)])
 	var band: Dictionary = _bands.get(station.id,{})
 	if band.is_empty() or str(band.get("hash","")) != Course.station_hash(station):
 		lines.append("Bot band: not benched for this layout (tools/flight_bench.gd)")

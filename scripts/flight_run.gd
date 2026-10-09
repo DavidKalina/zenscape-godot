@@ -26,6 +26,14 @@ extends RefCounted
 ## `knife_out` when it is past it (`clean`: on edge all through and no
 ## bump), or `knife_skip` if it went by without coming within KNIFE_NEAR m.
 ##
+## A pack's station may have guides and bonus tokens (FlightCourse `guides`,
+## `bonus`). A guide is a point of the line among the tokens: taken and
+## missed as they are (taking one misses what stands before it, as a token
+## does), so the line and the bots' route stay whole, but not drawn and not
+## counted in `collected` or the total. A bonus token stands off the line: taken whenever the
+## plane's path passes within REACH of it, seen as a token is, never missed
+## and not needed to clear.
+##
 ## `finish` returns the run as plain data (FlightMetrics `summarise` reads
 ## it; scripts/flight_log.gd saves it).
 
@@ -79,6 +87,15 @@ var knife_state := PackedInt32Array()
 var _knife_bank := PackedFloat32Array()
 var _knife_bump := []
 var edge_ticks := 0
+## Guides (FlightCourse `guides`): is token i a guide.
+var guide := PackedByteArray()
+## Bonus tokens (FlightCourse `bonus`): where, taken (1) or standing (0), when
+## first seen (s, or -1), and whether each sits where level wings don't fit
+## (FlightCourse `tight`: the bot goes on edge for it).
+var bonus: Array[Vector3] = []
+var bonus_state := PackedInt32Array()
+var bonus_seen := PackedFloat32Array()
+var bonus_tight := PackedByteArray()
 ## Live numbers for the overlay: the smoothed flown turn and pitch shares,
 ## stick travel and reversals so far.
 var live_turn := 0.0
@@ -116,6 +133,15 @@ func _init(s: Dictionary, who := "human", params := {}, physics: PhysicsDirectSp
 	state.fill(STANDING)
 	seen_at.resize(tokens.size())
 	seen_at.fill(-1.0)
+	guide.resize(tokens.size())
+	guide.fill(0)
+	for g in Course.guides(s): guide[g] = 1
+	bonus = Course.bonus(s)
+	bonus_state.resize(bonus.size())
+	bonus_state.fill(0)
+	bonus_seen.resize(bonus.size())
+	bonus_seen.fill(-1.0)
+	bonus_tight = Course.tight(s,bonus)
 	line = Metrics.line(entry.position,entry.heading,tokens)
 	gaps = Metrics.profile(line,tokens.size())
 	rooms = Course.rooms(s,line)
@@ -149,8 +175,19 @@ func next_token() -> int:
 		if state[i] == STANDING: return i
 	return -1
 
+## Tokens taken, guides not counted.
 func collected() -> int:
-	return Array(state).count(TAKEN)
+	var n := 0
+	for i in range(state.size()):
+		if state[i] == TAKEN and guide[i] == 0: n += 1
+	return n
+
+## The tokens to take to clear: all but the guides.
+func required() -> int:
+	return tokens.size()-Array(guide).count(1)
+
+func bonus_taken() -> int:
+	return Array(bonus_state).count(1)
 
 ## One tick of `delta` s with `input` (SkyPlane.step's dict).
 func tick(delta: float, input: Dictionary) -> void:
@@ -184,6 +221,11 @@ func _tokens(was: Vector3) -> void:
 			for k in range(i):
 				if state[k] == STANDING: _resolve(k,MISSED)
 			_resolve(i,TAKEN)
+	for i in range(bonus.size()):
+		if bonus_state[i] != 0: continue
+		if Geometry3D.get_closest_point_to_segment(bonus[i],was,at).distance_to(bonus[i]) < reach:
+			bonus_state[i] = 1
+			events.append({"t":snappedf(t,0.0001),"bonus":i,"kind":"bonus"})
 	for i in range(tokens.size()):
 		if state[i] == STANDING and ways[i].dot(at-tokens[i]) > PAST: _resolve(i,MISSED)
 
@@ -201,6 +243,13 @@ func _look() -> void:
 		if not Course.line_clear(space,plane.position,tokens[i]): continue
 		seen_at[i] = t
 		events.append({"t":snappedf(t,0.0001),"token":i,"kind":"seen"})
+	for i in range(bonus.size()):
+		if bonus_state[i] != 0 or bonus_seen[i] >= 0.0: continue
+		var d := bonus[i]-plane.position
+		if d.length() > SIGHT or way.angle_to(d) > CONE: continue
+		if not Course.line_clear(space,plane.position,bonus[i]): continue
+		bonus_seen[i] = t
+		events.append({"t":snappedf(t,0.0001),"bonus":i,"kind":"bonus_seen"})
 
 func _knife() -> void:
 	var on_edge := absf(plane.bank) >= Metrics.KNIFE_ON
@@ -307,7 +356,7 @@ func live() -> Dictionary:
 		var g: Dictionary = gaps[i]
 		demand = Metrics.gap_demand(g.turn_peak,g.pitch_peak,slack if not is_nan(slack) else 0.0,float(rooms[i].room),Metrics.commit_time(g))
 	var span := maxf(t,0.001)
-	return {"t":t,"collected":collected(),"total":tokens.size(),"next":i,"slack":slack,"since":since,"turn":live_turn,"pitch":live_pitch,
+	return {"t":t,"collected":collected(),"total":required(),"bonus":bonus_taken(),"bonus_total":bonus.size(),"next":i,"slack":slack,"since":since,"turn":live_turn,"pitch":live_pitch,
 		"demand":demand,"need_turn":float(gaps[i].turn_peak) if i >= 0 else 0.0,"need_pitch":float(gaps[i].pitch_peak) if i >= 0 else 0.0,
 		"reversals":reversals/span,"effort":travel/span,"full":float(full_ticks)/maxf(ticks.t.size(),1),"bumps":bumps,
 		"threading":float(thread_ticks)/maxf(ticks.t.size(),1),"threading_now":threading_now,"openings":openings,"openings_per_s":openings/span,
@@ -350,7 +399,17 @@ func finish() -> Dictionary:
 		"entry":{"position":Metrics.arr(entry.position),"heading":entry.heading},
 		"tokens":token_list,"reach":snappedf(Course.reach(station),0.001),"span":Course.SPAN,"rooms":room_list,"knife":zone_list,
 		"ticks":ticks,"events":events,
-		"result":{"duration":snappedf(t,0.001),"collected":collected(),"total":tokens.size(),"cleared":collected() == tokens.size(),"ended":ended},
+		"result":{"duration":snappedf(t,0.001),"collected":collected(),"total":required(),"cleared":collected() == required(),"ended":ended},
 	}
+	if guide.has(1):
+		var g := []
+		for i in range(guide.size()):
+			if guide[i] == 1: g.append(i)
+		run["guides"] = g
+	if station.has("bonus"):
+		var b := []
+		for p in bonus: b.append(Metrics.arr(p))
+		run["bonus"] = b
+		run.result["bonus"] = bonus_taken()
 	run["metrics"] = Metrics.summarise(run,solids)
 	return run

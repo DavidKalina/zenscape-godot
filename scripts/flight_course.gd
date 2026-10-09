@@ -32,6 +32,9 @@ const PlaneFigure = preload("res://scripts/plane_figure.gd")
 const Hall = preload("res://scripts/ruin_kit_hall.gd")
 const RuinBump = preload("res://scripts/ruin_bump.gd")
 const Lines = preload("res://scripts/collectible_lines.gd")
+## Station packs appended to the main list (each its own file, its stations
+## with their own `origin` and no digit key).
+const TokensPack = preload("res://scripts/flight_pack_tokens.gd")
 
 ## The stations stand ALT metres over the floor (y 0), SPACING metres apart
 ## along x; pillars rise to TOP over the entry.
@@ -229,7 +232,7 @@ const STATIONS := [
 		Vector3(79.42,-6.74,-220.48),Vector3(83.63,-6.29,-221.59),Vector3(92.57,-4.60,-220.60),Vector3(101.19,-2.35,-219.06),
 	]},
 	# <<< sundered_mix
-]
+] + TokensPack.STATIONS
 
 ## The station with `id`, or {}.
 static func station(id: String) -> Dictionary:
@@ -240,22 +243,36 @@ static func station(id: String) -> Dictionary:
 ## The `-` key's station key (keys 0-9 are their digits).
 const MINUS_KEY := 10
 
-## The key that jumps to station `s` in the study: its digit, or "-".
+## A pack's station has no key of its own (NO_KEY): it is reached with N
+## inside its pack, `--station=<id>` or `--pack=<pack>`.
+const NO_KEY := -1
+
+## The key that jumps to station `s` in the study: its digit, "-", or "" for
+## a pack's station.
 static func key_name(s: Dictionary) -> String:
+	if int(s.key) == NO_KEY: return ""
 	return "-" if int(s.key) == MINUS_KEY else str(int(s.key))
 
 static func station_by_key(key: int) -> Dictionary:
+	if key == NO_KEY: return {}
 	for s: Dictionary in STATIONS:
 		if int(s.key) == key: return s
 	return {}
+
+## The stations of pack `pack` (their "pack" key), in order.
+static func pack(name: String) -> Array:
+	return STATIONS.filter(func(s: Dictionary) -> bool: return str(s.get("pack","")) == name)
 
 static func ids() -> PackedStringArray:
 	var out := PackedStringArray()
 	for s: Dictionary in STATIONS: out.append(s.id)
 	return out
 
-## Where station `s` stands in the world: its entry point.
+## Where station `s` stands in the world: its entry point (its own
+## `origin` if it has one, as a pack's stations do, so merging packs never
+## moves a station).
 static func origin(s: Dictionary) -> Vector3:
+	if s.has("origin"): return s.origin
 	return Vector3(float(STATIONS.find(s))*SPACING,ALT,0.0)
 
 ## The entry: where the plane is set down and its heading (north).
@@ -279,7 +296,32 @@ static func floor_y() -> float:
 static func station_hash(s: Dictionary) -> String:
 	var shape := [VERSION,REACH,s.parts,s.tokens]
 	if s.has("ease"): shape.append(s.ease)
+	if s.has("guides"): shape.append(["guides",s.guides])
+	if s.has("bonus"): shape.append(["bonus",s.bonus])
 	return var_to_str(shape).md5_text().substr(0,12)
+
+## Station `s`'s guides: indices into its tokens that are not drawn or
+## counted, only shaping the line (the metrics' and the bots' route).
+static func guides(s: Dictionary) -> PackedInt32Array:
+	return PackedInt32Array(s.get("guides",[]))
+
+## Station `s`'s bonus tokens in the world: optional, off the line,
+## unordered, never missed.
+static func bonus(s: Dictionary) -> Array[Vector3]:
+	var at := origin(s)
+	var out: Array[Vector3] = []
+	for t: Vector3 in s.get("bonus",[]): out.append(at+t)
+	return out
+
+## Per point (world): 1 where level wings don't fit round it whichever way
+## the plane flies (its clearance is under half the span, as the rooms'
+## sphere), so taking a token there needs the knife edge; else 0.
+static func tight(s: Dictionary, points: Array[Vector3]) -> PackedByteArray:
+	var out := PackedByteArray()
+	if points.is_empty(): return out
+	var all := solids(s)
+	for p in points: out.append(1 if clearance(all,p) < SPAN*0.5 else 0)
+	return out
 
 ## Station `s`'s token reach: REACH, widened by its `ease` if it has one.
 static func reach(s: Dictionary) -> float:
@@ -528,7 +570,9 @@ static func wing_room(all: Array, p: Vector3, wings: Vector3) -> float:
 ## on edge (`wing_room`), and where on edge is KNIFE_BETTER better than
 ## level, the sample is a knife sample. Runs of knife samples are the zones.
 static func survey(s: Dictionary, line: Array) -> Dictionary:
-	var key := station_hash(s)+":"+str(line.size())
+	# The origin too: a pack's copy of a station has its hash but stands
+	# elsewhere, and the zones are in world space.
+	var key := station_hash(s)+":"+str(origin(s))+":"+str(line.size())
 	if _surveys.has(key): return _surveys[key]
 	var all := solids(s)
 	var count := int(s.tokens.size())
