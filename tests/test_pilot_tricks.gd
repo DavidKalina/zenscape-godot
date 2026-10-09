@@ -3,10 +3,10 @@ extends SceneTree
 ## (the game's own way): crouch pressed in the air twirls him, once an
 ## airtime, giving back some airtime, never from a crouch held off the
 ## ground, and a second jump press falling still asks to fly; held crouched
-## on a slope he boot-surfs down it, faster and faster to SLIDE_TOP, steers
+## on a slope he boot-surfs down it, faster and faster past 11 m/s, steers
 ## across it, and on one too steep to stand on surfs without the crouch;
-## jumped out of the surf he flies on at its pace over a gap no run jump
-## clears; onto flat ground he slows to his run; running up a steep slope he
+## jumped out of the surf uncrouched he flies on at its pace over a gap no
+## run jump clears; onto flat ground he slides on, slowing to his run; running up a steep slope he
 ## slows; jumped in a skid it is the side flip, higher than the pump and
 ## shorter, the way the stick now points, up onto a 1.9 m ledge; and a
 ## climb from a hang takes him up in under half a second.
@@ -140,7 +140,7 @@ func _surf() -> void:
 	var rising := true
 	for k in range(1,paces.size()): rising = rising and paces[k] >= paces[k-1]
 	check(started and m.move == "slide" and m.grounded,"Crouched on a 32° slope he surfs down it (%s)" % m.move)
-	check(rising and top <= PilotMotor.SLIDE_TOP+0.01 and top > PilotMotor.SLIDE_TOP-0.5,"Faster and faster, %s m/s, to %.2f (SLIDE_TOP %.1f)" % [paces,top,PilotMotor.SLIDE_TOP])
+	check(rising and top <= PilotMotor.SLIDE_TOP+0.01 and top > 11.0,"Faster and faster, %s m/s, to %.2f in 12 m (SLIDE_TOP %.1f)" % [paces,top,PilotMotor.SLIDE_TOP])
 	check(PilotMotor.forward(m.facing).dot(Vector2(1.0,0.0)) > 0.95,"Facing down the fall line")
 	check(figure._has_moves and float(figure._move_weights["slide"]) > 0.99,"The drawn pilot surfs in its own clip")
 	# Steered across it.
@@ -176,7 +176,7 @@ func _surf() -> void:
 		_step(m,Vector2(1.0,0.0),false,hill2)
 		if at_foot > 0.0 and m.move == "" and ran_at < 0.0: ran_at = m.feet.x
 		if ran_at > 0.0 and m.feet.x > ran_at+2.0: break
-	check(at_foot > 9.0 and ran_at > 10.0 and ran_at < 17.0 and absf(m.speed()-PilotMotor.RUN) < 0.2,"At the foot at %.1f m/s, he slows on the flat and runs on %.1f m later at %.2f m/s" % [at_foot,ran_at-10.0,m.speed()])
+	check(at_foot > 9.0 and ran_at > 17.0 and ran_at < 24.0 and absf(m.speed()-PilotMotor.RUN) < 0.2,"At the foot at %.1f m/s, he slides on along the flat and runs on %.1f m later at %.2f m/s" % [at_foot,ran_at-10.0,m.speed()])
 	# Jumped out at the foot over a 4.5 m gap: across, where a run jump falls.
 	var course := _hill(32.0,10.0,11.0,4.5)
 	var jumped := {}
@@ -184,6 +184,9 @@ func _surf() -> void:
 	m.crouch = true
 	var landed_x := -1.0
 	for i in range(300):
+		# Uncrouched off the slope: the slide jump (crouched it would be the
+		# long jump).
+		if m.feet.x > 10.0: m.crouch = false
 		var jump := m.feet.x > 10.7
 		var out := _step(m,Vector2(1.0,0.0),jump,course)
 		if out.has("slide_jump"): jumped = {"x":m.feet.x,"pace":m.speed()}

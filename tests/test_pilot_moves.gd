@@ -4,8 +4,8 @@ extends SceneTree
 ## and the pump peak at their set heights at 30, 60 and 144 frames a
 ## second; jumped again within CHAIN_WINDOW of a landing (or pressed in the
 ## buffer before it) is the pump, later is not, and there is no third
-## tier; crouched at a run he slides to a stop, and jumped from it it is the
-## long jump, low and far (over a 3.5 m gap, short of a 4 m one), while a crouch
+## tier; crouched at a run he slides on to a stop, and jumped from it it is the
+## long jump, low and far (over a 4.5 m gap, short of a 5 m one), while a crouch
 ## from a stand jumps as ever; into a wall in the air with the stick held
 ## he slides down it no faster than WALL_SLIDE, lets go when the stick does,
 ## and Jump kicks him up and out, not steering a while; kicked between two
@@ -147,18 +147,18 @@ func _long_jump() -> void:
 	m.crouch = true
 	var paces := []
 	var turned := false
-	for i in range(60):
+	for i in range(150):
 		_step(m,1.0/60.0,Vector2(0.0,1.0),false)
-		if i%15 == 0: paces.append(snappedf(m.speed(),0.01))
+		if i%30 == 0: paces.append(snappedf(m.speed(),0.01))
 		if m.speed() > 0.5: turned = turned or PilotMotor.forward(m.facing).dot(Vector2(1.0,0.0)) < 0.99
-	check(m.move == "crouch" and m.speed() < 0.01 and paces[0] > paces[1] and paces[1] > paces[2],"Crouched at a run he slides to a stop: %s m/s" % [paces])
+	check(m.move == "crouch" and m.speed() < 0.01 and paces[0] > paces[1] and paces[1] > paces[2] and m.feet.x > 3.5,"Crouched at a run he slides on (%.2f m) to a stop: %s m/s" % [m.feet.x,paces])
 	check(not turned,"Sliding crouched, the stick does not turn him")
 	var long := _long_reach(1.0/60.0)
 	check(long.long and absf(float(long.peak)-PilotMotor.LONG_HEIGHT) < 0.02,"Crouched at a run and jumped: the long jump, %.2f m up" % float(long.peak))
 	check(absf(float(long.reach)-PilotMotor.LONG_SPEED*2.0*sqrt(2.0*PilotMotor.LONG_HEIGHT/PilotMotor.LONG_GRAVITY)) < 0.12,"Level it goes %.2f m" % float(long.reach))
-	for gap: float in [3.0,3.5,4.0]:
+	for gap: float in [3.5,4.0,4.5,5.0,5.5]:
 		var over := _long_gap(gap)
-		check(over == (gap < 3.9),"Long-jumped from the edge of a %.1f m gap, he %s" % [gap,"lands across it" if over else "falls short"])
+		check(over == (gap < 4.9),"Long-jumped from the edge of a %.1f m gap, he %s" % [gap,"lands across it" if over else "falls short"])
 	# From a stand a crouch jumps as ever.
 	m.reset(Vector3.ZERO,0.0)
 	m.crouch = true
