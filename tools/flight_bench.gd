@@ -10,6 +10,9 @@ extends SceneTree
 ##   godot --headless --path . -s tools/flight_bench.gd -- --station all --runs 10
 ##   options: --station id[,id] | all   --runs N (default 10; 20 gives
 ##            steadier bands, about 7 s)   --skills sloppy,decent,...
+##            --pack name (every station of a pack, scripts/flight_pack_*.gd)
+##   A station with token lines (FlightCourse `flown`) is benched per line:
+##   id@yellow flies its yellow line; `all` and --pack take every line.
 ##            --out user://dir (default user://flight_runs)   --no-save (no run files)
 ##
 ## Writes each run's JSON, a summary (bench_<when>.json) and the bands
@@ -53,21 +56,40 @@ func _args() -> Dictionary:
 func run() -> void:
 	var args := _args()
 	var ids: PackedStringArray = Course.ids() if str(args.station) == "all" else str(args.station).split(",")
+	if args.has("pack"): ids = PackedStringArray(Course.pack(str(args.pack)).map(func(s: Dictionary) -> String: return str(s.id)))
+	if str(args.station) == "all" or args.has("pack"): ids = with_lines(ids)
 	var skills := str(args.skills).split(",")
 	var stage := Node3D.new()
 	root.add_child(stage)
+	var built := {}
 	for id in ids:
 		var s := Course.station(id)
 		if s.is_empty():
 			push_error("no station %s" % id)
 			quit(1)
 			return
-		Course.build(s,stage)
+		var base := Course.base_of(s)
+		if built.has(base.id): continue
+		built[base.id] = true
+		Course.build(base,stage)
 	await physics_frame
 	await physics_frame
 	var space := stage.get_world_3d().direct_space_state
 	summary = bench(ids,skills,int(args.runs),space,str(args.out),bool(args.save))
 	quit(0)
+
+## `ids` with every token line of each station that has more than one
+## (id, id@yellow, id@red: FlightCourse `line_names`).
+static func with_lines(ids: PackedStringArray) -> PackedStringArray:
+	var out := PackedStringArray()
+	for id in ids:
+		var s := Course.station(id)
+		if s.is_empty() or s.has("base"):
+			out.append(id)
+			continue
+		for line in Course.line_names(s):
+			out.append(str(Course.flown(s,line).id))
+	return out
 
 ## Flies every station in `ids` with every skill; returns the summary.
 static func bench(ids: PackedStringArray, skills: PackedStringArray, runs: int, space: PhysicsDirectSpaceState3D, dir: String, save: bool) -> Dictionary:
