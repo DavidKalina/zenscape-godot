@@ -72,6 +72,10 @@ Rendered stills from its real positions (opens a window; always pass `--no-title
 Godot --windowed --path . --resolution 1280x720 -s res://tools/capture_sundered.gd -- --no-title --motif=sundered --no-clusters --out=captures/sundered/try1 [--hours=noon,golden] [--only=inside,gap]
 ```
 
+Stills from this round are in `captures/sundered/try1` (noon, every shot) and `try2` (golden hour, after the islands became oblongs). The `captures/` folder is gitignored. Worth a look:
+- `overview`, `gate`, `inside-1-nave-3` and `inside-4-cloister-3`;
+- `gap-0-gap`, `gap-5-aqueduct` (the arch on the line, the spill), `torn-0` and `roof-1`.
+
 ## Measured
 
 All measurements are headless, seed 7 (the `--motif=sundered` default), unless noted.
