@@ -238,7 +238,7 @@ func reset(new_cells: SkyCells) -> void:
 			for z in range(-reach,reach+1):
 				var s: Variant = spot_of(Vector2i(x,z))
 				if s == null: continue
-				if forced.any(func(f: Dictionary) -> bool: return f.motif != "sundered" and _flat(f.at,s.at) < SPACING*0.5): continue
+				if forced.any(func(f: Dictionary) -> bool: return f.get("motif","") != "sundered" and _flat(f.at,s.at) < SPACING*0.5): continue
 				if hall_blocks(s.at,KEEP+HALL_KEEP): continue
 				spots.append(s)
 	var keep: Array[Vector3] = []
@@ -286,7 +286,7 @@ func near_spots(names: Array, seed_value: int, taken: Array) -> Array:
 				# Its own share of the turn first, then further either way.
 				var turn := TAU*float(i)/names.size()+0.35+(TAU/NEAR_TURNS*ceilf(k/2.0)*(1.0 if k % 2 == 0 else -1.0))
 				var here := Vector3(cos(turn),0.0,sin(turn))*(ring+step*NEAR_STEP)+Vector3.UP*NEAR_Y
-				if (taken+out).any(func(f: Dictionary) -> bool: return f.motif != "sundered" and _flat(f.at,here) < NEAR_GAP): continue
+				if (taken+out).any(func(f: Dictionary) -> bool: return f.get("motif","") != "sundered" and _flat(f.at,here) < NEAR_GAP): continue
 				if hall_blocks(here,NEAR_GAP*0.5+HALL_KEEP*0.5): continue
 				if cells != null and not cells.spots_near(here,NEAR_ISLAND).is_empty(): continue
 				if SkyPeaks.blocks(here,WALL_CLEAR) or SkyTowers.blocks(here,TOWER_CLEAR) or SkyForestIsles.blocks(here,WONDER_CLEAR): continue

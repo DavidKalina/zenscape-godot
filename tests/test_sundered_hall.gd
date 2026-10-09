@@ -234,7 +234,9 @@ func _standing() -> void:
 	check(piece0.near != null and (piece0.near as Node3D).visible and not (piece0.far as Node3D).visible,"Flown near, a piece's near detail streams in and shows")
 	field.queue_free()
 	islets.queue_free()
-	await process_frame
+	for n in root.get_children():
+		if n is StaticBody3D: n.queue_free()
+	for i in range(4): await process_frame
 
 static func _bays(plan: Dictionary) -> int:
 	var n := 0

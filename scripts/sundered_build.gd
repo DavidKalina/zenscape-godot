@@ -316,8 +316,14 @@ static func far(piece: Dictionary) -> ArrayMesh:
 			_far_block(b,RuinKit._box(b,Vector3((x1-x)*0.5,depth*0.5,0.6),0.0),Vector3((x+x1)*0.5,PODIUM_TOP-depth*0.5,s*PODIUM_Z),0.82)
 			x = x1
 	if piece.last: _far_apse(b,piece,rng)
-	var mesh: ArrayMesh = b.finish().get_node("Mesh").mesh
-	mesh.remove_meta("arrays")
+	return _far_mesh(b)
+
+## A far build's mesh (its node let go).
+static func _far_mesh(b: Build) -> ArrayMesh:
+	var node := b.finish()
+	var mesh: ArrayMesh = (node.get_node("Mesh") as MeshInstance3D).mesh
+	if mesh.has_meta("arrays"): mesh.remove_meta("arrays")
+	node.free()
 	return mesh
 
 ## One plain block of the far detail: `planes` stood at `at` (no wear, no
@@ -368,9 +374,7 @@ static func _far_aqueduct(plan: Dictionary) -> ArrayMesh:
 		_far_block(b,RuinKit._box(b,Vector3(Aqueduct.PIER.x*0.5,Aqueduct.DECK*0.5,Aqueduct.PIER.y*0.5),0.0),Vector3(Aqueduct.SPAN*i,Aqueduct.DECK*0.5-1.0,0.0),0.94)
 	var length := Aqueduct.SPAN*spans
 	_far_block(b,RuinKit._box(b,Vector3(length*0.5,1.4,Aqueduct.DECK_WIDTH*0.5),0.0),Vector3(length*0.5,Aqueduct.DECK-1.0,0.0),0.98)
-	var mesh: ArrayMesh = b.finish().get_node("Mesh").mesh
-	mesh.remove_meta("arrays")
-	return mesh
+	return _far_mesh(b)
 
 # --- Near detail -----------------------------------------------------------------
 
