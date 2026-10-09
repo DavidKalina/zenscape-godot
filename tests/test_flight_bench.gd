@@ -8,7 +8,9 @@ extends SceneTree
 ## sharp bot clears it; so does the flowing hall (sundered_flow), whose
 ## reference line hardly ever flies straight; the knife-edge bot threads a
 ## lone slit on edge (and bumps it held level); the mixed hall
-## (sundered_mix) stands on the - key and the sharp bot clears it.
+## (sundered_mix) stands on the - key and the sharp bot clears it; the
+## nature pack (scripts/flight_pack_nature.gd) stands, keyless, and the
+## sharp bot clears each of its stations clean.
 ##   godot --headless --path . --script tests/test_flight_bench.gd
 const Course = preload("res://scripts/flight_course.gd")
 const Run = preload("res://scripts/flight_run.gd")
@@ -128,5 +130,24 @@ func run() -> void:
 		"Its perfect line hardly flies straight and swings mostly sideways (still %.2f, longest %.2f s, sideways %.2f)" % [mref.still_share,mref.longest_straight,mref.yaw_share])
 	check(int(mref.knife_moments) == 2 and int(mref.knife_clean) == 2 and float(mref.duration) > 15.0 and float(mref.duration) < 22.0,
 		"Two knife slits, both threaded, in %.1f s" % mref.duration)
+	# The nature pack: no digit key, N cycles inside it (--pack=nature), its
+	# part kinds stand, the sharp bot clears each station without a bump,
+	# and each perfect line keeps swinging and goes through things.
+	var pack := Course.pack_stations("nature")
+	check(pack.size() == 5 and str(pack[0].id) == "nature_canyon","The nature pack has its five stations (%d)" % pack.size())
+	for st: Dictionary in pack:
+		check(Course.key_name(st) == "" and Course.station_by_key(int(st.key)).is_empty(),"%s has no key" % st.id)
+		var stood := Course.build(st,stage)
+		check(stood.get_child_count() == Course.solids(st).size() and stood.get_child_count() > 100,"%s stands (%d solids)" % [st.id,stood.get_child_count()])
+	await physics_frame
+	await physics_frame
+	for st: Dictionary in pack:
+		var nm: Dictionary = Bench.fly(st,"sharp",Bot.skill("sharp"),3,space).metrics
+		check(nm.cleared and int(nm.bumps) == 0,"The sharp bot clears %s clean (%d/%d in %.2f s, %d bumps)" % [st.id,nm.collected,nm.total,nm.duration,nm.bumps])
+		var np := Bot.skill("perfect")
+		np.look = 9.0
+		var nr: Dictionary = Bench.fly(st,"perfect",np,0,space).metrics
+		check(float(nr.still_share) <= 0.1 and float(nr.longest_straight) <= 0.8 and float(nr.threading_share) >= 0.1,
+			"%s: the perfect line keeps swinging and threads (still %.2f, longest %.2f s, threading %.2f)" % [st.id,nr.still_share,nr.longest_straight,nr.threading_share])
 	print("flight bench: %d failure(s)" % failures)
 	quit(1 if failures > 0 else 0)

@@ -23,7 +23,9 @@ extends Node3D
 ## live numbers, Esc lets the mouse go. After a station: 1-5 rates felt
 ## difficulty, then 1-5 fun (Enter skips).
 ##   ./run-flight-study.command
-##   godot --path . res://studies/flight_study.tscn -- --no-title [--station=slalom] [--bot=sharp]
+##   godot --path . res://studies/flight_study.tscn -- --no-title [--station=slalom] [--bot=sharp] [--pack=nature]
+## Stations with no key (the packs', scripts/flight_pack_*.gd) are reached
+## with N or --station; --pack=<name> starts at a pack and keeps N in it.
 
 const Course = preload("res://scripts/flight_course.gd")
 const Run = preload("res://scripts/flight_run.gd")
@@ -55,6 +57,9 @@ var scripted := false
 ## Where runs are saved.
 var log_dir := Log.DIR
 var station := {}
+## With --pack=<name>: the study starts at that pack's first station and N
+## cycles inside it ("" every station).
+var pack := ""
 var run: Run
 var bot: Bot
 var pilot := "human"
@@ -93,9 +98,14 @@ func _ready() -> void:
 	_space = get_world_3d().direct_space_state
 	_bands = Log.bands(log_dir)
 	var first := Course.STATIONS[0] as Dictionary
+	var named := false
 	for arg in OS.get_cmdline_user_args():
-		if arg.begins_with("--station="): first = Course.station(arg.substr(10)) if not Course.station(arg.substr(10)).is_empty() else first
+		if arg.begins_with("--station="):
+			named = not Course.station(arg.substr(10)).is_empty()
+			first = Course.station(arg.substr(10)) if named else first
 		if arg.begins_with("--bot=") and arg.substr(6) in PILOTS: pilot = arg.substr(6)
+		if arg.begins_with("--pack=") and not Course.pack_stations(arg.substr(7)).is_empty(): pack = arg.substr(7)
+	if pack != "" and not named: first = Course.pack_stations(pack)[0]
 	start(first)
 	flight_ready = true
 	ready_to_fly.emit()
@@ -157,7 +167,7 @@ func _build_course() -> void:
 	for s: Dictionary in Course.STATIONS:
 		Course.build(s,self,_material)
 		var at := Course.origin(s)
-		_label(at+Vector3(-8.0,7.0,-4.0),"%s  %s" % [Course.key_name(s),s.name],96)
+		_label(at+Vector3(-8.0,7.0,-4.0),("%s  %s" % [Course.key_name(s),s.name]).strip_edges(),96)
 		# A post under the entry, so its height reads against the floor.
 		var post := MeshInstance3D.new()
 		var cyl := CylinderMesh.new()
@@ -227,8 +237,9 @@ func restart() -> void:
 	start(station)
 
 func next_station() -> void:
-	var i := Course.STATIONS.find(station)
-	start(Course.STATIONS[(i+1)%Course.STATIONS.size()])
+	var ring := Course.pack_stations(pack)
+	var i := ring.find(station)
+	start(ring[(i+1)%ring.size()])
 
 func _physics_process(delta: float) -> void:
 	if flight_ready and not scripted: tick(delta)
