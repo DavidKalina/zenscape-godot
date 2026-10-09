@@ -141,7 +141,7 @@ func run() -> void:
 	# them) were flown on.
 	var pinned := {"gentle_arc":"ef5c73b6ecd3","slalom":"9e140f831e10","hidden_turn":"08b17c0ca386","tight_slot":"9b4941fb9a24",
 		"climb_rings":"4ed82e139779","dive_arch":"005a5bfc75b1","open_swoop":"fe3d869879c8","mixed_spike":"66cc6ea3502b","sundered":"72a9caa4ed86",
-		"sundered_flow":"2a22c9b41180","sundered_mix":"0ced8a69e2e0"}
+		"sundered_flow":"2a22c9b41180","sundered_mix":"db59c1bb79c5"}
 	for id: String in pinned:
 		check(Course.station_hash(Course.station(id)) == pinned[id],"%s keeps its hash %s" % [id,pinned[id]])
 	# Threading on a made-up run: 4 s north at 14 m/s past two walls either

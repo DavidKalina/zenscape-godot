@@ -325,17 +325,17 @@ MIX = {
 		# Piece B, 11 bays curving right: a wave over and under the ties, a
 		# quick weave, the second slit, then the climbing turn out of the
 		# open roof, tightening past the hall's end.
-		{"bays": 11, "drop": 5.0, "turn": -1.4, "gap": 24.0, "kappa": [(-99.0, -1.0 / 70.0), (88.0, 1.0 / 30.0)],
+		{"bays": 15, "drop": 5.0, "turn": -1.4, "gap": 24.0, "kappa": [(-99.0, -1.0 / 70.0), (120.0, 1.0 / 30.0)],
 		 "in": -8.0, "first_token": -8.0,
 		 "start": {"up": 1, "across": 1},
 		 "segments": [
-			{"move": "wave", "len": 50.0, "half": 22.0, "side": 1.5, "rise": 2.9, "mid": 5.2},
-			{"move": "weave", "len": 30.0, "half": 15.0, "side": 2.8, "rise": 0.6, "mid": 5.0},
-			{"move": "knife", "bay": 9, "approach": 28.0, "approach_up": 28.0, "hold": 8.0, "side_in": -1.5, "rise_in": 7.6},
+			{"move": "wave", "len": 46.0, "half": 22.5, "side": 1.5, "rise": 2.9, "mid": 5.4},
+			{"move": "weave", "len": 40.0, "half": 16.0, "side": 3.0, "rise": 0.6, "mid": 5.0},
+			{"move": "knife", "bay": 13, "approach": 26.0, "approach_up": 28.0, "hold": 8.0, "side_in": -0.5, "rise_in": 5.6},
 			{"move": "weave", "exit": 22.0, "half": 18.0, "side": 3.0, "rise": 0.5, "mid": 5.0},
 		 ],
-		 "climb": {"after": 72.0, "len": 48.0, "top": 12.0},
-		 "out": 116.0, "plans": {}},
+		 "climb": {"after": 104.0, "len": 48.0, "top": 9.0},
+		 "out": 130.0, "plans": {}},
 	],
 }
 
@@ -641,7 +641,7 @@ def auto_plan(piece, i, last):
 		elif CLEAR <= u <= HIGH_TIE[0] - CLEAR and i % 2 == 0:
 			plan["tie"] = "high"
 		inner = []
-		if abs(a) >= 1.2 + CLEAR + 0.8:
+		if abs(a) >= 1.2 + CLEAR + 0.5:
 			inner.append(0.0)
 		if abs(a + 2.6) >= 1.2 + CLEAR + 0.8 and abs(a) >= 3.5 and a > 0:
 			inner.append(-2.6)
@@ -693,27 +693,31 @@ def write_station(text, path="scripts/flight_course.gd"):
 	open(path, "w").write(src)
 
 
-def segment_times(layout=MIX):
-	"""Where each segment starts and ends, in s along its piece and in
-	seconds along the line at cruise."""
-	pa, pb, pts, tokens, kinds = mix_line(layout)
+def segment_marks(layout=MIX):
+	"""Where each move starts along its piece (s, m), as [(piece, move, s)]:
+	a knife's swing in starts `approach` m before its slit and its own
+	mark is the slit; the climb starts at its trough."""
+	pa, pb = (MixPiece(p) for p in layout["pieces"])
 	out = []
-	t = 0.0
 	for piece, name in ((pa, "A"), (pb, "B")):
 		spec = piece.spec
-		s_start = spec.get("entry", spec.get("in"))
-		marks = []
-		s = s_start
-		for seg in spec["segments"]:
+		s = spec.get("entry", spec.get("in"))
+		segs = spec["segments"]
+		for k, seg in enumerate(segs):
 			if seg["move"] == "knife":
-				marks.append(("knife", seg["bay"] * BAY))
-				s = seg["bay"] * BAY
+				slit = seg["bay"] * BAY
+				out.append((name, "knife in", slit - seg["approach"]))
+				out.append((name, "knife slit", slit))
+				s = slit + seg.get("hold", 0.0)
 				continue
-			marks.append((seg["move"], s))
-			s += seg["len"]
+			if k > 0 and segs[k - 1]["move"] == "knife":
+				out.append((name, seg["move"] + " (out)", s))
+			else:
+				out.append((name, seg["move"], s))
+			s += seg.get("len", 0.0)
 		if piece.climb_from is not None:
-			marks.append(("climb-turn", piece.climb_from))
-		out.append((name, s_start, spec["out"], marks))
+			out.append((name, "climb-turn", piece.climb_from))
+		out.append((name, "end", spec["out"]))
 	return out
 
 
