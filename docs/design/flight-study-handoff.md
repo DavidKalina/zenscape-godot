@@ -29,7 +29,7 @@ Tests: `python3 tools/run_tests.py --tests 'test_flight_*.gd'`.
 | Shift / LT | brake |
 | Q E / shoulders | held: knife edge; double-tap: barrel roll |
 | mouse / right stick | look round (the game's chase camera) |
-| 1-8 | teleport to a station's entry, at cruise, heading in |
+| 1-9 | teleport to a station's entry, at cruise, heading in |
 | R | restart the station |
 | N | next station |
 | B | switch pilot: you → sloppy → decent → sharp → perfect bot |
@@ -81,6 +81,7 @@ generate stations by emitting the same dictionary.
 | 6 | dive_arch | a 37 m dive under a floor arch with an 8 × 5 m opening, then a pull up |
 | 7 | open_swoop | a wide 3D S-curve with no obstacles near it |
 | 8 | mixed_spike | 4 easy tokens in a straight line, one spike 7 m east and 2 m up within 10 m, then 3 easy tokens |
+| 9 | sundered | round 2: a greybox stretch of the Sundered hall (below) |
 
 Tokens use the game's plane pickup: `PLANE_REACH` 1.1 plus half an air token
 (1.2 m), so 1.7 m. Tokens are greybox spheres. Taking a later token misses the
@@ -281,3 +282,181 @@ Being honest about how the bands were reached:
 5. Cluster on the CSV columns (need, warning, room, spike, duration) to name
    section types. That data then feeds the set-piece kits and the common
    set-piece interface in `generation-harness.md`.
+
+# Round 2: the Sundered hall station and threading
+
+After flying all eight, the user liked climb_rings best (easy, fun 4): it's
+more fun going through things than flying in the open, as with threading
+cliffs, coves and openings in the real world. The open-air stations rated
+fun 2. Round 2 adds a station that flies like the Sundered hall
+(`docs/scenic/sundered-hall.md`) and a number for "going through things".
+
+## Launch straight into it
+
+    ./run-flight-study.command --station=sundered
+    ./run-flight-study.command --station=sundered --bot=sharp      # watch a bot fly it
+    godot --headless --path . -s tools/flight_bench.gd -- --station sundered --runs 20
+
+Key 9 jumps to it in the study, and N cycles through it after mixed_spike.
+
+## The station (`sundered`, key 9, hash 72a9caa4ed86)
+
+A new part kind, `["bay", at, yaw, plan]`, is one bay of the hall's nave at
+the real dimensions from `scripts/ruin_kit_hall.gd`: BAY 8 m, outer
+columns at ±9.4 m (r 1.2, 10 m tall), walls at ±12.4 m, roof beams at the
+bay lines (10-11.1 m), slabs over them in six strips, ties with soffits at
+4 m (low) and 6 m (high), inner columns at 0 or ±2.6 m, the lane (z 4-8,
+y 1-3.6) and the knife-edge screen (a 1.15 m slit). The plan keys are
+documented on `FlightCourse._bay` and are the same words the real planner
+uses (`roof` whole/broken/open, `gaps`, `tie`, `inner`, `breach`, `screen`,
+`torn`, `beam`, `last`), so a generator can emit bays. The hash covers
+only this station's own data; stations 1-8 keep their hashes (pinned in
+`test_flight_metrics.gd`).
+
+The real hall is 9-10 pieces and about a minute. I took four of its acts
+and squeezed them into two pieces, about 166 m of line (12.7 s for the
+perfect bot):
+
+- **Piece A, 8 bays (gate, shafts, cloister):** in through the gate's
+  roofed mouth. A low tie is flown under, then the line climbs over a high
+  tie (5.9 m up, 1.3 m over the tie, 1.8 m under the beam), under broken
+  roof. Then come two open cloister bays. The line jinks right between the
+  row's columns at mid-bay, over a low breach in the right wall, and out
+  past the torn end.
+- **Gap:** 22 m, stepping down 5 m (a short drop; the real hall's are
+  12-30 m with ±5 m steps, and its drop is 34-40 m and 8-11 m down).
+- **Piece B, 6 bays (slit, apse):** it starts with a torn mouth. Next come
+  screens with knife-edge slits on the left every other bay, paired inner
+  columns, a low tie and high ties. The lane runs open on the right. Then
+  the apse: two open bays, and the line climbs 13 m out through the open
+  roof to the sky.
+
+16 tokens. Their trail goes in at the gate, along the nave, out the side
+breach, across the gap, along B's lane and out through the roof.
+
+Simplified, on purpose:
+
+- Plain boxes and drums. There are no gables, lancets, doors, buttresses,
+  fallen beams, rubble, parapets, islands or podium edges.
+- Torn and open walls have one height each (3 m and 7.5 m).
+- The hall is straight. The real pieces curve (radius ≥ 70 m) and kink
+  ≤ 0.14 rad at gaps.
+- **B sits 8 m right of A** so the line out of A's side breach runs
+  straight on into B's lane. My first layout put B in line with A, and the
+  hard swing back left after the breach lost every bot below perfect, with
+  long wall scrapes in B.
+- **No token goes through a slit.** The bot has no knife edge, and a
+  missed token can't be skipped (taking a later token misses it), so a
+  slit token would make the station unclearable for bots. The slits stand
+  there for a person to try. A knife-edge bot and an optional-token rule
+  are for a later round.
+- The aqueduct act, the long drop and the nave's side arches aren't in.
+  Arches are in the part kind (`breach` "arch") but unused.
+
+### Bench (VERSION 1 bots, 20 runs)
+
+| station | intent | band | clear rate (sloppy/decent/sharp/perfect) | ref time s | demand peak | mean | spike | warning min s | room min m | threading | openings/s |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| sundered | hard | **hard** | 0.0 / 0.1 / 0.9 / 1.0 | 12.65 | 1.11 | 0.45 | 0.70 | -0.06 | 0.40 | 40% | 0.24 |
+
+What makes it hard is one moment: **the jink out through the side
+breach.** The line has to cross the row of columns between two bay lines
+(8 m apart, 5.6 m clear) and the wall within about 6 m. That's about a
+40° swing with 0.4 m room either side of the wings, and the line's need
+is 1.47 × TURN_RATE. Decent bots take 15 of 16 tokens almost every time.
+They bump a column there and miss the token at the crossing or the one
+after it. Sharp bots bump once and clear 90% of the time. Every other part
+is medium at most: the tie hop needs about 1.7 × PITCH_SPEED on the exact
+line, but pitch is forgiving, and every bot from decent up takes it.
+These are the real hall's own breach dimensions. If the user finds it too
+hard, the fix is in the layout: a wider breach bay, or a fallen column at
+that bay line. Don't fix it by tuning the bot.
+
+## Threading metric (`FlightMetrics.threading`, `threading_at`)
+
+- **Rule:** a tick threads when a solid lies within **8 m both left and
+  right** of the plane (level rays square to its heading), or within
+  **12 m straight above** it (a roof, a lintel, a tie, a ring's top). The
+  rays are tested exactly against the station's boxes and upright
+  cylinders. Downward rays aren't cast, so neither the floor 40 m down nor
+  a hall's own floor counts.
+- **threading_share** = threading ticks / all ticks. **threading_s** =
+  share × duration.
+- **openings** = spells of threading, with spells less than 0.2 s apart
+  joined, so each ring, gate, slot or roofed stretch counts once.
+  **openings_per_s** = openings / duration.
+- It goes into the run JSON's `metrics` (`summarise(run, solids)`; run
+  files from now on carry it). It shows on the F1 overlay ("threading
+  NOW / open air", share so far, openings and their rate), on the
+  end-of-run panel, in the bench table (`thread`, `open/s`, perfect bot)
+  and in `tools/flight_report.py`. There it appears in the overview (the
+  people's mean, the reference), in the per-station bot and people tables,
+  and in a **Threading vs fun** table of every rated run with Pearson r.
+- **Backfill works.** `tools/flight_threading.gd` (headless) reads every
+  run without the numbers. For each one whose station hash still matches,
+  it measures threading from the recorded ticks and writes
+  `threading_backfill.json` next to the runs. The run files are only read,
+  and the user's human runs are unchanged (checked byte for byte against a
+  copy). `flight_report.py` runs it by itself when it finds runs without
+  the numbers and Godot is found (`GODOT_BIN`, `~/Applications/Godot.app`
+  or `godot` on PATH). `--no-backfill` skips it. Runs of changed layouts
+  are listed as stale and left out.
+
+### Threading vs the user's ratings (9 rated runs, backfilled)
+
+| station | threading | openings/s | felt difficulty | fun |
+|---|---|---|---|---|
+| gentle_arc (×2) | 0% | 0.00 | 2, 1 | 3, 3 |
+| slalom | 0% | 0.00 | 3 | 2 |
+| open_swoop | 0% | 0.00 | 1 | 2 |
+| mixed_spike | 0% | 0.00 | 4 | 2 |
+| dive_arch | 2% | 0.15 | 3 | 3 |
+| climb_rings | 5% | 0.61 | 1 | **4** |
+| tight_slot | 10% | 0.18 | 1 | 3 |
+| hidden_turn | 27% | 0.14 | 2 | 3 |
+| sundered | not flown yet | | | |
+
+The reference shares (perfect bot) are about the same: hidden_turn 28%,
+tight_slot 10%, climb_rings 5%, dive_arch 3%, the rest 0%, and sundered
+40%.
+
+Pearson r with fun over these 9 runs: **openings/s 0.80**, threading share
+0.32. On this little data, how often you pass through something tracks fun
+better than how long you spend enclosed. climb_rings has the least time
+inside (the rings are 1 m thick) but by far the most openings a second.
+hidden_turn's 8 m lane reads as a long threaded stretch but rated only 3.
+All four 0% stations rated 2 or 3. It's one person and nine runs, so read
+it as a hint. Sundered's ratings will be the real test: 40% share but only
+0.24 openings/s, because the roofed nave is one long spell. If it rates
+high, the share matters too. If it rates middling, count bay lines, ties
+and columns passed as openings, not just the spells.
+
+## Files changed
+
+- `scripts/flight_course.gd`: the `bay` part, `_bay`, the `sundered`
+  station.
+- `scripts/flight_metrics.gd`: `ray_hits`, `threading_at`, `threading`,
+  and `summarise(run, solids)`.
+- `scripts/flight_run.gd`: the live threading and the solids passed to
+  summarise.
+- `studies/flight_study.gd`: F1 and the report line, keys 1-9.
+- `tools/flight_bench.gd`: the threading columns.
+- `tools/flight_threading.gd`: new, the backfill.
+- `tools/flight_report.py`: the threading columns, the threading-vs-fun
+  table and the auto backfill.
+- Tests: `test_flight_metrics.gd` (hashes 1-8 pinned; threading on a fake
+  run with walls, a lintel and a lone pillar) and `test_flight_bench.gd`
+  (the hall stands, sharp clears it in 10-20 s, threads > 25%).
+
+## Unverified (round 2)
+
+- **No window was opened.** The hall greybox, the chase camera inside the
+  nave (it pulls in off solids, but 177 of them in a narrow nave are
+  untested), the F1 line and the taller panels haven't been seen.
+- **Nobody has flown the station by hand yet**, so it has no fun rating.
+- The knife-edge slits are physically there (1.15 m), but nobody has
+  threaded them. No token rewards them.
+- I ran the import check and `run_tests.py --tests 'test_flight_*.gd'`
+  (3/3 pass) only, not the full suite.
+- The first round-2 commit's bench test reads `threading_share`, which
+  only lands in the second commit. Check out both together.
