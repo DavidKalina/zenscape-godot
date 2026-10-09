@@ -92,6 +92,10 @@ const FADE_IN := 1.4
 ## the others to keep clear of (`blocks`).
 static var taken: Array[Vector3] = []
 
+## --pierced-trace: each step of making and standing one, printed.
+static func _trace(what: String) -> void:
+	if "--pierced-trace" in OS.get_cmdline_user_args(): print("PIERCED trace ",what)
+
 static func forced() -> bool:
 	return "--pierced" in OS.get_cmdline_user_args()
 
@@ -281,18 +285,23 @@ func _plan(s: Dictionary) -> void:
 ## far (PiercedMesh arrays), ruins (a Node3D, not in the tree), usec}.
 static func make(seed_: int, palette: Dictionary, home_y: float, out: Dictionary) -> void:
 	var began := Time.get_ticks_usec()
+	_trace("make %d: planning" % seed_)
 	var plan: RefCounted = PiercedIsle.make(seed_)
 	out.plan = plan
 	var t := Time.get_ticks_usec()
+	_trace("make %d: lid" % seed_)
 	out.lid = SkyIslets.make(plan.lid_seed(),plan.recipe,palette,home_y)
 	# The lid's wall in the rock's colours.
 	out.lid.meshes.sides = PiercedMesh.mesh(PiercedMesh.colour(plan,out.lid.sides))
 	var lid_usec := Time.get_ticks_usec()-t
 	var near_stats := {}
 	var far_stats := {}
+	_trace("make %d: rock" % seed_)
 	out.near = PiercedMesh.mesh(PiercedMesh.arrays(plan,PiercedMesh.CELL,near_stats))
 	out.far = PiercedMesh.mesh(PiercedMesh.arrays(plan,PiercedMesh.FAR_CELL,far_stats,false))
+	_trace("make %d: ruins" % seed_)
 	out.ruins = PiercedRuins.build(plan,out.lid.shape)
+	_trace("make %d: made" % seed_)
 	out.stats = {"near":near_stats,"far":far_stats,"lid_usec":lid_usec}
 	out.usec = Time.get_ticks_usec()-began
 
@@ -373,17 +382,18 @@ func flush() -> void:
 			s.task = -1
 			s.plan = s.out.plan
 			s.stage = ["lid","rock","far","ruins"]
-		while not (s.stage as Array).is_empty(): _stand(s,(s.stage as Array).pop_front())
+		while not (s.stage as Array).is_empty():
+			var part: String = (s.stage as Array).pop_front()
+			_trace("stand %s" % part)
+			_stand(s,part)
 		s.age = FADE_IN
 		_fade(s)
+	_trace("islets flush")
 	islets.flush()
+	_trace("flushed")
 
 ## Plans (now, on this thread's wait) the isle at `key` and stands it.
-##
-## Made here on this thread, not on a worker: the ruins' merge reads their
-## meshes back from the rendering server, which a worker can only do while
-## the main thread goes on drawing frames, so a main thread blocked waiting
-## on that worker would never let it finish.
+## Made here, on this thread; one a worker was still making is let go.
 func plan_now(key: String) -> void:
 	for s: Dictionary in spots:
 		if s.key != key: continue

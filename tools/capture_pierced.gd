@@ -76,6 +76,7 @@ func run() -> void:
 	var s: Dictionary = field.spots[0]
 	await _hold_at(s.at+Vector3(0.0,60.0,300.0),s.at,hours.noon,5)
 	var began := Time.get_ticks_usec()
+	print("PIERCED planning %s at %s" % [s.key,s.at])
 	field.plan_now(s.key)
 	# Shoot only once it stands: its lid among the islets, its rock and
 	# ruins under it; framed from where it really stands.

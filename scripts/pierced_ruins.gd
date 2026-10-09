@@ -14,6 +14,11 @@ extends RefCounted
 ##   hall: a short colossus hall on the top, on the lid's real ground (its
 ##     walls run down into it);
 ##   run: an aqueduct striding across the cavern's floor.
+## The runs and the hall are left unmerged, a mesh and a body a span or a
+## bay: RuinKit `merge` reads each piece's mesh back from the rendering
+## server, which on a worker waits on the main thread, and a main thread
+## waiting on that worker (forgetting an isle mid-make, a world rebuilt,
+## the game's exit) would never return.
 ## Every ruin's stone is solid to the plane (its hulls on LAYER, which only
 ## the bump asks: scripts/sky_pierced.gd) and none glows. The ruins draw to
 ## RANGE m; past that the rock alone stands for the isle.
@@ -59,8 +64,8 @@ static func build(plan: RefCounted, lid: RefCounted) -> Node3D:
 		match str(r.kind):
 			"feed": node = _feed(plan,lid,r)
 			"gate": node = RuinKit.arch(int(r.seed),float(r.weathered))
-			"hall": node = Hall.hall(int(r.seed),float(r.weathered),int(r.bays),ground(lid,at,-2.0),true)
-			"run": node = Aqueduct.run(int(r.seed),float(r.weathered),int(r.spans),-1,false,Callable(),true)
+			"hall": node = Hall.hall(int(r.seed),float(r.weathered),int(r.bays),ground(lid,at,-2.0),false)
+			"run": node = Aqueduct.run(int(r.seed),float(r.weathered),int(r.spans),-1,false,Callable(),false)
 		if node == null: continue
 		node.name = str(r.kind).capitalize()
 		node.transform = at
@@ -84,7 +89,7 @@ static func _feed(plan: RefCounted, lid: RefCounted, r: Dictionary) -> Node3D:
 	var at: Transform3D = r.at
 	var spans := int(r.spans)
 	var rim := SkyIslet.RIM_HEIGHT-at.origin.y
-	var root := Aqueduct.run(int(r.seed),float(r.weathered),spans,-1,true,ground(lid,at,rim),true)
+	var root := Aqueduct.run(int(r.seed),float(r.weathered),spans,-1,true,ground(lid,at,rim),false)
 	var end := Aqueduct.SPAN*spans
 	var face := end+Aqueduct.PIER.x*0.5
 	# The spout: the channel's floor and two low cheeks carried out over the
