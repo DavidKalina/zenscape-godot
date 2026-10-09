@@ -235,6 +235,9 @@ const SLIDE_RUNOUT := 2.4
 const SLIDE_AIR := 0.035
 const SLIDE_STOP := 0.8
 const SLIDE_JUMP := 0.9
+## The pace (m/s) at which a slide throws its fullest spray (the old top
+## surf); faster surfs throw no more.
+const SPRAY_FULL := 11.0
 ## The side flip: its height (m), its pace along (m/s), and the seconds
 ## after a skid it is still taken.
 const SIDE_FLIP := 1.9

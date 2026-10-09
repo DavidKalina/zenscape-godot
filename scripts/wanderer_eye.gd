@@ -1069,7 +1069,7 @@ func _motor_events(events: Dictionary) -> void:
 	if events.get("slide",false): steps.slide(_surface(),clampf(motor.speed()/RUN,0.4,1.0))
 	if motor.move == "slide" and motor.speed() > 1.0:
 		var travel := _world_way(motor.velocity)
-		puffs.spray(_puff_at(figure.global_position+travel*0.2),travel,_surface(),clampf(motor.speed()/PilotMotor.SLIDE_TOP,0.3,1.0),get_process_delta_time())
+		puffs.spray(_puff_at(figure.global_position+travel*0.2),travel,_surface(),clampf(motor.speed()/PilotMotor.SPRAY_FULL,0.3,1.0),get_process_delta_time())
 	if events.get("wall",false):
 		steps.step(_surface(),0.35)
 		steps.slide(_surface(),0.3)
