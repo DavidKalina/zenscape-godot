@@ -18,7 +18,7 @@ extends Node3D
 ## game's ruins (scripts/ruin_bump.gd). The camera is the game's chase
 ## (scripts/glide_camera.gd); the mouse or right stick looks round.
 ##
-## Keys: 1-9 the stations, R restart the station, N the next one, B cycles
+## Keys: 1-9 and 0 the stations, R restart the station, N the next one, B cycles
 ## who flies (you, then the sloppy, decent, sharp and perfect bots), F1 the
 ## live numbers, Esc lets the mouse go. After a station: 1-5 rates felt
 ## difficulty, then 1-5 fun (Enter skips).
@@ -329,7 +329,7 @@ func _build_ui() -> void:
 	_hud_label.position = Vector2(16.0,240.0)
 	_hud.add_child(_hud_label)
 	_hint = Label.new()
-	_hint.text = "WASD/stick turn and pitch (W noses down) · Space/RT boost · Shift/LT brake · Q/E lean, twice: roll · 1-9 stations · R restart · N next · B who flies · F1 numbers · Esc mouse"
+	_hint.text = "WASD/stick turn and pitch (W noses down) · Space/RT boost · Shift/LT brake · Q/E lean, twice: roll · 0-9 stations · R restart · N next · B who flies · F1 numbers · Esc mouse"
 	_style(_hint,14)
 	_hint.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
 	_hint.offset_top = -36.0
@@ -367,6 +367,7 @@ func _show_hud() -> void:
 		"next token seen %s" % since,
 		"reversals %.2f /s · effort %.2f /s · full stick %d%%" % [float(live.reversals),float(live.effort),roundi(float(live.full)*100.0)],
 		"threading %s · %d%% of the run · openings %d (%.2f /s)" % ["NOW" if live.threading_now else "open air",roundi(float(live.threading)*100.0),int(live.openings),float(live.openings_per_s)],
+		"flow: still %d%% · longest %.1f s%s" % [roundi(float(live.still)*100.0),float(live.longest_straight)," · straight NOW" if live.straight_now else ""],
 	]))
 
 ## The live bars: flown turn and pitch against what the line needs here
@@ -435,11 +436,12 @@ func _show_report() -> void:
 	lines.append("Warning least %s · room least %s" % ["-" if m.warning_min == null else "%.2f s" % float(m.warning_min),"-" if m.room_min == null else "%.2f m" % float(m.room_min)])
 	lines.append("Reversals %.2f /s · effort %.2f /s · full stick %d%%" % [float(m.reversals_per_s),float(m.effort),roundi(float(m.full_share)*100.0)])
 	lines.append("Threading %d%% of the run · openings %d (%.2f /s)" % [roundi(float(m.get("threading_share",0.0))*100.0),int(m.get("openings",0)),float(m.get("openings_per_s",0.0))])
+	lines.append("Flow: still %d%% · straights %d · longest %.1f s · swing %.0f°/s, %d%% sideways" % [roundi(float(m.get("still_share",0.0))*100.0),int(m.get("straights",0)),float(m.get("longest_straight",0.0)),float(m.get("swing_mean",0.0)),roundi(float(m.get("yaw_share",0.0))*100.0)])
 	var rating: Dictionary = last_run.get("rating",{})
 	if asking == "difficulty": lines.append("\nHow hard did it feel? 1 (easy) - 5 (hard)   · Enter skips")
 	elif asking == "fun": lines.append("\nDifficulty %d. How fun? 1 - 5   · Enter skips" % int(rating.difficulty))
 	elif not rating.is_empty(): lines.append("\nRated: difficulty %s · fun %s" % [str(rating.get("difficulty","-")),str(rating.get("fun","-"))])
-	lines.append("R again · N next · 1-9 a station")
+	lines.append("R again · N next · 0-9 a station")
 	_report_label.text = "\n".join(lines)
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -469,6 +471,6 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_Q: _lean_tapped(-1.0)
 			KEY_E: _lean_tapped(1.0)
 			_:
-				if key >= KEY_1 and key <= KEY_9:
+				if key >= KEY_0 and key <= KEY_9:
 					var s := Course.station_by_key(key-KEY_0)
 					if not s.is_empty(): start(s)

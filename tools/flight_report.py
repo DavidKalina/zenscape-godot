@@ -21,7 +21,8 @@ Examples:
 Runs saved before the threading numbers existed get them from
 threading_backfill.json, which tools/flight_threading.gd writes from their
 recorded ticks (run headless here automatically when Godot is found; pass
---no-backfill to skip). The run files themselves are only read.
+--no-backfill to skip). The flow numbers (round 3) are backfilled the same
+way into flow_backfill.json. The run files themselves are only read.
 
 Standard library only.
 """
@@ -46,9 +47,12 @@ SUMMARY_KEYS = [
     "warning_min", "warning_mean", "reversals_per_s", "effort", "full_share",
     "reach", "room_min", "demand_peak", "demand_mean", "demand_spike", "grade",
     "threading_share", "openings", "openings_per_s",
+    "still_share", "straights", "longest_straight", "swing_mean", "yaw_share", "swing_reversals_per_s",
 ]
 THREAD_KEYS = ["threading_share", "openings", "openings_per_s", "threading_s"]
+FLOW_KEYS = ["still_share", "straights", "longest_straight", "swing_mean", "yaw_share", "swing_reversals_per_s"]
 SIDE = "threading_backfill.json"
+FLOW_SIDE = "flow_backfill.json"
 DEFAULT_GODOT = Path.home() / "Applications" / "Godot.app" / "Contents" / "MacOS" / "Godot"
 
 
@@ -75,7 +79,7 @@ def load(folder: Path) -> tuple[list[dict], list[dict], dict]:
         except (OSError, json.JSONDecodeError) as error:
             print(f"skipped {path.name}: {error}", file=sys.stderr)
             continue
-        if path.name == SIDE:
+        if path.name in (SIDE, FLOW_SIDE):
             continue
         if path.name == "bands.json":
             bands = data
@@ -96,6 +100,16 @@ def load(folder: Path) -> tuple[list[dict], list[dict], dict]:
             if "threading_share" not in run["metrics"] and run["_file"] in filled:
                 run["metrics"].update({k: filled[run["_file"]].get(k) for k in THREAD_KEYS})
                 run["_threading_backfilled"] = True
+    flow_side = folder / FLOW_SIDE
+    if flow_side.is_file():
+        try:
+            flowed = json.loads(flow_side.read_text(encoding="utf-8")).get("runs", {})
+        except (OSError, json.JSONDecodeError):
+            flowed = {}
+        for run in runs:
+            if "still_share" not in run["metrics"] and run["_file"] in flowed:
+                run["metrics"].update({k: flowed[run["_file"]].get(k) for k in FLOW_KEYS})
+                run["_flow_backfilled"] = True
     return runs, benches, bands
 
 
@@ -110,14 +124,14 @@ def godot_binary() -> str | None:
 
 def backfill(folder: Path) -> None:
     """Runs tools/flight_threading.gd headless if some run lacks the threading
-    numbers and isn't in the side file yet."""
+    or flow numbers and isn't in the side files yet."""
     runs, _, _ = load(folder)
-    missing = [r for r in runs if "threading_share" not in r["metrics"]]
+    missing = [r for r in runs if "threading_share" not in r["metrics"] or "still_share" not in r["metrics"]]
     if not missing:
         return
     godot = godot_binary()
     if not godot:
-        print(f"{len(missing)} run(s) have no threading numbers and Godot wasn't found (set GODOT_BIN)", file=sys.stderr)
+        print(f"{len(missing)} run(s) have no threading or flow numbers and Godot wasn't found (set GODOT_BIN)", file=sys.stderr)
         return
     subprocess.run([godot, "--headless", "--path", str(ROOT), "-s", "tools/flight_threading.gd", "--", "--dir", str(folder)],
                    check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -218,14 +232,17 @@ def build(folder: Path, out: Path) -> tuple[Path, Path, Path]:
                          num(ref.get("warning_min")), num(ref.get("room_min")), str(len(people)),
                          num(mean([r["metrics"]["duration"] for r in people])), num(mean(ratings_d), 1), num(mean(ratings_f), 1),
                          pct(mean([r["metrics"].get("threading_share") for r in people])), num(mean([r["metrics"].get("openings_per_s") for r in people])),
-                         pct(ref.get("threading_share"))])
+                         pct(ref.get("threading_share")), pct(ref.get("still_share")), num(ref.get("longest_straight")),
+                         pct(mean([r["metrics"].get("still_share") for r in people]))])
         for r in people:
             rating = r.get("rating", {})
             if rating.get("fun") is not None:
                 m = r["metrics"]
                 fun_rows.append({"station": station, "name": name, "flown": r.get("started", "")[:19], "threading": m.get("threading_share"),
                                  "openings": m.get("openings_per_s"), "difficulty": rating.get("difficulty"), "fun": rating.get("fun"),
-                                 "backfilled": r.get("_threading_backfilled", False)})
+                                 "still": m.get("still_share"), "longest": m.get("longest_straight"),
+                                 "ref_still": ref.get("still_share"),
+                                 "backfilled": r.get("_threading_backfilled", False), "flow_backfilled": r.get("_flow_backfilled", False)})
         # Bots, per skill, over every bot run of this layout (all sessions).
         bot_rows = []
         versions = sorted({r.get("skill", {}).get("version", 0) for r in bots})
@@ -238,7 +255,9 @@ def build(folder: Path, out: Path) -> tuple[Path, Path, Path]:
                              num(mean([m["collected"] for m in ms]), 1), num(mean([m["demand_peak"] for m in ms])), num(mean([m["demand_mean"] for m in ms])),
                              num(mean([m["turn_flown_peak"] for m in ms])), num(mean([m["reversals_per_s"] for m in ms])),
                              num(mean([m["effort"] for m in ms])), num(mean([m["bumps"] for m in ms]), 1),
-                             pct(mean([m.get("threading_share") for m in ms])), num(mean([m.get("openings_per_s") for m in ms]))])
+                             pct(mean([m.get("threading_share") for m in ms])), num(mean([m.get("openings_per_s") for m in ms])),
+                             pct(mean([m.get("still_share") for m in ms])), num(mean([m.get("longest_straight") for m in ms])),
+                             num(mean([m.get("swing_mean") for m in ms]), 1), num(mean([m.get("swing_reversals_per_s") for m in ms]))])
         person_rows = []
         for r in people:
             m = r["metrics"]
@@ -248,15 +267,17 @@ def build(folder: Path, out: Path) -> tuple[Path, Path, Path]:
                                 num(m["turn_need_peak"]), num(m["turn_flown_peak"]), num(m["warning_min"]), num(m["room_min"]),
                                 num(m["reversals_per_s"]), num(m["effort"]), f'{round(m["full_share"] * 100)}%',
                                 pct(m.get("threading_share")), num(m.get("openings_per_s")),
+                                pct(m.get("still_share")), num(m.get("longest_straight")), num(m.get("swing_mean"), 1), pct(m.get("yaw_share")),
                                 num(rating.get("difficulty"), 0), num(rating.get("fun"), 0)])
         gap_rows = []
         for g in ref.get("gaps", []):
             gap_rows.append([str(g["token"]), num(g["length"], 1), num(g["turn"]), num(g["pitch"]), num(g["commit"]),
                              num(g.get("warning")), num(g["room"]), num(g["demand"])])
         bot_head = ["skill", "runs", "clear rate", "time s", "tokens", "demand peak", "demand mean", "turn flown", "rev/s", "effort/s", "bumps",
-                    "threading", "openings/s"]
+                    "threading", "openings/s", "still", "longest straight s", "swing °/s", "swing rev/s"]
         person_head = ["flown", "time s", "tokens", "bumps", "demand peak", "mean", "spike", "grade", "turn need", "turn flown",
-                       "warning min s", "room min m", "rev/s", "effort/s", "full", "threading", "openings/s", "felt diff", "fun"]
+                       "warning min s", "room min m", "rev/s", "effort/s", "full", "threading", "openings/s",
+                       "still", "longest straight s", "swing °/s", "sideways", "felt diff", "fun"]
         gap_head = ["token", "length m", "turn", "pitch", "commit s", "warning s", "room m", "demand"]
         md += [f"## {name} (`{station}` {digest})", "", f"Intent **{intent}** · bot band **{band or 'not benched'}**", ""]
         for head, rows, title in ((bot_head, bot_rows, "Bots"), (person_head, person_rows, "People"), (gap_head, gap_rows, "Reference line per gap (perfect bot)")):
@@ -284,16 +305,16 @@ def build(folder: Path, out: Path) -> tuple[Path, Path, Path]:
 
     over_head = ["station", "id", "hash", "intent", "bot band", "ref time s", "ref demand peak", "mean", "spike", "turn need",
                  "warning min s", "room min m", "people runs", "their time s", "felt diff", "fun", "their threading", "their openings/s",
-                 "ref threading"]
+                 "ref threading", "ref still", "ref longest straight s", "their still"]
     fun_head, fun_table, fun_note = threading_vs_fun(fun_rows)
     md[4:4] = (["| " + " | ".join(over_head) + " |", "|" + "---|" * len(over_head)] + ["| " + " | ".join(row) + " |" for row in overview] + [""]
-               + ["## Threading vs fun (rated runs)", "", THREAD_RULE, ""]
+               + ["## Threading and flow vs fun (rated runs)", "", THREAD_RULE, "", FLOW_RULE, ""]
                + (["| " + " | ".join(fun_head) + " |", "|" + "---|" * len(fun_head)] + ["| " + " | ".join(row) + " |" for row in fun_table] if fun_table else ["none yet"])
                + ["", fun_note, ""])
     out.mkdir(parents=True, exist_ok=True)
     md_path, html_path, csv_path = out / "flight_report.md", out / "flight_report.html", out / "flight_runs.csv"
     md_path.write_text("\n".join(md) + "\n", encoding="utf-8")
-    fun_html = (f"<h2>Threading vs fun (rated runs)</h2><p class=\"legend\">{html.escape(THREAD_RULE)}</p>"
+    fun_html = (f"<h2>Threading and flow vs fun (rated runs)</h2><p class=\"legend\">{html.escape(THREAD_RULE)}</p><p class=\"legend\">{html.escape(FLOW_RULE)}</p>"
                 + (table(fun_head, fun_table) if fun_table else "<p>none yet</p>") + f"<p>{html.escape(fun_note)}</p>")
     html_path.write_text(HTML.format(count=len(runs), folder=html.escape(str(folder)), overview=table(over_head, overview) + fun_html, body="\n".join(body)), encoding="utf-8")
     with csv_path.open("w", newline="", encoding="utf-8") as handle:
@@ -307,6 +328,13 @@ def build(folder: Path, out: Path) -> tuple[Path, Path, Path]:
 THREAD_RULE = ("Threading: a tick threads when a solid lies within 8 m both left and right of the plane (level rays square to its heading) "
                "or within 12 m straight above it; the share is threading ticks over all ticks; an opening is one spell of threading "
                "(spells under 0.2 s apart joined), per second of the run. Backfilled (*) from the recorded ticks for runs saved before it existed.")
+
+
+FLOW_RULE = ("Flow, from the flown direction (heading and pitch, not the stick): the swing is their change over the last 0.25 s "
+             "(deg/s); still = share of the run swinging under 6 deg/s (flying straight); a straight is a still spell of 0.5 s or more; "
+             "sideways = the yaw share of the swing; swing rev/s = sign changes of the yaw and pitch rates past 10 deg/s (a wobble "
+             "reverses often, so a sloppy pilot's low still share isn't flow). A station's own flow is its perfect bot's run (ref). "
+             "Backfilled (*) from the ticks for runs saved before it existed.")
 
 
 def pct(value) -> str:
@@ -331,14 +359,19 @@ def pearson(xs, ys):
 def threading_vs_fun(rows: list[dict]):
     """Every rated person's run: its threading next to its ratings, sorted by
     threading, and how well threading tracks fun (Pearson r over the runs)."""
-    head = ["station", "flown", "threading", "openings/s", "felt diff", "fun"]
+    head = ["station", "flown", "threading", "openings/s", "still", "longest straight s", "station still (ref)", "felt diff", "fun"]
     out = []
     for r in sorted(rows, key=lambda r: (r["threading"] if isinstance(r["threading"], (int, float)) else -1, r["station"])):
         mark = "*" if r["backfilled"] else ""
-        out.append([r["station"], r["flown"], pct(r["threading"]) + mark, num(r["openings"]) + mark, num(r["difficulty"], 0), num(r["fun"], 0)])
+        fmark = "*" if r.get("flow_backfilled") else ""
+        out.append([r["station"], r["flown"], pct(r["threading"]) + mark, num(r["openings"]) + mark, pct(r.get("still")) + fmark,
+                    num(r.get("longest")) + fmark, pct(r.get("ref_still")), num(r["difficulty"], 0), num(r["fun"], 0)])
     r_share = pearson([r["threading"] for r in rows], [r["fun"] for r in rows])
     r_open = pearson([r["openings"] for r in rows], [r["fun"] for r in rows])
-    note = (f"{len(rows)} rated runs. Pearson r with fun: threading share {num(r_share)}, openings/s {num(r_open)}"
+    r_still = pearson([r.get("still") for r in rows], [r["fun"] for r in rows])
+    r_long = pearson([r.get("longest") for r in rows], [r["fun"] for r in rows])
+    note = (f"{len(rows)} rated runs. Pearson r with fun: threading share {num(r_share)}, openings/s {num(r_open)}, "
+            f"still share {num(r_still)}, longest straight {num(r_long)}"
             " (few runs, one person: a hint, not a finding).")
     return head, out, note
 

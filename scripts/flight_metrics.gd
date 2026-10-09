@@ -47,6 +47,25 @@ extends RefCounted
 ##                     apart joined), so each ring, gate, slot or roofed
 ##                     stretch passed counts once; openings_per_s over the
 ##                     run's duration
+## Flow (the user's: continuous movement beats straight-then-climb-then-
+## straight steps), read off the flown direction (heading and pitch, not the
+## stick, so stick noise that the plane doesn't follow doesn't count; see
+## `flow`):
+##   swing        = how fast the flight direction swings, deg/s: the
+##                  heading's and pitch's change over the last FLOW_SMOOTH s,
+##                  sqrt(yaw^2 + pitch^2)
+##   still_share  = share of ticks swinging under FLOW_STILL deg/s (flying
+##                  straight)
+##   straights    = still spells of at least FLOW_STRAIGHT s; longest_straight
+##                  the longest still spell (s)
+##   swing_mean   = mean swing (deg/s); yaw_share = sideways share of the
+##                  swing (sum |yaw| / (sum |yaw| + sum |pitch|))
+##   swing_reversals_per_s = the jerkiness guard: sign changes of the yaw
+##                  rate and of the pitch rate past FLOW_REVERSE deg/s, per
+##                  s. A weave reverses about once a token; a wobbling pilot
+##                  reverses far more, so a sloppy bot's low still share
+##                  isn't flow. The station's own flow is its perfect
+##                  reference run's.
 
 const SkyPlane = preload("res://scripts/sky_plane.gd")
 
@@ -89,6 +108,16 @@ const CLEAR_SHARE := 0.6
 const THREAD_SIDE := 8.0
 const THREAD_UP := 12.0
 const THREAD_JOIN := 0.2
+
+## Flow: the swing is measured over the last FLOW_SMOOTH s; under
+## FLOW_STILL deg/s is flying straight, a still spell of FLOW_STRAIGHT s or
+## more is a straight; a swing reversal counts past FLOW_REVERSE deg/s.
+const FLOW_SMOOTH := 0.25
+const FLOW_STILL := 6.0
+const FLOW_STRAIGHT := 0.5
+const FLOW_REVERSE := 10.0
+## The flow numbers' keys (bench, backfill, report).
+const FLOW_KEYS := ["still_share","straights","longest_straight","swing_mean","yaw_share","swing_reversals_per_s"]
 
 ## A Vector3 from a JSON array or a Vector3.
 static func v3(x: Variant) -> Vector3:
@@ -390,7 +419,7 @@ static func summarise(run: Dictionary, solids := []) -> Dictionary:
 		"demand_peak":snappedf(peak,0.001),"demand_mean":snappedf(weighted/timed if timed > 0.0 else 0.0,0.001),
 		"demand_spike":snappedf(peak-median,0.001),"grade":grade(peak),
 		"gaps":out_gaps,"curve":curve(run,out_gaps,yaw,pit),
-	}.merged(threading(tk,solids,duration) if not solids.is_empty() else {})
+	}.merged(flow(tk,duration)).merged(threading(tk,solids,duration) if not solids.is_empty() else {})
 
 ## The demand curve: every CURVE_STEP s, [t, the gap's demand, flown turn
 ## share, flown pitch share, the stick held (the larger of turn and pitch)].
@@ -519,3 +548,67 @@ static func threading(ticks: Dictionary, solids: Array, duration := -1.0) -> Dic
 	var share := float(inside)/n if n > 0 else 0.0
 	return {"threading_share":snappedf(share,0.001),"openings":openings,"openings_per_s":snappedf(openings/maxf(duration,0.0001),0.001),
 		"threading_s":snappedf(share*duration,0.001)}
+
+# --- Flow ----------------------------------------------------------------------------
+
+## The flight direction's yaw and pitch rates (rad/s, signed) at each tick:
+## the change over the last FLOW_SMOOTH s (less at the start; 0 on the
+## first tick).
+static func swing_rates(t: Array, heading: Array, pitch: Array) -> Array[Vector2]:
+	var out: Array[Vector2] = []
+	var n := t.size()
+	var j := 0
+	for i in range(n):
+		var now := float(t[i])
+		while j < i and float(t[j+1]) <= now-FLOW_SMOOTH+0.00001: j += 1
+		var span := now-float(t[j])
+		if span <= 0.0:
+			out.append(Vector2.ZERO)
+			continue
+		out.append(Vector2(angle_difference(float(heading[j]),float(heading[i])),float(pitch[i])-float(pitch[j]))/span)
+	return out
+
+## A run's flow from its ticks (columns "t", "heading", "pitch"; see the
+## header): {still_share, straights, longest_straight, swing_mean,
+## yaw_share, swing_reversals_per_s}.
+static func flow(ticks: Dictionary, duration := -1.0) -> Dictionary:
+	var t: Array = ticks.get("t",[])
+	var n := t.size()
+	if n < 2: return {"still_share":0.0,"straights":0,"longest_straight":0.0,"swing_mean":0.0,"yaw_share":0.0,"swing_reversals_per_s":0.0}
+	if duration < 0.0: duration = float(t[n-1])-float(t[0])
+	var rates := swing_rates(t,ticks.heading,ticks.pitch)
+	var still := 0
+	var straights := 0
+	var longest := 0.0
+	var spell_from := -1.0
+	var swing := 0.0
+	var yaw := 0.0
+	var pit := 0.0
+	var signs := Vector2.ZERO
+	var reversed := 0
+	var dead := deg_to_rad(FLOW_REVERSE)
+	for i in range(n+1):
+		var calm := false
+		if i < n:
+			var r: Vector2 = rates[i]
+			var deg := rad_to_deg(r.length())
+			swing += deg
+			yaw += absf(r.x)
+			pit += absf(r.y)
+			calm = deg < FLOW_STILL
+			if calm: still += 1
+			for a in range(2):
+				if absf(r[a]) < dead: continue
+				if signs[a] != 0.0 and signf(r[a]) != signs[a]: reversed += 1
+				signs[a] = signf(r[a])
+		# A still spell runs from its first calm tick to the first tick that
+		# isn't (or the run's end).
+		if calm and spell_from < 0.0: spell_from = float(t[i])
+		elif not calm and spell_from >= 0.0:
+			var length := (float(t[i]) if i < n else float(t[n-1]))-spell_from
+			if length >= FLOW_STRAIGHT-0.00001: straights += 1
+			longest = maxf(longest,length)
+			spell_from = -1.0
+	return {"still_share":snappedf(float(still)/n,0.001),"straights":straights,"longest_straight":snappedf(longest,0.001),
+		"swing_mean":snappedf(swing/n,0.01),"yaw_share":snappedf(yaw/(yaw+pit) if yaw+pit > 0.0 else 0.0,0.001),
+		"swing_reversals_per_s":snappedf(reversed/maxf(duration,0.0001),0.001)}

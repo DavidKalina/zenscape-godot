@@ -76,6 +76,13 @@ var thread_ticks := 0
 var openings := 0
 var threading_now := false
 var _thread_last := -INF
+## Flow so far (FlightMetrics `flow`): the last FLOW_SMOOTH s of heading and
+## pitch, still ticks, the straight running now (from when, or -1) and the
+## longest one.
+var still_ticks := 0
+var straight_from := -1.0
+var longest_straight := 0.0
+var _swing_past := []
 
 func _init(s: Dictionary, who := "human", params := {}, physics: PhysicsDirectSpaceState3D = null) -> void:
 	station = s
@@ -128,6 +135,7 @@ func tick(delta: float, input: Dictionary) -> void:
 	_look()
 	_live(delta,input)
 	_thread()
+	_flow()
 	_record(input)
 	if next_token() < 0: _end("done")
 	elif t >= TIME_LIMIT: _end("timeout")
@@ -183,6 +191,20 @@ func _thread() -> void:
 	if t-_thread_last > Metrics.THREAD_JOIN: openings += 1
 	_thread_last = t
 
+func _flow() -> void:
+	_swing_past.append(Vector3(t,plane.heading,plane.pitch))
+	while _swing_past.size() > 2 and float(_swing_past[1].x) <= t-Metrics.FLOW_SMOOTH+0.00001: _swing_past.pop_front()
+	var old: Vector3 = _swing_past.front()
+	var span := t-old.x
+	var swing := 0.0
+	if span > 0.0: swing = rad_to_deg(Vector2(angle_difference(old.y,plane.heading),plane.pitch-old.z).length()/span)
+	if swing < Metrics.FLOW_STILL:
+		still_ticks += 1
+		if straight_from < 0.0: straight_from = t
+		longest_straight = maxf(longest_straight,t-straight_from)
+	else:
+		straight_from = -1.0
+
 func _record(input: Dictionary) -> void:
 	var p := plane.position
 	var row := [snappedf(t,0.0001),snappedf(p.x,0.001),snappedf(p.y,0.001),snappedf(p.z,0.001),snappedf(plane.heading,0.0001),snappedf(plane.pitch,0.0001),
@@ -221,7 +243,8 @@ func live() -> Dictionary:
 	return {"t":t,"collected":collected(),"total":tokens.size(),"next":i,"slack":slack,"since":since,"turn":live_turn,"pitch":live_pitch,
 		"demand":demand,"need_turn":float(gaps[i].turn_peak) if i >= 0 else 0.0,"need_pitch":float(gaps[i].pitch_peak) if i >= 0 else 0.0,
 		"reversals":reversals/span,"effort":travel/span,"full":float(full_ticks)/maxf(ticks.t.size(),1),"bumps":bumps,
-		"threading":float(thread_ticks)/maxf(ticks.t.size(),1),"threading_now":threading_now,"openings":openings,"openings_per_s":openings/span}
+		"threading":float(thread_ticks)/maxf(ticks.t.size(),1),"threading_now":threading_now,"openings":openings,"openings_per_s":openings/span,
+		"still":float(still_ticks)/maxf(ticks.t.size(),1),"longest_straight":longest_straight,"straight_now":straight_from >= 0.0 and t-straight_from >= Metrics.FLOW_STRAIGHT}
 
 ## The run as plain data, its numbers included.
 func finish() -> Dictionary:

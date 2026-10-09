@@ -5,7 +5,9 @@ extends SceneTree
 ## circle (cruise over the radius); the warning of a token seen long before
 ## versus one seen only on arrival; the demand formula's ends; the bands;
 ## the live slack; the course's signed distances and its hash (stations
-## 1-8 pinned); threading past walls, under a lintel and by a lone pillar.
+## 1-9 pinned); threading past walls, under a lintel and by a lone pillar;
+## flow on a run that flies straight, turns, then flies straight again, and
+## on a wobble.
 ##   godot --headless --path . --script tests/test_flight_metrics.gd
 const Metrics = preload("res://scripts/flight_metrics.gd")
 const Course = preload("res://scripts/flight_course.gd")
@@ -135,9 +137,9 @@ func run() -> void:
 	var mid := Course.clearance(Course.solids(slot),Course.tokens(slot)[3])-Course.SPAN*0.5
 	check(near(mid,0.5,0.001),"The 2.4 m slot leaves level wings 0.5 m a side (%.3f)" % mid)
 	check(float(rooms[3].room) <= 0.5 and float(rooms[3].room) > 0.3,"The line through it has that room, give or take its curve (%.3f)" % rooms[3].room)
-	# Stations 1-8 keep the hashes the user's rated runs were flown on.
+	# Stations 1-9 keep the hashes the user's rated runs were flown on.
 	var pinned := {"gentle_arc":"ef5c73b6ecd3","slalom":"9e140f831e10","hidden_turn":"08b17c0ca386","tight_slot":"9b4941fb9a24",
-		"climb_rings":"4ed82e139779","dive_arch":"005a5bfc75b1","open_swoop":"fe3d869879c8","mixed_spike":"66cc6ea3502b"}
+		"climb_rings":"4ed82e139779","dive_arch":"005a5bfc75b1","open_swoop":"fe3d869879c8","mixed_spike":"66cc6ea3502b","sundered":"72a9caa4ed86"}
 	for id: String in pinned:
 		check(Course.station_hash(Course.station(id)) == pinned[id],"%s keeps its hash %s" % [id,pinned[id]])
 	# Threading on a made-up run: 4 s north at 14 m/s past two walls either
@@ -156,5 +158,23 @@ func run() -> void:
 	check(not Metrics.threading_at(walls,Vector3(0.0,40.0,-50.0),0.0) and Metrics.threading_at(walls,Vector3(0.0,40.0,-21.0),0.0),"A pillar on one side alone isn't threading; walls both sides are")
 	check(not Metrics.threading_at(walls,Vector3(0.0,40.0,-21.0),PI*0.5),"Heading along the walls' normal, the side rays run along them: not threading")
 	check(not Metrics.summarise(walk).has("threading_share"),"Without solids, no threading numbers")
+	# Flow: 1 s straight, 2 s turning at 0.5 rad/s, 1 s straight (60 Hz).
+	# The swing is read over the last 0.25 s, so the turn shows 3 ticks
+	# late (past 6 deg/s) and the straight after it a quarter second late:
+	# still about (1.05 + 0.75) of 4 s, two straights, the longest 1.05 s.
+	var bend := straight_run(4.0,1.0/60.0,[0.0],1,[0.0])
+	for i in range(bend.ticks.t.size()):
+		var at := float(bend.ticks.t[i])
+		bend.ticks.heading[i] = 0.5*clampf(at-1.0,0.0,2.0)
+	var fl := Metrics.summarise(bend)
+	check(near(float(fl.still_share),1.8/4.0,0.02),"Flow: still about 45%% of the run (%.3f)" % fl.still_share)
+	check(int(fl.straights) == 2 and near(float(fl.longest_straight),1.05,0.04),"Flow: two straights, the longest about 1.05 s (%d, %.3f)" % [fl.straights,fl.longest_straight])
+	check(near(float(fl.yaw_share),1.0,0.001) and near(float(fl.swing_mean),rad_to_deg(0.5)*2.0/4.0,1.0),"Flow: all sideways, mean swing about 14 deg/s (%.2f)" % fl.swing_mean)
+	check(int(round(float(fl.swing_reversals_per_s)*4.0)) == 0,"Flow: one steady turn never reverses")
+	# A wobble (+-0.1 rad at 2 Hz) is never still but reverses about 4 times a second.
+	var wobble := straight_run(4.0,1.0/60.0,[0.0],1,[0.0])
+	for i in range(wobble.ticks.t.size()): wobble.ticks.heading[i] = 0.1*sin(TAU*2.0*float(wobble.ticks.t[i]))
+	var wf := Metrics.flow(wobble.ticks,4.0)
+	check(float(wf.still_share) < 0.1 and float(wf.swing_reversals_per_s) > 3.0,"Flow: a wobble isn't still, but its swing reverses %.1f /s (the jerkiness guard)" % wf.swing_reversals_per_s)
 	print("flight metrics: %d failure(s)" % failures)
 	quit(1 if failures > 0 else 0)

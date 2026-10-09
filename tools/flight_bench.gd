@@ -111,6 +111,7 @@ static func bench(ids: PackedStringArray, skills: PackedStringArray, runs: int, 
 		Log.save_bands(bands,dir)
 		print("flight bench saved: %s" % ProjectSettings.globalize_path("%s/bench_%s.json" % [dir,stamp]))
 	print(table(out))
+	print(flow_table(out))
 	return out
 
 ## One bot run of station `s`.
@@ -131,7 +132,7 @@ static func _better(a: Dictionary, b: Dictionary) -> bool:
 	return float(ma.duration) < float(mb.duration)
 
 static func _stats(flown: Array) -> Dictionary:
-	var keys := ["duration","collected","bumps","demand_peak","demand_mean","turn_flown_peak","pitch_flown_peak","reversals_per_s","effort","full_share","threading_share","openings_per_s"]
+	var keys := ["duration","collected","bumps","demand_peak","demand_mean","turn_flown_peak","pitch_flown_peak","reversals_per_s","effort","full_share","threading_share","openings_per_s"]+Metrics.FLOW_KEYS
 	var sums := {}
 	for k: String in keys: sums[k] = 0.0
 	var cleared := 0
@@ -153,14 +154,34 @@ static func _reference(r: Dictionary) -> Dictionary:
 ## The bench as a plain-text table.
 static func table(out: Dictionary) -> String:
 	var lines := PackedStringArray()
-	lines.append("%-12s %-7s %-8s  %-23s  %6s %6s %6s %6s %6s %6s %6s %6s" % ["station","intent","band","clear sl/de/sh/pf","time","dPeak","dMean","spike","warnMn","room","thread","open/s"])
+	lines.append("%-13s %-7s %-8s  %-23s  %6s %6s %6s %6s %6s %6s %6s %6s %6s %6s" % ["station","intent","band","clear sl/de/sh/pf","time","dPeak","dMean","spike","warnMn","room","thread","open/s","still","longst"])
 	for id: String in out.stations:
 		var row: Dictionary = out.stations[id]
 		var c: Dictionary = row.clears
 		var ref: Dictionary = row.get("reference",{})
-		lines.append("%-12s %-7s %-8s  %-23s  %6.2f %6.2f %6.2f %6.2f %6s %6.2f %6.2f %6.2f" % [id,row.intent,row.band,
+		lines.append("%-13s %-7s %-8s  %-23s  %6.2f %6.2f %6.2f %6.2f %6s %6.2f %6.2f %6.2f %6.2f %6.2f" % [id,row.intent,row.band,
 			"/".join(Metrics.SKILLS.map(func(k: String) -> String: return ("%.1f" % float(c[k])) if c.has(k) else "-")),
 			float(ref.get("duration",0.0)),float(ref.get("demand_peak",0.0)),float(ref.get("demand_mean",0.0)),float(ref.get("demand_spike",0.0)),
 			("%.2f" % float(ref.warning_min)) if ref.get("warning_min") != null else "-",float(ref.get("room_min",0.0)) if ref.get("room_min") != null else 0.0,
-			float(ref.get("threading_share",0.0)),float(ref.get("openings_per_s",0.0))])
+			float(ref.get("threading_share",0.0)),float(ref.get("openings_per_s",0.0)),float(ref.get("still_share",0.0)),float(ref.get("longest_straight",0.0))])
+	return "\n".join(lines)
+
+## Flow per station (FlightMetrics `flow`): the perfect reference's line,
+## its demand beside it, then each skill's mean still share and swing
+## reversals (the jerkiness guard: a wobbling bot reverses often).
+static func flow_table(out: Dictionary) -> String:
+	var lines := PackedStringArray(["flow (perfect reference; still/rev per skill sl/de/sh)"])
+	lines.append("%-13s %6s %6s %6s  %6s %5s %6s %6s %6s %6s %6s  %-17s %-17s" % ["station","time","dPeak","dMean","still","str","longst","swing","yaw","rev/s","open/s","still sl/de/sh","rev/s sl/de/sh"])
+	for id: String in out.stations:
+		var row: Dictionary = out.stations[id]
+		var ref: Dictionary = row.get("reference",{})
+		var per := func(key: String, fmt: String) -> String:
+			var bits := PackedStringArray()
+			for k: String in ["sloppy","decent","sharp"]:
+				bits.append((fmt % float(row.skills[k][key])) if row.skills.has(k) else "-")
+			return "/".join(bits)
+		lines.append("%-13s %6.2f %6.2f %6.2f  %5d%% %5d %6.2f %6.1f %5d%% %6.2f %6.2f  %-17s %-17s" % [id,float(ref.get("duration",0.0)),float(ref.get("demand_peak",0.0)),
+			float(ref.get("demand_mean",0.0)),roundi(float(ref.get("still_share",0.0))*100.0),int(ref.get("straights",0)),float(ref.get("longest_straight",0.0)),
+			float(ref.get("swing_mean",0.0)),roundi(float(ref.get("yaw_share",0.0))*100.0),float(ref.get("swing_reversals_per_s",0.0)),float(ref.get("openings_per_s",0.0)),
+			per.call("still_share","%.2f"),per.call("swing_reversals_per_s","%.1f")])
 	return "\n".join(lines)
