@@ -533,6 +533,7 @@ func setup(owner_scene: Node3D) -> void:
 			add_child(canopy)
 			islands.skip.append(canopy)
 			if skydive_start(OS.get_cmdline_user_args()) != "": _skydive_start.call_deferred(skydive_start(OS.get_cmdline_user_args()))
+			if islands.moments != null and moments_at(OS.get_cmdline_user_args()) >= 0: _moments_start.call_deferred(moments_at(OS.get_cmdline_user_args()))
 		# The mountains stand round the plate in the build view too
 		# (SkyIslands `_process`): the view reaches them.
 		if SkyWorld.ring_on(): camera.far = maxf(camera.far,SkyWorld.VIEW_FAR)
@@ -1268,7 +1269,7 @@ func _launch(pace: float, drop := true, start := Vector3.INF, towards := 0.0) ->
 	if not perched:
 		air.start()
 		sky.start(glide.position)
-	_hint.text = PLANE_HINT if plane else FLY_HINT
+	_hint.text = (PLANE_HINT+("  ·  N for the next set piece" if islands.moments != null else "")) if plane else FLY_HINT
 	_hint.modulate.a = 1.0
 	_hint_time = 0.0
 	steps.step(_surface(),1.0)
@@ -1352,6 +1353,8 @@ func _advance_flight(delta: float) -> void:
 	RopeBridge.flown_by(islands.global_transform*glide.position,glide.velocity)
 	# Tokens the plane flies through (scripts/sky_collectibles.gd).
 	if islands.collectibles != null: islands.collectibles.touch_plane(islands.global_transform*glide.position)
+	# The moments set pieces' collectibles and starters (scripts/sky_moments.gd).
+	if plane and not below() and islands.moments != null: islands.moments.touch_plane(islands.global_transform*glide.position)
 	# Into another island's footprint, it becomes the plate (not from under
 	# the cloud sea).
 	if not islands.claiming and not below():
@@ -2248,6 +2251,41 @@ func _skydive_start(how: String) -> void:
 		await get_tree().create_timer(0.6).timeout
 		eject()
 
+# --- The moments set pieces (debug) --------------------------------------------------
+
+## `--moments-at=N` (with --moments): the set piece to start at, or -1.
+static func moments_at(args: PackedStringArray) -> int:
+	for arg in args:
+		if arg.begins_with("--moments-at=") and arg.trim_prefix("--moments-at=").is_valid_int(): return int(arg.trim_prefix("--moments-at="))
+	return -1
+
+## `--moments-at=N`: once the world is up, into the eyes and in the plane
+## on set piece N's way in (`moments_hop`).
+func _moments_start(k: int) -> void:
+	while not can_enter(): await get_tree().process_frame
+	await get_tree().create_timer(0.4).timeout
+	if not can_enter(): return
+	if not has_figure(): place(Vector3.ZERO)
+	enter()
+	if not islands.built(): islands.build()
+	islands.moments.hopped = k-1
+	moments_hop(1)
+
+## N in the plane (Shift+N back): the plane put on the next moments set
+## piece's way in (scripts/sky_moments.gd `hop_next`), flying its line at
+## cruise; every set piece listed with its distance in the log.
+func moments_hop(step := 1) -> void:
+	if islands.moments == null: return
+	if not islands.built(): islands.build()
+	var eye: Vector3 = glide.position if flying else islands.global_transform.affine_inverse()*_eye_global()
+	var target: Dictionary = islands.moments.hop_next(eye,step)
+	if target.is_empty(): return
+	var start: Vector3 = islands.global_transform*(target.position as Vector3)
+	var heading: float = target.heading
+	var forward := Vector3(-sin(heading),0.0,-cos(heading))
+	_launch(SkyPlane.CRUISE_SPEED,false,start,heading)
+	chase.reset(glide,start-forward*6.0+Vector3.UP*2.0,camera.fov)
+
 ## X in the plane (the pad's X): the pilot pops out of the cockpit and
 ## falls; the plane flies on by itself. Not while a landing or takeoff has
 ## the controls, nor perched.
@@ -2653,6 +2691,8 @@ func handle(event: InputEvent) -> bool:
 			_land_key()
 		elif event.pressed and not event.echo and event.keycode == KEY_F and flying and perch.is_empty():
 			glide.approach = not glide.approach
+		elif event.pressed and not event.echo and event.keycode == KEY_N and flying and perch.is_empty() and plane and landing == null and islands.moments != null:
+			moments_hop(-1 if event.shift_pressed else 1)
 		elif event.pressed and not event.echo and event.keycode == KEY_C and flying and perch.is_empty():
 			chase.first_person = not chase.first_person
 			glider.visible = not chase.first_person

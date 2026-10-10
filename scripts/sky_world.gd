@@ -74,6 +74,14 @@ extends RefCounted
 ##     (scripts/sky_ring.gd), and nothing scattered stands on them
 ##     (SkyPeaks `blocks`).
 ##
+##   the moments set pieces (`_moments`, with --moments only): the flight
+##     study's five greybox stations (scripts/sky_moments_plan.gd), each
+##     laid MOMENTS times over between them, turned and mirrored, out in
+##     the open sky between the islands at flying height; laid after the
+##     summits, clear of everything above, the islands and each other, and
+##     spread out so a flight meets one every so often. Stood by scripts/
+##     sky_moments.gd; nothing scattered stands on them (SkyPeaks `blocks`).
+##
 ## Ranges on an island the world has saved (`kept`) are left out: a world
 ## saved before the ring might have one out where it would stand.
 ##
@@ -105,6 +113,8 @@ const LEGACY_SEED := 7
 static var seed := LEGACY_SEED
 ## The ring, the bounds and the edge wind.
 static var ring := true
+## The moments set pieces (`_moments`): off unless `--moments`.
+static var moments := false
 ## The homes of every island the world has saved, and the plate's own (home
 ## coordinates): the ranges keep clear of them and the edge wind holds them.
 static var kept: Array[Vector3] = []
@@ -421,6 +431,7 @@ static func read_flags() -> void:
 	var args := OS.get_cmdline_user_args()
 	if "--no-ring" in args: ring = false
 	if "--no-peaks" in args: SkyHomes.peaks = false
+	if "--moments" in args: moments = true
 
 ## `--sky-seed=N`, or -1.
 static func seed_flag() -> int:
@@ -585,7 +596,7 @@ static func in_band(kind: String) -> bool:
 ## for with none started, worked out here and now (tests, tools). Either way
 ## the same seed lays the same world.
 static func layout() -> Dictionary:
-	var wonders := int(SkyHomes.stone)+2*int(SkyHomes.isles)
+	var wonders := int(SkyHomes.stone)+2*int(SkyHomes.isles)+4*int(moments)
 	if _layout_seed == seed and not _kept_changed and _layout_wonders == wonders: return _layout
 	var key := _key_now()
 	var began := Time.get_ticks_usec()
@@ -604,7 +615,11 @@ static func layout() -> Dictionary:
 
 ## The layout's key: the seed, the islands kept and the wonders standing.
 static func _key_now() -> String:
-	return "%d|%s|%s%s" % [seed,str(kept),SkyHomes.stone,SkyHomes.isles]
+	var key := "%d|%s|%s%s" % [seed,str(kept),SkyHomes.stone,SkyHomes.isles]
+	# The moments set pieces only with --moments: without, the key (and the
+	# layout cached under it) is as it always was.
+	if moments: key += "|moments"
+	return key
 
 ## The worker working out a layout ahead (`prepare`), its key and its result.
 static var _task := -1
@@ -616,6 +631,8 @@ static var main_ms := 0.0
 ## Milliseconds the last layout's summits (`_summits`) took, on whichever
 ## thread worked it out, for the record (tests/test_sky_summits.gd).
 static var summit_ms := 0.0
+## The same for its moments set pieces (`_moments`).
+static var moments_ms := 0.0
 
 ## Sets a worker working out the layout for the world as it stands (its
 ## seed, kept islands and wonders), unless it is worked out or being worked
@@ -633,6 +650,7 @@ static func prepare() -> void:
 	# cells' script loaded here, so the worker only finds it.
 	frame()
 	load("res://scripts/sky_cells.gd")
+	if moments: load("res://scripts/sky_moments_plan.gd").prepare()
 	_task_key = key
 	_task_out = {}
 	SkyCache.prune()
@@ -723,6 +741,11 @@ static func _compute() -> Dictionary:
 	var began := Time.get_ticks_usec()
 	out.summits = _summits(ranges,out,ridges.get("_judged",{}))
 	summit_ms = (Time.get_ticks_usec()-began)/1000.0
+	# The moments set pieces, laid after everything else (--moments).
+	if moments:
+		began = Time.get_ticks_usec()
+		out.moments = _moments(ranges,out,ridges.get("_judged",{}))
+		moments_ms = (Time.get_ticks_usec()-began)/1000.0
 	return out
 
 ## Half a notch's width, and the ranges' inset from it, as an angle at its
@@ -2001,6 +2024,212 @@ static func _summit_room(p: Vector2, world: Dictionary) -> float:
 static func summits() -> Array:
 	if not ring_on(): return []
 	return layout().get("summits",[])
+
+# --- The moments set pieces ------------------------------------------------------------
+
+## The moments set pieces (--moments): how many (at least, at most); each
+## stands its footprint (scripts/sky_moments_plan.gd `footprint`, a
+## rectangle on the plate plane) MOMENT_KEEP (m) and more clear of what the
+## world holds (`_moment_room`): MOMENT_ISLAND from an island's spot (its
+## rock and room to fly round it), MOMENT_JET from the islands' jet
+## streams, MOMENT_PASS from a pass, a notch or a kept gorge's mouth,
+## BAND_CLEAR from the band's rock, RIDGE_GAP from a ridge's, a cumulus's
+## and a wonder's keep, SUMMIT_KEEP from a summit's crest, MOMENT_PLATE
+## from the plate's middle, MOMENT_EDGE inside the bounds and MOMENT_HAZE
+## inside the band's haze; and
+## MOMENT_APART (m) between their middles, spread as far apart as they will
+## go (each the farthest from those laid, by a little chance: MOMENT_LUCK),
+## so a flight meets one every so often wherever it goes. Their middles are
+## looked for on a grid MOMENT_GRID apart, each turned MOMENT_TURNS ways
+## and mirrored or not; the room is read on a grid MOMENT_CELL apart, so
+## each footprint point keeps its cell's half diagonal more. Their entries
+## stand MOMENT_Y (m, home) high: flying height, the stone's foot (the
+## study's floor, 44 m under the entry with its plinth) well over the
+## glide's floor and its top well under the ceiling. Nothing scattered
+## later stands within MOMENT_BLOCK of a footprint (SkyPeaks `blocks`).
+const MOMENTS := Vector2i(12,14)
+const MOMENT_KEEP := 25.0
+const MOMENT_ISLAND := 100.0
+const MOMENT_JET := 80.0
+const MOMENT_PASS := 250.0
+const MOMENT_PLATE := 350.0
+const MOMENT_EDGE := 150.0
+const MOMENT_HAZE := 80.0
+const MOMENT_APART := 650.0
+const MOMENT_LUCK := 200.0
+const MOMENT_GRID := 100.0
+const MOMENT_TURNS := 8
+const MOMENT_CELL := 25.0
+const MOMENT_Y := Vector2(8.0,30.0)
+const MOMENT_BLOCK := 40.0
+
+## The moments set pieces laid out: [{key, layout (the station's index in
+## the pack), id, at (home: the station's entry), turn, mirror, box_at
+## (home: its footprint's middle), half (Vector2), region}], `box_at`,
+## `half` and `turn` as a range's box (`box_distance`). None with the
+## ring's plan unjudged. Each the layout stood fewest times so far, so
+## each of the five stands two or three times.
+static func _moments(ranges: Array, laid: Dictionary, judged: Dictionary) -> Array:
+	var out := []
+	if judged.is_empty(): return out
+	var plan: GDScript = load("res://scripts/sky_moments_plan.gd")
+	var rng := RandomNumberGenerator.new()
+	rng.seed = int(noise(Vector2i(seed,11),SALT)*2147483647.0)
+	var want := rng.randi_range(MOMENTS.x,MOMENTS.y)
+	var world := _summit_world(ranges,laid,judged)
+	var crests: Array = []
+	for summit: Dictionary in laid.get("summits",[]):
+		for q: Vector3 in summit.crest: crests.append(Vector2(q.x,q.z))
+	world.crests = crests
+	# Every island that may stand (SkyCells `pick` blocked only past the
+	# bounds): the islands the game stands are among them, whatever else
+	# blocks a cell's (the plan's own count, `_island_spots`, reads the
+	# band a little differently).
+	var cells: GDScript = load("res://scripts/sky_cells.gd")
+	var islands: Array = []
+	for s: Vector3 in SLOTS: islands.append(Vector2(s.x,s.z))
+	var size: float = cells.CELL
+	var beyond := func(p: Vector3) -> bool: return Vector2(p.x,p.z).length() > SCATTER
+	for x in range(floori(-SCATTER/size)-1,ceili(SCATTER/size)+1):
+		for z in range(floori(-SCATTER/size)-1,ceili(SCATTER/size)+1):
+			var found: Variant = cells.pick(Vector2i(x,z),SLOTS,beyond)
+			if found != null: islands.append(Vector2(found.x,found.z))
+	world.islands = islands
+	# The band's rock as the bounds read it (`inside`): its foothills too.
+	world.rock = ranges.filter(func(r: Dictionary) -> bool: return r.kind == "run" or r.kind == "massif" or r.kind == "foot")
+	world.memo = {}
+	var n := grid_size()
+	var labels: PackedInt32Array = judged.basins.labels
+	# Every middle looked at, with a little luck of its own.
+	var spots := []
+	var g := int(SCATTER/MOMENT_GRID)
+	for gx in range(-g,g+1):
+		for gz in range(-g,g+1):
+			var p := Vector2(gx,gz)*MOMENT_GRID
+			if p.length() > SCATTER-MOMENT_EDGE or p.length() < MOMENT_PLATE: continue
+			spots.append([p,rng.randf()*MOMENT_LUCK])
+	# Each in turn the layout stood fewest times so far (ties the widest
+	# first: it has the least room), or failing it, where it has no room,
+	# the next.
+	var order := range(plan.count())
+	var area := func(i: int) -> float: return float(plan.footprint(i).half.x)*float(plan.footprint(i).half.y)
+	order.sort_custom(func(a: int, b: int) -> bool: return area.call(a) > area.call(b))
+	var stood := {}
+	for k in range(want):
+		var turns := order.duplicate()
+		turns.sort_custom(func(a: int, b: int) -> bool: return int(stood.get(a,0)) < int(stood.get(b,0)) or (int(stood.get(a,0)) == int(stood.get(b,0)) and order.find(a) < order.find(b)))
+		var which := -1
+		var placed := {}
+		for t: int in turns:
+			placed = _moment_place(plan.footprint(t),spots,world,out,rng)
+			if not placed.is_empty():
+				which = t
+				break
+		if which < 0: break
+		stood[which] = int(stood.get(which,0))+1
+		var f: Dictionary = plan.footprint(which)
+		var at: Vector2 = placed.at
+		var y := rng.randf_range(MOMENT_Y.x,MOMENT_Y.y)
+		var turn: float = placed.turn
+		var mirror: bool = placed.mirror
+		var mid: Vector2 = f.mid
+		var local_mid := Vector3(-mid.x if mirror else mid.x,0.0,mid.y).rotated(Vector3.UP,turn)
+		var entry := Vector3(at.x,y,at.y)-local_mid
+		entry.y = y
+		out.append({"key":"%s@%d,%d" % [f.id,roundi(entry.x),roundi(entry.z)],"layout":which,"id":f.id,"at":entry,"turn":turn,"mirror":mirror,
+			"box_at":Vector3(at.x,0.0,at.y),"half":f.half,"region":labels[_grid_index(at,n)]})
+	return out
+
+## Where a footprint `f` stands among `spots` ([middle, luck]): the one
+## farthest from every one laid (`out`) by a little chance, at least
+## MOMENT_APART off, whose rectangle keeps its room turned one of
+## MOMENT_TURNS ways from a chance one. {at (Vector2: its middle), turn,
+## mirror (by chance: the rectangle is the same mirrored, only the station
+## inside it turns)}, or empty if none has room.
+static func _moment_place(f: Dictionary, spots: Array, world: Dictionary, out: Array, rng: RandomNumberGenerator) -> Dictionary:
+	var scored := []
+	for spot: Array in spots:
+		var p: Vector2 = spot[0]
+		var apart := 2000.0
+		for o: Dictionary in out: apart = minf(apart,p.distance_to(Vector2(o.box_at.x,o.box_at.z)))
+		if apart < MOMENT_APART: continue
+		scored.append([apart+float(spot[1]),p])
+	scored.sort_custom(func(a: Array, b: Array) -> bool: return a[0] > b[0])
+	var half: Vector2 = f.half
+	var first := rng.randf()*TAU
+	var mirror := rng.randf() < 0.5
+	for entry: Array in scored:
+		var p: Vector2 = entry[1]
+		# Its middle has room for the footprint's narrower half at least.
+		if _moment_room_at(p,world) < minf(half.x,half.y): continue
+		for t in range(MOMENT_TURNS):
+			var turn := fposmod(first+TAU*t/MOMENT_TURNS,TAU)
+			if _moment_fits(p,turn,half,world): return {"at":p,"turn":turn,"mirror":mirror}
+	return {}
+
+## True if a footprint's rectangle (middle `p`, `half`, turned `turn`) keeps
+## its room everywhere: read every MOMENT_CELL*2 m or less across it, each
+## point keeping its share of the rectangle and its cell's half diagonal.
+static func _moment_fits(p: Vector2, turn: float, half: Vector2, world: Dictionary) -> bool:
+	var step := MOMENT_CELL*2.0
+	var nx := maxi(1,ceili(half.x*2.0/step))
+	var nz := maxi(1,ceili(half.y*2.0/step))
+	var cover := Vector2(half.x/nx,half.y/nz).length()+MOMENT_CELL*0.71
+	for i in range(nx):
+		for k in range(nz):
+			var local := Vector3(-half.x+half.x*2.0*(i+0.5)/nx,0.0,-half.y+half.y*2.0*(k+0.5)/nz).rotated(Vector3.UP,turn)
+			if _moment_room_at(p+Vector2(local.x,local.z),world) < cover: return false
+	return true
+
+## `_moment_room` read off a grid MOMENT_CELL apart, each cell worked out
+## once (`world.memo`).
+static func _moment_room_at(p: Vector2, world: Dictionary) -> float:
+	var cell := Vector2i(roundi(p.x/MOMENT_CELL),roundi(p.y/MOMENT_CELL))
+	var memo: Dictionary = world.memo
+	if memo.has(cell): return memo[cell]
+	var room := _moment_room(Vector2(cell)*MOMENT_CELL,world)
+	memo[cell] = room
+	return room
+
+## How much room a moments footprint's point at `p` (home, plate plane)
+## has past every keep (`_moments`), m; under 0 where none may stand.
+static func _moment_room(p: Vector2, world: Dictionary) -> float:
+	var room := SCATTER-MOMENT_EDGE-p.length()
+	room = minf(room,p.length()-MOMENT_PLATE)
+	if room < 0.0: return room
+	if p.length() > BAND_IN-BAND_CLEAR-MOMENT_KEEP-MOMENT_HAZE:
+		# Nor the band's haze within MOMENT_HAZE further out.
+		if _share(p*(1.0+MOMENT_HAZE/p.length()),world.inner) > 0.0: return -1.0
+		for r: Dictionary in world.rock: room = minf(room,box_distance(r,p)-BAND_CLEAR-MOMENT_KEEP)
+		if room < 0.0: return room
+	for r: Dictionary in world.ridges: room = minf(room,box_distance(r,p)-RIDGE_GAP-MOMENT_KEEP)
+	room = minf(room,box_distance(world.home,p)-RIDGE_GAP-MOMENT_KEEP)
+	room = minf(room,p.distance_to(Vector2(SkyHomes.RANGE.x,SkyHomes.RANGE.z))-SkyHomes.RANGE_KEEP-MOMENT_KEEP)
+	if room < 0.0: return room
+	for q: Vector2 in world.passes: room = minf(room,p.distance_to(q)-MOMENT_PASS)
+	for q: Vector2 in world.mouths: room = minf(room,p.distance_to(q)-MOMENT_PASS)
+	for q: Vector2 in world.towers: room = minf(room,p.distance_to(q)-SkyHomes.TOWER_KEEP-MOMENT_KEEP)
+	for w: Array in world.wonders: room = minf(room,p.distance_to(w[0])-float(w[1])-MOMENT_KEEP)
+	if room < 0.0: return room
+	for q: Vector2 in world.islands: room = minf(room,p.distance_to(q)-MOMENT_ISLAND)
+	for q: Vector2 in world.air: room = minf(room,p.distance_to(q)-MOMENT_JET)
+	for q: Vector2 in world.crests: room = minf(room,p.distance_to(q)-SUMMIT_KEEP-MOMENT_KEEP)
+	return room
+
+## The moments set pieces laid out (`_moments`): none without --moments or
+## the ring.
+static func moment_spots() -> Array:
+	if not moments or not ring_on(): return []
+	return layout().get("moments",[])
+
+## True if a home point stands within MOMENT_BLOCK (and `margin`) of a
+## moments set piece's footprint (SkyPeaks `blocks`).
+static func moments_block(home: Vector3, margin := 0.0) -> bool:
+	if not moments: return false
+	var p := Vector2(home.x,home.z)
+	for m: Dictionary in moment_spots():
+		if box_distance(m,p) < MOMENT_BLOCK+margin: return true
+	return false
 
 # --- Footprints ---------------------------------------------------------------------
 

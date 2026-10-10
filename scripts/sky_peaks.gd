@@ -607,6 +607,8 @@ static func blocks(home: Vector3, margin := 0.0) -> bool:
 			if _flat(tip,home) > float(summit.reach)+margin: continue
 			for q: Vector3 in summit.crest:
 				if _flat(q,home) < SkyWorld.SUMMIT_KEEP+margin: return true
+		# The moments set pieces (--moments): their footprints.
+		if SkyWorld.moments_block(home,margin): return true
 	var c := cell_of(home)
 	for dx in range(-1,2):
 		for dz in range(-1,2):
