@@ -405,8 +405,9 @@ const FALLEN_CORNER := [[Rect2(63.9,-14.6,2.2,2.0),3.0],[Rect2(63.9,-16.6,2.2,2.
 ## jump-catch onto the coping.
 const BUTTRESS_RUNS := [2,6,10,14]
 const BUTTRESS_STAGES := [[RuinKit.SET_OFF,2.0],[RuinKit.SET_OFF*2.0,1.2]]
-## The grand stair on the axis (its middle, world), climbing west.
-const STAIR_AT := Vector3(82.5,TOP,0.0)
+## The grand stair on the axis (its middle, world), climbing west, its back
+## at x 77.5 on the terrace's face (its run 12.24 m).
+const STAIR_AT := Vector3(83.62,TOP,0.0)
 ## The heel stone: a lone sarsen out east on the axis, leaning (its top a
 ## pump's catch).
 const HEEL := Vector2(118.0,0.0)
@@ -417,7 +418,7 @@ const HEEL_SIZE := Vector3(1.7,2.3,1.1)
 ## stone; the fallen corner along the north edge to the stumps; round the
 ## circle's floor.
 const PATHS := [
-	[Vector2(87.0,0.0),Vector2(90.5,5.5),Vector2(96.0,8.6),Vector2(100.0,10.0),Vector2(106.0,6.5),Vector2(112.0,2.0),Vector2(117.0,0.4)],
+	[Vector2(90.8,0.0),Vector2(91.4,5.5),Vector2(96.0,8.6),Vector2(100.0,10.0),Vector2(106.0,6.5),Vector2(112.0,2.0),Vector2(117.0,0.4)],
 	[Vector2(65.0,-17.5),Vector2(71.0,-19.0),Vector2(80.0,-20.5),Vector2(87.0,-20.8),Vector2(92.0,-22.0)],
 	[Vector2(76.5,0.0),Vector2(72.5,0.0),Vector2(71.0,3.5),Vector2(67.0,5.8),Vector2(62.0,5.6),Vector2(58.6,2.5),Vector2(58.6,-2.5),Vector2(62.0,-5.6),Vector2(67.0,-5.8),Vector2(71.0,-3.5),Vector2(72.5,0.0)],
 ]

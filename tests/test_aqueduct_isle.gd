@@ -7,7 +7,10 @@ extends SceneTree
 ## a player would; the henge (the terrace up the grand stair, the fallen
 ## corner and a buttress; the stone circle's lintel ring up the leaning
 ## stone and the fallen trilithon, run round as a loop; the great
-## trilithon's summit); the station's saved recordings replayed here; and
+## trilithon's summit); the grand stair walks sound (no gap or pit in its
+## treads or cheeks, never fallen through from any approach, walking,
+## running or jumping, up or down) and smooth (the figure and the camera
+## never pop a riser); the station's saved recordings replayed here; and
 ## the isle builds within its triangle budget.
 ##   godot --headless --path . --script tests/test_aqueduct_isle.gd
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
@@ -44,6 +47,8 @@ func run() -> void:
 	_aqueduct_wallrun()
 	_free_play()
 	_henge()
+	_stair_sound()
+	_stair_smooth()
 	_replays()
 	print("PASS: aqueduct isle" if failures == 0 else "FAIL: aqueduct isle (%d)" % failures)
 	quit(1 if failures else 0)
@@ -349,3 +354,127 @@ func _replays() -> void:
 		var off := float(study.replay_verdict().off) if ok else INF
 		study._replay = {}
 		check(ok and off < 0.05,"Replayed here, %s ends %.3f m from where it was recorded to" % [path.get_file(),off])
+
+# --- The grand stair: sound and smooth ------------------------------------------------
+
+## The stair's frame point `l` in the world.
+func on_stair(l: Vector3) -> Vector3:
+	return study.stair.transform*l
+
+## The tread's top under stair point `l` (its frame), NAN off the treads.
+func tread(l: Vector3) -> float:
+	var n := RuinKit.GRAND_STEPS
+	var run1 := (n-1)*RuinKit.GRAND_TREAD+RuinKit.GRAND_LANDING
+	var run2 := (n-1)*RuinKit.GRAND_TREAD+RuinKit.LANDING
+	var front := (run1+run2)*0.5
+	if absf(l.x) > RuinKit.GRAND_WIDTH*0.5-0.01: return NAN
+	var d := front-l.z
+	if d < 0.0 or d > run1+run2: return NAN
+	if d < run1: return (mini(int(d/RuinKit.GRAND_TREAD),n-1)+1)*RuinKit.GRAND_RISER
+	return (n+mini(int((d-run1)/RuinKit.GRAND_TREAD),n-1)+1)*RuinKit.GRAND_RISER
+
+## Its ground is sound: probed every 13 mm along and 5 cm across (clear of
+## the newels and copings over its edges), each tread's ground is its top
+## (no joint, settled slab or worn nosing a ray drops through); along each
+## cheek's top no pit opens to the ground. Then driven onto it from every
+## side, up and down, walking and running, straight and slanting, jumping
+## and not: never under a tread.
+func _stair_sound() -> void:
+	var off_top := 0
+	var probes := 0
+	var x := -RuinKit.GRAND_WIDTH*0.5+0.12
+	while x <= RuinKit.GRAND_WIDTH*0.5-0.12:
+		var z := 6.2
+		while z >= -6.2:
+			var t := tread(Vector3(x,0.0,z))
+			if not is_nan(t):
+				var w := on_stair(Vector3(x,0.0,z))
+				var g: float = study.ground.height_from(Vector2(w.x,w.z),30.0+t-0.2)-30.0
+				probes += 1
+				# Right on a nosing, either tread's top.
+				var low := tread(Vector3(x,0.0,z+0.03))
+				var high := tread(Vector3(x,0.0,z-0.03))
+				if g < (0.0 if is_nan(low) else low)-0.05 or g > (t if is_nan(high) else high)+0.05:
+					off_top += 1
+					if off_top < 6: print("     off: stair x %.3f z %.3f tread %.2f ground %.3f" % [x,z,t,g])
+			z -= 0.013
+		x += 0.05
+	check(probes > 50000 and off_top == 0,"Stair: its treads' ground is their tops at all %d probes (%d off)" % [probes,off_top])
+	var pits := 0
+	for side: float in [-1.0,1.0]:
+		var cx := side*(RuinKit.GRAND_WIDTH*0.5+RuinKit.CHEEK.x*0.5)
+		var heights: Array[float] = []
+		var z := 6.2
+		while z >= -6.0:
+			var w := on_stair(Vector3(cx,0.0,z))
+			heights.append(study.ground.top_from(Vector2(w.x,w.z),30.0)-30.0)
+			z -= 0.05
+		for k in range(1,heights.size()-1):
+			if heights[k] < 0.2 or heights[k] < minf(heights[k-1],heights[k+1])-0.3: pits += 1
+	check(pits == 0,"Stair: along both cheeks' tops no pit opens to the ground (%d)" % pits)
+	var foot: Vector3 = on_stair(study.stair.get_meta("foot"))
+	var head: Vector3 = on_stair(study.stair.get_meta("head"))
+	var inv: Transform3D = study.stair.transform.affine_inverse()
+	var runs := 0
+	var under := 0
+	var lost := 0
+	var first := ""
+	for pace: float in [0.5,1.0]:
+		for slant: float in [-50.0,-35.0,-20.0,-8.0,0.0,8.0,20.0,35.0,50.0]:
+			for across: float in [-1.8,-0.9,0.0,0.9,1.8]:
+				for up: bool in [true,false]:
+					for jumping: bool in [false,true]:
+						runs += 1
+						var way := (Vector2(-1.0,0.0) if up else Vector2(1.0,0.0)).rotated(deg_to_rad(slant))
+						study.place((foot+Vector3(2.0,0.0,across)) if up else (head+Vector3(-1.0,0.0,across)),way)
+						for i in range(20): tick(Vector2.ZERO)
+						for f in range(360):
+							tick(way*pace,jumping and m.grounded and f%25 == 0)
+							var l: Vector3 = inv*m.feet
+							if absf(l.z) > 8.6 or absf(l.x) > 5.0: break
+							# Its tread, a little back toward the foot (a nosing's
+							# reach), the feet never more than a riser under.
+							var t := tread(l+Vector3(0.0,0.0,0.15))
+							if absf(l.x) < RuinKit.GRAND_WIDTH*0.5-0.01 and not is_nan(t) and m.feet.y < 30.0+t-0.25:
+								under += 1
+								if first == "": first = "pace %.1f slant %.0f across %.1f %s%s: feet %s at stair %s, tread %.2f" % [pace,slant,across,"up" if up else "down"," jumping" if jumping else "",m.feet,l,t]
+								break
+							if m.feet.y < 29.0:
+								lost += 1
+								break
+	check(under == 0 and lost == 0,"Stair: driven on from %d approaches (9 slants, 5 lines, up and down, walking and running, jumping and not) never under a tread nor off the isle (%d under, %d lost)%s" % [runs,under,lost,"" if first == "" else " first: "+first])
+
+## Up and down the grand stair, straight and slanting, walking and running:
+## the figure and the camera rise and fall smoothly, never popping a
+## riser (the feet do: they stand on each tread), and the figure stays
+## within a half riser and a little of the feet.
+func _stair_smooth() -> void:
+	var foot: Vector3 = on_stair(study.stair.get_meta("foot"))
+	var head: Vector3 = on_stair(study.stair.get_meta("head"))
+	var inv: Transform3D = study.stair.transform.affine_inverse()
+	var worst := {"feet":0.0,"figure":0.0,"camera":0.0,"distance":0.0,"off":0.0}
+	for pace: float in [0.5,1.0]:
+		for up: bool in [true,false]:
+			for slant: float in [0.0,30.0]:
+				var way := (Vector2(-1.0,0.0) if up else Vector2(1.0,0.0)).rotated(deg_to_rad(slant))
+				study.place((foot+Vector3(2.0,0.0,0.0)) if up else (head+Vector3(-1.0,0.0,0.0)),way)
+				for i in range(60): tick(Vector2.ZERO)
+				var series := {"feet":[],"figure":[],"camera":[],"distance":[]}
+				for f in range(400):
+					tick(way*pace)
+					var l: Vector3 = inv*m.feet
+					if absf(l.z) > 9.0 or absf(l.x) > 2.0: break
+					if absf(l.z) > 7.0: continue
+					series.feet.append(m.feet.y)
+					series.figure.append(study.figure.global_position.y)
+					series.camera.append(study.camera.global_position.y)
+					series.distance.append(study._cam_distance)
+					worst.off = maxf(worst.off,absf(study.figure.global_position.y-m.feet.y))
+				for key: String in series:
+					var a: Array = series[key]
+					for k in range(2,a.size()): worst[key] = maxf(worst[key],absf((a[k]-a[k-1])-(a[k-1]-a[k-2])))
+	print("     stair, the most a frame's rise changes frame to frame (m): feet %.3f, figure %.4f, camera %.4f, camera's distance %.4f; figure off the feet at most %.3f m" % [worst.feet,worst.figure,worst.camera,worst.distance,worst.off])
+	check(worst.feet > 0.15,"Stair: the feet stand each tread in turn (they pop %.2f m)" % worst.feet)
+	check(worst.figure < 0.02 and worst.camera < 0.015 and worst.distance < 0.02,"Stair: the figure and the camera climb smoothly, never popping a riser (figure %.4f, camera %.4f, distance %.4f m a frame squared)" % [worst.figure,worst.camera,worst.distance])
+	check(worst.off < RuinKit.GRAND_RISER*0.5+0.06,"Stair: the figure drawn within half a riser of the feet (%.3f m)" % worst.off)
+

@@ -1,4 +1,66 @@
-# Aqueduct isle: handoff (round 2)
+# Aqueduct isle: handoff (round 3)
+
+Branch `look/aqueduct-isle-3` (from `look/aqueduct-isle-2` 74225ff7). Not merged, not pushed. Round 3 is the stair only: the user's three issues were falling through the stair, the pilot and camera vibrating on it, and the static grass. Mid-round the user held the grass (item 3) and asked instead why the stair "still doesn't look quite right".
+
+## Falling through (fixed in the kit)
+
+- **Root cause.** The motor's ground is one ray straight down from the feet (`scripts/pilot_physics_ground.gd`). The stair's treads were its drawn blocks' own convex hulls: a slab or two per section, each settled, tilted, chipped, with a chunk sometimes bitten from the top, 12–16 mm apart, and Jolt rounds every hull's edges by its 0.04 m margin. A headless probe grid over the grand stair found **20,729 of 79,310 points (26 %)** where the ray fell past the tread, 8,450 of them straight through to the turf, along every tread joint, every slab joint and across the chunk-bitten slabs. Once the feet's ray drops through, the motor falls, its body cylinder (from 0.5 m up) already overlapping the treads, so he sinks through the stair. The cheeks had the same fault: course joints and the odd courses' missing first stone left pits to the ground along their tops. A diagnostic drive (360 approaches) failed 249 of them.
+- **Fix (`scripts/ruin_kit.gd` `_flight`, so every kit stair gets it).** The drawn treads, cheek courses and copings get no hull. The stair walks on clean invisible hulls instead: `_walk_box` gives each step one box the flight's full width, its top true, from its nose back past the flight's back (`WALK_OVERLAP` 0.05 m, so the boxes overlap and flights meet seamlessly). `_walk_hull` gives each cheek course and coping its un-worn, un-chipped, un-settled planes. The odd cheek courses now start with a short stone instead of leaving their first 0.35 m out.
+- **Result.** 0 of 79,044 tread probes off the tread's top; no pit along either cheek; 0 of 360 driven approaches (9 slants from −50° to 50°, 5 lines across, up and down, walk and run, jumping and not) ever under a tread or off the isle.
+
+## Vibrating (fixed in the study)
+
+- **Root causes.** (1) The motor stands the feet on each tread in turn, so `feet.y` pops a riser (0.28 m then, 0.187 m now) in one frame. The figure was drawn exactly at the feet, so it popped too: the most a frame's rise changed frame to frame was **0.28 m**. (2) The camera's look point eased toward feet + 0.8 m, but its distance came from a single ray, which jumps from one stair nosing to the next as it sweeps over a stair behind the pilot. Walking down, the camera's frame-to-frame change in rise was **0.053–0.072 m**, distance jumps up to 0.12 m a frame.
+- **Fix.**
+  - `scripts/pilot_step_smooth.gd` (new, presentation only; the motor, its routes and replays are untouched) draws the figure and the camera's look point at a height that is the ground averaged along the way he goes (a 13-ray triangle filter ±0.5 m at a run, none standing). Over a stair this is a ramp through the treads, risen into before each riser, so there is no lag. It follows on a critically damped spring told the aim's own rate, never more than 0.3 m off the feet. Off the ground it follows the feet.
+  - `studies/character_study.gd`: the figure and camera use `step_smooth.lift`. The camera's reach is a 0.25 m ball cast (`_cam_reach`), whose reach changes smoothly as edges pass. It falls back to the old ray where the ball starts inside something. Letting the camera back out is now a critically damped spring from rest instead of an exponential with a kink.
+- **Result** (`tests/test_aqueduct_isle.gd`, up and down, straight and 30° slanted, walk and run). The most a frame's rise changes frame to frame:
+
+  | | Before | After | Test bound |
+  |---|---|---|---|
+  | Feet | 0.28 m | 0.187 m (they still stand each tread) | — |
+  | Figure | 0.28 m | 0.0095 m | < 0.02 m |
+  | Camera height | 0.053–0.072 m | 0.0078 m | < 0.015 m |
+  | Camera distance | — | 0.0128 m | < 0.02 m |
+
+  The figure is drawn at most 0.112 m off the feet (bound: half a riser + 0.06 m).
+- **Not done.** The game's own walker (`scripts/wanderer_eye.gd`) has neither part yet. Its camera code is the study's twin, so the same two changes would carry over.
+
+## Why it looked off, and what changed
+
+Captures are in `captures/aqueduct-isle-3/` (git-ignored): `before/` (round 2's stair, from 74225ff7's kit) and `after/`, the same five views. Re-take them with `zsh tools/stair_captures.sh DIR`. The views are `a-from-foot`, `b-side`, `c-top-down`, `d-onfoot-climb` and `e-far`. The before views were taken with the old foot and climb placements; after, those two are 2 m further east, following the moved stair.
+
+1. **Treads read as a heap of loaves, not steps (changed).** Every tread was chamfered on all twelve arrises, chipped, tilted and often bitten by a chunk, and laid in 2–4 slabs with wandering joints, so no nosing line ran across. Now each tread is laid as the halls' cheap stone (Build `lean`): its top level, chamfered only along the tread, few chips, no chunk. One slab per section, with a joint in only 30 % of sections. Tilt and settle are about halved.
+2. **Steps too big for the pilot (changed).** A 0.28 m riser is a quarter of the 1.1 m pilot's height: a giant's stair. The grand stair now has its own finer steps: `GRAND_STEPS` 12 a flight of `GRAND_RISER` 0.187 m by `GRAND_TREAD` 0.42 m, to the same 4.48 m head. Its run grows from 10.0 m to 12.24 m. `STAIR_AT` moves east to x 83.62, so its back still meets the terrace at x 77.5 and its foot is at x 90.3, about 2.2 m short of the castellum. The worn path's first points move to the new foot. The kit `stairs` flight keeps RISER × TREAD; it is shared with the island packs.
+3. **Too ruined for a ceremonial way (changed for this scene).** At weathered 0.55 one cheek was torn to rubble, the coping read as a loose rail, and a newel's cap lay as a black lump at the foot. The isle's stair is now `STAIR_WEATHERED` 0.3: cheeks stand, one torn low near its foot, and no cap has fallen. The circle stays at 0.55.
+4. **Corner breaks too big (changed).** They were rarer (weathered × 0.25), and keep 65–85 % of the slab.
+5. **Cheek courses had notches (changed).** Every other course left out its first 0.35 m stone at the foot of each flight.
+6. **Still open:**
+   - The castellum's shadow falls across the stair's foot in the noon light, so its lower flight reads dark from the east.
+   - The seam down the middle, where the two sections' slabs meet, is still visible on some treads.
+   - The cheek's shaded north face is a dark mass from the side (`b-side`).
+   - The coping is a thin sloped line that still reads a little like a handrail from low angles.
+
+## Tests (headless)
+
+- **Import check.** Clean.
+- **`tests/test_aqueduct_isle.gd`.** PASS. Five new stair checks: tread probes, cheek pits, the 360 approaches, feet pop, smoothness bound, figure offset.
+- **`tests/test_ruin_kit.gd`.** PASS. New: every tread of `stairs` and `grand_stair` (3 seeds × weathered 0 and 1) walks at its true top; the grand stair's finer steps reach the kit flight's head and stay under STEP_UP.
+- **Also run, touching `character_study.gd`.** These pass: `test_character_study`, `test_character_climb`, `test_character_momentum`, `test_character_tricks`, `test_island_pack_ruins_archipelago`, `test_island_pack_sky_village`. `test_sundered_hall` passes with a classified exit leak.
+- **`test_character_recordings`.** FAILS: "tech-fun-fluid-movement" strays at 28.8 s. It fails identically on 74225ff7 without this round's changes, so the failure was already there.
+- **Not run.** The full suite (per standing instructions). Nothing was added to `tests/known_failures.txt`.
+
+## The held grass
+
+The held grass work is parked, not merged, on `park/aqueduct-isle-3-flora` (a8f8a8eb). That branch also carries an earlier state of the stair fixes.
+
+- `studies/aqueduct_isle_flora.gd` grows the sky islets' own path: the plate catalog's shader grass tuft, fern, shrub and mushrooms, plus meadow flower drifts, using `GardenInstanceSamples.add_item` and `SkyIslets._plant_material`.
+- It is placed by physics rays, so it stays off anything standing, the paths' middles, the stair's foot and head, and the terrace wall.
+- Counts: about 6.1k tufts, 176 ferns, 105 shrubs and 177 mushrooms. That is about 590k instanced triangles, and the test budget was raised to 1.2M for it.
+- The breeze's offset is published each frame and the pilot's wake (`scripts/pilot_wake.gd`) is wired in.
+- It has a test section, and rendered captures in the same captures folder (`1-isle-grass-onfoot.png`, `2-isle-overview.png`, `main-test-island.png` for comparison).
+
+# Round 2
 
 Branch `look/aqueduct-isle-2` (from `look/aqueduct-isle` 0c2749ca). Not merged, not pushed.
 

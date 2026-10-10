@@ -62,6 +62,7 @@ const PilotRipples = preload("res://scripts/pilot_ripples.gd")
 const Pad = preload("res://scripts/pad.gd")
 const GRID := preload("res://shaders/character_study_grid.gdshader")
 const Recording = preload("res://scripts/character_recording.gd")
+const PilotStepSmooth = preload("res://scripts/pilot_step_smooth.gd")
 
 ## The walker's camera (scripts/wanderer_eye.gd), kept the same so what is
 ## tuned here holds in the game: its reach, the look point's height over
@@ -80,6 +81,8 @@ const LOOK_REST := 0.8
 const FOLLOW := 0.9
 const CAM_NEAREST := 0.9
 const EASE_CAM_OUT := 0.4
+## The ball cast out to find what stands between the camera and him (m).
+const CAM_BALL := 0.25
 const FOV := 60.0
 const LOOK := 0.0025
 const STICK_WALK_LOOK := Vector2(2.2,1.4)
@@ -325,6 +328,9 @@ var _last_stood := START
 ## Set once the room stands and the pilot is on his feet.
 var walk_ready := false
 var motor := PilotMotor.new()
+## The figure's and the camera's height over the feet, smoothed up and
+## down steps (scripts/pilot_step_smooth.gd).
+var step_smooth := PilotStepSmooth.new()
 var ground: PhysicsGround
 var figure: Node3D
 var body: Node3D
@@ -361,7 +367,9 @@ var _cam_y := 0.0
 var _cam_at := Vector2.ZERO
 var _cam_pace := Vector2.ZERO
 var _cam_distance := CAM_DISTANCE
+var _cam_out := 0.0
 var _look_rest := 0.0
+var _cam_ball: PhysicsShapeQueryParameters3D
 var _asked := 0.0
 var _skid_was := false
 var _jump_number := 0
@@ -702,10 +710,12 @@ func place(at: Vector3, face: Vector2) -> void:
 	_jump = {}
 	_yaw = motor.facing
 	_polar = CAM_POLAR
+	step_smooth.reset()
 	_cam_y = at.y+CAM_HEIGHT
 	_cam_at = Vector2(at.x,at.z)
 	_cam_pace = Vector2.ZERO
 	_cam_distance = CAM_DISTANCE
+	_cam_out = 0.0
 	_look_rest = 0.0
 	body.settle()
 	_sync_figure()
@@ -762,6 +772,7 @@ func tick(delta: float) -> void:
 		return
 	_measure(events,was)
 	_measure_tricks(events,delta)
+	step_smooth.step(motor,ground.ground_callable(),delta)
 	_sync_figure()
 	if events.has("grabbed") or events.has("climbed"): steps.step(_surface(),0.4)
 	_motor_events(events)
@@ -786,7 +797,7 @@ func _want(delta: float) -> Vector2:
 	return right*stick.x+forward*-stick.y
 
 func _sync_figure() -> void:
-	figure.position = motor.origin() if motor.on_ledge() else motor.feet
+	figure.position = motor.origin() if motor.on_ledge() else motor.feet+Vector3.UP*step_smooth.lift
 	figure.rotation = Vector3(0.0,motor.facing,0.0)
 
 ## The jump measured from takeoff to where it came down (a landing, a
@@ -928,7 +939,7 @@ func _water_events(events: Dictionary, drawn: Dictionary, delta: float) -> void:
 ## jump, up and down; swung round behind the run when left alone; drawn in
 ## where something stands between it and him.
 func _frame(delta: float) -> void:
-	var goal := motor.feet.y+CAM_HEIGHT
+	var goal := motor.feet.y+step_smooth.lift+CAM_HEIGHT
 	if delta > 0.0: _cam_y = lerpf(_cam_y,goal,_ease(EASE_CAM_Y if motor.grounded else EASE_CAM_Y_AIR,delta))
 	_cam_y = clampf(_cam_y,goal-1.2,goal+1.2)
 	_look_rest += delta
@@ -947,12 +958,45 @@ func _frame(delta: float) -> void:
 	if _cam_at.distance_to(feet) > CAM_LAG: _cam_at = feet+(_cam_at-feet).normalized()*CAM_LAG
 	var pivot := Vector3(_cam_at.x,_cam_y,_cam_at.y)
 	var out := Vector3(sin(_polar)*sin(_yaw),cos(_polar),sin(_polar)*cos(_yaw))
-	var reach := CAM_DISTANCE
-	var ray := PhysicsRayQueryParameters3D.create(pivot,pivot+out*(CAM_DISTANCE+0.3))
-	var hit := ground.space.intersect_ray(ray)
-	if not hit.is_empty(): reach = clampf(pivot.distance_to(hit.position)-0.3,CAM_NEAREST,CAM_DISTANCE)
-	_cam_distance = reach if reach < _cam_distance or delta <= 0.0 else lerpf(_cam_distance,reach,_ease(EASE_CAM_OUT,delta))
+	var reach := _cam_reach(pivot,out)
+	# Drawn in at once before what stands between; let out again on a
+	# critically damped spring from rest, so it never lurches out.
+	if reach < _cam_distance or delta <= 0.0:
+		_cam_distance = reach
+		_cam_out = 0.0
+	else:
+		var spring := 2.0/EASE_CAM_OUT
+		var out_left := minf(delta,0.25)
+		while out_left > 0.0:
+			var out_dt := minf(out_left,1.0/120.0)
+			_cam_out += (spring*spring*(reach-_cam_distance)-2.0*spring*_cam_out)*out_dt
+			_cam_distance = minf(_cam_distance+_cam_out*out_dt,reach)
+			out_left -= out_dt
 	camera.look_at_from_position(pivot+out*_cam_distance,pivot)
+
+## How far out along `out` from `pivot` the camera may stand, drawn in
+## before what stands between: a ball CAM_BALL round cast out (its reach
+## changes smoothly as edges pass across it, where a ray's jumps from one
+## stair nosing to the next and shook the camera), the ray's answer where
+## the ball starts in something.
+func _cam_reach(pivot: Vector3, out: Vector3) -> float:
+	var length := CAM_DISTANCE+0.3
+	if _cam_ball == null:
+		var ball := SphereShape3D.new()
+		ball.radius = CAM_BALL
+		_cam_ball = PhysicsShapeQueryParameters3D.new()
+		_cam_ball.shape = ball
+	_cam_ball.transform = Transform3D(Basis.IDENTITY,pivot)
+	_cam_ball.motion = Vector3.ZERO
+	if ground.space.intersect_shape(_cam_ball,1).is_empty():
+		_cam_ball.motion = out*length
+		var cast := ground.space.cast_motion(_cam_ball)
+		if float(cast[0]) >= 1.0: return CAM_DISTANCE
+		return clampf(float(cast[0])*length+CAM_BALL-0.3,CAM_NEAREST,CAM_DISTANCE)
+	var ray := PhysicsRayQueryParameters3D.create(pivot,pivot+out*length)
+	var hit := ground.space.intersect_ray(ray)
+	if hit.is_empty(): return CAM_DISTANCE
+	return clampf(pivot.distance_to(hit.position)-0.3,CAM_NEAREST,CAM_DISTANCE)
 
 func _ease(rate: float, delta: float) -> float:
 	return 1.0-exp(-delta/rate)

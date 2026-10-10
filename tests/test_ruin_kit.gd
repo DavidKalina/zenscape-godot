@@ -8,7 +8,10 @@ extends SceneTree
 ## (one stone surface, no halo); the plane's way stays clear through the
 ## gothic arch and window, every aqueduct arch and the hall (and the hall's
 ## knife-edge slit lets a plane on its wingtip through, not a level one);
-## and the scale constants still answer the pilot's and the plane's limits
+## the stairs walk on clean boxes (every tread's top true; the grand
+## stair's finer steps reach the flight's head; no joint between
+## treads or slabs left as a gap: the drawn treads, worn, settled and laid
+## in slabs, have no hulls); and the scale constants still answer the pilot's and the plane's limits
 ## (scripts/pilot_motor.gd, scripts/plane_figure.gd).
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 const Aqueduct = preload("res://scripts/ruin_kit_aqueduct.gd")
@@ -76,6 +79,8 @@ func _run() -> void:
 	_budget()
 	_terrain()
 	_connections()
+	_stairs_walk()
+	check(is_equal_approx(RuinKit.GRAND_STEPS*RuinKit.GRAND_RISER,RuinKit.STEPS*RuinKit.RISER) and RuinKit.GRAND_RISER < PilotMotor.STEP_UP,"the grand stair's flight rises as the kit's, on finer, walkable steps")
 	_scale()
 	print("PASS: ruin kit" if failures == 0 else "FAIL: ruin kit (%d)" % failures)
 	quit(1 if failures else 0)
@@ -431,3 +436,42 @@ func _top_near(node: Node3D, at: Vector3, height: float) -> bool:
 
 func _mesh(node: Node3D) -> MeshInstance3D:
 	return node.get_node_or_null("Mesh") as MeshInstance3D
+
+## The flight and the grand stair, intact and ruined: over every tread,
+## away from its edges, the body's top is the tread's own (RISER a step),
+## its hulls meeting with no gap between treads, slabs or flights.
+func _stairs_walk() -> void:
+	for id: String in ["stairs","grand_stair"]:
+		for seed_value: int in SEEDS:
+			for weathered: float in [0.0,1.0]:
+				var node := RuinKit.piece(id,seed_value,weathered)
+				var boxes: Array[AABB] = []
+				for holder in node.get_node("Body").get_children():
+					var pts: PackedVector3Array = ((holder as CollisionShape3D).shape as ConvexPolygonShape3D).points
+					var box := AABB(pts[0],Vector3.ZERO)
+					for q in pts: box = box.expand(q)
+					boxes.append(box)
+				var grand := id == "grand_stair"
+				var width := RuinKit.GRAND_WIDTH if grand else RuinKit.STAIR_WIDTH
+				var n := RuinKit.GRAND_STEPS if grand else RuinKit.STEPS
+				var tread := RuinKit.GRAND_TREAD if grand else RuinKit.TREAD
+				var riser := RuinKit.GRAND_RISER if grand else RuinKit.RISER
+				var run1 := (n-1)*tread+(RuinKit.GRAND_LANDING if grand else RuinKit.LANDING)
+				var run2 := (n-1)*tread+RuinKit.LANDING if grand else 0.0
+				var front := (run1+run2)*0.5
+				var bad := 0
+				var x := -width*0.5+0.15
+				while x <= width*0.5-0.15:
+					var d := 0.03
+					while d < run1+run2-0.03:
+						var step := mini(int(d/tread),n-1)+1 if d < run1 else n+mini(int((d-run1)/tread),n-1)+1
+						var near := fmod(d if d < run1 else d-run1,tread)
+						if near > 0.02 and near < tread-0.02:
+							var top := -INF
+							for box in boxes:
+								if x > box.position.x and x < box.end.x and front-d > box.position.z and front-d < box.end.z: top = maxf(top,box.end.y)
+							if absf(top-step*riser) > 0.005: bad += 1
+						d += 0.037
+					x += 0.11
+				check(bad == 0,"%s seed %d weathered %.0f: every tread walks at its true top (%d off)" % [id,seed_value,weathered,bad])
+				node.free()

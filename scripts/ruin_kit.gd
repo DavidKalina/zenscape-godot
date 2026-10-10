@@ -15,7 +15,8 @@ extends RefCounted
 ## own cuts (chips, a missing chunk, a ragged break) as more planes, so each
 ## face is one flat facet, coloured face by face and lit as the folk are
 ## (shaders/ruin_stone.gdshader). Each block is its own convex collision
-## hull. Ivy and moss are faceted too: small cut leaf clumps strung down the
+## hull, but a stair's: its treads and cheeks walk on clean, true boxes
+## (`_walk_box`, `_walk_hull`), so no joint or worn edge is a gap. Ivy and moss are faceted too: small cut leaf clumps strung down the
 ## faces and low cushions on the tops, never collided.
 ##
 ## Never new-built: even at `weathered` 0 the stone is centuries old (AGE):
@@ -159,6 +160,15 @@ const FLOOR := Vector3(4.2,0.85,0.2)
 ## head 2 STEPS RISERs up (4.48 m), onto a terrace or a hill's top.
 const GRAND_WIDTH := 4.4
 const GRAND_LANDING := 2.0
+## The grand stair's own steps, finer than a flight's (a ceremonial way for
+## folk about 1.1 m tall, not a giant's): GRAND_STEPS a flight, to the same
+## head (2 STEPS RISERs, 4.48 m), each GRAND_RISER by GRAND_TREAD.
+const GRAND_STEPS := 12
+const GRAND_RISER := 2.0*STEPS*RISER/(2.0*GRAND_STEPS)
+const GRAND_TREAD := 0.42
+## How far a stair's walked boxes run on past its flight's back (m), under
+## the next flight's foot or into what it climbs to, so flights meet seamless.
+const WALK_OVERLAP := 0.05
 ## The stone circle: the ring's radius (to its stones' middles) and its
 ## sarsens; a sarsen's width along the ring, height and thickness (over
 ## CHAIN_TOP: climbed by the ways the circle gives, not from the floor);
@@ -665,7 +675,8 @@ static func stairs(seed_value: int, weathered := 0.0) -> Node3D:
 	_rubble(b,STAIR_WIDTH*0.5+1.0,int(round(weathered*b.rng.randf_range(3.0,6.0))))
 	return b.finish()
 
-## A flight of the stair's steps at `pose`: `steps` of RISER by TREAD,
+## A flight of the stair's steps at `pose`: `steps` of `riser` by `tread`
+## (the kit's RISER by TREAD unless given),
 ## `width` wide, climbing toward -Z from its foot at +Z (the run centred on
 ## the pose), the last step a landing `landing` deep; ramped cheek walls
 ## either side under a sloped coping, a gabled newel at each foot. `foot`:
@@ -674,75 +685,90 @@ static func stairs(seed_value: int, weathered := 0.0) -> Node3D:
 ## wider than the stair's lays each tread in more slabs. Weathered (the
 ## Build's): steps crack and settle (never past a walkable rise), corners
 ## break off, one cheek torn down.
-static func _flight(b: Build, pose: Transform3D, steps: int, width: float, landing: float, foot := 0.0) -> void:
+static func _flight(b: Build, pose: Transform3D, steps: int, width: float, landing: float, foot := 0.0, riser := RISER, tread := TREAD) -> void:
 	var weathered := b.weathered
 	var half_width := width*0.5
-	var run := (steps-1)*TREAD+landing
+	var run := (steps-1)*tread+landing
 	var front := run*0.5
 	var sections := maxi(1,int(round(width/STAIR_WIDTH)))
 	var section := width/sections
 	for i in range(steps):
-		var z0 := front-i*TREAD
-		var z1 := z0-(landing if i == steps-1 else TREAD)
-		var top := (i+1)*RISER
-		var settle := b.rng.randf_range(0.0,0.025)+b.rng.randf_range(0.0,0.05)*weathered
-		# Each tread in one or two slabs a section, the joint wandering.
+		var z0 := front-i*tread
+		var z1 := z0-(landing if i == steps-1 else tread)
+		var top := (i+1)*riser
+		var settle := b.rng.randf_range(0.0,0.015)+b.rng.randf_range(0.0,0.03)*weathered
+		# Each tread a slab a section, now and then two, the joint wandering.
 		var parts: Array = []
 		for s in range(sections):
 			var mid := -half_width+section*(s+0.5)
-			var cut := b.rng.randf_range(-0.5,0.5) if b.rng.randf() < 0.6 else 99.0
+			var cut := b.rng.randf_range(-0.4,0.4) if b.rng.randf() < 0.3 else 99.0
 			if cut > 50.0: parts.append([mid-section*0.5,mid+section*0.5])
 			else: parts.append_array([[mid-section*0.5,mid+cut*section/STAIR_WIDTH],[mid+cut*section/STAIR_WIDTH,mid+section*0.5]])
 		for p: Array in parts:
 			var x0: float = p[0]
 			var x1: float = p[1]
 			var hh := Vector3((x1-x0)*0.5-0.008,(top-settle+foot)*0.5,(z0-z1)*0.5-0.006)
+			# Laid as the halls' cheap stone is (Build `lean`): its top kept
+			# level and true, its arrises chamfered only along the tread,
+			# few chips and no chunk bitten from the walking face, so the
+			# flight reads as crisp steps, not a heap of loaves.
+			b.lean = true
 			var planes := _box(b,hh)
 			# The nosing worn back, more at the middle where feet went.
 			var n := Vector3(0.0,1.0,1.0).normalized()
 			planes.append(Plane(n,(hh.y+hh.z)/sqrt(2.0)-0.03-0.05*b.age))
 			var extra: Array[Plane] = []
-			if b.rng.randf() < weathered*0.4 and absf(x0) > half_width-0.1 or absf(x1) > half_width-0.1 and b.rng.randf() < weathered*0.4:
+			if b.rng.randf() < weathered*0.25 and absf(x0) > half_width-0.1 or absf(x1) > half_width-0.1 and b.rng.randf() < weathered*0.25:
 				var side := signf(x0+x1)
 				var m := Vector3(side,b.rng.randf_range(0.4,0.9),b.rng.randf_range(0.0,0.6)).normalized()
-				var keep := Vector3(side*(x1-x0)*0.5*b.rng.randf_range(0.4,0.7),hh.y,hh.z)
+				var keep := Vector3(side*(x1-x0)*0.5*b.rng.randf_range(0.65,0.85),hh.y,hh.z)
 				extra.append(Plane(m,m.dot(keep)))
-			var tilt := Basis(Vector3.RIGHT,b.rng.randf_range(-0.012,0.012)+b.rng.randf_range(-0.03,0.03)*weathered)*Basis(Vector3.BACK,b.rng.randf_range(-0.01,0.01))
-			b.solid(planes,pose*Transform3D(tilt,Vector3((x0+x1)*0.5,hh.y-foot,(z0+z1)*0.5)),_stone(b),true,true,extra)
+			var tilt := Basis(Vector3.RIGHT,b.rng.randf_range(-0.005,0.005)+b.rng.randf_range(-0.012,0.012)*weathered)*Basis(Vector3.BACK,b.rng.randf_range(-0.004,0.004))
+			b.solid(planes,pose*Transform3D(tilt,Vector3((x0+x1)*0.5,hh.y-foot,(z0+z1)*0.5)),_stone(b),false,true,extra)
+			b.lean = false
+		# Walked on clean: the step's own box, the flight's full width, its
+		# top true, from its nose back past the flight's back (so no joint
+		# between treads or slabs, no settled slab or worn nosing, is a gap
+		# for the feet's ray to drop through).
+		_walk_box(b,pose,half_width+0.02,-foot,top,z0,front-run-WALK_OVERLAP)
 	# The cheeks: ramped with the flight, level by the landing, in courses
 	# cut by the slope, a sloped coping, a newel post at the foot.
 	var foot_z := front
-	var head_z := front-(steps-1)*TREAD
-	var slope := Vector3(0.0,TREAD,RISER).normalized()
+	var head_z := front-(steps-1)*tread
+	var slope := Vector3(0.0,tread,riser).normalized()
 	var torn := -1.0 if b.rng.randf() < 0.5 else 1.0
 	for side: float in [-1.0,1.0]:
 		var x0 := side*half_width
 		var x1 := side*(half_width+CHEEK.x)
 		var lo := minf(x0,x1)
 		var hi := maxf(x0,x1)
-		var line_at := func(z: float) -> float: return RISER+CHEEK.y+maxf(0.0,(foot_z-z))*RISER/TREAD if z > head_z else steps*RISER+CHEEK.y
+		var line_at := func(z: float) -> float: return riser+CHEEK.y+maxf(0.0,(foot_z-z))*riser/tread if z > head_z else steps*riser+CHEEK.y
 		var ruin: Callable = func(_z: float) -> float: return INF
 		if weathered > 0.25 and side == torn:
-			ruin = _ruin_line(b,front-run,front,0.5,steps*RISER*0.8,weathered)
+			ruin = _ruin_line(b,front-run,front,0.5,steps*riser*0.8,weathered)
 		var z := front
 		var course := 0.42
 		var cy := -foot
-		while cy < steps*RISER+CHEEK.y-0.02:
+		while cy < steps*riser+CHEEK.y-0.02:
 			var y1 := cy+course*b.rng.randf_range(0.85,1.15)
-			z = front-(0.0 if int((cy+foot)/course)%2 == 0 else 0.35)
+			# Every other course broken joint: its first stone a short one.
+			z = front
+			var first := -1.0 if int((cy+foot)/course)%2 == 0 else 0.35
 			while z > front-run+0.02:
-				var z1 := maxf(front-run,z-b.rng.randf_range(0.7,1.2))
+				var z1 := maxf(front-run,z-(first if first > 0.0 else b.rng.randf_range(0.7,1.2)))
+				first = -1.0
 				if z1-(front-run) < 0.3: z1 = front-run
 				var mid := (z+z1)*0.5
 				var stand := minf(line_at.call(mid),ruin.call(mid))
 				if cy+0.12 < minf(line_at.call(z),line_at.call(z1)) and cy+0.15 < stand:
 					var planes: Array[Plane] = [Plane(Vector3.LEFT,-lo),Plane(Vector3.RIGHT,hi),Plane(Vector3.DOWN,-cy),Plane(Vector3.UP,y1),Plane(Vector3.BACK,z),Plane(Vector3.FORWARD,-z1)]
-					planes.append(Plane(slope,slope.dot(Vector3(0.0,RISER+CHEEK.y-0.11,foot_z))))
-					planes.append(Plane(Vector3.UP,steps*RISER+CHEEK.y-0.11))
+					planes.append(Plane(slope,slope.dot(Vector3(0.0,riser+CHEEK.y-0.11,foot_z))))
+					planes.append(Plane(Vector3.UP,steps*riser+CHEEK.y-0.11))
 					if stand < y1:
 						var m := Vector3(0.0,1.0,b.rng.randf_range(-0.8,0.8)).normalized()
 						planes.append(Plane(m,m.dot(Vector3(0.0,stand,mid))))
-					b.solid(_bevel(planes,Vector3((lo+hi)*0.5,(cy+y1)*0.5,mid),0.03),pose,_stone(b,0.97))
+					b.solid(_bevel(planes,Vector3((lo+hi)*0.5,(cy+y1)*0.5,mid),0.03),pose,_stone(b,0.97),false)
+					_walk_hull(b,pose,planes)
 				z = z1
 			cy = y1
 		# The coping: sloped stones along the ramp, then level by the landing.
@@ -750,19 +776,46 @@ static func _flight(b: Build, pose: Transform3D, steps: int, width: float, landi
 		for k in range(count+1):
 			var za := foot_z-(foot_z-head_z)*k/count
 			var zb := foot_z-(foot_z-head_z)*(k+1)/count if k < count else front-run
-			if ruin.call((za+zb)*0.5) < steps*RISER: continue
+			if ruin.call((za+zb)*0.5) < steps*riser: continue
 			var ya: float = line_at.call(za)-0.11
 			var yb: float = line_at.call(zb)-0.11 if k < count else ya
 			var ang := atan2(ya-yb,za-zb)
 			var len := Vector2(za-zb,ya-yb).length()
 			var cope := Transform3D(Basis(Vector3.RIGHT,-ang),Vector3((lo+hi)*0.5,(ya+yb)*0.5+0.07,(za+zb)*0.5))
-			b.solid(_box(b,Vector3(CHEEK.x*0.5+0.04,0.07,len*0.5-0.01)),pose*_jiggle(b,cope,0.8),_stone(b,1.06))
+			b.solid(_box(b,Vector3(CHEEK.x*0.5+0.04,0.07,len*0.5-0.01)),pose*_jiggle(b,cope,0.8),_stone(b,1.06),false)
+			# Walked as laid true, end to end, over the courses' slope.
+			var cope_half := Vector3(CHEEK.x*0.5+0.04,0.07,len*0.5+0.02)
+			_walk_hull(b,pose*cope,[Plane(Vector3.RIGHT,cope_half.x),Plane(Vector3.LEFT,cope_half.x),Plane(Vector3.UP,cope_half.y),Plane(Vector3.DOWN,cope_half.y+0.12),Plane(Vector3.BACK,cope_half.z),Plane(Vector3.FORWARD,cope_half.z)])
 		# The newel at the foot: a square post under a little gabled cap.
 		var nx := side*(half_width+CHEEK.x*0.5)
 		var post := NEWEL.y-0.18
 		b.solid(_box(b,Vector3(NEWEL.x*0.5,post*0.5,NEWEL.x*0.5)),pose*_settle(b,Vector3(nx,post*0.5,foot_z+NEWEL.x*0.3),0.6),_stone(b,1.0))
 		if not (weathered > 0.4 and side == torn):
 			_gablet(b,pose*Transform3D(Basis.IDENTITY,Vector3(nx,post,foot_z+NEWEL.x*0.3)),NEWEL.x*0.5+0.05,0.42)
+
+## A stair's walked collision, invisible (Build `hulls` only): a box
+## `half` either side of x 0, from `bottom` to `top`, from `z_front` back to
+## `z_back`, at `pose` (in the Build's frame). A stair's drawn treads are
+## worn, settled, tilted and laid in slabs with joints between them; their
+## hulls left gaps and pits a ray straight down fell through (Jolt rounds a
+## hull's edges by its margin), so the stair walks on these instead.
+static func _walk_box(b: Build, pose: Transform3D, half: float, bottom: float, top: float, z_front: float, z_back: float) -> void:
+	_walk_hull(b,pose,[Plane(Vector3.RIGHT,half),Plane(Vector3.LEFT,half),Plane(Vector3.UP,top),Plane(Vector3.DOWN,-bottom),Plane(Vector3.BACK,z_front),Plane(Vector3.FORWARD,-z_back)])
+
+## The convex block `planes` (outward, at `pose` in the Build's frame) as a
+## hull only, true: no wear, chips, bevels or settling, so blocks laid face
+## to face (a cheek's courses, its coping) walk as one surface.
+static func _walk_hull(b: Build, pose: Transform3D, planes: Array) -> void:
+	var cut: Array[Plane] = []
+	for p: Plane in planes: cut.append(p)
+	var points := Geometry3D.compute_convex_mesh_points(cut)
+	if points.size() < 4: return
+	var xf := b.frame*pose
+	var hull := PackedVector3Array()
+	for q in points: hull.append(xf*q)
+	if b.thickness(hull) < HULL_THIN: return
+	b.hulls.append(hull)
+	b.hull_anchors.append(NAN)
 
 ## 8. A stair turret: an octagonal shell on a battered plinth, laid in
 ## courses two or three stones a side, a string course, slit windows up the
@@ -1230,10 +1283,11 @@ static func floor_slabs(seed_value: int, weathered := 0.0) -> Node3D:
 		_drum_cluster(b,Transform3D(Basis.IDENTITY,at+Vector3(0.0,0.36,0.0)),0.4,_break(b,0.4,0.5,0.9,0.0))
 	return b.finish()
 
-## 13. A grand stair: two of the stair's own flights (`_flight`, STEPS
-## each), GRAND_WIDTH wide, one above the other with a landing
-## GRAND_LANDING deep between them, climbing toward -Z to its head 2 STEPS
-## RISERs up (4.48 m): a broad ceremonial way up onto a terrace or a hill.
+## 13. A grand stair: two of the stair's flights (`_flight`, GRAND_STEPS
+## each of GRAND_RISER by GRAND_TREAD), GRAND_WIDTH wide, one above the
+## other with a landing GRAND_LANDING deep between them, climbing toward -Z
+## to its head 2 STEPS RISERs up (4.48 m): a broad ceremonial way up onto
+## a terrace or a hill.
 ## The upper flight stands on its own steps and cheeks carried down to the
 ## ground; newels at the foot and on the landing. Weathered: steps cracked
 ## and settled, a cheek torn down on each flight, a newel's cap fallen at
@@ -1241,12 +1295,12 @@ static func floor_slabs(seed_value: int, weathered := 0.0) -> Node3D:
 ## ground and of its head's landing on top.
 static func grand_stair(seed_value: int, weathered := 0.0) -> Node3D:
 	var b := Build.new(seed_value,weathered,"GrandStair")
-	var run1 := (STEPS-1)*TREAD+GRAND_LANDING
-	var run2 := (STEPS-1)*TREAD+LANDING
+	var run1 := (GRAND_STEPS-1)*GRAND_TREAD+GRAND_LANDING
+	var run2 := (GRAND_STEPS-1)*GRAND_TREAD+LANDING
 	var front := (run1+run2)*0.5
-	var rise := STEPS*RISER
-	_flight(b,Transform3D(Basis.IDENTITY,Vector3(0.0,0.0,front-run1*0.5)),STEPS,GRAND_WIDTH,GRAND_LANDING)
-	_flight(b,Transform3D(Basis.IDENTITY,Vector3(0.0,rise,front-run1-run2*0.5)),STEPS,GRAND_WIDTH,LANDING,rise)
+	var rise := GRAND_STEPS*GRAND_RISER
+	_flight(b,Transform3D(Basis.IDENTITY,Vector3(0.0,0.0,front-run1*0.5)),GRAND_STEPS,GRAND_WIDTH,GRAND_LANDING,0.0,GRAND_RISER,GRAND_TREAD)
+	_flight(b,Transform3D(Basis.IDENTITY,Vector3(0.0,rise,front-run1-run2*0.5)),GRAND_STEPS,GRAND_WIDTH,LANDING,rise,GRAND_RISER,GRAND_TREAD)
 	# A newel's cap fallen off at the foot, lying in the grass beside it.
 	if weathered > 0.3:
 		var side := -1.0 if b.rng.randf() < 0.5 else 1.0

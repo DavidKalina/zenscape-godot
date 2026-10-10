@@ -49,6 +49,9 @@ const PIECES := [
 const STAIR_SEED := 31
 const CIRCLE_SEED := 32
 const LANDMARK_WEATHERED := 0.55
+## The stair less ruined than the circle: a ceremonial way up, its cheeks
+## standing (one torn low), no newel's cap fallen.
+const STAIR_WEATHERED := 0.3
 ## The stepping stumps back from the far island (world x, z from, z to,
 ## top): an older arcade's piers broken off at the islands' height, their
 ## feet hanging in the sky; each collides as a clean box.
@@ -184,7 +187,7 @@ func _build_art() -> void:
 	var terrace: Dictionary = Art.terrace(SEED+7)
 	art.add_child(terrace.node)
 	for part: Array in terrace.parts: _part(part)
-	stair = RuinKit.grand_stair(STAIR_SEED,LANDMARK_WEATHERED)
+	stair = RuinKit.grand_stair(STAIR_SEED,STAIR_WEATHERED)
 	stair.transform = Transform3D(Basis(Vector3.UP,PI*0.5),Art.STAIR_AT)
 	art.add_child(stair)
 	circle = RuinKit.stone_circle(CIRCLE_SEED,LANDMARK_WEATHERED)
@@ -193,7 +196,7 @@ func _build_art() -> void:
 	art.add_child(Art.heel_stone(SEED+8))
 	var reach := Art.TERRACE_R+Art.TERRACE_WALL+2.4
 	avoid.append(Rect2(Art.HENGE.x-reach,Art.HENGE.y-reach,reach*2.0,reach*2.0))
-	avoid.append(Rect2(Art.STAIR_AT.x-5.6,-3.4,11.4,6.8))
+	avoid.append(Rect2(Art.STAIR_AT.x-6.4,-3.4,13.8,6.8))
 	avoid.append(Rect2(Art.HEEL.x-1.0,Art.HEEL.y-0.7,2.0,1.4))
 	for spec: Array in PIECES:
 		var piece: Node3D = RuinKit.piece(spec[0],spec[1],spec[2])
