@@ -144,6 +144,19 @@ func run() -> void:
 		"sundered_flow":"2a22c9b41180","sundered_mix":"db59c1bb79c5"}
 	for id: String in pinned:
 		check(Course.station_hash(Course.station(id)) == pinned[id],"%s keeps its hash %s" % [id,pinned[id]])
+	# The nature pack (scripts/flight_pack_nature.gd).
+	var nature_pins := {"nature_canyon":"9ccee47628b3","nature_stacks":"70f8a5630bc8","nature_cove":"ea9f8c1d807f",
+		"nature_ridge":"7dc1b3277775","nature_cave":"c3f1c938a98b"}
+	for id: String in nature_pins:
+		check(Course.station_hash(Course.station(id)) == nature_pins[id],"%s keeps its hash %s" % [id,nature_pins[id]])
+	# The token-placement pack (scripts/flight_pack_tokens.gd). The hall's
+	# and the swoop's dense baselines are their sources' own trails, so they
+	# share sundered_flow's and open_swoop's hashes.
+	var tokens_pinned := {"tokens_hall_dense":"2a22c9b41180","tokens_hall_sparse":"684c5de03943","tokens_hall_gates":"38217dde3d34",
+		"tokens_hall_detours":"1cf214a1e556","tokens_hall_hidden":"12e7a06efd63","tokens_hall_outback":"c7a50010ca6d",
+		"tokens_swoop_dense":"fe3d869879c8","tokens_swoop_skim":"28eba7531d56","tokens_swoop_detours":"f9d7d8a689b8"}
+	for id: String in tokens_pinned:
+		check(Course.station_hash(Course.station(id)) == tokens_pinned[id],"%s keeps its hash %s" % [id,tokens_pinned[id]])
 	# Threading on a made-up run: 4 s north at 14 m/s past two walls either
 	# side (z -14 to -28, 2.5 m off: 1 s), a lintel overhead (1 m deep, at
 	# z -42: a few ticks) and a pillar on one side only (never).

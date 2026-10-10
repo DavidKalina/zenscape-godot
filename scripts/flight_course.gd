@@ -20,6 +20,15 @@ extends RefCounted
 ##       scripts/ruin_kit_hall.gd: `at` is its bay line's middle on its
 ##       floor, the nave running north (-Z) at yaw 0; see `_bay` for the
 ##       plan's keys)
+##   ["wall", ...], ["stack", ...], ["arch", ...]   the nature pack's
+##       landforms (scripts/flight_pack_nature.gd `part_solids`)
+##   ["rock", ...], ["isle", ...], ["span", ...], ["bore", ...], ["slab", ...]
+##       the sky pack's floating islands (scripts/flight_pack_sky.gd
+##       `solids_of`)
+## Packs append their stations after these (key -1: no digit key). The
+## moments pack (scripts/flight_pack_moments.gd) reuses other packs' parts
+## and trails: its trail is all guides and what there is to get are its
+## `moments` (free, a starter, challenge ones; `challenge` its settings).
 ## Each expands into world-space solids (`solids`): {"kind":"box","middle",
 ## "size","basis"} or {"kind":"cyl","middle","radius","height"}, which the
 ## study draws and gives colliders on the ruins' layer (scripts/ruin_bump.gd
@@ -32,6 +41,13 @@ const PlaneFigure = preload("res://scripts/plane_figure.gd")
 const Hall = preload("res://scripts/ruin_kit_hall.gd")
 const RuinBump = preload("res://scripts/ruin_bump.gd")
 const Lines = preload("res://scripts/collectible_lines.gd")
+## Station packs, appended after the hand-placed stations in this order
+## (each its own file, its stations keyless: NO_KEY, a "pack" name).
+const PackLines = preload("res://scripts/flight_pack_lines.gd")
+const PackNature = preload("res://scripts/flight_pack_nature.gd")
+const PackSky = preload("res://scripts/flight_pack_sky.gd")
+const PackTokens = preload("res://scripts/flight_pack_tokens.gd")
+const PackMoments = preload("res://scripts/flight_pack_moments.gd")
 
 ## The stations stand ALT metres over the floor (y 0), SPACING metres apart
 ## along x; pillars rise to TOP over the entry.
@@ -229,34 +245,98 @@ const STATIONS := [
 		Vector3(79.42,-6.74,-220.48),Vector3(83.63,-6.29,-221.59),Vector3(92.57,-4.60,-220.60),Vector3(101.19,-2.35,-219.06),
 	]},
 	# <<< sundered_mix
-]
+]+PackLines.STATIONS+PackNature.STATIONS+PackSky.STATIONS+PackTokens.STATIONS+PackMoments.STATIONS
 
-## The station with `id`, or {}.
+## The station with `id`, or {}. "id@line" is station id flown on one of
+## its token lines (`flown`).
 static func station(id: String) -> Dictionary:
+	var at := id.find(LINE_SEP)
+	if at >= 0:
+		var base := station(id.substr(0,at))
+		return {} if base.is_empty() else flown(base,id.substr(at+1))
 	for s: Dictionary in STATIONS:
 		if s.id == id: return s
 	return {}
 
-## The `-` key's station key (keys 0-9 are their digits).
+## The `-` key's station key (keys 0-9 are their digits); a station with no
+## key (a pack's: reached with N, --station or --pack) has NO_KEY.
 const MINUS_KEY := 10
+const NO_KEY := -1
 
-## The key that jumps to station `s` in the study: its digit, or "-".
+## The key that jumps to station `s` in the study: its digit, "-", or "".
 static func key_name(s: Dictionary) -> String:
+	if int(s.key) == NO_KEY: return ""
 	return "-" if int(s.key) == MINUS_KEY else str(int(s.key))
 
 static func station_by_key(key: int) -> Dictionary:
+	if key == NO_KEY: return {}
 	for s: Dictionary in STATIONS:
 		if int(s.key) == key: return s
 	return {}
+
+## The stations of pack `name` (their "pack"), in order; every station
+## for "".
+static func pack(name: String) -> Array:
+	if name == "": return STATIONS.duplicate()
+	return STATIONS.filter(func(s: Dictionary) -> bool: return str(s.get("pack","")) == name)
+
+## Token lines: a station may carry more than one trail of tokens through
+## the same solids. Its own `tokens` are the green line (the forgiving main
+## one); `lines` holds the others, {name: {"intent", "tokens"}}, e.g. yellow
+## (branches off for more threading and rejoins) and red (the tight mastery
+## line). Flying one line is flying a station whose tokens are that line's
+## (`flown`): its id is "id@line", so its runs, hash and band are its own.
+const LINE_SEP := "@"
+const GREEN := "green"
+
+## The lines of station `s` (its base's), green first.
+static func line_names(s: Dictionary) -> PackedStringArray:
+	var out := PackedStringArray([GREEN])
+	for name: String in (s.get("lines",{}) as Dictionary): out.append(name)
+	return out
+
+## Which line station `s` flies: green unless it is a line flown (`flown`).
+static func line_of(s: Dictionary) -> String:
+	return str(s.get("line",GREEN))
+
+## The station `s` stands for: itself, or the station a line flown is of.
+static func base_of(s: Dictionary) -> Dictionary:
+	return station(str(s.base)) if s.has("base") else s
+
+## Station `s` flown on its line `line`: the same station with that line's
+## tokens, intent and `ease` (none unless the line has its own), id
+## "id@line" (green is the station itself). {} if it has no such line.
+static func flown(s: Dictionary, line: String) -> Dictionary:
+	var base := base_of(s)
+	if line == GREEN: return base
+	var lines: Dictionary = base.get("lines",{})
+	if not lines.has(line): return {}
+	var out := base.duplicate()
+	out.erase("lines")
+	out["id"] = str(base.id)+LINE_SEP+line
+	out["name"] = "%s (%s line)" % [base.name,line]
+	out["intent"] = str(lines[line].get("intent",base.intent))
+	out["tokens"] = lines[line].tokens
+	out.erase("ease")
+	if lines[line].has("ease"): out["ease"] = lines[line].ease
+	out["base"] = base.id
+	out["line"] = line
+	return out
 
 static func ids() -> PackedStringArray:
 	var out := PackedStringArray()
 	for s: Dictionary in STATIONS: out.append(s.id)
 	return out
 
-## Where station `s` stands in the world: its entry point.
+## Where station `s` stands in the world: its entry point. Its own
+## `origin` if it has one (the tokens pack's row at z +1300); else its
+## place in STATIONS, SPACING apart along x (a line flown stands where its
+## station does).
 static func origin(s: Dictionary) -> Vector3:
-	return Vector3(float(STATIONS.find(s))*SPACING,ALT,0.0)
+	if s.has("origin"): return s.origin
+	var i := STATIONS.find(s)
+	if i < 0 and s.has("base"): i = STATIONS.find(base_of(s))
+	return Vector3(float(i)*SPACING,ALT,0.0)
 
 ## The entry: where the plane is set down and its heading (north).
 static func entry(s: Dictionary) -> Dictionary:
@@ -279,7 +359,60 @@ static func floor_y() -> float:
 static func station_hash(s: Dictionary) -> String:
 	var shape := [VERSION,REACH,s.parts,s.tokens]
 	if s.has("ease"): shape.append(s.ease)
+	if s.has("miss_near"): shape.append(s.miss_near)
+	if s.has("guides"): shape.append(["guides",s.guides])
+	if s.has("bonus"): shape.append(["bonus",s.bonus])
+	if s.has("moments"): shape.append(["moments",s.moments,s.get("challenge",{})])
 	return var_to_str(shape).md5_text().substr(0,12)
+
+## Station `s`'s guides: indices into its tokens that are not drawn or
+## counted, only shaping the line (the metrics' and the bots' route).
+## A moments station (`moments`) has no tokens to take: its whole line is
+## guides (unless it lists its own).
+static func guides(s: Dictionary) -> PackedInt32Array:
+	if s.has("moments") and not s.has("guides"): return PackedInt32Array(range((s.tokens as Array).size()))
+	return PackedInt32Array(s.get("guides",[]))
+
+## Station `s`'s moments (the moments pack, scripts/flight_pack_moments.gd):
+## its free collectibles, its starter and its challenge collectibles, in the
+## world, in the station's order: [{"at", "role" ("free", "starter",
+## "challenge"), "kind" ("fit", "react", "reach", or "" for a starter),
+## "reach" (m: REACH times the moment's own `ease`, else the station's),
+## "note"}].
+static func moments(s: Dictionary) -> Array:
+	var at := origin(s)
+	var out := []
+	for m: Dictionary in s.get("moments",[]):
+		out.append({"at":at+(m.at as Vector3),"role":str(m.get("role","free")),"kind":str(m.get("kind","")),
+			"reach":REACH*float(m.get("ease",s.get("ease",1.0))),"note":str(m.get("note",""))})
+	return out
+
+## Station `s`'s challenge settings (FlightMoments CHALLENGE's defaults
+## under its own `challenge`): {"time" (s, 0 no limit), "area" (m off the
+## line that counts as leaving), "mode" ("all": the starter reveals every
+## challenge collectible; "chain": one at a time)}.
+static func challenge(s: Dictionary) -> Dictionary:
+	var out := {"time":0.0,"area":40.0,"mode":"all"}
+	out.merge(s.get("challenge",{}),true)
+	return out
+
+## Station `s`'s bonus tokens in the world: optional, off the line,
+## unordered, never missed.
+static func bonus(s: Dictionary) -> Array[Vector3]:
+	var at := origin(s)
+	var out: Array[Vector3] = []
+	for t: Vector3 in s.get("bonus",[]): out.append(at+t)
+	return out
+
+## Per point (world): 1 where level wings don't fit round it whichever way
+## the plane flies (its clearance is under half the span, as the rooms'
+## sphere), so taking a token there needs the knife edge; else 0.
+static func tight(s: Dictionary, points: Array[Vector3]) -> PackedByteArray:
+	var out := PackedByteArray()
+	if points.is_empty(): return out
+	var all := solids(s)
+	for p in points: out.append(1 if clearance(all,p) < SPAN*0.5 else 0)
+	return out
 
 ## Station `s`'s token reach: REACH, widened by its `ease` if it has one.
 static func reach(s: Dictionary) -> float:
@@ -316,6 +449,10 @@ static func solids(s: Dictionary) -> Array:
 					out.append(_box(mid+spin*Vector3(r+BAR*0.5,0.0,0.0),Vector3(BAR,length,BAR),spin))
 			"bay":
 				out.append_array(_bay(at+(part[1] as Vector3),float(part[2]),part[3]))
+			"wall","stack","arch":
+				out.append_array(PackNature.part_solids(part,at,-ALT))
+			"rock","isle","span","bore","slab":
+				out.append_array(PackSky.solids_of(part,at))
 	return out
 
 ## One greybox bay of the Sundered hall's nave, in the hall's own frame
@@ -332,17 +469,24 @@ static func solids(s: Dictionary) -> Array:
 ##   breach  [left, right]: "", "low", "collapse" (the wall torn down) or
 ##           "arch" (an ARCH opening through it)
 ##   screen  a screen across the left of the nave at the bay line, a
-##           knife-edge slit (KNIFE) through it
+##           knife-edge slit (KNIFE) through it ("right": across the right)
 ##   torn    1 the bay line torn (columns snapped, no beam), 2 the far end
 ##           torn; either way the bay's walls stand low
 ##   beam    false: no roof beam at the bay line (an open bay after an
 ##           open bay)
 ##   last    the bay closes the piece: a column line at x BAY too
+##   pitch   the bay tilted along the nave (rad, + rising toward its far
+##           bay line), for a hall that bends up and down along its length;
+##           its columns stay upright on its tilted floor
+##   rows    which outer rows have a column at the bay line: -1 the left,
+##           1 the right (default both; a fallen column opens a breach wide)
 ## Simplified from the real bay: plain boxes and drums, no gables, lancets,
 ## doors, buttresses, fallen beams, rubble or parapets; one height for
 ## torn and open walls.
 static func _bay(at: Vector3, yaw: float, plan: Dictionary) -> Array:
 	var turn := Basis(Vector3.UP,yaw+PI*0.5)
+	var tilt := float(plan.get("pitch",0.0))
+	if tilt != 0.0: turn = turn*Basis(Vector3.BACK,tilt)
 	var out := []
 	var put := func(middle: Vector3, size: Vector3) -> void: out.append(_box(at+turn*middle,size,turn))
 	var bay := Hall.BAY
@@ -357,10 +501,12 @@ static func _bay(at: Vector3, yaw: float, plan: Dictionary) -> Array:
 	for x: float in lines:
 		var snapped := (x == 0.0 and torn & 1 != 0) or (x > 0.0 and torn & 2 != 0)
 		var h := TORN_SNAP if snapped else Hall.COLUMN_H
-		var zs: Array = [-Hall.ROW_Z,Hall.ROW_Z]
+		var zs: Array = []
+		for row: int in (plan.get("rows",[-1,1]) if x == 0.0 else [-1,1]): zs.append(float(row)*Hall.ROW_Z)
 		if x == 0.0: zs.append_array(plan.get("inner",[]))
 		for z: float in zs:
-			out.append({"kind":"cyl","middle":at+turn*Vector3(x,h*0.5,z),"radius":Hall.COLUMN_R,"height":h})
+			var middle := at+turn*Vector3(x,h*0.5,z) if tilt == 0.0 else at+turn*Vector3(x,0.0,z)+Vector3.UP*h*0.5
+			out.append({"kind":"cyl","middle":middle,"radius":Hall.COLUMN_R,"height":h})
 		if not snapped and (x > 0.0 or bool(plan.get("beam",true))):
 			put.call(Vector3(x,Hall.COLUMN_H+Hall.BEAM.x*0.5,0.0),Vector3(Hall.BEAM.y*2.0,Hall.BEAM.x,2.0*Hall.WALL_Z))
 	# The tie across the nave at the bay line.
@@ -398,9 +544,10 @@ static func _bay(at: Vector3, yaw: float, plan: Dictionary) -> Array:
 			put.call(Vector3(bay*0.5,(top+high)*0.5,z),Vector3(w,high-top,Hall.WALL_THICK))
 		else:
 			put.call(Vector3(bay*0.5,high*0.5,z),size)
-	# The screen across the left of the nave, its knife-edge slit.
-	if bool(plan.get("screen",false)):
-		var z := -(Hall.ROW_Z+Hall.INNER_Z)*0.5
+	# The screen across the left (or right) of the nave, its knife-edge slit.
+	var screen: Variant = plan.get("screen",false)
+	if screen is String or bool(screen):
+		var z := (1.0 if str(screen) == "right" else -1.0)*(Hall.ROW_Z+Hall.INNER_Z)*0.5
 		var span := (Hall.ROW_Z-Hall.INNER_Z)*0.5-Hall.COLUMN_R+0.06
 		var high := (Hall.TIE_LOW if tie == "low" else (Hall.TIE_HIGH if tie == "high" else 7.0))-0.02
 		var half := Hall.KNIFE.x*0.5
@@ -528,7 +675,9 @@ static func wing_room(all: Array, p: Vector3, wings: Vector3) -> float:
 ## on edge (`wing_room`), and where on edge is KNIFE_BETTER better than
 ## level, the sample is a knife sample. Runs of knife samples are the zones.
 static func survey(s: Dictionary, line: Array) -> Dictionary:
-	var key := station_hash(s)+":"+str(line.size())
+	# The origin too: a pack's copy of a station has its hash but stands
+	# elsewhere, and the zones are in world space.
+	var key := station_hash(s)+":"+str(origin(s))+":"+str(line.size())
 	if _surveys.has(key): return _surveys[key]
 	var all := solids(s)
 	var count := int(s.tokens.size())

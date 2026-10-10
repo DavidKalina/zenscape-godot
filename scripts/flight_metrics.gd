@@ -360,6 +360,12 @@ static func summarise(run: Dictionary, solids := []) -> Dictionary:
 					kinds[i] = e.kind
 			"bump": bumps += 1
 	var collected := kinds.count("hit")
+	# A pack's guides (scripts/flight_run.gd) are points of the line, not
+	# tokens: their gaps are measured, but they aren't counted.
+	var guides: Array = run.get("guides",[])
+	var required := count-guides.size()
+	for g: Variant in guides:
+		if int(g) >= 0 and int(g) < count and kinds[int(g)] == "hit": collected -= 1
 	# Per gap: the line's turn and pitch, the warning, the room, the demand.
 	var out_gaps := []
 	var start := float(t[0]) if n > 0 else 0.0
@@ -423,7 +429,7 @@ static func summarise(run: Dictionary, solids := []) -> Dictionary:
 		warn_min = minf(warn_min,float(w))
 		warn_sum += float(w)
 	return {
-		"duration":snappedf(duration,0.001),"collected":collected,"total":count,"cleared":count > 0 and collected == count,
+		"duration":snappedf(duration,0.001),"collected":collected,"total":required,"cleared":required > 0 and collected == required,
 		"bumps":bumps,
 		"turn_need_peak":snappedf(need_turn.x,0.001),"turn_need_mean":snappedf(need_turn.y,0.001),
 		"pitch_need_peak":snappedf(need_pitch.x,0.001),"pitch_need_mean":snappedf(need_pitch.y,0.001),
@@ -438,7 +444,51 @@ static func summarise(run: Dictionary, solids := []) -> Dictionary:
 		"demand_peak":snappedf(peak,0.001),"demand_mean":snappedf(weighted/timed if timed > 0.0 else 0.0,0.001),
 		"demand_spike":snappedf(peak-median,0.001),"grade":grade(peak),
 		"gaps":out_gaps,"curve":curve(run,out_gaps,yaw,pit),
-	}.merged(flow(tk,duration)).merged(knife(run)).merged(threading(tk,solids,duration) if not solids.is_empty() else {})
+	}.merged(flow(tk,duration)).merged(knife(run)).merged(threading(tk,solids,duration) if not solids.is_empty() else {}).merged(bonus(run)).merged(moments(run))
+
+## A run's moments (a moments station's collectibles, scripts/flight_run.gd),
+## if its station has any: {free_total, free_taken, challenge_total,
+## challenge_taken (the best try), challenge_tries, challenge_complete,
+## moments_got (the indices taken at least once)}; {} otherwise.
+static func moments(run: Dictionary) -> Dictionary:
+	if not run.has("moments"): return {}
+	var got := {}
+	var complete := false
+	var tries := 0
+	var best := 0
+	for e: Dictionary in run.get("events",[]):
+		match str(e.kind):
+			"moment": got[int(e.moment)] = true
+			"challenge_start": tries += 1
+			"challenge_end":
+				best = maxi(best,int(e.taken))
+				if str(e.why) == "complete": complete = true
+	var list: Array = run.moments
+	var count := func(role: String, taken: bool) -> int:
+		var n := 0
+		for i in range(list.size()):
+			if str(list[i].role) == role and (not taken or got.has(i)): n += 1
+		return n
+	var indices := got.keys()
+	indices.sort()
+	return {"free_total":count.call("free",false),"free_taken":count.call("free",true),"challenge_total":count.call("challenge",false),
+		"challenge_taken":best,"challenge_tries":tries,"challenge_complete":complete,"moments_got":indices}
+
+## A run's bonus tokens (a pack's optional tokens off the line,
+## scripts/flight_run.gd), if its station has any: {bonus_total,
+## bonus_taken, bonus_seen}; {} otherwise, so other runs' numbers are as
+## they were.
+static func bonus(run: Dictionary) -> Dictionary:
+	if not run.has("bonus"): return {}
+	var taken := {}
+	var seen := {}
+	for e: Dictionary in run.get("events",[]):
+		match str(e.kind):
+			"bonus":
+				taken[int(e.bonus)] = true
+				seen[int(e.bonus)] = true
+			"bonus_seen": seen[int(e.bonus)] = true
+	return {"bonus_total":(run.bonus as Array).size(),"bonus_taken":taken.size(),"bonus_seen":seen.size()}
 
 ## A run's knife-edge numbers (see the header): {knife_moments,
 ## knife_clean, knife_warning_min, knife_warning_mean (s, or null),

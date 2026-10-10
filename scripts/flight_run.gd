@@ -13,7 +13,8 @@ extends RefCounted
 ## (scripts/sky_collectibles.gd `_touch`): the plane's path this tick passes
 ## within REACH of it. Taking a later token misses every one still standing
 ## before it, and a token is missed once the plane is PAST m beyond it along
-## the line's way there. A token is seen the first tick it lies within CONE
+## the line's way there (and, on a station with `miss_near`, within that
+## many m of it). A token is seen the first tick it lies within CONE
 ## of the way the plane is going, within SIGHT, with a clear line to it.
 ## The run ends with every token taken or missed, after TIME_LIMIT, or once
 ## the plane strays LOST m from the next one.
@@ -25,6 +26,30 @@ extends RefCounted
 ## (its bank then, and whether it is on edge, |bank| >= Metrics KNIFE_ON),
 ## `knife_out` when it is past it (`clean`: on edge all through and no
 ## bump), or `knife_skip` if it went by without coming within KNIFE_NEAR m.
+##
+## A pack's station may have guides and bonus tokens (FlightCourse `guides`,
+## `bonus`). A guide is a point of the line among the tokens: taken and
+## missed as they are (taking one misses what stands before it, as a token
+## does), so the line and the bots' route stay whole, but not drawn and not
+## counted in `collected` or the total. A bonus token stands off the line: taken whenever the
+## plane's path passes within REACH of it, seen as a token is, never missed
+## and not needed to clear.
+##
+## A moments station (FlightCourse `moments`, scripts/flight_pack_moments.gd)
+## has no tokens to take: its line is all guides, and what it has to get are
+## its moments, each taken (as a bonus token is) whenever the plane's path
+## passes within the moment's own reach, seen as a token is, never missed:
+##   free       standing from the start
+##   starter    standing from the start; taking it starts the challenge
+##   challenge  not there until the starter is taken (mode "all": all of
+##              them; "chain": one, the next once that is taken)
+## The challenge (FlightCourse `challenge`) ends `complete` once every
+## challenge collectible is taken, `left` once the plane strays `area` m
+## from the line, `timeout` after `time` s (0: never), or `over` when the
+## run ends. Ending is never a penalty: the challenge collectibles go away
+## and the starter stands again; taking it brings them all back. A pass
+## yields how many free ones it got and the most challenge ones one try
+## got (`free_taken`, `challenge_best`).
 ##
 ## `finish` returns the run as plain data (FlightMetrics `summarise` reads
 ## it; scripts/flight_log.gd saves it).
@@ -79,6 +104,31 @@ var knife_state := PackedInt32Array()
 var _knife_bank := PackedFloat32Array()
 var _knife_bump := []
 var edge_ticks := 0
+## Guides (FlightCourse `guides`): is token i a guide.
+var guide := PackedByteArray()
+## Bonus tokens (FlightCourse `bonus`): where, taken (1) or standing (0), when
+## first seen (s, or -1), and whether each sits where level wings don't fit
+## (FlightCourse `tight`: the bot goes on edge for it).
+var bonus: Array[Vector3] = []
+var bonus_state := PackedInt32Array()
+var bonus_seen := PackedFloat32Array()
+var bonus_tight := PackedByteArray()
+## Moments (FlightCourse `moments`): each one's {at, role, kind, reach},
+## taken (1) or standing (0), there now (1: drawn, takeable) or not, when
+## first seen (s, or -1), and tight (as bonus_tight). The challenge: "" not
+## started, "on", or how the last try ended; when the try began, tries,
+## challenge collectibles taken this try and the most any try took.
+var moments := []
+var moment_state := PackedInt32Array()
+var moment_live := PackedByteArray()
+var moment_seen := PackedFloat32Array()
+var moment_tight := PackedByteArray()
+var challenge := ""
+var challenge_from := 0.0
+var challenge_tries := 0
+var challenge_now := 0
+var challenge_best := 0
+var challenge_rules := {}
 ## Live numbers for the overlay: the smoothed flown turn and pitch shares,
 ## stick travel and reversals so far.
 var live_turn := 0.0
@@ -116,6 +166,24 @@ func _init(s: Dictionary, who := "human", params := {}, physics: PhysicsDirectSp
 	state.fill(STANDING)
 	seen_at.resize(tokens.size())
 	seen_at.fill(-1.0)
+	guide.resize(tokens.size())
+	guide.fill(0)
+	for g in Course.guides(s): guide[g] = 1
+	bonus = Course.bonus(s)
+	bonus_state.resize(bonus.size())
+	bonus_state.fill(0)
+	bonus_seen.resize(bonus.size())
+	bonus_seen.fill(-1.0)
+	bonus_tight = Course.tight(s,bonus)
+	moments = Course.moments(s)
+	challenge_rules = Course.challenge(s)
+	var spots: Array[Vector3] = []
+	for m: Dictionary in moments:
+		moment_state.append(0)
+		moment_live.append(0 if m.role == "challenge" else 1)
+		moment_seen.append(-1.0)
+		spots.append(m.at)
+	moment_tight = Course.tight(s,spots)
 	line = Metrics.line(entry.position,entry.heading,tokens)
 	gaps = Metrics.profile(line,tokens.size())
 	rooms = Course.rooms(s,line)
@@ -149,8 +217,35 @@ func next_token() -> int:
 		if state[i] == STANDING: return i
 	return -1
 
+## Tokens taken, guides not counted.
 func collected() -> int:
-	return Array(state).count(TAKEN)
+	var n := 0
+	for i in range(state.size()):
+		if state[i] == TAKEN and guide[i] == 0: n += 1
+	return n
+
+## The tokens to take to clear: all but the guides.
+func required() -> int:
+	return tokens.size()-Array(guide).count(1)
+
+func bonus_taken() -> int:
+	return Array(bonus_state).count(1)
+
+## Moments of `role` there are, and taken (challenge: this try's).
+func moment_count(role: String) -> int:
+	return moments.filter(func(m: Dictionary) -> bool: return m.role == role).size()
+
+func free_taken() -> int:
+	var n := 0
+	for i in range(moments.size()):
+		if moments[i].role == "free" and moment_state[i] == 1: n += 1
+	return n
+
+## Seconds the challenge has left (INF with no limit, 0 when not on).
+func challenge_left() -> float:
+	if challenge != "on": return 0.0
+	var limit := float(challenge_rules.time)
+	return INF if limit <= 0.0 else maxf(0.0,limit-(t-challenge_from))
 
 ## One tick of `delta` s with `input` (SkyPlane.step's dict).
 func tick(delta: float, input: Dictionary) -> void:
@@ -164,6 +259,7 @@ func tick(delta: float, input: Dictionary) -> void:
 		events.append({"t":snappedf(t,0.0001),"kind":"bump"})
 	bumping = bumped
 	_tokens(was)
+	if not moments.is_empty(): _moments(was)
 	_look()
 	_knife()
 	_live(delta,input)
@@ -177,6 +273,9 @@ func tick(delta: float, input: Dictionary) -> void:
 func _tokens(was: Vector3) -> void:
 	var at := plane.position
 	var reach := Course.reach(station)
+	# A station that curls back on itself (a spiral) misses a token by
+	# passing it only within its `miss_near` m.
+	var near_miss := float(station.get("miss_near",0.0))
 	for i in range(tokens.size()):
 		if state[i] != STANDING: continue
 		var near := Geometry3D.get_closest_point_to_segment(tokens[i],was,at)
@@ -184,8 +283,77 @@ func _tokens(was: Vector3) -> void:
 			for k in range(i):
 				if state[k] == STANDING: _resolve(k,MISSED)
 			_resolve(i,TAKEN)
+	for i in range(bonus.size()):
+		if bonus_state[i] != 0: continue
+		if Geometry3D.get_closest_point_to_segment(bonus[i],was,at).distance_to(bonus[i]) < reach:
+			bonus_state[i] = 1
+			events.append({"t":snappedf(t,0.0001),"bonus":i,"kind":"bonus"})
 	for i in range(tokens.size()):
-		if state[i] == STANDING and ways[i].dot(at-tokens[i]) > PAST: _resolve(i,MISSED)
+		if state[i] == STANDING and ways[i].dot(at-tokens[i]) > PAST and (near_miss <= 0.0 or at.distance_to(tokens[i]) < near_miss):
+			_resolve(i,MISSED)
+
+## Moments taken this tick, and the challenge started, carried on or ended.
+func _moments(was: Vector3) -> void:
+	var at := plane.position
+	for i in range(moments.size()):
+		if moment_state[i] != 0 or moment_live[i] == 0: continue
+		var m: Dictionary = moments[i]
+		if Geometry3D.get_closest_point_to_segment(m.at,was,at).distance_to(m.at) >= float(m.reach): continue
+		moment_state[i] = 1
+		events.append({"t":snappedf(t,0.0001),"moment":i,"role":m.role,"kind":"moment"})
+		if m.role == "starter": _challenge_start()
+		elif m.role == "challenge":
+			challenge_now += 1
+			challenge_best = maxi(challenge_best,challenge_now)
+			if _challenge_next() < 0: _challenge_end("complete")
+			elif str(challenge_rules.mode) == "chain": moment_live[_challenge_next()] = 1
+	if challenge != "on": return
+	if float(challenge_rules.time) > 0.0 and t-challenge_from >= float(challenge_rules.time): _challenge_end("timeout")
+	elif _off_line(at) > float(challenge_rules.area): _challenge_end("left")
+
+## The first challenge collectible still standing, or -1.
+func _challenge_next() -> int:
+	for i in range(moments.size()):
+		if moments[i].role == "challenge" and moment_state[i] == 0: return i
+	return -1
+
+## The starter taken: every challenge collectible stands again (all of them
+## there, or the first in "chain").
+func _challenge_start() -> void:
+	challenge = "on"
+	challenge_from = t
+	challenge_tries += 1
+	challenge_now = 0
+	var first := true
+	for i in range(moments.size()):
+		if moments[i].role != "challenge": continue
+		moment_state[i] = 0
+		moment_seen[i] = -1.0
+		moment_live[i] = 1 if first or str(challenge_rules.mode) != "chain" else 0
+		first = false
+	events.append({"t":snappedf(t,0.0001),"kind":"challenge_start","try":challenge_tries})
+
+## The try over (`why`): what's left of it goes away, and unless it was
+## complete the starter stands again.
+func _challenge_end(why: String) -> void:
+	challenge = why
+	for i in range(moments.size()):
+		var role: String = moments[i].role
+		if role == "challenge": moment_live[i] = 0
+		elif role == "starter" and why != "complete":
+			moment_state[i] = 0
+			moment_seen[i] = -1.0
+	events.append({"t":snappedf(t,0.0001),"kind":"challenge_end","why":why,"taken":challenge_now})
+
+## How far (m) `p` is from the station's line (the polyline from the entry
+## through its tokens).
+func _off_line(p: Vector3) -> float:
+	var best := INF
+	var from: Vector3 = entry.position
+	for q in tokens:
+		best = minf(best,Geometry3D.get_closest_point_to_segment(p,from,q).distance_to(p))
+		from = q
+	return best
 
 func _resolve(i: int, how: int) -> void:
 	state[i] = how
@@ -201,6 +369,20 @@ func _look() -> void:
 		if not Course.line_clear(space,plane.position,tokens[i]): continue
 		seen_at[i] = t
 		events.append({"t":snappedf(t,0.0001),"token":i,"kind":"seen"})
+	for i in range(bonus.size()):
+		if bonus_state[i] != 0 or bonus_seen[i] >= 0.0: continue
+		var d := bonus[i]-plane.position
+		if d.length() > SIGHT or way.angle_to(d) > CONE: continue
+		if not Course.line_clear(space,plane.position,bonus[i]): continue
+		bonus_seen[i] = t
+		events.append({"t":snappedf(t,0.0001),"bonus":i,"kind":"bonus_seen"})
+	for i in range(moments.size()):
+		if moment_state[i] != 0 or moment_live[i] == 0 or moment_seen[i] >= 0.0: continue
+		var d: Vector3 = (moments[i].at as Vector3)-plane.position
+		if d.length() > SIGHT or way.angle_to(d) > CONE: continue
+		if not Course.line_clear(space,plane.position,moments[i].at): continue
+		moment_seen[i] = t
+		events.append({"t":snappedf(t,0.0001),"moment":i,"kind":"moment_seen"})
 
 func _knife() -> void:
 	var on_edge := absf(plane.bank) >= Metrics.KNIFE_ON
@@ -284,6 +466,7 @@ func _record(input: Dictionary) -> void:
 func _end(why: String) -> void:
 	for i in range(state.size()):
 		if state[i] == STANDING: _resolve(i,MISSED)
+	if challenge == "on": _challenge_end("over")
 	ended = why
 	done = true
 
@@ -307,13 +490,15 @@ func live() -> Dictionary:
 		var g: Dictionary = gaps[i]
 		demand = Metrics.gap_demand(g.turn_peak,g.pitch_peak,slack if not is_nan(slack) else 0.0,float(rooms[i].room),Metrics.commit_time(g))
 	var span := maxf(t,0.001)
-	return {"t":t,"collected":collected(),"total":tokens.size(),"next":i,"slack":slack,"since":since,"turn":live_turn,"pitch":live_pitch,
+	return {"t":t,"collected":collected(),"total":required(),"bonus":bonus_taken(),"bonus_total":bonus.size(),"next":i,"slack":slack,"since":since,"turn":live_turn,"pitch":live_pitch,
 		"demand":demand,"need_turn":float(gaps[i].turn_peak) if i >= 0 else 0.0,"need_pitch":float(gaps[i].pitch_peak) if i >= 0 else 0.0,
 		"reversals":reversals/span,"effort":travel/span,"full":float(full_ticks)/maxf(ticks.t.size(),1),"bumps":bumps,
 		"threading":float(thread_ticks)/maxf(ticks.t.size(),1),"threading_now":threading_now,"openings":openings,"openings_per_s":openings/span,
 		"still":float(still_ticks)/maxf(ticks.t.size(),1),"longest_straight":longest_straight,"straight_now":straight_from >= 0.0 and t-straight_from >= Metrics.FLOW_STRAIGHT,
 		"knife_moments":zones.size(),"knife_clean":_knife_clean(),"knife_done":Array(knife_state).count(2),"on_edge_s":edge_ticks*t/maxf(ticks.t.size()-1,1),
-		"on_edge":absf(plane.bank) >= Metrics.KNIFE_ON,"knife_next":_knife_next()}
+		"on_edge":absf(plane.bank) >= Metrics.KNIFE_ON,"knife_next":_knife_next(),
+		"moments":moments.size(),"free":free_taken(),"free_total":moment_count("free"),"challenge":challenge_now if challenge == "on" else challenge_best,
+		"challenge_best":challenge_best,"challenge_total":moment_count("challenge"),"challenge_state":challenge,"challenge_left":challenge_left()}
 
 ## Knife zones passed clean so far.
 func _knife_clean() -> int:
@@ -350,7 +535,29 @@ func finish() -> Dictionary:
 		"entry":{"position":Metrics.arr(entry.position),"heading":entry.heading},
 		"tokens":token_list,"reach":snappedf(Course.reach(station),0.001),"span":Course.SPAN,"rooms":room_list,"knife":zone_list,
 		"ticks":ticks,"events":events,
-		"result":{"duration":snappedf(t,0.001),"collected":collected(),"total":tokens.size(),"cleared":collected() == tokens.size(),"ended":ended},
+		"result":{"duration":snappedf(t,0.001),"collected":collected(),"total":required(),"cleared":collected() == required(),"ended":ended},
 	}
+	if guide.has(1):
+		var g := []
+		for i in range(guide.size()):
+			if guide[i] == 1: g.append(i)
+		run["guides"] = g
+	if station.has("bonus"):
+		var b := []
+		for p in bonus: b.append(Metrics.arr(p))
+		run["bonus"] = b
+		run.result["bonus"] = bonus_taken()
+	if not moments.is_empty():
+		var list := []
+		for m: Dictionary in moments:
+			list.append({"at":Metrics.arr(m.at),"role":m.role,"kind":m.kind,"reach":snappedf(float(m.reach),0.001)})
+		run["moments"] = list
+		run["challenge"] = challenge_rules.duplicate()
+		run.result["free"] = free_taken()
+		run.result["free_total"] = moment_count("free")
+		run.result["challenge"] = challenge_best
+		run.result["challenge_total"] = moment_count("challenge")
+		run.result["challenge_tries"] = challenge_tries
+		run.result["challenge_ended"] = challenge
 	run["metrics"] = Metrics.summarise(run,solids)
 	return run
