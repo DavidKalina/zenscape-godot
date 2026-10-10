@@ -12,11 +12,15 @@ extends "res://studies/character_study.gd"
 ## The pilot, camera, moves, recorder and replays are the character
 ## study's (this extends it): the station's own boxes collide, invisible,
 ## under the stone (studies/aqueduct_isle_art.gd), so its proven routes
-## hold. Round it, three landmarks on one axis (z 0): the aqueduct with
-## the castellum at its head, the henge to the west (the kit's stone circle
-## on a walled terrace, the kit's grand stair up its east face) and the
-## heel stone out east; the gate on the far island. What stands collides
-## as built (the kit's hulls). See docs/scenic/aqueduct-isle.md.
+## hold. Round it, on one axis (z 0): the aqueduct with the castellum at
+## its head; to the west a hill rising in tiers of crag (the grand stair up
+## onto the lower one, a way winding round it up a ramp and a ledge to the
+## kit's stair into the crag), the stone circle crowning it, tilted with
+## the summit, its sarsen over a bitten edge broken off and floating;
+## floating stones and two islets round the isle (chains up, down and out);
+## the heel stone out east; the gate on the far island. What stands
+## collides as built (the kit's hulls), the ground as the game's terrain
+## look. See docs/scenic/aqueduct-isle.md.
 ##   R            back to the start (the rubble slope's foot)
 ##   F5 F6 F7 F8  record, replay the station's recordings, older, all paths
 ##   F1 numbers · F2 feel · Esc mouse
@@ -48,6 +52,7 @@ const PIECES := [
 ## the stone circle on it, both facing east along the isle's axis.
 const STAIR_SEED := 31
 const CIRCLE_SEED := 32
+const STEPS_SEED := 33
 const LANDMARK_WEATHERED := 0.55
 ## The stair less ruined than the circle: a ceremonial way up, its cheeks
 ## standing (one torn low), no newel's cap fallen.
@@ -73,6 +78,8 @@ var art: Node3D
 ## The landmarks from the kit (their metadata drives the tests).
 var stair: Node3D
 var circle: Node3D
+## The kit's stair up the crag from the upper tier's ledge.
+var kit_stairs: Node3D
 
 func _ready() -> void:
 	pack = "ruins_archipelago"
@@ -167,7 +174,7 @@ func _build_art() -> void:
 	art = Node3D.new()
 	art.name = "Art"
 	add_child(art)
-	var near := Art.island(Art.NEAR,30.0,SEED,Art.base)
+	var near := Art.island(Art.NEAR,30.0,SEED,Art.ground,Art.TOP,true)
 	near.name = "NearIsland"
 	art.add_child(near)
 	var far := Art.island(Art.FAR,20.0,SEED+1,Art.base)
@@ -182,21 +189,30 @@ func _build_art() -> void:
 	art.add_child(Art.buttress(SEED+3))
 	art.add_child(Art.rubble_heap(SEED+6))
 	var avoid: Array[Rect2] = [Rect2(97.0,-56.0,6.0,66.0),Rect2(92.5,-3.5,5.0,8.5),Rect2(103.3,-12.5,2.0,7.0)]
-	# The henge: its terrace, the grand stair up its east face, the stone
-	# circle on top, the heel stone out east on the axis.
-	var terrace: Dictionary = Art.terrace(SEED+7)
-	art.add_child(terrace.node)
-	for part: Array in terrace.parts: _part(part)
+	# The hill: its walls and kerbs, the grand stair up its east face onto
+	# the lower tier, the kit's stair up into the crag, the stone circle
+	# crowning it (tilted with the summit, its sarsen over the bite gone);
+	# the floating stones and islets round the isle; the heel stone out
+	# east on the axis.
+	art.add_child(Art.hill_walls(SEED+7))
 	stair = RuinKit.grand_stair(STAIR_SEED,STAIR_WEATHERED)
 	stair.transform = Transform3D(Basis(Vector3.UP,PI*0.5),Art.STAIR_AT)
 	art.add_child(stair)
-	circle = RuinKit.stone_circle(CIRCLE_SEED,LANDMARK_WEATHERED)
-	circle.transform = Transform3D(Basis(Vector3.UP,PI*0.5),Vector3(Art.HENGE.x,Art.TOP+Art.TERRACE_TOP,Art.HENGE.y))
+	kit_stairs = RuinKit.stairs(STEPS_SEED,STAIR_WEATHERED)
+	kit_stairs.transform = Art.stairs_frame()
+	art.add_child(kit_stairs)
+	circle = RuinKit.stone_circle(CIRCLE_SEED,LANDMARK_WEATHERED,[Art.MISSING])
+	circle.transform = Art.circle_transform()
 	art.add_child(circle)
+	art.add_child(Art.floating_stones(SEED+10))
+	var islets: Array = Art.islets(SEED+11)
+	for islet: Node3D in islets: art.add_child(islet)
 	art.add_child(Art.heel_stone(SEED+8))
-	var reach := Art.TERRACE_R+Art.TERRACE_WALL+2.4
-	avoid.append(Rect2(Art.HENGE.x-reach,Art.HENGE.y-reach,reach*2.0,reach*2.0))
 	avoid.append(Rect2(Art.STAIR_AT.x-6.4,-3.4,13.8,6.8))
+	avoid.append(Rect2(Art.EAST_FACE-0.6,-12.5,2.2,25.0))
+	var sf := Art.stairs_frame()
+	var sc := sf*Vector3.ZERO
+	avoid.append(Rect2(sc.x-3.2,sc.z-3.2,6.4,6.4))
 	avoid.append(Rect2(Art.HEEL.x-1.0,Art.HEEL.y-0.7,2.0,1.4))
 	for spec: Array in PIECES:
 		var piece: Node3D = RuinKit.piece(spec[0],spec[1],spec[2])
@@ -208,8 +224,8 @@ func _build_art() -> void:
 		avoid.append(Rect2(box.position.x,box.position.z,box.size.x,box.size.z).grow(-0.3))
 	art.add_child(_stumps())
 	art.add_child(Art.growth(SEED+4,[near.get_meta("outline"),far.get_meta("outline")],avoid))
-	var stones: Array[Rect2] = []
-	art.add_child(Art.growth(SEED+9,[Art.terrace_outline(Art.TERRACE_R-0.8)],stones))
+	var none: Array[Rect2] = []
+	art.add_child(Art.growth(SEED+9,[[islets[0].get_meta("outline"),Art.WEST_TOP],[islets[1].get_meta("outline"),Art.EAST_TOP]],none))
 	print("aqueduct isle: %d triangles" % triangles(art))
 
 ## The stepping stumps (STUMPS): an older arcade's piers, coursed solid

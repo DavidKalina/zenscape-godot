@@ -1,4 +1,129 @@
-# Aqueduct isle: handoff (round 3)
+# Aqueduct isle: handoff (round 4)
+
+Branch `look/aqueduct-isle-4` (from `look/aqueduct-isle-3` 152bf51b, with main 0f33b597 merged in). Not merged to main, not pushed. Run it with `./run-aqueduct-isle.command`.
+
+The user's round-3 note: the layout was "too flat" and "a little too stereotypical". They wanted a path winding up to the top, floating platforms, and more verticality. Round 4 does five things.
+
+## 1. Less flat: a hill in tiers
+
+The west lobe is now a hill around `HILL` (61, 0), and the island's outline grows round it. Everything is in `studies/aqueduct_isle_art.gd`, in the "hill" section.
+
+- **Meadow (30 m).** It is unchanged round the aqueduct, the castellum and the east. All of the station's routes and both recordings still pass.
+- **Lower tier, T1 (34.48 m).** This is the grand stair's head. Its east face is a straight coursed retaining wall either side of the stair, at `EAST_FACE` x 77.55, with two buttresses whose set-offs are a climb up. Elsewhere the tier ends in a cliff of the ground's own rock.
+- **Upper tier, T2 (38.68 m).** A ledge runs round the north, west and south, plus a wide west shelf, which is a vista.
+- **Summit (about 40.9 m at the circle's middle).** This is the crag the circle crowns. Its plane tilts down to the east by `SLANT` (3°), and the circle tilts with it. Its south-south-east edge is bitten away (`BITE`).
+- **The shape wanders.** The summit's edge, the ledge's width and the lower tier's width each vary round the hill (`summit_r`, `band2`, `band1`), so the tiers wander instead of stacking as rings. Rock cliffs come out of the heightfield: `cliff_points` probes the ground for steps and lays a top row, a foot row and a broken middle row along each one. The cliffs are 4 to 7 m.
+- **Boulders.** 22 lie at the cliffs' feet and collide.
+- **Heights.** The ring's lintels are at about 44.7 m and the great trilithon is the summit at 46.3 m. In round 3 they were 38.5 and 39.7.
+- **Cliff collision.** Next to each cliff the ground is also solid: convex prisms under the faces. A ray the pilot casts from under a lip finds the top, so lips are ledges and a cliff is never a pit.
+- **No hole.** No row of points lies on a round coordinate such as the axis z 0. A ray cast along a shared triangle edge slipped through there, and the probe grid is now offset so this can't happen.
+
+## 2. The winding way up (walked, no jump)
+
+1. The grand stair goes from the meadow onto T1. This is round 3's stair, untouched.
+2. Walk round T1 to the north.
+3. A ramp (`RAMP_FROM` to `RAMP_TO`, 100° to 160°) climbs 4.2 m at 12 to 15°. It is cut along T2's cliff behind a coursed retaining wall, with kerb stones along its open edge.
+4. Cross the west shelf (a vista west), then follow the ledge south. Kerbs line its drop.
+5. The kit's `stairs` (8 × 0.28 m) climbs into a notch cut in the crag, through the gap between ring sarsens 9 and 10. The ledge widens into an apron at the stair's foot (`APRON`) so there is room to turn up it.
+
+`Art.way_up()` gives the waypoints, and the test walks them. Angles run counterclockwise seen from above, east to north to west to south. The way is worn into the ground as a gravel and earth path.
+
+## 3. Floating platforms
+
+`Art.platforms()` lists them all, with names. Each is drawn worn and walked on a clean, true box (`RuinKit._walk_hull`, round 3's convention). Torn-up blocks hang a clod of earth and rock, plus ivy. Nothing bobs: the motor doesn't ride moving ground, and the recordings must replay. The test checks every stone's top against where it is drawn.
+
+- **South stones (`south_1`–`south_4`).** They rise 1.35 m a step, each a jump that catches the lip, from T1 round the crag's south-east shoulder to the summit at the bite. `south_1` lies fallen on T1 as the first step. This is a shortcut that skips the ramp and the ledge.
+- **The drift (`drift_1`–`drift_6`).** It runs from the summit's north-east edge over the forecourt and the grand stair's north side to the castellum's crown, dropping about 0.4 m a stone. It is run both ways, so it is a third way up and it ties the hill to the aqueduct.
+- **West islet.** Reached from the west shelf over `west_1`, a vista out to open sky.
+- **East islet.** Reached off the meadow's east edge up `east_0` (a fallen block) and `east_1`, a perch at the end of the long east run.
+- **Ring pieces.** These are covered under point 4.
+
+## 4. Less stereotypical circle
+
+- **Kit change.** `stone_circle(seed, weathered, missing := [])` (`scripts/ruin_kit.gd`). Missing sarsens aren't built, nor are the lintels they carried, listed in meta `gone`. No lintel next to the gap falls, so the ring runs right up to it. With the default argument the build is unchanged, and `test_ruin_kit` passes.
+- **Sarsen 11.** It is gone with the ground under it (the bite). It floats at the lintels' height over the bite as `ring_sarsen`, so the lintel loop crosses the gap with two twirled jumps onto it and off.
+- **Fallen lintels.** One lintel lies across the bite's mouth as a bridge (`bite_lintel`). The other lies in the bite on T1 (`bite_floor`).
+- **Tilt.** The circle tilts with the summit.
+
+## 5. The game's ground
+
+- **Material.** The islands' tops, the hill and the islets now use the sky islets' ground material: `shaders/reference_surface.gdshader` with `flat_faces` and `palette_role` 1 (`Art.ground_material`).
+- **Colours.** Face colours follow `SkyIslet.top_arrays`. They come from `NativeTerrainPalette`: grass by patch noise, rock on faces steeper than the palette's rock slope (darkened by `CRAG_SHADE` for the crags), and gravel and earth along the paths.
+- **What stayed.** The islands' sides keep the old rock keel. The static tufts and flowers stay, now kept off cliffs and path middles. The flora on `park/aqueduct-isle-3-flora` was not pulled in.
+
+## Ways up (all proven headless)
+
+**T1:**
+- The grand stair.
+- Either buttress's set-offs.
+
+**Summit:**
+- The winding way, with no jump.
+- The south stones.
+- The drift from the castellum's crown.
+
+**Ring:**
+- The leaning stone.
+- The fallen trilithon: its lying stone, then its stub, then lintel 9. With the tilt the jump from the stub to lintel 8 hits that lintel's underside, so the test takes the first of lintels 8, 7 and 9 that catches.
+
+**Loop:**
+- Round the lintels, over 2 fallen lintels and over the bite by the floating sarsen.
+
+**Trilithon (46.3 m):**
+- From the back lintel.
+
+**Drops:**
+- The drift down to the crown.
+- Off any tier or stone onto the one below. Every fall lands on a tier.
+
+**Vistas:**
+- The trilithon.
+- The ring.
+- The west shelf.
+- The north balcony, the dead-end ledge above the ramp.
+- The west islet.
+- The east islet, which looks back at the whole isle.
+- The castellum's crown.
+- The drift stones.
+
+**Runs:** the east meadow (about 25 × 35 m) and the meadow skirt round the hill's foot.
+
+## Tests (headless)
+
+- **Import check.** Clean.
+- **`tests/test_aqueduct_isle.gd`.** PASS, 40 checks. All of round 3's checks pass: routes, replays, the castellum, the stumps, the grand stair's soundness and smoothness. New: buttresses ×2, the way up, the south stones, the drift down and up, both islets, the circle on the tilt including the loop over the floating sarsen, no hole in the ground (about 22k probes; a hole means the ray lands 0.35 m or more under the ground, because the coarse turf facets sag up to 0.26 m off the smooth rises), every floating stone's top, and the kit stair's tread probes plus 60 driven approaches.
+- **Bot change.** The `climb` helper now lets go of Jump for 4 frames between jumps. Holding it across a landing never jumped again.
+- **`tests/test_ruin_kit.gd`.** PASS.
+- **Not run.** The full suite, per standing instructions. Nothing was added to `tests/known_failures.txt`.
+
+## Captures
+
+These are in `captures/aqueduct-isle-4/` (git-ignored). Re-take them with `zsh tools/aqueduct_isle_captures.sh DIR`.
+
+- `before/` holds round 3 (the establishing and south-west shots).
+- `r1/` is the first pass, with concentric tiers and pale cliffs.
+- `r2/` is the final pass.
+
+The views are `1-establishing`, `2-southwest`, `3-path-from-below`, `4-path-partway`, `5-floating-south`, `6-summit-view`, `7-onfoot-ledge` and `8-onfoot-ramp`.
+
+## Cost
+
+- **Triangles.** About 435k drawn (round 3: 409k). The cap is 900k.
+- **Build time.** About 4.5 s headless to walking.
+- **Collision.** Several thousand convex prisms by the cliffs, in one body.
+
+## Weak / open
+
+- **Cliffs still read smooth and fluted from afar.** They are pale beige in full sun even with `CRAG_SHADE`, more "cut drum" than crag. Up close (`7-onfoot-ledge`) they read as faceted rock. More bulge, overhang ledges or strata banding would help.
+- **The grass is the palette's pale green.** It is the game's own look, but lighter than the old turf, so the ruins read darker against it.
+- **The tilt is only 3°.** At 5° the kit's fallen-trilithon and ring routes broke (lintel headroom, jump geometry), so it reads subtly.
+- **The forecourt is narrow.** Between the grand stair's head and the summit's east crag it is about 2.6–3.5 m.
+- **No bobbing.** It would need the motor to ride moving ground.
+- **The ledge pump-catch is untested.** The summit's south lip is 2.0–2.3 m over the ledge, but the bot doesn't pump.
+- **The north balcony is a dead end** above the ramp. It is intended as a vista, but it is only reachable from the west.
+- **Round 3's open items still stand.**
+
+# Round 3
 
 Branch `look/aqueduct-isle-3` (from `look/aqueduct-isle-2` 74225ff7). Not merged, not pushed. Round 3 is the stair only: the user's three issues were falling through the stair, the pilot and camera vibrating on it, and the static grass. Mid-round the user held the grass (item 3) and asked instead why the stair "still doesn't look quite right".
 

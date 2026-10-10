@@ -4,10 +4,15 @@ extends SceneTree
 ## proven on its greybox (tests/test_island_pack_ruins_archipelago.gd,
 ## station 2), driven end to end with scripted inputs; the lines round it
 ## (the castellum's summit, the stumps back from the far island) driven as
-## a player would; the henge (the terrace up the grand stair, the fallen
-## corner and a buttress; the stone circle's lintel ring up the leaning
-## stone and the fallen trilithon, run round as a loop; the great
-## trilithon's summit); the grand stair walks sound (no gap or pit in its
+## a player would; the hill (its lower tier up the grand stair and both
+## buttresses; the summit walked up the winding way with no jump, up the
+## south floating stones, and up the drift of stones from the castellum's
+## crown, which is also run down; out to both islets; the tilted stone
+## circle's lintel ring up the leaning stone and the fallen trilithon, run
+## round as a loop over the floating sarsen; the great trilithon's
+## summit); the ground has no hole and every floating stone stands where
+## it is drawn; the kit stair up the crag and the grand stair walk sound
+## (no gap or pit in its
 ## treads or cheeks, never fallen through from any approach, walking,
 ## running or jumping, up or down) and smooth (the figure and the camera
 ## never pop a riser); the station's saved recordings replayed here; and
@@ -46,7 +51,9 @@ func run() -> void:
 	_aqueduct_easy()
 	_aqueduct_wallrun()
 	_free_play()
-	_henge()
+	_hill()
+	_ground_sound()
+	_kit_stairs_sound()
 	_stair_sound()
 	_stair_smooth()
 	_replays()
@@ -174,7 +181,7 @@ func _free_play() -> void:
 	back = back and line(m.feet,Vector3(92.0,30.0,-21.0),"jump")
 	check(back,"Stumps: back from the far island over three broken piers, two twirled and two running jumps (feet %s)" % m.feet)
 
-# --- The henge: the grand stair, the terrace, the stone circle ---------------------------
+# --- The hill: the way up, the floating stones, the stone circle ----------------------------
 
 ## A point of the stone circle's (its frame) in the world.
 func on_circle(p: Vector3) -> Vector3:
@@ -185,83 +192,289 @@ func lintel(k: int) -> Array:
 	var l: Array = (study.circle.get_meta("ring").lintels as Array)[k]
 	return [on_circle(l[0]),l[1]]
 
-## Over the middle of the ring's sarsen `j` (where two lintels meet), in the world.
+## Over the middle of the ring's sarsen `j` (where two lintels meet), at
+## the lintels' top, in the world.
 func joint(j: int) -> Vector3:
 	var a := (j%RuinKit.CIRCLE_STONES+0.5)*TAU/RuinKit.CIRCLE_STONES
-	return on_circle(Vector3(sin(a),0.0,cos(a))*RuinKit.CIRCLE_RADIUS)
+	return on_circle(Vector3(sin(a)*RuinKit.CIRCLE_RADIUS,RuinKit.SARSEN.y+RuinKit.LINTEL.y,cos(a)*RuinKit.CIRCLE_RADIUS))
 
-## The henge's landmarks, each reached more than one way, as a player
-## would: the terrace up the grand stair, up the fallen corner's heap and
-## up a buttress's set-offs; the circle's lintel ring up the leaning stone
-## and up the fallen trilithon (its lying partner, its stub), then run
-## round as a loop (twirled over the fallen lintels); the great trilithon
-## from the ring's back lintel.
-func _henge() -> void:
-	var terrace_y: float = 30.0+Art.TERRACE_TOP
+## On the summit at angle `t` (degrees), `r` from the hill's middle.
+func on_summit(t: float, r: float) -> Vector3:
+	var p: Vector2 = Art.at_polar(t,r)
+	return Vector3(p.x,Art.summit(p.x,p.y),p.y)
+
+## The floating stone `name`'s top middle.
+func stone(name: String) -> Vector3:
+	return Art.platform(name).at
+
+## From stone `a`'s far side (a run-up on it) a jump to `b`'s top (a
+## stone's name or a point).
+func hop(a: Vector3, b: Vector3, tech := "jump") -> bool:
+	var way := Vector2(b.x-a.x,b.z-a.z).normalized()
+	return line(a-Vector3(way.x,0.0,way.y)*0.7,b,tech)
+
+## Walked up the hill from the grand stair's foot to the summit through
+## the way's points, the stick only, never a jump: true there, standing on
+## the summit; `fell` the frames he was in the air over 0.25 s at a time.
+func walk_up(points: Array) -> Dictionary:
+	study.place(Vector3(points[0].x,30.0,points[0].y),(points[1]-points[0]).normalized())
+	for i in range(20): tick(Vector2.ZERO)
+	var i := 1
+	var air := 0
+	var fell := 0
+	var lowest := INF
+	for f in range(5000):
+		var to: Vector2 = points[i]
+		var off: Vector2 = to-flat(m.feet)
+		if off.length() < (0.5 if i == points.size()-1 else 1.0):
+			i += 1
+			if i >= points.size(): break
+			continue
+		tick(off.normalized())
+		air = 0 if m.grounded else air+1
+		if air == 15: fell += 1
+		if m.on_ledge(): fell += 1
+	return {"ok":i >= points.size() and m.grounded,"fell":fell,"reached":i}
+
+## The hill's landmarks, each reached more than one way, as a player
+## would: the lower tier up the grand stair and a buttress's set-offs; the
+## summit walked up the winding way (no jump), up the south stones, and up
+## the drift from the castellum's crown; the drift run down; the islets;
+## the circle's lintel ring up the leaning stone and the fallen trilithon,
+## run round as a loop over the floating sarsen; the great trilithon.
+func _hill() -> void:
+	var t1: float = 30.0+Art.T1
 	var foot: Vector3 = study.stair.transform*(study.stair.get_meta("foot") as Vector3)
 	var head: Vector3 = study.stair.transform*(study.stair.get_meta("head") as Vector3)
-	var ok := line(foot+Vector3(1.5,0.0,0.0),Vector3(head.x-2.0,terrace_y,head.z),"walk")
-	check(ok,"Henge: up the grand stair, both flights, onto the terrace at %.2f m (feet %s)" % [terrace_y,m.feet])
-	ok = climb(Vector3(65.0,30.0,-19.0),[Vector2(65.0,-15.6),Vector2(65.0,-13.6),Vector2(65.0,-10.5)])
-	check(ok and absf(m.feet.y-terrace_y) < 0.1,"Henge: up the fallen corner's heap, 1.5 m a step, onto the terrace (feet %s)" % m.feet)
-	var out := Vector2(cos(TAU/16.0*2.0),sin(TAU/16.0*2.0))
-	var at := func(r: float) -> Vector2: return Art.HENGE+out*r
-	ok = climb(Vector3(at.call(16.4).x,30.0,at.call(16.4).y),[at.call(14.2),at.call(13.0),at.call(10.8)])
-	check(ok and absf(m.feet.y-terrace_y) < 0.1,"Henge: up a buttress's set-offs onto the terrace (feet %s)" % m.feet)
+	var ok := line(foot+Vector3(1.5,0.0,0.0),Vector3(head.x-2.0,t1,head.z),"walk")
+	check(ok,"Hill: up the grand stair, both flights, onto the lower tier at %.2f m (feet %s)" % [t1,m.feet])
+	for side: float in [-1.0,1.0]:
+		var z: float = side*8.41
+		ok = climb(Vector3(81.8,30.0,z),[Vector2(79.5,z),Vector2(78.4,z),Vector2(76.0,z)])
+		check(ok and absf(m.feet.y-t1) < 0.1,"Hill: up the %s buttress's set-offs onto the lower tier (feet %s)" % ["north" if side < 0.0 else "south",m.feet])
+	# The winding way, walked.
+	var way: Array = Art.way_up()
+	var walked := walk_up(way)
+	var end: Vector2 = way[way.size()-1]
+	var top: float = Art.summit(end.x,end.y)
+	check(walked.ok and walked.fell == 0 and absf(m.feet.y-top) < 0.15,"Way up: walked from the grand stair's foot round the hill, up the ramp, along the ledge and up the kit stair to the summit at %.2f m, no jump, never falling (%d of %d points, %d falls, feet %s)" % [top,walked.reached,way.size(),walked.fell,m.feet])
+	# The south stones: up from the lower tier to the bite's lip.
+	var p: Vector2 = Art.at_polar(338.0,14.2)
+	ok = line(Vector3(p.x,t1,p.y),stone("south_1"),"jump")
+	var stones := 0
+	for k in range(2,5):
+		if ok:
+			stones += 1
+			ok = hop(stone("south_%d" % (k-1)),stone("south_%d" % k))
+	if ok: stones += 1
+	var lip := on_summit(285.0,Art.edge_r(285.0)-1.3)
+	ok = ok and hop(stone("south_4"),Vector3(lip.x,-(lip.y-0.1),lip.z))
+	check(ok,"South stones: from the lower tier up %d floating stones, 1.35 m a jump caught, onto the summit at the bite (feet %s)" % [stones,m.feet])
+	# The drift: down from the summit's north-east edge to the castellum's
+	# crown, and back up.
+	var from := on_summit(32.0,11.3)
+	var down := line(from,stone("drift_1"),"jump")
+	for k in range(2,7):
+		down = down and hop(stone("drift_%d" % (k-1)),stone("drift_%d" % k))
+	down = down and hop(stone("drift_6"),Vector3(94.3,37.8,-1.4))
+	check(down,"Drift: down from the summit over six floating stones to the castellum's crown (feet %s)" % m.feet)
+	var up := line(Vector3(94.6,37.8,-1.6),stone("drift_6"),"jump")
+	for k in range(5,0,-1):
+		up = up and hop(stone("drift_%d" % (k+1)),stone("drift_%d" % k))
+	up = up and hop(stone("drift_1"),on_summit(30.0,11.0))
+	check(up,"Drift: up from the castellum's crown over the six stones to the summit, a third way up (feet %s)" % m.feet)
+	# The islets.
+	var shelf: Vector2 = Art.at_polar(180.0,Art.r1(180.0)-1.6)
+	ok = line(Vector3(shelf.x,30.0+Art.T2,0.5),stone("west_1"),"jump")
+	ok = ok and hop(stone("west_1"),Vector3(Art.WEST_ISLET.x,Art.WEST_TOP,Art.WEST_ISLET.y))
+	ok = ok and line(Vector3(Art.WEST_ISLET.x-1.0,Art.WEST_TOP,0.5),stone("west_1"),"jump")
+	ok = ok and hop(stone("west_1"),Vector3(shelf.x,30.0+Art.T2,0.5))
+	check(ok,"West islet: out from the west shelf over a floating stone and back (feet %s)" % m.feet)
+	ok = line(Vector3(121.5,30.0,-6.3),stone("east_0"),"jump")
+	ok = ok and hop(stone("east_0"),stone("east_1"))
+	ok = ok and hop(stone("east_1"),Vector3(Art.EAST_ISLET.x-2.6,Art.EAST_TOP,Art.EAST_ISLET.y))
+	check(ok,"East islet: off the meadow's east edge up a fallen stone and a floating one onto it (feet %s)" % m.feet)
+	_circle()
+
+## The stone circle on the crag: onto its lintels up the leaning stone and
+## up the fallen trilithon; round them as a loop; the great trilithon.
+func _circle() -> void:
 	var ring: Dictionary = study.circle.get_meta("ring")
-	var ring_y: float = study.circle.transform.origin.y+float(ring.top)
 	var lean_foot := on_circle(ring.lean_foot)
 	var lean_head := on_circle(ring.lean_head)
 	var onto: Vector3 = lintel(RuinKit.LEAN_AT)[0]
-	ok = climb(lean_foot,[Vector2(lean_head.x,lean_head.z),Vector2(onto.x,onto.z)])
-	check(ok and absf(m.feet.y-ring_y) < 0.12,"Circle: up the leaning stone and a jump onto the lintels at %.2f m (feet %s)" % [ring_y,m.feet])
+	var ok := climb(lean_foot,[Vector2(lean_head.x,lean_head.z)]) and line(m.feet,onto,"jump")
+	check(ok and absf(m.feet.y-onto.y) < 0.15,"Circle: up the leaning stone and a jump onto the lintels at %.2f m (feet %s)" % [onto.y,m.feet])
 	var lying := on_circle(ring.lying)
 	var stub := on_circle(ring.stub)
 	onto = lintel(RuinKit.STUB_AT)[0]
 	var toward := Vector2(lying.x-stub.x,lying.z-stub.z).normalized()
 	var start := Vector2(lying.x,lying.z)+toward*3.4
-	ok = climb(Vector3(start.x,terrace_y,start.y),[Vector2(lying.x,lying.z),Vector2(stub.x,stub.z)])
-	ok = ok and line(m.feet,onto,"jump")
-	check(ok and absf(m.feet.y-ring_y) < 0.12,"Circle: up the fallen trilithon, its lying stone then its stub, onto the lintels (feet %s)" % m.feet)
-	_ring_loop(ring_y)
+	ok = climb(Vector3(start.x,Art.summit(start.x,start.y),start.y),[Vector2(lying.x,lying.z),Vector2(stub.x,stub.z)])
+	var caught := -1
+	if ok:
+		for k: int in [RuinKit.STUB_AT,RuinKit.STUB_AT-1,RuinKit.STUB_AT+1]:
+			var l: Vector3 = lintel(k)[0]
+			var end := joint(k+1) if k < RuinKit.STUB_AT else (joint(k) if k > RuinKit.STUB_AT else l)
+			if hop(stub,end.lerp(l,0.3)):
+				caught = k
+				break
+	ok = ok and caught >= 0
+	check(ok,"Circle: up the fallen trilithon, its lying stone then its stub, onto the lintels (lintel %d, feet %s)" % [caught,m.feet])
+	_ring_loop()
 	var back: Vector3 = lintel(RuinKit.CIRCLE_STONES/2-1)[0]
 	var summit := on_circle(ring.trilithon)
 	ok = line(back,summit,"jump")
 	check(ok,"Circle: from the back lintel a jump up onto the great trilithon at %.2f m, the isle's summit (feet %s)" % [summit.y,m.feet])
 
 ## Round the lintel ring from the lintel over the leaning stone back to it:
-## walked from lintel to lintel, a twirled jump over each fallen one.
-func _ring_loop(ring_y: float) -> void:
+## walked lintel to lintel, a twirled jump over each fallen one, and over
+## the bite by the floating sarsen (a twirled jump onto it, one off).
+func _ring_loop() -> void:
 	var n := RuinKit.CIRCLE_STONES
+	var ring: Dictionary = study.circle.get_meta("ring")
+	var gone: Array = ring.gone
 	var first := RuinKit.LEAN_AT
 	var here: Vector3 = lintel(first)[0]
 	study.place(here,Vector2(1.0,0.0))
 	for i in range(30): tick(Vector2.ZERO)
-	var ok := m.grounded and absf(m.feet.y-ring_y) < 0.12
+	var ok := m.grounded and absf(m.feet.y-here.y) < 0.15
 	var twirls := 0
+	var floated := false
 	var k := first
 	var steps := 0
+	var failed := ""
 	while ok and steps < n:
 		var next := (k+1)%n
 		var l: Array = lintel(next)
 		if l[1]:
 			var mid: Vector3 = l[0]
-			ok = climb(m.feet,[flat(joint(next)),flat(mid)]) and absf(m.feet.y-ring_y) < 0.12
+			ok = climb(m.feet,[flat(joint(next)),flat(mid)]) and absf(m.feet.y-mid.y) < 0.15
 			k = next
 			steps += 1
+		elif next in gone:
+			# Over the bite: from this lintel's end onto the floating sarsen,
+			# then onto the lintel past the gap.
+			var after := (next+gone.size())%n
+			var from := joint(k+1)+(joint(k)-joint(k+1)).normalized()*1.2
+			var to := joint(after)+(joint(after+1)-joint(after)).normalized()*1.2
+			var floating := stone("ring_sarsen")
+			ok = climb(m.feet,[flat(from)]) and line(m.feet,floating,"jump_twirl")
+			ok = ok and hop(floating,to,"jump_twirl")
+			floated = ok
+			twirls += 2
+			k = after
+			steps += 1+gone.size()
 		else:
-			# Over the fallen lintel: from near the end of this one along the
-			# fallen one's line to the start of the one after.
 			var after := (next+1)%n
 			var from := joint(k+1)+(joint(k)-joint(k+1)).normalized()*1.2
 			var to := joint(k+2)+(joint(k+3)-joint(k+2)).normalized()*1.2
-			from.y = ring_y
-			to.y = ring_y
 			ok = climb(m.feet,[flat(from)]) and line(m.feet,to,"jump_twirl")
 			twirls += 1
 			k = after
 			steps += 2
-	check(ok and k == first and twirls == (study.circle.get_meta("ring").fallen as Array).size(),"Circle: round the lintel ring as a loop, %d twirled jumps over fallen lintels (feet %s)" % [twirls,m.feet])
+		if not ok and failed == "": failed = " (stuck after lintel %d, feet %s)" % [k,m.feet]
+	check(ok and k == first and floated,"Circle: round the tilted lintel ring as a loop, over %d fallen lintels and the bite by the floating sarsen, %d twirled jumps%s" % [(ring.fallen as Array).size(),twirls,failed])
+
+## The ground has no hole: everywhere on the near island's top a ray from
+## high above stands on the ground at least (or on what is built on it),
+## and every floating stone's top is where it looks.
+func _ground_sound() -> void:
+	var holes := 0
+	var probes := 0
+	var first := ""
+	var poly: PackedVector2Array = study.art.get_node("NearIsland").get_meta("outline")
+	var x := 36.0
+	while x < 128.0:
+		var z := -27.0
+		while z < 25.0:
+			var p := Vector2(x,z)
+			z += 0.37
+			if not Geometry2D.is_point_in_polygon(p,poly) or Art._edge_distance(p,poly) < 0.6: continue
+			var g: float = Art.ground(p.x,p.y)
+			var steep := false
+			for d: Vector2 in [Vector2(0.9,0.0),Vector2(-0.9,0.0),Vector2(0.0,0.9),Vector2(0.0,-0.9)]:
+				if absf(Art.ground(p.x+d.x,p.y+d.y)-g) > 0.2: steep = true
+			if steep: continue
+			probes += 1
+			var hit: float = study.ground._down(p,60.0)
+			if hit < g-0.35:
+				holes += 1
+				print("     hole %s: %.2f under %.2f" % [p,hit,g])
+				if first == "": first = " first at %s: %.2f under %.2f" % [p,hit,g]
+		x += 0.37
+	check(probes > 20000 and holes == 0,"Ground: no hole in the hill's tiers, ramp, summit or the meadow at %d probes (%d)%s" % [probes,holes,first])
+	var off := 0
+	for s: Dictionary in Art.platforms():
+		var size: Vector3 = s.size
+		var basis := Basis(Vector3.UP,float(s.yaw))
+		for u: float in [-0.4,0.0,0.4]:
+			for v: float in [-0.4,0.0,0.4]:
+				var q: Vector3 = s.at+basis*Vector3(u*size.x,0.0,v*size.z)
+				var hit_y: float = study.ground._down(Vector2(q.x,q.z),s.at.y+0.4)
+				if absf(hit_y-s.at.y) > 0.03:
+					off += 1
+					print("     stone %s off at %s: %.3f vs %.3f" % [s.name,q,hit_y,s.at.y])
+	check(off == 0,"Floating stones: every one stands where its top is drawn (%d of %d probes off)" % [off,Art.platforms().size()*9])
+
+## The kit stair up the crag is sound: its treads' ground their tops (no
+## gap a ray drops through), and driven onto from every side, up and down,
+## walking and running, never under a tread nor off the hill.
+func _kit_stairs_sound() -> void:
+	var xf: Transform3D = study.kit_stairs.transform
+	var inv := xf.affine_inverse()
+	var front := Art.KIT_RUN*0.5
+	var tread_at := func(l: Vector3) -> float:
+		if absf(l.x) > RuinKit.STAIR_WIDTH*0.5-0.01: return NAN
+		var d := front-l.z
+		if d < 0.0 or d > Art.KIT_RUN: return NAN
+		return (mini(int(d/RuinKit.TREAD),RuinKit.STEPS-1)+1)*RuinKit.RISER
+	var base_y := xf.origin.y
+	var off := 0
+	var probes := 0
+	var lx := -RuinKit.STAIR_WIDTH*0.5+0.1
+	while lx <= RuinKit.STAIR_WIDTH*0.5-0.1:
+		var lz := front-0.01
+		while lz > -front+0.01:
+			var t: float = tread_at.call(Vector3(lx,0.0,lz))
+			var w := xf*Vector3(lx,0.0,lz)
+			var g: float = study.ground.height_from(Vector2(w.x,w.z),base_y+t-0.2)-base_y
+			probes += 1
+			var lo: float = tread_at.call(Vector3(lx,0.0,lz+0.03))
+			var hi: float = tread_at.call(Vector3(lx,0.0,lz-0.03))
+			if g < (0.0 if is_nan(lo) else lo)-0.05 or g > (t if is_nan(hi) else hi)+0.05: off += 1
+			lz -= 0.013
+		lx += 0.05
+	check(probes > 10000 and off == 0,"Kit stair: its treads' ground is their tops at all %d probes (%d off)" % [probes,off])
+	var runs := 0
+	var under := 0
+	var lost := 0
+	var first := ""
+	var foot := xf*Vector3(0.0,0.0,front+1.2)
+	var head := xf*Vector3(0.0,RuinKit.STEPS*RuinKit.RISER,-front-1.0)
+	for pace: float in [0.5,1.0]:
+		for slant: float in [-40.0,-20.0,0.0,20.0,40.0]:
+			for across: float in [-0.6,0.0,0.6]:
+				for going_up: bool in [true,false]:
+					runs += 1
+					var way3 := xf.basis*(Vector3(0.0,0.0,-1.0) if going_up else Vector3(0.0,0.0,1.0))
+					var way := Vector2(way3.x,way3.z).normalized().rotated(deg_to_rad(slant))
+					var side := xf.basis*Vector3(across,0.0,0.0)
+					study.place((foot if going_up else head)+side,way)
+					for i in range(20): tick(Vector2.ZERO)
+					for f in range(240):
+						tick(way*pace)
+						var l: Vector3 = inv*m.feet
+						if absf(l.z) > front+2.0 or absf(l.x) > 3.0: break
+						var t: float = tread_at.call(l+Vector3(0.0,0.0,0.15))
+						if not is_nan(t) and m.feet.y < base_y+t-0.25:
+							under += 1
+							if first == "": first = " first: pace %.1f slant %.0f across %.1f %s: feet %s" % [pace,slant,across,"up" if going_up else "down",m.feet]
+							break
+						if m.feet.y < 30.0+Art.T1-1.0:
+							lost += 1
+							break
+	check(under == 0 and lost == 0,"Kit stair: driven on from %d approaches never under a tread nor off the ledge (%d under, %d lost)%s" % [runs,under,lost,first])
 
 ## Placed at `from` (dropped onto what is under it), runs at `to` (x, z;
 ## y the top wanted, or under 0 any stand at least -y high, within 1.8 m)
@@ -334,9 +547,9 @@ func climb(from: Vector3, points: Array) -> bool:
 			continue
 		var way := off.normalized()
 		var jump := false
-		if m.grounded and holding == 0 and ahead(way) > m.feet.y+0.45: holding = 14
+		if m.grounded and holding == 0 and ahead(way) > m.feet.y+0.45: holding = 18
 		if holding > 0:
-			jump = true
+			jump = holding > 4
 			holding -= 1
 		if m.on_ledge(): jump = f%20 < 3
 		tick(way,jump)

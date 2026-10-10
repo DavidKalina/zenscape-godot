@@ -1334,8 +1334,12 @@ static func grand_stair(seed_value: int, weathered := 0.0) -> Node3D:
 ## (round(weathered x 3), never one a way up lands on) and lie toppled in
 ## the grass, cracked; ivy hangs from the lintels. Meta "ring": {top,
 ## lintels [[top middle, standing]], trilithon (its top's middle), stub,
-## lying (their tops' middles), lean_foot, lean_head, fallen}.
-static func stone_circle(seed_value: int, weathered := 0.0) -> Node3D:
+## lying (their tops' middles), lean_foot, lean_head, fallen, missing,
+## gone}. `missing`: sarsens (by index) broken away with the ground under
+## them (a crag's slumped edge): neither they nor the lintels they carried
+## (`gone`, standing false) are built, the scene places them; no lintel
+## next to the gap falls, so the ring runs on to its edge.
+static func stone_circle(seed_value: int, weathered := 0.0, missing: Array = []) -> Node3D:
 	var b := Build.new(seed_value,weathered,"StoneCircle")
 	b.ground = 0.0
 	var pitch := TAU/CIRCLE_STONES
@@ -1344,6 +1348,11 @@ static func stone_circle(seed_value: int, weathered := 0.0) -> Node3D:
 	# back one (before the great trilithon), nor those the leaning stone and
 	# the stub lead up onto; never two side by side.
 	var keep := [CIRCLE_STONES-1,CIRCLE_STONES/2-1,LEAN_AT-1,LEAN_AT,STUB_AT-1,STUB_AT,STUB_AT+1]
+	var gone: Array = []
+	for k in range(CIRCLE_STONES):
+		if k in missing or (k+1)%CIRCLE_STONES in missing: gone.append(k)
+	for k: int in gone:
+		keep.append_array([k,(k+1)%CIRCLE_STONES,(k+CIRCLE_STONES-1)%CIRCLE_STONES])
 	var may: Array = []
 	for k in range(CIRCLE_STONES):
 		if not k in keep: may.append(k)
@@ -1356,6 +1365,7 @@ static func stone_circle(seed_value: int, weathered := 0.0) -> Node3D:
 		fallen.append(k)
 	# The sarsens.
 	for k in range(CIRCLE_STONES):
+		if k in missing: continue
 		var a := (k+0.5)*pitch
 		_sarsen(b,Transform3D(Basis(Vector3.UP,a),_round(a,CIRCLE_RADIUS)),SARSEN,0.15)
 	# The lintels, each from one sarsen's middle to the next's, cut to the
@@ -1366,7 +1376,8 @@ static func stone_circle(seed_value: int, weathered := 0.0) -> Node3D:
 		var a1 := (k+1.5)*pitch
 		var am := (k+1.0)*pitch
 		var mid := _round(am,CIRCLE_RADIUS*cos(pitch*0.5))
-		lintels.append([mid+Vector3(0.0,ring_top,0.0),not k in fallen])
+		lintels.append([mid+Vector3(0.0,ring_top,0.0),not k in fallen and not k in gone])
+		if k in gone: continue
 		if k in fallen:
 			_toppled_lintel(b,am,2.0*CIRCLE_RADIUS*sin(pitch*0.5)+LINTEL.x*0.5)
 			continue
@@ -1420,10 +1431,10 @@ static func stone_circle(seed_value: int, weathered := 0.0) -> Node3D:
 	b.solid(_box(b,Vector3(LEAN.x*0.5,LEAN.y*0.5,(r_b-r_a)/cos(slope)*0.5),0.1),lean_pose,_stone(b,1.1),true,true,square,-1,1.4)
 	# Tufts at the stones' feet.
 	for k in range(CIRCLE_STONES):
-		if b.rng.randf() < 0.6: b.tuft(_round((k+0.5)*pitch+b.rng.randf_range(-0.12,0.12),CIRCLE_RADIUS+b.rng.randf_range(-0.9,0.9)),b.rng.randf_range(0.25,0.45),5)
+		if b.rng.randf() < 0.6 and not k in missing: b.tuft(_round((k+0.5)*pitch+b.rng.randf_range(-0.12,0.12),CIRCLE_RADIUS+b.rng.randf_range(-0.9,0.9)),b.rng.randf_range(0.25,0.45),5)
 	var root := b.finish()
 	var stub_top := _round(sa,stub_r)+Vector3(0.0,STUB,0.0)
-	root.set_meta("ring",{"top":ring_top,"lintels":lintels,"fallen":fallen,
+	root.set_meta("ring",{"top":ring_top,"lintels":lintels,"fallen":fallen,"missing":missing.duplicate(),"gone":gone,
 		"trilithon":Vector3(0.0,TRILITHON.y+LINTEL.y,-TRILITHON_AT),
 		"stub":stub_top,"lying":_round(sa,lie_r)+Vector3(0.0,TRILITHON.z-0.15,0.0),
 		"lean_foot":_round(al,low-0.6),"lean_head":_round(al,head-0.35)+Vector3(0.0,LEAN_TOP-0.35*tan(slope),0.0)})
