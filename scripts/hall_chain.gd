@@ -39,6 +39,25 @@ var sea_top := -102.0
 ## The first hall's lowest stone over the cloud top (m).
 var clear := 14.0
 var plane_box := Callable()
+## The heights a hall's lowest stone may stand over the cloud top (m;
+## ChainPlan.CLEAR_RANGE unless the caller says: the aqueduct isle's
+## halls stand far over the real cloud sea).
+var clear_range := ChainPlan.CLEAR_RANGE
+## The game's cloud puffs the halls burst into (scripts/sky_puff_burst.gd),
+## each `puff_scale` times the rise's size; null: each hall's own balls.
+var burst: Node = null
+var puff_scale := 1.0
+## Arrival-aware timing (the aqueduct isle's; off in the chain study).
+## `settle_by` > 0: the newest hall sets the next rising as soon as, at the
+## plane's speed (`plane_speed`, which the caller keeps up), the next gate
+## is no more than the rise's length plus `settle_by` s off, or at `at`,
+## whichever comes first. `catch_up` > 1: a hall still rising that the
+## plane would reach less than `settle_by` s after it is still rises up to
+## that many times quicker (each hall's `pace`), so a boost never meets a
+## gate still coming up.
+var settle_by := 0.0
+var plane_speed := 0.0
+var catch_up := 1.0
 ## The chain's settings (ChainPlan.settings) and the rise's options
 ## (HallRise.options).
 var cfg := {}
@@ -101,7 +120,18 @@ func lowest() -> float:
 
 ## The origin heights a hall may stand at.
 func y_range() -> Vector2:
-	return Vector2(ChainPlan.origin_y_for(ChainPlan.CLEAR_RANGE.x,sea_top,lowest()),ChainPlan.origin_y_for(ChainPlan.CLEAR_RANGE.y,sea_top,lowest()))
+	return Vector2(ChainPlan.origin_y_for(clear_range.x,sea_top,lowest()),ChainPlan.origin_y_for(clear_range.y,sea_top,lowest()))
+
+## How long (s) a hall standing at origin height `origin_y` takes to rise
+## till its last chunk is still (its cloud top `sea_top`).
+func length_at(origin_y: float) -> float:
+	var given := rise_opts.duplicate()
+	given.sea = sea_top-origin_y
+	return float(RisePlan.remake(template,given).length)
+
+## The gate (world: its line's first point) of a hall standing at `pose`.
+static func gate_of(pose: Dictionary) -> Vector3:
+	return ChainPlan.xform(pose)*ChainPlan.local(ChainPlan.line()[0],ChainPlan.hand_of(pose))
 
 ## The first hall's pose: turned `yaw`, standing `clear` over the cloud.
 func first_pose(yaw := 0.0) -> Dictionary:
@@ -167,13 +197,15 @@ func _add(pose: Dictionary) -> void:
 	rise.sea_y = sea_top-float(pose.origin.y)
 	rise.take_per_frame = TAKE_PER_FRAME
 	rise.plane_box = _box_for.bind(rise)
+	rise.burst = burst
+	rise.puff_scale = puff_scale
 	add_child(rise)
 	var given := rise_opts.duplicate()
 	given.template = template if ChainPlan.hand_of(pose) > 0 else template_left
 	given.materials = materials
 	rise.setup(given)
 	rise.play()
-	var h := {"index":int(pose.index),"pose":pose,"rise":rise,"progress":0.0,"next":false,"born":clock,"triggered_at":-1.0}
+	var h := {"index":int(pose.index),"pose":pose,"rise":rise,"progress":0.0,"next":false,"born":clock,"triggered_at":-1.0,"near":false,"pace":1.0}
 	halls.append(h)
 	spawns.append({"index":int(pose.index),"setup":rise.setup_usec,"frame":0,"total":0})
 	made += 1
@@ -195,7 +227,8 @@ func advance(delta: float, plane_at: Variant) -> void:
 	clock += delta
 	for h: Dictionary in halls:
 		var rise: Node3D = h.rise
-		rise.advance(delta)
+		h.pace = _pace(h,plane_at)
+		rise.advance(delta*float(h.pace))
 	for s: Dictionary in spawns:
 		var h := hall(int(s.index))
 		if h.is_empty(): continue
@@ -206,9 +239,11 @@ func advance(delta: float, plane_at: Variant) -> void:
 			if h.rise.sinking: continue
 			var local: Vector3 = (h.rise as Node3D).to_local(plane_at)
 			var got := ChainPlan.progress_at(ChainPlan.local(local,ChainPlan.hand_of(h.pose)))
-			if got.y <= NEAR: h.progress = maxf(float(h.progress),got.x)
+			if got.y <= NEAR:
+				h.progress = maxf(float(h.progress),got.x)
+				h.near = true
 		var newest: Dictionary = halls[-1]
-		if not bool(newest.next) and float(newest.progress) >= float(cfg.at): spawn_next()
+		if not bool(newest.next) and (float(newest.progress) >= float(cfg.at) or _due(newest)): spawn_next()
 	_cap(plane_at)
 	var k := 0
 	while k < halls.size():
@@ -219,6 +254,25 @@ func advance(delta: float, plane_at: Variant) -> void:
 			_trim_route()
 			continue
 		k += 1
+
+## Arrival-aware: whether, at the plane's speed, the next hall's gate is
+## now near enough that it must start rising to be still `settle_by` s
+## before the plane gets there (the plane on `h`'s line).
+func _due(h: Dictionary) -> bool:
+	if settle_by <= 0.0 or not bool(h.near): return false
+	var left := ChainPlan.line_length()*(1.0-float(h.progress))+float(cfg.gap)+ChainPlan.LEAD_IN
+	return left/maxf(plane_speed,1.0) <= float(h.rise.plan.length)+settle_by
+
+## How fast hall `h` rises this frame (1 its own pace): quicker, up to
+## `catch_up`, while the plane, flying at `plane_speed`, would reach its
+## gate less than `settle_by` s after it is still.
+func _pace(h: Dictionary, plane_at: Variant) -> float:
+	if catch_up <= 1.0 or plane_at == null or h.rise.sinking or not h.rise.playing or bool(h.near): return 1.0
+	var left := float(h.rise.plan.length)+float(h.rise.stall)-float(h.rise.clock)
+	if left <= 0.0: return 1.0
+	var eta := (plane_at as Vector3).distance_to(gate_of(h.pose))/maxf(plane_speed,1.0)-settle_by
+	if eta <= 0.05: return catch_up
+	return clampf(left/eta,1.0,catch_up)
 
 ## The hall with index `index` ({} if not up).
 func hall(index: int) -> Dictionary:

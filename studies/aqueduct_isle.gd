@@ -59,12 +59,17 @@ extends "res://studies/character_study.gd"
 ## <platform name> rests it elsewhere; --no-lode leaves it out; --pickup
 ## picks it up at once if he stands by it (captures).
 ## The hall chain (docs/design/isle-hall-chain.md, studies/
-## aqueduct_isle_chain.gd): near the shard an arch rises quietly out of
-## the cloud past it; threading it, a held breath, a pulse through the
-## plane, and the Sundered halls rise one after another ahead. --no-chain
-## leaves it out (the old shard-only arrival); --ring=x,y,z moves the
-## ring, --ring-pause=<s> the breath (1.5), --chain-lead=<m> how far on
-## the first hall's way in stands (180); --near-ring starts in the plane
+## aqueduct_isle_chain.gd): near the shard an arch erupts quietly out of
+## the cloud sea far below and climbs to stand past it; threading it, a
+## held breath, a pulse through the plane (the nose arrow goes quiet), and
+## the Sundered halls erupt from the sea one after another ahead.
+## --no-chain leaves it out (the old shard-only arrival); --ring=x,y,z
+## moves the ring, --ring-near=<m> how near it wakes (420),
+## --ring-pause=<s> the breath (1.5), --chain-lead=<m> how far on the first
+## hall's way in stands at the least (180), --arrive-spare=<s> how long
+## before the plane gets to a gate it is still (2), --catch-up=<x> how much
+## quicker a hall the plane outruns rises (1.6), --first-at=thread|pulse
+## when the first hall starts (thread); --near-ring starts in the plane
 ## with the stone seated 260 m before the ring; the chain's own flags
 ## (--chain-at=, --chain-gap=, ...) and the rise's apply.
 ## --look=<id> (or --preset=<id>) starts in that look preset; --look=x,y,z
@@ -252,7 +257,7 @@ const ARMS := Vector3(2.9,0.2,0.3)
 const CARRY_AT := Vector3(0.36,0.82,0.02)
 const CARRY_SCALE := 0.45
 ## The shard with the chain: 380 m north-north-east of the start, out over
-## the chain's cloud sea and clear of the near isles, so the ring past it
+## the cloud sea and clear of the near isles, so the ring past it
 ## and the halls past that run into open sky (docs/design/
 ## isle-hall-chain.md). Without it (--no-chain), where it was.
 const TARGET := Vector3(200.0,42.0,-380.0)
@@ -303,6 +308,10 @@ var _near_ring := false
 ## A capture from the walker's (or chase) camera waits this long (s;
 ## --capture-wait=<s>).
 var _capture_wait := 4.0
+## Seconds flown (fly_step's deltas): a capture from the plane waits for
+## this to reach --capture-wait, so it is the same moment run to run
+## however slow the first frames are.
+var flown := 0.0
 var _plane_flash: MeshInstance3D = null
 var _plane_flash_left := 0.0
 
@@ -783,6 +792,8 @@ func board() -> void:
 			_nose = NoseCompass.new()
 			_nose.target = lode_target
 			plane_figure.add_child(_nose)
+			# Back in the plane once the halls have begun, it stays quiet.
+			if isle_chain != null and isle_chain.state == "started": _nose.quiet(true)
 			_moments.pop("The lodestone wakes the compass",1.6)
 	chase = GlideCamera.new()
 	chase.reset(plane,camera.global_position,camera.fov)
@@ -888,10 +899,9 @@ func _fly_input(delta: float) -> Dictionary:
 ## stands, drawn, the chase camera behind it; skimming the turf braking
 ## slow for TOUCH_HOLD s sets the pilot down there.
 func fly_step(delta: float, input: Dictionary) -> void:
+	flown += delta
 	var was: Vector3 = plane.position
 	var ground := Callable(self,"plane_ground")
-	# Over the chain's cloud sea its top is the cloud floor.
-	if isle_chain != null: plane.floor_y = isle_chain.floor_at(plane.position,Art.TOP-FLOOR_BELOW)
 	plane.step(delta,input,ground)
 	_bump(was)
 	if isle_chain != null: isle_chain.step(delta,plane,lode_state == "seated",camera.global_position)
@@ -1071,7 +1081,9 @@ func _take_capture() -> void:
 			if life != null: life.advance(1.0/60.0)
 			await get_tree().process_frame
 	else:
-		await get_tree().create_timer(_capture_wait).timeout
+		if flying:
+			while flown < _capture_wait: await get_tree().process_frame
+		else: await get_tree().create_timer(_capture_wait).timeout
 	# The frame's cost, measured over a second before the save.
 	# The frame's cost: wall-clock frames with vsync off, over 120 frames.
 	var vsync := DisplayServer.window_get_vsync_mode()
@@ -1377,7 +1389,9 @@ func _chain_plane_box() -> AABB:
 func _ring_pulse() -> void:
 	_moments.flourish()
 	_plane_flash_left = PULSE_TIME
-	if _nose != null: _nose.pulse()
+	if _nose != null:
+		_nose.pulse()
+		_nose.quiet()
 	if stone_plane and flying and plane_figure != null: plane_figure.flash()
 
 func _pulse_frame(delta: float) -> void:

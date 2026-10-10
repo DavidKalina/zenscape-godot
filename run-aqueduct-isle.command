@@ -8,7 +8,8 @@
 #   ./run-aqueduct-isle.command --near-ring     in the plane, stone seated, 260 m before the ring
 #   ./run-aqueduct-isle.command --carry --fly   in the plane, stone seated, by the isle
 #   ./run-aqueduct-isle.command --no-chain      the shard only (the old arrival chime)
-#   --ring=x,y,z  --ring-pause=<s> (1.5)  --chain-lead=<m> (180)  --target=x,y,z
+#   --ring=x,y,z  --ring-near=<m> (420)  --ring-pause=<s> (1.5)  --chain-lead=<m> (180)  --target=x,y,z
+#   --arrive-spare=<s> (2)  --catch-up=<x> (1.6)  --first-at=thread|pulse (thread)
 #   --stone-plane, and the hall chain's flags (--chain-at=, --chain-gap=, ...)
 set -u
 PROJECT_DIR="${0:A:h}"

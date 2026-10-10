@@ -1,8 +1,12 @@
 # Isle hall chain: handoff
 
-Branch `study/isle-hall-chain`, from main (94a4d1c0) with `study/hall-chain` (c06cc605) merged in (no conflicts). Not merged, not pushed. It follows on from docs/design/isle-lodestone.md (the lodestone, the nose arrow) and docs/design/hall-chain.md (the chain).
+Branch `study/isle-hall-chain-2`, from `study/isle-hall-chain` (dfa139d2). Not merged, not pushed. It follows on from docs/design/isle-lodestone.md (the lodestone, the nose arrow) and docs/design/hall-chain.md (the chain).
 
-The ask: "Grab the sundered hall's orb, fly through the ring, and it starts."
+The first round's ask: "Grab the sundered hall's orb, fly through the ring, and it starts." You flew it: "Not bad. Few issues." This round fixes three of them:
+
+1. **"Spawns too late."** Now the ring and every hall are up and still before you reach them, at cruise and at boost.
+2. **"I don't like the cloud layer."** The flat greybox patch is gone. The ring and the halls now erupt out of the game's own cumulus sea, far below, and climb up to where you fly.
+3. **"Arrow keeps pointing while I start the challenge."** At the pulse the nose arrow now folds down along the nose, dims, and stops tracking.
 
 ## How to play
 
@@ -15,112 +19,215 @@ The ask: "Grab the sundered hall's orb, fly through the ring, and it starts."
 
 The scene picker's "Aqueduct isle" entry (Scenes, then Ruins) opens the whole loop.
 
-1. Find the lodestone on floating stone `east_1` and pick it up (E or pad A). Keep it (E), then board (F or pad Y). This part is unchanged.
-2. Fly where the nose arrow points. The shard is now 380 m north-north-east of the start, at (200, 42, -380).
-3. Within 230 m of the ring, an arch on a keel of lode stone rises out of the cloud sea. It stands 90 m past the shard and 35 m to its left. Nothing announces it:
-   - no beacon, glow or pulse;
-   - no text;
-   - the nose arrow goes on pointing at the shard.
-4. Fly through its opening. Nothing happens for 1.5 s. Then the chime plays, a soft flash blooms round the plane and the nose arrow flares (on the stone plane, its own sync flash). The first Sundered hall starts rising out of the cloud dead ahead, on the heading you left the ring with.
-5. From there it is the hall chain. Each hall you get 40% through sets the next one rising, and the oldest past 8 sinks. The flying hint adds one line: "The halls rise out of the cloud ahead: fly on through them".
-
-Missing the ring does nothing. Crossing its plane beside it, or flying round it, starts nothing, and you can come round and go through. Being near the shard no longer triggers anything either: the old 30 m arrival is off with the chain. Its chime is folded into the ring's pulse, and the shard's own flash is dropped.
+1. Find the lodestone on floating stone `east_1` and pick it up (E or pad A). Keep it (E), then board (F or pad Y).
+2. Fly where the nose arrow points. The shard is at (200, 42, -380).
+3. Within 420 m of the ring, an arch on a keel of lode stone erupts out of the cloud sea far below and climbs about 160 m to stand past the shard. It takes 8.6 s. Nothing announces it, and the nose arrow goes on pointing at the shard.
+4. Fly through its opening. The first hall starts rising at once, out of sight, deep in the cloud. For 1.5 s nothing shows. Then:
+   - the chime plays;
+   - a soft flash blooms round the plane;
+   - the nose arrow flares, then folds quiet over 2.4 s;
+   - the first chunk of the first hall bursts out of the cloud dead ahead, a tenth of a second after the pulse.
+5. From there it is the hall chain. Each hall erupts out of the sea ahead and climbs to your height, triggered early enough for its gate to be still before you get there.
 
 ### Flags
 
 | Flag | Default | Does |
 |---|---|---|
-| `--no-chain` | | no ring, sea or chain; the shard back at (250, 54, -230) with the old 30 m arrival |
-| `--near-ring` | | starts in the plane, the stone seated, 260 m before the ring and 3 m over its middle, flying at it (implies `--carry`) |
-| `--ring=x,y,z` | 90 m past the shard, 35 m left, y 25 | the opening's middle (where you thread it); it faces along the isle-to-shard line |
+| `--ring-near=<m>` | 420 | how near the ring wakes. It also wakes sooner at speed: once the plane would arrive within its rise plus 8 s |
 | `--ring-pause=<s>` | 1.5 | the held breath between threading and the pulse |
-| `--chain-lead=<m>` | 180 | how far past the pass point the first hall's way in stands (the gate is 25 m more) |
-| `--target=x,y,z` | (200, 42, -380) | the shard; the ring follows it |
-| `--capture-wait=<s>` | 4 | how long a chase-camera capture waits (captures only) |
-| the chain's and rise's | | `--chain-at=`, `--chain-gap=`, `--chain-keep=`, `--rise-speed=`, and so on, as in docs/design/hall-chain.md |
+| `--first-at=thread\|pulse` | thread | when the first hall starts rising: at the threading (unseen through the pause) or, as before, after the pause |
+| `--chain-lead=<m>` | 180 | the least distance past the pass point for the first hall's way in (the gate is 25 m more). At speed it stands further on |
+| `--arrive-spare=<s>` | 2 | how long before the plane gets to a gate it should be still. This sets the first hall's lead and the chain's triggers |
+| `--catch-up=<x>` | 1.6 | how much quicker a hall rises when the plane would still beat it (1: never) |
+| `--no-chain`, `--near-ring`, `--ring=x,y,z`, `--target=x,y,z`, `--capture-wait=<s>` | | as before. `--capture-wait` now counts seconds flown when the capture is from the plane, so a capture shows the same moment on every run |
+| the chain's and rise's | | `--chain-at=`, `--chain-gap=`, `--chain-keep=`, `--rise-speed=`, `--chunk-gap=`, `--rise-ease=`, and so on, as in docs/design/hall-chain.md. They override the isle's rise defaults below |
 
-## The ring
+To time it headless:
 
-- **What it is.** The gothic kit's pointed arch (`RuinKit.arch`, seed 52, weathered 0.25, so the crown stays whole) at 2.2×. That gives a clear span of 9.2 m and a crown 15 m over its feet. The wooden plane is 1.4 m across, so you have about 4 m either side.
-- **What it stands on.** A small keel of the shard's lode stone (`Lodestone.keel_mesh`, 21 × 10 m, 9 m deep), with its veins dark (hum 0). It floats like the halls do.
-- **Collision.** Both the arch and the keel collide (layer 1), but only once the ring stands.
-- **Why a new arch, not the shard's.** The shard's own arch is the kit's 4.2 m one: too tight to thread comfortably, and it can't rise without poking out of the shard's tapering keel. With the chain on, the shard drops its small arch and keeps the pier, so there is one arch to read, not two to choose between. The ring stands apart and rises out of the same cloud the halls will rise from. It is a quieter echo of what is about to happen.
-- **Why 35 m to the side.** On the straight line past the shard, the approach ran under the shard's keel (its bottom is at y 28, and the opening's middle is at 25). The first capture showed the keel filling the view and hiding the ring.
-- **How it appears.** It rises 46 m from under the cloud top over 6 s, easing to a stop (1 − (1 − u)³), with a soft sea swell where it breaks through. There is no puff burst. It rises only with the stone seated.
-- **What counts as threading.** Crossing the arch's plane (its local z through 0) with the crossing point inside the opening: within the span and under the pointed head, 0.6 m in from the stone. Any other crossing counts as a miss and does nothing.
+```
+godot --headless --path . -s tools/isle_chain_timings.gd [-- <flags>]
+```
 
-## Placement
+## 1. Timing
 
-- **The cloud sea.** The isle has no real cloud surface. Its cumulus is the sky's, drawn at infinity, and nothing can rise through that. So the chain's greybox sea comes along (`shaders/isle_cloud_sea.gdshader`: the same heaps and swells), with its top at y 0.
-  - It is a patch, not the whole world: opaque out to 420 m from its centre, breaking up into ragged clumps over 120 m more.
-  - It has a hole round the isle's middle: none within 220 m, full by 320 m. That keeps it off the isle, its keels and the four near isles.
-  - The patch starts centred on the ring and then follows the chain (over 4 s).
-  - Over the patch, the plane's cloud cushion is the sea top. Elsewhere it is the isle's own (y −20).
-- **The heights.** The first hall's lane stands 2 m under the pass height. That puts its lowest stone about 14 m over the cloud, as in the chain study, so the breakthrough is right ahead and a little below you. Later halls keep the chain's 8–24 m clearance.
-- **The shard.** It moved from (250, 54, -230) to (200, 42, -380), so the ring (468 m from the isle's middle) and the halls stand well out over the sea patch, with the isle's near isles in the hole.
-- **The direction.** The first hall is mirrored (it swings you left). Starting with the as-built hand would have run the chain's S east, toward the pierced isle and the reef cluster. Mirrored, the chain's mean heading is about 38° left of the ring's facing, north-north-west into open sky. On the way, the second or third hall passes the hamlet cluster about 300 m to the west, and the far isle `far_n` about 100–150 m off at about 1.2 km.
-- **The first gate.** It is 205 m past the pass point (the way in at 180 m), within 0.01° of the heading you left the ring on. At cruise (14 m/s), after the 1.5 s pause and the rise's 12 s, the gate is easing in or settled as you reach it, as in the chain study's 170 m start.
+### Before and after
+
+These come from `tools/isle_chain_timings.gd`, headless. The plane flies straight at the ring from 600 m out, threads it, and the chain's autopilot flies three halls, at cruise (14 m/s) and holding boost (about 22 m/s). The before numbers are the same tool run on dfa139d2.
+
+Each row shows seconds from the trigger to the gate standing still / seconds from the trigger to the plane reaching it / the margin (positive: still before you arrive).
+
+| | Before, cruise | Before, boost | After, cruise | After, boost |
+|---|---|---|---|---|
+| **Ring** (trigger: it wakes) | 6.0 / 16.4 / **+10.4** (woke 230 m out) | 6.0 / 10.4 / **+4.4** | 8.6 / 30.0 / **+21.4** (woke 420 m out) | 8.6 / 19.1 / **+10.5** |
+| **First hall** (trigger: threading) | 13.7 / 14.2 / **+0.4** | 13.7 / 9.0 / **−4.7** | 12.1 / 14.2 / **+2.1** | 12.1 / 13.8 / **+1.7** |
+| **Hall 1** (trigger: its spawn) | 12.2 / 13.3 / **+1.1** | 12.2 / 8.5 / **−3.6** | 11.4 / 13.3 / **+1.8** | 10.2 / 12.8 / **+2.6** |
+| **Hall 2** | 12.1 / 13.3 / **+1.2** | 12.1 / 8.5 / **−3.6** | 11.5 / 13.3 / **+1.8** | 10.4 / 12.9 / **+2.4** |
+
+Before, at boost, you met every hall's gate 3.6 to 4.7 s before it was still. Now every gate is still about 2 s before you get there, at either speed.
+
+### What changed
+
+- **The ring wakes at 420 m, not 230 m, and earlier still at speed.** It also wakes once the plane would arrive within its rise plus 8 s. Only a 30 m/s dive changes anything: from 470 m it wakes at 30 m/s but not at cruise. Its rise is longer (8.6 s, from deep in the sea), but it now stands still 10 to 21 s before you reach it. You see it rise from about 400 m out.
+- **The first hall starts rising at the threading, not after the pause.** Through the 1.5 s pause it is climbing deep under the cloud, so the held breath is unchanged. The rise's lead is tuned (0.4 s) so the first chunk breaks the cloud top just after the pulse, which ties the two together. This alone gains 1.5 s.
+- **The first hall's way in is speed-aware.** It stands at least `--chain-lead` (180 m) past the pass point. If you thread at speed, it moves further on, enough for the gate to be still `--arrive-spare` (2 s) before you get there at that speed. At cruise that is still 180 m; threaded at full boost it would be 287 m.
+- **The chain's triggers are speed-aware** (`HallChain.settle_by`). The next hall starts rising as soon as, at the plane's speed, its gate is no more than its rise plus 2 s away. The old trigger, 40% of the way along the hall, still fires if that comes first. At cruise the two land at about the same spot. At boost the next hall starts as you enter the current one.
+- **Catch-up** (`HallChain.catch_up`). If you speed up after a hall was set rising, so that you would still beat it, its rise plays up to 1.6× faster. It only applies until you reach that hall. It is what keeps hall 1 and hall 2 still at boost (10.2 s instead of 11.4 s).
+
+The chain study (`./run-hall-chain.command`) is unchanged: `settle_by` and `catch_up` are off there by default.
+
+## 2. The cloud: erupting out of the game's own sea
+
+### What's in the scene
+
+The aqueduct isle runs the game's look pass (scripts/look_pass.gd), so it already has the game's cumulus. In the first round's capture you can see it past the greybox patch's rim. It consists of:
+
+- **The near cloud sea** (scripts/sky_sea.gd), a field of cumulus heaps round the eye, out to 2.4 km. Their feet are at y −150 and their tops reach about −105. It is drawn by the unified cloud volume (scripts/cloud_volume.gd), raymarched after the opaque pass, so solid things inside it are hidden by real cloud.
+- **The dome's painted sea** past that, to the horizon.
+
+These aren't in the isle:
+
+- **The towering cumulus** (scripts/sky_towers.gd, the "cumulus life": towers rise from the sea, stand, wane and regrow). They are cell-placed by the sky world and need its islands. They are hundreds of metres tall and take tens of seconds to grow.
+- **The glide's drifting clouds** (scripts/sky_clouds.gd).
+- **Cloud tearing** (scripts/cloud_wakes.gd). It only acts on those puffs and the volume.
+
+The first round's note that "the isle's own clouds are drawn at infinity" was wrong: the near sea is real geometry in the world, about 130 m under the plane.
+
+### Chosen: rise out of the real sea, all the way up
+
+- **The halls stay where you fly.** Their lane is about the ring's height, about 23 m, with later halls within ±8 m of the first (`HallChain.clear_range`).
+- **Each one rises out of the near sea.** It starts 25 m under the heaps' tops (`SEA_TOP`, −108) and climbs about 160 m:
+  - it bursts through the heaps at full speed (30 m/s);
+  - it eases over its last 30 m;
+  - it sinks its 0.35 m into place.
+  - These are the isle's rise defaults (`RISE_OPTS`), and the rise flags override them. With chunks 1.2 s apart (was 1.5), a hall still takes about 12 s from start to still gate. That is about the same as the old 9 m/s rise over 40 m.
+- **The ring rises the same way.** It climbs about 160 m on a chunk's motion (`RisePlan.height_at`), at 26 m/s, easing over 26 m.
+- **The breakthrough is the game's own cloud.** The hall rise's bursts, streams and caps now go to `scripts/sky_puff_burst.gd` (`HallRise.burst`, shared by the chain and the ring). It draws them with `shaders/sky_cloud_puff.gdshader`, the shader of the glide's clouds and the cloud wrapped round a sky peak's foot. That means the sky's own cloud light: sunlit tops, cool shaded bases, ragged soft rims, and a soft fade where a puff meets stone.
+  - The puffs are 2.2× the greybox size.
+  - None is carried up faster than 8 m/s, so a fast chunk leaves a billow behind it, not a jet trail.
+  - The shader gains one switch, `instance_fade` (off by default), so each puff can fade in and out by its instance colour. Its other users are unchanged.
+- **No cloud of its own.** No patch, no hole round the isle, no rim, no follow. `shaders/isle_cloud_sea.gdshader` is deleted. The plane's cloud floor is the isle's own again (y −20) everywhere.
+
+Why this one: the sea is the cloud you liked, and it is already there. Rising out of it reads at once as "erupting from the clouds we have". From the plane you watch each chunk punch up through the heaps and climb to meet you, so the motion is easy to catch even though the breakthrough is about 130 m below.
+
+Captures (local only, gitignored) are in `captures/isle-hall-chain-2/`:
+- `before_t4.png`: the first round, with the flat white patch in front of the real sea;
+- `after_s01.png`: the ring bursting out of the sea in a billow of puffs;
+- `after_s05.png`: the ring standing, the sea under it;
+- `after_s21.png`, `after_s23.png`: the first hall's chunks climbing out of the sea ahead, the gate last;
+- `after_t30.png`: arriving at the first gate.
+
+The earlier `after_t*` frames used the old real-time capture wait, so their moments drift from run to run.
+
+### Alternatives considered
+
+- **A local billow at the halls' height**, in the same puff shader. This would be a cumulus heap that swells round each chunk at y 0 and bursts as it comes through. Rejected for now:
+  - with no sea under it, the heap floats alone in open sky;
+  - to hide a chunk before it breaks through, the heap would need to be about 30 m deep under the whole footprint (a hall is about 230 m long), at roughly 200 puffs a hall;
+  - from a shallow angle you could still see under it.
+  - It is the fallback if the long climb reads wrong in motion.
+- **Swelling the real sea under each hall.** The near sea already heaves up to 22 m under islands (`SkySea.set_islands`), and it could heave under each rising hall too. But the look pass rewrites the island list every frame, and a swell change re-bakes a 2048² texture. It is a good next layer, not done here.
+- **A towering cumulus under each hall**, the hall coming out of its crown. Rejected: the towers are hundreds of metres across and take tens of seconds to grow. They also cost a body bake each, and the cloud volume marches four at most.
+- **Lowering the whole chain to just over the sea.** Rejected: it would mean a 130 m dive from the ring and a run skimming the heaps, and it changes the flight you liked.
+
+## 3. The nose arrow goes quiet
+
+At the pulse, `NoseCompass.quiet()`:
+
+- the arrow stops tracking the shard;
+- over 2.4 s, smoothstepped from where it pointed, it swings round to lie along the nose, tipped 22° down toward the cowl (`NoseCompass.rest`);
+- its glow fades from its tracking energy (0.8 or more) to 0.06, and its gold dims to 55%;
+- it shrinks to 85%.
+
+The pulse's flare still plays on top during the first 1.2 s, so it reads as a flare, then a fold. It moves at most 1.75° a frame, so there is no pop. If you get out and board again after the chain has started, it comes up already folded (`quiet(true)`). Before the pulse everything is as it was: it wakes with the stone, tracks the shard, and brightens on course.
 
 ## Files
 
 - **New:**
-  - `studies/aqueduct_isle_chain.gd`: the ring, the sea patch, the pause, starting and stepping the chain;
-  - `shaders/isle_cloud_sea.gdshader`;
-  - `tests/test_isle_hall_chain.gd`.
+  - `scripts/sky_puff_burst.gd`: short-lived game-cloud puffs;
+  - `tools/isle_chain_timings.gd`: the timing table.
+- **Deleted:** `shaders/isle_cloud_sea.gdshader` (and its `.uid`).
+- **`studies/aqueduct_isle_chain.gd`** (rewritten in part):
+  - no sea patch;
+  - `SEA_TOP` at the near sea;
+  - the isle's rise defaults;
+  - the ring's long rise, its burst and stream, and its speed-aware wake;
+  - the first hall placed at the threading, with a speed-aware lead;
+  - the arrival settings handed to the chain;
+  - the new flags.
+- **`scripts/hall_chain.gd`** (additions; the study's defaults are unchanged):
+  - `clear_range`;
+  - `burst` and `puff_scale`;
+  - `settle_by`, `plane_speed` and `catch_up` (each hall's `pace`, `near`);
+  - `length_at`;
+  - `gate_of`.
+- **`scripts/hall_rise.gd`:** `burst`, `puff_scale` and `BURST_UP`. With a burst set, its puffs go there in the world. It is unchanged without one.
+- **`shaders/sky_cloud_puff.gdshader`:** `instance_fade` (off by default).
+- **`scripts/nose_compass.gd`:** `quiet()`, `rest()` and the quiet constants.
 - **`studies/aqueduct_isle.gd`:**
-  - the flags;
-  - the new default target;
-  - the chain built with the lodestone;
-  - stepped in `fly_step` (in `_process` on foot);
-  - the plane bumps off the halls (`RuinBump.LAYER` added to its bump and stone masks);
-  - the cloud floor over the patch;
-  - the pulse;
-  - `fly_from`;
-  - `--capture-wait`;
-  - the hint line;
-  - no proximity arrival with the chain.
-- **`scripts/hall_chain.gd`:** `first_pose_at(way_in, heading, hand)` and `reset(seed, first)`. Additions only; the chain study is unchanged.
-- **`scripts/nose_compass.gd`:** `pulse()`, a flare and a swell; where it points doesn't change.
-- **`tests/test_isle_lodestone.gd`:** runs with `chain_on = false`, because it checks the shard-only arrival.
-- **`scripts/scene_catalog.gd`:** the entry's detail.
-- **`run-aqueduct-isle.command`:** the comments.
+  - the arrow quieted at the pulse (and on boarding again);
+  - no patch floor;
+  - `flown`, so plane captures wait on seconds flown;
+  - the comments.
+- **`tests/test_isle_hall_chain.gd`:** rewritten for the above.
+- **`run-aqueduct-isle.command`:** the new flags in its comments.
 
 ## Tests (headless)
 
-`tests/test_isle_hall_chain.gd` takes about 32 s. It checks:
-- the ring is hidden at the start and 400 m off;
-- it rises within 230 m, starting under the cloud, then stands and collides;
-- the nose arrow still points at the shard;
-- a pass 18 m to the side counts a miss and starts nothing;
-- threading counts;
-- nothing happens for the pause (1.52 s measured, 1.50 asked): no hall, no flash;
-- then the first hall rises, with a pulse in the plane, its gate 0.00° off the exit heading and 205 m ahead, all four chunks under the cloud;
-- the chain's autopilot (`HallChain.steer`) flies from the ring through 2 halls (3 made, 43 s): never stuck (0 bumps), never inside stone, over the cloud;
-- each gate (the first hall's included) is easing in or settled as the plane reaches it;
-- `--no-chain`: no ring or chain, the shard where it was, the old arrival flash.
+`tests/test_isle_hall_chain.gd` takes about 34 s. It checks:
 
-`test_isle_lodestone`, `test_aqueduct_isle`, `test_aqueduct_isle_plane`, `test_aqueduct_isle_look`, `test_aqueduct_isle_sky`, `test_aqueduct_isle_life`, `test_lodestone_study`, `test_hall_chain`, `test_hall_rise`, `test_scene_picker` and `test_scene_picker_title` pass under the runner, and the headless import is clean. In one parallel run, `test_aqueduct_isle_sky` failed on renderer RID errors in `sky_islets.gd` `stand`, with none of its checks failing. It passed when rerun alone. That code is untouched here. The full suite was not run (see What's weak for `test_scene_picker_entries`).
+- **No patch:**
+  - no greybox cloud patch anywhere in the scene, and its shader is gone;
+  - the bursts are the sky puff shader, shared with the chain;
+  - things break out of the near sea's top.
+- **The ring:**
+  - hidden at the start and at 600 m;
+  - it wakes 420 m out: still 8.6 s later, with you there at 30 s at cruise and 19.1 s at boost;
+  - a 30 m/s dive wakes it from 470 m, cruise doesn't;
+  - it starts under the sea's top, bursts out in puffs (40 at once), stands on time, and collides;
+  - the nose arrow points at the shard, not the ring;
+  - crossing beside it triggers nothing.
+- **Threading:**
+  - threading counts, and the first hall starts rising at once;
+  - for the 1.5 s pause, no chunk is through the cloud and there is no flash, and the arrow isn't quieting;
+  - then the pulse;
+  - the gate is 0.00° off the exit heading and 205 m ahead;
+  - it is still 2.5 s before you get there at the threading speed;
+  - threaded at boost, the way in would stand 287 m on;
+  - the first chunk breaks out as the pulse runs.
+- **The arrow:**
+  - it starts folding with the pulse, at most 1.75° a frame;
+  - it ends at rest (0.00° off) with its glow at 0.06;
+  - it no longer tracks when the target moves.
+- **The chain:**
+  - the autopilot flies 2 halls (3 made, 40 s) with 0 bumps, never inside stone, high over the cloud;
+  - each gate is fully still (pending or set) when the plane reaches it at cruise. This is stricter than round 1's "easing in or settled".
+- **`--no-chain`:** as before.
 
-## Captures
+Run under the runner and passing: `test_isle_hall_chain` (with the runner's known exit leak), `test_isle_lodestone`, `test_aqueduct_isle`, `test_aqueduct_isle_plane`, `test_aqueduct_isle_look`, `test_aqueduct_isle_sky` (known exit leak), `test_lodestone_study`, `test_hall_chain`, `test_hall_rise` and `test_scene_picker`. The headless import is clean.
 
-These are in `captures/isle-hall-chain/`, local only (gitignored), taken from `--near-ring --capture-wait=<s>`.
+`test_aqueduct_isle_life` failed once in the parallel run on one wind leaf ("1 off" the turf). It passes run alone, on this branch and on dfa139d2, and this round doesn't touch the wind life. The full suite was not run.
+
+**Not verified headless.** Everything about the look (the cloud volume hiding a chunk under the heaps, the puffs' light, the billows) needs the GPU. Headless uses the dummy renderer, and the cloud volume needs a RenderingDevice. Those points were judged by eye from the rendered captures above only.
 
 ## What's weak
 
-- **The greybox sea is a stand-in.** Up close it reads as flat white fog against the sky's fluffy cumulus, and its ragged rim and the isle's hole are visible from the right angles. A real version wants the game's volumetric cumulus or `sky_sea` to be the thing the halls rise through.
-- **Nothing tells you to thread the ring.** That is the design, but it means a player could circle the shard, see nothing happen, and leave. The arrow still points at the shard after you thread the ring, and all through the halls, behind you. Whether it should go quiet once the chain starts is an open question.
-- **The chain's heading follows how you thread.** It is the plane's heading at the pass. A steep slanted pass (the opening allows about ±35°) swings the whole chain that way and could run it toward the hamlet or the pierced isle. Nothing checks halls against the sky's isles.
-- **The patch follows the chain.** Its ragged rim slides slowly as the halls move on, and over a long run it can cover a far isle's keel or a cluster's underside.
-- **Boost still outruns the first hall's rise,** as in the chain study (open question 2 there).
-- **One shot.** The ring starts the chain once. Getting out, R, or flying back doesn't reset the ring or the chain; a scene restart does.
-- **The pulse is small on the wooden plane.** A 7 m soft flash and the arrow's flare. It was checked headless (the flags are set) but not in motion.
-- **The full scene picker entries test.** Both of my full runs of `test_scene_picker_entries.gd` crashed at exit (signal 11, `~ArrayMesh` with the RenderingServer already gone), after every entry's checks had passed, aqueduct_isle, hall_rise and hall_chain included. Runs of just those entries with `collectibles` exit cleanly. This is the engine-shutdown problem with static meshes that docs/design/scene-picker.md already records (there, one run in three). Here it happened in 2 of 2, so the chain may make it likelier. Not fixed.
+- **Gaps in the sea.** Between heaps the sea is open down to its floor (−150). A chunk starts 25 m under the heaps' tops (−133 for its top). If it rises in a gap, its top can show for a moment before its burst. In the captures the breakthroughs read as coming out of cloud, but nothing checks where the heaps are. The sea's swell under each hall (see Alternatives) would fix this.
+- **The puffs are a touch brighter than the volume's heaps** right at the breakthrough (after_s01). Close, but the two shaders light differently. `PuffBurst` could take the sea's style colours.
+- **The long climb takes most of each hall's rise.** You watch the chunks come up a long way. It reads as an eruption in stills, but how it feels in motion at 30 m/s is unchecked: grand, or too quick?
+- **The halls are still greybox and still backlit black at this hour** (after_t30), as in round 1.
+- **Catch-up changes the rise's speed** (up to 1.6×). It is only noticeable if you boost late, but it is a visible speed-up.
+- **A rising chunk still passes through the plane** if you fly into it as it climbs, as before.
+- **Carried over from round 1, still open:**
+  - one shot only;
+  - nothing tells you to thread the ring;
+  - the chain's heading follows how you thread;
+  - the `test_scene_picker_entries` exit crash, not rerun here.
 
 ## Open questions
 
-1. Should the arrow go quiet (sink back into the cowl) once the ring has been threaded, so the halls are the only guide?
-2. Should the ring stay standing as the chain's first gate, or sink back once the first hall is up?
-3. Should the pause be shorter at speed? (1.5 s is about 21 m at cruise.)
-4. Should the chain clamp its heading to the ring's facing, so a slanted pass can't swing it toward other islands?
-5. Should there be a way back (sinking the chain, re-arming the ring) for a second go without a restart?
-6. Greybox sea or the game's cumulus: is it worth making the real clouds something the halls can break through?
+1. Is the long climb out of the sea right, or would you rather the halls broke out of a local billow at your height (the fallback above)?
+2. Should the sea heave up under each rising hall (the islands' swell), so the eruption has a mound of cloud under it?
+3. Ring at 420 m: is seeing it rise from that far good, or does it give the surprise away?
+4. The quiet arrow: folded flat along the nose and dim, or sunk back into the cowl entirely?
+5. Catch-up: keep it (hidden help at boost), or let a boost meet a gate still coming up?
+6. Should the halls' 30 m/s break-through stay, or would a slower, heavier climb (`--rise-speed=20`) with a longer lead suit the game better?

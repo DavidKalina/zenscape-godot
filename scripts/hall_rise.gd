@@ -110,6 +110,13 @@ var _sink_from := PackedFloat32Array()
 var _materials := {}
 ## The puffs: positions, velocities, sizes, growth, ages and lives.
 var _puffs: MultiMeshInstance3D
+## The game's own cloud puffs to burst into instead of the greybox balls
+## (scripts/sky_puff_burst.gd, shared by a chain's halls: the aqueduct
+## isle's, docs/design/isle-hall-chain.md), each puff `puff_scale` times
+## the size, in the world. Null (the default): the study's own balls.
+var burst: Node = null
+var puff_scale := 1.0
+const BURST_UP := 8.0
 var _pp := PackedVector3Array()
 var _pv := PackedVector3Array()
 var _ps := PackedFloat32Array()
@@ -583,7 +590,7 @@ static func _flat(v: PackedVector3Array, n: PackedVector3Array, a: Vector3, b: V
 # --- Cloud ---------------------------------------------------------------------------
 
 func _make_clouds() -> void:
-	if _puffs != null: return
+	if _puffs != null or burst != null: return
 	var ball := SphereMesh.new()
 	ball.radius = 0.5
 	ball.height = 1.0
@@ -614,6 +621,14 @@ func puff_count() -> int:
 	return _pp.size()
 
 func _puff(at: Vector3, vel: Vector3, size: float, grow: float, life: float) -> void:
+	if burst != null:
+		if not is_inside_tree(): return
+		# Spread wider with the size, but never carried up faster than
+		# BURST_UP: a quick rise would string them out into a jet.
+		var v := global_basis*vel
+		v = Vector3(v.x*puff_scale,minf(v.y,BURST_UP),v.z*puff_scale)
+		burst.puff(global_transform*at,v,size*puff_scale,grow,life*sqrt(puff_scale))
+		return
 	if _pp.size() >= PUFFS: return
 	_pp.append(at); _pv.append(vel); _ps.append(size); _pg.append(grow); _pa.append(0.0); _pl.append(life)
 
