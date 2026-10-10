@@ -58,6 +58,20 @@ extends "res://studies/character_study.gd"
 ## floating far off (--target=x,y,z). --carry starts with it; --lode-at=
 ## <platform name> rests it elsewhere; --no-lode leaves it out; --pickup
 ## picks it up at once if he stands by it (captures).
+## The hall chain (docs/design/isle-hall-chain.md, studies/
+## aqueduct_isle_chain.gd): near the shard an arch erupts quietly out of
+## the cloud sea far below and climbs to stand past it; threading it, a
+## held breath, a pulse through the plane (the nose arrow goes quiet), and
+## the Sundered halls erupt from the sea one after another ahead.
+## --no-chain leaves it out (the old shard-only arrival); --ring=x,y,z
+## moves the ring, --ring-near=<m> how near it wakes (420),
+## --ring-pause=<s> the breath (1.5), --chain-lead=<m> how far on the first
+## hall's way in stands at the least (180), --arrive-spare=<s> how long
+## before the plane gets to a gate it is still (2), --catch-up=<x> how much
+## quicker a hall the plane outruns rises (1.6), --first-at=thread|pulse
+## when the first hall starts (thread); --near-ring starts in the plane
+## with the stone seated 260 m before the ring; the chain's own flags
+## (--chain-at=, --chain-gap=, ...) and the rise's apply.
 ## --look=<id> (or --preset=<id>) starts in that look preset; --look=x,y,z
 ## (three numbers) is the capture's look-at point. --capture waits for the
 ## sky to settle, saves the view (from --at looking at the point, else the
@@ -84,6 +98,9 @@ const Lodestone = preload("res://scripts/lodestone.gd")
 const MomentsHud = preload("res://scripts/moments_hud.gd")
 const IsleSky = preload("res://studies/aqueduct_isle_sky.gd")
 const Life = preload("res://studies/aqueduct_isle_life.gd")
+const IsleChain = preload("res://studies/aqueduct_isle_chain.gd")
+## The hall chain's halls collide on the ruins' layer (scripts/hall_rise.gd).
+const RuinBump = preload("res://scripts/ruin_bump.gd")
 
 ## The station this is (its key in the pack).
 const STATION := 2
@@ -220,8 +237,12 @@ var _switch_hint: Label
 ## down into them over PICKUP s and the camera pushes in over PUSH s; kept,
 ## it rides at his side (CARRY_AT: right, up, forward, at CARRY_SCALE).
 ## Boarding with it seats it in the stone plane; its compass points at
-## TARGET (a shard floating far off) and arriving within ARRIVE m chimes and
-## flashes (again once he has been ARRIVE_AGAIN m away).
+## TARGET (a shard floating far off). With the hall chain (the default,
+## docs/design/isle-hall-chain.md, studies/aqueduct_isle_chain.gd) a ring
+## rises quietly past the shard as he nears it, and threading it starts the
+## halls; with --no-chain the shard stands at SHARD_ONLY_TARGET and
+## arriving within ARRIVE m chimes and flashes (again once he has been
+## ARRIVE_AGAIN m away), as before.
 const LODE_PLATFORM := "east_1"
 const LODE_MINI := "sundered"
 const LODE_HOVER := 0.85
@@ -235,7 +256,12 @@ const HOLD_UP := 0.42
 const ARMS := Vector3(2.9,0.2,0.3)
 const CARRY_AT := Vector3(0.36,0.82,0.02)
 const CARRY_SCALE := 0.45
-const TARGET := Vector3(250.0,Art.TOP+24.0,-230.0)
+## The shard with the chain: 380 m north-north-east of the start, out over
+## the cloud sea and clear of the near isles, so the ring past it
+## and the halls past that run into open sky (docs/design/
+## isle-hall-chain.md). Without it (--no-chain), where it was.
+const TARGET := Vector3(200.0,42.0,-380.0)
+const SHARD_ONLY_TARGET := Vector3(250.0,Art.TOP+24.0,-230.0)
 const ARRIVE := 30.0
 const ARRIVE_AGAIN := 90.0
 const CAM_BACK := 0.5
@@ -265,6 +291,29 @@ var _shard_material: ShaderMaterial
 var _flash_left := 0.0
 ## Captures: the eye in the plane's frame (--plane-eye=x,y,z), not the chase.
 var _plane_eye := Vector3.INF
+## The ring and the hall chain (studies/aqueduct_isle_chain.gd): on unless
+## --no-chain (or a test sets it off before the scene is built).
+## --near-ring starts in the plane with the stone seated NEAR_RING_OUT m
+## before the ring, NEAR_RING_UP m over its middle, flying at it.
+const NEAR_RING_OUT := 260.0
+const NEAR_RING_UP := 3.0
+## The pulse through the plane once the ring's pause is over: a soft flash
+## round it (m across, s).
+const PULSE_SIZE := 7.0
+const PULSE_TIME := 1.2
+var chain_on := true
+var isle_chain: Node3D = null
+var _target_given := false
+var _near_ring := false
+## A capture from the walker's (or chase) camera waits this long (s;
+## --capture-wait=<s>).
+var _capture_wait := 4.0
+## Seconds flown (fly_step's deltas): a capture from the plane waits for
+## this to reach --capture-wait, so it is the same moment run to run
+## however slow the first frames are.
+var flown := 0.0
+var _plane_flash: MeshInstance3D = null
+var _plane_flash_left := 0.0
 
 func _ready() -> void:
 	pack = "ruins_archipelago"
@@ -287,11 +336,19 @@ func _ready() -> void:
 		elif arg == "--no-lode": _no_lode = true
 		elif arg == "--carry": _carry = true
 		elif arg.begins_with("--lode-at="): _lode_at = arg.get_slice("=",1)
-		elif arg.begins_with("--target="): lode_target = _vec(arg.get_slice("=",1))
+		elif arg.begins_with("--target="):
+			lode_target = _vec(arg.get_slice("=",1))
+			_target_given = true
+		elif arg == "--no-chain": chain_on = false
+		elif arg.begins_with("--capture-wait="): _capture_wait = float(arg.get_slice("=",1))
+		elif arg == "--near-ring":
+			_near_ring = true
+			_carry = true
 		elif arg.begins_with("--plane-eye="): _plane_eye = _vec(arg.get_slice("=",1))
 		elif arg.begins_with("--place="):
 			var p := arg.get_slice("=",1).split(",")
 			_place = Vector4(float(p[0]),float(p[1]),float(p[2]),float(p[3]) if p.size() > 3 else 0.0)
+	if not _target_given: lode_target = TARGET if chain_on else SHARD_ONLY_TARGET
 	if not SceneLookPresets.PRESETS.has(look_id):
 		push_warning("aqueduct isle: no look preset '%s' (%s); %s instead" % [look_id,", ".join(_look_ids),START_LOOK])
 		look_id = START_LOOK
@@ -307,7 +364,10 @@ func _ready() -> void:
 		start = Vector3(_place.x,_place.y,_place.z)
 		start_face = Vector2(sin(turn),-cos(turn))
 		respawn()
-	if preload("res://scripts/launch_args.gd").user_args().has("--fly"): board()
+	if preload("res://scripts/launch_args.gd").user_args().has("--fly") or _near_ring: board()
+	if _near_ring and isle_chain != null:
+		var ahead := Vector3(-sin(isle_chain.ring_heading),0.0,-cos(isle_chain.ring_heading))
+		fly_from(isle_chain.ring_at-ahead*NEAR_RING_OUT+Vector3.UP*NEAR_RING_UP,isle_chain.ring_heading)
 	if preload("res://scripts/launch_args.gd").user_args().has("--pickup"):
 		for i in range(30): tick(1.0/60.0)
 		pick_up()
@@ -619,6 +679,9 @@ func _process(delta: float) -> void:
 		elif walk_ready and not scripted: fly_step(delta,_fly_input(delta))
 	_advance_look(delta)
 	_lode_frame(delta)
+	# Flying, `fly_step` steps the ring and the chain; on foot, here.
+	if isle_chain != null and not flying and delta > 0.0: isle_chain.step(delta,null,false,camera.global_position)
+	_pulse_frame(delta)
 	if life != null: life.advance(delta)
 	if _toast_left > 0.0 and _look_toast != null:
 		_toast_left = maxf(_toast_left-delta,0.0)
@@ -729,6 +792,8 @@ func board() -> void:
 			_nose = NoseCompass.new()
 			_nose.target = lode_target
 			plane_figure.add_child(_nose)
+			# Back in the plane once the halls have begun, it stays quiet.
+			if isle_chain != null and isle_chain.state == "started": _nose.quiet(true)
 			_moments.pop("The lodestone wakes the compass",1.6)
 	chase = GlideCamera.new()
 	chase.reset(plane,camera.global_position,camera.fov)
@@ -834,10 +899,12 @@ func _fly_input(delta: float) -> Dictionary:
 ## stands, drawn, the chase camera behind it; skimming the turf braking
 ## slow for TOUCH_HOLD s sets the pilot down there.
 func fly_step(delta: float, input: Dictionary) -> void:
+	flown += delta
 	var was: Vector3 = plane.position
 	var ground := Callable(self,"plane_ground")
 	plane.step(delta,input,ground)
 	_bump(was)
+	if isle_chain != null: isle_chain.step(delta,plane,lode_state == "seated",camera.global_position)
 	if stone_plane: plane_figure.target = lode_target
 	plane_figure.update(delta,plane,0.0,ground,false)
 	if _nose != null:
@@ -870,6 +937,7 @@ func _show_fly_hint() -> void:
 		else: text += "\nThe stone plane sleeps: find the lodestone on foot and board with it to wake it"
 	elif lodestone != null and lode_state == "seated":
 		text += "\nThe nose arrow points to the place in the stone (%.0f m): it glows brighter when you are dead on course" % plane.position.distance_to(lode_target)
+	if isle_chain != null and isle_chain.state == "started": text += "\nThe halls rise out of the cloud ahead: fly on through them"
 	_switch_hint.text = text
 
 ## The turf's top under a point, as the game's plane reads its heightfield:
@@ -894,7 +962,7 @@ func _plane_query() -> PhysicsShapeQueryParameters3D:
 		var box := BoxShape3D.new()
 		box.size = BUMP_BODY
 		_bump_query.shape = box
-		_bump_query.collision_mask = 1|TURF_LAYER
+		_bump_query.collision_mask = 1|TURF_LAYER|RuinBump.LAYER
 	var turn := PlaneFigure.pose(Vector3.ZERO,float(plane.heading),float(plane.pitch),float(plane.bank)+float(plane.spin)).basis
 	_bump_query.transform = Transform3D(turn,plane.position)
 	return _bump_query
@@ -956,7 +1024,7 @@ func _ride_top(space: PhysicsDirectSpaceState3D) -> bool:
 func _inside_stone(p: Vector3) -> bool:
 	var query := PhysicsPointQueryParameters3D.new()
 	query.position = p
-	query.collision_mask = 1|TURF_LAYER
+	query.collision_mask = 1|TURF_LAYER|RuinBump.LAYER
 	return not get_world_3d().direct_space_state.intersect_point(query,1).is_empty()
 
 ## A lean pressed: the second press the same way within DOUBLE_TAP asks
@@ -1013,7 +1081,9 @@ func _take_capture() -> void:
 			if life != null: life.advance(1.0/60.0)
 			await get_tree().process_frame
 	else:
-		await get_tree().create_timer(4.0).timeout
+		if flying:
+			while flown < _capture_wait: await get_tree().process_frame
+		else: await get_tree().create_timer(_capture_wait).timeout
 	# The frame's cost, measured over a second before the save.
 	# The frame's cost: wall-clock frames with vsync off, over 120 frames.
 	var vsync := DisplayServer.window_get_vsync_mode()
@@ -1059,6 +1129,7 @@ func _build_lode() -> void:
 	_moments = MomentsHud.new()
 	add_child(_moments)
 	_build_target()
+	if chain_on: _build_chain()
 	if _carry:
 		lode_state = "carried"
 		lodestone.scale = Vector3.ONE*CARRY_SCALE
@@ -1098,9 +1169,12 @@ func _build_target() -> void:
 	collider.shape = hull
 	body_static.add_child(collider)
 	shard.add_child(body_static)
-	var arch: Node3D = RuinKit.piece("arch",44,0.5)
-	arch.transform = Transform3D(Basis(Vector3.UP,0.3),Vector3(-1.5,0.0,0.5))
-	shard.add_child(arch)
+	# With the chain the arch is the ring past the shard (one arch, not two
+	# to choose between); the pier stays.
+	if not chain_on:
+		var arch: Node3D = RuinKit.piece("arch",44,0.5)
+		arch.transform = Transform3D(Basis(Vector3.UP,0.3),Vector3(-1.5,0.0,0.5))
+		shard.add_child(arch)
 	var pier: Node3D = RuinKit.piece("pier",45,0.6)
 	pier.position = Vector3(4.0,0.0,-2.0)
 	shard.add_child(pier)
@@ -1269,6 +1343,8 @@ func _foot_text() -> String:
 
 ## Near the shard with the stone seated: a chime, a pop and a flash.
 func _check_arrival() -> void:
+	# With the chain, nothing happens by being near: only threading the ring.
+	if isle_chain != null: return
 	if lode_state != "seated" or (stone_plane and not plane_figure.seated): return
 	var d: float = plane.position.distance_to(lode_target)
 	if not arrived and d < ARRIVE:
@@ -1278,6 +1354,67 @@ func _check_arrival() -> void:
 		if stone_plane: plane_figure.flash()
 		_flash_left = 1.4
 	elif arrived and d > ARRIVE_AGAIN: arrived = false
+
+# --- The ring and the hall chain ---------------------------------------------------------
+
+## The ring past the shard, the chain's cloud sea and the chain (studies/
+## aqueduct_isle_chain.gd, docs/design/isle-hall-chain.md).
+func _build_chain() -> void:
+	isle_chain = IsleChain.new()
+	add_child(isle_chain)
+	isle_chain.setup(lode_target,preload("res://scripts/launch_args.gd").user_args())
+	isle_chain.chain.plane_box = _chain_plane_box
+	isle_chain.started.connect(_ring_pulse)
+	_plane_flash = MeshInstance3D.new()
+	_plane_flash.name = "PlaneFlash"
+	var quad := QuadMesh.new()
+	quad.size = Vector2.ONE*PULSE_SIZE
+	_plane_flash.mesh = quad
+	var glow := (_shard_flash.material_override as StandardMaterial3D).duplicate() as StandardMaterial3D
+	glow.albedo_color.a = 0.0
+	_plane_flash.material_override = glow
+	_plane_flash.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_plane_flash.visible = false
+	add_child(_plane_flash)
+
+## The plane's box (world) for the halls' rise, which waits for it to be
+## clear before a chunk turns solid; none on foot.
+func _chain_plane_box() -> AABB:
+	if not flying or plane == null: return AABB()
+	var half := Vector3.ONE*(PlaneFigure.SPAN*0.5+0.3)
+	return AABB((plane.position as Vector3)-half,half*2.0)
+
+## The ring's pause over: the arrival's chime, a soft flash round the plane,
+## the nose arrow's flare (the stone plane's sync pulse), no words.
+func _ring_pulse() -> void:
+	_moments.flourish()
+	_plane_flash_left = PULSE_TIME
+	if _nose != null:
+		_nose.pulse()
+		_nose.quiet()
+	if stone_plane and flying and plane_figure != null: plane_figure.flash()
+
+func _pulse_frame(delta: float) -> void:
+	if _plane_flash == null: return
+	_plane_flash.visible = _plane_flash_left > 0.0 and flying
+	if _plane_flash_left <= 0.0: return
+	_plane_flash_left = maxf(_plane_flash_left-delta,0.0)
+	var t := _plane_flash_left/PULSE_TIME
+	if flying: _plane_flash.global_position = plane.position
+	(_plane_flash.material_override as StandardMaterial3D).albedo_color.a = sin(t*PI)*0.7
+	_plane_flash.scale = Vector3.ONE*lerpf(1.5,0.4,t)
+
+## Puts the plane (flying) at `at` on `heading`, at cruise, the chase camera
+## behind it (the quick test's start, the tests).
+func fly_from(at: Vector3, heading: float) -> void:
+	if not flying: return
+	plane.launch(at,heading,SkyPlane.CRUISE_SPEED,false)
+	plane.velocity = plane.forward()*float(plane.speed)
+	plane_figure.reset(plane)
+	chase = GlideCamera.new()
+	chase.reset(plane,at-plane.forward()*7.0+Vector3.UP*2.0,camera.fov)
+	chase.linger = LOOK_LINGER
+	if isle_chain != null: isle_chain.forget()
 
 # --- Life on the isle ------------------------------------------------------------------
 
