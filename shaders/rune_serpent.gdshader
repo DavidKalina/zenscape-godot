@@ -138,9 +138,14 @@ void fragment() {
 		if (what == 3.0) boost = 1.5;
 		if (what == 7.0) boost = 1.2;
 	} else if (what == 4.0) {
-		// The eye: bright in its socket, brightest at its middle.
+		// The eye: an almond of light in a dark socket (UV.x along the
+		// head, UV.y across), brightest at its middle, with a slit pupil
+		// standing across it, as a snake's.
 		vec2 e = (UV - 0.5) * 2.0;
-		lit = 0.55 + 0.45 * (1.0 - smoothstep(0.0, 1.0, dot(e, e)));
+		float aa = fwidth(e.y) * 1.5;
+		float almond = 1.0 - smoothstep(0.82 - aa, 0.82 + aa, length(vec2(e.x * 1.05, e.y * 1.3)) + 0.18 * abs(e.x));
+		float slit = smoothstep(0.07, 0.15, abs(e.x) + 0.05 * e.y * e.y);
+		lit = almond * mix(0.12, 0.7 + 0.3 * (1.0 - dot(e, e)), slit);
 		tint = eye_glow;
 		boost = eye_energy / max(energy, 0.05);
 		base *= 0.2;

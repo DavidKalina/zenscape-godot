@@ -66,7 +66,7 @@ const NECK := 17.0
 ## snout, the blunt nose. The eyes' length and width (shares of its girth).
 const HEAD_GIRTH := 1.15
 const HEAD_SECTIONS := [[0.92,0.78,0.0],[1.24,0.72,0.28],[1.08,0.62,0.56],[0.7,0.46,0.82],[0.36,0.28,0.97]]
-const EYE_SIZE := Vector2(0.3,0.19)
+const EYE_SIZE := Vector2(0.34,0.24)
 ## Rings along the body, and points on the neck's curve.
 const STATIONS := 48
 const NECK_SAMPLES := 12
@@ -220,7 +220,7 @@ const STONE := Color("5a5d63")
 const COOL := Color("52575f")
 const UNDER := Color("706b64")
 const CRESCENT := Color("2c2e33")
-const LIP := Color("7a756d")
+const LIP := Color("66625c")
 const MOUTH := Color("3b2a22")
 const FACE_TONE := [1.13,1.06,0.98,0.9,1.0,0.9,0.98,1.06]
 const SEGMENT_TONE := 0.08
@@ -1318,8 +1318,10 @@ func _build_mesh() -> ArrayMesh:
 			# A sigil on the brow, between the eyes.
 			mesh.paint(top,7 if j == 0 and i == 2 else 0,0.9,77.0,1.0)
 			mesh.quad(front[j],bone,front[n],bone,back[j],back_bone,back[n],back_bone,0.0,0.0,HEAD*(1.0-float(HEAD_SECTIONS[i][2])),HEAD*(1.0-float(HEAD_SECTIONS[i-1][2])))
+		# The blunt nose closed in a fan to its tip (wound as the sections'
+		# quads are, so it shows from outside).
 		mesh.paint(top,0,1.0,0.0,1.0)
-		mesh.tri(secs[-1][j],bone,tip,bone,secs[-1][n],bone,0.0,0.0,0.0,false,Vector2.ZERO,Vector2.ZERO,Vector2.ZERO,Vector3(HEAD*0.03,0.0,HEAD*0.03))
+		mesh.tri(tip,bone,secs[-1][j],bone,secs[-1][n],bone,0.0,0.0,0.0,false,Vector2.ZERO,Vector2.ZERO,Vector2.ZERO,Vector3(0.0,HEAD*0.03,HEAD*0.03))
 	# Inside the mouth, along the lip line (corners 3 and 6): a palate on the
 	# head and a floor on the jaw, warm with its light.
 	mesh.paint(MOUTH,5,1.0,0.0,1.0)
@@ -1349,8 +1351,9 @@ func _build_mesh() -> ArrayMesh:
 		eyes.append(center+out*0.25)
 		var length := along*EYE_SIZE.x*hr
 		var width := across*EYE_SIZE.y*hr
+		# A socket the shader lights as an almond of light with a slit pupil.
 		mesh.paint(Color(0.1,0.1,0.1),4,1.0,0.0,1.0)
-		mesh.quad(center+length,h,center+width,h,center-width,h,center-length,h,0.0,0.0,HEAD*0.4,HEAD*0.4,false,true)
+		mesh.quad(center+length-width,h,center+length+width,h,center-length-width,h,center-length+width,h,0.0,0.0,HEAD*0.4,HEAD*0.4,false,true)
 	# A forked tongue of light, flat both ways.
 	var t := STATIONS+1
 	var w := 0.08
