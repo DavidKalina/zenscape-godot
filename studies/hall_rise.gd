@@ -1,17 +1,19 @@
 extends Node3D
-## The hall eruption study (docs/design/hall-eruption.md): the Sundered
-## hall (the moments set piece, greybox) erupting out of the cloud sea in
-## pieces, one by one (scripts/hall_eruption.gd), to judge how it feels to
-## watch: from an orbit or hover camera, a free camera, or the game's plane.
+## The hall rise study (docs/design/hall-rise.md): the Sundered hall (the
+## moments set piece, greybox) rising out of the cloud sea in a few big
+## chunks, each whole, one after another (scripts/hall_rise.gd), to judge
+## how it feels to watch: from an orbit or hover camera, a free camera, or
+## the game's plane on its way in.
 ##
-## The hall stands as the sky world stands it (turn 0, its entry HALL_Y
-## over home, the cloud sea's top at SEA_Y as in the game), and the plane
-## flies as the game's does (scripts/sky_plane.gd, the chase camera, the
-## ruins' bump: scripts/ruin_bump.gd), so the distances, heights and speeds
-## are the game's.
+## The hall stands as the sky world stands it (turn 0, the cloud sea at
+## SEA_Y as in the game), but low: its lowest stone RISE_CLEAR over the
+## cloud top, so the breakthrough is close under the plane's line of sight
+## (`--hall-y=20` stands it at the moments world's height, 125 m up). The
+## plane flies as the game's does (scripts/sky_plane.gd, the chase camera,
+## the ruins' bump: scripts/ruin_bump.gd).
 ##
-##   R              play the eruption again (Shift+R: build it again too)
-##   Enter          every piece in place at once
+##   R              play the rise again (Shift+R: build it again too)
+##   Enter          every chunk in place at once
 ##   C              camera: orbit, free, the plane (F: into the plane and out)
 ##   [ ]            slower, quicker (0.25x to 2x; \ back to 1x)
 ##   O              orbit: turn by itself or hold (a hover)
@@ -20,21 +22,23 @@ extends Node3D
 ##   mouse to look, W A S D, Q E down and up, Shift quick. Plane: as the
 ##   game's (the hint on screen). Esc frees the mouse.
 ##
-##   ./run-hall-eruption.command [--watch=plane] [--erupt-speed=1.3] ...
-##   godot --path . res://studies/hall_eruption.tscn -- --no-title [flags]
+##   ./run-hall-rise.command [--watch=plane] [--rise-speed=7] ...
+##   godot --path . res://studies/hall_rise.tscn -- --no-title [flags]
 ## Flags: --watch=orbit|free|plane (the camera to start in), --wait (don't
 ## start till R), --loop=<s> (again this long after each one settles),
-## --hall-y=<m> (the entry's height), and the eruption's own (scripts/
-## hall_eruption.gd `options`): --erupt-speed=<x>, --erupt-gaps=<x>,
-## --erupt-path=arc|straight, --no-keels, --no-stones, --build-upfront=<s>,
-## --build-cost=<s>.
+## --rise=<m> (the hall's lowest stone over the cloud top: the rise is this
+## plus the chunk's height plus `under`), --hall-y=<m> (the entry's height
+## over home instead), and the rise's own (scripts/hall_rise.gd `options`):
+## --rise-speed=<m/s>, --chunk-gap=<s>, --rise-ease=<m>, --rise-over=<m>,
+## --rise-settle=<s>, --rise-from=apse|gate, --keels, --stones,
+## --build-upfront=<s>, --build-cost=<s>.
 ## Stills (opens a window; local only, captures/ is ignored): --capture=<dir>
-## [--capture-at=0.5,2,4,...] (eruption seconds) [--orbit-yaw=<rad>]
+## [--capture-at=0.5,2,4,...] (rise seconds) [--orbit-yaw=<rad>]
 ## [--orbit-dist=<m>] [--orbit-pitch=<rad>] [--hover]: saves a still at each
 ## time from the camera it starts in and quits.
 
-const Eruption = preload("res://scripts/hall_eruption.gd")
-const EPlan = preload("res://scripts/hall_eruption_plan.gd")
+const Rise = preload("res://scripts/hall_rise.gd")
+const RisePlan = preload("res://scripts/hall_rise_plan.gd")
 const Plan = preload("res://scripts/sky_moments_plan.gd")
 const SkyPlane = preload("res://scripts/sky_plane.gd")
 const PlaneFigure = preload("res://scripts/plane_figure.gd")
@@ -42,13 +46,13 @@ const GlideCamera = preload("res://scripts/glide_camera.gd")
 const RuinBump = preload("res://scripts/ruin_bump.gd")
 const Pad = preload("res://scripts/pad.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
-const SEA := preload("res://shaders/hall_eruption_sea.gdshader")
+const SEA := preload("res://shaders/hall_rise_sea.gdshader")
 
-## The cloud sea's top (the game's: scripts/sky_flight.gd SEA_Y) and the
-## hall's entry over home (the moments set pieces stand theirs 8-30 m up).
+## The cloud sea's base (the game's: scripts/sky_flight.gd SEA_Y), and how
+## far (m) the hall's lowest stone stands over the cloud top by default.
 const SEA_Y := -105.0
-const HALL_Y := 20.0
-## The eruption's cloud top sits this far over the sea mesh's base (its
+const RISE_CLEAR := 14.0
+## The rise's cloud top sits this far over the sea mesh's base (its
 ## heaps rise to the shader's `heap`).
 const SEA_TOP := 3.0
 ## The plane starts this far out on the hall's way in, this far up.
@@ -67,7 +71,7 @@ const PLANE_HINT := "Plane  ·  %.0f m/s  ·  bumps %d  ·  A D bank  ·  W S pi
 
 ## Set by tests: nothing waits on the mouse, nothing plays by itself.
 var scripted := false
-var eruption: Node3D
+var rise: Node3D
 var camera: Camera3D
 var mode := "orbit"
 var auto_turn := true
@@ -94,20 +98,22 @@ var _keys: Label
 var _marks: Node3D
 var _dragging := false
 var _opts := {}
-var _hall_y := HALL_Y
+var _hall_y := NAN
+var _clear := RISE_CLEAR
 var _capture := ""
-var _capture_at: Array = [0.6,1.6,2.6,3.6,4.6,5.6,6.6,7.6,8.6,9.6,10.6,11.6,12.6,13.6,15.5]
+var _capture_at: Array = [0.5,1.5,2.5,3.5,4.5,5.5,6.5,7.5,8.5,9.5,10.5,11.5,13.0]
 
 func _ready() -> void:
 	Pad.ensure()
 	var args := LaunchArgs.user_args()
-	_opts = Eruption.options(args)
+	_opts = Rise.options(args)
 	var wait := false
 	for a: String in args:
 		if a.begins_with("--watch=") and a.get_slice("=",1) in ["orbit","free","plane"]: mode = a.get_slice("=",1)
 		elif a == "--wait": wait = true
 		elif a.begins_with("--loop="): loop = maxf(0.0,float(a.get_slice("=",1)))
 		elif a.begins_with("--hall-y="): _hall_y = float(a.get_slice("=",1))
+		elif a.begins_with("--rise="): _clear = maxf(0.0,float(a.get_slice("=",1)))
 		elif a.begins_with("--capture="): _capture = a.get_slice("=",1)
 		elif a.begins_with("--capture-at="):
 			_capture_at = []
@@ -118,35 +124,43 @@ func _ready() -> void:
 		elif a == "--hover": auto_turn = false
 	_build_light()
 	_build_sea()
-	eruption = Eruption.new()
-	eruption.position = Vector3(0.0,_hall_y,0.0)
-	eruption.sea_y = SEA_Y+SEA_TOP-_hall_y
-	eruption.plane_box = _plane_box
-	add_child(eruption)
-	eruption.setup(_opts)
-	eruption.finished.connect(_on_finished)
+	if is_nan(_hall_y): _hall_y = hall_y_for(_clear,_opts)
+	rise = Rise.new()
+	rise.position = Vector3(0.0,_hall_y,0.0)
+	rise.sea_y = SEA_Y+SEA_TOP-_hall_y
+	rise.plane_box = _plane_box
+	add_child(rise)
+	rise.setup(_opts)
+	rise.finished.connect(_on_finished)
 	_build_marks()
 	_build_ui()
 	var start_mode := mode
 	mode = "orbit"
 	if start_mode == "plane": board()
 	elif start_mode == "free": mode = "free"
-	if not scripted and not wait: eruption.play()
+	if not scripted and not wait: rise.play()
 	if not scripted and get_tree().current_scene == self and mode != "orbit": Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-	print("hall eruption: %d pieces, %.1f s planned (the build on a worker)" % [eruption.pieces.size(),float(eruption.plan.length)])
+	print("hall rise: %d chunks, %.1f s planned, the entry %.1f m over home, the cloud top %.1f m under it (the build on a worker)" % [rise.chunks.size(),float(rise.plan.length),_hall_y,-rise.sea_y])
 	if _capture != "": _take_captures()
 
-## Stills at each of `_capture_at` (eruption seconds), then quits.
+## The entry's height over home that stands the hall's lowest stone `clear`
+## m over the cloud top.
+static func hall_y_for(clear: float, opts: Dictionary) -> float:
+	var lowest := INF
+	for c: Dictionary in RisePlan.make(opts).chunks: lowest = minf(lowest,float(c.lo.y))
+	return SEA_Y+SEA_TOP+clear-lowest
+
+## Stills at each of `_capture_at` (rise seconds), then quits.
 func _take_captures() -> void:
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path("res://"+_capture) if not _capture.begins_with("/") else _capture)
 	var dir := ProjectSettings.globalize_path("res://"+_capture) if not _capture.begins_with("/") else _capture
 	for k in range(_capture_at.size()):
-		while float(eruption.clock) < float(_capture_at[k]) and (float(eruption.done_at) < 0.0 or float(eruption.clock) < float(_capture_at[k])):
+		while float(rise.clock) < float(_capture_at[k]) and (float(rise.done_at) < 0.0 or float(rise.clock) < float(_capture_at[k])):
 			await get_tree().process_frame
-			if float(eruption.done_at) >= 0.0 and float(eruption.clock) < float(_capture_at[k]): eruption.clock += get_process_delta_time()
+			if float(rise.done_at) >= 0.0 and float(rise.clock) < float(_capture_at[k]): rise.clock += get_process_delta_time()
 		await RenderingServer.frame_post_draw
 		var image := get_viewport().get_texture().get_image()
-		var path := "%s/%02d_%s_t%04.1f.png" % [dir,k,mode,float(eruption.clock)]
+		var path := "%s/%02d_%s_t%04.1f.png" % [dir,k,mode,float(rise.clock)]
 		image.save_png(path)
 		print("capture: ",path)
 	get_tree().quit()
@@ -206,7 +220,7 @@ func _build_marks() -> void:
 	_marks = Node3D.new()
 	_marks.name = "Marks"
 	_marks.visible = false
-	eruption.add_child(_marks)
+	rise.add_child(_marks)
 	var gold := StandardMaterial3D.new()
 	gold.albedo_color = Color(1.0,0.82,0.3)
 	gold.emission_enabled = true
@@ -215,9 +229,9 @@ func _build_marks() -> void:
 	var white := StandardMaterial3D.new()
 	white.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	white.albedo_color = Color(1,1,1,0.8)
-	for m: Dictionary in Plan.moments(EPlan.LAYOUT):
+	for m: Dictionary in Plan.moments(RisePlan.LAYOUT):
 		_ball(m.at,0.6,gold)
-	for p: Vector3 in Plan.line(EPlan.LAYOUT): _ball(p,0.18,white)
+	for p: Vector3 in Plan.line(RisePlan.LAYOUT): _ball(p,0.18,white)
 
 func _ball(at: Vector3, r: float, mat: Material) -> void:
 	var ball := MeshInstance3D.new()
@@ -253,32 +267,45 @@ func _physics_process(delta: float) -> void:
 func _process(delta: float) -> void:
 	if mode == "free": _free_move(delta)
 
-## One frame: the eruption (at the study's speed), the plane, the camera.
+## One frame: the rise (at the study's speed), the plane, the camera.
 func tick(delta: float) -> void:
-	eruption.advance(delta*time_scale)
+	rise.advance(delta*time_scale)
 	if _loop_left >= 0.0:
 		_loop_left -= delta
 		if _loop_left < 0.0: replay()
 	if mode == "plane": _fly(delta)
 	elif mode == "orbit": _orbit(delta)
 	_sea.position = Vector3(snappedf(camera.global_position.x,20.0),SEA_Y,snappedf(camera.global_position.z,20.0))
+	_swell_sea()
 	_show_hud()
+
+## The sea heaves where a chunk is about to break through (world metres).
+func _swell_sea() -> void:
+	var s: Array[Vector4] = rise.swells()
+	var out := []
+	for v: Vector4 in s:
+		var w: Vector3 = rise.to_global(Vector3(v.x,0.0,v.y))
+		out.append(Vector4(w.x,w.z,v.z,v.w))
+	while out.size() < Rise.SWELLS: out.append(Vector4.ZERO)
+	var m := (_sea.mesh as PrimitiveMesh).material as ShaderMaterial
+	m.set_shader_parameter("swells",out)
+	m.set_shader_parameter("swell_count",s.size())
 
 func replay(rebuild := false) -> void:
 	_loop_left = -1.0
 	_marks.visible = false
-	if rebuild: eruption.setup(_opts)
-	eruption.play()
+	if rebuild: rise.setup(_opts)
+	rise.play()
 
 func _on_finished() -> void:
 	_marks.visible = _marks.get_meta(&"wanted",true)
 	if loop >= 0.0: _loop_left = loop
 
 func _show_hud() -> void:
-	var g: Dictionary = eruption.progress()
+	var g: Dictionary = rise.progress()
 	var build := "build %d/%d" % [g.built,g.total]
 	if float(g.build) >= 0.0: build += " in %.2f s (first %.2f s)" % [g.build,g.first]
-	var line := "Hall eruption  ·  %.1f / %.1f s  ·  risen %d/%d  ·  still %d  ·  %s  ·  %s" % [g.clock,g.length,g.risen,g.total,g.set,g.category,build]
+	var line := "Hall rise  ·  %.1f / %.1f s  ·  risen %d/%d  ·  still %d  ·  %s  ·  %s" % [g.clock,g.length,g.risen,g.total,g.set,g.chunk,build]
 	if float(g.stall) > 0.0: line += "  ·  held %.2f s for the build" % g.stall
 	if bool(g.waiting): line += "  ·  WAITING ON THE BUILD"
 	if float(g.done) >= 0.0: line += "  ·  settled at %.1f s" % g.done
@@ -292,11 +319,11 @@ func _show_hud() -> void:
 func centre() -> Vector3:
 	var lo := Vector3.INF
 	var hi := -Vector3.INF
-	for p: Dictionary in eruption.pieces:
-		if p.category == "stones": continue
-		lo = lo.min(p.lo)
-		hi = hi.max(p.hi)
-	return eruption.to_global((lo+hi)*0.5)
+	for c: Dictionary in rise.chunks:
+		if c.id == "stones": continue
+		lo = lo.min(c.lo)
+		hi = hi.max(c.hi)
+	return rise.to_global((lo+hi)*0.5)
 
 func _orbit(delta: float) -> void:
 	if auto_turn and not _dragging: orbit_yaw += ORBIT.z*delta
@@ -362,11 +389,11 @@ func leave() -> void:
 	plane = null
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
-## The plane's box in the eruption's frame (none out of the plane).
+## The plane's box in the rise's frame (none out of the plane).
 func _plane_box() -> AABB:
 	if plane == null or mode != "plane": return AABB()
 	var half := Vector3.ONE*(PlaneFigure.SPAN*0.5+0.3)
-	return AABB(eruption.to_local(plane.position)-half,half*2.0)
+	return AABB(rise.to_local(plane.position)-half,half*2.0)
 
 func plane_ground(_p: Vector3) -> Variant:
 	return SEA_Y
@@ -422,7 +449,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				replay((event as InputEventKey).shift_pressed)
 				return
 			KEY_ENTER, KEY_KP_ENTER:
-				eruption.finish_now()
+				rise.finish_now()
 				_on_finished()
 				return
 			KEY_C:
@@ -447,7 +474,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_M:
 				var wanted := not bool(_marks.get_meta(&"wanted",true))
 				_marks.set_meta(&"wanted",wanted)
-				_marks.visible = wanted and float(eruption.done_at) >= 0.0
+				_marks.visible = wanted and float(rise.done_at) >= 0.0
 				return
 			KEY_ESCAPE:
 				Input.mouse_mode = Input.MOUSE_MODE_VISIBLE

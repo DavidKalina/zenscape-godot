@@ -1,8 +1,8 @@
 shader_type spatial;
-// The hall eruption's greybox stone (scripts/hall_eruption.gd): the
+// The hall rise's greybox stone (scripts/hall_rise.gd): the
 // character study's grid (shaders/character_study_grid.gdshader), drawn
-// where the piece will stand (`offset`: how far it is from its place, set
-// while it moves), so the lines ride with a rising piece and, settled, are
+// where the chunk will stand (`offset`: how far it is from its place, set
+// while it moves), so the lines ride with a rising chunk and, settled, are
 // the in-world hall's own world-metre grid.
 uniform vec4 tint : source_color = vec4(0.62, 0.62, 0.6, 1.0);
 uniform float minor_dark = 0.22;

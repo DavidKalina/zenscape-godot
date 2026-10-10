@@ -1,5 +1,7 @@
 # Hall eruption: handoff
 
+> **Superseded by docs/design/hall-rise.md** (branch `study/hall-rise`): the hall now rises in four whole chunks rather than 92 pieces. The piecewise code below exists only on `study/hall-eruption`; on `study/hall-rise` its files were renamed `hall_rise*` and rewritten.
+
 Branch `study/hall-eruption`, from main (d4e68e82). Not merged, not pushed. Greybox study only. The game, the moments world and the aqueduct isle are untouched.
 
 The ask: the Sundered hall should erupt out of the cloud sea in pieces, one by one, instead of appearing all at once. In the game loop it rises where a lodestone is seated and then stays. This round covers only the eruption, so you can judge how it feels to watch from the plane and from an orbit or hover camera.

@@ -18,8 +18,8 @@ const ENTRIES: Array[Dictionary] = [
 		"detail":"The ruin platforming isle: grass, look presets (L), the plane on F."},
 	{"id":"sundered_hall","group":"Ruins","title":"The Sundered hall","scene":"res://studies/cozy_worlds.tscn","args":["--motif=sundered","--no-clusters","--skydive"],
 		"detail":"The game with the long gothic hall 240-900 m out; in the plane, fly to it."},
-	{"id":"hall_eruption","group":"Ruins","title":"Hall eruption","scene":"res://studies/hall_eruption.tscn","args":[],
-		"detail":"The Sundered hall rising out of the clouds piece by piece. R again, C camera, F plane."},
+	{"id":"hall_rise","group":"Ruins","title":"Hall rise","scene":"res://studies/hall_rise.tscn","args":[],
+		"detail":"The Sundered hall rising out of the clouds in four whole chunks. R again, C camera, F plane."},
 	{"id":"ruin_kit","group":"Ruins","title":"Ruin kit gallery","scene":"res://studies/ruin_kit_gallery.tscn","args":[],
 		"detail":"The ruin kit's three families on one plate, each piece intact and weathered."},
 	# Flight greyboxes (studies/flight_study.tscn, docs/design/flight-study-handoff.md).

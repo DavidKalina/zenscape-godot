@@ -1,5 +1,5 @@
 shader_type spatial;
-// The hall eruption's cloud puffs (scripts/hall_eruption.gd): soft greybox
+// The hall rise's cloud puffs (scripts/hall_rise.gd): soft greybox
 // balls of cloud, each instance's alpha in its colour; lit from above by
 // hand (the cloud sea's own colours), feathered at the rim so they read as
 // soft heaps rather than balls.

@@ -1,14 +1,15 @@
 #!/bin/zsh
-# The hall eruption study (studies/hall_eruption.tscn, docs/design/hall-eruption.md):
-# the Sundered hall erupting out of the cloud sea in pieces. R plays it again,
-# C cycles orbit / free / plane, F takes the plane. Extra args pass through, e.g.
-#   ./run-hall-eruption.command --watch=plane          # watch it from the plane
-#   ./run-hall-eruption.command --erupt-speed=1.3      # quicker
-#   ./run-hall-eruption.command --build-upfront=3.5 --build-cost=3.5   # a kit-slow build under it
+# The hall rise study (studies/hall_rise.tscn, docs/design/hall-rise.md):
+# the Sundered hall rising out of the cloud sea in four whole chunks, one
+# after another. R plays it again, C cycles orbit / free / plane, F takes
+# the plane. Extra args pass through, e.g.
+#   ./run-hall-rise.command --watch=plane          # watch it from the plane on the way in
+#   ./run-hall-rise.command --rise-speed=7 --chunk-gap=2.5   # slower, further apart
+#   ./run-hall-rise.command --rise=40              # the hall higher over the cloud: a longer rise
 set -u
 PROJECT_DIR="${0:A:h}"
 GODOT_BIN="${GODOT_BIN:-$HOME/Applications/Godot.app/Contents/MacOS/Godot}"
-LAUNCH_LOG="${TMPDIR:-/tmp}/zenscape-hall-eruption-launch.log"
+LAUNCH_LOG="${TMPDIR:-/tmp}/zenscape-hall-rise-launch.log"
 
 if [[ ! -x "$GODOT_BIN" ]]; then
   print -r -- "Godot could not be found at: $GODOT_BIN" | tee "$LAUNCH_LOG"
@@ -17,8 +18,8 @@ if [[ ! -x "$GODOT_BIN" ]]; then
   exit 1
 fi
 
-print -r -- "Opening the hall eruption study (R again, C camera, F plane). Launch log: $LAUNCH_LOG"
-"$GODOT_BIN" --path "$PROJECT_DIR" --rendering-method forward_plus --windowed --resolution 1440x900 res://studies/hall_eruption.tscn -- --no-title "$@" 2>&1 | tee "$LAUNCH_LOG"
+print -r -- "Opening the hall rise study (R again, C camera, F plane). Launch log: $LAUNCH_LOG"
+"$GODOT_BIN" --path "$PROJECT_DIR" --rendering-method forward_plus --windowed --resolution 1440x900 res://studies/hall_rise.tscn -- --no-title "$@" 2>&1 | tee "$LAUNCH_LOG"
 launch_status=${pipestatus[1]}
 # Godot can report script-load failures while returning a zero exit status.
 if (( launch_status == 0 )) && /usr/bin/grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load' "$LAUNCH_LOG"; then
