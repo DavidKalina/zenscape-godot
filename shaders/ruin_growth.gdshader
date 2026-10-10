@@ -166,7 +166,7 @@ void fragment() {
 	float edge = pow(1.0 - clamp(abs(dot(NORMAL, VIEW)), 0.0, 1.0), 3.0);
 	EMISSION = base * hemi * fill + base * zs_hemi_sky * zs_hemi_energy * edge * rim;
 	float shelter = 1.0 - COLOR.a;
-	EMISSION += base * mix(zs_hemi_sky, shelter_tint, 0.65) * zs_hemi_energy / PI * shelter_fill * 0.6 * shelter;
+	EMISSION += base * mix(zs_hemi_sky, shelter_tint, 0.65) * zs_hemi_energy / PI * shelter_fill * shelter;
 }
 
 void light() {
