@@ -42,6 +42,17 @@ extends Node3D
 ##   godot --path . res://studies/flight_study.tscn -- --no-title [--station=slalom] [--bot=sharp]
 ##   ... -- --no-title --pack=lines|nature|sky|tokens|moments [--line=red]   (starts on the pack, N cycles within it)
 ##   ./run-flight-moments.command [--challenge-time=12] [--challenge-mode=chain]
+##
+## Crash and restart (scripts/flight_crash.gd; opt-in, off by default: bump
+## and recover as ever): --crash=hard (a hard hit on stone crashes, a
+## glancing scrape still bumps) or --crash=any (any contact; a debug mode),
+## --restart=checkpoint|ring|entry, --crash-speed=<m/s> (stone's hard
+## threshold). C turns crashing off and on (hard; any too if asked for),
+## T cycles the restart point; either starts the station afresh. A crash
+## jolts the camera, flashes, throws greybox debris and tumbles the plane,
+## then cuts to the restart point flying at cruise (FlightCrash HOLD, then
+## a short fade in). The HUD (F1) and the end panel count crashes.
+##   ./run-flight-crash.command   (the moments pack, --crash=hard)
 
 const Course = preload("res://scripts/flight_course.gd")
 const Run = preload("res://scripts/flight_run.gd")
@@ -51,6 +62,7 @@ const Log = preload("res://scripts/flight_log.gd")
 const PlaneFigure = preload("res://scripts/plane_figure.gd")
 const GlideCamera = preload("res://scripts/glide_camera.gd")
 const Pad = preload("res://scripts/pad.gd")
+const Crash = preload("res://scripts/flight_crash.gd")
 const GRID := preload("res://shaders/character_study_grid.gdshader")
 
 ## The mouse's and right stick's look round the plane (as the wanderer's).
@@ -79,6 +91,20 @@ const CHALLENGE := Color(1.0,0.38,0.18)
 const SPIN := 2.0
 ## Who flies, in B's order.
 const PILOTS := ["human","sloppy","decent","sharp","perfect"]
+## The crash (see the header): the flash (s, its strength), the camera's
+## jolt (s, m), the debris (pieces, their speed m/s), the plane's tumble
+## (rad/s), the fade out before the cut (s before the hold ends, its
+## darkness) and the fade in after it (s).
+const FLASH := 0.1
+const FLASH_ALPHA := 0.6
+const JOLT := 0.35
+const JOLT_SIZE := 0.45
+const DEBRIS := 14
+const DEBRIS_SPEED := 6.0
+const TUMBLE := 9.0
+const FADE_OUT := 0.2
+const FADE_DARK := 0.85
+const FADE_IN := 0.2
 
 signal ready_to_fly
 
@@ -123,6 +149,23 @@ var _tap_at := 0
 var _space: PhysicsDirectSpaceState3D
 var _solids := []
 var _ghosts: Array[MeshInstance3D] = []
+## Crash and restart: the rules asked for ({mode, restart, hard}; mode
+## "off" by default), whether `any` is in C's cycle, crashes shown so far,
+## the wreck (a second plane figure), its debris ({node, velocity, spin}),
+## the screen's flash and fade, the crash's clock (s since it, -1 none), the
+## camera where it was and the wreck's tumble.
+var crash_given := {"mode":"off","restart":"checkpoint"}
+var _any_in_cycle := false
+var _crashes_seen := 0
+var _wreck: Node3D
+var _debris := []
+var _veil: ColorRect
+var _crash_t := -1.0
+var _fade_in := 0.0
+var _crash_camera := Transform3D.IDENTITY
+var _wreck_velocity := Vector3.ZERO
+var _wreck_axis := Vector3.UP
+var _wreck_basis := Basis.IDENTITY
 
 func _ready() -> void:
 	Pad.ensure()
@@ -131,6 +174,9 @@ func _ready() -> void:
 	_build_ui()
 	figure = PlaneFigure.new()
 	add_child(figure)
+	_wreck = PlaneFigure.new()
+	_wreck.visible = false
+	add_child(_wreck)
 	await get_tree().physics_frame
 	await get_tree().physics_frame
 	_space = get_world_3d().direct_space_state
@@ -145,6 +191,10 @@ func _ready() -> void:
 		if arg.begins_with("--bot=") and arg.substr(6) in PILOTS: pilot = arg.substr(6)
 		if arg.begins_with("--challenge-time="): challenge_override["time"] = maxf(0.0,float(arg.substr(17)))
 		if arg.begins_with("--challenge-mode=") and arg.substr(17) in ["all","chain"]: challenge_override["mode"] = arg.substr(17)
+		if arg.begins_with("--crash=") and arg.substr(8) in Crash.MODES: crash_given["mode"] = arg.substr(8)
+		if arg.begins_with("--restart=") and arg.substr(10) in Crash.RESTARTS: crash_given["restart"] = arg.substr(10)
+		if arg.begins_with("--crash-speed=") and float(arg.substr(14)) > 0.0: crash_given["hard"] = float(arg.substr(14))
+	_any_in_cycle = crash_given.mode == "any"
 	if pack != "": first = Course.pack(pack)[0]
 	if not Course.station(asked).is_empty(): first = Course.station(asked)
 	if line != "" and not Course.flown(first,line).is_empty(): first = Course.flown(first,line)
@@ -351,7 +401,11 @@ func start(s: Dictionary) -> void:
 	_solids = Course.solids(s)
 	var params := {} if pilot == "human" else Bot.skill(pilot)
 	run = Run.new(variant(s),"human" if pilot == "human" else "bot:"+pilot,params,_space)
+	run.set_crash(crash_given)
 	bot = null if pilot == "human" else Bot.new(params,randi())
+	_crash_clear()
+	_veil.color.a = 0.0
+	_fade_in = 0.0
 	asking = ""
 	_report.visible = false
 	_show_tokens()
@@ -372,6 +426,18 @@ func variant(s: Dictionary) -> Dictionary:
 
 func restart() -> void:
 	start(station)
+
+## C: crashing off, hard (and any, if it was asked for), round again; the
+## station starts afresh (a crash run is its own record).
+func cycle_crash() -> void:
+	var modes := ["off","hard","any"] if _any_in_cycle else ["off","hard"]
+	crash_given["mode"] = modes[(modes.find(str(crash_given.mode))+1)%modes.size()]
+	restart()
+
+## T: the restart point, checkpoint, ring, entry, round again.
+func cycle_restart() -> void:
+	crash_given["restart"] = Crash.RESTARTS[(Crash.RESTARTS.find(str(crash_given.restart))+1)%Crash.RESTARTS.size()]
+	restart()
 
 ## The next station (within `pack` if one was asked for), on the same token
 ## line if it has it.
@@ -399,6 +465,7 @@ func tick(delta: float) -> void:
 	var input := bot.input(run,delta) if bot != null else _input_dict()
 	if not run.done:
 		run.tick(delta,input)
+		if run.crashes > _crashes_seen: _crash_begin()
 		if run.done: _finished()
 	else:
 		var was := run.plane.position
@@ -415,9 +482,92 @@ func tick(delta: float) -> void:
 		var node := _moment_nodes[i]
 		node.visible = run.moment_live[i] == 1 and run.moment_state[i] == 0
 		if str(run.moments[i].role) != "free": node.rotate_y(SPIN*delta)
-	figure.update(delta,run.plane,0.0,Callable(Course,"ground"),false)
-	_frame(delta)
+	if _crash_t >= 0.0:
+		_crash_step(delta)
+	else:
+		figure.update(delta,run.plane,0.0,Callable(Course,"ground"),false)
+		_frame(delta)
+	if _fade_in > 0.0:
+		_fade_in = maxf(0.0,_fade_in-delta)
+		_veil.color = Color(0.05,0.05,0.07,FADE_DARK*_fade_in/FADE_IN)
 	_show_hud()
+
+# --- The crash -----------------------------------------------------------------------
+
+## A crash has just happened (the run is holding): the plane's figure gives
+## way to the wreck, tumbling off the face, debris thrown, the camera held
+## where it was to jolt, a flash.
+func _crash_begin() -> void:
+	_crashes_seen = run.crashes
+	_crash_clear()
+	_crash_t = 0.0
+	_crash_camera = camera.global_transform
+	var pose: Dictionary = run.crash_pose
+	var normal: Vector3 = pose.normal
+	var at: Vector3 = pose.position
+	figure.visible = false
+	_wreck.visible = true
+	_wreck_basis = PlaneFigure.pose(Vector3.ZERO,float(pose.heading),float(pose.pitch),float(pose.roll)).basis
+	_wreck.global_transform = Transform3D(_wreck_basis,at)
+	# Off the face, keeping a little of its way along it, and down.
+	var v: Vector3 = pose.velocity
+	_wreck_velocity = normal*3.5+(v-normal*v.dot(normal))*0.35+Vector3.UP*1.5
+	_wreck_axis = (normal.cross(v.normalized()+Vector3(0.1,0.0,0.0))).normalized()
+	if _wreck_axis.length() < 0.5: _wreck_axis = Vector3.RIGHT
+	var rng := RandomNumberGenerator.new()
+	rng.seed = run.crashes*7919+int(at.x*10.0)
+	for i in range(DEBRIS):
+		var piece := MeshInstance3D.new()
+		var box := BoxMesh.new()
+		var size := rng.randf_range(0.12,0.35)
+		box.size = Vector3(size,size*rng.randf_range(0.4,1.0),size*rng.randf_range(0.6,1.4))
+		piece.mesh = box
+		piece.material_override = _material("box") if i%3 != 0 else _token_material(Color(0.85,0.3,0.25))
+		piece.position = at+Vector3(rng.randf_range(-0.4,0.4),rng.randf_range(-0.2,0.3),rng.randf_range(-0.4,0.4))
+		add_child(piece)
+		var out := (normal*rng.randf_range(0.6,1.0)+Vector3(rng.randf_range(-1,1),rng.randf_range(-0.3,1.2),rng.randf_range(-1,1))*0.8).normalized()
+		_debris.append({"node":piece,"velocity":out*DEBRIS_SPEED*rng.randf_range(0.5,1.2),"spin":Vector3(rng.randf_range(-12,12),rng.randf_range(-12,12),rng.randf_range(-12,12))})
+	_veil.color = Color(1.0,0.97,0.9,FLASH_ALPHA)
+
+## The crash playing (until the run's hold ends): the wreck tumbles and
+## falls, the debris flies, the camera jolts, the flash fades and the screen
+## dims before the cut; then the cut to the restart point and the fade in.
+func _crash_step(delta: float) -> void:
+	_crash_t += delta
+	const G := Vector3(0.0,-9.8,0.0)
+	_wreck_velocity += G*delta
+	_wreck_basis = Basis(_wreck_axis,TUMBLE*delta)*_wreck_basis
+	_wreck.global_transform = Transform3D(_wreck_basis.orthonormalized(),_wreck.global_position+_wreck_velocity*delta)
+	for d: Dictionary in _debris:
+		d.velocity += G*delta
+		var node: MeshInstance3D = d.node
+		node.position += (d.velocity as Vector3)*delta
+		node.rotation += (d.spin as Vector3)*delta
+	var shake := Vector3.ZERO
+	if _crash_t < JOLT:
+		var k := 1.0-_crash_t/JOLT
+		shake = Vector3(sin(_crash_t*71.0),sin(_crash_t*53.0+1.3),sin(_crash_t*61.0+2.1))*JOLT_SIZE*k*k
+	camera.global_transform = Transform3D(_crash_camera.basis,_crash_camera.origin+shake)
+	var dim := clampf((_crash_t-(Crash.HOLD-FADE_OUT))/FADE_OUT,0.0,1.0)
+	if _crash_t < FLASH: _veil.color = Color(1.0,0.97,0.9,FLASH_ALPHA*(1.0-_crash_t/FLASH))
+	else: _veil.color = Color(0.05,0.05,0.07,FADE_DARK*dim)
+	if run.crash_left <= 0.0:
+		# The cut: flying on from the restart point.
+		_crash_clear()
+		figure.reset(run.plane)
+		chase.reset(run.plane,run.plane.position-run.plane.forward()*6.0+Vector3.UP*2.0,camera.fov)
+		_frame(0.0)
+		_fade_in = FADE_IN
+		_veil.color = Color(0.05,0.05,0.07,FADE_DARK)
+
+## The crash's pieces gone, the plane's figure back.
+func _crash_clear() -> void:
+	for d: Dictionary in _debris: (d.node as Node).queue_free()
+	_debris.clear()
+	_crash_t = -1.0
+	if _wreck != null: _wreck.visible = false
+	if figure != null: figure.visible = true
+	if run != null: _crashes_seen = run.crashes
 
 func _frame(delta: float) -> void:
 	if not scripted:
@@ -496,7 +646,7 @@ func _build_ui() -> void:
 	_hud_label.position = Vector2(16.0,240.0)
 	_hud.add_child(_hud_label)
 	_hint = Label.new()
-	_hint.text = "WASD/stick turn and pitch (W noses down) · Space/RT boost · Shift/LT brake · Q/E lean (knife edge), twice: roll · 0-9, - stations · R restart · N next · L line · B who flies · F1 numbers · Esc mouse"
+	_hint.text = "WASD/stick turn and pitch (W noses down) · Space/RT boost · Shift/LT brake · Q/E lean (knife edge), twice: roll · 0-9, - stations · R restart · N next · L line · B who flies · C crash · T restart point · F1 numbers · Esc mouse"
 	_style(_hint,14)
 	_hint.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
 	_hint.offset_top = -36.0
@@ -504,6 +654,13 @@ func _build_ui() -> void:
 	_hint.offset_right = 700.0
 	_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	layer.add_child(_hint)
+	# The crash's flash and fade, over everything but the numbers.
+	_veil = ColorRect.new()
+	_veil.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_veil.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_veil.color = Color(0.0,0.0,0.0,0.0)
+	layer.add_child(_veil)
+	layer.move_child(_veil,0)
 	_report = PanelContainer.new()
 	_report.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
 	_report.offset_left = -330.0
@@ -536,7 +693,15 @@ func _show_hud() -> void:
 		"reversals %.2f /s · effort %.2f /s · full stick %d%%" % [float(live.reversals),float(live.effort),roundi(float(live.full)*100.0)],
 		"threading %s · %d%% of the run · openings %d (%.2f /s)" % ["NOW" if live.threading_now else "open air",roundi(float(live.threading)*100.0),int(live.openings),float(live.openings_per_s)],
 		"flow: still %d%% · longest %.1f s%s" % [roundi(float(live.still)*100.0),float(live.longest_straight)," · straight NOW" if live.straight_now else ""],
+		crash_line(live,crash_given),
 	]+_knife_hud(live)))
+
+## The crash line, live: off (bump and recover), or the mode, its restart
+## point and the crashes so far.
+static func crash_line(live: Dictionary, given: Dictionary) -> String:
+	if str(live.crash_mode) == "off": return "crash off (bump and recover) · C turns it on"
+	var rule := "any contact" if str(live.crash_mode) == "any" else "hard hits, stone >= %.0f m/s into it" % Crash.threshold(given if str(given.get("mode","")) != "off" else {},"stone")
+	return "CRASH %s (%s) · restart at %s · crashes %d%s" % [str(live.crash_mode).to_upper(),rule,str(live.crash_restart),int(live.crashes)," · CRASHED" if live.crashing else ""]
 
 ## A moments station's count, live: "free x/y, challenge x/y" and the
 ## challenge's state (on, with its time left if it has a limit; or how the
@@ -549,6 +714,7 @@ static func moment_line(live: Dictionary) -> String:
 		"left": state = " (ended: left the area)"
 		"timeout": state = " (ended: time up)"
 		"over": state = " (ended with the pass)"
+		"crash": state = " (ended: crashed)"
 	return "free %d/%d, challenge %d/%d%s" % [int(live.free),int(live.free_total),int(live.challenge),int(live.challenge_total),state]
 
 ## The knife edge line, on a station with knife slits: slits threaded
@@ -616,15 +782,20 @@ func _show_report() -> void:
 	if m.has("free_total"):
 		lines.append("Time %.2f s · free %d/%d, challenge %d/%d · bumps %d" % [float(m.duration),int(m.free_taken),int(m.free_total),int(m.challenge_taken),int(m.challenge_total),int(m.bumps)])
 		var ended := str(last_run.get("result",{}).get("challenge_ended",""))
-		lines.append("Challenge: %s" % ({"":"not started (take the ring to start it)","complete":"complete","left":"ended, you left the area","timeout":"ended, time up","over":"ended with the pass"}.get(ended,ended)
+		lines.append("Challenge: %s" % ({"":"not started (take the ring to start it)","complete":"complete","left":"ended, you left the area","timeout":"ended, time up","over":"ended with the pass","crash":"ended, you crashed"}.get(ended,ended)
 			+(" · tries %d" % int(m.challenge_tries) if int(m.challenge_tries) > 1 else "")))
 	else:
 		lines.append("Time %.2f s · tokens %d/%d%s · bumps %d" % [float(m.duration),int(m.collected),int(m.total),"  CLEARED" if m.cleared else "",int(m.bumps)])
+	if last_run.has("crash"):
+		var restarts: Dictionary = m.get("crash_restarts",{})
+		lines.append("Crashes %d (crash %s, restart at %s)%s" % [int(m.get("crashes",0)),str(last_run.crash.mode),str(last_run.crash.restart),
+			"" if restarts.is_empty() else " · back to "+", ".join(restarts.keys().map(func(k: String) -> String: return "%s %d" % [k,int(restarts[k])]))])
 	if m.has("bonus_total"):
 		lines.append("Bonus tokens %d/%d (seen %d)" % [int(m.bonus_taken),int(m.bonus_total),int(m.bonus_seen)])
-	var band: Dictionary = _bands.get(station.id,{})
+	# Crashing on: the bench's bands for the same crash rules (tools/flight_bench.gd --crash).
+	var band: Dictionary = _bands.get(station.id if not last_run.has("crash") else "%s:%s" % [station.id,Crash.tag(last_run.crash)],{})
 	if band.is_empty() or str(band.get("hash","")) != str(last_run.get("station_hash",Course.station_hash(station))):
-		lines.append("Bot band: not benched for this layout (tools/flight_bench.gd)")
+		lines.append("Bot band: not benched for this layout%s (tools/flight_bench.gd)" % (" with these crash rules" if last_run.has("crash") else ""))
 	elif band.has("moments"):
 		# Each collectible's band, and whether this run got it.
 		var got: Array = m.get("moments_got",[])
@@ -670,6 +841,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				asking = ""
 				if _report.visible: _show_report()
 			KEY_R: restart()
+			KEY_C: cycle_crash()
+			KEY_T: cycle_restart()
 			KEY_N: next_station()
 			KEY_L: next_line()
 			KEY_B:

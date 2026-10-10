@@ -279,7 +279,7 @@ static func reversals(values: Array) -> int:
 
 ## A rate (per second) of an angle series against the clock, smoothed over
 ## SMOOTH s, as absolute values; `wrap` for headings.
-static func rates(t: Array, a: Array, wrap: bool) -> PackedFloat32Array:
+static func rates(t: Array, a: Array, wrap: bool, cuts := []) -> PackedFloat32Array:
 	var n := t.size()
 	var raw := PackedFloat32Array()
 	raw.resize(n)
@@ -287,6 +287,9 @@ static func rates(t: Array, a: Array, wrap: bool) -> PackedFloat32Array:
 		var dt := maxf(float(t[i])-float(t[i-1]),0.0001)
 		var d := angle_difference(float(a[i-1]),float(a[i])) if wrap else float(a[i])-float(a[i-1])
 		raw[i] = absf(d)/dt
+	# A crash's jump to its restart point (flight_run.gd `cuts`) isn't flown.
+	for c: Variant in cuts:
+		if int(c) > 0 and int(c) < n: raw[int(c)] = raw[int(c)-1]
 	if n > 1: raw[0] = raw[1]
 	var out := PackedFloat32Array()
 	out.resize(n)
@@ -328,8 +331,9 @@ static func summarise(run: Dictionary, solids := []) -> Dictionary:
 	var duration := float(run.get("result",{}).get("duration",(float(t[n-1])-float(t[0])) if n > 1 else 0.0))
 	var span := maxf(duration,0.0001)
 	# What the pilot flew.
-	var yaw := rates(t,tk.heading,true)
-	var pit := rates(t,tk.pitch,false)
+	var cuts: Array = run.get("cuts",[])
+	var yaw := rates(t,tk.heading,true,cuts)
+	var pit := rates(t,tk.pitch,false,cuts)
 	var flown_turn := _peak_mean(yaw,TURN_RATE)
 	var flown_pitch := _peak_mean(pit,PITCH_SPEED)
 	var turns: Array = tk.in_turn
@@ -444,7 +448,25 @@ static func summarise(run: Dictionary, solids := []) -> Dictionary:
 		"demand_peak":snappedf(peak,0.001),"demand_mean":snappedf(weighted/timed if timed > 0.0 else 0.0,0.001),
 		"demand_spike":snappedf(peak-median,0.001),"grade":grade(peak),
 		"gaps":out_gaps,"curve":curve(run,out_gaps,yaw,pit),
-	}.merged(flow(tk,duration)).merged(knife(run)).merged(threading(tk,solids,duration) if not solids.is_empty() else {}).merged(bonus(run)).merged(moments(run))
+	}.merged(flow(tk,duration,cuts)).merged(knife(run)).merged(threading(tk,solids,duration) if not solids.is_empty() else {}).merged(bonus(run)).merged(moments(run)).merged(crash(run))
+
+## A run with crashing on (scripts/flight_crash.gd): {crashes, crash_into
+## (mean m/s into the face), crash_restarts (per restart point), crash_spots
+## (line_s of each crash)}; {} otherwise, so other runs are as they were.
+static func crash(run: Dictionary) -> Dictionary:
+	if not run.has("crash"): return {}
+	var n := 0
+	var into := 0.0
+	var spots := []
+	var restarts := {}
+	for e: Dictionary in run.get("events",[]):
+		match str(e.kind):
+			"crash":
+				n += 1
+				into += float(e.get("into",0.0))
+				spots.append(float(e.get("line_s",0.0)))
+			"respawn": restarts[str(e.restart)] = int(restarts.get(str(e.restart),0))+1
+	return {"crashes":n,"crash_into":snappedf(into/n,0.01) if n > 0 else 0.0,"crash_restarts":restarts,"crash_spots":spots}
 
 ## A run's moments (a moments station's collectibles, scripts/flight_run.gd),
 ## if its station has any: {free_total, free_taken, challenge_total,
@@ -667,13 +689,16 @@ static func threading(ticks: Dictionary, solids: Array, duration := -1.0) -> Dic
 ## The flight direction's yaw and pitch rates (rad/s, signed) at each tick:
 ## the change over the last FLOW_SMOOTH s (less at the start; 0 on the
 ## first tick).
-static func swing_rates(t: Array, heading: Array, pitch: Array) -> Array[Vector2]:
+static func swing_rates(t: Array, heading: Array, pitch: Array, cuts := []) -> Array[Vector2]:
 	var out: Array[Vector2] = []
 	var n := t.size()
 	var j := 0
 	for i in range(n):
 		var now := float(t[i])
 		while j < i and float(t[j+1]) <= now-FLOW_SMOOTH+0.00001: j += 1
+		# Never measured across a crash's jump to its restart point.
+		for c: Variant in cuts:
+			if int(c) > j and int(c) <= i: j = int(c)
 		var span := now-float(t[j])
 		if span <= 0.0:
 			out.append(Vector2.ZERO)
@@ -684,12 +709,12 @@ static func swing_rates(t: Array, heading: Array, pitch: Array) -> Array[Vector2
 ## A run's flow from its ticks (columns "t", "heading", "pitch"; see the
 ## header): {still_share, straights, longest_straight, swing_mean,
 ## yaw_share, swing_reversals_per_s}.
-static func flow(ticks: Dictionary, duration := -1.0) -> Dictionary:
+static func flow(ticks: Dictionary, duration := -1.0, cuts := []) -> Dictionary:
 	var t: Array = ticks.get("t",[])
 	var n := t.size()
 	if n < 2: return {"still_share":0.0,"straights":0,"longest_straight":0.0,"swing_mean":0.0,"yaw_share":0.0,"swing_reversals_per_s":0.0}
 	if duration < 0.0: duration = float(t[n-1])-float(t[0])
-	var rates := swing_rates(t,ticks.heading,ticks.pitch)
+	var rates := swing_rates(t,ticks.heading,ticks.pitch,cuts)
 	var still := 0
 	var straights := 0
 	var longest := 0.0

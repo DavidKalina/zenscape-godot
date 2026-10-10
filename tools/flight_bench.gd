@@ -16,6 +16,16 @@ extends SceneTree
 ##            --no-bonus (bots ignore bonus tokens and moments: the main line alone)
 ##            --moment-ease E (every moment but the starter at reach E, a
 ##            layout sweep; use with --no-save)
+##            --crash hard|any (crash and restart, scripts/flight_crash.gd;
+##            default off: bump and recover, every number as before)
+##            --restart checkpoint|ring|entry   --crash-speed M (stone's
+##            hard threshold, m/s into the face)
+##   With crashing on, run files aren't saved (the bump-and-recover record
+##   stays as it is); bands.json gets the station's crash bands under
+##   "<id>:<tag>" (FlightCrash `tag`), which the study's report reads when
+##   it flies the same crash rules. The crash table gives each skill's mean
+##   crashes, the share of runs that ran out of time, and where on the line
+##   (s at cruise) the crashes were.
 ##   A moments station (--pack moments, scripts/flight_pack_moments.gd) has
 ##   nothing to clear: its band is "moments", and each collectible gets its
 ##   own (the least skill getting it in 60% of runs; moments_table).
@@ -31,6 +41,7 @@ const Bot = preload("res://scripts/flight_bot.gd")
 const Metrics = preload("res://scripts/flight_metrics.gd")
 const Log = preload("res://scripts/flight_log.gd")
 const Moments = preload("res://scripts/flight_moments.gd")
+const Crash = preload("res://scripts/flight_crash.gd")
 
 const DT := 1.0/60.0
 
@@ -84,7 +95,8 @@ func run() -> void:
 	await physics_frame
 	await physics_frame
 	var space := stage.get_world_3d().direct_space_state
-	summary = bench(ids,skills,int(args.runs),space,str(args.out),bool(args.save),bool(args.get("bonus",true)),float(args.get("moment-ease",0.0)))
+	var crash := Crash.rules({"mode":str(args.get("crash","off")),"restart":str(args.get("restart","checkpoint")),"hard":float(args.get("crash-speed",0.0))})
+	summary = bench(ids,skills,int(args.runs),space,str(args.out),bool(args.save),bool(args.get("bonus",true)),float(args.get("moment-ease",0.0)),crash)
 	quit(0)
 
 ## `ids` with every token line of each station that has more than one
@@ -101,14 +113,15 @@ static func with_lines(ids: PackedStringArray) -> PackedStringArray:
 	return out
 
 ## Flies every station in `ids` with every skill; returns the summary.
-static func bench(ids: PackedStringArray, skills: PackedStringArray, runs: int, space: PhysicsDirectSpaceState3D, dir: String, save: bool, bonus := true, moment_ease := 0.0) -> Dictionary:
+static func bench(ids: PackedStringArray, skills: PackedStringArray, runs: int, space: PhysicsDirectSpaceState3D, dir: String, save: bool, bonus := true, moment_ease := 0.0, crash := {}) -> Dictionary:
+	var tag := Crash.tag(crash)
 	var began := Time.get_ticks_msec()
 	var stations := {}
 	var bands := {}
 	for id in ids:
 		var s := Course.station(id)
 		if moment_ease > 0.0 and s.has("moments"): s = with_moment_ease(s,moment_ease)
-		var row := {"id":id,"name":s.name,"intent":s.intent,"hash":Course.station_hash(s),"skills":{}}
+		var row := {"id":id,"name":s.name,"intent":s.intent,"hash":Course.station_hash(s)+(":"+tag if tag != "" else ""),"skills":{}}
 		var clears := {}
 		# A moments station: every run per skill (the perfect bot's at each
 		# look-ahead too), for each collectible's get rate.
@@ -122,7 +135,7 @@ static func bench(ids: PackedStringArray, skills: PackedStringArray, runs: int, 
 					var params := Bot.skill("perfect")
 					params.look = look
 					if not bonus: params.merge({"bonus":false,"moments":false},true)
-					var r := fly(s,"perfect",params,0,space)
+					var r := fly(s,"perfect",params,0,space,crash)
 					every[name].append(r)
 					if best.is_empty() or _better(r,best): best = r
 				flown.append(best)
@@ -130,14 +143,15 @@ static func bench(ids: PackedStringArray, skills: PackedStringArray, runs: int, 
 				for n in range(runs):
 					var params := Bot.skill(name)
 					if not bonus: params.merge({"bonus":false,"moments":false},true)
-					flown.append(fly(s,name,params,hash([id,name,n]),space))
+					flown.append(fly(s,name,params,hash([id,name,n]),space,crash))
 				every[name] = flown
-			if save:
+			if save and tag == "":
 				for r: Dictionary in flown: Log.save(r,dir)
 			var stats := _stats(flown)
 			row.skills[name] = stats
 			clears[name] = stats.clear_rate
 			if name == "perfect": row["reference"] = _reference(flown[0])
+			if tag != "": row.skills[name].merge(crash_stats(every[name]),true)
 		row["band"] = Metrics.band(clears)
 		row["clears"] = clears
 		if s.has("moments"):
@@ -146,11 +160,12 @@ static func bench(ids: PackedStringArray, skills: PackedStringArray, runs: int, 
 			row["moments"] = moment_rows(s,every,space)
 			row["moment_skills"] = moment_skills(every)
 		stations[id] = row
-		bands[id] = {"hash":row.hash,"band":row.band,"clears":clears,"when":Time.get_datetime_string_from_system(true)+"Z",
+		bands[id if tag == "" else id+":"+tag] = {"hash":row.hash,"band":row.band,"clears":clears,"when":Time.get_datetime_string_from_system(true)+"Z",
 			"reference":row.get("reference",{})}
-		if row.has("moments"): bands[id]["moments"] = row.moments
+		if row.has("moments"): bands[id if tag == "" else id+":"+tag]["moments"] = row.moments
 	var out := {"kind":"bench","when":Time.get_datetime_string_from_system(true)+"Z","runs":runs,"skills":Array(skills),"stations":stations,
 		"seconds":snappedf((Time.get_ticks_msec()-began)/1000.0,0.01)}
+	if tag != "": out["crash"] = crash
 	if save:
 		var stamp := str(out.when).replace(":","").replace("-","").replace("Z","")
 		DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(dir))
@@ -164,7 +179,56 @@ static func bench(ids: PackedStringArray, skills: PackedStringArray, runs: int, 
 	if tokens != "": print(tokens)
 	var moments := moments_table(out)
 	if moments != "": print(moments)
+	if tag != "": print(crash_table(out))
 	return out
+
+## Crashing on: per skill its runs' mean crashes, the share that ran out of
+## time (TIME_LIMIT), the mean speed into the face, and each crash's place
+## on the line (s at cruise).
+static func crash_stats(runs: Array) -> Dictionary:
+	var crashes := 0.0
+	var timeouts := 0
+	var into := 0.0
+	var spots := []
+	for r: Dictionary in runs:
+		var m: Dictionary = r.metrics
+		crashes += float(m.get("crashes",0))
+		into += float(m.get("crash_into",0.0))*float(m.get("crashes",0))
+		spots.append_array(m.get("crash_spots",[]))
+		if str(r.get("result",{}).get("ended","")) == "timeout": timeouts += 1
+	var n := maxf(runs.size(),1)
+	return {"crashes":snappedf(crashes/n,0.01),"timeouts":snappedf(timeouts/n,0.01),"crash_into":snappedf(into/maxf(crashes,1.0),0.01),"crash_spots":spots}
+
+## The crash table (crashing on): per station and skill sl/de/sh/pf the mean
+## crashes a run and the share timed out, the mean speed into the face, then
+## the line's crash spots (s along the line at cruise, crashes there over
+## every skill's runs).
+static func crash_table(out: Dictionary) -> String:
+	var lines := PackedStringArray(["crashes (%s; per skill sl/de/sh/pf; perfect = its runs at every look-ahead)" % Crash.tag(out.get("crash",{}))])
+	lines.append("%-16s  %-23s  %-23s  %-6s  %s" % ["station","crashes/run","timed out","into","spots: line s x crashes"])
+	for id: String in out.stations:
+		var row: Dictionary = out.stations[id]
+		var per := func(key: String) -> String:
+			var bits := PackedStringArray()
+			for k: String in Metrics.SKILLS:
+				bits.append(("%.2f" % float(row.skills[k].get(key,0.0))) if row.skills.has(k) else "-")
+			return "/".join(bits)
+		var spots := {}
+		var into := 0.0
+		var total := 0.0
+		for k: String in row.skills:
+			for x: Variant in row.skills[k].get("crash_spots",[]):
+				var at := snappedf(float(x),0.5)
+				spots[at] = int(spots.get(at,0))+1
+			var many := float(row.skills[k].get("crashes",0.0))*float(row.skills[k].get("runs",1))
+			into += float(row.skills[k].get("crash_into",0.0))*many
+			total += many
+		var keys := spots.keys()
+		keys.sort_custom(func(a: float, b: float) -> bool: return spots[a] > spots[b])
+		var top := PackedStringArray()
+		for at: float in keys.slice(0,6): top.append("%.1fs x%d" % [at,int(spots[at])])
+		lines.append("%-16s  %-23s  %-23s  %6.1f  %s" % [id,per.call("crashes"),per.call("timeouts"),into/maxf(total,0.001),", ".join(top)])
+	return "\n".join(lines)
 
 ## Moments station `s` with every collectible but the starter at pickup
 ## reach `ease` (--moment-ease: a sweep for laying them out; its own hash).
@@ -206,6 +270,7 @@ static func moment_skills(every: Dictionary) -> Dictionary:
 		var complete := 0
 		var best := 0.0
 		var bumps := 0.0
+		var crashes := 0.0
 		for r: Dictionary in runs:
 			var m: Dictionary = r.metrics
 			free += float(m.get("free_taken",0))
@@ -213,9 +278,10 @@ static func moment_skills(every: Dictionary) -> Dictionary:
 			if bool(m.get("challenge_complete",false)): complete += 1
 			best += float(m.get("challenge_taken",0))
 			bumps += float(m.get("bumps",0))
+			crashes += float(m.get("crashes",0))
 		var n := maxf(runs.size(),1)
 		out[name] = {"runs":runs.size(),"free":snappedf(free/n,0.01),"started":snappedf(started/n,0.01),"complete":snappedf(complete/n,0.01),
-			"challenge":snappedf(best/n,0.01),"bumps":snappedf(bumps/n,0.01)}
+			"challenge":snappedf(best/n,0.01),"bumps":snappedf(bumps/n,0.01),"crashes":snappedf(crashes/n,0.01)}
 	return out
 
 ## The moments pack's per-collectible table: each collectible's fit (m of
@@ -238,12 +304,14 @@ static func moments_table(out: Dictionary) -> String:
 				float(m.react),float(m.reach),float(m.at_s),"/".join(Metrics.SKILLS.map(func(k: String) -> String: return ("%.2f" % float(rates[k])) if rates.has(k) else "-")),m.band,m.note])
 		var sk: Dictionary = row.moment_skills
 		var per := func(key: String) -> String: return "/".join(Metrics.SKILLS.map(func(k: String) -> String: return ("%.2f" % float(sk[k][key])) if sk.has(k) else "-"))
-		lines.append("  free got %s · challenge started %s · completed %s · challenge got %s · bumps %s" % [per.call("free"),per.call("started"),per.call("complete"),per.call("challenge"),per.call("bumps")])
+		lines.append("  free got %s · challenge started %s · completed %s · challenge got %s · bumps %s%s" % [per.call("free"),per.call("started"),per.call("complete"),per.call("challenge"),per.call("bumps"),
+			" · crashes %s" % per.call("crashes") if not (out.get("crash",{}) as Dictionary).is_empty() else ""])
 	return "\n".join(lines) if any else ""
 
 ## One bot run of station `s`.
-static func fly(s: Dictionary, name: String, params: Dictionary, seed_value: int, space: PhysicsDirectSpaceState3D) -> Dictionary:
+static func fly(s: Dictionary, name: String, params: Dictionary, seed_value: int, space: PhysicsDirectSpaceState3D, crash := {}) -> Dictionary:
 	var r := Run.new(s,"bot:"+name,params,space)
+	if not crash.is_empty(): r.set_crash(crash)
 	var bot := Bot.new(params,seed_value)
 	while not r.done: r.tick(DT,bot.input(r,DT))
 	var out := r.finish()
