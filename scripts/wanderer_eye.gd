@@ -1074,6 +1074,7 @@ func _motor_events(events: Dictionary) -> void:
 	if events.get("wall",false):
 		steps.step(_surface(),0.35)
 		steps.slide(_surface(),0.3)
+	if events.get("wallrun",false): steps.step(_surface(),0.4)
 	if motor.move == "wall":
 		var off := figure.global_transform.basis*Vector3(0.0,0.0,0.25)
 		puffs.spray(figure.global_position-off+Vector3.UP*0.15,Vector3.UP,_surface(),0.35,get_process_delta_time())

@@ -7,7 +7,12 @@ extends SceneTree
 ## jumped out of the surf uncrouched he flies on at its pace over a gap no
 ## run jump clears; onto flat ground he slides on, slowing to his run; running up a steep slope he
 ## slows; jumped in a skid it is the side flip, higher than the pump and
-## shorter, the way the stick now points, up onto a 1.9 m ledge; and a
+## shorter, the way the stick now points, up onto a 1.9 m ledge; kicked off
+## a wall, a twirl with the stick back at it turns him round to it for one
+## more kick, higher, and no more (the kick doesn't give the twirl back);
+## jumped along a wall at a glance he runs along it a few metres, rising a
+## little, and Jump kicks him off it out and up, his pace kept; head-on it is
+## the wall slide, and too slow nothing; and a
 ## climb from a hang takes him up in under half a second.
 ##   godot --headless --path . --script tests/test_pilot_tricks.gd
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
@@ -23,6 +28,8 @@ func _initialize() -> void:
 	figure = PilotFigure.new()
 	root.add_child(figure)
 	_twirl()
+	_twirl_back()
+	_wall_run()
 	_surf()
 	_side_flip()
 	_climb_time()
@@ -277,3 +284,81 @@ func _climb_time() -> void:
 		if m.hold == "hang" and hung_at < 0: hung_at = i
 		if out.has("climbed"): break
 	check(m.grounded and m.feet.y > 1.99,"Jump pressed as he catches the lip is kept for the climb")
+
+## Off a 10 m wall at x 0: run in, jump, slide down it, kick off; `twirl_at`
+## ticks after each kick the twirl is pressed, the stick held back at the
+## wall throughout (negative: never). The heights of the kicks, and where
+## he lands.
+func _wall_loop(twirl_at: int) -> Dictionary:
+	var wall := func(p: Vector2) -> float: return 10.0 if p.x < 0.0 else 0.0
+	var blocked := func(feet: Vector3, step: Vector2) -> Vector3:
+		var to := feet+Vector3(step.x,0.0,step.y)
+		if feet.y < 10.0: to.x = maxf(to.x,0.05)
+		return to
+	var m := PilotMotor.new()
+	m.reset(Vector3(1.0,0.0,0.0),PilotMotor.facing_of(Vector2(-1.0,0.0)),PilotMotor.RUN)
+	var kicks := []
+	var kicked := -1
+	for i in range(900):
+		var jump: bool = i < 14 or (m.move == "wall" and i > 20 and i%2 == 0)
+		m.twirl = twirl_at >= 0 and kicked >= 0 and i-kicked == twirl_at
+		var out := m.step(DT,Vector2(-1.0,0.0),PilotMotor.RUN,jump,wall,blocked)
+		figure.drive(m,DT)
+		if out.has("wall_jump"):
+			kicked = i
+			kicks.append(snappedf(m.feet.y,0.01))
+		if kicked >= 0 and m.grounded: break
+	return {"kicks":kicks,"x":m.feet.x}
+
+func _twirl_back() -> void:
+	var plain := _wall_loop(-1)
+	var back := _wall_loop(10)
+	print("MEASURE wall kick, then a twirl back at it: kicks at %s, lands %.2f m out (no twirl: %s, %.2f m out)" % [back.kicks,back.x,plain.kicks,plain.x])
+	check(plain.kicks.size() == 1 and float(plain.x) > 2.0,"Kicked off a wall, he goes out from it (%.2f m)" % plain.x)
+	check(back.kicks.size() == 2 and float(back.kicks[1])-float(back.kicks[0]) > 1.2,"Twirled back at it he comes back for one more kick, %.2f m higher" % (float(back.kicks[-1])-float(back.kicks[0])))
+	check(back.kicks.size() < 3 and float(back.x) > 0.5,"And no more: the kick doesn't give the twirl back, so a wall stays a wall (%d kicks)" % back.kicks.size())
+
+## A running jump along a 10 m wall (its face z 0, facing +z) at `pace`,
+## `degrees` in towards it, from 0.7 m out; Jump again `kick_at` ticks into
+## a wall run (negative: never). What came of it.
+func _along_wall(pace: float, degrees: float, kick_at := -1) -> Dictionary:
+	var wall := func(p: Vector2) -> float: return 10.0 if p.y < 0.0 else 0.0
+	var blocked := func(feet: Vector3, step: Vector2) -> Vector3:
+		var to := feet+Vector3(step.x,0.0,step.y)
+		if feet.y < 10.0: to.z = maxf(to.z,0.05)
+		return to
+	var way := Vector2(cos(deg_to_rad(degrees)),-sin(deg_to_rad(degrees)))
+	var m := PilotMotor.new()
+	m.reset(Vector3(0.0,0.0,0.7),PilotMotor.facing_of(way),pace)
+	var got := {"ran":false,"slid":false,"along":0.0,"rise":0.0,"kick":Vector3.ZERO}
+	var started := -1
+	var from := Vector3.ZERO
+	for i in range(240):
+		var jump: bool = i < 12 or (kick_at >= 0 and started >= 0 and i-started == kick_at)
+		var out := m.step(DT,way,pace,jump,wall,blocked)
+		figure.drive(m,DT)
+		if out.get("wallrun",null) == true:
+			got.ran = true
+			started = i
+			from = m.feet
+		if m.move == "wallrun":
+			got.along = m.feet.x-from.x
+			got.rise = maxf(float(got.rise),m.feet.y-from.y)
+		if out.has("wallrun_jump"): got.kick = m.velocity
+		if out.get("wall",null) == true: got.slid = true
+		if m.grounded and i > 12: break
+	return got
+
+func _wall_run() -> void:
+	var run := _along_wall(PilotMotor.RUN,15.0)
+	var fast := _along_wall(9.0,25.0)
+	var kick := _along_wall(PilotMotor.RUN,15.0,20)
+	var head_on := _along_wall(PilotMotor.RUN,80.0)
+	var slow := _along_wall(3.0,15.0)
+	print("MEASURE wall run: from a run %.2f m along, %.2f m up; at 9 m/s %.2f m; kicked off at %s" % [run.along,run.rise,fast.along,kick.kick])
+	check(run.ran and float(run.along) > 2.5 and float(run.along) < 4.5 and float(run.rise) > 0.1,"From a running jump along a wall he runs %.2f m along it, rising %.2f m" % [run.along,run.rise])
+	check(fast.ran and float(fast.along) > float(run.along)*1.5,"Faster, further: %.2f m at 9 m/s" % fast.along)
+	var k: Vector3 = kick.kick
+	check(k.y > 6.0 and k.z > 3.0 and k.x > 4.0,"Jump on it kicks him off up, out and on along it (%s)" % k)
+	check(not head_on.ran and head_on.slid,"Head-on it is the wall slide, not a wall run")
+	check(not slow.ran,"Too slow (3 m/s), no wall run")

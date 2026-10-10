@@ -193,6 +193,8 @@ const HIPS := 0.4329
 ## Radians of bank per radian a second of turn at a full run, and the most.
 const BANK := 0.06
 const BANK_MOST := 0.35
+## Radians he leans off a wall run along (his feet to the wall).
+const WALLRUN_BANK := 0.45
 ## Radians it leans back skidding without a skid clip; with one, the clip
 ## leans and the spring is only kicked back as it starts (radians a second).
 const SKID_LEAN := 0.3
@@ -543,7 +545,8 @@ func drive(motor: RefCounted, delta: float) -> Dictionary:
 		_lean.v += SKID_KICK
 	_skidding_was = motor.skidding
 	var speed: float = motor.speed()
-	if motor.grounded and not motor.skidding and move != "crouch" and move != "slide":
+	# Running along a wall runs as on the ground.
+	if (motor.grounded or move == "wallrun") and not motor.skidding and move != "crouch" and move != "slide":
 		var moving := speed > STILL
 		_moving = move_toward(_moving,1.0 if moving else 0.0,delta/FADE)
 		if moving:
@@ -567,7 +570,14 @@ func drive(motor: RefCounted, delta: float) -> Dictionary:
 	var across := Vector2(feet.x-_feet_was.x,feet.z-_feet_was.z).length() if _feet_was.is_finite() else 0.0
 	var climb := clampf((feet.y-_feet_was.y)/across,-1.5,1.5) if motor.grounded and across > 0.001 else 0.0
 	_feet_was = feet
-	var bank := _bank.step(clampf(turned*BANK*pace,-BANK_MOST,BANK_MOST) if motor.grounded else 0.0,delta)
+	var bank_to := clampf(turned*BANK*pace,-BANK_MOST,BANK_MOST) if motor.grounded else 0.0
+	if move == "wallrun":
+		# Leant off the wall, the head away from it: rolled left with the
+		# wall on his right.
+		var f: Vector2 = motor.forward(motor.facing)
+		var right := Vector2(-f.y,f.x)
+		bank_to = WALLRUN_BANK if (motor.wall_out as Vector2).dot(right) < 0.0 else -WALLRUN_BANK
+	var bank := _bank.step(bank_to,delta)
 	var lean_to := tip
 	if motor.skidding: lean_to = 0.0 if _has_skid else SKID_LEAN
 	elif move == "long": lean_to = LONG_LEAN

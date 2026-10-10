@@ -48,8 +48,12 @@ extends RefCounted
 ## falling no faster than TWIRL_FALL: a little more airtime to reach a ledge
 ## or fix a landing. His pace is kept through it, pushed on TWIRL_PUSH along
 ## the stick (never past TWIRL_TOP by it), and steered at TWIRL_STEER, so a
-## twirl at the end of a long jump stretches it. Once an airtime; landing, taking hold of a wall or a
-## ledge, or swimming gives it back. Crouch does nothing in the air: held
+## twirl at the end of a long jump stretches it. With the stick held back
+## against his way (TWIRL_BACK) it turns him round to it, his pace kept:
+## twirled back towards a wall just kicked off (the kick's lock lifted),
+## he comes back to it to slide and kick again, or to a ledge over it. Once an airtime; landing, taking hold of a ledge,
+## or swimming gives it back (a wall kick doesn't: one twirl back to the
+## wall, one more kick, then he falls away). Crouch does nothing in the air: held
 ## from the ground (for the long jump, or the slide), or pressed there, it
 ## is the slide on landing.
 ##
@@ -62,6 +66,17 @@ extends RefCounted
 ## or the slide jump on a slope) it is the chain, kept at his pace on the
 ## touch (the long jump's LONG_ADD on it, to LONG_TOP): a string of timed
 ## hops, weaving, runs past anything the ground gives on the flat.
+##
+## The wall run: in the air at WALLRUN_PACE or more, with a wall along his
+## way (met at a glance: its face within WALLRUN_GLANCE of his run) and
+## the stick not pulled off it, he runs along it (move "wallrun"): hopped
+## up to WALLRUN_RISE, then for WALLRUN_TIME on a share of his gravity
+## (WALLRUN_GRAVITY) and falling no faster than WALLRUN_FALL, his pace kept
+## along the wall. The wall ending, the time up or the stick pulled away
+## from it, he drops off; Jump kicks him off it, up (WALLRUN_JUMP) and out
+## (WALLRUN_KICK) with his pace along it kept. Once an airtime, as the
+## twirl: landing, taking hold of a ledge, or swimming gives it back. A hop
+## out of the water never starts one.
 ##
 ## Slopes (the ground's own fall, `_gradient`, read from heights around the
 ## feet, so a step's edge is no slope): running up one steeper than
@@ -226,12 +241,30 @@ const TWIRL_FALL := 2.0
 const TWIRL_PUSH := 2.0
 const TWIRL_TOP := 9.0
 const TWIRL_STEER := 12.0
+## The twirl turns him round to the stick held back against his way past
+## this (the cosine between them: about 115° and more).
+const TWIRL_BACK := -0.4
 ## The slide hop: its turn (rad/s) and its gain (m/s²) at full stick across
 ## his way, and the pace the gain stops at (m/s). Weaving a long jump's
 ## 0.56 s at full stick across gains about 1.7 m/s and turns about 70°.
 const HOP_TURN := 2.2
 const HOP_STRAFE := 3.0
 const HOP_TOP := 13.0
+## The wall run: the least pace (m/s) it starts at; how glancing the wall
+## must be (the cosine between his way and its face's way out: under 0.6,
+## within about 37° of running along it); how far beside him it is felt
+## (m); the rise it starts with (m/s), its seconds, its share of gravity
+## and fastest fall (m/s); its kick's height (m) and pace out (m/s). At a
+## run's 4.8 m/s it goes about 3.4 m along.
+const WALLRUN_PACE := 4.0
+const WALLRUN_GLANCE := 0.6
+const WALLRUN_REACH := 0.6
+const WALLRUN_RISE := 2.0
+const WALLRUN_TIME := 0.7
+const WALLRUN_GRAVITY := 0.35
+const WALLRUN_FALL := 2.0
+const WALLRUN_JUMP := 1.1
+const WALLRUN_KICK := 4.0
 ## Slopes, degrees: from SLOPE_SLOW up he runs up slower, to SLOPE_SLOWEST
 ## of his pace at SLIDE_AUTO, past which he can't stand and surfs down; from
 ## SLIDE_FROM a crouch surfs; under SLIDE_END is flat. Surfing: the pull
@@ -375,6 +408,12 @@ var twirl_push := TWIRL_PUSH
 var twirl_top := TWIRL_TOP
 var twirl_steer := TWIRL_STEER
 var hop_turn := HOP_TURN
+var wallrun_pace := WALLRUN_PACE
+var wallrun_time := WALLRUN_TIME
+var wallrun_gravity := WALLRUN_GRAVITY
+var wallrun_rise := WALLRUN_RISE
+var wallrun_jump := WALLRUN_JUMP
+var wallrun_kick := WALLRUN_KICK
 var hop_strafe := HOP_STRAFE
 var hop_top := HOP_TOP
 var slide_auto := SLIDE_AUTO
@@ -400,7 +439,7 @@ var chain := 0
 ## What he is doing beyond running and jumping: "" (nothing), "jump",
 ## "pump", "long" (the long jump), "kick" (off a wall), "wall" (sliding down
 ## one), "crouch", "twirl", "slide" (boot-surfing down a slope), "flip" (the
-## side flip).
+## side flip), "wallrun" (running along one).
 var move := ""
 ## Held by the caller: the crouch button, and the twirl's.
 var crouch := false
@@ -453,6 +492,9 @@ var _lock := 0.0
 var _twirl_was := false
 var _twirl := 0.0
 var _twirled := false
+## The wall run's seconds left, and whether this airtime's is spent.
+var _wallrun := 0.0
+var _wallran := false
 var _skid_left := 0.0
 var _hang_press := false
 ## In the air out of a slide (a long jump, a slide jump: the slide hop);
@@ -497,6 +539,8 @@ func reset(at: Vector3, towards: float, speed := 0.0) -> void:
 	slope = Vector2.ZERO
 	_twirl = 0.0
 	_twirled = false
+	_wallrun = 0.0
+	_wallran = false
 	_skid_left = 0.0
 	_hang_press = false
 	_hop_air = false
@@ -570,6 +614,7 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 		else: h = _run(h,want,top,delta)
 		surfing = move == "slide"
 		if surfing != surfed: out["slide"] = surfing
+	elif move == "wallrun": pass
 	elif move != "wall" and _hop_air and _lock <= 0.0: h = _strafe(h,want,top,delta,twirl_steer if move == "twirl" else air_accel)
 	elif move != "wall": h = _steer(h,Vector2.ZERO if _lock > 0.0 else want,side_speed if move == "flip" else top,delta,twirl_steer if move == "twirl" else air_accel)
 	# The jump: from the ground, or just off it; out of a skid, the side flip;
@@ -629,6 +674,8 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 		skidding = false
 		_jumped = true
 		_buffer = 0.0
+	elif _buffer > 0.0 and not grounded and move == "wallrun":
+		h = _wallrun_kick(h,out)
 	elif _buffer > 0.0 and not grounded and (move == "wall" or _wall_since <= WALL_TOUCH):
 		h = _kick_off(out)
 	elif pressed and not grounded and not _from_water and (velocity.y > 0.0 or feet.y-ground_y > FLY_CLEAR) \
@@ -643,11 +690,21 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 		_light = false
 		_no_cut = true
 		velocity.y = maxf(velocity.y,twirl_rise)
+		# The stick back against his way: turned round to it, his pace
+		# kept (back to a wall just kicked off, the kick's lock lifted).
 		# Pushed on along the stick (or the way he goes), his own pace kept
 		# past TWIRL_TOP.
 		var on := want.normalized() if want.length() > 0.2 else (h.normalized() if h.length() > 0.3 else forward(facing))
-		h = (h+on*twirl_push).limit_length(maxf(h.length(),twirl_top))
+		var pace := h.length()
+		if want.length() > 0.2 and pace > 0.3 and h.normalized().dot(on) < TWIRL_BACK: h = on*pace
+		h = (h+on*twirl_push).limit_length(maxf(pace,twirl_top))
+		_lock = 0.0
+		if h.length() > 0.3: facing = facing_of(h)
 		out["twirl"] = true
+	# The wall run: begun along a wall met at a glance, or run on.
+	if not grounded:
+		if move == "wallrun": h = _wallrun_step(delta,want,h,ground,out)
+		elif not _wallran and move != "wall" and move != "flip": h = _wallrun_start(want,h,ground,out)
 	var moved: Vector3 = slide.call(feet,h*delta)
 	var under: float = ground.call(Vector2(moved.x,moved.z))
 	if grounded and under > feet.y+STEP_UP:
@@ -683,7 +740,7 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 			h = Vector2.ZERO
 			under = ground.call(Vector2(feet.x,feet.z))
 			moved = feet
-		h = _on_wall(delta,want,h,going,ground,under,out)
+		if move != "wallrun": h = _on_wall(delta,want,h,going,ground,under,out)
 		if move == "wall":
 			moved = feet
 			under = ground.call(Vector2(feet.x,feet.z))
@@ -702,6 +759,7 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 		if y <= under and velocity.y <= 0.0:
 			out["landed"] = -velocity.y
 			if move == "wall": out["wall"] = false
+			if move == "wallrun": out["wallrun"] = false
 			y = under
 			grounded = true
 			velocity.y = 0.0
@@ -719,6 +777,8 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 			_from_water = false
 			_twirl = 0.0
 			_twirled = false
+			_wallrun = 0.0
+			_wallran = false
 		elif y < under:
 			y = under
 		feet = Vector3(moved.x,y,moved.z)
@@ -741,7 +801,7 @@ func _arc(delta: float, jump: bool) -> float:
 	for i in range(4):
 		if left <= 0.0: break
 		var v := velocity.y
-		var low := -wall_slide if move == "wall" else (-TWIRL_FALL if move == "twirl" else -terminal)
+		var low := -wall_slide if move == "wall" else (-TWIRL_FALL if move == "twirl" else (-WALLRUN_FALL if move == "wallrun" else -terminal))
 		if v < low:
 			# Faster down than it may go: held to it.
 			velocity.y = low
@@ -749,6 +809,7 @@ func _arc(delta: float, jump: bool) -> float:
 		var g := gravity
 		if move == "wall": g = WALL_GRAVITY
 		elif move == "twirl": g *= twirl_gravity
+		elif move == "wallrun": g *= wallrun_gravity
 		elif _light: g = long_gravity
 		elif v <= 0.0: g *= fall
 		elif not jump and not _no_cut: g *= cut
@@ -764,6 +825,73 @@ func _arc(delta: float, jump: bool) -> float:
 			left = 0.0
 	return dy
 
+## A wall beside him along his way, met at a glance, fast enough and the
+## stick not pulled off it: the wall run begun, his run turned along it.
+## The run's new pace.
+func _wallrun_start(want: Vector2, h: Vector2, ground: Callable, out: Dictionary) -> Vector2:
+	var pace := h.length()
+	if pace < wallrun_pace or _from_water or feet.y-ground_y < WALL_CLEAR or velocity.y < -WALLRUN_FALL*2.0: return h
+	var way := h/pace
+	for side: float in [1.0,-1.0]:
+		var beside := Vector2(-way.y,way.x)*side
+		# Felt to the side, then ahead and to the side, so a wall met at a
+		# glance is found.
+		var n := _wall_at(beside,ground,WALLRUN_REACH)
+		if n == Vector2.ZERO: n = _wall_at((beside+way).normalized(),ground,WALLRUN_REACH)
+		if n == Vector2.ZERO or absf(way.dot(n)) > WALLRUN_GLANCE or n.dot(beside) > -0.3: continue
+		if want.length() > 0.2 and want.normalized().dot(n) > 0.5: continue
+		var along := (way-n*way.dot(n)).normalized()
+		move = "wallrun"
+		wall_out = n
+		chain = 0
+		_wallran = true
+		_wallrun = wallrun_time
+		_twirl = 0.0
+		_light = false
+		_no_cut = true
+		_hop_air = false
+		velocity.y = maxf(velocity.y,wallrun_rise)
+		facing = facing_of(along)
+		out["wallrun"] = true
+		return along*pace
+	return h
+
+## Running along a wall: kept to it, his pace along it; off it as the time
+## runs out, the wall ends, or the stick pulls away. The run's new pace.
+func _wallrun_step(delta: float, want: Vector2, h: Vector2, ground: Callable, out: Dictionary) -> Vector2:
+	_wallrun -= delta
+	var n := _wall_at(-wall_out,ground,WALLRUN_REACH)
+	var away := want.length() > 0.2 and want.normalized().dot(wall_out) > 0.7
+	if n == Vector2.ZERO or _wallrun <= 0.0 or away:
+		move = ""
+		_no_cut = false
+		out["wallrun"] = false
+		return h+wall_out*0.6
+	wall_out = n
+	var along := h-n*h.dot(n)
+	if along.length() > 0.3: facing = rotate_toward(facing,facing_of(along),TURN*delta)
+	return along.normalized()*h.length() if along.length() > 1e-4 else h
+
+## Jumped off a wall run: up and out, his pace along the wall kept. The
+## run's new pace.
+func _wallrun_kick(h: Vector2, out: Dictionary) -> Vector2:
+	out["wallrun"] = false
+	move = "kick"
+	chain = 0
+	_light = false
+	_no_cut = true
+	_jumped = true
+	_buffer = 0.0
+	_wallrun = 0.0
+	_lock = wall_lock*0.5
+	velocity.y = sqrt(2.0*gravity*wallrun_jump)
+	h += wall_out*wallrun_kick
+	facing = facing_of(h)
+	out["jumped"] = 1
+	out["wall_jump"] = true
+	out["wallrun_jump"] = true
+	return h
+
 ## Off a wall (slid down, or just touched): up and out, turned round, the
 ## stick not steering a while. The run's new pace.
 func _kick_off(out: Dictionary) -> Vector2:
@@ -778,7 +906,6 @@ func _kick_off(out: Dictionary) -> Vector2:
 	_wall_since = 99.0
 	_lock = wall_lock
 	_twirl = 0.0
-	_twirled = false
 	_hop_air = false
 	velocity.y = sqrt(2.0*gravity*wall_jump)
 	facing = facing_of(away)
@@ -805,18 +932,24 @@ func _wall_at(way: Vector2, ground: Callable, reach: float) -> Vector2:
 
 ## A wall from heights alone: the ground `reach` along `way` from `at`'s
 ## feet standing over WALL_TALL above them; its way off, down the ground's
-## slope there (the way back along `way` where the slope is flat or
-## pointing on).
+## slope there, read at its edge (walked back towards the feet from deep
+## inside it, where the top is flat), or the way back along `way` where
+## the slope is still flat or falls away from it.
 static func heightfield_wall(ground: Callable, at: Vector3, way: Vector2, reach: float) -> Vector2:
 	var p := Vector2(at.x,at.z)+way*reach
 	var h := float(ground.call(p))
 	if not is_finite(h) or h < at.y+WALL_TALL: return Vector2.ZERO
+	for k in range(12):
+		var back := p-way*reach/12.0
+		var under := float(ground.call(back))
+		if not is_finite(under) or under < at.y+WALL_TALL: break
+		p = back
 	var heights := []
 	for d: Vector2 in [Vector2(0.15,0.0),Vector2(-0.15,0.0),Vector2(0.0,0.15),Vector2(0.0,-0.15)]:
 		var s := float(ground.call(p+d))
 		heights.append(s if is_finite(s) else at.y)
 	var slope := Vector2(heights[0]-heights[1],heights[2]-heights[3])
-	if slope.length() < 0.01 or slope.normalized().dot(way) < 0.3: return -way
+	if slope.length() < 0.01 or slope.normalized().dot(way) <= 0.0: return -way
 	return -slope.normalized()
 
 ## In the air by a wall: touched (for a kick), taken hold of and slid down,
@@ -963,6 +1096,8 @@ func _still() -> void:
 	shimmy = 0.0
 	_twirl = 0.0
 	_twirled = false
+	_wallrun = 0.0
+	_wallran = false
 	_hang_press = false
 	_hop_air = false
 
@@ -1120,6 +1255,8 @@ func _float_in(hard: float, out: Dictionary) -> void:
 	move = ""
 	_twirl = 0.0
 	_twirled = false
+	_wallrun = 0.0
+	_wallran = false
 	_hop_air = false
 	_jumped = false
 	_from_water = false

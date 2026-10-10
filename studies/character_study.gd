@@ -37,6 +37,20 @@ extends Node3D
 ## the long jumps chained and their fastest),
 ## F2 the feel's sliders (the motor's own vars, changed live; Print copies
 ## the set). Esc lets the mouse go, a click takes it back.
+## Packs: `-- --pack=NAME` builds studies/island_packs/NAME.gd's stations
+## instead of the room, floating in the open sky (no floor, no walls): a
+## pack script holds NAME, START, START_FACE, LOST (the fall that sets him
+## back, at the station spawn nearest where he last stood) and STATIONS in
+## the format below, plus "obox" parts (turned boxes). Keys 1-9, 0 - = [ ]
+## \ teleport to its stations as to the room's.
+##   ./run-character-study.command --pack=sky_village
+## Recording (scripts/character_recording.gd): F5 starts a recording of
+## the inputs and where he went, F5 again stops it and asks what it shows
+## (Enter saves it to studies/character_runs/, Esc drops it); F6 replays
+## the newest (again: stops), F7 the one before it, each on the feel now
+## with its path drawn and, at its end, how far from the recorded end he
+## came; F8 draws every saved path. tests/test_character_recordings.gd
+## replays them all headless, so what was recorded stays possible.
 ##   ./run-character-study.command
 ##   godot --path . res://studies/character_study.tscn -- --no-title
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
@@ -47,6 +61,7 @@ const PilotPuffs = preload("res://scripts/pilot_puffs.gd")
 const PilotRipples = preload("res://scripts/pilot_ripples.gd")
 const Pad = preload("res://scripts/pad.gd")
 const GRID := preload("res://shaders/character_study_grid.gdshader")
+const Recording = preload("res://scripts/character_recording.gd")
 
 ## The walker's camera (scripts/wanderer_eye.gd), kept the same so what is
 ## tuned here holds in the game: its reach, the look point's height over
@@ -107,6 +122,8 @@ const WATER := Color(0.22,0.5,0.86,0.5)
 ##   ["water", Rect2, bottom, top]   (a pool, its top flat)
 ##   ["ticks", Vector2 from, Vector2 to, across, labels every n m]
 ##   ["label", Vector3, text]
+##   ["obox", Vector3 middle, Vector3 size, yaw degrees, colour]   (a box
+##        turned about up; "lip" caps it orange)
 const STATIONS := [
 	{"key":1,"name":"Run lane · 30 m","spawn":Vector3(-28.5,0.0,27.0),"face":Vector2(1.0,0.0),"sign":Vector3(-13.0,2.2,25.0),"parts":[
 		["ticks",Vector2(-27.0,27.0),Vector2(3.0,27.0),2.0,5],
@@ -297,6 +314,14 @@ const STATIONS := [
 
 signal ready_to_walk
 
+## The pack built instead of the room ("" the room), set before it is in
+## the tree or by `--pack=NAME`; its stations, start and fall.
+var pack := ""
+var stations: Array = STATIONS
+var start := START
+var start_face := START_FACE
+var lost := LOST
+var _last_stood := START
 ## Set once the room stands and the pilot is on his feet.
 var walk_ready := false
 var motor := PilotMotor.new()
@@ -344,9 +369,33 @@ var _hud: Label
 var _tune: PanelContainer
 var _tune_box: VBoxContainer
 var _materials := {}
+## Recording: the one being made; one stopped, waiting for its name; the
+## naming box and its line; the REC / replay line; the replay (its run,
+## the tick it is at, the saved runs' paths and which is picked); the
+## paths drawn; the last replay's verdict and its seconds left showing.
+var _rec: RefCounted
+var _rec_pending: RefCounted
+var _name_panel: PanelContainer
+var _name_edit: LineEdit
+var _rec_line: Label
+var _replay := {}
+var _replay_i := 0
+## The first replayed tick that strayed past a few centimetres from the
+## recording's path (-1: none yet), and its seconds in.
+var _replay_strayed := -1
+var _replay_clock := 0.0
+var _runs := PackedStringArray()
+var _run_pick := -1
+var _ghost: MeshInstance3D
+var _ghosts_all := false
+var _verdict := ""
+var _verdict_left := 0.0
 var _holes: Array[Rect2] = []
 
 func _ready() -> void:
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--pack=") and pack == "": pack = arg.trim_prefix("--pack=")
+	if pack != "": _load_pack()
 	Pad.ensure()
 	_build_light()
 	_build_pilot()
@@ -362,6 +411,34 @@ func _ready() -> void:
 	print("character study: walking %.2f s from launch" % (Time.get_ticks_msec()/1000.0))
 
 # --- The room -----------------------------------------------------------------------
+
+const PACKS := "res://studies/island_packs"
+
+## The pack's stations, start and fall, from its script's constants.
+func _load_pack() -> void:
+	var path := "%s/%s.gd" % [PACKS,pack]
+	var script: Script = load(path) if ResourceLoader.exists(path) else null
+	if script == null:
+		push_error("character study: no pack at %s" % path)
+		pack = ""
+		return
+	var c := script.get_script_constant_map()
+	stations = c.get("STATIONS",[])
+	start = c.get("START",Vector3.ZERO)
+	start_face = c.get("START_FACE",Vector2(0.0,-1.0))
+	lost = c.get("LOST",start.y-30.0)
+	_last_stood = start
+	print("character study: pack %s (%s), %d stations" % [pack,c.get("NAME",pack),stations.size()])
+
+## Every pack's name under PACKS.
+static func pack_names() -> PackedStringArray:
+	var found := PackedStringArray()
+	var d := DirAccess.open(PACKS)
+	if d == null: return found
+	for f in d.get_files():
+		if f.ends_with(".gd"): found.append(f.trim_suffix(".gd"))
+	found.sort()
+	return found
 
 func _build_light() -> void:
 	var sky := ProceduralSkyMaterial.new()
@@ -397,6 +474,12 @@ func _build_light() -> void:
 ## The floor (less the stations' holes), the walls round it, then each
 ## station's parts and sign.
 func _build_room() -> void:
+	if pack != "":
+		for station: Dictionary in stations:
+			for part: Array in station.parts: _part(part)
+			if station.has("sign"): _label(station.sign,"%s  %s" % [key_name(station.key),station.name],64)
+		_label(start+Vector3(1.6,0.4,0.0),"START · R",36)
+		return
 	for station: Dictionary in STATIONS:
 		for part: Array in station.parts:
 			if part[0] == "hole": _holes.append(part[1])
@@ -461,6 +544,7 @@ func _part(part: Array) -> void:
 			mesh.material_override = water
 			mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			add_child(mesh)
+		"obox": _obox(part[1],part[2],part[3],part[4])
 		"ticks": _ticks(part[1],part[2],part[3],part[4])
 		"label": _label(part[1],part[2],28)
 
@@ -496,6 +580,23 @@ func _box(rect: Rect2, bottom: float, top: float, colour: String) -> void:
 	shape.size = size
 	_solid(mesh,shape,Transform3D(Basis.IDENTITY,Vector3(rect.get_center().x,(top+bottom)*0.5,rect.get_center().y)),colour)
 	if colour == "lip": _cap(Vector3(rect.get_center().x,top,rect.get_center().y),Vector3(rect.size.x,0.0,rect.size.y),0.0)
+
+## A box `size` round `middle`, turned `yaw` degrees about up.
+func _obox(middle: Vector3, size: Vector3, yaw: float, colour: String) -> void:
+	var mesh := BoxMesh.new()
+	mesh.size = size
+	var shape := BoxShape3D.new()
+	shape.size = size
+	var turned := Basis(Vector3.UP,deg_to_rad(yaw))
+	_solid(mesh,shape,Transform3D(turned,middle),colour)
+	if colour == "lip":
+		var cap := MeshInstance3D.new()
+		var slab := BoxMesh.new()
+		slab.size = Vector3(size.x+0.02,0.1,size.z+0.02)
+		cap.mesh = slab
+		cap.transform = Transform3D(turned,middle+Vector3(0.0,size.y*0.5-0.045,0.0))
+		cap.material_override = _material("lip")
+		add_child(cap)
 
 func _cyl(middle: Vector2, radius: float, bottom: float, top: float, colour: String) -> void:
 	var mesh := CylinderMesh.new()
@@ -611,7 +712,7 @@ func place(at: Vector3, face: Vector2) -> void:
 	_frame(0.0)
 
 func respawn() -> void:
-	place(START,START_FACE)
+	place(start,start_face)
 
 ## A station key's name: 1 to 9, 0 (10), - (11), = (12), [ (13), ] (14),
 ## \ (15).
@@ -620,11 +721,18 @@ static func key_name(key: int) -> String:
 
 ## Teleported to station `key` (1 to 15).
 func go_to(key: int) -> void:
-	for station: Dictionary in STATIONS:
+	for station: Dictionary in stations:
 		if station.key == key: place(station.spawn,station.face)
 
 func _process(delta: float) -> void:
-	if walk_ready and not scripted: tick(delta)
+	if not walk_ready or scripted: return
+	if not _replay.is_empty():
+		scripted = true
+		var going := replay_step()
+		scripted = false
+		if not going: _end_replay()
+	else: tick(delta)
+	_show_rec(delta)
 
 ## One frame of the pilot: the stick read, the motor stepped over the room,
 ## the body drawn, its sounds and puffs, the camera.
@@ -642,8 +750,15 @@ func tick(delta: float) -> void:
 	ground.head(delta)
 	var was := motor.feet
 	var events := motor.step(delta,want,motor.run,jump,ground.ground_callable(),ground.slide_callable(),ground.ledge_callable())
-	if motor.feet.y < LOST:
-		respawn()
+	if _rec != null: _rec.add(delta,want,jump,motor.crouch,motor.twirl,_yaw,_polar,motor,state(),events)
+	if motor.grounded: _last_stood = motor.feet
+	if motor.feet.y < lost:
+		# In a pack, back at the station nearest where he last stood.
+		if pack != "":
+			var key := station_near(_last_stood)
+			if key == 0: respawn()
+			else: go_to(key)
+		else: respawn()
 		return
 	_measure(events,was)
 	_measure_tricks(events,delta)
@@ -753,6 +868,7 @@ func _motor_events(events: Dictionary) -> void:
 	if events.get("wall",false):
 		steps.step(_surface(),0.35)
 		steps.slide(_surface(),0.3)
+	if events.get("wallrun",false): steps.step(_surface(),0.4)
 	if motor.move == "wall":
 		var off := Vector3(motor.wall_out.x,0.0,motor.wall_out.y)
 		puffs.spray(figure.global_position-off*0.25+Vector3.UP*0.15,Vector3.UP,_surface(),0.35,get_process_delta_time())
@@ -854,6 +970,7 @@ const TUNABLE := [["walk",0.5,6.0],["run",1.0,10.0],["accel",2.0,60.0],["brake",
 	["wall_jump",0.3,3.0],["wall_kick",1.0,10.0],["wall_lock",0.0,0.8],["twirl_rise",0.0,8.0],["twirl_time",0.1,1.0],
 	["twirl_gravity",0.1,1.0],["twirl_push",0.0,6.0],["twirl_top",0.0,16.0],["twirl_steer",0.0,30.0],
 	["hop_turn",0.0,6.0],["hop_strafe",0.0,10.0],["hop_top",4.0,24.0],
+	["wallrun_pace",1.0,10.0],["wallrun_time",0.1,2.0],["wallrun_gravity",0.0,1.0],["wallrun_rise",0.0,6.0],["wallrun_jump",0.2,3.0],["wallrun_kick",0.0,10.0],
 	["slide_auto",25.0,70.0],["slide_pull",4.0,40.0],["slide_top",4.0,30.0],["slide_runout",0.0,30.0],["slide_air",0.0,0.2],
 	["slide_jump",0.2,2.5],["side_flip",0.5,3.5],["side_speed",0.0,8.0],["climb_time",0.15,1.2]]
 
@@ -869,7 +986,7 @@ func _build_ui() -> void:
 	_hud.add_theme_constant_override("shadow_offset_y",1)
 	layer.add_child(_hud)
 	var hint := Label.new()
-	hint.text = "WASD run · Space jump (on landing: pump; in a skid: side flip) · Shift/C crouch: at a run slide, + Space long jump (crouch held, Space on landing: chain), on a slope surf · in the air X twirl; out of a slide, steer across to build speed, hop again on the touch · into a wall: slide, Space: kick · 1-9 0 - = [ ] \\ stations · R start · F1 numbers · F2 feel · Esc mouse"
+	hint.text = "F5 record · F6 replay · F7 older · F8 all paths · WASD run · Space jump (on landing: pump; in a skid: side flip) · Shift/C crouch: at a run slide, + Space long jump (crouch held, Space on landing: chain), on a slope surf · in the air X twirl; out of a slide, steer across to build speed, hop again on the touch · into a wall: slide, Space: kick · along a wall in the air: wall run, Space: kick off · 1-9 0 - = [ ] \\ stations · R start · F1 numbers · F2 feel · Esc mouse"
 	hint.add_theme_font_size_override("font_size",14)
 	hint.add_theme_color_override("font_color",Color("fbf6ea"))
 	hint.add_theme_color_override("font_shadow_color",Color(0,0,0,0.7))
@@ -879,6 +996,41 @@ func _build_ui() -> void:
 	hint.offset_right = 640.0
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	layer.add_child(hint)
+	_rec_line = Label.new()
+	_rec_line.add_theme_font_size_override("font_size",20)
+	_rec_line.add_theme_color_override("font_color",Color("ff6b5e"))
+	_rec_line.add_theme_color_override("font_shadow_color",Color(0,0,0,0.7))
+	_rec_line.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
+	_rec_line.offset_top = 12.0
+	_rec_line.offset_left = -500.0
+	_rec_line.offset_right = 500.0
+	_rec_line.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	layer.add_child(_rec_line)
+	_name_panel = PanelContainer.new()
+	_name_panel.visible = false
+	_name_panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	_name_panel.offset_left = -320.0
+	_name_panel.offset_right = 320.0
+	_name_panel.offset_top = -50.0
+	_name_panel.offset_bottom = 50.0
+	layer.add_child(_name_panel)
+	var name_box := VBoxContainer.new()
+	_name_panel.add_child(name_box)
+	var ask := Label.new()
+	ask.text = "What should this show? (Enter saves · Esc drops it)"
+	name_box.add_child(ask)
+	_name_edit = LineEdit.new()
+	_name_edit.placeholder_text = "e.g. wall kick up the slot, twirl to the far ledge"
+	_name_edit.text_submitted.connect(func(_t: String) -> void: _save_pending())
+	name_box.add_child(_name_edit)
+	_ghost = MeshInstance3D.new()
+	_ghost.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var ghost_mat := StandardMaterial3D.new()
+	ghost_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	ghost_mat.vertex_color_use_as_albedo = true
+	ghost_mat.no_depth_test = true
+	_ghost.material_override = ghost_mat
+	add_child(_ghost)
 	_tune = PanelContainer.new()
 	_tune.visible = false
 	_tune.set_anchors_and_offsets_preset(Control.PRESET_RIGHT_WIDE)
@@ -929,7 +1081,7 @@ func _build_ui() -> void:
 	_tune_box.add_child(buttons)
 
 func _tuning() -> bool:
-	return _tune != null and _tune.visible
+	return (_tune != null and _tune.visible) or (_name_panel != null and _name_panel.visible)
 
 ## A feel number by its TUNABLE name ("jumps:1" is the second jump).
 func _feel(key: String) -> float:
@@ -979,7 +1131,7 @@ func state() -> String:
 	if motor.on_ledge(): return motor.hold
 	if motor.swimming: return "swim"
 	if motor.skidding: return "skid"
-	if motor.move in ["wall","crouch","long","kick","slide","twirl","flip"]: return motor.move
+	if motor.move in ["wall","wallrun","crouch","long","kick","slide","twirl","flip"]: return motor.move
 	if motor.grounded: return "wade" if motor.wade > PilotMotor.WADE_FROM else "ground"
 	return "air"
 
@@ -1013,9 +1165,22 @@ func _unhandled_input(event: InputEvent) -> void:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	elif event is InputEventKey and event.pressed and not event.echo:
 		var key := (event as InputEventKey).keycode
+		if _name_panel.visible:
+			if key == KEY_ESCAPE: _drop_pending()
+			return
 		match key:
 			KEY_ESCAPE: Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-			KEY_R: respawn()
+			KEY_R:
+				_replay = {}
+				respawn()
+			KEY_F5: _toggle_record()
+			KEY_F6:
+				if not _replay.is_empty(): _end_replay()
+				else: _play_run(0)
+			KEY_F7: _play_run(_run_pick+1)
+			KEY_F8:
+				_ghosts_all = not _ghosts_all
+				_draw_ghosts()
 			KEY_F1: _hud.visible = not _hud.visible
 			KEY_F2:
 				_tune.visible = not _tune.visible
@@ -1028,3 +1193,196 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_BACKSLASH: go_to(15)
 			_:
 				if key >= KEY_1 and key <= KEY_9: go_to(key-KEY_0)
+
+# --- Recording ------------------------------------------------------------------------
+
+## The feel's var names (a replay keeps the feel now).
+static func feel_names() -> Array:
+	var names := []
+	for spec: Array in TUNABLE:
+		var key := str(spec[0]).get_slice(":",0)
+		if not key in names: names.append(key)
+	return names
+
+func _feel_now() -> Dictionary:
+	var out := {}
+	for key: String in feel_names(): out[key] = motor.get(key).duplicate() if motor.get(key) is Array else motor.get(key)
+	return out
+
+## The key of the station whose spawn is nearest `at`; 0 the start.
+func station_near(at: Vector3) -> int:
+	var best := 0
+	var near := at.distance_to(start)
+	for station: Dictionary in stations:
+		var d := at.distance_to(station.spawn as Vector3)
+		if d < near:
+			near = d
+			best = station.key
+	return best
+
+func _toggle_record() -> void:
+	if not _replay.is_empty(): return
+	if _rec == null:
+		_rec = Recording.new(motor,station_near(motor.feet),_feel_now(),pack)
+		return
+	var done := _rec
+	_rec = null
+	if done.size() < 10: return
+	_rec_pending = done
+	_name_edit.text = ""
+	_name_panel.visible = true
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	_name_edit.grab_focus()
+
+func _save_pending() -> void:
+	if _rec_pending == null: return
+	_rec_pending.label = _name_edit.text.strip_edges()
+	var path: String = _rec_pending.save()
+	_rec_pending = null
+	_close_naming()
+	_say("saved: %s" % path.get_file() if path != "" else "not saved (see the console)")
+	_runs = _pack_runs()
+	_run_pick = -1
+	if _ghosts_all: _draw_ghosts()
+
+func _drop_pending() -> void:
+	_rec_pending = null
+	_close_naming()
+	_say("recording dropped")
+
+func _close_naming() -> void:
+	_name_edit.release_focus()
+	_name_panel.visible = false
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+## Replays the saved run `pick` back from the newest (0), wrapping round.
+func _play_run(pick: int) -> void:
+	if _rec != null: return
+	_runs = _pack_runs()
+	if _runs.is_empty():
+		_say("no recordings here yet: F5 to make one")
+		return
+	_run_pick = pick % _runs.size()
+	var data := Recording.read(_runs[_runs.size()-1-_run_pick])
+	if not begin_replay(data):
+		_say("can't replay %s" % _runs[_runs.size()-1-_run_pick].get_file())
+		return
+	_draw_ghosts()
+
+## The saved runs made here (the room's, or this pack's).
+func _pack_runs() -> PackedStringArray:
+	var found := PackedStringArray()
+	for path in Recording.paths():
+		if str(Recording.read(path).get("pack","")) == pack: found.append(path)
+	return found
+
+## Set up to replay `data` (a saved run): the motor as it was at its start,
+## the feel left as it is now. False if it has nothing to replay.
+func begin_replay(data: Dictionary) -> bool:
+	if data.is_empty() or not data.has("ticks") or (data.ticks.dt as Array).is_empty(): return false
+	if str(data.get("pack","")) != pack: return false
+	var t: Dictionary = data.ticks
+	_rec = null
+	place(motor.feet,PilotMotor.forward(motor.facing))
+	Recording.restore(motor,str(data.motor),feel_names())
+	_yaw = float(t.yaw[0])
+	_polar = float(t.polar[0])
+	_cam_at = Vector2(motor.feet.x,motor.feet.z)
+	_cam_y = motor.feet.y+CAM_HEIGHT
+	body.settle()
+	_sync_figure()
+	_replay = data
+	_replay_i = 0
+	_replay_strayed = -1
+	_replay_clock = 0.0
+	return true
+
+## One recorded tick replayed; false once the run is done.
+func replay_step() -> bool:
+	if _replay.is_empty(): return false
+	var t: Dictionary = _replay.ticks
+	if _replay_i >= (t.dt as Array).size(): return false
+	var i := _replay_i
+	script_want = Vector2(float(t.wx[i]),float(t.wz[i]))
+	script_jump = int(t.jump[i]) != 0
+	script_crouch = int(t.crouch[i]) != 0
+	script_twirl = int(t.twirl[i]) != 0
+	_yaw = float(t.yaw[i])
+	_polar = float(t.polar[i])
+	tick(float(t.dt[i]))
+	_replay_clock += float(t.dt[i])
+	if _replay_strayed < 0 and motor.feet.distance_to(Vector3(float(t.x[i]),float(t.y[i]),float(t.z[i]))) > 0.05:
+		_replay_strayed = i
+		_replay.strayed_t = _replay_clock
+	_replay_i += 1
+	return true
+
+## How far the replay's feet are from where the recording's ended (m), and
+## the feel's numbers that differ from the recording's.
+func replay_verdict() -> Dictionary:
+	var t: Dictionary = _replay.ticks
+	var end := Vector3(float(t.x[-1]),float(t.y[-1]),float(t.z[-1]))
+	var changed := []
+	var then: Dictionary = _replay.get("feel",{})
+	for key: String in then:
+		var now: Variant = motor.get(key)
+		if now is Array:
+			if str(now) != str(then[key]): changed.append(key)
+		elif now != null and absf(float(now)-float(then[key])) > 1e-4: changed.append(key)
+	# Where it first strayed, and the recording's last beat before then.
+	var strayed := {}
+	if _replay_strayed >= 0:
+		var at := float(_replay.strayed_t)
+		var before := {}
+		for b: Dictionary in _replay.get("beats",[]):
+			if float(b.t) <= at+0.02: before = b
+		strayed = {"t":at,"after":before}
+	return {"off":motor.feet.distance_to(end),"end":end,"changed":changed,"strayed":strayed}
+
+func _end_replay() -> void:
+	if _replay.is_empty(): return
+	var label := str(_replay.get("label",""))
+	if _replay_i >= (_replay.ticks.dt as Array).size():
+		var v := replay_verdict()
+		var ok: bool = float(v.off) < 0.25
+		_say("replay \"%s\": %s %.2f m from the recorded end%s" % [label,"ok," if ok else "OFF,",v.off,"" if (v.changed as Array).is_empty() else " · feel changed: "+", ".join(v.changed)],6.0)
+	else: _say("replay stopped")
+	script_want = Vector2.ZERO
+	script_jump = false
+	script_crouch = false
+	script_twirl = false
+	_replay = {}
+
+func _say(text: String, seconds := 3.0) -> void:
+	_verdict = text
+	_verdict_left = seconds
+	print("character study: "+text)
+
+func _show_rec(delta: float) -> void:
+	_verdict_left = maxf(0.0,_verdict_left-delta)
+	var line := ""
+	if _rec != null: line = "● REC  %.1f s  · F5 stop" % _rec.duration()
+	elif not _replay.is_empty():
+		var t: Dictionary = _replay.ticks
+		line = "▶ replay \"%s\"  %d / %d  · F6 stop" % [_replay.get("label",""),_replay_i,(t.dt as Array).size()]
+	elif _verdict_left > 0.0: line = _verdict
+	_rec_line.text = line
+
+## The picked run's path (orange), and every saved run's (pale) with F8.
+func _draw_ghosts() -> void:
+	var mesh := ImmediateMesh.new()
+	var drawn := []
+	if _ghosts_all:
+		for path in _pack_runs(): drawn.append([Recording.read(path),Color(1.0,1.0,1.0,0.6)])
+	if not _replay.is_empty(): drawn.append([_replay,Color("ff9a3c")])
+	for pair: Array in drawn:
+		var data: Dictionary = pair[0]
+		if not data.has("ticks"): continue
+		var t: Dictionary = data.ticks
+		if (t.x as Array).size() < 2: continue
+		mesh.surface_begin(Mesh.PRIMITIVE_LINE_STRIP)
+		for i in range((t.x as Array).size()):
+			mesh.surface_set_color(pair[1])
+			mesh.surface_add_vertex(Vector3(float(t.x[i]),float(t.y[i])+0.05,float(t.z[i])))
+		mesh.surface_end()
+	_ghost.mesh = mesh
