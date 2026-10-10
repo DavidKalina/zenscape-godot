@@ -57,6 +57,7 @@ func run() -> void:
 	_chimney()
 	_tower()
 	_tors()
+	_slump()
 	_mist()
 	_crown_drop()
 	_plane_line()
@@ -330,6 +331,18 @@ func _tors() -> void:
 	settle(on_east(100.5,-32.0),Vector2(1.0,0.0))
 	var e := walk([Vector2(108.0,-34.0),Vector2(117.0,-35.8),Vector2(122.5,-36.5)],0.6)
 	check(e.ok and e.fell == 0 and absf(m.feet.y-(Gorge.E_TOP+float(Gorge.EAST_TOR[1]))) < 0.2,"Tors: up the east crag's ramp to its top (feet %s)" % m.feet)
+
+## The east half's slumped terraces: walked down their ramp to the lowest,
+## then back up both steps by jumps caught.
+func _slump() -> void:
+	var rx := (Gorge.SLUMP_RAMP.x+Gorge.SLUMP_RAMP.y)*0.5
+	settle(on_east(rx,-6.0),Vector2(0.0,1.0))
+	var down := walk([Vector2(rx,4.0),Vector2(rx,17.0)],0.6)
+	check(down.ok and down.fell == 0 and absf(m.feet.y-(Gorge.E_TOP-2.0*Gorge.SLUMP)) < 0.15,"Slump: walked down the ramp through both slumped terraces, no jump (feet %s)" % m.feet)
+	var x := 108.0
+	var e := Gorge.slump_edges(x)
+	var ok := climb(on_east(x,e.y+2.5),[Vector2(x,e.y-1.5),Vector2(x,e.x-1.5)])
+	check(ok and absf(m.feet.y-Gorge.E_TOP) < 0.15,"Slump: back up both 1.6 m steps by jumps caught (feet %s)" % m.feet)
 
 ## The mist stone by the curtain, off the lower ledge's north end.
 func _mist() -> void:

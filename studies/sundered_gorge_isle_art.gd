@@ -158,7 +158,21 @@ static func ground_e(x: float, z: float) -> float:
 		var s := strip_at(EAST_STRIPS,z)
 		if not s.is_empty(): return E_TOP+strip_off(s,z)
 		return E_TOP
-	return E_TOP+tor(EAST_TOR,x,z)
+	return E_TOP+tor(EAST_TOR,x,z)+slump(x,z)
+
+## The east half's south end slumped in two terraces as it tore away, each
+## SLUMP lower (a jump caught back up), their edges wandering; a ramp down
+## both in the band SLUMP_RAMP (world x), walked.
+const SLUMP := 1.6
+const SLUMP_RAMP := Vector2(117.5,121.5)
+static func slump_edges(x: float) -> Vector2:
+	return Vector2(1.5+2.5*sin(x*0.17+0.4),11.0+2.0*sin(x*0.23+1.3))
+
+static func slump(x: float, z: float) -> float:
+	var e := slump_edges(x)
+	if x > SLUMP_RAMP.x and x < SLUMP_RAMP.y:
+		return -SLUMP*clampf((z-(e.x-3.0))/6.0,0.0,1.0)-SLUMP*clampf((z-(e.y-3.0))/6.0,0.0,1.0)
+	return (-SLUMP if z > e.x else 0.0)+(-SLUMP if z > e.y else 0.0)
 
 ## Either half's ground (the gorge's middle splits them).
 static func ground(x: float, z: float) -> float:
@@ -339,7 +353,7 @@ const PATHS := [
 	# Up the tor's ramp.
 	[Vector2(60.0,-15.5),Vector2(55.0,-10.5),Vector2(52.3,-15.0),Vector2(52.2,-27.0)],
 	# East: from the bridge head through the chapel and on to the crag.
-	[Vector2(98.0,-15.0),Vector2(104.0,-15.0),Vector2(113.0,-15.0),Vector2(117.0,-12.0)],
+	[Vector2(98.0,-15.0),Vector2(104.0,-15.0),Vector2(113.0,-15.0),Vector2(117.0,-12.0),Vector2(119.5,-5.0),Vector2(119.5,17.0)],
 	# Along the east lip north to the ramp's head, and up the crag's ramp.
 	[Vector2(101.0,-17.5),Vector2(100.0,-23.0),Vector2(98.2,-27.5),Vector2(100.5,-32.5),Vector2(110.0,-34.5),Vector2(118.5,-36.0)],
 ]
@@ -732,7 +746,7 @@ static func west_fine() -> Array:
 	return [Rect2(74.0,-52.0,10.0,28.0),Rect2(66.0,-62.0,16.0,12.0),Rect2(40.0,-44.0,26.0,44.0)]
 
 static func east_fine() -> Array:
-	return [Rect2(90.0,-53.0,9.0,29.0),Rect2(96.0,-48.0,38.0,22.0)]
+	return [Rect2(90.0,-53.0,9.0,29.0),Rect2(96.0,-48.0,38.0,22.0),Rect2(100.0,-3.0,36.0,20.0)]
 
 static func west_half(seed_value: int) -> Node3D:
 	var rng := RandomNumberGenerator.new()
@@ -749,7 +763,7 @@ static func east_half(seed_value: int) -> Node3D:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value
 	var cliffs := {"points":PackedVector2Array(),"heights":PackedFloat32Array()}
-	for r: Rect2 in [Rect2(90.0,-53.0,9.0,29.0),Rect2(96.0,-48.0,38.0,22.0)]:
+	for r: Rect2 in [Rect2(90.0,-53.0,9.0,29.0),Rect2(96.0,-48.0,38.0,22.0),Rect2(100.0,-3.0,36.0,20.0)]:
 		var found := cliff_points(ground_e,r,rng)
 		cliffs.points.append_array(found.points)
 		cliffs.heights.append_array(found.heights)
