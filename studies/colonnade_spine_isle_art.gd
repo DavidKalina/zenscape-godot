@@ -918,3 +918,39 @@ static func anchors(seed_value: int) -> Node3D:
 			root.add_child(piece)
 			k += 1
 	return root
+
+# --- The plane's line ---------------------------------------------------------------------
+
+## The tokens for the plane (the sky collectibles', studies/
+## colonnade_spine_isle_sky.gd): [line id, category, kind, points (world)].
+## The slalom from the gate east down the colonnade: out under the north
+## row's lintels between two piers, back in through the plaza's portal, out
+## through the south row, through the broken portal, over the cleft's
+## lintel, through the low terrace's portal and under its cross lintel;
+## then off the tail's tip and down the curl: between the first fragments'
+## stones, under the first rope bridge, between the third and fourth
+## fragments, under the bridge home.
+static func plane_tokens() -> Array:
+	var slalom := PackedVector3Array([
+		at3(57.5,-ROW,TOP+L3+1.8),
+		at3(67.5,0.0,TOP+L3+2.6),
+		at3(79.75,ROW,TOP+L2+1.8),
+		at3(88.0,0.0,TOP+L2+2.6),
+		at3(CLEFT.x,0.0,TOP+crest(CLEFT.x)+2.2),
+		at3(117.5,0.0,TOP+L0+2.6),
+		at3(123.5,0.0,TOP+L0+2.0),
+	])
+	var tail := PackedVector3Array()
+	var tip := tail_tip()
+	tail.append(tip+Vector3(2.5,2.0,0.0))
+	for p: Dictionary in platforms():
+		if p.chain == "f12": tail.append((p.at as Vector3)+Vector3(0.0,2.4,0.0))
+	for ends: Array in bridge_ends():
+		var a: Vector3 = ends[0]
+		var b: Vector3 = ends[1]
+		var span := Vector2(b.x-a.x,b.z-a.z).length()
+		tail.append(a.lerp(b,0.5)+Vector3.UP*(Footbridge.lift(span,0.5)-2.6))
+	var f3 := slab_at(slab("frag_3"))
+	var f4 := slab_at(slab("frag_4"))
+	tail.insert(tail.size()-1,Vector3((f3.x+f4.x)*0.5,TOP-1.2+2.0,(f3.y+f4.y)*0.5))
+	return [["cs:slalom","air","thread",slalom],["cs:tail","air","thread",tail]]

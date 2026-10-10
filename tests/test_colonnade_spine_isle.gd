@@ -58,6 +58,8 @@ func run() -> void:
 	_lintels()
 	_south_slabs()
 	_tail()
+	_vistas()
+	_life_and_sky()
 	_ground_sound()
 	print("PASS: colonnade spine" if failures == 0 else "FAIL: colonnade spine (%d)" % failures)
 	quit(1 if failures else 0)
@@ -290,6 +292,36 @@ func chain(name: String, from: Vector3, to: Vector3) -> bool:
 			print("     %s: missed hop %d %s -> %s (feet %s)" % [name,i,points[i],points[i+1],m.feet])
 			return false
 	return true
+
+## The vistas off the way: dropped onto the pulpit from the podium, onto
+## the balcony from the north shelf.
+func _vistas() -> void:
+	for spec: Array in [["pulpit",Spine.at3(33.0,Spine.WC_HEAD-0.6,T+Spine.PODIUM)],["balcony",Spine.shelf_point(63.0)]]:
+		var s := Spine.slab(spec[0])
+		var c := Spine.slab_at(s)
+		var ok := line(spec[1],Vector3(c.x,T+float(s[4]),c.y),"jump")
+		check(ok,"Vista: off %s onto the %s (feet %s)" % ["the podium" if spec[0] == "pulpit" else "the north shelf",spec[0],m.feet])
+
+## The life and the sky are this isle's: songbirds on its stones, its
+## on-foot tokens (some taken on the routes above), the plane's slalom.
+func _life_and_sky() -> void:
+	var life: Node = study.get("life")
+	check(life != null and life.birds != null and life.birds.flocks.size() >= 3,"Life: songbird flocks perched on the colonnade (%d)" % (life.birds.flocks.size() if life != null and life.birds != null else -1))
+	var taken: Array = life.tokens.taken if life != null and life.tokens != null else []
+	check(life != null and life.tokens.tokens.size() == 6 and taken.has("cross_low") and taken.has("cleft") and taken.has("bridge") and taken.has("south_3") and taken.has("pulpit"),"Life: %d on-foot tokens, taken on the routes: %s" % [life.tokens.tokens.size() if life != null else 0,taken])
+	var lines: Array = Spine.plane_tokens()
+	check(lines.size() == 2 and (lines[0][3] as PackedVector3Array).size() >= 7 and (lines[1][3] as PackedVector3Array).size() >= 5,"Sky: the plane's slalom down the colonnade and the tail's line are laid")
+	var space: PhysicsDirectSpaceState3D = study.get_world_3d().direct_space_state
+	var ball := SphereShape3D.new()
+	ball.radius = 0.9
+	var q := PhysicsShapeQueryParameters3D.new()
+	q.shape = ball
+	var blocked := 0
+	for l: Array in lines:
+		for p: Vector3 in l[3]:
+			q.transform = Transform3D(Basis.IDENTITY,p)
+			if not space.intersect_shape(q,1).is_empty(): blocked += 1
+	check(blocked == 0,"Sky: every plane token stands in open air, 0.9 m clear (%d not)" % blocked)
 
 # --- Sound ground --------------------------------------------------------------------
 

@@ -205,5 +205,17 @@ func _add_sky() -> void:
 	sky.setup(self)
 	if _capture != "": sky.flush()
 
+## The isle's life (studies/colonnade_spine_isle_life.gd); its foot tokens
+## show on the sky collectibles' readout, as the aqueduct isle's do.
 func _add_life() -> void:
-	pass
+	var args: PackedStringArray = preload("res://scripts/launch_args.gd").user_args()
+	if args.has("--no-life"): return
+	var began := Time.get_ticks_msec()
+	life = SpineLife.new()
+	add_child(life)
+	life.setup(self,args)
+	var sky_tokens = sky.get("collectibles") if sky != null else null
+	if life.tokens != null and sky_tokens != null and sky_tokens.get("hud") != null:
+		life.tokens.hud.queue_free()
+		life.tokens.hud = sky_tokens.get("hud")
+	print("colonnade spine: life %s in %d ms %s" % [life.flags,Time.get_ticks_msec()-began,life.timings])
