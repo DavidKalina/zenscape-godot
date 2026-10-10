@@ -1,3 +1,7 @@
+# Aqueduct isle: the game's look
+
+The isle now grows the game's swaying grass and meadow flowers, and runs the game's light, air and weather with the edit mode's look presets (L / Shift+L, `--look=<id>`). See [aqueduct-isle-game-look.md](aqueduct-isle-game-look.md).
+
 # Aqueduct isle: handoff (round 4)
 
 Branch `look/aqueduct-isle-4` (from `look/aqueduct-isle-3` 152bf51b, with main 0f33b597 merged in). Not merged to main, not pushed. Run it with `./run-aqueduct-isle.command`.

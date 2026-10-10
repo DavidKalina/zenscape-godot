@@ -21,26 +21,57 @@ extends "res://studies/character_study.gd"
 ## the heel stone out east; the gate on the far island. What stands
 ## collides as built (the kit's hulls), the ground as the game's terrain
 ## look. See docs/scenic/aqueduct-isle.md.
+##
+## The game's look (docs/scenic/aqueduct-isle-game-look.md): the turf grows
+## the game's swaying shader grass and its meadow flowers (studies/
+## aqueduct_isle_flora.gd), parted by the pilot's wake; the light, sky,
+## air, weather and haze are the game's own rig (scripts/
+## landscape_lighting.gd, studies/celestial.gd, studies/atmosphere.gd,
+## studies/precipitation.gd, studies/display_fog.gd, scripts/look_pass.gd),
+## dressed by the edit mode's look presets (scripts/scene_look_presets.gd,
+## applied as the look editor applies them). Alpine morning to begin with.
 ##   R            back to the start (the rubble slope's foot)
+##   L / Shift+L  next / previous look preset (its name shows a moment)
+##   B            a strong gust front
+##   F (pad Y)    into the game's plane, already flying a little above and
+##                ahead; in it, back on foot on safe ground nearby (and
+##                skimming the turf braking slow sets him down there)
 ##   F5 F6 F7 F8  record, replay the station's recordings, older, all paths
 ##   F1 numbers · F2 feel · Esc mouse
-##   ./run-aqueduct-isle.command
-##   godot --path . res://studies/aqueduct_isle.tscn -- --no-title [--stone=mass] [--capture=out.png --at=x,y,z --look=x,y,z]
-## --capture waits for the sky to settle, saves the view (from --at
-## looking at --look, else the walker's camera) and quits; --place=x,y,z[,turn]
-## starts the pilot there instead (turn: degrees from facing -z, clockwise).
+##   ./run-aqueduct-isle.command [--look=first_snow]
+##   godot --path . res://studies/aqueduct_isle.tscn -- --no-title [--look=<preset id>] [--stone=mass] [--capture=out.png --at=x,y,z --look=x,y,z]
+## --no-flora leaves the grass and flowers out (to compare cost).
+## --fly starts in the plane; --drift=<x> scales its knife-edge drift
+## (scripts/sky_plane.gd). The plane: docs/scenic/aqueduct-isle-game-look.md.
+## --look=<id> (or --preset=<id>) starts in that look preset; --look=x,y,z
+## (three numbers) is the capture's look-at point. --capture waits for the
+## sky to settle, saves the view (from --at looking at the point, else the
+## walker's camera) and quits; --place=x,y,z[,turn] starts the pilot there
+## instead (turn: degrees from facing -z, clockwise).
 const Art = preload("res://studies/aqueduct_isle_art.gd")
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 const Aqueduct = preload("res://scripts/ruin_kit_aqueduct.gd")
 const LandscapeLighting = preload("res://scripts/landscape_lighting.gd")
 const Celestial = preload("res://studies/celestial.gd")
 const LookPass = preload("res://scripts/look_pass.gd")
-const Gallery = preload("res://studies/ruin_kit_gallery.gd")
-const GustFronts = preload("res://studies/gust_fronts.gd")
 const RuinGrowthPush = preload("res://scripts/ruin_growth_push.gd")
+const Atmosphere = preload("res://studies/atmosphere.gd")
+const Precipitation = preload("res://studies/precipitation.gd")
+const DisplayFog = preload("res://studies/display_fog.gd")
+const Flora = preload("res://studies/aqueduct_isle_flora.gd")
+const PilotWake = preload("res://scripts/pilot_wake.gd")
+const SkyPlane = preload("res://scripts/sky_plane.gd")
+const PlaneFigure = preload("res://scripts/plane_figure.gd")
+const GlideCamera = preload("res://scripts/glide_camera.gd")
 
 ## The station this is (its key in the pack).
 const STATION := 2
+## The look the isle opens in: the game's own for a new world
+## (scripts/native_chunk_editor.gd forms one in Alpine morning).
+const START_LOOK := "alpine_morning"
+## How long a preset's name shows (s), and its fade.
+const TOAST := 2.2
+const TOAST_FADE := 0.6
 const SEED := 11
 ## What stands round the aqueduct besides the landmarks: [kit piece,
 ## seed, weathered, world x, z, yaw (degrees)], each standing on the ground
@@ -66,12 +97,33 @@ const STUMPS := [[92.0,-26.7,-28.7,30.4],[92.0,-30.6,-32.6,29.8],[92.0,-36.0,-38
 
 var _environment: Environment
 var _lighting: LandscapeLighting
+var _source: Dictionary
+## The game's look rig, as the game's scene has it (studies/fidelity.gd):
+## the screen-space air (aerial haze, surface haze, light shafts), the
+## weather (its surface weather: autumn, cold, snow cover, wet), the air
+## (wind, breeze, gust fronts, mist and haze), the sky and its hour.
 var _display_fog: CanvasLayer = null
-var _precipitation := {"ground_texture":null}
+var _precipitation: Node3D
+var _atmosphere: Node3D
 var _motion_time := 0.0
 var _celestial: RefCounted
 var _look: Node
+## Rendered: the look pass, the screen-space air and the 1080p cap (not
+## headless; the rig itself runs either way, so presets apply in tests).
 var _looks := false
+## The look preset on (scripts/scene_look_presets.gd), the order L steps
+## through (the look editor's), and its name shown a moment on a change.
+var look_id := START_LOOK
+var _look_ids: Array = SceneLookPresets.PRESETS.keys()
+var _look_toast: Label
+var _toast_left := 0.0
+## The grass and flowers (studies/aqueduct_isle_flora.gd), true once grown;
+## the islands' ground bodies and outlines they grow on; the pilot's wake.
+var flora: Node3D
+var flora_ready := false
+var _turf: Array = []
+var _outlines: Array = []
+var wake: Node
 var _capture := ""
 var _capture_at := Vector3.INF
 var _capture_look := Vector3.INF
@@ -82,18 +134,74 @@ var stair: Node3D
 var circle: Node3D
 ## The kit's stair up the crag from the upper tier's ledge.
 var kit_stairs: Node3D
-## The air the ruin growth sways in, as the kit gallery runs it: the gust
-## fronts, the air's travel (m), the breeze. B sends a strong front.
-var _fronts: GustFronts = GustFronts.new()
-var _gust_distance := 0.0
-var _breeze := 0.53
+
+## The plane (F): the islands' and islets' ground bodies also sit on
+## TURF_LAYER, so the plane skims the turf as the game's plane skims its
+## heightfield, and is bumped off everything else that stands (and the
+## turf's sides and keels). Boarding puts it BOARD_AHEAD m ahead of the
+## pilot along the view and BOARD_UP m up, flying at cruise. The cloud
+## cushion lifts from FLOOR_BELOW m under the turf. The bump is the ruin
+## kit gallery's (scripts/ruin_bump.gd): the plane's wing-wide body,
+## turned with its bank and roll, BUMP_KEEP of its speed kept.
+const TURF_LAYER := 1 << 11
+const BOARD_AHEAD := 5.0
+const BOARD_UP := 3.0
+const FLOOR_BELOW := 50.0
+const BUMP_BODY := Vector3(PlaneFigure.SPAN,0.3,1.2)
+const BUMP_KEEP := 0.55
+## A face whose normal points up past FLOOR_NORMAL is a top the plane rides
+## over (lifted up to RIDE_LIFT m in RIDE_STEP m steps) rather than bumps.
+const FLOOR_NORMAL := 0.6
+const RIDE_LIFT := 1.2
+const RIDE_STEP := 0.1
+## The mouse's turn (radians a pixel, the game's LOOK), and the game's
+## double tap for a barrel roll (scripts/wanderer_eye.gd DOUBLE_TAP).
+const FLY_LOOK := 0.0025
+const DOUBLE_TAP := 0.3
+## The right stick's turn of the chase camera (radians a second at full
+## push) and how long a look holds before it swings back behind the plane
+## (s): the game's (scripts/wanderer_eye.gd STICK_LOOK, PLANE_LINGER).
+const STICK_LOOK := 2.4
+const LOOK_LINGER := 2.5
+## Setting down: skimming the turf with Brake held under TOUCH_SPEED m/s
+## for TOUCH_HOLD s puts the pilot on foot there. Getting out anywhere, he
+## stands on the nearest open turf within SAFE_REACH m of the plane.
+const TOUCH_SPEED := 9.5
+const TOUCH_HOLD := 0.5
+const TOUCH_GAP := 0.25
+const SAFE_REACH := 40.0
+const FOOT_HINT := "F (pad Y)  fly the plane from here  ·  R3 camera back behind"
+const FLY_HINT := "Flying  ·  %.0f m/s  ·  bumps %d\nA D bank and turn  ·  W S pitch (W nose down)  ·  mouse steers  ·  Space boost  ·  Shift brake  ·  hold Q E (LB RB) knife edge, + A D to drift  ·  Q Q or E E quick, or click: barrel roll\nF (pad Y) back on foot nearby  ·  skim the turf braking to set down  ·  R start on foot  ·  L / Shift+L look  ·  B gust  ·  hold right mouse or the right stick to look round  ·  R3 camera back behind"
+var flying := false
+## The plane's flight (a SkyPlane), its figure, the chase camera, the
+## bumps since boarding.
+var plane: RefCounted
+var plane_figure: Node3D
+var chase: RefCounted
+var bumps := 0
+var _fly_look := Vector2.ZERO
+var _roll_asked := 0.0
+var _tap_dir := 0.0
+var _tap_at := -100000
+var _touch := 0.0
+var _off_ground := INF
+var _turf_rids: Array[RID] = []
+var _bump_query: PhysicsShapeQueryParameters3D
+var _ground_ray: PhysicsRayQueryParameters3D
+var _foot_hint: Label
+var _switch_hint: Label
 
 func _ready() -> void:
 	pack = "ruins_archipelago"
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--capture="): _capture = arg.get_slice("=",1)
 		elif arg.begins_with("--at="): _capture_at = _vec(arg.get_slice("=",1))
-		elif arg.begins_with("--look="): _capture_look = _vec(arg.get_slice("=",1))
+		elif arg.begins_with("--look="):
+			# Three numbers: the capture's look-at point; else a look preset.
+			var value := arg.get_slice("=",1)
+			if value.split(",").size() == 3: _capture_look = _vec(value)
+			else: look_id = value
+		elif arg.begins_with("--preset="): look_id = arg.get_slice("=",1)
 		elif arg.begins_with("--stone="):
 			# The ruin stone's look (scripts/ruin_stone_style.gd).
 			var Style := preload("res://scripts/ruin_stone_style.gd")
@@ -102,14 +210,19 @@ func _ready() -> void:
 		elif arg.begins_with("--place="):
 			var p := arg.get_slice("=",1).split(",")
 			_place = Vector4(float(p[0]),float(p[1]),float(p[2]),float(p[3]) if p.size() > 3 else 0.0)
+	if not SceneLookPresets.PRESETS.has(look_id):
+		push_warning("aqueduct isle: no look preset '%s' (%s); %s instead" % [look_id,", ".join(_look_ids),START_LOOK])
+		look_id = START_LOOK
 	super._ready()
 	await ready_to_walk
 	_hud.visible = false
+	if not OS.get_cmdline_user_args().has("--no-flora"): _grow()
 	if _place != Vector4.INF:
 		var turn := deg_to_rad(_place.w)
 		start = Vector3(_place.x,_place.y,_place.z)
 		start_face = Vector2(sin(turn),-cos(turn))
 		respawn()
+	if OS.get_cmdline_user_args().has("--fly"): board()
 	if _capture != "": _take_capture()
 
 static func _vec(text: String) -> Vector3:
@@ -124,6 +237,22 @@ func _build_ui() -> void:
 		for child in layer.get_children():
 			if child is Label and (child as Label).text.contains(" stations"):
 				(child as Label).text = (child as Label).text.replace(" · 1-9 0 - = [ ] \\ stations","")
+				_foot_hint = child
+				_switch_hint = Label.new()
+				_switch_hint.name = "SwitchHint"
+				_switch_hint.text = FOOT_HINT
+				_switch_hint.add_theme_font_size_override("font_size",17)
+				_switch_hint.add_theme_color_override("font_color",Color("fbf6ea"))
+				_switch_hint.add_theme_color_override("font_shadow_color",Color(0,0,0,0.7))
+				_switch_hint.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
+				_switch_hint.offset_left = -760.0
+				_switch_hint.offset_right = 760.0
+				_switch_hint.offset_top = -140.0
+				_switch_hint.offset_bottom = -40.0
+				_switch_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+				_switch_hint.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+				layer.add_child(_switch_hint)
+				return
 
 ## The pack's station 2 alone: its spawn the start.
 func _load_pack() -> void:
@@ -136,8 +265,11 @@ func _load_pack() -> void:
 	start_face = kept[0].face
 	_last_stood = start
 
-## The game's look: its sky, sun and grade at noon, the cloud sea under the
-## islands; headless, a plain sun (nothing to see, the routes the same).
+## The game's look, set up as the game's scene sets it up (studies/
+## fidelity.gd `_setup_environment` and `_ready`): its lighting and sky,
+## the celestial rig on a still clock, the air and the weather; rendered,
+## the look pass, the screen-space air and the 1080p cap. Then the look
+## preset, applied as the look editor applies one.
 func _build_light() -> void:
 	_looks = DisplayServer.get_name() != "headless"
 	camera = Camera3D.new()
@@ -146,30 +278,108 @@ func _build_light() -> void:
 	camera.far = 4000.0
 	add_child(camera)
 	camera.current = true
-	if not _looks:
-		var sun := DirectionalLight3D.new()
-		sun.rotation_degrees = Vector3(-52.0,-35.0,0.0)
-		add_child(sun)
-		return
-	var source: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://assets/zen_reference/scene.json"))
+	_source = JSON.parse_string(FileAccess.get_file_as_string("res://assets/zen_reference/scene.json"))
 	_lighting = LandscapeLighting.new()
 	add_child(_lighting)
-	_lighting.setup(source)
+	_lighting.setup(_source)
 	_environment = _lighting.environment
 	for light in _lighting.lights: light.directional_shadow_max_distance = 140.0
 	_celestial = Celestial.new()
 	_celestial.setup(_lighting.lights)
 	_celestial.cycling = false
-	_celestial.cloud = Gallery.CLOUD
-	_celestial.look.restore(Gallery.GAME_LOOK)
-	var exposure: float = float(source.exposure)/1.08*float(_celestial.look.settings.exposure)
+	_celestial.look.changed.connect(_update_scene_look)
+	# The air: no valley fog volume (that is the plate's, round the world's
+	# middle); its ground the isle's, flat, so no summit cloud caps it.
+	_atmosphere = Atmosphere.new()
+	_atmosphere.name = "Atmosphere"
+	add_child(_atmosphere)
+	_atmosphere._environment = _environment
+	_atmosphere._ground_min = Art.TOP
+	_atmosphere._summit = Vector3(Art.HILL.x,Art.TOP,Art.HILL.y)
+	# The weather: its surface weather and sky; its rain and snow fall on
+	# the plate's ground map only, which has no ground here (see the doc).
+	_precipitation = Precipitation.new()
+	_precipitation.name = "Precipitation"
+	add_child(_precipitation)
+	var none := Node3D.new()
+	_precipitation.setup(none,NoGround.new())
+	none.free()
+	_precipitation.leaves.visible = false
+	_precipitation.weather_selected.connect(_atmosphere.set_weather_profile)
+	if _looks:
+		_look = LookPass.new()
+		_look.setup(self)
+		_look.apply_tier(_look.tier)
+		preload("res://scripts/render_resolution.gd").attach(get_viewport())
+		if RenderingServer.get_current_rendering_method() == "forward_plus" and not OS.get_cmdline_user_args().has("--no-fog"):
+			_display_fog = DisplayFog.new()
+			add_child(_display_fog)
+			_display_fog.setup(_atmosphere,camera,_precipitation.ground_texture,_precipitation.stream_texture)
+			# Its march is the plate's valley air (a box round the world's
+			# middle); off the plate it marches nothing.
+			_display_fog.material.set_shader_parameter("air_steps",0)
+			_atmosphere.native_volume = false
+			_environment.volumetric_fog_enabled = false
+	_build_toast()
+	apply_look(look_id,false)
+
+## The plate's ground map with no ground on it (the isle stands off the
+## plate): the weather's particles and the screen air's march stay off.
+class NoGround extends RefCounted:
+	func height_at(_x: float, _z: float) -> Variant: return null
+
+## The look preset `id`, applied as the look editor's preset buttons apply
+## one (SceneLookPresets.apply: the scene look's colours, the weather, the
+## hour, the air's wind, mist, haze and rays, the sky's cloud, the
+## surface weather), its name shown a moment when `show`.
+func apply_look(id: String, show := true) -> void:
+	if not SceneLookPresets.PRESETS.has(id): return
+	look_id = id
+	SceneLookPresets.apply(self,id)
+	if _display_fog != null: _display_fog.forget()
+	if show: _show_toast(str(SceneLookPresets.PRESETS[id].title))
+
+## The next (or previous) preset in the look editor's order.
+func step_look(by: int) -> void:
+	var i := _look_ids.find(look_id)
+	apply_look(_look_ids[posmod(i+by,_look_ids.size())])
+
+## The scene look's exposure, as the game sets it on a change (studies/
+## fidelity.gd `_update_scene_look`).
+func _update_scene_look() -> void:
+	_celestial.update_rig()
+	var exposure: float = float(_source.exposure)/1.08*float(_celestial.look.settings.exposure)
 	_environment.tonemap_exposure = exposure
 	RenderingServer.global_shader_parameter_set("zs_exposure",exposure)
-	_look = LookPass.new()
-	_look.setup(self)
-	_look.apply_tier(_look.tier)
-	preload("res://scripts/render_resolution.gd").attach(get_viewport())
-	_celestial.set_phase(Gallery.DAY)
+
+## SceneLookPresets.apply syncs the game's settings panel; there is none here.
+func _sync_saved_controls() -> void:
+	pass
+
+func _build_toast() -> void:
+	var layer := CanvasLayer.new()
+	layer.name = "LookToast"
+	layer.layer = 6
+	add_child(layer)
+	_look_toast = Label.new()
+	_look_toast.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
+	_look_toast.offset_top = 48.0
+	_look_toast.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_look_toast.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_look_toast.add_theme_font_size_override("font_size",30)
+	_look_toast.add_theme_color_override("font_outline_color",Color(0.0,0.0,0.0,0.55))
+	_look_toast.add_theme_constant_override("outline_size",8)
+	_look_toast.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_look_toast.modulate.a = 0.0
+	layer.add_child(_look_toast)
+
+func _show_toast(text: String) -> void:
+	if _look_toast == null: return
+	var description: String = ""
+	for id: String in SceneLookPresets.PRESETS:
+		if SceneLookPresets.PRESETS[id].title == text: description = SceneLookPresets.PRESETS[id].description
+	_look_toast.text = text+("\n"+description if description != "" else "")
+	_toast_left = TOAST+TOAST_FADE
 
 ## The station's parts as clean, invisible collision (the islands' slabs
 ## and the moss pad left out: the islands are built), then the art.
@@ -200,7 +410,6 @@ func _build_art() -> void:
 	for part: Array in castellum.parts: _part(part)
 	art.add_child(Art.buttress(SEED+3))
 	art.add_child(Art.rubble_heap(SEED+6))
-	var avoid: Array[Rect2] = [Rect2(97.0,-56.0,6.0,66.0),Rect2(92.5,-3.5,5.0,8.5),Rect2(103.3,-12.5,2.0,7.0)]
 	# The hill: its walls and kerbs, the grand stair up its east face onto
 	# the lower tier, the kit's stair up into the crag, the stone circle
 	# crowning it (tilted with the summit, its sarsen over the bite gone);
@@ -220,25 +429,41 @@ func _build_art() -> void:
 	var islets: Array = Art.islets(SEED+11)
 	for islet: Node3D in islets: art.add_child(islet)
 	art.add_child(Art.heel_stone(SEED+8))
-	avoid.append(Rect2(Art.STAIR_AT.x-6.4,-3.4,13.8,6.8))
-	avoid.append(Rect2(Art.EAST_FACE-0.6,-12.5,2.2,25.0))
-	var sf := Art.stairs_frame()
-	var sc := sf*Vector3.ZERO
-	avoid.append(Rect2(sc.x-3.2,sc.z-3.2,6.4,6.4))
-	avoid.append(Rect2(Art.HEEL.x-1.0,Art.HEEL.y-0.7,2.0,1.4))
 	for spec: Array in PIECES:
 		var piece: Node3D = RuinKit.piece(spec[0],spec[1],spec[2])
 		var x: float = spec[3]
 		var z: float = spec[4]
 		piece.transform = Transform3D(Basis(Vector3.UP,deg_to_rad(float(spec[5]))),Vector3(x,Art.ground(x,z),z))
 		art.add_child(piece)
-		var box: AABB = piece.transform*(piece.get_node("Mesh") as MeshInstance3D).mesh.get_aabb()
-		avoid.append(Rect2(box.position.x,box.position.z,box.size.x,box.size.z).grow(-0.3))
 	art.add_child(_stumps())
-	art.add_child(Art.growth(SEED+4,[near.get_meta("outline"),far.get_meta("outline")],avoid))
-	var none: Array[Rect2] = []
-	art.add_child(Art.growth(SEED+9,[[islets[0].get_meta("outline"),Art.WEST_TOP],[islets[1].get_meta("outline"),Art.EAST_TOP]],none))
+	# The turf the grass and flowers grow on (`_grow`, once it all stands
+	# in the physics space): the islands' and islets' ground.
+	for land: Node3D in [near,far]+islets:
+		var turf: StaticBody3D = land.get_node("Body")
+		turf.collision_layer |= TURF_LAYER
+		_turf_rids.append(turf.get_rid())
+		_turf.append(turf)
+		_outlines.append(land.get_meta("outline"))
 	print("aqueduct isle: %d triangles" % triangles(art))
+
+## The game's grass and flowers over the turf (studies/
+## aqueduct_isle_flora.gd), once the ruins stand in the physics space
+## (they grow round what stands).
+func _grow() -> void:
+	var began := Time.get_ticks_msec()
+	flora = Flora.grow(SEED+4,get_world_3d().direct_space_state,_turf,_outlines)
+	art.add_child(flora)
+	flora_ready = true
+	print("aqueduct isle: flora %s, %d instanced triangles, %d multimeshes, grown in %d ms" % [flora.get_meta("counts"),int(flora.get_meta("triangles")),flora.get_child_count(),Time.get_ticks_msec()-began])
+
+## The study's pilot, with his wake through the grass and flowers (as the
+## game's walker has it, scripts/wanderer_eye.gd).
+func _build_pilot() -> void:
+	super._build_pilot()
+	wake = PilotWake.new()
+	wake.name = "Wake"
+	wake.motor = motor
+	figure.add_child(wake)
 
 ## The stepping stumps (STUMPS): an older arcade's piers, coursed solid
 ## to their tops, mossed and tufted there, their feet broken off under the
@@ -299,50 +524,342 @@ func _label(at: Vector3, text: String, size: int) -> void:
 # --- The look, each frame ---------------------------------------------------------
 
 func _process(delta: float) -> void:
-	super._process(delta)
+	# SceneLookPresets.apply steps the scene once with no time: the look
+	# only, never the pilot.
+	if delta > 0.0:
+		if not flying: super._process(delta)
+		elif walk_ready and not scripted: fly_step(delta,_fly_input(delta))
+	_advance_look(delta)
+	if _toast_left > 0.0 and _look_toast != null:
+		_toast_left = maxf(_toast_left-delta,0.0)
+		_look_toast.modulate.a = clampf(_toast_left/TOAST_FADE,0.0,1.0)
+
+## One frame of the game's look, in the game's order (studies/fidelity.gd
+## `_process`): the weather and its surface weather, the air (round the
+## camera, as the kit gallery bounds its gust fronts), the sky, the
+## screen-space air and the look pass; the pilot parting the ruin growth.
+func _advance_look(delta: float) -> void:
 	_motion_time += delta
-	if not _looks: return
-	_celestial.advance(delta,true)
-	RenderingServer.global_shader_parameter_set("zs_camera_position",camera.global_position)
 	RenderingServer.global_shader_parameter_set("zs_motion_time",_motion_time)
-	RenderingServer.global_shader_parameter_set("zs_flow_time",_motion_time)
-	_look.update(camera,_celestial)
-	RenderingServer.global_shader_parameter_set("zs_cloud",Vector4(_celestial.cloud,0.0,Gallery.DECK.x,Gallery.DECK.y))
-	_advance_air(delta)
-
-## The game's air for the growth (as the kit gallery's): the air's travel,
-## the gust fronts round the camera, the lull before a front; the pilot
-## parting the curtains he passes.
-func _advance_air(delta: float) -> void:
-	var way := _wind_way()
-	var speed := 1.6+1.9*0.4
-	_gust_distance += speed*delta
+	_precipitation.wind = _atmosphere.strength
+	_celestial.shroud = _atmosphere.shroud
+	_precipitation.advance(delta,false,_celestial)
+	_atmosphere.cloud = _celestial.cloud
+	_atmosphere.rain = maxf(_precipitation.state.x,_precipitation.state.y)
+	_atmosphere.sun_height = _celestial.sun_height
+	_atmosphere.sun_setting = fposmod(_celestial.phase,1.0) >= 0.5
+	_atmosphere.cold = _celestial.cold
 	var focus := camera.global_position
-	_fronts.set_bounds(Vector2(focus.x,focus.z),36.0)
-	_fronts.advance(delta,way,0.4,_breeze)
-	_fronts.publish()
-	RenderingServer.global_shader_parameter_set("zs_gust_distance",_gust_distance)
-	RenderingServer.global_shader_parameter_set("zs_gust_speed",speed)
-	RenderingServer.global_shader_parameter_set("zs_breeze",_breeze*_fronts.lull())
-	if figure != null: RuinGrowthPush.stir(&"pilot",figure.global_position+Vector3.UP*1.1,delta)
+	_atmosphere.fronts.set_bounds(Vector2(focus.x,focus.z),36.0)
+	_atmosphere.advance(delta,false)
+	_celestial.wind = _atmosphere._air_strength
+	_celestial.advance(delta,false)
+	_atmosphere.set_inversion(_celestial.state.zs_inversion.x)
+	_celestial.sample_sky_motion(_motion_time)
+	RenderingServer.global_shader_parameter_set("zs_camera_position",focus)
+	if _display_fog != null:
+		_environment.volumetric_fog_enabled = false
+		_display_fog.blend.set_shader_parameter("surface_fog_color",_celestial.surface_fog_color)
+		_display_fog.blend.set_shader_parameter("aerial_sun_color",_celestial.aerial_sun_color)
+		_display_fog.material.set_shader_parameter("fog_display",_celestial.fog_display)
+		_display_fog.update_view()
+	if _look != null: _look.update(camera,_celestial)
+	if flying and delta > 0.0: RuinGrowthPush.stir(&"plane",plane_figure.global_position,delta)
+	elif figure != null and delta > 0.0: RuinGrowthPush.stir(&"pilot",figure.global_position+Vector3.UP*1.1,delta)
 
-## A strong gust front now, across what the camera looks at (B).
+## A strong gust front now, across what the camera looks at (B), in the
+## air's own way.
 func _send_gust() -> void:
 	var focus := camera.global_position+(-camera.global_basis.z)*20.0
-	_fronts.set_bounds(Vector2(focus.x,focus.z),24.0)
-	for i in range(_fronts.fronts.size()): _fronts.fronts[i] = {}
-	_fronts.send(_wind_way(),0.9,_breeze,1.0)
-
-func _wind_way() -> Vector2:
-	var setting: Variant = ProjectSettings.get_setting("shader_globals/zs_wind_direction")
-	if setting is Dictionary and (setting as Dictionary).get("value") is Vector2: return ((setting as Dictionary).value as Vector2).normalized()
-	return Vector2(0.943858,0.33035)
+	var fronts: RefCounted = _atmosphere.fronts
+	fronts.set_bounds(Vector2(focus.x,focus.z),24.0)
+	for i in range(fronts.fronts.size()): fronts.fronts[i] = {}
+	var way := Vector2(cos(_atmosphere._air_angle),sin(_atmosphere._air_angle))
+	fronts.send(way,0.9,Atmosphere.breeze_air(_atmosphere._air_strength),1.0)
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_B:
-		_send_gust()
+	if event is InputEventKey and event.pressed and not event.echo:
+		match (event as InputEventKey).keycode:
+			KEY_B:
+				_send_gust()
+				return
+			KEY_L:
+				step_look(-1 if (event as InputEventKey).shift_pressed else 1)
+				return
+	if Pad.pressed(event,&"camera_reset"):
+		reset_camera()
+		return
+	if flying:
+		_fly_event(event)
+		return
+	if (event is InputEventKey and event.pressed and not event.echo and (event as InputEventKey).keycode == KEY_F) or Pad.pressed(event,&"fly_land"):
+		if not _name_panel.visible and not _tune.visible: board()
 		return
 	super._unhandled_input(event)
+
+# --- The plane (F) ----------------------------------------------------------------
+
+## Into the game's plane (scripts/sky_plane.gd) from on foot: it is already
+## flying at cruise, BOARD_AHEAD m ahead of the pilot along the view and
+## BOARD_UP m up (higher if that is in stone), under the game's chase
+## camera (scripts/glide_camera.gd), the pilot in its cockpit.
+func board() -> void:
+	if flying or not walk_ready: return
+	if not _replay.is_empty(): _end_replay()
+	var way := PilotMotor.forward(_yaw)
+	var at := motor.feet+Vector3(way.x,0.0,way.y)*BOARD_AHEAD+Vector3.UP*BOARD_UP
+	plane = SkyPlane.new()
+	plane.floor_y = Art.TOP-FLOOR_BELOW
+	plane.launch(at,_yaw,SkyPlane.CRUISE_SPEED,false)
+	for i in range(12):
+		if not _in_stone(): break
+		plane.position += Vector3.UP*2.0
+	plane.velocity = plane.forward()*float(plane.speed)
+	plane_figure = PlaneFigure.new()
+	plane_figure.name = "Plane"
+	add_child(plane_figure)
+	plane_figure.show_pilot(true)
+	plane_figure.reset(plane)
+	plane_figure._mark.visible = false
+	chase = GlideCamera.new()
+	chase.reset(plane,camera.global_position,camera.fov)
+	chase.linger = LOOK_LINGER
+	figure.visible = false
+	flying = true
+	bumps = 0
+	_touch = 0.0
+	_off_ground = INF
+	_fly_look = Vector2.ZERO
+	_roll_asked = 0.0
+	if _foot_hint != null: _foot_hint.visible = false
+	_show_fly_hint()
+
+## Out of the plane, on foot on the nearest open turf to it (`at`, if
+## given, instead), facing the way it flew.
+func leave_plane(at := Vector3.INF) -> void:
+	if not flying: return
+	var spot := safe_ground(plane.position) if at == Vector3.INF else at
+	var face := Vector2(-sin(float(plane.heading)),-cos(float(plane.heading)))
+	flying = false
+	plane_figure.queue_free()
+	plane_figure = null
+	figure.visible = true
+	camera.fov = FOV
+	if _foot_hint != null: _foot_hint.visible = true
+	if _switch_hint != null: _switch_hint.text = FOOT_HINT
+	place(spot,face)
+	_last_stood = spot
+
+## Where the pilot can stand nearest `near`: open turf (not steep, room
+## for him over it), the nearest ring of points round `near` first, the
+## top nearest its height in a ring; failing all, where he last stood.
+func safe_ground(near: Vector3) -> Vector3:
+	var space := get_world_3d().direct_space_state
+	for ring in range(int(SAFE_REACH/2.0)+1):
+		var r := ring*2.0
+		var n := 1 if ring == 0 else 8+ring*4
+		var best := Vector3.INF
+		for i in range(n):
+			var a := TAU*float(i)/float(n)
+			var top := _turf_top(space,near.x+cos(a)*r,near.z+sin(a)*r)
+			if top == Vector3.INF or not _room_for_pilot(space,top): continue
+			if best == Vector3.INF or absf(top.y-near.y) < absf(best.y-near.y): best = top
+		if best != Vector3.INF: return best
+	return _last_stood
+
+## The turf's walkable top at (x, z), or INF.
+func _turf_top(space: PhysicsDirectSpaceState3D, x: float, z: float) -> Vector3:
+	var ray := PhysicsRayQueryParameters3D.create(Vector3(x,Art.TOP+80.0,z),Vector3(x,Art.TOP-80.0,z),TURF_LAYER)
+	var hit := space.intersect_ray(ray)
+	if hit.is_empty() or (hit.normal as Vector3).y < 0.75: return Vector3.INF
+	return hit.position
+
+func _room_for_pilot(space: PhysicsDirectSpaceState3D, feet: Vector3) -> bool:
+	var ball := SphereShape3D.new()
+	ball.radius = 0.35
+	var query := PhysicsShapeQueryParameters3D.new()
+	query.shape = ball
+	for up: float in [0.9,1.6]:
+		query.transform = Transform3D(Basis.IDENTITY,feet+Vector3.UP*up)
+		if not space.intersect_shape(query,1).is_empty(): return false
+	return true
+
+## The camera back to its default (R3): on foot behind the pilot at the
+## default pitch (the distance springs back out by itself); in the plane
+## the chase camera's free look let go, so it swings back behind.
+func reset_camera() -> void:
+	if flying:
+		# Its `free` is set by name: `chase.free =` parses as Object.free.
+		chase.set(&"free",Vector2.ZERO)
+		return
+	_yaw = motor.facing
+	_polar = CAM_POLAR
+	_look_rest = 0.0
+
+## The stick, mouse, throttle, knife edge and roll asked this frame, as
+## the game's plane reads them (the ruin kit gallery's fly mode). The
+## right stick (or the mouse with the right button held) swings the chase
+## camera round the plane, as the game's does (scripts/wanderer_eye.gd).
+func _fly_input(delta: float) -> Dictionary:
+	var right := Pad.stick(&"look_left",&"look_right",&"look_up",&"look_down")
+	if right != Vector2.ZERO: chase.turn(Vector2(-right.x,-right.y)*STICK_LOOK*delta)
+	chase.free_held = Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) or right != Vector2.ZERO
+	var stick := Input.get_vector(&"move_left",&"move_right",&"move_forward",&"move_back")
+	var keys := (1.0 if Input.is_key_pressed(KEY_E) else 0.0)-(1.0 if Input.is_key_pressed(KEY_Q) else 0.0)
+	var lean := clampf(keys+Input.get_action_strength(&"fly_lean_right")-Input.get_action_strength(&"fly_lean_left"),-1.0,1.0)
+	var input := {"turn":stick.x,"pitch":stick.y,"look":_fly_look,"lean":lean,
+		"boost":Input.get_action_strength(&"fly_boost"),"brake":Input.get_action_strength(&"fly_brake"),"roll":_roll_asked}
+	_fly_look = Vector2.ZERO
+	_roll_asked = 0.0
+	return input
+
+## One frame of flight: the plane stepped over the turf, bumped off what
+## stands, drawn, the chase camera behind it; skimming the turf braking
+## slow for TOUCH_HOLD s sets the pilot down there.
+func fly_step(delta: float, input: Dictionary) -> void:
+	var was: Vector3 = plane.position
+	var ground := Callable(self,"plane_ground")
+	plane.step(delta,input,ground)
+	_bump(was)
+	plane_figure.update(delta,plane,0.0,ground,false)
+	plane_figure._mark.visible = false
+	chase.step(delta,plane,0.0,_inside_stone)
+	camera.global_position = chase.eye
+	camera.look_at(chase.look,Vector3.UP)
+	camera.rotate_object_local(Vector3.FORWARD,chase.roll)
+	camera.fov = chase.fov
+	_show_fly_hint()
+	# Riding a top lifts it clear only frames it touches, so a skim counts
+	# on through TOUCH_GAP s off it.
+	var braking := float(input.get("brake",0.0)) > 0.5
+	_off_ground = 0.0 if plane.skimming else _off_ground+delta
+	_touch = _touch+delta if _off_ground <= TOUCH_GAP and braking and float(plane.speed) < TOUCH_SPEED else 0.0
+	if _touch >= TOUCH_HOLD: leave_plane()
+
+func _show_fly_hint() -> void:
+	if _switch_hint != null and plane != null: _switch_hint.text = FLY_HINT % [float(plane.speed),bumps]
+
+## The turf's top under a point, as the game's plane reads its heightfield:
+## a ray down from a metre over it onto the turf only, upward faces only
+## (inside an island's side or under its keel there is none; the bump
+## turns it off those).
+func plane_ground(p: Vector3) -> Variant:
+	if _ground_ray == null:
+		_ground_ray = PhysicsRayQueryParameters3D.new()
+		_ground_ray.collision_mask = TURF_LAYER
+	_ground_ray.from = p+Vector3.UP
+	_ground_ray.to = p+Vector3.DOWN*60.0
+	var hit := get_world_3d().direct_space_state.intersect_ray(_ground_ray)
+	if hit.is_empty() or (hit.normal as Vector3).y < 0.3: return null
+	return float((hit.position as Vector3).y)
+
+## The plane's body (BUMP_BODY, turned with its heading, pitch, bank and
+## roll) where it is now.
+func _plane_query() -> PhysicsShapeQueryParameters3D:
+	if _bump_query == null:
+		_bump_query = PhysicsShapeQueryParameters3D.new()
+		var box := BoxShape3D.new()
+		box.size = BUMP_BODY
+		_bump_query.shape = box
+		_bump_query.collision_mask = 1|TURF_LAYER
+	var turn := PlaneFigure.pose(Vector3.ZERO,float(plane.heading),float(plane.pitch),float(plane.bank)+float(plane.spin)).basis
+	_bump_query.transform = Transform3D(turn,plane.position)
+	return _bump_query
+
+func _in_stone() -> bool:
+	return not get_world_3d().direct_space_state.intersect_shape(_plane_query(),1).is_empty()
+
+## Bump and recover (the ruin kit gallery's, scripts/ruin_bump.gd): the
+## plane's body in stone, or in the turf's side or keel, is put back out
+## along the face it hit (the way it came, failing that), its heading
+## turned along the face and its pitch eased level, BUMP_KEEP of its speed
+## kept. Never a crash. On the turf's top it is only lifted clear.
+func _bump(was: Vector3) -> bool:
+	var space := get_world_3d().direct_space_state
+	var rest := space.get_rest_info(_plane_query())
+	if rest.is_empty(): return false
+	var normal: Vector3 = rest.get("normal",Vector3.ZERO)
+	if normal.y > FLOOR_NORMAL and _ride_top(space): return false
+	bumps += 1
+	if normal.length() < 0.5: normal = (was-plane.position).normalized()
+	plane.position = was+normal*0.15
+	if not space.get_rest_info(_plane_query()).is_empty(): plane.position = was+normal*0.6
+	# Failing both (a corner), back where it was, clear last frame.
+	if not space.get_rest_info(_plane_query()).is_empty(): plane.position = was
+	var way: Vector3 = plane.forward()
+	var along := way-normal*way.dot(normal)
+	if along.length() > 0.05:
+		along = along.normalized()
+		var flat := Vector2(along.x,along.z)
+		if flat.length() > 0.05: plane.heading = atan2(-flat.x,-flat.y)
+		plane.pitch = clampf(asin(clampf(along.y,-1.0,1.0)),-0.6,0.6)
+	# Turned, its wings may reach into the face again: out along it.
+	for i in range(10):
+		if space.get_rest_info(_plane_query()).is_empty(): break
+		plane.position += normal*0.1
+	plane.speed = maxf(SkyPlane.SLOW,float(plane.speed)*BUMP_KEEP)
+	plane.velocity = plane.forward()*float(plane.speed)
+	return true
+
+## On a top (a face whose normal is up past FLOOR_NORMAL: a ramp, a
+## stair, the rubble, a wall's or the channel's top, the turf), lifted
+## clear in RIDE_STEP m steps, up to RIDE_LIFT m, and ridden as the glide
+## rides ground: the fall stopped, a dipped nose eased level, the ground's
+## drag. True if it came clear.
+func _ride_top(space: PhysicsDirectSpaceState3D) -> bool:
+	var from: Vector3 = plane.position
+	for i in range(int(RIDE_LIFT/RIDE_STEP)):
+		plane.position = from+Vector3.UP*RIDE_STEP*float(i+1)
+		if space.get_rest_info(_plane_query()).is_empty():
+			if plane.velocity.y < 0.0: plane.velocity.y = 0.0
+			if plane.pitch < 0.0: plane.pitch = lerpf(float(plane.pitch),0.0,0.15)
+			plane.speed = maxf(SkyPlane.SLOW,float(plane.speed)-SkyPlane.SKIM_DRAG/60.0)
+			plane.skimming = true
+			return true
+	plane.position = from
+	return false
+
+## Whether a point is inside stone (the chase camera stays out of it).
+func _inside_stone(p: Vector3) -> bool:
+	var query := PhysicsPointQueryParameters3D.new()
+	query.position = p
+	query.collision_mask = 1|TURF_LAYER
+	return not get_world_3d().direct_space_state.intersect_point(query,1).is_empty()
+
+## A lean pressed: the second press the same way within DOUBLE_TAP asks
+## for a barrel roll that way.
+func _lean_tapped(dir: float) -> void:
+	var now := Time.get_ticks_msec()
+	if dir == _tap_dir and now-_tap_at <= int(DOUBLE_TAP*1000.0):
+		_roll_asked = dir
+		_tap_dir = 0.0
+	else:
+		_tap_dir = dir
+		_tap_at = now
+
+## The plane's keys, mouse and pad: F or Y back on foot, R on foot at the
+## start, Q E knife edge (twice quick a roll), the mouse steers, a click
+## rolls, the right button held looks round, Esc frees the mouse.
+func _fly_event(event: InputEvent) -> void:
+	if event is InputEventMouseMotion:
+		if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED: return
+		if Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT): chase.turn(Vector2(-event.relative.x,-event.relative.y)*FLY_LOOK)
+		else: _fly_look += Vector2(event.relative.x,-event.relative.y)*FLY_LOOK
+	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+		if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED: Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		else: _roll_asked = -1.0 if float(plane.bank) < -0.05 else 1.0
+	elif Pad.pressed(event,&"fly_land"): leave_plane()
+	elif Pad.pressed(event,&"fly_lean_left"): _lean_tapped(-1.0)
+	elif Pad.pressed(event,&"fly_lean_right"): _lean_tapped(1.0)
+	elif event is InputEventKey and event.pressed and not event.echo:
+		match (event as InputEventKey).keycode:
+			KEY_F: leave_plane()
+			KEY_R:
+				leave_plane(start)
+				respawn()
+			KEY_Q: _lean_tapped(-1.0)
+			KEY_E: _lean_tapped(1.0)
+			KEY_ESCAPE: Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 ## Only the station's recordings replay here.
 func _pack_runs() -> PackedStringArray:
@@ -353,21 +870,26 @@ func _pack_runs() -> PackedStringArray:
 
 func _take_capture() -> void:
 	for child in get_children():
-		if child is CanvasLayer and (child as CanvasLayer).layer == 5: (child as CanvasLayer).visible = false
+		if child is CanvasLayer and (child as CanvasLayer).layer in [5,6]: (child as CanvasLayer).visible = false
 	if _capture_at != Vector3.INF:
 		set_process(false)
 		var look := _capture_look if _capture_look != Vector3.INF else Vector3(100.0,34.0,-20.0)
 		camera.look_at_from_position(_capture_at,look)
 		for i in range(240):
-			_motion_time += 1.0/60.0
-			_celestial.advance(1.0/60.0,true)
-			RenderingServer.global_shader_parameter_set("zs_camera_position",camera.global_position)
-			_look.update(camera,_celestial)
-			RenderingServer.global_shader_parameter_set("zs_cloud",Vector4(_celestial.cloud,0.0,Gallery.DECK.x,Gallery.DECK.y))
+			_advance_look(1.0/60.0)
 			await get_tree().process_frame
 	else:
 		await get_tree().create_timer(4.0).timeout
+	# The frame's cost, measured over a second before the save.
+	# The frame's cost: wall-clock frames with vsync off, over 120 frames.
+	var vsync := DisplayServer.window_get_vsync_mode()
+	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
+	await RenderingServer.frame_post_draw
+	var began := Time.get_ticks_usec()
+	for i in range(120): await RenderingServer.frame_post_draw
+	var frame_ms := (Time.get_ticks_usec()-began)/120000.0
+	DisplayServer.window_set_vsync_mode(vsync)
 	await RenderingServer.frame_post_draw
 	get_viewport().get_texture().get_image().save_png(_capture)
-	print("aqueduct isle: saved %s" % _capture)
+	print("aqueduct isle: saved %s (%s; %.2f ms a frame, vsync off; %d draw calls, %d primitives)" % [_capture,look_id,frame_ms,RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME),RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME)])
 	get_tree().quit()

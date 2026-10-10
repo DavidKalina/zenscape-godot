@@ -21,6 +21,17 @@ extends "res://scripts/sky_glide.gd"
 ## edge does not turn it, so it flies on straight, and let go it rolls back
 ## to its bank.
 ##
+## Turn while on the knife edge and it drifts: the turn comes round
+## DRIFT_TURN more again than a banked one, the nose swings in ahead of its
+## path (a slip of up to DRIFT_SLIP seconds of turn), and the drift bleeds
+## DRIFT_BLEED m/s² off its speed as the price. A small stick (under
+## DRIFT_ONSET) is only a correction and doesn't drift, so threading a slit
+## stays steady; turning against the lean drifts DRIFT_COUNTER as hard.
+## Coming out of a drift held DRIFT_MIN seconds or more gives back up to
+## DRIFT_BOOST m/s (full after DRIFT_CHARGE seconds), which the engine
+## eases away again. `--drift=<x>` scales all of it (`drift_strength`,
+## 1 by default, 0 off). docs/design/knife-drift.md.
+##
 ## A barrel roll (`roll`: -1 left, 1 right, on the frame it is asked for)
 ## turns it a whole way round its length over ROLL_TIME seconds, with a
 ## little hop sideways, and it comes out level on the heading it went in
@@ -66,6 +77,21 @@ const EASE_LEVEL := 1.4
 ## it tips in and out (seconds).
 const KNIFE_BANK := PI*0.5
 const EASE_KNIFE := 0.12
+## The drift (a turn on the knife edge): the turn rate's extra share at a
+## full drift, the stick it starts at and is full by, how hard a turn against
+## the lean drifts, the speed it bleeds (m/s²), the nose's lead over its
+## path (seconds of turn), how fast it comes and goes (seconds), and the
+## release: the boost (m/s), the hold before any and the hold to the full.
+const DRIFT_TURN := 0.5
+const DRIFT_ONSET := 0.3
+const DRIFT_FULL := 0.8
+const DRIFT_COUNTER := 0.5
+const DRIFT_BLEED := 1.6
+const DRIFT_SLIP := 0.12
+const EASE_DRIFT := 0.15
+const DRIFT_BOOST := 2.5
+const DRIFT_MIN := 0.4
+const DRIFT_CHARGE := 1.2
 ## The barrel roll: seconds round, and the sideways hop (m/s at its middle).
 const ROLL_TIME := 0.7
 const JINK := 3.0
@@ -79,6 +105,13 @@ var rolling := false
 var roll_dir := 0.0
 ## How far it is tipped up on a wingtip, -1 left to 1 right.
 var knife := 0.0
+## The drift's strength (`--drift=<x>`, 0 off), how far into one it is now
+## (0 to 1), the nose's lead over its path (radians, the travel is at
+## heading+slip), and how long this one has been held (seconds).
+var drift_strength := drift_flag(OS.get_cmdline_user_args())
+var drift := 0.0
+var slip := 0.0
+var drift_held := 0.0
 ## The throttle held now: 1 boosting, -1 braking, 0 cruising (for the
 ## figure's propeller and the hum).
 var throttle := 0.0
@@ -106,6 +139,9 @@ func launch(from: Vector3, towards: float, pace: float, drop := true) -> void:
 	_lean = 0.0
 	_mouse_rate = 0.0
 	knife = 0.0
+	drift = 0.0
+	slip = 0.0
+	drift_held = 0.0
 	_free_bank = 0.0
 	velocity = forward()*speed
 
@@ -124,9 +160,23 @@ func resume(pace: float, nose: float) -> void:
 	_lean = 0.0
 	_mouse_rate = 0.0
 	knife = 0.0
+	drift = 0.0
+	slip = 0.0
+	drift_held = 0.0
 	_free_bank = 0.0
 	_roll_time = 0.0
 	velocity = forward()*speed
+
+## The drift strength asked for on the command line (`--drift=<x>`), else 1.
+static func drift_flag(args: PackedStringArray) -> float:
+	for arg in args:
+		if arg.begins_with("--drift="): return maxf(0.0,float(arg.substr(8)))
+	return 1.0
+
+## The direction it travels: the nose's, swung back by the drift's slip.
+func travel() -> Vector3:
+	var h := heading+slip
+	return Vector3(-sin(h)*cos(pitch),sin(pitch),-cos(h)*cos(pitch))
 
 ## One step. `input` holds:
 ##   turn, pitch: -1..1 held rates (keys, stick), right and nose-up positive;
@@ -170,7 +220,21 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 	# it turns itself to the target.
 	var aim := _aim(delta) if approach and is_zero_approx(turn) and is_zero_approx(look.x) else 0.0
 	_lean = lerpf(_lean,turn*BANK_HELD,_ease(EASE_ROLL_IN,delta))
-	heading += -_lean/BANK_HELD*TURN_RATE*delta-look.x+aim
+	# On the knife edge a real turn of the stick drifts: tighter, nose in.
+	var lean_in := clampf(float(input.get("lean",0.0)),-1.0,1.0)
+	var want := 0.0
+	if drift_strength > 0.0 and absf(knife) > 0.5 and absf(lean_in) > 0.5 and not rolling:
+		want = smoothstep(DRIFT_ONSET,DRIFT_FULL,absf(turn))
+		if signf(turn) != signf(knife): want *= DRIFT_COUNTER
+	drift = lerpf(drift,want,_ease(EASE_DRIFT,delta))
+	var rate := -_lean/BANK_HELD*TURN_RATE*(1.0+DRIFT_TURN*drift_strength*drift)
+	heading += rate*delta-look.x+aim
+	slip = lerpf(slip,-rate*DRIFT_SLIP*drift,_ease(EASE_DRIFT,delta))
+	var boost_out := 0.0
+	if want > 0.25: drift_held += delta
+	elif drift_held > 0.0:
+		if drift_held >= DRIFT_MIN: boost_out = DRIFT_BOOST*drift_strength*clampf(drift_held/DRIFT_CHARGE,0.0,1.0)
+		drift_held = 0.0
 	_mouse_rate = lerpf(_mouse_rate,(look.x-aim)/maxf(delta,0.0001),_ease(EASE_TURN,delta))
 	_free_bank = lerpf(_free_bank,clampf(_lean+_mouse_rate*MOUSE_BANK,-BANK_TOP,BANK_TOP),_ease(EASE_TURN,delta))
 	# The knife edge tips it up on a wingtip over the turn's bank.
@@ -188,13 +252,13 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 	# dive swing it either side.
 	var target := CRUISE_SPEED+boost*(BOOST_SPEED-CRUISE_SPEED)-brake*(CRUISE_SPEED-BRAKE_SPEED)
 	if approach: target = minf(target,LANDING_SPEED)
-	speed += (-SWING*sin(pitch)-THROTTLE*(speed-target))*delta
+	speed += (-SWING*sin(pitch)-THROTTLE*(speed-target)-DRIFT_BLEED*drift_strength*drift)*delta+boost_out
 	speed = clampf(speed,SLOW,FAST)
 	lift = clampf((floor_y-position.y)*CUSHION,0.0,CUSHION_MAX)
 	var fall := FALL*minf(airborne,FALL_TIME)*(1.0-smoothstep(FALL_TIME,FALL_TIME+CATCH,airborne))
 	var drop := approach_drop(ground) if approach else 0.0
 	var side := Vector3(cos(heading),0.0,-sin(heading))
-	velocity = forward()*speed+side*hop+Vector3.UP*(lift-fall-drop)+wind
+	velocity = travel()*speed+side*hop+Vector3.UP*(lift-fall-drop)+wind
 	var was := position
 	position += velocity*delta
 	_skim(delta,ground,was)

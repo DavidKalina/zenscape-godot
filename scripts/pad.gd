@@ -99,6 +99,8 @@ const ACTIONS := {
 	"photo_exposure_down":[["button",JOY_BUTTON_DPAD_DOWN]],
 	"photo_clean":[["button",JOY_BUTTON_BACK]],
 	"photo_reset":[["button",JOY_BUTTON_RIGHT_STICK]],
+	# The studies' cameras back to their default (the aqueduct isle's).
+	"camera_reset":[["button",JOY_BUTTON_RIGHT_STICK]],
 	# The library's and the New world panel's own verbs, beside ui_accept,
 	# ui_cancel and the ui moves.
 	"library_new":[["button",JOY_BUTTON_X]],
