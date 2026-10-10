@@ -1191,6 +1191,29 @@ static func fallen_pier(seed_value: int, weathered := 0.0) -> Node3D:
 	_rubble(b,2.4,1+int(round(weathered*b.rng.randf_range(3.0,6.0))))
 	return b.finish()
 
+## A rope bridge's anchor (not one of PIECES: a fitting the isles set where
+## a live rope bridge, scripts/rope_bridge.gd, comes to ground): a dressed
+## sill flush with the ground the deck runs out over (+Z), and a squat
+## stone post either side just outside the deck's `width`, capped, its foot
+## sunk, the bridge's own timber posts lashed to their inner faces. The
+## sill walks as laid (a clean hull); the posts collide. Weathered, a cap
+## gone and a little rubble.
+static func bridge_anchor(seed_value: int, weathered := 0.0, width := 0.74) -> Node3D:
+	var b := Build.new(seed_value,weathered,"BridgeAnchor")
+	var sill := Vector3(width*0.5+0.75,0.12,0.4)
+	b.lean = true
+	b.solid(_box(b,sill),Transform3D(Basis.IDENTITY,Vector3(0.0,-sill.y+0.03,-0.2)),_stone(b,0.95),false)
+	b.lean = false
+	_walk_hull(b,Transform3D(Basis.IDENTITY,Vector3(0.0,-sill.y+0.03,-0.2)),[Plane(Vector3.RIGHT,sill.x),Plane(Vector3.LEFT,sill.x),Plane(Vector3.UP,sill.y),Plane(Vector3.DOWN,sill.y),Plane(Vector3.BACK,sill.z),Plane(Vector3.FORWARD,sill.z)])
+	for side: float in [-1.0,1.0]:
+		var x := side*(width*0.5+0.42)
+		var post := Vector3(0.24,0.78,0.24)
+		b.solid(_box(b,post),_settle(b,Vector3(x,post.y-0.25,-0.15),0.5),_stone(b,1.0))
+		if not (weathered > 0.4 and side > 0.0):
+			b.solid(_prism(4,0.3,0.12,0.0,0.22,PI/4.0),_settle(b,Vector3(x,post.y*2.0-0.25,-0.15),0.6),_stone(b,1.05))
+	_rubble(b,width*0.5+1.0,int(round(weathered*b.rng.randf_range(1.0,3.0))))
+	return b.finish()
+
 ## 11. A carved chest: a stepped plinth, the chest's sides cut into blind
 ## arcading (little pointed niches between buttressed posts), a heavy lid
 ## with its edge chamfered deep. No figure, no lettering: a carved block.
