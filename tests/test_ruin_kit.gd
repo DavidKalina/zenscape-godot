@@ -5,7 +5,7 @@ extends SceneTree
 ## a "Mesh" (faces, normals, colours) and a "Body" of convex hulls, each
 ## with a real volume (Jolt cannot build a flat one), and a flat top a
 ## walker can stand on; the same seed builds the same piece; nothing glows
-## (one stone surface, no halo); the plane's way stays clear through the
+## (a stone surface and a growth surface, no halo); the plane's way stays clear through the
 ## gothic arch and window, every aqueduct arch and the hall (and the hall's
 ## knife-edge slit lets a plane on its wingtip through, not a level one);
 ## the stairs walk on clean boxes (every tread's top true; the grand
@@ -174,8 +174,10 @@ func _piece(id: String, seed_value: int, weathered: float) -> void:
 	check(hulls > 0,label+" has collision")
 	check(thin == 0,label+" has no flat or degenerate hull (%d)" % thin)
 	check(top,label+" has a top to stand on")
-	# No ornament glows: one stone surface, no halo.
-	check(ok and mesh.mesh.get_surface_count() == 1 and node.get_node_or_null("Halo") == null,label+" is stone and growth only, nothing glowing")
+	# No ornament glows: the stone's surface and the growth's (in the wind,
+	# scripts/ruin_growth.gd), no halo.
+	var only_stone_and_growth: bool = ok and mesh.mesh.surface_get_material(0) == RuinKit.materials().stone and (mesh.mesh.get_surface_count() == 1 or (mesh.mesh.get_surface_count() == 2 and mesh.mesh.surface_get_material(1) == RuinKit.materials().growth))
+	check(only_stone_and_growth and node.get_node_or_null("Halo") == null,label+" is stone and growth only, nothing glowing")
 	if id == "hall_bay": check(node.has_meta("slit"),label+" has its slit")
 	for key: String in ["bounds","feet","corridors","walk"]:
 		if id.begins_with("aqueduct") or id == "hall_bay": check(node.has_meta(key),label+" gives its "+key)

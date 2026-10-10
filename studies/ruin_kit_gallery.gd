@@ -27,6 +27,16 @@ extends Node3D
 ##   Space or Tab    the whole layout     L  light shafts in the hall
 ##   W               pairs, intact only, weathered only
 ##   R               reseed the weathering     N  day or night
+##   V               the growth in the wind or held still (compare)
+##   B               send a strong gust front across the view now
+## The growth (scripts/ruin_growth.gd, docs/scenic/ruin-overgrowth.md) sways
+## in the game's breeze, run here as the atmosphere runs it: the air's
+## travel, its gust fronts (studies/gust_fronts.gd) and the breeze.
+##   --still        start with the growth held still     --no-vines  no vine curtains
+##   --gust=<s>     send a strong gust front that many seconds in
+##   --breeze=<x>   the breeze (zs_breeze; the game's default air is 0.53)
+##   --frames=<n>   with --capture: n frames, --frame-step=<s> apart (0.1),
+##                  saved as <capture>_000.png and on, for a sway sequence
 ##   ./run-ruin-kit.command [--family=hall] [--piece=2] [--centre] [--night] [--show=intact|weathered] [--seed=3] [--no-shafts]
 ##   godot --path . res://studies/ruin_kit_gallery.tscn -- --no-title --capture=out.png
 ## --capture=<png> waits for the sky to settle, saves the view and quits;
@@ -44,6 +54,9 @@ const LookPass = preload("res://scripts/look_pass.gd")
 const SkyPlane = preload("res://scripts/sky_plane.gd")
 const GlideCamera = preload("res://scripts/glide_camera.gd")
 const Pad = preload("res://scripts/pad.gd")
+const RuinGrowth = preload("res://scripts/ruin_growth.gd")
+const RuinGrowthPush = preload("res://scripts/ruin_growth_push.gd")
+const GustFronts = preload("res://studies/gust_fronts.gd")
 
 ## The families left to right on the plate, their names, and each one's
 ## rows, back to front, and where each row stands (z, m).
@@ -182,6 +195,17 @@ var _autopilot := 0.0
 var _autopilot_lean := 0.0
 ## The height it holds over the floor (--height=, m).
 var _autopilot_height := 2.8
+## The air the growth sways in: on (V), the gust fronts, the air's travel
+## (m), the breeze, a strong front asked for at --gust seconds, and the
+## sway sequence's frames (--frames, --frame-step).
+var _wind := true
+var _fronts: GustFronts
+var _gust_distance := 0.0
+var _breeze := 0.53
+var _gust_at := -1.0
+var _frames := 0
+var _frame_step := 0.1
+var _forced_delta := 0.0
 
 func _ready() -> void:
 	var start_piece := -1
@@ -198,6 +222,14 @@ func _ready() -> void:
 		elif arg.begins_with("--show="): _show = maxi(0,SHOWS.find(arg.get_slice("=",1)))
 		elif arg.begins_with("--seed="): _seed = int(arg.get_slice("=",1))
 		elif arg.begins_with("--capture="): _capture = arg.get_slice("=",1)
+		elif arg == "--still": _wind = false
+		elif arg == "--no-vines": RuinGrowth.vines = false
+		elif arg.begins_with("--gust="): _gust_at = float(arg.get_slice("=",1))
+		elif arg.begins_with("--breeze="): _breeze = float(arg.get_slice("=",1))
+		elif arg.begins_with("--frames="): _frames = int(arg.get_slice("=",1))
+		elif arg.begins_with("--frame-step="): _frame_step = float(arg.get_slice("=",1))
+	_fronts = GustFronts.new()
+	_set_wind(_wind)
 	_build_world()
 	_set_night(_night)
 	_build_layout()
@@ -230,7 +262,18 @@ func _ready() -> void:
 	if not _capture.is_empty():
 		await get_tree().create_timer(_fly_at if _fly_at > 0.0 else 4.0).timeout
 		await RenderingServer.frame_post_draw
-		get_viewport().get_texture().get_image().save_png(_capture)
+		if _frames <= 0:
+			get_viewport().get_texture().get_image().save_png(_capture)
+		else:
+			# Each drawn frame steps the scene exactly --frame-step s, however
+			# long the save takes; saved at half size.
+			var stem := _capture.get_basename()
+			_forced_delta = _frame_step
+			for i in range(_frames):
+				var image := get_viewport().get_texture().get_image()
+				image.resize(image.get_width()/2,image.get_height()/2,Image.INTERPOLATE_BILINEAR)
+				image.save_png("%s_%03d.png" % [stem,i])
+				await RenderingServer.frame_post_draw
 		get_tree().quit()
 
 ## Where the family's centrepiece stands (its middle on the ground), in
@@ -287,7 +330,7 @@ func _build_world() -> void:
 	_label.add_theme_color_override("font_shadow_color",Color(0.0,0.0,0.0,0.4))
 	layer.add_child(_label)
 	var help := Label.new()
-	help.text = "F1 Gothic · F2 Aqueduct · F3 Hall · 1-9 0 - = \\ frame a piece · C centrepiece · G fly the long hall · ←/→ next · Space/Tab whole layout · W intact/weathered · R reseed · N night · L shafts · Drag orbit · Wheel zoom"
+	help.text = "F1 Gothic · F2 Aqueduct · F3 Hall · 1-9 0 - = \\ frame a piece · C centrepiece · G fly the long hall · ←/→ next · Space/Tab whole layout · W intact/weathered · R reseed · N night · L shafts · V wind on/off · B gust · Drag orbit · Wheel zoom"
 	help.add_theme_font_size_override("font_size",15)
 	help.add_theme_color_override("font_color",Color(1.0,0.98,0.92,0.5))
 	help.add_theme_color_override("font_shadow_color",Color(0.0,0.0,0.0,0.3))
@@ -906,9 +949,9 @@ func _say() -> void:
 		what = FAMILY_NAMES[_family]+(" · centrepiece" if _centred else "")
 	var keys := "F1 Gothic · F2 Aqueduct · F3 Hall · G fly the long hall"
 	if _flying:
-		_label.text = "Flying the long hall   ·   %.0f m/s   ·   bumps %d   ·   shafts %s\nA D bank and turn · W S pitch (W nose down) · mouse steers · Space boost · Shift brake · hold Q E or LB RB knife-edge, twice quick or click barrel roll · hold right mouse to look round · R or pad Back restart at the entrance · L shafts · N night · G or Esc to stop flying" % [float(_plane_flight.speed),_bumps,"on" if _shafts else "off"]
+		_label.text = "Flying the long hall   ·   %.0f m/s   ·   bumps %d   ·   shafts %s\nA D bank and turn · W S pitch (W nose down) · mouse steers · Space boost · Shift brake · hold Q E or LB RB knife-edge, twice quick or click barrel roll · hold right mouse to look round · R or pad Back restart at the entrance · L shafts · N night · V wind · B gust · G or Esc to stop flying" % [float(_plane_flight.speed),_bumps,"on" if _shafts else "off"]
 		return
-	_label.text = "%s   ·   %s   ·   %s   ·   shafts %s   ·   seed %d\n%s" % [what,SHOWS[_show],"night" if _night else "day","on" if _shafts else "off",_seed,keys]
+	_label.text = "%s   ·   %s   ·   %s   ·   shafts %s   ·   growth %s   ·   seed %d\n%s" % [what,SHOWS[_show],"night" if _night else "day","on" if _shafts else "off","in the wind" if _wind else "still",_seed,keys]
 
 func _set_night(on: bool) -> void:
 	_night = on
@@ -927,6 +970,7 @@ func _face_sun() -> void:
 	if _layout != null: _layout.rotation.y = _layout_yaw
 
 func _process(delta: float) -> void:
+	if _forced_delta > 0.0: delta = _forced_delta
 	_motion_time += delta
 	_celestial.advance(delta,true)
 	for pilot in _pilots:
@@ -947,6 +991,47 @@ func _process(delta: float) -> void:
 	RenderingServer.global_shader_parameter_set("zs_flow_time",_motion_time)
 	_look.update(_camera,_celestial)
 	RenderingServer.global_shader_parameter_set("zs_cloud",Vector4(_celestial.cloud,0.0,DECK.x,DECK.y))
+	_advance_air(delta)
+
+## The game's air for the growth (as studies/atmosphere.gd runs it): the
+## air's travel, the gust fronts rolling across the view, the breeze going
+## quiet before a front; the plane brushing the curtains it passes.
+func _advance_air(delta: float) -> void:
+	var way := _wind_way()
+	var speed := 1.6+1.9*0.4
+	_gust_distance += speed*delta
+	var focus := _camera.global_position
+	_fronts.set_bounds(Vector2(focus.x,focus.z),36.0)
+	_fronts.advance(delta,way,0.4,_breeze)
+	if _gust_at >= 0.0 and _motion_time >= _gust_at:
+		_gust_at = -1.0
+		_send_gust()
+	_fronts.publish()
+	RenderingServer.global_shader_parameter_set("zs_gust_distance",_gust_distance)
+	RenderingServer.global_shader_parameter_set("zs_gust_speed",speed)
+	RenderingServer.global_shader_parameter_set("zs_breeze",_breeze*_fronts.lull())
+	if _flying and _fly_figure != null: RuinGrowthPush.stir(&"plane",(_fly_figure as Node3D).global_position,delta)
+	else: RuinGrowthPush.settle(delta)
+
+## A strong gust front now, across what the camera looks at (B).
+func _send_gust() -> void:
+	var way := _wind_way()
+	var focus := _camera.global_position+(-_camera.global_basis.z)*20.0
+	_fronts.set_bounds(Vector2(focus.x,focus.z),24.0)
+	for i in range(_fronts.fronts.size()): _fronts.fronts[i] = {}
+	_fronts.send(way,0.9,_breeze,1.0)
+
+## The world's wind direction (the project's shader global).
+func _wind_way() -> Vector2:
+	var setting: Variant = ProjectSettings.get_setting("shader_globals/zs_wind_direction")
+	if setting is Dictionary and (setting as Dictionary).get("value") is Vector2: return ((setting as Dictionary).value as Vector2).normalized()
+	return Vector2(0.943858,0.33035)
+
+## The growth in the wind or held still (V).
+func _set_wind(on: bool) -> void:
+	_wind = on
+	RuinGrowth.material().set_shader_parameter("motion",1.0 if on else 0.0)
+	if _label != null: _say()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if _flying:
@@ -969,6 +1054,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				KEY_E: _lean_tapped(1.0)
 				KEY_N: _set_night(not _night)
 				KEY_L: _set_shafts(not _shafts)
+				KEY_V: _set_wind(not _wind)
+				KEY_B: _send_gust()
 		return
 	if event is InputEventMouseMotion and event.button_mask & MOUSE_BUTTON_MASK_LEFT:
 		_yaw -= event.relative.x*0.006
@@ -1003,6 +1090,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				_apply_show()
 				if _frame >= 0: _frame_piece(_frame)
 			KEY_N: _set_night(not _night)
+			KEY_V: _set_wind(not _wind)
+			KEY_B: _send_gust()
 
 # --- Fly mode (G) ---------------------------------------------------------------
 

@@ -104,6 +104,7 @@ const EYE_HEIGHT := 0.85
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const PilotFigure = preload("res://scripts/pilot_figure.gd")
 const PilotLedge = preload("res://scripts/pilot_ledge.gd")
+const PilotStepSmooth = preload("res://scripts/pilot_step_smooth.gd")
 const SolidProps = preload("res://scripts/solid_props.gd")
 ## Jogging and running speed, in metres a second (the motor's).
 const WALK := PilotMotor.WALK
@@ -143,6 +144,10 @@ const FOLLOW := 0.9
 const CAM_CLEAR := 0.35
 const CAM_NEAREST := 0.9
 const EASE_CAM_OUT := 0.4
+## The camera's clearance is read over a ball this round (m): the highest
+## ground under it and round it, so its reach changes smoothly as a stair's
+## edges pass under it.
+const CAM_BALL := 0.25
 ## The walk stays on the plate.
 const PLATE_REACH := Plate.HALF-0.5
 ## How far inside the shore a walker is put back on an outlined island (m).
@@ -203,6 +208,7 @@ const Presets = preload("res://scripts/native_landscape_presets.gd")
 const Disturbance = preload("res://scripts/disturbance.gd")
 const Footbridge = preload("res://scripts/footbridge.gd")
 const RopeBridge = preload("res://scripts/rope_bridge.gd")
+const RuinGrowthPush = preload("res://scripts/ruin_growth_push.gd")
 const HINT := "Mouse to look  ·  WASD or arrows to run  ·  Space to jump, again in the air to fly  ·  V or Esc to step out"
 const PERCH_HINT := "Mouse to look  ·  WASD or arrows to run  ·  Space to jump  ·  Off the edge or Space again in the air to fly  ·  V or Esc to step out"
 const GLIDER_HINT := "Mouse to look  ·  WASD or arrows to run  ·  Space to jump, again in the air to glide  ·  V or Esc to step out"
@@ -336,6 +342,10 @@ var _polar := CAM_POLAR
 ## The run's velocity across the ground, metres a second (the motor's).
 var _pace := Vector2.ZERO
 var motor := PilotMotor.new()
+## The figure's and the camera's height over the feet, smoothed up and down
+## steps (scripts/pilot_step_smooth.gd): the motor's feet pop a riser at a
+## time, the drawn pilot and the camera ramp over it.
+var step_smooth := PilotStepSmooth.new()
 ## The drawn pilot, on the figure.
 var body: Node3D
 ## The look point's height over the frame, the camera's reach, and seconds
@@ -346,6 +356,8 @@ var _cam_y := 0.0
 var cam_at := Vector2.ZERO
 var _cam_pace := Vector2.ZERO
 var _cam_distance := CAM_DISTANCE
+## The camera's pace letting out again (m/s, `_frame_walker`).
+var _cam_out := 0.0
 var _look_rest := 0.0
 var _before := {}
 var _returning := 0.0
@@ -622,6 +634,7 @@ func place(local: Vector3) -> void:
 	_feet = _clamped(_free_spot(_clamped(local)))
 	_yaw = scene.yaw
 	motor.reset(_feet,_yaw-_turn())
+	step_smooth.reset()
 	_sync_figure()
 	_disturb(PLACE_STRENGTH)
 
@@ -635,7 +648,8 @@ func _turn() -> float:
 func _sync_figure() -> void:
 	if not has_figure(): return
 	# On a ledge, where the motor draws the body (the climb's clip carries it).
-	var drawn := motor.origin() if motor.on_ledge() else (_feet if perch.is_empty() else _perch_feet)
+	# Else over the feet, smoothed up and down steps.
+	var drawn := motor.origin() if motor.on_ledge() else (_feet if perch.is_empty() else _perch_feet)+Vector3.UP*step_smooth.lift
 	if perch.is_empty():
 		figure.position = drawn
 		figure.rotation = Vector3(0.0,motor.facing,0.0)
@@ -885,6 +899,7 @@ func leave() -> void:
 		_feet = _clamped(_free_spot(_clamped(editor.terrain.to_local(at))))
 	_feet = _clamped(_feet)
 	motor.reset(_feet,motor.facing)
+	step_smooth.reset()
 	active = false
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_layer.visible = false
@@ -968,6 +983,7 @@ func _advance_eye(delta: float) -> void:
 	_pace = Vector2(motor.velocity.x,motor.velocity.z)
 	var moved := Vector2(_feet.x-was.x,_feet.z-was.z).length() if motor.grounded else 0.0
 	_notice_step(moved,delta)
+	step_smooth.step(motor,_motor_ground,delta)
 	_sync_figure()
 	_motor_events(events)
 	var drawn: Dictionary = body.drive(motor,delta)
@@ -1163,10 +1179,12 @@ func _puff_at(at: Vector3) -> Vector3:
 ## Stood where the motor is: the look point at the pilot, the camera back
 ## at its reach.
 func _stand_camera() -> void:
+	step_smooth.reset()
 	_cam_y = motor.feet.y+CAM_HEIGHT
 	cam_at = Vector2(motor.feet.x,motor.feet.z)
 	_cam_pace = Vector2.ZERO
 	_cam_distance = CAM_DISTANCE
+	_cam_out = 0.0
 	_look_rest = 0.0
 
 ## The camera behind the pilot, written into the scene's orbit: round a
@@ -1177,7 +1195,7 @@ func _stand_camera() -> void:
 ## world, `turn` is its turn about up, and `ground` gives the ground's
 ## height in the frame under a frame point (-INF for none).
 func _frame_walker(delta: float, frame: Transform3D, turn: float, ground: Callable) -> void:
-	var goal := motor.feet.y+CAM_HEIGHT
+	var goal := motor.feet.y+step_smooth.lift+CAM_HEIGHT
 	_cam_y = lerpf(_cam_y,goal,_ease(EASE_CAM_Y if motor.grounded else EASE_CAM_Y_AIR,delta))
 	# Never so far behind a fall that the pilot drops out of view.
 	_cam_y = clampf(_cam_y,goal-1.2,goal+1.2)
@@ -1199,12 +1217,20 @@ func _frame_walker(delta: float, frame: Transform3D, turn: float, ground: Callab
 	var pivot := Vector3(cam_at.x,_cam_y,cam_at.y)
 	# Drawn in until the camera is clear of the ground behind.
 	var out := frame.basis.inverse()*_offset(_yaw,_polar)
-	var reach := CAM_DISTANCE
-	while reach > CAM_NEAREST:
-		var at := pivot+out*reach
-		if at.y > float(ground.call(at))+CAM_CLEAR: break
-		reach -= 0.2
-	_cam_distance = reach if reach < _cam_distance else lerpf(_cam_distance,reach,_ease(EASE_CAM_OUT,delta))
+	var reach := _cam_reach(pivot,out,ground)
+	# Drawn in at once before the ground; let out again on a critically
+	# damped spring from rest, so it never lurches out.
+	if reach < _cam_distance or delta <= 0.0:
+		_cam_distance = reach
+		_cam_out = 0.0
+	else:
+		var spring := 2.0/EASE_CAM_OUT
+		var out_left := minf(delta,0.25)
+		while out_left > 0.0:
+			var out_dt := minf(out_left,1.0/120.0)
+			_cam_out += (spring*spring*(reach-_cam_distance)-2.0*spring*_cam_out)*out_dt
+			_cam_distance = minf(_cam_distance+_cam_out*out_dt,reach)
+			out_left -= out_dt
 	scene.target = frame*pivot
 	scene.yaw = _yaw
 	scene.polar = _polar
@@ -1213,6 +1239,33 @@ func _frame_walker(delta: float, frame: Transform3D, turn: float, ground: Callab
 	scene._auto_orbit = false
 	scene._orbit_delta = Vector2.ZERO
 	scene._pan_delta = Vector2.ZERO
+
+## How far out along `out` from `pivot` (the motor's frame) the camera may
+## stand, clear of the ground behind by CAM_CLEAR: the farthest reach, in
+## 0.2 m steps in from CAM_DISTANCE, where a ball CAM_BALL round is clear
+## (`_cam_clear`), then found between that step and the next out by halving,
+## so it changes smoothly as a stair passes under it, not 0.2 m at a time.
+func _cam_reach(pivot: Vector3, out: Vector3, ground: Callable) -> float:
+	var reach := CAM_DISTANCE
+	while reach > CAM_NEAREST and not _cam_clear(pivot+out*reach,ground):
+		reach -= 0.2
+	if reach >= CAM_DISTANCE: return CAM_DISTANCE
+	if reach <= CAM_NEAREST: return CAM_NEAREST
+	var blocked := minf(reach+0.2,CAM_DISTANCE)
+	for i in range(6):
+		var mid := (reach+blocked)*0.5
+		if _cam_clear(pivot+out*mid,ground): reach = mid
+		else: blocked = mid
+	return reach
+
+## Whether the camera at `at` stands CAM_CLEAR over the ground under it and
+## CAM_BALL round it.
+func _cam_clear(at: Vector3, ground: Callable) -> bool:
+	var floor_y: float = ground.call(at)
+	for k in range(4):
+		var by := Vector2.from_angle(TAU*k/4.0)*CAM_BALL
+		floor_y = maxf(floor_y,float(ground.call(at+Vector3(by.x,0.0,by.y))))
+	return at.y > floor_y+CAM_CLEAR
 
 ## Just landed from the chase: the camera swoops from where it was down
 ## into the eyes.
@@ -1353,6 +1406,8 @@ func _advance_flight(delta: float) -> void:
 	# recover.
 	if not below() and islands.pierced != null and islands.pierced.bump(glide,islands.global_transform): Pad.pulse(0.5,0.2,0.12)
 	RopeBridge.flown_by(islands.global_transform*glide.position,glide.velocity)
+	# The ruins' hanging vines billow as it passes (scripts/ruin_growth_push.gd).
+	RuinGrowthPush.stir(&"plane",islands.global_transform*glide.position,delta)
 	# Tokens the plane flies through (scripts/sky_collectibles.gd).
 	if islands.collectibles != null: islands.collectibles.touch_plane(islands.global_transform*glide.position)
 	# The moments set pieces' collectibles and starters (scripts/sky_moments.gd).
@@ -1611,6 +1666,7 @@ func _advance_perch(delta: float) -> void:
 	_ledge_events(events)
 	_perch_feet = motor.feet
 	_pace = Vector2(motor.velocity.x,motor.velocity.z)
+	step_smooth.step(motor,ground,delta)
 	_sync_figure()
 	_motor_events(events)
 	var drawn: Dictionary = body.drive(motor,delta)
@@ -1677,6 +1733,10 @@ func _perch_move(next: Dictionary) -> void:
 	motor.feet -= off
 	motor.ground_y -= off.y
 	_perch_floor -= off.y
+	# The smoothed height is kept in the perch's frame: carried over too, so
+	# the drawn pilot does not jump (scripts/pilot_step_smooth.gd's own).
+	step_smooth._y -= off.y
+	step_smooth._aim -= off.y
 	_perch_feet = motor.feet
 
 ## A rope bridge underfoot (scripts/rope_bridge.gd) takes the pilot's
@@ -1684,6 +1744,8 @@ func _perch_move(next: Dictionary) -> void:
 func _tread(frame: Node3D, events: Dictionary, drawn: Dictionary) -> void:
 	var effort := clampf((motor.speed()-WALK)/(RUN-WALK),0.0,1.0)
 	var carry := RopeBridge.tread(frame,motor.feet,motor.grounded,events,drawn,effort)
+	# The ruins' hanging vines part round him (scripts/ruin_growth_push.gd).
+	RuinGrowthPush.stir(&"pilot",figure.global_position+Vector3.UP*1.1,get_process_delta_time())
 	if carry != Vector3.ZERO: motor.feet += Vector3(carry.x,0.0,carry.z)
 
 ## A step over an islet: round what blocks the way, sliding along one axis
