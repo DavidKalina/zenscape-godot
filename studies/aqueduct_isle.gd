@@ -41,6 +41,11 @@ extends "res://studies/character_study.gd"
 ##   ./run-aqueduct-isle.command [--look=first_snow]
 ##   godot --path . res://studies/aqueduct_isle.tscn -- --no-title [--look=<preset id>] [--stone=mass] [--capture=out.png --at=x,y,z --look=x,y,z]
 ## --no-flora leaves the grass and flowers out (to compare cost).
+## Life (studies/aqueduct_isle_life.gd, docs/scenic/aqueduct-isle-life.md):
+## undergrowth, butterflies, fireflies, songbirds on the stones, the wind
+## made visible and seven on-foot tokens; --no-undergrowth, --no-butterflies,
+## --no-fireflies, --no-birds, --no-wind-life, --no-tokens leave each out,
+## --no-life all of it.
 ## --fly starts in the plane; --drift=<x> scales its knife-edge drift
 ## (scripts/sky_plane.gd). The plane: docs/scenic/aqueduct-isle-game-look.md.
 ## The lodestone (docs/design/isle-lodestone.md): a stone holding a world in
@@ -77,6 +82,7 @@ const StoneFigure = preload("res://scripts/stone_plane_figure.gd")
 const NoseCompass = preload("res://scripts/nose_compass.gd")
 const Lodestone = preload("res://scripts/lodestone.gd")
 const MomentsHud = preload("res://scripts/moments_hud.gd")
+const Life = preload("res://studies/aqueduct_isle_life.gd")
 
 ## The station this is (its key in the pack).
 const STATION := 2
@@ -293,6 +299,7 @@ func _ready() -> void:
 	_hud.visible = false
 	if not preload("res://scripts/launch_args.gd").user_args().has("--no-flora"): _grow()
 	if not _no_lode: _build_lode()
+	_add_life()
 	if _place != Vector4.INF:
 		var turn := deg_to_rad(_place.w)
 		start = Vector3(_place.x,_place.y,_place.z)
@@ -610,6 +617,7 @@ func _process(delta: float) -> void:
 		elif walk_ready and not scripted: fly_step(delta,_fly_input(delta))
 	_advance_look(delta)
 	_lode_frame(delta)
+	if life != null: life.advance(delta)
 	if _toast_left > 0.0 and _look_toast != null:
 		_toast_left = maxf(_toast_left-delta,0.0)
 		_look_toast.modulate.a = clampf(_toast_left/TOAST_FADE,0.0,1.0)
@@ -1000,6 +1008,7 @@ func _take_capture() -> void:
 		camera.look_at_from_position(_capture_at,look)
 		for i in range(240):
 			_advance_look(1.0/60.0)
+			if life != null: life.advance(1.0/60.0)
 			await get_tree().process_frame
 	else:
 		await get_tree().create_timer(4.0).timeout
@@ -1106,6 +1115,7 @@ func tick(delta: float) -> void:
 		return
 	super.tick(delta)
 	_lode_step(delta)
+	if life != null: life.step_pilot()
 
 func _lode_step(delta: float) -> void:
 	if lodestone == null: return
@@ -1253,3 +1263,20 @@ func _check_arrival() -> void:
 		if stone_plane: plane_figure.flash()
 		_flash_left = 1.4
 	elif arrived and d > ARRIVE_AGAIN: arrived = false
+
+# --- Life on the isle ------------------------------------------------------------------
+
+## The isle's life (studies/aqueduct_isle_life.gd, docs/scenic/
+## aqueduct-isle-life.md): undergrowth, butterflies, fireflies, songbirds on
+## the stones, the wind made visible, a few on-foot tokens. Each has its
+## opt-out flag; --no-life leaves it all out.
+var life: Node3D = null
+
+func _add_life() -> void:
+	var args: PackedStringArray = preload("res://scripts/launch_args.gd").user_args()
+	if args.has("--no-life"): return
+	var began := Time.get_ticks_msec()
+	life = Life.new()
+	add_child(life)
+	life.setup(self,args)
+	print("aqueduct isle: life %s in %d ms %s" % [life.flags,Time.get_ticks_msec()-began,life.timings])
