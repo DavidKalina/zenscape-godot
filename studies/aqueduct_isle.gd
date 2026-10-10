@@ -47,9 +47,9 @@ extends "res://studies/character_study.gd"
 ## miniature (scripts/lodestone.gd) hums on the floating stone past the heel
 ## stone (east_1); climb to it, E (pad A) picks it up and holds it up to
 ## look at (drag or the right stick turns it; E, Enter, pad A or B keeps
-## it), and it rides at the pilot's side. Boarding with it seats it in the
-## stone plane (scripts/stone_plane_figure.gd, this scene's plane; the
-## wooden one with --wood-plane), whose wing seams then point to a shard
+## it), and it rides at the pilot's side. With --stone-plane, boarding with
+## it seats it in the stone plane (scripts/stone_plane_figure.gd; the wooden
+## plane is the default), whose wing seams then point to a shard
 ## floating far off (--target=x,y,z). --carry starts with it; --lode-at=
 ## <platform name> rests it elsewhere; --no-lode leaves it out; --pickup
 ## picks it up at once if he stands by it (captures).
@@ -231,8 +231,8 @@ const TARGET := Vector3(250.0,Art.TOP+24.0,-230.0)
 const ARRIVE := 30.0
 const ARRIVE_AGAIN := 90.0
 const CAM_BACK := 0.5
-## The stone plane (the default here) or the game's wooden one.
-var stone_plane := true
+## The game's wooden plane (the default) or the stone plane (--stone-plane).
+var stone_plane := false
 var lodestone: Node3D = null
 ## "resting" on its stone, "inspecting" (held up), "carried", "seated" in
 ## the plane.

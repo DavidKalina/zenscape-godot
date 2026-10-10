@@ -27,6 +27,7 @@ func run() -> void:
 	create_timer(150.0).timeout.connect(func() -> void: push_error("isle lodestone test timed out"); quit(2))
 	study = load("res://studies/aqueduct_isle.tscn").instantiate()
 	study.scripted = true
+	study.stone_plane = true
 	root.add_child(study)
 	current_scene = study
 	while not study.flora_ready: await process_frame
