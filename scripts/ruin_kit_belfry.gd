@@ -107,8 +107,8 @@ static func belfry(seed_value: int, weathered := 0.4) -> Node3D:
 	for sx: float in [-1.0,1.0]:
 		for sz: float in [-1.0,1.0]:
 			if sx > 0.0 and sz < 0.0: continue
-			var at := Vector3(sx*(half-0.35),HEAD,sz*(half-0.35))
-			RuinKit._spire(b,Transform3D(Basis.IDENTITY,at),0.3,1.9,true)
+			var at := Vector3(sx*(half-0.35),HEAD-0.5,sz*(half-0.35))
+			RuinKit._spire(b,Transform3D(Basis.IDENTITY,at),0.3,2.4,true)
 	# The belfry floor (stone slabs on the walls), walked true.
 	b.solid(RuinKit._box(b,Vector3(half-WALL+0.05,0.15,half-WALL+0.05)),Transform3D(Basis.IDENTITY,Vector3(0.0,FLOOR-0.15,0.0)),RuinKit._stone(b,0.92),false)
 	RuinKit._walk_hull(b,Transform3D.IDENTITY,[Plane(Vector3.LEFT,half-0.2),Plane(Vector3.RIGHT,half-0.2),Plane(Vector3.BACK,half-0.2),Plane(Vector3.FORWARD,half-0.2),Plane(Vector3.UP,FLOOR),Plane(Vector3.DOWN,-(FLOOR-0.35))])

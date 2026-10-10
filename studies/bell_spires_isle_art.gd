@@ -277,32 +277,41 @@ static func spire_rock(s: Dictionary) -> Node3D:
 	var last_ring: Array = []
 	for k in range(beds.size()):
 		var bed: Array = beds[k]
+		# Its rings: at its foot and head, and between them every metre and
+		# a half or so (pushed out and in more, so its faces break up).
+		var rows := maxi(1,int(round((float(bed[1])-float(bed[0]))/1.5)))
 		var rings: Array = []
-		for e in range(2):
-			var y: float = bed[e]
-			var scale: float = bed[2+e]
+		for e in range(rows+1):
+			var f := float(e)/rows
+			var y: float = lerpf(float(bed[0]),float(bed[1]),f)
+			var scale: float = lerpf(float(bed[2]),float(bed[3]),f)
 			var ring: Array[Vector3] = []
-			var top_ring := k == beds.size()-1 and e == 1
+			var top_ring := k == beds.size()-1 and e == rows
+			var inner := e > 0 and e < rows
 			for i in range(RING):
-				var a := TAU*i/RING+(0.0 if top_ring else 0.0)
+				var a := TAU*i/RING
 				var r := plan_r(s,a,scale)
 				var flat := false
 				for clip: Array in s.clips:
 					var kk := Vector2.from_angle(a).dot(clip[0])
 					if kk > 0.01 and r >= float(clip[1])/kk-0.001: flat = true
-				var jitter := 0.0 if (flat or top_ring) else rng.randf_range(-0.2,0.2)-0.32*pow(absf(sin(a*3.5+float(s.seed))),8.0)
-				var dy := 0.0
+				var spread := 0.32 if inner else 0.2
+				var jitter := 0.0 if (flat or top_ring) else rng.randf_range(-spread,spread)-0.32*pow(absf(sin(a*3.5+float(s.seed))),8.0)
+				var dy := rng.randf_range(-0.25,0.25) if inner else 0.0
 				ring.append(c3+Vector3(cos(a)*(r+jitter),y+dy,sin(a)*(r+jitter)))
 			rings.append(ring)
 		var lo: Array = rings[0]
-		var hi: Array = rings[1]
+		var hi: Array = rings[rows]
 		var band := 0.88+0.14*sin(float(bed[0])*1.3)+rng.randf_range(-0.08,0.08)
-		for i in range(RING):
-			var j := (i+1)%RING
-			var mid: Vector3 = (lo[i]+hi[j])*0.5
-			var out := Vector3(mid.x-c.x,0.0,mid.z-c.y).normalized()
-			AqArt._tri(v,n,col,[lo[i],lo[j],hi[j]],_rock_tone(rng,mid,band),out)
-			AqArt._tri(v,n,col,[lo[i],hi[j],hi[i]],_rock_tone(rng,mid,band),out)
+		for e in range(rows):
+			var r0: Array = rings[e]
+			var r1: Array = rings[e+1]
+			for i in range(RING):
+				var j := (i+1)%RING
+				var mid: Vector3 = (r0[i]+r1[j])*0.5
+				var out := Vector3(mid.x-c.x,0.0,mid.z-c.y).normalized()
+				AqArt._tri(v,n,col,[r0[i],r0[j],r1[j]],_rock_tone(rng,mid,band),out)
+				AqArt._tri(v,n,col,[r0[i],r1[j],r1[i]],_rock_tone(rng,mid,band),out)
 		# The step from the bed under: a ledge where this one is narrower.
 		if not last_ring.is_empty():
 			for i in range(RING):
@@ -310,11 +319,14 @@ static func spire_rock(s: Dictionary) -> Node3D:
 				var under: Vector3 = last_ring[i]
 				var here: Vector3 = lo[i]
 				var wider := Vector2(under.x-c.x,under.z-c.y).length()-Vector2(here.x-c.x,here.z-c.y).length()
-				var up := Vector3.UP if wider > 0.0 else Vector3.DOWN
+				var up := (Vector3.UP if wider > 0.0 else Vector3.DOWN)+Vector3(here.x-c.x,0.0,here.z-c.y).normalized()*0.6
 				var tone := _rock_tone(rng,here,band*0.95)
 				if wider > 0.45 and rng.randf() < 0.65: tone = (grass[rng.randi()%grass.size()] as Color).linear_to_srgb()*rng.randf_range(0.85,1.0)
-				AqArt._tri(v,n,col,[last_ring[i],last_ring[j],lo[j]],tone,up)
-				AqArt._tri(v,n,col,[last_ring[i],lo[j],lo[i]],tone,up)
+				# Both ways: where the beds' rings cross, the step is a sliver
+				# seen from either side.
+				for way: Vector3 in [up,-up]:
+					AqArt._tri(v,n,col,[last_ring[i],last_ring[j],lo[j]],tone,way)
+					AqArt._tri(v,n,col,[last_ring[i],lo[j],lo[i]],tone,way)
 		# The first bed's foot (a free stack's keel point).
 		if k == 0:
 			var point := c3+Vector3(rng.randf_range(-0.5,0.5),float(bed[0])-(1.5 if s.free else 0.0),rng.randf_range(-0.5,0.5))
@@ -323,8 +335,8 @@ static func spire_rock(s: Dictionary) -> Node3D:
 				AqArt._tri(v,n,col,[lo[i],point,lo[j]],_rock_tone(rng,point,0.85),Vector3.DOWN)
 		last_ring = hi
 		var hull := PackedVector3Array()
-		for p: Vector3 in lo: hull.append(p)
-		for p: Vector3 in hi: hull.append(p)
+		for ring: Array in rings:
+			for p: Vector3 in ring: hull.append(p)
 		var shape := ConvexPolygonShape3D.new()
 		shape.points = hull
 		var holder := CollisionShape3D.new()
@@ -349,7 +361,7 @@ static func spire_rock(s: Dictionary) -> Node3D:
 
 static func _rock_tone(rng: RandomNumberGenerator, at: Vector3, band: float) -> Color:
 	var b := band*(0.9+0.1*sin(at.y*2.1))*lerpf(0.8,1.0,clampf((at.y-TOP+10.0)/40.0,0.0,1.0))
-	return ROCK.lerp(BASALT,0.45)*b*rng.randf_range(0.86,1.1)
+	return ROCK.lerp(BASALT,0.7)*b*rng.randf_range(0.84,1.12)
 
 ## A spire's turf top (the ground look, collided as one trimesh).
 static func top_turf(s: Dictionary) -> Node3D:
@@ -451,6 +463,8 @@ static func stair_node(stair: Dictionary, seed_value: int) -> Node3D:
 	all.append_array(stair.landings)
 	for st: Dictionary in all:
 		var y: float = st.y
+		# A stair come on to from the turf starts on the turf itself.
+		if y <= TOP+0.01: continue
 		var r_in: float = st.r_in
 		var r_out: float = st.r_out
 		var split := int(ceil((float(st.a1)-float(st.a0))*r_out/0.9))
@@ -463,7 +477,7 @@ static func stair_node(stair: Dictionary, seed_value: int) -> Node3D:
 			b.solid(sector_planes(c,part,y-0.34,y,r_in,r_out-0.02),Transform3D.IDENTITY,RuinKit._stone(b,1.1),false,true,[],-1,0.5,false)
 			b.lean = false
 			# The rock it is cut from, drawing in under it.
-			b.solid(sector_planes(c,part,y-1.7,y-0.34,r_in,r_out,-0.75),Transform3D.IDENTITY,ROCK*b.rng.randf_range(0.82,0.98),false,true,[],-1,1.2,false)
+			b.solid(sector_planes(c,part,y-2.6,y-0.34,r_in,r_out,-1.4),Transform3D.IDENTITY,ROCK.lerp(BASALT,0.7)*b.rng.randf_range(0.8,0.96),false,true,[],-1,1.2,false)
 			# Walked on a clean sector a little wider than its own, so the seam
 			# with the next is never a gap a ray slips through.
 			var walked: Dictionary = part.duplicate()
