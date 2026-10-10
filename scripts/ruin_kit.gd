@@ -15,7 +15,8 @@ extends RefCounted
 ## own cuts (chips, a missing chunk, a ragged break) as more planes, so each
 ## face is one flat facet, coloured face by face and lit as the folk are
 ## (shaders/ruin_stone.gdshader). Each block is its own convex collision
-## hull. Ivy and moss are faceted too: small cut leaf clumps strung down the
+## hull, but a stair's: its treads and cheeks walk on clean, true boxes
+## (`_walk_box`, `_walk_hull`), so no joint or worn edge is a gap. Ivy and moss are faceted too: small cut leaf clumps strung down the
 ## faces and low cushions on the tops, never collided.
 ##
 ## Never new-built: even at `weathered` 0 the stone is centuries old (AGE):
@@ -41,7 +42,7 @@ const STONE_SHADER = preload("res://shaders/ruin_stone.gdshader")
 const RuinGrowth = preload("res://scripts/ruin_growth.gd")
 
 ## The pieces, in the kit's order: the gothic abbey's, here.
-const PIECES := ["pier","arch","lancet_wall","rose_gable","buttress","wall","stairs","turret","vault","fallen_pier","tomb_chest","floor"]
+const PIECES := ["pier","arch","lancet_wall","rose_gable","buttress","wall","stairs","turret","vault","fallen_pier","tomb_chest","floor","grand_stair","stone_circle"]
 ## The families: the gothic abbey (here), the aqueduct (scripts/
 ## ruin_kit_aqueduct.gd) and the colossus hall (scripts/ruin_kit_hall.gd),
 ## each its pieces in order; ALL_PIECES the lot.
@@ -52,7 +53,7 @@ const ALL_PIECES := PIECES+AQUEDUCT_PIECES+HALL_PIECES
 const NAMES := {"pier":"Clustered pier","arch":"Pointed arch","lancet_wall":"Lancet window wall",
 	"rose_gable":"Rose window gable","buttress":"Buttress","wall":"Wall","stairs":"Stair flight",
 	"turret":"Stair turret","vault":"Vault ribs","fallen_pier":"Fallen pier","tomb_chest":"Carved chest",
-	"floor":"Floor slabs",
+	"floor":"Floor slabs","grand_stair":"Grand stair","stone_circle":"Stone circle",
 	"aqueduct_span":"Aqueduct span","aqueduct_two_tier":"Two-tier span","aqueduct_broken":"Broken span",
 	"aqueduct_stump":"Pier stump","aqueduct_end":"Aqueduct head",
 	"hall_column":"Colossus column","hall_beam":"Architrave beam","hall_slab":"Roof slabs",
@@ -156,6 +157,50 @@ const VAULT_STEPS := [4.2,2.75,1.4]
 const CHEST := Vector4(2.3,1.05,0.95,0.2)
 ## Floor slabs: the patch's side, a slab's rough size, thickness (stepped on).
 const FLOOR := Vector3(4.2,0.85,0.2)
+## The grand stair: two of the stair's flights (STEPS each) one above the
+## other, GRAND_WIDTH wide, a landing GRAND_LANDING deep between them; its
+## head 2 STEPS RISERs up (4.48 m), onto a terrace or a hill's top.
+const GRAND_WIDTH := 4.4
+const GRAND_LANDING := 2.0
+## The grand stair's own steps, finer than a flight's (a ceremonial way for
+## folk about 1.1 m tall, not a giant's): GRAND_STEPS a flight, to the same
+## head (2 STEPS RISERs, 4.48 m), each GRAND_RISER by GRAND_TREAD.
+const GRAND_STEPS := 12
+const GRAND_RISER := 2.0*STEPS*RISER/(2.0*GRAND_STEPS)
+const GRAND_TREAD := 0.42
+## How far a stair's walked boxes run on past its flight's back (m), under
+## the next flight's foot or into what it climbs to, so flights meet seamless.
+const WALK_OVERLAP := 0.05
+## The stone circle: the ring's radius (to its stones' middles) and its
+## sarsens; a sarsen's width along the ring, height and thickness (over
+## CHAIN_TOP: climbed by the ways the circle gives, not from the floor);
+## the lintels' depth across the ring (TOP_ROOM and more: the ring is run
+## round on them) and thickness. A lintel stands LINTEL.y over the bare top
+## of a sarsen whose other lintel fell.
+const CIRCLE_RADIUS := 8.5
+const CIRCLE_STONES := 14
+const SARSEN := Vector3(1.7,3.4,1.1)
+const LINTEL := Vector2(1.3,0.6)
+## The great trilithon across the back of the ring: an upright's width,
+## height and thickness, the slot between the pair (a window along the
+## circle's axis), its middle's distance in from the ring's middle (its
+## lintel a jump-catch, 1.2 m up and about 1 m in, from the ring's back
+## lintel: the circle's summit).
+const TRILITHON := Vector3(1.8,4.6,1.2)
+const TRILITHON_SLOT := 0.9
+const TRILITHON_AT := 6.0
+## The fallen trilithon: its stub's height (a SET_OFF under the ring's
+## lintels, by the lintel STUB_AT's middle), its partner lying in toward
+## the middle (its top caught from the floor, the stub's from it).
+const STUB := 2.5
+const STUB_AT := 8
+## The leaning stone: a sarsen fallen in against the ring's upright LEAN_AT,
+## its width and thickness, the slope of its top (walked up, surfed down)
+## and how high its head rests against the upright (under the lintels: a
+## jump-catch onto them).
+const LEAN := Vector3(1.5,0.8,30.0)
+const LEAN_TOP := 3.25
+const LEAN_AT := 2
 # --- Look --------------------------------------------------------------------
 
 ## The stone (sRGB): an umber charcoal gritstone and a cool slate-grey one,
@@ -250,6 +295,8 @@ static func piece(id: String, seed_value: int, weathered := 0.0) -> Node3D:
 		"fallen_pier": return fallen_pier(seed_value,weathered)
 		"tomb_chest": return tomb_chest(seed_value,weathered)
 		"floor": return floor_slabs(seed_value,weathered)
+		"grand_stair": return grand_stair(seed_value,weathered)
+		"stone_circle": return stone_circle(seed_value,weathered)
 	# The other families, loaded when asked for (they build on this script).
 	if id in AQUEDUCT_PIECES: return load("res://scripts/ruin_kit_aqueduct.gd").piece(id,seed_value,weathered)
 	if id in HALL_PIECES: return load("res://scripts/ruin_kit_hall.gd").piece(id,seed_value,weathered)
@@ -631,67 +678,104 @@ static func wall(seed_value: int, weathered := 0.0) -> Node3D:
 ## cheek is torn down, rubble and ivy over it.
 static func stairs(seed_value: int, weathered := 0.0) -> Node3D:
 	var b := Build.new(seed_value,weathered,"Stairs")
-	var half_width := STAIR_WIDTH*0.5
-	var run := (STEPS-1)*TREAD+LANDING
+	_flight(b,Transform3D.IDENTITY,STEPS,STAIR_WIDTH,LANDING)
+	_rubble(b,STAIR_WIDTH*0.5+1.0,int(round(weathered*b.rng.randf_range(3.0,6.0))))
+	return b.finish()
+
+## A flight of the stair's steps at `pose`: `steps` of `riser` by `tread`
+## (the kit's RISER by TREAD unless given),
+## `width` wide, climbing toward -Z from its foot at +Z (the run centred on
+## the pose), the last step a landing `landing` deep; ramped cheek walls
+## either side under a sloped coping, a gabled newel at each foot. `foot`:
+## how far under the pose its steps and cheeks reach down (0 on the ground;
+## a flight set on a landing reaches down to the ground under it). A flight
+## wider than the stair's lays each tread in more slabs. Weathered (the
+## Build's): steps crack and settle (never past a walkable rise), corners
+## break off, one cheek torn down.
+static func _flight(b: Build, pose: Transform3D, steps: int, width: float, landing: float, foot := 0.0, riser := RISER, tread := TREAD) -> void:
+	var weathered := b.weathered
+	var half_width := width*0.5
+	var run := (steps-1)*tread+landing
 	var front := run*0.5
-	for i in range(STEPS):
-		var z0 := front-i*TREAD
-		var z1 := z0-(LANDING if i == STEPS-1 else TREAD)
-		var top := (i+1)*RISER
-		var settle := b.rng.randf_range(0.0,0.025)+b.rng.randf_range(0.0,0.05)*weathered
-		# Each tread in one or two slabs, the joint wandering.
-		var cut := b.rng.randf_range(-0.5,0.5) if b.rng.randf() < 0.6 else 99.0
-		var parts: Array = [[-half_width,half_width]] if cut > 50.0 else [[-half_width,cut],[cut,half_width]]
+	var sections := maxi(1,int(round(width/STAIR_WIDTH)))
+	var section := width/sections
+	for i in range(steps):
+		var z0 := front-i*tread
+		var z1 := z0-(landing if i == steps-1 else tread)
+		var top := (i+1)*riser
+		var settle := b.rng.randf_range(0.0,0.015)+b.rng.randf_range(0.0,0.03)*weathered
+		# Each tread a slab a section, now and then two, the joint wandering.
+		var parts: Array = []
+		for s in range(sections):
+			var mid := -half_width+section*(s+0.5)
+			var cut := b.rng.randf_range(-0.4,0.4) if b.rng.randf() < 0.3 else 99.0
+			if cut > 50.0: parts.append([mid-section*0.5,mid+section*0.5])
+			else: parts.append_array([[mid-section*0.5,mid+cut*section/STAIR_WIDTH],[mid+cut*section/STAIR_WIDTH,mid+section*0.5]])
 		for p: Array in parts:
 			var x0: float = p[0]
 			var x1: float = p[1]
-			var hh := Vector3((x1-x0)*0.5-0.008,(top-settle)*0.5,(z0-z1)*0.5-0.006)
+			var hh := Vector3((x1-x0)*0.5-0.008,(top-settle+foot)*0.5,(z0-z1)*0.5-0.006)
+			# Laid as the halls' cheap stone is (Build `lean`): its top kept
+			# level and true, its arrises chamfered only along the tread,
+			# few chips and no chunk bitten from the walking face, so the
+			# flight reads as crisp steps, not a heap of loaves.
+			b.lean = true
 			var planes := _box(b,hh)
 			# The nosing worn back, more at the middle where feet went.
 			var n := Vector3(0.0,1.0,1.0).normalized()
 			planes.append(Plane(n,(hh.y+hh.z)/sqrt(2.0)-0.03-0.05*b.age))
 			var extra: Array[Plane] = []
-			if b.rng.randf() < weathered*0.4 and absf(x0) > 0.9 or absf(x1) > 0.9 and b.rng.randf() < weathered*0.4:
+			if b.rng.randf() < weathered*0.25 and absf(x0) > half_width-0.1 or absf(x1) > half_width-0.1 and b.rng.randf() < weathered*0.25:
 				var side := signf(x0+x1)
 				var m := Vector3(side,b.rng.randf_range(0.4,0.9),b.rng.randf_range(0.0,0.6)).normalized()
-				var keep := Vector3(side*(x1-x0)*0.5*b.rng.randf_range(0.4,0.7),hh.y,hh.z)
+				var keep := Vector3(side*(x1-x0)*0.5*b.rng.randf_range(0.65,0.85),hh.y,hh.z)
 				extra.append(Plane(m,m.dot(keep)))
-			var tilt := Basis(Vector3.RIGHT,b.rng.randf_range(-0.012,0.012)+b.rng.randf_range(-0.03,0.03)*weathered)*Basis(Vector3.BACK,b.rng.randf_range(-0.01,0.01))
-			b.solid(planes,Transform3D(tilt,Vector3((x0+x1)*0.5,hh.y,(z0+z1)*0.5)),_stone(b),true,true,extra)
+			var tilt := Basis(Vector3.RIGHT,b.rng.randf_range(-0.005,0.005)+b.rng.randf_range(-0.012,0.012)*weathered)*Basis(Vector3.BACK,b.rng.randf_range(-0.004,0.004))
+			b.solid(planes,pose*Transform3D(tilt,Vector3((x0+x1)*0.5,hh.y-foot,(z0+z1)*0.5)),_stone(b),false,true,extra)
+			b.lean = false
+		# Walked on clean: the step's own box, the flight's full width, its
+		# top true, from its nose back past the flight's back (so no joint
+		# between treads or slabs, no settled slab or worn nosing, is a gap
+		# for the feet's ray to drop through).
+		_walk_box(b,pose,half_width+0.02,-foot,top,z0,front-run-WALK_OVERLAP)
 	# The cheeks: ramped with the flight, level by the landing, in courses
 	# cut by the slope, a sloped coping, a newel post at the foot.
 	var foot_z := front
-	var head_z := front-(STEPS-1)*TREAD
-	var slope := Vector3(0.0,TREAD,RISER).normalized()
+	var head_z := front-(steps-1)*tread
+	var slope := Vector3(0.0,tread,riser).normalized()
 	var torn := -1.0 if b.rng.randf() < 0.5 else 1.0
 	for side: float in [-1.0,1.0]:
 		var x0 := side*half_width
 		var x1 := side*(half_width+CHEEK.x)
 		var lo := minf(x0,x1)
 		var hi := maxf(x0,x1)
-		var line_at := func(z: float) -> float: return RISER+CHEEK.y+maxf(0.0,(foot_z-z))*RISER/TREAD if z > head_z else STEPS*RISER+CHEEK.y
+		var line_at := func(z: float) -> float: return riser+CHEEK.y+maxf(0.0,(foot_z-z))*riser/tread if z > head_z else steps*riser+CHEEK.y
 		var ruin: Callable = func(_z: float) -> float: return INF
 		if weathered > 0.25 and side == torn:
-			ruin = _ruin_line(b,front-run,front,0.5,STEPS*RISER*0.8,weathered)
+			ruin = _ruin_line(b,front-run,front,0.5,steps*riser*0.8,weathered)
 		var z := front
 		var course := 0.42
-		var cy := 0.0
-		while cy < STEPS*RISER+CHEEK.y-0.02:
+		var cy := -foot
+		while cy < steps*riser+CHEEK.y-0.02:
 			var y1 := cy+course*b.rng.randf_range(0.85,1.15)
-			z = front-(0.0 if int(cy/course)%2 == 0 else 0.35)
+			# Every other course broken joint: its first stone a short one.
+			z = front
+			var first := -1.0 if int((cy+foot)/course)%2 == 0 else 0.35
 			while z > front-run+0.02:
-				var z1 := maxf(front-run,z-b.rng.randf_range(0.7,1.2))
+				var z1 := maxf(front-run,z-(first if first > 0.0 else b.rng.randf_range(0.7,1.2)))
+				first = -1.0
 				if z1-(front-run) < 0.3: z1 = front-run
 				var mid := (z+z1)*0.5
 				var stand := minf(line_at.call(mid),ruin.call(mid))
 				if cy+0.12 < minf(line_at.call(z),line_at.call(z1)) and cy+0.15 < stand:
 					var planes: Array[Plane] = [Plane(Vector3.LEFT,-lo),Plane(Vector3.RIGHT,hi),Plane(Vector3.DOWN,-cy),Plane(Vector3.UP,y1),Plane(Vector3.BACK,z),Plane(Vector3.FORWARD,-z1)]
-					planes.append(Plane(slope,slope.dot(Vector3(0.0,RISER+CHEEK.y-0.11,foot_z))))
-					planes.append(Plane(Vector3.UP,STEPS*RISER+CHEEK.y-0.11))
+					planes.append(Plane(slope,slope.dot(Vector3(0.0,riser+CHEEK.y-0.11,foot_z))))
+					planes.append(Plane(Vector3.UP,steps*riser+CHEEK.y-0.11))
 					if stand < y1:
 						var m := Vector3(0.0,1.0,b.rng.randf_range(-0.8,0.8)).normalized()
 						planes.append(Plane(m,m.dot(Vector3(0.0,stand,mid))))
-					b.solid(_bevel(planes,Vector3((lo+hi)*0.5,(cy+y1)*0.5,mid),0.03),Transform3D.IDENTITY,_stone(b,0.97))
+					b.solid(_bevel(planes,Vector3((lo+hi)*0.5,(cy+y1)*0.5,mid),0.03),pose,_stone(b,0.97),false)
+					_walk_hull(b,pose,planes)
 				z = z1
 			cy = y1
 		# The coping: sloped stones along the ramp, then level by the landing.
@@ -699,21 +783,46 @@ static func stairs(seed_value: int, weathered := 0.0) -> Node3D:
 		for k in range(count+1):
 			var za := foot_z-(foot_z-head_z)*k/count
 			var zb := foot_z-(foot_z-head_z)*(k+1)/count if k < count else front-run
-			if ruin.call((za+zb)*0.5) < STEPS*RISER: continue
+			if ruin.call((za+zb)*0.5) < steps*riser: continue
 			var ya: float = line_at.call(za)-0.11
 			var yb: float = line_at.call(zb)-0.11 if k < count else ya
 			var ang := atan2(ya-yb,za-zb)
 			var len := Vector2(za-zb,ya-yb).length()
-			var pose := Transform3D(Basis(Vector3.RIGHT,-ang),Vector3((lo+hi)*0.5,(ya+yb)*0.5+0.07,(za+zb)*0.5))
-			b.solid(_box(b,Vector3(CHEEK.x*0.5+0.04,0.07,len*0.5-0.01)),_jiggle(b,pose,0.8),_stone(b,1.06))
+			var cope := Transform3D(Basis(Vector3.RIGHT,-ang),Vector3((lo+hi)*0.5,(ya+yb)*0.5+0.07,(za+zb)*0.5))
+			b.solid(_box(b,Vector3(CHEEK.x*0.5+0.04,0.07,len*0.5-0.01)),pose*_jiggle(b,cope,0.8),_stone(b,1.06),false)
+			# Walked as laid true, end to end, over the courses' slope.
+			var cope_half := Vector3(CHEEK.x*0.5+0.04,0.07,len*0.5+0.02)
+			_walk_hull(b,pose*cope,[Plane(Vector3.RIGHT,cope_half.x),Plane(Vector3.LEFT,cope_half.x),Plane(Vector3.UP,cope_half.y),Plane(Vector3.DOWN,cope_half.y+0.12),Plane(Vector3.BACK,cope_half.z),Plane(Vector3.FORWARD,cope_half.z)])
 		# The newel at the foot: a square post under a little gabled cap.
 		var nx := side*(half_width+CHEEK.x*0.5)
 		var post := NEWEL.y-0.18
-		b.solid(_box(b,Vector3(NEWEL.x*0.5,post*0.5,NEWEL.x*0.5)),_settle(b,Vector3(nx,post*0.5,foot_z+NEWEL.x*0.3),0.6),_stone(b,1.0))
+		b.solid(_box(b,Vector3(NEWEL.x*0.5,post*0.5,NEWEL.x*0.5)),pose*_settle(b,Vector3(nx,post*0.5,foot_z+NEWEL.x*0.3),0.6),_stone(b,1.0))
 		if not (weathered > 0.4 and side == torn):
-			_gablet(b,Transform3D(Basis.IDENTITY,Vector3(nx,post,foot_z+NEWEL.x*0.3)),NEWEL.x*0.5+0.05,0.42)
-	_rubble(b,half_width+1.0,int(round(weathered*b.rng.randf_range(3.0,6.0))))
-	return b.finish()
+			_gablet(b,pose*Transform3D(Basis.IDENTITY,Vector3(nx,post,foot_z+NEWEL.x*0.3)),NEWEL.x*0.5+0.05,0.42)
+
+## A stair's walked collision, invisible (Build `hulls` only): a box
+## `half` either side of x 0, from `bottom` to `top`, from `z_front` back to
+## `z_back`, at `pose` (in the Build's frame). A stair's drawn treads are
+## worn, settled, tilted and laid in slabs with joints between them; their
+## hulls left gaps and pits a ray straight down fell through (Jolt rounds a
+## hull's edges by its margin), so the stair walks on these instead.
+static func _walk_box(b: Build, pose: Transform3D, half: float, bottom: float, top: float, z_front: float, z_back: float) -> void:
+	_walk_hull(b,pose,[Plane(Vector3.RIGHT,half),Plane(Vector3.LEFT,half),Plane(Vector3.UP,top),Plane(Vector3.DOWN,-bottom),Plane(Vector3.BACK,z_front),Plane(Vector3.FORWARD,-z_back)])
+
+## The convex block `planes` (outward, at `pose` in the Build's frame) as a
+## hull only, true: no wear, chips, bevels or settling, so blocks laid face
+## to face (a cheek's courses, its coping) walk as one surface.
+static func _walk_hull(b: Build, pose: Transform3D, planes: Array) -> void:
+	var cut: Array[Plane] = []
+	for p: Plane in planes: cut.append(p)
+	var points := Geometry3D.compute_convex_mesh_points(cut)
+	if points.size() < 4: return
+	var xf := b.frame*pose
+	var hull := PackedVector3Array()
+	for q in points: hull.append(xf*q)
+	if b.thickness(hull) < HULL_THIN: return
+	b.hulls.append(hull)
+	b.hull_anchors.append(NAN)
 
 ## 8. A stair turret: an octagonal shell on a battered plinth, laid in
 ## courses two or three stones a side, a string course, slit windows up the
@@ -1180,6 +1289,194 @@ static func floor_slabs(seed_value: int, weathered := 0.0) -> Node3D:
 		b.solid(_prism(8,0.62,0.56,0.0,0.36,PI/8.0),_settle(b,at,0.5),_stone(b,0.95))
 		_drum_cluster(b,Transform3D(Basis.IDENTITY,at+Vector3(0.0,0.36,0.0)),0.4,_break(b,0.4,0.5,0.9,0.0))
 	return b.finish()
+
+## 13. A grand stair: two of the stair's flights (`_flight`, GRAND_STEPS
+## each of GRAND_RISER by GRAND_TREAD), GRAND_WIDTH wide, one above the
+## other with a landing GRAND_LANDING deep between them, climbing toward -Z
+## to its head 2 STEPS RISERs up (4.48 m): a broad ceremonial way up onto
+## a terrace or a hill.
+## The upper flight stands on its own steps and cheeks carried down to the
+## ground; newels at the foot and on the landing. Weathered: steps cracked
+## and settled, a cheek torn down on each flight, a newel's cap fallen at
+## the foot, rubble. Meta "foot" and "head": the middle of its foot on the
+## ground and of its head's landing on top.
+static func grand_stair(seed_value: int, weathered := 0.0) -> Node3D:
+	var b := Build.new(seed_value,weathered,"GrandStair")
+	var run1 := (GRAND_STEPS-1)*GRAND_TREAD+GRAND_LANDING
+	var run2 := (GRAND_STEPS-1)*GRAND_TREAD+LANDING
+	var front := (run1+run2)*0.5
+	var rise := GRAND_STEPS*GRAND_RISER
+	_flight(b,Transform3D(Basis.IDENTITY,Vector3(0.0,0.0,front-run1*0.5)),GRAND_STEPS,GRAND_WIDTH,GRAND_LANDING,0.0,GRAND_RISER,GRAND_TREAD)
+	_flight(b,Transform3D(Basis.IDENTITY,Vector3(0.0,rise,front-run1-run2*0.5)),GRAND_STEPS,GRAND_WIDTH,LANDING,rise,GRAND_RISER,GRAND_TREAD)
+	# A newel's cap fallen off at the foot, lying in the grass beside it.
+	if weathered > 0.3:
+		var side := -1.0 if b.rng.randf() < 0.5 else 1.0
+		var at := Vector3(side*(GRAND_WIDTH*0.5+CHEEK.x+0.9),0.0,front+b.rng.randf_range(-0.6,0.4))
+		_gablet(b,Transform3D(Basis(Vector3.UP,b.rng.randf()*TAU)*Basis(Vector3.BACK,side*1.2),at+Vector3(0.0,0.24,0.0)),NEWEL.x*0.5+0.05,0.42)
+	_rubble(b,GRAND_WIDTH*0.5+1.2,int(round(weathered*b.rng.randf_range(4.0,8.0))))
+	var root := b.finish()
+	root.set_meta("foot",Vector3(0.0,0.0,front+0.6))
+	root.set_meta("head",Vector3(0.0,2.0*rise,front-run1-run2+LANDING*0.5))
+	return root
+
+## 14. A stone circle, the abbey's elder: a ring of CIRCLE_STONES great
+## sarsens, rough-dressed and narrowing a little to their tops, out of
+## plumb, carrying a ring of lintels cut to the curve (run round as a loop,
+## LINTEL.y over the bare top where one has fallen: a twirled jump over the
+## gap, or kicks up between its sarsens); a gap at the front (+Z) for the
+## way in. Inside, the great trilithon across the back, its narrow slot a
+## window on the circle's axis, its lintel the summit; an altar stone
+## before it; a fallen trilithon by the ring (its stub standing, its
+## partner lying in toward the middle, its lintel broken in the grass:
+## steps up onto the ring); a sarsen fallen in, leaning against the ring
+## (walked up, a jump-catch onto the lintels). Centuries old even at
+## weathered 0, moss on the tops and lichen; weathered, lintels have fallen
+## (round(weathered x 3), never one a way up lands on) and lie toppled in
+## the grass, cracked; ivy hangs from the lintels. Meta "ring": {top,
+## lintels [[top middle, standing]], trilithon (its top's middle), stub,
+## lying (their tops' middles), lean_foot, lean_head, fallen, missing,
+## gone}. `missing`: sarsens (by index) broken away with the ground under
+## them (a crag's slumped edge): neither they nor the lintels they carried
+## (`gone`, standing false) are built, the scene places them; no lintel
+## next to the gap falls, so the ring runs on to its edge.
+static func stone_circle(seed_value: int, weathered := 0.0, missing: Array = []) -> Node3D:
+	var b := Build.new(seed_value,weathered,"StoneCircle")
+	b.ground = 0.0
+	var pitch := TAU/CIRCLE_STONES
+	var ring_top := SARSEN.y+LINTEL.y
+	# The fallen lintels: never the entrance's (over the front gap), the
+	# back one (before the great trilithon), nor those the leaning stone and
+	# the stub lead up onto; never two side by side.
+	var keep := [CIRCLE_STONES-1,CIRCLE_STONES/2-1,LEAN_AT-1,LEAN_AT,STUB_AT-1,STUB_AT,STUB_AT+1]
+	var gone: Array = []
+	for k in range(CIRCLE_STONES):
+		if k in missing or (k+1)%CIRCLE_STONES in missing: gone.append(k)
+	for k: int in gone:
+		keep.append_array([k,(k+1)%CIRCLE_STONES,(k+CIRCLE_STONES-1)%CIRCLE_STONES])
+	var may: Array = []
+	for k in range(CIRCLE_STONES):
+		if not k in keep: may.append(k)
+	var fallen: Array = []
+	var count := int(round(weathered*3.0))
+	for attempt in range(40):
+		if fallen.size() >= count: break
+		var k: int = may[b.rng.randi()%may.size()]
+		if k in fallen or (k+1)%CIRCLE_STONES in fallen or (k+CIRCLE_STONES-1)%CIRCLE_STONES in fallen: continue
+		fallen.append(k)
+	# The sarsens.
+	for k in range(CIRCLE_STONES):
+		if k in missing: continue
+		var a := (k+0.5)*pitch
+		_sarsen(b,Transform3D(Basis(Vector3.UP,a),_round(a,CIRCLE_RADIUS)),SARSEN,0.15)
+	# The lintels, each from one sarsen's middle to the next's, cut to the
+	# radii there; the fallen ones toppled in the grass.
+	var lintels: Array = []
+	for k in range(CIRCLE_STONES):
+		var a0 := (k+0.5)*pitch
+		var a1 := (k+1.5)*pitch
+		var am := (k+1.0)*pitch
+		var mid := _round(am,CIRCLE_RADIUS*cos(pitch*0.5))
+		lintels.append([mid+Vector3(0.0,ring_top,0.0),not k in fallen and not k in gone])
+		if k in gone: continue
+		if k in fallen:
+			_toppled_lintel(b,am,2.0*CIRCLE_RADIUS*sin(pitch*0.5)+LINTEL.x*0.5)
+			continue
+		var half := Vector3(CIRCLE_RADIUS*sin(pitch*0.5)+LINTEL.x,LINTEL.y*0.5,LINTEL.x*0.5)
+		var pose := _jiggle(b,Transform3D(Basis(Vector3.UP,am),mid+Vector3(0.0,SARSEN.y+half.y,0.0)),0.3)
+		var inv := pose.affine_inverse()
+		var ends: Array[Plane] = [inv*Plane(Vector3(cos(a1),0.0,-sin(a1)),-0.008),inv*Plane(-Vector3(cos(a0),0.0,-sin(a0)),-0.008)]
+		b.solid(_box(b,half,0.07),pose,_stone(b,1.08),true,true,ends,-1,1.2)
+		if b.rng.randf() < 0.3+0.5*weathered:
+			b.hang(mid+Vector3(0.0,0.0,0.0)+_round(am,b.rng.randf_range(-0.4,0.4)),b.rng.randf_range(0.8,2.4),true,SARSEN.y)
+	# The great trilithon across the back, its lintel the summit.
+	var tri := Transform3D(Basis(Vector3.UP,PI),Vector3(0.0,0.0,-TRILITHON_AT))
+	for s: float in [-1.0,1.0]:
+		_sarsen(b,tri*Transform3D(Basis.IDENTITY,Vector3(s*(TRILITHON_SLOT+TRILITHON.x)*0.5,0.0,0.0)),TRILITHON,0.12)
+	var span := TRILITHON_SLOT+TRILITHON.x*2.0+0.1
+	b.solid(_box(b,Vector3(span*0.5,LINTEL.y*0.5,TRILITHON.z*0.5+0.04),0.08),tri*_settle(b,Vector3(0.0,TRILITHON.y+LINTEL.y*0.5,0.0),0.3),_stone(b,1.08),true,true,[],-1,1.2)
+	b.hang(Vector3(0.0,0.0,-TRILITHON_AT),b.rng.randf_range(1.2,2.6),true,TRILITHON.y)
+	# The altar stone before it, lying.
+	b.solid(_box(b,Vector3(1.6,0.32,0.5),0.08),_settle(b,Vector3(b.rng.randf_range(-0.3,0.3),0.22,-TRILITHON_AT+2.6),0.6),_stone(b,1.0),true,true,[],-1,1.4)
+	# The fallen trilithon: its stub by the ring, broken across a corner, its
+	# partner lying in from it, its lintel broken in two in the grass.
+	var sa := (STUB_AT+1.0)*pitch
+	var stub_r := CIRCLE_RADIUS*cos(pitch*0.5)-LINTEL.x*0.5-0.25-TRILITHON.z*0.5
+	var stub_size := Vector3(TRILITHON.x,STUB,TRILITHON.z)
+	var corner := Vector3(0.7,1.0,b.rng.randf_range(-0.3,0.3)).normalized()
+	var broken: Array[Plane] = [Plane(corner,corner.dot(Vector3(TRILITHON.x*0.5-0.45,(STUB+0.3)*0.5,0.0)))]
+	_sarsen(b,Transform3D(Basis(Vector3.UP,sa),_round(sa,stub_r)),stub_size,0.06,broken)
+	var lie_r := stub_r-TRILITHON.z*0.5-0.15-TRILITHON.y*0.5
+	var lie := Basis(Vector3.UP,sa+b.rng.randf_range(-0.04,0.04))*Basis(Vector3.RIGHT,PI*0.5)*Basis(Vector3.UP,b.rng.randf_range(-0.03,0.03))
+	b.solid(_box(b,TRILITHON*0.5,0.1),Transform3D(lie,_round(sa,lie_r)+Vector3(0.0,TRILITHON.z*0.5-0.15,0.0)),_stone(b,1.1),true,true,[],-1,1.6)
+	var la := sa-0.42
+	var piece_len := (span-0.4)*0.5
+	for s: float in [-1.0,1.0]:
+		var tip := Basis(Vector3.UP,la+PI*0.5+s*0.2+b.rng.randf_range(-0.1,0.1))*Basis(Vector3.BACK,b.rng.randf_range(-0.12,0.12))
+		var at := _round(la,4.9)+_round(la+PI*0.5,s*(piece_len*0.5+0.3))+Vector3(0.0,LINTEL.y*0.5-0.1,0.0)
+		var cut: Array[Plane] = [Plane(Vector3(-s,0.25,0.0).normalized(),piece_len*0.5-0.05)]
+		b.solid(_box(b,Vector3(piece_len*0.5+0.2,LINTEL.y*0.5,TRILITHON.z*0.5),0.08),Transform3D(tip,at),_stone(b,1.05),true,true,cut,-1,1.5)
+	# The leaning stone, fallen in against the sarsen LEAN_AT: its top a
+	# slope from the floor to LEAN_TOP against the sarsen's inner face, its
+	# head cut square on it.
+	var al := (LEAN_AT+0.5)*pitch
+	var slope := deg_to_rad(LEAN.z)
+	var head := CIRCLE_RADIUS-SARSEN.z*0.5-0.05
+	var low := head-LEAN_TOP/tan(slope)
+	var r_a := low-0.9
+	var r_b := head+0.4
+	var top_mid := Vector2((r_a+r_b)*0.5,LEAN_TOP-(head-(r_a+r_b)*0.5)*tan(slope))
+	var centre := top_mid-Vector2(-sin(slope),cos(slope))*LEAN.y*0.5
+	var lean_pose := Transform3D(Basis(Vector3.UP,al)*Basis(Vector3.RIGHT,-slope),_round(al,centre.x)+Vector3(0.0,centre.y,0.0))
+	var square: Array[Plane] = [lean_pose.affine_inverse()*Plane(_round(al,1.0),head)]
+	b.solid(_box(b,Vector3(LEAN.x*0.5,LEAN.y*0.5,(r_b-r_a)/cos(slope)*0.5),0.1),lean_pose,_stone(b,1.1),true,true,square,-1,1.4)
+	# Tufts at the stones' feet.
+	for k in range(CIRCLE_STONES):
+		if b.rng.randf() < 0.6 and not k in missing: b.tuft(_round((k+0.5)*pitch+b.rng.randf_range(-0.12,0.12),CIRCLE_RADIUS+b.rng.randf_range(-0.9,0.9)),b.rng.randf_range(0.25,0.45),5)
+	var root := b.finish()
+	var stub_top := _round(sa,stub_r)+Vector3(0.0,STUB,0.0)
+	root.set_meta("ring",{"top":ring_top,"lintels":lintels,"fallen":fallen,"missing":missing.duplicate(),"gone":gone,
+		"trilithon":Vector3(0.0,TRILITHON.y+LINTEL.y,-TRILITHON_AT),
+		"stub":stub_top,"lying":_round(sa,lie_r)+Vector3(0.0,TRILITHON.z-0.15,0.0),
+		"lean_foot":_round(al,low-0.6),"lean_head":_round(al,head-0.35)+Vector3(0.0,LEAN_TOP-0.35*tan(slope),0.0)})
+	return root
+
+## A point `r` out from the middle at angle `a` (from +Z toward +X).
+static func _round(a: float, r: float) -> Vector3:
+	return Vector3(sin(a),0.0,cos(a))*r
+
+## A sarsen at `pose` (its foot's middle, X along its face): `size` wide,
+## tall and thick, rough-dressed, its faces narrowing `taper` (m a side,
+## half that on its thin faces) to a flat top, sunk a little, out of plumb;
+## cut by `extra` too (its own frame: the middle of the block, sunk 0.3).
+static func _sarsen(b: Build, pose: Transform3D, size: Vector3, taper: float, extra: Array[Plane] = []) -> void:
+	var tall := size.y+0.3
+	var half := Vector3(size.x*0.5,tall*0.5,size.z*0.5)
+	var planes := _box(b,half,0.12)
+	for s: float in [-1.0,1.0]:
+		var n := Vector3(s*tall,taper,0.0).normalized()
+		planes.append(Plane(n,n.dot(Vector3(s*half.x,-half.y,0.0))))
+		var m := Vector3(0.0,taper*0.5,s*tall).normalized()
+		planes.append(Plane(m,m.dot(Vector3(0.0,-half.y,s*half.z))))
+	var lean := Basis(Vector3(b.rng.randf_range(-1,1),0.0,b.rng.randf_range(-1,1)).normalized(),b.rng.randf_range(0.0,0.01)+0.008*b.weathered)
+	b.solid(planes,pose*Transform3D(lean,Vector3(0.0,size.y-half.y,0.0)),_stone(b,1.12),true,true,extra,-1,1.6)
+
+## A lintel fallen from the ring at angle `a`, `length` long: in the grass
+## just outside the ring or in, lying across the way it fell, tipped, half
+## sunk; weathered, cracked in two.
+static func _toppled_lintel(b: Build, a: float, length: float) -> void:
+	var r := CIRCLE_RADIUS+(1.7 if b.rng.randf() < 0.65 else -2.0)
+	var yaw := Basis(Vector3.UP,a+b.rng.randf_range(-0.35,0.35))*Basis(Vector3.BACK,b.rng.randf_range(-0.1,0.1))*Basis(Vector3.RIGHT,b.rng.randf_range(-0.2,0.2))
+	var at := _round(a,r)+Vector3(0.0,LINTEL.y*0.5-0.12,0.0)
+	var half := Vector3(length*0.5,LINTEL.y*0.5,LINTEL.x*0.5)
+	if b.weathered > 0.5:
+		var crack := Vector3(1.0,0.0,b.rng.randf_range(-0.4,0.4)).normalized()
+		var off := b.rng.randf_range(-0.5,0.5)
+		for s: float in [-1.0,1.0]:
+			var cut: Array[Plane] = [Plane(-crack*s,-s*off-0.03)]
+			var shift := Transform3D(Basis(Vector3.UP,s*b.rng.randf_range(0.03,0.12)),crack*s*0.08+Vector3(0.0,-0.04*float(s > 0.0),0.0))
+			b.solid(_box(b,half,0.07),Transform3D(yaw,at)*shift,_stone(b,1.06),true,true,cut,-1,1.5)
+	else:
+		b.solid(_box(b,half,0.07),Transform3D(yaw,at),_stone(b,1.06),true,true,[],-1,1.5)
 
 # --- Parts --------------------------------------------------------------------
 
