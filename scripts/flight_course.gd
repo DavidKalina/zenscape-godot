@@ -25,7 +25,10 @@ extends RefCounted
 ##   ["rock", ...], ["isle", ...], ["span", ...], ["bore", ...], ["slab", ...]
 ##       the sky pack's floating islands (scripts/flight_pack_sky.gd
 ##       `solids_of`)
-## Packs append their stations after these (key -1: no digit key).
+## Packs append their stations after these (key -1: no digit key). The
+## moments pack (scripts/flight_pack_moments.gd) reuses other packs' parts
+## and trails: its trail is all guides and what there is to get are its
+## `moments` (free, a starter, challenge ones; `challenge` its settings).
 ## Each expands into world-space solids (`solids`): {"kind":"box","middle",
 ## "size","basis"} or {"kind":"cyl","middle","radius","height"}, which the
 ## study draws and gives colliders on the ruins' layer (scripts/ruin_bump.gd
@@ -44,6 +47,7 @@ const PackLines = preload("res://scripts/flight_pack_lines.gd")
 const PackNature = preload("res://scripts/flight_pack_nature.gd")
 const PackSky = preload("res://scripts/flight_pack_sky.gd")
 const PackTokens = preload("res://scripts/flight_pack_tokens.gd")
+const PackMoments = preload("res://scripts/flight_pack_moments.gd")
 
 ## The stations stand ALT metres over the floor (y 0), SPACING metres apart
 ## along x; pillars rise to TOP over the entry.
@@ -241,7 +245,7 @@ const STATIONS := [
 		Vector3(79.42,-6.74,-220.48),Vector3(83.63,-6.29,-221.59),Vector3(92.57,-4.60,-220.60),Vector3(101.19,-2.35,-219.06),
 	]},
 	# <<< sundered_mix
-]+PackLines.STATIONS+PackNature.STATIONS+PackSky.STATIONS+PackTokens.STATIONS
+]+PackLines.STATIONS+PackNature.STATIONS+PackSky.STATIONS+PackTokens.STATIONS+PackMoments.STATIONS
 
 ## The station with `id`, or {}. "id@line" is station id flown on one of
 ## its token lines (`flown`).
@@ -358,12 +362,39 @@ static func station_hash(s: Dictionary) -> String:
 	if s.has("miss_near"): shape.append(s.miss_near)
 	if s.has("guides"): shape.append(["guides",s.guides])
 	if s.has("bonus"): shape.append(["bonus",s.bonus])
+	if s.has("moments"): shape.append(["moments",s.moments,s.get("challenge",{})])
 	return var_to_str(shape).md5_text().substr(0,12)
 
 ## Station `s`'s guides: indices into its tokens that are not drawn or
 ## counted, only shaping the line (the metrics' and the bots' route).
+## A moments station (`moments`) has no tokens to take: its whole line is
+## guides (unless it lists its own).
 static func guides(s: Dictionary) -> PackedInt32Array:
+	if s.has("moments") and not s.has("guides"): return PackedInt32Array(range((s.tokens as Array).size()))
 	return PackedInt32Array(s.get("guides",[]))
+
+## Station `s`'s moments (the moments pack, scripts/flight_pack_moments.gd):
+## its free collectibles, its starter and its challenge collectibles, in the
+## world, in the station's order: [{"at", "role" ("free", "starter",
+## "challenge"), "kind" ("fit", "react", "reach", or "" for a starter),
+## "reach" (m: REACH times the moment's own `ease`, else the station's),
+## "note"}].
+static func moments(s: Dictionary) -> Array:
+	var at := origin(s)
+	var out := []
+	for m: Dictionary in s.get("moments",[]):
+		out.append({"at":at+(m.at as Vector3),"role":str(m.get("role","free")),"kind":str(m.get("kind","")),
+			"reach":REACH*float(m.get("ease",s.get("ease",1.0))),"note":str(m.get("note",""))})
+	return out
+
+## Station `s`'s challenge settings (FlightMoments CHALLENGE's defaults
+## under its own `challenge`): {"time" (s, 0 no limit), "area" (m off the
+## line that counts as leaving), "mode" ("all": the starter reveals every
+## challenge collectible; "chain": one at a time)}.
+static func challenge(s: Dictionary) -> Dictionary:
+	var out := {"time":0.0,"area":40.0,"mode":"all"}
+	out.merge(s.get("challenge",{}),true)
+	return out
 
 ## Station `s`'s bonus tokens in the world: optional, off the line,
 ## unordered, never missed.

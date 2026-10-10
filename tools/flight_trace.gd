@@ -39,8 +39,29 @@ func run() -> void:
 		var r: Dictionary = Bench.fly(s,skill,p,hash([id,skill,n]),space)
 		var m: Dictionary = r.metrics
 		var ev := []
-		for e: Dictionary in r.events: ev.append("%s%s@%.2f" % [e.kind,str(e.get("token",e.get("bonus",""))),e.t])
+		for e: Dictionary in r.events:
+			# Bumps are summed up as spells below.
+			if e.kind == "bump" and r.has("moments"): continue
+			ev.append("%s%s@%.2f" % [e.kind,str(e.get("token",e.get("bonus",e.get("moment",e.get("why",""))))),e.t])
 		print("%s %s: %d/%d bumps %d time %.2f ended %s | %s" % [id,skill,m.collected,m.total,m.bumps,m.duration,r.result.ended," ".join(ev)])
+		if r.has("moments"):
+			# A moments station: the spells spent scraping stone, when and where (local).
+			var tk: Dictionary = r.ticks
+			var at := Course.origin(s)
+			var spells := PackedStringArray()
+			var from := -1
+			for i in range(tk.t.size()+1):
+				# A scrape: bumping now or within 15 ticks (a quarter second).
+				var on := false
+				for k in range(i,mini(i+15,tk.t.size())):
+					if int(tk.bump[k]) == 1: on = true
+				if on and i < tk.t.size() and int(tk.bump[i]) == 0 and from < 0: on = false
+				if on and from < 0: from = i
+				if not on and from >= 0:
+					var j := (from+i-1)/2
+					spells.append("%.2f-%.2f s at (%.0f %.0f %.0f)" % [tk.t[from],tk.t[i-1],float(tk.x[j])-at.x,float(tk.y[j])-at.y,float(tk.z[j])-at.z])
+					from = -1
+			print("   free %d/%d, challenge best %d/%d, scraping: %s" % [m.free_taken,m.free_total,m.challenge_taken,m.challenge_total,", ".join(spells)])
 		if args.size() > 4:
 			var tk: Dictionary = r.ticks
 			for i in range(0,tk.t.size(),15):

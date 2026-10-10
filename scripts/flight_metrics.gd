@@ -444,7 +444,35 @@ static func summarise(run: Dictionary, solids := []) -> Dictionary:
 		"demand_peak":snappedf(peak,0.001),"demand_mean":snappedf(weighted/timed if timed > 0.0 else 0.0,0.001),
 		"demand_spike":snappedf(peak-median,0.001),"grade":grade(peak),
 		"gaps":out_gaps,"curve":curve(run,out_gaps,yaw,pit),
-	}.merged(flow(tk,duration)).merged(knife(run)).merged(threading(tk,solids,duration) if not solids.is_empty() else {}).merged(bonus(run))
+	}.merged(flow(tk,duration)).merged(knife(run)).merged(threading(tk,solids,duration) if not solids.is_empty() else {}).merged(bonus(run)).merged(moments(run))
+
+## A run's moments (a moments station's collectibles, scripts/flight_run.gd),
+## if its station has any: {free_total, free_taken, challenge_total,
+## challenge_taken (the best try), challenge_tries, challenge_complete,
+## moments_got (the indices taken at least once)}; {} otherwise.
+static func moments(run: Dictionary) -> Dictionary:
+	if not run.has("moments"): return {}
+	var got := {}
+	var complete := false
+	var tries := 0
+	var best := 0
+	for e: Dictionary in run.get("events",[]):
+		match str(e.kind):
+			"moment": got[int(e.moment)] = true
+			"challenge_start": tries += 1
+			"challenge_end":
+				best = maxi(best,int(e.taken))
+				if str(e.why) == "complete": complete = true
+	var list: Array = run.moments
+	var count := func(role: String, taken: bool) -> int:
+		var n := 0
+		for i in range(list.size()):
+			if str(list[i].role) == role and (not taken or got.has(i)): n += 1
+		return n
+	var indices := got.keys()
+	indices.sort()
+	return {"free_total":count.call("free",false),"free_taken":count.call("free",true),"challenge_total":count.call("challenge",false),
+		"challenge_taken":best,"challenge_tries":tries,"challenge_complete":complete,"moments_got":indices}
 
 ## A run's bonus tokens (a pack's optional tokens off the line,
 ## scripts/flight_run.gd), if its station has any: {bonus_total,

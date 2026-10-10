@@ -79,6 +79,10 @@ Tests: `python3 tools/run_tests.py --tests 'test_flight_*.gd'`.
 - nature (5 landform stations): docs/design/flight-study-nature.md
 - sky (4 floating-island stations): docs/design/flight-study-sky.md
 - tokens (9 token-placement stations): docs/design/flight-study-tokens.md
+- moments (5 stations, added on `study/flight-moments`): no trails, free
+  collectibles plus a starter that begins a challenge, banded per
+  collectible. `./run-flight-moments.command`, `--pack moments` on the
+  bench. See docs/design/flight-study-moments.md.
 
 Those docs describe each branch alone. Where they name a pack's preload
 (`SkyPack`, `TokensPack`, `Nature`), the merged course calls it `PackSky`,

@@ -24,7 +24,13 @@ extends Node3D
 ## --pack=<name>, which starts at the pack's first station and keeps N
 ## inside the pack. A lines station draws its flown line in its colour and
 ## the others faint; a tokens station's guides aren't drawn and its bonus
-## tokens (optional, never missed) are drawn in BONUS.
+## tokens (optional, never missed) are drawn in BONUS. A moments station
+## (--pack=moments, scripts/flight_pack_moments.gd) draws no trail: its free
+## collectibles are gold balls, its starter a magenta ring (take it to start
+## the challenge), its challenge collectibles orange-red diamonds, there
+## only while the challenge is on. HUD and report count "free x/y,
+## challenge x/y"; --challenge-time=<s> and --challenge-mode=chain fly a
+## variant of every moments station's challenge (its own hash and record).
 ##
 ## Keys: 1-9, 0 and - the stations, R restart the station, N the next one, B cycles
 ## who flies (you, then the sloppy, decent, sharp and perfect bots), L the
@@ -34,7 +40,8 @@ extends Node3D
 ##   ./run-flight-study.command
 ##   ./run-flight-packs.command   (every station, the packs' too, on N)
 ##   godot --path . res://studies/flight_study.tscn -- --no-title [--station=slalom] [--bot=sharp]
-##   ... -- --no-title --pack=lines|nature|sky|tokens [--line=red]   (starts on the pack, N cycles within it)
+##   ... -- --no-title --pack=lines|nature|sky|tokens|moments [--line=red]   (starts on the pack, N cycles within it)
+##   ./run-flight-moments.command [--challenge-time=12] [--challenge-mode=chain]
 
 const Course = preload("res://scripts/flight_course.gd")
 const Run = preload("res://scripts/flight_run.gd")
@@ -62,6 +69,14 @@ const TAKEN := Color(0.4,0.9,0.5)
 const MISSED := Color(0.85,0.3,0.25)
 ## A pack's bonus tokens (optional, off the line).
 const BONUS := Color(0.45,0.8,1.0)
+## A moments station's collectibles (scripts/flight_pack_moments.gd): free
+## ones gold balls, the starter a magenta ring with a ball in it, challenge
+## ones orange-red diamonds; the starter and challenge ones turn. Drawn a
+## size that follows their pickup reach.
+const FREE := Color(1.0,0.82,0.3)
+const STARTER := Color(0.95,0.25,0.85)
+const CHALLENGE := Color(1.0,0.38,0.18)
+const SPIN := 2.0
 ## Who flies, in B's order.
 const PILOTS := ["human","sloppy","decent","sharp","perfect"]
 
@@ -89,6 +104,11 @@ var last_path := ""
 var asking := ""
 var _token_nodes: Array[MeshInstance3D] = []
 var _bonus_nodes: Array[MeshInstance3D] = []
+## A moments station's collectibles, drawn by role (MOMENT_LOOKS).
+var _moment_nodes: Array[MeshInstance3D] = []
+## --challenge-time=<s> and --challenge-mode=all|chain: a moments station's
+## challenge flown as a variant ({} as the station has it).
+var challenge_override := {}
 var _token_materials := {}
 var _materials := {}
 var _hud: Control
@@ -123,6 +143,8 @@ func _ready() -> void:
 		if arg.begins_with("--pack=") and not Course.pack(arg.substr(7)).is_empty(): pack = arg.substr(7)
 		if arg.begins_with("--line="): line = arg.substr(7)
 		if arg.begins_with("--bot=") and arg.substr(6) in PILOTS: pilot = arg.substr(6)
+		if arg.begins_with("--challenge-time="): challenge_override["time"] = maxf(0.0,float(arg.substr(17)))
+		if arg.begins_with("--challenge-mode=") and arg.substr(17) in ["all","chain"]: challenge_override["mode"] = arg.substr(17)
 	if pack != "": first = Course.pack(pack)[0]
 	if not Course.station(asked).is_empty(): first = Course.station(asked)
 	if line != "" and not Course.flown(first,line).is_empty(): first = Course.flown(first,line)
@@ -232,10 +254,12 @@ func _token_material(colour: Color) -> StandardMaterial3D:
 ## flown line's in its colour and the other lines' (where they leave it)
 ## small and faint, never taken.
 func _show_tokens() -> void:
-	for n in _token_nodes+_ghosts+_bonus_nodes: n.queue_free()
+	for n in _token_nodes+_ghosts+_bonus_nodes+_moment_nodes: n.queue_free()
 	_token_nodes.clear()
 	_ghosts.clear()
 	_bonus_nodes.clear()
+	_moment_nodes.clear()
+	for m: Dictionary in Course.moments(station): _moment_nodes.append(_moment_node(m))
 	var mine := Course.tokens(station)
 	var guides := Course.guides(station)
 	for i in range(mine.size()):
@@ -251,6 +275,46 @@ func _show_tokens() -> void:
 		for p in Course.tokens(Course.flown(base,line)):
 			if mine.any(func(q: Vector3) -> bool: return q.distance_to(p) < 0.3): continue
 			_ghosts.append(_ball(p,GHOST,_ghost_material(LINE_COLOURS.get(line,TOKEN))))
+
+## One moment drawn by its role (see FREE): its size follows its pickup reach.
+func _moment_node(m: Dictionary) -> MeshInstance3D:
+	var size := Course.TOKEN_SIZE*clampf(float(m.reach)/Course.REACH,0.6,1.4)
+	var node := MeshInstance3D.new()
+	match str(m.role):
+		"starter":
+			var ring := TorusMesh.new()
+			ring.inner_radius = size*0.55
+			ring.outer_radius = size*0.85
+			node.mesh = ring
+			node.material_override = _token_material(STARTER)
+			# Standing up, so it reads as a hoop from the line.
+			node.rotation = Vector3(PI*0.5,0.0,0.0)
+			var core := MeshInstance3D.new()
+			var ball := SphereMesh.new()
+			ball.radius = size*0.3
+			ball.height = size*0.6
+			core.mesh = ball
+			core.material_override = _token_material(STARTER)
+			node.add_child(core)
+		"challenge":
+			# A diamond: a sphere with four sides and two rings.
+			var diamond := SphereMesh.new()
+			diamond.radius = size*0.55
+			diamond.height = size*1.3
+			diamond.radial_segments = 4
+			diamond.rings = 1
+			node.mesh = diamond
+			node.material_override = _token_material(CHALLENGE)
+		_:
+			var ball := SphereMesh.new()
+			ball.radius = size*0.5
+			ball.height = size
+			node.mesh = ball
+			node.material_override = _token_material(FREE)
+	node.position = m.at
+	node.visible = false
+	add_child(node)
+	return node
 
 func _ball(p: Vector3, scale: float, material: Material) -> MeshInstance3D:
 	var node := MeshInstance3D.new()
@@ -286,7 +350,7 @@ func start(s: Dictionary) -> void:
 	station = s
 	_solids = Course.solids(s)
 	var params := {} if pilot == "human" else Bot.skill(pilot)
-	run = Run.new(s,"human" if pilot == "human" else "bot:"+pilot,params,_space)
+	run = Run.new(variant(s),"human" if pilot == "human" else "bot:"+pilot,params,_space)
 	bot = null if pilot == "human" else Bot.new(params,randi())
 	asking = ""
 	_report.visible = false
@@ -294,6 +358,17 @@ func start(s: Dictionary) -> void:
 	figure.reset(run.plane)
 	chase.reset(run.plane,run.plane.position-run.plane.forward()*6.0+Vector3.UP*2.0,camera.fov)
 	_frame(0.0)
+
+## Station `s` as flown: a moments station with `challenge_override`
+## (--challenge-time, --challenge-mode) gets those challenge settings, and
+## so its own hash and record; anything else as it is.
+func variant(s: Dictionary) -> Dictionary:
+	if challenge_override.is_empty() or not s.has("moments"): return s
+	var out := s.duplicate()
+	var rules: Dictionary = (s.get("challenge",{}) as Dictionary).duplicate()
+	rules.merge(challenge_override,true)
+	out["challenge"] = rules
+	return out
 
 func restart() -> void:
 	start(station)
@@ -336,6 +411,10 @@ func tick(delta: float) -> void:
 		var missed := MISSED if _colour() == TOKEN else LINE_MISSED
 		_token_nodes[i].material_override = _token_material(missed if s == Run.MISSED else _colour())
 	for i in range(_bonus_nodes.size()): _bonus_nodes[i].visible = run.bonus_state[i] == 0
+	for i in range(_moment_nodes.size()):
+		var node := _moment_nodes[i]
+		node.visible = run.moment_live[i] == 1 and run.moment_state[i] == 0
+		if str(run.moments[i].role) != "free": node.rotate_y(SPIN*delta)
 	figure.update(delta,run.plane,0.0,Callable(Course,"ground"),false)
 	_frame(delta)
 	_show_hud()
@@ -451,13 +530,26 @@ func _show_hud() -> void:
 	var since := "-" if is_nan(float(live.since)) else "%.1f s ago" % float(live.since)
 	_hud_label.text = "\n".join(PackedStringArray([
 		"%s · %s · %s" % [station.name,run.pilot,"done" if run.done else "flying"],
-		"time %.2f s · tokens %d/%d%s · bumps %d · speed %.1f m/s" % [float(live.t),int(live.collected),int(live.total),
+		"time %.2f s · %s%s · bumps %d · speed %.1f m/s" % [float(live.t),moment_line(live) if int(live.moments) > 0 else "tokens %d/%d" % [int(live.collected),int(live.total)],
 			" · bonus %d/%d" % [int(live.bonus),int(live.bonus_total)] if int(live.bonus_total) > 0 else "",int(live.bumps),run.plane.speed],
 		"next token seen %s" % since,
 		"reversals %.2f /s · effort %.2f /s · full stick %d%%" % [float(live.reversals),float(live.effort),roundi(float(live.full)*100.0)],
 		"threading %s · %d%% of the run · openings %d (%.2f /s)" % ["NOW" if live.threading_now else "open air",roundi(float(live.threading)*100.0),int(live.openings),float(live.openings_per_s)],
 		"flow: still %d%% · longest %.1f s%s" % [roundi(float(live.still)*100.0),float(live.longest_straight)," · straight NOW" if live.straight_now else ""],
 	]+_knife_hud(live)))
+
+## A moments station's count, live: "free x/y, challenge x/y" and the
+## challenge's state (on, with its time left if it has a limit; or how the
+## last try ended).
+static func moment_line(live: Dictionary) -> String:
+	var state := ""
+	match str(live.challenge_state):
+		"on": state = " (ON%s)" % ("" if is_inf(float(live.challenge_left)) else ", %.1f s left" % float(live.challenge_left))
+		"complete": state = " (complete)"
+		"left": state = " (ended: left the area)"
+		"timeout": state = " (ended: time up)"
+		"over": state = " (ended with the pass)"
+	return "free %d/%d, challenge %d/%d%s" % [int(live.free),int(live.free_total),int(live.challenge),int(live.challenge_total),state]
 
 ## The knife edge line, on a station with knife slits: slits threaded
 ## clean of all, time on edge, and the next slit's distance in seconds once
@@ -521,12 +613,25 @@ func _show_report() -> void:
 	var m: Dictionary = last_run.get("metrics",{})
 	var lines := PackedStringArray()
 	lines.append("%s · %s" % [station.name,last_run.get("pilot","")])
-	lines.append("Time %.2f s · tokens %d/%d%s · bumps %d" % [float(m.duration),int(m.collected),int(m.total),"  CLEARED" if m.cleared else "",int(m.bumps)])
+	if m.has("free_total"):
+		lines.append("Time %.2f s · free %d/%d, challenge %d/%d · bumps %d" % [float(m.duration),int(m.free_taken),int(m.free_total),int(m.challenge_taken),int(m.challenge_total),int(m.bumps)])
+		var ended := str(last_run.get("result",{}).get("challenge_ended",""))
+		lines.append("Challenge: %s" % ({"":"not started (take the ring to start it)","complete":"complete","left":"ended, you left the area","timeout":"ended, time up","over":"ended with the pass"}.get(ended,ended)
+			+(" · tries %d" % int(m.challenge_tries) if int(m.challenge_tries) > 1 else "")))
+	else:
+		lines.append("Time %.2f s · tokens %d/%d%s · bumps %d" % [float(m.duration),int(m.collected),int(m.total),"  CLEARED" if m.cleared else "",int(m.bumps)])
 	if m.has("bonus_total"):
 		lines.append("Bonus tokens %d/%d (seen %d)" % [int(m.bonus_taken),int(m.bonus_total),int(m.bonus_seen)])
 	var band: Dictionary = _bands.get(station.id,{})
-	if band.is_empty() or str(band.get("hash","")) != Course.station_hash(station):
+	if band.is_empty() or str(band.get("hash","")) != str(last_run.get("station_hash",Course.station_hash(station))):
 		lines.append("Bot band: not benched for this layout (tools/flight_bench.gd)")
+	elif band.has("moments"):
+		# Each collectible's band, and whether this run got it.
+		var got: Array = m.get("moments_got",[])
+		var bits := PackedStringArray()
+		for row: Dictionary in band.moments:
+			bits.append("%s%s %s %s" % ["+" if int(row.i) in got else "-",str(row.role).left(1).to_upper(),str(row.kind) if str(row.kind) != "" else "start",str(row.band)])
+		lines.append("Bot bands (+ got, F free, S starter, C challenge): "+" · ".join(bits))
 	else:
 		var c: Dictionary = band.clears
 		lines.append("Bot band: %s  (clears: sloppy %.1f · decent %.1f · sharp %.1f · perfect %.1f)" % [str(band.band).to_upper(),float(c.get("sloppy",0)),float(c.get("decent",0)),float(c.get("sharp",0)),float(c.get("perfect",0))])
