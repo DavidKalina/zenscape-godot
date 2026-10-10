@@ -470,7 +470,7 @@ static func back_walls(seed_value: int, weathered: float) -> Node3D:
 		b.settle = 0.4
 		k += 1
 		# Its frame: X along the back, +Z into the alley, foot on K.
-		var o := world(n*(BACK+0.35))
+		var o := world(n*(BACK+0.1))
 		b.frame = Transform3D(Basis(Vector3(along.x,0.0,along.y),Vector3.UP,Vector3(-n.x,0.0,-n.y)),Vector3(o.x,K,o.y))
 		var step := func(x: float) -> float:
 			var p := world(n*(BACK+0.15)+along*x)
