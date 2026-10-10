@@ -32,6 +32,8 @@ const LandscapeLighting = preload("res://scripts/landscape_lighting.gd")
 const Celestial = preload("res://studies/celestial.gd")
 const LookPass = preload("res://scripts/look_pass.gd")
 const Gallery = preload("res://studies/ruin_kit_gallery.gd")
+const GustFronts = preload("res://studies/gust_fronts.gd")
+const RuinGrowthPush = preload("res://scripts/ruin_growth_push.gd")
 
 ## The station this is (its key in the pack).
 const STATION := 2
@@ -70,6 +72,11 @@ var art: Node3D
 ## The landmarks from the kit (their metadata drives the tests).
 var stair: Node3D
 var circle: Node3D
+## The air the ruin growth sways in, as the kit gallery runs it: the gust
+## fronts, the air's travel (m), the breeze. B sends a strong front.
+var _fronts: GustFronts = GustFronts.new()
+var _gust_distance := 0.0
+var _breeze := 0.53
 
 func _ready() -> void:
 	pack = "ruins_archipelago"
@@ -277,6 +284,41 @@ func _process(delta: float) -> void:
 	RenderingServer.global_shader_parameter_set("zs_flow_time",_motion_time)
 	_look.update(camera,_celestial)
 	RenderingServer.global_shader_parameter_set("zs_cloud",Vector4(_celestial.cloud,0.0,Gallery.DECK.x,Gallery.DECK.y))
+	_advance_air(delta)
+
+## The game's air for the growth (as the kit gallery's): the air's travel,
+## the gust fronts round the camera, the lull before a front; the pilot
+## parting the curtains he passes.
+func _advance_air(delta: float) -> void:
+	var way := _wind_way()
+	var speed := 1.6+1.9*0.4
+	_gust_distance += speed*delta
+	var focus := camera.global_position
+	_fronts.set_bounds(Vector2(focus.x,focus.z),36.0)
+	_fronts.advance(delta,way,0.4,_breeze)
+	_fronts.publish()
+	RenderingServer.global_shader_parameter_set("zs_gust_distance",_gust_distance)
+	RenderingServer.global_shader_parameter_set("zs_gust_speed",speed)
+	RenderingServer.global_shader_parameter_set("zs_breeze",_breeze*_fronts.lull())
+	if figure != null: RuinGrowthPush.stir(&"pilot",figure.global_position+Vector3.UP*1.1,delta)
+
+## A strong gust front now, across what the camera looks at (B).
+func _send_gust() -> void:
+	var focus := camera.global_position+(-camera.global_basis.z)*20.0
+	_fronts.set_bounds(Vector2(focus.x,focus.z),24.0)
+	for i in range(_fronts.fronts.size()): _fronts.fronts[i] = {}
+	_fronts.send(_wind_way(),0.9,_breeze,1.0)
+
+func _wind_way() -> Vector2:
+	var setting: Variant = ProjectSettings.get_setting("shader_globals/zs_wind_direction")
+	if setting is Dictionary and (setting as Dictionary).get("value") is Vector2: return ((setting as Dictionary).value as Vector2).normalized()
+	return Vector2(0.943858,0.33035)
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_B:
+		_send_gust()
+		return
+	super._unhandled_input(event)
 
 ## Only the station's recordings replay here.
 func _pack_runs() -> PackedStringArray:
