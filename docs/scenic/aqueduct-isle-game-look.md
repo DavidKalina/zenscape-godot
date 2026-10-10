@@ -111,3 +111,65 @@ These are in `captures/aqueduct-look/r1/` in this worktree (git-ignored). Re-tak
 - **First snow's sky is heavy grey** (its 0.59 cloud), as in the game.
 - **No undergrowth.** The parked branch's ferns, shrubs and mushrooms at the ruins' feet were not brought over. They would be easy to add to the flora file.
 - **Flowers are hard to see from the high on-foot camera.** That fits the "not a carpet" brief. Raise `FLOWER_SHARE` for more.
+
+## Flying the plane on the isle
+
+Branch `study/aqueduct-isle-plane`: this look branch plus `feature/knife-drift` (knife edge + turn = drift, docs/design/knife-drift.md). Not merged, not pushed.
+
+### Run
+
+```sh
+./run-aqueduct-isle.command              # on foot; press F to fly
+./run-aqueduct-isle.command --fly        # start in the plane
+./run-aqueduct-isle.command --fly --drift=1.5 --look=rosewater_dusk
+```
+
+### The switch: F (pad Y)
+
+- **On foot, F** puts you in the game's plane (`scripts/sky_plane.gd`, `scripts/plane_figure.gd`, the chase camera `scripts/glide_camera.gd`). It is already flying at cruise, 5 m ahead of the pilot along the view and 3 m up (raised in 2 m steps if that is in stone). No runway.
+- **In the plane, F** puts you back on foot. You land on the nearest open turf within 40 m of the plane (rings round it, nearest first; walkable faces only, with room to stand), facing the way you flew. If none is found, you go back to where you last stood.
+- **Setting down:** skim the turf (or a stone top) with Shift (Brake) held under 9.5 m/s for 0.5 s, and the pilot steps out there.
+- **R** in the plane puts you on foot at the start, as before.
+- F and pad Y were free on foot. In the game, F/Y is also the plane's land key.
+
+### Plane controls (the game's)
+
+A D bank and turn. W S pitch (W nose down). The mouse steers. Space boosts and Shift brakes. Hold Q E (LB RB) for the knife edge, and add A D to drift. Tap Q Q or E E quickly, or click, for a barrel roll. Hold the right mouse button to look round. Esc frees the mouse. A hint at the bottom shows these, with the speed and the bump count. On foot it shows `F (pad Y) fly the plane from here`.
+
+### Key clashes checked
+
+- L / Shift+L (presets) and B (gust) work in both modes.
+- Shift+L in the plane also brakes for that moment, which is harmless.
+- T, F1, F2 and F5 to F8 are on-foot keys and do nothing in the plane. Esc frees the mouse in both modes.
+- No X eject, C camera or V step-out here. Those belong to the game's wanderer.
+
+### Collision
+
+The game's plane skims its heightfield and bumps off the ruins' layer (`scripts/ruin_bump.gd`). Here:
+
+- **Turf (islands' and islets' ground bodies):** these bodies also sit on layer 12 (`TURF_LAYER`, 1 << 11). The plane's ground callable rays down onto them, so the plane skims the turf the way the game's plane skims ground: 0.9 m over it, with drag and the nose eased level. The flora and the pilot are unaffected.
+- **Everything else that stands, plus the turf's sides and keels:** this includes the kit's stone hulls, the station's invisible boxes, walls, arches, the aqueduct, the circle, floating stones and stumps. The plane uses the ruin kit gallery's bump and recover: a wing-wide box turned with its bank and roll, so a knife edge slips through gaps level wings won't. On contact it is put back out along the face, its heading turned along it and its pitch eased, and it keeps 55 % of its speed. It never crashes. If the plane's turn would put a wing back into the face, it is pushed out along the face.
+- **Upward faces** (normal y > 0.6: the rubble, stairs, ramps, wall and channel tops) are ridden over, lifted clear by up to 1.2 m, rather than bumped.
+- Below the isle, the game's cloud cushion lifts the plane from 50 m under the turf. The sky ceiling is the game's (95 m).
+- **No collision:** grass and flowers (as in the game), the aqueduct's water, and the ivy and moss. Thin pieces with no collider are flown through.
+- The chase camera is kept out of solids by a point test. Inside concave turf meshes that test does not detect solid, so the camera can dip into an island's side in a tight pass.
+
+### Checks (headless)
+
+- Import check: clean.
+- test_aqueduct_isle: PASS.
+- test_aqueduct_isle_look: PASS.
+- test_knife_drift: PASS.
+- test_sky_plane: PASS.
+- **`tests/test_aqueduct_isle_plane.gd` (new): PASS, 24 checks.**
+  - Boarding: you board ahead of and above the pilot at cruise, the plane has the drift (strength 1), and the drift tightens with its nose slip and gives the release boost.
+  - Collision: flown into the hill walls, the plane bumps and flies on and is never left in stone. Nosed down, it skims the turf and never goes into it.
+  - Back on foot: F puts the pilot on the turf by the plane, walking. Braking on the turf sets him down. R returns him to the start.
+- One rendered capture (`--fly --capture`) showed the biplane, with the pilot in it, under the chase camera.
+- **Not run:** the full suite.
+
+### Open
+
+- With `--fly` the plane takes the start's facing, which runs off the isle's edge. Turn back to reach the ruins.
+- The pilot's grass wake does not follow the plane when it skims. The ruin growth is still stirred by the plane.
+- The plane flies in still air: the game's jets and thermals are not here. The isle's wind, gusts and look still run while flying.
