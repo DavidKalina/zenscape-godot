@@ -1,5 +1,7 @@
 # Isle lodestone: handoff
 
+> **Later:** on `study/isle-hall-chain` the loop goes on past the shard. The shard has moved to (200, 42, -380), and a ring rises past it. Threading the ring starts the Sundered hall chain, and the 30 m arrival below now happens only with `--no-chain`. See docs/design/isle-hall-chain.md.
+
 Branch `study/isle-lodestone`, from `study/aqueduct-isle-plane` (c498dfa6) with `look/lodestone` (9fd567f0) merged in. This is a study scene only. The game's own plane (`scripts/plane_figure.gd`, `scripts/wanderer_eye.gd`) is untouched.
 
 The flow: find the lodestone on the aqueduct isle, pick it up and look at it, board the new stone plane, and fly by the wing-seam compass to a shard floating far off.

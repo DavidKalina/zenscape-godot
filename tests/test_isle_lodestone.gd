@@ -28,6 +28,9 @@ func run() -> void:
 	study = load("res://studies/aqueduct_isle.tscn").instantiate()
 	study.scripted = true
 	study.stone_plane = true
+	# The shard-only arrival (--no-chain); the ring and the chain are
+	# tests/test_isle_hall_chain.gd's.
+	study.chain_on = false
 	root.add_child(study)
 	current_scene = study
 	while not study.flora_ready: await process_frame

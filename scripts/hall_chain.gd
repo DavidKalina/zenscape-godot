@@ -107,9 +107,23 @@ func y_range() -> Vector2:
 func first_pose(yaw := 0.0) -> Dictionary:
 	return {"yaw":yaw,"origin":Vector3(0.0,ChainPlan.origin_y_for(clear,sea_top,lowest()),0.0),"hand":1,"index":0,"turn":0.0,"drift":0.0,"climb":0.0,"swing":0.0}
 
+## The first hall's pose for a chain that starts where the caller says
+## (the aqueduct isle's ring, docs/design/isle-hall-chain.md): of hand
+## `hand`, its way in at `way_in` (world), come into on `heading` (rad, 0
+## north, as SkyPlane's), so a plane flying on that heading meets its gate
+## dead ahead. Its height puts the lane (the cruise height through the
+## gate half, the hall's own 0) 2 m under `way_in`, kept within the
+## heights a hall may stand at.
+func first_pose_at(way_in: Vector3, heading: float, hand := 1) -> Dictionary:
+	var yaw := heading-float(hand)*ChainPlan.in_head()
+	var turned := Basis(Vector3.UP,yaw)*ChainPlan.local(ChainPlan.approach(),hand)
+	var r := y_range()
+	var y := clampf(way_in.y-2.0,r.x,r.y)
+	return {"yaw":yaw,"origin":Vector3(way_in.x-turned.x,y,way_in.z-turned.z),"hand":hand,"index":0,"turn":0.0,"drift":0.0,"climb":0.0,"swing":0.0}
+
 ## Every hall down at once and the first rising again (`seed`: -1 keeps
-## the chain's).
-func reset(seed := -1) -> void:
+## the chain's; `first`: the first hall's pose, `first_pose` if empty).
+func reset(seed := -1, first := {}) -> void:
 	if seed >= 0: cfg.seed = seed
 	for h: Dictionary in halls: _free(h)
 	halls = []
@@ -122,7 +136,7 @@ func reset(seed := -1) -> void:
 	sunk_count = 0
 	clock = 0.0
 	_rng.seed = int(cfg.seed)*7919+11
-	_first = first_pose()
+	_first = first_pose() if first.is_empty() else first
 	_add(_first)
 
 ## Sets the next hall rising off the newest one's exit (the trigger does

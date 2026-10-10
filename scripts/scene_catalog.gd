@@ -15,7 +15,7 @@ const ENTRIES: Array[Dictionary] = [
 		"detail":"The game with the moments set pieces, in the plane high over home. N: next set piece."},
 	# Ruins.
 	{"id":"aqueduct_isle","group":"Ruins","title":"Aqueduct isle","scene":"res://studies/aqueduct_isle.tscn","args":[],
-		"detail":"The ruin platforming isle: grass, look presets (L), the plane on F."},
+		"detail":"The ruin platforming isle: grass, look presets (L), the plane on F. Find the lodestone, fly where the nose points; the halls follow."},
 	{"id":"sundered_hall","group":"Ruins","title":"The Sundered hall","scene":"res://studies/cozy_worlds.tscn","args":["--motif=sundered","--no-clusters","--skydive"],
 		"detail":"The game with the long gothic hall 240-900 m out; in the plane, fly to it."},
 	{"id":"hall_rise","group":"Ruins","title":"Hall rise","scene":"res://studies/hall_rise.tscn","args":[],

@@ -25,6 +25,10 @@ var _pivot: Node3D
 var _arrow: Node3D
 var _glow: StandardMaterial3D
 var _risen := 0.0
+## `pulse`: how long it lasts (s) and how bright it flares.
+const PULSE := 1.2
+const PULSE_GLOW := 7.0
+var _pulse := 0.0
 
 func _init() -> void:
 	name = "NoseCompass"
@@ -106,4 +110,13 @@ func step(delta: float) -> void:
 	var blend := 1.0-exp(-SWING*delta)
 	_pivot.basis = Basis(_pivot.basis.get_rotation_quaternion().slerp(want.get_rotation_quaternion(),blend))
 	var ahead := maxf((-_pivot.basis.z).dot(Vector3.FORWARD),0.0)
-	_glow.emission_energy_multiplier = 0.8+1.6*pow(ahead,12.0)
+	_pulse = maxf(_pulse-delta/PULSE,0.0)
+	var surge := sin(_pulse*PI)
+	_glow.emission_energy_multiplier = 0.8+1.6*pow(ahead,12.0)+PULSE_GLOW*surge
+	_arrow.scale = Vector3.ONE*(1.0+0.3*surge)
+
+## A pulse through it (the isle's ring threaded, docs/design/
+## isle-hall-chain.md): it flares and swells a moment, then settles. Where
+## it points does not change.
+func pulse() -> void:
+	_pulse = 1.0

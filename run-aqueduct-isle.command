@@ -1,4 +1,15 @@
 #!/bin/zsh
+# The aqueduct isle (studies/aqueduct_isle.gd). The whole loop: find the
+# lodestone on the floating stone east of the heel stone (E / pad A picks it
+# up, E keeps it), board (F / pad Y), fly where the nose arrow points. Near
+# the shard an arch rises out of the cloud past it; fly through it, wait,
+# and the Sundered halls start rising ahead (docs/design/isle-hall-chain.md).
+#   ./run-aqueduct-isle.command                 the whole loop, from on foot
+#   ./run-aqueduct-isle.command --near-ring     in the plane, stone seated, 260 m before the ring
+#   ./run-aqueduct-isle.command --carry --fly   in the plane, stone seated, by the isle
+#   ./run-aqueduct-isle.command --no-chain      the shard only (the old arrival chime)
+#   --ring=x,y,z  --ring-pause=<s> (1.5)  --chain-lead=<m> (180)  --target=x,y,z
+#   --stone-plane, and the hall chain's flags (--chain-at=, --chain-gap=, ...)
 set -u
 PROJECT_DIR="${0:A:h}"
 GODOT_BIN="${GODOT_BIN:-$HOME/Applications/Godot.app/Contents/MacOS/Godot}"
