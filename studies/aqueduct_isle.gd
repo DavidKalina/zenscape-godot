@@ -74,6 +74,7 @@ const SkyPlane = preload("res://scripts/sky_plane.gd")
 const PlaneFigure = preload("res://scripts/plane_figure.gd")
 const GlideCamera = preload("res://scripts/glide_camera.gd")
 const StoneFigure = preload("res://scripts/stone_plane_figure.gd")
+const NoseCompass = preload("res://scripts/nose_compass.gd")
 const Lodestone = preload("res://scripts/lodestone.gd")
 const MomentsHud = preload("res://scripts/moments_hud.gd")
 
@@ -233,6 +234,8 @@ const ARRIVE_AGAIN := 90.0
 const CAM_BACK := 0.5
 ## The game's wooden plane (the default) or the stone plane (--stone-plane).
 var stone_plane := false
+## The compass arrow on the wooden plane's nose while the stone is seated.
+var _nose: Node3D = null
 var lodestone: Node3D = null
 ## "resting" on its stone, "inspecting" (held up), "carried", "seated" in
 ## the plane.
@@ -711,7 +714,12 @@ func board() -> void:
 		if stone_plane:
 			plane_figure.seat(lodestone)
 			_moments.pop("The lodestone seats in the plane",1.6)
-		else: lodestone.visible = false
+		else:
+			lodestone.visible = false
+			_nose = NoseCompass.new()
+			_nose.target = lode_target
+			plane_figure.add_child(_nose)
+			_moments.pop("The lodestone wakes the compass",1.6)
 	chase = GlideCamera.new()
 	chase.reset(plane,camera.global_position,camera.fov)
 	chase.linger = LOOK_LINGER
@@ -741,6 +749,7 @@ func leave_plane(at := Vector3.INF) -> void:
 		lode_state = "carried"
 	plane_figure.queue_free()
 	plane_figure = null
+	_nose = null
 	figure.visible = true
 	camera.fov = FOV
 	if _foot_hint != null: _foot_hint.visible = true
@@ -821,6 +830,9 @@ func fly_step(delta: float, input: Dictionary) -> void:
 	_bump(was)
 	if stone_plane: plane_figure.target = lode_target
 	plane_figure.update(delta,plane,0.0,ground,false)
+	if _nose != null:
+		_nose.target = lode_target
+		_nose.step(delta)
 	plane_figure._mark.visible = false
 	_check_arrival()
 	chase.step(delta,plane,0.0,_inside_stone)
@@ -846,6 +858,8 @@ func _show_fly_hint() -> void:
 		if lode_state == "seated":
 			text += "\nThe lodestone points the way (%.0f m): turn toward the brighter wing seam (both even and faint: on course)  ·  top or bottom fin lit: climb or dive  ·  tail lit: it is behind you  ·  prow runes flare: dead ahead" % plane.position.distance_to(lode_target)
 		else: text += "\nThe stone plane sleeps: find the lodestone on foot and board with it to wake it"
+	elif lodestone != null and lode_state == "seated":
+		text += "\nThe nose arrow points to the place in the stone (%.0f m): it glows brighter when you are dead on course" % plane.position.distance_to(lode_target)
 	_switch_hint.text = text
 
 ## The turf's top under a point, as the game's plane reads its heightfield:
@@ -1230,12 +1244,12 @@ func _foot_text() -> String:
 
 ## Near the shard with the stone seated: a chime, a pop and a flash.
 func _check_arrival() -> void:
-	if lode_state != "seated" or not stone_plane or not plane_figure.seated: return
+	if lode_state != "seated" or (stone_plane and not plane_figure.seated): return
 	var d: float = plane.position.distance_to(lode_target)
 	if not arrived and d < ARRIVE:
 		arrived = true
 		_moments.pop("Arrived: the place in the stone",2.6)
 		_moments.flourish()
-		plane_figure.flash()
+		if stone_plane: plane_figure.flash()
 		_flash_left = 1.4
 	elif arrived and d > ARRIVE_AGAIN: arrived = false

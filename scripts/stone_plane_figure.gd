@@ -143,6 +143,9 @@ var _seat_from := Vector3.ZERO
 var _seat_scale := 1.0
 var _pulse_t := INF
 var _flash := 0.0
+## The nose wisps toward the target; off by default (the user found they
+## read like a spider web from the nose; the seams carry the compass).
+var show_wisps := false
 var _wisps: MeshInstance3D
 var _wisp_mesh: ImmediateMesh
 var _scarf_points := PackedVector3Array()
@@ -446,7 +449,7 @@ func _bob(_delta: float) -> void:
 ## each other, swept back with the speed; stronger the further the eye.
 func _draw_wisps(glide: RefCounted) -> void:
 	var strength := wake*smoothstep(EYE.x,EYE.y,_eye_distance())
-	if target == Vector3.INF or not seated or strength < 0.01 or not is_inside_tree():
+	if not show_wisps or target == Vector3.INF or not seated or strength < 0.01 or not is_inside_tree():
 		_wisps.visible = false
 		return
 	var nose := global_transform*Vector3(0.0,0.03,-0.66)
