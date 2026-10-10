@@ -7,7 +7,10 @@ extends SceneTree
 ## the acts in order); it stands near the home with --motif=sundered (laid
 ## clear of the islands, the other clusters and the seeded islets), its
 ## islands bedded under the hall and turned along it; its far detail and
-## each piece's near detail within budget; the near detail streams in and
+## each piece's near detail within budget (its stone and its overgrowth,
+## scripts/sundered_growth.gd, apart); the overgrowth leaves the collision
+## as it was and keeps out of the flown lane's low slot and the breaches;
+## the near detail streams in and
 ## out by distance; and the game's plane on an autopilot flies the whole
 ## line headless through the near detail's stone, bumping and recovering,
 ## in a minute or more at cruise.
@@ -16,6 +19,7 @@ const SunderedBuild = preload("res://scripts/sundered_build.gd")
 const SkyIslets = preload("res://scripts/sky_islets.gd")
 const SkyCells = preload("res://scripts/sky_cells.gd")
 const SkyClusters = preload("res://scripts/sky_clusters.gd")
+const SunderedGrowth = preload("res://scripts/sundered_growth.gd")
 const SkyPlane = preload("res://scripts/sky_plane.gd")
 const RuinBump = preload("res://scripts/ruin_bump.gd")
 const RuinKit = preload("res://scripts/ruin_kit.gd")
@@ -24,12 +28,14 @@ const Solver = preload("res://scripts/cluster_solver.gd")
 
 ## Seeds whose layouts are checked; a way out at least every EXIT_EVERY m
 ## of line (3 s at cruise); budgets: the whole far detail, a piece's near
-## detail and its per-bay share; the traversal at cruise (s).
+## detail, its stone's per-bay share and its growth's (the overgrowth's
+## wind-blown surface); the traversal at cruise (s).
 const SEEDS := 60
 const EXIT_EVERY := 42.0
 const FAR_BUDGET := 30000
-const NEAR_BUDGET := 85000
+const NEAR_BUDGET := 130000
 const NEAR_BAY := 8000
+const GROWTH_BAY := 6500
 const TRAVERSE := Vector2(58.0,100.0)
 var failures := 0
 
@@ -197,6 +203,7 @@ func _standing() -> void:
 	check(t_mesh < 4000 and t_chunk < 4000,"A piece stands without a hitch (mesh %.1f ms, body chunks after the first %.1f ms at most)" % [t_mesh/1000.0,t_chunk/1000.0])
 	var worst := 0
 	var worst_bay := 0.0
+	var worst_growth := 0.0
 	var builds: Array = []
 	var stands: Array = []
 	for live: Dictionary in c.halls:
@@ -204,17 +211,21 @@ func _standing() -> void:
 		SunderedBuild.build_now(live,plan)
 		var spent := Time.get_ticks_usec()-t0
 		var tris := RuinKit.triangles(live.near)
+		var grown := _growth_tris(live.near)
 		if live.member.role == "piece":
+			var bays := int(plan.pieces[int(live.member.piece)].bays)
 			worst = maxi(worst,tris)
-			worst_bay = maxf(worst_bay,float(tris)/int(plan.pieces[int(live.member.piece)].bays))
+			worst_bay = maxf(worst_bay,float(tris-grown)/bays)
+			worst_growth = maxf(worst_growth,float(grown)/bays)
 			builds.append(int(live.get("build_usec",0))/1000)
 			stands.append((spent-int(live.get("build_usec",0)))/1000)
 		var hulls := 0
 		for n: Node in (live.near as Node).get_children():
 			if n is StaticBody3D: hulls += n.get_child_count()
-		print("  near %s: %d triangles, %d hulls" % [live.member.name,tris,hulls])
-	check(worst <= NEAR_BUDGET and worst_bay <= NEAR_BAY,"A piece's near detail at most %d triangles (%.0f a bay; budget %d, %d)" % [worst,worst_bay,NEAR_BUDGET,NEAR_BAY])
+		print("  near %s: %d triangles (%d growth), %d hulls" % [live.member.name,tris,grown,hulls])
+	check(worst <= NEAR_BUDGET and worst_bay <= NEAR_BAY and worst_growth <= GROWTH_BAY,"A piece's near detail at most %d triangles (stone %.0f a bay, growth %.0f a bay; budgets %d, %d, %d)" % [worst,worst_bay,worst_growth,NEAR_BUDGET,NEAR_BAY,GROWTH_BAY])
 	print("  near builds (worker, ms): %s" % str(builds))
+	_overgrowth(plan)
 	await physics_frame
 	await physics_frame
 	await _fly(field,plan,spot,cells)
@@ -237,6 +248,64 @@ func _standing() -> void:
 	for n in root.get_children():
 		if n is StaticBody3D: n.queue_free()
 	for i in range(4): await process_frame
+
+## The overgrowth (scripts/sundered_growth.gd): a piece built with and
+## without it collides alike, its growth is on (more than the kit's own),
+## and none of it hangs into the flown lane's low slot or across a breach.
+func _overgrowth(plan: Dictionary) -> void:
+	var picked: Dictionary = {}
+	for piece: Dictionary in plan.pieces:
+		if piece.act in ["shafts","slit"] and not picked.has(piece.act): picked[piece.act] = piece
+	var same := true
+	var more := true
+	var in_lane := 0
+	var in_breach := 0
+	var probed := 0
+	for piece: Dictionary in picked.values():
+		var keep := SunderedGrowth.amount
+		SunderedGrowth.amount = 0.0
+		var bare: Node3D = SunderedBuild.near(piece)
+		SunderedGrowth.amount = keep
+		var grown: Node3D = SunderedBuild.near(piece)
+		if _hulls(bare) != _hulls(grown): same = false
+		if _growth_tris(grown) < _growth_tris(bare)*2: more = false
+		var path: Hall.HallPath = piece.path
+		var weave: Dictionary = grown.get_meta("weave")
+		var mesh: Mesh = (grown.get_node("Mesh") as MeshInstance3D).mesh
+		var v: PackedVector3Array = mesh.surface_get_arrays(1)[Mesh.ARRAY_VERTEX] if mesh.get_surface_count() > 1 else PackedVector3Array()
+		for i in range(0,v.size(),5):
+			var q := path.locate(v[i])
+			probed += 1
+			# The lane's low slot: the line's height and a wing round it,
+			# inside the columns' bases (ivy on them may stand into its edge).
+			if q.z > Hall.LANE.x+0.6 and q.z < Hall.LANE.y-0.6 and q.y > 0.6 and q.y < 2.9 and q.x > 0.5 and q.x < float(piece.length)-0.5: in_lane += 1
+			for br: Dictionary in weave.breaches:
+				var box: AABB = br.box
+				if box.grow(-0.5).has_point(q): in_breach += 1
+		for n: Node3D in [bare,grown]:
+			for chunk: Node in n.get_meta("bodies",[]): chunk.free()
+			n.free()
+	check(same,"The overgrowth leaves the collision as it was (%s)" % ", ".join(picked.keys()))
+	check(more,"The overgrowth grows more than twice the kit's own growth")
+	check(in_lane == 0 and in_breach <= probed/2000,"The overgrowth keeps out of the lane's low slot (%d) and the breaches (%d of %d probed)" % [in_lane,in_breach,probed])
+
+static func _hulls(root: Node) -> Array:
+	var out: Array = []
+	for chunk: Node in root.get_meta("bodies",[]):
+		for h: CollisionShape3D in chunk.get_children():
+			var sum := Vector3.ZERO
+			for p in (h.shape as ConvexPolygonShape3D).points: sum += p
+			out.append(sum)
+	return out
+
+static func _growth_tris(root: Node) -> int:
+	var count := 0
+	for node in [root]+root.get_children():
+		var mesh := (node as Node).get_node_or_null("Mesh") as MeshInstance3D
+		if mesh == null or mesh.mesh == null: continue
+		for s in range(mesh.mesh.get_surface_count()):
+			if mesh.mesh.surface_get_material(s) == RuinKit.materials().growth: count += mesh.mesh.surface_get_array_len(s)/3
+	return count
 
 static func _bays(plan: Dictionary) -> int:
 	var n := 0

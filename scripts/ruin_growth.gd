@@ -177,30 +177,35 @@ static func curtains(b) -> void:
 	for hi in range(b.hangs.size()):
 		var h: Array = b.hangs[hi]
 		if b.detail < 1.0 and fmod(hi*0.618,1.0) >= b.detail: continue
-		var at: Vector3 = h[0]
-		var length: float = h[1]
-		var from: float = h[3]
-		if from < 0.0:
-			from = _underside(b,at,0.5,14.0)
-			if from < 0.0: continue
-		if length < 0.2: continue
-		var way := _run_way(b,at,from)
-		var spacing: float = b.rng.randf_range(SPACING.x,SPACING.y)*(LEAN_SCALE if b.lean else 1.0)
-		var most: int = STRANDS_LEAN if b.lean else STRANDS
-		var count := clampi(int(round(most*b.rng.randf_range(0.55,1.0))),2,most)
-		var long := minf(length*LENGTH_GAIN+0.6,LONGEST)
-		var facing := Vector3(-way.z,0.0,way.x)
-		var shift: float = b.rng.randf_range(-0.3,0.3)*count*spacing
-		for i in range(count):
-			var t := (i+0.5)/count
-			var p: Vector3 = at+way*((t-0.5)*count*spacing+shift+b.rng.randf_range(-0.03,0.03))
-			var top := _underside(b,p,from-0.9,from+1.2)
-			if top < 0.0: continue
-			var envelope := 0.5+0.5*sin(PI*t)
-			var room: float = top-b.floor_at(p.x,p.z)-0.35
-			var l := minf(long*envelope*b.rng.randf_range(0.6,1.1),room)
-			if l < 0.3: continue
-			strand(b,Vector3(p.x,top,p.z),l,facing,true)
+		curtain(b,h[0],h[1],h[3])
+
+## One curtain under the underside over `at` (x, z; from height `from`, or
+## found by looking up from the floor): a row of strands along the way the
+## underside runs, longest in its middle, its tips ragged, hanging
+## LENGTH_GAIN x `length` (at most `longest`). `most`: its strands at most
+## (-1: STRANDS, or STRANDS_LEAN on lean stone); `full`: as `strand`.
+static func curtain(b, at: Vector3, length: float, from := -1.0, most := -1, longest := LONGEST, full := false) -> void:
+	if from < 0.0:
+		from = _underside(b,at,0.5,14.0)
+		if from < 0.0: return
+	if length < 0.2: return
+	var way := _run_way(b,at,from)
+	var spacing: float = b.rng.randf_range(SPACING.x,SPACING.y)*(LEAN_SCALE if b.lean else 1.0)
+	if most < 0: most = STRANDS_LEAN if b.lean else STRANDS
+	var count := clampi(int(round(most*b.rng.randf_range(0.55,1.0))),2,most)
+	var long := minf(length*LENGTH_GAIN+0.6,longest)
+	var facing := Vector3(-way.z,0.0,way.x)
+	var shift: float = b.rng.randf_range(-0.3,0.3)*count*spacing
+	for i in range(count):
+		var t := (i+0.5)/count
+		var p: Vector3 = at+way*((t-0.5)*count*spacing+shift+b.rng.randf_range(-0.03,0.03))
+		var top := _underside(b,p,from-0.9,from+1.2)
+		if top < 0.0: continue
+		var envelope := 0.5+0.5*sin(PI*t)
+		var room: float = top-b.floor_at(p.x,p.z)-0.35
+		var l := minf(long*envelope*b.rng.randf_range(0.6,1.1),room)
+		if l < 0.3: continue
+		strand(b,Vector3(p.x,top,p.z),l,facing,true,1.0,full)
 
 ## The rows draped down from wall heads: a few of the high tops' edges whose
 ## face falls away under them, each a row of strands hugging the face (out
@@ -254,9 +259,12 @@ static func fringes(b) -> void:
 ## One strand from `start` down `length` m, `out` the way it faces: free
 ## (in the air under an underside) or hugging the face under it (pushed out
 ## round what stands proud, hanging free where the face falls away).
-static func strand(b, start: Vector3, length: float, out: Vector3, free: bool) -> void:
+## `coarse` scales its leaves and their spacing (fewer, bigger: growth seen
+## from further off), its stem then a flat ribbon; `full`: two leaves a
+## node on lean stone too (a fuller strand).
+static func strand(b, start: Vector3, length: float, out: Vector3, free: bool, coarse := 1.0, full := false) -> void:
 	var lean: bool = b.lean
-	var scale := LEAN_SCALE if lean else 1.0
+	var scale := (LEAN_SCALE if lean else 1.0)*coarse
 	var side := Vector3(-out.z,0.0,out.x)
 	var step := NODE_STEP*scale
 	var p := start
@@ -279,7 +287,7 @@ static func strand(b, start: Vector3, length: float, out: Vector3, free: bool) -
 		if not on_tendril or node%3 == 0:
 			var size: float = lerpf(LEAF.x,LEAF.y,smoothstep(0.3,1.0,t))*scale*b.rng.randf_range(0.8,1.15)
 			if on_tendril: size *= 0.7
-			for j in range(1 if (lean or on_tendril) else 2):
+			for j in range(1 if ((lean and not full) or on_tendril) else 2):
 				var s := 1.0 if (node+j)%2 == 0 else -1.0
 				b.grow = attrs(start.y,length,out,air_share,1.0,fmod(phase+node*0.137+j*0.31,1.0))
 				_vine_leaf(b,p,out,side*s,size,t,hug)
@@ -302,7 +310,8 @@ static func strand(b, start: Vector3, length: float, out: Vector3, free: bool) -
 		stem_len += step
 		if stem_len >= STEM_STEP*scale or travelled+step >= length:
 			b.grow = attrs(start.y,length,out,air_share,0.0,phase)
-			_stem(b,stem_from,next,STEM*scale*lerpf(1.0,0.6,t))
+			if coarse > 1.0: _ribbon(b,stem_from,next,STEM*scale*lerpf(1.0,0.6,t),out)
+			else: _stem(b,stem_from,next,STEM*scale*lerpf(1.0,0.6,t))
 			stem_from = next
 			stem_len = 0.0
 		p = next
@@ -356,6 +365,15 @@ static func _stem(b, a: Vector3, b2: Vector3, r: float) -> void:
 		var d1 := u*cos(a1)+v*sin(a1)
 		var n := (d0+d1).normalized()
 		b.growth_face(PackedVector3Array([a+d0*r,a+d1*r,b2+d1*r,b2+d0*r]),n,colour)
+
+## A flat stem from `a` to `b2`, `r` across, facing `out` (one quad; the
+## growth draws both sides).
+static func _ribbon(b, a: Vector3, b2: Vector3, r: float, out: Vector3) -> void:
+	var axis := b2-a
+	if axis.length() < 0.005: return
+	var across := axis.cross(out).normalized()
+	if across.length() < 0.5: return
+	b.growth_face(PackedVector3Array([a-across*r,a+across*r,b2+across*r,b2-across*r]),out,Color("3b4a26").srgb_to_linear())
 
 ## The underside over `at` (x, z): the lowest stone looking up from `low`
 ## to `high`, a little under it; -1 if none.
