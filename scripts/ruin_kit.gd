@@ -1786,7 +1786,7 @@ static func _courses(b: Build, pose: Transform3D, x0: float, x1: float, y0: floa
 		most = maxf(most,float(top.call(x)))
 		x += 0.2
 	most = maxf(most,float(top.call(x1)))
-	var sag := (SAG.x+(SAG.y-SAG.x)*b.weathered*b.settle)*(float(Style.get_value("sag")) if Style.clean() else 1.0)
+	var sag := (SAG.x+(SAG.y-SAG.x)*b.weathered*b.settle)*Style.share("sag")
 	var y := y0
 	var k := 0
 	var cap := 0.2 if coping else 0.0
@@ -1998,9 +1998,9 @@ static func _settle(b: Build, at: Vector3, loose: float) -> Transform3D:
 static func _jiggle(b: Build, pose: Transform3D, loose: float) -> Transform3D:
 	var tilt := (TRUE_OFF.x+(TRUE_OFF.y-TRUE_OFF.x)*b.weathered*b.settle)*loose
 	var shift := (SHIFT.x+(SHIFT.y-SHIFT.x)*b.weathered*b.settle)*loose
-	if Style.clean():
-		tilt *= float(Style.get_value("true_off"))
-		shift *= float(Style.get_value("true_off"))
+	if Style.ruled():
+		tilt *= Style.share("true_off")
+		shift *= Style.share("true_off")
 	var axis := Vector3(b.rng.randf_range(-1,1),b.rng.randf_range(-0.3,0.3),b.rng.randf_range(-1,1)).normalized()
 	var move := Vector3(b.rng.randf_range(-1,1),b.rng.randf_range(-0.3,0.1),b.rng.randf_range(-1,1))*shift
 	return Transform3D(Basis(axis,b.rng.randf_range(0.3,1.0)*tilt)*pose.basis,pose.origin+move)
@@ -2033,7 +2033,8 @@ static func _box(b: Build, half: Vector3, c := -1.0) -> Array[Plane]:
 			for se: float in [-1.0,1.0]:
 				# Lean: only the upper arrises (the lower meet the course below).
 				if b.lean and c < 0.0 and ((a == 1 and sa < 0.0) or (e == 1 and se < 0.0)): continue
-				var cc := minf(base*b.rng.randf_range(0.45,1.9),least*0.45)
+				var roll := b.rng.randf_range(0.45,1.9)
+				var cc := minf(base*roll,least*0.45)
 				var n := Vector3.ZERO
 				n[a] = sa
 				n[e] = se
@@ -2044,8 +2045,13 @@ static func _box(b: Build, half: Vector3, c := -1.0) -> Array[Plane]:
 				var bevel := Plane(n,n.dot(corner)-cc)
 				out.append(bevel)
 				# A clean look draws the box without its worn arrises (the
-				# same numbers drawn, so the piece is otherwise the same).
-				if c < 0.0 and Style.clean(): b.bevels[bevel] = true
+				# same numbers drawn, so the piece is otherwise the same); an
+				# eroded look keeps what it needs to dial the arris (`solid`):
+				# where it runs (round the top, upright, at the foot), how
+				# worn the classic drew it (a share), how deep, its cap.
+				if c < 0.0 and Style.ruled():
+					var kind := "arris_top" if (a == 1 and sa > 0.0) or (e == 1 and se > 0.0) else ("arris_low" if a == 1 or e == 1 else "arris_side")
+					b.bevels[bevel] = [kind,(roll-0.45)/1.45,cc,least*0.45]
 	return out
 
 ## Chamfers on the four vertical arrises of axis-aligned `planes` round
@@ -2150,11 +2156,20 @@ class Build extends RefCounted:
 	## the drawn and solid block), and the piece's own stone.
 	var bevels := {}
 	var clean_stone := Color()
+	## An eroded look's record of the last `_wear`'s chips and chunk (its
+	## planes after the block's own, in order): ["chip", how deep the classic
+	## drew it (a share), on an upper corner, its bite, its cap] or ["chunk",
+	## its roll (a share of the odds), its share, the block's depth across].
+	var worn_cuts: Array = []
 	static var _materials := {}
 	## How much of the small growth and scatter is built (RuinKit
 	## `set_detail`): 1 all of it; under 1 fewer ivy strands, moss
 	## cushions, tufts and rubble stones; 0 none (a far or cheap ruin).
 	static var detail := 1.0
+	## Every finished piece's random state, hashed in turn: the same in
+	## every stone look when the looks draw the same numbers
+	## (tools/ruin_stone_dump.gd checks it).
+	static var draws := 0
 
 	static func materials() -> Dictionary:
 		if _materials.is_empty():
@@ -2176,7 +2191,7 @@ class Build extends RefCounted:
 		weathered = clampf(amount,0.0,1.0)
 		age = AGE+(1.0-AGE)*weathered
 		stone = STONE.lerp(STONE_COOL,rng.randf())
-		if Style.clean(): clean_stone = Style.stone_of(seed_value)
+		if Style.ruled(): clean_stone = Style.stone_of(seed_value)
 		noise.seed = seed_value
 		noise.frequency = 1.0
 		noise.fractal_octaves = 2
@@ -2231,10 +2246,16 @@ class Build extends RefCounted:
 	func solid(planes: Array[Plane], pose: Transform3D, colour: Color, collide := true, wear := true, extra: Array[Plane] = [], open := -1, rough := 1.0, growable := true) -> PackedVector3Array:
 		var cut: Array[Plane] = planes.duplicate()
 		for p in extra: cut.append(p)
+		# An eroded look: the block's own planes as built (its faces, worn
+		# arrises and breaks), and whether the wear took (its chips and
+		# chunk in `worn_cuts`).
+		var source := cut
+		var wore := false
 		if wear:
 			# The wear's tilted faces never grow a block past where it stood
 			# unworn: a sliver whose sides tilt open would run on for metres.
 			var worn := _wear(cut,rough,open)
+			wore = true
 			var base := Geometry3D.compute_convex_mesh_points(cut)
 			if base.size() >= 4:
 				var box := AABB(base[0],Vector3.ZERO)
@@ -2243,6 +2264,7 @@ class Build extends RefCounted:
 				for q in Geometry3D.compute_convex_mesh_points(worn):
 					if not box.has_point(q):
 						worn = cut
+						wore = false
 						break
 			cut = worn
 		var xf := frame*pose
@@ -2254,6 +2276,9 @@ class Build extends RefCounted:
 		# is the same), then drawn and made solid without the wear and
 		# without its worn arrises, its faces coloured by the look's rule.
 		var cleaned := growable and Style.clean()
+		# A look other than classic on stone colours its faces by the look's
+		# rule (`Style.shade`); an eroded one keeps the classic's block.
+		var ruled := growable and Style.ruled()
 		var made: Array = _polys(cut,points,open)
 		if cleaned:
 			if points.size() >= 4:
@@ -2280,12 +2305,32 @@ class Build extends RefCounted:
 			var middle := Vector3.ZERO
 			for q in points: middle += xf*q
 			anchor = middle.x/points.size()
+		var eroding := ruled and Style.eroded()
+		# An eroded look: the block worn as the classic's, then its wear
+		# dialled (`_dial`); drawn at `finish`, when its open faces can be
+		# told, so only the wear on its open arrises and corners shows
+		# (`_erode`). Its hull, its ivy, what it gives back and the numbers
+		# drawn are the classic's.
+		var dialled: Array = _dial(source,cut,wore,planes.size()) if eroding else []
+		var shape := points
+		if eroding:
+			var mine: Array[Plane] = []
+			for d: Array in dialled: mine.append(d[0])
+			var drawn := _unique(Geometry3D.compute_convex_mesh_points(mine))
+			if drawn.size() >= 4: shape = drawn
 		var centre := Vector3.ZERO
 		var part := 1.0
-		if cleaned:
-			for q in points: centre += xf*q
-			centre /= points.size()
+		if ruled:
+			for q in shape: centre += xf*q
+			centre /= shape.size()
 			part = colour.get_luminance()/maxf(stone.get_luminance(),0.001)
+		if eroding:
+			var world: Array[Plane] = []
+			var kinds := PackedByteArray()
+			for d: Array in dialled:
+				world.append(xf*(d[0] as Plane))
+				kinds.append(int(d[1]))
+			pending.append(["erode",world,centre,part,occluder,anchor,kinds])
 		if cleaned and Style.carves():
 			# A carved look (Style `carve`): the block is drawn at `finish`,
 			# when every block stands and its open faces can be told, so
@@ -2301,6 +2346,11 @@ class Build extends RefCounted:
 			var small := wear and float(p[3]) < biggest*0.16
 			var shade: Color
 			if cleaned: shade = Style.shade(clean_stone,centre,mid,normal,part)
+			elif ruled:
+				# The classic's colour worked out only to draw its numbers.
+				_shade(mid,normal,linear,small)
+				if eroding: continue
+				shade = Style.shade(clean_stone,centre,mid,normal,part,small)
 			else: shade = _shade(mid,normal,linear,small) if growable else linear*(1.0+rng.randf_range(-0.06,0.06))
 			if not growable: shade.a = 1.0
 			var corners := PackedVector3Array()
@@ -2314,6 +2364,9 @@ class Build extends RefCounted:
 			for plane in cut: world.append(xf*plane)
 			solids.append([box.grow(0.01),world])
 		if collide:
+			# An eroded look's hull is the classic's worn block, so its routes
+			# are the classic's whatever the dial (the drawn wear differs from
+			# it by a few centimetres at most).
 			var hull := PackedVector3Array()
 			for q in points: hull.append(xf*q)
 			# A sliver (a block cut nearly away by a hole's line or a break)
@@ -2322,6 +2375,48 @@ class Build extends RefCounted:
 				hulls.append(hull)
 				hull_anchors.append(anchor)
 		return made[1]
+
+	## An eroded look's block (Style `erode`): its classic worn planes `cut`
+	## (the block's own as built, `source`, then the wear's chips and chunk,
+	## then the ground's), dialled: each face's wobble scaled back toward
+	## true (tops more), the worn arrises the classic wore least left sharp
+	## and the rest worn deeper, the shallowest chips and the least likely
+	## chunks left out and the rest cut deeper. [plane, kind] each: 0 a face,
+	## a break or the ground, 1 a worn arris, 2 a chip, 3 a chunk.
+	func _dial(source: Array[Plane], cut: Array[Plane], wore: bool, count: int) -> Array:
+		var out: Array = []
+		for i in range(cut.size()):
+			var p := cut[i]
+			if i < source.size():
+				var s := source[i]
+				var n := p.normal
+				var d := p.d
+				if wore and not p.is_equal_approx(s):
+					# The classic tilted the face about its point nearest the
+					# middle and set it in a little: both scaled.
+					var share := Style.erode("wobble_top" if s.normal.y > 0.85 else "wobble")
+					var off := p.normal.dot(s.normal*s.d)-p.d
+					n = s.normal.lerp(p.normal,share).normalized()
+					d = n.dot(s.normal*s.d)-off*share
+				var info: Variant = bevels.get(s) if i < count else null
+				if info is Array:
+					var arris: Array = info
+					if float(arris[1]) < 1.0-Style.erode(arris[0]): continue
+					d -= minf(float(arris[2])*Style.erode("arris"),float(arris[3]))-float(arris[2])
+					out.append([Plane(n,d),1])
+				else: out.append([Plane(n,d),0])
+			elif wore and i-source.size() < worn_cuts.size():
+				var w: Array = worn_cuts[i-source.size()]
+				if w[0] == "chip":
+					if float(w[1]) < 1.0-Style.erode("chip" if w[2] else "chip_low"): continue
+					var more := minf(float(w[3])*Style.erode("chip_depth"),float(w[4]))-float(w[3])
+					out.append([Plane(p.normal,p.d-maxf(more,0.0)),2])
+				else:
+					if float(w[1]) >= Style.erode("chunk"): continue
+					var more := (minf(float(w[2])*Style.erode("chunk_depth"),0.5)-float(w[2]))*float(w[3])
+					out.append([Plane(p.normal,p.d-maxf(more,0.0)),3])
+			else: out.append([p,0])
+		return out
 
 	## A block's faces from its planes `cut` and corners `points`: [faces
 	## ([corners, normal, middle, area] each, in the block's frame), the
@@ -2353,7 +2448,7 @@ class Build extends RefCounted:
 			var area := 0.0
 			for k in range(1,on.size()-1): area += (on[k]-on[0]).cross(on[k+1]-on[0]).length()*0.5
 			biggest = maxf(biggest,area)
-			polys.append([on,plane.normal,mid,area])
+			polys.append([on,plane.normal,mid,area,i])
 		return [polys,open_face,biggest]
 
 	## The faces of `polys` (at `xf`) that look up, for the ivy and moss.
@@ -2414,6 +2509,7 @@ class Build extends RefCounted:
 			body.add_child(holder)
 		root.add_child(body)
 		root.set_meta("weathered",weathered)
+		draws = hash([draws,rng.state])
 		return root
 
 	## Where straight point `p` is drawn: along the bend (by its own x, or
@@ -2444,7 +2540,7 @@ class Build extends RefCounted:
 		if carving:
 			var faces_out: Array = []
 			for face: Array in pending:
-				if face[0] is String: faces_out.append_array(_carve(face,grid))
+				if face[0] is String: faces_out.append_array(_erode(face,grid) if face[0] == "erode" else _carve(face,grid))
 				else: faces_out.append(face)
 			pending = faces_out
 		for face: Array in pending:
@@ -2600,6 +2696,89 @@ class Build extends RefCounted:
 			out.append([corners,normal,Style.shade(clean_stone,centre,f[2],normal,part),own,anchor,null])
 		return out
 
+	## An eroded look's block (`solid`'s ["erode", planes (straight, the
+	## piece's frame), middle, part, occluder, anchor, kinds (each plane's:
+	## 0 a face or break, 1 a worn arris, 2 a chip, 3 a chunk gone)]) as
+	## faces to draw: the wear shows only where the stone is open, so a wall
+	## reads worn at its head, its ends and its breaks, not stone by stone.
+	## A worn arris stays where both faces it rounds are open (not against
+	## another block); a chip where two of the faces round its corner are;
+	## a chunk always. Collision stays the worn block's (`solid`).
+	func _erode(entry: Array, grid: Dictionary) -> Array:
+		var planes: Array[Plane] = entry[1]
+		var centre: Vector3 = entry[2]
+		var part: float = entry[3]
+		var own: int = entry[4]
+		var anchor: float = entry[5]
+		var kinds: PackedByteArray = entry[6]
+		var out: Array = []
+		# The block without its arrises and chips: which of its faces are open.
+		var base: Array[Plane] = []
+		for i in range(planes.size()):
+			if kinds[i] == 0 or kinds[i] == 3: base.append(planes[i])
+		var faces: Array = _polys(base,_unique(Geometry3D.compute_convex_mesh_points(base)),-1)[0]
+		var open: Array[Vector3] = []
+		var shut: Array[Vector3] = []
+		for f: Array in faces:
+			if _covered(PackedVector3Array(f[0] as Array),f[1],own,grid): shut.append(f[1])
+			else: open.append(f[1])
+		var keep: Array[Plane] = []
+		var kept := PackedByteArray()
+		for i in range(planes.size()):
+			var kind := kinds[i]
+			if kind == 1 or kind == 2:
+				var n := planes[i].normal
+				var reach := 0.6 if kind == 1 else 0.3
+				var seen := 0
+				var hid := 0
+				for m in open:
+					if m.dot(n) > reach: seen += 1
+				for m in shut:
+					if m.dot(n) > reach: hid += 1
+				if kind == 1 and hid > 0: continue
+				if kind == 2 and seen < 2: continue
+			keep.append(planes[i])
+			kept.append(kind)
+		var points := _unique(Geometry3D.compute_convex_mesh_points(keep))
+		if points.size() < 4: return out
+		for f: Array in _polys(keep,points,-1)[0]:
+			var normal: Vector3 = f[1]
+			var worn := kept[int(f[4])] != 0
+			out.append([PackedVector3Array(f[0] as Array),normal,Style.shade(clean_stone,centre,f[2],normal,part,worn),own,anchor,null])
+		return out
+
+	## Whether a face (its corners, straight) is mostly against another
+	## block or the ground (an eroded look's joint, `_erode`): its middle
+	## and at least half of its corners, drawn in halfway, a little off it
+	## lie inside other blocks; so a course's top under the next course's
+	## worn foot, or a stone set a little back, still counts as a joint.
+	func _covered(corners: PackedVector3Array, normal: Vector3, own: int, grid: Dictionary) -> bool:
+		var middle := Vector3.ZERO
+		for q in corners: middle += q
+		middle /= corners.size()
+		if not _solid_at(middle+normal*CULL_OFF*2.0,own,grid): return false
+		var inside := 0
+		for q in corners:
+			if _solid_at(q.lerp(middle,0.5)+normal*CULL_OFF*2.0,own,grid): inside += 1
+		return inside*2 >= corners.size()
+
+	## Whether `p` lies inside a block other than `own`, or under the ground.
+	func _solid_at(p: Vector3, own: int, grid: Dictionary) -> bool:
+		if p.y < floor_at(p.x,p.z)-0.01 or p.y < ground-0.01: return true
+		var key := Vector3i(floori(p.x/CELL_CULL),floori(p.y/CELL_CULL),floori(p.z/CELL_CULL))
+		if not grid.has(key): return false
+		for i in grid[key]:
+			if i == own: continue
+			var s: Array = solids[i]
+			if not (s[0] as AABB).has_point(p): continue
+			var inside := true
+			for plane: Plane in s[1]:
+				if plane.distance_to(p) > 0.0:
+					inside = false
+					break
+			if inside: return true
+		return false
+
 	## Whether a face (its corners, straight) is hidden: every corner (drawn
 	## in a little toward its middle) and its middle, stood a little off the
 	## face, lie inside another block or under the ground.
@@ -2638,6 +2817,10 @@ class Build extends RefCounted:
 		var w := clampf(weathered*rough,0.0,1.0)
 		var out: Array[Plane] = []
 		var wobble := WOBBLE.x+(WOBBLE.y-WOBBLE.x)*w
+		# An eroded look (Style `erode`) dials the classic's cuts, drawing
+		# the same numbers.
+		var eroded := Style.eroded()
+		worn_cuts = []
 		for i in range(planes.size()):
 			var p := planes[i]
 			# Lean stone keeps its tops level (walked, and stacked flush).
@@ -2662,15 +2845,22 @@ class Build extends RefCounted:
 			var n := ((corner-centre).normalized()+Vector3(rng.randf_range(-0.35,0.35),rng.randf_range(-0.35,0.35),rng.randf_range(-0.35,0.35))).normalized()
 			var reach := -INF
 			for q in points: reach = maxf(reach,n.dot(q))
-			out.append(Plane(n,reach-least*rng.randf_range(CHIP.x,CHIP.y)*(0.35+0.65*a)))
-		if rng.randf() < (CHUNK_ODDS*w+0.05*minf(rough,1.0))*(0.5 if lean else 1.0):
+			var size := rng.randf_range(CHIP.x,CHIP.y)
+			var bite := least*size*(0.35+0.65*a)
+			out.append(Plane(n,reach-bite))
+			if eroded: worn_cuts.append(["chip",(size-CHIP.x)/(CHIP.y-CHIP.x),corner.y >= centre.y,bite,least*0.75])
+		var odds := (CHUNK_ODDS*w+0.05*minf(rough,1.0))*(0.5 if lean else 1.0)
+		var roll := rng.randf()
+		if roll < odds:
 			var n := Vector3(rng.randf_range(-1,1),rng.randf_range(0.0,1.0),rng.randf_range(-1,1)).normalized()
 			var reach := -INF
 			var low := INF
 			for q in points:
 				reach = maxf(reach,n.dot(q))
 				low = minf(low,n.dot(q))
-			out.append(Plane(n,reach-(reach-low)*rng.randf_range(CHUNK.x,CHUNK.y)))
+			var share := rng.randf_range(CHUNK.x,CHUNK.y)
+			out.append(Plane(n,reach-(reach-low)*share))
+			if eroded: worn_cuts.append(["chunk",roll/odds,share,reach-low])
 		return out
 
 	## A face's colour (linear): its block's, a facet's own step lighter or

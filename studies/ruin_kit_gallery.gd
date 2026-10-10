@@ -30,8 +30,10 @@ extends Node3D
 ##   V               the growth in the wind or held still (compare)
 ##   B               send a strong gust front across the view now
 ##   T               the next stone look: classic, big ashlar, carved mass,
-##                   islet basalt (scripts/ruin_stone_style.gd, docs/scenic/
-##                   ruin-stone.md); --stone=classic|ashlar|mass|basalt starts in one
+##                   islet basalt, eroded basalt light / medium / heavy
+##                   (scripts/ruin_stone_style.gd, docs/scenic/ruin-stone.md);
+##                   --stone=classic|ashlar|mass|basalt|eroded_light|eroded|eroded_heavy
+##                   starts in one
 ## The growth (scripts/ruin_growth.gd, docs/scenic/ruin-overgrowth.md) sways
 ## in the game's breeze, run here as the atmosphere runs it: the air's
 ## travel, its gust fronts (studies/gust_fronts.gd) and the breeze.

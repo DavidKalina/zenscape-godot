@@ -1,10 +1,117 @@
 # Ruin stone: handoff
 
-Branch `look/ruin-stone` (from `playtest/aqueduct-overgrowth` 69b61ff6). Not merged, not pushed.
+Branch `look/ruin-stone` (from `playtest/aqueduct-overgrowth` 69b61ff6), then `look/ruin-stone-eroded` (from d6f0cefe) for round 2. Not merged, not pushed.
+
+## Round 2: eroded basalt (2026-10-10)
+
+The user played basalt on the isle: "it kind of got stronger in some areas, but weaker in others… it's too flat now. It doesn't have that texture, the erosion." Compared with classic, they agreed to try an eroded basalt.
+
+**The diagnosis held.** Classic did two things: shape erosion (worn arrises, chips, chunks gone, ragged breaks, blocks out of true, faces wobbling) and colour noise (per-block tone, stains, lichen, moss patches). The colour noise is what made it muddy. Basalt dropped both. Side by side, an eroded look in basalt's colours has the texture back while staying calm, because the erosion now reads only through light and shadow on the facets.
+
+A second finding: the erosion was everywhere. Even without colour noise, wearing every arris and chipping every corner outlines each stone in a coursed wall (V-grooves at every joint), and that is where most of the brick-by-brick busyness comes from. So the eroded looks show wear **only where the stone is open**:
+
+- A worn arris stays only between two open faces, not against a neighbour.
+- A chip stays only where two of its corner's faces are open.
+- A chunk always stays.
+
+So the wear concentrates on wall heads, ends, steps' lips, corners and breaks, and the joints of a flush wall stay tight. Openness is judged at `finish`, when every block stands (Build `_erode`, `_covered`: a face counts as a joint when its middle and half its corners, drawn in halfway, sit inside a neighbour).
+
+### The eroded looks
+
+| Look | Name in the UI | Dial (share of classic's) |
+|---|---|---|
+| `eroded_light` | eroded basalt, light | arrises kept 0.6 top / 0.5 upright / 0.1 foot, ×1.5 deeper; wobble 0.25 (tops 0.15); chips 0.45 upper / 0.15 lower, ×1.5; chunks 0.5 |
+| `eroded` (**default**) | eroded basalt | arrises 0.8 / 0.65 / 0.25, ×1.6; wobble 0.4 (tops 0.25); chips 0.65 / 0.3, ×1.6; chunks 0.8, ×1.15 |
+| `eroded_heavy` | eroded basalt, heavy | arrises 1 / 0.9 / 0.5, ×1.7; wobble 0.7 (tops 0.4); chips 0.9 / 0.5, ×1.7; chunks 1, ×1.3 |
+
+- **The dial keeps the boldest cuts.** The kept arrises, chips and chunks are the ones the classic drew deepest or likeliest, and they are cut deeper still: fewer, bolder cuts.
+- **Colour.** Basalt's rule: the islets' dark stone, tone by facing only, tops one tone, 1.6 m bands, a darker foot, no per-block tone, stains, lichen or moss patches. A worn face (chip or arris) is 3% lighter (`worn`), so the cuts catch the light. Knobs: `ERODE_*` and `LOOKS.eroded*` in `scripts/ruin_stone_style.gd`.
+- **Same pieces as classic, exactly.** An eroded look builds every block as the classic does, with the same draws, poses, returned faces, ivy solids and **collision hulls**. It then dials the classic's recorded cuts for drawing only (Build `_dial`). So plans, breaks, ruin lines, drifts, routes and physics are classic's, piece for piece, whatever the dial.
+  - `tools/ruin_stone_dump.gd` now prints `draws` (every finished piece's random state, hashed). It matches classic at all 49 checkpoints in all three eroded looks.
+  - The hull counts match classic's too: 2360 / 2499 / 760.
+- **Out of true stays.** The blocks keep classic's tilt and shift. Truing them in drawing only would need the jiggle per block, but jiggled poses are reused for groups of blocks (capitals, hall columns in `ruin_kit_hall.gd`), so it was left alone. A first try that scaled the poses changed the stream: the weathered arch broke differently.
+- **Collision.** The eroded looks use the classic's worn hull, which classic's routes already walk. A first try with the dialled hull failed the isle's grand stair at medium. The drawn wear differs from the hull by a few centimetres at most.
+
+### Running them
+
+```
+./run-ruin-kit.command                          # eroded (the default); T cycles every look
+./run-ruin-kit.command --stone=eroded_light     # or eroded_heavy, basalt, classic, ashlar, mass
+./run-aqueduct-isle.command                     # eroded
+./run-aqueduct-isle.command --stone=eroded_heavy
+```
+
+The T order is classic → ashlar → mass → basalt → eroded light → eroded → eroded heavy.
+
+### Captures (round 2)
+
+These are in `docs/scenic/ruin-stone/` at the game's noon, rendered with `--no-title`, one capture at a time (parallel captures drift: the camera lands oddly and the fly autopilot strays). Each is a 3×2 grid: **classic | basalt / eroded light | eroded / eroded heavy | (blank)**.
+
+| File | View |
+|---|---|
+| `eroded_isle_close.jpg` | The rubble steps where the pilot starts |
+| `eroded_isle_wide.jpg` | The aqueduct isle, the same eye as round 1 |
+| `eroded_drum.jpg` | The henge terrace's drum wall, close (`--at=86,36,16 --look=66,32,2`) |
+| `eroded_arch.jpg` | The pointed arch, intact and weathered |
+| `eroded_aqueduct.jpg` | The gallery's aqueduct run |
+| `eroded_hall_inside.jpg` | Flying the hall (`--fly=3`) |
+| `eroded_hall.jpg` | The curved hall from above |
+
+### Triangles (round 2)
+
+From `tools/ruin_stone_dump.gd`, headless. Totals include growth.
+
+| Build | classic | basalt | eroded light | **eroded** | eroded heavy |
+|---|---|---|---|---|---|
+| 12-bay hall, seed 12, in-world | 90,532 | 77,355 | 78,622 | **79,529** | 80,608 |
+| 12-bay hall, seed 20, in-world | 94,842 | 83,399 | 82,533 | **83,529** | 84,748 |
+| … of which stone (seed 20) | 85,211 | 72,763 | 72,902 | 73,898 | 75,117 |
+| Aqueduct run (head + 4 spans) | 162,606 | 131,393 | 135,652 | 136,957 | 138,640 |
+| … of which stone | 44,547 | 19,757 | 17,593 | 18,898 | 20,581 |
+| All 46 pieces, detail 1 | 704,961 | 599,770 | 582,954 | 589,367 | 597,524 |
+| Aqueduct isle, the whole art | 411,667 | 294,687 | 298,983 | 303,109 | 308,486 |
+| 12-bay hall build time | 0.56 s | 1.0 s | 0.9 s | 0.9 s | 0.9 s |
+
+Every eroded look stays well under `Hall.BUDGET` (100k) and costs about the same as basalt. Showing wear only on open stone drops most of classic's triangles.
+
+### Pick: `eroded` (medium), now the default
+
+- **Against basalt.** The texture is back: steps' lips and wall heads are chamfered, broken courses are ragged and chipped, fallen stones are chunky faceted lumps. Light and shadow carry it, as the user asked.
+- **Against classic.** One calm colour family, no moss, stain or brown patchwork. The hall roof from above is as calm as basalt's. Flush walls read as cut stone with a few worn edges, not as a pile of outlined bricks.
+- **Light** is close behind: calmer and nearly as good up close, but at the isle's wide view it starts to drift back toward basalt's flatness.
+- **Heavy** rounds almost every open edge, so on coursed walls (the aqueduct head, the drum) the stones start to outline themselves again.
+- **Overgrowth.** The ivy and curtains are classic's exactly (same solids and draws) and stand out well against the grey.
+
+### Checks (round 2)
+
+- The headless import is clean.
+- With `eroded` as the default, these tests pass headless:
+  - `test_ruin_kit`
+  - `test_ruin_growth`
+  - `test_sundered_hall` (known `exit_leak` only)
+  - `test_aqueduct_isle` (24 OKs)
+  - `test_island_pack_ruins_archipelago`
+- `test_aqueduct_isle` was also run with `eroded_light` and `eroded_heavy` as the default: both pass.
+- Classic and basalt stay byte-identical to d6f0cefe (`--digest`).
+- The full suite was not run (as briefed).
+
+### Still weak (round 2)
+
+- **Coursed walls still show their stones a little**, most on the drum and the aqueduct head at mid distance. That comes from the classic's blocks out of true and in and out of the wall, which the eroded looks keep (see above). Next step: true the blocks in drawing only, by recording each solid's jiggle in `_jiggle` and un-applying it in `solid`. That needs care where one jiggled pose places several blocks.
+- **The clean looks don't draw the same numbers as classic**, contrary to round 1's note. Basalt's and ashlar's `draws` part from classic's from the first weathered piece on (`pier w1`). One visible result: the weathered pointed arch keeps its crown in classic and loses it in basalt (round 1's `cmp_looks.jpg` shows it too). The likely causes:
+  - their blocks give back their clean face to the code placing the next block;
+  - the ivy tests the clean solids.
+
+  Not traced further. The eroded looks don't have this problem.
+- **Intermittent capture hangs.** A rendered gallery or isle capture sometimes stalls at startup (no log past the engine banner) under load. Rerun alone, it takes about 15 s. This is not specific to any look.
+
+---
+
+# Round 1
 
 The ask: the ruin stone sat in an uncanny middle, "not detailed enough to look good, but too detailed to be stylized in a simplified way that reads like it was intentional". The reference is the game's own islands ("very simple, but very clean"). The goal: "everything should feel like it belongs in the same universe."
 
-The user picked **islet basalt** from the first round ("I feel like that one's gonna look the best"). It is now the default. The other looks stay on T for comparison.
+The user picked **islet basalt** from the first round ("I feel like that one's gonna look the best"). It was the default until round 2 (above) replaced it with eroded basalt. The other looks stay on T for comparison.
 
 ## The islands' style, as rules
 

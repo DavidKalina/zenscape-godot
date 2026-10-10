@@ -54,6 +54,7 @@ func _report(label: String, root: Node, digest: bool) -> int:
 			for holder in body.get_children():
 				hulls += 1
 				if digest: h = hash([h,((holder as CollisionShape3D).shape as ConvexPolygonShape3D).points])
-	print("%-28s tris %7d stone %7d hulls %5d %s" % [label,tris,stone_tris,hulls,("digest %d" % h) if digest else ""])
+	# The numbers drawn so far (RuinKit Build `draws`): the same in every look.
+	print("%-28s tris %7d stone %7d hulls %5d draws %d %s" % [label,tris,stone_tris,hulls,RuinKit.Build.draws,("digest %d" % h) if digest else ""])
 	if root is Node and not root.is_queued_for_deletion(): root.free()
 	return tris
