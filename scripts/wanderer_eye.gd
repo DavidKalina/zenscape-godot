@@ -203,6 +203,7 @@ const Presets = preload("res://scripts/native_landscape_presets.gd")
 const Disturbance = preload("res://scripts/disturbance.gd")
 const Footbridge = preload("res://scripts/footbridge.gd")
 const RopeBridge = preload("res://scripts/rope_bridge.gd")
+const RuinGrowthPush = preload("res://scripts/ruin_growth_push.gd")
 const HINT := "Mouse to look  ·  WASD or arrows to run  ·  Space to jump, again in the air to fly  ·  V or Esc to step out"
 const PERCH_HINT := "Mouse to look  ·  WASD or arrows to run  ·  Space to jump  ·  Off the edge or Space again in the air to fly  ·  V or Esc to step out"
 const GLIDER_HINT := "Mouse to look  ·  WASD or arrows to run  ·  Space to jump, again in the air to glide  ·  V or Esc to step out"
@@ -1353,6 +1354,8 @@ func _advance_flight(delta: float) -> void:
 	# recover.
 	if not below() and islands.pierced != null and islands.pierced.bump(glide,islands.global_transform): Pad.pulse(0.5,0.2,0.12)
 	RopeBridge.flown_by(islands.global_transform*glide.position,glide.velocity)
+	# The ruins' hanging vines billow as it passes (scripts/ruin_growth_push.gd).
+	RuinGrowthPush.stir(&"plane",islands.global_transform*glide.position,delta)
 	# Tokens the plane flies through (scripts/sky_collectibles.gd).
 	if islands.collectibles != null: islands.collectibles.touch_plane(islands.global_transform*glide.position)
 	# The moments set pieces' collectibles and starters (scripts/sky_moments.gd).
@@ -1684,6 +1687,8 @@ func _perch_move(next: Dictionary) -> void:
 func _tread(frame: Node3D, events: Dictionary, drawn: Dictionary) -> void:
 	var effort := clampf((motor.speed()-WALK)/(RUN-WALK),0.0,1.0)
 	var carry := RopeBridge.tread(frame,motor.feet,motor.grounded,events,drawn,effort)
+	# The ruins' hanging vines part round him (scripts/ruin_growth_push.gd).
+	RuinGrowthPush.stir(&"pilot",figure.global_position+Vector3.UP*1.1,get_process_delta_time())
 	if carry != Vector3.ZERO: motor.feet += Vector3(carry.x,0.0,carry.z)
 
 ## A step over an islet: round what blocks the way, sliding along one axis
