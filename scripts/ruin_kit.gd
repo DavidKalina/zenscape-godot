@@ -39,6 +39,8 @@ const PlaneFigure = preload("res://scripts/plane_figure.gd")
 const STONE_SHADER = preload("res://shaders/ruin_stone.gdshader")
 ## The growth's own surface and wind (docs/scenic/ruin-overgrowth.md).
 const RuinGrowth = preload("res://scripts/ruin_growth.gd")
+## The stone's look (classic, or a clean one: docs/scenic/ruin-stone.md).
+const Style = preload("res://scripts/ruin_stone_style.gd")
 
 ## The pieces, in the kit's order: the gothic abbey's, here.
 const PIECES := ["pier","arch","lancet_wall","rose_gable","buttress","wall","stairs","turret","vault","fallen_pier","tomb_chest","floor","grand_stair","stone_circle"]
@@ -1784,7 +1786,7 @@ static func _courses(b: Build, pose: Transform3D, x0: float, x1: float, y0: floa
 		most = maxf(most,float(top.call(x)))
 		x += 0.2
 	most = maxf(most,float(top.call(x1)))
-	var sag := SAG.x+(SAG.y-SAG.x)*b.weathered*b.settle
+	var sag := (SAG.x+(SAG.y-SAG.x)*b.weathered*b.settle)*(float(Style.get_value("sag")) if Style.clean() else 1.0)
 	var y := y0
 	var k := 0
 	var cap := 0.2 if coping else 0.0
@@ -1857,7 +1859,12 @@ static func _courses(b: Build, pose: Transform3D, x0: float, x1: float, y0: floa
 				centre.y -= sag*sin(PI*t)*clampf((ya-y0)/2.0,0.2,1.0)
 				# Lean stone overlaps a little, so its hidden joints close (Build `cull`).
 				var joint := -0.012 if b.lean else 0.006
-				var half := Vector3((sb-sa)*0.5-joint,(yb-ya)*0.5-joint,d+b.rng.randf_range(-0.045,0.02))
+				var depth := b.rng.randf_range(-0.045,0.02)
+				# A clean look: the stones flush, butted (no joint to see).
+				if Style.clean():
+					joint = 0.0
+					depth *= float(Style.get_value("depth"))
+				var half := Vector3((sb-sa)*0.5-joint,(yb-ya)*0.5-joint,d+depth)
 				var planes := _box(b,half)
 				var local := Transform3D(Basis.IDENTITY,centre)
 				var inv := local.affine_inverse()
@@ -1991,6 +1998,9 @@ static func _settle(b: Build, at: Vector3, loose: float) -> Transform3D:
 static func _jiggle(b: Build, pose: Transform3D, loose: float) -> Transform3D:
 	var tilt := (TRUE_OFF.x+(TRUE_OFF.y-TRUE_OFF.x)*b.weathered*b.settle)*loose
 	var shift := (SHIFT.x+(SHIFT.y-SHIFT.x)*b.weathered*b.settle)*loose
+	if Style.clean():
+		tilt *= float(Style.get_value("true_off"))
+		shift *= float(Style.get_value("true_off"))
 	var axis := Vector3(b.rng.randf_range(-1,1),b.rng.randf_range(-0.3,0.3),b.rng.randf_range(-1,1)).normalized()
 	var move := Vector3(b.rng.randf_range(-1,1),b.rng.randf_range(-0.3,0.1),b.rng.randf_range(-1,1))*shift
 	return Transform3D(Basis(axis,b.rng.randf_range(0.3,1.0)*tilt)*pose.basis,pose.origin+move)
@@ -2031,7 +2041,11 @@ static func _box(b: Build, half: Vector3, c := -1.0) -> Array[Plane]:
 				corner[a] = sa*half[a]
 				corner[e] = se*half[e]
 				n = n.normalized()
-				out.append(Plane(n,n.dot(corner)-cc))
+				var bevel := Plane(n,n.dot(corner)-cc)
+				out.append(bevel)
+				# A clean look draws the box without its worn arrises (the
+				# same numbers drawn, so the piece is otherwise the same).
+				if c < 0.0 and Style.clean(): b.bevels[bevel] = true
 	return out
 
 ## Chamfers on the four vertical arrises of axis-aligned `planes` round
@@ -2132,6 +2146,10 @@ class Build extends RefCounted:
 	## the growth's own surface (`growth`), not the stone's.
 	var grow := PackedFloat32Array()
 	var growth := RuinGrowth.Faces.new()
+	## A clean look's (Style): the worn arrises `_box` cut (left out of
+	## the drawn and solid block), and the piece's own stone.
+	var bevels := {}
+	var clean_stone := Color()
 	static var _materials := {}
 	## How much of the small growth and scatter is built (RuinKit
 	## `set_detail`): 1 all of it; under 1 fewer ivy strands, moss
@@ -2146,6 +2164,7 @@ class Build extends RefCounted:
 			s.set_shader_parameter("rim",0.14)
 			s.set_shader_parameter("roughness_value",0.95)
 			_materials = {"stone":s,"growth":RuinGrowth.material()}
+		Style.dress(_materials.stone)
 		return _materials
 
 	## The ground's height at (x, z) in the piece's frame: 0 with no terrain.
@@ -2157,6 +2176,7 @@ class Build extends RefCounted:
 		weathered = clampf(amount,0.0,1.0)
 		age = AGE+(1.0-AGE)*weathered
 		stone = STONE.lerp(STONE_COOL,rng.randf())
+		if Style.clean(): clean_stone = Style.stone_of(seed_value)
 		noise.seed = seed_value
 		noise.frequency = 1.0
 		noise.fractal_octaves = 2
@@ -2228,13 +2248,89 @@ class Build extends RefCounted:
 		var xf := frame*pose
 		if ground > -INF: cut.append(xf.affine_inverse()*Plane(Vector3.DOWN,-ground))
 		var points := _unique(Geometry3D.compute_convex_mesh_points(cut))
-		var open_face := PackedVector3Array()
-		if points.size() < 4: return open_face
 		var linear := colour.srgb_to_linear()
-		# The block's faces, and the biggest, so the small ones (worn
-		# arrises, chips) can be told.
+		# A clean look (Style) on stone: the block as cut, worn as the
+		# classic's only to draw the same numbers (so the rest of the piece
+		# is the same), then drawn and made solid without the wear and
+		# without its worn arrises, its faces coloured by the look's rule.
+		var cleaned := growable and Style.clean()
+		var made: Array = _polys(cut,points,open)
+		if cleaned:
+			if points.size() >= 4:
+				for p: Array in made[0]:
+					_shade(xf*(p[2] as Vector3),(xf.basis*(p[1] as Vector3)).normalized(),linear,wear and float(p[3]) < float(made[2])*0.16)
+				_tops(made[0],xf)
+			var bare: Array[Plane] = []
+			var keep := -1
+			for i in range(planes.size()+extra.size()):
+				if i < planes.size() and bevels.has(planes[i]): continue
+				if i == open: keep = bare.size()
+				bare.append(planes[i] if i < planes.size() else extra[i-planes.size()])
+			if ground > -INF: bare.append(xf.affine_inverse()*Plane(Vector3.DOWN,-ground))
+			cut = bare
+			open = keep
+			points = _unique(Geometry3D.compute_convex_mesh_points(cut))
+			made = _polys(cut,points,open)
+		if points.size() < 4: return PackedVector3Array()
+		var polys: Array = made[0]
+		var biggest: float = made[2]
+		var occluder := solids.size() if growable else -1
+		var anchor := NAN
+		if rigid and path != null:
+			var middle := Vector3.ZERO
+			for q in points: middle += xf*q
+			anchor = middle.x/points.size()
+		var centre := Vector3.ZERO
+		var part := 1.0
+		if cleaned:
+			for q in points: centre += xf*q
+			centre /= points.size()
+			part = colour.get_luminance()/maxf(stone.get_luminance(),0.001)
+		if cleaned and Style.carves():
+			# A carved look (Style `carve`): the block is drawn at `finish`,
+			# when every block stands and its open faces can be told, so
+			# its arrises can be cut in broad facets (`_carve`).
+			var world: Array[Plane] = []
+			for plane in cut: world.append(xf*plane)
+			pending.append(["carve",world,centre,part,occluder,anchor])
+			polys = []
+		for p: Array in polys:
+			var on: Array[Vector3] = p[0]
+			var normal := (xf.basis*(p[1] as Vector3)).normalized()
+			var mid := xf*(p[2] as Vector3)
+			var small := wear and float(p[3]) < biggest*0.16
+			var shade: Color
+			if cleaned: shade = Style.shade(clean_stone,centre,mid,normal,part)
+			else: shade = _shade(mid,normal,linear,small) if growable else linear*(1.0+rng.randf_range(-0.06,0.06))
+			if not growable: shade.a = 1.0
+			var corners := PackedVector3Array()
+			for q in on: corners.append(xf*q)
+			pending.append([corners,normal,shade,occluder,anchor,grow if not grow.is_empty() else null])
+		if growable and not cleaned: _tops(polys,xf)
+		if growable:
+			var box := AABB(xf*points[0],Vector3.ZERO)
+			for q in points: box = box.expand(xf*q)
+			var world: Array[Plane] = []
+			for plane in cut: world.append(xf*plane)
+			solids.append([box.grow(0.01),world])
+		if collide:
+			var hull := PackedVector3Array()
+			for q in points: hull.append(xf*q)
+			# A sliver (a block cut nearly away by a hole's line or a break)
+			# stays drawn but gets no hull: Jolt cannot build one so thin.
+			if thickness(hull) >= HULL_THIN:
+				hulls.append(hull)
+				hull_anchors.append(anchor)
+		return made[1]
+
+	## A block's faces from its planes `cut` and corners `points`: [faces
+	## ([corners, normal, middle, area] each, in the block's frame), the
+	## corners of plane `open` (not a face), the biggest face's area].
+	func _polys(cut: Array[Plane], points: PackedVector3Array, open: int) -> Array:
 		var polys: Array = []
+		var open_face := PackedVector3Array()
 		var biggest := 0.0
+		if points.size() < 4: return [polys,open_face,biggest]
 		for i in range(cut.size()):
 			var plane := cut[i]
 			var on: Array[Vector3] = []
@@ -2258,41 +2354,16 @@ class Build extends RefCounted:
 			for k in range(1,on.size()-1): area += (on[k]-on[0]).cross(on[k+1]-on[0]).length()*0.5
 			biggest = maxf(biggest,area)
 			polys.append([on,plane.normal,mid,area])
-		var occluder := solids.size() if growable else -1
-		var anchor := NAN
-		if rigid and path != null:
-			var middle := Vector3.ZERO
-			for q in points: middle += xf*q
-			anchor = middle.x/points.size()
+		return [polys,open_face,biggest]
+
+	## The faces of `polys` (at `xf`) that look up, for the ivy and moss.
+	func _tops(polys: Array, xf: Transform3D) -> void:
 		for p: Array in polys:
-			var on: Array[Vector3] = p[0]
 			var normal := (xf.basis*(p[1] as Vector3)).normalized()
-			var mid := xf*(p[2] as Vector3)
-			var small := wear and float(p[3]) < biggest*0.16
-			var shade := _shade(mid,normal,linear,small) if growable else linear*(1.0+rng.randf_range(-0.06,0.06))
-			if not growable: shade.a = 1.0
-			var corners := PackedVector3Array()
-			for q in on: corners.append(xf*q)
-			pending.append([corners,normal,shade,occluder,anchor,grow if not grow.is_empty() else null])
-			if growable and normal.y > 0.8 and float(p[3]) > 0.03:
+			if normal.y > 0.8 and float(p[3]) > 0.03:
 				var poly := PackedVector3Array()
-				for q in on: poly.append(xf*q)
+				for q: Vector3 in p[0]: poly.append(xf*q)
 				tops.append([poly,float(p[3])])
-		if growable:
-			var box := AABB(xf*points[0],Vector3.ZERO)
-			for q in points: box = box.expand(xf*q)
-			var world: Array[Plane] = []
-			for plane in cut: world.append(xf*plane)
-			solids.append([box.grow(0.01),world])
-		if collide:
-			var hull := PackedVector3Array()
-			for q in points: hull.append(xf*q)
-			# A sliver (a block cut nearly away by a hole's line or a break)
-			# stays drawn but gets no hull: Jolt cannot build one so thin.
-			if thickness(hull) >= HULL_THIN:
-				hulls.append(hull)
-				hull_anchors.append(anchor)
-		return open_face
 
 	## One growth face (RuinGrowth): `corners` (a fan, in the piece's
 	## frame), drawn with the growth's `grow` attrs; never solid.
@@ -2356,7 +2427,12 @@ class Build extends RefCounted:
 	## left out, the rest bent along `path`.
 	func _draw() -> void:
 		var grid := {}
-		if cull:
+		var carving := false
+		for face: Array in pending:
+			if face[0] is String:
+				carving = true
+				break
+		if cull or carving:
 			for i in range(solids.size()):
 				var box: AABB = solids[i][0]
 				for cx in range(floori(box.position.x/CELL_CULL),floori(box.end.x/CELL_CULL)+1):
@@ -2365,6 +2441,12 @@ class Build extends RefCounted:
 							var key := Vector3i(cx,cy,cz)
 							if not grid.has(key): grid[key] = PackedInt32Array()
 							grid[key].append(i)
+		if carving:
+			var faces_out: Array = []
+			for face: Array in pending:
+				if face[0] is String: faces_out.append_array(_carve(face,grid))
+				else: faces_out.append(face)
+			pending = faces_out
 		for face: Array in pending:
 			var corners: PackedVector3Array = face[0]
 			var normal: Vector3 = face[1]
@@ -2392,6 +2474,131 @@ class Build extends RefCounted:
 			for k in range(1,corners.size()-1):
 				_wound(faces,corners[0],corners[k],corners[k+1],normal,shade)
 		pending.clear()
+
+	## A carved look's block (`solid`'s ["carve", planes (straight, the
+	## piece's frame), middle, part, occluder, anchor]) as faces to draw:
+	## each arris between two open faces (not against another block, not
+	## buried) that is a top's edge or an upright corner may be cut in one
+	## broad facet (Style `carve`: how often, how deep, how far round),
+	## chosen by the arris's line and stretch (no random draw), so flush
+	## neighbours along one wall head or step take the same cut and read as
+	## one carved edge. Tops stay flat; collision is the uncut block's.
+	func _carve(entry: Array, grid: Dictionary) -> Array:
+		var planes: Array[Plane] = entry[1]
+		var centre: Vector3 = entry[2]
+		var part: float = entry[3]
+		var own: int = entry[4]
+		var anchor: float = entry[5]
+		var points := _unique(Geometry3D.compute_convex_mesh_points(planes))
+		var out: Array = []
+		if points.size() < 4: return out
+		var made: Array = _polys(planes,points,-1)
+		var box := AABB(points[0],Vector3.ZERO)
+		for q in points: box = box.expand(q)
+		var least := minf(box.size.x,minf(box.size.y,box.size.z))
+		var carve: Dictionary = Style.get_value("carve")
+		var faces: Array = made[0]
+		var open: Array = []
+		for f: Array in faces:
+			var corners := PackedVector3Array(f[0] as Array)
+			open.append(not _hidden(corners,f[1],own,grid))
+		var cuts: Array[Plane] = planes.duplicate()
+		for i in range(faces.size()):
+			if not open[i]: continue
+			for j in range(i+1,faces.size()):
+				if not open[j]: continue
+				var ni: Vector3 = faces[i][1]
+				var nj: Vector3 = faces[j][1]
+				var top := -1
+				if ni.y > 0.85 and absf(nj.y) < 0.35: top = i
+				elif nj.y > 0.85 and absf(ni.y) < 0.35: top = j
+				var upright := absf(ni.y) < 0.35 and absf(nj.y) < 0.35 and absf(ni.dot(nj)) < 0.6
+				if top < 0 and not upright: continue
+				# Their shared arris.
+				var shared: Array[Vector3] = []
+				for q: Vector3 in faces[i][0]:
+					for r: Vector3 in faces[j][0]:
+						if q.distance_squared_to(r) < 1e-6:
+							shared.append(q)
+							break
+				if shared.size() < 2: continue
+				var a: Vector3 = shared[0]
+				var b: Vector3 = shared[1]
+				if a.distance_to(b) < 0.25: continue
+				var along := (b-a).normalized()
+				var mid := (a+b)*0.5
+				var pi := Plane(ni,ni.dot(a))
+				var pj := Plane(nj,nj.dot(a))
+				var key := [Vector3i((ni*20.0).round()),int(roundf(pi.d*20.0)),Vector3i((nj*20.0).round()),int(roundf(pj.d*20.0)),
+					int(floorf(along.abs().dot(mid)/float(carve.stretch)))]
+				if ni.x+ni.z*0.7 > nj.x+nj.z*0.7: key = [key[2],key[3],key[0],key[1],key[4]]
+				var h := hash(key)
+				var u := Style.unit(h)
+				# Lean stone (the halls, by the dozen) carves half as often.
+				var odds: float = (float(carve.edge) if top >= 0 else float(carve.corner))*(float(carve.lean) if lean else 1.0)
+				if u >= odds: continue
+				var v := Style.unit(hash([h,1]))
+				var w := Style.unit(hash([h,2]))
+				var depth: Vector2 = carve.edge_depth if top >= 0 else carve.corner_depth
+				var c := minf(lerpf(depth.x,depth.y,v),least*float(carve.share))
+				# How far round from the one face to the other the facet
+				# looks: a top's lip leans to the face below, steep.
+				var turn := lerpf(0.35,0.65,w) if top < 0 else lerpf(0.5,0.7,w)
+				var first := ni if top != j else nj
+				var second := nj if top != j else ni
+				if top >= 0:
+					first = faces[top][1]
+					second = nj if top == i else ni
+				var n := (first*cos(turn*PI*0.5)+second*sin(turn*PI*0.5)).normalized()
+				cuts.append(Plane(n,n.dot(a)-c))
+		# Broad planes across the open faces themselves: each open face's
+		# plane is laid out in stretches (`stretch` m along it, by the
+		# world, not the stone), and in a stretch one crease runs across,
+		# the face past it turned a few degrees away (tops barely: still
+		# flat underfoot). Every stone in the plane and the stretch takes
+		# the same cut, so a coursed wall reads as a few broad planes, not
+		# as its stones.
+		for i in range(faces.size()):
+			if not open[i]: continue
+			var n: Vector3 = faces[i][1]
+			var mid: Vector3 = faces[i][2]
+			var flat := n.y > 0.85
+			if not flat and absf(n.y) > 0.35: continue
+			if float(faces[i][3]) < float(carve.crease_area): continue
+			var plane_key := [Vector3i((n*20.0).round()),int(roundf(n.dot(mid)*20.0)),"crease"]
+			var d: Vector3
+			if flat:
+				var a := Style.unit(hash(plane_key))*TAU
+				d = Vector3(cos(a),0.0,sin(a))
+			else:
+				d = n.cross(Vector3.UP).normalized()
+			d = (d-n*n.dot(d)).normalized()
+			var stretch: float = carve.stretch
+			var s := d.dot(mid)
+			var cell := floorf(s/stretch)
+			var h := hash(plane_key+[int(cell)])
+			if Style.unit(h) >= float(carve.crease)*(float(carve.lean) if lean else 1.0): continue
+			# The crease across the stretch, and which way the face past it
+			# turns away (toward the stretch's nearer end).
+			var at := (cell+lerpf(0.3,0.7,Style.unit(hash([h,2]))))*stretch
+			var way := 1.0 if Style.unit(hash([h,1])) < 0.5 else -1.0
+			var room := ((cell+1.0)*stretch-at) if way > 0.0 else (at-cell*stretch)
+			var most: float = carve.crease_flat if flat else float(carve.crease_side)
+			var tilt := atan(minf(most,room*tan(deg_to_rad(lerpf(carve.crease_angle.x,carve.crease_angle.y,Style.unit(hash([h,3]))))))/maxf(room,0.01))
+			var dd := d*way
+			var from := mid+d*(at-s)
+			var m := (n*cos(tilt)+dd*sin(tilt)).normalized()
+			cuts.append(Plane(m,m.dot(from)))
+		if cuts.size() > planes.size():
+			var carved := _unique(Geometry3D.compute_convex_mesh_points(cuts))
+			if carved.size() >= 4:
+				points = carved
+				made = _polys(cuts,points,-1)
+		for f: Array in made[0]:
+			var corners := PackedVector3Array(f[0] as Array)
+			var normal: Vector3 = f[1]
+			out.append([corners,normal,Style.shade(clean_stone,centre,f[2],normal,part),own,anchor,null])
+		return out
 
 	## Whether a face (its corners, straight) is hidden: every corner (drawn
 	## in a little toward its middle) and its middle, stood a little off the

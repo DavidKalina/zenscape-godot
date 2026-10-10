@@ -29,6 +29,9 @@ extends Node3D
 ##   R               reseed the weathering     N  day or night
 ##   V               the growth in the wind or held still (compare)
 ##   B               send a strong gust front across the view now
+##   T               the next stone look: classic, big ashlar, carved mass,
+##                   islet basalt (scripts/ruin_stone_style.gd, docs/scenic/
+##                   ruin-stone.md); --stone=classic|ashlar|mass|basalt starts in one
 ## The growth (scripts/ruin_growth.gd, docs/scenic/ruin-overgrowth.md) sways
 ## in the game's breeze, run here as the atmosphere runs it: the air's
 ## travel, its gust fronts (studies/gust_fronts.gd) and the breeze.
@@ -57,6 +60,7 @@ const Pad = preload("res://scripts/pad.gd")
 const RuinGrowth = preload("res://scripts/ruin_growth.gd")
 const RuinGrowthPush = preload("res://scripts/ruin_growth_push.gd")
 const GustFronts = preload("res://studies/gust_fronts.gd")
+const StoneStyle = preload("res://scripts/ruin_stone_style.gd")
 
 ## The families left to right on the plate, their names, and each one's
 ## rows, back to front, and where each row stands (z, m).
@@ -228,6 +232,7 @@ func _ready() -> void:
 		elif arg.begins_with("--breeze="): _breeze = float(arg.get_slice("=",1))
 		elif arg.begins_with("--frames="): _frames = int(arg.get_slice("=",1))
 		elif arg.begins_with("--frame-step="): _frame_step = float(arg.get_slice("=",1))
+		elif arg.begins_with("--stone="): _set_stone(arg.get_slice("=",1))
 	_fronts = GustFronts.new()
 	_set_wind(_wind)
 	_build_world()
@@ -330,7 +335,7 @@ func _build_world() -> void:
 	_label.add_theme_color_override("font_shadow_color",Color(0.0,0.0,0.0,0.4))
 	layer.add_child(_label)
 	var help := Label.new()
-	help.text = "F1 Gothic · F2 Aqueduct · F3 Hall · 1-9 0 - = \\ frame a piece · C centrepiece · G fly the long hall · ←/→ next · Space/Tab whole layout · W intact/weathered · R reseed · N night · L shafts · V wind on/off · B gust · Drag orbit · Wheel zoom"
+	help.text = "F1 Gothic · F2 Aqueduct · F3 Hall · 1-9 0 - = \\ frame a piece · C centrepiece · G fly the long hall · ←/→ next · Space/Tab whole layout · W intact/weathered · T stone look · R reseed · N night · L shafts · V wind on/off · B gust · Drag orbit · Wheel zoom"
 	help.add_theme_font_size_override("font_size",15)
 	help.add_theme_color_override("font_color",Color(1.0,0.98,0.92,0.5))
 	help.add_theme_color_override("font_shadow_color",Color(0.0,0.0,0.0,0.3))
@@ -951,7 +956,12 @@ func _say() -> void:
 	if _flying:
 		_label.text = "Flying the long hall   ·   %.0f m/s   ·   bumps %d   ·   shafts %s\nA D bank and turn · W S pitch (W nose down) · mouse steers · Space boost · Shift brake · hold Q E or LB RB knife-edge, twice quick or click barrel roll · hold right mouse to look round · R or pad Back restart at the entrance · L shafts · N night · V wind · B gust · G or Esc to stop flying" % [float(_plane_flight.speed),_bumps,"on" if _shafts else "off"]
 		return
-	_label.text = "%s   ·   %s   ·   %s   ·   shafts %s   ·   growth %s   ·   seed %d\n%s" % [what,SHOWS[_show],"night" if _night else "day","on" if _shafts else "off","in the wind" if _wind else "still",_seed,keys]
+	_label.text = "%s   ·   %s   ·   %s   ·   %s (T)   ·   shafts %s   ·   growth %s   ·   seed %d\n%s" % [what,SHOWS[_show],"night" if _night else "day",StoneStyle.NAMES[StoneStyle.current],"on" if _shafts else "off","in the wind" if _wind else "still",_seed,keys]
+
+## Builds in stone look `id` from now on (scripts/ruin_stone_style.gd).
+func _set_stone(id: String) -> void:
+	StoneStyle.use(id)
+	StoneStyle.dress(RuinKit.materials().stone)
 
 func _set_night(on: bool) -> void:
 	_night = on
@@ -1085,6 +1095,19 @@ func _unhandled_input(event: InputEvent) -> void:
 				_build_layout()
 				if centred: _frame_centre()
 				else: _frame_piece(framed)
+			KEY_T:
+				# The next stone look, the same pieces rebuilt in it.
+				var framed := _frame
+				var centred := _centred
+				var focus := _focus_goal
+				var distance := _distance_goal
+				_set_stone(StoneStyle.next(StoneStyle.current))
+				_build_layout()
+				if centred: _frame_centre()
+				elif framed >= 0: _frame_piece(framed)
+				_focus_goal = focus
+				_distance_goal = distance
+				_say()
 			KEY_W:
 				_show = (_show+1)%SHOWS.size()
 				_apply_show()

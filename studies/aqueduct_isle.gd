@@ -21,7 +21,7 @@ extends "res://studies/character_study.gd"
 ##   F5 F6 F7 F8  record, replay the station's recordings, older, all paths
 ##   F1 numbers · F2 feel · Esc mouse
 ##   ./run-aqueduct-isle.command
-##   godot --path . res://studies/aqueduct_isle.tscn -- --no-title [--capture=out.png --at=x,y,z --look=x,y,z]
+##   godot --path . res://studies/aqueduct_isle.tscn -- --no-title [--stone=mass] [--capture=out.png --at=x,y,z --look=x,y,z]
 ## --capture waits for the sky to settle, saves the view (from --at
 ## looking at --look, else the walker's camera) and quits; --place=x,y,z[,turn]
 ## starts the pilot there instead (turn: degrees from facing -z, clockwise).
@@ -84,6 +84,11 @@ func _ready() -> void:
 		if arg.begins_with("--capture="): _capture = arg.get_slice("=",1)
 		elif arg.begins_with("--at="): _capture_at = _vec(arg.get_slice("=",1))
 		elif arg.begins_with("--look="): _capture_look = _vec(arg.get_slice("=",1))
+		elif arg.begins_with("--stone="):
+			# The ruin stone's look (scripts/ruin_stone_style.gd).
+			var Style := preload("res://scripts/ruin_stone_style.gd")
+			Style.use(arg.get_slice("=",1))
+			Style.dress(RuinKit.materials().stone)
 		elif arg.begins_with("--place="):
 			var p := arg.get_slice("=",1).split(",")
 			_place = Vector4(float(p[0]),float(p[1]),float(p[2]),float(p[3]) if p.size() > 3 else 0.0)
