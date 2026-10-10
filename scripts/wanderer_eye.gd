@@ -11,7 +11,7 @@ extends Node
 ## the higher pump, jumped in a skid the side flip; crouched (Shift, C or
 ## LT) sliding to a stop, and from a crouch at a run the long jump; crouched
 ## on a slope (or on any too steep to stand on) boot-surfing down it, Space
-## jumping out at its pace; crouch pressed in the air twirling; slowed
+## jumping out at its pace; X pressed in the air twirling; slowed
 ## running up steep ground; into a cliff in the air sliding down it, Space
 ## kicking off it. The camera eases round behind the
 ## run when the mouse is left alone. V or Esc steps back out to building,
@@ -951,6 +951,7 @@ func _advance_eye(delta: float) -> void:
 	var want := _want(_yaw-_turn(),delta)
 	_asked = want.length()
 	motor.crouch = Input.is_action_pressed(&"walk_crouch")
+	motor.twirl = Input.is_action_pressed(&"walk_twirl")
 	var events := motor.step(delta,want,top,jump,_motor_ground,_walk,_lip)
 	if glide_enabled and events.has("fly"):
 		_launch(motor.speed(),false)
@@ -1585,6 +1586,7 @@ func _advance_perch(delta: float) -> void:
 	# its neighbours' ground too, so the pilot jumps from one to the next.
 	var ground := func(p: Vector2) -> float: return _perch_ground(p)
 	motor.crouch = Input.is_action_pressed(&"walk_crouch")
+	motor.twirl = Input.is_action_pressed(&"walk_twirl")
 	var events := motor.step(delta,want,_top(),jump,ground,
 		func(feet: Vector3, step: Vector2) -> Vector3: return _perch_slide(shape,feet,step),
 		func(near: Vector2, y: float) -> Dictionary: return PilotLedge.find(ground,near,y))

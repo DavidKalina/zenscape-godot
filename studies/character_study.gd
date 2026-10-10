@@ -27,9 +27,10 @@ extends Node3D
 ## into a 6 m gap.
 ## Space jumps (again on landing, the pump; in a skid, the side flip), Shift,
 ## C or LT crouches (at a run, the slide, and Space: the long jump, again on
-## each landing with crouch held, faster each time; on a slope, the surf; in
-## the air, the twirl); into a wall in the air he slides down it, and Space
-## kicks off it. R sets him back at the start, F1 shows the
+## each landing with crouch held, faster each time; on a slope, the surf);
+## X twirls in the air, and out of a slide the stick across his way weaves
+## him faster (the slide hop); into a wall in the air he slides down it, and
+## Space kicks off it. R sets him back at the start, F1 shows the
 ## numbers (speed, state, the jump, the height over the ground, the slope,
 ## the last jump's kind, peak and reach, the long jump's reach, the surf's
 ## pace, the last side flip's height and reach, the last twirl's airtime,
@@ -312,6 +313,7 @@ var scripted := false
 var script_want := Vector2.ZERO
 var script_jump := false
 var script_crouch := false
+var script_twirl := false
 ## The last jump, measured: its number, peak over the takeoff, reach across
 ## the ground, the drop to where it came down; the one in the air now; the
 ## last side flip's; the surf's fastest pace now (or last); the last twirl's
@@ -630,10 +632,12 @@ func tick(delta: float) -> void:
 	var want := script_want
 	var jump := script_jump
 	motor.crouch = script_crouch
+	motor.twirl = script_twirl
 	if not scripted:
 		want = _want(delta)
 		jump = Input.is_action_pressed(&"walk_jump") and not _tuning()
 		motor.crouch = Input.is_action_pressed(&"walk_crouch") and not _tuning()
+		motor.twirl = Input.is_action_pressed(&"walk_twirl") and not _tuning()
 	_asked = want.length()
 	ground.head(delta)
 	var was := motor.feet
@@ -844,11 +848,12 @@ const TUNABLE := [["walk",0.5,6.0],["run",1.0,10.0],["accel",2.0,60.0],["brake",
 	["turn",1.0,40.0],["turn_run",1.0,30.0],["air_turn",0.0,20.0],["gravity",5.0,80.0],["fall",0.5,4.0],["cut",1.0,6.0],
 	["terminal",5.0,40.0],["jumps:0",0.2,3.0],["jumps:1",0.2,3.0],["skid_speed",0.5,8.0],
 	["skid_brake",2.0,40.0],["coyote",0.0,0.4],["buffer",0.0,0.4],["chain_window",0.0,0.6],
-	["carry_hold",0.0,20.0],["carry_decay",0.0,30.0],["long_pace",1.0,6.0],
+	["carry_hold",0.0,20.0],["carry_decay",0.0,30.0],["carry_excess",0.0,4.0],["long_pace",1.0,6.0],
 	["long_height",0.1,2.0],["long_speed",2.0,16.0],["long_gravity",5.0,40.0],["long_chain",0.0,0.6],["long_add",0.0,4.0],
 	["long_top",4.0,24.0],["wall_slide",0.3,6.0],
 	["wall_jump",0.3,3.0],["wall_kick",1.0,10.0],["wall_lock",0.0,0.8],["twirl_rise",0.0,8.0],["twirl_time",0.1,1.0],
 	["twirl_gravity",0.1,1.0],["twirl_push",0.0,6.0],["twirl_top",0.0,16.0],["twirl_steer",0.0,30.0],
+	["hop_turn",0.0,6.0],["hop_strafe",0.0,10.0],["hop_top",4.0,24.0],
 	["slide_auto",25.0,70.0],["slide_pull",4.0,40.0],["slide_top",4.0,30.0],["slide_runout",0.0,30.0],["slide_air",0.0,0.2],
 	["slide_jump",0.2,2.5],["side_flip",0.5,3.5],["side_speed",0.0,8.0],["climb_time",0.15,1.2]]
 
@@ -864,7 +869,7 @@ func _build_ui() -> void:
 	_hud.add_theme_constant_override("shadow_offset_y",1)
 	layer.add_child(_hud)
 	var hint := Label.new()
-	hint.text = "WASD run · Space jump (on landing: pump; in a skid: side flip) · Shift/C crouch: at a run slide, + Space long jump (crouch held, Space on landing: chain), on a slope surf, in the air twirl · into a wall: slide, Space: kick · 1-9 0 - = [ ] \\ stations · R start · F1 numbers · F2 feel · Esc mouse"
+	hint.text = "WASD run · Space jump (on landing: pump; in a skid: side flip) · Shift/C crouch: at a run slide, + Space long jump (crouch held, Space on landing: chain), on a slope surf · in the air X twirl; out of a slide, steer across to build speed, hop again on the touch · into a wall: slide, Space: kick · 1-9 0 - = [ ] \\ stations · R start · F1 numbers · F2 feel · Esc mouse"
 	hint.add_theme_font_size_override("font_size",14)
 	hint.add_theme_color_override("font_color",Color("fbf6ea"))
 	hint.add_theme_color_override("font_shadow_color",Color(0,0,0,0.7))

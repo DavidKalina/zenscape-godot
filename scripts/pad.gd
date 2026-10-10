@@ -51,6 +51,8 @@ const ACTIONS := {
 	"walk_jump":[["key",KEY_SPACE],["button",JOY_BUTTON_A]],
 	# On foot, held: crouch; crouched at a run, Jump is the long jump.
 	"walk_crouch":[["key",KEY_SHIFT],["key",KEY_C],["axis",JOY_AXIS_TRIGGER_LEFT,1.0]],
+	# On foot, pressed in the air: the twirl.
+	"walk_twirl":[["key",KEY_X],["button",JOY_BUTTON_X]],
 	"eye_leave":[["button",JOY_BUTTON_B],["button",JOY_BUTTON_BACK]],
 	"fly_boost":[["key",KEY_SPACE],["button",JOY_BUTTON_A],["axis",JOY_AXIS_TRIGGER_RIGHT,1.0]],
 	"fly_brake":[["key",KEY_SHIFT],["axis",JOY_AXIS_TRIGGER_LEFT,1.0]],

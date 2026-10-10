@@ -1,8 +1,7 @@
 extends SceneTree
 ## The pilot's tricks on foot (scripts/pilot_motor.gd), over heights alone
-## (the game's own way): crouch pressed in the air twirls him, once an
-## airtime, giving back some airtime, never from a crouch held off the
-## ground, and a second jump press falling still asks to fly; held crouched
+## (the game's own way): the twirl pressed in the air twirls him, once an
+## airtime, giving back some airtime, never from crouch, and a second jump press falling still asks to fly; held crouched
 ## on a slope he boot-surfs down it, faster and faster past 11 m/s, steers
 ## across it, and on one too steep to stand on surfs without the crouch;
 ## jumped out of the surf uncrouched he flies on at its pace over a gap no
@@ -42,7 +41,7 @@ func _step(m: PilotMotor, want: Vector2, jump: bool, ground: Callable = flat, le
 	figure.drive(m,DT)
 	return out
 
-## A held jump from a stand, crouch pressed `at` s after takeoff (never if
+## A held jump from a stand, the twirl pressed `at` s after takeoff (never if
 ## negative): seconds in the air, and the twirls it gave.
 func _airtime(at: float, presses := 1) -> Dictionary:
 	var m := PilotMotor.new()
@@ -56,7 +55,7 @@ func _airtime(at: float, presses := 1) -> Dictionary:
 		t += DT
 		var press := false
 		for k in range(presses): press = press or (at >= 0.0 and t >= at+0.15*k and t < at+0.15*k+DT*2.0)
-		m.crouch = press
+		m.twirl = press
 		var out := _step(m,Vector2.ZERO,true)
 		if out.has("twirl"): twirls += 1
 		spun = spun or m.move == "twirl"
@@ -68,7 +67,7 @@ func _twirl() -> void:
 	var plain := _airtime(-1.0)
 	var at_peak := _airtime(0.25)
 	var falling := _airtime(0.4)
-	check(at_peak.twirls == 1 and at_peak.spun,"Crouch pressed at the jump's top twirls him")
+	check(at_peak.twirls == 1 and at_peak.spun,"The twirl pressed at the jump's top twirls him")
 	check(float(at_peak.time)-float(plain.time) > 0.3,"The twirl at the top gives %.2f s more airtime (%.2f s against %.2f s)" % [float(at_peak.time)-float(plain.time),at_peak.time,plain.time])
 	check(float(falling.time)-float(plain.time) > 0.3,"Pressed late, falling, it still gives %.2f s more" % (float(falling.time)-float(plain.time)))
 	var twice := _airtime(0.2,3)
@@ -79,33 +78,35 @@ func _twirl() -> void:
 	var twirls := 0
 	var jump := true
 	for i in range(240):
-		m.crouch = not m.grounded and m.velocity.y < 0.5 and i%20 < 2
+		m.twirl = not m.grounded and m.velocity.y < 0.5 and i%20 < 2
 		var out := _step(m,Vector2.ZERO,jump)
 		if out.has("twirl"): twirls += 1
 		if out.has("landed"): jump = false
 		elif m.grounded: jump = true
 		if twirls >= 2: break
 	check(twirls >= 2,"Landed, he can twirl again (%d)" % twirls)
-	# A crouch held from the ground (a long jump) does not twirl.
+	# Crouch, held into the long jump or pressed in the air, does not twirl.
 	m.reset(Vector3.ZERO,PilotMotor.facing_of(Vector2(1.0,0.0)),PilotMotor.RUN)
+	m.twirl = false
 	m.crouch = true
 	_step(m,Vector2(1.0,0.0),false)
 	var out := _step(m,Vector2(1.0,0.0),true)
 	var spun := false
 	for i in range(60):
+		m.crouch = i < 10 or i > 14
 		var o := _step(m,Vector2(1.0,0.0),true)
 		spun = spun or o.has("twirl")
 		if m.grounded: break
-	check(out.has("long") and not spun,"A crouch held into the long jump does not twirl")
+	check(out.has("long") and not spun,"Crouch held into the long jump, or pressed again in the air, does not twirl")
 	# Jump pressed again in the air still asks to fly, twirled or not.
 	m.reset(Vector3.ZERO,0.0)
 	m.crouch = false
 	_step(m,Vector2.ZERO,false)
 	_step(m,Vector2.ZERO,true)
 	for i in range(6): _step(m,Vector2.ZERO,true)
-	m.crouch = true
+	m.twirl = true
 	_step(m,Vector2.ZERO,false)
-	m.crouch = false
+	m.twirl = false
 	out = _step(m,Vector2.ZERO,true)
 	check(out.has("fly") and m.move == "twirl","Twirling, Jump pressed again still asks to fly")
 

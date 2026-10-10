@@ -15,10 +15,11 @@ func _initialize() -> void:
 	DirAccess.make_dir_recursive_absolute(out)
 	run.call_deferred()
 
-func tick(want: Vector2, jump: bool, crouch := false) -> void:
+func tick(want: Vector2, jump: bool, crouch := false, twirl := false) -> void:
 	study.script_want = want
 	study.script_jump = jump
 	study.script_crouch = crouch
+	study.script_twirl = twirl
 	study.tick(DT)
 
 func shot(name: String) -> void:
@@ -72,7 +73,7 @@ func run() -> void:
 	for i in range(30): tick(Vector2.ZERO,false)
 	# The twirl at a jump's top.
 	for i in range(14): tick(Vector2.ZERO,true)
-	tick(Vector2.ZERO,true,true)
+	tick(Vector2.ZERO,true,false,true)
 	for i in range(6): tick(Vector2.ZERO,true)
 	await shot("twirl")
 	for i in range(60): tick(Vector2.ZERO,false)

@@ -7,8 +7,10 @@ extends SceneTree
 ## and is kept longer with the stick held on; the crouched slide runs on far
 ## along the flat; crouched down a long steep slope he gains well past the
 ## run, steeper faster, under SLIDE_TOP, and carries it out onto the flat;
-## and the twirl stretches a running jump and a long jump. No pace ever
-## turns into height.
+## the twirl stretches a running jump and a long jump; and slide hops
+## (long jumps chained on the touch) weaving left and right build past
+## LONG_TOP, to HOP_TOP and no faster, where late ones lose it. No pace
+## ever turns into height.
 ##   godot --headless --path . --script tests/test_pilot_momentum.gd
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const DT := 1.0/60.0
@@ -23,6 +25,7 @@ func _initialize() -> void:
 	_flat_slide()
 	_slopes()
 	_twirl()
+	_slide_hops()
 	print("PASS: pilot momentum" if failures == 0 else "FAIL: pilot momentum (%d)" % failures)
 	quit(1 if failures else 0)
 
@@ -105,17 +108,18 @@ func _chains() -> void:
 ## Carried pace: landed at 10 m/s, held on, at half stick, let go.
 func _carry() -> void:
 	var times := {}
-	for how: String in ["on","half","none"]:
+	for how: String in ["on","half","none","hop"]:
 		var m := PilotMotor.new()
-		m.reset(Vector3.ZERO,PilotMotor.facing_of(Vector2(1.0,0.0)),10.0)
-		var want := {"on":Vector2(1.0,0.0),"half":Vector2(0.5,0.0),"none":Vector2.ZERO}[how] as Vector2
+		m.reset(Vector3.ZERO,PilotMotor.facing_of(Vector2(1.0,0.0)),PilotMotor.HOP_TOP if how == "hop" else 10.0)
+		var want := {"on":Vector2(1.0,0.0),"half":Vector2(0.5,0.0),"none":Vector2.ZERO,"hop":Vector2(1.0,0.0)}[how] as Vector2
 		var t := 0.0
 		while m.speed() > PilotMotor.RUN+0.05 and t < 10.0:
 			_step(m,want,false)
 			t += DT
 		times[how] = t
-	print("MEASURE carried 10 m/s back to the run: held on %.2f s, half stick %.2f s, let go %.2f s" % [times.on,times.half,times.none])
-	check(float(times.on) > 1.5 and float(times.on) < 3.0,"Held on, 10 m/s bleeds to the run over %.2f s" % times.on)
+	print("MEASURE carried 10 m/s back to the run: held on %.2f s, half stick %.2f s, let go %.2f s; a slide hop chain's HOP_TOP held on %.2f s" % [times.on,times.half,times.none,times.hop])
+	check(float(times.on) > 1.0 and float(times.on) < 2.0,"Held on, 10 m/s bleeds to the run over %.2f s" % times.on)
+	check(float(times.hop) < 2.0,"A slide hop chain's end (%.1f m/s) runs back to the run within %.2f s" % [PilotMotor.HOP_TOP,times.hop])
 	check(float(times.half) < float(times.on)*0.6,"At half stick, sooner (%.2f s)" % times.half)
 
 ## Crouched at a run on the flat: how far the slide goes.
@@ -206,7 +210,7 @@ func _twirl() -> void:
 		var from := m.feet.x
 		_step(m,Vector2(1.0,0.0),true)
 		for i in range(240):
-			m.crouch = twirl and m.velocity.y <= 0.0
+			m.twirl = twirl and m.velocity.y <= 0.0
 			var out := _step(m,Vector2(1.0,0.0),true)
 			if out.has("landed"): break
 		reach.append(m.feet.x-from)
@@ -219,10 +223,61 @@ func _twirl() -> void:
 		_step(m,Vector2(1.0,0.0),true)
 		m.crouch = false
 		for i in range(240):
-			m.crouch = twirl and m.velocity.y < 0.0 and m.feet.y < 0.3
+			m.twirl = twirl and m.velocity.y < 0.0 and m.feet.y < 0.3
 			var out := _step(m,Vector2(1.0,0.0),true)
 			if out.has("landed"): break
 		long.append(m.feet.x-from)
 	print("MEASURE twirl at a running jump's top: %.2f m against %.2f m (+%.2f); at a long jump's end: %.2f m against %.2f m (+%.2f)" % [reach[1],reach[0],reach[1]-reach[0],long[1],long[0],long[1]-long[0]])
 	check(reach[1]-reach[0] > 2.5,"A twirl at a running jump's top stretches it %.2f m" % (reach[1]-reach[0]))
 	check(long[1]-long[0] > 3.5,"A twirl at a long jump's end stretches it %.2f m" % (long[1]-long[0]))
+
+## Long jumps chained, crouch held throughout, Jump pressed `late` s after
+## each landing, the stick held `across` radians off his way in the air
+## (turning left one hop, right the next): the fastest pace, the paces
+## taken off at, and the highest he rose.
+func _weave(late: float, across: float, count := 10, twirls := false) -> Dictionary:
+	var m := _runner()
+	m.crouch = true
+	_step(m,Vector2(1.0,0.0),false)
+	var paces := []
+	var since := -1.0
+	var press := true
+	var top := 0.0
+	var peak := 0.0
+	var landed := 0
+	var side := 1.0
+	for i in range(2400):
+		var way := Vector2(m.velocity.x,m.velocity.z).normalized()
+		var want := way if m.grounded else way.rotated(side*across)
+		m.twirl = twirls and not m.grounded and m.velocity.y < 0.0
+		var out := _step(m,want,press)
+		top = maxf(top,m.speed())
+		if not twirls: peak = maxf(peak,m.feet.y)
+		if out.has("long"): paces.append(snappedf(m.speed(),0.01))
+		if out.has("landed"):
+			landed += 1
+			side = -side
+			since = 0.0
+			if landed >= count: break
+		elif since >= 0.0: since += DT
+		press = since >= late-1e-6 and since >= 0.0 and m.grounded and not press
+		if press: since = -1.0
+	return {"top":top,"paces":paces,"peak":peak,"jumps":paces.size()}
+
+func _slide_hops() -> void:
+	var weave := _weave(0.0,PI*0.5)
+	var long := _weave(0.0,PI*0.5,24)
+	var straight := _weave(0.0,0.0)
+	var late := _weave(0.35,PI*0.5)
+	var twirled := _weave(0.0,PI*0.5,10,true)
+	var twirled_straight := _weave(0.0,0.0,10,true)
+	for pair: Array in [["weaving, timed",weave],["straight, timed",straight],["weaving, late (0.35 s)",late],["weaving, twirled each hop",twirled],["straight, twirled each hop",twirled_straight]]:
+		var c: Dictionary = pair[1]
+		print("MEASURE 10 slide hops %s: paces %s, top %.2f m/s" % [pair[0],c.paces,c.top])
+	check(weave.jumps == 10 and float(weave.top) > PilotMotor.LONG_TOP+0.5,"Weaving timed slide hops builds past LONG_TOP to %.2f m/s" % weave.top)
+	check(float(straight.top) <= PilotMotor.LONG_TOP+0.01,"Straight, the chain stops at LONG_TOP (%.2f m/s)" % straight.top)
+	check(float(long.top) <= PilotMotor.HOP_TOP+0.01 and float(long.top) > PilotMotor.HOP_TOP-0.5,"Twenty-four weaving hops reach HOP_TOP and no faster (%.2f m/s)" % long.top)
+	check(float(late.top) < float(weave.top)-1.5,"Hopped late, the slide eats the gain (%.2f m/s against %.2f)" % [late.top,weave.top])
+	check(twirled.jumps == 10 and float(twirled.top) > PilotMotor.LONG_TOP+0.5,"Twirled on each hop's way down, the chain still builds (%.2f m/s)" % twirled.top)
+	check(twirled_straight.jumps == 10 and float(twirled_straight.paces[4]) >= PilotMotor.LONG_TOP-0.01,"Straight and twirled, it still chains to LONG_TOP (%s)" % [twirled_straight.paces])
+	check(absf(float(weave.peak)-PilotMotor.LONG_HEIGHT) < 0.02,"No pace turns into height (%.2f m up)" % weave.peak)

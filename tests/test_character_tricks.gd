@@ -149,11 +149,11 @@ func _twirl(m: PilotMotor) -> void:
 	study.script_jump = true
 	var twirled := false
 	for i in range(240):
-		study.script_crouch = i == 15
+		study.script_twirl = i == 15
 		study.tick(DT)
 		t += 1
 		twirled = twirled or m.move == "twirl"
 		if i > 2 and m.grounded: break
 	study.script_jump = false
-	study.script_crouch = false
+	study.script_twirl = false
 	check(twirled and t*DT > 0.8 and study.last_twirl > 0.4,"A twirl at the jump's top keeps him up %.2f s (a plain jump 0.45 s); F1 shows %.2f s from it" % [t*DT,study.last_twirl])
