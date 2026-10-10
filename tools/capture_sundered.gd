@@ -7,6 +7,8 @@ extends SceneTree
 ## Rendered only when asked for (needs a window):
 ##   Godot --windowed --path . --resolution 1280x720 -s res://tools/capture_sundered.gd \
 ##     -- --no-title --motif=sundered --no-clusters --out=captures/sundered/try1 [--hours=noon,golden] [--only=gate,inside]
+##     [--repeat=N] (N stills a shot, 20 frames apart: the growth's sway)
+##     [--overgrowth=0] (scripts/sundered_growth.gd off, to compare)
 const Sundered = preload("res://scripts/sundered_hall.gd")
 const SunderedBuild = preload("res://scripts/sundered_build.gd")
 var scene: Node3D
@@ -14,6 +16,7 @@ var eye: Node
 var out := "/private/tmp/zs-sundered"
 var only: Array = []
 var hours_wanted: Array = ["noon"]
+var repeat := 1
 var hours := {"noon": WorldClock.hour_for_phase(0.5), "golden": WorldClock.hour_for_phase(0.72), "night": WorldClock.hour_for_phase(0.02)}
 var _islets: Node3D
 var _parent: Node3D
@@ -37,6 +40,7 @@ func run() -> void:
 		if argument.begins_with("--out="): out = argument.trim_prefix("--out=")
 		elif argument.begins_with("--only="): only = Array(argument.trim_prefix("--only=").split(","))
 		elif argument.begins_with("--hours="): hours_wanted = Array(argument.trim_prefix("--hours=").split(","))
+		elif argument.begins_with("--repeat="): repeat = maxi(1,int(argument.trim_prefix("--repeat=")))
 	if out.is_relative_path(): out = ProjectSettings.globalize_path("res://").path_join(out)
 	DirAccess.make_dir_recursive_absolute(out)
 	create_timer(1500).timeout.connect(func() -> void: push_error("sundered capture timed out"); quit(2))
@@ -95,14 +99,19 @@ func run() -> void:
 		var first := true
 		for shot: Dictionary in shots:
 			if not only.is_empty() and not str(shot.label).get_slice("-",0) in only: continue
-			# Keep the near detail shown however far the eye stands.
+			# Keep the near detail shown however far the eye stands (the far
+			# shots: the far detail only).
+			var far_only := str(shot.label).begins_with("far")
 			for live: Dictionary in c.halls:
 				if live.near != null:
-					(live.near as Node3D).visible = true
-					(live.far as Node3D).visible = false
-			await _hold_at(shot.eye,shot.look,hours[hour_name],60 if first else 30,c.halls)
+					(live.near as Node3D).visible = not far_only
+					(live.far as Node3D).visible = far_only
+			await _hold_at(shot.eye,shot.look,hours[hour_name],60 if first else 30,c.halls,far_only)
 			first = false
 			await still("%s-%s" % [shot.label,hour_name])
+			for r in range(1,repeat):
+				await _hold_at(shot.eye,shot.look,hours[hour_name],20,c.halls,far_only)
+				await still("%s-%s-%d" % [shot.label,hour_name,r])
 	print("SUNDERED done")
 	quit(0)
 
@@ -120,6 +129,9 @@ func _shots(plan: Dictionary, line: Array, home: Callable) -> Array:
 	var side := way.cross(Vector3.UP).normalized()
 	out.append({"label":"overview","eye":mid+side*span*0.55+Vector3.UP*span*0.35,"look":mid})
 	out.append({"label":"overview-end","eye":b+way*120.0+side*60.0+Vector3.UP*70.0,"look":mid})
+	# The far detail alone (as from past NEAR_SHOW): the whole hall, and a
+	# torn end from 300 m.
+	out.append({"label":"far-overview","eye":mid+side*span*0.55+Vector3.UP*span*0.35,"look":mid})
 	var by_s := func(s: float) -> Dictionary:
 		for e: Dictionary in line:
 			if float(e.s) >= s: return e
@@ -141,7 +153,11 @@ func _shots(plan: Dictionary, line: Array, home: Callable) -> Array:
 		var end: Vector3 = home.call(Sundered.lane_point(pieces[gap.from],float(pieces[gap.from].length)))
 		var w: Vector3 = Sundered.lane_way(pieces[gap.from],float(pieces[gap.from].length))
 		var sd := w.cross(Vector3.UP).normalized()
-		if gap.index % 3 == 0: out.append({"label":"torn-%d" % gap.index,"eye":end+w*18.0+sd*34.0+Vector3.DOWN*4.0,"look":end+Vector3.DOWN*3.0})
+		if gap.index % 3 == 0:
+			out.append({"label":"torn-%d" % gap.index,"eye":end+w*18.0+sd*34.0+Vector3.DOWN*4.0,"look":end+Vector3.DOWN*3.0})
+			# Close under the lip, looking up the trailing vines.
+			out.append({"label":"lip-%d" % gap.index,"eye":end+w*9.0+sd*10.0+Vector3.DOWN*9.0,"look":end+Vector3.DOWN*4.0})
+		if gap.index == 0: out.append({"label":"far-torn-%d" % gap.index,"eye":end+w*160.0+sd*260.0+Vector3.DOWN*20.0,"look":end})
 	# The roof from above, a nave piece.
 	for piece: Dictionary in pieces:
 		if piece.act == "nave":
@@ -156,7 +172,7 @@ func _shots(plan: Dictionary, line: Array, home: Callable) -> Array:
 func _view(local: Vector3) -> Vector3:
 	return _parent.to_local(_islets.to_global(local))
 
-func _hold_at(at_home: Vector3, look_home: Vector3, hour: float, count: int, halls: Array) -> void:
+func _hold_at(at_home: Vector3, look_home: Vector3, hour: float, count: int, halls: Array, far_only := false) -> void:
 	var glide: RefCounted = eye.glide
 	eye.glider.visible = false
 	for i in range(count):
@@ -176,8 +192,8 @@ func _hold_at(at_home: Vector3, look_home: Vector3, hour: float, count: int, hal
 		eye.islands.advance(delta,at,glide.heading,0.0)
 		for live: Dictionary in halls:
 			if live.near != null:
-				(live.near as Node3D).visible = true
-				(live.far as Node3D).visible = false
+				(live.near as Node3D).visible = not far_only
+				(live.far as Node3D).visible = far_only
 		var o := at-look
 		scene.target = look
 		scene.distance = maxf(o.length(),0.01)

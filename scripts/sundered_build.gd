@@ -14,12 +14,15 @@ extends RefCounted
 ##
 ## Detail. Far (`far`): one cheap mesh a piece made with the plan: plain
 ## FAR_SIDES-sided columns, each wall a block or two, the roof strips as
-## whole slabs, the gables, beams, podium; no carving, no growth, no
-## collision; stood with the island and always there. Near (`near`, built
+## whole slabs, the gables, beams, podium; no carving, no collision, the
+## overgrowth only as a few hanging strips (scripts/sundered_growth.gd);
+## stood with the island and always there. Near (`near`, built
 ## on a worker when the eye comes within NEAR_BUILD of a piece, one piece
 ## at a time): the ruin kit's bays at Hall.IN_WORLD detail, the podium the
 ## hall stands on with its torn ends hanging over the sky, the apse's
-## ring and tower; one merged mesh and one body (RUIN_LAYER, the plane's
+## ring and tower, all dressed in the overgrowth (scripts/sundered_growth.gd:
+## curtains, ivy, cascades, vines trailing off the torn ends; growth only);
+## one merged mesh and one body (RUIN_LAYER, the plane's
 ## bump, scripts/ruin_bump.gd). Shown inside NEAR_SHOW (the far hidden),
 ## let go past NEAR_FORGET. Stood in a frame within the sky's frame budget
 ## (scripts/sky_commits.gd), its collision split by bay over frames.
@@ -36,6 +39,7 @@ const SkyFallThread = preload("res://scripts/sky_fall_thread.gd")
 const RockLooks = preload("res://scripts/rock_looks.gd")
 const SkyCommits = preload("res://scripts/sky_commits.gd")
 const SkyCells = preload("res://scripts/sky_cells.gd")
+const SunderedGrowth = preload("res://scripts/sundered_growth.gd")
 
 ## The physics layer the ruins' bodies stand on (the plane's bump asks
 ## only this one).
@@ -255,6 +259,9 @@ static func far(piece: Dictionary) -> ArrayMesh:
 	var plans: Array = piece.plans
 	var bays := plans.size()
 	var soffit := Hall.COLUMN_H+Hall.BEAM.x
+	# The overgrowth's hint on its own stream (the stone's draw unchanged).
+	var grow_rng := RandomNumberGenerator.new()
+	grow_rng.seed = int(piece.seed)+77
 	for i in range(bays):
 		var p: Dictionary = plans[i]
 		var x0 := i*Hall.BAY
@@ -287,6 +294,7 @@ static func far(piece: Dictionary) -> ArrayMesh:
 				_far_block(b,RuinKit._box(b,Vector3(Hall.BAY*0.5,Hall.SLAB*0.5,(z1-z0)*0.5),0.0),Vector3(x0+Hall.BAY*0.5,soffit+Hall.SLAB*0.5,(z0+z1)*0.5),0.96+rng.randf_range(-0.06,0.06))
 		# The walls.
 		var breach: Vector2i = p.breach
+		var heads := Vector2.ZERO
 		for k in range(2):
 			var z := (k*2-1)*Hall.WALL_Z
 			var kind: String = Hall.BREACHES[breach[k]]
@@ -306,6 +314,8 @@ static func far(piece: Dictionary) -> ArrayMesh:
 				if high > head: _far_block(b,RuinKit._box(b,Vector3(w,(high-head)*0.5,half.z),0.0),Vector3(x0+Hall.BAY*0.5,(high+head)*0.5,z),0.94)
 			else:
 				_far_block(b,RuinKit._box(b,Vector3(half.x,high*0.5,half.z),0.0),Vector3(x0+Hall.BAY*0.5,high*0.5,z),0.94)
+			heads[k] = high
+		SunderedGrowth.far_bay(b,x0,heads,grow_rng)
 	# The podium's faces.
 	var length: float = piece.length
 	for s: float in [-1.0,1.0]:
@@ -316,6 +326,8 @@ static func far(piece: Dictionary) -> ArrayMesh:
 			_far_block(b,RuinKit._box(b,Vector3((x1-x)*0.5,depth*0.5,0.6),0.0),Vector3((x+x1)*0.5,PODIUM_TOP-depth*0.5,s*PODIUM_Z),0.82)
 			x = x1
 	if piece.last: _far_apse(b,piece,rng)
+	if int(plans[0].get("torn",0)) & 1 != 0: SunderedGrowth.far_torn(b,0.0,-1.0,PODIUM_TOP,Hall.WALL_Z,grow_rng)
+	if int(plans[bays-1].get("torn",0)) & 2 != 0: SunderedGrowth.far_torn(b,length,1.0,PODIUM_TOP,Hall.WALL_Z,grow_rng)
 	return _far_mesh(b)
 
 ## A far build's mesh (its node let go).
@@ -391,9 +403,16 @@ static func near(piece: Dictionary) -> Node3D:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value
 	var weave := {"low_ties":[],"high_ties":[],"fallen":[],"gaps":[],"slits":[],"narrows":[],"breaches":[],"doors":[],"open":[]}
+	var growth: float = SunderedGrowth.ACTS.get(piece.act,1.0)
 	for i in range(plans.size()):
 		var x0 := Hall.BAY*i
-		var node := Hall.bay(seed_value*31+i,clampf(Sundered.WEATHERED+rng.randf_range(-0.12,0.12),0.0,1.0),plans[i],Callable(),path.shifted(x0) if curved else null)
+		# The overgrowth (scripts/sundered_growth.gd) dresses each bay.
+		var bay_plan: Dictionary = plans[i]
+		if SunderedGrowth.amount > 0.0:
+			bay_plan = bay_plan.duplicate()
+			bay_plan.growth = growth
+			bay_plan.dress = func(b: Build, p: Dictionary) -> void: SunderedGrowth.bay(b,p)
+		var node := Hall.bay(seed_value*31+i,clampf(Sundered.WEATHERED+rng.randf_range(-0.12,0.12),0.0,1.0),bay_plan,Callable(),path.shifted(x0) if curved else null)
 		node.name = "Bay%d" % i
 		if not curved: node.position.x = x0
 		root.add_child(node)
@@ -445,6 +464,10 @@ static func _podium(piece: Dictionary) -> Node3D:
 	b.path = path if path.curved() else null
 	var length: float = piece.length
 	b.shelter = func(_p: Vector3, _n: Vector3) -> float: return 0.0
+	# No ground under it as built: its faces all stand below the floor (y 0),
+	# which Build takes as buried with no terrain (they were culled), and
+	# its vines hang on down past them.
+	b.terrain = func(_x: float, _z: float) -> float: return -1000.0
 	for s: float in [-1.0,1.0]:
 		var x := 0.0
 		while x < length-0.3:
@@ -463,8 +486,15 @@ static func _podium(piece: Dictionary) -> Node3D:
 		b.solid(RuinKit._box(b,Vector3(run2*0.5,0.6,PODIUM_Z-0.6),0.0),Transform3D(Basis.IDENTITY,Vector3(x2+run2*0.5,PODIUM_TOP-PODIUM_COURSE*2.0-0.6,0.0)),RuinKit._stone(b,0.8),false,false,[],-1,1.0,false)
 		x2 += run2
 	var plans: Array = piece.plans
-	if int(plans[0].get("torn",0)) & 1 != 0: _torn(b,0.0,-1.0)
-	if int(plans[plans.size()-1].get("torn",0)) & 2 != 0: _torn(b,length,1.0)
+	var torn_start := int(plans[0].get("torn",0)) & 1 != 0
+	var torn_end := int(plans[plans.size()-1].get("torn",0)) & 2 != 0
+	if torn_start: _torn(b,0.0,-1.0)
+	if torn_end: _torn(b,length,1.0)
+	# The overgrowth: ivy down the faces, long vines off the torn lips.
+	var growth: float = SunderedGrowth.ACTS.get(piece.act,1.0)
+	SunderedGrowth.podium(b,length,PODIUM_TOP,PODIUM_Z+0.7,growth)
+	if torn_start: SunderedGrowth.torn(b,0.0,-1.0,PODIUM_TOP,Hall.WALL_Z,growth)
+	if torn_end: SunderedGrowth.torn(b,length,1.0,PODIUM_TOP,Hall.WALL_Z,growth)
 	return b.finish()
 
 ## A torn end at path x `x` (`out` +1 past it, -1 before it): the podium's
@@ -521,7 +551,9 @@ static func _apse(piece: Dictionary) -> Node3D:
 		var opening := Hall.ARCH if k == 0 else (Hall.LANCET if k == 2 else Vector4.ZERO)
 		Hall._wall(b,pose,TOWER_HALF+0.6,h,opening,h*b.rng.randf_range(0.45,0.7))
 	RuinKit._drift(b,middle+Vector3(TOWER_HALF+2.0,0.0,1.0),2.4,10)
+	var f := b.frame
 	b.frame = Transform3D.IDENTITY
+	SunderedGrowth.apse(b,f,middle,TOWER_HALF,high,apse_columns(piece),SunderedGrowth.ACTS.get("apse",1.0))
 	return b.finish()
 
 ## The aqueduct's near detail in its island's frame (on a worker): the

@@ -33,7 +33,7 @@ The brief: one long gothic hall of the old sky-builders, torn apart when the lan
   - The hall stands on a coursed podium. At torn ends the podium hangs in ragged stacks, with paving slabs tipping off the edge.
 - **Bobbing.** All members share one bob phase and period (the cluster's), so the pieces stay aligned at the gaps. The hall nodes are children of their island nodes.
 - **Detail and streaming:**
-  - **Far:** one cheap mesh per piece from the plan: 8-sided plain columns, block walls with breach gaps, roof strips as whole slabs, beams, gables, podium, apse ring and tower. No carving, growth or collision. It stands with the island and is always there.
+  - **Far:** one cheap mesh per piece from the plan: 8-sided plain columns, block walls with breach gaps, roof strips as whole slabs, beams, gables, podium, apse ring and tower. No carving or collision; the overgrowth only as a few hanging strips (see Overgrowth). It stands with the island and is always there.
   - **Near:** the ruin kit's bays at `Hall.IN_WORLD`, plus the podium, torn ends and apse.
     - Built on a worker for the nearest piece within 340 m, one piece at a time.
     - Shown within 240 m (the far is hidden then) and let go past 480 m.
@@ -92,6 +92,98 @@ All measurements are headless, seed 7 (the `--motif=sundered` default), unless n
 | Near build per piece (worker) | 0.3–0.6 s |
 | Planning the whole cluster (worker: islands, beds, far detail, dressing) | ~3.5 s solve, ~7 s with dressing |
 | Standing a piece (main thread) | mesh < 1 ms (headless); body chunks ~1–1.6 ms each, but the first chunk of a piece ~5 ms |
+
+## Overgrowth
+
+Branch `look/sundered-overgrowth` (from main 0f33b597). The ask: the wind-animated ruin overgrowth (`docs/scenic/ruin-overgrowth.md`) on the hall, inside and out.
+
+Why it was bare: the near build used the kit's bays at `Hall.IN_WORLD` (0.25) on lean stone. That keeps about a quarter of the kit's curtains as thin 5-strand rows and zero wall-head fringes (`FRINGES_LEAN` 2 × 0.25 rounds to 0). The podium, torn ends and apse got no growth, and the far mesh had none.
+
+### What was added
+
+`scripts/sundered_growth.gd` (new) dresses the hall on top of the kit's own growth. It's all growth surface, in the existing shader and wind, and none of it is collided.
+
+- **Inside a bay** (through a plan hook in `Hall.bay`, see below):
+  - **Curtains:**
+    - from the roof beams at each bay line, across the nave and over the lane;
+    - from the architraves along the rows and the high ties;
+    - from the low ties off the lane only, so the way under them stays open;
+    - under the slab edges of broken roofs.
+  - The plane threads the curtains and pushes them. They stop at least 3 m over the floor (the line is at 2.3 m).
+  - **Strands spilling over broken-roof edges** down into the light shafts.
+  - **Ivy** down the columns (and over snapped heads on torn lines) and down the inner wall faces from under the roof.
+  - None of it sits in the knife-slit screens or across a breach or door opening.
+- **Outside:**
+  - leaf mats on the wall heads, with rows of ivy cascading down the outer walls (more on torn bays);
+  - drapes down both faces of the gables.
+- **Under the hall** (`_podium`):
+  - ivy down the podium's long faces;
+  - at each torn end, clumps of long vines (6–15 m) over the lip. They hug the hanging stacks, then trail free into the void over the cloud sea. These are the signature strands: they swing widest, since a free tip moves most.
+- **Apse:** drapes over the snapped ring, and ivy cascades down the tower's four faces from its ragged head.
+- **Far:** a few tapered hanging strips per wall, leaf mats on the wall heads, and thin strips off the torn ends. They are in the growth material, so they sway too.
+- **Density by act** (`ACTS`): cloister 1.0, apse 0.85, the rest 0.8.
+
+### Options
+
+- `--overgrowth=<x>`: the game and `tools/capture_sundered.gd` scale it. `0` is off (the kit's own growth only); `1` is the default.
+- `SunderedGrowth.amount` sets the same scale from code.
+- `tools/capture_sundered.gd` gained:
+  - `far-*` shots: the far detail only;
+  - `lip-*` shots: under a torn end, looking up the trailing vines;
+  - `--repeat=N`: N stills per shot, 20 frames apart, to see the sway.
+
+### Edits to shared code (kept small; the stone code is untouched)
+
+- `ruin_kit_hall.gd`: `bay` calls an optional plan `"dress"` Callable(b, plan) after all its stone is laid. Nothing else sets it.
+- `ruin_growth.gd`:
+  - the body of `curtains`' loop is now a public `curtain(b, at, length, from, most, longest, full)`, with the same rng order;
+  - `strand` takes optional `coarse` (bigger, sparser leaves, a flat ribbon stem) and `full` (two leaves a node on lean stone).
+  - The defaults are unchanged. The gallery's and the tests' cost lines are identical (12-bay hall, seed 12, 0.6: 90,532 triangles, as before).
+- The sundered growth draws on its own rng stream, so the kit's own ivy and moss are drawn as before.
+- Its probing (`Probe`) is a grid over the piece's blocks. The kit's `_inside` walks every block, which was too slow for hundreds of strands.
+
+### A podium fix along the way
+
+The podium (and the torn ends' hanging stacks) was almost entirely culled. Built with no terrain, `Build.floor_at` is 0, and the culling took every face under the floor as buried: a podium drew 78–175 triangles of its ~230–280 hulls' blocks. It now has a deep terrain, so its faces draw (+4–6k stone triangles per piece). Its hulls are unchanged.
+
+### Measured (seed 7, headless)
+
+| What | Before | After |
+|---|---|---|
+| Near piece triangles (9 pieces) | 43.6–71.3k (growth 5.3–8.5k) | 79.8–121.0k (stone 43.6–68.7k, growth 36.2–52.7k) |
+| Worst per bay | 7,914 total | stone 7,498, growth 6,288 |
+| Far, whole hall | 15,424 | 17,461 (+2,037 growth) |
+| Draw calls, near piece | 2 surfaces (+2 shadow) | unchanged |
+| Draw calls, far piece | 1 surface | 2 surfaces (+1 draw, +1 shadow per far piece, 9 pieces) |
+| Worker build per piece | 420–773 ms | 508–1,031 ms |
+| Hulls (and their points) | 1,226–2,183 | identical |
+| Standing a piece (main thread) | mesh 0.1 ms, body chunks ≤ 1.7 ms after the first | unchanged |
+
+The growth breakdown, all 9 pieces: torn ends 64k, cascades 61k, beam curtains 53k, inner walls 39k, roof edges 32k, columns 24k, podium 16k, architraves 16k, ties 13k, gables 7k, apse 5k.
+
+**The test budgets changed.** `NEAR_BUDGET` went from 85k to 130k. The per-bay budget now applies to stone only (8k, unchanged), and growth gets its own (6.5k per bay). The rendered frame cost of ~50k growth triangles per near piece (3 vertices each through the wind shader, plus the shadow pass) was not measured. That needs a GPU check with 2–3 near pieces in view.
+
+### Checks
+
+`tests/test_sundered_hall.gd` now also checks that:
+- a piece built with and without the overgrowth has identical hulls;
+- the overgrowth grows more than twice the kit's own;
+- no growth vertex sits in the lane's low slot (z 4.6–7.4, y 0.6–2.9 m) or inside a breach box.
+
+### Still weak
+
+- **Inside reads only moderately overgrown:**
+  - The nave is curtained at the bay lines, but the walls between are still mostly stone.
+  - The thin lean strands read as lines of leaves rather than masses at distance.
+  - Fuller curtains cost about 2.5× per metre.
+- **Torn-end vines hang straight down** from a 1–4.5 m overhang. Over an island's cliff they read against the rock rather than over open void, and when they swing they can pass through the cliff (growth is never collided).
+- **The apse tower** carries only modest cascades for its height.
+- **Far:** the strips read as green streaks from 300 m but not as hanging growth. The far roofs show no growth.
+- **Not checked by hand:**
+  - flying through the curtains at speed: the push (`ruin_growth_push.gd`) was never flown in the game;
+  - golden-hour light shafts on the spill strands;
+  - the GPU frame cost.
+- Only seed 7 is measured against the budgets. A heavier seed could land near the 6.5k growth-per-bay line: the apse is at 6.3k.
 
 ## Checks
 

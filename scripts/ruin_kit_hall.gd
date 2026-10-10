@@ -447,6 +447,11 @@ static func bay(seed_value: int, weathered := 0.0, plan := {}, ground := Callabl
 		var x := b.rng.randf_range(1.0,BAY-1.0)
 		if breach.x != 0: x = 1.0 if x < BAY*0.5 else BAY-1.0
 		RuinKit._drift(b,Vector3(x,0.0,-ROW_Z+2.0),1.4 if breach.x == 0 else 0.8,int(b.weathered*6.0))
+	# A caller's own dressing (plan "dress": Callable(b, plan), e.g. the
+	# sundered hall's overgrowth, scripts/sundered_growth.gd), the stone all
+	# laid; growth only, never solid.
+	var dress: Variant = plan.get("dress")
+	if dress is Callable and (dress as Callable).is_valid(): (dress as Callable).call(b,plan)
 	var root := _finish(b)
 	root.set_meta("feet",feet)
 	root.set_meta("weave",weave)
