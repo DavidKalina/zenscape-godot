@@ -5,7 +5,7 @@ extends Node
 ## light shafts in the display-fog blend, glow that water and alpenglow can
 ## reach, and on Ultra a dense meadow of GPU-placed grass.
 ## F6 toggles the whole pass for a direct before/after.
-var enabled := "--no-look-pass" not in OS.get_cmdline_user_args()
+var enabled := "--no-look-pass" not in preload("res://scripts/launch_args.gd").user_args()
 ## Tier from the quality setting: 0 Beauty, 1 Balanced, 2 Ultra.
 var tier := 1
 var ao := 0.8
@@ -33,7 +33,7 @@ var cloud_sea := 0.0 if _flag("--no-cloud-sea") else 1.0
 const CLOUD_STYLES := ["opal","storybook","mystic"]
 const CLOUD_STYLE_NAMES := ["Opal","Storybook","Mystic"]
 const SETTINGS_PATH := "user://look.cfg"
-var cloud_style := cloud_style_from_args(OS.get_cmdline_user_args() + OS.get_cmdline_args(), load_cloud_style())
+var cloud_style := cloud_style_from_args(preload("res://scripts/launch_args.gd").user_args() + OS.get_cmdline_args(), load_cloud_style())
 ## The night sky's style (shaders/night_sky.gdshaderinc, the global
 ## zs_night_style), chosen and kept like the clouds' in Settings > Night sky.
 ## --night-style=nocturne|opal|storybook|mystic picks one for a run.
@@ -41,11 +41,11 @@ const NIGHT_STYLES := ["nocturne","opal","storybook","mystic"]
 const NIGHT_STYLE_NAMES := ["Nocturne","Opal","Storybook","Mystic"]
 ## The night until the player chooses.
 const NIGHT_DEFAULT := "storybook"
-var night_style := night_style_from_args(OS.get_cmdline_user_args() + OS.get_cmdline_args(), load_night_style())
+var night_style := night_style_from_args(preload("res://scripts/launch_args.gd").user_args() + OS.get_cmdline_args(), load_night_style())
 ## The ringed planet (scripts/sky_objects.gd): off unless the player turns
 ## it on in Settings > Planet, kept in user://look.cfg. --sky-planet or
 ## --no-sky-planet for a run.
-var sky_planet := sky_planet_from_args(OS.get_cmdline_user_args() + OS.get_cmdline_args(), load_sky_planet())
+var sky_planet := sky_planet_from_args(preload("res://scripts/launch_args.gd").user_args() + OS.get_cmdline_args(), load_sky_planet())
 ## Where the choice is kept (tests point it elsewhere).
 var settings_path := SETTINGS_PATH
 ## Motes of light adrift round the plate over the sea (scripts/sky_motes.gd),
@@ -187,14 +187,14 @@ func update(camera: Camera3D, celestial) -> void:
 		target.set_shader_parameter("rays_color", sun_light / maxf(maxf(sun_light.x,sun_light.y),maxf(sun_light.z,0.001)) * RAYS_LIGHT)
 
 static func _flag(name: String) -> bool:
-	return name in OS.get_cmdline_user_args() or name in OS.get_cmdline_args()
+	return name in preload("res://scripts/launch_args.gd").user_args() or name in OS.get_cmdline_args()
 
 ## The shafts' strength for this run: RAYS, --rays=N, or none with --no-rays.
 static func default_rays() -> float:
 	return 0.0 if _flag("--no-rays") else _arg_float("--rays=", RAYS)
 
 static func _arg_float(prefix: String, fallback: float) -> float:
-	for arg: String in OS.get_cmdline_user_args():
+	for arg: String in preload("res://scripts/launch_args.gd").user_args():
 		if arg.begins_with(prefix): return float(arg.trim_prefix(prefix))
 	return fallback
 

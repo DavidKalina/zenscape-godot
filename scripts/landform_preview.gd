@@ -58,7 +58,7 @@ var stood := {}
 ## The landforms asked for on the command line, known names only.
 static func wanted() -> Array:
 	var out: Array = []
-	for a: String in OS.get_cmdline_user_args():
+	for a: String in preload("res://scripts/launch_args.gd").user_args():
 		if not a.begins_with("--landform="): continue
 		for n: String in a.trim_prefix("--landform=").split(",",false):
 			if LANDFORMS.has(n) and not n in out: out.append(n)
@@ -75,7 +75,7 @@ static func attach(islands: Node3D) -> void:
 	preview.name = "LandformPreview"
 	preview.islets = islands.islets
 	preview.names = names_wanted
-	for a: String in OS.get_cmdline_user_args():
+	for a: String in preload("res://scripts/launch_args.gd").user_args():
 		if a.begins_with("--landform-seed="): preview.seed_base = int(a.trim_prefix("--landform-seed="))
 	islands.add_child(preview)
 

@@ -126,7 +126,7 @@ var clay: Node
 var counts := {}
 
 ## `--sound-log`: print every cue as it plays, is held back or is dropped.
-var log_cues := "--sound-log" in OS.get_cmdline_user_args()
+var log_cues := "--sound-log" in preload("res://scripts/launch_args.gd").user_args()
 var _rng := RandomNumberGenerator.new()
 var _takes := {}
 var _last_take := {}

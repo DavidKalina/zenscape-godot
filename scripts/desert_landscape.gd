@@ -8,7 +8,7 @@ extends RefCounted
 ## with desert load and play as before. ENABLED ships it; the --desert flag
 ## turns it on for development. Tests may set `on` before building.
 const ENABLED := false
-static var on: bool = ENABLED or "--desert" in OS.get_cmdline_user_args()
+static var on: bool = ENABLED or "--desert" in preload("res://scripts/launch_args.gd").user_args()
 const KINDS := ["desert","dunes","tablelands","buttes","monuments","salt-basin","desert-mountains"]
 const PROFILES := {
 	"desert":[1.0,1.0,1.0,1.0,0.0,[[-6,-7.5,4.8,3.4,6.4],[7.6,-4.2,2,1.6,4.2]]],

@@ -71,10 +71,10 @@ const NEAR_MOTIFS := ["farmstead","forest","mountain"]
 const JUMP := 12.0
 
 static func enabled() -> bool:
-	return not "--no-collectibles" in OS.get_cmdline_user_args()
+	return not "--no-collectibles" in preload("res://scripts/launch_args.gd").user_args()
 
 static func near_home_enabled() -> bool:
-	return "--collectibles-near-home" in OS.get_cmdline_user_args()
+	return "--collectibles-near-home" in preload("res://scripts/launch_args.gd").user_args()
 
 ## Emitted on each pickup: the token's glyph, how many of that glyph are
 ## collected now, its line's got and count.

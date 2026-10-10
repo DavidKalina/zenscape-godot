@@ -300,9 +300,9 @@ func _ready() -> void:
 		_atmosphere.wind_trails.set_canopy(func(p: Vector2) -> float: return editor.ground_shade.shade_at(p) if editor.ground_shade != null else 0.0)
 	_setup_fire()
 	_build_ui()
-	if not OS.get_cmdline_user_args().has("--native-fog") and RenderingServer.get_current_rendering_method() == "forward_plus":
+	if not preload("res://scripts/launch_args.gd").user_args().has("--native-fog") and RenderingServer.get_current_rendering_method() == "forward_plus":
 		_enable_display_fog()
-	for argument in OS.get_cmdline_user_args():
+	for argument in preload("res://scripts/launch_args.gd").user_args():
 		if argument.begins_with("--mood="):
 			_apply_mood(int(argument.trim_prefix("--mood=")))
 		if argument.begins_with("--preroll="):
@@ -433,10 +433,10 @@ func _ready() -> void:
 		_prerolling = true
 		_process(_preroll)
 		_prerolling = false
-	for argument in OS.get_cmdline_user_args():
+	for argument in preload("res://scripts/launch_args.gd").user_args():
 		if argument.begins_with("--garden-file="):
 			_chunk_editor.save_path = argument.trim_prefix("--garden-file=")
-	if OS.get_cmdline_user_args().has("--garden"):
+	if preload("res://scripts/launch_args.gd").user_args().has("--garden"):
 		if FileAccess.file_exists(_chunk_editor.save_path):
 			_chunk_editor.open_garden()
 		_chunk_editor.set_active(true)
@@ -448,7 +448,7 @@ func _enable_display_fog() -> void:
 	_display_fog = preload("res://studies/display_fog.gd").new()
 	add_child(_display_fog)
 	_display_fog.setup(_atmosphere, camera, _precipitation.ground_texture, _precipitation.stream_texture)
-	_display_fog.visible = not OS.get_cmdline_user_args().has("--no-fog")
+	_display_fog.visible = not preload("res://scripts/launch_args.gd").user_args().has("--no-fog")
 	_atmosphere.native_volume = false
 	_environment.volumetric_fog_enabled = false
 
@@ -1167,7 +1167,7 @@ func _build_ui() -> void:
 		slider.step = 0.01
 		slider.value = _atmosphere.get(property)
 		slider.focus_mode = Control.FOCUS_NONE
-		slider.editable = not OS.get_cmdline_user_args().has("--native-fog") and RenderingServer.get_current_rendering_method() == "forward_plus"
+		slider.editable = not preload("res://scripts/launch_args.gd").user_args().has("--native-fog") and RenderingServer.get_current_rendering_method() == "forward_plus"
 		slider.value_changed.connect(func(value: float) -> void: _atmosphere.set(property, value))
 		study.add_child(slider)
 		_remember_setting(slider,_atmosphere,property)

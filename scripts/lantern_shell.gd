@@ -42,7 +42,7 @@ const OTHER_WAY := {"land":"Drag to lower land","water":"Drag to drain water","m
 const WATER_BALL_HINT := "Hold to gather a ball of water  ·  Release to drop it  ·  Shift-drag drains"
 ## The bottom scrubber (season and time) shows only with `--scrubber`.
 static func scrubber_wanted() -> bool:
-	return "--scrubber" in OS.get_cmdline_user_args()
+	return "--scrubber" in preload("res://scripts/launch_args.gd").user_args()
 
 var scene: Node3D
 var editor: NativeChunkEditor

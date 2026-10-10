@@ -251,7 +251,7 @@ func _read_seen() -> bool:
 
 ## Probes and the packaged self-check never mark the hint as seen.
 func _private() -> bool:
-	return scene.has_meta("movie_capture") or "--verify-desktop-build" in OS.get_cmdline_user_args()
+	return scene.has_meta("movie_capture") or "--verify-desktop-build" in preload("res://scripts/launch_args.gd").user_args()
 
 func dismiss_hint() -> void:
 	if _hint_seen: return

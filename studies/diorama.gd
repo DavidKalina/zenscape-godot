@@ -30,7 +30,7 @@ var world_play = preload("res://scripts/diorama_world_play.gd").new()
 var _performance_trace = preload("res://scripts/performance_trace.gd").new()
 
 func _ready() -> void:
-	if "--verify-desktop-build" in OS.get_cmdline_user_args():
+	if "--verify-desktop-build" in preload("res://scripts/launch_args.gd").user_args():
 		get_tree().root.size = Vector2i(1440,960)
 		library_path = OS.get_temp_dir().path_join("zenscape-export-menu-"+str(Time.get_ticks_usec()))
 		recent_file = library_path.path_join("recent.cfg")
@@ -99,7 +99,7 @@ func _ready() -> void:
 	loading.queue_free()
 	title_loaded = true
 	set_process(true)
-	if "--verify-desktop-build" in OS.get_cmdline_user_args():
+	if "--verify-desktop-build" in preload("res://scripts/launch_args.gd").user_args():
 		preload("res://scripts/desktop_build_check.gd").run.call_deferred(self)
 
 func _process(delta: float) -> void:

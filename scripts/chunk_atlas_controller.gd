@@ -27,7 +27,7 @@ var _glide_time := -1.0
 ## Accepts `--atlas` before or after Godot's `--` separator; launchers pass
 ## their extra arguments straight through without one.
 static func enabled() -> bool:
-	return "--atlas" in OS.get_cmdline_user_args() or "--atlas" in OS.get_cmdline_args()
+	return "--atlas" in preload("res://scripts/launch_args.gd").user_args() or "--atlas" in OS.get_cmdline_args()
 
 func setup(owner_scene: Node3D) -> void:
 	scene = owner_scene

@@ -94,7 +94,7 @@ static func enabled() -> bool:
 ## challenge as the study's variants fly it ({} as the stations have it).
 static func override() -> Dictionary:
 	var out := {}
-	for a: String in OS.get_cmdline_user_args():
+	for a: String in preload("res://scripts/launch_args.gd").user_args():
 		if a.begins_with("--challenge-time=") and a.trim_prefix("--challenge-time=").is_valid_float(): out.time = float(a.trim_prefix("--challenge-time="))
 		if a.begins_with("--challenge-mode="): out.mode = a.trim_prefix("--challenge-mode=")
 	return out

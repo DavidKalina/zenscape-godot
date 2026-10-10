@@ -401,7 +401,7 @@ var _verdict_left := 0.0
 var _holes: Array[Rect2] = []
 
 func _ready() -> void:
-	for arg in OS.get_cmdline_user_args():
+	for arg in preload("res://scripts/launch_args.gd").user_args():
 		if arg.begins_with("--pack=") and pack == "": pack = arg.trim_prefix("--pack=")
 	if pack != "": _load_pack()
 	Pad.ensure()

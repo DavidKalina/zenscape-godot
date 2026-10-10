@@ -170,7 +170,7 @@ static func fov_to_focal(fov: float) -> float:
 ## Where photos go: ~/Pictures/ZenScape, or user://photos when Pictures is
 ## unavailable. `--photo-dir=PATH` points it elsewhere (probes, the build check).
 static func folder() -> String:
-	for arg in OS.get_cmdline_user_args():
+	for arg in preload("res://scripts/launch_args.gd").user_args():
 		if arg.begins_with("--photo-dir="): return arg.trim_prefix("--photo-dir=")
 	var pictures := OS.get_system_dir(OS.SYSTEM_DIR_PICTURES)
 	if not pictures.is_empty() and DirAccess.dir_exists_absolute(pictures): return pictures.path_join("ZenScape")

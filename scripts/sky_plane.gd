@@ -108,7 +108,7 @@ var knife := 0.0
 ## The drift's strength (`--drift=<x>`, 0 off), how far into one it is now
 ## (0 to 1), the nose's lead over its path (radians, the travel is at
 ## heading+slip), and how long this one has been held (seconds).
-var drift_strength := drift_flag(OS.get_cmdline_user_args())
+var drift_strength := drift_flag(preload("res://scripts/launch_args.gd").user_args())
 var drift := 0.0
 var slip := 0.0
 var drift_held := 0.0

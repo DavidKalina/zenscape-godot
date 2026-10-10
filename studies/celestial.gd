@@ -37,7 +37,7 @@ var cycling: bool:
 ## one, which comes on its own on clear winter nights (`_aurora`).
 var aurora_strength := 0.0
 ## --aurora: a floor the world's mood can't reset, for looking at it.
-var forced_aurora := 1.2 if "--aurora" in OS.get_cmdline_user_args() else 0.0
+var forced_aurora := 1.2 if "--aurora" in preload("res://scripts/launch_args.gd").user_args() else 0.0
 var rainbow_strength := 0.0
 var weather_bow := 0.0
 ## A rainbow that life calls after rain over a rich place (scripts/life_moments.gd).
@@ -188,7 +188,7 @@ static func _temper_sky(c: Vector3) -> Vector3:
 	return Vector3(c.x, minf(c.y, lerpf(c.x, c.z, SKY_GREEN_CAP) if c.z > c.x else c.y), c.z)
 
 static func _arg_float(prefix: String, fallback: float) -> float:
-	for arg: String in OS.get_cmdline_user_args():
+	for arg: String in preload("res://scripts/launch_args.gd").user_args():
 		if arg.begins_with(prefix): return float(arg.trim_prefix(prefix))
 	return fallback
 ## Aurora: each night rolls once, with this chance by the season it falls in

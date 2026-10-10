@@ -1060,7 +1060,7 @@ func prop_point(local: Vector3) -> Variant:
 ## The prop's size: the God Hand's scale (1 at the hand's own size), which
 ## `--hand-cursor` keeps one size on screen.
 func _prop_size() -> float:
-	if not "--hand-cursor" in OS.get_cmdline_user_args(): return 1.0
+	if not "--hand-cursor" in preload("res://scripts/launch_args.gd").user_args(): return 1.0
 	return float(scene.distance)/GodHand.CURSOR_DISTANCE
 
 ## How far the prop's working end hangs below its grip (m at size 1): the

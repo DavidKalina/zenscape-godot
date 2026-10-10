@@ -268,7 +268,7 @@ const Fences = preload("res://scripts/fences.gd")
 const HINT_LIFT := 124.0
 
 static func enabled() -> bool:
-	return Modeless.enabled() and not "--no-tray" in OS.get_cmdline_user_args()
+	return Modeless.enabled() and not "--no-tray" in preload("res://scripts/launch_args.gd").user_args()
 
 var scene: Node3D
 var reach: Node
@@ -1111,7 +1111,7 @@ func _carry(delta: float) -> void:
 	want = want and (pressing or (reach.available() and reach.holding.is_empty() and reach.hover_zone == "land"))
 	var growing: bool = reach.holding == "scatter" and _travel <= CLICK_PIXELS and SCATTER.has(held)
 	clump.grow = smoothstep(0.12,float(SCATTER[held].grow),_held_seconds) if growing else 0.0
-	var size: float = float(scene.distance)/GodHand.CURSOR_DISTANCE if "--hand-cursor" in OS.get_cmdline_user_args() else 1.0
+	var size: float = float(scene.distance)/GodHand.CURSOR_DISTANCE if "--hand-cursor" in preload("res://scripts/launch_args.gd").user_args() else 1.0
 	var rest := CursorMotion.across_view(editor.terrain,scene.camera)
 	clump.advance(delta,want,hit,pressing,rest,float(PRESS_GAP.get(held,PRESS_GAP_DEFAULT)),size)
 	_sow(delta,sowing)

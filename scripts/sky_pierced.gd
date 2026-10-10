@@ -94,16 +94,16 @@ static var taken: Array[Vector3] = []
 
 ## --pierced-trace: each step of making and standing one, printed.
 static func _trace(what: String) -> void:
-	if "--pierced-trace" in OS.get_cmdline_user_args(): print("PIERCED trace ",what)
+	if "--pierced-trace" in preload("res://scripts/launch_args.gd").user_args(): print("PIERCED trace ",what)
 
 static func forced() -> bool:
-	return "--pierced" in OS.get_cmdline_user_args()
+	return "--pierced" in preload("res://scripts/launch_args.gd").user_args()
 
 static func random_enabled() -> bool:
-	return not "--no-pierced" in OS.get_cmdline_user_args()
+	return not "--no-pierced" in preload("res://scripts/launch_args.gd").user_args()
 
 static func forced_seed() -> int:
-	for a: String in OS.get_cmdline_user_args():
+	for a: String in preload("res://scripts/launch_args.gd").user_args():
 		if a.begins_with("--pierced-seed="): return int(a.trim_prefix("--pierced-seed="))
 	return NEAR_SEED
 

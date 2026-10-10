@@ -31,7 +31,7 @@ const FLIP_REACH := 0.45
 ## `--modeless` is still accepted (the probes and films pass it) but no longer
 ## needed.
 static func enabled() -> bool:
-	return not "--classic-controls" in OS.get_cmdline_user_args()
+	return not "--classic-controls" in preload("res://scripts/launch_args.gd").user_args()
 
 ## How the edge spring's pull is shown (docs/scenic/modeless-spring.md, "Pull
 ## feel (experiment)"): `--pull-cam=a|b|c|old`. "a" holds the camera still
@@ -43,7 +43,7 @@ const PULL_CAMS := ["a","b","c","old"]
 const PULL_CAM_DEFAULT := "a"
 
 static func pull_cam() -> String:
-	for arg: String in OS.get_cmdline_user_args():
+	for arg: String in preload("res://scripts/launch_args.gd").user_args():
 		if arg.begins_with("--pull-cam="):
 			var value := arg.trim_prefix("--pull-cam=").to_lower()
 			if value in PULL_CAMS: return value

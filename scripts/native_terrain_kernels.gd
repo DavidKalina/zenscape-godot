@@ -5,8 +5,8 @@ const Plate := preload("res://scripts/plate.gd")
 static var _kernel: RefCounted
 static var _attempted := false
 static func get_kernel() -> RefCounted:
-	if "--gdscript-kernels" in OS.get_cmdline_user_args():
-		if "--native-kernels" in OS.get_cmdline_user_args():
+	if "--gdscript-kernels" in preload("res://scripts/launch_args.gd").user_args():
+		if "--native-kernels" in preload("res://scripts/launch_args.gd").user_args():
 			_requirement_failed("Choose either --native-kernels or --gdscript-kernels, not both")
 		return null
 	if _attempted: return _kernel
@@ -16,7 +16,7 @@ static func get_kernel() -> RefCounted:
 		GDExtensionManager.load_extension(path)
 	if ClassDB.class_exists("ZenScapeTerrainKernels"):
 		_kernel = ClassDB.instantiate("ZenScapeTerrainKernels")
-	elif "--native-kernels" in OS.get_cmdline_user_args():
+	elif "--native-kernels" in preload("res://scripts/launch_args.gd").user_args():
 		_requirement_failed("--native-kernels requires a built GDExtension; run tools/build_native_kernels.py")
 	return _kernel
 

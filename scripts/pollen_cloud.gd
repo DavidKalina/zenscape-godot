@@ -891,7 +891,7 @@ func _held_capsules(veil: Dictionary) -> Array:
 ## Whether the footprints are drawn: off unless --show-promise. The user found
 ## the landing outlines too many and too hand-holding; the veil drifting in
 ## the air and the sprouts where it lands say where it went.
-var show_prints := "--show-promise" in OS.get_cmdline_user_args()
+var show_prints := "--show-promise" in preload("res://scripts/launch_args.gd").user_args()
 
 ## The footprints: the aim (a click's under the pointer, or the held veil's)
 ## and each released veil's until it has settled.

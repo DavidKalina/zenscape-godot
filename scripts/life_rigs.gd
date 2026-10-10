@@ -16,7 +16,7 @@ const BLEND := 0.2
 static var _scene: PackedScene
 
 static func enabled() -> bool:
-	return not ("--classic-life" in OS.get_cmdline_user_args() or "--classic-life" in OS.get_cmdline_args())
+	return not ("--classic-life" in preload("res://scripts/launch_args.gd").user_args() or "--classic-life" in OS.get_cmdline_args())
 
 ## A deer, hidden until shown; `fawn` wears the lighter, spotted coat.
 static func deer(material: Material, fawn: bool) -> Rig:

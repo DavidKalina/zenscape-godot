@@ -35,7 +35,7 @@ const TIP_JITTER := 0.04
 const SATELLITES := [[3, 0.27, 0.62], [3, 0.24, 0.55]]
 
 static func enabled() -> bool:
-	return not ("--classic-grass" in OS.get_cmdline_user_args() or "--classic-grass" in OS.get_cmdline_args())
+	return not ("--classic-grass" in preload("res://scripts/launch_args.gd").user_args() or "--classic-grass" in OS.get_cmdline_args())
 
 ## The replacement for `mesh-10`, carrying the original's material and root
 ## and tip colours; any other mesh, or with `--classic-grass`, the original.

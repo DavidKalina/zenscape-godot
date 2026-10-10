@@ -139,7 +139,7 @@ const CHORUS_SONGS := ["robin","chickadee","kinglet","bluebird","hermit-thrush"]
 const FIGURE_EYE := 0.85
 
 var life: Node3D
-var enabled := "--no-notice" not in OS.get_cmdline_user_args()
+var enabled := "--no-notice" not in preload("res://scripts/launch_args.gd").user_args()
 ## For probes: reactions started, by what.
 var reactions := {}
 var _pending: Array = []

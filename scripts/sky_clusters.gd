@@ -139,17 +139,17 @@ const SAIL_SPIN := 0.55
 const BEAM_SPIN := 0.45
 
 static func showcase_enabled() -> bool:
-	return "--showcase" in OS.get_cmdline_user_args()
+	return "--showcase" in preload("res://scripts/launch_args.gd").user_args()
 
 static func random_enabled() -> bool:
-	return not "--no-clusters" in OS.get_cmdline_user_args()
+	return not "--no-clusters" in preload("res://scripts/launch_args.gd").user_args()
 
 ## The motifs forced near the home (--motif=a,b or --motifs-near-home),
 ## known names only, in order.
 static func near_motifs() -> Array:
 	var names: Array = Motifs.names()
 	var out: Array = []
-	for a: String in OS.get_cmdline_user_args():
+	for a: String in preload("res://scripts/launch_args.gd").user_args():
 		if a == "--motifs-near-home":
 			for n: String in names+SPECIAL:
 				if not n in out: out.append(n)
@@ -160,7 +160,7 @@ static func near_motifs() -> Array:
 	return out
 
 static func near_seed() -> int:
-	for a: String in OS.get_cmdline_user_args():
+	for a: String in preload("res://scripts/launch_args.gd").user_args():
 		if a.begins_with("--motif-seed="): return int(a.trim_prefix("--motif-seed="))
 	return NEAR_SEED
 

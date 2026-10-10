@@ -521,7 +521,7 @@ func _spring(point: Vector2, volume: float, head: bool) -> void:
 	var at_ground: Variant = data.ground_height(at)
 	var from_spring := PackedVector3Array([Vector3(at.x,float(at_ground) if at_ground != null else points[maxi(set-1,0)].y,at.y)])
 	from_spring.append_array(points.slice(set))
-	var bed := {} if "--no-spring-bed" in OS.get_cmdline_user_args() else spring_bed(data,{"points":from_spring,"end":course.end},1,volume)
+	var bed := {} if "--no-spring-bed" in preload("res://scripts/launch_args.gd").user_args() else spring_bed(data,{"points":from_spring,"end":course.end},1,volume)
 	if not bed.is_empty():
 		last_bed = {"from":data.heights.duplicate(),"heights":bed.heights.duplicate(),"rect":bed.rect,"pool":bed.pool,"radius":bed.radius}
 		data.heights = bed.heights

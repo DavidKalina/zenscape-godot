@@ -71,7 +71,7 @@ var puffs := preload("res://studies/wind_puffs.gd").new()
 var fronts := preload("res://studies/gust_fronts.gd").new()
 
 func _init() -> void:
-	for arg in OS.get_cmdline_user_args():
+	for arg in preload("res://scripts/launch_args.gd").user_args():
 		if arg.begins_with("--breeze="): breeze_gain = float(arg.get_slice("=", 1))
 		if arg.begins_with("--fronts="): fronts.gain = float(arg.get_slice("=", 1))
 var _fog_material: ShaderMaterial
@@ -81,7 +81,7 @@ var wind_trails: Node3D
 ## The air drawn: painterly breeze ribbons riding the flow and the gust
 ## fronts (scripts/breeze_ribbons.gd); `--old-trails` brings back the earlier
 ## stamped trails (scripts/weather_wind_trails.gd) to compare.
-func setup_wind_trails(probe: Callable, old := OS.get_cmdline_user_args().has("--old-trails")) -> void:
+func setup_wind_trails(probe: Callable, old := preload("res://scripts/launch_args.gd").user_args().has("--old-trails")) -> void:
 	if wind_trails != null: return
 	wind_trails = (preload("res://scripts/weather_wind_trails.gd") if old else preload("res://scripts/breeze_ribbons.gd")).new()
 	add_child(wind_trails)

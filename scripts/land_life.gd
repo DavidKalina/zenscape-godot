@@ -112,7 +112,7 @@ const DART := 1.1
 ## Multiplies the life clock; probes run it fast.
 var pace := 1.0
 ## --no-life turns the whole system off, for A/B timing.
-var enabled := "--no-life" not in OS.get_cmdline_user_args()
+var enabled := "--no-life" not in preload("res://scripts/launch_args.gd").user_args()
 ## --force-life[=deer,heron,snake]: each named creature (all three by default)
 ## comes as soon as the world has its place, skipping delay, chance and hour,
 ## and again FORCE_GAP s after it has gone, for looking at them in the game.
@@ -1190,7 +1190,7 @@ func _open_edges() -> Array:
 	return edges
 
 static func _forced_kinds() -> PackedStringArray:
-	for arg in OS.get_cmdline_user_args():
+	for arg in preload("res://scripts/launch_args.gd").user_args():
 		if arg == "--force-life": return PackedStringArray(["deer","heron","snake"])
 		if arg.begins_with("--force-life="): return arg.trim_prefix("--force-life=").split(",",false)
 	return PackedStringArray()

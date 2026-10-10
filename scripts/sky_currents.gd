@@ -70,7 +70,7 @@ var currents := []
 var _wisps: MultiMeshInstance3D
 var _material: ShaderMaterial
 ## The old fine streaks instead of the ribbons (`--old-currents`).
-var old_streaks := "--old-currents" in OS.get_cmdline_user_args()
+var old_streaks := "--old-currents" in preload("res://scripts/launch_args.gd").user_args()
 ## Each stroke's instance data as last built (Colors, as the MultiMesh
 ## holds them), for probes and tests.
 var stroke_data := []
@@ -338,7 +338,7 @@ func _build_wisps() -> void:
 	_material = ShaderMaterial.new()
 	_material.shader = preload("res://shaders/sky_current.gdshader") if old_streaks else preload("res://shaders/sky_jet_ribbon.gdshader")
 	if not old_streaks:
-		for arg: String in OS.get_cmdline_user_args():
+		for arg: String in preload("res://scripts/launch_args.gd").user_args():
 			if arg.begins_with("--jet-opacity="): _material.set_shader_parameter("opacity",float(arg.get_slice("=",1)))
 			if arg.begins_with("--jet-width="): _material.set_shader_parameter("width_scale",float(arg.get_slice("=",1)))
 			if arg.begins_with("--jet-tail="): _material.set_shader_parameter("tail_scale",float(arg.get_slice("=",1)))

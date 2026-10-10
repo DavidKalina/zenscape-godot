@@ -216,7 +216,7 @@ var _forced_delta := 0.0
 func _ready() -> void:
 	var start_piece := -1
 	var start_centre := false
-	for arg in OS.get_cmdline_user_args():
+	for arg in preload("res://scripts/launch_args.gd").user_args():
 		if arg.begins_with("--piece="): start_piece = int(arg.get_slice("=",1))-1
 		elif arg.begins_with("--family="): _family = arg.get_slice("=",1)
 		elif arg == "--centre": start_centre = true
@@ -242,10 +242,10 @@ func _ready() -> void:
 	_build_layout()
 	if start_centre: _frame_centre()
 	elif start_piece >= 0: _frame_piece(_family_slot(start_piece))
-	elif Array(OS.get_cmdline_user_args()).any(func(a: String) -> bool: return a.begins_with("--family=")): _frame_family(_family)
+	elif Array(preload("res://scripts/launch_args.gd").user_args()).any(func(a: String) -> bool: return a.begins_with("--family=")): _frame_family(_family)
 	else: _frame_piece(-1)
 	var eye := Vector3.INF
-	for arg in OS.get_cmdline_user_args():
+	for arg in preload("res://scripts/launch_args.gd").user_args():
 		if arg.begins_with("--yaw="): _yaw = float(arg.get_slice("=",1))
 		elif arg.begins_with("--pitch="): _pitch = float(arg.get_slice("=",1))
 		elif arg.begins_with("--distance="): _distance_goal = float(arg.get_slice("=",1))
