@@ -184,7 +184,7 @@ func _ready() -> void:
 	var first := Course.STATIONS[0] as Dictionary
 	var line := ""
 	var asked := ""
-	for arg in OS.get_cmdline_user_args():
+	for arg in preload("res://scripts/launch_args.gd").user_args():
 		if arg.begins_with("--station="): asked = arg.substr(10)
 		if arg.begins_with("--pack=") and not Course.pack(arg.substr(7)).is_empty(): pack = arg.substr(7)
 		if arg.begins_with("--line="): line = arg.substr(7)

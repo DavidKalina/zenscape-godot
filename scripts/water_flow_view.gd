@@ -42,7 +42,7 @@ const WET_OFF := 0.006
 const EMERGE := 0.015
 ## --no-glide draws the sim as it is, every 1/30 s, with hard edges (the
 ## drawing before 2026-10-01), for A/B.
-var glide := not "--no-glide" in OS.get_cmdline_user_args()
+var glide := not "--no-glide" in preload("res://scripts/launch_args.gd").user_args()
 ## Moving water from THIN.x (the drawn `wet` depth) to THIN.y m deep fades
 ## from a wet darkening of the ground to the stream's full look (shader
 ## `live_thin`). A sheet a centimetre or two deep running down a steep face
@@ -140,18 +140,18 @@ func setup(water_flow: RefCounted, pond_material: Material, stream_material: Mat
 		_params.wet_off = WET_OFF
 		_params.emerge = EMERGE
 	scene_node = scene
-	if scene != null and "--live-falls" in OS.get_cmdline_user_args():
+	if scene != null and "--live-falls" in preload("res://scripts/launch_args.gd").user_args():
 		falls = preload("res://scripts/flow_falls.gd").new()
 		falls.name = "FlowFalls"
 		scene.add_child(falls)
 		falls.setup(flow,[still_material,moving_material])
-	if scene != null and not "--no-edge-falls" in OS.get_cmdline_user_args():
+	if scene != null and not "--no-edge-falls" in preload("res://scripts/launch_args.gd").user_args():
 		edge_falls = preload("res://scripts/edge_falls.gd").new()
 		edge_falls.name = "EdgeFalls"
 		scene.add_child(edge_falls)
 		edge_falls.setup(flow,scene.get("_chunk_editor"))
 	data.state_restored.connect(_water_replaced)
-	if scene != null and not "--no-live-reflection" in OS.get_cmdline_user_args():
+	if scene != null and not "--no-live-reflection" in preload("res://scripts/launch_args.gd").user_args():
 		reflection = preload("res://scripts/live_water_reflection.gd").new()
 		reflection.name = "LiveReflection"
 		add_child(reflection)

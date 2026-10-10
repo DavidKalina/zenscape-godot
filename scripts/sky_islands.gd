@@ -202,7 +202,7 @@ func setup(owner_scene: Node3D) -> void:
 	# The wonders (SkyHomes): the ranges stand, the ring round the world with
 	# them (scripts/sky_world.gd); --wonders brings back every other one,
 	# --no-peaks takes the ranges away, --no-ring the ring and the bounds.
-	var args := OS.get_cmdline_user_args()
+	var args := preload("res://scripts/launch_args.gd").user_args()
 	if "--wonders" in args:
 		SkyHomes.stone = true
 		SkyHomes.isles = true

@@ -62,7 +62,7 @@ var sky_state := {}
 ## (or --seed N) opens the saved place or the valley as before, --resume opens
 ## the last saved place.
 static func launch_choice() -> String:
-	var args := OS.get_cmdline_user_args()
+	var args := preload("res://scripts/launch_args.gd").user_args()
 	if "--resume" in args: return "resume"
 	if "--generated" in args or "--seed" in args: return "generated"
 	return "plain"
@@ -125,7 +125,7 @@ func setup(owner_scene: Node3D, choice := "", land_seed := -1) -> void:
 	scene._notice.text = "Regrow for a new landscape, or press Build to shape this one."
 	if plain or _hand_only(): scene._notice.text = _plain_notice()
 	if world_seed >= 0: scene._chunk_editor.land_seed = world_seed
-	var args := OS.get_cmdline_user_args()
+	var args := preload("res://scripts/launch_args.gd").user_args()
 	var at := args.find("--seed")
 	if at >= 0 and at+1 < args.size() and args[at+1].is_valid_int(): regrow.call_deferred(int(args[at+1]))
 
@@ -158,7 +158,7 @@ func _form_land(land: String, seed_value: int) -> void:
 	active = 0
 
 func _plain_seed() -> int:
-	var args := OS.get_cmdline_user_args()
+	var args := preload("res://scripts/launch_args.gd").user_args()
 	var at := args.find("--plain-seed")
 	if at >= 0 and at+1 < args.size() and args[at+1].is_valid_int(): return int(args[at+1])
 	return randi() % 1000000

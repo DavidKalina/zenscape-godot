@@ -193,7 +193,7 @@ var _switch_hint: Label
 
 func _ready() -> void:
 	pack = "ruins_archipelago"
-	for arg in OS.get_cmdline_user_args():
+	for arg in preload("res://scripts/launch_args.gd").user_args():
 		if arg.begins_with("--capture="): _capture = arg.get_slice("=",1)
 		elif arg.begins_with("--at="): _capture_at = _vec(arg.get_slice("=",1))
 		elif arg.begins_with("--look="):
@@ -216,13 +216,13 @@ func _ready() -> void:
 	super._ready()
 	await ready_to_walk
 	_hud.visible = false
-	if not OS.get_cmdline_user_args().has("--no-flora"): _grow()
+	if not preload("res://scripts/launch_args.gd").user_args().has("--no-flora"): _grow()
 	if _place != Vector4.INF:
 		var turn := deg_to_rad(_place.w)
 		start = Vector3(_place.x,_place.y,_place.z)
 		start_face = Vector2(sin(turn),-cos(turn))
 		respawn()
-	if OS.get_cmdline_user_args().has("--fly"): board()
+	if preload("res://scripts/launch_args.gd").user_args().has("--fly"): board()
 	if _capture != "": _take_capture()
 
 static func _vec(text: String) -> Vector3:
@@ -311,7 +311,7 @@ func _build_light() -> void:
 		_look.setup(self)
 		_look.apply_tier(_look.tier)
 		preload("res://scripts/render_resolution.gd").attach(get_viewport())
-		if RenderingServer.get_current_rendering_method() == "forward_plus" and not OS.get_cmdline_user_args().has("--no-fog"):
+		if RenderingServer.get_current_rendering_method() == "forward_plus" and not preload("res://scripts/launch_args.gd").user_args().has("--no-fog"):
 			_display_fog = DisplayFog.new()
 			add_child(_display_fog)
 			_display_fog.setup(_atmosphere,camera,_precipitation.ground_texture,_precipitation.stream_texture)

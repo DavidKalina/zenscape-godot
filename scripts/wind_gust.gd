@@ -252,8 +252,8 @@ var scene: Node
 ## --show-promise. The user found them too hand-holding; the hand's air
 ## leaning the foliage is the preview, and a sent gust shows only its passing
 ## band of shade at the head.
-var show_promise := "--show-promise" in OS.get_cmdline_user_args()
-var nudge := 0.25 if "--gust-nudges" in OS.get_cmdline_user_args() else 0.0
+var show_promise := "--show-promise" in preload("res://scripts/launch_args.gd").user_args()
+var nudge := 0.25 if "--gust-nudges" in preload("res://scripts/launch_args.gd").user_args() else 0.0
 ## Gusts in flight: {"kind" ("lane" or "burst"), "origin" (plate x, z),
 ## "heading" (plate, unit), "reach", "half", "power", "t" (s since release),
 ## "run" (s), "head" (m along or out), "air" (0..1 now), "speed" (m/s),

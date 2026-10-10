@@ -201,10 +201,10 @@ var _clock := 0.0
 var _trickle := 0.0
 
 static func flag_now() -> bool:
-	return "--airship-now" in OS.get_cmdline_user_args()
+	return "--airship-now" in preload("res://scripts/launch_args.gd").user_args()
 
 static func flag_off() -> bool:
-	return "--no-airship" in OS.get_cmdline_user_args()
+	return "--no-airship" in preload("res://scripts/launch_args.gd").user_args()
 
 func _init() -> void:
 	name = "SkyAirship"

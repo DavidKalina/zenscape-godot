@@ -87,7 +87,7 @@ static var remap_override := -1
 
 static func remap_enabled() -> bool:
 	if remap_override >= 0: return remap_override == 1
-	return "--meadow-flowers" in OS.get_cmdline_user_args() or "--meadow-flowers" in OS.get_cmdline_args()
+	return "--meadow-flowers" in preload("res://scripts/launch_args.gd").user_args() or "--meadow-flowers" in OS.get_cmdline_args()
 
 ## The kind a painted meadow cell blooms in under the remap.
 static func drift_kind(x: int, z: int) -> String:

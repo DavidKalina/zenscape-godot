@@ -29,7 +29,7 @@ const Plate = preload("res://scripts/plate.gd")
 const Beauty = preload("res://scripts/world_beauty.gd")
 
 ## False with --no-guidance: water plans, emergence and the probe read it.
-static var enabled := "--no-guidance" not in OS.get_cmdline_user_args()
+static var enabled := "--no-guidance" not in preload("res://scripts/launch_args.gd").user_args()
 ## The water nudges alone, for probes that hold the ground fixed.
 static var water_enabled := true
 

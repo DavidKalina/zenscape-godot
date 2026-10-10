@@ -146,7 +146,7 @@ func _notification(what: int) -> void:
 ## The landforms `--landform=a,b` asks for, known names only.
 static func forced_names() -> Array:
 	var out: Array = []
-	for a: String in OS.get_cmdline_user_args():
+	for a: String in preload("res://scripts/launch_args.gd").user_args():
 		if not a.begins_with("--landform="): continue
 		for n: String in a.trim_prefix("--landform=").split(",",false):
 			if Landforms.has(n) and not n in out: out.append(n)

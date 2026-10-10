@@ -43,7 +43,7 @@ var _line: Array[Node3D] = []
 var _walker := 0.0
 
 func _ready() -> void:
-	for arg in OS.get_cmdline_user_args():
+	for arg in preload("res://scripts/launch_args.gd").user_args():
 		if arg.begins_with("--glyph="): _hero_index = maxi(0,IDS.find(arg.get_slice("=",1)))
 		elif arg == "--ring": _ring_view = true
 		elif arg == "--line": _line_mode = true

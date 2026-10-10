@@ -87,7 +87,7 @@ var enabled := true
 ## The quality tier (`set_tier`) and its row of TIERS.
 var tier := 0
 var quality: Array = TIERS[0]
-var full_res := FULL_RES_FLAG in OS.get_cmdline_user_args()
+var full_res := FULL_RES_FLAG in preload("res://scripts/launch_args.gd").user_args()
 ## The storm's lightning (studies/lightning.gd: `flash`, `flash_position`),
 ## lighting the cloud from within; null where there is none.
 var lightning: Object
@@ -100,7 +100,7 @@ var _prev_lens := Vector2.ONE
 var _has_prev := false
 
 static func wanted() -> bool:
-	return not OLD_FLAG in OS.get_cmdline_user_args() and RenderingServer.get_rendering_device() != null
+	return not OLD_FLAG in preload("res://scripts/launch_args.gd").user_args() and RenderingServer.get_rendering_device() != null
 
 func _init() -> void:
 	name = "CloudVolume"

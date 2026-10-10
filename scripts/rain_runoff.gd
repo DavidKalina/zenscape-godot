@@ -62,7 +62,7 @@ const MELT_HIGH := 0.9
 ## Melt of this many m³/s saturates the ground as full rain does.
 const MELT_WET := 0.05
 
-var enabled := "--no-rain-runoff" not in OS.get_cmdline_user_args()
+var enabled := "--no-rain-runoff" not in preload("res://scripts/launch_args.gd").user_args()
 ## Set every frame by the scene: liquid rain and falling snow, 0..1.
 var rain := 0.0
 var snowing := 0.0

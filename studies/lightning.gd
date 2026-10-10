@@ -109,7 +109,7 @@ func _update_flash() -> void:
 	_glow.set_shader_parameter("opacity", minf(0.5, flash * 0.55))
 	_bolts.visible = flash > 0.01
 	# Native LIGHT_COLOR includes PI; the source point irradiance does not.
-	_light.light_energy = flash * (12.0 if "--legacy-flash-light" in OS.get_cmdline_user_args() else 900.0 / PI)
+	_light.light_energy = flash * (12.0 if "--legacy-flash-light" in preload("res://scripts/launch_args.gd").user_args() else 900.0 / PI)
 	_publish()
 
 func _publish() -> void:

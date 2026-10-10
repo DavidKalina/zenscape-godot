@@ -9,7 +9,7 @@ extends CanvasLayer
 ## sample in, keeping the result as the next frame's history (source
 ## weather.js §2c). A still camera integrates the start dither away over a
 ## dozen frames instead of paying for more steps every frame.
-var surface_haze_enabled := not OS.get_cmdline_user_args().has("--no-surface-haze")
+var surface_haze_enabled := not preload("res://scripts/launch_args.gd").user_args().has("--no-surface-haze")
 var depth = preload("res://studies/surface_depth.gd").new()
 var blend := ShaderMaterial.new()
 ## The march.
@@ -41,7 +41,7 @@ var _frame := 0
 
 func setup(atmosphere: Node3D, view: Camera3D, ground: Texture2D, stream: Texture2D) -> void:
 	layer = 0
-	var post_inversion := not OS.get_cmdline_user_args().has("--native-inversion-paint")
+	var post_inversion := not preload("res://scripts/launch_args.gd").user_args().has("--native-inversion-paint")
 	RenderingServer.global_shader_parameter_set("zs_surface_post", post_inversion)
 	air = atmosphere
 	camera = view

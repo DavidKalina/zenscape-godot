@@ -24,7 +24,7 @@ var warm_ms := 0
 ## the glide's sky made (`--no-sky-veil` shows the world at once, as
 ## before).
 static func wanted(islands: Node) -> bool:
-	if "--no-sky-veil" in OS.get_cmdline_user_args() or islands == null: return false
+	if "--no-sky-veil" in preload("res://scripts/launch_args.gd").user_args() or islands == null: return false
 	return preload("res://scripts/sky_world.gd").ring_on()
 
 ## Waits for the sky under `veil` (stage and line), then warms it.

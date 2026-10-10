@@ -276,7 +276,7 @@ signal water_settled(bounds: Rect2)
 ## The water ball (scripts/water_ball.gd): with water in hand a press
 ## condenses a ball that fills while held; release drops it, and its water
 ## settles as one pour where it lands. --pour-water brings back drag-to-pour.
-var water_ball := "--pour-water" not in OS.get_cmdline_user_args()
+var water_ball := "--pour-water" not in preload("res://scripts/launch_args.gd").user_args()
 var ball: Node3D
 ## m³ a ball starts with and holds at most. It fills as a pour of the same
 ## size and flow would (WaterBrush RATE).
@@ -2532,7 +2532,7 @@ func _notification(what: int) -> void:
 	if what == NOTIFICATION_PREDELETE: data.release_listeners()
 
 static func flow_wanted() -> bool:
-	var args := OS.get_cmdline_user_args()
+	var args := preload("res://scripts/launch_args.gd").user_args()
 	if "--planned-water" in args: return false
 	return "--water-flow" in args or preload("res://scripts/modeless_input.gd").enabled()
 
@@ -3445,7 +3445,7 @@ const RISE_FOG_SECONDS := 4.0
 ## still clears as before, --paint-forest brings back drag-to-paint, and
 ## --pollen-veil the veil laid in the air along the sweep
 ## (scripts/pollen_cloud.gd), which the throws replaced.
-var seed_handful := "--paint-forest" not in OS.get_cmdline_user_args()
+var seed_handful := "--paint-forest" not in preload("res://scripts/launch_args.gd").user_args()
 var handful: Node3D
 var _handful_holding := false
 var _handful_serial := 0
@@ -3462,7 +3462,7 @@ func _pollen_in_hand() -> bool:
 func _make_pollen() -> void:
 	# The hand scheme flings the veil from a tree (docs/scenic/sky-cloud.md
 	# "Seeds"); the brush throws seed.
-	var veil := "--pollen-veil" in OS.get_cmdline_user_args() or preload("res://scripts/modeless_input.gd").enabled()
+	var veil := "--pollen-veil" in preload("res://scripts/launch_args.gd").user_args() or preload("res://scripts/modeless_input.gd").enabled()
 	handful = (preload("res://scripts/pollen_cloud.gd") if veil else preload("res://scripts/seed_throw.gd")).new()
 	handful.name = "Pollen"
 	handful.scene = scene

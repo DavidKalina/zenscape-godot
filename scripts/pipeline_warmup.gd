@@ -11,7 +11,7 @@ extends Node3D
 ## (and so bind their pipelines) without covering a pixel worth seeing.
 
 static func enabled() -> bool:
-	return not "--no-pipeline-warmup" in OS.get_cmdline_user_args()
+	return not "--no-pipeline-warmup" in preload("res://scripts/launch_args.gd").user_args()
 
 ## Frames each stage stays up. The first draw builds the pipeline; the rest
 ## let shadow and specialisation passes catch up.
@@ -30,7 +30,7 @@ func warm(scene: Node3D) -> void:
 	last_usec.batches = Time.get_ticks_usec()-began
 	# Live water sets up a few frames after the world; its view is worth waiting
 	# for, briefly.
-	var wanted := NativeChunkEditor.flow_wanted() and not "--no-live-reflection" in OS.get_cmdline_user_args()
+	var wanted := NativeChunkEditor.flow_wanted() and not "--no-live-reflection" in preload("res://scripts/launch_args.gd").user_args()
 	for i in range(240 if wanted else 0):
 		if editor.flow_view != null and editor.flow_view.reflection != null: break
 		await get_tree().process_frame

@@ -82,7 +82,7 @@ const WORLD := ["rim","wall","flip","shake","turn","catch","sun"]
 ## cursor (scripts/hand_materials.gd `Clump`), so "cup" (a water ball held)
 ## and "sprinkle" (seed sown) show the hand only under `--hand-everywhere`.
 const SKY := ["cloud","summon"]
-static var everywhere := "--hand-everywhere" in OS.get_cmdline_user_args()
+static var everywhere := "--hand-everywhere" in preload("res://scripts/launch_args.gd").user_args()
 const LOOPS := ["PinchHold","PressHold","CupHold","SprinkleHold","ShakeHold","TurnHold","CatchHold","ReachHold","RimHold","WallHold","VoidHold","SnapHold"]
 ## Idle's variations (god_hand_clips.py IDLE_VARIANTS), each starting and
 ## ending on Idle's first pose, so one may follow whenever Idle comes round:
@@ -172,7 +172,7 @@ var anchor := Vector3.ZERO
 var velocity := Vector3.ZERO
 var yaw := 0.0
 var opacity := 0.0
-var cursor_sized := "--hand-cursor" in OS.get_cmdline_user_args()
+var cursor_sized := "--hand-cursor" in preload("res://scripts/launch_args.gd").user_args()
 var _placed := false
 ## The skeleton's transform in the hand's own space.
 var _skeleton_space := Transform3D.IDENTITY
@@ -223,7 +223,7 @@ var _face := 0.0
 var held_off := false
 
 static func enabled() -> bool:
-	return not "--no-hand" in OS.get_cmdline_user_args()
+	return not "--no-hand" in preload("res://scripts/launch_args.gd").user_args()
 
 func setup(owner_scene: Node3D) -> void:
 	scene = owner_scene

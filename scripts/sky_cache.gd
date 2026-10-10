@@ -59,7 +59,7 @@ static var broken := 0
 static func on() -> bool:
 	if not _flags_read:
 		_flags_read = true
-		if "--no-sky-cache" in OS.get_cmdline_user_args(): enabled = false
+		if "--no-sky-cache" in preload("res://scripts/launch_args.gd").user_args(): enabled = false
 	return enabled
 
 ## The hash of everything in the code that shapes a kind (main thread

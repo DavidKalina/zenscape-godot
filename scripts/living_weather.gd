@@ -65,7 +65,7 @@ var _climate_key := -1
 
 func setup(owner: Node3D) -> void:
 	scene = owner
-	var args := OS.get_cmdline_user_args()
+	var args := preload("res://scripts/launch_args.gd").user_args()
 	drift = "--still-weather" not in args
 	turning = "--seasons-turn" in args
 	scene.season_glide = true

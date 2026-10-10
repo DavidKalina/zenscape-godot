@@ -65,7 +65,7 @@ const DIGS := ["crater"]
 var clay: Node
 var tremor: RefCounted
 ## Every kick's scale; 0 is no shudder at all.
-var amount := 0.0 if "--no-shake" in OS.get_cmdline_user_args() else 1.0
+var amount := 0.0 if "--no-shake" in preload("res://scripts/launch_args.gd").user_args() else 1.0
 ## Kicks given, for probes.
 var kicks := 0
 ## The eased rate, 0..1, for probes.

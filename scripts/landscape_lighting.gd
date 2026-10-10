@@ -17,7 +17,7 @@ func setup(source: Dictionary) -> void:
 	# Only wet sheen reads the radiance map (ambient light is disabled), so it
 	# can refresh over several frames instead of re-marching the clouds into a
 	# cubemap every frame. --realtime-sky restores the old mode to compare.
-	var realtime := "--realtime-sky" in OS.get_cmdline_user_args()
+	var realtime := "--realtime-sky" in preload("res://scripts/launch_args.gd").user_args()
 	sky.process_mode = Sky.PROCESS_MODE_REALTIME if realtime else Sky.PROCESS_MODE_INCREMENTAL
 	sky.radiance_size = Sky.RADIANCE_SIZE_256
 	var material := ShaderMaterial.new()
@@ -30,7 +30,7 @@ func setup(source: Dictionary) -> void:
 	environment.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 	# ACES; --agx tries AgX instead, which rolls highlights off more gently
 	# but turned the noon sky lavender (tools/capture_look_tour.gd).
-	if "--agx" in OS.get_cmdline_user_args():
+	if "--agx" in preload("res://scripts/launch_args.gd").user_args():
 		environment.tonemap_mode = Environment.TONE_MAPPER_AGX
 		environment.tonemap_agx_white = 16.0
 		environment.tonemap_agx_contrast = 1.25
@@ -49,7 +49,7 @@ func setup(source: Dictionary) -> void:
 	world_environment.environment = environment
 	add_child(world_environment)
 	# Stars and the planet as real objects (scripts/sky_objects.gd).
-	if not "--shader-stars" in OS.get_cmdline_user_args():
+	if not "--shader-stars" in preload("res://scripts/launch_args.gd").user_args():
 		sky_objects = preload("res://scripts/sky_objects.gd").new()
 		sky_objects.name = "SkyObjects"
 		add_child(sky_objects)
@@ -80,7 +80,7 @@ func setup(source: Dictionary) -> void:
 		# Three.js has no environment map: direct GGX only, no split-sum glaze.
 		light.light_specular = 1.0
 		# Source PCFSoftShadowMap filters edges without a distance-growing penumbra.
-		light.light_angular_distance = 0.6 if "--legacy-soft-shadows" in OS.get_cmdline_user_args() else 0.0
+		light.light_angular_distance = 0.6 if "--legacy-soft-shadows" in preload("res://scripts/launch_args.gd").user_args() else 0.0
 
 
 ## The sky marches its clouds at half resolution (shaders/reference_sky.gdshader)

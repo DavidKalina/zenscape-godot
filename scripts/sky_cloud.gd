@@ -166,11 +166,11 @@ const LEAVE_GRAB := 0.6
 const DEMO_DELAY := 4.0
 ## True once this session's demo has shown, or when it is not wanted: it
 ## shows only with `--cloud-demo`.
-static var demo_shown := not "--cloud-demo" in OS.get_cmdline_user_args()
+static var demo_shown := not "--cloud-demo" in preload("res://scripts/launch_args.gd").user_args()
 
 var scene: Node3D
 ## Summoned (the default) or always there (`--always-cloud`).
-var summoned := not "--always-cloud" in OS.get_cmdline_user_args()
+var summoned := not "--always-cloud" in preload("res://scripts/launch_args.gd").user_args()
 ## "gone", "forming", "here" or "leaving" (summoned only; always "here" else).
 var presence := "gone"
 ## The cloud's size (1 the always-there cloud's), seconds formed, seconds left

@@ -101,7 +101,7 @@ const TINT_DEPTHS := Vector3(1.6,5.0,9.5)
 static var _on := -1
 static func on() -> bool:
 	if _on < 0:
-		var asked := OS.get_cmdline_user_args()
+		var asked := preload("res://scripts/launch_args.gd").user_args()
 		var scripted := "--script" in OS.get_cmdline_args() or "-s" in OS.get_cmdline_args()
 		_on = int("--below" in asked or (not scripted and not "--no-below" in asked))
 	return _on == 1

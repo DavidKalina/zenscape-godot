@@ -109,7 +109,7 @@ static func first_size() -> float:
 	return preload("res://scripts/island_outline.gd").first_size()
 
 static func square_islands() -> bool:
-	return "--square-islands" in OS.get_cmdline_user_args()
+	return "--square-islands" in preload("res://scripts/launch_args.gd").user_args()
 
 ## Heights, grass, a carpet of standing blades and a few flower drifts for a
 ## blank plain.

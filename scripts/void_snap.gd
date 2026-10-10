@@ -43,7 +43,7 @@ const PINS := {0.035:"night",0.345:"morning",0.275:"dawn",0.47:"midday",0.76:"du
 
 ## True with `--void-snap`: a click in the void snaps, as before the almanac.
 static func enabled() -> bool:
-	return "--void-snap" in OS.get_cmdline_user_args()
+	return "--void-snap" in preload("res://scripts/launch_args.gd").user_args()
 
 ## The mood_look Time of day id of an hour a snap lands on ("" for others).
 static func pin_id(phase: float) -> String:

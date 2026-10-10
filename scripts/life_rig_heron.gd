@@ -37,7 +37,7 @@ var _carry := false
 var _latched := false
 
 static func enabled() -> bool:
-	return not ("--classic-life" in OS.get_cmdline_user_args() or "--classic-life" in OS.get_cmdline_args())
+	return not ("--classic-life" in preload("res://scripts/launch_args.gd").user_args() or "--classic-life" in OS.get_cmdline_args())
 
 func setup(material: Material) -> void:
 	name = "HeronRig"

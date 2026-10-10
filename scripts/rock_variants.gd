@@ -39,7 +39,7 @@ const ROCK_GREY := Color("969986")
 static var _meshes := {}
 
 static func enabled() -> bool:
-	return not ("--classic-rocks" in OS.get_cmdline_user_args() or "--classic-rocks" in OS.get_cmdline_args())
+	return not ("--classic-rocks" in preload("res://scripts/launch_args.gd").user_args() or "--classic-rocks" in OS.get_cmdline_args())
 
 static func keys() -> Array:
 	var out := []

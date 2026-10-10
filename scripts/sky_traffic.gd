@@ -124,7 +124,7 @@ var _shown := false
 var _clock := 0.0
 
 static func enabled() -> bool:
-	return not "--no-traffic" in OS.get_cmdline_user_args()
+	return not "--no-traffic" in preload("res://scripts/launch_args.gd").user_args()
 
 ## Puts COUNT planes in the sky, each starting a lap round its own island
 ## of `slots` (the currents' frame); hidden till `show`.

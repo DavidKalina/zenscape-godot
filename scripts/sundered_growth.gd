@@ -35,7 +35,7 @@ const RuinGrowth = preload("res://scripts/ruin_growth.gd")
 static var amount := _from_args()
 
 static func _from_args() -> float:
-	for a: String in OS.get_cmdline_user_args():
+	for a: String in preload("res://scripts/launch_args.gd").user_args():
 		if a.begins_with("--overgrowth="): return maxf(0.0,float(a.trim_prefix("--overgrowth=")))
 	return 1.0
 ## How overgrown each act is (its share of `amount`).

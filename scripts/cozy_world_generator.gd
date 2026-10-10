@@ -123,7 +123,7 @@ static func _classic_palette(rng: RandomNumberGenerator,hour: int,dry: bool,autu
 	return colors
 
 static func _use_classic() -> bool:
-	return "--classic-palette" in OS.get_cmdline_user_args() or "--classic-palette" in OS.get_cmdline_args()
+	return "--classic-palette" in preload("res://scripts/launch_args.gd").user_args() or "--classic-palette" in OS.get_cmdline_args()
 
 static func _pick_weather(rng: RandomNumberGenerator, odds: Dictionary) -> String:
 	var total := 0.0

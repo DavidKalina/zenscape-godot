@@ -134,7 +134,7 @@ func setup(probe: Callable) -> void:
 	_view.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_view.extra_cull_margin = 64.0
 	add_child(_view)
-	for arg in OS.get_cmdline_user_args():
+	for arg in preload("res://scripts/launch_args.gd").user_args():
 		if arg.begins_with("--ribbon-opacity="): opacity_scale = float(arg.get_slice("=", 1))
 		if arg.begins_with("--ribbon-width="): width_scale = float(arg.get_slice("=", 1))
 		if arg.begins_with("--ribbon-glow="): glow = float(arg.get_slice("=", 1))

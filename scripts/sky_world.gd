@@ -428,14 +428,14 @@ static var _flags_read := false
 static func read_flags() -> void:
 	if _flags_read: return
 	_flags_read = true
-	var args := OS.get_cmdline_user_args()
+	var args := preload("res://scripts/launch_args.gd").user_args()
 	if "--no-ring" in args: ring = false
 	if "--no-peaks" in args: SkyHomes.peaks = false
 	if "--moments" in args: moments = true
 
 ## `--sky-seed=N`, or -1.
 static func seed_flag() -> int:
-	for a: String in OS.get_cmdline_user_args():
+	for a: String in preload("res://scripts/launch_args.gd").user_args():
 		if a.begins_with("--sky-seed=") and a.trim_prefix("--sky-seed=").is_valid_int(): return int(a.trim_prefix("--sky-seed="))
 	return -1
 

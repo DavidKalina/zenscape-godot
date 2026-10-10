@@ -82,7 +82,7 @@ const OWN_SMOOTH := 0.3
 var rig: Node
 var scene: Node3D
 var camera: Camera3D
-var enabled := "--classic-orbit" not in OS.get_cmdline_user_args()
+var enabled := "--classic-orbit" not in preload("res://scripts/launch_args.gd").user_args()
 ## `--modeless` (docs/scenic/modeless.md): the turn is the rim's alone. Only a
 ## grab held from outside (`hold_begin`) turns the world, and a spin or catch
 ## that follows; a right drag is the camera and moves the view by pixels, not

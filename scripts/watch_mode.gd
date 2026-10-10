@@ -133,7 +133,7 @@ func setup(owner_scene: Node3D) -> void:
 	hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hint.modulate.a = 0.0
 	layer.add_child(hint)
-	_pending = "--watch" in OS.get_cmdline_user_args()
+	_pending = "--watch" in preload("res://scripts/launch_args.gd").user_args()
 
 # --- Entering and leaving -------------------------------------------------------
 

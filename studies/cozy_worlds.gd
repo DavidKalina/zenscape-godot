@@ -10,12 +10,12 @@ var places_path := "user://cozy-worlds/places.json"
 ## fine sculpt, paint and place tools; Create returns to the brush. Look (Tab) puts
 ## the brush away so the camera roams and nothing paints. --classic-build keeps
 ## the old Build/Enjoy toggle.
-var creation_mode := "--classic-build" not in OS.get_cmdline_user_args()
+var creation_mode := "--classic-build" not in preload("res://scripts/launch_args.gd").user_args()
 ## The Lantern Maker shell (scripts/lantern_shell.gd): brushes along the top,
 ## hands down the left, the world down the right, Photo as the play button.
 ## --classic-shell keeps the glass palette (scripts/creation_palette.gd) and
 ## its mood panel.
-var lantern := "--classic-shell" not in OS.get_cmdline_user_args()
+var lantern := "--classic-shell" not in preload("res://scripts/launch_args.gd").user_args()
 ## The hand scheme (scripts/modeless_input.gd): the hand is the only way to
 ## touch the world. No brush bar, hand modes, world column, Photo button, Craft
 ## or command palette; the keys are M (moods), P (photo), Esc (menu) and the
@@ -90,9 +90,13 @@ var _keep_title: Button
 var _your_worlds: Button
 ## The title's library page is up, over the front page's state.
 var library_open := false
+## The front page's quiet "Scenes" and the picker it opens
+## (scripts/scene_picker.gd), made the first time it's asked for.
+var _scenes: Button
+var scene_picker: Control
 
 func _ready() -> void:
-	if "--verify-desktop-build" in OS.get_cmdline_user_args():
+	if "--verify-desktop-build" in preload("res://scripts/launch_args.gd").user_args():
 		# The packaged self-check must never touch the player's saved places.
 		places_path = OS.get_temp_dir().path_join("zenscape-export-places-"+str(Time.get_ticks_usec())).path_join("places.json")
 		DirAccess.make_dir_recursive_absolute(places_path.get_base_dir())
@@ -114,7 +118,7 @@ func _ready() -> void:
 	world_session.name = "WorldSession"
 	add_child(world_session)
 	var titling := _title_wanted()
-	var args := OS.get_cmdline_user_args()
+	var args := preload("res://scripts/launch_args.gd").user_args()
 	# A probe can set the "manage_worlds" meta, with its own places_path, to run the worlds without the title.
 	world_session.setup(self,has_meta("manage_worlds") or ((titling or "--resume" in args)
 		and not preload("res://scripts/chunk_atlas_controller.gd").enabled() and "--verify-desktop-build" not in args))
@@ -203,7 +207,7 @@ func _ready() -> void:
 ## starts them from the top without saving, and a movie capture keeps them to
 ## the session, as the almanac's whispers are (scripts/almanac.gd `_private`).
 func _build_first_steps() -> void:
-	var args := OS.get_cmdline_user_args()
+	var args := preload("res://scripts/launch_args.gd").user_args()
 	if not hand_only or hand_reach == null or "--no-first-steps" in args or first_steps != null: return
 	first_steps = preload("res://scripts/first_steps.gd").new()
 	first_steps.name = "FirstSteps"
@@ -238,7 +242,7 @@ func _fill_world_menu() -> void:
 ## Whether a start with no title still waits for its sky under a veil:
 ## played straight on (--resume), or asked for (the "sky_veil" meta: tools).
 func _sky_veil_wanted() -> bool:
-	return has_meta("sky_veil") or (get_tree().current_scene == self and not has_meta("no_title") and "--resume" in OS.get_cmdline_user_args() and not "--no-title" in OS.get_cmdline_user_args())
+	return has_meta("sky_veil") or (get_tree().current_scene == self and not has_meta("no_title") and "--resume" in preload("res://scripts/launch_args.gd").user_args() and not "--no-title" in preload("res://scripts/launch_args.gd").user_args())
 
 ## The last wait for the sky (scripts/sky_reveal.gd), for the record.
 var sky_reveal: Node
@@ -253,7 +257,7 @@ func hold_for_sky(veil: Node = null) -> void:
 	var own := veil == null
 	if own:
 		# Tests and probes (no title) go on without waiting.
-		var played: bool = get_tree().current_scene == self and not has_meta("no_title") and not "--no-title" in OS.get_cmdline_user_args()
+		var played: bool = get_tree().current_scene == self and not has_meta("no_title") and not "--no-title" in preload("res://scripts/launch_args.gd").user_args()
 		if islands.sky_ready() or not (played or has_meta("sky_veil")): return
 		veil = preload("res://scripts/title_loading.gd").new()
 		add_child(veil)
@@ -268,7 +272,7 @@ func hold_for_sky(veil: Node = null) -> void:
 ## A test that makes the scene current can set the "no_title" meta, as --no-title.
 func _title_wanted() -> bool:
 	if get_tree().current_scene != self or has_meta("no_title"): return false
-	var args := OS.get_cmdline_user_args()
+	var args := preload("res://scripts/launch_args.gd").user_args()
 	for flag: String in ["--no-title","--resume","--generated","--seed","--atlas","--verify-desktop-build"]:
 		if flag in args: return false
 	return true
@@ -322,6 +326,37 @@ func _retitle_menu() -> void:
 	_keep_title = _menu.add_action("Build this world","The land behind the menu",_build_this_world,false,1)
 	# The library page, with worlds (show_menu shows it and counts them).
 	_your_worlds = _menu.add_action("Your worlds","",func() -> void: if titled: open_library(),false,1)
+	# The scene picker (scripts/scene_picker.gd), a quiet one on the foot
+	# before Settings, in editor and debug runs (scripts/scene_catalog.gd
+	# `enabled`).
+	if preload("res://scripts/scene_catalog.gd").enabled():
+		var settings_at: int = _menu.buttons.size()
+		for i in _menu.buttons.size():
+			if _menu.buttons[i].text == "Settings": settings_at = i
+		_scenes = _menu.add_action("Scenes","",open_scene_picker,true,settings_at)
+
+## The scene picker over the front page, which fades under it; Back brings
+## the front page again with "Scenes" in reach.
+func open_scene_picker() -> void:
+	if not titled or library_open: return
+	if scene_picker == null:
+		scene_picker = preload("res://scripts/scene_picker.gd").new()
+		scene_picker.name = "ScenePicker"
+		_menu.get_parent().add_child(scene_picker)
+		scene_picker.closed.connect(_close_scene_picker)
+		scene_picker.picked.connect(_open_picked_scene)
+	_menu.modulate.a = 0.0
+	scene_picker.present()
+
+func _close_scene_picker() -> void:
+	create_tween().tween_property(_menu,"modulate:a",1.0,0.25)
+	if _scenes != null and _scenes.is_visible_in_tree(): _scenes.grab_focus()
+
+## Leaves the game's scene for the picked one (scripts/scene_catalog.gd `open`).
+func _open_picked_scene(entry: Dictionary) -> void:
+	# Not while the land is forming or regrowth is busy; the scene would go mid-task.
+	if _chunk_editor.forming or (places != null and places.busy): return
+	preload("res://scripts/scene_catalog.gd").open(get_tree(),entry)
 
 func _build_this_world() -> void:
 	if not titled: return
@@ -589,6 +624,7 @@ func show_menu() -> void:
 		_your_worlds.disabled = not (titled and _worlds_screens())
 		var kept: int = world_session.library.worlds().size() if _worlds_screens() else 0
 		_your_worlds.set("detail","%d kept" % kept)
+	if _scenes != null: _scenes.disabled = not titled
 	super.show_menu()
 	_sync_creation_ui()
 	if _worlds_screens() and _menu.visible:
@@ -932,7 +968,7 @@ func handle_resident_input(event: InputEvent) -> bool:
 ## --pages-preview opens the almanac's Moods page on start, or
 ## --pages-preview=customise its Customise page; F8 opens it again once closed.
 func _pages_preview() -> void:
-	for arg: String in OS.get_cmdline_user_args():
+	for arg: String in preload("res://scripts/launch_args.gd").user_args():
 		if not arg.begins_with("--pages-preview"): continue
 		almanac_pages = preload("res://scripts/almanac_pages.gd").new()
 		_toolbar.get_parent().add_child(almanac_pages)

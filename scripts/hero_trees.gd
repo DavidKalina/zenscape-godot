@@ -47,7 +47,7 @@ const SPECIES := {
 static var _scenes := {}
 
 static func enabled() -> bool:
-	return not ("--classic-trees" in OS.get_cmdline_user_args() or "--classic-trees" in OS.get_cmdline_args())
+	return not ("--classic-trees" in preload("res://scripts/launch_args.gd").user_args() or "--classic-trees" in OS.get_cmdline_args())
 
 ## The replacement for a catalog part, carrying the original's material; or the original.
 static func swap(node_name: String, original: Mesh) -> Mesh:

@@ -158,7 +158,7 @@ var _school: Node3D
 ## the facets jostle. `--smooth-ball` gives back the smooth sphere.
 const FACET_SPLIT := 3
 const SMOOTH_ARG := "--smooth-ball"
-static var SMOOTH := SMOOTH_ARG in OS.get_cmdline_user_args()
+static var SMOOTH := SMOOTH_ARG in preload("res://scripts/launch_args.gd").user_args()
 static var _icospheres := {}
 
 ## A unit geodesic sphere: each icosahedron face cut into split² triangles,

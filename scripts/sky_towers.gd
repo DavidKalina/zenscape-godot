@@ -130,7 +130,7 @@ var pinned := -1.0
 
 func _init() -> void:
 	name = "SkyTowers"
-	for argument: String in OS.get_cmdline_user_args():
+	for argument: String in preload("res://scripts/launch_args.gd").user_args():
 		if argument.begins_with("--tower-pace="): pace = maxf(float(argument.trim_prefix("--tower-pace=")),0.0)
 		elif argument.begins_with("--tower-age="): clock = float(argument.trim_prefix("--tower-age="))-phase(Vector2i.ZERO)
 		elif argument == "--still-towers": pinned = MATURE

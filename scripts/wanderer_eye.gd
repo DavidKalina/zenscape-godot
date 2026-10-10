@@ -395,9 +395,9 @@ var sky: Node
 ## The lower world under the cloud sea (`--below`, scripts/sky_below.gd), or null.
 var lower: Node3D = null
 var flying := false
-var glide_enabled := "--no-glide" not in OS.get_cmdline_user_args()
+var glide_enabled := "--no-glide" not in preload("res://scripts/launch_args.gd").user_args()
 ## Flying the little plane (the default), or the old glider (`--glider`).
-var plane := flies_plane(OS.get_cmdline_user_args())
+var plane := flies_plane(preload("res://scripts/launch_args.gd").user_args())
 ## The plane's landing or takeoff under way (scripts/plane_landing.gd), and
 ## which; F pressed and waiting for its island to be claimed.
 var landing: RefCounted = null
@@ -544,8 +544,8 @@ func setup(owner_scene: Node3D) -> void:
 			canopy = CanopyFigure.new()
 			add_child(canopy)
 			islands.skip.append(canopy)
-			if skydive_start(OS.get_cmdline_user_args()) != "": _skydive_start.call_deferred(skydive_start(OS.get_cmdline_user_args()))
-			if islands.moments != null and moments_at(OS.get_cmdline_user_args()) >= 0: _moments_start.call_deferred(moments_at(OS.get_cmdline_user_args()))
+			if skydive_start(preload("res://scripts/launch_args.gd").user_args()) != "": _skydive_start.call_deferred(skydive_start(preload("res://scripts/launch_args.gd").user_args()))
+			if islands.moments != null and moments_at(preload("res://scripts/launch_args.gd").user_args()) >= 0: _moments_start.call_deferred(moments_at(preload("res://scripts/launch_args.gd").user_args()))
 		# The mountains stand round the plate in the build view too
 		# (SkyIslands `_process`): the view reaches them.
 		if SkyWorld.ring_on(): camera.far = maxf(camera.far,SkyWorld.VIEW_FAR)
