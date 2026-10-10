@@ -333,15 +333,9 @@ static func on_gorge(p: Vector2) -> bool:
 
 # --- The isle's ground look ---------------------------------------------------------
 
-## A crag's shade under the plate's open rock: lighter than the aqueduct
-## isle's (its 0.7 read near black against the light), the gorge's walls
-## lit warm.
-const CRAG_SHADE := 0.92
-const GORGE_ROCK := Color("9c9389")
-## How sheltered the gorge's walls count (the stone shader's bounce: 1
-## open air, 0 deep under a roof).
-const GORGE_SHELTER := 0.72
-const KEEL_ROCK := Color("6f6357")
+## The chimney's split pillar: the islets' dark basalt (scripts/kit_isle/
+## kit_look.gd), in the kit's stone.
+const GORGE_ROCK := Color("55575c")
 
 ## The paths worn in the turf (world polylines).
 const PATHS := [
@@ -369,85 +363,6 @@ static func path_wear(at: Vector2) -> float:
 			best = minf(best,at.distance_to(Geometry2D.get_closest_point_to_segment(at,path[i],path[i+1])))
 	return clampf(1.25-best/1.4,0.0,1.0)
 
-## A ground face's colour (linear), as SkyIslet `top_arrays` makes it (the
-## aqueduct isle's `ground_tone`, its crags lighter, paths and water ours).
-static func ground_tone(pal: Dictionary, patch: FastNoiseLite, at: Vector2, normal: Vector3, shimmer: float) -> Color:
-	var grass: Array = pal.grass
-	var n := patch.get_noise_2d(at.x,at.y)*0.5+0.5
-	var tone: Color = grass[1 if n > 0.55 else (2 if n < 0.42 else 0)]
-	var slope := sqrt(maxf(0.0,1.0-normal.y*normal.y))/maxf(normal.y,0.001)
-	if slope > float(pal.rock_slope):
-		var rock: Array = pal.rock
-		tone = rock[0 if patch.get_noise_2d(at.x+71.0,at.y) > 0.0 else rock.size()-1]
-		tone *= CRAG_SHADE+0.1*patch.get_noise_2d(at.x*0.7-13.0,at.y*0.7)
-	else:
-		var worn := path_wear(at) if not wet(at) else 0.0
-		if wet(at): tone = (pal.gravel as Color).lerp(AqArt.EARTH.srgb_to_linear(),0.6)*0.7
-		elif worn > 0.0: tone = tone.lerp((pal.gravel as Color).lerp(AqArt.EARTH.srgb_to_linear(),0.45)*lerpf(0.85,1.0,n),worn*0.8)
-	return Color(tone.r+shimmer,tone.g+shimmer,tone.b+shimmer,1.0)
-
-# --- The cliffs ---------------------------------------------------------------------
-
-## Where `ground` steps (probed on a CLIFF_PROBE grid over `box`, the step
-## found by halving): a point just on its top, one at its foot, a row either
-## side, and on a tall one a point between, pushed in or out, so its face is
-## a crag's facets ({points, heights}). The aqueduct isle's `cliff_points`,
-## for any ground (an extraction candidate).
-const CLIFF_PROBE := 0.5
-static func cliff_points(ground_fn: Callable, box: Rect2, rng: RandomNumberGenerator) -> Dictionary:
-	var points := PackedVector2Array()
-	var heights := PackedFloat32Array()
-	var seen := {}
-	var x := box.position.x+0.137
-	while x < box.end.x:
-		var z := box.position.y+0.213
-		while z < box.end.y:
-			var a := Vector2(x,z)
-			var ha: float = ground_fn.call(a.x,a.y)
-			for way: Vector2 in [Vector2(CLIFF_PROBE,0.0),Vector2(0.0,CLIFF_PROBE)]:
-				var c := a+way
-				var hc: float = ground_fn.call(c.x,c.y)
-				if absf(ha-hc) < 0.3: continue
-				var lo := a
-				var hi := c
-				for k in range(14):
-					var m := (lo+hi)*0.5
-					var hm: float = ground_fn.call(m.x,m.y)
-					if absf(hm-ha) < absf(hm-hc): lo = m
-					else: hi = m
-				var e := (lo+hi)*0.5
-				var key := Vector2i(floori(e.x/0.3),floori(e.y/0.3))
-				if seen.has(key): continue
-				seen[key] = true
-				var h0: float = ground_fn.call(e.x,e.y)
-				var down := Vector2.ZERO
-				for k in range(8):
-					var d := Vector2.from_angle(k*TAU/8.0)
-					down -= d*(float(ground_fn.call(e.x+d.x*0.35,e.y+d.y*0.35))-h0)
-				if down.length() < 0.01: continue
-				down = down.normalized()
-				e += down.orthogonal()*rng.randf_range(-0.04,0.04)
-				var top := e-down*0.04
-				var drop := absf(ha-hc)
-				var w := clampf(0.1*drop,0.2,0.6)*rng.randf_range(0.8,1.25)
-				var foot := e+down*w
-				var ht: float = ground_fn.call(top.x,top.y)
-				var hf: float = ground_fn.call(foot.x,foot.y)
-				points.append(top)
-				heights.append(ht)
-				points.append(foot)
-				heights.append(hf)
-				for q: Vector2 in [e-down*0.5,foot+down*0.45]:
-					points.append(q)
-					heights.append(float(ground_fn.call(q.x,q.y)))
-				if drop > 1.5:
-					var mid := e+down*w*rng.randf_range(0.2,0.8)+down.orthogonal()*rng.randf_range(-0.2,0.2)
-					points.append(mid)
-					heights.append(lerpf(ht,hf,rng.randf_range(0.3,0.7)))
-			z += CLIFF_PROBE
-		x += CLIFF_PROBE
-	return {"points":points,"heights":heights}
-
 # --- The island builder --------------------------------------------------------------
 
 ## An island of the game's ground over `ground_fn` (world (x, z) -> y)
@@ -467,127 +382,22 @@ static func island(label: String, outline: Array, ground_fn: Callable, base: flo
 	var ring := _subdivide(outline,1.3 if outline.size() > 12 else 0.7,rng,sheer)
 	var node := Node3D.new()
 	node.name = label
-	var centre := Vector2.ZERO
-	for p in ring: centre += p
-	centre /= ring.size()
-	var poly := PackedVector2Array(ring)
-	var points := PackedVector2Array(ring)
-	var heights := PackedFloat32Array()
-	for p in ring: heights.append(ground_fn.call(p.x,p.y))
-	var near := {}
-	var cliff_ids := PackedInt32Array()
-	if not cliffs.is_empty():
-		var cp: PackedVector2Array = cliffs.points
-		var ch: PackedFloat32Array = cliffs.heights
-		var taken := {}
-		for i in range(cp.size()):
-			if not Geometry2D.is_point_in_polygon(cp[i],poly) or AqArt._edge_distance(cp[i],poly) < 0.45: continue
-			var key := Vector2i(floori(cp[i].x/0.15),floori(cp[i].y/0.15))
-			var crowded := false
-			for dx in range(-1,2):
-				for dz in range(-1,2):
-					var other: Variant = taken.get(key+Vector2i(dx,dz))
-					if other != null and (other as Vector2).distance_to(cp[i]) < 0.12: crowded = true
-			if crowded: continue
-			taken[key] = cp[i]
-			points.append(cp[i])
-			heights.append(ch[i])
-			cliff_ids.append(points.size()-1)
-			near[Vector2i(floori(cp[i].x/0.5),floori(cp[i].y/0.5))] = true
-	var box := Rect2(ring[0],Vector2.ZERO)
-	for p in ring: box = box.expand(p)
-	for pass_fine: bool in [false,true]:
-		var cell := FINE if pass_fine else (CELL if outline.size() > 12 else 0.8)
-		if pass_fine and fine.is_empty(): continue
-		var gx := box.position.x+cell*0.5
-		while gx < box.end.x:
-			var gz := box.position.y+cell*0.5
-			while gz < box.end.y:
-				var p := Vector2(gx+rng.randf_range(-0.3,0.3)*cell,gz+rng.randf_range(-0.3,0.3)*cell)
-				gz += cell
-				var in_fine := false
-				for r: Rect2 in fine:
-					if r.has_point(p): in_fine = true
-				if in_fine != pass_fine: continue
-				if not Geometry2D.is_point_in_polygon(p,poly) or AqArt._edge_distance(p,poly) <= cell*0.45: continue
-				if _near_cliff(near,p): continue
-				points.append(p)
-				heights.append(ground_fn.call(p.x,p.y))
-			gx += cell
+	var centre := KitLand.centre_of(ring)
+	var g := KitLand.Gather.new(ring,ground_fn)
+	if not cliffs.is_empty(): g.add_cliffs(cliffs,0.45)
+	g.grid(CELL if outline.size() > 12 else 0.8,rng,ground_fn,fine,false,true)
+	if not fine.is_empty(): g.grid(FINE,rng,ground_fn,fine,true,true)
 	var cliffy := PackedByteArray()
-	cliffy.resize(points.size())
+	cliffy.resize(g.points.size())
 	cliffy.fill(0)
-	for i in cliff_ids: cliffy[i] = 1
-	var tris := Geometry2D.triangulate_delaunay(points)
-	var pal := AqArt.palette()
-	var patch := FastNoiseLite.new()
-	patch.seed = seed_value+5
-	patch.frequency = 0.4
-	var v := PackedVector3Array()
-	var n := PackedVector3Array()
-	var c := PackedColorArray()
-	var uv := PackedVector2Array()
-	var uv2 := PackedVector2Array()
-	var faces := PackedVector3Array()
-	var solid: Array[PackedVector3Array] = []
-	for t in range(0,tris.size(),3):
-		var a := points[tris[t]]
-		var bb := points[tris[t+1]]
-		var cc := points[tris[t+2]]
-		var mid := (a+bb+cc)/3.0
-		if not Geometry2D.is_point_in_polygon(mid,poly): continue
-		var pa := Vector3(a.x,heights[tris[t]],a.y)
-		var pb := Vector3(bb.x,heights[tris[t+1]],bb.y)
-		var pc := Vector3(cc.x,heights[tris[t+2]],cc.y)
-		faces.append_array([pa,pb,pc])
-		if cliffy[tris[t]] or cliffy[tris[t+1]] or cliffy[tris[t+2]]:
-			var deep := minf(pa.y,minf(pb.y,pc.y))-1.5
-			var hull := PackedVector3Array([pa,pb,pc,Vector3(pa.x,deep,pa.z),Vector3(pb.x,deep,pb.z),Vector3(pc.x,deep,pc.z)])
-			if RuinKit.hull_thickness(hull) >= RuinKit.HULL_THIN: solid.append(hull)
-		var normal := (pb-pa).cross(pc-pa).normalized()
-		if normal.y < 0.0:
-			normal = -normal
-			var swap := pb
-			pb = pc
-			pc = swap
-		var tone := ground_tone(pal,patch,mid,normal,rng.randf_range(-0.035,0.035))
-		for p: Vector3 in [pa,pc,pb]:
-			v.append(p-Vector3(0.0,0.02,0.0))
-			n.append(normal)
-			c.append(tone)
-			uv.append(Vector2(0.0,1.0))
-			uv2.append(Vector2(0.5,p.y))
-	var arrays := []
-	arrays.resize(Mesh.ARRAY_MAX)
-	arrays[Mesh.ARRAY_VERTEX] = v
-	arrays[Mesh.ARRAY_NORMAL] = n
-	arrays[Mesh.ARRAY_COLOR] = c
-	arrays[Mesh.ARRAY_TEX_UV] = uv
-	arrays[Mesh.ARRAY_TEX_UV2] = uv2
-	var ground_mesh := ArrayMesh.new()
-	ground_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
-	ground_mesh.surface_set_material(0,AqArt.ground_material())
-	var drawn_top := MeshInstance3D.new()
-	drawn_top.name = "Ground"
-	drawn_top.mesh = ground_mesh
-	node.add_child(drawn_top)
+	for i in g.cliff_ids: cliffy[i] = 1
+	var tone := KitLook.turf(seed_value,func(p: Vector2) -> float: return path_wear(p),
+		func(p: Vector2, _y: float) -> float: return 1.0 if wet(p) else 0.0)
+	var built := KitLand.surface(g.points,g.heights,g.poly,rng,tone,Callable(),cliffy)
+	KitLand.draw(node,built)
 	_sides(node,ring,ground_fn,base,depth,centre,keel_pull,rng,sheer)
-	var body := StaticBody3D.new()
-	body.name = "Body"
-	var shape := ConcavePolygonShape3D.new()
-	shape.set_faces(faces)
-	shape.backface_collision = true
-	var holder := CollisionShape3D.new()
-	holder.shape = shape
-	body.add_child(holder)
-	for hull: PackedVector3Array in solid:
-		var prism := ConvexPolygonShape3D.new()
-		prism.points = hull
-		var held := CollisionShape3D.new()
-		held.shape = prism
-		body.add_child(held)
-	node.add_child(body)
-	node.set_meta("outline",poly)
+	KitLand.bodies(node,built.faces,built.solid)
+	node.set_meta("outline",g.poly)
 	return node
 
 ## The rim's sides: rings under it (the turf's lip, the earth, the rock) to
@@ -648,9 +458,7 @@ static func _sides(node: Node3D, ring: Array, ground_fn: Callable, base: float, 
 			r.append(Vector3(q.x,y,q.y))
 		rims.append([stride,r])
 	var keel := Vector3(keel_at.x+rng.randf_range(-1.5,1.5),base-depth,keel_at.y+rng.randf_range(-1.5,1.5))
-	var v := PackedVector3Array()
-	var n := PackedVector3Array()
-	var c := PackedColorArray()
+	var rock := KitLook.RockMesh.new()
 	for k in range(rims.size()-1):
 		var upper: Array = rims[k][1]
 		var lower: Array = rims[k+1][1]
@@ -665,60 +473,28 @@ static func _sides(node: Node3D, ring: Array, ground_fn: Callable, base: float, 
 			for s in range(first,last):
 				var u0: Vector3 = upper[s%upper.size()]
 				var u1: Vector3 = upper[(s+1)%upper.size()]
-				var g: bool = gorge[(s*su)%count]
-				AqArt._tri(v,n,c,[u0,l0,u1],_wall_tone(rng,(u0+u1+l0)/3.0,k,g),AqArt._out(centre,(u0+u1+l0)/3.0))
+				rock.add([u0,l0,u1],rim_y[(s*su)%count],KitLand.out_from(centre,(u0+u1+l0)/3.0),rng.randf_range(0.88,1.1))
 			var ue: Vector3 = upper[last%upper.size()]
-			var ge: bool = gorge[(j*sl)%count]
-			AqArt._tri(v,n,c,[ue,l0,l1],_wall_tone(rng,(ue+l0+l1)/3.0,k,ge),AqArt._out(centre,(ue+l0+l1)/3.0))
+			rock.add([ue,l0,l1],rim_y[(j*sl)%count],KitLand.out_from(centre,(ue+l0+l1)/3.0),rng.randf_range(0.88,1.1))
 	var final: Array = rims[rims.size()-1][1]
+	var mean_rim := 0.0
+	for y in rim_y: mean_rim += y
+	mean_rim /= maxf(rim_y.size(),1)
 	for j in range(final.size()):
 		var a: Vector3 = final[j]
 		var b2: Vector3 = final[(j+1)%final.size()]
 		var mid := (a+b2+keel)/3.0
-		AqArt._tri(v,n,c,[a,keel,b2],_wall_tone(rng,mid,9,false),AqArt._out(centre,mid)+Vector3.DOWN)
-	var arrays := []
-	arrays.resize(Mesh.ARRAY_MAX)
-	arrays[Mesh.ARRAY_VERTEX] = v
-	arrays[Mesh.ARRAY_NORMAL] = n
-	arrays[Mesh.ARRAY_COLOR] = c
-	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
-	var drawn := MeshInstance3D.new()
-	drawn.name = "Mesh"
-	drawn.mesh = mesh
-	drawn.material_override = RuinKit.materials().stone
-	node.add_child(drawn)
+		rock.add([a,keel,b2],mean_rim,KitLand.out_from(centre,mid)+Vector3.DOWN,rng.randf_range(0.88,1.1))
+	node.add_child(rock.node("Mesh"))
 	var body := StaticBody3D.new()
 	body.name = "Sides"
 	var shape := ConcavePolygonShape3D.new()
-	shape.set_faces(v)
+	shape.set_faces(rock.faces())
 	shape.backface_collision = true
 	var holder := CollisionShape3D.new()
 	holder.shape = shape
 	body.add_child(holder)
 	node.add_child(body)
-
-## A side face's colour (sRGB): the turf's earthy lip, then rock; on the
-## gorge's walls a warmer, lighter rock in strata (lit well, never black).
-static func _wall_tone(rng: RandomNumberGenerator, at: Vector3, ring: int, gorge: bool) -> Color:
-	if ring == 0: return AqArt.EARTH*rng.randf_range(0.85,1.1)
-	if gorge and ring <= 6:
-		# Strata, and the light bouncing between the walls (the stone
-		# shader's shelter fill, its vertex alpha): never black in shade.
-		var band := 0.92+0.1*sin(at.y*2.3)+0.06*sin(at.y*0.61+1.7)
-		var c := GORGE_ROCK*band*rng.randf_range(0.92,1.06)
-		c.a = GORGE_SHELTER
-		return c
-	var band := 0.9+0.12*sin(at.y*1.7)+0.05*sin(at.y*0.53+1.0)
-	var c := KEEL_ROCK.lerp(AqArt.EARTH,0.25 if ring == 1 else 0.0)
-	return c*band*rng.randf_range(0.88,1.1)
-
-static func _near_cliff(near: Dictionary, p: Vector2) -> bool:
-	var k := Vector2i(floori(p.x/0.5),floori(p.y/0.5))
-	for dx in range(-1,2):
-		for dz in range(-1,2):
-			if near.has(k+Vector2i(dx,dz)): return true
-	return false
 
 ## The outline with each edge cut into pieces at most `most` m long, the
 ## new points nudged out or in a little (not on the gorge: its ledges'
@@ -753,7 +529,7 @@ static func west_half(seed_value: int) -> Node3D:
 	rng.seed = seed_value
 	var cliffs := {"points":PackedVector2Array(),"heights":PackedFloat32Array()}
 	for r: Rect2 in [Rect2(74.0,-52.0,10.0,28.0),Rect2(40.0,-44.0,26.0,44.0)]:
-		var found := cliff_points(ground_w,r,rng)
+		var found := KitLand.cliff_points(ground_w,r,rng,Callable(),0.6,0.2)
 		cliffs.points.append_array(found.points)
 		cliffs.heights.append_array(found.heights)
 	var node := island("WestHalf",west_outline(),ground_w,TOP,DEPTH+2.0,seed_value,Vector2(14.0,4.0),cliffs,west_fine())
@@ -764,7 +540,7 @@ static func east_half(seed_value: int) -> Node3D:
 	rng.seed = seed_value
 	var cliffs := {"points":PackedVector2Array(),"heights":PackedFloat32Array()}
 	for r: Rect2 in [Rect2(90.0,-53.0,9.0,29.0),Rect2(96.0,-48.0,38.0,22.0),Rect2(100.0,-3.0,36.0,20.0)]:
-		var found := cliff_points(ground_e,r,rng)
+		var found := KitLand.cliff_points(ground_e,r,rng,Callable(),0.6,0.2)
 		cliffs.points.append_array(found.points)
 		cliffs.heights.append_array(found.heights)
 	return island("EastHalf",east_outline(),ground_e,E_TOP,DEPTH+5.0,seed_value,Vector2(-12.0,2.0),cliffs,east_fine())

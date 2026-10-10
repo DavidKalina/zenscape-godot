@@ -1,4 +1,4 @@
-extends "res://studies/aqueduct_isle.gd"
+extends "res://studies/kit_isle.gd"
 ## The bell spires isle (docs/scenic/bell-spires.md): a hand-built sky
 ## isle motif in the aqueduct isle's world, smaller round but tall. A
 ## crescent of turf over hanging rock, and out of it and round it a stand
@@ -12,13 +12,13 @@ extends "res://studies/aqueduct_isle.gd"
 ## two as a split fin with a chimney between them. The art: studies/
 ## bell_spires_isle_art.gd.
 ##
-## Everything else is the aqueduct isle's (this extends it, changing none
-## of it): the pilot and his moves, the game's look, its presets (L /
-## Shift+L, --look=), its light, air and weather, the grass and flowers,
-## the life (its own copies here, wired to this isle's ground: studies/
-## bell_spires_isle_life.gd and friends), the sky round it (far isles,
-## airships, CPU planes; its plane tokens this isle's own), the plane
-## (F), the lodestone (under the bell) and every opt-out flag.
+## Everything else is the kit isles' (studies/kit_isle.gd, docs/scenic/
+## kit-isle-shared.md): the pilot and his moves, the rope bridges underfoot,
+## the game's look, its presets (L / Shift+L, --look=), its light, air and
+## weather, the ground and rock, the grass and flowers, the life (its
+## perches and tokens this isle's: studies/bell_spires_isle_life.gd), the
+## sky round it (its plane tokens this isle's own), the plane (F), the
+## lodestone (under the bell) and every opt-out flag.
 ##   ./run-bell-spires.command [--look=first_snow]
 ##   godot --path . res://studies/bell_spires_isle.tscn -- --no-title [--capture=out.png --at=x,y,z --look=x,y,z] [--place=x,y,z[,turn]]
 ## --no-flora, --no-life (--no-undergrowth, --no-butterflies, --no-fireflies,
@@ -29,8 +29,6 @@ extends "res://studies/aqueduct_isle.gd"
 const Spires = preload("res://studies/bell_spires_isle_art.gd")
 const Belfry = preload("res://scripts/ruin_kit_belfry.gd")
 const Footbridge = preload("res://scripts/footbridge.gd")
-const RopeBridge = preload("res://scripts/rope_bridge.gd")
-const SpiresFlora = preload("res://studies/bell_spires_isle_flora.gd")
 const SpiresLife = preload("res://studies/bell_spires_isle_life.gd")
 const SpiresSky = preload("res://studies/bell_spires_isle_sky.gd")
 const BELFRY_SEED := 61
@@ -47,8 +45,8 @@ var spire_nodes := {}
 var belfry: Node3D
 var bridges: Array[MeshInstance3D] = []
 var bells: Array[Dictionary] = []
-var _was_grounded := true
-var _fall_speed := 0.0
+var _bell_grounded := true
+var _bell_fall := 0.0
 var _still_bells := false
 
 func _ready() -> void:
@@ -64,9 +62,23 @@ func _load_pack() -> void:
 	_last_stood = start
 	stations = [{"key":1,"name":"Bell spires","spawn":start,"face":start_face,"parts":[]}]
 
-func _build_light() -> void:
-	super._build_light()
-	_atmosphere._summit = Vector3(Spires.HERO.x,Spires.TOP,Spires.HERO.y)
+func isle_name() -> String:
+	return "bell spires"
+
+func isle_top() -> float:
+	return Spires.TOP
+
+func isle_summit() -> Vector3:
+	return Vector3(Spires.HERO.x,Spires.TOP,Spires.HERO.y)
+
+func flora_site() -> KitFlora.Site:
+	return KitFlora.Site.new(Spires.TOP,func(p: Vector2) -> float: return Spires.path_wear(p))
+
+func sky_script() -> Script:
+	return SpiresSky
+
+func life_script() -> Script:
+	return SpiresLife
 
 func _build_room() -> void:
 	_build_art()
@@ -97,12 +109,7 @@ func _build_art() -> void:
 	art.add_child(Spires.chockstone(92))
 	_crowns(l)
 	_bridges(l)
-	for land: Node3D in lands:
-		var turf: StaticBody3D = land.get_node("Body")
-		turf.collision_layer |= TURF_LAYER
-		_turf_rids.append(turf.get_rid())
-		_turf.append(turf)
-		_outlines.append(land.get_meta("outline"))
+	for land: Node3D in lands: add_turf(land)
 	print("bell spires: %d triangles, built in %d ms" % [triangles(art),Time.get_ticks_msec()-began])
 
 ## What crowns each spire: the belfry on the hero (its front to the stair's
@@ -196,56 +203,26 @@ func _bridges(l: Dictionary) -> void:
 static func _deck(a: Vector3, b: Vector3, span: float, t: float) -> Vector3:
 	return a.lerp(b,t)+Vector3.UP*Footbridge.lift(span,t)
 
-## The walker's ground with the live bridges: on a deck, his height is the
-## planks' (their drop under him added to the resting deck he stands on),
-## and his steps are kept between the hand ropes (RopeBridge `hold`).
-class BridgeGround extends "res://scripts/pilot_physics_ground.gd":
-	var frame: Node3D
-	func height_from(p: Vector2, y: float) -> float:
-		var h := super.height_from(p,y)
-		if not is_finite(h): return h
-		for bridge: MeshInstance3D in RopeBridge._live:
-			var on: Vector3 = bridge._on_deck(bridge.global_transform.affine_inverse()*Vector3(p.x,h,p.y))
-			if on.x <= 0.0 or on.x >= 1.0: continue
-			if absf(on.y) > float(bridge.sim.width)*0.5+0.12: continue
-			var rest: float = lerpf(float(bridge.a.y),float(bridge.b.y),on.x)+float(bridge.bow)*pow(sin(PI*on.x),2.0)
-			if absf(h-rest) > 0.06: continue
-			return h+float(bridge.sim.drop(on.x,on.y-bridge.sim.sway(on.x)))
-		return h
-	func slide(feet: Vector3, step: Vector2) -> Vector3:
-		var out := super.slide(feet,step)
-		if frame == null: return out
-		var held := RopeBridge.hold(frame,feet,Vector2(out.x,out.z))
-		return Vector3(held.x,out.y,held.y)
-
+## The walker's ground: the kit's (scripts/kit_isle/deck_ground.gd), the
+## bridges' resting decks standing in the physics space as walk boxes, so
+## a deck met at rest sags by the sim's drop under him.
 func _build_pilot() -> void:
 	super._build_pilot()
-	var bg := BridgeGround.new(get_world_3d().direct_space_state,motor)
-	bg.frame = self
-	ground = bg
-	motor.water = ground.water_callable()
-	motor.wall = ground.wall_callable()
+	(ground as DeckGround).rest_decks = true
 
-## On foot: the bridges take his weight and his landings, and carry him
-## with their sway; a landing in the belfry rings the bell a little.
+## On foot (the kit's step: the bridges take his weight and landings): a
+## landing in the belfry rings the bell a little.
 func tick(delta: float) -> void:
-	var falling := motor.velocity.y
 	super.tick(delta)
 	if lode_state == "inspecting" or flying: return
-	var events := {}
-	if motor.grounded and not _was_grounded: events["landed"] = maxf(-_fall_speed,0.0)
-	_was_grounded = motor.grounded
-	_fall_speed = falling
-	var effort := clampf(Vector2(motor.velocity.x,motor.velocity.z).length()/PilotMotor.RUN,0.0,1.0)
-	var carry := RopeBridge.tread(self,motor.feet,motor.grounded,events,{},effort)
-	if carry != Vector3.ZERO: motor.feet += carry
-	if events.has("landed") and belfry != null and not bells.is_empty():
+	var landed := motor.grounded and not _bell_grounded
+	_bell_grounded = motor.grounded
+	if landed and belfry != null and not bells.is_empty():
 		var local := belfry.global_transform.affine_inverse()*motor.feet
 		if absf(local.x) < 1.4 and absf(local.z) < 1.4 and local.y > Belfry.FLOOR-0.3: _ring(bells[0],BELL_LAND)
 
 func fly_step(delta: float, input: Dictionary) -> void:
 	super.fly_step(delta,input)
-	RopeBridge.flown_by(plane.position,plane.velocity)
 	for bell: Dictionary in bells:
 		var d: float = (bell.node as Node3D).global_position.distance_to(plane.position)
 		if d < BELL_NEAR and float(bell.pushed) <= 0.0:
@@ -284,52 +261,8 @@ func _process(delta: float) -> void:
 # --- The lodestone, the sky, the life, the grass -----------------------------------
 
 ## The lodestone hums on the belfry's floor, under the bell.
-func _build_lode() -> void:
-	lode_rest = belfry.global_transform*Vector3(0.0,Belfry.FLOOR+LODE_HOVER,0.0)
-	lodestone = Lodestone.new()
-	lodestone.set_miniature(LODE_MINI)
-	lodestone.position = lode_rest
-	lodestone.scale = Vector3.ONE*LODE_SCALE
-	add_child(lodestone)
-	_moments = MomentsHud.new()
-	add_child(_moments)
-	_build_target()
-	if _carry:
-		lode_state = "carried"
-		lodestone.scale = Vector3.ONE*CARRY_SCALE
-		lodestone.show_light(false)
-		_carry_step(0.0)
-	if _switch_hint != null: _switch_hint.text = _foot_text()
+func lode_rest_at() -> Vector3:
+	return belfry.global_transform*Vector3(0.0,Belfry.FLOOR+LODE_HOVER,0.0)
 
-func _foot_text() -> String:
-	if lodestone == null or lode_state != "resting" or can_pick(): return super._foot_text()
-	return FOOT_HINT+"\nA lodestone hums under the bell in the belfry: climb the hero spire to it"
-
-func _pack_runs() -> PackedStringArray:
-	return PackedStringArray()
-
-func _add_sky() -> void:
-	sky = SpiresSky.new()
-	add_child(sky)
-	sky.setup(self)
-	if _capture != "": sky.flush()
-
-func _add_life() -> void:
-	var args: PackedStringArray = preload("res://scripts/launch_args.gd").user_args()
-	if args.has("--no-life"): return
-	var began := Time.get_ticks_msec()
-	life = SpiresLife.new()
-	add_child(life)
-	life.setup(self,args)
-	var sky_tokens = sky.get("collectibles") if sky != null else null
-	if life.tokens != null and sky_tokens != null and sky_tokens.get("hud") != null:
-		life.tokens.hud.queue_free()
-		life.tokens.hud = sky_tokens.get("hud")
-	print("bell spires: life %s in %d ms %s" % [life.flags,Time.get_ticks_msec()-began,life.timings])
-
-func _grow() -> void:
-	var began := Time.get_ticks_msec()
-	flora = SpiresFlora.grow(SEED+4,get_world_3d().direct_space_state,_turf,_outlines)
-	art.add_child(flora)
-	flora_ready = true
-	print("bell spires: flora %s, %d instanced triangles, grown in %d ms" % [flora.get_meta("counts"),int(flora.get_meta("triangles")),Time.get_ticks_msec()-began])
+func lode_hint() -> String:
+	return "A lodestone hums under the bell in the belfry: climb the hero spire to it"

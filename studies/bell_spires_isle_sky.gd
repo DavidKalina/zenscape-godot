@@ -31,13 +31,8 @@ static func spire_tokens() -> Array:
 	out.append(["bs:keel","under","keel",[Vector3(Spires.HERO.x+6.0,Spires.TOP-26.0,Spires.HERO.y+8.0)]])
 	return out
 
-func _build_tokens() -> void:
-	collectibles = SkyCollectibles.new()
-	collectibles.cells = SkyCells.new()
-	collectibles.seed_value = TOKEN_SEED
-	collectibles._trails_laid = true
-	add_child(collectibles)
-	var lines: Array = []
-	for t: Array in spire_tokens():
-		lines.append(Lines.line(t[0],t[1],t[2],PackedVector3Array(t[3]),TOKEN_SEED))
-	collectibles.add_source("bell_spires",lines)
+func plane_tokens() -> Array:
+	return spire_tokens()
+
+func token_source() -> String:
+	return "bell_spires"

@@ -567,71 +567,6 @@ static func _walled(e: Vector2) -> bool:
 	var p := polar(e.x,e.y)
 	return p.y >= RAMP_FROM-1.0 and p.y <= RAMP_TO-3.0 and absf(p.x-r2(p.y)) < 0.3
 
-## The hill's cliffs as ground points: wherever the ground steps (probed on
-## a CLIFF_PROBE grid, the step found by halving), a point just on its top,
-## one at its foot (CLIFF_WIDTH by the drop), and on a tall one a point
-## between, pushed in or out, so its face is a crag's facets. {points,
-## heights}.
-const CLIFF_PROBE := 0.5
-static func cliff_points(rng: RandomNumberGenerator) -> Dictionary:
-	var points := PackedVector2Array()
-	var heights := PackedFloat32Array()
-	var seen := {}
-	# Off the round numbers (the isle's axis is z 0): no row of points on a
-	# line a ray is likely cast along, where it could slip between faces.
-	var box := Rect2(HILL.x-23.0+0.137,HILL.y-23.0+0.213,EAST_FACE+1.0-(HILL.x-23.0),46.0)
-	var x := box.position.x
-	while x < box.end.x:
-		var z := box.position.y
-		while z < box.end.y:
-			var a := Vector2(x,z)
-			var ha := ground(a.x,a.y)
-			for way: Vector2 in [Vector2(CLIFF_PROBE,0.0),Vector2(0.0,CLIFF_PROBE)]:
-				var c := a+way
-				var hc := ground(c.x,c.y)
-				if absf(ha-hc) < 0.3: continue
-				var lo := a
-				var hi := c
-				for k in range(14):
-					var m := (lo+hi)*0.5
-					var hm := ground(m.x,m.y)
-					if absf(hm-ha) < absf(hm-hc): lo = m
-					else: hi = m
-				var e := (lo+hi)*0.5
-				var key := Vector2i(floori(e.x/0.3),floori(e.y/0.3))
-				if seen.has(key): continue
-				seen[key] = true
-				var h0 := ground(e.x,e.y)
-				var down := Vector2.ZERO
-				for k in range(8):
-					var d := Vector2.from_angle(k*TAU/8.0)
-					down -= d*(ground(e.x+d.x*0.35,e.y+d.y*0.35)-h0)
-				if down.length() < 0.01: continue
-				down = down.normalized()
-				e += down.orthogonal()*rng.randf_range(-0.04,0.04)
-				var top := e-down*0.04
-				var walled := _walled(e)
-				var drop := absf(ha-hc)
-				var w := 0.18 if walled else clampf(0.1*drop,0.2,0.8)*rng.randf_range(0.8,1.25)
-				var foot := e+down*w
-				var ht := ground(top.x,top.y)
-				var hf := ground(foot.x,foot.y)
-				points.append(top)
-				heights.append(ht)
-				points.append(foot)
-				heights.append(hf)
-				# A row either side, so no face of the ground spans the lip.
-				for q: Vector2 in [e-down*0.5,foot+down*0.45]:
-					points.append(q)
-					heights.append(ground(q.x,q.y))
-				if drop > 1.5 and not walled:
-					var mid := e+down*w*rng.randf_range(0.2,0.8)+down.orthogonal()*rng.randf_range(-0.22,0.22)
-					points.append(mid)
-					heights.append(lerpf(ht,hf,rng.randf_range(0.3,0.7)))
-			z += CLIFF_PROBE
-		x += CLIFF_PROBE
-	return {"points":points,"heights":heights}
-
 ## The way up the hill on foot, no jump (world x, z): the grand stair from
 ## its foot, round the lower tier north, up the ramp, over the west shelf,
 ## along the ledge south, up the kit stair through the ring's gap.
@@ -677,48 +612,13 @@ static func path_wear(at: Vector2) -> float:
 			best = minf(best,at.distance_to(Geometry2D.get_closest_point_to_segment(at,path[i],path[i+1])))
 	return clampf(1.25-best/1.5,0.0,1.0)
 
-## The world's ground look (the sky islets' own, scripts/sky_islets.gd):
-## the plate's terrain material, its palette (scripts/
-## native_terrain_palette.gd) in the faces' colours, grass toned by the
-## patch noise, rock where a face is steeper than its rock slope, the paths
-## worn to gravel and earth.
-const CRAG_SHADE := 0.7
-## How many boulders lie at the crags' feet.
-const BOULDERS := 22
-static var _palette := {}
-static var _ground_material: ShaderMaterial
-
+## The world's ground look: the kit isles' (scripts/kit_isle/kit_look.gd,
+## the plate's ground material and palette).
 static func palette() -> Dictionary:
-	if _palette.is_empty():
-		var p := NativeTerrainPalette.new()
-		_palette = {"grass":p.grass.duplicate(),"rock":p.rock.duplicate(),"sand":p.sand,"gravel":p.gravel,
-			"rock_slope":p.rock_slope if p.rock_slope > 0.0 else 0.93}
-	return _palette
+	return KitLook.palette()
 
 static func ground_material() -> ShaderMaterial:
-	if _ground_material == null:
-		_ground_material = ShaderMaterial.new()
-		_ground_material.shader = preload("res://shaders/reference_surface.gdshader")
-		_ground_material.set_shader_parameter("flat_faces",true)
-		_ground_material.set_shader_parameter("palette_role",1)
-		_ground_material.set_shader_parameter("base_color",Color.WHITE)
-	return _ground_material
-
-## A ground face's colour (linear), as SkyIslet `top_arrays` makes it.
-static func ground_tone(pal: Dictionary, patch: FastNoiseLite, at: Vector2, normal: Vector3, shimmer: float) -> Color:
-	var grass: Array = pal.grass
-	var n := patch.get_noise_2d(at.x,at.y)*0.5+0.5
-	var tone: Color = grass[1 if n > 0.55 else (2 if n < 0.42 else 0)]
-	var slope := sqrt(maxf(0.0,1.0-normal.y*normal.y))/maxf(normal.y,0.001)
-	if slope > float(pal.rock_slope):
-		var rock: Array = pal.rock
-		tone = rock[0 if patch.get_noise_2d(at.x+71.0,at.y) > 0.0 else rock.size()-1]
-		# A crag's face, a shade under the plate's open rock (sheer, weathered).
-		tone *= CRAG_SHADE+0.12*patch.get_noise_2d(at.x*0.7-13.0,at.y*0.7)
-	else:
-		var worn := path_wear(at)
-		if worn > 0.0: tone = tone.lerp((pal.gravel as Color).lerp(EARTH.srgb_to_linear(),0.45)*lerpf(0.85,1.0,n),worn*0.8)
-	return Color(tone.r+shimmer,tone.g+shimmer,tone.b+shimmer,1.0)
+	return KitLook.ground_material()
 
 # --- The islands --------------------------------------------------------------------
 
@@ -746,340 +646,47 @@ const CELL := 2.0
 const HILL_CELL := 1.2
 const EARTH := Color("6a4f37")
 const ROCK := Color("675b50")
+## How many boulders lie at the crags' feet (`hill_walls`).
+const BOULDERS := 22
 
-## An island: its top (the world's ground look, its faces collided as one
-## trimesh: its top is the ground) over `flat` (world (x, z) -> y), and its
-## sides and keel of hanging rock down from `top`, its keel's point `depth`
-## under it. `hill`: the hill's cliffs laid in as ground points.
+## An island: its top (the plate's ground look, its faces collided as one
+## trimesh: its top is the ground; its crags in the islets' rock) over
+## `flat` (world (x, z) -> y), and its sides and keel of hanging rock down
+## from `top`, its keel's point `depth` under it. `hill`: the hill's cliffs
+## laid in as ground points, its faces finer. The kit isles' shared builder
+## (scripts/kit_isle/kit_land.gd `island`).
 static func island(outline: Array, depth: float, seed_value: int, flat: Callable, top := TOP, hill := false) -> Node3D:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = seed_value
-	var ring := _resample(outline,96 if _perimeter(outline) > 60.0 else 32,rng)
-	var node := Node3D.new()
-	node.name = "Island"
-	var centre := Vector2.ZERO
-	for p in ring: centre += p
-	centre /= ring.size()
-	var poly := PackedVector2Array(ring)
-	var points := PackedVector2Array(ring)
-	var heights := PackedFloat32Array()
-	for p in ring: heights.append(flat.call(p.x,p.y))
-	var cliffy := PackedByteArray()
-	var solid: Array[PackedVector3Array] = []
-	var cliff_ids := PackedInt32Array()
-	var near := {}
+	var spec := {"outline":outline,"depth":depth,"seed":seed_value,"ground":flat,"top":top,
+		"tone":KitLook.turf(seed_value,func(p: Vector2) -> float: return path_wear(p))}
 	if hill:
-		var cliffs := cliff_points(rng)
-		var cp: PackedVector2Array = cliffs.points
-		var ch: PackedFloat32Array = cliffs.heights
-		var taken := {}
-		for i in range(cp.size()):
-			if not Geometry2D.is_point_in_polygon(cp[i],poly) or _edge_distance(cp[i],poly) < 0.5: continue
-			# Never two points nearly on one another (the triangulation drops
-			# faces round them).
-			var key := Vector2i(floori(cp[i].x/0.15),floori(cp[i].y/0.15))
-			var crowded := false
-			for dx in range(-1,2):
-				for dz in range(-1,2):
-					var other: Variant = taken.get(key+Vector2i(dx,dz))
-					if other != null and (other as Vector2).distance_to(cp[i]) < 0.12: crowded = true
-			if crowded: continue
-			taken[key] = cp[i]
-			points.append(cp[i])
-			heights.append(ch[i])
-			cliff_ids.append(points.size()-1)
-			near[Vector2i(floori(cp[i].x/0.5),floori(cp[i].y/0.5))] = true
-	var hill_box := Rect2(HILL.x-23.0,HILL.y-23.0,EAST_FACE+1.0-(HILL.x-23.0),46.0)
-	var box := Rect2(ring[0],Vector2.ZERO)
-	for p in ring: box = box.expand(p)
-	for fine: bool in [false,true]:
-		if fine and not hill: continue
-		var cell := HILL_CELL if fine else CELL
-		var gx := box.position.x+cell*0.5
-		while gx < box.end.x:
-			var gz := box.position.y+cell*0.5
-			while gz < box.end.y:
-				var p := Vector2(gx+rng.randf_range(-0.3,0.3)*cell,gz+rng.randf_range(-0.3,0.3)*cell)
-				gz += cell
-				if hill and hill_box.has_point(p) != fine: continue
-				if not Geometry2D.is_point_in_polygon(p,poly) or _edge_distance(p,poly) <= cell*0.45: continue
-				if fine and _near_cliff(near,p): continue
-				points.append(p)
-				heights.append(flat.call(p.x,p.y))
-			gx += cell
-	if not cliff_ids.is_empty():
-		cliffy.resize(points.size())
-		cliffy.fill(0)
-		for i in cliff_ids: cliffy[i] = 1
-	var tris := Geometry2D.triangulate_delaunay(points)
-	var pal := palette()
-	var patch := FastNoiseLite.new()
-	patch.seed = seed_value+5
-	patch.frequency = 0.4
-	var v := PackedVector3Array()
-	var n := PackedVector3Array()
-	var c := PackedColorArray()
-	var uv := PackedVector2Array()
-	var uv2 := PackedVector2Array()
-	var faces := PackedVector3Array()
-	for t in range(0,tris.size(),3):
-		var a := points[tris[t]]
-		var bb := points[tris[t+1]]
-		var cc := points[tris[t+2]]
-		var mid := (a+bb+cc)/3.0
-		if not Geometry2D.is_point_in_polygon(mid,poly): continue
-		var pa := Vector3(a.x,heights[tris[t]],a.y)
-		var pb := Vector3(bb.x,heights[tris[t+1]],bb.y)
-		var pc := Vector3(cc.x,heights[tris[t+2]],cc.y)
-		# Collided at the ground; drawn a hair under it, so feet stand on it.
-		faces.append_array([pa,pb,pc])
-		# By a cliff, the ground solid under its face (a convex prism down
-		# past the cliff's foot): a ray started under its top, as the
-		# pilot's are against the cliff, finds its top, and its lip is a ledge.
-		if not cliffy.is_empty() and (cliffy[tris[t]] or cliffy[tris[t+1]] or cliffy[tris[t+2]]):
-			var deep := minf(pa.y,minf(pb.y,pc.y))-1.5
-			var hull := PackedVector3Array([pa,pb,pc,Vector3(pa.x,deep,pa.z),Vector3(pb.x,deep,pb.z),Vector3(pc.x,deep,pc.z)])
-			if RuinKit.hull_thickness(hull) >= RuinKit.HULL_THIN: solid.append(hull)
-		var normal := (pb-pa).cross(pc-pa).normalized()
-		if normal.y < 0.0:
-			normal = -normal
-			var swap := pb
-			pb = pc
-			pc = swap
-		var tone := ground_tone(pal,patch,mid,normal,rng.randf_range(-0.035,0.035))
-		for p: Vector3 in [pa,pc,pb]:
-			v.append(p-Vector3(0.0,0.02,0.0))
-			n.append(normal)
-			c.append(tone)
-			uv.append(Vector2(0.0,1.0))
-			uv2.append(Vector2(0.5,p.y))
-	var arrays := []
-	arrays.resize(Mesh.ARRAY_MAX)
-	arrays[Mesh.ARRAY_VERTEX] = v
-	arrays[Mesh.ARRAY_NORMAL] = n
-	arrays[Mesh.ARRAY_COLOR] = c
-	arrays[Mesh.ARRAY_TEX_UV] = uv
-	arrays[Mesh.ARRAY_TEX_UV2] = uv2
-	var ground_mesh := ArrayMesh.new()
-	ground_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
-	ground_mesh.surface_set_material(0,ground_material())
-	var drawn_top := MeshInstance3D.new()
-	drawn_top.name = "Ground"
-	drawn_top.mesh = ground_mesh
-	node.add_child(drawn_top)
-	# The sides: rings under the rim, the turf's lip, the earth, then the
-	# rock tapering to a keel in ledges, a spur or two hanging lower.
-	v = PackedVector3Array()
-	n = PackedVector3Array()
-	c = PackedColorArray()
-	var count := ring.size()
-	var outward: Array[Vector2] = []
-	var ccw := _area(ring) > 0.0
-	for i in range(count):
-		var tangent: Vector2 = (ring[(i+1)%count]-ring[(i-1+count)%count]).normalized()
-		outward.append(Vector2(tangent.y,-tangent.x) if ccw else Vector2(-tangent.y,tangent.x))
-	var rims: Array = []
-	var top_ring: Array[Vector3] = []
-	for i in range(count):
-		top_ring.append(Vector3(ring[i].x,float(flat.call(ring[i].x,ring[i].y))-0.02,ring[i].y))
-	rims.append(top_ring)
-	# Each ring: [inset toward the middle, drop under the top, push out, stride].
-	var specs := [[0.0,0.45,0.28,1],[0.0,2.1,0.35,1],[0.1,depth*0.22,0.0,2],[0.32,depth*0.48,0.0,4],[0.6,depth*0.74,0.0,8],[0.82,depth*0.92,0.0,16]]
-	var spurs := {}
-	for i in range(3): spurs[rng.randi_range(0,maxi(count/16-1,0))] = rng.randf_range(0.15,0.3)*depth
-	for spec: Array in specs:
-		var stride: int = spec[3]
-		if count/stride < 4: break
-		var r: Array[Vector3] = []
-		for i in range(0,count,stride):
-			var p := ring[i]
-			var inset: float = float(spec[0])+rng.randf_range(-0.05,0.05)*float(spec[0] > 0.0)
-			var q := p.lerp(centre,clampf(inset,0.0,0.95))+outward[i]*float(spec[2])*rng.randf_range(0.3,1.2)
-			var drop: float = float(spec[1])*rng.randf_range(0.85,1.15)
-			if stride == 16 and spurs.has(i/16): drop += spurs[i/16]
-			r.append(Vector3(q.x,top-drop,q.y))
-		rims.append(r)
-	var keel := Vector3(centre.x+rng.randf_range(-2.0,2.0),top-depth,centre.y+rng.randf_range(-2.0,2.0))
-	for k in range(rims.size()-1):
-		var upper: Array = rims[k]
-		var lower: Array = rims[k+1]
-		var ratio := upper.size()/lower.size()
-		for j in range(lower.size()):
-			var l0: Vector3 = lower[j]
-			var l1: Vector3 = lower[(j+1)%lower.size()]
-			for s in range(ratio):
-				var u0: Vector3 = upper[j*ratio+s]
-				var u1: Vector3 = upper[(j*ratio+s+1)%upper.size()]
-				_tri(v,n,c,[u0,l0,u1],_side_tone(rng,(u0+u1+l0)/3.0,k),_out(centre,(u0+u1+l0)/3.0))
-			var ue: Vector3 = upper[((j+1)*ratio)%upper.size()]
-			_tri(v,n,c,[ue,l0,l1],_side_tone(rng,(ue+l0+l1)/3.0,k),_out(centre,(ue+l0+l1)/3.0))
-	var last: Array = rims[rims.size()-1]
-	for j in range(last.size()):
-		var a: Vector3 = last[j]
-		var b2: Vector3 = last[(j+1)%last.size()]
-		var mid := (a+b2+keel)/3.0
-		_tri(v,n,c,[a,keel,b2],_side_tone(rng,mid,9),_out(centre,mid)+Vector3.DOWN)
-	arrays = []
-	arrays.resize(Mesh.ARRAY_MAX)
-	arrays[Mesh.ARRAY_VERTEX] = v
-	arrays[Mesh.ARRAY_NORMAL] = n
-	arrays[Mesh.ARRAY_COLOR] = c
-	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
-	var drawn := MeshInstance3D.new()
-	drawn.name = "Mesh"
-	drawn.mesh = mesh
-	drawn.material_override = RuinKit.materials().stone
-	node.add_child(drawn)
-	var body := StaticBody3D.new()
-	body.name = "Body"
-	var shape := ConcavePolygonShape3D.new()
-	shape.set_faces(faces)
-	shape.backface_collision = true
-	var holder := CollisionShape3D.new()
-	holder.shape = shape
-	body.add_child(holder)
-	for hull: PackedVector3Array in solid:
-		var prism := ConvexPolygonShape3D.new()
-		prism.points = hull
-		var held := CollisionShape3D.new()
-		held.shape = prism
-		body.add_child(held)
-	node.add_child(body)
-	node.set_meta("outline",poly)
-	return node
-
-static func _near_cliff(near: Dictionary, p: Vector2) -> bool:
-	var k := Vector2i(floori(p.x/0.5),floori(p.y/0.5))
-	for dx in range(-1,2):
-		for dz in range(-1,2):
-			if near.has(k+Vector2i(dx,dz)): return true
-	return false
+		var box := Rect2(HILL.x-23.0,HILL.y-23.0,EAST_FACE+1.0-(HILL.x-23.0),46.0)
+		# Probed off the round numbers (the isle's axis is z 0): no row of
+		# points on a line a ray is likely cast along.
+		spec.cliffs = Rect2(HILL.x-23.0+0.137,HILL.y-23.0+0.213,EAST_FACE+1.0-(HILL.x-23.0),46.0)
+		spec.cliffs_nudge = Vector2.ZERO
+		spec.walled = func(e: Vector2) -> bool: return _walled(e)
+		spec.fine_box = box
+		spec.fine = HILL_CELL
+	return KitLand.island(spec)
 
 static func _perimeter(outline: Array) -> float:
-	var total := 0.0
-	for i in range(outline.size()): total += (outline[i] as Vector2).distance_to(outline[(i+1)%outline.size()])
-	return total
+	return KitLand.perimeter(outline)
 
 ## A small islet's outline: a wandering ring `r` round `centre`.
 static func blob(centre: Vector2, r: float, seed_value: int) -> Array:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = seed_value
-	var out: Array = []
-	for k in range(11):
-		var a := k*TAU/11.0+rng.randf_range(-0.12,0.12)
-		out.append(centre+Vector2(cos(a),sin(a))*r*rng.randf_range(0.78,1.12))
-	return out
-
-static func _side_tone(rng: RandomNumberGenerator, at: Vector3, ring: int) -> Color:
-	if ring == 0: return EARTH*rng.randf_range(0.85,1.1)
-	var band := 0.9+0.12*sin(at.y*1.7)+0.05*sin(at.y*0.53+1.0)
-	var c := ROCK.lerp(EARTH,0.25 if ring == 1 else 0.0)
-	return c*band*rng.randf_range(0.88,1.1)
-
-static func _out(centre: Vector2, at: Vector3) -> Vector3:
-	return Vector3(at.x-centre.x,0.0,at.z-centre.y).normalized()
-
-## A triangle wound to face `toward`, flat shaded.
-static func _tri(v: PackedVector3Array, n: PackedVector3Array, c: PackedColorArray, t: Array, colour: Color, toward: Vector3) -> void:
-	var p0: Vector3 = t[0]
-	var p1: Vector3 = t[1]
-	var p2: Vector3 = t[2]
-	if (p1-p0).cross(p2-p0).dot(toward) > 0.0:
-		var swap := p1
-		p1 = p2
-		p2 = swap
-	var normal := (p2-p0).cross(p1-p0).normalized()
-	var linear := colour.srgb_to_linear()
-	for p: Vector3 in [p0,p1,p2]:
-		v.append(p)
-		n.append(normal)
-		c.append(linear)
+	return KitLand.blob(centre,r,seed_value)
 
 static func _area(ring: Array) -> float:
-	var s := 0.0
-	for i in range(ring.size()):
-		var a: Vector2 = ring[i]
-		var b: Vector2 = ring[(i+1)%ring.size()]
-		s += a.x*b.y-b.x*a.y
-	return s*0.5
+	return KitLand.area(ring)
 
 static func _edge_distance(p: Vector2, poly: PackedVector2Array) -> float:
-	var best := INF
-	for i in range(poly.size()):
-		var q := Geometry2D.get_closest_point_to_segment(p,poly[i],poly[(i+1)%poly.size()])
-		best = minf(best,p.distance_to(q))
-	return best
+	return KitLand.edge_distance(p,poly)
 
-## The outline resampled to `count` points evenly round it, each nudged
-## out or in a little, so its edge wanders.
 static func _resample(outline: Array, count: int, rng: RandomNumberGenerator) -> Array[Vector2]:
-	var total := 0.0
-	for i in range(outline.size()): total += (outline[i] as Vector2).distance_to(outline[(i+1)%outline.size()])
-	var out: Array[Vector2] = []
-	var step := total/count
-	var seg := 0
-	var into := 0.0
-	for k in range(count):
-		var want := step*k
-		while true:
-			var a: Vector2 = outline[seg%outline.size()]
-			var b: Vector2 = outline[(seg+1)%outline.size()]
-			var length := a.distance_to(b)
-			if want-into <= length or seg >= outline.size()*2:
-				var p := a.lerp(b,clampf((want-into)/maxf(length,0.001),0.0,1.0))
-				var normal := Vector2(b.y-a.y,a.x-b.x).normalized()
-				out.append(p+normal*rng.randf_range(-0.35,0.35))
-				break
-			into += length
-			seg += 1
-	return out
+	return KitLand.resample(outline,count,rng)
 
 # --- The growth on the islands ---------------------------------------------------------
 
-## Grass tufts in drifts over the turf, thinning toward the ruins' feet;
-## `avoid` rects (world) kept bare. Drawn only.
-static func growth(seed_value: int, outlines: Array, avoid: Array[Rect2]) -> Node3D:
-	var b := Build.new(seed_value,0.5,"Growth")
-	var rng := b.rng
-	var noise := FastNoiseLite.new()
-	noise.seed = seed_value+3
-	noise.frequency = 0.09
-	for entry: Variant in outlines:
-		# An outline over the island's ground, or [outline, its flat top].
-		var outline: PackedVector2Array = entry if entry is PackedVector2Array else entry[0]
-		var flat_top: float = NAN if entry is PackedVector2Array else float(entry[1])
-		var box := Rect2(outline[0],Vector2.ZERO)
-		for p in outline: box = box.expand(p)
-		var tries := int(box.get_area()*0.6)
-		for i in range(tries):
-			var p := Vector2(rng.randf_range(box.position.x,box.end.x),rng.randf_range(box.position.y,box.end.y))
-			if not Geometry2D.is_point_in_polygon(p,outline): continue
-			if noise.get_noise_2d(p.x,p.y) < 0.05+rng.randf_range(-0.15,0.15): continue
-			var bare := false
-			for r in avoid:
-				if r.has_point(p):
-					bare = true
-					break
-			if bare: continue
-			var y := flat_top
-			if is_nan(y):
-				# Never on a cliff's face nor near its lip, nor down a path's middle.
-				y = ground(p.x,p.y)
-				var steep := false
-				for d: Vector2 in [Vector2(0.6,0.0),Vector2(-0.6,0.0),Vector2(0.0,0.6),Vector2(0.0,-0.6)]:
-					if absf(ground(p.x+d.x,p.y+d.y)-y) > 0.2: steep = true
-				if steep or path_wear(p) > 0.55: continue
-			var edge := _edge_distance(p,outline)
-			var h := rng.randf_range(0.28,0.5)*(1.25 if edge < 2.0 else 1.0)
-			_tuft(b,Vector3(p.x,y,p.y),h,rng.randi_range(4,7))
-			if rng.randf() < 0.16: _flower(b,Vector3(p.x,y,p.y),h)
-	var node := b.finish()
-	node.get_node("Body").free()
-	return node
-
-## A tuft as the kit's (Build `tuft`), in the turf's living greens: blades
-## a shade lighter than the ground, so a drift reads as grass, not shards.
 const BLADES := [Color("7d9a52"),Color("6f8b49"),Color("88a35b"),Color("75914c"),Color("94ab62")]
 
 static func _tuft(b: Build, at: Vector3, height: float, count: int) -> void:
@@ -1276,13 +883,14 @@ static func platform(name: String) -> Dictionary:
 		if p.name == name: return p
 	return {}
 
-## The floating stones: each drawn worn (laid lean, its top kept true) and
+## The floating stones (`stones`, platforms as `platforms` lays them; this
+## isle's own if none): each drawn worn (laid lean, its top kept true) and
 ## walked on a clean, true box (RuinKit `_walk_hull`, as the kit's stairs
 ## are), a clod of earth and rock hanging under the torn-up ones, ivy
 ## trailing.
-static func floating_stones(seed_value: int) -> Node3D:
+static func floating_stones(seed_value: int, stones: Array = []) -> Node3D:
 	var b := Build.new(seed_value,0.55,"FloatingStones")
-	for p: Dictionary in platforms():
+	for p: Dictionary in (stones if not stones.is_empty() else platforms()):
 		var size: Vector3 = p.size
 		var half := size*0.5
 		var at: Vector3 = p.at

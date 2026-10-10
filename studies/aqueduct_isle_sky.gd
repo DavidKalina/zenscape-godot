@@ -602,9 +602,18 @@ func _build_tokens() -> void:
 	collectibles._trails_laid = true
 	add_child(collectibles)
 	var lines: Array = []
-	for t: Array in TOKENS:
+	for t: Array in plane_tokens():
 		lines.append(Lines.line(t[0],t[1],t[2],PackedVector3Array(t[3]),TOKEN_SEED))
-	collectibles.add_source("aqueduct",lines)
+	collectibles.add_source(token_source(),lines)
+
+## The plane's tokens: [line id, category, kind, points (world)]. A kit
+## isle's sky (a subclass) answers with its own.
+func plane_tokens() -> Array:
+	return TOKENS
+
+## The tokens' source name on the collectibles.
+func token_source() -> String:
+	return "aqueduct"
 
 # --- Each frame ---------------------------------------------------------------------
 

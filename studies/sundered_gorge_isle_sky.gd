@@ -18,13 +18,8 @@ const GORGE_TOKENS := [
 	["sg:keel","under","keel",[Vector3(88.0,2.0,-22.0)]],
 ]
 
-func _build_tokens() -> void:
-	collectibles = SkyCollectibles.new()
-	collectibles.cells = SkyCells.new()
-	collectibles.seed_value = TOKEN_SEED
-	collectibles._trails_laid = true
-	add_child(collectibles)
-	var lines: Array = []
-	for t: Array in GORGE_TOKENS:
-		lines.append(Lines.line(t[0],t[1],t[2],PackedVector3Array(t[3]),TOKEN_SEED))
-	collectibles.add_source("sundered_gorge",lines)
+func plane_tokens() -> Array:
+	return GORGE_TOKENS
+
+func token_source() -> String:
+	return "sundered_gorge"

@@ -63,6 +63,8 @@ const RADII := {"hero":8.2,"low":4.6,"gable":4.0,"fin_high":4.6,"fin_low":4.4,"n
 const ROCK := Color("675b50")
 ## The spires' rock: the isle's, drawn a little toward a cool basalt grey.
 const BASALT := Color("4d4945")
+## The cut stairs' rock corbels: the islets' dark basalt, in the kit's stone.
+const CORBEL_ROCK := Color("4b4d53")
 const EARTH := Color("6a4f37")
 const CRAG_SHADE := 0.7
 ## The drift's bow out from the hero (m) and the air between its stones.
@@ -262,9 +264,8 @@ const RING := 20
 static func spire_rock(s: Dictionary) -> Node3D:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = int(s.seed)*13+7
-	var v := PackedVector3Array()
-	var n := PackedVector3Array()
-	var col := PackedColorArray()
+	var rock := KitLook.RockMesh.new()
+	var turf := KitLook.GroundMesh.new()
 	var body := StaticBody3D.new()
 	body.name = "Body"
 	var c: Vector2 = s.c
@@ -272,8 +273,12 @@ static func spire_rock(s: Dictionary) -> Node3D:
 	var beds: Array = []
 	if s.has("keel"): beds.append_array(s.keel)
 	beds.append_array(s.beds)
-	var pal := AqArt.palette()
+	var pal := KitLook.palette()
 	var grass: Array = pal.grass
+	var rim := float(s.top)
+	var patch := FastNoiseLite.new()
+	patch.seed = int(s.seed)+5
+	patch.frequency = 0.4
 	var last_ring: Array = []
 	for k in range(beds.size()):
 		var bed: Array = beds[k]
@@ -302,7 +307,8 @@ static func spire_rock(s: Dictionary) -> Node3D:
 			rings.append(ring)
 		var lo: Array = rings[0]
 		var hi: Array = rings[rows]
-		var band := 0.88+0.14*sin(float(bed[0])*1.3)+rng.randf_range(-0.08,0.08)
+		# (A bed's tone once; the rock's beds are the look's own now.)
+		rng.randf_range(-0.08,0.08)
 		for e in range(rows):
 			var r0: Array = rings[e]
 			var r1: Array = rings[e+1]
@@ -310,9 +316,10 @@ static func spire_rock(s: Dictionary) -> Node3D:
 				var j := (i+1)%RING
 				var mid: Vector3 = (r0[i]+r1[j])*0.5
 				var out := Vector3(mid.x-c.x,0.0,mid.z-c.y).normalized()
-				AqArt._tri(v,n,col,[r0[i],r0[j],r1[j]],_rock_tone(rng,mid,band),out)
-				AqArt._tri(v,n,col,[r0[i],r1[j],r1[i]],_rock_tone(rng,mid,band),out)
-		# The step from the bed under: a ledge where this one is narrower.
+				rock.add([r0[i],r0[j],r1[j]],rim,out,_shade(rng))
+				rock.add([r0[i],r1[j],r1[i]],rim,out,_shade(rng))
+		# The step from the bed under: a ledge where this one is narrower,
+		# turf where it is wide.
 		if not last_ring.is_empty():
 			for i in range(RING):
 				var j := (i+1)%RING
@@ -320,19 +327,23 @@ static func spire_rock(s: Dictionary) -> Node3D:
 				var here: Vector3 = lo[i]
 				var wider := Vector2(under.x-c.x,under.z-c.y).length()-Vector2(here.x-c.x,here.z-c.y).length()
 				var up := (Vector3.UP if wider > 0.0 else Vector3.DOWN)+Vector3(here.x-c.x,0.0,here.z-c.y).normalized()*0.6
-				var tone := _rock_tone(rng,here,band*0.95)
-				if wider > 0.45 and rng.randf() < 0.65: tone = (grass[rng.randi()%grass.size()] as Color).linear_to_srgb()*rng.randf_range(0.85,1.0)
+				var shade := _shade(rng)
+				if wider > 0.45 and rng.randf() < 0.65:
+					rng.randi()
+					var green := KitLook.ground_tone(pal,patch,Vector2(here.x,here.z),(rng.randf_range(0.85,1.0)-0.925)*0.4)
+					turf.add(last_ring[i],last_ring[j],lo[j],green)
+					turf.add(last_ring[i],lo[j],lo[i],green)
+					continue
 				# Both ways: where the beds' rings cross, the step is a sliver
-				# seen from either side.
-				for way: Vector3 in [up,-up]:
-					AqArt._tri(v,n,col,[last_ring[i],last_ring[j],lo[j]],tone,way)
-					AqArt._tri(v,n,col,[last_ring[i],lo[j],lo[i]],tone,way)
+				# seen from either side (the rock's material draws both).
+				rock.add([last_ring[i],last_ring[j],lo[j]],rim,up,shade)
+				rock.add([last_ring[i],lo[j],lo[i]],rim,up,shade)
 		# The first bed's foot (a free stack's keel point).
 		if k == 0:
 			var point := c3+Vector3(rng.randf_range(-0.5,0.5),float(bed[0])-(1.5 if s.free else 0.0),rng.randf_range(-0.5,0.5))
 			for i in range(RING):
 				var j := (i+1)%RING
-				AqArt._tri(v,n,col,[lo[i],point,lo[j]],_rock_tone(rng,point,0.85),Vector3.DOWN)
+				rock.add([lo[i],point,lo[j]],rim,Vector3.DOWN,_shade(rng))
 		last_ring = hi
 		var hull := PackedVector3Array()
 		for ring: Array in rings:
@@ -342,26 +353,18 @@ static func spire_rock(s: Dictionary) -> Node3D:
 		var holder := CollisionShape3D.new()
 		holder.shape = shape
 		body.add_child(holder)
-	var arrays := []
-	arrays.resize(Mesh.ARRAY_MAX)
-	arrays[Mesh.ARRAY_VERTEX] = v
-	arrays[Mesh.ARRAY_NORMAL] = n
-	arrays[Mesh.ARRAY_COLOR] = col
-	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
 	var node := Node3D.new()
 	node.name = "Spire_"+str(s.name)
-	var drawn := MeshInstance3D.new()
-	drawn.name = "Mesh"
-	drawn.mesh = mesh
-	drawn.material_override = RuinKit.materials().stone
-	node.add_child(drawn)
+	node.add_child(rock.node("Mesh"))
+	var ledges := turf.node("Ledges")
+	if ledges != null: node.add_child(ledges)
 	node.add_child(body)
 	return node
 
-static func _rock_tone(rng: RandomNumberGenerator, at: Vector3, band: float) -> Color:
-	var b := band*(0.9+0.1*sin(at.y*2.1))*lerpf(0.8,1.0,clampf((at.y-TOP+10.0)/40.0,0.0,1.0))
-	return ROCK.lerp(BASALT,0.7)*b*rng.randf_range(0.84,1.12)
+## A rock face's own shade (about 1), one draw of `rng` as the spire's
+## faces always took.
+static func _shade(rng: RandomNumberGenerator) -> float:
+	return 1.0+(rng.randf_range(0.84,1.12)-0.98)*0.6
 
 ## A spire's turf top (the ground look, collided as one trimesh).
 static func top_turf(s: Dictionary) -> Node3D:
@@ -477,7 +480,7 @@ static func stair_node(stair: Dictionary, seed_value: int) -> Node3D:
 			b.solid(sector_planes(c,part,y-0.34,y,r_in,r_out-0.02),Transform3D.IDENTITY,RuinKit._stone(b,1.1),false,true,[],-1,0.5,false)
 			b.lean = false
 			# The rock it is cut from, drawing in under it.
-			b.solid(sector_planes(c,part,y-2.6,y-0.34,r_in,r_out,-1.4),Transform3D.IDENTITY,ROCK.lerp(BASALT,0.7)*b.rng.randf_range(0.8,0.96),false,true,[],-1,1.2,false)
+			b.solid(sector_planes(c,part,y-2.6,y-0.34,r_in,r_out,-1.4),Transform3D.IDENTITY,CORBEL_ROCK*b.rng.randf_range(0.8,0.96),false,true,[],-1,1.2,false)
 			# Walked on a clean sector a little wider than its own, so the seam
 			# with the next is never a gap a ray slips through.
 			var walked: Dictionary = part.duplicate()
@@ -495,98 +498,15 @@ static func stair_node(stair: Dictionary, seed_value: int) -> Node3D:
 static func turf(outline: PackedVector2Array, height: Callable, seed_value: int, cell: float) -> Node3D:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value
-	var points := PackedVector2Array(outline)
-	var heights := PackedFloat32Array()
-	for p in outline: heights.append(height.call(p.x,p.y))
-	var box := Rect2(outline[0],Vector2.ZERO)
-	for p in outline: box = box.expand(p)
-	var gx := box.position.x+cell*0.5
-	while gx < box.end.x:
-		var gz := box.position.y+cell*0.5
-		while gz < box.end.y:
-			var p := Vector2(gx+rng.randf_range(-0.3,0.3)*cell,gz+rng.randf_range(-0.3,0.3)*cell)
-			gz += cell
-			if not Geometry2D.is_point_in_polygon(p,outline) or AqArt._edge_distance(p,outline) <= cell*0.45: continue
-			points.append(p)
-			heights.append(height.call(p.x,p.y))
-		gx += cell
-	var tris := Geometry2D.triangulate_delaunay(points)
-	var pal := AqArt.palette()
-	var patch := FastNoiseLite.new()
-	patch.seed = seed_value+5
-	patch.frequency = 0.4
-	var v := PackedVector3Array()
-	var n := PackedVector3Array()
-	var c := PackedColorArray()
-	var uv := PackedVector2Array()
-	var uv2 := PackedVector2Array()
-	var faces := PackedVector3Array()
-	for t in range(0,tris.size(),3):
-		var a := points[tris[t]]
-		var bb := points[tris[t+1]]
-		var cc := points[tris[t+2]]
-		var mid := (a+bb+cc)/3.0
-		if not Geometry2D.is_point_in_polygon(mid,outline): continue
-		var pa := Vector3(a.x,heights[tris[t]],a.y)
-		var pb := Vector3(bb.x,heights[tris[t+1]],bb.y)
-		var pc := Vector3(cc.x,heights[tris[t+2]],cc.y)
-		faces.append_array([pa,pb,pc])
-		var normal := (pb-pa).cross(pc-pa).normalized()
-		if normal.y < 0.0:
-			normal = -normal
-			var swap := pb
-			pb = pc
-			pc = swap
-		var tone := ground_tone(pal,patch,mid,normal,rng.randf_range(-0.035,0.035))
-		for p: Vector3 in [pa,pc,pb]:
-			v.append(p-Vector3(0.0,0.02,0.0))
-			n.append(normal)
-			c.append(tone)
-			uv.append(Vector2(0.0,1.0))
-			uv2.append(Vector2(0.5,p.y))
-	var arrays := []
-	arrays.resize(Mesh.ARRAY_MAX)
-	arrays[Mesh.ARRAY_VERTEX] = v
-	arrays[Mesh.ARRAY_NORMAL] = n
-	arrays[Mesh.ARRAY_COLOR] = c
-	arrays[Mesh.ARRAY_TEX_UV] = uv
-	arrays[Mesh.ARRAY_TEX_UV2] = uv2
-	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
-	mesh.surface_set_material(0,AqArt.ground_material())
+	var g := KitLand.Gather.new(Array(outline),height)
+	g.grid(cell,rng,height,[],true,false)
+	var built := KitLand.surface(g.points,g.heights,g.poly,rng,KitLook.turf(seed_value,func(p: Vector2) -> float: return path_wear(p)))
 	var node := Node3D.new()
 	node.name = "Turf"
-	var drawn := MeshInstance3D.new()
-	drawn.name = "Ground"
-	drawn.mesh = mesh
-	node.add_child(drawn)
-	var body := StaticBody3D.new()
-	body.name = "Body"
-	var shape := ConcavePolygonShape3D.new()
-	shape.set_faces(faces)
-	shape.backface_collision = true
-	var holder := CollisionShape3D.new()
-	holder.shape = shape
-	body.add_child(holder)
-	node.add_child(body)
+	KitLand.draw(node,built)
+	KitLand.bodies(node,built.faces,built.solid)
 	node.set_meta("outline",outline)
 	return node
-
-## A ground face's colour (linear), as the aqueduct isle's (AqArt
-## `ground_tone`), worn by this isle's own paths.
-static func ground_tone(pal: Dictionary, patch: FastNoiseLite, at: Vector2, normal: Vector3, shimmer: float) -> Color:
-	var grass: Array = pal.grass
-	var n := patch.get_noise_2d(at.x,at.y)*0.5+0.5
-	var tone: Color = grass[1 if n > 0.55 else (2 if n < 0.42 else 0)]
-	var slope := sqrt(maxf(0.0,1.0-normal.y*normal.y))/maxf(normal.y,0.001)
-	if slope > float(pal.rock_slope):
-		var rock: Array = pal.rock
-		tone = rock[0 if patch.get_noise_2d(at.x+71.0,at.y) > 0.0 else rock.size()-1]
-		tone *= CRAG_SHADE+0.12*patch.get_noise_2d(at.x*0.7-13.0,at.y*0.7)
-	else:
-		var worn := path_wear(at)
-		if worn > 0.0: tone = tone.lerp((pal.gravel as Color).lerp(EARTH.srgb_to_linear(),0.45)*lerpf(0.85,1.0,n),worn*0.8)
-	return Color(tone.r+shimmer,tone.g+shimmer,tone.b+shimmer,1.0)
 
 # --- The isle -------------------------------------------------------------------------
 
@@ -648,63 +568,10 @@ static func island(seed_value: int, depth := 24.0) -> Node3D:
 	var poly := PackedVector2Array(ring)
 	var node := turf(poly,func(x: float, z: float) -> float: return ground(x,z),seed_value,2.0)
 	node.name = "Isle"
-	var centre := Vector2.ZERO
-	for p in ring: centre += p
-	centre /= ring.size()
-	var v := PackedVector3Array()
-	var n := PackedVector3Array()
-	var c := PackedColorArray()
-	var count := ring.size()
-	var outward: Array[Vector2] = []
-	var ccw := AqArt._area(ring) > 0.0
-	for i in range(count):
-		var tangent: Vector2 = (ring[(i+1)%count]-ring[(i-1+count)%count]).normalized()
-		outward.append(Vector2(tangent.y,-tangent.x) if ccw else Vector2(-tangent.y,tangent.x))
-	var rims: Array = []
-	var top_ring: Array[Vector3] = []
-	for i in range(count): top_ring.append(Vector3(ring[i].x,ground(ring[i].x,ring[i].y)-0.02,ring[i].y))
-	rims.append(top_ring)
-	var specs := [[0.0,0.45,0.28,1],[0.0,2.1,0.35,1],[0.1,depth*0.22,0.0,2],[0.32,depth*0.48,0.0,4],[0.6,depth*0.74,0.0,8],[0.82,depth*0.92,0.0,16]]
-	for spec: Array in specs:
-		var stride: int = spec[3]
-		var r: Array[Vector3] = []
-		for i in range(0,count,stride):
-			var p := ring[i]
-			var q := p.lerp(centre,clampf(float(spec[0])+rng.randf_range(-0.05,0.05)*float(float(spec[0]) > 0.0),0.0,0.95))+outward[i]*float(spec[2])*rng.randf_range(0.3,1.2)
-			r.append(Vector3(q.x,TOP-float(spec[1])*rng.randf_range(0.85,1.15),q.y))
-		rims.append(r)
-	var keel := Vector3(centre.x+rng.randf_range(-2.0,2.0),TOP-depth,centre.y+rng.randf_range(-2.0,2.0))
-	for k in range(rims.size()-1):
-		var upper: Array = rims[k]
-		var lower: Array = rims[k+1]
-		var ratio := upper.size()/lower.size()
-		for j in range(lower.size()):
-			var l0: Vector3 = lower[j]
-			var l1: Vector3 = lower[(j+1)%lower.size()]
-			for s in range(ratio):
-				var u0: Vector3 = upper[j*ratio+s]
-				var u1: Vector3 = upper[(j*ratio+s+1)%upper.size()]
-				AqArt._tri(v,n,c,[u0,l0,u1],AqArt._side_tone(rng,(u0+u1+l0)/3.0,k),AqArt._out(centre,(u0+u1+l0)/3.0))
-			var ue: Vector3 = upper[((j+1)*ratio)%upper.size()]
-			AqArt._tri(v,n,c,[ue,l0,l1],AqArt._side_tone(rng,(ue+l0+l1)/3.0,k),AqArt._out(centre,(ue+l0+l1)/3.0))
-	var last: Array = rims[rims.size()-1]
-	for j in range(last.size()):
-		var a: Vector3 = last[j]
-		var b2: Vector3 = last[(j+1)%last.size()]
-		var mid := (a+b2+keel)/3.0
-		AqArt._tri(v,n,c,[a,keel,b2],AqArt._side_tone(rng,mid,9),AqArt._out(centre,mid)+Vector3.DOWN)
-	var arrays := []
-	arrays.resize(Mesh.ARRAY_MAX)
-	arrays[Mesh.ARRAY_VERTEX] = v
-	arrays[Mesh.ARRAY_NORMAL] = n
-	arrays[Mesh.ARRAY_COLOR] = c
-	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
-	var drawn := MeshInstance3D.new()
-	drawn.name = "Mesh"
-	drawn.mesh = mesh
-	drawn.material_override = RuinKit.materials().stone
-	node.add_child(drawn)
+	var rims := PackedFloat32Array()
+	for p in ring: rims.append(ground(p.x,p.y))
+	var sides := KitLand.ring_sides(ring,rims,KitLand.centre_of(ring),TOP,depth,rng,false)
+	node.add_child(sides.node("Mesh"))
 	return node
 
 # --- Paths ----------------------------------------------------------------------------

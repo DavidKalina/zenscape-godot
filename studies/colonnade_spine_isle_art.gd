@@ -282,7 +282,6 @@ static func creases() -> PackedVector2Array:
 ## face (a ray started under a lip finds its top; a cliff is never a pit);
 ## its sides of hanging rock down from the rim to a keel along the axis.
 const CELL := 1.05
-const PRISMS_A_BODY := 2000
 static func spine_island(seed_value: int) -> Node3D:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value
@@ -313,101 +312,27 @@ static func spine_island(seed_value: int) -> Node3D:
 			add.call(Vector2(gx+rng.randf_range(-0.25,0.25)*CELL,gz+rng.randf_range(-0.25,0.25)*CELL))
 			gz += CELL
 		gx += CELL
-	var tris := Geometry2D.triangulate_delaunay(points)
-	var pal := Art.palette()
-	var patch := FastNoiseLite.new()
-	patch.seed = seed_value+5
-	patch.frequency = 0.4
-	var v := PackedVector3Array()
-	var n := PackedVector3Array()
-	var c := PackedColorArray()
-	var uv := PackedVector2Array()
-	var uv2 := PackedVector2Array()
-	var faces := PackedVector3Array()
-	var solid: Array[PackedVector3Array] = []
-	for t in range(0,tris.size(),3):
-		var a := points[tris[t]]
-		var bb := points[tris[t+1]]
-		var cc := points[tris[t+2]]
-		var mid := (a+bb+cc)/3.0
-		if not Geometry2D.is_point_in_polygon(mid,poly): continue
-		var pa := Vector3(a.x,heights[tris[t]],a.y)
-		var pb := Vector3(bb.x,heights[tris[t+1]],bb.y)
-		var pc := Vector3(cc.x,heights[tris[t+2]],cc.y)
-		faces.append_array([pa,pb,pc])
-		var normal := (pb-pa).cross(pc-pa).normalized()
-		if normal.y < 0.0:
-			normal = -normal
-			var swap := pb
-			pb = pc
-			pc = swap
-		# A steep face: the ground solid under it.
-		if normal.y < 0.8:
-			var deep := minf(pa.y,minf(pb.y,pc.y))-1.5
-			var hull := PackedVector3Array([pa,pb,pc,Vector3(pa.x,deep,pa.z),Vector3(pb.x,deep,pb.z),Vector3(pc.x,deep,pc.z)])
-			if RuinKit.hull_thickness(hull) >= RuinKit.HULL_THIN: solid.append(hull)
-		# A face on the flanks is rock however its facets tilt (no stray
-		# grass speckled down a crag).
-		var look := normal
-		if normal.y > 0.3 and profile(mid.x,mid.y-zc(mid.x))[1] == "flank":
-			look = Vector3(0.93,0.36,0.0)
-		var tone := Art.ground_tone(pal,patch,mid,look,rng.randf_range(-0.035,0.035))
-		for p: Vector3 in [pa,pc,pb]:
-			v.append(p-Vector3(0.0,0.02,0.0))
-			n.append(normal)
-			c.append(tone)
-			uv.append(Vector2(0.0,1.0))
-			uv2.append(Vector2(0.5,p.y))
+	# A face on the flanks is rock however its facets tilt (no stray grass
+	# speckled down a crag).
+	var rocky := func(mid: Vector2, normal: Vector3) -> bool:
+		if normal.y > 0.3 and profile(mid.x,mid.y-zc(mid.x))[1] == "flank": return true
+		return KitLook.is_rock(normal)
+	var built := KitLand.surface(points,heights,poly,rng,KitLook.turf(seed_value,KitLand.wear_of(paths())),rocky,PackedByteArray(),0.8)
 	var node := Node3D.new()
 	node.name = "Spine"
-	var arrays := []
-	arrays.resize(Mesh.ARRAY_MAX)
-	arrays[Mesh.ARRAY_VERTEX] = v
-	arrays[Mesh.ARRAY_NORMAL] = n
-	arrays[Mesh.ARRAY_COLOR] = c
-	arrays[Mesh.ARRAY_TEX_UV] = uv
-	arrays[Mesh.ARRAY_TEX_UV2] = uv2
-	var ground_mesh := ArrayMesh.new()
-	ground_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
-	ground_mesh.surface_set_material(0,Art.ground_material())
-	var drawn_top := MeshInstance3D.new()
-	drawn_top.name = "Ground"
-	drawn_top.mesh = ground_mesh
-	node.add_child(drawn_top)
+	KitLand.draw(node,built)
 	node.add_child(_sides(ring,rng))
-	var body := StaticBody3D.new()
-	body.name = "Body"
-	var shape := ConcavePolygonShape3D.new()
-	shape.set_faces(faces)
-	shape.backface_collision = true
-	var holder := CollisionShape3D.new()
-	holder.shape = shape
-	body.add_child(holder)
-	node.add_child(body)
-	# The prisms in bodies of their own, PRISMS_A_BODY each (a body's
-	# compound runs out of sub-shape ids past a few thousand).
-	var rock: StaticBody3D = null
-	for i in range(solid.size()):
-		if i%PRISMS_A_BODY == 0:
-			rock = StaticBody3D.new()
-			rock.name = "Rock%d" % (i/PRISMS_A_BODY)
-			node.add_child(rock)
-		var prism := ConvexPolygonShape3D.new()
-		prism.points = solid[i]
-		var held := CollisionShape3D.new()
-		held.shape = prism
-		rock.add_child(held)
+	# The prisms in bodies of their own (a body's compound runs out of
+	# sub-shape ids past a few thousand).
+	KitLand.bodies(node,built.faces,built.solid,false)
 	node.set_meta("outline",poly)
-	node.set_meta("prisms",solid.size())
+	node.set_meta("prisms",(built.solid as Array).size())
 	return node
 
 ## The spine's sides: rings from the rim down and in toward the axis, the
 ## rock faceted (pushed in and out), a spur hanging lower here and there,
 ## closed under the last ring along a keel under the axis.
 static func _sides(ring: Array[Vector2], rng: RandomNumberGenerator) -> MeshInstance3D:
-	var v := PackedVector3Array()
-	var n := PackedVector3Array()
-	var c := PackedColorArray()
 	var count := ring.size()
 	# [toward the axis, drop (a share of rim to keel), push out, stride].
 	var specs := [[0.0,0.0,0.0,1],[0.04,0.05,0.35,1],[0.14,0.14,0.4,1],[0.32,0.32,0.0,2],[0.55,0.55,0.0,4],[0.78,0.78,0.0,8],[0.93,0.95,0.0,8]]
@@ -430,9 +355,14 @@ static func _sides(ring: Array[Vector2], rng: RandomNumberGenerator) -> MeshInst
 			if stride == 8 and spurs.has(i/8): f = minf(f+float(spurs[i/8]),1.0)
 			r.append(Vector3(q.x,lerpf(rim_y,low,f),q.y))
 		rims.append(r)
+	var rock := KitLook.RockMesh.new()
+	var rim_y := PackedFloat32Array()
+	for p: Vector2 in ring: rim_y.append(ground(p.x,p.y))
 	for k in range(rims.size()-1):
 		var upper: Array = rims[k]
 		var lower: Array = rims[k+1]
+		var su: int = specs[k][3]
+		var sl: int = specs[k+1][3]
 		var ratio := upper.size()/lower.size()
 		for j in range(lower.size()):
 			var l0: Vector3 = lower[j]
@@ -441,10 +371,10 @@ static func _sides(ring: Array[Vector2], rng: RandomNumberGenerator) -> MeshInst
 				var u0: Vector3 = upper[j*ratio+s]
 				var u1: Vector3 = upper[(j*ratio+s+1)%upper.size()]
 				var m := (u0+u1+l0)/3.0
-				Art._tri(v,n,c,[u0,l0,u1],Art._side_tone(rng,m,k),_out(m))
+				rock.add([u0,l0,u1],rim_y[((j*ratio+s)*su)%count],_out(m),rng.randf_range(0.88,1.1))
 			var ue: Vector3 = upper[((j+1)*ratio)%upper.size()]
 			var m2 := (ue+l0+l1)/3.0
-			Art._tri(v,n,c,[ue,l0,l1],Art._side_tone(rng,m2,k),_out(m2))
+			rock.add([ue,l0,l1],rim_y[(j*sl)%count],_out(m2),rng.randf_range(0.88,1.1))
 	# The keel: the last ring closed along the axis.
 	var last: Array = rims[rims.size()-1]
 	var flat := PackedVector2Array()
@@ -455,19 +385,8 @@ static func _sides(ring: Array[Vector2], rng: RandomNumberGenerator) -> MeshInst
 		var b: Vector3 = last[idx[t+1]]
 		var e: Vector3 = last[idx[t+2]]
 		var m := (a+b+e)/3.0
-		Art._tri(v,n,c,[a,b,e],Art._side_tone(rng,m,9),Vector3.DOWN)
-	var arrays := []
-	arrays.resize(Mesh.ARRAY_MAX)
-	arrays[Mesh.ARRAY_VERTEX] = v
-	arrays[Mesh.ARRAY_NORMAL] = n
-	arrays[Mesh.ARRAY_COLOR] = c
-	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
-	var drawn := MeshInstance3D.new()
-	drawn.name = "Mesh"
-	drawn.mesh = mesh
-	drawn.material_override = RuinKit.materials().stone
-	return drawn
+		rock.add([a,b,e],ground(m.x,m.z),Vector3.DOWN,rng.randf_range(0.88,1.1))
+	return rock.node("Mesh")
 
 ## The axis's nearest point to `p` (world x, z), held in from its ends so
 ## the prow and the tail's tip have an outward way along it.
@@ -482,8 +401,7 @@ static func _out(at_point: Vector3) -> Vector3:
 # --- The worn paths -------------------------------------------------------------------
 
 ## The paths worn in the turf (world polylines): the way along the crest,
-## the north shelf, the south bench. Art `path_wear` reads them (its
-## static `_paths`, set while this isle stands: `use_paths`).
+## the north shelf, the south bench (KitLand `wear_of` wears them).
 static func paths() -> Array:
 	var way: Array = []
 	var x := 20.0
@@ -501,12 +419,6 @@ static func paths() -> Array:
 		bench.append(at(x,shelf_out(x,1.0)-SHELF_S_BAND*0.5))
 		x += 5.0
 	return [way,shelf,bench]
-
-static func use_paths() -> void:
-	Art._paths = paths()
-
-static func forget_paths() -> void:
-	Art._paths = []
 
 # --- The colonnade ---------------------------------------------------------------------
 
@@ -871,8 +783,8 @@ static func bridge_ends() -> Array:
 	var bench := bench_point(131.0)
 	return [[a1,b1],[edge("frag_5",bench,0.5),bench]]
 
-## The floating stones (Art `floating_stones` builds them from `platforms`,
-## set as its own while this isle stands: `use_platforms`): {name, at (its
+## The floating stones (Art `floating_stones` builds them from these):
+## {name, at (its
 ## top's middle), size, yaw, kind, chain}, laid evenly across each gap.
 static func platforms() -> Array:
 	var f1 := slab_at(slab("frag_1"))
@@ -900,12 +812,6 @@ static func platforms() -> Array:
 			out.append({"name":"%s_%d" % [c[0],k+1],"at":p+Vector3(0.0,0.12*(k%2),0.0),"size":Vector3(1.9,0.7,1.7),
 				"yaw":atan2(-way.y,way.x)+0.3*float(k%2*2-1),"kind":"block","chain":str(c[0])})
 	return out
-
-static func use_platforms() -> void:
-	Art._platforms = platforms()
-
-static func forget_platforms() -> void:
-	Art._platforms = []
 
 ## The rope bridges' anchors (RuinKit `bridge_anchor`), one at each end,
 ## facing out over the gap.

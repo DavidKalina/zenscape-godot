@@ -1,4 +1,4 @@
-extends "res://studies/aqueduct_isle.gd"
+extends "res://studies/kit_isle.gd"
 ## The Sundered gorge isle (docs/scenic/sundered-gorge.md): a hand-built sky
 ## island motif in the aqueduct isle's universe. One big isle torn in two by
 ## a gorge, the halves drifted apart: the west lower and tilted toward the
@@ -17,13 +17,13 @@ extends "res://studies/aqueduct_isle.gd"
 ## the curtain, under the lower crossing and the broken bridge, out south.
 ## Art: studies/sundered_gorge_isle_art.gd.
 ##
-## Everything else is the aqueduct isle's (this extends studies/
-## aqueduct_isle.gd and overrides only what is that isle's own): the
-## character study's pilot and moves, the game's look rig and presets (L /
-## Shift+L, --look=<id>), the plane (F), the lodestone (here on the fallen
-## crown deep in the gorge: drop to it from the break, pick it up, board the
-## plane to fly out), the grass and flowers (studies/
-## sundered_gorge_isle_flora.gd), the life (studies/
+## Everything else is the kit isles' (studies/kit_isle.gd, docs/scenic/
+## kit-isle-shared.md): the character study's pilot and moves, the rope
+## bridge underfoot, the game's look rig and presets (L / Shift+L,
+## --look=<id>), the ground and rock, the plane (F), the lodestone (here on
+## the fallen crown deep in the gorge: drop to it from the break, pick it
+## up, board the plane to fly out), the grass and flowers (on this isle's
+## ground: `flora_site`), the life (studies/
 ## sundered_gorge_isle_life.gd) and the sky round it (studies/
 ## sundered_gorge_isle_sky.gd), with the same opt-out flags (--no-flora,
 ## --no-life, --no-undergrowth, --no-butterflies, --no-fireflies, --no-birds,
@@ -32,10 +32,8 @@ extends "res://studies/aqueduct_isle.gd"
 ##   ./run-sundered-gorge.command [--look=rosewater_dusk] [--fly]
 ##   godot --path . res://studies/sundered_gorge_isle.tscn -- --no-title [--capture=out.png --at=x,y,z --look=x,y,z] [--place=x,y,z[,turn]]
 const Gorge = preload("res://studies/sundered_gorge_isle_art.gd")
-const GorgeFlora = preload("res://studies/sundered_gorge_isle_flora.gd")
 const GorgeLife = preload("res://studies/sundered_gorge_isle_life.gd")
 const GorgeSky = preload("res://studies/sundered_gorge_isle_sky.gd")
-const RopeBridge = preload("res://scripts/rope_bridge.gd")
 const Footbridge = preload("res://scripts/footbridge.gd")
 
 const GORGE_SEED := 23
@@ -57,10 +55,6 @@ var water: Node3D
 ## The rope bridge and the deck the walker reads ({a, b, span, sim}).
 var rope: MeshInstance3D
 var rope_deck := {}
-var _was_grounded := true
-var _fall_speed := 0.0
-var _stride := 0.0
-var _foot := 0
 
 # --- Set up ----------------------------------------------------------------------
 
@@ -73,20 +67,33 @@ func _load_pack() -> void:
 	lost = GORGE_LOST
 	_last_stood = start
 
-## The game's look rig as the aqueduct isle builds it, its summit ours.
-func _build_light() -> void:
-	super._build_light()
-	_atmosphere._summit = Vector3(Gorge.WEST_TOR[0].x,Gorge.plane_w(Gorge.WEST_TOR[0].x)+float(Gorge.WEST_TOR[1]),Gorge.WEST_TOR[0].y)
+func isle_name() -> String:
+	return "sundered gorge"
 
-## The pilot (the aqueduct isle's, with his wake), his ground also reading
-## the rope bridge's live deck and keeping him between its hand ropes.
-func _build_pilot() -> void:
-	super._build_pilot()
-	var deck_ground := DeckGround.new(get_world_3d().direct_space_state,motor)
-	deck_ground.frame = self
-	ground = deck_ground
-	motor.water = ground.water_callable()
-	motor.wall = ground.wall_callable()
+func isle_top() -> float:
+	return Gorge.TOP
+
+## The air's summit: the west tor.
+func isle_summit() -> Vector3:
+	return Vector3(Gorge.WEST_TOR[0].x,Gorge.plane_w(Gorge.WEST_TOR[0].x)+float(Gorge.WEST_TOR[1]),Gorge.WEST_TOR[0].y)
+
+## The plants keep off the paths and the pool (Gorge `path_wear`); their
+## rays reach the ledges and fragments far down the gorge; a sparser sowing
+## for its larger land.
+func flora_site() -> KitFlora.Site:
+	var site := KitFlora.Site.new(Gorge.TOP,func(p: Vector2) -> float: return Gorge.path_wear(p))
+	site.ray = GorgeLife.ray_span()
+	site.tufts = 3.0
+	return site
+
+func flora_seed() -> int:
+	return GORGE_SEED+4
+
+func sky_script() -> Script:
+	return GorgeSky
+
+func life_script() -> Script:
+	return GorgeLife
 
 func _build_room() -> void:
 	ground.pools.append_array(Gorge.pools())
@@ -111,8 +118,6 @@ func _build_art() -> void:
 	art.add_child(east_bridge)
 	rope = Gorge.rope_bridge(GORGE_SEED+22,rope_deck)
 	art.add_child(rope)
-	var decks: Array[Dictionary] = [rope_deck]
-	(ground as DeckGround).decks = decks
 	# The gatehouse: the gate arch over the road, the tower by the lip.
 	gate = RuinKit.piece("arch",Gorge.GATE_SEED,0.5)
 	gate.name = "Gate"
@@ -155,12 +160,7 @@ func _build_art() -> void:
 	water = Gorge.water(GORGE_SEED+54)
 	art.add_child(water)
 	# The turf the grass grows on and the plane skims.
-	for land: Node3D in [west_half,east_half]+fragments:
-		var turf: StaticBody3D = land.get_node("Body")
-		turf.collision_layer |= TURF_LAYER
-		_turf_rids.append(turf.get_rid())
-		_turf.append(turf)
-		_outlines.append(land.get_meta("outline"))
+	for land: Node3D in [west_half,east_half]+fragments: add_turf(land)
 	print("sundered gorge: %d triangles" % triangles(art))
 
 ## A clean, invisible box in `frame` over `rect` (x, z) from `bottom` to
@@ -175,121 +175,16 @@ func _frame_box(frame: Transform3D, rect: Rect2, bottom: float, top: float) -> v
 	solid.add_child(collider)
 	add_child(solid)
 
-## The isle's grass and flowers (studies/sundered_gorge_isle_flora.gd).
-func _grow() -> void:
-	var began := Time.get_ticks_msec()
-	flora = GorgeFlora.grow(GORGE_SEED+4,get_world_3d().direct_space_state,_turf,_outlines)
-	art.add_child(flora)
-	flora_ready = true
-	print("sundered gorge: flora %s, %d instanced triangles, %d multimeshes, grown in %d ms" % [flora.get_meta("counts"),int(flora.get_meta("triangles")),flora.get_child_count(),Time.get_ticks_msec()-began])
-
-## No pack recordings here.
-func _pack_runs() -> PackedStringArray:
-	return PackedStringArray()
-
-# --- Each frame: the rope bridge -----------------------------------------------------
-
-## On foot: the deck under him takes his weight, his footfalls and landings
-## (as the game's walker tells it, scripts/wanderer_eye.gd), and its sway
-## carries him.
-func tick(delta: float) -> void:
-	var was := motor.grounded
-	var vy := motor.velocity.y
-	super.tick(delta)
-	if rope == null or lode_state == "inspecting" or flying: return
-	var events := {}
-	if motor.grounded and not was: events["landed"] = maxf(-minf(vy,_fall_speed),0.0)
-	_fall_speed = 0.0 if motor.grounded else minf(_fall_speed,motor.velocity.y)
-	var pace := Vector2(motor.velocity.x,motor.velocity.z).length()
-	var drawn := {}
-	if motor.grounded and pace > 0.6:
-		_stride += delta*pace/0.75
-		if _stride >= 1.0:
-			_stride -= 1.0
-			_foot = 1-_foot
-			drawn["footfall"] = _foot
-	var carry := RopeBridge.tread(self,motor.feet,motor.grounded,events,drawn,clampf(pace/PilotMotor.RUN,0.0,1.0))
-	if carry != Vector3.ZERO: motor.feet += carry
-
-## In the plane: the rope bridge shudders as it passes.
-func fly_step(delta: float, input: Dictionary) -> void:
-	super.fly_step(delta,input)
-	if flying and plane != null: RopeBridge.flown_by(plane.position,plane.velocity)
-
-# --- The sky, the life -------------------------------------------------------------
-
-func _add_sky() -> void:
-	sky = GorgeSky.new()
-	add_child(sky)
-	sky.setup(self)
-	if _capture != "": sky.flush()
-
-func _add_life() -> void:
-	var args: PackedStringArray = preload("res://scripts/launch_args.gd").user_args()
-	if args.has("--no-life"): return
-	var began := Time.get_ticks_msec()
-	life = GorgeLife.new()
-	add_child(life)
-	life.setup(self,args)
-	var sky_tokens = sky.get("collectibles") if sky != null else null
-	if life.tokens != null and sky_tokens != null and sky_tokens.get("hud") != null:
-		life.tokens.hud.queue_free()
-		life.tokens.hud = sky_tokens.get("hud")
-	print("sundered gorge: life %s in %d ms %s" % [life.flags,Time.get_ticks_msec()-began,life.timings])
-
 # --- The lodestone ----------------------------------------------------------------
 
 ## The lodestone on the fallen crown (or on a floating stone named by
 ## --lode-at=), the shard it points to.
-func _build_lode() -> void:
+func lode_rest_at() -> Vector3:
 	var p: Dictionary = Gorge.platform(_lode_at)
 	if p.is_empty():
 		var f: Array = Gorge.fragment("crown")
-		lode_rest = Vector3((f[1] as Vector2).x,float(f[3]),(f[1] as Vector2).y)+Gorge.CROWN_LODE+Vector3.UP*LODE_HOVER
-	else:
-		lode_rest = (p.at as Vector3)+Vector3.UP*LODE_HOVER
-	lodestone = Lodestone.new()
-	lodestone.set_miniature(LODE_MINI)
-	lodestone.position = lode_rest
-	lodestone.scale = Vector3.ONE*LODE_SCALE
-	add_child(lodestone)
-	_moments = MomentsHud.new()
-	add_child(_moments)
-	_build_target()
-	if _carry:
-		lode_state = "carried"
-		lodestone.scale = Vector3.ONE*CARRY_SCALE
-		lodestone.show_light(false)
-		_carry_step(0.0)
-	if _switch_hint != null: _switch_hint.text = _foot_text()
+		return Vector3((f[1] as Vector2).x,float(f[3]),(f[1] as Vector2).y)+Gorge.CROWN_LODE+Vector3.UP*LODE_HOVER
+	return (p.at as Vector3)+Vector3.UP*LODE_HOVER
 
-func _foot_text() -> String:
-	var text := super._foot_text()
-	return text.replace("A lodestone hums on a floating stone east, past the heel stone: climb up to it","A lodestone hums deep in the gorge, on the bridge's fallen crown: drop to it from the break")
-
-# --- The deck underfoot -------------------------------------------------------------
-
-## The pilot's ground over the physics space (scripts/pilot_physics_ground.gd)
-## and the rope bridge's live deck (Footbridge `deck_at`, moving with its
-## sim), the higher where both are under him; on the deck, kept between its
-## hand ropes (RopeBridge `hold`).
-class DeckGround extends "res://scripts/pilot_physics_ground.gd":
-	const Footbridge = preload("res://scripts/footbridge.gd")
-	const RopeBridge = preload("res://scripts/rope_bridge.gd")
-	var decks: Array[Dictionary] = []
-	var frame: Node3D
-
-	func height_from(p: Vector2, y: float) -> float:
-		var h := super.height_from(p,y)
-		if decks.is_empty(): return h
-		var on := Footbridge.deck_at(decks,p)
-		if on.is_empty(): return h
-		var deck_y := float(on.y)
-		if deck_y > y+PilotMotor.STEP_UP+LOOK_OVER: return h
-		return maxf(h,deck_y)
-
-	func slide(feet: Vector3, step: Vector2) -> Vector3:
-		var to := super.slide(feet,step)
-		if frame == null or decks.is_empty(): return to
-		var held := RopeBridge.hold(frame,feet,Vector2(to.x,to.z))
-		return Vector3(held.x,to.y,held.y)
+func lode_hint() -> String:
+	return "A lodestone hums deep in the gorge, on the bridge's fallen crown: drop to it from the break"

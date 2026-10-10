@@ -1,8 +1,9 @@
-extends "res://studies/aqueduct_isle.gd"
-## The cloister tarn: a hand-built sky-island motif in the aqueduct isle's
-## style (its look, light, air, presets, grass, life, sky, plane and
-## lodestone are the aqueduct isle's own, reused by extending it; see
-## docs/scenic/cloister-tarn.md).
+extends "res://studies/kit_isle.gd"
+## The cloister tarn: a hand-built sky-island motif, a kit isle (its look,
+## light, air, presets, ground and rock, grass, life, sky, plane, rope
+## bridges underfoot and lodestone are the kit isles' own: studies/
+## kit_isle.gd, docs/scenic/kit-isle-shared.md; see docs/scenic/
+## cloister-tarn.md).
 ##
 ## A crater-bowl mother isle rings a still tarn (studies/
 ## cloister_tarn_isle_art.gd): its rim rises to a tiered crag north-west and
@@ -25,13 +26,12 @@ extends "res://studies/aqueduct_isle.gd"
 ##   L / Shift+L  look presets · B gust · F (pad Y) the plane
 ##   F1 numbers · F2 feel · Esc mouse
 ##   ./run-cloister-tarn.command [--look=<preset id>]
-## The aqueduct isle's flags hold here: --no-flora, --no-life (and its
+## The kit isles' flags hold here: --no-flora, --no-life (and its
 ## parts), --no-sky (and its parts), --fly, --look=, --capture=, --at=,
 ## --place=, --no-lode, --carry, --stone-plane.
 const TarnArt = preload("res://studies/cloister_tarn_isle_art.gd")
 const TarnLife = preload("res://studies/cloister_tarn_isle_life.gd")
 const Footbridge = preload("res://scripts/footbridge.gd")
-const RopeBridge = preload("res://scripts/rope_bridge.gd")
 const Cloister = preload("res://scripts/ruin_kit_cloister.gd")
 
 const TARN_SEED := 41
@@ -50,8 +50,6 @@ var cloister: Dictionary = {}
 var bridges: Array = []
 var water: MeshInstance3D
 var fall_node: Node3D
-var _was_grounded := true
-var _fall_speed := 0.0
 
 # --- Setting up -----------------------------------------------------------------------
 
@@ -64,25 +62,39 @@ func _load_pack() -> void:
 	_last_stood = start
 	_lode_at = TARN_LODE
 
-## The game's look rig as the aqueduct isle builds it, its summit the crag.
-func _build_light() -> void:
-	super._build_light()
+func isle_name() -> String:
+	return "cloister tarn"
+
+func isle_top() -> float:
+	return TarnArt.W
+
+## The air's summit: the crag.
+func isle_summit() -> Vector3:
 	var crag := TarnArt.world(TarnArt.way(126.0)*TarnArt.RIM/TarnArt.sq(TarnArt.way(126.0)))
-	_atmosphere._summit = Vector3(crag.x,TarnArt.K+TarnArt.CRAG_TOP,crag.y)
+	return Vector3(crag.x,TarnArt.K+TarnArt.CRAG_TOP,crag.y)
+
+## The plants keep off the paths, the water and its edge (TarnArt `bare`),
+## out of the water (TarnArt `wet`); their rays reach the tarn's bed.
+func flora_site() -> KitFlora.Site:
+	var site := KitFlora.Site.new(TarnArt.W,func(p: Vector2) -> float: return TarnArt.bare(p),func(p: Vector2) -> bool: return TarnArt.wet(p))
+	site.ray = Vector2(TarnArt.W+60.0,TarnArt.W-12.0)
+	return site
+
+func flora_seed() -> int:
+	return TARN_SEED+6
+
+func sky_script() -> Script:
+	return TarnLife.TarnSky
+
+func life_script() -> Script:
+	return TarnLife
+
+func capture_look() -> Vector3:
+	return Vector3(TarnArt.C.x,TarnArt.K+2.0,TarnArt.C.y)
 
 func _build_room() -> void:
 	ground.pools.append_array(TarnArt.pools())
 	_build_art()
-
-## The pilot, his wake, and the ground he reads: the physics space and the
-## rope bridges' live decks.
-func _build_pilot() -> void:
-	super._build_pilot()
-	var live := BridgeGround.new(get_world_3d().direct_space_state,motor)
-	live.frame = self
-	ground = live
-	motor.water = ground.water_callable()
-	motor.wall = ground.wall_callable()
 
 func _build_art() -> void:
 	art = Node3D.new()
@@ -103,12 +115,7 @@ func _build_art() -> void:
 	_build_pieces(isles)
 	_build_bridges()
 	_build_water()
-	for land: Node3D in [mother]+isles:
-		for turf: StaticBody3D in [land.get_node("Body")]+land.get_meta("cliff_bodies",[]):
-			turf.collision_layer |= TURF_LAYER
-			_turf_rids.append(turf.get_rid())
-			_turf.append(turf)
-		_outlines.append(land.get_meta("outline"))
+	for land: Node3D in [mother]+isles: add_turf(land)
 	print("cloister tarn: %d triangles, built in %d ms (mother: %d ground points, %d cliff prisms)" % [triangles(art),Time.get_ticks_msec()-began,int(mother.get_meta("ground_points")),int(mother.get_meta("cliff_prisms"))])
 
 ## The kit's pieces on the satellites and the crag: a lancet window on the
@@ -198,84 +205,14 @@ static func tarn_material() -> Material:
 		_tarn = pond
 	return _tarn
 
-## The grass and flowers (the aqueduct isle's flora, grown on this isle's
-## ground: off the paths, the water and its edge).
-func _grow() -> void:
-	var began := Time.get_ticks_msec()
-	flora = TarnLife.grow_flora(TARN_SEED+6,get_world_3d().direct_space_state,_turf,_outlines)
-	art.add_child(flora)
-	flora_ready = true
-	print("cloister tarn: flora %s, %d instanced triangles, %d multimeshes, grown in %d ms" % [flora.get_meta("counts"),int(flora.get_meta("triangles")),flora.get_child_count(),Time.get_ticks_msec()-began])
-
-## The sky round it: the aqueduct isle's (far isles, airships, CPU planes,
-## open-air life, motes), with this isle's plane tokens.
-func _add_sky() -> void:
-	sky = TarnLife.TarnSky.new()
-	add_child(sky)
-	sky.setup(self)
-	if _capture != "": sky.flush()
-
-## Life on the isle: the aqueduct isle's parts on this isle's ground.
-func _add_life() -> void:
-	var args: PackedStringArray = preload("res://scripts/launch_args.gd").user_args()
-	if args.has("--no-life"): return
-	var began := Time.get_ticks_msec()
-	life = TarnLife.new()
-	add_child(life)
-	life.setup(self,args)
-	var sky_tokens = sky.get("collectibles") if sky != null else null
-	if life.tokens != null and sky_tokens != null and sky_tokens.get("hud") != null:
-		life.tokens.hud.queue_free()
-		life.tokens.hud = sky_tokens.get("hud")
-	print("cloister tarn: life %s in %d ms %s" % [life.flags,Time.get_ticks_msec()-began,life.timings])
-
 ## The lodestone on the north isle's altar.
-func _build_lode() -> void:
+func lode_rest_at() -> Vector3:
 	var p: Dictionary = TarnArt.platform(_lode_at)
 	if p.is_empty(): p = TarnArt.platform(TARN_LODE)
-	lode_rest = (p.at as Vector3)+Vector3.UP*LODE_HOVER
-	lodestone = Lodestone.new()
-	lodestone.set_miniature(LODE_MINI)
-	lodestone.position = lode_rest
-	lodestone.scale = Vector3.ONE*LODE_SCALE
-	add_child(lodestone)
-	_moments = MomentsHud.new()
-	add_child(_moments)
-	_build_target()
-	if _carry:
-		lode_state = "carried"
-		lodestone.scale = Vector3.ONE*CARRY_SCALE
-		lodestone.show_light(false)
-		_carry_step(0.0)
-	if _switch_hint != null: _switch_hint.text = _foot_text()
+	return (p.at as Vector3)+Vector3.UP*LODE_HOVER
 
-func _foot_text() -> String:
-	var text := super._foot_text()
-	return text.replace("A lodestone hums on a floating stone east, past the heel stone: climb up to it","A lodestone hums on the north isle: up the crag and out over the floating stones")
-
-## No station recordings here.
-func _pack_runs() -> PackedStringArray:
-	return PackedStringArray()
-
-# --- Each step ------------------------------------------------------------------------
-
-## On foot: the pilot's step, then the rope bridge under him takes his
-## weight (a landing's push too) and carries him with its sway.
-func tick(delta: float) -> void:
-	var was_y := motor.velocity.y
-	super.tick(delta)
-	if flying or lode_state == "inspecting": return
-	var events := {}
-	if motor.grounded and not _was_grounded: events["landed"] = clampf(-_fall_speed/8.0,0.0,2.0)
-	_was_grounded = motor.grounded
-	_fall_speed = minf(was_y,0.0) if not motor.grounded else 0.0
-	var carry: Vector3 = RopeBridge.tread(self,motor.feet,motor.grounded,events,{},clampf(motor.speed()/PilotMotor.RUN,0.0,1.0))
-	if carry != Vector3.ZERO: motor.feet += Vector3(carry.x,0.0,carry.z)
-
-## In the plane: the rope bridges shudder as it passes.
-func fly_step(delta: float, input: Dictionary) -> void:
-	super.fly_step(delta,input)
-	if plane != null: RopeBridge.flown_by(plane.position,plane.velocity)
+func lode_hint() -> String:
+	return "A lodestone hums on the north isle: up the crag and out over the floating stones"
 
 ## The water is skimmed as the turf is.
 func plane_ground(p: Vector3) -> Variant:
@@ -293,37 +230,3 @@ func _turf_top(space: PhysicsDirectSpaceState3D, x: float, z: float) -> Vector3:
 	var top := super._turf_top(space,x,z)
 	if top != Vector3.INF and top.y < TarnArt.W+0.2: return Vector3.INF
 	return top
-
-func _take_capture() -> void:
-	if _capture_at != Vector3.INF and _capture_look == Vector3.INF: _capture_look = Vector3(TarnArt.C.x,TarnArt.K+2.0,TarnArt.C.y)
-	super._take_capture()
-
-# --- The ground with the bridges ----------------------------------------------------------
-
-## The physics ground (scripts/pilot_physics_ground.gd) with the live rope
-## bridges' decks in it: on a deck (within its width, over its planks) the
-## ground is the deck where it sags and sways now (the walker's way:
-## scripts/rope_bridge.gd `_on_deck`); stepping is held between its hand
-## ropes (`hold`).
-class BridgeGround extends "res://scripts/pilot_physics_ground.gd":
-	var frame: Node3D
-
-	func height_from(p: Vector2, y: float) -> float:
-		var h := super.height_from(p,y)
-		var reach := y+PilotMotor.STEP_UP+LOOK_OVER
-		for bridge: MeshInstance3D in RopeBridge._live:
-			if not is_instance_valid(bridge) or not bridge.is_inside_tree(): continue
-			var into := bridge.global_transform.affine_inverse()
-			var local: Vector3 = into*Vector3(p.x,y,p.y)
-			var on: Vector3 = bridge._on_deck(local)
-			if on.x <= 0.0 or on.x >= 1.0: continue
-			if absf(on.y-float(bridge.sim.sway(on.x))) > float(bridge.sim.width)*0.5+RopeBridge.STAND_SLACK: continue
-			var deck: float = (bridge.global_transform*Vector3(local.x,local.y-on.z,local.z)).y
-			if deck <= reach and (deck > h or not is_finite(h)): h = deck
-		return h
-
-	func slide(feet: Vector3, step: Vector2) -> Vector3:
-		if frame != null and frame.is_inside_tree():
-			var to: Vector2 = RopeBridge.hold(frame,feet,Vector2(feet.x+step.x,feet.z+step.y))
-			step = to-Vector2(feet.x,feet.z)
-		return super.slide(feet,step)
