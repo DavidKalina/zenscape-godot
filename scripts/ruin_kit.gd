@@ -1442,6 +1442,44 @@ static func stone_circle(seed_value: int, weathered := 0.0, missing: Array = [])
 		"lean_foot":_round(al,low-0.6),"lean_head":_round(al,head-0.35)+Vector3(0.0,LEAN_TOP-0.35*tan(slope),0.0)})
 	return root
 
+## A rope bridge's stone anchor (scripts/rope_bridge.gd hangs its ropes
+## here; the Sundered gorge isle, studies/sundered_gorge_isle_art.gd): two
+## bollards either side of the deck's end, their middles `width` apart
+## across X, each a squared post of two or three courses under a pyramid
+## cap, ANCHOR_POST tall (over the hand ropes, which are tied round them),
+## and a long sill stone across between them at their feet, its top at y 0
+## (the deck the ropes start from); the bridge runs off toward +Z. Weathered,
+## the posts lean out of true and a cap may lie at a foot. Not a gallery
+## piece (PIECES): a part for a scene's bridge.
+const ANCHOR_POST := Vector2(0.42,1.15)
+static func rope_anchor(seed_value: int, weathered := 0.0, width := 1.3) -> Node3D:
+	var b := Build.new(seed_value,weathered,"RopeAnchor")
+	var post := ANCHOR_POST
+	for side: float in [-1.0,1.0]:
+		var lean := Basis(Vector3(b.rng.randf_range(-1,1),0.0,b.rng.randf_range(-1,1)).normalized(),b.rng.randf_range(0.004,0.01)+0.03*weathered)
+		var foot := Transform3D(lean,Vector3(side*width*0.5,-0.18,0.0))
+		var y := 0.0
+		var k := 0
+		while y < post.y-0.05:
+			var h := minf(post.y-y,b.rng.randf_range(0.38,0.52))
+			if post.y-(y+h) < 0.2: h = post.y-y
+			var half := Vector3(post.x*0.5-0.01*k,h*0.5-0.004,post.x*0.5-0.01*k)
+			b.solid(_box(b,half,0.04),foot*_settle(b,Vector3(0.0,y+h*0.5,0.0),0.3),_stone(b,1.0+0.03*k))
+			y += h
+			k += 1
+		var cap_lost := weathered > 0.45 and b.rng.randf() < weathered*0.6
+		var cap: Array[Plane] = _prism(4,post.x*0.55,0.06,0.0,0.32,PI*0.25)
+		if cap_lost:
+			var tip := Basis(Vector3.UP,b.rng.randf()*TAU)*Basis(Vector3.RIGHT,b.rng.randf_range(1.1,1.5))
+			b.solid(cap,Transform3D(tip,Vector3(side*(width*0.5+0.55),0.12,b.rng.randf_range(-0.5,-0.1))),_stone(b,1.05))
+		else:
+			b.solid(cap,foot*Transform3D(Basis.IDENTITY,Vector3(0.0,post.y-0.01,0.0)),_stone(b,1.05))
+	# The sill: one long stone across, its top the deck's (y 0).
+	var sill := Vector3(width*0.5+post.x*0.5+0.12,0.11,0.32)
+	b.solid(_box(b,sill,0.04),Transform3D(Basis.IDENTITY,Vector3(0.0,-sill.y,-0.08)),_stone(b,1.04))
+	_rubble(b,width*0.5+0.9,int(round(weathered*b.rng.randf_range(2.0,4.0))))
+	return b.finish()
+
 ## A point `r` out from the middle at angle `a` (from +Z toward +X).
 static func _round(a: float, r: float) -> Vector3:
 	return Vector3(sin(a),0.0,cos(a))*r
