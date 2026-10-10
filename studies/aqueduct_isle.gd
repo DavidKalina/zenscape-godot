@@ -158,6 +158,11 @@ const RIDE_STEP := 0.1
 ## double tap for a barrel roll (scripts/wanderer_eye.gd DOUBLE_TAP).
 const FLY_LOOK := 0.0025
 const DOUBLE_TAP := 0.3
+## The right stick's turn of the chase camera (radians a second at full
+## push) and how long a look holds before it swings back behind the plane
+## (s): the game's (scripts/wanderer_eye.gd STICK_LOOK, PLANE_LINGER).
+const STICK_LOOK := 2.4
+const LOOK_LINGER := 2.5
 ## Setting down: skimming the turf with Brake held under TOUCH_SPEED m/s
 ## for TOUCH_HOLD s puts the pilot on foot there. Getting out anywhere, he
 ## stands on the nearest open turf within SAFE_REACH m of the plane.
@@ -165,8 +170,8 @@ const TOUCH_SPEED := 9.5
 const TOUCH_HOLD := 0.5
 const TOUCH_GAP := 0.25
 const SAFE_REACH := 40.0
-const FOOT_HINT := "F (pad Y)  fly the plane from here"
-const FLY_HINT := "Flying  ·  %.0f m/s  ·  bumps %d\nA D bank and turn  ·  W S pitch (W nose down)  ·  mouse steers  ·  Space boost  ·  Shift brake  ·  hold Q E (LB RB) knife edge, + A D to drift  ·  Q Q or E E quick, or click: barrel roll\nF (pad Y) back on foot nearby  ·  skim the turf braking to set down  ·  R start on foot  ·  L / Shift+L look  ·  B gust  ·  hold right mouse to look round"
+const FOOT_HINT := "F (pad Y)  fly the plane from here  ·  R3 camera back behind"
+const FLY_HINT := "Flying  ·  %.0f m/s  ·  bumps %d\nA D bank and turn  ·  W S pitch (W nose down)  ·  mouse steers  ·  Space boost  ·  Shift brake  ·  hold Q E (LB RB) knife edge, + A D to drift  ·  Q Q or E E quick, or click: barrel roll\nF (pad Y) back on foot nearby  ·  skim the turf braking to set down  ·  R start on foot  ·  L / Shift+L look  ·  B gust  ·  hold right mouse or the right stick to look round  ·  R3 camera back behind"
 var flying := false
 ## The plane's flight (a SkyPlane), its figure, the chase camera, the
 ## bumps since boarding.
@@ -523,7 +528,7 @@ func _process(delta: float) -> void:
 	# only, never the pilot.
 	if delta > 0.0:
 		if not flying: super._process(delta)
-		elif walk_ready and not scripted: fly_step(delta,_fly_input())
+		elif walk_ready and not scripted: fly_step(delta,_fly_input(delta))
 	_advance_look(delta)
 	if _toast_left > 0.0 and _look_toast != null:
 		_toast_left = maxf(_toast_left-delta,0.0)
@@ -581,6 +586,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_L:
 				step_look(-1 if (event as InputEventKey).shift_pressed else 1)
 				return
+	if Pad.pressed(event,&"camera_reset"):
+		reset_camera()
+		return
 	if flying:
 		_fly_event(event)
 		return
@@ -615,6 +623,7 @@ func board() -> void:
 	plane_figure._mark.visible = false
 	chase = GlideCamera.new()
 	chase.reset(plane,camera.global_position,camera.fov)
+	chase.linger = LOOK_LINGER
 	figure.visible = false
 	flying = true
 	bumps = 0
@@ -675,9 +684,26 @@ func _room_for_pilot(space: PhysicsDirectSpaceState3D, feet: Vector3) -> bool:
 		if not space.intersect_shape(query,1).is_empty(): return false
 	return true
 
+## The camera back to its default (R3): on foot behind the pilot at the
+## default pitch (the distance springs back out by itself); in the plane
+## the chase camera's free look let go, so it swings back behind.
+func reset_camera() -> void:
+	if flying:
+		# Its `free` is set by name: `chase.free =` parses as Object.free.
+		chase.set(&"free",Vector2.ZERO)
+		return
+	_yaw = motor.facing
+	_polar = CAM_POLAR
+	_look_rest = 0.0
+
 ## The stick, mouse, throttle, knife edge and roll asked this frame, as
-## the game's plane reads them (the ruin kit gallery's fly mode).
-func _fly_input() -> Dictionary:
+## the game's plane reads them (the ruin kit gallery's fly mode). The
+## right stick (or the mouse with the right button held) swings the chase
+## camera round the plane, as the game's does (scripts/wanderer_eye.gd).
+func _fly_input(delta: float) -> Dictionary:
+	var right := Pad.stick(&"look_left",&"look_right",&"look_up",&"look_down")
+	if right != Vector2.ZERO: chase.turn(Vector2(-right.x,-right.y)*STICK_LOOK*delta)
+	chase.free_held = Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) or right != Vector2.ZERO
 	var stick := Input.get_vector(&"move_left",&"move_right",&"move_forward",&"move_back")
 	var keys := (1.0 if Input.is_key_pressed(KEY_E) else 0.0)-(1.0 if Input.is_key_pressed(KEY_Q) else 0.0)
 	var lean := clampf(keys+Input.get_action_strength(&"fly_lean_right")-Input.get_action_strength(&"fly_lean_left"),-1.0,1.0)
@@ -813,12 +839,12 @@ func _lean_tapped(dir: float) -> void:
 
 ## The plane's keys, mouse and pad: F or Y back on foot, R on foot at the
 ## start, Q E knife edge (twice quick a roll), the mouse steers, a click
-## rolls, the right button looks round, Esc frees the mouse.
+## rolls, the right button held looks round, Esc frees the mouse.
 func _fly_event(event: InputEvent) -> void:
 	if event is InputEventMouseMotion:
-		if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED: _fly_look += Vector2(event.relative.x,-event.relative.y)*FLY_LOOK
-	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT:
-		chase.free_held = event.pressed
+		if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED: return
+		if Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT): chase.turn(Vector2(-event.relative.x,-event.relative.y)*FLY_LOOK)
+		else: _fly_look += Vector2(event.relative.x,-event.relative.y)*FLY_LOOK
 	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 		if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED: Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		else: _roll_asked = -1.0 if float(plane.bank) < -0.05 else 1.0

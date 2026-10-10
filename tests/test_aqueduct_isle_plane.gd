@@ -5,7 +5,8 @@ extends SceneTree
 ## the turf and never sinks into it, it is bumped off the stone and flies on
 ## (never inside it, never stopped); F puts him back on foot on open turf
 ## near the plane, where he walks; skimming the turf braking slow sets him
-## down; R in the plane puts him on foot at the start.
+## down; R in the plane puts him on foot at the start. The pad's right
+## stick turns the camera on foot and in the plane, and R3 resets it.
 ##   godot --headless --path . --script tests/test_aqueduct_isle_plane.gd
 const Art = preload("res://studies/aqueduct_isle_art.gd")
 const SkyPlane = preload("res://scripts/sky_plane.gd")
@@ -29,7 +30,9 @@ func run() -> void:
 	while not study.flora_ready: await process_frame
 	await physics_frame
 	check(str(study._switch_hint.text).begins_with("F (pad Y)"),"On foot the hint shows the switch key: '%s'" % study._switch_hint.text)
+	_foot_look()
 	_board()
+	_plane_look()
 	_drift()
 	_bump()
 	_skim()
@@ -50,6 +53,54 @@ func _fly(seconds: float, input: Dictionary) -> Dictionary:
 		if top != null: out.lowest = minf(out.lowest,float(study.plane.position.y)-float(top))
 		if study.plane.skimming: out.skimmed = true
 	return out
+
+## Pushed or pressed, as the pad would.
+func _r3() -> void:
+	var press := InputEventJoypadButton.new()
+	press.button_index = JOY_BUTTON_RIGHT_STICK
+	press.pressed = true
+	study._unhandled_input(press)
+
+## On foot the right stick orbits the walker's camera; R3 puts it back
+## behind him at the default pitch.
+func _foot_look() -> void:
+	var yaw: float = study._yaw
+	var polar: float = study._polar
+	study.scripted = false
+	Input.action_press(&"look_right",1.0)
+	Input.action_press(&"look_up",0.6)
+	for i in range(30): study.tick(DT)
+	Input.action_release(&"look_right")
+	Input.action_release(&"look_up")
+	study.scripted = true
+	check(absf(angle_difference(yaw,float(study._yaw))) > 0.5 and absf(float(study._polar)-polar) > 0.1,"On foot the right stick orbits the camera (yaw %.2f, pitch %.2f rad)" % [angle_difference(yaw,float(study._yaw)),float(study._polar)-polar])
+	_r3()
+	study.tick(0.0)
+	check(absf(angle_difference(float(study._yaw),float(study.motor.facing))) < 0.01 and is_equal_approx(float(study._polar),study.CAM_POLAR),"R3 puts the camera back behind the pilot at the default pitch")
+
+## In the plane the right stick swings the chase camera round it; let go,
+## it holds a moment and swings back; R3 puts it back behind at once.
+func _plane_look() -> void:
+	var plane: RefCounted = study.plane
+	plane.position = Vector3(110.0,Art.TOP+40.0,-80.0)
+	_fly(1.0,{})
+	var behind: Vector3 = (study.chase.eye-plane.position).normalized()
+	Input.action_press(&"look_right",1.0)
+	for i in range(40): study.fly_step(DT,study._fly_input(DT))
+	Input.action_release(&"look_right")
+	var free: Vector2 = study.chase.get(&"free")
+	var swung: Vector3 = (study.chase.eye-plane.position).normalized()
+	check(absf(free.x) > 1.0 and rad_to_deg(behind.angle_to(swung)) > 20.0,"In the plane the right stick swings the chase camera round it (%.2f rad, eye %.0f deg round)" % [free.x,rad_to_deg(behind.angle_to(swung))])
+	for i in range(30): study.fly_step(DT,study._fly_input(DT))
+	check(absf(float(study.chase.get(&"free").x)) > 0.9,"Let go, the look holds a moment (%.2f rad)" % study.chase.get(&"free").x)
+	for i in range(int((study.LOOK_LINGER+2.0)/DT)): study.fly_step(DT,study._fly_input(DT))
+	check(absf(float(study.chase.get(&"free").x)) < 0.05,"Then it swings back behind the plane (%.2f rad)" % study.chase.get(&"free").x)
+	Input.action_press(&"look_right",1.0)
+	for i in range(40): study.fly_step(DT,study._fly_input(DT))
+	Input.action_release(&"look_right")
+	_r3()
+	check(study.chase.get(&"free") == Vector2.ZERO,"R3 puts the chase camera back behind the plane")
+	check(str(study._switch_hint.text).contains("R3"),"The hint names the camera reset")
 
 func _board() -> void:
 	var feet: Vector3 = study.motor.feet

@@ -134,7 +134,13 @@ Branch `study/aqueduct-isle-plane`: this look branch plus `feature/knife-drift` 
 
 ### Plane controls (the game's)
 
-A D bank and turn. W S pitch (W nose down). The mouse steers. Space boosts and Shift brakes. Hold Q E (LB RB) for the knife edge, and add A D to drift. Tap Q Q or E E quickly, or click, for a barrel roll. Hold the right mouse button to look round. Esc frees the mouse. A hint at the bottom shows these, with the speed and the bump count. On foot it shows `F (pad Y) fly the plane from here`.
+A D bank and turn. W S pitch (W nose down). The mouse steers. Space boosts and Shift brakes. Hold Q E (LB RB) for the knife edge, and add A D to drift. Tap Q Q or E E quickly, or click, for a barrel roll. Hold the right mouse button, or push the right stick, to look round, and R3 resets the camera. Esc frees the mouse. A hint at the bottom shows these, with the speed and the bump count. On foot it shows `F (pad Y) fly the plane from here · R3 camera back behind`.
+
+### The camera: right stick and R3
+
+- **The right stick looks round in both modes.** On foot it orbits the pilot camera (the character study's, unchanged). In the plane it swings the chase camera round the plane, as the game's does: 2.4 rad/s at full push, and when you let go the view holds 2.5 s, then eases back behind (the game's STICK_LOOK and PLANE_LINGER). The right mouse button held does the same with the mouse.
+- **Why it did nothing in the plane:** the study read the pad's look actions only on foot. Its fly input never read them and never called the chase camera's `turn`, so the free look stayed at zero. Holding the right mouse button only froze it. On foot the stick already worked (checked headless).
+- **R3 resets the camera** (the `camera_reset` action in `scripts/pad.gd`). On foot it puts the camera behind the pilot at the default pitch, and the distance springs back by itself. In the plane it lets go of the free look, so the camera swings straight back behind. In the game R3 is Overview when building and the chase/first-person toggle when flying. Neither is wired here, and this study has no first-person view, so R3 takes nothing away. The game itself is unchanged.
 
 ### Key clashes checked
 
@@ -161,9 +167,10 @@ The game's plane skims its heightfield and bumps off the ruins' layer (`scripts/
 - test_aqueduct_isle_look: PASS.
 - test_knife_drift: PASS.
 - test_sky_plane: PASS.
-- **`tests/test_aqueduct_isle_plane.gd` (new): PASS, 24 checks.**
+- **`tests/test_aqueduct_isle_plane.gd` (new): PASS, 31 checks.**
   - Boarding: you board ahead of and above the pilot at cruise, the plane has the drift (strength 1), and the drift tightens with its nose slip and gives the release boost.
   - Collision: flown into the hill walls, the plane bumps and flies on and is never left in stone. Nosed down, it skims the turf and never goes into it.
+  - Camera: the right stick (actions pressed as the pad would) orbits the camera on foot and swings the chase camera round the plane. The look holds after you let go, then swings back. R3 resets it in both modes.
   - Back on foot: F puts the pilot on the turf by the plane, walking. Braking on the turf sets him down. R returns him to the start.
 - One rendered capture (`--fly --capture`) showed the biplane, with the pilot in it, under the chase camera.
 - **Not run:** the full suite.
