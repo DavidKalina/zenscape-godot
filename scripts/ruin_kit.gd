@@ -37,6 +37,8 @@ extends RefCounted
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const PlaneFigure = preload("res://scripts/plane_figure.gd")
 const STONE_SHADER = preload("res://shaders/ruin_stone.gdshader")
+## The growth's own surface and wind (docs/scenic/ruin-overgrowth.md).
+const RuinGrowth = preload("res://scripts/ruin_growth.gd")
 
 ## The pieces, in the kit's order: the gothic abbey's, here.
 const PIECES := ["pier","arch","lancet_wall","rose_gable","buttress","wall","stairs","turret","vault","fallen_pier","tomb_chest","floor"]
@@ -279,6 +281,7 @@ static func merge(root: Node3D) -> void:
 	var v := PackedVector3Array()
 	var n := PackedVector3Array()
 	var c := PackedColorArray()
+	var growth := RuinGrowth.Faces.new()
 	var body := StaticBody3D.new()
 	body.name = "Body"
 	for child in root.get_children():
@@ -294,6 +297,8 @@ static func merge(root: Node3D) -> void:
 				v.append(xf*mv[i])
 				n.append((xf.basis*mn[i]).normalized())
 			c.append_array(mc)
+			var grown := RuinGrowth.arrays_of(mesh.mesh)
+			if not grown.is_empty(): RuinGrowth.append(growth,grown,xf)
 			mesh.free()
 		var old := child.get_node_or_null("Body")
 		if old != null:
@@ -317,6 +322,7 @@ static func merge(root: Node3D) -> void:
 	merged.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,surface)
 	merged.set_meta("arrays",surface)
 	merged.surface_set_material(0,materials().stone)
+	RuinGrowth.add_surface(merged,growth)
 	var instance := MeshInstance3D.new()
 	instance.name = "Mesh"
 	instance.mesh = merged
@@ -330,6 +336,7 @@ static func forget_arrays(root: Node) -> void:
 	for node in [root]+root.get_children():
 		var mesh := (node as Node).get_node_or_null("Mesh") as MeshInstance3D
 		if mesh != null and mesh.mesh != null and mesh.mesh.has_meta("arrays"): mesh.mesh.remove_meta("arrays")
+		if mesh != null and mesh.mesh != null and mesh.mesh.has_meta("growth_arrays"): mesh.mesh.remove_meta("growth_arrays")
 
 ## The triangles a built ruin draws (its own "Mesh" and its children's).
 static func triangles(root: Node) -> int:
@@ -340,7 +347,7 @@ static func triangles(root: Node) -> int:
 		for s in range(mesh.mesh.get_surface_count()): count += mesh.mesh.surface_get_array_len(s)/3
 	return count
 
-## The shared materials: {stone}.
+## The shared materials: {stone, growth}.
 static func materials() -> Dictionary:
 	return Build.materials()
 
@@ -1888,6 +1895,11 @@ class Build extends RefCounted:
 	var pending: Array = []
 	## Each hull's anchor (as `pending`'s), side by side with `hulls`.
 	var hull_anchors: PackedFloat32Array = []
+	## The growth being built (RuinGrowth `attrs`: where it hangs from, how
+	## it sways), empty while building stone: a face built with it goes to
+	## the growth's own surface (`growth`), not the stone's.
+	var grow := PackedFloat32Array()
+	var growth := RuinGrowth.Faces.new()
 	static var _materials := {}
 	## How much of the small growth and scatter is built (RuinKit
 	## `set_detail`): 1 all of it; under 1 fewer ivy strands, moss
@@ -1901,7 +1913,7 @@ class Build extends RefCounted:
 			s.set_shader_parameter("fill",1.2)
 			s.set_shader_parameter("rim",0.14)
 			s.set_shader_parameter("roughness_value",0.95)
-			_materials = {"stone":s}
+			_materials = {"stone":s,"growth":RuinGrowth.material()}
 		return _materials
 
 	## The ground's height at (x, z) in the piece's frame: 0 with no terrain.
@@ -2029,7 +2041,7 @@ class Build extends RefCounted:
 			if not growable: shade.a = 1.0
 			var corners := PackedVector3Array()
 			for q in on: corners.append(xf*q)
-			pending.append([corners,normal,shade,occluder,anchor])
+			pending.append([corners,normal,shade,occluder,anchor,grow if not grow.is_empty() else null])
 			if growable and normal.y > 0.8 and float(p[3]) > 0.03:
 				var poly := PackedVector3Array()
 				for q in on: poly.append(xf*q)
@@ -2050,10 +2062,16 @@ class Build extends RefCounted:
 				hull_anchors.append(anchor)
 		return open_face
 
+	## One growth face (RuinGrowth): `corners` (a fan, in the piece's
+	## frame), drawn with the growth's `grow` attrs; never solid.
+	func growth_face(corners: PackedVector3Array, normal: Vector3, colour: Color) -> void:
+		pending.append([corners,normal,colour,-1,NAN,grow.duplicate()])
+
 	## The piece: ivy and moss grown on it, then the mesh and the body.
 	func finish() -> Node3D:
 		frame = Transform3D.IDENTITY
 		_ivy()
+		RuinGrowth.fringes(self)
 		_cushions()
 		_draw()
 		var mesh := ArrayMesh.new()
@@ -2071,6 +2089,8 @@ class Build extends RefCounted:
 			# Kept for `merge`, which may run on a worker, where reading a
 			# mesh's arrays back waits on the renderer (and the main thread).
 			mesh.set_meta("arrays",surface)
+		# The growth: its own surface (second), in the wind.
+		if mesh.get_surface_count() > 0: RuinGrowth.add_surface(mesh,growth)
 		var instance := MeshInstance3D.new()
 		instance.name = "Mesh"
 		instance.mesh = mesh
@@ -2123,15 +2143,20 @@ class Build extends RefCounted:
 				var mid := Vector3.ZERO
 				for q in corners: mid += q
 				shade.a = 1.0-clampf(float(shelter.call(mid/corners.size(),normal)),0.0,1.0)
+			var turn := Basis.IDENTITY
 			if path != null:
 				var middle := Vector3.ZERO
 				for q in corners: middle += q
 				middle /= corners.size()
 				var at: float = middle.x if is_nan(anchor) else anchor
-				normal = ((path.xform(at) as Transform3D).basis*normal).normalized()
+				turn = (path.xform(at) as Transform3D).basis
+				normal = (turn*normal).normalized()
 				var bent := PackedVector3Array()
 				for q in corners: bent.append(bend(q,anchor))
 				corners = bent
+			if face[5] != null:
+				RuinGrowth.emit(growth,corners,normal,shade,face[5],turn)
+				continue
 			for k in range(1,corners.size()-1):
 				_wound(faces,corners[0],corners[k],corners[k+1],normal,shade)
 		pending.clear()
@@ -2292,31 +2317,17 @@ class Build extends RefCounted:
 				# Only where the face falls away under the edge.
 				if _inside(mid+out*0.12+Vector3.DOWN*0.3) or _inside(mid+out*0.1+Vector3.UP*0.08): continue
 				var start := mid+out*0.05+Vector3.UP*0.03
-				# A mat over the top it comes from.
+				# A mat over the top it comes from (it only flutters).
+				grow = RuinGrowth.attrs(0.0,0.0,Vector3.ZERO,0.0,0.35,fposmod(mid.x*3.17+mid.z*5.31,1.0),false,0.6)
 				for j in range(rng.randi_range(2,4)):
 					var on := mid-out*rng.randf_range(0.0,0.3)+edge.normalized()*rng.randf_range(-0.25,0.25)+Vector3.UP*0.02
 					_leaf(on,Vector3.UP,rng.randf_range(IVY_LEAF.x,IVY_LEAF.y),0.0)
 				_strand(start,out,minf(mid.y,rng.randf_range(0.4,1.0)*longest),false)
 				break
-		for hi in range(hangs.size()):
-			var h: Array = hangs[hi]
-			# Fewer free strands with less detail (by index: the seed's draw is kept).
-			if detail < 1.0 and fmod(hi*0.618,1.0) >= detail: continue
-			var at: Vector3 = h[0]
-			var from: float = h[3]
-			if from < 0.0:
-				# Look up for the underside to hang from.
-				from = -1.0
-				var y := 0.5
-				while y < 14.0:
-					if _inside(Vector3(at.x,y,at.z)):
-						from = y-0.04
-						break
-					y += 0.1
-				if from < 0.0: continue
-			var length: float = h[1]
-			if length < 0.2: continue
-			_strand(Vector3(at.x,from,at.z),Vector3(rng.randf_range(-1,1),0.0,rng.randf_range(-1,1)).normalized(),minf(length,from-0.2),true)
+		# The free strands a piece asked for under its arches, beams and
+		# decks: vine curtains (RuinGrowth).
+		RuinGrowth.curtains(self)
+		grow = PackedFloat32Array()
 
 	## One strand from `start` down, `out` the way the face looks; `free`:
 	## hanging in the air, swaying a little.
@@ -2326,8 +2337,12 @@ class Build extends RefCounted:
 		var travelled := 0.0
 		var size := rng.randf_range(IVY_LEAF.x,IVY_LEAF.y)*(1.45 if lean else 1.15)
 		var in_air := 0.0
+		var phase := fposmod(start.x*3.17+start.z*5.31,1.0)
 		while travelled < length:
 			var taper := 1.0-0.55*smoothstep(length*0.55,length,travelled)
+			# Swaying from where it starts: free in the air, or hugging its
+			# face (RuinGrowth `attrs`).
+			grow = RuinGrowth.attrs(start.y,length,out,1.0 if free else clampf(in_air/0.4,0.0,1.0),1.0,fposmod(phase+travelled*0.37,1.0))
 			for j in range((1 if lean else 2)+int(rng.randf() < 0.5)):
 				var off := along*rng.randf_range(-0.16,0.16)+Vector3(0.0,rng.randf_range(-0.05,0.05),0.0)+out*rng.randf_range(0.0,0.05)
 				_leaf(p+off,out,size*taper*rng.randf_range(0.75,1.1),0.5)
@@ -2349,6 +2364,7 @@ class Build extends RefCounted:
 			elif _inside(next): break
 			if next.y < 0.05:
 				# A spread where it meets the ground.
+				grow = RuinGrowth.attrs(0.0,0.0,Vector3.ZERO,0.0,0.35,phase,false,0.6)
 				for j in range(rng.randi_range(2,5)):
 					var on := Vector3(next.x,0.03,next.z)+out*rng.randf_range(0.0,0.5)+along*rng.randf_range(-0.4,0.4)
 					_leaf(on,Vector3.UP,rng.randf_range(IVY_LEAF.x,IVY_LEAF.y),0.0)
@@ -2380,6 +2396,8 @@ class Build extends RefCounted:
 		count = int(round(count*detail*(0.5 if lean else 1.0)))
 		var keep := frame
 		frame = Transform3D.IDENTITY
+		# Standing up from its root, bending as the grass does.
+		grow = RuinGrowth.attrs(at.y-0.02,height*1.15,Vector3.ZERO,1.0,0.6,fposmod(at.x*3.17+at.z*5.31,1.0),true)
 		for i in range(count):
 			var h := height*rng.randf_range(0.55,1.15)
 			var w := rng.randf_range(0.035,0.06)*(0.7+0.6*h)
@@ -2392,10 +2410,13 @@ class Build extends RefCounted:
 			var colour: Color = GRASS[rng.randi()%GRASS.size()]*rng.randf_range(0.85,1.12)
 			solid(planes,Transform3D(lean,at+off-Vector3(0.0,0.02,0.0)),colour,false,false,[],-1,1.0,false)
 		frame = keep
+		grow = PackedFloat32Array()
 
 	## Moss cushions on mossy tops: low faceted mounds, not solid.
 	func _cushions() -> void:
 		if detail <= 0.0: return
+		# Moss never moves: still growth, on the growth's surface.
+		grow = RuinGrowth.still()
 		var found := tops.duplicate()
 		for t: Array in found:
 			var poly: PackedVector3Array = t[0]
@@ -2418,6 +2439,7 @@ class Build extends RefCounted:
 					var n := Vector3(cos(a+0.5)*0.8,1.0,sin(a+0.5)*0.8).normalized()
 					planes.append(Plane(n,n.dot(Vector3(0.0,r*0.4,0.0))))
 				solid(planes,Transform3D(Basis.IDENTITY,at-Vector3(0.0,0.02,0.0)),Color(MOSS_LIGHT).lerp(Color(MOSS),rng.randf()*0.6),false,false,[],-1,1.0,false)
+		grow = PackedFloat32Array()
 
 	static func _tri(target: Faces, a: Vector3, b: Vector3, c: Vector3, normal: Vector3, colour: Color) -> void:
 		for p in [a,b,c]:
