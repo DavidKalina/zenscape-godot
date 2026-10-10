@@ -20,6 +20,8 @@ const ENTRIES: Array[Dictionary] = [
 		"detail":"The game with the long gothic hall 240-900 m out; in the plane, fly to it."},
 	{"id":"hall_rise","group":"Ruins","title":"Hall rise","scene":"res://studies/hall_rise.tscn","args":[],
 		"detail":"The Sundered hall rising out of the clouds in four whole chunks. R again, C camera, F plane."},
+	{"id":"hall_chain","group":"Ruins","title":"Hall chain","scene":"res://studies/hall_chain.tscn","args":[],
+		"detail":"Fly on through the Sundered hall and the next rises ahead, endlessly. N next hall, P autopilot, R again."},
 	{"id":"ruin_kit","group":"Ruins","title":"Ruin kit gallery","scene":"res://studies/ruin_kit_gallery.tscn","args":[],
 		"detail":"The ruin kit's three families on one plate, each piece intact and weathered."},
 	# Flight greyboxes (studies/flight_study.tscn, docs/design/flight-study-handoff.md).

@@ -54,6 +54,8 @@ const SWELLS := 6
 const PLANE_CLEAR := 0.6
 
 signal finished
+## Sunk back under the cloud (`sink`): every chunk hidden again.
+signal sunk
 
 ## The cloud top, in this node's frame.
 var sea_y := RisePlan.SEA
@@ -90,6 +92,21 @@ var _first_usec := -1
 ## The heaviest hand-over of one chunk on the main thread (usec: its mesh
 ## made, put under this node).
 var take_usec := 0
+## The heaviest one frame's hand-over (usec: every chunk taken that frame),
+## all of this rise's hand-overs added up, and `setup` itself (planning
+## and starting the worker).
+var frame_take_usec := 0
+var take_total_usec := 0
+var setup_usec := 0
+## The most chunks taken in one frame (0: every one made; a chain takes 1,
+## so a hall's hand-over is spread over a few frames).
+var take_per_frame := 0
+## Sinking back into the cloud (`sink`): the rise reversed. `sink_clock` is
+## seconds since it began, `gone` once every chunk is under again.
+var sinking := false
+var sink_clock := 0.0
+var gone := false
+var _sink_from := PackedFloat32Array()
 var _materials := {}
 ## The puffs: positions, velocities, sizes, growth, ages and lives.
 var _puffs: MultiMeshInstance3D
@@ -130,19 +147,36 @@ func _init() -> void:
 func _exit_tree() -> void:
 	_wait()
 
+## Freed with chunks made but never taken (a chain's hall dropped before
+## its build came in): free them too, they are under no node.
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE:
+		_wait()
+		for item: Array in _made:
+			if is_instance_valid(item[1]): (item[1] as Node).free()
+		_made = []
+
 func _wait() -> void:
 	if _task >= 0:
 		WorkerThreadPool.wait_for_task_completion(_task)
 		_task = -1
 
 ## Plans the chunks and starts making them on a worker. Puts nothing up.
+## `given` may also hold a `template` (a RisePlan.make with the same from,
+## keels and stones: the chunks are timed again from it, RisePlan.remake,
+## not planned again) and `materials` (a dictionary shared between rises,
+## so a chain's halls share their materials).
 func setup(given := {}) -> void:
+	var began := Time.get_ticks_usec()
 	_wait()
 	for n in nodes:
 		if n != null: (n as Node).queue_free()
 	opts = given.duplicate()
 	opts.sea = sea_y
-	plan = RisePlan.make(opts)
+	if given.has("materials"): _materials = given.materials
+	plan = RisePlan.remake(given.template,opts) if given.has("template") else RisePlan.make(opts)
+	sinking = false
+	gone = false
 	chunks = plan.chunks
 	var n := chunks.size()
 	nodes = []
@@ -164,6 +198,7 @@ func setup(given := {}) -> void:
 	_first_usec = -1
 	_build_began = Time.get_ticks_usec()
 	_task = WorkerThreadPool.add_task(_build_all.bind(float(given.get("upfront",0.0)),float(given.get("cost",0.0))),true,"Hall rise chunks")
+	setup_usec = Time.get_ticks_usec()-began
 
 ## From the start: every chunk back under the cloud, the clocks at 0.
 func play() -> void:
@@ -172,6 +207,8 @@ func play() -> void:
 	stall = 0.0
 	done_at = -1.0
 	playing = true
+	sinking = false
+	gone = false
 	for i in range(chunks.size()):
 		state[i] = "waiting"
 		broke[i] = 0
@@ -232,11 +269,83 @@ func advance(delta: float) -> void:
 			done_at = clock
 			playing = false
 			finished.emit()
+	if sinking: _sink_step(delta)
 	for i in range(chunks.size()):
 		if state[i] == "pending" and not plane_touches(i):
 			_solid(i,true)
 			state[i] = "set"
 	_step_clouds(delta)
+
+## Back down into the cloud: the rise reversed. Every chunk stops colliding
+## at once (nothing sinking is ever solid, so it never shuts the plane in),
+## and each goes down the way it came up, on the rise's own timing played
+## backwards: the last to rise goes first, the first to rise last, each
+## from where it is now. Done (`gone`, `sunk`) once all are under and
+## hidden; a chunk never made just stays unmade.
+func sink() -> void:
+	if sinking or chunks.is_empty(): return
+	playing = false
+	sinking = true
+	sink_clock = 0.0
+	var length := float(plan.get("length",0.0))
+	_sink_from = PackedFloat32Array()
+	_sink_from.resize(chunks.size())
+	for i in range(chunks.size()):
+		var c: Dictionary = chunks[i]
+		_solid(i,false)
+		broke[i] = 0
+		_owed[i] = 0.0
+		if state[i] == "waiting" or nodes[i] == null:
+			state[i] = "gone"
+			continue
+		# Its rise time now (the end of its settle if it is still), and the
+		# sink's clock when the reversed rise reaches it.
+		var now := minf(clock-float(began_at[i]),RisePlan.settles(c)-float(c.start)) if state[i] == "moving" else RisePlan.settles(c)-float(c.start)
+		_sink_from[i] = now
+		state[i] = "sinking"
+	if _all_gone(): _sunk()
+
+## How long the whole sink takes from the start (s), with every chunk still.
+func sink_length() -> float:
+	return float(plan.get("length",0.0))-float(chunks[0].start) if not chunks.is_empty() else 0.0
+
+## Chunk `c`'s rise time `s` s into the sink, from rise time `from`: the
+## rise played backwards from its end, held at `from` till it gets there.
+func sink_time(c: Dictionary, s: float, from: float) -> float:
+	return minf(from,float(plan.get("length",0.0))-s-float(c.start))
+
+func _sink_step(delta: float) -> void:
+	sink_clock += delta
+	for i in range(chunks.size()):
+		if state[i] != "sinking": continue
+		var c: Dictionary = chunks[i]
+		var t := sink_time(c,sink_clock,float(_sink_from[i]))
+		if t <= 0.0:
+			_hide(i)
+			state[i] = "gone"
+			continue
+		var pose := pose_at(c,t)
+		_place(i,pose)
+		var lift: float = pose.origin.y-float(c.pivot.y)
+		var top: float = float(c.hi.y)+lift
+		var foot: float = float(c.lo.y)+lift
+		# Cloud closing over it: off its sides as its foot goes under, a ring
+		# as its top does.
+		if foot < sea_y+STREAM_UP and top > sea_y: _stream(i,c,lift,2.0,delta)
+		if broke[i] == 0 and top < sea_y:
+			broke[i] = 1
+			_burst(c,lift)
+	if _all_gone(): _sunk()
+
+func _all_gone() -> bool:
+	for s in state:
+		if s != "gone": return false
+	return true
+
+func _sunk() -> void:
+	sinking = false
+	gone = true
+	sunk.emit()
 
 ## The index of the next chunk to rise (-1 none).
 func _next_due() -> int:
@@ -336,7 +445,11 @@ func _take() -> void:
 	_mutex.lock()
 	var got := _made
 	_made = []
+	if take_per_frame > 0 and got.size() > take_per_frame:
+		_made = got.slice(take_per_frame)
+		got = got.slice(0,take_per_frame)
 	_mutex.unlock()
+	var frame := 0
 	for item: Array in got:
 		var i: int = item[0]
 		var node: Node3D = item[1]
@@ -344,13 +457,17 @@ func _take() -> void:
 		var began := Time.get_ticks_usec()
 		finish_mesh(node,_materials)
 		add_child(node)
-		take_usec = maxi(take_usec,Time.get_ticks_usec()-began)
+		var took := Time.get_ticks_usec()-began
+		take_usec = maxi(take_usec,took)
+		take_total_usec += took
+		frame += took
 		built += 1
 		if _first_usec < 0: _first_usec = Time.get_ticks_usec()-_build_began
 		if state[i] == "set":
 			_place(i,home(i))
 			_solid(i,true)
 		else: _hide(i)
+	frame_take_usec = maxi(frame_take_usec,frame)
 	if built == chunks.size() and build_usec < 0 and not chunks.is_empty():
 		build_usec = Time.get_ticks_usec()-_build_began
 
@@ -559,11 +676,11 @@ func _step_clouds(delta: float) -> void:
 
 ## The sea's swells now: up to SWELLS of (x, z, radius, height), in this
 ## node's frame, where a chunk is about to break through or is breaking
-## through.
+## through, or sinking back under it.
 func swells() -> Array[Vector4]:
 	var out: Array[Vector4] = []
 	for i in range(chunks.size()):
-		if state[i] != "moving" or out.size() >= SWELLS: continue
+		if not (state[i] == "moving" or state[i] == "sinking") or out.size() >= SWELLS: continue
 		var c: Dictionary = chunks[i]
 		var lift := float(nodes[i].position.y)-float(c.pivot.y)
 		var d := float(c.hi.y)+lift-sea_y

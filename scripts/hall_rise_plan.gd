@@ -86,6 +86,60 @@ static func make(opts := {}) -> Dictionary:
 	schedule(chunks,opts)
 	return {"solids":solids,"chunks":chunks,"length":length(chunks),"sea":float(opts.get("sea",SEA))}
 
+## The same chunks as `base` (a `make` with the same from, keels and stones),
+## timed again for `opts` (a chain's next hall, its cloud top elsewhere in
+## its frame): no classify, no grouping, so it is cheap on the main thread.
+## The chunks' own data (solids, boxes, rim) is shared with `base`, read only.
+static func remake(base: Dictionary, opts := {}) -> Dictionary:
+	var chunks := []
+	for c: Dictionary in base.chunks: chunks.append(c.duplicate())
+	schedule(chunks,opts)
+	return {"solids":base.solids,"chunks":chunks,"length":length(chunks),"sea":float(opts.get("sea",SEA))}
+
+## `base` (a `make`) mirrored across the hall's length (x to -x, station
+## metres): the same hall swinging left where it swung right (a chain's
+## every other hall, scripts/hall_chain_plan.gd). Boxes keep a proper turn
+## (their basis mirrored on both sides), so the kit draws and collides
+## with them as ever. Its chunks are timed as `base`'s; `remake` it.
+static func mirrored(base: Dictionary) -> Dictionary:
+	var solids := []
+	for q: Dictionary in base.solids: solids.append(mirror_solid(q))
+	var chunks := []
+	for c: Dictionary in base.chunks:
+		var m := c.duplicate()
+		var lo: Vector3 = c.lo
+		var hi: Vector3 = c.hi
+		m.lo = Vector3(-hi.x,lo.y,lo.z)
+		m.hi = Vector3(-lo.x,hi.y,hi.z)
+		m.pivot = _flip(c.pivot)
+		var boxes := []
+		for b: AABB in c.boxes: boxes.append(AABB(Vector3(-b.end.x,b.position.y,b.position.z),b.size))
+		m.boxes = boxes
+		var rim := PackedVector3Array()
+		for p: Vector3 in c.rim: rim.append(_flip(p))
+		m.rim = rim
+		var extra := []
+		for q: Dictionary in c.extra: extra.append(mirror_solid(q))
+		m.extra = extra
+		chunks.append(m)
+	return {"solids":solids,"chunks":chunks,"length":base.length,"sea":base.sea,"mirrored":true}
+
+## One solid mirrored across x.
+static func mirror_solid(q: Dictionary) -> Dictionary:
+	var m := q.duplicate()
+	if q.has("middle"): m.middle = _flip(q.middle)
+	if q.has("basis"):
+		var f := Basis(Vector3(-1,0,0),Vector3(0,1,0),Vector3(0,0,1))
+		m.basis = (f*(q.basis as Basis)*f).orthonormalized()
+	if q.has("points"):
+		var pts := PackedVector3Array()
+		for p: Vector3 in q.points: pts.append(_flip(p))
+		m.points = pts
+	return m
+
+static func _flip(p: Vector3) -> Vector3:
+	return Vector3(-p.x,p.y,p.z)
+
 ## The rise's settings: RISE with any given in opts.
 static func settings(opts := {}) -> Dictionary:
 	var out := RISE.duplicate()
