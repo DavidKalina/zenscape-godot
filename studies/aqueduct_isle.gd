@@ -77,6 +77,7 @@ const StoneFigure = preload("res://scripts/stone_plane_figure.gd")
 const NoseCompass = preload("res://scripts/nose_compass.gd")
 const Lodestone = preload("res://scripts/lodestone.gd")
 const MomentsHud = preload("res://scripts/moments_hud.gd")
+const IsleSky = preload("res://studies/aqueduct_isle_sky.gd")
 
 ## The station this is (its key in the pack).
 const STATION := 2
@@ -293,6 +294,7 @@ func _ready() -> void:
 	_hud.visible = false
 	if not preload("res://scripts/launch_args.gd").user_args().has("--no-flora"): _grow()
 	if not _no_lode: _build_lode()
+	_add_sky()
 	if _place != Vector4.INF:
 		var turn := deg_to_rad(_place.w)
 		start = Vector3(_place.x,_place.y,_place.z)
@@ -1016,6 +1018,19 @@ func _take_capture() -> void:
 	get_viewport().get_texture().get_image().save_png(_capture)
 	print("aqueduct isle: saved %s (%s; %.2f ms a frame, vsync off; %d draw calls, %d primitives)" % [_capture,look_id,frame_ms,RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME),RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME)])
 	get_tree().quit()
+
+# --- The sky round it ----------------------------------------------------------------
+
+## The sky round the isle lived in (studies/aqueduct_isle_sky.gd): far isles,
+## airships, the CPU planes, open-air life, motes and a few tokens for the
+## plane; each with its own --no-... flag. A capture waits for it whole.
+var sky: Node3D
+
+func _add_sky() -> void:
+	sky = IsleSky.new()
+	add_child(sky)
+	sky.setup(self)
+	if _capture != "": sky.flush()
 
 # --- The lodestone ------------------------------------------------------------------
 
