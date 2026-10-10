@@ -145,7 +145,9 @@ func _build_bridges() -> void:
 	for spec: Dictionary in TarnArt.bridges():
 		for head: Array in spec.heads:
 			var at: Vector3 = head[0]
-			var stone: Node3D = Cloister.abutment(TARN_SEED+50+k,0.4,2.4)
+			# The kit's anchor on a coursed head block the deck comes onto.
+			var stone: Node3D = RuinKit.bridge_anchor(TARN_SEED+50+k,0.4,Footbridge.WIDTH,
+				{"head":Vector3(Cloister.ABUTMENT.x,2.4,Cloister.ABUTMENT.z),"post_x":Cloister.ABUTMENT.x*0.5-0.3,"post_z":Cloister.ABUTMENT.z*0.5-0.3})
 			stone.transform = Transform3D(Basis(Vector3.UP,float(head[1])),at)
 			art.add_child(stone)
 			k += 1

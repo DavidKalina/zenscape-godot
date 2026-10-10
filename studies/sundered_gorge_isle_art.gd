@@ -11,7 +11,7 @@ extends RefCounted
 ## halves drifted, it snapped at the crown: each half keeps its half-arch,
 ## its spandrel and deck torn off ragged over the gap, and a rope bridge
 ## (scripts/rope_bridge.gd, live) is slung between stone anchors on the two
-## snapped ends (RuinKit `rope_anchor`). The crown's stones hang in the gap
+## snapped ends (RuinKit `bridge_anchor`, the kit isles' one anchor). The crown's stones hang in the gap
 ## beside it (an expert's crossing) and the rest of it lies on a fragment of
 ## the isle caught deep in the gorge under the break.
 ##
@@ -641,7 +641,8 @@ static func half_bridge(seed_value: int, broken_at: float, weathered: float) -> 
 	drawn.get_node("Body").free()
 	node.add_child(drawn)
 	# The anchor on the snapped end.
-	var anchor: Node3D = RuinKit.rope_anchor(seed_value+2,weathered*0.6,ANCHOR_WIDTH)
+	var anchor: Node3D = RuinKit.bridge_anchor(seed_value+2,weathered*0.6,Footbridge.WIDTH,
+		{"post_x":ANCHOR_WIDTH*0.5,"post_z":0.0,"sill":Vector3(ANCHOR_WIDTH*0.5+0.33,0.11,0.32),"sill_at":Vector3(0.0,-0.11,-0.08)})
 	anchor.name = "Anchor"
 	anchor.transform = Transform3D(Basis(Vector3.UP,PI*0.5),Vector3(broken_at-ANCHOR_BACK-0.2,DECK_LIFT,0.0))
 	node.add_child(anchor)

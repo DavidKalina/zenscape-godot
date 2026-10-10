@@ -1191,28 +1191,94 @@ static func fallen_pier(seed_value: int, weathered := 0.0) -> Node3D:
 	_rubble(b,2.4,1+int(round(weathered*b.rng.randf_range(3.0,6.0))))
 	return b.finish()
 
-## A rope bridge's anchor (not one of PIECES: a fitting the isles set where
-## a live rope bridge, scripts/rope_bridge.gd, comes to ground): a dressed
-## sill flush with the ground the deck runs out over (+Z), and a squat
-## stone post either side just outside the deck's `width`, capped, its foot
-## sunk, the bridge's own timber posts lashed to their inner faces. The
-## sill walks as laid (a clean hull); the posts collide. Weathered, a cap
-## gone and a little rubble.
-static func bridge_anchor(seed_value: int, weathered := 0.0, width := 0.74) -> Node3D:
+## A rope bridge's stone anchor (not one of PIECES: a fitting the kit isles
+## set where a live rope bridge, scripts/rope_bridge.gd, comes to ground;
+## docs/scenic/kit-isle-shared.md): the one anchor every isle's bridges
+## hang from. Two squared posts either side of the deck, ANCHOR_POST (side,
+## height) in two or three courses under a projecting course and a low
+## pyramid cap, the ropes' lashing a band of rope round each; a long
+## dressed sill across between their feet, its top the walk (y 0), walked
+## on a clean hull; under it, by `spec`, a coursed plinth standing out of a
+## cliff's lip, or a whole coursed head block the deck comes onto. The posts
+## collide as clean blocks to their caps' tops; weathered, they lean, a cap
+## may lie at a foot (drawn only), a little rubble.
+## `spec` (the anchor's own frame, y up; each isle sets where its bridge's
+## end and its ground are):
+##   post_x    the posts' middles across X (default: just outside `width`)
+##   post_z    their middles along Z
+##   sill      the sill's half extents, `sill_at` its middle (its top y 0)
+##   plinth    a coursed plinth under the sill: (half width, depth, half
+##             depth), at `plinth_z`
+##   head      a coursed head block instead of a sill: (width, depth under
+##             its top, depth), its top walked
+## Meta "posts": the posts' tops (for perching birds).
+const ANCHOR_POST := Vector2(0.42,1.15)
+const ANCHOR_LASHING := Color("8a7350")
+static func bridge_anchor(seed_value: int, weathered := 0.4, width := 0.74, spec := {}) -> Node3D:
 	var b := Build.new(seed_value,weathered,"BridgeAnchor")
-	var sill := Vector3(width*0.5+0.75,0.12,0.4)
-	b.lean = true
-	b.solid(_box(b,sill),Transform3D(Basis.IDENTITY,Vector3(0.0,-sill.y+0.03,-0.2)),_stone(b,0.95),false)
-	b.lean = false
-	_walk_hull(b,Transform3D(Basis.IDENTITY,Vector3(0.0,-sill.y+0.03,-0.2)),[Plane(Vector3.RIGHT,sill.x),Plane(Vector3.LEFT,sill.x),Plane(Vector3.UP,sill.y),Plane(Vector3.DOWN,sill.y),Plane(Vector3.BACK,sill.z),Plane(Vector3.FORWARD,sill.z)])
+	var post := ANCHOR_POST
+	var post_x: float = spec.get("post_x",width*0.5+0.42)
+	var post_z: float = spec.get("post_z",-0.15)
+	var tops: Array = []
+	# The base: a head block, or a sill (on a plinth).
+	if spec.has("head"):
+		var head: Vector3 = spec.head
+		var hx := head.x*0.5
+		var hz := head.z*0.5
+		var foot := head.y
+		b.settle = 0.35
+		var top := func(_x: float) -> float: return foot-0.12
+		_courses(b,Transform3D(Basis.IDENTITY,Vector3(0.0,-foot,0.0)),-hx,hx,0.0,top,hz,Callable(),0.42)
+		for s: float in [-1.0,1.0]:
+			var cap := Vector3(hx*0.5-0.01,0.06,hz+0.05)
+			b.solid(_box(b,cap),_jiggle(b,Transform3D(Basis.IDENTITY,Vector3(s*hx*0.5,-0.06,0.0)),0.3),_stone(b,1.08),false,true)
+		_walk_box(b,Transform3D.IDENTITY,hx,-foot,0.0,hz,-hz)
+		b.settle = 0.0
+	else:
+		var sill: Vector3 = spec.get("sill",Vector3(width*0.5+0.75,0.12,0.4))
+		var sill_at: Vector3 = spec.get("sill_at",Vector3(0.0,-sill.y+0.03,-0.2))
+		b.lean = true
+		b.solid(_box(b,sill,0.04),Transform3D(Basis.IDENTITY,sill_at),_stone(b,1.02),false)
+		b.lean = false
+		_walk_hull(b,Transform3D(Basis.IDENTITY,sill_at),[Plane(Vector3.RIGHT,sill.x),Plane(Vector3.LEFT,sill.x),Plane(Vector3.UP,sill.y),Plane(Vector3.DOWN,sill.y),Plane(Vector3.BACK,sill.z),Plane(Vector3.FORWARD,sill.z)])
+		if spec.has("plinth"):
+			var plinth: Vector3 = spec.plinth
+			var under := sill_at.y-sill.y
+			var line := func(_x: float) -> float: return under
+			_courses(b,Transform3D(Basis.IDENTITY,Vector3(0.0,0.0,float(spec.get("plinth_z",0.2)))),-plinth.x,plinth.x,under-plinth.y,line,plinth.z,Callable(),0.38,false)
+	# The posts, coursed, capped, the ropes lashed round them.
 	for side: float in [-1.0,1.0]:
-		var x := side*(width*0.5+0.42)
-		var post := Vector3(0.24,0.78,0.24)
-		b.solid(_box(b,post),_settle(b,Vector3(x,post.y-0.25,-0.15),0.5),_stone(b,1.0))
-		if not (weathered > 0.4 and side > 0.0):
-			b.solid(_prism(4,0.3,0.12,0.0,0.22,PI/4.0),_settle(b,Vector3(x,post.y*2.0-0.25,-0.15),0.6),_stone(b,1.05))
-	_rubble(b,width*0.5+1.0,int(round(weathered*b.rng.randf_range(1.0,3.0))))
-	return b.finish()
+		var lean := Basis(Vector3(b.rng.randf_range(-1,1),0.0,b.rng.randf_range(-1,1)).normalized(),b.rng.randf_range(0.004,0.01)+0.03*weathered)
+		var foot := Transform3D(lean,Vector3(side*post_x,-0.18,post_z))
+		var y := 0.0
+		var k := 0
+		while y < post.y-0.05:
+			var h := minf(post.y-y,b.rng.randf_range(0.38,0.52))
+			if post.y-(y+h) < 0.2: h = post.y-y
+			# Each course drawn worn; the post walks past as one clean block.
+			var half := Vector3(post.x*0.5-0.01*k,h*0.5-0.004,post.x*0.5-0.01*k)
+			b.solid(_box(b,half,0.04),foot*_settle(b,Vector3(0.0,y+h*0.5,0.0),0.3),_stone(b,1.0+0.03*k),false)
+			y += h
+			k += 1
+		# Collided as one clean upright block to its cap's top, so a walker
+		# brushing past slides along it (the projecting course and the cap
+		# would catch his shoulder).
+		var tall := post.y+0.4
+		_walk_hull(b,foot*Transform3D(Basis.IDENTITY,Vector3(0.0,tall*0.5,0.0)),[Plane(Vector3.RIGHT,post.x*0.5),Plane(Vector3.LEFT,post.x*0.5),Plane(Vector3.UP,tall*0.5),Plane(Vector3.DOWN,tall*0.5),Plane(Vector3.BACK,post.x*0.5),Plane(Vector3.FORWARD,post.x*0.5)])
+		b.solid(_box(b,Vector3(post.x*0.5+0.04,0.05,post.x*0.5+0.04)),foot*Transform3D(Basis.IDENTITY,Vector3(0.0,post.y+0.05,0.0)),_stone(b,1.06),false,true)
+		var cap: Array[Plane] = _prism(4,post.x*0.6,0.04,0.0,0.3,PI*0.25)
+		if weathered > 0.45 and b.rng.randf() < weathered*0.6:
+			var tip := Basis(Vector3.UP,b.rng.randf()*TAU)*Basis(Vector3.RIGHT,b.rng.randf_range(1.1,1.5))
+			# Lying where it fell: drawn only, never a stumble at a bridge's end.
+			b.solid(cap,Transform3D(tip,Vector3(side*(post_x+0.55),0.12,post_z+b.rng.randf_range(-0.4,0.0))),_stone(b,1.05),false)
+		else:
+			b.solid(cap,foot*Transform3D(Basis.IDENTITY,Vector3(0.0,post.y+0.1,0.0)),_stone(b,1.05),false)
+		b.solid(_box(b,Vector3(post.x*0.5+0.025,0.055,post.x*0.5+0.025),0.01),foot*Transform3D(Basis.IDENTITY,Vector3(0.0,0.86,0.0)),ANCHOR_LASHING,false,false,[],-1,1.0,false)
+		tops.append(foot*Vector3(0.0,post.y+0.12,0.0))
+	_rubble(b,post_x+0.9,int(round(weathered*b.rng.randf_range(1.0,3.0))))
+	var node := b.finish()
+	node.set_meta("posts",tops)
+	return node
 
 ## 11. A carved chest: a stepped plinth, the chest's sides cut into blind
 ## arcading (little pointed niches between buttressed posts), a heavy lid
@@ -1464,44 +1530,6 @@ static func stone_circle(seed_value: int, weathered := 0.0, missing: Array = [])
 		"stub":stub_top,"lying":_round(sa,lie_r)+Vector3(0.0,TRILITHON.z-0.15,0.0),
 		"lean_foot":_round(al,low-0.6),"lean_head":_round(al,head-0.35)+Vector3(0.0,LEAN_TOP-0.35*tan(slope),0.0)})
 	return root
-
-## A rope bridge's stone anchor (scripts/rope_bridge.gd hangs its ropes
-## here; the Sundered gorge isle, studies/sundered_gorge_isle_art.gd): two
-## bollards either side of the deck's end, their middles `width` apart
-## across X, each a squared post of two or three courses under a pyramid
-## cap, ANCHOR_POST tall (over the hand ropes, which are tied round them),
-## and a long sill stone across between them at their feet, its top at y 0
-## (the deck the ropes start from); the bridge runs off toward +Z. Weathered,
-## the posts lean out of true and a cap may lie at a foot. Not a gallery
-## piece (PIECES): a part for a scene's bridge.
-const ANCHOR_POST := Vector2(0.42,1.15)
-static func rope_anchor(seed_value: int, weathered := 0.0, width := 1.3) -> Node3D:
-	var b := Build.new(seed_value,weathered,"RopeAnchor")
-	var post := ANCHOR_POST
-	for side: float in [-1.0,1.0]:
-		var lean := Basis(Vector3(b.rng.randf_range(-1,1),0.0,b.rng.randf_range(-1,1)).normalized(),b.rng.randf_range(0.004,0.01)+0.03*weathered)
-		var foot := Transform3D(lean,Vector3(side*width*0.5,-0.18,0.0))
-		var y := 0.0
-		var k := 0
-		while y < post.y-0.05:
-			var h := minf(post.y-y,b.rng.randf_range(0.38,0.52))
-			if post.y-(y+h) < 0.2: h = post.y-y
-			var half := Vector3(post.x*0.5-0.01*k,h*0.5-0.004,post.x*0.5-0.01*k)
-			b.solid(_box(b,half,0.04),foot*_settle(b,Vector3(0.0,y+h*0.5,0.0),0.3),_stone(b,1.0+0.03*k))
-			y += h
-			k += 1
-		var cap_lost := weathered > 0.45 and b.rng.randf() < weathered*0.6
-		var cap: Array[Plane] = _prism(4,post.x*0.55,0.06,0.0,0.32,PI*0.25)
-		if cap_lost:
-			var tip := Basis(Vector3.UP,b.rng.randf()*TAU)*Basis(Vector3.RIGHT,b.rng.randf_range(1.1,1.5))
-			b.solid(cap,Transform3D(tip,Vector3(side*(width*0.5+0.55),0.12,b.rng.randf_range(-0.5,-0.1))),_stone(b,1.05))
-		else:
-			b.solid(cap,foot*Transform3D(Basis.IDENTITY,Vector3(0.0,post.y-0.01,0.0)),_stone(b,1.05))
-	# The sill: one long stone across, its top the deck's (y 0).
-	var sill := Vector3(width*0.5+post.x*0.5+0.12,0.11,0.32)
-	b.solid(_box(b,sill,0.04),Transform3D(Basis.IDENTITY,Vector3(0.0,-sill.y,-0.08)),_stone(b,1.04))
-	_rubble(b,width*0.5+0.9,int(round(weathered*b.rng.randf_range(2.0,4.0))))
-	return b.finish()
 
 ## A point `r` out from the middle at angle `a` (from +Z toward +X).
 static func _round(a: float, r: float) -> Vector3:

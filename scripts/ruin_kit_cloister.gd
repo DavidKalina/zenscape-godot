@@ -201,33 +201,6 @@ static func pavilion(seed_value: int, weathered: float, side: float, top: float,
 	RuinKit._rubble(b,h+1.6,int(round(weathered*5.0)))
 	return b.finish()
 
-## A rope bridge's stone head: a coursed block from `foot` m under its top
-## (down into the ground) up to its top (y 0), ABUTMENT wide (X) and deep
-## (Z), its head walked on a clean box, two bollard posts at its front
-## corners (+Z, the bridge's side) the ropes are lashed to.
-static func abutment(seed_value: int, weathered: float, foot: float) -> Node3D:
-	var b := Build.new(seed_value,weathered,"BridgeHead")
-	b.settle = 0.35
-	var hx := ABUTMENT.x*0.5
-	var hz := ABUTMENT.z*0.5
-	var top := func(_x: float) -> float: return foot-0.12
-	var pose := Transform3D(Basis.IDENTITY,Vector3(0.0,-foot,0.0))
-	RuinKit._courses(b,pose,-hx,hx,0.0,top,hz,Callable(),0.42)
-	# The capstones, drawn; the head walked on a clean box.
-	for s: float in [-1.0,1.0]:
-		var half := Vector3(hx*0.5-0.01,0.06,hz+0.05)
-		b.solid(RuinKit._box(b,half),RuinKit._jiggle(b,Transform3D(Basis.IDENTITY,Vector3(s*hx*0.5,-0.06,0.0)),0.3),RuinKit._stone(b,1.08),false,true)
-	RuinKit._walk_box(b,Transform3D.IDENTITY,hx,-foot,0.0,hz,-hz)
-	for s: float in [-1.0,1.0]:
-		var at := Vector3(s*(hx-0.3),POST.y*0.5,hz-0.3)
-		var planes := RuinKit._box(b,POST*0.5)
-		planes.append(Plane((Vector3.UP+Vector3(s*0.3,0.0,0.3)).normalized(),POST.y*0.5-0.02))
-		b.solid(planes,RuinKit._jiggle(b,Transform3D(Basis.IDENTITY,at),0.4),RuinKit._stone(b,1.04),true,true)
-		# The rope's lashing round it: a band of the bridge's rope.
-		b.solid(RuinKit._box(b,Vector3(POST.x*0.5+0.03,0.06,POST.z*0.5+0.03),0.01),Transform3D(Basis.IDENTITY,at+Vector3(0.0,0.12,0.0)),Color("8a7350"),false,false,[],-1,1.0,false)
-	b.hang(Vector3(b.rng.randf_range(-hx,hx),-0.2,hz),b.rng.randf_range(0.4,1.2),true,-0.1)
-	return b.finish()
-
 ## A stone slab bridge `length` (X) by `width` (Z), its top at y 0: two or
 ## three long slabs side by side on a corbelled end each side, walked on a
 ## clean box the slabs' length.

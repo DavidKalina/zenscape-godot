@@ -206,31 +206,3 @@ static func bell(seed_value: int) -> Node3D:
 	pivot.add_child(node)
 	return pivot
 
-## A rope bridge's stone anchor: two square posts either side of the deck
-## (`width` m) under weathered caps, a sill stone the deck's end rests on,
-## its top at y 0 (the walk), and a coursed plinth under it standing out
-## of a cliff's lip; the bridge goes out toward -Z. The posts and the sill
-## collide (the sill walked true); the plinth only draws if `plinth`.
-## Meta "posts": the posts' tops (for perching birds).
-static func bridge_anchor(seed_value: int, weathered := 0.4, width := 0.74, plinth := true) -> Node3D:
-	var b := Build.new(seed_value,weathered,"BridgeAnchor")
-	var tops: Array = []
-	for s: float in [-1.0,1.0]:
-		var x := s*(width*0.5+POST.x+0.12)
-		var high := POST.y*b.rng.randf_range(0.9,1.05)
-		b.solid(RuinKit._box(b,Vector3(POST.x,(high+0.6)*0.5,POST.x)),RuinKit._settle(b,Vector3(x,(high-0.6)*0.5,0.0),0.4),RuinKit._stone(b,1.02))
-		# A cap: a low pyramid over a thin projecting course.
-		b.solid(RuinKit._box(b,Vector3(POST.x+0.05,0.06,POST.x+0.05)),Transform3D(Basis.IDENTITY,Vector3(x,high+0.06,0.0)),RuinKit._stone(b,1.06),true,true)
-		if b.rng.randf() > weathered*0.6:
-			b.solid(RuinKit._prism(4,(POST.x+0.04)*1.0,0.02,high+0.12,high+0.4,PI*0.25),Transform3D.IDENTITY.translated(Vector3(x,0.0,0.0)),RuinKit._stone(b,1.04),true,true)
-		tops.append(Vector3(x,high+0.12,0.0))
-		# The ropes' groove: a darker band where they were lashed.
-		b.solid(RuinKit._box(b,Vector3(POST.x+0.01,0.05,POST.x+0.01),0.0),Transform3D(Basis.IDENTITY,Vector3(x,0.85,0.0)),Color("3f3a33"),false,false)
-	b.solid(RuinKit._box(b,SILL*Vector3(1.0,0.5,1.0)+Vector3(width*0.5,0.0,0.0)*0.0),Transform3D(Basis.IDENTITY,Vector3(0.0,-SILL.y*0.5,0.15)),RuinKit._stone(b,1.08),false)
-	RuinKit._walk_hull(b,Transform3D.IDENTITY,[Plane(Vector3.LEFT,SILL.x),Plane(Vector3.RIGHT,SILL.x),Plane(Vector3.BACK,0.15+SILL.z),Plane(Vector3.FORWARD,SILL.z-0.15),Plane(Vector3.UP,0.0),Plane(Vector3.DOWN,SILL.y)])
-	if plinth:
-		var line := func(_x: float) -> float: return -SILL.y
-		RuinKit._courses(b,Transform3D(Basis.IDENTITY,Vector3(0.0,0.0,0.2)),-PLINTH.x,PLINTH.x,-SILL.y-PLINTH.y,line,PLINTH.z*0.5,Callable(),0.38,false)
-	var node := b.finish()
-	node.set_meta("posts",tops)
-	return node

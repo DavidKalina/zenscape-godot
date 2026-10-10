@@ -192,7 +192,11 @@ func _bridges(l: Dictionary) -> void:
 			body.add_child(shape)
 		holder.add_child(body)
 		for end: Array in [[a,b],[b,a]]:
-			var anchor := Belfry.bridge_anchor(seed_value*3+int(end[0] == b),0.45,Footbridge.WIDTH)
+			# The kit's anchor, the bridge going out toward -Z: its sill on a
+			# coursed plinth out of the lip.
+			var anchor := RuinKit.bridge_anchor(seed_value*3+int(end[0] == b),0.45,Footbridge.WIDTH,
+				{"post_x":Footbridge.WIDTH*0.5+0.33,"post_z":0.0,"sill":Vector3(0.75,0.11,0.55),"sill_at":Vector3(0.0,-0.11,0.15),
+				"plinth":Vector3(1.15,1.4,0.375),"plinth_z":0.2})
 			var way: Vector3 = (end[1] as Vector3)-(end[0] as Vector3)
 			way.y = 0.0
 			anchor.transform = Transform3D(Basis.looking_at(way.normalized(),Vector3.UP),end[0])
