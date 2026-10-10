@@ -585,7 +585,8 @@ static func ground(_point: Vector3) -> Variant:
 	return floor_y()
 
 ## Stands station `s`'s solids under `parent` as static bodies on LAYER; with
-## `material` (a Callable(kind) -> Material) they are drawn too.
+## `material` (a Callable(kind) -> Material) they are drawn too. Each body
+## carries its crash class as meta (a solid's "crash", else "stone").
 static func build(s: Dictionary, parent: Node3D, material := Callable()) -> Node3D:
 	var root := Node3D.new()
 	root.name = "Station_"+str(s.id)
@@ -594,6 +595,9 @@ static func build(s: Dictionary, parent: Node3D, material := Callable()) -> Node
 		var body := StaticBody3D.new()
 		body.collision_layer = LAYER
 		body.collision_mask = 0
+		# Its crash class (scripts/flight_crash.gd CLASSES): "stone" unless
+		# the solid says otherwise.
+		body.set_meta(&"crash_class",str(solid.get("crash","stone")))
 		var shape := CollisionShape3D.new()
 		var mesh: Mesh
 		if solid.kind == "box":

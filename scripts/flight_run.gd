@@ -51,6 +51,18 @@ extends RefCounted
 ## yields how many free ones it got and the most challenge ones one try
 ## got (`free_taken`, `challenge_best`).
 ##
+## Crash and restart (scripts/flight_crash.gd; `set_crash`, off by default):
+## with a mode on, each bump's contact is looked at after RuinBump has bumped
+## the plane out (RuinBump itself unchanged), and one that is a crash puts the
+## plane back at the restart point at cruise along the line; the run then
+## holds (its clock stopped) for FlightCrash HOLD s while the study's crash
+## plays. Guides from the restart point on stand again; free collectibles
+## taken stay taken; the challenge carries on (checkpoint), starts afresh
+## (ring) or ends "crash" (entry). Events "crash" and "respawn"; the record
+## carries "crash" (the rules), "cuts" (tick rows where it jumped to a
+## restart point) and its station_hash tagged ("<hash>:crash-hard-checkpoint")
+## so its runs pile up apart from bump-and-recover ones.
+##
 ## `finish` returns the run as plain data (FlightMetrics `summarise` reads
 ## it; scripts/flight_log.gd saves it).
 
@@ -58,6 +70,7 @@ const SkyPlane = preload("res://scripts/sky_plane.gd")
 const RuinBump = preload("res://scripts/ruin_bump.gd")
 const Course = preload("res://scripts/flight_course.gd")
 const Metrics = preload("res://scripts/flight_metrics.gd")
+const Crash = preload("res://scripts/flight_crash.gd")
 
 const FORMAT := 1
 const SIGHT := 160.0
@@ -154,6 +167,18 @@ var still_ticks := 0
 var straight_from := -1.0
 var longest_straight := 0.0
 var _swing_past := []
+## Crash and restart (FlightCrash): the rules ({} off), crashes so far, the
+## hold left (s), where and how the last crash was ({position, heading,
+## pitch, roll, velocity, normal, into, class}), restarts so far, the grace
+## left, the line sample beside the plane and the tick rows cut by a restart.
+var crash := {}
+var crashes := 0
+var crash_left := 0.0
+var crash_pose := {}
+var respawns := 0
+var _grace := 0.0
+var _beside := 0
+var cuts := []
 
 func _init(s: Dictionary, who := "human", params := {}, physics: PhysicsDirectSpaceState3D = null) -> void:
 	station = s
@@ -211,6 +236,11 @@ func _init(s: Dictionary, who := "human", params := {}, physics: PhysicsDirectSp
 	_last_pitch = plane.pitch
 	_record({})
 
+## Crash and restart with rules `given` ({mode, restart, hard}; see
+## FlightCrash `rules`); off (or {}) leaves the run as it always was.
+func set_crash(given: Dictionary) -> void:
+	crash = Crash.rules(given)
+
 ## The first standing token, or -1.
 func next_token() -> int:
 	for i in range(state.size()):
@@ -250,14 +280,24 @@ func challenge_left() -> float:
 ## One tick of `delta` s with `input` (SkyPlane.step's dict).
 func tick(delta: float, input: Dictionary) -> void:
 	if done: return
+	# After a crash the run holds, its clock stopped, while the crash plays.
+	if crash_left > 0.0:
+		crash_left = maxf(0.0,crash_left-delta)
+		return
 	t += delta
 	var was := plane.position
 	plane.step(delta,input,Callable(Course,"ground"))
-	var bumped := RuinBump.bump(space,plane,was) if space != null else false
-	if bumped and not bumping:
-		bumps += 1
-		events.append({"t":snappedf(t,0.0001),"kind":"bump"})
-	bumping = bumped
+	if not crash.is_empty():
+		if _crash_tick(was,delta):
+			_record({})
+			_check_end()
+			return
+	else:
+		var bumped := RuinBump.bump(space,plane,was) if space != null else false
+		if bumped and not bumping:
+			bumps += 1
+			events.append({"t":snappedf(t,0.0001),"kind":"bump"})
+		bumping = bumped
 	_tokens(was)
 	if not moments.is_empty(): _moments(was)
 	_look()
@@ -266,9 +306,117 @@ func tick(delta: float, input: Dictionary) -> void:
 	_thread()
 	_flow()
 	_record(input)
+	_check_end()
+
+func _check_end() -> void:
 	if next_token() < 0: _end("done")
 	elif t >= TIME_LIMIT: _end("timeout")
 	elif plane.position.distance_to(tokens[next_token()]) > LOST: _end("lost")
+
+## The bump with crashing on: RuinBump bumps the plane out as ever, then its
+## contact (FlightCrash `contact`, at the pose it had before) says how fast
+## it went into which solid; a crash (FlightCrash `crashes`, never in the
+## grace after a restart) puts it at the restart point. True if it crashed.
+func _crash_tick(was: Vector3, delta: float) -> bool:
+	_grace = maxf(0.0,_grace-delta)
+	var pre := Crash.pose(plane)
+	var bumped := RuinBump.bump(space,plane,was) if space != null else false
+	_beside = _nearest_line(pre.position)
+	if bumped:
+		var hit := Crash.contact(space,pre,was)
+		if hit.is_empty(): hit = {"normal":(plane.position-was).normalized(),"into":maxf(0.0,-(pre.velocity as Vector3).dot((plane.position-was).normalized())),"class":"stone","point":pre.position}
+		if _grace <= 0.0 and Crash.crashes(crash,hit):
+			_crash(pre,hit)
+			return true
+		if not bumping:
+			bumps += 1
+			events.append({"t":snappedf(t,0.0001),"kind":"bump","into":snappedf(float(hit.into),0.01),"speed":snappedf((pre.velocity as Vector3).length(),0.01),"solid":hit["class"]})
+	bumping = bumped
+	return false
+
+## A crash: recorded, the plane put at the restart point, the challenge
+## carried on, restarted or ended (see the header), the hold begun.
+func _crash(pre: Dictionary, hit: Dictionary) -> void:
+	crashes += 1
+	crash_pose = pre.merged({"normal":hit.normal,"into":float(hit.into),"class":hit["class"]})
+	events.append({"t":snappedf(t,0.0001),"kind":"crash","into":snappedf(float(hit.into),0.01),"solid":hit["class"],"at":Metrics.arr(pre.position),
+		"speed":snappedf((pre.velocity as Vector3).length(),0.01),"line_s":snappedf(_beside*Metrics.STEP/SkyPlane.CRUISE_SPEED,0.01)})
+	for k in range(zones.size()):
+		if knife_state[k] == 1: _knife_bump[k] = true
+	var how := str(crash.restart)
+	var starter := -1
+	for i in range(moments.size()):
+		if moments[i].role == "starter": starter = i
+	if how == "ring" and (challenge != "on" or starter < 0): how = "checkpoint"
+	var at := 0
+	match how:
+		"entry":
+			at = 0
+			if challenge == "on": _challenge_end("crash")
+		"ring":
+			at = _nearest_line(moments[starter].at,true)
+			_challenge_end("crash")
+			moment_state[starter] = 1
+			_challenge_start()
+		_:
+			at = _checkpoint(_beside)
+	var p: Vector3 = entry.position if at == 0 else line[at].p
+	var way := Metrics.angles((line[mini(at+1,line.size()-1)].p as Vector3)-(line[maxi(at-1,0)].p as Vector3))
+	var heading := float(entry.heading) if at == 0 else way.x
+	plane.launch(p,heading,SkyPlane.CRUISE_SPEED,false)
+	plane.pitch = 0.0 if at == 0 else clampf(way.y,SkyPlane.PITCH_LIMIT.x,SkyPlane.PITCH_LIMIT.y)
+	plane.velocity = plane.forward()*plane.speed
+	# The line stands again from where it flies on: guides ahead of it.
+	var gap := int(line[at].gap) if at < line.size() else 0
+	for i in range(tokens.size()):
+		if guide[i] == 1 and i >= gap and state[i] != STANDING:
+			state[i] = STANDING
+			seen_at[i] = -1.0
+	_beside = at
+	respawns += 1
+	crash_left = Crash.HOLD
+	_grace = Crash.GRACE
+	bumping = false
+	cuts.append(ticks.t.size())
+	events.append({"t":snappedf(t,0.0001),"kind":"respawn","restart":how,"at":Metrics.arr(p),"line_s":snappedf(at*Metrics.STEP/SkyPlane.CRUISE_SPEED,0.01)})
+	_last_heading = plane.heading
+	_last_pitch = plane.pitch
+	_swing_past.clear()
+	straight_from = -1.0
+
+## The restart point behind line sample `from`: BACK s back along the line,
+## then on back to a sample SAFE m clear with no knife slit just ahead (0,
+## the entry, if none).
+func _checkpoint(from: int) -> int:
+	var i := from-roundi(Crash.BACK*SkyPlane.CRUISE_SPEED/Metrics.STEP)
+	var ahead := roundi(Crash.SLIT_AHEAD*SkyPlane.CRUISE_SPEED/Metrics.STEP)
+	while i > 0:
+		var ok := Course.clearance(solids,line[i].p) >= Crash.SAFE
+		if ok:
+			for z: Dictionary in zones:
+				if int(z.first) > i and int(z.first)-i <= ahead: ok = false
+		if ok: return i
+		i -= 1
+	return 0
+
+## The line sample nearest `p`: near the last one (forward a little more
+## than back), or anywhere with `anywhere` or if that is far.
+func _nearest_line(p: Vector3, anywhere := false) -> int:
+	var best := INF
+	var at := _beside
+	if not anywhere:
+		for i in range(maxi(0,_beside-20),mini(line.size(),_beside+80)):
+			var d := p.distance_squared_to(line[i].p)
+			if d < best:
+				best = d
+				at = i
+	if anywhere or best > 144.0:
+		for i in range(line.size()):
+			var d := p.distance_squared_to(line[i].p)
+			if d < best:
+				best = d
+				at = i
+	return at
 
 func _tokens(was: Vector3) -> void:
 	var at := plane.position
@@ -498,7 +646,8 @@ func live() -> Dictionary:
 		"knife_moments":zones.size(),"knife_clean":_knife_clean(),"knife_done":Array(knife_state).count(2),"on_edge_s":edge_ticks*t/maxf(ticks.t.size()-1,1),
 		"on_edge":absf(plane.bank) >= Metrics.KNIFE_ON,"knife_next":_knife_next(),
 		"moments":moments.size(),"free":free_taken(),"free_total":moment_count("free"),"challenge":challenge_now if challenge == "on" else challenge_best,
-		"challenge_best":challenge_best,"challenge_total":moment_count("challenge"),"challenge_state":challenge,"challenge_left":challenge_left()}
+		"challenge_best":challenge_best,"challenge_total":moment_count("challenge"),"challenge_state":challenge,"challenge_left":challenge_left(),
+		"crashes":crashes,"crash_mode":str(crash.get("mode","off")),"crash_restart":str(crash.get("restart","")),"crashing":crash_left > 0.0}
 
 ## Knife zones passed clean so far.
 func _knife_clean() -> int:
@@ -559,5 +708,10 @@ func finish() -> Dictionary:
 		run.result["challenge_total"] = moment_count("challenge")
 		run.result["challenge_tries"] = challenge_tries
 		run.result["challenge_ended"] = challenge
+	if not crash.is_empty():
+		run["crash"] = crash.duplicate()
+		run["cuts"] = cuts.duplicate()
+		run.station_hash = str(run.station_hash)+":"+Crash.tag(crash)
+		run.result["crashes"] = crashes
 	run["metrics"] = Metrics.summarise(run,solids)
 	return run

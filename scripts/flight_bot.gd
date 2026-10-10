@@ -54,6 +54,14 @@ extends RefCounted
 ## params flies the bare line. A station without moments flies as before
 ## (`grab_aim` and the rest are only read on a moments station).
 ##
+## Crashing (scripts/flight_crash.gd, opt-in): after the run puts the plane
+## at a restart point the bot forgets what it was doing (its lagged view of
+## itself, the moment or bonus it was going for, being pinned) and takes
+## the line up from there. A moment or bonus token it has crashed going for
+## GIVE_UP times it gives up for the rest of the run (a person learns; the
+## perfect bot would otherwise crash the same way every time). With
+## crashing off nothing changes.
+##
 ## A skill is a dictionary of those numbers (SKILLS); a station's band is
 ## the least skill that clears it (FlightMetrics `band`).
 
@@ -103,6 +111,9 @@ const UNPIN_TURN := 0.5
 ## It never takes the line up again more than this far (m) back from the
 ## farthest it has been along it.
 const PROGRESS_SLACK := 3.0
+## Crashing on: a moment or bonus token is given up after this many crashes
+## going for it.
+const GIVE_UP := 2
 
 var params := {}
 ## The bonus token it is going for (-1 none), and its plan per tight one
@@ -132,6 +143,10 @@ var _zone := 0
 var _line_i := 0
 var _noise := Vector2.ZERO
 var _past := []
+## Restarts seen (the run's `respawns`), and crashes going for each moment
+## ("m<i>") and bonus token ("b<i>").
+var _respawns := 0
+var _given_up := {}
 
 func _init(skill: Dictionary, seed_value := 0) -> void:
 	params = skill
@@ -148,6 +163,7 @@ static func skill(name: String) -> Dictionary:
 ## This tick's input for `run`'s plane.
 func input(run: RefCounted, delta: float) -> Dictionary:
 	var plane: SkyPlane = run.plane
+	if run.get("respawns") != null and int(run.respawns) != _respawns: _respawned(run)
 	_past.append({"t":run.t,"p":plane.position,"h":plane.heading,"pitch":plane.pitch})
 	var lag := float(params.get("lag",0.0))
 	var me: Dictionary = _past.back()
@@ -224,6 +240,22 @@ func input(run: RefCounted, delta: float) -> Dictionary:
 			_unpin = 0.0
 	return out
 
+## Put at a restart point by a crash: start afresh from there.
+func _respawned(run: RefCounted) -> void:
+	_respawns = int(run.respawns)
+	for key: String in (["m%d" % _moment] if _moment >= 0 else [])+(["b%d" % _bonus] if _bonus >= 0 else []):
+		_given_up[key] = int(_given_up.get(key,0))+1
+	_past.clear()
+	_bonus = -1
+	_moment = -1
+	_pinned = 0.0
+	_unpin = 0.0
+	_bumped_at = -INF
+	_zone = 0
+	_line_i = 0
+	_line_i = _nearest(run,run.plane.position)
+	_progress = _line_i
+
 ## The bonus token to go for this tick (see the header), or -1.
 func _bonus_target(run: RefCounted, me: Dictionary) -> int:
 	var bonus: Array = run.get("bonus") if run.get("bonus") != null else []
@@ -245,7 +277,7 @@ func _bonus_target(run: RefCounted, me: Dictionary) -> int:
 	var knows_all := bool(params.get("knows_all",false))
 	var best := INF
 	for i in range(bonus.size()):
-		if run.bonus_state[i] != 0: continue
+		if run.bonus_state[i] != 0 or int(_given_up.get("b%d" % i,0)) >= GIVE_UP: continue
 		if not knows_all and (run.bonus_seen[i] < 0.0 or run.t-run.bonus_seen[i] < reaction): continue
 		var d: Vector3 = (bonus[i] as Vector3)-at
 		if d.length() > BONUS_RANGE or d.length() >= need or nose.angle_to(d) > BONUS_CONE or d.length() >= best: continue
@@ -271,7 +303,7 @@ func _moment_target(run: RefCounted, me: Dictionary) -> int:
 	var knows_all := bool(params.get("knows_all",false))
 	var best := INF
 	for i in range(list.size()):
-		if run.moment_state[i] != 0 or run.moment_live[i] == 0: continue
+		if run.moment_state[i] != 0 or run.moment_live[i] == 0 or int(_given_up.get("m%d" % i,0)) >= GIVE_UP: continue
 		if not knows_all and (run.moment_seen[i] < 0.0 or run.t-run.moment_seen[i] < reaction): continue
 		var d: Vector3 = (list[i].at as Vector3)-at
 		if d.length() > BONUS_RANGE or nose.angle_to(d) > BONUS_CONE or d.length() >= best: continue

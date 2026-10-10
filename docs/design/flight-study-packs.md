@@ -83,6 +83,10 @@ Tests: `python3 tools/run_tests.py --tests 'test_flight_*.gd'`.
   collectibles plus a starter that begins a challenge, banded per
   collectible. `./run-flight-moments.command`, `--pack moments` on the
   bench. See docs/design/flight-study-moments.md.
+- crash and restart (added on `study/flight-crash`): opt-in `--crash=hard`
+  next to bump and recover, restart at checkpoint, ring or entry, crash
+  classes per solid. `./run-flight-crash.command`. See
+  docs/design/flight-study-crash.md.
 
 Those docs describe each branch alone. Where they name a pack's preload
 (`SkyPack`, `TokensPack`, `Nature`), the merged course calls it `PackSky`,
