@@ -43,6 +43,16 @@ extends "res://studies/character_study.gd"
 ## --no-flora leaves the grass and flowers out (to compare cost).
 ## --fly starts in the plane; --drift=<x> scales its knife-edge drift
 ## (scripts/sky_plane.gd). The plane: docs/scenic/aqueduct-isle-game-look.md.
+## The lodestone (docs/design/isle-lodestone.md): a stone holding a world in
+## miniature (scripts/lodestone.gd) hums on the floating stone past the heel
+## stone (east_1); climb to it, E (pad A) picks it up and holds it up to
+## look at (drag or the right stick turns it; E, Enter, pad A or B keeps
+## it), and it rides at the pilot's side. Boarding with it seats it in the
+## stone plane (scripts/stone_plane_figure.gd, this scene's plane; the
+## wooden one with --wood-plane), whose wing seams then point to a shard
+## floating far off (--target=x,y,z). --carry starts with it; --lode-at=
+## <platform name> rests it elsewhere; --no-lode leaves it out; --pickup
+## picks it up at once if he stands by it (captures).
 ## --look=<id> (or --preset=<id>) starts in that look preset; --look=x,y,z
 ## (three numbers) is the capture's look-at point. --capture waits for the
 ## sky to settle, saves the view (from --at looking at the point, else the
@@ -63,6 +73,9 @@ const PilotWake = preload("res://scripts/pilot_wake.gd")
 const SkyPlane = preload("res://scripts/sky_plane.gd")
 const PlaneFigure = preload("res://scripts/plane_figure.gd")
 const GlideCamera = preload("res://scripts/glide_camera.gd")
+const StoneFigure = preload("res://scripts/stone_plane_figure.gd")
+const Lodestone = preload("res://scripts/lodestone.gd")
+const MomentsHud = preload("res://scripts/moments_hud.gd")
 
 ## The station this is (its key in the pack).
 const STATION := 2
@@ -191,6 +204,58 @@ var _ground_ray: PhysicsRayQueryParameters3D
 var _foot_hint: Label
 var _switch_hint: Label
 
+## The lodestone (docs/design/isle-lodestone.md). It rests LODE_HOVER m over
+## the top of the floating stone LODE_PLATFORM (studies/aqueduct_isle_art.gd
+## `platforms`), LODE_SCALE times its hand size so it is found; it hums from
+## HUM_FAR m, fully at HUM_NEAR. Standing on that stone within PICK_REACH m
+## (across), E or pad A picks it up: the pilot raises his mitts, it floats
+## down into them over PICKUP s and the camera pushes in over PUSH s; kept,
+## it rides at his side (CARRY_AT: right, up, forward, at CARRY_SCALE).
+## Boarding with it seats it in the stone plane; its compass points at
+## TARGET (a shard floating far off) and arriving within ARRIVE m chimes and
+## flashes (again once he has been ARRIVE_AGAIN m away).
+const LODE_PLATFORM := "east_1"
+const LODE_MINI := "sundered"
+const LODE_HOVER := 0.85
+const LODE_SCALE := 1.5
+const HUM_FAR := 9.0
+const HUM_NEAR := 1.6
+const PICK_REACH := 1.5
+const PICKUP := 1.1
+const PUSH := 1.8
+const HOLD_UP := 0.42
+const ARMS := Vector3(2.9,0.2,0.3)
+const CARRY_AT := Vector3(0.36,0.82,0.02)
+const CARRY_SCALE := 0.45
+const TARGET := Vector3(250.0,Art.TOP+24.0,-230.0)
+const ARRIVE := 30.0
+const ARRIVE_AGAIN := 90.0
+const CAM_BACK := 0.5
+## The stone plane (the default here) or the game's wooden one.
+var stone_plane := true
+var lodestone: Node3D = null
+## "resting" on its stone, "inspecting" (held up), "carried", "seated" in
+## the plane.
+var lode_state := "resting"
+var lode_rest := Vector3.ZERO
+var lode_target := TARGET
+var arrived := false
+var shard: Node3D
+var _lode_at := LODE_PLATFORM
+var _no_lode := false
+var _carry := false
+var _pick := 0.0
+var _pick_from_cam := Transform3D.IDENTITY
+var _cam_back := 0.0
+var _cam_from := Transform3D.IDENTITY
+var _arms_down := 0.0
+var _moments: CanvasLayer
+var _shard_flash: MeshInstance3D
+var _shard_material: ShaderMaterial
+var _flash_left := 0.0
+## Captures: the eye in the plane's frame (--plane-eye=x,y,z), not the chase.
+var _plane_eye := Vector3.INF
+
 func _ready() -> void:
 	pack = "ruins_archipelago"
 	for arg in OS.get_cmdline_user_args():
@@ -207,6 +272,13 @@ func _ready() -> void:
 			var Style := preload("res://scripts/ruin_stone_style.gd")
 			Style.use(arg.get_slice("=",1))
 			Style.dress(RuinKit.materials().stone)
+		elif arg == "--wood-plane": stone_plane = false
+		elif arg == "--stone-plane": stone_plane = true
+		elif arg == "--no-lode": _no_lode = true
+		elif arg == "--carry": _carry = true
+		elif arg.begins_with("--lode-at="): _lode_at = arg.get_slice("=",1)
+		elif arg.begins_with("--target="): lode_target = _vec(arg.get_slice("=",1))
+		elif arg.begins_with("--plane-eye="): _plane_eye = _vec(arg.get_slice("=",1))
 		elif arg.begins_with("--place="):
 			var p := arg.get_slice("=",1).split(",")
 			_place = Vector4(float(p[0]),float(p[1]),float(p[2]),float(p[3]) if p.size() > 3 else 0.0)
@@ -217,12 +289,16 @@ func _ready() -> void:
 	await ready_to_walk
 	_hud.visible = false
 	if not OS.get_cmdline_user_args().has("--no-flora"): _grow()
+	if not _no_lode: _build_lode()
 	if _place != Vector4.INF:
 		var turn := deg_to_rad(_place.w)
 		start = Vector3(_place.x,_place.y,_place.z)
 		start_face = Vector2(sin(turn),-cos(turn))
 		respawn()
 	if OS.get_cmdline_user_args().has("--fly"): board()
+	if OS.get_cmdline_user_args().has("--pickup"):
+		for i in range(30): tick(1.0/60.0)
+		pick_up()
 	if _capture != "": _take_capture()
 
 static func _vec(text: String) -> Vector3:
@@ -247,7 +323,7 @@ func _build_ui() -> void:
 				_switch_hint.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
 				_switch_hint.offset_left = -760.0
 				_switch_hint.offset_right = 760.0
-				_switch_hint.offset_top = -140.0
+				_switch_hint.offset_top = -170.0
 				_switch_hint.offset_bottom = -40.0
 				_switch_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 				_switch_hint.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
@@ -530,6 +606,7 @@ func _process(delta: float) -> void:
 		if not flying: super._process(delta)
 		elif walk_ready and not scripted: fly_step(delta,_fly_input(delta))
 	_advance_look(delta)
+	_lode_frame(delta)
 	if _toast_left > 0.0 and _look_toast != null:
 		_toast_left = maxf(_toast_left-delta,0.0)
 		_look_toast.modulate.a = clampf(_toast_left/TOAST_FADE,0.0,1.0)
@@ -589,6 +666,13 @@ func _unhandled_input(event: InputEvent) -> void:
 	if Pad.pressed(event,&"camera_reset"):
 		reset_camera()
 		return
+	if lode_state == "inspecting":
+		_inspect_event(event)
+		return
+	if not flying and can_pick() and ((event is InputEventKey and event.pressed and not event.echo and (event as InputEventKey).keycode == KEY_E) or Pad.pressed(event,&"walk_jump")):
+		pick_up()
+		Input.action_release(&"walk_jump")
+		return
 	if flying:
 		_fly_event(event)
 		return
@@ -615,12 +699,19 @@ func board() -> void:
 		if not _in_stone(): break
 		plane.position += Vector3.UP*2.0
 	plane.velocity = plane.forward()*float(plane.speed)
-	plane_figure = PlaneFigure.new()
+	plane_figure = StoneFigure.new() if stone_plane else PlaneFigure.new()
 	plane_figure.name = "Plane"
 	add_child(plane_figure)
 	plane_figure.show_pilot(true)
+	if stone_plane: plane_figure.target = lode_target
 	plane_figure.reset(plane)
 	plane_figure._mark.visible = false
+	if lode_state == "carried":
+		lode_state = "seated"
+		if stone_plane:
+			plane_figure.seat(lodestone)
+			_moments.pop("The lodestone seats in the plane",1.6)
+		else: lodestone.visible = false
 	chase = GlideCamera.new()
 	chase.reset(plane,camera.global_position,camera.fov)
 	chase.linger = LOOK_LINGER
@@ -641,12 +732,19 @@ func leave_plane(at := Vector3.INF) -> void:
 	var spot := safe_ground(plane.position) if at == Vector3.INF else at
 	var face := Vector2(-sin(float(plane.heading)),-cos(float(plane.heading)))
 	flying = false
+	if lode_state == "seated":
+		# He takes the stone with him.
+		if stone_plane and plane_figure.stone != null:
+			var lode: Node3D = plane_figure.unseat()
+			add_child(lode)
+		lodestone.visible = true
+		lode_state = "carried"
 	plane_figure.queue_free()
 	plane_figure = null
 	figure.visible = true
 	camera.fov = FOV
 	if _foot_hint != null: _foot_hint.visible = true
-	if _switch_hint != null: _switch_hint.text = FOOT_HINT
+	if _switch_hint != null: _switch_hint.text = _foot_text()
 	place(spot,face)
 	_last_stood = spot
 
@@ -721,13 +819,18 @@ func fly_step(delta: float, input: Dictionary) -> void:
 	var ground := Callable(self,"plane_ground")
 	plane.step(delta,input,ground)
 	_bump(was)
+	if stone_plane: plane_figure.target = lode_target
 	plane_figure.update(delta,plane,0.0,ground,false)
 	plane_figure._mark.visible = false
+	_check_arrival()
 	chase.step(delta,plane,0.0,_inside_stone)
 	camera.global_position = chase.eye
 	camera.look_at(chase.look,Vector3.UP)
 	camera.rotate_object_local(Vector3.FORWARD,chase.roll)
 	camera.fov = chase.fov
+	if _plane_eye != Vector3.INF:
+		camera.global_position = plane_figure.global_transform*_plane_eye
+		camera.look_at(plane_figure.global_transform*Vector3(0.0,0.05,-0.05),plane_figure.global_basis.y)
 	_show_fly_hint()
 	# Riding a top lifts it clear only frames it touches, so a skim counts
 	# on through TOUCH_GAP s off it.
@@ -737,7 +840,13 @@ func fly_step(delta: float, input: Dictionary) -> void:
 	if _touch >= TOUCH_HOLD: leave_plane()
 
 func _show_fly_hint() -> void:
-	if _switch_hint != null and plane != null: _switch_hint.text = FLY_HINT % [float(plane.speed),bumps]
+	if _switch_hint == null or plane == null: return
+	var text := FLY_HINT % [float(plane.speed),bumps]
+	if stone_plane and lodestone != null:
+		if lode_state == "seated":
+			text += "\nThe lodestone points the way (%.0f m): turn toward the brighter wing seam (both even and faint: on course)  ·  top or bottom fin lit: climb or dive  ·  tail lit: it is behind you  ·  prow runes flare: dead ahead" % plane.position.distance_to(lode_target)
+		else: text += "\nThe stone plane sleeps: find the lodestone on foot and board with it to wake it"
+	_switch_hint.text = text
 
 ## The turf's top under a point, as the game's plane reads its heightfield:
 ## a ray down from a metre over it onto the turf only, upward faces only
@@ -893,3 +1002,240 @@ func _take_capture() -> void:
 	get_viewport().get_texture().get_image().save_png(_capture)
 	print("aqueduct isle: saved %s (%s; %.2f ms a frame, vsync off; %d draw calls, %d primitives)" % [_capture,look_id,frame_ms,RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME),RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME)])
 	get_tree().quit()
+
+# --- The lodestone ------------------------------------------------------------------
+
+## The lodestone on its floating stone, the HUD's pops and chime, and the
+## shard it points to (docs/design/isle-lodestone.md).
+func _build_lode() -> void:
+	var p: Dictionary = Art.platform(_lode_at)
+	if p.is_empty():
+		push_warning("aqueduct isle: no platform '%s'; %s instead" % [_lode_at,LODE_PLATFORM])
+		p = Art.platform(LODE_PLATFORM)
+	lode_rest = (p.at as Vector3)+Vector3.UP*LODE_HOVER
+	lodestone = Lodestone.new()
+	lodestone.set_miniature(LODE_MINI)
+	lodestone.position = lode_rest
+	lodestone.scale = Vector3.ONE*LODE_SCALE
+	add_child(lodestone)
+	_moments = MomentsHud.new()
+	add_child(_moments)
+	_build_target()
+	if _carry:
+		lode_state = "carried"
+		lodestone.scale = Vector3.ONE*CARRY_SCALE
+		lodestone.show_light(false)
+		_carry_step(0.0)
+	if _switch_hint != null: _switch_hint.text = _foot_text()
+
+## The place the stone points to: a shard of island floating far off, its
+## keel veined with the lode as the stone's is (scripts/lodestone.gd
+## `keel_mesh` at island scale), a broken arch and a pier of the gothic kit
+## on it; it collides (the plane is bumped off it, as off the ruins).
+func _build_target() -> void:
+	shard = Node3D.new()
+	shard.name = "TargetShard"
+	shard.position = lode_target
+	add_child(shard)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 91
+	var outline := PackedVector2Array()
+	for i in range(11):
+		var a := -TAU*i/11.0
+		var r := 7.0*rng.randf_range(0.75,1.15)
+		outline.append(Vector2(cos(a)*r*1.3,sin(a)*r))
+	var mesh: ArrayMesh = Lodestone.keel_mesh(outline,14.0,91,true)
+	var rock := MeshInstance3D.new()
+	rock.name = "Rock"
+	rock.mesh = mesh
+	_shard_material = ShaderMaterial.new()
+	_shard_material.shader = Lodestone.STONE_SHADER
+	_shard_material.set_shader_parameter("hum",0.35)
+	rock.material_override = _shard_material
+	shard.add_child(rock)
+	var body_static := StaticBody3D.new()
+	var collider := CollisionShape3D.new()
+	var hull := ConvexPolygonShape3D.new()
+	hull.points = mesh.get_faces()
+	collider.shape = hull
+	body_static.add_child(collider)
+	shard.add_child(body_static)
+	var arch: Node3D = RuinKit.piece("arch",44,0.5)
+	arch.transform = Transform3D(Basis(Vector3.UP,0.3),Vector3(-1.5,0.0,0.5))
+	shard.add_child(arch)
+	var pier: Node3D = RuinKit.piece("pier",45,0.6)
+	pier.position = Vector3(4.0,0.0,-2.0)
+	shard.add_child(pier)
+	_shard_flash = MeshInstance3D.new()
+	_shard_flash.name = "Flash"
+	var quad := QuadMesh.new()
+	quad.size = Vector2.ONE*46.0
+	_shard_flash.mesh = quad
+	var glow := StandardMaterial3D.new()
+	glow.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	glow.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	glow.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	glow.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	glow.albedo_texture = preload("res://scripts/glider_figure.gd")._soft_ring()
+	glow.albedo_color = Color(1.0,0.86,0.6,0.0)
+	glow.disable_fog = true
+	_shard_flash.material_override = glow
+	_shard_flash.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_shard_flash.position = Vector3(0.0,4.0,0.0)
+	_shard_flash.visible = false
+	shard.add_child(_shard_flash)
+
+## On foot: the stone's step after the pilot's (or, held up, instead).
+func tick(delta: float) -> void:
+	if lode_state == "inspecting":
+		_inspect_step(delta)
+		return
+	super.tick(delta)
+	_lode_step(delta)
+
+func _lode_step(delta: float) -> void:
+	if lodestone == null: return
+	if lode_state == "resting":
+		var near := lode_rest.distance_to(motor.feet+Vector3.UP*0.9)
+		lodestone.hum_goal = clampf(inverse_lerp(HUM_FAR,HUM_NEAR,near),0.0,1.0)
+	elif lode_state == "carried": _carry_step(delta)
+	if _arms_down > 0.0:
+		_raise_arms(smoothstep(0.0,1.0,_arms_down))
+		_arms_down = maxf(_arms_down-delta/0.35,0.0)
+	if _cam_back > 0.0:
+		_cam_back = maxf(_cam_back-delta,0.0)
+		camera.global_transform = _cam_from.interpolate_with(camera.global_transform,1.0-_cam_back/CAM_BACK)
+	if _switch_hint != null and not flying:
+		var text := _foot_text()
+		if _switch_hint.text != text: _switch_hint.text = text
+
+## Each frame, walking or flying: the resting stone bobs, the shard's lode
+## breathes, the arrival's flash fades.
+func _lode_frame(delta: float) -> void:
+	if lodestone == null: return
+	if lode_state == "resting": lodestone.position = lode_rest+Vector3.UP*sin(_motion_time*0.9)*0.03
+	if _shard_material != null: _shard_material.set_shader_parameter("clock",_motion_time)
+	if _flash_left > 0.0:
+		_flash_left = maxf(_flash_left-delta,0.0)
+		var t := _flash_left/1.4
+		_shard_flash.visible = _flash_left > 0.0
+		(_shard_flash.material_override as StandardMaterial3D).albedo_color.a = sin(t*PI)*0.9
+		_shard_flash.scale = Vector3.ONE*lerpf(1.6,0.5,t)
+		_shard_material.set_shader_parameter("hum",0.35+0.65*sin(t*PI))
+
+## Beside the stone, on its floating stone, it can be picked up.
+func can_pick() -> bool:
+	if lodestone == null or lode_state != "resting" or flying or not walk_ready: return false
+	var feet := motor.feet
+	var across := Vector2(feet.x-lode_rest.x,feet.z-lode_rest.z).length()
+	return across < PICK_REACH and absf(feet.y+LODE_HOVER-lode_rest.y) < 0.5
+
+## Picked up (E, pad A): he stops, raises his mitts and it floats down
+## into them, the camera pushing in to look at it (`_inspect_step`).
+func pick_up() -> void:
+	if not can_pick(): return
+	_pick_from_cam = camera.global_transform
+	motor.velocity = Vector3.ZERO
+	lode_state = "inspecting"
+	_pick = 0.0
+	lodestone.reset_turn()
+	lodestone.idle_turn = true
+	_moments.blip(0)
+	if _switch_hint != null: _switch_hint.text = _foot_text()
+
+## Kept (E, Enter, pad A or B): it rides at his side; the camera eases back
+## behind him.
+func keep_stone() -> void:
+	if lode_state != "inspecting": return
+	lode_state = "carried"
+	_cam_from = camera.global_transform
+	_cam_back = CAM_BACK
+	_arms_down = 1.0
+	lodestone.idle_turn = true
+	lodestone.show_light(false)
+	_moments.blip(2)
+	_moments.pop("The lodestone is yours: board the plane (F, pad Y) and it will point the way",2.6)
+	if _switch_hint != null: _switch_hint.text = _foot_text()
+
+## The pickup, as the lodestone study's (studies/lodestone_study.gd
+## `_step_inspect`): the mitts raised, the stone floating down off its rest
+## into the air over them on an arc, the camera pushing in from where it
+## was to a close shot of it before his face; the right stick turns it.
+func _inspect_step(delta: float) -> void:
+	_pick += delta
+	motor.velocity = Vector3.ZERO
+	body.drive(motor,delta)
+	_raise_arms(smoothstep(0.0,0.6,_pick))
+	var hold: Vector3 = (body.mitt(0)+body.mitt(1))*0.5+Vector3.UP*HOLD_UP
+	var t := smoothstep(0.15,PICKUP,_pick)
+	lodestone.position = lode_rest.lerp(hold,t)+Vector3.UP*sin(t*PI)*0.35
+	lodestone.scale = Vector3.ONE*lerpf(LODE_SCALE,1.0,t)
+	lodestone.hum_goal = 1.0
+	var way := PilotMotor.forward(motor.facing)
+	var ahead := Vector3(way.x,0.0,way.y)
+	var right := Vector3(-way.y,0.0,way.x)
+	var close := Transform3D(Basis.IDENTITY,hold+ahead*0.82+right*0.22+Vector3.UP*0.07).looking_at(hold+Vector3(0.0,-0.02,0.0))
+	camera.global_transform = _pick_from_cam.interpolate_with(close,smoothstep(PICKUP*0.4,PICKUP+PUSH,_pick))
+	var stick := Pad.stick(&"look_left",&"look_right",&"look_up",&"look_down")
+	if stick != Vector2.ZERO:
+		lodestone.idle_turn = false
+		lodestone.turn_by(stick*delta*1.8)
+
+func _inspect_event(event: InputEvent) -> void:
+	if event is InputEventMouseMotion:
+		lodestone.idle_turn = false
+		lodestone.turn_by(Vector2(event.relative.x*0.008,event.relative.y*0.006))
+		return
+	var done: bool = Pad.pressed(event,&"walk_jump") or (event is InputEventJoypadButton and event.pressed and (event as InputEventJoypadButton).button_index == JOY_BUTTON_B)
+	if event is InputEventKey and event.pressed and not event.echo and (event as InputEventKey).keycode in [KEY_E,KEY_ENTER,KEY_KP_ENTER]: done = true
+	if done and _pick > 0.4:
+		keep_stone()
+		Input.action_release(&"walk_jump")
+
+## Carried: a small glow riding at his right side, a little behind his
+## step.
+func _carry_step(delta: float) -> void:
+	var way := PilotMotor.forward(motor.facing)
+	var ahead := Vector3(way.x,0.0,way.y)
+	var right := Vector3(-way.y,0.0,way.x)
+	var goal := figure.global_position+right*CARRY_AT.x+Vector3.UP*(CARRY_AT.y+sin(_motion_time*1.6)*0.03)+ahead*CARRY_AT.z
+	lodestone.position = lodestone.position.lerp(goal,1.0-exp(-delta/0.08)) if delta > 0.0 else goal
+	lodestone.scale = Vector3.ONE*move_toward(lodestone.scale.x,CARRY_SCALE,delta*1.5)
+	lodestone.hum_goal = 0.4
+
+## Bends the pilot's arms up over the clips' pose (`amount` 0 hanging to 1
+## raised), as the lodestone study does.
+func _raise_arms(amount: float) -> void:
+	if amount <= 0.0: return
+	var arms: Array[int] = body._upper_arms
+	var forearms: Array[int] = body._forearms
+	if arms.has(-1): return
+	body._turn_bone(arms[0],Vector3.BACK,-ARMS.x*amount)
+	body._turn_bone(arms[1],Vector3.BACK,ARMS.x*amount)
+	body._turn_bone(arms[0],Vector3.RIGHT,ARMS.y*amount)
+	body._turn_bone(arms[1],Vector3.RIGHT,ARMS.y*amount)
+	if not forearms.has(-1):
+		body._turn_bone(forearms[0],Vector3.BACK,ARMS.z*amount)
+		body._turn_bone(forearms[1],Vector3.BACK,-ARMS.z*amount)
+
+## The on-foot hint with the stone's line.
+func _foot_text() -> String:
+	if lodestone == null: return FOOT_HINT
+	var line := ""
+	match lode_state:
+		"resting": line = "E (pad A): pick up the lodestone" if can_pick() else "A lodestone hums on a floating stone east, past the heel stone: climb up to it"
+		"inspecting": line = "Drag or right stick: turn the lodestone  ·  E or Enter (pad A or B): keep it"
+		"carried": line = "Carrying the lodestone: F (pad Y) to board, and it seats in the plane"
+	return FOOT_HINT+"\n"+line
+
+## Near the shard with the stone seated: a chime, a pop and a flash.
+func _check_arrival() -> void:
+	if lode_state != "seated" or not stone_plane or not plane_figure.seated: return
+	var d: float = plane.position.distance_to(lode_target)
+	if not arrived and d < ARRIVE:
+		arrived = true
+		_moments.pop("Arrived: the place in the stone",2.6)
+		_moments.flourish()
+		plane_figure.flash()
+		_flash_left = 1.4
+	elif arrived and d > ARRIVE_AGAIN: arrived = false
