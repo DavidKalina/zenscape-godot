@@ -12,8 +12,11 @@ extends "res://studies/character_study.gd"
 ## The pilot, camera, moves, recorder and replays are the character
 ## study's (this extends it): the station's own boxes collide, invisible,
 ## under the stone (studies/aqueduct_isle_art.gd), so its proven routes
-## hold; round it a playground of kit pieces collides as built (their
-## hulls). See docs/scenic/aqueduct-isle.md.
+## hold. Round it, three landmarks on one axis (z 0): the aqueduct with
+## the castellum at its head, the henge to the west (the kit's stone circle
+## on a walled terrace, the kit's grand stair up its east face) and the
+## heel stone out east; the gate on the far island. What stands collides
+## as built (the kit's hulls). See docs/scenic/aqueduct-isle.md.
 ##   R            back to the start (the rubble slope's foot)
 ##   F5 F6 F7 F8  record, replay the station's recordings, older, all paths
 ##   F1 numbers · F2 feel · Esc mouse
@@ -33,35 +36,19 @@ const Gallery = preload("res://studies/ruin_kit_gallery.gd")
 ## The station this is (its key in the pack).
 const STATION := 2
 const SEED := 11
-## The playground round the aqueduct: [kit piece, seed, weathered, world
-## x, z, yaw (degrees)], each standing on the ground there and colliding
-## as the kit built it.
+## What stands round the aqueduct besides the landmarks: [kit piece,
+## seed, weathered, world x, z, yaw (degrees)], each standing on the ground
+## there and colliding as the kit built it. Only the gate on the far
+## island, where the aqueduct came down, and its paving.
 const PIECES := [
-	# West: a broken cloister walk, a stair up onto its first wall, three
-	# broken piers in a row, a vault bay, a lancet window on the edge.
-	["stairs",3,0.25,78.0,10.85,0.0],
-	["wall",5,0.2,78.0,6.0,90.0],
-	["wall",6,0.3,78.0,-1.0,90.0],
-	["wall",7,0.35,78.0,-8.4,90.0],
-	["pier",8,0.55,84.0,-2.0,0.0],
-	["pier",9,0.4,84.0,-5.6,20.0],
-	["pier",10,0.6,84.0,-9.2,45.0],
-	["fallen_pier",12,0.5,87.0,4.0,30.0],
-	["tomb_chest",13,0.4,88.5,-13.0,90.0],
-	["vault",14,0.5,81.0,-17.0,0.0],
-	["lancet_wall",15,0.45,74.5,-14.0,60.0],
-	# East: the rose gable over the island's east end, a buttress and a
-	# wall before it.
-	["rose_gable",16,0.55,120.0,-3.0,-90.0],
-	["buttress",17,0.5,113.0,6.0,0.0],
-	["wall",18,0.4,113.0,-11.0,90.0],
-	["fallen_pier",19,0.6,114.0,12.0,-20.0],
-	# The far island: the gate the aqueduct led to, piers either side.
 	["arch",20,0.35,100.0,-62.5,0.0],
-	["pier",21,0.5,92.0,-52.0,0.0],
-	["pier",22,0.45,108.0,-50.0,10.0],
 	["floor",23,0.6,94.5,-58.5,15.0],
 ]
+## The landmarks from the kit: the grand stair up the henge's terrace and
+## the stone circle on it, both facing east along the isle's axis.
+const STAIR_SEED := 31
+const CIRCLE_SEED := 32
+const LANDMARK_WEATHERED := 0.55
 ## The stepping stumps back from the far island (world x, z from, z to,
 ## top): an older arcade's piers broken off at the islands' height, their
 ## feet hanging in the sky; each collides as a clean box.
@@ -80,6 +67,9 @@ var _capture_at := Vector3.INF
 var _capture_look := Vector3.INF
 var _place := Vector4.INF
 var art: Node3D
+## The landmarks from the kit (their metadata drives the tests).
+var stair: Node3D
+var circle: Node3D
 
 func _ready() -> void:
 	pack = "ruins_archipelago"
@@ -103,6 +93,15 @@ func _ready() -> void:
 static func _vec(text: String) -> Vector3:
 	var p := text.split(",")
 	return Vector3(float(p[0]),float(p[1]),float(p[2]))
+
+## The study's hint, without its station keys (one scene here).
+func _build_ui() -> void:
+	super._build_ui()
+	for layer in get_children():
+		if not layer is CanvasLayer: continue
+		for child in layer.get_children():
+			if child is Label and (child as Label).text.contains(" stations"):
+				(child as Label).text = (child as Label).text.replace(" · 1-9 0 - = [ ] \\ stations","")
 
 ## The pack's station 2 alone: its spawn the start.
 func _load_pack() -> void:
@@ -165,10 +164,10 @@ func _build_art() -> void:
 	art = Node3D.new()
 	art.name = "Art"
 	add_child(art)
-	var near := Art.island(Art.NEAR,30.0,SEED,Art.ground)
+	var near := Art.island(Art.NEAR,30.0,SEED,Art.base)
 	near.name = "NearIsland"
 	art.add_child(near)
-	var far := Art.island(Art.FAR,20.0,SEED+1,Art.ground)
+	var far := Art.island(Art.FAR,20.0,SEED+1,Art.base)
 	far.name = "FarIsland"
 	art.add_child(far)
 	var built: Dictionary = Art.aqueduct(SEED)
@@ -180,6 +179,22 @@ func _build_art() -> void:
 	art.add_child(Art.buttress(SEED+3))
 	art.add_child(Art.rubble_heap(SEED+6))
 	var avoid: Array[Rect2] = [Rect2(97.0,-56.0,6.0,66.0),Rect2(92.5,-3.5,5.0,8.5),Rect2(103.3,-12.5,2.0,7.0)]
+	# The henge: its terrace, the grand stair up its east face, the stone
+	# circle on top, the heel stone out east on the axis.
+	var terrace: Dictionary = Art.terrace(SEED+7)
+	art.add_child(terrace.node)
+	for part: Array in terrace.parts: _part(part)
+	stair = RuinKit.grand_stair(STAIR_SEED,LANDMARK_WEATHERED)
+	stair.transform = Transform3D(Basis(Vector3.UP,PI*0.5),Art.STAIR_AT)
+	art.add_child(stair)
+	circle = RuinKit.stone_circle(CIRCLE_SEED,LANDMARK_WEATHERED)
+	circle.transform = Transform3D(Basis(Vector3.UP,PI*0.5),Vector3(Art.HENGE.x,Art.TOP+Art.TERRACE_TOP,Art.HENGE.y))
+	art.add_child(circle)
+	art.add_child(Art.heel_stone(SEED+8))
+	var reach := Art.TERRACE_R+Art.TERRACE_WALL+2.4
+	avoid.append(Rect2(Art.HENGE.x-reach,Art.HENGE.y-reach,reach*2.0,reach*2.0))
+	avoid.append(Rect2(Art.STAIR_AT.x-5.6,-3.4,11.4,6.8))
+	avoid.append(Rect2(Art.HEEL.x-1.0,Art.HEEL.y-0.7,2.0,1.4))
 	for spec: Array in PIECES:
 		var piece: Node3D = RuinKit.piece(spec[0],spec[1],spec[2])
 		var x: float = spec[3]
@@ -190,6 +205,8 @@ func _build_art() -> void:
 		avoid.append(Rect2(box.position.x,box.position.z,box.size.x,box.size.z).grow(-0.3))
 	art.add_child(_stumps())
 	art.add_child(Art.growth(SEED+4,[near.get_meta("outline"),far.get_meta("outline")],avoid))
+	var stones: Array[Rect2] = []
+	art.add_child(Art.growth(SEED+9,[Art.terrace_outline(Art.TERRACE_R-0.8)],stones))
 	print("aqueduct isle: %d triangles" % triangles(art))
 
 ## The stepping stumps (STUMPS): an older arcade's piers, coursed solid

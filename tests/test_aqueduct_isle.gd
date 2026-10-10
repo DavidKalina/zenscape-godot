@@ -2,13 +2,17 @@ extends SceneTree
 ## The aqueduct isle (studies/aqueduct_isle.tscn), headless: the ruins
 ## archipelago's aqueduct station dressed in the ruin kit keeps the routes
 ## proven on its greybox (tests/test_island_pack_ruins_archipelago.gd,
-## station 2), driven end to end with scripted inputs; the playground's
-## lines round it (the castellum's summit, the stumps back from the far
-## island, the cloister walls, the piers' heads) driven as a player would;
-## the station's saved recordings replayed here; and the isle builds within
-## its triangle budget.
+## station 2), driven end to end with scripted inputs; the lines round it
+## (the castellum's summit, the stumps back from the far island) driven as
+## a player would; the henge (the terrace up the grand stair, the fallen
+## corner and a buttress; the stone circle's lintel ring up the leaning
+## stone and the fallen trilithon, run round as a loop; the great
+## trilithon's summit); the station's saved recordings replayed here; and
+## the isle builds within its triangle budget.
 ##   godot --headless --path . --script tests/test_aqueduct_isle.gd
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
+const RuinKit = preload("res://scripts/ruin_kit.gd")
+const Art = preload("res://studies/aqueduct_isle_art.gd")
 const Recording = preload("res://scripts/character_recording.gd")
 const DT := 1.0/60.0
 ## The most triangles the isle may draw.
@@ -39,6 +43,7 @@ func run() -> void:
 	_aqueduct_easy()
 	_aqueduct_wallrun()
 	_free_play()
+	_henge()
 	_replays()
 	print("PASS: aqueduct isle" if failures == 0 else "FAIL: aqueduct isle (%d)" % failures)
 	quit(1 if failures else 0)
@@ -163,14 +168,95 @@ func _free_play() -> void:
 	back = back and line(m.feet,Vector3(92.0,30.4,-27.7),"jump")
 	back = back and line(m.feet,Vector3(92.0,30.0,-21.0),"jump")
 	check(back,"Stumps: back from the far island over three broken piers, two twirled and two running jumps (feet %s)" % m.feet)
-	ok = line(Vector3(78.0,30.0,13.6),Vector3(78.0,-31.8,7.5),"walk")
-	ok = ok and line(m.feet,Vector3(78.0,-31.6,0.6),"jump")
-	ok = ok and line(m.feet,Vector3(78.0,-31.6,-2.8),"walk")
-	ok = ok and line(m.feet,Vector3(78.0,-31.6,-8.4),"jump_twirl")
-	check(ok,"Cloister: up the stair onto the first wall, jumped to the second, along it and twirled to the third (feet %s)" % m.feet)
-	ok = line(Vector3(84.0,40.0,-2.0),Vector3(84.0,-31.0,-5.6),"jump")
-	ok = ok and line(m.feet,Vector3(84.0,-31.0,-9.2),"jump")
-	check(ok,"Piers: running jumps along the broken piers' heads (feet %s)" % m.feet)
+
+# --- The henge: the grand stair, the terrace, the stone circle ---------------------------
+
+## A point of the stone circle's (its frame) in the world.
+func on_circle(p: Vector3) -> Vector3:
+	return study.circle.transform*p
+
+## The middle of the ring's lintel `k`'s top in the world, and whether it stands.
+func lintel(k: int) -> Array:
+	var l: Array = (study.circle.get_meta("ring").lintels as Array)[k]
+	return [on_circle(l[0]),l[1]]
+
+## Over the middle of the ring's sarsen `j` (where two lintels meet), in the world.
+func joint(j: int) -> Vector3:
+	var a := (j%RuinKit.CIRCLE_STONES+0.5)*TAU/RuinKit.CIRCLE_STONES
+	return on_circle(Vector3(sin(a),0.0,cos(a))*RuinKit.CIRCLE_RADIUS)
+
+## The henge's landmarks, each reached more than one way, as a player
+## would: the terrace up the grand stair, up the fallen corner's heap and
+## up a buttress's set-offs; the circle's lintel ring up the leaning stone
+## and up the fallen trilithon (its lying partner, its stub), then run
+## round as a loop (twirled over the fallen lintels); the great trilithon
+## from the ring's back lintel.
+func _henge() -> void:
+	var terrace_y: float = 30.0+Art.TERRACE_TOP
+	var foot: Vector3 = study.stair.transform*(study.stair.get_meta("foot") as Vector3)
+	var head: Vector3 = study.stair.transform*(study.stair.get_meta("head") as Vector3)
+	var ok := line(foot+Vector3(1.5,0.0,0.0),Vector3(head.x-2.0,terrace_y,head.z),"walk")
+	check(ok,"Henge: up the grand stair, both flights, onto the terrace at %.2f m (feet %s)" % [terrace_y,m.feet])
+	ok = climb(Vector3(65.0,30.0,-19.0),[Vector2(65.0,-15.6),Vector2(65.0,-13.6),Vector2(65.0,-10.5)])
+	check(ok and absf(m.feet.y-terrace_y) < 0.1,"Henge: up the fallen corner's heap, 1.5 m a step, onto the terrace (feet %s)" % m.feet)
+	var out := Vector2(cos(TAU/16.0*2.0),sin(TAU/16.0*2.0))
+	var at := func(r: float) -> Vector2: return Art.HENGE+out*r
+	ok = climb(Vector3(at.call(16.4).x,30.0,at.call(16.4).y),[at.call(14.2),at.call(13.0),at.call(10.8)])
+	check(ok and absf(m.feet.y-terrace_y) < 0.1,"Henge: up a buttress's set-offs onto the terrace (feet %s)" % m.feet)
+	var ring: Dictionary = study.circle.get_meta("ring")
+	var ring_y: float = study.circle.transform.origin.y+float(ring.top)
+	var lean_foot := on_circle(ring.lean_foot)
+	var lean_head := on_circle(ring.lean_head)
+	var onto: Vector3 = lintel(RuinKit.LEAN_AT)[0]
+	ok = climb(lean_foot,[Vector2(lean_head.x,lean_head.z),Vector2(onto.x,onto.z)])
+	check(ok and absf(m.feet.y-ring_y) < 0.12,"Circle: up the leaning stone and a jump onto the lintels at %.2f m (feet %s)" % [ring_y,m.feet])
+	var lying := on_circle(ring.lying)
+	var stub := on_circle(ring.stub)
+	onto = lintel(RuinKit.STUB_AT)[0]
+	var toward := Vector2(lying.x-stub.x,lying.z-stub.z).normalized()
+	var start := Vector2(lying.x,lying.z)+toward*3.4
+	ok = climb(Vector3(start.x,terrace_y,start.y),[Vector2(lying.x,lying.z),Vector2(stub.x,stub.z)])
+	ok = ok and line(m.feet,onto,"jump")
+	check(ok and absf(m.feet.y-ring_y) < 0.12,"Circle: up the fallen trilithon, its lying stone then its stub, onto the lintels (feet %s)" % m.feet)
+	_ring_loop(ring_y)
+	var back: Vector3 = lintel(RuinKit.CIRCLE_STONES/2-1)[0]
+	var summit := on_circle(ring.trilithon)
+	ok = line(back,summit,"jump")
+	check(ok,"Circle: from the back lintel a jump up onto the great trilithon at %.2f m, the isle's summit (feet %s)" % [summit.y,m.feet])
+
+## Round the lintel ring from the lintel over the leaning stone back to it:
+## walked from lintel to lintel, a twirled jump over each fallen one.
+func _ring_loop(ring_y: float) -> void:
+	var n := RuinKit.CIRCLE_STONES
+	var first := RuinKit.LEAN_AT
+	var here: Vector3 = lintel(first)[0]
+	study.place(here,Vector2(1.0,0.0))
+	for i in range(30): tick(Vector2.ZERO)
+	var ok := m.grounded and absf(m.feet.y-ring_y) < 0.12
+	var twirls := 0
+	var k := first
+	var steps := 0
+	while ok and steps < n:
+		var next := (k+1)%n
+		var l: Array = lintel(next)
+		if l[1]:
+			var mid: Vector3 = l[0]
+			ok = climb(m.feet,[flat(joint(next)),flat(mid)]) and absf(m.feet.y-ring_y) < 0.12
+			k = next
+			steps += 1
+		else:
+			# Over the fallen lintel: from near the end of this one along the
+			# fallen one's line to the start of the one after.
+			var after := (next+1)%n
+			var from := joint(k+1)+(joint(k)-joint(k+1)).normalized()*1.2
+			var to := joint(k+2)+(joint(k+3)-joint(k+2)).normalized()*1.2
+			from.y = ring_y
+			to.y = ring_y
+			ok = climb(m.feet,[flat(from)]) and line(m.feet,to,"jump_twirl")
+			twirls += 1
+			k = after
+			steps += 2
+	check(ok and k == first and twirls == (study.circle.get_meta("ring").fallen as Array).size(),"Circle: round the lintel ring as a loop, %d twirled jumps over fallen lintels (feet %s)" % [twirls,m.feet])
 
 ## Placed at `from` (dropped onto what is under it), runs at `to` (x, z;
 ## y the top wanted, or under 0 any stand at least -y high, within 1.8 m)

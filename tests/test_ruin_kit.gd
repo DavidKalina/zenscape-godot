@@ -27,7 +27,7 @@ func check(ok: bool, label: String) -> void:
 		print("FAIL "+label)
 
 func _run() -> void:
-	check(RuinKit.PIECES.size() == 12,"twelve gothic pieces")
+	check(RuinKit.PIECES.size() == 14,"fourteen gothic pieces")
 	check(RuinKit.AQUEDUCT_PIECES.size() == 5 and RuinKit.HALL_PIECES.size() == 4,"five aqueduct pieces and four hall pieces")
 	for id: String in RuinKit.ALL_PIECES: check(RuinKit.NAMES.has(id),id+" is named")
 	for id: String in RuinKit.ALL_PIECES:
@@ -143,7 +143,7 @@ func _piece(id: String, seed_value: int, weathered: float) -> void:
 	check(ok,label+" has a mesh")
 	if ok:
 		var box := mesh.mesh.get_aabb()
-		check(box.position.y > -0.5 and box.size.length() > 0.5 and box.size.length() < (45.0 if id == "hall_bay" else 30.0),label+" stands on the ground at a sane size: "+str(box))
+		check(box.position.y > -0.5 and box.size.length() > 0.5 and box.size.length() < (45.0 if id in ["hall_bay","stone_circle"] else 30.0),label+" stands on the ground at a sane size: "+str(box))
 	var body := node.get_node_or_null("Body") as StaticBody3D
 	var hulls := 0
 	var thin := 0

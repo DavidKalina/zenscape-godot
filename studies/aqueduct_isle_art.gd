@@ -2,8 +2,9 @@ extends RefCounted
 ## The aqueduct isle's art (studies/aqueduct_isle.gd): the ruins
 ## archipelago's station 2 (studies/island_packs/ruins_archipelago.gd)
 ## dressed in the gothic ruin kit (scripts/ruin_kit.gd, scripts/
-## ruin_kit_aqueduct.gd) on two floating islands, with a playground of kit
-## pieces round it.
+## ruin_kit_aqueduct.gd) on two floating islands, with the henge (its
+## terrace, here; the stone circle and grand stair, the kit's) west of it
+## on the isle's axis and the heel stone east.
 ##
 ## The station's numbers stand: the channel 2.4 m wide at 6 m, piers 2 m
 ## thick, arches 4 m wide with 4 m clear, the blind wall 12 m, the 30° rubble
@@ -381,6 +382,189 @@ static func castellum(seed_value: int) -> Dictionary:
 	node.get_node("Body").free()
 	return {"node":node,"parts":parts}
 
+# --- The henge: its terrace, the grand stair's landing, the heel stone ------------------
+
+## The henge on the near island's west lobe: the kit's stone circle on a
+## round terrace of coursed walling (TERRACE_SIDES straight runs, its
+## wall's middle TERRACE_R out from HENGE, TERRACE_TOP high: the grand
+## stair's 2 x 8 risers), turfed on top. The stair climbs its east face on
+## the isle's axis (z 0: henge, stair, castellum and the aqueduct's head,
+## the heel stone beyond); a corner of its north face has fallen in a heap
+## of SET_OFF steps (FALLEN_CORNER); buttresses stand out from it, their
+## set-offs a third way up.
+const HENGE := Vector2(65.0,0.0)
+const TERRACE_R := 12.0
+const TERRACE_WALL := 0.6
+const TERRACE_SIDES := 16
+const TERRACE_TOP := 2.0*RuinKit.STEPS*RuinKit.RISER
+## The fallen corner (world rect, top over the island): 1.5 and 3.0 m, then
+## the terrace's 4.48.
+const FALLEN_CORNER := [[Rect2(63.9,-14.6,2.2,2.0),3.0],[Rect2(63.9,-16.6,2.2,2.0),1.5]]
+## The buttresses: which of the terrace's runs (from east, toward +z) and
+## their stages [top, depth]: a tread at SET_OFF and twice it, then a
+## jump-catch onto the coping.
+const BUTTRESS_RUNS := [2,6,10,14]
+const BUTTRESS_STAGES := [[RuinKit.SET_OFF,2.0],[RuinKit.SET_OFF*2.0,1.2]]
+## The grand stair on the axis (its middle, world), climbing west.
+const STAIR_AT := Vector3(82.5,TOP,0.0)
+## The heel stone: a lone sarsen out east on the axis, leaning (its top a
+## pump's catch).
+const HEEL := Vector2(118.0,0.0)
+const HEEL_SIZE := Vector3(1.7,2.3,1.1)
+
+## The paths worn in the turf between the landmarks (world polylines): the
+## stair's foot round the castellum to the slope's foot, on to the heel
+## stone; the fallen corner along the north edge to the stumps; round the
+## circle's floor.
+const PATHS := [
+	[Vector2(87.0,0.0),Vector2(90.5,5.5),Vector2(96.0,8.6),Vector2(100.0,10.0),Vector2(106.0,6.5),Vector2(112.0,2.0),Vector2(117.0,0.4)],
+	[Vector2(65.0,-17.5),Vector2(71.0,-19.0),Vector2(80.0,-20.5),Vector2(87.0,-20.8),Vector2(92.0,-22.0)],
+	[Vector2(76.5,0.0),Vector2(72.5,0.0),Vector2(71.0,3.5),Vector2(67.0,5.8),Vector2(62.0,5.6),Vector2(58.6,2.5),Vector2(58.6,-2.5),Vector2(62.0,-5.6),Vector2(67.0,-5.8),Vector2(71.0,-3.5),Vector2(72.5,0.0)],
+]
+## The turf's patches: lighter, yellower meadow and deeper hollows in broad
+## drifts, the paths a trodden dun.
+const MEADOW := [Color("6f8448"),Color("788b4d"),Color("6b8246")]
+const HOLLOW := [Color("4a6237"),Color("4e663a")]
+const WORN := Color("7f7853")
+
+## A turf facet's colour at `at` (world x, z): the greens, drifting into
+## meadow or hollow, worn along the paths.
+static func turf_tone(rng: RandomNumberGenerator, noise: FastNoiseLite, at: Vector2) -> Color:
+	var c: Color = GRASS[rng.randi()%GRASS.size()]
+	var broad := noise.get_noise_2d(at.x*0.35+40.0,at.y*0.35-17.0)
+	if broad > 0.1: c = c.lerp(MEADOW[rng.randi()%MEADOW.size()],clampf((broad-0.1)*3.5,0.0,0.85))
+	elif broad < -0.15: c = c.lerp(HOLLOW[rng.randi()%HOLLOW.size()],clampf((-broad-0.15)*3.5,0.0,0.8))
+	c = c.lerp(WORN*rng.randf_range(0.92,1.06),path_wear(at)*0.9)
+	return c*(rng.randf_range(0.93,1.06)+0.08*noise.get_noise_2d(at.x,at.y))
+
+## How worn the turf is at `at` (0 off the paths, 1 on their middle).
+static func path_wear(at: Vector2) -> float:
+	var best := INF
+	for path: Array in PATHS:
+		for i in range(path.size()-1):
+			best = minf(best,at.distance_to(Geometry2D.get_closest_point_to_segment(at,path[i],path[i+1])))
+	return clampf(1.25-best/1.5,0.0,1.0)
+
+## The terrace's outline (world x, z): its runs' outer corners.
+static func terrace_outline(r := TERRACE_R) -> PackedVector2Array:
+	var poly := PackedVector2Array()
+	var step := TAU/TERRACE_SIDES
+	for k in range(TERRACE_SIDES):
+		var phi := (k+0.5)*step
+		poly.append(HENGE+Vector2(cos(phi),sin(phi))*r/cos(step*0.5))
+	return poly
+
+## The terrace: its walls coursed under a coping (colliding as built), the
+## buttresses, the turf on top (its own faces collide); the fallen corner
+## (drawn, its clean boxes in `parts`). {node, parts}.
+static func terrace(seed_value: int) -> Dictionary:
+	var b := Build.new(seed_value,0.45,"Terrace")
+	var step := TAU/TERRACE_SIDES
+	var half_len := (TERRACE_R+TERRACE_WALL)*tan(step*0.5)+0.06
+	var top := func(_x: float) -> float: return TERRACE_TOP
+	var centre := Vector3(HENGE.x,TOP,HENGE.y)
+	for k in range(TERRACE_SIDES):
+		var phi := k*step
+		var out := Vector3(cos(phi),0.0,sin(phi))
+		var basis := Basis(Vector3.UP,PI*0.5-phi)
+		var pose := Transform3D(basis,centre+out*TERRACE_R)
+		RuinKit._plinth_course(b,pose,half_len,TERRACE_WALL)
+		RuinKit._courses(b,pose,-half_len,half_len,RuinKit.PLINTH_COURSE.x,top,TERRACE_WALL,Callable(),0.5,true)
+		if k in BUTTRESS_RUNS:
+			RuinKit._buttress(b,Transform3D(basis,centre+out*(TERRACE_R+TERRACE_WALL)),BUTTRESS_STAGES,1.3)
+	var node := b.finish()
+	node.add_child(turf_patch(terrace_outline(TERRACE_R),TOP+TERRACE_TOP,seed_value+1))
+	# The fallen corner: its courses tumbled into a stepped heap.
+	var c := Build.new(seed_value+2,0.6,"FallenCorner")
+	var parts: Array = []
+	for block: Array in FALLEN_CORNER:
+		var r: Rect2 = block[0]
+		var high: float = block[1]
+		parts.append(["box",r,TOP,TOP+high,"lip"])
+		var line := func(_x: float) -> float: return high
+		var pose := Transform3D(Basis.IDENTITY,Vector3(r.get_center().x,TOP,r.get_center().y))
+		RuinKit._courses(c,pose,-r.size.x*0.5,r.size.x*0.5,0.0,line,r.size.y*0.5-0.01,Callable(),0.5,true)
+	RuinKit._drift(c,Vector3(62.4,TOP,-15.6),1.1,5)
+	RuinKit._drift(c,Vector3(67.6,TOP,-14.4),0.9,4)
+	var heap := c.finish()
+	heap.get_node("Body").free()
+	node.add_child(heap)
+	return {"node":node,"parts":parts}
+
+## Turf over `poly` (world x, z) at `height`: faceted, toned as the
+## island's, its faces collided (a trimesh).
+static func turf_patch(poly: PackedVector2Array, height: float, seed_value: int) -> Node3D:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_value
+	var noise := FastNoiseLite.new()
+	noise.seed = seed_value
+	noise.frequency = 0.08
+	var points := PackedVector2Array(poly)
+	var box := Rect2(poly[0],Vector2.ZERO)
+	for p in poly: box = box.expand(p)
+	var gx := box.position.x+CELL*0.5
+	while gx < box.end.x:
+		var gz := box.position.y+CELL*0.5
+		while gz < box.end.y:
+			var p := Vector2(gx+rng.randf_range(-0.3,0.3)*CELL,gz+rng.randf_range(-0.3,0.3)*CELL)
+			if Geometry2D.is_point_in_polygon(p,poly) and _edge_distance(p,poly) > CELL*0.45: points.append(p)
+			gz += CELL
+		gx += CELL
+	var tris := Geometry2D.triangulate_delaunay(points)
+	var v := PackedVector3Array()
+	var n := PackedVector3Array()
+	var c := PackedColorArray()
+	var faces := PackedVector3Array()
+	for t in range(0,tris.size(),3):
+		var a := points[tris[t]]
+		var bb := points[tris[t+1]]
+		var cc := points[tris[t+2]]
+		var mid := (a+bb+cc)/3.0
+		if not Geometry2D.is_point_in_polygon(mid,poly): continue
+		var pa := Vector3(a.x,height,a.y)
+		var pb := Vector3(bb.x,height,bb.y)
+		var pc := Vector3(cc.x,height,cc.y)
+		faces.append_array([pa,pb,pc])
+		var sink := Vector3(0.0,0.02,0.0)
+		_tri(v,n,c,[pa-sink,pb-sink,pc-sink],turf_tone(rng,noise,mid),Vector3.UP)
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = v
+	arrays[Mesh.ARRAY_NORMAL] = n
+	arrays[Mesh.ARRAY_COLOR] = c
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
+	var node := Node3D.new()
+	node.name = "Turf"
+	var drawn := MeshInstance3D.new()
+	drawn.name = "Mesh"
+	drawn.mesh = mesh
+	drawn.material_override = RuinKit.materials().stone
+	node.add_child(drawn)
+	var body := StaticBody3D.new()
+	body.name = "Body"
+	var shape := ConcavePolygonShape3D.new()
+	shape.set_faces(faces)
+	shape.backface_collision = true
+	var holder := CollisionShape3D.new()
+	holder.shape = shape
+	body.add_child(holder)
+	node.add_child(body)
+	return node
+
+## The heel stone: a lone sarsen out on the axis east of the aqueduct,
+## leaning away from the henge, a drift of turf and tufts at its foot;
+## colliding as built.
+static func heel_stone(seed_value: int) -> Node3D:
+	var b := Build.new(seed_value,0.5,"HeelStone")
+	b.ground = 0.0
+	var lean := Basis(Vector3.BACK,-0.07)
+	RuinKit._sarsen(b,Transform3D(lean,Vector3.ZERO),HEEL_SIZE,0.14)
+	for i in range(6): _tuft(b,Vector3(b.rng.randf_range(-1.4,1.4),0.0,b.rng.randf_range(-1.1,1.1)),0.4,5)
+	var node := b.finish()
+	node.position = Vector3(HEEL.x,TOP,HEEL.y)
+	return node
+
 # --- The islands --------------------------------------------------------------------
 
 ## The islands' outlines (world x, z), each round its own middle: the big
@@ -390,9 +574,10 @@ static func castellum(seed_value: int) -> Dictionary:
 ## kept open under the aqueduct.
 const NEAR := [Vector2(100.0,-24.4),Vector2(104.0,-24.2),Vector2(109.0,-25.4),Vector2(114.0,-23.2),Vector2(119.0,-24.6),
 	Vector2(124.0,-20.0),Vector2(127.0,-13.0),Vector2(126.0,-5.0),Vector2(128.0,2.0),Vector2(124.0,9.0),Vector2(119.0,14.0),
-	Vector2(112.0,16.0),Vector2(106.0,15.5),Vector2(100.0,17.5),Vector2(93.0,16.0),Vector2(86.0,18.0),Vector2(79.0,15.0),
-	Vector2(73.0,9.0),Vector2(71.0,1.0),Vector2(72.0,-7.0),Vector2(70.0,-13.0),Vector2(74.0,-20.0),Vector2(80.0,-23.5),
-	Vector2(86.0,-22.6),Vector2(91.0,-24.8),Vector2(96.0,-24.2)]
+	Vector2(112.0,16.0),Vector2(106.0,15.5),Vector2(100.0,17.5),Vector2(93.0,16.0),Vector2(86.0,18.0),Vector2(80.0,17.0),
+	Vector2(74.0,18.5),Vector2(67.0,18.0),Vector2(60.0,16.5),Vector2(54.0,13.0),Vector2(50.0,7.0),Vector2(48.0,0.0),
+	Vector2(48.5,-7.0),Vector2(50.5,-13.0),Vector2(55.0,-18.5),Vector2(61.0,-21.5),Vector2(67.0,-21.0),Vector2(73.0,-20.0),
+	Vector2(79.0,-23.0),Vector2(86.0,-22.6),Vector2(91.0,-24.8),Vector2(96.0,-24.2)]
 const FAR := [Vector2(100.0,-39.8),Vector2(104.0,-40.2),Vector2(109.0,-41.5),Vector2(114.0,-46.0),Vector2(116.0,-53.0),
 	Vector2(113.0,-60.0),Vector2(107.0,-64.5),Vector2(100.0,-66.0),Vector2(93.0,-64.0),Vector2(88.0,-59.0),
 	Vector2(85.0,-53.0),Vector2(86.0,-47.0),Vector2(90.0,-42.0),Vector2(95.0,-40.4)]
@@ -407,9 +592,15 @@ const GRASS := [Color("5a7042"),Color("587040"),Color("5d7445"),Color("546a3d"),
 const EARTH := Color("6a4f37")
 const ROCK := Color("675b50")
 
-## The ground's top at (x, z) (world): TOP, rising on the rises, flat near
-## the aqueduct.
+## The ground underfoot at (x, z) (world): the island's turf (`base`), or
+## the henge's terrace top inside its walls.
 static func ground(x: float, z: float) -> float:
+	if Vector2(x,z).distance_to(HENGE) < TERRACE_R: return TOP+TERRACE_TOP
+	return base(x,z)
+
+## The island's turf at (x, z) (world): TOP, rising on the rises, flat near
+## the aqueduct.
+static func base(x: float, z: float) -> float:
 	var y := TOP
 	var keep := clampf((absf(x-MID_X)-FLAT_HALF)/4.0,0.0,1.0)
 	for r: Vector3 in RISES:
@@ -464,7 +655,7 @@ static func island(outline: Array, depth: float, seed_value: int, flat: Callable
 		var pa := Vector3(a.x,heights[tris[t]],a.y)
 		var pb := Vector3(bb.x,heights[tris[t+1]],bb.y)
 		var pc := Vector3(cc.x,heights[tris[t+2]],cc.y)
-		var tone: Color = GRASS[rng.randi()%GRASS.size()]*(rng.randf_range(0.93,1.06)+0.08*tone_noise.get_noise_2d(mid.x,mid.y))
+		var tone := turf_tone(rng,tone_noise,mid)
 		# Collided at the ground; drawn a hair under it, so feet stand on it.
 		faces.append_array([pa,pb,pc])
 		var sink := Vector3(0.0,0.02,0.0)
@@ -632,6 +823,7 @@ static func growth(seed_value: int, outlines: Array, avoid: Array[Rect2]) -> Nod
 			var edge := _edge_distance(p,outline)
 			var h := rng.randf_range(0.28,0.5)*(1.25 if edge < 2.0 else 1.0)
 			_tuft(b,Vector3(p.x,ground(p.x,p.y),p.y),h,rng.randi_range(4,7))
+			if rng.randf() < 0.16: _flower(b,Vector3(p.x,ground(p.x,p.y),p.y),h)
 	var node := b.finish()
 	node.get_node("Body").free()
 	return node
@@ -653,3 +845,19 @@ static func _tuft(b: Build, at: Vector3, height: float, count: int) -> void:
 		var off := Vector3(rng.randf_range(-1,1),0.0,rng.randf_range(-1,1))*height*0.3
 		var colour: Color = BLADES[rng.randi()%BLADES.size()]*rng.randf_range(0.9,1.1)
 		b.solid(planes,Transform3D(lean,at+off-Vector3(0.0,0.02,0.0)),colour,false,false,[],-1,1.0,false)
+
+## Wildflowers among the tufts: a few faceted heads on stalks, cream,
+## buttercup or harebell, small and soft (no glow).
+const FLOWERS := [Color("efe9d2"),Color("e8cf5a"),Color("a99fcf"),Color("f1e3e8")]
+
+static func _flower(b: Build, at: Vector3, height: float) -> void:
+	var rng := b.rng
+	var colour: Color = FLOWERS[rng.randi()%FLOWERS.size()]
+	for i in range(rng.randi_range(2,4)):
+		var h := height*rng.randf_range(0.9,1.35)
+		var foot := at+Vector3(rng.randf_range(-0.18,0.18),0.0,rng.randf_range(-0.18,0.18))
+		var stalk: Array[Plane] = RuinKit._prism(4,0.012,0.008,0.0,h)
+		b.solid(stalk,Transform3D(Basis(Vector3.UP,rng.randf()*TAU),foot),Color("6f8b49"),false,false,[],-1,1.0,false)
+		var r := rng.randf_range(0.035,0.055)
+		var head: Array[Plane] = RuinKit._prism(5,r,r*0.6,0.0,r*0.9,rng.randf()*TAU)
+		b.solid(head,Transform3D(Basis.IDENTITY,foot+Vector3(0.0,h,0.0)),colour*rng.randf_range(0.92,1.05),false,false,[],-1,1.0,false)

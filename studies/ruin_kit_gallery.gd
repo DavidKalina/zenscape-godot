@@ -1,10 +1,11 @@
 extends Node3D
 ## Ruin kit gallery: the ruin kit's three families on one floating plate,
 ## each piece intact and weathered side by side. In the middle the gothic
-## abbey's thirteen pieces (scripts/ruin_kit.gd), laid close in three rows
+## abbey's fourteen pieces (scripts/ruin_kit.gd), laid close in four rows
 ## (the tall gable, arch and window at the back, the turret, vault,
-## buttress and pier in the middle, the low pieces in front) so the whole
-## view is ruins, not lawn; to its right the aqueduct (scripts/
+## buttress and pier in the middle, the low pieces before them, the grand
+## stair and the stone circle in front) so the whole view is ruins, not
+## lawn; to its right the aqueduct (scripts/
 ## ruin_kit_aqueduct.gd), its pieces in two rows before an assembled run
 ## striding over a strip of water (the head, four spans, one broken and
 ## spilling, stumps beyond); to its left the colossus hall (scripts/
@@ -48,10 +49,10 @@ const Pad = preload("res://scripts/pad.gd")
 ## rows, back to front, and where each row stands (z, m).
 const ORDER := ["hall","gothic","aqueduct"]
 const FAMILY_NAMES := {"gothic":"Gothic abbey","aqueduct":"Aqueduct","hall":"Colossus hall"}
-const ROWS := {"gothic":[["rose_gable","arch","lancet_wall"],["turret","vault","buttress","pier"],["wall","stairs","fallen_pier","tomb_chest","floor"]],
+const ROWS := {"gothic":[["rose_gable","arch","lancet_wall"],["turret","vault","buttress","pier"],["wall","stairs","fallen_pier","tomb_chest","floor"],["grand_stair","stone_circle"]],
 	"aqueduct":[["aqueduct_end","aqueduct_two_tier","aqueduct_span","aqueduct_broken","aqueduct_stump"]],
 	"hall":[["hall_bay"],["hall_column","hall_beam","hall_slab"]]}
-const ROW_Z := {"gothic":[-13.0,-1.5,9.0],"aqueduct":[0.0],"hall":[0.0,27.0]}
+const ROW_Z := {"gothic":[-13.0,-1.5,9.0,33.0],"aqueduct":[0.0],"hall":[0.0,27.0]}
 ## The room between families on the plate (m), and how far behind its rows
 ## a family's centrepiece stands (to its middle).
 const FAMILY_GAP := 10.0
