@@ -69,7 +69,9 @@ func _build_art() -> void:
 	art.name = "Art"
 	add_child(art)
 	Spine.use_platforms()
+	var began := Time.get_ticks_msec()
 	spine = Spine.spine_island(SPINE_SEED)
+	var spine_ms := Time.get_ticks_msec()-began
 	art.add_child(spine)
 	colonnade = Spine.colonnade(SPINE_SEED+1)
 	art.add_child(colonnade)
@@ -102,7 +104,7 @@ func _build_art() -> void:
 		_turf_rids.append(turf.get_rid())
 		_turf.append(turf)
 		_outlines.append(land.get_meta("outline"))
-	print("colonnade spine: %d triangles, %d prisms" % [triangles(art),int(spine.get_meta("prisms"))])
+	print("colonnade spine: %d triangles, %d prisms; the ridge built in %d ms, the rest in %d ms" % [triangles(art),int(spine.get_meta("prisms")),spine_ms,Time.get_ticks_msec()-began-spine_ms])
 
 func _exit_tree() -> void:
 	Spine.forget_paths()

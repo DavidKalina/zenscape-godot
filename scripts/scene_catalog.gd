@@ -16,6 +16,8 @@ const ENTRIES: Array[Dictionary] = [
 	# Ruins.
 	{"id":"aqueduct_isle","group":"Ruins","title":"Aqueduct isle","scene":"res://studies/aqueduct_isle.tscn","args":[],
 		"detail":"The ruin platforming isle: grass, look presets (L), the plane on F."},
+	{"id":"colonnade_spine","group":"Ruins","title":"Colonnade spine","scene":"res://studies/colonnade_spine_isle.tscn","args":[],
+		"detail":"A knife-edge ridge isle: a colonnade up its crest to a temple gate, a curling tail of fragments and rope bridges."},
 	{"id":"sundered_hall","group":"Ruins","title":"The Sundered hall","scene":"res://studies/cozy_worlds.tscn","args":["--motif=sundered","--no-clusters","--skydive"],
 		"detail":"The game with the long gothic hall 240-900 m out; in the plane, fly to it."},
 	{"id":"ruin_kit","group":"Ruins","title":"Ruin kit gallery","scene":"res://studies/ruin_kit_gallery.tscn","args":[],

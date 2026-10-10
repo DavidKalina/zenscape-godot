@@ -346,7 +346,12 @@ static func spine_island(seed_value: int) -> Node3D:
 			var deep := minf(pa.y,minf(pb.y,pc.y))-1.5
 			var hull := PackedVector3Array([pa,pb,pc,Vector3(pa.x,deep,pa.z),Vector3(pb.x,deep,pb.z),Vector3(pc.x,deep,pc.z)])
 			if RuinKit.hull_thickness(hull) >= RuinKit.HULL_THIN: solid.append(hull)
-		var tone := Art.ground_tone(pal,patch,mid,normal,rng.randf_range(-0.035,0.035))
+		# A face on the flanks is rock however its facets tilt (no stray
+		# grass speckled down a crag).
+		var look := normal
+		if normal.y > 0.3 and profile(mid.x,mid.y-zc(mid.x))[1] == "flank":
+			look = Vector3(0.93,0.36,0.0)
+		var tone := Art.ground_tone(pal,patch,mid,look,rng.randf_range(-0.035,0.035))
 		for p: Vector3 in [pa,pc,pb]:
 			v.append(p-Vector3(0.0,0.02,0.0))
 			n.append(normal)
@@ -772,7 +777,7 @@ static func temple(seed_value: int) -> Node3D:
 
 ## Rock shelves jutting out of the flanks (overhangs: each a little island
 ## of the same ground and rock, its top flat): [name, world x, d, radius,
-## top over TOP]. The south two are a way up from the bench to the crest
+## top over TOP]. The south three are a way up from the bench's west end to the crest
 ## (each a jump-catch); the pulpit hangs off the podium's south flank (a
 ## vista dropped onto); the balcony under the north shelf.
 const SLABS := [
