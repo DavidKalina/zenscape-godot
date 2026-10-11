@@ -63,6 +63,9 @@ const RuinGrowth = preload("res://scripts/ruin_growth.gd")
 const RuinGrowthPush = preload("res://scripts/ruin_growth_push.gd")
 const GustFronts = preload("res://studies/gust_fronts.gd")
 const StoneStyle = preload("res://scripts/ruin_stone_style.gd")
+## --plane-scale / --wanderer-scale (test/plane-wanderer-scale): the planes
+## and walkers drawn at those sizes, the fly mode's body and camera too.
+const Sizes = preload("res://scripts/plane_ground_scale.gd")
 
 ## The families left to right on the plate, their names, and each one's
 ## rows, back to front, and where each row stands (z, m).
@@ -191,6 +194,7 @@ var _roll_asked := 0.0
 var _tap_dir := 0.0
 var _tap_at := -100000
 var _bumps := 0
+var _sizes := Sizes.new()
 ## The planes standing for scale in the long hall (hidden while flying it).
 var _hall_planes: Array = []
 ## --fly[=seconds]: start flying (for a capture: on autopilot down the lane
@@ -791,6 +795,10 @@ func _plate(rect: Rect2) -> void:
 ## pilot by a column's foot and on the medallion, the plane flying through
 ## under the roof and a second one knife-edged in the back wall's slit.
 func _figures() -> void:
+	_place_figures()
+	for pilot in _pilots: pilot.scale = Vector3.ONE*_sizes.wanderer_scale
+
+func _place_figures() -> void:
 	var slot := func(id: String) -> Dictionary:
 		for s in _slots:
 			if s.id == id: return s
@@ -861,6 +869,7 @@ func _plane(parent: Node3D, at: Vector3, turn: Vector3) -> Node3D:
 	plane.show_pilot(true)
 	plane._mark.visible = false
 	plane._vapour.visible = false
+	plane.scale = Vector3.ONE*_sizes.plane_scale
 	return plane
 
 func _pilot(slot: Dictionary, k: int, at: Vector3, turn: float) -> void:
@@ -1199,6 +1208,8 @@ func _fly_step(delta: float) -> void:
 	_bump(was)
 	_fly_figure.update(delta,_plane_flight,0.0,_fly_ground,false)
 	_fly_figure._mark.visible = false
+	_fly_figure.transform = _fly_figure.transform.scaled_local(Vector3.ONE*_sizes.plane_scale)
+	_chase.size = _sizes.plane_scale
 	_chase.step(delta,_plane_flight,0.0,_inside_stone)
 	_camera.global_position = _chase.eye
 	_camera.look_at(_chase.look,Vector3.UP)
@@ -1224,7 +1235,7 @@ func _bump(was: Vector3) -> void:
 	var space := get_world_3d().direct_space_state
 	var query := PhysicsShapeQueryParameters3D.new()
 	var body := BoxShape3D.new()
-	body.size = BUMP_BODY
+	body.size = BUMP_BODY*_sizes.plane_scale
 	query.shape = body
 	var turn := PlaneFigure.pose(Vector3.ZERO,float(_plane_flight.heading),float(_plane_flight.pitch),float(_plane_flight.bank)+float(_plane_flight.spin)).basis
 	query.transform = Transform3D(turn,_plane_flight.position)
