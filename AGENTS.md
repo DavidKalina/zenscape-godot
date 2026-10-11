@@ -19,8 +19,10 @@ the user has accepted, each with its reason.
 
 The plane's and the wanderer's sizes live only in `scripts/world_scale.gd`,
 the one parser of `--plane-scale=` / `--wanderer-scale=`. Size a flown gap
-with its `gap(room)` or `span` (a toy-sized base with `TOY_SPAN`), and derive
-walker reach, steps, ledges and jump gaps from the wanderer size
-(`PilotMotor.set_size`, `RuinKit.GRAB_TOP`/`CHAIN_TOP`). Other files ask
-WorldScale rather than copy 2.0, 0.83, 2.4 or the toy span 1.4. Guarded by
+with its `gap(room)` or `span` (a toy-sized base with `TOY_SPAN`): at least
+`SNUG` room (1.2 m past each wingtip), `ROOM` by default, and a knife-edge
+slot only on purpose with `knife()`. Derive walker reach, steps, ledges
+and jump gaps from the wanderer size (`PilotMotor.set_size`,
+`RuinKit.GRAB_TOP`/`CHAIN_TOP`). Other files ask WorldScale rather than
+copy 2.0, 2.4, 1.2 (`pilot_size`) or the toy span 1.4. Guarded by
 `tests/test_world_scale_guard.gd` and `tests/test_world_scale_fit.gd`.

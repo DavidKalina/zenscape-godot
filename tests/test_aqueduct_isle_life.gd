@@ -411,13 +411,15 @@ func _tokens() -> void:
 		tick(Vector2(0.0,-1.0),m.on_ledge() and i%20 < 3,false,twirl)
 		if m.grounded and m.feet.z < -35.6 and not m.on_ledge(): break
 	check(taken("span") and m.feet.z < -35.5 and absf(m.feet.y-36.0) < 0.1,"Tokens: the fallen span's, dropped into and twirled out of onto the far deck (feet %s)" % m.feet)
-	# The floating sarsen: from the lintel before the bite, a twirled jump.
+	# The floating sarsen: from the lintel before the bite, a twirled jump
+	# from the sarsen's top along the broken lintel's end (as the ring loop
+	# in tests/test_aqueduct_isle.gd).
 	var ring: Dictionary = study.circle.get_meta("ring")
 	var n := RuinKit.CIRCLE_STONES
 	var gone: Array = ring.gone
 	if not gone.is_empty():
 		var k := posmod(int(gone[0])-1,n)
-		var from := joint(k+1)+(joint(k)-joint(k+1)).normalized()*1.2
+		var from := joint(k+1)
 		study.place(lintel(k),Vector2(1.0,0.0))
 		for i in range(30): tick(Vector2.ZERO)
 		var ok := climb(m.feet,[flat(from)]) and line(m.feet,Art.platform("ring_sarsen").at,"jump_twirl")
