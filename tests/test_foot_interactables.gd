@@ -505,13 +505,14 @@ func _isle_route() -> void:
 	while not study.get("isle_up"): await process_frame
 	m = study.motor
 	pieces = study.foot_pieces
-	check(pieces != null and pieces.ropes.size() == 2 and pieces.slabs.size() >= 4 and pieces.rails.size() >= 2,"The aqueduct isle has its route: ropes, slabs, balustrades")
+	check(pieces != null and pieces.ropes.size() == 3 and pieces.slabs.size() >= 4 and pieces.rails.size() >= 2,"The aqueduct isle has its route: ropes, slabs, balustrades")
 	if pieces == null: return
 	var spot: Array = Route.SPOTS.ropes
 	study.place(spot[0],spot[1])
 	_tick(2)
 	var first: Node3D = pieces.ropes[0]
 	var second: Node3D = pieces.ropes[1]
+	var third: Node3D = pieces.ropes[2]
 	var to_first: Vector3 = first.hands-m.feet
 	var facing := PilotMotor.forward(m.facing)
 	check(Vector2(to_first.x,to_first.z).length() < 12.0 and facing.dot(Vector2(to_first.x,to_first.z).normalized()) > 0.95,"--foot-at=ropes starts him %.1f m from the first rope, facing it" % Vector2(to_first.x,to_first.z).length())
@@ -524,15 +525,14 @@ func _isle_route() -> void:
 	check(took and _air_before,"Run from there and jumped, he takes hold of the first rope (held %.1f m down it)" % first.grip)
 	if not took: return
 	_pump_and_go(first,5.0,0.75)
-	check(not _fly_to(second,""),"...let go plainly, he falls short of the second (%.1f m on)" % absf(second.anchor.z-first.anchor.z))
-	_isle_back(first)
-	took = _isle_first(first)
-	if not took: return
-	_pump_and_go(first,5.0,0.75)
-	var twirled := _fly_to(second,"twirl")
-	check(twirled,"...let go with a twirl at the top of the arc, he takes the second (%.1f m on)" % absf(second.anchor.z-first.anchor.z))
-	if not twirled: return
+	var plain1 := _fly_to(second,"")
+	check(plain1,"...let go plainly, he takes the second (%.1f m on)" % absf(second.anchor.z-first.anchor.z))
+	if not plain1: return
 	_pump_and_go(second,3.0,0.6)
+	var plain2 := _fly_to(third,"")
+	check(plain2,"...and plainly again, the third (%.1f m on)" % absf(third.anchor.z-second.anchor.z))
+	if not plain2: return
+	_pump_and_go(third,3.0,0.6)
 	var far := Vector3.INF
 	for t in range(240):
 		_input(Vector2(0.0,-1.0))

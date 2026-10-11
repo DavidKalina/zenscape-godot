@@ -5,11 +5,11 @@ extends RefCounted
 ##   1. the grand stair down from the henge terrace: a balustrade down each
 ##      cheek (slide it, flung off its foot east across the meadow);
 ##   2. beside the aqueduct, out over the near island's north meadow and
-##      the 16 m gap: two ropes hung from stone beams laid out over the
+##      the 16 m gap: three ropes hung from stone beams laid out over the
 ##      aqueduct's east parapet, a cloth tag off each beam's end, the first
-##      over the meadow (run into it or jump to it), the second over the
-##      gap past a plain release's reach, so the twirl (or the sail) takes
-##      him to it, and from it a release lands him on the far island;
+##      over the meadow (run into it or jump to it), the second and third
+##      over the gap, each a plain release on from the last (rope, rope,
+##      rope), and from the third a release lands him on the far island;
 ##   3. back across the gap east of it on a drifting slab, a ferry out and
 ##      back;
 ##   4. off the near island's east rim, three bobbing slabs climbing out to
@@ -37,12 +37,12 @@ const TOP := Art.TOP
 ## release reaches 19.0 m held by the knot, a twirl 24.4 (22.8 held 0.7 m
 ## up, as a running jump takes it), the sail 44.9. So the first hangs over
 ## the near island's meadow, 7.7 m in from the rim, run into or jumped to;
-## the second over the gap 21 m on, 2.8 m short of the far rim: past the
-## plain release, inside the twirl. A plain release from the first lands
-## at most about 18.8 m on, in the gap (5 m short of the far rim); from the
-## second it lands well up the far island.
+## the second over the gap 10.5 m on and the third 10.5 m past it, 2.8 m
+## short of the far rim: each well inside a plain release (the user asked
+## for rope, rope, rope across, 2026-10-11). From the third a release
+## lands well up the far island.
 const ROPE_X := 106.3
-const ROPE_ZS := [-16.6,-37.6]
+const ROPE_ZS := [-16.6,-27.1,-37.6]
 const ROPE_LENGTH := SwingRope.LENGTH
 const ROPE_TOP := TOP+SwingRope.KNOT+ROPE_LENGTH
 ## The ferry: along z across the gap at x, there and back in PERIOD s.
