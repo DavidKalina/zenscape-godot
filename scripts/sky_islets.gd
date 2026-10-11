@@ -637,7 +637,15 @@ func _fall(node: Node3D, shape: RefCounted, rings: Dictionary, thread: Dictionar
 	node.add_child(curtain_node)
 	var drops := GPUParticles3D.new()
 	drops.name = "FallDrops"
-	drops.process_material = _drop_material
+	# Each fall's spray has its own copy of the shared drop material, made
+	# here as it stands. One ParticleProcessMaterial made up front and handed
+	# to every fall left 1 to 4 DummyShader RIDs "leaked at exit" on every
+	# headless run (the CI export check fails on that line); a copy per fall
+	# leaves none. The copies share the one generated shader, so this costs
+	# nothing drawn. The likely engine side is godot#124183 (the dummy
+	# renderer's RID owners aren't thread-safe; fixed in 4.8).
+	# docs/design/consolidation-audit.md, "Round 2 done".
+	drops.process_material = _drop_material.duplicate()
 	drops.amount = DROPS
 	drops.lifetime = 1.6
 	drops.randomness = 0.5
