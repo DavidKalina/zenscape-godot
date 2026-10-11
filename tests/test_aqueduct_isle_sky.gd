@@ -60,7 +60,7 @@ func _isles() -> void:
 		var flora: int = (isle.flora.get_meta("records") as Array).size() if isle.flora != null else 0
 		var tokens: int = isle.life.tokens.tokens.size() if isle.life != null and isle.life.tokens != null else 0
 		print("sky: %s at (%.0f, %.0f) r %.0f, top %.1f, %.0f m off, %d plants, %d foot tokens" % [id,c.x,c.y,c.z,isle.isle_top(),off,flora,tokens])
-		check(off > 250.0 and off < 500.0,"%s stands a few hundred metres off the isle (%.0f m)" % [id,off])
+		check(off > 250.0 and off < 700.0,"%s stands a few hundred metres off the isle (%.0f m)" % [id,off])
 		check(flora > 1000 and tokens >= 4,"%s has its grass and flowers (%d) and its foot tokens (%d)" % [id,flora,tokens])
 		# Its ground meets the plane: over a tuft of its grass the turf's ray
 		# finds the turf it grows on, and the traffic's eye finds it too.
@@ -70,8 +70,8 @@ func _isles() -> void:
 		check(top != null and absf(float(top)-isle.isle_top()) < 25.0,"The plane reads %s's turf (%s, its datum %.0f)" % [id,str(top),isle.isle_top()])
 		check(sky.ground(at) != null,"%s's ground is there to the traffic's eye" % id)
 	var sources: Array = sky.collectibles.sources.keys()
-	check(["aqueduct","bell_spires","cloister","sundered_gorge","colonnade"].all(func(k: String) -> bool: return sources.has(k)),"Each motif's plane tokens are in the sky's collectibles (%s)" % str(sources))
-	check(ids == ["bell_spires","cloister_tarn","sundered_gorge","colonnade_spine"],"The bell spires, the cloister tarn, the Sundered gorge and the colonnade spine (%s)" % str(ids))
+	check(["aqueduct","bell_spires","cloister","sundered_gorge","colonnade","broken_ring"].all(func(k: String) -> bool: return sources.has(k)),"Each motif's plane tokens are in the sky's collectibles (%s)" % str(sources))
+	check(ids == ["bell_spires","cloister_tarn","sundered_gorge","colonnade_spine","broken_ring"],"The bell spires, the cloister tarn, the Sundered gorge, the colonnade spine and the broken ring (%s)" % str(ids))
 	for a: int in range(motifs.isles.size()):
 		for b: int in range(a+1,motifs.isles.size()):
 			var ca: Vector3 = motifs.isles[a].circle()

@@ -61,8 +61,21 @@ func _isle(isle: Node3D) -> void:
 	var birds: Node3D = isle.life.birds
 	check(birds != null and not (birds.groups as Dictionary).is_empty(),"%s's songbirds have their perches (%d groups)" % [id,(birds.groups as Dictionary).size() if birds != null else 0])
 	# Its turf, as the plane and the pilot meet it.
-	var run_spot := _open_run(isle)
-	check(not run_spot.is_empty(),"%s: open turf %d m long to land on" % [id,RUN])
+	# A motif of small isles (the broken ring) has no run to land on: the pilot
+	# is set down on its turf instead.
+	var landable: bool = not (isle.motif.has_method("landing_run") and not isle.motif.landing_run())
+	var run_spot := _open_run(isle) if landable else {}
+	check(not landable or not run_spot.is_empty(),"%s: open turf %d m long to land on" % [id,RUN])
+	if not landable:
+		var space: PhysicsDirectSpaceState3D = study.get_world_3d().direct_space_state
+		var summit: Vector3 = (isle.motif.summit() as Vector3)+(isle.offset as Vector3)
+		var top: Vector3 = study._turf_top(space,summit.x,summit.z)
+		if study.flying: study.board()
+		study.place(top,Vector2(1.0,0.0))
+		for i in range(30): study.tick(DT)
+		check(top != Vector3.INF and study.motor.grounded and absf(study.motor.feet.y-top.y) < 0.5,"%s: the pilot stands on its highest isle (%s)" % [id,str(study.motor.feet)])
+		_bridges(isle)
+		return
 	if run_spot.is_empty(): return
 	var at: Vector3 = run_spot.at
 	var way: Vector3 = run_spot.way
