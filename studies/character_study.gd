@@ -30,7 +30,11 @@ extends Node3D
 ## each landing with crouch held, faster each time; on a slope, the surf);
 ## X twirls in the air, and out of a slide the stick across his way weaves
 ## him faster (the slide hop); into a wall in the air he slides down it, and
-## Space kicks off it. R sets him back at the start, F1 shows the
+## Space kicks off it. Space in the air with room under him (off an edge,
+## knocked away) pops out the pocket sail (scripts/pocket_sail.gd, drawn by
+## scripts/pocket_sail_figure.gd), Space again folds it; crouch floats it.
+## The room's air is still (`motor.air` unset); studies/pocket_sail_study.gd
+## adds wind. R sets him back at the start, F1 shows the
 ## numbers (speed, state, the jump, the height over the ground, the slope,
 ## the last jump's kind, peak and reach, the long jump's reach, the surf's
 ## pace, the last side flip's height and reach, the last twirl's airtime,
@@ -63,6 +67,8 @@ const Pad = preload("res://scripts/pad.gd")
 const GRID := preload("res://shaders/character_study_grid.gdshader")
 const Recording = preload("res://scripts/character_recording.gd")
 const PilotStepSmooth = preload("res://scripts/pilot_step_smooth.gd")
+const PocketSail = preload("res://scripts/pocket_sail.gd")
+const PocketSailFigure = preload("res://scripts/pocket_sail_figure.gd")
 
 ## The walker's camera (scripts/wanderer_eye.gd), kept the same so what is
 ## tuned here holds in the game: its reach, the look point's height over
@@ -338,6 +344,11 @@ var puffs: Node3D
 var ripples: Node3D
 var steps: Node
 var camera: Camera3D
+## The pocket sail drawn over him, and the glide measured: from where it
+## opened (or INF), and the last one's across, drop and ratio at the touch.
+var sail_wing: Node3D
+var _sail_from := Vector3.INF
+var last_glide := {}
 ## Driven by a test: the stick and the jump are these, not the input's, and
 ## `tick` is called by hand.
 var scripted := false
@@ -701,6 +712,8 @@ func _build_pilot() -> void:
 	figure.add_child(puffs)
 	ripples = PilotRipples.new()
 	figure.add_child(ripples)
+	sail_wing = PocketSailFigure.new()
+	figure.add_child(sail_wing)
 	steps = WandererSteps.new()
 	add_child(steps)
 
@@ -708,6 +721,8 @@ func _build_pilot() -> void:
 func place(at: Vector3, face: Vector2) -> void:
 	motor.reset(at,PilotMotor.facing_of(face))
 	_jump = {}
+	_sail_from = Vector3.INF
+	if sail_wing != null: sail_wing.reset()
 	_yaw = motor.facing
 	_polar = CAM_POLAR
 	step_smooth.reset()
@@ -777,10 +792,23 @@ func tick(delta: float) -> void:
 	if events.has("grabbed") or events.has("climbed"): steps.step(_surface(),0.4)
 	_motor_events(events)
 	var drawn: Dictionary = body.drive(motor,delta)
+	sail_wing.update(delta,motor.move == "sail",PocketSail.steer(motor.sail.heading,want) if motor.move == "sail" else 0.0)
+	_measure_glide(events)
 	_body_events(drawn,delta)
 	_water_events(events,drawn,delta)
 	_frame(delta)
 	_show_hud()
+
+## The glide measured from the sail's opening to the touch (or the next
+## open, a catch, a splash): across, down and the ratio.
+func _measure_glide(events: Dictionary) -> void:
+	if events.get("sail",false) and _sail_from == Vector3.INF: _sail_from = motor.feet
+	if _sail_from == Vector3.INF: return
+	if motor.grounded or motor.on_ledge() or motor.swimming:
+		var across := Vector2(motor.feet.x-_sail_from.x,motor.feet.z-_sail_from.z).length()
+		var down := _sail_from.y-motor.feet.y
+		last_glide = {"across":across,"down":down,"ratio":across/down if down > 0.05 else INF}
+		_sail_from = Vector3.INF
 
 ## The stick in the motor's frame: the camera's way taken out; the right
 ## stick swings the camera as the mouse does.
@@ -872,6 +900,9 @@ func _motor_events(events: Dictionary) -> void:
 	if events.has("twirl"):
 		steps.step(_surface(),0.25)
 		puffs.swirl(figure.global_position+Vector3.UP*0.55,1.0,0.8)
+	if events.has("sail"):
+		steps.step(_surface(),0.3 if events.sail else 0.15)
+		if events.sail: puffs.swirl(figure.global_position+Vector3.UP*1.6,0.6,0.5)
 	if events.get("slide",false): steps.slide(_surface(),clampf(motor.speed()/PilotMotor.RUN,0.4,1.0))
 	if motor.move == "slide" and motor.speed() > 1.0:
 		var travel := _world_way(motor.velocity)
@@ -1016,7 +1047,10 @@ const TUNABLE := [["walk",0.5,6.0],["run",1.0,10.0],["accel",2.0,60.0],["brake",
 	["hop_turn",0.0,6.0],["hop_strafe",0.0,10.0],["hop_top",4.0,24.0],
 	["wallrun_pace",1.0,10.0],["wallrun_time",0.1,2.0],["wallrun_gravity",0.0,1.0],["wallrun_rise",0.0,6.0],["wallrun_jump",0.2,3.0],["wallrun_kick",0.0,10.0],
 	["slide_auto",25.0,70.0],["slide_pull",4.0,40.0],["slide_top",4.0,30.0],["slide_runout",0.0,30.0],["slide_air",0.0,0.2],
-	["slide_jump",0.2,2.5],["side_flip",0.5,3.5],["side_speed",0.0,8.0],["climb_time",0.15,1.2]]
+	["slide_jump",0.2,2.5],["side_flip",0.5,3.5],["side_speed",0.0,8.0],["climb_time",0.15,1.2],
+	["sail:pace",2.0,12.0],["sail:sink",0.4,4.0],["sail:top",4.0,20.0],["sail:bleed",0.0,6.0],["sail:turn",0.5,6.0],
+	["sail:kick",0.0,8.0],["sail:catch",2.0,30.0],["sail:swoop",0.0,1.0],["sail:wind_share",0.0,1.5],["sail:lift",0.0,2.0],
+	["sail:thermal",0.0,5.0],["sail:rise_most",0.0,4.0],["sail:ceiling",0.0,10.0],["sail:reopen",0.0,1.0]]
 
 func _build_ui() -> void:
 	var layer := CanvasLayer.new()
@@ -1030,7 +1064,7 @@ func _build_ui() -> void:
 	_hud.add_theme_constant_override("shadow_offset_y",1)
 	layer.add_child(_hud)
 	var hint := Label.new()
-	hint.text = "F5 record · F6 replay · F7 older · F8 all paths · WASD run · Space jump (on landing: pump; in a skid: side flip) · Shift/C crouch: at a run slide, + Space long jump (crouch held, Space on landing: chain), on a slope surf · in the air X twirl; out of a slide, steer across to build speed, hop again on the touch · into a wall: slide, Space: kick · along a wall in the air: wall run, Space: kick off · 1-9 0 - = [ ] \\ stations · R start · F1 numbers · F2 feel · Esc mouse"
+	hint.text = "F5 record · F6 replay · F7 older · F8 all paths · WASD run · Space jump (on landing: pump; in a skid: side flip) · Shift/C crouch: at a run slide, + Space long jump (crouch held, Space on landing: chain), on a slope surf · in the air X twirl; out of a slide, steer across to build speed, hop again on the touch · into a wall: slide, Space: kick · along a wall in the air: wall run, Space: kick off · with room under him (off an edge) Space: the sail (again: fold; crouch floats) · 1-9 0 - = [ ] \\ stations · R start · F1 numbers · F2 feel · Esc mouse"
 	hint.add_theme_font_size_override("font_size",14)
 	hint.add_theme_color_override("font_color",Color("fbf6ea"))
 	hint.add_theme_color_override("font_shadow_color",Color(0,0,0,0.7))
@@ -1130,10 +1164,12 @@ func _tuning() -> bool:
 ## A feel number by its TUNABLE name ("jumps:1" is the second jump).
 func _feel(key: String) -> float:
 	if key.begins_with("jumps:"): return float(motor.jumps[int(key.get_slice(":",1))])
+	if key.begins_with("sail:"): return float(motor.sail.get(key.get_slice(":",1)))
 	return float(motor.get(key))
 
 func _set_feel(key: String, value: float) -> void:
 	if key.begins_with("jumps:"): motor.jumps[int(key.get_slice(":",1))] = value
+	elif key.begins_with("sail:"): motor.sail.set(key.get_slice(":",1),value)
 	else: motor.set(key,value)
 
 ## The feel now, as the motor's constants to paste back, printed and copied.
@@ -1142,6 +1178,9 @@ func print_feel() -> String:
 	for spec: Array in TUNABLE:
 		var key: String = spec[0]
 		if key.begins_with("jumps:"): continue
+		if key.begins_with("sail:"):
+			lines.append("const %s := %s  # pocket_sail.gd" % [key.get_slice(":",1).to_upper(),_num(_feel(key))])
+			continue
 		lines.append("const %s := %s" % [key.to_upper(),_num(float(motor.get(key)))])
 	lines.append("const JUMPS := [%s]" % ",".join(motor.jumps.map(func(j: float) -> String: return _num(j))))
 	var text := "\n".join(lines)
@@ -1159,7 +1198,8 @@ func default_feel() -> void:
 	for spec: Array in TUNABLE:
 		var key: String = spec[0]
 		if key.begins_with("jumps:"): continue
-		motor.set(key,fresh.get(key))
+		if key.begins_with("sail:"): _set_feel(key,float(fresh.sail.get(key.get_slice(":",1))))
+		else: motor.set(key,fresh.get(key))
 	motor.jumps = fresh.jumps.duplicate()
 	for row in _tune_box.get_children():
 		for child in row.get_children():
@@ -1175,7 +1215,7 @@ func state() -> String:
 	if motor.on_ledge(): return motor.hold
 	if motor.swimming: return "swim"
 	if motor.skidding: return "skid"
-	if motor.move in ["wall","wallrun","crouch","long","kick","slide","twirl","flip"]: return motor.move
+	if motor.move in ["wall","wallrun","crouch","long","kick","slide","twirl","flip","sail"]: return motor.move
 	if motor.grounded: return "wade" if motor.wade > PilotMotor.WADE_FROM else "ground"
 	return "air"
 
@@ -1198,6 +1238,10 @@ func _show_hud() -> void:
 	if last_twirl > 0.0: lines.append("twirl     %.2f s in the air from it" % last_twirl)
 	if long_chain > 0: lines.append("long chain %d · fastest %.2f m/s (LONG_TOP %.1f)" % [long_chain,long_chain_top,motor.long_top])
 	if motor.wade > 0.0 or motor.swimming: lines.append("water     %.2f m over the feet" % motor.wade)
+	var sail: RefCounted = motor.sail
+	if motor.move == "sail": lines.append("sail      open · %.2f m/s across · %.2f m/s %s · lift %.2f · kick %s" % [motor.speed(),absf(motor.velocity.y),"up" if motor.velocity.y > 0.0 else "down",sail.lift_now,"spent" if sail.kicked else "ready"])
+	elif not motor.grounded: lines.append("sail      packed · kick %s · room %s" % ["spent" if sail.kicked else "ready","yes" if sail.can_open(motor.feet.y-motor.ground_y,motor.velocity.y) else "no"])
+	if not last_glide.is_empty(): lines.append("last glide %.1f m across, %.1f m down: %s to 1 (still air %.2f)" % [last_glide.across,last_glide.down,"%.2f" % last_glide.ratio if is_finite(float(last_glide.ratio)) else "-",sail.pace/sail.sink])
 	_hud.text = "\n".join(lines)
 
 func _unhandled_input(event: InputEvent) -> void:

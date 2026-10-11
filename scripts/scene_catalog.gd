@@ -55,6 +55,8 @@ const ENTRIES: Array[Dictionary] = [
 	# On-foot greyboxes.
 	{"id":"character_study","group":"On-foot greyboxes","title":"Character study","scene":"res://studies/character_study.tscn","args":[],
 		"detail":"The pilot's moves in the greybox room. 1-9: stations, R: back to start."},
+	{"id":"pocket_sail","group":"On-foot greyboxes","title":"Pocket sail","scene":"res://studies/pocket_sail_study.tscn","args":[],
+		"detail":"The hand glider: thrown off a tall island by pads (or K), Space in the air pops the sail, again folds it. Gusts, rising air, tiers below."},
 	{"id":"pack_ruins_archipelago","group":"On-foot greyboxes","title":"Ruins archipelago","scene":"res://studies/character_study.tscn","args":["--pack=ruins_archipelago"],
 		"detail":"Island pack: floating ruins of an old city to platform across. 1-7: stations."},
 	{"id":"pack_sky_village","group":"On-foot greyboxes","title":"Sky village","scene":"res://studies/character_study.tscn","args":["--pack=sky_village"],
