@@ -72,7 +72,7 @@ const STICK_LOOK := 2.4
 const DOUBLE_TAP := 0.3
 const PILOTS := ["human","sloppy","decent","sharp","perfect"]
 ## The pace a bot flies each approach at (Course APPROACHES).
-const BOT_PACE := {"normal":"slow","hot":"cruise","boost":"boost"}
+const BOT_PACE := {"normal":"slow","hot":"cruise","boost":"boost","dive":"dive"}
 ## The grit's tint off the fields.
 const TURF := Color(0.5,0.58,0.36)
 const COLOURS := {"field":Color(0.6,0.66,0.55),"shelf":Color(0.55,0.56,0.6),"sea":Color(0.42,0.52,0.6),"pilot":Color(0.32,0.24,0.18)}

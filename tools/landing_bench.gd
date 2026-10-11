@@ -21,7 +21,7 @@ const Log = preload("res://scripts/flight_log.gd")
 const DT := 1.0/60.0
 const DIR := "user://landing_runs"
 ## The pace a bot flies each approach at.
-const PACE := {"normal":"slow","hot":"cruise","boost":"boost"}
+const PACE := {"normal":"slow","hot":"cruise","boost":"boost","dive":"dive"}
 
 func _initialize() -> void:
 	var args := OS.get_cmdline_user_args()

@@ -5,7 +5,8 @@ extends SceneTree
 ## sky_plane.gd); it is bumped off the stone and flies on or sits on its
 ## wheels (never inside it, never a crash); nosed down at the turf it
 ## touches and sticks, never into it (the hand landing, scripts/
-## manual_landing.gd; tests/test_kit_isle_landing.gd has the rest); out in
+## manual_landing.gd; a dive too steep bounces instead, round 3, and
+## tests/test_kit_isle_landing.gd has that and the rest); out in
 ## the air he stands on open turf near the plane, which goes back to its
 ## parked home; slow and braking it settles and stops but never gets out by
 ## itself; R in the plane puts him on foot at the start. The pad's right
@@ -174,14 +175,15 @@ func _open_run() -> Dictionary:
 				if ok and space.intersect_ray(ray).is_empty() and study._room_for_pilot(space,top): return {"at":top,"way":way}
 	return {}
 
-## Nosed down over the turf: it touches and sticks, never sinks in.
+## Nosed down over the turf, low (not a dive steep enough to bounce): it
+## touches and sticks, never sinks in.
 func _skim() -> void:
 	var run := _open_run()
 	check(not run.is_empty(),"Open turf to touch found")
 	if run.is_empty(): return
 	var way: Vector3 = run.way
-	study.fly_from((run.at as Vector3)+Vector3.UP*4.0,atan2(-way.x,-way.z))
-	var out := _fly(1.2,{"pitch":-1.0})
+	study.fly_from((run.at as Vector3)+Vector3.UP*2.0,atan2(-way.x,-way.z))
+	var out := _fly(1.2,{"pitch":-0.6})
 	check(not (study.hand_landing.stats.touches as Array).is_empty() and study.hand_landing.on_ground(),"Nosed down at the turf, it touches and sticks (%s)" % study.hand_landing.last_touch)
 	check(out.lowest > 0.25,"Never into the turf (lowest %.2f m over it)" % out.lowest)
 
