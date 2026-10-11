@@ -20,9 +20,7 @@ extends RefCounted
 ## The curve (`fog`) is gentle: a Gaussian falloff over REACH metres, a
 ## little thicker low toward the cloud sea, and whole by WHOLE, the distance
 ## islets are built at (scripts/sky_islets.gd VIEW), so nothing ever shows up
-## out of clear air. A fresh island rises into place (scripts/sky_islands.gd
-## `sunk`) much nearer than that; while it rises it is hazed by how far it
-## still has to come (`emerging`), so it comes up out of the haze.
+## out of clear air.
 ##
 ## A mountain range risen through the sea (scripts/sky_peaks.gd) is a
 ## landform, not scenery streamed in: within its reach (`publish`'s peaks)
@@ -30,7 +28,6 @@ extends RefCounted
 ## stands pale and blue in the distance long after an island would have
 ## gone.
 
-const SkyIslands = preload("res://scripts/sky_islands.gd")
 const SkyIslets = preload("res://scripts/sky_islets.gd")
 const SkyBelow = preload("res://scripts/sky_below.gd")
 ## The falloff's scale and where it is whole (m), and the cloud sea's height
@@ -44,7 +41,8 @@ const SEA := -105.0
 const PEARL_SUN := 0.2
 const LOW := 75.0
 const THICK := 0.6
-## The most rising islands hazed at once (the shader's arrays).
+## The most rising boxes hazed at once (the shader's arrays; none rise
+## since the old game's chunk islands went, so they are published empty).
 const EMERGING := 4
 ## A range's curve: its reach and whole this many times the islands', and
 ## the most ranges hazed at once.
@@ -143,28 +141,6 @@ static func _dome(state: Dictionary, toward: Vector3) -> Vector3:
 		col += Vector3(0.42,0.13,0.16)*exp(-(toward.y-0.1)*(toward.y-0.1)/0.012)*away*away*belt
 		col = col.lerp(col*Vector3(0.55,0.62,0.8),exp(-toward.y*toward.y/0.004)*away*0.5*belt)
 	return col
-
-## The islands still rising into place, as boxes round them, nearest
-## first: [low corner, high corner, how hidden (0 to 1)], in world metres.
-## The box reaches down past the deepest rock an island's outline can hang
-## (scripts/island_shore.gd DEEPEST).
-## A wandered-to island rises its whole WANDER_RISE depth out of the haze;
-## one surfacing from the cloud sea is hidden until it is that near.
-static func emerging(islands: Node, eye: Vector3) -> Array:
-	var out := []
-	var terrain: Node3D = islands.editor.terrain if islands.get("editor") != null else null
-	if terrain == null: return out
-	var corners := [terrain.to_global(Vector3(-SkyIslands.HALF-1.0,NativeTerrainData.SLAB_BASE-preload("res://scripts/island_shore.gd").DEEPEST-2.0,-SkyIslands.HALF-1.0)),
-		terrain.to_global(Vector3(SkyIslands.HALF+1.0,12.0,SkyIslands.HALF+1.0))]
-	var lo: Vector3 = (corners[0] as Vector3).min(corners[1])
-	var hi: Vector3 = (corners[0] as Vector3).max(corners[1])
-	for i in range(islands.offsets.size()):
-		var sunk: float = islands.sunk(i)
-		if sunk <= 0.0: continue
-		var at: Vector3 = islands.offsets[i]+Vector3.DOWN*sunk
-		out.append([lo+at,hi+at,clampf(sunk/SkyIslands.WANDER_RISE.x,0.0,1.0)])
-	out.sort_custom(func(a: Array, b: Array) -> bool: return eye.distance_squared_to((a[0]+a[1])*0.5) < eye.distance_squared_to((b[0]+b[1])*0.5))
-	return out.slice(0,EMERGING)
 
 ## Lays the haze on by `amount` (0 to 1) and hands the display haze's
 ## `blend` (studies/display_fog.gd) the cloud sea under it (`sea`, as in

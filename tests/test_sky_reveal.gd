@@ -112,7 +112,7 @@ func _live() -> void:
 	var summits: int = SkyWorld.layout().get("summits",[]).size()
 	check(summits > 0 and peaks.ring.summit_count() == summits,"... and every one of the sea's summits (%d of %d)" % [peaks.ring.summit_count(),summits])
 	check(peaks.premade_whole(home) and peaks.premade.size() > 0 and peaks.range_count() == 0,"... the %d ranges within reach of the plate made in full ahead, none standing in the build view" % peaks.premade.size())
-	check(islands.built() and not islands.lands.has(null) and islands._copies.all(func(c: Node3D) -> bool: return not c.visible),"... the islands round it baked (%d), out of the build view till a glide" % islands.copy_count())
+	check(islands.built() and not islands.islets.visible,"... the sky round it laid out, out of the build view till a glide")
 	check(veil != null and veil.fading and peaks.ring._whole_at < 0 and scene.sky_reveal != null and scene.sky_reveal.revealed,"... its pipelines warmed, the veil fading in one gentle fade, the ring with no fade of its own")
 	# The first glide starts among them: every range near made at once.
 	islands.show_air(true)
@@ -120,8 +120,8 @@ func _live() -> void:
 	var started: int = peaks._making.size()+peaks.range_count()
 	var all_ahead: bool = peaks._making.values().all(func(m: Dictionary) -> bool: return int(m.task) < 0)
 	for i in range(started+2): peaks.advance(1.0/60.0,Vector3(0.0,50.0,0.0))
-	print("     glide start: %d started (made ahead: %s), %d standing, islands shown: %s" % [started,all_ahead,peaks.range_count(),islands._copies.all(func(c: Node3D) -> bool: return c.visible)])
-	check(started > 0 and all_ahead and peaks.range_count() == started and islands._copies.all(func(c: Node3D) -> bool: return c.visible),"A glide from the plate starts among them: the %d ranges near stood from those made ahead, one a frame, the islands shown" % started)
+	print("     glide start: %d started (made ahead: %s), %d standing, islets shown: %s" % [started,all_ahead,peaks.range_count(),islands.islets.visible])
+	check(started > 0 and all_ahead and peaks.range_count() == started and islands.islets.visible,"A glide from the plate starts among them: the %d ranges near stood from those made ahead, one a frame, the islets shown" % started)
 	islands.show_air(false)
 	current_scene.queue_free()
 	await process_frame

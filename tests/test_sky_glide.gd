@@ -32,16 +32,18 @@ func _initialize() -> void:
 	_spread()
 	_currents()
 	_clouds()
-	# The cells' own workings, in the open sky (SkyWorld `ring` off): far
-	# out past the bounds. In the bounded world: tests/test_sky_world.gd.
-	preload("res://scripts/sky_world.gd").ring = false
+	# The cells' own workings, in the open sky (SkyHomes `ring` off, as in
+	# play): far out past the bounds. In the bounded world:
+	# tests/test_sky_world.gd.
+	preload("res://scripts/sky_homes.gd").ring = false
 	_cells_determined()
 	_cells_spaced()
 	_cells_wander()
 	_cells_fall()
 	_cells_swap()
 	_cells_trim()
-	preload("res://scripts/sky_world.gd").ring = true
+	# The edge wind stands with the ring, kept but unwired: under --peak-ring.
+	preload("res://scripts/sky_homes.gd").use_flags(PackedStringArray(["--peak-ring"]))
 	_added_air()
 	_airspeed()
 	_flaps()

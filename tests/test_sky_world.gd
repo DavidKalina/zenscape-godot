@@ -627,18 +627,21 @@ func _saved() -> void:
 	check(SkyWorld.seed == 99 and int(islands.save_state().seed) == 99,"A world's seed is read back from its save")
 	islands.load_state({"origin":[0.0,0.0,0.0],"plate_seed":-1,"built":[]})
 	check(SkyWorld.seed == SkyWorld.LEGACY_SEED,"A save from before the seed reads as the legacy seed")
-	# A world saved before the ring, with islands out where the band stands.
+	# A world saved before the ring, claimed out to where the band stands:
+	# its plate keeps its place. The islands it built and left are no longer
+	# shown (claiming is gone), but its save keeps them as they were read.
 	var before: int = SkyWorld.layout().ranges.size()
 	var r: Dictionary = SkyWorld.layout().ranges[2]
 	var far: Vector3 = r.at+Vector3(0.0,-10.0,0.0)
-	islands.load_state({"origin":[-far.x,10.0,-far.z],"plate_seed":-1,"built":[{"home":[far.x+400.0,0.0,far.z],"label":"Far","document":{}}]})
+	var built := [{"home":[far.x+400.0,0.0,far.z],"label":"Far","document":{}}]
+	islands.load_state({"origin":[-far.x,10.0,-far.z],"plate_seed":12,"built":built})
 	var after: Array = SkyWorld.layout().ranges
 	var clear := true
 	for q: Dictionary in after:
-		for h: Vector3 in [far,far+Vector3(400.0,0.0,0.0)]:
-			if SkyWorld.box_distance(q,Vector2(h.x,h.z)) < 200.0: clear = false
-	var calm := SkyWorld.edge_air(far).is_empty() and SkyWorld.edge_air(far+Vector3(400.0,0.0,0.0)).is_empty()
-	check(after.size() < before and clear and calm,"Islands saved out where the band stands keep their place: %d of %d ranges leave them room, and no edge wind blows there" % [after.size(),before])
+		if SkyWorld.box_distance(q,Vector2(far.x,far.z)) < 200.0: clear = false
+	check(after.size() < before and clear and SkyWorld.edge_air(far).is_empty(),"A plate saved out where the band stands keeps its place: %d of %d ranges leave it room, and no edge wind blows there" % [after.size(),before])
+	var saved: Dictionary = islands.save_state()
+	check(saved.get("built") == built and int(saved.get("plate_seed",-1)) == 12 and saved.get("origin") == [-far.x,10.0,-far.z],"Its claims are saved back as they were read")
 	islands.load_state({})
 	check(SkyWorld.layout().ranges.size() == before and SkyWorld.kept.is_empty(),"Islands inside the bounds change nothing")
 	islands.free()

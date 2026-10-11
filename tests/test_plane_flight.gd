@@ -8,7 +8,6 @@ extends SceneTree
 ##     on the land and in the walker's way; F to walking in a few seconds;
 ##   - Space by it takes off: off the ground and flying, the parked one gone;
 ##   - F again mid line-up flies on;
-##   - F by another island claims it and lands on it;
 ##   - flying off the edge brings the parked plane along.
 ##   godot --headless --path . --script tests/test_plane_flight.gd
 const WandererEye = preload("res://scripts/wanderer_eye.gd")
@@ -125,8 +124,8 @@ func _plane() -> void:
 	check(was and eye.landing == null and not eye._landing_wait and eye.flying,"F again in the line-up: it flies on")
 	await create_timer(1.0).timeout
 	check(eye.flying and eye.glide.speed >= SkyPlane.SLOW,"Still flying under power")
-	# Another island: claimed, then landed on.
-	await _other_island(objects)
+	# In from out over the sky, landed on the plate again.
+	await _land_again(objects)
 	# Off the edge again: the parked plane comes along.
 	check(eye.has_parked(),"Parked on the island it landed on")
 	eye._launch(1.0)
@@ -156,28 +155,15 @@ func _parked_well(objects: int) -> void:
 	check(eye._blocked(eye._parked_at),"The walker steps round it")
 	check(eye.editor.data.has_land(eye._parked_at),"It stands on the island's land")
 
-func _other_island(objects: int) -> void:
-	var islands: Node3D = eye.islands
-	var index := -1
-	var began := Time.get_ticks_msec()
-	while index < 0 and Time.get_ticks_msec()-began < 30000:
-		for i in range(islands.offsets.size()):
-			if islands.lands[i] != null and islands._rise[i] == Vector3.ZERO:
-				index = i
-				break
-		await process_frame
-	check(index >= 0,"Another island stands baked in the sky")
-	if index < 0: return
-	var target: Vector3 = islands.homes[index]
-	var origin: Vector3 = islands.origin
-	var home: Vector3 = islands.offsets[index]+eye.editor.terrain.global_position
+## Back in from out over the sky: F lands on the plate (there is no other
+## island to claim), and it parks well again.
+func _land_again(_objects: int) -> void:
+	var home: Vector3 = eye.editor.terrain.global_position
 	eye.glide.position = home+Vector3(-90.0,30.0,0.0)
 	eye.glide.heading = -PI*0.5
 	eye.chase.reset(eye.glide,eye.glide.position+Vector3(-5.0,2.0,0.0))
 	await frames(2)
 	eye.handle(_key(KEY_F))
 	var out: Array = await _until_walking(60.0)
-	check(islands.origin != origin,"F by another island claims it (the world shifted %s)" % str(islands.origin-origin))
-	check(-islands.origin == target,"Claimed, it is the plate")
-	check(eye.active and not eye.flying and (out[0] as Array).has("touchdown"),"And lands on it: %s" % " > ".join(out[0]))
+	check(eye.active and not eye.flying and (out[0] as Array).has("touchdown"),"F from out over the sky lands on the plate: %s" % " > ".join(out[0]))
 	await _parked_well(eye.editor.data.objects.size())

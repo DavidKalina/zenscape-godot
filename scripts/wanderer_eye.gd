@@ -51,9 +51,8 @@ extends Node
 ## can dip under an island's slab. Near the ground a mark shows where it
 ## would touch down.
 ##
-## Under `--auto-landing`, F lands it (scripts/plane_landing.gd): the nearest island within
-## LANDING_REACH is claimed if it is not the plate yet, a strip picked on
-## its land (scripts/plane_strip.gd: the longest, flattest clear run, into
+## Under `--auto-landing`, F lands it (scripts/plane_landing.gd) on the
+## plate, if it is within LANDING_REACH: a strip picked on its land (scripts/plane_strip.gd: the longest, flattest clear run, into
 ## the wind), and the plane lines up, glides down, flares, touches with a
 ## bounce and a puff, rolls to a stop, and the pilot hops out; the camera
 ## swoops down behind them beside it. Before the touch, Boost, a roll or F
@@ -105,8 +104,8 @@ extends Node
 ##
 ## With `--below` (scripts/sky_below.gd) the cloud sea is a way down: dived
 ## through, it comes out over the lower world's ocean, its floor just over
-## the water, and climbs back up through the cloud. Down there it claims no
-## island and lands nowhere.
+## the water, and climbs back up through the cloud. Down there it lands
+## nowhere but on the archipelago's islands, perched on as islets are.
 
 const Plate = preload("res://scripts/plate.gd")
 const Pad = preload("res://scripts/pad.gd")
@@ -438,7 +437,8 @@ var lower: Node3D = null
 var flying := false
 var glide_enabled := "--no-glide" not in preload("res://scripts/launch_args.gd").user_args()
 ## The plane's landing or takeoff under way (scripts/plane_landing.gd), and
-## which; F pressed and waiting for its island to be claimed.
+## which; F pressed and waiting to begin (climbing out from under the
+## island first).
 var landing: RefCounted = null
 var _taking_off := false
 var _landing_wait := false
@@ -626,8 +626,7 @@ func _build_figure() -> void:
 	if islands != null: islands.skip.append(figure)
 
 func _world_restored(state: Dictionary) -> void:
-	# A claimed island's plain is formed under the glide, not a new world.
-	if state.is_empty() and not (islands != null and islands.claiming): forget()
+	if state.is_empty(): forget()
 	elif has_parked(): _seat_parked.call_deferred()
 
 ## The figure is gone, stepped out of first if the eye is in it; V sets a
@@ -971,8 +970,8 @@ func leave() -> void:
 	left.emit()
 
 ## The brush picked back up on leaving. The scene refuses it while the places
-## are busy, as they are all through a claim (SkyIslands `claim`), and
-## stepping out of a plane mid-claim would leave the build view with no brush
+## are busy (a world forming or loading), and stepping out of a plane
+## meanwhile would leave the build view with no brush
 ## and the editor off: the hand grips the land and nothing shapes it. So it
 ## waits for the places, unless the walk was taken up again meanwhile.
 func _brush_back() -> void:
@@ -1476,11 +1475,6 @@ func _advance_flight(delta: float) -> void:
 	if islands.collectibles != null: islands.collectibles.touch_plane(islands.global_transform*glide.position)
 	# The moments set pieces' collectibles and starters (scripts/sky_moments.gd).
 	if not below() and islands.moments != null: islands.moments.touch_plane(islands.global_transform*glide.position)
-	# Into another island's footprint, it becomes the plate (not from under
-	# the cloud sea).
-	if not islands.claiming and not below():
-		var under: int = islands.copy_under(glide.position)
-		if under >= 0: _claim(under)
 	sky.advance(delta,glide.position,islands.in_cloud(glide.position,scene._motion_time))
 	# Wandered off or fallen into the sea, an island turns up.
 	islands.advance(delta,glide.position,glide.heading,sky.flight.w)
@@ -1521,24 +1515,16 @@ func _advance_flight(delta: float) -> void:
 		if on_plate: _roll_out()
 		else: _perch(islet)
 
-## Where F comes in to land: the middle of the nearest island's land within
-## LANDING_REACH, or INF. An island's land need not sit in the middle of its
+## Where F comes in to land: the middle of the plate's land within
+## LANDING_REACH (under the cloud, the nearest island's), or INF. The land need not sit in the middle of its
 ## plate, nor hold its own middle (scripts/island_frame.gd `middle`).
 func _landing_spot() -> Vector3:
 	if below(): return lower.landing_spot(glide.position,LANDING_REACH)
-	var best := Vector3.INF
-	var nearest := LANDING_REACH
-	var middles: Array[Vector3] = [editor.terrain.global_position+_land_middle(editor.data)]
-	for i in range(islands.offsets.size()): middles.append(editor.terrain.global_position+islands.offsets[i]+Vector3.DOWN*islands.sunk(i)+_land_middle(islands.lands[i]))
-	for m in middles:
-		var d := Vector2(m.x-glide.position.x,m.z-glide.position.z).length()
-		if d < nearest:
-			nearest = d
-			best = m
-	return best
+	var m := editor.terrain.global_position+_land_middle(editor.data)
+	return m if Vector2(m.x-glide.position.x,m.z-glide.position.z).length() < LANDING_REACH else Vector3.INF
 
-## The offset of `land`'s middle from its plate's, level; none for a land
-## still baking. Kept per land and outline: a ring search is not per frame.
+## The offset of `land`'s middle from its plate's, level. Kept per land and
+## outline: a ring search is not per frame.
 func _land_middle(land: NativeTerrainData) -> Vector3:
 	if land == null: return Vector3.ZERO
 	var kept: Array = _middles.get(land.get_instance_id(),[])
@@ -1549,18 +1535,6 @@ func _land_middle(land: NativeTerrainData) -> Vector3:
 		if _middles.size() > 32: _middles.clear()
 		_middles[land.get_instance_id()] = kept
 	return kept[1]
-
-## Claims an island (SkyIslands `claim`); once the plate is its land, the
-## world has shifted, and everything that flies shifts with it.
-func _claim(index: int) -> void:
-	var shift: Vector3 = await islands.claim(index)
-	if not flying or shift == Vector3.ZERO: return
-	glide.position += shift
-	if drone != null and drone != glide: drone.position += shift
-	sky.move(shift)
-	glider.shift(shift)
-	chase.eye += shift
-	chase.look += shift
 
 ## The chase camera's pose, written into the scene's orbit.
 func _write_chase() -> void:
@@ -1978,9 +1952,9 @@ func _fly_on() -> void:
 	_hint.modulate.a = 1.0
 	_hint_time = 0.0
 
-## F pressed: the plane heads for the island to land on while it is
-## claimed; once it is the plate, the strip is picked and the landing
-## begins. Boost or a roll calls it off.
+## F pressed: the plane heads for the plate, climbing out first if it is
+## under it, then the strip is picked and the landing begins. Boost or a
+## roll calls it off.
 func _wait_to_land(delta: float, input: Dictionary) -> void:
 	if float(input.get("boost",0.0)) > 0.0 or float(input.get("roll",0.0)) != 0.0:
 		_landing_wait = false
@@ -1989,17 +1963,11 @@ func _wait_to_land(delta: float, input: Dictionary) -> void:
 	# Turning towards it meanwhile, unless steered.
 	glide.approach_target = _landing_spot()
 	if glide.approach_target != Vector3.INF and is_zero_approx(float(input.get("turn",0.0))): glide.heading += glide._aim(delta)
-	if islands.claiming: return
-	var target := _landing_target()
-	if target == -2:
+	if glide.approach_target == Vector3.INF:
 		_landing_wait = false
 		_hint.text = NO_LANDING_HINT
 		_hint.modulate.a = 1.0
 		_hint_time = 0.0
-		return
-	if target >= 0:
-		# Claimed first, so the strip is read off the real land.
-		if islands._rise[target] == Vector3.ZERO and islands.lands[target] != null: _claim(target)
 		return
 	# Under the island or below its land, it climbs out first, so the way
 	# in never has to pass through its rock.
@@ -2010,24 +1978,6 @@ func _wait_to_land(delta: float, input: Dictionary) -> void:
 		if is_zero_approx(float(input.get("pitch",0.0))): input["pitch"] = 0.8
 		return
 	_begin_landing()
-
-## Which island F lands on: -1 the plate, a copy's index, or -2 none
-## within LANDING_REACH.
-func _landing_target() -> int:
-	var best := -2
-	var nearest := LANDING_REACH
-	var m := editor.terrain.global_position+_land_middle(editor.data)
-	var d := Vector2(m.x-glide.position.x,m.z-glide.position.z).length()
-	if d < nearest:
-		nearest = d
-		best = -1
-	for i in range(islands.offsets.size()):
-		m = editor.terrain.global_position+islands.offsets[i]+Vector3.DOWN*islands.sunk(i)+_land_middle(islands.lands[i])
-		d = Vector2(m.x-glide.position.x,m.z-glide.position.z).length()
-		if d < nearest:
-			nearest = d
-			best = i
-	return best
 
 ## The plate's land as a strip survey (PlaneStrip `survey`): its heights,
 ## water and decks, and everything standing taller than the wings.
@@ -2448,7 +2398,7 @@ func _shaken(delta: float) -> Vector3:
 
 ## Walked off the edge by hand: the pilot drops, carried on out the way
 ## they ran, and the canopy opens by itself STEP_OFF_OPEN s on (X sooner);
-## the plane stays parked, and no other island is claimed on the way down.
+## the plane stays parked.
 func _step_off() -> void:
 	var perched := not perch.is_empty()
 	# From where the run left the land this step (the walk's feet are still
@@ -2681,13 +2631,6 @@ func _advance_dive(delta: float) -> void:
 		if _stranded_left < 0.0:
 			_return_to_plane()
 			return
-	# Over another island, it becomes the plate before the touch (as the
-	# plane's flight does), and the touch waits on the claim; never off the
-	# edge by hand, which leaves the plane parked on this one.
-	if not islands.claiming and not below() and not _stepped_off:
-		var copy: int = islands.copy_under(dive.position)
-		if copy >= 0: _claim(copy)
-	var hold: bool = islands.claiming and dive.under_canopy() and dive.height < 4.0
 	# Under the canopy, left alone, it drifts round towards the nearest land.
 	dive.approach_target = _landing_spot() if dive.under_canopy() and not _stepped_off else Vector3.INF
 	if _stepped_off:
@@ -2695,7 +2638,7 @@ func _advance_dive(delta: float) -> void:
 		if _open_in <= 0.0 and dive.falling(): dive.open_canopy(true)
 		if _stranded_left < 0.0 and dive.position.y < _off_y-STRAND_BELOW: _strand()
 	var was_falling: bool = dive.falling()
-	var out: Dictionary = {} if hold or dive.phase == SkyDive.DOWN else dive.fall(delta,input,_dive_ground,_fly_air)
+	var out: Dictionary = {} if dive.phase == SkyDive.DOWN else dive.fall(delta,input,_dive_ground,_fly_air)
 	if was_falling and dive.under_canopy():
 		air.flap()
 		_hint.text = CANOPY_HINT

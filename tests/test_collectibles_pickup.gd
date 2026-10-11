@@ -41,9 +41,7 @@ func _run() -> void:
 	eye.enter()
 	for i in range(5): await process_frame
 	eye._launch(6.0,false)
-	for i in range(600):
-		if not islands.lands.has(null): break
-		await process_frame
+	for i in range(30): await process_frame
 	var home := Vector3(0.0,30.0,40.0)
 	for s: Dictionary in islands.clusters.spots:
 		if str(s.key).begins_with("near:"): islands.clusters.plan_now(s.key)

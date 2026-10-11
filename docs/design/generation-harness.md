@@ -43,7 +43,6 @@ One bot and one report then work for all set pieces. Collectible token lines and
 - `tools/probe_clusters.gd`: cluster plans over many seeds (30 for everyday checks, 300 at milestones). `tools/capture_clusters.gd` takes rendered captures.
 - The ruin kit gallery's fly mode autopilot follows a hall's path (`docs/scenic/ruin-kit.md`).
 - The pierced isle verifies every hole is flyable (`docs/scenic/pierced-isle.md`, `tools/probe_pierced*.gd`, on feature/pierced-isle).
-- `tools/probe_sky_glide.gd`: glide and perch probes.
 - The Sundered hall (feature/sundered-hall) has its own plan checks.
 
 ## Suggested first round
