@@ -177,7 +177,7 @@ func _free_play() -> void:
 	check(line(Vector3(98.0,30.0,-2.6),Vector3(99.5,-35.0,-2.6),"kick"),"Kicks up the slot between the castellum and the blind wall to the channel (feet %s)" % m.feet)
 	var back := line(Vector3(92.0,30.0,-44.5),Vector3(92.0,30.2,-37.2),"jump_twirl")
 	back = back and line(m.feet,Vector3(92.0,29.8,-31.6),"jump_twirl")
-	back = back and line(m.feet,Vector3(92.0,30.4,-27.7),"jump")
+	back = back and line(m.feet,Vector3(92.0,30.4,-26.3),"jump")
 	back = back and line(m.feet,Vector3(92.0,30.0,-21.0),"jump")
 	check(back,"Stumps: back from the far island over three broken piers, two twirled and two running jumps (feet %s)" % m.feet)
 

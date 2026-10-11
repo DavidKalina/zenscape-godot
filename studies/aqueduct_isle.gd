@@ -131,8 +131,17 @@ const LANDMARK_WEATHERED := 0.55
 const STAIR_WEATHERED := 0.3
 ## The stepping stumps back from the far island (world x, z from, z to,
 ## top): an older arcade's piers broken off at the islands' height, their
-## feet hanging in the sky; each collides as a clean box.
-const STUMPS := [[92.0,-26.7,-28.7,30.4],[92.0,-30.6,-32.6,29.8],[92.0,-36.0,-38.4,30.2]]
+## feet hanging in the sky; each collides as a clean box. The first two
+## leave the knife-edge slot (WorldScale.knife with STUMP_KNIFE_ROOM: 2.32
+## m at plane 2, the plane on its wingtip 0.42 m clear either side; it was
+## 1.9) centred on KNIFE_Z, the line on under the aqueduct's arch at its
+## x 28 (z -26 to -30), so on knife edge the plane slips both; level, its
+## wings catch the stumps. The second runs on to its old far end, the first
+## from the slot toward the near island's edge (-24.75).
+const KNIFE_Z := -28.0
+const STUMP_KNIFE_ROOM := 0.6
+static var STUMP_SLOT: float = WorldScale.knife(STUMP_KNIFE_ROOM)
+static var STUMPS := [[92.0,-25.4,KNIFE_Z+STUMP_SLOT*0.5,30.4],[92.0,KNIFE_Z-STUMP_SLOT*0.5,-32.6,29.8],[92.0,-36.0,-38.4,30.2]]
 
 ## The lodestone's floating stone (Art `platforms`).
 const LODE_PLATFORM := "east_1"

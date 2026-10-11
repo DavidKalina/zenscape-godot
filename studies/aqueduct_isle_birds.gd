@@ -10,7 +10,7 @@ const Art = preload("res://studies/aqueduct_isle_art.gd")
 const FLOCKS := [["sparrow",5,"aqueduct"],["goldfinch",4,"circle"],["robin",2,"castellum"],["sparrow",3,"gate"]]
 ## The stepping stumps' tops (studies/aqueduct_isle.gd STUMPS, x and the
 ## middle of each z span).
-const STUMP_TOPS := [Vector2(92.0,-27.7),Vector2(92.0,-31.6),Vector2(92.0,-37.2)]
+const STUMP_TOPS := [Vector2(92.0,-26.3),Vector2(92.0,-31.4),Vector2(92.0,-37.2)]
 
 func flock_specs() -> Array:
 	return FLOCKS
