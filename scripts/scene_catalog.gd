@@ -3,12 +3,17 @@ extends RefCounted
 ## in the order shown, each group a column on the card. The run-*.command
 ## launchers in the repo root are the catalogue this follows; an entry's args
 ## are the ones after `--` in its launcher (scripts/launch_args.gd adds
-## `--no-title` to every one). To add an entry, add a line here
+## `--no-title` to every one but those marked `own_title`, which open on the
+## scene's own title). To add an entry, add a line here
 ## (docs/design/scene-picker.md); tests/test_scene_picker.gd checks each one's
 ## scene loads.
 
 const ENTRIES: Array[Dictionary] = [
-	# The game itself.
+	# The old game: the plate builder behind its own title (Continue, Your
+	# worlds, Build this world, a quiet plain), with every save. The default
+	# front door is the aqueduct isle now (studies/zenscape.tscn).
+	{"id":"builder","group":"The game","title":"Builder (old game)","scene":"res://studies/cozy_worlds.tscn","args":[],"own_title":true,
+		"detail":"The old game on its own title: your worlds and saves, the hand out to build the plate."},
 	{"id":"game_world","group":"The game","title":"Your world","scene":"res://studies/cozy_worlds.tscn","args":["--resume"],
 		"detail":"The game straight in: your last world (or a new plain), the hand out to build."},
 	{"id":"moments_world","group":"The game","title":"Moments in the sky","scene":"res://studies/cozy_worlds.tscn","args":["--moments","--skydive"],
@@ -57,6 +62,10 @@ const ENTRIES: Array[Dictionary] = [
 		"detail":"The pilot's moves in the greybox room. 1-9: stations, R: back to start."},
 	{"id":"pocket_sail","group":"On-foot greyboxes","title":"Pocket sail","scene":"res://studies/pocket_sail_study.tscn","args":[],
 		"detail":"The hand glider: thrown off a tall island by pads (or K), Space in the air pops the sail, again folds it. Gusts, rising air, tiers below."},
+	{"id":"serpent_ride","group":"On-foot greyboxes","title":"Serpent ride","scene":"res://studies/serpent_ride.tscn","args":[],
+		"detail":"Run about on the rune serpent's back as it flies a loop of open sky. 1-3: on its back, 4: the tower, R: start."},
+	{"id":"serpent_convoy","group":"On-foot greyboxes","title":"Serpent convoy","scene":"res://studies/serpent_ride.tscn","args":["--convoy"],
+		"detail":"Five serpents nose to tail down long descents: carve down one, leap off its head onto the next. T: the last gap again, 5: top of a descent."},
 	{"id":"pack_ruins_archipelago","group":"On-foot greyboxes","title":"Ruins archipelago","scene":"res://studies/character_study.tscn","args":["--pack=ruins_archipelago"],
 		"detail":"Island pack: floating ruins of an old city to platform across. 1-7: stations."},
 	{"id":"pack_sky_village","group":"On-foot greyboxes","title":"Sky village","scene":"res://studies/character_study.tscn","args":["--pack=sky_village"],
@@ -108,4 +117,4 @@ static func enabled() -> bool:
 ## back to the title in the tree (scripts/scene_return.gd).
 static func open(tree: SceneTree, entry: Dictionary) -> Error:
 	preload("res://scripts/scene_return.gd").ensure(tree)
-	return preload("res://scripts/launch_args.gd").open_scene(tree,str(entry.scene),PackedStringArray(entry.args))
+	return preload("res://scripts/launch_args.gd").open_scene(tree,str(entry.scene),PackedStringArray(entry.args),bool(entry.get("own_title",false)))

@@ -16,7 +16,7 @@ zsh tools/sundered_gorge_captures.sh DIR [view ...]   # rendered captures (--no-
 
 It is also in the scene picker: Scenes, then Ruins, then "Sundered gorge" (`scripts/scene_catalog.gd`).
 
-**Keys.** The keys are the aqueduct isle's: L / Shift+L for presets, B for a gust, F (pad Y) for the plane, R to reset, and F1 / F2 / Esc.
+**Keys.** The keys are the aqueduct isle's: L / Shift+L for presets, B for a gust, Space (pad A) by the parked plane to fly (landing by hand, docs/design/manual-landing.md "Kit isles"), R to reset, and F1 / F2 / Esc.
 
 **Flags.** It keeps all of the aqueduct isle's opt-outs: `--no-flora`, `--no-life`, `--no-undergrowth`, `--no-butterflies`, `--no-fireflies`, `--no-birds`, `--no-wind-life`, `--no-tokens`, `--no-sky`, `--no-far-isles`, `--no-clusters`, `--no-pierced`, `--no-airships`, `--no-traffic`, `--no-sky-life`, `--no-motes`, `--no-sky-tokens`, `--no-lode`.
 

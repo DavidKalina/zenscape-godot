@@ -54,7 +54,7 @@ extends Node
 ## can dip under an island's slab. Near the ground a mark shows where it
 ## would touch down.
 ##
-## F lands it (scripts/plane_landing.gd): the nearest island within
+## Under `--auto-landing`, F lands it (scripts/plane_landing.gd): the nearest island within
 ## LANDING_REACH is claimed if it is not the plate yet, a strip picked on
 ## its land (scripts/plane_strip.gd: the longest, flattest clear run, into
 ## the wind), and the plane lines up, glides down, flares, touches with a
@@ -86,9 +86,10 @@ extends Node
 ## towards it or Space climbs up, away lets go (off the rim, into the
 ## flight).
 ##
-## With `--manual-landing` (scripts/manual_landing.gd, a study:
-## studies/landing_study.tscn, docs/design/manual-landing.md, round 2) every
-## landing is flown by hand: F no longer lands it, it lowers and raises the
+## By default (scripts/manual_landing.gd, a study:
+## studies/landing_study.tscn, docs/design/manual-landing.md, round 2; the
+## old F landing above under `--auto-landing`) every landing is flown by
+## hand: F no longer lands it, it lowers and raises the
 ## flaps. Touching the land slow, shallow and wings level is a greaser: it
 ## settles and rolls out tidy under the brakes (Shift). Hot, hard or on a
 ## wingtip it sticks anyway, with a thump, a dust burst, a shake and a
@@ -486,11 +487,12 @@ var _hop_to := Vector3.INF
 var _hop_from := Vector3.ZERO
 var _board_asked := false
 var _near_plane := false
-## `--manual-landing` (see the header): the rules, the flaps, Exit asked
+## By hand, the default (see the header; `--auto-landing` for the old F
+## landing): the rules, the flaps, Exit asked
 ## (F stopped), a dive begun by walking off the edge (not an eject), the
 ## edge's height, the seconds left stranded (-1 not), and the bounce's
 ## shake left (s).
-var manual := "--manual-landing" in preload("res://scripts/launch_args.gd").user_args()
+var manual := not "--auto-landing" in preload("res://scripts/launch_args.gd").user_args()
 var hand_landing := ManualLanding.new()
 ## The grit off the sliding wheels (scripts/wheel_spray.gd), made on the
 ## first touch.

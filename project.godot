@@ -11,7 +11,7 @@ config_version=5
 [application]
 
 config/name="ZenScape — Landscape Sandbox"
-run/main_scene="res://studies/cozy_worlds.tscn"
+run/main_scene="res://studies/zenscape.tscn"
 config/features=PackedStringArray("4.7", "Forward Plus")
 run/max_fps=120
 run/max_fps.macos=60

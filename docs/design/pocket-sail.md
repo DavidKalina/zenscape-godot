@@ -406,3 +406,84 @@ The stills were `03-sail-out`, `06-cloth-close`, `07-cloth-side` and
 6. **The cloth** is CPU-rebuilt each frame: 16 × 16 quads, about 1500
    vertices. That is fine for one pilot. Move it to a vertex shader if many
    sails ever fly.
+
+## Merge with main
+
+main (471e2249, "the aqueduct isle is the game") was merged into the branch.
+
+- **Conflicts:**
+  - `scripts/pilot_motor.gd`: `reset` keeps both `sail.rest()` and main's
+    `carving = 0.0`; main's `carry()` and `_turned()` stay.
+  - `scripts/scene_catalog.gd`: the pocket sail entry and main's two serpent
+    entries.
+  - `studies/character_study.gd`: both TUNABLE lists (carve and sail); the
+    sail line went into main's `_hint_text()`.
+  - `scripts/wanderer_eye.gd`: main's default-on hand landing
+    (`--auto-landing` for the old one). Open question 1 above is settled by
+    this: off the edge is now a drop in the default game too.
+- **The kit isle's walk-off** (`studies/kit_isle.gd`). main had grown a
+  walk-off that dropped into the skydive with the canopy opening by itself.
+  It is now on foot all the way:
+  - Walked, jumped or knocked off (falling STEP_OFF_DROP, 4 m, under where
+    he last stood, with STEP_OFF_CLEAR, 12 m, of open air under him) sets
+    `off_edge`. The motor keeps falling, and Space (pad A) opens the sail.
+    Nothing opens by itself.
+  - Stranding stays as main had it, as the never-death net. Once
+    STRAND_BELOW (20 m) under the edge, or down in water, he is stranded for
+    STRANDED_WAIT (3 s) and then back beside the parked plane. Down on
+    ground or a ledge before that, he walks on. While off the edge the
+    isle's `lost` height is set aside, so the strand rule decides and not a
+    respawn at the start.
+  - Removed: the SkyDive drop, the canopy figure, the dive camera, the
+    dive's own input (X to open), DIVE_HINT, CANOPY_HINT and STEP_OFF_OPEN.
+    The kit isle has no eject, so nothing else needed the skydive there.
+  - Hints: FOOT_HINT names the sail; off the edge FALL_HINT ("Space (pad A)
+    open the sail"); under it SAIL_HINT (steer, Shift or C / LT float,
+    Space / pad A fold).
+  - All of main's plane, hand landing, parking, boarding and stranding stay.
+    The isle's wind still reaches the sail (`motor.air`,
+    `PocketSail.atmosphere_air`).
+- `tests/test_kit_isle_landing.gd`'s walk-off now checks the sail rules:
+  off the edge on foot, nothing opens by itself, the hint offers the sail,
+  stranded and back by the plane; then again with Jump opening the sail,
+  sinking slower than the fall, and still stranding back to the plane.
+- Comments in `scripts/kit_isle/pause_host.gd`, `pause_menu.gd` and
+  `studies/zenscape.gd` no longer mention the canopy. Nothing references the
+  deleted canopy files. Older docs (`docs/skydive.md`,
+  `docs/design/manual-landing.md`, `docs/design/consolidation-audit.md`)
+  still describe the canopy as history.
+- **A replay bug in the merge:** the sail's F2 numbers (`sail:pace` and
+  the rest) made `feel_names()` include `sail`, the PocketSail itself.
+  `_feel_now()` stored that object in recordings, and `replay_verdict()`
+  then crashed on `float(object)`. That broke test_slide_carve and the
+  round trip in test_character_recordings. Now `_feel_now()` stores each
+  `sail:NAME` as its own number, and the verdict reads those through
+  `_feel()`. Restoring a recording still keeps the motor's own sail.
+
+### Tests after the merge
+
+All headless. The import check is clean. Not the full suite.
+
+- **Passing:** test_pocket_sail, test_pocket_sail_study,
+  test_aqueduct_isle_sail, every test_pilot_* (9), test_slide_carve,
+  test_serpent_ride, test_rune_serpent, test_sky_dive, test_skydive,
+  test_manual_landing, test_gamepad, test_scene_picker,
+  test_kit_isle_landing (with its new sail checks), and every other test that
+  touches the kit isles: test_aqueduct_isle (+ _life, _look, _plane, _sky),
+  the cloister tarn, colonnade spine and sundered gorge isles, test_dev_keys,
+  test_export_entry, test_front_door, test_game_pause, test_game_settings,
+  test_isle_hall_chain, test_isle_lock, test_isle_lodestone,
+  test_isle_teardown, test_kit_clouds and test_kit_water.
+- **Still failing the same way as on main:** test_character_recordings
+  "Tech. Fun, fluid, movement" (strays at 28.82 s after its twirl, 9.54 m
+  off). Its round trip passes again.
+- **Intermittent:** test_manual_landing_game. It failed 2 of 10 runs after
+  the merge, and passed all 4 runs at the branch's head before it. Each run
+  makes a fresh random world.
+  - Failure one was "Down on the plane's own island, on foot (not
+    stranded)" plus the boarding checks after it. That was in the parallel
+    batch.
+  - Failure two was "Space opens the sail", in a run alone.
+  - Not diagnosed. Both are in the old main scene's walk-off
+    (`wanderer_eye.gd`), which the merge did not change beyond making hand
+    landing the default.

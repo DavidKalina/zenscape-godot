@@ -29,14 +29,17 @@ const START_OUT := 170.0
 const START_UP := 24.0
 ## The approaches it can start on (the study's H, `--approach=`): "normal"
 ## (START_OUT out, START_UP up, at cruise: time to slow down), "hot"
-## (closer and lower at cruise: it comes in fast) and "boost" (at Boost's
-## speed: hold Space to keep it). Out and up in m, the speed in m/s.
+## (closer and lower at cruise: it comes in fast), "boost" (at Boost's
+## speed: hold Space to keep it) and "dive" (round 3: close and high, so
+## getting down in time means a steep dive, which bounces unless pulled
+## out of). Out and up in m, the speed in m/s.
 const APPROACHES := {
 	"normal":{"out":START_OUT,"up":START_UP,"speed":14.0},
 	"hot":{"out":100.0,"up":12.0,"speed":14.0},
 	"boost":{"out":150.0,"up":14.0,"speed":22.0},
+	"dive":{"out":60.0,"up":50.0,"speed":14.0},
 }
-const APPROACH_NAMES := ["normal","hot","boost"]
+const APPROACH_NAMES := ["normal","hot","boost","dive"]
 
 const STATIONS: Array[Dictionary] = [
 	{"id":"long_field","key":1,"name":"Long field","note":"90 m by 24, flat. Room to float, bounce and settle again.",

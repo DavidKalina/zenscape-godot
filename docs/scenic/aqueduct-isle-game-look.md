@@ -126,6 +126,10 @@ Branch `study/aqueduct-isle-plane`: this look branch plus `feature/knife-drift` 
 
 ### The switch: F (pad Y)
 
+**Replaced (2026-10-10):** the kit isles now land by hand under the game's
+rules, with a parked plane you walk back to. See docs/design/manual-landing.md,
+"Kit isles". What follows is the old switch, for reference.
+
 - **On foot, F** puts you in the game's plane (`scripts/sky_plane.gd`, `scripts/plane_figure.gd`, the chase camera `scripts/glide_camera.gd`). It is already flying at cruise, 5 m ahead of the pilot along the view and 3 m up (raised in 2 m steps if that is in stone). No runway.
 - **In the plane, F** puts you back on foot. You land on the nearest open turf within 40 m of the plane (rings round it, nearest first; walkable faces only, with room to stand), facing the way you flew. If none is found, you go back to where you last stood.
 - **Setting down:** skim the turf (or a stone top) with Shift (Brake) held under 9.5 m/s for 0.5 s, and the pilot steps out there.

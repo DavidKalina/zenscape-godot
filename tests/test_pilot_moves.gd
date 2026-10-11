@@ -141,8 +141,10 @@ func _long_gap(gap: float) -> bool:
 	return false
 
 func _long_jump() -> void:
-	# Crouched at a run he slides to a stop.
+	# Crouched at a run he slides to a stop (the slide as it was, carving off:
+	# tests/test_slide_carve.gd has the carve).
 	var m := PilotMotor.new()
+	m.carve = false
 	m.reset(Vector3.ZERO,PilotMotor.facing_of(Vector2(1.0,0.0)),PilotMotor.RUN)
 	m.crouch = true
 	var paces := []

@@ -24,8 +24,14 @@ extends Node3D
 ##               the plane's own propeller drone (scripts/glide_air.gd
 ##               `engine`). --no-airships.
 ##   traffic     the game's CPU biplanes (scripts/sky_traffic.gd): laps
-##               round the clusters and buzzes of the islets, climbing over
-##               what stands. --no-traffic.
+##               round the clusters, buzzes of the islets and passes
+##               through the drifting clouds, climbing over what stands.
+##               --no-traffic.
+##   clouds      the game's towering cumulus, drifting clouds and cloud
+##               tearing (scripts/kit_isle/kit_clouds.gd, the sky's cloud
+##               host): towers rising out of the cloud sea round the isle,
+##               puffs on the breeze, and the plane's and the traffic's
+##               tunnels through both. --no-sky-clouds.
 ##   life        the open-air life of the other islands (scripts/
 ##               sky_ambient_life.gd): gulls on thermals over the nearest
 ##               isles, songbird flocks bursting from their crowns as you
@@ -36,6 +42,10 @@ extends Node3D
 ##               sky_collectibles.gd, CollectibleLines `line`), each a
 ##               skill moment through the isle's own stone (TOKENS).
 ##               --no-sky-tokens.
+##   serpent     a giant rune serpent (scripts/rune_serpent.gd) slithering
+##               its long way through the isles, the cloud sea and the
+##               pierced isle's arch; it watches and paces the plane, solid
+##               to it. --no-serpent. See docs/scenic/rune-serpent.md.
 ## --no-sky leaves all of it out. See docs/scenic/aqueduct-isle-sky.md.
 
 const SkyIslets = preload("res://scripts/sky_islets.gd")
@@ -58,6 +68,8 @@ const SkyCollectibles = preload("res://scripts/sky_collectibles.gd")
 const SkyCells = preload("res://scripts/sky_cells.gd")
 const Lines = preload("res://scripts/collectible_lines.gd")
 const IslanderFigure = preload("res://scripts/islander_figure.gd")
+const RuneSerpent = preload("res://scripts/rune_serpent.gd")
+const KitClouds = preload("res://scripts/kit_isle/kit_clouds.gd")
 
 ## The isle's own layers (studies/aqueduct_isle.gd TURF_LAYER): ground the
 ## plane skims and the pilot is set down on; and what bumps it.
@@ -145,13 +157,15 @@ var islets: Node3D
 var clusters: Node3D
 var pierced: Node3D
 var traffic: Node
+## The sky's cloud host (scripts/kit_isle/kit_clouds.gd), or null.
+var clouds: Node3D
 var life: Node3D
 var collectibles: Node3D
 var airships: Array[Dictionary] = []
 var motes: Array[Node3D] = []
 var drone: Node3D
 ## What is on (flags).
-var on := {"isles":true,"airships":true,"traffic":true,"life":true,"motes":true,"tokens":true}
+var on := {"isles":true,"airships":true,"traffic":true,"life":true,"motes":true,"tokens":true,"serpent":true,"clouds":true}
 ## Lone isles being made ({task, spec, out}) and their built records by name.
 var _making: Array[Dictionary] = []
 var isles := {}
@@ -180,12 +194,16 @@ func setup(study: Node3D) -> void:
 	if args.has("--no-sky-life"): on.life = false
 	if args.has("--no-motes"): on.motes = false
 	if args.has("--no-sky-tokens"): on.tokens = false
+	if args.has("--no-serpent"): on.serpent = false
+	if args.has("--no-sky-clouds"): on.clouds = false
 	if on.isles: _start_isles()
 	if on.airships: _build_airships()
 	if on.traffic: _build_traffic()
+	if on.clouds: _build_clouds()
 	if on.life and on.isles: _build_life()
 	if on.motes: _build_motes()
 	if on.tokens: _build_tokens()
+	if on.serpent: _build_serpent()
 
 func _exit_tree() -> void:
 	for m: Dictionary in _making: WorkerThreadPool.wait_for_task_completion(int(m.task))
@@ -293,8 +311,9 @@ func _stand_isle(spec: Array, out: Dictionary) -> void:
 	isles[spec[0]] = b
 	islets._fade(b)
 
-## Every isle stood up at once (tests, captures).
+## Every isle stood up at once (tests, captures), and the towers whole.
 func flush() -> void:
+	if clouds != null: clouds.flush()
 	if islets == null: return
 	for m: Dictionary in _making:
 		WorkerThreadPool.wait_for_task_completion(int(m.task))
@@ -374,14 +393,29 @@ func _build_traffic() -> void:
 	traffic.build(self,slots)
 	traffic.show(true)
 
+## The cloud host, made after the traffic so it traces the planes once
+## they have flown each frame, and flies them through its clouds.
+func _build_clouds() -> void:
+	clouds = KitClouds.new()
+	add_child(clouds)
+	clouds.setup_sky(scene,self)
+	if traffic != null: clouds.hook(traffic)
+
 ## SkyTraffic's pilots here: their islets are this sky's lone isles, not
-## the seeded cells'.
+## the seeded cells'; through a drifting cloud as often as the game's
+## (GOALS), when the cloud host flies them through its clouds.
 class IsleTraffic extends SkyTraffic:
 	var buzz: Array = []
+	const CLOUD_SHARE := 0.3
+	const BUZZ_SHARE := 0.35
 	func _choose(plane: Dictionary) -> Dictionary:
 		var rng: RandomNumberGenerator = plane.rng
 		var at: Vector3 = plane.flight.position
-		if rng.randf() < 0.35:
+		var roll := rng.randf()
+		if roll < CLOUD_SHARE:
+			var through := _through_cloud(plane)
+			if not through.is_empty(): return through
+		elif roll < CLOUD_SHARE+BUZZ_SHARE:
 			var near: Array = buzz.filter(func(p: Vector3) -> bool: return p.distance_to(at) < REACH and p.distance_to(at) > ARRIVE*3.0)
 			if not near.is_empty():
 				var p: Vector3 = near[rng.randi_range(0,near.size()-1)]
@@ -614,6 +648,17 @@ func plane_tokens() -> Array:
 ## The tokens' source name on the collectibles.
 func token_source() -> String:
 	return "aqueduct"
+
+# --- The rune serpent ---------------------------------------------------------------
+
+## The rune serpent (scripts/rune_serpent.gd): self-contained, it runs its
+## own frame and physics frame and reads the study's camera and plane.
+var serpent: Node3D
+
+func _build_serpent() -> void:
+	serpent = RuneSerpent.new()
+	add_child(serpent)
+	serpent.setup(scene)
 
 # --- Each frame ---------------------------------------------------------------------
 

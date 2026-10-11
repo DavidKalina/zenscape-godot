@@ -26,8 +26,10 @@ extends Node3D
 ## the stop's margin to the edge, hops, go-arounds, the rollout and the
 ## time to stop, and the run is saved as JSON under user://landing_runs.
 ## F1 shows the live numbers: speed and sink against the greaser's limits,
-## bank, height over the land, flaps, what a touch now would be; on the
-## wheels the slip, the grit and the room to the edge. H picks the
+## the dive against the slam's (round 3: a dive too steep bounces), bank,
+## height over the land, flaps, what a touch now would be
+## (scripts/landing_readout.gd); on the wheels gripping, sliding, the
+## power-slide or backing up, the slip, the grit and the room to the edge. H picks the
 ## approach: normal (far and high at cruise), hot (close and low at
 ## cruise) or boost (at Boost's speed); the bots fly them slow, at cruise
 ## and at boost.
@@ -35,7 +37,9 @@ extends Node3D
 ## Keys: WASD or the left stick turn and pitch (W noses down), Space or RT
 ## boosts, Shift or LT brakes (and on the wheels, the wheel brakes), F or Y
 ## lowers and raises the flaps in the air and gets out once stopped, Q and
-## E lean (twice: roll; on the wheels with a turn, a drift). 1-5 the
+## E lean (twice: roll; on the wheels with a turn, a drift; in a slide,
+## tighter). Stopped, Shift held backs it up and Shift, Space and a turn
+## pivot it. 1-5 the
 ## stations, R again, N the next, H the approach, B who flies (you, then
 ## the sloppy, decent, sharp and perfect bots), F1 the numbers, Esc lets
 ## the mouse go. On foot: WASD walks, Space (A) by the plane boards,
@@ -48,6 +52,7 @@ const Run = preload("res://scripts/landing_run.gd")
 const Bot = preload("res://scripts/landing_bot.gd")
 const Log = preload("res://scripts/flight_log.gd")
 const ManualLanding = preload("res://scripts/manual_landing.gd")
+const LandingReadout = preload("res://scripts/landing_readout.gd")
 const PlaneLanding = preload("res://scripts/plane_landing.gd")
 const PlaneStrip = preload("res://scripts/plane_strip.gd")
 const SkyPlane = preload("res://scripts/sky_plane.gd")
@@ -68,7 +73,7 @@ const STICK_LOOK := 2.4
 const DOUBLE_TAP := 0.3
 const PILOTS := ["human","sloppy","decent","sharp","perfect"]
 ## The pace a bot flies each approach at (Course APPROACHES).
-const BOT_PACE := {"normal":"slow","hot":"cruise","boost":"boost"}
+const BOT_PACE := {"normal":"slow","hot":"cruise","boost":"boost","dive":"dive"}
 ## The grit's tint off the fields.
 const TURF := Color(0.5,0.58,0.36)
 const COLOURS := {"field":Color(0.6,0.66,0.55),"shelf":Color(0.55,0.56,0.6),"sea":Color(0.42,0.52,0.6),"pilot":Color(0.32,0.24,0.18)}
@@ -435,8 +440,7 @@ func _react(out: Dictionary) -> void:
 		_shake = SHAKE_TIME
 		_shake_size = 1.0
 		Pad.pulse(0.6,0.5,0.2)
-		var why := {"tumble":"mid roll","rough":"ground too steep"}
-		_say("Hop: %s" % why.get(str(b.reason),str(b.reason)))
+		_say("Hop: %s" % LandingReadout.hop_word(str(b.reason)))
 	elif out.has("settled"):
 		var k := float(out.settled.k)
 		if out.has("greaser"):
@@ -455,6 +459,8 @@ func _react(out: Dictionary) -> void:
 	if out.has("not_yet"): _say("Stop first")
 	if out.has("off_edge"): _say("Off the edge: flying again")
 	if out.has("lifted"): _say("Touch and go")
+	if out.has("reverse"): _say("Backing up: let go of Shift to stop")
+	if out.has("edge_behind"): _say("The edge is right behind you")
 	if out.has("hit"):
 		_thump.volume_db = 0.0
 		_thump.play()
@@ -762,10 +768,10 @@ func _build_ui() -> void:
 	layer.add_child(_hud)
 	_hud_label = Label.new()
 	_style(_hud_label,15)
-	_hud_label.position = Vector2(0.0,96.0)
+	_hud_label.position = Vector2(0.0,122.0)
 	_hud.add_child(_hud_label)
 	_hint = Label.new()
-	_hint.text = "WASD/stick turn and pitch (W noses down) · Space/RT boost · Shift/LT brake · F/Y flaps, and out once stopped · Q/E lean · On the wheels: steer hard or Q/E + steer to drift, Shift + steer to slide, + a blip of Space to power-slide · 1-5 stations · H approach · R again · N next · B who flies · F1 numbers · Esc mouse"
+	_hint.text = "WASD/stick turn and pitch (W noses down) · Space/RT boost · Shift/LT brake · F/Y flaps, and out once stopped · Q/E lean · On the wheels: steer hard or Q/E + steer to drift, Shift + steer to slide, + a blip of Space to power-slide; in a slide, ease or counter the stick to widen, Q/E to tighten · Stopped: hold Shift to back up, Shift + Space + steer to pivot · Dive too steep: it bounces · 1-5 stations · H approach · R again · N next · B who flies · F1 numbers · Esc mouse"
 	_style(_hint,14)
 	_hint.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
 	_hint.offset_top = -36.0
@@ -814,8 +820,8 @@ func _show_hud() -> void:
 	var over := "-" if is_nan(float(live.over)) else "%.1f m" % float(live.over)
 	var now := str(live.touch_now)
 	var touch_line := ""
-	if run.ml.flying(): touch_line = "a touch now would be %s" % ({"greaser":"a GREASER","firm":"firm","hot":"HOT: drift it","hard":"HARD: it sticks","wingtip":"on a WINGTIP: it sticks","tumble":"a HOP (mid roll)","rough":"a HOP (too steep)"}.get(now,now))
-	elif run.ml.phase == ManualLanding.ROLL: touch_line = "%s · slip %.0f° · grit %.2f · %.1f m to the edge" % ["POWER-SLIDE" if live.power else ("sliding" if live.sliding else "gripping"),rad_to_deg(absf(float(live.slip))),float(live.grit),float(live.edge)]
+	if run.ml.flying(): touch_line = "a touch now would be %s\n%s" % [LandingReadout.touch_now(now),LandingReadout.dive_line(run.ml)]
+	elif run.ml.phase == ManualLanding.ROLL: touch_line = "%s · %.1f m to the edge" % [LandingReadout.wheels_line(run.ml),float(live.edge)]
 	_hud_label.text = "\n".join(PackedStringArray([
 		"%s · %s approach · %s · %s%s" % [station.name,approach,run.pilot,mode if mode != "plane" else str(live.phase),"" if not run.done else " (run over)"],
 		"time %.1f s · over the land %s · bank %.2f · pitch %.2f · flaps %s" % [float(live.t),over,float(live.bank),float(live.pitch),"down" if flaps else "up"],
@@ -824,7 +830,8 @@ func _show_hud() -> void:
 		touch_line,
 	]))
 
-## Speed, sink and bank against a greaser's limits (the white tick).
+## Speed, sink and bank against a greaser's limits, and the dive against
+## the slam's (the white tick).
 func _draw_bars() -> void:
 	if run == null: return
 	var live := run.live()
@@ -833,8 +840,9 @@ func _draw_bars() -> void:
 		["speed",float(live.speed),ManualLanding.TOUCH_FAST,24.0,"%.1f m/s" % float(live.speed)],
 		["sink",maxf(0.0,float(live.sink)),ManualLanding.GREASE_SINK,5.0,"%.2f m/s" % float(live.sink)],
 		["bank",absf(float(live.bank)),ManualLanding.GREASE_BANK,1.2,"%.2f rad" % float(live.bank)],
+		["dive",maxf(float(run.ml.dive),maxf(0.0,-float(live.pitch))),ManualLanding.SLAM_ANGLE,1.3,"%.0f° (bounce past the tick)" % rad_to_deg(maxf(float(run.ml.dive),maxf(0.0,-float(live.pitch))))],
 	]
-	_hud.draw_rect(Rect2(-8.0,-6.0,450.0,210.0),Color(0.0,0.0,0.0,0.35))
+	_hud.draw_rect(Rect2(-8.0,-6.0,450.0,262.0),Color(0.0,0.0,0.0,0.35))
 	var y := 6.0
 	for row: Array in rows:
 		_hud.draw_string(font,Vector2(0.0,y+14.0),row[0],HORIZONTAL_ALIGNMENT_LEFT,-1,15,Color("fbf6ea"))

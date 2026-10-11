@@ -6,7 +6,8 @@ extends RefCounted
 ## by asking (Exit). The landing study (studies/landing_study.gd) and the
 ## game under `--manual-landing` (scripts/wanderer_eye.gd) both run it;
 ## plain state and maths over the plane, so tests can step it.
-## docs/design/manual-landing.md (round 2: the drift).
+## docs/design/manual-landing.md (round 2: the drift; round 3: the slam,
+## backing up and steering the slide).
 ##
 ## Its phases:
 ##   AIR      flying as ever (SkyPlane `step`). Each step the wheels are
@@ -21,7 +22,9 @@ extends RefCounted
 ##            off the land's edge it is flying again with the speed it had,
 ##            a dip first, its slide carried on as the air drift's slip.
 ##   STOPPED  stood still, the brakes holding, the engine ticking over. Boost
-##            rolls it off again; Exit gets out.
+##            rolls it off again; Exit gets out. Brake held REVERSE_DELAY s
+##            backs it up (`reversing`, in ROLL: below); Brake, a blip of
+##            Boost and the stick pivot it on the spot (SPOT_TURN).
 ##   EXIT     the engine spins down (SPIN) and the pilot hops out (HOP_TIME,
 ##            `hop` 0 to 1), then OUT: the caller parks it and walks.
 ##
@@ -37,12 +40,20 @@ extends RefCounted
 ## (`events.thump`, its strength `k` for the caller's thump, dust, shake
 ## and pad pulse), a little speed lost to the sink (THUMP_SCRUB), and
 ## LOOSE_TIME of loose wheels that slide at less provocation. A wingtip
-## first touch also kicks the nose round (WINGTIP_KICK) into a slide. Only
-## two touches don't stick: mid barrel roll ("tumble") or onto land
-## steeper than TOUCH_SLOPE ("rough"). Those hop: a thump, kicked up at
-## BOUNCE_UP plus BOUNCE_GIVE of the sink, the wings put level, the nose up
-## to BOUNCE_NOSE, BOUNCE_GRACE s before the wheels count again. Never a
-## crash.
+## first touch also kicks the nose round (WINGTIP_KICK) into a slide. Three
+## touches don't stick: mid barrel roll ("tumble"), onto land steeper than
+## TOUCH_SLOPE ("rough"), or flown straight into the ground ("slam": the
+## dive's path steeper than SLAM_ANGLE, or its sink, the speed down the
+## nose's line, over SLAM_SINK). Those hop: a thump, kicked up at BOUNCE_UP
+## plus BOUNCE_GIVE of the sink (at most BOUNCE_TOP), the wings put level,
+## the nose up to BOUNCE_NOSE, BOUNCE_GRACE s before the wheels count
+## again. Never a crash. The slam is judged on the dive remembered over the
+## last moments (`dive`, `dive_sink`), which forget only at DIVE_FORGET
+## rad/s and SINK_FORGET m/s², a little slower than the stick can pull the
+## nose up: so a flare must be flown, and a flick of the nose on the last
+## frame (the mouse can) lands as the dive it came out of. The sink every
+## grade reads is remembered the same way. Speed alone never hops: a hot,
+## shallow touch sticks and slides.
 ##
 ## On the wheels it is a kart. Gripping, the tail wheel steers it
 ## (TAXI_TURN, less slow) and the wheels hold the way it points, the
@@ -65,6 +76,29 @@ extends RefCounted
 ## the stick go and the nose swings back to its track; within CATCH it
 ## grips again. The throttle without the brake pushes along the nose, to
 ## power out of a drift.
+##
+## Steering the slide, as a kart's drift: the slide keeps the side the
+## nose went out to (`drift_side`). Full stick into it is round 2's line;
+## easing the stick off bends the line wider by LINE_STEER rad/s per whole
+## stick, and steering against it (counter-steer) wider still (twice
+## LINE_STEER at full), the nose kept out at DRIFT_COUNTER of the angle, as
+## the air drift's turn against the lean does. The lean (Q E, LB RB: the
+## air drift's button) held bends it tighter by LINE_STEER more. Only the
+## stick let go swings the nose back and grips again. LINE_STEER scales
+## with the plane's `drift_strength` (`--drift`). The scrub is the slip's,
+## so a counter-steered slide stops no shorter.
+##
+## Backing up: stopped, Brake held REVERSE_DELAY s rolls it backwards
+## (`reversing`) up to REVERSE_SPEED, and the stick turns it as a car
+## backs (stick right, the tail goes right) at up to REVERSE_TURN. Let the
+## brake go and it stops; Boost stops it and rolls on forwards. It never
+## backs off the land: with no land REVERSE_LOOK m behind it, it stops
+## there ("edge_behind"). Stopped, Brake, Boost and the stick pivot it on
+## its wheels (SPOT_TURN), and rolling, an open throttle turns it at the
+## full TAXI_TURN even stood still (the prop's wash on the rudder): so a
+## plane nosed into stone can turn away. Into something (`blocked`), it is
+## stopped short; already in it (a slide's swing, a pivot), any move that
+## heads out (clear ESCAPE_REACH m on) goes, so it never sticks there.
 ##
 ## It counts what the study measures (`stats`): every touch (speed, sink,
 ## bank, its grade), greasers, hops (`bounces`), go-arounds (low over the
@@ -96,8 +130,19 @@ const GREASE_SINK := 1.2
 const GREASE_BANK := 0.2
 const GREASE_NOSE := -0.2
 const GREASE_SLIP := 0.12
+## The slam: a dive whose path is steeper than SLAM_ANGLE (radians, nose
+## down), or whose sink down the nose's line is over SLAM_SINK (m/s), hops
+## instead of sticking. The hardest flown touch the bots make sinks about
+## 3.3 m/s at 18 degrees; a hot touch nosed down at cruise (the kit isle's
+## test) about 5 m/s at 21. The dive and the sink are remembered, forgetting
+## at DIVE_FORGET rad/s and SINK_FORGET m/s² (the stick pulls the nose up at
+## SkyPlane.PITCH_SPEED, 1.4 rad/s), so a last-frame flare can't hide one.
+const SLAM_ANGLE := 0.55
+const SLAM_SINK := 9.0
+const DIVE_FORGET := 1.0
+const SINK_FORGET := 12.0
 ## The grades that don't stick, and hop.
-const HOPS := ["tumble","rough"]
+const HOPS := ["tumble","rough","slam"]
 ## A hard touch's hit: full at THUMP_SINK m/s of sink, THUMP_FAST m/s over
 ## TOUCH_FAST, or a wing right down; the speed it loses per m/s of sink;
 ## the squash (m down over SQUASH_TIME s) and the hop after it that stays on
@@ -114,12 +159,14 @@ const HOP_TIME := 0.34
 const LOOSE_TIME := 0.6
 const LOOSE_GRIP := 0.6
 const WINGTIP_KICK := 0.6
-## A hop: the kick up (m/s) and the share of the sink it gives back, the
-## pull that brings the kick down (m/s²), the nose it throws up to
+## A hop: the kick up (m/s) and the share of the sink it gives back, at
+## most BOUNCE_TOP (about 1.4 m of kick: "no, try again", not a launch),
+## the pull that brings the kick down (m/s²), the nose it throws up to
 ## (radians), the speed it scrubs (m/s) and the seconds before the wheels
 ## count again (after a touch-and-go too).
 const BOUNCE_UP := 3.2
 const BOUNCE_GIVE := 0.5
+const BOUNCE_TOP := 5.0
 const BOUNCE_PULL := 9.0
 const BOUNCE_NOSE := 0.3
 const BOUNCE_SCRUB := 1.0
@@ -162,6 +209,34 @@ const SCRUB := 8.5
 const SLIDE_BEND := 1.1
 const BRAKE_BEND := 0.8
 const LEAN_BEND := 0.4
+## Steering the slide: the line bent by the stick (rad/s for each whole
+## stick off full into the slide, not lessened by the brake): full into it
+## round 2's line, less wider, against it wider again (twice LINE_STEER at
+## full counter-steer), and the lean held tighter by as much again; against
+## it the nose holds DRIFT_COUNTER of its angle (the air drift's).
+const LINE_STEER := 0.3
+const DRIFT_COUNTER := SkyPlane.DRIFT_COUNTER
+## Backing up: Brake held stopped this long (s) backs it up, to at most
+## REVERSE_SPEED (m/s, under SLIDE_MIN so it never slides), gaining it at
+## REVERSE_PUSH and losing it with the brake let go at REVERSE_STOP (m/s²);
+## the stick turns it at up to REVERSE_TURN (rad/s, at REVERSE_SPEED; a
+## quarter of it barely moving); it looks REVERSE_LOOK m behind its middle
+## for the land's edge (the tail's over it).
+const REVERSE_DELAY := 0.4
+const REVERSE_SPEED := 1.6
+const REVERSE_PUSH := 2.5
+const REVERSE_STOP := 4.0
+const REVERSE_TURN := 0.8
+const REVERSE_LOOK := 1.2
+## Pivoting: stopped, Brake, Boost and the stick turn it on its wheels at
+## SPOT_TURN rad/s; rolling with the throttle open (WASH_FULL of it is
+## enough) the tail wheel turns it at the full TAXI_TURN however slow. Into something, a hit under HIT_FELT
+## m/s (pushing on it) is not felt; already in it, a move clear
+## ESCAPE_REACH m on is heading out and goes.
+const SPOT_TURN := 0.9
+const WASH_FULL := 0.3
+const HIT_FELT := 1.0
+const ESCAPE_REACH := 0.5
 ## The grit thrown off the wheels (`grit` 0 to 1): full sliding sideways at
 ## SPRAY_FULL m/s, and braking straight at most SPRAY_BRAKE of it (full at
 ## SPRAY_BRAKE_AT m/s); how fast it follows (s).
@@ -209,6 +284,16 @@ var sliding := false
 var slip := 0.0
 var power := false
 var grit := 0.0
+## The side the slide's nose is out to (1 or -1, 0 not sliding), and
+## backing up now.
+var drift_side := 0.0
+var reversing := false
+## In the air: the dive remembered (radians, nose down; and its sink down
+## the nose's line, m/s), and the sink remembered (m/s), as `grade` reads
+## them at the touch.
+var dive := 0.0
+var dive_sink := 0.0
+var sink_seen := 0.0
 ## The numbers (see the header).
 var stats := {}
 ## Seconds left before the wheels count, and the hop's kick still lifting
@@ -238,6 +323,10 @@ var _way := Vector2(0.0,-1.0)
 ## count).
 var _low := false
 var _in_power := false
+## Stopped: seconds Brake has been held (to back up); backing up, stopped
+## at the land's edge behind (said once).
+var _brake_held := 0.0
+var _at_edge := false
 
 ## Takes charge of `on_plane`: in the air (`on_ground` false, flying as it
 ## is), or stood stopped where it is (`on_ground`, as a parked plane boarded
@@ -264,10 +353,16 @@ func begin(on_plane: RefCounted, on_ground := false) -> void:
 	slip = 0.0
 	power = false
 	grit = 0.0
+	drift_side = 0.0
+	reversing = false
+	dive = 0.0
+	dive_sink = 0.0
+	sink_seen = 0.0
+	_brake_held = 0.0
 	_low = false
 	stats = {"touches":[],"bounces":0,"go_arounds":0,"touch_and_gos":0,"off_edge":0,"early_exits":0,
 		"rollout":NAN,"time_to_stop":NAN,"stopped":false,"bounce_reasons":{},"greasers":0,
-		"slide_distance":0.0,"peak_slip":0.0,"power_slides":0,"stop_margin":NAN,"stop_grade":""}
+		"slide_distance":0.0,"peak_slip":0.0,"power_slides":0,"stop_margin":NAN,"stop_grade":"","reverses":0}
 
 func flying() -> bool:
 	return phase == AIR
@@ -283,16 +378,24 @@ func done() -> bool:
 	return phase == OUT
 
 ## What a touch like this one is (see the header): "greaser", "firm",
-## "hot", "hard" or "wingtip", which stick, or "tumble" or "rough", which
-## hop. `slip` is the air drift's (SkyPlane `slip`).
-static func grade(speed: float, sink: float, bank: float, pitch: float, slope: float, rolling := false, drift_slip := 0.0) -> String:
+## "hot", "hard" or "wingtip", which stick, or "tumble", "rough" or "slam",
+## which hop. `slip` is the air drift's (SkyPlane `slip`); `dive` and
+## `dive_sink` the dive (radians nose down, and m/s down the nose's line;
+## by default the nose's and the sink).
+static func grade(speed: float, sink: float, bank: float, pitch: float, slope: float, rolling := false, drift_slip := 0.0, dive_now := NAN, dive_sink_now := NAN) -> String:
 	if rolling: return "tumble"
 	if slope > TOUCH_SLOPE: return "rough"
+	if slams(maxf(0.0,-pitch) if is_nan(dive_now) else dive_now,sink if is_nan(dive_sink_now) else dive_sink_now): return "slam"
 	if absf(bank) > TOUCH_BANK: return "wingtip"
 	if sink > TOUCH_SINK or pitch < TOUCH_NOSE: return "hard"
 	if speed > TOUCH_FAST: return "hot"
 	if sink <= GREASE_SINK and absf(bank) <= GREASE_BANK and pitch >= GREASE_NOSE and absf(drift_slip) <= GREASE_SLIP: return "greaser"
 	return "firm"
+
+## Whether a dive this steep (radians nose down) or sinking this hard down
+## its line (m/s) is flown straight into the ground.
+static func slams(dive_now: float, dive_sink_now: float) -> bool:
+	return dive_now > SLAM_ANGLE or dive_sink_now > SLAM_SINK
 
 ## Whether a touch of this grade stays on the wheels.
 static func sticks(touch_grade: String) -> bool:
@@ -304,12 +407,15 @@ static func thump(speed: float, sink: float, bank: float) -> float:
 	k = maxf(k,(absf(bank)-TOUCH_BANK)/(PI*0.5-TOUCH_BANK))
 	return clampf(k,0.0,1.0)
 
-## What a touch now would be, as `grade` reads the plane ("" not flying).
+## What a touch now would be, as `grade` reads the plane at the touch,
+## the dive and sink remembered ("" not flying).
 func grade_now(floor_at: Callable) -> String:
 	if phase != AIR or plane == null: return ""
 	var v: Vector3 = plane.velocity
 	var at := Vector2(plane.position.x,plane.position.z)
-	return grade(Vector2(v.x,v.z).length(),-v.y,float(plane.bank),float(plane.pitch),_slope(floor_at,at,v),bool(plane.get("rolling")),float(plane.get("slip")))
+	var now := _dive_now()
+	return grade(Vector2(v.x,v.z).length(),maxf(sink_seen,maxf(0.0,-v.y-_kick)),float(plane.bank),float(plane.pitch),_slope(floor_at,at,v),
+		bool(plane.get("rolling")),float(plane.get("slip")),maxf(dive,now.x),maxf(dive_sink,now.y))
 
 ## Whether a touch now would be a greaser (for a landing mark).
 func would_grease(floor_at: Callable) -> bool:
@@ -336,17 +442,7 @@ func step(delta: float, input: Dictionary, ground: Callable, floor_at: Callable,
 	match phase:
 		AIR: _fly(delta,input,ground,floor_at,air,out)
 		ROLL: _roll(delta,input,floor_at,blocked,out)
-		STOPPED:
-			engine = 1.0
-			throttle = -0.3
-			grit = 0.0
-			_hold(floor_at)
-			if float(input.get("boost",0.0)) > 0.0 and float(input.get("brake",0.0)) <= 0.3:
-				_enter(ROLL)
-				_v = Vector2.ZERO
-				sliding = false
-				_since_touch = INF
-			elif bool(input.get("exit",false)): _enter(EXIT)
+		STOPPED: _stopped(delta,input,floor_at,out)
 		EXIT:
 			engine = maxf(0.0,engine-delta/PlaneLanding.SPIN)
 			throttle = -1.0
@@ -363,6 +459,39 @@ func step(delta: float, input: Dictionary, ground: Callable, floor_at: Callable,
 func _enter(next: int) -> void:
 	phase = next
 	time = 0.0
+
+## Stood still: Boost (no brake) rolls it off; Brake, Boost and the stick
+## pivot it where it stands; Brake held a moment backs it up; Exit gets
+## out.
+func _stopped(delta: float, input: Dictionary, floor_at: Callable, out: Dictionary) -> void:
+	engine = 1.0
+	throttle = -0.3
+	grit = 0.0
+	_hold(floor_at)
+	var boost := clampf(float(input.get("boost",0.0)),0.0,1.0)
+	var brake := clampf(float(input.get("brake",0.0)),0.0,1.0)
+	var turn := clampf(float(input.get("turn",0.0)),-1.0,1.0)
+	_brake_held = _brake_held+delta if brake > 0.3 and boost <= 0.0 else 0.0
+	_at_edge = false
+	if boost > 0.0 and brake <= 0.3:
+		_enter(ROLL)
+		_v = Vector2.ZERO
+		sliding = false
+		reversing = false
+		_since_touch = INF
+	elif boost > 0.0 and absf(turn) > DRIFT_ONSET:
+		# The prop's wash on the rudder, the brakes holding: round on the spot.
+		throttle = boost-brake
+		plane.heading = float(plane.heading)-turn*SPOT_TURN*delta
+	elif _brake_held >= REVERSE_DELAY:
+		_enter(ROLL)
+		_v = Vector2.ZERO
+		sliding = false
+		reversing = true
+		_since_touch = INF
+		stats.reverses += 1
+		out["reverse"] = true
+	elif bool(input.get("exit",false)): _enter(EXIT)
 
 # --- In the air ----------------------------------------------------------------------
 
@@ -386,13 +515,30 @@ func _fly(delta: float, input: Dictionary, ground: Callable, floor_at: Callable,
 	if on_land and _grace <= 0.0:
 		_touch(at,land,floor_at,out)
 		return
+	_remember(delta,on_land)
 	# Riding the land during the grace counts as no sink: graded then on
-	# its speed alone.
+	# its speed alone (and on what is remembered).
 	_air_velocity = plane.velocity
 	_air_pitch = float(plane.pitch)
 	_air_bank = float(plane.bank)
 	_air_rolling = bool(plane.rolling)
 	_air_slip = float(plane.slip)
+
+## The dive now: Vector2(radians nose down, m/s down the nose's line).
+func _dive_now() -> Vector2:
+	var nose := maxf(0.0,-float(plane.pitch))
+	return Vector2(nose,float(plane.speed)*sin(nose))
+
+## The dive and the sink remembered: each the larger of now and the last
+## forgetting at its rate; riding the land (a hop's grace) nothing is
+## forgotten, so a slam can't be ridden out on the ground.
+func _remember(delta: float, riding: bool) -> void:
+	var now := _dive_now()
+	var sink := maxf(0.0,-float(plane.velocity.y)-_kick)
+	var keep := 0.0 if riding else 1.0
+	dive = maxf(now.x,dive-DIVE_FORGET*delta*keep)
+	dive_sink = maxf(now.y,dive_sink-SINK_FORGET*delta*keep)
+	sink_seen = maxf(sink,sink_seen-SINK_FORGET*delta*keep)
 
 ## The air at `p` (`here`, the flight's) with its rising part calmed near
 ## the land (CALM_LOW to CALM_HIGH m over it).
@@ -420,11 +566,15 @@ func _watch_go_around(land: float, out: Dictionary) -> void:
 func _touch(at: Vector2, land: float, floor_at: Callable, out: Dictionary) -> void:
 	var v := _air_velocity
 	var speed := Vector2(v.x,v.z).length()
-	var sink := maxf(0.0,-v.y)
+	var sink := maxf(maxf(0.0,-v.y),sink_seen)
 	var slope := _slope(floor_at,at,v)
-	var kind := grade(speed,sink,_air_bank,_air_pitch,slope,_air_rolling,_air_slip)
+	var kind := grade(speed,sink,_air_bank,_air_pitch,slope,_air_rolling,_air_slip,dive,dive_sink)
 	last_touch = kind
-	var touch := {"t":elapsed,"speed":speed,"sink":sink,"bank":_air_bank,"pitch":_air_pitch,"slope":slope,"grade":kind,"result":kind}
+	var touch := {"t":elapsed,"speed":speed,"sink":sink,"bank":_air_bank,"pitch":_air_pitch,"slope":slope,"grade":kind,"result":kind,
+		"dive":dive,"dive_sink":dive_sink}
+	dive = 0.0
+	dive_sink = 0.0
+	sink_seen = 0.0
 	(stats.touches as Array).append(touch)
 	out["touch"] = touch
 	_low = true
@@ -432,6 +582,8 @@ func _touch(at: Vector2, land: float, floor_at: Callable, out: Dictionary) -> vo
 		_bounce(kind,sink,speed,out)
 		return
 	_enter(ROLL)
+	reversing = false
+	drift_side = 0.0
 	_thump_k = 0.0 if kind == "greaser" else thump(speed,sink,_air_bank)
 	_v = Vector2(v.x,v.z)
 	if _thump_k > 0.0:
@@ -464,7 +616,7 @@ func _bounce(reason: String, sink: float, speed: float, out: Dictionary) -> void
 	stats.bounces += 1
 	var reasons: Dictionary = stats.bounce_reasons
 	reasons[reason] = int(reasons.get(reason,0))+1
-	_kick = BOUNCE_UP+BOUNCE_GIVE*sink
+	_kick = minf(BOUNCE_UP+BOUNCE_GIVE*sink,BOUNCE_TOP)
 	_grace = BOUNCE_GRACE
 	plane.pitch = maxf(float(plane.pitch),BOUNCE_NOSE)
 	plane.speed = maxf(float(plane.speed)-BOUNCE_SCRUB,SkyPlane.FLAP_SLOW)
@@ -472,8 +624,16 @@ func _bounce(reason: String, sink: float, speed: float, out: Dictionary) -> void
 	plane.spin = 0.0
 	plane.bank = 0.0
 	plane.knife = 0.0
+	# Its own bank's memory too, so the wings come up level, not just drawn so.
+	plane.set("_free_bank",0.0)
+	plane.set("_lean",0.0)
+	plane.set("drift",0.0)
+	plane.set("slip",0.0)
 	plane.position.y += 0.15
 	if plane.velocity.y < 0.0: plane.velocity.y = 0.0
+	dive = 0.0
+	dive_sink = 0.0
+	sink_seen = 0.0
 	out["bounce"] = {"reason":reason,"sink":sink,"speed":speed}
 
 # --- On the wheels -------------------------------------------------------------------
@@ -498,18 +658,43 @@ func _roll(delta: float, input: Dictionary, floor_at: Callable, blocked: Callabl
 	_v -= _gradient(floor_at,at)*SLOPE_PULL*delta
 	var speed := _v.length()
 	var track := atan2(-_v.x,-_v.y) if speed > 0.3 else heading
-	power = brake > 0.3 and absf(turn) > DRIFT_ONSET and speed > POWER_MIN
+	# Backing up: Boost calls it off (it stops, then rolls on forwards).
+	if reversing and boost > 0.0 and _v.dot(Vector2(-sin(heading),-cos(heading))) > -STOP_SPEED: reversing = false
+	power = brake > 0.3 and absf(turn) > DRIFT_ONSET and speed > POWER_MIN and not reversing
 	var grip := GRIP*(1.0-LOOSE_GRIP*clampf(_loose/LOOSE_TIME,0.0,1.0))
-	var steer := -turn*TAXI_TURN*lerpf(0.25,1.0,clampf(speed/TAXI_FULL,0.0,1.0))
+	# The tail wheel turns it more the faster it goes, and at its full with
+	# the throttle open (the prop's wash on the rudder), stood still or not.
+	var steer := -turn*TAXI_TURN*lerpf(0.25,1.0,clampf(maxf(speed/TAXI_FULL,boost/WASH_FULL),0.0,1.0))
 	var beta := angle_difference(track,heading)
-	if not sliding and speed > SLIDE_MIN:
+	if reversing:
+		sliding = false
+	elif not sliding and speed > SLIDE_MIN:
 		# Asked more than the wheels hold, the drift's lean, a power-slide,
 		# or already well off its way: it breaks loose.
 		var drift_asked := absf(lean) > 0.5 and absf(turn) > DRIFT_ONSET
 		if power or drift_asked or absf(steer)*speed > grip or absf(beta) > SLIDE_SLIP:
 			sliding = true
+			drift_side = 0.0
 			out["slide"] = true
-	if sliding:
+	if reversing:
+		_in_power = false
+		drift_side = 0.0
+		# Backing up as a car backs: the stick turns the nose the other way
+		# (stick right, the tail goes right); the brake held keeps it going.
+		var fwd := Vector2(-sin(heading),-cos(heading))
+		var along := minf(_v.dot(fwd),0.0)
+		heading += turn*REVERSE_TURN*lerpf(0.25,1.0,clampf(-along/REVERSE_SPEED,0.0,1.0))*delta
+		fwd = Vector2(-sin(heading),-cos(heading))
+		if brake > 0.3 and boost <= 0.0: along = move_toward(along,-REVERSE_SPEED*brake,REVERSE_PUSH*delta)
+		else: along = move_toward(along,0.0,REVERSE_STOP*delta)
+		_v = fwd*along
+		beta = 0.0
+	elif sliding:
+		# The slide keeps the side its nose went out to; the stick into it or
+		# against it (counter-steer) is how far it holds it out.
+		if drift_side == 0.0 or absf(beta) < CATCH and absf(turn) < DRIFT_ONSET:
+			drift_side = signf(beta) if absf(beta) > CATCH*0.5 else signf(-turn)
+		var into := -turn*drift_side
 		# The nose swings to the angle the stick asks; braked, further; with
 		# the throttle open too, right round on its wheels.
 		var angle := SLIDE_ANGLE
@@ -517,9 +702,10 @@ func _roll(delta: float, input: Dictionary, floor_at: Callable, blocked: Callabl
 		if power:
 			angle = lerpf(BRAKE_ANGLE,POWER_ANGLE,boost)
 			rate = lerpf(BRAKE_PIVOT,POWER_PIVOT,boost)
-		var want := -turn*angle
-		# Braked, the tail stays where a blip of throttle swung it.
-		if power and signf(beta) == signf(want) and absf(beta) > absf(want): want = beta
+		var want := drift_side*angle*(into if into >= 0.0 else -into*DRIFT_COUNTER)
+		# Braked, the tail stays where a blip of throttle swung it (never past
+		# POWER_ANGLE, however the line is steered away from the nose).
+		if power and signf(beta) == signf(want) and absf(beta) > absf(want): want = signf(beta)*minf(absf(beta),POWER_ANGLE)
 		var next := move_toward(beta,want,rate*delta)
 		heading += next-beta
 		beta = next
@@ -528,9 +714,11 @@ func _roll(delta: float, input: Dictionary, floor_at: Callable, blocked: Callabl
 		var loss := ROLL_DRAG*(1.0-boost)+maxf(WHEEL_BRAKE*brake*absf(cos(beta)),SCRUB*side*side)
 		var push := boost*PUSH*(1.0-brake)*cos(beta)
 		speed = maxf(0.0,speed+(push-loss)*delta)
-		# The path bends towards the nose.
+		# The path bends towards the nose, and the stick bends the line:
+		# into the slide tighter, against it wider.
 		var bend := SLIDE_BEND*(1.0-BRAKE_BEND*brake)*(1.0+LEAN_BEND*absf(lean))
 		track += clampf(beta,-bend*delta,bend*delta)
+		if speed > SLIDE_MIN: track += drift_side*(into-1.0+absf(lean))*LINE_STEER*_drift_strength()*delta
 		beta = angle_difference(track,heading)
 		_v = Vector2(-sin(track),-cos(track))*speed
 		stats.slide_distance += speed*delta
@@ -539,9 +727,11 @@ func _roll(delta: float, input: Dictionary, floor_at: Callable, blocked: Callabl
 		_in_power = power
 		if absf(beta) < CATCH and absf(turn) < DRIFT_ONSET or speed < SLIDE_MIN and not power:
 			sliding = false
+			drift_side = 0.0
 			out["caught"] = true
 	else:
 		_in_power = false
+		drift_side = 0.0
 		# Gripping: the tail wheel steers and the wheels hold the way it
 		# points; slowed straight by the drag and the brakes.
 		heading += steer*delta
@@ -558,13 +748,24 @@ func _roll(delta: float, input: Dictionary, floor_at: Callable, blocked: Callabl
 	want_grit = maxf(want_grit,SPRAY_BRAKE*brake*clampf(speed/SPRAY_BRAKE_AT,0.0,1.0))
 	grit = lerpf(grit,want_grit,1.0-exp(-delta/EASE_GRIT))
 	var next_at := at+_v*delta
-	if blocked.is_valid() and speed > 0.0 and bool(blocked.call(Vector3(next_at.x,plane.position.y,next_at.y))):
+	if blocked.is_valid() and speed > 0.0 and _blocks(blocked,at,next_at):
 		# Into something: stopped short with a thump, never through it.
-		out["hit"] = {"speed":speed}
+		if speed >= HIT_FELT: out["hit"] = {"speed":speed}
 		_v = Vector2.ZERO
 		speed = 0.0
 		sliding = false
 		next_at = at
+	if reversing and speed > 0.0:
+		# Backing up never takes it off the land: stopped with its tail at
+		# the edge.
+		var back := _v.normalized()
+		if is_nan(float(floor_at.call(next_at))) or is_nan(float(floor_at.call(next_at+back*REVERSE_LOOK))):
+			if not _at_edge: out["edge_behind"] = true
+			_at_edge = true
+			_v = Vector2.ZERO
+			speed = 0.0
+			next_at = at
+		else: _at_edge = false
 	var land := float(floor_at.call(next_at))
 	if is_nan(land):
 		# Off the land's edge: flying again with the speed it had, a dip
@@ -585,7 +786,10 @@ func _roll(delta: float, input: Dictionary, floor_at: Callable, blocked: Callabl
 		out["lifted"] = true
 		_lift(fwd_speed,0.15,false)
 		return
-	_slow_for = _slow_for+delta if speed < STOP_SPEED and (boost <= 0.0 or brake > 0.3) else 0.0
+	# Stopped: slow with the throttle shut or the brakes on; backing up, once
+	# the brake is let go.
+	var held := (brake <= 0.3 and boost <= 0.0) if reversing else (boost <= 0.0 or brake > 0.3)
+	_slow_for = _slow_for+delta if speed < STOP_SPEED and held else 0.0
 	if _slow_for >= STOP_HOLD:
 		_v = Vector2.ZERO
 		plane.speed = 0.0
@@ -600,8 +804,31 @@ func _roll(delta: float, input: Dictionary, floor_at: Callable, blocked: Callabl
 			stats.rollout = Vector2(plane.position.x-_touch_at.x,plane.position.z-_touch_at.z).length()
 			stats.stop_margin = margin
 			stats.stop_grade = last_touch
+		reversing = false
+		drift_side = 0.0
+		_brake_held = 0.0
 		_enter(STOPPED)
 		out["stopped"] = {"margin":margin}
+
+## Whether the move from `at` to `to` (global XZ) runs into what `blocked`
+## finds: in the way there and clear here; or, already in it (a swing of
+## the nose, a pivot), going further in: not clear ESCAPE_REACH m on, and
+## clear as far back. Deep in either way, it goes, so it never sticks.
+func _blocks(blocked: Callable, at: Vector2, to: Vector2) -> bool:
+	var y := float(plane.position.y)
+	if not bool(blocked.call(Vector3(to.x,y,to.y))): return false
+	if not bool(blocked.call(Vector3(at.x,y,at.y))): return true
+	var way := (to-at).normalized()
+	var on := at+way*ESCAPE_REACH
+	if not bool(blocked.call(Vector3(on.x,y,on.y))): return false
+	var back := at-way*ESCAPE_REACH
+	return not bool(blocked.call(Vector3(back.x,y,back.y)))
+
+## The plane's drift strength (SkyPlane `drift_strength`, `--drift`; 1 for
+## a plane without one).
+func _drift_strength() -> float:
+	var strength: Variant = plane.get("drift_strength")
+	return 1.0 if strength == null else float(strength)
 
 ## How far on from `at` along `way` the land goes before its edge (m, up to
 ## MARGIN_REACH).
@@ -670,9 +897,14 @@ func _lift(pace: float, nose: float, drop: bool) -> void:
 	_grace = BOUNCE_GRACE
 	_kick = 0.0
 	sliding = false
+	reversing = false
+	drift_side = 0.0
 	slip = 0.0
 	grit = 0.0
 	_in_power = false
+	dive = 0.0
+	dive_sink = 0.0
+	sink_seen = 0.0
 	_enter(AIR)
 
 ## The land's steepest slope under `at` (m per m), along the way `v` and

@@ -41,6 +41,11 @@ extends Node3D
 ## the long jumps chained and their fastest),
 ## F2 the feel's sliders (the motor's own vars, changed live; Print copies
 ## the set). Esc lets the mouse go, a click takes it back.
+## Carving: the slide carves (the motor's `carve`, on by default everywhere:
+## the stick across his way turns his slide, its pace carried round, rather
+## than pushing him across); `-- --no-carve` starts with the slide as it
+## was, F3 turns it on and off live to compare; F1 shows which, F2 holds its
+## numbers (carve_turn, carve_radius, carve_scrub).
 ## Packs: `-- --pack=NAME` builds studies/island_packs/NAME.gd's stations
 ## instead of the room, floating in the open sky (no floor, no walls): a
 ## pack script holds NAME, START, START_FACE, LOST (the fall that sets him
@@ -413,11 +418,15 @@ var _ghost: MeshInstance3D
 var _ghosts_all := false
 var _verdict := ""
 var _verdict_left := 0.0
+## Carving as it was before a replay (which carves as its run was made).
+var _carve_was := false
 var _holes: Array[Rect2] = []
 
 func _ready() -> void:
 	for arg in preload("res://scripts/launch_args.gd").user_args():
 		if arg.begins_with("--pack=") and pack == "": pack = arg.trim_prefix("--pack=")
+		elif arg == "--carve": motor.carve = true
+		elif arg == "--no-carve": motor.carve = false
 	if pack != "": _load_pack()
 	Pad.ensure()
 	_build_light()
@@ -1053,7 +1062,8 @@ const TUNABLE := [["walk",0.5,6.0],["run",1.0,10.0],["accel",2.0,60.0],["brake",
 	["hop_turn",0.0,6.0],["hop_strafe",0.0,10.0],["hop_top",4.0,24.0],
 	["wallrun_pace",1.0,10.0],["wallrun_time",0.1,2.0],["wallrun_gravity",0.0,1.0],["wallrun_rise",0.0,6.0],["wallrun_jump",0.2,3.0],["wallrun_kick",0.0,10.0],
 	["slide_auto",25.0,70.0],["slide_pull",4.0,40.0],["slide_top",4.0,30.0],["slide_runout",0.0,30.0],["slide_air",0.0,0.2],
-	["slide_jump",0.2,2.5],["side_flip",0.5,3.5],["side_speed",0.0,8.0],["climb_time",0.15,1.2],
+	["slide_jump",0.2,2.5],["carve_turn",0.0,6.0],["carve_radius",0.0,8.0],["carve_scrub",0.0,0.5],
+	["side_flip",0.5,3.5],["side_speed",0.0,8.0],["climb_time",0.15,1.2],
 	["sail:pace",2.0,12.0],["sail:sink",0.4,4.0],["sail:top",4.0,20.0],["sail:bleed",0.0,6.0],["sail:turn",0.5,6.0],
 	["sail:kick",0.0,8.0],["sail:catch",2.0,30.0],["sail:swoop",0.0,1.0],["sail:wind_share",0.0,1.5],["sail:lift",0.0,2.0],
 	["sail:thermal",0.0,5.0],["sail:rise_most",0.0,4.0],["sail:ceiling",0.0,10.0],["sail:thermal_most",0.0,10.0],["sail:thermal_take",0.0,20.0],["sail:reopen",0.0,1.0]]
@@ -1070,7 +1080,7 @@ func _build_ui() -> void:
 	_hud.add_theme_constant_override("shadow_offset_y",1)
 	layer.add_child(_hud)
 	var hint := Label.new()
-	hint.text = "F5 record · F6 replay · F7 older · F8 all paths · WASD run · Space jump (on landing: pump; in a skid: side flip) · Shift/C crouch: at a run slide, + Space long jump (crouch held, Space on landing: chain), on a slope surf · in the air X twirl; out of a slide, steer across to build speed, hop again on the touch · into a wall: slide, Space: kick · along a wall in the air: wall run, Space: kick off · with room under him (off an edge) Space: the sail (again: fold; crouch floats) · 1-9 0 - = [ ] \\ stations · R start · F1 numbers · F2 feel · Esc mouse"
+	hint.text = _hint_text()
 	hint.add_theme_font_size_override("font_size",14)
 	hint.add_theme_color_override("font_color",Color("fbf6ea"))
 	hint.add_theme_color_override("font_shadow_color",Color(0,0,0,0.7))
@@ -1164,6 +1174,10 @@ func _build_ui() -> void:
 		buttons.add_child(button)
 	_tune_box.add_child(buttons)
 
+## The help line along the bottom.
+func _hint_text() -> String:
+	return "F5 record · F6 replay · F7 older · F8 all paths · WASD run · Space jump (on landing: pump; in a skid: side flip) · Shift/C crouch: at a run slide, + Space long jump (crouch held, Space on landing: chain), on a slope surf · in the air X twirl; out of a slide, steer across to build speed, hop again on the touch · into a wall: slide, Space: kick · along a wall in the air: wall run, Space: kick off · with room under him (off an edge) Space: the sail (again: fold; crouch floats) · 1-9 0 - = [ ] \\ stations · R start · F1 numbers · F2 feel · F3 carve · Esc mouse"
+
 func _tuning() -> bool:
 	return (_tune != null and _tune.visible) or (_name_panel != null and _name_panel.visible)
 
@@ -1225,6 +1239,17 @@ func state() -> String:
 	if motor.grounded: return "wade" if motor.wade > PilotMotor.WADE_FROM else "ground"
 	return "air"
 
+## The slide carving (F3), or as it was; said on screen.
+func toggle_carve() -> void:
+	if not _replay.is_empty(): return
+	motor.carve = not motor.carve
+	_say("slide: %s" % ("carving (F3: as it was)" if motor.carve else "as it was (F3: carve)"))
+
+## F1's line for the slide's steer: carving, with its numbers, or as it was.
+func carve_line() -> String:
+	if not motor.carve: return "carve     off · the stick pushes the slide across (F3: carve)"
+	return "carve     ON · %.2f rad/s · radius %.2f m · scrub %.2f a rad · now %+.2f rad/s (F3: off)" % [motor.carve_turn,motor.carve_radius,motor.carve_scrub,motor.carving]
+
 func _show_hud() -> void:
 	if not _hud.visible: return
 	var under := ground.height_from(Vector2(motor.feet.x,motor.feet.z),motor.feet.y)
@@ -1240,6 +1265,7 @@ func _show_hud() -> void:
 	lines.append("long jump %.2f m level (%.2f m up)" % [long_reach(),motor.long_height])
 	lines.append("slope     %.0f°" % motor.steepness() if motor.grounded else "slope     -")
 	lines.append("surf      %.2f m/s%s · top %.2f m/s" % [motor.speed() if motor.move == "slide" else 0.0,"  (surfing)" if motor.move == "slide" else "",slide_top])
+	lines.append(carve_line())
 	if not last_flip.is_empty(): lines.append("side flip peak %.2f m · reach %.2f m" % [last_flip.peak,last_flip.reach])
 	if last_twirl > 0.0: lines.append("twirl     %.2f s in the air from it" % last_twirl)
 	if long_chain > 0: lines.append("long chain %d · fastest %.2f m/s (LONG_TOP %.1f)" % [long_chain,long_chain_top,motor.long_top])
@@ -1279,6 +1305,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_F2:
 				_tune.visible = not _tune.visible
 				Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if _tune.visible else Input.MOUSE_MODE_CAPTURED
+			KEY_F3: toggle_carve()
 			KEY_0: go_to(10)
 			KEY_MINUS: go_to(11)
 			KEY_EQUAL: go_to(12)
@@ -1298,9 +1325,15 @@ static func feel_names() -> Array:
 		if not key in names: names.append(key)
 	return names
 
+## The feel now, by name: the sail's numbers each as "sail:NAME" (the sail
+## itself is no number to keep).
 func _feel_now() -> Dictionary:
 	var out := {}
-	for key: String in feel_names(): out[key] = motor.get(key).duplicate() if motor.get(key) is Array else motor.get(key)
+	for key: String in feel_names():
+		if key == "sail": continue
+		out[key] = motor.get(key).duplicate() if motor.get(key) is Array else motor.get(key)
+	for spec: Array in TUNABLE:
+		if str(spec[0]).begins_with("sail:"): out[spec[0]] = _feel(spec[0])
 	return out
 
 ## The key of the station whose spawn is nearest `at`; 0 the start.
@@ -1378,6 +1411,10 @@ func begin_replay(data: Dictionary) -> bool:
 	var t: Dictionary = data.ticks
 	_rec = null
 	place(motor.feet,PilotMotor.forward(motor.facing))
+	# Carving as the run was made (the motor's state holds it; a run from
+	# before there was carving, off), put back as it is now when it ends.
+	_carve_was = motor.carve
+	motor.carve = false
 	Recording.restore(motor,str(data.motor),feel_names())
 	_yaw = float(t.yaw[0])
 	_polar = float(t.polar[0])
@@ -1419,7 +1456,8 @@ func replay_verdict() -> Dictionary:
 	var changed := []
 	var then: Dictionary = _replay.get("feel",{})
 	for key: String in then:
-		var now: Variant = motor.get(key)
+		var now: Variant = _feel(key) if key.begins_with("sail:") else motor.get(key)
+		if now is Object or then[key] is String: continue
 		if now is Array:
 			if str(now) != str(then[key]): changed.append(key)
 		elif now != null and absf(float(now)-float(then[key])) > 1e-4: changed.append(key)
@@ -1446,6 +1484,7 @@ func _end_replay() -> void:
 	script_crouch = false
 	script_twirl = false
 	_replay = {}
+	motor.carve = _carve_was
 
 func _say(text: String, seconds := 3.0) -> void:
 	_verdict = text

@@ -60,7 +60,8 @@ extends Node3D
 ## rising and falling (most at its fastest), squashes landing as hard as it
 ## came down and bounces back past standing; it tips forward setting off and
 ## stopping and wobbles back upright; it turns a beat behind its way and
-## swings a touch past it; it banks into turns about its feet; its chest
+## swings a touch past it; it banks into turns about its feet (carving a
+## slide, into the carve: CARVE_LEAN); its chest
 ## leans into the run (the faster the further, more up a slope and less
 ## down one), rolls into turns and leads them, the head lifting to look
 ## ahead; its head looks into turns and up and down with a jump; its arms
@@ -199,6 +200,11 @@ const BANK := 0.06
 const BANK_MOST := 0.35
 ## Radians he leans off a wall run along (his feet to the wall).
 const WALLRUN_BANK := 0.45
+## Carving a slide (the motor's `carve`): radians he leans into it per m/s²
+## of the carve's pull round (his pace by its turn), and the most: about
+## 0.2 rad at 4 m/s on its fullest turn, the most from about 7 m/s.
+const CARVE_LEAN := 0.025
+const CARVE_LEAN_MOST := 0.5
 ## Radians it leans back skidding without a skid clip; with one, the clip
 ## leans and the spring is only kicked back as it starts (radians a second).
 const SKID_LEAN := 0.3
@@ -577,6 +583,8 @@ func drive(motor: RefCounted, delta: float) -> Dictionary:
 	var climb := clampf((feet.y-_feet_was.y)/across,-1.5,1.5) if motor.grounded and across > 0.001 else 0.0
 	_feet_was = feet
 	var bank_to := clampf(turned*BANK*pace,-BANK_MOST,BANK_MOST) if motor.grounded else 0.0
+	# Carving a slide, leant into the carve as a snowboard is.
+	if move == "slide" and "carve" in motor and motor.carve: bank_to = clampf(float(motor.carving)*speed*CARVE_LEAN,-CARVE_LEAN_MOST,CARVE_LEAN_MOST)
 	if move == "wallrun":
 		# Leant off the wall, the head away from it: rolled left with the
 		# wall on his right.

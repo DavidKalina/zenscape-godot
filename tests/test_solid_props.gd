@@ -148,7 +148,7 @@ func _kick(prop: Dictionary, what: String) -> void:
 	var leaves := 0.0
 	var y: float = motor.feet.y
 	for p: Dictionary in eye.solids.parts:
-		if p.key != prop.id: continue
+		if p.get("key") != prop.id: continue
 		var wide: float = eye.solids._round_span(p,y+eye.STEP,y+eye.HEAD)
 		if p.soft: leaves = maxf(leaves,wide)
 		else: trunk = maxf(trunk,wide)
@@ -178,7 +178,7 @@ func _slide_round(prop: Dictionary, what: String) -> void:
 	var nearest := INF
 	var wide := 0.0
 	for p: Dictionary in eye.solids.parts:
-		if p.key == prop.id and p.has("round"): wide = maxf(wide,eye.solids._round_span(p,g+eye.STEP+0.15,g+eye.HEAD-0.15))
+		if p.get("key") == prop.id and p.has("round"): wide = maxf(wide,eye.solids._round_span(p,g+eye.STEP+0.15,g+eye.HEAD-0.15))
 	for i in range(150):
 		_step(way)
 		nearest = minf(nearest,_flat_feet().distance_to(c))
@@ -226,7 +226,7 @@ func _boulder(prop: Dictionary) -> void:
 ## The long way across a log part (its middle's long axis, plate x, z).
 func _log_across(prop: Dictionary) -> Vector2:
 	for p: Dictionary in eye.solids.parts:
-		if p.key != prop.id or not p.has("rects"): continue
+		if p.get("key") != prop.id or not p.has("rects"): continue
 		var widest := Rect2()
 		for r: Variant in p.rects:
 			if r != null and (r as Rect2).get_area() > widest.get_area(): widest = r
@@ -282,7 +282,7 @@ func _cabin(prop: Dictionary) -> void:
 	# Its walls: the part's own frame.
 	var part := {}
 	for p: Dictionary in eye.solids.parts:
-		if p.key == prop.id: part = p
+		if p.get("key") == prop.id: part = p
 	var basis: Basis = (part.from_local as Transform3D).basis
 	var side := Vector2(basis.x.x,basis.x.z).normalized()
 	var along := Vector2(basis.z.x,basis.z.z).normalized()
