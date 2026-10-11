@@ -93,7 +93,7 @@ func _places() -> void:
 		var gaps := [flat.distance_to(Vector2(c.x,c.y))-ring,KitClouds._to_segment(flat,line[0],line[1])]
 		for place: Array in study.sky.places(): gaps.append(flat.distance_to(Vector2(place[1].x,place[1].z))-float(place[2]))
 		worst = minf(worst,gaps.min())
-	check(study.sky.places().size() == 4,"The motif isles are among what they keep off (%d)" % study.sky.places().size())
+	check(study.sky.places().size() == 5,"The motif isles are among what they keep off (%d)" % study.sky.places().size())
 	check(worst >= SkyTowers.KEEP,"Each keeps the old game's keep (%.0f m) from the lock ring, the motif isles and the chain's line (closest %.0f m)" % [SkyTowers.KEEP,worst])
 	var home: Vector3 = spots[0]
 	var off := Vector2(home.x-c.x,home.z-c.y).length()

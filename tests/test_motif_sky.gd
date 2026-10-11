@@ -106,6 +106,7 @@ func _isle(isle: Node3D) -> void:
 	match id:
 		"bell_spires": await _bells(isle)
 		"cloister_tarn": _tarn(isle)
+		"drowned_nave": _tarn(isle)
 		_: pass
 	_bridges(isle)
 	study.board()
@@ -128,7 +129,7 @@ func _tarn(isle: Node3D) -> void:
 	var box: AABB = water.global_transform*water.get_aabb()
 	var middle := box.get_center()
 	var under: Variant = study.plane_ground(Vector3(middle.x,box.end.y+3.0,middle.z))
-	check(under != null and absf(float(under)-box.end.y) < 1.5,"The cloister tarn's water is skimmed (%s, its top %.1f)" % [str(under),box.end.y])
+	check(under != null and absf(float(under)-box.end.y) < 1.5,"%s's water is skimmed (%s, its top %.1f)" % [isle.motif.id(),str(under),box.end.y])
 
 ## Its rope bridges are live underfoot: in the scene's live set, their
 ## decks read at their place.

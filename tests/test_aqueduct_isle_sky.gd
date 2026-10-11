@@ -70,8 +70,8 @@ func _isles() -> void:
 		check(top != null and absf(float(top)-isle.isle_top()) < 25.0,"The plane reads %s's turf (%s, its datum %.0f)" % [id,str(top),isle.isle_top()])
 		check(sky.ground(at) != null,"%s's ground is there to the traffic's eye" % id)
 	var sources: Array = sky.collectibles.sources.keys()
-	check(["aqueduct","bell_spires","cloister","sundered_gorge","colonnade"].all(func(k: String) -> bool: return sources.has(k)),"Each motif's plane tokens are in the sky's collectibles (%s)" % str(sources))
-	check(ids == ["bell_spires","cloister_tarn","sundered_gorge","colonnade_spine"],"The bell spires, the cloister tarn, the Sundered gorge and the colonnade spine (%s)" % str(ids))
+	check(["aqueduct","bell_spires","cloister","sundered_gorge","colonnade","nave"].all(func(k: String) -> bool: return sources.has(k)),"Each motif's plane tokens are in the sky's collectibles (%s)" % str(sources))
+	check(ids == ["bell_spires","cloister_tarn","sundered_gorge","colonnade_spine","drowned_nave"],"The bell spires, the cloister tarn, the Sundered gorge, the colonnade spine and the drowned nave (%s)" % str(ids))
 	for a: int in range(motifs.isles.size()):
 		for b: int in range(a+1,motifs.isles.size()):
 			var ca: Vector3 = motifs.isles[a].circle()
