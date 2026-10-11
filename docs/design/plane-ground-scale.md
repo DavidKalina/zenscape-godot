@@ -40,3 +40,20 @@ Where the cheat can show (keep these in mind for later features):
   the ground scale; anything flown through is sized for flight (SPAN 1.4).
 - Ask scripts/plane_ground_scale.gd how big the plane is right now; don't
   hard-code either size in new code.
+
+Meeting in the middle (demo, branch test/plane-wanderer-scale):
+- `--plane-scale=<x>` (default 1) draws the plane x times bigger everywhere,
+  in flight too, scaled about its wheels so landing and skimming are
+  unchanged. Its bump bodies (flight hull, roll checks, fuselage box) grow and
+  shift with it; the chase camera's distance, height and look point follow
+  (`size()` = plane_scale * ground k). Flight physics and speeds untouched.
+- `--wanderer-scale=<x>` (default 1) scales the walker's figure, his body
+  collider (radius and head; step-up kept) and the on-foot camera's distance
+  and height (studies/character_study.gd, scripts/pilot_physics_ground.gd).
+- The ground factor now derives as 2.4 * wanderer / plane, never under 1;
+  `--plane-ground-scale=` still overrides it. E.g. 2.0/0.8 gives ~1 (cheat off).
+- Not done: the moveset (jump height, speeds, ledge reach) isn't re-tuned for
+  a smaller walker; set-piece gaps aren't re-spaced (pierced isle's
+  ROUTE_CLEAR still reads the toy SPAN); the pocket sail and the cockpit
+  pilot aren't scaled; other scenes' planes (ruin gallery, sky_pierced,
+  traffic) are unchanged.

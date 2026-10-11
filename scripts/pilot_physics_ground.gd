@@ -61,6 +61,8 @@ var pools: Array = []
 var _ray := PhysicsRayQueryParameters3D.new()
 var _body := PhysicsShapeQueryParameters3D.new()
 var _cap := PhysicsShapeQueryParameters3D.new()
+## The body's top over the feet: HEAD, times the walker's scale (`scale_body`).
+var head_top := HEAD
 
 func _init(physics: PhysicsDirectSpaceState3D, walker: PilotMotor) -> void:
 	space = physics
@@ -79,6 +81,14 @@ func _init(physics: PhysicsDirectSpaceState3D, walker: PilotMotor) -> void:
 	_cap.shape = cap
 	_cap.collision_mask = mask
 	_cap.margin = 0.0
+
+## The body drawn `s` times its size (--wanderer-scale, a demo): its radius
+## and top scaled; BODY_LOW (the step it walks up) kept.
+func scale_body(s: float) -> void:
+	head_top = maxf(HEAD*s,BODY_LOW+0.3)
+	(_body.shape as CylinderShape3D).radius = RADIUS*s
+	(_body.shape as CylinderShape3D).height = head_top-BODY_LOW
+	(_cap.shape as CylinderShape3D).radius = RADIUS*0.8*s
 
 ## The colliders' layers that count from now on (`mask`, and its queries').
 func see(layers: int) -> void:
@@ -132,7 +142,7 @@ func slide(feet: Vector3, step: Vector2) -> Vector3:
 	var motion := Vector3(step.x,0.0,step.y)
 	if motion.length_squared() < 1e-12: return feet
 	var at := feet
-	var middle := Vector3.UP*(BODY_LOW+(HEAD-BODY_LOW)*0.5)
+	var middle := Vector3.UP*(BODY_LOW+(head_top-BODY_LOW)*0.5)
 	_body.transform = Transform3D(Basis.IDENTITY,at+middle)
 	_body.motion = Vector3.ZERO
 	if not space.intersect_shape(_body,1).is_empty():
@@ -169,7 +179,7 @@ func slide(feet: Vector3, step: Vector2) -> Vector3:
 ## Rising into a ceiling: the jump stopped under it. True on the bump.
 func head(delta: float) -> bool:
 	if motor.grounded or motor.on_ledge() or motor.swimming or motor.velocity.y <= 0.0: return false
-	_cap.transform = Transform3D(Basis.IDENTITY,motor.feet+Vector3.UP*(HEAD-0.05))
+	_cap.transform = Transform3D(Basis.IDENTITY,motor.feet+Vector3.UP*(head_top-0.05))
 	_cap.motion = Vector3.UP*(motor.velocity.y*delta+0.02)
 	var cast := space.cast_motion(_cap)
 	if float(cast[0]) >= 1.0: return false

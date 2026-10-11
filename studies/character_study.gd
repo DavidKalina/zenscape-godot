@@ -348,6 +348,10 @@ var motor := PilotMotor.new()
 var step_smooth := PilotStepSmooth.new()
 var ground: PhysicsGround
 var figure: Node3D
+## The walker drawn this times his size (--wanderer-scale=, a demo on
+## test/plane-wanderer-scale): his figure, his body's collider and the
+## camera's distance and height. The moves' numbers are left alone.
+var wanderer_scale := 1.0
 var body: Node3D
 var puffs: Node3D
 var ripples: Node3D
@@ -386,7 +390,7 @@ var _polar := CAM_POLAR
 var _cam_y := 0.0
 var _cam_at := Vector2.ZERO
 var _cam_pace := Vector2.ZERO
-var _cam_distance := CAM_DISTANCE
+var _cam_distance := CAM_DISTANCE*wanderer_scale
 var _cam_out := 0.0
 var _look_rest := 0.0
 var _cam_ball: PhysicsShapeQueryParameters3D
@@ -427,6 +431,7 @@ func _ready() -> void:
 		if arg.begins_with("--pack=") and pack == "": pack = arg.trim_prefix("--pack=")
 		elif arg == "--carve": motor.carve = true
 		elif arg == "--no-carve": motor.carve = false
+		elif arg.begins_with("--wanderer-scale="): wanderer_scale = maxf(0.1,float(arg.get_slice("=",1)))
 	if pack != "": _load_pack()
 	Pad.ensure()
 	_build_light()
@@ -720,7 +725,9 @@ func _build_pilot() -> void:
 	figure.name = "Pilot"
 	add_child(figure)
 	body = PilotFigure.new()
+	body.scale = Vector3.ONE*wanderer_scale
 	figure.add_child(body)
+	if wanderer_scale != 1.0: ground.scale_body(wanderer_scale)
 	puffs = PilotPuffs.new()
 	figure.add_child(puffs)
 	ripples = PilotRipples.new()
@@ -739,10 +746,10 @@ func place(at: Vector3, face: Vector2) -> void:
 	_yaw = motor.facing
 	_polar = CAM_POLAR
 	step_smooth.reset()
-	_cam_y = at.y+CAM_HEIGHT
+	_cam_y = at.y+CAM_HEIGHT*wanderer_scale
 	_cam_at = Vector2(at.x,at.z)
 	_cam_pace = Vector2.ZERO
-	_cam_distance = CAM_DISTANCE
+	_cam_distance = CAM_DISTANCE*wanderer_scale
 	_cam_out = 0.0
 	_look_rest = 0.0
 	body.settle()
@@ -983,7 +990,7 @@ func _water_events(events: Dictionary, drawn: Dictionary, delta: float) -> void:
 ## jump, up and down; swung round behind the run when left alone; drawn in
 ## where something stands between it and him.
 func _frame(delta: float) -> void:
-	var goal := motor.feet.y+step_smooth.lift+CAM_HEIGHT
+	var goal := motor.feet.y+step_smooth.lift+CAM_HEIGHT*wanderer_scale
 	if delta > 0.0: _cam_y = lerpf(_cam_y,goal,_ease(EASE_CAM_Y if motor.grounded else EASE_CAM_Y_AIR,delta))
 	_cam_y = clampf(_cam_y,goal-1.2,goal+1.2)
 	_look_rest += delta
@@ -1026,7 +1033,7 @@ func _frame(delta: float) -> void:
 ## stair nosing to the next and shook the camera), the ray's answer where
 ## the ball starts in something.
 func _cam_reach(pivot: Vector3, out: Vector3) -> float:
-	var length := CAM_DISTANCE+0.3
+	var length := CAM_DISTANCE*wanderer_scale+0.3
 	if _cam_ball == null:
 		var ball := SphereShape3D.new()
 		ball.radius = CAM_BALL
@@ -1037,12 +1044,12 @@ func _cam_reach(pivot: Vector3, out: Vector3) -> float:
 	if ground.space.intersect_shape(_cam_ball,1).is_empty():
 		_cam_ball.motion = out*length
 		var cast := ground.space.cast_motion(_cam_ball)
-		if float(cast[0]) >= 1.0: return CAM_DISTANCE
-		return clampf(float(cast[0])*length+CAM_BALL-0.3,CAM_NEAREST,CAM_DISTANCE)
+		if float(cast[0]) >= 1.0: return CAM_DISTANCE*wanderer_scale
+		return clampf(float(cast[0])*length+CAM_BALL-0.3,CAM_NEAREST,CAM_DISTANCE*wanderer_scale)
 	var ray := PhysicsRayQueryParameters3D.create(pivot,pivot+out*length)
 	var hit := ground.space.intersect_ray(ray)
-	if hit.is_empty(): return CAM_DISTANCE
-	return clampf(pivot.distance_to(hit.position)-0.3,CAM_NEAREST,CAM_DISTANCE)
+	if hit.is_empty(): return CAM_DISTANCE*wanderer_scale
+	return clampf(pivot.distance_to(hit.position)-0.3,CAM_NEAREST,CAM_DISTANCE*wanderer_scale)
 
 func _ease(rate: float, delta: float) -> float:
 	return 1.0-exp(-delta/rate)
@@ -1419,7 +1426,7 @@ func begin_replay(data: Dictionary) -> bool:
 	_yaw = float(t.yaw[0])
 	_polar = float(t.polar[0])
 	_cam_at = Vector2(motor.feet.x,motor.feet.z)
-	_cam_y = motor.feet.y+CAM_HEIGHT
+	_cam_y = motor.feet.y+CAM_HEIGHT*wanderer_scale
 	body.settle()
 	_sync_figure()
 	_replay = data

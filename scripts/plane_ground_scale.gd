@@ -14,6 +14,14 @@ extends RefCounted
 ## plane_strip.gd WHEEL_DROP, WHEEL), so the wheels stay on the turf.
 ##
 ## `--plane-ground-scale=<x>` sets FACTOR (default DEFAULT); 1 turns it off.
+##
+## Meeting in the middle (test/plane-wanderer-scale, a demo):
+## `--plane-scale=<x>` draws the plane `plane_scale` times bigger everywhere,
+## in flight too (about its wheels, so they stay on the turf), and
+## `--wanderer-scale=<x>` is the walker's (studies/character_study.gd). With
+## no `--plane-ground-scale=`, the ground factor closes only what is left:
+## DEFAULT*wanderer_scale/plane_scale, never under 1. `size()` is the
+## figure's scale now: plane_scale*k.
 ## Plain state over the figure's transform: scripts/manual_landing.gd and
 ## the flight never see it.
 
@@ -33,14 +41,38 @@ const DIP_EASE := 0.12
 ## The wheels' contact in the figure's frame: the point it is scaled about.
 const PIVOT := Vector3(0.0,-PlaneStrip.WHEEL_DROP,-PlaneStrip.WHEEL)
 
-## The ground factor and the scale now (1 in flight).
+## The ground factor and the scale now (1 in flight), both over the
+## plane's own scale (`plane_scale`, everywhere).
 var factor := DEFAULT
 var k := 1.0
+var plane_scale := 1.0
+var wanderer_scale := 1.0
 
 func _init() -> void:
+	var given := NAN
 	for arg: String in preload("res://scripts/launch_args.gd").user_args():
 		if arg.begins_with("--plane-ground-scale="):
-			factor = maxf(1.0,float(arg.get_slice("=",1)))
+			given = maxf(1.0,float(arg.get_slice("=",1)))
+		elif arg.begins_with("--plane-scale="):
+			plane_scale = maxf(0.1,float(arg.get_slice("=",1)))
+		elif arg.begins_with("--wanderer-scale="):
+			wanderer_scale = maxf(0.1,float(arg.get_slice("=",1)))
+	factor = given if not is_nan(given) else maxf(1.0,DEFAULT*wanderer_scale/plane_scale)
+
+## The figure's scale now: the plane's own times the ground's.
+func size() -> float:
+	return plane_scale*k
+
+## The figure's scale stood on its wheels (parked).
+func ground_size() -> float:
+	return plane_scale*factor
+
+## Where the plane's middle sits off its flight-size middle, in the
+## figure's frame, drawn at `at_size` (default its own scale, as in
+## flight), scaled about the wheels. The bump bodies follow it.
+func middle_shift(at_size := NAN) -> Vector3:
+	var s := plane_scale if is_nan(at_size) else at_size
+	return (Vector3(0.0,PlaneStrip.FIGURE_DROP,0.0)-PIVOT)*(s-1.0)
 
 ## True when the cheat is on at all.
 func active() -> bool:
@@ -75,28 +107,29 @@ func step(delta: float, on_ground: bool, dipping: bool, glide: RefCounted) -> vo
 	k = clampf(eased,k-most,k+most)
 
 ## Scales `figure` (posed this frame at flight size) about its wheels by
-## `size` (default the scale now). At 1 it is left alone.
-func apply(figure: Node3D, size := NAN) -> void:
-	var s := k if is_nan(size) else size
+## `at_size` (default the scale now). At 1 it is left alone.
+func apply(figure: Node3D, at_size := NAN) -> void:
+	var s := size() if is_nan(at_size) else at_size
 	if s == 1.0: return
 	figure.transform = figure.transform*Transform3D(Basis.from_scale(Vector3.ONE*s),PIVOT*(1.0-s))
 
 ## Where a point on the flight-size plane (global) is on the plane drawn
-## at `size`: scaled about the wheels of `figure` (posed now, scaled or not).
-func point(figure: Node3D, at: Vector3, size := NAN) -> Vector3:
-	var s := k if is_nan(size) else size
+## at `at_size`: scaled about the wheels of `figure` (posed now, scaled or not).
+func point(figure: Node3D, at: Vector3, at_size := NAN) -> Vector3:
+	var s := size() if is_nan(at_size) else at_size
 	var wheels := figure.global_transform*PIVOT
 	return wheels+(at-wheels)*s
 
 ## The chase camera's lift: the plane's middle (0.61 m over its wheels at
 ## flight size) as far up as it has grown.
 func lift() -> Vector3:
-	return Vector3.UP*(PlaneStrip.FIGURE_DROP+PlaneStrip.WHEEL_DROP)*(k-1.0)
+	return Vector3.UP*(PlaneStrip.FIGURE_DROP+PlaneStrip.WHEEL_DROP)*(size()-1.0)
 
 ## Where the pilot hops out to, (left, ahead) of the plane's middle in m, at
 ## the ground size: at flight size `side` and `ahead` (kit_isle's HOP_SIDE,
 ## HOP_AHEAD); grown, to its left between the lower wing's trailing edge
 ## and the tailplane (figure frame x -0.42, z 0.38), clear of both.
 func hop_offset(side: float, ahead: float) -> Vector2:
-	if not active(): return Vector2(side,ahead)
-	return Vector2(0.42*factor,-PIVOT.z-(0.38-PIVOT.z)*factor)
+	var g := ground_size()
+	if g < 1.0001: return Vector2(side,ahead)
+	return Vector2(0.42*g,-PIVOT.z-(0.38-PIVOT.z)*g)

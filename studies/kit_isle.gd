@@ -1055,7 +1055,7 @@ func _park(at: Vector3, heading: float) -> void:
 		_park_body.collision_layer = PARKED_LAYER
 		_park_body.collision_mask = 0
 		var column := CylinderShape3D.new()
-		column.radius = PARKED_ROOM*sqrt(ground_scale.factor)
+		column.radius = PARKED_ROOM*sqrt(ground_scale.ground_size())
 		column.height = PARKED_TALL
 		var collider := CollisionShape3D.new()
 		collider.shape = column
@@ -1121,7 +1121,7 @@ func _level(top: Vector3) -> bool:
 ## nothing but turf where it would stand.
 func _room_for_plane(top: Vector3, heading: float) -> bool:
 	var box := BoxShape3D.new()
-	var f := ground_scale.factor
+	var f := ground_scale.ground_size()
 	box.size = Vector3(PlaneFigure.SPAN*f+0.4,1.2*f,maxf(3.0,1.6*f))
 	var query := PhysicsShapeQueryParameters3D.new()
 	query.shape = box
@@ -1134,7 +1134,7 @@ func _room_for_plane(top: Vector3, heading: float) -> bool:
 func by_plane() -> bool:
 	if flying or off_edge or not parked or not walk_ready: return false
 	var feet := motor.feet
-	return Vector2(feet.x-parked_at.x,feet.z-parked_at.z).length() <= BOARD_REACH*sqrt(ground_scale.factor) and absf(feet.y-parked_at.y) < 1.5
+	return Vector2(feet.x-parked_at.x,feet.z-parked_at.z).length() <= BOARD_REACH*sqrt(ground_scale.ground_size()) and absf(feet.y-parked_at.y) < 1.5
 
 ## Where the hop out of a plane standing at `at` (the turf under its
 ## middle) facing `heading` lands: HOP_SIDE m to its left and HOP_AHEAD m
@@ -1158,7 +1158,7 @@ func _hop_figure(k: float, delta: float) -> void:
 	if _hop_to == Vector3.INF: return
 	figure.visible = k > 0.02
 	var at := _hop_from.lerp(_hop_to,smoothstep(0.0,1.0,k))
-	at.y += HOP_HEIGHT*sqrt(ground_scale.factor)*sin(PI*k)
+	at.y += HOP_HEIGHT*sqrt(ground_scale.ground_size())*sin(PI*k)
 	figure.position = at
 	body.hop(cos(PI*k),delta)
 
@@ -1377,7 +1377,7 @@ func fly_step(delta: float, input: Dictionary) -> void:
 ## its wheels (scripts/plane_ground_scale.gd).
 func _size_chase() -> void:
 	if chase == null: return
-	chase.size = ground_scale.k
+	chase.size = ground_scale.size()
 	chase.lift = ground_scale.lift()
 
 ## The chase camera behind the plane (shaken by a hard touch), framing the
@@ -1615,10 +1615,10 @@ func roll_blocked(point: Vector3) -> bool:
 	if _fuselage_query == null:
 		_fuselage_query = PhysicsShapeQueryParameters3D.new()
 		var box := BoxShape3D.new()
-		box.size = Vector3(FUSELAGE,BUMP_BODY.y,BUMP_BODY.z)
+		box.size = Vector3(FUSELAGE,BUMP_BODY.y,BUMP_BODY.z)*ground_scale.plane_scale
 		_fuselage_query.shape = box
 		_fuselage_query.collision_mask = TURF_LAYER
-	_fuselage_query.transform = Transform3D(turn,point)
+	_fuselage_query.transform = Transform3D(turn,point+turn*ground_scale.middle_shift())
 	return not get_world_3d().direct_space_state.intersect_shape(_fuselage_query,1).is_empty()
 
 ## Stone (with `with_turf`, the turf too) in the plane's wing-wide body
@@ -1631,11 +1631,11 @@ func _stone_at(point: Vector3, turn: Basis, with_turf := false) -> bool:
 	if _stone_query == null:
 		_stone_query = PhysicsShapeQueryParameters3D.new()
 		var box := BoxShape3D.new()
-		box.size = BUMP_BODY
+		box.size = BUMP_BODY*ground_scale.plane_scale
 		_stone_query.shape = box
 		_stone_query.collision_mask = plane_mask()
 	_stone_query.exclude = _no_rids if with_turf else _turf_rids
-	_stone_query.transform = Transform3D(turn,point)
+	_stone_query.transform = Transform3D(turn,point+turn*ground_scale.middle_shift())
 	return not get_world_3d().direct_space_state.intersect_shape(_stone_query,1).is_empty()
 
 ## The best run to take off along from `at` (global XZ, the turf there at
@@ -1699,11 +1699,11 @@ func _plane_query() -> PhysicsShapeQueryParameters3D:
 	if _bump_query == null:
 		_bump_query = PhysicsShapeQueryParameters3D.new()
 		var box := BoxShape3D.new()
-		box.size = BUMP_BODY
+		box.size = BUMP_BODY*ground_scale.plane_scale
 		_bump_query.shape = box
 		_bump_query.collision_mask = plane_mask()
 	var turn := PlaneFigure.pose(Vector3.ZERO,float(plane.heading),float(plane.pitch),float(plane.bank)+float(plane.spin)).basis
-	_bump_query.transform = Transform3D(turn,plane.position)
+	_bump_query.transform = Transform3D(turn,plane.position+turn*ground_scale.middle_shift())
 	return _bump_query
 
 func _in_stone() -> bool:
