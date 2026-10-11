@@ -87,12 +87,13 @@ extends "res://studies/kit_isle.gd"
 ## sky to settle, saves the view (from --at looking at the point, else the
 ## walker's camera) and quits; --place=x,y,z[,turn] starts the pilot there
 ## instead (turn: degrees from facing -z, clockwise).
-## The rim dragon (an experiment: scripts/rim_dragon.gd, docs/design/
-## rim-dragon.md), with --dragon: it rises out of the cloud sea, swoops over
-## the isle, grips the east rim and rears its head over it, blowing gales
-## across the isle between pants; take the treasure off its tongue and it
-## lets go. Its flags (--dragon-perched, --dragon-delay=, --dragon-fly=,
-## --dragon-calm) are its own.
+## The dragon (an experiment: docs/design/rim-dragon.md), with --dragon: a
+## full-bodied dragon (scripts/sky_dragon.gd) rises out of the cloud sea and
+## roams the archipelago, now and then low over the isle; V puts the camera
+## on it. --dragon-look=a|b|c picks its dress; its other flags are its own.
+## Round 1's rim grip (scripts/rim_dragon.gd) is parked behind --dragon-rim:
+## it swoops in, grips the east rim and blows gales across the isle; take
+## the treasure off its tongue and it lets go (--dragon-perched, ...).
 const Art = preload("res://studies/aqueduct_isle_art.gd")
 const Aqueduct = preload("res://scripts/ruin_kit_aqueduct.gd")
 const Life = preload("res://studies/aqueduct_isle_life.gd")
@@ -100,6 +101,7 @@ const IsleChain = preload("res://studies/aqueduct_isle_chain.gd")
 ## The hall chain's halls collide on the ruins' layer (scripts/hall_rise.gd).
 const RuinBump = preload("res://scripts/ruin_bump.gd")
 const RimDragon = preload("res://scripts/rim_dragon.gd")
+const SkyDragon = preload("res://scripts/sky_dragon.gd")
 ## Where the rim dragon grips (world x, z on the near island's east rim) and
 ## the way it faces, into the isle.
 const DRAGON_RIM := Vector2(126.6,-9.0)
@@ -164,8 +166,9 @@ var _capture_high := false
 ## The landmarks from the kit (their metadata drives the tests).
 var stair: Node3D
 var circle: Node3D
-## The rim dragon, with --dragon.
+## The dragon, with --dragon (flying) or --dragon-rim (round 1's rim grip).
 var dragon_on := false
+var dragon_rim := false
 var dragon: Node3D = null
 
 func _ready() -> void:
@@ -176,6 +179,7 @@ func _ready() -> void:
 		elif arg == "--autopilot": autopilot = true
 		elif arg == "--capture-high": _capture_high = true
 		elif arg == "--dragon": dragon_on = true
+		elif arg == "--dragon-rim": dragon_rim = true
 		elif arg == "--near-ring":
 			_near_ring = true
 			_carry = true
@@ -395,7 +399,9 @@ func _process(delta: float) -> void:
 	# Flying, `_fly_tick` steps the ring and the chain; on foot, here.
 	if isle_chain != null and not flying and delta > 0.0: isle_chain.step(delta,null,false,camera.global_position)
 	_pulse_frame(delta)
-	if dragon != null: dragon.advance(delta,not flying)
+	if dragon != null:
+		if dragon_rim: dragon.advance(delta,not flying)
+		else: dragon.advance(delta)
 
 func _fly_tick(delta: float) -> void:
 	if isle_chain != null: isle_chain.step(delta,plane,lode_state == "seated",camera.global_position)
@@ -453,12 +459,15 @@ func _capture_flying() -> void:
 ## The life, then the dragon over it.
 func _add_life() -> void:
 	super._add_life()
-	if dragon_on: _build_dragon()
+	if dragon_rim: _build_dragon()
+	elif dragon_on: _build_sky_dragon()
 
 ## The kit's on-foot hint, and the dragon's line while it holds the treasure.
 func _foot_text() -> String:
 	var text := super._foot_text()
-	if dragon != null and not dragon.taken:
+	if dragon != null and not dragon_rim:
+		text += "\nV watches the dragon (chase, orbit, from here, off)"
+	if dragon != null and dragon_rim and not dragon.taken:
 		text += "\nThe dragon on the east rim holds a treasure in its mouth: get to it between gusts; when it breathes in, get behind stone"
 	return text
 
@@ -470,6 +479,22 @@ func _build_dragon() -> void:
 	dragon.setup(motor,ground.slide_callable(),rim,DRAGON_INTO,IsleChain.SEA_TOP,preload("res://scripts/launch_args.gd").user_args())
 	dragon.gust.connect(_dragon_gust)
 	dragon.yielded.connect(_dragon_yielded)
+	if _switch_hint != null and not flying: _switch_hint.text = _foot_text()
+
+## The flying dragon (scripts/sky_dragon.gd) round the archipelago: the near
+## isles and clusters (within 700 m) are what it threads between.
+func _build_sky_dragon() -> void:
+	var list: Array = []
+	for isle: Array in IsleSky.ISLES:
+		var at: Vector3 = isle[3]
+		if at.distance_to(IsleSky.MIDDLE) < 700.0: list.append([at,float(isle[4])])
+	for cluster: Array in IsleSky.CLUSTERS:
+		var at: Vector3 = cluster[2]
+		if at.distance_to(IsleSky.MIDDLE) < 700.0: list.append([at,40.0])
+	list.append([IsleSky.MIDDLE,60.0])
+	dragon = SkyDragon.new()
+	add_child(dragon)
+	dragon.setup(camera,preload("res://scripts/launch_args.gd").user_args(),IsleChain.SEA_TOP,IsleSky.MIDDLE,Art.TOP,list)
 	if _switch_hint != null and not flying: _switch_hint.text = _foot_text()
 
 ## Each gale as a strong gust front along its way, so the grass and the
