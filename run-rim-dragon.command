@@ -9,6 +9,7 @@
 #   ./run-rim-dragon.command --dragon-ride       round 5: on foot on the isle it grips; sag, snap, launch (~20 s a cycle); G lets go
 #   round 7: it attacks the four ruin motif isles; --dragon-target=bell_spires|cloister_tarn|sundered_gorge|colonnade_spine
 #   round 8: --dragon-ride grips your isle, flies off to grip another, comes back; --dragon-ride-repeat = the old instant loop
+#   round 9: the hold eases to a walkable ~9° (crouch to surf), a last pull before the snap; --dragon-walk-check (headless log)
 #   ./run-rim-dragon.command --dragon-look=a     a angular, b carved, c stone and glow (default)
 #   V in game cycles the dragon camera: chase, orbit, look from here, off
 #   --dragon-watch[=chase|orbit|look] starts on it  --dragon-delay=<s> (3)

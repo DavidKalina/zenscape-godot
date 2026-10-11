@@ -123,10 +123,12 @@ const LAUNCH_MOST := 32.0
 const LAUNCH_IN := 0.1
 ## --dragon-ride: the first swoop in starts RIDE_OUT m out and RIDE_UP m
 ## up; it holds on RIDE_HOLD s (one blast) and pants RIDE_PANT s; let go,
-## it swoops back for another grab.
+## it swoops back for another grab. Round 9: 8.5 s (was 6), so the first
+## pant always runs on into a blast (the slam's steep moment and ease back
+## take about 3 s of it) and he has some 10 s on the walkable tilt.
 const RIDE_OUT := 85.0
 const RIDE_UP := 18.0
-const RIDE_HOLD := 6.0
+const RIDE_HOLD := 8.5
 const RIDE_PANT := Vector2(2.5,3.5)
 ## Round 8: in the ride it goes off between grips on your isle to attack
 ## another motif isle (held RIDE_AWAY s, two blasts or so), then comes
@@ -340,10 +342,11 @@ const THUMB_IN := 0.9
 ## A neck probe further under the turf than this is under the lip's
 ## overhang beside the cliff, not in it.
 const NECK_DEEP := 3.0
-## The pilot surfs down the tipped isle on his own past this (degrees; the
-## motor's own SLIDE_AUTO, 44, elsewhere), once it tips past TILT_SLIDE.
-const RIDE_SLIDE_AUTO := 15.0
-const TILT_SLIDE := 0.12
+## Round 9: no auto-surf on the tipped isle (round 6's RIDE_SLIDE_AUTO is
+## gone). He surfs only when he crouches (or carves), as on any slope.
+## The last pull's length before it lets go (scripts/dragon_gale.gd
+## PULL_TIME).
+const PULL := 0.85
 var _probes_head: Array = []
 var _probes_neck: Array = []
 var _chin_back: Array = []
@@ -371,7 +374,6 @@ var _neck_base: Array = []
 var chin_miss := Vector2.ZERO
 var _ray := PhysicsRayQueryParameters3D.new()
 var chin: StaticBody3D
-var _auto_was := -1.0
 ## Logged: the deepest any probe sat in the turf this hold (m, before the
 ## lift), and after it.
 var sunk_before := 0.0
@@ -401,6 +403,7 @@ func setup(cam: Camera3D, args: PackedStringArray, sea: float, middle: Vector3, 
 		elif arg.begins_with("--dragon-seed="): _rng.seed = int(arg.get_slice("=",1))
 		elif arg.begins_with("--dragon-size="): size = float(arg.get_slice("=",1))
 		elif arg == "--dragon-log": _log = true
+		elif arg == "--dragon-walk-check": _walk_check = true
 		elif arg == "--dragon-pass": _pass_now = true
 		elif arg == "--dragon-attack": _attack_now = true
 		elif arg == "--dragon-ride": ride = true
@@ -888,6 +891,7 @@ func _step(delta: float) -> void:
 	_place_treasure(delta)
 	_measure_tip(delta)
 	_ride_isle(delta)
+	_walking_check(delta)
 	if _log:
 		_log_t += delta
 		if _log_t >= (0.5 if leg_kind == "low pass" else 2.0):
@@ -1679,9 +1683,14 @@ func _clinging(delta: float) -> void:
 			"settle": _set_breath("pant",_pant_length())
 			"pant":
 				if _cling_left <= 0.0:
-					_let_go()
-					return
-				_set_breath("inhale",INHALE)
+					# Round 9: one last heavy haul on the rim (the tell),
+					# then it lets go.
+					_set_breath("pull",PULL)
+					gale.pull_down()
+				else: _set_breath("inhale",INHALE)
+			"pull":
+				_let_go()
+				return
 			"inhale": _set_breath("blow",BLOW)
 			"blow": _set_breath("recover",RECOVER)
 			"recover": _set_breath("pant",_pant_length())
@@ -1696,7 +1705,7 @@ func _clinging(delta: float) -> void:
 			gale.blow(mouth,way,env,delta)
 			if gale.take_crumble(): gale.crumble(grip.rim,grip.out,grip.tangent,14.0)
 			_blow_on_pilot(delta,mouth,way,env)
-	if breath == "settle" and _breath_t < 1.6 and _rng.randf() < delta*8.0: gale.crumble(grip.rim,grip.out,grip.tangent,12.0)
+	if (breath == "pull" or (breath == "settle" and _breath_t < 1.6)) and _rng.randf() < delta*8.0: gale.crumble(grip.rim,grip.out,grip.tangent,12.0)
 	_touch_treasure()
 
 func _pant_length() -> float:
@@ -1750,6 +1759,12 @@ func _cling_pose(delta: float) -> void:
 			rear_goal = lerpf(1.0,-0.5,smoothstep(0.0,0.4,_breath_t))
 			wing_open = 0.5+0.25*env
 			yaw_goal = lerpf(_sweep_from,-_sweep_from,smoothstep(0.1,0.9,u))
+		"pull":
+			# Round 9: hauling the rim down, jaw clenched, reared back,
+			# wings half open for the heave.
+			jaw = 0.08
+			rear_goal = lerpf(0.0,0.7,smoothstep(0.0,0.6,u))
+			wing_open = lerpf(0.2,0.6,u)
 		"recover":
 			jaw = lerpf(0.5,0.28,u)
 			rear_goal = lerpf(-0.5,-0.15,smoothstep(0.0,1.0,u))
@@ -2116,7 +2131,6 @@ func _let_go() -> void:
 	state = "leaving"
 	_place_chin(false)
 	_rest_w = 0.0
-	_tilt_slide(false)
 	_snapshot(0.6)
 	gale.release_isle()
 	for i in range(14): gale.crumble(grip.rim,grip.out,grip.tangent,14.0)
@@ -2278,10 +2292,7 @@ func _blow_on_pilot(delta: float, mouth: Vector3, way: Vector3, env: float) -> v
 ## jump loose.
 func _ride_isle(delta: float) -> void:
 	if gale.snapped and not grip.is_empty(): gale.jolt(_isle_xf()*(grip.rim as Vector3),grip.out,grip.tangent,-gale.sag_v)
-	if walker == null or not on_foot or gale.isle == null or delta <= 0.0:
-		_tilt_slide(false)
-		return
-	_tilt_slide(gale.phase == "held" and gale.tip() > TILT_SLIDE and bool(walker.get("grounded")) and gale.stands_on(walker.get("feet") as Vector3,1.5) and _falls_to_dragon())
+	if walker == null or not on_foot or gale.isle == null or delta <= 0.0: return
 	if gale.moved.is_equal_approx(Transform3D.IDENTITY):
 		_ride_vy = 0.0
 		return
@@ -2305,6 +2316,60 @@ func _ride_isle(delta: float) -> void:
 	var rim_at: Vector3 = grip.rim if not grip.is_empty() else feet
 	print("sky dragon: the isle springs back and flings the pilot up at %.1f m/s, %.1f m from the rim it held" % [up,Vector2(feet.x-rim_at.x,feet.z-rim_at.z).length()])
 
+## Round 9's check (--dragon-walk-check, headless): the stick pressed
+## forward, then back, 1.4 s each, so the pilot runs to and fro: on the
+## flat before the first grip, and through the hold once it has eased back
+## to its walkable tilt (he stands still for the slam, the steep moment and
+## the last pull, to be flung). Every 0.25 s it prints his pace, the slope
+## under him, the isle's tip and his water; once per hold, each of the
+## isle's pools' water as the pilot's ground reads it against the posed
+## surface.
+var _walk_check := false
+var _walk_t := 0.0
+var _walk_log := 0.0
+var _walk_pools := false
+func _walking_check(delta: float) -> void:
+	if not _walk_check or walker == null: return
+	var flat: bool = gale.phase == "" and launched == 0 and state != "grabbing" and _clock > 1.0
+	var held: bool = state == "clinging" and gale.phase == "held" and gale.eased() and breath != "pull"
+	var go: bool = on_foot and (flat or held)
+	if not go:
+		Input.action_release(&"move_forward")
+		Input.action_release(&"move_back")
+		if gale.phase != "held": _walk_pools = false
+		# Standing through the slam's steep moment and the last pull.
+		if on_foot and gale.phase in ["held","snap"]:
+			_walk_log += delta
+			if _walk_log >= 0.2:
+				_walk_log = 0.0
+				print("sky dragon walk: t %.2f %s, isle tipped %.1f°, the rim sags %.2f m, pilot %s %.2f m/s on %.1f°, grounded %s, swimming %s" % [_clock,"pull" if breath == "pull" else str(gale.phase),rad_to_deg(gale.tip()),gale.sag,str(walker.get("move")),walker.speed(),walker.steepness(),str(walker.get("grounded")),str(walker.get("swimming"))])
+		return
+	_walk_t += delta
+	var fwd := fmod(_walk_t,2.8) < 1.4
+	if fwd:
+		Input.action_release(&"move_back")
+		Input.action_press(&"move_forward")
+	else:
+		Input.action_release(&"move_forward")
+		Input.action_press(&"move_back")
+	_walk_log += delta
+	if _walk_log >= 0.25:
+		_walk_log = 0.0
+		var f: Vector3 = walker.get("feet")
+		print("sky dragon walk: t %.2f %s, isle tipped %.1f°, pilot %s %.2f m/s on %.1f°, grounded %s, swimming %s wade %.2f, feet y %.2f" % [_clock,"flat" if flat else "held",rad_to_deg(gale.tip()),str(walker.get("move")),walker.speed(),walker.steepness(),str(walker.get("grounded")),str(walker.get("swimming")),float(walker.get("wade")),f.y])
+	if held and not _walk_pools:
+		_walk_pools = true
+		var ground: Object = slide.get_object() if slide.is_valid() else null
+		var motif: Variant = gale.isle.get("motif")
+		if ground == null or motif == null or not ground.has_method("surface"): return
+		var off: Vector3 = gale.isle.get("offset")
+		for pool: Dictionary in motif.pools():
+			var c: Vector2 = (pool.rect as Rect2).get_center()
+			var rest := Vector3(c.x+off.x,float(pool.top)+off.y,c.y+off.z)
+			var posed := _isle_xf()*rest
+			var at := Vector2(posed.x,posed.z)
+			print("sky dragon walk: pool at (%.1f, %.1f, %.1f) at rest; tipped %.1f°: its water stands at y %.2f, the pilot's ground reads its surface at %.2f (its rest top %.2f), the bed at %.2f, %.2f m deep" % [rest.x,rest.y,rest.z,rad_to_deg(gale.tip()),posed.y,float(ground.surface(at)),rest.y,float(ground.ground(at)),float(ground.depth(at))])
+
 ## The snout's motion against the body (round 8's log): the most speed and
 ## the most change of speed since the last line, while on a rim.
 func _measure_tip(delta: float) -> void:
@@ -2318,33 +2383,6 @@ func _measure_tip(delta: float) -> void:
 		tip_jerk = maxf(tip_jerk,(v-_tip_v).length()/delta)
 		_tip_v = v
 	_tip_was = tip
-
-## The tipped isle as a slope he can't stand on (round 6): while it is held
-## tipped and he stands on it, the motor's slide_auto is lowered to
-## RIDE_SLIDE_AUTO, so its steeper turf surfs him down toward the dragon on
-## his own (crouched he surfs from the motor's SLIDE_FROM, 10°, as on any
-## slope); off it, or let go, his own again.
-func _tilt_slide(on: bool) -> void:
-	if walker == null: return
-	if on:
-		if _auto_was < 0.0: _auto_was = float(walker.get("slide_auto"))
-		walker.set("slide_auto",RIDE_SLIDE_AUTO)
-	elif _auto_was >= 0.0:
-		walker.set("slide_auto",_auto_was)
-		_auto_was = -1.0
-
-## Whether the slope under the pilot falls toward the gripped rim (within
-## about 60°): only there does the tipped isle surf him on his own, so it
-## pours him toward the dragon, not off its other flanks.
-func _falls_to_dragon() -> bool:
-	if grip.is_empty(): return false
-	var slope: Vector2 = walker.get("slope")
-	if slope.length() < 0.05: return false
-	var feet: Vector3 = walker.get("feet")
-	var rim := _isle_xf()*(grip.rim as Vector3)
-	var to := Vector2(rim.x-feet.x,rim.z-feet.z)
-	if to.length() < 0.5: return true
-	return (-slope).normalized().dot(to.normalized()) > 0.5
 
 ## The treasure taken from its tongue: a roar, and it lets go.
 func _touch_treasure() -> void:

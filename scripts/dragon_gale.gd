@@ -79,15 +79,31 @@ var _p_acc := 0.0
 ## (0.3 dropped before): about 18° on hills_ne held, so the turf reads as a
 ## slope the pilot can surf down toward the dragon.
 const SAG_DROP := 0.12
-## The grip: on the slam the rim sags SLAM_SAG m, kicked down at SLAM_KICK
-## m/s, on a heavy soft spring (HOLD_W 1/s, HOLD_ZETA), so it drops, bobs
-## and hangs; each blast sinks it BLAST_SAG m more, to SAG_MOST.
-const SLAM_SAG := 4.5
+## The grip: on the slam the rim is kicked down at SLAM_KICK m/s on a heavy
+## soft spring (HOLD_W 1/s, HOLD_ZETA), so it drops, bobs and hangs.
+## Round 9: the hold is a walkable tilt, not a slope to surf. The slam tips
+## the isle steep (SLAM_TIP) for STEEP_FOR s, a dramatic moment, then it
+## eases back over EASE_BACK s to HOLD_TIP, under the motor's crouch surf
+## (SLIDE_FROM, 10°), where he walks, runs and jumps as on the flat. Each
+## blast nudges it BLAST_TIP deeper, and that eases away again (NUDGE_EASE
+## 1/s, at most NUDGE_MOST). Before it lets go, it hauls the rim down hard
+## one last time (`pull_down`): to PULL_TIP over PULL_TIME on a stiffer
+## spring (PULL_W, PULL_ZETA), the tell that the snap is coming, and the
+## depth the launch springs from (round 7's held 17 to 20°).
 const SLAM_KICK := 7.0
-const BLAST_SAG := 0.8
-const SAG_MOST := 7.5
 const HOLD_W := 3.2
 const HOLD_ZETA := 0.3
+const SLAM_TIP := 17.0
+const STEEP_FOR := 1.1
+const EASE_BACK := 1.6
+const HOLD_TIP := 9.0
+const BLAST_TIP := 2.5
+const NUDGE_MOST := 4.0
+const NUDGE_EASE := 0.9
+const PULL_TIP := 20.0
+const PULL_TIME := 0.85
+const PULL_W := 6.5
+const PULL_ZETA := 0.75
 ## The groan while held: a slow creak in the sag (m) and a lean either way.
 const GROAN := 0.28
 ## The snap: the edge spring's release (scripts/diorama_flip.gd `_step_dip`:
@@ -111,7 +127,12 @@ var sag_v := 0.0
 var phase := ""
 var _crossed := false
 var _snap_t := 0.0
-var _hold_sag := 0.0
+## Round 9: seconds since the slam, the blasts' nudge (m of sag), the last
+## pull's time (-1 none) and the sag it hauls down from.
+var _hold_t := 0.0
+var _nudge := 0.0
+var _pull_t := -1.0
+var _pull_from := 0.0
 var _rim_r := 16.0
 ## Round 7: the sag scaled by the gripped rim's distance from the pivot
 ## over hills_ne's (RIM_REF m), so a bigger motif isle tips by round 6's
@@ -284,7 +305,9 @@ func hold_isle(node: Node3D, shape: RefCounted, home: Vector3, radius: float, to
 	_tilt_axis = Vector3(-toward.z,0.0,toward.x).normalized()
 	_rim_r = maxf(Vector2(rim.x-home.x,rim.z-home.z).length(),6.0) if rim != Vector3.INF else radius
 	_scale = clampf(_rim_r/RIM_REF,1.0,2.5)
-	_hold_sag = 0.0
+	_hold_t = 0.0
+	_nudge = 0.0
+	_pull_t = -1.0
 	phase = "held"
 	_cache_floor()
 	# The breath's ribbons live over the isle and out past its far rim.
@@ -297,7 +320,8 @@ func release_isle() -> void:
 	phase = "snap"
 	_crossed = false
 	_snap_t = 0.0
-	_hold_sag = 0.0
+	_pull_t = -1.0
+	_nudge = 0.0
 
 ## The isle home at once (a new hold, leaving the tree).
 func _settle_now() -> void:
@@ -307,19 +331,45 @@ func _settle_now() -> void:
 	sag = 0.0
 	sag_v = 0.0
 
-## A blast's weight: the rim sinks a little deeper.
+## The sag (m at the gripped rim) that tips the isle `degrees` toward the
+## dragon.
+func _sag_for(degrees: float) -> float:
+	return deg_to_rad(degrees)*_rim_r/(1.0-SAG_DROP)
+
+## A blast's weight: the rim sinks a little deeper, then eases back up
+## (round 9).
 func deepen() -> void:
 	if phase != "held": return
-	_hold_sag = minf(_hold_sag+BLAST_SAG*_scale,SAG_MOST*_scale)
-	sag_v += 2.0*_scale
+	_nudge = minf(_nudge+_sag_for(BLAST_TIP),_sag_for(NUDGE_MOST))
+	sag_v += 1.2*_scale
 	_tremble = maxf(_tremble,0.6)
+
+## Round 9: the last heavy pull before it lets go. The rim hauls down deep
+## over PULL_TIME (the tell), the depth the snap springs back from.
+func pull_down() -> void:
+	if phase != "held" or _pull_t >= 0.0: return
+	_pull_t = 0.0
+	_pull_from = sag
+	_tremble = maxf(_tremble,0.7)
+
+## Whether the hold has eased back from the slam to its walkable tilt.
+func eased() -> bool:
+	return phase == "held" and _pull_t < 0.0 and _hold_t > STEEP_FOR+EASE_BACK+0.6
+
+## The sag the hold wants now, before the groan.
+func _hold_goal() -> float:
+	if _pull_t >= 0.0: return lerpf(_pull_from,_sag_for(PULL_TIP),smoothstep(0.0,1.0,_pull_t/PULL_TIME))
+	var u := clampf((_hold_t-STEEP_FOR)/EASE_BACK,0.0,1.0)
+	return lerpf(_sag_for(SLAM_TIP),_sag_for(HOLD_TIP),smoothstep(0.0,1.0,u))+_nudge
 
 ## The slam: the rim is dragged down and the isle tips toward the dragon,
 ## dust bursts off the rim, rubble breaks away and falls.
 func slam(rim: Vector3, out: Vector3, tangent: Vector3) -> void:
 	sag_v += SLAM_KICK*_scale
 	_tremble = 1.0
-	_hold_sag = SLAM_SAG*_scale
+	_hold_t = 0.0
+	_nudge = 0.0
+	_pull_t = -1.0
 	for i in range(26):
 		var along := _rng.randf_range(-14.0,14.0)
 		var at := rim+tangent*along+out*_rng.randf_range(-1.0,3.0)+Vector3.UP*_rng.randf_range(-3.0,1.0)
@@ -517,7 +567,13 @@ func _shake_isle(delta: float) -> void:
 	_tremble = maxf(_tremble-delta*0.8,0.0)
 	if phase == "": return
 	var goal := 0.0
-	if phase == "held": goal = _hold_sag+GROAN*_scale*(sin(_clock*1.1)*0.7+sin(_clock*2.7+0.4)*0.3)
+	if phase == "held":
+		_hold_t += delta
+		_nudge *= exp(-NUDGE_EASE*delta)
+		if _pull_t >= 0.0: _pull_t += delta
+		# The groan dies away under the pull: its haul is the tell.
+		var groan := 0.0 if _pull_t >= 0.0 else GROAN*_scale*(sin(_clock*1.1)*0.7+sin(_clock*2.7+0.4)*0.3)
+		goal = _hold_goal()+groan
 	else: _snap_t += delta
 	var remaining := delta
 	while remaining > 0.0:
@@ -525,6 +581,9 @@ func _shake_isle(delta: float) -> void:
 		remaining -= h
 		var w := HOLD_W
 		var zeta := HOLD_ZETA
+		if _pull_t >= 0.0:
+			w = PULL_W
+			zeta = PULL_ZETA
 		if phase == "snap":
 			# A bigger isle (sagged further) springs back slower, so its
 			# launch isn't twice round 6's.

@@ -11,10 +11,123 @@ flings the pilot. Round 6 keeps the head out of the isle, rests the chin on
 the turf, Odyssey-style, and lets the pilot surf down the tipped isle.
 Round 7 moves it onto the ruin motif isles that replaced the old far isles.
 Round 8 makes its breath the game's own breeze ribbons, smooths the head and
-sends the ride round the other isles.
+sends the ride round the other isles. Round 9 fixes swimming in mid-air on the
+tipped tarn and makes the held isle walkable.
 
 Branch `study/rim-dragon`. This is a demo round: no tests, no bot sweeps, no
 perf pass.
+
+## Round 9: water that tips, a walkable hold
+
+The user's notes on round 8 ("Awesome! ... wow, really cool so far"), two
+severe bugs: on the cloister tarn, after the tilt he was swimming in
+mid-air; and not being able to walk while the isle is tipped is still very
+frustrating.
+
+### Play
+
+- `./run-rim-dragon.command --dragon-ride` (the cloister tarn), or add
+  `--dragon-target=bell_spires`; `--dragon-ride-repeat` for the quick loop.
+- The slam tips the isle steep (about 21 to 23° at its peak) for about
+  1.5 s. Then it eases back to about 9° by about 3 s after the grip. Walk,
+  run and jump there as on the flat. Crouch (or carve) to surf; nothing
+  slides you on its own any more.
+- Each blast nudges the tilt to about 10 to 12°, and that eases away.
+- The tell: just before it lets go, the dragon rears back, jaw clenched,
+  and hauls the rim down over 0.85 s (back to about 18°, rubble falling).
+  Then it lets go and the isle springs back and flings you, as before.
+- The ride's hold on your isle is 8.5 s (it was 6), so it always gets to
+  one blast, and you have about 10 s on the walkable tilt.
+- `--dragon-walk-check` (headless check): the stick runs the pilot to and
+  fro through the hold, and his pace, slope, tip and water are printed.
+
+### Water (scripts/pilot_physics_ground.gd, scripts/kit_isle/motif_isle.gd)
+
+- **Cause.** The pilot's wade and swim depth came from `ground.pools`:
+  flat rects with a world `top`, registered at rest. The bed (physics rays)
+  tipped with the isle, but the top stayed put. Near the gripped rim the
+  bed sank metres under the rest top, so he was "in deep water" and floated
+  at the rest top, in mid-air over the sunken tarn.
+- **Fix.** A motif isle's pools now carry their `node` and its `rest`
+  transform. `_pool_top` reads the rect in the rest frame and returns the
+  posed surface's height over the point, for `depth` and `surface` alike.
+  Pools without a node (the aqueduct's channel, the motifs' own scenes)
+  work as before.
+- **Look: the water tips with the basin.** The tarn's mesh, its plane
+  collider and the curtain fall are already under the isle's node, so the
+  surface tips as a rigid sheet with the isle. The wade/swim test now
+  matches that sheet. Level water in a tipped basin would be more correct,
+  but it would need a re-cut mesh and spill handling. At the 9° hold it
+  reads fine; it is steeper only for the slam's moment and the pull.
+- Logged on the hold (cloister tarn, 8.4°): the tarn's posed water at
+  y 29.45, and the pilot's ground reads 29.45 (rest top 30.00), 2.28 m
+  deep. At the channel's middle it is 32.44 against the rest top's 30.00.
+  Placed in the tarn (`--place=60,31,365`), he swims 0.56 to 0.62 m under
+  the tipped surface through the slam, the hold, the pull and the snap. In
+  every run, no swimming while above water.
+- **Other isle-local data checked.** Ground, walls and ledges are physics
+  rays on the node's colliders, so they move with it. Live rope decks read
+  `bridge.global_transform`, and the bell spires' rest decks are walk boxes
+  under the node: they tip with it (round 7's note on them was stale).
+  On-foot tokens, birds and flora are under the node. The sky's plane tokens
+  stay put: they float in the air and are taken in flight, so they can't
+  strand him. Left as is.
+
+### The tilt (scripts/dragon_gale.gd, scripts/sky_dragon.gd)
+
+- **No auto-slide.** Round 6's `RIDE_SLIDE_AUTO` (15°), `_tilt_slide` and
+  `_falls_to_dragon` are gone. The motor keeps its own `slide_auto` (44°).
+- **Steep, then ease back.** The hold's goal is set by angle (`_sag_for`):
+  `SLAM_TIP` 17° (it overshoots to about 23° on the slam's kick), held
+  `STEEP_FOR` 1.1 s, eased over `EASE_BACK` 1.6 s to `HOLD_TIP` 9°. That is
+  under the motor's crouch surf (`SLIDE_FROM` 10°) and far under its slowing
+  (`SLOPE_SLOW` 22°).
+- **Blasts nudge.** Each adds `BLAST_TIP` 2.5° (at most 4°), which eases
+  away at 0.9/s.
+- **The pull.** `gale.pull_down()` ramps the goal to `PULL_TIP` 20° over
+  `PULL_TIME` 0.85 s on a stiffer spring (w 6.5, ζ 0.75). The groan stops
+  under it. The dragon's new "pull" beat (rear back, jaw shut, wings half
+  open, crumbling) runs in its place once the hold is up; then `_let_go`. G
+  and the treasure still let go at once.
+- **Carry.** The ease and the pull are the same per-frame `moved` that
+  `PilotMotor.carry` follows. Headless he stays grounded through both, and
+  he never left the ground except for the blast's knock and the launch.
+
+### Measured (headless, `--fixed-fps 60`, `--dragon-walk-check`)
+
+- **Pace on the held tilt:** 4.80 m/s (the motor's flat `RUN`) on most
+  samples. The rest are turnarounds and the blast's knock. This is on the
+  cloister tarn (two loops) and the bell spires.
+- **Standing through the slam:** 0 m/s, grounded, on local slopes up to
+  14°. No surf.
+- **Launches:** cloister tarn 22.0 m/s at 15.8 m from the rim (round 8: 9
+  to 29); bell spires 27.0 m/s at 16.5 m. In later `--dragon-ride-repeat`
+  loops a blast knocked him to the far side (20 to 26 m from the mouth, by
+  the pivot). There the snap doesn't throw him, as before.
+
+### Captures (local, gitignored, docs/design/rim-dragon/)
+
+- `r9_hold_0.png`, `r9_hold_1.png`: the cloister tarn on the eased hold (about 9°)
+  from the side, the dragon's chin on the rim, the cloister and tarn
+  readable and level enough to walk. Command: `--dragon-ride
+  --dragon-walk-check --dragon-watch=orbit --dragon-orbit=110
+  --dragon-orbit-up=35 --dragon-orbit-far=90 --capture-wait=6
+  --capture-seq=2,1.5`.
+
+### Rough
+
+- The steep moment is short (about 1.5 s over 15°). If it wants more drama,
+  raise `SLAM_TIP` or `STEEP_FOR`.
+- The pull reaches about 18° by the let-go, not the full 20° (the spring
+  lags). Launches are still in round 8's range.
+- The tarn's surface is tipped, not level. It is visible on the slam and
+  the pull.
+- No capture of the pull itself; wall-clock capture timing missed it.
+- The ride's hold is longer (8.5 s), so a full ride cycle is a few seconds
+  longer.
+- Not played by hand. Checked from headless logs and two captures. Headless
+  import passes. The plain aqueduct isle (no `--dragon`) loads with no
+  errors. No test suite run.
 
 ## Round 8: ribbon breath, a heavy head, the ride goes round
 
