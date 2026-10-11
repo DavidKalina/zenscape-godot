@@ -660,3 +660,142 @@ full suite wasn't run.
   the cumulus and tearing ports for the same pattern, and run them through
   `test_isle_teardown`'s kind of check. Keep handing each particle system
   its own ParticleProcessMaterial copy, too.
+
+## Round 3 done
+
+Branch `consolidate/clouds`, off `consolidate/pause-settings` 6df85518.
+Not merged, not pushed.
+
+### What the player sees (rendered only; see Unverified)
+
+- **Towering cumulus round the aqueduct.** There are four towers
+  (`KitClouds.TOWERS`):
+  - **The home tower**, 790 m south of the isle at (-100, 750), over open
+    sea. It's the one in sight from the isle's top and from the title's
+    orbit. It begins rising out of the cloud sea about 10 s after the isle
+    comes up (the old home tower's `RISE_SOON`), so you can watch it climb
+    over the first five minutes.
+  - **Three more** at 1.2 to 1.3 km: west (-1100, 400), east (1350, -200)
+    and north-north-west (-600, -1000). Each starts at a different point in
+    its life.
+
+  Each tower lives the old game's life: it rests 2 minutes, rises 5,
+  stands 14 and wanes 3, then rises again. Towers never drift. They're
+  drawn by the unified cloud volume, which now gets them, as one body with
+  the sea. They aren't solid: fly in and the view goes white (the volume's
+  own fog), the wind muffles, and you come out the far side.
+- **Drifting clouds.** The old game's 70 small cloud heaps (924 puffs) ride
+  the breeze across the isles' field, between y -35 and 95. That's the
+  height you fly at. None is laid on the isle, on an isle or in a tower.
+  They thin away over the four places nearest the eye (the isle, far
+  isles, clusters, the pierced isle), and the field re-centres as you fly
+  away.
+- **Cloud tearing.** Your plane and all four CPU planes tear a tunnel
+  through any puff or tower they fly through. It opens, widens, holds 7 s
+  and heals over 22 s. Tufts are dragged out after the plane, with a burst
+  on the way out.
+- **The CPU planes fly through clouds.** About 30% of their goals are now a
+  pass through the nearest drifting cloud, the same share as the old game.
+  Look at them over the near isles. They also tear the home tower if a lap
+  takes them through it.
+- **The plane's wind muffles in cloud** (`GlideAir.advance`'s cloud term),
+  as in the old game.
+- **Settings > Clouds** changes what it changed in the old game: the sea's
+  style, which the volume also shades the towers in. Visual quality sets
+  the volume's tier. There's no new setting.
+
+### Where it lives
+
+- `scripts/cloud_host.gd` is **the seam**. A cloud host has `towers`,
+  `clouds` and `wakes`, and answers `in_cloud`, `cloud_body` and
+  `cloud_near`. The rules are statics on it (`veil_of`, `body_of`,
+  `nearest_of`, `tear_into`), and both hosts use them. It's also a node
+  for a sky laid by hand: `setup(spots, slots, blocked)`, then `step(delta,
+  eye, time, fliers)` each frame, `hook(traffic)` and `flush()`.
+- `LookPass.cloud_host()` / `LookPass.host_of(scene)`: the scene's
+  `cloud_host()` if it has one, else the old `wanderer.islands`. The near
+  sea and `CloudVolume.update(camera, sea, host, ...)` both take it.
+  `SkyIslands` is still the old game's host, and its node tree is
+  unchanged. Its `in_cloud`, `cloud_body`, `_tear` and `cloud_near` now
+  call the statics.
+- `SkyTowers.fixed`: hand-laid spots. Spot i stands in for cell (i, 0), so
+  its life, shape and key work as before (spot 0 is the home life). With
+  `fixed` set it never reads `spot`, so the peak ring and its layout never
+  run (the test checks `SkyWorld._layout` stays empty). `keeps(home,
+  margin)` is the instance form of `blocks`.
+- `SkyClouds.build(slots, blocked)`: the callable replaces the
+  `SkyPeaks`/`SkyTowers`/`SkyForestIsles` checks. The rng sequence is
+  unchanged, so the old game lays the same clouds.
+- `SkyTraffic._through_cloud(plane)` is factored out of `_choose`.
+  `IsleTraffic._choose` is now 30% cloud, 35% buzz and the rest laps.
+- `scripts/kit_isle/kit_clouds.gd` is the kit's host (it extends
+  cloud_host). It knows TOWERS and drops any spot that would stand within
+  340 m (the old `SkyTowers.KEEP`) of the lock ring's widest ring, an isle,
+  a cluster, the pierced isle, or the line from the isle through the
+  chain's ring and 1.5 km on (`clear_of_play`). So another kit isle's sky
+  never stands a tower in its way. The aqueduct keeps all four, the
+  closest 401 m clear. The kit has no thermals (no currents). It runs its
+  own `_process` after the traffic.
+- `studies/aqueduct_isle_sky.gd` grew by about 30 lines: the `clouds` var,
+  `--no-sky-clouds`, `_build_clouds` and the IsleTraffic split.
+- `studies/kit_isle.gd` grew by 8 lines: `cloud_host()` and the wind
+  muffle in `fly_step`.
+
+### Cost (headless, this Mac, from `tests/test_kit_clouds.gd`)
+
+- **A frame of the clouds:** about 145 µs on the main thread (mean of
+  9,000 steps). That's the towers' lives, the puffs' screens, keeps and
+  follow, five fliers traced, and the tunnels handed on. It's the same
+  work and the same counts as the old game: 4 towers marched (the old
+  game's ring shows its home tower plus 3 at about 2.2 km), 70 clouds and
+  4 CPU planes.
+- **A tower's stage pair:** about 185 ms to bake, on a worker. The rising
+  stands a new pair about every 7.5 s.
+- **Standing up on the main thread:** 16 stand-ups while the towers came
+  in and went through their lives, a mean of about 370 µs. All of them sit
+  inside `SkyCommits`' 4 ms budget rule, and none piled onto another. The
+  first one, 5.7 ms headless, makes the shared cumulus noise texture. In a
+  rendered run the near sea has usually made that already.
+- **Not measurable headless:** the volume's GPU march with towers in it.
+  It's capped at 4 towers (`CloudVolume.TOWERS`), as in the old game.
+
+### Tests (headless, `tools/run_tests.py --tests ...`)
+
+New: `test_kit_clouds`. It checks the host and the seam (the kit's, the
+old game's through its wanderer, and none). The cloud volume reads the
+host. Placement is clear of everything, bad spots are dropped and no ring
+layout runs. The towers are built on workers and live: about to rise,
+rising, standing, waning, then rising again, never drifting and out of
+step. The puffs are laid clear and drift. Traffic passes through clouds,
+goes in and tears. The player's plane tears a puff (puffs given the
+tunnel, tufts) and a tower (its shader's wakes), and the volume marches
+both. Freeing the scene mid-bake leaves nothing. The cost lines above are
+printed by it.
+
+See the round's final report for the batch results. `test_sky_cumulus`
+fails one check, "And the streaks thicken into the cloud's wisps"
+(`GlideAir._shown`), **on the base commit too**. It isn't from this round
+and isn't in known_failures.
+
+### Unverified (needs a rendered run)
+
+- Everything visual: the towers in the volume, their rising and waning,
+  the puffs, the tunnels and tufts, the fog inside a tower, how the home
+  tower frames from the isle and the title, and the style setting on the
+  towers.
+- The GPU cost of marching four towers over the kit's look.
+
+### For round 4 (time and weather)
+
+- The towers read the sky through the volume (`celestial`): sun, moon,
+  night and `cloud`. A running clock should light them with no change
+  here. The lightning hook is `cloud_volume.lightning =
+  _scene.get("_lightning")`: give the kit a `_lightning` and the volume
+  flashes in its towers.
+- The towers' clock (`SkyTowers.clock`) is its own, not the day's.
+  Seasons or weather that want fewer or taller towers should go through
+  KitClouds (TOWERS, or a `pinned` age), not through `SkyWorld`.
+- The puffs don't follow the sea's style or the weather (they didn't in
+  the old game either). `SkyClouds` has no weather input.
+- `kit_clouds.gd` is the place for a kit cloud setting if one is wanted
+  (wire it through `game_settings.gd` as the Round 2 note says).
