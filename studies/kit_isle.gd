@@ -47,7 +47,8 @@ extends "res://studies/character_study.gd"
 ## itself round it on a ring (scripts/isle_lock.gd), the camera framing it,
 ## and the isle's card shows (scripts/isle_splash.gd, `isle_card`); A D draw
 ## the ring in and out, W S lower and raise it, R3 (Tab) lets go. Out of
-## reach R3 is the camera reset still. --lock starts locked (with --fly).
+## reach R3 is the camera reset still. --lock starts locked (with --fly);
+## --card-hold keeps the card up (captures).
 ## The lodestone (docs/design/isle-lodestone.md): a stone holding a world in
 ## miniature (scripts/lodestone.gd) hums where the isle rests it (E, pad A
 ## picks it up); --stone-plane seats it in the stone plane, whose wing
@@ -501,7 +502,7 @@ func isle_name() -> String:
 ## how much has been found. Placeholders until the isles are named.
 func isle_card() -> Dictionary:
 	return {"name":isle_name().capitalize(),"epithet":"An isle adrift over the cloud sea",
-		"finds":[["Glyphs",0,7],["Lodestones",0,1],["Hidden ways",0,3]]}
+		"finds":[["wildflower","Glyphs",0,7],["crystal","Lodestones",0,1],["bridge","Hidden ways",0,3]]}
 
 ## The isle's datum (world y): the turf near it; the rays down read from
 ## over it, the plane's cloud floor hangs FLOOR_BELOW under it.
@@ -841,6 +842,7 @@ func toggle_lock() -> bool:
 		splash = IsleSplash.new()
 		splash.name = "IsleSplash"
 		add_child(splash)
+	if preload("res://scripts/launch_args.gd").user_args().has("--card-hold"): splash.hold = 3600.0
 	splash.show_card(isle_card())
 	_show_fly_hint()
 	return true

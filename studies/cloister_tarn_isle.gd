@@ -67,7 +67,7 @@ func isle_name() -> String:
 
 ## Placeholder name, line and finds until the isle is named.
 func isle_card() -> Dictionary:
-	return {"name":"Cloister of the Still Tarn","epithet":"A mirror kept for no one","finds":[["Glyphs",3,5],["Lanterns",0,3],["Hidden ways",0,2]]}
+	return {"name":"Cloister of the Still Tarn","epithet":"A mirror kept for no one","finds":[["wildflower","Glyphs",3,5],["lamp","Lanterns",0,3],["bridge","Hidden ways",0,2]]}
 
 func isle_top() -> float:
 	return TarnArt.W
