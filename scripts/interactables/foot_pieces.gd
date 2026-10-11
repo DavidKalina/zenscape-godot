@@ -52,6 +52,10 @@ var _tilt_left := 0.0
 ## the coping this time on it (or the last).
 var counts := {"slab":0,"swing":0,"rail":0}
 var last_release := Vector3.ZERO
+## The last rope release's timing (SwingRope `timing`, 0 to 1).
+var last_timing := 0.0
+## The rope he hung from going into this frame's step.
+var _held: Node3D = null
 var last_rail_top := 0.0
 ## The balustrade whose coping he is on now, or null.
 var on_rail: Node3D = null
@@ -104,7 +108,15 @@ func rope_frame(mid: Vector3, way: Vector2, span: float, height: float, length: 
 	add_child(frame)
 	var r := rope(mid+Vector3.UP*height,length)
 	r.add_tag(mid+Vector3.UP*height+side*0.9,yaw,seed_value)
+	r.set_meta("frame",frame)
 	return r
+
+## A rope taken away (and its frame, if `rope_frame` made it).
+func remove_rope(r: Node3D) -> void:
+	if motor != null and motor.rider == r: motor.toss(motor.velocity)
+	ropes.erase(r)
+	if r.has_meta("frame"): (r.get_meta("frame") as Node).queue_free()
+	r.queue_free()
 
 func balustrade(points: PackedVector3Array, seed_value := 0, weathered := 0.3, floor := PackedVector3Array()) -> Node3D:
 	var r: Node3D = Balustrade.new()
@@ -126,6 +138,7 @@ func slab_of(rid: RID) -> Node3D:
 
 ## Every piece on a frame; he is carried by the slab under him.
 func before(delta: float) -> void:
+	_held = motor.rider if motor.rider in ropes else null
 	for slab: Node3D in slabs: slab.advance(delta)
 	for r: Node3D in ropes: r.advance(delta)
 	if on == null or motor.rider != null or motor.swimming: return
@@ -174,6 +187,7 @@ func after(_delta: float, events: Dictionary) -> void:
 	if on_rail != null: last_rail_top = maxf(last_rail_top,motor.speed())
 	if events.has("rope_jump") or (events.has("swing") and not events.swing):
 		last_release = motor.velocity
+		if _held != null: last_timing = _held.last_timing
 
 ## What is right under `p` (its body's RID), or none.
 func _under(p: Vector3) -> RID:

@@ -4,11 +4,12 @@ extends RefCounted
 ## loop:
 ##   1. the grand stair down from the henge terrace: a balustrade down each
 ##      cheek (slide it, flung off its foot east across the meadow);
-##   2. beside the aqueduct, the near island's north rim: two ropes hung
-##      from stone beams laid out over the aqueduct's east parapet, a cloth
-##      tag off each beam's end, across the 16 m gap to the far island: the
-##      second rope stands past a plain release's reach, so the twirl (or
-##      the sail) takes him to it;
+##   2. beside the aqueduct, out over the near island's north meadow and
+##      the 16 m gap: two ropes hung from stone beams laid out over the
+##      aqueduct's east parapet, a cloth tag off each beam's end, the first
+##      over the meadow (run into it or jump to it), the second over the
+##      gap past a plain release's reach, so the twirl (or the sail) takes
+##      him to it, and from it a release lands him on the far island;
 ##   3. back across the gap east of it on a drifting slab, a ferry out and
 ##      back;
 ##   4. off the near island's east rim, three bobbing slabs climbing out to
@@ -25,19 +26,25 @@ const Balustrade = preload("res://scripts/interactables/balustrade.gd")
 const Art = preload("res://studies/aqueduct_isle_art.gd")
 const StairClouds = preload("res://scripts/interactables/stair_clouds_foot_route.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
+const SwingRope = preload("res://scripts/interactables/swing_rope.gd")
 
 const TOP := Art.TOP
 ## The ropes: the anchor's x under the beam's outer end (the beam from the
-## deck out over the east face), their z across the gap (the near rim at
-## about -24.5, the far at -40.5), the anchor's height and the rope's
-## length (its end 1.8 m over the turf, so the first is jumped to from the
-## near island). Measured (tools/measure_rope_reach.gd), a 4.2 m rope's
-## plain release reaches 9.4 m, a twirl 13.6, the sail 22.3: the ropes
-## stand 12.2 m apart, past the plain release and inside the twirl's.
-const ROPE_X := 104.8
-const ROPE_ZS := [-23.8,-36.0]
-const ROPE_TOP := TOP+6.0
-const ROPE_LENGTH := 4.2
+## deck out over the east face, clear of the buttress at x 104.3), their z
+## along the aqueduct, the anchor's height and the rope's length (its knot
+## SwingRope.KNOT over the turf, at a standing walker's hands). Measured
+## (tools/measure_rope_reach.gd, round 3), a 5.6 m rope's well-timed plain
+## release reaches 19.0 m held by the knot, a twirl 24.4 (22.8 held 0.7 m
+## up, as a running jump takes it), the sail 44.9. So the first hangs over
+## the near island's meadow, 7.7 m in from the rim, run into or jumped to;
+## the second over the gap 21 m on, 2.8 m short of the far rim: past the
+## plain release, inside the twirl. A plain release from the first lands
+## at most about 18.8 m on, in the gap (5 m short of the far rim); from the
+## second it lands well up the far island.
+const ROPE_X := 106.3
+const ROPE_ZS := [-16.6,-37.6]
+const ROPE_LENGTH := SwingRope.LENGTH
+const ROPE_TOP := TOP+SwingRope.KNOT+ROPE_LENGTH
 ## The ferry: along z across the gap at x, there and back in PERIOD s.
 const FERRY := [Vector3(110.0,TOP+0.3,-27.0),Vector3(110.0,TOP+0.3,-40.8)]
 const FERRY_PERIOD := 11.0
@@ -46,7 +53,7 @@ const BOBS := [Vector3(129.6,TOP+0.3,3.4),Vector3(132.6,TOP+0.8,2.0),Vector3(135
 ## Where --foot-at= starts him: [feet, the way faced (x, z)].
 const SPOTS := {
 	"rail":[Vector3(77.8,TOP+4.48,-1.0),Vector2(1.0,0.0)],
-	"ropes":[Vector3(107.4,TOP,-14.0),Vector2(-0.26,-0.97)],
+	"ropes":[Vector3(ROPE_X,TOP,-6.6),Vector2(0.0,-1.0)],
 	"ferry":[Vector3(110.0,TOP,-43.5),Vector2(0.0,1.0)],
 	"slabs":[Vector3(124.0,TOP,4.0),Vector2(1.0,-0.2)],
 }
@@ -67,9 +74,9 @@ static func build(study: Node3D) -> Node3D:
 	var beams: Array = []
 	for i in range(ROPE_ZS.size()):
 		var z: float = ROPE_ZS[i]
-		beams.append({"name":"beam","at":Vector3(103.0,ROPE_TOP+0.5,z),"size":Vector3(4.8,0.5,0.6),"yaw":0.0,"kind":"lintel"})
+		beams.append({"name":"beam","at":Vector3(ROPE_X-2.75,ROPE_TOP+0.5,z),"size":Vector3(6.4,0.5,0.6),"yaw":0.0,"kind":"lintel"})
 		var r: Node3D = host.rope(Vector3(ROPE_X,ROPE_TOP,z),ROPE_LENGTH)
-		r.add_tag(Vector3(ROPE_X+0.45,ROPE_TOP,z),0.0,321+i)
+		r.add_tag(Vector3(ROPE_X+0.25,ROPE_TOP,z),0.0,321+i)
 	var beam_stones := Art.floating_stones(320,beams)
 	beam_stones.name = "RopeBeams"
 	host.add_child(beam_stones)

@@ -14,11 +14,15 @@ extends Node3D
 ## stick worked in time pumps both), across it steers its plane round
 ## (STEER), and he turns to face the stick (TURN). The swing is held under
 ## MOST from the plumb; it loses DAMP of its pace a second. Jump lets go
-## with the rope's velocity at his hands (capped at TOP) and POP more up: a
-## release on the upswing, near the top of the arc's pace, flies far; the
-## twirl, the wall run and the sail are fresh after it. Crouch drops off
-## (no pop). Let go, the same rope can't be caught for REGRAB s; another
-## can, so ropes chain.
+## with the rope's velocity at his hands, BOOST more along it as well as
+## the release is timed (`timing`: all of it rising BEST past the plumb,
+## none WINDOW either side), capped at TOP, and POP more up: let go well,
+## it is a launch (a 5.6 m rope's about 18 m/s, 19 m out, a running long
+## jump's 4.2 m four times over); let go early or late, about half that.
+## The twirl, the wall run and the sail are fresh after it. Crouch drops
+## off (no boost, no pop). Let go, the same rope can't be caught for
+## REGRAB s; another can, so ropes chain. On the ground he takes it only
+## running into it (RUN_IN): his hands meet its knot.
 ##
 ## Free, its end swings on as a pendulum and settles (and sways a little in
 ## the air), drawn as a faceted rope in the footbridges' rope tone
@@ -30,14 +34,31 @@ const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const PilotFigure = preload("res://scripts/pilot_figure.gd")
 const Footbridge = preload("res://scripts/footbridge.gd")
 
+## The placed ropes' length (m) and their knot's height over the ground
+## they hang over (m): at a standing walker's hands (PilotMotor HANG_DROP
+## 0.825), so a run straight into one takes it, and a jump's hands, rising
+## to 1.6 m, meet it anywhere on its lower part. The yard's F4 `t_length`
+## re-lays its ropes, the knot kept there.
+const LENGTH := 5.6
+const KNOT := 0.9
 const GRAVITY := 20.0
 const PUMP := 3.5
 const STEER := 3.0
 const TURN := 2.5
 const MOST := 1.35
 const DAMP := 0.08
-const TOP := 12.0
+const TOP := 24.0
 const POP := 1.5
+## The release's boost (m/s, along the swing) for a perfect timing: let go
+## rising, the rope BEST rad past the plumb, it is all of it; WINDOW rad
+## either side of that, none (falling off as the square). Let go falling,
+## or at the bottom, or crouched off, no boost.
+const BOOST := 6.0
+const BEST := 0.75
+const WINDOW := 0.5
+## Run into on the ground at RUN_IN m/s or more (toward it), he takes it
+## too: its knot hangs at his hands.
+const RUN_IN := 3.0
 const CATCH := 0.3
 const CATCH_BODY := 0.32
 ## The chest's height over the feet (m), for running into it.
@@ -53,6 +74,7 @@ const RADIUS := 0.06
 const TAG := Vector2(0.6,1.8)
 const TAG_TONE := Color("b04a2c")
 
+static var t_length := LENGTH
 static var t_gravity := GRAVITY
 static var t_pump := PUMP
 static var t_steer := STEER
@@ -60,6 +82,9 @@ static var t_most := MOST
 static var t_damp := DAMP
 static var t_top := TOP
 static var t_pop := POP
+static var t_boost := BOOST
+static var t_best := BEST
+static var t_window := WINDOW
 static var t_catch := CATCH
 static var t_catch_body := CATCH_BODY
 
@@ -75,6 +100,8 @@ var facing := 0.0
 ## The figure's tilt as last posed (the rope's frame) for letting go.
 var tilt := Basis.IDENTITY
 var _cool := 0.0
+## The last release's timing (0 to 1, `timing`), for F1.
+var last_timing := 0.0
 var _crouch_was := true
 var _time := 0.0
 var _upper: MeshInstance3D
@@ -138,13 +165,19 @@ func add_tag(at: Vector3, yaw := 0.0, seed_value := 0) -> void:
 	add_child(tag)
 	_tags.append([tag,rest])
 
-## Whether he catches it now: in the air, his hands within CATCH of its
-## lower part (from GRIP_HIGH of its length down), or his chest within
-## CATCH_BODY of it (he runs into it). Nothing pulls him in: taken hold of,
-## the rope comes to his hands where they are, and he rides it.
+## Whether he catches it now: his hands within CATCH of its lower part
+## (from GRIP_HIGH of its length down), or his chest within CATCH_BODY of
+## it; in the air, or on the ground running into it (at RUN_IN or more,
+## toward it: the knot hangs at his hands). Nothing pulls him in: taken
+## hold of, the rope comes to his hands where they are, and he rides it.
 func try_catch(walker: PilotMotor) -> bool:
-	if _cool > 0.0 or walker.rider != null or walker.grounded or walker.on_ledge() or walker.swimming or walker.move == "tumble": return false
+	if _cool > 0.0 or walker.rider != null or walker.on_ledge() or walker.swimming or walker.move == "tumble": return false
 	var hand := hand_of(walker)
+	if walker.grounded:
+		# On the ground only run into: at a run, toward it.
+		var flat := Vector2(walker.velocity.x,walker.velocity.z)
+		var to := Vector2(hands.x-walker.feet.x,hands.z-walker.feet.z)
+		if flat.length() < RUN_IN or flat.dot(to) <= 0.0: return false
 	var low := anchor+(hands-anchor).normalized()*length*GRIP_HIGH
 	var q := Geometry3D.get_closest_point_to_segment(hand,low,hands)
 	var met := hand.distance_to(q) <= t_catch
@@ -237,9 +270,22 @@ func _swing(delta: float, push: Vector3, damping: float) -> void:
 			if velocity.dot(outward) > 0.0: velocity -= outward*velocity.dot(outward)
 		velocity -= u*velocity.dot(u)
 
-## Let go: off the rope with its pace at his hands (and the pop, `pop`).
+## How well a release now is timed, 0 to 1: rising, the rope t_best past
+## the plumb is 1, falling off as the square to 0 t_window either side;
+## falling (or near still) 0.
+func timing() -> float:
+	if velocity.y <= 0.05 or velocity.length() < 1.0: return 0.0
+	var a := (hands-anchor).angle_to(Vector3.DOWN)
+	var x := (a-t_best)/maxf(t_window,0.01)
+	return clampf(1.0-x*x,0.0,1.0)
+
+## Let go: off the rope with its pace at his hands; jumped off (`pop`), the
+## boost along the swing as well timed (`timing`), and the pop up.
 func _let_go(walker: PilotMotor, pop: bool) -> void:
-	var v := velocity.limit_length(t_top)
+	var v := velocity
+	last_timing = timing() if pop else 0.0
+	if v.length() > 0.5: v += v.normalized()*t_boost*last_timing
+	v = v.limit_length(t_top)
 	if pop: v.y = maxf(v.y,0.0)+t_pop
 	_cool = REGRAB
 	walker.toss(v)

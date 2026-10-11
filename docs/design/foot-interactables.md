@@ -23,10 +23,10 @@ On-foot greyboxes.
 Test (headless): `godot --headless --path . --script tests/test_foot_interactables.gd`.
 Stills (rendered): `godot --path . --script tools/capture_interactables.gd -- --no-title [dir]`.
 Spawn still (rendered): `godot --path . --script tools/capture_foot_spawn.gd -- --no-title --foot-at=ropes [dir]`.
-Rope reach (headless): `godot --headless --path . --script tools/measure_rope_reach.gd -- --lengths=6.6,4.2`.
+Rope reach (headless): `godot --headless --path . --script tools/measure_rope_reach.gd -- --lengths=5.6,4.9 [--set=t_boost=6] [--curve]`.
 
-Round 2 changed the balustrade and the ropes; see "Round 2" at the end. Where the
-sections below disagree with it, round 2 wins.
+Round 2 changed the balustrade and the ropes, round 3 the ropes again; see "Round 2" and "Round 3" at the end. Where the
+sections below disagree with them, the later round wins.
 
 ## Controls
 
@@ -288,3 +288,133 @@ handed you to a rider. The user said: "I don't like how it snapped."
 - **The suite was not run.** These ran: the import check, headless loads of the game,
   the yard and the Stair to the Clouds (`--quit-after 300`), and the test (42 checks
   pass).
+
+## Round 3 (2026-10-11): a real fling, ropes you can reach
+
+The user played round 2 (`--foot-at=ropes`) and said: "Release doesn't fling you
+nearly far enough", and "Ropes are too high up, don't extend down enough to grab."
+They liked the ropes and want the second rope to need a twirl or the sail. Organic
+play still holds: no magnets, no pulling the body in. Where this section and earlier
+ones disagree, this one wins.
+
+### The fling: a timed release boost
+
+- **Boost.** Jump off a rope and he leaves with the rope's velocity at his hands plus
+  BOOST (6 m/s) along it, scaled by the timing (`SwingRope.timing()`, 0 to 1). The
+  timing is 1 rising with the rope BEST (0.75 rad, 43°) past the plumb. It falls off
+  as the square to 0 at WINDOW (0.5 rad, 29°) either side. Let go falling, at the
+  bottom or crouched off, and you get no boost. Then the cap (TOP, now 24, was 12)
+  and the pop (POP 1.5 up) are applied. So the skill is in the timing, and a
+  well-pumped swing still matters, since the boost adds to it.
+- **Longer ropes.** The ropes are 5.6 m long (`SwingRope.LENGTH`; the aqueduct's were
+  4.2), so they swing faster. GRAVITY, PUMP, MOST and DAMP are unchanged.
+- **Feel.** On a 5.6 m rope, a well-timed release leaves at about 18.6 m/s, 47° up,
+  from an 11.5 m/s swing. Released early (17°), it leaves at 14.9 m/s, only 23° up.
+  For comparison, a running long jump is 7.6 m/s and covers 4.3 m.
+- **F1** shows the timing you would get letting go now, and the timing of the last
+  release.
+
+### Reachable ropes
+
+- **Knot at the hands.** Every placed rope's knot hangs KNOT (0.9 m) over the ground
+  under it. A standing walker's hands are at 0.825 m (HANG_DROP), and a running
+  jump's hands reach 1.62 m at the top of its 0.8 m rise. So a jump's hands cross the
+  rope's lower part anywhere along their arc, and a running jump 1.6 m short of the
+  rope takes it about 0.7 m above the knot (held 4.9 m down). CATCH and CATCH_BODY
+  are unchanged (0.3 and 0.32).
+- **Run into it.** On the ground, `try_catch` now takes the rope too, but only at a
+  run (RUN_IN 3 m/s or more) and moving toward it, using the same hands and chest
+  tests. His hands meet the knot, which lifts the body about 8 cm. Walking past or
+  standing beside a rope doesn't take it, and neither does running past 0.55 m off it
+  (tested).
+
+### Measured reaches (round 3)
+
+Measured with `tools/measure_rope_reach.gd`, as in round 2: pumped to full swing, then
+let go on the forward rise. Figures are the furthest a like rope can stand and still be
+caught, in metres from the first rope's anchor. "lands" is where he comes down to the
+ground under the knot. "Early" means let go 17° past the plumb, and "late" 69°. The
+tool now measures in open sky, away from the yard's frames (round 2's numbers were
+right, but a higher arc can hit a lintel). Round 2's 4.2 m setting still measures 9.4,
+13.6 and 25.2.
+
+| rope (held at) | well-timed plain | early / late plain | twirl | sail |
+|---|---|---|---|---|
+| 5.6 m (knot) | **19.0** (lands 18.8) | 10.0 / 10.9 | 24.4 | 44.9 |
+| 4.9 m (running-jump catch) | 17.4 (lands 17.1) | 9.2 / 9.7 | 22.8 | 41.3 |
+| 4.5 m | 16.4 | 7.9 / 9.4 | 21.6 | 38.7 |
+| 4.2 m (round 2's length, new boost) | 15.6 | 8.1 / 8.9 | 20.7 | 37.0 |
+
+A well-timed plain release from the aqueduct's rope reaches 19.0 m, 2.0 times round
+2's 9.4. In the test, measured from where he let go to the deck's height, a well-timed
+release flies 13.7 m and an early one 7.1 m. A running long jump goes 4.3 m.
+
+### Spacing
+
+- **Aqueduct isle.** A 21 m spacing doesn't fit across the 16 m gap rim to rim, so
+  the first rope moved back onto the near island's north meadow. Both ropes are on
+  x 106.3 (ROPE_X; it was 104.8), clear of the buttress at x 104.3, z -6 to -12, and
+  4 m from the ferry. They hang from beams laid out over the aqueduct's east parapet
+  (now 6.4 m long), with the anchors at TOP+6.5. The first rope is at z -16.6, 7.7 m
+  in from the rim, so you run into it or jump to it. The second is at z -37.6, over
+  the gap 2.8 m short of the far rim. The ropes are 21 m apart, past the well-timed
+  plain release (19.0) and inside the twirl (22.8 when held from a running jump).
+  The test's plain release from the first rope falls into the gap at z -35.6, about
+  5 m short of the far rim. From the second rope, a release lands him well up the far
+  island (z -50 in the test). There is still no sail gap on the isle.
+- **Spawn.** `--foot-at=ropes` is at (106.3, TOP, -6.6), facing -z, 10 m back from
+  the first rope.
+- **Yard.** Station 3's ropes are the same 5.6 m with the knot 0.9 m over the deck.
+  The first is on the deck's edge at z -1.2 (its trilithon stands on the deck). The
+  second is at z -22.2, 21 m on, for the twirl. The third is at z -52.2, 30 m on, for
+  the sail: past the twirl (24.4), inside the sail (about 39 to 45). The far deck runs
+  from z -58 to -84 with ticks. The station's spawn is at z 6.5, 7.7 m back.
+
+### Tuning it yourself (yard F4)
+
+The F4 panel leads with the rope's length, pump, top (the release cap), boost, best and
+window, then pop, gravity, steer, most, damp, catch and catch_body. The length slider
+(`SwingRope.t_length`) re-lays station 3's ropes and trilithons at the new length, with
+the knot kept at 0.9 m. It takes effect when you're not hanging from a rope. The
+isle's ropes keep `SwingRope.LENGTH`. Print copies everything out as constants
+(`const LENGTH := …  # swing_rope`), and Defaults puts them back. The test drives the
+sliders and checks all of this.
+
+### Constants (round 3)
+
+- Swing rope: LENGTH 5.6, KNOT 0.9, TOP 24 (was 12), BOOST 6, BEST 0.75, WINDOW 0.5,
+  RUN_IN 3. New live values: `t_length`, `t_boost`, `t_best`, `t_window`. The others
+  are unchanged (GRAVITY 20, PUMP 3.5, POP 1.5, MOST 1.35, DAMP 0.08, CATCH 0.3,
+  CATCH_BODY 0.32).
+- Aqueduct route: ROPE_X 106.3, ROPE_ZS [-16.6, -37.6], ROPE_LENGTH = LENGTH,
+  ROPE_TOP = TOP+KNOT+LENGTH, spawn (106.3, TOP, -6.6).
+- Yard: ROPE_ZS [-1.2, -22.2, -52.2], with `lay_ropes()` and `FootPieces.remove_rope`.
+- Reach tool: `--set=t_boost=…,…` overrides the live values, `--curve` prints every
+  release angle, and it reports where he lands as well as where he catches.
+
+### Still weak or unverified (round 3)
+
+- **Hand-feel is unplayed.** Nobody has tried the boost window with a pad. A 29°
+  window either side may feel too strict or too loose. Hold Jump's press against the
+  F1 timing readout to learn it. There is no visual or sound cue for a good release.
+- **The twirl gap is narrow.** On the isle the margins are about 2 m: plain 19.0
+  against a 21 m spacing, and the twirl at 22.8 held from a jump. A rope caught
+  higher, say a twirl arriving at a second rope 3 m down it, swings slower and flings
+  less far: about 16 m/s from rope 2 in the test.
+- **The sideways swing.** If you catch a rope a little off its line, the pump grows
+  the sideways swing too, because it pumps along the velocity. The test's bot steers
+  that out with the stick, as a player would. Without steering, a sail from the
+  yard's second rope drifted 3.5 m sideways and missed the third. A pump along the
+  stick only might be kinder.
+- **Feet at the bottom of the swing.** With the knot at hand height, a rope held by
+  its knot swings his feet within about 8 cm of the turf at the plumb, over the meadow
+  and the yard's deck. Rope swings don't collide, so on uneven turf his feet could
+  dip into the grass.
+- **Rendered still.** `capture_foot_spawn` shows the first rope hanging nearly to the
+  turf beside the aqueduct, with its beam and the second rope over the gap beyond
+  (`/tmp/foot_spawn_r3/ropes_far.png`). From the spawn camera itself, the rope is a
+  thin dark line against the sky above the aqueduct's end, and the tag is hard to
+  make out.
+- **What ran.** The import check, headless loads of the game (`--foot-at=ropes`) and
+  the yard (`--quit-after 300`), and the test (all checks pass, including the new
+  F4, run-in, jump-catch, timing and spacing checks). The full suite was not run.

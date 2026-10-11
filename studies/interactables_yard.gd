@@ -8,10 +8,12 @@ extends "res://studies/character_study.gd"
 ##      him and spring back, out to a far deck
 ##   2  drifting slabs: one sliding across the way, one ferrying out and
 ##      back, a long one turning, one going round a ring
-##   3  swing ropes: three ropes on trilithons over a gap (jump in, the stick
-##      pumps, Space lets go with the swing's pace): the second past a plain
-##      release's reach (twirl to it), the third past the twirl's (sail to
-##      it), a far deck with metre ticks past it
+##   3  swing ropes: three ropes on trilithons, the first on the deck's
+##      edge (run into it or jump to it), the others over a gap (the stick
+##      pumps, Space lets go with the swing's pace, boosted as well as it is
+##      timed): the second past a plain release's reach (twirl to it), the
+##      third past the twirl's (sail to it), a far deck with metre ticks
+##      past it
 ##   4  balustrade: the kit's grand stair down from a high deck, a banister
 ##      down each cheek, only stone: hop onto one, crouch and surf it down,
 ##      the stick across carving to hold the coping, off its foot along the
@@ -33,11 +35,18 @@ const YARD_START := Vector3(0.0,0.0,4.0)
 const YARD_LOST := -4.0
 ## The grand stair (station 4): its frame, foot toward +z.
 const STAIR := Transform3D(Basis.IDENTITY,Vector3(24.0,0.0,-8.2))
-## The ropes: anchors and length; the trilithons' height.
-## Apart past a plain release's reach (13.0 m on these), then past the
-## twirl's (17.5 m), within the sail's (33.7 m): tools/measure_rope_reach.gd.
-const ROPES := [Vector3(6.0,7.0,-3.8),Vector3(6.0,7.0,-19.0),Vector3(6.0,7.0,-43.0)]
-const ROPE_LENGTH := 6.6
+## The ropes (the aqueduct isle's: SwingRope LENGTH, the knot KNOT over
+## the deck; the anchors over them, the trilithons as tall), along z: the
+## first 1.2 m in from the deck's edge, the second 21 m on: past a
+## well-timed plain release's reach (19.0 m held by the knot), within the
+## twirl's (22.8 m held 0.7 m up, as a running jump takes it); the third
+## 30 m on, past the twirl's (24.4 m), within the sail's (38.7 m held a
+## metre up): tools/measure_rope_reach.gd. The far deck from 6 m past the
+## third (a plain release lands about 17 to 19 m on). The F4 panel's rope length re-lays them, the knot kept.
+const ROPE_X := 6.0
+const ROPE_ZS := [-1.2,-22.2,-52.2]
+## The gap's floor the trilithons over it stand on.
+const ROPE_FLOOR := -11.0
 const YARD := [
 	{"key":1,"name":"Bobbing slabs","spawn":Vector3(-30.0,0.0,1.0),"face":Vector2(0.0,-1.0),"sign":Vector3(-30.0,3.0,3.0),"parts":[
 		["box",Rect2(-34.0,-24.0,8.0,4.0),-1.0,0.5,"pad"],
@@ -47,10 +56,11 @@ const YARD := [
 		["box",Rect2(-16.0,-38.0,8.0,4.0),-1.0,1.2,"pad"],
 		["label",Vector3(-12.0,2.0,-35.0),"far deck"],
 	]},
-	{"key":3,"name":"Swing ropes","spawn":Vector3(6.0,0.0,1.0),"face":Vector2(0.0,-1.0),"sign":Vector3(6.0,3.0,3.0),"parts":[
-		["box",Rect2(1.0,-64.0,10.0,16.0),-1.0,0.0,"pad"],
-		["ticks",Vector2(10.5,-48.0),Vector2(10.5,-64.0),1.0,2],
-		["box",Rect2(0.0,-21.0,12.0,1.0),-12.0,-11.0,"dark"],
+	{"key":3,"name":"Swing ropes","spawn":Vector3(6.0,0.0,6.5),"face":Vector2(0.0,-1.0),"sign":Vector3(13.0,3.0,3.0),"parts":[
+		["box",Rect2(1.0,-84.0,10.0,26.0),-1.0,0.0,"pad"],
+		["ticks",Vector2(10.5,-58.0),Vector2(10.5,-84.0),1.0,2],
+		["box",Rect2(0.0,-22.7,12.0,1.0),-12.0,-11.0,"dark"],
+		["box",Rect2(0.0,-52.7,12.0,1.0),-12.0,-11.0,"dark"],
 	]},
 	{"key":4,"name":"Balustrade","spawn":Vector3(24.0,4.48,-16.5),"face":Vector2(0.0,1.0),"sign":Vector3(24.0,7.5,-19.0),"parts":[
 		["box",Rect2(19.0,-20.5,10.0,6.2),-1.0,4.48,"grey"],
@@ -61,6 +71,9 @@ const YARD := [
 ]
 
 var pieces: Node3D
+## The station's ropes as laid, and the length they were laid at.
+var yard_ropes: Array = []
+var _laid_length := 0.0
 var _feel_panel: PanelContainer
 var _feel_box: VBoxContainer
 var _start_at := ""
@@ -70,9 +83,10 @@ const PIECE_TUNABLE := [
 	[BobSlab,"t_sink",0.0,0.8],[BobSlab,"t_tilt",0.0,0.4],[BobSlab,"t_give",0.0,0.2],[BobSlab,"t_hz",0.3,4.0],
 	[BobSlab,"t_damp",0.05,1.5],[BobSlab,"t_bob",0.0,0.6],[BobSlab,"t_bob_time",1.0,12.0],
 	[DriftSlab,"t_speed",0.0,3.0],[DriftSlab,"t_sink",0.0,0.4],[DriftSlab,"t_tilt",0.0,0.2],
-	[SwingRope,"t_gravity",5.0,40.0],[SwingRope,"t_pump",0.0,25.0],[SwingRope,"t_steer",0.0,10.0],[SwingRope,"t_most",0.5,1.55],
-	[SwingRope,"t_damp",0.0,1.0],[SwingRope,"t_top",4.0,24.0],[SwingRope,"t_pop",0.0,8.0],[SwingRope,"t_catch",0.1,0.8],
-	[SwingRope,"t_catch_body",0.1,0.8],
+	[SwingRope,"t_length",3.0,12.0],[SwingRope,"t_pump",0.0,25.0],[SwingRope,"t_top",4.0,40.0],[SwingRope,"t_boost",0.0,16.0],
+	[SwingRope,"t_best",0.1,1.3],[SwingRope,"t_window",0.05,1.2],[SwingRope,"t_pop",0.0,8.0],
+	[SwingRope,"t_gravity",5.0,40.0],[SwingRope,"t_steer",0.0,10.0],[SwingRope,"t_most",0.5,1.55],
+	[SwingRope,"t_damp",0.0,1.0],[SwingRope,"t_catch",0.1,0.8],[SwingRope,"t_catch_body",0.1,0.8],
 ]
 
 func _ready() -> void:
@@ -114,15 +128,35 @@ func _build_pieces() -> void:
 	var ring := PackedVector3Array()
 	for k in range(12): ring.append(Vector3(-12.0,1.2,-29.0)+Vector3(cos(TAU*k/12.0),0.0,sin(TAU*k/12.0))*2.6)
 	pieces.drift_slab(ring,12.0,true,0.0,Vector3(2.2,0.6,2.2),0.0,53)
-	# 3: ropes on trilithons over the gap.
-	for i in range(ROPES.size()):
-		var a: Vector3 = ROPES[i]
-		pieces.rope_frame(Vector3(a.x,-11.0,a.z),Vector2(1.0,0.0),7.0,a.y+11.0,ROPE_LENGTH,60+i)
+	# 3: ropes on trilithons, the first on the deck, the others over the gap.
+	lay_ropes()
 	# 4: the grand stair down from the high deck, a banister each side.
 	var stair := RuinKit.grand_stair(70,0.25)
 	stair.transform = STAIR
 	add_child(stair)
 	for side: float in [-1.0,1.0]: pieces.balustrade(Balustrade.grand_stair_rail(STAIR,side),71+int(side),0.3,Balustrade.grand_stair_floor(STAIR,side))
+
+## Station 3's ropes laid (again) at SwingRope `t_length`, the knot KNOT
+## over the deck, each trilithon as tall as its rope wants.
+func lay_ropes() -> void:
+	for r: Node3D in yard_ropes: pieces.remove_rope(r)
+	yard_ropes.clear()
+	_laid_length = SwingRope.t_length
+	var top := SwingRope.KNOT+_laid_length
+	for i in range(ROPE_ZS.size()):
+		var z: float = ROPE_ZS[i]
+		var floor_y := 0.0 if i == 0 else ROPE_FLOOR
+		yard_ropes.append(pieces.rope_frame(Vector3(ROPE_X,floor_y,z),Vector2(1.0,0.0),7.0,top-floor_y,_laid_length,60+i))
+
+## The ropes' anchors, as laid.
+func rope_anchors() -> Array:
+	return yard_ropes.map(func(r: Node3D) -> Vector3: return r.anchor)
+
+## A frame: the ropes re-laid first if F4's length moved (not while he
+## hangs from one).
+func tick(delta: float) -> void:
+	if pieces != null and not is_equal_approx(SwingRope.t_length,_laid_length) and motor.rider == null: lay_ropes()
+	super.tick(delta)
 
 # --- Tuning (F4) and numbers (F1) --------------------------------------------------
 
@@ -237,7 +271,7 @@ static func pieces_lines(host: Node3D) -> PackedStringArray:
 	var riding: Node3D = host.riding()
 	if riding is SwingRope:
 		var r: Node3D = riding
-		lines.append("rope      held at %.1f m · %.0f° off plumb · %.2f m/s" % [r.grip,rad_to_deg((r.hands-r.anchor).angle_to(Vector3.DOWN)),r.velocity.length()])
+		lines.append("rope      held at %.1f m · %.0f° off plumb · %.2f m/s · let go now: timing %.2f" % [r.grip,rad_to_deg((r.hands-r.anchor).angle_to(Vector3.DOWN)),r.velocity.length(),r.timing()])
 	elif host.on_rail != null:
 		var b: Node3D = host.on_rail
 		var near: Array = b.nearest(host.motor.feet)
@@ -246,6 +280,6 @@ static func pieces_lines(host: Node3D) -> PackedStringArray:
 		lines.append("slab      on · sag %+.2f m · tilt %.1f°" % [host.on.sag,rad_to_deg(host.on.lean.length())])
 	lines.append("pieces    slab landings %d · rope catches %d · times on a rail %d" % [host.counts.slab,host.counts.swing,host.counts.rail])
 	var v: Vector3 = host.last_release
-	if v != Vector3.ZERO: lines.append("last rope release %.2f m/s across, %.2f up" % [Vector2(v.x,v.z).length(),v.y])
+	if v != Vector3.ZERO: lines.append("last rope release %.2f m/s across, %.2f up · timing %.2f" % [Vector2(v.x,v.z).length(),v.y,host.last_timing])
 	if host.last_rail_top > 0.0: lines.append("last rail top %.2f m/s" % host.last_rail_top)
 	return lines
