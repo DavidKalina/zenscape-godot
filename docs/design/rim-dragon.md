@@ -10,9 +10,175 @@ Round 5 adds the edge spring: its weight sags the isle, and the snap back
 flings the pilot. Round 6 keeps the head out of the isle, rests the chin on
 the turf, Odyssey-style, and lets the pilot surf down the tipped isle.
 Round 7 moves it onto the ruin motif isles that replaced the old far isles.
+Round 8 makes its breath the game's own breeze ribbons, smooths the head and
+sends the ride round the other isles.
 
 Branch `study/rim-dragon`. This is a demo round: no tests, no bot sweeps, no
 perf pass.
+
+## Round 8: ribbon breath, a heavy head, the ride goes round
+
+The user's notes on round 7 (`--dragon-ride` on the cloister tarn): the head
+is super janky; it keeps looping over the same island; the air it blows
+goes through the island instead of sweeping off the top. Should it use the
+eddies we have?
+
+### Play
+
+- `./run-rim-dragon.command --dragon-ride`: it grips your isle (the
+  cloister tarn), blows once, lets go (and flings you), then flies off to
+  grip another motif isle for 16 s (nearest first, the others in turn,
+  gripped on its flank as seen from your isle), then comes back to yours.
+  A cycle is about 70 s.
+- `--dragon-ride-repeat`: round 5's instant swoop back to the same rim.
+- Normal mode goes to the isle left longest since its last attack. An isle
+  in the camera's view gets a minute's head start. A headless run with
+  `--dragon-attack-every=12 --dragon-cling=12` went bell spires, colonnade
+  spine, cloister tarn, sundered gorge.
+- `--dragon-cling=<s>` sets how long it holds on outside the ride (checks).
+
+### The breath (scripts/dragon_breath.gd, scripts/dragon_gale.gd)
+
+- **The game's breeze ribbons.** `DragonBreath` extends
+  scripts/breeze_ribbons.gd. It is a dedicated instance owned by the
+  gale, not a front fed to the isle's own ribbons (those live round the
+  aqueduct isle, 400 m off, with 8 slots). It reuses the class's flow,
+  look-ahead ground probe, eddies, sweeps, tail and stroke shader. The one
+  change to the shared class is that `capacity` is a var.
+- **Born in the mouth.** Through the blow, 9 ribbons a second (at full
+  envelope) leave the jaw's tip, each on its own way within ±0.26 rad of
+  the head's aim, at 19 to 26 m/s. They ride 1.4 to 3.6 m over the floor,
+  1.5 to 3 m wide, with 1.2 to 1.8 s tails. That makes strokes 25 to 45 m
+  long.
+- **The floor is the posed isle.** `gale.air_floor(p)` is the isle's
+  shape (dragon_isle_shape.gd, sampled once at rest) seen through the
+  isle node's current transform. It is the tipped, sagged, trembling isle,
+  solved for the world vertical in three steps. It reads `top_at`: the top
+  of anything solid (turf, ruins, bells, trees, rock, water), spread a
+  cell either way so a thin wall reads from both sides. The breeze's
+  look-ahead (to 1.2 s, about 25 m) lifts a ribbon before a wall. A hard
+  floor keeps every new point at least 0.9 m above it.
+- **Eddies.** Where the floor under a ribbon falls more than 1.8 m below
+  the highest it has just ridden over (behind a wall or ruin), it curls in
+  the lee. Behind a tall wall it rolls down into the hollow; behind a low
+  one it swirls flat. The breeze's own random eddies are kept but
+  tightened to 0.75 to 1.15 s a turn. At 20 m/s the breeze's 3 s turn
+  would make a loop 15 m across.
+- **Sweeps off the far rim.** Half the ribbons take the breeze's sweep:
+  they dive to skim the turf at 1.1 to 1.7 m (the stroke is wide), with
+  the skim timed so the lift-off starts at the far rim (`_to_rim`). Past
+  the rim, every ribbon's remembered floor sinks at 3 to 7 m/s, so it
+  spills down off the edge and out over the cloud sea. It dies 110 m past
+  the main land or after 7.5 s.
+- **Bolder far off.** The stroke shader is the breeze's, rebuilt at load
+  (`_far_shader`) with fog off and the width scaled up with distance (x1
+  at 90 m, up to x3). At 390 m from the aqueduct isle it reads as white
+  strokes pouring over the isle and curling up off its far side. Before
+  this the fog hid it entirely.
+- **Plants.** It publishes no `zs_ribbon_*` heads: those 8 slots belong to
+  the isle breeze (kit_life's ribbons) and would be overwritten. The
+  gale's `zs_blow_*` lanes still thrash the plants along the blast. The
+  inhale still uses round 4's streaks drawn into the mouth.
+
+### The head (scripts/sky_dragon.gd)
+
+Measured as the snout's speed and its change of speed against the body,
+now in the `--dragon-log` line. Round 7 panting showed 40 to 130 m/s
+spikes and jerks of 2,000 to 8,000 m/s², from one-frame pops. Now the
+cloister tarn runs at 2 to 20 m/s and under about 400 m/s². Only the slam
+reaches about 1,300 m/s² (it is an impact).
+
+- **Root cause: the body didn't tip with the isle.** The tipped turf
+  (17 to 23°) rose into the pose's head, so it had to be lifted by up to
+  11 m every blow. The clinging body now takes the isle's rotation
+  (`BODY_TIP` 1.0): dragon and isle tip as one, and the pose's sink
+  drops to about 5 m.
+- **The isle from its shape, not rays.** `_floor_gap` measures each probe
+  against the shape (turf, plus `solid_at`, the unspread solid tops,
+  within 5 m over the head) in the isle's posed frame. It is a smooth
+  field rather than collider edges. The chin rest uses it too.
+- **Clearance is a goal.** Each frame, a Newton solve from no lift finds
+  the smallest neck lift and nod that clear the deepest probes by 0.25 m.
+  The applied lift and nod spring to it (critically damped, 12/s) at a
+  limited rate (1.2 and 1.8 rad/s). What's left in, the body eases up out
+  of (a 6/s spring, at most 6 m). The one-frame body bump is gone.
+- **A heavy neck.** Each neck bone and the head may turn at most 1.6 rad/s
+  against the body, and must speed up and brake within 7 rad/s². That
+  removed the last pops.
+- **Other pops fixed:**
+  - The chest swell is eased. It switched size between panting and
+    breathing and at the let-go, and it carries the neck: a 1 to 1.5 m
+    head pop.
+  - The heave's phase now carries on through a change of pace.
+  - The rest's lift and nod are sprung. The solve jumped as the head came
+    down in the recover.
+  - The body's turn is eased toward its pose (10/s), and toward the
+    flight pose over the let-go.
+  - The slam blends over 0.75 s (it was 0.3).
+  - The neck is left out of the snapshot blends, so its clearance isn't
+    laid on twice.
+  - The blow's buzz is quieter and the thrust is softer (rear to -0.5,
+    from -0.8).
+- Residual sink on the cloister tarn: 0 to 0.5 m panting, about 1 m for a
+  moment as the blow thrusts, 1 to 2 m as the isle snaps up under the
+  leaving head.
+
+### The launch (round 7's missing "flings" line)
+
+In headless runs on the cloister tarn and the bell spires it fires every
+time the pilot stands on the isle (9 to 29 m/s). The likely cause of the
+user's run without one: `stands_on` only knew the main land's turf. A
+pilot on a ruin's floor or wall top, on a satellite, or hanging from a
+lip or ledge (round 7's auto-surf can end in a hang 13 m from the rim) was
+neither carried nor launched. He hung in the air while the isle moved.
+`stands_on` now also accepts anything solid of the isle under him (its
+`top_at`), up to 2.6 m below its top for a hang. So he is carried while he
+hangs and flung on the snap. The log line now prints his hold and whether
+he counts as on the held isle.
+
+### Captures (local, gitignored, docs/design/rim-dragon/)
+
+- `r8_breath_top.png`: high over the cloister tarn, mid-blow. Ribbons pour
+  out of the mouth across the tipped isle, rise over the cloister walls,
+  and run on over the far satellite and off the rim. Leaves are flung
+  along.
+- `r8_breath_side.png`: from the side, the ribbons over the tipped turf
+  and the far satellite's arch, out over the cloud sea.
+- `r8_breath_from_aqueduct.png`: from the aqueduct isle's turf (V look),
+  390 m off. White ribbons pour over the isle and curl up off its far
+  side.
+
+Commands: `--dragon-ride --dragon-watch=orbit --dragon-orbit=60
+--dragon-orbit-up=40 --dragon-orbit-far=75 --capture-wait=9.5
+--capture-seq=5,0.6` (top); `--dragon-orbit=100 --dragon-orbit-up=45
+--dragon-orbit-far=120 --capture-wait=9 --capture-seq=6,0.7` (side);
+`--dragon --dragon-attack --dragon-target=cloister_tarn --no-serpent
+--dragon-watch=look --capture-wait=19.5 --capture-seq=5,0.6` (aqueduct).
+
+### Rough
+
+- **Bell spires.** Every way round it is crowded with bell frames (the
+  grip scores 8 tall solids where the head works, even with the new
+  penalty). The head sits up to 5 m into a bell frame through much of
+  the hold. It needs its own grip or a way for the head to rest over the
+  frames.
+- The shape grid's margin grew to 14 m, which moved the cloister tarn's
+  picked grip from (95, 31, 370) to (39, 32, 371). The ride start moved
+  with it.
+- Lee curls are frequent on the cloister (most ribbons take one). That
+  reads well in the top capture but may be busy close up.
+- The ribbon wake doesn't bow the plants (the slots are the isle
+  breeze's). The zs_blow lanes still do.
+- From the aqueduct isle the strokes are fog-free, so they read a little
+  brighter than the hazy isle they cross.
+- The grab's first frame out of flight still shows one jerk (about
+  3,000 m/s²) when it starts from a let-go in `--dragon-ride-repeat`.
+- A tall beige column of cloud stands beside the cloister tarn in every
+  capture. It is not from the dragon.
+- Not played by hand: checked from headless logs (snout metric, sink,
+  launches, target order) and three captures. test_breeze_ribbons and
+  test_motif_sky pass headless. The import and the plain isle without
+  `--dragon` load with no errors.
 
 ## Round 7: the motif isles
 

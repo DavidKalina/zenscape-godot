@@ -5,8 +5,12 @@ extends Node3D
 ## off. One node, top level, world space; the dragon drives it.
 ##
 ##   streaks   round 1's wind streaks (scripts/rim_dragon.gd `_spawn`), a
-##             few times its size: drawn into the mouth on the inhale, poured
-##             out across the isle and on into the sky on the blow;
+##             few times its size: drawn into the mouth on the inhale;
+##   breath    round 8: the blow is the game's breeze ribbons
+##             (scripts/dragon_breath.gd), born in the mouth, pouring across
+##             the isle over its posed turf and ruins (`air_floor`), curling
+##             in their lee, kicking up off the far rim and sinking out over
+##             the cloud sea;
 ##   lanes     the wind tool's own air for foliage (zs_blow_*, read by every
 ##             plant's shader through zs_blow_at; scripts/wind_gust.gd is its
 ##             owner elsewhere, the aqueduct isle has none), fired over and
@@ -30,6 +34,9 @@ const RUBBLE := 120
 const PUFFS := 220
 ## The wind tool's lanes (shaders/reference_wind.gdshaderinc zs_blow_at).
 const LANES := 4
+const DragonBreath = preload("res://scripts/dragon_breath.gd")
+## Ribbons out of the mouth a second at the blow's full strength.
+const BREATH_RATE := 9.0
 
 var isle: Node3D
 var isle_rest := Transform3D.IDENTITY
@@ -43,6 +50,12 @@ var isle_frame := Transform3D.IDENTITY
 var isle_radius := 16.0
 var sea_y := -108.0
 var _rng := RandomNumberGenerator.new()
+var breath: Node3D
+var _breath_acc := 0.0
+## The held isle's pose now: its shape's frame to the world and back
+## (`air_floor`), cached once a frame.
+var _floor_xf := Transform3D.IDENTITY
+var _floor_inv := Transform3D.IDENTITY
 
 var _streaks: MultiMeshInstance3D
 var _debris: MultiMeshInstance3D
@@ -136,6 +149,9 @@ func _ready() -> void:
 	for i in range(RUBBLE): _r.append({"life":0.0})
 	for i in range(PUFFS): _p.append({"life":0.0})
 	for i in range(LANES): _lanes.append({})
+	breath = DragonBreath.new()
+	add_child(breath)
+	breath.setup_breath(air_floor)
 
 func _exit_tree() -> void:
 	_settle_now()
@@ -270,6 +286,9 @@ func hold_isle(node: Node3D, shape: RefCounted, home: Vector3, radius: float, to
 	_scale = clampf(_rim_r/RIM_REF,1.0,2.5)
 	_hold_sag = 0.0
 	phase = "held"
+	_cache_floor()
+	# The breath's ribbons live over the isle and out past its far rim.
+	if breath != null: breath.set_bounds(Vector2(home.x,home.z),radius+110.0)
 
 ## Let go of the isle: it snaps back up past rest, recoils, wobbles and
 ## settles home.
@@ -369,14 +388,11 @@ func inhale(mouth: Vector3, way: Vector3, delta: float) -> void:
 func blow(mouth: Vector3, way: Vector3, strength: float, delta: float) -> void:
 	if strength <= 0.01: return
 	var side := Vector3(-way.z,0.0,way.x)
-	_s_acc += delta*150.0*strength
-	while _s_acc >= 1.0:
-		_s_acc -= 1.0
-		var dir := way.rotated(Vector3.UP,_rng.randf_range(-0.32,0.32))
-		dir.y = _rng.randf_range(-0.16,0.06)
-		dir = dir.normalized()
-		var from := mouth+dir*_rng.randf_range(3.0,10.0)+Vector3.UP*_rng.randf_range(-3.0,2.0)
-		_streak(from,dir*_rng.randf_range(50.0,72.0),_rng.randf_range(1.8,2.8),_rng.randf_range(16.0,34.0),_rng.randf_range(0.9,1.7))
+	# Round 8: the breath is ribbons out of the mouth (scripts/dragon_breath.gd).
+	_breath_acc += delta*BREATH_RATE*strength
+	while _breath_acc >= 1.0:
+		_breath_acc -= 1.0
+		breath.blast(mouth,way,strength)
 	# The trees: lane after lane along the blast.
 	_lane_acc += delta
 	if _lane_acc >= 0.32:
@@ -471,6 +487,8 @@ func advance(delta: float) -> void:
 	if delta <= 0.0: return
 	_clock += delta
 	_shake_isle(delta)
+	_cache_floor()
+	breath.advance(delta,1.0,0.0)
 	var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
 	var eye := cam.global_position if cam != null else Vector3.ZERO
 	_step_streaks(delta,eye)
@@ -548,14 +566,24 @@ func tip() -> float:
 	return sag*(1.0-SAG_DROP)/_rim_r
 
 ## Whether `p` (world) stands on the held isle's ground as it stood before
-## this frame's move (on its land, within `above` m over its turf).
+## this frame's move (on its land, within `above` m over its turf; or on or
+## hanging from anything of it: round 8).
 func stands_on(p: Vector3, above := 0.9) -> bool:
 	if isle == null or not is_instance_valid(isle) or isle_shape == null: return false
 	var local := isle_frame.affine_inverse()*(before.affine_inverse()*p)
 	var flat := Vector2(local.x,local.z)
-	if not isle_shape.on_land(flat): return false
-	var over := local.y-float(isle_shape.ground_at(flat))
-	return over > -0.8 and over < above
+	if isle_shape.on_land(flat):
+		var over := local.y-float(isle_shape.ground_at(flat))
+		if over > -0.8 and over < above: return true
+	# Round 8: or on anything of it (a ruin's floor or wall top, a
+	# satellite, a spire's top), or hanging from its lip or a ledge (the
+	# feet up to 2.6 m under the top there).
+	if isle_shape.has_method("top_at"):
+		var top: Variant = isle_shape.top_at(flat)
+		if top != null:
+			var over_top := local.y-float(top)
+			if over_top > -2.6 and over_top < above: return true
+	return false
 
 func _step_streaks(delta: float, eye: Vector3) -> void:
 	var mm := _streaks.multimesh
@@ -645,3 +673,29 @@ func busy() -> int:
 		for s: Dictionary in list:
 			if float(s.life) > 0.0: n += 1
 	return n
+
+# --- The breath's floor (round 8) ------------------------------------------------------
+
+func _cache_floor() -> void:
+	if isle != null and is_instance_valid(isle): _floor_xf = isle.global_transform*isle_frame
+	else: _floor_xf = Transform3D(Basis.IDENTITY,isle_home)
+	_floor_inv = _floor_xf.affine_inverse()
+
+## The held isle's floor under `p` (world x, z) as it is posed now: the top
+## of its turf and of anything standing on it (scripts/dragon_isle_shape.gd
+## `top_at`), tipped and sagged with it; null over open air. The breath's
+## ribbons ride it.
+func air_floor(p: Vector2) -> Variant:
+	if isle_shape == null or not isle_shape.has_method("top_at"): return null
+	var w := Vector3(p.x,_floor_xf.origin.y,p.y)
+	for k in range(3):
+		var l := _floor_inv*w
+		var h: Variant = isle_shape.top_at(Vector2(l.x,l.z))
+		if h == null: return null
+		w.y = (_floor_xf*Vector3(l.x,float(h),l.z)).y
+	return w.y
+
+## The held isle's local frame (its shape's), posed now, for the dragon's
+## head (scripts/sky_dragon.gd `_clear_turf`).
+func floor_xf() -> Transform3D:
+	return _floor_xf

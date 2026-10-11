@@ -128,6 +128,10 @@ const RIDE_OUT := 85.0
 const RIDE_UP := 18.0
 const RIDE_HOLD := 6.0
 const RIDE_PANT := Vector2(2.5,3.5)
+## Round 8: in the ride it goes off between grips on your isle to attack
+## another motif isle (held RIDE_AWAY s, two blasts or so), then comes
+## back. --dragon-ride-repeat keeps round 5's instant swoop back.
+const RIDE_AWAY := 16.0
 const DragonGale = preload("res://scripts/dragon_gale.gd")
 
 var camera: Camera3D
@@ -307,6 +311,15 @@ var _blend_len := 0.0
 ## --dragon-ride (round 5): the pilot on foot on the target isle, the
 ## dragon swooping in to grip it over and over.
 var ride := false
+var ride_repeat := false
+## The ride's own isle (index in `targets`), and the next other one.
+var _ride_home := -1
+var _ride_away := 0
+## When each target was last attacked (index -> clock): normal mode goes to
+## the one left longest.
+var _attacked_at := {}
+## --dragon-cling=<s>: how long it holds on outside the ride (checks).
+var _cling_for := -1.0
 var _ride_vy := 0.0
 var launched := 0
 ## On the rim (round 6): the head, jaw, neck and thumbs kept on or over the
@@ -341,6 +354,17 @@ var _thumb: Dictionary = {}
 var _rest_w := 0.0
 var _rest_lift := 0.0
 var _rest_nod := 0.0
+## Round 8: the rest's lift and nod as laid on, sprung toward the solve.
+var _rest_app := Vector2.ZERO
+var _rest_app_v := Vector2.ZERO
+var _rest_dt := 1.0/60.0
+var _heave_hz := 0.22
+var _heave_ph := 0.0
+## Round 8: the body's turn as shown, eased toward its pose each frame, so
+## a change of state (the slam, the let-go, the grab) never snaps it.
+var _body_q := Quaternion.IDENTITY
+var _body_q_on := false
+const BODY_EASE := 10.0
 var _neck_look := Vector2.ZERO
 var _neck_base: Array = []
 ## Logged: the chin's miss from flush (back, front; m) when last laid down.
@@ -352,6 +376,13 @@ var _auto_was := -1.0
 ## lift), and after it.
 var sunk_before := 0.0
 var sunk_after := 0.0
+## Logged (round 8): how the snout moves against the body while it holds on
+## (m/s and m/s², in the body's frame): the most it moved and the most it
+## jerked, since the last line. A heavy animal's head moves smoothly.
+var _tip_was := Vector3.INF
+var _tip_v := Vector3.ZERO
+var tip_speed := 0.0
+var tip_jerk := 0.0
 
 func _init() -> void:
 	name = "SkyDragon"
@@ -373,6 +404,10 @@ func setup(cam: Camera3D, args: PackedStringArray, sea: float, middle: Vector3, 
 		elif arg == "--dragon-pass": _pass_now = true
 		elif arg == "--dragon-attack": _attack_now = true
 		elif arg == "--dragon-ride": ride = true
+		elif arg.begins_with("--dragon-cling="): _cling_for = float(arg.get_slice("=",1))
+		elif arg == "--dragon-ride-repeat":
+			ride = true
+			ride_repeat = true
 		elif arg.begins_with("--dragon-attack-every="): _attack_every = float(arg.get_slice("=",1))
 		elif arg.begins_with("--dragon-target="):
 			var want := arg.get_slice("=",1)
@@ -490,15 +525,6 @@ func _turf_y(space: PhysicsDirectSpaceState3D, p: Vector3, mask: int) -> float:
 	_ray.from = p+Vector3.UP*30.0
 	_ray.to = p+Vector3.DOWN*40.0
 	_ray.collision_mask = mask
-	var hit := space.intersect_ray(_ray)
-	return (hit.position as Vector3).y if not hit.is_empty() else -INF
-
-## The top of anything solid (ruins, the turf) under `p`, from a few metres
-## over it, -INF over nothing.
-func _solid_y(space: PhysicsDirectSpaceState3D, p: Vector3) -> float:
-	_ray.from = p+Vector3.UP*5.0
-	_ray.to = p+Vector3.DOWN*40.0
-	_ray.collision_mask = SOLID_LAYER
 	var hit := space.intersect_ray(_ray)
 	return (hit.position as Vector3).y if not hit.is_empty() else -INF
 
@@ -658,6 +684,9 @@ func _ride_in() -> void:
 	route.clear()
 	_leg_kinds.clear()
 	_target_i = _choose_target()
+	_ride_home = _target_i
+	_last_target = _target_i
+	_attacked_at[_target_i] = _clock
 	grip = _plan_grip(targets[_target_i%targets.size()])
 	var out: Vector3 = grip.out
 	pos = (grip.root as Vector3)+out*RIDE_OUT+(grip.tangent as Vector3)*float(grip.side)*25.0+Vector3.UP*RIDE_UP
@@ -843,17 +872,21 @@ func _step(delta: float) -> void:
 		"leaving":
 			_leaving(delta)
 			_pose(delta)
+			_ease_off_rim()
 		_:
 			if _hold: _held(delta)
 			else: _fly(delta)
 			_pose(delta)
+	_ease_body(delta)
 	_blend(delta)
 	gale.advance(delta)
 	# Round 6: head, jaw and neck clear of the isle as it stands after its
 	# move this frame, the chin's collider and the gem on the jaw so posed.
-	if state in ["grabbing","clinging","leaving"]: _clear_turf()
+	if state in ["grabbing","clinging","leaving"]: _clear_turf(delta)
+	else: _relax_clear(delta)
 	_place_chin(state == "clinging")
 	_place_treasure(delta)
+	_measure_tip(delta)
 	_ride_isle(delta)
 	if _log:
 		_log_t += delta
@@ -862,11 +895,13 @@ func _step(delta: float) -> void:
 			if walker != null and on_foot:
 				var f: Vector3 = walker.get("feet")
 				var gem := treasure.global_position if treasure != null else Vector3.ZERO
-				print("sky dragon: pilot at (%.1f, %.1f, %.1f) grounded %s v.y %.1f, %s on %.0f°, %.1f m/s, the gem at (%.1f, %.1f, %.1f), the isle's rim sags %.1f m" % [f.x,f.y,f.z,str(walker.get("grounded")),(walker.get("velocity") as Vector3).y,str(walker.get("move")),walker.steepness(),walker.speed(),gem.x,gem.y,gem.z,gale.sag])
+				print("sky dragon: pilot at (%.1f, %.1f, %.1f) grounded %s v.y %.1f, %s%s on %.0f°, %.1f m/s, on the held isle %s, the gem at (%.1f, %.1f, %.1f), the isle's rim sags %.1f m; breath ribbons %d (%d lee curls)" % [f.x,f.y,f.z,str(walker.get("grounded")),(walker.get("velocity") as Vector3).y,str(walker.get("move")),(" hold "+str(walker.get("hold"))) if str(walker.get("hold")) != "" else "",walker.steepness(),walker.speed(),str(gale.stands_on(f,1.5)),gem.x,gem.y,gem.z,gale.sag,gale.breath.count(),gale.breath.lees])
 			if state in ["clinging","grabbing","leaving"]:
-				print("sky dragon: t %.1f %s %s, %.0f s to let go, at (%.0f, %.0f, %.0f), %.0f m from the isle's middle; head in the turf %.2f m unlifted, %.2f m lifted, resting %.2f (chin off flush %.2f, %.2f m), isle tipped %.0f°" % [_clock,state,breath,_cling_left,pos.x,pos.y,pos.z,Vector2(pos.x-home.x,pos.z-home.z).length(),-sunk_before,-sunk_after,_rest_w,chin_miss.x,chin_miss.y,rad_to_deg(gale.tip())])
+				print("sky dragon: t %.1f %s %s, %.0f s to let go, at (%.0f, %.0f, %.0f), %.0f m from the isle's middle; head in the turf %.2f m unlifted, %.2f m lifted, resting %.2f (chin off flush %.2f, %.2f m), isle tipped %.0f°; snout at most %.1f m/s, %.0f m/s²" % [_clock,state,breath,_cling_left,pos.x,pos.y,pos.z,Vector2(pos.x-home.x,pos.z-home.z).length(),-sunk_before,-sunk_after,_rest_w,chin_miss.x,chin_miss.y,rad_to_deg(gale.tip()),tip_speed,tip_jerk])
 				sunk_before = 0.0
 				sunk_after = 0.0
+				tip_speed = 0.0
+				tip_jerk = 0.0
 			else: print("sky dragon: t %.0f %s %s leg %s at (%.0f, %.0f, %.0f) %.1f m/s gamma %.2f roll %.2f flap %.2f, %.0f m from the isle's middle" % [_clock,state,mode,leg_kind,pos.x,pos.y,pos.z,speed,gamma,roll,flap_w,Vector2(pos.x-home.x,pos.z-home.z).length()])
 
 func _fly(delta: float) -> void:
@@ -1048,7 +1083,7 @@ func _pose(delta: float) -> void:
 	# The body arching a little with the beat; the chest breathing.
 	var breath := sin(_clock*TAU*0.18)
 	_turn("chest",[[Vector3.RIGHT,0.03*sin(TAU*phase+0.6)*flap_w]])
-	if _bone.has("chest"): skeleton.set_bone_pose_scale(_bone["chest"],Vector3(1.0+0.025*breath,1.0,1.0+0.03*breath))
+	_set_chest(Vector3(1.0+0.025*breath,1.0,1.0+0.03*breath),delta)
 	_turn("hips",[[Vector3.RIGHT,-0.03*sin(TAU*phase+0.6)*flap_w]])
 	# The neck leads into the turn (a spring, so it overshoots a little) and
 	# holds the head level against the pitch, bank and bob; it sways in a
@@ -1301,25 +1336,34 @@ func _choose_target() -> int:
 				top = _best_score
 				best = i
 		if best >= 0: return best
-	var fallback := -1
-	for step in range(n):
-		var i := (_target_i+step)%n
+	# Round 8: of those that stand, the pilot isn't on and it didn't just
+	# let go of, the one left longest since its last attack, with a minute's
+	# head start for one in the camera's view (within 75°, 900 m). So it
+	# favours what you can see but goes round all of them in time.
+	var best := -1
+	var top := -INF
+	for i in range(n):
 		var t: Dictionary = targets[i]
 		var rec := _record(t)
 		if find_isle.is_valid() and rec.is_empty(): continue
 		if rec.has("home"): t.home = rec.home
 		var at: Vector3 = t.home
-		if not ride and walker != null and on_foot:
+		if walker != null and on_foot:
 			var feet: Vector3 = walker.get("feet")
 			if Vector2(feet.x-at.x,feet.z-at.z).length() < float(t.radius)+12.0: continue
-		if i == _last_target and n > 1 and not ride: continue
-		if fallback < 0: fallback = i
+		if i == _last_target and n > 1: continue
+		var score := _clock-float(_attacked_at.get(i,-1000.0))
 		if camera != null and camera.is_inside_tree():
 			var c := camera.global_position
 			var to := at-c
 			var look := -camera.global_transform.basis.z
-			if to.length() < 900.0 and Vector2(look.x,look.z).normalized().dot(Vector2(to.x,to.z).normalized()) > cos(deg_to_rad(75.0)): return i
-	return fallback if fallback >= 0 else _target_i%n
+			if to.length() < 900.0 and Vector2(look.x,look.z).normalized().dot(Vector2(to.x,to.z).normalized()) > cos(deg_to_rad(75.0)): score += 60.0
+		# Ties (none attacked yet) go round from `_target_i`.
+		score -= 0.01*float((i-_target_i+n)%n)
+		if score > top:
+			top = score
+			best = i
+	return best if best >= 0 else _target_i%n
 
 ## The isle's move since the grip was planned (its shudder), as a transform
 ## to carry grip points along with it.
@@ -1400,6 +1444,10 @@ func _plan_grip(t: Dictionary, turn := 0.0) -> Dictionary:
 ## (the player's view), else the aqueduct isle's turf.
 func _eye_for(t: Dictionary) -> Vector3:
 	var at: Vector3 = t.home
+	# The ride (round 8): another isle is gripped on its flank as seen
+	# from yours, where the pilot stands watching.
+	if ride and not _is_ride_home(t):
+		return targets[_ride_home].home
 	if not ride and camera != null and camera.is_inside_tree():
 		var c := camera.global_position
 		if Vector2(c.x-at.x,c.z-at.z).length() > float(t.radius)+30.0: return c
@@ -1457,6 +1505,17 @@ func _best_turn(t: Dictionary, shape: RefCounted, view: Vector3) -> float:
 				if d <= 11.0 and shape.on_land(p): rise = maxf(rise,absf(at.y+float(shape.ground_at(p))-rim.y)-0.4*d)
 		score += 6.0*float(open)/float(count)
 		score -= minf(rise*0.5,4.0)
+		# Round 8: nothing tall where the head pants and sweeps (a bell's
+		# frame, a wall): it can't lie there, and lifted over it, it hangs.
+		var tall := 0
+		if shape.has_method("solid_at"):
+			for d: float in [4.0,7.0,10.0,13.0]:
+				for side: float in [-6.0,-3.0,0.0,3.0,6.0]:
+					var p: Vector2 = r_flat-Vector2(out.x,out.z)*d+Vector2(right.x,right.z)*side
+					var top: Variant = shape.solid_at(p)
+					var turf: Variant = shape.turf_at(p)
+					if top != null and float(top)-(float(turf) if turf != null else 0.0) > 2.0: tall += 1
+		score -= 0.5*float(tall)
 		# Nothing under its body beyond the rim.
 		for d: float in [4.0,10.0,18.0,28.0,40.0,55.0]:
 			for side: float in [-12.0,0.0,12.0]:
@@ -1471,12 +1530,12 @@ func _best_turn(t: Dictionary, shape: RefCounted, view: Vector3) -> float:
 		if r < 10.0: score -= (10.0-r)*0.4
 		if r > 34.0: score -= (r-34.0)*0.08
 		# Seen in profile from off the isle.
-		if not ride: score += 1.5*(1.0-absf(absf(turn)-1.5)/1.5)
+		if not ride or not _is_ride_home(t): score += 1.5*(1.0-absf(absf(turn)-1.5)/1.5)
 		if score > best_score:
 			best_score = score
 			best = turn
 			_best_score = score
-			_grip_note = "open %.0f%%, rise %.1f m, rim %.0f m out, score %.1f" % [100.0*float(open)/float(count),rise,r,score]
+			_grip_note = "open %.0f%%, rise %.1f m, %d tall, rim %.0f m out, score %.1f" % [100.0*float(open)/float(count),rise,tall,r,score]
 	return best
 
 ## Which flank (1 or -1) shows from `eye`: the one whose rim stands
@@ -1505,6 +1564,7 @@ func _clear_side(t: Dictionary, view: Vector3, eye: Vector3) -> float:
 func _add_attack() -> void:
 	_target_i = _choose_target()
 	_last_target = _target_i
+	_attacked_at[_target_i] = _clock
 	var t: Dictionary = targets[_target_i%targets.size()]
 	grip = _plan_grip(t)
 	var out: Vector3 = grip.out
@@ -1577,7 +1637,8 @@ func _grabbing(delta: float) -> void:
 ## the isle's birds burst out.
 func _slam() -> void:
 	state = "clinging"
-	_snapshot(0.3)
+	# Round 8: a longer blend onto the rim (0.3 s popped the head).
+	_snapshot(0.75)
 	_free = 0.0
 	_flare = 0.0
 	var t: Dictionary = grip.target
@@ -1592,7 +1653,8 @@ func _slam() -> void:
 	if flush_birds.is_valid(): flush_birds.call(t.home)
 	_c_settle_v = -7.0
 	_cling_t = 0.0
-	_cling_left = RIDE_HOLD if ride else _rng.randf_range(CLING_HOLD.x,CLING_HOLD.y)
+	_cling_left = _rng.randf_range(CLING_HOLD.x,CLING_HOLD.y) if _cling_for < 0.0 else _cling_for
+	if ride: _cling_left = RIDE_HOLD if (_target_i == _ride_home or ride_repeat) else RIDE_AWAY
 	_set_breath("settle",2.6)
 	_c_look_next = 0.0
 	_roar_t = -1.0
@@ -1684,13 +1746,13 @@ func _cling_pose(delta: float) -> void:
 			wing_open = lerpf(0.2,0.5,u)
 		"blow":
 			var env := blow_envelope()
-			jaw = lerpf(0.42,0.66,smoothstep(0.0,0.15,_breath_t))+0.02*sin(_clock*29.0)
-			rear_goal = lerpf(1.0,-0.8,smoothstep(0.0,0.3,_breath_t))
+			jaw = lerpf(0.42,0.66,smoothstep(0.0,0.3,_breath_t))+0.006*sin(_clock*17.0)
+			rear_goal = lerpf(1.0,-0.5,smoothstep(0.0,0.4,_breath_t))
 			wing_open = 0.5+0.25*env
 			yaw_goal = lerpf(_sweep_from,-_sweep_from,smoothstep(0.1,0.9,u))
 		"recover":
 			jaw = lerpf(0.5,0.28,u)
-			rear_goal = lerpf(-0.8,-0.15,smoothstep(0.0,1.0,u))
+			rear_goal = lerpf(-0.5,-0.15,smoothstep(0.0,1.0,u))
 			wing_open = lerpf(0.75,0.2,u)
 	# Looking round between blasts: a new glance every couple of seconds.
 	if breath in ["pant","settle","recover"]:
@@ -1707,13 +1769,19 @@ func _cling_pose(delta: float) -> void:
 	_c_settle += _c_settle_v*delta
 	_jaw_goal = jaw
 	# The body.
-	var heave := sin(_clock*TAU*(0.6 if pant > 0.0 else 0.22))
+	# The breathing's pace eases between panting and slow breaths, its
+	# phase carried on (a switch of pace never jumps the heave).
+	_heave_hz = move_toward(_heave_hz,0.6 if pant > 0.0 else 0.22,delta*0.5)
+	_heave_ph = fposmod(_heave_ph+delta*TAU*_heave_hz,TAU)
+	var heave := sin(_heave_ph)
 	var pitch := CLING_PITCH+_c_rear*0.1+0.02*heave
 	var basis := Basis(Vector3.UP,float(grip.yaw))*Basis(Vector3.RIGHT,pitch)*Basis(Vector3.BACK,0.03*sin(_clock*0.37))
 	pos = xf*(grip.root as Vector3)+Vector3.UP*_c_settle+out*(_c_rear*0.9)
-	global_transform = Transform3D(basis,pos)
+	# Round 8: it hangs on the tipping rim, tipped with the isle.
+	var tip_q := Quaternion.IDENTITY.slerp(xf.basis.get_rotation_quaternion(),BODY_TIP)
+	global_transform = Transform3D(Basis(tip_q)*basis,pos)
 	yaw = float(grip.yaw)
-	if _bone.has("chest"): skeleton.set_bone_pose_scale(_bone["chest"],Vector3(1.0+0.05*heave*(0.4+pant),1.0,1.0+0.06*heave*(0.4+pant)))
+	_set_chest(Vector3(1.0+0.05*heave*(0.4+pant),1.0,1.0+0.06*heave*(0.4+pant)),delta)
 	_turn("chest",[[Vector3.RIGHT,-0.04*_c_rear]])
 	_turn("hips",[[Vector3.RIGHT,0.1]])
 	_turn("spine.2",[[Vector3.RIGHT,-0.1]])
@@ -1743,13 +1811,14 @@ func _cling_pose(delta: float) -> void:
 	# blasts (round 6) the chin comes down to rest on the turf and the
 	# glances shrink to small turns of the head where it lies.
 	var rest_goal := 1.0 if breath == "pant" or (breath == "settle" and _breath_t > 1.2) or (breath == "recover" and u > 0.35) else 0.0
-	_rest_w = move_toward(_rest_w,rest_goal,delta*(1.6 if rest_goal > _rest_w else 3.2))
+	_rest_w = move_toward(_rest_w,rest_goal,delta*(1.4 if rest_goal > _rest_w else 1.8))
 	_neck_look = Vector2(_c_look.x*(1.0-0.75*_rest_w),_c_look.y*(1.0-_rest_w))
 	# Resting, it pants with the mouth a little open: the head bobbing up
 	# off the jaw that lies on the turf.
 	if breath == "pant": _jaw_goal = lerpf(_jaw_goal,0.15+0.07*sin(_clock*TAU*1.4),_rest_w)
 	_pose_neck()
 	_mouth(delta)
+	_rest_dt = delta
 	_rest_head()
 	_tail(delta)
 
@@ -1781,95 +1850,207 @@ func _bend_neck(lift: float, nod: float) -> void:
 		var axis := ((_rest_global[b] as Basis).inverse()*Vector3.RIGHT).normalized()
 		skeleton.set_bone_pose_rotation(_bone[b],(_neck_base[i] as Quaternion)*Quaternion(axis,angle))
 
+## Round 8: the head and neck kept out of the isle smoothly. The isle is
+## read from its shape (scripts/dragon_isle_shape.gd, sampled once at rest)
+## posed as it stands now (`_land`), not from raw rays each frame, so the
+## floor under a probe is a smooth field, not collider edges. What clears
+## the head is a goal (lift, nod) it springs toward, rate-limited, and what
+## the neck can't clear the body eases up out of: never a push or a bump in
+## one frame.
+const CLEAR_GAP := 0.25
+const CLEAR_W := 12.0
+const CLEAR_RATE := Vector2(1.2,1.8)
+const BODY_W := 6.0
+## The most the body is eased up out of the isle (m).
+const BODY_MOST := 6.0
+## The most each neck bone and the head may turn against the body (rad/s):
+## the last guard against a pop.
+const NECK_RATE := 1.6
+## Share of the isle's tip the clinging body takes with it (round 8): it
+## hangs on the tipping rim, so the tipped turf no longer rises into its
+## pose's head.
+const BODY_TIP := 1.0
+var _clr := Vector2.ZERO
+var _clr_v := Vector2.ZERO
+var _body_up := 0.0
+var _body_up_v := 0.0
+var _body_goal := 0.0
+var _neck_was: Array = []
+var _land := {}
+
+## The gripped isle's shape and its frame as posed now ({} without one).
+func _land_now() -> Dictionary:
+	if grip.is_empty(): return {}
+	var rec := _record(grip.target)
+	if rec.is_empty() or not rec.has("shape") or not (rec.shape as RefCounted).has_method("top_at"): return {}
+	var node: Node3D = rec.node
+	if node == null or not is_instance_valid(node): return {}
+	var xf: Transform3D = node.global_transform*(rec.frame as Transform3D)
+	return {"shape":rec.shape,"xf":xf,"inv":xf.affine_inverse()}
+
+## How far `p` (world) stands over the isle's floor along its up (m), or INF
+## where there is none under it. `head`: its turf and anything standing on
+## it within 5 m over the probe (a ruin's wall, not an arch far overhead);
+## else (the neck) its turf and rock, unless the probe is deep under the lip
+## beside the cliff.
+func _floor_gap(p: Vector3, head: bool) -> float:
+	if _land.is_empty(): return INF
+	var l: Vector3 = (_land.inv as Transform3D)*p
+	var flat := Vector2(l.x,l.z)
+	var shape: RefCounted = _land.shape
+	var under := -INF
+	var turf: Variant = shape.turf_at(flat)
+	if turf != null: under = float(turf)
+	var top: Variant = shape.solid_at(flat) if head else shape.top_at(flat)
+	if top != null and (not head or float(top) < l.y+5.0): under = maxf(under,float(top))
+	if under == -INF: return INF
+	if not head and l.y < under-NECK_DEEP: return INF
+	return l.y-under
+
 ## The chin's two probes over the turf (m, less CHIN_GAP) bent `lift` and
-## `nod`, over turf heights `back` and `front`.
-func _chin_error(lift: float, nod: float, back: float, front: float) -> Vector2:
+## `nod`.
+func _chin_error(lift: float, nod: float) -> Vector2:
 	_bend_neck(lift,nod)
-	return Vector2(_probe(_chin_back).y-back-CHIN_GAP,_probe(_chin_front).y-front-CHIN_GAP)
+	return Vector2(_floor_gap(_probe(_chin_back),true)-CHIN_GAP,_floor_gap(_probe(_chin_front),true)-CHIN_GAP)
 
 ## The chin laid on the isle while it rests (round 6, `_rest_w`): the lift
 ## and nod that lay the jaw's floor flush on the turf, back and front (a
 ## few Newton steps a frame from last frame's, so it follows the isle's
-## groan), blended in by `_rest_w`. The jaw's own opening is on top, so it
-## lies still and the head lifts off it to pant.
+## groan), blended in by `_rest_w` (eased). The jaw's own opening is on top,
+## so it lies still and the head lifts off it to pant.
 func _rest_head() -> void:
-	if _chin_back.is_empty() or _chin_front.is_empty() or not is_inside_tree() or _rest_w <= 0.001: return
-	var space := get_world_3d().direct_space_state
+	_land = _land_now()
+	if _chin_back.is_empty() or _chin_front.is_empty() or not is_inside_tree(): return
+	if _rest_w <= 0.001:
+		_rest_app = Vector2(_rest_lift,_rest_nod)
+		_rest_app_v = Vector2.ZERO
+		return
 	_keep_neck()
 	var lift := _rest_lift
 	var nod := _rest_nod
-	_bend_neck(lift,nod)
-	var back := _turf_y(space,_probe(_chin_back),TURF_LAYER)
-	var front := _turf_y(space,_probe(_chin_front),TURF_LAYER)
-	if is_finite(back) and is_finite(front):
+	var e0 := _chin_error(lift,nod)
+	if is_finite(e0.x) and is_finite(e0.y):
 		for k in range(3):
-			var e := _chin_error(lift,nod,back,front)
+			var e := _chin_error(lift,nod)
 			if e.length() < 0.01: break
-			var a := (_chin_error(lift+0.02,nod,back,front)-e)/0.02
-			var b := (_chin_error(lift,nod+0.02,back,front)-e)/0.02
+			var a := (_chin_error(lift+0.02,nod)-e)/0.02
+			var b := (_chin_error(lift,nod+0.02)-e)/0.02
 			var det := a.x*b.y-b.x*a.y
-			if absf(det) < 1e-3: break
+			if absf(det) < 1e-3 or not is_finite(det): break
 			lift = clampf(lift+clampf((-e.x*b.y+b.x*e.y)/det,-0.3,0.3),-1.8,1.4)
 			nod = clampf(nod+clampf((-a.x*e.y+a.y*e.x)/det,-0.3,0.3),-1.4,1.4)
 		_rest_lift = lift
 		_rest_nod = nod
-		chin_miss = _chin_error(lift,nod,back,front)
-	_bend_neck(_rest_lift*_rest_w,_rest_nod*_rest_w)
+	# Laid on through a spring at a limited rate, so a solve that jumps
+	# (the head high off the turf as it comes down) never pops the head.
+	var goal := Vector2(_rest_lift,_rest_nod)
+	_rest_app_v += ((goal-_rest_app)*64.0-_rest_app_v*16.0)*_rest_dt
+	_rest_app_v = _rest_app_v.limit_length(0.8)
+	_rest_app += _rest_app_v*_rest_dt
+	chin_miss = _chin_error(_rest_app.x,_rest_app.y)
+	var w := smoothstep(0.0,1.0,_rest_w)
+	_bend_neck(_rest_app.x*w,_rest_app.y*w)
 
-## No probe under the isle's turf as it stands now (after the blend and the
-## isle's move this frame): the deepest one lifted clear by the neck or the
-## nod, whichever moves it more, a few times. On the rim, the grab and the
-## let-go alike.
-func _clear_turf() -> void:
-	if _chin_back.is_empty() or not is_inside_tree() or gale == null or gale.isle == null: return
-	var space := get_world_3d().direct_space_state
+## No probe in the isle as it stands now (after the blend and the isle's
+## move this frame). Each frame the smallest lift and nod that clear the
+## deepest probes (a few Newton steps from none) is the goal; the neck
+## springs toward it at a limited rate. What is left in, the body eases up
+## out of over a few frames. On the rim, the grab and the let-go alike.
+func _clear_turf(delta: float) -> void:
+	_land = _land_now()
+	if _chin_back.is_empty() or not is_inside_tree() or _land.is_empty():
+		_relax_clear(delta)
+		return
+	# The body's ease up out of the isle (what last frame left in).
+	_body_up_v += ((_body_goal-_body_up)*BODY_W*BODY_W-2.0*BODY_W*_body_up_v)*delta
+	_body_up = maxf(_body_up+_body_up_v*delta,0.0)
+	if _body_up > 0.0005:
+		pos += Vector3.UP*_body_up
+		global_position = pos
 	_keep_neck()
 	var probes: Array = _probes_head+_probes_neck
-	var under: Array = []
-	for i in range(probes.size()):
-		var p := _probe(probes[i])
-		var top := _turf_y(space,p,TURF_LAYER if i < _probes_head.size() else TURF_LAYER|SOLID_LAYER)
-		# The head over the ruins too (round 7): a wall or a column top
-		# within a few metres over it, not an arch far overhead.
-		if i < _probes_head.size(): top = maxf(top,_solid_y(space,p))
-		# The neck's root hangs beside the cliff, under the lip's overhang:
-		# only a neck probe near the top is in it.
-		if i >= _probes_head.size() and p.y < top-NECK_DEEP: top = -INF
-		under.append(top)
-	var lift := 0.0
-	var nod := 0.0
+	var nh := _probes_head.size()
+	var gaps := func() -> float:
+		var worst := INF
+		for i in range(probes.size()): worst = minf(worst,_floor_gap(_probe(probes[i]),i < nh))
+		return worst
+	var worst0: float = gaps.call()
+	if is_finite(worst0): sunk_before = minf(sunk_before,worst0)
+	# The goal: from none, the deepest probe lifted clear by the neck or the
+	# nod, whichever moves it more.
+	var goal := Vector2.ZERO
 	for k in range(6):
-		var worst := 0.0
+		_bend_neck(goal.x,goal.y)
+		var worst := CLEAR_GAP
 		var worst_i := -1
 		for i in range(probes.size()):
-			if not is_finite(float(under[i])): continue
-			var gap := _probe(probes[i]).y-float(under[i])
-			if gap < worst:
-				worst = gap
+			var g := _floor_gap(_probe(probes[i]),i < nh)
+			if g < worst:
+				worst = g
 				worst_i = i
-		if k == 0: sunk_before = minf(sunk_before,worst)
 		if worst_i < 0: break
-		_bend_neck(lift+0.03,nod)
-		var dl := (_probe(probes[worst_i]).y-float(under[worst_i])-worst)/0.03
-		_bend_neck(lift,nod+0.03)
-		var dn := (_probe(probes[worst_i]).y-float(under[worst_i])-worst)/0.03
-		var need := -worst+0.03
-		if absf(dl) >= absf(dn) and absf(dl) > 0.05: lift += clampf(need/dl,-0.4,0.4)
-		elif absf(dn) > 0.05: nod += clampf(need/dn,-0.4,0.4)
-		else:
-			_bend_neck(lift,nod)
-			break
-		_bend_neck(lift,nod)
-	var left := 0.0
-	for i in range(probes.size()):
-		if is_finite(float(under[i])): left = minf(left,_probe(probes[i]).y-float(under[i]))
-	if left < -0.02:
-		# Still in it (the isle springing up under the neck as it lets go):
-		# the whole body bumped up clear.
-		pos += Vector3.UP*(-left+0.03)
-		global_position = pos
-		left = 0.0
-	sunk_after = minf(sunk_after,left)
+		_bend_neck(goal.x+0.03,goal.y)
+		var dl := (_floor_gap(_probe(probes[worst_i]),worst_i < nh)-worst)/0.03
+		_bend_neck(goal.x,goal.y+0.03)
+		var dn := (_floor_gap(_probe(probes[worst_i]),worst_i < nh)-worst)/0.03
+		var need := CLEAR_GAP+0.05-worst
+		if absf(dl) >= absf(dn) and absf(dl) > 0.05: goal.x += clampf(need/dl,-0.4,0.4)
+		elif absf(dn) > 0.05: goal.y += clampf(need/dn,-0.4,0.4)
+		else: break
+	goal = Vector2(clampf(goal.x,-1.2,1.2),clampf(goal.y,-1.2,1.2))
+	# Sprung toward it, critically damped, at a limited rate.
+	_clr_v += ((goal-_clr)*CLEAR_W*CLEAR_W-_clr_v*2.0*CLEAR_W)*delta
+	_clr_v = Vector2(clampf(_clr_v.x,-CLEAR_RATE.x,CLEAR_RATE.x),clampf(_clr_v.y,-CLEAR_RATE.y,CLEAR_RATE.y))
+	_clr += _clr_v*delta
+	_bend_neck(_clr.x,_clr.y)
+	_limit_neck(delta)
+	var left: float = gaps.call()
+	if is_finite(left):
+		sunk_after = minf(sunk_after,minf(left,0.0))
+		# Still in it (the neck lagging, the isle springing up under it): the
+		# body eased up out of it; clear by a margin, it eases back down.
+		_body_goal = clampf(_body_up-(left-CLEAR_GAP),0.0,BODY_MOST)
+	else: _body_goal = 0.0
+
+## Off any isle: the clearance and the body's lift ease away.
+func _relax_clear(delta: float) -> void:
+	_clr = _clr.lerp(Vector2.ZERO,1.0-exp(-delta*3.0))
+	_clr_v = Vector2.ZERO
+	_body_goal = 0.0
+	_body_up = lerpf(_body_up,0.0,1.0-exp(-delta*3.0))
+	_body_up_v = 0.0
+	_neck_was.clear()
+
+## Each neck bone's and the head's turn moved from last frame's toward the
+## pose's at a speed that builds up and brakes at most NECK_ACCEL rad/s²,
+## up to NECK_RATE rad/s: a heavy neck, never a jump to full speed.
+const NECK_ACCEL := 7.0
+var _neck_speed: PackedFloat32Array = []
+func _limit_neck(delta: float) -> void:
+	var names: Array = []
+	for i in range(_neck_n): names.append("neck.%d" % i)
+	names.append("head")
+	if _neck_was.size() != names.size():
+		_neck_was.clear()
+		_neck_speed.resize(names.size())
+		for i in range(names.size()):
+			_neck_was.append(skeleton.get_bone_pose_rotation(_bone[names[i]]))
+			_neck_speed[i] = 0.0
+		return
+	for i in range(names.size()):
+		var bi: int = _bone[names[i]]
+		var now := skeleton.get_bone_pose_rotation(bi)
+		var was: Quaternion = _neck_was[i]
+		var angle := was.angle_to(now)
+		# Speed up by NECK_ACCEL, but no faster than it can brake to a stop
+		# in the angle left.
+		var speed := minf(minf(_neck_speed[i]+NECK_ACCEL*delta,NECK_RATE),sqrt(2.0*NECK_ACCEL*angle))
+		var step := minf(angle,speed*delta)
+		if angle > 0.0001 and step < angle:
+			now = was.slerp(now,step/angle)
+			skeleton.set_bone_pose_rotation(bi,now)
+		_neck_speed[i] = step/delta
+		_neck_was[i] = now
 
 ## The chin's collider on the jaw while it clings (`on`), else out of the
 ## world's way.
@@ -1941,13 +2122,23 @@ func _let_go() -> void:
 	for i in range(14): gale.crumble(grip.rim,grip.out,grip.tangent,14.0)
 	_jaw_goal = -1.0
 	breath = ""
-	_grab = {"t":0.0,"p0":pos,"yaw0":float(grip.yaw)}
+	_grab = {"t":0.0,"p0":pos,"yaw0":float(grip.yaw),"q0":global_transform.basis.get_rotation_quaternion()}
 	flap_w = 1.0
 	phase = 0.55
 	_bout = true
 	print("sky dragon: it lets go of %s" % str(grip.target.name))
 
 const LEAVE := 3.2
+
+## Round 8: off the rim, the body turns from its tipped cling (`q0`) to its
+## flight over the first part of the let-go, not in one frame.
+func _ease_off_rim() -> void:
+	if state != "leaving" or not _grab.has("q0"): return
+	var u := clampf(float(_grab.t)/(LEAVE*0.55),0.0,1.0)
+	if u >= 1.0: return
+	var q0: Quaternion = _grab.q0
+	var q1 := global_transform.basis.get_rotation_quaternion()
+	global_transform = Transform3D(Basis(q0.slerp(q1,smoothstep(0.0,1.0,u))),global_position)
 
 func _leaving(delta: float) -> void:
 	_grab.t = float(_grab.t)+delta
@@ -1967,24 +2158,74 @@ func _leaving(delta: float) -> void:
 	if u >= 1.0:
 		state = "roaming"
 		yaw = atan2(-out.x,-out.z)
-		gamma = -0.25
+		# The flight's pitch where the let-go's ended (-0.25), no jump.
+		gamma = -0.4
 		speed = 26.0
 		_free = 1.0
 		route.clear()
 		_leg_kinds.clear()
-		if ride and not grip.is_empty():
-			# --dragon-ride: round again and back onto the rim.
+		if ride_repeat and not grip.is_empty():
+			# --dragon-ride-repeat: round again and back onto the rim.
 			_begin_grab()
+			return
+		if ride and targets.size() > 1:
+			# --dragon-ride (round 8): off to another motif isle, then back
+			# to yours.
+			_target_i = _ride_next()
+			_target_forced = true
+			grip = {}
+			_add_attack()
 			return
 		_add_circuit()
 		_target_i = (_target_i+1)%maxi(targets.size(),1)
 		_attack_in = _attack_every*_rng.randf_range(0.85,1.2)
 		grip = {}
 
+## The chest's swell toward `want`, eased (round 8: it carries the neck and
+## head, so a jump in it popped the head by a metre or more).
+var _chest := Vector3.ONE
+func _set_chest(want: Vector3, delta: float) -> void:
+	if not _bone.has("chest"): return
+	_chest = _chest.lerp(want,1.0-exp(-delta*6.0))
+	skeleton.set_bone_pose_scale(_bone["chest"],_chest)
+
+## The body's turn eased toward the pose's (BODY_EASE 1/s).
+func _ease_body(delta: float) -> void:
+	var want := global_transform.basis.get_rotation_quaternion()
+	if not _body_q_on:
+		_body_q = want
+		_body_q_on = true
+		return
+	_body_q = _body_q.slerp(want,1.0-exp(-delta*BODY_EASE)).normalized()
+	global_transform = Transform3D(Basis(_body_q),global_position)
+
+## Whether `t` is the ride's own isle (the pilot's).
+func _is_ride_home(t: Dictionary) -> bool:
+	return _ride_home < 0 or (_ride_home < targets.size() and targets[_ride_home] == t)
+
+## The ride's next isle: after yours, the next of the others that stand
+## (nearest first, round in turn); after another, yours.
+func _ride_next() -> int:
+	if _target_i != _ride_home: return _ride_home
+	var home_at: Vector3 = targets[_ride_home].home
+	var others: Array = []
+	for i in range(targets.size()):
+		if i == _ride_home or _record(targets[i]).is_empty(): continue
+		others.append(i)
+	if others.is_empty(): return _ride_home
+	others.sort_custom(func(a: int, b: int) -> bool: return (targets[a].home as Vector3).distance_to(home_at) < (targets[b].home as Vector3).distance_to(home_at))
+	var pick: int = others[_ride_away%others.size()]
+	_ride_away += 1
+	return pick
+
 ## Remembers every bone's turn now, to blend from it over `length` s.
 func _snapshot(length: float) -> void:
 	_blend_from.clear()
 	for b: String in _bone:
+		# Round 8: not the neck and head. Their snapshot holds this frame's
+		# clearance, which would be laid on twice; they are rate-limited
+		# from their last turn anyway (`_limit_neck`).
+		if b == "head" or b.begins_with("neck."): continue
 		var i: int = _bone[b]
 		_blend_from[i] = skeleton.get_bone_pose_rotation(i)
 	_blend_t = 0.0
@@ -2063,6 +2304,20 @@ func _ride_isle(delta: float) -> void:
 	launched += 1
 	var rim_at: Vector3 = grip.rim if not grip.is_empty() else feet
 	print("sky dragon: the isle springs back and flings the pilot up at %.1f m/s, %.1f m from the rim it held" % [up,Vector2(feet.x-rim_at.x,feet.z-rim_at.z).length()])
+
+## The snout's motion against the body (round 8's log): the most speed and
+## the most change of speed since the last line, while on a rim.
+func _measure_tip(delta: float) -> void:
+	if not (state in ["grabbing","clinging","leaving"]) or not _bone.has("jaw.tip"):
+		_tip_was = Vector3.INF
+		return
+	var tip := skeleton.global_transform.basis*skeleton.get_bone_global_pose(_bone["jaw.tip"]).origin
+	if _tip_was != Vector3.INF:
+		var v := (tip-_tip_was)/delta
+		tip_speed = maxf(tip_speed,v.length())
+		tip_jerk = maxf(tip_jerk,(v-_tip_v).length()/delta)
+		_tip_v = v
+	_tip_was = tip
 
 ## The tipped isle as a slope he can't stand on (round 6): while it is held
 ## tipped and he stands on it, the motor's slide_auto is lowered to
