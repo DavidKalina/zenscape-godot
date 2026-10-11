@@ -33,7 +33,8 @@ extends Node
 ##   near the isle's pools and channel, rain, a thin high wind in open sky
 ##   away from the isle, the cloud sea's hush below; the swing ropes' creak,
 ##   swish and whip. The living layer (birds by the time of day, bees,
-##   crickets, frogs, waterfalls) is kit_audio_life.gd's.
+##   crickets, frogs, waterfalls) is kit_audio_life.gd's; the sky dragon
+##   and the rune serpent are kit_audio_beasts.gd's (round 3).
 ##
 ## Buses (`ensure_buses`): Master > SFX (the Effects volume) > SFX Air;
 ## Master > Ambience (the Ambience volume) > Ambience Far; Master > Music
@@ -43,6 +44,7 @@ extends Node
 const Audio = preload("res://scripts/genesis_audio.gd")
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const KitAudioLife = preload("res://scripts/kit_isle/kit_audio_life.gd")
+const KitAudioBeasts = preload("res://scripts/kit_isle/kit_audio_beasts.gd")
 
 const SFX := &"SFX"
 const AIR := &"SFX Air"
@@ -200,6 +202,8 @@ var pond_rect := Rect2()
 var pond_top := 0.0
 ## The living layer (birds, bees, crickets, frogs, falls).
 var life: KitAudioLife
+## The beasts (the sky dragon, the rune serpent): round 3's.
+var beasts: KitAudioBeasts
 
 var _probe := PackedFloat32Array()
 var _probe_next := 0
@@ -344,6 +348,10 @@ func _ready() -> void:
 	life.audio = self
 	life.isle = isle
 	add_child(life)
+	beasts = KitAudioBeasts.new()
+	beasts.audio = self
+	beasts.host = isle
+	add_child(beasts)
 
 ## The quit leak ("ObjectDB instances leaked at exit"): a playback still in
 ## the AudioServer's list when the engine tears down is reported leaked; a

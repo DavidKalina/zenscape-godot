@@ -10,7 +10,11 @@ plays them looping and drives their gain, pitch and bus filter live.
 
 Loops: air-rush, air-whistle, air-howl, engine, wheel-rumble, skid, flutter,
 wire-sing, thin-wind, cloud-hush. One-shots: thump-N, creak-N, tick-N, swish-N,
-whoosh-N, sail-pop-N, sail-fold-N, grab-N, engine-start.
+whoosh-N, sail-pop-N, sail-fold-N, grab-N, engine-start. Round 3's beasts
+(docs/design/sound-round3.md): dragon-beat/up/call/slam/inhale/exhale,
+dragon-growl, stone-grind, rock-debris, gale-howl, buffet, wind-slam,
+serpent-scales/hum/breath (`python3 tools/generate_kit_audio.py dragon`
+bakes the dragon_* takes, `serpent` the serpent's).
 """
 import math
 import random
@@ -884,10 +888,366 @@ def frog_croaks():
         write('frog-%d' % (k + 1), highpass(x, 50), 0.8)
 
 
+# --- Round 3: the beasts (docs/design/sound-round3.md) -------------------------
+# The sky dragon (scripts/sky_dragon.gd) and the rune serpent
+# (scripts/rune_serpent.gd), played by scripts/kit_isle/kit_audio_beasts.gd.
+# Big, slow and old: deep and soft-edged, nothing sharp or snarling.
+
+def pulse_train(rng, n, f0, jitter=0.02, width=0.004, rough=0.0):
+    """A throat's buzz: a decaying click each period of `f0(t)` (Hz), the
+    period jittered, every other pulse weaker by `rough` (a growl's
+    subharmonic)."""
+    out = [0.0] * n
+    k = 0
+    decay = 1.0 / max(width, 1e-4)
+    shape = [math.exp(-j / RATE * decay) for j in range(int(width * 6 * RATE))]
+    i = 0
+    while i < n:
+        t = i / RATE
+        period = RATE / max(f0(t), 5.0) * (1.0 + rng.uniform(-jitter, jitter))
+        g = (1.0 - (rough if k % 2 else 0.0)) * rng.uniform(0.85, 1.0)
+        for j in range(min(len(shape), n - i)):
+            out[i + j] += g * shape[j]
+        i += max(1, int(period))
+        k += 1
+    return out
+
+
+def dragon_wingbeats():
+    """The dragon's downstroke: a vast, slow whump of air pressed down, the
+    membrane drawn taut with a deep soft boom, a sub drop under it all. Its
+    peak sits about 0.35 s in (kit_audio_beasts.gd fires it ahead of the
+    stroke's middle)."""
+    for k in range(4):
+        rng = random.Random('dragon-beat-%d' % k)
+        seconds = 1.6
+        n = int(seconds * RATE)
+        peak = rng.uniform(0.32, 0.38)
+        f0 = rng.uniform(34.0, 44.0)
+        x = [0.0] * n
+        ph = 0.0
+        for i in range(n):
+            t = i / RATE
+            ph += TAU * f0 * (1.0 - 0.3 * min(1.0, max(0.0, t - peak) * 2.0)) / RATE
+            rise = min(1.0, t / peak) ** 2.0
+            x[i] = math.sin(ph) * rise * math.exp(-max(0.0, t - peak) * 4.5)
+        noise = pink(rng, n)
+        push = lowpass(lowpass(noise, 420), 700)
+        env = [(min(1.0, (i / RATE) / peak) ** 2.5) * math.exp(-max(0.0, i / RATE - peak) * 3.2) for i in range(n)]
+        add(x, mul(push, env), 2.6)
+        boom = [0.0] * n
+        fb = rng.uniform(95.0, 125.0)
+        for i in range(n):
+            t = i / RATE - peak + 0.03
+            if t > 0:
+                boom[i] = math.sin(TAU * fb * t) * min(1.0, t / 0.02) * math.exp(-t * 11.0)
+        add(x, boom, 0.45)
+        # The air spilling off the trailing edge, a little higher.
+        spill = bandpass(noise, lambda t: 380.0 + 200.0 * max(0.0, t - peak), 1.3)
+        env2 = [math.sin(math.pi * min(1.0, max(0.0, i / RATE - peak * 0.6) / 0.9)) ** 2 for i in range(n)]
+        add(x, mul(spill, env2), 0.5)
+        write('dragon-beat-%d' % (k + 1), soft(highpass(x, 22), 1.4), 0.9)
+
+
+def dragon_upstrokes():
+    """The upstroke: the wings drawn up and folded at the wrist, the
+    membrane rustling and fluttering, lighter and airier than the beat."""
+    for k in range(3):
+        rng = random.Random('dragon-up-%d' % k)
+        seconds = rng.uniform(0.9, 1.2)
+        n = int(seconds * RATE)
+        noise = pink(rng, n)
+        lo = rng.uniform(380, 520)
+        hi = rng.uniform(900, 1300)
+        band = bandpass(noise, lambda t: lo + (hi - lo) * math.sin(math.pi * min(1.0, t / seconds)), 1.2)
+        rate = rng.uniform(11.0, 16.0)
+        wob = wander(rng, seconds, 6.0)
+        env = [math.sin(math.pi * i / n) ** 1.6 * (0.55 + 0.45 * abs(math.sin(math.pi * rate * i / RATE + 0.6 * wob(i / RATE)))) for i in range(n)]
+        x = mul(band, env)
+        low = lowpass(noise, 260)
+        add(x, [v * math.sin(math.pi * i / n) ** 2 for i, v in enumerate(low)], 1.2)
+        write('dragon-up-%d' % (k + 1), lowpass(x, 3500), 0.75)
+
+
+def dragon_calls():
+    """Its call: long and low, a horn-like voice over a rough throat, rising
+    into the call and sinking away, as old as the rock. Not a snarl: no
+    rasping top, no bite. About 3.3 s, played as the jaw opens on a roar."""
+    shapes = [(62.0, 92.0, 50.0), (55.0, 80.0, 44.0), (70.0, 104.0, 58.0)]
+    for k in range(3):
+        rng = random.Random('dragon-call-%d' % k)
+        seconds = 3.3
+        n = int(seconds * RATE)
+        a, b, c = shapes[k]
+
+        def f0(t, a=a, b=b, c=c):
+            u = t / seconds
+            if u < 0.35:
+                return a + (b - a) * math.sin(math.pi * 0.5 * u / 0.35)
+            return b + (c - b) * ((u - 0.35) / 0.65) ** 1.3
+        src = pulse_train(rng, n, f0, jitter=0.03, width=0.005, rough=0.35)
+        x = [0.0] * n
+        add(x, bandpass(src, lambda t: 320.0 + 140.0 * math.sin(math.pi * min(1.0, t / seconds)), 4.0), 1.0)
+        add(x, bandpass(src, lambda t: 760.0 + 160.0 * math.sin(math.pi * min(1.0, t / seconds)), 6.0), 0.55)
+        add(x, bandpass(src, 1900.0, 8.0), 0.12)
+        add(x, lowpass(src, 160), 0.8)
+        # The horn: a few clean partials an octave over the throat, slow vibrato.
+        ph = 0.0
+        for i in range(n):
+            t = i / RATE
+            ph += TAU * f0(t) * 2.0 * (1.0 + 0.008 * math.sin(TAU * 4.5 * t)) / RATE
+            x[i] += 0.16 * (math.sin(ph) + 0.4 * math.sin(2 * ph) + 0.18 * math.sin(3 * ph))
+        add(x, bandpass(pink(rng, n), 520.0, 0.9), 0.25)
+        env = [min(1.0, (i / RATE) / 0.45) ** 1.6 * (1.0 - max(0.0, (i / RATE - (seconds - 1.0)) / 1.0)) ** 1.5 for i in range(n)]
+        write('dragon-call-%d' % (k + 1), soft(lowpass(mul(x, env), 4000), 1.3), 0.85)
+
+
+def dragon_growl():
+    """On the rim: a low rolling growl in the chest, breathing; seamless."""
+    seconds, fade = 8.0, 0.8
+    rng = random.Random('dragon-growl')
+    n = int((seconds + fade) * RATE)
+    w = wander(rng, seconds + fade, 0.6)
+    src = pulse_train(rng, n, lambda t: 31.0 + 5.0 * w(t), jitter=0.06, width=0.008, rough=0.45)
+    x = [0.0] * n
+    add(x, bandpass(src, 230.0, 3.0), 1.0)
+    add(x, bandpass(src, 520.0, 4.0), 0.35)
+    add(x, lowpass(src, 120), 1.1)
+    breath = wander(rng, seconds + fade, 0.25)
+    x = [v * (0.6 + 0.4 * (0.5 + 0.5 * math.sin(TAU * i / RATE / 4.0))) * (0.85 + 0.15 * breath(i / RATE)) for i, v in enumerate(x)]
+    write('dragon-growl-loop', seamless(highpass(lowpass(x, 1800), 25), int(fade * RATE)), 0.8, edge=False)
+
+
+def stone_grind():
+    """Stone dragged on stone under a great weight: a bed of crackle and
+    grit in surges (stick and slip), a deep groan of the rock under it. The
+    isle as the dragon tips it; pitched down, the serpent's ride rumble."""
+    seconds, fade = 9.0, 0.8
+    rng = random.Random('stone-grind')
+    n = int((seconds + fade) * RATE)
+    surge = wander(rng, seconds + fade, 0.8)
+    grit = [0.0] * n
+    i = 0
+    while i < n:
+        s = 0.5 + 0.5 * surge(i / RATE)
+        grit[i] += rng.uniform(-1.0, 1.0) * (0.3 + 0.7 * s)
+        i += max(1, int(rng.expovariate(220.0 + 900.0 * s) * RATE))
+    x = [0.0] * n
+    add(x, bandpass(grit, 700.0, 1.2), 1.0)
+    add(x, bandpass(grit, 1900.0, 2.0), 0.4)
+    groan_w = wander(rng, seconds + fade, 0.4)
+    noise = pink(rng, n)
+    add(x, bandpass(noise, lambda t: 70.0 * (1.0 + 0.2 * groan_w(t)), 6.0), 2.2)
+    add(x, lowpass(noise, 120), 1.2)
+    x = [v * (0.7 + 0.3 * surge(i / RATE)) for i, v in enumerate(x)]
+    write('stone-grind-loop', seamless(highpass(lowpass(x, 4000), 30), int(fade * RATE)), 0.8, edge=False)
+
+
+def rock_debris():
+    """Stone breaking off a rim: a crack, then rocks knocking and tumbling
+    away, thinning out, a dusty hiss and a low rumble under them."""
+    for k in range(3):
+        rng = random.Random('rock-debris-%d' % k)
+        seconds = 2.4
+        n = int(seconds * RATE)
+        x = [0.0] * n
+        add(x, bandpass([v * e for v, e in zip(white(rng, n), envelope(n, 0.001, 40.0))], rng.uniform(900, 1400), 1.0), 0.9)
+        t = 0.02
+        while t < seconds - 0.1:
+            f = rng.uniform(500.0, 2200.0)
+            d = rng.uniform(60.0, 110.0)
+            m = int(0.06 * RATE)
+            g = rng.uniform(0.2, 0.7) * math.exp(-t * 1.4)
+            knock = [math.exp(-j / RATE * d) * (math.sin(TAU * f * j / RATE) + 0.5 * math.sin(TAU * f * 2.3 * j / RATE)) for j in range(m)]
+            add(x, knock, g, int(t * RATE))
+            t += rng.expovariate(14.0 * math.exp(-t * 0.9) + 2.0)
+        noise = pink(rng, n)
+        add(x, [v * math.exp(-i / RATE * 1.5) for i, v in enumerate(lowpass(noise, 140))], 1.6)
+        add(x, [v * math.exp(-i / RATE * 2.2) for i, v in enumerate(highpass(noise, 2500))], 0.25)
+        write('rock-debris-%d' % (k + 1), lowpass(x, 6000), 0.8)
+
+
+def dragon_slams():
+    """It strikes the rim: a deep, heavy impact through the rock (felt more
+    than heard), a crack, a short shudder."""
+    for k in range(2):
+        rng = random.Random('dragon-slam-%d' % k)
+        seconds = 1.8
+        n = int(seconds * RATE)
+        x = [0.0] * n
+        f0 = rng.uniform(30.0, 38.0)
+        ph = 0.0
+        for i in range(n):
+            t = i / RATE
+            ph += TAU * f0 * (1.0 - 0.35 * min(1.0, t * 3.0)) / RATE
+            x[i] = math.sin(ph) * min(1.0, t / 0.006) * math.exp(-t * 3.2)
+        noise = pink(rng, n)
+        add(x, [v * math.exp(-i / RATE * 6.0) for i, v in enumerate(lowpass(noise, 380))], 2.4)
+        add(x, bandpass([v * e for v, e in zip(white(rng, n), envelope(n, 0.001, 30.0))], 1100.0, 1.2), 0.5)
+        shudder = [math.sin(TAU * 13.0 * i / RATE) * math.exp(-i / RATE * 4.0) for i in range(n)]
+        add(x, mul(lowpass(noise, 200), shudder), 1.2)
+        write('dragon-slam-%d' % (k + 1), soft(highpass(x, 20), 1.6), 0.9)
+
+
+def gale_howl():
+    """The dragon's gale passing: a rushing howl, hollow bands wavering over
+    a broad roar, gusting hard; seamless."""
+    seconds, fade = 8.0, 0.7
+    rng = random.Random('gale-howl')
+    n = int((seconds + fade) * RATE)
+    noise = pink(rng, n)
+    w1 = wander(rng, seconds + fade, 0.7)
+    w2 = wander(rng, seconds + fade, 0.5)
+    gust = wander(rng, seconds + fade, 1.1)
+    a = bandpass(noise, lambda t: 240.0 * (1.0 + 0.25 * w1(t)), 5.0)
+    b = bandpass(noise, lambda t: 520.0 * (1.0 + 0.2 * w2(t)), 6.0)
+    broad = lowpass(noise, 2600)
+    x = [(1.0 * p + 0.6 * q + 0.45 * r) * (0.6 + 0.4 * gust(i / RATE)) for i, (p, q, r) in enumerate(zip(a, b, broad))]
+    write('gale-howl-loop', seamless(highpass(x, 40), int(fade * RATE)), 0.8, edge=False)
+
+
+def buffets():
+    """A gust striking the plane: a hollow knock through the airframe and
+    its fabric drumming."""
+    for k in range(3):
+        rng = random.Random('buffet-%d' % k)
+        seconds = 0.7
+        n = int(seconds * RATE)
+        x = [0.0] * n
+        f0 = rng.uniform(65.0, 90.0)
+        for i in range(n):
+            t = i / RATE
+            x[i] = math.sin(TAU * f0 * t) * min(1.0, t / 0.004) * math.exp(-t * 12.0)
+        rate = rng.uniform(22.0, 30.0)
+        drum = bandpass(white(rng, n), rng.uniform(700, 1000), 1.5)
+        env = [abs(math.sin(math.pi * rate * i / RATE)) ** 3 * math.exp(-i / RATE * 7.0) for i in range(n)]
+        add(x, mul(drum, env), 0.6)
+        add(x, [v * math.exp(-i / RATE * 9.0) for i, v in enumerate(lowpass(pink(rng, n), 500))], 1.2)
+        write('buffet-%d' % (k + 1), soft(x, 1.3), 0.85)
+
+
+def wind_slams():
+    """A wall of wind hitting: a burst of air that slams in and roars away,
+    its top closing as it goes."""
+    for k in range(2):
+        rng = random.Random('wind-slam-%d' % k)
+        seconds = 1.6
+        n = int(seconds * RATE)
+        noise = pink(rng, n)
+        x = bandpass(noise, lambda t: 2600.0 * math.exp(-t * 2.2) + 350.0, 0.7)
+        add(x, lowpass(noise, 200), 1.6)
+        write('wind-slam-%d' % (k + 1), soft(mul(x, envelope(n, 0.04, 2.6, 0.7)), 1.2), 0.85)
+
+
+def dragon_breaths():
+    """On the rim: the long draw in (the tell, 2.1 s, rising to the blow) and
+    the blow out (3.8 s): a vast breathy rush and hiss, a low throat under
+    it. Air, not fire."""
+    rng = random.Random('dragon-inhale')
+    seconds = 2.1
+    n = int(seconds * RATE)
+    noise = pink(rng, n)
+    x = bandpass(noise, lambda t: 260.0 + 900.0 * (t / seconds) ** 1.5, 1.4)
+    add(x, lowpass(noise, 300), 0.7)
+    env = [(i / n) ** 1.8 * min(1.0, (n - i) / (0.08 * RATE)) for i in range(n)]
+    write('dragon-inhale', mul(x, env), 0.8)
+    for k in range(2):
+        rng = random.Random('dragon-exhale-%d' % k)
+        seconds = 3.8
+        n = int(seconds * RATE)
+        noise = pink(rng, n)
+        w = wander(rng, seconds, 1.4)
+        x = bandpass(noise, lambda t: 520.0 * (1.0 + 0.2 * w(t)), 0.8)
+        add(x, highpass(lowpass(white(rng, n), 7000), 2200), 0.18)
+        add(x, lowpass(noise, 180), 1.0)
+        src = pulse_train(rng, n, lambda t: 33.0, jitter=0.05, width=0.008, rough=0.4)
+        add(x, bandpass(src, 200.0, 3.0), 0.4)
+        env = []
+        for i in range(n):
+            t = i / RATE
+            a = min(1.0, t / 0.35)
+            a = a * a * (3 - 2 * a)
+            r = max(0.0, (t - (seconds - 0.7)) / 0.7)
+            env.append(a * (1.0 - r * r * (3 - 2 * r)) * (0.85 + 0.15 * w(t)))
+        write('dragon-exhale-%d' % (k + 1), soft(mul(x, env), 1.15), 0.85)
+
+
+def serpent_scales():
+    """The serpent's stone scales: plates grinding over each other in a slow
+    rolling rhythm as the body flows, the odd knock of one on the next, a
+    rumble of weight; seamless."""
+    seconds, fade = 8.0, 0.8
+    rng = random.Random('serpent-scales')
+    n = int((seconds + fade) * RATE)
+    w = wander(rng, seconds + fade, 0.9)
+    grit = [0.0] * n
+    i = 0
+    while i < n:
+        t = i / RATE
+        s = (0.5 + 0.5 * math.sin(TAU * t * 1.25) ** 2) * (0.7 + 0.3 * w(t))
+        grit[i] += rng.uniform(-1.0, 1.0) * s
+        i += max(1, int(rng.expovariate(150.0 + 700.0 * s) * RATE))
+    x = [0.0] * n
+    add(x, bandpass(grit, 520.0, 1.4), 1.0)
+    add(x, bandpass(grit, 1300.0, 2.2), 0.35)
+    t = 0.1
+    while t < seconds + fade - 0.1:
+        m = int(0.08 * RATE)
+        f = rng.uniform(220.0, 380.0)
+        add(x, [math.exp(-j / RATE * 45.0) * math.sin(TAU * f * j / RATE) for j in range(m)], rng.uniform(0.3, 0.7), int(t * RATE))
+        t += rng.uniform(0.25, 0.7)
+    add(x, lowpass(pink(rng, n), 90), 1.4)
+    write('serpent-scales-loop', seamless(highpass(lowpass(x, 3500), 28), int(fade * RATE)), 0.8, edge=False)
+
+
+def serpent_hum():
+    """The runes' glow as sound: a deep resonant hum (55 Hz and its partials,
+    two a hair apart so they beat slowly) with a faint glassy shimmer over
+    it; every partial a whole number of cycles in the 10 s loop, so it seams
+    clean."""
+    seconds, fade = 10.0, 1.0
+    rng = random.Random('serpent-hum')
+    n = int((seconds + fade) * RATE)
+    partials = [(55.0, 1.0), (55.3, 0.5), (110.0, 0.55), (165.1, 0.25), (220.4, 0.18), (329.6, 0.07),
+                (880.0, 0.03), (880.6, 0.025), (1319.0, 0.015)]
+    x = [0.0] * n
+    for f, g in partials:
+        lv = wander(rng, seconds + fade, 0.3, loop=seconds)
+        ph0 = rng.uniform(0.0, TAU)
+        w = TAU * f / RATE
+        for i in range(n):
+            x[i] += g * (0.75 + 0.25 * lv(i / RATE)) * math.sin(w * i + ph0)
+    write('serpent-hum-loop', seamless(x, int(fade * RATE)), 0.7, edge=False)
+
+
+def serpent_breaths():
+    """The serpent's slow breath (its 5.2 s cycle: in for 2 s, out for
+    2.5 s): deep, hollow, stone-throated."""
+    for k in range(2):
+        rng = random.Random('serpent-breath-%d' % k)
+        seconds = 4.8
+        n = int(seconds * RATE)
+        noise = pink(rng, n)
+        x = bandpass(noise, lambda t: 200.0 + 180.0 * min(1.0, t / 2.0) if t < 2.0 else 380.0 - 200.0 * min(1.0, (t - 2.0) / 2.5), 1.6)
+        add(x, lowpass(noise, 160), 0.8)
+        env = []
+        for i in range(n):
+            t = i / RATE
+            if t < 2.0:
+                e = 0.55 * math.sin(math.pi * 0.5 * t / 2.0) ** 2
+            else:
+                u = min(1.0, (t - 2.0) / 2.6)
+                e = (0.55 + 0.45 * math.sin(math.pi * 0.5 * min(1.0, u * 4.0))) * (1.0 - u) ** 1.4
+            env.append(e)
+        write('serpent-breath-%d' % (k + 1), lowpass(mul(x, env), 2000), 0.75)
+
+
 TAKES = [air_rush, air_whistle, air_howl, engine, engine_start, wheel_rumble, skid, flutter,
          wire_sing, thin_wind, cloud_hush, thumps, creaks, ticks, swishes, whooshes,
          sail_pops, sail_folds, grabs,
-         chirps, twitters, wings, bird_chorus, insect_hum, fall_roar, fall_spill, rope_creaks, rope_whips, crickets, frog_croaks]
+         chirps, twitters, wings, bird_chorus, insect_hum, fall_roar, fall_spill, rope_creaks, rope_whips, crickets, frog_croaks,
+         dragon_wingbeats, dragon_upstrokes, dragon_calls, dragon_growl, stone_grind, rock_debris, dragon_slams,
+         gale_howl, buffets, wind_slams, dragon_breaths, serpent_scales, serpent_hum, serpent_breaths]
 
 if __name__ == '__main__':
     only = sys.argv[1] if len(sys.argv) > 1 else ''

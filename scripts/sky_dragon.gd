@@ -1705,6 +1705,11 @@ func _pant_length() -> float:
 func blow_envelope() -> float:
 	return smoothstep(0.0,0.35,_breath_t)*(1.0-smoothstep(BLOW-0.7,BLOW,_breath_t))
 
+## Seconds into its roar now, or below 0 between roars (read by its sound,
+## scripts/kit_isle/kit_audio_beasts.gd).
+func roar_time() -> float:
+	return _roar_t
+
 ## The mouth (world): the jaw's tip.
 func mouth_at() -> Vector3:
 	return skeleton.global_transform*skeleton.get_bone_global_pose(_bone["jaw.tip"]).origin
