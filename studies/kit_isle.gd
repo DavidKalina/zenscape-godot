@@ -1184,11 +1184,12 @@ func toggle_lock() -> bool:
 	_show_fly_hint()
 	return true
 
+## The card of the isle locked onto.
+var _lock_card := {}
+
 ## The isle the plane at `at` would lock onto: {middle (x, z), radius, top,
 ## card}. This isle; one with others in its sky answers the nearest in
 ## reach (studies/aqueduct_isle.gd: its motif isles).
-var _lock_card := {}
-
 func lock_target(_at: Vector3) -> Dictionary:
 	var circle := isle_circle()
 	return {"middle":Vector3(circle.x,0.0,circle.y),"radius":circle.z,"top":isle_top(),"card":isle_card()}
