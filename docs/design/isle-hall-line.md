@@ -33,6 +33,7 @@ So the moments hall (15 bays, bending 68°, rising in four bay chunks, a long S)
 | `--line-ahead=<m>` | 260 | the next piece starts rising once its entry is this far ahead, or sooner at speed |
 | `--line-keep=<n>` | 6 | pieces standing at once before the oldest behind you sinks (0: never) |
 | `--line-seed=<n>` | 3 | the line's seed |
+| `--line-look=real\|greybox` | real | the game's own Sundered hall on its island (round 2), or round 1's greybox |
 | `--autopilot` | off | the line's pilot flies for you once the line starts |
 | `--capture-high` | off | a capture's eye high behind the plane, looking down the line |
 
@@ -152,3 +153,75 @@ New in `test_isle_hall_chain` (about 29 s):
 3. How much of the line should be up ahead: 260 m (one or two pieces), or 400+ so you see the run laid out?
 4. Next step for the look: the Sundered far mesh (cheap, real kit silhouettes) on each piece, or keep greybox until the flow is settled?
 5. Should the line ever end (an apse piece with Sundered's release climb), or stay endless?
+
+# Round 2: the real Sundered look
+
+Your ask after flying round 1: "let's see if we can actually use like the real bake or like I guess like the version that we see with the actual overgrowth and textures. The basalt color. And then once that's done, we'll merge it."
+
+Every piece is now the game's own Sundered hall, built the way `--motif=sundered` builds it in the default scene. The layout, the flags, the whole-piece rise out of the real cloud sea, the puffs, the triggers, the cap and the sink are all unchanged. `--line-look=greybox` brings back round 1's boxes.
+
+## What a piece is now (scripts/hall_line_build.gd)
+
+- **The same bays.** A line piece becomes a Sundered piece record (`hall_piece`): one straight stretch, both ends torn. Its bay plans come from the Sundered planner, from the same random stream the greybox used, so a piece has the same roofs, breaches and screens as in round 1.
+- **The hall.** `SunderedBuild.near`: the ruin kit's bays at in-world detail, the podium, the hanging torn ends, merged into one mesh. The stone is the eroded basalt (the ruin stone's default on main), and everything is dressed in the swaying overgrowth (`SunderedGrowth`, `ruin_growth.gdshader`). The overgrowth parts round the plane through the isle's existing `RuinGrowthPush.stir`.
+- **The island.** `SunderedBuild._isle`: a long ridge island authored like the game's islets, with its bed levelled under the hall and cleared of plants. It is laid like Sundered's islands, 21-24 m to each side, with the torn ends overhanging its tips. `SkyIslets.dress` gives it the isle's ground palette, trees, flowers and rock look. It is stood with `SkyIslets.stand`, which can now take a parent, inside the rising piece.
+- **Near and far.** `SunderedBuild.far` is built too. A piece shows its near detail within 240 m of the camera (`NEAR_SHOW`) and the far mesh past that. This is Sundered's own streaming, except nothing is let go: a piece stays built until it sinks.
+- **Collision.**
+  - The hall's hulls are regrouped into bodies of 40.
+  - The island's ground and rock become trimesh bodies of at most 1500 triangles.
+  - All of them sit on the ruins' layer, solid only once the piece is still.
+
+## How it avoids a hitch
+
+- **Built on a worker, one at a time, in order.** A piece's content never depends on where it stands, so it is built before it is placed, two ahead of the newest piece standing (`PREFETCH`). The first piece starts building when the ring wakes, about 20 s before you can thread it.
+- **A piece only rises once it is built.** The build takes 0.9-2.2 s on a worker. Pieces are due every 4-7 s, so the worker is idle most of the time.
+- **Hand-over.** HallRise takes a made node as it is (`chunk.node`, signal `taken`). The node is handed over in one frame and its island is stood the next.
+- **Collision is stood one body a frame while the piece rises.** It collides with nothing until the piece is still, and the piece only counts as "set" once every body stands. When a piece sinks, all its bodies stop colliding at once and are then freed one a frame.
+- **First-use warm-up.** What an island first stands with (its plants' materials and the trees' far stand-ins) is made one key a frame after its build finishes. Without this, the first island cost about 6 ms.
+- **Six pieces standing (`--line-keep=6`) stays.** Only the pieces within 240 m draw their near detail, so `--line-keep` did not need lowering.
+
+## Cost (headless, tools/isle_chain_timings.gd, now flown in real time)
+
+| | per piece |
+|---|---|
+| Worker build | 0.9-1.5 s alone, up to 2.2 s under test load (island 0.2-0.3 s, hall near+far 0.7-1.5 s) |
+| What it draws | 1,330-2,565 hulls, 77k-127k triangles near |
+| Main thread, whole piece | 22-42 ms in all, spread over 45-80 frames |
+| Heaviest single frame | 0.8-1.8 ms (the hand-over 0.4-0.7 ms, the island 0.15-0.3 ms, a body 0.8-1.8 ms) |
+| Heaviest whole frame once the line is up | 14.5 ms (process + physics, headless, the whole isle) |
+
+The margins are as in round 1:
+
+- at cruise each piece is still +9.6 to +9.7 s before you reach it (+5.8 s for the first);
+- at boost it is +2.9 to +3.0 s (+2.0 s for the first);
+- 0 bumps both ways.
+
+Rendered captures ran at 16.7-25.9 ms a frame with vsync off, against 16.7-20.6 ms in round 1. The worst frames had two or three near pieces in view: 0.8-1.5 M primitives.
+
+## Captures (local: `captures/isle-hall-line-2/`)
+
+- `t24.png`, `t36.png`, `jog_t50.png`: from the chase camera with `--near-ring --autopilot`.
+- `high_t44.png`, `high_t60.png`: the same with `--capture-high`.
+- `default-sundered/`: the default scene's Sundered hall (tools/capture_sundered.gd), to compare against.
+
+By eye, the pieces read as the same thing as the default scene's hall: dark basalt walls and roof slabs, ivy curtains, grass beside the nave, a dark faceted keel. From high up, the line reads as one long broken nave stepping across the cloud. All of this is judged by eye only: headless can't check the look.
+
+## Tests
+
+- `test_isle_hall_chain` (now `## suite: slow, serial`, about 78 s) flies the line in real time, a physics frame a step, because the pieces are built on a worker as they would be in play. It checks:
+  - every piece is the real build and whole: one chunk holding its near, far and island;
+  - every body stands on the ruins' layer once the piece is still (44-77 bodies a piece);
+  - every piece is still on arrival at cruise and at boost;
+  - 0 bumps through the real collision, never inside stone;
+  - no frame's main-thread cost over 4 ms (worst measured 1.7-1.8 ms);
+  - the first piece is built while the ring rises;
+  - `--line-look=greybox` still gives the greybox piece.
+
+## What's weak or missing against the default scene
+
+- **The near pieces cost frames.** With two or three of them in view, a rendered frame took up to about 26 ms. A visibility range or a nearer `NEAR_SHOW` would help if that shows when you fly it.
+- **Straight pieces only.** Sundered's own pieces curve; these stay straight for the line's layout.
+- **No gate, apse or aqueduct pieces.** Every piece is a middle act with both ends torn, as in round 1.
+- **The texture swims while rising.** The stone and growth shaders may sample world space, so the texture can slide on a piece as it rises. Not visible in the stills; check it in flight.
+- **Backlit black** at this hour from the chase camera, as before.
+- **Build timing under heavy CPU load is not guaranteed.** At four times slower than measured, a build would run near the boost interval. The test is tagged serial for that reason.

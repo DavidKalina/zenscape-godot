@@ -20,7 +20,10 @@ extends Node3D
 ## at speed, so its gate is still `spare` s before the plane gets there.
 ## From there it is the Sundered line (scripts/hall_line.gd, docs/design/
 ## isle-hall-line.md): big whole pieces of nave on their islands rising one
-## after another, end to end in straight runs, sidestepping now and then.
+## after another, end to end in straight runs, sidestepping now and then,
+## each the game's own Sundered hall (scripts/hall_line_build.gd: the ruin
+## kit in its basalt, the overgrowth, its ridge island), built on a worker
+## from when the ring wakes (--line-look=greybox: round 1's boxes).
 ## --chain-style=halls brings back the hall chain (scripts/hall_chain.gd:
 ## the moments hall in four chunks, a long S). Either way its triggers are
 ## arrival-aware here (`settle_by`, `catch_up`).
@@ -197,7 +200,9 @@ func setup(target: Vector3, args: PackedStringArray) -> void:
 	var rise := RISE_OPTS.duplicate()
 	rise.merge(Rise.options(args),true)
 	if style == "line":
-		# The line keeps its floors within its own band of the first's.
+		# The line keeps its floors within its own band of the first's; its
+		# islands' falls are planned from about the ring's height.
+		chain.home_y = ring_at.y
 		chain.configure(Line.options(args),rise)
 	else:
 		chain.configure(Chain.options(args),rise)
@@ -323,6 +328,8 @@ func step(delta: float, plane: RefCounted, seated: bool, _eye := Vector3.ZERO) -
 			if pause_left <= 0.0: _start()
 	if at != null and state == "standing": _watch(at as Vector3,plane)
 	if at == null: _prev = Vector3.INF
+	# The line's pieces built ahead from when the ring wakes.
+	if style == "line" and state != "hidden": chain.prefetch()
 	if chain.halls.size() > 0:
 		chain.plane_speed = speed
 		chain.advance(delta,at)

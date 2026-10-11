@@ -63,9 +63,11 @@ extends "res://studies/character_study.gd"
 ## the cloud sea far below and climbs to stand past it; threading it, a
 ## held breath, a pulse through the plane (the nose arrow goes quiet), and
 ## the Sundered line erupts from the sea ahead, big pieces one after
-## another, end to end, sidestepping now and then (docs/design/
-## isle-hall-line.md; --chain-style=halls: the old hall chain; the line's
-## flags --line-run=, --line-jog=, ... apply). --autopilot flies the line
+## another, end to end, sidestepping now and then, each the game's own
+## Sundered hall in its basalt and overgrowth on its ridge island (docs/
+## design/isle-hall-line.md; --line-look=greybox: round 1's boxes;
+## --chain-style=halls: the old hall chain; the line's flags --line-run=,
+## --line-jog=, ... apply). --autopilot flies the line
 ## for you once it starts (any stick or key takes over); --capture-high
 ## takes the capture from high behind the plane, looking down the line.
 ## --no-chain leaves it out (the old shard-only arrival); --ring=x,y,z

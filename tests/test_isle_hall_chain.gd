@@ -1,4 +1,5 @@
 extends SceneTree
+## suite: slow, serial
 ## The hall chain on the aqueduct isle (studies/aqueduct_isle.gd, studies/
 ## aqueduct_isle_chain.gd, docs/design/isle-hall-chain.md), headless: no
 ## greybox cloud of its own (the game's cloud sea, the game's puffs); with
@@ -12,10 +13,13 @@ extends SceneTree
 ## its entry within a few degrees of the heading the plane left the ring on;
 ## then the Sundered line (docs/design/isle-hall-line.md): planned, its
 ## pieces whole, end to end and straight within runs, a flyable sidestep
-## about every three; flown, the autopilot goes on through seven pieces at
-## cruise then boost, a sidestep among them, with no bump, never inside
-## stone, each piece still as the plane gets to it, the oldest sinking past
-## the cap; --chain-style=halls still gives the hall chain; and with the
+## about every three; flown in real time (each piece the game's own
+## Sundered hall, built on a worker: scripts/hall_line_build.gd), the
+## autopilot goes on through seven pieces at cruise then boost, a sidestep
+## among them, with no bump through the real collision, never inside
+## stone, each piece whole and still as the plane gets to it and solid on
+## the ruins' layer once still, its main-thread cost bounded, the oldest
+## sinking past the cap; --chain-style=halls still gives the hall chain; and with the
 ## chain off (--no-chain) there is no ring and the old arrival flashes by
 ## the shard.
 ##   godot --headless --path . --script tests/test_isle_hall_chain.gd
@@ -26,6 +30,11 @@ const LinePlan = preload("res://scripts/hall_line_plan.gd")
 const FLY_CRUISE := 4
 const FLY_BOOST := 3
 const SkyPlane = preload("res://scripts/sky_plane.gd")
+const RuinBump = preload("res://scripts/ruin_bump.gd")
+const LineBuild = preload("res://scripts/hall_line_build.gd")
+## The most a real piece may cost the main thread in one frame (ms: its
+## hand-over, its island stood, or one body of its collision).
+const FRAME_BUDGET := 4.0
 const NoseCompass = preload("res://scripts/nose_compass.gd")
 const DT := 1.0/60.0
 var failures := 0
@@ -44,13 +53,14 @@ func run() -> void:
 	study = await _open(true)
 	_no_patch()
 	_hidden()
-	_appears()
+	await _appears()
 	_arrow()
 	_beside()
 	await _threads()
 	_quiet()
 	await _runs_on()
 	_halls_style()
+	_greybox_look()
 	study.queue_free()
 	await process_frame
 	study = await _open(false)
@@ -143,6 +153,16 @@ func _appears() -> void:
 	var solid := 0
 	for b: CollisionObject3D in c._bodies: if b.collision_layer != 0: solid += 1
 	check(solid == c._bodies.size() and solid > 0,"And collides (%d bodies)" % solid)
+	# In play the ring takes its 8.6 s to rise, in real time: the line's
+	# first piece is built on a worker meanwhile (from when it woke), and
+	# what its island first stands with made a frame at a time.
+	var line: Node3D = c.chain
+	var waited := 0
+	while line.look == "real" and (not line.built(0) or not line._warm.is_empty()) and waited < 600:
+		study.fly_step(DT,{})
+		waited += 1
+		await physics_frame
+	check(line.look != "real" or line.built(0),"The line's first piece is built while the ring rises (%.1f s more)" % (waited*DT))
 
 ## The nose arrow still points at the shard.
 func _arrow() -> void:
@@ -230,9 +250,12 @@ func _quiet() -> void:
 
 ## The line runs on: the autopilot flies on from the ring through FLY_CRUISE
 ## pieces at cruise, then holding boost through FLY_BOOST more, a sidestep
-## among them: never stuck, never a bump, never inside stone; every piece
-## whole (one chunk, the island with it) and still as the plane gets to its
-## entry, at either speed; the oldest sinking past the cap.
+## among them, in real time (a physics frame a step: the pieces are built
+## on a worker as they would be in play): never stuck, never a bump, never
+## inside stone; every piece the real build, whole (one chunk: the hall's
+## near and far detail and its island) and still as the plane gets to its
+## entry, at either speed, solid on the ruins' layer once still; no frame's
+## hand-over over FRAME_BUDGET; the oldest sinking past the cap.
 func _runs_on() -> void:
 	var c: Node3D = study.isle_chain
 	var line: Node3D = c.chain
@@ -247,6 +270,8 @@ func _runs_on() -> void:
 	var most := 0
 	var boost := 0.0
 	var boosted_from := -1
+	var solid := {}
+	var real: bool = line.look == "real"
 	while arrived.size() < FLY_CRUISE+FLY_BOOST and steps < int(150.0/DT):
 		if arrived.size() >= FLY_CRUISE and boost == 0.0:
 			boost = 1.0
@@ -257,14 +282,20 @@ func _runs_on() -> void:
 		input.boost = boost
 		study.fly_step(DT,input)
 		steps += 1
-		if steps % 4 == 0:
-			await physics_frame
-			if study._inside_stone(study.plane.position): shut += 1
+		await physics_frame
+		if steps % 4 == 0 and study._inside_stone(study.plane.position): shut += 1
 		most = maxi(most,line.standing_count())
 		for h: Dictionary in line.halls:
 			var rise: Node3D = h.rise
 			if rise.sinking: sank = true
-			if rise.chunks.size() != 1 or int((rise.chunks[0].solids as Array).size()) != int(rise.plan.solids.size()) or (rise.chunks[0].extra as Array).size() != int(h.pose.bays): whole = false
+			if not _whole(rise,h): whole = false
+			if rise.state[0] == "set" and not solid.has(int(h.index)):
+				var bodies := 0
+				var on := 0
+				for b: StaticBody3D in rise._bodies_stood[0]:
+					bodies += 1
+					if b.collision_layer == RuinBump.LAYER: on += 1
+				solid[int(h.index)] = [bodies,on,(rise.chunks[0].get("bodies",[]) as Array).size()]
 			if bool(h.reached) and not arrived.has(int(h.index)):
 				arrived[int(h.index)] = [rise.state[0] in ["pending","set"],boost > 0.0,snappedf(float(study.plane.speed),0.1)]
 				kinds[str(h.pose.kind)] = int(kinds.get(str(h.pose.kind),0))+1
@@ -274,7 +305,11 @@ func _runs_on() -> void:
 		if not arrived[i][0]: still = false
 		if arrived[i][1]: at_boost += 1
 	check(arrived.size() >= FLY_CRUISE+FLY_BOOST,"The autopilot flies on from the ring into %d pieces (%d made, %.0f s)" % [arrived.size(),line.made,steps*DT])
-	check(whole,"Every piece rises whole: one chunk, every bay's stone and its island in it")
+	check(real and whole,"Every piece is the real Sundered build and rises whole: one chunk, its hall's near and far detail and its island in it")
+	var solid_ok := solid.size() >= FLY_CRUISE+FLY_BOOST-1
+	for i: int in solid:
+		if solid[i][0] != solid[i][2] or solid[i][1] != solid[i][0] or solid[i][0] < 20: solid_ok = false
+	check(solid_ok,"Once still, every body of each piece stands on the ruins' layer ([stood, on the layer, built]: %s)" % solid)
 	check(still and at_boost >= FLY_BOOST-1,"Every piece is still as the plane reaches its entry, at cruise and at boost (%d at boost): %s" % [at_boost,arrived])
 	check(kinds.has("jog"),"A sidestep is flown among them (%s)" % kinds)
 	check(study.bumps-bumps_from == 0,"Never a bump (%d)" % (study.bumps-bumps_from))
@@ -282,8 +317,23 @@ func _runs_on() -> void:
 	check(sank and most <= line.keep,"Past the cap the oldest sinks (at most %d standing)" % most)
 	check(study.plane.position.y > IsleChain.SEA_TOP+60.0,"High over the cloud (y %.1f)" % study.plane.position.y)
 	var worst := 0.0
-	for s: Dictionary in line.spawns: worst = maxf(worst,int(s.frame)/1000.0)
-	check(worst < 4.0,"No hitch: the heaviest frame's hand-over %.2f ms" % worst)
+	var take := 0.0
+	var bodies := 0.0
+	var build := 0.0
+	for s: Dictionary in line.spawns:
+		worst = maxf(worst,int(s.frame)/1000.0)
+		take = maxf(take,(int(s.setup)+int(s.take))/1000.0)
+		bodies = maxf(bodies,int(s.bodies)/1000.0)
+		build = maxf(build,int(s.build)/1000.0)
+	check(worst < FRAME_BUDGET,"No hitch: the heaviest frame's main-thread cost %.2f ms (a hand-over and its island %.2f, a body %.2f; the worker's build at most %.0f ms)" % [worst,take,bodies,build])
+
+## Whether a piece's rise is the real build, whole: one chunk, made (its
+## node, the hall's near and far detail and, once taken, its island).
+func _whole(rise: Node3D, h: Dictionary) -> bool:
+	if rise.chunks.size() != 1 or not (rise.chunks[0] as Dictionary).has("node") or (h.made as Dictionary).is_empty(): return false
+	var node: Node3D = rise.nodes[0]
+	if node == null: return true
+	return node.get_node_or_null("Near") != null and node.get_node_or_null("Far") != null and node.get_node_or_null("Island") != null
 
 ## The layout, as planned (no scene): pieces end to end and straight
 ## within runs, Sundered gaps, a sidestep about every three (parallel, to
@@ -396,6 +446,16 @@ func _halls_style() -> void:
 	var gate: Vector3 = c.first_gate()
 	var off := absf(rad_to_deg(wrapf(ChainPlan.heading_of(gate-c.pass_point)-c.pass_heading,-PI,PI)))
 	check(c.chain.halls.size() == 1 and c.chain.halls[0].rise.chunks.size() == 4 and off < 3.0,"Its first hall rises in its four chunks, its gate %.2f degrees off the heading" % off)
+	c.queue_free()
+
+## --line-look=greybox: round 1's look, the greybox piece drawn on a
+## worker as before (no real build).
+func _greybox_look() -> void:
+	var c: Node3D = IsleChain.new()
+	study.add_child(c)
+	c.setup(study.lode_target,PackedStringArray(["--line-look=greybox"]))
+	var t: Dictionary = c.chain._first_template
+	check(c.chain.look == "greybox" and not t.has("made") and (t.chunks[0].solids as Array).size() == t.solids.size() and t.solids.size() > 0 and c.chain.islets == null,"--line-look=greybox: the greybox piece (%d solids), no real build" % t.solids.size())
 	c.queue_free()
 
 ## --no-chain: no ring, the shard where it was, the old arrival.

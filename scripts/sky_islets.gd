@@ -398,13 +398,15 @@ func _finish(cell: Vector2i, home: Vector3, out: Dictionary) -> void:
 
 ## An islet made by `make` (or `_make`) stood up as nodes at `home`, as its
 ## built record: {node, shape, home, phase, period, age, usec}. Not yet in
-## `built`.
-func stand(node_name: String, home: Vector3, out: Dictionary) -> Dictionary:
+## `built`. Stood under `parent` (home in its frame) if given (the
+## aqueduct isle's Sundered line stands an island in its rising piece:
+## scripts/hall_line_build.gd).
+func stand(node_name: String, home: Vector3, out: Dictionary, parent: Node3D = null) -> Dictionary:
 	var shape: RefCounted = out.shape
 	var node := Node3D.new()
 	node.name = node_name
 	node.position = home
-	add_child(node)
+	(parent if parent != null else self).add_child(node)
 	var body := MeshInstance3D.new()
 	body.name = "Body"
 	body.mesh = _mesh_of(out,"top",ground_source if ground_source != null else _ground_material)

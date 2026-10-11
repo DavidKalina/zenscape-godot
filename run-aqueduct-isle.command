@@ -3,8 +3,8 @@
 # lodestone on the floating stone east of the heel stone (E / pad A picks it
 # up, E keeps it), board (F / pad Y), fly where the nose arrow points. Near
 # the shard an arch rises out of the cloud past it; fly through it, wait,
-# and the Sundered line starts rising ahead: big pieces end to end, a
-# sidestep now and then (docs/design/isle-hall-line.md, isle-hall-chain.md).
+# and the Sundered line starts rising ahead: big pieces of the real
+# Sundered hall end to end, a sidestep now and then (docs/design/isle-hall-line.md, isle-hall-chain.md).
 #   ./run-aqueduct-isle.command                 the whole loop, from on foot
 #   ./run-aqueduct-isle.command --near-ring     in the plane, stone seated, 260 m before the ring
 #   ./run-aqueduct-isle.command --carry --fly   in the plane, stone seated, by the isle
@@ -12,6 +12,7 @@
 #   ./run-aqueduct-isle.command --near-ring --autopilot   sit back: it flies the line for you
 #   ./run-aqueduct-isle.command --chain-style=halls       the old hall chain (four chunks, a long S)
 #   --line-bays=<a-b> (8-11)  --line-gap=<a-b> (14-26)  --line-run=<a-b> (2-4)  --line-turn=sidestep|bend|mix
+#   --line-look=real|greybox (real: each piece the game's own Sundered hall, basalt + overgrowth on its ridge island; greybox: round 1's boxes)
 #   --line-jog=<m> (48)  --line-jog-gap=<m> (120)  --line-bend=<deg> (26)  --line-ahead=<m> (260)  --line-keep=<n> (6)  --line-seed=<n>
 #   --ring=x,y,z  --ring-near=<m> (420)  --ring-pause=<s> (1.5)  --chain-lead=<m> (180)  --target=x,y,z
 #   --arrive-spare=<s> (2)  --catch-up=<x> (1.6)  --first-at=thread|pulse (thread)

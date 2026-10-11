@@ -8,7 +8,11 @@ extends SceneTree
 ## from then until it was still (a hall: its gate), how long until the
 ## plane got there (a piece: its entry), and the margin (positive: still
 ## before the plane arrived); for a piece also how the line came into it
-## (gap, jog, bend) and its main-thread cost.
+## (gap, jog, bend) and its main-thread cost (all of it, its heaviest
+## frame, its hand-over with its island, its heaviest body) and the
+## worker's build. It flies in real time (a physics frame a step), as the
+## real pieces are built on a worker as in play, and gives the heaviest
+## frame's process and physics time once the line is up.
 ##   godot --headless --path . -s tools/isle_chain_timings.gd [-- <isle flags>]
 const ChainPlan = preload("res://scripts/hall_chain_plan.gd")
 const DT := 1.0/60.0
@@ -44,6 +48,7 @@ func _measure(boost: float) -> void:
 	var at := -1
 	var speeds := PackedFloat32Array()
 	var bumps0: int = s.bumps
+	var worst_frame := 0.0
 	while t < 150.0 and not _done(halls,want):
 		var input := {"boost":boost}
 		if c.state in ["passed","started"] and not c.chain.halls.is_empty():
@@ -54,6 +59,8 @@ func _measure(boost: float) -> void:
 			input.boost = boost
 		s.fly_step(DT,input)
 		t += DT
+		await physics_frame
+		if c.state in ["passed","started"]: worst_frame = maxf(worst_frame,(Performance.get_monitor(Performance.TIME_PROCESS)+Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS))*1000.0)
 		speeds.append(float(s.plane.speed))
 		if ring.woke < 0.0 and c.state != "hidden":
 			ring.woke = t
@@ -87,8 +94,11 @@ func _measure(boost: float) -> void:
 		var cost := ""
 		if line:
 			for sp: Dictionary in c.chain.spawns:
-				if int(sp.index) == i: cost = ", main thread %.2f ms (heaviest frame %.2f ms)" % [int(sp.total)/1000.0,int(sp.frame)/1000.0]
+				if int(sp.index) == i:
+					cost = ", main thread %.2f ms (heaviest frame %.2f ms: hand-over %.2f, a body %.2f), build %.0f ms, %d hulls, %d triangles" % [int(sp.total)/1000.0,int(sp.frame)/1000.0,
+						(int(sp.setup)+int(sp.take))/1000.0,int(sp.get("bodies",0))/1000.0,int(sp.get("build",0))/1000.0,int(sp.get("hulls",0)),int(sp.get("triangles",0))]
 		print("%s: still %.1f s, plane there %.1f s; margin %+.1f s%s" % [what,float(rec.still)-from,float(rec.there)-from,float(rec.there)-float(rec.still),cost])
+	print("heaviest frame once the line is up (process + physics, headless): %.2f ms" % worst_frame)
 	s.queue_free()
 	await process_frame
 

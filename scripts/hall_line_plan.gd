@@ -413,12 +413,21 @@ static func _shape(chunk: Dictionary, solids: Array, piece: Dictionary) -> void:
 		for s in range(steps): rim.append(a.lerp(b,float(s)/steps))
 	chunk.rim = rim
 
-## A piece's footprint (flat, world): its island's top's four corners.
-static func footprint(piece: Dictionary) -> PackedVector2Array:
+## The real piece's island (scripts/hall_line_build.gd, Sundered's: some
+## 21-24 m half across, its rounded outline reaching a little further) at
+## most this far (m) either side of the nave's middle, and past either torn
+## end (the podium's hanging blocks).
+const REAL_HALF := 30.0
+const REAL_PAST := 2.5
+
+## A piece's footprint (flat, world): its island's top's four corners, the
+## real island's box (`real`) or the greybox's.
+static func footprint(piece: Dictionary, real := true) -> PackedVector2Array:
 	var t := xform(piece)
-	var w := ISLE_HALF.y+JITTER
+	var w := REAL_HALF if real else ISLE_HALF.y+JITTER
+	var past := REAL_PAST if real else 0.0
 	var out := PackedVector2Array()
-	for c: Vector2 in [Vector2(-w,0.0),Vector2(w,0.0),Vector2(w,float(piece.length)),Vector2(-w,float(piece.length))]:
+	for c: Vector2 in [Vector2(-w,-past),Vector2(w,-past),Vector2(w,float(piece.length)+past),Vector2(-w,float(piece.length)+past)]:
 		var p := t*Vector3(c.x,0.0,-c.y)
 		out.append(Vector2(p.x,p.z))
 	return out
