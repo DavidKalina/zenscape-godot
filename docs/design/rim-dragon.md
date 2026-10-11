@@ -7,10 +7,125 @@ body and made it fly well. Round 3 rebuilds it as a wyvern after Smaug and
 makes it ride the air. Round 4 brings the attack back on a far isle: it
 clings to the rim and blows gales across it, seen from the aqueduct isle.
 Round 5 adds the edge spring: its weight sags the isle, and the snap back
-flings the pilot.
+flings the pilot. Round 6 keeps the head out of the isle, rests the chin on
+the turf, Odyssey-style, and lets the pilot surf down the tipped isle.
 
 Branch `study/rim-dragon`. This is a demo round: no tests, no bot sweeps, no
 perf pass.
+
+## Round 6: chin on the turf, surfing the tilt
+
+The user's notes on round 5: the head clips into the isle a lot. Let it
+rest flush on the edge, as in Mario Odyssey. And the tilted isle should be
+a slope the pilot can slide down, as on any other slope.
+
+### Play
+
+- `./run-rim-dragon.command --dragon-ride`, as in round 5. While it pants
+  the chin lies on the turf about 7 m inside the rim. Crouch (C, Shift or
+  LT) on the tipped isle to surf down toward it. On turf that falls toward
+  the dragon at 15° or more, he surfs on his own.
+- `--dragon-ride-gem` keeps the treasure. It now lies at the front of the
+  mouth, in reach of a pilot pressed up against the chin.
+- `--dragon-target=meadow_south|grove_east` as before. All three were run.
+- The `--dragon-log` line now also prints the pilot's move, the slope under
+  him, how deep the head would have sunk without the fix and how deep it
+  is with it, the rest weight and the isle's tip.
+
+### Head, jaw, neck and thumbs (scripts/sky_dragon.gd)
+
+- **Probes.** About 20 points on the mesh's underside are measured off
+  rim_dragon_c.glb and pinned to their bones: the jaw's floor and sides,
+  the snout, the head's underside, the neck's underside (neck.1 to
+  neck.3) and each thumb claw's tip, middle and wrist. The isle's surface
+  under each comes from a vertical ray at the isle's turf collider (or the
+  rock too, for the neck), so it is the isle as posed this frame, sagged
+  and tipped. Trees are ignored.
+- **Never in it.** Every frame of the grab, the hold and the let-go, after
+  the blend and after the isle's move, the deepest probe is lifted clear
+  (`_clear_turf`). The neck bends up (shared down its bones) or the head
+  nods, whichever moves that probe more. It takes up to six Newton steps.
+  If it is still sunk, the whole body is bumped up. This covers the isle
+  springing up under the neck on the let-go. Logged on all three targets
+  through the sag, the blows and the snap: unfixed, the head would sink up
+  to about 14 m (the blow's thrust on the tipped isle). Fixed, 0.00 m.
+- **Resting.** Between blasts (the pant, the end of the settle, the second
+  half of the recover) `_rest_w` blends to 1 over about 0.6 s. A two-unknown
+  Newton solve (neck lift and head nod, warm-started each frame) puts the
+  jaw's floor flush on the turf, back and front, 4 cm over it. Logged miss:
+  0.00 m. The jaw's own opening sits on top of that, so the lower jaw lies
+  still and the head bobs up off it to pant (the pant jaw is smaller while
+  resting). Glances shrink to small turns of the head where it lies. The
+  inhale lifts it off at 3.2/s.
+- **Neck.** Its underside is kept over the turf and the lip. A neck probe
+  more than 3 m under the turf is taken to be under the lip's overhang,
+  beside the cliff (the root hangs there), not in the rock.
+- **Thumbs.** After the wrist's reach, the thumb claw's tip is moved onto
+  the turf 0.9 m inside the lip, using two more reaches shifted by its miss.
+  Then tip, claw and wrist are lifted over the top if any is still in it.
+- **Chin collider.** While it clings, a box on the lower jaw (layer 1)
+  stops the pilot. He surfs into the chin rather than through it, and he
+  can reach the gem from there. The blast's line-of-sight ray ignores it.
+
+### The slide (scripts/dragon_gale.gd, scripts/sky_dragon.gd)
+
+- **Why it didn't slide.** The motor already read the tilt: its ground
+  rays hit the moved colliders, and the log showed 10 to 13° at the start
+  spot under the sag (4° at rest). But the tip was only about 14°, just over
+  the crouch surf's 10° (SLIDE_FROM) and far under the 44° at which he
+  surfs on his own (SLIDE_AUTO). The hills isle's own bumps then took it
+  under 6° locally. Crouched, he slid 1.2 m into a hollow and stopped.
+- **More tip.** `SAG_DROP` is 0.12 (it was 0.3): less of the sag drops the
+  isle whole and more of it tips it. It is now about 17 to 22° held (24° on
+  the slam), with the same sag. The launch still works: hills_ne flings
+  him at 15 m/s 9 m from the rim. grove_east, a smaller isle, tips further
+  and hits the 32 m/s cap close to the rim.
+- **On his own.** While the isle is held and tipped past 0.12 rad, and he
+  stands on it on turf that falls toward the gripped rim (within about
+  60°), the motor's `slide_auto` drops to 15° (`RIDE_SLIDE_AUTO`). It goes
+  back to his own value once he is off that turf or the dragon lets go.
+  Steeper turf toward the dragon surfs him on his own. Crouched he surfs
+  from 10° as anywhere, and steers across as usual.
+- Headless, crouched from the start spot: he surfs off at the grip, about
+  8 m to the rim, and catches the lip. Crouched from above the mouth with
+  `--dragon-ride-gem`, he surfs down to the mouth and takes the treasure,
+  and it lets go.
+
+### Captures (local, gitignored, docs/design/rim-dragon/)
+
+- `r6_chin_rest.png`: the pant on hills_ne, from the side above the rim.
+  The lower jaw lies on the tipped turf, the head is lifted off it a
+  little, the neck arcs over the lip, and a thumb claw is hooked on the
+  lip. The pilot is a few metres off.
+- `r6_slide.png`, `r6_slide_on.png`: from the pilot's camera, crouched
+  just after the grip. He surfs down the tipped turf toward the rim, with
+  rubble breaking off and the neck beside him.
+- `r6_blow.png`: mid-blast. The jaw sweeps low over the turf without
+  sinking in.
+
+Captures use V's orbit, e.g. `--dragon-ride --dragon-watch=orbit
+--dragon-orbit=125 --dragon-orbit-up=8 --dragon-orbit-far=22
+--capture-wait=5.5`. The capture saves about 2 s after `--capture-wait`
+(a frame-time measure runs first). `--at` captures are not reliable here:
+in that mode the turf colliders lag the drawn isle, so the head is solved
+against a stale isle.
+
+### Rough
+
+- Trees are not probed. The chin can rest through a tree trunk or canopy
+  on the turf.
+- The fix is a clamp, not a pose. In the blow, the head is lifted by
+  bending, so it skims the turf rather than thrusting along it. It reads
+  fine at a distance, but the neck's curve changes from frame to frame.
+- On the let-go, as the isle snaps up, the body can be bumped up a little
+  in one frame.
+- Auto-surfing follows the turf's fall line. On hills_ne it often curves
+  him away from the mouth and off the rim, where he catches the lip or
+  falls. Reaching the mouth takes steering. The default start spot is on
+  13 to 17° and does not surf on its own unless crouched.
+- The chin collider is a box on the lower jaw only. With the gem on, just
+  walking up to the mouth takes it.
+- Not played by hand; checked from headless logs and four captures.
 
 ## Round 5: the spring launch
 

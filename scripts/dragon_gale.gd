@@ -57,8 +57,10 @@ var _r_acc := 0.0
 var _p_acc := 0.0
 ## The sag (round 5): metres the gripped rim stands under its rest (up is
 ## less), and its speed. A share of it is the isle dropping whole, the rest
-## the isle tipping about its middle toward the dragon.
-const SAG_DROP := 0.3
+## the isle tipping about its middle toward the dragon. Round 6 tips it more
+## (0.3 dropped before): about 18° on hills_ne held, so the turf reads as a
+## slope the pilot can surf down toward the dragon.
+const SAG_DROP := 0.12
 ## The grip: on the slam the rim sags SLAM_SAG m, kicked down at SLAM_KICK
 ## m/s, on a heavy soft spring (HOLD_W 1/s, HOLD_ZETA), so it drops, bobs
 ## and hangs; each blast sinks it BLAST_SAG m more, to SAG_MOST.
@@ -521,6 +523,11 @@ func _shake_isle(delta: float) -> void:
 	var basis := Basis(_tilt_axis,tilt+0.003*t*sin(_clock*33.0))*Basis(_toward,creak)*isle_rest.basis
 	isle.transform = Transform3D(basis,isle_rest.origin+Vector3.DOWN*sag*SAG_DROP+jitter)
 	moved = isle.transform*before.affine_inverse()
+
+## How far the isle is tipped toward the dragon now (radians).
+func tip() -> float:
+	if phase == "": return 0.0
+	return sag*(1.0-SAG_DROP)/_rim_r
 
 ## Whether `p` (world) stands on the held isle's ground as it stood before
 ## this frame's move (on its land, within `above` m over its turf).

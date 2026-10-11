@@ -304,6 +304,49 @@ var _blend_len := 0.0
 var ride := false
 var _ride_vy := 0.0
 var launched := 0
+## On the rim (round 6): the head, jaw, neck and thumbs kept on or over the
+## isle's turf as it is posed now (rays on its colliders), the chin laid flush
+## on the turf between blasts, Odyssey-style: the lower jaw lies on the
+## ground and the head lifts off it to pant, inhale and blow.
+## Probes are [bone, point in the bone's rest frame] on the mesh's underside
+## (scripts measured off rim_dragon_c.glb: the jaw's floor, its sides, the
+## snout, the neck's underside, the thumb claws' tips).
+const TURF_LAYER := 1 << 11
+const SOLID_LAYER := 1
+## Each neck bone's share of the lift that lowers the head onto the turf.
+const LIFT_SHARE := [0.4,0.3,0.2,0.1]
+## The chin's gap over the turf when it lies there (m).
+const CHIN_GAP := 0.04
+## The thumbs' claws sit this far inside the lip (m).
+const THUMB_IN := 0.9
+## A neck probe further under the turf than this is under the lip's
+## overhang beside the cliff, not in it.
+const NECK_DEEP := 3.0
+## The pilot surfs down the tipped isle on his own past this (degrees; the
+## motor's own SLIDE_AUTO, 44, elsewhere), once it tips past TILT_SLIDE.
+const RIDE_SLIDE_AUTO := 15.0
+const TILT_SLIDE := 0.12
+var _probes_head: Array = []
+var _probes_neck: Array = []
+var _chin_back: Array = []
+var _chin_front: Array = []
+var _gem_on: Array = []
+var _chin_box: Array = []
+var _thumb: Dictionary = {}
+var _rest_w := 0.0
+var _rest_lift := 0.0
+var _rest_nod := 0.0
+var _neck_look := Vector2.ZERO
+var _neck_base: Array = []
+## Logged: the chin's miss from flush (back, front; m) when last laid down.
+var chin_miss := Vector2.ZERO
+var _ray := PhysicsRayQueryParameters3D.new()
+var chin: StaticBody3D
+var _auto_was := -1.0
+## Logged: the deepest any probe sat in the turf this hold (m, before the
+## lift), and after it.
+var sunk_before := 0.0
+var sunk_after := 0.0
 
 func _init() -> void:
 	name = "SkyDragon"
@@ -377,6 +420,7 @@ func _build() -> void:
 		_rest_global[b] = skeleton.get_bone_global_rest(i).basis.orthonormalized()
 	while _bone.has("tail.%d" % _tail_n): _tail_n += 1
 	while _bone.has("neck.%d" % _neck_n): _neck_n += 1
+	_build_probes()
 	_dress(model)
 	model.visible = false
 	# The tail's rest: the hips' end to the tip, in the skeleton's frame.
@@ -387,6 +431,59 @@ func _build() -> void:
 	for i in range(_tail_n):
 		_seg_len.append((pts[i+1]-pts[i]).length())
 		_seg_dir.append((pts[i+1]-pts[i]).normalized())
+
+## The probes (see `_probes_head`), each [bone index, point in its rest
+## frame], and the chin's collider.
+func _build_probes() -> void:
+	var at := func(b: String, p: Vector3) -> Array:
+		if not _bone.has(b): return []
+		var i: int = _bone[b]
+		return [i,skeleton.get_bone_global_rest(i).affine_inverse()*p]
+	_chin_back = at.call("jaw",Vector3(0.0,3.1,-26.0))
+	_chin_front = at.call("jaw.tip",Vector3(0.0,4.25,-34.0))
+	_gem_on = at.call("jaw",Vector3(0.0,5.9,-33.5))
+	_chin_box = at.call("jaw",Vector3(0.0,4.4,-29.0))
+	for spec: Array in [["jaw",Vector3(0,3.1,-26)],["jaw",Vector3(2.2,3.8,-26)],["jaw",Vector3(-2.2,3.8,-26)],
+			["jaw",Vector3(0,3.5,-29.5)],["jaw",Vector3(1.8,3.9,-30)],["jaw",Vector3(-1.8,3.9,-30)],
+			["jaw.tip",Vector3(0,3.9,-32)],["jaw.tip",Vector3(0,4.25,-34)],["jaw.tip",Vector3(0,4.68,-36)],
+			["head",Vector3(1.3,4.7,-24)],["head",Vector3(-1.3,4.7,-24)],["head",Vector3(1.8,4.5,-30)],
+			["head",Vector3(-1.8,4.5,-30)],["head",Vector3(0,4.5,-34.5)],["head",Vector3(0,5.0,-36.5)]]:
+		var pr: Array = at.call(spec[0],spec[1])
+		if not pr.is_empty(): _probes_head.append(pr)
+	for spec: Array in [["neck.3",Vector3(0,4.6,-22.5)],["neck.2",Vector3(0,4.2,-19)],["neck.2",Vector3(0,4.1,-18)],
+			["neck.1",Vector3(0,2.1,-16)],["neck.1",Vector3(0,3.4,-17.5)]]:
+		var pr: Array = at.call(spec[0],spec[1])
+		if not pr.is_empty(): _probes_neck.append(pr)
+	for n in ["L","R"]:
+		var k := -1.0 if n == "L" else 1.0
+		_thumb[n] = [at.call("wing_hand."+n,Vector3(33.53*k,2.44,-6.82)),at.call("wing_hand."+n,Vector3(33.38*k,3.84,-5.49)),at.call("wing_hand."+n,Vector3(33.0*k,4.8,-3.2))]
+	# The chin: a box on the lower jaw while it clings, so the pilot slides
+	# up against it (not through it) and the gem on the tongue is in reach.
+	chin = StaticBody3D.new()
+	chin.name = "Chin"
+	chin.top_level = true
+	chin.collision_layer = 0
+	chin.collision_mask = 0
+	var box := BoxShape3D.new()
+	box.size = Vector3(4.6,2.4,10.0)*size
+	var shape := CollisionShape3D.new()
+	shape.shape = box
+	chin.add_child(shape)
+	add_child(chin)
+	_ray.collide_with_areas = false
+	_ray.exclude = [chin.get_rid()]
+
+## A probe's place now (world).
+func _probe(pr: Array) -> Vector3:
+	return skeleton.global_transform*(skeleton.get_bone_global_pose(int(pr[0]))*(pr[1] as Vector3))
+
+## The isle's top under `p` (world) on `mask`'s layers, -INF over nothing.
+func _turf_y(space: PhysicsDirectSpaceState3D, p: Vector3, mask: int) -> float:
+	_ray.from = p+Vector3.UP*30.0
+	_ray.to = p+Vector3.DOWN*40.0
+	_ray.collision_mask = mask
+	var hit := space.intersect_ray(_ray)
+	return (hit.position as Vector3).y if not hit.is_empty() else -INF
 
 static func _find_skeleton(n: Node) -> Skeleton3D:
 	if n is Skeleton3D: return n
@@ -709,8 +806,12 @@ func _step(delta: float) -> void:
 			else: _fly(delta)
 			_pose(delta)
 	_blend(delta)
-	_place_treasure(delta)
 	gale.advance(delta)
+	# Round 6: head, jaw and neck clear of the isle as it stands after its
+	# move this frame, the chin's collider and the gem on the jaw so posed.
+	if state in ["grabbing","clinging","leaving"]: _clear_turf()
+	_place_chin(state == "clinging")
+	_place_treasure(delta)
 	_ride_isle(delta)
 	if _log:
 		_log_t += delta
@@ -719,9 +820,11 @@ func _step(delta: float) -> void:
 			if walker != null and on_foot:
 				var f: Vector3 = walker.get("feet")
 				var gem := treasure.global_position if treasure != null else Vector3.ZERO
-				print("sky dragon: pilot at (%.1f, %.1f, %.1f) grounded %s v.y %.1f, the gem at (%.1f, %.1f, %.1f), the isle's rim sags %.1f m" % [f.x,f.y,f.z,str(walker.get("grounded")),(walker.get("velocity") as Vector3).y,gem.x,gem.y,gem.z,gale.sag])
+				print("sky dragon: pilot at (%.1f, %.1f, %.1f) grounded %s v.y %.1f, %s on %.0f°, %.1f m/s, the gem at (%.1f, %.1f, %.1f), the isle's rim sags %.1f m" % [f.x,f.y,f.z,str(walker.get("grounded")),(walker.get("velocity") as Vector3).y,str(walker.get("move")),walker.steepness(),walker.speed(),gem.x,gem.y,gem.z,gale.sag])
 			if state in ["clinging","grabbing","leaving"]:
-				print("sky dragon: t %.1f %s %s, %.0f s to let go, at (%.0f, %.0f, %.0f), %.0f m from the isle's middle" % [_clock,state,breath,_cling_left,pos.x,pos.y,pos.z,Vector2(pos.x-home.x,pos.z-home.z).length()])
+				print("sky dragon: t %.1f %s %s, %.0f s to let go, at (%.0f, %.0f, %.0f), %.0f m from the isle's middle; head in the turf %.2f m unlifted, %.2f m lifted, resting %.2f (chin off flush %.2f, %.2f m), isle tipped %.0f°" % [_clock,state,breath,_cling_left,pos.x,pos.y,pos.z,Vector2(pos.x-home.x,pos.z-home.z).length(),-sunk_before,-sunk_after,_rest_w,chin_miss.x,chin_miss.y,rad_to_deg(gale.tip())])
+				sunk_before = 0.0
+				sunk_after = 0.0
 			else: print("sky dragon: t %.0f %s %s leg %s at (%.0f, %.0f, %.0f) %.1f m/s gamma %.2f roll %.2f flap %.2f, %.0f m from the isle's middle" % [_clock,state,mode,leg_kind,pos.x,pos.y,pos.z,speed,gamma,roll,flap_w,Vector2(pos.x-home.x,pos.z-home.z).length()])
 
 func _fly(delta: float) -> void:
@@ -1121,13 +1224,10 @@ func _place_treasure(_delta: float) -> void:
 	if treasure == null: return
 	treasure.visible = model.visible and not taken
 	if not treasure.visible: return
-	var sk := skeleton.global_transform
-	var jaw := skeleton.get_bone_global_pose(_bone["jaw"])
-	var tip := skeleton.get_bone_global_pose(_bone["jaw.tip"])
-	var at := jaw.origin.lerp(tip.origin,0.45)+jaw.basis.z.normalized()*0.0+(jaw.basis*Vector3(0.0,0.0,1.0)).normalized()*0.0
-	# A little above the jaw's floor, on the tongue.
-	var up := (sk.basis*Vector3.UP).normalized()
-	treasure.global_position = sk*at+up*1.4*size
+	# On the tongue near the front of the jaw (round 6: riding the jaw's
+	# own frame, so it lies in the mouth when the chin rests on the turf, in
+	# reach of a pilot up against the chin).
+	treasure.global_position = _probe(_gem_on)
 	treasure.scale = Vector3.ONE*size/0.85
 	var flare := pow(maxf(sin(_clock*TAU/2.3),0.0),14.0)+0.5*pow(maxf(sin(_clock*TAU/3.7+1.0),0.0),20.0)
 	_glint.scale = Vector3.ONE*(1.5+7.0*flare)
@@ -1417,6 +1517,7 @@ func _cling_pose(delta: float) -> void:
 		_turn("wing_f4."+n,[[Vector3.UP,side*fold*0.6]])
 		var wrist: Vector3 = xf*(grip.wrists[n] as Vector3)+Vector3.UP*0.8*size-out*1.2*size
 		_reach(["wing_arm."+n,"wing_fore."+n],"wing_hand."+n,sk_inv*wrist)
+		_seat_thumb(n,wrist,xf*(grip.wrists[n] as Vector3)-out*THUMB_IN,sk_inv)
 		_turn("hind_upper."+n,[[Vector3.RIGHT,0.5]])
 		_turn("hind_lower."+n,[[Vector3.RIGHT,-0.3]])
 		_turn("hind_foot."+n,[[Vector3.RIGHT,0.9]])
@@ -1424,9 +1525,24 @@ func _cling_pose(delta: float) -> void:
 		_reach(["hind_upper."+n,"hind_lower."+n],"hind_foot."+n,sk_inv*foot)
 	# The neck: bent forward to carry the head out level over the turf
 	# (the body's pitch undone), turned round its own root to look and
-	# sweep, drawn back and up on the inhale, thrust on the blow.
-	var look_yaw := _c_look.x
-	var look_pitch := _c_look.y
+	# sweep, drawn back and up on the inhale, thrust on the blow. Between
+	# blasts (round 6) the chin comes down to rest on the turf and the
+	# glances shrink to small turns of the head where it lies.
+	var rest_goal := 1.0 if breath == "pant" or (breath == "settle" and _breath_t > 1.2) or (breath == "recover" and u > 0.35) else 0.0
+	_rest_w = move_toward(_rest_w,rest_goal,delta*(1.6 if rest_goal > _rest_w else 3.2))
+	_neck_look = Vector2(_c_look.x*(1.0-0.75*_rest_w),_c_look.y*(1.0-_rest_w))
+	# Resting, it pants with the mouth a little open: the head bobbing up
+	# off the jaw that lies on the turf.
+	if breath == "pant": _jaw_goal = lerpf(_jaw_goal,0.15+0.07*sin(_clock*TAU*1.4),_rest_w)
+	_pose_neck()
+	_mouth(delta)
+	_rest_head()
+	_tail(delta)
+
+## The neck and head as `_cling_pose` sets them.
+func _pose_neck() -> void:
+	var look_yaw := _neck_look.x
+	var look_pitch := _neck_look.y
 	var bends := [0.0,-0.3,-0.34,-0.24]
 	for i in range(_neck_n):
 		var b: float = bends[mini(i,bends.size()-1)]
@@ -1435,8 +1551,144 @@ func _cling_pose(delta: float) -> void:
 		var wave := 0.03*sin(_clock*0.9-float(i)*0.6)
 		_turn("neck.%d" % i,[[Vector3.FORWARD,look_yaw*lerpf(0.4,0.1,u_n)],[Vector3.RIGHT,b+rear+wave]])
 	_turn("head",[[Vector3.RIGHT,-0.12+look_pitch+_c_rear*0.25],[Vector3.UP,look_yaw*0.35]])
-	_mouth(delta)
-	_tail(delta)
+
+## The neck's and head's turns now, to bend from (`_bend_neck`).
+func _keep_neck() -> void:
+	_neck_base.clear()
+	for i in range(_neck_n): _neck_base.append(skeleton.get_bone_pose_rotation(_bone["neck.%d" % i]))
+	_neck_base.append(skeleton.get_bone_pose_rotation(_bone["head"]))
+
+## The kept neck lowered `lift` (radians about each bone's own right, its
+## LIFT_SHARE on each) and the head nodded `nod` more.
+func _bend_neck(lift: float, nod: float) -> void:
+	for i in range(_neck_n+1):
+		var b := "neck.%d" % i if i < _neck_n else "head"
+		var angle: float = nod if i == _neck_n else lift*float(LIFT_SHARE[mini(i,LIFT_SHARE.size()-1)])
+		var axis := ((_rest_global[b] as Basis).inverse()*Vector3.RIGHT).normalized()
+		skeleton.set_bone_pose_rotation(_bone[b],(_neck_base[i] as Quaternion)*Quaternion(axis,angle))
+
+## The chin's two probes over the turf (m, less CHIN_GAP) bent `lift` and
+## `nod`, over turf heights `back` and `front`.
+func _chin_error(lift: float, nod: float, back: float, front: float) -> Vector2:
+	_bend_neck(lift,nod)
+	return Vector2(_probe(_chin_back).y-back-CHIN_GAP,_probe(_chin_front).y-front-CHIN_GAP)
+
+## The chin laid on the isle while it rests (round 6, `_rest_w`): the lift
+## and nod that lay the jaw's floor flush on the turf, back and front (a
+## few Newton steps a frame from last frame's, so it follows the isle's
+## groan), blended in by `_rest_w`. The jaw's own opening is on top, so it
+## lies still and the head lifts off it to pant.
+func _rest_head() -> void:
+	if _chin_back.is_empty() or _chin_front.is_empty() or not is_inside_tree() or _rest_w <= 0.001: return
+	var space := get_world_3d().direct_space_state
+	_keep_neck()
+	var lift := _rest_lift
+	var nod := _rest_nod
+	_bend_neck(lift,nod)
+	var back := _turf_y(space,_probe(_chin_back),TURF_LAYER)
+	var front := _turf_y(space,_probe(_chin_front),TURF_LAYER)
+	if is_finite(back) and is_finite(front):
+		for k in range(3):
+			var e := _chin_error(lift,nod,back,front)
+			if e.length() < 0.01: break
+			var a := (_chin_error(lift+0.02,nod,back,front)-e)/0.02
+			var b := (_chin_error(lift,nod+0.02,back,front)-e)/0.02
+			var det := a.x*b.y-b.x*a.y
+			if absf(det) < 1e-3: break
+			lift = clampf(lift+clampf((-e.x*b.y+b.x*e.y)/det,-0.3,0.3),-1.8,1.4)
+			nod = clampf(nod+clampf((-a.x*e.y+a.y*e.x)/det,-0.3,0.3),-1.4,1.4)
+		_rest_lift = lift
+		_rest_nod = nod
+		chin_miss = _chin_error(lift,nod,back,front)
+	_bend_neck(_rest_lift*_rest_w,_rest_nod*_rest_w)
+
+## No probe under the isle's turf as it stands now (after the blend and the
+## isle's move this frame): the deepest one lifted clear by the neck or the
+## nod, whichever moves it more, a few times. On the rim, the grab and the
+## let-go alike.
+func _clear_turf() -> void:
+	if _chin_back.is_empty() or not is_inside_tree() or gale == null or gale.isle == null: return
+	var space := get_world_3d().direct_space_state
+	_keep_neck()
+	var probes: Array = _probes_head+_probes_neck
+	var under: Array = []
+	for i in range(probes.size()):
+		var p := _probe(probes[i])
+		var top := _turf_y(space,p,TURF_LAYER if i < _probes_head.size() else TURF_LAYER|SOLID_LAYER)
+		# The neck's root hangs beside the cliff, under the lip's overhang:
+		# only a neck probe near the top is in it.
+		if i >= _probes_head.size() and p.y < top-NECK_DEEP: top = -INF
+		under.append(top)
+	var lift := 0.0
+	var nod := 0.0
+	for k in range(6):
+		var worst := 0.0
+		var worst_i := -1
+		for i in range(probes.size()):
+			if not is_finite(float(under[i])): continue
+			var gap := _probe(probes[i]).y-float(under[i])
+			if gap < worst:
+				worst = gap
+				worst_i = i
+		if k == 0: sunk_before = minf(sunk_before,worst)
+		if worst_i < 0: break
+		_bend_neck(lift+0.03,nod)
+		var dl := (_probe(probes[worst_i]).y-float(under[worst_i])-worst)/0.03
+		_bend_neck(lift,nod+0.03)
+		var dn := (_probe(probes[worst_i]).y-float(under[worst_i])-worst)/0.03
+		var need := -worst+0.03
+		if absf(dl) >= absf(dn) and absf(dl) > 0.05: lift += clampf(need/dl,-0.4,0.4)
+		elif absf(dn) > 0.05: nod += clampf(need/dn,-0.4,0.4)
+		else:
+			_bend_neck(lift,nod)
+			break
+		_bend_neck(lift,nod)
+	var left := 0.0
+	for i in range(probes.size()):
+		if is_finite(float(under[i])): left = minf(left,_probe(probes[i]).y-float(under[i]))
+	if left < -0.02:
+		# Still in it (the isle springing up under the neck as it lets go):
+		# the whole body bumped up clear.
+		pos += Vector3.UP*(-left+0.03)
+		global_position = pos
+		left = 0.0
+	sunk_after = minf(sunk_after,left)
+
+## The chin's collider on the jaw while it clings (`on`), else out of the
+## world's way.
+func _place_chin(on: bool) -> void:
+	if chin == null: return
+	if not on or _chin_box.is_empty():
+		if chin.collision_layer != 0: chin.collision_layer = 0
+		return
+	var i: int = _chin_box[0]
+	var bone := skeleton.get_bone_global_pose(i)*skeleton.get_bone_global_rest(i).affine_inverse()
+	var basis := (skeleton.global_transform.basis*bone.basis).orthonormalized()
+	chin.global_transform = Transform3D(basis,_probe(_chin_box))
+	chin.collision_layer = SOLID_LAYER
+
+## The thumb's claw onto the turf just inside the lip (`seat`, world): the
+## wrist's reach moved by the claw's miss, twice; then the claw's tip, its
+## middle and the wrist kept over the top.
+func _seat_thumb(n: String, wrist: Vector3, seat: Vector3, sk_inv: Transform3D) -> void:
+	if not _thumb.has(n) or (_thumb[n][0] as Array).is_empty() or not is_inside_tree(): return
+	var space := get_world_3d().direct_space_state
+	var top := _turf_y(space,seat,TURF_LAYER)
+	if not is_finite(top): return
+	seat.y = top+0.05
+	var chain := ["wing_arm."+n,"wing_fore."+n]
+	for k in range(2):
+		wrist += seat-_probe(_thumb[n][0])
+		_reach(chain,"wing_hand."+n,sk_inv*wrist)
+	for k in range(2):
+		var sunk := 0.0
+		for pr: Array in _thumb[n]:
+			var p := _probe(pr)
+			var g := _turf_y(space,p,TURF_LAYER)
+			if is_finite(g): sunk = minf(sunk,p.y-g)
+		if sunk >= -0.02: break
+		wrist += Vector3.UP*(-sunk+0.05)
+		_reach(chain,"wing_hand."+n,sk_inv*wrist)
 
 ## A little reaching IK (cyclic coordinate descent): turns `chain`'s bones
 ## (root first) so `end`'s origin comes to `target` (skeleton space).
@@ -1464,6 +1716,9 @@ func _reach(chain: Array, end: String, target: Vector3) -> void:
 ## turning out, and the isle springs back.
 func _let_go() -> void:
 	state = "leaving"
+	_place_chin(false)
+	_rest_w = 0.0
+	_tilt_slide(false)
 	_snapshot(0.6)
 	gale.release_isle()
 	for i in range(14): gale.crumble(grip.rim,grip.out,grip.tangent,14.0)
@@ -1544,7 +1799,7 @@ func _blow_on_pilot(delta: float, mouth: Vector3, way: Vector3, env: float) -> v
 	var angle := absf(w2.angle_to(flat))
 	if angle > PUSH_CONE: return
 	var space := get_world_3d().direct_space_state
-	if not space.intersect_ray(PhysicsRayQueryParameters3D.create(mouth,mid,1)).is_empty(): return
+	if not space.intersect_ray(PhysicsRayQueryParameters3D.create(mouth,mid,1,[chin.get_rid()] if chin != null else [])).is_empty(): return
 	var away := (flat.normalized()*0.5+w2*0.5).normalized()
 	if angle <= CONE and env > 0.5 and not _knocked:
 		walker.knock(walker.knock_velocity(away,lerpf(KNOCK_OUT.x,KNOCK_OUT.y,dist/REACH),KNOCK_UP))
@@ -1565,7 +1820,10 @@ func _blow_on_pilot(delta: float, mouth: Vector3, way: Vector3, env: float) -> v
 ## jump loose.
 func _ride_isle(delta: float) -> void:
 	if gale.snapped and not grip.is_empty(): gale.jolt(_isle_xf()*(grip.rim as Vector3),grip.out,grip.tangent,-gale.sag_v)
-	if walker == null or not on_foot or gale.isle == null or delta <= 0.0: return
+	if walker == null or not on_foot or gale.isle == null or delta <= 0.0:
+		_tilt_slide(false)
+		return
+	_tilt_slide(gale.phase == "held" and gale.tip() > TILT_SLIDE and bool(walker.get("grounded")) and gale.stands_on(walker.get("feet") as Vector3,1.5) and _falls_to_dragon())
 	if gale.moved.is_equal_approx(Transform3D.IDENTITY):
 		_ride_vy = 0.0
 		return
@@ -1588,6 +1846,33 @@ func _ride_isle(delta: float) -> void:
 	launched += 1
 	var rim_at: Vector3 = grip.rim if not grip.is_empty() else feet
 	print("sky dragon: the isle springs back and flings the pilot up at %.1f m/s, %.1f m from the rim it held" % [up,Vector2(feet.x-rim_at.x,feet.z-rim_at.z).length()])
+
+## The tipped isle as a slope he can't stand on (round 6): while it is held
+## tipped and he stands on it, the motor's slide_auto is lowered to
+## RIDE_SLIDE_AUTO, so its steeper turf surfs him down toward the dragon on
+## his own (crouched he surfs from the motor's SLIDE_FROM, 10°, as on any
+## slope); off it, or let go, his own again.
+func _tilt_slide(on: bool) -> void:
+	if walker == null: return
+	if on:
+		if _auto_was < 0.0: _auto_was = float(walker.get("slide_auto"))
+		walker.set("slide_auto",RIDE_SLIDE_AUTO)
+	elif _auto_was >= 0.0:
+		walker.set("slide_auto",_auto_was)
+		_auto_was = -1.0
+
+## Whether the slope under the pilot falls toward the gripped rim (within
+## about 60°): only there does the tipped isle surf him on his own, so it
+## pours him toward the dragon, not off its other flanks.
+func _falls_to_dragon() -> bool:
+	if grip.is_empty(): return false
+	var slope: Vector2 = walker.get("slope")
+	if slope.length() < 0.05: return false
+	var feet: Vector3 = walker.get("feet")
+	var rim := _isle_xf()*(grip.rim as Vector3)
+	var to := Vector2(rim.x-feet.x,rim.z-feet.z)
+	if to.length() < 0.5: return true
+	return (-slope).normalized().dot(to.normalized()) > 0.5
 
 ## The treasure taken from its tongue: a roar, and it lets go.
 func _touch_treasure() -> void:
