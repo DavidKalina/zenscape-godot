@@ -17,6 +17,7 @@ const CloudHost = preload("res://scripts/cloud_host.gd")
 const SkyTowers = preload("res://scripts/sky_towers.gd")
 const SkyTower = preload("res://scripts/sky_tower.gd")
 const SkyClouds = preload("res://scripts/sky_clouds.gd")
+const MotifSky = preload("res://scripts/kit_isle/motif_sky.gd")
 const CloudWakes = preload("res://scripts/cloud_wakes.gd")
 const CloudVolume = preload("res://scripts/cloud_volume.gd")
 const LookPass = preload("res://scripts/look_pass.gd")
@@ -93,11 +94,7 @@ func _places() -> void:
 		var gaps := [flat.distance_to(Vector2(c.x,c.y))-ring,KitClouds._to_segment(flat,line[0],line[1])]
 		for place: Array in study.sky.places(): gaps.append(flat.distance_to(Vector2(place[1].x,place[1].z))-float(place[2]))
 		worst = minf(worst,gaps.min())
-<<<<<<< HEAD
-	check(study.sky.places().size() >= 4,"The motif isles are among what they keep off (%d)" % study.sky.places().size())
-=======
-	check(study.sky.places().size() == 5,"The motif isles are among what they keep off (%d)" % study.sky.places().size())
->>>>>>> look/motif-hollow-keel
+	check(study.sky.places().size() == MotifSky.PLACES.size(),"The motif isles are among what they keep off (%d)" % study.sky.places().size())
 	check(worst >= SkyTowers.KEEP,"Each keeps the old game's keep (%.0f m) from the lock ring, the motif isles and the chain's line (closest %.0f m)" % [SkyTowers.KEEP,worst])
 	var home: Vector3 = spots[0]
 	var off := Vector2(home.x-c.x,home.z-c.y).length()
