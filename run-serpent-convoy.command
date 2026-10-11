@@ -12,7 +12,7 @@ if [[ ! -x "$GODOT_BIN" ]]; then
 fi
 
 print -r -- "Opening the serpent convoy. Launch log: $LAUNCH_LOG"
-"$GODOT_BIN" --path "$PROJECT_DIR" --rendering-method forward_plus --windowed --resolution 1440x900 res://studies/serpent_ride.tscn -- --no-title --convoy --carve "$@" 2>&1 | tee "$LAUNCH_LOG"
+"$GODOT_BIN" --path "$PROJECT_DIR" --rendering-method forward_plus --windowed --resolution 1440x900 res://studies/serpent_ride.tscn -- --no-title --convoy "$@" 2>&1 | tee "$LAUNCH_LOG"
 launch_status=${pipestatus[1]}
 # Godot can report script-load failures while returning a zero exit status.
 if (( launch_status == 0 )) && /usr/bin/grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load' "$LAUNCH_LOG"; then

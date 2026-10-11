@@ -79,14 +79,15 @@ extends "res://studies/character_study.gd"
 ##   --serpent-speed=<x> its pace times x
 ##   --weave=<x>         its slither times x (its weave shares on its way)
 ##   --no-glance         it never glances back at you
-##   --carve             the slide carves from the start (F3 toggles it)
+##   --no-carve          the slide as it was, not carving (it carves by
+##                       default here; F3 toggles it)
 ##   --convoy[=N]        the convoy, N serpents (CONVOY; 2 to CONVOY_MOST)
 ##   --gap=<m>           the convoy's gap (GAP)
 ##   --descent=<deg>     the slope of the convoy's descents (DESCENT)
 ##   ./run-serpent-ride.command
 ##   ./run-serpent-convoy.command
 ##   godot --path . res://studies/serpent_ride.tscn -- --no-title
-##   godot --path . res://studies/serpent_ride.tscn -- --no-title --convoy --carve
+##   godot --path . res://studies/serpent_ride.tscn -- --no-title --convoy
 const RuneSerpent = preload("res://scripts/rune_serpent.gd")
 const SerpentBack = preload("res://studies/serpent_back.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
@@ -370,6 +371,9 @@ func _init() -> void:
 		elif arg.begins_with("--convoy="): convoy = clampi(int(arg.get_slice("=",1)),2,CONVOY_MOST)
 		elif arg.begins_with("--gap="): gap = clampf(float(arg.get_slice("=",1)),0.0,40.0)
 		elif arg.begins_with("--descent="): descent = clampf(float(arg.get_slice("=",1)),4.0,30.0)
+	# The slide carves here from the start (F3 toggles it); --no-carve rides
+	# the slide as it was.
+	motor.carve = not LaunchArgs.user_args().has("--no-carve")
 	# The floor is a backstop under everything; the fall is caught well
 	# before (LOST_DROP).
 	lost = FLOOR_Y+5.0

@@ -2,8 +2,8 @@
 
 Branch `study/serpent-convoy`, from `study/slide-carve` (3546ff9d). Not merged, not pushed.
 
-    ./run-serpent-convoy.command          # --convoy --carve
-    godot --path . res://studies/serpent_ride.tscn -- --no-title --convoy --carve
+    ./run-serpent-convoy.command          # --convoy (it carves by default)
+    godot --path . res://studies/serpent_ride.tscn -- --no-title --convoy
 
 Scenes picker: On-foot greyboxes, "Serpent convoy". Single-serpent mode is unchanged without `--convoy`.
 

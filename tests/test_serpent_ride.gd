@@ -46,6 +46,7 @@ func run() -> void:
 	serpent = study.serpent
 	check(serpent != null and serpent.route == Ride.RIDE_ROUTE,"The real serpent flies the ride's own way (%.0f m round)" % serpent.route_length)
 	check(study.riding_on == "still" and m.feet.distance_to(study.tower_top) < 0.1,"He starts on the start tower, the serpent coming")
+	check(m.carve,"The slide carves here from the start")
 	_stands_a_lap()
 	_runs_its_length()
 	_jumps()
