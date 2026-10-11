@@ -22,6 +22,11 @@ On-foot greyboxes.
 
 Test (headless): `godot --headless --path . --script tests/test_foot_interactables.gd`.
 Stills (rendered): `godot --path . --script tools/capture_interactables.gd -- --no-title [dir]`.
+Spawn still (rendered): `godot --path . --script tools/capture_foot_spawn.gd -- --no-title --foot-at=ropes [dir]`.
+Rope reach (headless): `godot --headless --path . --script tools/measure_rope_reach.gd -- --lengths=6.6,4.2`.
+
+Round 2 changed the balustrade and the ropes; see "Round 2" at the end. Where the
+sections below disagree with it, round 2 wins.
 
 ## Controls
 
@@ -29,12 +34,12 @@ Stills (rendered): `godot --path . --script tools/capture_interactables.gd -- --
 |---|---|---|---|
 | Bobbing slab | land on it | it sinks and tips toward you, then springs back; you ride its bob | jump; if the slab is on its way back up, its rise adds to your jump (up to 3 m/s) |
 | Drifting slab | land on it | it carries you and turns you with it | jump or walk off; its pace goes with you |
-| Swing rope | jump into it (hands or chest within 0.6 m of its lower two-thirds) | the stick along the swing pumps it (only while the swing goes your way, so working the stick in time pumps both halves); across, it steers the swing plane | Space lets go with the rope's pace plus a pop up; crouch drops off with no pop. Twirl and sail are fresh after |
-| Balustrade | jump onto it (land on the coping, or come down within 0.45 m of it) | the slope speeds you up; crouch or stick-forward tucks; stick-back brakes; the stick across leans you back to balance | Space jumps off with all your pace, and the slide-hop weave works in the air. The rail's end flings you off. Leaning past 1, you fall off that side |
+| Swing rope | jump into it (hands within 0.3 m, or chest within 0.32 m, of its lower two-thirds; the rope swings to your hands, you are never pulled in) | the stick along the swing pumps it (only while the swing goes your way, so working the stick in time pumps both halves); across, it steers the swing plane | Space lets go with the rope's pace plus a pop up; crouch drops off with no pop. Twirl and sail are fresh after |
+| Balustrade | it's only stone: walk up its eased head, or hop onto the coping | stand or run on it; crouch and the motor's slope surf takes you down it, the stick across carving | the slide jump; carve or drift off its side and you fall; its end is a drop you fly off at full pace |
 
 Your pace carries into a catch. Run and jump into a rope and you are already swinging.
-Land on a rail at a slide's speed and you grind at that speed. Land crouched after a
-rail and you slide on (carve family). A rope release can carry you straight into the
+Land on the coping crouched at a slide's speed and you surf on at that speed. Land
+crouched after a rail and you slide on (carve family). A rope release can carry you straight into the
 next rope.
 
 ## How it's built
@@ -162,3 +167,124 @@ below -4 m and respawn at the nearest station.
   the bends.
 - **Recorded challenges** (the recorder branch): the aqueduct loop (rail, ropes,
   ferry, slabs) is meant as the first one to record.
+
+## Round 2 (2026-10-11): organic play
+
+**The user's rule.** No magnet catches, no teleporting the body onto a line, no mode
+that takes over on proximity. The existing moveset works on things, and every entry
+keeps the player's full velocity. Round 1's balustrade broke all three. It grabbed you
+within 0.45 m, set you on its line, cut your sideways pace, forced a START pace and
+handed you to a rider. The user said: "I don't like how it snapped."
+
+### Balustrade: a real surface
+
+- `balustrade.gd` lost its catch, its rider (`try_catch`, `_take`, `ride`, `_place`,
+  the balance meter) and its `t_*` tuning. It is only stone now. The coping's clean
+  collision box *is* the surface. Stood on it you can walk and run. Crouched (or
+  landing crouched) on its slope, the motor's ordinary slope surf takes you down, and
+  the stick across carves, as on the serpent's back. Your feet leave its top and you
+  fall. Its end is a drop: you fly off at all your pace, with no scripted pop.
+- **Shape.** COPING is 0.38 m wide (was 0.3). The line runs straight from 0.95 m over
+  the top step's nosing down to 0.95 m over the foot step's: about 21°, ramped over the
+  half landing the way a handrail is. It used to go level there, which braked the
+  slide. Over the steps it stands 0.67 to 1.24 m. The head eases down to MOUNT 0.42 m
+  over the landing, RAMP 1.3 m back, onto a newel pedestal of the same height. A step
+  (STEP_UP 0.45) or a plain jump gets you on, which you need now that nothing catches
+  you. The foot newel stands NEWEL_DROP 0.3 m under the coping's end, so you fly over
+  it. Both newels collide. Balusters reach down to the steps' nosing line, `floor_line`
+  (`Balustrade.grand_stair_floor`). A groove or lips would not help: the motor reads a
+  feature under 0.4 m as a ridge or gully, so it would be flat. The wider coping does
+  the work.
+- **Motor change (small, generic, additive).** `PilotMotor._gradient` takes an optional
+  axis. `step` also reads the slope along his way (the velocity, or the facing when
+  slow) and keeps that read only if it is steeper than the world-axes one. The world-x/z
+  read calls a narrow coping or beam a ridge (flat) unless it runs along an axis. With
+  that read, a diagonal leg of the Stair to the Clouds threw you off after 3.3 m
+  (headless). Now every narrow slope, in any heading, is its slope. Planes read the
+  same as before. Ground rays per grounded step go from 9 to 18.
+- **Host.** `foot_pieces.gd` only notes `on_rail` (the balustrade under his feet),
+  counts times on it and keeps its top pace for F1. Events: `rail` true or false on
+  getting on or off. `rider`/`toss` stay in the motor for the rope.
+- **Measured (headless).** Run onto it, then crouch over the top of the flight: 4.8 to
+  9.6 m/s by the foot, off its end at 9.2 m/s, landed sliding at 8.7. Round 1's rider
+  gave 10.7 m/s from a standing catch. With the stick held straight down it (no
+  corrections), every placed rail runs to its end: the yard, the aqueduct isle, the
+  Stair to the Clouds' four diagonal legs and their copies in the sky, all at 9.0 m/s.
+  A full carve across drops you off the side in about half a second.
+
+### Ropes: findable and fair
+
+- **Why they were hard to find.** `--foot-at=ropes` stood him 3.5 m from the rim. The
+  walker's camera (polar PI/2-0.7) looks 50° down at his feet, so the first rope hung
+  above the top of the frame. What you saw was grass and a dark island underside, with
+  one thin 7 cm rope near the top edge, hanging against the aqueduct's dark stone.
+  Nothing said which island you were on or where the ropes were.
+- **Spawn.** He now starts at (107.4, 30, -14), 10 m from the first rope, facing it
+  (`SPOTS.ropes`). Every `--foot-at=` start sets the camera low behind him (SPOT_POLAR
+  1.32), looking out along his way. From there both ropes and their beams stand
+  against the sky, with the gap and the far island beyond (checked in a rendered still).
+- **Read from afar.** The rope is thicker (RADIUS 0.06, was 0.035), with a bigger knot
+  and anchor ring. `SwingRope.add_tag` hangs a weathered madder cloth tag (TAG 0.6 x
+  1.8 m, TAG_TONE b04a2c, folded facets, notched hem) that stirs in the air. The
+  aqueduct ropes have one off each beam's outer end; the yard's are on each lintel.
+  There are no HUD markers.
+- **Grab audit.** Your hands (where the hang holds them, `hand_of`: HANG_DROP up,
+  0.25 m ahead) must come within CATCH 0.3 m of the rope's lower part, or your chest
+  (0.6 m up) within CATCH_BODY 0.32 m. It was 0.6 m. Taken, the rope swings to your
+  hands and your body stays where it was. All your speed is kept, the part along the
+  rope turned into the swing, up to TOP. A jump passing 0.5 m beside a rope misses it
+  (tested).
+- **Spacing (user: "I want to have to twirl or glide to the next rope").** Measured
+  with `tools/measure_rope_reach.gd`: pumped to full swing, let go at the best angle,
+  the furthest a like rope can stand and still be caught. Each figure is in metres
+  from the first rope's anchor.
+
+  | rope | plain release | twirl at the top | sail popped at the top |
+  |---|---|---|---|
+  | 6.6 m (yard) | 13.1 | 17.6 | 35.5 |
+  | 6.0 m | 12.9 | 16.9 | 30.4 |
+  | 4.2 m (aqueduct) | 9.4 | 13.6 | 25.2 |
+
+  - **Yard:** three ropes at z -3.8, -19.0 and -43.0. The 15.2 m gap needs the twirl;
+    the 24 m gap needs the sail. The far deck moved to z -48 to -64.
+  - **Aqueduct isle:** the 16 m gap (rims at about z -24.5 and -40.5) can't hold three
+    ropes spaced like that, so there are two. Both are 4.2 m long, so their ends hang
+    1.8 m over the turf and the first is jumped to from the near island. They sit at
+    z -23.8 and -36.0, 12.2 m apart: past a plain release (9.4) and inside the twirl
+    (13.6) and the sail. From the second, a plain release lands on the far island. The
+    sail gap is only in the yard.
+  - **Tests:** in the yard, a plain release falls short of the second rope, a twirl
+    reaches it, and the sail reaches the third. On the isle, a plain release falls
+    short and a twirl reaches the second.
+
+### Constants (round 2)
+
+- Balustrade: HEIGHT 0.95, COPING 0.38 x 0.16, PITCH 0.42, MOUNT 0.42, RAMP 1.3,
+  NEWEL_DROP 0.3. All rider constants are gone. The slide is the motor's SLIDE_* and
+  CARVE_*.
+- Swing rope: CATCH 0.3, CATCH_BODY 0.32, CHEST 0.6, RADIUS 0.06, TAG 0.6 x 1.8,
+  TAG_TONE b04a2c. The others are unchanged.
+- Aqueduct route: ROPE_ZS [-23.8, -36.0], ROPE_LENGTH 4.2, SPOT_POLAR 1.32.
+- Yard: ROPES at z -3.8, -19.0, -43.0. The F4 panel lost the balustrade sliders and
+  gained the rope's `catch_body`.
+
+### Still weak or unverified (round 2)
+
+- **Hand-feel is unplayed.** Nobody has slid the coping or chained the spaced ropes
+  with a pad. The coping may feel too forgiving held straight, or too twitchy to get
+  onto. The bots land on it with the stick let go; land with 3 m/s sideways and you
+  slide off the far side, which is physical but may feel harsh.
+- **The rail is slower than round 1's** (about 9.6 against 10.7 m/s), because the
+  motor's own surf drag sets its pace. Making it faster means a steeper coping or a
+  motor change. Neither was made.
+- **No sail gap on the aqueduct isle.** The 16 m gap only fits one twirl gap. A sail
+  gap needs a longer line, perhaps out to an islet.
+- **The Stair to the Clouds' eased heads** (RAMP 1.3 m back onto each landing) weren't
+  checked in a still for clashes with the previous leg's foot newel.
+- **The spawn capture checked `--foot-at=ropes` only.** The other `--foot-at=` spots now
+  get the lower camera too, but nobody has looked at them.
+- **Moving the ropes moved the beams too.** A beam at z -36.0 stands just past the
+  fallen span's broken deck (it resumes at -35.5), and it looks right in the still.
+- **The suite was not run.** These ran: the import check, headless loads of the game,
+  the yard and the Stair to the Clouds (`--quit-after 300`), and the test (42 checks
+  pass).

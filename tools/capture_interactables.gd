@@ -2,7 +2,7 @@ extends SceneTree
 ## Stills of the on-foot pieces in the interactables yard (studies/
 ## interactables_yard.tscn, docs/design/foot-interactables.md): the yard
 ## from above, stood on a bobbing slab, mid-swing on a rope (from the
-## side), grinding a balustrade, on the turning slab. Needs a renderer
+## side), surfing a balustrade's coping, on the turning slab. Needs a renderer
 ## (opens a window).
 ##   godot --path . --script tools/capture_interactables.gd -- --no-title [OUT_DIR]
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
@@ -58,14 +58,14 @@ func run() -> void:
 		tick(Vector2(0.0,-1.0) if rope.velocity.z <= 0.0 else Vector2(0.0,1.0))
 	await shot("rope_swing")
 	await shot("rope_side",Vector3(15.0,3.0,-6.0),Vector3(6.0,3.0,-6.0))
-	# Grinding the balustrade.
+	# Surfing the balustrade's coping (only the motor's slope surf).
 	var rail: Node3D = pieces.rails[1]
-	study.place(rail.point(1.0)+Vector3.UP*0.2,Vector2(0.0,1.0))
+	var crest: float = rail.rail[0].distance_to(rail.rail[1])+0.4
+	var t: Vector3 = rail.way(crest)
+	var f := Vector2(t.x,t.z).normalized()
+	study.place(rail.point(crest),f)
 	tick(Vector2.ZERO)
-	for i in range(40):
-		var t: Vector3 = rail.way(rail.s)
-		var f := Vector2(t.x,t.z).normalized()
-		tick(f*0.3-Vector2(-f.y,f.x)*clampf(float(rail.balance)*2.5,-1.0,1.0),false,true)
+	for i in range(50): tick(f,false,true)
 	await shot("rail_grind")
 	await shot("rail_side",Vector3(33.0,5.0,-6.0),Vector3(24.0,2.5,-7.0))
 	# The drifting ones from the side.

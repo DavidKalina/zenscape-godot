@@ -16,9 +16,12 @@ extends Node3D
 ## takes the blow; leaving one (jumped, walked off), its pace at his feet
 ## goes with him (its rise only up to RISE_KEEP, so a jump off a slab
 ## springing back goes higher); stood on it, it feels his weight; in the
-## air a rope or a balustrade may take him (each its `try_catch`). The
-## events of the step get "slab" (landed on one), "swing" (true on a rope)
-## and "rail" (true onto a balustrade). `pose` tilts the drawn body along a
+## air a rope may take him (its `try_catch`: his hands or chest meeting
+## it). A balustrade is only a surface: stood or sliding on its coping, he
+## is `on_rail` (counted, its top pace kept for the HUD and tests), and
+## the motor does everything else. The events of the step get "slab"
+## (landed on one), "swing" (true on a rope) and "rail" (true onto a
+## balustrade's coping, false off it). `pose` tilts the drawn body along a
 ## rope he swings on, and eases it back upright over UPRIGHT s after.
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const FootSlab = preload("res://scripts/interactables/foot_slab.gd")
@@ -44,11 +47,14 @@ var on: Node3D = null
 var _ray := PhysicsRayQueryParameters3D.new()
 var _tilt := Basis.IDENTITY
 var _tilt_left := 0.0
-## Counted for the HUD and tests: landings on slabs, rope catches, rail
-## rides; the last rope release's pace and the last rail ride's top pace.
+## Counted for the HUD and tests: landings on slabs, rope catches, times on
+## a balustrade's coping; the last rope release's pace and the fastest on
+## the coping this time on it (or the last).
 var counts := {"slab":0,"swing":0,"rail":0}
 var last_release := Vector3.ZERO
 var last_rail_top := 0.0
+## The balustrade whose coping he is on now, or null.
+var on_rail: Node3D = null
 
 func _init() -> void:
 	name = "FootPieces"
@@ -96,11 +102,13 @@ func rope_frame(mid: Vector3, way: Vector2, span: float, height: float, length: 
 	var frame := FootSlab.Art.floating_stones(seed_value,stones)
 	frame.name = "RopeFrame"
 	add_child(frame)
-	return rope(mid+Vector3.UP*height,length)
+	var r := rope(mid+Vector3.UP*height,length)
+	r.add_tag(mid+Vector3.UP*height+side*0.9,yaw,seed_value)
+	return r
 
-func balustrade(points: PackedVector3Array, seed_value := 0, weathered := 0.3) -> Node3D:
+func balustrade(points: PackedVector3Array, seed_value := 0, weathered := 0.3, floor := PackedVector3Array()) -> Node3D:
 	var r: Node3D = Balustrade.new()
-	r.setup(points,seed_value,weathered)
+	r.setup(points,seed_value,weathered,floor)
 	add_child(r)
 	rails.append(r)
 	return r
@@ -120,7 +128,6 @@ func slab_of(rid: RID) -> Node3D:
 func before(delta: float) -> void:
 	for slab: Node3D in slabs: slab.advance(delta)
 	for r: Node3D in ropes: r.advance(delta)
-	for r: Node3D in rails: r.advance(delta)
 	if on == null or motor.rider != null or motor.swimming: return
 	if motor.grounded or motor.on_ledge(): motor.carry(on.moved(),on.turn())
 
@@ -153,16 +160,20 @@ func after(_delta: float, events: Dictionary) -> void:
 				events["swing"] = true
 				counts.swing += 1
 				break
-	if motor.rider == null and not motor.swimming:
+	# On a balustrade's coping: only noted.
+	var rail: Node3D = null
+	if under.is_valid():
 		for r: Node3D in rails:
-			if r.rail[0].distance_to(motor.feet) < NEAR+r.length and r.try_catch(motor,under):
-				events["rail"] = true
-				counts.rail += 1
-				break
+			if r.rid() == under: rail = r
+	if rail != on_rail:
+		events["rail"] = rail != null
+		if rail != null:
+			counts.rail += 1
+			last_rail_top = 0.0
+		on_rail = rail
+	if on_rail != null: last_rail_top = maxf(last_rail_top,motor.speed())
 	if events.has("rope_jump") or (events.has("swing") and not events.swing):
 		last_release = motor.velocity
-	for r: Node3D in rails:
-		if r.held(): last_rail_top = r.ride_top
 
 ## What is right under `p` (its body's RID), or none.
 func _under(p: Vector3) -> RID:
@@ -187,6 +198,6 @@ func pose(figure: Node3D) -> void:
 	var upright := figure.basis
 	figure.basis = upright.slerp(_tilt.orthonormalized(),_tilt_left/UPRIGHT).orthonormalized() if _tilt_left > 0.0 else upright
 
-## The rope or balustrade he rides now, or null.
+## The rope he rides now, or null.
 func riding() -> Node3D:
 	return motor.rider as Node3D if motor != null and motor.rider is Node3D else null

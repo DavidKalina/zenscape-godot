@@ -8,24 +8,28 @@ extends SceneTree
 ##   - set on a drifting slab (sliding across the way, then the turning
 ##     one) he rides it, staying put on it while it carries him metres, and
 ##     turns with the turning one;
-##   - run and jumped into the first rope he takes hold, pumps it up, lets
-##     go on the upswing and flies further than his running jump goes, out
-##     to the far deck (catching the second rope on the way and pumping it
-##     too);
-##   - jumped onto a balustrade from the high deck he slides it down the
-##     stair, balancing, gaining pace, flung off its foot faster than he
-##     runs, and landed crouched he slides on.
+##   - run and jumped into the first rope he takes hold (his hands meeting
+##     it; a jump passing 0.5 m from it doesn't), pumps it up and lets go
+##     on the upswing: plainly, he falls short of the second rope; with the
+##     twirl at the top of the arc he reaches it; from the second, with the
+##     sail, the third; from the third, the far deck;
+##   - hopped onto a balustrade's coping from the high deck he stands on
+##     it; crouched there he surfs down the stair on it (only the motor's
+##     slope surf, carving to hold the coping), gaining pace, off its foot
+##     faster than he runs; and carved hard across, he drops off its side.
 ## Then the aqueduct isle's route (scripts/interactables/
-## aqueduct_foot_route.gd): run off the near rim beside the aqueduct, he
-## takes the first rope and swings rope to rope across the gap onto the far
-## island; from its rim he boards the ferry and rides it back across.
+## aqueduct_foot_route.gd): from its --foot-at=ropes spot (facing the
+## first rope, the gap beyond) he runs and jumps to the first rope, swings,
+## let go plainly falls short of the second; again, lets go with a twirl
+## to the second, and from it onto the far island;
+## from its rim he boards the ferry and rides it back across.
 ##   godot --headless --path . --script tests/test_foot_interactables.gd
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const Yard = preload("res://studies/interactables_yard.gd")
 const SwingRope = preload("res://scripts/interactables/swing_rope.gd")
-const Balustrade = preload("res://scripts/interactables/balustrade.gd")
 const Route = preload("res://scripts/interactables/aqueduct_foot_route.gd")
 const DT := 1.0/60.0
+const TOP_Y := 30.0
 var failures := 0
 var study: Node3D
 var m: PilotMotor
@@ -47,7 +51,7 @@ func run() -> void:
 	while not study.walk_ready: await process_frame
 	m = study.motor
 	pieces = study.pieces
-	check(pieces != null and pieces.slabs.size() == 8 and pieces.ropes.size() == 2 and pieces.rails.size() == 2,"The yard has its pieces: 4 bobbing and 4 drifting slabs, 2 ropes, 2 balustrades")
+	check(pieces != null and pieces.slabs.size() == 8 and pieces.ropes.size() == 3 and pieces.rails.size() == 2,"The yard has its pieces: 4 bobbing and 4 drifting slabs, 3 ropes, 2 balustrades")
 	_bob()
 	_drift()
 	var run_reach := _running_jump()
@@ -182,54 +186,89 @@ func _running_jump() -> float:
 	return reach
 
 func _rope(run_reach: float) -> void:
-	var first: Node3D = pieces.ropes[0]
-	var second: Node3D = pieces.ropes[1]
-	study.place(Vector3(6.0,0.0,3.0),Vector2(0.0,-1.0))
-	_input(Vector2(0.0,-1.0))
-	var caught := false
-	var t := 0
-	while t < 180 and not caught:
-		# Jump at the deck's edge.
-		_input(Vector2(0.0,-1.0),_jumping(-1.6))
-		_tick(1)
-		t += 1
-		caught = first.held()
+	var ropes: Array = pieces.ropes
+	# A jump that passes beside the first rope (0.5 m off it) doesn't take it.
+	study.place(Vector3(6.55,0.0,3.0),Vector2(0.0,-1.0))
+	var missed := not _run_at(ropes[0],90)
+	check(missed,"A jump passing 0.5 m beside the first rope doesn't take hold (no magnet)")
+	_tick(30)
+	var caught := _catch_first()
 	check(caught,"Run and jumped off the deck, he takes hold of the first rope (%s)" % m.hold)
 	if not caught: return
 	check(m.hold == "swing" and m.on_ledge(),"...hanging from it (hold %s)" % m.hold)
-	var release := _pump_and_go(first,1.5,0.4)
-	var reached_second := false
-	for i in range(120):
-		_input(Vector2(0.0,-1.0))
-		_tick(1)
-		if second.held():
-			reached_second = true
-			break
-	check(reached_second,"Let go on the upswing, he flies on and takes hold of the second rope")
-	if not reached_second: return
-	var from := _pump_and_go(second,1.5,0.5)
+	var gap := absf(ropes[1].anchor.z-ropes[0].anchor.z)
+	var release := _pump_and_go(ropes[0],6.0,0.75)
+	var plain := _fly_to(ropes[1],"")
+	check(not plain,"Let go plainly at the best angle, he falls short of the second rope %.1f m on" % gap)
+	check(release.length() > 6.0,"...let go at %.1f m/s" % release.length())
+	caught = _catch_first()
+	_pump_and_go(ropes[0],6.0,0.75)
+	var twirled := _fly_to(ropes[1],"twirl")
+	check(twirled,"Let go with a twirl at the top of the arc, he reaches the second rope")
+	if not twirled: return
+	var gap2 := absf(ropes[2].anchor.z-ropes[1].anchor.z)
+	_pump_and_go(ropes[1],4.0,0.75)
+	var sailed := _fly_to(ropes[2],"sail")
+	check(sailed,"From the second, let go and the sail popped, he glides %.1f m to the third and takes it" % gap2)
+	if not sailed: return
+	var from := _pump_and_go(ropes[2],6.0,0.75,true)
 	var landed := Vector3.INF
-	for i in range(180):
+	for i in range(240):
 		_input(Vector2(0.0,-1.0))
 		_tick(1)
 		if m.grounded:
 			landed = m.feet
 			break
 	var throw := Vector2(landed.x-from.x,landed.z-from.z).length() if landed != Vector3.INF else 0.0
-	check(landed != Vector3.INF and landed.z < -16.0,"...pumped and let go again, he lands on the far deck (z %.1f)" % landed.z)
+	check(landed != Vector3.INF and landed.z < -47.0 and landed.y > -0.5,"...pumped and let go again, he lands on the far deck (z %.1f)" % landed.z)
 	check(throw > run_reach*1.5,"...the throw (%.2f m from letting go) goes well past a running jump (%.2f m)" % [throw,run_reach])
-	check(release.length() > 6.0,"...let go at %.1f m/s" % release.length())
+
+## Run along -z and jumped at the deck's edge: whether `r` took him.
+func _run_at(r: Node3D, frames: int) -> bool:
+	for t in range(frames):
+		_input(Vector2(0.0,-1.0),_jumping(-1.6))
+		_tick(1)
+		if r.held(): return true
+		if m.feet.y < -3.0: break
+	return false
+
+func _catch_first() -> bool:
+	study.place(Vector3(6.0,0.0,3.0),Vector2(0.0,-1.0))
+	_input(Vector2.ZERO)
+	_tick(2)
+	# The rope let go of swings on a while: waited for till it hangs still.
+	var r: Node3D = pieces.ropes[0]
+	for i in range(1800):
+		if (r.velocity as Vector3).length() < 0.3 and (r.hands-r.anchor).angle_to(Vector3.DOWN) < 0.06: break
+		_tick(1)
+	var ok := _run_at(pieces.ropes[0],180)
+	if not ok: print("  (no catch: feet %s, rope end %s, cool %.2f)" % [m.feet,pieces.ropes[0].hands,pieces.ropes[0]._cool])
+	return ok
+
+## Flown on from a release (`how`: "" plain, "twirl" or "sail" at the top
+## of the arc), the stick on along -z: whether `r` took him.
+func _fly_to(r: Node3D, how: String) -> bool:
+	var done := false
+	for i in range(420):
+		var top := not done and m.velocity.y <= 0.0
+		if top: done = true
+		study.script_twirl = how == "twirl" and top
+		_input(Vector2(0.0,-1.0),how == "sail" and top)
+		_tick(1)
+		study.script_twirl = false
+		if r.held(): return true
+		if m.grounded or m.feet.y < float(r.anchor.y)-float(r.length)-3.0: return false
+	return false
 
 ## Pumped (the stick along the swing, in time) for up to `seconds`, then let
-## go on a forward upswing: where he let go from (the first) and its pace
-## (from the second rope the place is given back instead).
-func _pump_and_go(r: Node3D, seconds: float, angle_at: float) -> Vector3:
+## go on a forward upswing past `angle_at` from the plumb: its pace (or,
+## `where`, where he let go from).
+func _pump_and_go(r: Node3D, seconds: float, angle_at: float, where := false) -> Vector3:
 	var frames := int(seconds*60.0)
 	for i in range(frames):
 		var v: Vector3 = r.velocity
 		_input(Vector2(0.0,-1.0) if v.z <= 0.0 else Vector2(0.0,1.0))
 		_tick(1)
-	# On to a forward upswing past `angle_at` from the plumb, then Space.
 	for i in range(240):
 		var v: Vector3 = r.velocity
 		var angle: float = (r.hands-r.anchor).angle_to(Vector3.DOWN)
@@ -243,55 +282,111 @@ func _pump_and_go(r: Node3D, seconds: float, angle_at: float) -> Vector3:
 	_tick(1)
 	_input(Vector2(0.0,-1.0),false)
 	check(not r.held() and not m.on_ledge(),"...let go (%.1f m/s, %.0f° up)" % [pace.length(),rad_to_deg(atan2(pace.y,Vector2(pace.x,pace.z).length()))])
-	if r == pieces.ropes[0]: return pace
-	return at
+	return at if where else pace
 
+## A balustrade is stone: hopped onto, surfed down by the motor's own
+## slope surf, carved off.
 func _rail() -> void:
 	var rail: Node3D = pieces.rails[1]
 	var head: Vector3 = rail.rail[0]
-	# Beside it on the high deck, the stick toward it, a jump.
-	var inward := Vector3(-signf(head.x-24.0),0.0,0.0)
-	study.place(Vector3(head.x,4.48,head.z)+inward*0.7+Vector3(0.0,0.0,0.3),Vector2(0.0,1.0))
+	var down3: Vector3 = rail.way(0.5)
+	var down := Vector2(down3.x,down3.z).normalized()
+	var side := Vector2(-down.y,down.x)
+	# Walked up its head from the high deck: a step onto the newel's
+	# pedestal, on up the eased coping.
+	study.place(Vector3(head.x,4.48,head.z-1.5),down)
 	_tick(2)
-	var toward := Vector2(-inward.x,0.0)
-	_input(toward,true)
-	var on := false
-	for i in range(60):
+	var walked := false
+	for i in range(90):
+		_input(down*0.5)
 		_tick(1)
-		if i == 6: _input(toward,false)
-		if rail.held():
+		if m.grounded and pieces.on_rail == rail:
+			walked = true
+			break
+	_input(Vector2.ZERO)
+	_tick(10)
+	check(walked and pieces.on_rail == rail and m.grounded,"Walked up its head from the high deck, he steps onto the coping and stands on it")
+	# Beside its eased head on the high deck, a step and a hop sideways onto it.
+	var inward := Vector2(signf(24.0-head.x),0.0)
+	study.place(Vector3(head.x,4.48,head.z+0.5)+Vector3(inward.x,0.0,0.0)*0.6,down)
+	_tick(2)
+	var on := false
+	for i in range(80):
+		# The jump with the stick toward it, let go over it (as he'd land).
+		_input(-inward if i < 14 else Vector2.ZERO,i < 14)
+		_tick(1)
+		if m.grounded and pieces.on_rail == rail:
 			on = true
 			break
-	check(on,"Jumped from the high deck onto the balustrade, he slides it")
+	_input(Vector2.ZERO)
+	_tick(20)
+	on = on and pieces.on_rail == rail and m.grounded
+	check(on,"Hopped sideways from the high deck onto its eased head, he lands and stands on its coping (no catch)")
 	if not on: return
-	var start := absf(float(rail.pace))
-	var fell := false
-	var flung := false
+	# Walked on over the top of the flight, then crouched, the stick down
+	# it: the motor's surf takes him down.
+	var crest: float = rail.rail[0].distance_to(rail.rail[1])+0.3
+	var surfed_down := false
+	var start := -1.0
 	var most := 0.0
-	var min_balance := 0.0
+	var off_side := false
+	var off_end := false
+	var flew := Vector3.ZERO
 	for i in range(600):
-		# Balanced: the stick across against his lean, a little tucked.
-		var t: Vector3 = rail.way(rail.s)*signf(rail.pace)
-		var flat := Vector2(t.x,t.z).normalized()
-		var right := Vector2(-flat.y,flat.x)
-		_input(flat*0.4-right*clampf(float(rail.balance)*2.5,-1.0,1.0),false,true)
-		var was_held: bool = rail.held()
+		var near: Array = rail.nearest(m.feet)
+		var t: Vector3 = rail.way(float(near[0]))
+		var f := Vector2(t.x,t.z).normalized()
+		var right := Vector2(-f.y,f.x)
+		# Hold the line: the stick on down it, carved back toward the middle.
+		var p := Vector2(m.feet.x,m.feet.z)-Vector2(rail.point(float(near[0])).x,rail.point(float(near[0])).z)
+		var v := Vector2(m.velocity.x,m.velocity.z)
+		var steer := clampf(-p.dot(right)*4.0-(v.dot(right)/maxf(v.length(),1.0))*3.0,-1.0,1.0)
+		# Up over its eased head on foot, then crouched down the flight.
+		var tuck := float(near[0]) > crest
+		if tuck and start < 0.0: start = m.speed()
+		_input((f+right*steer).normalized(),false,tuck)
 		_tick(1)
-		most = maxf(most,absf(float(rail.pace)))
-		min_balance = maxf(min_balance,absf(float(rail.balance)))
-		if was_held and not rail.held():
-			flung = rail.s >= rail.length-0.01
-			fell = not flung
+		if tuck: most = maxf(most,m.speed())
+		if tuck and m.move == "slide": surfed_down = true
+		if not m.grounded:
+			var where: Array = rail.nearest(m.feet)
+			off_end = float(where[0]) >= rail.length-0.3
+			off_side = not off_end
+			flew = m.velocity
 			break
-	check(not fell and flung,"...balanced the length of it, flung off its foot (balance at most %.2f)" % min_balance)
-	check(most > start+4.0,"...gaining pace down it (from %.2f m/s to %.2f m/s)" % [start,most])
+	check(surfed_down,"...run on over the top of the flight and crouched, he surfs it (the motor's slope surf)")
+	check(off_end and not off_side,"...the length of it, holding the coping, off its foot (left it %.1f m along of %.1f)" % [float(rail.nearest(m.feet)[0]),rail.length])
+	check(most > start+4.0 and most > PilotMotor.RUN*1.8,"...gaining pace down it (from %.2f m/s to %.2f m/s)" % [start,most])
+	check(Vector2(flew.x,flew.z).length() > PilotMotor.RUN,"...and flies off its foot at %.2f m/s, its shape's launch" % Vector2(flew.x,flew.z).length())
 	var landed_pace := 0.0
+	var landed_move := ""
 	for i in range(120):
 		_tick(1)
 		if m.grounded:
+			_tick(6)
 			landed_pace = m.speed()
+			landed_move = m.move
 			break
-	check(landed_pace > PilotMotor.RUN,"...landed crouched he slides on faster than he runs (%.2f m/s, %s)" % [landed_pace,m.move])
+	check(landed_pace > PilotMotor.RUN and landed_move == "slide","...landed crouched he slides on faster than he runs (%.2f m/s, %s)" % [landed_pace,landed_move])
+	# Carved hard across on the upper flight: off its side.
+	var mid: Vector3 = rail.point(rail.length*0.3)
+	study.place(mid,down)
+	_tick(2)
+	var surfed := false
+	var dropped := false
+	var gone := 0.0
+	for i in range(240):
+		var lean := 1.0 if i > 25 else 0.0
+		_input((down+side*lean).normalized() if lean > 0.0 else down,false,true)
+		_tick(1)
+		surfed = surfed or m.move == "slide"
+		if not m.grounded or pieces.on_rail != rail:
+			var where: Array = rail.nearest(m.feet)
+			dropped = float(where[0]) < rail.length-0.3
+			gone = float(where[1])
+			break
+	_tick(30)
+	check(surfed and dropped,"Surfing it, a hard carve across drops him off its side (%.2f m off its line, %.1f m down)" % [gone,mid.y-m.feet.y])
 	_input(Vector2.ZERO)
 
 ## The aqueduct isle's route: the rope chain over the gap, the ferry back.
@@ -303,34 +398,41 @@ func _isle_route() -> void:
 	while not study.get("isle_up"): await process_frame
 	m = study.motor
 	pieces = study.foot_pieces
-	check(pieces != null and pieces.ropes.size() == 3 and pieces.slabs.size() >= 4 and pieces.rails.size() >= 2,"The aqueduct isle has its route: ropes, slabs, balustrades")
+	check(pieces != null and pieces.ropes.size() == 2 and pieces.slabs.size() >= 4 and pieces.rails.size() >= 2,"The aqueduct isle has its route: ropes, slabs, balustrades")
 	if pieces == null: return
 	var spot: Array = Route.SPOTS.ropes
 	study.place(spot[0],spot[1])
-	var caught := [false,false,false]
-	var on := -1
-	var far := Vector3.INF
-	for t in range(900):
-		var want := Vector2(0.0,-1.0)
-		var edge: bool = study.ground.height_from(Vector2(m.feet.x,m.feet.z-0.6),m.feet.y) < m.feet.y-1.0
-		var jump := _jumping_if(edge)
-		on = -1
-		for i in range(3):
-			if pieces.ropes[i].held(): on = i
-		if on >= 0:
-			var r: Node3D = pieces.ropes[on]
-			want = Vector2(0.0,-1.0) if r.velocity.z <= 0.0 else Vector2(0.0,1.0)
-			jump = r.hands.z < r.anchor.z and r.velocity.z < 0.0 and (r.hands-r.anchor).angle_to(Vector3.DOWN) > 0.45 and r.velocity.length() > 7.0
-		_input(want,jump)
+	_tick(2)
+	var first: Node3D = pieces.ropes[0]
+	var second: Node3D = pieces.ropes[1]
+	var to_first: Vector3 = first.hands-m.feet
+	var facing := PilotMotor.forward(m.facing)
+	check(Vector2(to_first.x,to_first.z).length() < 12.0 and facing.dot(Vector2(to_first.x,to_first.z).normalized()) > 0.95,"--foot-at=ropes starts him %.1f m from the first rope, facing it" % Vector2(to_first.x,to_first.z).length())
+	var took := _isle_first(first)
+	check(took,"Run from there and jumped, he takes hold of the first rope")
+	if not took: return
+	_pump_and_go(first,5.0,0.75)
+	check(not _fly_to(second,""),"...let go plainly, he falls short of the second (%.1f m on)" % absf(second.anchor.z-first.anchor.z))
+	study.place(spot[0],spot[1])
+	_input(Vector2.ZERO)
+	for i in range(1800):
+		if (first.velocity as Vector3).length() < 0.3 and (first.hands-first.anchor).angle_to(Vector3.DOWN) < 0.06: break
 		_tick(1)
-		for i in range(3):
-			if pieces.ropes[i].held(): caught[i] = true
-		if m.grounded and m.feet.z < -40.0:
+	took = _isle_first(first)
+	if not took: return
+	_pump_and_go(first,5.0,0.75)
+	var twirled := _fly_to(second,"twirl")
+	check(twirled,"...let go with a twirl at the top of the arc, he takes the second (%.1f m on)" % absf(second.anchor.z-first.anchor.z))
+	if not twirled: return
+	_pump_and_go(second,3.0,0.6)
+	var far := Vector3.INF
+	for t in range(240):
+		_input(Vector2(0.0,-1.0))
+		_tick(1)
+		if m.grounded:
 			far = m.feet
 			break
-		if m.feet.y < 20.0: break
-	check(caught[0] and caught[1] and caught[2],"Run off the near rim he takes the first rope and swings rope to rope (%s)" % [caught])
-	check(far != Vector3.INF,"...and lets go onto the far island (%s)" % far)
+	check(far != Vector3.INF and far.z < -40.0 and far.y > TOP_Y-0.5,"...and lets go onto the far island (%s)" % far)
 	# The ferry, from the far rim when it comes in.
 	spot = Route.SPOTS.ferry
 	study.place(spot[0],spot[1])
@@ -351,6 +453,16 @@ func _isle_route() -> void:
 		if pieces.on != ferry: stayed = false
 		if ferry.transform.origin.z > -27.5: break
 	check(boarded and stayed and m.feet.z > -29.5,"From the far rim he boards the ferry and rides it back across (z %.1f)" % m.feet.z)
+
+## Run from where he stands to the isle's first rope and jumped at it:
+## whether he took hold.
+func _isle_first(first: Node3D) -> bool:
+	for t in range(240):
+		var to: Vector2 = Vector2(first.anchor.x-m.feet.x,first.anchor.z-m.feet.z)
+		_input(to.normalized(),_jumping_if(to.length() < 1.6))
+		_tick(1)
+		if first.held(): return true
+	return false
 
 ## As `_jumping`, from the ground when `go`.
 func _jumping_if(go: bool) -> bool:

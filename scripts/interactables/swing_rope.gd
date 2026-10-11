@@ -1,9 +1,10 @@
 extends Node3D
 ## A swing rope (docs/design/foot-interactables.md): a rope `length` m long
 ## hung from `anchor` (an arch's soffit, a lintel, a beam), its free end
-## swinging as a pendulum. Jumped into (his hands within CATCH of it, on its
-## lower part, from GRIP_HIGH of its length down), he takes hold where his
-## hands met it and rides it (the motor's `rider`, scripts/pilot_motor.gd,
+## swinging as a pendulum. Jumped into (his hands within CATCH of it, or his
+## chest within CATCH_BODY, on its lower part, from GRIP_HIGH of its length
+## down), he takes hold where his hands are, the rope swung to them (he is
+## never pulled in), and rides it (the motor's `rider`, scripts/pilot_motor.gd,
 ## hanging as on a ledge: `hold` "swing"): the rope's swing takes up his
 ## pace across it, so a run and a jump into it is a swing at once.
 ##
@@ -21,8 +22,9 @@ extends Node3D
 ##
 ## Free, its end swings on as a pendulum and settles (and sways a little in
 ## the air), drawn as a faceted rope in the footbridges' rope tone
-## (scripts/footbridge.gd ROPE), a knot at its end and an iron ring at the
-## anchor. The numbers are live (the yard's F4, studies/
+## (scripts/footbridge.gd ROPE), thick enough to read across a gap, a knot
+## at its end and an iron ring at the anchor; `add_tag` hangs a weathered
+## cloth tag beside it, so a rope is seen from across the isle. The numbers are live (the yard's F4, studies/
 ## interactables_yard.gd): `t_*` read each frame.
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const PilotFigure = preload("res://scripts/pilot_figure.gd")
@@ -36,14 +38,20 @@ const MOST := 1.35
 const DAMP := 0.08
 const TOP := 12.0
 const POP := 1.5
-const CATCH := 0.6
+const CATCH := 0.3
+const CATCH_BODY := 0.32
+## The chest's height over the feet (m), for running into it.
+const CHEST := 0.6
 const GRIP_HIGH := 0.35
 const REGRAB := 0.45
 ## Free, its end's damping a second, and its sway (m/s² at the end).
 const FREE_DAMP := 0.35
 const SWAY := 0.25
 ## The rope's radius drawn (m).
-const RADIUS := 0.035
+const RADIUS := 0.06
+## A tag's width and length (m), its cloth's tone (a faded madder).
+const TAG := Vector2(0.6,1.8)
+const TAG_TONE := Color("b04a2c")
 
 static var t_gravity := GRAVITY
 static var t_pump := PUMP
@@ -53,6 +61,7 @@ static var t_damp := DAMP
 static var t_top := TOP
 static var t_pop := POP
 static var t_catch := CATCH
+static var t_catch_body := CATCH_BODY
 
 var anchor := Vector3.ZERO
 var length := 5.0
@@ -71,6 +80,8 @@ var _time := 0.0
 var _upper: MeshInstance3D
 var _lower: MeshInstance3D
 var _knot: MeshInstance3D
+## Its tags (`add_tag`): [mesh instance, its rest pose].
+var _tags: Array = []
 
 ## Hung from `at`, `rope_length` m long.
 func setup(at: Vector3, rope_length: float) -> void:
@@ -88,10 +99,10 @@ func _ready() -> void:
 	_lower.mesh = mesh
 	add_child(_lower)
 	_knot = MeshInstance3D.new()
-	_knot.mesh = _knot_mesh(0.075,0.16,Footbridge.ROPE.darkened(0.12))
+	_knot.mesh = _knot_mesh(0.12,0.22,Footbridge.ROPE.darkened(0.12))
 	add_child(_knot)
 	var ring := MeshInstance3D.new()
-	ring.mesh = _knot_mesh(0.07,0.12,Color("2c2a28"))
+	ring.mesh = _knot_mesh(0.11,0.14,Color("2c2a28"))
 	ring.position = anchor+Vector3.DOWN*0.04
 	add_child(ring)
 	_draw()
@@ -110,26 +121,50 @@ func advance(delta: float) -> void:
 		var sway := Vector3(sin(_time*0.7+anchor.x),0.0,cos(_time*0.53+anchor.z))*SWAY
 		_swing(delta,sway,FREE_DAMP)
 	_draw()
+	for k in range(_tags.size()):
+		var tag: MeshInstance3D = _tags[k][0]
+		var rest: Transform3D = _tags[k][1]
+		var wave := sin(_time*1.3+float(k)*1.7+anchor.z)*0.07+sin(_time*2.9+anchor.x)*0.03
+		tag.transform = rest*Transform3D(Basis(Vector3.RIGHT,wave),Vector3.ZERO)
 
-## Whether he catches it now: in the air, his hands (or his chest) within
-## CATCH of its lower part. Taken hold of, he rides it.
+## A weathered cloth tag hung from the beam beside it (its top's middle at
+## `at`, its face turned `yaw` about up), stirring in the air: a rope to
+## swing on, seen from across the isle. TAG wide and long.
+func add_tag(at: Vector3, yaw := 0.0, seed_value := 0) -> void:
+	var tag := MeshInstance3D.new()
+	tag.mesh = _tag_mesh(seed_value)
+	var rest := Transform3D(Basis(Vector3.UP,yaw),at)
+	tag.transform = rest
+	add_child(tag)
+	_tags.append([tag,rest])
+
+## Whether he catches it now: in the air, his hands within CATCH of its
+## lower part (from GRIP_HIGH of its length down), or his chest within
+## CATCH_BODY of it (he runs into it). Nothing pulls him in: taken hold of,
+## the rope comes to his hands where they are, and he rides it.
 func try_catch(walker: PilotMotor) -> bool:
 	if _cool > 0.0 or walker.rider != null or walker.grounded or walker.on_ledge() or walker.swimming or walker.move == "tumble": return false
-	var reach := t_catch
-	var best := INF
-	var at := Vector3.ZERO
-	for up: float in [PilotMotor.HANG_DROP+0.1,0.6]:
-		var p := walker.feet+Vector3.UP*up
-		var q := Geometry3D.get_closest_point_to_segment(p,anchor,hands)
-		var d := p.distance_to(q)
-		if d < best:
-			best = d
-			at = q
-	if best > reach or anchor.distance_to(at) < length*GRIP_HIGH: return false
-	_take(walker,at)
+	var hand := hand_of(walker)
+	var low := anchor+(hands-anchor).normalized()*length*GRIP_HIGH
+	var q := Geometry3D.get_closest_point_to_segment(hand,low,hands)
+	var met := hand.distance_to(q) <= t_catch
+	if not met:
+		var chest := walker.feet+Vector3.UP*CHEST
+		met = chest.distance_to(Geometry3D.get_closest_point_to_segment(chest,low,hands)) <= t_catch_body
+	if not met: return false
+	_take(walker,hand)
 	return true
 
-## Taken hold of at `at` on it: his pace across the rope its swing.
+## Where his hands are, reaching up and ahead as they hang from a ledge
+## (PilotFigure GRIP).
+static func hand_of(walker: PilotMotor) -> Vector3:
+	var f := PilotMotor.forward(walker.facing)
+	return walker.feet+Vector3.UP*PilotMotor.HANG_DROP+Vector3(f.x,0.0,f.y)*(PilotMotor.HANG_OUT+0.03)
+
+## Taken hold of with his hands at `at`: the rope swung to them (its grip
+## that far from the anchor, inside its length), his pace across the rope
+## its swing, all of it kept (what went along the rope turned into the
+## swing, up to TOP).
 func _take(walker: PilotMotor, at: Vector3) -> void:
 	motor = walker
 	grip = clampf(anchor.distance_to(at),length*GRIP_HIGH,length)
@@ -137,6 +172,7 @@ func _take(walker: PilotMotor, at: Vector3) -> void:
 	hands = anchor+u*grip
 	var v := walker.velocity
 	velocity = v-u*v.dot(u)
+	if velocity.length() > 0.5: velocity = velocity.normalized()*minf(v.length(),maxf(velocity.length(),t_top))
 	var flat := Vector2(v.x,v.z)
 	facing = PilotMotor.facing_of(flat) if flat.length() > 1.0 else walker.facing
 	walker.rider = self
@@ -282,6 +318,44 @@ static func _rope_mesh() -> ArrayMesh:
 				st.set_color(tone)
 				st.set_normal(n)
 				st.add_vertex(p)
+	var mesh := st.commit()
+	mesh.surface_set_material(0,_material())
+	return mesh
+
+## A cloth tag: a strip hanging down -y from its top's middle, folded in
+## facets that turn a little in and out, frayed to a notched end, the madder
+## faded and darker toward the hem.
+static func _tag_mesh(seed_value: int) -> ArrayMesh:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7700+seed_value
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var rows := 5
+	var cols := 3
+	var grid: Array = []
+	for j in range(rows+1):
+		var line: Array = []
+		var y := -TAG.y*float(j)/rows
+		for i in range(cols+1):
+			var x := TAG.x*(float(i)/cols-0.5)*(1.0-0.12*float(j)/rows)
+			var z := (0.05 if (i+j)%2 == 0 else -0.04)*float(j)/rows+rng.randf_range(-0.015,0.015)
+			if j == rows: y -= (0.22 if i == 1 or i == 2 else 0.0)*rng.randf_range(0.6,1.0)
+			line.append(Vector3(x,y,z))
+		grid.append(line)
+	for j in range(rows):
+		var tone := TAG_TONE.darkened(0.08+0.32*float(j)/rows).lerp(Color("6f5a46"),rng.randf_range(0.0,0.25))
+		for i in range(cols):
+			var a: Vector3 = grid[j][i]
+			var b: Vector3 = grid[j][i+1]
+			var c: Vector3 = grid[j+1][i+1]
+			var d: Vector3 = grid[j+1][i]
+			for tri: Array in [[a,b,c],[a,c,d]]:
+				var n: Vector3 = ((tri[1]-tri[0]) as Vector3).cross(tri[2]-tri[0]).normalized()
+				var shade := tone.darkened(rng.randf_range(0.0,0.1))
+				for p: Vector3 in tri:
+					st.set_color(shade)
+					st.set_normal(n)
+					st.add_vertex(p)
 	var mesh := st.commit()
 	mesh.surface_set_material(0,_material())
 	return mesh

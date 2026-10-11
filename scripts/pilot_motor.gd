@@ -79,7 +79,9 @@ extends RefCounted
 ## out of the water never starts one.
 ##
 ## Slopes (the ground's own fall, `_gradient`, read from heights around the
-## feet, so a step's edge is no slope): running up one steeper than
+## feet, so a step's edge is no slope; read along the world's axes and
+## along his way, the steeper kept, so a narrow slope he goes along, a
+## banister's coping or a beam, is its slope in any heading, not a ridge): running up one steeper than
 ## SLOPE_SLOW he slows, to SLOPE_SLOWEST of his pace at SLIDE_AUTO. On one
 ## steeper than SLIDE_AUTO he can't stand: he boot-surfs down it (move
 ## "slide"), as he does on any steeper than SLIDE_FROM with `crouch` held
@@ -174,7 +176,7 @@ extends RefCounted
 ## holds him still where the caller puts his feet (a guardian's grab) till
 ## the next `knock` throws him. Only position and time are lost; never hurt.
 ##
-## Ridden (`rider`: a swing rope, a balustrade, scripts/interactables/):
+## Ridden (`rider`: a swing rope, scripts/interactables/):
 ## while set, the step reads the buttons and hands itself to the rider's
 ## `ride(motor, delta, want, pressed)`, which moves him (his feet, pace,
 ## facing, `move` or `hold` for the figure: "swing" hangs as the ledge's
@@ -787,6 +789,13 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 	var surfed := move == "slide"
 	if grounded:
 		slope = _gradient(ground,Vector2(feet.x,feet.z))
+		# Read along his way too: a narrow slope (a banister's coping, a
+		# beam) crossed by the world's axes reads as a ridge, flat; along
+		# it, it is its slope. Only ever steeper than the axes' read.
+		var way := Vector2(velocity.x,velocity.z)
+		way = way/way.length() if way.length() > 0.5 else forward(facing)
+		var along := _gradient(ground,Vector2(feet.x,feet.z),way)
+		if along.length_squared() > slope.length_squared(): slope = along
 		surfing = _surfing(crouched,ground)
 		move = "slide" if surfing else ("crouch" if crouched else "")
 		_skid_left = SIDE_GRACE if skidding else maxf(0.0,_skid_left-delta)
@@ -1696,15 +1705,17 @@ func _uphill(f: Vector2) -> float:
 ## each axis the gentlest of its rise either side of `p`, near (SLOPE_NEAR)
 ## and further (SLOPE_PROBE) (none where they rise opposite ways or any is
 ## missing), so a plane is its slope, and a step's edge, a stair's tread, a
-## ridge or a gully is flat.
-func _gradient(ground: Callable, p: Vector2) -> Vector2:
+## ridge or a gully is flat. Read along `x_axis` (unit) and across it,
+## given back in the world's x, z.
+func _gradient(ground: Callable, p: Vector2, x_axis := Vector2(1.0,0.0)) -> Vector2:
 	var c := float(ground.call(p))
 	if not is_finite(c): return Vector2.ZERO
 	var g := Vector2.ZERO
+	var axes := [x_axis,Vector2(-x_axis.y,x_axis.x)]
 	for axis in range(2):
 		var rises := []
 		for reach: float in [SLOPE_NEAR,SLOPE_PROBE]:
-			var d := Vector2(reach,0.0) if axis == 0 else Vector2(0.0,reach)
+			var d: Vector2 = axes[axis]*reach
 			rises.append((float(ground.call(p+d))-c)/reach)
 			rises.append((c-float(ground.call(p-d)))/reach)
 		var least: float = rises[0]
@@ -1713,7 +1724,7 @@ func _gradient(ground: Callable, p: Vector2) -> Vector2:
 				least = 0.0
 				break
 			if absf(r) < absf(least): least = r
-		g[axis] = least
+		g += axes[axis]*least
 	return g
 
 ## The slope underfoot, degrees.

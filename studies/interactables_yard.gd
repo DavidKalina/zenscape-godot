@@ -8,15 +8,16 @@ extends "res://studies/character_study.gd"
 ##      him and spring back, out to a far deck
 ##   2  drifting slabs: one sliding across the way, one ferrying out and
 ##      back, a long one turning, one going round a ring
-##   3  swing ropes: two ropes on trilithons over a gap (jump in, the stick
-##      pumps, Space lets go with the swing's pace), a far deck with metre
-##      ticks to read the throw
+##   3  swing ropes: three ropes on trilithons over a gap (jump in, the stick
+##      pumps, Space lets go with the swing's pace): the second past a plain
+##      release's reach (twirl to it), the third past the twirl's (sail to
+##      it), a far deck with metre ticks past it
 ##   4  balustrade: the kit's grand stair down from a high deck, a banister
-##      down each cheek; jump onto one and slide it (crouch tucks, stick back
-##      brakes, the stick across balances), jump off or be flung off its foot
-##      along the run-out's ticks
+##      down each cheek, only stone: hop onto one, crouch and surf it down,
+##      the stick across carving to hold the coping, off its foot along the
+##      run-out's ticks
 ## F1 adds the pieces' numbers (the slab under him, the rope's swing, the
-## rail's pace and balance, the last release and rail top). F4 the pieces'
+## rail's pace, the last release and rail top). F4 the pieces'
 ## feel (sliders over every piece's `t_*`, live; Print copies the set).
 ## --at=bob|drift|rope|rail (or 1-4) starts at that station.
 ##   ./run-interactables.command [--at=rope]
@@ -33,7 +34,9 @@ const YARD_LOST := -4.0
 ## The grand stair (station 4): its frame, foot toward +z.
 const STAIR := Transform3D(Basis.IDENTITY,Vector3(24.0,0.0,-8.2))
 ## The ropes: anchors and length; the trilithons' height.
-const ROPES := [Vector3(6.0,7.0,-3.8),Vector3(6.0,7.0,-11.5)]
+## Apart past a plain release's reach (13.0 m on these), then past the
+## twirl's (17.5 m), within the sail's (33.7 m): tools/measure_rope_reach.gd.
+const ROPES := [Vector3(6.0,7.0,-3.8),Vector3(6.0,7.0,-19.0),Vector3(6.0,7.0,-43.0)]
 const ROPE_LENGTH := 6.6
 const YARD := [
 	{"key":1,"name":"Bobbing slabs","spawn":Vector3(-30.0,0.0,1.0),"face":Vector2(0.0,-1.0),"sign":Vector3(-30.0,3.0,3.0),"parts":[
@@ -45,8 +48,8 @@ const YARD := [
 		["label",Vector3(-12.0,2.0,-35.0),"far deck"],
 	]},
 	{"key":3,"name":"Swing ropes","spawn":Vector3(6.0,0.0,1.0),"face":Vector2(0.0,-1.0),"sign":Vector3(6.0,3.0,3.0),"parts":[
-		["box",Rect2(1.0,-30.0,10.0,14.0),-1.0,0.0,"pad"],
-		["ticks",Vector2(10.5,-16.0),Vector2(10.5,-30.0),1.0,2],
+		["box",Rect2(1.0,-64.0,10.0,16.0),-1.0,0.0,"pad"],
+		["ticks",Vector2(10.5,-48.0),Vector2(10.5,-64.0),1.0,2],
 		["box",Rect2(0.0,-21.0,12.0,1.0),-12.0,-11.0,"dark"],
 	]},
 	{"key":4,"name":"Balustrade","spawn":Vector3(24.0,4.48,-16.5),"face":Vector2(0.0,1.0),"sign":Vector3(24.0,7.5,-19.0),"parts":[
@@ -68,10 +71,8 @@ const PIECE_TUNABLE := [
 	[BobSlab,"t_damp",0.05,1.5],[BobSlab,"t_bob",0.0,0.6],[BobSlab,"t_bob_time",1.0,12.0],
 	[DriftSlab,"t_speed",0.0,3.0],[DriftSlab,"t_sink",0.0,0.4],[DriftSlab,"t_tilt",0.0,0.2],
 	[SwingRope,"t_gravity",5.0,40.0],[SwingRope,"t_pump",0.0,25.0],[SwingRope,"t_steer",0.0,10.0],[SwingRope,"t_most",0.5,1.55],
-	[SwingRope,"t_damp",0.0,1.0],[SwingRope,"t_top",4.0,24.0],[SwingRope,"t_pop",0.0,8.0],[SwingRope,"t_catch",0.2,1.5],
-	[Balustrade,"t_pull",0.0,40.0],[Balustrade,"t_drag",0.0,5.0],[Balustrade,"t_air",0.0,0.15],[Balustrade,"t_tuck",0.0,1.0],
-	[Balustrade,"t_brake",0.0,15.0],[Balustrade,"t_top",4.0,30.0],[Balustrade,"t_jump",0.2,2.5],[Balustrade,"t_tip",0.0,3.0],
-	[Balustrade,"t_wobble",0.0,1.5],[Balustrade,"t_lean",0.0,6.0],[Balustrade,"t_catch",0.1,1.0],
+	[SwingRope,"t_damp",0.0,1.0],[SwingRope,"t_top",4.0,24.0],[SwingRope,"t_pop",0.0,8.0],[SwingRope,"t_catch",0.1,0.8],
+	[SwingRope,"t_catch_body",0.1,0.8],
 ]
 
 func _ready() -> void:
@@ -121,7 +122,7 @@ func _build_pieces() -> void:
 	var stair := RuinKit.grand_stair(70,0.25)
 	stair.transform = STAIR
 	add_child(stair)
-	for side: float in [-1.0,1.0]: pieces.balustrade(Balustrade.grand_stair_rail(STAIR,side),71+int(side),0.3)
+	for side: float in [-1.0,1.0]: pieces.balustrade(Balustrade.grand_stair_rail(STAIR,side),71+int(side),0.3,Balustrade.grand_stair_floor(STAIR,side))
 
 # --- Tuning (F4) and numbers (F1) --------------------------------------------------
 
@@ -221,7 +222,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	super._unhandled_input(event)
 
 func _hint_text() -> String:
-	return "1 bobbing slabs · 2 drifting slabs · 3 swing ropes (jump in; stick pumps; Space lets go, crouch drops) · 4 balustrade (jump on; crouch tucks, stick back brakes, across balances; Space off) · R start · F1 numbers · F2 feel · F4 pieces' feel · Esc mouse"
+	return "1 bobbing slabs · 2 drifting slabs · 3 swing ropes (jump in; stick pumps; Space lets go, crouch drops; X twirls or Space again sails to the far ones) · 4 balustrade (hop on; crouch surfs it; stick across carves) · R start · F1 numbers · F2 feel · F4 pieces' feel · Esc mouse"
 
 func _show_hud() -> void:
 	super._show_hud()
@@ -237,12 +238,13 @@ static func pieces_lines(host: Node3D) -> PackedStringArray:
 	if riding is SwingRope:
 		var r: Node3D = riding
 		lines.append("rope      held at %.1f m · %.0f° off plumb · %.2f m/s" % [r.grip,rad_to_deg((r.hands-r.anchor).angle_to(Vector3.DOWN)),r.velocity.length()])
-	elif riding is Balustrade:
-		var b: Node3D = riding
-		lines.append("rail      %.2f m/s · %.1f of %.1f m · balance %+.2f · top %.2f" % [absf(b.pace),b.s,b.length,b.balance,b.ride_top])
+	elif host.on_rail != null:
+		var b: Node3D = host.on_rail
+		var near: Array = b.nearest(host.motor.feet)
+		lines.append("rail      %.2f m/s · %.1f of %.1f m · %.2f m off its line · top %.2f" % [host.motor.speed(),float(near[0]),b.length,float(near[1]),host.last_rail_top])
 	elif host.on != null:
 		lines.append("slab      on · sag %+.2f m · tilt %.1f°" % [host.on.sag,rad_to_deg(host.on.lean.length())])
-	lines.append("pieces    slab landings %d · rope catches %d · rail rides %d" % [host.counts.slab,host.counts.swing,host.counts.rail])
+	lines.append("pieces    slab landings %d · rope catches %d · times on a rail %d" % [host.counts.slab,host.counts.swing,host.counts.rail])
 	var v: Vector3 = host.last_release
 	if v != Vector3.ZERO: lines.append("last rope release %.2f m/s across, %.2f up" % [Vector2(v.x,v.z).length(),v.y])
 	if host.last_rail_top > 0.0: lines.append("last rail top %.2f m/s" % host.last_rail_top)
