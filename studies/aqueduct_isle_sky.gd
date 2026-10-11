@@ -2,29 +2,26 @@ extends Node3D
 ## The sky round the aqueduct isle (studies/aqueduct_isle.gd), lived in with
 ## what the game already has, wired here rather than rewritten:
 ##
-##   far isles   other sky islands at a range of distances, made as the
-##               game's islets are (scripts/sky_islets.gd `stand`, scripts/
-##               sky_islet.gd `author`): a few near enough to fly to, more
-##               out in the air, the farthest big and coarse in the haze;
-##               the clusters of the sky (scripts/sky_clusters.gd: the
-##               solver, the dresser: cabins, windmills, docks, lighthouses,
-##               sky folk), and one pierced isle to thread (scripts/
-##               sky_pierced.gd). Their trees hand over to the far stand-ins
-##               (scripts/far_trees.gd) past FAR_TREES m. Each is worked out
-##               on a worker and stood up a part a frame within the sky's
-##               frame budget (scripts/sky_commits.gd), fading in. Their
-##               ground and rock collide (a trimesh on the isle's layers),
-##               so the plane skims, bumps and sets down on them as on the
-##               isle; the pierced isle's rock bumps as the game's does
-##               (SkyPierced `bump`). --no-far-isles leaves them out.
+##   motif isles the four ruin motifs' isles (the bell spires, the cloister
+##               tarn, the Sundered gorge, the colonnade spine), each placed
+##               a few hundred metres off the isle at its own height, whole:
+##               its art, turf, water, rope bridges, grass and flowers, life,
+##               bells and tokens, to fly to, land on and walk (scripts/
+##               kit_isle/motif_sky.gd, docs/scenic/motif-sky.md). Built
+##               after the isle is up, on a worker and a slice a frame
+##               within the sky's frame budget (scripts/sky_commits.gd), so
+##               the pilot walks as soon as ever. Only where the scene asks
+##               for them (`wants_motifs`: the aqueduct isle; a motif's own
+##               scene has none). --no-far-isles (or --no-motifs) leaves
+##               them out.
 ##   airships    the sky folk's cargo airship (scripts/sky_airship.gd's ship,
-##               scripts/airship_build.gd) on slow loops between the far
+##               scripts/airship_build.gd) on slow loops between the motif
 ##               isles, propellers turning, crew waving when you pass, lit
 ##               at night, solid to the plane; one passing close hums with
 ##               the plane's own propeller drone (scripts/glide_air.gd
 ##               `engine`). --no-airships.
 ##   traffic     the game's CPU biplanes (scripts/sky_traffic.gd): laps
-##               round the clusters, buzzes of the islets and passes
+##               round the motif isles, buzzes of their tops and passes
 ##               through the drifting clouds, climbing over what stands.
 ##               --no-traffic.
 ##   clouds      the game's towering cumulus, drifting clouds and cloud
@@ -34,30 +31,23 @@ extends Node3D
 ##               tunnels through both. --no-sky-clouds.
 ##   life        the open-air life of the other islands (scripts/
 ##               sky_ambient_life.gd): gulls on thermals over the nearest
-##               isles, songbird flocks bursting from their crowns as you
-##               pass. --no-sky-life.
+##               motif isles. --no-sky-life.
 ##   motes       the sky's motes of light (scripts/sky_motes.gd) round the
-##               isle and the nearest clusters. --no-motes.
+##               isle and the two nearest motif isles. --no-motes.
 ##   tokens      a few glyph tokens for the plane (scripts/
 ##               sky_collectibles.gd, CollectibleLines `line`), each a
-##               skill moment through the isle's own stone (TOKENS).
-##               --no-sky-tokens.
+##               skill moment through the isle's own stone (TOKENS), and
+##               each motif isle's own. --no-sky-tokens.
 ##   serpent     a giant rune serpent (scripts/rune_serpent.gd) slithering
-##               its long way through the isles, the cloud sea and the
-##               pierced isle's arch; it watches and paces the plane, solid
-##               to it. --no-serpent. See docs/scenic/rune-serpent.md.
+##               its long way round the isle, down the Sundered gorge, down
+##               into the cloud sea under the bell spires and home; it
+##               watches and paces the plane, solid to it. --no-serpent.
+##               See docs/scenic/rune-serpent.md.
 ## --no-sky leaves all of it out. See docs/scenic/aqueduct-isle-sky.md.
+## The far isles, the clusters and the pierced isle this sky had are gone
+## (docs/scenic/motif-sky.md); the old game still has them (scripts/
+## sky_islets.gd, sky_clusters.gd, sky_pierced.gd).
 
-const SkyIslets = preload("res://scripts/sky_islets.gd")
-const SkyIslet = preload("res://scripts/sky_islet.gd")
-const SkyClusters = preload("res://scripts/sky_clusters.gd")
-const SkyPierced = preload("res://scripts/sky_pierced.gd")
-const PiercedRuins = preload("res://scripts/pierced_ruins.gd")
-const PiercedMesh = preload("res://scripts/pierced_mesh.gd")
-const Cabin = preload("res://scripts/cabin.gd")
-const Dresser = preload("res://scripts/cluster_dresser.gd")
-const RockLooks = preload("res://scripts/rock_looks.gd")
-const SkyCommits = preload("res://scripts/sky_commits.gd")
 const SkyTraffic = preload("res://scripts/sky_traffic.gd")
 const SkyAirship = preload("res://scripts/sky_airship.gd")
 const AirshipBuild = preload("res://scripts/airship_build.gd")
@@ -70,6 +60,7 @@ const Lines = preload("res://scripts/collectible_lines.gd")
 const IslanderFigure = preload("res://scripts/islander_figure.gd")
 const RuneSerpent = preload("res://scripts/rune_serpent.gd")
 const KitClouds = preload("res://scripts/kit_isle/kit_clouds.gd")
+const MotifSky = preload("res://scripts/kit_isle/motif_sky.gd")
 
 ## The isle's own layers (studies/aqueduct_isle.gd TURF_LAYER): ground the
 ## plane skims and the pilot is set down on; and what bumps it.
@@ -78,53 +69,15 @@ const SOLID_LAYER := 1
 ## The isle's middle (world), for distances.
 const MIDDLE := Vector3(85.0,30.0,-20.0)
 
-## The lone isles: [name, kind, seed, middle (world; y the rim), radius
-## (m), grid step (m; 0 the plate's)]. Near ones to fly to, a ring further
-## out, and big coarse ones far off in the haze. Kept off the lodestone's
-## shard (studies/aqueduct_isle.gd TARGET) and the clusters.
-const ISLES := [
-	["grove_east","grove",4101,Vector3(215.0,40.0,-35.0),16.0,0.0],
-	["spring_west","spring",4102,Vector3(-75.0,46.0,55.0),15.0,0.0],
-	["meadow_south","meadow",4103,Vector3(45.0,16.0,185.0),13.0,0.0],
-	["spring_north","spring",4104,Vector3(105.0,22.0,-165.0),12.0,0.0],
-	["hills_ne","hills",4105,Vector3(330.0,52.0,-120.0),18.0,1.0],
-	["grove_w","grove",4106,Vector3(-380.0,34.0,-70.0),22.0,1.0],
-	["crag_se","crag",4107,Vector3(560.0,50.0,140.0),14.0,1.0],
-	["hills_nw","hills",4108,Vector3(-190.0,22.0,-560.0),24.0,1.0],
-	["spring_s","spring",4109,Vector3(250.0,44.0,520.0),18.0,1.0],
-	["shore_sw","shore",4110,Vector3(-470.0,10.0,480.0),20.0,1.0],
-	["far_n","grove",4111,Vector3(-160.0,30.0,-1500.0),48.0,2.5],
-	["far_ne","hills",4112,Vector3(1300.0,48.0,-900.0),55.0,2.5],
-	["far_e","grove",4113,Vector3(1650.0,20.0,350.0),46.0,2.5],
-	["far_se","spring",4114,Vector3(900.0,38.0,1350.0),42.0,2.5],
-	["far_sw","hills",4115,Vector3(-1100.0,26.0,1250.0),58.0,2.5],
-	["far_w","grove",4116,Vector3(-1700.0,44.0,100.0),50.0,2.5],
-	["far_nw","crag",4117,Vector3(-1200.0,60.0,-1150.0),40.0,2.5],
-]
-## Trees an isle bears, per square metre of land (groves more): so a big
-## isle reads wooded from far off.
-const TREE_DENSITY := {"grove":0.035,"spring":0.016,"hills":0.012,"meadow":0.01,"crag":0.008,"shore":0.006}
-## Its trees hand over to the far stand-ins past this (m).
-const FAR_TREES := 300.0
-## The clusters: [motif, seed, middle (world)].
-const CLUSTERS := [
-	["farmstead",21,Vector3(340.0,26.0,150.0)],
-	["falls",5,Vector3(-250.0,36.0,215.0)],
-	["hamlet",9,Vector3(-80.0,12.0,-430.0)],
-	["reef",4,Vector3(780.0,6.0,-310.0)],
-	["lake",7,Vector3(-720.0,28.0,-170.0)],
-	["forest",12,Vector3(560.0,40.0,760.0)],
-]
-## The pierced isle: its seed and middle (world).
-const PIERCED := [3,Vector3(520.0,64.0,-700.0)]
-
 ## The airships' loops (world waypoints, flown round and round, a Catmull-Rom
 ## through them) and their speeds (m/s). The first passes the isle close
-## (its drone heard on the isle's top), the others ply the far isles.
+## (its drone heard on the isle's top) and out by the bell spires; the
+## second circles the colonnade spine; the third the cloister tarn. All
+## keep well off the rune serpent's way.
 const ROUTES := [
-	[[Vector3(60.0,62.0,140.0),Vector3(330.0,58.0,200.0),Vector3(420.0,64.0,-60.0),Vector3(230.0,66.0,-130.0),Vector3(40.0,60.0,-70.0)],6.5],
-	[[Vector3(-90.0,40.0,-470.0),Vector3(-700.0,52.0,-230.0),Vector3(-260.0,58.0,240.0),Vector3(-120.0,48.0,-60.0)],7.5],
-	[[Vector3(780.0,38.0,-260.0),Vector3(560.0,70.0,-760.0),Vector3(560.0,60.0,700.0),Vector3(900.0,44.0,300.0)],8.0],
+	[[Vector3(60.0,62.0,140.0),Vector3(270.0,58.0,190.0),Vector3(420.0,64.0,-60.0),Vector3(230.0,66.0,-130.0),Vector3(40.0,60.0,-70.0)],6.5],
+	[[Vector3(-190.0,64.0,-140.0),Vector3(-440.0,60.0,-230.0),Vector3(-380.0,64.0,-560.0),Vector3(-60.0,58.0,-520.0),Vector3(-40.0,60.0,-300.0)],7.5],
+	[[Vector3(60.0,70.0,210.0),Vector3(290.0,58.0,360.0),Vector3(60.0,62.0,590.0),Vector3(-170.0,60.0,360.0)],8.0],
 ]
 ## The airship's bank per radian a second of turn, and most.
 const SHIP_BANK := 0.9
@@ -153,9 +106,8 @@ const TOKENS := [
 const TOKEN_SEED := 11
 
 var scene: Node3D
-var islets: Node3D
-var clusters: Node3D
-var pierced: Node3D
+## The motif isles (scripts/kit_isle/motif_sky.gd), or null.
+var motifs: Node3D
 var traffic: Node
 ## The sky's cloud host (scripts/kit_isle/kit_clouds.gd), or null.
 var clouds: Node3D
@@ -166,12 +118,6 @@ var motes: Array[Node3D] = []
 var drone: Node3D
 ## What is on (flags).
 var on := {"isles":true,"airships":true,"traffic":true,"life":true,"motes":true,"tokens":true,"serpent":true,"clouds":true}
-## Lone isles being made ({task, spec, out}) and their built records by name.
-var _making: Array[Dictionary] = []
-var isles := {}
-## Built records given collision already (by node).
-var _solid := {}
-var _palette := {}
 var _clock := 0.0
 ## The life's stand-in for SkyIslands (`IsleHosts`).
 var _hosts: Node3D
@@ -188,7 +134,7 @@ func setup(study: Node3D) -> void:
 	var args := flags()
 	if args.has("--no-sky"):
 		for k in on: on[k] = false
-	if args.has("--no-far-isles"): on.isles = false
+	if args.has("--no-far-isles") or args.has("--no-motifs"): on.isles = false
 	if args.has("--no-airships"): on.airships = false
 	if args.has("--no-traffic"): on.traffic = false
 	if args.has("--no-sky-life"): on.life = false
@@ -196,200 +142,57 @@ func setup(study: Node3D) -> void:
 	if args.has("--no-sky-tokens"): on.tokens = false
 	if args.has("--no-serpent"): on.serpent = false
 	if args.has("--no-sky-clouds"): on.clouds = false
-	if on.isles: _start_isles()
+	if on.isles and scene.has_method("wants_motifs") and scene.wants_motifs(): _start_motifs(args)
 	if on.airships: _build_airships()
 	if on.traffic: _build_traffic()
 	if on.clouds: _build_clouds()
-	if on.life and on.isles: _build_life()
+	if on.life and motifs != null: _build_life()
 	if on.motes: _build_motes()
 	if on.tokens: _build_tokens()
 	if on.serpent: _build_serpent()
 
-func _exit_tree() -> void:
-	for m: Dictionary in _making: WorkerThreadPool.wait_for_task_completion(int(m.task))
-	_making.clear()
+# --- The motif isles ----------------------------------------------------------------
 
-func _notification(what: int) -> void:
-	if what == NOTIFICATION_PREDELETE:
-		for m: Dictionary in _making: WorkerThreadPool.wait_for_task_completion(int(m.task))
+## The four ruin motifs' isles, placed (scripts/kit_isle/motif_sky.gd): each
+## built on a worker and stood a slice a frame within the sky's budget.
+func _start_motifs(args: PackedStringArray) -> void:
+	motifs = MotifSky.new()
+	add_child(motifs)
+	motifs.setup(scene,self,args)
 
-# --- The far isles ------------------------------------------------------------------
+## Where the motif isles stand: [id, middle (world; y its top), reach (m)]
+## each, none without them (scripts/kit_isle/kit_clouds.gd keeps its towers
+## and puffs off them).
+func places() -> Array:
+	return MotifSky.places() if motifs != null else []
 
-## The islets' host (SkyIslets, at the origin: every isle's home is world),
-## the clusters' and the pierced isle's on it; every lone isle set making
-## on a worker, the clusters and the pierced isle planned.
-func _start_isles() -> void:
-	islets = SkyIslets.new()
-	add_child(islets)
-	_palette = islets.prepare_authored()
-	Cabin.info()
-	Dresser._mats()
-	var catalog: Dictionary = SkyIslets.catalog()
-	for spec: Array in ISLES:
-		var out := {}
-		var recipe := _recipe(spec)
-		var home: Vector3 = spec[3]
-		var palette := _palette
-		var plants: Dictionary = catalog.data
-		var task := WorkerThreadPool.add_task(func() -> void:
-			SkyIslets._make(int(spec[2]),palette,plants,out,home.y,recipe),false,"Aqueduct sky isle")
-		_making.append({"task":task,"spec":spec,"out":out})
-	clusters = SkyClusters.new()
-	clusters.islets = islets
-	clusters.scene = scene
-	clusters.folk = false
-	clusters._palette = _palette
-	add_child(clusters)
-	# The game's own flags leave the clusters (--no-clusters) and the
-	# pierced isle (--no-pierced) out.
-	if SkyClusters.random_enabled():
-		for c: Array in CLUSTERS:
-			var s := {"key":"aq:"+str(c[0]),"at":c[2],"motif":c[0],"seed":int(c[1])}
-			clusters.spots.append(s)
-			clusters._plan(s)
-	pierced = SkyPierced.new()
-	pierced.islets = islets
-	pierced._palette = _palette
-	PiercedRuins.prepare()
-	PiercedMesh.material()
-	add_child(pierced)
-	if SkyPierced.random_enabled():
-		var p := {"key":"aq","at":PIERCED[1],"seed":int(PIERCED[0])}
-		pierced.spots = [p]
-		SkyPierced.taken.clear()
-		SkyPierced.taken.append(PIERCED[1])
-		pierced._plan(p)
-
-## A lone isle's recipe (SkyIslet `author`): its kind, radius, step, trees
-## by its land, its rock as a seeded islet's, its trees' far stand-ins.
-static func _recipe(spec: Array) -> Dictionary:
-	var recipe := RockLooks.seeded(int(spec[2]))
-	var kind: String = spec[1]
-	var radius: float = spec[4]
-	recipe.kind = kind
-	recipe.radius = radius
-	if float(spec[5]) > 0.0: recipe.step = float(spec[5])
-	var trees := int(PI*radius*radius*float(TREE_DENSITY.get(kind,0.01)))
-	if trees > 0: recipe.trees = Vector2i(trees,int(trees*1.3)+1)
-	recipe.far_trees = FAR_TREES
-	return recipe
-
-## Each frame: what the workers made stood up (a part a frame within the
-## sky's budget), new ones faded in and given collision, the clusters'
-## sails turned and lights lit.
-func _advance_isles(delta: float, eye: Vector3) -> void:
-	for i in range(_making.size()-1,-1,-1):
-		var m: Dictionary = _making[i]
-		if not WorkerThreadPool.is_task_completed(int(m.task)) or not SkyCommits.open(): continue
-		WorkerThreadPool.wait_for_task_completion(int(m.task))
-		_making.remove_at(i)
-		var began := Time.get_ticks_usec()
-		_stand_isle(m.spec,m.out)
-		SkyCommits.spend("aqueduct isle",Time.get_ticks_usec()-began)
-	clusters._stand_some(eye)
-	clusters._animate(delta)
-	pierced._stand_some()
-	for key in pierced.isles:
-		var s: Dictionary = pierced.isles[key]
-		if float(s.get("age",SkyPierced.FADE_IN)) < SkyPierced.FADE_IN:
-			s.age = float(s.age)+delta
-			pierced._fade(s)
-	for key: String in islets.built:
-		var b: Dictionary = islets.built[key]
-		if float(b.get("age",SkyIslets.FADE_IN)) < SkyIslets.FADE_IN:
-			b.age = float(b.get("age",0.0))+delta
-			islets._fade(b)
-		if not _solid.has(b.node) and is_instance_valid(b.node):
-			_solid[b.node] = true
-			_solidify(b.node)
-
-func _stand_isle(spec: Array, out: Dictionary) -> void:
-	var b: Dictionary = islets.stand("Isle_"+str(spec[0]),spec[3],out)
-	b.fixed = true
-	b.age = 0.0
-	b.out = out
-	islets.built["aq:"+str(spec[0])] = b
-	isles[spec[0]] = b
-	islets._fade(b)
-
-## Every isle stood up at once (tests, captures), and the towers whole.
+## Every motif isle stood up at once (tests, captures), and the towers whole.
 func flush() -> void:
 	if clouds != null: clouds.flush()
-	if islets == null: return
-	for m: Dictionary in _making:
-		WorkerThreadPool.wait_for_task_completion(int(m.task))
-		_stand_isle(m.spec,m.out)
-	_making.clear()
-	clusters.flush(MIDDLE)
-	pierced.flush()
-	for key: String in islets.built:
-		var b: Dictionary = islets.built[key]
-		b.age = SkyIslets.FADE_IN
-		islets._fade(b)
-		if not _solid.has(b.node):
-			_solid[b.node] = true
-			_solidify(b.node)
+	if motifs != null: motifs.flush()
 
-## True once every isle, cluster and the pierced isle stands.
+## True once every motif isle stands whole.
 func isles_ready() -> bool:
-	if islets == null: return true
-	if not _making.is_empty(): return false
-	for key in clusters.clusters:
-		var c: Dictionary = clusters.clusters[key]
-		if int(c.get("task",-1)) >= 0 or not (c.get("waiting",[]) as Array).is_empty(): return false
-	for key in pierced.isles:
-		if int(pierced.isles[key].get("task",-1)) >= 0 or not (pierced.isles[key].get("stage",[]) as Array).is_empty(): return false
-	return true
-
-## The isle's ground and rock as the plane meets the isle's: its top on the
-## turf's layer (skimmed, set down on) and the bump's, its sides (shore wall
-## and hanging rock) the bump's; a trimesh each, under the drawn mesh.
-func _solidify(node: Node3D) -> void:
-	for part: String in ["Body","Sides"]:
-		var mesh_node := node.get_node_or_null(part) as MeshInstance3D
-		if mesh_node == null or mesh_node.mesh == null: continue
-		var faces := mesh_node.mesh.get_faces()
-		if faces.size() < 3: continue
-		var body := StaticBody3D.new()
-		body.name = "Solid"
-		body.collision_layer = SOLID_LAYER|(TURF_LAYER if part == "Body" else 0)
-		body.collision_mask = 0
-		var shape := ConcavePolygonShape3D.new()
-		shape.set_faces(faces)
-		var collider := CollisionShape3D.new()
-		collider.shape = shape
-		body.add_child(collider)
-		mesh_node.add_child(body)
+	return motifs == null or motifs.all_stood()
 
 ## The highest ground or rock under a point (world), or null: what stands
-## (physics, every isle and the aqueduct isle) or the pierced isle's box.
+## (physics: the aqueduct isle and the motif isles).
 func ground(p: Vector3) -> Variant:
 	var space := get_world_3d().direct_space_state
 	var ray := PhysicsRayQueryParameters3D.create(Vector3(p.x,260.0,p.z),Vector3(p.x,-200.0,p.z),SOLID_LAYER|TURF_LAYER)
 	var hit := space.intersect_ray(ray)
-	var top: Variant = (hit.position as Vector3).y if not hit.is_empty() else null
-	if pierced != null:
-		for key in pierced.isles:
-			var s: Dictionary = pierced.isles[key]
-			if s.get("plan") == null: continue
-			var box: AABB = s.plan.bounds()
-			var at: Vector3 = s.spot.at
-			if absf(p.x-at.x-box.get_center().x) < box.size.x*0.5 and absf(p.z-at.z-box.get_center().z) < box.size.z*0.5:
-				top = maxf(float(top) if top != null else -INF,at.y+box.end.y)
-	return top
+	return (hit.position as Vector3).y if not hit.is_empty() else null
 
 # --- Traffic ------------------------------------------------------------------------
 
-## The game's CPU biplanes, lapping the clusters and the pierced isle and
-## buzzing the lone isles; shown always (the game shows them in flight).
+## The game's CPU biplanes, lapping the motif isles and buzzing their tops;
+## shown always (the game shows them in flight).
 func _build_traffic() -> void:
 	traffic = IsleTraffic.new()
 	add_child(traffic)
 	var slots: Array = []
-	for c: Array in CLUSTERS: slots.append(c[2])
-	slots.append(PIERCED[1])
-	for spec: Array in ISLES:
-		if float(spec[5]) < 2.0: traffic.buzz.append(spec[3])
+	for place: Array in MotifSky.places(): slots.append(place[1])
+	traffic.buzz = slots.duplicate()
 	traffic.ground = ground
 	traffic.build(self,slots)
 	traffic.show(true)
@@ -402,8 +205,8 @@ func _build_clouds() -> void:
 	clouds.setup_sky(scene,self)
 	if traffic != null: clouds.hook(traffic)
 
-## SkyTraffic's pilots here: their islets are this sky's lone isles, not
-## the seeded cells'; through a drifting cloud as often as the game's
+## SkyTraffic's pilots here: what they buzz is this sky's motif isles, not
+## the seeded cells' islets; through a drifting cloud as often as the game's
 ## (GOALS), when the cloud host flies them through its clouds.
 class IsleTraffic extends SkyTraffic:
 	var buzz: Array = []
@@ -525,9 +328,11 @@ func _advance_airships(delta: float, eye: Vector3) -> void:
 
 # --- Open-air life ------------------------------------------------------------------
 
-## The other islands' life (SkyAmbientLife) on this sky's isles: each lone
-## isle with trees and each cluster's member with the most, read through a
-## stand-in of the islands it asks (`IsleHosts`).
+## The other islands' life (SkyAmbientLife) on this sky's isles: each motif
+## isle once it stands, its gulls riding the thermals over its middle and
+## its high points (it has no trees, so no songbird flock in a crown: its
+## own songbirds are its life's), read through a stand-in of the islands it
+## asks (`IsleHosts`).
 func _build_life() -> void:
 	_hosts = IsleHosts.new()
 	_hosts.name = "LifeHosts"
@@ -539,29 +344,19 @@ func _build_life() -> void:
 	add_child(life)
 	life.setup(_hosts)
 
-## Each standing isle not yet known to the life, laid out for it (its
-## trees' crowns, its gulls' columns), once.
+## Each standing motif isle not yet known to the life, laid out for it (its
+## gulls' columns: its middle and its summit), once.
 func _advance_life(delta: float, eye: Vector3) -> void:
-	for key: String in islets.built:
-		var b: Dictionary = islets.built[key]
-		if _hosts.known.has(key) or not is_instance_valid(b.node): continue
-		var plants: Variant = null
-		if b.has("out"): plants = (b.out as Dictionary).get("plants")
-		elif b.has("cluster"):
-			var c: Dictionary = clusters.clusters.get(b.cluster,{})
-			if c.has("out") and (c.out as Dictionary).has("made"): plants = (c.out.made.get(b.member,{}) as Dictionary).get("plants")
+	for isle: Node3D in motifs.isles:
+		var key := str(isle.name)
+		if _hosts.known.has(key) or not isle.stands(): continue
 		_hosts.known[key] = true
-		if not plants is Dictionary: continue
-		var catalog: Dictionary = SkyIslets.catalog()
-		var trees: Array[Vector4] = SkyAmbientLife._trees(plants,catalog.roles,(catalog.data as Dictionary).boxes,Transform3D.IDENTITY)
-		if trees.size() < 3: continue
-		trees.sort_custom(func(p: Vector4, q: Vector4) -> bool: return p.y > q.y)
-		var shape: RefCounted = b.shape
-		var middle := Vector3(0.0,float(shape.ground_at(Vector2.ZERO)),0.0)
-		var columns: Array[Vector3] = []
-		for t: Vector4 in trees.slice(0,2): columns.append(Vector3(t.x,float(shape.ground_at(Vector2(t.x,t.z))),t.z))
-		columns.append(middle)
-		_hosts.add(b.node,b.home,{"middle":middle,"trees":trees,"columns":columns,"chaff":[]})
+		var c: Vector3 = isle.circle()
+		var top: float = isle.isle_top()
+		var under: Variant = ground(Vector3(c.x,0.0,c.y))
+		var middle := Vector3(c.x,float(under) if under != null else top,c.y)
+		var columns: Array[Vector3] = [middle,isle.isle_summit()]
+		_hosts.add(isle,Vector3(c.x,top,c.y),{"middle":middle,"trees":[],"columns":columns,"chaff":[]})
 	life.advance(delta,eye)
 
 ## What SkyAmbientLife reads of the islands (scripts/sky_islands.gd), for
@@ -612,10 +407,12 @@ class IsleLife extends SkyAmbientLife:
 # --- Motes --------------------------------------------------------------------------
 
 ## The sky's motes of light (SkyMotes), faint, round the isle (spread to its
-## size) and round the two nearest clusters.
+## size) and round the two motif isles nearest it.
 func _build_motes() -> void:
 	var spots := [[MIDDLE+Vector3(0.0,-6.0,0.0),2.0]]
-	for c: Array in CLUSTERS.slice(0,2): spots.append([(c[2] as Vector3)+Vector3(0.0,6.0,0.0),1.6])
+	var near: Array = MotifSky.places()
+	near.sort_custom(func(a: Array, b: Array) -> bool: return (a[1] as Vector3).distance_to(MIDDLE) < (b[1] as Vector3).distance_to(MIDDLE))
+	for place: Array in near.slice(0,2): spots.append([(place[1] as Vector3)+Vector3(0.0,6.0,0.0),1.6])
 	for s: Array in spots:
 		var m: Node3D = SkyMotes.new()
 		m.position = s[0]
@@ -627,9 +424,9 @@ func _build_motes() -> void:
 # --- Tokens -------------------------------------------------------------------------
 
 ## The tokens (SkyCollectibles): one source of hand-laid lines in world
-## coordinates on its own (no seeded trails, islets or clusters lay any);
-## the plane (and the pilot) take them as the game's do, with its readout,
-## blip and run.
+## coordinates on its own (no seeded trails, islets or clusters lay any),
+## and each motif isle's, moved to where it stands; the plane (and the
+## pilot) take them as the game's do, with its readout, blip and run.
 func _build_tokens() -> void:
 	collectibles = SkyCollectibles.new()
 	collectibles.cells = SkyCells.new()
@@ -640,6 +437,7 @@ func _build_tokens() -> void:
 	for t: Array in plane_tokens():
 		lines.append(Lines.line(t[0],t[1],t[2],PackedVector3Array(t[3]),TOKEN_SEED))
 	collectibles.add_source(token_source(),lines)
+	if motifs != null: motifs.add_tokens(collectibles,TOKEN_SEED)
 
 ## The plane's tokens: [line id, category, kind, points (world)]. A kit
 ## isle's sky (a subclass) answers with its own.
@@ -667,15 +465,9 @@ func _process(delta: float) -> void:
 	if scene == null or scene.camera == null: return
 	_clock += delta
 	var eye: Vector3 = scene.camera.global_position
-	if islets != null: _advance_isles(delta,eye)
 	if not airships.is_empty(): _advance_airships(delta,eye)
-	if life != null: _advance_life(delta,eye)
+	if life != null and motifs != null: _advance_life(delta,eye)
 	if collectibles != null:
 		collectibles.advance(delta,eye)
 		if scene.flying and scene.plane_figure != null: collectibles.touch_plane(scene.plane_figure.global_position)
 		elif scene.figure != null: collectibles.touch_walker(scene.figure.global_position+Vector3.UP*Lines.WALKER_MIDDLE)
-	# The pierced isle's rock bumps the plane as the game's does (its field;
-	# its ruins on their own layer); the stone's bodies bump it in the
-	# isle's own step.
-	if pierced != null and scene.flying and scene.plane != null and delta > 0.0:
-		if pierced.bump(scene.plane): scene.bumps += 1

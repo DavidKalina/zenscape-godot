@@ -3,10 +3,10 @@ extends Node3D
 ## aqueduct_isle_sky.gd; docs/scenic/rune-serpent.md): the grass snake
 ## (scripts/life_snakes.gd) grown to some ninety metres and carved from the
 ## ruins' eroded basalt, flying. It slithers a long authored way through the
-## sky isles: through the gap between the aqueduct isle and the grove to its
-## east, round the isle at a respectful distance, out between the near isles,
-## down into the cloud sea and breaching out of it again, through the
-## pierced isle's arch, and home. Runes glow in bands round its flanks where
+## sky isles: round the aqueduct isle at a respectful distance, out west and
+## down the length of the Sundered gorge between its two halves, back round
+## the isle, down into the cloud sea under the bell spires and breaching
+## out of it again, and home (docs/scenic/motif-sky.md). Runes glow in bands round its flanks where
 ## the grass snake has its dark bars, a rune collar behind its head, a line
 ## of runes running back along its spine with its speed, its eyes alight;
 ## two whiskers of soft light stream from the corners of its mouth and a
@@ -95,19 +95,20 @@ const HEWN := 0.05
 const STEP := 0.5
 const TRAIL := 240
 const SUB := 0.12
-
 ## The way round (world): a closed cubic B-spline through these control
 ## points, each [point, weave share, pace share, veer share]. North of the
-## isle (0) south through the 59 m gap between the aqueduct isle and the
-## grove to its east (2-4), round the isle's south, west and north some 45 m
-## off its rim (5-12), east between the grove and the hills (13-14), down
-## into the cloud sea (15-18) and along under its tops, breaching out north
-## (19-23), through the pierced isle's arch on its axis (24-32: nine points
-## in a line, so the curve runs straight through it, the weave held in), and
-## home west along the north and down past the lodestone's shard some 100 m
-## off its west side (33-40), clear of it and of the ring the hall chain
-## raises past it (studies/aqueduct_isle_chain.gd). Weave and veer are held in near rock and
-## the pace eased through the gaps.
+## isle (0) south past its east side (2-4), round its south some 45 m off
+## its rim (5-7), out west to the Sundered gorge (8-9) and down the length
+## of its gap from the south mouth to the north, over the lower crossing
+## and the broken bridge between the two halves' rims (10-14, the weave
+## held in: docs/scenic/motif-sky.md), back east round the isle's north
+## (15-19), east (20-21), down into the cloud sea under the bell spires
+## (22-25) and along under its tops, breaching out north (26-30), round
+## north-west (31-34) and home west along the north and down past the
+## lodestone's shard some 100 m off its west side (35-40), clear of it and
+## of the ring the hall chain raises past it (studies/
+## aqueduct_isle_chain.gd). Weave and veer are held in near rock and the
+## pace eased through the gaps.
 const ROUTE := [
 	[Vector3(172.0,44.0,-200.0),1.0,1.0,0.6],
 	[Vector3(172.0,40.0,-135.0),1.0,1.0,0.4],
@@ -117,8 +118,15 @@ const ROUTE := [
 	[Vector3(150.0,33.0,62.0),0.9,1.0,0.0],
 	[Vector3(95.0,36.0,92.0),1.0,1.0,0.0],
 	[Vector3(30.0,32.0,84.0),1.0,1.0,0.0],
-	[Vector3(-15.0,43.0,35.0),0.8,1.0,0.0],
-	[Vector3(-22.0,42.0,-35.0),0.8,1.0,0.0],
+	[Vector3(-110.0,40.0,170.0),1.0,1.0,0.6],
+	[Vector3(-240.0,46.0,200.0),0.8,1.0,0.0],
+	[Vector3(-298.0,50.0,150.0),0.4,0.95,0.0],
+	[Vector3(-299.0,50.0,110.0),0.3,0.9,0.0],
+	[Vector3(-299.0,50.0,70.0),0.3,0.9,0.0],
+	[Vector3(-299.0,50.0,30.0),0.3,0.9,0.0],
+	[Vector3(-297.0,48.0,-15.0),0.5,0.95,0.0],
+	[Vector3(-200.0,44.0,-45.0),0.9,1.0,0.4],
+	[Vector3(-80.0,42.0,-50.0),0.8,1.0,0.0],
 	[Vector3(5.0,38.0,-95.0),1.0,1.0,0.0],
 	[Vector3(65.0,32.0,-110.0),0.9,1.0,0.0],
 	[Vector3(130.0,30.0,-112.0),0.9,1.0,0.0],
@@ -133,15 +141,8 @@ const ROUTE := [
 	[Vector3(520.0,-55.0,-250.0),1.0,1.0,1.0],
 	[Vector3(528.0,-5.0,-345.0),1.0,1.0,1.0],
 	[Vector3(540.0,22.0,-440.0),0.8,1.0,0.5],
-	[Vector3(571.3,29.2,-491.6),0.5,0.95,0.0],
-	[Vector3(552.9,29.2,-522.5),0.4,0.9,0.0],
-	[Vector3(534.6,29.2,-553.4),0.35,0.9,0.0],
-	[Vector3(516.2,29.2,-584.4),0.35,0.9,0.0],
-	[Vector3(493.2,29.2,-623.1),0.35,0.9,0.0],
-	[Vector3(469.5,29.2,-663.0),0.35,0.9,0.0],
-	[Vector3(445.9,29.2,-702.9),0.35,0.9,0.0],
-	[Vector3(423.0,29.2,-741.6),0.4,0.9,0.0],
-	[Vector3(404.6,29.2,-772.6),0.5,0.95,0.0],
+	[Vector3(500.0,30.0,-610.0),1.0,1.0,1.0],
+	[Vector3(404.6,29.2,-772.6),0.8,1.0,0.5],
 	[Vector3(360.0,34.0,-815.0),0.8,1.0,0.0],
 	[Vector3(280.0,40.0,-830.0),1.0,1.0,1.0],
 	[Vector3(190.0,46.0,-790.0),1.0,1.0,1.0],
@@ -152,7 +153,7 @@ const ROUTE := [
 	[Vector3(140.0,47.0,-262.0),1.0,1.0,0.4],
 ]
 ## Places on the way, by control point (--serpent-at=<name>).
-const MARKS := {"north":0,"gap":2,"curl":6,"west":8,"east":13,"dive":16,"sea":18,"breach":21,"arch":26,"home":37}
+const MARKS := {"north":0,"gap":2,"curl":6,"gorge":12,"west":15,"east":20,"dive":23,"sea":25,"breach":28,"home":37}
 ## Where it starts (a mark).
 const START := "north"
 ## The route is kept as points ROUTE_STEP m apart.
