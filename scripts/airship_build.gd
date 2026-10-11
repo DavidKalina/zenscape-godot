@@ -11,8 +11,8 @@ extends RefCounted
 ## keel hook under the hull the tow lines hang from (TETHERS).
 ##
 ## Real metres, the gondola's deck at the origin, the bow toward -Z. Sized to
-## the sky folk (0.85 m tall, scripts/sky_folk.gd SCALE): the cabin a head
-## over them, the rail at their waist.
+## the sky folk (0.85 m tall, scripts/islander_figure.gd SKY_SCALE): the
+## cabin a head over them, the rail at their waist.
 
 const Builds = preload("res://scripts/showcase_builds.gd")
 

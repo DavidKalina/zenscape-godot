@@ -36,9 +36,6 @@ extends Node3D
 ## (scripts/sky_peaks.gd), giant stone with a gorge through it. All are solids
 ## to the glide (`body`); no island stands on a range or an isle.
 ##
-## On every island but the plate's first home live a few sky folk (scripts/
-## sky_folk.gd), the same ones each time, who go with their island.
-##
 ## Through it all, in short lines, the collectible tokens (scripts/
 ## sky_collectibles.gd): on the clusters' bridges, under the islands' and
 ## islets' rock, out on good flying lines and under the trees; what the
@@ -89,7 +86,6 @@ const CloudHost = preload("res://scripts/cloud_host.gd")
 const SkyForestIsles = preload("res://scripts/sky_forest_isles.gd")
 const SkyPierced = preload("res://scripts/sky_pierced.gd")
 const SkyHomes = preload("res://scripts/sky_homes.gd")
-const SkyFolk = preload("res://scripts/sky_folk.gd")
 ## The world's seed, bounds, ring and edge (scripts/sky_world.gd).
 const SkyWorld = preload("res://scripts/sky_world.gd")
 const SkyCommits = preload("res://scripts/sky_commits.gd")
@@ -166,8 +162,6 @@ var towers: Node3D
 var wakes: Node3D
 ## The forested isles (scripts/sky_forest_isles.gd).
 var isles: Node3D
-## The people on the islands (scripts/sky_folk.gd).
-var folk: Node3D
 ## The clusters of islets that read as places (scripts/sky_clusters.gd).
 var clusters: Node3D
 ## The pierced isles, big masses with holes to fly through (scripts/
@@ -274,10 +268,6 @@ func setup(owner_scene: Node3D) -> void:
 		ambient.setup(self)
 		add_child(ambient)
 		skip.append(ambient)
-	folk = SkyFolk.new()
-	folk.islands = self
-	add_child(folk)
-	skip.append(folk)
 	pierced = SkyPierced.new()
 	pierced.islets = islets
 	add_child(pierced)
@@ -608,9 +598,6 @@ func _bake(island: Node3D, chunk_seed: int, document: Dictionary = {}, maps: Dic
 	if out.has("life"): island.set_meta("life",out.life)
 	_stand(island,out)
 	SkyCommits.spend("island",Time.get_ticks_usec()-began)
-	# Its people, on its ground in its own frame, in a later frame with room
-	# (SkyFolk `settle_later`); none at the first home.
-	if homes[index].length() >= 1.0: folk.settle_later(island,chunk_seed,out.plain,editor.terrain.global_transform)
 
 ## The island's nodes, from its worker's `out`: its ground, in a copy of the
 ## plate's own ground material reading the island's own maps; its earth
@@ -819,7 +806,6 @@ func _over_land(land: NativeTerrainData, p: Vector2) -> bool:
 ## file is written on a worker.
 func claim(index: int) -> Vector3:
 	claiming = true
-	folk.clear_plate()
 	var began := Time.get_ticks_usec()
 	var target := homes[index]
 	var taken: Dictionary = _copies[index].get_meta("claim",{})

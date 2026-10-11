@@ -34,6 +34,11 @@ extends Node3D
 const PersonKit = preload("res://scripts/person_kit.gd")
 const Spring = PersonKit.Spring
 const MOVES := ["idle","wave","jump","hail","walk","run","air","skid"]
+## Scaled to stand in the sky (the clusters' folk, scripts/cluster_dresser.gd,
+## and the airships' crews, scripts/sky_airship.gd): its eyes at the
+## wanderer's height. And the scarves they wear, picked by seed.
+const SKY_SCALE := 1.9
+const SCARVES := [Color("d9573a"),Color("e2b84a"),Color("6f8fa8"),Color("7fa08a"),Color("cf6b4a"),Color("b85c7a")]
 ## The hips over the ground standing, the hip joints on them, the feet's
 ## stance, the leg bones' lengths and the arm bones'.
 const HIPS := 0.17
