@@ -2,7 +2,8 @@ extends RefCounted
 ## Weather and seasons for the product diorama (studies/diorama.gd).
 ##
 ## The sky drifts: WeatherScheduler runs in climate mode with the generator's
-## own odds (cozy_world_generator.gd WET_WEATHER / DRY_WEATHER), on a clock of
+## own odds (WET_WEATHER / DRY_WEATHER, which scripts/cozy_world_generator.gd
+## draws its moods from), on a clock of
 ## its own that ticks whenever the scene is not paused, so the weather lives
 ## even though a generated world holds its hour of day. Each change eases in
 ## over about half a minute.
@@ -17,8 +18,13 @@ extends RefCounted
 ## `zs_season` shader global, published by studies/fidelity.gd only when it
 ## changes.
 
-const Generator = preload("res://scripts/cozy_world_generator.gd")
 const Desert = preload("res://scripts/desert_landscape.gd")
+
+## The generator's weather odds for a regrow (scripts/cozy_world_generator.gd
+## reads them from here). Mostly bright skies: overcast dims the sun and
+## switches off god rays, so grey and wet worlds stay the occasional mood.
+const WET_WEATHER := {"clear":30,"fair":34,"mist":14,"rain":9,"overcast":7,"snow":6}
+const DRY_WEATHER := {"clear":45,"fair":45,"overcast":10}
 
 ## Real seconds per scheduler hour. Dwell times below are in these hours.
 const HOUR_SECONDS := 20.0
@@ -208,7 +214,7 @@ static func autumn_season(amount: float) -> float:
 ## The generator's odds for this world. Wet worlds trade snow for rain in
 ## summer and rain for snow in winter; the grey and wet share stays the same.
 static func climate_for(dry: bool, quarter: int) -> Dictionary:
-	var odds: Dictionary = (Generator.DRY_WEATHER if dry else Generator.WET_WEATHER).duplicate()
+	var odds: Dictionary = (DRY_WEATHER if dry else WET_WEATHER).duplicate()
 	if not dry and quarter == 1:
 		odds.rain = odds.rain + odds.snow
 		odds.erase("snow")
@@ -231,7 +237,17 @@ func _refresh_climate() -> void:
 ## own values by (part of) the difference between the two weathers.
 func _apply(name: String) -> void:
 	var precipitation: Node3D = scene._precipitation
-	var scheduler: WeatherScheduler = scene.weather_scheduler
+	ease_toward(name, precipitation, scene._atmosphere, scene.weather_scheduler)
+	# The season owns the leaves' gold; the weather keeps only the cold.
+	precipitation.surface_weather.target_autumn = 0.0
+	scene.claim_season()
+	scene._apply_season(0.0)
+
+## The sky `name` set easing in on `precipitation` (studies/precipitation.gd)
+## and `atmosphere` (studies/atmosphere.gd), from what is on screen and
+## keeping `scheduler`'s origin air (see `_apply`). Needs no scene: the kit
+## isles' drift (scripts/kit_isle/kit_weather.gd) eases its sky this way too.
+static func ease_toward(name: String, precipitation: Node3D, atmosphere: Node3D, scheduler: WeatherScheduler) -> void:
 	var profiles: Dictionary = precipitation.profiles
 	# A mood pins the visible cloud with an override. Start the ease from it,
 	# so clearing the override does not step the sky, the light or the rays.
@@ -242,12 +258,7 @@ func _apply(name: String) -> void:
 	var air := scheduler.origin_mood
 	if profiles.has(scheduler.origin) and air.size() >= 4:
 		var from: Dictionary = profiles[scheduler.origin]
-		var atmosphere: Node3D = scene._atmosphere
 		precipitation.target.z = clampf(float(profile.cloud) + float(air.cloud), 0.0, 1.0)
 		atmosphere.strength = clampf(float(air.wind) + (float(profile.wind) - float(from.wind)) * 0.5, 0.12, 1.4)
 		atmosphere._fog_target = clampf(float(air.mist) + float(MIST.get(name, 0.16)) - float(MIST.get(scheduler.origin, 0.16)), 0.02, 0.8)
 		atmosphere._haze_target = clampf(float(air.haze) + (float(profile.haze) - float(from.haze)) * 0.5, 0.05, 0.6)
-	# The season owns the leaves' gold; the weather keeps only the cold.
-	precipitation.surface_weather.target_autumn = 0.0
-	scene.claim_season()
-	scene._apply_season(0.0)

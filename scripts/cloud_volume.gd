@@ -88,8 +88,8 @@ var enabled := true
 var tier := 0
 var quality: Array = TIERS[0]
 var full_res := FULL_RES_FLAG in preload("res://scripts/launch_args.gd").user_args()
-## The storm's lightning (studies/lightning.gd: `flash`, `flash_position`),
-## lighting the cloud from within; null where there is none.
+## The storm's lightning (studies/lightning.gd: `flash`, `flash_position`,
+## `volume_gain`), lighting the cloud from within; null where there is none.
 var lightning: Object
 ## The weather map's square this frame: corner xz, side (m).
 var weather_corner := Vector2.ZERO
@@ -323,7 +323,8 @@ func _fill() -> void:
 	var flash := Vector4.ZERO
 	if lightning != null and is_instance_valid(lightning) and lightning.get("flash") != null:
 		var at: Vector3 = lightning.get("flash_position")
-		flash = Vector4(at.x,at.y,at.z,float(lightning.get("flash")))
+		var gain: Variant = lightning.get("volume_gain")
+		flash = Vector4(at.x,at.y,at.z,float(lightning.get("flash"))*(float(gain) if gain != null else 1.0))
 	_put4(p,172,flash)
 	_put4(p,176,Vector4(SHADE_SPLIT,CloudVolumeEffect.SHADOW_TEXELS,1.0 if weather_due else 0.0,1.0 if shade_due else 0.0))
 	# The land reads the shade map the frame after it is drawn (it is drawn

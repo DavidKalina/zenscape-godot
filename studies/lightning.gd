@@ -1,8 +1,26 @@
 extends Node3D
 const Plate = preload("res://scripts/plate.gd")
 ## Source weather.js strike timing and wind.js downburst, native tube/light rendering.
+##
+## A storm strikes the plate on its own (`advance`), or wherever `aim` says:
+## a sky with no plate (the kit isles', scripts/kit_isle/kit_weather.gd)
+## sets `aim` to a callable taking the camera's position, which strikes
+## through `strike_through` (a bolt from a cloud down to what lies under it,
+## sized to its drop) or `flash_in` (a flash inside a cloud, no bolt).
+## Thunder follows a strike by its distance over `sound_speed`, and the
+## unified cloud volume (scripts/cloud_volume.gd) lights its clouds round
+## `flash_position` by `flash` times `volume_gain`.
 signal thunder(distance: float, energy: float)
 signal struck(point: Vector3)
+## A storm's own strikes go here instead of the plate, when set.
+var aim := Callable()
+## The thunder's pace (m/s): the plate's, scaled to it.
+var sound_speed := 28.0
+## How strongly the cloud volume shows a flash (1 the plate's).
+var volume_gain := 1.0
+## The height (m) the plate's bolts fall from, and the flash's ceiling.
+const PLATE_TOP := 22.0
+const PLATE_CEILING := 20.0
 var clock := 0.0
 var next_strike := 6.0
 var flash := 0.0
@@ -44,30 +62,64 @@ func setup(ground: RefCounted) -> void:
 	_publish()
 
 func strike(at: Vector2, camera_position: Vector3) -> void:
+	_clear_bolts()
+	var height = _ground.height_at(clampf(at.x, -Plate.HALF, Plate.HALF), clampf(at.y, -Plate.HALF, Plate.HALF))
+	var gy: float = height if height != null else 0.15
+	_bolt(at, PLATE_TOP, gy, 1.0)
+	flash_position = Vector3(at.x, (PLATE_CEILING + gy) / 2.0, at.y)
+	_light.position = Vector3(at.x, gy + (PLATE_CEILING - gy) * 0.55, at.y)
+	_pulse(camera_position, true)
+	_foot = at
+	struck.emit(Vector3(at.x,gy,at.y))
+	_update_flash()
+
+## A bolt from `top` (global; a cloud's underside) down to `foot` (world
+## y), sized to its drop as the plate's is to its 20 m, the flash and the
+## light in the cloud at its top. No downburst: it falls where no grass is.
+func strike_through(top: Vector3, foot: float, camera_position: Vector3) -> void:
+	_clear_bolts()
+	_bolt(Vector2(top.x, top.z), top.y, foot, maxf(top.y - foot, 1.0) / PLATE_CEILING)
+	flash_position = top
+	_light.position = top
+	_pulse(camera_position, false)
+	struck.emit(Vector3(top.x, foot, top.z))
+	_update_flash()
+
+## A flash inside a cloud at `point` (global), no bolt: lightning that
+## stays in the cloud.
+func flash_in(point: Vector3, camera_position: Vector3) -> void:
+	_clear_bolts()
+	flash_position = point
+	_light.position = point
+	_pulse(camera_position, false)
+	_update_flash()
+
+func _clear_bolts() -> void:
 	for child in _bolts.get_children():
 		_bolts.remove_child(child)
 		child.queue_free()
-	var height = _ground.height_at(clampf(at.x, -Plate.HALF, Plate.HALF), clampf(at.y, -Plate.HALF, Plate.HALF))
-	var gy: float = height if height != null else 0.15
-	var main := _jagged(at, 22.0, gy, 28.0 * 0.22)
-	_add_tube(main, 0.055)
+
+## The bolt's main channel from `top` to `foot` over `at` and its forks,
+## `scale` times the plate's spread and width.
+func _bolt(at: Vector2, top: float, foot: float, scale: float) -> void:
+	var main := _jagged(at, top, foot, 28.0 * 0.22 * scale)
+	_add_tube(main, 0.055 * scale)
 	for f in range(1 + int(_rng.randf() * 3)):
 		var i := int(_rng.randf() * (main.size() - 4)) + 2
 		var a := main[i]
-		var drop := (a.y - gy) * (0.25 + _rng.randf() * 0.4)
-		_add_tube(_jagged(Vector2(a.x, a.z), a.y, a.y - drop, 28.0 * 0.16), 0.028)
-	flash_position = Vector3(at.x, (20.0 + gy) / 2.0, at.y)
-	_light.position = Vector3(at.x, gy + (20.0 - gy) * 0.55, at.y)
+		var drop := (a.y - foot) * (0.25 + _rng.randf() * 0.4)
+		_add_tube(_jagged(Vector2(a.x, a.z), a.y, a.y - drop, 28.0 * 0.16 * scale), 0.028 * scale)
+
+## The flash's pulses, the thunder on its way (by the distance to the
+## light), and the downburst `clap` half a second on when `clap`.
+func _pulse(camera_position: Vector3, clap_after: bool) -> void:
 	_pulses = [Vector2(clock, 1.0)]
 	for s in range(1 + int(_rng.randf() * 3)):
 		_pulses.append(Vector2(clock + 0.05 + _rng.randf() * 0.35, 0.35 + _rng.randf() * 0.55))
 	var distance := camera_position.distance_to(_light.position)
-	_thunders.append(Vector3(clock + distance / 28.0, distance, 0.5 + _rng.randf() * 0.5))
-	_clap_at = clock + 0.5
-	_foot = at
+	_thunders.append(Vector3(clock + distance / sound_speed, distance, 0.5 + _rng.randf() * 0.5))
+	if clap_after: _clap_at = clock + 0.5
 	strike_count += 1
-	struck.emit(Vector3(at.x,gy,at.y))
-	_update_flash()
 
 func advance(dt: float, paused: bool, storm: float, wind: float, direction: Vector2, camera_position: Vector3) -> void:
 	if paused:
@@ -76,7 +128,8 @@ func advance(dt: float, paused: bool, storm: float, wind: float, direction: Vect
 	if storm > 0.01:
 		next_strike -= dt * (0.12 + storm * 0.9)
 		if next_strike <= 0.0:
-			strike(Vector2(_rng.randf_range(-Plate.HALF, Plate.HALF), _rng.randf_range(-Plate.HALF, Plate.HALF)), camera_position)
+			if aim.is_valid(): aim.call(camera_position)
+			else: strike(Vector2(_rng.randf_range(-Plate.HALF, Plate.HALF), _rng.randf_range(-Plate.HALF, Plate.HALF)), camera_position)
 			next_strike = 5.0 + _rng.randf() * 25.0 * (1.05 - storm)
 	var clap_dt := dt
 	if _clap_at >= 0.0 and clock >= _clap_at:

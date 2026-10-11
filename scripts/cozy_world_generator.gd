@@ -9,10 +9,10 @@ const Geology = preload("res://scripts/geology_palette.gd")
 const Families = preload("res://scripts/palette_families.gd")
 const CANDIDATES := 6
 const PALETTE_DRAWS := 4
-## Weather odds for a regrow. Mostly bright skies: overcast dims the sun and
-## switches off god rays, so grey and wet worlds stay the occasional mood.
-const WET_WEATHER := {"clear":30,"fair":34,"mist":14,"rain":9,"overcast":7,"snow":6}
-const DRY_WEATHER := {"clear":45,"fair":45,"overcast":10}
+## Weather odds for a regrow, kept with the drift that also reads them
+## (scripts/living_weather.gd), so the drift needs nothing of the generator.
+const WET_WEATHER := preload("res://scripts/living_weather.gd").WET_WEATHER
+const DRY_WEATHER := preload("res://scripts/living_weather.gd").DRY_WEATHER
 
 static func sample(seed_value: int, previous: Dictionary = {}) -> Dictionary:
 	var rng := RandomNumberGenerator.new()

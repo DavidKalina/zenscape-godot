@@ -77,23 +77,43 @@ var world_clock: WorldClock = null
 ## Seeded weather drift over world hours. Off by default: a garden's sky stays
 ## where the player put it until they let the weather drift.
 var weather_scheduler: WeatherScheduler = null
+## The year on the land and the sky (scripts/sky_calendar.gd, shared with the
+## kit isles). The names below are its state, kept as this scene's so the
+## mood, the hand, the spin and the tests reach it as they always have.
+var calendar := preload("res://scripts/sky_calendar.gd").new()
 ## [autumn, cold]: what the season last wrote into the surface targets, and
 ## whether a command-line flag has taken that channel away from the calendar.
-var _season_wrote := [-1.0, -1.0]
-var _season_held := [false, false]
+var _season_wrote: Array:
+	get: return calendar.wrote
+	set(value): calendar.wrote = value
+var _season_held: Array:
+	get: return calendar.held
+	set(value): calendar.held = value
 ## The product's living weather and pinned seasons (scripts/living_weather.gd).
 ## Null in the studies, which keep the clock-driven drift below.
 var living_weather: RefCounted = null
 ## When on, the season the scene shows glides forward to the clock's season
 ## (a quarter per SEASON_GLIDE_SECONDS) instead of jumping to it.
-var season_glide := false
-const SEASON_GLIDE_SECONDS := 30.0
-var _season_shown := -1.0
-var _season_plants := Vector4(-1.0, -1.0, -1.0, -1.0)
-var _season_sky := Vector4(-1.0, -1.0, -1.0, -1.0)
+var season_glide: bool:
+	get: return calendar.glide
+	set(value): calendar.glide = value
+const SEASON_GLIDE_SECONDS := preload("res://scripts/sky_calendar.gd").GLIDE_SECONDS
+var _season_shown: float:
+	get: return calendar.shown
+	set(value): calendar.shown = value
+var _season_plants: Vector4:
+	get: return calendar.plants
+	set(value): calendar.plants = value
+var _season_sky: Vector4:
+	get: return calendar.sky
+	set(value): calendar.sky = value
 ## How many times zs_sky_season has been published (tests/test_sky_seasons.gd).
-var sky_season_published := 0
-var _season_claim_pending := false
+var sky_season_published: int:
+	get: return calendar.published
+	set(value): calendar.published = value
+var _season_claim_pending: bool:
+	get: return calendar.claim_pending
+	set(value): calendar.claim_pending = value
 var _lights: Array[DirectionalLight3D] = []
 var _aurora_slider: HSlider
 var _cycle_toggle: CheckBox
@@ -646,68 +666,23 @@ func _advance_weather_drift(delta := 0.0) -> void:
 		_precipitation.cold_override = -1.0
 		_precipitation.set_weather(WeatherScheduler.preset_index(name))
 
-## The calendar reaches the weather. The scheduler leans on the season when it
-## rolls the next sky, and the ground wears the year on top of the preset: the
-## preset profile is the base, the season adds a lift (gold through autumn,
-## cold through winter), clamped 0..1. Recomputed from the profile every frame,
-## so nothing accumulates.
-##
-## It never fights a hand-set value. The season only rewrites a target that is
-## still the one it wrote last frame, or the bare preset value a fresh
-## set_weather just installed; a slider, a look preset, a restored garden or a
-## --autumn=/--cold= flag therefore keeps its hold until the weather changes
-## again. See docs/world-clock/README.md.
-##
-## Plants read the same season through the `zs_season` global (bloom, leaf
-## fall, dormancy; WeatherScheduler.season_plants), and the sky layer through
-## `zs_sky_season` (WeatherScheduler.season_sky), each set only when it changes.
-## With living weather the season owns the leaves' gold outright: the weather
-## preset adds none, so a snow shower does not turn a summer wood orange.
+## The calendar reaches the weather and the ground, and the plants and the sky
+## layer read the season (scripts/sky_calendar.gd has the rules). With living
+## weather the season owns the leaves' gold outright: the weather preset adds
+## none, so a snow shower does not turn a summer wood orange.
 func _apply_season(delta := 0.0) -> void:
 	if world_clock == null: return
-	var season := _shown_season(0.0 if _paused else delta)
-	if weather_scheduler != null: weather_scheduler.season = season
-	var profile: Dictionary = _precipitation.profiles[_precipitation.PRESET_NAMES[_precipitation.preset_index]]
-	var surface: RefCounted = _precipitation.surface_weather
-	if _season_claim_pending:
-		_season_claim_pending = false
-		claim_season()
-	var base_autumn := 0.0 if living_weather != null else float(profile.autumn)
-	surface.target_autumn = _season_target(surface.target_autumn, base_autumn, WeatherScheduler.season_autumn(season), 0)
-	surface.target_cold = _season_target(surface.target_cold, float(profile.cold), WeatherScheduler.season_cold(season), 1)
-	var plants := WeatherScheduler.season_plants(season)
-	if plants != _season_plants:
-		_season_plants = plants
-		RenderingServer.global_shader_parameter_set("zs_season", plants)
-	# The sky layer's quarters (the peaks' snow line, the cloud sea's mood),
-	# also only when they change.
-	var sky := WeatherScheduler.season_sky(season)
-	if sky != _season_sky:
-		_season_sky = sky
-		sky_season_published += 1
-		RenderingServer.global_shader_parameter_set("zs_sky_season", sky)
+	calendar.apply(world_clock, 0.0 if _paused else delta, _precipitation, weather_scheduler, living_weather != null)
 
-## The season on screen. Without a glide it is the clock's. With one it moves
-## forward through the year toward the clock's season, so pressing E walks the
-## plants through the leaf fall or the blossom instead of cutting to them. A
-## small step backwards, or a snap request, jumps.
+## The season on screen (SkyCalendar `shown_season`): pressing E walks the
+## plants through the leaf fall or the blossom instead of cutting to them.
 func _shown_season(delta: float) -> float:
-	var season := world_clock.season
-	if not season_glide or _season_shown < 0.0:
-		_season_shown = season
-		return season
-	var gap := fposmod(season - _season_shown, 1.0)
-	if gap < 1e-6 or gap > 0.75:
-		_season_shown = season
-	else:
-		_season_shown = fposmod(_season_shown + minf(gap, maxf(delta, 0.0) * 0.25 / SEASON_GLIDE_SECONDS), 1.0)
-	return _season_shown
+	return calendar.shown_season(world_clock, delta)
 
 ## Adopt the surface's current gold and cold as the season's own, so the
 ## season keeps steering them (a new world's mood, a restored save, a drift).
 func claim_season() -> void:
-	var surface: RefCounted = _precipitation.surface_weather
-	_season_wrote = [surface.target_autumn, surface.target_cold]
+	calendar.claim(_precipitation.surface_weather)
 
 ## A generated world is about to take its mood (cozy_world_generator.gd).
 func establish_world_weather(world: Dictionary) -> void:
@@ -724,11 +699,7 @@ func restore_season_state(_state: Dictionary) -> void:
 	_season_claim_pending = true
 
 func _season_target(current: float, base: float, lift: float, slot: int) -> float:
-	if _season_held[slot]: return current
-	var wanted := clampf(base + lift, 0.0, 1.0)
-	if not (is_equal_approx(current, _season_wrote[slot]) or is_equal_approx(current, base)): return current
-	_season_wrote[slot] = wanted
-	return wanted
+	return calendar.target(current, base, lift, slot)
 
 func _process(delta: float) -> void:
 	# An occluded macOS movie window may update without drawing. Advance once
