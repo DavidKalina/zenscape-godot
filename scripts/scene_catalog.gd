@@ -13,6 +13,8 @@ const ENTRIES: Array[Dictionary] = [
 		"detail":"The game straight in: your last world (or a new plain), the hand out to build."},
 	{"id":"moments_world","group":"The game","title":"Moments in the sky","scene":"res://studies/cozy_worlds.tscn","args":["--moments","--skydive"],
 		"detail":"The game with the moments set pieces, in the plane high over home. N: next set piece."},
+	{"id":"manual_landing_world","group":"The game","title":"Landing by hand","scene":"res://studies/cozy_worlds.tscn","args":["--manual-landing","--skydive"],
+		"detail":"The game with every landing flown by hand, in the plane over home. F flaps, brake to a stop, F out; board the plane to fly again."},
 	# Ruins.
 	{"id":"aqueduct_isle","group":"Ruins","title":"Aqueduct isle","scene":"res://studies/aqueduct_isle.tscn","args":[],
 		"detail":"The ruin platforming isle: grass, look presets (L), the plane on F. Find the lodestone, fly where the nose points; the halls follow."},
