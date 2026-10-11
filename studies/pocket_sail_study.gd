@@ -4,8 +4,8 @@ extends "res://studies/character_study.gd"
 ## study's pilot, camera, numbers (F1) and feel panel (F2, the sail's own
 ## numbers at its foot), over a tall floating island in the open sky:
 ##
-##   the top     a 36 m square slab 50 m up on a stem, its rim a lip to hang
-##               from; on its east side four launch pads (stand-ins for a
+##   the top     a 36 m square slab 50 m up on a stem (its rim, as any
+##               edge, hung from); on its east side four launch pads (stand-ins for a
 ##               sentinel's blow, docs/design/sentinels-idea): walked onto,
 ##               each throws him east, harder down the row (PADS: nudge,
 ##               shove, blow, hurl). K anywhere is a sentinel's blow: out
@@ -135,8 +135,8 @@ func _material(colour: String) -> Material:
 
 static func _stations() -> Array:
 	var top := [
-		# The top: a slab on a stem, its rim a lip to hang from.
-		["box",Rect2(-TOP_HALF,-TOP_HALF,TOP_HALF*2.0,TOP_HALF*2.0),TOP-SLAB,TOP,"lip"],
+		# The top: a slab on a stem (its rim, as any edge, a lip to hang from).
+		["box",Rect2(-TOP_HALF,-TOP_HALF,TOP_HALF*2.0,TOP_HALF*2.0),TOP-SLAB,TOP,"floor"],
 		["box",Rect2(-STEM_HALF,-STEM_HALF,STEM_HALF*2.0,STEM_HALF*2.0),0.0,TOP-SLAB,"dark"],
 		["label",Vector3(-12.0,TOP+0.6,12.0),"K: a sentinel's blow · G: the next gust now"],
 	]

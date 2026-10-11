@@ -596,8 +596,11 @@ func drive(motor: RefCounted, delta: float) -> Dictionary:
 	var rise: float = motor.velocity.y
 	if not motor.grounded and _grounded_was and rise > 0.0: _stretch.v -= TAKE_OFF_DIP
 	_grounded_was = motor.grounded
-	var aloft: bool = not motor.grounded and (move == "" or move == "jump" or move == "sail")
+	var aloft: bool = not motor.grounded and (move == "" or move == "jump")
+	# Under the sail, the arms up over the idle (as the dive's are), not
+	# over the air's clips, whose arms are already up.
 	_sail = move_toward(_sail,1.0 if move == "sail" else 0.0,delta/SAIL_ARMS_TIME)
+	if move == "sail": _moving = move_toward(_moving,0.0,delta/FADE)
 	_air = move_toward(_air,1.0 if aloft else 0.0,delta/(AIR_IN if aloft else AIR_OUT))
 	_air_fall = move_toward(_air_fall,clampf((AIR_RISEN-rise)/(AIR_RISEN-AIR_FALLEN),0.0,1.0),delta*5.0)
 	_air_time = fmod(_air_time+delta,AIR_LENGTH)

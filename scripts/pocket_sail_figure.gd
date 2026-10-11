@@ -11,11 +11,11 @@ extends Node3D
 ## far its tips droop (m), and its cells.
 const SPAN := 1.8
 const CHORD := 0.55
-const HIGH := 1.75
+const HIGH := 1.6
 const DROOP := 0.28
 const CELLS := 6
 ## The bar the mitts hold (m over the feet), and its half width.
-const BAR := 1.32
+const BAR := 1.3
 const BAR_HALF := 0.2
 ## Seconds out and away; the swell past full as it opens.
 const OPEN_TIME := 0.18
