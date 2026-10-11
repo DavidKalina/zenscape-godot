@@ -37,12 +37,11 @@ extends Node3D
 ## the long jumps chained and their fastest),
 ## F2 the feel's sliders (the motor's own vars, changed live; Print copies
 ## the set). Esc lets the mouse go, a click takes it back.
-## Carving: `-- --carve` starts with the slide carving (the motor's `carve`:
+## Carving: the slide carves (the motor's `carve`, on by default everywhere:
 ## the stick across his way turns his slide, its pace carried round, rather
-## than pushing him across), F3 turns it on and off live to compare with the
-## slide as it was; F1 shows which, F2 holds its numbers (carve_turn,
-## carve_radius, carve_scrub). Only these studies carve; the game's slide is
-## as ever.
+## than pushing him across); `-- --no-carve` starts with the slide as it
+## was, F3 turns it on and off live to compare; F1 shows which, F2 holds its
+## numbers (carve_turn, carve_radius, carve_scrub).
 ## Packs: `-- --pack=NAME` builds studies/island_packs/NAME.gd's stations
 ## instead of the room, floating in the open sky (no floor, no walls): a
 ## pack script holds NAME, START, START_FACE, LOST (the fall that sets him
@@ -412,6 +411,7 @@ func _ready() -> void:
 	for arg in preload("res://scripts/launch_args.gd").user_args():
 		if arg.begins_with("--pack=") and pack == "": pack = arg.trim_prefix("--pack=")
 		elif arg == "--carve": motor.carve = true
+		elif arg == "--no-carve": motor.carve = false
 	if pack != "": _load_pack()
 	Pad.ensure()
 	_build_light()

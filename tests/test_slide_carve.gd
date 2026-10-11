@@ -70,13 +70,13 @@ static func as_was_runs(motor_script: GDScript) -> Dictionary:
 	var go := func(feet: Vector3, step: Vector2) -> Vector3: return feet+Vector3(step.x,0.0,step.y)
 	var out := {}
 	# Crouched on the flat from 8 m/s, the stick ahead and across.
-	var m: RefCounted = motor_script.new()
+	var m: RefCounted = _uncarved(motor_script)
 	m.reset(Vector3.ZERO,motor_script.facing_of(Vector2(1.0,0.0)),8.0)
 	m.crouch = true
 	for i in range(90): m.step(DT,Vector2(0.6,0.8),PilotMotor.RUN,false,level,go)
 	out["flat crouched"] = _end(m)
 	# Into the slide crouched, then up, the stick across.
-	m = motor_script.new()
+	m = _uncarved(motor_script)
 	m.reset(Vector3.ZERO,motor_script.facing_of(Vector2(1.0,0.0)),8.0)
 	m.crouch = true
 	m.step(DT,Vector2(1.0,0.0),PilotMotor.RUN,false,level,go)
@@ -84,19 +84,26 @@ static func as_was_runs(motor_script: GDScript) -> Dictionary:
 	for i in range(40): m.step(DT,Vector2(0.0,1.0),PilotMotor.RUN,false,level,go)
 	out["flat stood"] = _end(m)
 	# Down a 30° slope from a stand, crouched, the stick across.
-	m = motor_script.new()
+	m = _uncarved(motor_script)
 	m.reset(Vector3.ZERO,motor_script.facing_of(Vector2(1.0,0.0)))
 	m.crouch = true
 	for i in range(120): m.step(DT,Vector2(0.0,1.0),PilotMotor.RUN,false,slope,go)
 	out["slope across"] = _end(m)
 	# Down it with no stick, then braked, the stick back.
-	m = motor_script.new()
+	m = _uncarved(motor_script)
 	m.reset(Vector3.ZERO,motor_script.facing_of(Vector2(1.0,0.0)))
 	m.crouch = true
 	for i in range(60): m.step(DT,Vector2.ZERO,PilotMotor.RUN,false,slope,go)
 	for i in range(30): m.step(DT,Vector2(-1.0,0.0),PilotMotor.RUN,false,slope,go)
 	out["slope braked"] = _end(m)
 	return out
+
+## A motor of `motor_script` with carving off (the motor carves by default;
+## the one before carving has no `carve`).
+static func _uncarved(motor_script: GDScript) -> RefCounted:
+	var m: RefCounted = motor_script.new()
+	if "carve" in m: m.set("carve",false)
+	return m
 
 static func _end(m: RefCounted) -> Array:
 	return [m.feet.x,m.feet.y,m.feet.z,m.velocity.x,m.velocity.z,m.facing,m.move]
@@ -278,7 +285,9 @@ func _study() -> void:
 	current_scene = study
 	while not study.walk_ready: await process_frame
 	var m: PilotMotor = study.motor
-	check(not m.carve,"The character study starts with the slide as it was")
+	check(m.carve,"The character study starts with the slide carving (the motor's default)")
+	study.toggle_carve()
+	check(not m.carve,"F3 turns carving off")
 	study.toggle_carve()
 	study._hud.visible = true
 	study._show_hud()

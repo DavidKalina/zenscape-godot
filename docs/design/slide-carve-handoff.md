@@ -14,9 +14,9 @@ on-foot slide, behind a flag, so it can be compared with the slide as it is.
     godot --path . res://studies/serpent_ride.tscn -- --no-title --carve
     godot --path . res://studies/character_study.tscn -- --no-title --carve
 
-- **`--carve`** starts the scene with carving on. The serpent ride (and its
-  convoy) carves by default since 2026-10-10; `--no-carve` there gives the
-  old slide.
+- **`--carve`** starts the scene with carving on. Since 2026-10-10 carving is
+  the motor's default everywhere (the game, the kit isles, the studies, the
+  serpent ride); `--no-carve` in the studies gives the old slide.
 - **F3** turns carving on and off live in both scenes, for an A/B on the
   same slide. The screen says which ("slide: carving" or "slide: as it
   was").

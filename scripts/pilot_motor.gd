@@ -94,8 +94,8 @@ extends RefCounted
 ## uncrouched on the flat, is the slide jump: SLIDE_JUMP high with all the
 ## slide's pace; crouched on the flat it is the long jump.
 ##
-## Carving (`carve`, off unless a scene turns it on; off, all the above
-## holds as it is): sliding (the surf on a slope and the slide on the flat,
+## Carving (`carve`, on by default; off, all the above holds as it is):
+## sliding (the surf on a slope and the slide on the flat,
 ## crouched or not), the stick across his way no longer pushes him across
 ## it but turns his way, as a snowboard or a belly slide carves: his pace
 ## carried round into the new way, at CARVE_TURN (radians a second) at full
@@ -472,8 +472,8 @@ var move := ""
 var crouch := false
 var twirl := false
 ## Sliding, the stick carves (see above); off, it pushes him across as it
-## always has. A scene's choice (studies/character_study.gd's `--carve`).
-var carve := false
+## used to (studies/character_study.gd's `--no-carve`, F3).
+var carve := true
 ## The carve's turn of his way this step (radians a second, positive to his
 ## left, as `facing` turns), 0 not carving: for the figure's lean.
 var carving := 0.0
