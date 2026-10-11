@@ -166,21 +166,23 @@ static func mesa(seed_value: int) -> Node3D:
 		"tone":KitLook.turf(seed_value,KitLand.wear_of(paths()))}
 	var node := KitLand.island(spec)
 	node.name = "Mesa"
+	# The island's ring sides give way to the mesa's own skirt (`skirt`):
+	# buttresses, corner crags and an irregular keel, drawn and collided
+	# ("Sides") so the plane meets what it sees.
 	var sides := node.get_node_or_null("Mesh") as MeshInstance3D
-	if sides == null:
-		for c in node.get_children():
-			if c is MeshInstance3D and c.name != "Ground" and c.name != "Crags": sides = c
-	if sides != null and sides.mesh != null:
-		var body := StaticBody3D.new()
-		body.name = "Sides"
-		var shape := ConcavePolygonShape3D.new()
-		shape.set_faces(sides.mesh.get_faces())
-		shape.backface_collision = true
-		var holder := CollisionShape3D.new()
-		holder.shape = shape
-		body.add_child(holder)
-		node.add_child(body)
-	dress_walls(node,sides,seed_value)
+	if sides != null:
+		node.remove_child(sides)
+		sides.free()
+	var faces := dress_walls(node,seed_value)
+	var body := StaticBody3D.new()
+	body.name = "Sides"
+	var shape := ConcavePolygonShape3D.new()
+	shape.set_faces(faces)
+	shape.backface_collision = true
+	var holder := CollisionShape3D.new()
+	holder.shape = shape
+	body.add_child(holder)
+	node.add_child(body)
 	return node
 
 # --- The walls drawn ------------------------------------------------------------------
@@ -200,12 +202,30 @@ const FACET_H := 4.6
 const FACET_BACK := Vector2(0.05,0.75)
 ## A step shorter than this (m) is not a wall.
 const WALL_MIN := 1.0
-## The sides' facade: down to SIDE_FOOT under TOP, its foot drawn in toward
-## the middle by SIDE_IN of the radius, over the rock rings below.
-const SIDE_FOOT := 7.5
-const SIDE_IN := 0.15
-## Drawn sides faces wholly above this (m under TOP) give way to the facade.
-const SIDE_CUT := 4.6
+## The skirt (`skirt`): a column of rock every SKIRT_COL m round the rim,
+## each down WALL_ROWS rows to WALL_BASE under TOP, then in KEEL_ROWS
+## ([way in toward the middle, drop under TOP over KEEL]) to the keel's tip
+## KEEL under TOP.
+const SKIRT_COL := Vector2(2.4,4.0)
+const WALL_ROWS := 7
+const WALL_BASE := 3.0
+const KEEL := 27.0
+const KEEL_ROWS := [[0.16,0.13],[0.34,0.3],[0.52,0.48],[0.68,0.66],[0.83,0.83]]
+## The mesa's tiers: heights over TOP where the rock steps out a ledge
+## (TIER_OUT m) all round, and the batter: the wall leaning out BATTER m a
+## metre under its lip, up to BATTER_MOST.
+const TIERS := [8.0,19.0,28.0]
+const TIER_OUT := Vector2(0.5,1.3)
+## Bulges and hollows down a face, up to BULGE m out or in.
+const BULGE := 1.6
+const BATTER := 0.05
+const BATTER_MOST := 1.8
+## Buttresses stand out of the rim up to BUTTRESS m (a slow wander round
+## it), the crags at the plan's corners CORNER m; both start this far
+## under the lip, so the lip stays clean.
+const BUTTRESS := 3.2
+const CORNER := Vector2(2.6,4.4)
+const BUTTRESS_UNDER := 1.4
 
 ## The steps of `height` laid out as walls: [{line (world x z), top, foot
 ## (over TOP, a point each), into (unit (x z), toward the high side)}], found
@@ -368,8 +388,9 @@ static func filtered(mesh: ArrayMesh, drop: Callable) -> ArrayMesh:
 	return out
 
 ## The mesa's walls drawn as faceted basalt ("Walls"): the steps' slivers in
-## "Crags" and the sides' upper rings in `sides` give way to it.
-static func dress_walls(node: Node3D, sides: MeshInstance3D, seed_value: int) -> void:
+## "Crags" give way to it; and its skirt round the rim, down to the keel.
+## Returns the skirt's faces (to collide).
+static func dress_walls(node: Node3D, seed_value: int) -> PackedVector3Array:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value*7+11
 	var rock := KitLook.RockMesh.new()
@@ -400,31 +421,269 @@ static func dress_walls(node: Node3D, sides: MeshInstance3D, seed_value: int) ->
 					for w: Vector4 in near.get(k+Vector2i(dx,dz),[]):
 						if Vector2(w.x,w.y).distance_to(Vector2(m.x,m.z)) < 1.0 and m.y > w.z-0.6 and m.y < w.w+0.6: return true
 			return false)
-	# The sides: a facade round the rim down past the earth to the rock rings.
-	var ring: PackedVector2Array = node.get_meta("outline")
-	var line: Array = []
-	var tops := PackedFloat32Array()
-	var foots := PackedFloat32Array()
-	var intos: Array = []
-	var outs := KitLand.outward(Array(ring))
-	var centre := KitLand.centre_of(Array(ring))
-	for i in range(ring.size()):
-		line.append(ring[i])
-		tops.append(ground(ring[i].x,ring[i].y))
-		foots.append(TOP-SIDE_FOOT)
-		intos.append(-outs[i])
-	facade_closed_sides(rock,line,tops,foots,intos,rng,centre)
-	if sides != null and sides.mesh != null:
-		var cut := TOP-SIDE_CUT
-		sides.mesh = filtered(sides.mesh,func(a: Vector3, b: Vector3, c: Vector3) -> bool:
-			return maxf(a.y,maxf(b.y,c.y)) > cut)
 	var drawn := rock.node("Walls")
 	if drawn != null: node.add_child(drawn)
+	var sides := KitLook.RockMesh.new()
+	skirt(sides,Array(node.get_meta("outline") as PackedVector2Array),seed_value)
+	corner_spur(sides,rng)
+	for k in range(TORS.size()): tor(sides,TORS[k],rng)
+	node.add_child(sides.node("Skirt"))
+	return sides.faces()
 
-## The sides' facade round the closed outline: its foot drawn in toward
-## `centre` by SIDE_IN of the way.
-static func facade_closed_sides(rock: KitLook.RockMesh, line: Array, top: PackedFloat32Array, foot: PackedFloat32Array, into: Array, rng: RandomNumberGenerator, centre: Vector2) -> void:
-	facade(rock,line,top,foot,into,rng,0.0,centre,SIDE_IN,true)
+# --- The summit's spur and tors -----------------------------------------------------------
+#
+# The summit's pad stands 6.4 m out of the summit's wall over the lawn, a
+# sheer face 36 m tall: seen edge-on from the lawn, a thin dark column. A
+# spur of rock fills the corner between the two, from just under the pad's
+# lip down to the lawn, widening as it goes like a talus fan, so the pad
+# reads as a buttress of the mesa. On the summit's two outer corners, tors
+# of the same rock break its square top.
+
+## The spur's reach on the lawn along the summit wall (u) and out along
+## the pad's face (v), its top under the pad's lip, its rows.
+const SPUR := Vector2(5.5,5.2)
+const SPUR_UNDER := 1.6
+const SPUR_ROWS := 7
+## The tors: [vertex, radius from O, base radius, height].
+const TORS := [[6,17.6,2.6,4.2],[0,17.8,2.3,3.4]]
+
+static func corner_spur(rock: KitLook.RockMesh, rng: RandomNumberGenerator) -> void:
+	var s := SIDES-1
+	var u0 := -RUN*0.5
+	var top := TOP+SUMMIT-SPUR_UNDER
+	var low := TOP-0.4
+	var arc := 6
+	var grid: Array = []
+	for r in range(SPUR_ROWS+1):
+		var f := float(r)/SPUR_ROWS
+		var g := pow(f,0.6)
+		var y := lerpf(top,low,f)
+		var row: Array[Vector3] = []
+		for k in range(arc+1):
+			var th := PI*0.5*float(k)/arc
+			var j := 1.0 if r == 0 or k == 0 or k == arc else rng.randf_range(0.8,1.15)
+			var uu := u0+0.05+cos(th)*SPUR.x*g*j
+			var vv := 0.05+sin(th)*minf(SPUR.y,W-0.3)*g*j
+			# Each end stays on its wall.
+			if k == 0: vv = 0.05
+			if k == arc: uu = u0+0.05
+			var p := side_at(s,uu,vv)
+			row.append(Vector3(p.x,y,p.y))
+		grid.append(row)
+	var corner := side_at(s,u0,0.0)
+	for r in range(SPUR_ROWS):
+		for k in range(arc):
+			var a0: Vector3 = grid[r][k]
+			var a1: Vector3 = grid[r][k+1]
+			var b0: Vector3 = grid[r+1][k]
+			var b1: Vector3 = grid[r+1][k+1]
+			var m := (a0+a1+b0+b1)*0.25
+			var toward := Vector3(m.x-corner.x,0.3,m.z-corner.y)
+			rock.add([a0,b0,b1],top+SPUR_UNDER,toward,rng.randf_range(0.88,1.1))
+			rock.add([a0,b1,a1],top+SPUR_UNDER,toward,rng.randf_range(0.88,1.1))
+
+## A tor on the summit (`spec`: TORS' row): a faceted lump of the rock,
+## rings narrowing up to a ridge, its foot sunk in the turf.
+static func tor(rock: KitLook.RockMesh, spec: Array, rng: RandomNumberGenerator) -> void:
+	var c := vertex_at(int(spec[0]),float(spec[1]))
+	var base := TOP+SUMMIT-0.8
+	var r0 := float(spec[2])
+	var h := float(spec[3])
+	var n := 7
+	var rings: Array = []
+	for level: Array in [[0.0,1.0],[0.45,0.8],[0.8,0.5]]:
+		var ring: Array[Vector3] = []
+		for i in range(n):
+			var a := TAU*i/n+rng.randf_range(-0.2,0.2)
+			var rr := r0*float(level[1])*rng.randf_range(0.8,1.15)
+			var y := base+h*float(level[0])*rng.randf_range(0.85,1.1) if float(level[0]) > 0.0 else base
+			ring.append(Vector3(c.x+cos(a)*rr,y,c.y+sin(a)*rr))
+		rings.append(ring)
+	var lean := Vector2.from_angle(rng.randf()*TAU)*r0*0.25
+	var ridge: Array[Vector3] = [Vector3(c.x+lean.x-0.6,base+h,c.y+lean.y),Vector3(c.x+lean.x+0.5,base+h*0.9,c.y+lean.y+0.4)]
+	var rim := base+h+3.0
+	var centre := Vector3(c.x,base+h*0.4,c.y)
+	for k in range(rings.size()-1):
+		for i in range(n):
+			var j := (i+1)%n
+			var a0: Vector3 = rings[k][i]
+			var a1: Vector3 = rings[k][j]
+			var b0: Vector3 = rings[k+1][i]
+			var b1: Vector3 = rings[k+1][j]
+			rock.add([a0,b0,a1],rim,(a0+a1+b0)/3.0-centre,rng.randf_range(0.88,1.1))
+			rock.add([a1,b0,b1],rim,(a1+b0+b1)/3.0-centre,rng.randf_range(0.88,1.1))
+	var top_ring: Array = rings[rings.size()-1]
+	for i in range(n):
+		var j := (i+1)%n
+		var a0: Vector3 = top_ring[i]
+		var a1: Vector3 = top_ring[j]
+		var q: Vector3 = ridge[0] if (a0-ridge[0]).length() < (a0-ridge[1]).length() else ridge[1]
+		rock.add([a0,q,a1],rim,(a0+a1+q)/3.0-centre+Vector3.UP,rng.randf_range(0.88,1.1))
+	rock.add([ridge[0],ridge[1],top_ring[0]],rim,Vector3.UP,1.0)
+
+# --- The skirt ---------------------------------------------------------------------------
+#
+# The mesa's sides, round its rim: not a plain wall but the islets' hanging
+# rock, a column of facets every few metres. The lip is flush with the turf
+# (and a step where the rim steps); under it the rock stands out in
+# buttresses that wander round the rim, sharper crags at the plan's corners,
+# their tops lying back as ledges of talus, the bays between set in; under
+# the lawn's level it all tapers in, unevenly, column by column, a spur
+# hanging lower here and there, to a keel off the middle.
+
+## How far a column's last wall point stands out of its rim point `p`.
+static func o_last(column: Array[Vector3], p: Vector2, out: Vector2) -> float:
+	var q: Vector3 = column[column.size()-1]
+	return maxf((Vector2(q.x,q.z)-p).dot(out),0.0)
+
+## Whether ring point `p` is at one of the nonagon's corners (not the lawn's).
+static func at_corner(p: Vector2) -> bool:
+	var d := p-O
+	var a := fposmod(atan2(d.y,d.x)-PHI0,TAU)
+	var off := absf(a-roundf(a/SECTOR)*SECTOR)
+	return off*d.length() < 1.6 and not on_lawn(p)
+
+## The skirt round `ring` (the island's outline, closed) into `rock`.
+static func skirt(rock: KitLook.RockMesh, ring: Array, seed_value: int) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_value*13+5
+	var wander := FastNoiseLite.new()
+	wander.seed = seed_value+211
+	wander.frequency = 0.06
+	var outs := KitLand.outward(ring)
+	var centre := KitLand.centre_of(ring)
+	var count := ring.size()
+	var rims := PackedFloat32Array()
+	for p: Vector2 in ring: rims.append(ground(p.x,p.y))
+	# The columns: ring points every SKIRT_COL m or so, and both sides of
+	# every step in the rim (so the lip steps where the turf does).
+	var cols: Array[int] = []
+	var since := 0.0
+	var want := rng.randf_range(SKIRT_COL.x,SKIRT_COL.y)
+	var corner_seen := {}
+	for i in range(count):
+		var j := (i+1)%count
+		var take := i == 0 or since >= want
+		var stepped := absf(rims[j]-rims[i]) > 0.3 or absf(rims[i]-rims[(i-1+count)%count]) > 0.3
+		var corner := at_corner(ring[i])
+		if corner:
+			var k := roundi(fposmod(atan2((ring[i] as Vector2).y-O.y,(ring[i] as Vector2).x-O.x)-PHI0,TAU)/SECTOR)%SIDES
+			if not corner_seen.has(k):
+				corner_seen[k] = true
+				take = true
+		if take or stepped:
+			cols.append(i)
+			since = 0.0
+			want = rng.randf_range(SKIRT_COL.x,SKIRT_COL.y)
+		since += (ring[i] as Vector2).distance_to(ring[j])
+	var tip := Vector3(centre.x+rng.randf_range(-3.0,3.0),TOP-KEEL,centre.y+rng.randf_range(-3.0,3.0))
+	var lawn_c := O+normal_of(SIDES-1)*(AC+LAWN_AT)
+	var bulge := FastNoiseLite.new()
+	bulge.seed = seed_value+977
+	bulge.frequency = 0.09
+	var grid: Array = []
+	var col_rims := PackedFloat32Array()
+	var col_outs: Array[Vector2] = []
+	var length := 0.0
+	var last := 0
+	for c in range(cols.size()):
+		var i := cols[c]
+		for k in range(last,i): length += (ring[k] as Vector2).distance_to(ring[(k+1)%count])
+		last = i
+		var p: Vector2 = ring[i]
+		var out: Vector2 = outs[i]
+		var rim := rims[i]
+		var tall := rim-(TOP-WALL_BASE)
+		# How far this column stands out: the wander, a corner's crag, a
+		# column of its own now and then.
+		var stand := maxf(wander.get_noise_1d(length)*1.6+0.15,0.0)*BUTTRESS
+		if at_corner(p): stand = maxf(stand,rng.randf_range(CORNER.x,CORNER.y))
+		elif rng.randf() < 0.18: stand += rng.randf_range(0.8,1.8)
+		elif rng.randf() < 0.25: stand = -rng.randf_range(0.3,0.9)
+		stand *= clampf(tall/12.0,0.35,1.0)
+		# Where the rim looks over the lawn, it stands out little.
+		if (p+out*4.0).distance_to(lawn_c) < LAWN_R+1.5: stand *= 0.2
+		var column: Array[Vector3] = []
+		column.append(Vector3(p.x,rim-0.02,p.y))
+		var skin := p+out*rng.randf_range(0.15,0.35)
+		column.append(Vector3(skin.x,rim-0.5,skin.y))
+		var under := minf(BUTTRESS_UNDER,maxf(tall*0.2,0.6))
+		var head := rim-0.5-under
+		var foot := TOP-WALL_BASE
+		# The rows: WALL_ROWS down the wall, and a pair at each tier that
+		# stands in it (its ledge between), else two more down the wall.
+		var ys: Array[float] = []
+		var tiers: Array[float] = []
+		var spare := 0
+		for k in range(TIERS.size()):
+			# A tier holds for a stretch of the rim, then breaks off; its
+			# height wanders along it.
+			var gate := wander.get_noise_1d(length*1.7+400.0*k)
+			var at := TOP+float(TIERS[k])+wander.get_noise_1d(length*0.9-300.0*k)*3.0
+			if gate > 0.05 and at < head-1.0 and at > foot+1.5:
+				ys.append(at+0.15)
+				ys.append(at-0.35)
+				tiers.append(at)
+			else: spare += 2
+		var rows := WALL_ROWS+spare
+		for r in range(1,rows+1):
+			var f := float(r)/rows
+			if r < rows: f = clampf(f+rng.randf_range(-0.3,0.3)/rows,0.02,0.98)
+			ys.append(head if r == 1 else lerpf(head,foot,f))
+		ys.sort()
+		ys.reverse()
+		var steps := PackedFloat32Array()
+		for t in tiers: steps.append(rng.randf_range(TIER_OUT.x,TIER_OUT.y)*clampf(stand/BUTTRESS+0.6,0.6,1.3))
+		var scale := clampf(tall/12.0,0.35,1.0)*(0.2 if (p+out*4.0).distance_to(lawn_c) < LAWN_R+1.5 else 1.0)
+		for r in range(ys.size()):
+			var y := ys[r]
+			var f := clampf((head-y)/maxf(head-foot,0.1),0.0,1.0)
+			# Out to the full stand within the wall's first rows, swelling a
+			# little lower down, leaning out (the batter), stepping out at
+			# each tier passed; each point set in or out its own bit.
+			var o := stand*(0.75 if r == 0 else 1.0+0.15*sin(f*PI))+rng.randf_range(-0.4,0.3)
+			# Bulges and hollows down the face (the islets' slumped walls).
+			if r > 0: o += bulge.get_noise_2d(length,y*1.4)*BULGE*scale
+			o += minf((rim-y)*BATTER,BATTER_MOST)*scale
+			for t in range(tiers.size()):
+				if y < tiers[t]-0.1: o += steps[t]*scale
+			var q := p+out*o
+			column.append(Vector3(q.x,y,q.y))
+		var bottom := o_last(column,p,out)
+		# The keel: in toward the middle, each column its own drop, a spur
+		# hanging lower now and then.
+		var drop := rng.randf_range(0.85,1.12)
+		var spur := rng.randf_range(0.12,0.3) if rng.randf() < 0.16 else 0.0
+		for spec: Array in KEEL_ROWS:
+			var inset := clampf(float(spec[0])+rng.randf_range(-0.04,0.04),0.0,0.95)
+			var f := float(spec[1])*drop+spur*float(spec[1])
+			var q := p.lerp(centre,inset)+out*bottom*(1.0-inset)*0.8
+			column.append(Vector3(q.x,minf(TOP-WALL_BASE-1.0,TOP-KEEL*minf(f,0.97)),q.y))
+		grid.append(column)
+		col_rims.append(rim)
+		col_outs.append(out)
+	for c in range(grid.size()):
+		var d := (c+1)%grid.size()
+		var a: Array = grid[c]
+		var b: Array = grid[d]
+		var out2 := (col_outs[c]+col_outs[d]).normalized()
+		var rim := maxf(col_rims[c],col_rims[d])
+		for r in range(a.size()-1):
+			var a0: Vector3 = a[r]
+			var a1: Vector3 = a[r+1]
+			var b0: Vector3 = b[r]
+			var b1: Vector3 = b[r+1]
+			var down := 0.0 if r < WALL_ROWS+2*TIERS.size()+1 else 0.6
+			var toward := Vector3(out2.x,-down,out2.y)
+			if rng.randf() < 0.5:
+				rock.add([a0,a1,b1],rim,toward,rng.randf_range(0.88,1.1))
+				rock.add([a0,b1,b0],rim,toward,rng.randf_range(0.88,1.1))
+			else:
+				rock.add([a0,a1,b0],rim,toward,rng.randf_range(0.88,1.1))
+				rock.add([b0,a1,b1],rim,toward,rng.randf_range(0.88,1.1))
+		var la: Vector3 = a[a.size()-1]
+		var lb: Vector3 = b[b.size()-1]
+		rock.add([la,tip,lb],rim,Vector3(out2.x,-1.5,out2.y),rng.randf_range(0.88,1.1))
 
 # --- The stair --------------------------------------------------------------------
 

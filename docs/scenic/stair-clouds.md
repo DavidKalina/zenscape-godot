@@ -68,3 +68,24 @@ Open:
 - The lawn and pad turf in the mesa's shadow stays dark. Only the stone gets the bounce.
 
 Tests (headless): `test_stair_clouds_isle`, `test_motif_sky`, `test_aqueduct_isle_sky` PASS.
+
+## Rock round
+
+Branch `look/motif-rock` (from main 5430e81b). Only `studies/stair_clouds_isle_art.gd` changed; no shared code.
+
+- **Skirt** (`skirt`). The island's ring sides (`KitLand.island`'s "Mesh") and the old rim facade are gone. Round the rim stands a column of rock every 2.4–4 m: the lip flush with the turf (and stepping where the rim steps), then buttresses that wander round the rim (up to 3.2 m out), sharper crags at the nonagon's corners (2.6–4.4 m), bays set in, bulges and hollows down each face, a batter, and broken tiers of talus ledges at about 8, 19 and 28 m that hold for a stretch and break off. Under the lawn level it tapers in column by column, each its own drop with the odd spur, to a keel 27 m under the lawn, off the middle. It is drawn and collided ("Sides") from the same faces, so the plane meets what it sees. Near the lawn the columns stand out little.
+- **Summit spur** (`corner_spur`). The 36 m sheer face where the summit pad stands out of the summit wall over the lawn (the edge-on dark column) has a fluted spur of rock filling the corner, from 1.6 m under the pad's lip down to the lawn, fanning out like talus. Collided.
+- **Tors** (`tor`, `TORS`). Two faceted rock tors on the summit's outer corners (vertices 6 and 0) break its square top. Collided.
+- Every terrace, landing, the stairs, summit, bridge and walking route are unchanged (the heightfield and its collision are untouched; the inner step walls are as the walls round drew them).
+- Fallen lintel over the slot: not done.
+
+Triangles: 333.1k (was 331.7k–332.1k).
+
+Tests (headless): `test_stair_clouds_isle`, `test_motif_sky`, `test_aqueduct_isle_sky` PASS (plane tokens 0.9 m clear, whole climb, landings, bridge, lawn).
+
+Captures (gitignored, alpine_morning): `captures/motif-rock/{before,after}/stair/` (approach, establishing, below, west-low, close, edgeon), reference aqueduct isle in `captures/motif-rock/ref/`; intermediate rounds `r1`–`r4` (`r4/stair/summit.png`, `spur.png`).
+
+Open:
+- From the approach it reads as a craggy stepped mesa with a tapered keel, but the core's tall inner step walls are still sheer and the summit block's edge stays fairly square from some angles; the mesa is still tall and steep by design.
+- Faces away from the sun read navy-dark, as the reference isle's do from the same angle (sky ambient).
+- The spur only helps at the base; from the south lawn the pad's face above it still reads as a tall dark slab.
