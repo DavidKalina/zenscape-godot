@@ -13,6 +13,8 @@ const ENTRIES: Array[Dictionary] = [
 		"detail":"The game straight in: your last world (or a new plain), the hand out to build."},
 	{"id":"moments_world","group":"The game","title":"Moments in the sky","scene":"res://studies/cozy_worlds.tscn","args":["--moments","--skydive"],
 		"detail":"The game with the moments set pieces, in the plane high over home. N: next set piece."},
+	{"id":"manual_landing_world","group":"The game","title":"Landing by hand","scene":"res://studies/cozy_worlds.tscn","args":["--manual-landing","--skydive"],
+		"detail":"The game with every landing flown by hand, in the plane over home. Put it down anywhere, brake or drift to a stop, F out; board to fly."},
 	# Ruins.
 	{"id":"aqueduct_isle","group":"Ruins","title":"Aqueduct isle","scene":"res://studies/aqueduct_isle.tscn","args":[],
 		"detail":"The ruin platforming isle: grass, look presets (L), the plane on F. Find the lodestone, fly where the nose points; the halls follow."},
@@ -47,6 +49,9 @@ const ENTRIES: Array[Dictionary] = [
 		"detail":"Set pieces with starter-ring challenges: take the magenta ring."},
 	{"id":"flight_crash","group":"Flight greyboxes","title":"Moments, crashing","scene":"res://studies/flight_study.tscn","args":["--pack=moments","--crash=hard"],
 		"detail":"The moments pack with hard hits crashing. C toggles it, T the restart point."},
+	# Landing greybox (studies/landing_study.tscn, docs/design/manual-landing.md).
+	{"id":"landing_study","group":"Flight greyboxes","title":"Manual landing","scene":"res://studies/landing_study.tscn","args":[],
+		"detail":"Land by hand on five fields: slow and level greases it, hot or hard sticks and you drift it to a stop. H hot approach, 1-5, B bots."},
 	# On-foot greyboxes.
 	{"id":"character_study","group":"On-foot greyboxes","title":"Character study","scene":"res://studies/character_study.tscn","args":[],
 		"detail":"The pilot's moves in the greybox room. 1-9: stations, R: back to start."},
