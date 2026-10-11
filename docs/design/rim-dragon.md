@@ -9,9 +9,150 @@ clings to the rim and blows gales across it, seen from the aqueduct isle.
 Round 5 adds the edge spring: its weight sags the isle, and the snap back
 flings the pilot. Round 6 keeps the head out of the isle, rests the chin on
 the turf, Odyssey-style, and lets the pilot surf down the tipped isle.
+Round 7 moves it onto the ruin motif isles that replaced the old far isles.
 
 Branch `study/rim-dragon`. This is a demo round: no tests, no bot sweeps, no
 perf pass.
+
+## Round 7: the motif isles
+
+The merge of `consolidate/motif-sky` took the old far isles out of the
+aqueduct sky (the import failed on `IsleSky.ISLES`). The user asked whether
+it now goes from island to island on the four ruin motif isles. It does.
+
+### Play
+
+- `./run-rim-dragon.command --dragon-ride`: the pilot starts on foot on the
+  motif isle with the best grip (the cloister tarn). He stands on open turf
+  about 15 m in from the gripped rim, off the blast's line, facing it.
+- `--dragon-target=bell_spires|cloister_tarn|sundered_gorge|colonnade_spine`
+  picks the isle, with `--dragon-ride` or `--dragon-attack`.
+- `--dragon --dragon-attack`: it swoops in from the aqueduct isle at once.
+  Without `--dragon-attack` it roams and attacks every 60 to 85 s.
+- G still makes it let go.
+- Headless runs build the motif isles only near the eye. Add
+  `--motifs-now` to watch attacks headless (`--dragon-ride` flushes them).
+
+### Targets (studies/aqueduct_isle.gd, scripts/sky_dragon.gd)
+
+- The targets come from the sky's `places()`, whatever motifs it places.
+  `DRAGON_TARGETS` is gone. Each isle's record is made the first time the
+  dragon asks after the isle stands (`_dragon_isle`). It holds the
+  `Motif_<id>` node, a land shape (scripts/dragon_isle_shape.gd), the main
+  land's middle and radius, the shape's frame and the pivot.
+- **The shape.** Its land is all its outlines, so satellites and spire
+  tops count as land. On a 1.5 m grid over the main land (the biggest
+  outline), heights come from rays at its main turf only, and an open map
+  comes from rays at everything solid. A cell is open when nothing stands
+  more than 0.5 m over the turf there (no ruin, bell, tree or water).
+- **Choice** (`_choose_target`): a target is skipped if it hasn't stood
+  yet, if the pilot is on it, or if it was the last one let go. It must be
+  in the camera's view (within 75°, 900 m); failing that, it takes the
+  next in turn. `--dragon-ride` takes the isle with the best grip score.
+  An attack planned before its isle stood is planned again once it does
+  (`_replan_attack`). The motif isles come up a while after the scene.
+
+### The grip (`_best_turn`)
+
+48 ways round the main land are scored. The score is made of:
+
+- open turf along the chin's line, 3 to 16 m in;
+- turf near the lip's height out to 11 m in (no ridge rising from it);
+- no land under the body beyond the rim, out to 55 m;
+- a lip at the wrists' reach either side;
+- a rim 10 to 34 m from the middle;
+- off the isle, a flank as seen from the camera.
+
+The wrists and feet are now found on lines 8.5 m and 2.8 m either side of
+the grip, marched out to the real lip, rather than at fixed angles.
+Picked: cloister tarn 95 to 100% open, flat; bell spires 62 to 76% open;
+the gorge 100% open with a 0.8 m rise; the colonnade spine 100% open but a
+ridge of 8 m.
+
+### The sag (scripts/dragon_gale.gd)
+
+- **One node, a pivot.** A placed motif isle's node stands at the world's
+  origin. Under it are its art (land, rock, keel, ruins, kit pieces,
+  bells, rope bridges, water), its flora and its life (birds, butterflies,
+  on-foot tokens). So the gale poses that node. It now tips about a
+  pivot, the main land's middle, rather than the node's origin. Its
+  shape's frame is passed in, so `stands_on` and the debris spawn read the
+  land right. The colliders (turf, rock, ruin boxes, tarn water) are its
+  children and move with it.
+- **The satellites ride along**, rigid with the mother isle, and so do the
+  rope bridges between them. Nothing stretches and nothing is left
+  floating. The isle's far satellites rise as its near rim sinks, like a
+  raft tipping. This was the simplest choice that doesn't look broken.
+- **Round 6's angles kept.** The motif rims are 24 to 33 m from the pivot
+  (hills_ne's was 14 m). At round 6's sag they tipped only 8 to 12°. The
+  sag, kick, blasts and groan are now scaled by the rim's distance over
+  14 m (at most 2.5x). They tip 17 to 20° held, as in round 6. The snap's
+  rates are divided by the square root of that scale, so a big isle
+  springs back a little slower. Launches are logged at 14 to 25 m/s
+  (hills_ne: 15).
+- **Birds.** On the slam the isle's own songbirds flush off their perches
+  (kit_birds `flush`) and the sky's gulls over it stir.
+
+### Head and chin
+
+- Head probes clear ruin colliders too. A solid top up to 5 m above the
+  probe counts; an arch far overhead does not.
+- The dragon's turf rays skip the isle's other lands while it holds on.
+  Without that, on the bell spires a spire's top turf read as ground, and
+  the head was lifted 30 m onto it.
+- Headless, the chin lies flush (0.00 m miss) on the cloister tarn and the
+  bell spires through the pant. It never sinks after the lift on any of
+  the four.
+
+### Which work
+
+- **Cloister tarn: best.** Open, level turf at the grip, a clear view from
+  the aqueduct isle, the ruins and satellites tipping with it. Default
+  for the ride.
+- **Bell spires: good.** It is crowded, so the grip is 62 to 76% open. The
+  pilot on the tipped turf surfs off the rim on his own (17° there) unless
+  he steers. Seen from the aqueduct isle, the rune serpent often crosses
+  the view.
+- **Sundered gorge: fair.** The turf falls away behind the chin into the
+  gorge, so the chin rests on its back edge (logged miss up to 6 m at the
+  snout). It reads as the head lying on the lip.
+- **Colonnade spine: awkward.** Every side climbs to the spine's ridge, so
+  the chin can't lie flush (miss 3 to 9 m). The head is held up on the
+  slope by the lift, and launches cap at 32 m/s.
+
+### Captures (local, gitignored, docs/design/rim-dragon/)
+
+- `r7_sag_cloister.png`: the cloister tarn tipped toward the dragon from
+  the side. The cloister walls, the colonnade of stumps, the satellites and
+  rope bridges all lean with it.
+- `r7_chin_cloister.png`: close, the pant. The lower jaw lies on the tipped
+  turf, the head lifted off it.
+- `r7_from_aqueduct_cloister.png`: from the aqueduct isle's turf (V look),
+  mid-blast on the cloister tarn, about 390 m off and hazy.
+
+Commands: `--dragon-ride --dragon-target=cloister_tarn --dragon-watch=orbit
+--dragon-orbit=100 --dragon-orbit-up=35 --dragon-orbit-far=110
+--capture-wait=6` (sag), the same with `--dragon-orbit=125
+--dragon-orbit-up=8 --dragon-orbit-far=24 --capture-wait=5.5` (chin), and
+`--dragon --dragon-attack --dragon-target=cloister_tarn --no-serpent
+--dragon-watch=look --capture-wait=17` (from the aqueduct isle).
+
+### Rough
+
+- The pilot is only carried on the main land. He is not carried on a
+  satellite or a spire top (`ground_at` covers the main land only).
+- Walk and wade data stays at rest while the isle tips: the tarn's wade
+  pools (`ground.pools`) and the bell spires' rope-bridge rest decks
+  (deck_ground). Plane tokens in the sky's collectibles don't move either.
+  Perched songbirds are flushed on the slam, so they don't hang in the air.
+- At 350 to 450 m the dragon is small and hazy from the aqueduct isle;
+  V's look camera helps.
+- The colonnade spine has no level rim; it wants its own grip rule (e.g.
+  one end of the spine) if it is kept as a target.
+- Not played by hand; checked from headless logs and three captures.
+  test_motif_sky.gd and test_aqueduct_isle_sky.gd pass headless. The plain
+  isle without `--dragon` loads with no errors (the dragon code only runs
+  with the flag).
 
 ## Round 6: chin on the turf, surfing the tilt
 

@@ -35,6 +35,11 @@ var isle: Node3D
 var isle_rest := Transform3D.IDENTITY
 var isle_shape: RefCounted
 var isle_home := Vector3.ZERO
+## Round 7: the point (world, at rest) it tips about, and the shape's frame
+## in the node's (a motif isle's node stands at the world's origin, its
+## land about `isle_home`; a SkyIslet's node at its middle, the identity).
+var isle_pivot := Vector3.ZERO
+var isle_frame := Transform3D.IDENTITY
 var isle_radius := 16.0
 var sea_y := -108.0
 var _rng := RandomNumberGenerator.new()
@@ -95,6 +100,11 @@ var _crossed := false
 var _snap_t := 0.0
 var _hold_sag := 0.0
 var _rim_r := 16.0
+## Round 7: the sag scaled by the gripped rim's distance from the pivot
+## over hills_ne's (RIM_REF m), so a bigger motif isle tips by round 6's
+## angles (about 17 to 22° held), not half of them.
+const RIM_REF := 14.0
+var _scale := 1.0
 var _toward := Vector3.FORWARD
 var _tremble := 0.0
 var _tilt_axis := Vector3.RIGHT
@@ -241,7 +251,7 @@ void fragment() {
 ## The isle the dragon has hold of: its node (moved to shake it), its shape
 ## (where its land is), its home and radius.
 ## `toward` (flat, unit) the way out to the dragon, `rim` its grip.
-func hold_isle(node: Node3D, shape: RefCounted, home: Vector3, radius: float, toward: Vector3, rim := Vector3.INF) -> void:
+func hold_isle(node: Node3D, shape: RefCounted, home: Vector3, radius: float, toward: Vector3, rim := Vector3.INF, frame := Transform3D.IDENTITY, pivot := Vector3.INF) -> void:
 	var same := node != null and node == isle
 	if not same:
 		_settle_now()
@@ -249,12 +259,15 @@ func hold_isle(node: Node3D, shape: RefCounted, home: Vector3, radius: float, to
 		if isle != null: isle_rest = isle.transform
 		sag = 0.0
 		sag_v = 0.0
+	isle_frame = frame
+	isle_pivot = pivot if pivot != Vector3.INF else (isle_rest.origin if isle != null else home)
 	isle_shape = shape
 	isle_home = home
 	isle_radius = radius
 	_toward = toward
 	_tilt_axis = Vector3(-toward.z,0.0,toward.x).normalized()
 	_rim_r = maxf(Vector2(rim.x-home.x,rim.z-home.z).length(),6.0) if rim != Vector3.INF else radius
+	_scale = clampf(_rim_r/RIM_REF,1.0,2.5)
 	_hold_sag = 0.0
 	phase = "held"
 
@@ -278,16 +291,16 @@ func _settle_now() -> void:
 ## A blast's weight: the rim sinks a little deeper.
 func deepen() -> void:
 	if phase != "held": return
-	_hold_sag = minf(_hold_sag+BLAST_SAG,SAG_MOST)
-	sag_v += 2.0
+	_hold_sag = minf(_hold_sag+BLAST_SAG*_scale,SAG_MOST*_scale)
+	sag_v += 2.0*_scale
 	_tremble = maxf(_tremble,0.6)
 
 ## The slam: the rim is dragged down and the isle tips toward the dragon,
 ## dust bursts off the rim, rubble breaks away and falls.
 func slam(rim: Vector3, out: Vector3, tangent: Vector3) -> void:
-	sag_v += SLAM_KICK
+	sag_v += SLAM_KICK*_scale
 	_tremble = 1.0
-	_hold_sag = SLAM_SAG
+	_hold_sag = SLAM_SAG*_scale
 	for i in range(26):
 		var along := _rng.randf_range(-14.0,14.0)
 		var at := rim+tangent*along+out*_rng.randf_range(-1.0,3.0)+Vector3.UP*_rng.randf_range(-3.0,1.0)
@@ -408,7 +421,7 @@ func _on_isle() -> Vector3:
 		if isle_shape != null:
 			if not isle_shape.on_land(p): continue
 			var local := Vector3(p.x,float(isle_shape.ground_at(p))+0.6,p.y)
-			if isle != null: return isle.global_transform*local
+			if isle != null: return isle.global_transform*(isle_frame*local)
 			return isle_home+local
 		return isle_home+Vector3(p.x,0.6,p.y)
 	return Vector3.INF
@@ -486,7 +499,7 @@ func _shake_isle(delta: float) -> void:
 	_tremble = maxf(_tremble-delta*0.8,0.0)
 	if phase == "": return
 	var goal := 0.0
-	if phase == "held": goal = _hold_sag+GROAN*(sin(_clock*1.1)*0.7+sin(_clock*2.7+0.4)*0.3)
+	if phase == "held": goal = _hold_sag+GROAN*_scale*(sin(_clock*1.1)*0.7+sin(_clock*2.7+0.4)*0.3)
 	else: _snap_t += delta
 	var remaining := delta
 	while remaining > 0.0:
@@ -495,7 +508,9 @@ func _shake_isle(delta: float) -> void:
 		var w := HOLD_W
 		var zeta := HOLD_ZETA
 		if phase == "snap":
-			w = (RECOIL_W if _crossed else DIP_RISE_W)*SNAP_SCALE
+			# A bigger isle (sagged further) springs back slower, so its
+			# launch isn't twice round 6's.
+			w = (RECOIL_W if _crossed else DIP_RISE_W)*SNAP_SCALE/sqrt(_scale)
 			zeta = RECOIL_ZETA if _crossed else DIP_RISE_ZETA
 		sag_v += (w*w*(goal-sag)-2.0*zeta*w*sag_v)*h
 		sag += sag_v*h
@@ -520,8 +535,11 @@ func _shake_isle(delta: float) -> void:
 	var jitter := Vector3(sin(_clock*41.0),sin(_clock*37.0+1.3)*0.6,sin(_clock*47.0+2.1))*0.08*t
 	var creak := 0.004*sin(_clock*0.8)*(1.0 if phase == "held" else 0.0)
 	var tilt := -sag*(1.0-SAG_DROP)/_rim_r
-	var basis := Basis(_tilt_axis,tilt+0.003*t*sin(_clock*33.0))*Basis(_toward,creak)*isle_rest.basis
-	isle.transform = Transform3D(basis,isle_rest.origin+Vector3.DOWN*sag*SAG_DROP+jitter)
+	# Tipped about its pivot (a SkyIslet's own middle, a motif isle's main
+	# land's), dropped and trembling.
+	var turn := Basis(_tilt_axis,tilt+0.003*t*sin(_clock*33.0))*Basis(_toward,creak)
+	var pose := Transform3D(turn,isle_pivot+Vector3.DOWN*sag*SAG_DROP+jitter)*Transform3D(Basis.IDENTITY,-isle_pivot)
+	isle.transform = pose*isle_rest
 	moved = isle.transform*before.affine_inverse()
 
 ## How far the isle is tipped toward the dragon now (radians).
@@ -533,7 +551,7 @@ func tip() -> float:
 ## this frame's move (on its land, within `above` m over its turf).
 func stands_on(p: Vector3, above := 0.9) -> bool:
 	if isle == null or not is_instance_valid(isle) or isle_shape == null: return false
-	var local := before.affine_inverse()*p
+	var local := isle_frame.affine_inverse()*(before.affine_inverse()*p)
 	var flat := Vector2(local.x,local.z)
 	if not isle_shape.on_land(flat): return false
 	var over := local.y-float(isle_shape.ground_at(flat))

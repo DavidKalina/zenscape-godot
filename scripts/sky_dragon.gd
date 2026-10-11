@@ -152,6 +152,11 @@ var shadow_at := Vector3.INF
 ## his ground's slide, and whether he is on foot (the host sets it).
 var targets: Array = []
 var find_isle: Callable
+## Round 7: --dragon-target picked the first; the last one it attacked.
+var _target_forced := false
+var _last_target := -1
+var _grip_note := ""
+var _best_score := 0.0
 var flush_birds: Callable
 var walker: Object
 var slide: Callable
@@ -372,7 +377,10 @@ func setup(cam: Camera3D, args: PackedStringArray, sea: float, middle: Vector3, 
 		elif arg.begins_with("--dragon-target="):
 			var want := arg.get_slice("=",1)
 			for i in range(targets.size()):
-				if str(targets[i].name) == want: _target_i = i
+				if str(targets[i].name) == want:
+					_target_i = i
+					_target_forced = true
+			if not _target_forced: push_warning("sky dragon: no target '%s'" % want)
 		elif arg == "--dragon-hold": _hold = true
 		elif arg.begins_with("--dragon-phase="): _hold_phase = float(arg.get_slice("=",1))
 		elif arg.begins_with("--dragon-pose="): _hold_pose = arg.get_slice("=",1)
@@ -482,6 +490,15 @@ func _turf_y(space: PhysicsDirectSpaceState3D, p: Vector3, mask: int) -> float:
 	_ray.from = p+Vector3.UP*30.0
 	_ray.to = p+Vector3.DOWN*40.0
 	_ray.collision_mask = mask
+	var hit := space.intersect_ray(_ray)
+	return (hit.position as Vector3).y if not hit.is_empty() else -INF
+
+## The top of anything solid (ruins, the turf) under `p`, from a few metres
+## over it, -INF over nothing.
+func _solid_y(space: PhysicsDirectSpaceState3D, p: Vector3) -> float:
+	_ray.from = p+Vector3.UP*5.0
+	_ray.to = p+Vector3.DOWN*40.0
+	_ray.collision_mask = SOLID_LAYER
 	var hit := space.intersect_ray(_ray)
 	return (hit.position as Vector3).y if not hit.is_empty() else -INF
 
@@ -640,6 +657,7 @@ func _ride_in() -> void:
 	_attack_in = INF
 	route.clear()
 	_leg_kinds.clear()
+	_target_i = _choose_target()
 	grip = _plan_grip(targets[_target_i%targets.size()])
 	var out: Vector3 = grip.out
 	pos = (grip.root as Vector3)+out*RIDE_OUT+(grip.tangent as Vector3)*float(grip.side)*25.0+Vector3.UP*RIDE_UP
@@ -669,6 +687,30 @@ func ride_spot() -> Vector4:
 	var rec := _record(t)
 	var shape: RefCounted = rec.get("shape") as RefCounted if rec.has("shape") else null
 	var y := rim.y+1.0
+	if shape != null and shape.has_method("open_at"):
+		# A motif isle (round 7): open turf (no ruin, tree or water) on the
+		# main land 10 to 20 m in from the gripped rim and off the blast's
+		# middle line, nearest a spot 14 m in and 7 m aside.
+		var tangent: Vector3 = grip.tangent
+		var want := rim-out*14.0-tangent*float(grip.side)*7.0
+		var best := Vector3.INF
+		var near := INF
+		for i in range(4,24):
+			for j in range(-16,17):
+				var p := rim-out*float(i)+tangent*float(j)
+				var flat := Vector2(p.x-home_at.x,p.z-home_at.z)
+				if not shape.main_at(flat) or not shape.open_at(flat,2.5): continue
+				var d := p.distance_to(Vector3(want.x,p.y,want.z))
+				if absf(float(j)) < 4.0: d += 8.0
+				if d < near:
+					near = d
+					best = p
+		if best != Vector3.INF:
+			var flat := Vector2(best.x-home_at.x,best.z-home_at.z)
+			spot = best
+			y = home_at.y+float(shape.ground_at(flat))+0.2
+		var face := rim-spot
+		return Vector4(spot.x,y,spot.z,rad_to_deg(atan2(face.x,-face.z)))
 	if shape != null:
 		var flat := Vector2(spot.x-home_at.x,spot.z-home_at.z)
 		if shape.on_land(flat): y = home_at.y+float(shape.ground_at(flat))+0.2
@@ -829,6 +871,7 @@ func _step(delta: float) -> void:
 
 func _fly(delta: float) -> void:
 	if route.is_empty(): _next_legs()
+	_replan_attack()
 	var target: Vector3 = route[0]
 	leg_kind = _leg_kinds[0]
 	var to := target-pos
@@ -1234,6 +1277,50 @@ func _place_treasure(_delta: float) -> void:
 	(_glint.material_override as StandardMaterial3D).albedo_color.a = 0.25+0.75*flare
 	_treasure_light.light_energy = 1.0+2.0*flare
 
+## The next isle to attack (round 7): from `_target_i` round the list, the
+## first that stands (its record known), that the pilot isn't on (unless
+## --dragon-ride, which wants him on it), not the one it last let go of,
+## and in the camera's view (within 75° of its look, 900 m); failing the
+## view, the first of the rest. --dragon-target's pick holds the first time.
+func _choose_target() -> int:
+	var n := targets.size()
+	if n == 0: return 0
+	if _target_forced:
+		_target_forced = false
+		return _target_i%n
+	if ride:
+		# On foot on it: the isle with the best grip (open turf, a level
+		# lip, nothing under the body) of those that stand.
+		var best := -1
+		var top := -INF
+		for i in range(n):
+			var rec := _record(targets[i])
+			if rec.is_empty() or not rec.has("shape") or not (rec.shape as RefCounted).has_method("open_at"): continue
+			_plan_grip(targets[i])
+			if _best_score > top:
+				top = _best_score
+				best = i
+		if best >= 0: return best
+	var fallback := -1
+	for step in range(n):
+		var i := (_target_i+step)%n
+		var t: Dictionary = targets[i]
+		var rec := _record(t)
+		if find_isle.is_valid() and rec.is_empty(): continue
+		if rec.has("home"): t.home = rec.home
+		var at: Vector3 = t.home
+		if not ride and walker != null and on_foot:
+			var feet: Vector3 = walker.get("feet")
+			if Vector2(feet.x-at.x,feet.z-at.z).length() < float(t.radius)+12.0: continue
+		if i == _last_target and n > 1 and not ride: continue
+		if fallback < 0: fallback = i
+		if camera != null and camera.is_inside_tree():
+			var c := camera.global_position
+			var to := at-c
+			var look := -camera.global_transform.basis.z
+			if to.length() < 900.0 and Vector2(look.x,look.z).normalized().dot(Vector2(to.x,to.z).normalized()) > cos(deg_to_rad(75.0)): return i
+	return fallback if fallback >= 0 else _target_i%n
+
 ## The isle's move since the grip was planned (its shudder), as a transform
 ## to carry grip points along with it.
 func _isle_xf() -> Transform3D:
@@ -1271,10 +1358,19 @@ func _rim_along(t: Dictionary, dir: Vector3) -> Vector3:
 ## shows beside the isle and the neck rears over the turf, and the blast
 ## crosses the view.
 func _plan_grip(t: Dictionary, turn := 0.0) -> Dictionary:
+	# A motif isle's record (round 7) knows its main land's middle and
+	# radius once it stands: those, not the guess it was listed with.
+	var rec := _record(t)
+	if rec.has("home"):
+		t.home = rec.home
+		t.radius = float(rec.radius)
 	var home: Vector3 = t.home
-	var eye := shadow_at if shadow_at != Vector3.INF else home
-	var view := Vector3(home.x-eye.x,0.0,home.z-eye.z).normalized()
-	if turn == 0.0: turn = 1.5*_clear_side(t,view,eye)
+	var eye := _eye_for(t)
+	var view := Vector3(home.x-eye.x,0.0,home.z-eye.z)
+	view = view.normalized() if view.length() > 1.0 else Vector3.FORWARD
+	var shape: RefCounted = rec.get("shape") as RefCounted if rec.has("shape") else null
+	var scored := shape != null and shape.has_method("open_at")
+	if turn == 0.0: turn = _best_turn(t,shape,view) if scored else 1.5*_clear_side(t,view,eye)
 	var out := view.rotated(Vector3.UP,turn)
 	var tangent := Vector3(-out.z,0.0,out.x)
 	var rim := _rim_along(t,out)
@@ -1282,14 +1378,106 @@ func _plan_grip(t: Dictionary, turn := 0.0) -> Dictionary:
 	var wrists := {}
 	var feet := {}
 	for k in [-1.0,1.0]:
-		var w := _rim_along(t,out.rotated(Vector3.UP,0.62*k))
-		var f := _rim_along(t,out.rotated(Vector3.UP,0.2*k))
+		var w: Vector3
+		var f: Vector3
+		if scored:
+			# Its holds on the real lip either side, at the reach of its
+			# wrists and feet (as on hills_ne's 14 m rim), wherever the
+			# lip runs.
+			w = _rim_line(t,out,right*k*HOLD_WRIST*size/0.85,rim)
+			f = _rim_line(t,out,right*k*HOLD_FOOT*size/0.85,rim)
+		else:
+			w = _rim_along(t,out.rotated(Vector3.UP,0.62*k))
+			f = _rim_along(t,out.rotated(Vector3.UP,0.2*k))
 		var n := "R" if (w-rim).dot(right) > 0.0 else "L"
 		wrists[n] = w
 		feet["R" if (f-rim).dot(right) > 0.0 else "L"] = f
 	var root := rim+out*CLING_OUT*size/0.85-Vector3.UP*CLING_DOWN*size/0.85
 	return {"target":t,"turn":turn,"rim":rim,"out":out,"tangent":tangent,"side":signf(turn),
-		"wrists":wrists,"feet":feet,"root":root,"yaw":atan2(out.x,out.z)}
+		"wrists":wrists,"feet":feet,"root":root,"yaw":atan2(out.x,out.z),"scored":scored}
+
+## The eye the grip is planned for: the camera when it is off the isle
+## (the player's view), else the aqueduct isle's turf.
+func _eye_for(t: Dictionary) -> Vector3:
+	var at: Vector3 = t.home
+	if not ride and camera != null and camera.is_inside_tree():
+		var c := camera.global_position
+		if Vector2(c.x-at.x,c.z-at.z).length() > float(t.radius)+30.0: return c
+	return shadow_at if shadow_at != Vector3.INF else at
+
+## The lip along `out` from the line `by` (flat) off the isle's middle (the
+## last land along it), at the ground there; else the main rim moved by
+## `by`.
+func _rim_line(t: Dictionary, out: Vector3, by: Vector3, rim: Vector3) -> Vector3:
+	var at: Vector3 = t.home
+	var shape: RefCounted = _record(t).get("shape") as RefCounted
+	var last := Vector2.INF
+	var r := 0.0
+	var reach := float(shape.get("reach"))
+	while r <= reach+1.0:
+		var p := Vector2(by.x+out.x*r,by.z+out.z*r)
+		if shape.on_land(p): last = p
+		elif last != Vector2.INF and r > 2.0: break
+		r += 0.5
+	if last == Vector2.INF: return rim+by
+	return at+Vector3(last.x,float(shape.ground_at(last)),last.y)
+
+## A motif isle's grip (round 7): of 48 ways out round it, the best by
+## open turf inside the rim where the chin will lie and the neck reach (no
+## ruin, bell, tree or water: `open_at`), no other land under its body
+## beyond the rim (a satellite, a spire), a lip at its wrists' reach either
+## side at the rim's height, a rim not too near the middle (the tip goes as
+## the sag over it), and (off the isle) a flank as seen from the eye, so
+## the body shows in profile. The way as a turn from `view`.
+const HOLD_WRIST := 8.5
+const HOLD_FOOT := 2.8
+func _best_turn(t: Dictionary, shape: RefCounted, view: Vector3) -> float:
+	var best := 1.5
+	var best_score := -INF
+	for k in range(48):
+		var turn := -PI+TAU*float(k)/48.0
+		var out := view.rotated(Vector3.UP,turn)
+		var rim := _rim_along(t,out)
+		var at: Vector3 = t.home
+		var r_flat := Vector2(rim.x-at.x,rim.z-at.z)
+		var r := r_flat.length()
+		var right := (-out).cross(Vector3.UP).normalized()
+		var score := 0.0
+		# Open turf inside the rim, along the chin's line and either side.
+		var open := 0
+		var count := 0
+		var rise := 0.0
+		for d: float in [3.0,5.0,7.0,9.0,11.0,13.0,16.0]:
+			for side: float in [-3.0,0.0,3.0]:
+				var p: Vector2 = r_flat-Vector2(out.x,out.z)*d+Vector2(right.x,right.z)*side
+				count += 1
+				if shape.open_at(p,1.2): open += 1
+				# The turf the chin lies on near the lip's height: not a
+				# ridge climbing away from it, nor a hollow.
+				if d <= 11.0 and shape.on_land(p): rise = maxf(rise,absf(at.y+float(shape.ground_at(p))-rim.y)-0.4*d)
+		score += 6.0*float(open)/float(count)
+		score -= minf(rise*0.5,4.0)
+		# Nothing under its body beyond the rim.
+		for d: float in [4.0,10.0,18.0,28.0,40.0,55.0]:
+			for side: float in [-12.0,0.0,12.0]:
+				var p: Vector2 = r_flat+Vector2(out.x,out.z)*d+Vector2(right.x,right.z)*side
+				if shape.on_land(p): score -= 1.5
+		# A lip at the wrists' reach either side, near the rim's height.
+		for kk: float in [-1.0,1.0]:
+			var w := _rim_line(t,out,right*kk*HOLD_WRIST*size/0.85,rim)
+			var miss := absf(w.y-rim.y)+maxf(absf((w-rim).dot(out))-6.0,0.0)
+			score -= minf(miss*0.25,2.0)
+		# A rim neither at the middle nor far out on a spit.
+		if r < 10.0: score -= (10.0-r)*0.4
+		if r > 34.0: score -= (r-34.0)*0.08
+		# Seen in profile from off the isle.
+		if not ride: score += 1.5*(1.0-absf(absf(turn)-1.5)/1.5)
+		if score > best_score:
+			best_score = score
+			best = turn
+			_best_score = score
+			_grip_note = "open %.0f%%, rise %.1f m, rim %.0f m out, score %.1f" % [100.0*float(open)/float(count),rise,r,score]
+	return best
 
 ## Which flank (1 or -1) shows from `eye`: the one whose rim stands
 ## furthest, as seen, from any nearer isle in front of it.
@@ -1315,17 +1503,38 @@ func _clear_side(t: Dictionary, view: Vector3, eye: Vector3) -> float:
 ## Off to attack the next target: in wide and banking round, then low
 ## outside its rim, where the grab begins.
 func _add_attack() -> void:
+	_target_i = _choose_target()
+	_last_target = _target_i
 	var t: Dictionary = targets[_target_i%targets.size()]
 	grip = _plan_grip(t)
 	var out: Vector3 = grip.out
 	var tangent: Vector3 = grip.tangent
 	var root: Vector3 = grip.root
-	route.append(root+out*240.0+tangent*float(grip.side)*130.0+Vector3.UP*28.0)
-	route.append(root+out*95.0+Vector3.UP*6.0)
+	route.append(_attack_way(grip))
+	route.append(_grab_way(grip))
 	_leg_kinds.append("attack")
 	_leg_kinds.append("grab")
 	_attack_in = INF
 	print("sky dragon: off to attack %s, %.0f m from the isle's middle" % [str(t.name),Vector2(root.x-home.x,root.z-home.z).length()])
+
+## The attack's way in (wide, banking round) and where the grab begins.
+func _attack_way(g: Dictionary) -> Vector3:
+	return (g.root as Vector3)+(g.out as Vector3)*240.0+(g.tangent as Vector3)*float(g.side)*130.0+Vector3.UP*28.0
+
+func _grab_way(g: Dictionary) -> Vector3:
+	return (g.root as Vector3)+(g.out as Vector3)*95.0+Vector3.UP*6.0
+
+## On its way in to an isle that hadn't stood when it was planned (round
+## 7: the motif isles come up a while after the scene): once it stands, the
+## grip planned again on its real land and the way in moved to suit.
+func _replan_attack() -> void:
+	if grip.is_empty() or bool(grip.get("scored",true)) or _leg_kinds.is_empty() or not (_leg_kinds[0] in ["attack","grab"]): return
+	if _record(grip.target).is_empty(): return
+	grip = _plan_grip(grip.target)
+	if not bool(grip.scored): return
+	if _leg_kinds[0] == "attack": route = [_attack_way(grip),_grab_way(grip)]
+	else: route = [_grab_way(grip)]
+	print("sky dragon: %s stands now: its grip planned again (%s)" % [str(grip.target.name),_grip_note])
 
 ## The grab begins: from its flight into a hard flare and onto the rim.
 func _begin_grab() -> void:
@@ -1373,8 +1582,13 @@ func _slam() -> void:
 	_flare = 0.0
 	var t: Dictionary = grip.target
 	var rec := _record(t)
-	gale.hold_isle(rec.get("node") as Node3D if rec.has("node") else null,rec.get("shape") as RefCounted if rec.has("shape") else null,t.home,float(t.radius),grip.out,grip.rim)
+	gale.hold_isle(rec.get("node") as Node3D if rec.has("node") else null,rec.get("shape") as RefCounted if rec.has("shape") else null,t.home,float(t.radius),grip.out,grip.rim,
+		rec.get("frame",Transform3D.IDENTITY),rec.get("pivot",Vector3.INF))
 	gale.slam(grip.rim,grip.out,grip.tangent)
+	# Its rays at the turf skip the isle's other lands (a spire's top).
+	var skip: Array[RID] = [chin.get_rid()]
+	for rid: RID in rec.get("exclude",[]): skip.append(rid)
+	_ray.exclude = skip
 	if flush_birds.is_valid(): flush_birds.call(t.home)
 	_c_settle_v = -7.0
 	_cling_t = 0.0
@@ -1382,7 +1596,7 @@ func _slam() -> void:
 	_set_breath("settle",2.6)
 	_c_look_next = 0.0
 	_roar_t = -1.0
-	print("sky dragon: it grips %s's rim at (%.0f, %.0f, %.0f); lets go in %.0f s" % [str(t.name),(grip.rim as Vector3).x,(grip.rim as Vector3).y,(grip.rim as Vector3).z,_cling_left])
+	print("sky dragon: it grips %s's rim at (%.0f, %.0f, %.0f); lets go in %.0f s (%s)" % [str(t.name),(grip.rim as Vector3).x,(grip.rim as Vector3).y,(grip.rim as Vector3).z,_cling_left,_grip_note])
 
 func _set_breath(to: String, length: float) -> void:
 	breath = to
@@ -1615,6 +1829,9 @@ func _clear_turf() -> void:
 	for i in range(probes.size()):
 		var p := _probe(probes[i])
 		var top := _turf_y(space,p,TURF_LAYER if i < _probes_head.size() else TURF_LAYER|SOLID_LAYER)
+		# The head over the ruins too (round 7): a wall or a column top
+		# within a few metres over it, not an arch far overhead.
+		if i < _probes_head.size(): top = maxf(top,_solid_y(space,p))
 		# The neck's root hangs beside the cliff, under the lip's overhang:
 		# only a neck probe near the top is in it.
 		if i >= _probes_head.size() and p.y < top-NECK_DEEP: top = -INF

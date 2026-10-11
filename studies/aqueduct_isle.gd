@@ -108,9 +108,9 @@ const SkyDragon = preload("res://scripts/sky_dragon.gd")
 ## the way it faces, into the isle.
 const DRAGON_RIM := Vector2(126.6,-9.0)
 const DRAGON_INTO := Vector2(-1.0,0.0)
-## The flying dragon's attack targets (round 4), in turn: lone isles of
-## the sky (IsleSky.ISLES names) seen from the turf, 270, 190 and 135 m off.
-const DRAGON_TARGETS := ["hills_ne","meadow_south","grove_east"]
+## The flying dragon's attack targets (round 7): the sky's placed motif
+## isles, whatever it places (scripts/kit_isle/motif_sky.gd `places`).
+const DragonIsleShape = preload("res://scripts/dragon_isle_shape.gd")
 
 ## The station this is (its key in the pack).
 const STATION := 2
@@ -178,6 +178,9 @@ var dragon_rim := false
 ## the snap and the launch.
 var dragon_ride := false
 var dragon: Node3D = null
+## Each motif isle's record for the dragon, once it stands (its id ->
+## {node, shape, home, radius, frame, pivot}).
+var _dragon_isles := {}
 
 func _ready() -> void:
 	pack = "ruins_archipelago"
@@ -543,16 +546,14 @@ func _build_dragon() -> void:
 	dragon.yielded.connect(_dragon_yielded)
 	if _switch_hint != null and not flying: _switch_hint.text = _foot_text()
 
-## The flying dragon (scripts/sky_dragon.gd) round the archipelago: the near
-## isles and clusters (within 700 m) are what it threads between.
+## The flying dragon (scripts/sky_dragon.gd) round the archipelago: the
+## motif isles (within 700 m) are what it threads between and attacks.
 func _build_sky_dragon() -> void:
+	var places: Array = sky.places() if sky != null and sky.has_method("places") else []
 	var list: Array = []
-	for isle: Array in IsleSky.ISLES:
-		var at: Vector3 = isle[3]
-		if at.distance_to(IsleSky.MIDDLE) < 700.0: list.append([at,float(isle[4])])
-	for cluster: Array in IsleSky.CLUSTERS:
-		var at: Vector3 = cluster[2]
-		if at.distance_to(IsleSky.MIDDLE) < 700.0: list.append([at,40.0])
+	for place: Array in places:
+		var at: Vector3 = place[1]
+		if at.distance_to(IsleSky.MIDDLE) < 700.0: list.append([at,float(place[2])])
 	list.append([IsleSky.MIDDLE,60.0])
 	dragon = SkyDragon.new()
 	add_child(dragon)
@@ -561,13 +562,11 @@ func _build_sky_dragon() -> void:
 	for p: Vector2 in Art.NEAR: middle += p
 	middle /= float(Art.NEAR.size())
 	dragon.shadow_at = Vector3(middle.x,Art.TOP,middle.y)
-	# Its attacks: the far isles it clings to, their built records, their
+	# Its attacks: the motif isles, their records once they stand, their
 	# birds; the pilot it can knock and who can take its treasure.
-	for want: String in DRAGON_TARGETS:
-		for isle: Array in IsleSky.ISLES:
-			if isle[0] == want: dragon.targets.append({"name":want,"home":isle[3],"radius":float(isle[4])})
-	dragon.find_isle = func(isle_name: String) -> Dictionary:
-		return sky.isles.get(isle_name,{}) if sky != null and sky.get("isles") != null else {}
+	for place: Array in places:
+		dragon.targets.append({"name":str(place[0]),"home":place[1],"radius":float(place[2])*0.5})
+	dragon.find_isle = _dragon_isle
 	dragon.flush_birds = _flush_isle_birds
 	dragon.walker = motor
 	dragon.slide = ground.slide_callable()
@@ -581,9 +580,53 @@ func _build_sky_dragon() -> void:
 		if _place != Vector4.INF: print("aqueduct isle: --dragon-ride starts the pilot at (%.1f, %.1f, %.1f) on %s" % [_place.x,_place.y,_place.z,str(dragon.grip.target.name)])
 	if _switch_hint != null and not flying: _switch_hint.text = _foot_text()
 
-## The far isle's songbirds burst out of its crown and its gulls stir, as
-## the dragon slams onto its rim.
+## The placed motif isle by id (scripts/kit_isle/motif_isle.gd), or null.
+func _motif_isle(id: String) -> Node3D:
+	var motifs: Variant = sky.get("motifs") if sky != null else null
+	if motifs == null: return null
+	for isle: Node3D in motifs.isles:
+		if str(isle.motif.id()) == id: return isle
+	return null
+
+## A motif isle's record for the dragon, once it stands: its node (the
+## whole isle, art, turf, water, bridges, plants and life under it, moved
+## as one), its land (scripts/dragon_isle_shape.gd, sampled at rest), its
+## main land's middle and radius, the shape's frame in the node's, and the
+## point it tips about; {} until it stands.
+func _dragon_isle(id: String) -> Dictionary:
+	if _dragon_isles.has(id): return _dragon_isles[id]
+	var isle := _motif_isle(id)
+	if isle == null or not isle.stands(): return {}
+	# Sampled only at rest (it is never posed before its first record).
+	var shape: RefCounted = DragonIsleShape.new()
+	shape.build(isle,get_world_3d().direct_space_state)
+	if not shape.ok: return {}
+	var home: Vector3 = shape.home
+	var rec := {"node":isle,"shape":shape,"home":home,"radius":float(shape.radius),"exclude":shape.exclude,
+		"frame":isle.global_transform.affine_inverse()*Transform3D(Basis.IDENTITY,home),"pivot":home}
+	_dragon_isles[id] = rec
+	print("aqueduct isle: the dragon knows %s: its main land %.0f m across about (%.0f, %.0f, %.0f)" % [id,2.0*float(shape.radius),home.x,home.y,home.z])
+	return rec
+
+## The isle's birds burst out as the dragon slams onto its rim: the sky's
+## gulls over it, and its own songbirds off their perches.
 func _flush_isle_birds(at: Vector3) -> void:
+	var near: Node3D = null
+	var motifs: Variant = sky.get("motifs") if sky != null else null
+	if motifs != null:
+		var best := INF
+		for isle: Node3D in motifs.isles:
+			var c: Vector3 = isle.circle()
+			var d := Vector2(at.x-c.x,at.z-c.y).length()
+			if d < best:
+				best = d
+				near = isle
+	if near != null:
+		var own: Variant = near.life.get("birds") if near.life != null else null
+		if own != null:
+			for flock: Dictionary in own.flocks: own.flush(flock)
+		var c: Vector3 = near.circle()
+		at = Vector3(c.x,near.isle_top(),c.y)
 	var life_node: Variant = sky.get("life") if sky != null else null
 	if life_node == null: return
 	var host: Variant = life_node.host_at(at)
