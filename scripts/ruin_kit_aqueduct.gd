@@ -51,16 +51,15 @@ const PIECES := RuinKit.AQUEDUCT_PIECES
 
 # --- Scale -------------------------------------------------------------------
 
-## The module: pier middle to pier middle (m). A run's spans stand SPAN apart.
-const SPAN := 6.4
-## A pier: its width along the run and depth across it (m); the clear span
-## between two (SPAN less a pier's width, 4.7) leaves the game's plane
-## (2.8 m wings) 0.95 m past each tip, a hair under THREAD (4.9: 1.05) and
-## kept as it is (the isle's runs are laid out on SPAN), so a plane threads
-## every arch, and the arch is equilateral: its crown stands
-## SPRING + 4.07 m.
+## The module: pier middle to pier middle (m). A run's spans stand SPAN
+## apart: a pier's width and the clear span, THREAD (scripts/world_scale.gd
+## SNUG room: 1.2 m past each wingtip at plane 2), so a plane threads
+## every arch: 6.9 at plane 2 (it was 6.4, 0.95 m a tip). The arch is
+## equilateral: its crown stands SPRING + CLEAR*0.866.
+## A pier: its width along the run and depth across it (m).
 const PIER := Vector2(1.7,2.8)
-const CLEAR := SPAN-1.7
+static var CLEAR: float = RuinKit.THREAD
+static var SPAN: float = CLEAR+PIER.x
 const SPRING := 5.2
 ## The deck: the channel's floor top (m), the floor slabs' thickness, the
 ## whole deck's width (the channel and both parapets).

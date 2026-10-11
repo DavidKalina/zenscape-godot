@@ -32,6 +32,7 @@ extends Node3D
 const PlanePilot = preload("res://scripts/plane_pilot.gd")
 const PersonKit = preload("res://scripts/person_kit.gd")
 const FacetMesh = preload("res://scripts/facet_mesh.gd")
+const WorldScale = preload("res://scripts/world_scale.gd")
 const STONE_SHADER := preload("res://shaders/ruin_stone.gdshader")
 const GLOW_SHADER := preload("res://shaders/stone_plane_glow.gdshader")
 const BAND_SHADER := preload("res://shaders/stone_plane_band.gdshader")
@@ -180,7 +181,7 @@ func _init(_livery := {}) -> void:
 	_build()
 	_rig = PlanePilot.new(PersonKit.outfit())
 	_rig.position = SEAT
-	_rig.scale = Vector3.ONE*PILOT_SCALE
+	_rig.scale = Vector3.ONE*PILOT_SCALE*WorldScale.pilot_size
 	add_child(_rig)
 	_chamber = Node3D.new()
 	_chamber.name = "Chamber"

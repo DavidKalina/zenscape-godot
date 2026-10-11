@@ -37,6 +37,7 @@ extends Node3D
 
 const PlanePilot = preload("res://scripts/plane_pilot.gd")
 const FacetMesh = preload("res://scripts/facet_mesh.gd")
+const WorldScale = preload("res://scripts/world_scale.gd")
 const PersonKit = preload("res://scripts/person_kit.gd")
 const PROP_BLUR := preload("res://shaders/prop_blur.gdshader")
 const FOLK_RIBBON := preload("res://shaders/folk_ribbon.gdshader")
@@ -191,7 +192,9 @@ func _init(livery := {}) -> void:
 	for side in [-1.0,1.0]: _strut(Vector3(0.056*side,0.2,0.1),Vector3(0.056*side,0.268,0.124),brass,0.004)
 	_strut(Vector3(-0.056,0.268,0.124),Vector3(0.056,0.268,0.124),brass,0.003)
 	_rig = PlanePilot.new(PersonKit.outfit(livery.get("scarf",PersonKit.SCARF)))
-	_rig.scale = Vector3.ONE*0.92
+	# Drawn up by WorldScale.pilot_size so he is the walker's size in the
+	# grown plane (the plane itself never changes for him).
+	_rig.scale = Vector3.ONE*0.92*WorldScale.pilot_size
 	add_child(_rig)
 	_pilot.append(_rig)
 	# The wings: a lower wing through the body and a longer upper one on
