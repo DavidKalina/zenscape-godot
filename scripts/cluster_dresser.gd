@@ -21,7 +21,6 @@ const Footbridge = preload("res://scripts/footbridge.gd")
 const Cabin = preload("res://scripts/cabin.gd")
 const StoneLamp = preload("res://scripts/stone_lamp.gd")
 const IslanderFigure = preload("res://scripts/islander_figure.gd")
-const SkyFolk = preload("res://scripts/sky_folk.gd")
 const LakeDress = preload("res://scripts/lake_dress.gd")
 const FallsDress = preload("res://scripts/cluster_falls_dress.gd")
 const ForestHold = preload("res://scripts/forest_hold.gd")
@@ -146,7 +145,9 @@ static func prepare(member: Dictionary, plan: Dictionary) -> Dictionary:
 ## Stands what stands on `member` under its islet's `node`; what moves or
 ## lights is returned: {"sails": [Node3D], "beams": [Node3D], "lights":
 ## [[OmniLight3D, energy]]}.
-static func furnish(node: Node3D, member: Dictionary, plan: Dictionary, made: Dictionary) -> Dictionary:
+## `folk` off leaves out the lantern bearers and fishers (the features are
+## still drawn, so a cluster's layout is the same either way).
+static func furnish(node: Node3D, member: Dictionary, plan: Dictionary, made: Dictionary, folk := true) -> Dictionary:
 	var m := _mats()
 	var shape: RefCounted = member.shape
 	var live := {"sails":[],"beams":[],"lights":[]}
@@ -197,8 +198,9 @@ static func furnish(node: Node3D, member: Dictionary, plan: Dictionary, made: Di
 				var at := Vector3(f.at.x,shape.ground_at(f.at),f.at.y)
 				_post(node,at,float(f.angle),halos,live)
 			"bearer":
+				if not folk: continue
 				var figure := _person(node,shape,f.at,float(f.angle),1,member.seed)
-				var lantern := _lantern(figure,Vector3(0.075,0.18,-0.07),1.0/SkyFolk.SCALE)
+				var lantern := _lantern(figure,Vector3(0.075,0.18,-0.07),1.0/IslanderFigure.SKY_SCALE)
 				halos.append([figure.transform*(Vector3(0.075,0.14,-0.07)),HALO_LANTERN])
 				_light(lantern,Vector3(0.0,0.12,0.0),4.0,0.9,FADE_SMALL,live)
 			"windmill":
@@ -253,18 +255,19 @@ static func furnish(node: Node3D, member: Dictionary, plan: Dictionary, made: Di
 				halos.append([hang+Vector3.DOWN*0.2,HALO_LANTERN])
 				_light(lantern,Vector3(0.0,0.12,0.0),4.0,0.9,FADE_SMALL,live)
 			"fisher":
+				if not folk: continue
 				var figure := _person(node,shape,f.at,float(f.angle),2,member.seed,float(f.deck_y))
 				var hand := Vector3(0.075,0.13,-0.05)
 				var rod := MeshInstance3D.new()
 				rod.mesh = m.rod
 				rod.material_override = m.solid
-				rod.scale = Vector3.ONE/SkyFolk.SCALE
+				rod.scale = Vector3.ONE/IslanderFigure.SKY_SCALE
 				rod.position = hand
 				figure.add_child(rod)
 				var line := MeshInstance3D.new()
 				line.mesh = m.line
 				line.material_override = m.solid
-				line.position = figure.transform*(hand+Builds.rod_tip(2.6)/SkyFolk.SCALE)
+				line.position = figure.transform*(hand+Builds.rod_tip(2.6)/IslanderFigure.SKY_SCALE)
 				node.add_child(line)
 			"paddies", "moss", "wheel", "plunge":
 				FallsDress.furnish(node,member,f,made.features.get(i),m,halos,live)
@@ -399,8 +402,8 @@ static func _light(parent: Node3D, at: Vector3, reach: float, energy: float, fad
 	live.lights.append([light,energy])
 
 static func _person(node: Node3D, shape: RefCounted, at: Vector2, angle: float, scarf: int, seed_value: int, y := INF) -> Node3D:
-	var figure := IslanderFigure.new(SkyFolk.SCARVES[(scarf+seed_value) % SkyFolk.SCARVES.size()])
-	figure.scale = Vector3.ONE*SkyFolk.SCALE
+	var figure := IslanderFigure.new(IslanderFigure.SCARVES[(scarf+seed_value) % IslanderFigure.SCARVES.size()])
+	figure.scale = Vector3.ONE*IslanderFigure.SKY_SCALE
 	figure.position = Vector3(at.x,shape.ground_at(at) if y == INF else y,at.y)
 	figure.rotation.y = angle
 	node.add_child(figure)

@@ -106,7 +106,7 @@ enum {RUMBLE, POUR, FILL, RUN, SWELL, MEADOW, PATH, VOICES}
 const VOICE_CLIPS := ["genesis-rumble","genesis-pour","genesis-fill","stream-bed","leaf-rustle-bed","genesis-meadow","genesis-path"]
 
 var scene: Node3D
-var editor: NativeChunkEditor
+var editor: Node
 var world_rumble: Node
 var life: Node3D
 ## Microseconds this node spent last frame and at most, for probes.

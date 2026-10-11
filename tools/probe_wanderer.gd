@@ -233,7 +233,7 @@ func run() -> void:
 		if widest > 0.0: kinds.append("%s %.2f" % [kind,widest])
 	print("     footprint radius at scale 1 (without the figure's): "+", ".join(kinds))
 
-	# The plate clamp holds (with the glide off; tools/probe_sky_glide.gd
+	# The plate clamp holds (with the glide off; tests/test_plane_flight.gd
 	# walks off the edge).
 	eye.glide_enabled = false
 	eye._feet = eye._clamped(Vector3(eye.PLATE_REACH-0.3,0.0,0.0))

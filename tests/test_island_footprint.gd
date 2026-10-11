@@ -2,11 +2,9 @@ extends SceneTree
 ## Irregular islands, phase 2: what asks whether a point is on the island
 ## follows its outline (NativeTerrainData `has_land`, `nearest_land`). The
 ## wanderer walks off the shore, not the square's edge, and is never clamped
-## or landed onto air; a glider claims an island only over its land (or just
-## above its shore); a square island answers as the square always did.
+## or landed onto air; a square island answers as the square always did.
 const Genesis = preload("res://scripts/genesis_canvas.gd")
 const WandererEye = preload("res://scripts/wanderer_eye.gd")
-const SkyIslands = preload("res://scripts/sky_islands.gd")
 const Plate = preload("res://scripts/plate.gd")
 ## Whole metres inside the rim, each way, for grid walks over the plate.
 const INSIDE := int(Plate.HALF)-1
@@ -59,7 +57,6 @@ func run() -> void:
 	helper(data)
 	walking(data,eye,way)
 	placing(data,eye)
-	claiming(data,way)
 	square()
 	drop(eye.editor)
 	eye.free()
@@ -114,34 +111,6 @@ func placing(data: NativeTerrainData, eye: Node) -> void:
 			if eye._free(Vector2(x,z)) and not data.has_land(Vector2(x,z)): free_ok = false
 	check(free_ok,"No free spot is over air")
 
-func claiming(data: NativeTerrainData, way: Vector2) -> void:
-	var islands: Node3D = SkyIslands.new()
-	var editor := NativeChunkEditor.new()
-	editor.terrain = MeshInstance3D.new()
-	root.add_child(editor.terrain)
-	islands.editor = editor
-	islands.offsets.append(Vector3(100.0,5.0,0.0))
-	islands._rise.append(Vector3.ZERO)
-	islands.lands.append(data)
-	# A bay point inside the square, further than the claim margin from land.
-	var bay := Vector2.INF
-	for x in range(-INSIDE,INSIDE+1):
-		for z in range(-INSIDE,INSIDE+1):
-			if data.nearest_land(Vector2(x,z),0.0,SkyIslands.CLAIM_MARGIN+0.5) == Vector2.INF: bay = Vector2(x,z)
-	var shore := Vector2.ZERO
-	var run := 0.0
-	while data.has_land(way*run): run += 0.05
-	shore = way*(run-0.5)
-	var over := func(p: Vector2) -> int: return islands.copy_under(Vector3(100.0+p.x,20.0,p.y))
-	check(over.call(Vector2.ZERO) == 0,"A glider over the land claims the island")
-	check(bay != Vector2.INF and over.call(bay) == -1,"Over a bay, inside the square, it does not")
-	check(over.call(shore) == 0,"Over the land by the shore it does")
-	check(not data.has_land(way*(run+0.4)) and over.call(way*(run+0.4)) == 0,"Just past the shore, within the margin, it still does")
-	check(over.call(Vector2(Plate.HALF+1.0,0.0)) == -1,"Past the square it does not")
-	islands.free()
-	editor.terrain.free()
-	drop(editor)
-
 func square() -> void:
 	# A plate without an outline of its own is the 28 m square island.
 	var data := plate()
@@ -154,17 +123,5 @@ func square() -> void:
 	check(not eye._off_plate(Vector2(EDGE-0.2,-(EDGE-0.2))) and eye._off_plate(Vector2(EDGE+0.1,0.0)) and eye._off_plate(Vector2(0.0,-(EDGE+0.1))),"A square walk goes off at its sides, +-14")
 	var held: Vector3 = eye._clamped(Vector3(Plate.HALF+6.0,0.0,-(Plate.HALF+6.0)))
 	check(absf(held.x-EDGE) < 0.4 and absf(held.z+EDGE) < 0.4 and data.has_land(Vector2(held.x,held.z)),"A square clamp is the square, at its corner (%s)" % held)
-	var islands: Node3D = SkyIslands.new()
-	var editor := NativeChunkEditor.new()
-	editor.terrain = MeshInstance3D.new()
-	root.add_child(editor.terrain)
-	islands.editor = editor
-	islands.offsets.append(Vector3.ZERO)
-	islands._rise.append(Vector3.ZERO)
-	islands.lands.append(data)
-	check(islands.copy_under(Vector3(EDGE-0.1,0.0,-(EDGE-0.1))) == 0 and islands.copy_under(Vector3(EDGE+SkyIslands.CLAIM_MARGIN+0.3,0.0,0.0)) == -1,"A square island claims anywhere inside +-14 m, and not past its margin")
-	islands.free()
-	editor.terrain.free()
-	drop(editor)
 	drop(eye.editor)
 	eye.free()

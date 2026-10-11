@@ -178,6 +178,8 @@ var clusters := {}
 var daylight_override := -1.0
 var night := 0.0
 var with_random := true
+## Off, the dresser leaves out the lantern bearers and fishers (the kit's sky).
+var folk := true
 var with_showcase := false
 ## The motifs stood near the home (`near_motifs`), and their seed.
 var with_near: Array = []
@@ -475,7 +477,7 @@ func _stand(c: Dictionary, m: Dictionary) -> void:
 	if c.plan.get("motif","") == "sundered":
 		(c.get_or_add("halls",[]) as Array).append(SunderedBuild.furnish(b.node,m,c.plan,made.extra,(c.spot.at as Vector3).y))
 		return
-	var live := Dresser.furnish(b.node,m,c.plan,made.extra)
+	var live := Dresser.furnish(b.node,m,c.plan,made.extra,folk)
 	for k in ["sails","beams","lights"]: (c.live[k] as Array).append_array(live[k])
 
 ## Stands every planned member of every cluster at once (tests, probes,

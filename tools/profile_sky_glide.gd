@@ -78,10 +78,10 @@ func run() -> void:
 		glide.velocity = way*speed
 		eye.sky.advance(delta,at,0.0)
 		var t0 := Time.get_ticks_usec()
-		var count_before: int = peaks.range_count()+islands.islets.islet_count()+islands.copy_count()+islands.towers.built.size()
+		var count_before: int = peaks.range_count()+islands.islets.islet_count()+islands.towers.built.size()
 		islands.advance(delta,at,glide.heading,0.0)
 		var spent := (Time.get_ticks_usec()-t0)/1000.0
-		var count_after: int = peaks.range_count()+islands.islets.islet_count()+islands.copy_count()+islands.towers.built.size()
+		var count_after: int = peaks.range_count()+islands.islets.islet_count()+islands.towers.built.size()
 		var o := at-way*40.0+Vector3.UP*8.0
 		scene.target = at
 		scene.distance = o.distance_to(at)

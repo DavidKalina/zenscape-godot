@@ -251,7 +251,7 @@ def tube(ms, m, a, b, r0, r1=None, sides=6, M=Matrix()):
 
 
 def frustum(ms, m, r0, r1, h, sides, M=Matrix()):
-    """plane_figure.gd's GliderFigure._frustum: along Y, centred."""
+    """facet_mesh.gd's frustum (plane_figure.gd's FacetMesh.frustum): along Y, centred."""
     tube(ms, m, (0, -h / 2, 0), (0, h / 2, 0), r0, r1, sides, M)
 
 

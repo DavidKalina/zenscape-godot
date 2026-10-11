@@ -3,9 +3,7 @@ extends Node3D
 ## camera (scripts/glide_camera.gd): a small 1920s biplane in warm wood
 ## browns, cream doped wings tipped in terracotta, and the wanderer in the
 ## open cockpit behind a little windscreen, in a leather cap and brass
-## goggles, the scarf's two tails streaming behind. It is what flies; the
-## glider (scripts/glider_figure.gd, `--glider`) has the same calls, so the
-## wanderer's eye can swap one for the other.
+## goggles, the scarf's two tails streaming behind. It is what flies.
 ##
 ## Drawn as a real one is built, at a toy's size: a slim body tapering to a
 ## knife-edged tail, a round cowl with louvres, a seam of rivets and
@@ -26,7 +24,7 @@ extends Node3D
 ## (shaders/prop_blur.gdshader), its sweeps crawling round as a filmed one's
 ## do. It is drawn turned by the bank and the barrel roll together. The
 ## ailerons tip with the roll, the elevator with the pitch, so the stick
-## shows on the wings. Like the glider, a soft mark under it shows where it
+## shows on the wings. A soft mark under it shows where it
 ## would touch down, and close past rock vapour peels off its upper
 ## wingtips.
 ##
@@ -37,7 +35,6 @@ extends Node3D
 ## Landed, it stands on its two wheels and a tail skid, nose up (`park`,
 ## scripts/plane_strip.gd `rest`), the pilot out, the propeller still.
 
-const GliderFigure = preload("res://scripts/glider_figure.gd")
 const PlanePilot = preload("res://scripts/plane_pilot.gd")
 const FacetMesh = preload("res://scripts/facet_mesh.gd")
 const PersonKit = preload("res://scripts/person_kit.gd")
@@ -111,7 +108,7 @@ const FLUTTER_REACH := 0.035
 const FLUTTER_FAST := 18.0
 ## The landing mark shows within MARK_HEIGHT m of the ground.
 const MARK_HEIGHT := 28.0
-## The wingtip vapour, as the glider's.
+## The wingtip vapour (scripts/glide_vapour.gd says how near the rock is).
 const VAPOUR := 14
 const VAPOUR_EVERY := 0.04
 const VAPOUR_WIDTH := Vector2(0.06,0.55)
@@ -163,14 +160,14 @@ func _init(livery := {}) -> void:
 	# round the nose, its face dark, its lip and the spinner brass.
 	_add(_hull([Vector3(-0.47,0.13,0.135),Vector3(-0.36,0.142,0.15),Vector3(-0.1,0.146,0.158),Vector3(0.1,0.14,0.15),Vector3(0.3,0.105,0.12),Vector3(0.52,0.06,0.085),Vector3(0.72,0.016,0.05)],10),wood,Vector3.ZERO,Vector3.ZERO)
 	_add(_hull([Vector3(-0.62,0.1,0.1),Vector3(-0.6,0.125,0.125),Vector3(-0.55,0.14,0.145),Vector3(-0.47,0.143,0.149),Vector3(-0.44,0.139,0.146)],12),trim,Vector3.ZERO,Vector3.ZERO)
-	_add(GliderFigure._frustum(0.102,0.102,0.006,12),brass,Vector3(0.0,0.0,-0.619),Vector3(PI*0.5,0.0,0.0))
-	_add(GliderFigure._frustum(0.082,0.082,0.006,12),steel,Vector3(0.0,0.0,-0.623),Vector3(PI*0.5,0.0,0.0))
+	_add(FacetMesh.frustum(0.102,0.102,0.006,12),brass,Vector3(0.0,0.0,-0.619),Vector3(PI*0.5,0.0,0.0))
+	_add(FacetMesh.frustum(0.082,0.082,0.006,12),steel,Vector3(0.0,0.0,-0.623),Vector3(PI*0.5,0.0,0.0))
 	_add(_hull([Vector3(-0.76,0.0,0.0),Vector3(-0.73,0.03,0.03),Vector3(-0.67,0.052,0.052),Vector3(-0.63,0.056,0.056)],8),brass,Vector3.ZERO,Vector3.ZERO)
 	# A seam of rivets where the cowl meets the body, louvres let into its
 	# sides, and the exhaust stacks bent back into a pipe along each side.
 	for i in range(14):
 		var a := TAU*(float(i)+0.5)/14.0
-		_add(GliderFigure._gem(0.0055),brass,Vector3(cos(a)*0.141,sin(a)*0.148,-0.452),Vector3.ZERO)
+		_add(FacetMesh.gem(0.0055),brass,Vector3(cos(a)*0.141,sin(a)*0.148,-0.452),Vector3.ZERO)
 	for side in [-1.0,1.0]:
 		for i in range(4):
 			_add(_hull([Vector3(-0.035,0.0045,0.0045),Vector3(0.035,0.0045,0.0045)],4),steel,Vector3(0.139*side,0.042-0.026*i,-0.505),Vector3.ZERO)
@@ -185,7 +182,7 @@ func _init(livery := {}) -> void:
 	# behind, rising to a headrest. In it, the wanderer from the chest up,
 	# alive in the seat (scripts/plane_pilot.gd).
 	_add(_hull([Vector3(-0.12,0.095,0.06),Vector3(0.12,0.095,0.06)],8),dark,Vector3(0.0,0.15,0.22),Vector3.ZERO)
-	var rim := _add(GliderFigure._frustum(0.108,0.096,0.03,12),leather,Vector3(0.0,0.2,0.22),Vector3.ZERO)
+	var rim := _add(FacetMesh.frustum(0.108,0.096,0.03,12),leather,Vector3(0.0,0.2,0.22),Vector3.ZERO)
 	rim.scale = Vector3(1.0,1.0,1.3)
 	_add(_hull([Vector3(0.0,0.052,0.05),Vector3(0.1,0.04,0.035),Vector3(0.27,0.0,0.0)],8),dark,Vector3(0.0,0.17,0.33),Vector3(0.2,0.0,0.0))
 	var screen := _add(_prism([Vector2(0.0,0.0),Vector2(0.005,0.0),Vector2(0.027,0.068),Vector2(0.022,0.068)],0.11),_glass(),Vector3(0.0,0.2,0.1),Vector3.ZERO)
@@ -240,13 +237,13 @@ func _init(livery := {}) -> void:
 		# wheels on it, their spokes covered in cream, brass hubs.
 		_strut(Vector3(0.07*side,-0.14,-0.38),Vector3(0.165*side,-0.33,-0.28),dark,0.009)
 		_strut(Vector3(0.07*side,-0.14,-0.17),Vector3(0.165*side,-0.33,-0.28),dark,0.009)
-		_add(GliderFigure._frustum(0.08,0.08,0.038,14),steel,Vector3(0.2*side,-0.33,-0.28),Vector3(0.0,0.0,PI*0.5))
-		_add(GliderFigure._frustum(0.058,0.058,0.044,14),cream,Vector3(0.2*side,-0.33,-0.28),Vector3(0.0,0.0,PI*0.5))
-		_add(GliderFigure._frustum(0.02,0.014,0.06,8),brass,Vector3(0.21*side,-0.33,-0.28),Vector3(0.0,0.0,PI*0.5))
+		_add(FacetMesh.frustum(0.08,0.08,0.038,14),steel,Vector3(0.2*side,-0.33,-0.28),Vector3(0.0,0.0,PI*0.5))
+		_add(FacetMesh.frustum(0.058,0.058,0.044,14),cream,Vector3(0.2*side,-0.33,-0.28),Vector3(0.0,0.0,PI*0.5))
+		_add(FacetMesh.frustum(0.02,0.014,0.06,8),brass,Vector3(0.21*side,-0.33,-0.28),Vector3(0.0,0.0,PI*0.5))
 	_strut(Vector3(-0.17,-0.33,-0.28),Vector3(0.17,-0.33,-0.28),dark,0.008)
 	# A tail skid it rests on, parked (scripts/plane_strip.gd TAIL).
 	_strut(Vector3(0.0,-0.03,0.58),Vector3(0.0,-0.11,0.66),dark,0.01)
-	_add(GliderFigure._gem(0.018),steel,Vector3(0.0,-0.1,0.66),Vector3.ZERO)
+	_add(FacetMesh.gem(0.018),steel,Vector3(0.0,-0.1,0.66),Vector3.ZERO)
 	# The tail: a terracotta fin with a cream rudder, a cream tailplane and
 	# its elevator either side of the rudder.
 	_add(_prism([Vector2(-0.1,0.0),Vector2(0.1,0.0),Vector2(0.1,0.2),Vector2(0.065,0.24),Vector2(0.02,0.25),Vector2(-0.03,0.2)],0.012),trim,Vector3(0.0,0.03,0.58),Vector3.ZERO)
@@ -304,7 +301,7 @@ func _init(livery := {}) -> void:
 	_mark_material = StandardMaterial3D.new()
 	_mark_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_mark_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	_mark_material.albedo_texture = GliderFigure._soft_ring()
+	_mark_material.albedo_texture = FacetMesh.soft_ring()
 	_mark_material.cull_mode = BaseMaterial3D.CULL_DISABLED
 	_mark.material_override = _mark_material
 	_mark.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -319,7 +316,7 @@ func _init(livery := {}) -> void:
 	mist.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mist.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mist.vertex_color_use_as_albedo = true
-	mist.albedo_texture = GliderFigure._soft_band()
+	mist.albedo_texture = FacetMesh.soft_band()
 	mist.cull_mode = BaseMaterial3D.CULL_DISABLED
 	_vapour.material_override = mist
 	_vapour.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -358,7 +355,7 @@ func shift(by: Vector3) -> void:
 	for i in range(_short_points.size()): _short_points[i] += by
 	for i in range(_vapour_points.size()): _vapour_points[i] += by
 
-## One frame, as the glider's: posed on `glide` (a SkyPlane, or a plain
+## One frame: posed on `glide` (a SkyPlane, or a plain
 ## glide drawn without its roll), `dive` held 0..1 (unused), `ground` the
 ## height under a point, `landable` whether a touch now would land, and
 ## `near` and `lean` the vapour's.
@@ -503,7 +500,7 @@ func _draw_tail(points: PackedVector3Array, side: Vector3, up: Vector3, phase: f
 static func _scarf_width(along: float, wide: float) -> float:
 	return SCARF_WIDTH*wide*(1.0-0.4*along)
 
-## The vapour, as the glider's: each upper wingtip lays a point every
+## The vapour: each upper wingtip lays a point every
 ## VAPOUR_EVERY seconds; the points hang, drifting and widening as they fade.
 func _trail_vapour(delta: float, near: float, side: float) -> void:
 	_vapour_clock += delta
@@ -598,7 +595,7 @@ func _add(mesh: Mesh, material: Material, at: Vector3, turn: Vector3, parent: No
 
 ## A thin strut (or, `radius` finer, a wire) from `from` to `to`.
 func _strut(from: Vector3, to: Vector3, material: Material, radius := 0.014) -> void:
-	var part := _add(GliderFigure._frustum(radius,radius,1.0,4),material,(from+to)*0.5,Vector3.ZERO)
+	var part := _add(FacetMesh.frustum(radius,radius,1.0,4),material,(from+to)*0.5,Vector3.ZERO)
 	var y := (to-from)
 	var x := y.cross(Vector3.FORWARD if absf(y.normalized().dot(Vector3.FORWARD)) < 0.9 else Vector3.RIGHT).normalized()
 	part.basis = Basis(x,y,x.cross(y.normalized()).normalized())

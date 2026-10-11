@@ -59,10 +59,11 @@ func run() -> void:
 ## habitat mix and the record count the renderer instances.
 func types(data: NativeTerrainData) -> void:
 	const MeadowTypes = preload("res://scripts/meadow_types.gd")
+	const MeadowRecipe = preload("res://scripts/meadow_recipe.gd")
 	for type_id: String in MeadowTypes.ORDER:
 		for seed_value in [11,2024,777]:
 			var t := Time.get_ticks_usec()
-			var r := MeadowTypes.recipe(type_id,seed_value)
+			var r := MeadowRecipe.recipe(type_id,seed_value)
 			var planned := (Time.get_ticks_usec()-t)/1000.0
 			t = Time.get_ticks_usec()
 			await preload("res://scripts/inland_landscape.gd").new().form(data,r)

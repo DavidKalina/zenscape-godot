@@ -31,7 +31,7 @@ extends Node3D
 
 const PlanePilot = preload("res://scripts/plane_pilot.gd")
 const PersonKit = preload("res://scripts/person_kit.gd")
-const GliderFigure = preload("res://scripts/glider_figure.gd")
+const FacetMesh = preload("res://scripts/facet_mesh.gd")
 const STONE_SHADER := preload("res://shaders/ruin_stone.gdshader")
 const GLOW_SHADER := preload("res://shaders/stone_plane_glow.gdshader")
 const BAND_SHADER := preload("res://shaders/stone_plane_band.gdshader")
@@ -200,7 +200,7 @@ func _init(_livery := {}) -> void:
 	wisp.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	wisp.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 	wisp.vertex_color_use_as_albedo = true
-	wisp.albedo_texture = GliderFigure._soft_band()
+	wisp.albedo_texture = FacetMesh.soft_band()
 	wisp.cull_mode = BaseMaterial3D.CULL_DISABLED
 	wisp.disable_fog = true
 	_wisps.material_override = wisp

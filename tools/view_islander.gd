@@ -11,7 +11,7 @@ extends SceneTree
 ## With --shots=DIR it saves stills of each move into DIR and quits.
 const IslanderFigure = preload("res://scripts/islander_figure.gd")
 const SkyTraffic = preload("res://scripts/sky_traffic.gd")
-const GliderFigure = preload("res://scripts/glider_figure.gd")
+const FacetMesh = preload("res://scripts/facet_mesh.gd")
 ## Seconds each move runs while cycling.
 const CYCLE := 5.0
 ## The ring it walks round (m).
@@ -58,7 +58,7 @@ func run() -> void:
 	sun.shadow_enabled = true
 	stage.add_child(sun)
 	var grass := MeshInstance3D.new()
-	grass.mesh = GliderFigure._frustum(0.7,0.65,0.06,9)
+	grass.mesh = FacetMesh.frustum(0.7,0.65,0.06,9)
 	var green := StandardMaterial3D.new()
 	green.albedo_color = Color("7d9a52")
 	green.roughness = 0.9

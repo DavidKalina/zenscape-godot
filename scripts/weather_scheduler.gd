@@ -67,6 +67,12 @@ var _climate_weights := {}
 var current := "clear"
 var next_change_hour := 0.0
 var season := 0.0
+## The hour of the day (0..24) the next sky is drawn for, when the
+## scheduler keeps hours of its own that aren't the day's (the kit isles'
+## drift, scripts/kit_isle/kit_weather.gd, runs on real seconds while the
+## day turns, or holds, apart). Below 0 the scheduler's own hour is the
+## day's, as it is fed world hours.
+var hour_of_day := -1.0
 var history: Array[Dictionary] = []
 
 var _rng := RandomNumberGenerator.new()
@@ -224,7 +230,7 @@ func advance(world_hour_abs: float) -> Array[String]:
 			next_change_hour = now + _roll_dwell(current)
 			break
 		var at := next_change_hour
-		var chosen := _pick(current, fposmod(at, 24.0))
+		var chosen := _pick(current, _day_hour(at))
 		history.append({"hour": at, "from": current, "to": chosen})
 		while history.size() > HISTORY_LIMIT:
 			history.remove_at(0)
@@ -291,6 +297,10 @@ func restore(value: Dictionary) -> void:
 			"to": str(entry.get("to", "")),
 		})
 
+## The hour of the day a sky drawn at scheduler hour `at` is drawn for.
+func _day_hour(at: float) -> float:
+	return fposmod(hour_of_day, 24.0) if hour_of_day >= 0.0 else fposmod(at, 24.0)
+
 ## True when the current preset was reached directly from snow.
 func _came_from_snow() -> bool:
 	return not history.is_empty() and str(history.back().get("from", "")) == "snow"
@@ -344,7 +354,7 @@ func _pick_climate(from: String) -> String:
 ## Returns the new preset.
 func force_next(world_hour_abs: float) -> String:
 	_last_hour = maxf(_last_hour, world_hour_abs)
-	var chosen := _pick(current, fposmod(_last_hour, 24.0))
+	var chosen := _pick(current, _day_hour(_last_hour))
 	history.append({"hour": _last_hour, "from": current, "to": chosen})
 	while history.size() > HISTORY_LIMIT:
 		history.remove_at(0)

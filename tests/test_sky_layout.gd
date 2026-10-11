@@ -52,9 +52,9 @@ func _initialize() -> void:
 	SkyHomes.stone = true
 	SkyHomes.isles = true
 	# Every wonder, laid out in the open sky, endless, its kinds scattered
-	# through the cells (SkyWorld `ring` off); the bounded world's layout is
+	# through the cells (SkyHomes `ring` off); the bounded world's layout is
 	# checked in tests/test_sky_world.gd.
-	preload("res://scripts/sky_world.gd").ring = false
+	SkyHomes.ring = false
 	_gather()
 	_in_sight()
 	_facing()
@@ -68,12 +68,16 @@ func check(ok: bool, label: String) -> void:
 	if not ok: failures += 1
 	print(("OK   " if ok else "FAIL ")+label)
 
-## In play (SkyHomes `peaks`, `stone`, `isles`): of the wonders only the
-## ranges stand, the one in sight of the plate and the ring's (scripts/
-## sky_world.gd), and the cumulus; no other range, no pillar forest, tepui
-## or isle turns up or keeps anything out.
+## In play (SkyHomes `peaks`, `stone`, `isles`, `ring`): of the wonders only
+## the cumulus stands; the ranges and the ring are kept but unwired. Under
+## --peak-ring the ranges stand, the one in sight of the plate and the
+## ring's (scripts/sky_world.gd), and the cumulus; no other range, no pillar
+## forest, tepui or isle turns up or keeps anything out.
 func _off_in_play() -> void:
-	check(SkyHomes.peaks and not SkyHomes.stone and not SkyHomes.isles,"Of the wonders, the ranges stand; the other stone wonders and the forested isles start off")
+	check(not SkyHomes.peaks and not SkyHomes.stone and not SkyHomes.isles and not SkyHomes.ring,"By default no stone wonder, isle or ring stands")
+	check(SkyHomes.spots() == [[SkyHomes.TOWER,SkyHomes.TOWER_KEEP]],"By default only the towering cumulus stands in sight of the plate")
+	SkyHomes.use_flags(PackedStringArray(["--peak-ring"]))
+	check(SkyHomes.peaks and SkyHomes.ring and not SkyHomes.stone and not SkyHomes.isles,"Under --peak-ring the ranges and the ring stand; the other stone wonders and the forested isles stay off")
 	check(SkyHomes.spots() == [[SkyHomes.TOWER,SkyHomes.TOWER_KEEP],[SkyHomes.RANGE,SkyHomes.RANGE_KEEP]],"Only the towering cumulus and the range stand in sight of the plate")
 	var none := true
 	for x in range(-WINDOW,WINDOW+1):

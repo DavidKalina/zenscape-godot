@@ -164,6 +164,11 @@ func _allocate(want: Vector2i, whole: Vector2i) -> void:
 		_rd.texture_clear(_shadow,Color(1.0,1.0,0.0,0.0),0,1,0,1)
 		weather.texture_rd_rid = _weather
 		shadow.texture_rd_rid = _shadow
+	# Let go of the old targets before they are freed, as on teardown: a
+	# texture still pointing at a freed one frees it again when repointed.
+	resolved_a.texture_rd_rid = RID()
+	resolved_b.texture_rd_rid = RID()
+	march_depth.texture_rd_rid = RID()
 	for rid in [_march_a,_march_b,_depth,_resolved_a,_resolved_b,_history_a,_history_b]:
 		if rid.is_valid(): _rd.free_rid(rid)
 	_march_a = _target(want,RenderingDevice.DATA_FORMAT_R16G16B16A16_SFLOAT)

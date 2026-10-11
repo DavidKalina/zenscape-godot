@@ -10,8 +10,10 @@ extends "res://studies/character_study.gd"
 ## look rig (its lighting and sky, the celestial rig, the air, the weather,
 ## the screen-space air and the look pass: scripts/landscape_lighting.gd,
 ## studies/celestial.gd, studies/atmosphere.gd, studies/precipitation.gd,
-## studies/display_fog.gd, scripts/look_pass.gd) dressed by the edit
-## mode's look presets (L, --look=); the plane (F) with its bump and
+## studies/display_fog.gd, scripts/look_pass.gd) under a live sky (the day
+## turning, the year, the weather drifting, the storm's lightning:
+## scripts/kit_isle/kit_weather.gd) that the edit mode's look presets hold
+## (L, --look=; L's "Live sky" gives it back); the plane (F) with its bump and
 ## set-down; the lodestone and its shard; the grass and flowers
 ## (scripts/kit_isle/kit_flora.gd), the sky round it and its life; the live
 ## rope bridges underfoot (scripts/kit_isle/deck_ground.gd: the deck, the
@@ -31,6 +33,8 @@ extends "res://studies/character_study.gd"
 ##
 ##   R            back to the start
 ##   L / Shift+L  next / previous look preset (its name shows a moment)
+##   F9 · F10 · F11 · F12  the next quarter day · weather (Shift: drift
+##                on or off) · season · a lightning strike
 ##   B            a strong gust front
 ##   Space (pad A) by the parked plane: climb in and take off
 ##   F (pad Y)    in the air the flaps down or up; stopped, get out
@@ -111,6 +115,7 @@ const LandingReadout = preload("res://scripts/landing_readout.gd")
 const PlaneLanding = preload("res://scripts/plane_landing.gd")
 const PlaneStrip = preload("res://scripts/plane_strip.gd")
 const WheelSpray = preload("res://scripts/wheel_spray.gd")
+const KitWeather = preload("res://scripts/kit_isle/kit_weather.gd")
 
 ## The look the isle opens in: the game's own for a new world
 ## (scripts/native_chunk_editor.gd forms one in Alpine morning).
@@ -134,6 +139,11 @@ var _atmosphere: Node3D
 var _motion_time := 0.0
 var _celestial: RefCounted
 var _look: Node
+## The day, the year, the drifting weather and the storm
+## (scripts/kit_isle/kit_weather.gd), and its lightning, which the look
+## pass hands the cloud volume.
+var weather: Node
+var _lightning: Node3D
 ## Rendered: the look pass, the screen-space air and the 1080p cap (not
 ## headless; the rig itself runs either way, so presets apply in tests).
 var _looks := false
@@ -382,8 +392,25 @@ var flown := 0.0
 signal isle_ready
 var isle_up := false
 
+## The ring and painted-sky flags (scripts/sky_homes.gd) to hand back when the isle leaves.
+var _ring_was: Array = []
+
+func _exit_tree() -> void:
+	if _ring_was.is_empty(): return
+	var World := preload("res://scripts/sky_homes.gd")
+	World.ring = _ring_was[0]
+	World.painted_sky = _ring_was[1]
+	_ring_was = []
+
 func _ready() -> void:
 	pack = "ruins_archipelago"
+	# The peak ring is not part of the kit: off, so no SkyWorld layout runs
+	# for it. The painted sky stays as it was with the ring's ranges "up".
+	var World := preload("res://scripts/sky_homes.gd")
+	World.read_flags()
+	_ring_was = [World.ring,World.painted_sky]
+	World.ring = false
+	World.painted_sky = false
 	for arg in preload("res://scripts/launch_args.gd").user_args():
 		if arg.begins_with("--capture="): _capture = arg.get_slice("=",1)
 		elif arg.begins_with("--at="): _capture_at = _vec(arg.get_slice("=",1))
@@ -413,7 +440,7 @@ func _ready() -> void:
 		elif arg.begins_with("--place="):
 			var p := arg.get_slice("=",1).split(",")
 			_place = Vector4(float(p[0]),float(p[1]),float(p[2]),float(p[3]) if p.size() > 3 else 0.0)
-	if not SceneLookPresets.PRESETS.has(look_id):
+	if not SceneLookPresets.PRESETS.has(look_id) and look_id != KitWeather.LIVE:
 		push_warning("kit isle: no look preset '%s' (%s); %s instead" % [look_id,", ".join(_look_ids),START_LOOK])
 		look_id = START_LOOK
 	super._ready()
@@ -489,7 +516,8 @@ func _station_runs() -> PackedStringArray:
 
 ## The game's look, set up as the game's scene sets it up (studies/
 ## fidelity.gd `_setup_environment` and `_ready`): its lighting and sky,
-## the celestial rig on a still clock, the air and the weather; rendered,
+## the celestial rig on the world clock, the air and the weather, the live
+## sky over them (scripts/kit_isle/kit_weather.gd); rendered,
 ## the look pass, the screen-space air and the 1080p cap. Then the look
 ## preset, applied as the look editor applies one.
 func _build_light() -> void:
@@ -530,6 +558,12 @@ func _build_light() -> void:
 	none.free()
 	_precipitation.leaves.visible = false
 	_precipitation.weather_selected.connect(_atmosphere.set_weather_profile)
+	# The live sky; the look presets hold it (L's first entry gives it back).
+	weather = KitWeather.new()
+	add_child(weather)
+	weather.setup(self)
+	_look_ids.push_front(KitWeather.LIVE)
+	look_id = weather.start_look
 	if _looks:
 		_look = LookPass.new()
 		_look.setup(self)
@@ -556,12 +590,13 @@ class NoGround extends RefCounted:
 ## one (SceneLookPresets.apply: the scene look's colours, the weather, the
 ## hour, the air's wind, mist, haze and rays, the sky's cloud, the
 ## surface weather), its name shown a moment when `show`.
+## A preset holds the live sky; KitWeather.LIVE gives it back (KitWeather
+## `show_look`).
 func apply_look(id: String, show := true) -> void:
-	if not SceneLookPresets.PRESETS.has(id): return
+	if not weather.show_look(id): return
 	look_id = id
-	SceneLookPresets.apply(self,id)
 	if _display_fog != null: _display_fog.forget()
-	if show: _show_toast(str(SceneLookPresets.PRESETS[id].title))
+	if show: _show_toast(KitWeather.LIVE_TITLE if id == KitWeather.LIVE else str(SceneLookPresets.PRESETS[id].title))
 
 ## The next (or previous) preset in the look editor's order.
 func step_look(by: int) -> void:
@@ -602,6 +637,7 @@ func _show_toast(text: String) -> void:
 	var description: String = ""
 	for id: String in SceneLookPresets.PRESETS:
 		if SceneLookPresets.PRESETS[id].title == text: description = SceneLookPresets.PRESETS[id].description
+	if text == KitWeather.LIVE_TITLE: description = KitWeather.LIVE_LINE
 	_look_toast.text = text+("\n"+description if description != "" else "")
 	_toast_left = TOAST+TOAST_FADE
 
@@ -759,6 +795,7 @@ func _process(delta: float) -> void:
 ## camera, as the kit gallery bounds its gust fronts), the sky, the
 ## screen-space air and the look pass; the pilot parting the ruin growth.
 func _advance_look(delta: float) -> void:
+	weather.step(delta)
 	_motion_time += delta
 	RenderingServer.global_shader_parameter_set("zs_motion_time",_motion_time)
 	_precipitation.wind = _atmosphere.strength
@@ -798,6 +835,10 @@ func _send_gust() -> void:
 	fronts.send(way,0.9,Atmosphere.breeze_air(_atmosphere._air_strength),1.0)
 
 func _unhandled_input(event: InputEvent) -> void:
+	var changed: String = weather.key(event)
+	if changed != "":
+		_show_toast(changed+"\n"+weather.label())
+		return
 	if event is InputEventKey and event.pressed and not event.echo:
 		match (event as InputEventKey).keycode:
 			KEY_B:

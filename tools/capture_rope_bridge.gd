@@ -57,7 +57,7 @@ func run() -> void:
 	eye._launch(6.0,false)
 	var islands: Node3D = eye.islands
 	for i in range(900):
-		if not islands.lands.has(null): break
+		if islands.built(): break
 		await process_frame
 	var field: Node3D = islands.clusters
 	field.plan_now("showcase")

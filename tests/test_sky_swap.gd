@@ -25,6 +25,8 @@ const SkyWorld = preload("res://scripts/sky_world.gd")
 var failures := 0
 
 func _initialize() -> void:
+	# The ring and its ranges are kept but unwired: this runs under --peak-ring.
+	preload("res://scripts/sky_homes.gd").use_flags(PackedStringArray(["--peak-ring"]))
 	run.call_deferred()
 
 func check(ok: bool, label: String) -> void:
