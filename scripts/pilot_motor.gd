@@ -491,9 +491,12 @@ var swim_draft := SWIM_DRAFT
 ## scale by `s`. The jumps rise by what his hands lose hanging
 ## (HANG_DROP*(1-s)), so every lip he caught (ruin_kit.gd GRAB_TOP,
 ## CHAIN_TOP) he still catches. The walk and run go by sqrt(s), the pace a
-## smaller body keeps in the same gravity (Froude): with the jumps' longer
-## airtime a running jump carries as far as ever. All from the constants,
-## so calling it again re-fits.
+## smaller body keeps in the same gravity (Froude, PACE_POWER), and the
+## paces measured against the run (the long jump's, the skid's, the wall
+## run's) with them: with the jumps' longer airtime a running jump carries
+## about as far as ever. All from the constants, so calling it again
+## re-fits; the size itself is scripts/world_scale.gd's.
+const PACE_POWER := 0.5
 func set_size(s: float) -> void:
 	size = s
 	hang_drop = HANG_DROP*s
@@ -504,8 +507,13 @@ func set_size(s: float) -> void:
 	swim_draft = SWIM_DRAFT*s
 	var lift := HANG_DROP*(1.0-s)
 	jumps = [float(JUMPS[0])+lift,float(JUMPS[1])+lift]
-	walk = WALK*sqrt(s)
-	run = RUN*sqrt(s)
+	var pace := pow(s,PACE_POWER)
+	walk = WALK*pace
+	run = RUN*pace
+	# The paces the run is measured against go with it.
+	long_pace = LONG_PACE*pace
+	skid_speed = SKID_SPEED*pace
+	wallrun_pace = WALLRUN_PACE*pace
 
 ## The feet, in the frame.
 var feet := Vector3.ZERO
@@ -1505,7 +1513,13 @@ func _hang_step(delta: float, want: Vector2, pressed: bool, ground: Callable, sl
 		if ok:
 			var to := Vector2(found.at.x,found.at.z)
 			var moved := to.distance_to(Vector2(lip.x,lip.z))
-			var bend := absf((found.out as Vector2).angle_to(lip_out))
+			# The bend from the lip's way out read where he hangs now, not the
+			# one kept from the catch (read off the feet stepping off: on a
+			# rough lip it can sit a facet over, and the first step would
+			# read as a sharp curl and stop him).
+			var here: Dictionary = ledge.call(Vector2(lip.x,lip.z),lip.y)
+			var was_out: Vector2 = lip_out if here.is_empty() else (here.out as Vector2)
+			var bend := absf((found.out as Vector2).angle_to(was_out))
 			ok = to.distance_to(next) < 0.05 and moved > 0.0 and moved < go.length()*2.0+0.005 and bend/maxf(moved,0.01) < CURL_MOST 				and absf(float(found.at.y)-lip.y)/maxf(moved,0.01) < SHIMMY_SLOPE and _room_under(found,ground)
 		if ok:
 			lip = found.at

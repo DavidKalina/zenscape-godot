@@ -425,6 +425,8 @@ var _verdict := ""
 var _verdict_left := 0.0
 ## Carving as it was before a replay (which carves as its run was made).
 var _carve_was := false
+## The walker's size before a replay (run at its recording's).
+var _size_was := 1.0
 var _holes: Array[Rect2] = []
 
 func _ready() -> void:
@@ -725,20 +727,29 @@ func _build_pilot() -> void:
 	figure.name = "Pilot"
 	add_child(figure)
 	body = PilotFigure.new()
-	body.scale = Vector3.ONE*wanderer_scale
-	body.size = wanderer_scale
 	figure.add_child(body)
-	if wanderer_scale != 1.0: ground.scale_body(wanderer_scale)
-	motor.set_size(wanderer_scale)
 	puffs = PilotPuffs.new()
 	figure.add_child(puffs)
 	ripples = PilotRipples.new()
 	figure.add_child(ripples)
 	sail_wing = PocketSailFigure.new()
-	sail_wing.scale = Vector3.ONE*wanderer_scale
 	figure.add_child(sail_wing)
+	resize(wanderer_scale)
 	steps = WandererSteps.new()
 	add_child(steps)
+
+## The walker drawn `s` times his clips' size: his figure (and its gait),
+## his body's collider, the pocket sail, the camera (`wanderer_scale`) and
+## the moves that go by his body (PilotMotor.set_size, which sets the feel's
+## walk, run and jumps afresh). The game's size is scripts/world_scale.gd's;
+## a replay runs at the size it was recorded at.
+func resize(s: float) -> void:
+	wanderer_scale = s
+	body.scale = Vector3.ONE*s
+	body.size = s
+	ground.scale_body(s)
+	motor.set_size(s)
+	if sail_wing != null: sail_wing.scale = Vector3.ONE*s
 
 ## Set down at `at`, facing `face` (x, z), the camera behind.
 func place(at: Vector3, face: Vector2) -> void:
@@ -1303,6 +1314,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_ESCAPE: Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 			KEY_R:
 				_replay = {}
+				if wanderer_scale != _size_was: resize(_size_was)
 				respawn()
 			KEY_F5: _toggle_record()
 			KEY_F6:
@@ -1343,6 +1355,8 @@ func _feel_now() -> Dictionary:
 	for key: String in feel_names():
 		if key == "sail": continue
 		out[key] = motor.get(key).duplicate() if motor.get(key) is Array else motor.get(key)
+	# The walker's size (scripts/world_scale.gd): a replay runs at it.
+	out["size"] = wanderer_scale
 	for spec: Array in TUNABLE:
 		if str(spec[0]).begins_with("sail:"): out[spec[0]] = _feel(spec[0])
 	return out
@@ -1426,6 +1440,9 @@ func begin_replay(data: Dictionary) -> bool:
 	# before there was carving, off), put back as it is now when it ends.
 	_carve_was = motor.carve
 	motor.carve = false
+	# At the walker's size it was made at (runs from before sizes: 1).
+	_size_was = wanderer_scale
+	resize(float((data.get("feel",{}) as Dictionary).get("size",1.0)))
 	Recording.restore(motor,str(data.motor),feel_names())
 	_yaw = float(t.yaw[0])
 	_polar = float(t.polar[0])
@@ -1496,6 +1513,7 @@ func _end_replay() -> void:
 	script_twirl = false
 	_replay = {}
 	motor.carve = _carve_was
+	if wanderer_scale != _size_was: resize(_size_was)
 
 func _say(text: String, seconds := 3.0) -> void:
 	_verdict = text

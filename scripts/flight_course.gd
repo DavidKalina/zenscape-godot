@@ -66,7 +66,7 @@ const BAR := 1.0
 const RING_SEGMENTS := 12
 ## A token's pickup reach (m from the plane's middle to the token's): the
 ## game's plane reach plus half an air token (scripts/collectible_lines.gd).
-const REACH := Lines.PLANE_REACH+0.5*1.2
+static var REACH: float = Lines.PLANE_REACH+0.5*1.2
 ## The token drawn (m across), as the game's air tokens.
 const TOKEN_SIZE := 1.2
 ## The plane's wingspan (scripts/plane_figure.gd).

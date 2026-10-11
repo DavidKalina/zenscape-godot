@@ -57,7 +57,7 @@ const SIDE := 0.55
 ## wall's sill (RuinKit WINDOW.y) and how high over it the stone hovers.
 const ISLAND := 9.0
 const ISLAND_KEEL := 11.0
-const SILL := RuinKit.WINDOW.y
+static var SILL: float = RuinKit.WINDOW.y
 const HOVER := 0.4
 const SILL_X := -0.95
 ## The pilot's walk up to the stone: from APPROACH.x m off the wall to

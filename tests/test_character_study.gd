@@ -41,8 +41,11 @@ func run() -> void:
 	while not study.walk_ready: await process_frame
 	print("     walking %.2f s after the scene was added" % ((Time.get_ticks_msec()-began)/1000.0))
 	var m: PilotMotor = study.motor
-	# The feel starts as the constants.
-	check(m.run == PilotMotor.RUN and m.gravity == PilotMotor.GRAVITY and m.jumps == PilotMotor.JUMPS and m.coyote == PilotMotor.COYOTE,"The motor's feel starts as its constants")
+	# The feel starts as the constants, fitted to the walker's size
+	# (scripts/world_scale.gd; PilotMotor.set_size).
+	var fitted := PilotMotor.new()
+	fitted.set_size(study.wanderer_scale)
+	check(is_equal_approx(m.run,fitted.run) and m.gravity == PilotMotor.GRAVITY and m.jumps == fitted.jumps and m.coyote == PilotMotor.COYOTE,"The motor's feel starts as its constants, fitted to his size (run %.2f, jumps %s)" % [m.run,m.jumps])
 	check(study.get_child_count() > 100,"The room is built (%d nodes)" % study.get_child_count())
 	# Standing.
 	drive(Vector2.ZERO,false,30)
@@ -51,7 +54,7 @@ func run() -> void:
 	drive(Vector2.ZERO,true,40)
 	drive(Vector2.ZERO,false,40)
 	var jumped: Dictionary = study.last_jump
-	check(not jumped.is_empty() and absf(float(jumped.peak)-float(PilotMotor.JUMPS[0])) < 0.01 and m.grounded,"A held jump from a stand peaks at %.3f m (JUMPS[0]) and lands" % float(jumped.get("peak",0.0)))
+	check(not jumped.is_empty() and absf(float(jumped.peak)-float(m.jumps[0])) < 0.01 and m.grounded,"A held jump from a stand peaks at %.3f m (the motor's jumps[0]) and lands" % float(jumped.get("peak",0.0)))
 	# The room's wall.
 	study.place(Vector3(0.0,0.0,29.5),Vector2(0.0,1.0))
 	drive(Vector2(0.0,1.0),false,120)
@@ -79,7 +82,7 @@ func run() -> void:
 	highest[0] = 0.0
 	drive(Vector2.ZERO,true,30,func(mm: PilotMotor) -> void: highest[0] = maxf(highest[0],mm.feet.y))
 	drive(Vector2.ZERO,false,60)
-	check(highest[0] < 1.4-1.0 and m.grounded and absf(m.feet.y) < 0.01,"Jumping under it, he bumps his head (rose %.2f m) and comes down under it" % highest[0])
+	check(highest[0] < 1.4-study.ground.head_top+0.12 and m.grounded and absf(m.feet.y) < 0.01,"Jumping under it, he bumps his head (rose %.2f m) and comes down under it" % highest[0])
 	study.place(Vector3(-12.5,0.0,9.0),Vector2(1.0,0.0))
 	drive(Vector2(1.0,0.0),false,150)
 	check(m.grounded and absf(m.feet.y-1.7) < 0.02 and m.feet.x > -6.0,"Up its ramp, he stands on top of it (%.2f, %.2f)" % [m.feet.x,m.feet.y])

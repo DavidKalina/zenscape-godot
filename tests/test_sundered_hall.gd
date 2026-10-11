@@ -35,7 +35,10 @@ const EXIT_EVERY := 42.0
 const FAR_BUDGET := 30000
 const NEAR_BUDGET := 130000
 const NEAR_BAY := 8000
-const GROWTH_BAY := 6500
+## The growth's per bay grows with the hall's width (its walls stand out
+## with the plane's size, scripts/world_scale.gd): 6500 at the 12.4 m of
+## plane 1.
+static var GROWTH_BAY: int = int(6500.0*Hall.WALL_Z/12.4)
 const TRAVERSE := Vector2(58.0,100.0)
 var failures := 0
 

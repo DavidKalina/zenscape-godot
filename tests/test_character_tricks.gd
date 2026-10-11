@@ -107,7 +107,9 @@ func _chutes(m: PilotMotor) -> void:
 	study.place(Vector3(57.0,5.0,27.5),Vector2(0.0,-1.0))
 	surfed = false
 	var on_it := false
-	for i in range(120):
+	# Time to walk onto it at his pace (slower for a smaller walker,
+	# scripts/world_scale.gd): 120 ticks at the old full size.
+	for i in range(int(120.0/sqrt(study.wanderer_scale))+20):
 		study.script_want = Vector2(0.0,-0.4)
 		study.tick(DT)
 		surfed = surfed or m.move == "slide"

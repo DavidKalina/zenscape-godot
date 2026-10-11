@@ -82,7 +82,7 @@ const RING_SCALE := 2.2
 const THREAD_UP := 6.0
 const RING_SEED := 52
 const RING_WEATHERED := 0.25
-const RING_CROWN := (RuinKit.SPRING+RuinKit.ARCH_SPAN*0.866)*RING_SCALE
+static var RING_CROWN: float = (RuinKit.SPRING+RuinKit.ARCH_SPAN*0.866)*RING_SCALE
 ## Its keel: half across, half deep, how deep it hangs (m).
 const KEEL := Vector3(10.5,5.0,9.0)
 ## It rises when the plane, with the stone seated, would be there within

@@ -207,7 +207,9 @@ static func under_line(id: String, under: Callable, middle: Vector2, reach: floa
 		for w: Vector2 in [Vector2.ZERO,side*WING,-side*WING,way*WING,-way*WING]:
 			var u := float(under.call(p+w))
 			if u < INF: low = minf(low,u)
-		if low < INF:
+		# Only where the rock is overhead itself (a wide plane's wingtips
+		# reach past its edge).
+		if low < INF and float(under.call(p)) < INF:
 			ts.append(t)
 			lows.append(low)
 		t += 1.0

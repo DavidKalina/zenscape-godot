@@ -228,7 +228,7 @@ static func _soffit(rock: KitLook.RockMesh, under: PackedVector2Array) -> void:
 # shallow, so the plane that leaves the hall by it is clear to the sky.
 
 ## The band (m either side of MID) over the hall that stays level.
-const BAND := Hall.WALL_Z+1.0
+static var BAND: float = Hall.WALL_Z+1.0
 ## The gallery along the walls (m past the band) before the inner face
 ## drops, and the run it drops over.
 const GALLERY := 4.5
