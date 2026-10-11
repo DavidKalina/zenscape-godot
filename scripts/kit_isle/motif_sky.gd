@@ -36,6 +36,7 @@ const PLACES := [
 	[preload("res://scripts/kit_isle/motif_cloister_tarn.gd"),Vector3(-14.0,0.0,365.0)],
 	[preload("res://scripts/kit_isle/motif_sundered_gorge.gd"),Vector3(-386.0,6.0,102.0)],
 	[preload("res://scripts/kit_isle/motif_colonnade_spine.gd"),Vector3(-286.0,18.0,-320.0)],
+<<<<<<< HEAD
 	[preload("res://scripts/kit_isle/motif_broken_ring.gd"),Vector3(-660.0,6.0,-70.0)],
 ]
 ## Each motif's reach round its middle before it is registered (m, the
@@ -43,6 +44,15 @@ const PLACES := [
 const REACH := {"bell_spires":34.0,"cloister_tarn":54.0,"sundered_gorge":56.0,"colonnade_spine":85.0,"broken_ring":38.0}
 ## Its middle in its own frame (x, z), the same circle's.
 const MIDDLES := {"bell_spires":Vector2(82.3,-21.8),"cloister_tarn":Vector2(73.7,-5.0),"sundered_gorge":Vector2(86.0,-22.2),"colonnade_spine":Vector2(86.0,-10.5),"broken_ring":Vector2(80.0,-10.0)}
+=======
+	[preload("res://scripts/kit_isle/motif_stair_clouds.gd"),Vector3(440.0,14.0,-254.6)],
+]
+## Each motif's reach round its middle before it is registered (m, the
+## circle of its own outlines): its keep in the clouds' layout.
+const REACH := {"bell_spires":34.0,"cloister_tarn":54.0,"sundered_gorge":56.0,"colonnade_spine":85.0,"stair_clouds":33.0}
+## Its middle in its own frame (x, z), the same circle's.
+const MIDDLES := {"bell_spires":Vector2(82.3,-21.8),"cloister_tarn":Vector2(73.7,-5.0),"sundered_gorge":Vector2(86.0,-22.2),"colonnade_spine":Vector2(86.0,-10.5),"stair_clouds":Vector2(80.0,-5.4)}
+>>>>>>> look/motif-stair-clouds
 ## A slice is at least this long (usec) once the frame's budget is open.
 const SLICE_LEAST := 1500
 ## Headless (built on the main thread, a whole isle's art in one frame of
