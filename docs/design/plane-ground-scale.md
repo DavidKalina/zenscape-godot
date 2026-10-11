@@ -28,3 +28,15 @@ Open issues:
 - Rolling off an edge slowly can show a short (~0.3 s) shrink during the dip.
 - Not tuned. Only the parked view was captured; the mid-roll blend hasn't
   been seen yet.
+
+Where the cheat can show (keep these in mind for later features):
+- Planes seen from on foot in the air: CPU traffic flying low past the
+  wanderer, or a landing watched from the ground, reads as a model plane.
+  Traffic seen from on foot may need the same cheat.
+- Mid-air hand-offs: ejecting into the pocket sail or being knocked off by the
+  dragon swaps the ~0.5 m cockpit pilot for the 1.19 m walker in the air.
+  Each one needs something to hide the change (a puff, a tumble).
+- Built spaces: anything the plane parks in (hangar, strip, dock) is sized for
+  the ground scale; anything flown through is sized for flight (SPAN 1.4).
+- Ask scripts/plane_ground_scale.gd how big the plane is right now; don't
+  hard-code either size in new code.
