@@ -76,6 +76,7 @@ const IsleSky = preload("res://studies/aqueduct_isle_sky.gd")
 const KitLife = preload("res://scripts/kit_isle/kit_life.gd")
 const DeckGround = preload("res://scripts/kit_isle/deck_ground.gd")
 const RopeBridge = preload("res://scripts/rope_bridge.gd")
+const GlideAir = preload("res://scripts/glide_air.gd")
 
 ## The look the isle opens in: the game's own for a new world
 ## (scripts/native_chunk_editor.gd forms one in Alpine morning).
@@ -165,6 +166,10 @@ var flying := false
 ## bumps since boarding.
 var plane: RefCounted
 var plane_figure: Node3D
+## The plane's sound, as the game's (scripts/glide_air.gd): the wind past
+## it, the propeller's hum, a flap, a blip as it touches the turf.
+var air: Node3D
+var _flaps_heard := 0
 var chase: RefCounted
 var bumps := 0
 var _fly_look := Vector2.ZERO
@@ -700,6 +705,11 @@ func board() -> void:
 	chase = GlideCamera.new()
 	chase.reset(plane,camera.global_position,camera.fov)
 	chase.linger = LOOK_LINGER
+	if air == null:
+		air = GlideAir.new()
+		add_child(air)
+	air.start()
+	_flaps_heard = int(plane.flaps)
 	figure.visible = false
 	flying = true
 	bumps = 0
@@ -727,6 +737,7 @@ func leave_plane(at := Vector3.INF) -> void:
 	plane_figure.queue_free()
 	plane_figure = null
 	_nose = null
+	if air != null: air.stop()
 	figure.visible = true
 	camera.fov = FOV
 	if _foot_hint != null: _foot_hint.visible = true
@@ -814,6 +825,11 @@ func fly_step(delta: float, input: Dictionary) -> void:
 		_nose.step(delta)
 	plane_figure._mark.visible = false
 	_check_arrival()
+	air.advance(delta,plane.velocity,float(plane.hang),0.0)
+	air.engine(float(plane.speed),float(plane.throttle))
+	if int(plane.flaps) != _flaps_heard:
+		_flaps_heard = int(plane.flaps)
+		air.flap()
 	chase.step(delta,plane,0.0,_inside_stone)
 	camera.global_position = chase.eye
 	camera.look_at(chase.look,Vector3.UP)
@@ -826,6 +842,8 @@ func fly_step(delta: float, input: Dictionary) -> void:
 	# Riding a top lifts it clear only frames it touches, so a skim counts
 	# on through TOUCH_GAP s off it.
 	var braking := float(input.get("brake",0.0)) > 0.5
+	# Coming down onto a top after a while off it, the wheels' blip.
+	if plane.skimming and _off_ground > TOUCH_GAP*2.0 and _off_ground != INF: air.blip()
 	_off_ground = 0.0 if plane.skimming else _off_ground+delta
 	_touch = _touch+delta if _off_ground <= TOUCH_GAP and braking and float(plane.speed) < TOUCH_SPEED else 0.0
 	if _touch >= TOUCH_HOLD: leave_plane()
