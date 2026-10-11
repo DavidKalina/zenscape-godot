@@ -749,6 +749,10 @@ func _build_pilot() -> void:
 	decks.see(decks.mask|PARKED_LAYER)
 	decks.frame = self
 	decks.pools = ground.pools
+	# His body's collider stays the full-size one here (radius 0.28, head
+	# 1.12; the character study's is scaled): the demo the user flew had it
+	# so, and scaled (scale_body) several scripted isle routes stick or slip
+	# (docs/design/plane-ground-scale.md, open).
 	ground = decks
 	motor.water = ground.water_callable()
 	motor.wall = ground.wall_callable()
