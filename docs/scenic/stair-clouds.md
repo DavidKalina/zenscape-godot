@@ -50,3 +50,21 @@ No full suite run.
 - The sky's offset was not validated by flight; the plane approach to the lawn is the headless hand landing only.
 - The odd landings are a 4.5 m wall under the terrace: a ledge, not a way onto a terrace.
 - The isle is larger than briefed (reach 33 m, 333k tris) because grand-stair slope fixes the climb at about 100 m of path.
+
+## Look fix round
+
+Branch `look/stair-clouds-walls` (from main 4a1658e3). Everything stays in `studies/stair_clouds_isle_art.gd`. No shared code changed, so the other isles' layouts can't have moved. The collision is exactly as before, because only the drawn meshes change.
+
+- **Walls drawn as faceted basalt** (`dress_walls`). `wall_runs` finds every step of the height function by sampling across each line where the plan can step: each side's core face and strip edge, each pad's ends, each vertex's ray and the lawn's rim. The heightfield's slivers in "Crags" within 1 m of a run are dropped. The sides' upper rings (any face above TOP−4.6) are dropped too. In their place is "Walls", a `KitLook.RockMesh` lattice of facets about 2.4–4.4 m wide and 4.6 m tall. Its rows slant, and each inner point is set back 0.05–0.75 m into the rock (plus a per-column lean). The lip and the ends sit flush. Each wall's foot is kicked 0.85 m over the turf's edge. The rim facade runs down to TOP−7.5, drawn 15% in toward the middle, over the kept rock rings. The facets are painted by depth under their own rim (the topsoil/clay/shale skin, then the basalt beds), like the islets.
+- **Stair lit in the mesa's lee** (`lit_under_wall`, `wall_shelter`). This reuses the halls' bounce: the stone shader's `shelter_fill`, with the shelter in the vertex alpha. The eight legs and the pad shrines get 0.48–0.8 shelter, more under a tall wall. In the morning look their treads now read as warm grey in shadow. At noon (ocean_light) the sunlit flights stay stone-grey and are not washed out.
+- **Slot left as is.** The slot is a heightfield wall plus a small hanging pinnacle. Moving the pinnacle in by a metre or two would not make it read as a thread; that would need a roof (an arch or a fallen lintel over the gap). Not done.
+- Triangles: 331.7k (was ~333k).
+
+Captures: `captures/stair-clouds-walls/{before,after}/` (gitignored), alpine_morning and ocean_light, views establishing / south / wallclose / westplane / stairwest / stairnorth / onfoot (`/tmp/sc_shots.sh`-style runs: `--preset=<look> --at --look`).
+
+Open:
+- Seen edge-on (the summit pad's west face from the south lawn), a wall still reads as a narrow dark column.
+- Faces of the core in full shadow are near black at noon from the south. That is the rock material's shadow, the same as the islets'.
+- The lawn and pad turf in the mesa's shadow stays dark. Only the stone gets the bounce.
+
+Tests (headless): `test_stair_clouds_isle`, `test_motif_sky`, `test_aqueduct_isle_sky` PASS.

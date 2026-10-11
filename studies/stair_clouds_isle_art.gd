@@ -180,7 +180,251 @@ static func mesa(seed_value: int) -> Node3D:
 		holder.shape = shape
 		body.add_child(holder)
 		node.add_child(body)
+	dress_walls(node,sides,seed_value)
 	return node
+
+# --- The walls drawn ------------------------------------------------------------------
+#
+# The heightfield draws a sheer step as slivers (a point on its lip and one at
+# its foot every half metre, a mid point between), and the hanging sides as
+# rings a metre apart from the rim down to the rock: from the air both read
+# as long thin dark streaks. Collided as built, they are drawn instead as the
+# islets' faceted basalt: broad facets a few metres each way, every lattice
+# point set back into the rock a little, painted by depth under their own
+# rim (KitLook `RockMesh`). The collision is untouched.
+
+## A facet's width along a wall and its height (m), and how far a lattice
+## point sits back into the rock (m).
+const FACET_W := Vector2(2.4,4.4)
+const FACET_H := 4.6
+const FACET_BACK := Vector2(0.05,0.75)
+## A step shorter than this (m) is not a wall.
+const WALL_MIN := 1.0
+## The sides' facade: down to SIDE_FOOT under TOP, its foot drawn in toward
+## the middle by SIDE_IN of the radius, over the rock rings below.
+const SIDE_FOOT := 7.5
+const SIDE_IN := 0.15
+## Drawn sides faces wholly above this (m under TOP) give way to the facade.
+const SIDE_CUT := 4.6
+
+## The steps of `height` laid out as walls: [{line (world x z), top, foot
+## (over TOP, a point each), into (unit (x z), toward the high side)}], found
+## along every line the plan can step on (each side's core face and strip
+## edge, each pad's ends, each vertex's ray, the lawn's rim).
+static func wall_runs() -> Array:
+	var lines: Array = []
+	var reach := (AC+W+0.4)/cos(SECTOR*0.5)
+	var half := (AC+W+0.4)*tan(SECTOR*0.5)+0.5
+	for s in range(SIDES):
+		var n := normal_of(s)
+		var t := tangent_of(s)
+		for v: float in [0.0,W]:
+			lines.append([side_at(s,-half,v),side_at(s,half,v),n])
+		for u: float in [-RUN*0.5,RUN*0.5]:
+			lines.append([O+t*u,O+t*u+n*(AC+W+0.4),t])
+	for i in range(SIDES):
+		var d := vertex_dir(i)
+		lines.append([O,O+d*reach,Vector2(-d.y,d.x)])
+	var lawn_c := O+normal_of(SIDES-1)*(AC+LAWN_AT)
+	var ring: Array = []
+	for k in range(97): ring.append(lawn_c+Vector2.from_angle(TAU*k/96.0)*LAWN_R)
+	for k in range(96):
+		var mid: Vector2 = ((ring[k] as Vector2)+(ring[k+1] as Vector2))*0.5
+		lines.append([ring[k],ring[k+1],(mid-lawn_c).normalized()])
+	var poly := PackedVector2Array(outline())
+	var runs: Array = []
+	for line: Array in lines:
+		var a: Vector2 = line[0]
+		var b: Vector2 = line[1]
+		var perp: Vector2 = line[2]
+		var count := maxi(int(a.distance_to(b)/0.3),1)
+		var run := {}
+		for k in range(count+1):
+			var p := a.lerp(b,float(k)/count)
+			var h1 := height(p+perp*0.35)
+			var h2 := height(p-perp*0.35)
+			var inside := Geometry2D.is_point_in_polygon(p,poly) and KitLand.edge_distance(p,poly) > 0.3
+			var wall := inside and absf(h1-h2) >= WALL_MIN
+			var into := perp if h1 > h2 else -perp
+			var top := maxf(h1,h2)
+			var foot := minf(h1,h2)
+			if not run.is_empty() and (not wall or absf(top-float(run.top[-1])) > 0.2 or absf(foot-float(run.foot[-1])) > 0.2 or into.dot(run.into) < 0.0):
+				runs.append(run)
+				run = {}
+			if not wall: continue
+			if run.is_empty(): run = {"line":[],"top":[],"foot":[],"into":into}
+			run.line.append(p)
+			run.top.append(top)
+			run.foot.append(foot)
+		if not run.is_empty(): runs.append(run)
+	# Each a hair longer either end, so two meet at a corner (a lone point is
+	# no wall).
+	runs = runs.filter(func(run: Dictionary) -> bool: return (run.line as Array).size() >= 2)
+	for run: Dictionary in runs:
+		var pts: Array = run.line
+		pts[0] = (pts[0] as Vector2)+((pts[0] as Vector2)-(pts[1] as Vector2)).normalized()*0.3
+		pts[-1] = (pts[-1] as Vector2)+((pts[-1] as Vector2)-(pts[-2] as Vector2)).normalized()*0.3
+	return runs
+
+## A faceted wall into `rock` along `line` (world x z, in order), from
+## `top` (world y, a point each) down to `foot`, its rock toward `into` (a
+## unit (x z) each): a lattice of facets about FACET_W wide and FACET_H
+## tall, its rows slanting a little, each inner point set back into the rock
+## FACET_BACK, its ends and lip flush; its foot kicked out `kick` m (over the
+## turf's edge) or drawn toward `pull_to` by `pull` of the way.
+static func facade(rock: KitLook.RockMesh, line: Array, top: PackedFloat32Array, foot: PackedFloat32Array, into: Array, rng: RandomNumberGenerator,
+		kick := 0.0, pull_to := Vector2.ZERO, pull := 0.0, closed := false) -> void:
+	# The columns: along the line by length, FACET_W apart (jittered).
+	var lengths := PackedFloat32Array([0.0])
+	for i in range(1,line.size()): lengths.append(lengths[i-1]+(line[i] as Vector2).distance_to(line[i-1]))
+	if closed: lengths.append(lengths[-1]+(line[-1] as Vector2).distance_to(line[0]))
+	var total := lengths[-1]
+	if total < 0.05: return
+	var cols := PackedFloat32Array([0.0])
+	while true:
+		var next := cols[-1]+rng.randf_range(FACET_W.x,FACET_W.y)
+		if next > total-FACET_W.x*0.5: break
+		cols.append(next)
+	if not closed: cols.append(total)
+	var tallest := 0.0
+	for i in range(top.size()): tallest = maxf(tallest,top[i]-foot[i])
+	var rows := maxi(ceili(tallest/FACET_H),1)
+	var grid: Array = []
+	var rims := PackedFloat32Array()
+	# Each column's way into the rock (the faces turn out against it).
+	var ins: Array[Vector2] = []
+	for c in range(cols.size()):
+		var d := cols[c]
+		var seg := 0
+		while seg < lengths.size()-2 and lengths[seg+1] < d: seg += 1
+		var t := clampf((d-lengths[seg])/maxf(lengths[seg+1]-lengths[seg],0.0001),0.0,1.0)
+		var j := (seg+1)%line.size()
+		var p := (line[seg] as Vector2).lerp(line[j],t)
+		var hi := lerpf(top[seg],top[j],t)
+		var lo := lerpf(foot[seg],foot[j],t)
+		var inw := ((into[seg] as Vector2).lerp(into[j],t)).normalized()
+		var end := not closed and (c == 0 or c == cols.size()-1)
+		var lean := 0.0 if end else rng.randf_range(0.0,0.3)
+		var column: Array[Vector3] = []
+		for r in range(rows+1):
+			var f := float(r)/rows
+			if r > 0 and r < rows: f = clampf(f+rng.randf_range(-0.38,0.38)/rows,0.0,1.0)
+			var y := lerpf(hi,lo,f)
+			var back := 0.0
+			if r > 0 and not end: back = lean+rng.randf_range(FACET_BACK.x,FACET_BACK.y)
+			var q := p+inw*back
+			if r == rows:
+				q = p-inw*kick if pull <= 0.0 else p.lerp(pull_to,pull)
+				y -= 0.06
+			if r == 0: y -= 0.02
+			column.append(Vector3(q.x,y,q.y))
+		grid.append(column)
+		ins.append(inw)
+		rims.append(hi)
+	var span := grid.size() if closed else grid.size()-1
+	for c in range(span):
+		var a: Array = grid[c]
+		var b: Array = grid[(c+1)%grid.size()]
+		var rim := maxf(rims[c],rims[(c+1)%grid.size()])
+		var out := Vector3(-ins[c].x,0.0,-ins[c].y)
+		for r in range(rows):
+			var a0: Vector3 = a[r]
+			var a1: Vector3 = a[r+1]
+			var b0: Vector3 = b[r]
+			var b1: Vector3 = b[r+1]
+			var jitter := rng.randf_range(0.9,1.1)
+			if rng.randf() < 0.5:
+				rock.add([a0,a1,b1],rim,out,jitter)
+				rock.add([a0,b1,b0],rim,out,rng.randf_range(0.9,1.1))
+			else:
+				rock.add([a0,a1,b0],rim,out,jitter)
+				rock.add([b0,a1,b1],rim,out,rng.randf_range(0.9,1.1))
+
+## `mesh`'s faces (non-indexed, as KitLook draws them) but those `drop`
+## (its three points -> bool) says go.
+static func filtered(mesh: ArrayMesh, drop: Callable) -> ArrayMesh:
+	var arrays := mesh.surface_get_arrays(0)
+	var v: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var n: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+	var c: PackedColorArray = arrays[Mesh.ARRAY_COLOR]
+	var kv := PackedVector3Array()
+	var kn := PackedVector3Array()
+	var kc := PackedColorArray()
+	for i in range(0,v.size(),3):
+		if bool(drop.call(v[i],v[i+1],v[i+2])): continue
+		for k in range(3):
+			kv.append(v[i+k])
+			kn.append(n[i+k])
+			kc.append(c[i+k])
+	var out := ArrayMesh.new()
+	if kv.is_empty(): return out
+	var keep := []
+	keep.resize(Mesh.ARRAY_MAX)
+	keep[Mesh.ARRAY_VERTEX] = kv
+	keep[Mesh.ARRAY_NORMAL] = kn
+	keep[Mesh.ARRAY_COLOR] = kc
+	out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,keep)
+	out.surface_set_material(0,mesh.surface_get_material(0))
+	return out
+
+## The mesa's walls drawn as faceted basalt ("Walls"): the steps' slivers in
+## "Crags" and the sides' upper rings in `sides` give way to it.
+static func dress_walls(node: Node3D, sides: MeshInstance3D, seed_value: int) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_value*7+11
+	var rock := KitLook.RockMesh.new()
+	var runs := wall_runs()
+	# Where the walls stand (a 1 m grid of their points), to clear the crags.
+	var near := {}
+	for run: Dictionary in runs:
+		var tops := PackedFloat32Array()
+		var foots := PackedFloat32Array()
+		var intos: Array = []
+		for i in range((run.line as Array).size()):
+			tops.append(TOP+float(run.top[i]))
+			foots.append(TOP+float(run.foot[i]))
+			intos.append(run.into)
+			var p: Vector2 = run.line[i]
+			var key := Vector2i(floori(p.x),floori(p.y))
+			var have: Array = near.get(key,[])
+			have.append(Vector4(p.x,p.y,TOP+float(run.foot[i]),TOP+float(run.top[i])))
+			near[key] = have
+		facade(rock,run.line,tops,foots,intos,rng,0.85)
+	var crags := node.get_node_or_null("Crags") as MeshInstance3D
+	if crags != null:
+		crags.mesh = filtered(crags.mesh,func(a: Vector3, b: Vector3, c: Vector3) -> bool:
+			var m := (a+b+c)/3.0
+			var k := Vector2i(floori(m.x),floori(m.z))
+			for dx in range(-1,2):
+				for dz in range(-1,2):
+					for w: Vector4 in near.get(k+Vector2i(dx,dz),[]):
+						if Vector2(w.x,w.y).distance_to(Vector2(m.x,m.z)) < 1.0 and m.y > w.z-0.6 and m.y < w.w+0.6: return true
+			return false)
+	# The sides: a facade round the rim down past the earth to the rock rings.
+	var ring: PackedVector2Array = node.get_meta("outline")
+	var line: Array = []
+	var tops := PackedFloat32Array()
+	var foots := PackedFloat32Array()
+	var intos: Array = []
+	var outs := KitLand.outward(Array(ring))
+	var centre := KitLand.centre_of(Array(ring))
+	for i in range(ring.size()):
+		line.append(ring[i])
+		tops.append(ground(ring[i].x,ring[i].y))
+		foots.append(TOP-SIDE_FOOT)
+		intos.append(-outs[i])
+	facade_closed_sides(rock,line,tops,foots,intos,rng,centre)
+	if sides != null and sides.mesh != null:
+		var cut := TOP-SIDE_CUT
+		sides.mesh = filtered(sides.mesh,func(a: Vector3, b: Vector3, c: Vector3) -> bool:
+			return maxf(a.y,maxf(b.y,c.y)) > cut)
+	var drawn := rock.node("Walls")
+	if drawn != null: node.add_child(drawn)
+
+## The sides' facade round the closed outline: its foot drawn in toward
+## `centre` by SIDE_IN of the way.
+static func facade_closed_sides(rock: KitLook.RockMesh, line: Array, top: PackedFloat32Array, foot: PackedFloat32Array, into: Array, rng: RandomNumberGenerator, centre: Vector2) -> void:
+	facade(rock,line,top,foot,into,rng,0.0,centre,SIDE_IN,true)
 
 # --- The stair --------------------------------------------------------------------
 
@@ -215,8 +459,71 @@ static func stairs(seed_value: int) -> Node3D:
 		var stair: Node3D = RuinKit.grand_stair(seed_value+s,WEATHERED)
 		stair.name = "Leg%d" % (s+1)
 		stair.transform = leg_frame(s)
+		lit_under_wall(stair)
 		root.add_child(stair)
 	return root
+
+# --- The stair's light -------------------------------------------------------------
+#
+# The stair climbs in the mesa's lee: in a low sun most of it stands in the
+# wall's shadow, and the kit stone in shadow takes only the sky's hemisphere.
+# The halls light their sheltered stone with a bounce (the stone shader's
+# `shelter_fill`, the shelter carried in the vertex alpha: scripts/
+# ruin_kit_hall.gd `_shelter`); here the wall over a face shelters it the
+# same way, a little: the sunlit lawn, the cloud sea and the wall's lit
+# faces bouncing back under it, so the treads read in shadow without
+# lifting the stone in the sun much.
+
+## The most shelter a face under the wall takes, and the wall over it (m)
+## that gives it all.
+const STAIR_SHELTER := 0.8
+const SHELTER_WALL := 18.0
+
+## How sheltered a face at world `p` is: the whole stair stands in the
+## mesa's lee, more under a tall wall, less out past the strip.
+static func wall_shelter(p: Vector3, _n: Vector3) -> float:
+	var f := locate(Vector2(p.x,p.z))
+	var s: int = f[0]
+	var over := TOP+terrace(s)-p.y
+	var near := 1.0-clampf((float(f[2])-W)/8.0,0.0,1.0)
+	return STAIR_SHELTER*(0.6+0.4*clampf(over/SHELTER_WALL,0.0,1.0))*near
+
+## The kit stone under `node` (its "Mesh"es, in `node`'s parent frame at
+## `node.transform`) given its shelter (`wall_shelter`) in the vertex alpha.
+static func lit_under_wall(node: Node3D) -> void:
+	var stone: Material = RuinKit.materials().stone
+	var stack: Array = [[node,node.transform]]
+	while not stack.is_empty():
+		var at: Array = stack.pop_back()
+		var here: Node3D = at[0]
+		var xf: Transform3D = at[1]
+		for child in here.get_children():
+			if child is Node3D: stack.append([child,xf*(child as Node3D).transform])
+		var drawn := here as MeshInstance3D
+		if drawn == null or not drawn.mesh is ArrayMesh or not drawn.mesh.has_meta("arrays"): continue
+		var mesh := drawn.mesh as ArrayMesh
+		if mesh.surface_get_material(0) != stone: continue
+		var arrays: Array = (mesh.get_meta("arrays") as Array).duplicate()
+		var v: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var n: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+		var c: PackedColorArray = (arrays[Mesh.ARRAY_COLOR] as PackedColorArray).duplicate()
+		for i in range(0,v.size(),3):
+			var mid := xf*((v[i]+v[i+1]+v[i+2])/3.0)
+			var open := 1.0-clampf(wall_shelter(mid,xf.basis*n[i]),0.0,1.0)
+			for k in range(3): c[i+k].a = minf(c[i+k].a,open)
+		arrays[Mesh.ARRAY_COLOR] = c
+		var out := ArrayMesh.new()
+		out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
+		out.surface_set_material(0,stone)
+		out.set_meta("arrays",arrays)
+		for i in range(1,mesh.get_surface_count()):
+			var grown := RuinKit.RuinGrowth.arrays_of(mesh)
+			if grown.is_empty(): break
+			out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,grown,[],{},RuinKit.RuinGrowth.FORMAT)
+			out.surface_set_material(out.get_surface_count()-1,mesh.surface_get_material(i))
+			out.set_meta("growth_arrays",grown)
+			break
+		drawn.mesh = out
 
 # --- The shrines ------------------------------------------------------------------------
 
@@ -284,6 +591,7 @@ static func shrines(seed_value: int) -> Node3D:
 		var piece: Node3D = RuinKit.piece(str(spec[4]),seed_value+k,float(spec[5]))
 		piece.name = "%s%d" % [str(spec[4]).capitalize(),k]
 		piece.transform = shrine_frame(spec)
+		if spec[0] == "pad": lit_under_wall(piece)
 		root.add_child(piece)
 		k += 1
 	return root
