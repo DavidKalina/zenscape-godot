@@ -1,7 +1,9 @@
 #!/bin/zsh
 # The aqueduct isle (studies/aqueduct_isle.gd). The whole loop: find the
 # lodestone on the floating stone east of the heel stone (E / pad A picks it
-# up, E keeps it), board (F / pad Y), fly where the nose arrow points. Near
+# up, E keeps it), walk back to the parked plane and Space (pad A) by it to
+# take off, fly where the nose arrow points; land by hand on the turf (the
+# game's rules: brake or drift to a stop, then F / pad Y gets out). Near
 # the shard an arch rises out of the cloud past it; fly through it, wait,
 # and the Sundered line starts rising ahead: big pieces of the real
 # Sundered hall end to end, a sidestep now and then (docs/design/isle-hall-line.md, isle-hall-chain.md).

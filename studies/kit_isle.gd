@@ -26,15 +26,32 @@ extends "res://studies/character_study.gd"
 ## `life_script` (its sky and life, each extending the kit's), and its own
 ## start in `_load_pack`. It may also answer `plane_mask` (what the plane
 ## bumps off), `_fly_tick` (its own step each flown frame), `_shard_arch`
-## (an arch on the shard or not) and `_start_in_plane` (how --fly starts).
+## (an arch on the shard or not), `_start_in_plane` (how --fly starts) and
+## `plane_home` (where its plane stands parked to begin with).
 ##
 ##   R            back to the start
 ##   L / Shift+L  next / previous look preset (its name shows a moment)
 ##   B            a strong gust front
-##   F (pad Y)    into the game's plane, already flying a little above and
-##                ahead; in it, back on foot on safe ground nearby (and
-##                skimming the turf braking slow sets him down there)
+##   Space (pad A) by the parked plane: climb in and take off
+##   F (pad Y)    in the air the flaps down or up; stopped, get out
 ##   F1 numbers · F2 feel · Esc mouse
+## The plane lands by hand, as the game's does (scripts/manual_landing.gd,
+## docs/design/manual-landing.md "Kit isles" and "Round 3"): no F to land
+## it, a flown touch on the turf sticks (a greaser slow, shallow and level;
+## else a thump, a dust burst, a shake, a pad pulse), then brake or drift
+## it to a stop like a kart, the stick steering the slide's line
+## (scripts/wheel_spray.gd's grit off the wheels); slid off the edge it
+## flies on. A dive flown straight into the turf bounces back up instead
+## ("Too steep!"), and low over the turf the hint says what a touch now
+## would get (scripts/landing_readout.gd; F1 in the plane, the numbers).
+## Stopped, Shift held backs it up and Shift, Space and a turn pivot it, so
+## a plane nosed into stone gets free. Stopped, F gets out and the plane stays parked where it
+## stopped, solid to walk round; nothing summons it: walk back and Space by
+## it to take off (scripts/plane_landing.gd's takeoff). Walked off the
+## isle, he drops into the skydive's canopy (scripts/sky_dive.gd); down on
+## something near the edge he walks on, else he is stranded a moment and
+## back beside the plane. An isle that starts on foot has its plane parked
+## near the start (`plane_home`).
 ## --no-flora leaves the grass and flowers out (to compare cost).
 ## Life (scripts/kit_isle/kit_life.gd): undergrowth, butterflies, fireflies,
 ## songbirds on the stones, the wind made visible and the on-foot tokens;
@@ -88,6 +105,14 @@ const RopeBridge = preload("res://scripts/rope_bridge.gd")
 const GlideAir = preload("res://scripts/glide_air.gd")
 const IsleLock = preload("res://scripts/isle_lock.gd")
 const IsleSplash = preload("res://scripts/isle_splash.gd")
+const ManualLanding = preload("res://scripts/manual_landing.gd")
+const LandingReadout = preload("res://scripts/landing_readout.gd")
+const PlaneLanding = preload("res://scripts/plane_landing.gd")
+const PlaneStrip = preload("res://scripts/plane_strip.gd")
+const WheelSpray = preload("res://scripts/wheel_spray.gd")
+const SkyDive = preload("res://scripts/sky_dive.gd")
+const CanopyFigure = preload("res://scripts/canopy_figure.gd")
+const DiveCamera = preload("res://scripts/dive_camera.gd")
 
 ## The look the isle opens in: the game's own for a new world
 ## (scripts/native_chunk_editor.gd forms one in Alpine morning).
@@ -135,14 +160,15 @@ var art: Node3D
 ## A kit stair the isle stands (its tests read it), or null.
 var kit_stairs: Node3D
 
-## The plane (F): the islands' and islets' ground bodies also sit on
-## TURF_LAYER, so the plane skims the turf as the game's plane skims its
-## heightfield, and is bumped off everything else that stands (and the
-## turf's sides and keels). Boarding puts it BOARD_AHEAD m ahead of the
-## pilot along the view and BOARD_UP m up, flying at cruise. The cloud
-## cushion lifts from FLOOR_BELOW m under the turf. The bump is the ruin
-## kit gallery's (scripts/ruin_bump.gd): the plane's wing-wide body,
-## turned with its bank and roll, BUMP_KEEP of its speed kept.
+## The plane: the islands' and islets' ground bodies also sit on
+## TURF_LAYER, so the plane skims (and lands on) the turf as the game's
+## plane does its heightfield, and is bumped off everything else that
+## stands (and the turf's sides and keels). `board` (--fly, a test) puts it
+## BOARD_AHEAD m ahead of the pilot along the view and BOARD_UP m up,
+## flying at cruise. The cloud cushion lifts from FLOOR_BELOW m under the
+## turf. The bump is the ruin kit gallery's (scripts/ruin_bump.gd): the
+## plane's wing-wide body, turned with its bank and roll, BUMP_KEEP of its
+## speed kept.
 const TURF_LAYER := 1 << 11
 const BOARD_AHEAD := 5.0
 const BOARD_UP := 3.0
@@ -173,15 +199,65 @@ const FRAME_AIM_UP := 6.0
 const LOCK_HINT := "Circling %s  ·  A D draw the ring in and out  ·  W S lower and raise it  ·  boost, brake, knife edge and rolls as ever  ·  R3 / Tab let go"
 const LOCK_OFFER := "R3 / Tab  circle %s"
 const LOOK_LINGER := 2.5
-## Setting down: skimming the turf with Brake held under TOUCH_SPEED m/s
-## for TOUCH_HOLD s puts the pilot on foot there. Getting out anywhere, he
-## stands on the nearest open turf within SAFE_REACH m of the plane.
-const TOUCH_SPEED := 9.5
-const TOUCH_HOLD := 0.5
+## A wheel's blip on coming down onto a top after TOUCH_GAP*2 s off it.
+## Out of the plane in the air (R, a test), the pilot stands on the nearest
+## open turf within SAFE_REACH m of it, and the plane goes back to its home.
 const TOUCH_GAP := 0.25
 const SAFE_REACH := 40.0
-const FOOT_HINT := "F (pad Y)  fly the plane from here  ·  R3 camera back behind"
-const FLY_HINT := "Flying  ·  %.0f m/s  ·  bumps %d\nA D bank and turn  ·  W S pitch (W nose down)  ·  mouse steers  ·  Space boost  ·  Shift brake  ·  hold Q E (LB RB) knife edge, + A D to drift  ·  Q Q or E E quick, or click: barrel roll\nF (pad Y) back on foot nearby  ·  skim the turf braking to set down  ·  R start on foot  ·  L / Shift+L look  ·  B gust  ·  hold right mouse or the right stick to look round  ·  R3 camera back behind"
+## The hand landing (scripts/manual_landing.gd) reads the turf under the
+## wheels from FLOOR_UP m over the plane down to FLOOR_DOWN m under it: a
+## rise past that is no ground (the wheels are stopped by it: `roll_blocked`),
+## a drop past it is the edge (off it, flying). A rise of the turf into the
+## fuselage's box (WHEEL_BOX m, FUSELAGE wide) or stone in the wing-wide
+## bump body stops a roll with a thump.
+const FLOOR_UP := 1.5
+const FLOOR_DOWN := 2.0
+const FUSELAGE := 0.6
+## The parked plane: Space within BOARD_REACH m of its middle climbs in; the
+## walker keeps PARKED_ROOM m from its middle (a column PARKED_TALL m up on
+## PARKED_LAYER, which only the walker and his ground probes see, as the
+## game's walker keeps off its parked plane). Hopping out, the pilot
+## lands HOP_SIDE m to its left and HOP_AHEAD m ahead, HOP_HEIGHT m up at
+## the top of the hop. Its home (`plane_home`, an isle starting on foot) is
+## open level turf HOME_NEAR to HOME_FAR m from the start.
+const BOARD_REACH := 1.9
+const PARKED_ROOM := 0.75
+const PARKED_TALL := 6.0
+const PARKED_LAYER := 1 << 13
+const HOP_SIDE := 1.4
+const HOP_AHEAD := 0.3
+const HOP_HEIGHT := 0.55
+const HOME_NEAR := 8.0
+const HOME_FAR := 40.0
+## The touch's shake (s, m at a full hit) and the grit's tint off the turf
+## (the game's grass puff).
+const SHAKE_TIME := 0.4
+const SHAKE := 0.3
+const GRIT_TINT := Color("d6dcb4")
+## How long a touch's word leads the hint (s).
+const SAY_TIME := 2.2
+## Walked off the isle: falling STEP_OFF_DROP m under where he last stood
+## with nothing under him for STEP_OFF_CLEAR m, he drops into the skydive
+## (scripts/sky_dive.gd), the canopy opening by itself STEP_OFF_OPEN s on
+## (X, pad X sooner; about the game's 0.8 s from the edge in all). Down on
+## anything within STRAND_BELOW m of the edge he walks on; past that, or
+## down in water, he is stranded STRANDED_WAIT s and then back beside the
+## parked plane (the game's rule; scripts/wanderer_eye.gd `_strand`).
+const STEP_OFF_DROP := 4.0
+const STEP_OFF_CLEAR := 12.0
+const STEP_OFF_OPEN := 0.3
+const STRAND_BELOW := 20.0
+const STRANDED_WAIT := 3.0
+const FOOT_HINT := "Walk to your plane and Space (pad A) by it to fly  ·  R3 camera back behind"
+const BOARD_LINE := "Space (pad A)  climb in and take off"
+const FLY_HINT := "Flying  ·  %.0f m/s  ·  bumps %d\nA D bank and turn  ·  W S pitch (W nose down)  ·  mouse steers  ·  Space boost  ·  Shift brake  ·  hold Q E (LB RB) knife edge, + A D to drift  ·  Q Q or E E quick, or click: barrel roll\nF (pad Y) flaps %s  ·  put it down on the turf, then brake or drift to a stop  ·  R start on foot  ·  L / Shift+L look  ·  B gust  ·  hold right mouse or the right stick to look round  ·  R3 camera back behind"
+const ROLL_HINT := "On the wheels  ·  %.0f m/s\nShift brake  ·  steer hard, or Q E and steer, to drift  ·  Shift and steer, a blip of Space, to power-slide  ·  in a slide ease or counter the stick to widen, Q E to tighten  ·  Space take off again"
+const STOPPED_HINT := "Stopped\nF (pad Y) get out  ·  Space roll and take off again  ·  hold Shift (LT) to back up  ·  Shift, Space and steer to turn on the spot"
+const REVERSE_HINT := "Backing up  ·  %.1f m/s\nsteer: the tail goes that way  ·  let go of Shift (LT) to stop  ·  Space roll forwards"
+const TAKEOFF_HINT := "Taking off"
+const DIVE_HINT := "Off the edge  ·  X (pad X) open the canopy  ·  A D turn  ·  W track forward  ·  Space tuck  ·  Shift spread"
+const CANOPY_HINT := "A D steer  ·  W for speed  ·  S or Shift to brake and float  ·  it flares by itself over the ground"
+const STRANDED_HINT := "Stranded: back to your plane in a moment"
 var flying := false
 ## The plane's flight (a SkyPlane), its figure, the chase camera, the
 ## bumps since boarding.
@@ -197,8 +273,42 @@ var _fly_look := Vector2.ZERO
 var _roll_asked := 0.0
 var _tap_dir := 0.0
 var _tap_at := -100000
-var _touch := 0.0
 var _off_ground := INF
+## The hand landing (scripts/manual_landing.gd) over the plane while in it,
+## the takeoff from the parked plane (scripts/plane_landing.gd, null when
+## not taking off), the grit off the wheels, the flaps, Exit asked, the
+## touch's word on the hint and its seconds left, the shake left (s, and
+## its size).
+var hand_landing := ManualLanding.new()
+var takeoff: PlaneLanding = null
+var spray: WheelSpray = null
+var flaps := false
+var _exit_asked := false
+var _said := ""
+var _said_left := 0.0
+var _shake := 0.0
+var _shake_size := 1.0
+## The plane parked (the pilot out): its figure stands where it stopped, on
+## its wheels; `parked_at` the ground under its middle, its heading; the
+## column the walker keeps off; the hop out's (or in's) ends.
+var parked := false
+var parked_at := Vector3.ZERO
+var parked_heading := 0.0
+var _park_body: StaticBody3D = null
+var _hop_from := Vector3.ZERO
+var _hop_to := Vector3.INF
+## Off the edge: in the skydive (its flight, canopy and camera), the edge's
+## height, the seconds before the canopy opens by itself, X asked, and the
+## seconds left stranded (-1 not).
+var diving := false
+var dive: SkyDive = null
+var canopy: CanopyFigure = null
+var dive_camera := DiveCamera.new()
+var _off_y := 0.0
+var _open_in := 0.0
+var _open_asked := false
+var _stranded_left := -1.0
+var _jump_was := false
 var _turf_rids: Array[RID] = []
 var _bump_query: PhysicsShapeQueryParameters3D
 var _ground_ray: PhysicsRayQueryParameters3D
@@ -321,6 +431,8 @@ func _ready() -> void:
 		start_face = Vector2(sin(turn),-cos(turn))
 		respawn()
 	_start_in_plane()
+	# On foot to begin with, the plane stands parked near the start.
+	if not flying and not parked: park_home()
 	if flying and preload("res://scripts/launch_args.gd").user_args().has("--lock"): toggle_lock()
 	if preload("res://scripts/launch_args.gd").user_args().has("--pickup"):
 		for i in range(30): tick(1.0/60.0)
@@ -586,6 +698,8 @@ func _build_pilot() -> void:
 	wake.motor = motor
 	figure.add_child(wake)
 	var decks := DeckGround.new(get_world_3d().direct_space_state,motor)
+	# The parked plane's column stands in his way too.
+	decks.see(decks.mask|PARKED_LAYER)
 	decks.frame = self
 	decks.pools = ground.pools
 	ground = decks
@@ -703,22 +817,37 @@ func _unhandled_input(event: InputEvent) -> void:
 	if flying:
 		_fly_event(event)
 		return
+	if diving:
+		_dive_event(event)
+		return
+	# Space (pad A) by the parked plane climbs in; F (pad Y) on foot flies
+	# nothing (nothing summons the plane).
+	var space_key: bool = event is InputEventKey and event.pressed and not event.echo and (event as InputEventKey).keycode == KEY_SPACE
+	if (space_key or Pad.pressed(event,&"walk_jump")) and by_plane() and not _name_panel.visible and not _tune.visible:
+		board_parked()
+		Input.action_release(&"walk_jump")
+		return
 	if (event is InputEventKey and event.pressed and not event.echo and (event as InputEventKey).keycode == KEY_F) or Pad.pressed(event,&"fly_land"):
-		if not _name_panel.visible and not _tune.visible: board()
+		if not by_plane(): _word("Walk back to your plane")
 		return
 	super._unhandled_input(event)
 
-# --- The plane (F) ----------------------------------------------------------------
+# --- The plane ----------------------------------------------------------------------
 
-## Into the game's plane (scripts/sky_plane.gd) from on foot: it is already
-## flying at cruise, BOARD_AHEAD m ahead of the pilot along the view and
-## BOARD_UP m up (higher if that is in stone), under the game's chase
-## camera (scripts/glide_camera.gd), the pilot in its cockpit.
+## Into the game's plane (scripts/sky_plane.gd) in the air, on no key: the
+## --fly start, a set piece's and the tests'. It is already flying at
+## cruise, BOARD_AHEAD m ahead of the pilot along the view and BOARD_UP m
+## up (higher if that is in stone), under the game's chase camera
+## (scripts/glide_camera.gd), the pilot in its cockpit, the hand landing
+## watching its wheels. A parked plane is the one taken: there is only
+## ever one.
 func board() -> void:
 	if flying or not walk_ready: return
+	if diving: _end_dive()
 	if not _replay.is_empty(): _end_replay()
 	var way := PilotMotor.forward(_yaw)
 	var at := motor.feet+Vector3(way.x,0.0,way.y)*BOARD_AHEAD+Vector3.UP*BOARD_UP
+	_unpark()
 	plane = SkyPlane.new()
 	plane.floor_y = isle_top()-FLOOR_BELOW
 	plane.launch(at,_yaw,SkyPlane.CRUISE_SPEED,false)
@@ -726,9 +855,49 @@ func board() -> void:
 		if not _in_stone(): break
 		plane.position += Vector3.UP*2.0
 	plane.velocity = plane.forward()*float(plane.speed)
-	plane_figure = StoneFigure.new() if stone_plane else PlaneFigure.new()
-	plane_figure.name = "Plane"
-	add_child(plane_figure)
+	takeoff = null
+	hand_landing.begin(plane)
+	_into_plane()
+	_show_fly_hint()
+
+## Space (pad A) by the parked plane: the pilot hops in, and it turns to
+## its best clear run, rolls, lifts and flies (scripts/plane_landing.gd's
+## takeoff: BOARD, TAXI, ROLL, LIFT), as the game's parked plane takes off;
+## then the hand landing has it.
+func board_parked() -> void:
+	if flying or not parked or not walk_ready: return
+	if not _replay.is_empty(): _end_replay()
+	var at := parked_at
+	var heading := parked_heading
+	var feet := motor.feet
+	_unpark()
+	plane = SkyPlane.new()
+	plane.floor_y = isle_top()-FLOOR_BELOW
+	plane.launch(at,heading,SkyPlane.SLOW,false)
+	var r := PlaneStrip.rest(_floor_from(at.y),Vector2(at.x,at.z),heading)
+	plane.position = Vector3(at.x,r.x,at.z)
+	plane.pitch = r.y
+	plane.bank = r.z
+	plane.speed = 0.0
+	plane.velocity = Vector3.ZERO
+	takeoff = PlaneLanding.new()
+	takeoff.take_off(plane,takeoff_run(Vector2(at.x,at.z),heading,at.y),Callable(self,"floor_at"))
+	plane.engine = 0.0
+	hand_landing.begin(plane,true)
+	_into_plane()
+	# Hopping in from where he stood (the hop run backwards: `hop` 1 out,
+	# 0 in).
+	_hop_from = plane.position+Vector3.UP*0.1
+	_hop_to = feet
+	plane_figure.show_pilot(false)
+	figure.visible = true
+	_show_fly_hint()
+
+## In the plane (`board`, `board_parked`): its figure (made the first time,
+## kept parked after) reset onto it, the lodestone seated if carried, the
+## chase camera behind, the plane's sound, the walker hidden.
+func _into_plane() -> void:
+	if plane_figure == null: _make_plane_figure()
 	plane_figure.show_pilot(true)
 	if stone_plane: plane_figure.target = lode_target
 	plane_figure.reset(plane)
@@ -755,19 +924,33 @@ func board() -> void:
 	figure.visible = false
 	flying = true
 	bumps = 0
-	_touch = 0.0
+	flaps = false
+	_exit_asked = false
 	_off_ground = INF
 	_fly_look = Vector2.ZERO
 	_roll_asked = 0.0
+	_hop_to = Vector3.INF
+	_shake = 0.0
 	if _foot_hint != null: _foot_hint.visible = false
-	_show_fly_hint()
 
-## Out of the plane, on foot on the nearest open turf to it (`at`, if
-## given, instead), facing the way it flew.
+func _make_plane_figure() -> void:
+	plane_figure = StoneFigure.new() if stone_plane else PlaneFigure.new()
+	plane_figure.name = "Plane"
+	add_child(plane_figure)
+
+## Out of the plane. On its wheels (stopped and got out, or taxiing) it
+## stays parked where it stands, and the pilot is beside it (or at `at`),
+## facing it. In the air (R, a test) it goes back to its home
+## (`plane_home`), and he stands on the nearest open turf to where it flew
+## (or at `at`), facing the way it flew.
 func leave_plane(at := Vector3.INF) -> void:
 	if not flying: return
-	var spot := safe_ground(plane.position) if at == Vector3.INF else at
+	var on_wheels := not hand_landing.flying() if takeoff == null else takeoff.phase in [PlaneLanding.BOARD,PlaneLanding.TAXI]
+	# (A plane moved off the turf from outside is in the air, whatever.)
+	if is_nan(floor_at(Vector2(plane.position.x,plane.position.z))): on_wheels = false
+	var spot := at
 	var face := Vector2(-sin(float(plane.heading)),-cos(float(plane.heading)))
+	takeoff = null
 	flying = false
 	release_lock()
 	if lode_state == "seated":
@@ -777,16 +960,151 @@ func leave_plane(at := Vector3.INF) -> void:
 			add_child(lode)
 		lodestone.visible = true
 		lode_state = "carried"
-	plane_figure.queue_free()
-	plane_figure = null
+	if _nose != null: _nose.queue_free()
 	_nose = null
 	if air != null: air.stop()
+	if spray != null: spray.update(0.0,plane.position,Vector3.ZERO,0.0,GRIT_TINT)
+	if on_wheels:
+		var under := floor_at(Vector2(plane.position.x,plane.position.z))
+		_park(Vector3(plane.position.x,under,plane.position.z),float(plane.heading))
+		if spot == Vector3.INF: spot = _hop_spot(parked_at,parked_heading)
+		var to := Vector2(parked_at.x-spot.x,parked_at.z-spot.z)
+		if to.length() > 0.01: face = to.normalized()
+	else:
+		if spot == Vector3.INF: spot = safe_ground(plane.position)
+		park_home()
 	figure.visible = true
 	camera.fov = FOV
 	if _foot_hint != null: _foot_hint.visible = true
-	if _switch_hint != null: _switch_hint.text = _foot_text()
 	place(spot,face)
 	_last_stood = spot
+	_hop_to = Vector3.INF
+	if _switch_hint != null: _switch_hint.text = _foot_text()
+
+# --- Parked ------------------------------------------------------------------------
+
+## Stands the plane parked on the turf at `at` (the ground under its
+## middle), facing `heading`: its figure sat on its wheels and tail skid
+## (PlaneStrip `rest`), the engine off, no pilot; and the column round its
+## middle the walker keeps off (PARKED_ROOM m, as the game's walker keeps
+## off its parked plane).
+func _park(at: Vector3, heading: float) -> void:
+	if plane_figure == null: _make_plane_figure()
+	parked = true
+	parked_at = at
+	parked_heading = heading
+	var r := PlaneStrip.rest(_floor_from(at.y),Vector2(at.x,at.z),heading)
+	plane_figure.park(plane_figure.pose(Vector3(at.x,r.x,at.z),heading,r.y,r.z))
+	if _park_body == null:
+		_park_body = StaticBody3D.new()
+		_park_body.name = "ParkedPlaneRoom"
+		_park_body.collision_layer = PARKED_LAYER
+		_park_body.collision_mask = 0
+		var column := CylinderShape3D.new()
+		column.radius = PARKED_ROOM
+		column.height = PARKED_TALL
+		var collider := CollisionShape3D.new()
+		collider.shape = column
+		collider.position = Vector3.UP*PARKED_TALL*0.5
+		_park_body.add_child(collider)
+		add_child(_park_body)
+	_park_body.global_position = at
+
+## The parked plane taken (boarded or flown from elsewhere): its column
+## goes at once, so the plane is clear of it.
+func _unpark() -> void:
+	parked = false
+	if _park_body != null:
+		_park_body.free()
+		_park_body = null
+
+## Parks the plane at its home (`plane_home`).
+func park_home() -> void:
+	var home := plane_home()
+	_park(Vector3(home.x,home.y,home.z),home.w)
+
+## Where the plane stands parked to begin with: (x, y, z) the turf under
+## its middle, w its heading. The nearest ring HOME_NEAR to HOME_FAR m round
+## the start with a spot on open, level turf with room for its wings and a
+## run to take off along (to an edge, or LIFT_RUN m clear), the best run's
+## spot, facing along it; failing all, the nearest open turf to the start.
+## An isle may answer its own.
+var _home := Vector4.INF
+
+func plane_home() -> Vector4:
+	if _home != Vector4.INF: return _home
+	var space := get_world_3d().direct_space_state
+	var best := {}
+	var r := HOME_NEAR
+	while r <= HOME_FAR and best.is_empty():
+		for i in range(16):
+			var a := TAU*float(i)/16.0+r*0.37
+			var top := _turf_top(space,start.x+cos(a)*r,start.z+sin(a)*r)
+			if top == Vector3.INF or absf(top.y-start.y) > 6.0 or not _level(top): continue
+			var run := takeoff_run(Vector2(top.x,top.z),0.0,top.y)
+			if run.is_empty() or not (bool(run.edge) or float(run.length) >= PlaneStrip.LIFT_RUN): continue
+			var dir: Vector3 = run.dir
+			var heading := atan2(-dir.x,-dir.z)
+			if not _room_for_plane(top,heading): continue
+			if best.is_empty() or float(run.score) > float(best.score): best = {"at":top,"heading":heading,"score":float(run.score)}
+		r += 4.0
+	if best.is_empty():
+		var at := safe_ground(start)
+		_home = Vector4(at.x,at.y,at.z,PilotMotor.facing_of(start_face))
+	else:
+		var at: Vector3 = best.at
+		_home = Vector4(at.x,at.y,at.z,float(best.heading))
+	return _home
+
+## Level enough to park on: the turf 1.5 m round `top` within 0.4 m of it.
+func _level(top: Vector3) -> bool:
+	for d: Vector2 in [Vector2(1.5,0.0),Vector2(-1.5,0.0),Vector2(0.0,1.5),Vector2(0.0,-1.5)]:
+		var h := _turf_near(Vector2(top.x,top.z)+d,top.y)
+		if is_nan(h) or absf(h-top.y) > 0.4: return false
+	return true
+
+## Room for the parked plane's wings and length on `top` facing `heading`:
+## nothing but turf where it would stand.
+func _room_for_plane(top: Vector3, heading: float) -> bool:
+	var box := BoxShape3D.new()
+	box.size = Vector3(PlaneFigure.SPAN+0.4,1.2,3.0)
+	var query := PhysicsShapeQueryParameters3D.new()
+	query.shape = box
+	query.collision_mask = plane_mask()
+	query.exclude = _turf_rids
+	query.transform = Transform3D(Basis(Vector3.UP,heading),top+Vector3.UP*0.9)
+	return get_world_3d().direct_space_state.intersect_shape(query,1).is_empty()
+
+## True walking within BOARD_REACH m (across) of the parked plane's middle.
+func by_plane() -> bool:
+	if flying or diving or not parked or not walk_ready: return false
+	var feet := motor.feet
+	return Vector2(feet.x-parked_at.x,feet.z-parked_at.z).length() <= BOARD_REACH and absf(feet.y-parked_at.y) < 1.5
+
+## Where the hop out of a plane standing at `at` (the turf under its
+## middle) facing `heading` lands: HOP_SIDE m to its left and HOP_AHEAD m
+## ahead on open turf; else to its right; else the nearest open turf.
+func _hop_spot(at: Vector3, heading: float) -> Vector3:
+	var space := get_world_3d().direct_space_state
+	var forward := Vector3(-sin(heading),0.0,-cos(heading))
+	var right := Vector3(cos(heading),0.0,-sin(heading))
+	for side: float in [-1.0,1.0]:
+		var p := at+right*HOP_SIDE*side+forward*HOP_AHEAD
+		var top := _turf_near(Vector2(p.x,p.z),at.y)
+		if is_nan(top): continue
+		var spot := Vector3(p.x,top,p.z)
+		if _room_for_pilot(space,spot): return spot
+	return safe_ground(at-right*HOP_SIDE)
+
+## The pilot mid-hop: `k` 0 in the cockpit, 1 on the turf beside it,
+## rising and falling through the jump's pose.
+func _hop_figure(k: float, delta: float) -> void:
+	if _hop_to == Vector3.INF: return
+	figure.visible = k > 0.02
+	var at := _hop_from.lerp(_hop_to,smoothstep(0.0,1.0,k))
+	at.y += HOP_HEIGHT*sin(PI*k)
+	figure.position = at
+	body.hop(cos(PI*k),delta)
 
 ## Where the pilot can stand nearest `near`: open turf (not steep, room
 ## for him over it), the nearest ring of points round `near` first, the
@@ -838,7 +1156,7 @@ func reset_camera() -> void:
 ## locked (R3 / Tab in the plane); false if neither (out of reach). Locking
 ## puts the chase camera's free look back and shows the isle's card.
 func toggle_lock() -> bool:
-	if not flying: return false
+	if not flying or takeoff != null or not hand_landing.flying(): return false
 	if isle_lock == null:
 		isle_lock = IsleLock.new()
 		var circle := isle_circle()
@@ -923,30 +1241,66 @@ func _fly_input(delta: float) -> Dictionary:
 	if isle_lock != null and isle_lock.locked: return isle_lock.steer(input,plane)
 	return input
 
-## One frame of flight: the plane stepped over the turf, bumped off what
-## stands, drawn, the chase camera behind it; skimming the turf braking
-## slow for TOUCH_HOLD s sets the pilot down there.
+## One frame in the plane. Taking off, the takeoff flies it
+## (`_takeoff_step`). Else the hand landing steps it (scripts/
+## manual_landing.gd, the game's rules): in the air the plane over the turf
+## (`plane_ground`), bumped off what stands; on the wheels its roll, slide
+## and stop over the turf (`floor_at`), stopped short by what stands in the
+## way (`roll_blocked`); what the wheels did felt (`_wheel_events`). It is
+## drawn, the chase camera behind it. `input` is the plane's (SkyPlane
+## `step`), and may hold `flaps` (else the F key's) and `exit` (true asks
+## to get out, as F does on the wheels).
 func fly_step(delta: float, input: Dictionary) -> void:
 	flown += delta
+	_said_left = maxf(_said_left-delta,0.0)
+	if takeoff != null:
+		_takeoff_step(delta)
+		return
 	var was: Vector3 = plane.position
 	var ground := Callable(self,"plane_ground")
-	plane.step(delta,input,ground)
-	_bump(was)
+	var floor := Callable(self,"floor_at")
+	var asked := input.duplicate()
+	asked["flaps"] = float(input.get("flaps",1.0 if flaps else 0.0))
+	asked["exit"] = bool(input.get("exit",false)) or _exit_asked
+	_exit_asked = false
+	var out := hand_landing.step(delta,asked,ground,floor,Callable(),Callable(self,"roll_blocked"))
+	plane.engine = hand_landing.engine
+	if hand_landing.flying(): _bump(was)
+	elif isle_lock != null and isle_lock.locked: release_lock()
 	_fly_tick(delta)
 	if stone_plane: plane_figure.target = lode_target
-	plane_figure.update(delta,plane,0.0,ground,false)
+	plane_figure.update(delta,plane,0.0,ground,hand_landing.would_grease(floor))
 	if _nose != null:
 		_nose.target = lode_target
 		_nose.step(delta)
 	plane_figure._mark.visible = false
 	_check_arrival()
 	air.advance(delta,plane.velocity,float(plane.hang),0.0)
-	air.engine(float(plane.speed),float(plane.throttle))
+	air.engine(float(plane.speed),hand_landing.throttle,hand_landing.engine)
 	if int(plane.flaps) != _flaps_heard:
 		_flaps_heard = int(plane.flaps)
 		air.flap()
+	chase.cine = Vector3(-1.25,0.0,0.3) if hand_landing.on_ground() else Vector3.ZERO
+	_frame_plane(delta)
+	_wheel_events(out,delta)
+	if not flying: return
+	_show_plane_hud()
+	if hand_landing.flying():
+		# Coming down onto a top (a stone's, ridden over) after a while off
+		# it, the wheels' blip; riding one lifts it clear only frames it
+		# touches, so a skim counts on through TOUCH_GAP s off it.
+		if plane.skimming and _off_ground > TOUCH_GAP*2.0 and _off_ground != INF: air.blip()
+		_off_ground = 0.0 if plane.skimming else _off_ground+delta
+		RopeBridge.flown_by(plane.position,plane.velocity)
+	else:
+		_off_ground = INF
+	_show_fly_hint()
+
+## The chase camera behind the plane (shaken by a hard touch), framing the
+## isle while locked onto it; a capture's plane eye over all.
+func _frame_plane(delta: float) -> void:
 	chase.step(delta,plane,0.0,_inside_stone)
-	camera.global_position = chase.eye
+	camera.global_position = chase.eye+_shaken(delta)
 	camera.look_at(chase.look,Vector3.UP)
 	_frame_isle(delta)
 	camera.rotate_object_local(Vector3.FORWARD,chase.roll)
@@ -954,16 +1308,125 @@ func fly_step(delta: float, input: Dictionary) -> void:
 	if _plane_eye != Vector3.INF:
 		camera.global_position = plane_figure.global_transform*_plane_eye
 		camera.look_at(plane_figure.global_transform*Vector3(0.0,0.05,-0.05),plane_figure.global_basis.y)
+
+## One frame of the takeoff from the parked plane (scripts/plane_landing.gd
+## `take_off`): the pilot hopping in, the turn to its run, the roll, the
+## lift, no controls; done, the hand landing has it in the air and the
+## controls are given back.
+func _takeoff_step(delta: float) -> void:
+	takeoff.step(delta)
+	plane.engine = takeoff.engine
+	if takeoff.phase == PlaneLanding.BOARD: _hop_figure(takeoff.hop,delta)
+	elif figure.visible:
+		figure.visible = false
+		plane_figure.show_pilot(true)
+	var ground := Callable(self,"plane_ground")
+	plane_figure.update(delta,plane,0.0,ground,false)
+	plane_figure._mark.visible = false
+	if _nose != null: _nose.step(delta)
+	air.advance(delta,plane.velocity,0.0,0.0)
+	air.engine(float(plane.speed),takeoff.throttle,takeoff.engine)
+	chase.cine = Vector3(-1.2,-0.04,0.3) if takeoff.phase != PlaneLanding.LIFT else Vector3.ZERO
+	_frame_plane(delta)
+	if takeoff.done():
+		takeoff = null
+		_hop_to = Vector3.INF
+		figure.visible = false
+		plane_figure.show_pilot(true)
+		chase.cine = Vector3.ZERO
+		hand_landing.begin(plane)
 	_show_fly_hint()
-	# Riding a top lifts it clear only frames it touches, so a skim counts
-	# on through TOUCH_GAP s off it.
-	var braking := float(input.get("brake",0.0)) > 0.5
-	# Coming down onto a top after a while off it, the wheels' blip.
-	if plane.skimming and _off_ground > TOUCH_GAP*2.0 and _off_ground != INF: air.blip()
-	_off_ground = 0.0 if plane.skimming else _off_ground+delta
-	_touch = _touch+delta if _off_ground <= TOUCH_GAP and braking and float(plane.speed) < TOUCH_SPEED else 0.0
-	if _touch >= TOUCH_HOLD: leave_plane()
-	elif flying: RopeBridge.flown_by(plane.position,plane.velocity)
+
+## What the wheels did this step (ManualLanding `step`), felt as the game
+## feels them (scripts/wanderer_eye.gd `_hand_events`): a hop thumps,
+## shakes and pulses; a greaser blips softly; a hot or hard touch thumps,
+## throws a burst of dust (scripts/wheel_spray.gd), shakes by its hit and
+## pulses; sliding, the wheels throw grit and hiss; stopped, the hint offers
+## the way out; getting out, the pilot hops down beside the plane, which
+## stays parked where it stopped.
+func _wheel_events(out: Dictionary, delta: float) -> void:
+	if spray == null and (out.has("settled") or out.has("bounce")):
+		spray = WheelSpray.new()
+		spray.name = "WheelSpray"
+		add_child(spray)
+	var wheels := _wheels()
+	if out.has("bounce"):
+		_thump(1.0)
+		Pad.pulse(0.6,0.5,0.2)
+		_shake = SHAKE_TIME
+		_shake_size = 1.0
+		var reason := str(out.bounce.reason)
+		_word("Too steep! Bounced: pull up and come round" if reason == "slam" else "Hopped: %s" % LandingReadout.hop_word(reason))
+	elif out.has("settled"):
+		var k := float(out.settled.k)
+		_thump(k)
+		if out.has("greaser"):
+			Pad.pulse(0.2,0.1,0.1)
+			_word("Greaser!")
+		else:
+			# Hot or hard: it takes the hit and sticks.
+			spray.burst(wheels,k,GRIT_TINT)
+			Pad.pulse(0.35+0.4*k,0.2+0.4*k,0.14+0.1*k)
+			_shake = SHAKE_TIME
+			_shake_size = 0.3+0.7*k
+			_word({"hot":"Hot! Drift it to a stop","hard":"Stuck it!","wingtip":"Wingtip! Stuck it"}.get(str(out.settled.grade),"Down"))
+		_hop_to = Vector3.INF
+	if spray != null: spray.update(delta,wheels,plane.velocity,hand_landing.grit if hand_landing.phase == ManualLanding.ROLL else 0.0,GRIT_TINT)
+	if out.has("stopped"): _word("Stopped")
+	if out.has("off_edge"): _word("Off the edge: flying again")
+	if out.has("not_yet"): _word("Stop first  ·  Shift to brake")
+	if out.has("lifted"): _word("Touch and go")
+	if out.has("reverse"): _word("Backing up")
+	if out.has("edge_behind"): _word("The edge is right behind you")
+	if out.has("hit"):
+		_thump(0.6)
+		Pad.pulse(0.5,0.4,0.15)
+		_shake = SHAKE_TIME*0.6
+		_shake_size = 1.0
+	if hand_landing.phase == ManualLanding.EXIT:
+		if _hop_to == Vector3.INF:
+			_hop_from = plane.position+Vector3.UP*0.1
+			_hop_to = _hop_spot(wheels,float(plane.heading))
+			plane_figure.show_pilot(false)
+		_hop_figure(hand_landing.hop,delta)
+	if out.has("out"): leave_plane(_hop_to)
+
+## The wheels' touch, thump or knock: the wheels' blip and a heavy step on
+## the turf, by `k` (0 to 1).
+func _thump(k: float) -> void:
+	if air != null: air.blip()
+	steps.step("grass",0.4+0.6*k)
+
+## Where the wheels meet the turf now (global).
+func _wheels() -> Vector3:
+	var p: Vector3 = plane.position
+	var under := floor_at(Vector2(p.x,p.z))
+	return Vector3(p.x,under if not is_nan(under) else p.y-PlaneStrip.contact(float(plane.pitch)),p.z)
+
+## A word (a touch's grade, a stop, an edge) leading the hint a moment.
+func _word(text: String) -> void:
+	_said = text
+	_said_left = SAY_TIME
+	if not flying and _switch_hint != null: _switch_hint.text = _foot_text()
+
+## The touch's shake on the camera, dying away.
+func _shaken(delta: float) -> Vector3:
+	if _shake <= 0.0: return Vector3.ZERO
+	_shake = maxf(0.0,_shake-delta)
+	var k := _shake/SHAKE_TIME
+	var t := Time.get_ticks_msec()*0.001
+	return Vector3(sin(t*71.0),sin(t*53.0+1.3),sin(t*61.0+2.1))*SHAKE*_shake_size*k*k
+
+## F (pad Y) in the plane: in the air the flaps go down or up; on the
+## wheels it asks to get out (only stopped does it: ManualLanding `step`
+## says "not yet" rolling); taking off, nothing.
+func land_key() -> void:
+	if not flying or takeoff != null: return
+	if hand_landing.flying():
+		flaps = not flaps
+		_word("Flaps %s" % ("down" if flaps else "up"))
+	else:
+		_exit_asked = true
 
 ## The isle's own step each flown frame, after the plane's step and bump
 ## (none here).
@@ -974,18 +1437,33 @@ func _fly_tick(_delta: float) -> void:
 ## behind it (the quick tests' starts, the tests).
 func fly_from(at: Vector3, heading: float) -> void:
 	if not flying: return
+	takeoff = null
 	plane.launch(at,heading,SkyPlane.CRUISE_SPEED,false)
 	plane.velocity = plane.forward()*float(plane.speed)
+	hand_landing.begin(plane)
 	plane_figure.reset(plane)
+	figure.visible = false
 	chase = GlideCamera.new()
 	chase.reset(plane,at-plane.forward()*7.0+Vector3.UP*2.0,camera.fov)
 	chase.linger = LOOK_LINGER
 
 func _show_fly_hint() -> void:
 	if _switch_hint == null or plane == null: return
-	var text := FLY_HINT % [float(plane.speed),bumps]
-	if isle_lock != null and isle_lock.locked: text += "\n"+LOCK_HINT % str(isle_card().name)
-	elif isle_lock == null or isle_lock.in_reach(plane.position): text += "\n"+LOCK_OFFER % str(isle_card().name)
+	var text := ""
+	var aloft := takeoff == null and hand_landing.flying()
+	if takeoff != null: text = TAKEOFF_HINT
+	elif hand_landing.phase == ManualLanding.ROLL and hand_landing.reversing: text = REVERSE_HINT % hand_landing.roll_speed()
+	elif hand_landing.phase == ManualLanding.ROLL: text = ROLL_HINT % hand_landing.roll_speed()
+	elif not aloft: text = STOPPED_HINT
+	else: text = FLY_HINT % [float(plane.speed),bumps,"up" if flaps else "down"]
+	if aloft:
+		# Low over the turf, what a touch now would get (a slam: too steep).
+		var now := LandingReadout.hint_now(hand_landing.grade_now(Callable(self,"floor_at")),_over_turf())
+		if now != "": text = now+"  ·  "+text
+	if _said_left > 0.0: text = _said+"  ·  "+text
+	if aloft:
+		if isle_lock != null and isle_lock.locked: text += "\n"+LOCK_HINT % str(isle_card().name)
+		elif isle_lock == null or isle_lock.in_reach(plane.position): text += "\n"+LOCK_OFFER % str(isle_card().name)
 	if stone_plane and lodestone != null:
 		if lode_state == "seated":
 			text += "\nThe lodestone points the way (%.0f m): turn toward the brighter wing seam (both even and faint: on course)  ·  top or bottom fin lit: climb or dive  ·  tail lit: it is behind you  ·  prow runes flare: dead ahead" % plane.position.distance_to(lode_target)
@@ -993,6 +1471,125 @@ func _show_fly_hint() -> void:
 	elif lodestone != null and lode_state == "seated":
 		text += "\nThe nose arrow points to the place in the stone (%.0f m): it glows brighter when you are dead on course" % plane.position.distance_to(lode_target)
 	_switch_hint.text = text
+
+## How high the plane flies over what is under it (m, the flight's ground;
+## NAN over open sky).
+func _over_turf() -> float:
+	var under: Variant = plane_ground(plane.position)
+	return NAN if under == null else float(plane.position.y)-float(under)-SkyPlane.SKIM
+
+## The landing's live numbers for F1 in the plane (scripts/
+## landing_readout.gd): what a touch now would get and the dive against
+## the slam's limits, or on the wheels how it rolls.
+func _show_plane_hud() -> void:
+	if _hud == null or not _hud.visible or plane == null: return
+	var lines := PackedStringArray(["plane     %s · %.1f m/s · %s m over the turf" % [ManualLanding.NAMES[hand_landing.phase],float(plane.speed),
+		"-" if is_nan(_over_turf()) else "%.1f" % _over_turf()]])
+	if hand_landing.flying():
+		lines.append("touch now %s" % LandingReadout.touch_now(hand_landing.grade_now(Callable(self,"floor_at"))))
+		lines.append(LandingReadout.dive_line(hand_landing))
+	else:
+		lines.append(LandingReadout.wheels_line(hand_landing))
+	var s: Dictionary = hand_landing.stats
+	lines.append("touches %d · hops %d %s · go-arounds %d · last %s" % [(s.touches as Array).size(),int(s.bounces),str(s.bounce_reasons),int(s.go_arounds),hand_landing.last_touch if hand_landing.last_touch != "" else "-"])
+	_hud.text = "\n".join(lines)
+
+## The turf's height under the wheels at a global XZ point (NAN off it:
+## past its edge, or rising past what they reach): read from FLOOR_UP m
+## over the plane down to FLOOR_DOWN m under it, the turf only, upward faces
+## only. The hand landing's `floor_at` (scripts/manual_landing.gd `step`),
+## as the game's is its heightfield.
+func floor_at(p: Vector2) -> float:
+	return _turf_near(p,float(plane.position.y) if plane != null else isle_top())
+
+## The turf's top at `p` from FLOOR_UP m over `y` down to FLOOR_DOWN m under
+## it (NAN none).
+func _turf_near(p: Vector2, y: float) -> float:
+	var ray := PhysicsRayQueryParameters3D.create(Vector3(p.x,y+FLOOR_UP,p.y),Vector3(p.x,y-FLOOR_DOWN,p.y),TURF_LAYER)
+	var hit := get_world_3d().direct_space_state.intersect_ray(ray)
+	if hit.is_empty() or (hit.normal as Vector3).y < 0.3: return NAN
+	return float((hit.position as Vector3).y)
+
+## `_turf_near` round a fixed height, for a pose sat on the turf at `y`
+## (PlaneStrip `rest`): where none, `y` itself.
+func _floor_from(y: float) -> Callable:
+	return func(p: Vector2) -> float:
+		var h := _turf_near(p,y)
+		return y if is_nan(h) else h
+
+## Whether something stands in the rolling wheels' way at `point` (global,
+## the plane's middle there; ManualLanding `step`'s `blocked`): stone in
+## the wing-wide bump body, or the turf rising into the fuselage's box (a
+## step up the wheels can't climb, a crag's face).
+func roll_blocked(point: Vector3) -> bool:
+	var turn := Basis(Vector3.UP,float(plane.heading) if plane != null else 0.0)
+	if _stone_at(point,turn): return true
+	if _fuselage_query == null:
+		_fuselage_query = PhysicsShapeQueryParameters3D.new()
+		var box := BoxShape3D.new()
+		box.size = Vector3(FUSELAGE,BUMP_BODY.y,BUMP_BODY.z)
+		_fuselage_query.shape = box
+		_fuselage_query.collision_mask = TURF_LAYER
+	_fuselage_query.transform = Transform3D(turn,point)
+	return not get_world_3d().direct_space_state.intersect_shape(_fuselage_query,1).is_empty()
+
+## Stone (with `with_turf`, the turf too) in the plane's wing-wide body
+## (BUMP_BODY) at `point`, turned by `turn`.
+var _stone_query: PhysicsShapeQueryParameters3D
+var _fuselage_query: PhysicsShapeQueryParameters3D
+var _no_rids: Array[RID] = []
+
+func _stone_at(point: Vector3, turn: Basis, with_turf := false) -> bool:
+	if _stone_query == null:
+		_stone_query = PhysicsShapeQueryParameters3D.new()
+		var box := BoxShape3D.new()
+		box.size = BUMP_BODY
+		_stone_query.shape = box
+		_stone_query.collision_mask = plane_mask()
+	_stone_query.exclude = _no_rids if with_turf else _turf_rids
+	_stone_query.transform = Transform3D(turn,point)
+	return not get_world_3d().direct_space_state.intersect_shape(_stone_query,1).is_empty()
+
+## The best run to take off along from `at` (global XZ, the turf there at
+## height `y`) facing `heading`, as PlaneStrip `takeoff` reads the plate
+## (and the landing study its fields): each of 24 ways followed in 0.5 m
+## steps up to RUN_LOOK m, until the turf ends (an edge: it flies off it),
+## rises or drops past the wheels, or stone stands in the wings' way; a run
+## whose climb out meets stone counts as short. {dir (Vector3, level),
+## length, edge, score}.
+const RUN_LOOK := 14.0
+
+func takeoff_run(at: Vector2, heading: float, y: float) -> Dictionary:
+	var best := {}
+	var facing := Vector2(-sin(heading),-cos(heading))
+	var space := get_world_3d().direct_space_state
+	for k in range(24):
+		var dir := Vector2.from_angle(TAU*k/24.0)
+		var turn := Basis(Vector3.UP,atan2(-dir.x,-dir.y))
+		var t := 0.5
+		var h := y
+		var edge := false
+		while t <= RUN_LOOK:
+			var p := at+dir*t
+			var next := _turf_near(p,h)
+			if is_nan(next):
+				# Past the edge if nothing stands over the run's height there.
+				var over := PhysicsRayQueryParameters3D.create(Vector3(p.x,h+20.0,p.y),Vector3(p.x,h,p.y),TURF_LAYER)
+				edge = space.intersect_ray(over).is_empty()
+				break
+			if _stone_at(Vector3(p.x,next+PlaneStrip.contact(PlaneStrip.REST_PITCH),p.y),turn): break
+			h = next
+			t += 0.5
+		var length := t-0.5
+		# The climb out: on along the run and up, clear of stone.
+		var climb := 1.0
+		var from := Vector3(at.x+dir.x*length,h,at.y+dir.y*length)
+		for s in range(1,4):
+			var q := from+Vector3(dir.x,0.0,dir.y)*4.0*s+Vector3.UP*(1.0+1.2*s)
+			if _stone_at(q,turn,true): climb = 0.0
+		var score := minf(PlaneStrip.LIFT_RUN if edge else length,PlaneStrip.LIFT_RUN)*2.0*(0.5+0.5*climb)+(1.5 if edge else 0.0)+PlaneStrip.ON_WAY*dir.dot(facing)
+		if best.is_empty() or score > float(best.score): best = {"dir":Vector3(dir.x,0.0,dir.y),"length":length,"edge":edge,"score":score}
+	return best
 
 ## The turf's top under a point, as the game's plane reads its heightfield:
 ## a ray down from a metre over it onto the turf only, upward faces only
@@ -1097,8 +1694,8 @@ func _lean_tapped(dir: float) -> void:
 		_tap_dir = dir
 		_tap_at = now
 
-## The plane's keys, mouse and pad: F or Y back on foot, R on foot at the
-## start, Q E knife edge (twice quick a roll), the mouse steers, a click
+## The plane's keys, mouse and pad: F or Y the flaps in the air and out
+## once stopped (`land_key`), R on foot at the start, Q E knife edge (twice quick a roll), the mouse steers, a click
 ## rolls, the right button held looks round, Esc frees the mouse.
 func _fly_event(event: InputEvent) -> void:
 	if event is InputEventMouseMotion:
@@ -1108,12 +1705,13 @@ func _fly_event(event: InputEvent) -> void:
 	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 		if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED: Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		else: _roll_asked = -1.0 if float(plane.bank) < -0.05 else 1.0
-	elif Pad.pressed(event,&"fly_land"): leave_plane()
+	elif Pad.pressed(event,&"fly_land"): land_key()
 	elif Pad.pressed(event,&"fly_lean_left"): _lean_tapped(-1.0)
 	elif Pad.pressed(event,&"fly_lean_right"): _lean_tapped(1.0)
 	elif event is InputEventKey and event.pressed and not event.echo:
 		match (event as InputEventKey).keycode:
-			KEY_F: leave_plane()
+			KEY_F: land_key()
+			KEY_F1: _hud.visible = not _hud.visible
 			KEY_TAB: toggle_lock()
 			KEY_R:
 				leave_plane(start)
@@ -1267,6 +1865,11 @@ func _shard_arch() -> bool:
 
 ## On foot: the stone's step after the pilot's (or, held up, instead).
 func tick(delta: float) -> void:
+	_said_left = maxf(_said_left-delta,0.0)
+	if diving:
+		_dive_step(delta,{} if scripted else _dive_input(delta))
+		_show_foot_hint()
+		return
 	if lode_state == "inspecting":
 		_inspect_step(delta)
 		return
@@ -1275,7 +1878,15 @@ func tick(delta: float) -> void:
 	super.tick(delta)
 	_lode_step(delta)
 	if life != null: life.step_pilot()
-	if not flying: _tread(delta,was_grounded,falling)
+	if not flying:
+		_tread(delta,was_grounded,falling)
+		_check_step_off()
+		_show_foot_hint()
+
+func _show_foot_hint() -> void:
+	if _switch_hint == null or flying: return
+	var text := _foot_text()
+	if _switch_hint.text != text: _switch_hint.text = text
 
 ## The live rope bridges under him (scripts/rope_bridge.gd `tread`): the
 ## deck takes his weight, his landings (their speed, m/s) and footfalls
@@ -1429,13 +2040,16 @@ func _raise_arms(amount: float) -> void:
 
 ## The on-foot hint with the stone's line.
 func _foot_text() -> String:
-	if lodestone == null: return FOOT_HINT
+	var text := BOARD_LINE+"  ·  R3 camera back behind" if by_plane() else FOOT_HINT
+	if diving: text = STRANDED_HINT if _stranded_left >= 0.0 else CANOPY_HINT if dive.under_canopy() else DIVE_HINT
+	if _said_left > 0.0: text = _said+"  ·  "+text
+	if lodestone == null: return text
 	var line := ""
 	match lode_state:
 		"resting": line = "E (pad A): pick up the lodestone" if can_pick() else lode_hint()
 		"inspecting": line = "Drag or right stick: turn the lodestone  ·  E or Enter (pad A or B): keep it"
-		"carried": line = "Carrying the lodestone: F (pad Y) to board, and it seats in the plane"
-	return FOOT_HINT+"\n"+line
+		"carried": line = "Carrying the lodestone: Space (pad A) by your plane to board, and it seats in the plane"
+	return text+"\n"+line
 
 ## Near the shard with the stone seated: a chime, a pop and a flash.
 func _check_arrival() -> void:
@@ -1448,6 +2062,149 @@ func _check_arrival() -> void:
 		if stone_plane: plane_figure.flash()
 		_flash_left = 1.4
 	elif arrived and d > ARRIVE_AGAIN: arrived = false
+
+# --- Off the edge: the canopy -------------------------------------------------------
+
+## Walked (or jumped) off the isle: falling STEP_OFF_DROP m under where he
+## last stood with nothing under him for STEP_OFF_CLEAR m, into the
+## skydive. A jump between stones, or a drop onto a lower tier, has ground
+## under it and stays the walk's.
+func _check_step_off() -> void:
+	if flying or diving or not walk_ready or not _replay.is_empty(): return
+	if motor.grounded or motor.on_ledge() or motor.swimming or motor.velocity.y >= 0.0: return
+	if motor.feet.y > _last_stood.y-STEP_OFF_DROP: return
+	var ray := PhysicsRayQueryParameters3D.create(motor.feet,motor.feet+Vector3.DOWN*STEP_OFF_CLEAR,1|TURF_LAYER)
+	if not get_world_3d().direct_space_state.intersect_ray(ray).is_empty(): return
+	_step_off()
+
+## Off the edge: falling belly-down, carried on the way he went
+## (scripts/sky_dive.gd `drop`), the canopy opening by itself STEP_OFF_OPEN
+## s on (X, pad X sooner), the dive's camera (scripts/dive_camera.gd)
+## framing it. The plane stays parked.
+func _step_off() -> void:
+	dive = SkyDive.new()
+	dive.floor_y = isle_top()-FLOOR_BELOW
+	dive.drop(motor.feet+Vector3.UP*SkyDive.HIPS,motor.facing,maxf(-motor.velocity.y,2.0))
+	var ahead := Vector3(motor.velocity.x,0.0,motor.velocity.z)
+	dive.velocity += ahead
+	dive.drift = ahead
+	_off_y = _last_stood.y
+	_open_in = STEP_OFF_OPEN
+	_open_asked = false
+	_stranded_left = -1.0
+	if canopy == null:
+		canopy = CanopyFigure.new()
+		canopy.name = "Canopy"
+		add_child(canopy)
+	canopy.reset()
+	dive_camera.reset(dive,camera.global_position,camera.fov)
+	diving = true
+	body.settle()
+	_show_foot_hint()
+
+## The dive's input from the keys and the pad, as the game's
+## (scripts/wanderer_eye.gd `_dive_input`); the right stick or mouse turns
+## its camera.
+func _dive_input(delta: float) -> Dictionary:
+	var stick := Input.get_vector(&"move_left",&"move_right",&"move_forward",&"move_back")
+	var input := {"turn":stick.x,"pitch":stick.y,"boost":Input.get_action_strength(&"fly_boost"),
+		"brake":Input.get_action_strength(&"fly_brake"),"open":_open_asked}
+	_open_asked = false
+	var right := Pad.stick(&"look_left",&"look_right",&"look_up",&"look_down")
+	if right != Vector2.ZERO: dive_camera.turn(Vector2(-right.x,-right.y)*STICK_LOOK*delta)
+	dive_camera.free_held = Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) or right != Vector2.ZERO
+	return input
+
+## In the dive: X (pad X) opens the canopy, the mouse looks round, R back
+## to the start, Esc frees the mouse.
+func _dive_event(event: InputEvent) -> void:
+	if event is InputEventMouseMotion:
+		if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED: dive_camera.turn(Vector2(-event.relative.x,-event.relative.y)*FLY_LOOK)
+	elif Pad.pressed(event,&"fly_eject"): _open_asked = true
+	elif event is InputEventKey and event.pressed and not event.echo:
+		match (event as InputEventKey).keycode:
+			KEY_X: _open_asked = true
+			KEY_R:
+				_end_dive()
+				respawn()
+			KEY_ESCAPE: Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+## One frame off the edge: the fall or the float down, the pilot posed on
+## it under the canopy, the dive's camera; once STRAND_BELOW m under the
+## edge, stranded; down, `_dive_down`; stranded, the wait and then back by
+## the plane.
+func _dive_step(delta: float, input: Dictionary) -> void:
+	if _stranded_left >= 0.0:
+		_stranded_left -= delta
+		if _stranded_left < 0.0:
+			_return_to_plane()
+			return
+	_open_in -= delta
+	if _open_in <= 0.0 and dive.falling(): dive.open_canopy(true)
+	if _stranded_left < 0.0 and dive.position.y < _off_y-STRAND_BELOW: _strand()
+	var out: Dictionary = {} if dive.phase == SkyDive.DOWN else dive.fall(delta,input,Callable(self,"_dive_ground"))
+	if out.has("opened"):
+		dive_camera.kick()
+		Pad.pulse(0.5,0.3,0.2)
+	var b: Basis = dive.body_basis()
+	figure.global_transform = Transform3D(b,dive.position-b*Vector3(0.0,SkyDive.HIPS,0.0))
+	var hanging: float = smoothstep(0.3,0.75,float(dive.open)) if dive.under_canopy() else 0.0
+	body.dive(clampf(-float(dive.posture),0.0,1.0),clampf(float(dive.posture),0.0,1.0),hanging,float(dive.flare),0.0,delta)
+	canopy.update(delta,dive,figure.global_transform*Vector3(0.0,0.72,0.0))
+	dive_camera.step(delta,dive,_inside_stone)
+	var way: Vector3 = dive_camera.look-dive_camera.eye
+	if way.length() > 0.01: camera.global_transform = Transform3D(Basis.looking_at(way,Vector3.UP),dive_camera.eye)
+	camera.fov = dive_camera.fov
+	if out.has("touched"): _dive_down(out.touched)
+
+## What the dive comes down on: the top of whatever stands (turf or stone)
+## under a point, upward faces only.
+func _dive_ground(p: Vector3) -> Variant:
+	var ray := PhysicsRayQueryParameters3D.create(p+Vector3.UP,p+Vector3.DOWN*60.0,1|TURF_LAYER)
+	var hit := get_world_3d().direct_space_state.intersect_ray(ray)
+	if hit.is_empty() or (hit.normal as Vector3).y < 0.3: return null
+	return float((hit.position as Vector3).y)
+
+## Down under the canopy: on something within STRAND_BELOW m of the edge,
+## on foot there to walk (or climb) back; in water or lower, stranded.
+func _dive_down(touch: Dictionary) -> void:
+	var feet: Vector3 = dive.position-Vector3.UP*SkyDive.HIPS
+	canopy.collapse(feet.y)
+	if _stranded_left >= 0.0: return
+	if bool(touch.get("water",false)) or feet.y < _off_y-STRAND_BELOW:
+		_strand()
+		return
+	var face := Vector2(-sin(float(dive.heading)),-cos(float(dive.heading)))
+	_end_dive()
+	place(feet,face)
+	_last_stood = feet
+	body.land(3.0)
+	steps.step(_surface(),0.6)
+
+func _strand() -> void:
+	_stranded_left = STRANDED_WAIT
+	_show_foot_hint()
+
+## Back on foot beside the parked plane (to its left, as a hop out lands),
+## facing it; with none parked, at the start.
+func _return_to_plane() -> void:
+	_end_dive()
+	if not parked:
+		respawn()
+		return
+	var spot := _hop_spot(parked_at,parked_heading)
+	var to := Vector2(parked_at.x-spot.x,parked_at.z-spot.z)
+	place(spot,to.normalized() if to.length() > 0.01 else start_face)
+	_last_stood = spot
+
+## Out of the dive: the canopy put away, the pilot stood upright again.
+func _end_dive() -> void:
+	diving = false
+	dive = null
+	_stranded_left = -1.0
+	if canopy != null and not canopy.collapsing(): canopy.reset()
+	figure.global_transform = Transform3D(Basis.IDENTITY,figure.global_position)
+	body.settle()
 
 # --- Life on the isle ------------------------------------------------------------------
 

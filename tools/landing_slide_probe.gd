@@ -1,8 +1,9 @@
 extends SceneTree
 ## The manual landing's slide (scripts/manual_landing.gd), measured on a
 ## wide flat field headless: from a touch at each speed, how far on each way
-## of stopping goes (m along the touch's way), how long (s), the peak slip (degrees) and how far
-## it ends off its line (m). docs/design/manual-landing.md keeps the table.
+## of stopping goes (m along the touch's way), how long (s), the peak slip
+## (degrees) and how far it ends off its line (m); round 3 adds a slide
+## steered against itself (counter-steered) after its swing. docs/design/manual-landing.md keeps the table.
 ##   godot --headless --path . -s tools/landing_slide_probe.gd
 
 const ManualLanding = preload("res://scripts/manual_landing.gd")
@@ -16,6 +17,9 @@ const WAYS := {
 	"brake slide (brake + steer)":{"brake":1.0,"turn":1.0},
 	"power-slide (+ throttle)":{"brake":1.0,"turn":1.0,"boost":1.0},
 	"power-slide, blip 0.3 s":{"brake":1.0,"turn":1.0,"boost":1.0,"blip":0.3},
+	"power-slide + lean (tighter)":{"brake":1.0,"turn":1.0,"boost":1.0,"lean":1.0},
+	"power-slide, blip, then counter-steered":{"brake":1.0,"turn":1.0,"boost":1.0,"blip":0.3,"then":-1.0,"then_at":0.4},
+	"drift (lean + steer), then counter-steered":{"turn":1.0,"lean":1.0,"then":-1.0,"then_at":0.4},
 }
 
 static func flat(p: Vector2) -> float:
@@ -34,7 +38,8 @@ func _initialize() -> void:
 	quit(0)
 
 ## Down at `speed` (a firm touch, 0.3 m up, level), then `hold` held until
-## it stops (`blip` s of its throttle only, if given).
+## it stops (`blip` s of its throttle only, if given; from `then_at` s on,
+## the stick at `then`: against the slide, counter-steered).
 static func probe(speed: float, hold: Dictionary) -> Dictionary:
 	var plane := SkyPlane.new()
 	plane.launch(Vector3(0.0,SkyPlane.SKIM+0.2,-5.0),0.0,speed,false)
@@ -51,6 +56,7 @@ static func probe(speed: float, hold: Dictionary) -> Dictionary:
 	while ml.phase == ManualLanding.ROLL and on < 30.0:
 		var input := hold.duplicate()
 		if hold.has("blip") and on > float(hold.blip): input.boost = 0.0
+		if hold.has("then") and on > float(hold.then_at): input.turn = float(hold.then)
 		ml.step(DT,input,solid,flat)
 		on += DT
 	var p: Vector3 = ml.plane.position

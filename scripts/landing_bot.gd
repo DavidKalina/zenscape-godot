@@ -15,7 +15,11 @@ extends RefCounted
 ## is how it comes in: "slow" (round 1's careful pilot: from `brake_at` m
 ## out it closes the throttle, and with flaps, `flaps` "never", "short" for
 ## fields under SHORT m, "always", lowers them), "cruise" (no brake, no
-## flaps: in hot) or "boost" (Boost held to the flare: in very hot). Within
+## flaps: in hot), "boost" (Boost held to the flare: in very hot) or
+## "dive" (round 3: straight down a steep line at the near rim from where it
+## starts, no flare; a skill whose `flare` is PULL_SKILL or more pulls out
+## of it PULL_OUT m over its aim, to a hot shallow touch, and the rest slam
+## and bounce, and come in again slow). Within
 ## `flare` m of the land it eases the sink off to FLARE_SINK, unless this
 ## approach it forgets to (chance `flare_miss`), or it is in hot, aiming
 ## RIM m in from the near rim and slamming the wheels on; its throttle closes
@@ -43,7 +47,7 @@ const SkyPlane = preload("res://scripts/sky_plane.gd")
 const ManualLanding = preload("res://scripts/manual_landing.gd")
 const Course = preload("res://scripts/landing_course.gd")
 
-const VERSION := 2
+const VERSION := 3
 const SKILLS := {
 	"sloppy":{"noise":0.16,"drift":0.5,"gain":1.8,"look":10.0,"descend_at":75.0,"steepest":0.42,"brake_at":40.0,"flaps":"never","flare":0.5,"aim":6.0,"lateral":1.6,"flare_miss":0.5,"brake_jitter":20.0,
 		"ground_brake":0.6,"brake_delay":1.0,"exit_delay":0.8,"judge":0.7,"blip":0.0,"slide_let":0.3},
@@ -55,7 +59,7 @@ const SKILLS := {
 		"ground_brake":1.0,"brake_delay":0.0,"exit_delay":0.2,"judge":1.15,"blip":INF,"slide_let":0.0},
 }
 const SKILL_NAMES := ["sloppy","decent","sharp","perfect"]
-const PACES := ["slow","cruise","boost"]
+const PACES := ["slow","cruise","boost","dive"]
 
 ## The sink it flares to (m/s), fields shorter than SHORT m take flaps under "short", the
 ## circuit's height over the field and its legs (m), and how close a
@@ -73,6 +77,15 @@ const SPARE := 3.0
 const RIM := 1.5
 ## Boost closes this far over the land (m) on a boost approach.
 const BOOST_TILL := 3.0
+## On a dive: how far in from the near rim it aims (m), the steepest line
+## it takes (m down per m on), the skill's `flare` that pulls out, how high
+## over the aim it starts to (m), and the path it pulls out to (radians,
+## nose down).
+const DIVE_IN := 10.0
+const DIVE_STEEPEST := 1.5
+const PULL_SKILL := 1.5
+const PULL_OUT := 9.0
+const PULL_TO := 0.12
 
 var skill := {}
 var pace := "slow"
@@ -131,7 +144,7 @@ func input(run: RefCounted, delta: float) -> Dictionary:
 	var last: Dictionary = run.last
 	var touch := Course.touch_at(s)+Vector3(_aim.y,0.0,-_aim.x)
 	# In hot, it aims to slam the wheels on at the near rim.
-	if pace != "slow": touch = Course.origin(s)+Vector3(_aim.y,float((s.touch as Vector3).y),-RIM-absf(_aim.x)*0.5)
+	if pace != "slow": touch = Course.origin(s)+Vector3(_aim.y,float((s.touch as Vector3).y),-RIM-absf(_aim.x)*0.5-(DIVE_IN if pace == "dive" else 0.0))
 	var d := Course.way()
 	var p: Vector3 = plane.position
 	var along := (Vector2(touch.x,touch.z)-Vector2(p.x,p.z)).dot(d)
@@ -140,9 +153,11 @@ func input(run: RefCounted, delta: float) -> Dictionary:
 		var past_end := along < -(float(s.length)+(s.touch as Vector3).z)
 		var off_line := along < 12.0 and along > -2.0 and absf(across) > float(s.width)*0.5+1.0
 		if last.has("bounce"):
-			# Shaken: it flares the next one, down a fresh path.
+			# Shaken: it flares the next one, down a fresh path, and a diver
+			# comes in slow.
 			_flares = true
 			_slope = NAN
+			if pace == "dive": pace = "slow"
 		if last.has("bounce") and _room_left(run) < 18.0: _go_round(s)
 		elif last.has("off_edge") or past_end or off_line: _go_round(s)
 	if mode == "around": return _around(run,out)
@@ -156,13 +171,15 @@ func input(run: RefCounted, delta: float) -> Dictionary:
 	if along <= float(skill.descend_at) or pace != "slow" and along <= 120.0:
 		# The glide path, fixed as the descent begins: straight down it to
 		# the ground, unless it flares.
-		if is_nan(_slope): _slope = clampf((p.y-aim_y)/maxf(along,6.0),0.03,float(skill.steepest))
+		if is_nan(_slope): _slope = clampf((p.y-aim_y)/maxf(along,6.0),0.03,DIVE_STEEPEST if pace == "dive" else float(skill.steepest))
 		var line := aim_y+_slope*along
-		want = -_slope+clampf((line-p.y)*0.08,-0.12,0.12)
+		want = -(atan(_slope) if pace == "dive" else _slope)+clampf((line-p.y)*0.08,-0.12,0.12)
 	var over := p.y-land-SkyPlane.SKIM if not is_nan(land) else INF
 	if _flares and pace == "slow" and over < float(skill.flare):
 		var speed := maxf(float(plane.speed),1.0)
 		want = -FLARE_SINK/speed
+	# A dive pulled out of in time, by a skill that can.
+	if pace == "dive" and float(skill.flare) >= PULL_SKILL and p.y-aim_y < PULL_OUT: want = -PULL_TO
 	out.pitch = _pitch(plane,want)
 	match pace:
 		"slow":

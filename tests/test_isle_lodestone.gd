@@ -108,7 +108,7 @@ func _carried() -> void:
 	var stone: Node3D = study.lodestone
 	var side: float = stone.position.distance_to(study.figure.global_position+Vector3.UP*study.CARRY_AT.y)
 	check(side < 0.6 and stone.scale.x < 0.6,"It rides at his side (%.2f m, scale %.2f)" % [side,stone.scale.x])
-	check(str(study._switch_hint.text).contains("F (pad Y) to board"),"The hint says to board")
+	check(str(study._switch_hint.text).contains("by your plane to board"),"The hint says to board")
 
 ## Boarded: the stone flies into the chamber, the needle shows, the pulse
 ## runs and the seams wake.

@@ -17,7 +17,7 @@ zsh tools/colonnade_spine_captures.sh OUTDIR [flags]    # the 8 look views
 It is also in the scene picker (Ruins, "Colonnade spine").
 
 The keys and flags are the aqueduct isle's:
-- **Keys.** R start, L / Shift+L look presets, B gust, F (pad Y) plane.
+- **Keys.** R start, L / Shift+L look presets, B gust, Space (pad A) by the parked plane to fly, F (pad Y) flaps and out once stopped (docs/design/manual-landing.md, "Kit isles").
 - **Flags.** `--no-flora`, `--no-life` (and each part's), `--no-sky` (and each part's), `--no-lode`, `--fly`, `--capture`, `--at`, `--look`, `--place`.
 
 ## Files
