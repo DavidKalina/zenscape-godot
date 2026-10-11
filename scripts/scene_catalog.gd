@@ -39,6 +39,9 @@ const ENTRIES: Array[Dictionary] = [
 		"detail":"Set pieces with starter-ring challenges: take the magenta ring."},
 	{"id":"flight_crash","group":"Flight greyboxes","title":"Moments, crashing","scene":"res://studies/flight_study.tscn","args":["--pack=moments","--crash=hard"],
 		"detail":"The moments pack with hard hits crashing. C toggles it, T the restart point."},
+	# Landing greybox (studies/landing_study.tscn, docs/design/manual-landing.md).
+	{"id":"landing_study","group":"Flight greyboxes","title":"Manual landing","scene":"res://studies/landing_study.tscn","args":[],
+		"detail":"Land by hand on five fields: slow and shallow settles, hot or steep bounces. F flaps, and out once stopped. 1-5, B bots."},
 	# On-foot greyboxes.
 	{"id":"character_study","group":"On-foot greyboxes","title":"Character study","scene":"res://studies/character_study.tscn","args":[],
 		"detail":"The pilot's moves in the greybox room. 1-9: stations, R: back to start."},

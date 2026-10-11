@@ -44,6 +44,12 @@ extends "res://scripts/sky_glide.gd"
 ## lean or a roll calls it off. The wanderer's F lands it by its own sequence
 ## instead (scripts/plane_landing.gd), which flies it from outside and
 ## hands it back with `resume`; `engine` spins down when it is parked.
+##
+## Flaps (`flaps`, 0 up to 1 down; only the hand-flown landing,
+## scripts/manual_landing.gd, lowers them) let it fly slower than SLOW for a
+## short field: the throttle's speed comes down to FLAP_SPEED, the floor to
+## FLAP_SLOW, and it sinks FLAP_SINK m/s more, so an approach with flaps is
+## slower and steeper. Boost overrides them, for a go-around.
 
 ## Speeds along the path, in metres a second: the cruise the engine holds,
 ## Boost's and Brake's, the floor it never drops below, the cap a long dive
@@ -54,6 +60,11 @@ const BRAKE_SPEED := 8.0
 const SLOW := 7.0
 const FAST := 30.0
 const LANDING_SPEED := 8.0
+## Flaps down: the speed the engine holds, the floor it never drops below
+## (m/s), and the extra sink (m/s).
+const FLAP_SPEED := 5.5
+const FLAP_SLOW := 5.0
+const FLAP_SINK := 0.5
 ## How the speed answers the pitch (m/s² at straight down), and how fast
 ## the engine brings it back to the throttle's speed (per second).
 const SWING := 6.0
@@ -183,7 +194,8 @@ func travel() -> Vector3:
 ##   look: Vector2 of radians to turn and pitch directly (the mouse);
 ##   boost, brake: bools (or 0..1 for triggers);
 ##   lean: -1..1 held, a knife edge to that side;
-##   roll: -1 or 1 on the frame a barrel roll is asked for, else 0.
+##   roll: -1 or 1 on the frame a barrel roll is asked for, else 0;
+##   flaps: 0 up to 1 down (absent: up).
 ## `ground` and `air` are as for the glide.
 func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) -> void:
 	airborne += delta
@@ -252,15 +264,19 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 	# dive swing it either side.
 	var target := CRUISE_SPEED+boost*(BOOST_SPEED-CRUISE_SPEED)-brake*(CRUISE_SPEED-BRAKE_SPEED)
 	if approach: target = minf(target,LANDING_SPEED)
+	# Flaps down slow it and lower its floor; Boost takes them over.
+	var flap := clampf(float(input.get("flaps",0.0)),0.0,1.0)*(1.0-boost)
+	target = lerpf(target,minf(target,FLAP_SPEED),flap)
+	var slow := lerpf(SLOW,FLAP_SLOW,flap)
 	speed += (-SWING*sin(pitch)-THROTTLE*(speed-target)-DRIFT_BLEED*drift_strength*drift)*delta+boost_out
-	speed = clampf(speed,SLOW,FAST)
+	speed = clampf(speed,slow,FAST)
 	lift = clampf((floor_y-position.y)*CUSHION,0.0,CUSHION_MAX)
 	var fall := FALL*minf(airborne,FALL_TIME)*(1.0-smoothstep(FALL_TIME,FALL_TIME+CATCH,airborne))
 	var drop := approach_drop(ground) if approach else 0.0
 	var side := Vector3(cos(heading),0.0,-sin(heading))
-	velocity = travel()*speed+side*hop+Vector3.UP*(lift-fall-drop)+wind
+	velocity = travel()*speed+side*hop+Vector3.UP*(lift-fall-drop-FLAP_SINK*flap)+wind
 	var was := position
 	position += velocity*delta
 	_skim(delta,ground,was)
 	_water(delta)
-	speed = maxf(speed,SLOW)
+	speed = maxf(speed,slow)
