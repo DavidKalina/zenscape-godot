@@ -57,6 +57,10 @@ func run() -> void:
 	await _build()
 	_held_start()
 	await _free()
+	LaunchArgs.set_override(["--hour=10","--weather-seed=11"])
+	await _build()
+	_season_row()
+	await _free()
 	LaunchArgs.set_override(null)
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(LOOK_PATH))
 	print("PASS: kit time and weather" if failures == 0 else "FAIL: kit time and weather (%d)" % failures)
@@ -287,8 +291,45 @@ func _settings() -> void:
 	check(clock.running and is_equal_approx(clock.day_length,1440.0) and not weather.scheduler.enabled,"and Live sky takes up the chosen length and the still weather")
 	GameSettings.choose("day",0,study)
 	GameSettings.choose("weather",0,study)
+	var autumn := clock.season
+	GameSettings.choose("season",4,study)
+	check(is_equal_approx(clock.season,autumn) and clock.season_override < 0.0,"--season beats the Season setting")
+	GameSettings.choose("season",0,study)
 	GameSettings.apply_start(study)
 	check(is_equal_approx(clock.day_length,WorldClock.DEFAULT_DAY_LENGTH) and weather.scheduler.enabled,"The kept choices apply at the start")
+
+## The Season row: Live by default, a named season holds the year there (the
+## calendar doesn't advance, the plants glide), Live turns it again, kept.
+func _season_row() -> void:
+	check(GameSettings.entry("season").options == KitWeather.SEASON_CHOICES and KitWeather.SEASON_CHOICES.size() == 5,"Settings offer Season: Live, Spring, Summer, Autumn, Winter")
+	check(GameSettings.index_of("season") == 0 and weather.season_choice == 0,"Live until chosen")
+	var menu: Control = SettingsMenu.new()
+	check(menu.choice_rows.has("season"),"Season has a row on the settings sheet")
+	menu.free()
+	GameSettings.choose("day",0,study)
+	GameSettings.choose("season",4,study)
+	var shown: float = weather.calendar.shown
+	check(clock.season_override >= 0.0 and clock.season_name() == "winter" and GameSettings.index_of("season") == 4,"Winter holds the year at winter and keeps")
+	_run(5.0)
+	check(not is_equal_approx(weather.calendar.shown,shown) or is_equal_approx(shown,clock.season),"The plants glide there, not snap")
+	var held := clock.season
+	clock.day_length = 30.0
+	_run(60.0)
+	clock.day_length = weather.day_length
+	check(clock.day > 0 and is_equal_approx(clock.season,held) and clock.season_name() == "winter","The calendar turns on but the season stays winter")
+	GameSettings.choose("season",0,study)
+	var day := clock.day
+	check(clock.season_override < 0.0 and GameSettings.index_of("season") == 0,"Live gives the year back")
+	check(absf(fposmod(clock.season-KitWeather.date_season(Time.get_date_dict_from_system()),1.0)) < 0.05 or clock.season > 0.95,"at the real date's season")
+	var before := clock.season
+	clock.day_length = 30.0
+	_run(60.0)
+	clock.day_length = weather.day_length
+	check(not is_equal_approx(clock.season,before) and clock.day > day,"and turns again")
+	GameSettings.choose("season",2,study)
+	GameSettings.apply_start(study)
+	check(clock.season_name() == "summer" and GameSettings.index_of("season") == 2,"A kept season applies at the start")
+	GameSettings.choose("season",0,study)
 
 # --- The cost --------------------------------------------------------------------------------
 

@@ -79,6 +79,9 @@ const DAY_SECONDS := [WorldClock.DEFAULT_DAY_LENGTH,1440.0,0.0]
 const DAY_NAMES := ["A day in 8 minutes","A day in 24 minutes","Held"]
 ## The settings' weather ("weather"): drifting or still.
 const DRIFT_NAMES := ["Drifting","Still"]
+## The Settings > Look "Season" row: Live (the date's season, then turning)
+## or the year held at a season of WorldClock.SEASON_NAMES.
+const SEASON_CHOICES := ["Live","Spring","Summer","Autumn","Winter"]
 ## World days a year: the old game's four seven-day seasons. At the first
 ## day length a season is about an hour of play.
 const YEAR_DAYS := WorldClock.YEAR_DAYS
@@ -143,7 +146,10 @@ var start_look := LIVE
 ## Main-thread microseconds the last `step` took.
 var spent := 0
 ## Flags that set a thing pin it against the settings.
+## The season chosen in the settings (SEASON_CHOICES' index; 0 live).
+var season_choice := 0
 var _day_flag := false
+var _season_flag := false
 var _drift_flag := false
 var _start_hour := -1.0
 var _start_season := -1.0
@@ -174,7 +180,9 @@ func setup(study: Node3D) -> void:
 			day_length = maxf(float(arg.get_slice("=",1)),0.0)
 			_day_flag = true
 		elif arg.begins_with("--hour="): _start_hour = fposmod(float(arg.get_slice("=",1)),24.0)
-		elif arg.begins_with("--season="): _start_season = season_named(arg.get_slice("=",1))
+		elif arg.begins_with("--season="):
+			_start_season = season_named(arg.get_slice("=",1))
+			_season_flag = true
 		elif arg.begins_with("--year-days="): clock.year_days = int(arg.get_slice("=",1))
 		elif arg.begins_with("--weather="): _start_weather = arg.get_slice("=",1)
 		elif arg.begins_with("--weather-hour="): weather_hour = maxf(float(arg.get_slice("=",1)),0.01)
@@ -269,6 +277,7 @@ func _go_live(day: int, hour: float) -> void:
 		if _start_weather != "": weather = _start_weather
 	clock.season_override = -1.0
 	clock.set_time(day,hour)
+	_pin_season()
 	clock.day_length = day_length
 	scene._celestial.cycling = day_length > 0.0
 	# The start look pins the visible cloud and the cold; the drift owns
@@ -332,6 +341,26 @@ func choose_day(index: int) -> void:
 	if not live: return
 	clock.day_length = day_length
 	scene._celestial.cycling = day_length > 0.0
+
+## The season chosen in the settings (SEASON_CHOICES' index): a named one
+## holds the year there (the calendar doesn't turn on), the plants and tints
+## gliding to it as F11's do; Live goes back to the date's season and turns.
+## A --season= flag keeps its own. Held under a look preset, it waits for the
+## live sky (`_go_live`).
+func choose_season(index: int) -> void:
+	if _season_flag: return
+	var was := season_choice
+	season_choice = clampi(index,0,SEASON_CHOICES.size()-1)
+	if not live: return
+	if season_choice > 0: _pin_season()
+	elif was > 0:
+		clock.season_override = -1.0
+		var day := roundi(date_season(Time.get_date_dict_from_system())*clock.year_days-clock.hour/WorldClock.HOURS_PER_DAY)
+		clock.set_time(maxi(day,0),clock.hour)
+
+## The year held at the chosen season, if one is chosen.
+func _pin_season() -> void:
+	if season_choice > 0 and not _season_flag: clock.season_override = float(Living.SEASONS[season_choice-1])
 
 ## Whether the weather drifts, chosen in the settings; --still-weather
 ## keeps it still.
