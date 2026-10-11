@@ -1245,6 +1245,12 @@ func snout() -> Vector3:
 func speed() -> float:
 	return _sx[S_SPEED]
 
+## Where its breath stands in its cycle (0 to 1: in to 0.38, out to 0.86),
+## as `_pose` breathes it; read by its sound (scripts/kit_isle/
+## kit_audio_beasts.gd).
+func breath_phase() -> float:
+	return fposmod(_time/5.2,1.0)
+
 func spring(i: int) -> float:
 	return _sx[i]
 

@@ -391,6 +391,9 @@ func _build_room() -> void:
 		_build_arch()
 	_build_markers()
 	_build_fade()
+	# Its sound: scales, hum, breath, the ride's rumble and carves
+	# (docs/design/sound-round3.md).
+	preload("res://scripts/kit_isle/kit_audio_beasts.gd").attach(self)
 
 ## The real serpent on this scene's way, driven from `tick` (its own
 ## process off), its capsules left out (its back's hulls stand in).

@@ -10,7 +10,10 @@ extends SceneTree
 ##     pitch and the rush in gain; on the knife edge the wires sing;
 ##   - the cloud sea's hush closes the low-pass over everything;
 ##   - the touch thumps; the body's moves (a jump, a twirl, the sail) play
-##     their foley; parked after a flight, the engine ticks as it cools.
+##     their foley; parked after a flight, the engine ticks as it cools;
+##   - round 3 (kit_audio_beasts.gd): the serpent is found and grinds and
+##     hums beside its body, silent far off; the dragon is found, whumps
+##     once a beat with its upstroke's rustle, and calls as its jaw opens.
 ##   godot --headless --path . --script tests/test_kit_audio.gd
 const KitAudio = preload("res://scripts/kit_isle/kit_audio.gd")
 const DT := 1.0/60.0
@@ -72,6 +75,37 @@ func run() -> void:
 		check(loud > 0.0,"Beside a fall it roars (%.3f)" % loud)
 	audio.body({"swing":false})
 	check(audio.played.has("whip"),"Let go, the rope whips")
+	# Round 3: the beasts (scripts/kit_isle/kit_audio_beasts.gd).
+	var beasts = audio.beasts
+	check(beasts != null and beasts.serpents.size() > 0,"The serpent is found (%d)" % (beasts.serpents.size() if beasts != null else 0))
+	if beasts != null and beasts.serpents.size() > 0:
+		var serpent: Node3D = beasts.serpents[0]
+		var ring: Vector3 = serpent.global_transform*serpent.rings()[20]
+		for i in range(30): beasts.step(DT,ring+Vector3.UP*6.0)
+		var sb: Dictionary = beasts._s[serpent.get_instance_id()]
+		check(sb.scales.goal > 0.0 and sb.hum.goal > 0.0 and (sb.scales.player as Node3D).global_position.distance_to(ring) < 8.0,"Beside the serpent's body its scales grind (%.3f) and its runes hum (%.3f) right there" % [sb.scales.goal,sb.hum.goal])
+		beasts.step(DT,ring+Vector3.UP*2000.0)
+		check(sb.scales.goal == 0.0,"Far from it, silence")
+	study._build_sky_dragon()
+	var dragon: Node3D = study.dragon
+	check(beasts != null and beasts.dragons.has(dragon),"The dragon is found")
+	if dragon != null and beasts != null:
+		dragon.model.visible = true
+		dragon.state = "roaming"
+		dragon.flap_w = 1.0
+		var near: Vector3 = dragon.global_position+Vector3(0,0,120)
+		var beats := int(beasts.played.get("dragon_beat",0))
+		for i in range(int(7.0/DT)):
+			dragon.phase = fposmod(i*DT*0.3+0.013,1.0)
+			beasts.step(DT,near)
+		check(int(beasts.played.get("dragon_beat",0))-beats == 2 and int(beasts.played.get("dragon_up",0)) >= 2,"Two wingbeats in 7 s of its beat, each with its upstroke (%s)" % beasts.played)
+		beasts._call_wait = 0.0
+		dragon._roar_t = 0.2
+		beasts.step(DT,near)
+		dragon._roar_t = 0.5
+		beasts.step(DT,near)
+		check(beasts.played.has("dragon_call"),"As its jaw opens on a roar, it calls")
+		dragon._roar_t = -1.0
 	study.board()
 	for i in range(60):
 		study.fly_step(DT,{})
