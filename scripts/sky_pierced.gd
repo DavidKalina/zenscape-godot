@@ -411,8 +411,12 @@ func _forget(key: String) -> void:
 	if b is Dictionary:
 		if is_instance_valid(b.node): (b.node as Node3D).queue_free()
 		islets.built.erase(_built_key(s.spot.key))
-	elif s.out.get("ruins") is Node3D and is_instance_valid(s.out.ruins):
-		(s.out.ruins as Node3D).free()
+	# The worker's ruins, if they never stood (the isle let go before its
+	# last stage, or not stood at all): a whole node tree, colliders and all,
+	# that nothing else frees. Stood, they go with the lid's node.
+	var ruins: Variant = s.out.get("ruins")
+	if ruins is Node3D and is_instance_valid(ruins) and (ruins as Node3D).get_parent() == null:
+		(ruins as Node3D).free()
 	isles.erase(key)
 
 func _perched(s: Dictionary) -> bool:
