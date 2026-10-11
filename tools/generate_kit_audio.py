@@ -946,7 +946,20 @@ def dragon_wingbeats():
         spill = bandpass(noise, lambda t: 380.0 + 200.0 * max(0.0, t - peak), 1.3)
         env2 = [math.sin(math.pi * min(1.0, max(0.0, i / RATE - peak * 0.6) / 0.9)) ** 2 for i in range(n)]
         add(x, mul(spill, env2), 0.5)
-        write('dragon-beat-%d' % (k + 1), soft(highpass(x, 22), 1.4), 0.9)
+        # What small speakers hear: the leather catching the air, a hard
+        # swell of low-mid whoosh snapping off at the peak, and a thump an
+        # octave and a half over the sub so the beat reads as a beat.
+        catch = bandpass(noise, lambda t: 140.0 + 260.0 * min(1.0, t / peak), 1.1)
+        env3 = [(min(1.0, (i / RATE) / peak) ** 4.0) * math.exp(-max(0.0, i / RATE - peak) * 9.0) for i in range(n)]
+        add(x, mul(catch, env3), 3.2)
+        thump = [0.0] * n
+        ft = f0 * 2.0
+        for i in range(n):
+            t = i / RATE - peak + 0.02
+            if t > 0:
+                thump[i] = math.sin(TAU * ft * (1.0 - 0.25 * min(1.0, t * 4.0)) * t) * min(1.0, t / 0.008) * math.exp(-t * 7.0)
+        add(x, thump, 0.9)
+        write('dragon-beat-%d' % (k + 1), soft(highpass(x, 22), 2.0), 0.9)
 
 
 def dragon_upstrokes():
@@ -973,7 +986,7 @@ def dragon_calls():
     """Its call: long and low, a horn-like voice over a rough throat, rising
     into the call and sinking away, as old as the rock. Not a snarl: no
     rasping top, no bite. About 3.3 s, played as the jaw opens on a roar."""
-    shapes = [(62.0, 92.0, 50.0), (55.0, 80.0, 44.0), (70.0, 104.0, 58.0)]
+    shapes = [(46.0, 70.0, 37.0), (41.0, 62.0, 33.0), (52.0, 78.0, 42.0)]
     for k in range(3):
         rng = random.Random('dragon-call-%d' % k)
         seconds = 3.3
@@ -985,12 +998,20 @@ def dragon_calls():
             if u < 0.35:
                 return a + (b - a) * math.sin(math.pi * 0.5 * u / 0.35)
             return b + (c - b) * ((u - 0.35) / 0.65) ** 1.3
-        src = pulse_train(rng, n, f0, jitter=0.03, width=0.005, rough=0.35)
+        src = pulse_train(rng, n, f0, jitter=0.05, width=0.006, rough=0.55)
         x = [0.0] * n
-        add(x, bandpass(src, lambda t: 320.0 + 140.0 * math.sin(math.pi * min(1.0, t / seconds)), 4.0), 1.0)
-        add(x, bandpass(src, lambda t: 760.0 + 160.0 * math.sin(math.pi * min(1.0, t / seconds)), 6.0), 0.55)
-        add(x, bandpass(src, 1900.0, 8.0), 0.12)
-        add(x, lowpass(src, 160), 0.8)
+        add(x, bandpass(src, lambda t: 260.0 + 120.0 * math.sin(math.pi * min(1.0, t / seconds)), 4.0), 1.0)
+        add(x, bandpass(src, lambda t: 620.0 + 160.0 * math.sin(math.pi * min(1.0, t / seconds)), 6.0), 0.55)
+        add(x, bandpass(src, 1500.0, 5.0), 0.3)
+        add(x, lowpass(src, 160), 1.1)
+        # A sub an octave under the throat, felt in the chest.
+        ph_sub = 0.0
+        for i in range(n):
+            ph_sub += TAU * f0(i / RATE) * 0.5 / RATE
+            x[i] += 0.35 * math.sin(ph_sub)
+        # A rasp riding the throat's pulses: breath torn through the voice.
+        rasp = bandpass(pink(rng, n), 1700.0, 1.4)
+        add(x, mul(rasp, [min(1.0, abs(v) * 3.0) for v in lowpass(src, 400)]), 0.45)
         # The horn: a few clean partials an octave over the throat, slow vibrato.
         ph = 0.0
         for i in range(n):
@@ -999,7 +1020,7 @@ def dragon_calls():
             x[i] += 0.16 * (math.sin(ph) + 0.4 * math.sin(2 * ph) + 0.18 * math.sin(3 * ph))
         add(x, bandpass(pink(rng, n), 520.0, 0.9), 0.25)
         env = [min(1.0, (i / RATE) / 0.45) ** 1.6 * (1.0 - max(0.0, (i / RATE - (seconds - 1.0)) / 1.0)) ** 1.5 for i in range(n)]
-        write('dragon-call-%d' % (k + 1), soft(lowpass(mul(x, env), 4000), 1.3), 0.85)
+        write('dragon-call-%d' % (k + 1), soft(lowpass(mul(x, env), 4000), 2.0), 0.85)
 
 
 def dragon_growl():
@@ -1065,6 +1086,38 @@ def rock_debris():
         add(x, [v * math.exp(-i / RATE * 1.5) for i, v in enumerate(lowpass(noise, 140))], 1.6)
         add(x, [v * math.exp(-i / RATE * 2.2) for i, v in enumerate(highpass(noise, 2500))], 0.25)
         write('rock-debris-%d' % (k + 1), lowpass(x, 6000), 0.8)
+
+
+def dragon_grip_rumbles():
+    """It takes hold of a rim: no crash, a deep rolling rumble through the
+    whole isle, as if the rock itself groaned under the weight. Swells in
+    over a beat, rolls in slow surges, a few low crumbles in it, and dies
+    away over seconds."""
+    for k in range(2):
+        rng = random.Random('dragon-grip-%d' % k)
+        seconds = 4.5
+        n = int(seconds * RATE)
+        noise = pink(rng, n)
+        roll = wander(rng, seconds, 2.2)
+        x = [0.0] * n
+        add(x, lowpass(lowpass(noise, 110), 160), 3.0)
+        add(x, bandpass(noise, lambda t: 75.0 + 30.0 * roll(t), 2.5), 2.0)
+        add(x, bandpass(noise, 190.0, 1.5), 0.6)
+        f0 = rng.uniform(27.0, 33.0)
+        ph = 0.0
+        for i in range(n):
+            ph += TAU * f0 * (1.0 + 0.04 * roll(i / RATE)) / RATE
+            x[i] += 0.5 * math.sin(ph)
+        # Low crumbles: stone settling deep in the isle, no bright cracks.
+        t = 0.3
+        while t < seconds - 1.0:
+            m = int(0.25 * RATE)
+            burst = lowpass([v * e for v, e in zip(white(rng, m), envelope(m, 0.01, 14.0))], 500)
+            add(x, burst, rng.uniform(0.6, 1.2) * math.exp(-t * 0.5), int(t * RATE))
+            t += rng.uniform(0.25, 0.7)
+        env = [min(1.0, (i / RATE) / 0.35) ** 1.5 * math.exp(-max(0.0, i / RATE - 0.6) * 0.9)
+               * (0.7 + 0.3 * (0.5 + 0.5 * roll(i / RATE))) for i in range(n)]
+        write('dragon-grip-%d' % (k + 1), soft(highpass(mul(x, env), 20), 1.6), 0.9)
 
 
 def dragon_slams():
@@ -1246,7 +1299,7 @@ TAKES = [air_rush, air_whistle, air_howl, engine, engine_start, wheel_rumble, sk
          wire_sing, thin_wind, cloud_hush, thumps, creaks, ticks, swishes, whooshes,
          sail_pops, sail_folds, grabs,
          chirps, twitters, wings, bird_chorus, insect_hum, fall_roar, fall_spill, rope_creaks, rope_whips, crickets, frog_croaks,
-         dragon_wingbeats, dragon_upstrokes, dragon_calls, dragon_growl, stone_grind, rock_debris, dragon_slams,
+         dragon_wingbeats, dragon_upstrokes, dragon_calls, dragon_growl, stone_grind, rock_debris, dragon_slams, dragon_grip_rumbles,
          gale_howl, buffets, wind_slams, dragon_breaths, serpent_scales, serpent_hum, serpent_breaths]
 
 if __name__ == '__main__':

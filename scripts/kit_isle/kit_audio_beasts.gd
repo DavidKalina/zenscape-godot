@@ -45,8 +45,8 @@ const DRAGON_REACH := 1600.0
 ## A downstroke's whump and an upstroke's rustle (gain at a full beat);
 ## the whump's peak lies BEAT_PEAK s into its sample, and the stroke's
 ## middle at STROKE_MID of the beat (sky_dragon.gd DOWN is 0.5).
-const BEAT := 0.5
-const UPSTROKE := 0.16
+const BEAT := 0.75
+const UPSTROKE := 0.22
 const BEAT_PEAK := 0.35
 const STROKE_MID := 0.25
 const UP_AT := 0.6
@@ -55,7 +55,7 @@ const PASS := 0.22
 const PASS_SPEED := Vector2(20.0,54.0)
 ## Its call: gain, reach (m), the shortest gap (s) between calls, and the
 ## distance (m) whose crossing inward (coming toward you) calls.
-const CALL := 0.55
+const CALL := 0.65
 const CALL_UNIT := 140.0
 const CALL_REACH := 2600.0
 const CALL_GAP := 16.0
@@ -64,6 +64,8 @@ const APPROACH := 420.0
 ## grinding stone (a base while held, more with the sag's speed, m/s),
 ## the draw in and the blow.
 const SLAM := 0.6
+## Taking hold of a rim: a deep rolling rumble through the isle, not a crash.
+const GRIP := 0.8
 const DEBRIS := 0.35
 const GROWL := 0.3
 const GROWL_BY := {"settle":0.8,"pant":0.6,"inhale":0.25,"blow":0.35,"recover":0.65,"pull":1.0}
@@ -188,7 +190,7 @@ func _ready() -> void:
 		_flat.append(p)
 	_clips = {
 		"dragon_beat":_takes(KIT+"dragon-beat-%d.wav",4),"dragon_up":_takes(KIT+"dragon-up-%d.wav",3),
-		"dragon_call":_takes(KIT+"dragon-call-%d.wav",3),"dragon_slam":_takes(KIT+"dragon-slam-%d.wav",2),
+		"dragon_call":_takes(KIT+"dragon-call-%d.wav",3),"dragon_slam":_takes(KIT+"dragon-slam-%d.wav",2),"dragon_grip":_takes(KIT+"dragon-grip-%d.wav",2),
 		"debris":_takes(KIT+"rock-debris-%d.wav",3),"inhale":[load(KIT+"dragon-inhale.wav")],
 		"exhale":_takes(KIT+"dragon-exhale-%d.wav",2),"buffet":_takes(KIT+"buffet-%d.wav",3),
 		"wind_slam":_takes(KIT+"wind-slam-%d.wav",2),"serpent_breath":_takes(KIT+"serpent-breath-%d.wav",2),
@@ -432,8 +434,7 @@ func _rim(dragon: Node, b: Dictionary, state: String, was_state: String, listene
 		if gale != null and gale.isle != null and is_instance_valid(gale.isle):
 			rim = (gale.isle.transform*(gale.isle_rest as Transform3D).affine_inverse())*rim
 	if state == "clinging" and was_state != "clinging" and rim != Vector3.INF:
-		shot("dragon_slam",SLAM,_rng.randf_range(0.92,1.02),rim,DRAGON_UNIT,DRAGON_REACH,FAR)
-		shot("debris",DEBRIS,1.0,rim,30.0,800.0)
+		shot("dragon_grip",GRIP,_rng.randf_range(0.92,1.02),rim,DRAGON_UNIT,DRAGON_REACH,FAR)
 	if state == "leaving" and was_state == "clinging":
 		var at: Vector3 = (dragon as Node3D).global_position
 		shot("dragon_beat",BEAT*LAUNCH,0.82,at,DRAGON_UNIT,DRAGON_REACH,FAR)
