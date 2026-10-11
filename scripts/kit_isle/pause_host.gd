@@ -12,6 +12,10 @@ extends Node
 ## command line's flags less the ones that skip its title: the isle comes up
 ## afresh under the veil) and Quit.
 ##
+## It also tells scripts/pad.gd which device is in hand (`note`, from the
+## root window's every event, as the old game's scripts/pad_input.gd does),
+## so the sheets' keys and the isle's prompts follow the device.
+##
 ## It processes while paused, as does all it holds. Not while the title is
 ## up (the front door has the keys then), the isle is still coming up, or the
 ## study's recording-name panel is open (its Esc drops the recording).
@@ -38,6 +42,13 @@ var _mouse := Input.MOUSE_MODE_VISIBLE
 
 func _init() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+
+func _ready() -> void:
+	Pad.ensure()
+	get_tree().root.window_input.connect(Pad.note)
+
+func _exit_tree() -> void:
+	if get_tree().root.window_input.is_connected(Pad.note): get_tree().root.window_input.disconnect(Pad.note)
 
 ## Hosts the pause over `scene`.
 func setup(scene: Node3D) -> void:
