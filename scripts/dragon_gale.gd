@@ -4,7 +4,7 @@ extends Node3D
 ## to its rim, drawn big enough to read from the aqueduct isle 150 to 300 m
 ## off. One node, top level, world space; the dragon drives it.
 ##
-##   streaks   round 1's wind streaks (scripts/rim_dragon.gd `_spawn`), a
+##   streaks   round 1's wind streaks (the rim dragon's, since removed), a
 ##             few times its size: drawn into the mouth on the inhale;
 ##   breath    round 8: the blow is the game's breeze ribbons
 ##             (scripts/dragon_breath.gd), born in the mouth, pouring across
