@@ -27,6 +27,25 @@ cancelled, twirl / wall run / sail ready again. Rise from standing
 (`RING_*`), camera dip and rise (`DIP`), dust. The ring calls `wind_push` on
 group `wind_pushable` (only the swing ropes, which swing `WIND_SWING` 9 m/s).
 
+## Directional burst
+Q picks its direction from the stick (`updraft.burst`, tried before `updraft`).
+Stick at least `BURST_STICK` and within `BURST_CONE` (50 deg) of his flat travel
+(any way if under `BURST_SLOW`) is a forward burst: all the charge becomes
+`+BURST_ADD_MIN..MAX` (5..12) m/s along stick + travel, scaled down from
+`BURST_SOFT` (14) to `BURST_CAP` (28 m/s, floor `BURST_FLOOR`), with a
+`BURST_COOLDOWN` 0.6 s (a forward press inside it does nothing). Grounded he
+stays down and keeps sliding or running; for `BURST_RIDE` s the motor's
+`slide_top` is raised to `BURST_SLIDE_TOP` and `slide_air` cut to
+`BURST_AIR_DRAG`, set from the updraft, so the motor is untouched. Look: wind
+streaks and dust behind him, FOV kick `BURST_FOV`. Mid-air it is
+`BURST_AIR_SHARE` of the add with no lift (`BURST_AIR_ON` toggles it). Neutral
+stick or stick back is the updraft, everywhere; out of a fast slide
+(`UP_SLIDE_PACE`) the rise is scaled `UP_SLIDE_SCALE` and the pace is kept.
+The faster pace refills charge, so bursts chain. Probe numbers (flat m/s at
+0 / 0.25 / 0.5 / 1 s, real flat slide from 11.5): burst in slide 21.2 / 19.1 /
+15.8 (no burst 9.9 / 8.6 / 6.4); two bursts 0.67 s apart, 22.9 at 1 s;
+updraft out of a slide rose 9.4 m at 11.5 m/s kept.
+
 ## Hosting
 `studies/character_study.gd` creates it unless `--no-updraft` is passed, so every
 kit isle and the aqueduct isle have it. Launcher: `./run-updraft.command`.

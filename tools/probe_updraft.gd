@@ -70,6 +70,38 @@ func _initialize() -> void:
 		s.tick(DT)
 		if i == 14 or i == 29: o2.append(snappedf(m.speed(),0.1))
 	print("pace 13 no stick: flat before/0.25s/0.5s ",o2)
+	# Directional burst: a REAL slide (crouch at 12 m/s on the flat = move "slide").
+	for case in ["forward burst in slide","two chained bursts","updraft out of a slide","slide, no burst","forward burst running","air forward burst"]:
+		_settle(s)
+		var f: Vector2 = m.forward(m.facing)
+		m.velocity = Vector3(f.x*12.0,0.0,f.y*12.0)
+		s.script_want = f
+		if case != "forward burst running" and case != "air forward burst": s.script_crouch = true
+		for i in range(4): s.tick(DT)
+		if case == "air forward burst":
+			s.script_jump = true
+			for i in range(4): s.tick(DT)
+			s.script_jump = false
+		u.charge = 1.0
+		var mv: String = m.move
+		var y1: float = m.feet.y
+		var base: float = m.speed()
+		var rows := [snappedf(base,0.1)]
+		var stick := f if case != "updraft out of a slide" else Vector2.ZERO
+		s.script_want = stick
+		var press: bool = case != "slide, no burst"
+		var pk := y1
+		for i in range(60):
+			if i == 0 and press: u.update(DT,m,true,stick)
+			elif i == 40 and case == "two chained bursts":
+				u.charge = 1.0
+				u.update(DT,m,true,stick)
+			s.tick(DT)
+			pk = maxf(pk,m.feet.y)
+			if i == 14 or i == 29 or i == 59: rows.append(snappedf(m.speed(),0.1))
+		print(case," (move '",mv,"' then '",m.move,"') flat before/0.25s/0.5s/1s ",rows," add ",snappedf(u.last_add,0.1)," rise ",snappedf(pk-y1,0.2))
+		s.script_crouch = false
+		s.script_want = Vector2.ZERO
 	# Sail after the updraft.
 	_settle(s)
 	u.charge = 1.0

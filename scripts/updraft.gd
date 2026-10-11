@@ -48,6 +48,31 @@ const FADE := 0.3              # s a spent ring's streaks fade over
 const DIP := 0.35              # m the camera dips at full charge, then rises
 const DIP_TIME := 0.4          # s dip + rise
 
+# --- The directional burst (stick toward travel + Q): a flat kick, no lift
+const BURST_ON := true          # master toggle for the whole forward burst
+const BURST_AIR_ON := true      # the mid-air version; false = Q in the air is always the updraft
+const BURST_CONE := 50.0        # deg: stick within this of his flat travel is "forward"
+const BURST_STICK := 0.5        # least stick length that counts
+const BURST_SLOW := 3.0         # m/s: slower than this, any stick way is "forward"
+const BURST_ADD_MIN := 5.0      # m/s added at charge 0.15...
+const BURST_ADD_MAX := 12.0     # m/s added at full charge
+const BURST_SOFT := 14.0        # m/s: bursts start adding less above this pace
+const BURST_CAP := 28.0         # m/s: a burst adds nothing at this pace (soft ceiling)
+const BURST_FLOOR := 0.12       # share of the add kept near the cap, so it never feels dead
+const BURST_COOLDOWN := 0.6     # s between forward bursts
+const BURST_AIR_SHARE := 0.6    # share of the add in mid-air
+const BURST_AIR_LIFT := 0.0     # m/s of vy added in mid-air (a fall is not cancelled)
+const BURST_GROUND_HOP := 0.0   # m/s of vy added on the ground (0 = stays down)
+const BURST_SLIDE_TOP := 28.0   # m/s the slide's own top is raised to while a burst rides
+const BURST_AIR_DRAG := 0.4     # share of the slide's air drag kept while a burst rides (it is v squared)
+const BURST_RIDE := 2.5         # s the raised top lasts after a burst
+const BURST_FOV := 7.0          # deg of FOV kick at full charge
+const BURST_FOV_TIME := 0.5     # s the kick takes to settle
+const BURST_STREAKS := 10       # wind streaks left behind
+const BURST_STREAK_LEN := 1.6   # m long
+const UP_SLIDE_SCALE := 1.35    # rise multiplier when the updraft fires out of a fast slide
+const UP_SLIDE_PACE := 8.0      # m/s: "fast slide" for that
+
 # --- Look
 const STREAKS := 14
 const IDLE_COL := Color(0.75,0.92,1.0,0.8)
@@ -61,6 +86,15 @@ var _prev_move := ""
 var _clock := 0.0
 var _dip_t := 0.0
 var _dip_amp := 0.0
+var bursts := 0
+var last_add := 0.0             # m/s added by the last forward burst
+var _cool := 0.0
+var _ride := 0.0
+var _base_top := -1.0
+var _base_air := 0.0
+var _fov := 0.0
+var _fov_applied := 0.0
+var _cam: Camera3D
 var _rings: Array = []
 var _streaks: Array[MeshInstance3D] = []
 var _streak_mat: StandardMaterial3D
@@ -101,6 +135,8 @@ static func _glow(c: Color) -> StandardMaterial3D:
 
 func reset() -> void:
 	charge = 0.0
+	_cool = 0.0
+	_ride = 0.0
 	_quiet = 0.0
 	_prev_move = ""
 	_dip_t = 0.0
@@ -109,10 +145,15 @@ func reset() -> void:
 	_draw(Vector3.ZERO)
 
 ## One frame, before the motor steps. `pressed` is the key's press edge.
-func update(delta: float, m: PilotMotor, pressed: bool) -> void:
+func update(delta: float, m: PilotMotor, pressed: bool, want := Vector2.ZERO) -> void:
 	_clock += delta
+	if _cam != null and _fov_applied != 0.0:
+		_cam.fov -= _fov_applied
+		_fov_applied = 0.0
+	_cool = maxf(_cool-delta,0.0)
 	_charge(delta,m)
-	if pressed: updraft(m)
+	if pressed and not burst(m,want): updraft(m)
+	_ride_top(delta,m)
 	_step_rings(delta)
 	_draw(m.feet)
 
@@ -152,6 +193,7 @@ func updraft(m: PilotMotor) -> bool:
 	_quiet = 0.0
 	updrafts += 1
 	last_rise = lerpf(UP_RISE_MIN,UP_RISE_MAX,p)*UNIT
+	if m.move == "slide" and m.speed() > UP_SLIDE_PACE*UNIT: last_rise *= UP_SLIDE_SCALE
 	var vy := sqrt(2.0*PilotMotor.GRAVITY*last_rise)
 	var face := m.facing
 	var v := m.velocity
@@ -162,8 +204,96 @@ func updraft(m: PilotMotor) -> bool:
 	_dip_amp = DIP*p*UNIT
 	return true
 
-## The camera dips, then rises, after an updraft.
+## The forward burst: stick toward his travel (or any way when slow) plus the
+## key adds flat pace along it, scaled by charge and eased off near BURST_CAP.
+## No ring; wind streaks behind him and a FOV kick. Grounded he stays down (and
+## keeps sliding); in the air it is a share, no lift. Returns false when it is
+## not a forward burst (the caller then fires the updraft).
+func burst(m: PilotMotor, want: Vector2) -> bool:
+	if not BURST_ON or charge < MIN_RELEASE or want.length() < BURST_STICK: return false
+	if m.recovering() or m.swimming or m.seized() or m.rider != null or m.hold != "": return false
+	if not m.grounded and not BURST_AIR_ON: return false
+	var h := Vector2(m.velocity.x,m.velocity.z)
+	var pace := h.length()
+	var dir := want.normalized()
+	if pace > BURST_SLOW*UNIT:
+		var vdir := h/pace
+		if rad_to_deg(acos(clampf(vdir.dot(dir),-1.0,1.0))) > BURST_CONE: return false
+		dir = (vdir+dir).normalized()
+	if _cool > 0.0: return true   # a forward press inside the cooldown does nothing, not an updraft
+	var p := charge
+	charge = 0.0
+	_quiet = 0.0
+	bursts += 1
+	_cool = BURST_COOLDOWN
+	var soft := clampf((BURST_CAP-pace/UNIT)/(BURST_CAP-BURST_SOFT),BURST_FLOOR,1.0)
+	var add := lerpf(BURST_ADD_MIN,BURST_ADD_MAX,p)*soft*UNIT
+	if not m.grounded: add *= BURST_AIR_SHARE
+	last_add = add
+	m.velocity.x += dir.x*add
+	m.velocity.z += dir.y*add
+	if m.grounded: m.velocity.y += BURST_GROUND_HOP*UNIT
+	else: m.velocity.y += BURST_AIR_LIFT*UNIT
+	_ride = BURST_RIDE
+	_streaks_behind(m.feet,dir,p)
+	_fov = BURST_FOV*p
+	return true
+
+## The slide caps its pace at slide_top; while a burst rides, raise it.
+func _ride_top(delta: float, m: PilotMotor) -> void:
+	if _ride > 0.0:
+		if _base_top < 0.0:
+			_base_top = m.slide_top
+			_base_air = m.slide_air
+		m.slide_top = maxf(_base_top,BURST_SLIDE_TOP*UNIT)
+		m.slide_air = _base_air*BURST_AIR_DRAG
+		_ride -= delta
+	elif _base_top >= 0.0:
+		m.slide_top = _base_top
+		m.slide_air = _base_air
+		_base_top = -1.0
+
+func _streaks_behind(feet: Vector3, dir: Vector2, p: float) -> void:
+	var back := Vector3(-dir.x,0.0,-dir.y)
+	var box := BoxMesh.new()
+	box.size = Vector3(0.04,0.04,BURST_STREAK_LEN*UNIT)
+	for i in range(BURST_STREAKS):
+		var side := Vector3(-back.z,0.0,back.x)
+		var n := MeshInstance3D.new()
+		n.mesh = box
+		var mat := _glow(IDLE_COL.lerp(FULL_COL,p))
+		n.material_override = mat
+		n.top_level = true
+		add_child(n)
+		var from := feet+back*randf_range(0.3,0.9)*UNIT+side*randf_range(-0.7,0.7)*UNIT+Vector3(0.0,randf_range(0.1,1.3)*UNIT,0.0)
+		n.position = from
+		n.basis = Basis.looking_at(back,Vector3.UP)
+		var tw := create_tween().set_parallel(true)
+		tw.tween_property(n,"position",from+back*randf_range(2.0,4.0)*UNIT,0.35)
+		tw.tween_property(mat,"albedo_color:a",0.0,0.35)
+		tw.chain().tween_callback(n.queue_free)
+	var dust := BoxMesh.new()
+	dust.size = Vector3.ONE*0.16*UNIT
+	for i in range(6):
+		var d := MeshInstance3D.new()
+		d.mesh = dust
+		var dm := _glow(Color(0.6,0.55,0.5,0.5))
+		d.material_override = dm
+		d.top_level = true
+		add_child(d)
+		d.position = feet
+		var tw := create_tween().set_parallel(true)
+		tw.tween_property(d,"position",feet+back*randf_range(1.0,2.5)*UNIT+Vector3(randf_range(-0.5,0.5),randf_range(0.2,0.7),randf_range(-0.5,0.5))*UNIT,0.45)
+		tw.tween_property(dm,"albedo_color:a",0.0,0.45)
+		tw.chain().tween_callback(d.queue_free)
+
+## The camera dips, then rises, after an updraft; a burst kicks the FOV.
 func apply_feel(camera: Camera3D) -> void:
+	_cam = camera
+	if _fov > 0.01 and camera != null:
+		_fov = maxf(_fov-BURST_FOV*get_process_delta_time()/BURST_FOV_TIME,0.0)
+		camera.fov += _fov
+		_fov_applied = _fov
 	if _dip_t > 0.0 and camera != null:
 		_dip_t = maxf(_dip_t-get_process_delta_time(),0.0)
 		var u := 1.0-_dip_t/DIP_TIME

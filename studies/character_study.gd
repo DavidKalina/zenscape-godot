@@ -799,7 +799,7 @@ func tick(delta: float) -> void:
 		motor.twirl = Input.is_action_pressed(&"walk_twirl") and not _tuning()
 	_asked = want.length()
 	if updraft != null and not _tuning():
-		updraft.update(delta,motor,not scripted and Input.is_action_just_pressed(&"walk_wind"))
+		updraft.update(delta,motor,not scripted and Input.is_action_just_pressed(&"walk_wind"),want)
 	ground.head(delta)
 	if foot_pieces != null: foot_pieces.before(delta)
 	var was := motor.feet
