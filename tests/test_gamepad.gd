@@ -10,7 +10,8 @@ extends SceneTree
 ##     the right stick orbits, the triggers zoom, the shoulders step the tool,
 ##     the D-pad the case and the size, Y the mode; A taps a tree in with a
 ##     seed in hand, B puts it down, B held undoes;
-##   - build -> walk (View) -> fly (A held) -> land (Y) -> walk -> build (B);
+##   - build -> walk (View) -> A again in the air never flies -> fly (off
+##     the edge) -> land (Y) -> walk -> build (B);
 ##   - Menu pauses, the D-pad steps the panel, A opens the field notes and B
 ##     comes back from them, B resumes;
 ##   - L3 opens photo mode, its sticks compose, X is the ground eye, B leaves;
@@ -267,7 +268,13 @@ func _modes() -> void:
 	await frames(3)
 	button(JOY_BUTTON_A,false)
 	await frames(3)
-	check(eye.flying,"A again on the way up the jump: flying")
+	check(not eye.flying,"A again on the way up the jump: never the plane (no room over the plate for the sail either)")
+	# Off the edge is the way into the plane now; started here as the walk
+	# off the edge starts it.
+	await seconds(1.0)
+	eye._launch(maxf(eye.motor.speed(),1.0))
+	await frames(3)
+	check(eye.flying,"Off the edge: flying")
 	await seconds(1.5)
 	await tap(JOY_BUTTON_Y)
 	check(eye._landing_wait or eye.landing != null,"Y: it comes in to land")

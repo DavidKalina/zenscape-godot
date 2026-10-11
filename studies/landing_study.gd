@@ -10,9 +10,9 @@ extends Node3D
 ## Only a barrel roll into the ground or land too steep hops. Only stopped
 ## can you get out (F, or the pad's Y), and only by asking. On foot, walk back to the plane and Space
 ## (A) by it climbs in and takes off (scripts/plane_landing.gd's takeoff);
-## nothing else flies. Walk off an edge and you drop, the canopy opening a
-## moment on (scripts/sky_dive.gd; X opens it sooner), the plane staying
-## parked: come down on the plane's field and walk to it; anywhere else (a
+## nothing else flies. Walk off an edge and you drop (scripts/sky_dive.gd),
+## Space opening the pocket sail (scripts/pocket_sail.gd) to coast down
+## on, nothing opening by itself, the plane staying parked: come down on the plane's field and walk to it; anywhere else (a
 ## lower shelf, another field, the sea), or once STRAND_BELOW m under the
 ## edge, and you are stranded PICKUP_WAIT s, then
 ## the view fades and you stand beside the parked plane again, still to
@@ -54,7 +54,8 @@ const SkyPlane = preload("res://scripts/sky_plane.gd")
 const SkyDive = preload("res://scripts/sky_dive.gd")
 const PlaneFigure = preload("res://scripts/plane_figure.gd")
 const WheelSpray = preload("res://scripts/wheel_spray.gd")
-const CanopyFigure = preload("res://scripts/canopy_figure.gd")
+const PocketSailFigure = preload("res://scripts/pocket_sail_figure.gd")
+const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const GlideCamera = preload("res://scripts/glide_camera.gd")
 const DiveCamera = preload("res://scripts/dive_camera.gd")
 const Pad = preload("res://scripts/pad.gd")
@@ -81,11 +82,9 @@ const FOOT_CAM := Vector2(6.0,2.6)
 ## The hop out lands this far to the plane's left and ahead (m).
 const HOP_SIDE := 1.4
 const HOP_AHEAD := 0.3
-## Off an edge: the drop before the canopy opens by itself (s), and how far
-## under the edge the pilot is stranded (m). Stranded (that, or down
-## anywhere but the plane's field): seconds before the way back, and the
-## fade's (s).
-const STEP_OFF_OPEN := 0.8
+## Off an edge: how far under the edge the pilot is stranded (m).
+## Stranded (that, or down anywhere but the plane's field): seconds before
+## the way back, and the fade's (s).
 const STRAND_BELOW := 20.0
 const PICKUP_WAIT := 3.0
 const FADE := 0.5
@@ -110,11 +109,11 @@ var run: Run
 var bot: Bot
 ## What the pilot is doing: "plane" (in it: flying, rolling, stopped,
 ## getting out), "takeoff" (boarding and the takeoff run), "foot",
-## "canopy" or "stranded".
+## "drop" (off an edge, falling or under the sail) or "stranded".
 var mode := "plane"
 var figure: PlaneFigure
 var walker: Node3D
-var canopy: CanopyFigure
+var sail_wing: PocketSailFigure
 var spray: WheelSpray
 var chase := GlideCamera.new()
 var dive_camera := DiveCamera.new()
@@ -133,10 +132,9 @@ var _foot_yaw := 0.0
 var _hop_from := Vector3.ZERO
 var _hop_to := Vector3.ZERO
 var _stranded := 0.0
-## Off an edge: the edge's height, the seconds before the canopy opens by
-## itself, and X asked (open it now).
+## Off an edge: the edge's height, and Space asked (the sail opened or
+## folded).
 var _off_y := 0.0
-var _open_in := 0.0
 var _open_asked := false
 ## The plane parked (the pilot out): where it stands.
 var parked := false
@@ -170,8 +168,8 @@ func _ready() -> void:
 	figure = PlaneFigure.new()
 	add_child(figure)
 	walker = _build_walker()
-	canopy = CanopyFigure.new()
-	add_child(canopy)
+	sail_wing = PocketSailFigure.new()
+	walker.add_child(sail_wing)
 	spray = WheelSpray.new()
 	add_child(spray)
 	_thump = AudioStreamPlayer.new()
@@ -327,8 +325,7 @@ func start(s: Dictionary) -> void:
 	takeoff = null
 	dive = null
 	walker.visible = false
-	canopy.reset()
-	canopy.visible = false
+	sail_wing.reset()
 	_report.visible = false
 	figure.reset(run.plane)
 	chase.reset(run.plane,run.plane.position-run.plane.forward()*6.0+Vector3.UP*2.0,camera.fov)
@@ -364,7 +361,7 @@ func tick(delta: float, given := {}) -> void:
 		"plane": _tick_plane(delta,given)
 		"takeoff": _tick_takeoff(delta)
 		"foot": _tick_foot(delta,given)
-		"canopy": _tick_canopy(delta,given)
+		"drop": _tick_drop(delta,given)
 		"stranded": _tick_stranded(delta)
 	_flash_time = maxf(0.0,_flash_time-delta)
 	_flash.modulate.a = clampf(_flash_time/0.6,0.0,1.0)
@@ -543,7 +540,7 @@ func _tick_foot(delta: float, given: Dictionary) -> void:
 	next.y += _feet_v*delta
 	var under := Course.floor_at(Vector2(next.x,next.z))
 	if is_nan(under):
-		# Off the edge: the canopy, never a flight.
+		# Off the edge: a drop, never a flight.
 		feet = next
 		_step_off()
 		return
@@ -603,64 +600,56 @@ func _tick_takeoff(delta: float) -> void:
 		mode = "plane"
 		chase.cine = Vector3.ZERO
 
-# --- Off the edge: the canopy ---------------------------------------------------------
+# --- Off the edge: the drop and the sail ----------------------------------------------
 
 ## Walked off the land: a drop into the air, carried on out the way it
-## walked; the canopy opens by itself STEP_OFF_OPEN s on (X sooner). The
+## walked, upright, under the walker's gravity; Space opens the sail. The
 ## plane stays parked.
 func _step_off() -> void:
 	dive = SkyDive.new()
 	dive.water = Course.SEA_Y
 	dive.floor_y = Course.SEA_Y-30.0
-	dive.drop(feet+Vector3.UP*SkyDive.HIPS,facing,2.0)
 	var out := Vector3(-sin(facing),0.0,-cos(facing))*WALK
-	dive.velocity += out
-	dive.drift = out
+	dive.step_off(feet+Vector3.UP*SkyDive.HIPS,out,facing,null,PilotMotor.GRAVITY*PilotMotor.FALL,PilotMotor.TERMINAL)
 	_off_y = feet.y
-	_open_in = STEP_OFF_OPEN
-	canopy.reset()
-	canopy.visible = true
+	sail_wing.reset()
 	dive_camera.reset(dive,camera.global_position,camera.fov)
-	mode = "canopy"
-	_say("Off the edge")
+	mode = "drop"
+	_say("Off the edge: Space for the sail")
 
-func _tick_canopy(delta: float, given: Dictionary) -> void:
+func _tick_drop(delta: float, given: Dictionary) -> void:
 	var input := {}
 	if scripted:
 		input = given.duplicate()
 	else:
 		var stick := Input.get_vector(&"move_left",&"move_right",&"move_forward",&"move_back")
-		input = {"turn":stick.x,"pitch":stick.y,"boost":Input.get_action_strength(&"fly_boost"),"brake":Input.get_action_strength(&"fly_brake"),"open":_open_asked}
+		input = {"turn":stick.x,"pitch":stick.y,"boost":Input.get_action_strength(&"dive_tuck"),"brake":Input.get_action_strength(&"fly_brake"),"open":_open_asked}
 		_open_asked = false
-	_open_in -= delta
-	if _open_in <= 0.0 and dive.falling(): dive.open_canopy(true)
 	_fall(delta,input)
-	if mode != "canopy": return
+	if mode != "drop": return
 	# Well under the edge (or down on anything but the plane's field):
 	# stranded.
 	if dive.position.y < _off_y-STRAND_BELOW: _strand()
 
-## The dive's step, the pilot and canopy drawn on it, its camera; touched
-## down, `_canopy_down`.
+## The dive's step, the pilot and sail drawn on it, its camera; touched
+## down, `_drop_down`.
 func _fall(delta: float, input: Dictionary) -> void:
-	# No assist: the fields are flat-topped and the canopy only sinks, so
-	# it would only steer back into the face just stepped off.
-	dive.approach_target = Vector3.INF
 	var out := {}
 	if dive.phase != SkyDive.DOWN: out = dive.fall(delta,input,Callable(Course,"ground"),func(p: Vector3) -> Dictionary: return Course.air_at(p,run.t))
 	walker.position = dive.position-Vector3.UP*SkyDive.HIPS
 	walker.visible = true
-	canopy.update(delta,dive,walker.position+Vector3.UP*0.75)
+	walker.rotation = Vector3(0.0,dive.heading,0.0)
+	sail_wing.update(delta,dive.sailing(),-float(input.get("turn",0.0)))
 	dive_camera.step(delta,dive)
 	camera.global_transform = Transform3D(Basis.looking_at(dive_camera.look-dive_camera.eye,Vector3.UP),dive_camera.eye)
 	camera.fov = dive_camera.fov
-	if out.has("touched"): _canopy_down(out.touched)
+	if out.has("touched"): _drop_down(out.touched)
 
-## Down under the canopy: on the plane's own field, on foot to walk back
-## to it; anywhere else (a lower shelf, another field, the sea) stranded.
-func _canopy_down(touch: Dictionary) -> void:
+## Down off the drop: on the plane's own field, on foot to walk back to
+## it; anywhere else (a lower shelf, another field, the sea) stranded.
+func _drop_down(touch: Dictionary) -> void:
 	feet = dive.position-Vector3.UP*SkyDive.HIPS
-	canopy.collapse(feet.y)
+	sail_wing.update(0.0,false)
 	if mode == "stranded": return
 	if not bool(touch.get("water",false)) and parked and walkable_to_plane(feet):
 		feet.y = Course.floor_at(Vector2(feet.x,feet.z))
@@ -704,14 +693,13 @@ func _tick_stranded(delta: float) -> void:
 	if dive.phase != SkyDive.DOWN: _fall(delta,{})
 	else:
 		walker.position = feet+Vector3.UP*0.05*sin(_stranded*3.0)
-		canopy.update(delta,dive,walker.position+Vector3.UP*0.75)
+		sail_wing.update(delta,false)
 	feet = dive.position-Vector3.UP*SkyDive.HIPS
 	var dark := clampf((_stranded-(PICKUP_WAIT-FADE))/FADE,0.0,1.0)
 	_veil.color.a = dark*0.9
 	if _stranded < PICKUP_WAIT: return
 	_veil.color.a = 0.0
-	canopy.reset()
-	canopy.visible = false
+	sail_wing.reset()
 	if stranded_rule == "return" and parked:
 		_hop_to = Vector3.ZERO
 		_hop_figure(0.0)
@@ -895,13 +883,13 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		var by := Vector2(-event.relative.x,-event.relative.y)*LOOK
 		if mode == "foot": _foot_yaw += by.x
-		elif mode == "canopy": dive_camera.turn(by)
+		elif mode == "drop": dive_camera.turn(by)
 		else: chase.turn(by)
 	elif event is InputEventMouseButton and event.pressed and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	elif event is InputEventJoypadButton and event.pressed:
 		if Pad.pressed(event,&"fly_land"): land_key()
-		elif Pad.pressed(event,&"fly_eject"): _open_asked = true
+		elif mode == "drop" and Pad.pressed(event,&"walk_jump"): _open_asked = true
 		elif Pad.pressed(event,&"fly_lean_left"): _lean_tapped(-1.0)
 		elif Pad.pressed(event,&"fly_lean_right"): _lean_tapped(1.0)
 	elif event is InputEventKey and event.pressed and not event.echo:
@@ -909,7 +897,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		match key:
 			KEY_ESCAPE: Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 			KEY_F: land_key()
-			KEY_X: _open_asked = true
+			KEY_SPACE: if mode == "drop": _open_asked = true
 			KEY_R: restart()
 			KEY_N: next_station()
 			KEY_H:

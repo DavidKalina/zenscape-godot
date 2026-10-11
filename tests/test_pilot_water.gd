@@ -4,7 +4,7 @@ extends SceneTree
 ## depth and keeps him on the bed, the drawn body lifting its knees; chest
 ## deep he swims, floating SWIM_DRAFT under the surface, slower than on foot,
 ## the paddle's strokes told; Space there hops him up out of it and never
-## asks to fly, and he falls back in with a splash; walked back up the shelf
+## opens the sail, and he falls back in with a splash; walked back up the shelf
 ## he stands and walks out. Out of it he drips a while, less and less, and
 ## stops; his clothes stay wet a while longer and dry. His wake through the
 ## plants (scripts/pilot_wake.gd) is quiet while he swims. The rings on the
@@ -104,10 +104,10 @@ func run() -> void:
 		figure.drive(m,DT)
 		figure.soak(m,DT)
 		pressed = not pressed if i < 40 else false
-		flew = flew or out.has("fly")
+		flew = flew or out.has("sail") or out.has("fly")
 		hopped = hopped or out.has("hopped")
 		if hopped and out.has("swam"): back_in = true
-	check(hopped and not flew,"Space in deep water hops him up, and pressed again never flies")
+	check(hopped and not flew,"Space in deep water hops him up, and pressed again never opens the sail")
 	check(back_in and m.swimming,"He falls back in with a splash, afloat again")
 	# Walking out.
 	var stood := false

@@ -21,8 +21,9 @@ extends SceneTree
 ##   - rising air is calmed near the land; flaps slow the plane under SLOW,
 ##     without them it flies as ever;
 ##   - in the study: the sharp bot lands and stops and the run is saved;
-##     out of the plane, a hop is only a hop, walking off the edge opens the
-##     canopy and never flies, the plane staying parked; stranded, the pilot
+##     out of the plane, a hop is only a hop, walking off the edge drops
+##     (Space opening the pocket sail) and never flies, the plane staying
+##     parked; stranded, the pilot
 ##     is brought back beside the plane, still on foot; Space by the plane
 ##     boards it and takes off, flying again; the hot bots power-slide to a
 ##     stop on the short field and the islet.
@@ -299,12 +300,16 @@ func _study() -> bool:
 	while study.mode == "foot" and frames < 60*12:
 		study.tick(DT,{"move":Vector2(0.0,1.0)})
 		frames += 1
-	check(study.mode == "canopy","Walked off the edge: the canopy, not a flight")
+	check(study.mode == "drop","Walked off the edge: a drop, not a flight")
 	check(study.parked and study.run.plane.position.distance_to(parked_at) < 0.01,"The plane stays parked where it was")
 	frames = 0
-	while study.mode == "canopy" and frames < 60*60:
-		study.tick(DT,{})
+	var sailed := false
+	while study.mode == "drop" and frames < 60*60:
+		# Space a moment after the edge: the sail.
+		study.tick(DT,{"open":frames == 20})
+		sailed = sailed or study.dive.sailing()
 		frames += 1
+	check(sailed,"Space in the drop opens the sail")
 	check(study.mode == "stranded","Down off the plane's field: stranded (%s)" % study.mode)
 	frames = 0
 	while study.mode == "stranded" and frames < 60*10:

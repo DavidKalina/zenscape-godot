@@ -60,8 +60,10 @@ const ACTIONS := {
 	"fly_lean_right":[["button",JOY_BUTTON_RIGHT_SHOULDER]],
 	"fly_land":[["button",JOY_BUTTON_Y]],
 	"fly_camera":[["button",JOY_BUTTON_RIGHT_STICK]],
-	# Out of the plane (and, falling, the canopy open): X on both.
+	# Out of the plane: X on both (falling, Jump opens the sail).
 	"fly_eject":[["key",KEY_X],["button",JOY_BUTTON_X]],
+	# Falling out of the plane: the right trigger tucks and dives.
+	"dive_tuck":[["axis",JOY_AXIS_TRIGGER_RIGHT,1.0]],
 	# The old glider (--glider): rise and dive, and its flap.
 	"glide_rise":[["key",KEY_SPACE],["button",JOY_BUTTON_A],["axis",JOY_AXIS_TRIGGER_LEFT,1.0]],
 	"glide_dive":[["key",KEY_SHIFT],["axis",JOY_AXIS_TRIGGER_RIGHT,1.0]],
@@ -145,7 +147,7 @@ static func ensure() -> void:
 	_add_pad("ui_accept",JOY_BUTTON_A)
 	_add_pad("ui_cancel",JOY_BUTTON_B)
 	# Triggers and moves fire at a light press.
-	for action: String in ["fly_boost","fly_brake","glide_rise","glide_dive","zoom_in","zoom_out"]:
+	for action: String in ["fly_boost","fly_brake","dive_tuck","glide_rise","glide_dive","zoom_in","zoom_out"]:
 		InputMap.action_set_deadzone(action,TRIGGER_DEAD)
 	for action: String in ["move_left","move_right","move_forward","move_back"]:
 		InputMap.action_set_deadzone(action,0.15)
