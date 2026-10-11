@@ -24,7 +24,9 @@ extends "res://studies/character_study.gd"
 ## `flora_site` and `flora_seed` (its ground for the plants), `lode_rest_at`
 ## and `lode_hint` (where the lodestone rests), `sky_script` and
 ## `life_script` (its sky and life, each extending the kit's), and its own
-## start in `_load_pack`.
+## start in `_load_pack`. It may also answer `plane_mask` (what the plane
+## bumps off), `_fly_tick` (its own step each flown frame), `_shard_arch`
+## (an arch on the shard or not) and `_start_in_plane` (how --fly starts).
 ##
 ##   R            back to the start
 ##   L / Shift+L  next / previous look preset (its name shows a moment)
@@ -51,7 +53,9 @@ extends "res://studies/character_study.gd"
 ## (three numbers) is the capture's look-at point. --capture waits for the
 ## sky to settle, saves the view (from --at looking at the point, else the
 ## walker's camera) and quits; --place=x,y,z[,turn] starts the pilot there
-## instead (turn: degrees from facing -z, clockwise).
+## instead (turn: degrees from facing -z, clockwise). Without --at it waits
+## --capture-wait=<s> (4): flying, that many seconds flown (`flown`), so it
+## is the same moment run to run however slow the first frames are.
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 const LandscapeLighting = preload("res://scripts/landscape_lighting.gd")
 const Celestial = preload("res://studies/celestial.gd")
@@ -227,6 +231,13 @@ var _shard_material: ShaderMaterial
 var _flash_left := 0.0
 ## Captures: the eye in the plane's frame (--plane-eye=x,y,z), not the chase.
 var _plane_eye := Vector3.INF
+## A capture from the walker's (or chase) camera waits this long (s;
+## --capture-wait=<s>).
+var _capture_wait := 4.0
+## Seconds flown (fly_step's deltas): a capture from the plane waits for
+## this to reach --capture-wait, so it is the same moment run to run
+## however slow the first frames are.
+var flown := 0.0
 
 func _ready() -> void:
 	pack = "ruins_archipelago"
@@ -251,6 +262,7 @@ func _ready() -> void:
 		elif arg.begins_with("--lode-at="): _lode_at = arg.get_slice("=",1)
 		elif arg.begins_with("--target="): lode_target = _vec(arg.get_slice("=",1))
 		elif arg.begins_with("--plane-eye="): _plane_eye = _vec(arg.get_slice("=",1))
+		elif arg.begins_with("--capture-wait="): _capture_wait = float(arg.get_slice("=",1))
 		elif arg.begins_with("--place="):
 			var p := arg.get_slice("=",1).split(",")
 			_place = Vector4(float(p[0]),float(p[1]),float(p[2]),float(p[3]) if p.size() > 3 else 0.0)
@@ -269,11 +281,15 @@ func _ready() -> void:
 		start = Vector3(_place.x,_place.y,_place.z)
 		start_face = Vector2(sin(turn),-cos(turn))
 		respawn()
-	if preload("res://scripts/launch_args.gd").user_args().has("--fly"): board()
+	_start_in_plane()
 	if preload("res://scripts/launch_args.gd").user_args().has("--pickup"):
 		for i in range(30): tick(1.0/60.0)
 		pick_up()
 	if _capture != "": _take_capture()
+
+## The start in the plane (--fly); an isle may start in the air elsewhere.
+func _start_in_plane() -> void:
+	if preload("res://scripts/launch_args.gd").user_args().has("--fly"): board()
 
 static func _vec(text: String) -> Vector3:
 	var p := text.split(",")
@@ -785,10 +801,12 @@ func _fly_input(delta: float) -> Dictionary:
 ## stands, drawn, the chase camera behind it; skimming the turf braking
 ## slow for TOUCH_HOLD s sets the pilot down there.
 func fly_step(delta: float, input: Dictionary) -> void:
+	flown += delta
 	var was: Vector3 = plane.position
 	var ground := Callable(self,"plane_ground")
 	plane.step(delta,input,ground)
 	_bump(was)
+	_fly_tick(delta)
 	if stone_plane: plane_figure.target = lode_target
 	plane_figure.update(delta,plane,0.0,ground,false)
 	if _nose != null:
@@ -812,6 +830,22 @@ func fly_step(delta: float, input: Dictionary) -> void:
 	_touch = _touch+delta if _off_ground <= TOUCH_GAP and braking and float(plane.speed) < TOUCH_SPEED else 0.0
 	if _touch >= TOUCH_HOLD: leave_plane()
 	elif flying: RopeBridge.flown_by(plane.position,plane.velocity)
+
+## The isle's own step each flown frame, after the plane's step and bump
+## (none here).
+func _fly_tick(_delta: float) -> void:
+	pass
+
+## Puts the plane (flying) at `at` on `heading`, at cruise, the chase camera
+## behind it (the quick tests' starts, the tests).
+func fly_from(at: Vector3, heading: float) -> void:
+	if not flying: return
+	plane.launch(at,heading,SkyPlane.CRUISE_SPEED,false)
+	plane.velocity = plane.forward()*float(plane.speed)
+	plane_figure.reset(plane)
+	chase = GlideCamera.new()
+	chase.reset(plane,at-plane.forward()*7.0+Vector3.UP*2.0,camera.fov)
+	chase.linger = LOOK_LINGER
 
 func _show_fly_hint() -> void:
 	if _switch_hint == null or plane == null: return
@@ -846,7 +880,7 @@ func _plane_query() -> PhysicsShapeQueryParameters3D:
 		var box := BoxShape3D.new()
 		box.size = BUMP_BODY
 		_bump_query.shape = box
-		_bump_query.collision_mask = 1|TURF_LAYER
+		_bump_query.collision_mask = plane_mask()
 	var turn := PlaneFigure.pose(Vector3.ZERO,float(plane.heading),float(plane.pitch),float(plane.bank)+float(plane.spin)).basis
 	_bump_query.transform = Transform3D(turn,plane.position)
 	return _bump_query
@@ -908,8 +942,13 @@ func _ride_top(space: PhysicsDirectSpaceState3D) -> bool:
 func _inside_stone(p: Vector3) -> bool:
 	var query := PhysicsPointQueryParameters3D.new()
 	query.position = p
-	query.collision_mask = 1|TURF_LAYER
+	query.collision_mask = plane_mask()
 	return not get_world_3d().direct_space_state.intersect_point(query,1).is_empty()
+
+## The layers the plane bumps off and the chase camera stays out of: the
+## stone and the turf.
+func plane_mask() -> int:
+	return 1|TURF_LAYER
 
 ## A lean pressed: the second press the same way within DOUBLE_TAP asks
 ## for a barrel roll that way.
@@ -962,7 +1001,9 @@ func _take_capture() -> void:
 			if life != null: life.advance(1.0/60.0)
 			await get_tree().process_frame
 	else:
-		await get_tree().create_timer(4.0).timeout
+		if flying:
+			while flown < _capture_wait: await get_tree().process_frame
+		else: await get_tree().create_timer(_capture_wait).timeout
 	# The frame's cost, measured over a second before the save.
 	# The frame's cost: wall-clock frames with vsync off, over 120 frames.
 	var vsync := DisplayServer.window_get_vsync_mode()
@@ -1044,9 +1085,10 @@ func _build_target() -> void:
 	collider.shape = hull
 	body_static.add_child(collider)
 	shard.add_child(body_static)
-	var arch: Node3D = RuinKit.piece("arch",44,0.5)
-	arch.transform = Transform3D(Basis(Vector3.UP,0.3),Vector3(-1.5,0.0,0.5))
-	shard.add_child(arch)
+	if _shard_arch():
+		var arch: Node3D = RuinKit.piece("arch",44,0.5)
+		arch.transform = Transform3D(Basis(Vector3.UP,0.3),Vector3(-1.5,0.0,0.5))
+		shard.add_child(arch)
 	var pier: Node3D = RuinKit.piece("pier",45,0.6)
 	pier.position = Vector3(4.0,0.0,-2.0)
 	shard.add_child(pier)
@@ -1068,6 +1110,11 @@ func _build_target() -> void:
 	_shard_flash.position = Vector3(0.0,4.0,0.0)
 	_shard_flash.visible = false
 	shard.add_child(_shard_flash)
+
+## Whether the shard bears its broken arch (an isle whose ring stands past
+## the shard leaves it out: one arch, not two to choose between).
+func _shard_arch() -> bool:
+	return true
 
 ## On foot: the stone's step after the pilot's (or, held up, instead).
 func tick(delta: float) -> void:

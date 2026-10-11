@@ -52,6 +52,10 @@ uniform float veiled = 0.0;
 // A batch fading in or out as a whole (the cloud wrapped round a range's
 // foot as the range comes and goes: scripts/sky_peaks.gd `swap_of`).
 instance uniform float batch_fade = 1.0;
+// Each puff's own fade in its instance colour's alpha (a MultiMesh with
+// colours: the bursts as a hall breaks out of the sea, scripts/
+// sky_puff_burst.gd). Off, the colour is ignored.
+uniform bool instance_fade = false;
 // The planes' tunnels (CloudWakes `at`, `way`), global, laid where the
 // clouds stood then: each drifts on with them.
 uniform vec4 wake_at[32];
@@ -123,6 +127,7 @@ void vertex() {
 	float away = distance(CAMERA_POSITION_WORLD, centre);
 	// Thinned away close up; gone in the far haze.
 	opacity = smoothstep(radius * 0.35, radius * 1.4, away) * (1.0 - smoothstep(2600.0, 3000.0, away)) * strength * thinned;
+	if (instance_fade) opacity *= COLOR.a;
 	// Into the glide's haze with distance (glide_haze.gdshaderinc): drawn
 	// over the open sky, which the display haze leaves be, a far cloud melts
 	// away into the sky behind it rather than standing out sharp.

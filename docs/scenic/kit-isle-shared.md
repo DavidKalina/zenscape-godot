@@ -120,6 +120,7 @@ That height banding can't serve a kit isle, whose rims sit anywhere from 25 to 5
 | `sky_script` | `studies/aqueduct_isle_sky.gd` or a subclass answering `plane_tokens()` / `token_source()` |
 | `life_script` | A `kit_life.gd` subclass |
 | `capture_look` | What a capture looks at when only `--at` is given |
+| `plane_mask`, `_fly_tick`, `_shard_arch`, `_start_in_plane` | Optional: what the plane bumps off, the isle's own step each flown frame, whether the shard bears its arch, how `--fly` starts (the aqueduct isle's hall chain uses all four) |
 
 **How a new motif is built:**
 

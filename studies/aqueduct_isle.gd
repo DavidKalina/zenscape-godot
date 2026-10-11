@@ -61,6 +61,20 @@ extends "res://studies/kit_isle.gd"
 ## floating far off (--target=x,y,z). --carry starts with it; --lode-at=
 ## <platform name> rests it elsewhere; --no-lode leaves it out; --pickup
 ## picks it up at once if he stands by it (captures).
+## The hall chain (docs/design/isle-hall-chain.md, studies/
+## aqueduct_isle_chain.gd): near the shard an arch erupts quietly out of
+## the cloud sea far below and climbs to stand past it; threading it, a
+## held breath, a pulse through the plane (the nose arrow goes quiet), and
+## the Sundered halls erupt from the sea one after another ahead.
+## --no-chain leaves it out (the old shard-only arrival); --ring=x,y,z
+## moves the ring, --ring-near=<m> how near it wakes (420),
+## --ring-pause=<s> the breath (1.5), --chain-lead=<m> how far on the first
+## hall's way in stands at the least (180), --arrive-spare=<s> how long
+## before the plane gets to a gate it is still (2), --catch-up=<x> how much
+## quicker a hall the plane outruns rises (1.6), --first-at=thread|pulse
+## when the first hall starts (thread); --near-ring starts in the plane
+## with the stone seated 260 m before the ring; the chain's own flags
+## (--chain-at=, --chain-gap=, ...) and the rise's apply.
 ## --look=<id> (or --preset=<id>) starts in that look preset; --look=x,y,z
 ## (three numbers) is the capture's look-at point. --capture waits for the
 ## sky to settle, saves the view (from --at looking at the point, else the
@@ -69,6 +83,9 @@ extends "res://studies/kit_isle.gd"
 const Art = preload("res://studies/aqueduct_isle_art.gd")
 const Aqueduct = preload("res://scripts/ruin_kit_aqueduct.gd")
 const Life = preload("res://studies/aqueduct_isle_life.gd")
+const IsleChain = preload("res://studies/aqueduct_isle_chain.gd")
+## The hall chain's halls collide on the ruins' layer (scripts/hall_rise.gd).
+const RuinBump = preload("res://scripts/ruin_bump.gd")
 
 ## The station this is (its key in the pack).
 const STATION := 2
@@ -97,6 +114,28 @@ const STUMPS := [[92.0,-26.7,-28.7,30.4],[92.0,-30.6,-32.6,29.8],[92.0,-36.0,-38
 
 ## The lodestone's floating stone (Art `platforms`).
 const LODE_PLATFORM := "east_1"
+## The shard with the chain: 380 m north-north-east of the start, out over
+## the cloud sea and clear of the near isles, so the ring past it and the
+## halls past that run into open sky (docs/design/isle-hall-chain.md).
+## Without it (--no-chain), where the kit isles keep it (TARGET).
+const CHAIN_TARGET := Vector3(200.0,42.0,-380.0)
+const SHARD_ONLY_TARGET := Vector3(250.0,Art.TOP+24.0,-230.0)
+## The ring and the hall chain (studies/aqueduct_isle_chain.gd): on unless
+## --no-chain (or a test sets it off before the scene is built). With it,
+## nothing happens by being near the shard: only threading the ring.
+## --near-ring starts in the plane with the stone seated NEAR_RING_OUT m
+## before the ring, NEAR_RING_UP m over its middle, flying at it.
+const NEAR_RING_OUT := 260.0
+const NEAR_RING_UP := 3.0
+## The pulse through the plane once the ring's pause is over: a soft flash
+## round it (m across, s).
+const PULSE_SIZE := 7.0
+const PULSE_TIME := 1.2
+var chain_on := true
+var isle_chain: Node3D = null
+var _near_ring := false
+var _plane_flash: MeshInstance3D = null
+var _plane_flash_left := 0.0
 
 ## The landmarks from the kit (their metadata drives the tests).
 var stair: Node3D
@@ -105,6 +144,13 @@ var circle: Node3D
 func _ready() -> void:
 	pack = "ruins_archipelago"
 	_lode_at = LODE_PLATFORM
+	for arg in preload("res://scripts/launch_args.gd").user_args():
+		if arg == "--no-chain": chain_on = false
+		elif arg == "--near-ring":
+			_near_ring = true
+			_carry = true
+	# --target= (the kit's) still moves it.
+	lode_target = CHAIN_TARGET if chain_on else SHARD_ONLY_TARGET
 	super._ready()
 
 ## The pack's station 2 alone: its spawn the start.
@@ -240,3 +286,102 @@ func _stumps() -> Node3D:
 	var node := b.finish()
 	node.get_node("Body").free()
 	return node
+
+# --- The ring and the hall chain ---------------------------------------------------------
+
+## --fly, or --near-ring: in the plane, the stone seated, NEAR_RING_OUT m
+## before the ring flying at it.
+func _start_in_plane() -> void:
+	super._start_in_plane()
+	if _near_ring: board()
+	if _near_ring and isle_chain != null:
+		var ahead := Vector3(-sin(isle_chain.ring_heading),0.0,-cos(isle_chain.ring_heading))
+		fly_from(isle_chain.ring_at-ahead*NEAR_RING_OUT+Vector3.UP*NEAR_RING_UP,isle_chain.ring_heading)
+
+## The shard, then the ring past it, the chain's cloud sea and the chain
+## (studies/aqueduct_isle_chain.gd, docs/design/isle-hall-chain.md).
+func _build_target() -> void:
+	super._build_target()
+	if chain_on: _build_chain()
+
+## With the chain the arch is the ring past the shard; the pier stays.
+func _shard_arch() -> bool:
+	return not chain_on
+
+func _build_chain() -> void:
+	isle_chain = IsleChain.new()
+	add_child(isle_chain)
+	isle_chain.setup(lode_target,preload("res://scripts/launch_args.gd").user_args())
+	isle_chain.chain.plane_box = _chain_plane_box
+	isle_chain.started.connect(_ring_pulse)
+	_plane_flash = MeshInstance3D.new()
+	_plane_flash.name = "PlaneFlash"
+	var quad := QuadMesh.new()
+	quad.size = Vector2.ONE*PULSE_SIZE
+	_plane_flash.mesh = quad
+	var glow := (_shard_flash.material_override as StandardMaterial3D).duplicate() as StandardMaterial3D
+	glow.albedo_color.a = 0.0
+	_plane_flash.material_override = glow
+	_plane_flash.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_plane_flash.visible = false
+	add_child(_plane_flash)
+
+## The plane's box (world) for the halls' rise, which waits for it to be
+## clear before a chunk turns solid; none on foot.
+func _chain_plane_box() -> AABB:
+	if not flying or plane == null: return AABB()
+	var half := Vector3.ONE*(PlaneFigure.SPAN*0.5+0.3)
+	return AABB((plane.position as Vector3)-half,half*2.0)
+
+## The ring's pause over: the arrival's chime, a soft flash round the plane,
+## the nose arrow's flare (the stone plane's sync pulse), no words.
+func _ring_pulse() -> void:
+	_moments.flourish()
+	_plane_flash_left = PULSE_TIME
+	if _nose != null:
+		_nose.pulse()
+		_nose.quiet()
+	if stone_plane and flying and plane_figure != null: plane_figure.flash()
+
+func _pulse_frame(delta: float) -> void:
+	if _plane_flash == null: return
+	_plane_flash.visible = _plane_flash_left > 0.0 and flying
+	if _plane_flash_left <= 0.0: return
+	_plane_flash_left = maxf(_plane_flash_left-delta,0.0)
+	var t := _plane_flash_left/PULSE_TIME
+	if flying: _plane_flash.global_position = plane.position
+	(_plane_flash.material_override as StandardMaterial3D).albedo_color.a = sin(t*PI)*0.7
+	_plane_flash.scale = Vector3.ONE*lerpf(1.5,0.4,t)
+
+func _process(delta: float) -> void:
+	super._process(delta)
+	# Flying, `_fly_tick` steps the ring and the chain; on foot, here.
+	if isle_chain != null and not flying and delta > 0.0: isle_chain.step(delta,null,false,camera.global_position)
+	_pulse_frame(delta)
+
+func _fly_tick(delta: float) -> void:
+	if isle_chain != null: isle_chain.step(delta,plane,lode_state == "seated",camera.global_position)
+
+## The halls collide on the ruins' layer.
+func plane_mask() -> int:
+	return super.plane_mask()|RuinBump.LAYER
+
+func board() -> void:
+	var was_flying := flying
+	super.board()
+	# Back in the plane once the halls have begun, the arrow stays quiet.
+	if not was_flying and _nose != null and isle_chain != null and isle_chain.state == "started": _nose.quiet(true)
+
+func fly_from(at: Vector3, heading: float) -> void:
+	super.fly_from(at,heading)
+	if flying and isle_chain != null: isle_chain.forget()
+
+func _show_fly_hint() -> void:
+	super._show_fly_hint()
+	if _switch_hint == null or plane == null: return
+	if isle_chain != null and isle_chain.state == "started": _switch_hint.text += "\nThe halls rise out of the cloud ahead: fly on through them"
+
+## With the chain, nothing happens by being near: only threading the ring.
+func _check_arrival() -> void:
+	if isle_chain != null: return
+	super._check_arrival()
