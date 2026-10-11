@@ -383,6 +383,12 @@ var _capture_every := 0.5
 ## this to reach --capture-wait, so it is the same moment run to run
 ## however slow the first frames are.
 var flown := 0.0
+## The whole isle is up (its flora, lodestone, sky and life built, the plane
+## parked or flown): the end of `_ready`, which waits on `ready_to_walk`
+## first. The front door (scripts/kit_isle/front_door.gd) lifts its veil on
+## it.
+signal isle_ready
+var isle_up := false
 
 func _ready() -> void:
 	pack = "ruins_archipelago"
@@ -437,6 +443,8 @@ func _ready() -> void:
 	if preload("res://scripts/launch_args.gd").user_args().has("--pickup"):
 		for i in range(30): tick(1.0/60.0)
 		pick_up()
+	isle_up = true
+	isle_ready.emit()
 	if _capture != "": _take_capture()
 
 ## The start in the plane (--fly); an isle may start in the air elsewhere.

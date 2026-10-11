@@ -7,7 +7,8 @@ extends SceneTree
 ##     flags drop the ones that skip it;
 ##   - the picker card: a row per entry, the first in reach, the keys and the
 ##     pad walk its columns (never off the card), A picks, B goes back;
-##   - opening an entry changes scene with its flags, and holding Esc there
+##   - opening an entry changes scene with its flags (the builder's own-title
+##     entry without --no-title), and holding Esc there
 ##     (then letting go) goes back, with the override gone to the title's.
 ##   godot --headless --path . --script tests/test_scene_picker.gd
 const Catalog = preload("res://scripts/scene_catalog.gd")
@@ -155,6 +156,12 @@ func run() -> void:
 	var returned := await until(func() -> bool: return current_scene != null and current_scene.scene_file_path == main,10.0)
 	check(returned,"Holding Esc and letting go goes back")
 	check(not back.active and LaunchArgs.user_args() == LaunchArgs.title_args() and not "--no-title" in LaunchArgs.user_args(),"On the title's flags, the way back off")
+	# The builder's entry opens the old game on its own title: no --no-title.
+	var builder := Catalog.find("builder")
+	check(builder.get("own_title") == true and builder.scene == "res://studies/cozy_worlds.tscn" and builder.group == "The game","The Builder (old game) entry: the cozy worlds scene on its own title")
+	check(LaunchArgs.open_scene(self,main,PackedStringArray(builder.args),true) == OK and not "--no-title" in LaunchArgs.user_args(),"An own-title entry opens without --no-title")
+	await until(func() -> bool: return current_scene != null and current_scene.scene_file_path == main,10.0)
+	LaunchArgs.set_override(null)
 	current_scene.queue_free()
 	await frames(10)
 	print("scene picker: %d failures" % failures)
