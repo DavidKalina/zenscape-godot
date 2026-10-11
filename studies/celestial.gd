@@ -92,6 +92,18 @@ const LUNAR_START := 0.85
 const MOON_LIGHT := Vector2(0.1, 2.0)
 ## The night fill leans on the moon: this at new, this at full.
 const MOON_FILL := Vector2(0.7, 1.0)
+## Night light round 1 (docs/design/night-light/round1.md): the land read as a
+## black cutout under clear moonlit skies while the clouds round it took the
+## moon well. The moon's key on surfaces is MOON_KEY times what it was, the
+## night fill's energy NIGHT_FILL_ENERGY (was 0.4) a unit of fill, and the
+## rim's night floor NIGHT_RIM (new moon, full; was 0.12, 0.3), so stone and
+## turf read cool and moonlit and night stays night (the grade's rod-lit
+## shift and the sky are untouched). --moon-key=K, --night-fill=F try others.
+const MOON_KEY := 2.0
+const NIGHT_FILL_ENERGY := 1.1
+const NIGHT_RIM := Vector2(0.16, 0.42)
+var moon_key := _arg_float("--moon-key=", MOON_KEY)
+var night_fill_energy := _arg_float("--night-fill=", NIGHT_FILL_ENERGY)
 ## Moonlight's colour at new and full moon: a thin dim blue under a sliver,
 ## brighter silver-blue under a full moon (the source's b9cae8 sits between).
 const MOON_TINT := ["8a9ac4", "c4d3f4"]
@@ -298,7 +310,7 @@ func update_rig() -> void:
 	var sun_energy := 3.4 * smoothstep(-0.035, 0.05, e) * (0.68 + 0.32 * smoothstep(0.08, 0.45, e))
 	var sky_day := smoothstep(SKY_DAY_E.x, SKY_DAY_E.y, e)
 	var moon_up := smoothstep(0.02, 0.30, moon.y)
-	var moon_energy := 3.4 * 0.11 * moon_up * night * lerpf(MOON_LIGHT.x, MOON_LIGHT.y, moon_lit)
+	var moon_energy := 3.4 * 0.11 * moon_up * night * lerpf(MOON_LIGHT.x, MOON_LIGHT.y, moon_lit) * moon_key
 	# How much moon there is to see by (phase and height), and how deep into
 	# the night the look has gone.
 	var moon_glow := moon_lit * moon_up
@@ -334,7 +346,7 @@ func update_rig() -> void:
 		_rim.global_basis = Basis(Vector3.UP, room_yaw) * _rim_basis
 		_rim_turned = room_yaw
 	# The rim's night floor follows the moon: a new moon leaves silhouettes.
-	_rim.light_energy = 1.1 * (lerpf(0.3, lerpf(0.12, 0.3, moon_glow), dark) + 0.7 * sky_day) * lerpf(1.0, 0.5, cloud) / PI
+	_rim.light_energy = 1.1 * (lerpf(0.3, lerpf(NIGHT_RIM.x, NIGHT_RIM.y, moon_glow), dark) + 0.7 * sky_day) * lerpf(1.0, 0.5, cloud) / PI
 	_publish("zs_key_direction", _sun.global_basis.z.normalized())
 	var key_color := _sun.light_color.srgb_to_linear()
 	_publish("zs_key_irradiance", Vector3(key_color.r, key_color.g, key_color.b) * _sun.light_energy * PI)
@@ -360,7 +372,7 @@ func update_rig() -> void:
 	_publish("zs_hemi_sky", surface_sky + NIGHT_FILL * fill)
 	_publish("zs_hemi_ground", hemi_ground + Vector3(0.08, 0.1, 0.13) * fill)
 	var golden := smoothstep(0.3, 0.1, e) * smoothstep(-0.03, 0.05, e) * (1.0 - minf(1.0, cloud * 1.3))
-	_publish("zs_hemi_energy", (0.55 * (0.22 + 0.78 * ambient) * (1.0 - GOLDEN_FILL_DIP * golden) * lerpf(1.0, 1.25, cloud) * lerpf(1.0, 0.55, storm) * lerpf(1.0, fill_gain, day) + 0.4 * fill + DUSK_FILL * dusk_fill) * look.settings.ambient_energy)
+	_publish("zs_hemi_energy", (0.55 * (0.22 + 0.78 * ambient) * (1.0 - GOLDEN_FILL_DIP * golden) * lerpf(1.0, 1.25, cloud) * lerpf(1.0, 0.55, storm) * lerpf(1.0, fill_gain, day) + night_fill_energy * fill + DUSK_FILL * dusk_fill) * look.settings.ambient_energy)
 	var down := Vector3(0.006, 0.009, 0.016).lerp(DAY_SKY[0], sky_day)
 	var up := Vector3(0.01, 0.016, 0.038).lerp(DAY_SKY[1], sky_day).lerp(Vector3(0.1, 0.07, 0.16), warmth * 0.55)
 	var glow := Vector3(0.016, 0.024, 0.045).lerp(DAY_SKY[2], sky_day).lerp(Vector3(0.85, 0.3, 0.09), warmth * 0.8)

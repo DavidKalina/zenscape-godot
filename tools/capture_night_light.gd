@@ -13,7 +13,7 @@ extends SceneTree
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const Art = preload("res://studies/aqueduct_isle_art.gd")
 const GAME := "res://studies/zenscape.tscn"
-const SHOTS := ["wide","circle","aqueduct","arch","plane","airship","dragon","serpent"]
+const SHOTS := ["wide","circle","rune","aqueduct","arch","plane","airship","dragon","serpent"]
 
 var game: Node3D
 var camera: Camera3D
@@ -107,6 +107,17 @@ func _aim(shot: String) -> Dictionary:
 			from.y = 0.0
 			from = from.normalized() if from.length() > 1.0 else Vector3.FORWARD
 			return {"eye":at+from*520.0+Vector3.UP*30.0,"at":at}
+		"rune":
+			# A carving of the night lights' (one on the stone circle if any).
+			var lights: Node = game.get("night_lights")
+			if lights == null or (lights.runes as Array).is_empty(): return {}
+			var pick: Dictionary = lights.runes[0]
+			for r: Dictionary in lights.runes:
+				if str(r.piece).to_lower().contains("circle"):
+					pick = r
+					break
+			var n: Vector3 = pick.normal
+			return {"eye":(pick.at as Vector3)+n*5.0+Vector3.UP*0.6+n.cross(Vector3.UP)*1.5,"at":pick.at}
 		"dragon":
 			var dragon: Node3D = game.get("dragon")
 			if dragon == null: return {}

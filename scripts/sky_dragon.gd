@@ -126,8 +126,32 @@ const RIDE_PANT := Vector2(2.5,3.5)
 ## back. --dragon-ride-repeat keeps round 5's instant swoop back.
 const RIDE_AWAY := 16.0
 const DragonGale = preload("res://scripts/dragon_gale.gd")
+const StoneLampLights = preload("res://scripts/stone_lamp_lights.gd")
+## Its night glow (night light round 1, docs/design/night-light/round1.md),
+## eased in as the lamps are (StoneLampLights.night_for, over NIGHT_FADE s):
+## the eyes' emission by day and at night, the spines' and tail blade's,
+## the membranes' rose edge (and how much of the membrane it lights
+## through, NIGHT_MEMBRANE_REACH), an ember in the throat and mouth
+## (NIGHT_THROAT colour, energy at rest and with the jaw open or breathing
+## in), and a faint cool sheen on the hide so its shape reads against the
+## night sky (NIGHT_SHEEN colour and energy).
+const NIGHT_FADE := 2.5
+const NIGHT_EYE := Vector2(2.2,7.5)
+const NIGHT_SPINES := Vector2(1.6,3.6)
+const NIGHT_MEMBRANE := Vector2(0.42,1.5)
+const NIGHT_MEMBRANE_REACH := 0.3
+const NIGHT_THROAT := Color("ff5a1e")
+const NIGHT_THROAT_ENERGY := Vector2(0.9,3.2)
+const NIGHT_SHEEN := Color("7d8fbf")
+const NIGHT_SHEEN_ENERGY := 0.1
 
 var camera: Camera3D
+## The scene whose sky says how dark it is (its `_celestial`), set by the
+## host; without one the dragon keeps its day look.
+var sky_scene: Node = null
+## 0 by day .. 1 at night, eased; its materials by key, to light at night.
+var night := 0.0
+var _night_materials := {}
 var sea_y := -120.0
 var home := Vector3.ZERO
 var home_top := 30.0
@@ -541,6 +565,13 @@ func _dress(n: Node) -> void:
 ## deep maroon going near black, ivory teeth, pale horn and claws, violet
 ## membranes (c: soft and glowing toward the trailing edge).
 func _material(key: String) -> Material:
+	var made := _made_material(key)
+	if key in ["dragon_membrane_glow","dragon_eye","dragon_glow","dragon_mouth","dragon_tongue","dragon_hide","dragon_belly"]:
+		if not _night_materials.has(key): _night_materials[key] = []
+		_night_materials[key].append(made)
+	return made
+
+func _made_material(key: String) -> Material:
 	if key == "dragon_membrane_glow": return _glow_membrane()
 	var m := StandardMaterial3D.new()
 	m.resource_name = key
@@ -605,6 +636,10 @@ uniform vec3 deep : source_color = vec3(0.24, 0.17, 0.32);
 uniform vec3 edge : source_color = vec3(0.45, 0.32, 0.56);
 uniform vec3 glow : source_color = vec3(0.96, 0.64, 0.74);
 uniform float glow_energy = 0.42;
+// 0 by day, 1 at night: the glow reaches further in from the trailing edge
+// (by `night_reach` of the membrane) and the veins show lit through.
+uniform float night = 0.0;
+uniform float night_reach = 0.3;
 void fragment() {
 	float v = UV.y;
 	float vein = smoothstep(0.92, 1.0, fract(UV.x * 3.0 + 0.5)) * (1.0 - v) * 0.25;
@@ -613,13 +648,46 @@ void fragment() {
 	ROUGHNESS = 0.8;
 	SPECULAR = 0.25;
 	BACKLIGHT = edge * 0.8;
-	EMISSION = glow * glow_energy * smoothstep(0.55, 1.0, v) * (0.85 + 0.15 * sin(TIME * 1.3 + UV.x * 4.0));
+	float band = smoothstep(0.55 - night_reach * night, 1.0, v);
+	EMISSION = glow * glow_energy * band * (0.85 + 0.15 * sin(TIME * 1.3 + UV.x * 4.0));
+	EMISSION += glow * night * 0.18 * smoothstep(0.85, 1.0, fract(UV.x * 3.0 + 0.5)) * (1.0 - v);
 }
 """
 	var m := ShaderMaterial.new()
 	m.shader = sh
 	m.resource_name = "dragon_membrane_glow"
 	return m
+
+## The night glow, eased in at dusk and out at dawn (NIGHT_*).
+func _night_glow(delta: float) -> void:
+	var goal := StoneLampLights.night_for(_daylight())
+	night = move_toward(night,goal,delta/NIGHT_FADE)
+	var open := clampf(_jaw*4.0,0.0,1.0)
+	if breath == "inhale": open = maxf(open,0.8)
+	for m: StandardMaterial3D in _night_materials.get("dragon_eye",[]):
+		m.emission_energy_multiplier = lerpf(NIGHT_EYE.x,NIGHT_EYE.y,night)
+	for m: StandardMaterial3D in _night_materials.get("dragon_glow",[]):
+		m.emission_energy_multiplier = lerpf(NIGHT_SPINES.x,NIGHT_SPINES.y,night)
+	for m: ShaderMaterial in _night_materials.get("dragon_membrane_glow",[]):
+		m.set_shader_parameter("glow_energy",lerpf(NIGHT_MEMBRANE.x,NIGHT_MEMBRANE.y,night))
+		m.set_shader_parameter("night",night)
+		m.set_shader_parameter("night_reach",NIGHT_MEMBRANE_REACH)
+	for key in ["dragon_mouth","dragon_tongue"]:
+		for m: StandardMaterial3D in _night_materials.get(key,[]):
+			m.emission_enabled = night > 0.001
+			m.emission = NIGHT_THROAT
+			m.emission_energy_multiplier = night*lerpf(NIGHT_THROAT_ENERGY.x,NIGHT_THROAT_ENERGY.y,open)*(0.6 if key == "dragon_tongue" else 1.0)
+	for key in ["dragon_hide","dragon_belly"]:
+		for m: StandardMaterial3D in _night_materials.get(key,[]):
+			m.emission_enabled = night > 0.001
+			m.emission = NIGHT_SHEEN
+			m.emission_energy_multiplier = NIGHT_SHEEN_ENERGY*night
+
+func _daylight() -> float:
+	var celestial: Variant = sky_scene.get("_celestial") if sky_scene != null else null
+	if celestial != null and celestial.get("state") is Dictionary and celestial.state.has("zs_daylight"):
+		return float(celestial.state.zs_daylight)
+	return 1.0
 
 # --- The route ----------------------------------------------------------------------
 
@@ -841,6 +909,7 @@ func advance(delta: float) -> void:
 			_step(minf(ahead,1.0/30.0))
 			ahead -= 1.0/30.0
 	_step(minf(delta,0.1))
+	_night_glow(delta)
 	_watch_camera(delta)
 
 func _step(delta: float) -> void:

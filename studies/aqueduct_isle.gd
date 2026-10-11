@@ -529,6 +529,44 @@ func _capture_flying() -> void:
 func _add_life() -> void:
 	super._add_life()
 	if dragon_on: _build_sky_dragon()
+	if NightLights.wanted(preload("res://scripts/launch_args.gd").user_args()):
+		night_lights = NightLights.new()
+		add_child(night_lights)
+		night_lights.setup(self,night_lamp_spots,art)
+
+# --- The night's lights (scripts/kit_isle/kit_night_lights.gd) ----------------------
+
+## The isle's runes and lanterns after dark (docs/design/night-light/round1.md).
+const NightLights = preload("res://scripts/kit_isle/kit_night_lights.gd")
+var night_lights: Node3D = null
+
+## Where the lanterns stand (x, z): a pair behind the parked plane, the
+## grand stair's foot and head, the path from the plane to it, the circle's
+## way in, the aqueduct's head, the heel stone, and either side of the
+## gate on the far island.
+func night_lamp_spots() -> Array:
+	var spots: Array = []
+	if parked:
+		var forward := Vector3(-sin(parked_heading),0.0,-cos(parked_heading))
+		var right := Vector3(cos(parked_heading),0.0,-sin(parked_heading))
+		for side: float in [-1.0,1.0]:
+			var p := parked_at-forward*6.5+right*3.2*side
+			spots.append(Vector2(p.x,p.z))
+	for p: Vector2 in NIGHT_LAMPS: spots.append(p)
+	return spots
+
+const NIGHT_LAMPS := [
+	# The grand stair (Art.STAIR_AT 83.6, 0): its foot either side, its head.
+	Vector2(88.6,-3.4),Vector2(88.6,3.4),Vector2(77.5,2.8),
+	# The path from the plane toward the stair.
+	Vector2(92.0,2.5),
+	# The stone circle's way in (Art.HILL 61, 0), on its east side.
+	Vector2(71.5,-5.5),
+	# The aqueduct's head and the heel stone (Art.HEEL 118, 0).
+	Vector2(104.5,2.0),Vector2(115.5,1.8),
+	# The gate on the far island (its arch at 100, -62.5), either side.
+	Vector2(96.8,-60.2),Vector2(103.2,-60.2),
+]
 
 ## The kit's on-foot hint, and the dragon's line while it holds the treasure.
 func _foot_text() -> String:
@@ -547,6 +585,7 @@ func _build_sky_dragon() -> void:
 		if at.distance_to(IsleSky.MIDDLE) < 700.0: list.append([at,float(place[2])])
 	list.append([IsleSky.MIDDLE,60.0])
 	dragon = SkyDragon.new()
+	dragon.sky_scene = self
 	add_child(dragon)
 	# Its low passes cast their shadow across the near island's turf.
 	var middle := Vector2.ZERO
