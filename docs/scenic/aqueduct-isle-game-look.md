@@ -11,8 +11,9 @@ The user's ask: the isle's grass looked flat, with no animated grass and no flow
 ./run-aqueduct-isle.command --look=first_snow    # or any preset id
 ```
 
-- **L** goes to the next look preset and **Shift+L** to the previous one. They come in the look editor's order (`SceneLookPresets.PRESETS`, all 18). The preset's name and description show at the top for about 2 s.
-- **`--look=<id>`** (or **`--preset=<id>`**) starts in that preset. An unknown id warns and falls back to Alpine morning.
+- **L** goes to the next look preset and **Shift+L** to the previous one. They come in the look editor's order (`SceneLookPresets.PRESETS`, all 18), after **Live sky**. The preset's name and description show at the top for about 2 s.
+- Since round 4 (docs/design/consolidation-audit.md) the isle opens on the **live sky** (`scripts/kit_isle/kit_weather.gd`): Alpine morning's colours over a turning day, the year and drifting weather. A preset **holds** the sky at its hour, weather and season; **Live sky** gives it back from the hour it was held at.
+- **`--look=<id>`** (or **`--preset=<id>`**) starts in that preset, held. An unknown id warns and falls back to Alpine morning. A capture holds its look too (`--live-sky` to capture the live sky); `--still-sky` starts held in Alpine morning, as before round 4.
 - **`--look=x,y,z`** (three numbers) is still the capture's look-at point, so `tools/aqueduct_isle_captures.sh` works unchanged.
 - **`--no-flora`** leaves the grass and flowers out, to compare cost.
 - **B** still sends a gust front, now through the game's air.

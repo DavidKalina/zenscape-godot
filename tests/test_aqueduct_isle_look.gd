@@ -3,7 +3,9 @@ extends SceneTree
 ## studies/aqueduct_isle_flora.gd), headless: the game's grass tufts and
 ## meadow flowers grow on the turf, drawn as the catalog's multimeshes with
 ## its plant materials, kept off the paths' middles, off the crags and off
-## anything standing; and every look preset the edit mode offers applies
+## anything standing; it opens on the live sky in the start look's colours
+## (tests/test_kit_time_weather.gd has the rest); every look preset the
+## edit mode offers applies
 ## through the game's own SceneLookPresets.apply and reads back as applied
 ## (SceneLookPresets.matches), L steps through them in the editor's order,
 ## a bad --look id falls back, and First snow lays snow on the ground.
@@ -93,7 +95,9 @@ func _flora() -> void:
 	check(study.wake != null and study.wake.motor == study.motor,"The pilot's wake parts the plants")
 
 func _presets() -> void:
-	check(study.look_id == study.START_LOOK and SceneLookPresets.matches(study,study.START_LOOK),"The isle opens in %s" % study.START_LOOK)
+	# It opens on the live sky (scripts/kit_isle/kit_weather.gd): the start
+	# look's colours over the turning day; the presets hold it.
+	check(study.look_id == "live" and study.weather.live and study._celestial.look.document() == SceneLookPresets.look_document(study.START_LOOK),"The isle opens on the live sky, in %s's colours" % study.START_LOOK)
 	var ids: Array = SceneLookPresets.PRESETS.keys()
 	var bad: Array = []
 	for id: String in ids:
