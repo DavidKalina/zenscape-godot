@@ -209,10 +209,12 @@ static func wet(p: Vector2) -> bool:
 	if p.x > lip or Vector2(p.x,p.y).distance_to(POOL) > POOL_R+1.8 and (p.x < POOL.x or absf(p.y-POOL.y) > CHANNEL_HALF+1.0): return false
 	return ground_w(p.x,p.y) < water_level()-0.01
 
-## The pool's sheet of water (the islets' pond water) and the curtain off
-## the lip: the waterfalls' strand (shaders/flow_fall.gdshader, as the sky
-## forest isles lay their long falls), FALL_HALF across, falling down the
-## gorge's west wall past the ledges into the deep.
+## The pool's water (scripts/kit_isle/kit_water.gd: the edit chunks' own
+## still water, clear teal, down the outflow to the brink) and the curtain
+## off the lip: the waterfalls' strand (shaders/flow_fall.gdshader, as the
+## sky forest isles lay their long falls), FALL_HALF across, falling down
+## the gorge's west wall past the ledges into the deep. --old-water lays the
+## islets' pond water on a coarse fan, as before.
 const FALL_HALF := 3.0
 const FALL_DROP := 17.0
 const FALL_TAIL := 9.0
@@ -222,28 +224,13 @@ static func water(seed_value: int) -> Node3D:
 	node.name = "Water"
 	var wl := water_level()
 	var lip := lip_at(WEST_LIP,POOL.y)
-	# The sheet: a fan round the pool's middle out to where the ground rises
-	# over the water, and the channel's strip to the lip.
-	var v := PackedVector3Array()
-	var n := PackedVector3Array()
-	var rim: Array[Vector3] = []
-	for k in range(36):
-		var a := TAU*k/36.0
-		var dir := Vector2(cos(a),sin(a))
-		var r := POOL_R
-		while r < POOL_R+1.6 and ground_w(POOL.x+dir.x*r,POOL.y+dir.y*r) < wl: r += 0.1
-		rim.append(Vector3(POOL.x+dir.x*(r+0.05),wl,POOL.y+dir.y*(r+0.05)))
-	var mid := Vector3(POOL.x,wl,POOL.y)
-	for k in range(36):
-		for p: Vector3 in [mid,rim[k],rim[(k+1)%36]]:
-			v.append(p)
-			n.append(Vector3.UP)
-	var half := CHANNEL_HALF+0.15
-	for p: Vector3 in [Vector3(POOL.x,wl,POOL.y-half),Vector3(lip+0.05,wl,POOL.y-half),Vector3(lip+0.05,wl,POOL.y+half),
-			Vector3(POOL.x,wl,POOL.y-half),Vector3(lip+0.05,wl,POOL.y+half),Vector3(POOL.x,wl,POOL.y+half)]:
-		v.append(p)
-		n.append(Vector3.UP)
-	Aqueduct._sheet(node,v,n,"Pool")
+	if KitWater.old_water(): _old_sheet(node,wl,lip)
+	else:
+		var from := POOL.x-POOL_R-1.8
+		node.add_child(KitWater.still({"name":"Pool","level":wl,
+			"ground":func(x: float, z: float) -> float: return ground_w(x,z),
+			"rect":Rect2(from,POOL.y-POOL_R-1.8,lip+0.5-from,(POOL_R+1.8)*2.0),
+			"inside":func(p: Vector2) -> bool: return p.x < lip_at(WEST_LIP,p.y)}))
 	# The curtain over the lip.
 	var at := Vector3(lip,wl,POOL.y)
 	var rings: Dictionary = SkyIslets.curtain(at,Vector3.RIGHT,FALL_DROP,FALL_TAIL,FALL_HALF,0.3,FALL_STRENGTH)
@@ -275,6 +262,31 @@ static func water(seed_value: int) -> Node3D:
 	node.add_child(curtain)
 	node.set_meta("lip",at)
 	return node
+
+## The sheet as it was (--old-water): a fan round the pool's middle out to
+## where the ground rises over the water, and the channel's strip to the
+## lip, in the islets' pond water.
+static func _old_sheet(node: Node3D, wl: float, lip: float) -> void:
+	var v := PackedVector3Array()
+	var n := PackedVector3Array()
+	var rim: Array[Vector3] = []
+	for k in range(36):
+		var a := TAU*k/36.0
+		var dir := Vector2(cos(a),sin(a))
+		var r := POOL_R
+		while r < POOL_R+1.6 and ground_w(POOL.x+dir.x*r,POOL.y+dir.y*r) < wl: r += 0.1
+		rim.append(Vector3(POOL.x+dir.x*(r+0.05),wl,POOL.y+dir.y*(r+0.05)))
+	var mid := Vector3(POOL.x,wl,POOL.y)
+	for k in range(36):
+		for p: Vector3 in [mid,rim[k],rim[(k+1)%36]]:
+			v.append(p)
+			n.append(Vector3.UP)
+	var half := CHANNEL_HALF+0.15
+	for p: Vector3 in [Vector3(POOL.x,wl,POOL.y-half),Vector3(lip+0.05,wl,POOL.y-half),Vector3(lip+0.05,wl,POOL.y+half),
+			Vector3(POOL.x,wl,POOL.y-half),Vector3(lip+0.05,wl,POOL.y+half),Vector3(POOL.x,wl,POOL.y+half)]:
+		v.append(p)
+		n.append(Vector3.UP)
+	Aqueduct._sheet(node,v,n,"Pool")
 
 # --- The outlines -------------------------------------------------------------------
 
