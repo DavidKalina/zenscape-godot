@@ -36,6 +36,10 @@ extends Node3D
 ##               sky_collectibles.gd, CollectibleLines `line`), each a
 ##               skill moment through the isle's own stone (TOKENS).
 ##               --no-sky-tokens.
+##   serpent     a giant rune serpent (scripts/rune_serpent.gd) slithering
+##               its long way through the isles, the cloud sea and the
+##               pierced isle's arch; it watches and paces the plane, solid
+##               to it. --no-serpent. See docs/scenic/rune-serpent.md.
 ## --no-sky leaves all of it out. See docs/scenic/aqueduct-isle-sky.md.
 
 const SkyIslets = preload("res://scripts/sky_islets.gd")
@@ -58,6 +62,7 @@ const SkyCollectibles = preload("res://scripts/sky_collectibles.gd")
 const SkyCells = preload("res://scripts/sky_cells.gd")
 const Lines = preload("res://scripts/collectible_lines.gd")
 const IslanderFigure = preload("res://scripts/islander_figure.gd")
+const RuneSerpent = preload("res://scripts/rune_serpent.gd")
 
 ## The isle's own layers (studies/aqueduct_isle.gd TURF_LAYER): ground the
 ## plane skims and the pilot is set down on; and what bumps it.
@@ -151,7 +156,7 @@ var airships: Array[Dictionary] = []
 var motes: Array[Node3D] = []
 var drone: Node3D
 ## What is on (flags).
-var on := {"isles":true,"airships":true,"traffic":true,"life":true,"motes":true,"tokens":true}
+var on := {"isles":true,"airships":true,"traffic":true,"life":true,"motes":true,"tokens":true,"serpent":true}
 ## Lone isles being made ({task, spec, out}) and their built records by name.
 var _making: Array[Dictionary] = []
 var isles := {}
@@ -180,12 +185,14 @@ func setup(study: Node3D) -> void:
 	if args.has("--no-sky-life"): on.life = false
 	if args.has("--no-motes"): on.motes = false
 	if args.has("--no-sky-tokens"): on.tokens = false
+	if args.has("--no-serpent"): on.serpent = false
 	if on.isles: _start_isles()
 	if on.airships: _build_airships()
 	if on.traffic: _build_traffic()
 	if on.life and on.isles: _build_life()
 	if on.motes: _build_motes()
 	if on.tokens: _build_tokens()
+	if on.serpent: _build_serpent()
 
 func _exit_tree() -> void:
 	for m: Dictionary in _making: WorkerThreadPool.wait_for_task_completion(int(m.task))
@@ -614,6 +621,17 @@ func plane_tokens() -> Array:
 ## The tokens' source name on the collectibles.
 func token_source() -> String:
 	return "aqueduct"
+
+# --- The rune serpent ---------------------------------------------------------------
+
+## The rune serpent (scripts/rune_serpent.gd): self-contained, it runs its
+## own frame and physics frame and reads the study's camera and plane.
+var serpent: Node3D
+
+func _build_serpent() -> void:
+	serpent = RuneSerpent.new()
+	add_child(serpent)
+	serpent.setup(scene)
 
 # --- Each frame ---------------------------------------------------------------------
 

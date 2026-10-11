@@ -94,6 +94,20 @@ extends RefCounted
 ## uncrouched on the flat, is the slide jump: SLIDE_JUMP high with all the
 ## slide's pace; crouched on the flat it is the long jump.
 ##
+## Carving (`carve`, off unless a scene turns it on; off, all the above
+## holds as it is): sliding (the surf on a slope and the slide on the flat,
+## crouched or not), the stick across his way no longer pushes him across
+## it but turns his way, as a snowboard or a belly slide carves: his pace
+## carried round into the new way, at CARVE_TURN (radians a second) at full
+## stick across, by its share across less, and never tighter than
+## CARVE_RADIUS, so a slow slide does not spin on the spot. Each radian
+## carved scrubs CARVE_SCRUB of his pace, so a clean line is the fast one;
+## the stick held back against his way brakes (SLIDE_BRAKE) as ever, and a
+## slope pulls down its fall line as ever, so carving across one gains less
+## and following the fall line gains most. Carving adds no pace of its own.
+## He faces the way he slides, so a jump out of a carve (the long jump, the
+## slide jump) leaves along the carved way.
+##
 ## The side flip: Jump while skidding round (or SIDE_GRACE after it) flips
 ## him high (SIDE_FLIP, higher than the pump) the way the stick now points,
 ## slowly along (SIDE_SPEED), the button's hold not cutting it: up onto a
@@ -289,6 +303,16 @@ const SLIDE_RUNOUT := 2.4
 const SLIDE_AIR := 0.035
 const SLIDE_STOP := 0.8
 const SLIDE_JUMP := 0.9
+## Carving (with `carve` on): the turn at full stick across his way
+## (radians a second: a half turn in about 1.1 s), the least radius of it
+## (m: the turn is no faster than his pace over it, so full from 5.6 m/s,
+## 1.5 rad/s at 3), and the share of his pace each radian carved scrubs off
+## (a quarter turn about 12%). Chosen by a bot sliding the rune serpent's
+## dive (tools/slide_carve_bot.gd): from 1.6 rad/s up, the faster the turn
+## the fewer its falls, levelling off past about 2.8.
+const CARVE_TURN := 2.8
+const CARVE_RADIUS := 2.0
+const CARVE_SCRUB := 0.08
 ## The pace (m/s) at which a slide throws its fullest spray (the old top
 ## surf); faster surfs throw no more.
 const SPRAY_FULL := 11.0
@@ -422,6 +446,9 @@ var slide_top := SLIDE_TOP
 var slide_runout := SLIDE_RUNOUT
 var slide_air := SLIDE_AIR
 var slide_jump := SLIDE_JUMP
+var carve_turn := CARVE_TURN
+var carve_radius := CARVE_RADIUS
+var carve_scrub := CARVE_SCRUB
 var side_flip := SIDE_FLIP
 var side_speed := SIDE_SPEED
 var climb_time := CLIMB_TIME
@@ -444,6 +471,12 @@ var move := ""
 ## Held by the caller: the crouch button, and the twirl's.
 var crouch := false
 var twirl := false
+## Sliding, the stick carves (see above); off, it pushes him across as it
+## always has. A scene's choice (studies/character_study.gd's `--carve`).
+var carve := false
+## The carve's turn of his way this step (radians a second, positive to his
+## left, as `facing` turns), 0 not carving: for the figure's lean.
+var carving := 0.0
 ## The ground's slope under the feet, its rise a metre (x, z), as last read
 ## standing on it.
 var slope := Vector2.ZERO
@@ -550,6 +583,35 @@ func reset(at: Vector3, towards: float, speed := 0.0) -> void:
 	wade = 0.0
 	surface = -INF
 	_from_water = false
+	carving = 0.0
+
+## Carried by what he stands on or hangs from, between steps (a moving
+## body: studies/serpent_ride.gd's serpent): every place he keeps (the feet,
+## a lip and his hang under it) moved by `by`, and every way he keeps (his
+## facing, his pace, a lip's or a wall's way off, the slope's fall) turned
+## `turn` radians about up, so he stays upright. Nothing else calls it, and
+## his feel is untouched: the step after it runs as ever, on the ground as
+## it is now.
+func carry(by: Transform3D, turn: float) -> void:
+	var was := feet
+	feet = by*feet
+	ground_y += feet.y-was.y
+	if is_finite(surface): surface += feet.y-was.y
+	lip = by*lip
+	_hang_feet = by*_hang_feet
+	_snap = _snap.rotated(Vector3.UP,turn)
+	_correct = _correct.rotated(Vector3.UP,turn)
+	velocity = velocity.rotated(Vector3.UP,turn)
+	facing = wrapf(facing+turn,-PI,PI)
+	lip_out = _turned(lip_out,turn)
+	wall_out = _turned(wall_out,turn)
+	_wall_seen = _turned(_wall_seen,turn)
+	slope = _turned(slope,turn)
+
+## `way` (x, z) turned `turn` radians about up.
+static func _turned(way: Vector2, turn: float) -> Vector2:
+	var v := Vector3(way.x,0.0,way.y).rotated(Vector3.UP,turn)
+	return Vector2(v.x,v.z)
 
 ## The way `towards` faces, in the frame's plane (x, z).
 static func forward(towards: float) -> Vector2:
@@ -583,6 +645,7 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 	var twirl_pressed := twirl and not _twirl_was
 	_twirl_was = twirl
 	_regrab = maxf(0.0,_regrab-delta)
+	carving = 0.0
 	if hold != "": return _hold_step(delta,want,pressed,ground,slide,ledge)
 	if swimming: return _swim_step(delta,want,pressed,ground,slide)
 	_wet_at(Vector2(feet.x,feet.z),ground)
@@ -1419,7 +1482,8 @@ func _surfing(crouched: bool, ground: Callable) -> bool:
 	return is_finite(up) and is_finite(down) and rad_to_deg(atan(minf(up,down))) > slide_auto
 
 ## Boot-surfing: pulled down the fall line, steered across it (on the flat
-## only uncrouched: the crouched slide runs straight), braked against it,
+## only uncrouched: the crouched slide runs straight; carving, his way
+## turned instead, on slopes and the flat alike), braked against it,
 ## slowed by the air, no faster than slide_top, turning to face the way he
 ## goes; on flat ground slowing, and once down to the pace the stick asks (crouched,
 ## to a stop) on his feet again; stopped on a slope he can stand on, too.
@@ -1432,7 +1496,8 @@ func _surf(h: Vector2, want: Vector2, top: float, delta: float) -> Vector2:
 	h += fall*slide_pull*sin(atan(rise))*delta
 	var way := h.normalized() if h.length() > 0.3 else (fall if fall != Vector2.ZERO else forward(facing))
 	var side := Vector2(-way.y,way.x)
-	if steep >= SLIDE_END or not crouch: h += side*want.dot(side)*SLIDE_STEER*delta
+	if carve: h = _carve(h,want.dot(side),delta)
+	elif steep >= SLIDE_END or not crouch: h += side*want.dot(side)*SLIDE_STEER*delta
 	var drag := (SLIDE_DRAG if steep >= SLIDE_END else slide_runout)+slide_air*h.length_squared()
 	if want.dot(way) < -0.5: drag += SLIDE_BRAKE
 	var pace := minf(move_toward(h.length(),0.0,drag*delta),slide_top)
@@ -1443,6 +1508,17 @@ func _surf(h: Vector2, want: Vector2, top: float, delta: float) -> Vector2:
 	var done := (flat and pace <= SLIDE_STOP) if crouch else pace <= (maxf(top*want.length(),SLIDE_STOP) if flat else SLIDE_STOP)
 	if done: move = "crouch" if crouch else ""
 	return h
+
+## Carving (with `carve` on): his way turned by the stick's share `across`
+## his way (to his right, -1 to 1), at carve_turn at full stick, no tighter
+## than carve_radius, his pace carried round less carve_scrub of it a
+## radian turned. The run's new pace.
+func _carve(h: Vector2, across: float, delta: float) -> Vector2:
+	var pace := h.length()
+	var rate := minf(carve_turn,pace/maxf(carve_radius,0.01))*clampf(across,-1.0,1.0)
+	var turned := rate*delta
+	carving = -rate
+	return h.rotated(turned)*maxf(1.0-carve_scrub*absf(turned),0.0)
 
 ## Whether a jump now chains on a slide hop's touch.
 func _chained() -> bool:

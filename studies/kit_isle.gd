@@ -61,7 +61,10 @@ extends "res://studies/character_study.gd"
 ## walker's camera) and quits; --place=x,y,z[,turn] starts the pilot there
 ## instead (turn: degrees from facing -z, clockwise). Without --at it waits
 ## --capture-wait=<s> (4): flying, that many seconds flown (`flown`), so it
-## is the same moment run to run however slow the first frames are.
+## is the same moment run to run however slow the first frames are; with
+## --at it holds too (its settling frames count as the first 4 s).
+## --capture-seq=<count>,<s> saves that many, that far apart (out_0.png...),
+## to judge motion across frames.
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 const LandscapeLighting = preload("res://scripts/landscape_lighting.gd")
 const Celestial = preload("res://studies/celestial.gd")
@@ -262,6 +265,10 @@ var _plane_eye := Vector3.INF
 ## A capture from the walker's (or chase) camera waits this long (s;
 ## --capture-wait=<s>).
 var _capture_wait := 4.0
+## A capture saves this many frames, this many seconds apart
+## (--capture-seq=<count>,<s>).
+var _capture_count := 1
+var _capture_every := 0.5
 ## Seconds flown (fly_step's deltas): a capture from the plane waits for
 ## this to reach --capture-wait, so it is the same moment run to run
 ## however slow the first frames are.
@@ -291,6 +298,10 @@ func _ready() -> void:
 		elif arg.begins_with("--target="): lode_target = _vec(arg.get_slice("=",1))
 		elif arg.begins_with("--plane-eye="): _plane_eye = _vec(arg.get_slice("=",1))
 		elif arg.begins_with("--capture-wait="): _capture_wait = float(arg.get_slice("=",1))
+		elif arg.begins_with("--capture-seq="):
+			var seq := arg.get_slice("=",1).split(",")
+			_capture_count = maxi(int(seq[0]),1)
+			if seq.size() > 1: _capture_every = float(seq[1])
 		elif arg.begins_with("--place="):
 			var p := arg.get_slice("=",1).split(",")
 			_place = Vector4(float(p[0]),float(p[1]),float(p[2]),float(p[3]) if p.size() > 3 else 0.0)
@@ -1131,6 +1142,7 @@ func _take_capture() -> void:
 			_advance_look(1.0/60.0)
 			if life != null: life.advance(1.0/60.0)
 			await get_tree().process_frame
+		if _capture_wait > 4.0: await get_tree().create_timer(_capture_wait-4.0).timeout
 	else:
 		if flying:
 			while flown < _capture_wait: await get_tree().process_frame
@@ -1146,8 +1158,13 @@ func _take_capture() -> void:
 	var frame_ms := (Time.get_ticks_usec()-began)/120000.0
 	DisplayServer.window_set_vsync_mode(vsync)
 	await RenderingServer.frame_post_draw
-	get_viewport().get_texture().get_image().save_png(_capture)
-	print("%s: saved %s (%s; %.2f ms a frame, vsync off; %d draw calls, %d primitives)" % [isle_name(),_capture,look_id,frame_ms,RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME),RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME)])
+	for n in range(_capture_count):
+		if n > 0:
+			await get_tree().create_timer(_capture_every).timeout
+			await RenderingServer.frame_post_draw
+		var path := _capture if _capture_count == 1 else "%s_%d.png" % [_capture.get_basename(),n]
+		get_viewport().get_texture().get_image().save_png(path)
+		print("%s: saved %s (%s; %.2f ms a frame, vsync off; %d draw calls, %d primitives)" % [isle_name(),path,look_id,frame_ms,RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME),RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME)])
 	get_tree().quit()
 
 # --- The sky round it ----------------------------------------------------------------
