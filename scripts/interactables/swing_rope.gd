@@ -1,0 +1,320 @@
+extends Node3D
+## A swing rope (docs/design/foot-interactables.md): a rope `length` m long
+## hung from `anchor` (an arch's soffit, a lintel, a beam), its free end
+## swinging as a pendulum. Jumped into (his hands within CATCH of it, on its
+## lower part, from GRIP_HIGH of its length down), he takes hold where his
+## hands met it and rides it (the motor's `rider`, scripts/pilot_motor.gd,
+## hanging as on a ledge: `hold` "swing"): the rope's swing takes up his
+## pace across it, so a run and a jump into it is a swing at once.
+##
+## Hanging, he is a pendulum from the anchor at his grip (GRAVITY): the
+## stick along his swing pumps it (PUMP, m/s², only while it goes the
+## stick's way, so a held stick pumps the half swing it points along and a
+## stick worked in time pumps both), across it steers its plane round
+## (STEER), and he turns to face the stick (TURN). The swing is held under
+## MOST from the plumb; it loses DAMP of its pace a second. Jump lets go
+## with the rope's velocity at his hands (capped at TOP) and POP more up: a
+## release on the upswing, near the top of the arc's pace, flies far; the
+## twirl, the wall run and the sail are fresh after it. Crouch drops off
+## (no pop). Let go, the same rope can't be caught for REGRAB s; another
+## can, so ropes chain.
+##
+## Free, its end swings on as a pendulum and settles (and sways a little in
+## the air), drawn as a faceted rope in the footbridges' rope tone
+## (scripts/footbridge.gd ROPE), a knot at its end and an iron ring at the
+## anchor. The numbers are live (the yard's F4, studies/
+## interactables_yard.gd): `t_*` read each frame.
+const PilotMotor = preload("res://scripts/pilot_motor.gd")
+const PilotFigure = preload("res://scripts/pilot_figure.gd")
+const Footbridge = preload("res://scripts/footbridge.gd")
+
+const GRAVITY := 20.0
+const PUMP := 3.5
+const STEER := 3.0
+const TURN := 2.5
+const MOST := 1.35
+const DAMP := 0.08
+const TOP := 12.0
+const POP := 1.5
+const CATCH := 0.6
+const GRIP_HIGH := 0.35
+const REGRAB := 0.45
+## Free, its end's damping a second, and its sway (m/s² at the end).
+const FREE_DAMP := 0.35
+const SWAY := 0.25
+## The rope's radius drawn (m).
+const RADIUS := 0.035
+
+static var t_gravity := GRAVITY
+static var t_pump := PUMP
+static var t_steer := STEER
+static var t_most := MOST
+static var t_damp := DAMP
+static var t_top := TOP
+static var t_pop := POP
+static var t_catch := CATCH
+
+var anchor := Vector3.ZERO
+var length := 5.0
+## The rope's held point or its end (world), and its velocity.
+var hands := Vector3.ZERO
+var velocity := Vector3.ZERO
+## Held at `grip` m from the anchor (its length, free).
+var grip := 5.0
+var motor: PilotMotor = null
+var facing := 0.0
+## The figure's tilt as last posed (the rope's frame) for letting go.
+var tilt := Basis.IDENTITY
+var _cool := 0.0
+var _crouch_was := true
+var _time := 0.0
+var _upper: MeshInstance3D
+var _lower: MeshInstance3D
+var _knot: MeshInstance3D
+
+## Hung from `at`, `rope_length` m long.
+func setup(at: Vector3, rope_length: float) -> void:
+	anchor = at
+	length = rope_length
+	grip = length
+	hands = anchor+Vector3.DOWN*length
+
+func _ready() -> void:
+	var mesh := _rope_mesh()
+	_upper = MeshInstance3D.new()
+	_upper.mesh = mesh
+	add_child(_upper)
+	_lower = MeshInstance3D.new()
+	_lower.mesh = mesh
+	add_child(_lower)
+	_knot = MeshInstance3D.new()
+	_knot.mesh = _knot_mesh(0.075,0.16,Footbridge.ROPE.darkened(0.12))
+	add_child(_knot)
+	var ring := MeshInstance3D.new()
+	ring.mesh = _knot_mesh(0.07,0.12,Color("2c2a28"))
+	ring.position = anchor+Vector3.DOWN*0.04
+	add_child(ring)
+	_draw()
+
+func held() -> bool:
+	return motor != null and motor.rider == self
+
+## Free: its end on as a pendulum, settling, swaying a little.
+func advance(delta: float) -> void:
+	if delta <= 0.0: return
+	_time += delta
+	_cool = maxf(_cool-delta,0.0)
+	if not held():
+		motor = null
+		grip = length
+		var sway := Vector3(sin(_time*0.7+anchor.x),0.0,cos(_time*0.53+anchor.z))*SWAY
+		_swing(delta,sway,FREE_DAMP)
+	_draw()
+
+## Whether he catches it now: in the air, his hands (or his chest) within
+## CATCH of its lower part. Taken hold of, he rides it.
+func try_catch(walker: PilotMotor) -> bool:
+	if _cool > 0.0 or walker.rider != null or walker.grounded or walker.on_ledge() or walker.swimming or walker.move == "tumble": return false
+	var reach := t_catch
+	var best := INF
+	var at := Vector3.ZERO
+	for up: float in [PilotMotor.HANG_DROP+0.1,0.6]:
+		var p := walker.feet+Vector3.UP*up
+		var q := Geometry3D.get_closest_point_to_segment(p,anchor,hands)
+		var d := p.distance_to(q)
+		if d < best:
+			best = d
+			at = q
+	if best > reach or anchor.distance_to(at) < length*GRIP_HIGH: return false
+	_take(walker,at)
+	return true
+
+## Taken hold of at `at` on it: his pace across the rope its swing.
+func _take(walker: PilotMotor, at: Vector3) -> void:
+	motor = walker
+	grip = clampf(anchor.distance_to(at),length*GRIP_HIGH,length)
+	var u := (at-anchor).normalized() if at.distance_to(anchor) > 0.01 else Vector3.DOWN
+	hands = anchor+u*grip
+	var v := walker.velocity
+	velocity = v-u*v.dot(u)
+	var flat := Vector2(v.x,v.z)
+	facing = PilotMotor.facing_of(flat) if flat.length() > 1.0 else walker.facing
+	walker.rider = self
+	walker.hold = "swing"
+	walker.move = ""
+	walker.chain = 0
+	walker.grounded = false
+	walker.skidding = false
+	walker.sail.rest()
+	_crouch_was = walker.crouch
+	_place(walker)
+
+## One step held (the motor's rider): pumped and steered by the stick,
+## let go by Jump (with the pop) or crouch (without).
+func ride(walker: PilotMotor, delta: float, want: Vector2, pressed: bool) -> Dictionary:
+	var out := {}
+	var dropped := walker.crouch and not _crouch_was
+	_crouch_was = walker.crouch
+	if pressed or dropped:
+		_let_go(walker,not dropped)
+		out["swing"] = false
+		if pressed:
+			out["jumped"] = 1
+			out["rope_jump"] = true
+		return out
+	var w := Vector3(want.x,0.0,want.y)
+	var u := (hands-anchor).normalized()
+	var tangent := w-u*w.dot(u)
+	var push := Vector3.ZERO
+	if velocity.length() > 0.4:
+		var way := velocity.normalized()
+		var along := tangent.dot(way)
+		push = way*t_pump*maxf(along,0.0)+(tangent-way*along)*t_steer
+	else:
+		push = tangent*t_pump
+	if want.length() > 0.3: facing = rotate_toward(facing,PilotMotor.facing_of(want),TURN*delta)
+	_swing(delta,push,t_damp)
+	_place(walker)
+	return out
+
+## The pendulum over `delta` at the grip: gravity and `push` (m/s²), the
+## pace kept across the rope, held under MOST from the plumb.
+func _swing(delta: float, push: Vector3, damping: float) -> void:
+	var left := delta
+	while left > 0.0:
+		var dt := minf(left,1.0/120.0)
+		left -= dt
+		var u := (hands-anchor).normalized()
+		velocity += (Vector3.DOWN*t_gravity+push)*dt
+		velocity -= u*velocity.dot(u)
+		velocity *= maxf(1.0-damping*dt,0.0)
+		hands = anchor+(hands+velocity*dt-anchor).normalized()*grip
+		u = (hands-anchor).normalized()
+		var angle := u.angle_to(Vector3.DOWN)
+		if angle > t_most:
+			# Held at the most: turned back to it, the pace outward taken off.
+			var axis := Vector3.DOWN.cross(u).normalized()
+			if axis.length() < 0.5: axis = Vector3.RIGHT
+			u = Vector3.DOWN.rotated(axis,t_most)
+			hands = anchor+u*grip
+			var outward := axis.cross(u).normalized()
+			if velocity.dot(outward) > 0.0: velocity -= outward*velocity.dot(outward)
+		velocity -= u*velocity.dot(u)
+
+## Let go: off the rope with its pace at his hands (and the pop, `pop`).
+func _let_go(walker: PilotMotor, pop: bool) -> void:
+	var v := velocity.limit_length(t_top)
+	if pop: v.y = maxf(v.y,0.0)+t_pop
+	_cool = REGRAB
+	walker.toss(v)
+	walker.feet.y -= 0.02
+	motor = null
+	grip = length
+
+## His body under his hands: the hang's grip on the rope, hanging along it.
+func _place(walker: PilotMotor) -> void:
+	walker.facing = facing
+	walker.velocity = velocity
+	walker.feet = hands-_frame()*PilotFigure.GRIP
+	walker.ground_y = walker.feet.y
+
+## The hanging body's frame: up along the rope to the anchor, facing his
+## way across it.
+func _frame() -> Basis:
+	var up := (anchor-hands).normalized()
+	var f := PilotMotor.forward(facing)
+	var ahead := Vector3(f.x,0.0,f.y)
+	ahead = (ahead-up*ahead.dot(up))
+	if ahead.length() < 1e-3: ahead = Vector3.FORWARD
+	ahead = ahead.normalized()
+	var back := -ahead
+	tilt = Basis(up.cross(back),up,back)
+	return tilt
+
+## The rope drawn: anchor to his hands, then the tail on past them; free,
+## anchor to its end.
+func _draw() -> void:
+	if _upper == null: return
+	var u := (hands-anchor).normalized()
+	var end := anchor+u*length
+	_segment(_upper,anchor,hands)
+	_lower.visible = grip < length-0.05
+	if _lower.visible: _segment(_lower,hands,end)
+	_knot.transform = Transform3D(_segment_basis(end-u,end).orthonormalized(),end)
+
+func _segment(mesh: MeshInstance3D, from: Vector3, to: Vector3) -> void:
+	mesh.transform = Transform3D(_segment_basis(from,to),from)
+
+## The rope mesh runs from 0 to -1 along y: its y axis the way back up,
+## from `to` to `from`, as long as the span.
+static func _segment_basis(from: Vector3, to: Vector3) -> Basis:
+	var y := from-to
+	if y.length() < 1e-4: y = Vector3.UP*1e-4
+	var n := y.normalized()
+	var x := n.cross(Vector3.FORWARD if absf(n.dot(Vector3.FORWARD)) < 0.9 else Vector3.RIGHT).normalized()
+	var z := x.cross(n).normalized()
+	return Basis(x,y,z)
+
+## A faceted rope, a unit long down y: six faces, twisted bands of the rope
+## tone, flat-shaded.
+static func _rope_mesh() -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var sides := 6
+	var bands := 24
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 4111
+	for k in range(bands):
+		var y0 := -float(k)/bands
+		var y1 := -float(k+1)/bands
+		var twist0 := float(k)*0.5
+		var twist1 := float(k+1)*0.5
+		for i in range(sides):
+			var a0 := TAU*float(i)/sides
+			var a1 := TAU*float(i+1)/sides
+			var p0 := Vector3(cos(a0+twist0)*RADIUS,y0,sin(a0+twist0)*RADIUS)
+			var p1 := Vector3(cos(a1+twist0)*RADIUS,y0,sin(a1+twist0)*RADIUS)
+			var p2 := Vector3(cos(a1+twist1)*RADIUS,y1,sin(a1+twist1)*RADIUS)
+			var p3 := Vector3(cos(a0+twist1)*RADIUS,y1,sin(a0+twist1)*RADIUS)
+			var n := Vector3(cos((a0+a1)*0.5+(twist0+twist1)*0.5),0.0,sin((a0+a1)*0.5+(twist0+twist1)*0.5))
+			var tone := Footbridge.ROPE.darkened(rng.randf_range(0.0,0.18) if (i+k)%2 == 0 else rng.randf_range(0.12,0.28))
+			for p: Vector3 in [p0,p2,p1,p0,p3,p2]:
+				st.set_color(tone)
+				st.set_normal(n)
+				st.add_vertex(p)
+	var mesh := st.commit()
+	mesh.surface_set_material(0,_material())
+	return mesh
+
+## A small faceted lump (a knot, a ring), `r` round and `h` tall about its
+## middle.
+static func _knot_mesh(r: float, h: float, colour: Color) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var sides := 7
+	var top := Vector3.UP*h*0.5
+	var low := Vector3.DOWN*h*0.5
+	for i in range(sides):
+		var a0 := TAU*float(i)/sides
+		var a1 := TAU*float(i+1)/sides
+		var p0 := Vector3(cos(a0)*r,0.0,sin(a0)*r)
+		var p1 := Vector3(cos(a1)*r,0.0,sin(a1)*r)
+		for tri: Array in [[top,p1,p0],[low,p0,p1]]:
+			var n: Vector3 = ((tri[1]-tri[0]) as Vector3).cross(tri[2]-tri[0]).normalized()
+			for p: Vector3 in tri:
+				st.set_color(colour*(1.0 if n.y > 0.0 else 0.8))
+				st.set_normal(n)
+				st.add_vertex(p)
+	var mesh := st.commit()
+	mesh.surface_set_material(0,_material())
+	return mesh
+
+static var _shared: StandardMaterial3D
+
+static func _material() -> StandardMaterial3D:
+	if _shared == null:
+		_shared = StandardMaterial3D.new()
+		_shared.vertex_color_use_as_albedo = true
+		_shared.roughness = 1.0
+		_shared.cull_mode = BaseMaterial3D.CULL_DISABLED
+	return _shared

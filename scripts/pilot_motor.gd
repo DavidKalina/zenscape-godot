@@ -173,6 +173,14 @@ extends RefCounted
 ## an airtime as ever: a knock does not give a spent one back). `seize`
 ## holds him still where the caller puts his feet (a guardian's grab) till
 ## the next `knock` throws him. Only position and time are lost; never hurt.
+##
+## Ridden (`rider`: a swing rope, a balustrade, scripts/interactables/):
+## while set, the step reads the buttons and hands itself to the rider's
+## `ride(motor, delta, want, pressed)`, which moves him (his feet, pace,
+## facing, `move` or `hold` for the figure: "swing" hangs as the ledge's
+## hang) and gives the step's events back. The rider lets go with `toss`
+## (which clears it), `hop` keeping the slide hop's weave for the air after
+## it. A reset or a knock clears it too.
 
 ## Speeds, metres a second, and how fast they are reached and lost.
 const WALK := 2.4
@@ -576,6 +584,8 @@ var _seized := false
 const PocketSail = preload("res://scripts/pocket_sail.gd")
 var sail := PocketSail.new()
 var air := Callable()
+## Riding something that moves him itself (see the header), or null.
+var rider: Object = null
 
 ## Stood at `at`, facing `towards`, moving `speed` the way it faces.
 func reset(at: Vector3, towards: float, speed := 0.0) -> void:
@@ -622,6 +632,7 @@ func reset(at: Vector3, towards: float, speed := 0.0) -> void:
 	_seized = false
 	sail.rest()
 	carving = 0.0
+	rider = null
 
 ## Carried by what he stands on or hangs from, between steps (a moving
 ## body: studies/serpent_ride.gd's serpent): every place he keeps (the feet,
@@ -655,6 +666,7 @@ static func _turned(way: Vector2, turn: float) -> Vector2:
 ## tumbling (see above), facing back the way the blow came from.
 func knock(v: Vector3) -> void:
 	sail.rest()
+	rider = null
 	hold = ""
 	hold_t = 0.0
 	shimmy = 0.0
@@ -745,6 +757,7 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 	_regrab = maxf(0.0,_regrab-delta)
 	carving = 0.0
 	_immune = maxf(0.0,_immune-delta)
+	if rider != null: return rider.ride(self,delta,want,pressed)
 	if _seized: return out
 	if move == "tumble":
 		if twirl_pressed and not grounded and not _twirled:
@@ -1073,14 +1086,17 @@ func _sail_step(delta: float, want: Vector2, h: Vector2) -> Vector2:
 	facing = sail.heading
 	return Vector2(v.x,v.z)
 
-## Tossed by something (a launcher): unlike `knock`, no tumble;: off the ground or a
-## ledge at `push` (m/s), a fresh airtime (the twirl, the wall run and the
-## sail's kick ready), no jump taken from it.
-func toss(push: Vector3) -> void:
+## Tossed by something (a launcher, a rider letting go): unlike `knock`, no
+## tumble;: off the ground or a ledge at `push` (m/s), a fresh airtime (the
+## twirl, the wall run and the sail's kick ready), no jump taken from it;
+## with `hop`, the slide hop's weave in the air after it.
+func toss(push: Vector3, hop := false) -> void:
 	if swimming: return
+	rider = null
 	hold = ""
 	hold_t = 0.0
 	_still()
+	_hop_air = hop
 	velocity = push
 	_jumped = true
 	_light = false
