@@ -43,6 +43,11 @@ extends "res://studies/character_study.gd"
 ## (studies/aqueduct_isle_sky.gd): --no-sky and its parts.
 ## --fly starts in the plane; --drift=<x> scales its knife-edge drift
 ## (scripts/sky_plane.gd).
+## In the plane, R3 (Tab) locks onto the isle when in reach: the plane flies
+## itself round it on a ring (scripts/isle_lock.gd), the camera framing it,
+## and the isle's card shows (scripts/isle_splash.gd, `isle_card`); A D draw
+## the ring in and out, W S lower and raise it, R3 (Tab) lets go. Out of
+## reach R3 is the camera reset still. --lock starts locked (with --fly).
 ## The lodestone (docs/design/isle-lodestone.md): a stone holding a world in
 ## miniature (scripts/lodestone.gd) hums where the isle rests it (E, pad A
 ## picks it up); --stone-plane seats it in the stone plane, whose wing
@@ -77,6 +82,8 @@ const KitLife = preload("res://scripts/kit_isle/kit_life.gd")
 const DeckGround = preload("res://scripts/kit_isle/deck_ground.gd")
 const RopeBridge = preload("res://scripts/rope_bridge.gd")
 const GlideAir = preload("res://scripts/glide_air.gd")
+const IsleLock = preload("res://scripts/isle_lock.gd")
+const IsleSplash = preload("res://scripts/isle_splash.gd")
 
 ## The look the isle opens in: the game's own for a new world
 ## (scripts/native_chunk_editor.gd forms one in Alpine morning).
@@ -151,6 +158,16 @@ const DOUBLE_TAP := 0.3
 ## push) and how long a look holds before it swings back behind the plane
 ## (s): the game's (scripts/wanderer_eye.gd STICK_LOOK, PLANE_LINGER).
 const STICK_LOOK := 2.4
+## Locked onto the isle, the camera framing it (_frame_isle): m out from
+## the isle and up from the chase's eye, the share of its aim drawn to the
+## isle's middle, and m over the isle's top it aims at.
+const FRAME_OUT := 6.0
+const FRAME_UP := 1.5
+const FRAME_AIM := 0.5
+const FRAME_AIM_UP := 6.0
+## The hint's line while locked, and the offer to lock while in reach.
+const LOCK_HINT := "Circling %s  ·  A D draw the ring in and out  ·  W S lower and raise it  ·  boost, brake, knife edge and rolls as ever  ·  R3 / Tab let go"
+const LOCK_OFFER := "R3 / Tab  circle %s"
 const LOOK_LINGER := 2.5
 ## Setting down: skimming the turf with Brake held under TOUCH_SPEED m/s
 ## for TOUCH_HOLD s puts the pilot on foot there. Getting out anywhere, he
@@ -183,6 +200,11 @@ var _bump_query: PhysicsShapeQueryParameters3D
 var _ground_ray: PhysicsRayQueryParameters3D
 var _foot_hint: Label
 var _switch_hint: Label
+## Locking onto the isle from the plane (R3 / Tab, scripts/isle_lock.gd) and
+## its card (scripts/isle_splash.gd).
+var isle_lock: RefCounted = null
+var splash: CanvasLayer = null
+var _lock_stick := Vector2.ZERO
 
 ## The lodestone (docs/design/isle-lodestone.md). It rests LODE_HOVER m over
 ## the top of the floating stone LODE_PLATFORM (studies/aqueduct_isle_art.gd
@@ -287,6 +309,7 @@ func _ready() -> void:
 		start_face = Vector2(sin(turn),-cos(turn))
 		respawn()
 	_start_in_plane()
+	if flying and preload("res://scripts/launch_args.gd").user_args().has("--lock"): toggle_lock()
 	if preload("res://scripts/launch_args.gd").user_args().has("--pickup"):
 		for i in range(30): tick(1.0/60.0)
 		pick_up()
@@ -473,6 +496,13 @@ func _build_art() -> void:
 func isle_name() -> String:
 	return "kit isle"
 
+## The isle's card as the plane locks onto it (scripts/isle_splash.gd):
+## its name, a line of what it is, and what there is to find on it with
+## how much has been found. Placeholders until the isles are named.
+func isle_card() -> Dictionary:
+	return {"name":isle_name().capitalize(),"epithet":"An isle adrift over the cloud sea",
+		"finds":[["Glyphs",0,7],["Lodestones",0,1],["Hidden ways",0,3]]}
+
 ## The isle's datum (world y): the turf near it; the rays down read from
 ## over it, the plane's cloud floor hangs FLOOR_BELOW under it.
 func isle_top() -> float:
@@ -649,7 +679,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				step_look(-1 if (event as InputEventKey).shift_pressed else 1)
 				return
 	if Pad.pressed(event,&"camera_reset"):
-		reset_camera()
+		if not (flying and toggle_lock()): reset_camera()
 		return
 	if lode_state == "inspecting":
 		_inspect_event(event)
@@ -727,6 +757,7 @@ func leave_plane(at := Vector3.INF) -> void:
 	var spot := safe_ground(plane.position) if at == Vector3.INF else at
 	var face := Vector2(-sin(float(plane.heading)),-cos(float(plane.heading)))
 	flying = false
+	release_lock()
 	if lode_state == "seated":
 		# He takes the stone with him.
 		if stone_plane and plane_figure.stone != null:
@@ -791,6 +822,75 @@ func reset_camera() -> void:
 	_polar = CAM_POLAR
 	_look_rest = 0.0
 
+## Locks onto the isle if the plane is in reach of it, or lets go if
+## locked (R3 / Tab in the plane); false if neither (out of reach). Locking
+## puts the chase camera's free look back and shows the isle's card.
+func toggle_lock() -> bool:
+	if not flying: return false
+	if isle_lock == null:
+		isle_lock = IsleLock.new()
+		var circle := isle_circle()
+		isle_lock.set_isle(Vector3(circle.x,0.0,circle.y),circle.z,isle_top())
+	if isle_lock.locked:
+		release_lock()
+		return true
+	if not isle_lock.in_reach(plane.position): return false
+	isle_lock.lock(plane.position,plane.velocity)
+	chase.set(&"free",Vector2.ZERO)
+	if splash == null:
+		splash = IsleSplash.new()
+		splash.name = "IsleSplash"
+		add_child(splash)
+	splash.show_card(isle_card())
+	_show_fly_hint()
+	return true
+
+## Lets go of the isle (the camera eases back behind, the card fades).
+func release_lock() -> void:
+	if isle_lock == null or not isle_lock.locked: return
+	isle_lock.release()
+	if splash != null: splash.fade()
+	if chase != null: chase.set(&"free",Vector2.ZERO)
+
+## The circle round the isle's outlines: (x, z) its middle, z its radius.
+func isle_circle() -> Vector3:
+	var lo := Vector2(INF,INF)
+	var hi := -lo
+	for outline: PackedVector2Array in _outlines:
+		for p in outline:
+			lo = lo.min(p)
+			hi = hi.max(p)
+	if lo.x == INF: return Vector3(isle_summit().x,isle_summit().z,40.0)
+	var mid := (lo+hi)*0.5
+	var reach := 0.0
+	for outline: PackedVector2Array in _outlines:
+		for p in outline: reach = maxf(reach,p.distance_to(mid))
+	return Vector3(mid.x,mid.y,reach)
+
+## The lock's step, and the camera framing the isle while locked: eased
+## out FRAME_OUT m and up FRAME_UP m from the chase's eye, its aim drawn
+## FRAME_AIM of the way to the isle's middle (FRAME_AIM_UP m over its top),
+## so the plane rides the near side of the view with the isle turning past.
+func _frame_isle(delta: float) -> void:
+	if isle_lock == null: return
+	var was: bool = isle_lock.locked
+	isle_lock.advance(delta,plane.position,_lock_stick)
+	_lock_stick = Vector2.ZERO
+	if was and not isle_lock.locked:
+		if splash != null: splash.fade()
+		chase.set(&"free",Vector2.ZERO)
+	var f := smoothstep(0.0,1.0,float(isle_lock.framing))
+	if f <= 0.0: return
+	var out: Vector3 = plane.position-isle_lock.centre
+	out.y = 0.0
+	out = out.normalized()
+	camera.global_position = chase.eye+(out*FRAME_OUT+Vector3.UP*FRAME_UP)*f
+	var mid: Vector3 = isle_lock.centre+Vector3.UP*FRAME_AIM_UP
+	# Aimed no lower than halfway down to the plane's height, so the plane
+	# stays in the view's lower part rather than off its foot.
+	mid.y = maxf(mid.y,lerpf(mid.y,float(plane.position.y),0.6))
+	camera.look_at(chase.look.lerp(mid,FRAME_AIM*f),Vector3.UP)
+
 ## The stick, mouse, throttle, knife edge and roll asked this frame, as
 ## the game's plane reads them (the ruin kit gallery's fly mode). The
 ## right stick (or the mouse with the right button held) swings the chase
@@ -806,6 +906,8 @@ func _fly_input(delta: float) -> Dictionary:
 		"boost":Input.get_action_strength(&"fly_boost"),"brake":Input.get_action_strength(&"fly_brake"),"roll":_roll_asked}
 	_fly_look = Vector2.ZERO
 	_roll_asked = 0.0
+	_lock_stick = stick
+	if isle_lock != null and isle_lock.locked: return isle_lock.steer(input,plane)
 	return input
 
 ## One frame of flight: the plane stepped over the turf, bumped off what
@@ -833,6 +935,7 @@ func fly_step(delta: float, input: Dictionary) -> void:
 	chase.step(delta,plane,0.0,_inside_stone)
 	camera.global_position = chase.eye
 	camera.look_at(chase.look,Vector3.UP)
+	_frame_isle(delta)
 	camera.rotate_object_local(Vector3.FORWARD,chase.roll)
 	camera.fov = chase.fov
 	if _plane_eye != Vector3.INF:
@@ -868,6 +971,8 @@ func fly_from(at: Vector3, heading: float) -> void:
 func _show_fly_hint() -> void:
 	if _switch_hint == null or plane == null: return
 	var text := FLY_HINT % [float(plane.speed),bumps]
+	if isle_lock != null and isle_lock.locked: text += "\n"+LOCK_HINT % str(isle_card().name)
+	elif isle_lock == null or isle_lock.in_reach(plane.position): text += "\n"+LOCK_OFFER % str(isle_card().name)
 	if stone_plane and lodestone != null:
 		if lode_state == "seated":
 			text += "\nThe lodestone points the way (%.0f m): turn toward the brighter wing seam (both even and faint: on course)  ·  top or bottom fin lit: climb or dive  ·  tail lit: it is behind you  ·  prow runes flare: dead ahead" % plane.position.distance_to(lode_target)
@@ -996,6 +1101,7 @@ func _fly_event(event: InputEvent) -> void:
 	elif event is InputEventKey and event.pressed and not event.echo:
 		match (event as InputEventKey).keycode:
 			KEY_F: leave_plane()
+			KEY_TAB: toggle_lock()
 			KEY_R:
 				leave_plane(start)
 				respawn()

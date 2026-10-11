@@ -229,6 +229,10 @@ func _build_art() -> void:
 func isle_name() -> String:
 	return "aqueduct isle"
 
+## Placeholder name, line and finds until the isle is named.
+func isle_card() -> Dictionary:
+	return {"name":"The Aqueduct of Veyl","epithet":"Where the old water still walks the sky","finds":[["Glyphs",2,7],["Lodestones",0,1],["Hidden ways",1,3]]}
+
 func isle_top() -> float:
 	return Art.TOP
 
