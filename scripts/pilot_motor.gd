@@ -496,15 +496,19 @@ var swim_draft := SWIM_DRAFT
 ## run's) with them: with the jumps' longer airtime a running jump carries
 ## about as far as ever. All from the constants, so calling it again
 ## re-fits; the size itself is scripts/world_scale.gd's.
-const PACE_POWER := 0.5
+const PACE_POWER := 0.25
+## The water's depths by his size to this power: 0 for now, they stay the
+## full-size ones (the isles' pools and causeways are laid for them; at 1 a
+## smaller walker swam where the drowned nave's stones are hopped).
+const WATER_POWER := 0.0
 func set_size(s: float) -> void:
 	size = s
 	hang_drop = HANG_DROP*s
 	hang_out = HANG_OUT*s
 	climb_in = CLIMB_IN*s
-	swim_in = SWIM_IN*s
-	swim_out = SWIM_OUT*s
-	swim_draft = SWIM_DRAFT*s
+	swim_in = SWIM_IN*pow(s,WATER_POWER)
+	swim_out = SWIM_OUT*pow(s,WATER_POWER)
+	swim_draft = SWIM_DRAFT*pow(s,WATER_POWER)
 	var lift := HANG_DROP*(1.0-s)
 	jumps = [float(JUMPS[0])+lift,float(JUMPS[1])+lift]
 	var pace := pow(s,PACE_POWER)
