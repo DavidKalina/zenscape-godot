@@ -1,4 +1,5 @@
 extends SceneTree
+## suite: slow
 ## The rune serpent's route between the isles (scripts/kit_isle/
 ## serpent_route.gd, ridden: scripts/kit_isle/serpent_rider.gd), headless,
 ## in the aqueduct isle's sky with its motif isles stood up:
