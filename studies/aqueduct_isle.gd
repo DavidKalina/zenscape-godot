@@ -36,9 +36,9 @@ extends "res://studies/kit_isle.gd"
 ##   R            back to the start (the rubble slope's foot)
 ##   L / Shift+L  next / previous look preset (its name shows a moment)
 ##   B            a strong gust front
-##   F (pad Y)    into the game's plane, already flying a little above and
-##                ahead; in it, back on foot on safe ground nearby (and
-##                skimming the turf braking slow sets him down there)
+##   Space (pad A) by the parked plane: climb in and take off; in it,
+##                land by hand on the turf (studies/kit_isle.gd: the game's
+##                hand landing), F (pad Y) the flaps, and out once stopped
 ##   F5 F6 F7 F8  record, replay the station's recordings, older, all paths
 ##   F1 numbers · F2 feel · Esc mouse
 ##   ./run-aqueduct-isle.command [--look=first_snow]
@@ -388,11 +388,10 @@ func _fly_tick(delta: float) -> void:
 func plane_mask() -> int:
 	return super.plane_mask()|RuinBump.LAYER
 
-func board() -> void:
-	var was_flying := flying
-	super.board()
+func _into_plane() -> void:
+	super._into_plane()
 	# Back in the plane once the halls have begun, the arrow stays quiet.
-	if not was_flying and _nose != null and isle_chain != null and isle_chain.state == "started": _nose.quiet(true)
+	if _nose != null and isle_chain != null and isle_chain.state == "started": _nose.quiet(true)
 
 func fly_from(at: Vector3, heading: float) -> void:
 	super.fly_from(at,heading)
