@@ -27,6 +27,8 @@ const ENTRIES: Array[Dictionary] = [
 		"detail":"Rock spires joined by rope bridges, a belfry on the tallest. Look presets (L), the plane on F."},
 	{"id":"cloister_tarn","group":"Ruins","title":"Cloister tarn","scene":"res://studies/cloister_tarn_isle.tscn","args":[],
 		"detail":"A crater isle round a still tarn, a ruined cloister round its shore, satellites on rope bridges."},
+	{"id":"drowned_nave","group":"Ruins","title":"Drowned nave","scene":"res://studies/drowned_nave_isle.tscn","args":[],
+		"detail":"A flooded cathedral: a long nave of piers and arches half under a shallow basin, a rocky apse and rose gable, a causeway down the water."},
 	{"id":"sundered_gorge","group":"Ruins","title":"Sundered gorge","scene":"res://studies/sundered_gorge_isle.tscn","args":[],
 		"detail":"An isle split by a gorge: a snapped stone bridge, a rope bridge over the break, a lower crossing. F: the plane."},
 	{"id":"colonnade_spine","group":"Ruins","title":"Colonnade spine","scene":"res://studies/colonnade_spine_isle.tscn","args":[],
