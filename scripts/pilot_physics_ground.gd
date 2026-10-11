@@ -80,6 +80,13 @@ func _init(physics: PhysicsDirectSpaceState3D, walker: PilotMotor) -> void:
 	_cap.collision_mask = mask
 	_cap.margin = 0.0
 
+## The colliders' layers that count from now on (`mask`, and its queries').
+func see(layers: int) -> void:
+	mask = layers
+	_ray.collision_mask = layers
+	_body.collision_mask = layers
+	_cap.collision_mask = layers
+
 ## The motor's callables, wired to this.
 func ground_callable() -> Callable:
 	return ground

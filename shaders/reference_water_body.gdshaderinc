@@ -138,6 +138,13 @@ uniform bool depth_read = false;
 // Under the cloud sea (scripts/sky_below.gd), 1: the sky it mirrors is the
 // cloud's underside (zsBelowAir), not the open sky's gradient.
 uniform float below_sky = 0.0;
+// Water with no planar view standing in a bowl of land (a kit isle's tarn,
+// scripts/kit_isle/kit_water.gd): a reflected ray lower than the rim round
+// it (`surround.w`, the sine of the rim's elevation seen from the water)
+// would meet the walls, not the sky, so it takes the sky's light dimmed by
+// `surround.rgb`. Without it the pale sky low on the horizon sheened a dark
+// tarn grey where the plate's water mirrors its banks. Off at w 0.
+uniform vec4 surround = vec4(0.0);
 uniform sampler2D pond_screen : hint_screen_texture, filter_linear_mipmap;
 uniform sampler2D pond_depth : hint_depth_texture, filter_nearest, repeat_disable;
 uniform float caustics_strength = 0.0;
@@ -270,6 +277,7 @@ void fragment() {
 	}
 	vec3 reflection = scene_linear_for_display(clamp(zsSkyGradient(vec3(reflected.x, abs(reflected.y), reflected.z)), vec3(0.0), vec3(0.98)));
 	if (below_sky > 0.0) reflection = mix(reflection, scene_linear_for_display(clamp(zsBelowAir(vec3(reflected.x, abs(reflected.y), reflected.z)), vec3(0.0), vec3(0.98))), below_sky);
+	if (surround.w > 0.0) reflection = mix(reflection * surround.rgb, reflection, smoothstep(surround.w * 0.55, surround.w * 1.25, reflected.y));
 	// Depth for the shoreline foam: the mesh's own, or where the planar path
 	// reads the bed behind each pixel, the true per-pixel depth.
 	float shore_depth = water_depth;

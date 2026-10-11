@@ -51,7 +51,7 @@ extends Node
 ## can dip under an island's slab. Near the ground a mark shows where it
 ## would touch down.
 ##
-## F lands it (scripts/plane_landing.gd): the nearest island within
+## Under `--auto-landing`, F lands it (scripts/plane_landing.gd): the nearest island within
 ## LANDING_REACH is claimed if it is not the plate yet, a strip picked on
 ## its land (scripts/plane_strip.gd: the longest, flattest clear run, into
 ## the wind), and the plane lines up, glides down, flares, touches with a
@@ -82,6 +82,26 @@ extends Node
 ## is caught falling past it. Hanging, the stick along the lip shimmies,
 ## towards it or Space climbs up, away lets go (off the rim, into the
 ## flight).
+##
+## By default (scripts/manual_landing.gd, a study:
+## studies/landing_study.tscn, docs/design/manual-landing.md, round 2; the
+## old F landing above under `--auto-landing`) every landing is flown by
+## hand: F no longer lands it, it lowers and raises the
+## flaps. Touching the land slow, shallow and wings level is a greaser: it
+## settles and rolls out tidy under the brakes (Shift). Hot, hard or on a
+## wingtip it sticks anyway, with a thump, a dust burst, a shake and a
+## pulse, and slides; on the wheels it drifts like a kart (steer hard at
+## speed, or Q E with a turn; Shift with a turn, and a blip of Space with it
+## for a power-slide that whips the tail round), grit spraying off the
+## wheels. Slid off the edge, it flies on. Only a barrel roll into the
+## ground or land too steep hops it back up. Only stopped can the pilot
+## get out, and only by asking (F); Space on the roll takes off again. And
+## nothing summons the plane: a jump is a jump, walking off the edge drops
+## into the canopy (the plane staying parked), and once STRAND_BELOW m
+## under the edge, or down anywhere but the plane's island, the pilot is
+## stranded STRANDED_WAIT s and then back beside the parked plane, still to
+## board it. Stepping in with no plane parked parks one beside the pilot.
+## Under the cloud (`--below`) the old rules hold.
 ##
 ## With `--glider` it glides under the old cloth wing instead
 ## (scripts/glider_figure.gd): a click (or E, or the pad's X) flaps for lift
@@ -224,6 +244,21 @@ const PLANE_HINT := "A D to bank and turn  ·  W S to pitch  ·  Mouse to look r
 const DIVE_HINT := "X to open the canopy  ·  A D to turn  ·  W to track forward  ·  Space to tuck and dive  ·  Shift to spread and slow  ·  Mouse to look round"
 const CANOPY_HINT := "A D to steer  ·  W for speed  ·  S or Shift to brake and float  ·  It flares by itself over the ground"
 const PICKUP_HINT := "Your plane swoops in and picks you up"
+## `--manual-landing`'s hints: flying, on the wheels, stopped, on foot and
+## stranded.
+const MANUAL_HINT := "A D to bank and turn  ·  W S to pitch  ·  Space to boost  ·  Shift to brake  ·  F for flaps  ·  Put it down anywhere, then brake or drift to a stop  ·  X to eject  ·  C for the camera  ·  V or Esc to step out"
+const MANUAL_ROLL_HINT := "Shift to brake  ·  Steer hard, or Q E and steer, to drift  ·  Shift and steer, a blip of Space, to power-slide  ·  Space to take off again"
+## The touch's word before the roll's hint: a greaser, a hot or hard one
+## stuck; and off the edge.
+const MANUAL_GREASER_HINT := "Greaser!  ·  "+MANUAL_ROLL_HINT
+const MANUAL_HOT_HINT := "Hot! Drift it to a stop  ·  "+MANUAL_ROLL_HINT
+const MANUAL_HARD_HINT := "Stuck it!  ·  "+MANUAL_ROLL_HINT
+const MANUAL_OFF_HINT := "Off the edge: flying again  ·  "+MANUAL_HINT
+const MANUAL_ROLL_PAD := "{LT} brake  ·  {LS} hard, or {LB} {RB} and {LS}, to drift  ·  {LT} and {LS}, a blip of {RT}, to power-slide  ·  {RT} take off again"
+const MANUAL_PAD := "{LS} steer  ·  {RS} look round  ·  {RT} boost  ·  {LT} brake  ·  {Y} flaps  ·  Put it down anywhere, then brake or drift to a stop  ·  {X} eject  ·  {R3} camera  ·  {B} step out"
+const MANUAL_STOPPED_HINT := "F to get out  ·  Space to roll and take off again"
+const MANUAL_WALK_HINT := "Mouse to look  ·  WASD or arrows to run  ·  Space to jump  ·  Walk to your plane and Space by it to fly  ·  V or Esc to step out"
+const STRANDED_HINT := "Stranded: back to your plane in a moment"
 ## The hints' forms for the pad (scripts/pad_prompt.gd `alternates`).
 const PAD_HINTS := {
 	HINT:"{LS} run  ·  {RS} look  ·  {A} jump, again in the air to fly  ·  {B} step out",
@@ -237,6 +272,14 @@ const PAD_HINTS := {
 	PLANE_HINT:"{LS} steer  ·  {RS} look round  ·  {RT} boost  ·  {LT} brake  ·  hold {LB} {RB} knife-edge, twice quick barrel roll  ·  {Y} land  ·  {X} eject  ·  {R3} camera  ·  {B} step out",
 	DIVE_HINT:"{X} open the canopy  ·  {LS} turn and track  ·  {RT} tuck and dive  ·  {LT} spread and slow  ·  {RS} look round",
 	CANOPY_HINT:"{LS} steer, forward for speed, back to brake  ·  {LT} brake and float  ·  It flares by itself over the ground",
+	MANUAL_HINT:MANUAL_PAD,
+	MANUAL_ROLL_HINT:MANUAL_ROLL_PAD,
+	MANUAL_GREASER_HINT:"Greaser!  ·  "+MANUAL_ROLL_PAD,
+	MANUAL_HOT_HINT:"Hot! Drift it to a stop  ·  "+MANUAL_ROLL_PAD,
+	MANUAL_HARD_HINT:"Stuck it!  ·  "+MANUAL_ROLL_PAD,
+	MANUAL_OFF_HINT:"Off the edge: flying again  ·  "+MANUAL_PAD,
+	MANUAL_STOPPED_HINT:"{Y} get out  ·  {RT} roll and take off again",
+	MANUAL_WALK_HINT:"{LS} run  ·  {RS} look  ·  {A} jump  ·  Walk to your plane and {A} by it to fly  ·  {B} step out",
 	FLY_HINT:"{LS} turn and pitch  ·  {X} flap  ·  {LT} rise  ·  {RT} dive  ·  {Y} land  ·  {RS} look round  ·  {R3} camera  ·  {B} step out",
 }
 ## The right stick's swing of the camera on foot, radians a second at full
@@ -322,6 +365,17 @@ const GUST_PUSH := 5.0
 const LAND_TIME := 0.3
 ## F lands on the nearest island this near (m, in the plate plane).
 const LANDING_REACH := 160.0
+## `--manual-landing` (see the header): off the edge the drop before the
+## canopy opens by itself (s), how far under the edge the pilot is
+## stranded (m), the wait before the way back to the plane (s), and the
+## bounce's shake (s, m).
+const ManualLanding = preload("res://scripts/manual_landing.gd")
+const WheelSpray = preload("res://scripts/wheel_spray.gd")
+const STEP_OFF_OPEN := 0.8
+const STRAND_BELOW := 20.0
+const STRANDED_WAIT := 3.0
+const SHAKE_TIME := 0.4
+const SHAKE := 0.3
 
 signal entered
 signal left
@@ -427,6 +481,23 @@ var _hop_to := Vector3.INF
 var _hop_from := Vector3.ZERO
 var _board_asked := false
 var _near_plane := false
+## By hand, the default (see the header; `--auto-landing` for the old F
+## landing): the rules, the flaps, Exit asked
+## (F stopped), a dive begun by walking off the edge (not an eject), the
+## edge's height, the seconds before its canopy opens by itself, the
+## seconds left stranded (-1 not), and the bounce's shake left (s).
+var manual := not "--auto-landing" in preload("res://scripts/launch_args.gd").user_args()
+var hand_landing := ManualLanding.new()
+## The grit off the sliding wheels (scripts/wheel_spray.gd), made on the
+## first touch.
+var _spray: WheelSpray
+var _flaps := false
+var _exit_asked := false
+var _stepped_off := false
+var _off_y := 0.0
+var _open_in := 0.0
+var _stranded_left := -1.0
+var _shake := 0.0
 ## Mouse look gathered for the glide's next step, and seconds of skim so far.
 var _fly_look := Vector2.ZERO
 var _skim_time := 0.0
@@ -865,6 +936,15 @@ func enter() -> void:
 	_read_depths()
 	_feet = _clamped(_free_spot(_clamped(_feet)))
 	motor.reset(_feet,figure.rotation.y)
+	# By hand there is no summoning: stepping in with no plane parked, one
+	# is parked beside the pilot.
+	if manual and plane and glide_enabled and not has_parked():
+		var spot := _clamped(_free_spot(_clamped(_feet+Vector3(2.5,0.0,1.5))))
+		_park(Vector2(spot.x,spot.z),motor.facing)
+		_read_obstacles(true)
+	if manual and plane:
+		_near_plane = by_plane()
+		_hint.text = _walk_hint()
 	_stand_camera()
 	scene._orbiting = false
 	scene._panning = false
@@ -892,7 +972,7 @@ func leave() -> void:
 		var at := glide.position
 		# On the ground, mid landing or takeoff, the plane stays parked
 		# where it stands and the walker steps out beside it.
-		var grounded: bool = landing != null and landing.on_ground()
+		var grounded: bool = landing != null and landing.on_ground() or _hand() and not diving and hand_landing.on_ground()
 		if grounded: _park_here()
 		_end_flight()
 		if grounded: _read_obstacles(true)
@@ -969,11 +1049,14 @@ func _advance_eye(delta: float) -> void:
 	motor.crouch = Input.is_action_pressed(&"walk_crouch")
 	motor.twirl = Input.is_action_pressed(&"walk_twirl")
 	var events := motor.step(delta,want,top,jump,_motor_ground,_walk,_lip)
-	if glide_enabled and events.has("fly"):
+	# By hand (--manual-landing) a jump is only a jump, and off the edge is
+	# the canopy, the plane left parked.
+	if glide_enabled and events.has("fly") and not manual:
 		_launch(motor.speed(),false)
 		return
 	if glide_enabled and not motor.on_ledge() and _off_plate(Vector2(motor.feet.x,motor.feet.z)):
-		_launch(motor.speed())
+		if manual and plane: _step_off()
+		else: _launch(motor.speed())
 		return
 	_ledge_events(events)
 	if not glide_enabled and not motor.on_ledge():
@@ -1295,7 +1378,10 @@ func _launch(pace: float, drop := true, start := Vector3.INF, towards := 0.0) ->
 		perch_turn = SkyIslets.yaw_of(perch)
 		_unperch()
 	# There is only the one plane: flying from anywhere but it brings it along.
+	# By hand nothing flies but the plane boarded (which is unparked first);
+	# a flight set from outside (--skydive, a set piece's hop) takes it.
 	if start == Vector3.INF: _unpark(true)
+	elif manual: _unpark(false)
 	flying = true
 	_fly_look = Vector2.ZERO
 	_skim_time = 0.0
@@ -1324,10 +1410,11 @@ func _launch(pace: float, drop := true, start := Vector3.INF, towards := 0.0) ->
 	if not perched:
 		air.start()
 		sky.start(glide.position)
-	_hint.text = (PLANE_HINT+("  ·  N for the next set piece" if islands.moments != null else "")) if plane else FLY_HINT
+	_hint.text = (_plane_hint()+("  ·  N for the next set piece" if islands.moments != null else "")) if plane else FLY_HINT
 	_hint.modulate.a = 1.0
 	_hint_time = 0.0
 	steps.step(_surface(),1.0)
+	if manual and plane: _hand_begin()
 
 func _end_flight() -> void:
 	_unperch()
@@ -1398,7 +1485,15 @@ func _advance_flight(delta: float) -> void:
 	if glide.approach: glide.approach_target = _landing_spot()
 	if _landing_wait and not below(): _wait_to_land(delta,input)
 	var was: Vector3 = glide.position
-	glide.step(delta,input,_fly_ground,_fly_air)
+	var hand := {}
+	if _hand():
+		input["flaps"] = 1.0 if _flaps else 0.0
+		input["exit"] = _exit_asked
+		_exit_asked = false
+		hand = hand_landing.step(delta,input,_fly_ground,_floor_global,_fly_air,_roll_blocked)
+		glide.engine = hand_landing.engine
+	else:
+		glide.step(delta,input,_fly_ground,_fly_air)
 	# The ruins' stone (the Sundered hall, scripts/ruin_bump.gd): bump and
 	# recover, never a crash.
 	if plane and not below() and islands is Node3D: RuinBump.bump((islands as Node3D).get_world_3d().direct_space_state,glide,was,(islands as Node3D).global_transform)
@@ -1423,11 +1518,14 @@ func _advance_flight(delta: float) -> void:
 	vapour.step(delta,glide,_fly_ground)
 	islands.wake(glide.position,glide.velocity,delta)
 	air.advance(delta,glide.velocity,glide.hang,float(input.dive),vapour.near,islands.cloud_body(camera.global_position))
-	if plane: air.engine(glide.speed,(glide as SkyPlane).throttle)
+	if _hand(): air.engine(glide.speed,hand_landing.throttle,hand_landing.engine)
+	elif plane: air.engine(glide.speed,(glide as SkyPlane).throttle)
 	if glide.flaps != _flaps_heard:
 		_flaps_heard = glide.flaps
 		air.flap()
+	if _hand(): chase.cine = Vector3(-1.25,0.0,0.3) if hand_landing.on_ground() else Vector3.ZERO
 	chase.step(delta,glide,float(input.dive),_solid)
+	chase.eye += _shaken(delta)
 	_write_chase()
 	scene._auto_orbit = false
 	scene._orbit_delta = Vector2.ZERO
@@ -1435,6 +1533,11 @@ func _advance_flight(delta: float) -> void:
 	camera.fov = chase.fov
 	_hint_time += delta
 	_hint.modulate.a = clampf(1.0-(_hint_time-6.0)/1.5,0.0,1.0)
+	if _hand():
+		if hand_landing.phase != ManualLanding.EXIT and hand_landing.phase != ManualLanding.OUT:
+			glider.update(delta,glide,0.0,_fly_ground,hand_landing.would_grease(_floor_global),vapour.near,vapour.side)
+		_hand_events(hand,delta)
+		return
 	# Touching down slowly anywhere on the plate lands; on an islet's ground
 	# (not its crowns or spire) it perches.
 	# Under the cloud (--below) there is no plate, only the archipelago's
@@ -1660,7 +1763,10 @@ func _advance_perch(delta: float) -> void:
 	# under the last ground, so a jump between islets carries on.
 	var off: bool = not motor.on_ledge() and _perch_ground(at) == -INF
 	if off and perch.has("group") and motor.feet.y > _perch_floor-PERCH_FALL: off = false
-	if events.has("fly") or off:
+	if manual and plane and off:
+		_step_off()
+		return
+	if (events.has("fly") and not (manual and plane)) or off:
 		_launch(maxf(motor.speed(),1.0),not events.has("fly"))
 		return
 	_ledge_events(events)
@@ -1845,6 +1951,7 @@ func _advance_return(delta: float) -> void:
 
 func _walk_hint() -> String:
 	if not plane: return GLIDER_HINT
+	if manual and not _near_plane: return MANUAL_WALK_HINT
 	return BOARD_HINT if _near_plane else HINT
 
 ## Walking: the hint offers the takeoff by the parked plane.
@@ -1867,6 +1974,14 @@ func by_plane() -> bool:
 
 ## F in the plane: lands; mid line-up, flies on; rolling out, hops out now.
 func _land_key() -> void:
+	if _hand() and landing == null:
+		# By hand: flaps in the air; on the wheels, Exit (out once stopped).
+		if hand_landing.flying():
+			_flaps = not _flaps
+			_show_hint("Flaps down" if _flaps else "Flaps up")
+		else:
+			_exit_asked = true
+		return
 	if below():
 		_land_below()
 		return
@@ -2105,7 +2220,8 @@ func _advance_sequence(delta: float) -> void:
 		_taking_off = false
 		chase.cine = Vector3.ZERO
 		glider.show_pilot(true)
-		_hint.text = PLANE_HINT
+		if manual: _hand_begin()
+		_hint.text = _plane_hint()
 		_hint.modulate.a = 1.0
 		_hint_time = 0.0
 	else:
@@ -2141,8 +2257,7 @@ func _touchdown() -> void:
 ## on earth and sand, snow on snow, spray on water; a few soft balls that
 ## swell, drift up and fade.
 func _puff(at: Vector3, surface: String, size := 1.0) -> void:
-	var tints := {"grass":Color("d6dcb4"),"snow":Color("f4f6f8"),"water":Color("e8f2f4"),"stone":Color("cfc8bc"),"wood":Color("d8c4a4")}
-	var tint: Color = tints.get(surface,Color("d8c39c"))
+	var tint := _puff_tint(surface)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = int(at.x*13.0+at.z*7.0)
 	var sphere := SphereMesh.new()
@@ -2283,7 +2398,190 @@ func _board() -> void:
 	var hop_to := _hop_to
 	_start_sequence(seq,true)
 	_hop_to = hop_to
-	_hint.text = PLANE_HINT
+	_hint.text = _plane_hint()
+
+# --- By hand (--manual-landing) ------------------------------------------------------
+
+## True while the plane is flown by hand (`--manual-landing`, the plane,
+## over the cloud).
+func _hand() -> bool:
+	return manual and plane and not below()
+
+## The hand landing takes the plane as it flies now (after a launch, a
+## takeoff or a pickup): in the air, the flaps up.
+func _hand_begin() -> void:
+	hand_landing.begin(glide)
+	_flaps = false
+	_exit_asked = false
+
+## The plane's hint: by hand, no F to land.
+func _plane_hint() -> String:
+	return MANUAL_HINT if manual and plane else PLANE_HINT
+
+func _show_hint(text: String) -> void:
+	_hint.text = text
+	_hint.modulate.a = 1.0
+	_hint_time = 0.0
+
+## A puff's colour over `surface` (`_surface_at`): grass-green and pale,
+## warm dust on earth and sand, snow, spray, stone, wood.
+static func _puff_tint(surface: String) -> Color:
+	var tints := {"grass":Color("d6dcb4"),"snow":Color("f4f6f8"),"water":Color("e8f2f4"),"stone":Color("cfc8bc"),"wood":Color("d8c4a4")}
+	return tints.get(surface,Color("d8c39c"))
+
+## What the wheels did this step (ManualLanding `step`): a hop thumps,
+## shakes and pulses; a greaser puffs softly and rolls; a hot or hard
+## touch thumps, throws a burst of dust, shakes by its hit and slides;
+## sliding, the wheels throw grit; stopped, the hint offers the way out;
+## getting out, the pilot hops down beside the plane, parked where it
+## stopped.
+func _hand_events(out: Dictionary, delta: float) -> void:
+	if _spray == null and (out.has("settled") or out.has("bounce")):
+		_spray = WheelSpray.new()
+		add_child(_spray)
+	if out.has("bounce"):
+		_touchdown()
+		Pad.pulse(0.6,0.5,0.2)
+		_shake = SHAKE_TIME
+		var why := {"tumble":"mid roll","rough":"ground too steep"}
+		_show_hint("Hopped: %s" % why.get(str(out.bounce.reason),str(out.bounce.reason)))
+	elif out.has("settled"):
+		_touchdown()
+		var k := float(out.settled.k)
+		if out.has("greaser"):
+			_show_hint(MANUAL_GREASER_HINT)
+		else:
+			# Hot or hard: it takes the hit and sticks.
+			var ground := _floor_global(Vector2(glide.position.x,glide.position.z))
+			var at := Vector3(glide.position.x,ground if not is_nan(ground) else glide.position.y-0.6,glide.position.z)
+			var local := editor.terrain.to_local(glide.position)
+			var tint := _puff_tint(_surface_at(Vector2(local.x,local.z)))
+			_puff(at,_surface_at(Vector2(local.x,local.z)),1.0+1.5*k)
+			_spray.burst(at,k,tint)
+			Pad.pulse(0.35+0.4*k,0.2+0.4*k,0.14+0.1*k)
+			_shake = SHAKE_TIME*(0.3+0.7*k)
+			_show_hint(MANUAL_HOT_HINT if str(out.settled.grade) == "hot" else MANUAL_HARD_HINT if str(out.settled.grade) in ["hard","wingtip"] else MANUAL_ROLL_HINT)
+		# Down: the hop out, when it comes, is worked out afresh.
+		_hop_to = Vector3.INF
+	if _spray != null:
+		var grit := hand_landing.grit if hand_landing.phase == ManualLanding.ROLL else 0.0
+		var tint := Color("d6dcb4")
+		var ground := _floor_global(Vector2(glide.position.x,glide.position.z))
+		var wheels := Vector3(glide.position.x,ground if not is_nan(ground) else glide.position.y-0.8,glide.position.z)
+		if grit > WheelSpray.LEAST:
+			var local := editor.terrain.to_local(glide.position)
+			tint = _puff_tint(_surface_at(Vector2(local.x,local.z)))
+		_spray.update(delta,wheels,glide.velocity,grit,tint)
+	if out.has("stopped"): _show_hint(MANUAL_STOPPED_HINT)
+	if out.has("off_edge"): _show_hint(MANUAL_OFF_HINT)
+	if out.has("not_yet"): _show_hint("Stop first  ·  Shift to brake")
+	if out.has("lifted"): _show_hint(_plane_hint())
+	if out.has("hit"):
+		var local := editor.terrain.to_local(glide.position)
+		steps.step(_surface_at(Vector2(local.x,local.z)),1.0)
+		Pad.pulse(0.5,0.4,0.15)
+		_shake = SHAKE_TIME*0.6
+	if hand_landing.phase == ManualLanding.EXIT:
+		if _hop_to == Vector3.INF: _begin_hop_out()
+		_hop_figure(hand_landing.hop,delta)
+	if out.has("out"): _land_beside_plane()
+
+## Whether something stands in the rolling wheels' way at a global point:
+## the walker's obstacles (trees, rocks, cabins) and water.
+func _roll_blocked(point: Vector3) -> bool:
+	var local := editor.terrain.to_local(point)
+	return _blocked(Vector2(local.x,local.z))
+
+## The bounce's shake on the camera, dying away.
+func _shaken(delta: float) -> Vector3:
+	if _shake <= 0.0: return Vector3.ZERO
+	_shake = maxf(0.0,_shake-delta)
+	var k := _shake/SHAKE_TIME
+	var t := Time.get_ticks_msec()*0.001
+	return Vector3(sin(t*71.0),sin(t*53.0+1.3),sin(t*61.0+2.1))*SHAKE*k*k
+
+## Walked off the edge by hand: the pilot drops, carried on out the way
+## they ran, and the canopy opens by itself STEP_OFF_OPEN s on (X sooner);
+## the plane stays parked, and no other island is claimed on the way down.
+func _step_off() -> void:
+	var perched := not perch.is_empty()
+	# From where the run left the land this step (the walk's feet are still
+	# on it).
+	var from := _perch_eye_global() if perched else editor.terrain.to_global(motor.feet+Vector3.UP*EYE_HEIGHT)
+	var way: float = motor.facing+(SkyIslets.yaw_of(perch) if perched else _turn())
+	var pace := maxf(motor.speed(),2.0)
+	if perched: _unperch()
+	flying = true
+	if not islands.built(): islands.build()
+	if not perched: _far_before = camera.far
+	camera.far = SkyWorld.VIEW_FAR if SkyWorld.ring_on() else FLY_FAR
+	islands.show_air(true)
+	air.start()
+	sky.start(from)
+	var out := SkyDive.new()
+	out.stone = glide.stone
+	out.floor_y = glide.floor_y
+	out.water = glide.water
+	out.drop(from-Vector3.UP*(EYE_HEIGHT-SkyDive.HIPS),way,2.0)
+	var ahead := Vector3(-sin(way),0.0,-cos(way))*pace
+	out.velocity += ahead
+	out.drift = ahead
+	_plane_flight = glide
+	drone = null
+	_drone_landing = null
+	dive = out
+	glide = out
+	diving = true
+	_open_asked = false
+	_stepped_off = true
+	_off_y = from.y
+	_open_in = STEP_OFF_OPEN
+	_stranded_left = -1.0
+	glider.visible = false
+	canopy.reset()
+	chase.first_person = false
+	dive_camera.reset(dive,camera.global_position,camera.fov)
+	if has_figure():
+		figure.visible = true
+		body.settle()
+		_pose_diver(0.0)
+	_swoop = 0.0
+	_show_hint(DIVE_HINT)
+
+## Stranded off the edge (well under it, or down anywhere but the plane's
+## island): STRANDED_WAIT s, then back by the plane.
+func _strand() -> void:
+	_stranded_left = STRANDED_WAIT
+	_show_hint(STRANDED_HINT)
+
+## Back on foot beside the parked plane (to its left, as a hop out lands),
+## facing it, the camera swooping down from where it was; with none parked,
+## at the island's middle.
+func _return_to_plane() -> void:
+	if canopy != null and not canopy.collapsing(): canopy.reset()
+	_swoop = SWOOP
+	_swoop_from = {"target":scene.target,"yaw":scene.yaw,"polar":scene.polar,"distance":scene.distance}
+	_end_dive()
+	_end_flight()
+	_read_obstacles(true)
+	_read_depths()
+	var spot := _land_middle(editor.data)
+	if has_parked():
+		var h := _parked_heading
+		var at := _parked_at-Vector2(cos(h),-sin(h))*HOP_SIDE+Vector2(-sin(h),-cos(h))*HOP_AHEAD
+		spot = Vector3(at.x,0.0,at.y)
+	_feet = _clamped(_free_spot(_clamped(spot)))
+	var to := _parked_at-Vector2(_feet.x,_feet.z) if has_parked() else Vector2(0.0,-1.0)
+	_yaw = atan2(-to.x,-to.y)+_turn()
+	_polar = CAM_POLAR
+	_pace = Vector2.ZERO
+	motor.reset(_feet,_yaw-_turn())
+	_stand_camera()
+	figure.visible = true
+	body.settle()
+	_sync_figure()
+	_near_plane = by_plane()
+	_show_hint(_walk_hint())
 
 # --- The skydive -------------------------------------------------------------------
 
@@ -2356,6 +2654,7 @@ func moments_hop(step := 1) -> void:
 ## the controls, nor perched.
 func eject() -> bool:
 	if not flying or diving or not plane or not perch.is_empty() or landing != null or canopy == null: return false
+	if _hand() and not hand_landing.flying(): return false
 	_landing_wait = false
 	glide.approach = false
 	_plane_flight = glide
@@ -2430,16 +2729,27 @@ func _dive_ground(point: Vector3) -> Variant:
 ## down, on foot (or swimming), or the plane picks the pilot up.
 func _advance_dive(delta: float) -> void:
 	var input := _dive_input()
+	# Off the edge by hand: stranded a while, then back by the plane.
+	if _stranded_left >= 0.0:
+		_stranded_left -= delta
+		if _stranded_left < 0.0:
+			_return_to_plane()
+			return
 	# Over another island, it becomes the plate before the touch (as the
-	# plane's flight does), and the touch waits on the claim.
-	if not islands.claiming and not below():
+	# plane's flight does), and the touch waits on the claim; never off the
+	# edge by hand, which leaves the plane parked on this one.
+	if not islands.claiming and not below() and not _stepped_off:
 		var copy: int = islands.copy_under(dive.position)
 		if copy >= 0: _claim(copy)
 	var hold: bool = islands.claiming and dive.under_canopy() and dive.height < 4.0
 	# Under the canopy, left alone, it drifts round towards the nearest land.
-	dive.approach_target = _landing_spot() if dive.under_canopy() else Vector3.INF
+	dive.approach_target = _landing_spot() if dive.under_canopy() and not _stepped_off else Vector3.INF
+	if _stepped_off:
+		_open_in -= delta
+		if _open_in <= 0.0 and dive.falling(): dive.open_canopy(true)
+		if _stranded_left < 0.0 and dive.position.y < _off_y-STRAND_BELOW: _strand()
 	var was_falling: bool = dive.falling()
-	var out: Dictionary = {} if hold else dive.fall(delta,input,_dive_ground,_fly_air)
+	var out: Dictionary = {} if hold or dive.phase == SkyDive.DOWN else dive.fall(delta,input,_dive_ground,_fly_air)
 	if was_falling and dive.under_canopy():
 		air.flap()
 		_hint.text = CANOPY_HINT
@@ -2450,7 +2760,7 @@ func _advance_dive(delta: float) -> void:
 		air.flap()
 		Pad.pulse(0.5,0.3,0.2)
 	# Into the cloud sea with no world under it: the plane catches.
-	if lower == null and dive.position.y < dive.floor_y-DIVE_CATCH:
+	if lower == null and dive.position.y < dive.floor_y-DIVE_CATCH and not _stepped_off:
 		_pickup(false)
 		return
 	sky.advance(delta,dive.position,islands.in_cloud(dive.position,scene._motion_time))
@@ -2499,6 +2809,8 @@ func _shoulders() -> Vector3:
 ## Out of the dive: the plane's flight is the eye's again.
 func _end_dive() -> void:
 	diving = false
+	_stepped_off = false
+	_stranded_left = -1.0
 	if _plane_flight != null: glide = _plane_flight
 	scene.camera_roll = 0.0
 
@@ -2508,6 +2820,15 @@ func _end_dive() -> void:
 func _dive_down(touch: Dictionary) -> void:
 	var feet: Vector3 = dive.position-Vector3.UP*SkyDive.HIPS
 	canopy.collapse(feet.y)
+	if _stepped_off:
+		# Off the edge by hand: on the plane's island, walk to it; anywhere
+		# else, stranded.
+		# Home is the land the walk stands on, not the rock skirting it.
+		var local := editor.terrain.to_local(feet)
+		var home: bool = not bool(touch.get("water",false)) and not below() and islands._height(feet+Vector3.UP*0.5) != null and _on_land(Vector2(local.x,local.z))
+		if home and _stranded_left < 0.0: _dive_land_plate(touch)
+		elif _stranded_left < 0.0: _strand()
+		return
 	if bool(touch.get("water",false)):
 		_pickup(true)
 		return
@@ -2602,6 +2923,7 @@ func _pickup(wet: bool) -> void:
 	glide.position = at+Vector3.UP*1.2
 	glide.heading = heading
 	glide.resume(SkyPlane.CRUISE_SPEED,0.35)
+	if manual: _hand_begin()
 	glider.reset(glide)
 	glider.show_pilot(true)
 	glider.visible = not chase.first_person

@@ -20,6 +20,15 @@ extends Node3D
 ## plane is touching one of its solids then (`plane_box`), in which case it
 ## waits till the plane is clear: the plane is never shut inside stone.
 ##
+## A chunk may come made (its plan's `node`: a built piece, the aqueduct
+## isle's real Sundered line, scripts/hall_line_build.gd): it is taken as
+## it is, `taken` lets the caller finish it on the main thread, and its
+## `bodies` (StaticBody3Ds out of the tree, no layer) are stood under it
+## BODIES_PER_FRAME a frame from the take on, colliding with nothing till
+## it is still, so no frame stands thousands of hulls; it is solid ("set")
+## once every one stands. Sinking, they stop colliding at once and are let
+## go one a frame.
+##
 ## The cloud is greybox: the sea swells where a chunk is about to break
 ## through (`swells`, for the sea's shader), a ring of cloud bursts round it
 ## as it punches through, and cloud streams off its sides and wall tops as
@@ -52,8 +61,12 @@ const SWELL_FROM := 14.0
 const SWELLS := 6
 ## A settled chunk waits for the plane to be this far (m) off its solids.
 const PLANE_CLEAR := 0.6
+## A made chunk's bodies stood a frame.
+const BODIES_PER_FRAME := 1
 
 signal finished
+## A made chunk (its plan's `node`) put under this node (main thread).
+signal taken(index: int, node: Node3D)
 ## Sunk back under the cloud (`sink`): every chunk hidden again.
 signal sunk
 
@@ -107,6 +120,13 @@ var sinking := false
 var sink_clock := 0.0
 var gone := false
 var _sink_from := PackedFloat32Array()
+## A made chunk's bodies not yet stood, and those stood, by chunk.
+var _bodies_left: Array = []
+var _bodies_stood: Array = []
+## The heaviest frame's standing (or letting go) of bodies (usec), and
+## all of it added up.
+var body_frame_usec := 0
+var body_total_usec := 0
 var _materials := {}
 ## The puffs: positions, velocities, sizes, growth, ages and lives.
 var _puffs: MultiMeshInstance3D
@@ -117,6 +137,12 @@ var _puffs: MultiMeshInstance3D
 var burst: Node = null
 var puff_scale := 1.0
 const BURST_UP := 8.0
+## How many puffs burst round a chunk as it breaks through (at most), and
+## stream off it a second: BURST and STREAM_RATE unless the caller says
+## (the aqueduct isle's line, whose whole pieces are big:
+## scripts/hall_line.gd).
+var burst_puffs := BURST
+var stream_rate := STREAM_RATE
 var _pp := PackedVector3Array()
 var _pv := PackedVector3Array()
 var _ps := PackedFloat32Array()
@@ -162,6 +188,7 @@ func _notification(what: int) -> void:
 		for item: Array in _made:
 			if is_instance_valid(item[1]): (item[1] as Node).free()
 		_made = []
+		_free_left()
 
 func _wait() -> void:
 	if _task >= 0:
@@ -197,6 +224,12 @@ func setup(given := {}) -> void:
 	broke.resize(n)
 	_owed = PackedFloat32Array()
 	_owed.resize(n)
+	_free_left()
+	_bodies_left = []
+	_bodies_stood = []
+	for i in range(n):
+		_bodies_left.append((chunks[i].get("bodies",[]) as Array).duplicate())
+		_bodies_stood.append([])
 	for kind: String in TINTS: _material(kind)
 	_make_clouds()
 	built = 0
@@ -227,6 +260,7 @@ func play() -> void:
 func finish_now() -> void:
 	flush()
 	for i in range(chunks.size()):
+		while _stand_body(i): pass
 		_place(i,home(i))
 		(nodes[i] as Node3D).visible = true
 		_solid(i,true)
@@ -277,8 +311,9 @@ func advance(delta: float) -> void:
 			playing = false
 			finished.emit()
 	if sinking: _sink_step(delta)
+	_bodies_step()
 	for i in range(chunks.size()):
-		if state[i] == "pending" and not plane_touches(i):
+		if state[i] == "pending" and not plane_touches(i) and bodies_ready(i):
 			_solid(i,true)
 			state[i] = "set"
 	_step_clouds(delta)
@@ -386,7 +421,7 @@ func _move(i: int, dt: float) -> void:
 	if t >= RisePlan.settles(c)-float(c.start):
 		_place(i,home(i))
 		state[i] = "pending"
-		if not plane_touches(i):
+		if not plane_touches(i) and bodies_ready(i):
 			_solid(i,true)
 			state[i] = "set"
 
@@ -407,8 +442,52 @@ func _hide(i: int) -> void:
 func _solid(i: int, on: bool) -> void:
 	var node: Node3D = nodes[i]
 	if node == null: return
-	var body := node.get_node(^"Body") as StaticBody3D
-	body.collision_layer = RuinBump.LAYER if on else 0
+	var body := node.get_node_or_null(^"Body") as StaticBody3D
+	if body != null: body.collision_layer = RuinBump.LAYER if on else 0
+	if i < _bodies_stood.size():
+		for b: StaticBody3D in _bodies_stood[i]: b.collision_layer = RuinBump.LAYER if on else 0
+
+## True once every one of a made chunk's bodies stands (always, for one
+## made here).
+func bodies_ready(i: int) -> bool:
+	return i >= _bodies_left.size() or (_bodies_left[i] as Array).is_empty()
+
+## Stands the next of chunk `i`'s bodies (its layer as the chunk is now);
+## false if none is left or the chunk is not taken yet.
+func _stand_body(i: int) -> bool:
+	if i >= _bodies_left.size() or (_bodies_left[i] as Array).is_empty() or nodes[i] == null: return false
+	var body: StaticBody3D = (_bodies_left[i] as Array).pop_front()
+	body.collision_layer = RuinBump.LAYER if state[i] == "set" else 0
+	(nodes[i] as Node3D).add_child(body)
+	(_bodies_stood[i] as Array).append(body)
+	return true
+
+## Each frame: BODIES_PER_FRAME of the taken, unsunk chunks' bodies stood;
+## sinking, one stood body let go a chunk.
+func _bodies_step() -> void:
+	var began := Time.get_ticks_usec()
+	var touched := false
+	for i in range(_bodies_left.size()):
+		if state[i] in ["sinking","gone"]:
+			var stood: Array = _bodies_stood[i]
+			if not stood.is_empty():
+				(stood.pop_back() as Node).queue_free()
+				touched = true
+			continue
+		for k in range(BODIES_PER_FRAME):
+			if not _stand_body(i): break
+			touched = true
+	if not touched: return
+	var took := Time.get_ticks_usec()-began
+	body_frame_usec = maxi(body_frame_usec,took)
+	body_total_usec += took
+
+## Frees the bodies never stood (they are in no tree).
+func _free_left() -> void:
+	for left: Array in _bodies_left:
+		for body: Node in left:
+			if is_instance_valid(body): body.free()
+	_bodies_left = []
 
 ## Whether the plane touches (is within PLANE_CLEAR of) any of chunk `i`'s
 ## solids' boxes, in its place.
@@ -436,9 +515,9 @@ func _build_all(upfront: float, cost: float) -> void:
 	for c: Dictionary in chunks: weight += _weight(c)
 	for i in range(chunks.size()):
 		var began := Time.get_ticks_usec()
-		var node := make_chunk(chunks[i],plan.solids)
+		var node: Node3D = chunks[i].node if chunks[i].has("node") else make_chunk(chunks[i],plan.solids)
 		if cost > 0.0:
-			var owed := int(cost*1e6*_weight(chunks[i])/weight)-(Time.get_ticks_usec()-began)
+			var owed := int(cost*1e6*_weight(chunks[i])/maxf(weight,1.0))-(Time.get_ticks_usec()-began)
 			if owed > 0: OS.delay_usec(owed)
 		_mutex.lock()
 		_made.append([i,node])
@@ -464,6 +543,7 @@ func _take() -> void:
 		var began := Time.get_ticks_usec()
 		finish_mesh(node,_materials)
 		add_child(node)
+		if chunks[i].has("node"): taken.emit(i,node)
 		var took := Time.get_ticks_usec()-began
 		take_usec = maxi(take_usec,took)
 		take_total_usec += took
@@ -542,8 +622,8 @@ static func make_chunk(c: Dictionary, solids: Array) -> Node3D:
 
 ## Makes a chunk's mesh from the surfaces its worker left (main thread).
 static func finish_mesh(node: Node3D, mats: Dictionary) -> void:
-	var drawn := node.get_node(^"Mesh") as MeshInstance3D
-	if not drawn.has_meta(&"surfaces"): return
+	var drawn := node.get_node_or_null(^"Mesh") as MeshInstance3D
+	if drawn == null or not drawn.has_meta(&"surfaces"): return
 	var surfaces: Dictionary = drawn.get_meta(&"surfaces")
 	drawn.remove_meta(&"surfaces")
 	var mesh := ArrayMesh.new()
@@ -641,7 +721,7 @@ static func _out(c: Dictionary, p: Vector3) -> Vector3:
 ## through, and the cap of cloud on its wall tops.
 func _burst(c: Dictionary, lift: float) -> void:
 	var rim: PackedVector3Array = c.rim
-	var n := mini(BURST,rim.size())
+	var n := mini(burst_puffs,rim.size())
 	for k in range(n):
 		var p := rim[_rng.randi_range(0,rim.size()-1)]
 		var out := _out(c,p)
@@ -657,7 +737,7 @@ func _burst(c: Dictionary, lift: float) -> void:
 ## between the cloud top and its own top, carried up a little and left
 ## behind.
 func _stream(i: int, c: Dictionary, lift: float, v: float, dt: float) -> void:
-	_owed[i] += STREAM_RATE*dt
+	_owed[i] += stream_rate*dt
 	var rim: PackedVector3Array = c.rim
 	var top: float = float(c.hi.y)+lift
 	while _owed[i] >= 1.0:

@@ -194,6 +194,25 @@ var ambient: Node3D
 ## True once a glide has shown the islands: made ahead as the world starts
 ## (`make_ahead`), they stay out of the build view till then, as before.
 var _flown := false
+## The islands baking on the workers (`_bake`), by task. Each bake waits
+## for its task over frames, and that wait dies with the sky: freed
+## mid-bake (the game quitting a moment after a takeoff or a landing, the
+## workers still busy with the ranges), its task was never waited on, and
+## the island's meshes it held outlived the renderer and crashed the
+## quit. They are waited for here as the sky leaves the tree.
+var _baking: Array[int] = []
+
+func _exit_tree() -> void:
+	_join_bakes()
+
+## Freed without leaving a tree (as tests and probes do), the bakes are
+## still waited for.
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE: _join_bakes()
+
+func _join_bakes() -> void:
+	for task in _baking: WorkerThreadPool.wait_for_task_completion(task)
+	_baking.clear()
 
 func setup(owner_scene: Node3D) -> void:
 	scene = owner_scene
@@ -572,7 +591,11 @@ func _bake(island: Node3D, chunk_seed: int, document: Dictionary = {}, maps: Dic
 		out.maps = maps if not maps.is_empty() else far_maps(plain,source_maps[0],source_maps[1])
 		out.maps_usec = Time.get_ticks_usec()-began
 		if not life.is_empty(): out.life = SkyAmbientLife.layout(plain,out.get("flora",{}),life.roles,life.boxes,life.plate,life.place))
+	_baking.append(task)
 	while not WorkerThreadPool.is_task_completed(task) or not SkyCommits.open(): await get_tree().process_frame
+	# Waited for already, the sky leaving the tree (`_join_bakes`).
+	if not _baking.has(task): return
+	_baking.erase(task)
 	WorkerThreadPool.wait_for_task_completion(task)
 	var began := Time.get_ticks_usec()
 	if out.get("ground") == null or not is_instance_valid(island) or island.is_queued_for_deletion(): return

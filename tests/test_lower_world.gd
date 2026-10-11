@@ -535,6 +535,9 @@ func _live() -> void:
 	while scene.places.busy or scene._chunk_editor.forming: await process_frame
 	for i in range(20): await process_frame
 	var eye: Node = scene.wanderer
+	# These checks fly the old F landing (--auto-landing); the default hand
+	# landing has its own tests (tests/test_manual_landing*.gd).
+	eye.manual = false
 	check(eye.lower != null and eye.sky.lower == eye.lower,"With --below the wanderer has the lower world")
 	check(eye.glide.floor_y == SkyBelow.FLOOR and eye.glide.water == SkyBelow.OCEAN,"Its plane's floor is just over the ocean")
 	eye.place(Vector3(eye.PLATE_REACH-0.6,0.0,0.0))

@@ -1,11 +1,15 @@
 extends SceneTree
-## The plane on the aqueduct isle (studies/aqueduct_isle.gd, F), headless:
-## from on foot the pilot boards the game's plane already flying ahead and
-## above him, with the knife-edge drift (scripts/sky_plane.gd); it skims
-## the turf and never sinks into it, it is bumped off the stone and flies on
-## (never inside it, never stopped); F puts him back on foot on open turf
-## near the plane, where he walks; skimming the turf braking slow sets him
-## down; R in the plane puts him on foot at the start. The pad's right
+## The plane on the aqueduct isle (studies/aqueduct_isle.gd), headless:
+## `board` (the --fly start) puts the pilot in the game's plane already
+## flying ahead and above him, with the knife-edge drift (scripts/
+## sky_plane.gd); it is bumped off the stone and flies on or sits on its
+## wheels (never inside it, never a crash); nosed down at the turf it
+## touches and sticks, never into it (the hand landing, scripts/
+## manual_landing.gd; a dive too steep bounces instead, round 3, and
+## tests/test_kit_isle_landing.gd has that and the rest); out in
+## the air he stands on open turf near the plane, which goes back to its
+## parked home; slow and braking it settles and stops but never gets out by
+## itself; R in the plane puts him on foot at the start. The pad's right
 ## stick turns the camera on foot and in the plane, and R3 resets it.
 ##   godot --headless --path . --script tests/test_aqueduct_isle_plane.gd
 const Art = preload("res://studies/aqueduct_isle_art.gd")
@@ -29,7 +33,7 @@ func run() -> void:
 	current_scene = study
 	while not study.flora_ready: await process_frame
 	await physics_frame
-	check(str(study._switch_hint.text).begins_with("F (pad Y)"),"On foot the hint shows the switch key: '%s'" % study._switch_hint.text)
+	check(str(study._switch_hint.text).contains("Walk to your plane"),"On foot the hint says to walk to the plane: '%s'" % study._switch_hint.text)
 	_foot_look()
 	_board()
 	_plane_look()
@@ -105,14 +109,14 @@ func _plane_look() -> void:
 func _board() -> void:
 	var feet: Vector3 = study.motor.feet
 	study.board()
-	check(study.flying,"F boards the plane")
+	check(study.flying,"Boarded (the --fly start)")
 	var plane: RefCounted = study.plane
 	var off: Vector3 = plane.position-feet
 	check(off.y >= study.BOARD_UP-0.01 and Vector2(off.x,off.z).length() > 3.0,"It starts flying ahead of and above the pilot (%.1f m out, %.1f m up)" % [Vector2(off.x,off.z).length(),off.y])
 	check(float(plane.speed) >= SkyPlane.CRUISE_SPEED*0.8,"At cruise, no runway (%.1f m/s)" % plane.speed)
 	check(not study._in_stone(),"Not in stone")
 	check(not study.figure.visible and study.plane_figure.is_inside_tree(),"The walker is hidden, the plane drawn")
-	check(str(study._switch_hint.text).contains("knife edge") and str(study._switch_hint.text).contains("F (pad Y) back on foot"),"The hint shows the knife edge and the way back")
+	check(str(study._switch_hint.text).contains("knife edge") and str(study._switch_hint.text).contains("F (pad Y) flaps"),"The hint shows the knife edge and the flaps")
 	check(is_equal_approx(float(plane.drift_strength),1.0),"The plane has the knife-edge drift (strength %.1f)" % plane.drift_strength)
 
 func _drift() -> void:
@@ -123,6 +127,7 @@ func _drift() -> void:
 	var speed := float(plane.speed)
 	_fly(0.1,{})
 	check(float(plane.speed) > speed+0.5,"Letting go gives the boost (%.1f to %.1f m/s)" % [speed,plane.speed])
+	check(study.air != null and study.air._player.playing and float(study.air._hum_goal) > 0.0,"Flying, the plane sounds: wind and the propeller's hum")
 
 ## Flown straight at stone found round the start: bumped off and flying on.
 func _bump() -> void:
@@ -147,7 +152,7 @@ func _bump() -> void:
 	print("  bumped %d times off stone at %s" % [study.bumps,target.at])
 	check(study.bumps > 0,"Flown at stone, it bumps (%d)" % study.bumps)
 	check(out.in_stone == 0,"Never left inside stone (%d frames)" % out.in_stone)
-	check(study.flying and float(plane.speed) >= SkyPlane.SLOW,"And flies on (%.1f m/s), never a crash" % plane.speed)
+	check(study.flying and (float(plane.speed) >= SkyPlane.SLOW or study.hand_landing.on_ground()),"And flies on, or sits on its wheels (%.1f m/s, %s), never a crash" % [plane.speed,study.hand_landing.NAMES[study.hand_landing.phase]])
 
 ## A stretch of open, nearly flat turf RUN m long on the near island:
 ## {at (its top), way}.
@@ -170,33 +175,35 @@ func _open_run() -> Dictionary:
 				if ok and space.intersect_ray(ray).is_empty() and study._room_for_pilot(space,top): return {"at":top,"way":way}
 	return {}
 
-## Nosed down over the turf: it skims it, never sinks in.
+## Nosed down over the turf, low (not a dive steep enough to bounce): it
+## touches and sticks, never sinks in.
 func _skim() -> void:
 	var run := _open_run()
-	check(not run.is_empty(),"Open turf to skim found")
+	check(not run.is_empty(),"Open turf to touch found")
 	if run.is_empty(): return
-	var plane: RefCounted = study.plane
 	var way: Vector3 = run.way
-	plane.launch((run.at as Vector3)+Vector3.UP*4.0,atan2(-way.x,-way.z),SkyPlane.CRUISE_SPEED,false)
-	var out := _fly(1.2,{"pitch":-1.0})
-	check(out.skimmed,"Nosed down at the turf, it skims it")
-	check(out.lowest > 0.5,"Never into the turf (lowest %.2f m over it)" % out.lowest)
+	study.fly_from((run.at as Vector3)+Vector3.UP*2.0,atan2(-way.x,-way.z))
+	var out := _fly(1.2,{"pitch":-0.6})
+	check(not (study.hand_landing.stats.touches as Array).is_empty() and study.hand_landing.on_ground(),"Nosed down at the turf, it touches and sticks (%s)" % study.hand_landing.last_touch)
+	check(out.lowest > 0.25,"Never into the turf (lowest %.2f m over it)" % out.lowest)
 
 func _back_on_foot() -> void:
 	var plane: RefCounted = study.plane
 	plane.position = study.start+Vector3(0.0,12.0,0.0)
 	var near: Vector3 = plane.position
 	study.leave_plane()
-	check(not study.flying and study.figure.visible and study.plane_figure == null,"F again: back on foot, the plane gone")
+	check(not study.flying and study.figure.visible and study.parked and bool(study.plane_figure.parked),"Out in the air: back on foot, the plane parked at its home")
+	check(not study.air._player.playing,"And its sound stops")
 	var feet: Vector3 = study.motor.feet
 	check(Vector2(feet.x-near.x,feet.z-near.z).length() < 6.0,"He stands near where the plane was (%.1f m off)" % Vector2(feet.x-near.x,feet.z-near.z).length())
 	var top: Variant = study.plane_ground(feet+Vector3.UP*0.5)
 	check(top != null and absf(float(top)-feet.y) < 0.3,"On the turf")
 	for i in range(30): study.tick(DT)
 	check(study.motor.grounded and study.motor.feet.distance_to(feet) < 1.0,"And stands there walking (grounded, %.2f m moved)" % study.motor.feet.distance_to(feet))
-	check(str(study._switch_hint.text).begins_with("F (pad Y)"),"The hint is the on-foot one again")
+	check(str(study._switch_hint.text).contains("Walk to your plane"),"The hint is the on-foot one again")
 
-## Low over the turf, braking: it sets him down there.
+## Low over the turf, braking: it settles and stops on its wheels, and
+## never gets out by itself.
 func _touch_down() -> void:
 	study.board()
 	var plane: RefCounted = study.plane
@@ -204,11 +211,14 @@ func _touch_down() -> void:
 	if run.is_empty(): return
 	var way: Vector3 = run.way
 	plane.launch((run.at as Vector3)+Vector3.UP*1.5,atan2(-way.x,-way.z),SkyPlane.BRAKE_SPEED,false)
+	study.hand_landing.begin(plane)
 	var flew := 0.0
-	while study.flying and flew < 4.0:
+	while study.flying and flew < 6.0 and study.hand_landing.phase != study.hand_landing.STOPPED:
 		study.fly_step(DT,{"brake":1.0,"pitch":-0.3})
 		flew += DT
-	check(not study.flying,"Skimming the turf braking slow sets him down (after %.1f s)" % flew)
+	check(study.flying and study.hand_landing.phase == study.hand_landing.STOPPED,"Slow and braking over the turf it settles and stops (after %.1f s, %s)" % [flew,study.hand_landing.last_touch])
+	for i in range(30): study.fly_step(DT,{"brake":1.0})
+	check(study.flying,"And never gets out by itself")
 
 func _reset() -> void:
 	study.board()
