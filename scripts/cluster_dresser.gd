@@ -146,7 +146,9 @@ static func prepare(member: Dictionary, plan: Dictionary) -> Dictionary:
 ## Stands what stands on `member` under its islet's `node`; what moves or
 ## lights is returned: {"sails": [Node3D], "beams": [Node3D], "lights":
 ## [[OmniLight3D, energy]]}.
-static func furnish(node: Node3D, member: Dictionary, plan: Dictionary, made: Dictionary) -> Dictionary:
+## `folk` off leaves out the lantern bearers and fishers (the features are
+## still drawn, so a cluster's layout is the same either way).
+static func furnish(node: Node3D, member: Dictionary, plan: Dictionary, made: Dictionary, folk := true) -> Dictionary:
 	var m := _mats()
 	var shape: RefCounted = member.shape
 	var live := {"sails":[],"beams":[],"lights":[]}
@@ -197,6 +199,7 @@ static func furnish(node: Node3D, member: Dictionary, plan: Dictionary, made: Di
 				var at := Vector3(f.at.x,shape.ground_at(f.at),f.at.y)
 				_post(node,at,float(f.angle),halos,live)
 			"bearer":
+				if not folk: continue
 				var figure := _person(node,shape,f.at,float(f.angle),1,member.seed)
 				var lantern := _lantern(figure,Vector3(0.075,0.18,-0.07),1.0/SkyFolk.SCALE)
 				halos.append([figure.transform*(Vector3(0.075,0.14,-0.07)),HALO_LANTERN])
@@ -253,6 +256,7 @@ static func furnish(node: Node3D, member: Dictionary, plan: Dictionary, made: Di
 				halos.append([hang+Vector3.DOWN*0.2,HALO_LANTERN])
 				_light(lantern,Vector3(0.0,0.12,0.0),4.0,0.9,FADE_SMALL,live)
 			"fisher":
+				if not folk: continue
 				var figure := _person(node,shape,f.at,float(f.angle),2,member.seed,float(f.deck_y))
 				var hand := Vector3(0.075,0.13,-0.05)
 				var rod := MeshInstance3D.new()

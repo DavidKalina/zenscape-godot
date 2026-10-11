@@ -237,6 +237,7 @@ func _start_isles() -> void:
 	clusters = SkyClusters.new()
 	clusters.islets = islets
 	clusters.scene = scene
+	clusters.folk = false
 	clusters._palette = _palette
 	add_child(clusters)
 	# The game's own flags leave the clusters (--no-clusters) and the
