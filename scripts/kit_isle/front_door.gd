@@ -19,7 +19,8 @@ extends Node
 ##
 ## The title shows when the scene is the current one (the game launched, or
 ## the way back from a picked scene: scripts/scene_return.gd), unless
-## `--no-title`, `--capture=`, `--fly`, `--near-ring` or `--place=` is
+## `--no-title`, `--capture=`, `--fly`, `--near-ring`, `--place=` or
+## `--serpent-board=` is
 ## given, or the scene has the "no_title" meta; the "title" meta forces it
 ## (tests). The veil goes up with the title, and on a played start with no
 ## title (the scene current, no capture).
@@ -34,7 +35,7 @@ const Catalog = preload("res://scripts/scene_catalog.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 ## Flags that start straight in, as `--no-title` does.
 const STRAIGHT_IN := ["--no-title","--fly","--near-ring"]
-const STRAIGHT_IN_PREFIX := ["--capture=","--place="]
+const STRAIGHT_IN_PREFIX := ["--capture=","--place=","--serpent-board="]
 ## The orbit, as the old title's (studies/diorama.gd `_frame_title`): the
 ## eye POLAR rad down from straight above the isle's middle, raised LIFT m
 ## over its datum, at DISTANCE times its half-span (at least NEAR m), turning

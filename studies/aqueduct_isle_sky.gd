@@ -42,7 +42,11 @@ extends Node3D
 ##               its long way round the isle, down the Sundered gorge, down
 ##               into the cloud sea under the bell spires and home; it
 ##               watches and paces the plane, solid to it. --no-serpent.
-##               See docs/scenic/rune-serpent.md.
+##               See docs/scenic/rune-serpent.md. Where the motif isles
+##               stand it flies the route between them instead, ridden on
+##               foot from a ledge at each (scripts/kit_isle/
+##               serpent_route.gd, docs/design/serpent-route.md);
+##               --serpent-old-route keeps the long way above.
 ## --no-sky leaves all of it out. See docs/scenic/aqueduct-isle-sky.md.
 ## The far isles, the clusters and the pierced isle this sky had are gone
 ## (docs/scenic/motif-sky.md); the old game still has them (scripts/
@@ -61,6 +65,7 @@ const IslanderFigure = preload("res://scripts/islander_figure.gd")
 const RuneSerpent = preload("res://scripts/rune_serpent.gd")
 const KitClouds = preload("res://scripts/kit_isle/kit_clouds.gd")
 const MotifSky = preload("res://scripts/kit_isle/motif_sky.gd")
+const SerpentRoute = preload("res://scripts/kit_isle/serpent_route.gd")
 
 ## The isle's own layers (studies/aqueduct_isle.gd TURF_LAYER): ground the
 ## plane skims and the pilot is set down on; and what bumps it.
@@ -451,10 +456,19 @@ func token_source() -> String:
 # --- The rune serpent ---------------------------------------------------------------
 
 ## The rune serpent (scripts/rune_serpent.gd): self-contained, it runs its
-## own frame and physics frame and reads the study's camera and plane.
+## own frame and physics frame and reads the study's camera and plane. With
+## the motif isles it flies the route between them (`route`, scripts/
+## kit_isle/serpent_route.gd: the ledges and the rider), unless
+## --serpent-old-route.
 var serpent: Node3D
+var route: Node3D
 
 func _build_serpent() -> void:
+	if motifs != null and SerpentRoute.wanted():
+		route = SerpentRoute.new()
+		add_child(route)
+		serpent = route.setup(scene,self)
+		return
 	serpent = RuneSerpent.new()
 	add_child(serpent)
 	serpent.setup(scene)

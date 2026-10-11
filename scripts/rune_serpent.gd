@@ -322,6 +322,10 @@ var solid := true
 ## its shoulder (GLANCE) rather than looked away from.
 var bank_share := 1.0
 var look_back := false
+## The share of its look it takes (live): its head's turn, tilt, lean and
+## lift toward a watcher, times this. A route easing it by a boarding ledge
+## (scripts/kit_isle/serpent_route.gd) keeps its head on its way there.
+var look_share := 1.0
 ## Its own draws (the tongue's flicks, how long it paces) and where its
 ## clock starts (s: its breath, its surge and its head's drift), set before
 ## `setup`; a line of them each its own, so they don't move in step.
@@ -807,6 +811,10 @@ func _goals() -> void:
 		pitch = clampf(asin(clampf(to.y,-1.0,1.0))-asin(clampf(base.y,-1.0,1.0)),-LOOK_MAX.y,LOOK_MAX.y)
 		lean = LEAN
 		lift = LOOK_LIFT
+		yaw *= look_share
+		pitch *= look_share
+		lean *= look_share
+		lift *= look_share
 	if mode == "pace" and w != Vector3.INF:
 		var plane: Variant = scene.get("plane")
 		if plane != null: pace = (plane.velocity as Vector3).dot(way)
@@ -1178,6 +1186,11 @@ func _place_solid() -> void:
 		var y := axis.normalized()
 		var x := y.cross(Vector3.UP if absf(y.y) < 0.95 else Vector3.RIGHT).normalized()
 		_capsules[i].transform = Transform3D(Basis(x,y,x.cross(y)),(a+b)*0.5)
+
+## Its capsules solid to the plane or not (a rider's hulls standing in
+## for them: scripts/kit_isle/serpent_rider.gd).
+func set_solid(on: bool) -> void:
+	if _solid != null: _solid.collision_layer = SOLID_LAYER if on else 0
 
 ## The body's physics RID (tests keep it out of their own queries).
 func solid_rid() -> RID:
