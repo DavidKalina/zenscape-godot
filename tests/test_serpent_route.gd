@@ -68,6 +68,7 @@ func run() -> void:
 	_tube()
 	_airships()
 	await _passes()
+	_stand_by()
 	await _ride()
 	await _off_over_sky()
 	await _old_route()
@@ -176,6 +177,21 @@ func _passes() -> void:
 		check(s.built != null,"The %s ledge stands (a flight of %d steps up to its landing)" % [s.id,int(s.get("steps",0))])
 		check(r.x < JUMP_ACROSS and r.y > JUMP_UNDER.x and r.y < JUMP_UNDER.y,"By the %s ledge its back passes within a jump: %.2f m across, %.2f m under" % [s.id,r.x,r.y])
 		check(not touch.has(s.id),"By the %s ledge its body never touches the ledge" % s.id)
+
+## Stood still on each ledge's end as it goes by (its head turned to look
+## at him all the way in): never touched, never carried off.
+func _stand_by() -> void:
+	for s: Dictionary in route.spots:
+		route.start_at(s)
+		_input(Vector2.ZERO,false)
+		var worst := 0.0
+		var on := false
+		for i in range(60*14):
+			frame()
+			worst = maxf(worst,m.feet.distance_to(s.stand))
+			if rider.riding_on != "still": on = true
+		print("MEASURE stood on the %s ledge as it passed: moved %.2f m at most, %s" % [s.id,worst,"carried off" if on else "left alone"])
+		check(not on and worst < 0.3,"Stood on the %s ledge as it goes by, he is left alone (moved %.2f m)" % [s.id,worst])
 
 ## From the aqueduct isle's ledge: run and jump as its middle goes by; on
 ## its back through the dip to the cloister tarn; off it there onto the

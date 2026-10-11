@@ -134,9 +134,12 @@ const LEDGE_WEATHERED := 0.45
 ## jutting over the rim stands on a wall with some depth to it.
 const LEDGE_DEPTH := 2.6
 ## Its head kept to its way by a ledge: its look's share within LOOK_NEAR
-## m (along its way) of a ledge's mark, easing back over LOOK_EASE m.
-const LOOK_NEAR := 40.0
-const LOOK_EASE := 30.0
+## m (along its way) of a ledge's mark, easing back over LOOK_EASE m. Its
+## look's springs are slow (0.3 Hz), so the hold starts well before the
+## ledge: a look begun 40 m out still swung its snout into a rider
+## standing there (a capture, round 1).
+const LOOK_NEAR := 100.0
+const LOOK_EASE := 40.0
 const LOOK_HELD := 0.1
 ## --serpent-board: its head this far (m along its way) short of the mark:
 ## at the pass's pace its head goes by in about five seconds, its middle in
