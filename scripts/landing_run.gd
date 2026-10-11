@@ -50,6 +50,12 @@ func _init(on: Dictionary, who := "human", skill := {}) -> void:
 	plane.pitch = 0.0
 	ml.begin(plane)
 
+## Goes on from `flying` (a SkyPlane in the air: after a takeoff or a
+## pickup) rather than the station's start: the next approach, its own run.
+func adopt(flying: RefCounted) -> void:
+	plane = flying
+	ml.begin(plane)
+
 ## The air at a point now (Course `air_at`).
 func air(point: Vector3) -> Dictionary:
 	return Course.air_at(point,t)

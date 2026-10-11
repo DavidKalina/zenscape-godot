@@ -182,16 +182,16 @@ static func pad_mesh(pad: Dictionary) -> ArrayMesh:
 		var b := ring[(k+1)%ring.size()]
 		# The top, a fan from the middle.
 		st.add_vertex(top.call(centre))
-		st.add_vertex(top.call(b))
 		st.add_vertex(top.call(a))
+		st.add_vertex(top.call(b))
 		# The side, down to the underside.
 		var ta: Vector3 = top.call(a)
 		var tb: Vector3 = top.call(b)
 		st.add_vertex(ta)
+		st.add_vertex(Vector3(b.x,bottom,b.y))
 		st.add_vertex(tb)
-		st.add_vertex(Vector3(b.x,bottom,b.y))
 		st.add_vertex(ta)
-		st.add_vertex(Vector3(b.x,bottom,b.y))
 		st.add_vertex(Vector3(a.x,bottom,a.y))
+		st.add_vertex(Vector3(b.x,bottom,b.y))
 	st.generate_normals()
 	return st.commit()

@@ -171,6 +171,9 @@ func _study() -> bool:
 	current_scene = study
 	while not study.flight_ready: await process_frame
 	check(study.find_children("Station_*","",false,false).size() == Course.STATIONS.size(),"Every station stands")
+	var arrays := Course.pad_mesh(Course.STATIONS[0].pads[0]).surface_get_arrays(0)
+	var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+	check(normals[0].y > 0.9,"A field's top faces up (%s)" % str(normals[0]))
 	# The sharp bot lands the long field and stops.
 	study.pilot = "sharp"
 	study.start(Course.station("long_field"))

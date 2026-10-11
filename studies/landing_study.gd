@@ -302,6 +302,19 @@ func start(s: Dictionary) -> void:
 	chase.reset(run.plane,run.plane.position-run.plane.forward()*6.0+Vector3.UP*2.0,camera.fov)
 	_frame(0.0)
 
+## Flying again (after a takeoff or a pickup): the next approach is its
+## own run, on the station whose field is nearest, the same pilot.
+func _next_run(plane: SkyPlane) -> void:
+	var s := Course.station_near(plane.position)
+	var params := {} if pilot == "human" else Bot.params(pilot)
+	var next := Run.new(s,"human" if pilot == "human" else "bot:"+pilot,params)
+	next.adopt(plane)
+	run = next
+	station = s
+	bot = null if pilot == "human" else Bot.new(params,randi())
+	if bot != null: bot._go_round(s)
+	_report.visible = false
+
 func restart() -> void:
 	start(station)
 
@@ -339,6 +352,7 @@ func _tick_plane(delta: float, given: Dictionary) -> void:
 	_react(out)
 	if run.done and not was_done: _finished()
 	var ml := run.ml
+	if run.done and ml.phase != ManualLanding.STOPPED: _report.visible = false
 	if ml.phase == ManualLanding.EXIT: _hop_figure(ml.hop)
 	figure.update(delta,run.plane,0.0,Callable(Course,"ground"),ml.would_land(Callable(Course,"floor_at")))
 	if out.has("out"):
@@ -532,7 +546,7 @@ func _tick_takeoff(delta: float) -> void:
 	_frame(delta)
 	if takeoff.done():
 		takeoff = null
-		run.ml.begin(plane)
+		_next_run(plane)
 		mode = "plane"
 		chase.cine = Vector3.ZERO
 
@@ -641,7 +655,7 @@ func _tick_stranded(delta: float) -> void:
 	plane.position = feet+Vector3.UP*3.0
 	plane.heading = facing
 	plane.resume(SkyPlane.CRUISE_SPEED,0.35)
-	run.ml.begin(plane)
+	_next_run(plane)
 	parked = false
 	walker.visible = false
 	figure.reset(plane)
