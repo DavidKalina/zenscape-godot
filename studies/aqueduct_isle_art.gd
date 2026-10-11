@@ -112,12 +112,17 @@ static func aqueduct(seed_value: int) -> Dictionary:
 	Aqueduct._deck(b,RESUME,END,DECK,Callable(),false,FACE+0.05)
 	_parapets(b,parts)
 	# The water: from the head to the snap, then the spill down into the sky.
-	var water := Aqueduct._water(b.root,HEAD+0.5,SNAP-0.15,DECK+WATER_LIFT,WATER_HALF)
-	var running := ShaderMaterial.new()
-	running.shader = CHANNEL_SHADER
-	running.set_shader_parameter("middle",Vector3(MID_X,TOP+DECK,0.0))
-	running.set_shader_parameter("half_width",WATER_HALF)
-	water.material_override = running
+	# The edit chunks' water is laid in the world's frame (`channel_water`);
+	# --old-water keeps the channel's own running film.
+	var water: Node3D = null
+	if KitWater.old_water():
+		var film := Aqueduct._water(b.root,HEAD+0.5,SNAP-0.15,DECK+WATER_LIFT,WATER_HALF)
+		var running := ShaderMaterial.new()
+		running.shader = CHANNEL_SHADER
+		running.set_shader_parameter("middle",Vector3(MID_X,TOP+DECK,0.0))
+		running.set_shader_parameter("half_width",WATER_HALF)
+		film.material_override = running
+	else: water = channel_water()
 	Aqueduct._spill(b.root,Vector3(SNAP-0.12,DECK+WATER_LIFT-0.02,0.0),Vector3.RIGHT,seed_value,-70.0)
 	# The rubble slope at the head and the drops at the far end.
 	_rubble_slope(b)
@@ -141,7 +146,27 @@ static func aqueduct(seed_value: int) -> Dictionary:
 	var node := b.finish()
 	node.get_node("Body").free()
 	node.transform = AQ
-	return {"node":node,"parts":parts}
+	return {"node":node,"parts":parts,"water":water}
+
+## The channel's water (scripts/kit_isle/kit_water.gd), in the world's
+## frame (the chop reads world axes): the edit chunks' water a hand deep
+## over the channel's floor, from the head to the snap, its edges at the
+## parapets' inner faces, tipping over the snap into the spill. So thin a
+## film would be clear glass by the live water's shallows (shallow_clear),
+## its stone barely darkened: the plate's teal tint stays all the way up
+## (CLEAR 0), so it reads as clear teal water over the stone, deeper where
+## a settled slab lies lower. The plate's running water over it read as a
+## pale teal slab (docs/scenic/kit-isle-water.md), so only the wind's chop
+## moves on it.
+const CLEAR := 0.0
+static func channel_water() -> MeshInstance3D:
+	var inner := PARAPET_Z-PARAPET.x
+	var snap := SNAP-0.12
+	return KitWater.still({"name":"Channel","level":TOP+DECK+WATER_LIFT,
+		"ground":func(_x: float, _z: float) -> float: return TOP+DECK,
+		"rect":Rect2(MID_X-inner-0.5,-snap-0.5,(inner+0.5)*2.0,snap-HEAD+0.5),
+		"inside":func(p: Vector2) -> bool: return absf(p.x-MID_X) < inner and p.y > -snap and p.y < -(HEAD+0.5),
+		"clear":CLEAR})
 
 ## A span: the pointed arch at `cx` (aqueduct x), its spandrels coursed up
 ## from the springing to the deck's foot.

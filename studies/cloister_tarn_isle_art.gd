@@ -518,6 +518,30 @@ static func water_faces() -> PackedVector3Array:
 static func lip() -> Vector3:
 	return Vector3(C.x+edge_r(0.0),W,C.y)
 
+## How steeped the tarn is (scripts/kit_isle/kit_water.gd `tea`): a dark
+## slate-blue mountain tarn, umber only over its shelf.
+const TEA := 0.9
+## What the tarn mirrors low down (KitWater `surround`): the arcades and the
+## crag round it, up to some 22 degrees over the water, dark stone and turf.
+const SURROUND := Vector4(0.16,0.2,0.18,0.37)
+
+## The tarn's water drawn (scripts/kit_isle/kit_water.gd): the edit chunks'
+## still water over the bowl and down the channel to the brink, where the
+## fall's curtain takes it over (no churn on the lip: the plate's edge falls
+## have none); steeped dark, the walls round it dark in it.
+static func water() -> MeshInstance3D:
+	var at := lip()
+	return KitWater.still({"name":"Tarn","level":W,
+		"ground":func(x: float, z: float) -> float: return ground(x,z),
+		"rect":Rect2(C.x-12.5,C.y-12.5,at.x+0.5-(C.x-12.5),25.0),
+		"inside":func(p: Vector2) -> bool: return on_mother(p),
+		"tea":TEA,"surround":SURROUND})
+
+## True on the mother isle (world x, z): inside its edge.
+static func on_mother(p: Vector2) -> bool:
+	var d := local(p.x,p.y)
+	return d.length() < edge_r(angle(d))
+
 ## A shape stand-in for the fall's thread plan (SkyIslets `_thread_plan`
 ## reads its recipe, water, seed).
 class FallShape extends RefCounted:
