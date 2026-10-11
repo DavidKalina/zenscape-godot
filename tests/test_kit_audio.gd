@@ -101,4 +101,5 @@ func run() -> void:
 	for i in range(40): audio._process(0.25)
 	check(bool(study.parked) and int(audio.played.get("tick",0)) > 0,"Parked after a flight, the engine ticks as it cools (%d)" % int(audio.played.get("tick",0)))
 	print("PASS: kit audio" if failures == 0 else "FAIL: kit audio (%d)" % failures)
-	quit(1 if failures > 0 else 0)
+	# Quit as the game does (KitAudio.quit), so no playback leaks at exit.
+	KitAudio.quit(self,1 if failures > 0 else 0)

@@ -89,16 +89,32 @@ These are main's `scripts/interactables/swing_rope.gd`, read through
 
 ## Quit leak
 
-I couldn't reproduce it. These runs printed no "ObjectDB instances leaked":
+The leak reproduced after merging main: about 1 run in 4 of the headless
+load printed "ObjectDB instances leaked". `--verbose` listed the kit's bed
+streams, each an `AudioStreamWAV` with its `AudioStreamPlaybackWAV`, and the
+airship drone's `AudioStreamGeneratorPlayback`.
 
-- headless runs, on foot, flying and from the title, up to 2400 frames;
-- the same runs with `--audio-driver CoreAudio`, so real playbacks were live;
-- a probe of the steps' static take caches.
+The cause is a race at teardown. A player freed while it plays leaves its
+playback in the AudioServer's list. The list lets it go only on a later
+main-loop frame, so if the engine shuts down first, the playback is counted
+as leaked. Stopping the players in `_exit_tree`, even with a wait for the mix
+thread, made it worse, because nothing frees them after that point.
 
-As a defensive fix, `KitAudio._exit_tree` now stops every player and lets go
-of the clips and beds. `KitAudioLife._exit_tree` disconnects its
-`node_added` hook. If the leak comes back, run with `--verbose` to get the
-class names.
+The fix:
+
+- **`KitAudio.quit(tree)`.** It stops every audio player in the tree,
+  disables KitAudio, lets three frames pass, then quits.
+  - The pause menu's Quit and the title's Quit now call it.
+  - So does the window close: KitAudio sets `auto_accept_quit = false` while
+    it's in the tree and handles `NOTIFICATION_WM_CLOSE_REQUEST`.
+  - `tests/test_kit_audio.gd` quits this way too. It now ends with no leak;
+    before, it leaked 2 instances per run.
+- **Silent beds stop.** They used to stay paused. They start again at a
+  random point of the loop when heard, so silent beds hold no playback.
+
+`--quit-after` and other direct `tree.quit()` calls, such as kit_isle's
+capture, still bypass `KitAudio.quit`, so they can still print the warning.
+It only happens at exit and is harmless.
 
 ## Assets
 

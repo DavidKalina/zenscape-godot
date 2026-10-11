@@ -128,7 +128,10 @@ const ROPE_WHIP := 0.12
 const PLACE_TICK := 0.4
 
 ## A looping voice: its gain and pitch eased toward their goals (per second
-## rates up and down), paused while silent.
+## rates up and down), stopped while silent and started again at a random
+## point of its loop when heard: a silent bed holds no playback in the
+## AudioServer (paused ones did, and some were caught mid-teardown at quit:
+## the "ObjectDB instances leaked" warning).
 class Bed extends RefCounted:
 	var player
 	var gain := 0.0
@@ -142,8 +145,10 @@ class Bed extends RefCounted:
 		if goal <= 0.0 and gain < 0.0006: gain = 0.0
 		pitch = lerpf(pitch,pitch_goal,1.0-exp(-delta*6.0))
 		var silent := gain <= 0.0
-		if player.stream_paused != silent: player.stream_paused = silent
-		if silent: return
+		if silent:
+			if player.playing: player.stop()
+			return
+		if not player.playing: player.play(randf()*player.stream.get_length())
 		player.volume_db = linear_to_db(gain)
 		player.pitch_scale = clampf(pitch,0.1,4.0)
 
@@ -340,13 +345,32 @@ func _ready() -> void:
 	life.isle = isle
 	add_child(life)
 
-## Quitting: every voice stopped and the clips let go, so no playback is
-## left holding a stream at exit.
+## The quit leak ("ObjectDB instances leaked at exit"): a playback still in
+## the AudioServer's list when the engine tears down is reported leaked; a
+## stopped one leaves the list only on a later main-loop frame, so stopping
+## it in _exit_tree (or waiting on the mix thread) is too late. `quit`
+## stops every voice in the tree, lets two frames pass, then quits; the
+## game's quits go through it (pause menu, title, window close).
+static func quit(tree: SceneTree, code := 0) -> void:
+	for node: Node in tree.root.find_children("*","",true,false):
+		if node is AudioStreamPlayer or node is AudioStreamPlayer3D:
+			node.set_process(false)
+			node.call("stop")
+	# Nothing restarts them meanwhile.
+	for node: Node in tree.root.find_children("KitAudio","",true,false): node.process_mode = Node.PROCESS_MODE_DISABLED
+	await tree.process_frame
+	await tree.process_frame
+	await tree.process_frame
+	tree.quit(code)
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST: quit(get_tree())
+
+func _enter_tree() -> void:
+	get_tree().auto_accept_quit = false
+
 func _exit_tree() -> void:
-	for node: Node in find_children("*","",true,false):
-		if node is AudioStreamPlayer or node is AudioStreamPlayer3D: node.call("stop")
-	_beds.clear()
-	_clips.clear()
+	get_tree().auto_accept_quit = true
 
 static func _takes(pattern: String, count: int) -> Array:
 	var out := []
@@ -354,7 +378,7 @@ static func _takes(pattern: String, count: int) -> Array:
 	return out
 
 ## A looping copy of a WAV (they import unlooped), started at a random
-## point and paused, on `bus`; placed in the world when `placed`.
+## point when heard, on `bus`; placed in the world when `placed`.
 func _bed(path: String, bus: StringName, placed := false) -> Bed:
 	var stream := (load(path) as AudioStreamWAV).duplicate() as AudioStreamWAV
 	stream.loop_mode = AudioStreamWAV.LOOP_FORWARD
@@ -373,8 +397,6 @@ func _bed(path: String, bus: StringName, placed := false) -> Bed:
 	player.bus = bus
 	player.volume_db = -80.0
 	add_child(player)
-	player.play(_rng.randf()*stream.get_length())
-	player.stream_paused = true
 	var bed := Bed.new()
 	bed.player = player
 	_beds.append(bed)
