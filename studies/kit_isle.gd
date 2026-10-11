@@ -1109,7 +1109,20 @@ func plane_home() -> Vector4:
 			if best.is_empty() or float(run.score) > float(best.score): best = {"at":top,"heading":heading,"score":float(run.score)}
 		r += 4.0
 	if best.is_empty():
-		var at := safe_ground(start)
+		# No run: the nearest level spot with room for it, off the start (the
+		# walker starts there, and the column round it would stand him on it).
+		var spot := Vector3.INF
+		r = HOME_NEAR
+		while r <= HOME_FAR and spot == Vector3.INF:
+			for i in range(16):
+				var a := TAU*float(i)/16.0+r*0.37
+				var top := _turf_top(space,start.x+cos(a)*r,start.z+sin(a)*r)
+				if top == Vector3.INF or absf(top.y-start.y) > 6.0 or not _level(top): continue
+				if _room_for_plane(top,PilotMotor.facing_of(start_face)):
+					spot = top
+					break
+			r += 4.0
+		var at := safe_ground(start) if spot == Vector3.INF else spot
 		_home = Vector4(at.x,at.y,at.z,PilotMotor.facing_of(start_face))
 	else:
 		var at: Vector3 = best.at

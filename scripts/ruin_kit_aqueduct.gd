@@ -83,7 +83,9 @@ const STRIP := 1.05
 ## between the tiers (a walkable ledge along it), the upper piers (width,
 ## depth), the upper springing over the course, the upper arch's radius as
 ## a share of its clear span (under 1: a lower, drop arch) and its deck.
-const LOWER_SPRING := 3.0
+## The lower springing: 3.0, or low enough that the lower arch (CLEAR
+## wide, equilateral) crowns under the course (2.76 at plane 2).
+static var LOWER_SPRING: float = minf(3.0,MID-FLOOR-CLEAR*0.866-RuinKit.ORDER*2.0-0.1)
 const MID := 8.4
 const UPPER_PIER := Vector2(1.3,2.5)
 const UPPER_RISE := 1.2

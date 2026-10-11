@@ -128,12 +128,12 @@ const HOOD := Vector2(0.13,0.1)
 ## The thickness of an arch, a window wall or a gable.
 const ARCH_DEPTH := 1.1
 ## The lancet window: clear width (two lights under one head; with its
-## mullion gone, flown: THREAD's room), sill height (caught from the
+## mullion gone, flown: WorldScale.ROOM, wider than THREAD), sill height (caught from the
 ## ground; the sill as deep as the wall, STAND and more) and springing; its
-## head equilateral. The width is a gap (5.2 at plane 2); the wall round it
+## head equilateral. The width is a gap (5.6 at plane 2); the wall round it
 ## is as much wider than the toy's 6.8 and taller than its 7.8 by the
 ## head's rise on that (WINDOW_GROW).
-const WINDOW_ROOM := THREAD_ROOM
+const WINDOW_ROOM := WorldScale.ROOM
 static var WINDOW := Vector3(WorldScale.gap(WINDOW_ROOM),1.6,3.4)
 static var WINDOW_GROW: float = WINDOW.x-3.6
 static var WINDOW_WALL := Vector2(6.8+WINDOW_GROW,7.8+WINDOW_GROW*0.866)
@@ -634,7 +634,9 @@ static func rose_gable(seed_value: int, weathered := 0.0) -> Node3D:
 			var a := b.rng.randf_range(0.2,PI-0.2)
 			b.hang(Vector3(cos(a)*inner*0.9,0.0,b.rng.randf_range(-d,d)),b.rng.randf_range(0.5,2.0)*weathered,true,ROSE.x+sin(a)*inner)
 	if not hub and weathered > 0.0:
-		b.solid(_axial_prism(8,0.34,0.26),Transform3D(Basis(Vector3.RIGHT,b.rng.randf_range(0.2,0.6)),Vector3(b.rng.randf_range(-1.0,1.0),0.3,d+1.4)),_stone(b,1.05))
+		# Fallen to one side of the door, never across the way through it.
+		var off := (dw+0.8)*(1.0 if b.rng.randf() < 0.5 else -1.0)+b.rng.randf_range(-0.3,0.3)
+		b.solid(_axial_prism(8,0.34,0.26),Transform3D(Basis(Vector3.RIGHT,b.rng.randf_range(0.2,0.6)),Vector3(off,0.3,d+1.4)),_stone(b,1.05))
 	_drift(b,Vector3(b.rng.randf_range(-2.0,2.0),0.0,d+1.2),2.0,int(weathered*8.0))
 	_rubble(b,half+1.0,int(round(weathered*b.rng.randf_range(5.0,9.0))))
 	return b.finish()
