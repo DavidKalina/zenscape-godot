@@ -509,3 +509,152 @@ old game's title.
 - Any later kit isle can use the same front door. Give it a scene script
   like `zenscape.gd`: the `FrontDoor` child, `open(self)`, the two-frame
   wait and the input gate.
+
+## Round 2 done
+
+Branch `consolidate/pause-settings`, off `consolidate/front-door` f696ce83.
+Not merged, not pushed.
+
+### What the player sees
+
+- **Pause.** In the game (after Begin, or with `--no-title`), Esc or the
+  pad's Menu pauses the tree (`get_tree().paused`) under a linen sheet in
+  the old pause panel's look (scrim, cloth, Newsreader rows, dashed seam):
+  "Paused" over the isle's name, then **Resume** (its key reads Esc, or pad B
+  with the pad in hand), **Back to the plane** (only on foot or under the
+  canopy), **Settings**, **Scenes** (when the picker is offered), a seam,
+  **Back to the title** and **Quit**, and an italic line under them: "The
+  isle starts afresh from the title." Up and down (arrows, D-pad, stick)
+  step the rows, Enter, a click or pad A presses, Esc or pad B backs out one
+  level, and Menu resumes from anywhere. The mouse is freed while paused and
+  captured again on Resume if it was before.
+- **Settings**, from the pause and as a quiet **Settings** on the title's
+  card (between Scenes and Quit; the card stays minimal): Look (Visual
+  quality, Render resolution, Clouds, Night sky, Planet in the night sky),
+  Sound (Volume, "Steps, tokens and life" on the Genesis bus, Mute all
+  sound), Controls (Controller vibration). Each row is a choice,
+  "‹ Balanced ›", stepped by left and right, a press, or a click on its ‹.
+  It saves and applies the moment it steps.
+- **R** on foot (or under the canopy) is the same as Back to the plane: you
+  stand beside the parked plane where a hop out of it lands, facing it
+  (`kit_isle._return_to_plane`, now public as `zenscape.back_to_plane`).
+  The plane never moves, which keeps to the hand landing's rule
+  (docs/design/manual-landing.md: you board to fly, nothing summons it). In
+  the plane, R isn't a player key and the pause doesn't offer the row.
+- **Back to the title** reloads the main scene on the command line's flags,
+  minus the ones that skip the title. That's `front_door.title_args()`,
+  which also drops `--fly`, `--near-ring`, `--place=` and `--capture=`. The
+  isle comes up again under the veil, because the kit saves nothing.
+- **Pad prompts follow the device in the game now.** The kit never called
+  `Pad.note`, so its prompts never switched. The pause host connects the
+  root window's input to `Pad.note`, as the old game's `pad_input.gd` does.
+
+### Where it lives (none of it in kit_isle.gd)
+
+- `scripts/kit_isle/menu_sheet.gd` is the shared linen sheet: rows,
+  choices, groups, the seam, the hint line (a `pad_prompt.gd` Label), and
+  keys, mouse and pad navigation. It runs while paused.
+- `scripts/kit_isle/pause_menu.gd` is the pause's rows and signals.
+  `scripts/kit_isle/settings_menu.gd` is the settings sheet.
+- `scripts/kit_isle/pause_host.gd` does the pausing and wiring, and is
+  `zenscape.gd`'s `pause` child. It won't open under the title, before
+  `walk_ready`, or while the study's recording-name panel is up.
+- `scripts/kit_isle/game_settings.gd` is the model. It keeps everything
+  where the old game kept it, through the same pieces, so a choice holds
+  in both games: `look.cfg` (LookPass's `clouds`/`night`/`sky` keys and
+  savers, render_resolution's `[display] max_lines`), `sound.cfg`
+  (genesis_audio's keys, applied with `apply_settings`) and `pad.cfg`.
+  Visual quality had no saved value in the old game, so it's new: `[quality]
+  tier`, Balanced (the kit's tier) until the player chooses. The isle reads
+  clouds, night, planet and the cap itself as it's built. `apply_start`
+  applies the sound, vibration and tier on `isle_ready`. The paths are vars,
+  so tests write elsewhere.
+- `scripts/kit_isle/dev_keys.gd` gates the developer keys the way the
+  picker's IN_RELEASE pattern does, but off in release: `const IN_RELEASE :=
+  false`, the project setting `zenscape/dev/dev_keys`, `--dev-keys`,
+  `--no-dev-keys`, and `as_release` for tests. The gated keys are F1, F2,
+  F3, F5-F8, the station keys 0-9 - = [ ] \, L and Shift+L, and B on foot,
+  plus F1, R, L and B in the plane. In a release build `strip_captures`
+  takes `--capture=`, `--capture-seq=`, `--capture-wait=`, `--capture-high`,
+  `--at=` and `--card-hold` out of the flags before the isle reads them.
+  Editor and debug runs (run-zenscape.command included) keep them all.
+  `zenscape.gd`'s `_unhandled_input` does the filtering.
+
+### The CI exit leak: found and fixed
+
+There were two separate teardown leaks, both in the aqueduct's sky.
+
+1. **`N RID allocations of type ...DummyShader... leaked at exit`** (every
+   headless run, N 1-4). I bisected by flags and then by code: `--no-sky`
+   was clean, `--no-far-isles` was clean, the lone far isles alone leaked,
+   making but never standing them was clean, standing them without
+   `SkyIslets._fall` was clean, and inside `_fall` the leak came with the
+   single line `drops.process_material = _drop_material`. That's one static
+   `ParticleProcessMaterial` handed to every islet fall's GPUParticles3D.
+   Giving each fall its own `.duplicate()`, made as it stands, leaves
+   nothing. Checked over about 15 runs: the front door straight in and
+   titled, the aqueduct isle, early quits, the packaged self-check
+   (`--verify-desktop-build`) and `test_export_entry` exactly as CI runs it.
+   Before the fix, `test_export_entry`'s log had `ERROR: 4 RID allocations
+   ... DummyShader` and failed CI's grep; after it, the log has no `ERROR:`.
+   The copies share the one generated shader, so nothing changes on screen.
+   **What's not proven** is the engine mechanism. The leaked count isn't one
+   per fall: even one fall leaked 1-4 shaders, and a minimal repro outside
+   the game doesn't leak. The likeliest cause is godot#124183: the dummy
+   renderer's shader and material RID owners aren't thread-safe, so
+   allocations racing on workers corrupt the count. It's fixed in 4.8 by
+   godot#121958. If a stray `DummyShader` count ever shows up on CI again,
+   look for materials made or first used on workers, or move to 4.8.
+2. **4276 objects, 13 Jolt bodies and 2087 shapes leaked**, seen once in
+   the runner under load. `SkyPierced._forget` freed the worker-built ruins
+   tree only when the lid hadn't stood. The pierced isle stands its parts a
+   frame at a time, within the sky's budget (`SkyCommits`). Freed between
+   its lid and its ruins (the packaged check frees the scene a few seconds
+   in, and a slow runner gets there sooner), the ruins tree was orphaned.
+   Now any ruins without a parent are freed. `tests/test_isle_teardown.gd`
+   frees the scene at exactly that moment: it fails on the old code and
+   passes now.
+
+Neither the grep nor `known_failures.txt` changed. **Not confirmed on the
+Windows CI runner itself** (nothing was pushed).
+
+### Tests (headless, `tools/run_tests.py --tests ...`)
+
+New: `test_game_pause` (pause, keys and pad, prompts, settings and scenes
+round trips, Menu, R and the row back to the plane, no row in the plane,
+back to the title), `test_game_settings` (kept sound applied at start, the
+title card's Settings, volume, mute, vibration and resolution applied and
+kept, the look's choices kept under the old keys, read back), `test_dev_keys`
+(the gate, capture flags stripped as release, keys dead as release on foot
+and in the plane, alive in debug), `test_isle_teardown`. All pass. So do
+the import check, `test_front_door` (now 4 card buttons), `test_export_entry`,
+the three `test_scene_picker*`, the five `test_aqueduct_isle*`,
+`test_kit_isle_landing`, `test_gamepad`, `test_gamepad_screens`,
+`test_title_resolution`, `test_title_showcase` and `test_world_title`.
+`test_export_entry` failed once in the 19-test batch with leak 2 above; it
+passed alone and in the CI form after the fix. The full suite wasn't run.
+
+### Unverified (needs a rendered run)
+
+- How the sheets look: their size on the screen, the linen, the glyph chips
+  and whether the settings sheet fits on a small window. Everything was
+  checked headless by numbers only.
+- Live look changes. Headless has no look pass, so quality, clouds, night
+  and planet were only checked as saved. In a rendered run they go through
+  `LookPass.apply_tier` and its `set_*` setters, and the tier is applied at
+  start.
+- MetalFX or FSR scaling with a real GPU (the scale value is checked).
+- Pausing with the plane's engine sound running (its generator just
+  starves) and paused shader time (the clouds and water still move under
+  the scrim).
+
+### For round 3 (clouds)
+
+- Hook the cloud host into `game_settings.gd` if the clouds get a new
+  setting (a row in `ENTRIES`, a case in `index_of` and `choose`).
+- `pause_host.can_pause` is the place to block the pause in a set piece.
+- Whatever is built on a worker and stood a frame at a time needs freeing
+  when it never stands, as `_forget` now does for the pierced ruins. Check
+  the cumulus and tearing ports for the same pattern, and run them through
+  `test_isle_teardown`'s kind of check. Keep handing each particle system
+  its own ParticleProcessMaterial copy, too.

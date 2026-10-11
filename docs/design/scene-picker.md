@@ -107,6 +107,12 @@ every scene from the menu in an exported build on their Windows PC until Steam.
 To hide it from players later, set `IN_RELEASE` to false, or add
 `zenscape/dev/scene_picker=false` under `[zenscape]` in project.godot.
 
+The game's developer keys (the study's F1-F8, station keys, L, B, R in the
+plane) and capture flags are gated the same way in
+`scripts/kit_isle/dev_keys.gd`, but off in release: `const IN_RELEASE :=
+false`, the project setting `zenscape/dev/dev_keys`, `--dev-keys` and
+`--no-dev-keys` (docs/design/consolidation-audit.md, "Round 2 done").
+
 ### Export check
 
 `export_presets.cfg` (Windows and macOS) uses `export_filter="all_resources"`,
