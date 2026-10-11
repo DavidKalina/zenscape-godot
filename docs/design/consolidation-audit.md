@@ -1006,3 +1006,68 @@ Results:
   map round the eye, which is shader work and GPU-only to verify. M.
 - `KitWeather.YEAR_DAYS`, `DAY_SECONDS` and the strike shares are the
   tuning knobs once the user has looked at a rendered run.
+
+## Round 5 done
+
+Branch `consolidate/drop-tidy`, off main 471e2249. Not merged, not pushed.
+
+### What the player sees
+
+- **No sky folk on the cluster isles.** The lantern bearers and the fishers
+  on the docks are gone from every cluster in the kit's sky. Their
+  features are still drawn from the rng, so the clusters lay out exactly as
+  before; only the figures (and the bearers' lantern and halo) are left
+  out. **The airship crews are unchanged** (still open with the user): the
+  test counts 6 aboard.
+- **No peak ring.** The ring was never built in the kit, but
+  `SkyWorld.ring` defaulted to on, so `ring_on()` answered true and the
+  haze, edge-wind and layout calls took their ring paths. Now it is off for
+  the kit's life, so those calls give their "no ring" answers and no layout
+  is ever worked out.
+- **The sky should look as it did.** With the ring "up", `sea_peaks()` and
+  `painted_ridges()` were 0, so the painted distant peaks and horizon
+  ridges were already off in the kit. Turning the ring off would have
+  brought them back, so I added `SkyWorld.painted_sky` (default true) and
+  the kit sets it false. If you want the painted peaks and ridges back in
+  the kit, that one flag is the switch. Rendered only, so unverified.
+- **Walking off an edge is unchanged** (canopy or respawn is still open).
+
+### Where it lives
+
+- `scripts/cluster_dresser.gd`: `furnish(..., folk := true)`; bearer and
+  fisher are skipped when off. `scripts/sky_clusters.gd`: `var folk := true`,
+  passed to `furnish`. `studies/aqueduct_isle_sky.gd`: one line,
+  `clusters.folk = false`. The old game's `SkyIslands` keeps the default.
+- `studies/kit_isle.gd`: `_ready` reads the SkyWorld flags, remembers
+  `ring` and `painted_sky`, sets both off; a new `_exit_tree` hands them
+  back, so a later old-game scene in the same process (the Scenes picker)
+  gets its ring as before. Code stays; round 7 deletes it.
+- `scripts/sky_world.gd`: the `painted_sky` var and its two uses.
+- Shared files touched: `cluster_dresser.gd`, `sky_clusters.gd`,
+  `sky_world.gd` (small edits). Round 7 deleting folk or the ring will meet
+  these three.
+
+### Tests (headless)
+
+New: `test_kit_drops` (it fails without the `clusters.folk = false` line,
+checked). It stands every cluster and finds no figure outside an airship,
+counts the crews, checks the ring is off with no layout, edge wind or
+haze, and that the flags come back on leaving.
+
+All PASSED: `test_kit_drops`, `test_front_door`, `test_game_pause`,
+`test_kit_clouds`, `test_kit_isle_landing`, `test_isle_teardown`,
+`test_export_entry`, `test_aqueduct_isle`, `test_aqueduct_isle_sky`,
+`test_aqueduct_isle_look`, `test_aqueduct_isle_plane`, `test_sky_clusters`,
+`test_sky_world`. No full suite; `test_sky_cumulus` and
+`test_aqueduct_isle_life` were not run.
+
+### Unverified
+
+- Rendered look: that the cluster isles read right without their folk, and
+  that the sky is unchanged with `painted_sky` off.
+
+### For later rounds
+
+- If the crews go, `sky_airship.gd:998` is the only figure left in the kit.
+- When round 7 removes the ring, the kit's flag handling and `painted_sky`
+  go with it (the painted sky is then simply on or off).
