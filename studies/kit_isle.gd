@@ -259,10 +259,11 @@ const STRANDED_WAIT := 3.0
 const FOOT_HINT := "Walk to your plane and Space (pad A) by it to fly  ·  Space (pad A) again in the air: the sail, again: fold  ·  R3 camera back behind"
 const BOARD_LINE := "Space (pad A)  climb in and take off"
 const FLY_HINT := "Flying  ·  %.0f m/s  ·  bumps %d\nA D bank and turn  ·  W S pitch (W nose down)  ·  mouse steers  ·  Space boost  ·  Shift brake  ·  hold Q E (LB RB) knife edge, + A D to drift  ·  Q Q or E E quick, or click: barrel roll\nF (pad Y) flaps %s  ·  put it down on the turf, then brake or drift to a stop  ·  R start on foot  ·  L / Shift+L look  ·  B gust  ·  hold right mouse or the right stick to look round  ·  R3 camera back behind"
-const ROLL_HINT := "On the wheels  ·  %.0f m/s\nShift brake  ·  steer hard, or Q E and steer, to drift  ·  Shift and steer, a blip of Space, to power-slide  ·  in a slide ease or counter the stick to widen, Q E to tighten  ·  Space take off again"
-const STOPPED_HINT := "Stopped\nF (pad Y) get out  ·  Space roll and take off again  ·  hold Shift (LT) to back up  ·  Shift, Space and steer to turn on the spot"
+const ROLL_HINT := "On the wheels  ·  %.0f m/s\nShift brake  ·  steer hard, or Q E and steer, to drift  ·  Shift and steer, a blip of Space, to power-slide  ·  in a slide ease or counter the stick to widen, Q E to tighten  ·  roll off the edge to fly"
+const STOPPED_HINT := "On the wheels\nSpace roll, A D steer, off the isle's edge to fly  ·  F (pad Y) get out  ·  hold Shift (LT) to back up  ·  Shift, Space and steer to turn on the spot"
 const REVERSE_HINT := "Backing up  ·  %.1f m/s\nsteer: the tail goes that way  ·  let go of Shift (LT) to stop  ·  Space roll forwards"
-const TAKEOFF_HINT := "Taking off"
+const TAKEOFF_HINT := "Climbing in"
+const DIP_HINT := "Off the edge  ·  dropping until it has the speed to fly: nose down, Space for power"
 const FALL_HINT := "Off the edge  ·  Space (pad A) open the sail  ·  WASD (left stick) steer"
 const SAIL_HINT := "Under the sail  ·  WASD (left stick) steer  ·  Shift or C (LT) float  ·  Space (pad A) fold it and drop"
 const STRANDED_HINT := "Stranded: back to your plane in a moment"
@@ -900,10 +901,10 @@ func board() -> void:
 	_into_plane()
 	_show_fly_hint()
 
-## Space (pad A) by the parked plane: the pilot hops in, and it turns to
-## its best clear run, rolls, lifts and flies (scripts/plane_landing.gd's
-## takeoff: BOARD, TAXI, ROLL, LIFT), as the game's parked plane takes off;
-## then the hand landing has it.
+## Space (pad A) by the parked plane: the pilot hops in (scripts/
+## plane_landing.gd's takeoff, its BOARD only), then the hand landing has
+## it stopped on its wheels: the pilot taxis it, steering, and takes off
+## by rolling it off the isle's edge (it dips, then the wings catch).
 func board_parked() -> void:
 	if flying or not parked or not walk_ready: return
 	if not _replay.is_empty(): _end_replay()
@@ -1367,10 +1368,9 @@ func _frame_plane(delta: float) -> void:
 		camera.global_position = plane_figure.global_transform*_plane_eye
 		camera.look_at(plane_figure.global_transform*Vector3(0.0,0.05,-0.05),plane_figure.global_basis.y)
 
-## One frame of the takeoff from the parked plane (scripts/plane_landing.gd
-## `take_off`): the pilot hopping in, the turn to its run, the roll, the
-## lift, no controls; done, the hand landing has it in the air and the
-## controls are given back.
+## One frame of the pilot hopping into the parked plane (scripts/
+## plane_landing.gd `take_off`'s BOARD), no controls; in, the hand landing
+## has it stopped on its wheels and the controls are given back.
 func _takeoff_step(delta: float) -> void:
 	takeoff.step(delta)
 	plane.engine = takeoff.engine
@@ -1386,13 +1386,12 @@ func _takeoff_step(delta: float) -> void:
 	air.engine(float(plane.speed),takeoff.throttle,takeoff.engine)
 	chase.cine = Vector3(-1.2,-0.04,0.3) if takeoff.phase != PlaneLanding.LIFT else Vector3.ZERO
 	_frame_plane(delta)
-	if takeoff.done():
+	if takeoff.phase != PlaneLanding.BOARD:
 		takeoff = null
 		_hop_to = Vector3.INF
 		figure.visible = false
 		plane_figure.show_pilot(true)
-		chase.cine = Vector3.ZERO
-		hand_landing.begin(plane)
+		hand_landing.begin(plane,true)
 	_show_fly_hint()
 
 ## What the wheels did this step (ManualLanding `step`), felt as the game
@@ -1431,9 +1430,9 @@ func _wheel_events(out: Dictionary, delta: float) -> void:
 		_hop_to = Vector3.INF
 	if spray != null: spray.update(delta,wheels,plane.velocity,hand_landing.grit if hand_landing.phase == ManualLanding.ROLL else 0.0,GRIT_TINT)
 	if out.has("stopped"): _word("Stopped")
-	if out.has("off_edge"): _word("Off the edge: flying again")
+	if out.has("off_edge"): _word("Off the edge")
 	if out.has("not_yet"): _word("Stop first  ·  Shift to brake")
-	if out.has("lifted"): _word("Touch and go")
+	if out.has("wings"): _word("Lift!")
 	if out.has("reverse"): _word("Backing up")
 	if out.has("edge_behind"): _word("The edge is right behind you")
 	if out.has("hit"):
@@ -1513,6 +1512,7 @@ func _show_fly_hint() -> void:
 	elif hand_landing.phase == ManualLanding.ROLL and hand_landing.reversing: text = REVERSE_HINT % hand_landing.roll_speed()
 	elif hand_landing.phase == ManualLanding.ROLL: text = ROLL_HINT % hand_landing.roll_speed()
 	elif not aloft: text = STOPPED_HINT
+	elif hand_landing.dipping(): text = DIP_HINT
 	else: text = FLY_HINT % [float(plane.speed),bumps,"up" if flaps else "down"]
 	if aloft:
 		# Low over the turf, what a touch now would get (a slam: too steep).

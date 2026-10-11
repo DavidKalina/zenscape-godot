@@ -17,10 +17,14 @@ extends RefCounted
 ##            is calmed (CALM_LOW to CALM_HIGH m), so a slow approach is not
 ##            held up off the ground by ridge lift or a gust.
 ##   ROLL     on its wheels, sliding or gripping (below). Boost opens the
-##            throttle (PUSH), and gripping at LIFT_SPEED with Boost held
-##            (no Brake) it lifts off again (a touch-and-go). Rolled or slid
-##            off the land's edge it is flying again with the speed it had,
-##            a dip first, its slide carried on as the air drift's slip.
+##            throttle (PUSH, up to ROLL_TOP), the stick steers; the wheels
+##            never lift it: only rolled or slid off the land's edge is it
+##            flying again, its slide carried on as the air drift's slip,
+##            and first it dips (`dipping`): it falls, the nose eases down
+##            to DIP_NOSE, and only once the dive (DIP_GAIN of the fall
+##            along it, Boost's PUSH) has it up to FLY_SPEED do the wings
+##            catch it (`events.wings`). Off slow it dips deep; nose held up
+##            it dips on; after DIP_MAX s the wings catch it anyway.
 ##   STOPPED  stood still, the brakes holding, the engine ticking over. Boost
 ##            rolls it off again; Exit gets out. Brake held REVERSE_DELAY s
 ##            backs it up (`reversing`, in ROLL: below); Brake, a blip of
@@ -184,6 +188,17 @@ const SLOPE_PULL := 7.0
 const TAXI_TURN := 0.9
 const TAXI_FULL := 3.0
 const LIFT_SPEED := PlaneLanding.LIFT_SPEED
+## The fastest the throttle rolls it on the wheels (m/s), under FLY_SPEED,
+## so every takeoff off an edge dips. The dip: the speed the wings catch
+## it at (m/s), the nose it eases to with the stick let go (radians, down
+## negative) and how fast (s), the pull along the dive (m/s² per sine of
+## it; a nose held up loses speed), and the longest it lasts (s).
+const ROLL_TOP := 11.0
+const FLY_SPEED := 12.5
+const DIP_NOSE := -0.35
+const EASE_DIP := 0.3
+const DIP_GAIN := 9.0
+const DIP_MAX := 3.0
 ## The slide: the wheels' grip (m/s² sideways before they let go), the
 ## slowest it slides (m/s; a power-slide from POWER_MIN), the stick that
 ## starts a drift with the lean held, the nose already off its track that
@@ -300,6 +315,10 @@ var stats := {}
 ## (m/s).
 var _grace := 0.0
 var _kick := 0.0
+## Off an edge, not yet flying: the speed it has (m/s) and seconds dipping
+## (negative: not dipping).
+var _dip_speed := 0.0
+var _dip_time := -1.0
 ## The air step's velocity before the wheels met the land, and its pose.
 var _air_velocity := Vector3.ZERO
 var _air_pitch := 0.0
@@ -342,6 +361,7 @@ func begin(on_plane: RefCounted, on_ground := false) -> void:
 	last_touch = ""
 	_grace = 0.0
 	_kick = 0.0
+	_dip_time = -1.0
 	_air_velocity = plane.velocity
 	_air_pitch = float(plane.pitch)
 	_air_bank = float(plane.bank)
@@ -363,6 +383,10 @@ func begin(on_plane: RefCounted, on_ground := false) -> void:
 	stats = {"touches":[],"bounces":0,"go_arounds":0,"touch_and_gos":0,"off_edge":0,"early_exits":0,
 		"rollout":NAN,"time_to_stop":NAN,"stopped":false,"bounce_reasons":{},"greasers":0,
 		"slide_distance":0.0,"peak_slip":0.0,"power_slides":0,"stop_margin":NAN,"stop_grade":"","reverses":0}
+
+## Off an edge and falling, the wings not yet carrying it.
+func dipping() -> bool:
+	return phase == AIR and _dip_time >= 0.0
 
 func flying() -> bool:
 	return phase == AIR
@@ -430,7 +454,7 @@ func would_grease(floor_at: Callable) -> bool:
 ##   touch {speed, sink, bank, grade, ...}, settled {grade, k} (it stuck),
 ##   greaser, thump {k} (a hard one), bounce {reason, sink, speed} (a hop),
 ##   slide (it broke loose), caught (it gripped again), stopped {margin},
-##   lifted (a touch-and-go), off_edge {speed}, go_around, not_yet (Exit
+##   off_edge {speed}, wings {speed} (the dip over, flying), go_around, not_yet (Exit
 ##   before the stop), hit (slid into something), out (the pilot is out).
 func step(delta: float, input: Dictionary, ground: Callable, floor_at: Callable, air := Callable(), blocked := Callable()) -> Dictionary:
 	var out := {}
@@ -500,8 +524,11 @@ func _fly(delta: float, input: Dictionary, ground: Callable, floor_at: Callable,
 	grit = 0.0
 	var calm := air
 	if air.is_valid(): calm = func(p: Vector3) -> Dictionary: return calmed(air.call(p),p,floor_at)
+	# Dipping, the fall holds at its full until the wings catch it.
+	if _dip_time >= 0.0: plane.airborne = minf(float(plane.airborne),SkyPlane.FALL_TIME)
 	plane.step(delta,input,ground,calm)
 	throttle = float(plane.throttle)
+	if _dip_time >= 0.0: _dip(delta,input,out)
 	# A hop's kick, lifting it clear and dying away.
 	if _kick > 0.0:
 		plane.position.y += _kick*delta
@@ -523,6 +550,22 @@ func _fly(delta: float, input: Dictionary, ground: Callable, floor_at: Callable,
 	_air_bank = float(plane.bank)
 	_air_rolling = bool(plane.rolling)
 	_air_slip = float(plane.slip)
+
+## One step of the dip: the nose eased down (the stick let go), the speed
+## gained down the dive and from the throttle, lost climbing; at FLY_SPEED
+## (or after DIP_MAX s) the wings catch it and the fall eases away.
+func _dip(delta: float, input: Dictionary, out: Dictionary) -> void:
+	_dip_time += delta
+	var look: Vector2 = input.get("look",Vector2.ZERO)
+	if is_zero_approx(float(input.get("pitch",0.0))) and is_zero_approx(look.y):
+		plane.pitch = lerpf(float(plane.pitch),DIP_NOSE,1.0-exp(-delta/EASE_DIP))
+	var boost := clampf(float(input.get("boost",0.0)),0.0,1.0)
+	_dip_speed = clampf(_dip_speed+(-DIP_GAIN*sin(float(plane.pitch))+boost*PUSH)*delta,0.0,SkyPlane.FAST)
+	plane.speed = maxf(_dip_speed,SkyPlane.SLOW)
+	if _dip_speed >= FLY_SPEED or _dip_time >= DIP_MAX:
+		_dip_time = -1.0
+		plane.speed = maxf(_dip_speed,FLY_SPEED)
+		out["wings"] = {"speed":_dip_speed}
 
 ## The dive now: Vector2(radians nose down, m/s down the nose's line).
 func _dive_now() -> Vector2:
@@ -564,6 +607,7 @@ func _watch_go_around(land: float, out: Dictionary) -> void:
 
 ## The wheels meet the land: graded on the air step before.
 func _touch(at: Vector2, land: float, floor_at: Callable, out: Dictionary) -> void:
+	_dip_time = -1.0
 	var v := _air_velocity
 	var speed := Vector2(v.x,v.z).length()
 	var sink := maxf(maxf(0.0,-v.y),sink_seen)
@@ -712,7 +756,7 @@ func _roll(delta: float, input: Dictionary, floor_at: Callable, blocked: Callabl
 		# The scrub: the more sideways, the more; the brakes along the wheels.
 		var side := sin(beta)
 		var loss := ROLL_DRAG*(1.0-boost)+maxf(WHEEL_BRAKE*brake*absf(cos(beta)),SCRUB*side*side)
-		var push := boost*PUSH*(1.0-brake)*cos(beta)
+		var push := boost*PUSH*(1.0-brake)*cos(beta) if speed < ROLL_TOP else 0.0
 		speed = maxf(0.0,speed+(push-loss)*delta)
 		# The path bends towards the nose, and the stick bends the line:
 		# into the slide tighter, against it wider.
@@ -737,7 +781,8 @@ func _roll(delta: float, input: Dictionary, floor_at: Callable, blocked: Callabl
 		heading += steer*delta
 		var fwd := Vector2(-sin(heading),-cos(heading))
 		var along := _v.dot(fwd)
-		along = move_toward(along,0.0,(ROLL_DRAG*(1.0-boost)+WHEEL_BRAKE*brake)*delta)+boost*PUSH*(1.0-brake)*delta
+		along = move_toward(along,0.0,(ROLL_DRAG*(1.0-boost)+WHEEL_BRAKE*brake)*delta)
+		if along < ROLL_TOP: along = minf(along+boost*PUSH*(1.0-brake)*delta,maxf(along,ROLL_TOP))
 		_v = fwd*along
 		beta = 0.0
 	plane.heading = heading
@@ -774,18 +819,14 @@ func _roll(delta: float, input: Dictionary, floor_at: Callable, blocked: Callabl
 		out["off_edge"] = {"speed":speed}
 		plane.position = Vector3(next_at.x,plane.position.y,next_at.y)
 		_lift(speed,0.0,true)
+		_dip_speed = speed
+		_dip_time = 0.0
 		plane.slip = -clampf(beta,-1.2,1.2)
 		return
 	plane.position = Vector3(next_at.x,plane.position.y,next_at.y)
 	_place_on(land,floor_at,smoothstep(0.0,TAIL_DOWN,_since_touch))
 	plane.speed = speed
 	plane.velocity = Vector3(_v.x,0.0,_v.y)
-	var fwd_speed := _v.dot(Vector2(-sin(heading),-cos(heading)))
-	if boost > 0.0 and brake <= 0.3 and not sliding and fwd_speed >= LIFT_SPEED:
-		stats.touch_and_gos += 1
-		out["lifted"] = true
-		_lift(fwd_speed,0.15,false)
-		return
 	# Stopped: slow with the throttle shut or the brakes on; backing up, once
 	# the brake is let go.
 	var held := (brake <= 0.3 and boost <= 0.0) if reversing else (boost <= 0.0 or brake > 0.3)

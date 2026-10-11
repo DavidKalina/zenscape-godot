@@ -28,8 +28,10 @@ extends SceneTree
 ##   - steering hard at speed, or the lean with a turn, breaks it loose into
 ##     a slide that sprays grit; let go, it grips again; a power-slide stops
 ##     shorter than a straight brake, and a braked slide in between;
-##   - slid off the land's edge it flies on with its speed; Boost on the
-##     roll lifts off again (a touch-and-go);
+##   - slid off the land's edge it flies on with its speed; on the wheels
+##     Boost rolls it (never past ROLL_TOP) and the stick steers it, but
+##     never lifts it: only off the edge, after a dip (deeper off slow)
+##     until the wings catch it;
 ##   - rising air is calmed near the land; flaps slow the plane under SLOW,
 ##     without them it flies as ever;
 ##   - in the study: the sharp bot lands and stops and the run is saved;
@@ -102,7 +104,7 @@ func run() -> void:
 	_slide_steer()
 	_reverse()
 	_blocked()
-	_touch_and_go()
+	_ground_takeoff()
 	_edge()
 	_calm_air()
 	_flaps()
@@ -377,13 +379,53 @@ func _blocked() -> void:
 	for i in range(10): deeper.step(DT,{"boost":1.0},field_ground,field_floor,Callable(),post)
 	check(float(deeper.plane.position.x) <= in_x+0.01,"But never further in (%.2f m)" % (float(deeper.plane.position.x)-in_x))
 
-func _touch_and_go() -> void:
-	var ml := approach(9.0,0.25,-0.1)
-	fly(ml,{},2.0,func(m: ManualLanding, _o: Dictionary) -> bool: return m.phase == ManualLanding.ROLL)
-	var seen := fly(ml,{"boost":1.0},5.0,func(_m: ManualLanding, o: Dictionary) -> bool: return o.has("lifted"))
-	check(seen.has("lifted") and ml.flying(),"Boost on the roll lifts it off again (a touch-and-go)")
-	var climb := fly(ml,{"boost":1.0},1.5)
-	check(float(ml.plane.position.y) > SkyPlane.SKIM+0.5 and not climb.has("touch"),"And it climbs away, the wheels not counting a moment (%.1f m)" % float(ml.plane.position.y))
+## Stood on the field facing north, `z` m along it, the landing in charge.
+func _parked(z: float) -> ManualLanding:
+	var plane := SkyPlane.new()
+	plane.launch(Vector3(0.0,0.0,z),0.0,SkyPlane.SLOW,false)
+	plane.speed = 0.0
+	plane.velocity = Vector3.ZERO
+	var ml := ManualLanding.new()
+	ml.begin(plane,true)
+	return ml
+
+## Boost held from `z` off the field's end until the wings have caught it
+## and it climbs again: how far under the land it dipped (m), and whether
+## they caught it.
+func _dip_from(z: float) -> Vector2:
+	var ml := _parked(z)
+	var deepest := 0.0
+	var caught := false
+	var t := 0.0
+	while t < 12.0 and not (caught and float(ml.plane.velocity.y) >= 0.0):
+		var out := ml.step(DT,{"boost":1.0},field_ground,field_floor)
+		if ml.flying(): deepest = minf(deepest,float(ml.plane.position.y))
+		caught = caught or out.has("wings")
+		t += DT
+	return Vector2(-deepest,1.0 if caught else 0.0)
+
+func _ground_takeoff() -> void:
+	var ml := _parked(-40.0)
+	var roll := fly(ml,{"boost":1.0},4.0)
+	check(ml.phase == ManualLanding.ROLL and not roll.has("off_edge"),"Boost held on the wheels rolls it on and never lifts it (%s)" % ManualLanding.NAMES[ml.phase])
+	check(ml.roll_speed() <= ManualLanding.ROLL_TOP+0.01 and ml.roll_speed() > ManualLanding.ROLL_TOP-0.5,"At most ROLL_TOP on the wheels (%.1f m/s)" % ml.roll_speed())
+	var turned := _parked(-40.0)
+	fly(turned,{"boost":1.0},1.0)
+	var was := float(turned.plane.heading)
+	fly(turned,{"boost":1.0,"turn":0.5},1.0)
+	check(not turned.sliding and absf(angle_difference(was,float(turned.plane.heading))) > 0.25,"The stick steers it on the wheels (%.2f rad)" % angle_difference(was,float(turned.plane.heading)))
+	var off := _parked(-90.0)
+	var seen := fly(off,{"boost":1.0},5.0,func(m: ManualLanding, _o: Dictionary) -> bool: return m.flying())
+	check(seen.has("off_edge") and off.dipping(),"Rolled off the end it dips, not flying yet")
+	var slow := _dip_from(-98.0)
+	var fast := _dip_from(-70.0)
+	check(slow.y > 0.0 and fast.y > 0.0,"The wings catch it either way")
+	check(fast.x > 1.0,"Even off at its top speed it dips first (%.1f m)" % fast.x)
+	check(slow.x > fast.x+1.0,"Off slow it dips deeper (%.1f m against %.1f m)" % [slow.x,fast.x])
+	var flown := _parked(-90.0)
+	fly(flown,{"boost":1.0},8.0,func(_m: ManualLanding, o: Dictionary) -> bool: return o.has("wings"))
+	fly(flown,{},2.0)
+	check(flown.flying() and not flown.dipping() and float(flown.plane.velocity.y) > -1.5,"Caught, it flies on (sinking %.1f m/s)" % -float(flown.plane.velocity.y))
 
 func _edge() -> void:
 	# Touching near the field's far end with no brakes: off the edge.
