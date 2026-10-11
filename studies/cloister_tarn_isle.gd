@@ -65,6 +65,10 @@ func _load_pack() -> void:
 func isle_name() -> String:
 	return "cloister tarn"
 
+## Placeholder name, line and finds until the isle is named.
+func isle_card() -> Dictionary:
+	return {"name":"Cloister of the Still Tarn","epithet":"A mirror kept for no one","finds":[["wildflower","Glyphs",3,5],["lamp","Lanterns",0,3],["bridge","Hidden ways",0,2]]}
+
 func isle_top() -> float:
 	return TarnArt.W
 

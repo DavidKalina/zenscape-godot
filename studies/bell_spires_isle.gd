@@ -65,6 +65,10 @@ func _load_pack() -> void:
 func isle_name() -> String:
 	return "bell spires"
 
+## Placeholder name, line and finds until the isle is named.
+func isle_card() -> Dictionary:
+	return {"name":"Spires of the Silent Bell","epithet":"Rung once, when the sky was young","finds":[["wildflower","Glyphs",0,6],["lamp","Bells",1,4],["bridge","Hidden ways",0,2]]}
+
 func isle_top() -> float:
 	return Spires.TOP
 

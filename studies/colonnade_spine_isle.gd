@@ -62,6 +62,10 @@ func _load_pack() -> void:
 func isle_name() -> String:
 	return "colonnade spine"
 
+## Placeholder name, line and finds until the isle is named.
+func isle_card() -> Dictionary:
+	return {"name":"The Long Colonnade","epithet":"The bones of a road to nowhere","finds":[["wildflower","Glyphs",0,8],["crystal","Lodestones",0,1],["bridge","Hidden ways",2,4]]}
+
 func isle_top() -> float:
 	return Spine.TOP
 
