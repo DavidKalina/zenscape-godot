@@ -253,8 +253,12 @@ func flow(r: Dictionary, way: Vector2) -> Vector3:
 	var heading := Vector2((r.vel as Vector3).x, (r.vel as Vector3).z)
 	heading = heading.normalized() if heading.length_squared() > 0.01 else way
 	var ground := -INF
+	# A ribbon may read less far ahead (`look`, a share), so it hugs the
+	# ground rather than riding over what stands further on (the dragon's
+	# ground breath, scripts/dragon_breath.gd).
+	var ahead := float(r.get("look", 1.0))
 	for s: float in LOOK_AHEAD:
-		var at := p2 + heading * speed * quick * s
+		var at := p2 + heading * speed * quick * s * ahead
 		var h: Variant = ground_height.call(at)
 		if h != null: ground = maxf(ground, float(h) + _canopy_lift(at))
 	if ground == -INF: ground = float(r.ground)

@@ -10,7 +10,14 @@ extends Node3D
 ##             (scripts/dragon_breath.gd), born in the mouth, pouring across
 ##             the isle over its posed turf and ruins (`air_floor`), curling
 ##             in their lee, kicking up off the far rim and sinking out over
-##             the cloud sea;
+##             the cloud sea; round 10: over half of them come down onto
+##             the turf and skim it all the way across (the ground layer),
+##             kicking up grass blades (scripts/wind_kicked_blades.gd),
+##             leaves and dust along their track;
+##   gust      round 10: the blast as air for the plane (`plane_gust`):
+##             a cone out of the mouth, strongest in its core near the jaw,
+##             plus the ribbons near it, with buffeting and a shove on the
+##             airframe (the plane reads it as any gust, SkyPlane `step`);
 ##   lanes     the wind tool's own air for foliage (zs_blow_*, read by every
 ##             plant's shader through zs_blow_at; scripts/wind_gust.gd is its
 ##             owner elsewhere, the aqueduct isle has none), fired over and
@@ -31,12 +38,39 @@ extends Node3D
 const STREAKS := 280
 const DEBRIS := 360
 const RUBBLE := 120
-const PUFFS := 220
+const PUFFS := 320
 ## The wind tool's lanes (shaders/reference_wind.gdshaderinc zs_blow_at).
 const LANES := 4
 const DragonBreath = preload("res://scripts/dragon_breath.gd")
+const KickedBlades = preload("res://scripts/wind_kicked_blades.gd")
+## Round 10, along the ground ribbons: leaves torn off and dust puffs a
+## second per ribbon skimming the turf, and the dust's tint and opacity.
+const GROUND_LEAVES := 6.0
+const GROUND_DUST := 2.2
+const DUST_TINT := Color(0.86,0.82,0.70)
+const DUST_ALPHA := 0.45
+## Round 10, the blast as a gust for the plane (`plane_gust`): its cone
+## out of the mouth (the axis dips GUST_DIP under level; its radius GUST_R0
+## m at the jaw, widening GUST_SPREAD m a metre), its reach (m), the wind
+## in its core at the jaw (m/s, falling to GUST_FAR of that at its reach),
+## the buffet (m/s: across, up and down), the shove on the airframe (rad/s:
+## the nose swung along the blast, the wings tipped by a crossing blast,
+## and the random part of each), how long it lingers after the blow (s),
+## and the ribbons' own air near the plane (reach m, rise m, share).
+const GUST_DIP := 0.06
+const GUST_R0 := 8.0
+const GUST_SPREAD := 0.42
+const GUST_REACH := 170.0
+const GUST_CORE := 15.0
+const GUST_FAR := 0.25
+const GUST_BUFFET := Vector2(4.0,3.0)
+const GUST_YAW := 0.9
+const GUST_ROLL := 5.0
+const GUST_JOLT := Vector3(0.45,0.6,3.5)
+const GUST_LINGER := 0.9
+const GUST_RIBBON := Vector3(7.0,5.0,0.35)
 ## Ribbons out of the mouth a second at the blow's full strength.
-const BREATH_RATE := 9.0
+const BREATH_RATE := 12.0
 
 var isle: Node3D
 var isle_rest := Transform3D.IDENTITY
@@ -52,6 +86,15 @@ var sea_y := -108.0
 var _rng := RandomNumberGenerator.new()
 var breath: Node3D
 var _breath_acc := 0.0
+## Round 10: the grass blades the ground ribbons tear up, the dust and
+## leaves owed along them, and the blast as it was last blown (for the
+## plane's gust): its mouth, way and strength (eased away after the blow).
+var blades: MultiMeshInstance3D
+var _g_leaf_acc := 0.0
+var _g_dust_acc := 0.0
+var gust_env := 0.0
+var _gust_mouth := Vector3.INF
+var _gust_way := Vector3.FORWARD
 ## The held isle's pose now: its shape's frame to the world and back
 ## (`air_floor`), cached once a frame.
 var _floor_xf := Transform3D.IDENTITY
@@ -173,6 +216,12 @@ func _ready() -> void:
 	breath = DragonBreath.new()
 	add_child(breath)
 	breath.setup_breath(air_floor)
+	breath.standing = stands_at
+	blades = KickedBlades.new()
+	blades.name = "BreathBlades"
+	blades.ground_height = air_floor
+	blades.extra_cull_margin = 200.0
+	add_child(blades)
 
 func _exit_tree() -> void:
 	_settle_now()
@@ -437,6 +486,9 @@ func inhale(mouth: Vector3, way: Vector3, delta: float) -> void:
 ## leaves torn off, stone shaken loose, the cloud sea beyond churned.
 func blow(mouth: Vector3, way: Vector3, strength: float, delta: float) -> void:
 	if strength <= 0.01: return
+	gust_env = maxf(gust_env,strength)
+	_gust_mouth = mouth
+	_gust_way = way
 	var side := Vector3(-way.z,0.0,way.x)
 	# Round 8: the breath is ribbons out of the mouth (scripts/dragon_breath.gd).
 	_breath_acc += delta*BREATH_RATE*strength
@@ -448,8 +500,9 @@ func blow(mouth: Vector3, way: Vector3, strength: float, delta: float) -> void:
 	if _lane_acc >= 0.32:
 		_lane_acc = 0.0
 		_fire_lane(mouth,way,0.85,80.0,1.35*strength,26.0)
-	# Leaves and twigs off the turf it crosses.
-	_d_acc += delta*95.0*strength
+	# Leaves and twigs off the turf it crosses (round 10: fewer at random,
+	# more along the ground ribbons, `_along_ground`).
+	_d_acc += delta*45.0*strength
 	while _d_acc >= 1.0:
 		_d_acc -= 1.0
 		var at := _on_isle()
@@ -504,8 +557,8 @@ func _leaf(p: Vector3, v: Vector3) -> void:
 	_debris.multimesh.set_instance_color(_d_next,c)
 	_d_next = (_d_next+1)%DEBRIS
 
-func _puff(p: Vector3, v: Vector3, size: float, grow: float, life: float, tint: Color) -> void:
-	_p[_p_next] = {"p":p,"v":v,"size":size,"grow":grow,"life":life,"age":0.0}
+func _puff(p: Vector3, v: Vector3, size: float, grow: float, life: float, tint: Color, alpha := 1.0) -> void:
+	_p[_p_next] = {"p":p,"v":v,"size":size,"grow":grow,"life":life,"age":0.0,"alpha":alpha}
 	_puffs.multimesh.set_instance_color(_p_next,tint)
 	_p_next = (_p_next+1)%PUFFS
 
@@ -538,9 +591,15 @@ func advance(delta: float) -> void:
 	_clock += delta
 	_shake_isle(delta)
 	_cache_floor()
-	breath.advance(delta,1.0,0.0)
+	gust_env *= exp(-delta/GUST_LINGER)
 	var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
 	var eye := cam.global_position if cam != null else Vector3.ZERO
+	# The ground ribbons bow the plants under them while the eye is near
+	# enough to see it (the isle breeze's slots, for the frame).
+	breath.claim = breath.count() > 0 and isle != null and eye.distance_to(isle_home) < 260.0
+	breath.advance(delta,1.0,0.0)
+	_along_ground(delta)
+	blades.advance(delta,false,breath)
 	_step_streaks(delta,eye)
 	_step_debris(delta)
 	_step_rubble(delta)
@@ -555,6 +614,74 @@ func advance(delta: float) -> void:
 			_lanes[i] = {}
 			_publish_lane(i,{})
 		else: _publish_lane(i,lane)
+
+## Round 10: along each ground ribbon skimming the turf, leaves torn off
+## and flung ahead, and dust kicked up low behind its head.
+func _along_ground(delta: float) -> void:
+	var list: Array = breath.skimming()
+	if list.is_empty(): return
+	_g_leaf_acc += delta*GROUND_LEAVES*list.size()
+	_g_dust_acc += delta*GROUND_DUST*list.size()
+	while _g_leaf_acc >= 1.0:
+		_g_leaf_acc -= 1.0
+		var one: Array = list[_rng.randi()%list.size()]
+		var head: Vector3 = one[0]
+		var v: Vector3 = one[1]
+		var at := Vector3(head.x,float(one[2])+0.3,head.z)+Vector3(_rng.randf_range(-1.2,1.2),0.0,_rng.randf_range(-1.2,1.2))
+		_leaf(at,Vector3(v.x,0.0,v.z)*_rng.randf_range(0.6,1.0)+Vector3.UP*_rng.randf_range(2.0,6.0))
+	while _g_dust_acc >= 1.0:
+		_g_dust_acc -= 1.0
+		var one: Array = list[_rng.randi()%list.size()]
+		var head: Vector3 = one[0]
+		var v: Vector3 = one[1]
+		var flat := Vector3(v.x,0.0,v.z)
+		var at := Vector3(head.x,float(one[2])+0.8,head.z)-flat.normalized()*_rng.randf_range(1.0,4.0)
+		var size := _rng.randf_range(2.0,3.5)
+		_puff(at,flat*_rng.randf_range(0.45,0.7)+Vector3.UP*_rng.randf_range(0.5,1.8),size,size*_rng.randf_range(2.0,2.8),_rng.randf_range(1.4,2.2),DUST_TINT,DUST_ALPHA)
+
+## The blast as a gust for the plane at `p` (world), `nose` its forward
+## (world, unit): `wind` (m/s, added to its velocity: along the blast,
+## strongest in the cone's core near the jaw, fading out to its reach, with
+## a buffet, and the ribbons' own air near it), `shove` (rad/s on its pitch,
+## heading and bank: the nose swung along the blast, the wings tipped by a
+## blast across them, jolts) and `gust` (0 to about 1, how hard). Empty
+## when there is no blast near. A shove, never a crash: the plane's own
+## easing takes it back as it leaves the air.
+func plane_gust(p: Vector3, nose: Vector3) -> Dictionary:
+	var s := 0.0
+	var axis := Vector3(_gust_way.x,-GUST_DIP,_gust_way.z).normalized()
+	if gust_env > 0.01 and _gust_mouth != Vector3.INF:
+		var rel := p-_gust_mouth
+		var along := rel.dot(axis)
+		if along > -10.0 and along < GUST_REACH:
+			var radius := GUST_R0+maxf(along,0.0)*GUST_SPREAD
+			var off := (rel-axis*along).length()
+			var core := 1.0-smoothstep(radius*0.3,radius,off)
+			var fall := lerpf(1.0,GUST_FAR,smoothstep(10.0,GUST_REACH,along))*(1.0-smoothstep(GUST_REACH*0.85,GUST_REACH,along))*smoothstep(-10.0,3.0,along)
+			s = core*fall*gust_env
+	var ribbons: Vector3 = breath.air_near(p,GUST_RIBBON.x,GUST_RIBBON.y)*GUST_RIBBON.z
+	var r := clampf(ribbons.length()/12.0,0.0,0.6)
+	var hard := clampf(s+r,0.0,1.2)
+	if hard < 0.01: return {}
+	var t := _clock
+	var ph := Vector3(p.x,p.y,p.z)*0.07
+	var n1 := sin(t*8.3+ph.x)*0.6+sin(t*13.1+ph.z*1.3)*0.4
+	var n2 := sin(t*9.7+ph.z+1.7)*0.6+sin(t*15.3+ph.x*0.8)*0.4
+	var n3 := sin(t*11.9+ph.y+3.1)*0.5+sin(t*6.1+ph.x+ph.z)*0.5
+	var side := Vector3(-axis.z,0.0,axis.x)
+	var wind := axis*GUST_CORE*s+side*n1*GUST_BUFFET.x*hard+Vector3.UP*n2*GUST_BUFFET.y*hard+ribbons
+	var flat := Vector2(nose.x,nose.z)
+	var yaw := 0.0
+	var roll := 0.0
+	if flat.length_squared() > 0.0001:
+		var a := flat.normalized().angle_to(Vector2(axis.x,axis.z))
+		yaw = -sin(a)*GUST_YAW*s
+		# The plane's right (SkyPlane: forward (-sin h, -cos h), right
+		# (cos h, -sin h)): a blast toward it lifts the wing it comes from.
+		var right := Vector2(-flat.y,flat.x).normalized()
+		roll = Vector2(axis.x,axis.z).normalized().dot(right)*GUST_ROLL*s
+	var shove := Vector3(n2*GUST_JOLT.x*hard,yaw+n3*GUST_JOLT.y*hard,roll+n1*GUST_JOLT.z*hard)
+	return {"wind":wind,"shove":shove,"gust":hard}
 
 ## The isle's sag, one frame: held, a heavy soft spring toward the hold
 ## (with its groan); let go, the edge spring's snap (scripts/diorama_flip.gd
@@ -721,7 +848,7 @@ func _step_puffs(delta: float) -> void:
 		s.p = (s.p as Vector3)+(s.v as Vector3)*delta
 		var u := float(s.age)/float(s.life)
 		var size := lerpf(float(s.size),float(s.grow),1.0-pow(1.0-u,2.0))
-		var fade := smoothstep(0.0,0.15,u)*(1.0-smoothstep(0.45,1.0,u))*0.8
+		var fade := smoothstep(0.0,0.15,u)*(1.0-smoothstep(0.45,1.0,u))*0.8*float(s.get("alpha",1.0))
 		mm.set_instance_transform(i,Transform3D(Basis.from_scale(Vector3.ONE*size),s.p))
 		mm.set_instance_custom_data(i,Color(fade,0,0,0))
 
@@ -753,6 +880,19 @@ func air_floor(p: Vector2) -> Variant:
 		if h == null: return null
 		w.y = (_floor_xf*Vector3(l.x,float(h),l.z)).y
 	return w.y
+
+## How high something stands over the held isle's turf at `p` (world x, z;
+## m, in the isle's own frame, so its tip doesn't count): a wall, a ruin, a
+## bell frame; 0 on open turf, on water or off its main land. The ground ribbons steer
+## round what stands (scripts/dragon_breath.gd `_steer_round`).
+func stands_at(p: Vector2) -> float:
+	if isle_shape == null or not isle_shape.has_method("dry_at"): return 0.0
+	var l := _floor_inv*Vector3(p.x,_floor_xf.origin.y,p.y)
+	var flat := Vector2(l.x,l.z)
+	var top: Variant = isle_shape.dry_at(flat)
+	var turf: Variant = isle_shape.turf_at(flat)
+	if top == null or turf == null: return 0.0
+	return maxf(float(top)-float(turf),0.0)
 
 ## The held isle's local frame (its shape's), posed now, for the dragon's
 ## head (scripts/sky_dragon.gd `_clear_turf`).

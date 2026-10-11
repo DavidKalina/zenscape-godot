@@ -12,10 +12,149 @@ the turf, Odyssey-style, and lets the pilot surf down the tipped isle.
 Round 7 moves it onto the ruin motif isles that replaced the old far isles.
 Round 8 makes its breath the game's own breeze ribbons, smooths the head and
 sends the ride round the other isles. Round 9 fixes swimming in mid-air on the
-tipped tarn and makes the held isle walkable.
+tipped tarn and makes the held isle walkable. Round 10 brings the breath down
+onto the ground and makes it a gust for the plane.
 
 Branch `study/rim-dragon`. This is a demo round: no tests, no bot sweeps, no
 perf pass.
+
+## Round 10: wind on the ground, a gust for the plane
+
+The user's notes on round 9 ("Incredible. Much better."): the breath arcs
+over the isle instead of covering the ground (keep the arc, but it should
+also blow at ground level); and it should act on the plane like a gust,
+since it uses the same wind code.
+
+### Play
+
+- `./run-rim-dragon.command --dragon-ride`: as before. The breath now
+  drives down out of the jaw onto the turf some 8 m out and tears across it.
+- `./run-rim-dragon.command --dragon-fly-test`: starts in the plane. Each
+  time the dragon breathes in on a rim (any isle the ride goes to), the
+  plane is put on a pass across the blast: 40 m to the side, 30 m out from
+  the jaw, 14 m over it, in the core about a second into the blow. Add
+  `--dragon-target=cloister_tarn` to start there.
+- `--dragon-fly-test=land`: a low approach (about 7 m) over the held turf,
+  18 m in from the jaw, across the blast. Flaps (F) and touch down in it.
+- Headless, both print a `dragon fly test:` line four times a second while
+  the gust is on the plane.
+
+### Ground breath (scripts/dragon_breath.gd)
+
+- **Two layers.** 65% of the ribbons are ground ribbons. The rest arc over
+  as in round 8. The rate is 12 a second at full blow (was 9), and up to 60
+  are kept (was 36; it was at capacity).
+- **Down out of the mouth.** A ground ribbon is born with a sweep already
+  running (the breeze's own sweep), its skim timed so the lift-off starts at
+  the far rim (`_to_rim`). It comes down at up to `GROUND_DIVE` 24 m/s, so
+  the blast meets the turf some 8 m out from the jaw. It skims at 1.0 to
+  1.6 m, 15 to 20 m/s (x1.35 low).
+- **Hugging the floor.** The breeze's look-ahead takes the highest floor
+  over 1.2 s of travel. On a tipped isle that is 25 m, so it held the
+  ribbons high: the arc. Ground ribbons read 0.12 of it, a shared-class
+  hook: per-ribbon `look` in `breeze_ribbons.gd flow`. My `flow` then pulls
+  them to the floor under them and 2 to 3 m on at 6/s.
+- **Round ruins.** When something stands more than 2 m over the turf 7 m
+  ahead, a ground ribbon turns toward the lower side, up to 0.8 rad off its
+  aim, and eases back once clear. That is a wall, ruin, bell frame or tree,
+  read in the isle's own frame, so the tip doesn't count, and not water
+  (`dragon_isle_shape.gd dry_at`, a new grid without water;
+  `dragon_gale.gd stands_at`). The cloister turns nearly every one.
+- **Chaff, leaves, dust.** The gale owns a `wind_kicked_blades.gd` fed by
+  the breath. Ground ribbons count as kicks while they skim under 2.4 m, at
+  0.3 of the breeze's rate. So grass blades are plucked under them and
+  dragged in their `air_at`, and they spiral up as a ribbon lifts off the
+  rim. Along each skimming ribbon the gale also tears off leaves (6 a
+  second, the big debris leaves) and kicks up low tan dust puffs (2.2 a
+  second, behind the head). The random leaves off the turf are halved.
+- **Plant wake.** While the gale's isle is within 260 m of the camera, the
+  breath claims the zs_ribbon_* slots for the frame (`claim`). It publishes
+  after kit_life's ribbons, so its ground ribbons' heads bow the plants
+  under them in a wake. When it lets go it clears them once, and the isle
+  breeze writes them again. Untested by eye: the aqueduct isle's own
+  ribbons lose their wake while you are near a blast.
+
+### The pilot (scripts/sky_dragon.gd `_blow_on_pilot`)
+
+- The cone-and-line-of-sight test is gone. The air on him is the ribbons'
+  own (`DragonBreath.air_near`): each stroke within 2 m to the side (past
+  its half width) and 3 m up or down of his chest (1.3 m over his feet),
+  along its head and the last half second of its tail. The nearest counts
+  in full and the rest add half.
+- 11 m/s or more while the blow is still strong knocks him into a tumble,
+  once a blast. From 3 m/s up it pushes him along the stroke. It runs
+  through the whole cling, so ribbons still crossing after the blow still
+  push.
+- A ribbon passing over a wall he stands behind, or arcing high, misses
+  him.
+- Headless on the cloister tarn: placed 8 m from the jaw, he was knocked
+  at 16.5 m/s of air (pushed for 16 frames before); placed 20 m in, knocked
+  at 11.4 m/s. At round 9's ride spot (off the line) nothing reached him.
+- The log line adds ground ribbons, steers, knocks, pushed frames and the
+  most air on him.
+
+### The plane (scripts/dragon_gale.gd `plane_gust`, scripts/sky_plane.gd)
+
+- **How the plane feels air.** `SkyPlane.step` takes an `air` callable
+  (SkyCurrents `air_at`: `wind`, `jet`, `thermal`) and adds `wind` to its
+  velocity. The game's wanderer feeds it `islands.air` and gust fronts
+  (`wanderer_eye.gd _fly_air`). The kit isle passed none (`Callable()` to
+  the hand landing). It now passes `plane_air` (kit_isle.gd), which is
+  empty by default. The aqueduct isle sets it to the dragon's blast.
+- **The gust.** A cone out of the jaw along the blast, dipping 0.06 rad.
+  It is 8 m round at the jaw and widens 0.42 m a metre, out to 170 m. The
+  core wind is 15 m/s at the jaw, falling to a quarter at its reach. It
+  lingers 0.9 s after the blow. The ribbons' own air within 7 m adds a
+  third. On top: a buffet (4 m/s across, 3 m/s up and down, at 1 to 2 Hz)
+  and a `shove`, the smallest new hook in `SkyPlane.step`. It is rad/s
+  added to pitch, heading and the free bank:
+  - the nose is swung along the blast (0.9 rad/s at full);
+  - a blast across the wings tips it away (5 rad/s on a bank that eases
+    back in 0.1 s, so about 0.5 rad);
+  - random jolts.
+  The plane's own easing takes it all back once it is out of the air.
+- **Landing.** The hand landing's `calmed` (less updraft near the land)
+  wraps it, as for any air. On the low approach the buffet runs ±7° of
+  bank. A touch with the wings tipped grades as a wingtip, as any.
+- **Measured headless** (`--dragon-fly-test`, no input), on the cross
+  pass:
+  - gust 0.8 to 0.9 in the core, 12 to 14 m/s of wind;
+  - bank up to 21 to 30°, the heading swung 40 to 60° over the pass, pitch
+    within ±17°;
+  - speed held at 14 m/s.
+  It skimmed the cloister's ruin tops and flew on. One earlier pass at
+  6 m over the jaw flew into the cloister wall (the placement, not the
+  gust), hence 14 m now. Land pass: gust about 0.6, bank ±7°, heading 7°.
+
+### Captures (local, gitignored, docs/design/rim-dragon/)
+
+- `r10_ground_1.png`, `r10_ground_3.png`: the cloister tarn mid-blow, from
+  above the dragon's shoulder. The breath drives down out of the jaw onto
+  the tarn and turf, with dust at the mouth and leaves flung off the far
+  side. Command: `--dragon-ride --dragon-watch=orbit --dragon-orbit=60
+  --dragon-orbit-up=24 --dragon-orbit-far=55 --capture-wait=9.5
+  --capture-seq=4,0.6`.
+
+### Rough
+
+- No capture right at ground level. The pilot's own camera at 64,30,362
+  looked past the blast, and a low orbit went under the turf. The ground
+  layer reads from above the shoulder, but the "tearing across at your
+  feet" view is only checked from headless logs.
+- The grass blades are small (16 to 28 cm), so they don't read from the
+  orbit. The big debris leaves and the dust do.
+- The steer round ruins fires on nearly every ribbon on the cloister. It
+  may fan them more than wanted; `AROUND_MOST` / `AROUND_RISE` tune it.
+- Ground ribbons still ride 2 to 3 m over the turf right under the jaw,
+  where they are coming down. The pilot there is in the dive, not the skim.
+- The cross pass swings the heading up to 60° with no stick. If it is too
+  much, lower `GUST_YAW` (0.9) or `GUST_CORE` (15).
+- The plant wake claim (zs_ribbon slots) is not checked by eye.
+- The fly test re-places the plane at every inhale, wherever you are.
+- The four touched tests pass headless: test_breeze_ribbons,
+  test_sky_plane, test_manual_landing, test_wind_kicked_blades. Headless
+  import is clean, and the plain aqueduct isle (`--fly`, no dragon) loads
+  with no errors. No full suite. Not played by hand.
 
 ## Round 9: water that tips, a walkable hold
 

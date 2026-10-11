@@ -280,6 +280,10 @@ var _off_ground := INF
 ## touch's word on the hint and its seconds left, the shake left (s, and
 ## its size).
 var hand_landing := ManualLanding.new()
+## The air the plane flies in (SkyCurrents `air_at`: `wind`, and a gust's
+## `shove`), or none: still air. The aqueduct isle's dragon sets its blast
+## here (scripts/dragon_gale.gd `plane_gust`).
+var plane_air := Callable()
 var takeoff: PlaneLanding = null
 var spray: WheelSpray = null
 var flaps := false
@@ -1286,7 +1290,7 @@ func fly_step(delta: float, input: Dictionary) -> void:
 	asked["flaps"] = float(input.get("flaps",1.0 if flaps else 0.0))
 	asked["exit"] = bool(input.get("exit",false)) or _exit_asked
 	_exit_asked = false
-	var out := hand_landing.step(delta,asked,ground,floor,Callable(),Callable(self,"roll_blocked"))
+	var out := hand_landing.step(delta,asked,ground,floor,plane_air,Callable(self,"roll_blocked"))
 	plane.engine = hand_landing.engine
 	if hand_landing.flying(): _bump(was)
 	elif isle_lock != null and isle_lock.locked: release_lock()

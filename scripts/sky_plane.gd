@@ -203,6 +203,10 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 	wind = here.get("wind",Vector3.ZERO)
 	in_jet = float(here.get("jet",0.0))
 	in_thermal = float(here.get("thermal",0.0))
+	# A gust's shove on the airframe (rad/s; the dragon's blast, scripts/
+	# dragon_gale.gd `plane_gust`): it swings the nose and tips the wings
+	# and pitch, and the plane's own easing brings it back.
+	var shove: Vector3 = here.get("shove",Vector3.ZERO)
 	var look: Vector2 = input.get("look",Vector2.ZERO)
 	var deep := clampf((floor_y-position.y)/CATCH_DEPTH,0.0,1.0)
 	var boost := clampf(float(input.get("boost",0.0)),0.0,1.0)
@@ -240,7 +244,7 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 		if signf(turn) != signf(knife): want *= DRIFT_COUNTER
 	drift = lerpf(drift,want,_ease(EASE_DRIFT,delta))
 	var rate := -_lean/BANK_HELD*TURN_RATE*(1.0+DRIFT_TURN*drift_strength*drift)
-	heading += rate*delta-look.x+aim
+	heading += rate*delta-look.x+aim+shove.y*delta
 	slip = lerpf(slip,-rate*DRIFT_SLIP*drift,_ease(EASE_DRIFT,delta))
 	var boost_out := 0.0
 	if want > 0.25: drift_held += delta
@@ -249,6 +253,7 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 		drift_held = 0.0
 	_mouse_rate = lerpf(_mouse_rate,(look.x-aim)/maxf(delta,0.0001),_ease(EASE_TURN,delta))
 	_free_bank = lerpf(_free_bank,clampf(_lean+_mouse_rate*MOUSE_BANK,-BANK_TOP,BANK_TOP),_ease(EASE_TURN,delta))
+	if shove != Vector3.ZERO: _free_bank = clampf(_free_bank+shove.z*delta,-BANK_TOP,BANK_TOP)
 	# The knife edge tips it up on a wingtip over the turn's bank.
 	knife = lerpf(knife,clampf(float(input.get("lean",0.0)),-1.0,1.0),_ease(EASE_KNIFE,delta))
 	bank = lerpf(_free_bank,signf(knife)*KNIFE_BANK,absf(knife))
@@ -257,6 +262,7 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 	pitch += look.y+steer*PITCH_SPEED*delta
 	if is_zero_approx(steer) and is_zero_approx(look.y):
 		pitch = lerpf(pitch,approach_pitch(ground) if approach else 0.0,_ease(EASE_LEVEL,delta))
+	pitch += shove.x*delta
 	if deep > 0.0: pitch = lerpf(pitch,CUSHION_PITCH,_ease(0.5,delta)*deep)
 	var over := clampf((position.y-CEILING)/CEILING_FADE,0.0,1.0)
 	pitch = clampf(pitch,PITCH_LIMIT.x,lerpf(PITCH_LIMIT.y,CEILING_NOSE,over))

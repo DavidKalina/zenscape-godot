@@ -37,6 +37,9 @@ var _height := PackedFloat32Array()
 var _open := PackedByteArray()
 var _top := PackedFloat32Array()
 var _top_raw := PackedFloat32Array()
+## Round 10: as _top, but water left out (the breath skims a tarn; it steers
+## only round what stands dry: walls, ruins, bells, trees, rock).
+var _dry := PackedFloat32Array()
 ## Metres of grid kept round the main land's bounds (round 8: wide enough
 ## to take in its near satellites and spires for the breath).
 const MARGIN := 14.0
@@ -91,6 +94,8 @@ func build(isle: Node3D, space: PhysicsDirectSpaceState3D) -> void:
 	_open.resize(_nx*_nz)
 	var raw := PackedFloat32Array()
 	raw.resize(_nx*_nz)
+	var dry_raw := PackedFloat32Array()
+	dry_raw.resize(_nx*_nz)
 	var turf_rids := {}
 	for body: Node in turf:
 		if body is CollisionObject3D: turf_rids[(body as CollisionObject3D).get_rid()] = true
@@ -124,6 +129,9 @@ func build(isle: Node3D, space: PhysicsDirectSpaceState3D) -> void:
 			ray.exclude = []
 			var over := space.intersect_ray(ray)
 			if not over.is_empty(): raw[k] = (over.position as Vector3).y-home.y
+			ray.collision_mask = SOLID_LAYER|TURF_LAYER
+			var dry_hit := space.intersect_ray(ray)
+			dry_raw[k] = (dry_hit.position as Vector3).y-home.y if not dry_hit.is_empty() else NAN
 			if not on_land(flat): continue
 			var w := Vector3(home.x+flat.x,home.y+60.0,home.z+flat.y)
 			ray.from = w
@@ -143,9 +151,11 @@ func build(isle: Node3D, space: PhysicsDirectSpaceState3D) -> void:
 	# The tops spread a cell either way, so a thin wall or a column reads
 	# from either side and the breath lifts before it, not into it.
 	_top.resize(_nx*_nz)
+	_dry.resize(_nx*_nz)
 	for iz in range(_nz):
 		for ix in range(_nx):
 			var best := NAN
+			var best_dry := NAN
 			for dz in range(-1,2):
 				for dx in range(-1,2):
 					var x := ix+dx
@@ -153,7 +163,10 @@ func build(isle: Node3D, space: PhysicsDirectSpaceState3D) -> void:
 					if x < 0 or z < 0 or x >= _nx or z >= _nz: continue
 					var h := raw[z*_nx+x]
 					if not is_nan(h) and (is_nan(best) or h > best): best = h
+					var d := dry_raw[z*_nx+x]
+					if not is_nan(d) and (is_nan(best_dry) or d > best_dry): best_dry = d
 			_top[iz*_nx+ix] = best
+			_dry[iz*_nx+ix] = best_dry
 	_top_raw = raw
 	ok = hits > 0
 
@@ -256,6 +269,10 @@ func turf_at(p: Vector2) -> Variant:
 ## null over open air (round 8).
 func top_at(p: Vector2) -> Variant:
 	return _known_at(_top,p)
+
+## As top_at, but water left out (round 10).
+func dry_at(p: Vector2) -> Variant:
+	return _known_at(_dry,p)
 
 ## As top_at, but not spread: the solid top in the cells about p only (the
 ## dragon's head, which must not be lifted by a column a metre off).

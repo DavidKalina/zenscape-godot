@@ -93,6 +93,11 @@ extends "res://studies/kit_isle.gd"
 ## on it. --dragon-look=a|b|c picks its dress (c by default); its other flags are its own.
 ## --dragon-ride (round 5) starts the pilot on foot on the isle it grips, to
 ## ride the sag and be flung by the snap; G makes it let go.
+## The blast is a gust for the plane too (round 10, scripts/dragon_gale.gd
+## `plane_gust`, through `plane_air`). --dragon-fly-test starts in the plane
+## and, each time the dragon breathes in on a rim, puts it on a pass across
+## the blast 30 m out from the jaw; --dragon-fly-test=land puts it on a low
+## approach over the held isle's turf instead, to land in the blast.
 ## Round 1's rim grip (scripts/rim_dragon.gd) is parked behind --dragon-rim:
 ## it swoops in, grips the east rim and blows gales across the isle; take
 ## the treasure off its tongue and it lets go (--dragon-perched, ...).
@@ -178,6 +183,12 @@ var dragon_rim := false
 ## the snap and the launch.
 var dragon_ride := false
 var dragon: Node3D = null
+## --dragon-fly-test (round 10): "cross" or "land", else "".
+var _fly_test := ""
+var _fly_test_breath := ""
+var _fly_test_t := 0.0
+var _fly_test_log := 0.0
+var _fly_test_heading := 0.0
 ## Each motif isle's record for the dragon, once it stands (its id ->
 ## {node, shape, home, radius, frame, pivot}).
 var _dragon_isles := {}
@@ -194,6 +205,10 @@ func _ready() -> void:
 			dragon_on = true
 			dragon_ride = true
 		elif arg == "--dragon-rim": dragon_rim = true
+		elif arg.begins_with("--dragon-fly-test"):
+			dragon_on = true
+			dragon_ride = true
+			_fly_test = "land" if arg.ends_with("=land") else "cross"
 		elif arg == "--near-ring":
 			_near_ring = true
 			_carry = true
@@ -389,7 +404,7 @@ func _stumps() -> Node3D:
 ## before the ring flying at it.
 func _start_in_plane() -> void:
 	super._start_in_plane()
-	if _near_ring: board()
+	if _near_ring or _fly_test != "": board()
 	if _near_ring and isle_chain != null:
 		var ahead := Vector3(-sin(isle_chain.ring_heading),0.0,-cos(isle_chain.ring_heading))
 		fly_from(isle_chain.ring_at-ahead*NEAR_RING_OUT+Vector3.UP*NEAR_RING_UP,isle_chain.ring_heading)
@@ -462,6 +477,7 @@ func _process(delta: float) -> void:
 				dragon.air_angle = _atmosphere._air_angle
 			dragon.on_foot = not flying
 			dragon.advance(delta)
+			if _fly_test != "": _fly_test_frame(delta)
 
 ## A fixed-eye capture (--at) still flies the dragon.
 func _capture_tick(delta: float) -> void:
@@ -579,6 +595,56 @@ func _build_sky_dragon() -> void:
 		_place = dragon.ride_spot()
 		if _place != Vector4.INF: print("aqueduct isle: --dragon-ride starts the pilot at (%.1f, %.1f, %.1f) on %s" % [_place.x,_place.y,_place.z,str(dragon.grip.target.name)])
 	if _switch_hint != null and not flying: _switch_hint.text = _foot_text()
+	# Round 10: its blast is a gust for the plane.
+	plane_air = _dragon_air
+
+## The air the plane flies in: the dragon's blast (scripts/dragon_gale.gd
+## `plane_gust`), or still air.
+func _dragon_air(p: Vector3) -> Dictionary:
+	if dragon == null or dragon.gale == null or plane == null: return {}
+	return dragon.gale.plane_gust(p,plane.forward())
+
+## --dragon-fly-test: each time the dragon breathes in on a rim, the plane
+## is put on a pass through its blast (cross: 40 m to the side of the line
+## 30 m out from the jaw, 14 m over the jaw (clear of the ruins), flying across it, in the
+## blast's core about a second into the blow; land: 60 m to the side, low
+## over the held turf 18 m in from the jaw, across the blast toward the isle's
+## middle). Logged four times a second while the gust is on it.
+func _fly_test_frame(delta: float) -> void:
+	_fly_test_t += delta
+	var now := str(dragon.breath) if str(dragon.state) == "clinging" else ""
+	if now == "inhale" and _fly_test_breath != "inhale" and flying and plane != null:
+		var mouth: Vector3 = dragon.mouth_at()
+		var way: Vector3 = dragon.blast_way()
+		var side := Vector3(-way.z,0.0,way.x)
+		var at: Vector3
+		var go: Vector3
+		if _fly_test == "land":
+			var over := mouth+way*18.0
+			var floor: Variant = dragon.gale.air_floor(Vector2(over.x,over.z))
+			over.y = (float(floor) if floor != null else mouth.y-4.0)+7.0
+			at = over-side*60.0+Vector3.UP*5.0
+			go = side
+		else:
+			var cross := mouth+way*30.0+Vector3.UP*14.0
+			at = cross-side*40.0-way*4.0
+			go = (side+way*0.1).normalized()
+		fly_from(at,atan2(-go.x,-go.z))
+		_fly_test_heading = float(plane.heading)
+		_fly_test_log = 0.0
+		print("dragon fly test: on %s's blast, the plane at (%.0f, %.0f, %.0f), the jaw at (%.0f, %.0f, %.0f)" % [str(dragon.grip.target.name),at.x,at.y,at.z,mouth.x,mouth.y,mouth.z])
+	_fly_test_breath = now
+	if not flying or plane == null: return
+	_fly_test_log -= delta
+	if _fly_test_log > 0.0: return
+	_fly_test_log = 0.25
+	var g: Dictionary = dragon.gale.plane_gust(plane.position,plane.forward())
+	if g.is_empty(): return
+	var w: Vector3 = g.wind
+	var floor: Variant = dragon.gale.air_floor(Vector2(plane.position.x,plane.position.z))
+	print("dragon fly test: t %.2f %s gust %.2f wind %.1f m/s (up %.1f) shove (%.2f, %.2f, %.2f), plane %.1f m/s, bank %.0f°, pitch %.0f°, turned %.0f°, %s, %s" % [_fly_test_t,now,float(g.gust),w.length(),w.y,
+		(g.shove as Vector3).x,(g.shove as Vector3).y,(g.shove as Vector3).z,float(plane.speed),rad_to_deg(float(plane.bank)),rad_to_deg(float(plane.pitch)),
+		rad_to_deg(wrapf(float(plane.heading)-_fly_test_heading,-PI,PI)),("%.1f m over the turf" % (plane.position.y-float(floor))) if floor != null else "over open air",ManualLanding.NAMES[hand_landing.phase]])
 
 ## The placed motif isle by id (scripts/kit_isle/motif_isle.gd), or null.
 func _motif_isle(id: String) -> Node3D:

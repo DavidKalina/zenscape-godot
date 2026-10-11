@@ -103,12 +103,10 @@ const BLOW := 3.8
 const RECOVER := 1.3
 ## The blow's sweep either side of straight across the isle.
 const SWEEP := 0.42
-## The blow on a pilot on the isle (round 1's): in the cone's core he is
-## knocked into a tumble, in the band pushed along; the treasure is taken
-## within TAKE_R of it.
+## The blow on a pilot on the isle: round 10 reads the ribbons' air
+## (`_blow_on_pilot`); the knock's distance out and push are round 1's. The
+## treasure is taken within TAKE_R of it.
 const REACH := 70.0
-const CONE := 0.34
-const PUSH_CONE := 0.6
 const PUSH := 5.0
 const KNOCK_OUT := Vector2(12.0,6.0)
 const KNOCK_UP := 1.6
@@ -899,7 +897,7 @@ func _step(delta: float) -> void:
 			if walker != null and on_foot:
 				var f: Vector3 = walker.get("feet")
 				var gem := treasure.global_position if treasure != null else Vector3.ZERO
-				print("sky dragon: pilot at (%.1f, %.1f, %.1f) grounded %s v.y %.1f, %s%s on %.0f°, %.1f m/s, on the held isle %s, the gem at (%.1f, %.1f, %.1f), the isle's rim sags %.1f m; breath ribbons %d (%d lee curls)" % [f.x,f.y,f.z,str(walker.get("grounded")),(walker.get("velocity") as Vector3).y,str(walker.get("move")),(" hold "+str(walker.get("hold"))) if str(walker.get("hold")) != "" else "",walker.steepness(),walker.speed(),str(gale.stands_on(f,1.5)),gem.x,gem.y,gem.z,gale.sag,gale.breath.count(),gale.breath.lees])
+				print("sky dragon: pilot at (%.1f, %.1f, %.1f) grounded %s v.y %.1f, %s%s on %.0f°, %.1f m/s, on the held isle %s, the gem at (%.1f, %.1f, %.1f), the isle's rim sags %.1f m; breath ribbons %d (%d lee curls, %d on the ground, %d steered round), knocked %d, pushed %d frames, air on him at most %.1f m/s" % [f.x,f.y,f.z,str(walker.get("grounded")),(walker.get("velocity") as Vector3).y,str(walker.get("move")),(" hold "+str(walker.get("hold"))) if str(walker.get("hold")) != "" else "",walker.steepness(),walker.speed(),str(gale.stands_on(f,1.5)),gem.x,gem.y,gem.z,gale.sag,gale.breath.count(),gale.breath.lees,gale.breath.grounds,gale.breath.steers,knocks,pushed,air_most])
 			if state in ["clinging","grabbing","leaving"]:
 				print("sky dragon: t %.1f %s %s, %.0f s to let go, at (%.0f, %.0f, %.0f), %.0f m from the isle's middle; head in the turf %.2f m unlifted, %.2f m lifted, resting %.2f (chin off flush %.2f, %.2f m), isle tipped %.0f°; snout at most %.1f m/s, %.0f m/s²" % [_clock,state,breath,_cling_left,pos.x,pos.y,pos.z,Vector2(pos.x-home.x,pos.z-home.z).length(),-sunk_before,-sunk_after,_rest_w,chin_miss.x,chin_miss.y,rad_to_deg(gale.tip()),tip_speed,tip_jerk])
 				sunk_before = 0.0
@@ -1668,8 +1666,9 @@ func _set_breath(to: String, length: float) -> void:
 	breath = to
 	_breath_t = 0.0
 	_breath_len = length
-	_knocked = false
 	if to == "blow":
+		# One knock a blast (its ribbons run on after the blow).
+		_knocked = false
 		_sweep_from = SWEEP if _rng.randf() < 0.5 else -SWEEP
 		gale.deepen()
 
@@ -1704,7 +1703,9 @@ func _clinging(delta: float) -> void:
 			var env := blow_envelope()
 			gale.blow(mouth,way,env,delta)
 			if gale.take_crumble(): gale.crumble(grip.rim,grip.out,grip.tangent,14.0)
-			_blow_on_pilot(delta,mouth,way,env)
+	# Round 10: the wind on the pilot is the ribbons' own, wherever they
+	# are now (they run on after the blow).
+	_blow_on_pilot(delta,mouth)
 	if (breath == "pull" or (breath == "settle" and _breath_t < 1.6)) and _rng.randf() < delta*8.0: gale.crumble(grip.rim,grip.out,grip.tangent,12.0)
 	_touch_treasure()
 
@@ -2256,33 +2257,46 @@ func _blend(delta: float) -> void:
 		var now := skeleton.get_bone_pose_rotation(i)
 		skeleton.set_bone_pose_rotation(i,(_blend_from[i] as Quaternion).slerp(now,w))
 
-## The blow on a pilot on the isle (round 1's): in the cone's core and in
-## the open, knocked into a tumble; in the wider band, pushed along; behind
-## stone, nothing.
-func _blow_on_pilot(delta: float, mouth: Vector3, way: Vector3, env: float) -> void:
-	if walker == null or not on_foot or env <= 0.05: return
+## The blow on a pilot on the isle. Round 10: the air on him is the breath
+## ribbons' where they are (scripts/dragon_breath.gd `air_near`: within
+## PILOT_REACH m to the side and PILOT_RISE m up or down of his chest), so a
+## ground ribbon tearing across the turf through him is what knocks him into
+## a tumble (once a blast, while the blow is strong), a weaker or glancing
+## one pushes him along; one passing over a wall he crouches behind, or
+## arcing high overhead, misses him.
+const PILOT_REACH := 2.0
+const PILOT_RISE := 3.0
+## Where on him the air is read (m over his feet: his chest).
+const PILOT_CHEST := 1.3
+const KNOCK_AIR := 11.0
+const PUSH_AIR := 3.0
+## Logged: knocks and the frames he was pushed this hold.
+var knocks := 0
+var pushed := 0
+var air_most := 0.0
+func _blow_on_pilot(delta: float, mouth: Vector3) -> void:
+	if walker == null or not on_foot or gale == null: return
 	if walker.has_method("recovering") and walker.recovering(): return
-	var mid: Vector3 = (walker.get("feet") as Vector3)+Vector3.UP*0.6
-	var off := mid-mouth
-	var flat := Vector2(off.x,off.z)
-	var dist := flat.length()
-	if dist > REACH or dist < 0.5 or absf(off.y) > 30.0: return
-	var w2 := Vector2(way.x,way.z)
-	var angle := absf(w2.angle_to(flat))
-	if angle > PUSH_CONE: return
-	var space := get_world_3d().direct_space_state
-	if not space.intersect_ray(PhysicsRayQueryParameters3D.create(mouth,mid,1,[chin.get_rid()] if chin != null else [])).is_empty(): return
-	var away := (flat.normalized()*0.5+w2*0.5).normalized()
-	if angle <= CONE and env > 0.5 and not _knocked:
-		walker.knock(walker.knock_velocity(away,lerpf(KNOCK_OUT.x,KNOCK_OUT.y,dist/REACH),KNOCK_UP))
+	var mid: Vector3 = (walker.get("feet") as Vector3)+Vector3.UP*PILOT_CHEST
+	var air: Vector3 = gale.breath.air_near(mid,PILOT_REACH,PILOT_RISE)
+	var flat := Vector2(air.x,air.z)
+	var hard := flat.length()
+	air_most = maxf(air_most,hard)
+	if hard < PUSH_AIR: return
+	var away := flat/hard
+	var dist := Vector2(mid.x-mouth.x,mid.z-mouth.z).length()
+	if hard >= KNOCK_AIR and float(gale.gust_env) > 0.3 and not _knocked:
+		walker.knock(walker.knock_velocity(away,lerpf(KNOCK_OUT.x,KNOCK_OUT.y,clampf(dist/REACH,0.0,1.0))*clampf(hard/20.0,0.75,1.2),KNOCK_UP))
 		_knocked = true
-		print("sky dragon: the gale knocks the pilot, %.1f m from the mouth" % dist)
+		knocks += 1
+		print("sky dragon: a ground gust knocks the pilot, %.1f m from the mouth, air %.1f m/s" % [dist,hard])
 		return
 	if slide.is_valid() and bool(walker.get("grounded")):
-		var push := away*PUSH*env*(1.0-dist/REACH*0.5)*delta
+		var push := away*PUSH*clampf(hard/14.0,0.0,1.4)*delta
 		var feet: Vector3 = walker.get("feet")
 		var moved: Vector3 = slide.call(feet,push)
 		walker.set("feet",Vector3(moved.x,feet.y,moved.z))
+		pushed += 1
 
 ## The isle under the pilot (round 5): standing on it while it sags, holds
 ## and snaps, he is carried with it (PilotMotor.carry, as a moving body
