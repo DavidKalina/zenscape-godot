@@ -113,6 +113,7 @@ const IsleSplash = preload("res://scripts/isle_splash.gd")
 const ManualLanding = preload("res://scripts/manual_landing.gd")
 const LandingReadout = preload("res://scripts/landing_readout.gd")
 const PlaneLanding = preload("res://scripts/plane_landing.gd")
+const PlaneGroundScale = preload("res://scripts/plane_ground_scale.gd")
 const PlaneStrip = preload("res://scripts/plane_strip.gd")
 const WheelSpray = preload("res://scripts/wheel_spray.gd")
 const KitWeather = preload("res://scripts/kit_isle/kit_weather.gd")
@@ -289,6 +290,9 @@ var _off_ground := INF
 ## touch's word on the hint and its seconds left, the shake left (s, and
 ## its size).
 var hand_landing := ManualLanding.new()
+## The plane drawn bigger on its wheels (scripts/plane_ground_scale.gd,
+## --plane-ground-scale=x; 1 off), exactly its size in flight.
+var ground_scale := PlaneGroundScale.new()
 ## The air the plane flies in (SkyCurrents `air_at`: `wind`, and a gust's
 ## `shove`), or none: still air. The aqueduct isle's dragon sets its blast
 ## here (scripts/dragon_gale.gd `plane_gust`).
@@ -932,7 +936,7 @@ func board_parked() -> void:
 	_into_plane()
 	# Hopping in from where he stood (the hop run backwards: `hop` 1 out,
 	# 0 in).
-	_hop_from = plane.position+Vector3.UP*0.1
+	_hop_from = ground_scale.point(plane_figure,plane.position+Vector3.UP*0.1)
 	_hop_to = feet
 	plane_figure.show_pilot(false)
 	figure.visible = true
@@ -946,6 +950,8 @@ func _into_plane() -> void:
 	plane_figure.show_pilot(true)
 	if stone_plane: plane_figure.target = lode_target
 	plane_figure.reset(plane)
+	ground_scale.reset(takeoff != null or hand_landing.on_ground())
+	ground_scale.apply(plane_figure)
 	plane_figure._mark.visible = false
 	if lode_state == "carried":
 		lode_state = "seated"
@@ -961,6 +967,7 @@ func _into_plane() -> void:
 	chase = GlideCamera.new()
 	chase.reset(plane,camera.global_position,camera.fov)
 	chase.linger = LOOK_LINGER
+	_size_chase()
 	if air == null:
 		air = GlideAir.new()
 		add_child(air)
@@ -1040,13 +1047,15 @@ func _park(at: Vector3, heading: float) -> void:
 	parked_heading = heading
 	var r := PlaneStrip.rest(_floor_from(at.y),Vector2(at.x,at.z),heading)
 	plane_figure.park(plane_figure.pose(Vector3(at.x,r.x,at.z),heading,r.y,r.z))
+	ground_scale.k = ground_scale.factor
+	ground_scale.apply(plane_figure)
 	if _park_body == null:
 		_park_body = StaticBody3D.new()
 		_park_body.name = "ParkedPlaneRoom"
 		_park_body.collision_layer = PARKED_LAYER
 		_park_body.collision_mask = 0
 		var column := CylinderShape3D.new()
-		column.radius = PARKED_ROOM
+		column.radius = PARKED_ROOM*sqrt(ground_scale.factor)
 		column.height = PARKED_TALL
 		var collider := CollisionShape3D.new()
 		collider.shape = column
@@ -1112,19 +1121,20 @@ func _level(top: Vector3) -> bool:
 ## nothing but turf where it would stand.
 func _room_for_plane(top: Vector3, heading: float) -> bool:
 	var box := BoxShape3D.new()
-	box.size = Vector3(PlaneFigure.SPAN+0.4,1.2,3.0)
+	var f := ground_scale.factor
+	box.size = Vector3(PlaneFigure.SPAN*f+0.4,1.2*f,maxf(3.0,1.6*f))
 	var query := PhysicsShapeQueryParameters3D.new()
 	query.shape = box
 	query.collision_mask = plane_mask()
 	query.exclude = _turf_rids
-	query.transform = Transform3D(Basis(Vector3.UP,heading),top+Vector3.UP*0.9)
+	query.transform = Transform3D(Basis(Vector3.UP,heading),top+Vector3.UP*(0.3+0.6*f))
 	return get_world_3d().direct_space_state.intersect_shape(query,1).is_empty()
 
 ## True walking within BOARD_REACH m (across) of the parked plane's middle.
 func by_plane() -> bool:
 	if flying or off_edge or not parked or not walk_ready: return false
 	var feet := motor.feet
-	return Vector2(feet.x-parked_at.x,feet.z-parked_at.z).length() <= BOARD_REACH and absf(feet.y-parked_at.y) < 1.5
+	return Vector2(feet.x-parked_at.x,feet.z-parked_at.z).length() <= BOARD_REACH*sqrt(ground_scale.factor) and absf(feet.y-parked_at.y) < 1.5
 
 ## Where the hop out of a plane standing at `at` (the turf under its
 ## middle) facing `heading` lands: HOP_SIDE m to its left and HOP_AHEAD m
@@ -1133,8 +1143,9 @@ func _hop_spot(at: Vector3, heading: float) -> Vector3:
 	var space := get_world_3d().direct_space_state
 	var forward := Vector3(-sin(heading),0.0,-cos(heading))
 	var right := Vector3(cos(heading),0.0,-sin(heading))
+	var hop := ground_scale.hop_offset(HOP_SIDE,HOP_AHEAD)
 	for side: float in [-1.0,1.0]:
-		var p := at+right*HOP_SIDE*side+forward*HOP_AHEAD
+		var p := at+right*hop.x*side+forward*hop.y
 		var top := _turf_near(Vector2(p.x,p.z),at.y)
 		if is_nan(top): continue
 		var spot := Vector3(p.x,top,p.z)
@@ -1147,7 +1158,7 @@ func _hop_figure(k: float, delta: float) -> void:
 	if _hop_to == Vector3.INF: return
 	figure.visible = k > 0.02
 	var at := _hop_from.lerp(_hop_to,smoothstep(0.0,1.0,k))
-	at.y += HOP_HEIGHT*sin(PI*k)
+	at.y += HOP_HEIGHT*sqrt(ground_scale.factor)*sin(PI*k)
 	figure.position = at
 	body.hop(cos(PI*k),delta)
 
@@ -1331,6 +1342,9 @@ func fly_step(delta: float, input: Dictionary) -> void:
 	_fly_tick(delta)
 	if stone_plane: plane_figure.target = lode_target
 	plane_figure.update(delta,plane,0.0,ground,hand_landing.would_grease(floor))
+	ground_scale.step(delta,hand_landing.on_ground(),hand_landing.dipping(),plane)
+	ground_scale.apply(plane_figure)
+	_size_chase()
 	if _nose != null:
 		_nose.target = lode_target
 		_nose.step(delta)
@@ -1359,6 +1373,13 @@ func fly_step(delta: float, input: Dictionary) -> void:
 		_off_ground = INF
 	_show_fly_hint()
 
+## The chase camera stands back and frames higher as the plane grows on
+## its wheels (scripts/plane_ground_scale.gd).
+func _size_chase() -> void:
+	if chase == null: return
+	chase.size = ground_scale.k
+	chase.lift = ground_scale.lift()
+
 ## The chase camera behind the plane (shaken by a hard touch), framing the
 ## isle while locked onto it; a capture's plane eye over all.
 func _frame_plane(delta: float) -> void:
@@ -1384,6 +1405,9 @@ func _takeoff_step(delta: float) -> void:
 		plane_figure.show_pilot(true)
 	var ground := Callable(self,"plane_ground")
 	plane_figure.update(delta,plane,0.0,ground,false)
+	ground_scale.step(delta,true,false,plane)
+	ground_scale.apply(plane_figure)
+	_size_chase()
 	plane_figure._mark.visible = false
 	if _nose != null: _nose.step(delta)
 	air.advance(delta,plane.velocity,0.0,0.0)
@@ -1446,7 +1470,7 @@ func _wheel_events(out: Dictionary, delta: float) -> void:
 		_shake_size = 1.0
 	if hand_landing.phase == ManualLanding.EXIT:
 		if _hop_to == Vector3.INF:
-			_hop_from = plane.position+Vector3.UP*0.1
+			_hop_from = ground_scale.point(plane_figure,plane.position+Vector3.UP*0.1)
 			_hop_to = _hop_spot(wheels,float(plane.heading))
 			plane_figure.show_pilot(false)
 		_hop_figure(hand_landing.hop,delta)
