@@ -36,8 +36,6 @@ extends Node3D
 ##     go, drops off the rim on a heavy beat and roams again. A pilot on
 ##     that isle is knocked by the blast as in round 1, and can take the
 ##     treasure off its tongue (`yielded`).
-## Round 1's rim grip on the aqueduct isle itself is parked:
-## scripts/rim_dragon.gd, --dragon-rim.
 ##
 ## Self-contained: the host (studies/aqueduct_isle.gd) makes one, calls
 ## `setup` and then `advance` every frame after its own camera is placed,
@@ -46,7 +44,7 @@ extends Node3D
 ## orbit, look from where you stand, off), which takes the host's camera
 ## over while on.
 ##
-## Flags: --dragon-look=a|b|c (c) the dress; --dragon-delay=<s> (3) before
+## Flags: --dragon-delay=<s> (3) before
 ## it rises; --dragon-skip=<s> runs it on that far at the start;
 ## --dragon-watch[=chase|orbit|look] starts watching; --dragon-seed=<n> its
 ## route's dice; --dragon-size=<x> (0.85) its scale; --dragon-attack starts
@@ -56,12 +54,7 @@ extends Node3D
 
 signal yielded
 
-const MODELS := {
-	"a": "res://assets/models/rim_dragon_a.glb",
-	"b": "res://assets/models/rim_dragon_b.glb",
-	"c": "res://assets/models/rim_dragon_c.glb",
-}
-const LOOK_NAMES := {"a":"angular","b":"carved","c":"stone and glow"}
+const MODEL := "res://assets/models/rim_dragon_c.glb"
 
 ## Flight (m, s, rad). Cruise between FLAP_BELOW and GLIDE_ABOVE: beats
 ## when slower, glides when faster.
@@ -139,7 +132,6 @@ var sea_y := -120.0
 var home := Vector3.ZERO
 var home_top := 30.0
 var isles: Array = []
-var look := "c"
 var size := 0.85
 var delay := 3.0
 var _skip := 0.0
@@ -395,8 +387,7 @@ func setup(cam: Camera3D, args: PackedStringArray, sea: float, middle: Vector3, 
 	isles = isle_list
 	_rng.seed = 7
 	for arg in args:
-		if arg.begins_with("--dragon-look="): look = arg.get_slice("=",1).to_lower()
-		elif arg.begins_with("--dragon-delay="): delay = float(arg.get_slice("=",1))
+		if arg.begins_with("--dragon-delay="): delay = float(arg.get_slice("=",1))
 		elif arg.begins_with("--dragon-skip="): _skip = float(arg.get_slice("=",1))
 		elif arg.begins_with("--dragon-seed="): _rng.seed = int(arg.get_slice("=",1))
 		elif arg.begins_with("--dragon-size="): size = float(arg.get_slice("=",1))
@@ -425,9 +416,6 @@ func setup(cam: Camera3D, args: PackedStringArray, sea: float, middle: Vector3, 
 		elif arg.begins_with("--dragon-orbit-far="): _orbit_far = float(arg.get_slice("=",1))
 		elif arg == "--dragon-watch": watch = "chase"
 		elif arg.begins_with("--dragon-watch="): watch = arg.get_slice("=",1)
-	if not MODELS.has(look):
-		push_warning("sky dragon: no look '%s' (a, b, c); c instead" % look)
-		look = "c"
 	if _attack_now and not args_have(args,"--dragon-delay="): delay = 0.3
 	_attack_in = _attack_every*0.55
 	_build()
@@ -443,7 +431,7 @@ func setup(cam: Camera3D, args: PackedStringArray, sea: float, middle: Vector3, 
 			taken = true
 			treasure.visible = false
 		_ride_in()
-	print("sky dragon: look %s (%s), rises in %.1f s" % [look,LOOK_NAMES[look],delay])
+	print("sky dragon: rises in %.1f s" % delay)
 
 static func args_have(args: PackedStringArray, prefix: String) -> bool:
 	for arg in args:
@@ -453,7 +441,7 @@ static func args_have(args: PackedStringArray, prefix: String) -> bool:
 # --- Building ---------------------------------------------------------------------
 
 func _build() -> void:
-	model = (load(MODELS[look]) as PackedScene).instantiate()
+	model = (load(MODEL) as PackedScene).instantiate()
 	add_child(model)
 	model.scale = Vector3.ONE*size
 	skeleton = _find_skeleton(model)
@@ -560,8 +548,8 @@ func _material(key: String) -> Material:
 	match key:
 		"dragon_hide":
 			m.albedo_color = Color("40364c")
-			m.roughness = 0.85 if look == "c" else 0.55
-			m.metallic_specular = 0.3 if look == "c" else 0.45
+			m.roughness = 0.85
+			m.metallic_specular = 0.3
 			m.rim_enabled = true
 			m.rim = 0.2
 			m.rim_tint = 0.6

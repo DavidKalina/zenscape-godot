@@ -3,7 +3,7 @@
 # Round 3: a wyvern after Smaug (scripts/sky_dragon.gd) rises out of the
 # cloud sea and roams the archipelago, now and then low over the isle, its
 # shadow sweeping the turf.
-#   ./run-rim-dragon.command                     the flying dragon, look c
+#   ./run-rim-dragon.command                     the flying dragon
 #   ./run-rim-dragon.command --dragon-pass       starts on a low pass (shadow over the isle ~12 s in)
 #   ./run-rim-dragon.command --dragon-attack     round 4: starts on its way in to grab a far isle (~10 s)
 #   ./run-rim-dragon.command --dragon-ride       round 5: on foot on the isle it grips; sag, snap, launch (~20 s a cycle); G lets go
@@ -13,11 +13,9 @@
 #   round 10: ground ribbons skim the turf; the blast is a gust for the plane:
 #     --dragon-fly-test         in the plane, put on a pass across the blast at each inhale
 #     --dragon-fly-test=land    a low approach over the held turf in the blast (F flaps, land)
-#   ./run-rim-dragon.command --dragon-look=a     a angular, b carved, c stone and glow (default)
 #   V in game cycles the dragon camera: chase, orbit, look from here, off
 #   --dragon-watch[=chase|orbit|look] starts on it  --dragon-delay=<s> (3)
 #   --dragon-skip=<s> runs it on  --dragon-log prints where it is every 2 s
-#   ./run-rim-dragon.command --dragon-rim         round 1's rim grip and gales
 set -u
 PROJECT_DIR="${0:A:h}"
 GODOT_BIN="${GODOT_BIN:-$HOME/Applications/Godot.app/Contents/MacOS/Godot}"
