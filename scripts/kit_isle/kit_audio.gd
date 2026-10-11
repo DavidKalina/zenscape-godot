@@ -249,8 +249,15 @@ static func ensure_buses() -> void:
 	reverb.spread = 1.0
 	reverb.dry = 0.7
 	reverb.wet = 0.35
+	reverb.hipass = 0.3
 	_bus(FAR,AMBIENCE,[_lpf(3200.0),reverb])
 	_bus(MUSIC,&"Master",[])
+	# A ceiling on everything, so no pile-up can overload the output.
+	for i in range(AudioServer.get_bus_effect_count(0)):
+		if AudioServer.get_bus_effect(0,i) is AudioEffectHardLimiter: return
+	var limiter := AudioEffectHardLimiter.new()
+	limiter.ceiling_db = -0.5
+	AudioServer.add_bus_effect(0,limiter)
 
 static func _lpf(hz: float) -> AudioEffectLowPassFilter:
 	var f := AudioEffectLowPassFilter.new()

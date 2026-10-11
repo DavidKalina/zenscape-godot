@@ -222,8 +222,12 @@ static func _ensure_far_bus() -> void:
 	lpf.cutoff_hz = 5000.0
 	AudioServer.add_bus_effect(index,lpf)
 	var reverb := AudioEffectReverb.new()
-	reverb.room_size = 0.95
+	reverb.room_size = 0.9
 	reverb.damping = 0.45
+	# The beats' and the call's sub (34-44 Hz) kept out of the tail: fed
+	# into the reverb it rang up past full scale (about +21 dB on a call)
+	# and the output cut out.
+	reverb.hipass = 0.5
 	reverb.predelay_msec = 80.0
 	reverb.spread = 1.0
 	reverb.dry = 0.85
