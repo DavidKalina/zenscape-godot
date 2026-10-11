@@ -105,3 +105,12 @@ very dark (the stair pieces carry no shelter bounce).
   is bare stone, no grass.
 - Only the south wall's flyable breach is a token line; the north's are open
   but untokened.
+
+## Fix round (look/hollow-keel-fixes)
+
+- Stairs: `RuinKit.grand_stair` takes an optional `shelter` callable (default none, so other isles are unchanged); the shaft's stairs and turn slab pass `Keel.stair_shelter(k)` (0.75 / 0.9 / 1.0, deeper = more), the same vertex-alpha bounce the hall uses. Readable now, not washed out; the hall interior was already readable and is unchanged.
+- Walk: the third stair's west cheek stood 0.34 m over the turn slab. The turn slab now carries a ramp up over it and a deck across (`CURB`); the test walks the whole descent stick-only (jump removed).
+- Crags/hull/soffit: faces lifted and warmed (`CRAG_LIFT`, `HULL_LIFT`, `SOFFIT_LIFT`), crags' rim moved to their own top. Reads about like the aqueduct isle's keel from below, but still navy-dark in the plate's shadow; the flat soffit stays near black. Not fully fixed.
+- Shelf outside the hall walls: painted turf (plate turf tone) instead of stone. No plants: the flora pipeline raycasts from above onto one site and the plate covers the shelf, so growing there needs a second site (shared code). Not done.
+- North-breach plane line: not added.
+- Captures: `docs/scenic/captures-hollow-keel-fixes/` (before-/after-).

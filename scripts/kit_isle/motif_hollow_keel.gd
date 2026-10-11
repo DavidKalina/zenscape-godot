@@ -73,7 +73,7 @@ func build(into: Node3D) -> void:
 	roots.transform = Keel.hall_frame()
 	art.add_child(roots)
 	for k in range(3):
-		var s: Node3D = RuinKit.grand_stair(KEEL_SEED+10+k,STAIR_WEATHERED)
+		var s: Node3D = RuinKit.grand_stair(KEEL_SEED+10+k,STAIR_WEATHERED,Keel.stair_shelter(k))
 		s.name = "Stair%d" % k
 		s.transform = Keel.stair_frame(k)
 		art.add_child(s)

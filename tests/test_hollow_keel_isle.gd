@@ -149,7 +149,7 @@ func _stairs() -> void:
 	var x2: float = Keel.stair_x(2)
 	var head: Vector3 = Keel.stair_head(0)
 	var foot: Vector3 = Keel.stair_foot(0)
-	var r := walk(Vector3(x0,Keel.TOP,Keel.MID.y-24.0),[Vector2(x0,head.z-1.0),Vector2(x0,head.z+2.0),Vector2(x0,foot.z-1.0),Vector2(x1,foot.z-0.4),Vector2(x1,Keel.stair_foot(1).z),Vector2(x2,Keel.stair_foot(1).z),Vector2(x2,Keel.stair_foot(2).z+0.3)],9000,4,5)
+	var r := walk(Vector3(x0,Keel.TOP,Keel.MID.y-24.0),[Vector2(x0,head.z-1.0),Vector2(x0,head.z+2.0),Vector2(x0,foot.z-1.0),Vector2(x1,foot.z-0.4),Vector2(x1,Keel.stair_foot(1).z),Vector2(x2,Keel.stair_foot(1).z),Vector2(x2,Keel.stair_foot(2).z+0.3)],9000,4,-1)
 	check(bool(r.ok) and absf(m.feet.y-Keel.YF) < 0.6,"Stairs: from the chapel's turf down the three grand stairs to the hall's floor, walked (feet %s, floor %.2f; %s)" % [m.feet,Keel.YF,str(r)])
 
 ## From the foot of the stairs along the hall's open floor to the east mouth,

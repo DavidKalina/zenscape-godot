@@ -43,6 +43,9 @@ const SHAFT_BAYS := [3,4,5]
 ## shared z offset from MID.
 const STAIR_XS := [28.0,33.5,39.0]
 const STAIR_Z := -2.3
+## The grand stair's cheeks stand this far over its landing (a bit over the
+## cheek and its coping).
+const CURB := 0.55
 ## The shaft in the plate (x, z, world): flush with the first stair's head
 ## on the north and over its foot on the south.
 const SHAFT := Rect2(HALL_X+25.0,MID.y-8.5,17.4,14.0)
@@ -209,7 +212,7 @@ static func _soffit(rock: KitLook.RockMesh, under: PackedVector2Array) -> void:
 				var p0: Vector2 = poly[idx[t]]
 				var p1: Vector2 = poly[idx[t+1]]
 				var p2: Vector2 = poly[idx[t+2]]
-				rock.add([Vector3(p0.x,SOFFIT,p0.y),Vector3(p1.x,SOFFIT,p1.y),Vector3(p2.x,SOFFIT,p2.y)],TOP,Vector3.DOWN,1.0)
+				_face(rock,[Vector3(p0.x,SOFFIT,p0.y),Vector3(p1.x,SOFFIT,p1.y),Vector3(p2.x,SOFFIT,p2.y)],TOP,Vector3.DOWN,1.0,SOFFIT_LIFT)
 
 ## The shaft's cut faces: the plate's earth and rock showing round it.
 static func _jambs(rock: KitLook.RockMesh) -> void:
@@ -240,10 +243,24 @@ static func _solid_rock(node: Node3D, label: String, rock: KitLook.RockMesh) -> 
 
 # --- The keel: crags under the plate, the hull under the floor ---------------------------
 
+## A rock face as `RockMesh.add` draws it, its colour lifted `lift` times
+## (the crags under the plate sit in its shadow and read black else).
+static func _face(rock: KitLook.RockMesh, tri: Array, rim: float, toward: Vector3, jitter: float, lift: float) -> void:
+	if lift == 1.0:
+		rock.add(tri,rim,toward,jitter)
+		return
+	var p0: Vector3 = tri[0]
+	var p1: Vector3 = tri[1]
+	var p2: Vector3 = tri[2]
+	var n := (p1-p0).cross(p2-p0).normalized()
+	if n.dot(toward) < 0.0: n = -n
+	var c := KitLook.rock_tone((p0+p1+p2)/3.0,rim,n,1.0+(jitter-1.0)*0.5)
+	rock.add_toned(tri,Color(c.r*lift*1.3,c.g*lift*1.02,c.b*lift*0.8),toward)
+
 ## A hanging mass: `ring` (x, z) at height `y`, rings tapering in and down to
 ## a point `depth` under, faceted (pushed in and out by `rng`). Its colours
 ## by depth under `rim`.
-static func cone(rock: KitLook.RockMesh, ring: Array, y: float, depth: float, rim: float, rng: RandomNumberGenerator, specs: Array = []) -> void:
+static func cone(rock: KitLook.RockMesh, ring: Array, y: float, depth: float, rim: float, rng: RandomNumberGenerator, specs: Array = [], lift := 1.0) -> void:
 	if specs.is_empty(): specs = [[0.0,0.0],[0.22,0.3],[0.55,0.62],[0.85,0.88]]
 	var centre := KitLand.centre_of(ring)
 	var out := KitLand.outward(ring)
@@ -264,18 +281,22 @@ static func cone(rock: KitLook.RockMesh, ring: Array, y: float, depth: float, ri
 		for i in range(count):
 			var j := (i+1)%count
 			var m1: Vector3 = (u[i]+u[j]+l[i])/3.0
-			rock.add([u[i],l[i],u[j]],rim,Vector3(m1.x-centre.x,-0.2,m1.z-centre.y),rng.randf_range(0.88,1.1))
+			_face(rock,[u[i],l[i],u[j]],rim,Vector3(m1.x-centre.x,-0.2,m1.z-centre.y),rng.randf_range(0.88,1.1),lift)
 			var m2: Vector3 = (u[j]+l[i]+l[j])/3.0
-			rock.add([u[j],l[i],l[j]],rim,Vector3(m2.x-centre.x,-0.2,m2.z-centre.y),rng.randf_range(0.88,1.1))
+			_face(rock,[u[j],l[i],l[j]],rim,Vector3(m2.x-centre.x,-0.2,m2.z-centre.y),rng.randf_range(0.88,1.1),lift)
 	var last: Array = rings[rings.size()-1]
 	for i in range(count):
 		var j := (i+1)%count
 		var m: Vector3 = (last[i]+last[j]+tip)/3.0
-		rock.add([last[i],tip,last[j]],rim,Vector3(m.x-centre.x,-1.0,m.z-centre.y),rng.randf_range(0.88,1.1))
+		_face(rock,[last[i],tip,last[j]],rim,Vector3(m.x-centre.x,-1.0,m.z-centre.y),rng.randf_range(0.88,1.1),lift)
 
 ## Where the crags hang from the plate's underside: (x, z, radius, depth),
 ## either side of the hall, clear of its walls' breaches' way and of the
 ## shaft.
+## The crags' and the hull's colour lifted (they hang in the plate's shadow).
+const CRAG_LIFT := 2.4
+const HULL_LIFT := 2.0
+const SOFFIT_LIFT := 2.2
 const CRAGS := [
 	[HALL_X+8.0,MID.y-24.0,7.0,12.0],[HALL_X+26.0,MID.y-23.0,6.0,8.0],[HALL_X+46.0,MID.y-26.0,8.5,15.0],[HALL_X+64.0,MID.y-22.0,6.5,9.0],
 	[HALL_X+74.0,MID.y-27.0,5.5,7.0],[HALL_X+4.0,MID.y+22.0,6.0,8.5],[HALL_X+20.0,MID.y+26.0,8.0,14.0],[HALL_X+40.0,MID.y+23.0,6.5,9.0],
@@ -298,7 +319,7 @@ static func keel(seed_value: int) -> Node3D:
 		for s in range(sides):
 			var a := TAU*s/sides+rng.randf_range(-0.15,0.15)
 			ring.append(at+Vector2(cos(a),sin(a))*float(c[2])*rng.randf_range(0.8,1.15))
-		cone(rock,ring,SOFFIT,float(c[3]),TOP,rng)
+		cone(rock,ring,SOFFIT,float(c[3]),SOFFIT+1.4,rng,[],CRAG_LIFT)
 	# The hull under the hall's floor: a boat's lines, long and narrow, its
 	# porches beyond the mouths.
 	var hull: Array = []
@@ -310,15 +331,31 @@ static func keel(seed_value: int) -> Node3D:
 		var r := pow(pow(absf(cs)/HULL.x,4.0)+pow(absf(sn)/HULL.y,4.0),-0.25)
 		hull.append(MID+Vector2(cs,sn)*r)
 	var floor_y := YF-0.32
-	cone(rock,hull,floor_y,15.0,YF+3.0,rng,[[0.0,0.0],[0.03,0.1],[0.2,0.3],[0.5,0.62],[0.8,0.9]])
-	# Its top, the porches and the shelf either side of the hall: stone.
-	var idx := Geometry2D.triangulate_polygon(PackedVector2Array(hull))
-	for t in range(0,idx.size(),3):
-		var tri: Array = []
-		for q in range(3):
-			var p: Vector2 = hull[idx[t+q]]
-			tri.append(Vector3(p.x,floor_y,p.y))
-		rock.add(tri,YF+3.0,Vector3.UP,1.0)
+	cone(rock,hull,floor_y,15.0,YF+3.0,rng,[[0.0,0.0],[0.03,0.1],[0.2,0.3],[0.5,0.62],[0.8,0.9]],HULL_LIFT)
+	# Its top: the porches and the hall's floor under it, stone; the shelf
+	# either side of the hall, outside its walls, turf like the plate.
+	var big := 1000.0
+	var keep_z := Hall.WALL_Z+0.8
+	var mid_band := PackedVector2Array([Vector2(-big,MID.y-keep_z),Vector2(big,MID.y-keep_z),Vector2(big,MID.y+keep_z),Vector2(-big,MID.y+keep_z)])
+	var tone := KitLook.turf(seed_value,Callable())
+	for part: PackedVector2Array in Geometry2D.intersect_polygons(PackedVector2Array(hull),mid_band):
+		var idx := Geometry2D.triangulate_polygon(part)
+		for t in range(0,idx.size(),3):
+			var tri: Array = []
+			for q in range(3):
+				var p: Vector2 = part[idx[t+q]]
+				tri.append(Vector3(p.x,floor_y,p.y))
+			rock.add(tri,YF+3.0,Vector3.UP,1.0)
+	for part: PackedVector2Array in Geometry2D.clip_polygons(PackedVector2Array(hull),mid_band):
+		var idx := Geometry2D.triangulate_polygon(part)
+		for t in range(0,idx.size(),3):
+			var tri: Array = []
+			var mid := Vector2.ZERO
+			for q in range(3):
+				var p: Vector2 = part[idx[t+q]]
+				tri.append(Vector3(p.x,floor_y,p.y))
+				mid += p/3.0
+			rock.add_toned(tri,tone.call(mid,Vector3.UP,rng.randf_range(-0.035,0.035),floor_y),Vector3.UP)
 	var node := Node3D.new()
 	node.name = "Keel"
 	_solid_rock(node,"Keel",rock)
@@ -434,6 +471,13 @@ static func stair_frame(k: int) -> Transform3D:
 	var yaw := PI if k == 1 else 0.0
 	return Transform3D(Basis(Vector3.UP,yaw),Vector3(stair_x(k),YF+float(2-k)*FLIGHT,z+(1.1 if k == 1 else 0.0)))
 
+## How sheltered stair `k`'s faces are (Build `shelter`, the hall's): the
+## shaft is a well in the plate, its sky small and far, so the stairs take a
+## share of the hall's bounce, more the deeper they go.
+static func stair_shelter(k: int) -> Callable:
+	var amount: float = [0.75,0.9,1.0][k]
+	return func(_p: Vector3, _n: Vector3) -> float: return amount
+
 ## The landing at the head of stair `k` (world): where the walker steps on.
 static func stair_head(k: int) -> Vector3:
 	return stair_frame(k)*_head_local()
@@ -443,11 +487,24 @@ static func stair_head(k: int) -> Vector3:
 ## last tread (the stairs stand side by side, so this is the way across).
 static func turn_slab(seed_value: int) -> Node3D:
 	var b := RuinKit.Build.new(seed_value,0.35,"TurnLanding")
+	b.shelter = stair_shelter(2)
 	var a := stair_foot(1)
 	var c := stair_head(2)
 	var half := Vector3((c.x-a.x)*0.5+2.5,0.28,0.62)
 	var at := Vector3((a.x+c.x)*0.5,c.y-half.y,c.z-0.1)
 	b.solid(RuinKit._box(b,half),Transform3D(Basis.IDENTITY,at),RuinKit._stone(b,1.02))
+	# The third stair's west cheek stands CURB over the slab: a ramp up over
+	# it and a deck across (a plain stone wedge, so the whole way down walks
+	# on the stick), the landing a step down beyond.
+	var cheek_x := c.x-RuinKit.GRAND_WIDTH*0.5-RuinKit.CHEEK.x
+	var run := 1.6
+	var tilt := atan2(CURB,run)
+	var slope := Vector3(run,CURB,0.0).length()
+	var out := Vector3(-sin(tilt),cos(tilt),0.0)
+	var mid := Vector3(cheek_x-run*0.5,c.y+CURB*0.5,a.z)-out*0.06
+	b.solid(RuinKit._box(b,Vector3(slope*0.5,0.06,0.9),0.02),Transform3D(Basis(Vector3.BACK,tilt),mid),RuinKit._stone(b,1.04))
+	var deck := Vector3((c.x-RuinKit.GRAND_WIDTH*0.5+0.3-cheek_x)*0.5+0.05,0.06,0.9)
+	b.solid(RuinKit._box(b,deck,0.02),Transform3D(Basis.IDENTITY,Vector3(cheek_x+deck.x-0.05,c.y+CURB-0.06,a.z)),RuinKit._stone(b,1.04))
 	return b.finish()
 
 static func _head_local() -> Vector3:
