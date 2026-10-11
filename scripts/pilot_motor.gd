@@ -352,6 +352,9 @@ const SIDE_GRACE := 0.12
 const SLOPE_NEAR := 0.05
 const SLOPE_PROBE := 0.2
 const SLOPE_FAR := 1.0
+## The axes' slope (rise per metre) under which the ground is read along
+## his way too: a ridge the axes read flat (a banister's coping, a beam).
+const RIDGE_FLAT := 0.02
 ## The ledge, as art/blender/pilot/pilot_build.py made the clips: hanging,
 ## the lip's top HANG_DROP over the feet and its edge HANG_OUT ahead; the
 ## climb (CLIMB_TIME s, Mario quick) ends stood CLIMB_IN in from the edge;
@@ -791,11 +794,14 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 		slope = _gradient(ground,Vector2(feet.x,feet.z))
 		# Read along his way too: a narrow slope (a banister's coping, a
 		# beam) crossed by the world's axes reads as a ridge, flat; along
-		# it, it is its slope. Only ever steeper than the axes' read.
-		var way := Vector2(velocity.x,velocity.z)
-		way = way/way.length() if way.length() > 0.5 else forward(facing)
-		var along := _gradient(ground,Vector2(feet.x,feet.z),way)
-		if along.length_squared() > slope.length_squared(): slope = along
+		# it, it is its slope. Only where the axes read it flat (RIDGE_FLAT),
+		# so open ground and the foot of a wall read as they always have,
+		# and only ever steeper than the axes' read.
+		if slope.length() < RIDGE_FLAT:
+			var way := Vector2(velocity.x,velocity.z)
+			way = way/way.length() if way.length() > 0.5 else forward(facing)
+			var along := _gradient(ground,Vector2(feet.x,feet.z),way)
+			if along.length_squared() > slope.length_squared(): slope = along
 		surfing = _surfing(crouched,ground)
 		move = "slide" if surfing else ("crouch" if crouched else "")
 		_skid_left = SIDE_GRACE if skidding else maxf(0.0,_skid_left-delta)
