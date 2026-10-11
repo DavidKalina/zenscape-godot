@@ -257,7 +257,7 @@ func _draw_marks(on: Control) -> void:
 	if reach > gap:
 		on.draw_line(Vector2(mid-reach,y),Vector2(mid-gap,y),line,maxf(1.0,px))
 		on.draw_line(Vector2(mid+gap,y),Vector2(mid+reach,y),line,maxf(1.0,px))
-	on.draw_colored_polygon(_diamond(Vector2(mid,y),4.5*px*smoothstep(0.0,0.4,t)),line)
+	_stud(on,_diamond(Vector2(mid,y),4.5*px*smoothstep(0.0,0.4,t)),line)
 	var groups := _groups()
 	var row_y := _slots_y()
 	for g in range(groups.size()):
@@ -268,7 +268,7 @@ func _draw_marks(on: Control) -> void:
 			_socket(on,at,str(find[0]),k < int(find[2]),_slot_in(g,k)*shown)
 		if g > 0:
 			var between := groups[g].x-GROUP_GAP*px*0.5
-			on.draw_colored_polygon(_diamond(Vector2(between,row_y),2.5*px),Color(HAIRLINE,HAIRLINE.a*0.6*_slot_in(g,0)*shown))
+			_stud(on,_diamond(Vector2(between,row_y),2.5*px),Color(HAIRLINE,HAIRLINE.a*0.6*_slot_in(g,0)*shown))
 
 ## One socket at `at`: a faceted octagon sunk into the band, its rim lit
 ## on its upper left and shaded on its lower right, holding the gem: the
@@ -295,6 +295,14 @@ func _socket(on: Control, at: Vector2, id: String, found: bool, a: float) -> voi
 	else:
 		var shape := _icon(id,"locked")
 		if shape != null: on.draw_texture_rect(shape,box,false,Color(EMPTY,EMPTY.a*a))
+
+## `points` filled, unless it has collapsed to (near) nothing: the title
+## diamond grows from zero size as the card fades in, and one under a few
+## thousandths of a pixel across, at screen coordinates, has no area the
+## triangulator can find ("Invalid polygon data, triangulation failed").
+static func _stud(on: Control, points: PackedVector2Array, color: Color) -> void:
+	if Geometry2D.triangulate_polygon(points).is_empty(): return
+	on.draw_colored_polygon(points,color)
 
 static func _octagon(at: Vector2, r: float) -> PackedVector2Array:
 	var points := PackedVector2Array()

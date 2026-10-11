@@ -84,7 +84,7 @@ func _until_walking(most: float) -> Array:
 
 func _plane() -> void:
 	check(eye.glide is SkyPlane and eye.glider is PlaneFigure,"It flies the plane")
-	check("again in the air to fly" in eye._walk_hint() and not "glide" in eye._walk_hint() and not "flap" in eye.PLANE_HINT and "F to land" in eye.PLANE_HINT,"And the hints name the plane's controls")
+	check("Off the edge to fly" in eye._walk_hint() and not "glide" in eye._walk_hint() and not "flap" in eye.PLANE_HINT and "F to land" in eye.PLANE_HINT,"And the hints name the plane's controls")
 	var objects: int = eye.editor.data.objects.size()
 	await _off_the_edge()
 	check(eye.flying,"Off the edge, it flies")
