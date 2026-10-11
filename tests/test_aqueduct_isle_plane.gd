@@ -123,6 +123,7 @@ func _drift() -> void:
 	var speed := float(plane.speed)
 	_fly(0.1,{})
 	check(float(plane.speed) > speed+0.5,"Letting go gives the boost (%.1f to %.1f m/s)" % [speed,plane.speed])
+	check(study.air != null and study.air._player.playing and float(study.air._hum_goal) > 0.0,"Flying, the plane sounds: wind and the propeller's hum")
 
 ## Flown straight at stone found round the start: bumped off and flying on.
 func _bump() -> void:
@@ -188,6 +189,7 @@ func _back_on_foot() -> void:
 	var near: Vector3 = plane.position
 	study.leave_plane()
 	check(not study.flying and study.figure.visible and study.plane_figure == null,"F again: back on foot, the plane gone")
+	check(not study.air._player.playing,"And its sound stops")
 	var feet: Vector3 = study.motor.feet
 	check(Vector2(feet.x-near.x,feet.z-near.z).length() < 6.0,"He stands near where the plane was (%.1f m off)" % Vector2(feet.x-near.x,feet.z-near.z).length())
 	var top: Variant = study.plane_ground(feet+Vector3.UP*0.5)
