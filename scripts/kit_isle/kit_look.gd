@@ -47,11 +47,11 @@ const SHALE := 0.3
 ## soft), their tone spread, the share of hard ones; how far they wave
 ## (m) over how long (m).
 const BED := 1.35
-const BED_TONE := Vector2(0.95,1.4)
-const HARD := 0.42
+const BED_TONE := Vector2(0.85,1.15)
+const HARD := 0.35
 const BED_WAVE := Vector2(0.35,23.0)
 ## Broad warm and cool patches over the rock (share, over 1/WARM_WAVE m).
-const WARM := 0.22
+const WARM := 0.12
 const WARM_WAVE := 0.045
 ## A rock face lying back past LEDGE_UP (a ledge, a step's tread) reads
 ## LEDGE_LIFT times paler.
@@ -267,7 +267,7 @@ class RockMesh extends RefCounted:
 			p1 = p2
 			p2 = swap
 		var normal := (p2-p0).cross(p1-p0).normalized()
-		var tone := KitLook.rock_tone((p0+p1+p2)/3.0,rim,normal,jitter)
+		var tone := KitLook.rock_tone((p0+p1+p2)/3.0,rim,normal,1.0+(jitter-1.0)*0.5)
 		for p: Vector3 in [p0,p1,p2]:
 			_v.append(p)
 			_n.append(normal)

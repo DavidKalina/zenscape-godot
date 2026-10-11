@@ -54,8 +54,10 @@ const PATH_BARE := 0.5
 const PATH_THIN := 0.1
 const REACH := 0.25
 const STEEP_SHARE := 0.85
-## Tiles (m) and how far each kind draws (m), with the fade's margin.
-const TILE := 16.0
+## Tiles (m: the grass and flowers', the undergrowth's, sparser, larger)
+## and how far each kind draws (m), with the fade's margin.
+const TILE := 24.0
+const UNDER_TILE := 40.0
 const GRASS_RANGE := 95.0
 const FLOWER_RANGE := 65.0
 const FADE := 15.0
@@ -263,20 +265,20 @@ static func undergrowth(seed_value: int, space: PhysicsDirectSpaceState3D, turf:
 			logs += 1
 			for k in range(rng.randi_range(1,2)):
 				add.call("fern",p+Vector2.from_angle(rng.randf()*TAU)*rng.randf_range(0.9,1.5),rng.randf_range(0.5,0.75))
-	var node: Node3D = draw(records,ground,area)
+	var node: Node3D = draw(records,ground,area,UNDER_TILE)
 	node.name = "Undergrowth"
 	return node
 
 ## The records drawn as the islets draw theirs, one multimesh a tile and
-## catalog part.
-static func draw(records: Array, ground: Ground, area: float) -> Node3D:
+## catalog part, `tile_size` m a tile.
+static func draw(records: Array, ground: Ground, area: float, tile_size := TILE) -> Node3D:
 	var catalog: Dictionary = SkyIslets.catalog()
 	var data: Dictionary = catalog.data
 	var meshes: Dictionary = catalog.meshes
 	# Records by tile, each built on its own so its parts stay together.
 	var tiles := {}
 	for item: Dictionary in records:
-		var key := Vector2i(floori(float(item.x)/TILE),floori(float(item.z)/TILE))
+		var key := Vector2i(floori(float(item.x)/tile_size),floori(float(item.z)/tile_size))
 		if not tiles.has(key): tiles[key] = []
 		(tiles[key] as Array).append(item)
 	var node := Node3D.new()
