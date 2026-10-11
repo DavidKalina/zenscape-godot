@@ -5,6 +5,7 @@
 # shadow sweeping the turf.
 #   ./run-rim-dragon.command                     the flying dragon, look c
 #   ./run-rim-dragon.command --dragon-pass       starts on a low pass (shadow over the isle ~12 s in)
+#   ./run-rim-dragon.command --dragon-attack     round 4: starts on its way in to grab a far isle (~10 s)
 #   ./run-rim-dragon.command --dragon-look=a     a angular, b carved, c stone and glow (default)
 #   V in game cycles the dragon camera: chase, orbit, look from here, off
 #   --dragon-watch[=chase|orbit|look] starts on it  --dragon-delay=<s> (3)

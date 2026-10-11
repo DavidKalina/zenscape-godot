@@ -22,8 +22,22 @@ extends Node3D
 ##     in, overshooting and settling), the cheek skin stretching and the
 ##     lower lip following through;
 ##   - the head turning to look at the camera when it passes close.
-## No combat, no gusts (the rim grip is parked: scripts/rim_dragon.gd,
-## --dragon-rim).
+##   - round 4, the attack: every minute or two it banks in to a far isle
+##     (one of `targets`, seen from the aqueduct isle's turf), flares hard
+##     with its wings cupped and back-beating and its legs reaching, and
+##     slams onto the rim: hind claws and wrist thumbs hooked over the edge
+##     (a little reaching IK each frame), the tail hanging and swinging
+##     under the keel, the neck reared up over the turf. The isle shudders,
+##     dust and stone come off the rim, its birds burst out. Then it pants
+##     and looks round, breathes in (the tell: streaks drawn in, the trees
+##     leaning toward it) and blows a sweeping gale across the isle
+##     (scripts/dragon_gale.gd: streaks, thrashing trees, leaves torn off,
+##     the cloud sea beyond thrown into a wake). After 45 to 60 s it lets
+##     go, drops off the rim on a heavy beat and roams again. A pilot on
+##     that isle is knocked by the blast as in round 1, and can take the
+##     treasure off its tongue (`yielded`).
+## Round 1's rim grip on the aqueduct isle itself is parked:
+## scripts/rim_dragon.gd, --dragon-rim.
 ##
 ## Self-contained: the host (studies/aqueduct_isle.gd) makes one, calls
 ## `setup` and then `advance` every frame after its own camera is placed,
@@ -35,7 +49,12 @@ extends Node3D
 ## Flags: --dragon-look=a|b|c (c) the dress; --dragon-delay=<s> (3) before
 ## it rises; --dragon-skip=<s> runs it on that far at the start;
 ## --dragon-watch[=chase|orbit|look] starts watching; --dragon-seed=<n> its
-## route's dice; --dragon-size=<x> (0.85) its scale.
+## route's dice; --dragon-size=<x> (0.85) its scale; --dragon-attack starts
+## it on its way in to an attack (the grab about 8 s on);
+## --dragon-target=<isle name> its first (or only) target;
+## --dragon-attack-every=<s> (70) between attacks.
+
+signal yielded
 
 const MODELS := {
 	"a": "res://assets/models/rim_dragon_a.glb",
@@ -69,6 +88,32 @@ const RAISE_GLIDE := 0.17
 const BOB := 2.2
 ## The roar's length (s).
 const ROAR := 3.6
+## The attack (m, s, rad, before `size`). The grab's length; the cling's
+## body pitch (nose up, belly to the cliff) and where its root hangs from
+## the rim (out from it, down). How long it holds on.
+const GRAB := 3.4
+const CLING_PITCH := 1.12
+const CLING_OUT := 7.5
+const CLING_DOWN := 7.0
+const CLING_HOLD := Vector2(45.0,60.0)
+## The breath's beats: pant, inhale (the tell), blow, recover.
+const PANT := Vector2(4.5,7.0)
+const INHALE := 2.1
+const BLOW := 3.8
+const RECOVER := 1.3
+## The blow's sweep either side of straight across the isle.
+const SWEEP := 0.42
+## The blow on a pilot on the isle (round 1's): in the cone's core he is
+## knocked into a tumble, in the band pushed along; the treasure is taken
+## within TAKE_R of it.
+const REACH := 70.0
+const CONE := 0.34
+const PUSH_CONE := 0.6
+const PUSH := 5.0
+const KNOCK_OUT := Vector2(12.0,6.0)
+const KNOCK_UP := 1.6
+const TAKE_R := 3.2
+const DragonGale = preload("res://scripts/dragon_gale.gd")
 
 var camera: Camera3D
 var sea_y := -120.0
@@ -86,6 +131,17 @@ var air_angle := 0.0
 ## Where a low pass's shadow should cross (the turf's middle; the host may
 ## set it before `setup`, else the isle's middle at its top).
 var shadow_at := Vector3.INF
+## The attack's isles: each {name, home (world; y the rim), radius}; the
+## host's lookup for an isle's built record ({node, shape, ...}) by name;
+## its call to flush the isle's birds (home). The pilot (PilotMotor) and
+## his ground's slide, and whether he is on foot (the host sets it).
+var targets: Array = []
+var find_isle: Callable
+var flush_birds: Callable
+var walker: Object
+var slide: Callable
+var on_foot := true
+var taken := false
 
 var model: Node3D
 var skeleton: Skeleton3D
@@ -184,6 +240,50 @@ var _log_t := 0.0
 ## --dragon-pass: starts on the low pass's way in (its shadow over the isle
 ## about 12 s on).
 var _pass_now := false
+## How free in the air it is (1 flying; the swell and bumps fade out as it
+## grabs) and how far into the grab's flare.
+var _free := 1.0
+var _flare := 0.0
+## The attack: the next target's index, the seconds till the next attack,
+## the grip ({rim, out, tangent, root, yaw, wrists, feet}), the grab's
+## start (pos, velocity, yaw, pitch, roll), the cling's clock and what the
+## breath is doing ("settle", "pant", "inhale", "blow", "recover") and for
+## how long; the effects.
+var _attack_now := false
+var _target_i := 0
+var _attack_in := 40.0
+var _attack_every := 70.0
+var grip := {}
+var _grab := {}
+var _cling_t := 0.0
+var _cling_left := 50.0
+var breath := ""
+var _breath_t := 0.0
+var _breath_len := 0.0
+var _sweep_from := 0.0
+## The head's look turned to the world's way round (1 or -1: the neck's
+## turn about its root runs one way or the other with the pose).
+var _sweep_sign := 1.0
+var _knocked := false
+var gale: Node3D
+var treasure: Node3D
+var _treasure_light: OmniLight3D
+var _glint: MeshInstance3D
+## The cling's springs: the head's look round (yaw, pitch), the rear back
+## (inhale) and thrust (blow), the body's settle from the slam.
+var _c_look := Vector2.ZERO
+var _c_look_v := Vector2.ZERO
+var _c_look_goal := Vector2.ZERO
+var _c_look_next := 0.0
+var _c_rear := 0.0
+var _c_rear_v := 0.0
+var _c_settle := 0.0
+var _c_settle_v := 0.0
+var _jaw_goal := -1.0
+## A blend from a pose snapshot (bone -> rotation) over `_blend_len` s.
+var _blend_from := {}
+var _blend_t := 0.0
+var _blend_len := 0.0
 
 func _init() -> void:
 	name = "SkyDragon"
@@ -203,6 +303,12 @@ func setup(cam: Camera3D, args: PackedStringArray, sea: float, middle: Vector3, 
 		elif arg.begins_with("--dragon-size="): size = float(arg.get_slice("=",1))
 		elif arg == "--dragon-log": _log = true
 		elif arg == "--dragon-pass": _pass_now = true
+		elif arg == "--dragon-attack": _attack_now = true
+		elif arg.begins_with("--dragon-attack-every="): _attack_every = float(arg.get_slice("=",1))
+		elif arg.begins_with("--dragon-target="):
+			var want := arg.get_slice("=",1)
+			for i in range(targets.size()):
+				if str(targets[i].name) == want: _target_i = i
 		elif arg == "--dragon-hold": _hold = true
 		elif arg.begins_with("--dragon-phase="): _hold_phase = float(arg.get_slice("=",1))
 		elif arg.begins_with("--dragon-pose="): _hold_pose = arg.get_slice("=",1)
@@ -214,9 +320,20 @@ func setup(cam: Camera3D, args: PackedStringArray, sea: float, middle: Vector3, 
 	if not MODELS.has(look):
 		push_warning("sky dragon: no look '%s' (a, b, c); c instead" % look)
 		look = "c"
+	if _attack_now and not args_have(args,"--dragon-delay="): delay = 0.3
+	_attack_in = _attack_every*0.55
 	_build()
+	_build_treasure()
+	gale = DragonGale.new()
+	gale.sea_y = sea_y
+	add_child(gale)
 	_start()
 	print("sky dragon: look %s (%s), rises in %.1f s" % [look,LOOK_NAMES[look],delay])
+
+static func args_have(args: PackedStringArray, prefix: String) -> bool:
+	for arg in args:
+		if arg.begins_with(prefix): return true
+	return false
 
 # --- Building ---------------------------------------------------------------------
 
@@ -376,6 +493,22 @@ func _start() -> void:
 		speed = 32.0
 		flap_w = 0.0
 		_bout = false
+	elif _attack_now and not targets.is_empty():
+		# --dragon-attack: already on its way in, level, far out.
+		route.clear()
+		_leg_kinds.clear()
+		_add_attack()
+		route.pop_front()
+		_leg_kinds.pop_front()
+		var to: Vector3 = route[0]
+		var away: Vector3 = grip.out
+		var along: Vector3 = grip.tangent
+		pos = to+away*170.0+along*float(grip.side)*70.0+Vector3.UP*22.0
+		yaw = atan2(-(to.x-pos.x),-(to.z-pos.z))
+		gamma = 0.0
+		speed = 32.0
+		flap_w = 0.0
+		_bout = false
 
 func _isle_pos(i: int) -> Vector3:
 	return isles[i][0]
@@ -461,6 +594,9 @@ func _add_climb_dive() -> void:
 	_leg_kinds.append("dive")
 
 func _next_legs() -> void:
+	if _attack_in <= 0.0 and not targets.is_empty():
+		_add_attack()
+		return
 	_legs_since_pass += 1
 	if _legs_since_pass >= 3 and _rng.randf() < 0.7:
 		_add_low_pass()
@@ -488,18 +624,33 @@ func _step(delta: float) -> void:
 	_t += delta
 	if state == "waiting":
 		if _t < delay: return
-		state = "roaming" if _pass_now else "rising"
+		state = "roaming" if _pass_now or _attack_now else "rising"
 		model.visible = true
 		_t = 0.0
-	if _hold: _held(delta)
-	else: _fly(delta)
+	if state == "roaming": _attack_in -= delta
 	_ride_air(delta)
-	_pose(delta)
+	match state:
+		"grabbing":
+			_grabbing(delta)
+			_pose(delta)
+		"clinging": _clinging(delta)
+		"leaving":
+			_leaving(delta)
+			_pose(delta)
+		_:
+			if _hold: _held(delta)
+			else: _fly(delta)
+			_pose(delta)
+	_blend(delta)
+	_place_treasure(delta)
+	gale.advance(delta)
 	if _log:
 		_log_t += delta
 		if _log_t >= (0.5 if leg_kind == "low pass" else 2.0):
 			_log_t = 0.0
-			print("sky dragon: t %.0f %s %s leg %s at (%.0f, %.0f, %.0f) %.1f m/s gamma %.2f roll %.2f flap %.2f, %.0f m from the isle's middle" % [_clock,state,mode,leg_kind,pos.x,pos.y,pos.z,speed,gamma,roll,flap_w,Vector2(pos.x-home.x,pos.z-home.z).length()])
+			if state in ["clinging","grabbing","leaving"]:
+				print("sky dragon: t %.1f %s %s, %.0f s to let go, at (%.0f, %.0f, %.0f), %.0f m from the isle's middle" % [_clock,state,breath,_cling_left,pos.x,pos.y,pos.z,Vector2(pos.x-home.x,pos.z-home.z).length()])
+			else: print("sky dragon: t %.0f %s %s leg %s at (%.0f, %.0f, %.0f) %.1f m/s gamma %.2f roll %.2f flap %.2f, %.0f m from the isle's middle" % [_clock,state,mode,leg_kind,pos.x,pos.y,pos.z,speed,gamma,roll,flap_w,Vector2(pos.x-home.x,pos.z-home.z).length()])
 
 func _fly(delta: float) -> void:
 	if route.is_empty(): _next_legs()
@@ -509,13 +660,16 @@ func _fly(delta: float) -> void:
 	var flat := Vector2(to.x,to.z)
 	var dist := flat.length()
 	# A low pass is flown right through its points, so it really is low.
-	var arrive := 30.0 if state == "rising" else (40.0 if leg_kind == "low pass" else ARRIVE)
+	var arrive := 30.0 if state == "rising" else (40.0 if leg_kind in ["low pass","grab"] else ARRIVE)
 	var behind := Vector2(-sin(yaw),-cos(yaw)).dot(flat.normalized()) < -0.2
 	var reached := pos.y > target.y-10.0 if state == "rising" else (dist < arrive or (behind and dist < (90.0 if leg_kind == "low pass" else 220.0)))
 	if reached:
 		route.pop_front()
 		_leg_kinds.pop_front()
 		if state == "rising": state = "roaming"
+		if leg_kind == "grab":
+			_begin_grab()
+			return
 		if route.is_empty(): _next_legs()
 		target = route[0]
 		to = target-pos
@@ -630,6 +784,8 @@ func _pose(delta: float) -> void:
 		raise = lerpf(raise,0.32,tuck)
 		fold = lerpf(fold,0.55,tuck)
 		sweep = 0.3*tuck
+	# The grab's flare: wings cupped forward, beating back against the air.
+	sweep -= 0.55*_flare
 	# The tips lag the beat: they bend against the raise's speed.
 	var rv := (raise-_last_raise)/maxf(delta,0.001)
 	_last_raise = raise
@@ -638,17 +794,17 @@ func _pose(delta: float) -> void:
 	# answers the air's roll (the low wing lifts), the hands twist with the
 	# swell, the tips flex on a bump.
 	var still := 1.0-flap_w
-	var air_roll := _air_roll+_bump.x
+	var air_roll := (_air_roll+_bump.x)*_free
 	_trim = Vector2(0.05*sin(_clock*0.71)+0.03*sin(_clock*1.9),0.05*sin(_clock*0.63+1.7)+0.03*sin(_clock*2.3))*still
 	var twist := (_swell*0.02+0.06*sin(_clock*0.9))*still
 	# The body: bobbing against each beat, nodding with it, rolled and
 	# pitched by the air.
 	var bob := -BOB*cos(TAU*phase)*flap_w*(1.3 if mode == "climb" else 1.0)
 	var nod := 0.04*sin(TAU*phase)*flap_w
-	var pitch := gamma*0.75+0.05+nod+_air_pitch+_bump.y
+	var pitch := gamma*0.75+0.05+nod+(_air_pitch+_bump.y)*_free
 	var body_roll := roll+air_roll
 	var basis := Basis(Vector3.UP,yaw)*Basis(Vector3.RIGHT,pitch)*Basis(Vector3.BACK,body_roll)
-	global_transform = Transform3D(basis,pos+basis.y*bob*size+Vector3.UP*_swell_y)
+	global_transform = Transform3D(basis,pos+basis.y*bob*size+Vector3.UP*_swell_y*_free)
 	for side in [-1.0,1.0]:
 		var n := "L" if side < 0.0 else "R"
 		# The low wing (air rolling it down) lifts against it.
@@ -666,9 +822,10 @@ func _pose(delta: float) -> void:
 		# The hind legs tucked back under the tail's root; a little swing with
 		# the beat.
 		var swing := 0.06*sin(TAU*phase-0.8)*flap_w
-		_turn("hind_upper."+n,[[Vector3.RIGHT,-1.5-swing]])
-		_turn("hind_lower."+n,[[Vector3.RIGHT,0.9]])
-		_turn("hind_foot."+n,[[Vector3.RIGHT,-0.7]])
+		# In the flare the legs swing down and forward, claws open, reaching.
+		_turn("hind_upper."+n,[[Vector3.RIGHT,lerpf(-1.5-swing,0.7,_flare)]])
+		_turn("hind_lower."+n,[[Vector3.RIGHT,lerpf(0.9,-0.4,_flare)]])
+		_turn("hind_foot."+n,[[Vector3.RIGHT,lerpf(-0.7,0.5,_flare)]])
 	_mouth(delta)
 	# The body arching a little with the beat; the chest breathing.
 	var breath := sin(_clock*TAU*0.18)
@@ -715,7 +872,10 @@ func _pose(delta: float) -> void:
 func _mouth(delta: float) -> void:
 	var goal := 0.03+0.015*sin(_clock*TAU*0.18+0.6)
 	var rear_goal := 0.0
-	if _roar_t < 0.0 and _hold_pose != "roar":
+	if state == "clinging" and _jaw_goal >= 0.0:
+		# On the rim the breath sets the jaw (no chews, no roars).
+		goal = _jaw_goal
+	elif _roar_t < 0.0 and _hold_pose != "roar":
 		_roar_next -= delta
 		if _roar_next <= 0.0:
 			_roar_t = 0.0
@@ -739,7 +899,7 @@ func _mouth(delta: float) -> void:
 			rear_goal = 1.0-smoothstep(0.0,1.0,u)
 		else:
 			_roar_t = 0.0 if _hold_pose == "roar" else -1.0
-	else:
+	elif state != "clinging":
 		_chew_next -= delta
 		if _chew_next <= 0.0 and _chew_t < 0.0:
 			_chew_t = 0.0
@@ -790,6 +950,10 @@ func _tail(delta: float) -> void:
 		# wave down it, as a whip in the air.
 		var rest := _rope[i-1]+len_w
 		rest += basis.x.normalized()*sin(_clock*0.8-float(i)*0.7)*0.25*float(i)/n*len_w.length()
+		if state == "clinging" and not grip.is_empty():
+			# Hanging: down under the keel, swinging slowly side to side.
+			rest += Vector3.DOWN*len_w.length()*0.35
+			rest += (grip.tangent as Vector3)*sin(_clock*0.5-float(i)*0.32)*0.22*float(i)/n*len_w.length()
 		p = p.lerp(rest,clampf((n+1.0-float(i))*5.4/n*delta,0.0,1.0))
 		var d := p-_rope[i-1]
 		_rope[i] = _rope[i-1]+d.normalized()*len_w.length()
@@ -817,6 +981,511 @@ func _turn(b: String, turns: Array) -> void:
 		if absf(angle) < 0.00001: continue
 		q = q*Quaternion((g.inverse()*(turn[0] as Vector3)).normalized(),angle)
 	skeleton.set_bone_pose_rotation(_bone[b],q)
+
+# --- The attack ------------------------------------------------------------------------
+
+## The treasure on its tongue: a gem riding the jaw, a small light and a
+## glint that flares now and then, big enough to catch the eye from afar.
+func _build_treasure() -> void:
+	treasure = Node3D.new()
+	treasure.name = "Treasure"
+	treasure.top_level = true
+	add_child(treasure)
+	var gem := MeshInstance3D.new()
+	var mesh := SphereMesh.new()
+	mesh.radius = 0.9
+	mesh.height = 2.0
+	mesh.radial_segments = 6
+	mesh.rings = 3
+	gem.mesh = mesh
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color("ffd56a")
+	m.metallic = 0.8
+	m.roughness = 0.15
+	m.emission_enabled = true
+	m.emission = Color("ffb84a")
+	m.emission_energy_multiplier = 3.0
+	gem.material_override = m
+	gem.name = "Gem"
+	treasure.add_child(gem)
+	_treasure_light = OmniLight3D.new()
+	_treasure_light.light_color = Color("ffcf70")
+	_treasure_light.light_energy = 1.4
+	_treasure_light.omni_range = 7.0
+	treasure.add_child(_treasure_light)
+	_glint = MeshInstance3D.new()
+	var quad := QuadMesh.new()
+	quad.size = Vector2(1.0,1.0)
+	_glint.mesh = quad
+	var g := StandardMaterial3D.new()
+	g.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	g.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	g.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	g.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	g.no_depth_test = false
+	g.albedo_color = Color(1.0,0.85,0.5,1.0)
+	g.albedo_texture = _glint_texture()
+	_glint.material_override = g
+	_glint.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	treasure.add_child(_glint)
+	treasure.visible = false
+
+## A four-pointed star of light.
+static func _glint_texture() -> Texture2D:
+	var n := 64
+	var img := Image.create(n,n,false,Image.FORMAT_RGBA8)
+	for y in range(n):
+		for x in range(n):
+			var p := Vector2(x+0.5-n*0.5,y+0.5-n*0.5)/(n*0.5)
+			var core := exp(-p.length_squared()*18.0)
+			var rays := exp(-absf(p.x)*40.0)*(1.0-absf(p.y))+exp(-absf(p.y)*40.0)*(1.0-absf(p.x))
+			var a := clampf(core+rays*0.8,0.0,1.0)
+			img.set_pixel(x,y,Color(1,1,1,a))
+	return ImageTexture.create_from_image(img)
+
+## The gem on the tongue, between the jaw's root and its tip; the glint
+## flaring every couple of seconds.
+func _place_treasure(_delta: float) -> void:
+	if treasure == null: return
+	treasure.visible = model.visible and not taken
+	if not treasure.visible: return
+	var sk := skeleton.global_transform
+	var jaw := skeleton.get_bone_global_pose(_bone["jaw"])
+	var tip := skeleton.get_bone_global_pose(_bone["jaw.tip"])
+	var at := jaw.origin.lerp(tip.origin,0.45)+jaw.basis.z.normalized()*0.0+(jaw.basis*Vector3(0.0,0.0,1.0)).normalized()*0.0
+	# A little above the jaw's floor, on the tongue.
+	var up := (sk.basis*Vector3.UP).normalized()
+	treasure.global_position = sk*at+up*1.4*size
+	treasure.scale = Vector3.ONE*size/0.85
+	var flare := pow(maxf(sin(_clock*TAU/2.3),0.0),14.0)+0.5*pow(maxf(sin(_clock*TAU/3.7+1.0),0.0),20.0)
+	_glint.scale = Vector3.ONE*(1.5+7.0*flare)
+	(_glint.material_override as StandardMaterial3D).albedo_color.a = 0.25+0.75*flare
+	_treasure_light.light_energy = 1.0+2.0*flare
+
+## The isle's move since the grip was planned (its shudder), as a transform
+## to carry grip points along with it.
+func _isle_xf() -> Transform3D:
+	if gale == null or gale.isle == null or not is_instance_valid(gale.isle): return Transform3D.IDENTITY
+	return gale.isle.transform*gale.isle_rest.affine_inverse()
+
+## The isle's built record ({node, shape, ...}), or {}.
+func _record(t: Dictionary) -> Dictionary:
+	if not find_isle.is_valid(): return {}
+	var rec: Variant = find_isle.call(str(t.name))
+	return rec if rec is Dictionary else {}
+
+## The rim's lip from the isle's middle along `dir` (flat, unit): the last
+## land along it, at the ground there; else the radius at the rim's height.
+func _rim_along(t: Dictionary, dir: Vector3) -> Vector3:
+	var home: Vector3 = t.home
+	var rec := _record(t)
+	var shape: RefCounted = rec.get("shape") as RefCounted if rec.has("shape") else null
+	if shape == null: return home+dir*float(t.radius)
+	var reach := float(shape.get("reach")) if shape.get("reach") != null else float(t.radius)*1.5
+	var last := Vector2.INF
+	var r := 0.0
+	while r <= reach+1.0:
+		var p := Vector2(dir.x,dir.z)*r
+		if shape.on_land(p): last = p
+		elif last != Vector2.INF and r > 2.0: break
+		r += 0.5
+	if last == Vector2.INF: return home+dir*float(t.radius)
+	return home+Vector3(last.x,float(shape.ground_at(last)),last.y)
+
+## Where it will grip target `t`: the side it comes from (`turn`, or a coin
+## for it), the rim there, its wrists and feet on the lip either side, where
+## its root hangs and which way it faces. Seen from the aqueduct isle's
+## turf, it clings on the isle's flank and a little beyond it, so the body
+## shows beside the isle and the neck rears over the turf, and the blast
+## crosses the view.
+func _plan_grip(t: Dictionary, turn := 0.0) -> Dictionary:
+	var home: Vector3 = t.home
+	var eye := shadow_at if shadow_at != Vector3.INF else home
+	var view := Vector3(home.x-eye.x,0.0,home.z-eye.z).normalized()
+	if turn == 0.0: turn = 1.5*_clear_side(t,view,eye)
+	var out := view.rotated(Vector3.UP,turn)
+	var tangent := Vector3(-out.z,0.0,out.x)
+	var rim := _rim_along(t,out)
+	var right := (-out).cross(Vector3.UP).normalized()
+	var wrists := {}
+	var feet := {}
+	for k in [-1.0,1.0]:
+		var w := _rim_along(t,out.rotated(Vector3.UP,0.62*k))
+		var f := _rim_along(t,out.rotated(Vector3.UP,0.2*k))
+		var n := "R" if (w-rim).dot(right) > 0.0 else "L"
+		wrists[n] = w
+		feet["R" if (f-rim).dot(right) > 0.0 else "L"] = f
+	var root := rim+out*CLING_OUT*size/0.85-Vector3.UP*CLING_DOWN*size/0.85
+	return {"target":t,"turn":turn,"rim":rim,"out":out,"tangent":tangent,"side":signf(turn),
+		"wrists":wrists,"feet":feet,"root":root,"yaw":atan2(out.x,out.z)}
+
+## Which flank (1 or -1) shows from `eye`: the one whose rim stands
+## furthest, as seen, from any nearer isle in front of it.
+func _clear_side(t: Dictionary, view: Vector3, eye: Vector3) -> float:
+	var home: Vector3 = t.home
+	var best := 1.0
+	var best_gap := -INF
+	for k in [1.0,-1.0]:
+		var at := home+view.rotated(Vector3.UP,1.5*k)*(float(t.radius)+10.0)-Vector3.UP*10.0
+		var d := at-eye
+		var gap := INF
+		for isle: Array in isles:
+			var p: Vector3 = isle[0]
+			if p.distance_to(home) < 1.0: continue
+			var to := p-eye
+			if to.length() >= d.length() or to.length() < 60.0: continue
+			gap = minf(gap,to.angle_to(d)-atan2(float(isle[1])*1.6,to.length()))
+		if gap > best_gap:
+			best_gap = gap
+			best = k
+	return best
+
+## Off to attack the next target: in wide and banking round, then low
+## outside its rim, where the grab begins.
+func _add_attack() -> void:
+	var t: Dictionary = targets[_target_i%targets.size()]
+	grip = _plan_grip(t)
+	var out: Vector3 = grip.out
+	var tangent: Vector3 = grip.tangent
+	var root: Vector3 = grip.root
+	route.append(root+out*240.0+tangent*float(grip.side)*130.0+Vector3.UP*28.0)
+	route.append(root+out*95.0+Vector3.UP*6.0)
+	_leg_kinds.append("attack")
+	_leg_kinds.append("grab")
+	_attack_in = INF
+	print("sky dragon: off to attack %s, %.0f m from the isle's middle" % [str(t.name),Vector2(root.x-home.x,root.z-home.z).length()])
+
+## The grab begins: from its flight into a hard flare and onto the rim.
+func _begin_grab() -> void:
+	# The isle may have stood up since the plan: the rim again, same side.
+	grip = _plan_grip(grip.target,float(grip.turn))
+	var fwd := Vector3(-sin(yaw)*cos(gamma),sin(gamma),-cos(yaw)*cos(gamma))
+	_grab = {"p0":pos,"v0":fwd*speed,"yaw0":yaw,"pitch0":gamma*0.75+0.05,"roll0":roll,"t":0.0}
+	state = "grabbing"
+	route.clear()
+	_leg_kinds.clear()
+	leg_kind = "grab"
+
+## The grab: a curve from where it was (at its speed) to its hold on the
+## rim, arriving slowed but still coming; it pitches up into a flare, the
+## wings cupped and beating back hard, the legs swung forward to reach.
+func _grabbing(delta: float) -> void:
+	_grab.t = float(_grab.t)+delta
+	var u := clampf(float(_grab.t)/GRAB,0.0,1.0)
+	var p0: Vector3 = _grab.p0
+	var p1: Vector3 = grip.root
+	var m0: Vector3 = (_grab.v0 as Vector3)*GRAB
+	m0 = m0.limit_length(p0.distance_to(p1)*1.25)
+	var m1: Vector3 = (-(grip.out as Vector3)*0.5+Vector3.DOWN*0.8).normalized()*14.0
+	var u2 := u*u
+	var u3 := u2*u
+	pos = p0*(2.0*u3-3.0*u2+1.0)+m0*(u3-2.0*u2+u)+p1*(-2.0*u3+3.0*u2)+m1*(u3-u2)
+	yaw = lerp_angle(float(_grab.yaw0),float(grip.yaw),smoothstep(0.0,0.8,u))
+	var pitch := lerpf(float(_grab.pitch0),CLING_PITCH*0.92,smoothstep(0.15,0.9,u))
+	gamma = (pitch-0.05)/0.75
+	roll = lerpf(float(_grab.roll0),0.0,smoothstep(0.0,0.6,u))
+	_free = 1.0-smoothstep(0.0,0.5,u)
+	_flare = smoothstep(0.3,0.75,u)
+	mode = "climb"
+	# Hard back-beats through the flare.
+	flap_w = 1.0
+	phase = fposmod(phase+delta*lerpf(BEAT,0.75,_flare),1.0)
+	if u >= 1.0: _slam()
+
+## On the rim: it holds on, the isle shudders, dust and stone come off,
+## the isle's birds burst out.
+func _slam() -> void:
+	state = "clinging"
+	_snapshot(0.3)
+	_free = 0.0
+	_flare = 0.0
+	var t: Dictionary = grip.target
+	var rec := _record(t)
+	gale.hold_isle(rec.get("node") as Node3D if rec.has("node") else null,rec.get("shape") as RefCounted if rec.has("shape") else null,t.home,float(t.radius),grip.out)
+	gale.slam(grip.rim,grip.out,grip.tangent)
+	if flush_birds.is_valid(): flush_birds.call(t.home)
+	_c_settle_v = -7.0
+	_cling_t = 0.0
+	_cling_left = _rng.randf_range(CLING_HOLD.x,CLING_HOLD.y)
+	_set_breath("settle",2.6)
+	_c_look_next = 0.0
+	_roar_t = -1.0
+	print("sky dragon: it grips %s's rim at (%.0f, %.0f, %.0f); lets go in %.0f s" % [str(t.name),(grip.rim as Vector3).x,(grip.rim as Vector3).y,(grip.rim as Vector3).z,_cling_left])
+
+func _set_breath(to: String, length: float) -> void:
+	breath = to
+	_breath_t = 0.0
+	_breath_len = length
+	_knocked = false
+	if to == "blow": _sweep_from = SWEEP if _rng.randf() < 0.5 else -SWEEP
+
+## Holding on: the breath's beats, its pose, the gale and the pilot.
+func _clinging(delta: float) -> void:
+	_cling_t += delta
+	_cling_left -= delta
+	_breath_t += delta
+	if _breath_t >= _breath_len:
+		match breath:
+			"settle": _set_breath("pant",_rng.randf_range(PANT.x,PANT.y))
+			"pant":
+				if _cling_left <= 0.0:
+					_let_go()
+					return
+				_set_breath("inhale",INHALE)
+			"inhale": _set_breath("blow",BLOW)
+			"blow": _set_breath("recover",RECOVER)
+			"recover": _set_breath("pant",_rng.randf_range(PANT.x,PANT.y))
+	_cling_pose(delta)
+	var mouth := mouth_at()
+	var way := blast_way()
+	match breath:
+		"inhale":
+			if _breath_t > 0.3: gale.inhale(mouth,way,delta)
+		"blow":
+			var env := blow_envelope()
+			gale.blow(mouth,way,env,delta)
+			if gale.take_crumble(): gale.crumble(grip.rim,grip.out,grip.tangent,14.0)
+			_blow_on_pilot(delta,mouth,way,env)
+	if breath == "settle" and _breath_t < 1.6 and _rng.randf() < delta*8.0: gale.crumble(grip.rim,grip.out,grip.tangent,12.0)
+	_touch_treasure()
+
+## The blow's strength through its beat: quick in, held, eased out.
+func blow_envelope() -> float:
+	return smoothstep(0.0,0.35,_breath_t)*(1.0-smoothstep(BLOW-0.7,BLOW,_breath_t))
+
+## The mouth (world): the jaw's tip.
+func mouth_at() -> Vector3:
+	return skeleton.global_transform*skeleton.get_bone_global_pose(_bone["jaw.tip"]).origin
+
+## Which way it blows, flat (unit): in across the isle, turned by the
+## head's sweep.
+func blast_way() -> Vector3:
+	if grip.is_empty(): return Vector3.FORWARD
+	return (-(grip.out as Vector3)).rotated(Vector3.UP,_c_look.x*float(_sweep_sign)).normalized()
+
+## The pose on the rim. The body hangs nose up with its belly to the cliff,
+## heaving as it breathes; the wrists' thumbs and the hind claws are reached
+## to the lip (a little IK each frame); the neck rears over the turf and
+## turns, looking round, drawing back on the inhale and thrusting and
+## sweeping on the blow; the mouth pants open, the tail hangs under the keel.
+func _cling_pose(delta: float) -> void:
+	var xf := _isle_xf()
+	var out: Vector3 = grip.out
+	var u := _breath_t/maxf(_breath_len,0.01)
+	var rear_goal := 0.0
+	var jaw := 0.0
+	var wing_open := 0.2
+	var yaw_goal := 0.0
+	var pant := 0.0
+	match breath:
+		"settle":
+			jaw = 0.42*sin(PI*clampf(_breath_t/1.6,0.0,1.0))
+			rear_goal = 0.5*sin(PI*clampf(_breath_t/2.0,0.0,1.0))
+			wing_open = lerpf(0.75,0.2,smoothstep(0.0,1.0,u))
+		"pant":
+			pant = 1.0
+			jaw = 0.26+0.07*sin(_clock*TAU*1.4)
+			rear_goal = -0.15
+		"inhale":
+			jaw = lerpf(0.2,0.42,smoothstep(0.0,1.0,u))
+			rear_goal = smoothstep(0.0,0.8,u)
+			wing_open = lerpf(0.2,0.5,u)
+		"blow":
+			var env := blow_envelope()
+			jaw = lerpf(0.42,0.66,smoothstep(0.0,0.15,_breath_t))+0.02*sin(_clock*29.0)
+			rear_goal = lerpf(1.0,-0.8,smoothstep(0.0,0.3,_breath_t))
+			wing_open = 0.5+0.25*env
+			yaw_goal = lerpf(_sweep_from,-_sweep_from,smoothstep(0.1,0.9,u))
+		"recover":
+			jaw = lerpf(0.5,0.28,u)
+			rear_goal = lerpf(-0.8,-0.15,smoothstep(0.0,1.0,u))
+			wing_open = lerpf(0.75,0.2,u)
+	# Looking round between blasts: a new glance every couple of seconds.
+	if breath in ["pant","settle","recover"]:
+		_c_look_next -= delta
+		if _c_look_next <= 0.0:
+			_c_look_next = _rng.randf_range(1.4,3.2)
+			_c_look_goal = Vector2(_rng.randf_range(-0.6,0.6),_rng.randf_range(-0.2,0.25))
+		yaw_goal = _c_look_goal.x
+	_c_look_v += ((Vector2(yaw_goal,_c_look_goal.y*(1.0 if pant > 0.0 else 0.0))-_c_look)*(14.0 if breath == "blow" else 5.0)-_c_look_v*(5.5 if breath == "blow" else 3.4))*delta
+	_c_look += _c_look_v*delta
+	_c_rear_v += ((rear_goal-_c_rear)*12.0-_c_rear_v*5.0)*delta
+	_c_rear += _c_rear_v*delta
+	_c_settle_v += (-_c_settle*16.0-_c_settle_v*3.0)*delta
+	_c_settle += _c_settle_v*delta
+	_jaw_goal = jaw
+	# The body.
+	var heave := sin(_clock*TAU*(0.6 if pant > 0.0 else 0.22))
+	var pitch := CLING_PITCH+_c_rear*0.1+0.02*heave
+	var basis := Basis(Vector3.UP,float(grip.yaw))*Basis(Vector3.RIGHT,pitch)*Basis(Vector3.BACK,0.03*sin(_clock*0.37))
+	pos = xf*(grip.root as Vector3)+Vector3.UP*_c_settle+out*(_c_rear*0.9)
+	global_transform = Transform3D(basis,pos)
+	yaw = float(grip.yaw)
+	if _bone.has("chest"): skeleton.set_bone_pose_scale(_bone["chest"],Vector3(1.0+0.05*heave*(0.4+pant),1.0,1.0+0.06*heave*(0.4+pant)))
+	_turn("chest",[[Vector3.RIGHT,-0.04*_c_rear]])
+	_turn("hips",[[Vector3.RIGHT,0.1]])
+	_turn("spine.2",[[Vector3.RIGHT,-0.1]])
+	var sk_inv := skeleton.global_transform.affine_inverse()
+	for side in [-1.0,1.0]:
+		var n := "L" if side < 0.0 else "R"
+		var fold := 1.0-wing_open
+		_turn("wing_arm."+n,[[Vector3.BACK,-side*0.5],[Vector3.UP,side*0.3]])
+		_turn("wing_fore."+n,[[Vector3.UP,side*fold*0.9]])
+		_turn("wing_hand."+n,[[Vector3.UP,-side*fold*1.6],[Vector3.BACK,-side*0.25]])
+		_turn("wing_f1."+n,[[Vector3.BACK,side*0.1]])
+		_turn("wing_f1b."+n,[[Vector3.BACK,side*0.15]])
+		_turn("wing_f2."+n,[[Vector3.UP,side*fold*0.2]])
+		_turn("wing_f3."+n,[[Vector3.UP,side*fold*0.4]])
+		_turn("wing_f4."+n,[[Vector3.UP,side*fold*0.6]])
+		var wrist: Vector3 = xf*(grip.wrists[n] as Vector3)+Vector3.UP*0.8*size-out*1.2*size
+		_reach(["wing_arm."+n,"wing_fore."+n],"wing_hand."+n,sk_inv*wrist)
+		_turn("hind_upper."+n,[[Vector3.RIGHT,0.5]])
+		_turn("hind_lower."+n,[[Vector3.RIGHT,-0.3]])
+		_turn("hind_foot."+n,[[Vector3.RIGHT,0.9]])
+		var foot: Vector3 = xf*(grip.feet[n] as Vector3)-Vector3.UP*1.0*size+out*0.4*size
+		_reach(["hind_upper."+n,"hind_lower."+n],"hind_foot."+n,sk_inv*foot)
+	# The neck: bent forward to carry the head out level over the turf
+	# (the body's pitch undone), turned round its own root to look and
+	# sweep, drawn back and up on the inhale, thrust on the blow.
+	var look_yaw := _c_look.x
+	var look_pitch := _c_look.y
+	var bends := [0.0,-0.3,-0.34,-0.24]
+	for i in range(_neck_n):
+		var b: float = bends[mini(i,bends.size()-1)]
+		var u_n := float(i)/maxf(_neck_n-1,1)
+		var rear := _c_rear*lerpf(0.32,-0.1,u_n)
+		var wave := 0.03*sin(_clock*0.9-float(i)*0.6)
+		_turn("neck.%d" % i,[[Vector3.FORWARD,look_yaw*lerpf(0.4,0.1,u_n)],[Vector3.RIGHT,b+rear+wave]])
+	_turn("head",[[Vector3.RIGHT,-0.12+look_pitch+_c_rear*0.25],[Vector3.UP,look_yaw*0.35]])
+	_mouth(delta)
+	_tail(delta)
+
+## A little reaching IK (cyclic coordinate descent): turns `chain`'s bones
+## (root first) so `end`'s origin comes to `target` (skeleton space).
+func _reach(chain: Array, end: String, target: Vector3) -> void:
+	if not _bone.has(end): return
+	for k in range(4):
+		for j in range(chain.size()-1,-1,-1):
+			var b: String = chain[j]
+			if not _bone.has(b): continue
+			var bi: int = _bone[b]
+			var bg := skeleton.get_bone_global_pose(bi)
+			var e := skeleton.get_bone_global_pose(_bone[end]).origin
+			var to_e := e-bg.origin
+			var to_t := target-bg.origin
+			if to_e.length() < 0.01 or to_t.length() < 0.01: continue
+			var axis := to_e.cross(to_t)
+			if axis.length() < 0.00001: continue
+			var angle := minf(to_e.angle_to(to_t),0.7)
+			var new_g := Basis(axis.normalized(),angle)*bg.basis
+			var parent := skeleton.get_bone_parent(bi)
+			var pg := skeleton.get_bone_global_pose(parent).basis if parent >= 0 else Basis()
+			skeleton.set_bone_pose_rotation(bi,(pg.inverse()*new_g).get_rotation_quaternion())
+
+## Lets go: it pushes off and drops back from the rim on a heavy beat,
+## turning out, and the isle springs back.
+func _let_go() -> void:
+	state = "leaving"
+	_snapshot(0.6)
+	gale.release_isle()
+	for i in range(14): gale.crumble(grip.rim,grip.out,grip.tangent,14.0)
+	_jaw_goal = -1.0
+	breath = ""
+	_grab = {"t":0.0,"p0":pos,"yaw0":float(grip.yaw)}
+	flap_w = 1.0
+	phase = 0.55
+	_bout = true
+	print("sky dragon: it lets go of %s" % str(grip.target.name))
+
+const LEAVE := 3.2
+
+func _leaving(delta: float) -> void:
+	_grab.t = float(_grab.t)+delta
+	var t := float(_grab.t)
+	var u := clampf(t/LEAVE,0.0,1.0)
+	var out: Vector3 = grip.out
+	pos = (_grab.p0 as Vector3)+out*(6.0*t+2.2*t*t)+Vector3.DOWN*(2.6*t*t)
+	yaw = lerp_angle(float(_grab.yaw0),float(_grab.yaw0)+PI*float(grip.side),smoothstep(0.15,0.95,u))
+	var pitch := lerpf(CLING_PITCH*0.9,-0.25,smoothstep(0.0,0.85,u))
+	gamma = (pitch-0.05)/0.75
+	roll = 0.5*float(grip.side)*sin(PI*u)
+	_free = smoothstep(0.5,1.0,u)
+	# One heavy beat, then gliding off.
+	flap_w = 1.0-smoothstep(0.7,1.0,u)
+	phase = fposmod(phase+delta*0.42,1.0)
+	mode = "cruise"
+	if u >= 1.0:
+		state = "roaming"
+		yaw = atan2(-out.x,-out.z)
+		gamma = -0.25
+		speed = 26.0
+		_free = 1.0
+		route.clear()
+		_leg_kinds.clear()
+		_add_circuit()
+		_target_i = (_target_i+1)%maxi(targets.size(),1)
+		_attack_in = _attack_every*_rng.randf_range(0.85,1.2)
+		grip = {}
+
+## Remembers every bone's turn now, to blend from it over `length` s.
+func _snapshot(length: float) -> void:
+	_blend_from.clear()
+	for b: String in _bone:
+		var i: int = _bone[b]
+		_blend_from[i] = skeleton.get_bone_pose_rotation(i)
+	_blend_t = 0.0
+	_blend_len = length
+
+func _blend(delta: float) -> void:
+	if _blend_from.is_empty(): return
+	_blend_t += delta
+	var w := smoothstep(0.0,1.0,_blend_t/maxf(_blend_len,0.01))
+	if w >= 1.0:
+		_blend_from.clear()
+		return
+	for i: int in _blend_from:
+		var now := skeleton.get_bone_pose_rotation(i)
+		skeleton.set_bone_pose_rotation(i,(_blend_from[i] as Quaternion).slerp(now,w))
+
+## The blow on a pilot on the isle (round 1's): in the cone's core and in
+## the open, knocked into a tumble; in the wider band, pushed along; behind
+## stone, nothing.
+func _blow_on_pilot(delta: float, mouth: Vector3, way: Vector3, env: float) -> void:
+	if walker == null or not on_foot or env <= 0.05: return
+	if walker.has_method("recovering") and walker.recovering(): return
+	var mid: Vector3 = (walker.get("feet") as Vector3)+Vector3.UP*0.6
+	var off := mid-mouth
+	var flat := Vector2(off.x,off.z)
+	var dist := flat.length()
+	if dist > REACH or dist < 0.5 or absf(off.y) > 30.0: return
+	var w2 := Vector2(way.x,way.z)
+	var angle := absf(w2.angle_to(flat))
+	if angle > PUSH_CONE: return
+	var space := get_world_3d().direct_space_state
+	if not space.intersect_ray(PhysicsRayQueryParameters3D.create(mouth,mid,1)).is_empty(): return
+	var away := (flat.normalized()*0.5+w2*0.5).normalized()
+	if angle <= CONE and env > 0.5 and not _knocked:
+		walker.knock(walker.knock_velocity(away,lerpf(KNOCK_OUT.x,KNOCK_OUT.y,dist/REACH),KNOCK_UP))
+		_knocked = true
+		print("sky dragon: the gale knocks the pilot, %.1f m from the mouth" % dist)
+		return
+	if slide.is_valid() and bool(walker.get("grounded")):
+		var push := away*PUSH*env*(1.0-dist/REACH*0.5)*delta
+		var feet: Vector3 = walker.get("feet")
+		var moved: Vector3 = slide.call(feet,Vector3(push.x,0.0,push.y))
+		walker.set("feet",Vector3(moved.x,feet.y,moved.z))
+
+## The treasure taken from its tongue: a roar, and it lets go.
+func _touch_treasure() -> void:
+	if taken or walker == null or not on_foot or treasure == null: return
+	var mid: Vector3 = (walker.get("feet") as Vector3)+Vector3.UP*0.6
+	if mid.distance_to(treasure.global_position) > TAKE_R: return
+	taken = true
+	treasure.visible = false
+	print("sky dragon: the treasure is taken; it roars and lets go")
+	yielded.emit()
+	_let_go()
+	_roar_t = 0.0
 
 # --- The watch camera ---------------------------------------------------------------
 
@@ -868,6 +1537,24 @@ func _watch_camera(delta: float) -> void:
 			eye = _watch_from
 			aim = at
 		_: return
+	# On a rim: framed on the isle and the dragon on it, out to the side so
+	# the neck over the turf, the hanging tail and the blast across all show.
+	var on_rim := not grip.is_empty() and (state == "clinging" or (state == "grabbing" and float(_grab.get("t",0.0)) > GRAB*0.4))
+	if on_rim:
+		var rim: Vector3 = _isle_xf()*(grip.rim as Vector3)
+		var out: Vector3 = grip.out
+		var tangent: Vector3 = grip.tangent
+		match watch:
+			"chase":
+				eye = rim+out*72.0+tangent*float(grip.side)*62.0+Vector3.UP*26.0
+				aim = rim+Vector3.UP*4.0-out*6.0
+			"orbit":
+				var a := _orbit
+				if _orbit_fixed != INF: a = atan2(out.z,out.x)+_orbit_fixed
+				eye = rim+Vector3(cos(a),0.0,sin(a))*_orbit_far+Vector3.UP*_orbit_up
+				aim = rim+Vector3.UP*2.0
+			"look":
+				aim = rim+Vector3.UP*8.0
 	if _watch_fresh:
 		if _fov < 0.0: _fov = camera.fov
 		_watch_eye = eye

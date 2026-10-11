@@ -4,10 +4,116 @@ A giant dragon from the cloud sea, after the Ruined Kingdom dragon in Mario
 Odyssey. Round 1 gripped the isle's rim and blew gales; the user found it
 "animatronic" (no body) and out of the game's style. Round 2 gave it a full
 body and made it fly well. Round 3 rebuilds it as a wyvern after Smaug and
-makes it ride the air. The rim grip and gusts are parked.
+makes it ride the air. Round 4 brings the attack back on a far isle: it
+clings to the rim and blows gales across it, seen from the aqueduct isle.
 
 Branch `study/rim-dragon`. This is a demo round: no tests, no bot sweeps, no
 perf pass.
+
+## Round 4: the attack on a far isle
+
+The user's note on round 3: "Much better. Now, can we work on the attack?
+I'd like to see him cling on to one of the other islands in the distance."
+
+### Play
+
+- `./run-rim-dragon.command --dragon-attack`: the dragon starts far out on
+  its way in to **hills_ne**, about 270 m east-north-east of the turf. It
+  grabs about 6 s in and is on the rim by about 10 s. Stand on the turf's
+  east side and look ENE.
+- Without the flag it roams as in round 3 and makes its first attack about
+  40 s after rising, then another every 60 to 85 s
+  (`--dragon-attack-every=<s>`, 70). The targets rotate: hills_ne (270 m),
+  meadow_south (190 m, south), grove_east (135 m, east; the most trees).
+  `--dragon-target=<name>` picks the first one.
+- V's cameras frame the rim while it clings: chase is a three-quarter view
+  from outside and to the side, orbit circles the rim point
+  (`--dragon-orbit=<deg>` is measured from the rim's outward way), and look
+  aims at the rim from where you stood.
+
+### What happens (scripts/sky_dragon.gd, scripts/dragon_gale.gd)
+
+- **Target and side.** Targets are listed in `DRAGON_TARGETS`
+  (studies/aqueduct_isle.gd). It grips the isle's flank as seen from the
+  turf (`_clear_side`): of the two flanks, the one whose rim stands
+  furthest, as seen, from any nearer isle. grove_east would otherwise hide
+  it on hills_ne. So it shows in profile, and the blast crosses the view.
+  The rim is found on the isle's real outline (SkyIslet `on_land` and
+  `ground_at`, marched outward), as are the wrist and foot holds either
+  side.
+- **Approach and grab.** It goes in wide and banking round, then low
+  outside the rim. The grab is a 3.4 s Hermite curve from its flight
+  velocity onto the hold. It pitches up into a flare, with the wings swept
+  forward and back-beating at 0.75 Hz and the legs swung forward. The
+  swell and bumps fade out.
+- **The slam.** The pose snaps over in 0.3 s. The isle node itself dips
+  (an under-damped spring) and tilts toward the dragon, collision and all,
+  and stays a little tilted while held. Dust puffs burst along the rim,
+  about 30 stones break off and tumble into the clouds, and the isle's
+  songbird flock (SkyAmbientLife) is flushed.
+- **Clinging.** The body hangs nose up (1.12 rad), belly to the cliff. The
+  wrists (thumb claws) and the hind feet are reached to the lip each frame
+  by a small CCD IK (`_reach`), so they ride the isle's shudder. The
+  membranes hang folded like a cape and open on the blast. The tail rope
+  hangs and swings slowly under the keel. The neck rears over the turf.
+- **Breath cycle.**
+  - **Settle:** a gasp.
+  - **Pant:** 4.5 to 7 s, jaw panting, glancing round on springs.
+  - **Inhale:** 2.1 s, the tell. The head draws back and up, streaks flow
+    into the mouth, and the isle's trees lean toward it.
+  - **Blow:** 3.8 s. The head thrusts forward and sweeps ±0.42 rad across.
+  - **Recover:** 1.3 s.
+
+  Most of the blow reuses round 1's streaks, about 3x bigger (up to 34 m
+  long), pouring across and on into the sky. The trees thrash because the
+  wind tool's own foliage lanes (`zs_blow_*`, read by every plant's shader
+  through `zs_blow_at`, conifers included) fire every 0.32 s along the
+  blast. Nothing else publishes them on the aqueduct isle. Leaves are torn
+  off the turf, stones shake loose, and big soft puffs churn up out of the
+  cloud tops 70 to 420 m beyond in a widening wake.
+- **The treasure.** A gem on its tongue, with a four-pointed glint that
+  flares every few seconds and a small light.
+- **Let go.** After 45 to 60 s, at the end of a pant, it pushes off. It
+  drops back and turns out on one heavy beat (3.2 s, blended from the cling
+  pose), the isle springs back, and it flies a circuit before roaming on.
+- **The pilot.** If he is on foot on the attacked isle, the blow uses round
+  1's rules: knocked into a tumble in the cone's core (±0.34 rad, 70 m) with
+  a clear line, and pushed along in the band. Touching the gem (3.2 m)
+  takes it: `yielded` pops the HUD, and it roars and lets go.
+
+### Captures (local, gitignored, docs/design/rim-dragon/)
+
+- `r4_from_turf_blast.png`: from the turf's east side, mid-blast on
+  hills_ne. It shows the streaks across the isle, the leaves flung off and
+  the tail hanging.
+- `r4_close_blast.png`: close side view mid-blast. The neck is reared over
+  the turf, the jaw open, a wrist hooked on the rim.
+- `r4_slam_chase.png`: chase camera at the end of the grab.
+- `r4_top_grip.png`: from above, the wrists on the rim either side.
+
+Capture example: `--dragon --dragon-attack --dragon-skip=17 --at=122,40,6
+--look=330,50,-120 --capture=x.png` (mid-blast from the turf).
+
+### Rough
+
+- From the turf, at 270 m, the dragon is small, about a tenth of the screen
+  wide. The blast streaks and the leaf cloud read; the trees thrashing do
+  not read at that range. Using `look` (V) narrows the FOV to 40.
+  grove_east (135 m) shows it bigger.
+- Not checked in play whether the pilot can land on and walk a lone isle.
+  The knock and treasure code is wired but untested in play.
+- The cloud-sea wake is plain soft billboards, not the volumetric clouds
+  themselves (cloud_wakes.gd is tied to the puffs and towers). It sits at
+  "about 80 m under the mouth", a guess at the cloud tops.
+- The neck's sweep axis and sign are rough. The blast's way follows the
+  dragon's facing plus the sweep rather than the head's true aim, so they
+  can disagree by a little.
+- The grab is a curve, not physics, and the slam has no camera shake or
+  sound. The let-go turn is a simple yaw lerp.
+- The membranes fold like a cape. The thumb claws are not posed separately.
+- Leaves are flat quads. Debris is big on purpose (0.5 to 1.3 m).
+- While it clings, nothing else reads the isle's tilt: the airships, the
+  traffic and the islet life still use the home position.
 
 ## Round 3: a wyvern after Smaug
 

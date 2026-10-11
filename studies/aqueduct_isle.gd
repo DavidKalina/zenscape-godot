@@ -106,6 +106,9 @@ const SkyDragon = preload("res://scripts/sky_dragon.gd")
 ## the way it faces, into the isle.
 const DRAGON_RIM := Vector2(126.6,-9.0)
 const DRAGON_INTO := Vector2(-1.0,0.0)
+## The flying dragon's attack targets (round 4), in turn: lone isles of
+## the sky (IsleSky.ISLES names) seen from the turf, 270, 190 and 135 m off.
+const DRAGON_TARGETS := ["hills_ne","meadow_south","grove_east"]
 
 ## The station this is (its key in the pack).
 const STATION := 2
@@ -405,6 +408,7 @@ func _process(delta: float) -> void:
 			if _atmosphere != null:
 				dragon.air = _atmosphere.breeze()
 				dragon.air_angle = _atmosphere._air_angle
+			dragon.on_foot = not flying
 			dragon.advance(delta)
 
 ## A fixed-eye capture (--at) still flies the dragon.
@@ -508,8 +512,30 @@ func _build_sky_dragon() -> void:
 	for p: Vector2 in Art.NEAR: middle += p
 	middle /= float(Art.NEAR.size())
 	dragon.shadow_at = Vector3(middle.x,Art.TOP,middle.y)
+	# Its attacks: the far isles it clings to, their built records, their
+	# birds; the pilot it can knock and who can take its treasure.
+	for want: String in DRAGON_TARGETS:
+		for isle: Array in IsleSky.ISLES:
+			if isle[0] == want: dragon.targets.append({"name":want,"home":isle[3],"radius":float(isle[4])})
+	dragon.find_isle = func(isle_name: String) -> Dictionary:
+		return sky.isles.get(isle_name,{}) if sky != null and sky.get("isles") != null else {}
+	dragon.flush_birds = _flush_isle_birds
+	dragon.walker = motor
+	dragon.slide = ground.slide_callable()
+	dragon.yielded.connect(_dragon_yielded)
 	dragon.setup(camera,preload("res://scripts/launch_args.gd").user_args(),IsleChain.SEA_TOP,IsleSky.MIDDLE,Art.TOP,list)
 	if _switch_hint != null and not flying: _switch_hint.text = _foot_text()
+
+## The far isle's songbirds burst out of its crown and its gulls stir, as
+## the dragon slams onto its rim.
+func _flush_isle_birds(at: Vector3) -> void:
+	var life_node: Variant = sky.get("life") if sky != null else null
+	if life_node == null: return
+	var host: Variant = life_node.host_at(at)
+	if host == null: return
+	host.flushed = 0.0
+	host.armed = false
+	host.stir = 1.0
 
 ## Each gale as a strong gust front along its way, so the grass and the
 ## air's ribbons lie over with it.
