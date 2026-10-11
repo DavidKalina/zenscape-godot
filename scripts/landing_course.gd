@@ -8,7 +8,8 @@ extends RefCounted
 ## gust, start}, in local metres: the field's near edge is at local z 0 and
 ## it runs north (-Z) for `length` m, `width` m wide; the plane starts
 ## START_OUT m south of it, START_UP m over it, flying north at cruise.
-## `touch` (local) is where a careful pilot would set the wheels down.
+## `touch` (local) is where a careful pilot would set the wheels down. Or
+## it starts closer, lower or faster (APPROACHES).
 ## A pad is a solid of land: a `rect` (Rect2 over x, z) or a `circle`
 ## (Vector3 x, z, radius), its top at `y` plus `slope` (Vector2: metres up
 ## per metre of x and of z), `depth` m of rock under it. Stations stand
@@ -17,7 +18,7 @@ extends RefCounted
 ##   1 long_field   a long wide field, flat: room for anything
 ##   2 short_ledge  a short field ending at a ledge, a lower shelf beyond it
 ##   3 slope_field  a field rising 1 in 7 away from the approach
-##   4 islet        a round islet 18 m across
+##   4 islet        a round islet 24 m across (round 1: 18)
 ##   5 crosswind    a narrow strip with a gusting wind across it
 
 const SPACING := 500.0
@@ -26,6 +27,16 @@ const SEA_Y := -60.0
 ## field (m).
 const START_OUT := 170.0
 const START_UP := 24.0
+## The approaches it can start on (the study's H, `--approach=`): "normal"
+## (START_OUT out, START_UP up, at cruise: time to slow down), "hot"
+## (closer and lower at cruise: it comes in fast) and "boost" (at Boost's
+## speed: hold Space to keep it). Out and up in m, the speed in m/s.
+const APPROACHES := {
+	"normal":{"out":START_OUT,"up":START_UP,"speed":14.0},
+	"hot":{"out":100.0,"up":12.0,"speed":14.0},
+	"boost":{"out":150.0,"up":14.0,"speed":22.0},
+}
+const APPROACH_NAMES := ["normal","hot","boost"]
 
 const STATIONS: Array[Dictionary] = [
 	{"id":"long_field","key":1,"name":"Long field","note":"90 m by 24, flat. Room to float, bounce and settle again.",
@@ -38,9 +49,9 @@ const STATIONS: Array[Dictionary] = [
 	{"id":"slope_field","key":3,"name":"Sloped field","note":"50 m long, rising 1 in 7 away from you: it comes up to meet the wheels.",
 		"pads":[{"rect":Rect2(-10.0,-50.0,20.0,50.0),"y":0.0,"slope":Vector2(0.0,-0.14),"depth":12.0}],
 		"touch":Vector3(0.0,0.84,-6.0),"length":50.0,"width":20.0},
-	{"id":"islet","key":4,"name":"Small islet","note":"A round islet 18 m across. Slow, flaps, brakes.",
-		"pads":[{"circle":Vector3(0.0,-9.0,9.0),"y":0.0,"depth":9.0}],
-		"touch":Vector3(0.0,0.0,-3.0),"length":18.0,"width":18.0},
+	{"id":"islet","key":4,"name":"Small islet","note":"A round islet 24 m across. Slow and flaps, or hot onto its rim and power-slide.",
+		"pads":[{"circle":Vector3(0.0,-12.0,12.0),"y":0.0,"depth":10.0}],
+		"touch":Vector3(0.0,0.0,-3.0),"length":24.0,"width":24.0},
 	{"id":"crosswind","key":5,"name":"Crosswind strip","note":"60 m by 10, the wind across it from the west, gusting.",
 		"pads":[{"rect":Rect2(-5.0,-60.0,10.0,60.0),"y":0.0,"depth":12.0}],
 		"touch":Vector3(0.0,0.0,-10.0),"length":60.0,"width":10.0,
@@ -66,9 +77,14 @@ static func index_of(s: Dictionary) -> int:
 static func origin(s: Dictionary) -> Vector3:
 	return Vector3(index_of(s)*SPACING,0.0,0.0)
 
-## Where the plane starts (global) and its heading (north).
-static func start_at(s: Dictionary) -> Vector3:
-	return origin(s)+Vector3(0.0,START_UP,START_OUT)
+## Where the plane starts (global) and its heading (north), on
+## `approach` (APPROACHES), and how fast.
+static func start_at(s: Dictionary, approach := "normal") -> Vector3:
+	var a: Dictionary = APPROACHES.get(approach,APPROACHES.normal)
+	return origin(s)+Vector3(0.0,float(a.up),float(a.out))
+
+static func start_speed(approach := "normal") -> float:
+	return float((APPROACHES.get(approach,APPROACHES.normal) as Dictionary).speed)
 
 ## The touch spot (global) and the field's way (level, north).
 static func touch_at(s: Dictionary) -> Vector3:

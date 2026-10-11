@@ -1,20 +1,31 @@
 extends SceneTree
 ## The hand-flown landing (scripts/manual_landing.gd) and its study
 ## (studies/landing_study.tscn), headless:
-##   - the touch's judge: slow, shallow, level is good; fast, steep, banked,
-##     nose first or on rough ground is a bounce;
-##   - a good touch settles, rolls out under the brakes and stops; stopped,
-##     it stays stopped until Exit is asked (never out by itself); Exit in
-##     the air or rolling is refused; once stopped it gets out;
-##   - a hot touch and a steep one bounce back up into the air, never into
-##     the ground; Boost on the roll lifts off again (a touch-and-go); rolled
-##     off the land's edge it flies again;
-##   - flaps slow the plane under SLOW; without them it flies as ever;
+##   - the touch's grade: slow, shallow, level is a greaser; within round
+##     1's limits firm; fast hot, steep or nose first hard, a wing low
+##     wingtip, all of which stick; mid barrel roll or onto rough ground
+##     hops;
+##   - a greaser settles, rolls out straight and tidy under the brakes and
+##     stops; stopped, it stays stopped until Exit is asked (never out by
+##     itself); Exit in the air or rolling is refused; once stopped it gets
+##     out;
+##   - a hot touch at cruise or boost, and a slam down a steep dive, stick:
+##     a thump and a little hop that stays on the wheels, never a bounce,
+##     never into the ground; a barrel roll into the ground hops and rights
+##     itself, still flying;
+##   - steering hard at speed, or the lean with a turn, breaks it loose into
+##     a slide that sprays grit; let go, it grips again; a power-slide stops
+##     shorter than a straight brake, and a braked slide in between;
+##   - slid off the land's edge it flies on with its speed; Boost on the
+##     roll lifts off again (a touch-and-go);
+##   - rising air is calmed near the land; flaps slow the plane under SLOW,
+##     without them it flies as ever;
 ##   - in the study: the sharp bot lands and stops and the run is saved;
 ##     out of the plane, a hop is only a hop, walking off the edge opens the
 ##     canopy and never flies, the plane staying parked; stranded, the pilot
 ##     is brought back beside the plane, still on foot; Space by the plane
-##     boards it and takes off, flying again.
+##     boards it and takes off, flying again; the hot bots power-slide to a
+##     stop on the short field and the islet.
 ##   godot --headless --path . --script tests/test_manual_landing.gd
 const ManualLanding = preload("res://scripts/manual_landing.gd")
 const SkyPlane = preload("res://scripts/sky_plane.gd")
@@ -68,33 +79,44 @@ func fly(ml: ManualLanding, input: Dictionary, most: float, until := Callable())
 
 func run() -> void:
 	create_timer(240.0).timeout.connect(func() -> void: push_error("manual landing test timed out"); quit(2))
-	_judge()
+	_grades()
 	_good_touch()
-	_bounces()
+	_hot_sticks()
+	_hops()
+	_slides()
+	_power_slide()
 	_touch_and_go()
 	_edge()
+	_calm_air()
 	_flaps()
 	var finished: bool = await _study()
 	check(finished,"The study's checks ran to the end")
 	print("PASS: manual landing" if failures == 0 else "FAIL: manual landing (%d)" % failures)
 	quit(1 if failures else 0)
 
-func _judge() -> void:
-	check(ManualLanding.judge(8.0,0.8,0.05,-0.05,0.0) == "","Slow, shallow, level, on flat ground: a good touch")
-	check(ManualLanding.judge(13.0,0.8,0.0,0.0,0.0) == "fast","Too fast: a bounce (fast)")
-	check(ManualLanding.judge(8.0,3.0,0.0,-0.1,0.0) == "sink","Sinking too hard: a bounce (sink)")
-	check(ManualLanding.judge(8.0,0.5,0.6,0.0,0.0) == "bank","A wing down: a bounce (bank)")
-	check(ManualLanding.judge(8.0,0.5,0.0,0.0,0.0,true) == "bank","Mid barrel roll: a bounce (bank)")
-	check(ManualLanding.judge(8.0,0.5,0.0,-0.6,0.0) == "nose","Nose first: a bounce (nose)")
-	check(ManualLanding.judge(8.0,0.5,0.0,0.0,0.6) == "rough","Onto ground too steep: a bounce (rough)")
+func _grades() -> void:
+	check(ManualLanding.grade(8.0,0.8,0.05,-0.05,0.0) == "greaser","Slow, shallow, level, on flat ground: a greaser")
+	check(ManualLanding.grade(9.0,1.8,0.25,-0.3,0.0) == "firm","Within round 1's limits but firmer: firm")
+	check(ManualLanding.grade(8.0,0.8,0.05,-0.05,0.0,false,0.4) == "firm","Drifting at the touch: not a greaser")
+	check(ManualLanding.grade(14.0,0.8,0.0,0.0,0.0) == "hot","Too fast: hot")
+	check(ManualLanding.grade(8.0,3.0,0.0,-0.1,0.0) == "hard","Sinking hard: hard")
+	check(ManualLanding.grade(8.0,0.5,0.0,-0.6,0.0) == "hard","Nose first: hard")
+	check(ManualLanding.grade(8.0,0.5,0.6,0.0,0.0) == "wingtip","A wing down: wingtip")
+	check(ManualLanding.grade(8.0,0.5,0.0,0.0,0.0,true) == "tumble","Mid barrel roll: tumble")
+	check(ManualLanding.grade(8.0,0.5,0.0,0.0,0.6) == "rough","Onto ground too steep: rough")
+	for g: String in ["greaser","firm","hot","hard","wingtip"]: check(ManualLanding.sticks(g),"A %s touch sticks" % g)
+	check(not ManualLanding.sticks("tumble") and not ManualLanding.sticks("rough"),"A tumble or rough touch hops")
+	check(ManualLanding.thump(8.0,0.8,0.0) == 0.0 and ManualLanding.thump(22.0,5.0,0.0) > 0.9,"The hit grows with the speed and the sink")
 
 func _good_touch() -> void:
 	# Slow and shallow, brakes on: touches, rolls, stops.
 	var ml := approach(8.0,0.25,-0.1)
 	var input := {"brake":1.0,"flaps":0.0}
 	var seen := fly(ml,input,6.0,func(m: ManualLanding, _o: Dictionary) -> bool: return m.phase == ManualLanding.STOPPED)
-	check(seen.has("touch") and str(seen.touch.result) == "good","A slow shallow touch is good (%.1f m/s, sink %.2f)" % [float(seen.get("touch",{}).get("speed",0)),float(seen.get("touch",{}).get("sink",0))])
-	check(seen.has("settled") and not seen.has("bounce"),"It settles, no bounce")
+	check(seen.has("touch") and str(seen.touch.grade) == "greaser","A slow shallow touch is a greaser (%.1f m/s, sink %.2f)" % [float(seen.get("touch",{}).get("speed",0)),float(seen.get("touch",{}).get("sink",0))])
+	check(seen.has("settled") and seen.has("greaser") and not seen.has("bounce") and not seen.has("thump"),"It settles, no bounce, no thump")
+	check(not seen.has("slide") and float(ml.stats.slide_distance) == 0.0 and absf(float(ml.plane.position.x)) < 0.05,"A greaser rolls out straight: no slide, on its line")
+	check(int(ml.stats.greasers) == 1 and str(ml.stats.stop_grade) == "greaser","Counted as a greaser")
 	check(ml.phase == ManualLanding.STOPPED and seen.has("stopped"),"It rolls out under the brakes and stops (%.1f s)" % float(seen._t))
 	check(float(ml.stats.rollout) > 1.0 and float(ml.stats.rollout) < 14.0,"The rollout is measured (%.1f m)" % float(ml.stats.rollout))
 	check(float(seen._lowest) > 0.2,"The wheels never go into the ground (lowest %.2f m)" % float(seen._lowest))
@@ -115,24 +137,82 @@ func _good_touch() -> void:
 	check(ml.done() and out.has("out") and is_equal_approx(ml.hop,1.0) and ml.engine == 0.0,"The engine spins down and the pilot is out")
 	check(int(ml.stats.early_exits) == 0,"The early exits are counted per landing (none on this one)")
 
-func _bounces() -> void:
-	# Hot: at cruise, low over the field.
-	var ml := approach(14.0,0.2,-0.1)
-	var seen := fly(ml,{},0.6,func(_m: ManualLanding, o: Dictionary) -> bool: return o.has("bounce"))
-	check(seen.has("bounce") and str(seen.bounce.reason) == "fast","A touch at cruise bounces (fast)")
+## Steps until on the wheels; then a while more, watching it stays down.
+func _stuck(ml: ManualLanding, label: String, input := {}) -> void:
+	var seen := fly(ml,input,3.0,func(m: ManualLanding, _o: Dictionary) -> bool: return m.on_ground() or m.stats.bounces > 0)
+	var g := str(seen.get("touch",{}).get("grade","none"))
+	check(ml.on_ground() and not seen.has("bounce"),"%s sticks (%s, %.1f m/s, sink %.1f)" % [label,g,float(seen.get("touch",{}).get("speed",0.0)),float(seen.get("touch",{}).get("sink",0.0))])
+	check(seen.has("thump") and float(seen.thump.k) > 0.0,"%s: the plane takes the hit (k %.2f)" % [label,float(seen.get("thump",{}).get("k",0.0))])
+	var state := {"highest":-INF,"stayed":true}
+	var after := fly(ml,input,1.0,func(m: ManualLanding, _o: Dictionary) -> bool:
+		state.highest = maxf(float(state.highest),float(m.plane.position.y))
+		if not m.on_ground(): state.stayed = false
+		return false)
+	check(bool(state.stayed) and float(state.highest) < SkyPlane.SKIM+ManualLanding.HOP+0.15,"%s: the hop after stays on the wheels (top %.2f m)" % [label,float(state.highest)])
+	check(float(after._lowest) > 0.2 and float(seen._lowest) > 0.2,"%s: never into the ground" % label)
+
+func _hot_sticks() -> void:
+	# Hot: at cruise and at boost, low over the field, no hands.
+	_stuck(approach(SkyPlane.CRUISE_SPEED,0.2,-0.1),"A touch at cruise")
+	_stuck(approach(SkyPlane.BOOST_SPEED,0.2,-0.1),"A touch at boost")
+	# Slammed down: diving at the ground.
+	_stuck(approach(8.0,3.0,-0.6),"A steep dive",{"pitch":-0.3})
+	_stuck(approach(14.0,4.0,-0.9),"A hard slam at cruise",{"pitch":-0.5})
+
+func _hops() -> void:
+	# A barrel roll into the ground: up, the wings put level, still flying.
+	var ml := approach(10.0,0.6,-0.15)
+	var seen := fly(ml,{"roll":1.0},1.0,func(_m: ManualLanding, o: Dictionary) -> bool: return o.has("touch"))
+	check(seen.has("bounce") and str(seen.bounce.reason) == "tumble","Mid barrel roll into the ground: a hop (%s)" % str(seen.get("bounce",{}).get("reason","none")))
 	var y0: float = ml.plane.position.y
 	var up := fly(ml,{},0.6)
-	check(ml.flying() and float(ml.plane.position.y) > y0+0.3,"The bounce throws it back up into the air (%.2f m up)" % (float(ml.plane.position.y)-y0))
-	check(float(up._lowest) > 0.2,"Never into the ground after the bounce")
-	check(int(ml.stats.bounces) == 1,"One bounce counted")
-	# Steep: diving at the ground slow.
-	var steep := approach(8.0,3.0,-0.6)
-	var hit := fly(steep,{"brake":1.0,"pitch":-0.3},2.0,func(_m: ManualLanding, o: Dictionary) -> bool: return o.has("touch"))
-	check(hit.has("bounce") and str(hit.bounce.reason) in ["sink","nose","fast"],"A steep dive onto the field bounces (%s, sink %.1f)" % [str(hit.get("bounce",{}).get("reason","none")),float(hit.get("touch",{}).get("sink",0.0))])
-	check(steep.flying(),"And it is flying, not crashed")
-	# Bounced, then flown level, it can come down good and stop.
-	var again := fly(steep,{"brake":1.0,"flaps":1.0},14.0,func(m: ManualLanding, _o: Dictionary) -> bool: return m.phase == ManualLanding.STOPPED)
-	check(steep.phase == ManualLanding.STOPPED and again.has("settled"),"After the bounce it settles and stops (%.1f s)" % float(again._t))
+	check(ml.flying() and float(ml.plane.position.y) > y0+0.3 and not bool(ml.plane.rolling),"It hops up and rights itself (%.2f m up)" % (float(ml.plane.position.y)-y0))
+	check(float(up._lowest) > 0.2,"Never into the ground after the hop")
+	var again := fly(ml,{"brake":1.0,"flaps":1.0},14.0,func(m: ManualLanding, _o: Dictionary) -> bool: return m.phase == ManualLanding.STOPPED)
+	check(ml.phase == ManualLanding.STOPPED and again.has("settled"),"After the hop it comes down and stops (%.1f s)" % float(again._t))
+
+## On the wheels at `speed`, rolling straight (a firm touch near the field's
+## start).
+func rolling(speed: float, z := -5.0) -> ManualLanding:
+	var ml := approach(speed,0.2,-0.05,z)
+	fly(ml,{},2.0,func(m: ManualLanding, _o: Dictionary) -> bool: return m.on_ground())
+	return ml
+
+func _slides() -> void:
+	# Steering hard at speed breaks it loose.
+	var ml := rolling(14.0)
+	var seen := fly(ml,{"turn":1.0},0.5)
+	check(seen.has("slide") and ml.sliding and absf(ml.slip) > 0.3,"Steering hard at speed kicks the tail out (slip %.2f rad)" % ml.slip)
+	check(ml.grit > 0.4,"Sliding throws grit off the wheels (%.2f)" % ml.grit)
+	var caught := fly(ml,{},2.0,func(_m: ManualLanding, o: Dictionary) -> bool: return o.has("caught"))
+	check(caught.has("caught") and not ml.sliding and ml.on_ground(),"Let go, it grips again")
+	# Slow, the same stick only steers.
+	var slow := rolling(8.0)
+	fly(slow,{"brake":1.0},3.0,func(m: ManualLanding, _o: Dictionary) -> bool: return m.roll_speed() < 5.0)
+	var steer := fly(slow,{"turn":1.0},0.5)
+	check(not steer.has("slide"),"Slow, the stick steers it without sliding")
+	# The lean (the air drift's button) with a turn drifts even gently.
+	var lean := rolling(8.0)
+	var drift := fly(lean,{"turn":0.5,"lean":0.8},0.4)
+	var plain := rolling(8.0)
+	var nope := fly(plain,{"turn":0.5},0.4)
+	check(drift.has("slide") and not nope.has("slide"),"The lean with a turn drifts where the turn alone grips")
+
+func _power_slide() -> void:
+	var straight := rolling(14.0)
+	var from: float = straight.touched_at().z
+	fly(straight,{"brake":1.0},10.0,func(m: ManualLanding, _o: Dictionary) -> bool: return m.phase == ManualLanding.STOPPED)
+	var braked := rolling(14.0)
+	fly(braked,{"brake":1.0,"turn":1.0},10.0,func(m: ManualLanding, _o: Dictionary) -> bool: return m.phase == ManualLanding.STOPPED)
+	var power := rolling(14.0)
+	var seen := fly(power,{"brake":1.0,"turn":1.0,"boost":1.0},10.0,func(m: ManualLanding, _o: Dictionary) -> bool: return m.phase == ManualLanding.STOPPED)
+	var a := from-float(straight.plane.position.z)
+	var b := from-float(braked.plane.position.z)
+	var c := from-float(power.plane.position.z)
+	check(power.phase == ManualLanding.STOPPED and seen.has("stopped"),"A power-slide, the throttle held, still stops")
+	check(c < a-4.0 and b < a,"A power-slide stops shorter than a straight brake (%.1f m against %.1f; braked slide %.1f)" % [c,a,b])
+	check(float(power.stats.peak_slip) > 1.2 and int(power.stats.power_slides) == 1,"It pivots right round on its wheels (peak slip %.0f deg)" % rad_to_deg(float(power.stats.peak_slip)))
+	check(float(power.stats.slide_distance) > 3.0 and not is_nan(float(power.stats.stop_margin)),"The slide and the stop's margin are measured (%.1f m slid, %.1f m to the edge)" % [float(power.stats.slide_distance),float(power.stats.stop_margin)])
 
 func _touch_and_go() -> void:
 	var ml := approach(9.0,0.25,-0.1)
@@ -148,6 +228,21 @@ func _edge() -> void:
 	var seen := fly(ml,{},4.0,func(_m: ManualLanding, o: Dictionary) -> bool: return o.has("off_edge"))
 	check(seen.has("settled") and seen.has("off_edge") and ml.flying(),"Rolled off the edge it is flying again")
 	check(int(ml.stats.off_edge) == 1,"Counted")
+	# Hot and sliding off the end: flying on with its speed.
+	var hot := approach(SkyPlane.BOOST_SPEED,0.2,-0.05,-88.0)
+	var off := fly(hot,{"turn":0.4,"lean":1.0},4.0,func(_m: ManualLanding, o: Dictionary) -> bool: return o.has("off_edge"))
+	check(off.has("slide") and off.has("off_edge") and hot.flying(),"Slid off the edge at boost: flying again")
+	check(float(hot.plane.speed) > 14.0,"With its speed carried (%.1f m/s)" % float(hot.plane.speed))
+	var dip := fly(hot,{},2.0)
+	check(hot.flying() and not dip.has("touch"),"No penalty: a dip and on it flies")
+
+func _calm_air() -> void:
+	var lift := {"wind":Vector3(1.0,5.0,0.0)}
+	var low := ManualLanding.calmed(lift,Vector3(0.0,0.9,-10.0),field_floor)
+	var high := ManualLanding.calmed(lift,Vector3(0.0,8.0,-10.0),field_floor)
+	var off := ManualLanding.calmed(lift,Vector3(0.0,0.9,50.0),field_floor)
+	check(is_zero_approx((low.wind as Vector3).y) and is_equal_approx((low.wind as Vector3).x,1.0),"Rising air is calmed just over the land, the wind along kept")
+	check(is_equal_approx((high.wind as Vector3).y,5.0) and is_equal_approx((off.wind as Vector3).y,5.0),"Higher up, or off the land, it lifts as ever")
 
 func _flaps() -> void:
 	var plain := SkyPlane.new()
@@ -235,5 +330,19 @@ func _study() -> bool:
 			study.tick(DT)
 			frames += 1
 		check(study.run.ended == "stopped","Sharp bot stops on %s (%.1f s, bounces %d)" % [s.id,study.run.t,int(study.run.ml.stats.bounces)])
+	# In hot: the sharp bot slams it on and power-slides to a stop first
+	# time, at boost on the short field and at cruise on the islet.
+	for hot: Array in [["short_ledge","boost"],["islet","hot"]]:
+		study.approach = hot[1]
+		study.start(Course.station(hot[0]))
+		study.bot = load("res://scripts/landing_bot.gd").new(study.bot.skill,1000,study.BOT_PACE[hot[1]])
+		frames = 0
+		while not study.run.done and frames < 60*120:
+			study.tick(DT)
+			frames += 1
+		var m: Dictionary = study.run.metrics()
+		check(bool(m.first_try) and float(m.touch_speed) > ManualLanding.TOUCH_FAST,"In hot (%s) on %s: stopped first time from %.1f m/s" % [hot[1],hot[0],float(m.touch_speed) if m.touch_speed != null else 0.0])
+		check(int(m.power_slides) > 0 and float(m.peak_slip) > 1.0 and float(m.stop_margin) > 0.0,"By a power-slide (%.1f m slid, peak %.0f deg, %.1f m to spare)" % [float(m.slide_distance),rad_to_deg(float(m.peak_slip)),float(m.stop_margin) if m.stop_margin != null else -1.0])
+	study.approach = "normal"
 	study.queue_free()
 	return true

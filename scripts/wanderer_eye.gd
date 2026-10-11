@@ -1512,7 +1512,7 @@ func _advance_flight(delta: float) -> void:
 	_hint.modulate.a = clampf(1.0-(_hint_time-6.0)/1.5,0.0,1.0)
 	if _hand():
 		if hand_landing.phase != ManualLanding.EXIT and hand_landing.phase != ManualLanding.OUT:
-			glider.update(delta,glide,0.0,_fly_ground,hand_landing.would_land(_floor_global),vapour.near,vapour.side)
+			glider.update(delta,glide,0.0,_fly_ground,hand_landing.would_grease(_floor_global),vapour.near,vapour.side)
 		_hand_events(hand,delta)
 		return
 	# Touching down slowly anywhere on the plate lands; on an islet's ground

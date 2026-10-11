@@ -2,10 +2,13 @@ extends Node3D
 ## Landing study: greybox fields of rising difficulty (scripts/
 ## landing_course.gd) to land the game's plane on by hand, under the manual
 ## landing's rules (scripts/manual_landing.gd): no F to land it for you.
-## Find a spot, come in slow and shallow, touch down wheels first; a good
-## touch rolls out under your own brakes, a hot or steep one bounces you
-## back into the air to go round. Only stopped can you get out (F, or the
-## pad's Y), and only by asking. On foot, walk back to the plane and Space
+## Find a spot and put it down: slow, shallow and level is a greaser and a
+## tidy rollout; hot or hard it sticks anyway, thumps and slides, and you
+## drift it to a stop like a kart (steer hard, or Q E with a turn; Shift
+## with a turn is a braked slide, and a blip of Space with it whips the
+## tail right round, a power-slide). Off the end, you are flying again.
+## Only a barrel roll into the ground or land too steep hops. Only stopped
+## can you get out (F, or the pad's Y), and only by asking. On foot, walk back to the plane and Space
 ## (A) by it climbs in and takes off (scripts/plane_landing.gd's takeoff);
 ## nothing else flies. Walk off an edge and you drop, the canopy opening a
 ## moment on (scripts/sky_dive.gd; X opens it sooner), the plane staying
@@ -19,19 +22,25 @@ extends Node3D
 ## Each approach is a run (scripts/landing_run.gd), a person's or the
 ## CPU's (scripts/landing_bot.gd), recorded and measured: when the plane
 ## stops (or after LandingRun TIME_LIMIT s), a report shows the touch's
-## speed and sink, bounces, go-arounds, the rollout and the time to stop,
-## and the run is saved as JSON under user://landing_runs. F1 shows the
-## live numbers: speed and sink against the touch's limits, bank, height
-## over the land, flaps, the last touch.
+## grade (a greaser or not), speed and sink, the slide (metres, peak slip),
+## the stop's margin to the edge, hops, go-arounds, the rollout and the
+## time to stop, and the run is saved as JSON under user://landing_runs.
+## F1 shows the live numbers: speed and sink against the greaser's limits,
+## bank, height over the land, flaps, what a touch now would be; on the
+## wheels the slip, the grit and the room to the edge. H picks the
+## approach: normal (far and high at cruise), hot (close and low at
+## cruise) or boost (at Boost's speed); the bots fly them slow, at cruise
+## and at boost.
 ##
 ## Keys: WASD or the left stick turn and pitch (W noses down), Space or RT
 ## boosts, Shift or LT brakes (and on the wheels, the wheel brakes), F or Y
 ## lowers and raises the flaps in the air and gets out once stopped, Q and
-## E lean (twice: roll). 1-5 the stations, R again, N the next, B who flies
-## (you, then the sloppy, decent, sharp and perfect bots), F1 the numbers,
-## Esc lets the mouse go. On foot: WASD walks, Space (A) by the plane
-## boards, elsewhere hops.
-##   ./run-landing-study.command [--station=islet] [--bot=sharp] [--stranded=pickup]
+## E lean (twice: roll; on the wheels with a turn, a drift). 1-5 the
+## stations, R again, N the next, H the approach, B who flies (you, then
+## the sloppy, decent, sharp and perfect bots), F1 the numbers, Esc lets
+## the mouse go. On foot: WASD walks, Space (A) by the plane boards,
+## elsewhere hops.
+##   ./run-landing-study.command [--station=islet] [--bot=sharp] [--approach=hot] [--stranded=pickup]
 ##   godot --path . res://studies/landing_study.tscn -- --no-title
 
 const Course = preload("res://scripts/landing_course.gd")
@@ -44,6 +53,7 @@ const PlaneStrip = preload("res://scripts/plane_strip.gd")
 const SkyPlane = preload("res://scripts/sky_plane.gd")
 const SkyDive = preload("res://scripts/sky_dive.gd")
 const PlaneFigure = preload("res://scripts/plane_figure.gd")
+const WheelSpray = preload("res://scripts/wheel_spray.gd")
 const CanopyFigure = preload("res://scripts/canopy_figure.gd")
 const GlideCamera = preload("res://scripts/glide_camera.gd")
 const DiveCamera = preload("res://scripts/dive_camera.gd")
@@ -56,6 +66,10 @@ const LOOK := 0.0025
 const STICK_LOOK := 2.4
 const DOUBLE_TAP := 0.3
 const PILOTS := ["human","sloppy","decent","sharp","perfect"]
+## The pace a bot flies each approach at (Course APPROACHES).
+const BOT_PACE := {"normal":"slow","hot":"cruise","boost":"boost"}
+## The grit's tint off the fields.
+const TURF := Color(0.5,0.58,0.36)
 const COLOURS := {"field":Color(0.6,0.66,0.55),"shelf":Color(0.55,0.56,0.6),"sea":Color(0.42,0.52,0.6),"pilot":Color(0.32,0.24,0.18)}
 ## On foot: the pace (m/s), the hop (m/s up), the pull down (m/s²), how near
 ## the plane Space boards it (m), and the camera behind and over (m).
@@ -75,7 +89,8 @@ const STEP_OFF_OPEN := 0.8
 const STRAND_BELOW := 20.0
 const PICKUP_WAIT := 3.0
 const FADE := 0.5
-## The bounce's shake: seconds and metres; the thump's length (s) and pitch (Hz).
+## The thump's shake (at a full hit, or a hop): seconds and metres; the
+## thump's length (s) and pitch (Hz).
 const SHAKE_TIME := 0.4
 const SHAKE := 0.35
 const THUMP_TIME := 0.22
@@ -89,6 +104,8 @@ var scripted := false
 var log_dir := DIR
 var station := {}
 var pilot := "human"
+## The approach each run starts on (Course APPROACHES).
+var approach := "normal"
 var run: Run
 var bot: Bot
 ## What the pilot is doing: "plane" (in it: flying, rolling, stopped,
@@ -98,6 +115,7 @@ var mode := "plane"
 var figure: PlaneFigure
 var walker: Node3D
 var canopy: CanopyFigure
+var spray: WheelSpray
 var chase := GlideCamera.new()
 var dive_camera := DiveCamera.new()
 var camera: Camera3D
@@ -136,6 +154,7 @@ var _hint: Label
 var _flash: Label
 var _flash_time := 0.0
 var _shake := 0.0
+var _shake_size := 1.0
 var _thump: AudioStreamPlayer
 var _materials := {}
 var _roll_asked := 0.0
@@ -153,6 +172,8 @@ func _ready() -> void:
 	walker = _build_walker()
 	canopy = CanopyFigure.new()
 	add_child(canopy)
+	spray = WheelSpray.new()
+	add_child(spray)
 	_thump = AudioStreamPlayer.new()
 	_thump.stream = thump_sound()
 	add_child(_thump)
@@ -161,6 +182,7 @@ func _ready() -> void:
 		if arg.begins_with("--station=") and not Course.station(arg.substr(10)).is_empty(): first = Course.station(arg.substr(10))
 		if arg.begins_with("--bot=") and arg.substr(6) in PILOTS: pilot = arg.substr(6)
 		if arg in ["--stranded=pickup","--stranded=return"]: stranded_rule = arg.substr(11)
+		if arg.begins_with("--approach=") and arg.substr(11) in Course.APPROACH_NAMES: approach = arg.substr(11)
 	start(first)
 	flight_ready = true
 	ready_to_fly.emit()
@@ -297,8 +319,8 @@ func start(s: Dictionary) -> void:
 	if run != null: run.abandon()
 	station = s
 	var params := {} if pilot == "human" else Bot.params(pilot)
-	run = Run.new(s,"human" if pilot == "human" else "bot:"+pilot,params)
-	bot = null if pilot == "human" else Bot.new(params,randi())
+	run = Run.new(s,"human" if pilot == "human" else "bot:"+pilot,params,approach)
+	bot = null if pilot == "human" else Bot.new(params,randi(),BOT_PACE.get(approach,"slow"))
 	mode = "plane"
 	flaps = false
 	parked = false
@@ -364,7 +386,8 @@ func _tick_plane(delta: float, given: Dictionary) -> void:
 	var ml := run.ml
 	if run.done and ml.phase != ManualLanding.STOPPED: _report.visible = false
 	if ml.phase == ManualLanding.EXIT: _hop_figure(ml.hop)
-	figure.update(delta,run.plane,0.0,Callable(Course,"ground"),ml.would_land(Callable(Course,"floor_at")))
+	figure.update(delta,run.plane,0.0,Callable(Course,"ground"),ml.would_grease(Callable(Course,"floor_at")))
+	spray.update(delta,_wheels(),run.plane.velocity,ml.grit if ml.phase == ManualLanding.ROLL else 0.0,TURF)
 	if out.has("out"):
 		_step_out()
 		return
@@ -399,24 +422,44 @@ func land_key() -> void:
 	else:
 		_exit_asked = true
 
-## The touch, a bounce, the stop: the thump, the shake, the pad, a word.
+## Where the wheels meet the ground (global), for the grit.
+func _wheels() -> Vector3:
+	var p: Vector3 = run.plane.position
+	var land := Course.floor_at(Vector2(p.x,p.z))
+	return Vector3(p.x,land if not is_nan(land) else p.y-0.8,p.z)
+
+## The touch, a hop, the slide, the stop: the thump, the dust, the shake,
+## the pad, a word.
 func _react(out: Dictionary) -> void:
 	if out.has("bounce"):
 		var b: Dictionary = out.bounce
+		_thump.volume_db = 0.0
 		_thump.play()
 		_shake = SHAKE_TIME
+		_shake_size = 1.0
 		Pad.pulse(0.6,0.5,0.2)
-		var why := {"fast":"too fast (%.1f m/s)" % float(b.speed),"sink":"too steep (sinking %.1f m/s)" % float(b.sink),"bank":"wings not level",
-			"nose":"nose first","rough":"ground too steep"}
-		_say("Bounce: %s" % why.get(str(b.reason),str(b.reason)))
+		var why := {"tumble":"mid roll","rough":"ground too steep"}
+		_say("Hop: %s" % why.get(str(b.reason),str(b.reason)))
 	elif out.has("settled"):
-		Pad.pulse(0.3,0.15,0.12)
-		_say("Down. Brake (Shift) to stop")
-	if out.has("stopped"): _say("Stopped. F to get out")
+		var k := float(out.settled.k)
+		if out.has("greaser"):
+			Pad.pulse(0.2,0.1,0.1)
+			_say("Greaser!")
+		else:
+			# Hot or hard: it takes the hit and sticks.
+			_thump.volume_db = linear_to_db(0.35+0.65*k)
+			_thump.play()
+			_shake = SHAKE_TIME
+			_shake_size = 0.3+0.7*k
+			Pad.pulse(0.3+0.4*k,0.15+0.4*k,0.12+0.1*k)
+			spray.burst(_wheels(),k,TURF)
+			_say({"hot":"Hot! Drift it to a stop","hard":"Hard one! Stuck it","wingtip":"Wingtip! Stuck it","firm":"Down"}.get(str(out.settled.grade),"Down"))
+	if out.has("stopped"): _say("Stopped, %.1f m to spare. F to get out" % float(out.stopped.margin) if float(out.stopped.margin) < 20.0 else "Stopped. F to get out")
 	if out.has("not_yet"): _say("Stop first")
-	if out.has("off_edge"): _say("Off the edge: flying")
+	if out.has("off_edge"): _say("Off the edge: flying again")
 	if out.has("lifted"): _say("Touch and go")
 	if out.has("hit"):
+		_thump.volume_db = 0.0
 		_thump.play()
 		Pad.pulse(0.5,0.4,0.15)
 
@@ -710,7 +753,7 @@ func _shaken(delta: float) -> Vector3:
 	_shake = maxf(0.0,_shake-delta)
 	var k := _shake/SHAKE_TIME
 	var t := Time.get_ticks_msec()*0.001
-	return Vector3(sin(t*71.0),sin(t*53.0+1.3),sin(t*61.0+2.1))*SHAKE*k*k
+	return Vector3(sin(t*71.0),sin(t*53.0+1.3),sin(t*61.0+2.1))*SHAKE*_shake_size*k*k
 
 func _solid(p: Vector3) -> bool:
 	var under: Variant = Course.ground(p)
@@ -734,7 +777,7 @@ func _build_ui() -> void:
 	_hud_label.position = Vector2(0.0,96.0)
 	_hud.add_child(_hud_label)
 	_hint = Label.new()
-	_hint.text = "WASD/stick turn and pitch (W noses down) · Space/RT boost · Shift/LT brake · F/Y flaps, and out once stopped · Q/E lean · 1-5 stations · R again · N next · B who flies · F1 numbers · Esc mouse"
+	_hint.text = "WASD/stick turn and pitch (W noses down) · Space/RT boost · Shift/LT brake · F/Y flaps, and out once stopped · Q/E lean · On the wheels: steer hard or Q/E + steer to drift, Shift + steer to slide, + a blip of Space to power-slide · 1-5 stations · H approach · R again · N next · B who flies · F1 numbers · Esc mouse"
 	_style(_hint,14)
 	_hint.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
 	_hint.offset_top = -36.0
@@ -781,23 +824,27 @@ func _show_hud() -> void:
 	var live := run.live()
 	var s: Dictionary = run.ml.stats
 	var over := "-" if is_nan(float(live.over)) else "%.1f m" % float(live.over)
+	var now := str(live.touch_now)
+	var touch_line := ""
+	if run.ml.flying(): touch_line = "a touch now would be %s" % ({"greaser":"a GREASER","firm":"firm","hot":"HOT: drift it","hard":"HARD: it sticks","wingtip":"on a WINGTIP: it sticks","tumble":"a HOP (mid roll)","rough":"a HOP (too steep)"}.get(now,now))
+	elif run.ml.phase == ManualLanding.ROLL: touch_line = "%s · slip %.0f° · grit %.2f · %.1f m to the edge" % ["POWER-SLIDE" if live.power else ("sliding" if live.sliding else "gripping"),rad_to_deg(absf(float(live.slip))),float(live.grit),float(live.edge)]
 	_hud_label.text = "\n".join(PackedStringArray([
-		"%s · %s · %s%s" % [station.name,run.pilot,mode if mode != "plane" else str(live.phase),"" if not run.done else " (run over)"],
+		"%s · %s approach · %s · %s%s" % [station.name,approach,run.pilot,mode if mode != "plane" else str(live.phase),"" if not run.done else " (run over)"],
 		"time %.1f s · over the land %s · bank %.2f · pitch %.2f · flaps %s" % [float(live.t),over,float(live.bank),float(live.pitch),"down" if flaps else "up"],
-		"touches %d · bounces %d · go-arounds %d · last touch %s" % [int(live.touches),int(live.bounces),int(live.go_arounds),str(live.last_touch) if live.last_touch != "" else "-"],
-		"touch-and-gos %d · off the edge %d · out before stopping %d" % [int(s.touch_and_gos),int(s.off_edge),int(s.early_exits)],
-		"a touch now would %s" % ("LAND" if live.would_land else "bounce") if run.ml.flying() else "",
+		"touches %d · greasers %d · hops %d · go-arounds %d · last touch %s" % [int(live.touches),int(s.greasers),int(live.bounces),int(live.go_arounds),str(live.last_touch) if live.last_touch != "" else "-"],
+		"slid %.1f m · peak slip %.0f° · touch-and-gos %d · off the edge %d · out before stopping %d" % [float(s.slide_distance),rad_to_deg(float(s.peak_slip)),int(s.touch_and_gos),int(s.off_edge),int(s.early_exits)],
+		touch_line,
 	]))
 
-## Speed and sink against the touch's limits (the white tick).
+## Speed, sink and bank against a greaser's limits (the white tick).
 func _draw_bars() -> void:
 	if run == null: return
 	var live := run.live()
 	var font := ThemeDB.fallback_font
 	var rows := [
-		["speed",float(live.speed),ManualLanding.TOUCH_FAST,20.0,"%.1f m/s" % float(live.speed)],
-		["sink",maxf(0.0,float(live.sink)),ManualLanding.TOUCH_SINK,5.0,"%.2f m/s" % float(live.sink)],
-		["bank",absf(float(live.bank)),ManualLanding.TOUCH_BANK,1.2,"%.2f rad" % float(live.bank)],
+		["speed",float(live.speed),ManualLanding.TOUCH_FAST,24.0,"%.1f m/s" % float(live.speed)],
+		["sink",maxf(0.0,float(live.sink)),ManualLanding.GREASE_SINK,5.0,"%.2f m/s" % float(live.sink)],
+		["bank",absf(float(live.bank)),ManualLanding.GREASE_BANK,1.2,"%.2f rad" % float(live.bank)],
 	]
 	_hud.draw_rect(Rect2(-8.0,-6.0,450.0,210.0),Color(0.0,0.0,0.0,0.35))
 	var y := 6.0
@@ -823,21 +870,23 @@ func _finished() -> void:
 static func report_text(s: Dictionary, saved: Dictionary) -> String:
 	var m: Dictionary = saved.metrics
 	var lines := PackedStringArray()
-	lines.append("%s · %s" % [s.name,saved.pilot])
+	lines.append("%s · %s approach · %s" % [s.name,str(m.get("approach","normal")),saved.pilot])
 	if bool(m.stopped):
-		lines.append("Stopped in %.1f s · rolled %.1f m from the touch" % [float(m.time_to_stop),float(m.rollout)])
-		lines.append("The touch: %.1f m/s, sinking %.2f m/s (good under %.1f and %.1f)" % [float(m.touch_speed),float(m.touch_sink),ManualLanding.TOUCH_FAST,ManualLanding.TOUCH_SINK])
+		lines.append("GREASER! A tidy one" if bool(m.greaser) else "Stuck it: %s" % str(m.grade))
+		lines.append("Stopped in %.1f s · rolled %.1f m from the touch · %.1f m to spare" % [float(m.time_to_stop),float(m.rollout),float(m.stop_margin)])
+		lines.append("The touch: %.1f m/s, sinking %.2f m/s (a greaser under %.1f and %.1f)" % [float(m.touch_speed),float(m.touch_sink),ManualLanding.TOUCH_FAST,ManualLanding.GREASE_SINK])
+		if float(m.slide_distance) > 0.5: lines.append("Slid %.1f m · peak slip %.0f° · power-slides %d" % [float(m.slide_distance),rad_to_deg(float(m.peak_slip)),int(m.power_slides)])
 	else:
 		lines.append("No stop in %.0f s" % float(m.duration))
 	if m.first_touch_speed != null and int(m.touches) > 1:
 		lines.append("First touch: %.1f m/s, sinking %.2f m/s" % [float(m.first_touch_speed),float(m.first_touch_sink)])
 	var reasons: Dictionary = m.bounce_reasons
-	lines.append("Bounces %d%s · go-arounds %d · touch-and-gos %d · off the edge %d" % [int(m.bounces),
+	lines.append("Hops %d%s · go-arounds %d · touch-and-gos %d · off the edge %d" % [int(m.bounces),
 		"" if reasons.is_empty() else " ("+", ".join(reasons.keys().map(func(k: String) -> String: return "%s %d" % [k,int(reasons[k])]))+")",
 		int(m.go_arounds),int(m.touch_and_gos),int(m.off_edge)])
 	if int(m.early_exits) > 0: lines.append("Asked to get out before stopping: %d" % int(m.early_exits))
 	if bool(m.stopped): lines.append("Stopped %.1f m into the field, %.1f m off its middle" % [float(m.stop_along),float(m.stop_off)])
-	lines.append("\nF out · R again · N next · 1-5 a station")
+	lines.append("\nF out · R again · N next · H approach · 1-5 a station")
 	return "\n".join(lines)
 
 # --- Input ---------------------------------------------------------------------------
@@ -863,6 +912,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_X: _open_asked = true
 			KEY_R: restart()
 			KEY_N: next_station()
+			KEY_H:
+				approach = Course.APPROACH_NAMES[(Course.APPROACH_NAMES.find(approach)+1)%Course.APPROACH_NAMES.size()]
+				restart()
+				_say("Approach: %s" % approach)
 			KEY_B:
 				pilot = PILOTS[(PILOTS.find(pilot)+1)%PILOTS.size()]
 				restart()
