@@ -205,13 +205,39 @@ func wall(feet: Vector3, way: Vector2, reach: float) -> Vector2:
 ## The water's depth over the ground at `p`, 0 out of every pool.
 func depth(p: Vector2) -> float:
 	for pool: Dictionary in pools:
-		if not (pool.rect as Rect2).has_point(p): continue
+		var top := _pool_top(pool,p)
+		if top == -INF: continue
 		var bed := ground(p)
-		return maxf(float(pool.top)-bed,0.0) if is_finite(bed) else 0.0
+		return maxf(top-bed,0.0) if is_finite(bed) else 0.0
 	return 0.0
 
 ## The pool's surface at `p`, or -INF.
 func surface(p: Vector2) -> float:
 	for pool: Dictionary in pools:
-		if (pool.rect as Rect2).has_point(p): return float(pool.top)
+		var top := _pool_top(pool,p)
+		if top != -INF: return top
 	return -INF
+
+## `pool`'s surface over world `p` (x, z), or -INF off it. A pool with a
+## "node" (and its "rest" transform) rides that node: a motif isle the rim
+## dragon tips (docs/design/rim-dragon.md, round 9) carries its tarn with
+## it, so the rect is read in the node's rest frame and the top is the
+## posed (tipped) surface's height over `p`.
+static func _pool_top(pool: Dictionary, p: Vector2) -> float:
+	var node: Variant = pool.get("node")
+	if node == null or not is_instance_valid(node):
+		return float(pool.top) if (pool.rect as Rect2).has_point(p) else -INF
+	var rest: Transform3D = pool.rest
+	var now: Transform3D = (node as Node3D).transform
+	if now.is_equal_approx(rest):
+		return float(pool.top) if (pool.rect as Rect2).has_point(p) else -INF
+	# The world point over `p` on the posed surface: its rest-frame height
+	# is linear in the world height.
+	var back := rest*now.affine_inverse()
+	var l0 := back*Vector3(p.x,0.0,p.y)
+	var l1 := back*Vector3(p.x,1.0,p.y)
+	var rise := l1.y-l0.y
+	if absf(rise) < 0.2: return -INF
+	var y := (float(pool.top)-l0.y)/rise
+	var l := back*Vector3(p.x,y,p.y)
+	return y if (pool.rect as Rect2).has_point(Vector2(l.x,l.z)) else -INF

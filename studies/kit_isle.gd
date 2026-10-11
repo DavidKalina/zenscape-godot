@@ -289,6 +289,10 @@ var _off_ground := INF
 ## touch's word on the hint and its seconds left, the shake left (s, and
 ## its size).
 var hand_landing := ManualLanding.new()
+## The air the plane flies in (SkyCurrents `air_at`: `wind`, and a gust's
+## `shove`), or none: still air. The aqueduct isle's dragon sets its blast
+## here (scripts/dragon_gale.gd `plane_gust`).
+var plane_air := Callable()
 var takeoff: PlaneLanding = null
 var spray: WheelSpray = null
 var flaps := false
@@ -1320,7 +1324,7 @@ func fly_step(delta: float, input: Dictionary) -> void:
 	asked["flaps"] = float(input.get("flaps",1.0 if flaps else 0.0))
 	asked["exit"] = bool(input.get("exit",false)) or _exit_asked
 	_exit_asked = false
-	var out := hand_landing.step(delta,asked,ground,floor,Callable(),Callable(self,"roll_blocked"))
+	var out := hand_landing.step(delta,asked,ground,floor,plane_air,Callable(self,"roll_blocked"))
 	plane.engine = hand_landing.engine
 	if hand_landing.flying(): _bump(was)
 	elif isle_lock != null and isle_lock.locked: release_lock()
@@ -1789,6 +1793,11 @@ func _pack_runs() -> PackedStringArray:
 func _capture_flying() -> void:
 	pass
 
+## A capture from a fixed eye (--at) stops `_process`; an isle steps what
+## else should move meanwhile here.
+func _capture_tick(_delta: float) -> void:
+	pass
+
 func _take_capture() -> void:
 	for child in get_children():
 		if child is CanvasLayer and (child as CanvasLayer).layer in [5,6]: (child as CanvasLayer).visible = false
@@ -1799,6 +1808,7 @@ func _take_capture() -> void:
 		for i in range(240):
 			_advance_look(1.0/60.0)
 			if life != null: life.advance(1.0/60.0)
+			_capture_tick(1.0/60.0)
 			await get_tree().process_frame
 		if _capture_wait > 4.0: await get_tree().create_timer(_capture_wait-4.0).timeout
 	else:

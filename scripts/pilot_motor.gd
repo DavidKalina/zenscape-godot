@@ -162,6 +162,17 @@ extends RefCounted
 ## than SWIM_OUT he stands and walks out. Jump while swimming hops him out of
 ## the water (SWIM_HOP), onto a bank or back in with a splash; that hop never
 ## opens the sail. Never drowning, never hurt.
+##
+## Knocked (`knock`, by a guardian's blow: scripts/henge_guardian.gd): thrown
+## off whatever he was on (a ledge, a wall, the water) at the velocity given,
+## tumbling (move "tumble"): no steering, no jump, no catching a ledge or a
+## wall, gravity as ever. Landed, he is down for TUMBLE_DOWN (sliding to a
+## stop at TUMBLE_SKID), then up, and for TUMBLE_IMMUNE after that
+## `recovering` still says so (a guardian holds off). A twirl pressed while
+## tumbling in the air takes him out of it at once, into the twirl (its once
+## an airtime as ever: a knock does not give a spent one back). `seize`
+## holds him still where the caller puts his feet (a guardian's grab) till
+## the next `knock` throws him. Only position and time are lost; never hurt.
 
 ## Speeds, metres a second, and how fast they are reached and lost.
 const WALK := 2.4
@@ -393,6 +404,11 @@ const SWIM_SPRING := 1.1
 const SWIM_DAMP := 0.6
 const SWIM_ENTRY := 0.35
 const SWIM_HOP := 0.9
+## Knocked: seconds down after the tumble lands, his slide to a stop there
+## (m/s²), and seconds after getting up that he still counts as recovering.
+const TUMBLE_DOWN := 0.5
+const TUMBLE_SKID := 14.0
+const TUMBLE_IMMUNE := 0.8
 
 ## The feel, this motor's own: each starts as its constant above, which the
 ## game keeps; a study (studies/character_study.gd) may turn them live. The
@@ -456,6 +472,8 @@ var carve_scrub := CARVE_SCRUB
 var side_flip := SIDE_FLIP
 var side_speed := SIDE_SPEED
 var climb_time := CLIMB_TIME
+var tumble_down := TUMBLE_DOWN
+var tumble_immune := TUMBLE_IMMUNE
 
 ## The feet, in the frame.
 var feet := Vector3.ZERO
@@ -470,7 +488,8 @@ var chain := 0
 ## What he is doing beyond running and jumping: "" (nothing), "jump",
 ## "pump", "long" (the long jump), "kick" (off a wall), "wall" (sliding down
 ## one), "crouch", "twirl", "slide" (boot-surfing down a slope), "flip" (the
-## side flip), "wallrun" (running along one).
+## side flip), "wallrun" (running along one), "tumble" (knocked: in the air,
+## then down on the ground getting up).
 var move := ""
 ## Held by the caller: the crouch button, and the twirl's.
 var crouch := false
@@ -546,6 +565,11 @@ var swimming := false
 var wade := 0.0
 var surface := -INF
 var _from_water := false
+## Knocked: seconds left down on the ground, seconds left recovering once
+## up, and held by a grab.
+var _down := 0.0
+var _immune := 0.0
+var _seized := false
 ## The pocket sail (see the header), and the air it flies in: anything
 ## `air` answers for the feet's point (Vector3, the frame's), {wind,
 ## thermal}; none, still air.
@@ -593,6 +617,9 @@ func reset(at: Vector3, towards: float, speed := 0.0) -> void:
 	wade = 0.0
 	surface = -INF
 	_from_water = false
+	_down = 0.0
+	_immune = 0.0
+	_seized = false
 	sail.rest()
 	carving = 0.0
 
@@ -624,6 +651,64 @@ static func _turned(way: Vector2, turn: float) -> Vector2:
 	var v := Vector3(way.x,0.0,way.y).rotated(Vector3.UP,turn)
 	return Vector2(v.x,v.z)
 
+## Knocked away at `v` (m/s, in the frame): off any ledge, wall or swim,
+## tumbling (see above), facing back the way the blow came from.
+func knock(v: Vector3) -> void:
+	sail.rest()
+	hold = ""
+	hold_t = 0.0
+	shimmy = 0.0
+	swimming = false
+	grounded = false
+	skidding = false
+	chain = 0
+	move = "tumble"
+	velocity = v
+	wall_out = Vector2.ZERO
+	_seized = false
+	_down = 0.0
+	_immune = 0.0
+	_light = false
+	_no_cut = true
+	_jumped = true
+	_buffer = 0.0
+	_since_ground = coyote
+	_lock = 0.0
+	_twirl = 0.0
+	_wallrun = 0.0
+	_wallran = true
+	_hop_air = false
+	_hang_press = false
+	_snap = Vector3.ZERO
+	_regrab = REGRAB
+	var flat := Vector2(v.x,v.z)
+	if flat.length() > 0.3: facing = facing_of(-flat)
+
+## The velocity (m/s, in the frame) that knocks him to rest `out` m along
+## `away` (x, z), his slide down at TUMBLE_SKID counted, peaking `up` m over
+## where he was hit, landing `drop` m under it, at the motor's gravity
+## (rising, then falling FALL times as hard).
+func knock_velocity(away: Vector2, out: float, up: float, drop := 0.0) -> Vector3:
+	var rise := sqrt(2.0*gravity*maxf(up,0.05))
+	var air := rise/gravity+sqrt(2.0*maxf(up+maxf(drop,0.0),0.05)/(gravity*fall))
+	# Flown pace v: v air + v²/(2 TUMBLE_SKID) = out.
+	var pace := (sqrt(air*air+2.0*maxf(out,0.0)/TUMBLE_SKID)-air)*TUMBLE_SKID
+	var flat := away.normalized()*pace
+	return Vector3(flat.x,rise,flat.y)
+
+## Held still (a grab): his feet are the caller's to set till `knock`.
+func seize() -> void:
+	knock(Vector3.ZERO)
+	_seized = true
+
+## Whether he is knocked, held, down, or just up from it.
+func recovering() -> bool:
+	return move == "tumble" or _seized or _immune > 0.0
+
+## Whether he is held by a grab.
+func seized() -> bool:
+	return _seized
+
 ## The way `towards` faces, in the frame's plane (x, z).
 static func forward(towards: float) -> Vector2:
 	return Vector2(-sin(towards),-cos(towards))
@@ -648,7 +733,8 @@ func speed() -> float:
 ## or {}), "grabbed" ("air" or "step"), "hung", "climbed", "let_go",
 ## "stopped" (a shimmy that can't go on); in water (`water`), "swam" (gone in
 ## deep enough to swim, how hard he fell in, m/s), "stood" (out of a swim
-## onto his feet), "hopped" (out of the water).
+## onto his feet), "hopped" (out of the water); knocked, "recovered" (a twirl
+## out of the tumble) and "got_up".
 func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable, slide: Callable, ledge := Callable()) -> Dictionary:
 	var out := {}
 	if want.length() > 1.0: want = want.normalized()
@@ -658,6 +744,15 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 	_twirl_was = twirl
 	_regrab = maxf(0.0,_regrab-delta)
 	carving = 0.0
+	_immune = maxf(0.0,_immune-delta)
+	if _seized: return out
+	if move == "tumble":
+		if twirl_pressed and not grounded and not _twirled:
+			# Out of the tumble: the twirl below takes him on.
+			move = ""
+			_no_cut = false
+			out["recovered"] = true
+		else: return _tumble_step(delta,ground,slide,out)
 	if hold != "": return _hold_step(delta,want,pressed,ground,slide,ledge)
 	if swimming: return _swim_step(delta,want,pressed,ground,slide)
 	_wet_at(Vector2(feet.x,feet.z),ground)
@@ -879,6 +974,79 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 	velocity.z = h.y
 	return out
 
+## One step knocked: through the air unsteered, stopped by what he meets,
+## into deep water with a splash (afloat, the tumble over); landed, down a
+## while, sliding to a stop (off an edge, tumbling on), then up.
+func _tumble_step(delta: float, ground: Callable, slide: Callable, out: Dictionary) -> Dictionary:
+	var h := Vector2(velocity.x,velocity.z)
+	if grounded:
+		_down -= delta
+		h = h.move_toward(Vector2.ZERO,TUMBLE_SKID*delta)
+		var slid: Vector3 = slide.call(feet,h*delta)
+		var low: float = ground.call(Vector2(slid.x,slid.z))
+		if low > feet.y+STEP_UP:
+			h = Vector2.ZERO
+			slid = feet
+			low = ground.call(Vector2(feet.x,feet.z))
+		if not is_finite(low) or low < feet.y-SNAP-h.length()*delta*1.5:
+			grounded = false
+			velocity.y = 0.0
+			feet = Vector3(slid.x,feet.y,slid.z)
+		else:
+			feet = Vector3(slid.x,low,slid.z)
+			ground_y = low
+			if _down <= 0.0:
+				move = ""
+				_no_cut = false
+				_immune = tumble_immune
+				_since_land = 99.0
+				out["got_up"] = true
+		velocity.x = h.x
+		velocity.z = h.y
+		return out
+	var moved: Vector3 = slide.call(feet,h*delta)
+	var under: float = ground.call(Vector2(moved.x,moved.z))
+	if under > feet.y+STEP_UP:
+		# Into a wall: stopped against it, falling on.
+		h = Vector2.ZERO
+		moved = feet
+		under = ground.call(Vector2(feet.x,feet.z))
+	var y := feet.y+_arc(delta,true)
+	ground_y = under
+	var deep := _depth(Vector2(moved.x,moved.z))
+	if deep > SWIM_IN and is_finite(under) and velocity.y <= 0.0 and y <= under+deep-SWIM_DRAFT:
+		feet = Vector3(moved.x,y,moved.z)
+		velocity.x = h.x
+		velocity.z = h.y
+		_float_in(-velocity.y,out)
+		velocity.y *= SWIM_ENTRY
+		_wet_at(Vector2(feet.x,feet.z),ground)
+		_immune = tumble_immune
+		return out
+	if y <= under and velocity.y <= 0.0:
+		out["landed"] = -velocity.y
+		y = under
+		grounded = true
+		velocity.y = 0.0
+		_down = tumble_down
+		_last_chain = 0
+		_since_land = 99.0
+		_hop_landed = false
+		_land_pace = 0.0
+		_jumped = false
+		_from_water = false
+		_light = false
+		_twirl = 0.0
+		_twirled = false
+		_wallrun = 0.0
+		_wallran = false
+	elif y < under:
+		y = under
+	feet = Vector3(moved.x,y,moved.z)
+	velocity.x = h.x
+	velocity.z = h.y
+	return out
+
 ## Jump in the air: the sail out overhead, kicked up the first time this
 ## airtime, gliding on the way he goes. The run's new pace.
 func _sail_open(h: Vector2, out: Dictionary) -> Vector2:
@@ -905,10 +1073,10 @@ func _sail_step(delta: float, want: Vector2, h: Vector2) -> Vector2:
 	facing = sail.heading
 	return Vector2(v.x,v.z)
 
-## Thrown by something (a sentinel's blow, a launcher): off the ground or a
+## Tossed by something (a launcher): unlike `knock`, no tumble;: off the ground or a
 ## ledge at `push` (m/s), a fresh airtime (the twirl, the wall run and the
 ## sail's kick ready), no jump taken from it.
-func knock(push: Vector3) -> void:
+func toss(push: Vector3) -> void:
 	if swimming: return
 	hold = ""
 	hold_t = 0.0

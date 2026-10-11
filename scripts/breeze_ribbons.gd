@@ -92,6 +92,9 @@ const WIDTH := Vector2(0.14, 0.3)
 const OPACITY := 1.0
 
 var enabled := true
+## How many ribbons it keeps at once (CAPACITY; the dragon's breath,
+## scripts/dragon_breath.gd, keeps more). Only the first CAPACITY publish.
+var capacity := CAPACITY
 ## Tuning: every ribbon's opacity, width and brightness (the stroke's
 ## light, 1 as lit).
 var opacity_scale := 1.0
@@ -202,7 +205,7 @@ func _step(way: Vector2, power: float) -> void:
 ## `sweep_after` is the seconds from its birth a ribbon waits before it takes
 ## a sweep (negative: it is not given one).
 func _birth(at: Vector2, way: Vector2, speed: float, weight: float, sweep_after := -1.0) -> void:
-	if ribbons.size() >= CAPACITY: return
+	if ribbons.size() >= capacity: return
 	var ground: Variant = ground_height.call(at)
 	var ride := _rng.randf_range(RIDE.x, RIDE.y)
 	var y := (float(ground) if ground != null else 0.0) + ride
@@ -250,8 +253,12 @@ func flow(r: Dictionary, way: Vector2) -> Vector3:
 	var heading := Vector2((r.vel as Vector3).x, (r.vel as Vector3).z)
 	heading = heading.normalized() if heading.length_squared() > 0.01 else way
 	var ground := -INF
+	# A ribbon may read less far ahead (`look`, a share), so it hugs the
+	# ground rather than riding over what stands further on (the dragon's
+	# ground breath, scripts/dragon_breath.gd).
+	var ahead := float(r.get("look", 1.0))
 	for s: float in LOOK_AHEAD:
-		var at := p2 + heading * speed * quick * s
+		var at := p2 + heading * speed * quick * s * ahead
 		var h: Variant = ground_height.call(at)
 		if h != null: ground = maxf(ground, float(h) + _canopy_lift(at))
 	if ground == -INF: ground = float(r.ground)

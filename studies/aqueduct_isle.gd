@@ -87,12 +87,35 @@ extends "res://studies/kit_isle.gd"
 ## sky to settle, saves the view (from --at looking at the point, else the
 ## walker's camera) and quits; --place=x,y,z[,turn] starts the pilot there
 ## instead (turn: degrees from facing -z, clockwise).
+## The dragon (an experiment: docs/design/rim-dragon.md), with --dragon: a
+## full-bodied dragon (scripts/sky_dragon.gd) rises out of the cloud sea and
+## roams the archipelago, now and then low over the isle; V puts the camera
+## on it. --dragon-look=a|b|c picks its dress (c by default); its other flags are its own.
+## --dragon-ride (round 5) starts the pilot on foot on the isle it grips, to
+## ride the sag and be flung by the snap; G makes it let go.
+## The blast is a gust for the plane too (round 10, scripts/dragon_gale.gd
+## `plane_gust`, through `plane_air`). --dragon-fly-test starts in the plane
+## and, each time the dragon breathes in on a rim, puts it on a pass across
+## the blast 30 m out from the jaw; --dragon-fly-test=land puts it on a low
+## approach over the held isle's turf instead, to land in the blast.
+## Round 1's rim grip (scripts/rim_dragon.gd) is parked behind --dragon-rim:
+## it swoops in, grips the east rim and blows gales across the isle; take
+## the treasure off its tongue and it lets go (--dragon-perched, ...).
 const Art = preload("res://studies/aqueduct_isle_art.gd")
 const Aqueduct = preload("res://scripts/ruin_kit_aqueduct.gd")
 const Life = preload("res://studies/aqueduct_isle_life.gd")
 const IsleChain = preload("res://studies/aqueduct_isle_chain.gd")
 ## The hall chain's halls collide on the ruins' layer (scripts/hall_rise.gd).
 const RuinBump = preload("res://scripts/ruin_bump.gd")
+const RimDragon = preload("res://scripts/rim_dragon.gd")
+const SkyDragon = preload("res://scripts/sky_dragon.gd")
+## Where the rim dragon grips (world x, z on the near island's east rim) and
+## the way it faces, into the isle.
+const DRAGON_RIM := Vector2(126.6,-9.0)
+const DRAGON_INTO := Vector2(-1.0,0.0)
+## The flying dragon's attack targets (round 7): the sky's placed motif
+## isles, whatever it places (scripts/kit_isle/motif_sky.gd `places`).
+const DragonIsleShape = preload("res://scripts/dragon_isle_shape.gd")
 
 ## The station this is (its key in the pack).
 const STATION := 2
@@ -153,6 +176,22 @@ var _capture_high := false
 ## The landmarks from the kit (their metadata drives the tests).
 var stair: Node3D
 var circle: Node3D
+## The dragon, with --dragon (flying) or --dragon-rim (round 1's rim grip).
+var dragon_on := false
+var dragon_rim := false
+## --dragon-ride (round 5): on foot on the isle it grips, to feel the sag,
+## the snap and the launch.
+var dragon_ride := false
+var dragon: Node3D = null
+## --dragon-fly-test (round 10): "cross" or "land", else "".
+var _fly_test := ""
+var _fly_test_breath := ""
+var _fly_test_t := 0.0
+var _fly_test_log := 0.0
+var _fly_test_heading := 0.0
+## Each motif isle's record for the dragon, once it stands (its id ->
+## {node, shape, home, radius, frame, pivot}).
+var _dragon_isles := {}
 
 func _ready() -> void:
 	pack = "ruins_archipelago"
@@ -161,6 +200,15 @@ func _ready() -> void:
 		if arg == "--no-chain": chain_on = false
 		elif arg == "--autopilot": autopilot = true
 		elif arg == "--capture-high": _capture_high = true
+		elif arg == "--dragon": dragon_on = true
+		elif arg == "--dragon-ride":
+			dragon_on = true
+			dragon_ride = true
+		elif arg == "--dragon-rim": dragon_rim = true
+		elif arg.begins_with("--dragon-fly-test"):
+			dragon_on = true
+			dragon_ride = true
+			_fly_test = "land" if arg.ends_with("=land") else "cross"
 		elif arg == "--near-ring":
 			_near_ring = true
 			_carry = true
@@ -356,7 +404,7 @@ func _stumps() -> Node3D:
 ## before the ring flying at it.
 func _start_in_plane() -> void:
 	super._start_in_plane()
-	if _near_ring: board()
+	if _near_ring or _fly_test != "": board()
 	if _near_ring and isle_chain != null:
 		var ahead := Vector3(-sin(isle_chain.ring_heading),0.0,-cos(isle_chain.ring_heading))
 		fly_from(isle_chain.ring_at-ahead*NEAR_RING_OUT+Vector3.UP*NEAR_RING_UP,isle_chain.ring_heading)
@@ -421,6 +469,20 @@ func _process(delta: float) -> void:
 	# Flying, `_fly_tick` steps the ring and the chain; on foot, here.
 	if isle_chain != null and not flying and delta > 0.0: isle_chain.step(delta,null,false,camera.global_position)
 	_pulse_frame(delta)
+	if dragon != null:
+		if dragon_rim: dragon.advance(delta,not flying)
+		else:
+			if _atmosphere != null:
+				dragon.air = _atmosphere.breeze()
+				dragon.air_angle = _atmosphere._air_angle
+			dragon.on_foot = not flying
+			dragon.advance(delta)
+			if _fly_test != "": _fly_test_frame(delta)
+
+## A fixed-eye capture (--at) still flies the dragon.
+func _capture_tick(delta: float) -> void:
+	if dragon != null and not dragon_rim:
+		dragon.advance(delta)
 
 func _fly_tick(delta: float) -> void:
 	if isle_chain != null: isle_chain.step(delta,plane,lode_state == "seated",camera.global_position)
@@ -472,3 +534,190 @@ func _capture_flying() -> void:
 	var on := Vector3(-sin(float(plane.heading)),0.0,-cos(float(plane.heading)))
 	camera.fov = 60.0
 	camera.look_at_from_position(plane.position-on*110.0+Vector3.UP*75.0,plane.position+on*170.0-Vector3.UP*10.0)
+
+# --- The rim dragon (--dragon) --------------------------------------------------------
+
+## The life, then the dragon over it.
+func _add_life() -> void:
+	super._add_life()
+	if dragon_rim: _build_dragon()
+	elif dragon_on: _build_sky_dragon()
+
+## The kit's on-foot hint, and the dragon's line while it holds the treasure.
+func _foot_text() -> String:
+	var text := super._foot_text()
+	if dragon != null and not dragon_rim:
+		text += "\nV watches the dragon (chase, orbit, from here, off)  ·  G: it lets go of the rim"
+	if dragon != null and dragon_rim and not dragon.taken:
+		text += "\nThe dragon on the east rim holds a treasure in its mouth: get to it between gusts; when it breathes in, get behind stone"
+	return text
+
+## The dragon (scripts/rim_dragon.gd) on the east rim, over the cloud sea.
+func _build_dragon() -> void:
+	var rim := Vector3(DRAGON_RIM.x,Art.ground(DRAGON_RIM.x-1.0,DRAGON_RIM.y),DRAGON_RIM.y)
+	dragon = RimDragon.new()
+	add_child(dragon)
+	dragon.setup(motor,ground.slide_callable(),rim,DRAGON_INTO,IsleChain.SEA_TOP,preload("res://scripts/launch_args.gd").user_args())
+	dragon.gust.connect(_dragon_gust)
+	dragon.yielded.connect(_dragon_yielded)
+	if _switch_hint != null and not flying: _switch_hint.text = _foot_text()
+
+## The flying dragon (scripts/sky_dragon.gd) round the archipelago: the
+## motif isles (within 700 m) are what it threads between and attacks.
+func _build_sky_dragon() -> void:
+	var places: Array = sky.places() if sky != null and sky.has_method("places") else []
+	var list: Array = []
+	for place: Array in places:
+		var at: Vector3 = place[1]
+		if at.distance_to(IsleSky.MIDDLE) < 700.0: list.append([at,float(place[2])])
+	list.append([IsleSky.MIDDLE,60.0])
+	dragon = SkyDragon.new()
+	add_child(dragon)
+	# Its low passes cast their shadow across the near island's turf.
+	var middle := Vector2.ZERO
+	for p: Vector2 in Art.NEAR: middle += p
+	middle /= float(Art.NEAR.size())
+	dragon.shadow_at = Vector3(middle.x,Art.TOP,middle.y)
+	# Its attacks: the motif isles, their records once they stand, their
+	# birds; the pilot it can knock and who can take its treasure.
+	for place: Array in places:
+		dragon.targets.append({"name":str(place[0]),"home":place[1],"radius":float(place[2])*0.5})
+	dragon.find_isle = _dragon_isle
+	dragon.flush_birds = _flush_isle_birds
+	dragon.walker = motor
+	dragon.slide = ground.slide_callable()
+	dragon.yielded.connect(_dragon_yielded)
+	# --dragon-ride: the isles stand at once, so it can grip one with the
+	# pilot already on it.
+	if dragon_ride and sky != null: sky.flush()
+	dragon.setup(camera,preload("res://scripts/launch_args.gd").user_args(),IsleChain.SEA_TOP,IsleSky.MIDDLE,Art.TOP,list)
+	if dragon_ride and _place == Vector4.INF:
+		_place = dragon.ride_spot()
+		if _place != Vector4.INF: print("aqueduct isle: --dragon-ride starts the pilot at (%.1f, %.1f, %.1f) on %s" % [_place.x,_place.y,_place.z,str(dragon.grip.target.name)])
+	if _switch_hint != null and not flying: _switch_hint.text = _foot_text()
+	# Round 10: its blast is a gust for the plane.
+	plane_air = _dragon_air
+
+## The air the plane flies in: the dragon's blast (scripts/dragon_gale.gd
+## `plane_gust`), or still air.
+func _dragon_air(p: Vector3) -> Dictionary:
+	if dragon == null or dragon.gale == null or plane == null: return {}
+	return dragon.gale.plane_gust(p,plane.forward())
+
+## --dragon-fly-test: each time the dragon breathes in on a rim, the plane
+## is put on a pass through its blast (cross: 40 m to the side of the line
+## 30 m out from the jaw, 14 m over the jaw (clear of the ruins), flying across it, in the
+## blast's core about a second into the blow; land: 60 m to the side, low
+## over the held turf 18 m in from the jaw, across the blast toward the isle's
+## middle). Logged four times a second while the gust is on it.
+func _fly_test_frame(delta: float) -> void:
+	_fly_test_t += delta
+	var now := str(dragon.breath) if str(dragon.state) == "clinging" else ""
+	if now == "inhale" and _fly_test_breath != "inhale" and flying and plane != null:
+		var mouth: Vector3 = dragon.mouth_at()
+		var way: Vector3 = dragon.blast_way()
+		var side := Vector3(-way.z,0.0,way.x)
+		var at: Vector3
+		var go: Vector3
+		if _fly_test == "land":
+			var over := mouth+way*18.0
+			var floor: Variant = dragon.gale.air_floor(Vector2(over.x,over.z))
+			over.y = (float(floor) if floor != null else mouth.y-4.0)+7.0
+			at = over-side*60.0+Vector3.UP*5.0
+			go = side
+		else:
+			var cross := mouth+way*30.0+Vector3.UP*14.0
+			at = cross-side*40.0-way*4.0
+			go = (side+way*0.1).normalized()
+		fly_from(at,atan2(-go.x,-go.z))
+		_fly_test_heading = float(plane.heading)
+		_fly_test_log = 0.0
+		print("dragon fly test: on %s's blast, the plane at (%.0f, %.0f, %.0f), the jaw at (%.0f, %.0f, %.0f)" % [str(dragon.grip.target.name),at.x,at.y,at.z,mouth.x,mouth.y,mouth.z])
+	_fly_test_breath = now
+	if not flying or plane == null: return
+	_fly_test_log -= delta
+	if _fly_test_log > 0.0: return
+	_fly_test_log = 0.25
+	var g: Dictionary = dragon.gale.plane_gust(plane.position,plane.forward())
+	if g.is_empty(): return
+	var w: Vector3 = g.wind
+	var floor: Variant = dragon.gale.air_floor(Vector2(plane.position.x,plane.position.z))
+	print("dragon fly test: t %.2f %s gust %.2f wind %.1f m/s (up %.1f) shove (%.2f, %.2f, %.2f), plane %.1f m/s, bank %.0f°, pitch %.0f°, turned %.0f°, %s, %s" % [_fly_test_t,now,float(g.gust),w.length(),w.y,
+		(g.shove as Vector3).x,(g.shove as Vector3).y,(g.shove as Vector3).z,float(plane.speed),rad_to_deg(float(plane.bank)),rad_to_deg(float(plane.pitch)),
+		rad_to_deg(wrapf(float(plane.heading)-_fly_test_heading,-PI,PI)),("%.1f m over the turf" % (plane.position.y-float(floor))) if floor != null else "over open air",ManualLanding.NAMES[hand_landing.phase]])
+
+## The placed motif isle by id (scripts/kit_isle/motif_isle.gd), or null.
+func _motif_isle(id: String) -> Node3D:
+	var motifs: Variant = sky.get("motifs") if sky != null else null
+	if motifs == null: return null
+	for isle: Node3D in motifs.isles:
+		if str(isle.motif.id()) == id: return isle
+	return null
+
+## A motif isle's record for the dragon, once it stands: its node (the
+## whole isle, art, turf, water, bridges, plants and life under it, moved
+## as one), its land (scripts/dragon_isle_shape.gd, sampled at rest), its
+## main land's middle and radius, the shape's frame in the node's, and the
+## point it tips about; {} until it stands.
+func _dragon_isle(id: String) -> Dictionary:
+	if _dragon_isles.has(id): return _dragon_isles[id]
+	var isle := _motif_isle(id)
+	if isle == null or not isle.stands(): return {}
+	# Sampled only at rest (it is never posed before its first record).
+	var shape: RefCounted = DragonIsleShape.new()
+	shape.build(isle,get_world_3d().direct_space_state)
+	if not shape.ok: return {}
+	var home: Vector3 = shape.home
+	var rec := {"node":isle,"shape":shape,"home":home,"radius":float(shape.radius),"exclude":shape.exclude,
+		"frame":isle.global_transform.affine_inverse()*Transform3D(Basis.IDENTITY,home),"pivot":home}
+	_dragon_isles[id] = rec
+	print("aqueduct isle: the dragon knows %s: its main land %.0f m across about (%.0f, %.0f, %.0f)" % [id,2.0*float(shape.radius),home.x,home.y,home.z])
+	return rec
+
+## The isle's birds burst out as the dragon slams onto its rim: the sky's
+## gulls over it, and its own songbirds off their perches.
+func _flush_isle_birds(at: Vector3) -> void:
+	var near: Node3D = null
+	var motifs: Variant = sky.get("motifs") if sky != null else null
+	if motifs != null:
+		var best := INF
+		for isle: Node3D in motifs.isles:
+			var c: Vector3 = isle.circle()
+			var d := Vector2(at.x-c.x,at.z-c.y).length()
+			if d < best:
+				best = d
+				near = isle
+	if near != null:
+		var own: Variant = near.life.get("birds") if near.life != null else null
+		if own != null:
+			for flock: Dictionary in own.flocks: own.flush(flock)
+		var c: Vector3 = near.circle()
+		at = Vector3(c.x,near.isle_top(),c.y)
+	var life_node: Variant = sky.get("life") if sky != null else null
+	if life_node == null: return
+	var host: Variant = life_node.host_at(at)
+	if host == null: return
+	host.flushed = 0.0
+	host.armed = false
+	host.stir = 1.0
+
+## Each gale as a strong gust front along its way, so the grass and the
+## air's ribbons lie over with it.
+func _dragon_gust(way: Vector2) -> void:
+	var focus := camera.global_position
+	var fronts: RefCounted = _atmosphere.fronts
+	fronts.set_bounds(Vector2(focus.x,focus.z),36.0)
+	for i in range(fronts.fronts.size()): fronts.fronts[i] = {}
+	fronts.send(way,1.0,Atmosphere.breeze_air(_atmosphere._air_strength),1.0)
+
+## The treasure taken: a pop and the flourish, a crystal on the readout.
+func _dragon_yielded() -> void:
+	print("aqueduct isle: the dragon's treasure is taken")
+	if _moments == null:
+		_moments = MomentsHud.new()
+		add_child(_moments)
+	_moments.pop("The dragon's treasure: it lets go of the rim",2.8)
+	_moments.flourish()
+	var sky_tokens = sky.get("collectibles") if sky != null else null
+	if sky_tokens != null and sky_tokens.get("hud") != null: sky_tokens.hud.show_pickup("crystal",1,1,1)
+	if _switch_hint != null and not flying: _switch_hint.text = _foot_text()

@@ -23,6 +23,10 @@ const ENTRIES: Array[Dictionary] = [
 	# Ruins.
 	{"id":"aqueduct_isle","group":"Ruins","title":"Aqueduct isle","scene":"res://studies/aqueduct_isle.tscn","args":[],
 		"detail":"The ruin platforming isle: grass, look presets (L), the plane on F. Find the lodestone, fly where the nose points; the halls follow."},
+	{"id":"sky_dragon","group":"Ruins","title":"Sky dragon","scene":"res://studies/aqueduct_isle.tscn","args":["--dragon"],
+		"detail":"An experiment: a great dragon rises from the clouds and roams the isles, now and then low over yours. V puts the camera on it."},
+	{"id":"rim_dragon","group":"Ruins","title":"Rim dragon (round 1)","scene":"res://studies/aqueduct_isle.tscn","args":["--dragon-rim"],
+		"detail":"The first dragon experiment: it grips the isle's rim and blows gales. Take the treasure from its mouth between gusts."},
 	{"id":"bell_spires","group":"Ruins","title":"Bell spires","scene":"res://studies/bell_spires_isle.tscn","args":[],
 		"detail":"Rock spires joined by rope bridges, a belfry on the tallest. Look presets (L), the plane on F."},
 	{"id":"cloister_tarn","group":"Ruins","title":"Cloister tarn","scene":"res://studies/cloister_tarn_isle.tscn","args":[],

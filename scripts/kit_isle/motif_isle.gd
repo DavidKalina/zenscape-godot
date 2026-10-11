@@ -282,7 +282,9 @@ func _register() -> void:
 	if ground != null and ground.get("pools") is Array:
 		for pool: Dictionary in motif.pools():
 			var r: Rect2 = pool.rect
-			(ground.pools as Array).append({"rect":Rect2(r.position+flat,r.size),"top":float(pool.top)+offset.y})
+			# Round 9 (docs/design/rim-dragon.md): the pool rides this node, so
+			# it tips with the isle when the dragon holds it.
+			(ground.pools as Array).append({"rect":Rect2(r.position+flat,r.size),"top":float(pool.top)+offset.y,"node":self,"rest":transform})
 
 ## One readout for its tokens and the sky's (as kit_isle `_add_life`).
 func _share_hud() -> void:

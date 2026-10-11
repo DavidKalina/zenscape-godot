@@ -377,7 +377,7 @@ func pad_under(feet: Vector3) -> String:
 
 ## Thrown from where he stands: `push` (m/s), named `what`.
 func throw(push: Vector3, what: String) -> void:
-	motor.knock(push)
+	motor.toss(push)
 	last_throw = {"what":what,"at":motor.feet,"push":push}
 	_throw_peak = motor.feet.y
 	steps.step(_surface(),1.0)

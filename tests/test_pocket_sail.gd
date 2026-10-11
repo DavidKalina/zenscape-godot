@@ -210,7 +210,7 @@ func _initialize() -> void:
 	# Knocked: a fresh airtime, the kick ready.
 	m.reset(Vector3(-20.0,0.0,0.0),0.0)
 	_step(m,figure,flat,Vector2.ZERO,false)
-	m.knock(Vector3(6.0,12.0,0.0))
+	m.toss(Vector3(6.0,12.0,0.0))
 	check(not m.grounded and m.velocity.y > 11.0,"A knock throws him up and out")
 	for k in range(15): _step(m,figure,flat,Vector2.ZERO,false)
 	var knocked := _step(m,figure,flat,Vector2.ZERO,true)
