@@ -31,6 +31,8 @@ const ENTRIES: Array[Dictionary] = [
 		"detail":"An isle split by a gorge: a snapped stone bridge, a rope bridge over the break, a lower crossing. F: the plane."},
 	{"id":"colonnade_spine","group":"Ruins","title":"Colonnade spine","scene":"res://studies/colonnade_spine_isle.tscn","args":[],
 		"detail":"A knife-edge ridge isle: a colonnade up its crest to a temple gate, a curling tail of fragments and rope bridges."},
+	{"id":"stair_clouds","group":"Ruins","title":"Stair to the Clouds","scene":"res://studies/stair_clouds_isle.tscn","args":[],
+		"detail":"The tallest isle: a stepped mesa with a grand stair winding up it to a gate, a rope bridge to a hanging pinnacle."},
 	{"id":"sundered_hall","group":"Ruins","title":"The Sundered hall","scene":"res://studies/cozy_worlds.tscn","args":["--motif=sundered","--no-clusters","--skydive"],
 		"detail":"The game with the long gothic hall 240-900 m out; in the plane, fly to it."},
 	{"id":"hall_rise","group":"Ruins","title":"Hall rise","scene":"res://studies/hall_rise.tscn","args":[],
