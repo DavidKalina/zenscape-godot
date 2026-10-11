@@ -88,6 +88,8 @@ func _build_art() -> void:
 	pinnacle = motif.pinnacle
 	bridge = motif.bridge
 	for land: Array in motif.lands: add_turf(land[0],land[1],land[2])
+	# The on-foot pieces: balustrades down the top flights, bobbing slabs.
+	preload("res://scripts/interactables/stair_clouds_foot_route.gd").build(self,Vector3.ZERO)
 	print("stair to the clouds: %d triangles, the mesa built in %d ms, the rest in %d ms" % [triangles(art),motif.mesa_ms,Time.get_ticks_msec()-began-motif.mesa_ms])
 
 # --- The lodestone ------------------------------------------------------------------

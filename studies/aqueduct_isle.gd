@@ -289,6 +289,8 @@ func _build_art() -> void:
 	# in the physics space): the islands' and islets' ground.
 	for land: Node3D in [near,far]+islets: add_turf(land)
 	print("aqueduct isle: %d triangles" % triangles(art))
+	# The on-foot pieces' route (balustrades, ropes, a ferry, bobbing slabs).
+	preload("res://scripts/interactables/aqueduct_foot_route.gd").build(self)
 
 # --- The isle's hooks --------------------------------------------------------------
 

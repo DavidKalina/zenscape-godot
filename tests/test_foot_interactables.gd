@@ -15,11 +15,16 @@ extends SceneTree
 ##   - jumped onto a balustrade from the high deck he slides it down the
 ##     stair, balancing, gaining pace, flung off its foot faster than he
 ##     runs, and landed crouched he slides on.
+## Then the aqueduct isle's route (scripts/interactables/
+## aqueduct_foot_route.gd): run off the near rim beside the aqueduct, he
+## takes the first rope and swings rope to rope across the gap onto the far
+## island; from its rim he boards the ferry and rides it back across.
 ##   godot --headless --path . --script tests/test_foot_interactables.gd
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const Yard = preload("res://studies/interactables_yard.gd")
 const SwingRope = preload("res://scripts/interactables/swing_rope.gd")
 const Balustrade = preload("res://scripts/interactables/balustrade.gd")
+const Route = preload("res://scripts/interactables/aqueduct_foot_route.gd")
 const DT := 1.0/60.0
 var failures := 0
 var study: Node3D
@@ -48,6 +53,9 @@ func run() -> void:
 	var run_reach := _running_jump()
 	_rope(run_reach)
 	_rail()
+	study.queue_free()
+	await process_frame
+	await _isle_route()
 	print("foot interactables: %d failure(s)" % failures)
 	quit(1 if failures > 0 else 0)
 
@@ -285,3 +293,72 @@ func _rail() -> void:
 			break
 	check(landed_pace > PilotMotor.RUN,"...landed crouched he slides on faster than he runs (%.2f m/s, %s)" % [landed_pace,m.move])
 	_input(Vector2.ZERO)
+
+## The aqueduct isle's route: the rope chain over the gap, the ferry back.
+func _isle_route() -> void:
+	study = load("res://studies/aqueduct_isle.tscn").instantiate()
+	study.scripted = true
+	root.add_child(study)
+	current_scene = study
+	while not study.get("isle_up"): await process_frame
+	m = study.motor
+	pieces = study.foot_pieces
+	check(pieces != null and pieces.ropes.size() == 3 and pieces.slabs.size() >= 4 and pieces.rails.size() >= 2,"The aqueduct isle has its route: ropes, slabs, balustrades")
+	if pieces == null: return
+	var spot: Array = Route.SPOTS.ropes
+	study.place(spot[0],spot[1])
+	var caught := [false,false,false]
+	var on := -1
+	var far := Vector3.INF
+	for t in range(900):
+		var want := Vector2(0.0,-1.0)
+		var edge: bool = study.ground.height_from(Vector2(m.feet.x,m.feet.z-0.6),m.feet.y) < m.feet.y-1.0
+		var jump := _jumping_if(edge)
+		on = -1
+		for i in range(3):
+			if pieces.ropes[i].held(): on = i
+		if on >= 0:
+			var r: Node3D = pieces.ropes[on]
+			want = Vector2(0.0,-1.0) if r.velocity.z <= 0.0 else Vector2(0.0,1.0)
+			jump = r.hands.z < r.anchor.z and r.velocity.z < 0.0 and (r.hands-r.anchor).angle_to(Vector3.DOWN) > 0.45 and r.velocity.length() > 7.0
+		_input(want,jump)
+		_tick(1)
+		for i in range(3):
+			if pieces.ropes[i].held(): caught[i] = true
+		if m.grounded and m.feet.z < -40.0:
+			far = m.feet
+			break
+		if m.feet.y < 20.0: break
+	check(caught[0] and caught[1] and caught[2],"Run off the near rim he takes the first rope and swings rope to rope (%s)" % [caught])
+	check(far != Vector3.INF,"...and lets go onto the far island (%s)" % far)
+	# The ferry, from the far rim when it comes in.
+	spot = Route.SPOTS.ferry
+	study.place(spot[0],spot[1])
+	var ferry: Node3D = pieces.slabs[0]
+	var boarded := false
+	for t in range(1200):
+		var near: bool = ferry.transform.origin.z < -40.3
+		_input(Vector2(0.0,1.0) if near or not m.grounded else Vector2.ZERO,_jumping_if(near and m.feet.z > -42.3))
+		_tick(1)
+		if pieces.on == ferry:
+			boarded = true
+			break
+		if m.feet.y < 20.0: break
+	_input(Vector2.ZERO)
+	var stayed := true
+	for k in range(600):
+		_tick(1)
+		if pieces.on != ferry: stayed = false
+		if ferry.transform.origin.z > -27.5: break
+	check(boarded and stayed and m.feet.z > -29.5,"From the far rim he boards the ferry and rides it back across (z %.1f)" % m.feet.z)
+
+## As `_jumping`, from the ground when `go`.
+func _jumping_if(go: bool) -> bool:
+	if m.grounded and go:
+		_held_for = 1
+		return true
+	if _held_for > 0 and not m.grounded and m.velocity.y > 0.0:
+		_held_for += 1
+		return true
+	_held_for = 0
+	return false
