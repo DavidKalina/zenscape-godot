@@ -171,7 +171,7 @@ func _at(b: Dictionary, age: float) -> Vector2:
 	towers.clock = age-towers.phase(b.cell)
 	for i in range(600):
 		await process_frame
-		if b.pair == SkyTowers._stage(SkyTowers.grown_of(towers.age_of(b.cell))) and b.job.is_empty(): break
+		if b.pair == SkyTowers._stage(SkyTowers.grown_of(towers.age_of(b.cell))): break
 	await process_frame
 	return Vector2(float(b.grown),float(b.wane))
 

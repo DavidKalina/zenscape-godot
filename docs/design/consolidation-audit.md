@@ -743,18 +743,18 @@ Not merged, not pushed.
 
 ### Cost (headless, this Mac, from `tests/test_kit_clouds.gd`)
 
-- **A frame of the clouds:** about 145 µs on the main thread (mean of
-  9,000 steps). That's the towers' lives, the puffs' screens, keeps and
+- **A frame of the clouds:** 145 to 240 µs on the main thread (mean of
+  9,000 steps; the higher figure is with other tests running alongside). That's the towers' lives, the puffs' screens, keeps and
   follow, five fliers traced, and the tunnels handed on. It's the same
   work and the same counts as the old game: 4 towers marched (the old
   game's ring shows its home tower plus 3 at about 2.2 km), 70 clouds and
   4 CPU planes.
-- **A tower's stage pair:** about 185 ms to bake, on a worker. The rising
+- **A tower's stage pair:** 185 to 245 ms to bake, on a worker. The rising
   stands a new pair about every 7.5 s.
-- **Standing up on the main thread:** 16 stand-ups while the towers came
-  in and went through their lives, a mean of about 370 µs. All of them sit
+- **Standing up on the main thread:** 13 to 16 stand-ups while the towers
+  came in and went through their lives, a mean of 370 to 850 µs. All of them sit
   inside `SkyCommits`' 4 ms budget rule, and none piled onto another. The
-  first one, 5.7 ms headless, makes the shared cumulus noise texture. In a
+  first one, 5 to 10.6 ms headless, makes the shared cumulus noise texture. In a
   rendered run the near sea has usually made that already.
 - **Not measurable headless:** the volume's GPU march with towers in it.
   It's capped at 4 towers (`CloudVolume.TOWERS`), as in the old game.
@@ -772,10 +772,31 @@ tunnel, tufts) and a tower (its shader's wakes), and the volume marches
 both. Freeing the scene mid-bake leaves nothing. The cost lines above are
 printed by it.
 
-See the round's final report for the batch results. `test_sky_cumulus`
-fails one check, "And the streaks thicken into the cloud's wisps"
-(`GlideAir._shown`), **on the base commit too**. It isn't from this round
-and isn't in known_failures.
+Results:
+
+- **Pass:** the import check, `test_kit_clouds` (17 to 22 s alone),
+  round 2's set (`test_front_door`, `test_export_entry`, the three
+  `test_scene_picker*`, the five `test_aqueduct_isle*`,
+  `test_kit_isle_landing`, `test_game_pause`, `test_game_settings` and
+  `test_isle_teardown`), the old game's `test_cloud_styles`,
+  `test_cloud_volume`, `test_cloud_wakes` and `test_sky_traffic`, and the
+  other kit isles' tests, whose skies now carry the clouds too
+  (`test_bell_spires_isle`, `test_cloister_tarn_isle`,
+  `test_colonnade_spine_isle`, `test_sundered_gorge_isle`,
+  `test_isle_lock`, `test_isle_lodestone`, `test_isle_hall_chain` and
+  `test_kit_water`). `test_cloud_view_from_above` is gpu-tagged, so it's
+  skipped headless.
+- **`test_sky_cumulus`** fails one check, "And the streaks thicken into the
+  cloud's wisps" (`GlideAir._shown`). It fails the same way on the base
+  commit 6df85518, so it isn't from this round. It isn't in
+  known_failures.
+- **`test_aqueduct_isle_life` is flaky.** On the branch: 1 of 3 runs
+  failed, each failure on a different check (a gust ribbon dipped under
+  the isle, songbirds coming home). On the base: 1 of 3 failed (a leaf off
+  the turf). It depends on timing.
+- **`test_cloud_volume`** came back `pass_with_known_engine_error`
+  (exit_leak) once in a run alongside other tests. It did the same in the
+  first base batch. It runs the old `diorama.tscn`.
 
 ### Unverified (needs a rendered run)
 
