@@ -140,8 +140,13 @@ const STAIR_WEATHERED := 0.3
 ## from the slot toward the near island's edge (-24.75).
 const KNIFE_Z := -28.0
 const STUMP_KNIFE_ROOM := 0.45
-static var STUMP_SLOT: float = WorldScale.knife(STUMP_KNIFE_ROOM)
-static var STUMPS := [[92.0,-25.4,KNIFE_Z+STUMP_SLOT*0.5,30.4],[92.0,KNIFE_Z-STUMP_SLOT*0.5,-32.6,29.8],[92.0,-36.0,-38.4,30.2]]
+static func stump_slot() -> float:
+	return WorldScale.knife(STUMP_KNIFE_ROOM)
+## (Funcs, not static vars: a static var on this scene's script left the
+## engine reporting pages still in use at exit.)
+static func stumps() -> Array:
+	var slot := stump_slot()
+	return [[92.0,-25.4,KNIFE_Z+slot*0.5,30.4],[92.0,KNIFE_Z-slot*0.5,-32.6,29.8],[92.0,-36.0,-38.4,30.2]]
 
 ## The lodestone's floating stone (Art `platforms`).
 const LODE_PLATFORM := "east_1"
@@ -372,13 +377,13 @@ func _pack_runs() -> PackedStringArray:
 		if int(Recording.read(path).get("station",0)) == STATION: found.append(path)
 	return found
 
-## The stepping stumps (STUMPS): an older arcade's piers, coursed solid
+## The stepping stumps (`stumps`): an older arcade's piers, coursed solid
 ## to their tops, mossed and tufted there, their feet broken off under the
 ## islands; collided as clean boxes.
 func _stumps() -> Node3D:
 	var b := RuinKit.Build.new(SEED+5,0.6,"Stumps")
 	b.settle = Aqueduct.SETTLE
-	for s: Array in STUMPS:
+	for s: Array in stumps():
 		var x: float = s[0]
 		var z0: float = s[1]
 		var z1: float = s[2]

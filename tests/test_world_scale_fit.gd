@@ -77,7 +77,7 @@ func _gaps(tag: String) -> void:
 	var tall := WorldScale.TOY_TALL*WorldScale.plane
 	var knives := {
 		"the great trilithon's slot (RuinKit.TRILITHON_SLOT)":RuinKit.TRILITHON_SLOT,
-		"the aqueduct isle's stumps (AqueductIsle.STUMP_SLOT)":AqIsle.STUMP_SLOT,
+		"the aqueduct isle's stumps (AqueductIsle.stump_slot)":AqIsle.stump_slot(),
 		"a hall's knife slit (Hall.KNIFE.x)":Hall.KNIFE.x,
 	}
 	for name: String in knives:

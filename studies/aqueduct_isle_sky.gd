@@ -97,7 +97,7 @@ const WAVE_NEAR := 70.0
 ## (see the doc for the flying line each asks for).
 const TOKENS := [
 	# Knife edge (Q or E held) along z -28 (AqueductIsle KNIFE_Z), x east:
-	# between the first two stepping stumps (their STUMP_SLOT) and on under
+	# between the first two stepping stumps (their `stump_slot`) and on under
 	# the aqueduct's arch.
 	["aq:knife","air","knife",[Vector3(91.8,25.0,-28.0),Vector3(100.0,25.0,-28.0)]],
 	# Through the fallen span, where the channel's water falls.
