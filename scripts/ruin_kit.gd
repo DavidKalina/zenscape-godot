@@ -1391,8 +1391,9 @@ static func floor_slabs(seed_value: int, weathered := 0.0) -> Node3D:
 ## and settled, a cheek torn down on each flight, a newel's cap fallen at
 ## the foot, rubble. Meta "foot" and "head": the middle of its foot on the
 ## ground and of its head's landing on top.
-static func grand_stair(seed_value: int, weathered := 0.0) -> Node3D:
+static func grand_stair(seed_value: int, weathered := 0.0, shelter := Callable()) -> Node3D:
 	var b := Build.new(seed_value,weathered,"GrandStair")
+	b.shelter = shelter
 	var run1 := (GRAND_STEPS-1)*GRAND_TREAD+GRAND_LANDING
 	var run2 := (GRAND_STEPS-1)*GRAND_TREAD+LANDING
 	var front := (run1+run2)*0.5
