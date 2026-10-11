@@ -7,9 +7,12 @@ extends Node3D
 ## gothic arch on a keel of lode stone erupts quietly out of the cloud sea
 ## far below, past the shard (`ring`), and climbs to stand in the plane's
 ## way: no beacon, no glow, no pulse, and the arrow goes on pointing at the
-## shard. It rises early enough to stand still well before the plane gets
-## there, even at boost (`ring_near`, and RING_SPARE s before the plane at
-## its speed). Threading its opening is the only thing that counts
+## shard. It wakes as the plane nears, so it is seen rising: at the plane's
+## speed it stands RING_SPARE s before the plane gets there (not from
+## further off, so it isn't already standing as the plane leaves the isle,
+## 470 m away), and wakes within `ring_near` at the least. A plane that
+## speeds up and gets there while it still climbs threads it all the
+## same. Threading its opening is the only thing that counts
 ## (crossing its plane outside the opening, or flying round it, does
 ## nothing; you can come round and go through). The first Sundered hall
 ## starts rising at once, still deep in the cloud (`first_at` "thread");
@@ -82,13 +85,15 @@ const RING_WEATHERED := 0.25
 const RING_CROWN := (RuinKit.SPRING+RuinKit.ARCH_SPAN*0.866)*RING_SCALE
 ## Its keel: half across, half deep, how deep it hangs (m).
 const KEEL := Vector3(10.5,5.0,9.0)
-## It rises when the plane, with the stone seated, is within RING_NEAR m
-## (--ring-near=<m>), or sooner at speed: once the plane would be there
-## within the rise and RING_SPARE s. Its motion is a hall chunk's
-## (RisePlan.height_at), its crown starting RING_UNDER m under the cloud
-## top, with RING_RISE's keys.
-const RING_NEAR := 420.0
-const RING_SPARE := 8.0
+## It rises when the plane, with the stone seated, would be there within
+## the rise and RING_SPARE s at its speed (cruise at the least: some 176 m
+## out), or is within RING_NEAR m (--ring-near=<m>), whichever is further.
+## Its motion is a hall chunk's (RisePlan.height_at), its crown starting
+## RING_UNDER m under the cloud top, with RING_RISE's keys. (It was 420 m
+## and 8 s: the ring woke as the plane left the isle and stood half a
+## minute before it got there, so it seemed always to be there.)
+const RING_NEAR := 150.0
+const RING_SPARE := 4.0
 const RING_UNDER := 20.0
 const RING_RISE := {"speed":26.0,"ease_in":8.0,"ease_out":26.0,"over":0.3,"settle":1.0,"lead":0.0,"gap":0.0}
 ## The held breath after threading it (s), and how far on the first hall's
@@ -123,9 +128,12 @@ var burst: MultiMeshInstance3D
 ## the way the ring faces (rad, SkyPlane's heading).
 var ring_at := Vector3.ZERO
 var ring_heading := 0.0
-## "hidden", "rising", "standing", "passed" (the pause), "started".
+## "hidden", "rising", "standing", "passed" (the pause), "started". A ring
+## threaded while it still climbs goes on climbing through the pause.
 var state := "hidden"
 var rise_clock := 0.0
+## Whether it has finished rising (and collides).
+var ring_stood := false
 ## The ring's motion (a RisePlan chunk: from_y, t_in, ... in its frame).
 var ring_motion := {}
 var ring_near := RING_NEAR
@@ -316,20 +324,22 @@ func step(delta: float, plane: RefCounted, seated: bool, _eye := Vector3.ZERO) -
 			if at != null and seated and wakes(at as Vector3,speed):
 				ring_woke_at = Vector2((at as Vector3).distance_to(ring_at),speed)
 				appear()
-		"rising":
-			rise_clock += delta
-			_ring_frame(delta)
-			if rise_clock >= ring_length():
-				_lift.position = Vector3.ZERO
-				state = "standing"
-				_solid(true)
 		"passed":
 			pause_left -= delta
 			if pause_left <= 0.0: _start()
-	if at != null and state == "standing": _watch(at as Vector3,plane)
+	if state != "hidden" and not ring_stood:
+		rise_clock += delta
+		_ring_frame(delta)
+		if rise_clock >= ring_length():
+			_lift.position = Vector3.ZERO
+			ring_stood = true
+			if state == "rising": state = "standing"
+			_solid(true)
+	if at != null and state in ["rising","standing"]: _watch(at as Vector3,plane)
 	if at == null: _prev = Vector3.INF
-	# The line's pieces built ahead from when the ring wakes.
-	if style == "line" and state != "hidden": chain.prefetch()
+	# The line's pieces built ahead from when the stone rides in the plane
+	# (the ring wakes only some 13 s before the plane gets there).
+	if style == "line" and (state != "hidden" or (at != null and seated)): chain.prefetch()
 	if chain.halls.size() > 0:
 		chain.plane_speed = speed
 		chain.advance(delta,at)
@@ -360,15 +370,16 @@ func _ring_frame(delta: float) -> void:
 				_rng.randf_range(6.0,11.0),_rng.randf_range(0.6,1.4),_rng.randf_range(1.6,2.8))
 
 ## A crossing of the ring's plane (its local z through 0): through the
-## opening it is threaded, else a miss.
+## opening it is threaded, else a miss. The opening is where the arch is
+## now, risen or still climbing.
 func _watch(at: Vector3, plane: RefCounted) -> void:
-	var local := ring.global_transform.affine_inverse()*at
+	var local := ring.global_transform.affine_inverse()*at-_lift.position
 	if _prev != Vector3.INF and signf(_prev.z) != signf(local.z) and absf(local.z-_prev.z) < 30.0:
 		var u := _prev.z/(_prev.z-local.z)
 		var cross := _prev.lerp(local,u)
 		if in_opening(cross.x,cross.y):
 			state = "passed"
-			pass_point = ring.global_transform*cross
+			pass_point = ring.global_transform*(cross+_lift.position)
 			pass_heading = float(plane.heading)
 			pass_speed = float(plane.speed)
 			pause_left = pause

@@ -21,7 +21,7 @@ The scene picker's "Aqueduct isle" entry (Scenes, then Ruins) opens the whole lo
 
 1. Find the lodestone on floating stone `east_1` and pick it up (E or pad A). Keep it (E), then board (F or pad Y).
 2. Fly where the nose arrow points. The shard is at (200, 42, -380).
-3. Within 420 m of the ring, an arch on a keel of lode stone erupts out of the cloud sea far below and climbs about 160 m to stand past the shard. It takes 8.6 s. Nothing announces it, and the nose arrow goes on pointing at the shard.
+3. As you near the ring (about 13 s out at your speed: 176 m at cruise, 277 m at boost), an arch on a keel of lode stone erupts out of the cloud sea far below and climbs about 160 m to stand past the shard. It takes 8.6 s. Nothing announces it, and the nose arrow goes on pointing at the shard.
 4. Fly through its opening. The first hall starts rising at once, out of sight, deep in the cloud. For 1.5 s nothing shows. Then:
    - the chime plays;
    - a soft flash blooms round the plane;
@@ -33,7 +33,7 @@ The scene picker's "Aqueduct isle" entry (Scenes, then Ruins) opens the whole lo
 
 | Flag | Default | Does |
 |---|---|---|
-| `--ring-near=<m>` | 420 | how near the ring wakes. It also wakes sooner at speed: once the plane would arrive within its rise plus 8 s |
+| `--ring-near=<m>` | 150 | the nearest the ring wakes. At speed it wakes sooner: once the plane would arrive within its rise plus 4 s (was 420 m and 8 s; see the fix below) |
 | `--ring-pause=<s>` | 1.5 | the held breath between threading and the pulse |
 | `--first-at=thread\|pulse` | thread | when the first hall starts rising: at the threading (unseen through the pause) or, as before, after the pause |
 | `--chain-lead=<m>` | 180 | the least distance past the pass point for the first hall's way in (the gate is 25 m more). At speed it stands further on |
@@ -231,3 +231,15 @@ Run under the runner and passing: `test_isle_hall_chain` (with the runner's know
 4. The quiet arrow: folded flat along the nose and dim, or sunk back into the cowl entirely?
 5. Catch-up: keep it (hidden help at boost), or let a boost meet a gate still coming up?
 6. Should the halls' 30 m/s break-through stay, or would a slower, heavier climb (`--rise-speed=20`) with a longer lead suit the game better?
+
+## Fix (2026-10-11, fix/hall-line-trigger): the ring wakes as you near
+
+Played from the front door, "the arch is always there". The ring woke 420 m out, and the ring stands 469 m from the isle's middle, so it woke as the plane rolled off the isle's north edge and stood still half a minute before the plane got there. The loop tests never saw this: they open the isle with the stone carried and jump the plane 600 m and then 410 m out on the ring's line.
+
+- The ring now wakes once the plane would be there within its rise plus 4 s at its speed (cruise at the least), and within 150 m at the least: 176 m out at cruise, 277 m at boost. It stands about 4 s before you get there, so you see it come up out of the cloud.
+- A plane that speeds up after it wakes can reach it while it still climbs. Flying through its opening, where it is at that moment, threads it all the same, and it climbs on to stand through the pause. It collides only once it stands, as before.
+- The line's pieces start building as soon as the stone rides in the plane, no longer only when the ring wakes, so the first real piece is ready by the thread.
+- Without the stone nothing changes: the ring never wakes and the shard has no arch of its own.
+- `tests/test_isle_loop_played.gd` plays it the player's way. It opens studies/zenscape.tscn with no study flags, flies out without the stone (no ring, no halls), then walks to the stone, keeps it, boards the parked plane, rolls it off the edge, flies at the ring, threads it and flies into the first Sundered piece.
+
+The second report, "when I go through it, no Sundered hall", did not reproduce on main b6fc79b4. Threading worked through the real path, headless and rendered, with fixed steps and with live input through the game's own `_process`, from straight on, ±40°, the reverse side, 3 m off centre, at boost, after three minutes of circling and after leaving and re-boarding. Every time the first piece rose and stood ahead.

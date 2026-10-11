@@ -74,7 +74,7 @@ extends "res://studies/kit_isle.gd"
 ## for you once it starts (any stick or key takes over); --capture-high
 ## takes the capture from high behind the plane, looking down the line.
 ## --no-chain leaves it out (the old shard-only arrival); --ring=x,y,z
-## moves the ring, --ring-near=<m> how near it wakes (420),
+## moves the ring, --ring-near=<m> the nearest it wakes (150; at speed further),
 ## --ring-pause=<s> the breath (1.5), --chain-lead=<m> how far on the first
 ## hall's way in stands at the least (180), --arrive-spare=<s> how long
 ## before the plane gets to a gate it is still (2), --catch-up=<x> how much

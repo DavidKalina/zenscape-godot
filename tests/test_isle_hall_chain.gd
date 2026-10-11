@@ -125,14 +125,19 @@ func _hidden() -> void:
 	_fly(1.0)
 	check(c.state == "hidden" and not c.ring.visible,"600 m off it is still hidden")
 
-## Nearer: it rises out of the cloud sea, early enough to stand still well
-## before the plane gets there even at boost, then stands, solid.
+## Nearer: it rises out of the cloud sea as the plane nears, seen rising,
+## and stands a few seconds before the plane gets there at cruise or boost
+## (not half a minute early: woken from the isle's edge it seemed always to
+## be there), then stands, solid.
 func _appears() -> void:
 	var c: Node3D = study.isle_chain
 	var still: float = c.ring_length()
-	var boost_eta: float = c.ring_near/SkyPlane.BOOST_SPEED
-	check(boost_eta-still > 5.0 and c.ring_near/SkyPlane.CRUISE_SPEED-still > 15.0,"It wakes %.0f m out: still %.1f s after, the plane there %.1f s after at cruise, %.1f s at boost" % [c.ring_near,still,c.ring_near/SkyPlane.CRUISE_SPEED,boost_eta])
-	check(c.wakes(c.ring_at-_ahead(c.ring_heading)*470.0,SkyPlane.FAST) and not c.wakes(c.ring_at-_ahead(c.ring_heading)*470.0,SkyPlane.CRUISE_SPEED),"Diving fast it wakes sooner (from 470 m at %.0f m/s, not at cruise)" % SkyPlane.FAST)
+	for v: float in [SkyPlane.CRUISE_SPEED,SkyPlane.BOOST_SPEED]:
+		var d := _wake_distance(c,v)
+		check(d/v-still > 2.0 and d/v-still < 8.0,"At %.0f m/s it wakes %.0f m out: still %.1f s after, the plane there %.1f s after" % [v,d,still,d/v])
+	var from_isle: float = Vector2(c.ring_at.x-85.0,c.ring_at.z+20.0).length()
+	check(_wake_distance(c,SkyPlane.CRUISE_SPEED) < from_isle-200.0,"At cruise it wakes well out from the isle (%.0f m from the ring, the isle %.0f m)" % [_wake_distance(c,SkyPlane.CRUISE_SPEED),from_isle])
+	check(c.wakes(c.ring_at-_ahead(c.ring_heading)*300.0,SkyPlane.FAST) and not c.wakes(c.ring_at-_ahead(c.ring_heading)*300.0,SkyPlane.CRUISE_SPEED),"Diving fast it wakes sooner (from 300 m at %.0f m/s, not at cruise)" % SkyPlane.FAST)
 	study.fly_from(c.ring_at-_ahead(c.ring_heading)*(c.ring_near-10.0),c.ring_heading)
 	_fly(0.1)
 	check(c.state == "rising" and c.ring.visible,"Within %.0f m it starts to rise" % c.ring_near)
@@ -157,12 +162,21 @@ func _appears() -> void:
 	# first piece is built on a worker meanwhile (from when it woke), and
 	# what its island first stands with made a frame at a time.
 	var line: Node3D = c.chain
+	# (Waited for well back: the ring now wakes only some 13 s out, so
+	# flying on from here would thread it.)
+	study.fly_from(c.ring_at-_ahead(c.ring_heading)*600.0,c.ring_heading)
 	var waited := 0
 	while line.look == "real" and (not line.built(0) or not line._warm.is_empty()) and waited < 600:
 		study.fly_step(DT,{})
 		waited += 1
 		await physics_frame
 	check(line.look != "real" or line.built(0),"The line's first piece is built while the ring rises (%.1f s more)" % (waited*DT))
+
+## How far out the ring wakes for a plane at `speed` (m, to the metre).
+func _wake_distance(c: Node3D, speed: float) -> float:
+	var d := 1000.0
+	while d > 0.0 and not c.wakes(c.ring_at-_ahead(c.ring_heading)*d,speed): d -= 1.0
+	return d
 
 ## The nose arrow still points at the shard.
 func _arrow() -> void:

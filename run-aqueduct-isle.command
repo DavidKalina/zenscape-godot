@@ -16,7 +16,7 @@
 #   --line-bays=<a-b> (8-11)  --line-gap=<a-b> (14-26)  --line-run=<a-b> (2-4)  --line-turn=sidestep|bend|mix
 #   --line-look=real|greybox (real: each piece the game's own Sundered hall, basalt + overgrowth on its ridge island; greybox: round 1's boxes)
 #   --line-jog=<m> (48)  --line-jog-gap=<m> (120)  --line-bend=<deg> (26)  --line-ahead=<m> (260)  --line-keep=<n> (6)  --line-seed=<n>
-#   --ring=x,y,z  --ring-near=<m> (420)  --ring-pause=<s> (1.5)  --chain-lead=<m> (180)  --target=x,y,z
+#   --ring=x,y,z  --ring-near=<m> (150; at cruise it wakes 176 m out)  --ring-pause=<s> (1.5)  --chain-lead=<m> (180)  --target=x,y,z
 #   --arrive-spare=<s> (2)  --catch-up=<x> (1.6)  --first-at=thread|pulse (thread)
 #   --stone-plane, and the hall chain's flags (--chain-at=, --chain-gap=, ...)
 set -u
