@@ -2,13 +2,153 @@
 
 A giant dragon from the cloud sea, after the Ruined Kingdom dragon in Mario
 Odyssey. Round 1 gripped the isle's rim and blew gales; the user found it
-"animatronic" (no body) and out of the game's style. Round 2 gives it a full
-body and makes it fly well. The rim grip and gusts are parked.
+"animatronic" (no body) and out of the game's style. Round 2 gave it a full
+body and made it fly well. Round 3 rebuilds it as a wyvern after Smaug and
+makes it ride the air. The rim grip and gusts are parked.
 
 Branch `study/rim-dragon`. This is a demo round: no tests, no bot sweeps, no
 perf pass.
 
-## Round 2: the sky dragon
+## Round 3: a wyvern after Smaug
+
+The user's notes on round 2 (look c, watched from the isle): still a bit
+animatronic, the mouth most of all; reads well from the rear but not the side
+or front; "lipstick" (the red mouth band); the tail too short; a lizard body;
+the flight good but slow in a weird way, it should adjust to the wind and go
+up and down a little; think Smaug; no shadow over the isle; wider wings.
+
+### Play
+
+- `./run-rim-dragon.command`: as round 2. Look **c** (stone body, soft
+  glowing membranes) is now the default.
+- `./run-rim-dragon.command --dragon-pass`: starts on the low pass's way in,
+  so it comes over the isle and its shadow crosses the turf about 12 s in.
+- V cycles the dragon camera, as before.
+
+New flags (scripts/sky_dragon.gd): `--dragon-pass`, `--dragon-size=<x>`
+(0.85, the model's scale), `--dragon-pose=roar` (with `--dragon-hold`: roars
+on a loop), `--dragon-orbit-up=<m>` and `--dragon-orbit-far=<m>` (the orbit
+camera's height and distance, for side and head-on captures).
+
+### The model (art/blender/rim_dragon/dragon_body_build.py)
+
+All three dresses still build from the one script (`--style=a|b|c`, c the
+default); it was cheap to keep them.
+
+- **A wyvern.** The wings are the forelimbs: there are no forelegs. Each
+  wrist has a big hooked thumb claw, the one it would walk on. Two heavy
+  hind legs, folded back under the tail's root in flight.
+- **Neck.** Five neck bones (`neck.0` at the root to `neck.4`) along a long,
+  thick neck that rises from the chest in a shallow S and carries the head
+  out level.
+- **Body.** A massive, deep chest (6 m half-width before scale), with a
+  separate mass of wing muscle over each shoulder, then a lean waist into
+  the hips.
+- **Tail.** Eight bones, about 43 m from the hips to the tip before scale
+  (head to hips is about 42 m). It is thick at the root and tapers to a whip
+  with a spade blade.
+- **Wings.** About 122 m span and 20 m chord at the arm before scale (round
+  2: 84 m and 16 m). The membrane runs back to the hips.
+- **Head.** A long wedge: broad at the cheeks, the brow peaked out over sunk
+  amber slit eyes, the top falling straight to a narrow snout with nostril
+  bosses. Horns swept back, cheek spikes, a row of blades over each brow.
+- **Mouth.** The lips are the hide. The palate (`dragon_mouth`) and tongue
+  (`dragon_tongue`) are a deep maroon going near black; the teeth ivory. A
+  cheek-skin web joins the upper lip to the jaw at the back of the mouth,
+  weighted from the head to the jaw, so it stretches open. The jaw's front
+  half is its own bone (`jaw.tip`) for the lower lip's follow-through.
+- **Size in game.** The game scales it by 0.85: about 74 m nose to tail and
+  104 m span. Triangles: a 3.1k, b 5.1k, c 4.9k.
+- **Sheet.** `dragon_body_sheet.py -- --styles=abc` renders side, head on,
+  three-quarter, head close-up and top for each dress (c is the default
+  style). `--jaw=-0.55` opens the mouth. `--tiles` keeps each view as its own
+  png.
+
+### The flight (scripts/sky_dragon.gd)
+
+- **Faster.** It cruises at about 28 to 40 m/s (round 2: 19 to 26). Beats
+  come at 0.3 Hz, and bouts start under 28 m/s. It glides until it is slow
+  again, usually 8 to 12 s rather than 15 to 20. The turn rate is higher. The
+  circuits are tighter and shorter (3 points, not 4) and the climbs a little
+  lower, so there is less flying far off.
+- **Riding the air.**
+  - A slow swell lifts and sinks it a few metres, a bounded offset rather
+    than a drift. Three sines, strongest when gliding and with the isle's
+    breeze.
+  - The air rolls and pitches the body a little. The nose rides the swell.
+  - Every 3.5 to 8 s a bump hits: an under-damped roll and pitch spring
+    that jolts, sways and settles. The wingtips flex with it.
+  - Gliding, each wing trims against the air. The low wing lifts against the
+    roll, and the hands twist with the swell. The wings take a gull's bend at
+    the wrist, which also reads better head on.
+  - A slow weave in the heading means no straight is ruled.
+  - It drifts down the isle's wind. The host passes `air`
+    (`Atmosphere.breeze()`) and `air_angle` each frame.
+- **Mouth, all on springs.**
+  - It breathes: a slight part of the jaw, and the chest swells (bone scale).
+  - Every 2.5 to 6.5 s it chews, one or two soft small bites.
+  - Every 12 to 22 s it roars. First it tightens, with a small dip. Then the
+    jaw eases open (an under-damped spring, so it overshoots and settles)
+    while the head lifts and the neck draws back. It holds with a tremble,
+    then eases shut.
+  - The lower lip lags the jaw's speed and springs back.
+- **Neck.** Generic over the five bones. It holds the S, takes a share of
+  the turn's lead, and a slow sway and slither pass up it.
+- **Tail.** The rope now runs in world space through the skeleton's real
+  transform (so it scales), over eight segments, with a slow whip wave down
+  it.
+
+### The shadow
+
+Cast shadows were already on in round 2; they are now two-sided, so the
+wings cast too. The isle's sun is an orthogonal map out to 140 m, which
+reaches the turf under a pass 42 m up; the captures show the shadow
+plainly. Round 2's trouble was aim. The low pass went over `IsleSky.MIDDLE`,
+which sits on the near island's north edge. Under a sun about 38 degrees up,
+the shadow fell 55 m away, mostly off the turf, and only for a moment. Now
+the pass's middle point is set up-sun of the near island's turf (the middle
+of `Art.NEAR`), by the shadow's offset (capped at 80 m). It is flown right
+through: low passes arrive within 40 m, not round 2's 95 m skip. So the
+shadow sweeps across the turf.
+
+### Captures (local, gitignored, docs/design/rim-dragon/)
+
+- `r3_side.png`: side, held glide.
+- `r3_head_on.png`: head on, held glide.
+- `r3_rear_three_quarter.png`: rear three-quarter in flight, banked.
+- `r3_shadow_from_isle.png`: the shadow sweeping the turf with the dragon
+  overhead, from the isle (`r3_shadow_after.png`: a second later, gone).
+- `r3_shadow_overhead.png`: from above, the shadow over the hill.
+- `r3_from_below.png`: from below on the low pass, against the sun.
+- `r3_roar_open.png`, `r3_roar_closing.png`: a held roar.
+- `r3_mouth_open_sheet.png`: the mouth open in Blender: dark inside, hide
+  lips, cheek skin.
+- `dragon_sheet.png`: the three dresses, five views each.
+
+### Rough
+
+- From the side, gliding, the wings are still edge-on and read as thin
+  lines, though the neck, head and tail now carry the silhouette. Head on,
+  the chest reads as a dark block and the head is foreshortened.
+- The cheek web is subtle; the roar reads mostly through the head lift and
+  the dark gape. No tongue motion.
+- The membrane glow is toned down a little (0.42 from 0.7) but still lilac
+  in bright daylight.
+- It is big now (104 m span). Watch it against the isles and airships; there
+  is still no collision. `--dragon-size` scales it.
+- The swell, bumps and gain are tuned by eye, from captures only, not
+  played. The wind tie is through the breeze strength and the drift; gust
+  fronts are not sampled.
+- The low pass picks a random approach heading, so on some passes the
+  shadow crosses behind the ruins. The aim uses the first shadowed sun at
+  the time the pass is planned. If the look preset's hour changes a lot,
+  the aim goes stale.
+- The capture rig: `studies/kit_isle.gd` gains a `_capture_tick` hook so a
+  fixed-eye capture (`--at`) still flies the dragon.
+- Still from round 2: no sound, the dragon camera doesn't stop pilot input,
+  and the waypoints can make wide loops.
+
+## Round 2: the sky dragon (superseded by round 3)
 
 ### Play
 
@@ -16,7 +156,7 @@ perf pass.
   rises out of the cloud sea after 3 s, makes a low pass over the isle, then
   roams.
 - `./run-rim-dragon.command --dragon-look=a` (or `b`, `c`): the dress.
-  `b` is the default.
+  `b` was the default (c is now).
 - Press **V** in game to cycle the dragon camera: chase, orbit, look (from
   where the camera was), then off. `--dragon-watch[=chase|orbit|look]`
   starts on it.

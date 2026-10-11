@@ -1,9 +1,11 @@
 #!/bin/zsh
 # The dragon experiment on the aqueduct isle (docs/design/rim-dragon.md).
-# Round 2: a full-bodied dragon (scripts/sky_dragon.gd) rises out of the
-# cloud sea and roams the archipelago, now and then low over the isle.
-#   ./run-rim-dragon.command                     the flying dragon, look b
-#   ./run-rim-dragon.command --dragon-look=a     a angular, b carved, c stone and glow
+# Round 3: a wyvern after Smaug (scripts/sky_dragon.gd) rises out of the
+# cloud sea and roams the archipelago, now and then low over the isle, its
+# shadow sweeping the turf.
+#   ./run-rim-dragon.command                     the flying dragon, look c
+#   ./run-rim-dragon.command --dragon-pass       starts on a low pass (shadow over the isle ~12 s in)
+#   ./run-rim-dragon.command --dragon-look=a     a angular, b carved, c stone and glow (default)
 #   V in game cycles the dragon camera: chase, orbit, look from here, off
 #   --dragon-watch[=chase|orbit|look] starts on it  --dragon-delay=<s> (3)
 #   --dragon-skip=<s> runs it on  --dragon-log prints where it is every 2 s

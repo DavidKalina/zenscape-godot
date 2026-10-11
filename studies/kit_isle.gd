@@ -1729,6 +1729,11 @@ func _pack_runs() -> PackedStringArray:
 func _capture_flying() -> void:
 	pass
 
+## A capture from a fixed eye (--at) stops `_process`; an isle steps what
+## else should move meanwhile here.
+func _capture_tick(_delta: float) -> void:
+	pass
+
 func _take_capture() -> void:
 	for child in get_children():
 		if child is CanvasLayer and (child as CanvasLayer).layer in [5,6]: (child as CanvasLayer).visible = false
@@ -1739,6 +1744,7 @@ func _take_capture() -> void:
 		for i in range(240):
 			_advance_look(1.0/60.0)
 			if life != null: life.advance(1.0/60.0)
+			_capture_tick(1.0/60.0)
 			await get_tree().process_frame
 		if _capture_wait > 4.0: await get_tree().create_timer(_capture_wait-4.0).timeout
 	else:

@@ -90,7 +90,7 @@ extends "res://studies/kit_isle.gd"
 ## The dragon (an experiment: docs/design/rim-dragon.md), with --dragon: a
 ## full-bodied dragon (scripts/sky_dragon.gd) rises out of the cloud sea and
 ## roams the archipelago, now and then low over the isle; V puts the camera
-## on it. --dragon-look=a|b|c picks its dress; its other flags are its own.
+## on it. --dragon-look=a|b|c picks its dress (c by default); its other flags are its own.
 ## Round 1's rim grip (scripts/rim_dragon.gd) is parked behind --dragon-rim:
 ## it swoops in, grips the east rim and blows gales across the isle; take
 ## the treasure off its tongue and it lets go (--dragon-perched, ...).
@@ -401,7 +401,16 @@ func _process(delta: float) -> void:
 	_pulse_frame(delta)
 	if dragon != null:
 		if dragon_rim: dragon.advance(delta,not flying)
-		else: dragon.advance(delta)
+		else:
+			if _atmosphere != null:
+				dragon.air = _atmosphere.breeze()
+				dragon.air_angle = _atmosphere._air_angle
+			dragon.advance(delta)
+
+## A fixed-eye capture (--at) still flies the dragon.
+func _capture_tick(delta: float) -> void:
+	if dragon != null and not dragon_rim:
+		dragon.advance(delta)
 
 func _fly_tick(delta: float) -> void:
 	if isle_chain != null: isle_chain.step(delta,plane,lode_state == "seated",camera.global_position)
@@ -494,6 +503,11 @@ func _build_sky_dragon() -> void:
 	list.append([IsleSky.MIDDLE,60.0])
 	dragon = SkyDragon.new()
 	add_child(dragon)
+	# Its low passes cast their shadow across the near island's turf.
+	var middle := Vector2.ZERO
+	for p: Vector2 in Art.NEAR: middle += p
+	middle /= float(Art.NEAR.size())
+	dragon.shadow_at = Vector3(middle.x,Art.TOP,middle.y)
 	dragon.setup(camera,preload("res://scripts/launch_args.gd").user_args(),IsleChain.SEA_TOP,IsleSky.MIDDLE,Art.TOP,list)
 	if _switch_hint != null and not flying: _switch_hint.text = _foot_text()
 
