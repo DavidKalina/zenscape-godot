@@ -5,6 +5,9 @@ extends RefCounted
 ## over the isle, Begin, on foot by the plane, the plane boards and flies,
 ## a clean teardown) or, run from the old game (studies/cozy_worlds.tscn),
 ## its hand scheme or creation shell, photo mode and main menu.
+
+const ManualLanding = preload("res://scripts/manual_landing.gd")
+
 static func run(scene: Node) -> void:
 	var tree := scene.get_tree()
 	var kernel = preload("res://scripts/native_terrain_kernels.gd").get_kernel()
@@ -284,13 +287,50 @@ static func _check_front_door(scene: Node) -> void:
 	if not bool(scene.flying):
 		_fail(tree,"the parked plane did not board")
 		return
-	var ground: float = scene.parked_at.y
+	# Climbed in, it stands on its wheels; it flies only rolled off the
+	# isle's edge (scripts/manual_landing.gd's dip). Steered to the nearest
+	# edge through the plane's own input actions, as a player would.
 	deadline = Time.get_ticks_msec()+120_000
-	while not (bool(scene.flying) and scene.plane != null and float(scene.plane.position.y) > ground+4.0):
+	while not (scene.takeoff == null and scene.hand_landing.on_ground()):
 		if Time.get_ticks_msec() >= deadline or not bool(scene.flying):
-			_fail(tree,"the plane did not take off from the isle")
+			_fail(tree,"the plane was not handed over on its wheels")
 			return
 		await tree.process_frame
+	var p: Vector3 = scene.plane.position
+	var best := Vector2.ZERO
+	var reach := INF
+	for i in range(24):
+		var way := Vector2.from_angle(TAU*i/24.0)
+		var d: float = ManualLanding.edge_margin(Callable(scene,"floor_at"),Vector2(p.x,p.z),way)
+		if d < reach:
+			reach = d
+			best = way
+	var want := atan2(-best.x,-best.y)
+	var flew := false
+	while Time.get_ticks_msec() < deadline and bool(scene.flying):
+		if scene.hand_landing.flying() and not scene.hand_landing.dipping():
+			flew = true
+			break
+		var off := angle_difference(float(scene.plane.heading),want)
+		var turn := 0.0
+		var brake := 0.0
+		if scene.hand_landing.on_ground() and absf(off) > 0.1:
+			if scene.hand_landing.phase == ManualLanding.STOPPED:
+				turn = -signf(off)
+				brake = 1.0
+			else: turn = clampf(-off*2.0,-1.0,1.0)
+		Input.action_press(&"fly_boost")
+		if brake > 0.0: Input.action_press(&"fly_brake")
+		else: Input.action_release(&"fly_brake")
+		Input.action_release(&"move_left")
+		Input.action_release(&"move_right")
+		if turn > 0.0: Input.action_press(&"move_right",turn)
+		elif turn < 0.0: Input.action_press(&"move_left",-turn)
+		await tree.process_frame
+	for action in [&"fly_boost",&"fly_brake",&"move_left",&"move_right"]: Input.action_release(action)
+	if not flew:
+		_fail(tree,"the plane did not roll off the isle's edge and fly")
+		return
 	var audio_streams: Array[WeakRef] = []
 	for kind in ["AudioStreamPlayer","AudioStreamPlayer3D"]:
 		for player in scene.find_children("*",kind,true,false):
