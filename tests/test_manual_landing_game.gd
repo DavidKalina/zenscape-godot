@@ -8,8 +8,10 @@ extends SceneTree
 ##     beside it;
 ##   - Space by the plane boards it and takes off, flown by hand after;
 ##   - F in the air lowers the flaps, never lands it;
-##   - a hot touch bounces back up; a slow one rolls, brakes to a stop, F
-##     rolling is refused, F stopped gets out, the plane parked there;
+##   - a hot touch at cruise sticks, no bounce; Shift and a turn with a blip
+##     of Space power-slides it, grit spraying, to a stop (or off the edge,
+##     flying again); a slow one settles, brakes to a stop, F rolling is
+##     refused, F stopped gets out, the plane parked there;
 ##   - a flight set from outside (--skydive's start) takes the parked plane.
 ##   godot --headless --path . --script tests/test_manual_landing_game.gd
 ## suite: slow
@@ -61,6 +63,7 @@ func run() -> void:
 	await _off_the_edge()
 	await _board()
 	await _flaps()
+	await _hot_and_slide()
 	await _bounce_and_land()
 	Engine.time_scale = 1.0
 	print("PASS: manual landing game" if failures == 0 else "FAIL: manual landing game (%d)" % failures)
@@ -180,17 +183,41 @@ func _fly_low(up: float, pace: float, nose: float) -> void:
 	eye._hand_begin()
 	await frames(1)
 
-func _bounce_and_land() -> void:
-	# The island's air (ridge lift, gust fronts) can hold a low plane up,
-	# so each approach is tried a few times, the nose pushed down a moment.
-	var bounced := false
+func _hot_and_slide() -> void:
+	# The island's air (gust fronts) can still hold a low plane up a moment,
+	# so each approach is tried a few times, the nose pushed down.
+	var stuck := false
 	for attempt in range(4):
 		await _fly_low(0.3,14.0,-0.15)
 		await _nose_down()
-		bounced = await until(func() -> bool: return int(eye.hand_landing.stats.bounces) > 0,3.0)
-		if bounced: break
-	check(bounced and eye.hand_landing.flying() and eye.flying,"A touch at cruise bounces back up, still flying")
-	check(bounced and str(eye.hand_landing.stats.touches[0].result) == "fast","Too fast")
+		stuck = await until(func() -> bool: return eye.hand_landing.on_ground() or int(eye.hand_landing.stats.bounces) > 0,3.0)
+		if stuck and eye.hand_landing.on_ground(): break
+	check(stuck and eye.hand_landing.on_ground() and int(eye.hand_landing.stats.bounces) == 0,"A touch at cruise sticks: on the wheels, no bounce")
+	var touches: Array = eye.hand_landing.stats.touches
+	check(not touches.is_empty() and str(touches[-1].grade) == "hot","Graded hot (%s)" % (str(touches[-1].grade) if not touches.is_empty() else "none"))
+	check(eye._spray != null,"The wheels' spray is made")
+	# A power-slide: Shift and a turn, a blip of Space.
+	Input.action_press(&"fly_brake")
+	Input.action_press(&"move_right")
+	Input.action_press(&"fly_boost")
+	var slid: bool = await until(func() -> bool: return eye.hand_landing.sliding or not eye.hand_landing.on_ground(),1.0)
+	var peak := {"grit":0.0}
+	await until(func() -> bool:
+		peak.grit = maxf(float(peak.grit),eye.hand_landing.grit)
+		return absf(eye.hand_landing.slip) > 1.0 or not eye.hand_landing.on_ground(),1.0)
+	Input.action_release(&"fly_boost")
+	check(slid and eye.hand_landing.power and absf(eye.hand_landing.slip) > 1.0,"Shift, a turn and a blip of Space: a power-slide, the tail right round (slip %.2f)" % eye.hand_landing.slip)
+	var done: bool = await until(func() -> bool:
+		peak.grit = maxf(float(peak.grit),eye.hand_landing.grit)
+		return eye.hand_landing.phase == ManualLanding.STOPPED or eye.hand_landing.flying(),8.0)
+	Input.action_release(&"move_right")
+	Input.action_release(&"fly_brake")
+	check(float(peak.grit) > 0.3,"Grit thrown off the wheels (%.2f)" % float(peak.grit))
+	var s: Dictionary = eye.hand_landing.stats
+	check(done and (eye.hand_landing.phase == ManualLanding.STOPPED or eye.hand_landing.flying() and int(s.off_edge) > 0),"It slides to a stop, or off the edge and flies (%s, %.1f m slid)" % [ManualLanding.NAMES[eye.hand_landing.phase],float(s.slide_distance)])
+	check(eye.flying,"Still in the plane")
+
+func _bounce_and_land() -> void:
 	var down := false
 	for attempt in range(4):
 		await _fly_low(0.08,8.0,-0.08)

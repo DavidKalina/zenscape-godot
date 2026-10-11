@@ -83,12 +83,17 @@ extends Node
 ## towards it or Space climbs up, away lets go (off the rim, into the
 ## flight).
 ##
-## With `--manual-landing` (scripts/manual_landing.gd, a round-1 study:
-## studies/landing_study.tscn, docs/design/manual-landing.md) every landing
-## is flown by hand: F no longer lands it, it lowers and raises the flaps.
-## Touching the land slow, shallow and wings level settles it and it rolls
-## out under the brakes (Shift); hot, steep or banked it bounces back up
-## with a thump, a shake and a pulse, to go round. Only stopped can the pilot
+## With `--manual-landing` (scripts/manual_landing.gd, a study:
+## studies/landing_study.tscn, docs/design/manual-landing.md, round 2) every
+## landing is flown by hand: F no longer lands it, it lowers and raises the
+## flaps. Touching the land slow, shallow and wings level is a greaser: it
+## settles and rolls out tidy under the brakes (Shift). Hot, hard or on a
+## wingtip it sticks anyway, with a thump, a dust burst, a shake and a
+## pulse, and slides; on the wheels it drifts like a kart (steer hard at
+## speed, or Q E with a turn; Shift with a turn, and a blip of Space with it
+## for a power-slide that whips the tail round), grit spraying off the
+## wheels. Slid off the edge, it flies on. Only a barrel roll into the
+## ground or land too steep hops it back up. Only stopped can the pilot
 ## get out, and only by asking (F); Space on the roll takes off again. And
 ## nothing summons the plane: a jump is a jump, walking off the edge drops
 ## into the canopy (the plane staying parked), and once STRAND_BELOW m
@@ -240,8 +245,16 @@ const CANOPY_HINT := "A D to steer  ·  W for speed  ·  S or Shift to brake and
 const PICKUP_HINT := "Your plane swoops in and picks you up"
 ## `--manual-landing`'s hints: flying, on the wheels, stopped, on foot and
 ## stranded.
-const MANUAL_HINT := "A D to bank and turn  ·  W S to pitch  ·  Space to boost  ·  Shift to brake  ·  F for flaps  ·  Land slow and shallow, then brake to a stop  ·  X to eject  ·  C for the camera  ·  V or Esc to step out"
-const MANUAL_ROLL_HINT := "Shift to brake to a stop  ·  Space to take off again"
+const MANUAL_HINT := "A D to bank and turn  ·  W S to pitch  ·  Space to boost  ·  Shift to brake  ·  F for flaps  ·  Put it down anywhere, then brake or drift to a stop  ·  X to eject  ·  C for the camera  ·  V or Esc to step out"
+const MANUAL_ROLL_HINT := "Shift to brake  ·  Steer hard, or Q E and steer, to drift  ·  Shift and steer, a blip of Space, to power-slide  ·  Space to take off again"
+## The touch's word before the roll's hint: a greaser, a hot or hard one
+## stuck; and off the edge.
+const MANUAL_GREASER_HINT := "Greaser!  ·  "+MANUAL_ROLL_HINT
+const MANUAL_HOT_HINT := "Hot! Drift it to a stop  ·  "+MANUAL_ROLL_HINT
+const MANUAL_HARD_HINT := "Stuck it!  ·  "+MANUAL_ROLL_HINT
+const MANUAL_OFF_HINT := "Off the edge: flying again  ·  "+MANUAL_HINT
+const MANUAL_ROLL_PAD := "{LT} brake  ·  {LS} hard, or {LB} {RB} and {LS}, to drift  ·  {LT} and {LS}, a blip of {RT}, to power-slide  ·  {RT} take off again"
+const MANUAL_PAD := "{LS} steer  ·  {RS} look round  ·  {RT} boost  ·  {LT} brake  ·  {Y} flaps  ·  Put it down anywhere, then brake or drift to a stop  ·  {X} eject  ·  {R3} camera  ·  {B} step out"
 const MANUAL_STOPPED_HINT := "F to get out  ·  Space to roll and take off again"
 const MANUAL_WALK_HINT := "Mouse to look  ·  WASD or arrows to run  ·  Space to jump  ·  Walk to your plane and Space by it to fly  ·  V or Esc to step out"
 const STRANDED_HINT := "Stranded: back to your plane in a moment"
@@ -258,8 +271,12 @@ const PAD_HINTS := {
 	PLANE_HINT:"{LS} steer  ·  {RS} look round  ·  {RT} boost  ·  {LT} brake  ·  hold {LB} {RB} knife-edge, twice quick barrel roll  ·  {Y} land  ·  {X} eject  ·  {R3} camera  ·  {B} step out",
 	DIVE_HINT:"{X} open the canopy  ·  {LS} turn and track  ·  {RT} tuck and dive  ·  {LT} spread and slow  ·  {RS} look round",
 	CANOPY_HINT:"{LS} steer, forward for speed, back to brake  ·  {LT} brake and float  ·  It flares by itself over the ground",
-	MANUAL_HINT:"{LS} steer  ·  {RS} look round  ·  {RT} boost  ·  {LT} brake  ·  {Y} flaps  ·  Land slow and shallow, then brake to a stop  ·  {X} eject  ·  {R3} camera  ·  {B} step out",
-	MANUAL_ROLL_HINT:"{LT} brake to a stop  ·  {RT} take off again",
+	MANUAL_HINT:MANUAL_PAD,
+	MANUAL_ROLL_HINT:MANUAL_ROLL_PAD,
+	MANUAL_GREASER_HINT:"Greaser!  ·  "+MANUAL_ROLL_PAD,
+	MANUAL_HOT_HINT:"Hot! Drift it to a stop  ·  "+MANUAL_ROLL_PAD,
+	MANUAL_HARD_HINT:"Stuck it!  ·  "+MANUAL_ROLL_PAD,
+	MANUAL_OFF_HINT:"Off the edge: flying again  ·  "+MANUAL_PAD,
 	MANUAL_STOPPED_HINT:"{Y} get out  ·  {RT} roll and take off again",
 	MANUAL_WALK_HINT:"{LS} run  ·  {RS} look  ·  {A} jump  ·  Walk to your plane and {A} by it to fly  ·  {B} step out",
 	FLY_HINT:"{LS} turn and pitch  ·  {X} flap  ·  {LT} rise  ·  {RT} dive  ·  {Y} land  ·  {RS} look round  ·  {R3} camera  ·  {B} step out",
@@ -352,6 +369,7 @@ const LANDING_REACH := 160.0
 ## stranded (m), the wait before the way back to the plane (s), and the
 ## bounce's shake (s, m).
 const ManualLanding = preload("res://scripts/manual_landing.gd")
+const WheelSpray = preload("res://scripts/wheel_spray.gd")
 const STEP_OFF_OPEN := 0.8
 const STRAND_BELOW := 20.0
 const STRANDED_WAIT := 3.0
@@ -468,6 +486,9 @@ var _near_plane := false
 ## seconds left stranded (-1 not), and the bounce's shake left (s).
 var manual := "--manual-landing" in preload("res://scripts/launch_args.gd").user_args()
 var hand_landing := ManualLanding.new()
+## The grit off the sliding wheels (scripts/wheel_spray.gd), made on the
+## first touch.
+var _spray: WheelSpray
 var _flaps := false
 var _exit_asked := false
 var _stepped_off := false
@@ -2234,8 +2255,7 @@ func _touchdown() -> void:
 ## on earth and sand, snow on snow, spray on water; a few soft balls that
 ## swell, drift up and fade.
 func _puff(at: Vector3, surface: String, size := 1.0) -> void:
-	var tints := {"grass":Color("d6dcb4"),"snow":Color("f4f6f8"),"water":Color("e8f2f4"),"stone":Color("cfc8bc"),"wood":Color("d8c4a4")}
-	var tint: Color = tints.get(surface,Color("d8c39c"))
+	var tint := _puff_tint(surface)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = int(at.x*13.0+at.z*7.0)
 	var sphere := SphereMesh.new()
@@ -2401,25 +2421,59 @@ func _show_hint(text: String) -> void:
 	_hint.modulate.a = 1.0
 	_hint_time = 0.0
 
-## What the wheels did this step (ManualLanding `step`): a bounce thumps,
-## shakes and pulses; a good touch puffs and rolls; stopped, the hint
-## offers the way out; getting out, the pilot hops down beside the plane,
-## parked where it stopped.
+## A puff's colour over `surface` (`_surface_at`): grass-green and pale,
+## warm dust on earth and sand, snow, spray, stone, wood.
+static func _puff_tint(surface: String) -> Color:
+	var tints := {"grass":Color("d6dcb4"),"snow":Color("f4f6f8"),"water":Color("e8f2f4"),"stone":Color("cfc8bc"),"wood":Color("d8c4a4")}
+	return tints.get(surface,Color("d8c39c"))
+
+## What the wheels did this step (ManualLanding `step`): a hop thumps,
+## shakes and pulses; a greaser puffs softly and rolls; a hot or hard
+## touch thumps, throws a burst of dust, shakes by its hit and slides;
+## sliding, the wheels throw grit; stopped, the hint offers the way out;
+## getting out, the pilot hops down beside the plane, parked where it
+## stopped.
 func _hand_events(out: Dictionary, delta: float) -> void:
+	if _spray == null and (out.has("settled") or out.has("bounce")):
+		_spray = WheelSpray.new()
+		add_child(_spray)
 	if out.has("bounce"):
 		_touchdown()
 		Pad.pulse(0.6,0.5,0.2)
 		_shake = SHAKE_TIME
-		var why := {"fast":"too fast","sink":"too steep","bank":"wings not level","nose":"nose first","rough":"ground too steep"}
-		_show_hint("Bounced: %s  ·  go round, slower and shallower" % why.get(str(out.bounce.reason),str(out.bounce.reason)))
+		var why := {"tumble":"mid roll","rough":"ground too steep"}
+		_show_hint("Hopped: %s" % why.get(str(out.bounce.reason),str(out.bounce.reason)))
 	elif out.has("settled"):
 		_touchdown()
-		_show_hint(MANUAL_ROLL_HINT)
+		var k := float(out.settled.k)
+		if out.has("greaser"):
+			_show_hint(MANUAL_GREASER_HINT)
+		else:
+			# Hot or hard: it takes the hit and sticks.
+			var ground := _floor_global(Vector2(glide.position.x,glide.position.z))
+			var at := Vector3(glide.position.x,ground if not is_nan(ground) else glide.position.y-0.6,glide.position.z)
+			var local := editor.terrain.to_local(glide.position)
+			var tint := _puff_tint(_surface_at(Vector2(local.x,local.z)))
+			_puff(at,_surface_at(Vector2(local.x,local.z)),1.0+1.5*k)
+			_spray.burst(at,k,tint)
+			Pad.pulse(0.35+0.4*k,0.2+0.4*k,0.14+0.1*k)
+			_shake = SHAKE_TIME*(0.3+0.7*k)
+			_show_hint(MANUAL_HOT_HINT if str(out.settled.grade) == "hot" else MANUAL_HARD_HINT if str(out.settled.grade) in ["hard","wingtip"] else MANUAL_ROLL_HINT)
 		# Down: the hop out, when it comes, is worked out afresh.
 		_hop_to = Vector3.INF
+	if _spray != null:
+		var grit := hand_landing.grit if hand_landing.phase == ManualLanding.ROLL else 0.0
+		var tint := Color("d6dcb4")
+		var ground := _floor_global(Vector2(glide.position.x,glide.position.z))
+		var wheels := Vector3(glide.position.x,ground if not is_nan(ground) else glide.position.y-0.8,glide.position.z)
+		if grit > WheelSpray.LEAST:
+			var local := editor.terrain.to_local(glide.position)
+			tint = _puff_tint(_surface_at(Vector2(local.x,local.z)))
+		_spray.update(delta,wheels,glide.velocity,grit,tint)
 	if out.has("stopped"): _show_hint(MANUAL_STOPPED_HINT)
+	if out.has("off_edge"): _show_hint(MANUAL_OFF_HINT)
 	if out.has("not_yet"): _show_hint("Stop first  ·  Shift to brake")
-	if out.has("lifted") or out.has("off_edge"): _show_hint(_plane_hint())
+	if out.has("lifted"): _show_hint(_plane_hint())
 	if out.has("hit"):
 		var local := editor.terrain.to_local(glide.position)
 		steps.step(_surface_at(Vector2(local.x,local.z)),1.0)
