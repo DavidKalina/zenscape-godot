@@ -7,10 +7,11 @@ extends Node3D
 ## back into the air to go round. Only stopped can you get out (F, or the
 ## pad's Y), and only by asking. On foot, walk back to the plane and Space
 ## (A) by it climbs in and takes off (scripts/plane_landing.gd's takeoff);
-## nothing else flies. Walk off an edge and the canopy opens
-## (scripts/sky_dive.gd), the plane staying parked: drift back down onto
-## the plane's field and walk to it; come down anywhere else (a lower
-## shelf, another field, the sea) and you are stranded PICKUP_WAIT s, then
+## nothing else flies. Walk off an edge and you drop, the canopy opening a
+## moment on (scripts/sky_dive.gd; X opens it sooner), the plane staying
+## parked: come down on the plane's field and walk to it; anywhere else (a
+## lower shelf, another field, the sea), or once STRAND_BELOW m under the
+## edge, and you are stranded PICKUP_WAIT s, then
 ## the view fades and you stand beside the parked plane again, still to
 ## board it (`--stranded=pickup` instead has the plane come for you and
 ## you are flying again, the skydive's sea pickup made slow).
@@ -66,9 +67,13 @@ const FOOT_CAM := Vector2(6.0,2.6)
 ## The hop out lands this far to the plane's left and ahead (m).
 const HOP_SIDE := 1.4
 const HOP_AHEAD := 0.3
-## Stranded (down off the plane's field): seconds before the way back, and
-## the fade's (s).
-const PICKUP_WAIT := 4.0
+## Off an edge: the drop before the canopy opens by itself (s), and how far
+## under the edge the pilot is stranded (m). Stranded (that, or down
+## anywhere but the plane's field): seconds before the way back, and the
+## fade's (s).
+const STEP_OFF_OPEN := 0.8
+const STRAND_BELOW := 20.0
+const PICKUP_WAIT := 3.0
 const FADE := 0.5
 ## The bounce's shake: seconds and metres; the thump's length (s) and pitch (Hz).
 const SHAKE_TIME := 0.4
@@ -110,6 +115,11 @@ var _foot_yaw := 0.0
 var _hop_from := Vector3.ZERO
 var _hop_to := Vector3.ZERO
 var _stranded := 0.0
+## Off an edge: the edge's height, the seconds before the canopy opens by
+## itself, and X asked (open it now).
+var _off_y := 0.0
+var _open_in := 0.0
+var _open_asked := false
 ## The plane parked (the pilot out): where it stands.
 var parked := false
 ## Stranded: "return" (back beside the parked plane) or "pickup" (the
@@ -552,23 +562,24 @@ func _tick_takeoff(delta: float) -> void:
 
 # --- Off the edge: the canopy ---------------------------------------------------------
 
-## Walked off the land: a step down into the air and the canopy opening at
-## once; the plane stays parked.
+## Walked off the land: a drop into the air, carried on out the way it
+## walked; the canopy opens by itself STEP_OFF_OPEN s on (X sooner). The
+## plane stays parked.
 func _step_off() -> void:
 	dive = SkyDive.new()
 	dive.water = Course.SEA_Y
 	dive.floor_y = Course.SEA_Y-30.0
 	dive.drop(feet+Vector3.UP*SkyDive.HIPS,facing,2.0)
-	# Carried on out the way it walked, clear of the edge.
 	var out := Vector3(-sin(facing),0.0,-cos(facing))*WALK
 	dive.velocity += out
 	dive.drift = out
-	dive.open_canopy(true)
+	_off_y = feet.y
+	_open_in = STEP_OFF_OPEN
 	canopy.reset()
 	canopy.visible = true
 	dive_camera.reset(dive,camera.global_position,camera.fov)
 	mode = "canopy"
-	_say("Off the edge: the canopy")
+	_say("Off the edge")
 
 func _tick_canopy(delta: float, given: Dictionary) -> void:
 	var input := {}
@@ -576,11 +587,24 @@ func _tick_canopy(delta: float, given: Dictionary) -> void:
 		input = given.duplicate()
 	else:
 		var stick := Input.get_vector(&"move_left",&"move_right",&"move_forward",&"move_back")
-		input = {"turn":stick.x,"pitch":stick.y,"boost":Input.get_action_strength(&"fly_boost"),"brake":Input.get_action_strength(&"fly_brake"),"open":false}
+		input = {"turn":stick.x,"pitch":stick.y,"boost":Input.get_action_strength(&"fly_boost"),"brake":Input.get_action_strength(&"fly_brake"),"open":_open_asked}
+		_open_asked = false
+	_open_in -= delta
+	if _open_in <= 0.0 and dive.falling(): dive.open_canopy(true)
+	_fall(delta,input)
+	if mode != "canopy": return
+	# Well under the edge (or down on anything but the plane's field):
+	# stranded.
+	if dive.position.y < _off_y-STRAND_BELOW: _strand()
+
+## The dive's step, the pilot and canopy drawn on it, its camera; touched
+## down, `_canopy_down`.
+func _fall(delta: float, input: Dictionary) -> void:
 	# No assist: the fields are flat-topped and the canopy only sinks, so
 	# it would only steer back into the face just stepped off.
 	dive.approach_target = Vector3.INF
-	var out := dive.fall(delta,input,Callable(Course,"ground"),func(p: Vector3) -> Dictionary: return Course.air_at(p,run.t))
+	var out := {}
+	if dive.phase != SkyDive.DOWN: out = dive.fall(delta,input,Callable(Course,"ground"),func(p: Vector3) -> Dictionary: return Course.air_at(p,run.t))
 	walker.position = dive.position-Vector3.UP*SkyDive.HIPS
 	walker.visible = true
 	canopy.update(delta,dive,walker.position+Vector3.UP*0.75)
@@ -590,17 +614,20 @@ func _tick_canopy(delta: float, given: Dictionary) -> void:
 	if out.has("touched"): _canopy_down(out.touched)
 
 ## Down under the canopy: on the plane's own field, on foot to walk back
-## to it; anywhere else (a lower shelf, another field, the sea) stranded,
-## until the plane comes.
+## to it; anywhere else (a lower shelf, another field, the sea) stranded.
 func _canopy_down(touch: Dictionary) -> void:
 	feet = dive.position-Vector3.UP*SkyDive.HIPS
 	canopy.collapse(feet.y)
+	if mode == "stranded": return
 	if not bool(touch.get("water",false)) and parked and walkable_to_plane(feet):
 		feet.y = Course.floor_at(Vector2(feet.x,feet.z))
 		_feet_v = 0.0
 		mode = "foot"
 		_say("Down. Walk back to the plane")
 		return
+	_strand()
+
+func _strand() -> void:
 	mode = "stranded"
 	_stranded = 0.0
 	_say("Stranded: back to the plane soon" if stranded_rule == "return" else "Stranded: the plane is coming for you")
@@ -630,8 +657,12 @@ static func _pad_under(p: Vector2) -> String:
 ## the plane is there and you are flying, nose up over where you came down.
 func _tick_stranded(delta: float) -> void:
 	_stranded += delta
-	walker.position = feet+Vector3.UP*0.05*sin(_stranded*3.0)
-	canopy.update(delta,dive,walker.position+Vector3.UP*0.75)
+	# Still floating down, or bobbing where it came down.
+	if dive.phase != SkyDive.DOWN: _fall(delta,{})
+	else:
+		walker.position = feet+Vector3.UP*0.05*sin(_stranded*3.0)
+		canopy.update(delta,dive,walker.position+Vector3.UP*0.75)
+	feet = dive.position-Vector3.UP*SkyDive.HIPS
 	var dark := clampf((_stranded-(PICKUP_WAIT-FADE))/FADE,0.0,1.0)
 	_veil.color.a = dark*0.9
 	if _stranded < PICKUP_WAIT: return
@@ -821,6 +852,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	elif event is InputEventJoypadButton and event.pressed:
 		if Pad.pressed(event,&"fly_land"): land_key()
+		elif Pad.pressed(event,&"fly_eject"): _open_asked = true
 		elif Pad.pressed(event,&"fly_lean_left"): _lean_tapped(-1.0)
 		elif Pad.pressed(event,&"fly_lean_right"): _lean_tapped(1.0)
 	elif event is InputEventKey and event.pressed and not event.echo:
@@ -828,6 +860,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		match key:
 			KEY_ESCAPE: Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 			KEY_F: land_key()
+			KEY_X: _open_asked = true
 			KEY_R: restart()
 			KEY_N: next_station()
 			KEY_B:
