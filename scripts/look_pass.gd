@@ -248,12 +248,26 @@ func _update_cloud_sea(on: float) -> void:
 	sky.set_meta("look_cloud_sea", strength)
 	sky.set_shader_parameter("cloud_sea", strength)
 
+## The scene's cloud host (scripts/cloud_host.gd): the towers and the
+## planes' wakes the cloud volume marches, and the islands the near sea
+## parts round. A scene that has one answers `cloud_host()` (the kit isles,
+## through their sky); else the old game's islands (its wanderer's
+## SkyIslands) are it. Null with none, or none yet.
+func cloud_host() -> Node:
+	return host_of(_scene)
+
+## A scene's cloud host, as `cloud_host` finds it.
+static func host_of(scene: Node) -> Node:
+	if scene == null: return null
+	if scene.has_method("cloud_host"): return scene.cloud_host()
+	var wanderer: Variant = scene.get("wanderer")
+	return wanderer.get("islands") if wanderer is Node else null
+
 ## The near sea round the eye, under the plate and the islands over it.
 func _update_near_sea(camera: Camera3D) -> void:
 	if not sea.visible or camera == null: return
 	sea.follow(camera, float(_scene.get("_motion_time")) if _scene.get("_motion_time") != null else 0.0)
-	var wanderer: Variant = _scene.get("wanderer")
-	var islands: Node = wanderer.get("islands") if wanderer is Node else null
+	var islands: Node = cloud_host()
 	var editor = _scene.get("_chunk_editor")
 	var plate: Node3D = editor.terrain if editor != null and editor.get("terrain") is Node3D else null
 	sea.set_islands(SkySea.island_spots(islands, plate, camera.global_position))
@@ -264,11 +278,10 @@ func _update_near_sea(camera: Camera3D) -> void:
 func _update_cloud_volume(camera: Camera3D, celestial) -> void:
 	if cloud_volume == null or camera == null: return
 	var wanderer: Variant = _scene.get("wanderer")
-	var islands: Node = wanderer.get("islands") if wanderer is Node else null
 	var flight: Variant = wanderer.get("sky") if wanderer is Node else null
 	var sea_flight: Variant = flight.get("flight") if flight is Object else null
 	cloud_volume.lightning = _scene.get("_lightning")
-	cloud_volume.update(camera, sea, islands, celestial, float(_scene.get("_motion_time")) if _scene.get("_motion_time") != null else 0.0, sea_flight if sea_flight is Vector4 else Vector4.ZERO)
+	cloud_volume.update(camera, sea, cloud_host(), celestial, float(_scene.get("_motion_time")) if _scene.get("_motion_time") != null else 0.0, sea_flight if sea_flight is Vector4 else Vector4.ZERO)
 
 ## The Opal sea's painted distant peaks off while the sky world's ring of
 ## real ranges stands (SkyWorld `sea_peaks`), in the overview and the glide.

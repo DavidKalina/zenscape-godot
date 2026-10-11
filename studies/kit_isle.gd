@@ -1283,7 +1283,9 @@ func fly_step(delta: float, input: Dictionary) -> void:
 		_nose.step(delta)
 	plane_figure._mark.visible = false
 	_check_arrival()
-	air.advance(delta,plane.velocity,float(plane.hang),0.0)
+	# The wind muffled in a cloud's body round the eye, as in the game.
+	var host := cloud_host()
+	air.advance(delta,plane.velocity,float(plane.hang),0.0,0.0,host.cloud_body(camera.global_position) if host != null else 0.0)
 	air.engine(float(plane.speed),hand_landing.throttle,hand_landing.engine)
 	if int(plane.flaps) != _flaps_heard:
 		_flaps_heard = int(plane.flaps)
@@ -1779,6 +1781,11 @@ func _take_capture() -> void:
 ## airships, the CPU planes, open-air life, motes and a few tokens for the
 ## plane; each with its own --no-... flag. A capture waits for it whole.
 var sky: Node3D
+
+## The scene's cloud host (scripts/cloud_host.gd), the sky's: what the look
+## pass hands the cloud volume. Null without one.
+func cloud_host() -> Node:
+	return sky.get("clouds") if sky != null else null
 
 func _add_sky() -> void:
 	sky = sky_script().new()
