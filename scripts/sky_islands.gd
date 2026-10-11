@@ -22,18 +22,19 @@ extends Node3D
 ##
 ## Chunks are only translated, never turned, so they light like the plate.
 ##
-## The world is bounded (scripts/sky_world.gd): one seed for every placement
-## in the sky, saved with the world; islands, islets and clouds only within
-## the bounds round the plate's first home; and round them a ring of
-## mountain ranges with a few notches through it, past which an edge wind
-## turns the glide home (`air`). --no-ring opens the sky again, endless.
+## One seed for every placement in the sky (scripts/sky_world.gd), saved with
+## the world. With --peak-ring (kept but unwired: the game dropped it) the
+## world is bounded: islands, islets and clouds only within the bounds round
+## the plate's first home, and round them a ring of mountain ranges with a few
+## notches through it, past which an edge wind turns the glide home (`air`).
+## Without it the sky is open, endless.
 ##
-## Between them stand the islets (scripts/sky_islets.gd), small scenery, a
-## few big forested isles (scripts/sky_forest_isles.gd) to glide in under
-## the trees of, and now and then a mountain range of the land far below
-## risen up through the cloud sea (scripts/sky_peaks.gd), giant stone with a
-## gorge through it. All are solids to the glide (`body`); no island stands
-## on a range or an isle.
+## Between them stand the islets (scripts/sky_islets.gd), small scenery; with
+## --wonders a few big forested isles (scripts/sky_forest_isles.gd) to glide
+## in under the trees of, and with --peaks or --peak-ring now and then a
+## mountain range of the land far below risen up through the cloud sea
+## (scripts/sky_peaks.gd), giant stone with a gorge through it. All are solids
+## to the glide (`body`); no island stands on a range or an isle.
 ##
 ## On every island but the plate's first home live a few sky folk (scripts/
 ## sky_folk.gd), the same ones each time, who go with their island.
@@ -219,14 +220,14 @@ func setup(owner_scene: Node3D) -> void:
 	scene = owner_scene
 	editor = scene._chunk_editor
 	name = "SkyIslands"
-	# The wonders (SkyHomes): the ranges stand, the ring round the world with
-	# them (scripts/sky_world.gd); --wonders brings back every other one,
-	# --no-peaks takes the ranges away, --no-ring the ring and the bounds.
+	# The wonders (SkyHomes): none stand unless asked for. --peak-ring stands
+	# the ranges and the ring round the world with them
+	# (scripts/sky_world.gd), --peaks the ranges alone, --wonders every other
+	# one.
 	var args := preload("res://scripts/launch_args.gd").user_args()
 	if "--wonders" in args:
 		SkyHomes.stone = true
 		SkyHomes.isles = true
-	if "--no-peaks" in args: SkyHomes.peaks = false
 	SkyWorld.read_flags()
 	currents = SkyCurrents.new()
 	add_child(currents)

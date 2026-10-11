@@ -21,6 +21,8 @@ var failures := 0
 var shapes := {}
 
 func _initialize() -> void:
+	# The ring and its ranges are kept but unwired: this runs under --peak-ring.
+	preload("res://scripts/sky_homes.gd").use_flags(PackedStringArray(["--peak-ring"]))
 	# The wonders are off in play (SkyHomes `stone`, `isles`); on here.
 	preload("res://scripts/sky_homes.gd").stone = true
 	preload("res://scripts/sky_homes.gd").isles = true

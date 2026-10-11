@@ -19,6 +19,8 @@ var failures := 0
 var palette: RefCounted
 
 func _initialize() -> void:
+	# The ring and its ranges are kept but unwired: this runs under --peak-ring.
+	preload("res://scripts/sky_homes.gd").use_flags(PackedStringArray(["--peak-ring"]))
 	preload("res://scripts/sky_world.gd").ring = false
 	palette = preload("res://scripts/native_terrain_palette.gd").new()
 	for s: int in [SkyPeaks.seed_of(Vector2i.ZERO),4242]:

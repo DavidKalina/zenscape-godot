@@ -98,11 +98,11 @@ extends RefCounted
 ## skyline far off (scripts/sky_ring.gd) and as the full range near
 ## (SkyPeaks).
 ##
-## The ring (SkyHomes `ring`, on unless `--no-ring`) turns all of this on
-## together; off, the sky is the old open one, endless, its ranges
-## scattered through the cells.
-## It is made of the peaks, so it stands only while they do (SkyHomes
-## `peaks`).
+## The ring (SkyHomes `ring`) turns all of this on together. The game dropped
+## it, so it is kept but unwired: off unless --peak-ring, and off the sky is
+## the old open one, endless, its ranges (if --peaks stands them) scattered
+## through the cells. It is made of the peaks, so it stands only while they do
+## (SkyHomes `peaks`).
 
 const SkyHomes = preload("res://scripts/sky_homes.gd")
 const SkyPeak = preload("res://scripts/sky_peak.gd")
@@ -403,7 +403,7 @@ static var _frame := {}
 static var _frame_seed := -1
 
 ## True while the ring, the bounds and the edge wind stand (SkyHomes
-## `ring_on`).
+## `ring_on`: off unless --peak-ring).
 static func ring_on() -> bool:
 	return SkyHomes.ring_on()
 
@@ -417,8 +417,8 @@ static func painted_ridges() -> float:
 
 static var _flags_read := false
 
-## Reads --no-ring and --no-peaks (SkyHomes `read_flags`) and --moments from the
-## command line, once, whoever asks first.
+## Reads --peak-ring and --peaks (SkyHomes `read_flags`) and --moments from
+## the command line, once, whoever asks first.
 static func read_flags() -> void:
 	SkyHomes.read_flags()
 	if _flags_read: return

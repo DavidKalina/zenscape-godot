@@ -106,9 +106,12 @@ func check(ok: bool, label: String) -> void:
 	if not ok: failures += 1
 	print(("OK   " if ok else "FAIL ")+label)
 
-## In play the ranges and the ring stand; the other wonders don't.
+## The ring is kept but unwired: off in play, on under --peak-ring (which
+## the rest of this test runs under); the other wonders stay off.
 func _defaults() -> void:
-	check(SkyHomes.peaks and not SkyHomes.stone and not SkyHomes.isles and SkyHomes.ring and SkyWorld.ring_on(),"The ranges and the ring stand by default; the other stone wonders and the isles don't")
+	check(not SkyHomes.peaks and not SkyHomes.ring and not SkyWorld.ring_on(),"By default neither the ranges nor the ring stand")
+	SkyHomes.use_flags(PackedStringArray(["--peak-ring"]))
+	check(SkyHomes.peaks and not SkyHomes.stone and not SkyHomes.isles and SkyHomes.ring and SkyWorld.ring_on(),"Under --peak-ring the ranges and the ring stand; the other stone wonders and the isles don't")
 	check(SkyWorld.seed == SkyWorld.LEGACY_SEED,"A world starts on the legacy seed")
 	check(SkyWorld.SLOTS.slice(1) == SkyIslands.OFFSETS,"The layout reads the fixed islands where they stand (SkyIslands OFFSETS)")
 	# The hash every kind used before, by hand, under the legacy seed.
