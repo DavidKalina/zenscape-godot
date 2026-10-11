@@ -42,7 +42,189 @@ Where the cheat can show (keep these in mind for later features):
 - Ask scripts/world_scale.gd (sizes) and scripts/plane_ground_scale.gd (the
   size right now) how big the plane is; don't hard-code either in new code.
 
-## The game's sizes (feature/plane-wanderer-scale)
+## World spacing (feature/world-spacing): the current sizes
+
+The user flew `--wanderer-scale=1 --plane-scale=2.0 --plane-ground-scale=1`
+and found the walker at 0.83 "too damn small" and the openings too tight.
+This round puts the walker back to his full size, keeps the bigger plane,
+and spaces the world out. The sections below this one describe the round
+before; where they disagree, this section is current.
+
+**Defaults** (scripts/world_scale.gd):
+- `PLANE` 2.0 (2.8 m wings) and `WANDERER` 1.0 (his clips' size, 1.19 m).
+- The cockpit pilot is drawn bigger instead of the plane: `pilot_size` =
+  PILOT_RATIO*wanderer/plane = 1.2 (plane_figure.gd, stone_plane_figure.gd).
+  It is capped at `PILOT_MOST` 1.25; past that he stays 1 and the ground
+  cheat does all of it.
+- With that, the ground cheat `ground_factor()` = PILOT_RATIO*wanderer/
+  (plane*pilot_size) comes out at exactly 1.0, so the cheat is off.
+  `--plane-ground-scale=<x>` still overrides it. At
+  `--plane-scale=1 --wanderer-scale=1` the pilot is 1 and the cheat 2.4,
+  as before.
+- The walker's collider: kit_isle now calls `decks.scale_body(wanderer)`.
+  At 1.0 that is the full-size collider (radius 0.28, head 1.12), the same
+  as the character study's. The open item from last round is closed.
+
+**Room** (steering room past the wings, counted in toy spans, both sides
+together; it does not grow with the plane):
+- `WorldScale.ROOM` 2.0 is the default for a flown opening: 1.4 m past each
+  wingtip.
+- `WorldScale.SNUG` 2.4/1.4 = 1.714 is the least any flown opening gets:
+  1.2 m past each wingtip.
+- `WorldScale.knife(room)` sizes a deliberate knife-edge slot: the plane's
+  height on its side (TOY_TALL*plane) plus room. `KNIFE_ROOM` is 0.3, so
+  1.9 m at plane 2.
+- `WorldScale.past_tip(width)` gives what an opening leaves past each tip.
+
+**Openings, old → new at plane 2** (past each wingtip in brackets):
+
+| Opening | Old | New |
+| --- | --- | --- |
+| RuinKit THREAD (SNUG) | 4.62 (0.91) | 5.2 (1.2) |
+| RuinKit ARCH_SPAN (room 2.6) | 5.6 (1.4) | 6.44 (1.82), crown 8.78 |
+| RuinKit WINDOW (ROOM) | 5.0 (1.1) | 5.6 (1.4); wall grows with it |
+| Rose glass (ROSE_GROW off THREAD) | 4.95 | 5.25 (1.23) |
+| Aqueduct CLEAR = THREAD, SPAN = CLEAR+PIER | 4.7 (0.95), SPAN 6.4 | 5.2 (1.2), SPAN 6.9 |
+| Aqueduct two-tier LOWER_SPRING | 3.0 | derived, 2.76 (the lower arch crowns under the course) |
+| Stone circle sarsen gap (HENGE_ROOM = SNUG) | 14 stones, ~2.1 m gaps | 8 stones, 5.2 m at their inner faces (1.2) |
+| Great trilithon slot (knife) | 0.9 | 1.9 (0.21 round the plane on its wingtip) |
+| Hall LANE (LANE_ROOM 2.4) | 5.4 (1.3) | 6.16 (1.68) |
+| Hall breach corridor (BREACH_HALF off THREAD) | 4.66 | 5.24 (1.22) |
+| Hall broken ARCH | 5.62 | 6.2 (1.7) |
+| Hall knife slit | 1.89 | 1.89 (knife edge, kept) |
+| Ring arch on the lodestone's line (RING_ROOM 8) | 2.2 x arch, 12.3 | gap(8) = 14.0 (5.6) |
+| Aqueduct isle stumps' knife slot (knife(0.45)) | 1.9, off the line | 2.11, centred on the arch (0.32 round the plane on edge) |
+| CollectibleLines GAP_ROOM (SNUG) | 3.2 | 5.2 |
+| CollectibleLines WING (half gap(SNUG)) | 1.5 | 2.6 |
+| Pierced isle ROUTE_CLEAR (half gap(SNUG)) | 2.3 | 2.6 |
+| Bell spires: hero to the low spire | 6.2 (1.7) | 12.4 (4.8) |
+| Bell spires: gable to fin_low | 7.9 | 10.4 (3.8) |
+| Bell spires: other spire pairs | 8.8 to 11.7 | 11.6 to 14.2 |
+
+**Stone circle** (ruin_kit.gd `stone_circle`; the user's #1):
+- `CIRCLE_STONES` is 8 and `SARSEN` is 1.5 m wide (it was 1.7).
+- `CIRCLE_RADIUS` is derived so that the gap between two sarsens at their
+  inner faces is `gap(HENGE_ROOM)`. That gives 9.3 m at plane 2 (it was
+  8.5) and 7.5 m at plane 1. It fits the aqueduct isle's summit (11 m at its
+  narrowest) and the broken ring's 13.5 m isle.
+- Fallen lintels no longer leave a whole chord missing:
+  - A fallen lintel breaks in its middle. A `LINTEL_BREAK` piece (3.0 m x
+    wanderer) falls into the grass, and the two ends stay on their sarsens,
+    so the ring is still run round with one twirled jump.
+  - A lintel whose sarsen is `missing` keeps the end on the sarsen that still
+    stands.
+  - The ring's lintels are walked on true hulls (`_walk_hull`). A worn chunk
+    out of a 7 m lintel had taken its top for metres.
+- The fallen trilithon's stub is turned end-on, so the hop from the stub
+  onto the lintel starts on stone.
+- `TRILITHON_AT` is derived so the summit jump from the back lintel stays
+  the same 2.29 m in. The broken lintel's pieces lie at R-3.6.
+- Indices changed: `LEAN_AT` 1, `STUB_AT` 4, the aqueduct isle's
+  `MISSING` 6 (292.5 degrees, in the bite), and the broken ring's
+  `MISSING` [3, 4].
+  - The aqueduct isle's floating ring sarsen is sized off the ring, a
+    twirled jump from each broken end: 4.12 x 1.1 x 2.17.
+  - Its kit stair stays at 257.14 degrees, 1.3 m off sarsen 5's face.
+- test_aqueduct_isle `_ring_loop` now jumps along the ring's own lintels
+  (from the sarsen's top to the next). At 8 stones the old straight line,
+  cut across a sarsen's corner, ran 0.85 m off the lintels' line, so it left
+  the lintels.
+
+**Sundered** (from the Sundered fork, merged; commit a4f5c5bf):
+- The line was hard to fly because `Sundered.LANE_MID` was a fixed 6.0. It
+  ran 0.6 m off the inner columns in the widened lane. `LANE_MID` and
+  `LINE_Y` are now static vars at the lane's middle: 7.08 and 2.55.
+- Turns are eased:
+  - Sundered: `RADIUS` 70 → 95, `TURN` 0.55 → 0.5, `KINK` 0.14 → 0.1.
+  - Sundered line (`hall_line_plan.gd`): the sidestep's `jog_gap` 120 → 140
+    m, `bend` 26 → 22 degrees.
+- Breaches are placed only where their corridor fits between the columns on
+  a curve (`Hall.breach_fits`, `HallPath.stretch`, `fit_breaches`). Where a
+  bay can't take one, its roof is broken open instead.
+- The podium, bed and island half-widths come from `WALL_Z`.
+- Sundered gorge: the line's second point moved to (87.6, 18.8, -47), under
+  the two lower-crossing fragments; it grazed them before. 0 bumps.
+- Hollow keel: `FLOOR_SINK` 0.2 under the paving (it left a 0.47 m step),
+  and its lane uses the kit's lane middle.
+- Flight study: its stations keep the toy plane's hall (`TOY_ROW_Z`,
+  `TOY_WALL_Z`, `TOY_KNIFE`, `TOY_ARCH` in flight_course.gd), since their
+  hashes are pinned and their plane is the toy.
+- test_sundered_hall now checks the lane's room, the line in the lane's
+  middle, the breaches and arch at least THREAD, and curves of at least 90
+  m. Its bot flies the line in 61 s with 0 bumps.
+
+**Bell isles** (from the bells fork, merged; commit 11d1d22e;
+studies/bell_spires_isle_art.gd):
+- Each outer spire stands off the hero by `gap(CARVE_ROOM 6.0)`. Every
+  outer pair is held to `gap(PASS_ROOM 4.0)`.
+- The air between two spires is measured rock to rock (`air_between`). The
+  bridges, drift stones, causeway, outline and start rebuild from the new
+  positions.
+- The chimney stays 2.6 m on purpose: it is the walker's wall-kick climb and
+  the knife-edge token line.
+- The bridges are now 13.3 to 14.1 m long.
+- motif_sky's `REACH` for the bells went from 34 to 41.
+
+**Other fixes made along the way:**
+- The cloister tarn's north-east arch now faces the bridge across the isle's
+  middle. Set along the bridge, its wider pier had stood on the bridge's
+  head.
+- The rose gable's fallen hub lands to one side of the door, never across
+  it. It had blocked the colonnade spine's gate walk.
+- kit_isle: a plane with no take-off run parks on the nearest level spot
+  with room for it, not on the walker's start. The broken ring's start had
+  stood him on the parked plane's column. That failure also happened on
+  850aa041.
+- The stumps' knife line moved from z -29.2 to z -28 (`KNIFE_Z`), the
+  middle of the aqueduct's arch, which is 4 m clear. It had run 0.06 m off
+  the arch's pier on a knife edge.
+
+**Tests** (headless; each listed below passes):
+- The two world-scale tests. test_world_scale_fit now covers every opening
+  in the table, the three knife slots and the cockpit pilot, at the default
+  sizes and at the old ones.
+- The five that failed on 850aa041: aqueduct_isle_sky, sundered_gorge_isle,
+  cloister_tarn_isle, hollow_keel_isle, flight_metrics.
+- All of these pass: ruin_kit, sundered_hall, hall_chain, hall_rise,
+  isle_hall_chain, lodestone_study, isle_lodestone, aqueduct_isle (+_life,
+  _plane, _sail), broken_ring, colonnade_spine, drowned_nave, stair_clouds,
+  bell_spires, pierced_isle, collectibles_world, island_pack_ruins_archipelago,
+  isle_loop_played, isle_lock, cluster_motifs, kit_isle_landing,
+  manual_landing (+_game), hand_landing_exit, plane_landing, sky_plane,
+  pocket_sail (+_study), pilot_figure, pilot_ledge, pilot_motor,
+  character_climb and character_study. plane_flight passes with a known
+  engine error.
+- Two tests still fail, and both fail the same way on 850aa041:
+  - motif_sky: "colonnade_spine: open turf 14 m long to land on".
+  - collectibles_pickup: its checks pass, but the engine logs
+    `!isfinite(p_size)` from cozy_worlds `_layout_shell`.
+- test_aqueduct_isle_look was not run. It already failed before this work.
+- The sarsen token in test_aqueduct_isle_life jumps along the ring's own
+  lintel now, the same way the loop test does.
+
+**Open:**
+- At `--plane-scale=1` the gaps no longer return to their old numbers. The
+  room is bigger now, and the hall lane, arch, circle and ring are all wider
+  at plane 1 too.
+- Cloister arcades (SPRING 1.75, crown 3.5) are the walker's arches and
+  weren't widened. The colonnade spine's portals and the drowned nave's
+  openings weren't audited one by one; their tests pass.
+- Knife edges (the trilithon at 1.9, the hall slits at 1.89, the stumps at
+  2.11) leave only 0.2 to 0.3 m round the plane on its wingtip. They are
+  deliberate challenges.
+- The moments hall (`--chain-style=halls`) uses the widened hall, but its
+  tokens were laid for the toy plane and weren't re-laid.
+- The hall's BAY stays 8 m, so a breach on a straight wall has 5.6 m between
+  the column shafts.
+- The flight study's toy plane now seats a 1.2x pilot.
+- Captured (rendered, --no-title) and looked at: the stone circle from
+  above and at the ring (wide gaps, broken lintel ends), the bell isles from
+  afar, and the Sundered gate and nave.
+  - The bell spires capture script's "thread" view (tools/
+    bell_spires_captures.sh) now sits by the rock at the new spacing.
+  - Not flown by a person yet.
+
+## The game's sizes (feature/plane-wanderer-scale; superseded above)
 
 The "meet in the middle" sizes are the default: the plane 2.0x its toy size
 everywhere (2.8 m wings), the wanderer 0.83, and no ground cheat (it
