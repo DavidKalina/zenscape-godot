@@ -98,6 +98,8 @@ const DisplayFog = preload("res://studies/display_fog.gd")
 const PilotWake = preload("res://scripts/pilot_wake.gd")
 const SkyPlane = preload("res://scripts/sky_plane.gd")
 const PlaneFigure = preload("res://scripts/plane_figure.gd")
+## The toy plane's span and the game's sizes (scripts/world_scale.gd).
+const WorldScale = preload("res://scripts/world_scale.gd")
 const GlideCamera = preload("res://scripts/glide_camera.gd")
 const StoneFigure = preload("res://scripts/stone_plane_figure.gd")
 const NoseCompass = preload("res://scripts/nose_compass.gd")
@@ -182,7 +184,7 @@ const TURF_LAYER := 1 << 11
 const BOARD_AHEAD := 5.0
 const BOARD_UP := 3.0
 const FLOOR_BELOW := 50.0
-const BUMP_BODY := Vector3(PlaneFigure.SPAN,0.3,1.2)
+const BUMP_BODY := Vector3(WorldScale.TOY_SPAN,0.3,1.2)
 const BUMP_KEEP := 0.55
 ## A face whose normal points up past FLOOR_NORMAL is a top the plane rides
 ## over (lifted up to RIDE_LIFT m in RIDE_STEP m steps) rather than bumps.
@@ -1126,7 +1128,7 @@ func _level(top: Vector3) -> bool:
 func _room_for_plane(top: Vector3, heading: float) -> bool:
 	var box := BoxShape3D.new()
 	var f := ground_scale.ground_size()
-	box.size = Vector3(PlaneFigure.SPAN*f+0.4,1.2*f,maxf(3.0,1.6*f))
+	box.size = Vector3(WorldScale.TOY_SPAN*f+0.4,1.2*f,maxf(3.0,1.6*f))
 	var query := PhysicsShapeQueryParameters3D.new()
 	query.shape = box
 	query.collision_mask = plane_mask()

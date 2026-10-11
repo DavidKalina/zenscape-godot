@@ -14,3 +14,13 @@ that needs a real renderer gets a `## suite: gpu` line under `extends`, and one
 that takes over a minute headless gets `## suite: slow`, and one with a timing budget gets `## suite: serial`. Don't add a test to
 `tests/known_failures.txt` to get a run green. That file holds only failures
 the user has accepted, each with its reason.
+
+# Sizes
+
+The plane's and the wanderer's sizes live only in `scripts/world_scale.gd`,
+the one parser of `--plane-scale=` / `--wanderer-scale=`. Size a flown gap
+with its `gap(room)` or `span` (a toy-sized base with `TOY_SPAN`), and derive
+walker reach, steps, ledges and jump gaps from the wanderer size
+(`PilotMotor.set_size`, `RuinKit.GRAB_TOP`/`CHAIN_TOP`). Other files ask
+WorldScale rather than copy 2.0, 0.83, 2.4 or the toy span 1.4. Guarded by
+`tests/test_world_scale_guard.gd` and `tests/test_world_scale_fit.gd`.

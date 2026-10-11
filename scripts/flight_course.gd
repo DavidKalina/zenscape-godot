@@ -38,6 +38,8 @@ extends RefCounted
 ## give the room round the line.
 
 const PlaneFigure = preload("res://scripts/plane_figure.gd")
+## The toy plane's span and the game's sizes (scripts/world_scale.gd).
+const WorldScale = preload("res://scripts/world_scale.gd")
 const Hall = preload("res://scripts/ruin_kit_hall.gd")
 const RuinBump = preload("res://scripts/ruin_bump.gd")
 const Lines = preload("res://scripts/collectible_lines.gd")
@@ -70,7 +72,7 @@ const REACH := 1.1+0.5*1.2
 ## The token drawn (m across), as the game's air tokens.
 const TOKEN_SIZE := 1.2
 ## The plane's wingspan (scripts/plane_figure.gd).
-const SPAN := PlaneFigure.SPAN
+const SPAN := WorldScale.TOY_SPAN
 ## Bumped into: the collision layer (the ruins', as RuinBump reads it).
 const LAYER := RuinBump.LAYER
 ## Bumped into the data format or the reach: older runs keep their own hash.

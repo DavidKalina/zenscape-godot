@@ -102,7 +102,7 @@ const SHAFT_LIGHT := 4.0
 ## thin slab, its length; turned with its bank, so on a knife edge it slips
 ## through a gap its level wings would not), the share of its speed a
 ## bump keeps, the mouse's turn (radians a pixel, the game's LOOK).
-const BUMP_BODY := Vector3(PlaneFigure.SPAN,0.3,1.2)
+const BUMP_BODY := Vector3(WorldScale.TOY_SPAN,0.3,1.2)
 const BUMP_KEEP := 0.55
 const FLY_LOOK := 0.0025
 ## The aqueduct across a valley (uneven ground): its spans.

@@ -433,7 +433,7 @@ func _chain_plane_box() -> AABB:
 	if not flying or plane == null: return AABB()
 	# The plane as drawn (ground_scale.size(), about its wheels: its middle
 	# middle_shift up from the flight's).
-	var half := Vector3.ONE*(PlaneFigure.SPAN*0.5*ground_scale.size()+0.3)
+	var half := Vector3.ONE*(WorldScale.TOY_SPAN*0.5*ground_scale.size()+0.3)
 	return AABB((plane.position as Vector3)+Vector3.UP*ground_scale.middle_shift().y-half,half*2.0)
 
 ## The ring's pause over: the arrival's chime, a soft flash round the plane,

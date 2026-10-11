@@ -41,6 +41,8 @@ const SkyForestIsles = preload("res://scripts/sky_forest_isles.gd")
 const SkyWorld = preload("res://scripts/sky_world.gd")
 const SkyCommits = preload("res://scripts/sky_commits.gd")
 const PlaneFigure = preload("res://scripts/plane_figure.gd")
+## The toy plane's span and the game's sizes (scripts/world_scale.gd).
+const WorldScale = preload("res://scripts/world_scale.gd")
 
 ## The cells: side (m), the share holding an isle, how far its spot may
 ## sit off the cell's middle (share of the cell), the salt.
@@ -82,7 +84,7 @@ const CHECK := 0.5
 ## a thin slab, its length).
 const MARGIN := 0.6
 const BUMP_KEEP := 0.55
-const BUMP_BODY := Vector3(PlaneFigure.SPAN,0.3,1.2)
+const BUMP_BODY := Vector3(WorldScale.TOY_SPAN,0.3,1.2)
 ## The ruins' hulls' physics layer (the bump asks only it).
 const RUIN_LAYER := 1 << 19
 ## The rock fades in over FADE_IN s as the lid does (SkyIslets FADE_IN).

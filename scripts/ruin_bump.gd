@@ -10,9 +10,11 @@ extends RefCounted
 ## Never a crash.
 
 const PlaneFigure = preload("res://scripts/plane_figure.gd")
+## The toy plane's span and the game's sizes (scripts/world_scale.gd).
+const WorldScale = preload("res://scripts/world_scale.gd")
 const SkyPlane = preload("res://scripts/sky_plane.gd")
 
-const BODY := Vector3(PlaneFigure.SPAN,0.3,1.2)
+const BODY := Vector3(WorldScale.TOY_SPAN,0.3,1.2)
 const KEEP := 0.55
 const LAYER := 1 << 10
 

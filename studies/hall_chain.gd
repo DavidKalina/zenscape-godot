@@ -35,6 +35,8 @@ const ChainPlan = preload("res://scripts/hall_chain_plan.gd")
 const Rise = preload("res://scripts/hall_rise.gd")
 const SkyPlane = preload("res://scripts/sky_plane.gd")
 const PlaneFigure = preload("res://scripts/plane_figure.gd")
+## The toy plane's span and the game's sizes (scripts/world_scale.gd).
+const WorldScale = preload("res://scripts/world_scale.gd")
 const GlideCamera = preload("res://scripts/glide_camera.gd")
 const RuinBump = preload("res://scripts/ruin_bump.gd")
 const Pad = preload("res://scripts/pad.gd")
@@ -407,7 +409,7 @@ func leave() -> void:
 ## The plane's box (world; none out of the plane).
 func _plane_box() -> AABB:
 	if plane == null or mode != "plane": return AABB()
-	var half := Vector3.ONE*(PlaneFigure.SPAN*0.5+0.3)
+	var half := Vector3.ONE*(WorldScale.TOY_SPAN*0.5+0.3)
 	return AABB((plane.position as Vector3)-half,half*2.0)
 
 func plane_ground(_p: Vector3) -> Variant:
