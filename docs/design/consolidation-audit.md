@@ -631,8 +631,10 @@ the import check, `test_front_door` (now 4 card buttons), `test_export_entry`,
 the three `test_scene_picker*`, the five `test_aqueduct_isle*`,
 `test_kit_isle_landing`, `test_gamepad`, `test_gamepad_screens`,
 `test_title_resolution`, `test_title_showcase` and `test_world_title`.
-`test_export_entry` failed once in the 19-test batch with leak 2 above; it
-passed alone and in the CI form after the fix. The full suite wasn't run.
+In the first batch, `test_export_entry` failed once with leak 2 above. After
+that fix the 20-test batch ran clean: 20 passed and none
+`pass_with_known_engine_error`, where round 1 had seven `exit_leak`s. The
+full suite wasn't run.
 
 ### Unverified (needs a rendered run)
 
