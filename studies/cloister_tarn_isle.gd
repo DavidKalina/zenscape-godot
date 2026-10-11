@@ -161,27 +161,14 @@ func _build_bridges() -> void:
 		art.add_child(bridge)
 		bridges.append(bridge)
 
-## The tarn's water: the game's sky pond water (SkyIslets' pond material,
-## the plate's still water steeped dark, a slate-blue tarn), a surface the
-## plane skims (WATER_LAYER), the curtain fall off the lip.
+## The tarn's water: the edit chunks' own still water (studies/
+## cloister_tarn_isle_art.gd `water`, scripts/kit_isle/kit_water.gd),
+## steeped to a dark slate-blue tarn, down the channel to the lip; a
+## surface the plane skims (WATER_LAYER); the curtain fall off the lip.
+## --old-water draws the islets' pond water on a coarse fan, as before.
 func _build_water() -> void:
 	var faces := TarnArt.water_faces()
-	var v := PackedVector3Array()
-	var n := PackedVector3Array()
-	for p in faces:
-		v.append(p)
-		n.append(Vector3.UP)
-	var arrays := []
-	arrays.resize(Mesh.ARRAY_MAX)
-	arrays[Mesh.ARRAY_VERTEX] = v
-	arrays[Mesh.ARRAY_NORMAL] = n
-	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
-	water = MeshInstance3D.new()
-	water.name = "Tarn"
-	water.mesh = mesh
-	water.material_override = tarn_material()
-	water.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	water = _old_water(faces) if KitWater.old_water() else TarnArt.water()
 	art.add_child(water)
 	var body := StaticBody3D.new()
 	body.name = "TarnSurface"
@@ -197,11 +184,31 @@ func _build_water() -> void:
 	fall_node = TarnArt.fall(TARN_SEED+5)
 	art.add_child(fall_node)
 
-## The tarn's water: the sky islets' pond water (shaders/islet_pond.gdshader,
-## as the islets' and the aqueduct's channel have it: a dark, glassy
-## slate-blue tarn, the sky's pale blue at a glance, a slow ripple, a sharp
-## glint; tinted by the look presets' water colour). The plate's still
-## water was tried: off the plate its maps are missing and it read milky.
+## The water as it was (--old-water): the disc and channel's faces flat in
+## the islets' pond water.
+func _old_water(faces: PackedVector3Array) -> MeshInstance3D:
+	var v := PackedVector3Array()
+	var n := PackedVector3Array()
+	for p in faces:
+		v.append(p)
+		n.append(Vector3.UP)
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = v
+	arrays[Mesh.ARRAY_NORMAL] = n
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
+	var sheet := MeshInstance3D.new()
+	sheet.name = "Tarn"
+	sheet.mesh = mesh
+	sheet.material_override = tarn_material()
+	sheet.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return sheet
+
+## The old water's material (--old-water): the sky islets' pond water
+## (shaders/islet_pond.gdshader: a dark slate-blue, the sky's pale blue at a
+## glance, a slow ripple, a sharp glint). The plate's still material on that
+## fan had read milky: the fan carries none of its data (depth, fetch, shore).
 static var _tarn: Material
 static func tarn_material() -> Material:
 	if _tarn == null:

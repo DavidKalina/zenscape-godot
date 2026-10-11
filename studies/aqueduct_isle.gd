@@ -202,6 +202,9 @@ func _build_art() -> void:
 	art.add_child(far)
 	var built: Dictionary = Art.aqueduct(SEED)
 	art.add_child(built.node)
+	# Its channel's water, in the world's frame (none with --old-water: the
+	# old film is the aqueduct's own).
+	if built.water != null: art.add_child(built.water)
 	for part: Array in built.parts: _part(part)
 	var castellum: Dictionary = Art.castellum(SEED+2)
 	art.add_child(castellum.node)
