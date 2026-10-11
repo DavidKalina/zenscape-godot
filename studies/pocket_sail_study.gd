@@ -103,8 +103,8 @@ void fragment() {
 	float rise = fract(local.y*0.08-TIME*pace+sin(a*3.0)*0.15);
 	float band = smoothstep(0.0,0.1,rise)*smoothstep(0.4,0.15,rise);
 	float rim = 1.0-abs(dot(normalize(NORMAL),normalize(VIEW)));
-	ALBEDO = mix(tint.rgb,vec3(1.0,0.95,0.8),glow*0.5);
-	ALPHA = clamp((base+0.32*band)*(0.6+0.8*rim)*(1.0+glow),0.0,1.0);
+	ALBEDO = mix(tint.rgb,vec3(1.0,0.9,0.7),glow*0.4);
+	ALPHA = clamp((base+0.32*band)*(0.6+0.8*rim)*(1.0+0.35*glow),0.0,1.0);
 }
 """
 
@@ -288,7 +288,7 @@ func _advance_air(delta: float) -> void:
 func _build_air() -> void:
 	var shader := Shader.new()
 	shader.code = THERMAL_SHADER
-	for tube_at: Array in [[THERMAL_RADIUS,0.9,0.08],[THERMAL_RADIUS*0.5,1.4,0.12]]:
+	for tube_at: Array in [[THERMAL_RADIUS,0.9,0.08],[THERMAL_RADIUS*0.5,1.4,0.05]]:
 		var column := MeshInstance3D.new()
 		var tube := CylinderMesh.new()
 		tube.top_radius = tube_at[0]
@@ -319,8 +319,8 @@ func _build_air() -> void:
 	ring.material_override = hot
 	ring.position = Vector3(THERMAL_AT.x,0.1,THERMAL_AT.y)
 	add_child(ring)
-	_label(Vector3(THERMAL_AT.x,TOP+6.0,THERMAL_AT.y),"↑ rising air ↑",72)
-	_label(Vector3(THERMAL_AT.x,40.0,THERMAL_AT.y),"↑ rising air: fly into it, circle ↑",48)
+	_label(Vector3(THERMAL_AT.x,TOP+11.0,THERMAL_AT.y),"rising air",72)
+	_label(Vector3(THERMAL_AT.x,40.0,THERMAL_AT.y),"rising air: fly into it and circle",48)
 
 ## A front drawn: streaks along x scattered through its band, each a thin
 ## rod a few metres long, fading to its edges.
@@ -448,7 +448,7 @@ func _build_ui() -> void:
 	_study_line.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_hud.get_parent().add_child(_study_line)
 	_riding_line = Label.new()
-	_riding_line.text = "↑  riding the rising air  ↑"
+	_riding_line.text = "riding the rising air: climbing"
 	_riding_line.add_theme_font_size_override("font_size",30)
 	_riding_line.add_theme_color_override("font_color",Color("ffd9a0"))
 	_riding_line.add_theme_color_override("font_shadow_color",Color(0,0,0,0.7))

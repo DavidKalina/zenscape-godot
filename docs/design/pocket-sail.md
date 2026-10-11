@@ -1,4 +1,4 @@
-# Pocket sail (round 1)
+# Pocket sail (rounds 1 and 2)
 
 Branch `study/pocket-sail`, cut from main at 06ec4de5. Not merged, not
 pushed.
@@ -52,7 +52,7 @@ the study's own station list (not an island pack file).
   west (back towards it). Each band is 30 m deep, travels at 9 m/s and pushes
   8 m/s with 1 m/s of lift at its middle. They are drawn as bands of white
   streaks with a "gust →" sign.
-- **Rising air:** a warm column at (30, -27), 6 m across, 75 m tall,
+- **Rising air (round 1; see Round 2 below for now):** a warm column at (30, -27), 6 m across, 75 m tall,
   strength 1.2 (the sail rises about 2.4 m/s in it before its caps).
 - **Never death:** fall under -30 and you're set back at the nearest
   station.
@@ -248,3 +248,161 @@ suite.
    with W, and folding the sail is the new way to dive.
 9. **The old skydive capture** (`tools/capture_skydive.gd`) was updated for
    the sail but not run.
+
+## Round 2
+
+The user flew round 1 and said: "I didn't notice the rising air lifting me up
+at all." They also wanted the wing to look more like a handkerchief, like
+fabric: narrower, with more of an arc.
+
+### Why the rising air felt like nothing
+
+Four things added up:
+
+- **The cap.** A thermal could never take you more than CEILING (1 m) over
+  the airtime's peak. From a throw you open near the peak, so it had about
+  1 m to give.
+- **The strength.** 1.2 units × THERMAL 2.0 = 2.4 m/s of lift, minus the
+  1.5 m/s sink, left 0.9 m/s. RISE_MOST (0.8) capped that, and SETTLE
+  (3 m/s²) took it up slowly. At best you flew level.
+- **The size.** The column was 6 m across with a 3.6 m full-strength core.
+  At 5.5 m/s you crossed it in about 2 s.
+- **The place.** It stood at (30, -27). The pads throw along z = -7 to 14, so
+  no throw went near it.
+
+### What changed
+
+- **Thermals climb you for real** (`scripts/pocket_sail.gd`). A thermal's
+  lift now has no ceiling. In a column the sail climbs at up to
+  THERMAL_MOST and takes up the climb at THERMAL_TAKE. While it climbs, the
+  airtime's peak rises with it, so the height is yours to spend. Gust and
+  wind lift keep RISE_MOST and CEILING, so a gust still pushes you sideways
+  and never lifts you home. The ceiling can no longer force a sink faster
+  than SINK. This was a latent case once a thermal had lifted you over it.
+  `sail.riding` is true while a thermal climbs you. The figure, the camera
+  and the numbers read it.
+- **The study's column** (`studies/pocket_sail_study.gd`):
+  - It is now at (46, -4), 20 m across, 85 m tall, with strength 3.0. That
+    is 6 m/s of lift, or a 4.5 m/s climb after the sink.
+  - It fades over its top 12 m, so you top out about 35 m over the top
+    slab.
+  - It draws you in towards its core at up to INFLOW (2 m/s), out to 1.8×
+    its radius, which makes it easier to stay in.
+  - The hurl's and the blow's lines out (z = -7 and 0) pass through it.
+  - Station 6 starts at the east edge facing it.
+- **Easy to see:** an outer tube plus a core tube with bands racing up, a
+  warm ring on the floor at its foot, a "rising air" sign over the top's
+  height, and "rising air: fly into it and circle" at shelf height.
+- **Cues while riding:**
+  - The column glows.
+  - A banner says "riding the rising air: climbing".
+  - The camera widens by RIDE_FOV, 9° (`studies/character_study.gd`, so
+    every study with a sail gets it).
+  - The sail puffs fuller and breathes faster.
+  - A puff swirls up off the sail every 0.45 s.
+  - F1's sail line says "riding the rising air".
+  - No sound yet.
+- **The handkerchief wing** (`scripts/pocket_sail_figure.gd`, rewritten):
+  - The wing is now a 1.25 × 1.05 m square-ish cloth sheet held by its four
+    corners on short lines to the bar. It replaces the 1.8 m wide six-cell
+    wing.
+  - The sheet arches deep across: its sides hang ARC (0.42 m) below its
+    middle. It also domes along, with the front and back edges DOME
+    (0.14 m) down.
+  - It is a 16 × 16 grid with smooth normals: cream cloth with a thin
+    terracotta hem.
+  - The middle breathes, and the trailing edge ripples in waves running
+    back, with the corners flapping most.
+  - In a turn it rolls, the inside side pulls down (back corner most), and
+    the ripple grows.
+  - It pops out crumpled (deeper and rumpled), swells past full, and
+    settles.
+  - Rising air puffs it fuller.
+  - `update()` takes a fourth argument, `lift` (0 to 1). The character study
+    and the walker (`scripts/wanderer_eye.gd`) pass `sail.riding`. Other
+    callers default to 0.
+- **F2:** `sail:thermal_most` and `sail:thermal_take` added.
+- **Capture:** `tools/capture_pocket_sail.gd` adds two close cloth shots and
+  a riding-the-column shot.
+
+### New constants
+
+| Constant | Where | Value | Feel |
+|---|---|---|---|
+| THERMAL_MOST | pocket_sail.gd | 5 m/s | the fastest climb in a thermal |
+| THERMAL_TAKE | pocket_sail.gd | 6 m/s² | from sinking to a full climb in under a second |
+| RIDING | pocket_sail.gd | 0.3 m/s | climb over which it counts as ridden (cues) |
+| THERMAL_AT / RADIUS / TOP / FADE / STRENGTH | study | (46, -4) / 10 m / 85 m / 12 m / 3.0 | see above |
+| INFLOW / INFLOW_REACH | study | 2 m/s / 1.8 | the draw to the core |
+| RIDE_FOV / RIDE_EASE | character_study.gd | 9° / 0.6 s | the camera's widening while riding |
+| WIDTH / DEPTH / HIGH / ARC / DOME / GRID / HEM | figure | 1.25 / 1.05 / 2.0 / 0.42 / 0.14 m / 16 / 1 | the sheet |
+| BILLOW / RIPPLE / PULL / PUFF | figure | 0.035 / 0.06 / 0.16 m / 0.9 | breathing, trailing ripple, turn pull, fullness in lift |
+
+Measured headless:
+
+- A 3.0 thermal, opened 0.3 s into a drop off a cliff: up 9.6 m in 4 s,
+  7.6 m over the airtime's peak, climbing at 4.5 m/s. Out of it, 4 s later
+  it was down 5.2 m, back at 1.5 m/s sink.
+- A strong gust rise (6 m/s up) for 10 s: at most 0.85 m over the peak, so
+  the ceiling still holds.
+- In the study, opened in the column and circled: up 12.0 m in 4 s. The
+  same opening outside the column: down 6.7 m in 4 s.
+
+### Tests (round 2)
+
+Headless only: the import check plus feature tests. Not the full suite.
+
+- `test_pocket_sail.gd`: pass. The rising-air section is rewritten: the gust
+  ceiling, the thermal climbing over 8 m in 4 s and over the peak, capped at
+  THERMAL_MOST, and sinking at SINK once out of it.
+- `test_pocket_sail_study.gd`: pass. New checks:
+  - the column climbs the sail over 8 m in 4 s;
+  - the banner and glow show while riding;
+  - the hurl's and blow's lines pass through the column;
+  - it stops at its top;
+  - outside it, the sail sinks.
+- Also passing:
+  - every `test_pilot_*` (9);
+  - test_aqueduct_isle_sail (pass, with the runner's known exit-leak
+    diagnostic);
+  - test_sky_dive;
+  - test_skydive (live, slow; same known exit leak);
+  - test_manual_landing*;
+  - test_character_* except one.
+- Still failing, unchanged from round 1 and from main's motor:
+  `test_character_recordings.gd` "Tech. Fun, fluid, movement" (strays at
+  28.82 s after a twirl).
+
+### Looked at, rendered (`--no-title`)
+
+The stills were `03-sail-out`, `06-cloth-close`, `07-cloth-side` and
+`08-riding-the-rising-air`.
+
+- The sheet reads as a domed cloth, not a board. It is narrower than round
+  1's wing, with a deep arc and a thin hem.
+- The first pass had a hem two squares wide, which read as a tray from the
+  side. It is now one square of 16.
+- From inside the column the warm haze washed the view out. I toned down
+  the glow and the core tube afterwards, but did not re-capture that change.
+- The ripple and billow are motion, and stills can't show them. They were
+  not watched live.
+
+### Open items
+
+1. **Feel by hand.** Is 4.5 m/s of climb too strong, or just right? Are a
+   20 m column and the inflow easy enough to stay in by circling with the
+   stick? Turn radius at TURN 2.4 is about 2.3 m, so circling is easy. The
+   question is whether players find out they should circle. Both
+   THERMAL_MOST and THERMAL_TAKE are on F2. The study's strength and radius
+   are constants.
+2. **Haze inside the column.** It may still be too much when the camera is
+   inside it. Lower `base` on the tubes, or fade them by camera distance.
+3. **Sound.** There is no ride cue sound or cloth rustle yet.
+4. **The game's own thermals** (`scripts/sky_currents.gd`, the old main
+   scene) now climb the sail uncapped too, at their own strength (a 1-unit
+   thermal gives 0.5 m/s net). This was not flown.
+5. **The kit isles** have no thermals (`atmosphere_air` gives 0). If the
+   aqueduct isle should have one, it must be placed.
+6. **The cloth** is CPU-rebuilt each frame: 16 × 16 quads, about 1500
+   vertices. That is fine for one pilot. Move it to a vertex shader if many
+   sails ever fly.

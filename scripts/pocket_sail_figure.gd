@@ -23,7 +23,7 @@ const DEPTH := 1.05
 const HIGH := 2.0
 const ARC := 0.42
 const DOME := 0.14
-const GRID := 10
+const GRID := 16
 const HEM := 1
 ## The bar the mitts hold (m over the feet), and its half width.
 const BAR := 1.3
