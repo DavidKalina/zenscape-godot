@@ -6,9 +6,108 @@ Odyssey. Round 1 gripped the isle's rim and blew gales; the user found it
 body and made it fly well. Round 3 rebuilds it as a wyvern after Smaug and
 makes it ride the air. Round 4 brings the attack back on a far isle: it
 clings to the rim and blows gales across it, seen from the aqueduct isle.
+Round 5 adds the edge spring: its weight sags the isle, and the snap back
+flings the pilot.
 
 Branch `study/rim-dragon`. This is a demo round: no tests, no bot sweeps, no
 perf pass.
+
+## Round 5: the spring launch
+
+The user's ask: the editor's edge spring in the attack. The dragon's weight
+drags its edge of the isle down; let go, the isle snaps back and springs
+the pilot into the air.
+
+### Play
+
+- `./run-rim-dragon.command --dragon-ride`: the pilot starts on foot on
+  **hills_ne**, half way out toward the rim and off to one side, facing it.
+  The dragon swoops in at once. It grips at about 3.5 s, holds through
+  one blast, and lets go at about 19 s. If he is still on the isle, it
+  flings him up. Then it swoops straight back for another grip (about 23 s
+  a cycle). `--dragon-target=meadow_south|grove_east` picks another isle.
+- **G** makes it let go at once (while it clings, any mode).
+- The gem is left out of the ride: on an 18 m isle its chin sweeps most of
+  the turf, so standing still takes it. `--dragon-ride-gem` keeps it.
+- `--dragon-log` now also prints the pilot's feet and the rim's sag.
+
+### What happens (scripts/dragon_gale.gd, scripts/sky_dragon.gd)
+
+- **One pivot.** The far isles are SkyIslets. Their turf, rock, pond,
+  trees, flora and colliders are all children of the one `Isle_<name>`
+  node (scripts/sky_islets.gd `stand`, aqueduct_isle_sky.gd `_solidify`),
+  so posing that node carries everything. The kit isle's sibling problem
+  does not apply to these targets.
+- **The grip.** A single sag value (metres the gripped rim sits below rest)
+  drives the pose. Of it, 30% drops the whole isle and 70% tips it about
+  its middle toward the dragon. On the slam the rim sags 4.5 m, kicked
+  down on a heavy, soft spring (w 3.2, ζ 0.3), so it drops, bobs and hangs
+  there.
+- **The hold.** It groans: a slow creak of about ±0.3 m and a small lean.
+  Each blast sinks it 0.8 m deeper (7.5 m at most) with a tremble. The
+  logged rim sag is about 4.4 to 5.9 m.
+- **The release.** This is the editor's `_step_dip` maths as is:
+  semi-implicit, 240 Hz substeps, w²(goal - x) - 2ζw v. The rise uses
+  DIP_RISE_W 26 and ζ 0.5, then RECOIL_W 40 once past rest. The rates are
+  scaled by 0.4 (`SNAP_SCALE`): at the editor's 26 1/s a 5 m sag comes up
+  at about 70 m/s and would throw the pilot 100 m. The recoil is damped at
+  ζ 0.32 rather than the editor's critical damping, so the isle wobbles a
+  few times before it settles. As it comes up through rest, `jolt` throws
+  stone, dust and leaves off the turf at its speed, and more rubble breaks
+  off the rim.
+- **Riding it.** Each frame the gale records its move (`moved`). If the
+  pilot stands on the isle's land (checked against its pose before the
+  move), `PilotMotor.carry(moved)` takes him along, as the serpent ride
+  does. The colliders are the node's StaticBody3D children, moved with it.
+  In headless runs he stays grounded through the sag, hold and snap, and
+  walks around on the tilted isle.
+- **The launch.** He leaves the isle once its upward speed at his feet is
+  over 3 m/s and it is slowing faster than his gravity (26). That is the
+  moment a real body would leave it. `knock` uses the isle's speed there
+  (at most 32 m/s) plus 10% inward, so he lands back on the isle in a
+  tumble, and X twirls out as usual. He goes up hardest by the rim: about
+  17 to 22 m/s logged 6 to 9 m from it, so about 6 to 9 m up.
+
+### Checked on foot (round 4's open points)
+
+- **Standing and walking on the target isle** work once the isle stands.
+  The isles are built on worker threads and stood up over several frames,
+  so `--place` onto one at load can land before it exists. The ride calls
+  `sky.flush()` first.
+- **Knock:** works. The log shows "the gale knocks the pilot", 1.2 to
+  10 m from the mouth. Round 4's push in the wider band crashed: it passed
+  the deck ground's `slide` a Vector3 where it takes a Vector2. Fixed.
+- **Treasure:** works on foot. It was taken (and it let go) just by
+  standing near the chin, so it is too easy on a small isle.
+
+### Captures (local, gitignored, docs/design/rim-dragon/)
+
+- `r5_sag_side.png`: from the side, the dragon on hills_ne's rim. The isle
+  is sagged about 5 m at the grip and tipped toward it.
+- `r5_launch.png`: from the pilot's camera, the frame after the snap. He
+  tumbles up off the turf, with stone, dust and leaves flung up round him
+  and the wing at the edge.
+
+Capture examples: `--dragon-ride --dragon-skip=5 --at=410,64,-152
+--look=327,47,-126 --capture=x.png` (side), and `--dragon-ride
+--capture-wait=17 --capture-seq=30,0.15 --capture=x.png` (the launch is
+in the first frames; timing is wall-clock).
+
+### Rough
+
+- The snap dust is thick: from the pilot's camera the puffs briefly fog
+  the view.
+- The isle tips about its middle, so its far side rises as the near rim
+  sags. A hinge at the far rim may read more like a pulled edge.
+- The snap speed is tuned for hills_ne (rim about 14 m from the middle along
+  the grip). Smaller isles tip further for the same sag.
+- The dragon's body rides the isle's move, but its own basis does not
+  tilt with it. Its tail rope still sticks out level in the side capture.
+- The launch is upward and slightly inward. He can still tumble off a
+  small isle if a blast knocked him near the edge first.
+- With his feel untouched, the camera follows him through the sag. There
+  is no camera shake on the snap and no sound.
+- Not played by hand; tuned from headless logs and two captures.
 
 ## Round 4: the attack on a far isle
 
@@ -100,8 +199,7 @@ Capture example: `--dragon --dragon-attack --dragon-skip=17 --at=122,40,6
   wide. The blast streaks and the leaf cloud read; the trees thrashing do
   not read at that range. Using `look` (V) narrows the FOV to 40.
   grove_east (135 m) shows it bigger.
-- Not checked in play whether the pilot can land on and walk a lone isle.
-  The knock and treasure code is wired but untested in play.
+- (Round 5 checked standing, walking, the knock and the treasure on foot.)
 - The cloud-sea wake is plain soft billboards, not the volumetric clouds
   themselves (cloud_wakes.gd is tied to the puffs and towers). It sits at
   "about 80 m under the mouth", a guess at the cloud tops.

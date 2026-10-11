@@ -16,9 +16,13 @@ extends Node3D
 ##   rubble    stone breaking off the rim, tumbling down into the clouds;
 ##   puffs     soft billboards: dust on the slam, and the cloud sea beyond
 ##             churned up into a wake along the blast;
-##   shudder   the isle itself dips toward the dragon and springs back (its
-##             node moved, collision and all), trembles on each blast and
-##             bobs up when it lets go.
+##   sag       the isle itself (its node: turf, rock, plants and collision
+##             all under it) dragged down at the gripped rim and tipped
+##             toward the dragon under its weight, groaning while held and
+##             sinking deeper with each blast; let go, it snaps back on the
+##             edge spring's damped spring (scripts/diorama_flip.gd
+##             `_step_dip`), runs on past rest, recoils, wobbles and
+##             settles, and rubble, dust and leaves jump loose (round 5).
 
 const STREAKS := 280
 const DEBRIS := 360
@@ -51,16 +55,53 @@ var _s_acc := 0.0
 var _d_acc := 0.0
 var _r_acc := 0.0
 var _p_acc := 0.0
-## The isle's shake: a dip and tilt toward the dragon (springs), a tremble.
-var _dip := 0.0
-var _dip_v := 0.0
-var _tilt := 0.0
-var _tilt_v := 0.0
+## The sag (round 5): metres the gripped rim stands under its rest (up is
+## less), and its speed. A share of it is the isle dropping whole, the rest
+## the isle tipping about its middle toward the dragon.
+const SAG_DROP := 0.3
+## The grip: on the slam the rim sags SLAM_SAG m, kicked down at SLAM_KICK
+## m/s, on a heavy soft spring (HOLD_W 1/s, HOLD_ZETA), so it drops, bobs
+## and hangs; each blast sinks it BLAST_SAG m more, to SAG_MOST.
+const SLAM_SAG := 4.5
+const SLAM_KICK := 7.0
+const BLAST_SAG := 0.8
+const SAG_MOST := 7.5
+const HOLD_W := 3.2
+const HOLD_ZETA := 0.3
+## The groan while held: a slow creak in the sag (m) and a lean either way.
+const GROAN := 0.28
+## The snap: the edge spring's release (scripts/diorama_flip.gd `_step_dip`:
+## DIP_RISE_W 26, DIP_RISE_ZETA 0.5, then RECOIL_W 40 once past rest), its
+## maths as is, its rates scaled to a 36 m isle sagging metres rather than
+## a plate dipping one (SNAP_SCALE): at 26 1/s the rim would come up at
+## some 70 m/s and fling the pilot 100 m high. The recoil runs at the
+## editor's ratio to the rise but softer than its critical damping, so the
+## isle wobbles a few times before it settles.
+const SNAP_SCALE := 0.4
+const DIP_RISE_W := 26.0
+const DIP_RISE_ZETA := 0.5
+const RECOIL_W := 40.0
+const RECOIL_ZETA := 0.32
+const REST := 0.01
+const REST_SPEED := 0.02
+const SUBSTEP := 1.0/240.0
+var sag := 0.0
+var sag_v := 0.0
+## "" (at rest), "held" or "snap"; the snap past rest yet; its time.
+var phase := ""
+var _crossed := false
+var _snap_t := 0.0
+var _hold_sag := 0.0
+var _rim_r := 16.0
+var _toward := Vector3.FORWARD
 var _tremble := 0.0
-var _hold_dip := 0.0
-var _hold_tilt := 0.0
 var _tilt_axis := Vector3.RIGHT
 var _shaking := false
+## The isle's move this frame (world, now from before) and its pose before.
+var moved := Transform3D.IDENTITY
+var before := Transform3D.IDENTITY
+## True for the frame the snap comes up through rest.
+var snapped := false
 ## The lanes: each {a, b, c, age, run} or empty.
 var _lanes: Array = []
 var _lane_next := 0
@@ -85,7 +126,7 @@ func _ready() -> void:
 	for i in range(LANES): _lanes.append({})
 
 func _exit_tree() -> void:
-	release_isle()
+	_settle_now()
 	if _published:
 		for i in range(LANES): _publish_lane(i,{})
 
@@ -197,30 +238,54 @@ void fragment() {
 
 ## The isle the dragon has hold of: its node (moved to shake it), its shape
 ## (where its land is), its home and radius.
-func hold_isle(node: Node3D, shape: RefCounted, home: Vector3, radius: float, toward: Vector3) -> void:
-	release_isle()
-	isle = node if node != null and is_instance_valid(node) else null
-	if isle != null: isle_rest = isle.transform
+## `toward` (flat, unit) the way out to the dragon, `rim` its grip.
+func hold_isle(node: Node3D, shape: RefCounted, home: Vector3, radius: float, toward: Vector3, rim := Vector3.INF) -> void:
+	var same := node != null and node == isle
+	if not same:
+		_settle_now()
+		isle = node if node != null and is_instance_valid(node) else null
+		if isle != null: isle_rest = isle.transform
+		sag = 0.0
+		sag_v = 0.0
 	isle_shape = shape
 	isle_home = home
 	isle_radius = radius
+	_toward = toward
 	_tilt_axis = Vector3(-toward.z,0.0,toward.x).normalized()
-	_hold_dip = 0.0
-	_hold_tilt = 0.0
+	_rim_r = maxf(Vector2(rim.x-home.x,rim.z-home.z).length(),6.0) if rim != Vector3.INF else radius
+	_hold_sag = 0.0
+	phase = "held"
 
-## Let go of the isle: it springs back up and settles home.
+## Let go of the isle: it snaps back up past rest, recoils, wobbles and
+## settles home.
 func release_isle() -> void:
-	_hold_dip = 0.0
-	_hold_tilt = 0.0
+	if phase != "held": return
+	phase = "snap"
+	_crossed = false
+	_snap_t = 0.0
+	_hold_sag = 0.0
 
-## The slam: the isle dips and tilts toward the dragon, dust bursts off the
-## rim, rubble breaks away and falls.
+## The isle home at once (a new hold, leaving the tree).
+func _settle_now() -> void:
+	if isle != null and is_instance_valid(isle) and _shaking: isle.transform = isle_rest
+	_shaking = false
+	phase = ""
+	sag = 0.0
+	sag_v = 0.0
+
+## A blast's weight: the rim sinks a little deeper.
+func deepen() -> void:
+	if phase != "held": return
+	_hold_sag = minf(_hold_sag+BLAST_SAG,SAG_MOST)
+	sag_v += 2.0
+	_tremble = maxf(_tremble,0.6)
+
+## The slam: the rim is dragged down and the isle tips toward the dragon,
+## dust bursts off the rim, rubble breaks away and falls.
 func slam(rim: Vector3, out: Vector3, tangent: Vector3) -> void:
-	_dip_v -= 2.6
-	_tilt_v += 0.05
+	sag_v += SLAM_KICK
 	_tremble = 1.0
-	_hold_dip = -0.6
-	_hold_tilt = 0.012
+	_hold_sag = SLAM_SAG
 	for i in range(26):
 		var along := _rng.randf_range(-14.0,14.0)
 		var at := rim+tangent*along+out*_rng.randf_range(-1.0,3.0)+Vector3.UP*_rng.randf_range(-3.0,1.0)
@@ -241,6 +306,30 @@ func crumble(rim: Vector3, out: Vector3, tangent: Vector3, spread: float) -> voi
 ## A blast's tremble through the isle.
 func shake(amount: float) -> void:
 	_tremble = maxf(_tremble,amount)
+
+## The snap's kick (the frame it comes up through rest): stone, dust and
+## leaves jump off the turf with the isle's way up, and more rubble off the
+## rim it had hold of.
+func jolt(rim: Vector3, out: Vector3, tangent: Vector3, up: float) -> void:
+	_tremble = 1.0
+	for i in range(40):
+		var at := _on_isle()
+		if at == Vector3.INF: continue
+		var near := clampf(1.0-(at-rim).length()/(_rim_r*2.0),0.2,1.0)
+		var v := Vector3.UP*up*near*_rng.randf_range(0.5,1.0)+Vector3(_rng.randf_range(-2,2),0.0,_rng.randf_range(-2,2))
+		if i%3 == 0:
+			var s := {"p":at,"v":v,"spin":Vector3(_rng.randf_range(-5,5),_rng.randf_range(-5,5),_rng.randf_range(-5,5)),"rot":Basis(),
+				"size":_rng.randf_range(0.4,1.2),"life":9.0,"age":0.0}
+			_r[_r_next] = s
+			var c := _rng.randf_range(0.24,0.38)
+			_rubble.multimesh.set_instance_color(_r_next,Color(c,c*0.95,c*1.05))
+			_r_next = (_r_next+1)%RUBBLE
+		else: _leaf(at,v*0.8)
+		if i%2 == 0: _puff(at,v*0.25,_rng.randf_range(2.5,5.0),_rng.randf_range(8.0,14.0),_rng.randf_range(2.0,3.4),Color(0.66,0.62,0.56))
+	for i in range(18):
+		crumble(rim,out,tangent,16.0)
+		var last := (_r_next-1+RUBBLE)%RUBBLE
+		_r[last].v = (_r[last].v as Vector3)+Vector3.UP*up*_rng.randf_range(0.4,0.9)
 
 # --- The breath -----------------------------------------------------------------------
 
@@ -316,8 +405,9 @@ func _on_isle() -> Vector3:
 		var p := Vector2(cos(a)*r,sin(a)*r)
 		if isle_shape != null:
 			if not isle_shape.on_land(p): continue
-			var base := isle.global_position if isle != null else isle_home
-			return base+Vector3(p.x,float(isle_shape.ground_at(p))+0.6,p.y)
+			var local := Vector3(p.x,float(isle_shape.ground_at(p))+0.6,p.y)
+			if isle != null: return isle.global_transform*local
+			return isle_home+local
 		return isle_home+Vector3(p.x,0.6,p.y)
 	return Vector3.INF
 
@@ -383,26 +473,64 @@ func advance(delta: float) -> void:
 			_publish_lane(i,{})
 		else: _publish_lane(i,lane)
 
-## The isle: an under-damped dip and tilt toward the dragon round where it
-## rests while held, and a tremble that dies away.
+## The isle's sag, one frame: held, a heavy soft spring toward the hold
+## (with its groan); let go, the edge spring's snap (scripts/diorama_flip.gd
+## `_step_dip`: semi-implicit, 240 Hz substeps, w²(goal - x) - 2ζw v), on
+## up past rest into the recoil, wobbling home. Then the node posed: the
+## drop and the tip about its middle, and a tremble that dies away.
 func _shake_isle(delta: float) -> void:
-	_dip_v += ((_hold_dip-_dip)*9.0-_dip_v*2.2)*delta
-	_dip += _dip_v*delta
-	_tilt_v += ((_hold_tilt-_tilt)*9.0-_tilt_v*2.4)*delta
-	_tilt += _tilt_v*delta
+	snapped = false
+	moved = Transform3D.IDENTITY
 	_tremble = maxf(_tremble-delta*0.8,0.0)
-	if isle == null or not is_instance_valid(isle): return
-	var still := absf(_dip) < 0.002 and absf(_dip_v) < 0.002 and absf(_tilt) < 0.0002 and absf(_tilt_v) < 0.0002 and _tremble <= 0.0
-	if still:
-		if _shaking:
-			isle.transform = isle_rest
-			_shaking = false
+	if phase == "": return
+	var goal := 0.0
+	if phase == "held": goal = _hold_sag+GROAN*(sin(_clock*1.1)*0.7+sin(_clock*2.7+0.4)*0.3)
+	else: _snap_t += delta
+	var remaining := delta
+	while remaining > 0.0:
+		var h := minf(remaining,SUBSTEP)
+		remaining -= h
+		var w := HOLD_W
+		var zeta := HOLD_ZETA
+		if phase == "snap":
+			w = (RECOIL_W if _crossed else DIP_RISE_W)*SNAP_SCALE
+			zeta = RECOIL_ZETA if _crossed else DIP_RISE_ZETA
+		sag_v += (w*w*(goal-sag)-2.0*zeta*w*sag_v)*h
+		sag += sag_v*h
+		if phase == "snap" and not _crossed and sag <= 0.0:
+			_crossed = true
+			snapped = true
+	if phase == "snap" and _crossed and absf(sag) < REST and absf(sag_v) < REST_SPEED: phase = "done"
+	if isle == null or not is_instance_valid(isle):
+		if phase == "done": phase = ""
+		return
+	before = isle.transform
+	if phase == "done":
+		phase = ""
+		sag = 0.0
+		sag_v = 0.0
+		isle.transform = isle_rest
+		_shaking = false
+		moved = isle.transform*before.affine_inverse()
 		return
 	_shaking = true
 	var t := _tremble*_tremble
-	var jitter := Vector3(sin(_clock*41.0),sin(_clock*37.0+1.3)*0.6,sin(_clock*47.0+2.1))*0.22*t
-	var basis := Basis(_tilt_axis,_tilt+0.004*t*sin(_clock*33.0))*isle_rest.basis
-	isle.transform = Transform3D(basis,isle_rest.origin+Vector3.UP*_dip+jitter)
+	var jitter := Vector3(sin(_clock*41.0),sin(_clock*37.0+1.3)*0.6,sin(_clock*47.0+2.1))*0.08*t
+	var creak := 0.004*sin(_clock*0.8)*(1.0 if phase == "held" else 0.0)
+	var tilt := -sag*(1.0-SAG_DROP)/_rim_r
+	var basis := Basis(_tilt_axis,tilt+0.003*t*sin(_clock*33.0))*Basis(_toward,creak)*isle_rest.basis
+	isle.transform = Transform3D(basis,isle_rest.origin+Vector3.DOWN*sag*SAG_DROP+jitter)
+	moved = isle.transform*before.affine_inverse()
+
+## Whether `p` (world) stands on the held isle's ground as it stood before
+## this frame's move (on its land, within `above` m over its turf).
+func stands_on(p: Vector3, above := 0.9) -> bool:
+	if isle == null or not is_instance_valid(isle) or isle_shape == null: return false
+	var local := before.affine_inverse()*p
+	var flat := Vector2(local.x,local.z)
+	if not isle_shape.on_land(flat): return false
+	var over := local.y-float(isle_shape.ground_at(flat))
+	return over > -0.8 and over < above
 
 func _step_streaks(delta: float, eye: Vector3) -> void:
 	var mm := _streaks.multimesh

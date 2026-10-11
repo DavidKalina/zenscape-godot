@@ -91,6 +91,8 @@ extends "res://studies/kit_isle.gd"
 ## full-bodied dragon (scripts/sky_dragon.gd) rises out of the cloud sea and
 ## roams the archipelago, now and then low over the isle; V puts the camera
 ## on it. --dragon-look=a|b|c picks its dress (c by default); its other flags are its own.
+## --dragon-ride (round 5) starts the pilot on foot on the isle it grips, to
+## ride the sag and be flung by the snap; G makes it let go.
 ## Round 1's rim grip (scripts/rim_dragon.gd) is parked behind --dragon-rim:
 ## it swoops in, grips the east rim and blows gales across the isle; take
 ## the treasure off its tongue and it lets go (--dragon-perched, ...).
@@ -172,6 +174,9 @@ var circle: Node3D
 ## The dragon, with --dragon (flying) or --dragon-rim (round 1's rim grip).
 var dragon_on := false
 var dragon_rim := false
+## --dragon-ride (round 5): on foot on the isle it grips, to feel the sag,
+## the snap and the launch.
+var dragon_ride := false
 var dragon: Node3D = null
 
 func _ready() -> void:
@@ -182,6 +187,9 @@ func _ready() -> void:
 		elif arg == "--autopilot": autopilot = true
 		elif arg == "--capture-high": _capture_high = true
 		elif arg == "--dragon": dragon_on = true
+		elif arg == "--dragon-ride":
+			dragon_on = true
+			dragon_ride = true
 		elif arg == "--dragon-rim": dragon_rim = true
 		elif arg == "--near-ring":
 			_near_ring = true
@@ -479,7 +487,7 @@ func _add_life() -> void:
 func _foot_text() -> String:
 	var text := super._foot_text()
 	if dragon != null and not dragon_rim:
-		text += "\nV watches the dragon (chase, orbit, from here, off)"
+		text += "\nV watches the dragon (chase, orbit, from here, off)  ·  G: it lets go of the rim"
 	if dragon != null and dragon_rim and not dragon.taken:
 		text += "\nThe dragon on the east rim holds a treasure in its mouth: get to it between gusts; when it breathes in, get behind stone"
 	return text
@@ -523,7 +531,13 @@ func _build_sky_dragon() -> void:
 	dragon.walker = motor
 	dragon.slide = ground.slide_callable()
 	dragon.yielded.connect(_dragon_yielded)
+	# --dragon-ride: the isles stand at once, so it can grip one with the
+	# pilot already on it.
+	if dragon_ride and sky != null: sky.flush()
 	dragon.setup(camera,preload("res://scripts/launch_args.gd").user_args(),IsleChain.SEA_TOP,IsleSky.MIDDLE,Art.TOP,list)
+	if dragon_ride and _place == Vector4.INF:
+		_place = dragon.ride_spot()
+		if _place != Vector4.INF: print("aqueduct isle: --dragon-ride starts the pilot at (%.1f, %.1f, %.1f) on %s" % [_place.x,_place.y,_place.z,str(dragon.grip.target.name)])
 	if _switch_hint != null and not flying: _switch_hint.text = _foot_text()
 
 ## The far isle's songbirds burst out of its crown and its gulls stir, as

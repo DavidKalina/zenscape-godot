@@ -113,6 +113,21 @@ const PUSH := 5.0
 const KNOCK_OUT := Vector2(12.0,6.0)
 const KNOCK_UP := 1.6
 const TAKE_R := 3.2
+## The spring launch (round 5): standing on the isle as it snaps back, the
+## pilot leaves it the moment it comes up faster than he can fall (it
+## slows harder than gravity), at its speed where he stands (LAUNCH_GAIN,
+## at most LAUNCH_MOST m/s up), nudged in over the isle (LAUNCH_IN of that,
+## so he comes down on it).
+const LAUNCH_GAIN := 1.0
+const LAUNCH_MOST := 32.0
+const LAUNCH_IN := 0.1
+## --dragon-ride: the first swoop in starts RIDE_OUT m out and RIDE_UP m
+## up; it holds on RIDE_HOLD s (one blast) and pants RIDE_PANT s; let go,
+## it swoops back for another grab.
+const RIDE_OUT := 85.0
+const RIDE_UP := 18.0
+const RIDE_HOLD := 6.0
+const RIDE_PANT := Vector2(2.5,3.5)
 const DragonGale = preload("res://scripts/dragon_gale.gd")
 
 var camera: Camera3D
@@ -284,6 +299,11 @@ var _jaw_goal := -1.0
 var _blend_from := {}
 var _blend_t := 0.0
 var _blend_len := 0.0
+## --dragon-ride (round 5): the pilot on foot on the target isle, the
+## dragon swooping in to grip it over and over.
+var ride := false
+var _ride_vy := 0.0
+var launched := 0
 
 func _init() -> void:
 	name = "SkyDragon"
@@ -304,6 +324,7 @@ func setup(cam: Camera3D, args: PackedStringArray, sea: float, middle: Vector3, 
 		elif arg == "--dragon-log": _log = true
 		elif arg == "--dragon-pass": _pass_now = true
 		elif arg == "--dragon-attack": _attack_now = true
+		elif arg == "--dragon-ride": ride = true
 		elif arg.begins_with("--dragon-attack-every="): _attack_every = float(arg.get_slice("=",1))
 		elif arg.begins_with("--dragon-target="):
 			var want := arg.get_slice("=",1)
@@ -328,6 +349,13 @@ func setup(cam: Camera3D, args: PackedStringArray, sea: float, middle: Vector3, 
 	gale.sea_y = sea_y
 	add_child(gale)
 	_start()
+	if ride and not targets.is_empty():
+		# The isle is small for its neck: its chin sweeps most of it, and
+		# the gem would be taken by standing still. Left out for the ride.
+		if not args.has("--dragon-ride-gem"):
+			taken = true
+			treasure.visible = false
+		_ride_in()
 	print("sky dragon: look %s (%s), rises in %.1f s" % [look,LOOK_NAMES[look],delay])
 
 static func args_have(args: PackedStringArray, prefix: String) -> bool:
@@ -510,6 +538,45 @@ func _start() -> void:
 		flap_w = 0.0
 		_bout = false
 
+## --dragon-ride: it comes in close and low on its grab at once.
+func _ride_in() -> void:
+	_attack_in = INF
+	route.clear()
+	_leg_kinds.clear()
+	grip = _plan_grip(targets[_target_i%targets.size()])
+	var out: Vector3 = grip.out
+	pos = (grip.root as Vector3)+out*RIDE_OUT+(grip.tangent as Vector3)*float(grip.side)*25.0+Vector3.UP*RIDE_UP
+	var to := (grip.root as Vector3)-pos
+	yaw = atan2(-to.x,-to.z)
+	gamma = -0.12
+	speed = 30.0
+	flap_w = 0.0
+	_bout = false
+	state = "roaming"
+	model.visible = true
+	_begin_grab()
+
+## Where the pilot starts on --dragon-ride: on the target isle, a little
+## more than halfway out to the gripped rim and off its blast's middle
+## line, facing the dragon (x, y, z and the turn --place takes: degrees
+## from facing -z, clockwise); INF without a grip.
+func ride_spot() -> Vector4:
+	if grip.is_empty(): return Vector4.INF
+	var t: Dictionary = grip.target
+	var home_at: Vector3 = t.home
+	var rim: Vector3 = grip.rim
+	var out: Vector3 = grip.out
+	# Half way out, a third of the way round from the neck, clear of its
+	# chin while it pants.
+	var spot := home_at+(rim-home_at).rotated(Vector3.UP,-0.75*float(grip.side))*0.6
+	var rec := _record(t)
+	var shape: RefCounted = rec.get("shape") as RefCounted if rec.has("shape") else null
+	var y := rim.y+1.0
+	if shape != null:
+		var flat := Vector2(spot.x-home_at.x,spot.z-home_at.z)
+		if shape.on_land(flat): y = home_at.y+float(shape.ground_at(flat))+0.2
+	return Vector4(spot.x,y,spot.z,rad_to_deg(atan2(out.x,-out.z)))
+
 func _isle_pos(i: int) -> Vector3:
 	return isles[i][0]
 
@@ -644,10 +711,15 @@ func _step(delta: float) -> void:
 	_blend(delta)
 	_place_treasure(delta)
 	gale.advance(delta)
+	_ride_isle(delta)
 	if _log:
 		_log_t += delta
 		if _log_t >= (0.5 if leg_kind == "low pass" else 2.0):
 			_log_t = 0.0
+			if walker != null and on_foot:
+				var f: Vector3 = walker.get("feet")
+				var gem := treasure.global_position if treasure != null else Vector3.ZERO
+				print("sky dragon: pilot at (%.1f, %.1f, %.1f) grounded %s v.y %.1f, the gem at (%.1f, %.1f, %.1f), the isle's rim sags %.1f m" % [f.x,f.y,f.z,str(walker.get("grounded")),(walker.get("velocity") as Vector3).y,gem.x,gem.y,gem.z,gale.sag])
 			if state in ["clinging","grabbing","leaving"]:
 				print("sky dragon: t %.1f %s %s, %.0f s to let go, at (%.0f, %.0f, %.0f), %.0f m from the isle's middle" % [_clock,state,breath,_cling_left,pos.x,pos.y,pos.z,Vector2(pos.x-home.x,pos.z-home.z).length()])
 			else: print("sky dragon: t %.0f %s %s leg %s at (%.0f, %.0f, %.0f) %.1f m/s gamma %.2f roll %.2f flap %.2f, %.0f m from the isle's middle" % [_clock,state,mode,leg_kind,pos.x,pos.y,pos.z,speed,gamma,roll,flap_w,Vector2(pos.x-home.x,pos.z-home.z).length()])
@@ -1201,12 +1273,12 @@ func _slam() -> void:
 	_flare = 0.0
 	var t: Dictionary = grip.target
 	var rec := _record(t)
-	gale.hold_isle(rec.get("node") as Node3D if rec.has("node") else null,rec.get("shape") as RefCounted if rec.has("shape") else null,t.home,float(t.radius),grip.out)
+	gale.hold_isle(rec.get("node") as Node3D if rec.has("node") else null,rec.get("shape") as RefCounted if rec.has("shape") else null,t.home,float(t.radius),grip.out,grip.rim)
 	gale.slam(grip.rim,grip.out,grip.tangent)
 	if flush_birds.is_valid(): flush_birds.call(t.home)
 	_c_settle_v = -7.0
 	_cling_t = 0.0
-	_cling_left = _rng.randf_range(CLING_HOLD.x,CLING_HOLD.y)
+	_cling_left = RIDE_HOLD if ride else _rng.randf_range(CLING_HOLD.x,CLING_HOLD.y)
 	_set_breath("settle",2.6)
 	_c_look_next = 0.0
 	_roar_t = -1.0
@@ -1217,7 +1289,9 @@ func _set_breath(to: String, length: float) -> void:
 	_breath_t = 0.0
 	_breath_len = length
 	_knocked = false
-	if to == "blow": _sweep_from = SWEEP if _rng.randf() < 0.5 else -SWEEP
+	if to == "blow":
+		_sweep_from = SWEEP if _rng.randf() < 0.5 else -SWEEP
+		gale.deepen()
 
 ## Holding on: the breath's beats, its pose, the gale and the pilot.
 func _clinging(delta: float) -> void:
@@ -1226,7 +1300,7 @@ func _clinging(delta: float) -> void:
 	_breath_t += delta
 	if _breath_t >= _breath_len:
 		match breath:
-			"settle": _set_breath("pant",_rng.randf_range(PANT.x,PANT.y))
+			"settle": _set_breath("pant",_pant_length())
 			"pant":
 				if _cling_left <= 0.0:
 					_let_go()
@@ -1234,7 +1308,7 @@ func _clinging(delta: float) -> void:
 				_set_breath("inhale",INHALE)
 			"inhale": _set_breath("blow",BLOW)
 			"blow": _set_breath("recover",RECOVER)
-			"recover": _set_breath("pant",_rng.randf_range(PANT.x,PANT.y))
+			"recover": _set_breath("pant",_pant_length())
 	_cling_pose(delta)
 	var mouth := mouth_at()
 	var way := blast_way()
@@ -1248,6 +1322,10 @@ func _clinging(delta: float) -> void:
 			_blow_on_pilot(delta,mouth,way,env)
 	if breath == "settle" and _breath_t < 1.6 and _rng.randf() < delta*8.0: gale.crumble(grip.rim,grip.out,grip.tangent,12.0)
 	_touch_treasure()
+
+func _pant_length() -> float:
+	var span := RIDE_PANT if ride else PANT
+	return _rng.randf_range(span.x,span.y)
 
 ## The blow's strength through its beat: quick in, held, eased out.
 func blow_envelope() -> float:
@@ -1422,6 +1500,10 @@ func _leaving(delta: float) -> void:
 		_free = 1.0
 		route.clear()
 		_leg_kinds.clear()
+		if ride and not grip.is_empty():
+			# --dragon-ride: round again and back onto the rim.
+			_begin_grab()
+			return
 		_add_circuit()
 		_target_i = (_target_i+1)%maxi(targets.size(),1)
 		_attack_in = _attack_every*_rng.randf_range(0.85,1.2)
@@ -1472,8 +1554,40 @@ func _blow_on_pilot(delta: float, mouth: Vector3, way: Vector3, env: float) -> v
 	if slide.is_valid() and bool(walker.get("grounded")):
 		var push := away*PUSH*env*(1.0-dist/REACH*0.5)*delta
 		var feet: Vector3 = walker.get("feet")
-		var moved: Vector3 = slide.call(feet,Vector3(push.x,0.0,push.y))
+		var moved: Vector3 = slide.call(feet,push)
 		walker.set("feet",Vector3(moved.x,feet.y,moved.z))
+
+## The isle under the pilot (round 5): standing on it while it sags, holds
+## and snaps, he is carried with it (PilotMotor.carry, as a moving body
+## carries him); as it snaps back he is flung off it into a tumble the
+## moment it slows harder than he falls, at its speed where he stands, so
+## hardest by the gripped rim. And the snap's jolt: stone, dust and leaves
+## jump loose.
+func _ride_isle(delta: float) -> void:
+	if gale.snapped and not grip.is_empty(): gale.jolt(_isle_xf()*(grip.rim as Vector3),grip.out,grip.tangent,-gale.sag_v)
+	if walker == null or not on_foot or gale.isle == null or delta <= 0.0: return
+	if gale.moved.is_equal_approx(Transform3D.IDENTITY):
+		_ride_vy = 0.0
+		return
+	var feet: Vector3 = walker.get("feet")
+	var vel: Vector3 = walker.get("velocity")
+	if not gale.stands_on(feet) or (not bool(walker.get("grounded")) and vel.y > 0.5):
+		_ride_vy = 0.0
+		return
+	var moved_by: Transform3D = gale.moved
+	var now := moved_by*feet
+	walker.carry(moved_by,0.0)
+	var v := (now-feet)/delta
+	var accel := (v.y-_ride_vy)/delta
+	_ride_vy = v.y
+	if gale.phase != "snap" or v.y < 3.0 or accel > -float(walker.get("gravity")): return
+	var up := minf(v.y*LAUNCH_GAIN,LAUNCH_MOST)
+	var inward := -(grip.out as Vector3)*up*LAUNCH_IN if not grip.is_empty() else Vector3.ZERO
+	walker.knock(Vector3(v.x+inward.x,up,v.z+inward.z))
+	_ride_vy = 0.0
+	launched += 1
+	var rim_at: Vector3 = grip.rim if not grip.is_empty() else feet
+	print("sky dragon: the isle springs back and flings the pilot up at %.1f m/s, %.1f m from the rim it held" % [up,Vector2(feet.x-rim_at.x,feet.z-rim_at.z).length()])
 
 ## The treasure taken from its tongue: a roar, and it lets go.
 func _touch_treasure() -> void:
@@ -1490,6 +1604,11 @@ func _touch_treasure() -> void:
 # --- The watch camera ---------------------------------------------------------------
 
 func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo and (event as InputEventKey).keycode == KEY_G and state == "clinging":
+		_say("It lets go")
+		_let_go()
+		get_viewport().set_input_as_handled()
+		return
 	if event is InputEventKey and event.pressed and not event.echo and (event as InputEventKey).keycode == KEY_V:
 		var order := ["","chase","orbit","look"]
 		watch = order[(order.find(watch)+1)%order.size()]
