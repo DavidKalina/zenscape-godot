@@ -108,7 +108,7 @@ func check(ok: bool, label: String) -> void:
 
 ## In play the ranges and the ring stand; the other wonders don't.
 func _defaults() -> void:
-	check(SkyHomes.peaks and not SkyHomes.stone and not SkyHomes.isles and SkyWorld.ring and SkyWorld.ring_on(),"The ranges and the ring stand by default; the other stone wonders and the isles don't")
+	check(SkyHomes.peaks and not SkyHomes.stone and not SkyHomes.isles and SkyHomes.ring and SkyWorld.ring_on(),"The ranges and the ring stand by default; the other stone wonders and the isles don't")
 	check(SkyWorld.seed == SkyWorld.LEGACY_SEED,"A world starts on the legacy seed")
 	check(SkyWorld.SLOTS.slice(1) == SkyIslands.OFFSETS,"The layout reads the fixed islands where they stand (SkyIslands OFFSETS)")
 	# The hash every kind used before, by hand, under the legacy seed.

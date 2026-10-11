@@ -193,7 +193,7 @@ static func _wild_tree(data: NativeTerrainData, seed_value: int) -> void:
 ## Form the plain as one undoable operation that also restores the previous
 ## scene look, as `form_inland` does for generated worlds.
 ## `size` and `outline` as `shape` takes them.
-static func form(editor: NativeChunkEditor, world_value: Dictionary, live := true, origin := Vector2.ZERO, islanded := true, size := -1.0, outline := PackedByteArray()) -> void:
+static func form(editor: Node, world_value: Dictionary, live := true, origin := Vector2.ZERO, islanded := true, size := -1.0, outline := PackedByteArray()) -> void:
 	if editor.forming: return
 	editor.finish_stroke()
 	editor.selected_object_id = -1

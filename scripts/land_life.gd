@@ -120,7 +120,7 @@ const FORCE_GAP := 8.0
 var _force_kinds := _forced_kinds()
 var _force_next := {}
 var scene: Node3D
-var editor: NativeChunkEditor
+var editor: Node
 var data: NativeTerrainData
 ## The last complete survey, and one still being read.
 var survey: RefCounted
