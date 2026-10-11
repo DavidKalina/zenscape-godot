@@ -7,8 +7,9 @@ extends Node
 ## orbiting it slowly as the old title orbited its showcase world. The card:
 ## Begin (on foot by the parked plane), and along its foot the quiet Scenes
 ## (the scene picker, scripts/scene_picker.gd, where the old game waits as
-## "Builder (old game)") and Quit. Begin fades the card, gives the pilot
-## back and eases the camera from the orbit down behind him.
+## "Builder (old game)"), Settings (scripts/kit_isle/settings_menu.gd, the
+## same sheet the pause opens) and Quit. Begin fades the card, gives the
+## pilot back and eases the camera from the orbit down behind him.
 ##
 ## It sits as the scene's first child, so its `_process` runs after the
 ## scene's each frame: the orbit and the ease have the camera last. While
@@ -28,6 +29,7 @@ signal begun
 const Title = preload("res://scripts/title_screen.gd")
 const Loading = preload("res://scripts/title_loading.gd")
 const Picker = preload("res://scripts/scene_picker.gd")
+const SettingsMenu = preload("res://scripts/kit_isle/settings_menu.gd")
 const Catalog = preload("res://scripts/scene_catalog.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 ## Flags that start straight in, as `--no-title` does.
@@ -56,8 +58,10 @@ var veil: CanvasLayer
 var layer: CanvasLayer
 var title: Control
 var picker: Control
+var settings: Control
 var begin_button: Button
 var scenes_button: Button
+var settings_button: Button
 var quit_button: Button
 ## The orbit's middle (world), its reach (m) and its yaw now.
 var orbit_middle := Vector3.ZERO
@@ -77,6 +81,19 @@ static func title_for(scene: Node) -> bool:
 		for prefix: String in STRAIGHT_IN_PREFIX:
 			if arg.begins_with(prefix): return false
 	return true
+
+## The flags for coming back to the title (the pause's Back to the title):
+## the command line's, less the ones that skip it (scripts/launch_args.gd
+## `title_args`, and STRAIGHT_IN, STRAIGHT_IN_PREFIX).
+static func title_args() -> PackedStringArray:
+	var out := PackedStringArray()
+	for arg: String in LaunchArgs.title_args():
+		if arg in STRAIGHT_IN: continue
+		var skip := false
+		for prefix: String in STRAIGHT_IN_PREFIX:
+			if arg.begins_with(prefix): skip = true
+		if not skip: out.append(arg)
+	return out
 
 ## Whether a start puts the veil up: the title's, or a played start straight in.
 static func veil_for(scene: Node) -> bool:
@@ -129,6 +146,7 @@ func _build_title() -> void:
 	layer.add_child(title)
 	begin_button = title.add_action("Begin","On foot by your plane",begin)
 	if Catalog.enabled(): scenes_button = title.add_action("Scenes","",open_scenes,true)
+	settings_button = title.add_action("Settings","",open_settings,true)
 	quit_button = title.add_action("Quit","",func() -> void: get_tree().quit(),true)
 
 ## The orbit round the isle's art: its middle and reach from what it draws.
@@ -176,6 +194,7 @@ func _process(delta: float) -> void:
 func begin() -> void:
 	if not titled: return
 	if picker != null and picker.visible: return
+	if settings != null and settings.visible: return
 	titled = false
 	isle.scripted = false
 	for child in _hidden:
@@ -203,6 +222,21 @@ func open_scenes() -> void:
 		picker.picked.connect(func(entry: Dictionary) -> void: Catalog.open(get_tree(),entry))
 	title.modulate.a = 0.0
 	picker.present()
+
+## The settings sheet over the card, which fades under it; Back brings the
+## card again with Settings in reach.
+func open_settings() -> void:
+	if not titled: return
+	if settings == null:
+		settings = SettingsMenu.new()
+		settings.name = "Settings"
+		settings.isle = isle
+		layer.add_child(settings)
+		settings.closed.connect(func() -> void:
+			create_tween().tween_property(title,"modulate:a",1.0,0.25)
+			if settings_button.is_visible_in_tree(): settings_button.grab_focus())
+	title.modulate.a = 0.0
+	settings.present()
 
 func _close_scenes() -> void:
 	create_tween().tween_property(title,"modulate:a",1.0,0.25)

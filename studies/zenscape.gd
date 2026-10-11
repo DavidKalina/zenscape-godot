@@ -9,6 +9,16 @@ extends "res://studies/aqueduct_isle.gd"
 ## (scripts/scene_catalog.gd); Quit quits. docs/design/consolidation-audit.md,
 ## round 1.
 ##
+## In the game, Esc or the pad's Menu pauses (scripts/kit_isle/pause_host.gd:
+## Resume, Back to the plane, Settings, Scenes, Back to the title, Quit);
+## the settings (scripts/kit_isle/game_settings.gd) are applied as the isle
+## comes up. R on foot (or under the canopy) is Back to the plane: beside
+## the parked plane, where a hop out of it lands; nothing summons the plane
+## (docs/design/manual-landing.md). The study's developer keys (F1-F8, the
+## station keys, L, B, R in the plane) and capture flags work only in
+## editor and debug runs (scripts/kit_isle/dev_keys.gd); docs/design/
+## consolidation-audit.md, round 2.
+##
 ## `--no-title` (and the isle's straight-in starts: --fly, --near-ring,
 ## --place=, --capture=) skips the title; a played start still has the veil.
 ## On foot the pilot starts by the plane, not at the rubble slope's foot,
@@ -17,17 +27,28 @@ extends "res://studies/aqueduct_isle.gd"
 ##   godot --path .                                the game, as a player opens it
 ##   godot --path . -- --no-title [isle flags]     straight in
 const FrontDoor = preload("res://scripts/kit_isle/front_door.gd")
+const PauseHost = preload("res://scripts/kit_isle/pause_host.gd")
+const DevKeys = preload("res://scripts/kit_isle/dev_keys.gd")
+const GameSettings = preload("res://scripts/kit_isle/game_settings.gd")
 
 var front_door: Node
+var pause: Node
 
 func _ready() -> void:
+	# A release build never starts a capture (before the isle reads its flags).
+	DevKeys.strip_captures()
 	# Stood by the plane before the front door frames the title on him.
 	isle_ready.connect(_stand_by_plane,CONNECT_ONE_SHOT)
+	isle_ready.connect(func() -> void: GameSettings.apply_start(self),CONNECT_ONE_SHOT)
 	front_door = FrontDoor.new()
 	front_door.name = "FrontDoor"
 	add_child(front_door)
 	front_door.open(self)
 	if front_door.title_wanted: scripted = true
+	pause = PauseHost.new()
+	pause.name = "Pause"
+	add_child(pause)
+	pause.setup(self)
 	if front_door.veil != null:
 		# Two frames for the veil to draw before the isle's build holds the
 		# main thread (as the old title's, studies/diorama.gd); nothing of the
@@ -51,7 +72,23 @@ func _stand_by_plane() -> void:
 	place(spot,to.normalized() if to.length() > 0.01 else start_face)
 	_last_stood = spot
 
+## Back on foot beside the parked plane, facing it, as a hop out of it
+## lands (kit_isle.gd `_return_to_plane`; out of the canopy too): R, and
+## the pause's Back to the plane. Not in the plane, nor while the lodestone
+## is held up to look at.
+func back_to_plane() -> void:
+	if flying or not walk_ready or lode_state == "inspecting": return
+	if not _replay.is_empty(): _end_replay()
+	_return_to_plane()
+	reset_camera()
+
 ## Nothing reaches the isle while the title is up: its card has the keys.
+## The study's developer keys only where they're on (DevKeys); R on foot is
+## Back to the plane.
 func _unhandled_input(event: InputEvent) -> void:
 	if front_door != null and front_door.titled: return
+	if DevKeys.is_dev_event(event,flying) and not DevKeys.enabled(): return
+	if not flying and event is InputEventKey and event.pressed and not event.echo and (event as InputEventKey).keycode == KEY_R:
+		if _name_panel == null or not _name_panel.visible: back_to_plane()
+		return
 	super._unhandled_input(event)

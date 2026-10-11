@@ -5,8 +5,8 @@ extends SceneTree
 ##   - the project's main scene is the front door, and the way back from a
 ##     picked scene (scripts/scene_return.gd) goes to it;
 ##   - the veil is up while the isle builds, and gone once it's up;
-##   - the original title over the isle: the card's Begin in reach, Scenes
-##     and Quit quiet along its foot, the isle's own HUD hidden, the pilot
+##   - the original title over the isle: the card's Begin in reach, Scenes,
+##     Settings and Quit quiet along its foot, the isle's own HUD hidden, the pilot
 ##     held, the camera orbiting the isle from above;
 ##   - nothing reaches the isle under the card (R, a click);
 ##   - Scenes opens the picker over the faded card, its Builder (old game)
@@ -76,8 +76,8 @@ func run() -> void:
 	var title: Control = door.title
 	check(title != null and title.is_visible_in_tree(),"The title shows")
 	check(door.begin_button.has_focus() and not door.begin_button.get("quiet"),"Begin in reach on the card")
-	check(door.scenes_button != null and door.scenes_button.get("quiet") and door.quit_button.get("quiet"),"Scenes and Quit quiet along its foot")
-	check(title.buttons.size() == 3,"Nothing else on the card")
+	check(door.scenes_button != null and door.scenes_button.get("quiet") and door.settings_button.get("quiet") and door.quit_button.get("quiet"),"Scenes, Settings and Quit quiet along its foot")
+	check(title.buttons.size() == 4,"Nothing else on the card")
 	var shown := 0
 	for child in game.get_children():
 		if child is CanvasLayer and child.visible: shown += 1
