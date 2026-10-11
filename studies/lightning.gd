@@ -21,6 +21,9 @@ var volume_gain := 1.0
 ## The height (m) the plate's bolts fall from, and the flash's ceiling.
 const PLATE_TOP := 22.0
 const PLATE_CEILING := 20.0
+## How far (s) a pulse's stored time may run past the clock and still be
+## lit: past a 32-bit float's step at a day of play.
+const PULSE_SLACK := 0.01
 var clock := 0.0
 var next_strike := 6.0
 var flash := 0.0
@@ -74,13 +77,14 @@ func strike(at: Vector2, camera_position: Vector3) -> void:
 	_update_flash()
 
 ## A bolt from `top` (global; a cloud's underside) down to `foot` (world
-## y), sized to its drop as the plate's is to its 20 m, the flash and the
-## light in the cloud at its top. No downburst: it falls where no grass is.
+## y), sized to its drop as the plate's is to its 20 m; the flash where it
+## meets what lies under it (a cloud sea lights there), the light halfway.
+## No downburst: it falls where no grass is.
 func strike_through(top: Vector3, foot: float, camera_position: Vector3) -> void:
 	_clear_bolts()
 	_bolt(Vector2(top.x, top.z), top.y, foot, maxf(top.y - foot, 1.0) / PLATE_CEILING)
-	flash_position = top
-	_light.position = top
+	flash_position = Vector3(top.x, foot, top.z)
+	_light.position = Vector3(top.x, (top.y + foot) * 0.5, top.z)
 	_pulse(camera_position, false)
 	struck.emit(Vector3(top.x, foot, top.z))
 	_update_flash()
@@ -154,8 +158,12 @@ func advance(dt: float, paused: bool, storm: float, wind: float, direction: Vect
 func _update_flash() -> void:
 	flash = 0.0
 	for pulse in _pulses:
-		if clock >= pulse.x:
-			flash += pulse.y * exp(-(clock - pulse.x) * decay)
+		# A pulse's time is a Vector2's (32 bits): minutes into a session it
+		# can sit a hair past the clock that struck it, so the strike's own
+		# frame would show no flash.
+		var since: float = clock - pulse.x
+		if since >= -PULSE_SLACK:
+			flash += pulse.y * exp(-maxf(since, 0.0) * decay)
 	if not _pulses.is_empty() and clock - _pulses[0].x > 1.0 + 6.0 / decay:
 		_pulses.clear()
 	_core.set_shader_parameter("opacity", minf(1.0, flash * 2.2))
