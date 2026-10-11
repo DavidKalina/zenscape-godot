@@ -148,7 +148,7 @@ func _build_title() -> void:
 	begin_button = title.add_action("Begin","On foot by your plane",begin)
 	if Catalog.enabled(): scenes_button = title.add_action("Scenes","",open_scenes,true)
 	settings_button = title.add_action("Settings","",open_settings,true)
-	quit_button = title.add_action("Quit","",func() -> void: get_tree().quit(),true)
+	quit_button = title.add_action("Quit","",func() -> void: preload("res://scripts/kit_isle/kit_audio.gd").quit(get_tree()),true)
 
 ## The orbit round the isle's art: its middle and reach from what it draws.
 func _frame_orbit() -> void:

@@ -50,6 +50,28 @@ func run() -> void:
 			var kind: String = audio._read_surface(Vector3(p.x,float(turf),p.y))
 			found[kind] = int(found.get(kind,0))+1
 	check(found.has("grass") and found.has("earth"),"Over the isle's turf the feet find grass and worn earth (%s)" % found)
+	# Round 2: the living layer (scripts/kit_isle/kit_audio_life.gd).
+	var life = audio.life
+	var dawn: Vector2 = life.activity(0.3)
+	check(dawn.x > life.activity(0.5).x and life.activity(0.95) == Vector2.ZERO and life.activity(0.72).y > life.activity(0.5).y,"Birds sing most at dawn, less at midday, a dusk chorus, none at night")
+	var listener: Vector3 = study.camera.global_position
+	study._celestial.phase = 0.3
+	var songs := int(audio.played.get("song",0))
+	for i in range(600): life.step(DT,listener,1.0,1.0,0.0)
+	check(int(audio.played.get("song",0))-songs >= 3 and life.chorus.goal > 0.0,"At dawn the songs come often (%d in 10 s) over the chorus (%.3f)" % [int(audio.played.get("song",0))-songs,life.chorus.goal])
+	study._celestial.phase = 0.95
+	for i in range(300): life.step(DT,listener,0.0,1.0,0.0)
+	check(life.chorus.goal == 0.0 and int(audio.played.get("cricket",0)) > 0,"At night the chorus is gone and the crickets chirp (%d)" % int(audio.played.get("cricket",0)))
+	study._celestial.phase = 0.4
+	check(life.falls.size() > 0,"The falls are found (%d)" % life.falls.size())
+	if life.falls.size() > 0:
+		var fall: MeshInstance3D = life.falls[0][0]
+		life._falls((fall.global_transform*fall.custom_aabb).get_center()+Vector3(4,0,0),1.0)
+		var loud := 0.0
+		for bed in life._roars+life._spills: loud = maxf(loud,bed.goal)
+		check(loud > 0.0,"Beside a fall it roars (%.3f)" % loud)
+	audio.body({"swing":false})
+	check(audio.played.has("whip"),"Let go, the rope whips")
 	study.board()
 	for i in range(60):
 		study.fly_step(DT,{})
@@ -79,4 +101,5 @@ func run() -> void:
 	for i in range(40): audio._process(0.25)
 	check(bool(study.parked) and int(audio.played.get("tick",0)) > 0,"Parked after a flight, the engine ticks as it cools (%d)" % int(audio.played.get("tick",0)))
 	print("PASS: kit audio" if failures == 0 else "FAIL: kit audio (%d)" % failures)
-	quit(1 if failures > 0 else 0)
+	# Quit as the game does (KitAudio.quit), so no playback leaks at exit.
+	KitAudio.quit(self,1 if failures > 0 else 0)

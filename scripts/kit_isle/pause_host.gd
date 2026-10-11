@@ -65,7 +65,7 @@ func setup(scene: Node3D) -> void:
 	menu.settings_requested.connect(open_settings)
 	menu.scenes_requested.connect(open_scenes)
 	menu.title_requested.connect(back_to_title)
-	menu.quit_requested.connect(func() -> void: get_tree().quit())
+	menu.quit_requested.connect(func() -> void: preload("res://scripts/kit_isle/kit_audio.gd").quit(get_tree()))
 	settings = SettingsMenu.new()
 	settings.name = "Settings"
 	settings.isle = scene
