@@ -72,6 +72,9 @@ func _flora() -> void:
 	var off_ground := 0
 	var space: PhysicsDirectSpaceState3D = study.get_world_3d().direct_space_state
 	var ray := PhysicsRayQueryParameters3D.new()
+	# The parked plane's walker column (studies/kit_isle.gd PARKED_LAYER)
+	# stands on the grass, as a plane parked there would; it is no art.
+	ray.collision_mask = ~study.PARKED_LAYER
 	var limit := float(Art.palette().rock_slope)
 	for item: Dictionary in flora.get_meta("records"):
 		var p := Vector2(item.x,item.z)

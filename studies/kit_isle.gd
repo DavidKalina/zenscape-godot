@@ -205,14 +205,16 @@ const FLOOR_UP := 1.5
 const FLOOR_DOWN := 2.0
 const FUSELAGE := 0.6
 ## The parked plane: Space within BOARD_REACH m of its middle climbs in; the
-## walker keeps PARKED_ROOM m from its middle (a column PARKED_TALL m up,
-## as the game's walker keeps off its parked plane). Hopping out, the pilot
+## walker keeps PARKED_ROOM m from its middle (a column PARKED_TALL m up on
+## PARKED_LAYER, which only the walker and his ground probes see, as the
+## game's walker keeps off its parked plane). Hopping out, the pilot
 ## lands HOP_SIDE m to its left and HOP_AHEAD m ahead, HOP_HEIGHT m up at
 ## the top of the hop. Its home (`plane_home`, an isle starting on foot) is
 ## open level turf HOME_NEAR to HOME_FAR m from the start.
 const BOARD_REACH := 1.9
 const PARKED_ROOM := 0.75
 const PARKED_TALL := 6.0
+const PARKED_LAYER := 1 << 13
 const HOP_SIDE := 1.4
 const HOP_AHEAD := 0.3
 const HOP_HEIGHT := 0.55
@@ -678,6 +680,8 @@ func _build_pilot() -> void:
 	wake.motor = motor
 	figure.add_child(wake)
 	var decks := DeckGround.new(get_world_3d().direct_space_state,motor)
+	# The parked plane's column stands in his way too.
+	decks.see(decks.mask|PARKED_LAYER)
 	decks.frame = self
 	decks.pools = ground.pools
 	ground = decks
@@ -924,6 +928,8 @@ func _make_plane_figure() -> void:
 func leave_plane(at := Vector3.INF) -> void:
 	if not flying: return
 	var on_wheels := not hand_landing.flying() if takeoff == null else takeoff.phase in [PlaneLanding.BOARD,PlaneLanding.TAXI]
+	# (A plane moved off the turf from outside is in the air, whatever.)
+	if is_nan(floor_at(Vector2(plane.position.x,plane.position.z))): on_wheels = false
 	var spot := at
 	var face := Vector2(-sin(float(plane.heading)),-cos(float(plane.heading)))
 	takeoff = null
@@ -942,7 +948,6 @@ func leave_plane(at := Vector3.INF) -> void:
 	if spray != null: spray.update(0.0,plane.position,Vector3.ZERO,0.0,GRIT_TINT)
 	if on_wheels:
 		var under := floor_at(Vector2(plane.position.x,plane.position.z))
-		if is_nan(under): under = float(plane.position.y)-PlaneStrip.contact(float(plane.pitch))
 		_park(Vector3(plane.position.x,under,plane.position.z),float(plane.heading))
 		if spot == Vector3.INF: spot = _hop_spot(parked_at,parked_heading)
 		var to := Vector2(parked_at.x-spot.x,parked_at.z-spot.z)
@@ -975,7 +980,7 @@ func _park(at: Vector3, heading: float) -> void:
 	if _park_body == null:
 		_park_body = StaticBody3D.new()
 		_park_body.name = "ParkedPlaneRoom"
-		_park_body.collision_layer = 1
+		_park_body.collision_layer = PARKED_LAYER
 		_park_body.collision_mask = 0
 		var column := CylinderShape3D.new()
 		column.radius = PARKED_ROOM
