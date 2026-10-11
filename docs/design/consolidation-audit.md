@@ -820,3 +820,189 @@ Results:
   the old game either). `SkyClouds` has no weather input.
 - `kit_clouds.gd` is the place for a kit cloud setting if one is wanted
   (wire it through `game_settings.gd` as the Round 2 note says).
+
+## Round 4 done
+
+Branch `consolidate/time-weather`, off `main` 471e2249. Not merged, not
+pushed.
+
+### What the player sees (rendered only for the look; see Unverified)
+
+- **A live sky.** The game opens on it (L's first entry, "Live sky"):
+  Alpine morning's colours over a turning day. A day is 8 minutes (the old
+  game's 480 s, golden hour and dusk lingering as there). The sun sets,
+  the night look comes in and the **night style** chosen in Settings shows,
+  the moon waxes over an 8-day month, and on a clear winter night the
+  aurora may burn. The isle's life already read the daylight (fireflies,
+  birds roosting), so it follows.
+- **Seasons.** The year is the old game's: 28 world days, a season about an
+  hour of play. A session **opens in the real date's season** (1 March
+  opens spring, so mid October is autumn) and turns on from there. The
+  season goes into the sky (`zs_sky_season`: the cloud sea's and the cloud
+  volume's grade), the plants (`zs_season`: blossom, leaf fall, straw) and
+  the ground (gold through autumn, cold through winter).
+- **Weather drift.** The old scheduler's seasonal table: summer afternoon
+  thunder, dawn mist after rain, snow only toward winter, a gold sky in
+  autumn. A bright sky holds three to four minutes, rain a minute or two,
+  a storm one to two. Each change eases in over about half a minute, as
+  the old game's living weather does, keeping the start look's air. The
+  season owns the gold whatever the sky.
+- **Lightning in the cloud volume.** In a storm, strikes come every 5 to 30
+  s. They are flashes inside the nearest standing cumulus tower (its near
+  side), flashes in the cloud sea 160 to 700 m off, or bolts from a drifting
+  cloud down into the sea, lighting the sea where they land. Never on an
+  isle. Each has thunder a few seconds after (sound paced at 160 m/s). The
+  volume shows a flash 6 times the plate's (`VOLUME_GAIN`).
+- **Look presets are overrides.** L (or `--look=`) **holds** the sky in
+  that preset: its hour, its weather, its season (snow is winter, gold is
+  autumn, the rest spring or summer), the drift off, and its ground exactly
+  as the editor sets it. **Live sky** gives the sky back, turning from the
+  hour it was held at. In release builds L is a dev key, so players always
+  get the live sky.
+- **Settings > Look** has two new rows: **Day and night** (A day in 8
+  minutes, A day in 24 minutes, Held) and **Weather** (Drifting, Still),
+  kept in `user://look.cfg` under `[time]`.
+- **Not done (the stretch):** rain and snow round the player. The kit sky
+  rains and snows only as cloud, wet ground and cold, as before.
+
+**To watch it fast:** `-- --no-title --day-length=60` (a day a minute),
+`--hour=17.5` (straight to dusk), `--season=winter` (or spring, summer,
+autumn, 0..1), `--year-days=4`, `--weather=storm` (lightning within
+seconds), `--weather-hour=2` (drift ten times faster), `--weather-seed=N`.
+Dev keys (debug and editor runs): **F9** next quarter day, **F10** next
+weather (Shift+F10 drift on or off), **F11** next season (the plants
+glide there), **F12** a strike now; a toast shows the clock, season and
+weather. **Off:** `--still-sky` (held in Alpine morning, as before round
+4), `--still-weather`. Captures hold their look unless `--live-sky`.
+
+### Where it lives
+
+- `scripts/kit_isle/kit_weather.gd` (new, about 450 lines) is the kit's
+  host, the scene's `weather` child. It holds the `WorldClock` attached to
+  the celestial rig, a `WeatherScheduler`, the shared calendar, the
+  `Lightning` node (also the scene's `_lightning`, which
+  `look_pass.gd:283` already hands the cloud volume) and the thunder. It
+  also holds the hold and live semantics (`show_look`, `_hold`,
+  `_go_live`), the settings hooks (`choose_day`, `choose_drift`; flags
+  win) and the storm's aim (`strike`). It steps first in the look
+  (`step`, as fidelity steps its clock first). The scheduler runs on hours
+  of its own (20 s each), drawn for the clock's hour, so the weather
+  drifts while the day holds.
+- `scripts/sky_calendar.gd` (new, shared): fidelity's season state and
+  rules, lifted out unchanged. Fidelity's old fields (`_season_shown`,
+  `sky_season_published`, `season_glide`, …) are now forwarding properties,
+  so `mood_look`, `hand_reach`, `spin_time`, `void_snap` and the tests are
+  untouched.
+- `scripts/living_weather.gd`: owns the generator's weather odds (the
+  generator reads them from it, so the drift no longer preloads the
+  generator), and its sky ease is a static, `ease_toward`, which the kit
+  reuses.
+- `studies/lightning.gd`: adds `strike_through` (a bolt sized to its drop),
+  `flash_in` (no bolt), `aim` (a sky picks where its storm strikes),
+  `sound_speed` and `volume_gain`. The plate's strikes keep the same
+  random draws. Also a real fix: a pulse's time is a 32-bit `Vector2`, so
+  minutes into a session a strike's first frame showed no flash
+  (`PULSE_SLACK`).
+- `scripts/cloud_volume.gd`: scales the flash by `volume_gain`.
+  `weather_scheduler.gd`: `hour_of_day` (off by default).
+- `studies/kit_isle.gd` grew by about 20 lines: the `weather` and
+  `_lightning` vars, its setup in `_build_light`, `apply_look` going
+  through `weather.show_look`, Live sky in `_look_ids`, `weather.step` in
+  `_advance_look`, and the F9-F12 keys. `dev_keys.gd` gates F9-F12 on foot
+  and in the plane. `game_settings.gd` has the two rows and applies them
+  at the start.
+
+### Cost (headless, this Mac, measured under heavy load from other agents)
+
+- **A frame of time and weather:** 14 to 22 µs on the main thread (mean of
+  3,000 steps: the clock, the drift, the year and the storm), from
+  `tests/test_kit_time_weather.gd`.
+- **A bolt:** 0.7 ms to build its tubes on the main thread, once a strike,
+  every 5 to 30 s in a storm. Flashes in towers or the sea build nothing.
+- **Not measurable headless:** the cloud volume's flash, which is one more
+  term already in the march.
+
+### Tests (headless, `tools/run_tests.py --tests ...`)
+
+New: `test_kit_time_weather` (about 50 s alone, 100 s under load):
+
+- It opens live, attached and turning from `--hour` in `--season`'s
+  quarter, the ground in autumn gold at once, the sky's and the plants'
+  seasons published, the start look's pins handed to the drift, and the
+  easing.
+- The date season. Day into night (sun down, night look in) and back.
+- F11 to winter with the plants gliding, then winter in the sky and on
+  the ground. The year turning with the days.
+- The drift: at least three skies, eased, the season keeping the gold,
+  drawn for the clock's hour, and holding when told.
+- Presets hold the hour, the season and their own ground (First snow,
+  Copper autumn). Live sky resumes from the held hour, and L and Shift+L
+  go round it.
+- The storm: tower, sea and bolt strikes, never on the isle, thunder, no
+  downburst, and the cloud volume's flash parameter with the gain.
+- The settings rows apply and keep. A `--still-sky --day-length=30` start
+  is held, and the flag beats the settings.
+
+`test_aqueduct_isle_look` now expects the live opening, not the still
+Alpine morning (an intended change, not a looser check).
+
+Results:
+
+- **Pass:** the import check, `test_kit_time_weather`, and every round
+  1–3 test: `test_front_door`, `test_game_pause`, `test_game_settings`,
+  `test_dev_keys`, `test_isle_teardown`, `test_kit_clouds`, the three
+  `test_scene_picker*`, `test_export_entry` and `test_kit_isle_landing`.
+- **Also pass:** the five `test_aqueduct_isle*`, the other kit isles'
+  (`test_bell_spires_isle`, `test_cloister_tarn_isle`,
+  `test_colonnade_spine_isle`, `test_sundered_gorge_isle`,
+  `test_isle_lock`, `test_isle_lodestone`, `test_kit_water`,
+  `test_rune_serpent`), and the old game's `test_lightning`,
+  `test_sky_seasons`, `test_weather_drift`, `test_weather_scheduler`,
+  `test_season_scene`, `test_world_clock_scene`, `test_world_clock`,
+  `test_first_steps`, `test_worlds_flow` and `test_cloud_volume`.
+- **`test_isle_hall_chain`** (serial, a frame budget) failed twice under
+  load: 15.8 ms and 24 ms, with worker builds of 4 to 8 s against base's
+  2 s. It then passed twice on the branch, alternating with base: 1.8 and
+  1.5 ms against base's 1.2 and 1.1 ms. Load-affected; rerun later on a
+  quiet machine.
+- `test_cloud_volume` came back `pass_with_known_engine_error` (exit_leak)
+  once, as round 3 saw on base. The full suite wasn't run.
+
+### Unverified (needs a rendered run)
+
+- Everything visual:
+  - the night styles at night on the isle
+  - the season grade on the cloud sea and the volume
+  - the plants' seasons on the kit flora (straw grass in winter, blossom
+    in spring)
+  - the drift's transitions and the ground's gold, cold and wet over the
+    ruin kit's stone
+  - how the flashes read inside a tower and in the sea, and whether
+    `VOLUME_GAIN` 6 is too much or too little
+  - the bolts' size and width at range (0.055 m × drop/20 for the core)
+- The thunder's loudness.
+- Whether an 8-minute day with about 2 minutes of night suits flying. The
+  24-minute setting is the alternative.
+
+### Decisions for the user
+
+- The default is a **turning day of 8 minutes** and a **turning year
+  opening on the real date's season**. The old game pinned each world's
+  season instead. `--season=` or F11 shows others.
+- The kit drifts on the **scheduler's seasonal table**, which has storms,
+  not on living weather's climate odds, which have none. That's so
+  lightning happens.
+- A held preset owns its ground and **pins the season** it was drawn for.
+
+### For round 5 (drop-list tidy)
+
+- Nothing here touches the drop list. `living_weather.gd` still preloads
+  `desert_landscape.gd` for `KINDS` (main-only climate detection). Cut it
+  with the constant hubs in round 7.
+- Rain and snow round the eye, if wanted: `precipitation.gd`'s particles
+  sit in a plate-sized box at the world's origin, and the shader hides
+  every drop with no ground map under it (`reference_precipitation.
+  gdshader:61`). It needs a moving centre uniform and a ray-baked height
+  map round the eye, which is shader work and GPU-only to verify. M.
+- `KitWeather.YEAR_DAYS`, `DAY_SECONDS` and the strike shares are the
+  tuning knobs once the user has looked at a rendered run.
