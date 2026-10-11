@@ -348,10 +348,11 @@ var motor := PilotMotor.new()
 var step_smooth := PilotStepSmooth.new()
 var ground: PhysicsGround
 var figure: Node3D
-## The walker drawn this times his size (--wanderer-scale=, a demo on
-## test/plane-wanderer-scale): his figure, his body's collider and the
-## camera's distance and height. The moves' numbers are left alone.
-var wanderer_scale := 1.0
+## The walker drawn this times his size (scripts/world_scale.gd: 0.83,
+## --wanderer-scale= overrides it):
+## his figure, his body's collider, the pocket sail, the camera's distance
+## and height, and the moves that go by his body (PilotMotor.set_size).
+var wanderer_scale: float = preload("res://scripts/world_scale.gd").wanderer
 var body: Node3D
 var puffs: Node3D
 var ripples: Node3D
@@ -431,7 +432,6 @@ func _ready() -> void:
 		if arg.begins_with("--pack=") and pack == "": pack = arg.trim_prefix("--pack=")
 		elif arg == "--carve": motor.carve = true
 		elif arg == "--no-carve": motor.carve = false
-		elif arg.begins_with("--wanderer-scale="): wanderer_scale = maxf(0.1,float(arg.get_slice("=",1)))
 	if pack != "": _load_pack()
 	Pad.ensure()
 	_build_light()
@@ -726,13 +726,16 @@ func _build_pilot() -> void:
 	add_child(figure)
 	body = PilotFigure.new()
 	body.scale = Vector3.ONE*wanderer_scale
+	body.size = wanderer_scale
 	figure.add_child(body)
 	if wanderer_scale != 1.0: ground.scale_body(wanderer_scale)
+	motor.set_size(wanderer_scale)
 	puffs = PilotPuffs.new()
 	figure.add_child(puffs)
 	ripples = PilotRipples.new()
 	figure.add_child(ripples)
 	sail_wing = PocketSailFigure.new()
+	sail_wing.scale = Vector3.ONE*wanderer_scale
 	figure.add_child(sail_wing)
 	steps = WandererSteps.new()
 	add_child(steps)
@@ -1222,6 +1225,7 @@ static func _num(v: float) -> String:
 
 func default_feel() -> void:
 	var fresh := PilotMotor.new()
+	fresh.set_size(wanderer_scale)
 	for spec: Array in TUNABLE:
 		var key: String = spec[0]
 		if key.begins_with("jumps:"): continue

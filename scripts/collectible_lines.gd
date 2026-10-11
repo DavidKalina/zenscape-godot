@@ -39,6 +39,7 @@ extends RefCounted
 
 const SkyIslet = preload("res://scripts/sky_islet.gd")
 const SkyGlide = preload("res://scripts/sky_glide.gd")
+const WorldScale = preload("res://scripts/world_scale.gd")
 const Footbridge = preload("res://scripts/footbridge.gd")
 
 ## The density: one multiplier on every kind of line's odds. 1 is the
@@ -61,19 +62,21 @@ const GLYPHS := {"bridge":["lamp","heron"],"under":["crystal","moon"],"air":["fe
 ## walker's about his chest.
 const SIZES := {"bridge":0.7,"under":1.05,"air":1.2,"foot":0.7}
 ## Pickup reaches (m, from the walker's middle or the plane's, plus half the
-## token): the plane's larger, so an air line is fair at speed.
+## token): the plane's larger, so an air line is fair at speed (1.1 at
+## plane 1, out by half of what the plane is wider: scripts/world_scale.gd).
 const WALKER_REACH := 0.6
-const PLANE_REACH := 1.1
+static var PLANE_REACH: float = 1.1+WorldScale.wider*0.5
 ## The walker's middle over his feet (m), and a foot or bridge token's
 ## middle over the ground or the planks.
 const WALKER_MIDDLE := 0.5
 const FOOT_Y := 0.55
-## The plane: half its wingspan (scripts/plane_figure.gd SPAN 1.4) and a
-## little room; how far over the ground it rides and under rock it keeps
-## (SkyGlide SKIM, CLEAR).
-const WING := 0.8
+## The plane: half its wingspan (scripts/world_scale.gd span: 0.8 at
+## plane 1) and a little room; how far over the ground it rides and under
+## rock it keeps (SkyGlide SKIM, CLEAR; drawn about its wheels a bigger
+## plane is taller, all of it upward: WorldScale.taller more).
+static var WING: float = WorldScale.span*0.5+0.1
 const SKIM := SkyGlide.SKIM
-const CLEAR := SkyGlide.CLEAR
+static var CLEAR: float = SkyGlide.CLEAR+WorldScale.taller
 ## Nothing hangs lower than this (home y): the glide's floor (SkyGlide
 ## FLOOR) with room, over the cloud sea's heaps.
 const LOWEST := SkyGlide.FLOOR+6.0
@@ -321,10 +324,14 @@ static func blocked_heights(solids: Array, p: Vector2, cache = null) -> Array[Ve
 	return out
 
 ## The grid the plane's places are read on (m), and its wings' reach round
-## its middle on that grid (about WING).
+## its middle on that grid (about WING: 0.9 and 0.6 at plane 1, grown
+## with it).
 const LATTICE := 0.3
-const WINGS := [Vector2.ZERO,Vector2(0.9,0.0),Vector2(-0.9,0.0),Vector2(0.0,0.9),Vector2(0.0,-0.9),
-	Vector2(0.6,0.6),Vector2(-0.6,0.6),Vector2(0.6,-0.6),Vector2(-0.6,-0.6)]
+static var WING_REACH: float = 0.9*WING/0.8
+static var WING_SLANT: float = 0.6*WING/0.8
+static var WINGS := [Vector2.ZERO,Vector2(WING_REACH,0.0),Vector2(-WING_REACH,0.0),Vector2(0.0,WING_REACH),Vector2(0.0,-WING_REACH),
+	Vector2(WING_SLANT,WING_SLANT),Vector2(-WING_SLANT,WING_SLANT),Vector2(WING_SLANT,-WING_SLANT),Vector2(-WING_SLANT,-WING_SLANT)]
+
 
 ## True when the plane's middle can stand at host-frame point `p`.
 static func plane_fits(solids: Array, p: Vector3) -> bool:

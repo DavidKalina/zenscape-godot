@@ -41,9 +41,10 @@ static func _from_args() -> float:
 ## How overgrown each act is (its share of `amount`).
 const ACTS := {"gate":0.8,"nave":0.8,"shafts":0.8,"cloister":1.0,"slit":0.8,"apse":0.85}
 ## The lane the line flies (hall z, m, and up to y over the floor): the low
-## ties' curtains and the breaches' keep out of it.
-const LANE := Vector2(2.6,9.4)
-const LANE_TOP := 4.6
+## ties' curtains and the breaches' keep out of it (the inner columns'
+## line to the outer row's, up to 0.6 over the low ties' soffit).
+static var LANE := Vector2(Hall.INNER_Z,Hall.ROW_Z)
+static var LANE_TOP: float = Hall.TIE_LOW+0.6
 ## Beam curtains: the spots across the nave (z) tried at each bay line, the
 ## odds of one, its strands at most and the asked length (RuinGrowth
 ## `curtain` hangs 1.8 x that + 0.6 m).

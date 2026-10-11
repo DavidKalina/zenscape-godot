@@ -295,6 +295,9 @@ var _grounded_was := true
 var _moving := 0.0
 var _running := 0.0
 var _phase := 0.0
+## The size he is drawn at (the node's scale; the game's walker 0.83,
+## studies/character_study.gd): the gait goes by his pace over it.
+var size := 1.0
 var _facing_was := INF
 ## Standing (since it stopped), 0 to 1 into a skid, and the skid last frame.
 var _standing := true
@@ -572,7 +575,9 @@ func drive(motor: RefCounted, delta: float) -> Dictionary:
 		_tree.set(&"parameters/skid_at/seek_request",0.0)
 		_lean.v += SKID_KICK
 	_skidding_was = motor.skidding
-	var speed: float = motor.speed()
+	# His pace in his own lengths: drawn smaller (`size`), the same pace
+	# is a quicker gait.
+	var speed: float = motor.speed()/size
 	# Running along a wall runs as on the ground.
 	if (motor.grounded or move == "wallrun") and not motor.skidding and move != "crouch" and move != "slide":
 		var moving := speed > STILL
@@ -753,7 +758,7 @@ func _drive_swim(motor: RefCounted, delta: float) -> Dictionary:
 		_yaw.x = wrapf(_yaw.x-swung,-PI,PI)
 		if delta > 0.0: turned = swung/delta
 	_facing_was = motor.facing
-	var speed: float = motor.speed()
+	var speed: float = motor.speed()/size
 	_swim = move_toward(_swim,1.0,delta/SWIM_FADE)
 	_moving = move_toward(_moving,0.0,delta/FADE)
 	_standing = true

@@ -21,7 +21,7 @@ extends RefCounted
 ## down in beams through the gaps and the lancets.
 ##
 ## The generous line: between the inner columns at +INNER_Z and the outer
-## row at +ROW_Z there is always a LANE (z LANE.x to LANE.y, 4 m wide, under
+## row at +ROW_Z there is always a LANE (z LANE.x to LANE.y, 5.4 m wide, under
 ## every tie) clear from end to end; everything tighter is optional, and
 ## the tightest lines (the knife-edge slits through the screens) lead
 ## somewhere worth it.
@@ -50,6 +50,10 @@ extends RefCounted
 ##   ./run-ruin-kit.command  (F3 frames the hall, G flies it)
 
 const RuinKit = preload("res://scripts/ruin_kit.gd")
+## The plane's size (scripts/world_scale.gd): the lane, the slits, the
+## breaches and the low ties follow it (static vars, read once; at plane 1
+## each is its old number).
+const WorldScale = preload("res://scripts/world_scale.gd")
 const Build = RuinKit.Build
 
 const PIECES := RuinKit.HALL_PIECES
@@ -59,10 +63,16 @@ const PIECES := RuinKit.HALL_PIECES
 ## A bay's length along the nave (m): bay lines BAY apart.
 const BAY := 8.0
 ## Across the hall: the outer column rows, the inner columns' offsets, the
-## side walls' middles and their thickness.
-const ROW_Z := 9.4
+## side walls' middles and their thickness. The outer rows and the walls
+## stand out by what the lane is wider than at plane 1 (LANE_GROW; 9.4 and
+## 12.4 there, 10.8 and 13.8 at plane 2).
+## The lane's width is a gap (LANE_ROOM, see LANE); LANE_GROW what it is
+## wider than at plane 1. Before ROW_Z: static vars set in order.
+const LANE_ROOM := 2.6/1.4
+static var LANE_GROW: float = WorldScale.gap(LANE_ROOM)-4.0
+static var ROW_Z: float = 9.4+LANE_GROW
 const INNER_Z := 2.6
-const WALL_Z := 12.4
+static var WALL_Z: float = 12.4+LANE_GROW
 const WALL_THICK := 1.2
 ## A column: its drums' apothem (16 sides, 2.4 m across, four times the
 ## clustered pier's core), its height from y 0 to the abacus's top (the
@@ -88,21 +98,31 @@ const SLAB := 0.5
 const ROOF_TOP := COLUMN_H+1.1+0.5
 ## The ties across the nave: a low one's soffit (dived under: the lane's
 ## top LANE_Y.y and more under it; flown over: room to the roof beams) and
-## a high one's (hopped over: 2 m and more over its top), their depth.
-const TIE_LOW := 4.0
+## a high one's (hopped over: 2 m and more over its top), their depth. The
+## low one 4.0 at plane 1, up by what the plane is taller (WorldScale
+## taller) but never so high the room over it, under the capitals, is under
+## TIE_OVER: 4.5 at plane 2 (its whole 0.74 would leave 3.36).
+const TIE_OVER := 3.6
+static var TIE_LOW: float = minf(4.0+WorldScale.taller,COLUMN_H-CAPITAL_H-TIE_DEPTH-TIE_OVER)
 const TIE_HIGH := 6.0
 const TIE_DEPTH := 0.9
 ## The generous line: its z range (between the inner columns at +INNER_Z
-## and the outer row) and the heights it is clear between.
-const LANE := Vector2(4.0,8.0)
-const LANE_Y := Vector2(1.0,3.6)
+## and the outer row) and the heights it is clear between. Its width a gap
+## (WorldScale.gap: 4.0 at plane 1, 5.4 at 2), its top up as the low tie
+## goes up (3.6 at plane 1, 4.1 at 2).
+static var LANE := Vector2(4.0,8.0+LANE_GROW)
+static var LANE_Y := Vector2(1.0,3.6+(TIE_LOW-4.0))
 ## The paving: thickness (stepped onto) and rough size.
 const PAVING := Vector2(0.18,2.4)
-## A knife-edge slit through a screen wall: clear width (about the plane's
-## height on its wingtip, ~1 m, and under its span 1.4: a level plane does
-## not pass), sill, clear height to the head's springing (the span on edge
-## and a margin).
-const KNIFE := Vector3(1.15,1.0,3.3)
+## A knife-edge slit through a screen wall: clear width (the plane's
+## height on its wingtip and a margin: 1.15 at plane 1, as much more as
+## the plane is taller, 1.89 at 2, under its span: a level plane does not
+## pass), sill, clear height to the head's springing (the span on edge and
+## a margin: a gap, 3.3 at plane 1, 4.7 at 2). Where the screen's top
+## (under a tie) comes lower than its head, the slit runs up open to the
+## top, the tie its lintel (`_wall`).
+const KNIFE_ROOM := 1.9/1.4
+static var KNIFE := Vector3(1.15+WorldScale.taller,1.0,WorldScale.gap(KNIFE_ROOM))
 ## A side wall's lancet: clear width, sill, height to the springing, the
 ## arc's radius as a share of the width.
 const LANCET := Vector4(1.8,2.6,4.6,1.0)
@@ -119,12 +139,20 @@ const SETTLE := 0.4
 ## through); the wall collapsed to its stumps (walked and flown through).
 const BREACHES := ["","door","low","arch","collapse"]
 const DOOR := Vector4(2.4,0.0,2.2,0.7)
-const ARCH := Vector4(5.2,0.0,5.4,1.0)
+static var ARCH := Vector4(maxf(5.2,RuinKit.THREAD+1.0),0.0,5.4,1.0)
 const LOW_WALL := Vector2(1.2,1.6)
-## A flyable breach's corridor: half its width along the nave (x), its
-## floor and top over the ground by kind, and how far it reaches out past
-## the wall.
-const BREACH_HALF := 1.8
+## A flyable breach's corridor: half its width along the nave (x: THREAD
+## and more across: 1.8 at plane 1, 2.45 at 2; the broken arch ARCH is
+## THREAD and a metre wide, 5.2 at least), its floor and top over the
+## ground by kind, and how far it reaches out past the wall.
+static var BREACH_HALF: float = maxf(1.8,RuinKit.THREAD*0.5+0.02)
+## A breach's corridor floor over the ground: BREACH_FLOOR, or over the
+## outer columns' carved feet (plinth, base and niche band) when the
+## corridor is wider than the room between those (a big plane's THREAD).
+static func breach_floor(kind: String) -> float:
+	var floor_y := float(BREACH_FLOOR.get(kind,0.0))
+	if BREACH_HALF*2.0 > BAY-2.0*(PLINTH.y+0.1): floor_y = maxf(floor_y,PLINTH.x+BASE_H+NICHE_BAND+0.2)
+	return floor_y
 const BREACH_FLOOR := {"low":2.3,"arch":1.0,"collapse":1.4}
 const BREACH_TOP := {"low":8.0,"arch":6.4,"collapse":8.0}
 const BREACH_OUT := 2.5
@@ -321,16 +349,23 @@ static func bay(seed_value: int, weathered := 0.0, plan := {}, ground := Callabl
 			var pick: int = nave[b.rng.randi()%nave.size()]
 			if not pick in gaps: gaps.append(pick)
 		if b.rng.randf() < 0.5: gaps.append(0 if b.rng.randf() < 0.5 else 5)
+	# An outer nave strip (1, 4: its architrave eats into it) is too narrow
+	# to fly out of alone once the plane is big: its inner neighbour goes
+	# with it, and the opening is the two (`runs` below).
+	if 1 in gaps and not 2 in gaps and WorldScale.gap(RuinKit.THREAD_ROOM) > ROW_Z*0.5-BEAM.y-0.3: gaps.append(2)
+	if 4 in gaps and not 3 in gaps and WorldScale.gap(RuinKit.THREAD_ROOM) > ROW_Z*0.5-BEAM.y-0.3: gaps.append(3)
 	if roof == "open":
 		weave.open.append(AABB(Vector3(ABACUS+0.6,OPEN_SKY,-ROW_Z+ABACUS+0.2),Vector3(BAY-2.0*ABACUS-1.2,ROOF_TOP+6.0-OPEN_SKY,(ROW_Z-ABACUS-0.2)*2.0)))
 	else:
 		for i in range(edges.size()-1):
 			if i in gaps:
 				# The opening: clear of the roof beams at the bay lines and of the
-				# architraves along the rows.
-				if i >= 1 and i <= 4:
+				# architraves along the rows; strips gapped side by side, one.
+				if i >= 1 and i <= 4 and not (i-1 in gaps and i-1 >= 1):
+					var last := i
+					while last+1 <= 4 and last+1 in gaps: last += 1
 					var z0: float = float(edges[i])+(BEAM.y+0.18 if absf(float(edges[i])) > ROW_Z-0.1 else 0.12)
-					var z1: float = float(edges[i+1])-(BEAM.y+0.18 if absf(float(edges[i+1])) > ROW_Z-0.1 else 0.12)
+					var z1: float = float(edges[last+1])-(BEAM.y+0.18 if absf(float(edges[last+1])) > ROW_Z-0.1 else 0.12)
 					weave.gaps.append(AABB(Vector3(BEAM.y+0.4,soffit-0.2,z0),Vector3(BAY-2.0*BEAM.y-0.8,SLAB+0.6,z1-z0)))
 				continue
 			# Broken: a slab here and there tipped up on its neighbour.
@@ -384,7 +419,7 @@ static func bay(seed_value: int, weathered := 0.0, plan := {}, ground := Callabl
 			for x: float in [0.9,BAY-0.9]:
 				RuinKit._drift(b,Vector3(x,0.0,s*(WALL_Z+1.6)),1.0,3+int(b.weathered*3.0))
 		if kind != "":
-			var base := mid+float(BREACH_FLOOR.get(kind,0.0))
+			var base := mid+breach_floor(kind)
 			var top := mid+float(BREACH_TOP.get(kind,0.0))
 			var inside := LANE.x if s > 0.0 else -(WALL_Z+WALL_THICK*0.5+BREACH_OUT)
 			var outside := WALL_Z+WALL_THICK*0.5+BREACH_OUT if s > 0.0 else LANE.y
@@ -721,7 +756,9 @@ static func _lane(x0: float, x1: float, ground: Callable) -> AABB:
 		while x <= x1:
 			var g := -INF
 			for z in [LANE.x,(LANE.x+LANE.y)*0.5,LANE.y]: g = maxf(g,float(ground.call(x,z)))
-			var ok := g+LANE_Y.x < LANE_Y.y-1.0
+			# Its top kept under a high tie's soffit too (the lane is taller
+			# for a bigger plane, so it would reach one up a slope).
+			var ok := g+LANE_Y.x < LANE_Y.y-1.0 and g+LANE_Y.y < TIE_HIGH-0.4
 			if ok and not clear: start = x
 			if ok:
 				end = x
@@ -978,6 +1015,9 @@ static func _wall(b: Build, pose: Transform3D, span: float, high: float, opening
 	var sill := ground_mid+opening.y
 	var spring := sill+opening.z
 	var head := spring+RuinKit._rise(w,radius)+0.35
+	# No room for its head under the wall's top (a slit under a tie): the
+	# opening runs up open to the top, no ring, the tie its lintel.
+	var slot := open and head > high
 	var top: Callable = func(_x: float) -> float: return high
 	if b.weathered > 0.2:
 		var ragged := RuinKit._ruin_line(b,-span,span,lerpf(high,low,b.weathered),high,b.weathered)
@@ -986,13 +1026,13 @@ static func _wall(b: Build, pose: Transform3D, span: float, high: float, opening
 	if open:
 		hole = func(y: float) -> Vector2:
 			if y < sill: return Vector2(0.0,-1.0)
-			if y < spring: return Vector2(0.0,w)
+			if y < spring or slot: return Vector2(0.0,w)
 			return Vector2(0.0,RuinKit._arc_half(w,radius,0.32,y-spring))
 	if not b.terrain.is_valid(): RuinKit._plinth_course(b,pose,span,thick*0.5)
 	RuinKit._courses(b,pose,-span,span,y0+(RuinKit.PLINTH_COURSE.x if not b.terrain.is_valid() else 0.0),top,thick*0.5,hole,COURSE)
 	if open:
 		var stones := maxi(4,int(radius*1.4))
-		RuinKit._ring_order(b,pose,0.0,spring,w,radius,0.0,0.32,thick*0.5+0.02,stones,99,1.0,RuinKit._stone(b,1.08),0,Callable(),true)
+		if not slot: RuinKit._ring_order(b,pose,0.0,spring,w,radius,0.0,0.32,thick*0.5+0.02,stones,99,1.0,RuinKit._stone(b,1.08),0,Callable(),true)
 		b.solid(RuinKit._box(b,Vector3(w+0.3,0.08,thick*0.5+0.05)),pose*RuinKit._settle(b,Vector3(0.0,sill-0.08,0.0),0.3),RuinKit._stone(b,1.08))
 	return Vector3(pose.origin.x,y0,pose.origin.z)
 

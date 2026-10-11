@@ -37,6 +37,7 @@ extends RefCounted
 
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const PlaneFigure = preload("res://scripts/plane_figure.gd")
+const WorldScale = preload("res://scripts/world_scale.gd")
 const STONE_SHADER = preload("res://shaders/ruin_stone.gdshader")
 ## The growth's own surface and wind (docs/scenic/ruin-overgrowth.md).
 const RuinGrowth = preload("res://scripts/ruin_growth.gd")
@@ -100,14 +101,24 @@ const WALL_LENGTH := 5.2
 ## The plinth course at a wall's foot: its height (under STEP_UP: stepped
 ## onto) and how far it stands out.
 const PLINTH_COURSE := Vector2(0.4,0.16)
+## The gaps the plane flies through follow the plane's size (scripts/
+## world_scale.gd): each is WorldScale.gap(room), its span and `room` toy
+## spans of steering room; static vars, read once. At plane 1 each is its
+## old number.
 ## The least clear width of an opening meant to be flown through: the
-## plane's wingspan (SPAN 1.4) and three quarters of it clear either side at
-## cruise (SkyGlide CRUISE 6 m/s, SKIM 0.9 over ground).
-const THREAD := PlaneFigure.SPAN*2.5
+## wings and 0.65 of a toy span (0.91 m) clear either side at cruise
+## (SkyGlide CRUISE 6 m/s, SKIM 0.9 over ground). 4.62 at plane 2 (3.22 at
+## 1; it was 3.5 there, 0.75 a side, but that much round the plane at 2
+## would not pass between a hall's outer columns or under the aqueduct's
+## 4.7 arches).
+const THREAD_ROOM := 1.3
+static var THREAD: float = WorldScale.gap(THREAD_ROOM)
 ## The pointed arch: clear span, the springing (capital tops) and the
-## arc's radius as a share of the span (1 is equilateral). Its crown stands
-## SPRING + ARCH_SPAN*0.866, 6.8 m: room for the plane over its SKIM.
-const ARCH_SPAN := 4.2
+## arc's radius as a share of the span (1 is equilateral). A toy span clear
+## either side of the wings: 4.2 at plane 1, 5.6 at 2. Its crown stands
+## SPRING + ARCH_SPAN*0.866 (6.8, 8.0): room for the plane over its SKIM.
+const ARCH_ROOM := 2.0
+static var ARCH_SPAN: float = WorldScale.gap(ARCH_ROOM)
 const SPRING := 3.2
 const ARCH_PITCH := 1.0
 ## The arch's moulded orders: each order's radial depth, the inner one set
@@ -120,15 +131,23 @@ const ARCH_DEPTH := 1.1
 ## The lancet window: clear width (two lights under one head; with its
 ## mullion gone, at THREAD and over), sill height (caught from the ground;
 ## the sill as deep as the wall, STAND and more) and springing; its head
-## equilateral.
-const WINDOW := Vector3(3.6,1.6,3.4)
-const WINDOW_WALL := Vector2(6.8,7.8)
+## equilateral. The width is a gap (3.6 at plane 1, 5.0 at 2); the wall
+## round it is as much wider than the toy's 6.8 and taller than its 7.8 by
+## the head's rise on that (WINDOW_GROW).
+const WINDOW_ROOM := 2.2/1.4
+static var WINDOW := Vector3(WorldScale.gap(WINDOW_ROOM),1.6,3.4)
+static var WINDOW_GROW: float = WINDOW.x-3.6
+static var WINDOW_WALL := Vector2(6.8+WINDOW_GROW,7.8+WINDOW_GROW*0.866)
 ## The rose: its centre's height, outer radius (frame included) and the
-## frame's radial depth; the glass circle within is 3.96 m across, wider
-## than THREAD with its spokes gone.
-const ROSE := Vector3(6.6,2.4,0.42)
+## frame's radial depth; the glass circle within is 3.96 m across at plane
+## 1, and grown to THREAD and more (4.95 at plane 2) so it is flown with
+## its spokes gone. The rose and the gable round it are the plane-1 ones
+## grown by ROSE_GROW (the gable 8.4 wide, 10.6 to its apex, the rose's
+## centre 6.6 up); the door under them stays.
+static var ROSE_GROW: float = maxf(1.0,THREAD*1.01/3.96)
+static var ROSE := Vector3(6.6*ROSE_GROW,2.4*ROSE_GROW-0.42*(ROSE_GROW-1.0),0.42)
 ## The gable: width, the height of its eaves, its apex.
-const GABLE := Vector3(8.4,5.2,10.6)
+static var GABLE := Vector3(8.4*ROSE_GROW,5.2*ROSE_GROW,10.6*ROSE_GROW)
 ## The door under the rose: clear width, springing.
 const DOOR := Vector2(2.0,1.8)
 ## The clustered pier: the core's apothem, the four main shafts' and the

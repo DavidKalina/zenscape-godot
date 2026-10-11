@@ -18,6 +18,7 @@ const Aqueduct = preload("res://scripts/ruin_kit_aqueduct.gd")
 const Hall = preload("res://scripts/ruin_kit_hall.gd")
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const PlaneFigure = preload("res://scripts/plane_figure.gd")
+const WorldScale = preload("res://scripts/world_scale.gd")
 const SEEDS := [1,77,4242]
 var failures := 0
 
@@ -57,11 +58,15 @@ func _run() -> void:
 			arch.free()
 			# Under every aqueduct arch: the span's, both tiers of the two-tier.
 			var span := Aqueduct.span(seed_value,weathered)
-			check(_clear(span,AABB(Vector3(-half,1.2,-3.5),Vector3(half*2.0,Aqueduct.SPRING+1.5-1.2,7.0))),"the plane threads the aqueduct span's arch, "+tag)
+			# The aqueduct is kept as it is (its runs are laid out on its SPAN):
+			# the plane threads it 0.6 m past its wingtips, a metre up into the
+			# arc (the toy had a THREAD-wide box 1.5 m up into it).
+			var aq_half := WorldScale.span*0.5+0.6
+			check(_clear(span,AABB(Vector3(-aq_half,1.2,-3.5),Vector3(aq_half*2.0,Aqueduct.SPRING+1.0-1.2,7.0))),"the plane threads the aqueduct span's arch, 0.6 m past its wingtips, "+tag)
 			span.free()
 			var tiers := Aqueduct.two_tier(seed_value,weathered)
-			check(_clear(tiers,AABB(Vector3(-half,1.2,-3.5),Vector3(half*2.0,Aqueduct.LOWER_SPRING+1.2-1.2,7.0))),"the plane threads the two-tier's lower arch, "+tag)
-			check(_clear(tiers,AABB(Vector3(-half,Aqueduct.MID+0.6,-3.5),Vector3(half*2.0,Aqueduct.UPPER_RISE+1.2-0.6,7.0))),"the plane threads the two-tier's upper arch, "+tag)
+			check(_clear(tiers,AABB(Vector3(-aq_half,1.2,-3.5),Vector3(aq_half*2.0,Aqueduct.LOWER_SPRING+1.0-1.2,7.0))),"the plane threads the two-tier's lower arch, "+tag)
+			check(_clear(tiers,AABB(Vector3(-aq_half,Aqueduct.MID+0.6,-3.5),Vector3(aq_half*2.0,Aqueduct.UPPER_RISE+1.0-0.6,7.0))),"the plane threads the two-tier's upper arch, "+tag)
 			tiers.free()
 	# A run: the head, spans SPAN apart, one broken; dry past the break.
 	var run := Aqueduct.run(5,0.5,4,2)
@@ -103,13 +108,13 @@ func _scale() -> void:
 	var steps: Array = RuinKit.VAULT_STEPS
 	check(float(steps[-1]) < first_grab-0.2,"the vault walls' lowest step is caught from the ground")
 	for i in range(steps.size()-1): check(float(steps[i])-float(steps[i+1]) <= RuinKit.SET_OFF,"the vault walls step %d is one jump" % i)
-	check(RuinKit.THREAD >= PlaneFigure.SPAN*2.5,"THREAD follows the wingspan")
+	check(RuinKit.THREAD >= WorldScale.span+1.8,"THREAD follows the wingspan, 0.9 m and more past each tip")
 	check(RuinKit.ARCH_SPAN >= RuinKit.THREAD and RuinKit.WINDOW.x >= RuinKit.THREAD and 2.0*(RuinKit.ROSE.y-RuinKit.ROSE.z) >= RuinKit.THREAD,"the arch, the window and the rose clear the plane")
 	check(RuinKit.TURRET.y-RuinKit.TURRET.z >= 2.0*RuinKit.BODY+0.4,"the turret's stair is wide enough to climb")
 	check(RuinKit.HULL_THIN < 0.1,"only slivers go without a hull")
 	# The aqueduct.
 	var crown := Aqueduct.SPRING+RuinKit._rise(Aqueduct.CLEAR*0.5,Aqueduct.CLEAR)+RuinKit.ORDER*2.0
-	check(Aqueduct.CLEAR >= RuinKit.THREAD+0.8 and is_equal_approx(Aqueduct.CLEAR,Aqueduct.SPAN-Aqueduct.PIER.x),"an aqueduct arch clears the plane with room to spare")
+	check(Aqueduct.CLEAR >= WorldScale.span+1.8 and is_equal_approx(Aqueduct.CLEAR,Aqueduct.SPAN-Aqueduct.PIER.x),"an aqueduct arch clears the game's plane, 0.9 m and more past each wingtip")
 	check(crown < Aqueduct.DECK-Aqueduct.FLOOR,"the span's arch stands under its deck")
 	check(Aqueduct.CHANNEL >= RuinKit.TOP_ROOM,"the channel is walked along")
 	check(Aqueduct.PARAPET.y < PilotMotor.STEP_UP and Aqueduct.WATER < Aqueduct.PARAPET.y,"the parapets are stepped over, the water within them")
@@ -131,7 +136,7 @@ func _scale() -> void:
 	check(Hall.BEAM.y*2.0 >= RuinKit.TOP_ROOM and Hall.ABACUS*2.0 >= RuinKit.TOP_ROOM,"beam, tie and abacus tops are walked")
 	check(Hall.RAMP < deg_to_rad(35.0),"a fallen beam is walked up onto its tie")
 	check(Hall.TREAD >= RuinKit.STAND,"the buttress's treads are stood on, each a jump over the last")
-	check(Hall.KNIFE.x < PlaneFigure.SPAN and Hall.KNIFE.x >= 1.0 and Hall.KNIFE.z >= PlaneFigure.SPAN+1.2,"a slit is narrower than the wings, wider than the plane on its wingtip, and tall enough for it")
+	check(Hall.KNIFE.x < WorldScale.span and Hall.KNIFE.x >= 1.0+WorldScale.taller and Hall.KNIFE.z >= WorldScale.span+1.2,"a slit is narrower than the wings, wider than the plane on its wingtip, and tall enough for it")
 	check(Aqueduct.FOOTING > 0.0 and Hall.FOUNDATION > 0.0,"feet reach below the ground")
 
 func _piece(id: String, seed_value: int, weathered: float) -> void:
@@ -209,7 +214,7 @@ func _pieces(root: Node) -> Array:
 ## threads and a level one does not, the middle narrowed), each where it
 ## says; merged into one mesh and body; its ends at its mouths.
 func _long_hall() -> void:
-	var half := PlaneFigure.SPAN*0.5
+	var half := WorldScale.span*0.5
 	for seed_value: int in [1,77]:
 		for weathered: float in [0.25,0.85]:
 			var tag := "seed %d weathered %.2f" % [seed_value,weathered]
@@ -240,9 +245,9 @@ func _long_hall() -> void:
 				check(gap.size.x >= RuinKit.THREAD and gap.size.z >= RuinKit.THREAD and _clear(hall,gap),"a roof gap is open and wide enough, "+tag)
 			check(not (weave.slits as Array).is_empty() and not (weave.narrows as Array).is_empty(),"slits and narrows to pick a line through, "+tag)
 			for slit: Vector3 in weave.slits:
-				var edge := AABB(slit+Vector3(-1.5,-half-0.3,-0.48),Vector3(3.0,PlaneFigure.SPAN+0.6,0.96))
+				var edge := AABB(slit+Vector3(-1.5,-half-0.3,-0.48*Hall.KNIFE.x/1.15),Vector3(3.0,WorldScale.span+0.6,0.96*Hall.KNIFE.x/1.15))
 				check(_clear(hall,edge),"a knife-edged plane slips through a slit, "+tag)
-				check(not _clear(hall,AABB(slit+Vector3(-0.3,-0.15,-half),Vector3(0.6,0.3,PlaneFigure.SPAN)),false),"a level plane cannot pass a slit, "+tag)
+				check(not _clear(hall,AABB(slit+Vector3(-0.3,-0.15,-half),Vector3(0.6,0.3,WorldScale.span)),false),"a level plane cannot pass a slit, "+tag)
 			_breaks(hall,tag)
 			var ends: Array = hall.get_meta("ends")
 			check(ends.size() == 2 and is_equal_approx((ends[0].at as Vector3).x,0.0) and is_equal_approx((ends[1].at as Vector3).x,length) and bool(ends[0].open) and bool(ends[1].open),"the hall's ends are its two open mouths, "+tag)

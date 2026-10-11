@@ -21,6 +21,10 @@ extends Node
 ## --no-traffic leaves the sky empty.
 
 const PlaneFigure = preload("res://scripts/plane_figure.gd")
+## The planes drawn the game's size (scripts/world_scale.gd), as the
+## player's, about their wheels (PlaneGroundScale.grow).
+const WorldScale = preload("res://scripts/world_scale.gd")
+const PlaneGroundScale = preload("res://scripts/plane_ground_scale.gd")
 const SkyIslets = preload("res://scripts/sky_islets.gd")
 
 ## Planes in the sky.
@@ -113,6 +117,7 @@ var cloud_depth := Callable()
 ## Each plane: {figure, flight, cruise, turn (rad/s), goal, trick, next
 ## (seconds to the next trick), phase, rng}.
 var planes := []
+var _size := WorldScale.plane
 ## The islands' slots, in the currents' frame, their middle and how far
 ## out the farthest is (flat).
 var _slots := []
@@ -161,6 +166,7 @@ func build(currents: Node3D, slots: Array) -> void:
 		flight.velocity = flight.forward()*flight.speed
 		planes.append(plane)
 		figure.update(0.0,flight,0.0,Callable(),false)
+		PlaneGroundScale.grow(figure,_size)
 		figure.reset(flight)
 
 func clear() -> void:
@@ -247,6 +253,7 @@ func _fly(plane: Dictionary, delta: float) -> void:
 	flight.position.y = maxf(flight.position.y,floor_y-CLEAR*0.5)
 	var mist := float(cloud_depth.call(flight.position)) if cloud_depth.is_valid() else 0.0
 	plane.figure.update(delta,flight,0.0,Callable(),false,mist,flight.bank)
+	PlaneGroundScale.grow(plane.figure,_size)
 
 ## Where the plane steers for now (global): its goal's point, or round its
 ## island, leading along the lap.

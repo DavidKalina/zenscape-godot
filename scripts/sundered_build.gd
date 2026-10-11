@@ -77,7 +77,7 @@ const APSE_RADIUS := 10.0
 const APSE_PAST := 2.0
 const TOWER_HALF := 3.6
 const TOWER_HIGH := Vector2(19.0,26.0)
-const TOWER_AT := Vector3(-6.0,0.0,-(Hall.WALL_Z+7.0))
+static var TOWER_AT := Vector3(-6.0,0.0,-(Hall.WALL_Z+7.0))
 ## The aqueduct: its spans, the line's height over its island's ground
 ## under the arch it threads, the snapped stub past the last pier (m).
 const AQ_SPANS := 3

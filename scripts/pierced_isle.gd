@@ -47,7 +47,7 @@ extends RefCounted
 
 const SkyIslet = preload("res://scripts/sky_islet.gd")
 const IslandOutline = preload("res://scripts/island_outline.gd")
-const PlaneFigure = preload("res://scripts/plane_figure.gd")
+const WorldScale = preload("res://scripts/world_scale.gd")
 const RockLooks = preload("res://scripts/rock_looks.gd")
 
 ## The lid: its radius (m, the islet's own `radius`), its grid's step, and
@@ -127,9 +127,10 @@ const WINDOW_UP := Vector2(6.5,8.5)
 ## round it (m).
 const EYE_R := Vector2(8.0,9.5)
 const EYE_ROOM := 9.0
-## The routes: the corridor kept clear round each (m: the wings' half span
-## and a margin) and how far each runs on past a mouth (m).
-const ROUTE_CLEAR := PlaneFigure.SPAN*0.5+0.9
+## The routes: the corridor kept clear round each (m: the plane's half span,
+## scripts/world_scale.gd, and a margin) and how far each runs on past a
+## mouth (m).
+static var ROUTE_CLEAR: float = WorldScale.span*0.5+0.9
 const LEAD := 45.0
 ## The plane through a hole: the least room (m) past its wingtips either
 ## side of the tube's middle line, wide and tight.
@@ -1363,8 +1364,8 @@ func verify() -> Array[String]:
 	for h: Dictionary in holes:
 		var why := tube_problem(h)
 		if not why.is_empty(): problems.append(why)
-		var room := float(h.clear)-PlaneFigure.SPAN*0.5
-		if h.kind == "cavern": room = float(h.clear)-PlaneFigure.SPAN*0.5
+		var room := float(h.clear)-WorldScale.span*0.5
+		if h.kind == "cavern": room = float(h.clear)-WorldScale.span*0.5
 		if room < (ROOM_TIGHT if bool(h.get("tight",false)) else ROOM_WIDE): problems.append("%s: only %.1f m past the wingtips" % [h.name,room])
 	for r: Dictionary in routes:
 		var why := route_problem(r)
@@ -1376,7 +1377,7 @@ func verify() -> Array[String]:
 func summary() -> Array:
 	var out := []
 	for h: Dictionary in holes:
-		out.append({"name":h.name,"kind":h.kind,"across":float(h.clear)*2.0,"room":float(h.clear)-PlaneFigure.SPAN*0.5,"tight":bool(h.get("tight",false))})
+		out.append({"name":h.name,"kind":h.kind,"across":float(h.clear)*2.0,"room":float(h.clear)-WorldScale.span*0.5,"tight":bool(h.get("tight",false))})
 	return out
 
 ## The whole mass's box in the lid frame (lid and body).

@@ -62,7 +62,7 @@ const RISE := {"speed":9.0,"ease_in":5.0,"ease_out":8.0,"over":0.35,"settle":1.3
 const SEA := -26.0
 ## Rim points every this many metres round each floor.
 const RIM_STEP := 3.0
-const HALF_W := Hall.WALL_Z+Hall.WALL_THICK*0.5
+static var HALF_W: float = Hall.WALL_Z+Hall.WALL_THICK*0.5
 ## The keels: depth under the floor (m, at a half's middle and its ends),
 ## how far the bottom draws in (share of the top), the jitter (m).
 const KEEL_DEEP := Vector2(16.0,6.0)

@@ -13,26 +13,19 @@ extends RefCounted
 ## never pops. The figure is scaled about its wheels' contact (scripts/
 ## plane_strip.gd WHEEL_DROP, WHEEL), so the wheels stay on the turf.
 ##
-## `--plane-ground-scale=<x>` sets FACTOR (default DEFAULT); 1 turns it off.
-##
-## Meeting in the middle (test/plane-wanderer-scale, a demo):
-## `--plane-scale=<x>` draws the plane `plane_scale` times bigger everywhere,
-## in flight too (about its wheels, so they stay on the turf), and
-## `--wanderer-scale=<x>` is the walker's (studies/character_study.gd). With
-## no `--plane-ground-scale=`, the ground factor closes only what is left:
-## DEFAULT*wanderer_scale/plane_scale, never under 1. `size()` is the
+## The sizes are scripts/world_scale.gd's (the only place they live):
+## the plane drawn WorldScale.plane (2.0) times its toy size everywhere, in
+## flight too (about its wheels), the walker WorldScale.wanderer (0.83).
+## The ground factor (WorldScale.ground_factor) closes only what is left
+## between the cockpit pilot and the walker: 1 at the game's sizes (no
+## cheat), 2.4 at `--plane-scale=1 --wanderer-scale=1`. `size()` is the
 ## figure's scale now: plane_scale*k.
 ## Plain state over the figure's transform: scripts/manual_landing.gd and
 ## the flight never see it.
 
 const PlaneStrip = preload("res://scripts/plane_strip.gd")
 
-## Measured: the on-foot wanderer (scripts/pilot_figure.gd, 1.19 m) stands
-## 0.44 m from his shoulders to the top of his cap and 0.34 m across his
-## shoulders; the cockpit pilot (scripts/plane_pilot.gd in the 0.92 rig)
-## 0.185 m and 0.156 m: 2.38 and 2.2. The head and cap read most, so
-## DEFAULT matches them.
-const DEFAULT := 2.4
+const WorldScale = preload("res://scripts/world_scale.gd")
 const BIG_BELOW := 3.0
 const SMALL_ABOVE := 10.0
 const EASE := 0.22
@@ -42,22 +35,18 @@ const DIP_EASE := 0.12
 const PIVOT := Vector3(0.0,-PlaneStrip.WHEEL_DROP,-PlaneStrip.WHEEL)
 
 ## The ground factor and the scale now (1 in flight), both over the
-## plane's own scale (`plane_scale`, everywhere).
-var factor := DEFAULT
+## plane's own scale (`plane_scale`, everywhere): WorldScale's.
+var factor := WorldScale.ground_factor()
 var k := 1.0
-var plane_scale := 1.0
-var wanderer_scale := 1.0
+var plane_scale := WorldScale.plane
+var wanderer_scale := WorldScale.wanderer
 
-func _init() -> void:
-	var given := NAN
-	for arg: String in preload("res://scripts/launch_args.gd").user_args():
-		if arg.begins_with("--plane-ground-scale="):
-			given = maxf(1.0,float(arg.get_slice("=",1)))
-		elif arg.begins_with("--plane-scale="):
-			plane_scale = maxf(0.1,float(arg.get_slice("=",1)))
-		elif arg.begins_with("--wanderer-scale="):
-			wanderer_scale = maxf(0.1,float(arg.get_slice("=",1)))
-	factor = given if not is_nan(given) else maxf(1.0,DEFAULT*wanderer_scale/plane_scale)
+## Draws `figure` (a plane posed this frame at toy size) `s` times bigger
+## about its wheels, as `apply` does: for planes with no cheat of their own
+## (the CPU traffic).
+static func grow(figure: Node3D, s: float) -> void:
+	if s == 1.0: return
+	figure.transform = figure.transform*Transform3D(Basis.from_scale(Vector3.ONE*s),PIVOT*(1.0-s))
 
 ## The figure's scale now: the plane's own times the ground's.
 func size() -> float:

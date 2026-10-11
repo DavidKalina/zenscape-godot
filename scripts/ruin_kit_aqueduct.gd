@@ -54,8 +54,10 @@ const PIECES := RuinKit.AQUEDUCT_PIECES
 ## The module: pier middle to pier middle (m). A run's spans stand SPAN apart.
 const SPAN := 6.4
 ## A pier: its width along the run and depth across it (m); the clear span
-## between two (SPAN less a pier's width, 4.7) is well over THREAD, so a
-## plane threads every arch, and the arch is equilateral: its crown stands
+## between two (SPAN less a pier's width, 4.7) leaves the game's plane
+## (2.8 m wings) 0.95 m past each tip, a hair under THREAD (4.9: 1.05) and
+## kept as it is (the isle's runs are laid out on SPAN), so a plane threads
+## every arch, and the arch is equilateral: its crown stands
 ## SPRING + 4.07 m.
 const PIER := Vector2(1.7,2.8)
 const CLEAR := SPAN-1.7
@@ -466,7 +468,10 @@ static func _finish(b: Build, deck: float, piers: int, arches: Array) -> Node3D:
 		if piers & (1 if side < 0.0 else 2): feet.append(Vector3(side*SPAN*0.5,_pier_foot(b,side*SPAN*0.5),0.0))
 	node.set_meta("feet",feet)
 	var corridors: Array = []
-	var half := RuinKit.THREAD*0.5
+	# THREAD wide, but never closer than 0.6 to a pier's face: the game's
+	# plane (2.8 m wings) threads CLEAR 4.7 with 0.95 m past each tip, a
+	# little under THREAD's 1.05, and the corridor stays the arch's.
+	var half := minf(RuinKit.THREAD,CLEAR-1.2)*0.5
 	for arch: Array in arches:
 		var low := -INF
 		for x: float in [-half,0.0,half]:
