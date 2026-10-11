@@ -405,6 +405,112 @@ KICK 4.5 m/s, HISS_DB -8, BURST 22 balls at 5 m/s.
 - Round 1's open decisions still stand: the stranded rule, islets as
   landing spots, and making the flag the default.
 
+## Kit isles
+
+Branch `feature/kit-isle-hand-landing` (from main a793e8a9). The kit isles
+(`studies/kit_isle.gd`: the aqueduct isle and the four motif isles) now fly
+the game's rules. Their old lightweight plane is gone: F no longer boards a
+plane in the air ahead of you, braking on the turf no longer sets you down,
+and you can no longer get out anywhere.
+
+    ./run-aqueduct-isle.command              # on foot, the plane parked near the start
+    ./run-aqueduct-isle.command --fly        # in the air, as before
+
+**The same rules, not a copy.** `scripts/manual_landing.gd` and
+`scripts/wheel_spray.gd` are used as they are. No seam was needed: the
+landing already takes its ground through callables, and the kit isle passes
+its own:
+- `plane_ground` as the flight's `ground` (unchanged)
+- `floor_at` as `floor_at`: a ray onto the turf only (`TURF_LAYER`), from
+  1.5 m over the plane down to 2 m under it. Further down is past the edge,
+  so a roll off a tier or an isle's rim flies on and never snaps down a
+  cliff.
+- `roll_blocked` as `blocked`: stone in the plane's wing-wide bump body, or
+  the turf rising into a fuselage-wide box (a step or a crag face). Either
+  stops a roll dead with a thump.
+
+The air step's bump off the stone (`_bump`) runs only while the landing says
+it is flying. Touches are felt as the game feels them: the wheels' blip and
+a heavy step, the burst, the grit and hiss, the shake, the pad pulse and a
+word on the hint (Greaser!, Hot! Drift it to a stop, Stuck it!).
+
+**Parked.** Stopped, F (pad Y) gets out. The pilot hops down to the plane's
+left, and the plane stays where it stopped: a `PlaneFigure` parked on its
+wheels, with a column of 0.75 m round its middle that the walker keeps off,
+as the game's walker does. The column is on its own layer (`PARKED_LAYER`,
+1 << 13), so only the walker's ground (`pilot_physics_ground.gd`, which
+gains `see`) and the room checks see it. Space (pad A) within 1.9 m climbs
+in, and `scripts/plane_landing.gd` takes it off: BOARD, TAXI, ROLL, LIFT,
+along the best run that `takeoff_run` finds over the turf (24 ways, to an
+edge or 14 m, with a clear climb out). Then the hand landing has it.
+
+**Starting on foot.** `plane_home` parks the plane on the nearest ring 8 to
+40 m round the start that has level, open turf with room for the wings and a
+run to an edge or of at least 9 m, facing along the best run. Each isle found
+one on its first ring:
+
+| isle | home from the start | run |
+|---|---|---|
+| aqueduct | 8 m | 14 m |
+| bell spires | 8 m | 13.5 m, to an edge |
+| cloister tarn | 8 m | 8 m, to an edge |
+| sundered gorge | 8 m | 14 m |
+| colonnade spine | 12 m | 7.5 m, to an edge |
+
+An isle may answer its own `plane_home`.
+
+**`--fly`, `board` and R.** `board()` is still the start in the air (5 m
+ahead, 3 m up, at cruise) for `--fly`, `--near-ring` and the tests, and it
+takes the parked plane, so there is only ever one. No key calls it. Getting
+out in the air (R in the plane, or `leave_plane` from a test) puts the pilot
+on the nearest open turf (R: at the start) and sends the plane back to its
+home.
+
+**Off the edge.** The kit isle has the skydive's pieces (`sky_dive.gd`,
+`canopy_figure.gd`, `dive_camera.gd`, and `PilotFigure.dive`), so it matches
+the game. A drop counts as a step off once he falls 4 m under where he last
+stood with nothing under him for 12 m. A jump between stones, or a drop to a
+lower tier, has ground under it and stays the walk's. Then:
+- he falls into the canopy, which opens 0.3 s on by itself (about the game's
+  0.8 s from the edge in all), or sooner with X (pad X)
+- down on anything within 20 m of the edge, he walks on from there
+- 20 m under the edge, or down in water, he is stranded for 3 s and then
+  stands beside the parked plane, facing it
+
+The character study's old fall (under `lost`, back to the start) still
+catches anything else.
+
+**Kept.** Everything else works as before: the isle lock (R3/Tab), the
+lodestone and its seat, the hall chain, the collectibles, the rope bridges
+(flown by in the air, trodden on foot), the bumps and the deck ground. The
+isle lock locks only in the air, and a touch lets go of it. Carried, the
+lodestone seats when you board the parked plane. The touchdown mark stays
+hidden on the kit isles, as before.
+
+**Tests.** `tests/test_kit_isle_landing.gd` is new and passes. It checks
+that:
+- the plane starts parked near the start, on the turf, solid to walk into
+- F, or Space away from the plane, flies nothing
+- Space by the plane takes off through all four phases
+- a hot touch (hard, 13.5 m/s) sticks with no hop
+- asking out while rolling is refused, braked it stops, and it never gets
+  out by itself
+- F gets out, the plane stays parked where it stopped, and the pilot is
+  beside it
+- boarding again takes off
+- off the edge: the canopy, stranded, and back beside the plane
+
+Rewritten to the new rules: `test_aqueduct_isle_plane.gd`,
+`test_isle_lodestone.gd`'s hint line, and `test_aqueduct_isle_look.gd`'s
+root probe, which now skips the parked plane's column (it stands on grass,
+as a parked plane would). The landing's own tests, including the live game,
+pass unchanged.
+
+**Unverified.** Nothing was seen or heard rendered or flown by hand: not the
+parked plane on the turf, the hop out and in, the takeoff's camera, the
+spray and shake on the kit turf, the canopy over the isles, or how
+`STEP_OFF_DROP` feels when a jump goes long. The pad hasn't been tried.
+
 ---
 
 '''

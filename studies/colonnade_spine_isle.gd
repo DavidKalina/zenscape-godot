@@ -21,7 +21,7 @@ extends "res://studies/kit_isle.gd"
 ##   R            back to the start (the low end of the way, looking west)
 ##   L / Shift+L  next / previous look preset
 ##   B            a strong gust front
-##   F (pad Y)    into the plane and back
+##   Space (pad A) by the parked plane: into it; land by hand, F (pad Y) out once stopped
 ##   ./run-colonnade-spine.command [--look=first_snow]
 ##   godot --path . res://studies/colonnade_spine_isle.tscn -- --no-title [--capture=out.png --at=x,y,z --look=x,y,z] [--place=x,y,z[,turn]]
 const Spine = preload("res://studies/colonnade_spine_isle_art.gd")

@@ -23,7 +23,7 @@ extends "res://studies/kit_isle.gd"
 ## (between the stubs on knife edge, or over them), skimming the tarn, out
 ## through the water gate and off over the fall.
 ##   R            back to the start (the cloister's south-east corner)
-##   L / Shift+L  look presets · B gust · F (pad Y) the plane
+##   L / Shift+L  look presets · B gust · Space (pad A) by the parked plane
 ##   F1 numbers · F2 feel · Esc mouse
 ##   ./run-cloister-tarn.command [--look=<preset id>]
 ## The kit isles' flags hold here: --no-flora, --no-life (and its
