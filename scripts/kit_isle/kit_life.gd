@@ -78,6 +78,18 @@ var _heights := PackedFloat32Array()
 var _standing := PackedByteArray()
 ## What each part cost to set up (ms), for the handoff and tests.
 var timings := {}
+## A placed isle (scripts/kit_isle/motif_isle.gd): where it stands from its
+## own frame, which its hooks answer in (`top`, `ground_span`, `ride_y`,
+## `chaff_meadow`, `leaf_spots`, the birds' perches and the tokens' spots
+## are moved by it); and whether it shares the scene's wind (the home
+## isle's life set up the breeze ribbons, which are the atmosphere's one).
+var offset := Vector3.ZERO
+var shares_wind := false
+## The staged setup (`begin`, then `step`): the part it is at, the ground
+## grid's next row, the undergrowth's job.
+var _stage := 0
+var _row := 0
+var _under: KitFlora.Undergrow
 
 static func wanted(args: PackedStringArray) -> Dictionary:
 	var all := not args.has("--no-life")
@@ -86,46 +98,89 @@ static func wanted(args: PackedStringArray) -> Dictionary:
 		"wind":all and not args.has("--no-wind-life"),"tokens":all and not args.has("--no-tokens")}
 
 func setup(isle: Node3D, args: PackedStringArray) -> void:
+	begin(isle,args)
+	while not step(-1): pass
+
+## The setup in steps (a placed isle's, a slice a frame): `begin`, then
+## `step(usec)` until it answers true, each working on for about `usec`
+## (-1: to the end). The same life as `setup`.
+func begin(isle: Node3D, args: PackedStringArray) -> void:
 	scene = isle
 	name = "Life"
 	flags = wanted(args)
+	_stage = 0
+	_row = 0
+
+func step(usec: int) -> bool:
+	var end := Time.get_ticks_usec()+usec
 	var space := scene.get_world_3d().direct_space_state
 	var t := Time.get_ticks_msec()
-	_read_ground(space)
-	timings.ground = Time.get_ticks_msec()-t
-	if flags.undergrowth:
-		t = Time.get_ticks_msec()
-		undergrowth = make_undergrowth(space)
-		add_child(undergrowth)
-		timings.undergrowth = Time.get_ticks_msec()-t
-	if flags.butterflies and scene.flora != null: _meadows()
-	if flags.fireflies: _fireflies()
-	if flags.wind:
-		t = Time.get_ticks_msec()
-		_wind()
-		timings.wind = Time.get_ticks_msec()-t
-	if flags.birds:
-		t = Time.get_ticks_msec()
-		birds = make_birds()
-		if birds != null:
-			add_child(birds)
-			birds.setup(scene,ground_at)
-		timings.birds = Time.get_ticks_msec()-t
-	if flags.tokens:
-		tokens = make_tokens()
-		if tokens != null:
-			add_child(tokens)
-			tokens.setup(scene)
+	if _stage == 0:
+		if _row == 0: _ground_grid()
+		var done := _read_rows(space,end if usec >= 0 else -1)
+		timings.ground = int(timings.get("ground",0))+Time.get_ticks_msec()-t
+		if not done: return false
+		_stage = 1
+		if usec >= 0 and Time.get_ticks_usec() > end: return false
+	if _stage == 1:
+		if flags.undergrowth:
+			t = Time.get_ticks_msec()
+			if _under == null: _under = undergrowth_job(space)
+			var done := _under.step(maxi(end-Time.get_ticks_usec(),0) if usec >= 0 else -1)
+			timings.undergrowth = int(timings.get("undergrowth",0))+Time.get_ticks_msec()-t
+			if not done: return false
+			undergrowth = _under.node
+			_under = null
+			add_child(undergrowth)
+		_stage = 2
+		if usec >= 0 and Time.get_ticks_usec() > end: return false
+	if _stage == 2:
+		if flags.butterflies and scene.flora != null: _meadows()
+		if flags.fireflies: _fireflies()
+		_stage = 3
+		if usec >= 0 and Time.get_ticks_usec() > end: return false
+	if _stage == 3:
+		if flags.wind:
+			t = Time.get_ticks_msec()
+			_wind()
+			timings.wind = Time.get_ticks_msec()-t
+		_stage = 4
+		if usec >= 0 and Time.get_ticks_usec() > end: return false
+	if _stage == 4:
+		if flags.birds:
+			t = Time.get_ticks_msec()
+			birds = make_birds()
+			if birds != null:
+				birds.set("offset",offset)
+				add_child(birds)
+				birds.setup(scene,ground_at)
+			timings.birds = Time.get_ticks_msec()-t
+		if flags.tokens:
+			tokens = make_tokens()
+			if tokens != null:
+				tokens.set("offset",offset)
+				add_child(tokens)
+				tokens.setup(scene)
+		_stage = 5
+	return true
+
+## True once the staged setup is done.
+func is_set_up() -> bool:
+	return _stage >= 5
 
 # --- The isle's hooks -------------------------------------------------------------------
 
-## The isle's datum (world y): its scene's `isle_top`.
+## The isle's datum (its own frame's y): its scene's `isle_top`.
 func top() -> float:
-	return float(scene.isle_top())
+	return float(scene.isle_top())-offset.y
 
 ## The undergrowth (KitFlora `undergrowth` over the scene's turf and site).
 func make_undergrowth(space: PhysicsDirectSpaceState3D) -> Node3D:
 	return KitFlora.undergrowth(UNDERGROWTH_SEED,space,scene._turf,scene._outlines,scene.flora_site())
+
+## The undergrowth's job, in steps (as `make_undergrowth`).
+func undergrowth_job(space: PhysicsDirectSpaceState3D) -> KitFlora.Undergrow:
+	return KitFlora.Undergrow.new(UNDERGROWTH_SEED,space,scene._turf,scene._outlines,scene.flora_site())
 
 ## The songbirds (a scripts/kit_isle/kit_birds.gd), or null for none.
 func make_birds() -> Node3D:
@@ -135,7 +190,7 @@ func make_birds() -> Node3D:
 func make_tokens() -> Node3D:
 	return null
 
-## The ground grid's rays (world y from, to).
+## The ground grid's rays (y from, to, in the isle's frame).
 func ground_span() -> Vector2:
 	return Vector2(top()+60.0,top()-10.0)
 
@@ -147,18 +202,22 @@ func wind_box() -> Vector2:
 func ride_y() -> float:
 	return top()
 
-## The meadow the chaff lies on (world rect).
+## The meadow the chaff lies on (the isle's frame).
 func chaff_meadow() -> Rect2:
 	return Rect2()
+
+## A rect in the isle's frame, where it stands (moved by `offset`).
+func placed(rect: Rect2) -> Rect2:
+	return Rect2(rect.position+Vector2(offset.x,offset.z),rect.size)
 
 ## The chaff's anchors: over `chaff_meadow`'s open grass.
 func chaff_anchors() -> Array:
 	var meadow := chaff_meadow()
 	if meadow.size == Vector2.ZERO: return []
-	return GrassChaff.anchors_on(grass_at,GrassChaff.count_for(meadow.get_area()*0.8),meadow)
+	return GrassChaff.anchors_on(grass_at,GrassChaff.count_for(meadow.get_area()*0.8),placed(meadow))
 
 ## Where loose leaves gather besides the undergrowth: the feet of the ruins
-## the walker passes (world x, z).
+## the walker passes (x, z in the isle's frame).
 func leaf_spots() -> Array:
 	return []
 
@@ -167,6 +226,11 @@ func leaf_spots() -> Array:
 ## Reads the isle's turf (its ground bodies on the scene's TURF_LAYER) and
 ## what is built over it into the grid.
 func _read_ground(space: PhysicsDirectSpaceState3D) -> void:
+	_ground_grid()
+	_read_rows(space,-1)
+
+## The grid's box round the scene's outlines (world).
+func _ground_grid() -> void:
 	var box := Rect2()
 	for i in range(scene._outlines.size()):
 		var outline: PackedVector2Array = scene._outlines[i]
@@ -179,11 +243,19 @@ func _read_ground(space: PhysicsDirectSpaceState3D) -> void:
 	_h = int(ceil(box.size.y/CELL))+1
 	_heights.resize(_w*_h)
 	_standing.resize(_w*_h)
-	var span := ground_span()
+	_row = 0
+
+## The grid's rows from `_row` on, until `end` (usec; -1 all): true once
+## the last is read.
+func _read_rows(space: PhysicsDirectSpaceState3D, end: int) -> bool:
+	var span := ground_span()+Vector2.ONE*offset.y
 	var turf := PhysicsRayQueryParameters3D.new()
 	turf.collision_mask = TURF_LAYER
 	var all := PhysicsRayQueryParameters3D.new()
-	for j in range(_h):
+	while _row < _h:
+		if end >= 0 and Time.get_ticks_usec() > end: return false
+		var j := _row
+		_row += 1
 		for i in range(_w):
 			var p := _origin+Vector2(i,j)*CELL
 			turf.from = Vector3(p.x,span.x,p.y)
@@ -200,6 +272,7 @@ func _read_ground(space: PhysicsDirectSpaceState3D) -> void:
 			all.to = Vector3(p.x,y-0.05,p.y)
 			var top := space.intersect_ray(all)
 			_standing[k] = 1 if not top.is_empty() and (top.position as Vector3).y > y+STANDING else 0
+	return true
 
 ## The turf's height at `p` (world x, z), or null off it.
 func ground_at(p: Vector2) -> Variant:
@@ -296,7 +369,7 @@ func _meadows() -> void:
 		meadow.flies = flies
 		# Their batches are boxed for the plate round the origin: box them
 		# round the patch instead.
-		var middle := Vector3((keys[n].x+0.5)*PATCH,top(),(keys[n].y+0.5)*PATCH)
+		var middle := Vector3((keys[n].x+0.5)*PATCH,top()+offset.y,(keys[n].y+0.5)*PATCH)
 		for child in flies.get_children():
 			if child is MultiMeshInstance3D:
 				(child as MultiMeshInstance3D).multimesh.custom_aabb = AABB(middle-Vector3(PATCH,4.0,PATCH),Vector3(PATCH*2.0,20.0,PATCH*2.0))
@@ -350,12 +423,15 @@ func _wind() -> void:
 	# islands' height rather than drop to the world's zero.
 	var ride := func(p: Vector2) -> Variant:
 		var h: Variant = ground_at(p)
-		return h if h != null else ride_y()
-	atmosphere.setup_wind_trails(ride,false)
-	var trails: Node = atmosphere.wind_trails
-	if trails.has_method("set_canopy"): trails.set_canopy(func(p: Vector2) -> float: return 0.6 if standing_at(p) else 0.0)
+		return h if h != null else ride_y()+offset.y
+	# A placed isle's life rides the home isle's ribbons (the atmosphere has
+	# one set), its canopy theirs.
+	if not shares_wind:
+		atmosphere.setup_wind_trails(ride,false)
+		var trails: Node = atmosphere.wind_trails
+		if trails.has_method("set_canopy"): trails.set_canopy(func(p: Vector2) -> float: return 0.6 if standing_at(p) else 0.0)
 	var tall := wind_box()
-	var box := AABB(Vector3(_origin.x,top()-tall.x,_origin.y),Vector3(_w*CELL,tall.y,_h*CELL))
+	var box := AABB(Vector3(_origin.x,top()+offset.y-tall.x,_origin.y),Vector3(_w*CELL,tall.y,_h*CELL))
 	leaf_litter = LeafLitter.new()
 	leaf_litter.custom_aabb = box
 	add_child(leaf_litter)
@@ -372,7 +448,7 @@ func _wind() -> void:
 ## Where loose leaves gather: at the feet of the ruins the walker passes
 ## (`leaf_spots`), by the undergrowth's shrubs and logs.
 func _leaf_anchors() -> Array:
-	var anchors: Array = leaf_spots().duplicate()
+	var anchors: Array = leaf_spots().map(func(p: Vector2) -> Vector2: return p+Vector2(offset.x,offset.z))
 	if undergrowth != null:
 		var rng := RandomNumberGenerator.new()
 		rng.seed = 233

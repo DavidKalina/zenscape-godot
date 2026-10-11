@@ -155,174 +155,293 @@ static func box_and_area(outlines: Array) -> Array:
 ## physics space the isle stands in; `turf` the islands' ground bodies (a
 ## ray must land on one); `outlines` the islands' (world x, z) polygons.
 static func grow(seed_value: int, space: PhysicsDirectSpaceState3D, turf: Array, outlines: Array, site: Site) -> Node3D:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = seed_value
-	var drift := FastNoiseLite.new()
-	drift.seed = seed_value+5
-	drift.frequency = DRIFT_FREQUENCY
-	var meadow := MeadowTypes.new(MEADOW,seed_value+9)
-	# The isle stands far off the plate: no plate rim thins its drifts.
-	meadow.rim_band = Vector2(1.0e6,2.0e6)
-	var probe := prober(space,turf,site)
-	var ground := Ground.new()
-	var records: Array = []
-	var add := func(asset: String, p: Vector2, size: float, extra := {}) -> bool:
-		var h: float = probe.call(p,REACH)
-		if is_nan(h) or site.is_wet(p): return false
-		var item := {"id":records.size()+1,"asset":asset,"x":p.x,"z":p.y,"angle":rng.randf()*TAU,"scale":size}
+	var job := Grow.new(seed_value,space,turf,outlines,site)
+	while not job.step(-1): pass
+	return job.node
+
+## `grow` in steps, so a placed isle (scripts/kit_isle/motif_isle.gd) grows
+## its plants a slice a frame: `step(usec)` works on for about that long
+## (-1: to the end) and answers true once `node` is drawn. The same records
+## in the same order as `grow`.
+class Grow extends RefCounted:
+	var node: Node3D
+	var _site: Site
+	var _outlines: Array
+	var _rng := RandomNumberGenerator.new()
+	var _drift := FastNoiseLite.new()
+	var _meadow: MeadowTypes
+	var _probe: Callable
+	var _ground := Ground.new()
+	var _records: Array = []
+	var _box: Rect2
+	var _area := 0.0
+	var _grass := 0
+	var _flowers := 0
+	var _n := 0
+	var _phase := 0
+	var _draw: Draw
+
+	func _init(seed_value: int, space: PhysicsDirectSpaceState3D, turf: Array, outlines: Array, site: Site) -> void:
+		_site = site
+		_outlines = outlines
+		_rng.seed = seed_value
+		_drift.seed = seed_value+5
+		_drift.frequency = DRIFT_FREQUENCY
+		_meadow = MeadowTypes.new(MEADOW,seed_value+9)
+		# The isle stands far off the plate: no plate rim thins its drifts.
+		_meadow.rim_band = Vector2(1.0e6,2.0e6)
+		_probe = KitFlora.prober(space,turf,site)
+		var ba := KitFlora.box_and_area(outlines)
+		_box = ba[0]
+		_area = ba[1]
+		_grass = int(_box.get_area()*site.tufts)
+		_flowers = int(_box.get_area()*FLOWER_TRIES)
+
+	func _add(asset: String, p: Vector2, size: float, extra := {}) -> bool:
+		var h: float = _probe.call(p,REACH)
+		if is_nan(h) or _site.is_wet(p): return false
+		var item := {"id":_records.size()+1,"asset":asset,"x":p.x,"z":p.y,"angle":_rng.randf()*TAU,"scale":size}
 		item.merge(extra,true)
-		ground.heights[item.id] = h
-		records.append(item)
+		_ground.heights[item.id] = h
+		_records.append(item)
 		return true
-	var ba := box_and_area(outlines)
-	var box: Rect2 = ba[0]
-	var area: float = ba[1]
-	# Grass: thick in drifts, thinner between, thinning onto the paths.
-	for n in range(int(box.get_area()*site.tufts)):
-		var p := Vector2(rng.randf_range(box.position.x,box.end.x),rng.randf_range(box.position.y,box.end.y))
-		var thick := clampf(0.6+drift.get_noise_2d(p.x,p.y)*1.3,THIN,1.0)
-		var worn := site.worn(p)
-		if worn > PATH_BARE or rng.randf() > thick*(1.0-smoothstep(PATH_THIN,PATH_BARE,worn)): continue
-		if edge(p,outlines) < RIM: continue
-		add.call("grass_tuft",p,rng.randf_range(TUFT_SIZE.x,TUFT_SIZE.y)*lerpf(1.0,0.75,worn))
-	# Flowers: the meadow type's drifts, sown sparse.
-	var sizes: Dictionary = meadow.type.sizes
-	for n in range(int(box.get_area()*FLOWER_TRIES)):
-		var p := Vector2(rng.randf_range(box.position.x,box.end.x),rng.randf_range(box.position.y,box.end.y))
-		var presence := meadow.presence(p)
-		var kind := meadow.kind_at(p,rng.randf())
-		var keep := pow(presence,1.2)*MeadowTypes.packing(kind)*FLOWER_SHARE
-		if rng.randf() > maxf(keep,STRAY): continue
-		if site.worn(p) > PATH_THIN or edge(p,outlines) < RIM+0.3: continue
-		var range_of: Array = sizes.get(kind,[0.85,1.1])
-		var formed: Array = MeadowTypes.form(kind,rng.randf_range(float(range_of[0]),float(range_of[1])),rng.randf()*TAU)
-		var extra := {}
-		var tint := MeadowTypes.tint(kind,meadow.variant(p))
-		if tint != "": extra.tint = tint
-		if not (formed[1] as Dictionary).is_empty(): extra.pose = formed[1]
-		add.call(MeadowTypes.asset(kind),p,float(formed[0]),extra)
-	return draw(records,ground,area)
+
+	func step(usec: int) -> bool:
+		var end := Time.get_ticks_usec()+usec
+		# Grass: thick in drifts, thinner between, thinning onto the paths.
+		while _phase == 0:
+			if _n >= _grass:
+				_phase = 1
+				_n = 0
+				break
+			_n += 1
+			if usec >= 0 and _n % 32 == 0 and Time.get_ticks_usec() > end:
+				_n -= 1
+				return false
+			var p := Vector2(_rng.randf_range(_box.position.x,_box.end.x),_rng.randf_range(_box.position.y,_box.end.y))
+			var thick := clampf(0.6+_drift.get_noise_2d(p.x,p.y)*1.3,THIN,1.0)
+			var worn := _site.worn(p)
+			if worn > PATH_BARE or _rng.randf() > thick*(1.0-smoothstep(PATH_THIN,PATH_BARE,worn)): continue
+			if KitFlora.edge(p,_outlines) < RIM: continue
+			_add("grass_tuft",p,_rng.randf_range(TUFT_SIZE.x,TUFT_SIZE.y)*lerpf(1.0,0.75,worn))
+		# Flowers: the meadow type's drifts, sown sparse.
+		var sizes: Dictionary = _meadow.type.sizes
+		while _phase == 1:
+			if _n >= _flowers:
+				_phase = 2
+				_draw = Draw.new(_records,_ground,_area)
+				break
+			_n += 1
+			if usec >= 0 and _n % 32 == 0 and Time.get_ticks_usec() > end:
+				_n -= 1
+				return false
+			var p := Vector2(_rng.randf_range(_box.position.x,_box.end.x),_rng.randf_range(_box.position.y,_box.end.y))
+			var presence := _meadow.presence(p)
+			var kind := _meadow.kind_at(p,_rng.randf())
+			var keep := pow(presence,1.2)*MeadowTypes.packing(kind)*FLOWER_SHARE
+			if _rng.randf() > maxf(keep,STRAY): continue
+			if _site.worn(p) > PATH_THIN or KitFlora.edge(p,_outlines) < RIM+0.3: continue
+			var range_of: Array = sizes.get(kind,[0.85,1.1])
+			var formed: Array = MeadowTypes.form(kind,_rng.randf_range(float(range_of[0]),float(range_of[1])),_rng.randf()*TAU)
+			var extra := {}
+			var tint := MeadowTypes.tint(kind,_meadow.variant(p))
+			if tint != "": extra.tint = tint
+			if not (formed[1] as Dictionary).is_empty(): extra.pose = formed[1]
+			_add(MeadowTypes.asset(kind),p,float(formed[0]),extra)
+		if _phase == 2:
+			if not _draw.step(maxi(end-Time.get_ticks_usec(),0) if usec >= 0 else -1): return false
+			node = _draw.node
+			_phase = 3
+		return true
 
 ## The undergrowth at what stands' feet and under the rims, a few
 ## elsewhere (KINDS), and a few mossy logs, off the worn ground and the
 ## water: a Node3D as `grow`'s (meta "records", "counts", "instances",
 ## "triangles").
 static func undergrowth(seed_value: int, space: PhysicsDirectSpaceState3D, turf: Array, outlines: Array, site: Site) -> Node3D:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = seed_value
-	var probe := prober(space,turf,site)
-	var ground := Ground.new()
-	var records: Array = []
-	var at_foot := func(p: Vector2) -> bool:
+	var job := Undergrow.new(seed_value,space,turf,outlines,site)
+	while not job.step(-1): pass
+	return job.node
+
+## `undergrowth` in steps, as `Grow` is `grow`'s.
+class Undergrow extends RefCounted:
+	var node: Node3D
+	var _site: Site
+	var _outlines: Array
+	var _rng := RandomNumberGenerator.new()
+	var _probe: Callable
+	var _ground := Ground.new()
+	var _records: Array = []
+	var _box: Rect2
+	var _area := 0.0
+	## Where it is: the kind, its candidate, how many placed; then the logs'
+	## candidate and count; then the draw.
+	var _kind := 0
+	var _n := 0
+	var _placed := 0
+	var _logs := 0
+	var _phase := 0
+	var _draw: Draw
+
+	func _init(seed_value: int, space: PhysicsDirectSpaceState3D, turf: Array, outlines: Array, site: Site) -> void:
+		_site = site
+		_outlines = outlines
+		_rng.seed = seed_value
+		_probe = KitFlora.prober(space,turf,site)
+		var ba := KitFlora.box_and_area(outlines)
+		_box = ba[0]
+		_area = ba[1]
+
+	func _at_foot(p: Vector2) -> bool:
 		for k in range(8):
-			if is_nan(probe.call(p+Vector2.from_angle(k*TAU/8.0+0.2)*FOOT,0.0)): return true
+			if is_nan(_probe.call(p+Vector2.from_angle(k*TAU/8.0+0.2)*FOOT,0.0)): return true
 		return false
-	var add := func(asset: String, p: Vector2, size: float) -> bool:
-		if site.worn(p) > 0.1: return false
-		var h: float = probe.call(p,UNDER_REACH)
-		if is_nan(h) or site.is_wet(p): return false
-		var item := {"id":records.size()+1,"asset":asset,"x":p.x,"z":p.y,"angle":rng.randf()*TAU,"scale":size}
-		ground.heights[item.id] = h
-		records.append(item)
+
+	func _add(asset: String, p: Vector2, size: float) -> bool:
+		if _site.worn(p) > 0.1: return false
+		var h: float = _probe.call(p,UNDER_REACH)
+		if is_nan(h) or _site.is_wet(p): return false
+		var item := {"id":_records.size()+1,"asset":asset,"x":p.x,"z":p.y,"angle":_rng.randf()*TAU,"scale":size}
+		_ground.heights[item.id] = h
+		_records.append(item)
 		return true
-	var ba := box_and_area(outlines)
-	var box: Rect2 = ba[0]
-	var area: float = ba[1]
-	for entry: Array in KINDS:
-		var asset: String = entry[0]
-		var want := int(area*float(entry[1]))
-		var sizes: Vector2 = entry[2]
-		var placed := 0
-		for n in range(want*14):
-			if placed >= want: break
-			var p := Vector2(rng.randf_range(box.position.x,box.end.x),rng.randf_range(box.position.y,box.end.y))
-			var e := edge(p,outlines)
-			if e < UNDER_RIM or site.worn(p) > 0.05: continue
-			if e > RIM_NEAR and not at_foot.call(p) and rng.randf() > OPEN_KEEP: continue
+
+	func step(usec: int) -> bool:
+		var end := Time.get_ticks_usec()+usec
+		while _phase == 0:
+			if _kind >= KINDS.size():
+				_phase = 1
+				_n = 0
+				break
+			var entry: Array = KINDS[_kind]
+			var asset: String = entry[0]
+			var want := int(_area*float(entry[1]))
+			var sizes: Vector2 = entry[2]
+			if _placed >= want or _n >= want*14:
+				_kind += 1
+				_n = 0
+				_placed = 0
+				continue
+			if usec >= 0 and _n % 16 == 15 and Time.get_ticks_usec() > end: return false
+			_n += 1
+			var p := Vector2(_rng.randf_range(_box.position.x,_box.end.x),_rng.randf_range(_box.position.y,_box.end.y))
+			var e := KitFlora.edge(p,_outlines)
+			if e < UNDER_RIM or _site.worn(p) > 0.05: continue
+			if e > RIM_NEAR and not _at_foot(p) and _rng.randf() > OPEN_KEEP: continue
 			if asset == "mushroom":
 				var any := false
-				for k in range(rng.randi_range(3,6)):
-					var q := p+Vector2.from_angle(rng.randf()*TAU)*rng.randf_range(0.12,0.5)
-					any = add.call(asset,q,rng.randf_range(sizes.x,sizes.y)) or any
-				if any: placed += 1
-			elif add.call(asset,p,rng.randf_range(sizes.x,sizes.y)):
-				placed += 1
+				for k in range(_rng.randi_range(3,6)):
+					var q := p+Vector2.from_angle(_rng.randf()*TAU)*_rng.randf_range(0.12,0.5)
+					any = _add(asset,q,_rng.randf_range(sizes.x,sizes.y)) or any
+				if any: _placed += 1
+			elif _add(asset,p,_rng.randf_range(sizes.x,sizes.y)):
+				_placed += 1
 				# A fern or shrub seldom stands alone: a second close by.
-				if asset in ["fern","shrub"] and rng.randf() < 0.45:
-					add.call(asset,p+Vector2.from_angle(rng.randf()*TAU)*rng.randf_range(0.6,1.2),rng.randf_range(sizes.x,sizes.y)*0.85)
-	# The logs: lying at a foot on open turf, a fern or two by each.
-	var logs := 0
-	for n in range(400):
-		if logs >= LOGS: break
-		var p := Vector2(rng.randf_range(box.position.x,box.end.x),rng.randf_range(box.position.y,box.end.y))
-		if edge(p,outlines) < 2.0 or site.worn(p) > 0.02 or not at_foot.call(p): continue
-		# A log wants its length clear: probe along it.
-		var angle := rng.randf()*TAU
-		var along := Vector2.from_angle(angle)
-		if is_nan(probe.call(p+along*1.2,UNDER_REACH)) or is_nan(probe.call(p-along*1.2,UNDER_REACH)): continue
-		if add.call("log",p,rng.randf_range(LOG_SIZE.x,LOG_SIZE.y)):
-			(records[-1] as Dictionary).angle = angle
-			logs += 1
-			for k in range(rng.randi_range(1,2)):
-				add.call("fern",p+Vector2.from_angle(rng.randf()*TAU)*rng.randf_range(0.9,1.5),rng.randf_range(0.5,0.75))
-	var node: Node3D = draw(records,ground,area,UNDER_TILE)
-	node.name = "Undergrowth"
-	return node
+				if asset in ["fern","shrub"] and _rng.randf() < 0.45:
+					_add(asset,p+Vector2.from_angle(_rng.randf()*TAU)*_rng.randf_range(0.6,1.2),_rng.randf_range(sizes.x,sizes.y)*0.85)
+		# The logs: lying at a foot on open turf, a fern or two by each.
+		while _phase == 1:
+			if _n >= 400 or _logs >= LOGS:
+				_phase = 2
+				_draw = Draw.new(_records,_ground,_area,UNDER_TILE)
+				break
+			if usec >= 0 and _n % 16 == 15 and Time.get_ticks_usec() > end: return false
+			_n += 1
+			var p := Vector2(_rng.randf_range(_box.position.x,_box.end.x),_rng.randf_range(_box.position.y,_box.end.y))
+			if KitFlora.edge(p,_outlines) < 2.0 or _site.worn(p) > 0.02 or not _at_foot(p): continue
+			# A log wants its length clear: probe along it.
+			var angle := _rng.randf()*TAU
+			var along := Vector2.from_angle(angle)
+			if is_nan(_probe.call(p+along*1.2,UNDER_REACH)) or is_nan(_probe.call(p-along*1.2,UNDER_REACH)): continue
+			if _add("log",p,_rng.randf_range(LOG_SIZE.x,LOG_SIZE.y)):
+				(_records[-1] as Dictionary).angle = angle
+				_logs += 1
+				for k in range(_rng.randi_range(1,2)):
+					_add("fern",p+Vector2.from_angle(_rng.randf()*TAU)*_rng.randf_range(0.9,1.5),_rng.randf_range(0.5,0.75))
+		if _phase == 2:
+			if not _draw.step(maxi(end-Time.get_ticks_usec(),0) if usec >= 0 else -1): return false
+			node = _draw.node
+			node.name = "Undergrowth"
+			_phase = 3
+		return true
 
 ## The records drawn as the islets draw theirs, one multimesh a tile and
 ## catalog part, `tile_size` m a tile.
 static func draw(records: Array, ground: Ground, area: float, tile_size := TILE) -> Node3D:
-	var catalog: Dictionary = SkyIslets.catalog()
-	var data: Dictionary = catalog.data
-	var meshes: Dictionary = catalog.meshes
-	# Records by tile, each built on its own so its parts stay together.
-	var tiles := {}
-	for item: Dictionary in records:
-		var key := Vector2i(floori(float(item.x)/tile_size),floori(float(item.z)/tile_size))
-		if not tiles.has(key): tiles[key] = []
-		(tiles[key] as Array).append(item)
+	var job := Draw.new(records,ground,area,tile_size)
+	while not job.step(-1): pass
+	return job.node
+
+## `draw` in steps, a tile at a time.
+class Draw extends RefCounted:
 	var node := Node3D.new()
-	node.name = "Flora"
-	var instances := {}
-	var triangles := 0
-	for tile: Vector2i in tiles:
-		var transforms := {}
-		var sources := {}
-		var tints := {}
-		for item: Dictionary in tiles[tile]:
-			Samples.add_item(item,ground,data.parts,data.poses,data.tints,data.world,false,transforms,sources,tints)
-		for key: String in transforms:
-			var list: Array = transforms[key]
-			if list.is_empty() or not meshes.has(key): continue
-			var colours: Array = tints[key]
-			var multimesh := MultiMesh.new()
-			multimesh.transform_format = MultiMesh.TRANSFORM_3D
-			multimesh.use_colors = true
-			multimesh.mesh = meshes[key]
-			multimesh.instance_count = list.size()
-			for i in range(list.size()):
-				multimesh.set_instance_transform(i,list[i])
-				multimesh.set_instance_color(i,colours[i] if i < colours.size() else Color.WHITE)
-			var batch := MultiMeshInstance3D.new()
-			batch.name = "%s_%d_%d" % [key.replace(":","_"),tile.x,tile.y]
-			batch.multimesh = multimesh
-			batch.material_override = SkyIslets._plant_material(key)
-			batch.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			batch.visibility_range_end = GRASS_RANGE if key.begins_with("grass") else FLOWER_RANGE
-			batch.visibility_range_end_margin = FADE
-			batch.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
-			batch.set_meta("part",key)
-			node.add_child(batch)
-			instances[key] = int(instances.get(key,0))+list.size()
-			triangles += _mesh_triangles(meshes[key])*list.size()
-	var counts := {}
-	for item: Dictionary in records: counts[item.asset] = int(counts.get(item.asset,0))+1
-	node.set_meta("records",records)
-	node.set_meta("counts",counts)
-	node.set_meta("instances",instances)
-	node.set_meta("triangles",triangles)
-	node.set_meta("area",area)
-	return node
+	var _records: Array
+	var _ground: Ground
+	var _area: float
+	var _tiles := {}
+	var _keys: Array = []
+	var _at := 0
+	var _instances := {}
+	var _triangles := 0
+
+	func _init(records: Array, ground: Ground, area: float, tile_size := TILE) -> void:
+		_records = records
+		_ground = ground
+		_area = area
+		node.name = "Flora"
+		# Records by tile, each built on its own so its parts stay together.
+		for item: Dictionary in records:
+			var key := Vector2i(floori(float(item.x)/tile_size),floori(float(item.z)/tile_size))
+			if not _tiles.has(key): _tiles[key] = []
+			(_tiles[key] as Array).append(item)
+		_keys = _tiles.keys()
+
+	func step(usec: int) -> bool:
+		var end := Time.get_ticks_usec()+usec
+		var catalog: Dictionary = SkyIslets.catalog()
+		var data: Dictionary = catalog.data
+		var meshes: Dictionary = catalog.meshes
+		while _at < _keys.size():
+			if usec >= 0 and Time.get_ticks_usec() > end: return false
+			var tile: Vector2i = _keys[_at]
+			_at += 1
+			var transforms := {}
+			var sources := {}
+			var tints := {}
+			for item: Dictionary in _tiles[tile]:
+				Samples.add_item(item,_ground,data.parts,data.poses,data.tints,data.world,false,transforms,sources,tints)
+			for key: String in transforms:
+				var list: Array = transforms[key]
+				if list.is_empty() or not meshes.has(key): continue
+				var colours: Array = tints[key]
+				var multimesh := MultiMesh.new()
+				multimesh.transform_format = MultiMesh.TRANSFORM_3D
+				multimesh.use_colors = true
+				multimesh.mesh = meshes[key]
+				multimesh.instance_count = list.size()
+				for i in range(list.size()):
+					multimesh.set_instance_transform(i,list[i])
+					multimesh.set_instance_color(i,colours[i] if i < colours.size() else Color.WHITE)
+				var batch := MultiMeshInstance3D.new()
+				batch.name = "%s_%d_%d" % [key.replace(":","_"),tile.x,tile.y]
+				batch.multimesh = multimesh
+				batch.material_override = SkyIslets._plant_material(key)
+				batch.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				batch.visibility_range_end = GRASS_RANGE if key.begins_with("grass") else FLOWER_RANGE
+				batch.visibility_range_end_margin = FADE
+				batch.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+				batch.set_meta("part",key)
+				node.add_child(batch)
+				_instances[key] = int(_instances.get(key,0))+list.size()
+				_triangles += KitFlora._mesh_triangles(meshes[key])*list.size()
+		var counts := {}
+		for item: Dictionary in _records: counts[item.asset] = int(counts.get(item.asset,0))+1
+		node.set_meta("records",_records)
+		node.set_meta("counts",counts)
+		node.set_meta("instances",_instances)
+		node.set_meta("triangles",_triangles)
+		node.set_meta("area",_area)
+		return true
 
 static func _mesh_triangles(mesh: Mesh) -> int:
 	var count := 0

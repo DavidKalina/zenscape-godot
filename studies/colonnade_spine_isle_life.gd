@@ -19,7 +19,7 @@ func wind_box() -> Vector2:
 func chaff_anchors() -> Array:
 	var anchors: Array = []
 	for meadow: Rect2 in [Rect2(46.0,Spine.zc(58.0)-6.0,24.0,12.0),Rect2(116.0,Spine.zc(124.0)-6.0,16.0,12.0)]:
-		anchors.append_array(GrassChaff.anchors_on(grass_at,GrassChaff.count_for(meadow.get_area()*0.4),meadow))
+		anchors.append_array(GrassChaff.anchors_on(grass_at,GrassChaff.count_for(meadow.get_area()*0.4),placed(meadow)))
 	return anchors
 
 ## Leaves gather at the piers' feet, the stairs' and the gate's.

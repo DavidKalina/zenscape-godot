@@ -29,6 +29,9 @@ var taken: Array[String] = []
 var hud: CanvasLayer
 var _holders := {}
 var _last := Vector3.INF
+## A placed isle's (scripts/kit_isle/motif_isle.gd): where it stands from
+## its own frame, which `spots_for` answers in.
+var offset := Vector3.ZERO
 
 ## Where each token stands and the move it asks for ({name, at, move}),
 ## worked out from the isle's own geometry (`isle` the study).
@@ -50,6 +53,7 @@ static func under_lip(p: Dictionary, along: float) -> Vector3:
 func setup(isle: Node3D) -> void:
 	name = "Tokens"
 	tokens = spots_for(isle)
+	for t: Dictionary in tokens: t.at = (t.at as Vector3)+offset
 	for i in range(tokens.size()):
 		var t: Dictionary = tokens[i]
 		var holder := GlyphPickup.make(GLYPH,SIZE,float(i)*1.3,true)
