@@ -12,7 +12,8 @@ func _initialize() -> void: run.call_deferred()
 func run() -> void:
 	var path := "res://studies/aqueduct_isle.tscn"
 	var seconds := 20.0
-	var extra := PackedStringArray(["--no-title"])
+	# Headless the motif isles are built only near the eye unless asked.
+	var extra := PackedStringArray(["--no-title","--motifs-now"])
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--scene="): path = arg.get_slice("=",1)
 		elif arg.begins_with("--seconds="): seconds = float(arg.get_slice("=",1))

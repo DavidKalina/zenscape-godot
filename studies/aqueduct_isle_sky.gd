@@ -39,8 +39,8 @@ extends Node3D
 ##               skill moment through the isle's own stone (TOKENS), and
 ##               each motif isle's own. --no-sky-tokens.
 ##   serpent     a giant rune serpent (scripts/rune_serpent.gd) slithering
-##               its long way round the isle, through the Sundered gorge,
-##               down into the cloud sea under the bell spires and home; it
+##               its long way round the isle, down the Sundered gorge, down
+##               into the cloud sea under the bell spires and home; it
 ##               watches and paces the plane, solid to it. --no-serpent.
 ##               See docs/scenic/rune-serpent.md.
 ## --no-sky leaves all of it out. See docs/scenic/aqueduct-isle-sky.md.
@@ -72,11 +72,11 @@ const MIDDLE := Vector3(85.0,30.0,-20.0)
 ## The airships' loops (world waypoints, flown round and round, a Catmull-Rom
 ## through them) and their speeds (m/s). The first passes the isle close
 ## (its drone heard on the isle's top) and out by the bell spires; the
-## second loops the Sundered gorge between the isle and the colonnade
-## spine; the third circles the cloister tarn.
+## second circles the colonnade spine; the third the cloister tarn. All
+## keep well off the rune serpent's way.
 const ROUTES := [
-	[[Vector3(40.0,60.0,120.0),Vector3(270.0,58.0,190.0),Vector3(420.0,64.0,-60.0),Vector3(230.0,66.0,-130.0),Vector3(40.0,60.0,-70.0)],6.5],
-	[[Vector3(-120.0,58.0,-80.0),Vector3(-330.0,62.0,-150.0),Vector3(-520.0,56.0,40.0),Vector3(-330.0,60.0,250.0),Vector3(-150.0,56.0,150.0)],7.5],
+	[[Vector3(60.0,62.0,140.0),Vector3(270.0,58.0,190.0),Vector3(420.0,64.0,-60.0),Vector3(230.0,66.0,-130.0),Vector3(40.0,60.0,-70.0)],6.5],
+	[[Vector3(-190.0,64.0,-140.0),Vector3(-440.0,60.0,-230.0),Vector3(-380.0,64.0,-560.0),Vector3(-60.0,58.0,-520.0),Vector3(-40.0,60.0,-300.0)],7.5],
 	[[Vector3(60.0,70.0,210.0),Vector3(290.0,58.0,360.0),Vector3(60.0,62.0,590.0),Vector3(-170.0,60.0,360.0)],8.0],
 ]
 ## The airship's bank per radian a second of turn, and most.

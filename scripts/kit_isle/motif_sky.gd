@@ -44,6 +44,12 @@ const REACH := {"bell_spires":34.0,"cloister_tarn":54.0,"sundered_gorge":56.0,"c
 const MIDDLES := {"bell_spires":Vector2(82.3,-21.8),"cloister_tarn":Vector2(73.7,-5.0),"sundered_gorge":Vector2(86.0,-22.2),"colonnade_spine":Vector2(86.0,-10.5)}
 ## A slice is at least this long (usec) once the frame's budget is open.
 const SLICE_LEAST := 1500
+## Headless (built on the main thread, a whole isle's art in one frame of
+## up to 4 s), an isle is built only once the eye is within this of its
+## edge (m), unless --motifs-now (or `flush`): so a headless run on the
+## aqueduct isle (tests, the packaged check) isn't stalled by isles it never
+## goes near. Rendered, every isle is built from the start, on a worker.
+const HEADLESS_NEAR := 200.0
 
 var scene: Node3D
 var sky: Node3D
@@ -52,6 +58,8 @@ var isles: Array = []
 var _building: Node3D = null
 ## Built on workers (rendered), or on the main thread (headless).
 var threaded := DisplayServer.get_name() != "headless"
+## Every isle built from the start, near or not (rendered; --motifs-now).
+var eager := true
 
 ## Where each stands, without making any: [id, middle (world; y its top),
 ## reach (m)].
@@ -71,6 +79,7 @@ func setup(study: Node3D, owner_sky: Node3D, args: PackedStringArray) -> void:
 	scene = study
 	sky = owner_sky
 	var began := Time.get_ticks_msec()
+	eager = threaded or args.has("--motifs-now")
 	var where := places()
 	for k in range(PLACES.size()):
 		var spec: Array = PLACES[k]
@@ -161,6 +170,9 @@ func _process(delta: float) -> void:
 			if not isle.wants_work(): continue
 			var c: Vector3 = isle.circle()
 			var d := Vector2(eye.x-c.x,eye.z-c.y).length()
+			# Headless, an isle's art is built here, a whole isle in one
+			# frame: only once the eye comes near (or `eager`).
+			if isle.stage == "waiting" and not eager and d-c.z > HEADLESS_NEAR: continue
 			if d < near:
 				near = d
 				best = isle
