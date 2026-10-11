@@ -213,6 +213,8 @@ func burst(m: PilotMotor, want: Vector2) -> bool:
 	if not BURST_ON or charge < MIN_RELEASE or want.length() < BURST_STICK: return false
 	if m.recovering() or m.swimming or m.seized() or m.rider != null or m.hold != "": return false
 	if not m.grounded and not BURST_AIR_ON: return false
+	# On the ground only a slide takes the forward burst; running, it is the updraft.
+	if m.grounded and m.move != "slide": return false
 	var h := Vector2(m.velocity.x,m.velocity.z)
 	var pace := h.length()
 	var dir := want.normalized()
