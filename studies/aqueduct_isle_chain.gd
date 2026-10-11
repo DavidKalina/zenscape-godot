@@ -18,7 +18,14 @@ extends Node3D
 ## hall's first chunk bursts out of the cloud dead ahead, on the heading
 ## the plane left the ring with. Its way in stands `lead` m on, or further
 ## at speed, so its gate is still `spare` s before the plane gets there.
-## From there it is the hall chain (scripts/hall_chain.gd), its triggers
+## From there it is the Sundered line (scripts/hall_line.gd, docs/design/
+## isle-hall-line.md): big whole pieces of nave on their islands rising one
+## after another, end to end in straight runs, sidestepping now and then,
+## each the game's own Sundered hall (scripts/hall_line_build.gd: the ruin
+## kit in its basalt, the overgrowth, its ridge island), built on a worker
+## from when the ring wakes (--line-look=greybox: round 1's boxes).
+## --chain-style=halls brings back the hall chain (scripts/hall_chain.gd:
+## the moments hall in four chunks, a long S). Either way its triggers are
 ## arrival-aware here (`settle_by`, `catch_up`).
 ##
 ## The cloud is the game's own: the near cloud sea round the isle (scripts/
@@ -32,6 +39,7 @@ extends Node3D
 ## flying).
 
 const Chain = preload("res://scripts/hall_chain.gd")
+const Line = preload("res://scripts/hall_line.gd")
 const ChainPlan = preload("res://scripts/hall_chain_plan.gd")
 const Rise = preload("res://scripts/hall_rise.gd")
 const RisePlan = preload("res://scripts/hall_rise_plan.gd")
@@ -134,6 +142,9 @@ var spare := SPARE
 ## the ring is threaded; "pulse": after the pause, as before
 ## (--first-at=pulse).
 var first_at := "thread"
+## "line" (the Sundered line, scripts/hall_line.gd) or "halls" (the hall
+## chain, --chain-style=halls).
+var style := "line"
 ## The first hall's way in as placed (m past the pass point).
 var lead_used := 0.0
 ## Where and on what heading the plane threaded it.
@@ -173,13 +184,14 @@ func setup(target: Vector3, args: PackedStringArray) -> void:
 		elif a.begins_with("--arrive-spare="): spare = float(v)
 		elif a.begins_with("--catch-up="): catch_up = maxf(1.0,float(v))
 		elif a.begins_with("--first-at=") and v in ["thread","pulse"]: first_at = v
+		elif a.begins_with("--chain-style=") and v in ["line","halls"]: style = v
 	# It faces out along the isle-to-shard line.
 	ring_heading = atan2(-way.x,-way.y)
 	burst = PuffBurst.new()
 	burst.base_y = SEA_TOP
 	add_child(burst)
 	_build_ring()
-	chain = Chain.new()
+	chain = Line.new() if style == "line" else Chain.new()
 	chain.sea_top = SEA_TOP
 	chain.plane_box = Callable()
 	chain.burst = burst
@@ -187,10 +199,16 @@ func setup(target: Vector3, args: PackedStringArray) -> void:
 	add_child(chain)
 	var rise := RISE_OPTS.duplicate()
 	rise.merge(Rise.options(args),true)
-	chain.configure(Chain.options(args),rise)
-	# The halls stand about the ring's height, far over the sea.
-	var clear: float = ring_at.y-2.0-SEA_TOP+float(chain.lowest())
-	chain.clear_range = Vector2(clear-CLIMB_BAND,clear+CLIMB_BAND)
+	if style == "line":
+		# The line keeps its floors within its own band of the first's; its
+		# islands' falls are planned from about the ring's height.
+		chain.home_y = ring_at.y
+		chain.configure(Line.options(args),rise)
+	else:
+		chain.configure(Chain.options(args),rise)
+		# The halls stand about the ring's height, far over the sea.
+		var clear: float = ring_at.y-2.0-SEA_TOP+float(chain.lowest())
+		chain.clear_range = Vector2(clear-CLIMB_BAND,clear+CLIMB_BAND)
 	chain.settle_by = spare
 	chain.catch_up = catch_up
 
@@ -310,6 +328,8 @@ func step(delta: float, plane: RefCounted, seated: bool, _eye := Vector3.ZERO) -
 			if pause_left <= 0.0: _start()
 	if at != null and state == "standing": _watch(at as Vector3,plane)
 	if at == null: _prev = Vector3.INF
+	# The line's pieces built ahead from when the ring wakes.
+	if style == "line" and state != "hidden": chain.prefetch()
 	if chain.halls.size() > 0:
 		chain.plane_speed = speed
 		chain.advance(delta,at)
@@ -362,12 +382,20 @@ func _watch(at: Vector3, plane: RefCounted) -> void:
 ## its gate is still `spare` s before the plane gets there.
 func _place_first() -> void:
 	var v := maxf(pass_speed,SkyPlane.CRUISE_SPEED)
-	var origin_y := pass_point.y-2.0
-	var still: float = float(chain.length_at(origin_y))+(pause if first_at == "pulse" else 0.0)
-	lead_used = maxf(lead,v*(still+spare)-ChainPlan.LEAD_IN)
+	var still: float = float(chain.length_at(first_y()))+(pause if first_at == "pulse" else 0.0)
+	lead_used = maxf(lead,v*(still+spare)-lead_in())
 	var way_in := pass_point+ChainPlan.ahead(pass_heading)*lead_used
 	chain.plane_speed = v
 	chain.reset(-1,chain.first_pose_at(way_in,pass_heading,HAND))
+
+## The height the first hall's rise is timed at: the hall chain's origin
+## (2 m under the way in), or the line's lane (the way in's height).
+func first_y() -> float:
+	return pass_point.y-2.0 if style == "halls" else pass_point.y
+
+## How far the way in stands before the first gate or entry (m).
+func lead_in() -> float:
+	return ChainPlan.LEAD_IN if style == "halls" else Line.LEAD_IN
 
 ## After the held breath: the pulse (and the first hall, if it waits).
 func _start() -> void:
@@ -375,7 +403,8 @@ func _start() -> void:
 	if first_at == "pulse": _place_first()
 	started.emit()
 
-## The gate of the first hall (world), once placed.
+## The gate of the first hall, or the first piece's entry (world), once
+## placed.
 func first_gate() -> Vector3:
 	if chain.halls.is_empty(): return Vector3.INF
-	return Chain.gate_of(chain.halls[0].pose)
+	return Chain.gate_of(chain.halls[0].pose) if style == "halls" else Line.gate_of(chain.halls[0].pose)

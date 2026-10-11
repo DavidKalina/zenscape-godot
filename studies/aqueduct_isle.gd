@@ -65,7 +65,14 @@ extends "res://studies/kit_isle.gd"
 ## aqueduct_isle_chain.gd): near the shard an arch erupts quietly out of
 ## the cloud sea far below and climbs to stand past it; threading it, a
 ## held breath, a pulse through the plane (the nose arrow goes quiet), and
-## the Sundered halls erupt from the sea one after another ahead.
+## the Sundered line erupts from the sea ahead, big pieces one after
+## another, end to end, sidestepping now and then, each the game's own
+## Sundered hall in its basalt and overgrowth on its ridge island (docs/
+## design/isle-hall-line.md; --line-look=greybox: round 1's boxes;
+## --chain-style=halls: the old hall chain; the line's flags --line-run=,
+## --line-jog=, ... apply). --autopilot flies the line
+## for you once it starts (any stick or key takes over); --capture-high
+## takes the capture from high behind the plane, looking down the line.
 ## --no-chain leaves it out (the old shard-only arrival); --ring=x,y,z
 ## moves the ring, --ring-near=<m> how near it wakes (420),
 ## --ring-pause=<s> the breath (1.5), --chain-lead=<m> how far on the first
@@ -136,6 +143,12 @@ var isle_chain: Node3D = null
 var _near_ring := false
 var _plane_flash: MeshInstance3D = null
 var _plane_flash_left := 0.0
+## --autopilot: the chain's pilot flies its route once it has one (any real
+## stick or key turns it off); its place along the route.
+var autopilot := false
+var _auto_at := -1
+## --capture-high: the capture's eye high behind the plane.
+var _capture_high := false
 
 ## The landmarks from the kit (their metadata drives the tests).
 var stair: Node3D
@@ -146,6 +159,8 @@ func _ready() -> void:
 	_lode_at = LODE_PLATFORM
 	for arg in preload("res://scripts/launch_args.gd").user_args():
 		if arg == "--no-chain": chain_on = false
+		elif arg == "--autopilot": autopilot = true
+		elif arg == "--capture-high": _capture_high = true
 		elif arg == "--near-ring":
 			_near_ring = true
 			_carry = true
@@ -389,3 +404,28 @@ func _show_fly_hint() -> void:
 func _check_arrival() -> void:
 	if isle_chain != null: return
 	super._check_arrival()
+
+## With --autopilot, once the chain has a route: its pilot's input, till a
+## real stick or key (turn, pitch, lean) takes over for good.
+func _fly_input(delta: float) -> Dictionary:
+	var input := super._fly_input(delta)
+	if not autopilot or isle_chain == null or isle_chain.chain.halls.is_empty(): return input
+	if absf(float(input.turn))+absf(float(input.pitch))+absf(float(input.lean)) > 0.05:
+		autopilot = false
+		return input
+	if _auto_at < 0: _auto_at = isle_chain.chain.route_base
+	var got: Array = isle_chain.chain.steer(plane,_auto_at)
+	_auto_at = got[1]
+	var out: Dictionary = got[0]
+	out.boost = input.boost
+	out.brake = input.brake
+	return out
+
+## With --capture-high, flying: frozen there, seen from high behind,
+## looking on down the line.
+func _capture_flying() -> void:
+	if not _capture_high: return
+	set_process(false)
+	var on := Vector3(-sin(float(plane.heading)),0.0,-cos(float(plane.heading)))
+	camera.fov = 60.0
+	camera.look_at_from_position(plane.position-on*110.0+Vector3.UP*75.0,plane.position+on*170.0-Vector3.UP*10.0)

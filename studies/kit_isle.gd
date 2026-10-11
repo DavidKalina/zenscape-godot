@@ -1115,6 +1115,11 @@ func _fly_event(event: InputEvent) -> void:
 func _pack_runs() -> PackedStringArray:
 	return PackedStringArray()
 
+## A flying capture's last word on the eye, once the wait is flown (a
+## scene may move the camera; the chase camera's by default).
+func _capture_flying() -> void:
+	pass
+
 func _take_capture() -> void:
 	for child in get_children():
 		if child is CanvasLayer and (child as CanvasLayer).layer in [5,6]: (child as CanvasLayer).visible = false
@@ -1129,6 +1134,7 @@ func _take_capture() -> void:
 	else:
 		if flying:
 			while flown < _capture_wait: await get_tree().process_frame
+			_capture_flying()
 		else: await get_tree().create_timer(_capture_wait).timeout
 	# The frame's cost, measured over a second before the save.
 	# The frame's cost: wall-clock frames with vsync off, over 120 frames.
