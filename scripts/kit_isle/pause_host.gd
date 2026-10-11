@@ -80,7 +80,7 @@ func can_pause() -> bool:
 	var naming: Control = isle.get("_name_panel")
 	return naming == null or not naming.visible
 
-## Whether Back to the plane is offered: on foot or under the canopy, with
+## Whether Back to the plane is offered: on foot or off the edge, with
 ## the plane parked (in the plane it's the plane).
 func can_return() -> bool:
 	return not isle.flying and isle.parked and isle.lode_state != "inspecting"

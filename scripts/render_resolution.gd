@@ -13,8 +13,8 @@ extends RefCounted
 
 const SETTINGS_PATH := "user://look.cfg"
 ## Each choice's most lines high; 0 draws at the window's own resolution.
-const CAPS := [0,1440,1080,720]
-const CAP_NAMES := ["Native","1440p","1080p","720p"]
+const CAPS := [0,1440,1080,900,720]
+const CAP_NAMES := ["Native","1440p","1080p","900p","720p"]
 const DEFAULT_CAP := 1080
 
 ## The cap until the player chooses: none on a discrete GPU, full fidelity

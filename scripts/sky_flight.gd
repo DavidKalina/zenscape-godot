@@ -169,7 +169,7 @@ func _publish() -> void:
 	var middle: Variant = islands.get("origin") if islands != null else null
 	var ring := SkyHaze.ring_spot(middle) if middle is Vector3 else Vector4.ZERO
 	var below := 1.0 if lower != null and lower.below else 0.0
-	SkyHaze.publish(haze,blend,sea,SkyHaze.emerging(islands,eye) if islands != null and haze > 0.0 else [],spots,ring,below)
+	SkyHaze.publish(haze,blend,sea,[],spots,ring,below)
 	if lower != null: _overcast(sky,below)
 	if _veil == null: return
 	_veil.visible = vapour > 0.003

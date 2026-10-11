@@ -5,6 +5,7 @@ extends SceneTree
 ## a renderer. Saves captures/meadows/map-<type>-<seed>.png, 16 px a metre.
 ##   godot --headless --path . -s res://tools/map_meadows.gd -- [--types=sunflower,cosmos] [--seed=2081]
 const MeadowTypes = preload("res://scripts/meadow_types.gd")
+const MeadowRecipe = preload("res://scripts/meadow_recipe.gd")
 const OUT := "res://captures/meadows"
 const PX := 16.0
 const HABITATS := {"meadow":Color("9fbe5c"),"woodland":Color("4f7d4a"),"alpine":Color("9a978c"),"wetland":Color("6f9c86"),"redwood":Color("3f5f3a"),"arid":Color("c2a678")}
@@ -25,7 +26,7 @@ func run() -> void:
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(OUT))
 	for type_id: String in types:
 		var land = preload("res://scripts/inland_landscape.gd").new()
-		await land.form(data,MeadowTypes.recipe(type_id,seed_value))
+		await land.form(data,MeadowRecipe.recipe(type_id,seed_value))
 		var side := int(28.0*PX)
 		var image := Image.create(side,side,false,Image.FORMAT_RGB8)
 		for y in range(side):

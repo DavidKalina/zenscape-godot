@@ -11,11 +11,15 @@ Double-click **`run-zenscape.command`**, or open `project.godot` in
 the front door, `studies/zenscape.tscn`: the title over the aqueduct isle
 (`studies/aqueduct_isle.gd`), the camera orbiting it. **Begin** puts you on
 foot beside your parked plane; **Scenes** opens every study and greybox
-(docs/design/scene-picker.md); **Settings** (look, sound, controller);
-**Quit**. `-- --no-title` goes straight in. In the game, **Esc** or the
+(docs/design/scene-picker.md); **Settings** (look, day and night, weather,
+sound, controller); **Quit**. `-- --no-title` goes straight in. The sky is
+live: the day turns (8 minutes a day), the year turns from the real date's
+season, the weather drifts and storms flash in the clouds
+(`scripts/kit_isle/kit_weather.gd`; `--day-length=60 --weather=storm` to
+watch it fast). In the game, **Esc** or the
 pad's **Menu** pauses: Resume, Back to the plane (also **R** on foot),
 Settings, Scenes, Back to the title and Quit. The study's developer keys
-(F1-F8, the station keys, L, B) and capture flags work only in editor and
+(F1-F12, the station keys, L, B) and capture flags work only in editor and
 debug runs. The plan behind it is docs/design/consolidation-audit.md.
 
 The old game (the plate builder below) is hidden for now: it's **Builder

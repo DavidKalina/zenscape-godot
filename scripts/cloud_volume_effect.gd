@@ -164,8 +164,18 @@ func _allocate(want: Vector2i, whole: Vector2i) -> void:
 		_rd.texture_clear(_shadow,Color(1.0,1.0,0.0,0.0),0,1,0,1)
 		weather.texture_rd_rid = _weather
 		shadow.texture_rd_rid = _shadow
-	for rid in [_march_a,_march_b,_depth,_resolved_a,_resolved_b,_history_a,_history_b]:
-		if rid.is_valid(): _rd.free_rid(rid)
+	# The new targets are made and the textures repointed to them before
+	# the old ones go. Repointing a Texture2DRD replaces its server texture
+	# in place (the same RID), so the composite's material, which holds that
+	# RID from when `cloud_light` was set (scripts/cloud_volume.gd), reads
+	# the new target. Never blank it (texture_rd_rid = RID()) here: that
+	# frees the server texture, the next repoint makes a new RID the
+	# material never hears of, and the composite samples a dead texture,
+	# washing the whole view out to fog over the land (the title's grey
+	# murk of 2026-10-11; the round 5 resize fix 4f3c9ed6). Replacing the
+	# server texture can free the old target with it, so an old one is
+	# freed here only if it still stands (no 'free invalid ID').
+	var old := [_march_a,_march_b,_depth,_resolved_a,_resolved_b,_history_a,_history_b]
 	_march_a = _target(want,RenderingDevice.DATA_FORMAT_R16G16B16A16_SFLOAT)
 	_march_b = _target(want,RenderingDevice.DATA_FORMAT_R16G16B16A16_SFLOAT)
 	_depth = _target(want,RenderingDevice.DATA_FORMAT_R32_SFLOAT)
@@ -176,6 +186,8 @@ func _allocate(want: Vector2i, whole: Vector2i) -> void:
 	resolved_a.texture_rd_rid = _resolved_a
 	resolved_b.texture_rd_rid = _resolved_b
 	march_depth.texture_rd_rid = _depth
+	for rid: RID in old:
+		if rid.is_valid() and _rd.texture_is_valid(rid): _rd.free_rid(rid)
 	_fresh = true
 
 func _target(want: Vector2i, data_format: int) -> RID:

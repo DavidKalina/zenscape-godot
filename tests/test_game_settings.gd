@@ -125,7 +125,7 @@ func run() -> void:
 	file.load(LOOK)
 	check(int(file.get_value("display","max_lines",0)) == 720,"...kept as the old game keeps it")
 	# The look's choices.
-	for pair: Array in [["quality",KEY_RIGHT],["clouds",KEY_RIGHT],["night",KEY_RIGHT],["planet",KEY_RIGHT]]:
+	for pair: Array in [["quality",KEY_RIGHT],["clouds",KEY_RIGHT],["night",KEY_RIGHT],["planet",KEY_RIGHT],["season",KEY_RIGHT]]:
 		var row: Button = sheet.choice_rows[pair[0]]
 		row.grab_focus()
 		await key(pair[1])
@@ -136,6 +136,7 @@ func run() -> void:
 	var night_was := LookPass.NIGHT_STYLES.find(LookPass.NIGHT_DEFAULT)
 	check(LookPass.load_night_style(LOOK) == LookPass.NIGHT_STYLES[(night_was+1)%LookPass.NIGHT_STYLES.size()],"Night sky kept")
 	check(LookPass.load_sky_planet(LOOK),"Planet kept")
+	check(int(file.get_value("time","season",-1)) == 1 and GameSettings.options("season")[1] == "Spring","Season kept (Live to Spring) under [time]")
 	for key_name: String in sheet.choice_rows:
 		check(GameSettings.index_of(key_name) == sheet.choice_rows[key_name].chosen,"%s reads back as chosen" % key_name)
 	# Back.

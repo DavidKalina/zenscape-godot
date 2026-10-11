@@ -1,0 +1,83 @@
+extends "res://scripts/kit_isle/kit_life.gd"
+## Life on the Stair to the Clouds (studies/stair_clouds_isle.gd): the kit
+## isles' (scripts/kit_isle/kit_life.gd: undergrowth, butterflies, fireflies,
+## songbirds on the stones, the wind made visible, on-foot tokens; the same
+## flags), its stone perches, its chaff's meadow, its leaves' anchors and its
+## tokens this isle's.
+const Stair = preload("res://studies/stair_clouds_isle_art.gd")
+
+func make_birds() -> Node3D:
+	return StairBirds.new()
+
+func make_tokens() -> Node3D:
+	return StairTokens.new()
+
+## The loose bits rise with the mesa.
+func wind_box() -> Vector2:
+	return Vector2(6.0,Stair.SUMMIT+14.0)
+
+## The chaff on the lawn.
+func chaff_meadow() -> Rect2:
+	var c := Stair.side_at(Stair.SIDES-1,0.0,Stair.LAWN_AT+2.0)
+	return Rect2(c.x-7.0,c.y-5.0,14.0,10.0)
+
+## Leaves gather at the landings' shrines and the gate's feet.
+func leaf_spots() -> Array:
+	var anchors: Array = []
+	for spec: Array in Stair.SHRINES:
+		if spec[0] == "pad":
+			var p := Stair.vertex_at(int(spec[1]),float(spec[2])-1.2,deg_to_rad(float(spec[3])))
+			anchors.append(p)
+	anchors.append(Stair.side_at(Stair.SIDES-1,2.0,-5.0))
+	return anchors
+
+# --- Songbirds on the shrines ------------------------------------------------------
+
+## The kit isles' songbirds (scripts/kit_isle/kit_birds.gd), their perches
+## the shrines': the chests' lids, the piers' stubs and the summit's stones.
+class StairBirds extends "res://scripts/kit_isle/kit_birds.gd":
+	const HOMES := [["sparrow",4,"chests"],["goldfinch",3,"stubs"],["robin",2,"summit"]]
+
+	func flock_specs() -> Array:
+		return HOMES
+
+	func spots(_space: PhysicsDirectSpaceState3D) -> Dictionary:
+		var found := {"chests":[],"stubs":[],"summit":[]}
+		for spec: Array in Stair.SHRINES:
+			var at := Stair.shrine_frame(spec).origin
+			var p := Vector2(at.x,at.z)
+			match str(spec[4]):
+				"tomb_chest": (found.chests as Array).append(p)
+				"pier","fallen_pier": (found.stubs as Array).append(p)
+				"floor": (found.chests as Array).append(p)
+		for off: Vector2 in [Vector2(-5.0,-4.0),Vector2(-3.0,-4.5),Vector2(3.0,-4.5),Vector2(5.0,-4.0),Vector2(0.0,-9.0)]:
+			var p := Stair.side_at(Stair.SIDES-1,off.x,off.y-3.0)
+			(found.summit as Array).append(p)
+		return found
+
+# --- On-foot tokens ---------------------------------------------------------------------
+
+## The kit isles' on-foot tokens, set where this isle asks for a move.
+class StairTokens extends "res://scripts/kit_isle/kit_tokens.gd":
+	func spots_for(_isle: Node3D) -> Array[Dictionary]:
+		return stair_spots()
+
+	## Where each stands and the move it asks for.
+	static func stair_spots() -> Array[Dictionary]:
+		var out: Array[Dictionary] = []
+		for spec: Array in TOKENS:
+			var p := Stair.vertex_at(int(spec[1]),float(spec[2]))
+			out.append({"name":spec[0],"at":Vector3(p.x,Stair.TOP+float(spec[3])+0.85,p.y),"move":spec[4]})
+		var gate := Stair.side_at(Stair.SIDES-1,0.0,-7.0)
+		out.append({"name":"gate","at":Vector3(gate.x,Stair.TOP+Stair.SUMMIT+0.85,gate.y),"move":"Climb the whole stair to the gate on the summit"})
+		var pin := Stair.pinnacle_at()
+		out.append({"name":"pinnacle","at":Vector3(pin.x,Stair.TOP+Stair.PIN_TOP+0.85,pin.y),"move":"Cross the rope bridge from the summit's rim to the hanging pinnacle"})
+		return out
+
+	## [name, vertex, radius, height over TOP, move].
+	const TOKENS := [
+		["landing_1",1,24.3,1.0*Stair.STEP,"Up the first flights to the first landing, and its piers"],
+		["landing_3",3,24.3,3.0*Stair.STEP,"Round the mesa to the third landing"],
+		["landing_5",5,24.3,5.0*Stair.STEP,"Up and round to the fifth landing, high over the lawn"],
+		["landing_7",7,24.3,7.0*Stair.STEP,"The seventh landing, one flight under the summit"],
+	]

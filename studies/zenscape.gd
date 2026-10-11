@@ -73,7 +73,7 @@ func _stand_by_plane() -> void:
 	_last_stood = spot
 
 ## Back on foot beside the parked plane, facing it, as a hop out of it
-## lands (kit_isle.gd `_return_to_plane`; out of the canopy too): R, and
+## lands (kit_isle.gd `_return_to_plane`; off the edge too): R, and
 ## the pause's Back to the plane. Not in the plane, nor while the lodestone
 ## is held up to look at.
 func back_to_plane() -> void:

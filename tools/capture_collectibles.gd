@@ -58,7 +58,7 @@ func run() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	var islands: Node3D = eye.islands
 	for i in range(900):
-		if not islands.lands.has(null): break
+		if islands.built(): break
 		await frames(1)
 	_parent = scene.camera.get_parent()
 	var tokens: Node3D = islands.collectibles

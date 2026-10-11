@@ -29,7 +29,7 @@ extends MeshInstance3D
 ## shaders/sky_sea_swells.gdshader), again when the eye has gone as far or the
 ## islands or ranges it is told of change.
 
-const SkyIslands = preload("res://scripts/sky_islands.gd")
+const Plate = preload("res://scripts/plate.gd")
 const NativeTerrainData = preload("res://scripts/native_terrain_data.gd")
 const IslandShore = preload("res://scripts/island_shore.gd")
 const CumulusNoise = preload("res://scripts/cumulus_noise.gd")
@@ -150,7 +150,7 @@ func set_ranges(spots: Array) -> void:
 ## `eye`, as `set_islands` takes them; the plate alone when there are none.
 static func island_spots(islands: Node, plate: Node3D, eye: Vector3) -> Array:
 	var out := []
-	var reach := SkyIslands.HALF*1.25
+	var reach := Plate.HALF*1.25
 	# The middle of the underside: below the slab, part way down the keel.
 	var under := NativeTerrainData.SLAB_BASE-IslandShore.DEEPEST*0.5
 	var home := plate.global_position if plate != null else Vector3.ZERO

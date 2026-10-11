@@ -7,8 +7,9 @@ extends SceneTree
 ## on the turf sticks (no hop) and slides on its wheels; asking out rolling
 ## is refused, braked it stops, and only then F gets out; the plane stays
 ## parked where it stopped, the pilot beside it; boarding it again takes
-## off; walked off the isle he drops into the canopy, is stranded and then
-## back beside the plane. Round 3: low over the turf the hint says what a
+## off; walked off the isle he stays on foot, falling (nothing opens by
+## itself; Jump opens the pocket sail), is stranded and then back beside the
+## plane. Round 3: low over the turf the hint says what a
 ## touch now would get; a near-vertical slam onto the turf bounces back up
 ## (never into it) and flies on; stopped, Shift held backs it up, steering
 ## as a car backs, and let go it stops; nosed into stone it stops short,
@@ -108,16 +109,15 @@ func _take_off() -> void:
 	check(study.by_plane(),"Beside it he is by the plane")
 	check(str(study._switch_hint.text).contains("Space (pad A)  climb in"),"The hint offers to climb in")
 	_key(KEY_SPACE)
-	check(study.flying and study.takeoff != null and not study.parked,"Space by it: in, taking off, no longer parked")
+	check(study.flying and study.takeoff != null and not study.parked,"Space by it: in, climbing in, no longer parked")
 	check(study._park_body == null,"Its column is gone")
-	var phases := {}
 	var t := 0.0
 	while study.flying and study.takeoff != null and t < 10.0:
-		phases[PlaneLanding.NAMES[study.takeoff.phase]] = true
 		study.fly_step(DT,{})
 		t += DT
-	check(phases.has("board") and phases.has("roll"),"Board, (taxi,) roll and lift: %s" % ", ".join(phases.keys()))
-	check(study.takeoff == null and study.hand_landing.flying(),"Off in %.1f s, the hand landing has it aloft" % t)
+	check(study.takeoff == null and study.hand_landing.phase == ManualLanding.STOPPED,"In in %.1f s, stopped on its wheels and the controls given back" % t)
+	t = _fly_off()
+	check(study.hand_landing.flying() and not study.hand_landing.dipping(),"Rolled off the edge, dipped and flying in %.1f s" % t)
 	for i in range(int(1.0/DT)): study.fly_step(DT,{"pitch":0.3})
 	var over: float = float(study.plane.position.y)-_turf_under(study.plane.position) if not is_nan(_turf_under(study.plane.position)) else 99.0
 	check(study.hand_landing.flying() and over > 1.0,"Flying clear of the turf (%.1f m over it)" % over)
@@ -343,9 +343,34 @@ func _board_again() -> void:
 	while study.flying and study.takeoff != null and t < 10.0:
 		study.fly_step(DT,{})
 		t += DT
-	check(study.flying and study.takeoff == null and study.hand_landing.flying(),"Boarded again, it takes off (%.1f s)" % t)
+	t += _fly_off()
+	check(study.flying and study.takeoff == null and study.hand_landing.flying(),"Boarded again, it takes off off the edge (%.1f s)" % t)
 
-## Walked off the isle over open sky: the canopy, stranded, back by the plane.
+## On the wheels: steered (a power pivot, then Boost) towards the nearest
+## edge and rolled off it, until the wings catch it. The seconds it took.
+func _fly_off() -> float:
+	var t := 0.0
+	var p: Vector3 = study.plane.position
+	var best := Vector2.ZERO
+	var reach := INF
+	for i in range(24):
+		var way := Vector2.from_angle(TAU*i/24.0)
+		var d := ManualLanding.edge_margin(Callable(study,"floor_at"),Vector2(p.x,p.z),way)
+		if d < reach:
+			reach = d
+			best = way
+	var want := atan2(-best.x,-best.y)
+	while study.flying and t < 20.0 and not (study.hand_landing.flying() and not study.hand_landing.dipping()):
+		var off := angle_difference(float(study.plane.heading),want)
+		var input := {"boost":1.0}
+		if study.hand_landing.on_ground() and absf(off) > 0.1:
+			input = {"boost":1.0,"brake":1.0,"turn":-signf(off)} if study.hand_landing.phase == ManualLanding.STOPPED else {"boost":1.0,"turn":clampf(-off*2.0,-1.0,1.0)}
+		study.fly_step(DT,input)
+		t += DT
+	return t
+
+## Walked off the isle over open sky: on foot, falling, no canopy and the
+## sail shut until asked; stranded; back by the plane.
 func _off_the_edge() -> void:
 	# Out in the air (R's way): the plane goes back to its home.
 	study.leave_plane()
@@ -354,20 +379,48 @@ func _off_the_edge() -> void:
 	var out := Vector3(circle.x,study.isle_top()+2.0,circle.y)+Vector3(circle.z+60.0,0.0,0.0)
 	study.place(out,Vector2(1.0,0.0))
 	study._last_stood = out
-	var dived := false
-	var opened := false
+	var off := false
+	var sailed := false
 	var stranded := false
+	var hint_ok := false
 	var t := 0.0
 	while t < 20.0:
 		study.tick(DT)
 		t += DT
-		if study.diving:
-			dived = true
-			if study.dive.under_canopy(): opened = true
+		if study.off_edge or study._stranded_left >= 0.0:
+			if not off: hint_ok = "the sail" in str(study._switch_hint.text) if study._switch_hint != null else true
+			off = true
+			if study.motor.move == "sail": sailed = true
 			if study._stranded_left >= 0.0: stranded = true
-		elif dived: break
-	check(dived,"Off the edge he drops into the dive")
-	check(opened,"The canopy opens by itself")
+		elif off: break
+	check(off,"Off the edge he is off the edge, on foot")
+	check(not sailed,"Nothing opens by itself")
+	check(hint_ok,"The hint offers the sail")
 	check(stranded,"Well under the edge, stranded")
-	check(not study.diving and not study.flying,"Then on foot again (%.1f s)" % t)
+	check(not study.off_edge and study._stranded_left < 0.0 and not study.flying,"Then on foot again (%.1f s)" % t)
 	check(study.by_plane(),"Beside the parked plane")
+	# Again, and Jump (pad A) in the air opens the sail: it coasts him down,
+	# slower than the fall, and the stranding still brings him back.
+	study.place(out,Vector2(1.0,0.0))
+	study._last_stood = out
+	t = 0.0
+	while not study.off_edge and t < 5.0:
+		study.tick(DT)
+		t += DT
+	var y0: float = study.motor.feet.y
+	study.script_jump = true
+	study.tick(DT)
+	study.script_jump = false
+	var opened: bool = study.motor.move == "sail"
+	var hint: String = str(study._switch_hint.text) if study._switch_hint != null else ""
+	for i in range(60):
+		study.tick(DT)
+	var sank: float = y0-study.motor.feet.y
+	check(opened and study.motor.move == "sail","Off the edge, Jump opens the sail")
+	check(study._switch_hint == null or "fold" in hint,"Under the sail the hint says how to fold it (%s)" % hint)
+	check(sank < 14.0,"Under the sail he sinks slower than the fall's 18 m/s (%.1f m in about 1 s)" % sank)
+	t = 0.0
+	while (study.off_edge or study._stranded_left >= 0.0) and t < 40.0:
+		study.tick(DT)
+		t += DT
+	check(not study.off_edge and study._stranded_left < 0.0 and study.by_plane(),"Sailed off and stranded, back beside the plane (%.1f s)" % t)

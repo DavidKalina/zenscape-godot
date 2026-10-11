@@ -230,7 +230,7 @@ func _update_ridges(on: float) -> void:
 ## The painted ridges' strength for a look's `strength`: none with the
 ## ring's real ranges standing (SkyWorld `painted_ridges`).
 static func ridge_strength(strength: float) -> float:
-	return strength * preload("res://scripts/sky_world.gd").painted_ridges()
+	return strength * preload("res://scripts/sky_homes.gd").painted_ridges()
 
 ## The cloud sea's strength on the sky (the sky objects copy it from there).
 func _update_cloud_sea(on: float) -> void:
@@ -286,7 +286,7 @@ func _update_cloud_volume(camera: Camera3D, celestial) -> void:
 ## The Opal sea's painted distant peaks off while the sky world's ring of
 ## real ranges stands (SkyWorld `sea_peaks`), in the overview and the glide.
 static func apply_sea_peaks(sky: ShaderMaterial) -> void:
-	var peaks: float = preload("res://scripts/sky_world.gd").sea_peaks()
+	var peaks: float = preload("res://scripts/sky_homes.gd").sea_peaks()
 	if sky.get_meta("look_sea_peaks", -1.0) == peaks: return
 	sky.set_meta("look_sea_peaks", peaks)
 	sky.set_shader_parameter("sea_peaks", peaks)

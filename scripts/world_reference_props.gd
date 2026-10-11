@@ -2,6 +2,9 @@ extends RefCounted
 const Plate = preload("res://scripts/plate.gd")
 ## Upgrade legacy reference scenery into ordinary saved object records once.
 ## Individual source parts are suppressed only after a replacement is accepted.
+## The editor (scripts/native_chunk_editor.gd) is passed in untyped: the
+## land's data (scripts/native_terrain_data.gd) checks `valid` here, and the
+## isles read that data without reaching the editor.
 const GROUPS := {
 	"tree":["mesh-8","mesh-9"], "broadleaf":["mesh-11","broadleaf-canopies"],
 	"log":["logs"], "stump":["stumps"], "snag":["snags"],
@@ -17,10 +20,10 @@ static func valid(value: Variant) -> bool:
 		if pair.size()!=2 or pair[0] not in names or not pair[1].is_valid_int() or int(pair[1]) < 0 or int(pair[1])>20000: return false
 	return true
 
-static func migrate(editor: NativeChunkEditor) -> bool:
+static func migrate(editor: Node) -> bool:
 	if editor.data.blank: return false
 	var changed := false
-	var reference := editor.scene.get_node("Reference")
+	var reference: Node = editor.scene.get_node("Reference")
 	for kind in GROUPS:
 		var names: Array = GROUPS[kind]
 		var node: Node3D = reference.get_node(names[0])
@@ -39,15 +42,15 @@ static func migrate(editor: NativeChunkEditor) -> bool:
 			var tint := ""
 			if color_node is MultiMeshInstance3D and color_node.multimesh.use_colors and i<color_node.multimesh.instance_count:
 				tint = NativeObjectPose.encode_tint(color_node.multimesh.get_instance_color(i))
-			var id := editor.data.place(kind,point,0.0,clampf(record_pose.basis.get_scale().x,0.1,5.0),pose,tint)
+			var id: int = editor.data.place(kind,point,0.0,clampf(record_pose.basis.get_scale().x,0.1,5.0),pose,tint)
 			if id < 0: continue
 			for name in names: editor.data.source_replacements.append("%s:%d" % [name,i])
 			changed = true
 	return changed
 
-static func hide_replaced(editor: NativeChunkEditor) -> void:
+static func hide_replaced(editor: Node) -> void:
 	if editor.data.source_replacements.is_empty(): return
-	var reference := editor.scene.get_node("Reference")
+	var reference: Node = editor.scene.get_node("Reference")
 	var groups: Dictionary = editor.get_meta("play_source_groups",{})
 	if groups.is_empty():
 		for key in editor.data.source_replacements:
@@ -67,9 +70,9 @@ static func hide_replaced(editor: NativeChunkEditor) -> void:
 				if index<node.multimesh.instance_count: node.multimesh.set_instance_transform(index,Transform3D(Basis.from_scale(Vector3.ZERO),Vector3.ZERO))
 		elif node.visible: node.hide()
 
-static func before_refresh(editor: NativeChunkEditor) -> void:
+static func before_refresh(editor: Node) -> void:
 	if editor.has_meta("play_source_groups"): editor.remove_meta("play_source_groups")
-	var reference := editor.scene.get_node("Reference")
+	var reference: Node = editor.scene.get_node("Reference")
 	for names in GROUPS.values():
 		for name in names:
 			var node := reference.get_node(name)

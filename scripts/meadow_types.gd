@@ -19,7 +19,6 @@ extends RefCounted
 ## planting stream, so trees, water and the land are the recipe's own.
 const Plate = preload("res://scripts/plate.gd")
 const Variety = preload("res://scripts/seeded_variety.gd")
-const Genome = preload("res://scripts/inland_genome.gd")
 const BiomeBlend = preload("res://scripts/biome_blend.gd")
 const Presets = preload("res://scripts/native_landscape_presets.gd")
 
@@ -87,7 +86,8 @@ const FALLBACK_FORMS := {"daisy_flower":[0.258,0.17],"button_flower":[0.242,0.08
 ##   share tinted straw (`tuft_straw`).
 ## - `trees`: the meadow's own tree budget, a few lone trees at most;
 ##   `rocks`: stones per 0.9 m candidate.
-## - `terrain` and `blend` shape the land and its neighbours (BiomeBlend
+## - `terrain` and `blend` shape the land and its neighbours (scripts/
+##   meadow_recipe.gd plans them from here; BiomeBlend
 ##   layers [habitat, rule, share, turn], the turn "sun" or "shade" of the
 ##   world's own sun side; "moist" only where there is water).
 ## - `land`: the New world land that forms it (scripts/world_library.gd);
@@ -478,46 +478,3 @@ func _meadow_ground(land: RefCounted, p: Vector2, snow: float) -> bool:
 	if h == null or float(h) > snow-SNOW_GAP or land._is_wet(p) or land._clearing(p): return false
 	if land._habitat(p) != "meadow": return false
 	return Presets._slope(data,p) <= 0.75
-
-# --- Recipes -----------------------------------------------------------------------
-## The inland recipe for a `type_id` meadow world from `seed_value`: the type's
-## land and relief drawn from the seed, its neighbours planned over the built
-## land (BiomeBlend layers), seeded variety, and the type itself.
-static func recipe(type_id: String, seed_value: int) -> Dictionary:
-	var t: Dictionary = TYPES[type_id]
-	var rng := RandomNumberGenerator.new()
-	rng.seed = hash(["meadow",type_id,seed_value])
-	var terrain: Dictionary = t.terrain
-	var result := {"kind":"inland","version":Genome.VERSION,"seed":seed_value%1000000,"composition":terrain.composition,
-		"archetype":terrain.archetype,"landform":terrain.landform,"biome":"meadow",
-		"relief":snappedf(rng.randf_range(terrain.relief[0],terrain.relief[1]),0.001),
-		"breadth":snappedf(rng.randf_range(terrain.breadth[0],terrain.breadth[1]),0.001)}
-	var blend := plan(type_id,result,rng)
-	if not blend.is_empty(): result["blend"] = blend
-	result["variety"] = 1
-	result["meadow"] = type_id
-	return result
-
-## The type's neighbours as BiomeBlend layers over the land the recipe builds:
-## each claims its share of the land by its rule (scripts/biome_blend.gd
-## `plan` does the same for generated worlds), and one with almost no ground,
-## or a wet neighbour on dry land, is dropped.
-static func plan(type_id: String, settings: Dictionary, rng: RandomNumberGenerator) -> Array:
-	var world = preload("res://scripts/inland_world.gd").new(settings)
-	var field = BiomeBlend.new(world.genome,world.sampler)
-	var sun := int(rng.randf_range(-60.0,60.0)+360.0)%360
-	var blend: Array = []
-	for pick: Array in TYPES[type_id].blend:
-		var rule: String = pick[1]
-		if rule == "moist" and not field.has_water: continue
-		var turn := 0
-		if str(pick[3]) == "sun": turn = sun
-		elif str(pick[3]) == "shade": turn = (sun+180)%360
-		var at: float = field._quantile(rule,turn,1.0-float(pick[2]))
-		if pick[0] == "alpine" and rule == "high": at = minf(at,field._altitude_of(BiomeBlend.WOOD_CEILING))
-		blend.append({"biome":pick[0],"by":rule,"at":clampi(roundi(at*100.0),0,100),"soft":roundi(rng.randf_range(0.07,0.12)*100.0),"turn":turn})
-	field.apply("meadow",blend)
-	var kept: Array = []
-	for layer: Dictionary in blend:
-		if field.share(layer.biome) >= 0.04: kept.append(layer)
-	return kept.slice(0,BiomeBlend.MAX_LAYERS)

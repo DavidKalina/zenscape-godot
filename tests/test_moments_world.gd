@@ -24,6 +24,9 @@ func check(ok: bool, label: String) -> void:
 
 func _run() -> void:
 	create_timer(600).timeout.connect(func() -> void: push_error("moments world timed out"); quit(2))
+	# The set pieces are laid by the ring's world layout (SkyWorld `_moments`),
+	# kept but unwired: this runs under --peak-ring --moments.
+	preload("res://scripts/sky_homes.gd").use_flags(PackedStringArray(["--peak-ring"]))
 	SkyWorld.moments = true
 	scene = load("res://studies/cozy_worlds.tscn").instantiate()
 	scene.set_meta("no_title",true)

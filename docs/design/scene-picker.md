@@ -36,6 +36,7 @@ always.
 | Flight greyboxes | Lines / Nature / Sky / Tokens / Moments | studies/flight_study.tscn | `--pack=<name>` |
 | Flight greyboxes | Moments, crashing | studies/flight_study.tscn | `--pack=moments --crash=hard` |
 | On-foot greyboxes | Character study | studies/character_study.tscn | none |
+| On-foot greyboxes | Pocket sail | studies/pocket_sail_study.tscn | none |
 | On-foot greyboxes | Ruins archipelago / Sky village / Starter islands | studies/character_study.tscn | `--pack=ruins_archipelago` / `sky_village` / `starter` |
 | On-foot greyboxes | Test island | studies/test_island.tscn | none |
 | On-foot greyboxes | Walk island | studies/walk_island.tscn | none |

@@ -98,10 +98,11 @@ extends RefCounted
 ## skyline far off (scripts/sky_ring.gd) and as the full range near
 ## (SkyPeaks).
 ##
-## `ring` (on unless `--no-ring`) turns all of this on together; off, the
-## sky is the old open one, endless, its ranges scattered through the cells.
-## It is made of the peaks, so it stands only while they do (SkyHomes
-## `peaks`).
+## The ring (SkyHomes `ring`) turns all of this on together. The game dropped
+## it, so it is kept but unwired: off unless --peak-ring, and off the sky is
+## the old open one, endless, its ranges (if --peaks stands them) scattered
+## through the cells. It is made of the peaks, so it stands only while they do
+## (SkyHomes `peaks`).
 
 const SkyHomes = preload("res://scripts/sky_homes.gd")
 const SkyPeak = preload("res://scripts/sky_peak.gd")
@@ -111,9 +112,8 @@ const SkyCache = preload("res://scripts/sky_cache.gd")
 ## The seed every hash used before there was one; and the world's.
 const LEGACY_SEED := 7
 static var seed := LEGACY_SEED
-## The ring, the bounds and the edge wind.
-static var ring := true
-## The moments set pieces (`_moments`): off unless `--moments`.
+## The moments set pieces (`_moments`): off unless `--moments`. Laid by the
+## ring's layout, so they stand only with --peak-ring too.
 static var moments := false
 ## The homes of every island the world has saved, and the plate's own (home
 ## coordinates): the ranges keep clear of them and the edge wind holds them.
@@ -403,34 +403,28 @@ static var _kept_changed := true
 static var _frame := {}
 static var _frame_seed := -1
 
-## True while the ring, the bounds and the edge wind stand.
+## True while the ring, the bounds and the edge wind stand (SkyHomes
+## `ring_on`: off unless --peak-ring).
 static func ring_on() -> bool:
-	read_flags()
-	return ring and (SkyHomes.peaks or SkyHomes.stone)
+	return SkyHomes.ring_on()
 
-## How much of the Opal cloud sea's painted distant peaks to draw (shaders/
-## sky_cloud_sea_opal.gdshaderinc `sea_peaks`): none while the ring's real
-## ranges stand (they travel with the eye and read wrong beside them).
+## The painted peaks and ridges that stand in for the ring while it is off
+## (SkyHomes `sea_peaks`, `painted_ridges`).
 static func sea_peaks() -> float:
-	return 0.0 if ring_on() else 1.0
+	return SkyHomes.sea_peaks()
 
-## How much of the sky dome's painted horizon ridges to draw (shaders/
-## reference_sky.gdshader `horizon_ridges`, scripts/look_pass.gd): none
-## while the ring's real ranges stand, in the build view and the glide;
-## they showed through its notches and passes as flat grey bands.
 static func painted_ridges() -> float:
-	return 0.0 if ring_on() else 1.0
+	return SkyHomes.painted_ridges()
 
 static var _flags_read := false
 
-## Reads `--no-ring` and `--no-peaks` from the command line, once, whoever
-## asks first (the look pass sets the sky before the glide's islands exist).
+## Reads --peak-ring and --peaks (SkyHomes `read_flags`) and --moments from
+## the command line, once, whoever asks first.
 static func read_flags() -> void:
+	SkyHomes.read_flags()
 	if _flags_read: return
 	_flags_read = true
 	var args := preload("res://scripts/launch_args.gd").user_args()
-	if "--no-ring" in args: ring = false
-	if "--no-peaks" in args: SkyHomes.peaks = false
 	if "--moments" in args: moments = true
 
 ## `--sky-seed=N`, or -1.

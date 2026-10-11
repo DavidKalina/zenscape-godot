@@ -88,7 +88,7 @@ static func run(scene: Node) -> void:
 ## Walk the creation shell the way a player first meets it. Returns what
 ## failed, or "" when every step held.
 static func _check_creation_shell(scene: Node) -> String:
-	var editor: NativeChunkEditor = scene._chunk_editor
+	var editor: Node = scene._chunk_editor
 	var palette: Control = scene.creation_palette
 	if not scene._has_world or not scene.places.plain or not editor.data.blank:
 		return "startup did not open on the Genesis plain"
@@ -111,7 +111,7 @@ static func _check_creation_shell(scene: Node) -> String:
 	press.button_index = MOUSE_BUTTON_LEFT
 	press.pressed = true
 	press.position = scene.get_viewport().get_visible_rect().size*0.5
-	var revision := editor.data.heights.duplicate()
+	var revision: PackedFloat32Array = editor.data.heights.duplicate()
 	scene._unhandled_input(press)
 	var orbiting: bool = scene._orbiting
 	var release := press.duplicate()
@@ -148,7 +148,7 @@ static func _check_creation_shell(scene: Node) -> String:
 ## bar or Photo button, the hand at work on the Genesis plain, P for photo
 ## and Esc for the main menu. Returns what failed, or "".
 static func _check_hand_scheme(scene: Node) -> String:
-	var editor: NativeChunkEditor = scene._chunk_editor
+	var editor: Node = scene._chunk_editor
 	var palette: Control = scene.creation_palette
 	var photo: Node = scene.get("photo")
 	if not scene._has_world or not scene.places.plain or not editor.data.blank:
@@ -196,7 +196,7 @@ static func _key(code: Key) -> InputEventKey:
 ## hides, a drag turns the composed camera without painting, and P or Esc
 ## returns to the brush or to Look. Returns what failed, or "".
 static func _check_photo_mode(scene: Node) -> String:
-	var editor: NativeChunkEditor = scene._chunk_editor
+	var editor: Node = scene._chunk_editor
 	var palette: Control = scene.creation_palette
 	var photo: Node = scene.get("photo")
 	var ids: Array = scene.brush_ids

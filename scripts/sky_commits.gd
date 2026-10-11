@@ -1,12 +1,11 @@
 extends RefCounted
 ## The one budget every part of the sky that streams in mid-glide shares on
-## the main thread: the islands (scripts/sky_islands.gd), islets, ranges,
-## cumulus and forested isles each have their shapes and meshes made on
+## the main thread: the islets, clusters, ranges, cumulus and forested isles
+## each have their shapes and meshes made on
 ## workers, and only stand them up here, as nodes. One of them stands up in
 ## a frame at most once that frame has spent BUDGET_USEC on them: the first
 ## always may, so the sky always fills in, but two never pile into one
-## frame. Each commit is timed, and kept for the record when `recording`
-## (tools/profile_sky_streaming.gd, tests/test_sky_streaming_budget.gd).
+## frame. Each commit is timed, and kept for the record when `recording`.
 
 ## Microseconds a frame may spend standing the sky's parts up.
 const BUDGET_USEC := 4000
@@ -16,8 +15,8 @@ static var _used := 0
 ## While set, every commit is kept: [process frame, what, usec].
 static var recording := false
 static var log: Array = []
-## While `recording`, the steps timed for the record only, never spent
-## (a claim's slices, tools/profile_claim.gd): [process frame, what, usec].
+## While `recording`, the steps timed for the record only, never spent:
+## [process frame, what, usec].
 static var trace: Array = []
 
 ## True while this frame may stand one more part up.

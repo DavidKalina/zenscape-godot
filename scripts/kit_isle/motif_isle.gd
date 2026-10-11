@@ -220,7 +220,9 @@ func work(usec: int) -> String:
 					_staging.free()
 					_staging = null
 					stage = "turf"
-				timings.stand = int(timings.get("stand",0))+(Time.get_ticks_usec()-began)/1000
+				var spent := (Time.get_ticks_usec()-began)/1000
+				timings.stand = int(timings.get("stand",0))+spent
+				timings.stand_worst = maxi(int(timings.get("stand_worst",0)),spent)
 				if usec >= 0: return stage
 			"turf":
 				_register()

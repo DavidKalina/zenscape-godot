@@ -161,6 +161,10 @@ const WET_MOST := 0.8
 ## holds, radians), the slap onto a wall, the stretch of a kick off it.
 const MOVE_CLIPS := {"crouch":["crouch",1.0],"long":["long_jump",0.5],"wall":["wall_slide",0.5],"kick":["wall_kick",0.4],"pump":["pump",0.5],
 	"slide":["slide",0.8],"twirl":["twirl",0.4],"flip":["side_flip",0.7]}
+## Under the pocket sail: the arms' turn up overhead and the elbows' bend
+## (radians), and the seconds they take to go up.
+const SAIL_ARMS := Vector2(2.6,0.3)
+const SAIL_ARMS_TIME := 0.12
 ## The moves' clips played once (held on their last frame).
 const ONCE := ["kick","pump","flip"]
 const MOVE_IN := 0.07
@@ -364,6 +368,8 @@ var _forearms: Array[int] = []
 ## elbows bent, thighs forward, shins tucked) and (legs apart, head up,
 ## unused, unused); seconds into the pop's flail.
 var _dive_a := Vector4.ZERO
+## How far the arms are up holding the pocket sail (0 to 1).
+var _sail := 0.0
 var _dive_b := Vector4.ZERO
 var _dive_time := 0.0
 ## Knocked: the somersault's turn (rad, about the hips), 0 to 1 sat down,
@@ -615,12 +621,16 @@ func drive(motor: RefCounted, delta: float) -> Dictionary:
 	if not motor.grounded and _grounded_was and rise > 0.0: _stretch.v -= TAKE_OFF_DIP
 	_grounded_was = motor.grounded
 	var aloft: bool = not motor.grounded and (move == "" or move == "jump")
+	# Under the sail, the arms up over the idle (as the dive's are), not
+	# over the air's clips, whose arms are already up.
+	_sail = move_toward(_sail,1.0 if move == "sail" else 0.0,delta/SAIL_ARMS_TIME)
+	if move == "sail": _moving = move_toward(_moving,0.0,delta/FADE)
 	_air = move_toward(_air,1.0 if aloft else 0.0,delta/(AIR_IN if aloft else AIR_OUT))
 	_air_fall = move_toward(_air_fall,clampf((AIR_RISEN-rise)/(AIR_RISEN-AIR_FALLEN),0.0,1.0),delta*5.0)
 	_air_time = fmod(_air_time+delta,AIR_LENGTH)
 	_stretch_to = 1.0 if motor.grounded else 1.0+AIR_STRETCH*clampf(absf(rise)/AIR_FAST,0.0,1.0)
 	_nod_to = 0.0 if motor.grounded else clampf(rise*NOD,-NOD_MOST,NOD_MOST)
-	_arms_to = 0.0 if motor.grounded or (_has_moves and not aloft) else (AIR_ARMS if _has_air else 1.0)
+	_arms_to = 0.0 if motor.grounded or move == "sail" or (_has_moves and not aloft) else (AIR_ARMS if _has_air else 1.0)
 	_look_to = clampf(turned*LOOK,-LOOK_MOST,LOOK_MOST) if motor.grounded else 0.0
 	# The chest leans into the run and the slope climbed, and rolls into a
 	# turn.
@@ -930,17 +940,15 @@ static func stride(running: float) -> float:
 	return lerpf(WALK_SPEED*WALK_CYCLE,RUN_SPEED*RUN_CYCLE,running)
 
 ## Skydiving (scripts/sky_dive.gd), posed over the idle by the dive's own
-## state: `spread` and `tuck` (0 to 1 each) falling, `canopy` (0 falling to
-## 1 hanging under it), `flare` (0 to 1) and `pop` (1 just out of the
-## plane, flailing). Falling belly-down it is the classic box: arms out
-## and bent up at the elbows, knees bent and boots up behind, head up to
-## look ahead; spread, wider; tucked, arms swept back along the body and
-## legs straight for the dive. Under the canopy his mitts are up on the
-## toggles and his legs hang, a little forward as if sat in the harness;
-## in the flare he pulls the toggles down and puts his boots out ahead
-## for the touch. The walker turns the whole figure (onto the belly, on its
-## lines): this is the limbs alone.
-func dive(spread: float, tuck: float, canopy: float, flare: float, pop: float, delta: float) -> void:
+## state: `spread` and `tuck` (0 to 1 each) falling, `sail` (0 falling to 1
+## holding the pocket sail overhead) and `pop` (1 just out of the plane,
+## flailing). Falling belly-down it is the classic box: arms out and bent
+## up at the elbows, knees bent and boots up behind, head up to look ahead;
+## spread, wider; tucked, arms swept back along the body and legs straight
+## for the dive. Under the sail his mitts are up overhead on its bar and his
+## legs hang. The walker turns the whole figure (onto the belly, upright
+## under the sail): this is the limbs alone.
+func dive(spread: float, tuck: float, sail: float, pop: float, delta: float) -> void:
 	_moving = move_toward(_moving,0.0,delta/FADE)
 	_swim = move_toward(_swim,0.0,delta/SWIM_FADE)
 	_swimming_was = false
@@ -959,17 +967,18 @@ func dive(spread: float, tuck: float, canopy: float, flare: float, pop: float, d
 	_roll_to = 0.0
 	_feet_was = Vector3.INF
 	_grounded_was = false
+	_sail = 0.0
 	_dive_time = _dive_time+delta if pop > 0.0 else 0.0
 	# Falling: the box, widened by the spread, swept back by the tuck.
 	var box := Vector4(1.35,1.1,-0.15,-1.25)
 	box = box.lerp(Vector4(1.6,0.6,-0.1,-0.75),spread)
 	box = box.lerp(Vector4(0.3,0.05,0.0,-0.15),tuck)
 	var box_b := Vector4(0.25,-0.55,0.0,0.0).lerp(Vector4(0.45,-0.6,0.0,0.0),spread).lerp(Vector4(0.02,-0.3,0.0,0.0),tuck)
-	# Under the canopy: mitts up on the toggles, then down in the flare.
-	var hang := Vector4(2.55,0.35,0.3,-0.25).lerp(Vector4(0.55,0.9,0.75,-0.35),flare)
+	# Under the sail: mitts up overhead on its bar, legs hanging.
+	var hang := Vector4(SAIL_ARMS.x,SAIL_ARMS.y,0.15,-0.2)
 	var hang_b := Vector4(0.06,0.0,0.0,0.0)
-	var want := box.lerp(hang,canopy)
-	var want_b := box_b.lerp(hang_b,canopy)
+	var want := box.lerp(hang,sail)
+	var want_b := box_b.lerp(hang_b,sail)
 	if pop > 0.0:
 		# Just out: flailing, arms up, a kick of the legs.
 		var t := _dive_time
@@ -1013,6 +1022,7 @@ func land(hard: float) -> void:
 ## Stood still, as set down.
 func settle() -> void:
 	_facing_was = INF
+	_sail = 0.0
 	_moving = 0.0
 	_skid = 0.0
 	_skidding_was = false
@@ -1120,7 +1130,18 @@ func _springs(delta: float) -> void:
 	# Out is down the -X side for the left arm, +X for the right.
 	_turn_bone(_upper_arms[0],Vector3.BACK,-arms)
 	_turn_bone(_upper_arms[1],Vector3.BACK,arms)
+	if _sail > 0.001: _holding_sail()
 	if _wade > 0.001: _wading()
+
+## Under the pocket sail (the motor's move "sail"): both arms up overhead
+## holding its bar, the elbows a little bent, by how far it is out.
+func _holding_sail() -> void:
+	var up := smoothstep(0.0,1.0,_sail)
+	_turn_bone(_upper_arms[0],Vector3.BACK,-SAIL_ARMS.x*up)
+	_turn_bone(_upper_arms[1],Vector3.BACK,SAIL_ARMS.x*up)
+	if _forearms.has(-1): return
+	_turn_bone(_forearms[0],Vector3.BACK,-SAIL_ARMS.y*up)
+	_turn_bone(_forearms[1],Vector3.BACK,SAIL_ARMS.y*up)
 
 ## The wading gait over the walk and the run: each knee lifted higher
 ## through its swing (the shin tucked under, so the boot clears the water

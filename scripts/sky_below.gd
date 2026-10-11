@@ -95,15 +95,13 @@ const TINT_DEEP := Color(0.04,0.26,0.42)
 const TINT_ABYSS := Color(0.03,0.14,0.25)
 const TINT_DEPTHS := Vector3(1.6,5.0,9.5)
 
-## Whether this run has the lower world: on in play by default, off with
-## `--no-below`. Scripts run with --script (the tests and the capture tools)
-## keep it off unless they ask for it with `--below`.
+## Whether this run has the lower world: only with `--below`. The game
+## dropped it, so it is kept but unwired: off in play, in the builder and
+## in scripts (the tests and the capture tools ask for it with `--below`).
 static var _on := -1
 static func on() -> bool:
 	if _on < 0:
-		var asked := preload("res://scripts/launch_args.gd").user_args()
-		var scripted := "--script" in OS.get_cmdline_args() or "-s" in OS.get_cmdline_args()
-		_on = int("--below" in asked or (not scripted and not "--no-below" in asked))
+		_on = int("--below" in preload("res://scripts/launch_args.gd").user_args())
 	return _on == 1
 
 ## True while the eye is under the cloud.

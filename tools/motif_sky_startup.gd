@@ -4,7 +4,7 @@ extends SceneTree
 ## then every frame's wall time for SECONDS of frames after it (mean, p95,
 ## worst, frames over 50 ms), and when the motif isles all stand (the
 ## aqueduct isle's `motifs`, if any).
-##   godot --headless --path . --script tools/motif_sky_startup.gd -- [--scene=res://studies/aqueduct_isle.tscn] [--seconds=20] [scene flags, e.g. --no-motifs]
+##   godot --headless --path . --script tools/motif_sky_startup.gd -- [--scene=res://studies/aqueduct_isle.tscn] [--seconds=20] [scene flags, e.g. --no-motifs; --motifs-later for the headless default]
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 
 func _initialize() -> void: run.call_deferred()
@@ -18,6 +18,8 @@ func run() -> void:
 		if arg.begins_with("--scene="): path = arg.get_slice("=",1)
 		elif arg.begins_with("--seconds="): seconds = float(arg.get_slice("=",1))
 		else: extra.append(arg)
+	# --motifs-later: the headless default (built only near the eye).
+	if extra.has("--motifs-later"): extra.remove_at(extra.find("--motifs-now"))
 	LaunchArgs.set_override(extra)
 	var began := Time.get_ticks_usec()
 	var scene: Node = load(path).instantiate()
