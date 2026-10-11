@@ -151,7 +151,8 @@ var tree_parts := Callable()
 var canopy_tint := Color.WHITE
 ## Built ranges by cell key: {node, shape, home, turn, cell}.
 var built := {}
-## Ranges being made on workers, by cell key: {task, cell, spot, out}.
+## Ranges being made on workers, by cell key: {task, cell, spot, out,
+## stamp (`_stamp`, what it was made for)}; kept on between glides.
 var _making := {}
 var _since := CHECK
 var _material: Material
@@ -281,6 +282,9 @@ func advance(delta: float, eye: Vector3) -> void:
 			if not WorkerThreadPool.is_task_completed(m.task): continue
 			WorkerThreadPool.wait_for_task_completion(m.task)
 		_making.erase(key)
+		# Made for a palette changed since (kept on through a walk,
+		# `let_go`): dropped, and made again at the next survey.
+		if m.get("stamp",_stamp()) != _stamp(): continue
 		var began := Time.get_ticks_usec()
 		_finish(m.cell,m.spot,m.out)
 		SkyCommits.spend("range",Time.get_ticks_usec()-began)
@@ -301,10 +305,15 @@ func overview(origin: Vector3) -> void:
 	_take_premade()
 
 ## Every range made in full let go, its skyline back (the glide over: the
-## build view stands on the skylines alone).
+## build view stands on the skylines alone). Ranges still on the workers
+## are kept, never waited for: the next glide stands them up as they finish
+## (`advance`), and makes none of them again. Waiting here held the main
+## thread on every range under way, 5 s to over 30 s headless: landed soon
+## after a glide began (the hand landing out of `--skydive`), the game stood
+## frozen as the pilot got out (tests/test_hand_landing_exit.gd). Dropping
+## them unwaited instead had every landing and takeoff start the same
+## ranges over, piling them up on the workers.
 func let_go() -> void:
-	_wait_all()
-	_making.clear()
 	_drop_leaving()
 	_last = Vector3.INF
 	for key in built:
@@ -397,6 +406,8 @@ func premake(home: Vector3) -> void:
 	preload("res://scripts/native_terrain_kernels.gd").get_kernel()
 	for key in wanted:
 		if premade.has(key) or (_premaking.has(key) and _premaking[key].out.stamp == stamp): continue
+		# Still being made since the last glide (`let_go`): not twice.
+		if _making.has(key) and _making[key].get("stamp","") == stamp: continue
 		var cell: Vector2i = wanted[key]
 		var out := {"stamp":stamp}
 		var task := WorkerThreadPool.add_task(_make.bind(seed_of(cell),stature_of(cell),_palette("grass"),_palette("rock"),_gravel(),_snow(),out,gorge_of(cell),detail_of(cell),scale_of(cell).y),false,"Sky peak ahead")
@@ -630,14 +641,14 @@ func _start(cell: Vector2i, s: Vector4) -> void:
 	var key := _key(cell)
 	_take_premade()
 	if premade.has(key) and premade[key].stamp == _stamp():
-		_making[key] = {"task":-1,"cell":cell,"spot":s,"out":premade[key]}
+		_making[key] = {"task":-1,"cell":cell,"spot":s,"out":premade[key],"stamp":premade[key].stamp}
 		return
 	# The erosion's native kernel, if built, is found here on the main
 	# thread, before a worker asks for it.
 	preload("res://scripts/native_terrain_kernels.gd").get_kernel()
 	var out := {}
 	var task := WorkerThreadPool.add_task(_make.bind(seed_of(cell),stature_of(cell),_palette("grass"),_palette("rock"),_gravel(),_snow(),out,gorge_of(cell),detail_of(cell),scale_of(cell).y),false,"Sky peak")
-	_making[key] = {"task":task,"cell":cell,"spot":s,"out":out}
+	_making[key] = {"task":task,"cell":cell,"spot":s,"out":out,"stamp":_stamp()}
 
 static func _make(seed_value: int, stature: float, grass: Array, rock: Array, gravel: Color, snow: Color, out: Dictionary, gorge := true, stride := 1, height := 1.0) -> void:
 	var shape: RefCounted = SkyPeak.make(seed_value,stature,gorge)
