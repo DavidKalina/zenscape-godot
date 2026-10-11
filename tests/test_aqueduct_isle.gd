@@ -328,8 +328,11 @@ func _circle() -> void:
 	check(ok,"Circle: from the back lintel a jump up onto the great trilithon at %.2f m, the isle's summit (feet %s)" % [summit.y,m.feet])
 
 ## Round the lintel ring from the lintel over the leaning stone back to it:
-## walked lintel to lintel, a twirled jump over each fallen one, and over
-## the bite by the floating sarsen (a twirled jump onto it, one off).
+## walked lintel to lintel, a twirled jump over each fallen one's break
+## (from the sarsen's top along its broken ends), and over the bite by the
+## floating sarsen (a twirled jump onto it, one off). Each jump runs along
+## the ring's own lintels: at 8 sarsens a straight line cut across a
+## sarsen's corner leaves the lintels.
 func _ring_loop() -> void:
 	var n := RuinKit.CIRCLE_STONES
 	var ring: Dictionary = study.circle.get_meta("ring")
@@ -356,8 +359,8 @@ func _ring_loop() -> void:
 			# Over the bite: from this lintel's end onto the floating sarsen,
 			# then onto the lintel past the gap.
 			var after := (next+gone.size())%n
-			var from := joint(k+1)+(joint(k)-joint(k+1)).normalized()*1.2
-			var to := joint(after)+(joint(after+1)-joint(after)).normalized()*1.2
+			var from := joint(k+1)
+			var to := joint(after)
 			var floating := stone("ring_sarsen")
 			ok = climb(m.feet,[flat(from)]) and line(m.feet,floating,"jump_twirl")
 			ok = ok and hop(floating,to,"jump_twirl")
@@ -367,8 +370,8 @@ func _ring_loop() -> void:
 			steps += 1+gone.size()
 		else:
 			var after := (next+1)%n
-			var from := joint(k+1)+(joint(k)-joint(k+1)).normalized()*1.2
-			var to := joint(k+2)+(joint(k+3)-joint(k+2)).normalized()*1.2
+			var from := joint(k+1)
+			var to := joint(k+2)
 			ok = climb(m.feet,[flat(from)]) and line(m.feet,to,"jump_twirl")
 			twirls += 1
 			k = after

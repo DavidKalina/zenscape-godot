@@ -191,36 +191,48 @@ const GRAND_TREAD := 0.42
 ## How far a stair's walked boxes run on past its flight's back (m), under
 ## the next flight's foot or into what it climbs to, so flights meet seamless.
 const WALK_OVERLAP := 0.05
-## The stone circle: the ring's radius (to its stones' middles) and its
-## sarsens; a sarsen's width along the ring, height and thickness (over
-## CHAIN_TOP: climbed by the ways the circle gives, not from the floor);
-## the lintels' depth across the ring (TOP_ROOM and more: the ring is run
-## round on them) and thickness. A lintel stands LINTEL.y over the bare top
-## of a sarsen whose other lintel fell.
-const CIRCLE_RADIUS := 8.5
-const CIRCLE_STONES := 14
-const SARSEN := Vector3(1.7,3.4,1.1)
+## The stone circle: its sarsens, the gap the plane flies between two
+## (HENGE_ROOM: SNUG, 1.2 m past each wingtip at their inner faces, 5.2 m
+## at plane 2; it was 14 sarsens 1.7 wide, 2.1 m gaps against 2.8 m
+## wings) and the ring's radius (to its stones' middles) that gap sets:
+## 9.3 at plane 2, 8 sarsens. A sarsen's width along the ring, height and
+## thickness (over CHAIN_TOP: climbed by the ways the circle gives, not
+## from the floor); the lintels' depth across the ring (TOP_ROOM and more:
+## the ring is run round on them) and thickness. A lintel stands LINTEL.y
+## over the bare top of a sarsen whose other lintel fell.
+const CIRCLE_STONES := 8
+const SARSEN := Vector3(1.5,3.4,1.1)
 const LINTEL := Vector2(1.3,0.6)
+const HENGE_ROOM := WorldScale.SNUG
+static var HENGE_GAP: float = WorldScale.gap(HENGE_ROOM)
+static var CIRCLE_RADIUS: float = (HENGE_GAP+SARSEN.x)/(2.0*sin(PI/CIRCLE_STONES))+SARSEN.z*0.5
+## A fallen lintel breaks in its middle: a piece LINTEL_BREAK long drops
+## into the grass and the two ends stay on their sarsens, out over the gap,
+## so the ring is still run round with a twirled jump over the break (the
+## walker's, scaled with him). A lintel whose sarsen went (`missing`)
+## leaves the same end on the sarsen still standing.
+static var LINTEL_BREAK: float = 3.0*WorldScale.wanderer
 ## The great trilithon across the back of the ring: an upright's width,
 ## height and thickness, the slot between the pair (a window along the
-## circle's axis), its middle's distance in from the ring's middle (its
-## lintel a jump-catch, 1.2 m up and about 1 m in, from the ring's back
-## lintel: the circle's summit).
+## circle's axis, flown on a knife edge: WorldScale.knife), its middle's
+## distance in from the ring's middle (its lintel a jump-catch, 1.2 m up
+## and TRILITHON_IN in from the ring's back lintel: the circle's summit).
 const TRILITHON := Vector3(1.8,4.6,1.2)
-const TRILITHON_SLOT := 0.9
-const TRILITHON_AT := 6.0
+static var TRILITHON_SLOT: float = WorldScale.knife()
+const TRILITHON_IN := 2.29
+static var TRILITHON_AT: float = CIRCLE_RADIUS*cos(PI/CIRCLE_STONES)-TRILITHON_IN
 ## The fallen trilithon: its stub's height (a SET_OFF under the ring's
 ## lintels, by the lintel STUB_AT's middle), its partner lying in toward
 ## the middle (its top caught from the floor, the stub's from it).
 const STUB := 2.5
-const STUB_AT := 8
+const STUB_AT := 4
 ## The leaning stone: a sarsen fallen in against the ring's upright LEAN_AT,
 ## its width and thickness, the slope of its top (walked up, surfed down)
 ## and how high its head rests against the upright (under the lintels: a
 ## jump-catch onto them).
 const LEAN := Vector3(1.5,0.8,30.0)
 const LEAN_TOP := 3.25
-const LEAN_AT := 2
+const LEAN_AT := 1
 # --- Look --------------------------------------------------------------------
 
 ## The stone (sRGB): an umber charcoal gritstone and a cool slate-grey one,
@@ -1487,15 +1499,34 @@ static func stone_circle(seed_value: int, weathered := 0.0, missing: Array = [])
 		var am := (k+1.0)*pitch
 		var mid := _round(am,CIRCLE_RADIUS*cos(pitch*0.5))
 		lintels.append([mid+Vector3(0.0,ring_top,0.0),not k in fallen and not k in gone])
-		if k in gone: continue
-		if k in fallen:
-			_toppled_lintel(b,am,2.0*CIRCLE_RADIUS*sin(pitch*0.5)+LINTEL.x*0.5)
-			continue
 		var half := Vector3(CIRCLE_RADIUS*sin(pitch*0.5)+LINTEL.x,LINTEL.y*0.5,LINTEL.x*0.5)
-		var pose := _jiggle(b,Transform3D(Basis(Vector3.UP,am),mid+Vector3(0.0,SARSEN.y+half.y,0.0)),0.3)
+		# Broken: which ends stay on their sarsens (-1 the first's, +1 the
+		# next's), out over the gap to the break.
+		var stays: Array = []
+		if k in fallen: stays = [-1.0,1.0]
+		elif k in gone:
+			if not k in missing: stays.append(-1.0)
+			if not (k+1)%CIRCLE_STONES in missing: stays.append(1.0)
+		if k in fallen:
+			_toppled_lintel(b,am,LINTEL_BREAK+0.5)
+		if (k in fallen or k in gone) and stays.is_empty(): continue
+		var pose := Transform3D(Basis(Vector3.UP,am),mid+Vector3(0.0,SARSEN.y+half.y,0.0))
+		if stays.is_empty(): pose = _jiggle(b,pose,0.3)
 		var inv := pose.affine_inverse()
 		var ends: Array[Plane] = [inv*Plane(Vector3(cos(a1),0.0,-sin(a1)),-0.008),inv*Plane(-Vector3(cos(a0),0.0,-sin(a0)),-0.008)]
-		b.solid(_box(b,half,0.07),pose,_stone(b,1.08),true,true,ends,-1,1.2)
+		# Each walked on a true hull too (`_walk_hull`): a worn chunk out of
+		# a lintel this long can take its top for metres.
+		if stays.is_empty():
+			b.solid(_box(b,half,0.07),pose,_stone(b,1.08),true,true,ends,-1,1.2)
+			_walk_hull(b,pose,_box(b,half)+ends)
+		else:
+			for side: float in stays:
+				var n := Vector3(-side,b.rng.randf_range(-0.35,0.35),b.rng.randf_range(-0.3,0.3)).normalized()
+				var cut: Array[Plane] = ends.duplicate()
+				cut.append(Plane(n,n.dot(Vector3(side*LINTEL_BREAK*0.5,0.0,0.0))))
+				b.solid(_box(b,half,0.07),pose,_stone(b,1.08),true,true,cut,-1,1.2)
+				_walk_hull(b,pose,_box(b,half)+cut)
+			continue
 		if b.rng.randf() < 0.3+0.5*weathered:
 			b.hang(mid+Vector3(0.0,0.0,0.0)+_round(am,b.rng.randf_range(-0.4,0.4)),b.rng.randf_range(0.8,2.4),true,SARSEN.y)
 	# The great trilithon across the back, its lintel the summit.
@@ -1507,22 +1538,24 @@ static func stone_circle(seed_value: int, weathered := 0.0, missing: Array = [])
 	b.hang(Vector3(0.0,0.0,-TRILITHON_AT),b.rng.randf_range(1.2,2.6),true,TRILITHON.y)
 	# The altar stone before it, lying.
 	b.solid(_box(b,Vector3(1.6,0.32,0.5),0.08),_settle(b,Vector3(b.rng.randf_range(-0.3,0.3),0.22,-TRILITHON_AT+2.6),0.6),_stone(b,1.0),true,true,[],-1,1.4)
-	# The fallen trilithon: its stub by the ring, broken across a corner, its
-	# partner lying in from it, its lintel broken in two in the grass.
+	# The fallen trilithon: its stub by the ring, turned end on to it (its
+	# width along the way up from the lying stone to the lintel), broken
+	# across its inner corner, its partner lying in from it, its lintel
+	# broken in two in the grass.
 	var sa := (STUB_AT+1.0)*pitch
-	var stub_r := CIRCLE_RADIUS*cos(pitch*0.5)-LINTEL.x*0.5-0.25-TRILITHON.z*0.5
+	var stub_r := CIRCLE_RADIUS*cos(pitch*0.5)-LINTEL.x*0.5-0.25-TRILITHON.x*0.5
 	var stub_size := Vector3(TRILITHON.x,STUB,TRILITHON.z)
 	var corner := Vector3(0.7,1.0,b.rng.randf_range(-0.3,0.3)).normalized()
 	var broken: Array[Plane] = [Plane(corner,corner.dot(Vector3(TRILITHON.x*0.5-0.45,(STUB+0.3)*0.5,0.0)))]
-	_sarsen(b,Transform3D(Basis(Vector3.UP,sa),_round(sa,stub_r)),stub_size,0.06,broken)
-	var lie_r := stub_r-TRILITHON.z*0.5-0.15-TRILITHON.y*0.5
+	_sarsen(b,Transform3D(Basis(Vector3.UP,sa+PI*0.5),_round(sa,stub_r)),stub_size,0.06,broken)
+	var lie_r := stub_r-TRILITHON.x*0.5-0.15-TRILITHON.y*0.5
 	var lie := Basis(Vector3.UP,sa+b.rng.randf_range(-0.04,0.04))*Basis(Vector3.RIGHT,PI*0.5)*Basis(Vector3.UP,b.rng.randf_range(-0.03,0.03))
 	b.solid(_box(b,TRILITHON*0.5,0.1),Transform3D(lie,_round(sa,lie_r)+Vector3(0.0,TRILITHON.z*0.5-0.15,0.0)),_stone(b,1.1),true,true,[],-1,1.6)
 	var la := sa-0.42
 	var piece_len := (span-0.4)*0.5
 	for s: float in [-1.0,1.0]:
 		var tip := Basis(Vector3.UP,la+PI*0.5+s*0.2+b.rng.randf_range(-0.1,0.1))*Basis(Vector3.BACK,b.rng.randf_range(-0.12,0.12))
-		var at := _round(la,4.9)+_round(la+PI*0.5,s*(piece_len*0.5+0.3))+Vector3(0.0,LINTEL.y*0.5-0.1,0.0)
+		var at := _round(la,CIRCLE_RADIUS-3.6)+_round(la+PI*0.5,s*(piece_len*0.5+0.3))+Vector3(0.0,LINTEL.y*0.5-0.1,0.0)
 		var cut: Array[Plane] = [Plane(Vector3(-s,0.25,0.0).normalized(),piece_len*0.5-0.05)]
 		b.solid(_box(b,Vector3(piece_len*0.5+0.2,LINTEL.y*0.5,TRILITHON.z*0.5),0.08),Transform3D(tip,at),_stone(b,1.05),true,true,cut,-1,1.5)
 	# The leaning stone, fallen in against the sarsen LEAN_AT: its top a
@@ -1544,7 +1577,7 @@ static func stone_circle(seed_value: int, weathered := 0.0, missing: Array = [])
 		if b.rng.randf() < 0.6 and not k in missing: b.tuft(_round((k+0.5)*pitch+b.rng.randf_range(-0.12,0.12),CIRCLE_RADIUS+b.rng.randf_range(-0.9,0.9)),b.rng.randf_range(0.25,0.45),5)
 	var root := b.finish()
 	var stub_top := _round(sa,stub_r)+Vector3(0.0,STUB,0.0)
-	root.set_meta("ring",{"top":ring_top,"lintels":lintels,"fallen":fallen,"missing":missing.duplicate(),"gone":gone,
+	root.set_meta("ring",{"top":ring_top,"lintels":lintels,"fallen":fallen,"missing":missing.duplicate(),"gone":gone,"break":LINTEL_BREAK,
 		"trilithon":Vector3(0.0,TRILITHON.y+LINTEL.y,-TRILITHON_AT),
 		"stub":stub_top,"lying":_round(sa,lie_r)+Vector3(0.0,TRILITHON.z-0.15,0.0),
 		"lean_foot":_round(al,low-0.6),"lean_head":_round(al,head-0.35)+Vector3(0.0,LEAN_TOP-0.35*tan(slope),0.0)})

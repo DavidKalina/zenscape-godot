@@ -88,6 +88,14 @@ const SNUG := 2.4/TOY_SPAN
 static func gap(room := ROOM) -> float:
 	return span+TOY_SPAN*room
 
+## A slot the plane is meant to pass only on a knife edge (on a wingtip):
+## its height on its side (the toy's TOY_TALL times the plane) and `room`
+## toy spans of it either side together, KNIFE_ROOM by default (0.21 m a
+## side): 1.9 m at plane 2. Narrower than the span, so level it can't pass.
+const KNIFE_ROOM := 0.3
+static func knife(room := KNIFE_ROOM) -> float:
+	return TOY_TALL*plane+TOY_SPAN*room
+
 ## How far past each wingtip an opening `width` m across leaves the plane
 ## flown level through its middle.
 static func past_tip(width: float) -> float:

@@ -457,7 +457,7 @@ const BAND_TO := 280.0
 ## reaches (m from HILL).
 const BITE := Vector3(296.0,16.0,7.8)
 ## The kit stair up the crag: its way (degrees, the gap between the ring's
-## sarsens 9 and 10), its run.
+## sarsens 5 and 6, 1.3 m off sarsen 5's face), its run.
 const KIT_STAIRS_AT := 257.14
 const KIT_RUN := (RuinKit.STEPS-1)*RuinKit.TREAD+RuinKit.LANDING
 ## The ledge widened before the kit stair's foot (m at its middle, half
@@ -465,8 +465,9 @@ const KIT_RUN := (RuinKit.STEPS-1)*RuinKit.TREAD+RuinKit.LANDING
 const APRON := 2.6
 const APRON_HALF := 10.0
 ## The ring's sarsen broken away over the bite (it floats there, at the
-## lintels' height, a stepping stone round the ring).
-const MISSING := 11
+## lintels' height, a stepping stone round the ring): the one at 292.5
+## degrees of RuinKit.CIRCLE_STONES 8, in the bite's middle (BITE.x).
+const MISSING := 6
 ## The grand stair on the axis (its middle, world), climbing west, its back
 ## at x 77.5 on the lower tier's face (its run 12.24 m).
 const STAIR_AT := Vector3(83.62,TOP,0.0)
@@ -882,7 +883,13 @@ static func platforms() -> Array:
 	var am := (MISSING+0.5)*pitch
 	var top := xf*Vector3(sin(am)*RuinKit.CIRCLE_RADIUS,RuinKit.SARSEN.y+RuinKit.LINTEL.y,cos(am)*RuinKit.CIRCLE_RADIUS)
 	var tangent := xf.basis*Vector3(cos(am),0.0,-sin(am))
-	out.append({"name":"ring_sarsen","at":top,"size":Vector3(3.0,1.1,1.25),"yaw":atan2(-tangent.z,tangent.x),"kind":"sarsen","chain":"ring"})
+	# As long as the lintels' broken ends either side leave a twirled jump
+	# (RuinKit.LINTEL_BREAK) to it, and lying on its broad face, wide enough
+	# to run its length toward either end along the lintels' line (each
+	# half a sarsen's pitch off its own).
+	var length := 2.0*RuinKit.CIRCLE_RADIUS*sin(pitch*0.5)-RuinKit.LINTEL_BREAK
+	var wide := 2.0*length*0.5*sin(pitch*0.5)+0.6
+	out.append({"name":"ring_sarsen","at":top,"size":Vector3(length,1.1,wide),"yaw":atan2(-tangent.z,tangent.x),"kind":"sarsen","chain":"ring"})
 	# A lintel fallen across the bite's mouth, resting on its lips.
 	var rb := 10.4
 	var lo := BITE.x

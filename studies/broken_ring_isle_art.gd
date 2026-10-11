@@ -21,7 +21,7 @@ const C := Vector2(80.0,-10.0)
 const W := 30.0
 const TOP := W
 ## The central isle: radius, rise over W, seed. The stone circle on it is
-## RuinKit.CIRCLE_RADIUS (8.5 m) round.
+## RuinKit.CIRCLE_RADIUS (9.3 m at plane 2) round.
 const CENTRE_R := 13.5
 const CENTRE_RISE := 12.0
 const CENTRE_SEED := 11
@@ -206,8 +206,10 @@ static func floating_stones(seed_value: int) -> Node3D:
 
 # --- The stone circle and its turret ---------------------------------------------------------
 
-## The circle's gap faces the fourth satellite's bridge; two stones missing.
-const MISSING := [5,6]
+## The circle's gap faces the fourth satellite's bridge; two stones missing
+## (of RuinKit.CIRCLE_STONES 8: the back-left pair, 157.5 and 202.5 degrees
+## round from the gap).
+const MISSING := [3,4]
 ## The turret stands this far off the circle's middle (away from the fallen trilithon).
 const TURRET_AT := Vector2(0.9,0.7)
 
