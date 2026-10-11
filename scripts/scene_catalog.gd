@@ -76,6 +76,8 @@ const ENTRIES: Array[Dictionary] = [
 		"detail":"Run about on the rune serpent's back as it flies a loop of open sky. 1-3: on its back, 4: the tower, R: start."},
 	{"id":"serpent_convoy","group":"On-foot greyboxes","title":"Serpent convoy","scene":"res://studies/serpent_ride.tscn","args":["--convoy"],
 		"detail":"Five serpents nose to tail down long descents: carve down one, leap off its head onto the next. T: the last gap again, 5: top of a descent."},
+	{"id":"interactables_yard","group":"On-foot greyboxes","title":"Interactables yard","scene":"res://studies/interactables_yard.tscn","args":[],
+		"detail":"Bobbing and drifting slabs, swing ropes and a balustrade down a grand stair, side by side for tuning. 1-4: pieces, F4: their feel."},
 	{"id":"pack_ruins_archipelago","group":"On-foot greyboxes","title":"Ruins archipelago","scene":"res://studies/character_study.tscn","args":["--pack=ruins_archipelago"],
 		"detail":"Island pack: floating ruins of an old city to platform across. 1-7: stations."},
 	{"id":"pack_sky_village","group":"On-foot greyboxes","title":"Sky village","scene":"res://studies/character_study.tscn","args":["--pack=sky_village"],

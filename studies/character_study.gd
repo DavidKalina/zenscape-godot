@@ -343,6 +343,10 @@ var _last_stood := START
 ## Set once the room stands and the pilot is on his feet.
 var walk_ready := false
 var motor := PilotMotor.new()
+## The on-foot pieces that move him or that he rides (scripts/
+## interactables/foot_pieces.gd: bobbing and drifting slabs, swing ropes,
+## balustrades), or null: stepped round the motor's step each frame.
+var foot_pieces: Node = null
 ## The figure's and the camera's height over the feet, smoothed up and
 ## down steps (scripts/pilot_step_smooth.gd).
 var step_smooth := PilotStepSmooth.new()
@@ -786,8 +790,10 @@ func tick(delta: float) -> void:
 		motor.twirl = Input.is_action_pressed(&"walk_twirl") and not _tuning()
 	_asked = want.length()
 	ground.head(delta)
+	if foot_pieces != null: foot_pieces.before(delta)
 	var was := motor.feet
 	var events := motor.step(delta,want,motor.run,jump,ground.ground_callable(),ground.slide_callable(),ground.ledge_callable())
+	if foot_pieces != null: foot_pieces.after(delta,events)
 	if _rec != null: _rec.add(delta,want,jump,motor.crouch,motor.twirl,_yaw,_polar,motor,state(),events)
 	if motor.grounded: _last_stood = motor.feet
 	if motor.feet.y < lost:
@@ -840,6 +846,7 @@ func _want(delta: float) -> Vector2:
 func _sync_figure() -> void:
 	figure.position = motor.origin() if motor.on_ledge() else motor.feet+Vector3.UP*step_smooth.lift
 	figure.rotation = Vector3(0.0,motor.facing,0.0)
+	if foot_pieces != null: foot_pieces.pose(figure)
 
 ## The jump measured from takeoff to where it came down (a landing, a
 ## catch, a splash, a wall taken hold of, another jump): its kind ("jump",

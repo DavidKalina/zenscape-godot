@@ -874,7 +874,9 @@ func _drive_ledge(motor: RefCounted, hold: String, delta: float) -> Dictionary:
 			_ledge = 1.0
 			_climbing = move_toward(_climbing,1.0,delta/CLIMB_FADE)
 			_climb_at = clampf(float(motor.hold_t),0.0,1.0)*CLIMB_LENGTH
-		"hang":
+		"hang", "swing":
+			# A swing rope's hold (scripts/interactables/swing_rope.gd) hangs
+			# as the ledge's does, the rope's tilt the caller's.
 			if was == "lower": _hang_time = 0.0
 			if was == "":
 				# Caught in the air: a jolt, hanging from the hands.
@@ -888,7 +890,7 @@ func _drive_ledge(motor: RefCounted, hold: String, delta: float) -> Dictionary:
 			if pace > 0.01: _shimmy_way = move_toward(_shimmy_way,1.0 if float(motor.shimmy) > 0.0 else 0.0,delta/SHIMMY_TURN)
 			_shimmying = clampf(pace/(SHIMMY_SPEED*0.4),0.0,1.0)
 			_shimmy_phase = fmod(_shimmy_phase+pace/(SHIMMY_SPEED*SHIMMY_CYCLE)*delta,1.0)
-	var hanging := hold == "hang"
+	var hanging := hold == "hang" or hold == "swing"
 	_stretch_to = 1.0
 	_nod_to = 0.0
 	_arms_to = 0.0
