@@ -86,7 +86,11 @@ const SNUG := 2.4/TOY_SPAN
 ## steering room (both sides together), ROOM by default. E.g. RuinKit
 ## THREAD is gap(SNUG): 3.8 m for the toy, 5.2 for the plane at 2.
 static func gap(room := ROOM) -> float:
-	return span+TOY_SPAN*room
+	return span+TOY_SPAN*room*room_scale
+
+## `--room-scale=<x>` multiplies every flown gap's steering room (not the
+## knife slots), to try roomier openings for a run. 1 by default.
+static var room_scale: float = _flag("--room-scale=",1.0)
 
 ## A slot the plane is meant to pass only on a knife edge (on a wingtip):
 ## its height on its side (the toy's TOY_TALL times the plane) and `room`
