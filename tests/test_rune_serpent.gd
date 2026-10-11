@@ -13,6 +13,8 @@ extends SceneTree
 ## airships' loops; it is solid to the plane (a ray finds it, the bump puts
 ## the plane back out); a plane flying alongside is noticed, watched (the
 ## head turned toward it), paced and then left; --no-serpent leaves it out.
+## This is its old long way (--serpent-old-route); the route between the
+## isles it flies by default is tests/test_serpent_route.gd's.
 ##   godot --headless --path . --script tests/test_rune_serpent.gd
 const IsleSky = preload("res://studies/aqueduct_isle_sky.gd")
 const RuneSerpent = preload("res://scripts/rune_serpent.gd")
@@ -44,6 +46,7 @@ func check(ok: bool, label: String) -> void:
 
 func run() -> void:
 	create_timer(300.0).timeout.connect(func() -> void: push_error("rune serpent test timed out"); quit(2))
+	LaunchArgs.set_override(["--serpent-old-route"])
 	study = load("res://studies/aqueduct_isle.tscn").instantiate()
 	study.scripted = true
 	root.add_child(study)
