@@ -71,12 +71,17 @@ func _isles() -> void:
 		check(sky.ground(at) != null,"%s's ground is there to the traffic's eye" % id)
 	var sources: Array = sky.collectibles.sources.keys()
 <<<<<<< HEAD
+<<<<<<< HEAD
 	check(["aqueduct","bell_spires","cloister","sundered_gorge","colonnade","broken_ring"].all(func(k: String) -> bool: return sources.has(k)),"Each motif's plane tokens are in the sky's collectibles (%s)" % str(sources))
 	check(ids == ["bell_spires","cloister_tarn","sundered_gorge","colonnade_spine","broken_ring"],"The bell spires, the cloister tarn, the Sundered gorge, the colonnade spine and the broken ring (%s)" % str(ids))
 =======
 	check(["aqueduct","bell_spires","cloister","sundered_gorge","colonnade","stair_clouds"].all(func(k: String) -> bool: return sources.has(k)),"Each motif's plane tokens are in the sky's collectibles (%s)" % str(sources))
 	check(ids == ["bell_spires","cloister_tarn","sundered_gorge","colonnade_spine","stair_clouds"],"The bell spires, the cloister tarn, the Sundered gorge, the colonnade spine and the stair to the clouds (%s)" % str(ids))
 >>>>>>> look/motif-stair-clouds
+=======
+	check(["aqueduct","bell_spires","cloister","sundered_gorge","colonnade","hollow_keel"].all(func(k: String) -> bool: return sources.has(k)),"Each motif's plane tokens are in the sky's collectibles (%s)" % str(sources))
+	check(ids == ["bell_spires","cloister_tarn","sundered_gorge","colonnade_spine","hollow_keel"],"The bell spires, the cloister tarn, the Sundered gorge and the colonnade spine (%s)" % str(ids))
+>>>>>>> look/motif-hollow-keel
 	for a: int in range(motifs.isles.size()):
 		for b: int in range(a+1,motifs.isles.size()):
 			var ca: Vector3 = motifs.isles[a].circle()
