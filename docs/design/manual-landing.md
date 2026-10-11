@@ -1,11 +1,10 @@
 # Manual landing
 
-Round 2 (drift) is on branch `study/manual-landing-drift`, cut from
-`study/manual-landing` (61a3adb7) with main (3ecaabec, the isle lock) merged
-in. Round 1 is kept below for reference. Its foot, stranded, flaps and
-get-out rules all still hold. Round 2 replaces its touch and roll rules. The
-game's default play is still unchanged: everything is behind
-`--manual-landing`.
+Round 2 (drift) was merged to main (06ec4de5) and is the game's default
+landing: no flag needed. `--auto-landing` brings back the old F landing,
+and `--manual-landing` is still accepted but does nothing now. Round 1 is
+kept below for reference. Its foot, stranded, flaps and get-out rules all
+still hold. Round 2 replaces its touch and roll rules.
 
 ## Round 2: hit it hot, drift it to a stop
 

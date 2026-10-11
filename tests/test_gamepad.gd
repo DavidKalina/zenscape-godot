@@ -113,6 +113,9 @@ func run() -> void:
 	await frames(20)
 	pad = scene.pad
 	eye = scene.wanderer
+	# These checks fly the old F landing (--auto-landing); the default hand
+	# landing has its own tests (tests/test_manual_landing*.gd).
+	eye.manual = false
 	_actions()
 	await _prompts()
 	await _building()

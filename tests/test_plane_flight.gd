@@ -50,6 +50,9 @@ func run() -> void:
 	while scene.places.busy or scene._chunk_editor.forming: await process_frame
 	await frames(20)
 	eye = scene.wanderer
+	# These checks fly the old F landing (--auto-landing); the default hand
+	# landing has its own tests (tests/test_manual_landing*.gd).
+	eye.manual = false
 	check(not WandererEye.flies_plane(PackedStringArray(["--glider"])) and WandererEye.flies_plane(PackedStringArray()) and WandererEye.flies_plane(PackedStringArray(["--plane"])),"The plane flies unless --glider asks for the glider")
 	if "--glider" in OS.get_cmdline_user_args(): await _glider()
 	else: await _plane()
