@@ -47,7 +47,11 @@ var shift := Vector3.ZERO
 var _puffs: MultiMeshInstance3D
 var _material: ShaderMaterial
 
-func build(slots: Array) -> void:
+## Lays COUNT clouds over the field round `slots` (+MARGIN), CLEAR of each
+## slot. `blocked` (a home point to true), given, says where else none may
+## stand, in place of the open sky's peaks, towers and forested isles: a
+## sky laid by hand (scripts/kit_isle/kit_clouds.gd) reads no layout.
+func build(slots: Array, blocked := Callable()) -> void:
 	name = "SkyClouds"
 	var lo := Vector2(INF,INF)
 	var hi := Vector2(-INF,-INF)
@@ -70,8 +74,11 @@ func build(slots: Array) -> void:
 			if Vector2(at.x,at.z).distance_to(Vector2(s.x,s.z)) < CLEAR: clear = false
 		# Nor on a mountain risen through the sea (its cloud is at its foot),
 		# in a tower, nor in a forested isle's trees.
-		if SkyPeaks.blocks(at) or SkyTowers.blocks(at,SIZE.y): clear = false
-		if SkyForestIsles.blocks(at,40.0): clear = false
+		if blocked.is_valid():
+			if clear and blocked.call(at): clear = false
+		else:
+			if SkyPeaks.blocks(at) or SkyTowers.blocks(at,SIZE.y): clear = false
+			if SkyForestIsles.blocks(at,40.0): clear = false
 		if clear: clouds.append(Vector4(at.x,at.y,at.z,rng.randf_range(SIZE.x,SIZE.y)))
 	_build_puffs(rng)
 

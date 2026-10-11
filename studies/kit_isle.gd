@@ -383,6 +383,12 @@ var _capture_every := 0.5
 ## this to reach --capture-wait, so it is the same moment run to run
 ## however slow the first frames are.
 var flown := 0.0
+## The whole isle is up (its flora, lodestone, sky and life built, the plane
+## parked or flown): the end of `_ready`, which waits on `ready_to_walk`
+## first. The front door (scripts/kit_isle/front_door.gd) lifts its veil on
+## it.
+signal isle_ready
+var isle_up := false
 
 func _ready() -> void:
 	pack = "ruins_archipelago"
@@ -437,6 +443,8 @@ func _ready() -> void:
 	if preload("res://scripts/launch_args.gd").user_args().has("--pickup"):
 		for i in range(30): tick(1.0/60.0)
 		pick_up()
+	isle_up = true
+	isle_ready.emit()
 	if _capture != "": _take_capture()
 
 ## The start in the plane (--fly); an isle may start in the air elsewhere.
@@ -1275,7 +1283,9 @@ func fly_step(delta: float, input: Dictionary) -> void:
 		_nose.step(delta)
 	plane_figure._mark.visible = false
 	_check_arrival()
-	air.advance(delta,plane.velocity,float(plane.hang),0.0)
+	# The wind muffled in a cloud's body round the eye, as in the game.
+	var host := cloud_host()
+	air.advance(delta,plane.velocity,float(plane.hang),0.0,0.0,host.cloud_body(camera.global_position) if host != null else 0.0)
 	air.engine(float(plane.speed),hand_landing.throttle,hand_landing.engine)
 	if int(plane.flaps) != _flaps_heard:
 		_flaps_heard = int(plane.flaps)
@@ -1771,6 +1781,11 @@ func _take_capture() -> void:
 ## airships, the CPU planes, open-air life, motes and a few tokens for the
 ## plane; each with its own --no-... flag. A capture waits for it whole.
 var sky: Node3D
+
+## The scene's cloud host (scripts/cloud_host.gd), the sky's: what the look
+## pass hands the cloud volume. Null without one.
+func cloud_host() -> Node:
+	return sky.get("clouds") if sky != null else null
 
 func _add_sky() -> void:
 	sky = sky_script().new()

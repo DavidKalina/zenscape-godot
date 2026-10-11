@@ -44,7 +44,7 @@ with tempfile.TemporaryDirectory(prefix='zenscape-export-check-') as temporary:
         raise RuntimeError(f'Packaged self-check failed (exit {result.returncode})')
     for marker in ['PASS: packaged native terrain kernel loaded',
                    'PASS: packaged native mesh equivalence',
-                   'PASS: packaged photo mode',
-                   'PASS: packaged hand scheme, photo and main menu']:
+                   'PASS: packaged front door title over the isle',
+                   'PASS: packaged walk, plane and teardown']:
         if marker not in output:
             raise RuntimeError(f'Packaged self-check did not finish: {marker}')

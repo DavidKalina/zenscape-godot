@@ -1,5 +1,10 @@
 extends RefCounted
 ## Explicit CI self-check: release templates disallow --script/path overrides.
+## The native kernel and mesh equivalence first (any scene), then the scene's
+## own walk: the front door (studies/zenscape.tscn, the main scene: the title
+## over the isle, Begin, on foot by the plane, the plane boards and flies,
+## a clean teardown) or, run from the old game (studies/cozy_worlds.tscn),
+## its hand scheme or creation shell, photo mode and main menu.
 static func run(scene: Node) -> void:
 	var tree := scene.get_tree()
 	var kernel = preload("res://scripts/native_terrain_kernels.gd").get_kernel()
@@ -36,7 +41,10 @@ static func run(scene: Node) -> void:
 				tree.quit(1)
 				return
 	print("PASS: packaged native mesh equivalence")
-	# The product opens on the Genesis plain with a creation brush in hand.
+	if scene.get("front_door") != null:
+		await _check_front_door(scene)
+		return
+	# The old game opens on the Genesis plain with a creation brush in hand.
 	var deadline := Time.get_ticks_msec()+120_000
 	while not bool(scene.get("shell_ready")):
 		if Time.get_ticks_msec() >= deadline or scene.get("shell_ready") == null:
@@ -239,3 +247,64 @@ static func _check_photo_mode(scene: Node) -> String:
 	if not scene._creating():
 		return "picking the brush after photo mode did not put it in hand"
 	return ""
+
+## The front door (scripts/kit_isle/front_door.gd) as a player first meets
+## it: the isle up under the title, Begin, on foot by the parked plane, the
+## plane boarded and off the turf, then the scene freed with its sounds let
+## go. Prints the two front-door markers tools/verify_desktop_export.py
+## looks for, and quits with the verdict.
+static func _check_front_door(scene: Node) -> void:
+	var tree := scene.get_tree()
+	var door: Node = scene.front_door
+	var deadline := Time.get_ticks_msec()+600_000
+	while not (bool(scene.isle_up) and bool(door.titled)):
+		if Time.get_ticks_msec() >= deadline:
+			_fail(tree,"startup did not reach the title over the isle")
+			return
+		await tree.process_frame
+	var title: Control = door.title
+	if title == null or not title.is_visible_in_tree() or door.begin_button == null or not door.begin_button.has_focus():
+		_fail(tree,"title is missing, or Begin is not in reach")
+		return
+	if not bool(scene.scripted) or bool(scene.flying) or not bool(scene.parked):
+		_fail(tree,"the pilot is not held under the title by the parked plane")
+		return
+	var eye: Vector3 = scene.camera.global_position
+	for i in range(10): await tree.process_frame
+	if scene.camera.global_position.distance_to(eye) < 0.001:
+		_fail(tree,"the title's camera does not orbit the isle")
+		return
+	print("PASS: packaged front door title over the isle")
+	door.begin_button.pressed.emit()
+	await tree.process_frame
+	if bool(door.titled) or bool(scene.scripted) or not scene.by_plane():
+		_fail(tree,"Begin did not put the pilot on foot by the plane")
+		return
+	scene.board_parked()
+	if not bool(scene.flying):
+		_fail(tree,"the parked plane did not board")
+		return
+	var ground: float = scene.parked_at.y
+	deadline = Time.get_ticks_msec()+120_000
+	while not (bool(scene.flying) and scene.plane != null and float(scene.plane.position.y) > ground+4.0):
+		if Time.get_ticks_msec() >= deadline or not bool(scene.flying):
+			_fail(tree,"the plane did not take off from the isle")
+			return
+		await tree.process_frame
+	var audio_streams: Array[WeakRef] = []
+	for kind in ["AudioStreamPlayer","AudioStreamPlayer3D"]:
+		for player in scene.find_children("*",kind,true,false):
+			if player.stream != null: audio_streams.append(weakref(player.stream))
+	scene.free()
+	var release_deadline := Time.get_ticks_msec()+2000
+	while audio_streams.any(func(stream: WeakRef) -> bool: return stream.get_ref() != null):
+		if Time.get_ticks_msec() >= release_deadline:
+			_fail(tree,"audio streams retained after shutdown")
+			return
+		await tree.process_frame
+	print("PASS: packaged walk, plane and teardown")
+	tree.quit(0)
+
+static func _fail(tree: SceneTree, what: String) -> void:
+	push_error("FAIL: packaged "+what)
+	tree.quit(1)

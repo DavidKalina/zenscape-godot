@@ -23,7 +23,8 @@ feel lived in. It only wires up systems the game already has and adds no new one
 | Collision | – | Every isle's top is a trimesh on layer 1 plus the isle's `TURF_LAYER`, and its sides on layer 1. The plane skims them, gets bumped off them and can set down on them, the same as on the isle. |
 | Airships (3) | `SkyAirship._make_ship` (the tow event's ship: envelope, gondola, crew, windows, lantern), `airship_build.gd` | They fly slow Catmull-Rom loops (`ROUTES`). Route 0 passes about 100 m off the isle. Propellers spin, the bow crewman waves within 70 m, and they light up at night. Each has a capsule and box body on layer 1, so the plane bumps off them. |
 | Engine drone | `GlideAir.engine` (the plane's propeller hum) | It's faint, heard from 170 m and full at 45 m from the nearest airship. |
-| CPU planes (4) | `SkyTraffic` (subclass `IsleTraffic` swaps only `_choose`) | They lap the clusters and the pierced isle and buzz the near and mid isles. The `ground` callable is a physics ray plus the pierced isle's box, so they climb clear over what stands. They are always shown. |
+| CPU planes (4) | `SkyTraffic` (subclass `IsleTraffic` swaps only `_choose`) | They lap the clusters and the pierced isle, buzz the near and mid isles, and pass through the drifting clouds as often as the game's do (30%, `SkyTraffic._through_cloud`). The `ground` callable is a physics ray plus the pierced isle's box, so they climb clear over what stands. They are always shown. |
+| Clouds | `scripts/kit_isle/kit_clouds.gd`, a cloud host (`scripts/cloud_host.gd`) over `SkyTowers` (fixed spots), `SkyClouds` and `CloudWakes` | Four towering cumulus (`KitClouds.TOWERS`): one 790 m south of the isle that starts rising 10 s in, three at 1.2-1.3 km west, east and north-north-west. Each lives the game's life (rest 2 min, rise 5 min, stand 14 min, wane 3 min) and is left out if it would stand within 340 m of the lock ring, an isle, a cluster, the pierced isle or the line out to the ring and the halls. The game's 70 drifting clouds over the isles' field, and the tunnels the player's plane and the CPU planes tear through both. The look pass hands the host to the cloud volume (`LookPass.cloud_host`). See docs/design/consolidation-audit.md, "Round 3 done". |
 | Open-air life | `SkyAmbientLife` (subclass `IsleLife`; `IsleHosts` stands in for SkyIslands) | Gulls ride thermals and songbird flocks burst out of the tallest crown on the 3 nearest isles within 420 m. The gull mesh is the Fidelity source gull from `geometry.scn`, the same as LandLife's. |
 | Motes | `SkyMotes` | One set spread round the isle (scale 2) and one round each of the two nearest clusters, at a fixed strength of 0.75. The game shows them only with the Mystic sea, so this is the one place we turn them on by default. |
 | Tokens (6) | `SkyCollectibles` (`add_source`, its HUD, blip and line run), `CollectibleLines.line` | Laid by hand in world coordinates. There are no seeded trails here (`_trails_laid` is set). |
@@ -41,6 +42,8 @@ Everything is on by default. You can turn parts off with:
 - `--no-sky-life`
 - `--no-motes`
 - `--no-sky-tokens`
+- `--no-sky-clouds`: the towers, the drifting clouds and the tearing. The
+  game's `--tower-pace=N`, `--tower-age=S` and `--still-towers` work here.
 
 ## Tokens and the line each one asks for
 

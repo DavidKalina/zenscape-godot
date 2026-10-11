@@ -41,7 +41,10 @@ extends Node3D
 ##
 ## Within BUILD of the eye one is made on a worker, beyond FORGET let go,
 ## the same one coming back when flown back to; it is far in the haze when
-## it comes, and fades in over FADE_IN besides. The node stands at the
+## it comes, and fades in over FADE_IN besides. A sky with its places laid
+## by hand (the kit isles', scripts/kit_isle/kit_clouds.gd) gives its own
+## spots instead (`fixed`): only those stand, the first rising RISE_SOON in
+## as the home tower's does, and no cell, peak or ring layout is read. The node stands at the
 ## cells' origin, so the swaps that move the world carry the towers along.
 ## `fade` says how far into one a point is (0 outside, 1 in its heart), for
 ## the vapour and the muffled wind (scripts/wanderer_eye.gd). Not a solid:
@@ -127,6 +130,11 @@ var _since := CHECK
 var clock := 0.0
 var pace := 1.0
 var pinned := -1.0
+## Hand-laid towers (home coordinates, y 0), or none for the seeded cells'
+## (`spot`). The spot at index i stands in for the cell (i, 0): its life
+## and its shape are that cell's (the first's the home tower's), its key
+## the same, so nothing else in a life changes.
+var fixed: Array = []
 
 func _init() -> void:
 	name = "SkyTowers"
@@ -309,15 +317,35 @@ func _survey(home: Vector3) -> void:
 		(built[key].node as Node3D).queue_free()
 		if currents != null: currents.drop_thermals(_thermal_key(key))
 		built.erase(key)
+	for pair: Array in _near(home):
+		var cell: Vector2i = pair[0]
+		var key := _key(cell)
+		if built.has(key) or _making.has(key): continue
+		var s: Vector3 = pair[1]
+		if Vector2(s.x-home.x,s.z-home.z).length() > BUILD: continue
+		_start(cell,s)
+
+## The towers that may stand round a home point: [cell, spot] for the
+## fixed spots, else for the 3x3 cells round it that hold one.
+func _near(home: Vector3) -> Array:
+	var out := []
+	if not fixed.is_empty():
+		for i in range(fixed.size()): out.append([Vector2i(i,0),fixed[i] as Vector3])
+		return out
 	var c := cell_of(home)
 	for dx in range(-1,2):
 		for dz in range(-1,2):
-			var cell := c+Vector2i(dx,dz)
-			var key := _key(cell)
-			if built.has(key) or _making.has(key): continue
-			var s: Variant = spot(cell)
-			if s == null or Vector2(s.x-home.x,s.z-home.z).length() > BUILD: continue
-			_start(cell,s)
+			var s: Variant = spot(c+Vector2i(dx,dz))
+			if s != null: out.append([c+Vector2i(dx,dz),s])
+	return out
+
+## True if a home point lies within KEEP (plus `margin`) of one of these
+## towers' middles: the fixed spots', else the cells' (`blocks`).
+func keeps(home: Vector3, margin := 0.0) -> bool:
+	if fixed.is_empty(): return blocks(home,margin)
+	for s: Vector3 in fixed:
+		if Vector2(s.x-home.x,s.z-home.z).length() < KEEP+margin: return true
+	return false
 
 # --- Where they stand ------------------------------------------------------------
 

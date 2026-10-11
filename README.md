@@ -6,11 +6,22 @@ trees, fish, frogs, birds and deer.
 
 ## Play
 
-Double-click **`run-cozy-flow.command`**, or open `project.godot` in
+Double-click **`run-zenscape.command`**, or open `project.godot` in
 **Godot 4.7.2** (standard edition; no .NET needed) and press **F5**. Both open
-`studies/cozy_worlds.tscn`.
+the front door, `studies/zenscape.tscn`: the title over the aqueduct isle
+(`studies/aqueduct_isle.gd`), the camera orbiting it. **Begin** puts you on
+foot beside your parked plane; **Scenes** opens every study and greybox
+(docs/design/scene-picker.md); **Settings** (look, sound, controller);
+**Quit**. `-- --no-title` goes straight in. In the game, **Esc** or the
+pad's **Menu** pauses: Resume, Back to the plane (also **R** on foot),
+Settings, Scenes, Back to the title and Quit. The study's developer keys
+(F1-F8, the station keys, L, B) and capture flags work only in editor and
+debug runs. The plan behind it is docs/design/consolidation-audit.md.
 
-The title is a generated world the camera orbits behind the menu:
+The old game (the plate builder below) is hidden for now: it's **Builder
+(old game)** under Scenes, or `run-cozy-flow.command`, which opens
+`studies/cozy_worlds.tscn`. Its own title is a generated world the camera
+orbits behind the menu:
 **Continue your world**, **Your worlds** (the library of saved worlds),
 **Build this world** (keep the land behind the menu), **Begin on a quiet
 plain** (a bare Genesis plain), **Settings** and **Quit**. In a world, **Esc**

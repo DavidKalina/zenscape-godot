@@ -25,12 +25,14 @@ static func overridden() -> bool:
 static func set_override(args: Variant) -> void:
 	override = null if args == null else PackedStringArray(args)
 
-## Changes to `scene` with `args` as its launch flags. `--no-title` is always
-## among them, so a scene that has a title (studies/cozy_worlds.tscn) goes
-## straight in. Returns the change_scene error.
-static func open_scene(tree: SceneTree, scene: String, args: PackedStringArray) -> Error:
+## Changes to `scene` with `args` as its launch flags. `--no-title` is
+## among them unless `own_title` (the builder's entry, which opens on its own
+## title: scripts/scene_catalog.gd), so a scene that has a title (studies/
+## cozy_worlds.tscn, studies/zenscape.tscn) goes straight in. Returns the
+## change_scene error.
+static func open_scene(tree: SceneTree, scene: String, args: PackedStringArray, own_title := false) -> Error:
 	var given := PackedStringArray(args)
-	if not "--no-title" in given: given.insert(0,"--no-title")
+	if not own_title and not "--no-title" in given: given.insert(0,"--no-title")
 	set_override(given)
 	return tree.change_scene_to_file(scene)
 
