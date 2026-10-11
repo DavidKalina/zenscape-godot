@@ -21,6 +21,11 @@ extends RefCounted
 ## trail, so this is the body's exact carry. `moved` gives the move near a
 ## place since the last `update` as one transform (for everything a rider
 ## keeps), and `turn` gives its turn about up.
+##
+## A far body's hulls can be taken out of the world (`set_live`: a line of
+## serpents rebuilds only those near the rider). Its rings are still read
+## every update, so its places, frames and moves stay true; only its hulls
+## wait, laid again as it comes back.
 const RuneSerpent = preload("res://scripts/rune_serpent.gd")
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
 
@@ -44,6 +49,8 @@ var _now: Array[Transform3D] = []
 var _then: Array[Transform3D] = []
 var _hulls: Array[ConvexPolygonShape3D] = []
 var _world := PackedVector3Array()
+## Whether its hulls stand in the world and are laid every update.
+var live := true
 
 ## Its hulls under `parent`, laid on the serpent as it is posed now.
 func _init(on: Node3D, parent: Node3D) -> void:
@@ -74,17 +81,30 @@ func _init(on: Node3D, parent: Node3D) -> void:
 		_hulls.append(hull)
 	reset()
 
-## The rings as posed now read, and every hull laid on them; the last
-## update's kept, for the move since.
+## The rings as posed now read, and (live) every hull laid on them; the
+## last update's kept, for the move since.
 func update() -> void:
 	_then = _now.duplicate()
 	var head: Transform3D = serpent.head_frame()
 	for k in range(_arc.size()):
-		var frame: Transform3D = serpent.ring_frame(k-_heads) if k >= _heads else head.translated_local(Vector3(0.0,0.0,RuneSerpent.HEAD-_arc[k]))
-		_now[k] = frame
+		_now[k] = serpent.ring_frame(k-_heads) if k >= _heads else head.translated_local(Vector3(0.0,0.0,RuneSerpent.HEAD-_arc[k]))
+	if live: _lay()
+
+## Every hull laid on the rings as read.
+func _lay() -> void:
+	for k in range(_arc.size()):
+		var frame := _now[k]
 		var corners: Array = _corners[k]
 		for j in range(8): _world[k*8+j] = frame*(corners[j] as Vector3)
 	for k in range(_hulls.size()): _hulls[k].points = _world.slice(k*8,k*8+16)
+
+## Its hulls into the world (laid at once, on the rings as last read) or
+## out of it.
+func set_live(on: bool) -> void:
+	if on == live: return
+	live = on
+	body.collision_layer = LAYER if on else 0
+	if on: _lay()
 
 ## As `update`, with no move since (after the serpent is set down anew).
 func reset() -> void:

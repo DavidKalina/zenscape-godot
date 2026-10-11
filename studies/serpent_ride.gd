@@ -51,15 +51,42 @@ extends "res://studies/character_study.gd"
 ## the feel's sliders; F3 the slide carving or as it was (the character
 ## study's: the stick across his way turns his slide rather than pushing
 ## him across, to follow its spine down the dive).
+##
+## The convoy (--convoy[=N], CONVOY serpents unless given): a line of them
+## flying one way (CONVOY_ROUTE) nose to tail, each GAP m (--gap=) from its
+## snout back to the tip of the tail ahead of it, kept there exactly (each
+## behind the first holds the first's pace, `_advance_line`). Their way is a
+## long loop of two long straight descents of DESCENT° along their backs,
+## each with one gentle S, joined by climbing half turns. Sharing one way,
+## the line down a descent is a long run of downhill backs with gaps in it:
+## carve down one, leap off its head over the gap onto the tail of the next
+## (lower, and still diving) and carve on, a string of carves. On a climb
+## the downhill runs toward their tails, back down the line. He rides
+## whichever he lands on; landing crouched he slides on at his pace. A
+## missed leap sets him back fast, RETRY_BACK s before he left the back he
+## leapt from, at the pace and on the line he had there (T, or the pad's Y,
+## does the same at will: the last gap again). Only the serpents near him
+## have their hulls in the world (LIVE_NEAR); the rest fly on without.
+## Keys: 1, 2, 3 on the one he's on (neck, mid-back, tail), 4 on the last
+## one's tail, 5 the line set at the top of the next descent with him on the
+## last one's back, ready to carve down it, T the last gap again, R back to
+## the start (the first descent's top; the string's counts cleared). F1 adds
+## which one he's on, the string (gaps made in a row, the best), its peak
+## pace, the last gap's paces, and the line's cost a frame.
 ## Flags, after --:
 ##   --girth=<x>         its girth times x (GIRTH: 1.5)
 ##   --ride-roll=<x>     the share of its roll kept while ridden (RIDE_ROLL)
 ##   --serpent-speed=<x> its pace times x
-##   --weave=<x>         its slither times x (its weave shares on RIDE_ROUTE)
+##   --weave=<x>         its slither times x (its weave shares on its way)
 ##   --no-glance         it never glances back at you
 ##   --carve             the slide carves from the start (F3 toggles it)
+##   --convoy[=N]        the convoy, N serpents (CONVOY; 2 to CONVOY_MOST)
+##   --gap=<m>           the convoy's gap (GAP)
+##   --descent=<deg>     the slope of the convoy's descents (DESCENT)
 ##   ./run-serpent-ride.command
+##   ./run-serpent-convoy.command
 ##   godot --path . res://studies/serpent_ride.tscn -- --no-title
+##   godot --path . res://studies/serpent_ride.tscn -- --no-title --convoy --carve
 const RuneSerpent = preload("res://scripts/rune_serpent.gd")
 const SerpentBack = preload("res://studies/serpent_back.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
@@ -186,10 +213,74 @@ const MARKER_RISE := 7.0
 const MARKER_SIZE := 1.2
 const MARKER_CLEAR := 22.0
 
+## The convoy: how many serpents (--convoy=N), and the most.
+const CONVOY := 5
+const CONVOY_MOST := 8
+## The gap (m, --gap=) along their way from each one's snout back to the
+## tip of the tail of the one ahead. The leap that matters is longer: from
+## its head's flat top (about 4 m back from its snout) over the gap to
+## where the tail ahead is wide enough to land and stay on (about 10 m in
+## from its tip). A bot (tools/serpent_convoy_bot.gd, 600 s a run, three
+## seeds) landed 85-86% of its leaps on the next at 2 m, 74-83% at 3,
+## 73-81% at 4 (94% at 0, where the gap hardly shows).
+const GAP := 2.0
+## The line's girth, times rune_serpent.gd's, unless --girth= is given
+## (the single serpent's is GIRTH). Their tails are where he lands: at 1.5
+## the last ten metres of a tail are under a metre and a half across,
+## shoulders and all, and the bot landed 51% of its leaps; at 2, 85%.
+const CONVOY_GIRTH := 2.0
+## Their way (`convoy_route`): two straight legs, the east north and the
+## west south, each a descent at DESCENT° (--descent=) from HIGH m over
+## 2*LEG_HALF m, bending BEND m out and back in one gentle S (about 1.2 km
+## round at its tightest) on LEG_POINTS control points; joined by climbing
+## half turns, LEG_X m round, on TURN_POINTS. Its weave share, all round
+## (times --weave=).
+const HIGH := 430.0
+const LEG_X := 260.0
+const LEG_HALF := 600.0
+const DESCENT := 20.0
+const BEND := 30.0
+const LEG_POINTS := 12
+const TURN_POINTS := 8
+const CONVOY_WEAVE := 0.4
+## Its marks, by control point: the tops of the two descents (a, b), their
+## feet (a_low, b_low), and the middles of the turns (north, south).
+const CONVOY_MARKS := {"a":0,"a_low":12,"north":16,"b":20,"b_low":32,"south":36}
+## The descents in order round its way: [top, foot].
+const DESCENTS := [["a","a_low"],["b","b_low"]]
+## Each behind the first holds the first's pace, and LINE_PULL m/s more for
+## every metre it has fallen behind its place (less, ahead of it), up to
+## LINE_CATCH m/s either way: so they keep their places in the line to the
+## centimetre round the loop.
+const LINE_PULL := 0.5
+const LINE_CATCH := 1.5
+## The true length round their way is read every LINE_STEP m of its arc.
+const LINE_STEP := 1.0
+## Set at a descent's top (5, R): the line laid so the last one's back at
+## START_AT m from its snout is START_PAST m down the descent from its top
+## (its slope there about 12° on the way down).
+const START_AT := 60.0
+const START_PAST := 60.0
+## Only these have their hulls in the world, rebuilt each frame: the one he
+## is on (or last left) and any with a ring or its head within LIVE_NEAR m
+## of him (the one ahead as he nears its tail, the one behind on a climb).
+const LIVE_NEAR := 30.0
+## A leap missed: lost LINE_DROP m under the line (where he left, carried
+## on down their way's slope as he goes on along it: the next tail is
+## never so far under him), the view fades quicker (out, held, in; s),
+## and he is set back on the spine of the back he leapt from where he was
+## RETRY_BACK s before he left it, at his pace then. His places on the
+## backs are kept HISTORY s.
+const LINE_DROP := 8.0
+const LINE_FADE := Vector3(0.2,0.1,0.35)
+const RETRY_BACK := 1.5
+const HISTORY := 4.0
+
 ## The serpent, and its body as ground.
 var serpent: Node3D
 var back: SerpentBack
 var girth := GIRTH
+var _girth_given := false
 var ride_roll := RIDE_ROLL
 ## Its slither, times the route's weave shares (--weave=).
 var weave := 1.0
@@ -217,6 +308,9 @@ var tower_face := Vector2(1.0,0.0)
 var flying := false
 var plane: Variant = null
 var _air_ref := 0.0
+# The frame he left in, flat (its way), and its slope (rise a metre).
+var _air_way := Vector2.ZERO
+var _air_slope := 0.0
 var _turn_owed := 0.0
 var _since_ridden := 99.0
 var _fade_t := -1.0
@@ -224,12 +318,58 @@ var _set_back := false
 var _fade: ColorRect
 var _arch_at := Vector3.ZERO
 
+## The convoy: how many in the line (0: the single serpent), its gap (m)
+## and its descents' slope (degrees).
+var convoy := 0
+var gap := GAP
+var descent := DESCENT
+## Every serpent and its back, the first the lead (the single serpent
+## alone, without the convoy); the one he is on or last left (`serpent`
+## and `back` are it).
+var serpents: Array[Node3D] = []
+var backs: Array[SerpentBack] = []
+var on_k := 0
+## The string: gaps made in all, in a row (since the last fall or the
+## start), the best row, his fastest on a back in this row (on its back and
+## over the ground, m/s), falls; the last gap ({from, to, left, landed}:
+## the serpents and his pace on the back leaving and landing).
+var gaps := 0
+var string := 0
+var best_string := 0
+var string_peak := 0.0
+var string_peak_ground := 0.0
+var last_gap := {}
+## The line's cost the last frame (µs): the serpents' advance, the backs
+## (rings read, the live ones' hulls laid); and how many backs are live.
+var line_usec := 0
+var hulls_usec := 0
+var live_count := 0
+# The true length of their way from its start to each LINE_STEP of its
+# arc, and round.
+var _line_true := PackedFloat32Array()
+var _line_length := 0.0
+# Where he has stood on the backs, the newest last: {t, k, place, rel
+# (his pace along and across its way), face (his facing off its way),
+# move, string}; the state to set back to for the last take-off; the
+# serpent he left, in the air (-1 none) and his pace leaving.
+var _history: Array[Dictionary] = []
+var _retry := {}
+var _left := -1
+var _left_pace := 0.0
+var _line_clock := 0.0
+
 func _init() -> void:
 	for arg: String in LaunchArgs.user_args():
-		if arg.begins_with("--girth="): girth = clampf(float(arg.get_slice("=",1)),0.5,3.0)
+		if arg.begins_with("--girth="):
+			girth = clampf(float(arg.get_slice("=",1)),0.5,3.0)
+			_girth_given = true
 		elif arg.begins_with("--ride-roll="): ride_roll = clampf(float(arg.get_slice("=",1)),0.0,1.0)
 		elif arg.begins_with("--weave="): weave = clampf(float(arg.get_slice("=",1)),0.0,2.0)
 		elif arg == "--no-glance": glance = false
+		elif arg == "--convoy": convoy = CONVOY
+		elif arg.begins_with("--convoy="): convoy = clampi(int(arg.get_slice("=",1)),2,CONVOY_MOST)
+		elif arg.begins_with("--gap="): gap = clampf(float(arg.get_slice("=",1)),0.0,40.0)
+		elif arg.begins_with("--descent="): descent = clampf(float(arg.get_slice("=",1)),4.0,30.0)
 	# The floor is a backstop under everything; the fall is caught well
 	# before (LOST_DROP).
 	lost = FLOOR_Y+5.0
@@ -241,31 +381,160 @@ func _build_light() -> void:
 	camera.far = FAR
 
 func _build_room() -> void:
-	_build_serpent()
+	if convoy > 0: _build_convoy()
+	else: _build_serpent()
 	_build_floor()
-	_build_tower()
-	for p: Vector2 in PILLARS: _box(Rect2(p.x-PILLAR_HALF,p.y-PILLAR_HALF,PILLAR_HALF*2.0,PILLAR_HALF*2.0),FLOOR_Y,PILLAR_TOP,"grey")
-	_build_arch()
+	if convoy == 0:
+		_build_tower()
+		for p: Vector2 in PILLARS: _box(Rect2(p.x-PILLAR_HALF,p.y-PILLAR_HALF,PILLAR_HALF*2.0,PILLAR_HALF*2.0),FLOOR_Y,PILLAR_TOP,"grey")
+		_build_arch()
 	_build_markers()
 	_build_fade()
 
 ## The real serpent on this scene's way, driven from `tick` (its own
 ## process off), its capsules left out (its back's hulls stand in).
 func _build_serpent() -> void:
-	serpent = RuneSerpent.new()
-	var route := []
-	for point: Array in RIDE_ROUTE: route.append([point[0],float(point[1])*weave,point[2],point[3]])
-	serpent.route = route
-	serpent.route_marks = RIDE_MARKS
-	serpent.start_mark = "tower"
-	serpent.girth = girth
-	serpent.solid = false
-	serpent.look_back = glance
-	add_child(serpent)
-	serpent.setup(self)
-	serpent.set_process(false)
-	serpent.set_physics_process(false)
+	serpent = _new_serpent(RIDE_ROUTE,RIDE_MARKS,"tower",0)
 	back = SerpentBack.new(serpent,self)
+	serpents = [serpent]
+	backs = [back]
+
+## A real serpent flying `way` (its weave shares times --weave=), set at
+## `start`, the `k`th of a line (its own draws and clock), driven from
+## `tick`.
+func _new_serpent(way: Array, marks: Dictionary, start: String, k: int) -> Node3D:
+	var made: Node3D = RuneSerpent.new()
+	var route := []
+	for point: Array in way: route.append([point[0],float(point[1])*weave,point[2],point[3]])
+	made.route = route
+	made.route_marks = marks
+	made.start_mark = start
+	made.girth = girth
+	made.solid = false
+	made.look_back = glance
+	if k > 0:
+		made.name = "RuneSerpent%d" % (k+1)
+		made.rng_seed = 7741+97*k
+		made.clock = 13.7*k
+	add_child(made)
+	made.setup(self)
+	made.set_process(false)
+	made.set_physics_process(false)
+	return made
+
+## The convoy's line: `convoy` serpents on its way, the first the lead,
+## each its own back; the true length round their way read; laid nose to
+## tail at the first descent's top.
+func _build_convoy() -> void:
+	if not _girth_given: girth = CONVOY_GIRTH
+	var way := convoy_route(descent)
+	for k in range(convoy):
+		var made := _new_serpent(way,CONVOY_MARKS,"a",k)
+		serpents.append(made)
+		backs.append(SerpentBack.new(made,self))
+	serpent = serpents[serpents.size()-1]
+	back = backs[backs.size()-1]
+	on_k = serpents.size()-1
+	_read_line()
+	_line_at("a")
+
+## The convoy's way, its descents at `slope` degrees (`descent`): control
+## points as RIDE_ROUTE's. The east leg runs north (−z) down from HIGH, a
+## gentle S out to the east and back in; the north turn climbs round west
+## to the west leg, which runs south down from HIGH the same; the south
+## turn climbs round east to the start.
+static func convoy_route(slope: float) -> Array:
+	var drop := 2.0*LEG_HALF*tan(deg_to_rad(slope))
+	var low := HIGH-drop
+	var out := []
+	for leg in range(2):
+		var side := 1.0 if leg == 0 else -1.0
+		for i in range(LEG_POINTS):
+			var f := float(i)/LEG_POINTS
+			out.append([Vector3(side*(LEG_X+BEND*sin(TAU*f)),HIGH-drop*f,side*(LEG_HALF-2.0*LEG_HALF*f)),CONVOY_WEAVE,1.0,0.0])
+		for i in range(TURN_POINTS):
+			var f := float(i)/TURN_POINTS
+			var a := PI*f
+			out.append([Vector3(side*LEG_X*cos(a),low+drop*f,-side*(LEG_HALF+LEG_X*sin(a))),CONVOY_WEAVE,1.0,0.0])
+	return out
+
+## The true length of their way (as the lead's head lays it: the weave and
+## the heave in) from its start to every LINE_STEP of its arc.
+func _read_line() -> void:
+	var lead := serpents[0]
+	var count := int(ceil(float(lead.route_length)/LINE_STEP))
+	_line_true.resize(count+1)
+	_line_true[0] = 0.0
+	var was: Vector3 = lead._path(0.0)[0]
+	for i in range(1,count+1):
+		var p: Vector3 = lead._path(minf(i*LINE_STEP,float(lead.route_length)))[0]
+		_line_true[i] = _line_true[i-1]+p.distance_to(was)
+		was = p
+	_line_length = _line_true[count]
+
+## The true length of their way from its start to arc `at` (m).
+func _true_at(at: float) -> float:
+	var f := fposmod(at,float(serpents[0].route_length))/LINE_STEP
+	var i := mini(floori(f),_line_true.size()-2)
+	return lerpf(_line_true[i],_line_true[i+1],f-i)
+
+## The arc `metres` of true length on along their way from arc `at` (back,
+## if less than 0).
+func _arc_on(at: float, metres: float) -> float:
+	var want := fposmod(_true_at(at)+metres,_line_length)
+	var lo := 0
+	var hi := _line_true.size()-1
+	while hi-lo > 1:
+		var mid := (lo+hi)/2
+		if _line_true[mid] <= want: lo = mid
+		else: hi = mid
+	return (lo+(want-_line_true[lo])/maxf(_line_true[hi]-_line_true[lo],1e-6))*LINE_STEP
+
+## How far along their way (true m) serpent `k`'s head is from the lead's.
+func _behind_lead(k: int) -> float:
+	return fposmod(_true_at(serpents[0].s)-_true_at(serpents[k].s),_line_length)
+
+## The line laid nose to tail, the lead's head at arc `lead_at`: each
+## head LENGTH and the gap behind the one ahead's (place() lays a body back
+## from its head by travelling on from an arc behind it, so each is set
+## from the arc that travel ends at hers).
+func _place_line(lead_at: float) -> void:
+	var lay := RuneSerpent.LENGTH+RuneSerpent.STEP*8.0
+	for k in range(serpents.size()):
+		var head := _arc_on(lead_at,-k*spacing())
+		serpents[k].pace_hold = -1.0
+		serpents[k].place(fposmod(_arc_on(head,-lay)+lay,float(serpents[k].route_length)))
+	for b: SerpentBack in backs: b.reset()
+
+## From one head to the next (m).
+func spacing() -> float:
+	return RuneSerpent.LENGTH+gap
+
+## The line set at descent `mark`'s top: the last one's back at START_AT
+## from its snout START_PAST m down from the top; him there, facing its
+## head.
+func _line_at(mark: String) -> void:
+	var spot := float(serpents[0].marks()[mark])+START_PAST
+	_place_line(_arc_on(spot,START_AT+(serpents.size()-1)*spacing()))
+	_history.clear()
+	_retry = {}
+	_left = -1
+
+## The descent to start down (5): the one the last serpent's head is on
+## now (again from its top), else the next ahead round their way.
+func descent_to_start() -> String:
+	var last := serpents[serpents.size()-1]
+	var length := float(last.route_length)
+	var best := ""
+	var nearest := INF
+	for d: Array in DESCENTS:
+		var top := float(last.marks()[d[0]])
+		if fposmod(float(last.s)-top,length) < fposmod(float(last.marks()[d[1]])-top,length): return d[0]
+		var ahead := fposmod(top-float(last.s),length)
+		if ahead < nearest:
+			nearest = ahead
+			best = d[0]
+	return best
 
 func _build_floor() -> void:
 	var floor_body := StaticBody3D.new()
@@ -381,18 +650,42 @@ func _build_fade() -> void:
 
 # --- Setting him down ---------------------------------------------------------------
 
-## The start: on the tower, the serpent coming.
+## The start: on the tower, the serpent coming; in the convoy, the line at
+## the first descent's top with him on the last one's back, the string's
+## counts cleared.
 func respawn() -> void:
-	to_tower()
+	if convoy == 0:
+		to_tower()
+		return
+	falls = 0
+	gaps = 0
+	best_string = 0
+	_break_string()
+	last_gap = {}
+	_line_at("a")
+	set_on(serpents.size()-1,START_AT)
 
 ## 1 on its neck behind the collar, 2 mid-back, 3 near the tail, 4 the
-## tower.
+## tower. In the convoy, 1 to 3 on the one he's on, 4 on the last one's
+## tail, 5 the line at the top of a descent (`descent_to_start`) with him
+## on the last one's back.
 func go_to(key: int) -> void:
 	match key:
 		1: set_on_back(NECK_AT)
 		2: set_on_back(MID_AT)
 		3: set_on_back(TAIL_AT)
-		4: to_tower()
+		4:
+			if convoy > 0: set_on(serpents.size()-1,TAIL_AT)
+			else: to_tower()
+		5:
+			if convoy > 0: to_descent(descent_to_start())
+
+## The line set at descent `mark`'s top (a, b), him on the last one's back
+## at START_AT, facing its head; the string begun anew.
+func to_descent(mark: String) -> void:
+	_line_at(mark)
+	_break_string()
+	set_on(serpents.size()-1,START_AT)
 
 ## On the tower's top, facing the serpent as it comes, its head TOWER_LEAD m
 ## off.
@@ -404,11 +697,36 @@ func to_tower() -> void:
 	rode = false
 	_since_ridden = 99.0
 
+## Serpent `k` (0 the lead) is the one he is on: its back his ground.
+func _switch_to(k: int) -> void:
+	on_k = k
+	serpent = serpents[k]
+	back = backs[k]
+	back.set_live(true)
+
+## On serpent `k`'s back at arc `a`, as `set_on_back`.
+func set_on(k: int, a: float) -> void:
+	_switch_to(k)
+	set_on_back(a)
+
 ## On the middle of its back's top at arc `a`, facing its head.
 func set_on_back(a: float) -> void:
-	var c := back.top(a)
+	_set_on_place(back.top(a),Vector2.ZERO,0.0,"")
+
+## On its back at place `c` (arc, across, up), his pace `rel` along its way
+## toward its head and across it (m/s), facing `face` off its way, moving
+## `move` ("slide": surfing on as he was).
+func _set_on_place(c: Vector3, rel: Vector2, face: float, move: String) -> void:
+	var a := c.x
 	var at := back.place(c)
-	place(at,back.ahead(a))
+	var ahead := back.ahead(a)
+	place(at,ahead)
+	if rel != Vector2.ZERO or face != 0.0:
+		var h := ahead*rel.x+Vector2(-ahead.y,ahead.x)*rel.y
+		motor.velocity = Vector3(h.x,0.0,h.y)
+		motor.facing = wrapf(PilotMotor.facing_of(ahead)+face,-PI,PI)
+		_yaw = motor.facing
+		if move == "slide": motor.move = "slide"
 	riding_on = "serpent"
 	anchor = back.locate(at,a)
 	last_on = anchor
@@ -418,6 +736,7 @@ func set_on_back(a: float) -> void:
 	var along := back.frame(a).basis.z.normalized()
 	carry_v = along*float(serpent.speed())
 	_turn_owed = 0.0
+	_left = -1
 
 func _still_now() -> void:
 	riding_on = "still"
@@ -427,22 +746,68 @@ func _still_now() -> void:
 
 # --- A frame ------------------------------------------------------------------------
 
-## The serpent moves on; he is carried with it (or with the frame he left
-## it in); then the character study's own frame (the motor's step over
-## what is there now, the figure, its puffs and steps, the camera); then
-## what he stands on now, and whether he has fallen.
+## The serpent moves on (in the convoy, the line); he is carried with it
+## (or with the frame he left it in); then the character study's own frame
+## (the motor's step over what is there now, the figure, its puffs and
+## steps, the camera); then what he stands on now, and whether he has
+## fallen; in the convoy, where he stood kept and the string counted.
 func tick(delta: float) -> void:
 	var step := minf(delta,RuneSerpent.MAX_STEP)
-	serpent.bank_share = ride_roll if _since_ridden < RIDDEN_AFTER else 1.0
-	serpent.advance(step)
-	back.update()
+	if convoy > 0: _advance_line(step)
+	else:
+		serpent.bank_share = ride_roll if _since_ridden < RIDDEN_AFTER else 1.0
+		serpent.advance(step)
+		back.update()
 	_carry(step)
+	var carried := motor.feet
+	var was_air := riding_on == "air"
 	var take := _turn_owed*(1.0-exp(-delta/CAM_TURN))
 	_yaw += take
 	_turn_owed -= take
 	super.tick(delta)
 	_contact(delta)
+	# In the line, the fall is measured from the line's own slope under
+	# him: his own way on along the frame he left in, down (or up) its
+	# slope as their way goes.
+	if convoy > 0 and was_air and riding_on == "air":
+		_air_ref += Vector2(motor.feet.x-carried.x,motor.feet.z-carried.z).dot(_air_way)*_air_slope
 	_fall(delta)
+	if convoy > 0: _keep(delta)
+
+## The line on over `step`: the lead at its own pace, every one behind it
+## held to that pace, a little more or less to keep its place exactly
+## (LINE_PULL); all eased in their roll as ridden; then the backs read,
+## only the live ones' hulls laid (`_choose_live`).
+func _advance_line(step: float) -> void:
+	var began := Time.get_ticks_usec()
+	var lead := serpents[0]
+	for each: Node3D in serpents: each.bank_share = ride_roll
+	lead.advance(step)
+	for k in range(1,serpents.size()):
+		var off := _behind_lead(k)-k*spacing()
+		serpents[k].pace_hold = maxf(float(lead.speed())+clampf(off*LINE_PULL,-LINE_CATCH,LINE_CATCH),0.0)
+		serpents[k].advance(step)
+	var laid := Time.get_ticks_usec()
+	_choose_live()
+	for b: SerpentBack in backs: b.update()
+	hulls_usec = Time.get_ticks_usec()-laid
+	line_usec = Time.get_ticks_usec()-began
+
+## Live (hulls in the world, laid each frame): the one he is on or last
+## left, and any with its head or a ring within LIVE_NEAR m of him.
+func _choose_live() -> void:
+	var at := motor.feet
+	var near := LIVE_NEAR*LIVE_NEAR
+	live_count = 0
+	for k in range(serpents.size()):
+		var live := k == on_k or (serpents[k].head() as Vector3).distance_squared_to(at) < near
+		var rings: PackedVector3Array = serpents[k].rings()
+		var i := 0
+		while not live and i < rings.size():
+			live = rings[i].distance_squared_to(at) < near
+			i += 3
+		backs[k].set_live(live)
+		if live: live_count += 1
 
 ## Carried over `step`: on it, by the body's move where he is; in the air,
 ## by the frame he left in (slid round what stands in the way, as his own
@@ -479,27 +844,46 @@ func _carry_camera(about: Vector3, moved: Vector3, turn: float) -> void:
 ## carry).
 func _contact(delta: float) -> void:
 	var was := riding_on
+	var was_k := on_k
+	var under := -1
 	if motor.on_ledge():
-		var on_lip := motor.lip-Vector3(motor.lip_out.x,0.0,motor.lip_out.y)*0.1
-		riding_on = "serpent" if _rid_under(on_lip) == back.rid() else "still"
-	elif motor.grounded: riding_on = "serpent" if _rid_under(motor.feet) == back.rid() else "still"
+		under = _back_under(motor.lip-Vector3(motor.lip_out.x,0.0,motor.lip_out.y)*0.1)
+		riding_on = "serpent" if under >= 0 else "still"
+	elif motor.grounded:
+		under = _back_under(motor.feet)
+		riding_on = "serpent" if under >= 0 else "still"
 	else: riding_on = "air"
+	# Onto another: its back his ground from now (the line's handover).
+	if under >= 0 and under != on_k: _switch_to(under)
 	match riding_on:
 		"serpent":
-			anchor = back.locate(motor.lip if motor.on_ledge() else motor.feet,anchor.x if was == "serpent" else -1.0)
+			anchor = back.locate(motor.lip if motor.on_ledge() else motor.feet,anchor.x if was == "serpent" and on_k == was_k else -1.0)
 			if motor.grounded: last_on = anchor
 			rode = true
 			_since_ridden = 0.0
 			air_v = Vector3.ZERO
+			if was == "air" and convoy > 0 and not fading(): _landed()
 		"air":
 			if was != "air":
 				air_v = carry_v if was == "serpent" else Vector3.ZERO
 				_air_ref = motor.feet.y
+				var flat := Vector2(air_v.x,air_v.z)
+				_air_way = flat.normalized() if flat.length() > 0.1 else Vector2.ZERO
+				_air_slope = air_v.y/maxf(flat.length(),0.1)
+				if was == "serpent" and convoy > 0 and not fading(): _took_off()
 			_since_ridden += delta
 		_:
 			air_v = Vector3.ZERO
 			carry_v = Vector3.ZERO
 			_since_ridden += delta
+
+## Which serpent's back is right under `p` (0 the lead), or -1.
+func _back_under(p: Vector3) -> int:
+	var rid := _rid_under(p)
+	if not rid.is_valid(): return -1
+	for k in range(backs.size()):
+		if backs[k].rid() == rid: return k
+	return -1
 
 ## What is right under `p` (its body's RID), or none.
 func _rid_under(p: Vector3) -> RID:
@@ -512,27 +896,92 @@ func _rid_under(p: Vector3) -> RID:
 ## on), and it fades in.
 func _fall(delta: float) -> void:
 	if _fade_t < 0.0:
-		if riding_on == "air" and _air_ref-motor.feet.y > LOST_DROP:
+		if riding_on == "air" and _air_ref-motor.feet.y > (LINE_DROP if convoy > 0 else LOST_DROP):
 			falls += 1
 			_fade_t = 0.0
 			_set_back = false
+			if convoy > 0: _break_string()
 		return
+	var fade := LINE_FADE if convoy > 0 else Vector3(FADE_OUT,FADE_HOLD,FADE_IN)
 	_fade_t += delta
 	var a := 1.0
-	if _fade_t < FADE_OUT: a = smoothstep(0.0,1.0,_fade_t/FADE_OUT)
-	elif _fade_t > FADE_OUT+FADE_HOLD: a = 1.0-smoothstep(0.0,1.0,(_fade_t-FADE_OUT-FADE_HOLD)/FADE_IN)
-	if not _set_back and _fade_t >= FADE_OUT+FADE_HOLD*0.5:
+	if _fade_t < fade.x: a = smoothstep(0.0,1.0,_fade_t/fade.x)
+	elif _fade_t > fade.x+fade.y: a = 1.0-smoothstep(0.0,1.0,(_fade_t-fade.x-fade.y)/fade.z)
+	if not _set_back and _fade_t >= fade.x+fade.y*0.5:
 		_set_back = true
-		if rode: set_on_back(clampf(last_on.x,NECK_AT,TAIL_AT))
+		if convoy > 0: retry_gap(false)
+		elif rode: set_on_back(clampf(last_on.x,NECK_AT,TAIL_AT))
 		else: to_tower()
 	_fade.color = Color(FADE_COLOUR,a)
-	if _fade_t >= FADE_OUT+FADE_HOLD+FADE_IN:
+	if _fade_t >= fade.x+fade.y+fade.z:
 		_fade_t = -1.0
 		_fade.color = Color(FADE_COLOUR,0.0)
 
 ## Whether he is being set back after a fall.
 func fading() -> bool:
 	return _fade_t >= 0.0
+
+# --- The string (the convoy) ---------------------------------------------------------
+
+## Off a back into the air: the serpent he left and his pace, and where to
+## set him back for this leap (his place RETRY_BACK s before, on this back).
+func _took_off() -> void:
+	_left = on_k
+	_left_pace = motor.speed()
+	var pick := {}
+	for i in range(_history.size()-1,-1,-1):
+		var was: Dictionary = _history[i]
+		if int(was.k) != on_k: break
+		pick = was
+		if float(was.t) <= _line_clock-RETRY_BACK: break
+	if not pick.is_empty(): _retry = pick
+
+## Down on a back out of the air: onto another than he left, a gap made.
+func _landed() -> void:
+	if _left >= 0 and on_k != _left:
+		gaps += 1
+		string += 1
+		best_string = maxi(best_string,string)
+		last_gap = {"from":_left,"to":on_k,"left":_left_pace,"landed":motor.speed()}
+	_left = -1
+
+## Each frame on a back, where he stood kept (HISTORY s); the string's peak.
+func _keep(delta: float) -> void:
+	_line_clock += delta
+	if riding_on == "serpent" and motor.grounded and not fading():
+		var ahead := back.ahead(anchor.x)
+		var h := Vector2(motor.velocity.x,motor.velocity.z)
+		_history.append({"t":_line_clock,"k":on_k,"place":anchor,"rel":Vector2(h.dot(ahead),h.dot(Vector2(-ahead.y,ahead.x))),
+			"face":wrapf(motor.facing-PilotMotor.facing_of(ahead),-PI,PI),"move":motor.move,"string":string})
+	while not _history.is_empty() and _line_clock-float(_history[0].t) > HISTORY: _history.pop_front()
+	if not fading():
+		string_peak = maxf(string_peak,motor.speed())
+		var over := ground_velocity()
+		string_peak_ground = maxf(string_peak_ground,Vector2(over.x,over.z).length())
+
+## A fall (or a start): the string begun again.
+func _break_string() -> void:
+	string = 0
+	string_peak = 0.0
+	string_peak_ground = 0.0
+
+## The last leap again (T, the pad's Y, and after a fall): set back on the
+## spine of the back he leapt from where he was RETRY_BACK s before he left
+## it, at his pace then along its spine the way he was going, sliding if he
+## was (a clean run at it, wherever across it he had drifted); the string
+## as it was then (`keep`), or begun again (a fall). Before any leap, back
+## where he last stood.
+func retry_gap(keep := true) -> void:
+	if _retry.is_empty():
+		set_on(on_k,clampf(last_on.x,NECK_AT,TAIL_AT))
+		return
+	var r := _retry
+	_switch_to(int(r.k))
+	var rel: Vector2 = r.rel
+	var toward := 1.0 if rel.x >= 0.0 else -1.0
+	_set_on_place(back.top(float(r.place.x)),Vector2(toward*rel.length(),0.0),0.0 if toward > 0.0 else PI,str(r.move))
+	if keep: string = int(r.string)
+	_history.clear()
 
 # --- Numbers ------------------------------------------------------------------------
 
@@ -547,25 +996,41 @@ func _show_hud() -> void:
 	var where := "on the tower"
 	if riding_on == "serpent": where = "on its back · %.1f m from the snout, %+.2f across" % [anchor.x,anchor.y]
 	elif riding_on == "air": where = "in the air · %.1f m under where he left" % maxf(_air_ref-motor.feet.y,0.0)
-	var lines := PackedStringArray([
+	if convoy > 0 and riding_on == "air": where = "in the air off %d · %.1f m under the line" % [on_k+1,maxf(_air_ref-motor.feet.y,0.0)]
+	var lines := PackedStringArray()
+	if convoy > 0: lines.append("serpent   %d of %d (1 the lead)" % [on_k+1,serpents.size()])
+	lines.append_array([
 		"on        %s" % where,
 		"over the ground %.2f m/s" % Vector2(over.x,over.z).length(),
 		"on its back     %.2f m/s" % motor.speed(),
 		"serpent         %.2f m/s" % serpent.speed(),
 		"state     %s" % state(),
 		("slope     %.0f°" % motor.steepness()) if motor.grounded else "slope     -",
-		"surf      %.2f m/s%s · top %.2f m/s" % [motor.speed() if motor.move == "slide" else 0.0,"  (surfing)" if motor.move == "slide" else "",slide_top],
+		"surf      %.2f m/s%s · top %.2f m/s (SLIDE_TOP %.1f)" % [motor.speed() if motor.move == "slide" else 0.0,"  (surfing)" if motor.move == "slide" else "",slide_top,motor.slide_top],
 		"falls     %d" % falls,
-		carve_line(),
-		"girth %.1f× · roll kept %.2f while ridden (now %.2f rad) · %s" % [girth,ride_roll,serpent.spring(RuneSerpent.S_BANK),serpent.mode],
 	])
+	if convoy > 0:
+		lines.append("string    %d in a row · best %d · %d gaps made" % [string,best_string,gaps])
+		lines.append("peak      %.2f m/s on its back · %.2f over the ground (this string)" % [string_peak,string_peak_ground])
+		if not last_gap.is_empty(): lines.append("last gap  %d → %d · left at %.2f m/s, landed at %.2f on its back" % [int(last_gap.from)+1,int(last_gap.to)+1,last_gap.left,last_gap.landed])
+		lines.append("line      gap %.1f m · descents %.0f° · %.2f ms a frame (hulls %.2f; %d of %d live)" % [gap,descent,line_usec/1000.0,hulls_usec/1000.0,live_count,serpents.size()])
+	lines.append(carve_line())
+	lines.append("girth %.1f× · roll kept %.2f while ridden (now %.2f rad) · %s" % [girth,ride_roll,serpent.spring(RuneSerpent.S_BANK),serpent.mode])
 	if long_chain > 0: lines.append("long chain %d · fastest %.2f m/s" % [long_chain,long_chain_top])
 	_hud.text = "\n".join(lines)
 
 func _hint_text() -> String:
+	if convoy > 0: return "WASD run · Space jump · Shift/C crouch: on a slope surf, the stick carves; Space off its head: leap to the next · X twirl (more air) · T/pad Y the last gap again · 5 top of a descent · 1 neck · 2 mid-back · 3 tail · 4 the last one's tail · R start · F1 numbers · F2 feel · F3 carve · Esc mouse"
 	return "WASD run · Space jump (on landing: pump) · Shift/C crouch: at a run slide, + Space long jump; on a slope (its back in the dive) surf · X twirl · 1 neck · 2 mid-back · 3 tail · 4 the tower (time the jump) · R start · F1 numbers · F2 feel · F3 carve · Esc mouse"
 
 func _unhandled_input(event: InputEvent) -> void:
 	# No recordings here: a replay can't put the serpent back where it was.
 	if event is InputEventKey and (event as InputEventKey).keycode in [KEY_F5,KEY_F6,KEY_F7,KEY_F8]: return
+	if convoy > 0 and not fading():
+		var again: bool = event is InputEventJoypadButton and event.pressed and (event as InputEventJoypadButton).button_index == JOY_BUTTON_Y
+		if event is InputEventKey and event.pressed and not event.echo and not _tuning():
+			again = (event as InputEventKey).keycode == KEY_T
+		if again:
+			retry_gap()
+			return
 	super._unhandled_input(event)

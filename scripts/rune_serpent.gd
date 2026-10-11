@@ -48,7 +48,11 @@ extends Node3D
 ## ridden, `bank_share` eases its roll and `look_back` has it glance back
 ## over its shoulder at whoever is behind it. `ring_frame`, `ring_corners`,
 ## `head_frame` and `head_corners` give its rings and head as posed, to
-## stand on. Left alone, all of these are as above.
+## stand on. A line of them flying one way nose to tail (the ride's convoy)
+## sets each its own `rng_seed` and `clock` before `setup`, so they breathe
+## and flick out of step, and holds every one behind the first to a pace
+## (`pace_hold`), so each keeps its place in the line. Left alone, all of
+## these are as above.
 
 const Variety = preload("res://scripts/seeded_variety.gd")
 const StoneLampLights = preload("res://scripts/stone_lamp_lights.gd")
@@ -317,6 +321,14 @@ var solid := true
 ## its shoulder (GLANCE) rather than looked away from.
 var bank_share := 1.0
 var look_back := false
+## Its own draws (the tongue's flicks, how long it paces) and where its
+## clock starts (s: its breath, its surge and its head's drift), set before
+## `setup`; a line of them each its own, so they don't move in step.
+var rng_seed := 7741
+var clock := 0.0
+## Held to this pace (m/s) while 0 or more, its own pace's goal set aside
+## (live): a serpent in a line keeps the pace of the one at its head.
+var pace_hold := -1.0
 ## Its pace now (m/s), how far round its way it is (m), how far its head
 ## has travelled in all (m), and the way's length (m).
 var s := 0.0
@@ -417,7 +429,8 @@ func _init() -> void:
 ## Stands it on its way in `study`'s sky, its body laid behind its head.
 func setup(study: Node3D) -> void:
 	scene = study
-	_rng.seed = 7741
+	_rng.seed = rng_seed
+	_time = clock
 	var start: Variant = start_mark
 	for arg: String in LaunchArgs.user_args():
 		if arg.begins_with("--serpent-at="): start = arg.get_slice("=",1)
@@ -694,6 +707,10 @@ func advance(delta: float) -> void:
 	_see()
 	_goals()
 	_springs(delta)
+	if pace_hold >= 0.0:
+		_sx[S_SPEED] = pace_hold
+		_sv[S_SPEED] = 0.0
+		_sf[S_SPEED] = pace_hold
 	var went := _travel(_sx[S_SPEED]*delta)
 	_scroll += went*RUNE_RUN
 	_pose(delta)
