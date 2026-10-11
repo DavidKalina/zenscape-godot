@@ -60,12 +60,12 @@ const SQUARE := 4.0
 const ISLE_STEP := 1.0
 ## The bed: the hall's footprint across (half, m, to the podium's face)
 ## and how far the ground eases back to its own past it.
-const BED_HALF := 14.6
+static var BED_HALF: float = Hall.WALL_Z+0.8
 const BED_EASE := 4.0
 ## The podium under the floor: its face's middle across (m), its top
 ## under the floor, its courses (m) and their count (a range), the blocks'
 ## length along it.
-const PODIUM_Z := 14.0
+static var PODIUM_Z: float = Hall.WALL_Z+0.2
 const PODIUM_TOP := -0.3
 const PODIUM_COURSE := 1.25
 const PODIUM_COURSES := Vector2i(2,4)
@@ -373,7 +373,7 @@ static func apse_columns(piece: Dictionary) -> Array:
 	for k in range(7):
 		var a := lerpf(-1.45,1.45,k/6.0)
 		var p := middle+Vector2(cos(a),sin(a))*APSE_RADIUS
-		if absf(p.y-Sundered.LANE_MID) < 4.6 and p.x > length: continue
+		if absf(p.y-Sundered.LANE_MID) < (Hall.LANE.y-Hall.LANE.x)*0.5+1.5 and p.x > length: continue
 		out.append(Vector3(p.x,rng.randf_range(3.0,8.5),p.y))
 	return out
 

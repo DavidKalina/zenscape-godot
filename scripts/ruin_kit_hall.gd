@@ -21,7 +21,7 @@ extends RefCounted
 ## down in beams through the gaps and the lancets.
 ##
 ## The generous line: between the inner columns at +INNER_Z and the outer
-## row at +ROW_Z there is always a LANE (z LANE.x to LANE.y, 5.4 m wide, under
+## row at +ROW_Z there is always a LANE (z LANE.x to LANE.y, 6.16 m wide, under
 ## every tie) clear from end to end; everything tighter is optional, and
 ## the tightest lines (the knife-edge slits through the screens) lead
 ## somewhere worth it.
@@ -64,11 +64,15 @@ const PIECES := RuinKit.HALL_PIECES
 const BAY := 8.0
 ## Across the hall: the outer column rows, the inner columns' offsets, the
 ## side walls' middles and their thickness. The outer rows and the walls
-## stand out by what the lane is wider than at plane 1 (LANE_GROW; 9.4 and
-## 12.4 there, 10.8 and 13.8 at plane 2).
-## The lane's width is a gap (LANE_ROOM, see LANE); LANE_GROW what it is
-## wider than at plane 1. Before ROW_Z: static vars set in order.
-const LANE_ROOM := 2.6/1.4
+## stand out by what the lane is wider than the old toy's 4 m (LANE_GROW;
+## 9.4 and 12.4 with that lane, 10.16 and 13.16 at plane 1 now, 11.56 and
+## 14.56 at plane 2).
+## The lane's width is a gap (LANE_ROOM, see LANE): 2.4 toy spans of
+## steering room, 1.68 m past each wingtip at plane 2 (it was 1.86, 1.3 m,
+## and the Sundered hall was too tight to fly; feature/world-spacing).
+## LANE_GROW what it is wider than 4 m. Before ROW_Z: static vars set in
+## order.
+const LANE_ROOM := 2.4
 static var LANE_GROW: float = WorldScale.gap(LANE_ROOM)-4.0
 static var ROW_Z: float = 9.4+LANE_GROW
 const INNER_Z := 2.6
@@ -108,7 +112,7 @@ const TIE_HIGH := 6.0
 const TIE_DEPTH := 0.9
 ## The generous line: its z range (between the inner columns at +INNER_Z
 ## and the outer row) and the heights it is clear between. Its width a gap
-## (WorldScale.gap: 4.0 at plane 1, 5.4 at 2), its top up as the low tie
+## (WorldScale.gap: 4.76 at plane 1, 6.16 at 2), its top up as the low tie
 ## goes up (3.6 at plane 1, 4.1 at 2).
 static var LANE := Vector2(4.0,8.0+LANE_GROW)
 static var LANE_Y := Vector2(1.0,3.6+(TIE_LOW-4.0))
@@ -153,6 +157,44 @@ static func breach_floor(kind: String) -> float:
 	var floor_y := float(BREACH_FLOOR.get(kind,0.0))
 	if BREACH_HALF*2.0 > BAY-2.0*(PLINTH.y+0.1): floor_y = maxf(floor_y,PLINTH.x+BASE_H+NICHE_BAND+0.2)
 	return floor_y
+## Whether a flyable breach's corridor (BREACH_HALF a side) fits between
+## the outer row's columns at bay `i`'s lines on `side` (0 left, -Z; 1
+## right) of `path`: on the inside of a curve the bay is shorter there, the
+## columns closer (path space: a column is wider there by 1 over the
+## stretch). Straight, always (BAY less a column's width is wider).
+static func breach_fits(path: HallPath, i: int, side: int) -> bool:
+	if path == null or not path.curved(): return true
+	var z := ROW_Z*(side*2-1)
+	var half0 := COLUMN_R/maxf(0.2,path.stretch(BAY*i,z))
+	var half1 := COLUMN_R/maxf(0.2,path.stretch(BAY*(i+1),z))
+	return BAY-half0-half1 >= BREACH_HALF*2.0+0.2
+
+## The plans' flyable breaches that `breach_fits` refuses on `path` are
+## let go, then each side's least (at least two flyable on the right, one
+## on the left) made up again where one fits.
+static func fit_breaches(plans: Array, path: HallPath) -> void:
+	if path == null or not path.curved(): return
+	var flyable := ["low","arch","collapse"]
+	for i in range(plans.size()):
+		var p: Dictionary = plans[i]
+		for side in range(2):
+			if BREACHES[p.breach[side]] in flyable and not breach_fits(path,i,side):
+				var v: Vector2i = p.breach
+				v[side] = 0
+				p.breach = v
+	var bays := plans.size()
+	if bays < 4: return
+	for side in range(2):
+		var have := plans.filter(func(p: Dictionary) -> bool: return BREACHES[p.breach[side]] in flyable).size()
+		for i in range(1,bays-1):
+			if have >= (2 if side == 1 else 1): break
+			var p: Dictionary = plans[i]
+			if BREACHES[p.breach[side]] == "" and not (side == 0 and bool(p.fallen)) and breach_fits(path,i,side):
+				var v: Vector2i = p.breach
+				v[side] = BREACHES.find("collapse" if p.roof == "open" else "arch")
+				p.breach = v
+				have += 1
+
 const BREACH_FLOOR := {"low":2.3,"arch":1.0,"collapse":1.4}
 const BREACH_TOP := {"low":8.0,"arch":6.4,"collapse":8.0}
 const BREACH_OUT := 2.5
@@ -567,6 +609,7 @@ static func hall(seed_value: int, weathered := 0.6, bays := 12, ground := Callab
 	rng.seed = hash([seed_value,"long hall"])
 	var plans := plan(rng,weathered,bays)
 	var path := HallPath.make(layout if not layout.is_empty() else [{"bays":bays,"turn":0.0}],BAY)
+	fit_breaches(plans,path)
 	var curved := path.curved()
 	# The ground in path space.
 	var pground := Callable()
@@ -1136,6 +1179,15 @@ class HallPath extends RefCounted:
 		if at == segs.size()-1 and u > float(seg[1]): cap = float(seg[1])
 		var basis := Basis(Vector3.UP,float(seg[4])+float(seg[2])*cap)
 		return Transform3D(basis,_at(seg,cap)+basis.x*(u-cap))
+
+	## How long a metre of the line is `z` across it at `s` (1 straight;
+	## under 1 on the inside of a curve, over it outside).
+	func stretch(s: float, z: float) -> float:
+		s += offset
+		var at := 0
+		for i in range(segs.size()):
+			if s >= float(segs[i][0]): at = i
+		return 1.0+float(segs[at][2])*z
 
 	## Path space to the hall's frame.
 	func point(p: Vector3) -> Vector3:

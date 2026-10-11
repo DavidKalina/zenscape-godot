@@ -15,7 +15,10 @@ const GORGE_TOKENS := [
 	# The gorge's line: in at the narrow north mouth, past the curtain, under
 	# the lower crossing's fragments, under the broken bridge (between its
 	# snapped ends and the fallen crown), out past the spur at the south mouth.
-	["sg:gorge","air","thread",[Vector3(86.6,24.0,-61.0),Vector3(87.2,21.0,-47.0),Vector3(88.3,23.5,-15.0),Vector3(87.0,24.5,4.0)]],
+	# Under the fragments well clear of their keels (about 22 m): the
+	# plane's wings (2.8 m) don't fit the 2 m gaps between them, so the line
+	# passes under, not between (it was 21.0, grazing them at plane 2).
+	["sg:gorge","air","thread",[Vector3(86.6,24.0,-61.0),Vector3(87.6,18.8,-47.0),Vector3(88.3,23.5,-15.0),Vector3(87.0,24.5,4.0)]],
 	# Close by the curtain, where it falls past the lower ledge.
 	["sg:curtain","air","break",[Vector3(83.6,23.0,-56.0)]],
 	# Under the split, between the two halves' hanging keels.

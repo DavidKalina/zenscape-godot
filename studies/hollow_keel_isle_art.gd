@@ -55,6 +55,12 @@ const PLATE_B := 40.0
 const PLATE_P := 3.2
 ## The hull under the hall's floor, its half length and half width.
 const HULL := Vector2(45.5,16.5)
+## How far the hull's stone top (the hall's floor between its paving, the
+## porches) lies under the floor YF: the kit's paving (Hall PAVING, about
+## 0.15 proud) stands on y 0, so a bare patch is a step down of this and
+## that, under the walker's STEP_UP (0.45; at 0.32 it was 0.47, and the
+## walk along the widened hall stuck on a paving edge).
+const FLOOR_SINK := 0.2
 ## The hanging islet (x, z, radius, top) off the east porch and the rope
 ## bridge's ends.
 const ISLET := Vector4(MID.x+72.0,MID.y+4.0,8.0,YF-1.1)
@@ -400,7 +406,7 @@ static func keel(seed_value: int) -> Node3D:
 		var sn := sin(a)
 		var r := pow(pow(absf(cs)/HULL.x,4.0)+pow(absf(sn)/HULL.y,4.0),-0.25)
 		hull.append(MID+Vector2(cs,sn)*r)
-	var floor_y := YF-0.32
+	var floor_y := YF-FLOOR_SINK
 	cone(rock,hull,floor_y,15.0,YF+3.0,rng,[[0.0,0.0],[0.03,0.1],[0.2,0.3],[0.5,0.62],[0.8,0.9]],true)
 	# Its top: the porches and the hall's floor under it, stone; the shelf
 	# either side of the hall, outside its walls, turf like the plate.
@@ -609,7 +615,7 @@ const CHAPEL := [
 ## The rope bridge's ends (world): the porch's edge under the plate and the
 ## hanging islet's.
 static func bridge_ends() -> Array:
-	var a := Vector3(MID.x+LENGTH*0.5+4.0,YF-0.32,MID.y+3.0)
+	var a := Vector3(MID.x+LENGTH*0.5+4.0,YF-FLOOR_SINK,MID.y+3.0)
 	var to := Vector2(ISLET.x,ISLET.y)
 	var way := (to-Vector2(a.x,a.z)).normalized()
 	var edge := to-way*(ISLET.z*0.78)
@@ -649,9 +655,11 @@ static func anchors(seed_value: int) -> Node3D:
 
 # --- The plane's lines, the walker's tokens ------------------------------------------------------
 
-## The hall's lane (z from MID) the plane flies, its height over the floor.
-const LANE_Z := 6.3
-const LANE_Y := 2.4
+## The hall's lane (z from MID) the plane flies, its height over the floor:
+## the kit lane's middle (Hall LANE, LANE_Y; it follows the plane: 7.08
+## and 2.55 at plane 2; it was 6.3, off the widened lane's middle).
+static var LANE_Z: float = (Hall.LANE.x+Hall.LANE.y)*0.5
+static var LANE_Y: float = (Hall.LANE_Y.x+Hall.LANE_Y.y)*0.5
 
 ## The first flyable breach on the right (+z) wall: its bay's middle.
 static func right_breach() -> float:

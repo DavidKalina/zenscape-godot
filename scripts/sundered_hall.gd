@@ -65,9 +65,12 @@ const HallPath = Hall.HallPath
 
 const BAY := Hall.BAY
 ## The line's height over the floor (the lane's middle, LANE_Y) and its
-## place across the nave (the lane's middle).
-const LINE_Y := 2.3
-const LANE_MID := 6.0
+## place across the nave (the lane's middle), both from the lane (which
+## follows the plane, scripts/world_scale.gd): 2.55 and 7.08 at plane 2,
+## the wings 1.68 m off the lane's sides (it was 6.0, off the middle: 0.6
+## m off the inner columns' side, too tight to fly).
+static var LINE_Y: float = (Hall.LANE_Y.x+Hall.LANE_Y.y)*0.5
+static var LANE_MID: float = (Hall.LANE.x+Hall.LANE.y)*0.5
 ## The acts in order: each [act, pieces (range), bays a piece (range)].
 const ACTS := [
 	["gate",Vector2i(1,1),Vector2i(8,10)],
@@ -88,13 +91,15 @@ const DROP := Vector2(-11.0,-8.0)
 const DROP_GAP := Vector2(34.0,40.0)
 const AQUEDUCT_GAP := Vector2(40.0,44.0)
 ## The line's kink at a gap (rad either way) and how far the heading may
-## wander off the first (rad): the hall snakes on, never back.
-const KINK := 0.14
+## wander off the first (rad): the hall snakes on, never back. Eased for
+## the big plane (it was 0.14).
+const KINK := 0.1
 const WANDER := 0.9
 ## A piece's curve: at most a stretch's turn, and never tighter than
-## RADIUS (m) (the kit keeps >= 40).
-const TURN := 0.55
-const RADIUS := 70.0
+## RADIUS (m) (the kit keeps >= 40). Eased for the big plane (it was 70):
+## a lane's breadth off the line still turns gently.
+const TURN := 0.5
+const RADIUS := 95.0
 ## Lead in to the gate and the release out of the apse (m), its climb.
 const LEAD := 60.0
 const RELEASE := 70.0
@@ -309,6 +314,9 @@ static func _plans(piece: Dictionary, rng: RandomNumberGenerator) -> Array:
 			elif p.roof == "broken": kind = "arch" if roll < 0.15 else ("door" if roll < 0.22 else "")
 			else: kind = "arch" if roll < 0.25 else ("door" if roll < 0.35 else "")
 			if side == 0 and kind in flyable and bool(p.fallen): kind = ""
+			# Only where the breach's corridor fits between the columns (the
+			# inside of a curve is shorter).
+			if kind in flyable and not Hall.breach_fits(piece.get("path"),i,side): kind = ""
 			var v: Vector2i = p.breach
 			v[side] = Hall.BREACHES.find(kind)
 			p.breach = v
@@ -320,8 +328,11 @@ static func _plans(piece: Dictionary, rng: RandomNumberGenerator) -> Array:
 		if shut > MAX_SHUT-1 and not (piece.first and i == 0):
 			# Open this one: an arch out on the lane's side, else the left.
 			var v: Vector2i = p.breach
-			if not bool(p.fallen) and rng.randf() < 0.35: v.x = Hall.BREACHES.find("arch")
-			else: v.y = Hall.BREACHES.find("arch")
+			var left := not bool(p.fallen) and Hall.breach_fits(piece.get("path"),i,0)
+			var right := Hall.breach_fits(piece.get("path"),i,1)
+			if left and (rng.randf() < 0.35 or not right): v.x = Hall.BREACHES.find("arch")
+			elif right: v.y = Hall.BREACHES.find("arch")
+			elif p.roof == "whole": p.roof = "broken"
 			p.breach = v
 			shut = 0
 	# A stair up near each end on foot, where the bay keeps its buttress.
