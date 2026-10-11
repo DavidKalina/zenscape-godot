@@ -29,10 +29,11 @@ extends Node
 ##   rustle, wall kicks and twirls swish, grabs slap the stone, the sail
 ##   pops and folds, slides and carves scrape, heavy landings thud, the
 ##   bridges' planks creak.
-## - The place: leaves and birds where the turf is green (birds sing from
-##   the isle's own songbirds where it has them), crickets and an owl at
-##   night, water near the isle's pools and channel, rain, a thin high wind
-##   in open sky away from the isle, the cloud sea's hush below.
+## - The place: leaves where the turf is green, an owl at night, water
+##   near the isle's pools and channel, rain, a thin high wind in open sky
+##   away from the isle, the cloud sea's hush below; the swing ropes' creak,
+##   swish and whip. The living layer (birds by the time of day, bees,
+##   crickets, frogs, waterfalls) is kit_audio_life.gd's.
 ##
 ## Buses (`ensure_buses`): Master > SFX (the Effects volume) > SFX Air;
 ## Master > Ambience (the Ambience volume) > Ambience Far; Master > Music
@@ -41,6 +42,7 @@ extends Node
 
 const Audio = preload("res://scripts/genesis_audio.gd")
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
+const KitAudioLife = preload("res://scripts/kit_isle/kit_audio_life.gd")
 
 const SFX := &"SFX"
 const AIR := &"SFX Air"
@@ -103,7 +105,6 @@ const BREEZE_FLYING := 0.3
 const THIN := 0.07
 const HUSH := 0.15
 const LEAVES := 0.055
-const CRICKETS := 0.03
 const RAIN := 0.12
 const STREAM := 0.32
 const POND := 0.16
@@ -113,12 +114,16 @@ const POND := 0.16
 const HUSH_OVER := 30.0
 const MUFFLE_CUT := 1300.0
 const OPEN_CUT := 18000.0
-## Birdsong: seconds between songs, their gain, how far (m) a singer may be.
-const SONG_GAP := Vector2(5.0,14.0)
-const SONG_GAIN := Vector2(0.1,0.2)
-const SONG_REACH := 45.0
+## Birdsong, crickets, frogs, bees and falls are kit_audio_life.gd's (its
+## own tuning); the owl's gap is here.
 const OWL_GAP := Vector2(25.0,55.0)
 const SONGS := ["bluebird.mp3","chickadee.mp3","hermit-thrush.mp3","kinglet.mp3","robin.mp3","jay-1.mp3","jay-2.mp3","nutcracker.mp3"]
+## The swing rope: its creak's gain and gap (s) at a full swing and at
+## rest, the swish past the plumb, the whip let go.
+const ROPE_CREAK := Vector2(0.03,0.09)
+const ROPE_CREAK_GAP := Vector2(0.45,1.8)
+const ROPE_SWISH := Vector2(0.04,0.12)
+const ROPE_WHIP := 0.12
 ## Seconds between place reads (green round the listener, the water).
 const PLACE_TICK := 0.4
 
@@ -168,7 +173,6 @@ var breeze: Bed
 var thin: Bed
 var hush: Bed
 var leaves: Bed
-var crickets: Bed
 var rain: Bed
 var stream: Bed
 var pond: Bed
@@ -186,6 +190,11 @@ var green := 0.0
 var isle_near := 0.0
 ## One-shots played, by kind (probes).
 var played := {}
+## The nearest wide pool (its Rect2 and top), for the frogs; zero if none.
+var pond_rect := Rect2()
+var pond_top := 0.0
+## The living layer (birds, bees, crickets, frogs, falls).
+var life: KitAudioLife
 
 var _probe := PackedFloat32Array()
 var _probe_next := 0
@@ -198,7 +207,8 @@ var _rolling_was := false
 var _flaps_was := -1
 var _cool_left := 0.0
 var _tick_wait := 0.0
-var _song_wait := 3.0
+var _rope_creak := 0.0
+var _rope_side := 0.0
 var _owl_wait := 20.0
 var _place_wait := 0.0
 var _deck_wait := 0.0
@@ -296,9 +306,8 @@ func _ready() -> void:
 	thin = _bed(KIT+"thin-wind-loop.wav",AMBIENCE)
 	hush = _bed(KIT+"cloud-hush-loop.wav",AMBIENCE)
 	leaves = _bed(OLD+"leaf-rustle-bed.wav",AMBIENCE)
-	crickets = _bed(OLD+"cricket-bed.wav",FAR)
 	rain = _bed(OLD+"rain-bed.wav",AMBIENCE)
-	for bed in [thin,hush,leaves,crickets,rain]:
+	for bed in [thin,hush,leaves,rain]:
 		bed.attack = 0.6
 		bed.release = 0.5
 	stream = _bed(OLD+"stream-bed.wav",AMBIENCE,true)
@@ -311,7 +320,7 @@ func _ready() -> void:
 		p.bus = SFX
 		add_child(p)
 		_pool2.append(p)
-	for i in range(8):
+	for i in range(14):
 		var p := AudioStreamPlayer3D.new()
 		p.bus = SFX
 		add_child(p)
@@ -322,8 +331,22 @@ func _ready() -> void:
 		"fold":_takes(KIT+"sail-fold-%d.wav",2),"grab":_takes(KIT+"grab-%d.wav",4),"start":[load(KIT+"engine-start.wav")],
 		"cloth":_takes(OLD+"foley/ui-cloth-%d.wav",5),"pat":_takes(OLD+"foley/pat-%d.wav",6),
 		"splash":_takes(OLD+"foley/water-splash-%d.wav",6),"plop":_takes(OLD+"foley/water-pop-%d.wav",6),
-		"song":SONGS.map(func(s: String) -> AudioStream: return load(OLD+s)),"owl":[load(OLD+"owl.mp3")],
+		"owl":[load(OLD+"owl.mp3")],
+		"chirp":_takes(KIT+"chirp-%d.wav",8),"twitter":_takes(KIT+"twitter-%d.wav",6),"wings":_takes(KIT+"wings-%d.wav",4),
+		"rope_creak":_takes(KIT+"rope-creak-%d.wav",4),"whip":_takes(KIT+"rope-whip-%d.wav",3),
 	}
+	life = KitAudioLife.new()
+	life.audio = self
+	life.isle = isle
+	add_child(life)
+
+## Quitting: every voice stopped and the clips let go, so no playback is
+## left holding a stream at exit.
+func _exit_tree() -> void:
+	for node: Node in find_children("*","",true,false):
+		if node is AudioStreamPlayer or node is AudioStreamPlayer3D: node.call("stop")
+	_beds.clear()
+	_clips.clear()
 
 static func _takes(pattern: String, count: int) -> Array:
 	var out := []
@@ -430,6 +453,18 @@ func body(events: Dictionary) -> void:
 		if _surface == "wood": shot("creak",0.04+0.06*clampf(hard/10.0,0.0,1.0),1.15)
 	if events.has("swam"): shot("splash",0.08+0.1*clampf(float(events.swam)/8.0,0.0,1.0))
 	if events.has("hopped"): shot("plop",0.06)
+	# The swing rope: caught, the hands slap it and it takes his weight; let
+	# go, its slack end whips.
+	if events.has("swing"):
+		var rope = motor.rider if events.swing else null
+		var at: Vector3 = rope.anchor if rope != null and "anchor" in rope else motor.feet+Vector3.UP*2.0
+		if events.swing:
+			shot("grab",0.11,0.85)
+			shot("rope_creak",0.09,0.9,at)
+			_rope_creak = 0.6
+		else:
+			shot("whip",ROPE_WHIP,_rng.randf_range(0.92,1.08),motor.feet+Vector3.UP*1.5)
+			shot("cloth",0.04,1.1)
 
 ## What the feet are on, for the steps and puffs (scripts/wanderer_steps.gd
 ## SURFACES): water wading or swimming, a bridge's planks, open grass (the
@@ -473,6 +508,7 @@ func _process(delta: float) -> void:
 	_parked(delta)
 	_air(delta,flying)
 	_body_loops(delta,flying)
+	_rope(delta)
 	_place_wait -= delta
 	if _place_wait <= 0.0:
 		_place_wait = PLACE_TICK
@@ -652,6 +688,28 @@ func _parked(delta: float) -> void:
 	var at: Vector3 = (isle.parked_at as Vector3)+Vector3.UP*1.2
 	shot("tick",TICK*(0.4+0.6*left),1.0,at)
 
+## On a swing rope: it creaks over its ring, more and quicker as the swing
+## grows; each pass through the plumb swishes.
+func _rope(delta: float) -> void:
+	var motor: PilotMotor = isle.motor
+	var rope = motor.rider if motor != null else null
+	if rope == null or not ("anchor" in rope and "velocity" in rope and "hands" in rope):
+		_rope_side = 0.0
+		return
+	var v: Vector3 = rope.velocity
+	var anchor: Vector3 = rope.anchor
+	var hands: Vector3 = rope.hands
+	var k := clampf(v.length()/10.0,0.0,1.0)
+	_rope_creak -= delta
+	if _rope_creak <= 0.0 and v.length() > 0.8:
+		_rope_creak = lerpf(ROPE_CREAK_GAP.y,ROPE_CREAK_GAP.x,k)*_rng.randf_range(0.8,1.25)
+		shot("rope_creak",lerpf(ROPE_CREAK.x,ROPE_CREAK.y,k),_rng.randf_range(0.85,1.15),anchor)
+	var out := Vector2(hands.x-anchor.x,hands.z-anchor.z).dot(Vector2(v.x,v.z))
+	if _rope_side < 0.0 and out >= 0.0 and v.length() > 3.0:
+		shot("swish",lerpf(ROPE_SWISH.x,ROPE_SWISH.y,k),lerpf(0.6,0.85,k))
+		if k > 0.7: shot("whoosh",0.06*k,0.8,hands,AIR,true)
+	_rope_side = out
+
 ## Sliding and carving scrape the ground; the bridge's planks creak.
 func _body_loops(delta: float, flying: bool) -> void:
 	var motor: PilotMotor = isle.motor
@@ -697,6 +755,8 @@ func _water(listener: Vector3) -> void:
 	var ground: Variant = isle.get("ground")
 	var pools: Array = ground.get("pools") if ground != null else []
 	var best := {"stream":[INF,Vector3.ZERO],"pond":[INF,Vector3.ZERO]}
+	var pond_d := INF
+	pond_rect = Rect2()
 	for pool: Dictionary in pools:
 		var rect: Rect2 = pool.rect
 		var top := float(pool.top)
@@ -705,6 +765,10 @@ func _water(listener: Vector3) -> void:
 		var d := at.distance_to(listener)
 		var kind := "stream" if minf(rect.size.x,rect.size.y) < 3.0 else "pond"
 		if d < float(best[kind][0]): best[kind] = [d,at]
+		if kind == "pond" and d < pond_d:
+			pond_d = d
+			pond_rect = rect
+			pond_top = top
 	for kind: String in best:
 		var bed: Bed = stream if kind == "stream" else pond
 		var d: float = best[kind][0]
@@ -727,37 +791,13 @@ func _ambience(delta: float, listener: Vector3, flying: bool) -> void:
 	var celestial: Variant = isle.get("_celestial")
 	if celestial != null: daylight = clampf(float(celestial.state.get("zs_daylight",1.0)),0.0,1.0)
 	var night := 1.0-smoothstep(0.15,0.45,daylight)
-	crickets.goal = CRICKETS*night*maxf(green,0.3)*isle_near
 	var precipitation: Variant = isle.get("_precipitation")
-	rain.goal = RAIN*clampf(float(precipitation.state.x),0.0,1.0) if precipitation != null else 0.0
-	# Birds sing by day on a green isle, from its own songbirds where it has
-	# them; an owl now and then at night.
-	_song_wait -= delta
-	if _song_wait <= 0.0:
-		_song_wait = _rng.randf_range(SONG_GAP.x,SONG_GAP.y)
-		if daylight > 0.4 and isle_near > 0.3 and green > 0.12 and muffle < 0.5:
-			shot("song",_rng.randf_range(SONG_GAIN.x,SONG_GAIN.y)*isle_near,1.0,_singer(listener),FAR)
+	var wet := clampf(float(precipitation.state.x),0.0,1.0) if precipitation != null else 0.0
+	rain.goal = RAIN*wet
+	# The living layer: birds by the time of day, bees, crickets, frogs, falls.
+	if life != null: life.step(delta,listener,daylight,open,wet)
+	# An owl now and then at night.
 	_owl_wait -= delta
 	if _owl_wait <= 0.0:
 		_owl_wait = _rng.randf_range(OWL_GAP.x,OWL_GAP.y)
-		if night > 0.7 and isle_near > 0.5: shot("owl",0.1,1.0,_singer(listener),FAR)
-
-## Where a song comes from: one of the isle's songbirds within SONG_REACH
-## m, else a spot in the grass round the listener.
-func _singer(listener: Vector3) -> Vector3:
-	var life = isle.get("life")
-	var flock = life.get("birds") if life != null else null
-	if flock != null and is_instance_valid(flock):
-		var birds: Array = flock.get("birds")
-		var near_ones := []
-		for bird: Dictionary in birds:
-			if bird.has("p") and (bird.p as Vector3).distance_to(listener) < SONG_REACH: near_ones.append(bird.p)
-		if not near_ones.is_empty(): return near_ones[_rng.randi_range(0,near_ones.size()-1)]
-	var a := _rng.randf()*TAU
-	var r := _rng.randf_range(12.0,30.0)
-	var p := Vector2(listener.x,listener.z)+Vector2.from_angle(a)*r
-	var y := listener.y
-	if life != null and life.is_set_up():
-		var g: Variant = life.ground_at(p)
-		if g != null: y = float(g)+2.0
-	return Vector3(p.x,y,p.y)
+		if night > 0.7 and isle_near > 0.5 and life != null: shot("owl",0.1,1.0,life.singer(listener),FAR)

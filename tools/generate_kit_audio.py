@@ -532,9 +532,362 @@ def grabs():
         write('grab-%d' % (k + 1), x, 0.8)
 
 
+# --- Round 2: the living isle (docs/design/sound-round2.md) -----------------------
+
+def bird_note(rng, f0, f1, seconds, vibrato=0.0, vib_hz=0.0, bend=1.0, harmonic=0.12):
+    """One small-bird note: a pure tone gliding f0 -> f1 (the glide's curve
+    `bend`), a quick swell and fall, a touch of second harmonic, an optional
+    warble (`vibrato` as a share of the pitch at `vib_hz`)."""
+    n = max(1, int(seconds * RATE))
+    out = [0.0] * n
+    ph = 0.0
+    for i in range(n):
+        u = i / n
+        f = f0 + (f1 - f0) * (u ** bend)
+        if vibrato:
+            f *= 1.0 + vibrato * math.sin(TAU * vib_hz * i / RATE)
+        ph += TAU * f / RATE
+        env = min(1.0, u / 0.12) * (1.0 - u) ** 1.3
+        out[i] = env * (math.sin(ph) + harmonic * math.sin(2.0 * ph))
+    return out
+
+
+def chirp_take(rng):
+    """A chirp: one to three quick notes, rising, falling or a hooked slur."""
+    parts = []
+    for _ in range(rng.choice([1, 1, 2, 2, 3])):
+        f0 = rng.uniform(2600, 5200)
+        kind = rng.random()
+        if kind < 0.4:
+            f1 = f0 * rng.uniform(1.15, 1.5)
+        elif kind < 0.8:
+            f1 = f0 * rng.uniform(0.6, 0.85)
+        else:
+            f1 = f0 * rng.uniform(0.95, 1.05)
+        parts.append(bird_note(rng, f0, f1, rng.uniform(0.04, 0.11), rng.uniform(0.0, 0.03), rng.uniform(40, 90), rng.uniform(0.5, 2.0)))
+        parts.append([0.0] * int(rng.uniform(0.03, 0.09) * RATE))
+    return [v for p in parts for v in p]
+
+
+def twitter_take(rng):
+    """A twitter: a run of quick notes, a little pattern repeated and drifting
+    in pitch, as a small bird chatters on a perch."""
+    base = rng.uniform(3000, 5600)
+    pattern = [(rng.uniform(0.8, 1.2), rng.uniform(0.7, 1.3)) for _ in range(rng.randint(1, 3))]
+    count = rng.randint(4, 11)
+    drift = rng.uniform(-0.25, 0.2)
+    out = []
+    for k in range(count):
+        a, b = pattern[k % len(pattern)]
+        f = base * (1.0 + drift * k / count)
+        out += bird_note(rng, f * a, f * b, rng.uniform(0.025, 0.06), rng.uniform(0.0, 0.04), 70.0, 1.0)
+        out += [0.0] * int(rng.uniform(0.012, 0.045) * RATE)
+    return out
+
+
+def trill_take(rng):
+    """A trill: one pitch shaken fast, a warbler's or a junco's."""
+    f = rng.uniform(3200, 5800)
+    seconds = rng.uniform(0.5, 1.3)
+    rate = rng.uniform(14, 28)
+    n = int(seconds * RATE)
+    out = [0.0] * n
+    ph = 0.0
+    glide = rng.uniform(-0.15, 0.12)
+    for i in range(n):
+        u = i / n
+        ff = f * (1.0 + glide * u)
+        ph += TAU * ff / RATE
+        pulse = max(0.0, math.sin(TAU * rate * i / RATE)) ** 1.5
+        env = min(1.0, u / 0.08) * min(1.0, (1.0 - u) / 0.2)
+        out[i] = env * pulse * (math.sin(ph) + 0.1 * math.sin(2 * ph))
+    return out
+
+
+def whistle_take(rng):
+    """A clear slow whistle or two: a thrush's or a titmouse's phrase."""
+    out = []
+    f = rng.uniform(1800, 3600)
+    for _ in range(rng.randint(1, 3)):
+        g = f * rng.uniform(0.8, 1.3)
+        out += bird_note(rng, f, g, rng.uniform(0.18, 0.45), rng.uniform(0.005, 0.02), rng.uniform(5, 12), rng.uniform(0.6, 1.6), 0.06)
+        out += [0.0] * int(rng.uniform(0.05, 0.15) * RATE)
+        f = g * rng.uniform(0.85, 1.15)
+    return out
+
+
+def chirps():
+    """Near birds' small talk: chirps (call notes), on the listener's isle."""
+    for k in range(8):
+        rng = random.Random('chirp-%d' % k)
+        x = chirp_take(rng) + [0.0] * int(0.05 * RATE)
+        write('chirp-%d' % (k + 1), lowpass(x, 9000), 0.7)
+
+
+def twitters():
+    """Near birds chattering on a perch: twitters and trills."""
+    for k in range(6):
+        rng = random.Random('twitter-%d' % k)
+        x = (twitter_take(rng) if k % 3 != 2 else trill_take(rng)) + [0.0] * int(0.05 * RATE)
+        write('twitter-%d' % (k + 1), lowpass(x, 9000), 0.7)
+
+
+def wings():
+    """Small wings: a flurry of beats as birds burst off a perch (the first
+    takes one bird, the last a whole flock taking off together)."""
+    for k in range(4):
+        rng = random.Random('wings-%d' % k)
+        seconds = 0.6 + 0.25 * k
+        n = int(seconds * RATE)
+        x = [0.0] * n
+        for bird in range(1 + 2 * k):
+            t = rng.uniform(0.0, 0.12 * k)
+            rate = rng.uniform(14.0, 22.0)
+            centre = rng.uniform(700, 1400)
+            g = rng.uniform(0.5, 1.0)
+            while t < seconds - 0.05:
+                m = int(0.05 * RATE)
+                burst = bandpass([v * math.sin(math.pi * i / m) ** 2 for i, v in enumerate(white(rng, m))], centre * rng.uniform(0.85, 1.15), 1.4)
+                add(x, burst, g * math.exp(-t * 2.2), int(t * RATE))
+                t += 1.0 / rate * rng.uniform(0.85, 1.2)
+                rate *= 0.97
+        write('wings-%d' % (k + 1), lowpass(x, 5000), 0.75)
+
+
+def bird_chorus():
+    """The isle's distant birds: many small singers far off over a seamless
+    loop (every phrase laid modulo its length, so it wraps cleanly), dulled
+    and softened by distance, a little room on them. The dawn chorus at
+    full; a thin daytime bed at a low gain."""
+    seconds = 30.0
+    rng = random.Random('bird-chorus')
+    n = int(seconds * RATE)
+    x = [0.0] * n
+    makers = [chirp_take, twitter_take, trill_take, whistle_take, whistle_take, twitter_take]
+    # A few singers, each repeating its own kind of phrase at its own pace.
+    for singer in range(16):
+        make = rng.choice(makers)
+        phrase_rng = random.Random('chorus-singer-%d' % singer)
+        phrases = [make(phrase_rng) for _ in range(3)]
+        far = rng.uniform(0.25, 1.0)
+        cut = 1800 + 4200 * far
+        gain = 0.15 + 0.6 * far
+        t = rng.uniform(0.0, seconds)
+        gap = rng.uniform(1.6, 5.5)
+        made = 0
+        while made < int(seconds / gap):
+            p = lowpass(phrases[made % 3], cut)
+            at = int(t * RATE) % n
+            for i, v in enumerate(p):
+                x[(at + i) % n] += v * gain
+            t += gap * rng.uniform(0.7, 1.4)
+            made += 1
+    # A little open air round them: a few circular echoes (wraps cleanly).
+    y = x[:]
+    for delay, g in [(0.071, 0.22), (0.113, 0.18), (0.167, 0.14), (0.241, 0.1)]:
+        d = int(delay * RATE)
+        for i in range(n):
+            y[i] += g * x[(i - d) % n]
+    write('bird-chorus-loop', highpass(y, 900), 0.7, edge=False)
+
+
+def insect_hum():
+    """Bees about the flowers: a few buzzes, each wandering in pitch and in
+    nearness, soft and warm; a faint high hum of smaller flies."""
+    seconds, fade = 12.0, 1.0
+    rng = random.Random('insect-hum')
+    total = seconds + fade
+    n = int(total * RATE)
+    x = [0.0] * n
+    for bee in range(4):
+        f = rng.uniform(170, 250)
+        pw = wander(rng, total, rng.uniform(0.5, 1.2))
+        near = wander(rng, total, rng.uniform(0.15, 0.4))
+        ph = 0.0
+        for i in range(n):
+            t = i / RATE
+            ph += TAU * f * (1.0 + 0.07 * pw(t)) / RATE
+            # A buzz: a rich, slightly clipped wave.
+            s = math.sin(ph) + 0.5 * math.sin(2 * ph + 0.3) + 0.3 * math.sin(3 * ph + 0.9) + 0.18 * math.sin(5 * ph)
+            g = max(0.0, 0.35 + 0.65 * near(t)) ** 2
+            x[i] += s * g * 0.3
+    flies = bandpass(white(rng, n), lambda t: 620.0, 14.0)
+    x = [v + 0.25 * f for v, f in zip(x, flies)]
+    x = lowpass(lowpass(x, 2600), 3200)
+    write('insect-hum-loop', seamless(highpass(x, 90), int(fade * RATE)), 0.6, edge=False)
+
+
+def fall_roar():
+    """A waterfall's body heard from near: a broad, deep, steady roar with a
+    slow surge, the spray's hiss over it."""
+    seconds, fade = 12.0, 1.0
+    rng = random.Random('fall-roar')
+    n = int((seconds + fade) * RATE)
+    noise = pink(rng, n)
+    body = lowpass(lowpass(noise, 900), 1100)
+    mid = bandpass(noise, 520.0, 0.8)
+    spray = highpass(lowpass(white(rng, n), 7000), 2500)
+    surge = wander(rng, seconds + fade, 0.35)
+    flick = wander(rng, seconds + fade, 3.0)
+    x = [(1.0 * b + 0.6 * m) * (0.82 + 0.18 * surge(i / RATE)) + 0.12 * s * (0.75 + 0.25 * flick(i / RATE))
+         for i, (b, m, s) in enumerate(zip(body, mid, spray))]
+    write('fall-roar-loop', seamless(highpass(x, 40), int(fade * RATE)), 0.75, edge=False)
+
+
+def fall_spill():
+    """A thin spill or channel falling into a pool: a splashy patter and
+    gurgle, brighter and lighter than a fall's roar."""
+    seconds, fade = 10.0, 0.8
+    rng = random.Random('fall-spill')
+    n = int((seconds + fade) * RATE)
+    noise = pink(rng, n)
+    patter = bandpass(noise, lambda t: 1500.0, 0.7)
+    lev = wander(rng, seconds + fade, 4.0)
+    x = [p * (0.7 + 0.3 * lev(i / RATE)) for i, p in enumerate(patter)]
+    # Bubbles: little rising tones where drops plunge in.
+    t = 0.0
+    while t < seconds + fade - 0.1:
+        f = rng.uniform(350, 1100)
+        m = int(rng.uniform(0.02, 0.06) * RATE)
+        bub = [math.sin(TAU * f * (1.0 + 2.0 * i / m) * i / RATE) * math.exp(-i / m * 3.0) for i in range(m)]
+        add(x, bub, rng.uniform(0.05, 0.18), int(t * RATE))
+        t += rng.uniform(0.01, 0.08)
+    write('fall-spill-loop', seamless(highpass(lowpass(x, 6000), 120), int(fade * RATE)), 0.7, edge=False)
+
+
+def rope_creaks():
+    """A rope under a body's weight: a fibrous, low stick-slip groan where it
+    runs over its iron ring, and the strands' rasp."""
+    for k in range(4):
+        rng = random.Random('rope-creak-%d' % k)
+        seconds = rng.uniform(0.4, 0.75)
+        n = int(seconds * RATE)
+        pulses = [0.0] * n
+        r0 = rng.uniform(22.0, 40.0)
+        r1 = r0 * rng.uniform(0.7, 1.5)
+        t = 0.0
+        while t < seconds:
+            u = t / seconds
+            at = int(t * RATE)
+            if at < n:
+                pulses[at] += rng.uniform(0.4, 1.0) * math.sin(math.pi * u) ** 0.8
+            t += 1.0 / (r0 + (r1 - r0) * u) * rng.uniform(0.8, 1.2)
+        x = [0.0] * n
+        for f, q, g in [(rng.uniform(220, 280), 5.0, 1.0), (rng.uniform(520, 640), 6.0, 0.55), (rng.uniform(1100, 1300), 7.0, 0.25)]:
+            add(x, bandpass(pulses, f, q), g)
+        rasp = bandpass(white(rng, n), 2200.0, 1.2)
+        env = [math.sin(math.pi * i / n) ** 1.5 for i in range(n)]
+        add(x, mul(rasp, env), 0.05)
+        write('rope-creak-%d' % (k + 1), lowpass(x, 3500), 0.8)
+
+
+def rope_whips():
+    """A rope let go: a quick whip-crack of the slack end and the line's
+    low thrum as it swings free."""
+    for k in range(3):
+        rng = random.Random('rope-whip-%d' % k)
+        n = int(0.55 * RATE)
+        crack = bandpass([v * e for v, e in zip(white(rng, n), envelope(n, 0.003, 55.0))], lambda t: 3200.0 - 2000.0 * min(1.0, t / 0.06), 1.3)
+        thrum = [0.0] * n
+        f = rng.uniform(85, 115)
+        for i in range(n):
+            t = i / RATE
+            thrum[i] = math.sin(TAU * f * t + 0.4 * math.sin(TAU * 7.0 * t)) * min(1.0, t / 0.01) * math.exp(-t * 7.0)
+        swish = bandpass([v * math.sin(math.pi * min(1.0, i / (0.2 * RATE))) ** 2 if i < 0.2 * RATE else 0.0 for i, v in enumerate(pink(rng, n))], 900.0, 1.2)
+        x = [1.0 * c + 0.35 * th + 0.5 * s for c, th, s in zip(crack, thrum, swish)]
+        write('rope-whip-%d' % (k + 1), soft(x, 1.3), 0.8)
+
+
+def resonant_lowpass(x, freq, q):
+    """RBJ low-pass with resonance `q`."""
+    w = TAU * freq / RATE
+    alpha = math.sin(w) / (2.0 * q)
+    cw = math.cos(w)
+    a0 = 1.0 + alpha
+    b0 = (1.0 - cw) / 2.0 / a0
+    b1 = (1.0 - cw) / a0
+    b2 = b0
+    a1 = -2.0 * cw / a0
+    a2 = (1.0 - alpha) / a0
+    out = [0.0] * len(x)
+    x1 = x2 = y1 = y2 = 0.0
+    for i, v in enumerate(x):
+        y = b0 * v + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2
+        x2, x1, y2, y1 = x1, v, y1, y
+        out[i] = y
+    return out
+
+
+# The Electron Zenscape's crickets (zenscape/audio.js tickCrickets): a sine
+# at about 4.5 kHz gated into 3 or 4 pulses 0.055 s apart, each opening over
+# 8 ms and closing from 28 ms with an 8 ms time constant. Cold stretches the
+# pulse period (and the gap, which kit_audio.gd schedules) by 1 + 1.6 cold;
+# a take for each pulse count at each of these stretches. The voice's own
+# pitch (4100 to 5000 Hz) is its player's pitch_scale over CRICKET_HZ.
+CRICKET_HZ = 4500.0
+CRICKET_SLOW = [1.0, 1.5, 2.0, 2.6]
+
+
+def crickets():
+    for si, slow in enumerate(CRICKET_SLOW):
+        for pulses in (3, 4):
+            period = 0.055 * slow
+            n = int((pulses * period + 0.08) * RATE)
+            x = [0.0] * n
+            for i in range(n):
+                t = i / RATE
+                k = int(t / period)
+                if k >= pulses:
+                    pt = t - (pulses - 1) * period
+                else:
+                    pt = t - k * period
+                if pt < 0.008:
+                    g = pt / 0.008
+                elif pt < 0.028:
+                    g = 1.0
+                else:
+                    g = math.exp(-(pt - 0.028) / 0.008)
+                x[i] = g * math.sin(TAU * CRICKET_HZ * t)
+            write('cricket-%d-%d' % (pulses, si + 1), x, 0.8)
+
+
+# Its frogs (audio.js tickFrogs): a low sawtooth through a resonant low-pass
+# (480 Hz, Q 3), gated in a ratchet of 6 to 10 pulses 0.042 to 0.052 s apart
+# (opening over 6 ms, closing from 20 ms, tau 8 ms), the pitch climbing 1.3x
+# through it. Six frogs, each its own base pitch (85 to 155 Hz).
+def frog_croaks():
+    for k in range(6):
+        rng = random.Random('frog-croak-%d' % k)
+        base = 85.0 + 70.0 * k / 5.0 + rng.uniform(-5, 5)
+        pulses = rng.randint(6, 10)
+        period = rng.uniform(0.042, 0.052)
+        length = pulses * period
+        n = int((length + 0.08) * RATE)
+        saw = [0.0] * n
+        gate = [0.0] * n
+        ph = 0.0
+        for i in range(n):
+            t = i / RATE
+            f = base * (1.0 + 0.3 * min(1.0, t / length))
+            ph = (ph + f / RATE) % 1.0
+            saw[i] = 2.0 * ph - 1.0
+            j = min(int(t / period), pulses - 1)
+            pt = t - j * period
+            if pt < 0.006:
+                g = pt / 0.006
+            elif pt < 0.02:
+                g = 1.0
+            else:
+                g = math.exp(-(pt - 0.02) / 0.008)
+            gate[i] = g
+        x = mul(resonant_lowpass(saw, 480.0, 3.0), gate)
+        write('frog-%d' % (k + 1), highpass(x, 50), 0.8)
+
+
 TAKES = [air_rush, air_whistle, air_howl, engine, engine_start, wheel_rumble, skid, flutter,
          wire_sing, thin_wind, cloud_hush, thumps, creaks, ticks, swishes, whooshes,
-         sail_pops, sail_folds, grabs]
+         sail_pops, sail_folds, grabs,
+         chirps, twitters, wings, bird_chorus, insect_hum, fall_roar, fall_spill, rope_creaks, rope_whips, crickets, frog_croaks]
 
 if __name__ == '__main__':
     only = sys.argv[1] if len(sys.argv) > 1 else ''
