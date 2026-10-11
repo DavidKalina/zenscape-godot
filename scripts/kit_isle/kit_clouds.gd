@@ -13,15 +13,15 @@ extends "res://scripts/cloud_host.gd"
 ##             sea, stand, wane, rise again) and is built on a worker within
 ##             BUILD of the eye and stood within the sky's frame budget
 ##             (SkyTowers, scripts/sky_commits.gd). A tower that would
-##             stand within KEEP of the isle's lock ring, of a far isle, a
-##             cluster, the pierced isle, or the line out to the lodestone's
-##             ring and the halls past it (CHAIN_RUN m on) is left out
-##             (`spots`), so another kit isle's sky never stands one in its
-##             way.
-##   clouds    the old game's drifting puffs over the field round the isle,
-##             its near isles, clusters and pierced isle (`slots`), none
-##             laid in a tower, an isle or on the isle (`blocked`), thinning
-##             away over the KEEPS places nearest the eye (`keep`).
+##             stand within KEEP of the isle's lock ring, of a motif isle
+##             (the sky's `places`, scripts/kit_isle/motif_sky.gd), or the
+##             line out to the lodestone's ring and the halls past it
+##             (CHAIN_RUN m on) is left out (`spots`), so another kit isle's
+##             sky never stands one in its way.
+##   clouds    the old game's drifting puffs over the field round the isle
+##             and its motif isles (`slots`), none laid in a tower, on an
+##             isle or on the isle (`blocked`), thinning away over the
+##             places nearest the eye (`keep`).
 ##   tearing   the player's plane (while flying) and every CPU plane traced
 ##             through the cloud each frame: a tunnel, tufts dragged along,
 ##             a burst on the way out, on the puffs and in the towers.
@@ -40,9 +40,6 @@ const TOWERS := [Vector3(-100.0,0.0,750.0),Vector3(-1100.0,0.0,400.0),Vector3(13
 ## A tower's middle keeps this far (m, flat) from anything the sky lays
 ## (SkyTowers KEEP, the old game's own keep).
 const KEEP := SkyTowers.KEEP
-## A cluster's spread round its middle (m) and the pierced isle's.
-const CLUSTER_REACH := 120.0
-const PIERCED_REACH := 120.0
 ## The chain's line runs this far past the ring (m).
 const CHAIN_RUN := 1500.0
 ## The puffs keep this far (m) from an isle's edge and from the isle's.
@@ -93,58 +90,48 @@ func spots() -> Array:
 		if clear_of_play(at) == "": out.append(at)
 	return out
 
+## The sky's motif isles: [id, middle (world), reach (m)] each.
+func places() -> Array:
+	return sky.places() if sky != null and sky.has_method("places") else []
+
 ## What a tower's middle would stand in ("" for nothing): the lock ring,
-## an isle, a cluster, the pierced isle or the chain's line.
+## a motif isle or the chain's line.
 func clear_of_play(at: Vector3) -> String:
 	var flat := Vector2(at.x,at.z)
 	var c := isle()
 	if flat.distance_to(Vector2(c.x,c.y)) < lock_reach()+KEEP: return "lock ring"
-	for spec: Array in sky.ISLES:
-		var home: Vector3 = spec[3]
-		if flat.distance_to(Vector2(home.x,home.z)) < float(spec[4])+KEEP: return "isle "+str(spec[0])
-	for cluster: Array in sky.CLUSTERS:
-		var middle: Vector3 = cluster[2]
-		if flat.distance_to(Vector2(middle.x,middle.z)) < CLUSTER_REACH+KEEP: return "cluster "+str(cluster[0])
-	var pierced: Vector3 = sky.PIERCED[1]
-	if flat.distance_to(Vector2(pierced.x,pierced.z)) < PIERCED_REACH+KEEP: return "pierced isle"
+	for place: Array in places():
+		var home: Vector3 = place[1]
+		if flat.distance_to(Vector2(home.x,home.z)) < float(place[2])+KEEP: return "isle "+str(place[0])
 	var line := chain_line()
 	if not line.is_empty() and _to_segment(flat,line[0],line[1]) < KEEP: return "chain"
 	return ""
 
-## The puffs' field: the isle, its near isles (the plate's grid), the
-## clusters and the pierced isle.
+## The puffs' field: the isle and its motif isles.
 func slots() -> Array:
 	var c := isle()
 	var out := [Vector3(c.x,0.0,c.y)]
-	for spec: Array in sky.ISLES:
-		if float(spec[5]) < 2.0: out.append(spec[3])
-	for cluster: Array in sky.CLUSTERS: out.append(cluster[2])
-	out.append(sky.PIERCED[1])
+	for place: Array in places(): out.append(place[1])
 	return out
 
-## No puff on the isle, an isle or in a tower.
+## No puff on the isle, a motif isle or in a tower.
 func blocked(at: Vector3) -> bool:
 	var flat := Vector2(at.x,at.z)
 	var c := isle()
 	if flat.distance_to(Vector2(c.x,c.y)) < c.z+ISLE_CLEAR: return true
-	for spec: Array in sky.ISLES:
-		var home: Vector3 = spec[3]
-		if flat.distance_to(Vector2(home.x,home.z)) < float(spec[4])+ISLE_CLEAR: return true
+	for place: Array in places():
+		var home: Vector3 = place[1]
+		if flat.distance_to(Vector2(home.x,home.z)) < float(place[2])+ISLE_CLEAR: return true
 	return towers != null and towers.keeps(at,SkyClouds.SIZE.y)
 
 ## The places the puffs thin away over (Vector4(x, z, 0, radius)): the
-## isle, the far isles, the clusters, the pierced isle.
+## isle and the motif isles.
 func keeps() -> Array:
 	var c := isle()
 	var out := [Vector4(c.x,c.y,0.0,c.z+ISLE_CLEAR)]
-	for spec: Array in sky.ISLES:
-		var home: Vector3 = spec[3]
-		out.append(Vector4(home.x,home.z,0.0,float(spec[4])+ISLE_CLEAR))
-	for cluster: Array in sky.CLUSTERS:
-		var middle: Vector3 = cluster[2]
-		out.append(Vector4(middle.x,middle.z,0.0,CLUSTER_REACH))
-	var pierced: Vector3 = sky.PIERCED[1]
-	out.append(Vector4(pierced.x,pierced.z,0.0,PIERCED_REACH))
+	for place: Array in places():
+		var home: Vector3 = place[1]
+		out.append(Vector4(home.x,home.z,0.0,float(place[2])+ISLE_CLEAR))
 	return out
 
 static func _to_segment(p: Vector2, a: Vector2, b: Vector2) -> float:

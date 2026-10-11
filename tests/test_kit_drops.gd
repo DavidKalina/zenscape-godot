@@ -1,8 +1,8 @@
 extends SceneTree
 ## What the kit drops (docs/design/consolidation-audit.md, round 5), headless,
-## on the aqueduct isle: no sky folk (the clusters' lantern bearers and
-## fishers stand nowhere, even with every cluster stood; the airships' crews
-## are left as they were) and no peak ring (SkyWorld's ring off, no layout
+## on the aqueduct isle: no sky folk (none stands anywhere, even with every
+## motif isle stood, docs/scenic/motif-sky.md; the airships' crews are left
+## as they were) and no peak ring (SkyWorld's ring off, no layout
 ## worked out, no ring ranges), then the flags handed back when the isle
 ## leaves, so the old game's sky is as it was.
 ##   godot --headless --path . --script tests/test_kit_drops.gd
@@ -35,13 +35,13 @@ func run() -> void:
 	current_scene = study
 	while not study.isle_up: await process_frame
 	var sky: Node = study.sky
-	check(sky.clusters != null and not sky.clusters.folk, "The kit's clusters are told to leave the folk out")
-	sky.clusters.flush()
+	check(sky.motifs != null, "The motif isles are in the sky")
+	sky.flush()
 	var ships: Array = []
 	for a: Dictionary in sky.airships: ships.append(a.ship)
 	var found: Array = []
 	_folk(study, ships, found)
-	check(sky.clusters.clusters.size() > 0, "Clusters stand (%d)" % sky.clusters.clusters.size())
+	check(sky.isles_ready(), "Every motif isle stands")
 	check(found.is_empty(), "No sky folk stand anywhere but on airships (%d found)" % found.size())
 	var crews := 0
 	var crewed: Array = []

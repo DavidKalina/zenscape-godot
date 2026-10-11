@@ -3,8 +3,8 @@ extends SceneTree
 ## cloud host, scripts/cloud_host.gd), headless: the sky has a cloud host,
 ## the look pass finds it (and still finds the old game's islands), and the
 ## cloud volume reads its towers and wakes; the towers stand where nothing
-## else does (clear of the lock ring, every isle, cluster and the pierced
-## isle, and the chain's line), with no peak ring laid; they rise, stand,
+## else does (clear of the lock ring, every motif isle and the chain's
+## line), with no peak ring laid; they rise, stand,
 ## wane and rise again, and never drift; the puffs drift, clear of the isle,
 ## the isles and the towers; the CPU planes are flown through the puffs and
 ## tear them; the player's plane tears a puff and a tower, and the volume
@@ -91,19 +91,18 @@ func _places() -> void:
 	for at: Vector3 in spots:
 		var flat := Vector2(at.x,at.z)
 		var gaps := [flat.distance_to(Vector2(c.x,c.y))-ring,KitClouds._to_segment(flat,line[0],line[1])]
-		for spec: Array in study.sky.ISLES: gaps.append(flat.distance_to(Vector2(spec[3].x,spec[3].z))-float(spec[4]))
-		for cl: Array in study.sky.CLUSTERS: gaps.append(flat.distance_to(Vector2(cl[2].x,cl[2].z))-KitClouds.CLUSTER_REACH)
-		gaps.append(flat.distance_to(Vector2(study.sky.PIERCED[1].x,study.sky.PIERCED[1].z))-KitClouds.PIERCED_REACH)
+		for place: Array in study.sky.places(): gaps.append(flat.distance_to(Vector2(place[1].x,place[1].z))-float(place[2]))
 		worst = minf(worst,gaps.min())
-	check(worst >= SkyTowers.KEEP,"Each keeps the old game's keep (%.0f m) from the lock ring, the isles, clusters, pierced isle and the chain's line (closest %.0f m)" % [SkyTowers.KEEP,worst])
+	check(study.sky.places().size() == 4,"The motif isles are among what they keep off (%d)" % study.sky.places().size())
+	check(worst >= SkyTowers.KEEP,"Each keeps the old game's keep (%.0f m) from the lock ring, the motif isles and the chain's line (closest %.0f m)" % [SkyTowers.KEEP,worst])
 	var home: Vector3 = spots[0]
 	var off := Vector2(home.x-c.x,home.z-c.y).length()
 	check(off < 1000.0,"The first stands in sight of the isle (%.0f m off)" % off)
 	check(host.clear_of_play(Vector3(c.x,0.0,c.y)) == "lock ring","A tower on the isle is left out (the lock ring)")
 	var on_line: Vector2 = (line[0] as Vector2).lerp(line[1],0.8)
 	check(host.clear_of_play(Vector3(on_line.x,0.0,on_line.y)) == "chain","A tower on the chain's line is left out")
-	var cl0: Vector3 = study.sky.CLUSTERS[3][2]
-	check(host.clear_of_play(cl0).begins_with("cluster"),"A tower on a cluster is left out")
+	var isle0: Vector3 = study.sky.places()[3][1]
+	check(host.clear_of_play(isle0) != "","A tower on a motif isle is left out (%s)" % host.clear_of_play(isle0))
 	check(SkyWorld._layout.is_empty(),"No peak ring was laid for the clouds (SkyWorld layout untouched)")
 
 ## The towers built on workers round the eye, the home one about to rise;

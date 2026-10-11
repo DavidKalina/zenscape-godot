@@ -1,15 +1,16 @@
 extends SceneTree
 ## The sky round the aqueduct isle (studies/aqueduct_isle_sky.gd), headless:
-## the far isles, the clusters and the pierced isle all stand, wooded and
-## falling where they should, their trees handing over to far stand-ins;
-## their ground and rock meet the plane (skimmed, bumped); the CPU planes
+## the four ruin motif isles stand where they are placed (scripts/kit_isle/
+## motif_sky.gd, docs/scenic/motif-sky.md), whole: their art, turf, grass,
+## life and tokens; their ground meets the plane (skimmed); the CPU planes
 ## fly their laps over what stands; the airships ply their loops, solid to
-## the plane; the open-air life stands on the nearest isles; the motes are
-## out; and each token is taken on its flying line without a bump, the
+## the plane; the open-air life stands on the nearest motif isles; the motes
+## are out; and each token is taken on its flying line without a bump, the
 ## knife-edge pair only on knife edge (level, the plane is bumped off the
-## stumps).
+## stumps). The far isles, clusters and pierced isle are gone.
 ##   godot --headless --path . --script tests/test_aqueduct_isle_sky.gd
 const IsleSky = preload("res://studies/aqueduct_isle_sky.gd")
+const MotifSky = preload("res://scripts/kit_isle/motif_sky.gd")
 const DT := 1.0/60.0
 var failures := 0
 var study: Node3D
@@ -40,47 +41,43 @@ func run() -> void:
 	await _traffic()
 	_airships()
 	_life()
-	check(sky.motes.size() == 3 and sky.motes.all(func(m: Node3D) -> bool: return m.visible),"The motes are out round the isle and the nearest clusters")
+	check(sky.motes.size() == 3 and sky.motes.all(func(m: Node3D) -> bool: return m.visible),"The motes are out round the isle and the two nearest motif isles")
 	_tokens()
 	print("PASS: aqueduct isle sky" if failures == 0 else "FAIL: aqueduct isle sky (%d)" % failures)
 	quit(1 if failures > 0 else 0)
 
 func _isles() -> void:
-	check(sky.isles.size() == IsleSky.ISLES.size(),"Every lone isle stands (%d of %d)" % [sky.isles.size(),IsleSky.ISLES.size()])
-	var members := 0
-	var built := 0
-	for key in sky.clusters.clusters:
-		var c: Dictionary = sky.clusters.clusters[key]
-		members += (c.stood as Dictionary).size()
-		if (c.stood as Dictionary).size() >= 2: built += 1
-	check(built == IsleSky.CLUSTERS.size(),"Every cluster stands, %d members in all" % members)
-	var lid := false
-	var rock := false
-	for key in sky.pierced.isles:
-		lid = sky.pierced.isles[key].has("b")
-		rock = sky.pierced.isles[key].get("rock") is MeshInstance3D
-	check(lid and rock,"The pierced isle stands, its lid and its rock")
-	# Built on: a cabin or a windmill on the farmstead, trees and falls round.
-	var furnished := 0
-	var falls := 0
-	var stand_ins := 0
-	var trees := 0
-	for key: String in sky.islets.built:
-		var node: Node3D = sky.islets.built[key].node
-		for child in node.get_children():
-			if child.name.begins_with("Far_"): stand_ins += 1
-			if child.name.begins_with("tree") or child.name.begins_with("Far_"): trees += 1
-			if str(child.name).to_lower().contains("fall"): falls += 1
-		if node.get_child_count() > 8: furnished += 1
-	check(stand_ins > 10,"The lone isles' trees hand over to far stand-ins (%d batches)" % stand_ins)
-	check(falls >= 2,"Springs fall off their isles' rims (%d)" % falls)
-	print("sky: %d built records, %d furnished, %d tree batches" % [sky.islets.built.size(),furnished,trees])
-	# Their ground meets the plane: the turf's ray finds the near grove's top.
-	var grove: Vector3 = sky.isles.grove_east.home
-	var top: Variant = study.plane_ground(grove+Vector3.UP*30.0)
-	check(top != null and absf(float(top)-grove.y) < 6.0,"The plane reads the near grove's ground (%s at rim %.1f)" % [str(top),grove.y])
-	var hit: Variant = sky.ground(sky.CLUSTERS[0][2])
-	check(hit != null,"The farmstead's ground is there to the traffic's eye (%s)" % str(hit))
+	var motifs: Node3D = sky.motifs
+	check(motifs != null and motifs.isles.size() == MotifSky.PLACES.size(),"The four motif isles are in the sky (%d)" % (motifs.isles.size() if motifs != null else 0))
+	check(sky.get("islets") == null and sky.get("clusters") == null and sky.get("pierced") == null,"No far isles, clusters or pierced isle")
+	check(motifs.all_stood() and sky.isles_ready(),"Every motif isle stands whole")
+	var ids := []
+	for isle: Node3D in motifs.isles:
+		var id: String = isle.motif.id()
+		ids.append(id)
+		var c: Vector3 = isle.circle()
+		var off := Vector2(c.x-sky.MIDDLE.x,c.y-sky.MIDDLE.z).length()
+		var flora: int = (isle.flora.get_meta("records") as Array).size() if isle.flora != null else 0
+		var tokens: int = isle.life.tokens.tokens.size() if isle.life != null and isle.life.tokens != null else 0
+		print("sky: %s at (%.0f, %.0f) r %.0f, top %.1f, %.0f m off, %d plants, %d foot tokens" % [id,c.x,c.y,c.z,isle.isle_top(),off,flora,tokens])
+		check(off > 250.0 and off < 500.0,"%s stands a few hundred metres off the isle (%.0f m)" % [id,off])
+		check(flora > 1000 and tokens >= 4,"%s has its grass and flowers (%d) and its foot tokens (%d)" % [id,flora,tokens])
+		# Its ground meets the plane: over a tuft of its grass the turf's ray
+		# finds the turf it grows on, and the traffic's eye finds it too.
+		var tuft: Dictionary = (isle.flora.get_meta("records") as Array)[0] if flora > 0 else {}
+		var at := Vector3(float(tuft.get("x",c.x)),isle.isle_top()+30.0,float(tuft.get("z",c.y)))
+		var top: Variant = study.plane_ground(at)
+		check(top != null and absf(float(top)-isle.isle_top()) < 25.0,"The plane reads %s's turf (%s, its datum %.0f)" % [id,str(top),isle.isle_top()])
+		check(sky.ground(at) != null,"%s's ground is there to the traffic's eye" % id)
+	var sources: Array = sky.collectibles.sources.keys()
+	check(["aqueduct","bell_spires","cloister","sundered_gorge","colonnade"].all(func(k: String) -> bool: return sources.has(k)),"Each motif's plane tokens are in the sky's collectibles (%s)" % str(sources))
+	check(ids == ["bell_spires","cloister_tarn","sundered_gorge","colonnade_spine"],"The bell spires, the cloister tarn, the Sundered gorge and the colonnade spine (%s)" % str(ids))
+	for a: int in range(motifs.isles.size()):
+		for b: int in range(a+1,motifs.isles.size()):
+			var ca: Vector3 = motifs.isles[a].circle()
+			var cb: Vector3 = motifs.isles[b].circle()
+			var gap := Vector2(ca.x-cb.x,ca.y-cb.y).length()-ca.z-cb.z
+			check(gap > 150.0,"%s and %s stand apart (%.0f m of sky between)" % [motifs.isles[a].motif.id(),motifs.isles[b].motif.id(),gap])
 
 func _traffic() -> void:
 	var planes: Array = sky.traffic.planes
@@ -121,9 +118,9 @@ func _airships() -> void:
 	check(float(sky.drone._hum_goal) > 0.0,"The drone hums close by")
 
 func _life() -> void:
-	var grove: Vector3 = sky.isles.grove_east.home
-	for i in range(240): sky._advance_life(DT,grove+Vector3(0.0,20.0,40.0))
-	check(sky.life.hosts.size() >= 1,"Open-air life stands on the nearest isles (%d)" % sky.life.hosts.size())
+	var bell: Vector3 = MotifSky.places()[0][1]
+	for i in range(240): sky._advance_life(DT,bell+Vector3(0.0,20.0,60.0))
+	check(sky.life.hosts.size() >= 1,"Open-air life stands on the nearest motif isles (%d)" % sky.life.hosts.size())
 	var gulls := 0
 	for host in sky.life.hosts.values(): gulls += (host.gulls as Array).size()
 	check(gulls > 0,"Gulls ride the thermals over them (%d)" % gulls)

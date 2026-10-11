@@ -1,5 +1,7 @@
 # Aqueduct isle: the sky round it (handoff)
 
+> **Since 2026-10-11** (`consolidate/motif-sky`, docs/scenic/motif-sky.md): the far isles, the clusters and the pierced isle are gone from this sky. The four ruin motif isles stand in it instead, and the airships, traffic, motes, gulls, tokens and the rune serpent's way were re-pointed at them.
+
 Branch `look/aqueduct-isle-sky`. This round makes the sky round the aqueduct isle
 feel lived in. It only wires up systems the game already has and adds no new ones.
 

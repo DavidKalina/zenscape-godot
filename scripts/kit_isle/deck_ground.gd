@@ -12,7 +12,10 @@ extends "res://scripts/pilot_physics_ground.gd"
 ##
 ## With `rest_decks` the bridges' resting decks already stand in the
 ## physics space as walk boxes (the bell spires'): a deck met at rest is
-## lowered by the sim's drop under him, so it still sags.
+## lowered by the sim's drop under him, so it still sags. A bridge with the
+## meta "rest_deck" is such a bridge whatever `rest_decks` says (the bell
+## spires placed in the aqueduct isle's sky, scripts/kit_isle/
+## motif_isle.gd, beside the other isles' live decks).
 const RopeBridge = preload("res://scripts/rope_bridge.gd")
 
 ## The node the feet are in (the scene: world space).
@@ -23,6 +26,8 @@ func height_from(p: Vector2, y: float) -> float:
 	var h := super.height_from(p,y)
 	if RopeBridge._live.is_empty(): return h
 	if rest_decks: return _sagged(p,h)
+	var sagged := _sagged(p,h)
+	if sagged != h: return sagged
 	var from := y+PilotMotor.STEP_UP+LOOK_OVER
 	var deck := deck_at(p,from)
 	return maxf(h,deck) if deck > -INF else h
@@ -31,7 +36,7 @@ func height_from(p: Vector2, y: float) -> float:
 func deck_at(p: Vector2, from: float) -> float:
 	var best := -INF
 	for bridge: MeshInstance3D in RopeBridge._live:
-		if not is_instance_valid(bridge) or not bridge.is_inside_tree(): continue
+		if not is_instance_valid(bridge) or not bridge.is_inside_tree() or _resting(bridge): continue
 		var local: Vector3 = bridge.global_transform.affine_inverse()*Vector3(p.x,from,p.y)
 		var on: Vector3 = bridge._on_deck(local)
 		if on.x <= 0.0 or on.x >= 1.0: continue
@@ -40,17 +45,22 @@ func deck_at(p: Vector2, from: float) -> float:
 		if top <= from+0.001: best = maxf(best,top)
 	return best
 
+## Whether `bridge`'s resting deck stands as walk boxes.
+func _resting(bridge: Node) -> bool:
+	return rest_decks or bridge.has_meta("rest_deck")
+
 ## `h` (the physics ground's) lowered by the sim's drop where it is a
-## bridge's resting deck.
+## bridge's resting deck (read in the bridge's frame).
 func _sagged(p: Vector2, h: float) -> float:
 	if not is_finite(h): return h
 	for bridge: MeshInstance3D in RopeBridge._live:
-		if not is_instance_valid(bridge) or not bridge.is_inside_tree(): continue
-		var on: Vector3 = bridge._on_deck(bridge.global_transform.affine_inverse()*Vector3(p.x,h,p.y))
+		if not is_instance_valid(bridge) or not bridge.is_inside_tree() or not _resting(bridge): continue
+		var local: Vector3 = bridge.global_transform.affine_inverse()*Vector3(p.x,h,p.y)
+		var on: Vector3 = bridge._on_deck(local)
 		if on.x <= 0.0 or on.x >= 1.0: continue
 		if absf(on.y) > float(bridge.sim.width)*0.5+0.12: continue
 		var rest: float = lerpf(float(bridge.a.y),float(bridge.b.y),on.x)+float(bridge.bow)*pow(sin(PI*on.x),2.0)
-		if absf(h-rest) > 0.06: continue
+		if absf(local.y-rest) > 0.06: continue
 		return h+float(bridge.sim.drop(on.x,on.y-bridge.sim.sway(on.x)))
 	return h
 
