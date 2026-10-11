@@ -36,11 +36,16 @@ extends "res://studies/character_study.gd"
 ##   F (pad Y)    in the air the flaps down or up; stopped, get out
 ##   F1 numbers · F2 feel · Esc mouse
 ## The plane lands by hand, as the game's does (scripts/manual_landing.gd,
-## docs/design/manual-landing.md "Kit isles"): no F to land it, any touch
-## on the turf sticks (a greaser slow, shallow and level; else a thump, a
-## dust burst, a shake, a pad pulse), then brake or drift it to a stop like
-## a kart (scripts/wheel_spray.gd's grit off the wheels); slid off the edge
-## it flies on. Stopped, F gets out and the plane stays parked where it
+## docs/design/manual-landing.md "Kit isles" and "Round 3"): no F to land
+## it, a flown touch on the turf sticks (a greaser slow, shallow and level;
+## else a thump, a dust burst, a shake, a pad pulse), then brake or drift
+## it to a stop like a kart, the stick steering the slide's line
+## (scripts/wheel_spray.gd's grit off the wheels); slid off the edge it
+## flies on. A dive flown straight into the turf bounces back up instead
+## ("Too steep!"), and low over the turf the hint says what a touch now
+## would get (scripts/landing_readout.gd; F1 in the plane, the numbers).
+## Stopped, Shift held backs it up and Shift, Space and a turn pivot it, so
+## a plane nosed into stone gets free. Stopped, F gets out and the plane stays parked where it
 ## stopped, solid to walk round; nothing summons it: walk back and Space by
 ## it to take off (scripts/plane_landing.gd's takeoff). Walked off the
 ## isle, he drops into the skydive's canopy (scripts/sky_dive.gd); down on
@@ -98,6 +103,7 @@ const GlideAir = preload("res://scripts/glide_air.gd")
 const IsleLock = preload("res://scripts/isle_lock.gd")
 const IsleSplash = preload("res://scripts/isle_splash.gd")
 const ManualLanding = preload("res://scripts/manual_landing.gd")
+const LandingReadout = preload("res://scripts/landing_readout.gd")
 const PlaneLanding = preload("res://scripts/plane_landing.gd")
 const PlaneStrip = preload("res://scripts/plane_strip.gd")
 const WheelSpray = preload("res://scripts/wheel_spray.gd")
@@ -242,8 +248,9 @@ const STRANDED_WAIT := 3.0
 const FOOT_HINT := "Walk to your plane and Space (pad A) by it to fly  ·  R3 camera back behind"
 const BOARD_LINE := "Space (pad A)  climb in and take off"
 const FLY_HINT := "Flying  ·  %.0f m/s  ·  bumps %d\nA D bank and turn  ·  W S pitch (W nose down)  ·  mouse steers  ·  Space boost  ·  Shift brake  ·  hold Q E (LB RB) knife edge, + A D to drift  ·  Q Q or E E quick, or click: barrel roll\nF (pad Y) flaps %s  ·  put it down on the turf, then brake or drift to a stop  ·  R start on foot  ·  L / Shift+L look  ·  B gust  ·  hold right mouse or the right stick to look round  ·  R3 camera back behind"
-const ROLL_HINT := "On the wheels  ·  %.0f m/s\nShift brake  ·  steer hard, or Q E and steer, to drift  ·  Shift and steer, a blip of Space, to power-slide  ·  Space take off again"
-const STOPPED_HINT := "Stopped\nF (pad Y) get out  ·  Space roll and take off again"
+const ROLL_HINT := "On the wheels  ·  %.0f m/s\nShift brake  ·  steer hard, or Q E and steer, to drift  ·  Shift and steer, a blip of Space, to power-slide  ·  in a slide ease or counter the stick to widen, Q E to tighten  ·  Space take off again"
+const STOPPED_HINT := "Stopped\nF (pad Y) get out  ·  Space roll and take off again  ·  hold Shift (LT) to back up  ·  Shift, Space and steer to turn on the spot"
+const REVERSE_HINT := "Backing up  ·  %.1f m/s\nsteer: the tail goes that way  ·  let go of Shift (LT) to stop  ·  Space roll forwards"
 const TAKEOFF_HINT := "Taking off"
 const DIVE_HINT := "Off the edge  ·  X (pad X) open the canopy  ·  A D turn  ·  W track forward  ·  Space tuck  ·  Shift spread"
 const CANOPY_HINT := "A D steer  ·  W for speed  ·  S or Shift to brake and float  ·  it flares by itself over the ground"
@@ -1266,6 +1273,7 @@ func fly_step(delta: float, input: Dictionary) -> void:
 	_frame_plane(delta)
 	_wheel_events(out,delta)
 	if not flying: return
+	_show_plane_hud()
 	if hand_landing.flying():
 		# Coming down onto a top (a stone's, ridden over) after a while off
 		# it, the wheels' blip; riding one lifts it clear only frames it
@@ -1336,8 +1344,8 @@ func _wheel_events(out: Dictionary, delta: float) -> void:
 		Pad.pulse(0.6,0.5,0.2)
 		_shake = SHAKE_TIME
 		_shake_size = 1.0
-		var why := {"tumble":"mid roll","rough":"ground too steep"}
-		_word("Hopped: %s" % why.get(str(out.bounce.reason),str(out.bounce.reason)))
+		var reason := str(out.bounce.reason)
+		_word("Too steep! Bounced: pull up and come round" if reason == "slam" else "Hopped: %s" % LandingReadout.hop_word(reason))
 	elif out.has("settled"):
 		var k := float(out.settled.k)
 		_thump(k)
@@ -1357,6 +1365,8 @@ func _wheel_events(out: Dictionary, delta: float) -> void:
 	if out.has("off_edge"): _word("Off the edge: flying again")
 	if out.has("not_yet"): _word("Stop first  ·  Shift to brake")
 	if out.has("lifted"): _word("Touch and go")
+	if out.has("reverse"): _word("Backing up")
+	if out.has("edge_behind"): _word("The edge is right behind you")
 	if out.has("hit"):
 		_thump(0.6)
 		Pad.pulse(0.5,0.4,0.15)
@@ -1431,9 +1441,14 @@ func _show_fly_hint() -> void:
 	var text := ""
 	var aloft := takeoff == null and hand_landing.flying()
 	if takeoff != null: text = TAKEOFF_HINT
+	elif hand_landing.phase == ManualLanding.ROLL and hand_landing.reversing: text = REVERSE_HINT % hand_landing.roll_speed()
 	elif hand_landing.phase == ManualLanding.ROLL: text = ROLL_HINT % hand_landing.roll_speed()
 	elif not aloft: text = STOPPED_HINT
 	else: text = FLY_HINT % [float(plane.speed),bumps,"up" if flaps else "down"]
+	if aloft:
+		# Low over the turf, what a touch now would get (a slam: too steep).
+		var now := LandingReadout.hint_now(hand_landing.grade_now(Callable(self,"floor_at")),_over_turf())
+		if now != "": text = now+"  ·  "+text
 	if _said_left > 0.0: text = _said+"  ·  "+text
 	if aloft:
 		if isle_lock != null and isle_lock.locked: text += "\n"+LOCK_HINT % str(isle_card().name)
@@ -1445,6 +1460,28 @@ func _show_fly_hint() -> void:
 	elif lodestone != null and lode_state == "seated":
 		text += "\nThe nose arrow points to the place in the stone (%.0f m): it glows brighter when you are dead on course" % plane.position.distance_to(lode_target)
 	_switch_hint.text = text
+
+## How high the plane flies over what is under it (m, the flight's ground;
+## NAN over open sky).
+func _over_turf() -> float:
+	var under: Variant = plane_ground(plane.position)
+	return NAN if under == null else float(plane.position.y)-float(under)-SkyPlane.SKIM
+
+## The landing's live numbers for F1 in the plane (scripts/
+## landing_readout.gd): what a touch now would get and the dive against
+## the slam's limits, or on the wheels how it rolls.
+func _show_plane_hud() -> void:
+	if _hud == null or not _hud.visible or plane == null: return
+	var lines := PackedStringArray(["plane     %s · %.1f m/s · %s m over the turf" % [ManualLanding.NAMES[hand_landing.phase],float(plane.speed),
+		"-" if is_nan(_over_turf()) else "%.1f" % _over_turf()]])
+	if hand_landing.flying():
+		lines.append("touch now %s" % LandingReadout.touch_now(hand_landing.grade_now(Callable(self,"floor_at"))))
+		lines.append(LandingReadout.dive_line(hand_landing))
+	else:
+		lines.append(LandingReadout.wheels_line(hand_landing))
+	var s: Dictionary = hand_landing.stats
+	lines.append("touches %d · hops %d %s · go-arounds %d · last %s" % [(s.touches as Array).size(),int(s.bounces),str(s.bounce_reasons),int(s.go_arounds),hand_landing.last_touch if hand_landing.last_touch != "" else "-"])
+	_hud.text = "\n".join(lines)
 
 ## The turf's height under the wheels at a global XZ point (NAN off it:
 ## past its edge, or rising past what they reach): read from FLOOR_UP m
@@ -1663,6 +1700,7 @@ func _fly_event(event: InputEvent) -> void:
 	elif event is InputEventKey and event.pressed and not event.echo:
 		match (event as InputEventKey).keycode:
 			KEY_F: land_key()
+			KEY_F1: _hud.visible = not _hud.visible
 			KEY_TAB: toggle_lock()
 			KEY_R:
 				leave_plane(start)

@@ -8,7 +8,11 @@ extends SceneTree
 ## is refused, braked it stops, and only then F gets out; the plane stays
 ## parked where it stopped, the pilot beside it; boarding it again takes
 ## off; walked off the isle he drops into the canopy, is stranded and then
-## back beside the plane.
+## back beside the plane. Round 3: low over the turf the hint says what a
+## touch now would get; a near-vertical slam onto the turf bounces back up
+## (never into it) and flies on; stopped, Shift held backs it up, steering
+## as a car backs, and let go it stops; nosed into stone it stops short,
+## then a turn on the spot and backing up get it free to roll on.
 ##   godot --headless --path . --script tests/test_kit_isle_landing.gd
 const ManualLanding = preload("res://scripts/manual_landing.gd")
 const PlaneLanding = preload("res://scripts/plane_landing.gd")
@@ -37,9 +41,11 @@ func run() -> void:
 	_f_on_foot_flies_nothing()
 	_solid()
 	_take_off()
+	_slam()
 	_hot_touch()
 	_stop_and_get_out()
 	_board_again()
+	_free_from_stone()
 	_off_the_edge()
 	print("PASS: kit isle landing" if failures == 0 else "FAIL: kit isle landing (%d)" % failures)
 	quit(1 if failures > 0 else 0)
@@ -166,6 +172,140 @@ func _hot_touch() -> void:
 	var over: float = float(plane.position.y)-_turf_under(plane.position)
 	check(over > 0.0 and over < 1.0,"Sat on the turf, never in it (%.2f m over)" % over)
 
+## Dived near-vertically at the open turf: the hint warns low down, the
+## touch bounces ("slam"), and it flies on, never into the turf.
+func _slam() -> void:
+	_run = _open_run()
+	if _run.is_empty(): return
+	var way: Vector3 = _run.way
+	study.fly_from((_run.at as Vector3)+Vector3.UP*14.0,atan2(-way.x,-way.z))
+	var ml: RefCounted = study.hand_landing
+	study.plane.pitch = -1.25
+	var warned := false
+	var lowest := INF
+	var t := 0.0
+	while t < 4.0 and int(ml.stats.bounces) == 0 and ml.flying():
+		study.fly_step(DT,{"pitch":-1.0})
+		if str(study._switch_hint.text).contains("Too steep"): warned = true
+		t += DT
+	check(warned,"Low over the turf in a steep dive, the hint warns it will bounce")
+	var reasons: Dictionary = ml.stats.bounce_reasons
+	check(int(reasons.get("slam",0)) == 1 and ml.flying(),"A near-vertical slam onto the turf bounces back up, flying (%s)" % str(reasons))
+	check(str(study._switch_hint.text).contains("Bounced"),"The hint says why: '%s'" % str(study._switch_hint.text).get_slice("\n",0))
+	for i in range(int(1.0/DT)):
+		study.fly_step(DT,{})
+		var under := _turf_under(study.plane.position)
+		if not is_nan(under): lowest = minf(lowest,float(study.plane.position.y)-under)
+	check(ml.flying() and lowest > 0.3,"It flies on, never into the turf (lowest %.2f m over it)" % lowest)
+
+## Stopped on the turf, Shift held backs it up, the stick turning it as a
+## car backs; let go, it stops.
+func _back_up() -> void:
+	if _run.is_empty(): return
+	var ml: RefCounted = study.hand_landing
+	var t := 0.0
+	while study.flying and ml.phase == ManualLanding.ROLL and t < 8.0:
+		study.fly_step(DT,{"brake":1.0})
+		t += DT
+	if ml.phase != ManualLanding.STOPPED: return
+	var at: Vector3 = study.plane.position
+	var h0 := float(study.plane.heading)
+	var fwd := Vector2(-sin(h0),-cos(h0))
+	for i in range(int(1.6/DT)): study.fly_step(DT,{"brake":1.0,"turn":0.6})
+	var moved := Vector2(study.plane.position.x-at.x,study.plane.position.z-at.z)
+	check(ml.reversing and moved.dot(fwd) < -0.6,"Stopped, Shift held backs it up (%.1f m back)" % -moved.dot(fwd))
+	check(float(study.plane.heading) > h0+0.15,"The stick turns it backing up, as a car backs (%.2f rad)" % (float(study.plane.heading)-h0))
+	check(str(study._switch_hint.text).contains("Backing up"),"The hint says so")
+	t = 0.0
+	while ml.phase != ManualLanding.STOPPED and t < 2.0:
+		study.fly_step(DT,{})
+		t += DT
+	check(ml.phase == ManualLanding.STOPPED and not ml.reversing,"Let go of Shift, it stops (%.1f s)" % t)
+
+## Turf running up to stone: {at (the turf's top), way} with clear turf to
+## start from and stone across the way within a few metres.
+func _stone_ahead() -> Dictionary:
+	var space: PhysicsDirectSpaceState3D = study.get_world_3d().direct_space_state
+	var c: Vector3 = study.isle_circle()
+	for gx in range(-12,13):
+		for gz in range(-12,13):
+			var top: Vector3 = study._turf_top(space,c.x+gx*3.0,c.y+gz*3.0)
+			if top == Vector3.INF: continue
+			for d in range(8):
+				var way := Vector3(cos(TAU*d/8.0),0.0,sin(TAU*d/8.0))
+				var turn := Basis(Vector3.UP,atan2(-way.x,-way.z))
+				if study._stone_at(top+Vector3.UP*0.6,turn): continue
+				# Room behind to back into.
+				var room := true
+				for b in range(1,7):
+					var back: Vector3 = study._turf_top(space,top.x-way.x*b*0.5,top.z-way.z*b*0.5)
+					if back == Vector3.INF or absf(back.y-top.y) > 0.3 or study._stone_at(back+Vector3.UP*0.6,turn): room = false
+				if not room: continue
+				for k in range(1,12):
+					var p := top+way*k*0.5
+					var there: Vector3 = study._turf_top(space,p.x,p.z)
+					if there == Vector3.INF or absf(there.y-top.y) > 0.3: break
+					if study._stone_at(there+Vector3.UP*0.6,turn):
+						if k >= 3: return {"at":top,"way":way}
+						break
+	return {}
+
+## Stood on the turf facing stone: rolled into it, it stops short; then
+## a turn on the spot and backing up get it free, and it rolls on.
+func _free_from_stone() -> void:
+	var spot := _stone_ahead()
+	check(not spot.is_empty(),"Turf running up to stone found")
+	if spot.is_empty() or not study.flying: return
+	var ml: RefCounted = study.hand_landing
+	var way: Vector3 = spot.way
+	var at: Vector3 = spot.at
+	var heading := atan2(-way.x,-way.z)
+	var plane: RefCounted = study.plane
+	study.takeoff = null
+	plane.launch(at,heading,SkyPlane.SLOW,false)
+	plane.heading = heading
+	plane.position = Vector3(at.x,at.y+0.6,at.z)
+	plane.speed = 0.0
+	plane.velocity = Vector3.ZERO
+	ml.begin(plane,true)
+	for i in range(3): study.fly_step(DT,{})
+	var t := 0.0
+	var hit := false
+	var moved := 0.0
+	while t < 5.0:
+		var before: Vector3 = plane.position
+		study.fly_step(DT,{"boost":0.4})
+		moved = Vector2(plane.position.x-at.x,plane.position.z-at.z).length()
+		if ml.roll_speed() < 0.01 and t > 0.5 and before.distance_to(plane.position) < 0.001:
+			hit = true
+			break
+		t += DT
+	check(hit and ml.on_ground(),"Rolled at the stone, it stops short (%.1f m on)" % moved)
+	var stopped_at: Vector3 = plane.position
+	# Shift, Space and the stick: round on the spot.
+	t = 0.0
+	while t < 0.5 and ml.phase != ManualLanding.STOPPED:
+		study.fly_step(DT,{"brake":1.0})
+		t += DT
+	var h0 := float(plane.heading)
+	for i in range(int(1.0/DT)): study.fly_step(DT,{"brake":1.0,"boost":1.0,"turn":1.0})
+	check(ml.phase == ManualLanding.STOPPED and absf(angle_difference(h0,float(plane.heading))) > 0.6,"Shift, Space and a turn: round on the spot (%.2f rad)" % absf(angle_difference(h0,float(plane.heading))))
+	# Turned back to the stone, Shift held backs it off.
+	plane.heading = heading
+	for i in range(int(0.3/DT)): study.fly_step(DT,{})
+	for i in range(int(2.0/DT)): study.fly_step(DT,{"brake":1.0})
+	var back := Vector2(plane.position.x-stopped_at.x,plane.position.z-stopped_at.z)
+	check(back.dot(Vector2(way.x,way.z)) < -1.0,"Shift held backs it off the stone (%.1f m)" % -back.dot(Vector2(way.x,way.z)))
+	# Free: turned away and rolled on.
+	t = 0.0
+	while t < 1.0 and ml.phase != ManualLanding.STOPPED:
+		study.fly_step(DT,{})
+		t += DT
+	for i in range(int(1.5/DT)): study.fly_step(DT,{"brake":1.0,"boost":1.0,"turn":1.0})
+	var from: Vector3 = plane.position
+	for i in range(int(1.5/DT)): study.fly_step(DT,{"boost":0.5})
+	check(plane.position.distance_to(from) > 1.0 and ml.on_ground(),"Turned away, it rolls on free (%.1f m)" % plane.position.distance_to(from))
+
 func _stop_and_get_out() -> void:
 	if _run.is_empty(): return
 	var ml: RefCounted = study.hand_landing
@@ -177,6 +317,7 @@ func _stop_and_get_out() -> void:
 		t += DT
 	check(ml.phase == ManualLanding.STOPPED,"Braked, it stops (%.1f s, %.1f m from the touch)" % [t,float(ml.stats.rollout)])
 	if ml.phase != ManualLanding.STOPPED: return
+	_back_up()
 	for i in range(30): study.fly_step(DT,{})
 	check(study.flying and ml.phase == ManualLanding.STOPPED,"Stopped, it never gets out by itself")
 	check(str(study._switch_hint.text).contains("get out"),"The hint offers the way out")
