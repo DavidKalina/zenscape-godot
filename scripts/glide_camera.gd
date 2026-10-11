@@ -89,6 +89,11 @@ var _since_turn := INF
 ## it has eased to.
 var cine := Vector3.ZERO
 var _cine := Vector3.ZERO
+## A plane drawn bigger on its wheels (scripts/plane_ground_scale.gd): its
+## distance and height times `size`, and the middle it frames lifted by
+## `lift`. 1 and none in flight.
+var size := 1.0
+var lift := Vector3.ZERO
 ## How close in it is now (0 cruise, 1 tucked) and how wide (the float).
 var tuck := 0.0
 var float_out := 0.0
@@ -127,7 +132,7 @@ func turn(by: Vector2) -> void:
 ## One frame behind `glide`, `dive` held 0..1. `solid`, if given, is a
 ## Callable(Vector3) -> bool: true inside rock or ground.
 func step(delta: float, glide: RefCounted, dive: float, solid := Callable()) -> void:
-	var at: Vector3 = glide.position
+	var at: Vector3 = glide.position+lift
 	_widen(delta,glide)
 	if first_person:
 		_way = glide.forward()
@@ -149,8 +154,8 @@ func step(delta: float, glide: RefCounted, dive: float, solid := Callable()) -> 
 	var hang := float(glide.hang)
 	float_out = lerpf(float_out,hang,_ease(FLOAT_IN if hang > float_out else FLOAT_OUT,delta))
 	_cine = _cine.lerp(cine,_ease(EASE_CINE,delta))
-	var back := lerpf(lerpf(BACK.x,BACK.y,float_out),BACK.z,tuck)*(1.0+_cine.z)
-	var up := lerpf(lerpf(UP.x,UP.y,float_out),UP.z,tuck)*(1.0+_cine.z*0.5)
+	var back := lerpf(lerpf(BACK.x,BACK.y,float_out),BACK.z,tuck)*(1.0+_cine.z)*size
+	var up := lerpf(lerpf(UP.x,UP.y,float_out),UP.z,tuck)*(1.0+_cine.z*0.5)*size
 	_since_turn += delta
 	if not free_held and _since_turn >= linger: free = free.lerp(Vector2.ZERO,_ease(EASE_BACK,delta))
 	var swing := free+Vector2(_cine.x,_cine.y)
@@ -168,7 +173,7 @@ func step(delta: float, glide: RefCounted, dive: float, solid := Callable()) -> 
 	_offset += _offset_v*delta
 	eye = at+_offset
 	var ahead := AHEAD+AHEAD_SPEED*float(glide.speed)
-	look = at.lerp(at+_way*ahead+Vector3.UP*LOOK_UP,1.0-smoothstep(0.3,1.0,absf(swing.x)/PI))
+	look = at.lerp(at+_way*ahead*size+Vector3.UP*LOOK_UP*size,1.0-smoothstep(0.3,1.0,absf(swing.x)/PI))
 	roll = lerpf(roll,_lean(float(glide.bank)),_ease(EASE_ROLL,delta))
 	if solid.is_valid(): _keep_clear(at,solid)
 
