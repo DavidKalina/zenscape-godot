@@ -134,6 +134,26 @@ func _plane_line() -> void:
 		if not space.intersect_shape(q,1).is_empty(): out += 1
 		z += 0.5
 	check(out == 0,"Plane: the breach line leaves the hall clear of stone (%d slabs blocked)" % out)
+	# On out under the keel's gully over the breach, past the plate's rim.
+	var past := 0
+	while bx > 0.0 and z < Keel.MID.y+Keel.PLATE_B+6.0:
+		q.transform = Transform3D(Basis.IDENTITY,Vector3(Keel.HALL_X+bx,Keel.YF+3.1,z))
+		if not space.intersect_shape(q,1).is_empty(): past += 1
+		z += 0.5
+	check(past == 0,"Plane: past the breach the keel's gully is clear out past the rim (%d slabs blocked)" % past)
+	# Every flyable breach either side has its gully clear to the sky.
+	var shut_gullies := 0
+	for side in range(2):
+		var sign := -1.0 if side == 0 else 1.0
+		for gx: float in Keel.breach_bays(side):
+			var gz := Hall.WALL_Z+1.0
+			while gz < Keel.PLATE_B+6.0:
+				q.transform = Transform3D(Basis.IDENTITY,Vector3(Keel.HALL_X+gx,Keel.YF+3.1,Keel.MID.y+sign*gz))
+				if not space.intersect_shape(q,1).is_empty():
+					shut_gullies += 1
+					break
+				gz += 0.5
+	check(shut_gullies == 0,"Plane: every flyable breach has a gully out under the keel (%d shut)" % shut_gullies)
 	var hit := space.intersect_ray(_ray(Vector3(Keel.HALL_X-8.0,Keel.YF+Keel.LANE_Y,Keel.MID.y+Keel.LANE_Z),Vector3(Keel.HALL_X+Keel.LENGTH+8.0,Keel.YF+Keel.LANE_Y,Keel.MID.y+Keel.LANE_Z)))
 	check(hit.is_empty(),"Plane: a ray down the lane from outside one mouth to outside the other meets nothing")
 	var wall := space.intersect_ray(_ray(Vector3(Keel.HALL_X+10.0,Keel.YF+8.0,Keel.MID.y-4.0),Vector3(Keel.HALL_X+10.0,Keel.YF+30.0,Keel.MID.y-4.0)))

@@ -114,3 +114,23 @@ very dark (the stair pieces carry no shelter bounce).
 - Shelf outside the hall walls: painted turf (plate turf tone) instead of stone. No plants: the flora pipeline raycasts from above onto one site and the plate covers the shelf, so growing there needs a second site (shared code). Not done.
 - North-breach plane line: not added.
 - Captures: `docs/scenic/captures-hollow-keel-fixes/` (before-/after-).
+
+## Rock round
+
+Branch `look/motif-rock` (from main 5430e81b). Only `studies/hollow_keel_isle_art.gd` and `tests/test_hollow_keel_isle.gd` changed.
+
+- **Keel under the plate** (`_underside`, `keel_depth`). The twelve gem-cut crags and most of the flat soffit are gone. Off the band over the hall (`BAND`, the hall's walls + 1 m, which stays level at the soffit), the plate's underside hangs as the islets' keels do: one faceted face per point of a jittered 3.2 m grid, 7–19 m deep in noise ridges with nine spurs, tapering back up to the skirt at the rim and, past a 4.5 m gallery along the walls, up a steep inner face to the band. Over every flyable breach (both sides) a gully stays shallow so the plane leaving the hall has a way out. Drawn and collided ("Sides").
+- **Hull** (`cone(..., rough)`). Each column round it has its own drop (ridges, gullies, an odd spur), the rings draw in unevenly and the keel point sits off the middle.
+- **Tone.** `CRAG_LIFT`, `HULL_LIFT`, `SOFFIT_LIFT` and the warm re-tint are gone: the rock is the plain islet rock (`RockMesh.add`). From the sun's side the underside now reads dark charcoal like the aqueduct isle's keel; from the backlit side both read navy-dark the same (`ref/below-backlit.png` vs `after/keel/below-backlit.png`): that's the shared lighting (sky hemisphere and rim sheen on shaded faces), not this isle.
+- The hall, its lane, the stairs, the porch and islet are unchanged.
+- Test: two new checks: the breach line continues clear past the plate's rim, and every flyable breach on both sides has a clear gully out at YF+3.1.
+
+Triangles: 329.0k (was ~328k).
+
+Tests (headless): `test_hollow_keel_isle` (all checks incl. the new two), `test_motif_sky`, `test_aqueduct_isle_sky` PASS.
+
+Captures (gitignored, alpine_morning): `captures/motif-rock/{before,after}/keel/` (approach, above, below, below-side, close-below, west_mouth, after: below-backlit), reference `captures/motif-rock/ref/`.
+
+Open:
+- From the sides the keel lobes now hide more of the hall's flanks; it shows through the mouths, the gallery and the breach gullies.
+- The band over the hall (beyond the mouths and along the walls) is still a flat soffit, near black in the plate's shadow.

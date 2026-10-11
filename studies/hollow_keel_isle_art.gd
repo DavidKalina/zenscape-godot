@@ -143,6 +143,7 @@ static func plate(seed_value: int) -> Node3D:
 	var rock := KitLook.RockMesh.new()
 	var under := _skirt(rock,ring,rng)
 	_soffit(rock,under)
+	_underside(rock,under,rng)
 	_jambs(rock)
 	_solid_rock(node,"Sides",rock)
 	return node
@@ -195,13 +196,16 @@ static func _skirt(rock: KitLook.RockMesh, ring: Array[Vector2], rng: RandomNumb
 	for p: Vector3 in c: under.append(Vector2(p.x,p.z))
 	return under
 
-## The underside of the plate, level, in four pieces round the shaft.
+## The underside of the plate over the hall (the band `BAND` either side of
+## its walls, the whole length), level, in four pieces round the shaft.
 static func _soffit(rock: KitLook.RockMesh, under: PackedVector2Array) -> void:
 	var big := 1000.0
 	var s := SHAFT
+	var lo := MID.y-BAND
+	var hi := MID.y+BAND
 	var pieces: Array[Rect2] = [
-		Rect2(-big,-big,2.0*big,big+s.position.y),
-		Rect2(-big,s.end.y,2.0*big,big),
+		Rect2(-big,lo,2.0*big,s.position.y-lo),
+		Rect2(-big,s.end.y,2.0*big,hi-s.end.y),
 		Rect2(-big,s.position.y,big+s.position.x,s.size.y),
 		Rect2(s.end.x,s.position.y,big,s.size.y)]
 	for r in pieces:
@@ -212,7 +216,97 @@ static func _soffit(rock: KitLook.RockMesh, under: PackedVector2Array) -> void:
 				var p0: Vector2 = poly[idx[t]]
 				var p1: Vector2 = poly[idx[t+1]]
 				var p2: Vector2 = poly[idx[t+2]]
-				_face(rock,[Vector3(p0.x,SOFFIT,p0.y),Vector3(p1.x,SOFFIT,p1.y),Vector3(p2.x,SOFFIT,p2.y)],TOP,Vector3.DOWN,1.0,SOFFIT_LIFT)
+				rock.add([Vector3(p0.x,SOFFIT,p0.y),Vector3(p1.x,SOFFIT,p1.y),Vector3(p2.x,SOFFIT,p2.y)],TOP,Vector3.DOWN,1.0)
+
+# --- The keel: the plate's hanging rock either side of the hall ----------------------------
+#
+# Off the band over the hall, the plate's underside hangs as the islets'
+# keels do: one faceted face under each point of a jittered grid, deeper
+# toward the middle of each side, in ridges and spurs, tapering back up to
+# the skirt at the rim and up to the band at the hall in a steep inner face
+# (a gallery along the walls). Over each flyable breach a gully stays
+# shallow, so the plane that leaves the hall by it is clear to the sky.
+
+## The band (m either side of MID) over the hall that stays level.
+const BAND := Hall.WALL_Z+1.0
+## The gallery along the walls (m past the band) before the inner face
+## drops, and the run it drops over.
+const GALLERY := 4.5
+const INNER_RUN := 5.0
+## How deep the keel hangs (m under the soffit): the least and the most a
+## ridge reaches, how far in from the rim it reaches it.
+const KEEL_DEPTH := Vector2(7.0,19.0)
+const RIM_RUN := 9.0
+## Over a breach: a gully this wide past its bay's half, this shallow.
+const GULLY := Vector2(6.0,0.12)
+## The spurs: [x from the hall's mouth, z from MID, radius, extra depth].
+const SPURS := [[6.0,-24.0,3.5,7.0],[30.0,-27.0,4.0,9.0],[52.0,-23.0,3.0,6.0],[72.0,-26.0,3.5,8.0],
+	[14.0,25.0,4.0,8.0],[44.0,27.0,3.5,10.0],[62.0,24.0,3.0,6.5],[86.0,20.0,3.0,5.0],[-6.0,-20.0,3.0,5.0]]
+
+## The flyable breaches' bays (their middles, x from the mouth) on side
+## `side` (0 the -z wall, 1 the +z).
+static func breach_bays(side: int) -> Array[float]:
+	var out: Array[float] = []
+	var ps := plans()
+	for i in range(BAYS):
+		if Hall.BREACHES[ps[i].breach[side]] in ["low","arch","collapse"]: out.append(Hall.BAY*(i+0.5))
+	return out
+
+## How far the keel hangs under the soffit at (x, z), `edge` m in from the
+## underside's rim.
+static func keel_depth(p: Vector2, edge: float, bays: Array) -> float:
+	var off := absf(p.y-MID.y)-BAND
+	if off <= 0.0: return 0.0
+	var inner := smoothstep(GALLERY,GALLERY+INNER_RUN,off)
+	var rim := smoothstep(0.0,RIM_RUN,edge)
+	var n := noise().get_noise_2d(p.x*0.8+311.0,p.y*1.6-97.0)*0.5+0.5
+	var ridge := 1.0-absf(noise().get_noise_2d(p.x*0.35-50.0,p.y*0.9+120.0))
+	var deep := lerpf(KEEL_DEPTH.x,KEEL_DEPTH.y,clampf(n*0.6+ridge*0.55-0.1,0.0,1.0))
+	var x := p.x-HALL_X
+	for spur: Array in SPURS:
+		var d := Vector2(x,p.y-MID.y).distance_to(Vector2(float(spur[0]),float(spur[1])))
+		deep += float(spur[3])*clampf(1.0-d/float(spur[2]),0.0,1.0)
+	var gully := 1.0
+	for bx: float in bays[0 if p.y < MID.y else 1]:
+		gully = minf(gully,lerpf(GULLY.y,1.0,smoothstep(Hall.BAY*0.5,Hall.BAY*0.5+GULLY.x,absf(x-bx))))
+	return deep*inner*rim*gully
+
+## The keel hung under `under` (the skirt's foot), off the band.
+static func _underside(rock: KitLook.RockMesh, under: PackedVector2Array, rng: RandomNumberGenerator) -> void:
+	var bays := [breach_bays(0),breach_bays(1)]
+	var pts := PackedVector2Array()
+	for p: Vector2 in under: pts.append(p)
+	# The band's edges, and a row on each gallery's edge, so the inner face
+	# stands where it should.
+	var box := Rect2(MID.x-60.0,MID.y-60.0,120.0,120.0)
+	for edge_z: float in [-BAND,BAND,-(BAND+GALLERY),BAND+GALLERY]:
+		var x := box.position.x
+		while x < box.end.x:
+			var p := Vector2(x,MID.y+edge_z)
+			if Geometry2D.is_point_in_polygon(p,under): pts.append(p)
+			x += 2.6
+	var cell := 3.2
+	var gx := box.position.x
+	while gx < box.end.x:
+		var gz := box.position.y
+		while gz < box.end.y:
+			var p := Vector2(gx+rng.randf_range(-1.1,1.1),gz+rng.randf_range(-1.1,1.1))
+			if absf(p.y-MID.y) > BAND+0.6 and Geometry2D.is_point_in_polygon(p,under) and KitLand.edge_distance(p,under) > 1.2: pts.append(p)
+			gz += cell
+		gx += cell
+	var ys := PackedFloat32Array()
+	for p: Vector2 in pts:
+		var edge := KitLand.edge_distance(p,under)
+		var on_rim := edge < 0.05
+		ys.append(SOFFIT if on_rim else SOFFIT-keel_depth(p,edge,bays)*rng.randf_range(0.92,1.08))
+	var tris := Geometry2D.triangulate_delaunay(pts)
+	for t in range(0,tris.size(),3):
+		var a := pts[tris[t]]
+		var b := pts[tris[t+1]]
+		var c := pts[tris[t+2]]
+		var mid := (a+b+c)/3.0
+		if absf(mid.y-MID.y) < BAND or not Geometry2D.is_point_in_polygon(mid,under): continue
+		rock.add([Vector3(a.x,ys[tris[t]],a.y),Vector3(b.x,ys[tris[t+1]],b.y),Vector3(c.x,ys[tris[t+2]],c.y)],TOP,Vector3.DOWN,rng.randf_range(0.88,1.1))
 
 ## The shaft's cut faces: the plate's earth and rock showing round it.
 static func _jambs(rock: KitLook.RockMesh) -> void:
@@ -241,85 +335,61 @@ static func _solid_rock(node: Node3D, label: String, rock: KitLook.RockMesh) -> 
 	body.add_child(holder)
 	node.add_child(body)
 
-# --- The keel: crags under the plate, the hull under the floor ---------------------------
-
-## A rock face as `RockMesh.add` draws it, its colour lifted `lift` times
-## (the crags under the plate sit in its shadow and read black else).
-static func _face(rock: KitLook.RockMesh, tri: Array, rim: float, toward: Vector3, jitter: float, lift: float) -> void:
-	if lift == 1.0:
-		rock.add(tri,rim,toward,jitter)
-		return
-	var p0: Vector3 = tri[0]
-	var p1: Vector3 = tri[1]
-	var p2: Vector3 = tri[2]
-	var n := (p1-p0).cross(p2-p0).normalized()
-	if n.dot(toward) < 0.0: n = -n
-	var c := KitLook.rock_tone((p0+p1+p2)/3.0,rim,n,1.0+(jitter-1.0)*0.5)
-	rock.add_toned(tri,Color(c.r*lift*1.3,c.g*lift*1.02,c.b*lift*0.8),toward)
+# --- The hull under the floor ------------------------------------------------------------
 
 ## A hanging mass: `ring` (x, z) at height `y`, rings tapering in and down to
-## a point `depth` under, faceted (pushed in and out by `rng`). Its colours
-## by depth under `rim`.
-static func cone(rock: KitLook.RockMesh, ring: Array, y: float, depth: float, rim: float, rng: RandomNumberGenerator, specs: Array = [], lift := 1.0) -> void:
+## a keel `depth` under, faceted (pushed in and out by `rng`), its colours by
+## depth under `rim`. With `rough`, as the islets' keels hang: each column
+## round it its own drop (ridges and gullies down the taper, a spur here and
+## there), the rings drawn in unevenly, the keel's point off the middle.
+static func cone(rock: KitLook.RockMesh, ring: Array, y: float, depth: float, rim: float, rng: RandomNumberGenerator, specs: Array = [], rough := false) -> void:
 	if specs.is_empty(): specs = [[0.0,0.0],[0.22,0.3],[0.55,0.62],[0.85,0.88]]
 	var centre := KitLand.centre_of(ring)
 	var out := KitLand.outward(ring)
 	var count := ring.size()
+	var drops := PackedFloat32Array()
+	var ins := PackedFloat32Array()
+	for i in range(count):
+		var wave := noise().get_noise_2d((ring[i] as Vector2).x*1.3+40.0,(ring[i] as Vector2).y*1.3-70.0)
+		var spur := rng.randf_range(0.18,0.4) if rough and rng.randf() < 0.14 else 0.0
+		drops.append(1.0+(wave*0.45+spur if rough else 0.0))
+		ins.append(wave*0.12 if rough else 0.0)
 	var rings: Array = []
 	for spec: Array in specs:
 		var r: Array[Vector3] = []
+		var f := float(spec[1])
 		for i in range(count):
-			var p: Vector2 = (ring[i] as Vector2).lerp(centre,float(spec[0]))
+			var inset := float(spec[0])
+			if inset > 0.0: inset = clampf(inset+ins[i]*(1.0-inset)+rng.randf_range(-0.03,0.05),0.0,0.95)
+			var p: Vector2 = (ring[i] as Vector2).lerp(centre,inset)
 			var push := rng.randf_range(-0.12,0.2)*(0.0 if float(spec[0]) == 0.0 else 1.0)
 			p += out[i]*push*(1.0+depth*0.1)
-			r.append(Vector3(p.x,y-depth*float(spec[1])*rng.randf_range(0.9,1.1) if float(spec[1]) > 0.0 else y,p.y))
+			var drop := f*drops[i]*rng.randf_range(0.9,1.1)
+			r.append(Vector3(p.x,y-depth*minf(drop,0.97) if f > 0.0 else y,p.y))
 		rings.append(r)
 	var tip := Vector3(centre.x+rng.randf_range(-0.8,0.8),y-depth,centre.y+rng.randf_range(-0.8,0.8))
+	if rough:
+		var reach := (ring[0] as Vector2).distance_to(centre)
+		tip = Vector3(centre.x+rng.randf_range(-0.25,0.25)*reach,y-depth*rng.randf_range(1.0,1.06),centre.y+rng.randf_range(-1.5,1.5))
 	for k in range(rings.size()-1):
 		var u: Array = rings[k]
 		var l: Array = rings[k+1]
 		for i in range(count):
 			var j := (i+1)%count
 			var m1: Vector3 = (u[i]+u[j]+l[i])/3.0
-			_face(rock,[u[i],l[i],u[j]],rim,Vector3(m1.x-centre.x,-0.2,m1.z-centre.y),rng.randf_range(0.88,1.1),lift)
+			rock.add([u[i],l[i],u[j]],rim,Vector3(m1.x-centre.x,-0.2,m1.z-centre.y),rng.randf_range(0.88,1.1))
 			var m2: Vector3 = (u[j]+l[i]+l[j])/3.0
-			_face(rock,[u[j],l[i],l[j]],rim,Vector3(m2.x-centre.x,-0.2,m2.z-centre.y),rng.randf_range(0.88,1.1),lift)
+			rock.add([u[j],l[i],l[j]],rim,Vector3(m2.x-centre.x,-0.2,m2.z-centre.y),rng.randf_range(0.88,1.1))
 	var last: Array = rings[rings.size()-1]
 	for i in range(count):
 		var j := (i+1)%count
 		var m: Vector3 = (last[i]+last[j]+tip)/3.0
-		_face(rock,[last[i],tip,last[j]],rim,Vector3(m.x-centre.x,-1.0,m.z-centre.y),rng.randf_range(0.88,1.1),lift)
-
-## Where the crags hang from the plate's underside: (x, z, radius, depth),
-## either side of the hall, clear of its walls' breaches' way and of the
-## shaft.
-## The crags' and the hull's colour lifted (they hang in the plate's shadow).
-const CRAG_LIFT := 2.4
-const HULL_LIFT := 2.0
-const SOFFIT_LIFT := 2.2
-const CRAGS := [
-	[HALL_X+8.0,MID.y-24.0,7.0,12.0],[HALL_X+26.0,MID.y-23.0,6.0,8.0],[HALL_X+46.0,MID.y-26.0,8.5,15.0],[HALL_X+64.0,MID.y-22.0,6.5,9.0],
-	[HALL_X+74.0,MID.y-27.0,5.5,7.0],[HALL_X+4.0,MID.y+22.0,6.0,8.5],[HALL_X+20.0,MID.y+26.0,8.0,14.0],[HALL_X+40.0,MID.y+23.0,6.5,9.0],
-	[HALL_X+57.0,MID.y+27.0,8.5,16.0],[HALL_X+76.0,MID.y+22.0,5.5,7.5],
-	[HALL_X-4.0,MID.y-12.0,5.0,6.0],[HALL_X+84.0,MID.y+11.0,5.0,6.5],
-]
+		rock.add([last[i],tip,last[j]],rim,Vector3(m.x-centre.x,-1.0,m.z-centre.y),rng.randf_range(0.88,1.1))
 
 static func keel(seed_value: int) -> Node3D:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value
 	var rock := KitLook.RockMesh.new()
-	var poly := PackedVector2Array(outline())
-	var k := 0
-	for c: Array in CRAGS:
-		k += 1
-		var at := Vector2(float(c[0]),float(c[1]))
-		if not Geometry2D.is_point_in_polygon(at,poly): continue
-		var ring: Array = []
-		var sides := 9
-		for s in range(sides):
-			var a := TAU*s/sides+rng.randf_range(-0.15,0.15)
-			ring.append(at+Vector2(cos(a),sin(a))*float(c[2])*rng.randf_range(0.8,1.15))
-		cone(rock,ring,SOFFIT,float(c[3]),SOFFIT+1.4,rng,[],CRAG_LIFT)
 	# The hull under the hall's floor: a boat's lines, long and narrow, its
 	# porches beyond the mouths.
 	var hull: Array = []
@@ -331,7 +401,7 @@ static func keel(seed_value: int) -> Node3D:
 		var r := pow(pow(absf(cs)/HULL.x,4.0)+pow(absf(sn)/HULL.y,4.0),-0.25)
 		hull.append(MID+Vector2(cs,sn)*r)
 	var floor_y := YF-0.32
-	cone(rock,hull,floor_y,15.0,YF+3.0,rng,[[0.0,0.0],[0.03,0.1],[0.2,0.3],[0.5,0.62],[0.8,0.9]],HULL_LIFT)
+	cone(rock,hull,floor_y,15.0,YF+3.0,rng,[[0.0,0.0],[0.03,0.1],[0.2,0.3],[0.5,0.62],[0.8,0.9]],true)
 	# Its top: the porches and the hall's floor under it, stone; the shelf
 	# either side of the hall, outside its walls, turf like the plate.
 	var big := 1000.0
