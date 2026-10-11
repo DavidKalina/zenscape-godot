@@ -50,10 +50,23 @@ func check(ok: bool, label: String) -> void:
 	print(("OK   " if ok else "FAIL ")+label)
 
 func _run() -> void:
+	_spacing()
 	_layouts()
 	await _standing()
 	print("PASS: sundered hall" if failures == 0 else "FAIL: sundered hall")
 	quit(1 if failures else 0)
+
+## The line flies the lane's middle with room past the wings (scripts/
+## world_scale.gd: the world spaced out for the big plane), its breaches
+## wider than the wings, its curves gentle.
+func _spacing() -> void:
+	var WorldScale = preload("res://scripts/world_scale.gd")
+	var lane := Hall.LANE.y-Hall.LANE.x
+	var past: float = WorldScale.past_tip(lane)
+	check(past >= WorldScale.TOY_SPAN*WorldScale.ROOM*0.5-0.001,"The lane %.2f m leaves the %.2f m wings %.2f m past each tip, ROOM and more" % [lane,WorldScale.span,past])
+	check(is_equal_approx(Sundered.LANE_MID,(Hall.LANE.x+Hall.LANE.y)*0.5) and is_equal_approx(Sundered.LINE_Y,(Hall.LANE_Y.x+Hall.LANE_Y.y)*0.5),"The line runs down the lane's middle (z %.2f, y %.2f)" % [Sundered.LANE_MID,Sundered.LINE_Y])
+	check(WorldScale.past_tip(Hall.BREACH_HALF*2.0) >= WorldScale.past_tip(RuinKit.THREAD)-0.001 and WorldScale.past_tip(Hall.ARCH.x) > WorldScale.past_tip(RuinKit.THREAD),"A breach's corridor (%.2f) and its broken arch (%.2f) are THREAD and more" % [Hall.BREACH_HALF*2.0,Hall.ARCH.x])
+	check(Sundered.RADIUS >= 90.0,"A piece's curve is never tighter than %.0f m" % Sundered.RADIUS)
 
 func _layouts() -> void:
 	var bad: Array = []

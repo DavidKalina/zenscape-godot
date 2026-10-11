@@ -450,12 +450,26 @@ static func solids(s: Dictionary) -> Array:
 					var spin := turn*Basis(Vector3.BACK,a)
 					out.append(_box(mid+spin*Vector3(r+BAR*0.5,0.0,0.0),Vector3(BAR,length,BAR),spin))
 			"bay":
-				out.append_array(_bay(at+(part[1] as Vector3),float(part[2]),part[3]))
+				# The study's stations stand in the toy's hall; the moments (the
+				# game's set pieces) in the game's.
+				out.append_array(_bay(at+(part[1] as Vector3),float(part[2]),part[3],str(s.get("pack","")) != "moments"))
 			"wall","stack","arch":
 				out.append_array(PackNature.part_solids(part,at,-ALT))
 			"rock","isle","span","bore","slab":
 				out.append_array(PackSky.solids_of(part,at))
 	return out
+
+## The hall the stations are laid in, as the kit built it for the toy
+## plane (the study's plane is the toy, flight_course SPAN): its outer
+## rows, walls, low tie, knife slit and broken arch. Frozen here: the
+## stations' tokens (and the runs rated on them, their hashes pinned) were
+## placed in that hall, while the game's hall (scripts/ruin_kit_hall.gd)
+## widens with the game's plane. `_bay`'s `toy` off draws the game's.
+const TOY_ROW_Z := 9.4
+const TOY_WALL_Z := 12.4
+const TOY_TIE_LOW := 4.0
+const TOY_KNIFE := Vector3(1.15,1.0,3.3)
+const TOY_ARCH := Vector4(5.2,0.0,5.4,1.0)
 
 ## One greybox bay of the Sundered hall's nave, in the hall's own frame
 ## (Hall: x along the nave from its bay line at 0 to BAY, y up from the
@@ -485,7 +499,12 @@ static func solids(s: Dictionary) -> Array:
 ## Simplified from the real bay: plain boxes and drums, no gables, lancets,
 ## doors, buttresses, fallen beams, rubble or parapets; one height for
 ## torn and open walls.
-static func _bay(at: Vector3, yaw: float, plan: Dictionary) -> Array:
+static func _bay(at: Vector3, yaw: float, plan: Dictionary, toy := true) -> Array:
+	var ROW_Z := TOY_ROW_Z if toy else Hall.ROW_Z
+	var WALL_Z := TOY_WALL_Z if toy else Hall.WALL_Z
+	var TIE_LOW := TOY_TIE_LOW if toy else Hall.TIE_LOW
+	var KNIFE := TOY_KNIFE if toy else Hall.KNIFE
+	var ARCH := TOY_ARCH if toy else Hall.ARCH
 	var turn := Basis(Vector3.UP,yaw+PI*0.5)
 	var tilt := float(plan.get("pitch",0.0))
 	if tilt != 0.0: turn = turn*Basis(Vector3.BACK,tilt)
@@ -496,7 +515,7 @@ static func _bay(at: Vector3, yaw: float, plan: Dictionary) -> Array:
 	var roof: String = plan.get("roof","whole")
 	var soffit := Hall.COLUMN_H+Hall.BEAM.x
 	# The floor: the podium's top at y 0.
-	put.call(Vector3(bay*0.5,-1.0,0.0),Vector3(bay,2.0,2.0*Hall.WALL_Z+Hall.WALL_THICK))
+	put.call(Vector3(bay*0.5,-1.0,0.0),Vector3(bay,2.0,2.0*WALL_Z+Hall.WALL_THICK))
 	# The column lines, each with its roof beam across, wall to wall.
 	var lines := [0.0]
 	if bool(plan.get("last",false)): lines.append(bay)
@@ -504,23 +523,23 @@ static func _bay(at: Vector3, yaw: float, plan: Dictionary) -> Array:
 		var snapped := (x == 0.0 and torn & 1 != 0) or (x > 0.0 and torn & 2 != 0)
 		var h := TORN_SNAP if snapped else Hall.COLUMN_H
 		var zs: Array = []
-		for row: int in (plan.get("rows",[-1,1]) if x == 0.0 else [-1,1]): zs.append(float(row)*Hall.ROW_Z)
+		for row: int in (plan.get("rows",[-1,1]) if x == 0.0 else [-1,1]): zs.append(float(row)*ROW_Z)
 		if x == 0.0: zs.append_array(plan.get("inner",[]))
 		for z: float in zs:
 			var middle := at+turn*Vector3(x,h*0.5,z) if tilt == 0.0 else at+turn*Vector3(x,0.0,z)+Vector3.UP*h*0.5
 			out.append({"kind":"cyl","middle":middle,"radius":Hall.COLUMN_R,"height":h})
 		if not snapped and (x > 0.0 or bool(plan.get("beam",true))):
-			put.call(Vector3(x,Hall.COLUMN_H+Hall.BEAM.x*0.5,0.0),Vector3(Hall.BEAM.y*2.0,Hall.BEAM.x,2.0*Hall.WALL_Z))
+			put.call(Vector3(x,Hall.COLUMN_H+Hall.BEAM.x*0.5,0.0),Vector3(Hall.BEAM.y*2.0,Hall.BEAM.x,2.0*WALL_Z))
 	# The tie across the nave at the bay line.
 	var tie: String = plan.get("tie","")
 	if tie != "":
-		var tie_y := Hall.TIE_LOW if tie == "low" else Hall.TIE_HIGH
-		put.call(Vector3(0.0,tie_y+Hall.TIE_DEPTH*0.5,0.0),Vector3(Hall.BEAM.y*2.0,Hall.TIE_DEPTH,2.0*Hall.ROW_Z))
+		var tie_y := TIE_LOW if tie == "low" else Hall.TIE_HIGH
+		put.call(Vector3(0.0,tie_y+Hall.TIE_DEPTH*0.5,0.0),Vector3(Hall.BEAM.y*2.0,Hall.TIE_DEPTH,2.0*ROW_Z))
 	# The architraves along the rows and the roof's six strips.
 	if roof != "open" and torn == 0:
 		for k: float in [-1.0,1.0]:
-			put.call(Vector3(bay*0.5,Hall.COLUMN_H+Hall.BEAM.x*0.5,k*Hall.ROW_Z),Vector3(bay,Hall.BEAM.x,Hall.BEAM.y*2.0))
-		var edges := [-Hall.WALL_Z-0.5,-Hall.ROW_Z,-Hall.ROW_Z*0.5,0.0,Hall.ROW_Z*0.5,Hall.ROW_Z,Hall.WALL_Z+0.5]
+			put.call(Vector3(bay*0.5,Hall.COLUMN_H+Hall.BEAM.x*0.5,k*ROW_Z),Vector3(bay,Hall.BEAM.x,Hall.BEAM.y*2.0))
+		var edges := [-WALL_Z-0.5,-ROW_Z,-ROW_Z*0.5,0.0,ROW_Z*0.5,ROW_Z,WALL_Z+0.5]
 		var gaps: Array = plan.get("gaps",[])
 		for i in range(edges.size()-1):
 			if i in gaps: continue
@@ -535,11 +554,11 @@ static func _bay(at: Vector3, yaw: float, plan: Dictionary) -> Array:
 		if roof == "open": high = OPEN_WALL
 		if torn != 0: high = minf(high,TORN_WALL)
 		if BREACH_WALL.has(kind): high = BREACH_WALL[kind]
-		var z := side*Hall.WALL_Z
+		var z := side*WALL_Z
 		var size := Vector3(bay,high,Hall.WALL_THICK)
 		if kind == "arch":
-			var w := Hall.ARCH.x
-			var top := Hall.ARCH.z
+			var w := ARCH.x
+			var top := ARCH.z
 			var jamb := (bay-w)*0.5
 			put.call(Vector3(jamb*0.5,high*0.5,z),Vector3(jamb,high,Hall.WALL_THICK))
 			put.call(Vector3(bay-jamb*0.5,high*0.5,z),Vector3(jamb,high,Hall.WALL_THICK))
@@ -549,16 +568,16 @@ static func _bay(at: Vector3, yaw: float, plan: Dictionary) -> Array:
 	# The screen across the left (or right) of the nave, its knife-edge slit.
 	var screen: Variant = plan.get("screen",false)
 	if screen is String or bool(screen):
-		var z := (1.0 if str(screen) == "right" else -1.0)*(Hall.ROW_Z+Hall.INNER_Z)*0.5
-		var span := (Hall.ROW_Z-Hall.INNER_Z)*0.5-Hall.COLUMN_R+0.06
-		var high := (Hall.TIE_LOW if tie == "low" else (Hall.TIE_HIGH if tie == "high" else 7.0))-0.02
-		var half := Hall.KNIFE.x*0.5
-		var head := Hall.KNIFE.y+Hall.KNIFE.z
+		var z := (1.0 if str(screen) == "right" else -1.0)*(ROW_Z+Hall.INNER_Z)*0.5
+		var span := (ROW_Z-Hall.INNER_Z)*0.5-Hall.COLUMN_R+0.06
+		var high := (TIE_LOW if tie == "low" else (Hall.TIE_HIGH if tie == "high" else 7.0))-0.02
+		var half := KNIFE.x*0.5
+		var head := KNIFE.y+KNIFE.z
 		var thick := 0.9
 		put.call(Vector3(0.0,high*0.5,(z-span+z-half)*0.5),Vector3(thick,high,span-half))
 		put.call(Vector3(0.0,high*0.5,(z+half+z+span)*0.5),Vector3(thick,high,span-half))
-		put.call(Vector3(0.0,Hall.KNIFE.y*0.5,z),Vector3(thick,Hall.KNIFE.y,Hall.KNIFE.x))
-		put.call(Vector3(0.0,(head+high)*0.5,z),Vector3(thick,high-head,Hall.KNIFE.x))
+		put.call(Vector3(0.0,KNIFE.y*0.5,z),Vector3(thick,KNIFE.y,KNIFE.x))
+		put.call(Vector3(0.0,(head+high)*0.5,z),Vector3(thick,high-head,KNIFE.x))
 	return out
 
 static func _box(middle: Vector3, size: Vector3, basis: Basis) -> Dictionary:

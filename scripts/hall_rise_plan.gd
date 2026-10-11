@@ -168,7 +168,7 @@ static func classify() -> Array:
 		var yaw := float(part[2])
 		var plan: Dictionary = part[3]
 		var turn := Basis(Vector3.UP,yaw+PI*0.5)
-		for q: Dictionary in Course._bay(at,yaw,plan):
+		for q: Dictionary in Course._bay(at,yaw,plan,false):
 			var local: Vector3 = turn.inverse()*((q.middle as Vector3)-at)
 			var kind := "span"
 			if q.kind == "cyl": kind = "column"

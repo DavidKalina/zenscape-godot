@@ -43,8 +43,8 @@ const RisePlan = preload("res://scripts/hall_rise_plan.gd")
 const BAY := Hall.BAY
 ## The lane: Sundered's line, LINE_Y over the floor, LANE_MID right of the
 ## nave's middle (clear of the inner columns and the low ties).
-const LINE_Y := Sundered.LINE_Y
-const LANE_MID := Sundered.LANE_MID
+static var LINE_Y: float = Sundered.LINE_Y
+static var LANE_MID: float = Sundered.LANE_MID
 ## The defaults, all tunable by flag (scripts/hall_line.gd `options`):
 ##   bays     bays a piece (a range; Sundered's pieces are 7-12)
 ##   gap      m of open sky between pieces in a run (a range; Sundered's
@@ -52,11 +52,12 @@ const LANE_MID := Sundered.LANE_MID
 ##   run      pieces a straight run (a range): how often the line turns
 ##   turn     "sidestep", "bend" or "mix": what the line does between runs
 ##   jog      m the next run stands to the side on a sidestep
-##   jog_gap  m of sky a sidestep takes (long enough to fly the S at boost)
-##   bend     degrees a bend turns the line
+##   jog_gap  m of sky a sidestep takes (long enough to fly the S at boost;
+##            eased to 140 for the big plane, it was 120)
+##   bend     degrees a bend turns the line (eased to 22, it was 26)
 ##   band     m a piece's floor may stand over or under the first's
 ##   seed     the line's seed
-const LINE := {"bays":Vector2i(8,11),"gap":Vector2(14.0,26.0),"run":Vector2i(2,4),"turn":"sidestep","jog":48.0,"jog_gap":120.0,"bend":26.0,"band":8.0,"seed":3}
+const LINE := {"bays":Vector2i(8,11),"gap":Vector2(14.0,26.0),"run":Vector2i(2,4),"turn":"sidestep","jog":48.0,"jog_gap":140.0,"bend":22.0,"band":8.0,"seed":3}
 ## The step up or down over a gap (m, a range), kept under GRADE (rise over
 ## run, as the Sundered hall's).
 const STEP := Vector2(-3.0,3.0)
@@ -82,7 +83,9 @@ const ACTS := ["nave","shafts","cloister","nave","slit","shafts","cloister"]
 ## torn ends and the middle), how far it draws in under each torn end
 ## (m), the bottom's share of the top, the jitter (m). Its top stands just
 ## under the floor slab.
-const ISLE_HALF := Vector2(15.5,19.5)
+## Off the walls by what it was at the toy's 12.4 m walls (15.5, 19.5),
+## so the island follows the hall as it widens with the plane.
+static var ISLE_HALF := Vector2(Hall.WALL_Z+3.1,Hall.WALL_Z+7.1)
 const KEEL_DEEP := Vector2(8.0,22.0)
 const TIP := 2.5
 const TAPER := 0.42
@@ -303,7 +306,7 @@ static func bays(piece: Dictionary) -> Array:
 				var k := rng.randi_range(1,4)
 				if not k in gone: gone.append(k)
 			q.gaps = gone
-		solids.append_array(Course._bay(Vector3(0.0,0.0,-i*BAY),0.0,q))
+		solids.append_array(Course._bay(Vector3(0.0,0.0,-i*BAY),0.0,q,false))
 	return [solids,plans]
 
 ## The island under a piece (its frame): one faceted hull a bay (a top
