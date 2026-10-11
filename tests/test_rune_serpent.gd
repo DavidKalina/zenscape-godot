@@ -25,8 +25,10 @@ const POP := 40.0
 ## the most of a ring's velocity that may run across its own line.
 const ON_PATH := 0.05
 const SLIP := 0.04
-## Clear of rock and ground by at least this (m).
+## Clear of rock and ground by at least this (m), and of the lodestone's
+## shard and ring (flat).
 const MARGIN := 0.5
+const QUEST_CLEAR := 60.0
 var failures := 0
 var study: Node3D
 var sky: Node3D
@@ -60,6 +62,7 @@ func run() -> void:
 	_stands()
 	_tube()
 	_airships()
+	_quest()
 	await _loop()
 	await _solid()
 	_plane()
@@ -128,6 +131,26 @@ func _airships() -> void:
 	# A ship's farthest from its loop's point: the envelope's end, up where it rides.
 	var ship: float = Vector2(IsleSky.AirshipBuild.ENVELOPE_LENGTH*0.5,IsleSky.AirshipBuild.ENVELOPE_AT.y+IsleSky.AirshipBuild.ENVELOPE_RADIUS).length()+2.0
 	check(worst > ship,"Its way keeps clear of the airships' loops (%.1f m past its reach, a ship's %.1f)" % [worst,ship])
+
+## The lodestone's end of the loop (studies/aqueduct_isle.gd `lode_target`,
+## studies/aqueduct_isle_chain.gd `ring_at`): its way keeps QUEST_CLEAR m
+## (flat) off the shard and the ring, which rise and stand in the plane's
+## way there.
+func _quest() -> void:
+	var spots := {"shard":study.lode_target}
+	var chain: Variant = study.get("isle_chain")
+	if chain != null: spots["ring"] = chain.ring_at
+	var least := {}
+	for key: String in spots:
+		var spot: Vector3 = spots[key]
+		var d := INF
+		var t := 0.0
+		while t < serpent.route_length:
+			var p: Vector3 = serpent.route_point(t)
+			d = minf(d,Vector2(p.x-spot.x,p.z-spot.z).length())
+			t += 2.0
+		least[key] = snappedf(d,0.1)
+	check(least.values().all(func(d: float) -> bool: return d > QUEST_CLEAR),"Its way keeps well off the lodestone's shard and the hall chain's ring (%s m)" % str(least))
 
 ## Its whole way round: flown frame by frame with the pilot far off on the
 ## isle. Every ring behind the neck against where the head was; slip; pops;

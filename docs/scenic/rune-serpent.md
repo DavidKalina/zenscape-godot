@@ -1,12 +1,14 @@
 # Rune serpent (handoff)
 
-Branch `look/rune-serpent`, from `main` 94a4d1c0. Not merged and not pushed.
+Branch `look/rune-serpent`, rebased on `main` 3ecaabec (after the isle hall
+chain). Not merged and not pushed.
 
 This round adds a giant rune serpent to the sky round the aqueduct isle. It is
 the grass snake (`scripts/life_snakes.gd`) grown to 90 m and carved from the
 ruins' eroded basalt. It flies a long way through the sky isles: through the
 gap between the isle and the grove to its east, round the isle, down into the
-cloud sea and out again, and through the pierced isle's arch. It watches you,
+cloud sea and out again, through the pierced isle's arch, and home past the
+lodestone's shard. It watches you,
 paces your plane, then peels away. It is on by default.
 
 ## Where
@@ -66,12 +68,14 @@ paces your plane, then peels away. It is on by default.
 
 ## How it moves
 
-- **The way.** `ROUTE` is a closed cubic B-spline through 40 control points,
-  2.78 km round, about four minutes a lap at cruise. A B-spline is smooth
+- **The way.** `ROUTE` is a closed cubic B-spline through 41 control points,
+  2.9 km round, about four minutes a lap at cruise. A B-spline is smooth
   (C2), never overshoots its control points and stays inside their hull, which
   makes clearance easy to reason about. Nine control points in a line run it
-  straight through the pierced isle's arch on the arch's own axis. Each
-  control point carries:
+  straight through the pierced isle's arch on the arch's own axis. Home runs
+  west along the north and down past the lodestone's shard, about 100 m off
+  it and 111 m off the ring the hall chain raises past it. Each control point
+  carries:
   - a weave share (held in near rock and in the arch, widened in the sea);
   - a pace share (eased through the gaps);
   - a veer share (0 near rock, so pacing never pushes it toward an isle).
@@ -171,7 +175,8 @@ watches you as it passes.
 | `BANK`, `BANK_MAX` | 0.2, 0.5 rad | How far it rolls into turns. |
 | `SPRING_HZ` | 0.07–0.6 Hz | How slow and majestic each quantity is. |
 | `NOTICE`, `PACE_*`, `VEER`, `PEEL*` | 120 m … | How it watches and paces you. |
-| `ROUTE` | 40 points | Its way. Each point also carries a weave, pace and veer share. |
+| `ROUTE` | 41 points | Its way. Each point also carries a weave, pace and veer share. |
+| `MAX_STEP` | 0.1 s | Its longest step in one frame, so a hitch slows it rather than throwing it on. |
 | `DAY_GLOW`, `NIGHT_GLOW`, `EYE_*`, `HAZE_*` | 1.5, 1.25, … | Its light. |
 | `BAND_EVERY`, `SPINE_CELL`, shader `spine_share` | 3, 1.5 m, 0.5 | How dense the runes are. |
 | `RUNE_RUN` | 0.45 | The spine runes' run, in m per m flown. |
@@ -180,7 +185,7 @@ watches you as it passes.
 
 ## Tests
 
-`tests/test_rune_serpent.gd` runs headless in about 42 s. It checks that:
+`tests/test_rune_serpent.gd` runs headless in about 45 s. It checks that:
 
 - the serpent stands by default, giant, with its body laid out behind its head;
 - the route's tube is clear of every isle's ground and rock. The tube is its
@@ -188,21 +193,24 @@ watches you as it passes.
   whatever the serpent does. The isles are checked through physics and the
   pierced isle's rock through its field, probed round the tube's rim. Least
   margin on the pierced rock: 3.0.
-- its way stays clear of the three airships' loops. Least: 15.3 m past its
+- its way stays clear of the three airships' loops. Least: 15.9 m past its
   reach, against a ship's 14.9.
-- it flies its whole way round (56 of 56 stretches). Measured on that lap:
+- its way keeps 60 m or more (flat) off the lodestone's shard (99.7 m) and the
+  hall chain's ring (110.9 m).
+- it flies its whole way round (58 of 58 stretches). Measured on that lap:
   - every ring behind the neck lies where the head was when it had come that
-    far (0.002 m at most);
-  - the body slides along its own line (at most 1.5% of a ring's speed across
+    far (0.003 m at most);
+  - the body slides along its own line (at most 2.5% of a ring's speed across
     it);
   - nothing pops: the worst frame acceleration of any ring or the snout is
-    22.4 m/s², against a limit of 40, where a 1 cm one-frame pop is 36;
+    23.1 m/s², at the dive's start, against a limit of 40, where a 1 cm
+    one-frame pop is 36;
   - the body never touches rock (checked every 12 frames);
 - a ray finds its body on the bump's layer, and the plane put inside it is
   bumped out;
 - a plane flying alongside is noticed, watched with the head turned toward it,
-  paced at its own speed (13.0 against 13), then left. It never comes closer
-  than 44 m.
+  paced at its own speed (12.9 against 13), then left. It never comes closer
+  than 49 m.
 - `--no-serpent` leaves it out (through `LaunchArgs.set_override`).
 
 `tests/test_aqueduct_isle_sky.gd` still passes. Both report the one known
@@ -245,15 +253,20 @@ its visibility on the same frames:
   plane from y ≈ −20, and the serpent's dive bottoms out at about −140, under
   the cumulus tops. You watch the dive and breach from above, which is the
   best view anyway.
-- **One near pass with an airship.** Airship 0 comes within about 15 m of the
-  serpent's farthest reach on the south-west curl. They never touch by the
+- **The hall chain's halls aren't planned around.** The ring and the shard are
+  kept well off (tested), but the halls rise on whatever heading the plane
+  leaves the ring with, endlessly, so one can rise across the serpent's way
+  (its north-west home stretch, or the pierced isle's side). It would fly
+  through it. This is not checked.
+- **One near pass with an airship.** Airship 0 comes within about 16 m of the
+  serpent's farthest reach, near the gap's northern approach. They never touch by the
   test's bound, but it is close if they meet there.
 - **The tail's last rings drift a little off the path** (by design, a living
   tip). The on-path check stops at 85% of the length.
-- **Merging `--capture-wait`.** At least two other branches on the aqueduct
-  isle add a `--capture-wait` with the same name and the same 4 s default.
-  `_take_capture` will conflict textually; keep one copy. `--capture-seq` is
-  only here.
+- **`--capture-wait` is main's** (from the hall chain). This branch only
+  makes it hold with `--at` too, past the 240 settling frames, and adds
+  `--capture-seq`. Another branch I saw adds the same flag; on merging,
+  keep main's.
 - **`--serpent-cam` and the pilot.** The camera follows the serpent, but the
   pilot still walks on input, unseen.
 - **Its belly is near black from below.** Against the sky it reads as a black

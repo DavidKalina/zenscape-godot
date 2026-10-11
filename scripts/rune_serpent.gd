@@ -92,10 +92,12 @@ const SUB := 0.12
 ## into the cloud sea (15-18) and along under its tops, breaching out north
 ## (19-23), through the pierced isle's arch on its axis (24-32: nine points
 ## in a line, so the curve runs straight through it, the weave held in), and
-## home round the north (33-39). Weave and veer are held in near rock and
+## home west along the north and down past the lodestone's shard some 100 m
+## off its west side (33-40), clear of it and of the ring the hall chain
+## raises past it (studies/aqueduct_isle_chain.gd). Weave and veer are held in near rock and
 ## the pace eased through the gaps.
 const ROUTE := [
-	[Vector3(178.0,46.0,-205.0),1.0,1.0,1.0],
+	[Vector3(172.0,44.0,-200.0),1.0,1.0,0.6],
 	[Vector3(172.0,40.0,-135.0),1.0,1.0,0.4],
 	[Vector3(168.0,34.0,-72.0),0.6,0.95,0.0],
 	[Vector3(167.0,32.0,-35.0),0.5,0.92,0.0],
@@ -129,15 +131,16 @@ const ROUTE := [
 	[Vector3(423.0,29.2,-741.6),0.4,0.9,0.0],
 	[Vector3(404.6,29.2,-772.6),0.5,0.95,0.0],
 	[Vector3(360.0,34.0,-815.0),0.8,1.0,0.0],
-	[Vector3(290.0,40.0,-800.0),1.0,1.0,1.0],
-	[Vector3(230.0,46.0,-730.0),1.0,1.0,1.0],
-	[Vector3(200.0,50.0,-620.0),1.0,1.0,1.0],
-	[Vector3(190.0,50.0,-500.0),1.0,1.0,1.0],
-	[Vector3(185.0,49.0,-390.0),1.0,1.0,1.0],
-	[Vector3(182.0,48.0,-290.0),1.0,1.0,0.5],
+	[Vector3(280.0,40.0,-830.0),1.0,1.0,1.0],
+	[Vector3(190.0,46.0,-790.0),1.0,1.0,1.0],
+	[Vector3(115.0,50.0,-700.0),1.0,1.0,1.0],
+	[Vector3(80.0,50.0,-590.0),1.0,1.0,1.0],
+	[Vector3(80.0,49.0,-470.0),1.0,1.0,1.0],
+	[Vector3(100.0,48.0,-350.0),1.0,1.0,0.6],
+	[Vector3(140.0,47.0,-262.0),1.0,1.0,0.4],
 ]
 ## Places on the way, by control point (--serpent-at=<name>).
-const MARKS := {"north":0,"gap":2,"curl":6,"west":8,"east":13,"dive":16,"sea":18,"breach":21,"arch":26,"home":36}
+const MARKS := {"north":0,"gap":2,"curl":6,"west":8,"east":13,"dive":16,"sea":18,"breach":21,"arch":26,"home":37}
 ## Where it starts (a mark).
 const START := "north"
 ## The route is kept as points ROUTE_STEP m apart.
@@ -275,6 +278,8 @@ const SOLID_LAYER := 1
 const CAPSULE_RINGS := 4
 const CAPSULE_SHARE := 0.95
 
+## The longest step it takes in one frame (s).
+const MAX_STEP := 0.1
 ## The camera on it (--serpent-cam): how far out, up and back for each
 ## view (m), and how quickly it follows (per second).
 const CAM_FOLLOW := 2.5
@@ -647,7 +652,9 @@ func _trail_p(a: float) -> Vector3:
 
 func _process(delta: float) -> void:
 	if scene == null or delta <= 0.0: return
-	advance(delta)
+	# A long frame (a hitch, a world being built) slows it a moment rather
+	# than throwing it tens of metres on in one step.
+	advance(minf(delta,MAX_STEP))
 	if _meet and scene.get("walk_ready") and not scene.flying:
 		_meet = false
 		meet()
