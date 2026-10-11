@@ -47,8 +47,9 @@ extends "res://studies/character_study.gd"
 ## Stopped, Shift held backs it up and Shift, Space and a turn pivot it, so
 ## a plane nosed into stone gets free. Stopped, F gets out and the plane stays parked where it
 ## stopped, solid to walk round; nothing summons it: walk back and Space by
-## it to take off (scripts/plane_landing.gd's takeoff). Walked off the
-## isle, he drops into the skydive's canopy (scripts/sky_dive.gd); down on
+## it to take off (scripts/plane_landing.gd's takeoff). Walked or knocked
+## off the isle he stays on foot, falling, and Space (pad A) opens the
+## pocket sail (scripts/pocket_sail.gd; nothing opens by itself); down on
 ## something near the edge he walks on, else he is stranded a moment and
 ## back beside the plane. An isle that starts on foot has its plane parked
 ## near the start (`plane_home`).
@@ -110,9 +111,6 @@ const LandingReadout = preload("res://scripts/landing_readout.gd")
 const PlaneLanding = preload("res://scripts/plane_landing.gd")
 const PlaneStrip = preload("res://scripts/plane_strip.gd")
 const WheelSpray = preload("res://scripts/wheel_spray.gd")
-const SkyDive = preload("res://scripts/sky_dive.gd")
-const CanopyFigure = preload("res://scripts/canopy_figure.gd")
-const DiveCamera = preload("res://scripts/dive_camera.gd")
 
 ## The look the isle opens in: the game's own for a new world
 ## (scripts/native_chunk_editor.gd forms one in Alpine morning).
@@ -236,27 +234,27 @@ const SHAKE := 0.3
 const GRIT_TINT := Color("d6dcb4")
 ## How long a touch's word leads the hint (s).
 const SAY_TIME := 2.2
-## Walked off the isle: falling STEP_OFF_DROP m under where he last stood
-## with nothing under him for STEP_OFF_CLEAR m, he drops into the skydive
-## (scripts/sky_dive.gd), the canopy opening by itself STEP_OFF_OPEN s on
-## (X, pad X sooner; about the game's 0.8 s from the edge in all). Down on
-## anything within STRAND_BELOW m of the edge he walks on; past that, or
-## down in water, he is stranded STRANDED_WAIT s and then back beside the
-## parked plane (the game's rule; scripts/wanderer_eye.gd `_strand`).
+## Walked, jumped or knocked off the isle: falling STEP_OFF_DROP m under
+## where he last stood with nothing under him for STEP_OFF_CLEAR m, he is
+## off the edge. He stays on foot: the motor's own fall, and Space (pad A)
+## opens the pocket sail (scripts/pocket_sail.gd); nothing opens by itself.
+## Down on anything within STRAND_BELOW m of the edge he walks on; past
+## that, or down in water, he is stranded STRANDED_WAIT s and then back
+## beside the parked plane (the game's rule; scripts/wanderer_eye.gd
+## `_strand`), the never-death net.
 const STEP_OFF_DROP := 4.0
 const STEP_OFF_CLEAR := 12.0
-const STEP_OFF_OPEN := 0.3
 const STRAND_BELOW := 20.0
 const STRANDED_WAIT := 3.0
-const FOOT_HINT := "Walk to your plane and Space (pad A) by it to fly  ·  R3 camera back behind"
+const FOOT_HINT := "Walk to your plane and Space (pad A) by it to fly  ·  Space (pad A) again in the air: the sail, again: fold  ·  R3 camera back behind"
 const BOARD_LINE := "Space (pad A)  climb in and take off"
 const FLY_HINT := "Flying  ·  %.0f m/s  ·  bumps %d\nA D bank and turn  ·  W S pitch (W nose down)  ·  mouse steers  ·  Space boost  ·  Shift brake  ·  hold Q E (LB RB) knife edge, + A D to drift  ·  Q Q or E E quick, or click: barrel roll\nF (pad Y) flaps %s  ·  put it down on the turf, then brake or drift to a stop  ·  R start on foot  ·  L / Shift+L look  ·  B gust  ·  hold right mouse or the right stick to look round  ·  R3 camera back behind"
 const ROLL_HINT := "On the wheels  ·  %.0f m/s\nShift brake  ·  steer hard, or Q E and steer, to drift  ·  Shift and steer, a blip of Space, to power-slide  ·  in a slide ease or counter the stick to widen, Q E to tighten  ·  Space take off again"
 const STOPPED_HINT := "Stopped\nF (pad Y) get out  ·  Space roll and take off again  ·  hold Shift (LT) to back up  ·  Shift, Space and steer to turn on the spot"
 const REVERSE_HINT := "Backing up  ·  %.1f m/s\nsteer: the tail goes that way  ·  let go of Shift (LT) to stop  ·  Space roll forwards"
 const TAKEOFF_HINT := "Taking off"
-const DIVE_HINT := "Off the edge  ·  X (pad X) open the canopy  ·  A D turn  ·  W track forward  ·  Space tuck  ·  Shift spread"
-const CANOPY_HINT := "A D steer  ·  W for speed  ·  S or Shift to brake and float  ·  it flares by itself over the ground"
+const FALL_HINT := "Off the edge  ·  Space (pad A) open the sail  ·  WASD (left stick) steer"
+const SAIL_HINT := "Under the sail  ·  WASD (left stick) steer  ·  Shift or C (LT) float  ·  Space (pad A) fold it and drop"
 const STRANDED_HINT := "Stranded: back to your plane in a moment"
 var flying := false
 ## The plane's flight (a SkyPlane), its figure, the chase camera, the
@@ -297,16 +295,10 @@ var parked_heading := 0.0
 var _park_body: StaticBody3D = null
 var _hop_from := Vector3.ZERO
 var _hop_to := Vector3.INF
-## Off the edge: in the skydive (its flight, canopy and camera), the edge's
-## height, the seconds before the canopy opens by itself, X asked, and the
-## seconds left stranded (-1 not).
-var diving := false
-var dive: SkyDive = null
-var canopy: CanopyFigure = null
-var dive_camera := DiveCamera.new()
+## Off the edge (still on foot, the motor falling or under its sail), the
+## edge's height, and the seconds left stranded (-1 not).
+var off_edge := false
 var _off_y := 0.0
-var _open_in := 0.0
-var _open_asked := false
 var _stranded_left := -1.0
 var _jump_was := false
 var _turf_rids: Array[RID] = []
@@ -526,6 +518,8 @@ func _build_light() -> void:
 	_atmosphere._environment = _environment
 	_atmosphere._ground_min = isle_top()
 	_atmosphere._summit = isle_summit()
+	# The pocket sail (scripts/pocket_sail.gd) rides its breeze and gusts.
+	motor.air = func(p: Vector3) -> Dictionary: return PocketSail.atmosphere_air(_atmosphere,p)
 	# The weather: its surface weather and sky; its rain and snow fall on
 	# the plate's ground map only, which has no ground here (see the doc).
 	_precipitation = Precipitation.new()
@@ -825,9 +819,6 @@ func _unhandled_input(event: InputEvent) -> void:
 	if flying:
 		_fly_event(event)
 		return
-	if diving:
-		_dive_event(event)
-		return
 	# Space (pad A) by the parked plane climbs in; F (pad Y) on foot flies
 	# nothing (nothing summons the plane).
 	var space_key: bool = event is InputEventKey and event.pressed and not event.echo and (event as InputEventKey).keycode == KEY_SPACE
@@ -851,7 +842,7 @@ func _unhandled_input(event: InputEvent) -> void:
 ## ever one.
 func board() -> void:
 	if flying or not walk_ready: return
-	if diving: _end_dive()
+	if off_edge: _end_fall()
 	if not _replay.is_empty(): _end_replay()
 	var way := PilotMotor.forward(_yaw)
 	var at := motor.feet+Vector3(way.x,0.0,way.y)*BOARD_AHEAD+Vector3.UP*BOARD_UP
@@ -1085,7 +1076,7 @@ func _room_for_plane(top: Vector3, heading: float) -> bool:
 
 ## True walking within BOARD_REACH m (across) of the parked plane's middle.
 func by_plane() -> bool:
-	if flying or diving or not parked or not walk_ready: return false
+	if flying or off_edge or not parked or not walk_ready: return false
 	var feet := motor.feet
 	return Vector2(feet.x-parked_at.x,feet.z-parked_at.z).length() <= BOARD_REACH and absf(feet.y-parked_at.y) < 1.5
 
@@ -1881,21 +1872,27 @@ func _shard_arch() -> bool:
 ## On foot: the stone's step after the pilot's (or, held up, instead).
 func tick(delta: float) -> void:
 	_said_left = maxf(_said_left-delta,0.0)
-	if diving:
-		_dive_step(delta,{} if scripted else _dive_input(delta))
-		_show_foot_hint()
-		return
+	if _stranded_left >= 0.0:
+		_stranded_left -= delta
+		if _stranded_left < 0.0:
+			_return_to_plane()
+			return
 	if lode_state == "inspecting":
 		_inspect_step(delta)
 		return
 	var was_grounded := motor.grounded
 	var falling := motor.velocity.y
+	# Off the edge the stranding rule is the net, not the study's `lost`.
+	var keep := lost
+	if off_edge: lost = -INF
 	super.tick(delta)
+	lost = keep
 	_lode_step(delta)
 	if life != null: life.step_pilot()
 	if not flying:
 		_tread(delta,was_grounded,falling)
 		_check_step_off()
+		_watch_off_edge()
 		_show_foot_hint()
 
 func _show_foot_hint() -> void:
@@ -2056,7 +2053,9 @@ func _raise_arms(amount: float) -> void:
 ## The on-foot hint with the stone's line.
 func _foot_text() -> String:
 	var text := BOARD_LINE+"  ·  R3 camera back behind" if by_plane() else FOOT_HINT
-	if diving: text = STRANDED_HINT if _stranded_left >= 0.0 else CANOPY_HINT if dive.under_canopy() else DIVE_HINT
+	if _stranded_left >= 0.0: text = STRANDED_HINT
+	elif motor.move == "sail": text = SAIL_HINT
+	elif off_edge: text = FALL_HINT
 	if _said_left > 0.0: text = _said+"  ·  "+text
 	if lodestone == null: return text
 	var line := ""
@@ -2078,132 +2077,46 @@ func _check_arrival() -> void:
 		_flash_left = 1.4
 	elif arrived and d > ARRIVE_AGAIN: arrived = false
 
-# --- Off the edge: the canopy -------------------------------------------------------
+# --- Off the edge: the pocket sail ---------------------------------------------------
 
-## Walked (or jumped) off the isle: falling STEP_OFF_DROP m under where he
-## last stood with nothing under him for STEP_OFF_CLEAR m, into the
-## skydive. A jump between stones, or a drop onto a lower tier, has ground
-## under it and stays the walk's.
+## Walked, jumped or knocked off the isle: falling STEP_OFF_DROP m under
+## where he last stood with nothing under him for STEP_OFF_CLEAR m, he is
+## off the edge. A jump between stones, or a drop onto a lower tier, has
+## ground under it and stays an ordinary fall.
 func _check_step_off() -> void:
-	if flying or diving or not walk_ready or not _replay.is_empty(): return
+	if flying or off_edge or not walk_ready or not _replay.is_empty(): return
 	if motor.grounded or motor.on_ledge() or motor.swimming or motor.velocity.y >= 0.0: return
 	if motor.feet.y > _last_stood.y-STEP_OFF_DROP: return
 	var ray := PhysicsRayQueryParameters3D.create(motor.feet,motor.feet+Vector3.DOWN*STEP_OFF_CLEAR,1|TURF_LAYER)
 	if not get_world_3d().direct_space_state.intersect_ray(ray).is_empty(): return
 	_step_off()
 
-## Off the edge: falling belly-down, carried on the way he went
-## (scripts/sky_dive.gd `drop`), the canopy opening by itself STEP_OFF_OPEN
-## s on (X, pad X sooner), the dive's camera (scripts/dive_camera.gd)
-## framing it. The plane stays parked.
+## Off the edge: he stays on foot, the motor's fall and its sail (Space,
+## pad A) his to use; nothing opens by itself. The plane stays parked.
 func _step_off() -> void:
-	dive = SkyDive.new()
-	dive.floor_y = isle_top()-FLOOR_BELOW
-	dive.drop(motor.feet+Vector3.UP*SkyDive.HIPS,motor.facing,maxf(-motor.velocity.y,2.0))
-	var ahead := Vector3(motor.velocity.x,0.0,motor.velocity.z)
-	dive.velocity += ahead
-	dive.drift = ahead
+	off_edge = true
 	_off_y = _last_stood.y
-	_open_in = STEP_OFF_OPEN
-	_open_asked = false
 	_stranded_left = -1.0
-	if canopy == null:
-		canopy = CanopyFigure.new()
-		canopy.name = "Canopy"
-		add_child(canopy)
-	canopy.reset()
-	dive_camera.reset(dive,camera.global_position,camera.fov)
-	diving = true
-	body.settle()
 	_show_foot_hint()
 
-## The dive's input from the keys and the pad, as the game's
-## (scripts/wanderer_eye.gd `_dive_input`); the right stick or mouse turns
-## its camera.
-func _dive_input(delta: float) -> Dictionary:
-	var stick := Input.get_vector(&"move_left",&"move_right",&"move_forward",&"move_back")
-	var input := {"turn":stick.x,"pitch":stick.y,"boost":Input.get_action_strength(&"fly_boost"),
-		"brake":Input.get_action_strength(&"fly_brake"),"open":_open_asked}
-	_open_asked = false
-	var right := Pad.stick(&"look_left",&"look_right",&"look_up",&"look_down")
-	if right != Vector2.ZERO: dive_camera.turn(Vector2(-right.x,-right.y)*STICK_LOOK*delta)
-	dive_camera.free_held = Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) or right != Vector2.ZERO
-	return input
-
-## In the dive: X (pad X) opens the canopy, the mouse looks round, R back
-## to the start, Esc frees the mouse.
-func _dive_event(event: InputEvent) -> void:
-	if event is InputEventMouseMotion:
-		if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED: dive_camera.turn(Vector2(-event.relative.x,-event.relative.y)*FLY_LOOK)
-	elif Pad.pressed(event,&"fly_eject"): _open_asked = true
-	elif event is InputEventKey and event.pressed and not event.echo:
-		match (event as InputEventKey).keycode:
-			KEY_X: _open_asked = true
-			KEY_R:
-				_end_dive()
-				respawn()
-			KEY_ESCAPE: Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-
-## One frame off the edge: the fall or the float down, the pilot posed on
-## it under the canopy, the dive's camera; once STRAND_BELOW m under the
-## edge, stranded; down, `_dive_down`; stranded, the wait and then back by
-## the plane.
-func _dive_step(delta: float, input: Dictionary) -> void:
-	if _stranded_left >= 0.0:
-		_stranded_left -= delta
-		if _stranded_left < 0.0:
-			_return_to_plane()
-			return
-	_open_in -= delta
-	if _open_in <= 0.0 and dive.falling(): dive.open_canopy(true)
-	if _stranded_left < 0.0 and dive.position.y < _off_y-STRAND_BELOW: _strand()
-	var out: Dictionary = {} if dive.phase == SkyDive.DOWN else dive.fall(delta,input,Callable(self,"_dive_ground"))
-	if out.has("opened"):
-		dive_camera.kick()
-		Pad.pulse(0.5,0.3,0.2)
-	var b: Basis = dive.body_basis()
-	figure.global_transform = Transform3D(b,dive.position-b*Vector3(0.0,SkyDive.HIPS,0.0))
-	var hanging: float = smoothstep(0.3,0.75,float(dive.open)) if dive.under_canopy() else 0.0
-	body.dive(clampf(-float(dive.posture),0.0,1.0),clampf(float(dive.posture),0.0,1.0),hanging,float(dive.flare),0.0,delta)
-	canopy.update(delta,dive,figure.global_transform*Vector3(0.0,0.72,0.0))
-	dive_camera.step(delta,dive,_inside_stone)
-	var way: Vector3 = dive_camera.look-dive_camera.eye
-	if way.length() > 0.01: camera.global_transform = Transform3D(Basis.looking_at(way,Vector3.UP),dive_camera.eye)
-	camera.fov = dive_camera.fov
-	if out.has("touched"): _dive_down(out.touched)
-
-## What the dive comes down on: the top of whatever stands (turf or stone)
-## under a point, upward faces only.
-func _dive_ground(p: Vector3) -> Variant:
-	var ray := PhysicsRayQueryParameters3D.create(p+Vector3.UP,p+Vector3.DOWN*60.0,1|TURF_LAYER)
-	var hit := get_world_3d().direct_space_state.intersect_ray(ray)
-	if hit.is_empty() or (hit.normal as Vector3).y < 0.3: return null
-	return float((hit.position as Vector3).y)
-
-## Down under the canopy: on something within STRAND_BELOW m of the edge,
-## on foot there to walk (or climb) back; in water or lower, stranded.
-func _dive_down(touch: Dictionary) -> void:
-	var feet: Vector3 = dive.position-Vector3.UP*SkyDive.HIPS
-	canopy.collapse(feet.y)
-	if _stranded_left >= 0.0: return
-	if bool(touch.get("water",false)) or feet.y < _off_y-STRAND_BELOW:
+## Off the edge, each step: down on ground or a ledge within STRAND_BELOW m
+## of the edge, he walks (or climbs) back; once STRAND_BELOW m under the
+## edge, or down in water, stranded.
+func _watch_off_edge() -> void:
+	if not off_edge or _stranded_left >= 0.0: return
+	if motor.swimming or motor.feet.y < _off_y-STRAND_BELOW:
 		_strand()
 		return
-	var face := Vector2(-sin(float(dive.heading)),-cos(float(dive.heading)))
-	_end_dive()
-	place(feet,face)
-	_last_stood = feet
-	body.land(3.0)
-	steps.step(_surface(),0.6)
+	if motor.grounded or motor.on_ledge(): off_edge = false
 
 func _strand() -> void:
 	_stranded_left = STRANDED_WAIT
 	_show_foot_hint()
 
-## Back on foot beside the parked plane (to its left, as a hop out lands),
-## facing it; with none parked, at the start.
+## Back on foot beside the parked plane (to its left, as a hop out of it
+## lands), facing it; with none parked, at the start.
 func _return_to_plane() -> void:
-	_end_dive()
+	_end_fall()
 	if not parked:
 		respawn()
 		return
@@ -2212,14 +2125,10 @@ func _return_to_plane() -> void:
 	place(spot,to.normalized() if to.length() > 0.01 else start_face)
 	_last_stood = spot
 
-## Out of the dive: the canopy put away, the pilot stood upright again.
-func _end_dive() -> void:
-	diving = false
-	dive = null
+## No longer off the edge nor stranded.
+func _end_fall() -> void:
+	off_edge = false
 	_stranded_left = -1.0
-	if canopy != null and not canopy.collapsing(): canopy.reset()
-	figure.global_transform = Transform3D(Basis.IDENTITY,figure.global_position)
-	body.settle()
 
 # --- Life on the isle ------------------------------------------------------------------
 

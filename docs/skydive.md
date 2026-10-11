@@ -1,5 +1,11 @@
 # Skydive (prototype)
 
+> **2026-10-10: the canopy is gone.** Out of the plane (and off an edge on
+> foot) you now fall until you press Jump (Space, pad A), which pops out the
+> pocket sail, the walker's own hand glider. Nothing opens by itself, X no
+> longer opens anything, and there is no assist or flare. See
+> `docs/design/pocket-sail.md`. The canopy notes below are kept for history.
+
 Eject from the plane, dive, float down under a canopy, land and walk on. Branch `feature/skydive`, cut from `feature/ruins` (knife-edge included). Not on main.
 
 ## Try it

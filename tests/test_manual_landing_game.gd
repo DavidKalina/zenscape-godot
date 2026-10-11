@@ -3,9 +3,9 @@ extends SceneTree
 ## scripts/manual_landing.gd), headless:
 ##   - stepping in with no plane parked parks one beside the pilot;
 ##   - a jump and a second press in the air is only a jump: no flight;
-##   - walking off the island's edge drops into the canopy, the plane left
-##     parked where it was, and stranded a while, the pilot is back on foot
-##     beside it;
+##   - walking off the island's edge drops (nothing opens by itself; Space
+##     opens the pocket sail), the plane left parked where it was, and
+##     stranded a while, the pilot is back on foot beside it;
 ##   - Space by the plane boards it and takes off, flown by hand after;
 ##   - F in the air lowers the flaps, never lands it;
 ##   - a hot touch at cruise sticks, no bounce; Shift and a turn with a blip
@@ -111,11 +111,18 @@ func _off_the_edge() -> void:
 	var off: bool = await until(func() -> bool: return eye.diving,8.0)
 	print("     stepped off: motor feet %s on land %s, dive at %s, under %s" % [str(eye.motor.feet),eye._on_land(Vector2(eye.motor.feet.x,eye.motor.feet.z)),str(eye.dive.position) if eye.dive != null else "-",str(eye._dive_ground(eye.dive.position)) if eye.dive != null else "-"])
 	Input.action_release(&"move_forward")
-	check(off and eye.diving and eye._stepped_off,"Walked off the edge: the drop and the canopy")
+	check(off and eye.diving and eye._stepped_off,"Walked off the edge: the drop")
 	check(eye.glide is SkyDive and eye.drone == null,"No plane flying: not a flight, nothing summoned")
 	check(eye.has_parked() and eye._parked_at.distance_to(parked_at) < 0.01,"The plane stays parked where it was")
-	var opened: bool = await until(func() -> bool: return eye.dive.under_canopy(),4.0)
-	check(opened,"The canopy opens by itself")
+	var opened_alone: bool = await until(func() -> bool: return eye.dive.sailing(),0.5)
+	check(not opened_alone and eye.dive.falling() and eye.dive.upright,"Nothing opens by itself: falling, upright")
+	var space := InputEventKey.new()
+	space.keycode = KEY_SPACE
+	space.physical_keycode = KEY_SPACE
+	space.pressed = true
+	eye.handle(space)
+	var opened: bool = await until(func() -> bool: return eye.dive.sailing(),1.0)
+	check(opened,"Space opens the sail")
 	if not opened:
 		print("     dive %s at %s touched %s, diving %s, feet %s, off_y %.1f" % [SkyDive.NAMES[eye.dive.phase],str(eye.dive.position),str(eye.dive.touched),eye.diving,str(eye._feet),eye._off_y])
 	var stranded: bool = await until(func() -> bool: return eye._stranded_left >= 0.0 or not eye.diving,20.0)

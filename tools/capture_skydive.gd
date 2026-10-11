@@ -1,9 +1,9 @@
 extends SceneTree
 ## The skydive, rendered (scripts/sky_dive.gd through scripts/wanderer_eye.gd):
-## the plane high over home, the eject, the fall (and tucked), the canopy
-## opening and floating, the flare and the landing, and the plane parked
-## after; with close views from the side (the play frozen) of the pilot
-## falling and under the canopy. Rendered only when asked for (needs a
+## the plane high over home, the eject, the fall (and tucked), the pocket
+## sail popped out and coasting, folded to drop and opened again low, the
+## landing, and the plane parked after; with close views from the side (the
+## play frozen) of the pilot falling and under the sail. Rendered only when asked for (needs a
 ## window):
 ##   Godot --windowed --path . --resolution 1280x720 -s res://tools/capture_skydive.gd \
 ##     -- --no-title --out=/private/tmp/zs-skydive
@@ -96,21 +96,25 @@ func run() -> void:
 	await seconds(1.6)
 	await still("03-freefall")
 	await close("04-freefall-side",Vector3(2.2,0.6,0.6))
-	Input.action_press(&"fly_boost")
+	Input.action_press(&"dive_tuck")
 	await seconds(1.6)
 	await still("05-tucked")
-	Input.action_release(&"fly_boost")
+	Input.action_release(&"dive_tuck")
 	await seconds(0.8)
 	eye._open_asked = true
-	await seconds(0.45)
-	await still("06-opening")
+	await seconds(0.2)
+	await still("06-sail-open")
 	await seconds(1.6)
-	await still("07-canopy")
-	await close("08-canopy-side",Vector3(3.6,0.6,-2.4),1.0)
-	await close("09-canopy-front",Vector3(-1.0,1.4,-4.5),1.2)
-	await close("10-canopy-wide",Vector3(-14.0,-5.0,10.0),1.0)
+	await still("07-sail")
+	await close("08-sail-side",Vector3(3.6,0.6,-2.4),1.0)
+	await close("09-sail-front",Vector3(-1.0,1.4,-4.5),1.2)
+	await close("10-sail-wide",Vector3(-14.0,-5.0,10.0),1.0)
+	# Folded to drop, opened again low to save it.
+	eye._open_asked = true
+	while eye.diving and eye.dive.height > 16.0: await process_frame
+	eye._open_asked = true
 	while eye.diving and eye.dive.height > 1.6: await process_frame
-	await still("11-flare")
+	await still("11-touch")
 	while eye.diving: await process_frame
 	await seconds(0.5)
 	await still("12-landed")

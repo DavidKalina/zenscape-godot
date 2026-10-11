@@ -4,17 +4,22 @@ extends SceneTree
 ##     and tumbles onto the belly into the fall;
 ##   - the fall holds its terminal speed: tucked faster, spread slower;
 ##   - left and right turn it, forward tracks across the ground;
-##   - the canopy, opened, bites and slows the fall to a float, steers,
-##     and swings on its lines;
-##   - left alone the canopy opens by itself in time over the ground and
-##     over water, and every touch under it is soft (the flare);
+##   - Jump opens the pocket sail (scripts/pocket_sail.gd): it kicks once,
+##     catches the fall to its sink, steers, floats braked, folds with Jump
+##     again and opens again with no kick;
+##   - nothing opens by itself: left alone it lands hard (a bump), over the
+##     ground and over water; under the sail the touch is soft;
+##   - off an edge on foot it falls upright under the walker's gravity, the
+##     walker's sail carried on into it, open and kick spent;
 ##   - an island's side holds the fall off, and its top is landed on;
-##   - its figure (scripts/canopy_figure.gd) and camera (scripts/
+##   - its sail (scripts/pocket_sail_figure.gd) and camera (scripts/
 ##     dive_camera.gd) build and follow it.
 ##   godot --headless --path . --script tests/test_sky_dive.gd
 const SkyDive = preload("res://scripts/sky_dive.gd")
 const DiveCamera = preload("res://scripts/dive_camera.gd")
-const CanopyFigure = preload("res://scripts/canopy_figure.gd")
+const PocketSailFigure = preload("res://scripts/pocket_sail_figure.gd")
+const PocketSail = preload("res://scripts/pocket_sail.gd")
+const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const DT := 1.0/60.0
 var failures := 0
 
@@ -22,9 +27,10 @@ func _initialize() -> void:
 	_pop()
 	_terminal()
 	_steer()
-	_canopy()
-	_auto_open()
-	_auto_open_water()
+	_sail()
+	_no_auto_open()
+	_no_auto_open_water()
+	_step_off()
 	_island_side()
 	_figure_and_camera()
 	print("PASS: sky dive" if failures == 0 else "FAIL: sky dive")
@@ -94,49 +100,72 @@ func _steer() -> void:
 	fall(dive,3.0,{"pitch":-1.0})
 	check(dive.velocity.z < -SkyDive.TRACK*0.8,"Forward tracks across the ground (%.1f m/s)" % -dive.velocity.z)
 
-func _canopy() -> void:
+func _sail() -> void:
 	var dive := SkyDive.new()
 	dive.drop(Vector3(0.0,2000.0,0.0),0.0)
 	fall(dive,3.0,{})
-	var seen := fall(dive,0.1,{"open":true})
-	check(dive.phase == SkyDive.OPENING,"Open: the canopy comes out")
-	seen = fall(dive,2.0,{})
-	check("opened" in seen and dive.phase == SkyDive.CANOPY,"It bites and fills")
-	fall(dive,3.0,{})
-	check(absf(-dive.velocity.y-SkyDive.SINK_CANOPY) < 0.3,"Floating down at %.1f m/s" % -dive.velocity.y)
-	check(absf(Vector2(dive.velocity.x,dive.velocity.z).length()-SkyDive.FLY) < 0.4,"Flying on at %.1f m/s" % Vector2(dive.velocity.x,dive.velocity.z).length())
+	var falling := dive.velocity.y
+	var seen := fall(dive,DT,{"open":true})
+	check("opened" in seen and dive.sailing(),"Jump: the sail comes out")
+	check(dive.velocity.y > falling+PocketSail.KICK-0.5,"With its kick (%.1f to %.1f m/s)" % [falling,dive.velocity.y])
+	fall(dive,4.0,{})
+	check(absf(-dive.velocity.y-PocketSail.SINK) < 0.2,"Coasting down at %.2f m/s" % -dive.velocity.y)
+	check(absf(Vector2(dive.velocity.x,dive.velocity.z).length()-PocketSail.PACE) < 0.4,"Gliding on at %.1f m/s" % Vector2(dive.velocity.x,dive.velocity.z).length())
 	check(absf(dive.tilt) < 0.2,"Hanging upright under it (tilt %.2f)" % dive.tilt)
 	var heading := dive.heading
-	var swing := 0.0
-	for i in range(90):
-		dive.fall(DT,{"turn":-1.0},Callable(self,"nothing"))
-		swing = maxf(swing,dive.sway.y)
+	fall(dive,1.0,{"turn":-1.0})
 	check(dive.heading > heading+1.0,"Left steers it round")
-	check(swing > 0.15,"Swinging out into the turn (%.2f)" % swing)
 	fall(dive,3.0,{"brake":1.0})
-	check(-dive.velocity.y < SkyDive.SINK_CANOPY-0.5,"Braked it floats (%.1f m/s)" % -dive.velocity.y)
+	check(-dive.velocity.y < PocketSail.SINK-0.2,"Braked it floats (%.2f m/s)" % -dive.velocity.y)
+	seen = fall(dive,DT,{"open":true})
+	check("folded" in seen and dive.falling(),"Jump again folds it")
+	fall(dive,1.0,{})
+	var dropping := dive.velocity.y
+	seen = fall(dive,DT,{"open":true})
+	check("opened" in seen and dive.velocity.y < dropping+1.0,"Opened again, no second kick (%.1f to %.1f m/s)" % [dropping,dive.velocity.y])
 
-func _auto_open() -> void:
+func _no_auto_open() -> void:
 	var dive := SkyDive.new()
-	dive.drop(Vector3(0.0,300.0,0.0),0.0)
-	var opened_at := INF
+	dive.drop(Vector3(0.0,120.0,0.0),0.0)
 	var touch := {}
 	for i in range(int(60.0/DT)):
-		var out := dive.fall(DT,{"boost":1.0},Callable(self,"flat"))
-		if out.has("auto"): opened_at = dive.position.y
+		var out := dive.fall(DT,{},Callable(self,"flat"))
 		if out.has("touched"): touch = out.touched
 		if dive.phase == SkyDive.DOWN: break
-	check(dive.auto_opened and opened_at > 30.0,"Tucked all the way, it opens by itself %.0f m up" % opened_at)
-	check(not touch.is_empty() and not touch.hard,"And lands under it")
-	check(float(touch.get("speed",99.0)) < 2.5,"Softly, flared: %.2f m/s" % float(touch.get("speed",99.0)))
+	check(not touch.is_empty() and touch.hard,"Left alone nothing opens: it lands hard, a bump")
 	check(absf(dive.position.y-SkyDive.HIPS) < 0.01,"Stood on the ground")
+	var soft := SkyDive.new()
+	soft.drop(Vector3(0.0,40.0,0.0),0.0)
+	fall(soft,1.0,{},Callable(self,"flat"))
+	fall(soft,DT,{"open":true},Callable(self,"flat"))
+	fall(soft,60.0,{},Callable(self,"flat"))
+	check(soft.phase == SkyDive.DOWN and not soft.touched.hard and float(soft.touched.speed) < PocketSail.PACE+1.0,"Under the sail it touches down soft (%.1f m/s)" % float(soft.touched.get("speed",99.0)))
 
-func _auto_open_water() -> void:
+func _no_auto_open_water() -> void:
 	var dive := SkyDive.new()
 	dive.water = -50.0
 	dive.drop(Vector3(0.0,100.0,0.0),0.0)
 	fall(dive,60.0,{},Callable(self,"nothing"))
-	check(dive.auto_opened and dive.phase == SkyDive.DOWN and dive.touched.get("water",false),"Over open water it opens by itself and comes down on it")
+	check(dive.phase == SkyDive.DOWN and dive.touched.get("water",false) and dive.touched.hard,"Over open water it comes down on it, unopened")
+
+func _step_off() -> void:
+	var walker := PocketSail.new()
+	walker.rest()
+	walker.peak = 10.0
+	var moving := Vector3(-PilotMotor.RUN,-1.0,0.0)
+	walker.deploy(moving,PI*0.5,10.0)
+	var dive := SkyDive.new()
+	dive.step_off(Vector3(0.0,9.0,0.0),moving,PI*0.5,walker,PilotMotor.GRAVITY*PilotMotor.FALL,PilotMotor.TERMINAL)
+	check(dive.sailing() and dive.sail == walker and walker.kicked,"Sailed off an edge, the walker's sail carries on, its kick spent")
+	var plain := SkyDive.new()
+	plain.step_off(Vector3(0.0,200.0,0.0),Vector3(-PilotMotor.RUN,0.0,0.0),PI*0.5,null,PilotMotor.GRAVITY*PilotMotor.FALL,PilotMotor.TERMINAL)
+	fall(plain,0.3,{})
+	check(plain.falling() and plain.upright and absf(plain.tilt) < 0.5,"Walked off, it falls upright (tilt %.2f)" % plain.tilt)
+	check(plain.velocity.x < -PilotMotor.RUN*0.7,"Carried on out the way he ran (%.1f m/s)" % -plain.velocity.x)
+	fall(plain,2.0,{})
+	check(absf(-plain.velocity.y-PilotMotor.TERMINAL) < 1.5,"At the walker's fastest fall (%.1f m/s)" % -plain.velocity.y)
+	var seen := fall(plain,DT,{"open":true})
+	check("opened" in seen and plain.sail.kicked,"Jump opens the sail, with its kick")
 
 func _island_side() -> void:
 	var dive := SkyDive.new()
@@ -162,17 +191,16 @@ func _figure_and_camera() -> void:
 		camera.step(DT,dive)
 	check(camera.eye.y > dive.position.y+1.0 and camera.look.y < dive.position.y,"Falling, the camera rides over the shoulders looking down past them")
 	check(camera.fov > DiveCamera.FOV+5.0,"Its view widens with the fall (%.0f deg)" % camera.fov)
-	dive.open_canopy()
+	dive.open_sail()
 	for i in range(int(4.0/DT)):
 		dive.fall(DT,{},Callable(self,"nothing"))
 		camera.step(DT,dive)
 	var behind := Vector2(camera.eye.x-dive.position.x,camera.eye.z-dive.position.z)
-	check(behind.length() > 3.0 and camera.eye.y < dive.position.y+4.0,"Under the canopy it falls back behind")
-	var figure := CanopyFigure.new()
+	check(behind.length() > 3.0 and camera.eye.y < dive.position.y+4.0,"Under the sail it falls back behind")
+	var figure := PocketSailFigure.new()
 	root.add_child(figure)
-	figure.update(DT,dive)
-	check(figure.visible and figure.get_child_count() > 0,"The canopy figure builds and follows")
-	figure.collapse(0.0)
-	for i in range(200): figure.update(DT,dive)
-	check(not figure.visible,"Collapsed on landing, it goes")
+	for i in range(30): figure.update(DT,dive.sailing(),0.5)
+	check(figure.visible and figure.out >= 1.0 and figure.get_child_count() > 0,"The sail's figure builds and pops out")
+	for i in range(30): figure.update(DT,false)
+	check(not figure.visible,"Folded, it goes")
 	figure.queue_free()

@@ -6,8 +6,9 @@ extends SceneTree
 ## is the pump, higher, and the pump again stays that high (no third, no
 ## flip); a press just before landing is kept, one
 ## just after a ledge still jumps; a ledge drops it, a wall in the air stops
-## it; Space again on the way up asks to fly, near the ground falling it does
-## not. The drawn pilot follows it through every state without its pose
+## it; Space again in the air opens the pocket sail with room under him
+## (off the ledge), over flat ground or near it falling it does not
+## (tests/test_pocket_sail.gd holds the sail's own). The drawn pilot follows it through every state without its pose
 ## going wrong.
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const PilotFigure = preload("res://scripts/pilot_figure.gd")
@@ -80,12 +81,12 @@ func _initialize() -> void:
 	for i in range(120):
 		var low: bool = m.velocity.y < 0.0 and m.feet.y < 0.25
 		var out := m.step(DT,Vector2.ZERO,PilotMotor.RUN,low,ground,slide)
-		flew = flew or out.has("fly")
+		flew = flew or out.has("sail")
 		pressed_early = pressed_early or low
 		if out.has("jumped"):
 			again = true
 			break
-	check(not flew,"Near the ground falling, Space does not fly")
+	check(not flew,"Near the ground falling, Space does not open the sail")
 	check(pressed_early and again and not m.grounded and m.velocity.y > 0.0,"Pressed just before landing, it jumps on the touch")
 	# A wall in the air.
 	_settle(m)
@@ -97,12 +98,19 @@ func _initialize() -> void:
 	m.reset(Vector3(0.0,0.0,-9.8),PilotMotor.facing_of(Vector2(0.0,-1.0)),PilotMotor.RUN)
 	for i in range(30): m.step(DT,Vector2(0.0,-1.0),PilotMotor.RUN,false,ground,slide)
 	check(m.feet.z >= -10.01 and m.feet.y < 0.01,"And on the ground (%.2f)" % m.feet.z)
-	# Fly: again on the way up.
+	# The sail: Space again on the way up over flat ground, nothing (no
+	# room); jumped off the ledge (2 m down past x 10), it opens.
 	_settle(m)
 	m.step(DT,Vector2.ZERO,PilotMotor.RUN,true,ground,slide)
 	m.step(DT,Vector2.ZERO,PilotMotor.RUN,false,ground,slide)
-	var fly := m.step(DT,Vector2.ZERO,PilotMotor.RUN,true,ground,slide)
-	check(fly.has("fly"),"Space again on the way up asks to fly")
+	var low := m.step(DT,Vector2.ZERO,PilotMotor.RUN,true,ground,slide)
+	check(not low.has("sail") and not low.has("fly"),"Space again in a jump over flat ground: no sail, and never a flight")
+	m.reset(Vector3(9.5,0.0,0.0),PilotMotor.facing_of(Vector2(1.0,0.0)),PilotMotor.RUN)
+	m.step(DT,Vector2(1.0,0.0),PilotMotor.RUN,false,ground,slide)
+	m.step(DT,Vector2(1.0,0.0),PilotMotor.RUN,true,ground,slide)
+	for i in range(8): m.step(DT,Vector2(1.0,0.0),PilotMotor.RUN,false,ground,slide)
+	var fly := m.step(DT,Vector2(1.0,0.0),PilotMotor.RUN,true,ground,slide)
+	check(fly.get("sail",false) and m.move == "sail" and not fly.has("fly"),"Jumped off the ledge, Space again opens the sail, and never asks to fly")
 	var ok := true
 	for node: Node3D in figure.find_children("*","Node3D",true,false):
 		ok = ok and node.transform.origin.is_finite() and node.transform.basis.x.is_finite()

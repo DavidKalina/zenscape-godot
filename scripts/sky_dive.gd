@@ -1,41 +1,35 @@
 extends "res://scripts/sky_glide.gd"
-## The skydive: out of the plane (scripts/sky_plane.gd), down through the
-## air, and floating down under a canopy (scripts/wanderer_eye.gd runs it,
-## scripts/canopy_figure.gd draws the canopy, scripts/dive_camera.gd
-## frames it). Tuned for a toy's feel over a real one's, under the game's
-## rules: never death, never a splat, always a way back up.
+## The skydive: out of the plane (scripts/sky_plane.gd), or off an island's
+## edge on foot, down through the air, and coasting on the pocket sail
+## (scripts/pocket_sail.gd, the walker's own, drawn by
+## scripts/pocket_sail_figure.gd); scripts/wanderer_eye.gd runs it and
+## scripts/dive_camera.gd frames it. Tuned for a toy's feel over a real
+## one's, under the game's rules: never death, never a splat, always a way
+## back up.
 ##
-## It goes through its phases in order:
+## It goes through its phases:
 ##   POP       out of the cockpit: a small kick up, keeping some of the
 ##             plane's way, the body tumbling over onto its belly over
 ##             POP_TIME. Then the fall.
-##   FREEFALL  falling belly-down. Gravity against the air's drag holds the
+##   FREEFALL  falling, belly-down out of the plane (upright off an edge on
+##             foot, `upright`). Gravity against the air's drag holds the
 ##             fall at its terminal speed, which the posture sets: tucked
 ##             (Boost) it dives head-down to TERMINAL_TUCK, spread (Brake)
 ##             it slows to TERMINAL_SPREAD, else TERMINAL. Left and right
 ##             turn it; forward tracks (flies on over the ground, head
 ##             lower), back slides it gently backward. The plane's way it
 ##             kept fades out over GRIP. The wind drifts it a little.
-##   OPENING   the canopy out (Open, or by itself, below): it streams and
-##             fills over OPEN_TIME; at SNATCH it bites, the fall eases to
-##             the canopy's over EASE_OPEN and the body swings upright.
-##   CANOPY    floating down at FLY across and SINK down. Left and right
-##             steer, forward speeds it up (and it sinks faster), back or
-##             Brake slows it (and it floats). The body hangs on its lines
-##             and swings: back and forth as it speeds up and slows, out
-##             into a turn. Over FLARE_FROM metres off whatever is under it
-##             it flares by itself, the sink and the way all but gone, so
-##             every landing is soft. The wind carries it, and air rising
-##             (a thermal, a ridge) holds it up. Left alone it turns
-##             towards the nearest island (`approach_target`, ASSIST), so
-##             a hands-off float comes down on land.
+##   SAIL      Jump (`open`) pops the pocket sail out overhead: its kick the
+##             first time (once a dive), then it coasts down slowly, steered
+##             with left and right, forward diving it faster, back or Brake
+##             floating it; the wind carries it and air rising holds it up,
+##             as the walker's does (the same maths, the same sail). Jump
+##             again folds it, back to the fall; opened again, no kick.
 ##   DOWN      touched (`touched` on that step): the wanderer takes over.
 ##
-## Nobody splats: falling, the canopy opens by itself AUTO_OPEN metres
-## plus AUTO_OPEN_PER seconds of the fall over whatever is under it (the
-## ground, an island's top, open water), with time to fill and slow. A
-## fall that meets the ground before it has filled (off a cliff's side, say)
-## comes down as a bump (`touched.hard`), never a hurt.
+## Nothing opens by itself: not opened, the fall comes down as a bump
+## (`touched.hard`), never a hurt; under the sail falling slower than
+## SOFT it is a soft touch.
 ##
 ## Islands are solids as the glide reads them (`ground`: Vector2(top,
 ## underside) or null): only a top under the body counts as under it; coming
@@ -44,8 +38,9 @@ extends "res://scripts/sky_glide.gd"
 ##
 ## Plain state and maths, as the glide is, so tests can step it.
 
-enum {POP,FREEFALL,OPENING,CANOPY,DOWN}
-const NAMES := ["pop","freefall","opening","canopy","down"]
+enum {POP,FREEFALL,SAIL,DOWN}
+const NAMES := ["pop","freefall","sail","down"]
+const PocketSail = preload("res://scripts/pocket_sail.gd")
 
 ## Gravity (m/s², a toy's: snappier than the world's), and the terminal
 ## speeds of the fall (m/s): belly-down, tucked and spread. The drag
@@ -71,84 +66,47 @@ const POP_UP := 5.5
 const POP_BACK := 1.5
 const KEEP := 0.6
 const POP_TIME := 0.6
-## The opening: how long the canopy takes to fill (s), the share of that
-## at which it bites, and how fast the fall then eases to the canopy's (s).
-const OPEN_TIME := 1.1
-const SNATCH := 0.4
-const EASE_OPEN := 0.3
-## Under the canopy: across at rest, full forward and braked (m/s), and
-## the sink with each; how fast they follow (s); the turn (radians a
-## second at full stick); the share of the wind that carries it; how much
-## of the air's rise holds it up.
-const FLY := 3.4
-const FLY_FAST := 6.0
-const FLY_SLOW := 1.4
-const SINK_CANOPY := 2.4
-const SINK_FAST := 3.6
-const SINK_BRAKE := 1.6
-const EASE_CANOPY := 0.6
-const TURN_CANOPY := 1.2
-const WIND_CANOPY := 0.8
-const HELD_UP := 0.6
-## Left alone under the canopy (no turn held), it eases round over ASSIST
-## seconds towards `approach_target` (the nearest island's middle, set by
-## the wanderer), so a hands-off float comes down on land, circling it.
-const ASSIST := 1.4
-## The flare: from FLARE_FROM metres over the ground it eases in, to a
-## sink of FLARE_SINK and a way of FLARE_FLY at the touch.
-const FLARE_FROM := 3.2
-const FLARE_SINK := 0.45
-const FLARE_FLY := 1.4
-## Falling, the canopy opens by itself AUTO_OPEN metres plus AUTO_OPEN_PER
-## seconds of the fall over what is under it.
-const AUTO_OPEN := 12.0
-const AUTO_OPEN_PER := 1.0
+## Under the sail: touching down slower than this (m/s down) is soft.
+const SOFT := 4.0
+## The body's lean forward falling upright off an edge (radians).
+const UPRIGHT_LEAN := 0.2
 ## The body's hips over its feet (m): `position` is the hips; it touches
 ## down with the feet.
 const HIPS := 0.43
-## The swing on the lines: its spring (Hz, damping), how far a turn leans
-## it out (radians at full stick) and how far a change of way swings it
-## (radians per m/s²).
-const SWING_HZ := 0.85
-const SWING_DAMP := 0.28
-const SWING_TURN := 0.38
-const SWING_PUSH := 0.06
 ## The body's tilt (0 upright, PI/2 belly-down): its spring (Hz, damping),
 ## the tuck's and the track's extra lean head-down.
 const TILT_HZ := 1.6
 const TILT_DAMP := 0.55
 const TILT_TUCK := 0.7
 const TILT_TRACK := 0.3
-## The bank in a freefall turn (radians at full stick).
+## The bank in a freefall turn and under the sail (radians at full stick).
 const BANK_FALL := 0.45
+const BANK_SAIL := 0.3
 
 var phase := POP
 ## Seconds in this phase.
 var time := 0.0
-## -1 spread to 1 tucked, eased; the body's tilt (and its pace), its
-## swing on the lines (x back and forth, y side to side, and their pace).
+## The fall's gravity and terminal speed (the toy's; off an edge on foot,
+## the walker's), and whether it falls upright (off an edge) or belly-down.
+var gravity := GRAVITY
+var terminal := TERMINAL
+var upright := false
+## -1 spread to 1 tucked, eased; the body's tilt (and its pace).
 var posture := 0.0
 var tilt := 0.0
 var _tilt_v := 0.0
-var sway := Vector2.ZERO
-var _sway_v := Vector2.ZERO
-## The canopy: how far filled (0 packed to 1 full, for the drawing), and
-## how far into the flare (0 to 1).
+## The pocket sail (the walker's own, handed over off an edge, so its kick
+## spent stays spent), and how far out it is drawn (0 packed to 1 out).
+var sail := PocketSail.new()
 var open := 0.0
-var flare := 0.0
-## True if the canopy opened by itself.
-var auto_opened := false
 ## Metres from the feet down to what is under the body (INF over open air),
 ## and what that is: "ground" or "water" ("" over open air).
 var height := INF
 var under := ""
 ## Set on the step it touches: {top, water, speed, hard}; else empty.
 var touched := {}
-## The way across the ground (m/s) it falls with, and under the canopy
-## its speed along its heading.
+## The way across the ground (m/s) it falls with.
 var drift := Vector3.ZERO
-var _fly := FLY
-var _sink := SINK_CANOPY
 var _turn_held := 0.0
 
 ## Out of the plane at `from` (the cockpit, global), the plane flying at
@@ -168,6 +126,24 @@ func drop(from: Vector3, towards: float, fall := TERMINAL) -> void:
 	tilt = PI*0.5
 	velocity = Vector3.DOWN*fall
 
+## Off an edge on foot at `from` (the hips), moving at `moving`, facing
+## `towards`: upright, under the walker's gravity and fastest fall, with
+## the walker's sail (open still if it is, its kick spent if it was).
+func step_off(from: Vector3, moving: Vector3, towards: float, walker_sail: RefCounted, walker_gravity: float, walker_terminal: float) -> void:
+	_begin(from,towards)
+	phase = FREEFALL
+	upright = true
+	gravity = walker_gravity
+	terminal = walker_terminal
+	velocity = moving
+	drift = Vector3(moving.x,0.0,moving.z)
+	if walker_sail != null: sail = walker_sail
+	sail.peak = maxf(sail.peak,from.y-HIPS)
+	if sail.open:
+		phase = SAIL
+		open = 1.0
+		heading = sail.heading
+
 func _begin(from: Vector3, towards: float) -> void:
 	position = from
 	heading = towards
@@ -175,49 +151,55 @@ func _begin(from: Vector3, towards: float) -> void:
 	bank = 0.0
 	time = 0.0
 	airborne = 0.0
+	gravity = GRAVITY
+	terminal = TERMINAL
+	upright = false
 	posture = 0.0
 	tilt = 0.0
 	_tilt_v = 0.0
-	sway = Vector2.ZERO
-	_sway_v = Vector2.ZERO
+	sail = PocketSail.new()
+	sail.rest()
+	sail.peak = from.y-HIPS
 	open = 0.0
-	flare = 0.0
-	auto_opened = false
 	height = INF
 	under = ""
 	touched = {}
 	drift = Vector3.ZERO
-	_fly = FLY
-	_sink = SINK_CANOPY
 	_turn_held = 0.0
 	velocity = Vector3.ZERO
 	speed = 0.0
 
-## Opens the canopy (falling only): `auto` when it opens by itself.
-func open_canopy(auto := false) -> bool:
-	if phase != POP and phase != FREEFALL: return false
-	phase = OPENING
+## Opens the sail (falling, with room under it): true if it opened.
+func open_sail() -> bool:
+	if not falling() or not sail.can_open(height,velocity.y): return false
+	phase = SAIL
 	time = 0.0
-	auto_opened = auto
+	velocity = sail.deploy(velocity,heading,position.y-HIPS)
+	heading = sail.heading
+	drift = Vector3(velocity.x,0.0,velocity.z)
 	return true
 
-## True falling without the canopy (popping out or in freefall).
+## Folds the sail: falling again.
+func fold_sail() -> bool:
+	if phase != SAIL: return false
+	phase = FREEFALL
+	time = 0.0
+	sail.fold()
+	return true
+
+## True falling without the sail (popping out or in freefall).
 func falling() -> bool:
 	return phase == POP or phase == FREEFALL
 
-## True under the canopy (opening or open).
-func under_canopy() -> bool:
-	return phase == OPENING or phase == CANOPY
-
-## The height at which a fall this fast opens by itself.
-func auto_height() -> float:
-	return AUTO_OPEN+AUTO_OPEN_PER*maxf(-velocity.y,0.0)
+## True under the sail.
+func sailing() -> bool:
+	return phase == SAIL
 
 ## One step. `input` holds turn and pitch (-1..1 held, right and back
 ## positive: forward on the stick is -1), boost and brake (0..1), and open
-## (true on the frame the canopy is asked for). `ground` and `air` as for
-## the glide. Returns what happened: "opened" (the canopy bit), "auto"
-## (it opened by itself this step), "touched" (as `touched`).
+## (true on the frame Jump is pressed: the sail opened, or folded). `ground`
+## and `air` as for the glide. Returns what happened: "opened" or "folded"
+## (the sail), "touched" (as `touched`).
 func fall(delta: float, input: Dictionary, ground: Callable, air := Callable()) -> Dictionary:
 	var out := {}
 	touched = {}
@@ -251,14 +233,16 @@ func _fall(delta: float, input: Dictionary, ground: Callable, air: Callable) -> 
 	var stick := clampf(float(input.get("pitch",0.0)),-1.0,1.0)
 	var boost := clampf(float(input.get("boost",0.0)),0.0,1.0)
 	var brake := clampf(float(input.get("brake",0.0)),0.0,1.0)
-	if input.get("open",false): open_canopy()
 	_turn_held = lerpf(_turn_held,turn,_ease(0.2,delta))
 	_probe(ground)
-	# Nobody splats: the canopy opens by itself in time.
-	if falling() and height < auto_height() and open_canopy(true): out["auto"] = true
+	if input.get("open",false):
+		if phase == SAIL:
+			if fold_sail(): out["folded"] = true
+		elif open_sail(): out["opened"] = true
 	match phase:
 		POP,FREEFALL: _freefall(delta,turn,stick,boost,brake)
-		OPENING,CANOPY: _canopy(delta,turn,stick,brake,out)
+		SAIL: _sail(delta,turn,stick,brake,here)
+	open = move_toward(open,1.0 if phase == SAIL else 0.0,delta/0.15)
 	speed = velocity.length()
 	var flat := Vector2(velocity.x,velocity.z).length()
 	pitch = atan2(velocity.y,maxf(flat,0.001))
@@ -272,80 +256,37 @@ func _freefall(delta: float, turn: float, stick: float, boost: float, brake: flo
 	if phase == POP and time >= POP_TIME:
 		phase = FREEFALL
 		time = 0.0
+	sail.track(position.y-HIPS,delta)
 	posture = lerpf(posture,boost-brake,_ease(EASE_POSTURE,delta))
-	var terminal := lerpf(TERMINAL,TERMINAL_TUCK,posture) if posture > 0.0 else lerpf(TERMINAL,TERMINAL_SPREAD,-posture)
-	var drag := GRAVITY*(velocity.y/terminal)*(velocity.y/terminal)
-	drag = minf(drag,GRAVITY*DRAG_MOST)
-	velocity.y += (-GRAVITY+(drag if velocity.y < 0.0 else -drag))*delta
+	var scale := terminal/TERMINAL
+	var most := lerpf(terminal,TERMINAL_TUCK*scale,posture) if posture > 0.0 else lerpf(terminal,TERMINAL_SPREAD*scale,-posture)
+	var drag := gravity*(velocity.y/most)*(velocity.y/most)
+	drag = minf(drag,gravity*DRAG_MOST)
+	velocity.y += (-gravity+(drag if velocity.y < 0.0 else -drag))*delta
 	heading += -turn*TURN_FALL*delta
 	var forward := Vector3(-sin(heading),0.0,-cos(heading))
 	var track := maxf(-stick,0.0)
 	var want := forward*(TRACK*track-BACKSLIDE*maxf(stick,0.0))+Vector3(wind.x,0.0,wind.z)*WIND_FALL
-	drift = drift.lerp(want,_ease(GRIP,delta))
+	if upright:
+		# Off an edge on foot the run is kept, as the walker's fall keeps it.
+		want += drift*(1.0-track)
+		drift = drift.lerp(want,_ease(GRIP*4.0,delta))
+	else:
+		drift = drift.lerp(want,_ease(GRIP,delta))
 	velocity.x = drift.x
 	velocity.z = drift.z
 	bank = lerpf(bank,-turn*BANK_FALL,_ease(0.25,delta))
-	var goal := PI*0.5+maxf(posture,0.0)*TILT_TUCK+track*TILT_TRACK
+	var goal := UPRIGHT_LEAN+track*TILT_TRACK if upright else PI*0.5+maxf(posture,0.0)*TILT_TUCK+track*TILT_TRACK
 	_tilt_to(goal,delta)
-	sway = sway.lerp(Vector2.ZERO,_ease(0.3,delta))
 
-## Under the canopy: the opening's bite, the way and the sink, the swing,
-## and the flare.
-func _canopy(delta: float, turn: float, stick: float, brake: float, out: Dictionary) -> void:
-	if phase == OPENING:
-		open = clampf(time/OPEN_TIME,0.0,1.0)
-		if time >= OPEN_TIME:
-			phase = CANOPY
-			time = 0.0
-			open = 1.0
-	else:
-		open = 1.0
-	var bitten := phase == CANOPY or time >= OPEN_TIME*SNATCH
-	if phase == OPENING and time-delta < OPEN_TIME*SNATCH and bitten:
-		out["opened"] = true
-		# The snatch swings the body forward under the canopy.
-		_sway_v.x += 2.2
-	var forward := Vector3(-sin(heading),0.0,-cos(heading))
-	if not bitten:
-		# Streaming out: still falling, a little slower.
-		velocity.y = move_toward(velocity.y,-TERMINAL*0.8,GRAVITY*delta)
-		drift = drift.lerp(Vector3.ZERO,_ease(GRIP,delta))
-		velocity.x = drift.x
-		velocity.z = drift.z
-		_tilt_to(PI*0.5,delta)
-		return
-	heading += -turn*TURN_CANOPY*delta
-	if absf(turn) < 0.05 and approach_target != Vector3.INF:
-		var to := Vector2(approach_target.x-position.x,approach_target.z-position.z)
-		if to.length() > AIM_NEAR: heading = lerp_angle(heading,atan2(-to.x,-to.y),_ease(ASSIST,delta))
-	var ahead := maxf(-stick,0.0)
-	var slow := maxf(maxf(stick,0.0),brake)
-	var fly := FLY+(FLY_FAST-FLY)*ahead-(FLY-FLY_SLOW)*slow
-	var sink := SINK_CANOPY+(SINK_FAST-SINK_CANOPY)*ahead-(SINK_CANOPY-SINK_BRAKE)*slow
-	# The flare: by itself over the ground, all of it by the touch.
-	var want_flare := 0.0
-	if under != "": want_flare = 1.0-smoothstep(0.15,FLARE_FROM,height)
-	flare = lerpf(flare,want_flare,_ease(0.1,delta))
-	var was_fly := _fly
-	_fly = lerpf(_fly,fly,_ease(EASE_CANOPY,delta))
-	_sink = lerpf(_sink,sink,_ease(EASE_CANOPY,delta))
-	var rise := clampf(wind.y,0.0,4.0)*HELD_UP*(1.0-flare)
-	var flown := lerpf(_fly,FLARE_FLY,flare)
-	var sunk := lerpf(_sink,FLARE_SINK,flare)
-	var target := forward*flown+Vector3(wind.x,0.0,wind.z)*WIND_CANOPY*(1.0-flare*0.7)+Vector3.DOWN*(sunk-rise)
-	var k := _ease(EASE_OPEN,delta) if phase == OPENING else 1.0
-	velocity = velocity.lerp(target,k)
+## Under the sail: the walker's sail flown with the dive's keys (left and
+## right steer, forward dives it, back or Brake floats it).
+func _sail(delta: float, turn: float, stick: float, brake: float, here: Dictionary) -> void:
+	var push := clampf(-stick-brake,-1.0,1.0)
+	velocity = sail.step(delta,velocity,position.y-HIPS,-turn,push,here)
+	heading = sail.heading
 	drift = Vector3(velocity.x,0.0,velocity.z)
-	bank = lerpf(bank,-_turn_held*SWING_TURN,_ease(0.3,delta))
-	# The swing on its lines: pushed back and forth by the change of way,
-	# out into a turn.
-	var push := (_fly-was_fly)/delta if delta > 0.0 else 0.0
-	_sway_v.x += -push*SWING_PUSH
-	var goal := Vector2(0.0,-_turn_held*SWING_TURN)
-	var w := TAU*SWING_HZ
-	_sway_v += (w*w*(goal-sway)-2.0*SWING_DAMP*w*_sway_v)*delta
-	sway += _sway_v*delta
-	sway = sway.clamp(Vector2(-0.7,-0.7),Vector2(0.7,0.7))
+	bank = lerpf(bank,-_turn_held*BANK_SAIL,_ease(0.3,delta))
 	_tilt_to(0.0,delta)
 
 func _tilt_to(goal: float, delta: float) -> void:
@@ -384,25 +325,23 @@ func _land(ground: Callable, was: Vector3, out: Dictionary) -> void:
 			drift = Vector3.ZERO
 			velocity.x = 0.0
 			velocity.z = 0.0
+			sail.speed = 0.0
+			sail.drift = Vector2.ZERO
 		else:
 			top = body.x
 	if is_finite(water) and water > top:
 		top = water
 		on_water = true
 	if feet > top: return
-	var hard := not under_canopy() or (phase == OPENING and time < OPEN_TIME*SNATCH)
+	var hard := not sailing() or -velocity.y > SOFT
 	touched = {"top":top,"water":on_water,"speed":velocity.length(),"hard":hard}
 	out["touched"] = touched
 	position.y = top+HIPS
+	sail.rest()
 	phase = DOWN
 	time = 0.0
 
-## The lines' frame: turned to the heading and swung on the lines, up
-## along them from the pilot to the canopy.
-func line_basis() -> Basis:
-	return Basis(Vector3.UP,heading)*Basis(Vector3.RIGHT,sway.x)*Basis(Vector3.BACK,sway.y)
-
-## The body's frame: on its lines, banked in a freefall turn and tipped
+## The body's frame: turned to the heading, banked in a turn and tipped
 ## over by its tilt (onto the belly at PI/2, the head forward).
 func body_basis() -> Basis:
-	return line_basis()*Basis(Vector3.BACK,bank*(1.0-open))*Basis(Vector3.RIGHT,-tilt)
+	return Basis(Vector3.UP,heading)*Basis(Vector3.BACK,bank)*Basis(Vector3.RIGHT,-tilt)

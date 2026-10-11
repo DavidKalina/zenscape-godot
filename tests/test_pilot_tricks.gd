@@ -1,7 +1,7 @@
 extends SceneTree
 ## The pilot's tricks on foot (scripts/pilot_motor.gd), over heights alone
 ## (the game's own way): the twirl pressed in the air twirls him, once an
-## airtime, giving back some airtime, never from crouch, and a second jump press falling still asks to fly; held crouched
+## airtime, giving back some airtime, never from crouch, and a second jump press low over the ground neither flies nor opens the sail; held crouched
 ## on a slope he boot-surfs down it, faster and faster past 11 m/s, steers
 ## across it, and on one too steep to stand on surfs without the crouch;
 ## jumped out of the surf uncrouched he flies on at its pace over a gap no
@@ -105,7 +105,7 @@ func _twirl() -> void:
 		spun = spun or o.has("twirl")
 		if m.grounded: break
 	check(out.has("long") and not spun,"Crouch held into the long jump, or pressed again in the air, does not twirl")
-	# Jump pressed again in the air still asks to fly, twirled or not.
+	# Jump pressed again twirling low over the ground: no sail (no room).
 	m.reset(Vector3.ZERO,0.0)
 	m.crouch = false
 	_step(m,Vector2.ZERO,false)
@@ -115,7 +115,7 @@ func _twirl() -> void:
 	_step(m,Vector2.ZERO,false)
 	m.twirl = false
 	out = _step(m,Vector2.ZERO,true)
-	check(out.has("fly") and m.move == "twirl","Twirling, Jump pressed again still asks to fly")
+	check(not out.has("sail") and not out.has("fly") and m.move == "twirl","Twirling low, Jump pressed again neither opens the sail nor flies")
 
 ## A slope `degrees` steep falling to +x from x 0 to `length`, a platform
 ## over it before, flat after, then a gap from `gap_at` `gap` wide (the

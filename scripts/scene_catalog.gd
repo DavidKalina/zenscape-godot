@@ -60,6 +60,8 @@ const ENTRIES: Array[Dictionary] = [
 	# On-foot greyboxes.
 	{"id":"character_study","group":"On-foot greyboxes","title":"Character study","scene":"res://studies/character_study.tscn","args":[],
 		"detail":"The pilot's moves in the greybox room. 1-9: stations, R: back to start."},
+	{"id":"pocket_sail","group":"On-foot greyboxes","title":"Pocket sail","scene":"res://studies/pocket_sail_study.tscn","args":[],
+		"detail":"The hand glider: thrown off a tall island by pads (or K), Space in the air pops the sail, again folds it. Gusts, rising air, tiers below."},
 	{"id":"serpent_ride","group":"On-foot greyboxes","title":"Serpent ride","scene":"res://studies/serpent_ride.tscn","args":[],
 		"detail":"Run about on the rune serpent's back as it flies a loop of open sky. 1-3: on its back, 4: the tower, R: start."},
 	{"id":"serpent_convoy","group":"On-foot greyboxes","title":"Serpent convoy","scene":"res://studies/serpent_ride.tscn","args":["--convoy"],

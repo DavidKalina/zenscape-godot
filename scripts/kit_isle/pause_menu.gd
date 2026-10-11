@@ -2,7 +2,7 @@ extends "res://scripts/kit_isle/menu_sheet.gd"
 ## The game's pause (docs/design/consolidation-audit.md, round 2): a linen
 ## sheet (scripts/kit_isle/menu_sheet.gd) saying Paused over the isle's
 ## name, with Resume (Esc, pad B or Menu), Back to the plane (on foot or
-## under the canopy: back beside the parked plane, as a hop out of it
+## under the sail: back beside the parked plane, as a hop out of it
 ## lands), Settings, Scenes (when the scene picker is offered: scripts/
 ## scene_catalog.gd `enabled`), then past the seam Back to the title and
 ## Quit. It only shows and asks; scripts/kit_isle/pause_host.gd pauses and
