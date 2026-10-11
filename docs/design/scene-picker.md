@@ -5,10 +5,12 @@ title, with no `.command` launchers. It works in exported builds too.
 
 ## How to open it
 
-1. Start the game as normal (`./run-cozy-flow.command`, F5 in the editor, or
-   the exported build). Don't pass `--no-title`.
+1. Start the game as normal (`./run-zenscape.command`, F5 in the editor, or
+   the exported build: the front door, `studies/zenscape.tscn`, the title
+   over the aqueduct isle). Don't pass `--no-title`.
 2. On the title card's foot, pick **Scenes**. It's a quiet small-caps entry
-   before Settings. Nothing else on the title changed.
+   before Quit. The old game's own title (Builder (old game)) has it too,
+   before Settings.
 3. The picker shows one column per group. Mouse, arrow keys, or the pad's
    D-pad or stick move between rows. Return, Space or A opens the row. Esc, B,
    or **Back** on the card's foot returns to the title. The line under the
@@ -24,6 +26,7 @@ always.
 
 | Group | Entry | Scene | Flags (after `--no-title`) |
 |---|---|---|---|
+| The game | Builder (old game) | studies/cozy_worlds.tscn | none, and no `--no-title` either (`own_title`): the old game on its own title, with Continue, Your worlds, Build this world and every save |
 | The game | Your world | studies/cozy_worlds.tscn | `--resume` (your last world, or a new plain; the normal hand/build start) |
 | The game | Moments in the sky | studies/cozy_worlds.tscn | `--moments --skydive` |
 | Ruins | Aqueduct isle | studies/aqueduct_isle.tscn | none |

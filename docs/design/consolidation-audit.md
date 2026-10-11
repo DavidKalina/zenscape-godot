@@ -398,3 +398,114 @@ and the plate-anchored main scene. It also can't actually take the builder out
 of the default, because the plate is what everything stands on. It's the same
 amount of new behaviour, plus a third ground model in the most coupled file,
 plus a 151-node boot behind a scene that should feel light.
+
+## Round 1 done
+
+Branch `consolidate/front-door`, off `main` 440a405d. Not merged, not pushed.
+
+### What changed
+
+- **The front door.** `studies/zenscape.tscn` is `run/main_scene` now. Its
+  script, `studies/zenscape.gd` (about 60 lines), extends
+  `aqueduct_isle.gd`, so every aqueduct flag works on it. The work lives in
+  `scripts/kit_isle/front_door.gd`, the scene's first child, which processes
+  after the scene each frame so it has the camera last. It runs in this order:
+  1. The loading veil (`title_loading.gd`, "The isle is rising out of the
+     clouds") goes up. The scene waits two frames so the veil draws, with
+     process and input off, then builds.
+  2. On the new `isle_ready` signal (the end of `kit_isle._ready`, with
+     `isle_up`), the pilot stands where he'd land hopping out of the parked
+     plane (`_hop_spot`), facing it.
+  3. The original `title_screen.gd` comes up over the isle, unchanged: the
+     wordmark, the tagline and the linen card. The card holds **Begin** ("On
+     foot by your plane"), then **Scenes** and **Quit**, both quiet along its
+     foot. The camera orbits the isle's art bounds at the old title's polar
+     and speed (`diorama.gd _frame_title`).
+  4. While the title is up, the scene is `scripted` (the pilot holds still
+     and the mouse stays free), its own CanvasLayers are hidden, and
+     `_unhandled_input` is blocked. The look, sky, life and traffic keep going.
+  5. Begin fades the card, puts the HUD back, unscripts the pilot, captures
+     the mouse, and eases the camera from the orbit to the walker's camera
+     over 1.8 s.
+- **When the title shows.** It shows when the scene is the current scene.
+  These skip it: `--no-title`, `--fly`, `--near-ring`, `--place=`,
+  `--capture=`, and the `no_title` meta. The `title` meta forces it, for
+  tests. A start that skips the title still gets the veil when it's the
+  current scene and not a capture. `run-aqueduct-isle.command` opens
+  `aqueduct_isle.tscn` itself and hasn't changed.
+- **Scenes.** `scene_catalog.gd` has a new first entry, **Builder (old
+  game)**: `cozy_worlds.tscn` with `"own_title": true`.
+  `launch_args.open_scene(tree, scene, args, own_title)` leaves `--no-title`
+  out for an entry like that, so the old game opens on its own title, with
+  Continue, Your worlds, Build this world, a quiet plain and every save.
+  Holding Esc there (`scene_return.gd`) comes back to the front door.
+  `title_scene` follows the main scene. The other 29 entries haven't changed.
+- **Packaging and CI.** `test_export_entry.gd` expects
+  `studies/zenscape.tscn`. It sets the `title` meta, because the scene isn't
+  current in that test. `desktop_build_check.gd` keeps the kernel and mesh
+  part, then branches on `scene.front_door`. The front door's walk is: the
+  title over the isle, Begin in reach, the pilot held by the parked plane,
+  the camera orbiting, Begin, by the plane, the plane boards and climbs 4 m,
+  then the scene is freed and its audio released. The old cozy walk stays
+  for `cozy_worlds`. `zenscape.gd` runs the check on
+  `--verify-desktop-build`, through the title. The new markers
+  (`verify_desktop_export.py`) are `PASS: packaged front door title over the
+  isle` and `PASS: packaged walk, plane and teardown`. `export_presets.cfg`
+  and `desktop.yml` didn't need changes.
+- **New files and docs.** `tests/test_front_door.gd` is new, plus a check in
+  `test_scene_picker.gd` that an `own_title` entry opens without
+  `--no-title`. The new launcher is `run-zenscape.command`, which opens the
+  main scene. The README's Play section and `docs/design/scene-picker.md`
+  are updated.
+- `kit_isle.gd` grew 8 lines: the signal, `isle_up` and the emit.
+
+### Corrections to section 1
+
+- Before this round, **4** of **29** catalog entries opened `cozy_worlds`,
+  not 5 of 30. The title itself had no entry. Now it's 5 of 30.
+- `cozy_worlds.gd`'s Scenes button sits before Settings. The front door has
+  no Settings, so its Scenes sits before Quit.
+
+### Tests (headless, `tools/run_tests.py --tests ...`)
+
+All 14 pass: `test_front_door`, `test_export_entry`, `test_scene_picker`,
+`test_scene_picker_entries`, `test_scene_picker_title`,
+`test_title_resolution`, `test_title_showcase`, `test_world_title`, the five
+`test_aqueduct_isle*` tests and `test_kit_isle_landing`. Seven of them are
+`pass_with_known_engine_error` (`exit_leak`). `test_scene_picker_entries`
+didn't crash at exit in this run. It still opens the builder entry with
+`--no-title`, because it adds that flag to every entry, so the builder's own
+title is covered only by `test_scene_picker_title`, which still drives the
+old game's title.
+
+### What's left, and gotchas
+
+- **CI will see `ERROR:` lines (open).** At exit the aqueduct leaks 2 to 10
+  DummyShader RIDs. The count changes from run to run and appears on `main`
+  in any headless aqueduct run. `desktop.yml` greps `menu-test.log` for
+  `ERROR:`, and `verify_desktop_export.py` fails on any `ERROR:`, so the
+  leak line will likely turn the Windows job red now that the main scene is
+  the isle. I haven't confirmed that on CI. Clearing the kit's obvious static
+  material caches made no difference, and neither did `--no-life`,
+  `--no-flora`, `--no-traffic` or `--no-chain`. The count varies, which
+  points at timing (workers, or something freed after the RenderingServer).
+  The old cozy check printed `ERROR: Resumed function '_bake_underside()'
+  after await` (`diorama_flip.gd:1036`) on main locally, so it wasn't clean
+  either. Round 2 should track the leak down rather than loosen the grep.
+- **Round 2 (pause, settings, quit) is still needed.** In the game, Esc only
+  frees the mouse. There's no way back to the title except quitting. Scene
+  return is active only after a picked scene. The front door has no Settings.
+  The F1/F2/F5-F8/B/R dev keys still work in the default game.
+- **The tagline still reads "A little wilderness, made by you".** It's left
+  as the user's title had it. Whether it fits the isle is the user's call.
+- **R respawns at the rubble slope's foot**, the station start, not by the
+  plane.
+- **Untested visually.** The orbit framing (distance 1.35 times the art's
+  half-span, at least 70 m, lifted 6 m) and whether the card hides the isle
+  have only been checked by numbers. Look at a rendered run with no
+  `--no-title` before tuning anything.
+- **Startup.** The isle comes up in about 14 s headless with the suite in
+  parallel, and in about 7 s alone. All of it is under the veil.
+- Any later kit isle can use the same front door. Give it a scene script
+  like `zenscape.gd`: the `FrontDoor` child, `open(self)`, the two-frame
+  wait and the input gate.
