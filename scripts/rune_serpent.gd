@@ -41,6 +41,14 @@ extends Node3D
 ##   --serpent-cam[=side|left|pace|below|head|far|hill]   a camera on it
 ##   --meet-serpent                  into the plane, flying alongside it
 ##   --serpent-speed=<x>             its pace times x (judging the motion)
+##
+## Another scene may fly it its own way (studies/serpent_ride.gd, the
+## greybox for riding on its back): before `setup` it sets `route`,
+## `route_marks` and `start_mark`, its `girth`, and `solid` off; while it is
+## ridden, `bank_share` eases its roll and `look_back` has it glance back
+## over its shoulder at whoever is behind it. `ring_frame` and
+## `ring_corners` give its rings as posed, to stand on. Left alone, all of
+## these are as above.
 
 const Variety = preload("res://scripts/seeded_variety.gd")
 const StoneLampLights = preload("res://scripts/stone_lamp_lights.gd")
@@ -180,6 +188,10 @@ const BANK_MAX := 0.5
 ## times its pace and veering off, for PEEL_TIME s.
 const NOTICE := 120.0
 const WATCH_MOST := 14.0
+## Glancing back over its shoulder (`look_back`): the most seconds a glance
+## lasts, and the share of LOOK_MAX it turns.
+const GLANCE := 5.0
+const GLANCE_TURN := 0.85
 const NOTICE_COOLDOWN := 16.0
 const LOOK_MAX := Vector2(1.25,0.55)
 const LOOK_BEHIND := 2.4
@@ -292,6 +304,19 @@ const HILL_EYE := 9.0
 const BREATH_KEYS := [[0.0,0.0],[0.38,1.0],[0.86,0.0],[1.0,0.0]]
 
 var scene: Node3D
+## Set before `setup` to fly it another way: its route (as ROUTE), the marks
+## on it (as MARKS) and the one it starts at; its girth (RADIUS times this
+## through, the head too); whether its body is solid to the plane.
+var route: Array = ROUTE
+var route_marks: Dictionary = MARKS
+var start_mark := START
+var girth := 1.0
+var solid := true
+## The share of its roll into turns it takes (1 all of it; a rider on its
+## back may ease it), and whether a watcher behind it is glanced at over
+## its shoulder (GLANCE) rather than looked away from.
+var bank_share := 1.0
+var look_back := false
 ## Its pace now (m/s), how far round its way it is (m), how far its head
 ## has travelled in all (m), and the way's length (m).
 var s := 0.0
@@ -355,6 +380,7 @@ var _jaw_until := -10.0
 var _flick := -10.0
 var _next_flick := 2.0
 var _veer_side := 1.0
+var _glance_side := 1.0
 var _head_fwd := Vector3.FORWARD
 var _head_pos := Vector3.ZERO
 var _head_dir := Vector3.FORWARD
@@ -392,7 +418,7 @@ func _init() -> void:
 func setup(study: Node3D) -> void:
 	scene = study
 	_rng.seed = 7741
-	var start: Variant = START
+	var start: Variant = start_mark
 	for arg: String in LaunchArgs.user_args():
 		if arg.begins_with("--serpent-at="): start = arg.get_slice("=",1)
 		elif arg == "--serpent-cam": cam_mode = "side"
@@ -407,8 +433,8 @@ func setup(study: Node3D) -> void:
 	_stations()
 	_build_body()
 	_build_ribbons()
-	_build_solid()
-	var at := float(_marks.get(start,-1.0)) if _marks.has(start) else (float(start) if str(start).is_valid_float() else float(_marks[START]))
+	if solid: _build_solid()
+	var at := float(_marks.get(start,-1.0)) if _marks.has(start) else (float(start) if str(start).is_valid_float() else float(_marks.get(start_mark,0.0)))
 	place(at)
 
 ## Its head at `at` m round its way, its body laid out behind along the way
@@ -446,21 +472,21 @@ func place(at: float) -> void:
 ## The route sampled every ROUTE_STEP m along its B-spline: points, ways,
 ## turns and shares; the marks' places on it.
 func _build_route() -> void:
-	var n := ROUTE.size()
+	var n := route.size()
 	var dense := PackedVector3Array()
 	var shares := PackedVector3Array()
 	var per := 48
 	var mark_at := {}
 	for i in range(n):
-		for m: String in MARKS:
-			if int(MARKS[m]) == i: mark_at[m] = dense.size()
+		for m: String in route_marks:
+			if int(route_marks[m]) == i: mark_at[m] = dense.size()
 		for j in range(per):
 			var t := float(j)/per
 			var w := _basis(t)
 			var p := Vector3.ZERO
 			var sh := Vector3.ZERO
 			for c in range(4):
-				var cp: Array = ROUTE[(i-1+c+n)%n]
+				var cp: Array = route[(i-1+c+n)%n]
 				p += (cp[0] as Vector3)*w[c]
 				sh += Vector3(float(cp[1]),float(cp[2]),float(cp[3]))*w[c]
 			dense.append(p)
@@ -553,7 +579,7 @@ func heave_reach() -> float:
 ## rock by this, it is clear whatever it does.
 func reach_at(at: float) -> float:
 	var sh := route_shares(at)
-	return RADIUS*1.08+weave_reach()*sh.x*1.05+VEER*sh.z+heave_reach()
+	return RADIUS*girth*1.08+weave_reach()*sh.x*1.05+VEER*sh.z+heave_reach()
 
 ## The head's way at route arc `at`: [path point (with the weave), base
 ## point (the route and the veer)], in the route's frame rolled by the
@@ -695,6 +721,9 @@ func _set_mode(next: String) -> void:
 			notices += 1
 			_jaw_until = _time+JAW_TIME
 			_next_flick = minf(_next_flick,_time+0.8)
+			if watching != Vector3.INF:
+				var right := _head_fwd.cross(Vector3.UP).normalized()
+				_glance_side = -1.0 if (watching-_head_pos).dot(right) > 0.0 else 1.0
 		"pace":
 			paces += 1
 			_mode_for = _rng.randf_range(PACE_TIME.x,PACE_TIME.y)
@@ -712,12 +741,19 @@ func _see() -> void:
 		"roam":
 			if d < NOTICE and _time >= _notice_ready: _set_mode("watch")
 		"watch":
-			if d > NOTICE*1.25 or age > WATCH_MOST: _set_mode("roam")
+			if d > NOTICE*1.25 or age > (GLANCE if look_back and _behind(w) else WATCH_MOST): _set_mode("roam")
 			elif flying and d < PACE_NEAR and _aligned(): _set_mode("pace")
 		"pace":
 			if age > _mode_for or d > NOTICE: _set_mode("peel")
 		"peel":
 			if age > PEEL_TIME: _set_mode("roam")
+
+## Whether `w` is behind its head, past where it would look round to it.
+func _behind(w: Vector3) -> bool:
+	if w == Vector3.INF: return false
+	var to := w-_head_pos
+	var rel := wrapf(atan2(to.x,to.z)-atan2(_head_fwd.x,_head_fwd.z),-PI,PI)
+	return absf(rel) > LOOK_BEHIND-0.5
 
 ## The plane flies its way (headings within PACE_ALIGN).
 func _aligned() -> bool:
@@ -747,6 +783,9 @@ func _goals() -> void:
 		# whipping its head from one side to the other.
 		var rel := wrapf(atan2(to.x,to.z)-atan2(base.x,base.z),-PI,PI)
 		yaw = clampf(rel,-LOOK_MAX.x,LOOK_MAX.x)*(1.0-smoothstep(LOOK_BEHIND-0.5,LOOK_BEHIND,absf(rel)))
+		# Glancing back: over the shoulder it began on, held there, so a
+		# watcher straight behind doesn't flip it from side to side.
+		if look_back and absf(rel) > LOOK_BEHIND-0.5: yaw = _glance_side*LOOK_MAX.x*GLANCE_TURN
 		pitch = clampf(asin(clampf(to.y,-1.0,1.0))-asin(clampf(base.y,-1.0,1.0)),-LOOK_MAX.y,LOOK_MAX.y)
 		lean = LEAN
 		lift = LOOK_LIFT
@@ -770,7 +809,7 @@ func _goals() -> void:
 	_sg[S_LIFT] = lift
 	_sg[S_JAW] = JAW_NOTICE if _time < _jaw_until else 0.0
 	var v := _sx[S_SPEED] if _sx[S_SPEED] > 0.0 else CRUISE
-	_sg[S_BANK] = clampf(BANK*v*v*_route_turn(s),-BANK_MAX,BANK_MAX)
+	_sg[S_BANK] = clampf(BANK*v*v*_route_turn(s),-BANK_MAX,BANK_MAX)*bank_share
 
 func _springs(step: float) -> void:
 	if step <= 0.0: return
@@ -803,7 +842,7 @@ func _stations() -> void:
 	_neck_count = 0
 	for k in range(STATIONS):
 		var u := _body_u(_arc[k])
-		_radius[k] = RADIUS*_profile(u)
+		_radius[k] = RADIUS*girth*_profile(u)
 		_breath_w[k] = sin(PI*clampf((u-0.08)/0.55,0.0,1.0))
 		_tail_w[k] = pow(smoothstep(0.86,1.0,u),2.0)
 		if _arc[k] < NECK: _neck_count = k+1
@@ -922,10 +961,10 @@ func _pose(_delta: float) -> void:
 	var tongue := hd.rotated(head_side,0.12+flutter)
 	var tongue_up := head_up.rotated(head_side,0.12+flutter)
 	var ts := maxf(out,0.001)
-	_skeleton.set_bone_pose(STATIONS+1,Transform3D(Basis(head_side*ts,tongue_up*ts,tongue*ts),held+hd*(HEAD*0.97)-head_up*RADIUS*0.22))
+	_skeleton.set_bone_pose(STATIONS+1,Transform3D(Basis(head_side*ts,tongue_up*ts,tongue*ts),held+hd*(HEAD*0.97)-head_up*RADIUS*girth*0.22))
 	lo = lo.min(_snout).min(held)
 	hi = hi.max(_snout).max(held)
-	var pad := Vector3.ONE*(RADIUS*2.0+HAZE*2.0+4.0)
+	var pad := Vector3.ONE*(RADIUS*girth*2.0+HAZE*2.0+4.0)
 	_body.custom_aabb = AABB(lo-pad,hi-lo+pad*2.0)
 
 ## The runes' run and the light by the hour: brighter after dark.
@@ -1097,7 +1136,7 @@ func _build_solid() -> void:
 		_add_capsule(r*CAPSULE_SHARE,_arc[to]-_arc[k])
 		_capsule_rings.append(Vector2i(k,to))
 		k = to
-	_add_capsule(RADIUS*0.85,HEAD)
+	_add_capsule(RADIUS*girth*0.85,HEAD)
 	_capsule_rings.append(Vector2i(-1,-1))
 
 func _add_capsule(radius: float, length: float) -> void:
@@ -1137,6 +1176,30 @@ func radii() -> PackedFloat32Array:
 
 func stations() -> PackedFloat32Array:
 	return _arc
+
+## Ring `k`'s place and turn as posed this frame (its bone: across, up and
+## along toward the head, scaled by its breath), and its octagon's corners
+## in that frame (the faces between two rings' corners are its skin).
+func ring_frame(k: int) -> Transform3D:
+	return _skeleton.get_bone_pose(k)
+
+func ring_corners(k: int) -> Array[Vector3]:
+	return _octagon(_radius[k],1.0,SQUASH,0.0,k,HEWN if k >= 2 and k < STATIONS-3 else 0.0)
+
+## The head's place and turn as posed this frame (its bone: across, up and
+## along toward the snout), and its section `i`'s corners (HEAD_SECTIONS,
+## back to front; the brows raised over the eyes) in that frame, laid flat
+## at its back: section i stands HEAD times its share along from there.
+func head_frame() -> Transform3D:
+	return _head_xf
+
+func head_corners(i: int) -> Array[Vector3]:
+	var hr := RADIUS*girth*_profile(0.0)*HEAD_GIRTH
+	var spec: Array = HEAD_SECTIONS[i]
+	var section := _octagon(hr,float(spec[0]),float(spec[1])*SQUASH,0.0,-1,0.0,false)
+	if i == 2:
+		for j: int in [0,1]: section[j] += Vector3(signf(section[j].x)*0.06*hr,0.14*hr,0.0)
+	return section
 
 ## The head's back, its way, its snout; its pace now (m/s).
 func head() -> Vector3:
@@ -1268,9 +1331,7 @@ func _build_mesh() -> ArrayMesh:
 	var mesh := MeshParts.new()
 	# The rings, each its own true-ish octagon: crest, belly, hewn corners.
 	var rings: Array = []
-	for k in range(STATIONS):
-		var hewn := HEWN if k >= 2 and k < STATIONS-3 else 0.0
-		rings.append(_octagon(_radius[k],1.0,SQUASH,0.0,k,hewn))
+	for k in range(STATIONS): rings.append(ring_corners(k))
 	var bands := {}
 	for k in range(3,STATIONS-5):
 		if k%BAND_EVERY == 0 and Variety.unit([k,41]) >= BAND_SKIP: bands[k] = true
@@ -1296,14 +1357,12 @@ func _build_mesh() -> ArrayMesh:
 	# brows over the eyes, a blunt snout; the jaw (the lower faces) on its
 	# own bone, hinged at the head's back, whose back edge stays with the
 	# head so the corner of the mouth stretches.
-	var hr := RADIUS*_profile(0.0)*HEAD_GIRTH
+	var hr := RADIUS*girth*_profile(0.0)*HEAD_GIRTH
 	var secs: Array = []
-	for spec: Array in HEAD_SECTIONS:
-		var section := _octagon(hr,float(spec[0]),float(spec[1])*SQUASH,0.0,-1,0.0,false)
-		for j in range(8): section[j].z = HEAD*float(spec[2])
+	for i in range(HEAD_SECTIONS.size()):
+		var section := head_corners(i)
+		for j in range(8): section[j].z = HEAD*float(HEAD_SECTIONS[i][2])
 		secs.append(section)
-	for j: int in [0,1]:
-		secs[2][j] += Vector3(signf(secs[2][j].x)*0.06*hr,0.14*hr,0.0)
 	var tip := Vector3(0.0,-0.06*hr,HEAD)
 	var h := STATIONS
 	var jaw := STATIONS+2

@@ -42,6 +42,8 @@ const ENTRIES: Array[Dictionary] = [
 	# On-foot greyboxes.
 	{"id":"character_study","group":"On-foot greyboxes","title":"Character study","scene":"res://studies/character_study.tscn","args":[],
 		"detail":"The pilot's moves in the greybox room. 1-9: stations, R: back to start."},
+	{"id":"serpent_ride","group":"On-foot greyboxes","title":"Serpent ride","scene":"res://studies/serpent_ride.tscn","args":[],
+		"detail":"Run about on the rune serpent's back as it flies a loop of open sky. 1-3: on its back, 4: the tower, R: start."},
 	{"id":"pack_ruins_archipelago","group":"On-foot greyboxes","title":"Ruins archipelago","scene":"res://studies/character_study.tscn","args":["--pack=ruins_archipelago"],
 		"detail":"Island pack: floating ruins of an old city to platform across. 1-7: stations."},
 	{"id":"pack_sky_village","group":"On-foot greyboxes","title":"Sky village","scene":"res://studies/character_study.tscn","args":["--pack=sky_village"],

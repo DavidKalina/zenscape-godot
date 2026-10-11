@@ -551,6 +551,34 @@ func reset(at: Vector3, towards: float, speed := 0.0) -> void:
 	surface = -INF
 	_from_water = false
 
+## Carried by what he stands on or hangs from, between steps (a moving
+## body: studies/serpent_ride.gd's serpent): every place he keeps (the feet,
+## a lip and his hang under it) moved by `by`, and every way he keeps (his
+## facing, his pace, a lip's or a wall's way off, the slope's fall) turned
+## `turn` radians about up, so he stays upright. Nothing else calls it, and
+## his feel is untouched: the step after it runs as ever, on the ground as
+## it is now.
+func carry(by: Transform3D, turn: float) -> void:
+	var was := feet
+	feet = by*feet
+	ground_y += feet.y-was.y
+	if is_finite(surface): surface += feet.y-was.y
+	lip = by*lip
+	_hang_feet = by*_hang_feet
+	_snap = _snap.rotated(Vector3.UP,turn)
+	_correct = _correct.rotated(Vector3.UP,turn)
+	velocity = velocity.rotated(Vector3.UP,turn)
+	facing = wrapf(facing+turn,-PI,PI)
+	lip_out = _turned(lip_out,turn)
+	wall_out = _turned(wall_out,turn)
+	_wall_seen = _turned(_wall_seen,turn)
+	slope = _turned(slope,turn)
+
+## `way` (x, z) turned `turn` radians about up.
+static func _turned(way: Vector2, turn: float) -> Vector2:
+	var v := Vector3(way.x,0.0,way.y).rotated(Vector3.UP,turn)
+	return Vector2(v.x,v.z)
+
 ## The way `towards` faces, in the frame's plane (x, z).
 static func forward(towards: float) -> Vector2:
 	return Vector2(-sin(towards),-cos(towards))

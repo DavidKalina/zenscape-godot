@@ -1030,7 +1030,7 @@ func _build_ui() -> void:
 	_hud.add_theme_constant_override("shadow_offset_y",1)
 	layer.add_child(_hud)
 	var hint := Label.new()
-	hint.text = "F5 record · F6 replay · F7 older · F8 all paths · WASD run · Space jump (on landing: pump; in a skid: side flip) · Shift/C crouch: at a run slide, + Space long jump (crouch held, Space on landing: chain), on a slope surf · in the air X twirl; out of a slide, steer across to build speed, hop again on the touch · into a wall: slide, Space: kick · along a wall in the air: wall run, Space: kick off · 1-9 0 - = [ ] \\ stations · R start · F1 numbers · F2 feel · Esc mouse"
+	hint.text = _hint_text()
 	hint.add_theme_font_size_override("font_size",14)
 	hint.add_theme_color_override("font_color",Color("fbf6ea"))
 	hint.add_theme_color_override("font_shadow_color",Color(0,0,0,0.7))
@@ -1123,6 +1123,10 @@ func _build_ui() -> void:
 			else: default_feel())
 		buttons.add_child(button)
 	_tune_box.add_child(buttons)
+
+## The help line along the bottom.
+func _hint_text() -> String:
+	return "F5 record · F6 replay · F7 older · F8 all paths · WASD run · Space jump (on landing: pump; in a skid: side flip) · Shift/C crouch: at a run slide, + Space long jump (crouch held, Space on landing: chain), on a slope surf · in the air X twirl; out of a slide, steer across to build speed, hop again on the touch · into a wall: slide, Space: kick · along a wall in the air: wall run, Space: kick off · 1-9 0 - = [ ] \\ stations · R start · F1 numbers · F2 feel · Esc mouse"
 
 func _tuning() -> bool:
 	return (_tune != null and _tune.visible) or (_name_panel != null and _name_panel.visible)
