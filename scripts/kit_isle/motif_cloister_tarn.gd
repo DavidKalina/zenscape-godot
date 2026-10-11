@@ -106,7 +106,14 @@ func _build_pieces() -> void:
 	place.call("lancet_wall",TARN_SEED+30,0.5,"west",Vector2(-1.2,0.0),PI*0.5)
 	place.call("pier",TARN_SEED+31,0.75,"southwest",Vector2(0.8,-1.0),0.4)
 	place.call("tomb_chest",TARN_SEED+32,0.5,"southwest",Vector2(-1.8,1.6),1.1)
-	place.call("arch",TARN_SEED+33,0.45,"northeast",Vector2(0.6,-0.8),deg_to_rad(-47.0+90.0))
+	# The arch faces the north-east bridge across the isle's middle: the
+	# bridge walks and flies in through it (as wide as the plane's arch it
+	# spans most of the isle; set along the bridge its pier stood on the
+	# bridge's head).
+	var ne_way := Vector2(1.0,0.0)
+	for spec: Dictionary in TarnArt.bridges():
+		if spec.name == "northeast_bridge": ne_way = Vector2((spec.b as Vector3).x-(spec.a as Vector3).x,(spec.b as Vector3).z-(spec.a as Vector3).z).normalized()
+	place.call("arch",TARN_SEED+33,0.45,"northeast",ne_way*0.6,atan2(ne_way.x,ne_way.y))
 	place.call("fallen_pier",TARN_SEED+34,0.6,"north",Vector2(-1.6,-0.4),0.9)
 
 ## The rope bridges between the mother and the satellites: each the game's
