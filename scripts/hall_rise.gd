@@ -117,6 +117,12 @@ var _puffs: MultiMeshInstance3D
 var burst: Node = null
 var puff_scale := 1.0
 const BURST_UP := 8.0
+## How many puffs burst round a chunk as it breaks through (at most), and
+## stream off it a second: BURST and STREAM_RATE unless the caller says
+## (the aqueduct isle's line, whose whole pieces are big:
+## scripts/hall_line.gd).
+var burst_puffs := BURST
+var stream_rate := STREAM_RATE
 var _pp := PackedVector3Array()
 var _pv := PackedVector3Array()
 var _ps := PackedFloat32Array()
@@ -641,7 +647,7 @@ static func _out(c: Dictionary, p: Vector3) -> Vector3:
 ## through, and the cap of cloud on its wall tops.
 func _burst(c: Dictionary, lift: float) -> void:
 	var rim: PackedVector3Array = c.rim
-	var n := mini(BURST,rim.size())
+	var n := mini(burst_puffs,rim.size())
 	for k in range(n):
 		var p := rim[_rng.randi_range(0,rim.size()-1)]
 		var out := _out(c,p)
@@ -657,7 +663,7 @@ func _burst(c: Dictionary, lift: float) -> void:
 ## between the cloud top and its own top, carried up a little and left
 ## behind.
 func _stream(i: int, c: Dictionary, lift: float, v: float, dt: float) -> void:
-	_owed[i] += STREAM_RATE*dt
+	_owed[i] += stream_rate*dt
 	var rim: PackedVector3Array = c.rim
 	var top: float = float(c.hi.y)+lift
 	while _owed[i] >= 1.0:

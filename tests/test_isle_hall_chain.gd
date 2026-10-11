@@ -9,14 +9,22 @@ extends SceneTree
 ## does nothing; threading it sets the first hall rising unseen under the
 ## cloud and nothing shows for the pause, then the pulse, the nose arrow
 ## folding quiet (no more tracking) and the first hall breaking out ahead,
-## its gate within a few degrees of the heading the plane left the ring on;
-## the chain then runs on, the autopilot flying through 2+ halls never
-## stuck and never inside stone, each gate still as the plane gets to it;
-## and with the chain off (--no-chain) there is no ring and the old arrival
-## flashes by the shard.
+## its entry within a few degrees of the heading the plane left the ring on;
+## then the Sundered line (docs/design/isle-hall-line.md): planned, its
+## pieces whole, end to end and straight within runs, a flyable sidestep
+## about every three; flown, the autopilot goes on through seven pieces at
+## cruise then boost, a sidestep among them, with no bump, never inside
+## stone, each piece still as the plane gets to it, the oldest sinking past
+## the cap; --chain-style=halls still gives the hall chain; and with the
+## chain off (--no-chain) there is no ring and the old arrival flashes by
+## the shard.
 ##   godot --headless --path . --script tests/test_isle_hall_chain.gd
 const ChainPlan = preload("res://scripts/hall_chain_plan.gd")
 const IsleChain = preload("res://studies/aqueduct_isle_chain.gd")
+const LinePlan = preload("res://scripts/hall_line_plan.gd")
+## Pieces the autopilot flies into at cruise, then holding boost.
+const FLY_CRUISE := 4
+const FLY_BOOST := 3
 const SkyPlane = preload("res://scripts/sky_plane.gd")
 const NoseCompass = preload("res://scripts/nose_compass.gd")
 const DT := 1.0/60.0
@@ -32,6 +40,7 @@ func check(ok: bool, label: String) -> void:
 
 func run() -> void:
 	create_timer(300.0).timeout.connect(func() -> void: push_error("isle hall chain test timed out"); quit(2))
+	_layout()
 	study = await _open(true)
 	_no_patch()
 	_hidden()
@@ -41,6 +50,7 @@ func run() -> void:
 	await _threads()
 	_quiet()
 	await _runs_on()
+	_halls_style()
 	study.queue_free()
 	await process_frame
 	study = await _open(false)
@@ -179,12 +189,12 @@ func _threads() -> void:
 	var gate: Vector3 = c.first_gate()
 	var off := absf(rad_to_deg(wrapf(ChainPlan.heading_of(gate-c.pass_point)-c.pass_heading,-PI,PI)))
 	var ahead := Vector2(gate.x-c.pass_point.x,gate.z-c.pass_point.z).length()
-	check(off < 3.0 and ahead >= c.lead+ChainPlan.LEAD_IN-1.0,"The first gate is %.2f degrees off the heading the plane left the ring on (%.0f m ahead, way in %.0f m)" % [off,ahead,c.lead_used])
+	check(off < 3.0 and ahead >= c.lead+c.lead_in()-1.0,"The first gate is %.2f degrees off the heading the plane left the ring on (%.0f m ahead, way in %.0f m)" % [off,ahead,c.lead_used])
 	var rise: Node3D = c.chain.halls[0].rise
 	var arrive: float = ahead/maxf(c.pass_speed,SkyPlane.CRUISE_SPEED)
 	check(float(rise.plan.length)+c.spare <= arrive+0.05,"At the plane's speed its gate is still %.1f s after threading, %.1f s before the plane gets there" % [float(rise.plan.length),arrive-float(rise.plan.length)])
-	var need: float = SkyPlane.BOOST_SPEED*(float(c.chain.length_at(c.pass_point.y-2.0))+c.spare)-ChainPlan.LEAD_IN
-	check(need > c.lead_used+50.0,"Threaded at boost, its way in would stand %.0f m on (%.0f at cruise)" % [need,c.lead_used])
+	var need: float = SkyPlane.BOOST_SPEED*(float(c.chain.length_at(c.first_y()))+c.spare)-c.lead_in()
+	check(need > c.lead_used+20.0,"Threaded at boost, its way in would stand %.0f m on (%.0f at cruise)" % [need,c.lead_used])
 	var through := 0
 	for i in range(int(0.4/DT)):
 		study.fly_step(DT,{})
@@ -218,45 +228,175 @@ func _quiet() -> void:
 	check(rad_to_deg(was.angle_to(pivot.basis.get_rotation_quaternion())) < 0.01,"And no longer tracks")
 	study.lode_target = keep
 
-## The chain runs on: the autopilot flies through 2+ halls from the ring,
-## never stuck and never inside stone, the next one rising each time, each
-## gate still as the plane gets to it.
+## The line runs on: the autopilot flies on from the ring through FLY_CRUISE
+## pieces at cruise, then holding boost through FLY_BOOST more, a sidestep
+## among them: never stuck, never a bump, never inside stone; every piece
+## whole (one chunk, the island with it) and still as the plane gets to its
+## entry, at either speed; the oldest sinking past the cap.
 func _runs_on() -> void:
 	var c: Node3D = study.isle_chain
-	var chain: Node3D = c.chain
-	var at: int = chain.route_base
-	var through := {}
-	var gates := {}
-	var stuck := 0
+	var line: Node3D = c.chain
+	var at: int = line.route_base
+	var arrived := {}
+	var kinds := {}
 	var shut := 0
-	var last: Vector3 = study.plane.position
 	var bumps_from: int = study.bumps
 	var steps := 0
-	while through.size() < 2 and steps < int(90.0/DT):
-		var got: Array = chain.steer(study.plane,at)
+	var whole := true
+	var sank := false
+	var most := 0
+	var boost := 0.0
+	var boosted_from := -1
+	while arrived.size() < FLY_CRUISE+FLY_BOOST and steps < int(150.0/DT):
+		if arrived.size() >= FLY_CRUISE and boost == 0.0:
+			boost = 1.0
+			boosted_from = arrived.size()
+		var got: Array = line.steer(study.plane,at)
 		at = got[1]
-		study.fly_step(DT,got[0])
+		var input: Dictionary = got[0]
+		input.boost = boost
+		study.fly_step(DT,input)
 		steps += 1
 		if steps % 4 == 0:
 			await physics_frame
 			if study._inside_stone(study.plane.position): shut += 1
-		if steps % 60 == 59:
-			if study.plane.position.distance_to(last) < 6.0: stuck += 1
-			last = study.plane.position
-		for h: Dictionary in chain.halls:
-			if float(h.progress) >= 0.97: through[int(h.index)] = true
+		most = maxi(most,line.standing_count())
+		for h: Dictionary in line.halls:
 			var rise: Node3D = h.rise
-			var local: Vector3 = ChainPlan.local(rise.to_local(study.plane.position),ChainPlan.hand_of(h.pose))
-			if not gates.has(int(h.index)) and local.distance_to(ChainPlan.line()[0]) < 8.0:
-				# The gate (the last chunk up): still in its place by now.
-				var g: int = rise.chunks.size()-1
-				gates[int(h.index)] = rise.state[g] in ["pending","set"]
-	check(through.has(0) and through.has(1),"The plane flies on through %d halls from the ring (%d made, %.0f s)" % [through.size(),chain.made,steps*DT])
-	check(gates.get(0,false) and gates.get(1,false),"Each gate is still as the plane gets to it at cruise (%s)" % gates)
-	check(chain.made >= 3,"Each one sets the next rising (%d made)" % chain.made)
-	check(stuck == 0 and float(study.plane.speed) >= 6.9,"Never stuck (%d bumps)" % (study.bumps-bumps_from))
+			if rise.sinking: sank = true
+			if rise.chunks.size() != 1 or int((rise.chunks[0].solids as Array).size()) != int(rise.plan.solids.size()) or (rise.chunks[0].extra as Array).size() != int(h.pose.bays): whole = false
+			if bool(h.reached) and not arrived.has(int(h.index)):
+				arrived[int(h.index)] = [rise.state[0] in ["pending","set"],boost > 0.0,snappedf(float(study.plane.speed),0.1)]
+				kinds[str(h.pose.kind)] = int(kinds.get(str(h.pose.kind),0))+1
+	var still := true
+	var at_boost := 0
+	for i: int in arrived:
+		if not arrived[i][0]: still = false
+		if arrived[i][1]: at_boost += 1
+	check(arrived.size() >= FLY_CRUISE+FLY_BOOST,"The autopilot flies on from the ring into %d pieces (%d made, %.0f s)" % [arrived.size(),line.made,steps*DT])
+	check(whole,"Every piece rises whole: one chunk, every bay's stone and its island in it")
+	check(still and at_boost >= FLY_BOOST-1,"Every piece is still as the plane reaches its entry, at cruise and at boost (%d at boost): %s" % [at_boost,arrived])
+	check(kinds.has("jog"),"A sidestep is flown among them (%s)" % kinds)
+	check(study.bumps-bumps_from == 0,"Never a bump (%d)" % (study.bumps-bumps_from))
 	check(shut == 0,"Never inside stone")
+	check(sank and most <= line.keep,"Past the cap the oldest sinks (at most %d standing)" % most)
 	check(study.plane.position.y > IsleChain.SEA_TOP+60.0,"High over the cloud (y %.1f)" % study.plane.position.y)
+	var worst := 0.0
+	for s: Dictionary in line.spawns: worst = maxf(worst,int(s.frame)/1000.0)
+	check(worst < 4.0,"No hitch: the heaviest frame's hand-over %.2f ms" % worst)
+
+## The layout, as planned (no scene): pieces end to end and straight
+## within runs, Sundered gaps, a sidestep about every three (parallel, to
+## the side, flyable at boost), the same for the same seed; and a bend line.
+func _layout() -> void:
+	var cfg := LinePlan.settings({})
+	var pieces := _plan(cfg,40)
+	var straight := true
+	var gaps_ok := true
+	var jogs := 0
+	var jog_ok := true
+	var runs := []
+	var run := 1
+	var worst_rate := 0.0
+	var worst_off := 0.0
+	var shortest := INF
+	for i in range(1,pieces.size()):
+		var a: Dictionary = pieces[i-1]
+		var b: Dictionary = pieces[i]
+		var d: Vector3 = b.entry-a.exit
+		var flat := Vector3(d.x,0.0,d.z)
+		var along := flat.dot(LinePlan.ahead(float(a.yaw)))
+		var across := flat.dot(LinePlan.right(float(a.yaw)))
+		if b.kind == "gap":
+			run += 1
+			if absf(across) > 0.01 or absf(float(b.yaw)-float(a.yaw)) > 1e-5: straight = false
+			if along < 14.0-0.01 or along > 26.0+0.01 or absf(d.y) > 3.01 or absf(d.y) > along*LinePlan.GRADE+0.01: gaps_ok = false
+		else:
+			runs.append(run)
+			run = 1
+			jogs += 1
+			if b.kind != "jog" or absf(float(b.yaw)-float(a.yaw)) > 1e-5 or absf(absf(across)-48.0) > 48.0*0.16 or along < 100.0: jog_ok = false
+			shortest = minf(shortest,along)
+			var m := _gap_motion(a,b)
+			worst_rate = maxf(worst_rate,SkyPlane.BOOST_SPEED/m.x)
+			worst_off = maxf(worst_off,m.y)
+	check(straight,"Within a run the pieces stand end to end, dead straight on one heading")
+	check(gaps_ok,"Their gaps are Sundered's: 14-26 m of sky, a step of at most 3 m")
+	var mean := 0.0
+	for r: int in runs: mean += r
+	mean /= maxf(runs.size(),1)
+	check(jogs >= 8 and runs.min() >= 2 and runs.max() <= 4 and mean > 2.4 and mean < 3.6,"A sidestep about every three pieces (%d in 40; runs %s, mean %.1f)" % [jogs,runs,mean])
+	check(jog_ok,"Each sidestep sets the next run parallel, about 48 m to the side, over a gap of at least 100 m (shortest %.0f m)" % shortest)
+	check(worst_rate < SkyPlane.TURN_RATE*0.6 and worst_off < 50.0,"Flyable at boost: at most %.2f rad/s of turn (the plane can %.1f), at most %.0f degrees off the run's heading" % [worst_rate,SkyPlane.TURN_RATE,worst_off])
+	var overlap := 0
+	for i in range(pieces.size()):
+		for j in range(i+1,pieces.size()):
+			if not Geometry2D.intersect_polygons(LinePlan.footprint(pieces[i]),LinePlan.footprint(pieces[j])).is_empty(): overlap += 1
+	check(overlap == 0,"No two pieces' islands overlap")
+	var drift := 0.0
+	for p: Dictionary in pieces: drift = maxf(drift,absf(float(p.offset)))
+	check(drift < 48.0*1.2+10.0,"The sidesteps lean back: never more than %.0f m off the first run's axis" % drift)
+	var again := _plan(cfg,40)
+	var same := true
+	for i in range(pieces.size()):
+		if (pieces[i].entry as Vector3).distance_to(again[i].entry) > 1e-4 or pieces[i].bays != again[i].bays: same = false
+	check(same,"The same seed gives the same line")
+	var t := LinePlan.template(pieces[1])
+	check(t.chunks.size() == 1 and (t.chunks[0].solids as Array).size() == t.solids.size() and (t.chunks[0].extra as Array).size() == int(pieces[1].bays),"A piece is one chunk: all %d of its bays' solids and its island's %d hulls" % [t.solids.size(),int(pieces[1].bays)])
+	var length := float(pieces[1].length)
+	check(length >= 64.0 and float(t.chunks[0].hi.y)-float(t.chunks[0].lo.y) > 30.0,"A big piece: %.0f m of nave, %.0f m from keel to wall top" % [length,float(t.chunks[0].hi.y)-float(t.chunks[0].lo.y)])
+	# The bend line.
+	var bends := _plan(LinePlan.settings({"turn":"bend"}),40)
+	var turned := 0
+	var wander := 0.0
+	var h0 := float(bends[0].yaw)
+	for i in range(1,bends.size()):
+		if bends[i].kind == "bend":
+			turned += 1
+			var m := _gap_motion(bends[i-1],bends[i])
+			worst_rate = maxf(worst_rate,SkyPlane.BOOST_SPEED/m.x)
+		wander = maxf(wander,absf(wrapf(float(bends[i].yaw)-h0,-PI,PI)))
+	check(turned >= 8 and rad_to_deg(wander) < 40.0 and worst_rate < SkyPlane.TURN_RATE*0.6,"--line-turn=bend: %d bends, never more than %.0f degrees off the first heading, at most %.2f rad/s at boost" % [turned,rad_to_deg(wander),worst_rate])
+
+func _plan(cfg: Dictionary, n: int) -> Array:
+	var out := [LinePlan.first(int(cfg.seed),cfg,Vector3(0.0,25.0,0.0),0.4)]
+	for i in range(n-1): out.append(LinePlan.next(out[-1],cfg))
+	return out
+
+## Over a gap's lane: its tightest turn's radius (m) and the most it swings
+## off the first run's heading (degrees).
+func _gap_motion(a: Dictionary, b: Dictionary) -> Vector2:
+	var pts := [a.exit]
+	for k in range(1,201): pts.append(LinePlan.gap_point(a,b,k/200.0))
+	var tight := INF
+	var off := 0.0
+	for k in range(1,pts.size()-1):
+		var p0: Vector3 = pts[k-1]
+		var p1: Vector3 = pts[k]
+		var p2: Vector3 = pts[k+1]
+		var h1 := LinePlan.heading_of(p1-p0)
+		var h2 := LinePlan.heading_of(p2-p1)
+		var turn := absf(wrapf(h2-h1,-PI,PI))
+		var step := Vector2(p2.x-p1.x,p2.z-p1.z).length()
+		if turn > 1e-6: tight = minf(tight,step/turn)
+		off = maxf(off,rad_to_deg(absf(wrapf(h1-float(a.yaw),-PI,PI))))
+	return Vector2(tight,off)
+
+## --chain-style=halls still gives the old hall chain, its first hall
+## placed dead ahead of the threading.
+func _halls_style() -> void:
+	var c: Node3D = IsleChain.new()
+	study.add_child(c)
+	c.setup(study.lode_target,PackedStringArray(["--chain-style=halls"]))
+	check(c.style == "halls" and c.chain.get("template_left") != null,"--chain-style=halls: the hall chain")
+	c.pass_point = c.ring_at
+	c.pass_heading = c.ring_heading
+	c.pass_speed = SkyPlane.CRUISE_SPEED
+	c._place_first()
+	var gate: Vector3 = c.first_gate()
+	var off := absf(rad_to_deg(wrapf(ChainPlan.heading_of(gate-c.pass_point)-c.pass_heading,-PI,PI)))
+	check(c.chain.halls.size() == 1 and c.chain.halls[0].rise.chunks.size() == 4 and off < 3.0,"Its first hall rises in its four chunks, its gate %.2f degrees off the heading" % off)
+	c.queue_free()
 
 ## --no-chain: no ring, the shard where it was, the old arrival.
 func _no_chain() -> void:
