@@ -177,7 +177,7 @@ const TOUCH_SPEED := 9.5
 const TOUCH_HOLD := 0.5
 const TOUCH_GAP := 0.25
 const SAFE_REACH := 40.0
-const FOOT_HINT := "F (pad Y)  fly the plane from here  ·  R3 camera back behind"
+const FOOT_HINT := "F (pad Y)  fly the plane from here  ·  Space (pad A) again in the air off an edge: the sail, again: fold  ·  R3 camera back behind"
 const FLY_HINT := "Flying  ·  %.0f m/s  ·  bumps %d\nA D bank and turn  ·  W S pitch (W nose down)  ·  mouse steers  ·  Space boost  ·  Shift brake  ·  hold Q E (LB RB) knife edge, + A D to drift  ·  Q Q or E E quick, or click: barrel roll\nF (pad Y) back on foot nearby  ·  skim the turf braking to set down  ·  R start on foot  ·  L / Shift+L look  ·  B gust  ·  hold right mouse or the right stick to look round  ·  R3 camera back behind"
 var flying := false
 ## The plane's flight (a SkyPlane), its figure, the chase camera, the
@@ -395,6 +395,8 @@ func _build_light() -> void:
 	_atmosphere._environment = _environment
 	_atmosphere._ground_min = isle_top()
 	_atmosphere._summit = isle_summit()
+	# The pocket sail (scripts/pocket_sail.gd) rides its breeze and gusts.
+	motor.air = func(p: Vector3) -> Dictionary: return PocketSail.atmosphere_air(_atmosphere,p)
 	# The weather: its surface weather and sky; its rain and snow fall on
 	# the plate's ground map only, which has no ground here (see the doc).
 	_precipitation = Precipitation.new()

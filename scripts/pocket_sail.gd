@@ -33,7 +33,10 @@ extends RefCounted
 ##
 ## Plain state and maths, as the motor and the glide are, so tests can step
 ## it. The motor (scripts/pilot_motor.gd) and the skydive
-## (scripts/sky_dive.gd) each fly it.
+## (scripts/sky_dive.gd) each fly it. Any scene with the game's air
+## (studies/atmosphere.gd) gives the motor its wind with `atmosphere_air`
+## (the kit isles do, studies/kit_isle.gd; the old plate's walker reads the
+## glide's own, scripts/wanderer_eye.gd `_walker_air`).
 
 ## Across and down at cruise (m/s): about 3.7 m on for each metre down.
 const PACE := 5.5
@@ -193,6 +196,25 @@ func step(delta: float, velocity: Vector3, y: float, steering: float, push: floa
 	if rise > target: rise = maxf(target,rise-RISE_GRAVITY*delta)
 	else: rise = minf(target,rise+(catch if rise < -want_sink-1.0 else SETTLE)*delta)
 	return Vector3(-sin(heading)*speed+drift.x,rise,-cos(heading)*speed+drift.y)
+
+## The game's air (studies/atmosphere.gd) at `point`: its breeze across
+## (BREEZE of it), and its gust fronts' push and lift by their lean
+## (GUST_PUSH, GUST_LIFT m/s at a full lean, as the glide reads them,
+## scripts/wanderer_eye.gd `_fly_air`). {wind, thermal}; none, still air.
+const BREEZE := 0.5
+const GUST_PUSH := 5.0
+const GUST_LIFT := 9.0
+static func atmosphere_air(atmosphere: Node, point: Vector3) -> Dictionary:
+	if atmosphere == null or not is_instance_valid(atmosphere): return {}
+	var angle: float = atmosphere.get("_air_angle")
+	var way := Vector2(cos(angle),sin(angle))
+	var breeze: float = (1.6+1.9*float(atmosphere.get("_air_strength")))*BREEZE
+	var wind := Vector3(way.x,0.0,way.y)*breeze
+	var fronts: RefCounted = atmosphere.get("fronts")
+	if fronts != null:
+		var lean: float = fronts.lean_at(Vector2(point.x,point.z),way)
+		if lean > 0.0: wind += Vector3(way.x*GUST_PUSH,GUST_LIFT,way.y*GUST_PUSH)*lean
+	return {"wind":wind,"thermal":0.0}
 
 ## Across the ground per metre down, in still air at cruise.
 func ratio() -> float:
