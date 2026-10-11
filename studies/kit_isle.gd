@@ -1165,14 +1165,14 @@ func reset_camera() -> void:
 ## puts the chase camera's free look back and shows the isle's card.
 func toggle_lock() -> bool:
 	if not flying or takeoff != null or not hand_landing.flying(): return false
-	if isle_lock == null:
-		isle_lock = IsleLock.new()
-		var circle := isle_circle()
-		isle_lock.set_isle(Vector3(circle.x,0.0,circle.y),circle.z,isle_top())
+	if isle_lock == null: isle_lock = IsleLock.new()
 	if isle_lock.locked:
 		release_lock()
 		return true
+	var target := lock_target(plane.position)
+	isle_lock.set_isle(target.middle,target.radius,target.top)
 	if not isle_lock.in_reach(plane.position): return false
+	_lock_card = target.card
 	isle_lock.lock(plane.position,plane.velocity)
 	chase.set(&"free",Vector2.ZERO)
 	if splash == null:
@@ -1180,9 +1180,24 @@ func toggle_lock() -> bool:
 		splash.name = "IsleSplash"
 		add_child(splash)
 	if preload("res://scripts/launch_args.gd").user_args().has("--card-hold"): splash.hold = 3600.0
-	splash.show_card(isle_card())
+	splash.show_card(_lock_card)
 	_show_fly_hint()
 	return true
+
+## The isle the plane at `at` would lock onto: {middle (x, z), radius, top,
+## card}. This isle; one with others in its sky answers the nearest in
+## reach (studies/aqueduct_isle.gd: its motif isles).
+var _lock_card := {}
+
+func lock_target(_at: Vector3) -> Dictionary:
+	var circle := isle_circle()
+	return {"middle":Vector3(circle.x,0.0,circle.y),"radius":circle.z,"top":isle_top(),"card":isle_card()}
+
+## Whether the plane at `at` is in the lock's reach of `target`.
+static func lock_reaches(target: Dictionary, at: Vector3) -> bool:
+	var probe: RefCounted = IsleLock.new()
+	probe.set_isle(target.middle,target.radius,target.top)
+	return probe.in_reach(at)
 
 ## Lets go of the isle (the camera eases back behind, the card fades).
 func release_lock() -> void:
@@ -1472,8 +1487,10 @@ func _show_fly_hint() -> void:
 		if now != "": text = now+"  ·  "+text
 	if _said_left > 0.0: text = _said+"  ·  "+text
 	if aloft:
-		if isle_lock != null and isle_lock.locked: text += "\n"+LOCK_HINT % str(isle_card().name)
-		elif isle_lock == null or isle_lock.in_reach(plane.position): text += "\n"+LOCK_OFFER % str(isle_card().name)
+		if isle_lock != null and isle_lock.locked: text += "\n"+LOCK_HINT % str(_lock_card.get("name",""))
+		else:
+			var target := lock_target(plane.position)
+			if isle_lock == null or lock_reaches(target,plane.position): text += "\n"+LOCK_OFFER % str(target.card.name)
 	if stone_plane and lodestone != null:
 		if lode_state == "seated":
 			text += "\nThe lodestone points the way (%.0f m): turn toward the brighter wing seam (both even and faint: on course)  ·  top or bottom fin lit: climb or dive  ·  tail lit: it is behind you  ·  prow runes flare: dead ahead" % plane.position.distance_to(lode_target)

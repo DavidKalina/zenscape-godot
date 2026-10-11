@@ -51,6 +51,8 @@ func flora_site() -> KitFlora.Site:
 func flora_seed() -> int:
 	return TARN_SEED+6
 
+## Loaded when asked, not preloaded: the life's script holds the tarn's sky
+## (`TarnSky`, a studies/aqueduct_isle_sky.gd), which places this motif.
 func life_script() -> Script:
 	return load("res://studies/cloister_tarn_isle_life.gd")
 
@@ -58,7 +60,7 @@ func pools() -> Array:
 	return TarnArt.pools()
 
 func plane_tokens() -> Array:
-	return load("res://studies/cloister_tarn_isle_life.gd").TarnSky.tarn_tokens()
+	return tarn_tokens()
 
 func token_source() -> String:
 	return "cloister"
@@ -184,3 +186,17 @@ static func tarn_material() -> Material:
 		pond.set_shader_parameter("deep_color",Color(0.12,0.19,0.25))
 		_tarn = pond
 	return _tarn
+
+## The plane's tokens: in over the west saddle, through the cloister's gap
+## between the stubs, skimming the tarn, through the water gate, down the
+## fall: [line id, category, kind, points (its frame)].
+static func tarn_tokens() -> Array:
+	var c := TarnArt.C
+	var lip := TarnArt.lip()
+	return [
+		["ct:gap","air","thread",[Vector3(c.x-TarnArt.ARC-6.0,TarnArt.K+2.2,c.y),Vector3(c.x-TarnArt.ARC,TarnArt.K+1.4,c.y)]],
+		["ct:skim","air","skim",[Vector3(c.x-5.0,TarnArt.W+1.0,c.y+1.5),Vector3(c.x+4.0,TarnArt.W+1.0,c.y+1.0)]],
+		["ct:gate","air","thread",[Vector3(c.x+TarnArt.ARC,TarnArt.W+1.2,c.y)]],
+		["ct:fall","air","dive",[Vector3(lip.x+3.0,TarnArt.W-5.0,lip.z),Vector3(lip.x+5.0,TarnArt.W-12.0,lip.z)]],
+		["ct:keel","under","keel",[Vector3(c.x,TarnArt.W-TarnArt.KEEL-4.0,c.y)]],
+	]

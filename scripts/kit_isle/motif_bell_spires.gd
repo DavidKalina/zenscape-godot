@@ -47,10 +47,10 @@ func flora_site() -> KitFlora.Site:
 	return KitFlora.Site.new(Spires.TOP,func(p: Vector2) -> float: return Spires.path_wear(p))
 
 func life_script() -> Script:
-	return load("res://studies/bell_spires_isle_life.gd")
+	return preload("res://studies/bell_spires_isle_life.gd")
 
 func plane_tokens() -> Array:
-	return load("res://studies/bell_spires_isle_sky.gd").spire_tokens()
+	return spire_tokens()
 
 func rest_decks() -> bool:
 	return true
@@ -224,3 +224,33 @@ func plane_near(at: Vector3) -> void:
 		if d < BELL_NEAR and float(bell.pushed) <= 0.0:
 			ring(bell,BELL_PLANE*(1.0-d/BELL_NEAR))
 			bell.pushed = 1.5
+
+# --- The plane's tokens ------------------------------------------------------------
+
+## The plane's tokens: [line id, category, kind, points (its frame)], each a
+## line through the spires.
+static func spire_tokens() -> Array:
+	var l: Dictionary = Spires.layout()
+	var out: Array = []
+	# Under each long bridge at mid-span, a few metres under its deck.
+	for name: String in ["low","gable","needle"]:
+		var br: Dictionary = Spires.bridge(name)
+		var mid: Vector3 = (br.a as Vector3).lerp(br.b,0.5)
+		out.append(["bs:under_"+name,"air","thread",[mid+Vector3.DOWN*4.5]])
+	# Knife edge (Q or E held) along the chimney between the fin's stacks.
+	var fh: Dictionary = l.spires.fin_high
+	var fl: Dictionary = l.spires.fin_low
+	var mid: Vector2 = (fh.c as Vector2).lerp(fl.c,0.5)
+	var along: Vector2 = l.chock.along
+	var a := mid-along*3.0
+	var b := mid+along*0.2
+	out.append(["bs:chimney","air","knife",[Vector3(a.x,Spires.TOP+4.5,a.y),Vector3(b.x,Spires.TOP+4.5,b.y)]])
+	# Low between the needle and the hero's rock.
+	var needle: Dictionary = l.spires.needle
+	var nm: Vector2 = (needle.c as Vector2).lerp(Spires.HERO,0.45)
+	out.append(["bs:needle","air","thread",[Vector3(nm.x,float(needle.top)-9.0,nm.y)]])
+	# Over the belfry's open head.
+	out.append(["bs:belfry","air","thread",[Vector3(Spires.HERO.x,float(l.spires.hero.top)+Spires.Belfry.HEAD+4.5,Spires.HERO.y)]])
+	# Under the isle's keel.
+	out.append(["bs:keel","under","keel",[Vector3(Spires.HERO.x+6.0,Spires.TOP-26.0,Spires.HERO.y+8.0)]])
+	return out

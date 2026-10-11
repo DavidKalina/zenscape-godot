@@ -4,7 +4,7 @@ extends SceneTree
 ## then every frame's wall time for SECONDS of frames after it (mean, p95,
 ## worst, frames over 50 ms), and when the motif isles all stand (the
 ## aqueduct isle's `motifs`, if any).
-##   godot --headless --path . --script tools/motif_sky_startup.gd -- [--scene=res://studies/aqueduct_isle.tscn] [--seconds=20]
+##   godot --headless --path . --script tools/motif_sky_startup.gd -- [--scene=res://studies/aqueduct_isle.tscn] [--seconds=20] [scene flags, e.g. --no-motifs]
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 
 func _initialize() -> void: run.call_deferred()
@@ -12,10 +12,12 @@ func _initialize() -> void: run.call_deferred()
 func run() -> void:
 	var path := "res://studies/aqueduct_isle.tscn"
 	var seconds := 20.0
+	var extra := PackedStringArray(["--no-title"])
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--scene="): path = arg.get_slice("=",1)
 		elif arg.begins_with("--seconds="): seconds = float(arg.get_slice("=",1))
-	LaunchArgs.set_override(PackedStringArray(["--no-title"]))
+		else: extra.append(arg)
+	LaunchArgs.set_override(extra)
 	var began := Time.get_ticks_usec()
 	var scene: Node = load(path).instantiate()
 	scene.set("scripted",true)
@@ -39,6 +41,7 @@ func run() -> void:
 		if all_at < 0.0 and motifs != null and bool(motifs.call("all_stood")):
 			all_at = (now-t0)/1000.0
 			print("startup: every motif isle stands %.0f ms after walking (%d frames)" % [all_at,frames.size()])
+	if frames.is_empty(): frames.append(0.0)
 	var sorted := frames.duplicate()
 	sorted.sort()
 	var total := 0.0
@@ -51,6 +54,13 @@ func run() -> void:
 	for i in range(frames.size()):
 		if frames[i] > 50.0: worst.append("%d:%.0f" % [i,frames[i]])
 	if not worst.is_empty(): print("frames over 50 ms (index:ms): %s" % " ".join(worst.slice(0,40)))
-	scene.free()
+	var refs: Array = []
+	var motifs: Variant = scene.get("motifs")
+	if motifs != null:
+		for isle: Node in motifs.isles: refs.append(weakref(isle.motif))
+	scene.queue_free()
+	for i in range(3): await process_frame
+	var alive := refs.filter(func(r: WeakRef) -> bool: return r.get_ref() != null).size()
+	if not refs.is_empty(): print("motif builders alive after the scene: %d of %d" % [alive,refs.size()])
 	LaunchArgs.set_override(null)
 	quit(0)

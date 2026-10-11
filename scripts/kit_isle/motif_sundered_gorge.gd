@@ -10,6 +10,17 @@ extends "res://scripts/kit_isle/kit_motif.gd"
 const Gorge = preload("res://studies/sundered_gorge_isle_art.gd")
 
 const GORGE_SEED := 23
+## The tokens: [line id, category, kind, points (its frame)].
+const GORGE_TOKENS := [
+	# The gorge's line: in at the narrow north mouth, past the curtain, under
+	# the lower crossing's fragments, under the broken bridge (between its
+	# snapped ends and the fallen crown), out past the spur at the south mouth.
+	["sg:gorge","air","thread",[Vector3(86.6,24.0,-61.0),Vector3(87.2,21.0,-47.0),Vector3(88.3,23.5,-15.0),Vector3(87.0,24.5,4.0)]],
+	# Close by the curtain, where it falls past the lower ledge.
+	["sg:curtain","air","break",[Vector3(83.6,23.0,-56.0)]],
+	# Under the split, between the two halves' hanging keels.
+	["sg:keel","under","keel",[Vector3(88.0,2.0,-22.0)]],
+]
 
 var west_half: Node3D
 var east_half: Node3D
@@ -47,7 +58,7 @@ func summit() -> Vector3:
 ## for its larger land.
 func flora_site() -> KitFlora.Site:
 	var site := KitFlora.Site.new(Gorge.TOP,func(p: Vector2) -> float: return Gorge.path_wear(p))
-	site.ray = load("res://studies/sundered_gorge_isle_life.gd").ray_span()
+	site.ray = preload("res://studies/sundered_gorge_isle_life.gd").ray_span()
 	site.tufts = 3.0
 	return site
 
@@ -55,13 +66,13 @@ func flora_seed() -> int:
 	return GORGE_SEED+4
 
 func life_script() -> Script:
-	return load("res://studies/sundered_gorge_isle_life.gd")
+	return preload("res://studies/sundered_gorge_isle_life.gd")
 
 func pools() -> Array:
 	return Gorge.pools()
 
 func plane_tokens() -> Array:
-	return load("res://studies/sundered_gorge_isle_sky.gd").GORGE_TOKENS
+	return GORGE_TOKENS
 
 func warm() -> void:
 	super.warm()

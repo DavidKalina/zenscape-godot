@@ -39,7 +39,7 @@ func flora_site() -> KitFlora.Site:
 	return KitFlora.Site.new(Spine.TOP,KitLand.wear_of(Spine.paths()))
 
 func life_script() -> Script:
-	return load("res://studies/colonnade_spine_isle_life.gd")
+	return preload("res://studies/colonnade_spine_isle_life.gd")
 
 func plane_tokens() -> Array:
 	return Spine.plane_tokens()
