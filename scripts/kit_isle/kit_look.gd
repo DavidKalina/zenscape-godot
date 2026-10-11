@@ -57,6 +57,9 @@ const WARM_WAVE := 0.045
 ## LEDGE_LIFT times paler.
 const LEDGE_UP := 0.72
 const LEDGE_LIFT := 1.22
+## How far the ground's direct light follows its smoothed normal (the
+## reference surface's `facet_soft`).
+const FACET_SOFT := 0.65
 ## The worn paths' earth and the water's bed (sRGB).
 const EARTH := Color("6a4f37")
 
@@ -86,6 +89,10 @@ static func ground_material() -> ShaderMaterial:
 		_ground.set_shader_parameter("wet_ground",true)
 		_ground.set_shader_parameter("terrain_growth",true)
 		_ground.set_shader_parameter("palette_role",1)
+		# The plate's mesh is fine (Plate.POINT_STEP, 0.67 m) and its facets
+		# small; a kit isle's are 1 to 2 m, so its light leans this far to
+		# the smoothed ground too (the sky peaks' `facet_soft`).
+		_ground.set_shader_parameter("facet_soft",FACET_SOFT)
 	return _ground
 
 ## The islets' rock material, its colours painted face by face (`rock_tone`).
@@ -171,9 +178,10 @@ static func rock_tone(at: Vector3, rim: float, normal: Vector3, jitter := 1.0) -
 
 # --- Meshes ------------------------------------------------------------------------------
 
-## Turf faces gathered, then drawn in the ground material: each face its own
-## colour (flat), its vertices the smoothed normal of the turf round them
-## (the light's ambient follows the smoothed ground, as on the plate). The
+## Turf faces gathered, then drawn in the ground material: each vertex the
+## mean of the colours of the turf faces round it (so a path wears in soft
+## across the faces, never in hard triangles) and their smoothed normal
+## (the light follows the smoothed ground, as on the plate's finer mesh). The
 ## faces are drawn DROP m under where they are collided, so feet stand on
 ## them.
 class GroundMesh extends RefCounted:
@@ -201,25 +209,30 @@ class GroundMesh extends RefCounted:
 	func mesh() -> ArrayMesh:
 		if _points.is_empty(): return null
 		var sums := {}
+		var tones := {}
 		for i in range(0,_points.size(),3):
 			var a := _points[i]
 			var b := _points[i+1]
 			var c := _points[i+2]
 			# Area-weighted (the cross's length), so slivers count little.
 			var normal := (b-a).cross(c-a)
+			var weight := normal.length()
+			var tone := _tones[i/3]
 			for p: Vector3 in [a,b,c]:
 				var k := _key(p)
 				sums[k] = sums.get(k,Vector3.ZERO)+normal
+				tones[k] = (tones.get(k,Vector4.ZERO) as Vector4)+Vector4(tone.r,tone.g,tone.b,1.0)*weight
 		var v := PackedVector3Array()
 		var n := PackedVector3Array()
 		var col := PackedColorArray()
 		var uv := PackedVector2Array()
 		var uv2 := PackedVector2Array()
 		for i in range(0,_points.size(),3):
-			var tone := _tones[i/3]
 			# The shader's front, as the plate's terrain winds it.
 			for p: Vector3 in [_points[i],_points[i+2],_points[i+1]]:
 				var s: Vector3 = sums[_key(p)]
+				var t: Vector4 = tones[_key(p)]
+				var tone := Color(t.x/t.w,t.y/t.w,t.z/t.w,1.0) if t.w > 1e-9 else _tones[i/3]
 				var smooth := s.normalized() if s.length_squared() > 1e-12 else Vector3.UP
 				var y := p.y-DROP
 				v.append(Vector3(p.x,y,p.z))
