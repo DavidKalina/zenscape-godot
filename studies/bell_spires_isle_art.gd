@@ -22,6 +22,7 @@ extends RefCounted
 ## set out along the bridge from the landing the stair reaches it at.
 
 const RuinKit = preload("res://scripts/ruin_kit.gd")
+const WorldScale = preload("res://scripts/world_scale.gd")
 const Belfry = preload("res://scripts/ruin_kit_belfry.gd")
 ## The aqueduct isle's art, for its ground look (palette, material,
 ## faces, outlines): called, never changed.
@@ -30,8 +31,20 @@ const Build = RuinKit.Build
 
 const TOP := 30.0
 const HERO := Vector2(86.0,-24.0)
-## The low stack, by the start; where the stair begins (its bridge).
+## The low stack, by the start; where the stair begins (its bridge): its
+## way from the hero (it stands out along it as far as CARVE_ROOM asks).
 const LOW := Vector2(101.0,-12.0)
+## The air between the spires, as the plane's steering room (scripts/
+## world_scale.gd `gap`, toy spans past the wings, both sides together).
+## CARVE_ROOM: between the hero's rock and each spire round it, at its
+## narrowest (low down, where the beds are widest): room to carve a
+## climbing turn up and through, 4.2 m past each wingtip at plane 2
+## (WorldScale.gap(6): 11.2 m; the narrowest was 6.2, by the low stack).
+## PASS_ROOM: between any two of the others, 2.8 m past each tip (8.4 m;
+## it was 7.9, the south stack by the fin). The chimney is not flown level:
+## it is a walker's wall-kick gap, threaded on a knife edge (CHIMNEY).
+const CARVE_ROOM := 6.0
+const PASS_ROOM := 4.0
 const RISER := RuinKit.RISER
 const TREAD := RuinKit.TREAD
 ## The cut stair: its band out from the rock's face (in under it, out
@@ -86,6 +99,7 @@ static func layout() -> Dictionary:
 	var hero := _make_spire("hero",HERO,RADII.hero,TOP-1.5,58.0,false,501,[])
 	spires.hero = hero
 	var a0 := (LOW-HERO).angle()
+	var carve := WorldScale.gap(CARVE_ROOM)
 	var stairs := {}
 	var hs := cut_stair(hero,a0,TOP+LOW_STEPS*RISER,1.0,HERO_FLIGHTS)
 	stairs.hero = hs
@@ -93,6 +107,7 @@ static func layout() -> Dictionary:
 	var bridges: Array = []
 	var low_top := TOP+LOW_STEPS*RISER
 	spires.low = _make_spire("low",LOW,RADII.low,TOP-1.5,low_top,false,502,[])
+	_stand_off([spires.low],hero,Vector2.from_angle(a0),carve)
 	for landing: Dictionary in hs.landings:
 		var kind: String = landing.kind
 		if kind in ["","top","start"]: continue
@@ -104,9 +119,11 @@ static func layout() -> Dictionary:
 			"gable":
 				var c := at+dir*RADII.gable*0.85
 				spires.gable = _make_spire("gable",c,RADII.gable,y-26.0,y,true,503,[])
+				_stand_off([spires.gable],hero,dir,carve)
 			"needle":
 				var c := at+dir*RADII.needle*0.85
 				spires.needle = _make_spire("needle",c,RADII.needle,y-30.0,y,true,504,[])
+				_stand_off([spires.needle],hero,dir,carve)
 			"fin":
 				# The fin's high stack on the bridge's line; its low stack
 				# beside it across the chimney, a quarter turn round.
@@ -118,6 +135,23 @@ static func layout() -> Dictionary:
 				var low_y := TOP+FIN_LOW_STEPS*RISER
 				spires.fin_high = _make_spire("fin_high",c,RADII.fin_high,TOP-1.5,low_y+FIN_HIGH_STEPS*RISER,false,505,[[side,d1]])
 				spires.fin_low = _make_spire("fin_low",c2,RADII.fin_low,TOP-1.5,low_y,false,506,[[-side,d2]])
+				# The two stacks stand off together (the chimney between
+				# them kept).
+				_stand_off([spires.fin_high,spires.fin_low],hero,dir,carve)
+	# The others clear of each other by PASS_ROOM: the nearer to the hero
+	# stays, the other stands off from the hero further (the chimney's two
+	# stacks, one fin, are never parted).
+	var fin := ["fin_high","fin_low"]
+	var outer := ["low","gable","fin_high","fin_low","needle"]
+	for i in range(outer.size()):
+		for j in range(i+1,outer.size()):
+			if outer[i] in fin and outer[j] in fin: continue
+			var sa: Dictionary = spires[outer[i]]
+			var sb: Dictionary = spires[outer[j]]
+			var far: Dictionary = sb if (sb.c as Vector2).distance_to(HERO) > (sa.c as Vector2).distance_to(HERO) else sa
+			var near: Dictionary = sa if far == sb else sb
+			var moved: Array = [spires.fin_high,spires.fin_low] if far.name in fin else [far]
+			_stand_off(moved,near,((far.c as Vector2)-HERO).normalized(),WorldScale.gap(PASS_ROOM))
 	# The bridges: from the hero's landing to the spire's edge (the low
 	# stack's: from its top to the hero's first landing).
 	for landing: Dictionary in hs.landings:
@@ -153,7 +187,7 @@ static func layout() -> Dictionary:
 	var hdir := Vector2.from_angle(float(first.mid))
 	var hfrom := HERO+hdir*(float(first.r_out)-0.7)
 	var lr := radius_at(spires.low,a0+PI,low_top-0.05)-0.9
-	var lto := LOW+Vector2.from_angle(a0+PI)*lr
+	var lto := (spires.low.c as Vector2)+Vector2.from_angle(a0+PI)*lr
 	bridges[0] = {"name":"low","a":Vector3(hfrom.x,low_top,hfrom.y),"b":Vector3(lto.x,low_top,lto.y),"to":"low"}
 	var out := {"spires":spires,"stairs":stairs,"bridges":bridges,"chock":chock}
 	_layout = out
@@ -162,11 +196,39 @@ static func layout() -> Dictionary:
 	var foot: Dictionary = stairs.low.steps[0]
 	var fp := (spires.low.c as Vector2)+Vector2.from_angle(float(foot.mid))*(float(foot.r_out)+1.8)
 	out.start = Vector3(fp.x,TOP,fp.y)
-	out.start_face = (LOW-fp).normalized()
+	out.start_face = ((spires.low.c as Vector2)-fp).normalized()
 	return out
 
 static func spire(name: String) -> Dictionary:
 	return layout().spires.get(name,{})
+
+## The least air (m) between spires `a` and `b`'s rock at the heights both
+## stand over the turf (each face read toward the other's middle, less a
+## little for the faces' waves and the rock's jitter, which the plan
+## doesn't hold).
+static func air_between(a: Dictionary, b: Dictionary) -> float:
+	var lo := maxf(maxf(float(a.foot),float(b.foot)),TOP+1.0)
+	var hi := minf(float(a.top),float(b.top))
+	var ca: Vector2 = a.c
+	var cb: Vector2 = b.c
+	var ab := (cb-ca).angle()
+	var best := INF
+	var y := lo
+	while y <= hi+0.01:
+		for k in range(-3,4):
+			var off := k*0.12
+			best = minf(best,ca.distance_to(cb)-radius_at(a,ab+off,y)-radius_at(b,ab+PI-off,y))
+		y += 0.5
+	return best-0.35
+
+## Moves `moved` (spires, together) out along `way` until the air between
+## them and `from` is `want` at least.
+static func _stand_off(moved: Array, from: Dictionary, way: Vector2, want: float) -> void:
+	for pass_k in range(6):
+		var least := INF
+		for s: Dictionary in moved: least = minf(least,air_between(s,from))
+		if least >= want: return
+		for s: Dictionary in moved: s.c = (s.c as Vector2)+way*(want-least+0.05)
 
 # --- Spires ---------------------------------------------------------------------------
 
