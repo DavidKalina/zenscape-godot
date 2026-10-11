@@ -403,6 +403,10 @@ static var _kept_changed := true
 static var _frame := {}
 static var _frame_seed := -1
 
+## Off, the sky's painted distant peaks and horizon ridges stay out even with
+## the ring off (the kit sets both: it has no ring, and keeps the sky it had).
+static var painted_sky := true
+
 ## True while the ring, the bounds and the edge wind stand.
 static func ring_on() -> bool:
 	read_flags()
@@ -412,14 +416,14 @@ static func ring_on() -> bool:
 ## sky_cloud_sea_opal.gdshaderinc `sea_peaks`): none while the ring's real
 ## ranges stand (they travel with the eye and read wrong beside them).
 static func sea_peaks() -> float:
-	return 0.0 if ring_on() else 1.0
+	return 0.0 if ring_on() or not painted_sky else 1.0
 
 ## How much of the sky dome's painted horizon ridges to draw (shaders/
 ## reference_sky.gdshader `horizon_ridges`, scripts/look_pass.gd): none
 ## while the ring's real ranges stand, in the build view and the glide;
 ## they showed through its notches and passes as flat grey bands.
 static func painted_ridges() -> float:
-	return 0.0 if ring_on() else 1.0
+	return 0.0 if ring_on() or not painted_sky else 1.0
 
 static var _flags_read := false
 
