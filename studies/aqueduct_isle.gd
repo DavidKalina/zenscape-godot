@@ -77,6 +77,12 @@ extends "res://studies/character_study.gd"
 ## sky to settle, saves the view (from --at looking at the point, else the
 ## walker's camera) and quits; --place=x,y,z[,turn] starts the pilot there
 ## instead (turn: degrees from facing -z, clockwise).
+## The rim dragon (an experiment: scripts/rim_dragon.gd, docs/design/
+## rim-dragon.md), with --dragon: it rises out of the cloud sea, swoops over
+## the isle, grips the east rim and rears its head over it, blowing gales
+## across the isle between pants; take the treasure off its tongue and it
+## lets go. Its flags (--dragon-perched, --dragon-delay=, --dragon-fly=,
+## --dragon-calm) are its own.
 const Art = preload("res://studies/aqueduct_isle_art.gd")
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 const Aqueduct = preload("res://scripts/ruin_kit_aqueduct.gd")
@@ -101,6 +107,11 @@ const Life = preload("res://studies/aqueduct_isle_life.gd")
 const IsleChain = preload("res://studies/aqueduct_isle_chain.gd")
 ## The hall chain's halls collide on the ruins' layer (scripts/hall_rise.gd).
 const RuinBump = preload("res://scripts/ruin_bump.gd")
+const RimDragon = preload("res://scripts/rim_dragon.gd")
+## Where the rim dragon grips (world x, z on the near island's east rim) and
+## the way it faces, into the isle.
+const DRAGON_RIM := Vector2(126.6,-9.0)
+const DRAGON_INTO := Vector2(-1.0,0.0)
 
 ## The station this is (its key in the pack).
 const STATION := 2
@@ -313,6 +324,9 @@ var _capture_wait := 4.0
 ## however slow the first frames are.
 var flown := 0.0
 var _plane_flash: MeshInstance3D = null
+## The rim dragon, with --dragon.
+var dragon_on := false
+var dragon: Node3D = null
 var _plane_flash_left := 0.0
 
 func _ready() -> void:
@@ -345,6 +359,7 @@ func _ready() -> void:
 			_near_ring = true
 			_carry = true
 		elif arg.begins_with("--plane-eye="): _plane_eye = _vec(arg.get_slice("=",1))
+		elif arg == "--dragon": dragon_on = true
 		elif arg.begins_with("--place="):
 			var p := arg.get_slice("=",1).split(",")
 			_place = Vector4(float(p[0]),float(p[1]),float(p[2]),float(p[3]) if p.size() > 3 else 0.0)
@@ -359,6 +374,7 @@ func _ready() -> void:
 	if not _no_lode: _build_lode()
 	_add_sky()
 	_add_life()
+	if dragon_on: _build_dragon()
 	if _place != Vector4.INF:
 		var turn := deg_to_rad(_place.w)
 		start = Vector3(_place.x,_place.y,_place.z)
@@ -682,6 +698,7 @@ func _process(delta: float) -> void:
 	# Flying, `fly_step` steps the ring and the chain; on foot, here.
 	if isle_chain != null and not flying and delta > 0.0: isle_chain.step(delta,null,false,camera.global_position)
 	_pulse_frame(delta)
+	if dragon != null: dragon.advance(delta,not flying)
 	if life != null: life.advance(delta)
 	if _toast_left > 0.0 and _look_toast != null:
 		_toast_left = maxf(_toast_left-delta,0.0)
@@ -1079,6 +1096,7 @@ func _take_capture() -> void:
 		for i in range(240):
 			_advance_look(1.0/60.0)
 			if life != null: life.advance(1.0/60.0)
+			if dragon != null: dragon.advance(1.0/60.0,false)
 			await get_tree().process_frame
 	else:
 		if flying:
@@ -1333,6 +1351,12 @@ func _raise_arms(amount: float) -> void:
 
 ## The on-foot hint with the stone's line.
 func _foot_text() -> String:
+	var text := _lode_text()
+	if dragon != null and not dragon.taken:
+		text += "\nThe dragon on the east rim holds a treasure in its mouth: get to it between gusts; when it breathes in, get behind stone"
+	return text
+
+func _lode_text() -> String:
 	if lodestone == null: return FOOT_HINT
 	var line := ""
 	match lode_state:
@@ -1438,3 +1462,36 @@ func _add_life() -> void:
 		life.tokens.hud.queue_free()
 		life.tokens.hud = sky_tokens.get("hud")
 	print("aqueduct isle: life %s in %d ms %s" % [life.flags,Time.get_ticks_msec()-began,life.timings])
+
+# --- The rim dragon (--dragon) --------------------------------------------------------
+
+## The dragon (scripts/rim_dragon.gd) on the east rim, over the cloud sea.
+func _build_dragon() -> void:
+	var rim := Vector3(DRAGON_RIM.x,Art.ground(DRAGON_RIM.x-1.0,DRAGON_RIM.y),DRAGON_RIM.y)
+	dragon = RimDragon.new()
+	add_child(dragon)
+	dragon.setup(motor,ground.slide_callable(),rim,DRAGON_INTO,IsleChain.SEA_TOP,preload("res://scripts/launch_args.gd").user_args())
+	dragon.gust.connect(_dragon_gust)
+	dragon.yielded.connect(_dragon_yielded)
+	if _switch_hint != null and not flying: _switch_hint.text = _foot_text()
+
+## Each gale as a strong gust front along its way, so the grass and the
+## air's ribbons lie over with it.
+func _dragon_gust(way: Vector2) -> void:
+	var focus := camera.global_position
+	var fronts: RefCounted = _atmosphere.fronts
+	fronts.set_bounds(Vector2(focus.x,focus.z),36.0)
+	for i in range(fronts.fronts.size()): fronts.fronts[i] = {}
+	fronts.send(way,1.0,Atmosphere.breeze_air(_atmosphere._air_strength),1.0)
+
+## The treasure taken: a pop and the flourish, a crystal on the readout.
+func _dragon_yielded() -> void:
+	print("aqueduct isle: the dragon's treasure is taken")
+	if _moments == null:
+		_moments = MomentsHud.new()
+		add_child(_moments)
+	_moments.pop("The dragon's treasure: it lets go of the rim",2.8)
+	_moments.flourish()
+	var sky_tokens = sky.get("collectibles") if sky != null else null
+	if sky_tokens != null and sky_tokens.get("hud") != null: sky_tokens.hud.show_pickup("crystal",1,1,1)
+	if _switch_hint != null and not flying: _switch_hint.text = _foot_text()

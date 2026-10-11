@@ -46,6 +46,11 @@ extends Node3D
 ## leaning back, and coming out of it whips round to face the new way with
 ## a little hop.
 ##
+## Knocked (the motor's move "tumble"): in the air it somersaults backward
+## about the hips (TUMBLE_SPIN), flailing, arms flung out; down on the
+## ground it sits back on its seat, legs out ahead, and comes upright as he
+## gets up; out of it (up, or a twirl) the somersault unwinds.
+##
 ## On a ledge (the motor's `hold`) it plays the hang, blended into the
 ## shimmy by its pace and in its step as the walk is (the gripping mitts stay
 ## on the lip), and the climb at the motor's place in it. A catch in the air
@@ -190,6 +195,12 @@ const AIR_FALLEN := -2.0
 const AIR_ARMS := 0.3
 ## The pelvis over the feet (pilot_build.py HIPS).
 const HIPS := 0.4329
+## Knocked: the somersault (rad/s, backward), sat back on the ground
+## (radians tipped back, m lower), and seconds it unwinds over after.
+const TUMBLE_SPIN := 11.0
+const TUMBLE_SIT := 0.55
+const TUMBLE_LOW := 0.3
+const TUMBLE_EASE := 0.09
 ## Radians of bank per radian a second of turn at a full run, and the most.
 const BANK := 0.06
 const BANK_MOST := 0.35
@@ -349,6 +360,11 @@ var _forearms: Array[int] = []
 var _dive_a := Vector4.ZERO
 var _dive_b := Vector4.ZERO
 var _dive_time := 0.0
+## Knocked: the somersault's turn (rad, about the hips), 0 to 1 sat down,
+## and the flail's clock.
+var _tumble := 0.0
+var _tumble_low := 0.0
+var _flail_time := 0.0
 
 func _init() -> void:
 	name = "Pilot"
@@ -602,9 +618,46 @@ func drive(motor: RefCounted, delta: float) -> Dictionary:
 	# turn.
 	_hunch_to = -(RUN_LEAN*pace*_running+clampf(climb*SLOPE_LEAN,-SLOPE_MOST,SLOPE_MOST)) if motor.grounded and not motor.skidding and move != "crouch" and move != "slide" else 0.0
 	_roll_to = clampf(turned*CHEST_BANK*pace,-CHEST_BANK_MOST,CHEST_BANK_MOST) if motor.grounded else 0.0
-	_pivot.rotation = _spun(delta)
+	_pivot.rotation = _spun(delta)+Vector3(_tumbled(motor,move,delta),0.0,0.0)
 	_advance(delta)
+	if move == "tumble": _flail(motor.grounded)
 	return out
+
+## Knocked (move "tumble"): the somersault about the hips in the air, sat
+## back on the ground; out of it, unwound. The pivot's turn about its side.
+func _tumbled(motor: RefCounted, move: String, delta: float) -> float:
+	if move == "tumble":
+		_flail_time += delta
+		var held: bool = motor.has_method("seized") and motor.seized()
+		if held:
+			_tumble = lerp_angle(_tumble,0.35,1.0-exp(-delta/0.1))
+			_tumble_low = move_toward(_tumble_low,0.0,delta/0.1)
+		elif motor.grounded:
+			_tumble = lerp_angle(_tumble,TUMBLE_SIT,1.0-exp(-delta/0.06))
+			_tumble_low = move_toward(_tumble_low,1.0,delta/0.1)
+		else:
+			_tumble = wrapf(_tumble+TUMBLE_SPIN*delta,-PI,PI)
+			_tumble_low = move_toward(_tumble_low,0.0,delta/0.1)
+		_arms_to = 1.0
+	elif _tumble == 0.0 and _tumble_low == 0.0:
+		return 0.0
+	else:
+		_tumble = lerp_angle(_tumble,0.0,1.0-exp(-delta/TUMBLE_EASE))
+		if absf(_tumble) < 0.002: _tumble = 0.0
+		_tumble_low = move_toward(_tumble_low,0.0,delta/0.25)
+	_tilt.position.y = -TUMBLE_LOW*smoothstep(0.0,1.0,_tumble_low)
+	return _tumble
+
+## The limbs knocked about: flailing in the air; sat down, the legs out ahead.
+func _flail(down: bool) -> void:
+	if _upper_arms.has(-1) or _thighs.has(-1) or _shins.has(-1): return
+	var t := _flail_time
+	var arms := 0.9 if down else 2.0+0.4*sin(t*13.0)
+	_turn_bone(_upper_arms[0],Vector3.BACK,-arms)
+	_turn_bone(_upper_arms[1],Vector3.BACK,arms)
+	for side in range(2):
+		_turn_bone(_thighs[side],Vector3.RIGHT,1.3 if down else 0.5+0.4*sin(t*11.0+PI*side))
+		_turn_bone(_shins[side],Vector3.RIGHT,-0.2 if down else -0.7)
 
 ## The spins this frame (a twirl's about up, a side flip's about forward),
 ## each run through to its whole turns whatever the motor does meanwhile:
@@ -983,6 +1036,8 @@ func settle() -> void:
 	_air = 0.0
 	_spin = Vector2.ZERO
 	_spin_t = Vector2(INF,INF)
+	_tumble = 0.0
+	_tumble_low = 0.0
 	_pivot.rotation = Vector3.ZERO
 	_idle_anywhere()
 	_apply()

@@ -16,6 +16,8 @@ const ENTRIES: Array[Dictionary] = [
 	# Ruins.
 	{"id":"aqueduct_isle","group":"Ruins","title":"Aqueduct isle","scene":"res://studies/aqueduct_isle.tscn","args":[],
 		"detail":"The ruin platforming isle: grass, look presets (L), the plane on F. Find the lodestone, fly where the nose points; the halls follow."},
+	{"id":"rim_dragon","group":"Ruins","title":"Rim dragon","scene":"res://studies/aqueduct_isle.tscn","args":["--dragon"],
+		"detail":"An experiment: a dragon rises from the clouds, grips the isle's rim and blows gales. Take the treasure from its mouth between gusts."},
 	{"id":"sundered_hall","group":"Ruins","title":"The Sundered hall","scene":"res://studies/cozy_worlds.tscn","args":["--motif=sundered","--no-clusters","--skydive"],
 		"detail":"The game with the long gothic hall 240-900 m out; in the plane, fly to it."},
 	{"id":"hall_rise","group":"Ruins","title":"Hall rise","scene":"res://studies/hall_rise.tscn","args":[],
