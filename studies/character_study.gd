@@ -426,6 +426,11 @@ var _verdict_left := 0.0
 var _carve_was := false
 var _holes: Array[Rect2] = []
 
+## The updraft (docs/design/updraft.md): flow charges it, Q / pad RB spends it.
+## On unless `--no-updraft`.
+const Updraft = preload("res://scripts/updraft.gd")
+var updraft: Node3D
+
 func _ready() -> void:
 	for arg in preload("res://scripts/launch_args.gd").user_args():
 		if arg.begins_with("--pack=") and pack == "": pack = arg.trim_prefix("--pack=")
@@ -437,6 +442,9 @@ func _ready() -> void:
 	_build_pilot()
 	_build_room()
 	_build_ui()
+	if not preload("res://scripts/launch_args.gd").user_args().has("--no-updraft") and updraft == null:
+		updraft = Updraft.new()
+		updraft.setup(self)
 	# The bodies are in the space after a physics step.
 	await get_tree().physics_frame
 	await get_tree().physics_frame
@@ -737,6 +745,7 @@ func _build_pilot() -> void:
 ## Set down at `at`, facing `face` (x, z), the camera behind.
 func place(at: Vector3, face: Vector2) -> void:
 	motor.reset(at,PilotMotor.facing_of(face))
+	if updraft != null: updraft.reset()
 	_jump = {}
 	_sail_from = Vector3.INF
 	if sail_wing != null: sail_wing.reset()
@@ -789,6 +798,8 @@ func tick(delta: float) -> void:
 		motor.crouch = Input.is_action_pressed(&"walk_crouch") and not _tuning()
 		motor.twirl = Input.is_action_pressed(&"walk_twirl") and not _tuning()
 	_asked = want.length()
+	if updraft != null and not _tuning():
+		updraft.update(delta,motor,not scripted and Input.is_action_just_pressed(&"walk_wind"),want)
 	ground.head(delta)
 	if foot_pieces != null: foot_pieces.before(delta)
 	var was := motor.feet
@@ -816,6 +827,7 @@ func tick(delta: float) -> void:
 	_body_events(drawn,delta)
 	_water_events(events,drawn,delta)
 	_frame(delta)
+	if updraft != null: updraft.apply_feel(camera)
 	_show_hud()
 
 ## The glide measured from the sail's opening to the touch (or the next
