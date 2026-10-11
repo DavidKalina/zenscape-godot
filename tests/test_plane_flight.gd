@@ -1,9 +1,8 @@
 extends SceneTree
 ## The plane in the live scene, through the wanderer (scripts/wanderer_eye.gd),
 ## headless:
-##   - the plane is how it flies by default, and the walking and flying
-##     hints name its controls; `--glider` brings the old glider back (run
-##     again with `-- --glider` for its half);
+##   - the plane is how it flies (the old glider is gone), and the walking
+##     and flying hints name its controls;
 ##   - off the edge and F: the landing runs through its phases and ends
 ##     walking beside the plane, parked on its wheels and skid, not a record
 ##     on the land and in the walker's way; F to walking in a few seconds;
@@ -12,12 +11,10 @@ extends SceneTree
 ##   - F by another island claims it and lands on it;
 ##   - flying off the edge brings the parked plane along.
 ##   godot --headless --path . --script tests/test_plane_flight.gd
-##   godot --headless --path . --script tests/test_plane_flight.gd -- --glider
 const WandererEye = preload("res://scripts/wanderer_eye.gd")
 const SkyPlane = preload("res://scripts/sky_plane.gd")
 const SkyGlide = preload("res://scripts/sky_glide.gd")
 const PlaneFigure = preload("res://scripts/plane_figure.gd")
-const GliderFigure = preload("res://scripts/glider_figure.gd")
 const PlaneLanding = preload("res://scripts/plane_landing.gd")
 const PlaneStrip = preload("res://scripts/plane_strip.gd")
 var failures := 0
@@ -52,18 +49,9 @@ func run() -> void:
 	# These checks fly the old F landing (--auto-landing); the default hand
 	# landing has its own tests (tests/test_manual_landing*.gd).
 	eye.manual = false
-	check(not WandererEye.flies_plane(PackedStringArray(["--glider"])) and WandererEye.flies_plane(PackedStringArray()) and WandererEye.flies_plane(PackedStringArray(["--plane"])),"The plane flies unless --glider asks for the glider")
-	if "--glider" in OS.get_cmdline_user_args(): await _glider()
-	else: await _plane()
+	await _plane()
 	print("PASS: plane flight" if failures == 0 else "FAIL: plane flight (%d)" % failures)
 	quit(1 if failures else 0)
-
-func _glider() -> void:
-	check(not eye.plane and not (eye.glide is SkyPlane) and eye.glide is SkyGlide and eye.glider is GliderFigure,"With --glider it glides under the cloth wing")
-	check("glide" in eye._walk_hint() and "flap" in eye.FLY_HINT,"And the hints name the glider's controls")
-	await _off_the_edge()
-	eye.handle(_key(KEY_F))
-	check(eye.glide.approach and eye.landing == null,"F comes in to land the glider's way")
 
 func _key(code: Key) -> InputEventKey:
 	var event := InputEventKey.new()
@@ -96,7 +84,7 @@ func _until_walking(most: float) -> Array:
 	return [phases,seconds]
 
 func _plane() -> void:
-	check(eye.plane and eye.glide is SkyPlane and eye.glider is PlaneFigure,"By default it flies the plane")
+	check(eye.glide is SkyPlane and eye.glider is PlaneFigure,"It flies the plane")
 	check("again in the air to fly" in eye._walk_hint() and not "glide" in eye._walk_hint() and not "flap" in eye.PLANE_HINT and "F to land" in eye.PLANE_HINT,"And the hints name the plane's controls")
 	var objects: int = eye.editor.data.objects.size()
 	await _off_the_edge()

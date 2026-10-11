@@ -12,7 +12,7 @@ extends SceneTree
 ## With --record=DIR it saves RECORD_SECONDS of frames, side on, running then
 ## stopping, into DIR and quits (tile them with ffmpeg).
 const PilotFigure = preload("res://scripts/pilot_figure.gd")
-const GliderFigure = preload("res://scripts/glider_figure.gd")
+const FacetMesh = preload("res://scripts/facet_mesh.gd")
 ## Seconds standing, then running, while cycling.
 const STAND := 3.0
 const RUN := 5.0
@@ -80,7 +80,7 @@ func run() -> void:
 	sun.shadow_enabled = true
 	stage.add_child(sun)
 	var grass := MeshInstance3D.new()
-	grass.mesh = GliderFigure._frustum(RING+1.2,RING+1.1,0.06,24)
+	grass.mesh = FacetMesh.frustum(RING+1.2,RING+1.1,0.06,24)
 	var green := StandardMaterial3D.new()
 	green.albedo_color = Color("7d9a52")
 	green.roughness = 0.9
@@ -90,7 +90,7 @@ func run() -> void:
 	# Stones round the ring, to see the boots keep to the ground against.
 	for i in range(16):
 		var stone := MeshInstance3D.new()
-		stone.mesh = GliderFigure._gem(0.05)
+		stone.mesh = FacetMesh.gem(0.05)
 		stone.material_override = green.duplicate()
 		(stone.material_override as StandardMaterial3D).albedo_color = Color("8a8279")
 		var a := TAU*i/16.0

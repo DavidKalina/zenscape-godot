@@ -1,6 +1,6 @@
 extends "res://scripts/sky_glide.gd"
-## The little plane: how the wanderer flies (scripts/wanderer_eye.gd; the
-## old glider is `--glider`), a toy prop plane in the spirit of an island
+## The little plane: how the wanderer flies (scripts/wanderer_eye.gd), a
+## toy prop plane in the spirit of an island
 ## flyover rather than a flight sim. It keeps the glide's rules and its
 ## shape, so the chase camera, the vapour, the sky and the landing read it
 ## the same: no stamina, no crashing (it skims the ground, slides under an

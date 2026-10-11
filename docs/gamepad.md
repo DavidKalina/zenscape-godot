@@ -81,11 +81,6 @@ During the landing, RT, a roll or Y flies on, as Boost, Q/E or F do.
 | Right stick | Look round | Mouse |
 | B or View | Step out | V / Esc |
 
-The old glider (`--glider`) keeps its own controls:
-- LT or A rises and RT dives.
-- X flaps.
-- Y comes in to land.
-
 ### Photo mode
 
 | Pad | Does | Keys |
@@ -130,7 +125,6 @@ Keys sit in the same action where the code polls them:
 - `walk_jump`, `walk_crouch` and `walk_twirl`
 - `fly_boost` and `fly_brake`
 - `fly_eject` (the pad's X: eject, then open the canopy; the X key is the same verb, read as an event)
-- `glide_rise` and `glide_dive`
 
 Keys read as events keep their own handlers.
 

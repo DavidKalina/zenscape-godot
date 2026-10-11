@@ -1124,14 +1124,14 @@ func sky_progress() -> float:
 ## frames, so their pipelines are built under the loading screen): the
 ## skylines, solid and fading; a range made in full, the cloud at its foot
 ## and its spruces; whatever stands under the sky now (islands, islets,
-## cumulus, clouds), hidden or not; and the plane or glider the glide flies,
+## cumulus, clouds), hidden or not; and the plane the glide flies,
 ## all its parts.
 func standins() -> Array[GeometryInstance3D]:
 	var out: Array[GeometryInstance3D] = []
 	var seen := {}
 	_standins_of(self,out,seen)
 	# And what flies with the glide, drawn only in it (`skip`, set by the
-	# wanderer: the plane or glider with its prop's blur and vapour, the
+	# wanderer: the plane with its prop's blur and vapour, the
 	# streaks of air).
 	for node in skip:
 		if is_instance_valid(node) and not is_ancestor_of(node): _standins_of(node,out,seen)

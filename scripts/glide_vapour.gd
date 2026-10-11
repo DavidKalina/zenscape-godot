@@ -2,12 +2,12 @@ extends RefCounted
 ## How close the glide (scripts/sky_glide.gd) is passing to something big:
 ## an island, an islet, the plate's trees, anything the glide's `ground`
 ## solid holds. Flying fast past it, the air thickens into vapour that
-## peels off the wingtips (scripts/glider_figure.gd) and the streaks and the
+## peels off the wingtips (scripts/plane_figure.gd) and the streaks and the
 ## wind's hiss rise (scripts/glide_air.gd), so a pass along a cliff feels
 ## like a rush without anything going faster.
 ##
 ## It feels round the flight path with a ring of probes a little ahead of
-## the glider: out to each side, below, above and the four diagonals,
+## the plane: out to each side, below, above and the four diagonals,
 ## each tried at a few reaches. A probe inside the solid counts as close,
 ## the nearer the reach the closer. The ring is cheap: each step tries only
 ## SPREAD of its directions and keeps the rest from before, so the whole
