@@ -160,7 +160,7 @@ func _wingtips() -> void:
 	check(mist.visible,"Close to rock it trails off the wingtips")
 	var right: Vector3 = figure._vapour_points[PlaneFigure.VAPOUR]
 	var left: Vector3 = figure._vapour_points[0]
-	check((right-left).dot(glide.forward().cross(Vector3.UP)) > 1.5,"From both tips, a wingspan apart (%.2f m)" % right.distance_to(left))
+	check((right-left).dot(glide.forward().cross(Vector3.UP)) > PlaneFigure.SPAN*0.9,"From both tips, a wingspan apart (%.2f m)" % right.distance_to(left))
 	check(figure._vapour_strength[PlaneFigure.VAPOUR] > figure._vapour_strength[0],"Stronger off the nearer wing")
 	figure.free()
 

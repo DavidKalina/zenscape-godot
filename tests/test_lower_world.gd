@@ -33,7 +33,11 @@ const Landforms = preload("res://scripts/landforms.gd")
 const DT := 1.0/60.0
 var failures := 0
 
-func _initialize() -> void: run.call_deferred()
+func _initialize() -> void:
+	# The lower world was made with the ring's ranges standing down into it;
+	# both are kept but unwired, so this runs under --below --peak-ring.
+	preload("res://scripts/sky_homes.gd").use_flags(PackedStringArray(["--peak-ring"]))
+	run.call_deferred()
 
 func check(ok: bool, label: String) -> void:
 	if not ok: failures += 1

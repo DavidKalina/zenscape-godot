@@ -12,6 +12,9 @@ const SkyAirship = preload("res://scripts/sky_airship.gd")
 var failures := 0
 
 func _initialize() -> void:
+	# Laid out in the bounded world, with the ring and its ranges: those are
+	# kept but unwired, so this runs under --peak-ring.
+	preload("res://scripts/sky_homes.gd").use_flags(PackedStringArray(["--peak-ring"]))
 	_run.call_deferred()
 
 func check(ok: bool, label: String) -> void:

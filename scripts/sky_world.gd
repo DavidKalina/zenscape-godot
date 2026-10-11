@@ -112,7 +112,8 @@ const SkyCache = preload("res://scripts/sky_cache.gd")
 ## The seed every hash used before there was one; and the world's.
 const LEGACY_SEED := 7
 static var seed := LEGACY_SEED
-## The moments set pieces (`_moments`): off unless `--moments`.
+## The moments set pieces (`_moments`): off unless `--moments`. Laid by the
+## ring's layout, so they stand only with --peak-ring too.
 static var moments := false
 ## The homes of every island the world has saved, and the plate's own (home
 ## coordinates): the ranges keep clear of them and the edge wind holds them.
