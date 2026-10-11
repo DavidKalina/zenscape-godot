@@ -11,7 +11,7 @@ extends RefCounted
 ## vibration (scripts/pad.gd), in user://pad.cfg. The sky's time and
 ## weather (docs/design/consolidation-audit.md, round 4; scripts/kit_isle/
 ## kit_weather.gd): how long a day lasts or that it holds, and whether the
-## weather drifts, new to the kit (the old game had a Day/night checkbox in
+## weather drifts and the season (Live or held at one), new to the kit (the old game had a Day/night checkbox in
 ## its look editor only), kept in user://look.cfg under [time].
 ##
 ## Every setting is a choice among named options, held as an index
@@ -47,6 +47,7 @@ const ENTRIES := [
 	{"key":"planet","title":"Planet in the night sky","options":OFF_ON,"group":"Look"},
 	{"key":"day","title":"Day and night","options":KitWeather.DAY_NAMES,"group":"Look"},
 	{"key":"weather","title":"Weather","options":KitWeather.DRIFT_NAMES,"group":"Look"},
+	{"key":"season","title":"Season","options":KitWeather.SEASON_CHOICES,"group":"Look"},
 	{"key":"master","title":"Volume","options":null,"group":"Sound"},
 	{"key":"sound","title":"Steps, tokens and life","options":null,"group":"Sound"},
 	{"key":"muted","title":"Mute all sound","options":OFF_ON,"group":"Sound"},
@@ -81,7 +82,7 @@ static func index_of(key: String) -> int:
 		"clouds": return maxi(LookPass.CLOUD_STYLES.find(LookPass.load_cloud_style(look_path)),0)
 		"night": return maxi(LookPass.NIGHT_STYLES.find(LookPass.load_night_style(look_path)),0)
 		"planet": return 1 if LookPass.load_sky_planet(look_path) else 0
-		"day","weather":
+		"day","weather","season":
 			var file := ConfigFile.new()
 			if file.load(look_path) != OK: return 0
 			return clampi(int(file.get_value("time",key,0)),0,options(key).size()-1)
@@ -127,7 +128,7 @@ static func choose(key: String, index: int, isle: Node = null) -> void:
 		"planet":
 			_keep(look_path,"sky","planet",index == 1)
 			if look != null: look.set_sky_planet(index == 1,false)
-		"day","weather":
+		"day","weather","season":
 			_keep(look_path,"time",key,index)
 			_apply_time(isle)
 		"master","sound","muted":
@@ -152,13 +153,14 @@ static func apply_start(isle: Node) -> void:
 	if look != null: look.apply_tier(index_of("quality"))
 	_apply_time(isle)
 
-## The kept day length and drift on `isle`'s time and weather, if it has
+## The kept day length, drift and season on `isle`'s time and weather, if it has
 ## them (a flag that set either keeps its own).
 static func _apply_time(isle: Node) -> void:
 	var weather: Variant = isle.get("weather") if isle != null else null
 	if not (weather is Node and (weather as Node).has_method("choose_day")): return
 	weather.choose_day(index_of("day"))
 	weather.choose_drift(index_of("weather") == 0)
+	weather.choose_season(index_of("season"))
 
 static func _keep(path: String, section: String, name: String, value: Variant) -> void:
 	var file := ConfigFile.new()
