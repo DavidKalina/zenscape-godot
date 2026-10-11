@@ -46,9 +46,9 @@ extends Node3D
 ## greybox for riding on its back): before `setup` it sets `route`,
 ## `route_marks` and `start_mark`, its `girth`, and `solid` off; while it is
 ## ridden, `bank_share` eases its roll and `look_back` has it glance back
-## over its shoulder at whoever is behind it. `ring_frame` and
-## `ring_corners` give its rings as posed, to stand on. Left alone, all of
-## these are as above.
+## over its shoulder at whoever is behind it. `ring_frame`, `ring_corners`,
+## `head_frame` and `head_corners` give its rings and head as posed, to
+## stand on. Left alone, all of these are as above.
 
 const Variety = preload("res://scripts/seeded_variety.gd")
 const StoneLampLights = preload("res://scripts/stone_lamp_lights.gd")

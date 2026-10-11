@@ -1,11 +1,13 @@
 extends SceneTree
 ## Stills of the serpent ride (studies/serpent_ride.tscn), the pilot driven
 ## by scripted input: from his camera running along its back through the
-## slalom (run), surfing down it in the dive (dive), on the tower as it
-## comes (tower), and a wide shot from off its side with him small on its
-## back (wide). Needs a renderer (opens a window). The ride's flags
-## (--girth=, --ride-roll=) go after the out dir.
+## slalom (run), surfing down it in the dive (dive), on its neck as it
+## glances back at him (glance), on the tower as it comes (tower), and a
+## wide shot from off its side with him small on its back (wide). Needs a
+## renderer (opens a window). The ride's flags (--girth=, --ride-roll=,
+## --weave=) go after the out dir.
 ##   godot --path . --script tools/capture_serpent_ride.gd -- --no-title [OUT_DIR] [--girth=2]
+const RuneSerpentRef = preload("res://scripts/rune_serpent.gd")
 const DT := 1.0/60.0
 var study: Node3D
 var out := "/tmp/sr"
@@ -53,6 +55,12 @@ func run() -> void:
 	set_on(float(marks["dive"])+95.0,60.0)
 	for i in range(90): tick(Vector2.ZERO,false,true)
 	await shot("dive")
+	# On its neck as it glances back at him.
+	study.go_to(1)
+	for i in range(60*30):
+		tick(Vector2.ZERO)
+		if absf(float(study.serpent.spring(RuneSerpentRef.S_YAW))) > 0.9: break
+	await shot("glance")
 	# On the tower, it coming.
 	study.go_to(4)
 	for i in range(170): tick(Vector2.ZERO)

@@ -17,10 +17,12 @@ extends "res://studies/character_study.gd"
 ## curve west, a slalom round five pillars, south through the arch, a long
 ## gentle curve east, and back past the tower.
 ##
-## Riding. Its skin between every two rings is a convex hull, rebuilt from
-## the rings each frame (studies/serpent_back.gd), so the bridge stands him
-## on its back, stops him at its flanks and hangs him from its shoulders'
-## edges, as drawn. Each frame the serpent moves first, then he is carried:
+## Riding. Its skin between every two rings (and its head's, between its
+## sections) is a convex hull, rebuilt from the rings each frame
+## (studies/serpent_back.gd), so the bridge stands him on its back and its
+## head, stops him at its flanks (to slide down and kick off) and hangs him
+## from its shoulders' edges, as drawn. Each frame the serpent moves first,
+## then he is carried:
 ##   - On it (stood, or hanging from it), he is held as a place on the body
 ##     (its arc back from the snout, across, up). The body's move at that
 ##     place since the last frame carries everything the motor keeps (his
@@ -39,7 +41,8 @@ extends "res://studies/character_study.gd"
 ##
 ## Falling off, more than LOST_DROP under where he left, the view fades
 ## softly and he is set back on its back where he last stood (or on the
-## tower, if he never got on). F1 counts the falls.
+## tower, if he never got on). F1 counts the falls. Ridden, it eases its
+## roll (RIDE_ROLL) and now and then glances back at him over its shoulder.
 ##
 ## Keys: 1 on its neck behind the collar, 2 mid-back, 3 near the tail, 4 on
 ## the start tower with it coming (time the jump); R back to the start
@@ -49,6 +52,7 @@ extends "res://studies/character_study.gd"
 ##   --girth=<x>         its girth times x (GIRTH: 1.5)
 ##   --ride-roll=<x>     the share of its roll kept while ridden (RIDE_ROLL)
 ##   --serpent-speed=<x> its pace times x
+##   --weave=<x>         its slither times x (its weave shares on RIDE_ROUTE)
 ##   --no-glance         it never glances back at you
 ##   ./run-serpent-ride.command
 ##   godot --path . res://studies/serpent_ride.tscn -- --no-title
@@ -143,11 +147,18 @@ const TOWER_LEAD := 60.0
 const NECK_AT := 11.0
 const MID_AT := 45.0
 const TAIL_AT := 70.0
-## Its girth, times rune_serpent.gd's (--girth=): 1.5 makes its back's top
-## 1.9 m across and 5.5 m to the shoulders' edges (1: 1.3 and 3.7 m).
+## Its girth, times rune_serpent.gd's (--girth=): 1.5 makes it 6 m through,
+## its back's flat top 1.95 m across and 5.5 m to its shoulders' edges (1:
+## 1.3 and 3.7 m; 2: 2.6 and 7.3 m). Chosen as the middle: a bot playing on
+## its back (runs, jumps, long jumps, twirls) fell 3.0 times a minute at 1,
+## 2.5 at 1.5, 2.25 at 2; 1.5 keeps it a slender snake, 2 reads as a road.
 const GIRTH := 1.5
 ## The share of its roll into turns it keeps while ridden (--ride-roll=),
-## and the seconds after he leaves its back it still counts as ridden.
+## and the seconds after he leaves its back it still counts as ridden. At
+## 0.4 its flat top tilts at most about 9° round the loop (all of it: 20°,
+## near the motor's SLOPE_SLOW, where a run up it slows), and its banks
+## still show. In a bank its low shoulder (40° unbanked) passes SLIDE_AUTO
+## either way: stood there, he surfs off.
 const RIDE_ROLL := 0.4
 const RIDDEN_AFTER := 3.0
 ## Falling: this far (m) under the frame he left in, he is lost. The fade
@@ -176,6 +187,8 @@ var serpent: Node3D
 var back: SerpentBack
 var girth := GIRTH
 var ride_roll := RIDE_ROLL
+## Its slither, times the route's weave shares (--weave=).
+var weave := 1.0
 var glance := true
 ## What he is on: "serpent" (stood on it or hanging from it), "still"
 ## (standing ground: the tower), "air".
@@ -211,6 +224,7 @@ func _init() -> void:
 	for arg: String in LaunchArgs.user_args():
 		if arg.begins_with("--girth="): girth = clampf(float(arg.get_slice("=",1)),0.5,3.0)
 		elif arg.begins_with("--ride-roll="): ride_roll = clampf(float(arg.get_slice("=",1)),0.0,1.0)
+		elif arg.begins_with("--weave="): weave = clampf(float(arg.get_slice("=",1)),0.0,2.0)
 		elif arg == "--no-glance": glance = false
 	# The floor is a backstop under everything; the fall is caught well
 	# before (LOST_DROP).
@@ -235,7 +249,9 @@ func _build_room() -> void:
 ## process off), its capsules left out (its back's hulls stand in).
 func _build_serpent() -> void:
 	serpent = RuneSerpent.new()
-	serpent.route = RIDE_ROUTE
+	var route := []
+	for point: Array in RIDE_ROUTE: route.append([point[0],float(point[1])*weave,point[2],point[3]])
+	serpent.route = route
 	serpent.route_marks = RIDE_MARKS
 	serpent.start_mark = "tower"
 	serpent.girth = girth
