@@ -70,11 +70,12 @@ static var PLANE_REACH: float = 1.1+WorldScale.wider*0.5
 ## middle over the ground or the planks.
 const WALKER_MIDDLE := 0.5
 const FOOT_Y := 0.55
-## The plane: half its wingspan (scripts/world_scale.gd span: 0.8 at
-## plane 1) and a little room; how far over the ground it rides and under
+## The plane: half its wingspan and the least steering room past each tip
+## (scripts/world_scale.gd SNUG: half of gap(SNUG), 2.6 at plane 2; it was
+## the half span and 0.1); how far over the ground it rides and under
 ## rock it keeps (SkyGlide SKIM, CLEAR; drawn about its wheels a bigger
 ## plane is taller, all of it upward: WorldScale.taller more).
-static var WING: float = WorldScale.span*0.5+0.1
+static var WING: float = WorldScale.gap(WorldScale.SNUG)*0.5
 const SKIM := SkyGlide.SKIM
 static var CLEAR: float = SkyGlide.CLEAR+WorldScale.taller
 ## Nothing hangs lower than this (home y): the glide's floor (SkyGlide
@@ -87,10 +88,11 @@ const BRIDGE_COUNT := Vector2i(2,5)
 const UNDER_GAP := 3.2
 const UNDER_STEP := 5.0
 const UNDER_COUNT := Vector2i(4,7)
-## Air: a cluster's gap is threaded where it is GAP_ROOM wide at least and
-## GAP_MOST at most (rim to rim); the line's tokens apart and how many; how
-## far under a bridge's deck it runs.
-const GAP_ROOM := 3.2
+## Air: a cluster's gap is threaded where it is GAP_ROOM wide at least
+## (WorldScale.gap(SNUG): 5.2 at plane 2; it was 3.2) and GAP_MOST at most
+## (rim to rim); the line's tokens apart and how many; how far under a
+## bridge's deck it runs.
+static var GAP_ROOM: float = WorldScale.gap(WorldScale.SNUG)
 const GAP_MOST := 16.0
 const GAP_STEP := 4.0
 const GAP_COUNT := Vector2i(5,6)
@@ -326,8 +328,7 @@ static func blocked_heights(solids: Array, p: Vector2, cache = null) -> Array[Ve
 	return out
 
 ## The grid the plane's places are read on (m), and its wings' reach round
-## its middle on that grid (about WING: 0.9 and 0.6 at plane 1, grown
-## with it).
+## its middle on that grid (about WING, grown with it).
 const LATTICE := 0.3
 static var WING_REACH: float = 0.9*WING/0.8
 static var WING_SLANT: float = 0.6*WING/0.8
