@@ -3,10 +3,11 @@ extends SceneTree
 ## wanderer_eye.gd, scripts/sky_dive.gd), headless:
 ##   - X in the plane ejects: the pilot pops out falling, drawn, and the
 ##     plane flies on by itself, without its pilot;
-##   - left alone the canopy opens by itself, and the touch on the home
-##     island hands over to walking, the canopy folding away;
+##   - Space opens the pocket sail (scripts/pocket_sail.gd; nothing opens
+##     by itself), and the soft touch on the home island hands over to
+##     walking, the sail folding away;
 ##   - the plane then comes in, lands near and parks; Space by it boards it;
-##   - the canopy opened by hand (X again) and steered;
+##   - the sail opened again from a fall and steered;
 ##   - a landing in deep water swims;
 ##   - a fall past everything, into the cloud sea, is caught by the plane,
 ##     and so is a touch on open water;
@@ -101,14 +102,27 @@ func _eject_and_land() -> void:
 	check(eye.figure.visible and eye._hint.text == eye.DIVE_HINT,"The pilot is drawn falling, the dive's hint up")
 	await frames(10)
 	check(eye.dive.velocity.y > -3.0 and eye.dive.position.y > eye.drone.position.y-3.0,"A pop up out of it first")
+	# Falling, nothing opens by itself; Space 20 m over the land opens the
+	# sail, and it circles down (left held).
+	var began := Time.get_ticks_msec()
+	var opened_alone := false
+	while eye.diving and not (eye.dive.under == "ground" and eye.dive.height < 20.0) and (Time.get_ticks_msec()-began)/1000.0*Engine.time_scale < 30.0:
+		opened_alone = opened_alone or eye.dive.sailing()
+		await process_frame
+	check(not opened_alone and eye.dive.falling(),"Falling, nothing opens by itself (%.1f m over the land)" % eye.dive.height)
+	eye.handle(_key(KEY_SPACE))
+	await frames(2)
+	check(eye.dive.sailing() and eye.dive.sail.kicked and eye._hint.text == eye.SAIL_HINT,"Space: the sail, kicked, its hint up")
+	Input.action_press(&"move_left")
 	var seen: Array = await _until_down(60.0)
+	Input.action_release(&"move_left")
 	print("     phases: %s" % " > ".join(seen))
-	check(seen.has("freefall") and seen.has("opening") and seen.has("canopy"),"Falls, and the canopy opens")
-	check(eye.dive.auto_opened,"By itself, with nobody asking")
+	check(seen.has("sail"),"Sails down")
 	check(eye.active and not eye.flying and not eye.diving and eye.perch.is_empty(),"Down on the home island, walking")
 	check(eye.figure.visible and eye.motor.grounded and eye.editor.data.has_land(Vector2(eye._feet.x,eye._feet.z)),"Stood on its land")
-	check(not (eye.dive.touched as Dictionary).get("hard",true),"A soft touch under the canopy")
-	check(eye.canopy.collapsing(),"The canopy folds down behind")
+	check(not (eye.dive.touched as Dictionary).get("hard",true),"A soft touch under the sail")
+	await frames(20)
+	check(not eye.sail_wing.visible,"The sail folds away")
 	check(eye.glide is SkyPlane,"The plane's flight is the eye's again")
 	# Walks on.
 	var was: Vector3 = eye._feet
@@ -149,14 +163,27 @@ func _open_by_hand() -> void:
 	check(eye.dive.phase == SkyDive.FREEFALL,"Falling")
 	eye.handle(_key(KEY_X))
 	await frames(2)
-	check(eye.dive.under_canopy() and not eye.dive.auto_opened and eye._hint.text == eye.CANOPY_HINT,"X again opens the canopy")
+	check(eye.dive.falling(),"X no longer opens anything")
+	eye.handle(_key(KEY_SPACE))
+	await frames(2)
+	check(eye.dive.sailing() and eye._hint.text == eye.SAIL_HINT,"Space opens the sail")
 	await frames(60)
 	var heading: float = eye.dive.heading
 	Input.action_press(&"move_left")
-	await frames(40)
+	await frames(12)
 	Input.action_release(&"move_left")
-	check(angle_difference(heading,eye.dive.heading) > 0.5,"The stick steers it")
-	check(eye.canopy.visible,"The canopy is drawn over the pilot")
+	check(absf(angle_difference(heading,eye.dive.heading)) > 0.5,"The stick steers it (%.2f rad)" % angle_difference(heading,eye.dive.heading))
+	check(eye.sail_wing.visible,"The sail is drawn over the pilot")
+	eye.handle(_key(KEY_SPACE))
+	await frames(2)
+	check(eye.dive.falling() and eye._hint.text == eye.DIVE_HINT,"Space again folds it")
+	await frames(30)
+	eye.handle(_key(KEY_SPACE))
+	await frames(2)
+	check(eye.dive.sailing(),"And opens it again")
+	# Folded for the way down: a quicker test.
+	await frames(10)
+	eye.handle(_key(KEY_SPACE))
 	await _until_down(60.0)
 	check(not eye.diving,"And comes down (%s)" % ("walking" if eye.active and not eye.flying else "picked up"))
 
@@ -174,8 +201,8 @@ func _lake() -> void:
 	eye.eject()
 	var top: Vector3 = eye.editor.terrain.to_global(Vector3(pond.x,eye._ground(Vector3(pond.x,0.0,pond.y)),pond.y))
 	eye.dive.drop(top+Vector3.UP*(SkyDive.HIPS+1.0),0.0,0.0)
-	eye.dive.open_canopy()
-	eye.dive.phase = SkyDive.CANOPY
+	eye.dive.phase = SkyDive.SAIL
+	eye.dive.sail.open = true
 	eye.dive.open = 1.0
 	eye.dive.tilt = 0.0
 	eye.dive.velocity = Vector3.DOWN*1.5
@@ -242,4 +269,4 @@ func _step_out() -> void:
 	check(eye.diving,"Diving again")
 	eye.handle(_key(KEY_V))
 	await frames(3)
-	check(not eye.active and not eye.diving and not eye.flying and eye.glide is SkyPlane and not eye.canopy.visible,"V mid-dive steps out cleanly")
+	check(not eye.active and not eye.diving and not eye.flying and eye.glide is SkyPlane and not eye.sail_wing.visible,"V mid-dive steps out cleanly")

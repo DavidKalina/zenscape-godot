@@ -118,8 +118,14 @@ extends RefCounted
 ## airtime) and the slide hop's weave (to HOP_TOP); no pace turns into
 ## height.
 ##
-## Pressed again in the air on the way up, or falling from high enough
-## (FLY_CLEAR), with no wall at hand, it asks to fly (`step` returns "fly").
+## The pocket sail (scripts/pocket_sail.gd, `sail`): Jump pressed again in
+## the air with room under him (`can_open`: off an edge, knocked away; never
+## from a jump over flat ground), with no wall at hand, pops it out overhead (move "sail"), kicked up a little
+## the first time an airtime; pressed again it folds and he falls. Open, it
+## glides him on slowly down, turned towards the stick, crouch braking it
+## to a float; the air (`air`: the feet's point, giving {wind, thermal})
+## carries it and holds it up. Landing, catching a ledge or swimming packs
+## it. Nothing in the air asks for the plane any more.
 ##
 ## Ledges (`ledge`, a lip finder as scripts/pilot_ledge.gd's `find`): falling
 ## past a lip he faces, hands come down to it, he catches it; stepping off
@@ -155,7 +161,7 @@ extends RefCounted
 ## floatier than on foot, drifting on as he turns; where it grows shallower
 ## than SWIM_OUT he stands and walks out. Jump while swimming hops him out of
 ## the water (SWIM_HOP), onto a bank or back in with a splash; that hop never
-## asks to fly. Never drowning, never hurt.
+## opens the sail. Never drowning, never hurt.
 
 ## Speeds, metres a second, and how fast they are reached and lost.
 const WALK := 2.4
@@ -191,8 +197,6 @@ const BUFFER := 0.15
 ## is a wall.
 const SNAP := 0.3
 const STEP_UP := 0.45
-## Over this, metres above the ground, a press falling asks to fly.
-const FLY_CLEAR := 1.6
 ## Carried pace over the run, bleeding away on the ground (m/s²): with the
 ## stick held on along his way (within about 25°), and without; and more
 ## (m/s² a m/s over the run), so a big carry (a slide hop chain's end) falls
@@ -542,6 +546,12 @@ var swimming := false
 var wade := 0.0
 var surface := -INF
 var _from_water := false
+## The pocket sail (see the header), and the air it flies in: anything
+## `air` answers for the feet's point (Vector3, the frame's), {wind,
+## thermal}; none, still air.
+const PocketSail = preload("res://scripts/pocket_sail.gd")
+var sail := PocketSail.new()
+var air := Callable()
 
 ## Stood at `at`, facing `towards`, moving `speed` the way it faces.
 func reset(at: Vector3, towards: float, speed := 0.0) -> void:
@@ -583,6 +593,7 @@ func reset(at: Vector3, towards: float, speed := 0.0) -> void:
 	wade = 0.0
 	surface = -INF
 	_from_water = false
+	sail.rest()
 	carving = 0.0
 
 ## Carried by what he stands on or hangs from, between steps (a moving
@@ -631,7 +642,8 @@ func speed() -> float:
 ## the feet moved. Returns what happened: "jumped" (1 a jump, 2 the pump),
 ## with "long", "wall_jump", "slide_jump" or "side_flip" for those, "twirl",
 ## "slide" (true onto a surf, false off it), "landed" (how hard, metres a
-## second), "fly", "wall" (true onto a wall, false off it); on a ledge
+## second), "sail" (true opened, false folded or packed), "wall" (true onto
+## a wall, false off it); on a ledge
 ## (`ledge`: a point (x, z) and a height near the lip, giving {"at", "out"}
 ## or {}), "grabbed" ("air" or "step"), "hung", "climbed", "let_go",
 ## "stopped" (a shimmy that can't go on); in water (`water`), "swam" (gone in
@@ -678,6 +690,7 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 		surfing = move == "slide"
 		if surfing != surfed: out["slide"] = surfing
 	elif move == "wallrun": pass
+	elif move == "sail": h = _sail_step(delta,want,h)
 	elif move != "wall" and _hop_air and _lock <= 0.0: h = _strafe(h,want,top,delta,twirl_steer if move == "twirl" else air_accel)
 	elif move != "wall": h = _steer(h,Vector2.ZERO if _lock > 0.0 else want,side_speed if move == "flip" else top,delta,twirl_steer if move == "twirl" else air_accel)
 	# The jump: from the ground, or just off it; out of a skid, the side flip;
@@ -737,16 +750,22 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 		skidding = false
 		_jumped = true
 		_buffer = 0.0
+	elif pressed and not grounded and move == "sail":
+		# Folded: falling again.
+		_buffer = 0.0
+		move = ""
+		_no_cut = true
+		sail.fold()
+		out["sail"] = false
 	elif _buffer > 0.0 and not grounded and move == "wallrun":
 		h = _wallrun_kick(h,out)
 	elif _buffer > 0.0 and not grounded and (move == "wall" or _wall_since <= WALL_TOUCH):
 		h = _kick_off(out)
-	elif pressed and not grounded and not _from_water and (velocity.y > 0.0 or feet.y-ground_y > FLY_CLEAR) \
+	elif pressed and not grounded and not _from_water and sail.can_open(feet.y-ground_y,velocity.y) \
 			and _wall_near(want,h,ground,WALL_PROBE+0.8) == Vector2.ZERO:
-		_buffer = 0.0
-		out["fly"] = true
+		h = _sail_open(h,out)
 	# The twirl: its button pressed anywhere in the air, once an airtime.
-	if twirl_pressed and not grounded and not _twirled and move != "wall":
+	if twirl_pressed and not grounded and not _twirled and move != "wall" and move != "sail":
 		_twirled = true
 		_twirl = twirl_time
 		move = "twirl"
@@ -767,7 +786,7 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 	# The wall run: begun along a wall met at a glance, or run on.
 	if not grounded:
 		if move == "wallrun": h = _wallrun_step(delta,want,h,ground,out)
-		elif not _wallran and move != "wall" and move != "flip": h = _wallrun_start(want,h,ground,out)
+		elif not _wallran and move != "wall" and move != "flip" and move != "sail": h = _wallrun_start(want,h,ground,out)
 	var moved: Vector3 = slide.call(feet,h*delta)
 	var under: float = ground.call(Vector2(moved.x,moved.z))
 	if grounded and under > feet.y+STEP_UP:
@@ -799,15 +818,20 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 			if _twirl <= 0.0 and move == "twirl": move = ""
 		var going := h
 		if under > feet.y+STEP_UP:
-			# A wall in the air: stopped against it.
+			# A wall in the air: stopped against it (the sail's way too).
 			h = Vector2.ZERO
 			under = ground.call(Vector2(feet.x,feet.z))
 			moved = feet
-		if move != "wallrun": h = _on_wall(delta,want,h,going,ground,under,out)
+			if move == "sail":
+				sail.speed = 0.0
+				sail.drift = Vector2.ZERO
+		if move != "wallrun" and move != "sail": h = _on_wall(delta,want,h,going,ground,under,out)
 		if move == "wall":
 			moved = feet
 			under = ground.call(Vector2(feet.x,feet.z))
-		var y := feet.y+_arc(delta,jump)
+		# Under the sail its own sink and lift (set in `_sail_step`).
+		var y := feet.y+(velocity.y*delta if move == "sail" else _arc(delta,jump))
+		if move != "sail": sail.track(y,delta)
 		ground_y = under
 		var deep := _depth(Vector2(moved.x,moved.z))
 		if deep > SWIM_IN and is_finite(under) and velocity.y <= 0.0 and y <= under+deep-SWIM_DRAFT:
@@ -823,6 +847,8 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 			out["landed"] = -velocity.y
 			if move == "wall": out["wall"] = false
 			if move == "wallrun": out["wallrun"] = false
+			if move == "sail": out["sail"] = false
+			sail.rest()
 			y = under
 			grounded = true
 			velocity.y = 0.0
@@ -852,6 +878,50 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 	velocity.x = h.x
 	velocity.z = h.y
 	return out
+
+## Jump in the air: the sail out overhead, kicked up the first time this
+## airtime, gliding on the way he goes. The run's new pace.
+func _sail_open(h: Vector2, out: Dictionary) -> Vector2:
+	_buffer = 0.0
+	var v := sail.deploy(Vector3(h.x,velocity.y,h.y),facing,feet.y)
+	velocity.y = v.y
+	move = "sail"
+	_light = false
+	_no_cut = true
+	_twirl = 0.0
+	_lock = 0.0
+	_hop_air = false
+	facing = sail.heading
+	out["sail"] = true
+	return Vector2(v.x,v.z)
+
+## One step under the sail: turned towards the stick, crouch braking it, the
+## air at the feet carrying it and holding it up. The run's new pace (the
+## rise is set on `velocity`).
+func _sail_step(delta: float, want: Vector2, h: Vector2) -> Vector2:
+	var here: Dictionary = air.call(feet) if air.is_valid() else {}
+	var v := sail.step(delta,Vector3(h.x,velocity.y,h.y),feet.y,PocketSail.steer(sail.heading,want),-1.0 if crouch else 0.0,here)
+	velocity.y = v.y
+	facing = sail.heading
+	return Vector2(v.x,v.z)
+
+## Thrown by something (a sentinel's blow, a launcher): off the ground or a
+## ledge at `push` (m/s), a fresh airtime (the twirl, the wall run and the
+## sail's kick ready), no jump taken from it.
+func knock(push: Vector3) -> void:
+	if swimming: return
+	hold = ""
+	hold_t = 0.0
+	_still()
+	velocity = push
+	_jumped = true
+	_light = false
+	_no_cut = true
+	_buffer = 0.0
+	_since_ground = 99.0
+	_regrab = REGRAB
+	if Vector2(push.x,push.z).length() > 0.3: facing = facing_of(Vector2(push.x,push.z))
+	feet.y += 0.02
 
 ## The rise or the fall over `delta` (m, up), velocity.y carried on: worked
 ## out exactly for each part of the step's own gravity (rising, then past
@@ -1163,6 +1233,7 @@ func _still() -> void:
 	_wallran = false
 	_hang_press = false
 	_hop_air = false
+	sail.rest()
 
 ## One step on a ledge.
 func _hold_step(delta: float, want: Vector2, pressed: bool, ground: Callable, slide: Callable, ledge: Callable) -> Dictionary:
@@ -1324,6 +1395,7 @@ func _float_in(hard: float, out: Dictionary) -> void:
 	_jumped = false
 	_from_water = false
 	_buffer = 0.0
+	sail.rest()
 	out["swam"] = hard
 
 ## One step afloat: the stick paddles him its way, slower and floatier than
