@@ -120,6 +120,9 @@ var knife := 0.0
 ## (0 to 1), the nose's lead over its path (radians, the travel is at
 ## heading+slip), and how long this one has been held (seconds).
 var drift_strength := drift_flag(preload("res://scripts/launch_args.gd").user_args())
+## `--plane-speed=<x>` (1 by default): times the cruise, boost and brake
+## speeds only; landing, flap and stall speeds stay as they are.
+var speed_scale := speed_flag(preload("res://scripts/launch_args.gd").user_args())
 var drift := 0.0
 var slip := 0.0
 var drift_held := 0.0
@@ -182,6 +185,11 @@ func resume(pace: float, nose: float) -> void:
 static func drift_flag(args: PackedStringArray) -> float:
 	for arg in args:
 		if arg.begins_with("--drift="): return maxf(0.0,float(arg.substr(8)))
+	return 1.0
+
+static func speed_flag(args: PackedStringArray) -> float:
+	for arg in args:
+		if arg.begins_with("--plane-speed="): return maxf(0.1,float(arg.substr(14)))
 	return 1.0
 
 ## The direction it travels: the nose's, swung back by the drift's slip.
@@ -268,7 +276,7 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 	pitch = clampf(pitch,PITCH_LIMIT.x,lerpf(PITCH_LIMIT.y,CEILING_NOSE,over))
 	# Speed: the engine pulls it to the throttle's speed; the climb and the
 	# dive swing it either side.
-	var target := CRUISE_SPEED+boost*(BOOST_SPEED-CRUISE_SPEED)-brake*(CRUISE_SPEED-BRAKE_SPEED)
+	var target := (CRUISE_SPEED+boost*(BOOST_SPEED-CRUISE_SPEED)-brake*(CRUISE_SPEED-BRAKE_SPEED))*speed_scale
 	if approach: target = minf(target,LANDING_SPEED)
 	# Flaps down slow it and lower its floor; Boost takes them over.
 	var flap := clampf(float(input.get("flaps",0.0)),0.0,1.0)*(1.0-boost)

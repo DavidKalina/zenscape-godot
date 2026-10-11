@@ -94,6 +94,12 @@ var _cine := Vector3.ZERO
 ## `lift`. 1 and none in flight.
 var size := 1.0
 var lift := Vector3.ZERO
+## Launch-flag trials: `--cam-distance=<x>` times the chase's back distance
+## and height (on top of `size`), `--cam-fov=<deg>` its base view, and
+## `--cam-speed-fov=<x>` times how much speed widens it. 1, FOV, 1 by default.
+var distance_scale := _flag("--cam-distance=",1.0)
+var base_fov := _flag("--cam-fov=",FOV)
+var speed_fov := _flag("--cam-speed-fov=",1.0)
 ## How close in it is now (0 cruise, 1 tucked) and how wide (the float).
 var tuck := 0.0
 var float_out := 0.0
@@ -154,8 +160,8 @@ func step(delta: float, glide: RefCounted, dive: float, solid := Callable()) -> 
 	var hang := float(glide.hang)
 	float_out = lerpf(float_out,hang,_ease(FLOAT_IN if hang > float_out else FLOAT_OUT,delta))
 	_cine = _cine.lerp(cine,_ease(EASE_CINE,delta))
-	var back := lerpf(lerpf(BACK.x,BACK.y,float_out),BACK.z,tuck)*(1.0+_cine.z)*size
-	var up := lerpf(lerpf(UP.x,UP.y,float_out),UP.z,tuck)*(1.0+_cine.z*0.5)*size
+	var back := lerpf(lerpf(BACK.x,BACK.y,float_out),BACK.z,tuck)*(1.0+_cine.z)*size*distance_scale
+	var up := lerpf(lerpf(UP.x,UP.y,float_out),UP.z,tuck)*(1.0+_cine.z*0.5)*size*distance_scale
 	_since_turn += delta
 	if not free_held and _since_turn >= linger: free = free.lerp(Vector2.ZERO,_ease(EASE_BACK,delta))
 	var swing := free+Vector2(_cine.x,_cine.y)
@@ -177,6 +183,11 @@ func step(delta: float, glide: RefCounted, dive: float, solid := Callable()) -> 
 	roll = lerpf(roll,_lean(float(glide.bank)),_ease(EASE_ROLL,delta))
 	if solid.is_valid(): _keep_clear(at,solid)
 
+static func _flag(prefix: String, fallback: float) -> float:
+	for arg in preload("res://scripts/launch_args.gd").user_args():
+		if arg.begins_with(prefix): return maxf(0.0,float(arg.substr(prefix.length())))
+	return fallback
+
 ## The roll for a bank: a share of it, eased softly into ROLL_MAX.
 func _lean(bank: float) -> float:
 	return -ROLL_MAX*tanh(bank*ROLL/ROLL_MAX)
@@ -189,7 +200,7 @@ func _widen(delta: float, glide: RefCounted) -> void:
 	var jet := float(glide.in_jet)
 	_jet_felt = lerpf(_jet_felt,jet,_ease(JET_SETTLE,delta))
 	var kick := smoothstep(0.0,0.5,jet-_jet_felt)
-	var want := (FOV_FIRST+FOV_FIRST_FAST*fast) if first_person else (FOV+FOV_FAST*fast)
+	var want := (FOV_FIRST+FOV_FIRST_FAST*fast) if first_person else (base_fov+FOV_FAST*speed_fov*fast)
 	want += JET_KICK*kick-FOV_FLOAT*float(glide.hang)
 	fov = lerpf(fov,want,_ease(EASE_FOV,delta))
 
