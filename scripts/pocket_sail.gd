@@ -24,12 +24,15 @@ extends RefCounted
 ## dives to PACE_FAST, sinking SINK_FAST.
 ##
 ## The air (`air`: {wind, thermal}, as the glide and the skydive read it):
-## the wind across carries it (WIND of it, eased in over WIND_EASE), and air
-## rising (the wind's rise, LIFT of it; a thermal, THERMAL m/s for each of
-## its units) eases its sink or lifts it a little, up to RISE_MOST. Never
-## over the airtime's highest point (`peak`, the highest the feet were with
-## it folded) by more than CEILING: rising air can slow the spend of height,
-## but it never climbs him back up.
+## the wind across carries it (WIND of it, eased in over WIND_EASE). The
+## wind's rise (a gust's, LIFT of it) eases its sink or lifts it a little,
+## up to RISE_MOST, and never over the airtime's highest point (`peak`, the
+## highest the feet were with it folded) by more than CEILING: a gust can
+## slow the spend of height, but never climbs him back up. A thermal (rising
+## air: THERMAL m/s for each of its units) is the one thing that does: in
+## its column the sail climbs, up to THERMAL_MOST m/s, taken up at
+## THERMAL_TAKE m/s², with no ceiling (`riding` while it does). Thermals are
+## placed and rare, so height stays what it spends everywhere else.
 ##
 ## Plain state and maths, as the motor and the glide are, so tests can step
 ## it. The motor (scripts/pilot_motor.gd) and the skydive
@@ -77,6 +80,12 @@ const LIFT := 0.5
 const THERMAL := 2.0
 const RISE_MOST := 0.8
 const CEILING := 1.0
+## In a thermal: the fastest it climbs (m/s), and how fast it takes up the
+## climb (m/s²): from its sink to a full climb in under a second.
+const THERMAL_MOST := 5.0
+const THERMAL_TAKE := 6.0
+## The thermal's lift (m/s, after the sink) over which it counts as ridden.
+const RIDING := 0.3
 ## Seconds after folding before it opens again; the least room under the
 ## feet it opens with (m), plus the fall's speed for this many seconds. So
 ## it never opens over flat ground from a jump (the pump tops out at
@@ -102,12 +111,15 @@ var lift := LIFT
 var thermal := THERMAL
 var rise_most := RISE_MOST
 var ceiling := CEILING
+var thermal_most := THERMAL_MOST
+var thermal_take := THERMAL_TAKE
 var reopen := REOPEN
 
 ## Open now; this airtime's kick spent; the way it flies (the motor's
 ## facing convention) and its own pace along it; the wind's carry across
 ## (x, z); the airtime's highest point with it folded; seconds since it
-## folded; the air's lift now (m/s, for the numbers).
+## folded; the air's lift now (m/s, for the numbers); climbing in a
+## thermal now (for the cues: the wing's billow, the camera, the numbers).
 var open := false
 var kicked := false
 var heading := 0.0
@@ -116,6 +128,7 @@ var drift := Vector2.ZERO
 var peak := -INF
 var since_fold := 99.0
 var lift_now := 0.0
+var riding := false
 
 ## Stood, hung or afloat: packed, the kick ready for the next airtime.
 func rest() -> void:
@@ -125,6 +138,7 @@ func rest() -> void:
 	since_fold = 99.0
 	drift = Vector2.ZERO
 	lift_now = 0.0
+	riding = false
 
 ## Each step in the air with it folded: the highest point kept, the fold's
 ## seconds counted.
@@ -151,6 +165,7 @@ func deploy(velocity: Vector3, facing: float, y := -INF) -> Vector3:
 	speed = minf(speed,top)
 	drift = Vector2.ZERO
 	lift_now = 0.0
+	riding = false
 	if not kicked:
 		velocity.y = maxf(velocity.y,minf(velocity.y+kick,kick))
 		kicked = true
@@ -159,6 +174,7 @@ func deploy(velocity: Vector3, facing: float, y := -INF) -> Vector3:
 ## Folded: falling again, the kick not given back.
 func fold() -> void:
 	open = false
+	riding = false
 	since_fold = 0.0
 
 ## The turn (-1 right to 1 left) towards the way asked, `want` (x, z, at
@@ -188,12 +204,22 @@ func step(delta: float, velocity: Vector3, y: float, steering: float, push: floa
 	speed = minf(speed,top)
 	var wind: Vector3 = air.get("wind",Vector3.ZERO)
 	drift = drift.lerp(Vector2(wind.x,wind.z)*wind_share,1.0-exp(-delta/WIND_EASE))
-	lift_now = maxf(wind.y,0.0)*lift+maxf(float(air.get("thermal",0.0)),0.0)*thermal
-	var target := minf(-want_sink+lift_now,rise_most)
-	# Never back up over the airtime's peak.
-	if is_finite(peak): target = minf(target,peak+ceiling-y)
+	var gust := maxf(wind.y,0.0)*lift
+	var warm := maxf(float(air.get("thermal",0.0)),0.0)*thermal
+	lift_now = gust+warm
+	var target := minf(-want_sink+gust,rise_most)
+	# A gust never lifts him back up over the airtime's peak (nor, over it,
+	# drops him faster than his sink).
+	if is_finite(peak): target = minf(target,maxf(peak+ceiling-y,-want_sink))
+	# A thermal climbs him, with no ceiling: the height it gives is his to
+	# spend (the peak goes up with him).
+	var climb := minf(-want_sink+lift_now,thermal_most)
+	riding = warm > 0.0 and climb > RIDING
+	if warm > 0.0: target = maxf(target,climb)
+	if riding: peak = maxf(peak,y)
 	var rise := velocity.y
 	if rise > target: rise = maxf(target,rise-RISE_GRAVITY*delta)
+	elif riding: rise = minf(target,rise+maxf(thermal_take,catch if rise < -want_sink-1.0 else SETTLE)*delta)
 	else: rise = minf(target,rise+(catch if rise < -want_sink-1.0 else SETTLE)*delta)
 	return Vector3(-sin(heading)*speed+drift.x,rise,-cos(heading)*speed+drift.y)
 

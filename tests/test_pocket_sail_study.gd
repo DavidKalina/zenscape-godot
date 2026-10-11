@@ -7,7 +7,8 @@ extends SceneTree
 ## onto it; thrown by the hurl without it, he falls past the shelf; the
 ## shelf's stair climbs back to the top, and the switchbacks from the
 ## islets to the shelf and from the floor to the islets; a gust front pushes the sail
-## sideways and the rising air holds it up; a sentinel's blow (K) throws
+## sideways and the rising air climbs it several metres in a few seconds
+## (out of it, it sinks); a sentinel's blow (K) throws
 ## him out from the middle; fallen past everything, he is set back at a
 ## station, never lost.
 ##   godot --headless --path . --script tests/test_pocket_sail_study.gd
@@ -136,16 +137,34 @@ func run() -> void:
 	print("MEASURE: a gust front's push on the sail: %.2f m/s across" % pushed)
 	check(m.move == "sail" and pushed > Study.GUST_PUSH*0.5,"A gust front pushes the sail across (%.2f m/s)" % pushed)
 	calm()
-	# The rising air holds it up.
+	# The rising air climbs it for real: opened in the column and circled,
+	# several metres up in a few seconds, riding it; the hurl's and the
+	# blow's lines out pass through it.
 	study.place(Vector3(Study.THERMAL_AT.x,45.0,Study.THERMAL_AT.y),Vector2(0.0,-1.0))
 	until(Vector2.ZERO,false,15,func(_m: PilotMotor) -> bool: return false)
 	press()
-	var low := INF
-	for i in range(180):
+	var opened_at := m.feet.y
+	var rode := false
+	for i in range(60*4):
 		study.script_want = Vector2(1.0,0.0).rotated(i*0.05)
 		study.tick(DT)
-		if i > 90: low = minf(low,-m.velocity.y)
-	check(m.move == "sail" and low < PocketSail.SINK*0.3,"In the rising air the sail barely sinks, or lifts (%.2f m/s down at most)" % low)
+		rode = rode or m.sail.riding
+	var rose_by := m.feet.y-opened_at
+	print("MEASURE: in the study's column 4 s, circling: rose_by %.2f m, %.2f m/s up, %.1f m off its core" % [rose_by,m.velocity.y,Vector2(m.feet.x,m.feet.z).distance_to(Study.THERMAL_AT)])
+	check(m.move == "sail" and rose_by > 8.0,"In the rising air the sail climbs several metres in a few seconds (%.2f m in 4 s)" % rose_by)
+	check(rode and study._riding_line.visible and study._thermal_glow > 0.5,"Riding it, the banner shows and the column glows")
+	check(float(study.air_at(Vector3(Study.THERMAL_AT.x,Study.TOP+5.0,-7.0)).thermal) > 1.0 and float(study.air_at(Vector3(Study.THERMAL_AT.x,Study.TOP+5.0,0.0)).thermal) > 1.0,"The hurl's and the blow's lines out pass through it")
+	check(float(study.air_at(Vector3(Study.THERMAL_AT.x,Study.THERMAL_TOP+1.0,Study.THERMAL_AT.y)).thermal) == 0.0,"It stops at its top")
+	# Out of it, the same opening sinks.
+	study.place(Vector3(90.0,45.0,-60.0),Vector2(0.0,-1.0))
+	until(Vector2.ZERO,false,15,func(_m: PilotMotor) -> bool: return false)
+	press()
+	var out_at := m.feet.y
+	for i in range(60*4):
+		study.script_want = Vector2(1.0,0.0).rotated(i*0.05)
+		study.tick(DT)
+	print("MEASURE: out of the column 4 s: %+.2f m" % (m.feet.y-out_at))
+	check(m.move == "sail" and m.feet.y < out_at-3.0 and not m.sail.riding and not study._riding_line.visible,"Out of the rising air the sail sinks (%+.2f m in 4 s)" % (m.feet.y-out_at))
 	# A sentinel's blow.
 	study.place(Vector3(0.0,Study.TOP,-14.0),Vector2(0.0,1.0))
 	until(Vector2.ZERO,false,10,func(_m: PilotMotor) -> bool: return false)

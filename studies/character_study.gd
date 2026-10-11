@@ -90,6 +90,10 @@ const EASE_CAM_OUT := 0.4
 ## The ball cast out to find what stands between the camera and him (m).
 const CAM_BALL := 0.25
 const FOV := 60.0
+## Riding a thermal under the sail: the view widens this much (degrees),
+## eased in and out over RIDE_EASE (s), so the climb is felt.
+const RIDE_FOV := 9.0
+const RIDE_EASE := 0.6
 const LOOK := 0.0025
 const STICK_WALK_LOOK := Vector2(2.2,1.4)
 ## The walker's puffs: a landing this hard (m/s) kicks up a ring, fullest
@@ -792,7 +796,7 @@ func tick(delta: float) -> void:
 	if events.has("grabbed") or events.has("climbed"): steps.step(_surface(),0.4)
 	_motor_events(events)
 	var drawn: Dictionary = body.drive(motor,delta)
-	sail_wing.update(delta,motor.move == "sail",PocketSail.steer(motor.sail.heading,want) if motor.move == "sail" else 0.0)
+	sail_wing.update(delta,motor.move == "sail",PocketSail.steer(motor.sail.heading,want) if motor.move == "sail" else 0.0,1.0 if motor.sail.riding else 0.0)
 	_measure_glide(events)
 	_body_events(drawn,delta)
 	_water_events(events,drawn,delta)
@@ -1004,6 +1008,8 @@ func _frame(delta: float) -> void:
 			_cam_distance = minf(_cam_distance+_cam_out*out_dt,reach)
 			out_left -= out_dt
 	camera.look_at_from_position(pivot+out*_cam_distance,pivot)
+	var riding: bool = motor.move == "sail" and motor.sail.riding
+	if delta > 0.0: camera.fov = lerpf(camera.fov,FOV+(RIDE_FOV if riding else 0.0),_ease(RIDE_EASE,delta))
 
 ## How far out along `out` from `pivot` the camera may stand, drawn in
 ## before what stands between: a ball CAM_BALL round cast out (its reach
@@ -1050,7 +1056,7 @@ const TUNABLE := [["walk",0.5,6.0],["run",1.0,10.0],["accel",2.0,60.0],["brake",
 	["slide_jump",0.2,2.5],["side_flip",0.5,3.5],["side_speed",0.0,8.0],["climb_time",0.15,1.2],
 	["sail:pace",2.0,12.0],["sail:sink",0.4,4.0],["sail:top",4.0,20.0],["sail:bleed",0.0,6.0],["sail:turn",0.5,6.0],
 	["sail:kick",0.0,8.0],["sail:catch",2.0,30.0],["sail:swoop",0.0,1.0],["sail:wind_share",0.0,1.5],["sail:lift",0.0,2.0],
-	["sail:thermal",0.0,5.0],["sail:rise_most",0.0,4.0],["sail:ceiling",0.0,10.0],["sail:reopen",0.0,1.0]]
+	["sail:thermal",0.0,5.0],["sail:rise_most",0.0,4.0],["sail:ceiling",0.0,10.0],["sail:thermal_most",0.0,10.0],["sail:thermal_take",0.0,20.0],["sail:reopen",0.0,1.0]]
 
 func _build_ui() -> void:
 	var layer := CanvasLayer.new()
@@ -1239,7 +1245,7 @@ func _show_hud() -> void:
 	if long_chain > 0: lines.append("long chain %d · fastest %.2f m/s (LONG_TOP %.1f)" % [long_chain,long_chain_top,motor.long_top])
 	if motor.wade > 0.0 or motor.swimming: lines.append("water     %.2f m over the feet" % motor.wade)
 	var sail: RefCounted = motor.sail
-	if motor.move == "sail": lines.append("sail      open · %.2f m/s across · %.2f m/s %s · lift %.2f · kick %s" % [motor.speed(),absf(motor.velocity.y),"up" if motor.velocity.y > 0.0 else "down",sail.lift_now,"spent" if sail.kicked else "ready"])
+	if motor.move == "sail": lines.append("sail      open · %.2f m/s across · %.2f m/s %s · lift %.2f%s · kick %s" % [motor.speed(),absf(motor.velocity.y),"up" if motor.velocity.y > 0.0 else "down",sail.lift_now," · riding the rising air" if sail.riding else "","spent" if sail.kicked else "ready"])
 	elif not motor.grounded: lines.append("sail      packed · kick %s · room %s" % ["spent" if sail.kicked else "ready","yes" if sail.can_open(motor.feet.y-motor.ground_y,motor.velocity.y) else "no"])
 	if not last_glide.is_empty(): lines.append("last glide %.1f m across, %.1f m down: %s to 1 (still air %.2f)" % [last_glide.across,last_glide.down,"%.2f" % last_glide.ratio if is_finite(float(last_glide.ratio)) else "-",sail.pace/sail.sink])
 	_hud.text = "\n".join(lines)

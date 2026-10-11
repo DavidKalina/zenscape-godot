@@ -5,8 +5,10 @@ extends SceneTree
 ## again, none), it folds with Space and falls, and opens again only after
 ## REOPEN; opened early it saves the fall, opened late it barely slows it;
 ## pace brought into it is kept a while, never over TOP; crouch floats it;
-## the wind across carries it and air rising slows its sink, but it never
-## climbs over the airtime's peak by more than CEILING; landing packs it
+## the wind across carries it and a gust's rise slows its sink, but never
+## climbs it over the airtime's peak by more than CEILING; a thermal climbs
+## it for real (metres in seconds, over the peak), and out of the column it
+## sinks again; landing packs it
 ## and gives the kick back; a press close over the ground is still the
 ## jump buffered for the touch; a knock is a fresh airtime. Nothing asks to
 ## fly. The skydive's sail (scripts/sky_dive.gd) flies the same maths.
@@ -138,22 +140,41 @@ func _initialize() -> void:
 	var held := _glide_off(m,figure,Vector2(1.0,0.0),false,3.0)
 	_wind = Vector3.ZERO
 	check(held.down < PocketSail.SINK*0.5,"Rising air slows its sink (%.2f m/s down)" % held.down)
+	# A gust's rise past the peak: held under it by CEILING.
+	_wind = Vector3(0.0,6.0,0.0)
+	m.reset(Vector3(-1.0,0.0,0.0),PilotMotor.facing_of(Vector2(1.0,0.0)),PilotMotor.RUN)
+	_until_off(m,figure)
+	var gust_peak := m.feet.y
+	_air_for(m,figure,0.3,Vector2(1.0,0.0))
+	_press(m,figure,Vector2(1.0,0.0))
+	var gust_high := -INF
+	for k in range(60*10):
+		_step(m,figure,cliff,Vector2(1.0,0.0),false)
+		gust_high = maxf(gust_high,m.feet.y)
+	_wind = Vector3.ZERO
+	print("MEASURE: in a gust's strong rise for 10 s: %.2f m over the airtime's peak at most" % (gust_high-gust_peak))
+	check(gust_high <= gust_peak+PocketSail.CEILING+0.05,"A gust's rise never lifts it over the airtime's peak by more than CEILING (%.2f m)" % (gust_high-gust_peak))
+	# A thermal: climbs it for real, metres in a few seconds, over the peak.
 	_thermal = 3.0
 	m.reset(Vector3(-1.0,0.0,0.0),PilotMotor.facing_of(Vector2(1.0,0.0)),PilotMotor.RUN)
 	_until_off(m,figure)
 	var peak := m.feet.y
 	_air_for(m,figure,0.3,Vector2(1.0,0.0))
 	_press(m,figure,Vector2(1.0,0.0))
-	var highest := -INF
-	var rose := false
-	for k in range(60*20):
-		_step(m,figure,cliff,Vector2(1.0,0.0),false)
-		highest = maxf(highest,m.feet.y)
-		rose = rose or m.velocity.y > 0.3
+	var opened_at := m.feet.y
+	for k in range(60*4): _step(m,figure,cliff,Vector2(1.0,0.0),false)
+	var climbed := m.feet.y-opened_at
+	print("MEASURE: a 3.0 thermal for 4 s: climbed %.2f m (%.2f m over the airtime's peak), %.2f m/s up, riding %s" % [climbed,m.feet.y-peak,m.velocity.y,m.sail.riding])
+	check(climbed > 8.0,"A thermal climbs the sail several metres in a few seconds (%.2f m in 4 s)" % climbed)
+	check(m.feet.y > peak+5.0,"Over the airtime's peak, with no ceiling (%.2f m over)" % (m.feet.y-peak))
+	check(m.sail.riding and m.velocity.y > 2.0,"Riding it, climbing (%.2f m/s)" % m.velocity.y)
+	check(m.velocity.y <= PocketSail.THERMAL_MOST+0.01,"Never faster than THERMAL_MOST")
+	# Out of the column it sinks again, at its sink.
 	_thermal = 0.0
-	print("MEASURE: in a strong thermal for 20 s: %.2f m over the airtime's peak at most" % (highest-peak))
-	check(rose,"A strong thermal lifts it")
-	check(highest <= peak+PocketSail.CEILING+0.05,"But never over the airtime's peak by more than CEILING (%.2f m)" % (highest-peak))
+	var left_at := m.feet.y
+	for k in range(60*4): _step(m,figure,cliff,Vector2(1.0,0.0),false)
+	print("MEASURE: 4 s out of the thermal: %+.2f m, %.2f m/s" % [m.feet.y-left_at,m.velocity.y])
+	check(m.feet.y < left_at-3.0 and absf(m.velocity.y+PocketSail.SINK) < 0.1 and not m.sail.riding,"Out of it, it sinks again at SINK (%.2f m/s)" % m.velocity.y)
 	# Landing packs it, and gives the kick back: off a 10 m step.
 	var step := func(p: Vector2) -> float: return 0.0 if p.x < 0.0 else -10.0
 	m.reset(Vector3(-1.0,0.0,0.0),PilotMotor.facing_of(Vector2(1.0,0.0)),PilotMotor.RUN)

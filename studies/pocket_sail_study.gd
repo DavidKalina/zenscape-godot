@@ -23,9 +23,13 @@ extends "res://studies/character_study.gd"
 ## apart) sweep the whole sky across x, by turns out from the island (east)
 ## and back towards it (west), each a band GUST_WIDTH m deep pushing at
 ## GUST_PUSH m/s with a little lift, drawn as a band of streaks; G sends
-## the next one now. A rising-air column (THERMAL) stands off the shelf's
-## north end, drawn as a warm column with rising bands: under the sail it
-## slows the sink or lifts a little, never over the airtime's peak.
+## the next one now. A rising-air column (THERMAL) stands east of the
+## shelf, across the hurl's and the blow's line out, drawn as a warm
+## column with bands racing up it, a bright core and a ring on the floor:
+## under the sail it climbs him for real (metres a second, over the
+## airtime's peak, up to its top), drawing him in towards its core. Riding
+## it, the column glows, a banner says so, the view widens and the sail
+## puffs fuller.
 ##
 ## Height is what the sail spends: thrown high (blow, hurl) it coasts back
 ## onto the top; a nudge or a shove comes down short, and costs the climb.
@@ -62,12 +66,18 @@ const GUST_PUSH := 8.0
 const GUST_LIFT := 1.0
 const GUST_FROM := 120.0
 const GUST_FIRST := 3.0
-## The rising-air column: its middle (x, z), radius (m), top (m) and
-## strength (thermal units: the sail rises THERMAL m/s for each).
-const THERMAL_AT := Vector2(30.0,-27.0)
-const THERMAL_RADIUS := 6.0
-const THERMAL_TOP := 75.0
-const THERMAL_STRENGTH := 1.2
+## The rising-air column: its middle (x, z), radius (m), top (m), the
+## depth under its top over which it fades (m), and strength (thermal
+## units: the sail's lift is THERMAL m/s for each, so 3 is 6 m/s, a climb
+## of 4.5 m/s after its sink). It draws the air in towards its core: at
+## most INFLOW m/s, out to INFLOW_REACH of its radius.
+const THERMAL_AT := Vector2(46.0,-4.0)
+const THERMAL_RADIUS := 10.0
+const THERMAL_TOP := 85.0
+const THERMAL_FADE := 12.0
+const THERMAL_STRENGTH := 3.0
+const INFLOW := 2.0
+const INFLOW_REACH := 1.8
 
 const GUST_SHADER := """
 shader_type spatial;
@@ -82,15 +92,19 @@ void fragment() {
 const THERMAL_SHADER := """
 shader_type spatial;
 render_mode unshaded, cull_disabled, depth_draw_never, blend_mix, shadows_disabled;
-uniform vec4 tint : source_color = vec4(1.0,0.82,0.55,1.0);
+uniform vec4 tint : source_color = vec4(1.0,0.78,0.48,1.0);
+uniform float glow = 0.0;
+uniform float pace = 0.9;
+uniform float base = 0.08;
 varying vec3 local;
 void vertex() { local = VERTEX; }
 void fragment() {
 	float a = atan(local.z,local.x);
-	float rise = fract(local.y*0.1-TIME*0.4+sin(a*3.0)*0.12);
-	float band = smoothstep(0.0,0.12,rise)*smoothstep(0.45,0.2,rise);
-	ALBEDO = tint.rgb;
-	ALPHA = 0.05+0.22*band;
+	float rise = fract(local.y*0.08-TIME*pace+sin(a*3.0)*0.15);
+	float band = smoothstep(0.0,0.1,rise)*smoothstep(0.4,0.15,rise);
+	float rim = 1.0-abs(dot(normalize(NORMAL),normalize(VIEW)));
+	ALBEDO = mix(tint.rgb,vec3(1.0,0.95,0.8),glow*0.5);
+	ALPHA = clamp((base+0.32*band)*(0.6+0.8*rim)*(1.0+glow),0.0,1.0);
 }
 """
 
@@ -109,6 +123,12 @@ var _blow_asked := false
 var last_throw := {}
 var _throw_peak := -INF
 var _study_line: Label
+## The column's materials (glowing when ridden), the banner shown riding it,
+## and seconds to the next puff of rising air off the sail.
+var _thermal_tubes: Array[ShaderMaterial] = []
+var _thermal_glow := 0.0
+var _riding_line: Label
+var _ride_puff := 0.0
 
 func _init() -> void:
 	pack = "pocket_sail"
@@ -184,7 +204,7 @@ static func _stations() -> Array:
 		{"key":3,"name":"Shelf · 12 m down","spawn":Vector3(30.0,38.0,4.0),"face":Vector2(-1.0,0.0),"sign":Vector3(30.0,41.0,-14.0),"parts":shelf},
 		{"key":4,"name":"Islets · 26 m down","spawn":Vector3(44.0,24.0,18.0),"face":Vector2(0.0,-1.0),"sign":Vector3(44.0,27.0,21.0),"parts":islets},
 		{"key":5,"name":"Floor · 50 m down","spawn":Vector3(52.0,0.0,44.0),"face":Vector2(0.0,-1.0),"sign":Vector3(52.0,3.5,47.0),"parts":floor},
-		{"key":6,"name":"By the rising air","spawn":Vector3(14.0,TOP,-14.0),"face":Vector2(1.0,-0.8).normalized(),"sign":Vector3(THERMAL_AT.x,TOP+6.0,THERMAL_AT.y),"parts":[]},
+		{"key":6,"name":"By the rising air","spawn":Vector3(14.0,TOP,-12.0),"face":Vector2(1.0,0.25).normalized(),"sign":Vector3(THERMAL_AT.x,TOP+6.0,THERMAL_AT.y),"parts":[]},
 	]
 
 ## A switchback climb: `flights` ramps of `rise` m each, 4 m wide, about
@@ -213,16 +233,21 @@ static func _switchback(from: Vector2, low: float, flights: int, rise: float, wa
 
 # --- The air ------------------------------------------------------------------------
 
-## The air at `p`: the fronts' push and lift, the column's rise
-## ({wind, thermal}).
+## The air at `p`: the fronts' push and lift, the column's rise and its
+## draw in towards the core ({wind, thermal}).
 func air_at(p: Vector3) -> Dictionary:
 	var wind := Vector3.ZERO
 	for front: Dictionary in fronts:
 		var k := gust_at(front,p.x)
 		wind += Vector3(float(front.way)*GUST_PUSH*k,GUST_LIFT*k,0.0)
 	var thermal := 0.0
-	var off := Vector2(p.x,p.z).distance_to(THERMAL_AT)
-	if p.y < THERMAL_TOP: thermal = THERMAL_STRENGTH*(1.0-smoothstep(THERMAL_RADIUS*0.6,THERMAL_RADIUS,off))
+	var to_core := THERMAL_AT-Vector2(p.x,p.z)
+	var off := to_core.length()
+	var under_top := 1.0-smoothstep(THERMAL_TOP-THERMAL_FADE,THERMAL_TOP,p.y)
+	thermal = THERMAL_STRENGTH*(1.0-smoothstep(THERMAL_RADIUS*0.7,THERMAL_RADIUS,off))*under_top
+	if off > 0.01 and under_top > 0.0:
+		var draw := INFLOW*clampf(off/(THERMAL_RADIUS*0.5),0.0,1.0)*(1.0-smoothstep(THERMAL_RADIUS,THERMAL_RADIUS*INFLOW_REACH,off))*under_top
+		wind += Vector3(to_core.x,0.0,to_core.y)/off*draw
 	return {"wind":wind,"thermal":thermal}
 
 ## Where front `front` stands along x now.
@@ -256,24 +281,46 @@ func _advance_air(delta: float) -> void:
 			continue
 		if front.node != null: (front.node as Node3D).position.x = x
 
+## The column drawn: an outer tube at its radius and a brighter core at half
+## it, bands racing up both; a warm ring on the floor at its foot; signs at
+## the top's height and over the shelf. Ridden, the tubes glow
+## (`_thermal_glow`).
 func _build_air() -> void:
-	var column := MeshInstance3D.new()
-	var tube := CylinderMesh.new()
-	tube.top_radius = THERMAL_RADIUS
-	tube.bottom_radius = THERMAL_RADIUS
-	tube.height = THERMAL_TOP
-	tube.cap_top = false
-	tube.cap_bottom = false
-	tube.radial_segments = 32
-	column.mesh = tube
-	var warm := ShaderMaterial.new()
-	warm.shader = Shader.new()
-	warm.shader.code = THERMAL_SHADER
-	column.material_override = warm
-	column.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	column.position = Vector3(THERMAL_AT.x,THERMAL_TOP*0.5,THERMAL_AT.y)
-	add_child(column)
-	_label(Vector3(THERMAL_AT.x,TOP+4.0,THERMAL_AT.y),"rising air",48)
+	var shader := Shader.new()
+	shader.code = THERMAL_SHADER
+	for tube_at: Array in [[THERMAL_RADIUS,0.9,0.08],[THERMAL_RADIUS*0.5,1.4,0.12]]:
+		var column := MeshInstance3D.new()
+		var tube := CylinderMesh.new()
+		tube.top_radius = tube_at[0]
+		tube.bottom_radius = tube_at[0]
+		tube.height = THERMAL_TOP
+		tube.cap_top = false
+		tube.cap_bottom = false
+		tube.radial_segments = 40
+		tube.rings = 1
+		column.mesh = tube
+		var warm := ShaderMaterial.new()
+		warm.shader = shader
+		warm.set_shader_parameter("pace",tube_at[1])
+		warm.set_shader_parameter("base",tube_at[2])
+		column.material_override = warm
+		column.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		column.position = Vector3(THERMAL_AT.x,THERMAL_TOP*0.5,THERMAL_AT.y)
+		add_child(column)
+		_thermal_tubes.append(warm)
+	var ring := MeshInstance3D.new()
+	var disc := TorusMesh.new()
+	disc.inner_radius = THERMAL_RADIUS-0.6
+	disc.outer_radius = THERMAL_RADIUS
+	ring.mesh = disc
+	var hot := StandardMaterial3D.new()
+	hot.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	hot.albedo_color = Color(1.0,0.66,0.32)
+	ring.material_override = hot
+	ring.position = Vector3(THERMAL_AT.x,0.1,THERMAL_AT.y)
+	add_child(ring)
+	_label(Vector3(THERMAL_AT.x,TOP+6.0,THERMAL_AT.y),"↑ rising air ↑",72)
+	_label(Vector3(THERMAL_AT.x,40.0,THERMAL_AT.y),"↑ rising air: fly into it, circle ↑",48)
 
 ## A front drawn: streaks along x scattered through its band, each a thin
 ## rod a few metres long, fading to its edges.
@@ -359,6 +406,19 @@ func tick(delta: float) -> void:
 	_blow_asked = false
 	super.tick(delta)
 	if not motor.grounded: _throw_peak = maxf(_throw_peak,motor.feet.y)
+	_ride_cues(delta)
+
+## Riding the rising air: the column glows, the banner shows, and now and
+## then a puff swirls up off the sail.
+func _ride_cues(delta: float) -> void:
+	var riding: bool = motor.move == "sail" and motor.sail.riding
+	_thermal_glow = move_toward(_thermal_glow,1.0 if riding else 0.0,delta*2.5)
+	for warm in _thermal_tubes: warm.set_shader_parameter("glow",_thermal_glow)
+	if _riding_line != null: _riding_line.visible = riding
+	_ride_puff -= delta
+	if riding and _ride_puff <= 0.0:
+		_ride_puff = 0.45
+		puffs.swirl(figure.global_position+Vector3.UP*2.2,1.0,0.8)
 
 func _show_hud() -> void:
 	super._show_hud()
@@ -387,6 +447,18 @@ func _build_ui() -> void:
 	_study_line.offset_right = 640.0
 	_study_line.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_hud.get_parent().add_child(_study_line)
+	_riding_line = Label.new()
+	_riding_line.text = "↑  riding the rising air  ↑"
+	_riding_line.add_theme_font_size_override("font_size",30)
+	_riding_line.add_theme_color_override("font_color",Color("ffd9a0"))
+	_riding_line.add_theme_color_override("font_shadow_color",Color(0,0,0,0.7))
+	_riding_line.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
+	_riding_line.offset_top = 90.0
+	_riding_line.offset_left = -400.0
+	_riding_line.offset_right = 400.0
+	_riding_line.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_riding_line.visible = false
+	_hud.get_parent().add_child(_riding_line)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo and not _tuning():

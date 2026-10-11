@@ -2816,7 +2816,7 @@ func _pose_diver(delta: float) -> void:
 ## The motor's sail on foot: its wing drawn out or away, and its sound and
 ## pulse as it opens or folds.
 func _sail_events(events: Dictionary, delta: float) -> void:
-	sail_wing.update(delta,motor.move == "sail",PocketSail.steer(motor.sail.heading,_pace_want()) if motor.move == "sail" else 0.0)
+	sail_wing.update(delta,motor.move == "sail",PocketSail.steer(motor.sail.heading,_pace_want()) if motor.move == "sail" else 0.0,1.0 if motor.sail.riding else 0.0)
 	if not events.has("sail"): return
 	if air != null: air.flap()
 	if events.sail: Pad.pulse(0.3,0.15,0.12)
