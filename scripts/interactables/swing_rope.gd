@@ -117,7 +117,17 @@ func setup(at: Vector3, rope_length: float) -> void:
 	grip = length
 	hands = anchor+Vector3.DOWN*length
 
+## The updraft's ring blast (scripts/updraft.gd) swings the free end.
+const WIND_SWING := 9.0       # m/s of swing at full power
+
+func wind_point() -> Vector3: return hands
+
+func wind_push(_origin: Vector3, dir: Vector3, power: float) -> void:
+	if held(): return
+	velocity += dir*WIND_SWING*power
+
 func _ready() -> void:
+	add_to_group(&"wind_pushable")
 	var mesh := _rope_mesh()
 	_upper = MeshInstance3D.new()
 	_upper.mesh = mesh
