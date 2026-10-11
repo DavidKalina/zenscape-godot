@@ -398,3 +398,425 @@ and the plate-anchored main scene. It also can't actually take the builder out
 of the default, because the plate is what everything stands on. It's the same
 amount of new behaviour, plus a third ground model in the most coupled file,
 plus a 151-node boot behind a scene that should feel light.
+
+## Round 1 done
+
+Branch `consolidate/front-door`, off `main` 440a405d. Not merged, not pushed.
+
+### What changed
+
+- **The front door.** `studies/zenscape.tscn` is `run/main_scene` now. Its
+  script, `studies/zenscape.gd` (about 60 lines), extends
+  `aqueduct_isle.gd`, so every aqueduct flag works on it. The work lives in
+  `scripts/kit_isle/front_door.gd`, the scene's first child, which processes
+  after the scene each frame so it has the camera last. It runs in this order:
+  1. The loading veil (`title_loading.gd`, "The isle is rising out of the
+     clouds") goes up. The scene waits two frames so the veil draws, with
+     process and input off, then builds.
+  2. On the new `isle_ready` signal (the end of `kit_isle._ready`, with
+     `isle_up`), the pilot stands where he'd land hopping out of the parked
+     plane (`_hop_spot`), facing it.
+  3. The original `title_screen.gd` comes up over the isle, unchanged: the
+     wordmark, the tagline and the linen card. The card holds **Begin** ("On
+     foot by your plane"), then **Scenes** and **Quit**, both quiet along its
+     foot. The camera orbits the isle's art bounds at the old title's polar
+     and speed (`diorama.gd _frame_title`).
+  4. While the title is up, the scene is `scripted` (the pilot holds still
+     and the mouse stays free), its own CanvasLayers are hidden, and
+     `_unhandled_input` is blocked. The look, sky, life and traffic keep going.
+  5. Begin fades the card, puts the HUD back, unscripts the pilot, captures
+     the mouse, and eases the camera from the orbit to the walker's camera
+     over 1.8 s.
+- **When the title shows.** It shows when the scene is the current scene.
+  These skip it: `--no-title`, `--fly`, `--near-ring`, `--place=`,
+  `--capture=`, and the `no_title` meta. The `title` meta forces it, for
+  tests. A start that skips the title still gets the veil when it's the
+  current scene and not a capture. `run-aqueduct-isle.command` opens
+  `aqueduct_isle.tscn` itself and hasn't changed.
+- **Scenes.** `scene_catalog.gd` has a new first entry, **Builder (old
+  game)**: `cozy_worlds.tscn` with `"own_title": true`.
+  `launch_args.open_scene(tree, scene, args, own_title)` leaves `--no-title`
+  out for an entry like that, so the old game opens on its own title, with
+  Continue, Your worlds, Build this world, a quiet plain and every save.
+  Holding Esc there (`scene_return.gd`) comes back to the front door.
+  `title_scene` follows the main scene. The other 29 entries haven't changed.
+- **Packaging and CI.** `test_export_entry.gd` expects
+  `studies/zenscape.tscn`. It sets the `title` meta, because the scene isn't
+  current in that test. `desktop_build_check.gd` keeps the kernel and mesh
+  part, then branches on `scene.front_door`. The front door's walk is: the
+  title over the isle, Begin in reach, the pilot held by the parked plane,
+  the camera orbiting, Begin, by the plane, the plane boards and climbs 4 m,
+  then the scene is freed and its audio released. The old cozy walk stays
+  for `cozy_worlds`. `zenscape.gd` runs the check on
+  `--verify-desktop-build`, through the title. The new markers
+  (`verify_desktop_export.py`) are `PASS: packaged front door title over the
+  isle` and `PASS: packaged walk, plane and teardown`. `export_presets.cfg`
+  and `desktop.yml` didn't need changes.
+- **New files and docs.** `tests/test_front_door.gd` is new, plus a check in
+  `test_scene_picker.gd` that an `own_title` entry opens without
+  `--no-title`. The new launcher is `run-zenscape.command`, which opens the
+  main scene. The README's Play section and `docs/design/scene-picker.md`
+  are updated.
+- `kit_isle.gd` grew 8 lines: the signal, `isle_up` and the emit.
+
+### Corrections to section 1
+
+- Before this round, **4** of **29** catalog entries opened `cozy_worlds`,
+  not 5 of 30. The title itself had no entry. Now it's 5 of 30.
+- `cozy_worlds.gd`'s Scenes button sits before Settings. The front door has
+  no Settings, so its Scenes sits before Quit.
+
+### Tests (headless, `tools/run_tests.py --tests ...`)
+
+All 14 pass: `test_front_door`, `test_export_entry`, `test_scene_picker`,
+`test_scene_picker_entries`, `test_scene_picker_title`,
+`test_title_resolution`, `test_title_showcase`, `test_world_title`, the five
+`test_aqueduct_isle*` tests and `test_kit_isle_landing`. Seven of them are
+`pass_with_known_engine_error` (`exit_leak`). `test_scene_picker_entries`
+didn't crash at exit in this run. It still opens the builder entry with
+`--no-title`, because it adds that flag to every entry, so the builder's own
+title is covered only by `test_scene_picker_title`, which still drives the
+old game's title.
+
+### What's left, and gotchas
+
+- **CI will see `ERROR:` lines (open).** At exit the aqueduct leaks 2 to 10
+  DummyShader RIDs. The count changes from run to run and appears on `main`
+  in any headless aqueduct run. `desktop.yml` greps `menu-test.log` for
+  `ERROR:`, and `verify_desktop_export.py` fails on any `ERROR:`, so the
+  leak line will likely turn the Windows job red now that the main scene is
+  the isle. I haven't confirmed that on CI. Clearing the kit's obvious static
+  material caches made no difference, and neither did `--no-life`,
+  `--no-flora`, `--no-traffic` or `--no-chain`. The count varies, which
+  points at timing (workers, or something freed after the RenderingServer).
+  The old cozy check printed `ERROR: Resumed function '_bake_underside()'
+  after await` (`diorama_flip.gd:1036`) on main locally, so it wasn't clean
+  either. Round 2 should track the leak down rather than loosen the grep.
+- **Round 2 (pause, settings, quit) is still needed.** In the game, Esc only
+  frees the mouse. There's no way back to the title except quitting. Scene
+  return is active only after a picked scene. The front door has no Settings.
+  The F1/F2/F5-F8/B/R dev keys still work in the default game.
+- **The tagline still reads "A little wilderness, made by you".** It's left
+  as the user's title had it. Whether it fits the isle is the user's call.
+- **R respawns at the rubble slope's foot**, the station start, not by the
+  plane.
+- **Untested visually.** The orbit framing (distance 1.35 times the art's
+  half-span, at least 70 m, lifted 6 m) and whether the card hides the isle
+  have only been checked by numbers. Look at a rendered run with no
+  `--no-title` before tuning anything.
+- **Startup.** The isle comes up in about 14 s headless with the suite in
+  parallel, and in about 7 s alone. All of it is under the veil.
+- Any later kit isle can use the same front door. Give it a scene script
+  like `zenscape.gd`: the `FrontDoor` child, `open(self)`, the two-frame
+  wait and the input gate.
+
+## Round 2 done
+
+Branch `consolidate/pause-settings`, off `consolidate/front-door` f696ce83.
+Not merged, not pushed.
+
+### What the player sees
+
+- **Pause.** In the game (after Begin, or with `--no-title`), Esc or the
+  pad's Menu pauses the tree (`get_tree().paused`) under a linen sheet in
+  the old pause panel's look (scrim, cloth, Newsreader rows, dashed seam):
+  "Paused" over the isle's name, then **Resume** (its key reads Esc, or pad B
+  with the pad in hand), **Back to the plane** (only on foot or under the
+  canopy), **Settings**, **Scenes** (when the picker is offered), a seam,
+  **Back to the title** and **Quit**, and an italic line under them: "The
+  isle starts afresh from the title." Up and down (arrows, D-pad, stick)
+  step the rows, Enter, a click or pad A presses, Esc or pad B backs out one
+  level, and Menu resumes from anywhere. The mouse is freed while paused and
+  captured again on Resume if it was before.
+- **Settings**, from the pause and as a quiet **Settings** on the title's
+  card (between Scenes and Quit; the card stays minimal): Look (Visual
+  quality, Render resolution, Clouds, Night sky, Planet in the night sky),
+  Sound (Volume, "Steps, tokens and life" on the Genesis bus, Mute all
+  sound), Controls (Controller vibration). Each row is a choice,
+  "‹ Balanced ›", stepped by left and right, a press, or a click on its ‹.
+  It saves and applies the moment it steps.
+- **R** on foot (or under the canopy) is the same as Back to the plane: you
+  stand beside the parked plane where a hop out of it lands, facing it
+  (`kit_isle._return_to_plane`, now public as `zenscape.back_to_plane`).
+  The plane never moves, which keeps to the hand landing's rule
+  (docs/design/manual-landing.md: you board to fly, nothing summons it). In
+  the plane, R isn't a player key and the pause doesn't offer the row.
+- **Back to the title** reloads the main scene on the command line's flags,
+  minus the ones that skip the title. That's `front_door.title_args()`,
+  which also drops `--fly`, `--near-ring`, `--place=` and `--capture=`. The
+  isle comes up again under the veil, because the kit saves nothing.
+- **Pad prompts follow the device in the game now.** The kit never called
+  `Pad.note`, so its prompts never switched. The pause host connects the
+  root window's input to `Pad.note`, as the old game's `pad_input.gd` does.
+
+### Where it lives (none of it in kit_isle.gd)
+
+- `scripts/kit_isle/menu_sheet.gd` is the shared linen sheet: rows,
+  choices, groups, the seam, the hint line (a `pad_prompt.gd` Label), and
+  keys, mouse and pad navigation. It runs while paused.
+- `scripts/kit_isle/pause_menu.gd` is the pause's rows and signals.
+  `scripts/kit_isle/settings_menu.gd` is the settings sheet.
+- `scripts/kit_isle/pause_host.gd` does the pausing and wiring, and is
+  `zenscape.gd`'s `pause` child. It won't open under the title, before
+  `walk_ready`, or while the study's recording-name panel is up.
+- `scripts/kit_isle/game_settings.gd` is the model. It keeps everything
+  where the old game kept it, through the same pieces, so a choice holds
+  in both games: `look.cfg` (LookPass's `clouds`/`night`/`sky` keys and
+  savers, render_resolution's `[display] max_lines`), `sound.cfg`
+  (genesis_audio's keys, applied with `apply_settings`) and `pad.cfg`.
+  Visual quality had no saved value in the old game, so it's new: `[quality]
+  tier`, Balanced (the kit's tier) until the player chooses. The isle reads
+  clouds, night, planet and the cap itself as it's built. `apply_start`
+  applies the sound, vibration and tier on `isle_ready`. The paths are vars,
+  so tests write elsewhere.
+- `scripts/kit_isle/dev_keys.gd` gates the developer keys the way the
+  picker's IN_RELEASE pattern does, but off in release: `const IN_RELEASE :=
+  false`, the project setting `zenscape/dev/dev_keys`, `--dev-keys`,
+  `--no-dev-keys`, and `as_release` for tests. The gated keys are F1, F2,
+  F3, F5-F8, the station keys 0-9 - = [ ] \, L and Shift+L, and B on foot,
+  plus F1, R, L and B in the plane. In a release build `strip_captures`
+  takes `--capture=`, `--capture-seq=`, `--capture-wait=`, `--capture-high`,
+  `--at=` and `--card-hold` out of the flags before the isle reads them.
+  Editor and debug runs (run-zenscape.command included) keep them all.
+  `zenscape.gd`'s `_unhandled_input` does the filtering.
+
+### The CI exit leak: found and fixed
+
+There were two separate teardown leaks, both in the aqueduct's sky.
+
+1. **`N RID allocations of type ...DummyShader... leaked at exit`** (every
+   headless run, N 1-4). I bisected by flags and then by code: `--no-sky`
+   was clean, `--no-far-isles` was clean, the lone far isles alone leaked,
+   making but never standing them was clean, standing them without
+   `SkyIslets._fall` was clean, and inside `_fall` the leak came with the
+   single line `drops.process_material = _drop_material`. That's one static
+   `ParticleProcessMaterial` handed to every islet fall's GPUParticles3D.
+   Giving each fall its own `.duplicate()`, made as it stands, leaves
+   nothing. Checked over about 15 runs: the front door straight in and
+   titled, the aqueduct isle, early quits, the packaged self-check
+   (`--verify-desktop-build`) and `test_export_entry` exactly as CI runs it.
+   Before the fix, `test_export_entry`'s log had `ERROR: 4 RID allocations
+   ... DummyShader` and failed CI's grep; after it, the log has no `ERROR:`.
+   The copies share the one generated shader, so nothing changes on screen.
+   **What's not proven** is the engine mechanism. The leaked count isn't one
+   per fall: even one fall leaked 1-4 shaders, and a minimal repro outside
+   the game doesn't leak. The likeliest cause is godot#124183: the dummy
+   renderer's shader and material RID owners aren't thread-safe, so
+   allocations racing on workers corrupt the count. It's fixed in 4.8 by
+   godot#121958. If a stray `DummyShader` count ever shows up on CI again,
+   look for materials made or first used on workers, or move to 4.8.
+2. **4276 objects, 13 Jolt bodies and 2087 shapes leaked**, seen once in
+   the runner under load. `SkyPierced._forget` freed the worker-built ruins
+   tree only when the lid hadn't stood. The pierced isle stands its parts a
+   frame at a time, within the sky's budget (`SkyCommits`). Freed between
+   its lid and its ruins (the packaged check frees the scene a few seconds
+   in, and a slow runner gets there sooner), the ruins tree was orphaned.
+   Now any ruins without a parent are freed. `tests/test_isle_teardown.gd`
+   frees the scene at exactly that moment: it fails on the old code and
+   passes now.
+
+Neither the grep nor `known_failures.txt` changed. **Not confirmed on the
+Windows CI runner itself** (nothing was pushed).
+
+### Tests (headless, `tools/run_tests.py --tests ...`)
+
+New: `test_game_pause` (pause, keys and pad, prompts, settings and scenes
+round trips, Menu, R and the row back to the plane, no row in the plane,
+back to the title), `test_game_settings` (kept sound applied at start, the
+title card's Settings, volume, mute, vibration and resolution applied and
+kept, the look's choices kept under the old keys, read back), `test_dev_keys`
+(the gate, capture flags stripped as release, keys dead as release on foot
+and in the plane, alive in debug), `test_isle_teardown`. All pass. So do
+the import check, `test_front_door` (now 4 card buttons), `test_export_entry`,
+the three `test_scene_picker*`, the five `test_aqueduct_isle*`,
+`test_kit_isle_landing`, `test_gamepad`, `test_gamepad_screens`,
+`test_title_resolution`, `test_title_showcase` and `test_world_title`.
+In the first batch, `test_export_entry` failed once with leak 2 above. After
+that fix the 20-test batch ran clean: 20 passed and none
+`pass_with_known_engine_error`, where round 1 had seven `exit_leak`s. The
+full suite wasn't run.
+
+### Unverified (needs a rendered run)
+
+- How the sheets look: their size on the screen, the linen, the glyph chips
+  and whether the settings sheet fits on a small window. Everything was
+  checked headless by numbers only.
+- Live look changes. Headless has no look pass, so quality, clouds, night
+  and planet were only checked as saved. In a rendered run they go through
+  `LookPass.apply_tier` and its `set_*` setters, and the tier is applied at
+  start.
+- MetalFX or FSR scaling with a real GPU (the scale value is checked).
+- Pausing with the plane's engine sound running (its generator just
+  starves) and paused shader time (the clouds and water still move under
+  the scrim).
+
+### For round 3 (clouds)
+
+- Hook the cloud host into `game_settings.gd` if the clouds get a new
+  setting (a row in `ENTRIES`, a case in `index_of` and `choose`).
+- `pause_host.can_pause` is the place to block the pause in a set piece.
+- Whatever is built on a worker and stood a frame at a time needs freeing
+  when it never stands, as `_forget` now does for the pierced ruins. Check
+  the cumulus and tearing ports for the same pattern, and run them through
+  `test_isle_teardown`'s kind of check. Keep handing each particle system
+  its own ParticleProcessMaterial copy, too.
+
+## Round 3 done
+
+Branch `consolidate/clouds`, off `consolidate/pause-settings` 6df85518.
+Not merged, not pushed.
+
+### What the player sees (rendered only; see Unverified)
+
+- **Towering cumulus round the aqueduct.** There are four towers
+  (`KitClouds.TOWERS`):
+  - **The home tower**, 790 m south of the isle at (-100, 750), over open
+    sea. It's the one in sight from the isle's top and from the title's
+    orbit. It begins rising out of the cloud sea about 10 s after the isle
+    comes up (the old home tower's `RISE_SOON`), so you can watch it climb
+    over the first five minutes.
+  - **Three more** at 1.2 to 1.3 km: west (-1100, 400), east (1350, -200)
+    and north-north-west (-600, -1000). Each starts at a different point in
+    its life.
+
+  Each tower lives the old game's life: it rests 2 minutes, rises 5,
+  stands 14 and wanes 3, then rises again. Towers never drift. They're
+  drawn by the unified cloud volume, which now gets them, as one body with
+  the sea. They aren't solid: fly in and the view goes white (the volume's
+  own fog), the wind muffles, and you come out the far side.
+- **Drifting clouds.** The old game's 70 small cloud heaps (924 puffs) ride
+  the breeze across the isles' field, between y -35 and 95. That's the
+  height you fly at. None is laid on the isle, on an isle or in a tower.
+  They thin away over the four places nearest the eye (the isle, far
+  isles, clusters, the pierced isle), and the field re-centres as you fly
+  away.
+- **Cloud tearing.** Your plane and all four CPU planes tear a tunnel
+  through any puff or tower they fly through. It opens, widens, holds 7 s
+  and heals over 22 s. Tufts are dragged out after the plane, with a burst
+  on the way out.
+- **The CPU planes fly through clouds.** About 30% of their goals are now a
+  pass through the nearest drifting cloud, the same share as the old game.
+  Look at them over the near isles. They also tear the home tower if a lap
+  takes them through it.
+- **The plane's wind muffles in cloud** (`GlideAir.advance`'s cloud term),
+  as in the old game.
+- **Settings > Clouds** changes what it changed in the old game: the sea's
+  style, which the volume also shades the towers in. Visual quality sets
+  the volume's tier. There's no new setting.
+
+### Where it lives
+
+- `scripts/cloud_host.gd` is **the seam**. A cloud host has `towers`,
+  `clouds` and `wakes`, and answers `in_cloud`, `cloud_body` and
+  `cloud_near`. The rules are statics on it (`veil_of`, `body_of`,
+  `nearest_of`, `tear_into`), and both hosts use them. It's also a node
+  for a sky laid by hand: `setup(spots, slots, blocked)`, then `step(delta,
+  eye, time, fliers)` each frame, `hook(traffic)` and `flush()`.
+- `LookPass.cloud_host()` / `LookPass.host_of(scene)`: the scene's
+  `cloud_host()` if it has one, else the old `wanderer.islands`. The near
+  sea and `CloudVolume.update(camera, sea, host, ...)` both take it.
+  `SkyIslands` is still the old game's host, and its node tree is
+  unchanged. Its `in_cloud`, `cloud_body`, `_tear` and `cloud_near` now
+  call the statics.
+- `SkyTowers.fixed`: hand-laid spots. Spot i stands in for cell (i, 0), so
+  its life, shape and key work as before (spot 0 is the home life). With
+  `fixed` set it never reads `spot`, so the peak ring and its layout never
+  run (the test checks `SkyWorld._layout` stays empty). `keeps(home,
+  margin)` is the instance form of `blocks`.
+- `SkyClouds.build(slots, blocked)`: the callable replaces the
+  `SkyPeaks`/`SkyTowers`/`SkyForestIsles` checks. The rng sequence is
+  unchanged, so the old game lays the same clouds.
+- `SkyTraffic._through_cloud(plane)` is factored out of `_choose`.
+  `IsleTraffic._choose` is now 30% cloud, 35% buzz and the rest laps.
+- `scripts/kit_isle/kit_clouds.gd` is the kit's host (it extends
+  cloud_host). It knows TOWERS and drops any spot that would stand within
+  340 m (the old `SkyTowers.KEEP`) of the lock ring's widest ring, an isle,
+  a cluster, the pierced isle, or the line from the isle through the
+  chain's ring and 1.5 km on (`clear_of_play`). So another kit isle's sky
+  never stands a tower in its way. The aqueduct keeps all four, the
+  closest 401 m clear. The kit has no thermals (no currents). It runs its
+  own `_process` after the traffic.
+- `studies/aqueduct_isle_sky.gd` grew by about 30 lines: the `clouds` var,
+  `--no-sky-clouds`, `_build_clouds` and the IsleTraffic split.
+- `studies/kit_isle.gd` grew by 8 lines: `cloud_host()` and the wind
+  muffle in `fly_step`.
+
+### Cost (headless, this Mac, from `tests/test_kit_clouds.gd`)
+
+- **A frame of the clouds:** 145 to 240 µs on the main thread (mean of
+  9,000 steps; the higher figure is with other tests running alongside). That's the towers' lives, the puffs' screens, keeps and
+  follow, five fliers traced, and the tunnels handed on. It's the same
+  work and the same counts as the old game: 4 towers marched (the old
+  game's ring shows its home tower plus 3 at about 2.2 km), 70 clouds and
+  4 CPU planes.
+- **A tower's stage pair:** 185 to 245 ms to bake, on a worker. The rising
+  stands a new pair about every 7.5 s.
+- **Standing up on the main thread:** 13 to 16 stand-ups while the towers
+  came in and went through their lives, a mean of 370 to 850 µs. All of them sit
+  inside `SkyCommits`' 4 ms budget rule, and none piled onto another. The
+  first one, 5 to 10.6 ms headless, makes the shared cumulus noise texture. In a
+  rendered run the near sea has usually made that already.
+- **Not measurable headless:** the volume's GPU march with towers in it.
+  It's capped at 4 towers (`CloudVolume.TOWERS`), as in the old game.
+
+### Tests (headless, `tools/run_tests.py --tests ...`)
+
+New: `test_kit_clouds`. It checks the host and the seam (the kit's, the
+old game's through its wanderer, and none). The cloud volume reads the
+host. Placement is clear of everything, bad spots are dropped and no ring
+layout runs. The towers are built on workers and live: about to rise,
+rising, standing, waning, then rising again, never drifting and out of
+step. The puffs are laid clear and drift. Traffic passes through clouds,
+goes in and tears. The player's plane tears a puff (puffs given the
+tunnel, tufts) and a tower (its shader's wakes), and the volume marches
+both. Freeing the scene mid-bake leaves nothing. The cost lines above are
+printed by it.
+
+Results:
+
+- **Pass:** the import check, `test_kit_clouds` (17 to 22 s alone),
+  round 2's set (`test_front_door`, `test_export_entry`, the three
+  `test_scene_picker*`, the five `test_aqueduct_isle*`,
+  `test_kit_isle_landing`, `test_game_pause`, `test_game_settings` and
+  `test_isle_teardown`), the old game's `test_cloud_styles`,
+  `test_cloud_volume`, `test_cloud_wakes` and `test_sky_traffic`, and the
+  other kit isles' tests, whose skies now carry the clouds too
+  (`test_bell_spires_isle`, `test_cloister_tarn_isle`,
+  `test_colonnade_spine_isle`, `test_sundered_gorge_isle`,
+  `test_isle_lock`, `test_isle_lodestone`, `test_isle_hall_chain` and
+  `test_kit_water`). `test_cloud_view_from_above` is gpu-tagged, so it's
+  skipped headless.
+- **`test_sky_cumulus`** fails one check, "And the streaks thicken into the
+  cloud's wisps" (`GlideAir._shown`). It fails the same way on the base
+  commit 6df85518, so it isn't from this round. It isn't in
+  known_failures.
+- **`test_aqueduct_isle_life` is flaky.** On the branch: 1 of 3 runs
+  failed, each failure on a different check (a gust ribbon dipped under
+  the isle, songbirds coming home). On the base: 1 of 3 failed (a leaf off
+  the turf). It depends on timing.
+- **`test_cloud_volume`** came back `pass_with_known_engine_error`
+  (exit_leak) once in a run alongside other tests. It did the same in the
+  first base batch. It runs the old `diorama.tscn`.
+
+### Unverified (needs a rendered run)
+
+- Everything visual: the towers in the volume, their rising and waning,
+  the puffs, the tunnels and tufts, the fog inside a tower, how the home
+  tower frames from the isle and the title, and the style setting on the
+  towers.
+- The GPU cost of marching four towers over the kit's look.
+
+### For round 4 (time and weather)
+
+- The towers read the sky through the volume (`celestial`): sun, moon,
+  night and `cloud`. A running clock should light them with no change
+  here. The lightning hook is `cloud_volume.lightning =
+  _scene.get("_lightning")`: give the kit a `_lightning` and the volume
+  flashes in its towers.
+- The towers' clock (`SkyTowers.clock`) is its own, not the day's.
+  Seasons or weather that want fewer or taller towers should go through
+  KitClouds (TOWERS, or a `pinned` age), not through `SkyWorld`.
+- The puffs don't follow the sea's style or the weather (they didn't in
+  the old game either). `SkyClouds` has no weather input.
+- `kit_clouds.gd` is the place for a kit cloud setting if one is wanted
+  (wire it through `game_settings.gd` as the Round 2 note says).

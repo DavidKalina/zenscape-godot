@@ -84,6 +84,9 @@ var _held := {}
 var _clock := 0.0
 var _pending: Array = []
 var _rng := RandomNumberGenerator.new()
+## A placed isle's (scripts/kit_isle/motif_isle.gd): where it stands from
+## its own frame, which `spots` answers in.
+var offset := Vector3.ZERO
 
 func setup(owner_scene: Node3D, ground_at: Callable) -> void:
 	scene = owner_scene
@@ -92,7 +95,11 @@ func setup(owner_scene: Node3D, ground_at: Callable) -> void:
 	top_level = true
 	_rng.seed = 4021
 	var space := scene.get_world_3d().direct_space_state
-	groups = perches_from(space,spots(space),ground_at,float(scene.isle_top()))
+	var found := spots(space)
+	if offset != Vector3.ZERO:
+		var by := Vector2(offset.x,offset.z)
+		for group: String in found: found[group] = (found[group] as Array).map(func(p: Vector2) -> Vector2: return p+by)
+	groups = perches_from(space,found,ground_at,float(scene.isle_top()))
 	for spec: Array in flock_specs():
 		if not groups.has(spec[2]) or (groups[spec[2]].perches as Array).size() < 2: continue
 		var flock := {"index":flocks.size(),"species":spec[0],"home":spec[2],"group":spec[2],"state":"settled",

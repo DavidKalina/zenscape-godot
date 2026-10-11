@@ -296,6 +296,47 @@ func flora_seed() -> int:
 func life_script() -> Script:
 	return Life
 
+# --- The motif isles in its sky (docs/scenic/motif-sky.md) ---------------------------
+
+## The four ruin motifs' isles stand in this isle's sky (studies/
+## aqueduct_isle_sky.gd, scripts/kit_isle/motif_sky.gd); a motif's own
+## scene has none.
+func wants_motifs() -> bool:
+	return true
+
+## The sky's motif isles (scripts/kit_isle/motif_sky.gd), or null.
+var motifs: Node3D:
+	get: return sky.get("motifs") if sky != null else null
+
+## R3 / Tab locks onto the nearest isle in reach: this one or a motif isle
+## that stands (its circle, its top, its card).
+func lock_target(at: Vector3) -> Dictionary:
+	var best := super.lock_target(at)
+	var near := INF
+	if lock_reaches(best,at): near = Vector2(at.x-best.middle.x,at.z-best.middle.z).length()-float(best.radius)
+	if motifs == null: return best
+	for isle: Node3D in motifs.isles:
+		if not isle.stands(): continue
+		var c: Vector3 = isle.circle()
+		var target := {"middle":Vector3(c.x,0.0,c.y),"radius":c.z,"top":isle.isle_top(),"card":isle.isle_card()}
+		if not lock_reaches(target,at): continue
+		var d := Vector2(at.x-c.x,at.z-c.y).length()-c.z
+		if d < near:
+			near = d
+			best = target
+	return best
+
+## The cloister tarn's water (its surface on its own layer, scripts/
+## kit_isle/motif_cloister_tarn.gd WATER_LAYER) is skimmed as the turf is,
+## as on its own scene.
+const MOTIF_WATER := 1 << 12
+
+func plane_ground(p: Vector3) -> Variant:
+	if _ground_ray == null:
+		_ground_ray = PhysicsRayQueryParameters3D.new()
+		_ground_ray.collision_mask = TURF_LAYER|MOTIF_WATER
+	return super.plane_ground(p)
+
 ## The lodestone on its floating stone (`_lode_at`, else LODE_PLATFORM).
 func lode_rest_at() -> Vector3:
 	var p: Dictionary = Art.platform(_lode_at)

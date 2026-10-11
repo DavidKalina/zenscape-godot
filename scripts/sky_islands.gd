@@ -84,6 +84,7 @@ const SkyMoments = preload("res://scripts/sky_moments.gd")
 const SkyPeaks = preload("res://scripts/sky_peaks.gd")
 const SkyTowers = preload("res://scripts/sky_towers.gd")
 const CloudWakes = preload("res://scripts/cloud_wakes.gd")
+const CloudHost = preload("res://scripts/cloud_host.gd")
 const SkyForestIsles = preload("res://scripts/sky_forest_isles.gd")
 const SkyPierced = preload("res://scripts/sky_pierced.gd")
 const SkyHomes = preload("res://scripts/sky_homes.gd")
@@ -1257,55 +1258,36 @@ func show_air(on: bool) -> void:
 		if not on: ambient.clear()
 
 ## How deep a global point is in cloud, for the vapour: a drifting one's
-## heap (SkyClouds `inside`) or a tower's (SkyTowers `fade`, by its VEIL:
-## a tower draws its own fog round the eye), 0 to 1.
+## heap or a tower's, 0 to 1 (CloudHost `veil_of`). The islands are the
+## old game's cloud host (scripts/cloud_host.gd): the look pass hands
+## their towers and wakes to the cloud volume, the traffic flies through
+## their clouds.
 func in_cloud(point: Vector3, time: float) -> float:
-	return maxf(clouds.inside(point,time),towers.fade(point)*SkyTowers.VEIL)
+	return CloudHost.veil_of(clouds,towers,point,time)
 
 ## How deep a global point is in the body of a cloud, drifting or a
 ## tower, 0 to 1: what a plane tears through and the mist round the eye.
 func cloud_body(point: Vector3) -> float:
-	return maxf(clouds.inside(point,scene._motion_time),towers.fade(point))
+	return CloudHost.body_of(clouds,towers,point,scene._motion_time)
 
 ## The eye's plane this frame, through the clouds (CloudWakes `trace`).
 func wake(position: Vector3, velocity: Vector3, delta: float) -> void:
 	wakes.trace("eye",position,velocity,cloud_body(position),scene._motion_time,delta)
 
 ## The traffic through the clouds, the tufts flown on, and every tunnel
-## handed to the clouds that show it: all to the drifting puffs, and to
-## each tower the few near it.
+## handed to the clouds that show it (CloudHost `tear_into`).
 func _tear(delta: float) -> void:
 	var time: float = scene._motion_time
 	if traffic != null:
 		for i in range(traffic.planes.size()):
 			var flight: RefCounted = traffic.planes[i].flight
 			wakes.trace(i,flight.position,flight.velocity,cloud_body(flight.position),time,delta)
-	wakes.advance(delta)
-	clouds.wakes(wakes.at,wakes.way)
-	for b: Dictionary in towers.built.values():
-		var material: ShaderMaterial = b.get("material")
-		if material == null or not is_instance_valid(b.get("node")): continue
-		var half: Variant = material.get_shader_parameter("box_half")
-		var mid: Variant = material.get_shader_parameter("box_mid")
-		if not half is Vector3 or not mid is Vector3: continue
-		var near: Array = wakes.near_box((b.node as Node3D).global_position+mid,half,time,8)
-		material.set_shader_parameter("wake_count",near[2])
-		if near[2] > 0:
-			material.set_shader_parameter("wake_at",near[0])
-			material.set_shader_parameter("wake_way",near[1])
+	CloudHost.tear_into(towers,clouds,wakes,time,delta)
 
 ## The middle of the drifting cloud nearest a global point within `reach`
 ## metres, global, or null (for the other planes, scripts/sky_traffic.gd).
 func cloud_near(point: Vector3, reach: float) -> Variant:
-	var best: Variant = null
-	var gap := reach
-	for i in range(clouds.clouds.size()):
-		var c: Vector3 = clouds.centre(i,scene._motion_time)
-		var d := c.distance_to(point)
-		if d < gap:
-			gap = d
-			best = c
-	return best
+	return CloudHost.nearest_of(clouds,point,reach,scene._motion_time)
 
 ## The air at a global point (SkyCurrents `air_at`), and past the mountain
 ## ring the edge wind blowing home (SkyWorld `edge_air`).

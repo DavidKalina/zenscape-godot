@@ -40,7 +40,7 @@ static func spots(isle: Node3D) -> Array[Dictionary]:
 	# 6. The belfry's wall head, the isle's highest standing: up the corbels.
 	var bel: Node3D = isle.get("belfry") if isle != null else null
 	if bel != null:
-		out.append({"name":"belfry_head","at":bel.global_transform*Vector3(-1.95,Belfry.HEAD+0.85,-1.95),"move":"Climb the corbels inside the belfry onto its wall head"})
+		out.append({"name":"belfry_head","at":bel.transform*Vector3(-1.95,Belfry.HEAD+0.85,-1.95),"move":"Climb the corbels inside the belfry onto its wall head"})
 	# 7. The fin's high top, up its stair from the chockstone.
 	out.append({"name":"fin_top","at":Vector3(fh.c.x,float(fh.top)+1.2,fh.c.y),"move":"Climb from the chockstone round the fin's high stack"})
 	return out

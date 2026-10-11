@@ -289,13 +289,9 @@ func _choose(plane: Dictionary) -> Dictionary:
 	var rng: RandomNumberGenerator = plane.rng
 	var kind := _pick(GOALS,rng)
 	var at: Vector3 = plane.flight.position
-	if kind == "cloud" and cloud_near.is_valid():
-		var cloud: Variant = cloud_near.call(at+plane.flight.forward()*REACH*0.4,REACH)
-		if cloud != null and _within(cloud-_origin):
-			var c: Vector3 = cloud
-			# Through its heart and on out the far side.
-			var through := Vector3(c.x-at.x,0.0,c.z-at.z).normalized()
-			return {"kind":"cloud","point":c+through*PAST}
+	if kind == "cloud":
+		var through := _through_cloud(plane)
+		if not through.is_empty(): return through
 	if kind == "islet":
 		var islet: Variant = _islet_near(at-_origin,rng)
 		if islet != null and _within(islet):
@@ -309,6 +305,17 @@ func _choose(plane: Dictionary) -> Dictionary:
 	order.sort_custom(func(a: int, b: int) -> bool: return (_slots[a] as Vector3).distance_to(here) < (_slots[b] as Vector3).distance_to(here))
 	if order.size() > 1: order.erase(int(plane.goal.get("island",-1)))
 	return _lap(plane,order[rng.randi_range(0,mini(2,order.size()-1))])
+
+## A pass through the drifting cloud nearest ahead, through its heart and
+## on out the far side; {} with none in reach (or no `cloud_near`).
+func _through_cloud(plane: Dictionary) -> Dictionary:
+	if not cloud_near.is_valid(): return {}
+	var at: Vector3 = plane.flight.position
+	var cloud: Variant = cloud_near.call(at+plane.flight.forward()*REACH*0.4,REACH)
+	if cloud == null or not _within(cloud-_origin): return {}
+	var c: Vector3 = cloud
+	var through := Vector3(c.x-at.x,0.0,c.z-at.z).normalized()
+	return {"kind":"cloud","point":c+through*PAST}
 
 ## Whether a point in the currents' frame is among the islands.
 func _within(at: Vector3) -> bool:

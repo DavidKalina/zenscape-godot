@@ -5,7 +5,9 @@ extends SceneTree
 ## card (scripts/isle_splash.gd); locked, the plane flies itself round the
 ## isle on its ring (held near the ring, never in stone, a good way round in
 ## the band of sky), the stick draws the ring out and raises it; R3 lets go
-## and the card fades; leaving the plane lets go too.
+## and the card fades; leaving the plane lets go too. Near a motif isle in
+## the aqueduct isle's sky (docs/scenic/motif-sky.md), Tab locks onto it,
+## its card shows, and the plane circles it clear of its stone.
 ##   godot --headless --path . --script tests/test_isle_lock.gd
 const DT := 1.0/60.0
 var failures := 0
@@ -80,8 +82,35 @@ func run() -> void:
 	check(lock.locked and study.splash.visible,"Tab locks on again and the card shows again")
 	study.leave_plane()
 	check(not lock.locked,"Leaving the plane lets go")
+	await _motif_lock()
 	print("PASS: isle lock" if failures == 0 else "FAIL: isle lock (%d)" % failures)
 	quit(1 if failures > 0 else 0)
+
+## The bell spires, placed in the sky: in reach of it (and out of the
+## aqueduct isle's), Tab locks onto it and its card shows; it circles it.
+func _motif_lock() -> void:
+	study.sky.flush()
+	await physics_frame
+	var bell: Node3D = study.motifs.isles[0]
+	var c: Vector3 = bell.circle()
+	var middle := Vector3(c.x,bell.isle_top(),c.y)
+	study.board()
+	study.fly_from(middle+Vector3(150.0,25.0,0.0),0.0)
+	_tab()
+	var lock: RefCounted = study.isle_lock
+	check(lock.locked and Vector2(lock.centre.x-c.x,lock.centre.z-c.y).length() < 1.0,"By the bell spires Tab locks onto them (ring round (%.0f, %.0f))" % [lock.centre.x,lock.centre.z])
+	check(study.splash.visible and str(study.splash._name.text) == "SPIRES OF THE SILENT BELL","Their card shows (%s)" % str(study.splash._name.text))
+	var in_stone := 0
+	var swept := 0.0
+	var last := _angle(middle)
+	for i in range(int(30.0/DT)):
+		study.fly_step(DT,study._fly_input(DT))
+		if study._in_stone(): in_stone += 1
+		var a := _angle(middle)
+		swept += angle_difference(last,a)
+		last = a
+	check(lock.locked and absf(swept) > PI*0.5 and in_stone == 0,"It circles them, never in stone (%.0f deg in 30 s, %d frames in stone)" % [rad_to_deg(absf(swept)),in_stone])
+	_r3()
 
 func _angle(middle: Vector3) -> float:
 	var p: Vector3 = study.plane.position

@@ -2,7 +2,9 @@ extends "res://scripts/kit_isle/kit_birds.gd"
 ## Songbirds on the bell spires (docs/scenic/bell-spires.md): the kit isles'
 ## songbirds (scripts/kit_isle/kit_birds.gd) perched on this isle's stone:
 ## the belfry's wall head, the bridges' anchor posts, the turrets' and
-## arches' broken heads, the floating stones and the chockstone.
+## arches' broken heads, the floating stones and the chockstone. Its spots
+## are in the isle's own frame (the belfry and anchors as they stand in its
+## art), so a placed isle (scripts/kit_isle/motif_isle.gd) moves them.
 const Art = preload("res://studies/bell_spires_isle_art.gd")
 
 ## The flocks: [species, birds, home group].
@@ -21,7 +23,7 @@ func spots(_space: PhysicsDirectSpaceState3D) -> Dictionary:
 			var u := -2.2+4.4*float(k%8)/7.0
 			var side := 1.0 if k < 8 else -1.0
 			for local: Vector3 in [Vector3(u,0.0,side*1.95),Vector3(side*1.95,0.0,u)]:
-				var w: Vector3 = bel.global_transform*local
+				var w: Vector3 = bel.transform*local
 				head.append(Vector2(w.x,w.z))
 		found["belfry"] = head
 	# The bridges' anchor posts.
@@ -31,7 +33,7 @@ func spots(_space: PhysicsDirectSpaceState3D) -> Dictionary:
 		for child in holder.get_children():
 			if child.has_meta("posts"):
 				for p: Vector3 in child.get_meta("posts"):
-					var w: Vector3 = (child as Node3D).global_transform*p
+					var w: Vector3 = (child as Node3D).transform*p
 					posts.append(Vector2(w.x,w.z))
 	found["anchors"] = posts
 	# The needle's turret and the fin's snapped one, and the arch on the

@@ -131,8 +131,9 @@ func _exit_tree() -> void:
 	_publish_shade(false)
 
 ## Each frame, after the near sea has followed the eye: the camera, the
-## sea, and the sky world's islands (whose towers and wakes it reads).
-func update(view: Camera3D, near_sea: Node, islands: Node, sky, time: float, flight := Vector4.ZERO) -> void:
+## sea, and the scene's cloud host (scripts/cloud_host.gd: the old game's
+## SkyIslands, or a laid sky's host), whose towers and wakes it reads.
+func update(view: Camera3D, near_sea: Node, host: Node, sky, time: float, flight := Vector4.ZERO) -> void:
 	sea_flight = flight
 	if view != camera:
 		_detach()
@@ -141,8 +142,8 @@ func update(view: Camera3D, near_sea: Node, islands: Node, sky, time: float, fli
 	sea = near_sea
 	celestial = sky
 	motion_time = time
-	towers = islands.get("towers") if islands != null else null
-	wakes = islands.get("wakes") if islands != null else null
+	towers = host.get("towers") if host != null else null
+	wakes = host.get("wakes") if host != null else null
 	if not enabled:
 		sheet.visible = false
 		return

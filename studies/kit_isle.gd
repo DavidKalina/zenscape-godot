@@ -383,6 +383,12 @@ var _capture_every := 0.5
 ## this to reach --capture-wait, so it is the same moment run to run
 ## however slow the first frames are.
 var flown := 0.0
+## The whole isle is up (its flora, lodestone, sky and life built, the plane
+## parked or flown): the end of `_ready`, which waits on `ready_to_walk`
+## first. The front door (scripts/kit_isle/front_door.gd) lifts its veil on
+## it.
+signal isle_ready
+var isle_up := false
 
 func _ready() -> void:
 	pack = "ruins_archipelago"
@@ -437,6 +443,8 @@ func _ready() -> void:
 	if preload("res://scripts/launch_args.gd").user_args().has("--pickup"):
 		for i in range(30): tick(1.0/60.0)
 		pick_up()
+	isle_up = true
+	isle_ready.emit()
 	if _capture != "": _take_capture()
 
 ## The start in the plane (--fly); an isle may start in the air elsewhere.
@@ -1157,14 +1165,14 @@ func reset_camera() -> void:
 ## puts the chase camera's free look back and shows the isle's card.
 func toggle_lock() -> bool:
 	if not flying or takeoff != null or not hand_landing.flying(): return false
-	if isle_lock == null:
-		isle_lock = IsleLock.new()
-		var circle := isle_circle()
-		isle_lock.set_isle(Vector3(circle.x,0.0,circle.y),circle.z,isle_top())
+	if isle_lock == null: isle_lock = IsleLock.new()
 	if isle_lock.locked:
 		release_lock()
 		return true
+	var target := lock_target(plane.position)
+	isle_lock.set_isle(target.middle,target.radius,target.top)
 	if not isle_lock.in_reach(plane.position): return false
+	_lock_card = target.card
 	isle_lock.lock(plane.position,plane.velocity)
 	chase.set(&"free",Vector2.ZERO)
 	if splash == null:
@@ -1172,9 +1180,24 @@ func toggle_lock() -> bool:
 		splash.name = "IsleSplash"
 		add_child(splash)
 	if preload("res://scripts/launch_args.gd").user_args().has("--card-hold"): splash.hold = 3600.0
-	splash.show_card(isle_card())
+	splash.show_card(_lock_card)
 	_show_fly_hint()
 	return true
+
+## The isle the plane at `at` would lock onto: {middle (x, z), radius, top,
+## card}. This isle; one with others in its sky answers the nearest in
+## reach (studies/aqueduct_isle.gd: its motif isles).
+var _lock_card := {}
+
+func lock_target(_at: Vector3) -> Dictionary:
+	var circle := isle_circle()
+	return {"middle":Vector3(circle.x,0.0,circle.y),"radius":circle.z,"top":isle_top(),"card":isle_card()}
+
+## Whether the plane at `at` is in the lock's reach of `target`.
+static func lock_reaches(target: Dictionary, at: Vector3) -> bool:
+	var probe: RefCounted = IsleLock.new()
+	probe.set_isle(target.middle,target.radius,target.top)
+	return probe.in_reach(at)
 
 ## Lets go of the isle (the camera eases back behind, the card fades).
 func release_lock() -> void:
@@ -1275,7 +1298,9 @@ func fly_step(delta: float, input: Dictionary) -> void:
 		_nose.step(delta)
 	plane_figure._mark.visible = false
 	_check_arrival()
-	air.advance(delta,plane.velocity,float(plane.hang),0.0)
+	# The wind muffled in a cloud's body round the eye, as in the game.
+	var host := cloud_host()
+	air.advance(delta,plane.velocity,float(plane.hang),0.0,0.0,host.cloud_body(camera.global_position) if host != null else 0.0)
 	air.engine(float(plane.speed),hand_landing.throttle,hand_landing.engine)
 	if int(plane.flaps) != _flaps_heard:
 		_flaps_heard = int(plane.flaps)
@@ -1462,8 +1487,10 @@ func _show_fly_hint() -> void:
 		if now != "": text = now+"  ·  "+text
 	if _said_left > 0.0: text = _said+"  ·  "+text
 	if aloft:
-		if isle_lock != null and isle_lock.locked: text += "\n"+LOCK_HINT % str(isle_card().name)
-		elif isle_lock == null or isle_lock.in_reach(plane.position): text += "\n"+LOCK_OFFER % str(isle_card().name)
+		if isle_lock != null and isle_lock.locked: text += "\n"+LOCK_HINT % str(_lock_card.get("name",""))
+		else:
+			var target := lock_target(plane.position)
+			if isle_lock == null or lock_reaches(target,plane.position): text += "\n"+LOCK_OFFER % str(target.card.name)
 	if stone_plane and lodestone != null:
 		if lode_state == "seated":
 			text += "\nThe lodestone points the way (%.0f m): turn toward the brighter wing seam (both even and faint: on course)  ·  top or bottom fin lit: climb or dive  ·  tail lit: it is behind you  ·  prow runes flare: dead ahead" % plane.position.distance_to(lode_target)
@@ -1777,6 +1804,11 @@ func _take_capture() -> void:
 ## airships, the CPU planes, open-air life, motes and a few tokens for the
 ## plane; each with its own --no-... flag. A capture waits for it whole.
 var sky: Node3D
+
+## The scene's cloud host (scripts/cloud_host.gd), the sky's: what the look
+## pass hands the cloud volume. Null without one.
+func cloud_host() -> Node:
+	return sky.get("clouds") if sky != null else null
 
 func _add_sky() -> void:
 	sky = sky_script().new()

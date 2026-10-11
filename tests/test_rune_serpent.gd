@@ -6,7 +6,8 @@ extends SceneTree
 ## was when it had come that far, and slides along its own line, never
 ## sideways; nothing on it pops (no frame's acceleration of any ring or the
 ## snout past POP, while its smooth worst is about 25 m/s²); its body keeps
-## clear of every isle's ground and rock and the pierced isle's along the
+## clear of every isle's ground and rock (the aqueduct isle's and the motif
+## isles', down the Sundered gorge too: docs/scenic/motif-sky.md) along the
 ## whole way, both as it flies and for anything it might do there (the
 ## route's tube at its farthest reach), and its way keeps clear of the
 ## airships' loops; it is solid to the plane (a ray finds it, the bump puts
@@ -87,8 +88,8 @@ func _stands() -> void:
 
 ## The way's tube: round every point of the route, as far as the body could
 ## ever reach there (its girth, the most weave, the veer allowed, the
-## heave), clear of every isle's ground and rock (physics) and the pierced
-## isle's rock (its field, probed round the tube's rim).
+## heave), clear of every isle's ground and rock (physics: the aqueduct
+## isle's and the motif isles').
 func _tube() -> void:
 	var space := study.get_world_3d().direct_space_state
 	var q := PhysicsShapeQueryParameters3D.new()
@@ -97,7 +98,6 @@ func _tube() -> void:
 	q.collision_mask = 1|IsleSky.TURF_LAYER
 	q.exclude = [serpent.solid_rid()]
 	var blocked := []
-	var least := INF
 	var at := 0.0
 	while at < serpent.route_length:
 		var p: Vector3 = serpent.route_point(at)
@@ -105,17 +105,25 @@ func _tube() -> void:
 		ball.radius = r+MARGIN
 		q.transform = Transform3D(Basis.IDENTITY,p)
 		var hit := not space.intersect_shape(q,1).is_empty()
-		var way: Vector3 = serpent._route_way(at)
-		var right := way.cross(Vector3.UP).normalized()
-		var up := right.cross(way)
-		for i in range(16):
-			var a := TAU*i/16.0
-			var f: float = sky.pierced.field_at(p+(right*cos(a)+up*sin(a))*(r+MARGIN))
-			least = minf(least,f)
-			if f < 0.0: hit = true
 		if hit and (blocked.is_empty() or at-float(blocked[-1]) > 10.0): blocked.append(at)
 		at += 2.0
-	check(blocked.is_empty(),"Its way's tube (its girth, weave, veer and heave at their most) is clear of rock all round (blocked at %s m; the pierced rock's least %.1f)" % [str(blocked),least])
+	check(blocked.is_empty(),"Its way's tube (its girth, weave, veer and heave at their most) is clear of rock all round (blocked at %s m)" % str(blocked))
+	# Down the Sundered gorge: its way runs the gorge's length between the
+	# halves' rims (the motif's own frame x 86-88, z -61 to 4).
+	var gorge: Variant = null
+	var motifs: Variant = study.get("motifs")
+	if motifs != null:
+		for isle: Node3D in motifs.isles:
+			if str(isle.motif.id()) == "sundered_gorge": gorge = isle
+	var down := 0.0
+	if gorge != null:
+		var off: Vector3 = gorge.offset
+		var t := 0.0
+		while t < serpent.route_length:
+			var p: Vector3 = serpent.route_point(t)-off
+			if absf(p.x-87.0) < 4.0 and p.z > -61.0 and p.z < 4.0: down += 2.0
+			t += 2.0
+	check(down > 50.0,"Its way runs down the Sundered gorge (%.0f m of it between the halves)" % down)
 
 ## The airships' loops never come near its way: they could meet anywhere.
 func _airships() -> void:
@@ -218,15 +226,6 @@ func _loop() -> void:
 				ball.radius = radii[k]+MARGIN
 				q.transform = Transform3D(Basis.IDENTITY,rings[k])
 				var bad := not space.intersect_shape(q,1).is_empty()
-				var f: float = sky.pierced.field_at(rings[k])
-				if f < INF and f < radii[k]+MARGIN:
-					# Near the pierced rock: its rim's probes, as the plane's bump reads it.
-					var t := (rings[maxi(k-1,0)]-rings[mini(k+1,rings.size()-1)]).normalized()
-					var side := t.cross(Vector3.UP).normalized()
-					var up := side.cross(t)
-					for i in range(8):
-						var a := TAU*i/8.0
-						if float(sky.pierced.field_at(rings[k]+(side*cos(a)+up*sin(a))*(radii[k]+MARGIN))) < 0.0: bad = true
 				if bad and (hits.is_empty() or serpent.s-float(hits[-1]) > 10.0): hits.append(snappedf(serpent.s,1.0))
 		if frames % 600 == 0: await process_frame
 	print("serpent: flew %.0f m in %d frames (%d ms), worst advance %d us, %d notices of the pilot" % [went,frames,Time.get_ticks_msec()-began,serpent.worst_usec,serpent.notices])
@@ -235,7 +234,7 @@ func _loop() -> void:
 	check(worst_off < ON_PATH,"Every ring behind the neck lies where the head was when it had come that far (%.3f m off at most)" % worst_off)
 	check(worst_slip < SLIP,"The body slides along its own line, never sideways (at most %.3f of a ring's speed across it)" % worst_slip)
 	check(worst_pop < POP,"Nothing pops (worst %.1f m/s², %s; under %.0f)" % [worst_pop,pop_at,POP])
-	check(hits.is_empty(),"Its body keeps clear of every isle's ground and rock and the pierced isle's as it flies (touching at %s m)" % str(hits))
+	check(hits.is_empty(),"Its body keeps clear of every isle's ground and rock as it flies (touching at %s m)" % str(hits))
 
 ## Solid to the plane: a ray down onto its middle finds it; the plane put
 ## inside its body is bumped back out.
