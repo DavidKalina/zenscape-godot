@@ -356,7 +356,13 @@ func step(delta: float) -> void:
 	if picked != scheduler.current: scheduler.set_current(picked,weather_hours)
 	# Always advance: disabled, the scheduler slides its schedule forward.
 	for name: String in scheduler.advance(weather_hours): _ease(name)
-	calendar.apply(clock,delta,precipitation,scheduler,live)
+	# Live, the year is worn on the ground; a held preset owns its ground
+	# (its gold, cold and snow) and only shows its season in the sky and
+	# the plants.
+	if live: calendar.apply(clock,delta,precipitation,scheduler,true)
+	else:
+		scheduler.season = calendar.shown_season(clock,delta)
+		calendar.publish(scheduler.season)
 	var atmosphere: Node3D = scene._atmosphere
 	var camera: Camera3D = scene.camera
 	lightning.advance(delta,false,precipitation.state.w,atmosphere._air_strength,Vector2(cos(atmosphere._air_angle),sin(atmosphere._air_angle)),camera.global_position if camera != null else Vector3.ZERO)

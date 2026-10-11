@@ -182,7 +182,9 @@ func _presets_hold() -> void:
 	check(is_equal_approx(clock.season,KitWeather.preset_season("nordic_night")) and clock.season < 0.5,"in the season it was drawn for (%.3f)" % clock.season)
 	check(is_equal_approx(study._precipitation.response,0.55) and not study._precipitation.gather,"its weather set as the editor sets it, not eased")
 	study.apply_look("first_snow")
-	check(absf(clock.season-Living.SEASONS[3]) < 0.001,"First snow holds winter")
+	_run(2.0)
+	check(absf(clock.season-Living.SEASONS[3]) < 0.001 and weather.calendar.sky.w > 0.99,"First snow holds winter, in the sky too")
+	check(SceneLookPresets.matches(study,"first_snow"),"its own ground kept, not the calendar's (gold %.2f)" % study._precipitation.surface_weather.target_autumn)
 	study.apply_look("copper_autumn")
 	check(clock.season >= 0.5 and clock.season < 0.6 and absf(study._precipitation.surface_weather.target_autumn-0.65) < 0.001,"Copper autumn holds autumn, its own gold kept (%.3f)" % clock.season)
 	var held_hour := clock.hour
