@@ -38,6 +38,8 @@ const ISLET_AIR := 30.0
 var failures := 0
 
 func _initialize() -> void:
+	# The ring and its ranges are kept but unwired: this runs under --peak-ring.
+	preload("res://scripts/sky_homes.gd").use_flags(PackedStringArray(["--peak-ring"]))
 	preload("res://scripts/native_terrain_kernels.gd").get_kernel()
 	_counts()
 	_same_by_seed()

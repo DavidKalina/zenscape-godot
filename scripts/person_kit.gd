@@ -13,7 +13,6 @@ extends RefCounted
 ## Sizes are the pilot's (a head about 0.14 m across); a figure is scaled
 ## as a whole to stand in the world.
 
-const GliderFigure = preload("res://scripts/glider_figure.gd")
 const FacetMesh = preload("res://scripts/facet_mesh.gd")
 ## The folk's look (shaders/folk_surface.gdshader): the world gives no
 ## ambient light, so a plain material goes black in shade; this one takes the
@@ -78,10 +77,10 @@ static func outfit(scarf := SCARF) -> Dictionary:
 ## knot behind.
 static func chest(parent: Node3D, m: Dictionary) -> void:
 	part(parent,FacetMesh.hull([Vector3(0.0,0.07,0.055),Vector3(0.08,0.085,0.062),Vector3(0.125,0.092,0.058),Vector3(0.152,0.05,0.04)],8),m.jacket,Vector3.ZERO,Vector3(-PI*0.5,0.0,0.0))
-	for side in [-1.0,1.0]: part(parent,GliderFigure._gem(0.036),m.jacket,Vector3(SHOULDER.x*side,SHOULDER.y+0.005,0.0),Vector3.ZERO)
-	part(parent,GliderFigure._frustum(0.07,0.056,0.03,10),m.fleece,Vector3(0.0,NECK-0.012,0.006),Vector3.ZERO,Vector3(1.0,1.0,0.92))
-	part(parent,GliderFigure._gem(0.05),m.scarf,Vector3(0.0,NECK,0.0),Vector3.ZERO,Vector3(1.3,0.55,1.2))
-	part(parent,GliderFigure._gem(0.024),m.scarf,Vector3(0.0,0.152,0.05),Vector3.ZERO)
+	for side in [-1.0,1.0]: part(parent,FacetMesh.gem(0.036),m.jacket,Vector3(SHOULDER.x*side,SHOULDER.y+0.005,0.0),Vector3.ZERO)
+	part(parent,FacetMesh.frustum(0.07,0.056,0.03,10),m.fleece,Vector3(0.0,NECK-0.012,0.006),Vector3.ZERO,Vector3(1.0,1.0,0.92))
+	part(parent,FacetMesh.gem(0.05),m.scarf,Vector3(0.0,NECK,0.0),Vector3.ZERO,Vector3(1.3,0.55,1.2))
+	part(parent,FacetMesh.gem(0.024),m.scarf,Vector3(0.0,0.152,0.05),Vector3.ZERO)
 
 ## The neck and head on `parent` (the chest), returned [neck, head], each
 ## a pivot to turn: the faceted head in its cap, ear flaps, strap and
@@ -90,7 +89,7 @@ static func head(parent: Node3D, m: Dictionary, size := 0.9) -> Array:
 	var neck := Node3D.new()
 	neck.position = Vector3(0.0,NECK,0.0)
 	parent.add_child(neck)
-	part(neck,GliderFigure._frustum(0.026,0.023,0.05,6),m.skin,Vector3(0.0,0.02,0.0),Vector3.ZERO)
+	part(neck,FacetMesh.frustum(0.026,0.023,0.05,6),m.skin,Vector3(0.0,0.02,0.0),Vector3.ZERO)
 	var pivot := Node3D.new()
 	pivot.position = Vector3(0.0,0.035,0.0)
 	pivot.scale = Vector3.ONE*size
@@ -98,26 +97,26 @@ static func head(parent: Node3D, m: Dictionary, size := 0.9) -> Array:
 	var mid := Vector3(0.0,0.055,0.0)
 	part(pivot,FacetMesh.hull([Vector3(-0.08,0.03,0.03),Vector3(-0.05,0.064,0.064),Vector3(0.0,0.075,0.075),Vector3(0.045,0.066,0.068),Vector3(0.078,0.03,0.034)],8),m.skin,mid,Vector3(-PI*0.5,0.0,0.0))
 	part(pivot,FacetMesh.hull([Vector3(-0.005,0.081,0.083),Vector3(0.04,0.073,0.076),Vector3(0.072,0.045,0.048),Vector3(0.09,0.0,0.0)],8),m.leather,mid+Vector3(0.0,0.012,0.012),Vector3(-PI*0.5,0.0,0.0))
-	for side in [-1.0,1.0]: part(pivot,GliderFigure._gem(0.03),m.leather,mid+Vector3(0.078*side,-0.02,0.007),Vector3.ZERO,Vector3(0.45,1.3,0.9))
-	part(pivot,GliderFigure._frustum(0.085,0.085,0.016,10),m.strap,mid+Vector3(0.0,0.012,0.01),Vector3.ZERO)
+	for side in [-1.0,1.0]: part(pivot,FacetMesh.gem(0.03),m.leather,mid+Vector3(0.078*side,-0.02,0.007),Vector3.ZERO,Vector3(0.45,1.3,0.9))
+	part(pivot,FacetMesh.frustum(0.085,0.085,0.016,10),m.strap,mid+Vector3(0.0,0.012,0.01),Vector3.ZERO)
 	for side in [-1.0,1.0]:
 		var turn := Vector3(PI*0.5,0.35*side,0.0)
-		part(pivot,GliderFigure._frustum(0.025,0.025,0.014,8),m.brass,mid+Vector3(0.03*side,0.012,-0.073),turn)
-		part(pivot,GliderFigure._frustum(0.019,0.019,0.016,8),m.lens,mid+Vector3(0.031*side,0.012,-0.076),turn)
-	part(pivot,GliderFigure._gem(0.011),m.skin,mid+Vector3(0.0,-0.012,-0.074),Vector3.ZERO,Vector3(0.8,1.0,1.2))
+		part(pivot,FacetMesh.frustum(0.025,0.025,0.014,8),m.brass,mid+Vector3(0.03*side,0.012,-0.073),turn)
+		part(pivot,FacetMesh.frustum(0.019,0.019,0.016,8),m.lens,mid+Vector3(0.031*side,0.012,-0.076),turn)
+	part(pivot,FacetMesh.gem(0.011),m.skin,mid+Vector3(0.0,-0.012,-0.074),Vector3.ZERO,Vector3(0.8,1.0,1.2))
 	return [neck,pivot]
 
 ## A limb on `parent`: [upper, lower, end], the two bones unit tall (posed
 ## by `pose`) and the end (a hand or a boot) placed at their tip.
 static func limb(parent: Node3D, upper: Vector2, lower: Vector2, material: Material, end: Mesh, end_material: Material) -> Array:
-	var a := part(parent,GliderFigure._frustum(upper.x,upper.y,1.0,5),material,Vector3.ZERO,Vector3.ZERO)
-	var b := part(parent,GliderFigure._frustum(lower.x,lower.y,1.0,5),material,Vector3.ZERO,Vector3.ZERO)
+	var a := part(parent,FacetMesh.frustum(upper.x,upper.y,1.0,5),material,Vector3.ZERO,Vector3.ZERO)
+	var b := part(parent,FacetMesh.frustum(lower.x,lower.y,1.0,5),material,Vector3.ZERO,Vector3.ZERO)
 	var c := part(parent,end,end_material,Vector3.ZERO,Vector3.ZERO)
 	return [a,b,c]
 
 ## A gloved hand.
 static func hand() -> Mesh:
-	return GliderFigure._gem(0.021)
+	return FacetMesh.gem(0.021)
 
 ## A boot, toe forward (-Z), its sole at its origin's height.
 static func boot() -> Mesh:

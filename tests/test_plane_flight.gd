@@ -1,24 +1,19 @@
 extends SceneTree
 ## The plane in the live scene, through the wanderer (scripts/wanderer_eye.gd),
 ## headless:
-##   - the plane is how it flies by default, and the walking and flying
-##     hints name its controls; `--glider` brings the old glider back (run
-##     again with `-- --glider` for its half);
+##   - the plane is how it flies (the old glider is gone), and the walking
+##     and flying hints name its controls;
 ##   - off the edge and F: the landing runs through its phases and ends
 ##     walking beside the plane, parked on its wheels and skid, not a record
 ##     on the land and in the walker's way; F to walking in a few seconds;
 ##   - Space by it takes off: off the ground and flying, the parked one gone;
 ##   - F again mid line-up flies on;
-##   - F by another island claims it and lands on it, its folk (scripts/
-##     sky_folk.gd) standing on it before and on the plate after;
 ##   - flying off the edge brings the parked plane along.
 ##   godot --headless --path . --script tests/test_plane_flight.gd
-##   godot --headless --path . --script tests/test_plane_flight.gd -- --glider
 const WandererEye = preload("res://scripts/wanderer_eye.gd")
 const SkyPlane = preload("res://scripts/sky_plane.gd")
 const SkyGlide = preload("res://scripts/sky_glide.gd")
 const PlaneFigure = preload("res://scripts/plane_figure.gd")
-const GliderFigure = preload("res://scripts/glider_figure.gd")
 const PlaneLanding = preload("res://scripts/plane_landing.gd")
 const PlaneStrip = preload("res://scripts/plane_strip.gd")
 var failures := 0
@@ -53,18 +48,9 @@ func run() -> void:
 	# These checks fly the old F landing (--auto-landing); the default hand
 	# landing has its own tests (tests/test_manual_landing*.gd).
 	eye.manual = false
-	check(not WandererEye.flies_plane(PackedStringArray(["--glider"])) and WandererEye.flies_plane(PackedStringArray()) and WandererEye.flies_plane(PackedStringArray(["--plane"])),"The plane flies unless --glider asks for the glider")
-	if "--glider" in OS.get_cmdline_user_args(): await _glider()
-	else: await _plane()
+	await _plane()
 	print("PASS: plane flight" if failures == 0 else "FAIL: plane flight (%d)" % failures)
 	quit(1 if failures else 0)
-
-func _glider() -> void:
-	check(not eye.plane and not (eye.glide is SkyPlane) and eye.glide is SkyGlide and eye.glider is GliderFigure,"With --glider it glides under the cloth wing")
-	check("glide" in eye._walk_hint() and "flap" in eye.FLY_HINT,"And the hints name the glider's controls")
-	await _off_the_edge()
-	eye.handle(_key(KEY_F))
-	check(eye.glide.approach and eye.landing == null,"F comes in to land the glider's way")
 
 func _key(code: Key) -> InputEventKey:
 	var event := InputEventKey.new()
@@ -97,7 +83,7 @@ func _until_walking(most: float) -> Array:
 	return [phases,seconds]
 
 func _plane() -> void:
-	check(eye.plane and eye.glide is SkyPlane and eye.glider is PlaneFigure,"By default it flies the plane")
+	check(eye.glide is SkyPlane and eye.glider is PlaneFigure,"It flies the plane")
 	check("again in the air to fly" in eye._walk_hint() and not "glide" in eye._walk_hint() and not "flap" in eye.PLANE_HINT and "F to land" in eye.PLANE_HINT,"And the hints name the plane's controls")
 	var objects: int = eye.editor.data.objects.size()
 	await _off_the_edge()
@@ -138,8 +124,8 @@ func _plane() -> void:
 	check(was and eye.landing == null and not eye._landing_wait and eye.flying,"F again in the line-up: it flies on")
 	await create_timer(1.0).timeout
 	check(eye.flying and eye.glide.speed >= SkyPlane.SLOW,"Still flying under power")
-	# Another island: claimed, then landed on.
-	await _other_island(objects)
+	# In from out over the sky, landed on the plate again.
+	await _land_again(objects)
 	# Off the edge again: the parked plane comes along.
 	check(eye.has_parked(),"Parked on the island it landed on")
 	eye._launch(1.0)
@@ -169,42 +155,15 @@ func _parked_well(objects: int) -> void:
 	check(eye._blocked(eye._parked_at),"The walker steps round it")
 	check(eye.editor.data.has_land(eye._parked_at),"It stands on the island's land")
 
-func _other_island(objects: int) -> void:
-	var islands: Node3D = eye.islands
-	var index := -1
-	var began := Time.get_ticks_msec()
-	while index < 0 and Time.get_ticks_msec()-began < 30000:
-		for i in range(islands.offsets.size()):
-			if islands.lands[i] != null and islands._rise[i] == Vector3.ZERO:
-				index = i
-				break
-		await process_frame
-	check(index >= 0,"Another island stands baked in the sky")
-	if index < 0: return
-	var copy: Node3D = islands._copies[index]
-	var dwellers: Array = islands.folk.people.filter(func(p: Dictionary) -> bool: return p.figure.get_parent() == copy)
-	check(not dwellers.is_empty(),"Its folk stand on it (%d)" % dwellers.size())
-	var target: Vector3 = islands.homes[index]
-	var origin: Vector3 = islands.origin
-	var home: Vector3 = islands.offsets[index]+eye.editor.terrain.global_position
+## Back in from out over the sky: F lands on the plate (there is no other
+## island to claim), and it parks well again.
+func _land_again(_objects: int) -> void:
+	var home: Vector3 = eye.editor.terrain.global_position
 	eye.glide.position = home+Vector3(-90.0,30.0,0.0)
 	eye.glide.heading = -PI*0.5
 	eye.chase.reset(eye.glide,eye.glide.position+Vector3(-5.0,2.0,0.0))
 	await frames(2)
 	eye.handle(_key(KEY_F))
 	var out: Array = await _until_walking(60.0)
-	check(islands.origin != origin,"F by another island claims it (the world shifted %s)" % str(islands.origin-origin))
-	var plate_folk: Array = []
-	began = Time.get_ticks_msec()
-	while plate_folk.is_empty() and Time.get_ticks_msec()-began < 5000:
-		await process_frame
-		plate_folk = islands.folk.people.filter(func(p: Dictionary) -> bool: return p.figure.get_parent() == islands.folk.plate_holder)
-	check(plate_folk.size() == dwellers.size() and -islands.origin == target,"Claimed, its folk are on the plate (%d)" % plate_folk.size())
-	var off := 0.0
-	for person: Dictionary in plate_folk:
-		var at: Vector3 = person.figure.global_position
-		var under: Variant = islands.ground(at+Vector3.UP*2.0)
-		off = maxf(off,absf(at.y-float(under)) if under != null else INF)
-	check(off < 0.2,"Standing on its ground (%.3f m off at worst)" % off)
-	check(eye.active and not eye.flying and (out[0] as Array).has("touchdown"),"And lands on it: %s" % " > ".join(out[0]))
+	check(eye.active and not eye.flying and (out[0] as Array).has("touchdown"),"F from out over the sky lands on the plate: %s" % " > ".join(out[0]))
 	await _parked_well(eye.editor.data.objects.size())

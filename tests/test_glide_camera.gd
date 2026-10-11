@@ -5,12 +5,11 @@ extends SceneTree
 ## catches up; the free look turns it round the glider and it swings back
 ## when let go, at once or, lingering, only after a while without a turn;
 ## it never goes into rock; first person puts it in the head.
-## The glider
-## (scripts/glider_figure.gd) follows the glide and its mark shows near
-## the ground.
+## The plane (scripts/plane_figure.gd) follows the glide and its mark
+## shows near the ground.
 const SkyGlide = preload("res://scripts/sky_glide.gd")
 const GlideCamera = preload("res://scripts/glide_camera.gd")
-const GliderFigure = preload("res://scripts/glider_figure.gd")
+const PlaneFigure = preload("res://scripts/plane_figure.gd")
 const DT := 1.0/60.0
 var failures := 0
 
@@ -135,14 +134,14 @@ func _first_person() -> void:
 
 func _figure() -> void:
 	var glide := flying()
-	var figure: Node3D = GliderFigure.new()
+	var figure: Node3D = PlaneFigure.new()
 	root.add_child(figure)
 	figure.reset(glide)
 	var ground := func(_p: Vector3) -> Variant: return Vector2(glide.position.y-5.0,-50.0)
 	for i in range(60):
 		glide.step(DT,{"rise":1.0},open_air)
 		figure.update(DT,glide,0.0,ground,true)
-	check(figure.position.distance_to(glide.position) < 0.6,"The glider rides with the glide")
+	check(figure.position.distance_to(glide.position) < 0.6,"The plane rides with the glide")
 	var mark: MeshInstance3D = figure._mark
 	check(mark.visible and absf(mark.position.y-(glide.position.y-5.0)) < 0.2,"Near the ground its mark shows on it")
 	var scarf_tail: Vector3 = figure._scarf_points[figure.SCARF-1]

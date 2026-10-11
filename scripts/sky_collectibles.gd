@@ -353,11 +353,11 @@ func _cluster_job(skey: String, c: Dictionary) -> Dictionary:
 					break
 		return out}
 
-## The islands' lines, laid here once each island's land is baked and it
-## has risen: under each one's rock, in its copy's frame; the plate's in
-## home coordinates.
+## The plate's line under its rock, laid here once its land is in, in home
+## coordinates.
 func _survey_islands() -> void:
-	var plate_key: String = "island:"+islands._key(-cells.origin)
+	var home_at := -cells.origin
+	var plate_key: String = "island:%d,%d" % [roundi(home_at.x),roundi(home_at.z)]
 	if not sources.has(plate_key) and islands.editor != null and islands.editor.data != null:
 		var home := -cells.origin
 		var lines: Array = []
@@ -374,30 +374,6 @@ func _survey_islands() -> void:
 				l.points = points
 				lines.append(l)
 		add_source(plate_key,lines)
-	for i in range(islands._copies.size()):
-		if islands.lands[i] == null or islands._rise[i] != Vector3.ZERO: continue
-		var home: Vector3 = islands.homes[i]
-		var skey: String = "island:"+islands._key(home)
-		if sources.has(skey): continue
-		var lines: Array = []
-		var force := near_home and _flat(home,Vector3.ZERO) < NEAR_HOME*2.0
-		if Lines.lays(seed_value,skey,"under_island",force):
-			var land: NativeTerrainData = islands.lands[i]
-			var under := func(p: Vector2) -> float:
-				var b: Variant = islands._body(Vector3(p.x,0.0,p.y),land)
-				return (b as Vector2).y if b != null else INF
-			var l := Lines.under_line(skey+":under",under,Vector2.ZERO,Plate.HALF,Lines.LOWEST-home.y,seed_value)
-			if not l.is_empty(): lines.append(l)
-			add_source(skey,lines,islands._copies[i])
-			# One island's rock read a survey: each is a few hundred reads.
-			return
-		add_source(skey,lines,islands._copies[i])
-
-## A claim moved the plate: the islands' lines are laid again in their new
-## frames (their ids are the same, so what was collected stays collected).
-func on_claimed(_shift: Vector3) -> void:
-	for key in sources.keys():
-		if str(key).begins_with("island:"): drop_source(key)
 
 ## The swoops between islands: each island's (the fixed slots' and every
 ## cell's) two nearest neighbours within TRAIL_REACH, each pair as its hash

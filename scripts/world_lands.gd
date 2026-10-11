@@ -14,6 +14,7 @@ extends RefCounted
 ##   its land, neighbours and light drawn from the seed and the type.
 const Genesis = preload("res://scripts/genesis_canvas.gd")
 const MeadowTypes = preload("res://scripts/meadow_types.gd")
+const MeadowRecipe = preload("res://scripts/meadow_recipe.gd")
 const IDS := ["plain","canyon","isle","hollow","wildflowers","sunflowers","dandelions","cosmos","alpine_meadow"]
 ## Desert-only lands, offered for new worlds only with desert on
 ## (scripts/desert_landscape.gd `on`). IDS keeps them: a world made on one
@@ -48,7 +49,7 @@ static func form(scene: Node3D, land: String, seed_value: int, live := true) -> 
 			_mood(scene,"enchanted_forest",HOLLOW,{"fog_density":0.5,"fog_height":3.0,"peak_density":0.12})
 		_ when not MeadowTypes.type_of_land(land).is_empty():
 			var type_id := MeadowTypes.type_of_land(land)
-			await editor.form_inland(MeadowTypes.recipe(type_id,seed_value),live,false)
+			await editor.form_inland(MeadowRecipe.recipe(type_id,seed_value),live,false)
 			var mood: Dictionary = MeadowTypes.TYPES[type_id].mood.duplicate(true)
 			var preset: String = mood.preset
 			mood.erase("preset")

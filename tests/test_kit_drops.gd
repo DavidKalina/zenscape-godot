@@ -7,6 +7,7 @@ extends SceneTree
 ## leaves, so the old game's sky is as it was.
 ##   godot --headless --path . --script tests/test_kit_drops.gd
 const SkyWorld = preload("res://scripts/sky_world.gd")
+const SkyHomes = preload("res://scripts/sky_homes.gd")
 const IslanderFigure = preload("res://scripts/islander_figure.gd")
 const Dresser = preload("res://scripts/cluster_dresser.gd")
 var failures := 0
@@ -26,8 +27,8 @@ func _folk(node: Node, ships: Array, out: Array) -> void:
 
 func run() -> void:
 	create_timer(200.0).timeout.connect(func() -> void: push_error("kit drops test timed out"); quit(2))
-	var ring_before := SkyWorld.ring
-	var painted_before := SkyWorld.painted_sky
+	var ring_before := SkyHomes.ring
+	var painted_before := SkyHomes.painted_sky
 	var study: Node3D = load("res://studies/aqueduct_isle.tscn").instantiate()
 	study.scripted = true
 	root.add_child(study)
@@ -47,7 +48,7 @@ func run() -> void:
 	for ship in ships: _folk_in(ship, crewed)
 	crews = crewed.size()
 	check(ships.is_empty() or crews > 0, "The airships' crews are left as they were (%d aboard)" % crews)
-	check(not SkyWorld.ring and not SkyWorld.ring_on(), "The peak ring is off for the kit")
+	check(not SkyHomes.ring and not SkyWorld.ring_on(), "The peak ring is off for the kit")
 	check(SkyWorld.sea_peaks() == 0.0 and SkyWorld.painted_ridges() == 0.0, "and the painted sky stays as it was")
 	check(SkyWorld._layout.is_empty(), "No ring layout was worked out")
 	check(SkyWorld.edge_air(Vector3(9000.0,0.0,0.0)).is_empty() and SkyWorld.haze_share(Vector2(9000.0,0.0)) == 0.0, "There is no edge wind or haze band")
@@ -57,7 +58,7 @@ func run() -> void:
 	study.queue_free()
 	await process_frame
 	await process_frame
-	check(SkyWorld.ring == ring_before and SkyWorld.painted_sky == painted_before, "Leaving the isle hands the ring flags back")
+	check(SkyHomes.ring == ring_before and SkyHomes.painted_sky == painted_before, "Leaving the isle hands the ring flags back")
 	print("PASS: kit drops" if failures == 0 else "FAIL: kit drops (%d)" % failures)
 	quit(1 if failures > 0 else 0)
 

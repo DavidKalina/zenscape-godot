@@ -34,6 +34,11 @@ extends Node3D
 const PersonKit = preload("res://scripts/person_kit.gd")
 const Spring = PersonKit.Spring
 const MOVES := ["idle","wave","jump","hail","walk","run","air","skid"]
+## Scaled to stand in the sky (the clusters' folk, scripts/cluster_dresser.gd,
+## and the airships' crews, scripts/sky_airship.gd): its eyes at the
+## wanderer's height. And the scarves they wear, picked by seed.
+const SKY_SCALE := 1.9
+const SCARVES := [Color("d9573a"),Color("e2b84a"),Color("6f8fa8"),Color("7fa08a"),Color("cf6b4a"),Color("b85c7a")]
 ## The hips over the ground standing, the hip joints on them, the feet's
 ## stance, the leg bones' lengths and the arm bones'.
 const HIPS := 0.17
@@ -121,8 +126,8 @@ func _init(scarf := PersonKit.SCARF) -> void:
 	add_child(_hips)
 	# The hips in canvas, belted, a brass buckle.
 	PersonKit.part(_hips,PersonKit.FacetMesh.hull([Vector3(-0.03,0.06,0.045),Vector3(0.0,0.072,0.052),Vector3(0.035,0.07,0.055)],8),m.trousers,Vector3.ZERO,Vector3(-PI*0.5,0.0,0.0))
-	PersonKit.part(_hips,PersonKit.GliderFigure._frustum(0.075,0.075,0.014,8),m.strap,Vector3(0.0,0.03,0.0),Vector3.ZERO,Vector3(1.0,1.0,0.78))
-	PersonKit.part(_hips,PersonKit.GliderFigure._gem(0.011),m.brass,Vector3(0.0,0.03,-0.058),Vector3.ZERO,Vector3(1.3,1.0,0.6))
+	PersonKit.part(_hips,PersonKit.FacetMesh.frustum(0.075,0.075,0.014,8),m.strap,Vector3(0.0,0.03,0.0),Vector3.ZERO,Vector3(1.0,1.0,0.78))
+	PersonKit.part(_hips,PersonKit.FacetMesh.gem(0.011),m.brass,Vector3(0.0,0.03,-0.058),Vector3.ZERO,Vector3(1.3,1.0,0.6))
 	_torso = Node3D.new()
 	_torso.position = Vector3(0.0,0.025,0.0)
 	_hips.add_child(_torso)
@@ -143,7 +148,7 @@ func _init(scarf := PersonKit.SCARF) -> void:
 			var segment := Node3D.new()
 			segment.position = at
 			pivot.add_child(segment)
-			PersonKit.part(segment,PersonKit.GliderFigure._frustum(0.017-i*0.002,0.015-i*0.002,TAIL_LENGTH,4),m.scarf,Vector3(0.0,-TAIL_LENGTH*0.5,0.0),Vector3.ZERO,Vector3(1.0,1.0,0.3))
+			PersonKit.part(segment,PersonKit.FacetMesh.frustum(0.017-i*0.002,0.015-i*0.002,TAIL_LENGTH,4),m.scarf,Vector3(0.0,-TAIL_LENGTH*0.5,0.0),Vector3.ZERO,Vector3(1.0,1.0,0.3))
 			tail.append(segment)
 			swings.append(Spring.new(2.6-i*0.4,0.25))
 			pivot = segment

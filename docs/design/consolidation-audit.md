@@ -1071,3 +1071,241 @@ All PASSED: `test_kit_drops`, `test_front_door`, `test_game_pause`,
 - If the crews go, `sky_airship.gd:998` is the only figure left in the kit.
 - When round 7 removes the ring, the kit's flag handling and `painted_sky`
   go with it (the painted sky is then simply on or off).
+
+## Round 7 done
+
+Branch `consolidate/deletion`, off `main` 471e2249 (rounds 1 to 3). Not
+merged, not pushed. `main` has moved since (the pocket sail, 46db24a0):
+see "Merging" below.
+
+The user changed the scope mid-round: the peak ring and the lower world
+stay as code, unwired, reachable only by their flags. So this round
+untangled the hubs, unwired those two, and removed chunk claiming, the sky
+folk and the glider.
+
+### Lines removed, by commit
+
+| Commit | What | Lines (+/-) |
+|---|---|---|
+| a1efbbd7 | Hubs untangled (no behaviour change) | +141 / -99 |
+| 28f8e25f | Peak ring and lower world unwired (kept, off, back by flag) | +103 / -72 |
+| 7a5a2b5d | Sky folk removed | +16 / -391 |
+| 2d119d0a | Glider removed | +203 / -672 |
+| a5c0dd15 | Chunk claiming removed | +157 / -3,024 |
+| 76075b93 | The ring's remaining tests run under `--peak-ring`; wingspan check | small |
+| **Total** | 115 files | **+621 / -4,243** |
+
+Of the total, tests are -1,172 net and tools -1,087. `sky_islands.gd` went
+from 1,365 to 624 lines and `wanderer_eye.gd` from 3,123 to 3,002. The
+kit's static reach (all five kit scenes and the front door, scene catalog
+excluded) went from 406 files and 147,610 lines to 403 files and 145,387
+lines. `sky_islands.gd` and `wanderer_eye.gd` are no longer in it.
+
+### The hubs
+
+- `sky_sea` → `sky_islands`: `island_spots` reads `Plate.HALF`.
+- `look_pass` → `sky_world`: the ring's switch (`ring`, `ring_on`,
+  `sea_peaks`, `painted_ridges`, `read_flags`, plus `use_flags` for tests)
+  moved to `sky_homes.gd`, which preloads nothing of the sky. `SkyWorld`
+  forwards to it. **The `look_pass.gd` edit is two preload paths**
+  (`sky_world.gd` → `sky_homes.gd` in `ridge_strength` and
+  `apply_sea_peaks`), nothing else.
+- `meadow_types` → `inland_world`: a meadow type's world recipe (`recipe`,
+  `plan`) moved to the new `scripts/meadow_recipe.gd`. Its callers are
+  `world_lands.gd`, `test_meadow_types`, `tools/map_meadows.gd` and
+  `tools/probe_meadow_digests.gd`.
+- The seven → `native_chunk_editor`: the editor is typed `Node`, not
+  `NativeChunkEditor`, in `world_reference_props` (the edge
+  `native_terrain_data` came through), `genesis_audio`, `genesis_canvas`,
+  `land_life`, `songbirds`, `stroke_feedback` and `desktop_build_check`.
+- **Still reached, through other paths:** `sky_world` (via
+  `sky_islets` → `sky_forest_isles`), `inland_world` (via `garden_view` →
+  `native_terrain_recipe`) and `native_chunk_editor` (via `songbirds` →
+  `scene_inspector`, which genuinely needs the editor). Cutting those is
+  the next untangling, not this round's four.
+
+### Kept but unwired
+
+Neither runs by default on any path, the builder included. Their tests
+run under their flags (`SkyHomes.use_flags`, `SkyBelow._on`).
+
+| Feature | Files | Flag that brings it back |
+|---|---|---|
+| Peak ring: the bounded world, the ranges, the ring, the summits, the edge wind | `sky_world`, `sky_peaks`, `sky_peak`, `sky_ring`, `sky_cache`, `sky_reveal`, `mountain_spire` | `--peak-ring` (the ranges and the ring); `--peaks` (the ranges alone, the sky open) |
+| Lower world | `sky_below`, `sky_archipelago`, `islet_lod`, `landform_preview` (and `sky_haze`'s below terms) | `--below` (`--landform=<name>` as before) |
+
+- `--no-ring` and `--no-peaks` are gone: that's the default now. The flag
+  is `--peak-ring`, not `--ring`, because the aqueduct already has
+  `--ring=x,y,z` and the collectible gallery has `--ring`.
+- `--below` was on in play by default before (off only with
+  `--no-below`). Now it's off everywhere unless asked for.
+- **`--moments` now needs `--peak-ring` too.** The moments set pieces are
+  laid by the ring's world layout (`SkyWorld._moments`). With `--moments`
+  alone, the builder lays none. The moments tests run under both flags.
+- The `--wonders` (pillars, tepui, forest isles) were already off. They're
+  unchanged.
+- The tests run under `--peak-ring`: `test_sky_world`, `test_sky_layout`
+  (which checks the new defaults first), `test_sky_summits`,
+  `test_sky_peak_look` and `test_sky_peaks` (both `--peaks`),
+  `test_sky_cache`, `test_sky_reveal`, `test_sky_swap`, `test_sky_overview`,
+  `test_overview_framing`, `test_sky_clusters`, `test_sky_moments`,
+  `test_moments_world`, `test_hand_landing_exit`, `test_lower_world`
+  (`--below --peak-ring`) and the edge-wind part of `test_sky_glide`.
+- `test_sky_painted_ridges` and `test_sky_sea_peaks` now check the default
+  (no ring) in process and `--peak-ring` in the child.
+- Without the ranges, `test_lower_world`'s first archipelago island paid a
+  one-time warm-up: 95 ms against 13 ms. Under `--peak-ring` it's 11.6 ms.
+  A plain `--below` run may hitch once, the first time an island stands.
+
+### Removed
+
+- **Chunk claiming.** The fresh chunk islands round the plate, their bakes,
+  far flora, look syncing, plate hiding, the claim and the world shift, the
+  `built_islands` bookkeeping, F to another island, the canopy claiming
+  the island under it, and `SkyAmbientLife` on chunks are gone. Now:
+  - `SkyIslands` is the sky round the plate: currents, clouds, cumulus,
+    islets, clusters, pierced isles, airship, traffic, tokens and
+    moments. OFFSETS stay as slots for the currents, laps and clouds, so
+    the builder's sky lays out as before, minus the five islands.
+  - **Saves:** a world saved after claims keeps its `origin`, so the sky
+    still lays out round the plate's home. Its `plate_seed` and `built`
+    islands are written back exactly as read (`_claims_kept`), so no save
+    loses a built island's land, though none shows.
+  - F and the canopy come in only to the plate, or under `--below` to the
+    archipelago.
+  - `SkyCollectibles` lays only the plate's under-line (the plate key's
+    format is unchanged, so collected ids hold). `SkyHaze.emerging` is
+    gone and the rising boxes are published empty.
+  - Tests deleted: `test_tools_after_claim`, `test_sky_chunk_popin`,
+    `test_sky_streaming_budget` and `test_sky_ambient_life`.
+    `SkyAmbientLife` is still covered by the kit's `test_aqueduct_isle_life`.
+  - Tools deleted: `profile_claim`, `probe_chunk_popin`,
+    `profile_sky_streaming` and `probe_sky_glide`. Twenty-four capture and
+    probe tools now wait on `islands.built()`.
+- **Sky folk.** `sky_folk.gd` and `test_sky_folk` are deleted.
+  `IslanderFigure.SKY_SCALE` and `SCARVES` replace `SkyFolk.SCALE` and
+  `SCARVES` for the clusters' folk (`cluster_dresser`) and the airships'
+  crews (`sky_airship`, kept). `sky_homes.gd` is **not** folk (the audit's
+  row B had it wrong): it's the wonders' home spots, and it now also holds
+  the ring's switch.
+- **The glider.** The `--glider` flight, the wanderer's `plane` flag, the
+  cloth wing, the flap (click, E, the pad's X), the glider hints and its
+  `_land` are gone, as are the pad's `glide_rise`, `glide_dive` and
+  `glide_flap` actions. `sky_glide.gd` stays: it's the flight model that
+  `sky_plane` and `sky_dive` extend. `glide_vapour`, `glide_air` and
+  `glide_camera` stay too, since the plane uses them. The glider figure's
+  shared meshes and soft textures moved to `facet_mesh.gd` (`frustum`,
+  `gem`, `faceted`, `soft_band`, `soft_ring`). The wanderer's drawn plane is
+  still the var `glider`, because about 30 capture tools read
+  `eye.glider`.
+
+### What's left of the old game
+
+The builder (Scenes → "Builder (old game)", `cozy_worlds.tscn`) still
+loads and plays. Building, walking, flying the biplane, the hand landing
+(default) and the `--auto-landing` F landing on the plate, skydive and the
+canopy, perching on islets, and the sky round the plate are covered by the
+tests below. What it lost: the other islands to fly to and claim, the
+folk, the glider, and (unless flagged) the mountain ring and the lower
+world.
+
+### Files outside my area I touched
+
+- `scripts/look_pass.gd` (round 4's file): two preload paths only, as
+  above.
+- `scripts/glider_figure.gd` is now a 9-line stub. It's kept only because
+  `studies/kit_isle.gd:1867` (round 5's file) preloads it for
+  `_soft_ring()`. Point that line at `facet_mesh.gd`'s `soft_ring()` and
+  delete the stub.
+- Kit-shared scripts with small edits: `sky_sea`, `sky_collectibles`,
+  `sky_haze`, `sky_commits` (doc only), `cluster_dresser`, `sky_airship`,
+  `islander_figure`, `person_kit`, `plane_figure`, `stone_plane_figure`,
+  `facet_mesh`, `pad`, `songbirds`, `genesis_audio`, `land_life`,
+  `meadow_types`, `desktop_build_check`. None is in round 4's or round
+  5's list.
+
+### Merging
+
+`git merge-tree main consolidate/deletion` shows two conflicts against the
+pocket sail (46db24a0), both from the glider removal:
+
+- `scripts/pad.gd`: keep main's `dive_tuck` and drop the three `glide_*`
+  actions (and `glide_rise`/`glide_dive` from the deadzone list).
+- `scripts/wanderer_eye.gd`: main rewrote the walk hints and the
+  canopy/summon text. Keep main's text and drop `GLIDER_HINT`,
+  `GLIDER_PERCH_HINT` and the `plane` branches as this branch does. The
+  pocket sail replaces the canopy there, so the canopy-claim lines this
+  branch removed may already have moved.
+
+### Tests (headless, `tools/run_tests.py --tests ...`, `--jobs 4`, the machine under heavy load)
+
+Baseline: main 471e2249, the same patterns, in a second worktree.
+
+- **Import check:** clean (no parse errors, no missing preloads), after
+  every commit. All 326 tests and tools that touch the sky, the wanderer,
+  the figures, the meadows, the pad or the look pass parse with
+  `--check-only`.
+- **Pass, round 1 to 3:** `test_front_door`, `test_game_pause`,
+  `test_game_settings`, `test_dev_keys`, `test_isle_teardown`,
+  `test_kit_clouds`, `test_scene_picker`, `test_scene_picker_entries`,
+  `test_scene_picker_title`, `test_export_entry` and
+  `test_kit_isle_landing`. Also the five `test_aqueduct_isle*` (life passed
+  this time), `test_isle_*`, `test_kit_water`, `test_title_*` and
+  `test_world_title`.
+- **Pass, the builder and the sky:** `test_manual_landing`,
+  `test_manual_landing_game`, `test_plane_flight`, `test_plane_landing`,
+  `test_gamepad` (on rerun), `test_gamepad_screens`,
+  `test_hand_landing_exit` (rerun, under the flag), `test_solid_props`,
+  `test_glide_camera`, `test_glide_feel` (rerun), `test_sky_dive`, every
+  other `test_sky_*` listed under "Kept but unwired", `test_sky_haze`,
+  `test_sky_glide`, `test_sky_islets`, `test_sky_sea`, `test_sky_traffic`,
+  `test_sky_airship`, `test_sky_clusters` (rerun), `test_sky_moments`
+  (rerun), `test_sky_seasons`, `test_sky_objects`, `test_sky_plane`,
+  `test_sky_fall_thread`, `test_cloud_*`, `test_collectibles_world`,
+  `test_flight_crash`, `test_meadow_*`, `test_lower_world` (alone, under
+  `--below --peak-ring`).
+- **Fail as on the baseline:**
+  - `test_sky_cumulus`: "And the streaks thicken into the cloud's wisps".
+  - `test_collectibles_pickup` and `test_moments_world`: every check
+    passes, but the engine logs `set_size` non-finite ERRORs. Same on main.
+  - `test_sky_overview`: "The layout cost the main thread 68 ms" (81 ms on
+    main). A timing budget: load-affected, rerun later.
+- **Load-affected or flaky:**
+  - `test_gamepad` failed once in the batch ("A again on the way up the
+    jump: flying") and passed alone.
+  - `test_lower_world` failed once on "It touches down and the pilot
+    perches on the island, under the cloud", which depends on frame
+    pacing, and passed on rerun.
+  - `test_skydive` is `pass_with_known_engine_error` (`exit_leak`) in 2 of
+    3 branch runs and 0 of 4 on main. The leaked resource is `clay_sound`'s
+    cached `ui-cloth-5.wav` (the `ui_reach` clip) still held at quit, code
+    this round didn't touch. On main the same test failed 1 of 4 runs on
+    "The stick steers it". Worth a look if it shows up on CI.
+  - `test_island_footprint`: `exit_leak` (5 resources), the same on main.
+- `test_cloud_view_from_above` is gpu-tagged and was skipped. The full
+  suite wasn't run. `known_failures.txt` is unchanged.
+
+### Deliberately kept, and why
+
+- **Skydive and the canopy:** the user hasn't decided yet. The pocket sail
+  on main may settle it.
+- **Airship crews:** the user hasn't decided.
+- **The dresser's folk** (`cluster_dresser`'s lantern bearers and
+  fishers): shared cluster code that the kit draws too. "Dresser folk off"
+  is round 5's job on the kit side, so it was left there.
+- **`SkyAmbientLife`'s claim handover** (`leave`, `handover`, the
+  `handing`/`from` easing; about 70 lines) is now never called. It's
+  kit-shared (the aqueduct's life), so it was left alone to keep the kit
+  untouched. Remove it in a kit-side tidy.
+- **Builder internals that only claiming used:**
+  `NativeTerrainData.adopt`, `NativeChunkEditor.adopt_shore`, the
+  `outline` argument of `Genesis.form`, `WaterFlow`'s adopt path and the
+  comments that still name `SkyIslands claim` (`fire_field`,
+  `cozy_regrowth`, `water_flow`, `sky_cells`, `sky_islets`,
+  `sky_currents`, `sky_traffic`, `sky_airship`, `plane_figure.shift`). They
+  are harmless and belong to the deferred old-flag refactor.
+- **`SkyCells.advance` and `trim`** (spawning islands as you wander) are
+  unused by the builder now, but `SkyCells` is shared and
+  `test_sky_glide` still checks them.
+- **`origin` in old saves** is honoured, so the sky stays where it was laid
+  round a claimed plate's home.

@@ -392,12 +392,12 @@ var flown := 0.0
 signal isle_ready
 var isle_up := false
 
-## The SkyWorld ring and painted-sky flags to hand back when the isle leaves.
+## The ring and painted-sky flags (scripts/sky_homes.gd) to hand back when the isle leaves.
 var _ring_was: Array = []
 
 func _exit_tree() -> void:
 	if _ring_was.is_empty(): return
-	var World := preload("res://scripts/sky_world.gd")
+	var World := preload("res://scripts/sky_homes.gd")
 	World.ring = _ring_was[0]
 	World.painted_sky = _ring_was[1]
 	_ring_was = []
@@ -406,7 +406,7 @@ func _ready() -> void:
 	pack = "ruins_archipelago"
 	# The peak ring is not part of the kit: off, so no SkyWorld layout runs
 	# for it. The painted sky stays as it was with the ring's ranges "up".
-	var World := preload("res://scripts/sky_world.gd")
+	var World := preload("res://scripts/sky_homes.gd")
 	World.read_flags()
 	_ring_was = [World.ring,World.painted_sky]
 	World.ring = false

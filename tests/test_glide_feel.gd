@@ -4,12 +4,12 @@ extends SceneTree
 ## (scripts/glide_camera.gd); its view widens with speed, capped, kicks open
 ## entering a jet and narrows at the float; the vapour (scripts/
 ## glide_vapour.gd) is nothing in open air and shows fast past rock, off
-## the nearer wing; the glider's wingtips trail it (scripts/
-## glider_figure.gd); nothing goes NaN at a standstill.
+## the nearer wing; the plane's wingtips trail it (scripts/
+## plane_figure.gd); nothing goes NaN at a standstill.
 const SkyGlide = preload("res://scripts/sky_glide.gd")
 const GlideCamera = preload("res://scripts/glide_camera.gd")
 const GlideVapour = preload("res://scripts/glide_vapour.gd")
-const GliderFigure = preload("res://scripts/glider_figure.gd")
+const PlaneFigure = preload("res://scripts/plane_figure.gd")
 const DT := 1.0/60.0
 var failures := 0
 
@@ -146,7 +146,7 @@ func _vapour() -> void:
 
 func _wingtips() -> void:
 	var glide := flying()
-	var figure: Node3D = GliderFigure.new()
+	var figure: Node3D = PlaneFigure.new()
 	root.add_child(figure)
 	figure.reset(glide)
 	for i in range(30):
@@ -158,10 +158,10 @@ func _wingtips() -> void:
 		glide.step(DT,{},open_air)
 		figure.update(DT,glide,0.0,open_air,false,0.8,1.0)
 	check(mist.visible,"Close to rock it trails off the wingtips")
-	var right: Vector3 = figure._tip(1)
-	var left: Vector3 = figure._tip(0)
-	check((right-left).dot(glide.forward().cross(Vector3.UP)) > 1.5,"From both tips, a wingspan apart (%.2f m)" % right.distance_to(left))
-	check(figure._vapour_strength[GliderFigure.VAPOUR] > figure._vapour_strength[0],"Stronger off the nearer wing")
+	var right: Vector3 = figure._vapour_points[PlaneFigure.VAPOUR]
+	var left: Vector3 = figure._vapour_points[0]
+	check((right-left).dot(glide.forward().cross(Vector3.UP)) > PlaneFigure.SPAN*0.9,"From both tips, a wingspan apart (%.2f m)" % right.distance_to(left))
+	check(figure._vapour_strength[PlaneFigure.VAPOUR] > figure._vapour_strength[0],"Stronger off the nearer wing")
 	figure.free()
 
 func _standstill() -> void:

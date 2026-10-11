@@ -16,8 +16,7 @@ extends SceneTree
 ##   - the range kept on the workers through the walk is not made again
 ##     (SkyPeaks `let_go`);
 ##   - quitting straight after, the workers still busy, does not crash the
-##     engine's exit: every island bake is waited for (SkyIslands
-##     `_join_bakes`; the runner fails a crash at exit).
+##     engine's exit (the runner fails a crash at exit).
 ## A watchdog thread prints the stage when frames stop and kills the run
 ## after WATCHDOG_KILL s, so a freeze fails rather than hangs.
 ##   godot --headless --path . --script tests/test_hand_landing_exit.gd
@@ -38,6 +37,9 @@ var _kept := {}
 var _restarted := 0
 
 func _initialize() -> void:
+	# The ranges being made are the ring's, kept but unwired: this runs
+	# under --peak-ring.
+	preload("res://scripts/sky_homes.gd").use_flags(PackedStringArray(["--peak-ring"]))
 	run.call_deferred()
 
 func check(ok: bool, label: String) -> void:

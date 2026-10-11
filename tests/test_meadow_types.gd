@@ -5,6 +5,7 @@ extends SceneTree
 ## confetti, and grows its own flowers on new ground; the flower kit's keys
 ## fall back to the old forms until the kit is in.
 const MeadowTypes = preload("res://scripts/meadow_types.gd")
+const MeadowRecipe = preload("res://scripts/meadow_recipe.gd")
 const Probe = preload("res://tools/probe_meadow_digests.gd")
 const Lands = preload("res://scripts/world_lands.gd")
 const Library = preload("res://scripts/world_library.gd")
@@ -53,10 +54,10 @@ func checks() -> void:
 	var grounds := {}
 	var heights := {}
 	for type_id: String in MeadowTypes.ORDER:
-		var recipe := MeadowTypes.recipe(type_id,SEED)
+		var recipe := MeadowRecipe.recipe(type_id,SEED)
 		check(NativeTerrainRecipe.valid(recipe),"%s: its recipe is valid" % type_id)
 		check(recipe.get("meadow") == type_id and recipe.biome == "meadow" and recipe.get("variety") == 1,"%s: the recipe names its type" % type_id)
-		check(MeadowTypes.recipe(type_id,SEED) == recipe,"%s: the same seed plans the same recipe" % type_id)
+		check(MeadowRecipe.recipe(type_id,SEED) == recipe,"%s: the same seed plans the same recipe" % type_id)
 		var decoded: Variant = NativeTerrainRecipe.decode(JSON.parse_string(JSON.stringify(NativeTerrainRecipe.encode(recipe))))
 		check(decoded is Dictionary and decoded == recipe,"%s: the recipe survives JSON" % type_id)
 		var started := Time.get_ticks_usec()
@@ -109,7 +110,7 @@ func checks() -> void:
 	for type_id: String in MeadowTypes.ORDER:
 		if type_id != "sunflower": check(heights.sunflower > 1.5*heights[type_id],"Sunflowers stand tallest (%.2f m against %s %.2f m)" % [heights.sunflower,type_id,heights[type_id]])
 	check(heights.alpine < heights.wildflower,"Alpine flowers stand low (%.2f m against %.2f m)" % [heights.alpine,heights.wildflower])
-	var alpine := MeadowTypes.recipe("alpine",SEED)
+	var alpine := MeadowRecipe.recipe("alpine",SEED)
 	check(alpine.get("blend",[]).any(func(layer: Dictionary) -> bool: return layer.biome == "alpine"),"The alpine meadow lies under alpine ground")
 
 ## The flower kit's keys: one fallback each, every kind a type asks for has
@@ -130,8 +131,8 @@ func check_keys() -> void:
 	for type_id: String in MeadowTypes.TYPES:
 		for entry: Array in MeadowTypes.TYPES[type_id].flowers:
 			check(MeadowTypes.FLOWER_KEYS.has(entry[0]),"%s's %s has a key" % [type_id,entry[0]])
-	check(not NativeTerrainRecipe.valid(MeadowTypes.recipe("wildflower",SEED).merged({"biome":"woodland"},true)),"A meadow type needs a meadow habitat")
-	check(not NativeTerrainRecipe.valid(MeadowTypes.recipe("wildflower",SEED).merged({"meadow":"tulip"},true)),"An unknown type is refused")
+	check(not NativeTerrainRecipe.valid(MeadowRecipe.recipe("wildflower",SEED).merged({"biome":"woodland"},true)),"A meadow type needs a meadow habitat")
+	check(not NativeTerrainRecipe.valid(MeadowRecipe.recipe("wildflower",SEED).merged({"meadow":"tulip"},true)),"An unknown type is refused")
 
 ## Every type is a land New world forms, listed in the library.
 func check_lands() -> void:

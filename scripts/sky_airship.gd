@@ -37,7 +37,6 @@ const SkyPeaks = preload("res://scripts/sky_peaks.gd")
 const SkyTowers = preload("res://scripts/sky_towers.gd")
 const SkyForestIsles = preload("res://scripts/sky_forest_isles.gd")
 const IslanderFigure = preload("res://scripts/islander_figure.gd")
-const SkyFolk = preload("res://scripts/sky_folk.gd")
 const StoneLampLights = preload("res://scripts/stone_lamp_lights.gd")
 const SURFACE := preload("res://shaders/airship_surface.gdshader")
 const HALO := preload("res://shaders/cluster_halo.gdshader")
@@ -995,8 +994,8 @@ func _make_ship() -> void:
 	_cargo.visible = false
 	_ship.add_child(_cargo)
 	for i in range(Build.CREW.size()):
-		var figure := IslanderFigure.new(SkyFolk.SCARVES[(i*2+1) % SkyFolk.SCARVES.size()])
-		figure.scale = Vector3.ONE*SkyFolk.SCALE
+		var figure := IslanderFigure.new(IslanderFigure.SCARVES[(i*2+1) % IslanderFigure.SCARVES.size()])
+		figure.scale = Vector3.ONE*IslanderFigure.SKY_SCALE
 		figure.position = Build.CREW[i]+Vector3.UP*0.06
 		figure.rotation.y = 0.0 if i == 0 else PI*0.85
 		_ship.add_child(figure)

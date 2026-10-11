@@ -2,14 +2,12 @@ extends SceneTree
 ## The glide's aerial perspective (scripts/sky_haze.gd): its colour is the
 ## sky's horizon through the day, golden hour and night (never lifting the
 ## dark); its curve keeps near things clear and is whole by the distance
-## islets are built and islands let go; a rising island is hidden in it
-## until it has risen; and it is off in the build view, where the old haze
+## islets are built; and it is off in the build view, where the old haze
 ## stands as it was. Headless, so the shaders are compiled, not drawn: the
 ## look itself is unverified here.
 const SkyHaze = preload("res://scripts/sky_haze.gd")
 const SkyFlight = preload("res://scripts/sky_flight.gd")
 const SkyIslets = preload("res://scripts/sky_islets.gd")
-const SkyIslands = preload("res://scripts/sky_islands.gd")
 const Plate = preload("res://scripts/plate.gd")
 const Celestial = preload("res://studies/celestial.gd")
 var failures := 0
@@ -24,7 +22,6 @@ func run() -> void:
 	_shaders()
 	_colour()
 	_curve()
-	_emerging()
 	await _flight()
 	print("PASS: sky haze" if failures == 0 else "FAIL: sky haze")
 	quit(1 if failures else 0)
@@ -121,30 +118,6 @@ func _curve() -> void:
 	check(at.call(SkyIslets.VIEW*0.95) > 0.97,"Just inside the view an islet is still all but hidden")
 	check(SkyHaze.fog(300.0,SkyHaze.SEA) > SkyHaze.fog(300.0,0.0),"Low toward the cloud sea the air is thicker")
 	check(SkyHaze.fog(300.0,40.0) == SkyHaze.fog(300.0,0.0),"Up among the islands it is even")
-
-class FakeEditor extends RefCounted:
-	var terrain: Node3D
-class FakeIslands extends Node:
-	var editor := FakeEditor.new()
-	var offsets: Array[Vector3] = []
-	var depth: Array[float] = []
-	func sunk(i: int) -> float: return depth[i]
-
-func _emerging() -> void:
-	var islands := FakeIslands.new()
-	islands.editor.terrain = Node3D.new()
-	root.add_child(islands.editor.terrain)
-	islands.offsets = [Vector3(300,0,0),Vector3(-400,10,0),Vector3(0,0,500)]
-	islands.depth = [0.0,SkyIslands.WANDER_RISE.x,SkyIslands.WANDER_RISE.x*0.5]
-	var boxes := SkyHaze.emerging(islands,Vector3.ZERO)
-	check(boxes.size() == 2,"Only the islands still rising are hidden")
-	check(boxes[0][2] == 1.0 and boxes[1][2] == 0.5,"Nearest first, each by how far it has still to come")
-	var lo: Vector3 = boxes[0][0]
-	var hi: Vector3 = boxes[0][1]
-	var middle := Vector3(-400,10-SkyIslands.WANDER_RISE.x,0)
-	check(lo.x < middle.x-SkyIslands.HALF and hi.x > middle.x+SkyIslands.HALF and lo.y < middle.y+NativeTerrainData.SLAB_BASE and hi.y > middle.y,"Its box holds the whole sunken slab")
-	islands.editor.terrain.free()
-	islands.free()
 
 func _flight() -> void:
 	var scene := Node3D.new()

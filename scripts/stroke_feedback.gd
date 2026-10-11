@@ -106,7 +106,7 @@ var _reveal_strength := 0.0
 var _reveal_published := true
 var _waves := PackedVector4Array()
 var _newest := -1
-var _editor: NativeChunkEditor
+var _editor: Node
 ## Emerged trees waiting for their birth: Vector3(x, z, born) in plate metres.
 var _arriving := PackedVector3Array()
 var _arrival_wait := 0.0
@@ -120,7 +120,7 @@ func setup(scene: Node3D) -> void:
 		_waves[i] = Vector4(0.0, 0.0, 0.0, 1.0)
 		RenderingServer.global_shader_parameter_set(WAVE_GLOBALS[i], _waves[i])
 	RenderingServer.global_shader_parameter_set(&"zs_reveal", Vector4.ZERO)
-	var editor: NativeChunkEditor = scene._chunk_editor
+	var editor: Node = scene._chunk_editor
 	editor.stroke_started.connect(_on_stroke_started)
 	editor.stroke_moved.connect(_on_stroke_moved)
 	editor.stroke_finished.connect(_on_stroke_finished)

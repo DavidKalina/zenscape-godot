@@ -78,7 +78,7 @@ const DUSK := 0.18
 
 var life: Node3D
 var scene: Node3D
-var editor: NativeChunkEditor
+var editor: Node
 var inspector := Inspector.new()
 ## Trees by id: {id, asset, local (content-local mesh transform), crown (local
 ## point), reach (m), perches: [{key, at, face}] (mesh space), conifer, stand}.
@@ -132,7 +132,7 @@ func clear() -> void:
 ## Reads every tree: where its crown is and where its perches are, in the
 ## content's space; then groups them into groves.
 func scan_trees() -> void:
-	var data := editor.data
+	var data: NativeTerrainData = editor.data
 	var content: GardenView = editor.content
 	var oak_perches := Limbs.perches() if HeroTrees.enabled() else []
 	var disturbed := _disturbed()
@@ -292,7 +292,7 @@ func _arrival_point() -> Vector3:
 	if editor.data.has_method("land_rect"): land = editor.data.land_rect()
 	var reach := land.size.length()*0.5*sqrt(0.5)+1.0
 	var local := Vector3(land.get_center().x+cos(angle)*reach,0.0,land.get_center().y+sin(angle)*reach)
-	var at := editor.terrain.to_global(local)
+	var at: Vector3 = editor.terrain.to_global(local)
 	var ground: Variant = inspector.ground_y(editor.terrain.to_global(Vector3.ZERO))
 	at.y = (float(ground) if ground != null else at.y)+7.0
 	return at
