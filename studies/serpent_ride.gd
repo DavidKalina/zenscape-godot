@@ -47,13 +47,17 @@ extends "res://studies/character_study.gd"
 ## Keys: 1 on its neck behind the collar, 2 mid-back, 3 near the tail, 4 on
 ## the start tower with it coming (time the jump); R back to the start
 ## (the tower); F1 numbers (speed over the ground and on its back, its
-## speed, what he is on, falls, the slope under him); F2 the feel's sliders.
+## speed, what he is on, falls, the slope under him, the slide's carve); F2
+## the feel's sliders; F3 the slide carving or as it was (the character
+## study's: the stick across his way turns his slide rather than pushing
+## him across, to follow its spine down the dive).
 ## Flags, after --:
 ##   --girth=<x>         its girth times x (GIRTH: 1.5)
 ##   --ride-roll=<x>     the share of its roll kept while ridden (RIDE_ROLL)
 ##   --serpent-speed=<x> its pace times x
 ##   --weave=<x>         its slither times x (its weave shares on RIDE_ROUTE)
 ##   --no-glance         it never glances back at you
+##   --carve             the slide carves from the start (F3 toggles it)
 ##   ./run-serpent-ride.command
 ##   godot --path . res://studies/serpent_ride.tscn -- --no-title
 const RuneSerpent = preload("res://scripts/rune_serpent.gd")
@@ -552,13 +556,14 @@ func _show_hud() -> void:
 		("slope     %.0f°" % motor.steepness()) if motor.grounded else "slope     -",
 		"surf      %.2f m/s%s · top %.2f m/s" % [motor.speed() if motor.move == "slide" else 0.0,"  (surfing)" if motor.move == "slide" else "",slide_top],
 		"falls     %d" % falls,
+		carve_line(),
 		"girth %.1f× · roll kept %.2f while ridden (now %.2f rad) · %s" % [girth,ride_roll,serpent.spring(RuneSerpent.S_BANK),serpent.mode],
 	])
 	if long_chain > 0: lines.append("long chain %d · fastest %.2f m/s" % [long_chain,long_chain_top])
 	_hud.text = "\n".join(lines)
 
 func _hint_text() -> String:
-	return "WASD run · Space jump (on landing: pump) · Shift/C crouch: at a run slide, + Space long jump; on a slope (its back in the dive) surf · X twirl · 1 neck · 2 mid-back · 3 tail · 4 the tower (time the jump) · R start · F1 numbers · F2 feel · Esc mouse"
+	return "WASD run · Space jump (on landing: pump) · Shift/C crouch: at a run slide, + Space long jump; on a slope (its back in the dive) surf · X twirl · 1 neck · 2 mid-back · 3 tail · 4 the tower (time the jump) · R start · F1 numbers · F2 feel · F3 carve · Esc mouse"
 
 func _unhandled_input(event: InputEvent) -> void:
 	# No recordings here: a replay can't put the serpent back where it was.
