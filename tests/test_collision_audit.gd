@@ -10,8 +10,8 @@ extends SceneTree
 ##   stumps, kit hulls and cliff prisms), the stone circle's none at all;
 ## - nowhere does a shape stand 3 m off anything drawn (the rune serpent's
 ##   capsules ride a body bent in its shader, out of the audit's sight);
-## - all told, fewer than MOST_FAR shapes stand a metre off (339 after this
-##   round's fixes, of 1487 off at all; 454 of 2059 before them, at ratio
+## - all told, fewer than MOST_FAR shapes stand a metre off (340 after this
+##   round's fixes, of 1504 off at all; 454 of 2059 before them, at ratio
 ##   0.95; most left are the stair to the clouds' cliff prisms and the
 ##   drowned nave's, docs/design/plane-ground-scale.md's open list);
 ## - no stone rests on nothing but the floating stones, the drowned nave's

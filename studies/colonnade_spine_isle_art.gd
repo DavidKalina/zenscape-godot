@@ -93,10 +93,13 @@ const MARGIN := 0.6
 ## The rim, where the island's sides take over (under TOP).
 const RIM := -5.0
 ## The shelves: [x, height over TOP] knots, west to east; their band (m).
+## The south bench runs on flat to x 98, so the south chain's first slab
+## is a jump-catch off its end (at ratio 1 the bench ended at 99 and the
+## jump ran down the flank into the slab's side).
 const SHELF_N := [Vector2(44.0,L3),Vector2(52.0,L3),Vector2(58.0,11.4),Vector2(70.0,9.0),Vector2(84.0,7.6),
 	Vector2(98.0,L1-RISE),Vector2(110.0,5.0),Vector2(124.0,3.6),Vector2(138.0,2.2),Vector2(148.0,1.0)]
 const SHELF_N_BAND := 3.2
-const SHELF_S := [Vector2(99.0,3.2),Vector2(112.0,2.6),Vector2(128.0,2.0),Vector2(146.0,1.0)]
+const SHELF_S := [Vector2(98.0,3.2),Vector2(99.0,3.2),Vector2(112.0,2.6),Vector2(128.0,2.0),Vector2(146.0,1.0)]
 const SHELF_S_BAND := 3.0
 ## The crest smoothed (x, height over TOP), for the flanks below the lip.
 const SMOOTH := [Vector2(8.0,PODIUM),Vector2(42.0,PODIUM),Vector2(52.0,14.6),Vector2(64.0,13.2),Vector2(76.0,11.6),
@@ -572,7 +575,9 @@ static func colonnade(seed_value: int) -> Node3D:
 		if LINES[i][2] == "portal":
 			var h := ROW-RuinKit.ORDER
 			var f := frame(x,0.0,y)
-			RuinKit._arch_ring(b,f,0.0,PIER_H,h,2.0*h,RuinKit.ARCH_DEPTH*0.5,true,int(PORTAL_LOST[i]),-1.0 if i%2 == 0 else 1.0)
+			# No hood mould: with no wall behind it a hood stands proud of
+			# the ring's face, a loose-looking slab where the ring settles.
+			RuinKit._arch_ring(b,f,0.0,PIER_H,h,2.0*h,RuinKit.ARCH_DEPTH*0.5,false,int(PORTAL_LOST[i]),-1.0 if i%2 == 0 else 1.0)
 	for l: Dictionary in lintels(): _beam(b,l.a,l.b,LINTEL)
 	# Fallen lintels: lying in the way beside their row, broken in two.
 	for key: String in FALLEN:

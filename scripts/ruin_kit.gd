@@ -122,9 +122,6 @@ const ARCH_PITCH := 1.0
 const ORDER := 0.32
 const RECESS := 0.17
 const HOOD := Vector2(0.13,0.1)
-## How far a hood mould is bedded into the ring it caps (radially and in
-## depth): hidden, it keeps the hood bearing on the ring as stones settle.
-const HOOD_BED := 0.1
 ## The thickness of an arch, a window wall or a gable.
 const ARCH_DEPTH := 1.1
 ## The lancet window: clear width (two lights under one head; with its
@@ -1904,10 +1901,8 @@ static func _arch_ring(b: Build, pose: Transform3D, cx: float, spring: float, h:
 		# where that order still stands (`cap`), so no length of it hangs
 		# over a lost crown.
 		for s: float in [-1.0,1.0]:
-			# Set HOOD_BED into the outer order's face and back, so a settled
-			# stone of either still bears on the other.
-			var hp := pose*Transform3D(Basis.IDENTITY,Vector3(0.0,0.0,s*(d+HOOD.y*0.5-HOOD_BED*0.5)))
-			_ring_order(b,hp,cx,spring,h,radius,ORDER*2.0-HOOD_BED,HOOD.x+HOOD_BED,HOOD.y*0.5+HOOD_BED*0.5,n+2,99,lost_side,_stone(b,1.06),lost+1+int(b.rng.randf()*3.0*b.weathered),top,false,b.weathered*0.5,0.0,outer)
+			var hp := pose*Transform3D(Basis.IDENTITY,Vector3(0.0,0.0,s*(d+HOOD.y*0.5)))
+			_ring_order(b,hp,cx,spring,h,radius,ORDER*2.0,HOOD.x,HOOD.y*0.5,n+2,99,lost_side,_stone(b,1.06),lost+1+int(b.rng.randf()*3.0*b.weathered),top,false,b.weathered*0.5,0.0,outer)
 
 ## One order of a pointed arch: voussoirs from `radius`+`r0` out `dr`,
 ## `d` deep (half), `n` a side; the first `keep` of each side (99, all);

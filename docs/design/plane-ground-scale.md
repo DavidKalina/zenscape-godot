@@ -42,6 +42,222 @@ Where the cheat can show (keep these in mind for later features):
 - Ask scripts/world_scale.gd (sizes) and scripts/plane_ground_scale.gd (the
   size right now) how big the plane is; don't hard-code either in new code.
 
+## Opening ratio 1.0 + collision audit (feature/opening-ratio-1)
+
+The user flew opening-ratio-2 and said it still felt like there were
+invisible hitboxes, saw a stone hanging in a broken arch, and asked for
+ratio 1.0. Where this section disagrees with the ones below, it is current.
+
+**Ratio 1.0** (scripts/world_scale.gd `RATIO := 1.0`): every flown opening is
+its toy width x the plane exactly (2x at plane 2); the SNUG floor never acts
+at the knobs. Widths at plane 2 (past each wingtip = (w - 2.8)/2):
+
+| Opening | Toy | 0.95 | 1.0 |
+| --- | --- | --- | --- |
+| THREAD | 3.5 | 6.65 | 7.0 |
+| Gothic ARCH_SPAN | 4.2 | 7.98 | 8.4 |
+| Lancet WINDOW | 3.6 | 6.84 | 7.2 |
+| Hall lane | 4.0 | 7.6 | 8.0 (ROW_Z 13.4, WALL_Z 16.4) |
+| Hall breach corridor | 3.6 | 6.84 | 7.2 |
+| Hall broken ARCH | 5.2 | 9.88 | 10.4 (crown lost, as before) |
+| Hall BAY | 8 | 11.08 | 11.6 |
+| Kit aqueduct CLEAR | 4.7 | 8.93 | 9.4 |
+| Aqueduct isle arches | 4.0 | 7.6 (deck 9.6, END 69.2) | 8.0 (deck 10.0, END 72.0) |
+| Drowned nave crossing | 4.46 | 8.47 | 8.92 |
+| Colonnade portal | 6.16 | 11.7 | 12.32 |
+| Token GAP_ROOM / wing box | 3.2 / 3.5 | 6.08 / 6.65 | 6.4 / 7.0 |
+| Sarsen / great trilithon | 3.4 / 4.6 | 6.46 / 8.59 | 6.8 / 8.93 (trilithon capped at sarsen + TRILITHON_RISE) |
+| Ring arch | | 15.0 | 15.0 (RING_MOST cap kept) |
+
+Caps and floors kept: SNUG floors `opening` (inactive at 1.0, still acts at
+smaller ratios); the ring's RING_MOST 15 m (the opening alone would be 23);
+the trilithon's TRILITHON_RISE (a pumped catch over the back lintel).
+
+**Re-anchored to the knobs** (no 0.9 numbers left as literals):
+- `WorldScale.DRAWN_RATIO` (0.9) and `opening_at(toy, ratio)`.
+- The aqueduct isle's outlines: `REF_CLEAR` = TOY_CLEAR x PLANE x DRAWN_RATIO,
+  REF_EDGE and REF_END derived from it (37.2, 66.4 as before). FAR_SHIFT 5.6,
+  NEAR_SHIFT 3.2 at 1.0.
+- Sundered `ACT_BAY` = max(TOY_BAY, TOY_ARCH x PLANE x DRAWN_RATIO + 2 jambs)
+  (10.56 as before).
+- The drowned nave's NAVE_X, basin and props are untouched: its test passes at
+  1.0 (its crossing and piers already derive from `opening`).
+
+**Aqueduct isle routes at 1.0** (each moved in the layout, not the test):
+- Castellum: the steps run evenly from the high step down to
+  `CASTELLUM_FOOT` 1.4, each at most SET_OFF (1.47 m at 1.0; the old 1.6 m
+  stride left a 2.2 m bottom step).
+- Buttress/slot kicks: a kick rises 1.42 m, and from the turf the 10 m deck
+  sent the climb out onto the castellum, not the channel. A block fallen into
+  the slot (`KICK_BLOCK`, `KICK_RISE` 1.4, `kick_from()`) starts the climb.
+  The test reads `Art.kick_from()` and `CASTELLUM_HIGH` (still deck + 0.2).
+- Stumps: the slot's near stump keeps its length (`STUMP_SLOT_NEAR_LONG` 3.6)
+  and the 1.6 m running jump (`STUMP_NEAR_GAP`); the first stump grows with
+  the run instead.
+- Fallen trilithon: the stub's broken corner is narrower (`STUB_CORNER` 0.2),
+  so the hop's run-up is on its flat top; its steps rise up to `STUB_STEP` =
+  GRAB_TOP - 0.25 (two of 1.62 at 1.0, not three packed ones).
+
+- Colonnade spine: the south bench runs on flat to x 98 (`SHELF_S`). At 1.0
+  the jump to the first south slab ran down the flank into the slab's side.
+
+**The floating stone in the screenshot** was a lancet window's oculus. Its
+ring was a fixed 0.5 m that sat in a toy window's head; in a 6.8 m window it
+hung in the middle of the head with nothing under it. Broken tracery (any
+lancet weathered over 0.3) also kept the oculus 30% of the time with most
+of its stones gone: one curved stone in the air. The legs with no crown were
+the head ring's lost crown stones with the wall torn down round them (that
+part is intentional). Fixed in scripts/ruin_kit.gd:
+- `_oculus(w, light)`: the ring rests on the two lights' heads and is
+  OCULUS_FIT (0.7) of the widest that also touches the window's arc. 0.63 m
+  out in the toy's window (as before), 1.2 m in a 7.2 m window.
+- Broken tracery has no oculus, and a broken light keeps only its springers
+  off the jamb (`_ring_order` `only_side`); its inner springers had stood on
+  a mullion snapped below them.
+- Hood moulds stop where the outer order stops (`cap`). The colonnade's
+  free-standing portals have none: with no wall behind them, their hoods
+  stood proud of the ring's face as loose slabs. Bedding the hoods into the
+  ring instead broke the cloister tarn's heap climb (radially) and the bell
+  spires' drift (in depth), so it was dropped.
+- Colonnade spine: the south bench runs on flat to x 98 (`SHELF_S`). At 1.0
+  the jump to the first south slab ran down the flank into the slab's side.
+
+**The floating stone in the screenshot** was a lancet window's oculus. Its
+ring was a fixed 0.5 m that sat in a toy window's head; in a 6.8 m window it
+hung in the middle of the head with nothing under it. Broken tracery (any
+lancet weathered over 0.3) also kept the oculus 30% of the time with most
+of its stones gone: one curved stone in the air. The legs with no crown were
+the head ring's lost crown stones with the wall torn down round them (that
+part is intentional). Fixed in scripts/ruin_kit.gd:
+- `_oculus(w, light)`: the ring rests on the two lights' heads and is
+  OCULUS_FIT (0.7) of the widest that also touches the window's arc. 0.63 m
+  out in the toy's window (as before), 1.2 m in a 7.2 m window.
+- Broken tracery has no oculus, and a broken light keeps only its springers
+  off the jamb (`_ring_order` `only_side`); its inner springers had stood on
+  a mullion snapped below them.
+- Hood moulds stop where the outer order stops (`cap`) and are bedded 0.1 m
+  back into the ring's face (`HOOD_BED`, depth only; bedded radially too
+  they broke the cloister tarn's heap climb). On the colonnade's
+  free-standing portals they had hung loose.
+
+**Floating-stone check** (RuinKit Build `check_floating`, `drop_floating`,
+`drop_loose`): every drawn block is joined to the ground through blocks
+touching within FLOAT_TOUCH (0.2 m); the rest float.
+- Pieces whose ruin removes stones by rule drop what floats: arch,
+  lancet_wall, rose_gable, buttress, wall, aqueduct_end. That covers crown-lost
+  courses, gable fragments, a lost crown's hood and ragged heads.
+- Isle builds drop loose stones (groups of 3 or fewer): the aqueduct (the
+  "stones hung up on the springers" of the fallen span hung in the gap), the
+  hill walls, the cloister's back walls and the colonnade's step walls.
+- A broken crown is intentional: what is left stands on its own legs, and
+  what fell lies in the drift and rubble. Nothing hangs.
+- Left floating on purpose: the floating stones, the drowned nave's causeway
+  stones, the half bridge's parapet (its deck is a walk hull, not a block),
+  and the colonnade's fallen lintels lying in the grass.
+
+**Collision audit** (scripts/collision_audit.gd; tools/collision_audit.gd
+prints it):
+- What it does: loads the game with every motif isle built and copies every
+  drawn mesh onto a layer of its own as a trimesh. Then it samples each
+  collision shape's surface on the plane's and walker's layers (box faces on
+  a grid, hull corners, trimesh triangles). A point is exposed if no drawn
+  surface is within 0.3 m and it isn't inside drawn stone (straight up, the
+  first drawn face is met from behind).
+- Runtime: about 30 s headless.
+- Results: 2059 shapes stood off the drawn stone (454 by a metre or more) at
+  0.95 before the fixes; 1504 at 1.0 after them (340 by a metre or more).
+  - The aqueduct isle's own boxes (station parts, castellum, stumps, kit
+    hulls) were all within a metre: only box corners stood 0.3 to 1 m off.
+    The greybox station itself isn't built in the game; its parts are laid at
+    the derived numbers.
+  - Stone circle, by name: 74 shapes checked (both circles), 3 off by 0.3 to
+    1 m, none by a metre. The tallest hull is 8.92 m = TRILITHON, so the
+    hulls grew with the stones. No station circle boxes exist. The broken
+    lintels' walk hulls stop at the break (they include the break plane), so
+    there's no invisible bridge.
+  - Worst offenders found and fixed:
+    - The stair to the clouds' cliff slivers and prisms stood up to 1.6 m
+      proud of the set-back, bulging rock walls drawn over them: 1075 shapes.
+      The drawn walls now collide (`Sides`). The heightfield's steep
+      triangles and prisms in a wall's face are gone. Lip and foot triangles
+      stay (they are walked). Lip prisms on walls 4.6 m and taller hang only
+      0.4 m (`_collide_as_drawn`).
+    - Cliff prisms under every island rim hung 1.5 m straight down into the
+      air under the lip: 650 shapes, mostly the colonnade spine. Within 2 m of
+      the outline they now hang 0.3 m (kit_land `PRISM_RIM_DROP`).
+    - Bell spires' stair walk hulls lean in under their treads as the corbels
+      do (`WALK_LEAN`).
+    - The Sundered gorge gate tower's boxes ran to -2 m under blocks drawn
+      from -0.6.
+    - The airship envelope was one capsule the whole teardrop long. It is now
+      two capsules inside the teardrop (`envelope_solid`).
+  - Plane bump body: BUMP_BODY x plane (2.8 x 0.6 x 2.4) offset by
+    `middle_shift()` lies inside the drawn plane's box (2.8 x 1.76 x 3.01),
+    neither offset nor oversized. The parked-plane room check now reads
+    `WorldScale.span x factor`; it was the same number from TOY_SPAN x
+    ground_size.
+- Exempt: the rune serpent's capsules. Its body is bent in its shader, so the
+  audit can't see it.
+
+**Tests** (headless, ratio 1.0): 39 of 44 related pass (world_scale_fit and
+_guard, ruin_kit, ruin_floating, collision_audit, hall_chain, hall_rise,
+isle_hall_chain, sundered_gorge, hollow_keel, cloister_tarn, colonnade_spine,
+drowned_nave, stair_clouds, broken_ring, bell_spires, motif_sky,
+cluster_motifs, pierced_isle, collectibles_world, flight_moments,
+flight_metrics, aqueduct_isle and its _life, _plane, _sail and _sky tests,
+glide_camera, plane_flight, plane_landing, sky_plane, kit_isle_landing,
+manual_landing, hand_landing_exit, isle_lodestone, isle_loop_played,
+isle_lock, lodestone_study, island_pack_ruins_archipelago). These fail:
+- Known from the base: aqueduct_isle_look, collectibles_pickup, and
+  moments_world (engine error only).
+- sundered_hall, new at 1.0 (it passes at `--opening-ratio=0.95`): "The
+  overgrowth keeps out of the lane's low slot (25) and the breaches (57 of
+  58422)". This is vine geometry, not collision:
+  - in the lane, leaf mats at y 2.6 to 2.84 (the window's top is 2.9) round
+    x 24 and x 70 of the shafts piece;
+  - in the breach corridors, ivy at z 13.4 (the outer row's line) inside the
+    7.2 m corridors.
+  - `sundered_growth.gd`'s BEAM_SPOTS and the tie spots are fixed metres
+    from an older hall width.
+  - Open.
+
+Test notes:
+- New, headless: test_collision_audit (about 30 s: the aqueduct isle has no
+  shape a metre off, the circles have none, no shape anywhere is 3 m off,
+  under 400 are a metre off, nothing floats but the listed, and the bump body
+  is inside the plane) and test_ruin_floating (about 25 s).
+- test_world_scale_fit: at ratio 1 each opening is toy x plane; the oculus
+  fits; the 0.9 references derive.
+- test_ruin_kit's hall_bay size bound reads the hall's width (3 x WALL_Z). Its
+  diagonal is 45.1 m at 1.0, over the old fixed 45.
+- test_aqueduct_isle reads `Art.kick_from()` and `CASTELLUM_HIGH`.
+
+**Captured** (rendered, --no-title; 6 in all):
+- the far island's gate (whole, no floaters);
+- the colonnade portals at 0.95 (loose hood slabs) and at 1.0 (rings
+  standing, crowns lost, nothing hanging);
+- the drowned nave's and the broken ring's lancet walls at 1.0. The broken
+  ring's is the screenshot's shape (two legs, crown lost), with the window's
+  head now empty.
+- The hall's broken arch wasn't captured. The headless check covers it: hall
+  bays float nothing but the fallen beams, which rest on the paving.
+
+**Open:**
+- The stair to the clouds' mesa still has about 240 cliff prisms and sliver
+  triangles a metre proud of its set-back drawn walls, at lips and short
+  steps. Taking them out broke landings walked along a wall's edge (landing
+  4) and the lawn probes. The way on is to make the facade's set-back rows
+  start under a lip band, or collide the facade only.
+- About 60 of the drowned nave's cliff prisms by the basin's banks stand a
+  metre off. They are mostly under water.
+- The rune serpent is shader-skinned, so the audit can't see it.
+- The airship gondola box is 0.3 to 1 m proud.
+- Sundered overgrowth at 1.0 (above).
+- The hall bay's fallen beam rests on the paving a little high (the
+  floating check reports it; it's harmless); test_ruin_kit's hall_bay size
+  bound now reads WALL_Z.
+- Nothing has been flown by a person at 1.0.
+
 ## Opening ratio 2 (feature/opening-ratio-2): RATIO 0.95, the rest on opening()
 
 This round finished the openings left over from the last one and, at the
