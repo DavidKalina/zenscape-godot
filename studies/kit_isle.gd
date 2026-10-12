@@ -121,6 +121,7 @@ const PlaneGroundScale = preload("res://scripts/plane_ground_scale.gd")
 const PlaneStrip = preload("res://scripts/plane_strip.gd")
 const WheelSpray = preload("res://scripts/wheel_spray.gd")
 const KitWeather = preload("res://scripts/kit_isle/kit_weather.gd")
+const KitAudio = preload("res://scripts/kit_isle/kit_audio.gd")
 
 ## The look the isle opens in: the game's own for a new world
 ## (scripts/native_chunk_editor.gd forms one in Alpine morning).
@@ -303,6 +304,9 @@ var ground_scale := PlaneGroundScale.new()
 ## here (scripts/dragon_gale.gd `plane_gust`).
 var plane_air := Callable()
 var takeoff: PlaneLanding = null
+## The isle's sound (scripts/kit_isle/kit_audio.gd): the air, the plane,
+## the body's extra foley and the place's ambience.
+var audio: KitAudio = null
 var spray: WheelSpray = null
 var flaps := false
 var _exit_asked := false
@@ -469,6 +473,10 @@ func _ready() -> void:
 	if not _no_lode: _build_lode()
 	_add_sky()
 	_add_life()
+	# The isle's sound (docs/design/sound-round1.md).
+	audio = KitAudio.new()
+	audio.isle = self
+	add_child(audio)
 	if _place != Vector4.INF:
 		var turn := deg_to_rad(_place.w)
 		start = Vector3(_place.x,_place.y,_place.z)
@@ -990,6 +998,7 @@ func _into_plane() -> void:
 	_new_chase(camera.global_position)
 	if air == null:
 		air = GlideAir.new()
+		air.voiced = false
 		add_child(air)
 	air.start()
 	_flaps_heard = int(plane.flaps)
@@ -1539,6 +1548,7 @@ func _wheel_events(out: Dictionary, delta: float) -> void:
 ## the turf, by `k` (0 to 1).
 func _thump(k: float) -> void:
 	if air != null: air.blip()
+	if audio != null: audio.thump(k)
 	steps.step("grass",0.4+0.6*k)
 
 ## Where the wheels meet the turf now (global).
@@ -2057,6 +2067,16 @@ func tick(delta: float) -> void:
 		_check_step_off()
 		_watch_off_edge()
 		_show_foot_hint()
+
+## What the feet are on, as the isle's sound reads it (stone, grass, a
+## bridge's planks, water), for the steps and puffs.
+func _surface() -> String:
+	return audio.surface(motor) if audio != null else super._surface()
+
+## The study's jumps, landings and moves, and the isle's sound over them.
+func _motor_events(events: Dictionary) -> void:
+	super._motor_events(events)
+	if audio != null: audio.body(events)
 
 func _show_foot_hint() -> void:
 	if _switch_hint == null or flying: return

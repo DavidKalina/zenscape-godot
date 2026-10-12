@@ -99,6 +99,10 @@ var _hum_pitch := HUM_PITCH
 var _hum_phase := 0.0
 ## Samples of blip left.
 var _blip_left := 0
+## Whether it makes its sound (the wind, hum, whoosh and blip). The kit
+## isles' own sound (scripts/kit_isle/kit_audio.gd) voices the plane there,
+## so they keep only the streaks and mist.
+var voiced := true
 
 func _ready() -> void:
 	name = "GlideAir"
@@ -169,6 +173,8 @@ func start() -> void:
 	mist = 0.0
 	_mist.visible = false
 	_player.volume_db = 0.0
+	_playback = null
+	if not voiced: return
 	_player.play()
 	_playback = _player.get_stream_playback()
 	_hum = 0.0

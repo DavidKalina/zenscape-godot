@@ -6,8 +6,10 @@ extends RefCounted
 ## `apply_tier`), render resolution (scripts/render_resolution.gd), the
 ## clouds, the night sky and the planet (look_pass `set_cloud_style`,
 ## `set_night_style`, `set_sky_planet`), all in user://look.cfg. The sound:
-## the Master volume, the Sound bus (scripts/genesis_audio.gd's Genesis bus:
-## steps, tokens, life's one-shots) and Mute, in user://sound.cfg. The pad's
+## the Master volume, the Effects volume (scripts/genesis_audio.gd's Genesis bus:
+## steps, tokens, life's one-shots; and scripts/kit_isle/kit_audio.gd's SFX
+## bus: the air, the plane, the body), the Ambience volume (kit_audio's
+## Ambience bus) and Mute, in user://sound.cfg. The pad's
 ## vibration (scripts/pad.gd), in user://pad.cfg. The sky's time and
 ## weather (docs/design/consolidation-audit.md, round 4; scripts/kit_isle/
 ## kit_weather.gd): how long a day lasts or that it holds, and whether the
@@ -32,6 +34,7 @@ const RenderResolution = preload("res://scripts/render_resolution.gd")
 const Audio = preload("res://scripts/genesis_audio.gd")
 const Pad = preload("res://scripts/pad.gd")
 const KitWeather = preload("res://scripts/kit_isle/kit_weather.gd")
+const KitAudio = preload("res://scripts/kit_isle/kit_audio.gd")
 
 const TIERS := ["Beauty","Balanced","Ultra"]
 const DEFAULT_TIER := 1
@@ -49,7 +52,8 @@ const ENTRIES := [
 	{"key":"weather","title":"Weather","options":KitWeather.DRIFT_NAMES,"group":"Look"},
 	{"key":"season","title":"Season","options":KitWeather.SEASON_CHOICES,"group":"Look"},
 	{"key":"master","title":"Volume","options":null,"group":"Sound"},
-	{"key":"sound","title":"Steps, tokens and life","options":null,"group":"Sound"},
+	{"key":"sound","title":"Effects (steps, air, plane)","options":null,"group":"Sound"},
+	{"key":"ambience","title":"Ambience (wind, birds, water)","options":null,"group":"Sound"},
 	{"key":"muted","title":"Mute all sound","options":OFF_ON,"group":"Sound"},
 	{"key":"vibration","title":"Controller vibration","options":OFF_ON,"group":"Controls"},
 ]
@@ -86,19 +90,22 @@ static func index_of(key: String) -> int:
 			var file := ConfigFile.new()
 			if file.load(look_path) != OK: return 0
 			return clampi(int(file.get_value("time",key,0)),0,options(key).size()-1)
-		"master","sound": return roundi(float(sound()[key])*STEPS)
+		"master","sound","ambience": return roundi(float(sound()[key])*STEPS)
 		"muted": return 1 if bool(sound().muted) else 0
 		"vibration": return 1 if vibration() else 0
 	return 0
 
-## The kept sound settings (genesis_audio's keys and defaults).
+## The kept sound settings (genesis_audio's keys and defaults, and the kit's
+## Ambience volume, scripts/kit_isle/kit_audio.gd).
 static func sound() -> Dictionary:
 	var settings: Dictionary = Audio.DEFAULTS.duplicate()
+	settings["ambience"] = KitAudio.DEFAULT_AMBIENCE
 	var file := ConfigFile.new()
 	if file.load(sound_path) == OK:
 		settings.master = clampf(float(file.get_value("sound","master",settings.master)),0.0,1.0)
 		settings.muted = bool(file.get_value("sound","muted",settings.muted))
 		settings.sound = clampf(float(file.get_value("sound","sound",settings.sound)),0.0,1.0)
+		settings.ambience = clampf(float(file.get_value("sound","ambience",settings.ambience)),0.0,1.0)
 	return settings
 
 static func vibration() -> bool:
@@ -131,13 +138,14 @@ static func choose(key: String, index: int, isle: Node = null) -> void:
 		"day","weather","season":
 			_keep(look_path,"time",key,index)
 			_apply_time(isle)
-		"master","sound","muted":
+		"master","sound","ambience","muted":
 			var settings := sound()
 			settings[key] = (index == 1) if key == "muted" else float(index)/STEPS
 			var file := ConfigFile.new()
 			for name: String in settings: file.set_value("sound",name,settings[name])
 			file.save(sound_path)
 			Audio.apply_settings(settings)
+			KitAudio.apply_settings(settings)
 		"vibration":
 			_keep(pad_path,"pad","vibration",index == 1)
 			Pad._vibration = index == 1
@@ -148,6 +156,7 @@ static func choose(key: String, index: int, isle: Node = null) -> void:
 ## they're made).
 static func apply_start(isle: Node) -> void:
 	Audio.apply_settings(sound())
+	KitAudio.apply_settings(sound())
 	Pad._vibration = vibration()
 	var look: Node = isle.get("_look") if isle != null else null
 	if look != null: look.apply_tier(index_of("quality"))

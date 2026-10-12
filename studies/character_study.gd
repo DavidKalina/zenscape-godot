@@ -343,6 +343,10 @@ var _last_stood := START
 ## Set once the room stands and the pilot is on his feet.
 var walk_ready := false
 var motor := PilotMotor.new()
+## The on-foot pieces that move him or that he rides (scripts/
+## interactables/foot_pieces.gd: bobbing and drifting slabs, swing ropes,
+## balustrades), or null: stepped round the motor's step each frame.
+var foot_pieces: Node = null
 ## The figure's and the camera's height over the feet, smoothed up and
 ## down steps (scripts/pilot_step_smooth.gd).
 var step_smooth := PilotStepSmooth.new()
@@ -429,6 +433,11 @@ var _carve_was := false
 var _size_was := 1.0
 var _holes: Array[Rect2] = []
 
+## The updraft (docs/design/updraft.md): flow charges it, Q / pad RB spends it.
+## On unless `--no-updraft`.
+const Updraft = preload("res://scripts/updraft.gd")
+var updraft: Node3D
+
 func _ready() -> void:
 	for arg in preload("res://scripts/launch_args.gd").user_args():
 		if arg.begins_with("--pack=") and pack == "": pack = arg.trim_prefix("--pack=")
@@ -440,6 +449,9 @@ func _ready() -> void:
 	_build_pilot()
 	_build_room()
 	_build_ui()
+	if not preload("res://scripts/launch_args.gd").user_args().has("--no-updraft") and updraft == null:
+		updraft = Updraft.new()
+		updraft.setup(self)
 	# The bodies are in the space after a physics step.
 	await get_tree().physics_frame
 	await get_tree().physics_frame
@@ -754,6 +766,7 @@ func resize(s: float) -> void:
 ## Set down at `at`, facing `face` (x, z), the camera behind.
 func place(at: Vector3, face: Vector2) -> void:
 	motor.reset(at,PilotMotor.facing_of(face))
+	if updraft != null: updraft.reset()
 	_jump = {}
 	_sail_from = Vector3.INF
 	if sail_wing != null: sail_wing.reset()
@@ -806,9 +819,13 @@ func tick(delta: float) -> void:
 		motor.crouch = Input.is_action_pressed(&"walk_crouch") and not _tuning()
 		motor.twirl = Input.is_action_pressed(&"walk_twirl") and not _tuning()
 	_asked = want.length()
+	if updraft != null and not _tuning():
+		updraft.update(delta,motor,not scripted and Input.is_action_just_pressed(&"walk_wind"),want)
 	ground.head(delta)
+	if foot_pieces != null: foot_pieces.before(delta)
 	var was := motor.feet
 	var events := motor.step(delta,want,motor.run,jump,ground.ground_callable(),ground.slide_callable(),ground.ledge_callable())
+	if foot_pieces != null: foot_pieces.after(delta,events)
 	if _rec != null: _rec.add(delta,want,jump,motor.crouch,motor.twirl,_yaw,_polar,motor,state(),events)
 	if motor.grounded: _last_stood = motor.feet
 	if motor.feet.y < lost:
@@ -831,6 +848,7 @@ func tick(delta: float) -> void:
 	_body_events(drawn,delta)
 	_water_events(events,drawn,delta)
 	_frame(delta)
+	if updraft != null: updraft.apply_feel(camera)
 	_show_hud()
 
 ## The glide measured from the sail's opening to the touch (or the next
@@ -861,6 +879,7 @@ func _want(delta: float) -> Vector2:
 func _sync_figure() -> void:
 	figure.position = motor.origin() if motor.on_ledge() else motor.feet+Vector3.UP*step_smooth.lift
 	figure.rotation = Vector3(0.0,motor.facing,0.0)
+	if foot_pieces != null: foot_pieces.pose(figure)
 
 ## The jump measured from takeoff to where it came down (a landing, a
 ## catch, a splash, a wall taken hold of, another jump): its kind ("jump",

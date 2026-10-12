@@ -126,8 +126,32 @@ const RIDE_PANT := Vector2(2.5,3.5)
 ## back. --dragon-ride-repeat keeps round 5's instant swoop back.
 const RIDE_AWAY := 16.0
 const DragonGale = preload("res://scripts/dragon_gale.gd")
+const StoneLampLights = preload("res://scripts/stone_lamp_lights.gd")
+## Its night glow (night light round 1, docs/design/night-light/round1.md),
+## eased in as the lamps are (StoneLampLights.night_for, over NIGHT_FADE s):
+## the eyes' emission by day and at night, the spines' and tail blade's,
+## the membranes' rose edge (and how much of the membrane it lights
+## through, NIGHT_MEMBRANE_REACH), an ember in the throat and mouth
+## (NIGHT_THROAT colour, energy at rest and with the jaw open or breathing
+## in), and a faint cool sheen on the hide so its shape reads against the
+## night sky (NIGHT_SHEEN colour and energy).
+const NIGHT_FADE := 2.5
+const NIGHT_EYE := Vector2(2.2,7.5)
+const NIGHT_SPINES := Vector2(1.6,3.6)
+const NIGHT_MEMBRANE := Vector2(0.42,0.5)
+const NIGHT_MEMBRANE_REACH := 0.3
+const NIGHT_THROAT := Color("ff5a1e")
+const NIGHT_THROAT_ENERGY := Vector2(0.9,3.2)
+const NIGHT_SHEEN := Color("7d8fbf")
+const NIGHT_SHEEN_ENERGY := 0.1
 
 var camera: Camera3D
+## The scene whose sky says how dark it is (its `_celestial`), set by the
+## host; without one the dragon keeps its day look.
+var sky_scene: Node = null
+## 0 by day .. 1 at night, eased; its materials by key, to light at night.
+var night := 0.0
+var _night_materials := {}
 var sea_y := -120.0
 var home := Vector3.ZERO
 var home_top := 30.0
@@ -529,18 +553,89 @@ func _dress(n: Node) -> void:
 		var mi := n as MeshInstance3D
 		for i in mi.mesh.get_surface_count():
 			var m := mi.mesh.surface_get_material(i)
+			if m != null and m.resource_name == "dragon_membrane_glow": _tag_membrane(mi,i)
+		for i in mi.mesh.get_surface_count():
+			var m := mi.mesh.surface_get_material(i)
 			mi.set_surface_override_material(i,_material(m.resource_name if m != null else ""))
+			if m != null and m.resource_name == "dragon_eye": _find_eyes(mi,i)
 		# Its shadow over the isles: the wings' too (two-sided).
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_DOUBLE_SIDED
 		# The wings reach far from the rest pose's bounds.
 		mi.extra_cull_margin = 60.0
 	for c in n.get_children(): _dress(c)
 
+## The membranes' panels, tagged for the night glow (night light round 2,
+## docs/design/night-light/round2.md). The model's membrane is one grid
+## panel per span (art/blender/rim_dragon/dragon_body_build.py `panel`):
+## the arm's panel runs shoulder to knuckle in u and leading edge (the arm)
+## to trailing edge in v; each finger's runs knuckle to free edge in u and
+## finger to finger in v. So UV alone can't say where the free edge is.
+## Each panel (a connected piece of the surface) gets a vertex colour: r how
+## near the free trailing edge, g how far from any bone (thin membrane), b
+## the coordinate the veins cross (they run from the bones to the edge).
+## The arm panels are the two pieces reaching nearest the body.
+func _tag_membrane(mi: MeshInstance3D, surface: int) -> void:
+	var src := mi.mesh as ArrayMesh
+	if src == null or src.get_blend_shape_count() > 0: return
+	var arrays := src.surface_get_arrays(surface)
+	var points: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var uvs: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV]
+	var index: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+	if uvs.size() != points.size() or index.is_empty(): return
+	# Union-find over the triangles: the panels share no vertices.
+	var parent := PackedInt32Array()
+	parent.resize(points.size())
+	for k in range(points.size()): parent[k] = k
+	var root := func(k: int) -> int:
+		while parent[k] != k:
+			parent[k] = parent[parent[k]]
+			k = parent[k]
+		return k
+	for t in range(0,index.size(),3):
+		var a: int = root.call(index[t])
+		for e in [index[t+1],index[t+2]]:
+			var b: int = root.call(e)
+			if a != b: parent[b] = a
+	var nearest := {}
+	for k in range(points.size()):
+		var r: int = root.call(k)
+		var x := absf((mi.transform*points[k]).x)
+		nearest[r] = minf(nearest.get(r,INF),x)
+	var order: Array = nearest.keys()
+	order.sort_custom(func(a,b) -> bool: return nearest[a] < nearest[b])
+	var arm := order.slice(0,2)
+	var colours := PackedColorArray()
+	colours.resize(points.size())
+	for k in range(points.size()):
+		var u := uvs[k].x
+		var v := uvs[k].y
+		if root.call(k) in arm:
+			colours[k] = Color(v,smoothstep(0.0,0.35,v)*smoothstep(0.0,0.12,u)*(1.0-smoothstep(0.88,1.0,u)),u*6.0,1.0)
+		else:
+			colours[k] = Color(u,pow(sin(PI*v),0.7)*smoothstep(0.0,0.12,u),v,1.0)
+	arrays[Mesh.ARRAY_COLOR] = colours
+	var mesh := ArrayMesh.new()
+	for i in range(src.get_surface_count()):
+		var a := arrays if i == surface else src.surface_get_arrays(i)
+		var format := src.surface_get_format(i) & ~(Mesh.ARRAY_FORMAT_VERTEX|Mesh.ARRAY_FORMAT_NORMAL|Mesh.ARRAY_FORMAT_TANGENT|Mesh.ARRAY_FORMAT_COLOR|Mesh.ARRAY_FORMAT_TEX_UV|Mesh.ARRAY_FORMAT_TEX_UV2|Mesh.ARRAY_FORMAT_BONES|Mesh.ARRAY_FORMAT_WEIGHTS|Mesh.ARRAY_FORMAT_INDEX)
+		format &= Mesh.ARRAY_FLAG_USE_8_BONE_WEIGHTS
+		mesh.add_surface_from_arrays(src.surface_get_primitive_type(i),a,[],{},format)
+		mesh.surface_set_material(i,src.surface_get_material(i))
+		mesh.surface_set_name(i,src.surface_get_name(i))
+	mi.mesh = mesh
+
 ## The game's materials, by the model's names: a dark basalt-violet hide
 ## (satin in a and b, matte stone in c), the lips the hide, the mouth a
 ## deep maroon going near black, ivory teeth, pale horn and claws, violet
 ## membranes (c: soft and glowing toward the trailing edge).
 func _material(key: String) -> Material:
+	var made := _made_material(key)
+	if key in ["dragon_membrane_glow","dragon_eye","dragon_glow","dragon_mouth","dragon_tongue","dragon_hide","dragon_belly"]:
+		if not _night_materials.has(key): _night_materials[key] = []
+		_night_materials[key].append(made)
+	return made
+
+func _made_material(key: String) -> Material:
 	if key == "dragon_membrane_glow": return _glow_membrane()
 	var m := StandardMaterial3D.new()
 	m.resource_name = key
@@ -595,7 +690,13 @@ func _material(key: String) -> Material:
 	return m
 
 ## The wildcard's membrane: smooth, a deep violet at the bones going to a
-## soft rose glow at the trailing edge, lit through from behind.
+## soft rose glow at the trailing edge, lit through from behind. At night
+## (night light round 2) the panel goes dark and leathery and glows from
+## within: an ember rose strongest at the free trailing edge and along the
+## veins, falling off smoothly toward the bones (the panels' vertex colours,
+## `_tag_membrane`: r near the edge, g away from the bones, b across the
+## veins), with a faint warmth through the thin middle so no panel goes
+## flat black.
 static func _glow_membrane() -> ShaderMaterial:
 	var sh := Shader.new()
 	sh.code = """
@@ -605,21 +706,142 @@ uniform vec3 deep : source_color = vec3(0.24, 0.17, 0.32);
 uniform vec3 edge : source_color = vec3(0.45, 0.32, 0.56);
 uniform vec3 glow : source_color = vec3(0.96, 0.64, 0.74);
 uniform float glow_energy = 0.42;
+// 0 by day, 1 at night.
+uniform float night = 0.0;
+uniform float night_reach = 0.3;
+// The night look: the leathery hide's colour, the ember glowing through it,
+// how strong the glow is at the trailing edge, along the veins and through
+// the thin middle, how tight the veins are and how far in the edge reaches.
+uniform vec3 night_hide : source_color = vec3(0.17, 0.13, 0.19);
+uniform vec3 night_ember : source_color = vec3(0.88, 0.44, 0.42);
+uniform float night_energy = 1.0;
+uniform float night_edge = 1.0;
+uniform float night_vein = 0.45;
+uniform float night_body = 0.16;
+uniform float vein_width = 0.07;
+varying vec3 tag;
+void vertex() {
+	tag = COLOR.rgb;
+}
 void fragment() {
 	float v = UV.y;
 	float vein = smoothstep(0.92, 1.0, fract(UV.x * 3.0 + 0.5)) * (1.0 - v) * 0.25;
 	vec3 base = mix(deep, edge, smoothstep(0.2, 1.0, v));
-	ALBEDO = base * (1.0 - vein);
-	ROUGHNESS = 0.8;
+	float breathe = 0.85 + 0.15 * sin(TIME * 1.3 + UV.x * 4.0);
+	float band = smoothstep(0.55, 1.0, v);
+	vec3 day_emission = glow * glow_energy * band * breathe;
+	// Night: near the free edge (eased so it falls off smoothly), the veins
+	// (soft lines, brighter toward the edge), and the thin middle.
+	float trail = clamp(tag.r, 0.0, 1.0);
+	float thin = clamp(tag.g, 0.0, 1.0);
+	float d = abs(fract(tag.b) - 0.5);
+	float vline = exp(-(d * d) / (vein_width * vein_width));
+	float reach = 1.0 - night_reach;
+	float rim = pow(smoothstep(reach - 0.2, 1.0, trail), 2.2);
+	float inner = night_edge * rim * (0.35 + 0.65 * thin)
+		+ night_vein * vline * smoothstep(0.1, 1.0, trail) * thin
+		+ night_body * thin;
+	vec3 night_emission = night_ember * night_energy * inner * (0.9 + 0.1 * sin(TIME * 1.1 + tag.b * 2.0));
+	ALBEDO = mix(base * (1.0 - vein), night_hide, night);
+	ROUGHNESS = mix(0.8, 0.7, night);
 	SPECULAR = 0.25;
-	BACKLIGHT = edge * 0.8;
-	EMISSION = glow * glow_energy * smoothstep(0.55, 1.0, v) * (0.85 + 0.15 * sin(TIME * 1.3 + UV.x * 4.0));
+	BACKLIGHT = mix(edge * 0.8, night_ember * 0.25, night);
+	EMISSION = mix(day_emission, night_emission, night);
 }
 """
 	var m := ShaderMaterial.new()
 	m.shader = sh
 	m.resource_name = "dragon_membrane_glow"
 	return m
+
+## The eyes' middles (the eye surface's vertices either side of the
+## midline, in the skeleton's rest frame), held in the head bone's frame
+## for their night halos.
+func _find_eyes(mi: MeshInstance3D, surface: int) -> void:
+	if not _bone.has("head"): return
+	var arrays := mi.mesh.surface_get_arrays(surface)
+	var points: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var sums := [Vector3.ZERO,Vector3.ZERO]
+	var counts := [0,0]
+	for p in points:
+		var k := 0 if p.x < 0.0 else 1
+		sums[k] += p
+		counts[k] += 1
+	var head_rest := skeleton.get_bone_global_rest(_bone["head"]).affine_inverse()
+	for k in range(2):
+		if counts[k] > 0: _eye_points.append(head_rest*(mi.transform*(sums[k]/float(counts[k]))))
+
+## The eyes' halos at night: soft warm glows round each eye (the stone
+## lamps' halo, shaders/stone_lamp_halo.gdshader), NIGHT_EYE_HALO m across
+## at the model's scale 1, at NIGHT_EYE_HALO_STRENGTH.
+const NIGHT_EYE_HALO := 4.2
+const NIGHT_EYE_HALO_STRENGTH := 1.0
+## Round 2: the halo is drawn this share of its size toward the eye, so the
+## head doesn't hide half of it.
+const NIGHT_EYE_HALO_LIFT := 0.35
+var _eye_points: Array[Vector3] = []
+var _eye_halos: MultiMeshInstance3D = null
+var _eye_halo_material: ShaderMaterial = null
+
+func _place_eye_halos() -> void:
+	if _eye_points.is_empty(): return
+	if _eye_halos == null:
+		_eye_halo_material = ShaderMaterial.new()
+		_eye_halo_material.shader = preload("res://shaders/stone_lamp_halo.gdshader")
+		_eye_halo_material.set_shader_parameter("tint",Color("ffb030"))
+		_eye_halo_material.set_shader_parameter("toward_eye",NIGHT_EYE_HALO_LIFT)
+		var quad := QuadMesh.new()
+		quad.size = Vector2.ONE
+		_eye_halos = MultiMeshInstance3D.new()
+		_eye_halos.name = "EyeHalos"
+		_eye_halos.multimesh = MultiMesh.new()
+		_eye_halos.multimesh.transform_format = MultiMesh.TRANSFORM_3D
+		_eye_halos.multimesh.mesh = quad
+		_eye_halos.multimesh.instance_count = _eye_points.size()
+		_eye_halos.material_override = _eye_halo_material
+		_eye_halos.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_eye_halos.top_level = true
+		add_child(_eye_halos)
+	_eye_halos.visible = night > 0.001 and model.visible
+	if not _eye_halos.visible: return
+	_eye_halo_material.set_shader_parameter("glow",night*NIGHT_EYE_HALO_STRENGTH)
+	var head := skeleton.global_transform*skeleton.get_bone_global_pose(_bone["head"])
+	var across := NIGHT_EYE_HALO*size
+	for k in range(_eye_points.size()):
+		_eye_halos.multimesh.set_instance_transform(k,Transform3D(Basis.IDENTITY.scaled(Vector3.ONE*across),head*_eye_points[k]))
+
+## The night glow, eased in at dusk and out at dawn (NIGHT_*).
+func _night_glow(delta: float) -> void:
+	var goal := StoneLampLights.night_for(_daylight())
+	night = move_toward(night,goal,delta/NIGHT_FADE)
+	var open := clampf(_jaw*4.0,0.0,1.0)
+	if breath == "inhale": open = maxf(open,0.8)
+	for m: StandardMaterial3D in _night_materials.get("dragon_eye",[]):
+		m.emission_energy_multiplier = lerpf(NIGHT_EYE.x,NIGHT_EYE.y,night)
+	for m: StandardMaterial3D in _night_materials.get("dragon_glow",[]):
+		m.emission_energy_multiplier = lerpf(NIGHT_SPINES.x,NIGHT_SPINES.y,night)
+	for m: ShaderMaterial in _night_materials.get("dragon_membrane_glow",[]):
+		m.set_shader_parameter("glow_energy",NIGHT_MEMBRANE.x)
+		m.set_shader_parameter("night_energy",NIGHT_MEMBRANE.y)
+		m.set_shader_parameter("night",night)
+		m.set_shader_parameter("night_reach",NIGHT_MEMBRANE_REACH)
+	for key in ["dragon_mouth","dragon_tongue"]:
+		for m: StandardMaterial3D in _night_materials.get(key,[]):
+			m.emission_enabled = night > 0.001
+			m.emission = NIGHT_THROAT
+			m.emission_energy_multiplier = night*lerpf(NIGHT_THROAT_ENERGY.x,NIGHT_THROAT_ENERGY.y,open)*(0.6 if key == "dragon_tongue" else 1.0)
+	for key in ["dragon_hide","dragon_belly"]:
+		for m: StandardMaterial3D in _night_materials.get(key,[]):
+			m.emission_enabled = night > 0.001
+			m.emission = NIGHT_SHEEN
+			m.emission_energy_multiplier = NIGHT_SHEEN_ENERGY*night
+	_place_eye_halos()
+
+func _daylight() -> float:
+	var celestial: Variant = sky_scene.get("_celestial") if sky_scene != null else null
+	if celestial != null and celestial.get("state") is Dictionary and celestial.state.has("zs_daylight"):
+		return float(celestial.state.zs_daylight)
+	return 1.0
 
 # --- The route ----------------------------------------------------------------------
 
@@ -841,6 +1063,7 @@ func advance(delta: float) -> void:
 			_step(minf(ahead,1.0/30.0))
 			ahead -= 1.0/30.0
 	_step(minf(delta,0.1))
+	_night_glow(delta)
 	_watch_camera(delta)
 
 func _step(delta: float) -> void:
@@ -1704,6 +1927,11 @@ func _pant_length() -> float:
 ## The blow's strength through its beat: quick in, held, eased out.
 func blow_envelope() -> float:
 	return smoothstep(0.0,0.35,_breath_t)*(1.0-smoothstep(BLOW-0.7,BLOW,_breath_t))
+
+## Seconds into its roar now, or below 0 between roars (read by its sound,
+## scripts/kit_isle/kit_audio_beasts.gd).
+func roar_time() -> float:
+	return _roar_t
 
 ## The mouth (world): the jaw's tip.
 func mouth_at() -> Vector3:

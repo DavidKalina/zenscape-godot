@@ -19,6 +19,8 @@ const ROW_GAP := 3.0
 const SEAM := 17.0
 const FOOT := 34.0
 var buttons: Array[Button] = []
+## The scrim's material (shaders/title_scrim.gdshader, its `strength`).
+var scrim_material: ShaderMaterial
 var _frame := Control.new()
 var _card := Linen.Cloth.new()
 var _seam := Seam.new()
@@ -78,6 +80,7 @@ func _ready() -> void:
 	var scrim := ColorRect.new()
 	var material := ShaderMaterial.new()
 	material.shader = preload("res://shaders/title_scrim.gdshader")
+	scrim_material = material
 	scrim.material = material
 	scrim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(scrim)

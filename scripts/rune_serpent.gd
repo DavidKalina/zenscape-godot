@@ -252,19 +252,27 @@ const BAND_EVERY := 3
 const BAND_SKIP := 0.15
 ## The runes' light (shaders/rune_serpent.gdshader): their colour (the stone
 ## plane's and the lodestone's warm gold) and strength by day and by night
-## (less at night: against the dark it reads brighter, and more blows out
-## to white), the eyes' colour and strength by day and by night, and the
+## (stronger at night, NIGHT_RUNE_COLOUR and NIGHT_HALO keeping it from
+## blowing out to white), the eyes' colour and strength by day and by night, and the
 ## eyes' haze (radius m, strength by day and night). The spine's runes run back RUNE_RUN m a
 ## second per m/s of its pace.
 const GLOW := Color(1.0,0.72,0.38)
 const DAY_GLOW := 1.5
-const NIGHT_GLOW := 1.25
+const NIGHT_GLOW := 2.1
 const EYE_DAY := 3.5
 const EYE_NIGHT := 5.0
 const EYE_GLOW := Color(1.0,0.72,0.36)
 const HAZE := 1.4
 const HAZE_STRENGTH := Vector2(0.12,0.7)
 const RUNE_RUN := 0.45
+## Night light round 1 (docs/design/night-light/round1.md): at night the
+## runes stay strong (NIGHT_GLOW, was 1.25 to keep them from white) and white
+## blowout is held off by their colour, not by dimming: they go a deeper,
+## more saturated amber (NIGHT_RUNE_COLOUR, which the tonemap carries to
+## gold rather than white), and each stroke's soft halo in the stone grows
+## (NIGHT_HALO: share and spread, from the day's 0.32 and 10).
+const NIGHT_RUNE_COLOUR := Color(1.0,0.5,0.16)
+const NIGHT_HALO := Vector2(0.62,24.0)
 ## A spine rune's length (m).
 const SPINE_CELL := 1.5
 
@@ -998,6 +1006,9 @@ func _light(_delta: float) -> void:
 	var night := StoneLampLights.night_for(_daylight())
 	_material.set_shader_parameter("scroll",_scroll)
 	_material.set_shader_parameter("energy",lerpf(DAY_GLOW,NIGHT_GLOW,night))
+	_material.set_shader_parameter("glow",GLOW.lerp(NIGHT_RUNE_COLOUR,night))
+	_material.set_shader_parameter("halo",lerpf(0.32,NIGHT_HALO.x,night))
+	_material.set_shader_parameter("halo_spread",lerpf(10.0,NIGHT_HALO.y,night))
 	_material.set_shader_parameter("eye_energy",lerpf(EYE_DAY,EYE_NIGHT,night))
 	_haze.set_shader_parameter("strength",lerpf(HAZE_STRENGTH.x,HAZE_STRENGTH.y,night))
 	_ribbon_material.set_shader_parameter("night",night)
@@ -1244,6 +1255,12 @@ func snout() -> Vector3:
 
 func speed() -> float:
 	return _sx[S_SPEED]
+
+## Where its breath stands in its cycle (0 to 1: in to 0.38, out to 0.86),
+## as `_pose` breathes it; read by its sound (scripts/kit_isle/
+## kit_audio_beasts.gd).
+func breath_phase() -> float:
+	return fposmod(_time/5.2,1.0)
 
 func spring(i: int) -> float:
 	return _sx[i]

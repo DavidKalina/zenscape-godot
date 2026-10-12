@@ -20,6 +20,10 @@ render_mode unshaded, blend_mix, cull_disabled, shadows_disabled, depth_draw_nev
 #include "res://shaders/cloud_wake.gdshaderinc"
 
 uniform float strength = 1.0;
+// At night: the sky's share of a puff's light, and the light wrapped onto
+// its far side (by day 0.25).
+const float NIGHT_SKY = 0.55;
+const float NIGHT_WRAP = 0.06;
 // Metres a second the clouds drift on the breeze.
 uniform vec2 drift = vec2(0.6, 0.3);
 // The field's corner and size in the plate plane, in metres before `shift`.
@@ -157,11 +161,16 @@ void vertex() {
 	}
 	// Light: the sky's colour all round, the sun's on the side and top
 	// facing it, a cool shade at the base.
+	// At night the moon is the light (night light round 1): its side lit,
+	// the far side and the base in shade, the sky's share down to
+	// NIGHT_SKY so a puff reads moonlit and cool, not flat white.
 	vec3 offset = normalize(data.xyz + vec3(0.0, 0.25, 0.0));
-	float sunward = clamp(dot(offset, normalize(zs_sun_direction + vec3(0.0, 1e-4, 0.0))) * 0.5 + 0.5, 0.0, 1.0);
+	vec3 lamp = normalize(mix(zs_sun_direction, zs_moon_direction, zs_night) + vec3(0.0, 1e-4, 0.0));
+	float sunward = clamp(dot(offset, lamp) * 0.5 + 0.5, 0.0, 1.0);
 	float height = clamp(data.y * 1.4 + 0.5, 0.0, 1.0);
-	vec3 sky = zs_cloud_sky * mix(0.72, 1.0, height);
-	shade = sky * vec3(0.93, 0.95, 1.02) + zs_cloud_sun * (0.25 + 0.75 * sunward) * mix(0.45, 1.0, height) * 0.85;
+	vec3 sky = zs_cloud_sky * mix(0.72, 1.0, height) * mix(1.0, NIGHT_SKY, zs_night);
+	float wrap = mix(0.25, NIGHT_WRAP, zs_night);
+	shade = sky * vec3(0.93, 0.95, 1.02) + zs_cloud_sun * (wrap + (1.0 - wrap) * sunward * sunward) * mix(0.45, 1.0, height) * 0.85;
 }
 
 void fragment() {

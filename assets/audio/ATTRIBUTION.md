@@ -50,3 +50,12 @@ recordings: it is synthesised from noise, filters and sines by
 `tools/generate_nature_audio.py --land`, after the Electron ZenScape's
 formation rumble (audio.js `rumble` and the strain bed). It carries no licence
 beyond the project's own and is not listed in `foley/SOURCES.tsv`.
+
+## Kit isle sound (`kit/`)
+
+The kit isles' air, plane and body takes (`kit/*.wav`: air rush, whistle and
+howl, engine and its start, wheel rumble, skid, flutter, wire sing, thin wind,
+cloud hush, thumps, creaks, ticks, swishes, whooshes, sail pops and folds,
+grabs) are synthesised from noise, filters and sines by
+`tools/generate_kit_audio.py`. They use no recordings and carry no licence
+beyond the project's own (docs/design/sound-round1.md).

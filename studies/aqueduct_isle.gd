@@ -281,6 +281,8 @@ func _build_art() -> void:
 	# in the physics space): the islands' and islets' ground.
 	for land: Node3D in [near,far]+islets: add_turf(land)
 	print("aqueduct isle: %d triangles" % triangles(art))
+	# The on-foot pieces' route (balustrades, ropes, a ferry, bobbing slabs).
+	preload("res://scripts/interactables/aqueduct_foot_route.gd").build(self)
 
 # --- The isle's hooks --------------------------------------------------------------
 
@@ -537,6 +539,47 @@ func _capture_flying() -> void:
 func _add_life() -> void:
 	super._add_life()
 	if dragon_on: _build_sky_dragon()
+	if NightLights.wanted(preload("res://scripts/launch_args.gd").user_args()):
+		night_lights = NightLights.new()
+		add_child(night_lights)
+		night_lights.setup(self,night_lamp_spots)
+
+# --- The night's lights (scripts/kit_isle/kit_night_lights.gd) ----------------------
+
+## The isle's lanterns and its ruins' own light after dark
+## (docs/design/night-light/round1.md, round2.md).
+const NightLights = preload("res://scripts/kit_isle/kit_night_lights.gd")
+var night_lights: Node3D = null
+
+## Where the lanterns stand (x, z): a pair behind the parked plane, the
+## grand stair's foot and head, the path from the plane to it, the circle's
+## way in, the aqueduct's head, the heel stone, and either side of the
+## gate on the far island.
+func night_lamp_spots() -> Array:
+	var spots: Array = []
+	if parked:
+		var forward := Vector3(-sin(parked_heading),0.0,-cos(parked_heading))
+		var right := Vector3(cos(parked_heading),0.0,-sin(parked_heading))
+		for side: float in [-1.0,1.0]:
+			var p := parked_at-forward*6.5+right*3.2*side
+			spots.append(Vector3(p.x,parked_at.y+3.5,p.z))
+	spots.append_array(NIGHT_LAMPS)
+	return spots
+
+## A Vector3 spot is x, the top of its ray down, z: under the floating
+## stones and lintels, so a lantern stands on the turf, not on them.
+const NIGHT_LAMPS := [
+	# The grand stair (Art.STAIR_AT 83.6, 0): its foot either side, its head.
+	Vector3(88.6,33.5,-3.4),Vector3(88.6,33.5,3.4),Vector2(77.5,2.8),
+	# The path from the plane toward the stair.
+	Vector3(92.0,33.5,2.5),
+	# The stone circle's way in (Art.HILL 61, 0), on its east side.
+	Vector3(71.5,44.0,-5.5),
+	# The aqueduct's head and the heel stone (Art.HEEL 118, 0).
+	Vector3(105.5,33.5,3.5),Vector3(115.5,33.5,1.8),
+	# The gate on the far island (its arch at 100, -62.5), either side.
+	Vector3(96.8,33.5,-60.2),Vector3(103.2,33.5,-60.2),
+]
 
 ## The kit's on-foot hint, and the dragon's line while it holds the treasure.
 func _foot_text() -> String:
@@ -555,6 +598,7 @@ func _build_sky_dragon() -> void:
 		if at.distance_to(IsleSky.MIDDLE) < 700.0: list.append([at,float(place[2])])
 	list.append([IsleSky.MIDDLE,60.0])
 	dragon = SkyDragon.new()
+	dragon.sky_scene = self
 	add_child(dragon)
 	# Its low passes cast their shadow across the near island's turf.
 	var middle := Vector2.ZERO

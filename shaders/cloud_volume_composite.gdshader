@@ -40,7 +40,10 @@ const float CELL = 72.0;
 const float GROUND = 700.0;
 const float GROUND_UNIT = 100.0;
 const vec3 STYLE_TINT = vec3(0.3, 0.0, 0.45);
-const float NIGHT_TINT = 0.4;
+// Night light round 1: the style's painted moonlit sea leads at night (was
+// 0.4), so the heaps, towers and puffs read moonlit and cool, lit on the
+// moon's side and shaded on the other, not near-day white.
+const float NIGHT_TINT = 0.72;
 const float AIR = 2600.0;
 const float LAND_AIR = 4000.0;
 const float LIFT = 1.25;

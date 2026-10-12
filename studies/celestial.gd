@@ -92,6 +92,29 @@ const LUNAR_START := 0.85
 const MOON_LIGHT := Vector2(0.1, 2.0)
 ## The night fill leans on the moon: this at new, this at full.
 const MOON_FILL := Vector2(0.7, 1.0)
+## Night light round 1 (docs/design/night-light/round1.md): the land read as a
+## black cutout under clear moonlit skies while the clouds round it took the
+## moon well. The moon's key on surfaces is MOON_KEY times what it was, the
+## night fill's energy NIGHT_FILL_ENERGY (was 0.4) a unit of fill, and the
+## rim's night floor NIGHT_RIM (new moon, full; was 0.12, 0.3), so stone and
+## turf read cool and moonlit and night stays night (the grade's rod-lit
+## shift and the sky are untouched). --moon-key=K, --night-fill=F try others.
+const MOON_KEY := 2.0
+const NIGHT_FILL_ENERGY := 1.1
+const NIGHT_RIM := Vector2(0.16, 0.42)
+## Round 2 (docs/design/night-light/round2.md): up close the moonlit turf
+## read pale and sandy, partly autumn's warm cast left on the moon, the
+## fill and the haze; at night only this share of it stays.
+const NIGHT_AUTUMN := 0.15
+var moon_key := _arg_float("--moon-key=", MOON_KEY)
+var night_fill_energy := _arg_float("--night-fill=", NIGHT_FILL_ENERGY)
+## The moon's light on the clouds (zs_cloud_sun at night) under a new and a
+## full moon (was 0.12, 0.85): a full moon lit the drifting puffs, the
+## towers and the cloud sea near daytime white; now they stay moonlit and
+## cool, bright on the moon's side, in shade on the other. --night-cloud=X
+## scales the full moon's.
+const NIGHT_CLOUD_LIGHT := Vector2(0.1, 0.42)
+var night_cloud := _arg_float("--night-cloud=", 1.0)
 ## Moonlight's colour at new and full moon: a thin dim blue under a sliver,
 ## brighter silver-blue under a full moon (the source's b9cae8 sits between).
 const MOON_TINT := ["8a9ac4", "c4d3f4"]
@@ -298,11 +321,14 @@ func update_rig() -> void:
 	var sun_energy := 3.4 * smoothstep(-0.035, 0.05, e) * (0.68 + 0.32 * smoothstep(0.08, 0.45, e))
 	var sky_day := smoothstep(SKY_DAY_E.x, SKY_DAY_E.y, e)
 	var moon_up := smoothstep(0.02, 0.30, moon.y)
-	var moon_energy := 3.4 * 0.11 * moon_up * night * lerpf(MOON_LIGHT.x, MOON_LIGHT.y, moon_lit)
+	var moon_energy := 3.4 * 0.11 * moon_up * night * lerpf(MOON_LIGHT.x, MOON_LIGHT.y, moon_lit) * moon_key
 	# How much moon there is to see by (phase and height), and how deep into
 	# the night the look has gone.
 	var moon_glow := moon_lit * moon_up
 	var dark := 1.0 - smoothstep(NIGHT_LOOK_E.x, NIGHT_LOOK_E.y, e)
+	# Autumn's warm cast on the light, the fill and the haze is the sun's:
+	# under the moon only NIGHT_AUTUMN of it is left (night light round 2).
+	var autumn_lit := autumn * lerpf(1.0, NIGHT_AUTUMN, dark)
 	var moon_tint := _rgb(MOON_TINT[0]).lerp(_rgb(MOON_TINT[1]), moon_lit)
 	var tint := look.rgb("sun").lerp(Vector3(1, 0.97, 0.9), smoothstep(0.35, 0.9, e) * 0.5)
 	tint = _rgb("ff6222").lerp(_rgb("ffb45c"), smoothstep(-0.02, 0.1, e)).lerp(tint, smoothstep(0.1, 0.4, e))
@@ -319,13 +345,13 @@ func update_rig() -> void:
 	if shimmer > 0.0:
 		var t := Time.get_ticks_msec() * 0.001
 		_sun.light_energy *= 1.0 + shimmer * 0.16 * (0.5 * sin(t * 37.0) + 0.5 * sin(t * 23.0 + 1.3))
-	_sun.light_color = _color(tint.lerp(Vector3(0.78, 0.84, 0.95), cloud * 0.7).lerp(Vector3(1.0, 0.70, 0.38), autumn * 0.35).lerp(Vector3(0.82, 0.88, 1.0), cold * 0.4)).linear_to_srgb()
+	_sun.light_color = _color(tint.lerp(Vector3(0.78, 0.84, 0.95), cloud * 0.7).lerp(Vector3(1.0, 0.70, 0.38), autumn_lit * 0.35).lerp(Vector3(0.82, 0.88, 1.0), cold * 0.4)).linear_to_srgb()
 	var ambient := smoothstep(-0.12, 0.10, e)
 	var hemi_sky := _rgb("26324e").lerp(_rgb("8fb3d9"), ambient).lerp(_rgb("7d92bd"), warmth * 0.5)
 	var dusk_glow := smoothstep(AFTERGLOW_E.x, AFTERGLOW_E.y, e) * smoothstep(AFTERGLOW_E.z, AFTERGLOW_E.w, e) * (1.0 - minf(1.0, cloud * 1.3))
 	hemi_sky = hemi_sky.lerp(AFTERGLOW_AMBIENT * maxf(hemi_sky.dot(Vector3(0.2126, 0.7152, 0.0722)), 0.0) / AFTERGLOW_AMBIENT.dot(Vector3(0.2126, 0.7152, 0.0722)), dusk_glow * 0.6)
 	hemi_sky *= look.ratio("ambient")
-	hemi_sky = hemi_sky.lerp(Vector3(0.5, 0.55, 0.62), cloud * 0.6).lerp(Vector3(0.66, 0.58, 0.46), autumn * 0.3).lerp(Vector3(0.62, 0.70, 0.85), cold * 0.35)
+	hemi_sky = hemi_sky.lerp(Vector3(0.5, 0.55, 0.62), cloud * 0.6).lerp(Vector3(0.66, 0.58, 0.46), autumn_lit * 0.3).lerp(Vector3(0.62, 0.70, 0.85), cold * 0.35)
 	hemi_sky = _temper_fill(hemi_sky)
 	var hemi_ground := _rgb("0d1016").lerp(_rgb("4a5240"), sky_day)
 	hemi_ground *= look.ratio("bounce")
@@ -334,7 +360,7 @@ func update_rig() -> void:
 		_rim.global_basis = Basis(Vector3.UP, room_yaw) * _rim_basis
 		_rim_turned = room_yaw
 	# The rim's night floor follows the moon: a new moon leaves silhouettes.
-	_rim.light_energy = 1.1 * (lerpf(0.3, lerpf(0.12, 0.3, moon_glow), dark) + 0.7 * sky_day) * lerpf(1.0, 0.5, cloud) / PI
+	_rim.light_energy = 1.1 * (lerpf(0.3, lerpf(NIGHT_RIM.x, NIGHT_RIM.y, moon_glow), dark) + 0.7 * sky_day) * lerpf(1.0, 0.5, cloud) / PI
 	_publish("zs_key_direction", _sun.global_basis.z.normalized())
 	var key_color := _sun.light_color.srgb_to_linear()
 	_publish("zs_key_irradiance", Vector3(key_color.r, key_color.g, key_color.b) * _sun.light_energy * PI)
@@ -343,11 +369,11 @@ func update_rig() -> void:
 	var rim_color := _rim.light_color.srgb_to_linear()
 	_publish("zs_rim_irradiance", Vector3(rim_color.r, rim_color.g, rim_color.b) * _rim.light_energy * PI)
 	_publish("zs_cloud_direction", key_direction)
-	var cloud_sun := tint.lerp(Vector3(0.78, 0.84, 0.95), cloud * 0.7).lerp(Vector3(1.0, 0.70, 0.38), autumn * 0.35).lerp(Vector3(0.82, 0.88, 1.0), cold * 0.4) * (0.9 + 0.5 * overcast)
+	var cloud_sun := tint.lerp(Vector3(0.78, 0.84, 0.95), cloud * 0.7).lerp(Vector3(1.0, 0.70, 0.38), autumn_lit * 0.35).lerp(Vector3(0.82, 0.88, 1.0), cold * 0.4) * (0.9 + 0.5 * overcast)
 	# The source lights air and cloud with the key's colour at full strength
 	# even when nothing is up. At night that left the mist lit like day (and
 	# orange under a new moon): lean it on the moon instead.
-	cloud_sun = cloud_sun.lerp(moon_tint.lerp(Vector3(0.78, 0.84, 0.95), cloud * 0.7) * lerpf(0.12, 0.85, moon_glow) * (0.9 + 0.5 * overcast), dark)
+	cloud_sun = cloud_sun.lerp(moon_tint.lerp(Vector3(0.78, 0.84, 0.95), cloud * 0.7) * lerpf(NIGHT_CLOUD_LIGHT.x, NIGHT_CLOUD_LIGHT.y * night_cloud, moon_glow) * (0.9 + 0.5 * overcast), dark)
 	_publish("zs_cloud_sun", cloud_sun)
 	_publish("zs_cloud_sky", hemi_sky * 0.55)
 	# Native night adaptation: a cool surface fill keeps the miniature readable.
@@ -360,7 +386,7 @@ func update_rig() -> void:
 	_publish("zs_hemi_sky", surface_sky + NIGHT_FILL * fill)
 	_publish("zs_hemi_ground", hemi_ground + Vector3(0.08, 0.1, 0.13) * fill)
 	var golden := smoothstep(0.3, 0.1, e) * smoothstep(-0.03, 0.05, e) * (1.0 - minf(1.0, cloud * 1.3))
-	_publish("zs_hemi_energy", (0.55 * (0.22 + 0.78 * ambient) * (1.0 - GOLDEN_FILL_DIP * golden) * lerpf(1.0, 1.25, cloud) * lerpf(1.0, 0.55, storm) * lerpf(1.0, fill_gain, day) + 0.4 * fill + DUSK_FILL * dusk_fill) * look.settings.ambient_energy)
+	_publish("zs_hemi_energy", (0.55 * (0.22 + 0.78 * ambient) * (1.0 - GOLDEN_FILL_DIP * golden) * lerpf(1.0, 1.25, cloud) * lerpf(1.0, 0.55, storm) * lerpf(1.0, fill_gain, day) + night_fill_energy * fill + DUSK_FILL * dusk_fill) * look.settings.ambient_energy)
 	var down := Vector3(0.006, 0.009, 0.016).lerp(DAY_SKY[0], sky_day)
 	var up := Vector3(0.01, 0.016, 0.038).lerp(DAY_SKY[1], sky_day).lerp(Vector3(0.1, 0.07, 0.16), warmth * 0.55)
 	var glow := Vector3(0.016, 0.024, 0.045).lerp(DAY_SKY[2], sky_day).lerp(Vector3(0.85, 0.3, 0.09), warmth * 0.8)
@@ -405,7 +431,7 @@ func update_rig() -> void:
 	var sun_on := lerpf(1.0, smoothstep(shade_line - band * 0.5, shade_line + band * 0.5, lid), source_alpen)
 	var source_energy := 3.4 * smoothstep(-0.03, 0.10, e) * (0.45 + 0.55 * smoothstep(0.08, 0.45, e))
 	var sun_k := minf(1.0, (energy if moon_energy > sun_energy else source_energy) / 2.0)
-	var fog_color := (hemi_sky * 0.55 * 1.7).lerp(Vector3(0.30, 0.33, 0.38), storm * 0.6).lerp(Vector3(0.72, 0.66, 0.54), autumn * 0.35).lerp(Vector3(0.62, 0.68, 0.78), cold * 0.45)
+	var fog_color := (hemi_sky * 0.55 * 1.7).lerp(Vector3(0.30, 0.33, 0.38), storm * 0.6).lerp(Vector3(0.72, 0.66, 0.54), autumn_lit * 0.35).lerp(Vector3(0.62, 0.68, 0.78), cold * 0.45)
 	fog_color *= look.ratio("fog")
 	fog_display = source_display_fog(fog_color, 1.15 * look.settings.exposure)
 	var display_color := Color(fog_color.x, fog_color.y, fog_color.z).linear_to_srgb()
