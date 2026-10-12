@@ -5,6 +5,11 @@ extends SceneTree
 ##   - empty, it returns level;
 ##   - a hard landing on the high end flings what stands on the low end:
 ##     a RigidBody3D load, and the pilot himself.
+##   - round 2b: a slam on the high end flings a heavy block off the low end
+##     farther than a plain landing; the heavy block holds its end down under
+##     the pilot's plain weight; a block dropped on the high end launches a
+##     pilot on the low end (to the ledge on the catapult lane, off the span
+##     on the timed one).
 ##   godot --headless --path . --script tests/test_trap_seesaw.gd
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const Trap = preload("res://scripts/traps/trap.gd")
@@ -26,8 +31,8 @@ func _tick(n: int) -> void:
 		study.tick(DT)
 		await physics_frame
 
-func _put(z: float, up := 0.0) -> void:
-	var at: Vector3 = trap.to_global(Vector3(0.0,up,z))
+func _put(z: float, up := 0.0, t: Node3D = null) -> void:
+	var at: Vector3 = (t if t != null else trap).to_global(Vector3(0.0,up,z))
 	study.place(at,Vector2(0.0,-1.0))
 	study.script_want = Vector2.ZERO
 
@@ -81,6 +86,7 @@ func run() -> void:
 	trap.impact(2.5,float(trap.knob("hard"))*1.5)
 	await _tick(2)
 	check(not m.grounded and m.velocity.y > 1.0,"...and the pilot on the low end (vy %.1f)" % m.velocity.y)
+	await _round_2b()
 	print("trap seesaw: %d failure(s)" % failures)
 	quit(1 if failures > 0 else 0)
 
@@ -92,3 +98,74 @@ func _level_at(t: float) -> void:
 	trap.tilt = t
 	trap.spin = 0.0
 	trap._pose()
+
+## Block flight from a drop/slam on the near end of the slam lane: [farthest
+## z travelled (m, along the route), highest y above its rest].
+func _slam_run(t: Node3D, height: float, slam: bool) -> Array:
+	var z := -0.8
+	_put(z,height,t)
+	await physics_frame
+	await _tick(2)
+	if slam: m.slam(27.0,20.0)
+	var b: RigidBody3D = t.block
+	var start: Vector3 = b.global_position
+	var far := 0.0
+	var high := 0.0
+	var launches: int = t.launches
+	for i in range(240):
+		await _tick(1)
+		far = maxf(far,start.z-b.global_position.z)
+		high = maxf(high,b.global_position.y-start.y)
+	return [far,high,t.launches-launches]
+
+func _round_2b() -> void:
+	# Heavy load keeps its end down under the pilot's plain weight.
+	var sl: Node3D = study.traps.named("seesaw_slam")
+	check(sl != null,"The yard has the slam lane")
+	_put(8.0,0.0,sl)
+	await _tick(120)
+	var cap: float = sl.knob("max_tilt")
+	check(sl.tilt < -cap*0.8 and sl.high_end() == -1,"The heavy block holds the far end down (tilt %.2f of %.2f)" % [sl.tilt,cap])
+	var rest_y: float = sl.block.global_position.y
+	_put(-0.8,0.1,sl)
+	await _tick(150)
+	check(m.grounded and sl.on_slab(m.feet) and sl.tilt < -cap*0.5,"...and the pilot standing on the high end alone cannot lift it (tilt %.2f)" % sl.tilt)
+	check(absf(sl.block.global_position.y-rest_y) < 0.4,"...the block stays down (dy %.2f)" % (sl.block.global_position.y-rest_y))
+	# A plain landing on the high end, then a slam from height.
+	var plain: Array = await _slam_run(sl,1.2,false)
+	await _tick(60)
+	var hit: Array = await _slam_run(sl,5.0,true)
+	print("  plain landing: carried %.2f m, rose %.2f m; slam: carried %.2f m, rose %.2f m" % [plain[0],plain[1],hit[0],hit[1]])
+	check(hit[2] >= 1 and hit[1] > 1.0,"A slam on the high end flings the load up (rose %.2f m)" % hit[1])
+	check(hit[0] > 2.0*maxf(plain[0],0.5),"...farther than a plain landing does (%.2f m against %.2f m)" % [hit[0],plain[0]])
+	# A light load rises more than a heavy one for the same blow.
+	# The catapult lane: the plate lets the block fall; the pilot rides to the ledge.
+	var dr: Node3D = study.traps.named("seesaw_drop")
+	check(dr != null,"The yard has the drop lane")
+	_put(dr.launch_z()+1.0,0.5,dr)
+	await _tick(60)
+	check(m.grounded and dr.on_slab(m.feet) and dr.high_end() == -1,"On the plate the pilot is the low end, the hook end up")
+	var top := 0.0
+	var vy := 0.0
+	var dropped := false
+	for i in range(420):
+		await _tick(1)
+		vy = maxf(vy,m.velocity.y)
+		if dr.drops > 0: dropped = true
+	check(dropped,"Standing on the plate lets the block go")
+	check(vy > 8.0,"A block dropped on the high end launches the pilot on the low end (vy %.1f)" % vy)
+	var ledge_y: float = dr.to_global(Vector3(0.0,dr.ledge_top(),0.0)).y
+	check(m.grounded and absf(m.feet.y-ledge_y) < 0.3,"...he comes down on the high ledge (feet y %.2f, ledge %.2f, z %.1f)" % [m.feet.y,ledge_y,dr.to_local(m.feet).z])
+	# The timed trap: flung off the span.
+	var tm: Node3D = study.traps.named("seesaw_dropper")
+	check(tm != null,"The yard has the timed dropper")
+	_put(-4.6,0.3,tm)
+	await _tick(30)
+	var x0: float = m.feet.x
+	var thrown := 0.0
+	var drops := 0
+	for i in range(480):
+		await _tick(1)
+		thrown = maxf(thrown,absf(m.feet.x-tm.to_global(Vector3.ZERO).x))
+		drops = maxi(drops,tm.drops)
+	check(drops >= 1 and thrown > float(tm.knob("width"))*0.5+1.5,"The timed drop throws the pilot off the span (%.1f m sideways, %d drop(s))" % [thrown,drops])

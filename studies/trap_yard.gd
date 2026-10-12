@@ -18,6 +18,9 @@ const Trap = preload("res://scripts/traps/trap.gd")
 const TrapField = preload("res://scripts/traps/trap_field.gd")
 const Voussoirs = preload("res://scripts/traps/trap_voussoirs.gd")
 const Seesaw = preload("res://scripts/traps/trap_seesaw.gd")
+const SeesawSlam = preload("res://scripts/traps/trap_seesaw_slam.gd")
+const SeesawDrop = preload("res://scripts/traps/trap_seesaw_drop.gd")
+const SeesawDropper = preload("res://scripts/traps/trap_seesaw_dropper.gd")
 const Wind = preload("res://scripts/traps/trap_wind.gd")
 const WindBlaster = preload("res://scripts/traps/trap_wind_blaster.gd")
 const Sluice = preload("res://scripts/traps/trap_sluice.gd")
@@ -26,6 +29,9 @@ const Sluice = preload("res://scripts/traps/trap_sluice.gd")
 const TRAPS := {
 	"voussoirs": Voussoirs,
 	"seesaw": Seesaw,
+	"seesaw_slam": SeesawSlam,
+	"seesaw_drop": SeesawDrop,
+	"seesaw_dropper": SeesawDropper,
 	"wind": Wind,
 	"wind_blaster": WindBlaster,
 	"sluice": Sluice,
