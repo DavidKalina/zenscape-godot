@@ -17,6 +17,9 @@ extends Node3D
 ## the towers. `flush` stands them all at once (tests, captures). Their
 ## plane tokens join the sky's collectibles at once, a source each.
 ##
+## With --dragon-roost the dragon's mountain stands too, past the others
+## (scripts/kit_isle/motif_dragon_roost.gd, its own AT; not in `places`).
+##
 ## Placed clear of the aqueduct isle's lock ring, of the lodestone's shard,
 ## its ring and the hall chain's line out north-north-east, and of the
 ## cumulus towers' spots (scripts/kit_isle/kit_clouds.gd TOWERS, each its
@@ -24,6 +27,7 @@ extends Node3D
 const MotifIsle = preload("res://scripts/kit_isle/motif_isle.gd")
 const SkyCommits = preload("res://scripts/sky_commits.gd")
 const Lines = preload("res://scripts/collectible_lines.gd")
+const Roost = preload("res://scripts/kit_isle/motif_dragon_roost.gd")
 
 ## [motif script, offset from its own frame (m)]. Their middles (world x, z)
 ## and turf: the bell spires east (420, 60) at 42 m, the cloister tarn south
@@ -85,8 +89,14 @@ func setup(study: Node3D, owner_sky: Node3D, args: PackedStringArray) -> void:
 	var began := Time.get_ticks_msec()
 	eager = threaded or args.has("--motifs-now")
 	var where := places()
-	for k in range(PLACES.size()):
-		var spec: Array = PLACES[k]
+	var specs: Array = PLACES.duplicate()
+	# --dragon-roost: the dragon's mountain too, out past the others
+	# (scripts/kit_isle/motif_dragon_roost.gd).
+	if args.has("--dragon-roost"):
+		specs.append([Roost,Roost.AT])
+		where.append(["dragon_roost",Vector3(Roost.O.x+Roost.AT.x,Roost.TOP+Roost.AT.y,Roost.O.y+Roost.AT.z),Roost.R])
+	for k in range(specs.size()):
+		var spec: Array = specs[k]
 		var motif: RefCounted = (spec[0] as Script).new()
 		if motif.get("still_bells") != null: motif.set("still_bells",args.has("--no-bell"))
 		motif.warm()

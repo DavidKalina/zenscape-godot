@@ -1054,8 +1054,29 @@ func _next_legs() -> void:
 
 # --- Each frame ---------------------------------------------------------------------
 
+## Asleep on its roost (--dragon-roost, docs/design/dragon-roost/round1.md):
+## the pose (scripts/dragon_roost.gd) lays it coiled on its mountain and
+## breathes it; it never flies, grips or blows.
+var roost: RefCounted = null
+
+## Built and laid asleep on its roost instead of `setup`: no route, gale or
+## treasure; `pose` (scripts/dragon_roost.gd) poses it every frame.
+## Its size is the one the roost's rock is cut for (the pose's `size`).
+func setup_roost(cam: Camera3D, pose: RefCounted) -> void:
+	camera = cam
+	size = float(pose.get("size"))
+	_build()
+	model.visible = true
+	state = "roosting"
+	roost = pose
+	roost.setup(self)
+
 func advance(delta: float) -> void:
 	if delta <= 0.0: return
+	if roost != null:
+		roost.advance(delta)
+		_night_glow(delta)
+		return
 	if _skip > 0.0:
 		var ahead := _skip
 		_skip = 0.0
@@ -2629,6 +2650,7 @@ func _touch_treasure() -> void:
 # --- The watch camera ---------------------------------------------------------------
 
 func _unhandled_input(event: InputEvent) -> void:
+	if roost != null: return
 	if event is InputEventKey and event.pressed and not event.echo and (event as InputEventKey).keycode == KEY_G and state == "clinging":
 		_say("It lets go")
 		_let_go()

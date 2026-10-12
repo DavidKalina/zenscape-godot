@@ -87,6 +87,10 @@ extends "res://studies/kit_isle.gd"
 ## sky to settle, saves the view (from --at looking at the point, else the
 ## walker's camera) and quits; --place=x,y,z[,turn] starts the pilot there
 ## instead (turn: degrees from facing -z, clockwise).
+## --dragon-roost (docs/design/dragon-roost/round1.md): the dragon's mountain
+## stands out past the motif isles (scripts/kit_isle/motif_dragon_roost.gd)
+## and the dragon sleeps coiled round its needle (scripts/dragon_roost.gd);
+## it doesn't roam (with --dragon too, it still only sleeps).
 ## The dragon (an experiment: docs/design/rim-dragon.md), with --dragon: a
 ## full-bodied dragon (scripts/sky_dragon.gd) rises out of the cloud sea and
 ## roams the archipelago, now and then low over the isle; V puts the camera
@@ -105,6 +109,7 @@ const IsleChain = preload("res://studies/aqueduct_isle_chain.gd")
 ## The hall chain's halls collide on the ruins' layer (scripts/hall_rise.gd).
 const RuinBump = preload("res://scripts/ruin_bump.gd")
 const SkyDragon = preload("res://scripts/sky_dragon.gd")
+const DragonRoost = preload("res://scripts/dragon_roost.gd")
 ## The flying dragon's attack targets (round 7): the sky's placed motif
 ## isles, whatever it places (scripts/kit_isle/motif_sky.gd `places`).
 const DragonIsleShape = preload("res://scripts/dragon_isle_shape.gd")
@@ -185,6 +190,10 @@ var _fly_test_breath := ""
 var _fly_test_t := 0.0
 var _fly_test_log := 0.0
 var _fly_test_heading := 0.0
+## --dragon-roost: the dragon asleep on its mountain, shown once the
+## mountain stands.
+var dragon_roost := false
+var roost_dragon: Node3D = null
 ## Each motif isle's record for the dragon, once it stands (its id ->
 ## {node, shape, home, radius, frame, pivot}).
 var _dragon_isles := {}
@@ -197,6 +206,7 @@ func _ready() -> void:
 		elif arg == "--autopilot": autopilot = true
 		elif arg == "--capture-high": _capture_high = true
 		elif arg == "--dragon": dragon_on = true
+		elif arg == "--dragon-roost": dragon_roost = true
 		elif arg == "--dragon-ride":
 			dragon_on = true
 			dragon_ride = true
@@ -476,11 +486,13 @@ func _process(delta: float) -> void:
 		dragon.on_foot = not flying
 		dragon.advance(delta)
 		if _fly_test != "": _fly_test_frame(delta)
+	_roost_frame(delta)
 
 ## A fixed-eye capture (--at) still flies the dragon.
 func _capture_tick(delta: float) -> void:
 	if dragon != null:
 		dragon.advance(delta)
+	_roost_frame(delta)
 
 func _fly_tick(delta: float) -> void:
 	if isle_chain != null: isle_chain.step(delta,plane,lode_state == "seated",camera.global_position)
@@ -538,7 +550,8 @@ func _capture_flying() -> void:
 ## The life, then the dragon over it.
 func _add_life() -> void:
 	super._add_life()
-	if dragon_on: _build_sky_dragon()
+	if dragon_roost: _build_roost_dragon()
+	elif dragon_on: _build_sky_dragon()
 	if NightLights.wanted(preload("res://scripts/launch_args.gd").user_args()):
 		night_lights = NightLights.new()
 		add_child(night_lights)
@@ -587,6 +600,22 @@ func _foot_text() -> String:
 	if dragon != null:
 		text += "\nV watches the dragon (chase, orbit, from here, off)  ·  G: it lets go of the rim"
 	return text
+
+## The dragon asleep on its roost (--dragon-roost): its own body posed
+## coiled on the mountain (scripts/dragon_roost.gd), not flying.
+func _build_roost_dragon() -> void:
+	roost_dragon = SkyDragon.new()
+	roost_dragon.name = "RoostDragon"
+	roost_dragon.sky_scene = self
+	add_child(roost_dragon)
+	roost_dragon.setup_roost(camera,DragonRoost.new())
+
+## Its breath and glow, seen only once its mountain stands.
+func _roost_frame(delta: float) -> void:
+	if roost_dragon == null: return
+	var isle := _motif_isle("dragon_roost")
+	roost_dragon.visible = isle == null or isle.stands()
+	roost_dragon.advance(delta)
 
 ## The flying dragon (scripts/sky_dragon.gd) round the archipelago: the
 ## motif isles (within 700 m) are what it threads between and attacks.
