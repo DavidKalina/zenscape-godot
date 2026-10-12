@@ -103,8 +103,9 @@ func _build_water() -> void:
 	art.add_child(fall_node)
 
 ## The plane's tokens: in over the beach, skimming the nave's axis, out
-## through the south row's gap, back through a standing bay, up through the
-## broken vault, down the fall.
+## through the south row's gap at the crossing, back across and out through
+## the north row's great arch facing it, up through the broken vault, down
+## the fall.
 static func nave_tokens() -> Array:
 	var c := NaveArt.C
 	var w := NaveArt.W
@@ -112,8 +113,8 @@ static func nave_tokens() -> Array:
 	var row := NaveArt.ROW_Z
 	return [
 		["dn:skim","air","skim",[Vector3(c.x-30.0,w+1.1,c.y),Vector3(c.x-22.0,w+1.1,c.y),Vector3(c.x-14.0,w+1.1,c.y),Vector3(c.x-6.0,w+1.1,c.y)]],
-		["dn:gap","air","thread",[Vector3(c.x-8.1,w+1.5,c.y+row)]],
-		["dn:bay","air","thread",[Vector3(c.x-18.9,w+1.8,c.y-row)]],
+		["dn:gap","air","thread",[Vector3(c.x+NaveArt.cross_mid(),w+1.5,c.y+row)]],
+		["dn:bay","air","thread",[Vector3(c.x+NaveArt.cross_mid(),w+1.8,c.y-row)]],
 		["dn:vault","air","thread",[Vector3(c.x+18.0,w+2.6,c.y),Vector3(c.x+25.0,w+6.8,c.y)]],
 		["dn:fall","air","dive",[Vector3(lip.x,w-5.0,lip.z-3.0),Vector3(lip.x,w-12.0,lip.z-5.0)]],
 		["dn:keel","under","keel",[Vector3(c.x,w-NaveArt.KEEL-4.0,c.y)]],

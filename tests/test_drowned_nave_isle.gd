@@ -3,7 +3,7 @@ extends SceneTree
 ## builds within its triangle budget and the pilot starts dry on the beach;
 ## no hole in the ground; the water is skimmed as the turf is; the plane's
 ## lines are clear of stone (the nave's axis along the water, the south
-## row's gap, a standing bay, the pull-up past the chancel's springers);
+## row's gap and the north row's great arch at the crossing, the pull-up past the chancel's springers);
 ## and on foot: the causeway hopped down the nave from stone to stone, the
 ## grand stair walked up the apse to the lookout, the moat swum, every
 ## stone's walked top where it is drawn.
@@ -178,14 +178,25 @@ func _skim_lines() -> void:
 	var w := NaveArt.W
 	var axis := _line_clear(Vector3(c.x-36.0,w+1.1,c.y),Vector3(c.x+22.0,w+1.1,c.y))
 	check(axis.hits == 0,"Skim: the nave's axis from the beach to the chancel is clear of stone at 1.1 m over the water (%d hits, first %s)" % [axis.hits,str(axis.first)])
-	var gap := _line_clear(Vector3(c.x-8.1,w+1.5,c.y),Vector3(c.x-8.1,w+1.5,c.y+10.0))
-	check(gap.hits == 0,"Skim: out through the south row's gap (%d hits, first %s)" % [gap.hits,str(gap.first)])
-	var bay := _line_clear(Vector3(c.x-18.9,w+1.8,c.y),Vector3(c.x-18.9,w+1.8,c.y-10.0))
-	check(bay.hits == 0,"Skim: out through a standing bay of the north row (%d hits, first %s)" % [bay.hits,str(bay.first)])
+	# The crossing: out through the south row's gap, back and out through the
+	# north row's great arch facing it (NaveArt CROSS, an opening).
+	var x := c.x+NaveArt.cross_mid()
+	var gap := _line_clear(Vector3(x,w+1.5,c.y),Vector3(x,w+1.5,c.y+10.0))
+	check(gap.hits == 0,"Skim: out through the south row's gap at the crossing (%d hits, first %s)" % [gap.hits,str(gap.first)])
+	var bay := _line_clear(Vector3(x,w+1.8,c.y),Vector3(x,w+1.8,c.y-10.0))
+	check(bay.hits == 0,"Skim: out through the north row's great arch standing at the crossing (%d hits, first %s)" % [bay.hits,str(bay.first)])
+	# Both a wing's room and more off its piers' stone (the gap's stubs, the
+	# great arch's piers): the crossing is CROSS_CLEAR, THREAD-class.
+	for side: float in [-1.0,1.0]:
+		for off: float in [-1.0,1.0]:
+			var edge := x+off*(NaveArt.CROSS_CLEAR*0.5-1.6)
+			var row := _line_clear(Vector3(edge,w+1.6,c.y),Vector3(edge,w+1.6,c.y+side*10.0))
+			check(row.hits == 0,"Skim: the crossing's %s row clear %.1f m off its middle (%d hits, first %s)" % ["south" if side > 0.0 else "north",edge-x,row.hits,str(row.first)])
 	var pull := _line_clear(Vector3(c.x+14.0,w+1.5,c.y),Vector3(c.x+25.0,w+6.8,c.y))
 	check(pull.hits == 0,"Skim: the pull-up past the chancel's springers (%d hits, first %s)" % [pull.hits,str(pull.first)])
 	# And the stone is there to be missed: a bay's pier, a stub.
-	var pier := _line_clear(Vector3(c.x-5.4,w+1.5,c.y-NaveArt.ROW_Z-4.0),Vector3(c.x-5.4,w+1.5,c.y-NaveArt.ROW_Z+4.0))
+	var px: float = c.x+float(NaveArt.PIERS[NaveArt.CROSS_AT-1])
+	var pier := _line_clear(Vector3(px,w+1.5,c.y-NaveArt.ROW_Z-4.0),Vector3(px,w+1.5,c.y-NaveArt.ROW_Z+4.0))
 	check(pier.hits > 0,"Skim: a pier of the north row stands in the way across the row (%d hits)" % pier.hits)
 
 ## The causeway hopped down the nave from stone to stone, from the first

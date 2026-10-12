@@ -49,7 +49,8 @@ class NaveBirds extends "res://scripts/kit_isle/kit_birds.gd":
 		found["north_walk"] = along.call(-NaveArt.ROW_Z,-26.0,26.0)
 		found["south_walk"] = along.call(NaveArt.ROW_Z,-26.0,26.0)
 		var stubs: Array = []
-		for x: float in [-10.8,-5.4]:
+		for j: int in NaveArt.SOUTH_STUBS:
+			var x: float = NaveArt.PIERS[j]
 			for dz: float in [-0.3,0.0,0.3]: stubs.append(c+Vector2(x+dz,NaveArt.ROW_Z))
 		found["stubs"] = stubs
 		var plateau: Array = []
@@ -78,9 +79,10 @@ class NaveTokens extends "res://scripts/kit_isle/kit_tokens.gd":
 		var g := NaveArt.world(Vector2(NaveArt.GABLE_X-3.0,-1.5))
 		out.append({"name":"lookout","at":Vector3(g.x,NaveArt.plateau_top()+0.85,g.y),"move":"Up the apse's grand stair to the rose gable"})
 		# 3. The north arcade's wall-walk, up the buttress.
-		out.append({"name":"walk","at":Vector3(c.x-13.5,NaveArt.NAVE_FLOOR+NaveArt.TALL+0.85,c.y-NaveArt.ROW_Z),"move":"Up the buttress onto the arcade's wall-walk"})
+		out.append({"name":"walk","at":Vector3(c.x+NaveArt.bay_mid(NaveArt.NORTH_BUTTRESS+1),NaveArt.NAVE_FLOOR+NaveArt.TALL+0.85,c.y-NaveArt.ROW_Z),"move":"Up the buttress onto the arcade's wall-walk"})
 		# 4. A snapped pier in the south row, its stub the top.
-		out.append({"name":"stub","at":Vector3(c.x-10.8,NaveArt.NAVE_FLOOR+3.1+0.85,c.y+NaveArt.ROW_Z),"move":"Onto the snapped pier"})
+		var stub: int = NaveArt.CROSS_AT+1
+		out.append({"name":"stub","at":Vector3(c.x+float(NaveArt.PIERS[stub]),NaveArt.NAVE_FLOOR+float(NaveArt.SOUTH_STUBS[stub])+0.85,c.y+NaveArt.ROW_Z),"move":"Onto the snapped pier"})
 		# 5. The spill's bank, by the slabs over the channel.
 		var lp := NaveArt.lip()
 		var sz := c.y-32.0
