@@ -114,8 +114,9 @@ func _build() -> void:
 func _art(_root: Node3D) -> void:
 	_part(Vector3(width,height,length),Vector3(0.0,height*0.5,0.0),true)
 
-## A box part of the skin: `tinted` ones change colour with the tell.
-func _part(size: Vector3, at: Vector3, tinted := false, colour := Color.WHITE) -> void:
+## A box part of the skin (or of `parent`, a pivot in it): `tinted` ones
+## change colour with the tell.
+func _part(size: Vector3, at: Vector3, tinted := false, colour := Color.WHITE, parent: Node3D = null) -> MeshInstance3D:
 	var m := MeshInstance3D.new()
 	var mesh := BoxMesh.new()
 	mesh.size = size
@@ -127,7 +128,8 @@ func _part(size: Vector3, at: Vector3, tinted := false, colour := Color.WHITE) -
 		own.albedo_color = colour
 		own.roughness = 0.9
 		m.material_override = own
-	skin.add_child(m)
+	(parent if parent != null else skin).add_child(m)
+	return m
 
 # --- The tell --------------------------------------------------------------------
 
@@ -208,7 +210,7 @@ func _move(delta: float) -> void:
 		vel.y -= float(knobs.gravity)*delta
 		var was_y := position.y
 		position += vel*delta
-		skin.rotation.x = minf(skin.rotation.x+1.6*delta,1.2)
+		_air_pose(delta)
 		if vel.y <= 0.0:
 			var g: float = field.floor_under(position,was_y-position.y+0.05,0.05,rid)
 			if g != -INF:
@@ -222,6 +224,10 @@ func _move(delta: float) -> void:
 			field.gone_count += 1
 			fell.emit(self)
 			queue_free()
+
+## Its pose while it falls (override): the front tipping up.
+func _air_pose(delta: float) -> void:
+	skin.rotation.x = minf(skin.rotation.x+1.6*delta,1.2)
 
 ## Slows the flat velocity by `decel` m/s^2; true once at rest.
 func slow(delta: float, decel: float) -> bool:
