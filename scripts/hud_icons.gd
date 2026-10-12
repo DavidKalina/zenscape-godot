@@ -231,6 +231,8 @@ static func _build() -> void:
 	# The Life pocket's creatures and signs (seeds 46-54): see `_life` below.
 	_life()
 	_add("crystal","Crystal","Quartz","#9b7fc9",["M7.5 21 L5.5 11 L8.5 6 L11.5 11 L9.5 21Z","M13 21 L12 8 L15 3 L18 8 L16.5 21Z"],[],8)
+	# The isles' on-foot token (scripts/rune_token.gd): a diamond in its ring.
+	_add("rune","Rune","Ruins","#8fd3e6",["M12 2.5 L17 11 L12 21.5 L7 11Z"],["M2.5 12.5 Q12 6.5 21.5 11.5 Q12 17.5 2.5 12.5"],90)
 	_add("snow","Frost","Winter","#7fbfd0",_snowflake(),[],9)
 	# Shaping tools (the tool roll).
 	# The Modeller (id "hand", the roll's first pocket, once the bare Hand's): a

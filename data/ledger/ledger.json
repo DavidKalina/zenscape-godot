@@ -1,0 +1,11 @@
+{
+	"format": 1,
+	"note": "The ledger's index (docs/design/ledger/round1.md): the objective types, the isle card's rows they count under (in the card's order), and the region files under data/ledger/.",
+	"types": {
+		"token": {"row": "glyphs"}
+	},
+	"rows": [
+		{"id": "glyphs", "icon": "rune", "label": "Runes"}
+	],
+	"regions": ["ruins"]
+}

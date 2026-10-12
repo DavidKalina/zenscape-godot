@@ -45,9 +45,10 @@ func id() -> String:
 func isle_name() -> String:
 	return "sundered gorge"
 
-## Placeholder name, line and finds until the isle is named.
+## Placeholder name and line until the isle is named; its finds are the
+## ledger's (scripts/ledger/ledger.gd `card`).
 func isle_card() -> Dictionary:
-	return {"name":"The Sundered Gorge","epithet":"Split by a word no one remembers","finds":[["wildflower","Glyphs",1,6],["snow","Echoes",0,3],["bridge","Hidden ways",0,3]]}
+	return Ledger.shared().card(id(),{"name":"The Sundered Gorge","epithet":"Split by a word no one remembers"})
 
 func top() -> float:
 	return Gorge.TOP

@@ -95,6 +95,9 @@ extends "res://studies/kit_isle.gd"
 ## full-bodied dragon (scripts/sky_dragon.gd) rises out of the cloud sea and
 ## roams the archipelago, now and then low over the isle; V puts the camera
 ## on it. Its other flags are its own.
+## --watcher: a stranger on the south rim, telescope up, watching a glint
+## on the rune serpent's back (scripts/kit_isle/watcher.gd, docs/design/
+## watcher/round1.md).
 ## --dragon-ride (round 5) starts the pilot on foot on the isle it grips, to
 ## ride the sag and be flung by the snap; G makes it let go.
 ## The blast is a gust for the plane too (round 10, scripts/dragon_gale.gd
@@ -299,9 +302,10 @@ func _build_art() -> void:
 func isle_name() -> String:
 	return "aqueduct isle"
 
-## Placeholder name, line and finds until the isle is named.
+## Placeholder name and line until the isle is named; its finds are the
+## ledger's (scripts/ledger/ledger.gd `card`).
 func isle_card() -> Dictionary:
-	return {"name":"The Aqueduct of Veyl","epithet":"Where the old water still walks the sky","finds":[["wildflower","Glyphs",2,7],["crystal","Lodestones",0,1],["bridge","Hidden ways",1,3]]}
+	return Ledger.shared().card(Ledger.isle_id_of(self),{"name":"The Aqueduct of Veyl","epithet":"Where the old water still walks the sky"})
 
 func isle_top() -> float:
 	return Art.TOP
@@ -347,6 +351,16 @@ func lock_target(at: Vector3) -> Dictionary:
 			near = d
 			best = target
 	return best
+
+## The telescope's isles: this one and the motif isles that stand.
+func sight_isles() -> Array:
+	var isles := super.sight_isles()
+	if motifs == null: return isles
+	for isle: Node3D in motifs.isles:
+		if not isle.stands(): continue
+		var c: Vector3 = isle.circle()
+		isles.append({"middle":Vector3(c.x,0.0,c.y),"radius":c.z,"top":isle.isle_top(),"isle":isle})
+	return isles
 
 ## The cloister tarn's water (its surface on its own layer, scripts/
 ## kit_isle/motif_cloister_tarn.gd WATER_LAYER) is skimmed as the turf is,
@@ -552,10 +566,21 @@ func _add_life() -> void:
 	super._add_life()
 	if dragon_roost: _build_roost_dragon()
 	elif dragon_on: _build_sky_dragon()
+	if Watcher.wanted() and sky != null and sky.get("serpent") != null:
+		watcher = Watcher.new()
+		add_child(watcher)
+		watcher.setup(self)
 	if NightLights.wanted(preload("res://scripts/launch_args.gd").user_args()):
 		night_lights = NightLights.new()
 		add_child(night_lights)
 		night_lights.setup(self,night_lamp_spots)
+
+# --- The watcher (scripts/kit_isle/watcher.gd, --watcher) ----------------------------
+
+## A stranger on the south rim, telescope up, following a glint on the
+## serpent's back (docs/design/watcher/round1.md); null without --watcher.
+const Watcher = preload("res://scripts/kit_isle/watcher.gd")
+var watcher: Node3D = null
 
 # --- The night's lights (scripts/kit_isle/kit_night_lights.gd) ----------------------
 
@@ -567,7 +592,7 @@ var night_lights: Node3D = null
 ## Where the lanterns stand (x, z): a pair behind the parked plane, the
 ## grand stair's foot and head, the path from the plane to it, the circle's
 ## way in, the aqueduct's head, the heel stone, and either side of the
-## gate on the far island.
+## gate on the far island (Art.GATE, which follows the aqueduct's run).
 func night_lamp_spots() -> Array:
 	var spots: Array = []
 	if parked:
@@ -577,6 +602,13 @@ func night_lamp_spots() -> Array:
 			var p := parked_at-forward*6.5+right*3.2*side
 			spots.append(Vector3(p.x,parked_at.y+3.5,p.z))
 	spots.append_array(NIGHT_LAMPS)
+	# The circle's way in: on the summit's east side, NIGHT_WAY_IN degrees
+	# round from the drift's landing (its last stone onto the summit at 30
+	# degrees, 11 m out), so a hop up or down the drift doesn't land on it.
+	var way_in := Art.at_polar(NIGHT_WAY_IN.x,NIGHT_WAY_IN.y)
+	spots.append(Vector3(way_in.x,44.0,way_in.y))
+	# The gate on the far island (Art.GATE), either side, in front of it.
+	for side: float in [-1.0,1.0]: spots.append(Vector3(Art.GATE.x+3.2*side,33.5,Art.GATE.y+2.3))
 	return spots
 
 ## A Vector3 spot is x, the top of its ray down, z: under the floating
@@ -586,13 +618,12 @@ const NIGHT_LAMPS := [
 	Vector3(88.6,33.5,-3.4),Vector3(88.6,33.5,3.4),Vector2(77.5,2.8),
 	# The path from the plane toward the stair.
 	Vector3(92.0,33.5,2.5),
-	# The stone circle's way in (Art.HILL 61, 0), on its east side.
-	Vector3(71.5,44.0,-5.5),
 	# The aqueduct's head and the heel stone (Art.HEEL 118, 0).
 	Vector3(105.5,33.5,3.5),Vector3(115.5,33.5,1.8),
-	# The gate on the far island (its arch at 100, -62.5), either side.
-	Vector3(96.8,33.5,-60.2),Vector3(103.2,33.5,-60.2),
 ]
+## The circle's way-in lantern (Art.at_polar: degrees, m from Art.HILL).
+## Main stood it at 27.6 degrees, on the drift's landing (30, 11 m out).
+const NIGHT_WAY_IN := Vector2(15.0,11.85)
 
 ## The kit's on-foot hint, and the dragon's line while it holds the treasure.
 func _foot_text() -> String:

@@ -33,9 +33,10 @@ func id() -> String:
 func isle_name() -> String:
 	return "bell spires"
 
-## Placeholder name, line and finds until the isle is named.
+## Placeholder name and line until the isle is named; its finds are the
+## ledger's (scripts/ledger/ledger.gd `card`).
 func isle_card() -> Dictionary:
-	return {"name":"Spires of the Silent Bell","epithet":"Rung once, when the sky was young","finds":[["wildflower","Glyphs",0,6],["lamp","Bells",1,4],["bridge","Hidden ways",0,2]]}
+	return Ledger.shared().card(id(),{"name":"Spires of the Silent Bell","epithet":"Rung once, when the sky was young"})
 
 func top() -> float:
 	return Spires.TOP
@@ -113,7 +114,7 @@ func _crowns(l: Dictionary) -> void:
 	var low: Dictionary = l.spires.low
 	var arch: Node3D = RuinKit.arch(65,0.55)
 	var out := (Spires.HERO-(low.c as Vector2)).normalized()
-	var at: Vector2 = (low.c as Vector2)+out*1.2
+	var at: Vector2 = (low.c as Vector2)+out*float(Spires.ARCHED.low)
 	arch.transform = Transform3D(facing(out),Vector3(at.x,Spires.top_height(low,at)-0.1,at.y))
 	art.add_child(arch)
 	var fh: Dictionary = l.spires.fin_high

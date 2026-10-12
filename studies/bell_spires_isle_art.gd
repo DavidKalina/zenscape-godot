@@ -40,11 +40,12 @@ const LOW := Vector2(101.0,-12.0)
 ## narrowest (low down, where the beds are widest): room to carve a
 ## climbing turn up and through, 4.2 m past each wingtip at plane 2
 ## (WorldScale.gap(6): 11.2 m; the narrowest was 6.2, by the low stack).
-## PASS_ROOM: between any two of the others, 2.8 m past each tip (8.4 m;
-## it was 7.9, the south stack by the fin). The chimney is not flown level:
+## PASS_ROOM: between any two of the others, 3.6 m past each tip (10.1 m:
+## the least there was, 10.05 by the south stack and the fin's low stack,
+## kept when the arched stacks grew; it was 7.9 before that). The chimney is not flown level:
 ## it is a walker's wall-kick gap, threaded on a knife edge (CHIMNEY).
 const CARVE_ROOM := 6.0
-const PASS_ROOM := 4.0
+const PASS_ROOM := 5.2
 const RISER := RuinKit.RISER
 const TREAD := RuinKit.TREAD
 ## The cut stair: its band out from the rock's face (in under it, out
@@ -73,6 +74,14 @@ const SPANS := {"low":0.0,"gable":10.0,"fin":9.0,"needle":11.0}
 const CHIMNEY := 2.6
 ## Radii (m) and seeds.
 const RADII := {"hero":8.2,"low":4.6,"gable":4.0,"fin_high":4.6,"fin_low":4.4,"needle":3.6}
+## The stacks crowned by the kit's pointed arch (the south stack's bell
+## gable, the low stack's arch, scripts/kit_isle/motif_bell_spires.gd) and
+## how far (m) out toward the hero each arch stands from the middle. Their
+## RADII are least sizes: each grows until its top holds the arch's
+## footprint (RuinKit.arch_foot, so with the flown span) plus ARCH_SEAT of
+## rock past the buttress toes all round (`_fit_arch`).
+const ARCHED := {"gable":0.0,"low":1.2}
+const ARCH_SEAT := 0.4
 const ROCK := Color("675b50")
 ## The spires' rock: the isle's, drawn a little toward a cool basalt grey.
 const BASALT := Color("4d4945")
@@ -106,7 +115,7 @@ static func layout() -> Dictionary:
 	# Each spire off a bridge landing: along the landing's middle line.
 	var bridges: Array = []
 	var low_top := TOP+LOW_STEPS*RISER
-	spires.low = _make_spire("low",LOW,RADII.low,TOP-1.5,low_top,false,502,[])
+	spires.low = _fit_arch(_make_spire("low",LOW,RADII.low,TOP-1.5,low_top,false,502,[]))
 	_stand_off([spires.low],hero,Vector2.from_angle(a0),carve)
 	for landing: Dictionary in hs.landings:
 		var kind: String = landing.kind
@@ -118,7 +127,7 @@ static func layout() -> Dictionary:
 		match kind:
 			"gable":
 				var c := at+dir*RADII.gable*0.85
-				spires.gable = _make_spire("gable",c,RADII.gable,y-26.0,y,true,503,[])
+				spires.gable = _fit_arch(_make_spire("gable",c,RADII.gable,y-26.0,y,true,503,[]))
 				_stand_off([spires.gable],hero,dir,carve)
 			"needle":
 				var c := at+dir*RADII.needle*0.85
@@ -276,6 +285,20 @@ static func _make_spire(name: String, c: Vector2, r: float, foot: float, top: fl
 		var s_first: float = (beds[0] as Array)[2]
 		var deep := (top-foot)*0.45
 		s.keel = [[foot-deep*0.45,foot,s_first*0.62,s_first],[foot-deep,foot-deep*0.45,0.08,s_first*0.62]]
+	return s
+
+## An arched stack (ARCHED) grown so its top holds the arch: its radius
+## set so the narrowest of its top's plan reaches the arch's far corner
+## (its half width, its half depth plus its stand out) and ARCH_SEAT more.
+## Its beds' scales don't hang on the radius, so only the radius moves.
+static func _fit_arch(s: Dictionary) -> Dictionary:
+	var foot := RuinKit.arch_foot()
+	var need := Vector2(foot.x,foot.y+float(ARCHED[s.name])).length()+ARCH_SEAT
+	var last: Array = s.beds[s.beds.size()-1]
+	var least := INF
+	for i in range(RING*4):
+		least = minf(least,plan_r(s,TAU*i/(RING*4),float(last[3])))
+	s.r = maxf(float(s.r),float(s.r)*need/least)
 	return s
 
 ## The spire's plan radius at angle `a` for bed scale `scale`: its waves,

@@ -1,0 +1,83 @@
+{
+	"format": 1,
+	"id": "ruins",
+	"name": "The Ruins",
+	"note": "Region one: the aqueduct isle and the eight motif isles round it (scripts/kit_isle/motif_sky.gd PLACES). An objective's id is <isle>/<slug>; a token's slug is the name its isle's spots give it (scripts/kit_isle/kit_tokens.gd `spots_for`). The names are placeholders.",
+	"isles": [
+		{"id": "aqueduct_isle", "objectives": [
+			{"slug": "slot", "type": "token", "name": "Between Wall and Water"},
+			{"slug": "wallrun", "type": "token", "name": "Along the Blind Wall"},
+			{"slug": "span", "type": "token", "name": "Where the Channel Broke"},
+			{"slug": "sarsen", "type": "token", "name": "The Stone That Would Not Fall"},
+			{"slug": "trilithon", "type": "token", "name": "Atop the Great Gate"},
+			{"slug": "drift", "type": "token", "name": "Beneath the Drifting Lintel"},
+			{"slug": "stumps", "type": "token", "name": "Back Across the Broken Piers"}
+		]},
+		{"id": "bell_spires", "objectives": [
+			{"slug": "chimney", "type": "token", "name": "Between the Twin Stacks"},
+			{"slug": "drift", "type": "token", "name": "Stepping Stones of Air"},
+			{"slug": "high_bridge", "type": "token", "name": "Halfway to the Needle"},
+			{"slug": "turret", "type": "token", "name": "The Needle's Broken Crown"},
+			{"slug": "needle_stones", "type": "token", "name": "The Last Stone Before the Summit"},
+			{"slug": "belfry_head", "type": "token", "name": "Above the Silent Bell"},
+			{"slug": "fin_top", "type": "token", "name": "The Fin's High Shoulder"}
+		]},
+		{"id": "cloister_tarn", "objectives": [
+			{"slug": "stubs", "type": "token", "name": "Across the Snapped Piers"},
+			{"slug": "lavabo", "type": "token", "name": "The Basin of Fallen Drums"},
+			{"slug": "crag", "type": "token", "name": "The Crag Above the Mirror"},
+			{"slug": "gate", "type": "token", "name": "The Water Gate"},
+			{"slug": "tiers", "type": "token", "name": "Out of the Alley"},
+			{"slug": "bridge", "type": "token", "name": "The Swaying Crossing"},
+			{"slug": "stones", "type": "token", "name": "From the Crag to the North Isle"}
+		]},
+		{"id": "sundered_gorge", "objectives": [
+			{"slug": "tower", "type": "token", "name": "The Gate Tower's Crown"},
+			{"slug": "crown_stones", "type": "token", "name": "Beside the Rope Bridge"},
+			{"slug": "chimney", "type": "token", "name": "Up the Split Pillar"},
+			{"slug": "mist", "type": "token", "name": "The Stone by the Fall"},
+			{"slug": "crown", "type": "token", "name": "The Fallen Crown"},
+			{"slug": "gap", "type": "token", "name": "Between the Fragments"},
+			{"slug": "tor", "type": "token", "name": "The West Tor"}
+		]},
+		{"id": "colonnade_spine", "objectives": [
+			{"slug": "cross_low", "type": "token", "name": "Between the Rows, Below"},
+			{"slug": "cross_high", "type": "token", "name": "Between the Rows, Above"},
+			{"slug": "cleft", "type": "token", "name": "Drums in the Cleft"},
+			{"slug": "south_3", "type": "token", "name": "The South Flank's Shelves"},
+			{"slug": "pulpit", "type": "token", "name": "The Pulpit Over Nothing"},
+			{"slug": "bridge", "type": "token", "name": "In the Tail's Curl"}
+		]},
+		{"id": "broken_ring", "objectives": [
+			{"slug": "first_bridge", "type": "token", "name": "The First Crossing"},
+			{"slug": "stones_low", "type": "token", "name": "Low Stones, Rising"},
+			{"slug": "jump", "type": "token", "name": "The Gap Past the Fourth"},
+			{"slug": "stones_high", "type": "token", "name": "High Stones, Rising"},
+			{"slug": "turret", "type": "token", "name": "Heart of the Circle"},
+			{"slug": "summit", "type": "token", "name": "The Ring's Last Stone"}
+		]},
+		{"id": "drowned_nave", "objectives": [
+			{"slug": "causeway", "type": "token", "name": "Down the Drowned Aisle"},
+			{"slug": "lookout", "type": "token", "name": "Under the Rose Gable"},
+			{"slug": "walk", "type": "token", "name": "Atop the Arcade"},
+			{"slug": "stub", "type": "token", "name": "The Snapped Pier"},
+			{"slug": "spill", "type": "token", "name": "Where the Nave Spills Over"}
+		]},
+		{"id": "stair_clouds", "objectives": [
+			{"slug": "landing_1", "type": "token", "name": "The First Landing"},
+			{"slug": "landing_3", "type": "token", "name": "Round the Mesa"},
+			{"slug": "landing_5", "type": "token", "name": "High Over the Lawn"},
+			{"slug": "landing_7", "type": "token", "name": "One Flight Short"},
+			{"slug": "gate", "type": "token", "name": "The Open Gate"},
+			{"slug": "pinnacle", "type": "token", "name": "The Hanging Pinnacle"}
+		]},
+		{"id": "hollow_keel", "objectives": [
+			{"slug": "chapel", "type": "token", "name": "To the Rose and Back"},
+			{"slug": "turn", "type": "token", "name": "The Turn of the Grand Stair"},
+			{"slug": "vault", "type": "token", "name": "Beneath the Keel's Shadow"},
+			{"slug": "aisle", "type": "token", "name": "Among the Hall's Columns"},
+			{"slug": "porch", "type": "token", "name": "The Porch in the Keel"},
+			{"slug": "islet", "type": "token", "name": "The Hanging Islet"}
+		]}
+	]
+}

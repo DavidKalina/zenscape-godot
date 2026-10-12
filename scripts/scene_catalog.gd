@@ -78,6 +78,8 @@ const ENTRIES: Array[Dictionary] = [
 		"detail":"Five serpents nose to tail down long descents: carve down one, leap off its head onto the next. T: the last gap again, 5: top of a descent."},
 	{"id":"interactables_yard","group":"On-foot greyboxes","title":"Interactables yard","scene":"res://studies/interactables_yard.tscn","args":[],
 		"detail":"Bobbing and drifting slabs, swing ropes and a balustrade down a grand stair, side by side for tuning. 1-4: pieces, F4: their feel."},
+	{"id":"snag_study","group":"On-foot greyboxes","title":"Snag study","scene":"res://studies/snag_study.tscn","args":[],
+		"detail":"A sky-folk plane flies a fixed low loop with a part on a rope: time a jump, long jump or updraft to snatch it. 1-4: spots."},
 	{"id":"pack_ruins_archipelago","group":"On-foot greyboxes","title":"Ruins archipelago","scene":"res://studies/character_study.tscn","args":["--pack=ruins_archipelago"],
 		"detail":"Island pack: floating ruins of an old city to platform across. 1-7: stations."},
 	{"id":"pack_sky_village","group":"On-foot greyboxes","title":"Sky village","scene":"res://studies/character_study.tscn","args":["--pack=sky_village"],
@@ -90,6 +92,10 @@ const ENTRIES: Array[Dictionary] = [
 		"detail":"One fixed sky island with a mountain chain, to walk round."},
 	{"id":"collectibles","group":"On-foot greyboxes","title":"Collectible gallery","scene":"res://studies/collectible_gallery.tscn","args":[],
 		"detail":"The glyph tokens hanging in open sky, to judge their look."},
+	{"id":"plane_parts","group":"On-foot greyboxes","title":"Plane parts gallery","scene":"res://studies/plane_parts_gallery.tscn","args":[],
+		"detail":"The plane's six lost parts as coins and as hovering pieces, beside the plane."},
+	{"id":"broken_plane","group":"On-foot greyboxes","title":"Broken plane gallery","scene":"res://studies/broken_plane_gallery.tscn","args":[],
+		"detail":"The plane broken, partly mended and mended; find a part to watch it seat back on."},
 ]
 
 ## The groups, in the order their first entry comes.

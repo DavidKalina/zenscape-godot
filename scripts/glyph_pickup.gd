@@ -11,10 +11,17 @@ extends Node3D
 ##   parent.add_child(holder)
 ##   ...
 ##   holder.take(seed)   # frees itself when done
+## Glyph "rune" stands the rune token instead (scripts/rune_token.gd): a
+## glowing diamond with a tilted ring orbiting it.
 const GlyphToken = preload("res://scripts/glyph_token.gd")
+const RuneToken = preload("res://scripts/rune_token.gd")
 const GlyphPuff = preload("res://scripts/glyph_puff.gd")
 const HudIcons = preload("res://scripts/hud_icons.gd")
 const HALO_SHADER = preload("res://shaders/glyph_halo.gdshader")
+
+## The rune's ring: how fast its tilt turns round the diamond (rad/s),
+## against the token's own turn.
+const ORBIT := -1.6
 
 ## The turn (rad/s) and the bob (m, and its pace).
 const TURN := 0.7
@@ -62,6 +69,9 @@ var motes: CPUParticles3D
 var _spin: Node3D
 var _token: MeshInstance3D
 var _halo: MeshInstance3D
+## The rune's ring and the pivot that turns its tilt (null for a glyph).
+var _ring: MeshInstance3D
+var _orbit: Node3D
 
 ## A holder for glyph `id`, `size` m across, its token turning in "Spin";
 ## `calm` for one only the pilot on foot takes.
@@ -80,7 +90,16 @@ func _build(glyph: String, token_size: float, bob_phase: float) -> void:
 	_spin = Node3D.new()
 	_spin.name = "Spin"
 	add_child(_spin)
-	_token = GlyphToken.token(id,size)
+	if id == "rune":
+		var tint := Color(HudIcons.item(id).tint)
+		_token = RuneToken.diamond(size,tint)
+		_orbit = Node3D.new()
+		_orbit.name = "Orbit"
+		_ring = RuneToken.ring(size,tint)
+		_orbit.add_child(_ring)
+		_spin.add_child(_orbit)
+	else:
+		_token = GlyphToken.token(id,size)
 	_spin.add_child(_token)
 	_halo = MeshInstance3D.new()
 	var quad := QuadMesh.new()
@@ -141,12 +160,17 @@ func glow_for(night: float) -> void:
 	var token_material := _token.material_override as ShaderMaterial
 	token_material.set_shader_parameter("glow",_glow)
 	token_material.set_shader_parameter("inner",INNER_NIGHT*night)
+	if _ring != null:
+		var ring_material := _ring.material_override as ShaderMaterial
+		ring_material.set_shader_parameter("glow",_glow)
+		ring_material.set_shader_parameter("inner",INNER_NIGHT*night)
 	(_halo.material_override as ShaderMaterial).set_shader_parameter("strength",_halo_strength)
 
 func _process(delta: float) -> void:
 	if taking: return
 	var share := CALM if calm else 1.0
 	if turning: _spin.rotation.y += TURN*share*delta
+	if _orbit != null and turning: _orbit.rotation.y += ORBIT*delta
 	_spin.position.y = sin(Time.get_ticks_msec()/1000.0*BOB_PACE*(CALM_PACE if calm else 1.0)+phase)*BOB*share
 
 ## The pickup: a short twist that winds faster as the token lifts a touch
@@ -174,6 +198,7 @@ func take(seed_value: int, puff_parent: Node = null, free_after := true) -> Twee
 		_spin.scale = Vector3.ONE*maxf(0.01,(1.0+0.08*k)*(1.0-gone*gone))
 		_halo.scale = Vector3.ONE*maxf(0.01,1.0-gone)
 		token_material.set_shader_parameter("glow",lerpf(_glow,1.6,k*k))
+		if _ring != null: (_ring.material_override as ShaderMaterial).set_shader_parameter("glow",lerpf(_glow,1.6,k*k))
 		halo_material.set_shader_parameter("strength",lerpf(_halo_strength,maxf(0.5,_halo_strength),k*k)),0.0,end,SPIN_TIME+SHRINK_TIME)
 	var parent := puff_parent if puff_parent != null else get_parent()
 	tween.parallel().tween_callback(func() -> void:
