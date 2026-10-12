@@ -2,10 +2,13 @@ extends SceneTree
 ## The cannon (scripts/cannon/, studies/cannon_yard.tscn), headless, the
 ## pilot driven by scripted input:
 ##   - touching a keg picks it up and it hovers after him; the jump is NOT
-##     muffled; loading takes one keg from the hover (the big one first);
-##   - a small keg's shot lands the pilot on the near isle, a big keg's on
-##     the far isle (aim at the cannon's rest);
-##   - an unloaded cannon doesn't fire (a dry click) and one keg is one shot.
+##     muffled;
+##   - firing yourself needs no keg, lands where the aim and power say
+##     (the near isle, a narrow target);
+##   - firing a keg uses one, flies the pilot's arc, and its marker is where
+##     the pilot then lands at the same aim and power; into the void it
+##     leaves a "lost" mark;
+##   - no keg: a keg shot only clicks, yourself still fires.
 ##   godot --headless --path . --script tests/test_cannon.gd
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const DT := 1.0/60.0
@@ -35,9 +38,9 @@ func run() -> void:
 	field = study.cannon_field
 	await physics_frame
 	_pickup_and_jump()
-	_loading()
-	_shots()
-	_dry_and_single()
+	_self_shots()
+	_keg_shots()
+	_no_keg()
 	print("cannon: %d failure(s)" % failures)
 	quit(1 if failures > 0 else 0)
 
@@ -75,42 +78,27 @@ func _pickup_and_jump() -> void:
 	check(gap < 1.5 and keg.global_position.distance_to(keg.home) > 2.0,"...and it hovers along after him (%.2f m off, %.1f m from where it lay)" % [gap,keg.global_position.distance_to(keg.home)])
 	var loaded_peak := _jump_peak(Vector3(2.0,0.0,6.0),keg)
 	check(field.carried.size() >= 1 and absf(loaded_peak-bare) < 0.03,"Carrying does not muffle the jump (%.3f m bare, %.3f m with a keg)" % [bare,loaded_peak])
-	var many := 0
-	for k: Node3D in field.kegs: if field.pick_up(k): many += 1
+	for k: Node3D in field.kegs: field.pick_up(k)
 	field.knobs.max_kegs = 3
 	check(field.carried.size() <= 3,"He can hold several kegs, up to the knob (%d)" % field.carried.size())
 
-func _loading() -> void:
-	var cannon: Node3D = field.cannons[0]
-	study.place(cannon.global_position+Vector3(4.0,0.0,0.0),Vector2(0.0,-1.0))
-	for k: Node3D in field.kegs: field.pick_up(k)
-	check(field.carried.size() == 3,"Three kegs carried")
-	study.script_want = Vector2(-1.0,0.0)
-	_tick(60)
-	study.script_want = Vector2.ZERO
-	check(cannon.loaded == "big" and field.carried.size() == 2,"Walking up loads the big keg from the hover (%s, %d left)" % [cannon.loaded,field.carried.size()])
-
-## Fires cannon `c` with a keg of `kind` and flies to the first touch;
-## returns the feet where he came down.
-func _fly(c: Node3D, kind: String) -> Vector3:
-	study.place(c.global_position+Vector3(4.0,0.0,0.0),Vector2(0.0,-1.0))
-	for k: Node3D in field.kegs:
-		if k.kind == kind and field.pick_up(k): break
-	study.script_want = Vector2(-1.0,0.0)
-	for i in 120:
-		study.tick(DT)
-		if c.loaded != "": break
-	study.script_want = Vector2.ZERO
+## Climbs into cannon `c` from the side (a use press), aim and power set.
+func _board(c: Node3D, yaw_deg: float, pitch_deg: float, notch: int) -> void:
+	study.place(c.global_position+Vector3(2.5,0.0,0.0),Vector2(0.0,-1.0))
 	_tick(2)
+
+func _climb(c: Node3D, yaw_deg: float, pitch_deg: float, notch: int) -> void:
 	field.script_use = true
 	_tick(2)
-	var boarded: bool = field.aboard == c
-	if not boarded: print("  (not aboard)")
+	c.set_aim(deg_to_rad(yaw_deg),deg_to_rad(pitch_deg))
+	c.set_power(notch)
+
+func _press_jump() -> void:
 	study.script_jump = true
 	_tick(1)
 	study.script_jump = false
-	var launched: bool = field.aboard == null and not m.grounded
-	if not launched: print("  (not launched)")
+
+func _land() -> Vector3:
 	var i := 0
 	while i < 900:
 		study.tick(DT)
@@ -121,48 +109,74 @@ func _fly(c: Node3D, kind: String) -> Vector3:
 func _in(r: Rect2, p: Vector3) -> bool:
 	return r.has_point(Vector2(p.x,p.z))
 
-func _shots() -> void:
+func _self_shots() -> void:
 	var a: Node3D = field.cannons[0]
-	var near := Rect2(-study.NEAR_WIDE*0.5,study.near_centre.z-study.NEAR_WIDE*0.5,study.NEAR_WIDE,study.NEAR_WIDE)
-	var far := Rect2(-study.FAR_WIDE*0.5,study.far_centre.z-study.FAR_DEPTH*0.5,study.FAR_WIDE,study.FAR_DEPTH)
-	var at := _fly(a,"small")
-	check(_in(near,at) and absf(at.y) < 0.1 and a.shots == 1,"A small keg's shot lands on the near isle (%.1f, %.1f, %.1f)" % [at.x,at.y,at.z])
+	var rects: Dictionary = study.target_rects()
+	_board(a,0,0,0)
+	check(field.carried.is_empty(),"No keg in hand")
+	_climb(a,0.0,40.0,1)
+	check(field.aboard == a,"Climbs in")
+	_press_jump()
+	var at := _land()
+	check(a.shots == 1 and _in(rects.near,at) and absf(at.y) < 0.1,"Firing yourself needs no keg: lands on the near isle (%.1f, %.1f, %.1f)" % [at.x,at.y,at.z])
 	check(m.move != "tumble","...a launch, not a tumble (move '%s')" % m.move)
-	at = _fly(a,"big")
-	check(_in(far,at) and absf(at.y) < 0.1,"A big keg's shot reaches the far isle (%.1f, %.1f, %.1f)" % [at.x,at.y,at.z])
+	var aim: Dictionary = study.AIMS.target_1
+	_board(a,0,0,0)
+	_climb(a,aim.yaw,aim.pitch,aim.notch)
+	_press_jump()
+	at = _land()
+	check(_in(rects.target_1,at) and absf(at.y) < 0.1,"The narrow target is reachable at its aim and power (%.1f, %.1f, %.1f)" % [at.x,at.y,at.z])
 	var b: Node3D = field.cannons[1]
-	at = _fly(b,"small")
-	check(_in(far,at) and absf(at.y) < 0.1,"The near isle's cannon with a small keg also reaches the far isle (%.1f, %.1f, %.1f)" % [at.x,at.y,at.z])
+	aim = study.AIMS.target_2
+	_board(b,0,0,0)
+	_climb(b,aim.yaw,aim.pitch,aim.notch)
+	_press_jump()
+	at = _land()
+	check(_in(rects.target_2,at) and absf(at.y) < 0.1,"...and the second cannon's (%.1f, %.1f, %.1f)" % [at.x,at.y,at.z])
 
-func _dry_and_single() -> void:
+func _fly_keg() -> void:
+	field.script_keg = true
+	_tick(1)
+	var i := 0
+	while not field._flying.is_empty() and i < 900:
+		_tick(1)
+		i += 1
+
+func _keg_shots() -> void:
+	var a: Node3D = field.cannons[0]
+	_board(a,0,0,0)
+	var k: Node3D = field.kegs[0]
+	field.pick_up(k)
+	_climb(a,8.0,45.0,1)
+	var shots: int = a.shots
+	_fly_keg()
+	check(field.carried.is_empty() and k.state == "spent" and a.shots == shots+1,"Firing a keg uses one")
+	check(field.markers.size() == 1 and field.markers[0].kind == "landed","...and leaves a landing marker")
+	var mark: Vector3 = field.markers[0].at
+	check(field.aboard == a and field.markers[0].node.is_inside_tree(),"...he stays in the cannon, the marker stays")
+	_press_jump()
+	var at := _land()
+	var off := Vector2(at.x-mark.x,at.z-mark.z).length()
+	check(off < 0.8 and absf(at.y-mark.y) < 0.1,"Then fired himself at the same aim and power, he lands on the keg's marker (%.2f m off; keg %.1f, %.1f; him %.1f, %.1f)" % [off,mark.x,mark.z,at.x,at.z])
+	# Into the void.
+	_board(a,0,0,0)
+	field.pick_up(field.kegs[1])
+	_climb(a,60.0,30.0,4)
+	_fly_keg()
+	var lost: Dictionary = field.markers[field.markers.size()-1]
+	check(lost.kind == "lost" and absf(lost.at.y-a.global_position.y) < 0.3 and field.heard.any(func(h: Array) -> bool: return h[0] == &"lost"),"A keg into the void leaves a puff at the isle-top height and a lost sound (y %.2f)" % lost.at.y)
+	field.reset()
+	check(field.markers.is_empty() and field.kegs.all(func(x: Node3D) -> bool: return x.state == "laid"),"R clears the markers and brings the kegs back")
+
+func _no_keg() -> void:
 	field.reset()
 	var a: Node3D = field.cannons[0]
-	study.place(a.global_position+Vector3(2.5,0.0,0.0),Vector2(0.0,-1.0))
-	_tick(2)
-	field.script_use = true
-	_tick(2)
-	check(field.aboard == a and a.loaded == "","Climbs into an empty cannon")
-	var was := m.feet
-	study.script_jump = true
-	_tick(1)
-	study.script_jump = false
-	_tick(30)
-	check(field.aboard == a and a.shots == 0 and m.feet.distance_to(was) < 0.1 and a.heard.any(func(h: Array) -> bool: return h[0] == &"click"),"An unloaded cannon doesn't fire: it clicks")
-	field.reset()
-	for k: Node3D in field.kegs:
-		if k.kind == "small": field.pick_up(k); break
-	field.load_from_hover(a)
-	check(a.loaded == "small","Loaded from the hover")
-	field.board(a)
-	study.script_jump = true
-	_tick(1)
-	study.script_jump = false
-	_tick(5)
-	check(a.shots == 1 and a.loaded == "","Fired")
-	field.board(a)
-	var peak := m.feet
-	study.script_jump = true
-	_tick(1)
-	study.script_jump = false
-	_tick(30)
-	check(a.shots == 1 and field.aboard == a,"One keg is one shot: a second press only clicks")
+	_board(a,0,0,0)
+	_climb(a,0.0,40.0,1)
+	var shots: int = a.shots
+	field.script_keg = true
+	_tick(3)
+	check(a.shots == shots and field.markers.is_empty() and field.aboard == a and a.heard.any(func(h: Array) -> bool: return h[0] == &"click"),"With no keg, the keg button only clicks")
+	_press_jump()
+	var at := _land()
+	check(a.shots == shots+1 and absf(at.y) < 0.1,"...and he can still fire himself")
