@@ -1,4 +1,5 @@
 extends SceneTree
+## suite: slow
 ## The motif families (docs/design/roguelike/motif-families.md, scripts/
 ## kit_isle/kit_motif.gd's family contract), headless: each family's
 ## default seed builds today's isle exactly (its built Art hashed,
