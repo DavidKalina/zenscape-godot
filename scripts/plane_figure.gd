@@ -744,9 +744,8 @@ func set_missing(ids: Array) -> void:
 	for id: String in FOUND:
 		_show(id,not _missing.has(id))
 		_glow(id,0.0,0.0)
-	_lean = 1.0 if _missing.has("wheel") else 0.0
-	_lean_to = _lean
-	if parked: transform = _parked_at*_leaning()
+	_lean_to = 1.0 if _missing.has("wheel") else 0.0
+	_relean(_lean_to)
 	_gleam_t = -1.0
 	_gleam(-1.0)
 	set_wear(_broken_wear(_missing.size()))
@@ -778,8 +777,7 @@ func set_found(id: String, seat := true) -> void:
 		s.t = SEAT+FLASH_FALL*8.0
 		s.snapped = true
 		_show(id,true)
-		_lean = _lean_to
-		if parked: transform = _parked_at*_leaning()
+		_relean(_lean_to)
 		set_wear(_broken_wear(_missing.size()))
 	_seating.append(s)
 	set_process(true)
@@ -830,8 +828,7 @@ func _process(delta: float) -> void:
 			_glow(id,0.0,0.0)
 			_seating.erase(s)
 	if _lean != _lean_to:
-		_lean = move_toward(_lean,_lean_to,delta/SEAT)
-		if parked: transform = _parked_at*_leaning()
+		_relean(move_toward(_lean,_lean_to,delta/SEAT))
 	if _wear != _wear_to:
 		_wear = move_toward(_wear,_wear_to,delta/_wear_ease)
 		_finish(_paints,_wear)
@@ -991,6 +988,14 @@ static func _puff_texture() -> Texture2D:
 	texture.height = 64
 	_puff_tex = texture
 	return texture
+
+## Leans it to `lean`, parked: what stands over the parked lean (the
+## ground scale's sizing about the wheels, scripts/plane_ground_scale.gd) is
+## kept, so a lean easing never undoes the plane's size.
+func _relean(lean: float) -> void:
+	var over := (_parked_at*_leaning()).affine_inverse()*transform if parked else Transform3D.IDENTITY
+	_lean = lean
+	if parked: transform = _parked_at*_leaning()*over
 
 ## Leaning onto the bare axle, as far as `_lean` (none, the identity).
 func _leaning() -> Transform3D:

@@ -287,12 +287,15 @@ func _fall() -> void:
 func _fit_one() -> void:
 	_by_plane()
 	var wear: float = study.plane_figure.get_wear()
+	var size_was: float = study.plane_figure.global_transform.basis.get_scale().x
 	study.board_parked()
 	check(not study.flying and arc.state.wheel == "fitted" and book.is_fitted("wheel") and not book.is_carried("wheel"),"Space by the plane fits the wheel (saved at once), no takeoff")
 	_frames(2.5)
 	check(not study.plane_figure.is_missing("wheel") and study.plane_figure.missing().size() == 5,"It seats on the plane (%d missing)" % study.plane_figure.missing().size())
 	check(study.plane_figure.get_wear() < wear-0.05,"The paint a step cleaner (%.2f to %.2f)" % [wear,study.plane_figure.get_wear()])
 	check(not arc.holders.has("wheel"),"Nothing carried left of it")
+	var size_now: float = study.plane_figure.global_transform.basis.get_scale().x
+	check(absf(size_now-size_was) < 0.01,"The plane keeps its size as the wheel straightens it (%.2fx to %.2fx)" % [size_was,size_now])
 	study.board_parked()
 	_frames(0.2)
 	check(not study.flying and arc.cough.playing(),"Five still missing: it won't start")
