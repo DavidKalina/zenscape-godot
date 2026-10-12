@@ -32,6 +32,10 @@ extends Node3D
 ## a plane is a dozen draws however finely it is made (the sky's traffic
 ## flies several, scripts/sky_traffic.gd).
 ##
+## Its loose pieces (`piece`: the cowl, propeller, windscreen, wheels, fin
+## and wingtip) are built apart, so the parts the pilot finds on foot
+## (scripts/plane_parts.gd) are drawn from the same geometry and paint.
+##
 ## Landed, it stands on its two wheels and a tail skid, nose up (`park`,
 ## scripts/plane_strip.gd `rest`), the pilot out, the propeller still.
 
@@ -48,6 +52,7 @@ const LEATHER := Color("5e3522")
 const BRASS := Color("d6ad62")
 const STRIPE := Color("f3ead6")
 const PROPWOOD := Color("7a4429")
+const STEEL := Color("3b3430")
 ## How weathered the paint is (folk_surface `wear`), the body's and the
 ## wings' cloth.
 const WEAR := Vector2(0.55,0.3)
@@ -68,6 +73,9 @@ const ROUND := 0.86
 const LOWER_Y := -0.1
 const UPPER_Y := 0.3
 const STAGGER := -0.06
+## The found wingtip (`piece` "wingtip") runs from this share of the upper
+## wing's half span out to its tip.
+const WINGTIP_FROM := 0.4
 ## The ailerons, out along the upper wing's trailing edge (fractions of its
 ## half span), and their depth (m); the elevator's depth.
 const AILERON_SPAN := Vector2(0.42,0.78)
@@ -148,33 +156,19 @@ var _vapour_clock := 0.0
 ## wing and scarf, each a Color; the wanderer's own plane takes none.
 func _init(livery := {}) -> void:
 	name = "Plane"
-	var wood := _paint(livery.get("body",WOOD),0.32,0.8,WEAR.x)
-	var dark := _paint(livery.get("dark",DARK),0.32,0.8,WEAR.x)
-	var trim := _paint(livery.get("trim",TRIM),0.32,0.8,WEAR.x)
-	var cream := _paint(livery.get("wing",WING),0.5,0.35,WEAR.y)
-	var leather := _paint(LEATHER,0.55,0.3,0.0)
-	var brass := _metal(BRASS,0.28)
-	var steel := _metal(Color("3b3430"),0.4)
+	var paint := paints(livery)
+	var wood: Material = paint.wood
+	var dark: Material = paint.dark
+	var trim: Material = paint.trim
+	var cream: Material = paint.cream
+	var leather: Material = paint.leather
+	var steel: Material = paint.steel
 	# The body runs along -Z, the nose forward: slim, deepest at the
 	# cockpit, tapering to a knife-edged tail post; a round terracotta cowl
-	# round the nose, its face dark, its lip and the spinner brass.
+	# round the nose (`piece` "cowl") and the brass spinner.
 	_add(_hull([Vector3(-0.47,0.13,0.135),Vector3(-0.36,0.142,0.15),Vector3(-0.1,0.146,0.158),Vector3(0.1,0.14,0.15),Vector3(0.3,0.105,0.12),Vector3(0.52,0.06,0.085),Vector3(0.72,0.016,0.05)],10),wood,Vector3.ZERO,Vector3.ZERO)
-	_add(_hull([Vector3(-0.62,0.1,0.1),Vector3(-0.6,0.125,0.125),Vector3(-0.55,0.14,0.145),Vector3(-0.47,0.143,0.149),Vector3(-0.44,0.139,0.146)],12),trim,Vector3.ZERO,Vector3.ZERO)
-	_add(FacetMesh.frustum(0.102,0.102,0.006,12),brass,Vector3(0.0,0.0,-0.619),Vector3(PI*0.5,0.0,0.0))
-	_add(FacetMesh.frustum(0.082,0.082,0.006,12),steel,Vector3(0.0,0.0,-0.623),Vector3(PI*0.5,0.0,0.0))
-	_add(_hull([Vector3(-0.76,0.0,0.0),Vector3(-0.73,0.03,0.03),Vector3(-0.67,0.052,0.052),Vector3(-0.63,0.056,0.056)],8),brass,Vector3.ZERO,Vector3.ZERO)
-	# A seam of rivets where the cowl meets the body, louvres let into its
-	# sides, and the exhaust stacks bent back into a pipe along each side.
-	for i in range(14):
-		var a := TAU*(float(i)+0.5)/14.0
-		_add(FacetMesh.gem(0.0055),brass,Vector3(cos(a)*0.141,sin(a)*0.148,-0.452),Vector3.ZERO)
-	for side in [-1.0,1.0]:
-		for i in range(4):
-			_add(_hull([Vector3(-0.035,0.0045,0.0045),Vector3(0.035,0.0045,0.0045)],4),steel,Vector3(0.139*side,0.042-0.026*i,-0.505),Vector3.ZERO)
-		for i in range(3):
-			var z := -0.56+0.045*i
-			_strut(Vector3(0.12*side,-0.05,z),Vector3(0.168*side,-0.075,z+0.03),steel,0.009)
-		_strut(Vector3(0.168*side,-0.075,-0.53),Vector3(0.152*side,-0.098,-0.22),steel,0.011)
+	_add_piece("cowl",paint)
+	_add_piece("spinner",paint)
 	# A terracotta band round the body before the tail.
 	_add(_hull([Vector3(0.42,0.085,0.104),Vector3(0.47,0.075,0.097)],10),trim,Vector3.ZERO,Vector3.ZERO)
 	# The cockpit: a dark tub let into the back, a padded leather coaming,
@@ -185,11 +179,7 @@ func _init(livery := {}) -> void:
 	var rim := _add(FacetMesh.frustum(0.108,0.096,0.03,12),leather,Vector3(0.0,0.2,0.22),Vector3.ZERO)
 	rim.scale = Vector3(1.0,1.0,1.3)
 	_add(_hull([Vector3(0.0,0.052,0.05),Vector3(0.1,0.04,0.035),Vector3(0.27,0.0,0.0)],8),dark,Vector3(0.0,0.17,0.33),Vector3(0.2,0.0,0.0))
-	var screen := _add(_prism([Vector2(0.0,0.0),Vector2(0.005,0.0),Vector2(0.027,0.068),Vector2(0.022,0.068)],0.11),_glass(),Vector3(0.0,0.2,0.1),Vector3.ZERO)
-	screen.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	screen.remove_meta("join")
-	for side in [-1.0,1.0]: _strut(Vector3(0.056*side,0.2,0.1),Vector3(0.056*side,0.268,0.124),brass,0.004)
-	_strut(Vector3(-0.056,0.268,0.124),Vector3(0.056,0.268,0.124),brass,0.003)
+	_add_piece("windscreen",paint)
 	_rig = PlanePilot.new(PersonKit.outfit(livery.get("scarf",PersonKit.SCARF)))
 	_rig.scale = Vector3.ONE*0.92
 	add_child(_rig)
@@ -237,17 +227,14 @@ func _init(livery := {}) -> void:
 		# wheels on it, their spokes covered in cream, brass hubs.
 		_strut(Vector3(0.07*side,-0.14,-0.38),Vector3(0.165*side,-0.33,-0.28),dark,0.009)
 		_strut(Vector3(0.07*side,-0.14,-0.17),Vector3(0.165*side,-0.33,-0.28),dark,0.009)
-		_add(FacetMesh.frustum(0.08,0.08,0.038,14),steel,Vector3(0.2*side,-0.33,-0.28),Vector3(0.0,0.0,PI*0.5))
-		_add(FacetMesh.frustum(0.058,0.058,0.044,14),cream,Vector3(0.2*side,-0.33,-0.28),Vector3(0.0,0.0,PI*0.5))
-		_add(FacetMesh.frustum(0.02,0.014,0.06,8),brass,Vector3(0.21*side,-0.33,-0.28),Vector3(0.0,0.0,PI*0.5))
+		_add_piece("wheel",paint,null,side)
 	_strut(Vector3(-0.17,-0.33,-0.28),Vector3(0.17,-0.33,-0.28),dark,0.008)
 	# A tail skid it rests on, parked (scripts/plane_strip.gd TAIL).
 	_strut(Vector3(0.0,-0.03,0.58),Vector3(0.0,-0.11,0.66),dark,0.01)
 	_add(FacetMesh.gem(0.018),steel,Vector3(0.0,-0.1,0.66),Vector3.ZERO)
 	# The tail: a terracotta fin with a cream rudder, a cream tailplane and
 	# its elevator either side of the rudder.
-	_add(_prism([Vector2(-0.1,0.0),Vector2(0.1,0.0),Vector2(0.1,0.2),Vector2(0.065,0.24),Vector2(0.02,0.25),Vector2(-0.03,0.2)],0.012),trim,Vector3(0.0,0.03,0.58),Vector3.ZERO)
-	_add(_prism([Vector2(0.1,-0.04),Vector2(0.15,-0.04),Vector2(0.165,0.1),Vector2(0.145,0.19),Vector2(0.1,0.2)],0.01),cream,Vector3(0.0,0.03,0.58),Vector3.ZERO)
+	_add_piece("fin",paint)
 	_add(_wing(0.25,-0.25,0.25,Vector3.ZERO,0.13,0.1,0.016,3),cream,Vector3(0.0,0.03,0.62),Vector3.ZERO)
 	_elevator = Node3D.new()
 	_elevator.position = Vector3(0.0,0.032,0.62+0.065)
@@ -263,13 +250,8 @@ func _init(livery := {}) -> void:
 	_prop = Node3D.new()
 	_prop.position = Vector3(0.0,0.0,-0.68)
 	add_child(_prop)
-	var varnish := _paint(PROPWOOD,0.3,0.9,0.0)
-	for turn in [0.0,PI]:
-		var lay := Basis(Vector3.BACK,turn)*Basis(Vector3.UP,0.32)*Basis(Vector3.RIGHT,-PI*0.5)
-		var blade := _add(_hull([Vector3(0.0,0.012,0.009),Vector3(0.04,0.026,0.008),Vector3(0.16,0.024,0.006),Vector3(0.235,0.017,0.005)],6),varnish,Vector3.ZERO,Vector3.ZERO,_prop)
-		blade.basis = lay
-		var sheath := _add(_hull([Vector3(0.232,0.0175,0.0055),Vector3(0.262,0.012,0.0045),Vector3(0.27,0.004,0.003)],6),brass,Vector3.ZERO,Vector3.ZERO,_prop)
-		sheath.basis = lay
+	var varnish: Material = paint.varnish
+	_add_piece("propeller",paint,_prop)
 	var blur := MeshInstance3D.new()
 	_blur = blur
 	var disc := QuadMesh.new()
@@ -559,6 +541,98 @@ func _place_mark(delta: float, at: Vector3, ground: Callable, landable: bool) ->
 	_mark.transform = Transform3D(Basis().scaled(Vector3(size,1.0,size)),Vector3(at.x,float(under)+0.06,at.z))
 	_mark_material.albedo_color = Color(1.0,0.97,0.88,close*lerpf(0.35,0.85,_mark_bright))
 
+# --- The pieces ---------------------------------------------------------------------
+
+## The plane's paints by name, `livery` (see `_init`) repainting the body,
+## dark, trim and wing; the pieces (`piece`) name theirs from these.
+static func paints(livery := {}) -> Dictionary:
+	return {
+		"wood":_paint(livery.get("body",WOOD),0.32,0.8,WEAR.x),
+		"dark":_paint(livery.get("dark",DARK),0.32,0.8,WEAR.x),
+		"trim":_paint(livery.get("trim",TRIM),0.32,0.8,WEAR.x),
+		"cream":_paint(livery.get("wing",WING),0.5,0.35,WEAR.y),
+		"leather":_paint(LEATHER,0.55,0.3,0.0),
+		"brass":_metal(BRASS,0.28),
+		"steel":_metal(STEEL,0.4),
+		"glass":_glass(),
+		"varnish":_paint(PROPWOOD,0.3,0.9,0.0),
+	}
+
+## Each paint's plain colour, for drawing a piece flat (scripts/
+## plane_parts.gd's coins).
+const PAINT_COLOURS := {"wood":WOOD,"dark":DARK,"trim":TRIM,"cream":WING,"leather":LEATHER,"brass":BRASS,"steel":STEEL,"glass":Color(0.78,0.88,0.92),"varnish":PROPWOOD}
+
+## One of the plane's pieces, as [mesh, paint name (`paints`), transform]
+## parts placed as on the figure: "cowl" (the terracotta ring round the
+## nose, its brass lip and dark face, the rivets, louvres and exhaust
+## stacks), "spinner", "propeller" (in the propeller's own frame, its hub at
+## the origin), "windscreen" (glass in a brass frame), "wheel" (`side` -1
+## the left, 1 the right), "fin" (the terracotta fin and cream rudder) and
+## "wingtip" (the upper wing's right tip with its roundel and aileron; the
+## figure draws that as part of the whole wing). The figure is built from
+## these, and the found parts are too (scripts/plane_parts.gd), so a found
+## part matches the plane it goes back on.
+static func piece(id: String, side := 1.0) -> Array:
+	var out := []
+	match id:
+		"cowl":
+			out.append([_hull([Vector3(-0.62,0.1,0.1),Vector3(-0.6,0.125,0.125),Vector3(-0.55,0.14,0.145),Vector3(-0.47,0.143,0.149),Vector3(-0.44,0.139,0.146)],12),"trim",Transform3D.IDENTITY])
+			out.append([FacetMesh.frustum(0.102,0.102,0.006,12),"brass",_placed(Vector3(0.0,0.0,-0.619),Vector3(PI*0.5,0.0,0.0))])
+			out.append([FacetMesh.frustum(0.082,0.082,0.006,12),"steel",_placed(Vector3(0.0,0.0,-0.623),Vector3(PI*0.5,0.0,0.0))])
+			# A seam of rivets where the cowl meets the body, louvres let
+			# into its sides, and the exhaust stacks bent back into a pipe
+			# along each side.
+			for i in range(14):
+				var a := TAU*(float(i)+0.5)/14.0
+				out.append([FacetMesh.gem(0.0055),"brass",_placed(Vector3(cos(a)*0.141,sin(a)*0.148,-0.452),Vector3.ZERO)])
+			for hand: float in [-1.0,1.0]:
+				for i in range(4):
+					out.append([_hull([Vector3(-0.035,0.0045,0.0045),Vector3(0.035,0.0045,0.0045)],4),"steel",_placed(Vector3(0.139*hand,0.042-0.026*i,-0.505),Vector3.ZERO)])
+				for i in range(3):
+					var z := -0.56+0.045*i
+					out.append([FacetMesh.frustum(0.009,0.009,1.0,4),"steel",_strut_at(Vector3(0.12*hand,-0.05,z),Vector3(0.168*hand,-0.075,z+0.03))])
+				out.append([FacetMesh.frustum(0.011,0.011,1.0,4),"steel",_strut_at(Vector3(0.168*hand,-0.075,-0.53),Vector3(0.152*hand,-0.098,-0.22))])
+		"spinner":
+			out.append([_hull([Vector3(-0.76,0.0,0.0),Vector3(-0.73,0.03,0.03),Vector3(-0.67,0.052,0.052),Vector3(-0.63,0.056,0.056)],8),"brass",Transform3D.IDENTITY])
+		"propeller":
+			# Two varnished wooden blades, brass-sheathed at the tips.
+			for turn: float in [0.0,PI]:
+				var lay := Transform3D(Basis(Vector3.BACK,turn)*Basis(Vector3.UP,0.32)*Basis(Vector3.RIGHT,-PI*0.5),Vector3.ZERO)
+				out.append([_hull([Vector3(0.0,0.012,0.009),Vector3(0.04,0.026,0.008),Vector3(0.16,0.024,0.006),Vector3(0.235,0.017,0.005)],6),"varnish",lay])
+				out.append([_hull([Vector3(0.232,0.0175,0.0055),Vector3(0.262,0.012,0.0045),Vector3(0.27,0.004,0.003)],6),"brass",lay])
+		"windscreen":
+			out.append([_prism([Vector2(0.0,0.0),Vector2(0.005,0.0),Vector2(0.027,0.068),Vector2(0.022,0.068)],0.11),"glass",_placed(Vector3(0.0,0.2,0.1),Vector3.ZERO)])
+			for hand: float in [-1.0,1.0]: out.append([FacetMesh.frustum(0.004,0.004,1.0,4),"brass",_strut_at(Vector3(0.056*hand,0.2,0.1),Vector3(0.056*hand,0.268,0.124))])
+			out.append([FacetMesh.frustum(0.003,0.003,1.0,4),"brass",_strut_at(Vector3(-0.056,0.268,0.124),Vector3(0.056,0.268,0.124))])
+		"wheel":
+			# The spokes covered in cream, a brass hub.
+			out.append([FacetMesh.frustum(0.08,0.08,0.038,14),"steel",_placed(Vector3(0.2*side,-0.33,-0.28),Vector3(0.0,0.0,PI*0.5))])
+			out.append([FacetMesh.frustum(0.058,0.058,0.044,14),"cream",_placed(Vector3(0.2*side,-0.33,-0.28),Vector3(0.0,0.0,PI*0.5))])
+			out.append([FacetMesh.frustum(0.02,0.014,0.06,8),"brass",_placed(Vector3(0.21*side,-0.33,-0.28),Vector3(0.0,0.0,PI*0.5))])
+		"fin":
+			out.append([_prism([Vector2(-0.1,0.0),Vector2(0.1,0.0),Vector2(0.1,0.2),Vector2(0.065,0.24),Vector2(0.02,0.25),Vector2(-0.03,0.2)],0.012),"trim",_placed(Vector3(0.0,0.03,0.58),Vector3.ZERO)])
+			out.append([_prism([Vector2(0.1,-0.04),Vector2(0.15,-0.04),Vector2(0.165,0.1),Vector2(0.145,0.19),Vector2(0.1,0.2)],0.01),"cream",_placed(Vector3(0.0,0.03,0.58),Vector3.ZERO)])
+		"wingtip":
+			# The upper wing from WINGTIP_FROM out: the cloth cut back for
+			# the aileron, the terracotta tip, the roundel and the aileron.
+			var half := SPAN*0.5
+			var rounded := half*0.8
+			var ailerons := Vector3(half*AILERON_SPAN.x,half*AILERON_SPAN.y,_hinge_z())
+			var wing := _placed(Vector3(0.0,UPPER_Y,STAGGER),Vector3.ZERO)
+			out.append([_wing(half,half*WINGTIP_FROM,rounded,ailerons),"cream",wing])
+			out.append([_wing(half,rounded,half),"trim",wing])
+			var at := Vector2(SPAN*0.3,-CHORD*0.5+0.42*_chord_at(half,SPAN*0.3))
+			var rings := [[0.062,"dark"],[0.046,"trim"],[0.018,"cream"]]
+			for k in range(rings.size()):
+				out.append([_decal(half,at,float(rings[k][0]),0.0015+0.0005*k),rings[k][1],wing])
+			var flap := _scaled(_prism([Vector2(0.0,0.006),Vector2(AILERON_DEPTH,-0.001),Vector2(0.0,-0.006)]),Vector3(ailerons.y-ailerons.x-0.004,1.0,1.0))
+			out.append([flap,"cream",_placed(Vector3((ailerons.x+ailerons.y)*0.5,UPPER_Y+0.004,STAGGER+ailerons.z),Vector3.ZERO)])
+	return out
+
+## A part at `at`, turned by `turn` (Euler angles, as Node3D.rotation).
+static func _placed(at: Vector3, turn: Vector3) -> Transform3D:
+	return Transform3D(Basis.from_euler(turn),at)
+
 # --- Building -----------------------------------------------------------------------
 
 ## Paint, lit as the folk are (shaders/folk_surface.gdshader): a
@@ -595,10 +669,25 @@ func _add(mesh: Mesh, material: Material, at: Vector3, turn: Vector3, parent: No
 
 ## A thin strut (or, `radius` finer, a wire) from `from` to `to`.
 func _strut(from: Vector3, to: Vector3, material: Material, radius := 0.014) -> void:
-	var part := _add(FacetMesh.frustum(radius,radius,1.0,4),material,(from+to)*0.5,Vector3.ZERO)
+	var part := _add(FacetMesh.frustum(radius,radius,1.0,4),material,Vector3.ZERO,Vector3.ZERO)
+	part.transform = _strut_at(from,to)
+
+## Where a strut from `from` to `to` stands: a unit frustum along Y
+## stretched and turned onto the line.
+static func _strut_at(from: Vector3, to: Vector3) -> Transform3D:
 	var y := (to-from)
 	var x := y.cross(Vector3.FORWARD if absf(y.normalized().dot(Vector3.FORWARD)) < 0.9 else Vector3.RIGHT).normalized()
-	part.basis = Basis(x,y,x.cross(y.normalized()).normalized())
+	return Transform3D(Basis(x,y,x.cross(y.normalized()).normalized()),(from+to)*0.5)
+
+## A piece's parts (`piece`) added as fixed parts on `parent`, in `paint`.
+## The windscreen's glass casts no shadow and stays out of the join.
+func _add_piece(id: String, paint: Dictionary, parent: Node3D = null, side := 1.0) -> void:
+	for p: Array in piece(id,side):
+		var part := _add(p[0],paint[p[1]],Vector3.ZERO,Vector3.ZERO,parent)
+		part.transform = p[2]
+		if p[1] == "glass":
+			part.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			part.remove_meta("join")
 
 ## Joins `parent`'s fixed parts (`_add`'s) into one mesh for each material,
 ## that of `first` first among its children.

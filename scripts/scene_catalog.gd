@@ -90,6 +90,8 @@ const ENTRIES: Array[Dictionary] = [
 		"detail":"One fixed sky island with a mountain chain, to walk round."},
 	{"id":"collectibles","group":"On-foot greyboxes","title":"Collectible gallery","scene":"res://studies/collectible_gallery.tscn","args":[],
 		"detail":"The glyph tokens hanging in open sky, to judge their look."},
+	{"id":"plane_parts","group":"On-foot greyboxes","title":"Plane parts gallery","scene":"res://studies/plane_parts_gallery.tscn","args":[],
+		"detail":"The plane's six lost parts as coins and as hovering pieces, beside the plane."},
 ]
 
 ## The groups, in the order their first entry comes.
