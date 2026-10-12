@@ -16,6 +16,7 @@ extends RefCounted
 ## Everything it answers is in its own frame (the standalone scene's world).
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 const Footbridge = preload("res://scripts/footbridge.gd")
+const Ledger = preload("res://scripts/ledger/ledger.gd")
 
 ## The Art node it was built into, and its lands: [land, outline (or null
 ## for its meta), cliffs] each, registered as turf by whoever stands it.

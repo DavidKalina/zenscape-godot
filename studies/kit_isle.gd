@@ -262,7 +262,8 @@ const STEP_OFF_DROP := 4.0
 const STEP_OFF_CLEAR := 12.0
 const STRAND_BELOW := 20.0
 const STRANDED_WAIT := 3.0
-const FOOT_HINT := "Walk to your plane and Space (pad A) by it to fly  ·  Space (pad A) again in the air: the sail, again: fold  ·  R3 camera back behind"
+const FOOT_HINT := "Walk to your plane and Space (pad A) by it to fly  ·  Space (pad A) again in the air: the sail, again: fold  ·  hold right mouse (LB): binoculars  ·  R3 camera back behind"
+const LOOK_HINT := "Binoculars  ·  mouse (right stick) look  ·  wheel (LT RT) zoom  ·  hold on an isle for its card  ·  let go to lower"
 const BOARD_LINE := "Space (pad A)  climb in and take off"
 const FLY_HINT := "Flying  ·  %.0f m/s  ·  bumps %d\nA D bank and turn  ·  W S pitch (W nose down)  ·  mouse steers  ·  Space boost  ·  Shift brake  ·  hold Q E (LB RB) knife edge, + A D to drift  ·  Q Q or E E quick, or click: barrel roll\nF (pad Y) flaps %s  ·  put it down on the turf, then brake or drift to a stop  ·  R start on foot  ·  L / Shift+L look  ·  B gust  ·  hold right mouse or the right stick to look round  ·  R3 camera back behind"
 const ROLL_HINT := "On the wheels  ·  %.0f m/s\nShift brake  ·  steer hard, or Q E and steer, to drift  ·  Shift and steer, a blip of Space, to power-slide  ·  in a slide ease or counter the stick to widen, Q E to tighten  ·  roll off the edge to fly"
@@ -692,12 +693,15 @@ func _build_art() -> void:
 func isle_name() -> String:
 	return "kit isle"
 
+## What the player has done, kept across runs (scripts/ledger/ledger.gd).
+const Ledger = preload("res://scripts/ledger/ledger.gd")
+
 ## The isle's card as the plane locks onto it (scripts/isle_splash.gd):
 ## its name, a line of what it is, and what there is to find on it with
-## how much has been found. Placeholders until the isles are named.
+## how much has been found, from the ledger (`card`; no rows for an isle it
+## doesn't list). Placeholders until the isles are named.
 func isle_card() -> Dictionary:
-	return {"name":isle_name().capitalize(),"epithet":"An isle adrift over the cloud sea",
-		"finds":[["wildflower","Glyphs",0,7],["crystal","Lodestones",0,1],["bridge","Hidden ways",0,3]]}
+	return Ledger.shared().card(Ledger.isle_id_of(self),{"name":isle_name().capitalize(),"epithet":"An isle adrift over the cloud sea"})
 
 ## The isle's datum (world y): the turf near it; the rays down read from
 ## over it, the plane's cloud floor hangs FLOOR_BELOW under it.
@@ -1285,6 +1289,16 @@ var _lock_card := {}
 func lock_target(_at: Vector3) -> Dictionary:
 	var circle := isle_circle()
 	return {"middle":Vector3(circle.x,0.0,circle.y),"radius":circle.z,"top":isle_top(),"card":isle_card()}
+
+## The isles the binoculars aim at (scripts/binoculars.gd `pick`), as
+## `lock_target` sees them: this one; with others in its sky, those too.
+func sight_isles() -> Array:
+	var circle := isle_circle()
+	return [{"middle":Vector3(circle.x,0.0,circle.y),"radius":circle.z,"top":isle_top(),"isle":self}]
+
+## On foot only, and not off the edge, stranded or holding the lodestone up.
+func binoculars_allowed() -> bool:
+	return not flying and not off_edge and _stranded_left < 0.0 and lode_state != "inspecting" and super.binoculars_allowed()
 
 ## Whether the plane at `at` is in the lock's reach of `target`.
 static func lock_reaches(target: Dictionary, at: Vector3) -> bool:
@@ -2240,6 +2254,7 @@ func _foot_text() -> String:
 	elif motor.move == "sail": text = SAIL_HINT
 	elif off_edge: text = FALL_HINT
 	if _said_left > 0.0: text = _said+"  ·  "+text
+	if binoculars != null and binoculars.busy(): text = LOOK_HINT
 	if lodestone == null: return text
 	var line := ""
 	match lode_state:

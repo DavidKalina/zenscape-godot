@@ -289,9 +289,10 @@ func _build_art() -> void:
 func isle_name() -> String:
 	return "aqueduct isle"
 
-## Placeholder name, line and finds until the isle is named.
+## Placeholder name and line until the isle is named; its finds are the
+## ledger's (scripts/ledger/ledger.gd `card`).
 func isle_card() -> Dictionary:
-	return {"name":"The Aqueduct of Veyl","epithet":"Where the old water still walks the sky","finds":[["wildflower","Glyphs",2,7],["crystal","Lodestones",0,1],["bridge","Hidden ways",1,3]]}
+	return Ledger.shared().card(Ledger.isle_id_of(self),{"name":"The Aqueduct of Veyl","epithet":"Where the old water still walks the sky"})
 
 func isle_top() -> float:
 	return Art.TOP
@@ -337,6 +338,16 @@ func lock_target(at: Vector3) -> Dictionary:
 			near = d
 			best = target
 	return best
+
+## The binoculars' isles: this one and the motif isles that stand.
+func sight_isles() -> Array:
+	var isles := super.sight_isles()
+	if motifs == null: return isles
+	for isle: Node3D in motifs.isles:
+		if not isle.stands(): continue
+		var c: Vector3 = isle.circle()
+		isles.append({"middle":Vector3(c.x,0.0,c.y),"radius":c.z,"top":isle.isle_top(),"isle":isle})
+	return isles
 
 ## The cloister tarn's water (its surface on its own layer, scripts/
 ## kit_isle/motif_cloister_tarn.gd WATER_LAYER) is skimmed as the turf is,

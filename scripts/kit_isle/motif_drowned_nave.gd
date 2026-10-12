@@ -26,8 +26,10 @@ func id() -> String:
 func isle_name() -> String:
 	return "drowned nave"
 
+## Placeholder name and line until the isle is named; its finds are the
+## ledger's (scripts/ledger/ledger.gd `card`).
 func isle_card() -> Dictionary:
-	return {"name":"The Drowned Nave","epithet":"Where the roof went, the sky came in","finds":[["wildflower","Glyphs",3,5],["lamp","Lanterns",0,3],["bridge","Hidden ways",0,2]]}
+	return Ledger.shared().card(id(),{"name":"The Drowned Nave","epithet":"Where the roof went, the sky came in"})
 
 func top() -> float:
 	return NaveArt.W

@@ -11,12 +11,18 @@ extends Node3D
 ## Only the pilot on foot takes them (the plane passes through): his middle
 ## (CollectibleLines FOOT_Y over his feet) within WALKER_REACH plus half a
 ## token, read along the way he moved since the last frame, as the sky's
-## do. Nothing is saved; a new run lays them again.
+## do. Each is one of the isle's objectives in the ledger (scripts/ledger/
+## ledger.gd, "<isle>/<name>"): taking it marks it done there, saved, and a
+## token done before isn't laid again; the readout counts it as found.
+## Unfound, each glints far off through the binoculars (scripts/
+## binoculars.gd `spottable`).
 const GlyphPickup = preload("res://scripts/glyph_pickup.gd")
 const Hud = preload("res://scripts/collectibles_hud.gd")
 const Lines = preload("res://scripts/collectible_lines.gd")
+const Ledger = preload("res://scripts/ledger/ledger.gd")
+const Binoculars = preload("res://scripts/binoculars.gd")
 
-const GLYPH := "wildflower"
+const GLYPH := "rune"
 const SIZE := 0.7
 ## A mover jumping further than this in a frame (a respawn, a placing)
 ## starts its sweep afresh.
@@ -24,8 +30,10 @@ const JUMP := 6.0
 
 ## The tokens: {name, at, move}. Filled by `spots_for`.
 var tokens: Array[Dictionary] = []
-## Taken token names, in order.
+## Taken token names, in order (those done in an earlier run first).
 var taken: Array[String] = []
+## The isle's id in the ledger (scripts/ledger/ledger.gd `isle_id_of`).
+var isle_id := ""
 var hud: CanvasLayer
 var _holders := {}
 var _last := Vector3.INF
@@ -53,17 +61,26 @@ static func under_lip(p: Dictionary, along: float) -> Vector3:
 func setup(isle: Node3D) -> void:
 	name = "Tokens"
 	tokens = spots_for(isle)
-	for t: Dictionary in tokens: t.at = (t.at as Vector3)+offset
+	isle_id = Ledger.isle_id_of(isle)
+	for t: Dictionary in tokens:
+		t.at = (t.at as Vector3)+offset
+		if Ledger.shared().is_done(objective(t.name)): taken.append(t.name)
 	for i in range(tokens.size()):
 		var t: Dictionary = tokens[i]
+		if taken.has(t.name): continue
 		var holder := GlyphPickup.make(GLYPH,SIZE,float(i)*1.3,true)
 		holder.name = "Token_%s" % t.name
 		holder.position = t.at
 		add_child(holder)
 		holder.motes_on(true)
+		Binoculars.spottable(holder,objective(t.name))
 		_holders[t.name] = holder
 	hud = Hud.new()
 	add_child(hud)
+
+## Token `name`'s objective id in the ledger.
+func objective(token_name: String) -> String:
+	return Ledger.objective_id(isle_id,token_name)
 
 ## How many are left.
 func left() -> int:
@@ -93,6 +110,7 @@ func touch(point: Vector3) -> void:
 func take(name: String) -> void:
 	if taken.has(name) or not _holders.has(name): return
 	taken.append(name)
+	Ledger.shared().mark_done(objective(name))
 	var holder: Node3D = _holders[name]
 	if is_instance_valid(holder): holder.take(hash(name) & 0xffff)
 	_holders.erase(name)
