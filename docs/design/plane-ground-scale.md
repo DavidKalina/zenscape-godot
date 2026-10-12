@@ -42,6 +42,71 @@ Where the cheat can show (keep these in mind for later features):
 - Ask scripts/world_scale.gd (sizes) and scripts/plane_ground_scale.gd (the
   size right now) how big the plane is; don't hard-code either in new code.
 
+## Scale cleanup (feature/scale-cleanup)
+
+Closes the Open list of the section below, at ratio 1.0. Where they
+disagree, this one is current.
+
+- **Sundered overgrowth.** The hits weren't the beam spots:
+  - the lane: column ivy pushed round the outer columns' bases, and the
+    kit's own fringe hanging off a low tie (in the bare build too);
+  - the breaches: architrave curtains over a broken arch.
+
+  A RuinKit Build now carries `clear` boxes (`kept_clear`) and every strand
+  stops at one. The Sundered dress clears the lane under `LANE_Y`'s top and
+  each flyable breach's corridor (`Hall.breach_box`, taken out of `bay`).
+  The beam and tie curtain spots now derive from ROW_Z and COLUMN_R.
+  test_sundered_hall: lane 0, breaches 0 of 54845 (limits unchanged).
+- **The fifth failing test** didn't come back. Two runs of the related set
+  plus the five extras that round named (cluster_motifs, hand_landing_exit,
+  island_pack_ruins_archipelago, lodestone_study, pierced_isle) failed only
+  the three known base tests and, before the fix, sundered_hall. That
+  round's 44 left out one name. By elimination it was isle_card_marks,
+  isle_teardown or manual_landing_game; all three pass each time here.
+- **Stair to the clouds** (`_collide_as_drawn`): a steep cliff prism on a
+  drawn wall is cut to WALL_KEEP under the lip of its wall.
+  - The wall is matched by lip height. Matched by nearness, a landing's
+    step-down wall was taken for the wall rising behind it, and landing 4
+    fell.
+  - On a wall over LIP_WALL the prism also keeps its foot up to FOOT_KEEP
+    (2 m, inside the drawn foot's kick). Without it the lawn probes by the
+    summit pad found a gap.
+  - Short walls keep only the lip band. A foot band there broke landing 4.
+  - The heightfield trimesh is untouched: it is one shape in the audit.
+  - Mesa: 1024 shapes off -> 355; a metre off: 238 -> 13 (12 prisms and
+    the trimesh).
+- **Drowned nave.** Its prisms aren't by the basin. They line the grand
+  stair's cut to the apse (local x 117-127, z +-2.5), and their bottoms
+  hung 1.5 m under the cut's turf, where the stair's bedded blocks face
+  down. KitLand `island` takes `prism_drop`, and the nave asks
+  PRISM_RIM_DROP. 64 -> 3 (two small arcade hulls 0.9 x 0.6 x 0.9 and one
+  under 1 m).
+- **Airship gondola**: `AirshipBuild.gondola_hulls()` is the drawn hull's
+  half shell (stations shared with the mesh) and the cabin with its roof.
+  None of it is off now. The envelope capsules are still 0.3-1 m off at
+  their caps (6 shapes over the three ships).
+- **Rune serpent**: still skipped by eye (shader-bent), 13 capsules.
+
+**Audit** (tools/collision_audit.gd now also prints the metre-off count by
+isle): 1504 shapes off, 353 a metre off (340 without the serpent's 13) ->
+771 off, 67 a metre off (54 without the serpent). What's left, a metre off:
+- colonnade 18;
+- stair mesa 13;
+- sundered gorge 11;
+- cloister 5;
+- near island cliffs 3;
+- bell spires 2;
+- nave 2.
+
+**Tests** (headless): 38 of 41 in the related globs and 5 of 5 extras pass.
+The three failures are the known base ones: aqueduct_isle_look (23 plants
+off turf), collectibles_pickup (engine errors only), moments_world (engine
+errors only).
+
+**Open:** nothing flown by a person at 1.0 yet. The stair's lawn by the
+summit pad has a drawn gap at about (85.5, 16.7) in the study: neither turf nor wall,
+the skirt seen below. The foot band covers it in collision.
+
 ## Opening ratio 1.0 + collision audit (feature/opening-ratio-1)
 
 The user flew opening-ratio-2 and said it still felt like there were

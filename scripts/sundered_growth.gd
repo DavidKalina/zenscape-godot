@@ -45,10 +45,18 @@ const ACTS := {"gate":0.8,"nave":0.8,"shafts":0.8,"cloister":1.0,"slit":0.8,"aps
 ## line to the outer row's, up to 0.6 over the low ties' soffit).
 static var LANE := Vector2(Hall.INNER_Z,Hall.ROW_Z)
 static var LANE_TOP: float = Hall.TIE_LOW+0.6
-## Beam curtains: the spots across the nave (z) tried at each bay line, the
+## Beam curtains: the spots across the nave (z) tried at each bay line, as
+## shares of BEAM_REACH (the outer columns' faces, 0.2 m in: 11.2 m when
+## the spots were laid by hand at ROW_Z 12.6, 12.0 at ROW_Z 13.4), the
 ## odds of one, its strands at most and the asked length (RuinGrowth
 ## `curtain` hangs 1.8 x that + 0.6 m).
-const BEAM_SPOTS := [-11.2,-7.8,-4.4,-1.0,2.4,5.6,8.4,11.2]
+const BEAM_SHARES := [-1.0,-0.696,-0.393,-0.089,0.214,0.5,0.75,1.0]
+static var BEAM_REACH: float = Hall.ROW_Z-Hall.COLUMN_R-0.2
+static var BEAM_SPOTS: Array = BEAM_SHARES.map(func(k: float) -> float: return k*BEAM_REACH)
+## Tie curtains: the spots across the nave (z), evenly out to TIE_REACH (a
+## column's width in from the outer columns' faces: the toy hall's 7 m).
+static var TIE_REACH: float = Hall.ROW_Z-Hall.COLUMN_R*2.0
+static var TIE_SPOTS: Array = [-TIE_REACH,-TIE_REACH*0.5,0.0,TIE_REACH*0.5,TIE_REACH]
 const BEAM_ODDS := 0.4
 const BEAM_MOST := 7
 const BEAM_LENGTH := Vector2(1.4,3.2)
@@ -93,6 +101,15 @@ static func bay(b, plan: Dictionary) -> void:
 	var torn: int = plan.get("torn",0)
 	var roof: String = plan.get("roof","whole")
 	var breach: Vector2i = plan.get("breach",Vector2i.ZERO)
+	# The flown lane under LANE_Y's top and the flyable breaches' corridors
+	# (Hall `breach_box`) are kept clear: every strand in the bay, this
+	# growth's and the kit's own, stops at them (Build `clear`).
+	b.clear.append(AABB(Vector3(-1.0,-2.0,Hall.LANE.x),Vector3(Hall.BAY+2.0,Hall.LANE_Y.y+2.0,Hall.LANE.y-Hall.LANE.x)))
+	for k in range(2):
+		var kind: String = Hall.BREACHES[breach[k]]
+		if kind in ["","door"]: continue
+		var s := -1.0 if k == 0 else 1.0
+		b.clear.append(Hall.breach_box(kind,s,b.floor_at(Hall.BAY*0.5,s*Hall.WALL_Z)))
 	var lines: Array = [0.0]
 	if bool(plan.get("last",false)): lines.append(Hall.BAY)
 	var slit: bool = plan.get("screen",false)
@@ -120,7 +137,7 @@ static func bay(b, plan: Dictionary) -> void:
 	probe.label = "ties"
 	if tie != "" and torn & 1 == 0:
 		var tie_y := Hall.TIE_LOW if tie == "low" else Hall.TIE_HIGH
-		for z: float in [-7.0,-3.5,0.0,3.5,7.0]:
+		for z: float in TIE_SPOTS:
 			if rng.randf() > 0.45*d: continue
 			var in_lane := z+0.8 > LANE.x and z-0.8 < LANE.y
 			if tie == "low" and in_lane: continue
@@ -503,6 +520,9 @@ class Probe extends RefCounted:
 
 	func floor_at(x: float, z: float) -> float:
 		return build.floor_at(x,z)
+
+	func kept_clear(p: Vector3) -> bool:
+		return build.kept_clear(p)
 
 	func growth_face(corners: PackedVector3Array, normal: Vector3, colour: Color) -> void:
 		build.growth_face(corners,normal,colour)

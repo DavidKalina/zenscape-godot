@@ -278,6 +278,8 @@ static func strand(b, start: Vector3, length: float, out: Vector3, free: bool, c
 	var bare := length*(1.0-TENDRIL)
 	var node := 0
 	while travelled < length:
+		# A flown lane kept clear (Build `clear`): the strand stops short.
+		if b.kept_clear(p): break
 		var t := travelled/length
 		var hug := 0.0 if free else (1.0 if in_air <= 0.0 else 0.0)
 		var air_share := 1.0 if free else clampf(in_air/0.4,0.0,1.0)

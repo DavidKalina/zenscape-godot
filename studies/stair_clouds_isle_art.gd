@@ -210,6 +210,13 @@ const WALL_STEEP := 0.6
 const WALL_KEEP := 0.5
 ## A lip's or foot's cliff prism's depth under its face (m).
 const WALL_PRISM := 0.4
+## How far over a tall wall's foot (over LIP_WALL) a steep cliff prism on it
+## still collides (m): there the drawn wall's foot kicks out past the
+## heightfield's line (`facade` kick, its first row set back up to a metre
+## FACET_H up), so the prism is inside the drawn rock and the turf at its
+## foot stays whole. A short wall's prisms keep only their lip: its foot is
+## walked along by the landings.
+const FOOT_KEEP := 2.0
 ## Only a wall at least this tall (m) has its lip's prisms hung shallow: a
 ## step walked along its edge (a landing's side) keeps them as built.
 const LIP_WALL := 4.6
@@ -454,7 +461,23 @@ static func dress_walls(node: Node3D, seed_value: int) -> PackedVector3Array:
 				for w: Vector4 in near.get(k+Vector2i(dx,dz),[]):
 					if Vector2(w.x,w.y).distance_to(Vector2(m.x,m.z)) < 1.0 and high > w.w-WALL_KEEP-0.3 and w.w-w.z > LIP_WALL: return true
 		return false
-	_collide_as_drawn(node,in_face,on_wall,at_lip)
+	# The wall a sliver from `low` up to `high` (its middle `m`) hangs on:
+	# within 1 m across, its lip the nearest `high` (at most 0.6 under it)
+	# and its foot under `low`. Vector2(foot, lip), or NAN if none.
+	var wall_at := func(m: Vector3, low: float, high: float) -> Vector2:
+		var k := Vector2i(floori(m.x),floori(m.z))
+		var best := INF
+		var got := Vector2(NAN,NAN)
+		for dx in range(-1,2):
+			for dz in range(-1,2):
+				for w: Vector4 in near.get(k+Vector2i(dx,dz),[]):
+					if Vector2(w.x,w.y).distance_to(Vector2(m.x,m.z)) >= 1.0: continue
+					if high > w.w+0.6 or low < w.z-0.6: continue
+					if absf(w.w-high) < best:
+						best = absf(w.w-high)
+						got = Vector2(w.z,w.w)
+		return got
+	_collide_as_drawn(node,in_face,on_wall,at_lip,wall_at)
 	var wall_faces := rock.faces()
 	var sides := KitLook.RockMesh.new()
 	skirt(sides,Array(node.get_meta("outline") as PackedVector2Array),seed_value)
@@ -472,7 +495,12 @@ static func dress_walls(node: Node3D, seed_value: int) -> PackedVector3Array:
 ## its lip (`at_lip`), hung only WALL_PRISM under their face (a ray started
 ## under the lip still finds its top; hung 1.5 m straight down from the
 ## lip one stood out of the set-back rock); at its foot, as built.
-static func _collide_as_drawn(node: Node3D, in_face: Callable, on_wall: Callable, at_lip: Callable) -> void:
+## A steep turf triangle or cliff prism on a wall (`wall_at`: its foot and
+## lip) is cut down to its bands: the turf's to WALL_KEEP under the lip and
+## over the foot, a prism's to WALL_KEEP under the lip (its foot is in the
+## ground). Whole, the slivers ran lip to foot, flat, where the drawn wall
+## sets back and bulges: a metre and more proud of it.
+static func _collide_as_drawn(node: Node3D, in_face: Callable, on_wall: Callable, at_lip: Callable, wall_at := Callable()) -> void:
 	var body := node.get_node("Body") as StaticBody3D
 	var bodies: Array = [body]
 	bodies.append_array(node.get_meta("cliff_bodies",[]))
@@ -498,6 +526,28 @@ static func _collide_as_drawn(node: Node3D, in_face: Callable, on_wall: Callable
 			if not bool(on_wall.call(mid)): continue
 			var low := minf(pts[0].y,minf(pts[1].y,pts[2].y))
 			var high := maxf(pts[0].y,maxf(pts[1].y,pts[2].y))
+			var steep := absf((pts[1]-pts[0]).cross(pts[2]-pts[0]).normalized().y) < WALL_STEEP
+			if steep and wall_at.is_valid():
+				var wall: Vector2 = wall_at.call(mid,low,high)
+				if not is_nan(wall.x):
+					var lip := prism_cut(pts,wall.y-WALL_KEEP,true)
+					var foot := prism_cut(pts,wall.x+FOOT_KEEP,false) if wall.y-wall.x > LIP_WALL else PackedVector3Array()
+					var kept := 0
+					for part: PackedVector3Array in [lip,foot]:
+						if part.size() < 4 or RuinKit.hull_thickness(part) < RuinKit.HULL_THIN: continue
+						if kept == 0: prism.points = part
+						else:
+							var more := CollisionShape3D.new()
+							var hull := ConvexPolygonShape3D.new()
+							hull.points = part
+							more.shape = hull
+							more.transform = (holder as CollisionShape3D).transform
+							into.add_child(more)
+						kept += 1
+					if kept == 0:
+						into.remove_child(holder)
+						holder.free()
+					continue
 			if bool(in_face.call(low,high,mid)):
 				into.remove_child(holder)
 				holder.free()
@@ -506,6 +556,37 @@ static func _collide_as_drawn(node: Node3D, in_face: Callable, on_wall: Callable
 			if not bool(at_lip.call(high,mid)): continue
 			var deep := low-WALL_PRISM
 			prism.points = PackedVector3Array([pts[0],pts[1],pts[2],Vector3(pts[0].x,deep,pts[0].z),Vector3(pts[1].x,deep,pts[1].z),Vector3(pts[2].x,deep,pts[2].z)])
+
+## A convex polygon's part between heights `lo` and `hi` (Sutherland-Hodgman
+## on two levels); empty if none.
+static func clip_y(poly: PackedVector3Array, lo: float, hi: float) -> PackedVector3Array:
+	for level: Array in [[lo,1.0],[hi,-1.0]]:
+		var y: float = level[0]
+		if is_inf(y): continue
+		var sgn: float = level[1]
+		var out := PackedVector3Array()
+		for i in range(poly.size()):
+			var p := poly[i]
+			var q := poly[(i+1)%poly.size()]
+			var p_in := (p.y-y)*sgn >= 0.0
+			var q_in := (q.y-y)*sgn >= 0.0
+			if p_in: out.append(p)
+			if p_in != q_in: out.append(p.lerp(q,(y-p.y)/(q.y-p.y)))
+		poly = out
+		if poly.size() < 3: return PackedVector3Array()
+	return poly
+
+## A cliff prism's (top triangle `pts[0..2]` over `pts[3..5]`) points above
+## height `cut` (`above`, else under it): its corners there and where its
+## edges cross it.
+static func prism_cut(pts: PackedVector3Array, cut: float, above: bool) -> PackedVector3Array:
+	var out := PackedVector3Array()
+	for q in pts: if (q.y >= cut) == above: out.append(q)
+	for e: Vector2i in [Vector2i(0,1),Vector2i(1,2),Vector2i(2,0),Vector2i(3,4),Vector2i(4,5),Vector2i(5,3),Vector2i(0,3),Vector2i(1,4),Vector2i(2,5)]:
+		var p := pts[e.x]
+		var q := pts[e.y]
+		if (p.y-cut)*(q.y-cut) < 0.0: out.append(p.lerp(q,(cut-p.y)/(q.y-p.y)))
+	return out
 
 # --- The summit's spur and tors -----------------------------------------------------------
 #

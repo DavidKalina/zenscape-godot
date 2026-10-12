@@ -2441,6 +2441,10 @@ class Build extends RefCounted:
 	var tops: Array = []
 	## Strands asked to hang free: [at, length, free, from height].
 	var hangs: Array = []
+	## Boxes (the piece's straight frame) no strand of growth hangs into: a
+	## flown lane or corridor kept clear (`kept_clear`; a strand stops at
+	## one).
+	var clear: Array[AABB] = []
 	## Applied to every block (a piece turned or leaning as a whole).
 	var frame := Transform3D.IDENTITY
 	## Blocks are cut off level under this height (the piece's frame, y):
@@ -2539,6 +2543,12 @@ class Build extends RefCounted:
 	## The ground's height at (x, z) in the piece's frame: 0 with no terrain.
 	func floor_at(x: float, z: float) -> float:
 		return float(terrain.call(x,z)) if terrain.is_valid() else 0.0
+
+	## Whether `p` is in a box kept clear of growth (`clear`).
+	func kept_clear(p: Vector3) -> bool:
+		for box: AABB in clear:
+			if box.has_point(p): return true
+		return false
 
 	func _init(seed_value: int, amount: float, label: String) -> void:
 		rng.seed = hash([seed_value,label,"gothic"])
