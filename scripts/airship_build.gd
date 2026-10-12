@@ -176,13 +176,38 @@ static func _fins(st: SurfaceTool) -> void:
 
 # --- The gondola ----------------------------------------------------------------
 
+## The hull's stations along it (shares of HULL.z), its half width and its
+## depth there (shares of HULL.x, HULL.y), and its sides round a half.
+const HULL_ZS := [-1.0,-0.85,-0.6,-0.2,0.3,0.75,1.0]
+const HULL_WIDTHS := [0.05,0.45,0.8,0.97,1.0,0.94,0.8]
+const HULL_DEEPS := [0.05,0.55,0.85,1.0,1.0,0.9,0.7]
+const HULL_SIDES := 7
+## The cabin's middle on deck.
+const CABIN_AT := Vector3(0.0,0.0,0.85)
+
+## The gondola as it is drawn, for its solid: the hull's half shell up to
+## the deck, and the cabin with its pitched roof (convex hulls' points,
+## ship frame). The rails, posts and lantern are left to fly through.
+static func gondola_hulls() -> Array[PackedVector3Array]:
+	var hull := PackedVector3Array()
+	for k in range(HULL_ZS.size()):
+		for j in range(HULL_SIDES+1):
+			var t := PI+PI*float(j)/HULL_SIDES
+			hull.append(Vector3(cos(t)*HULL.x*float(HULL_WIDTHS[k]),sin(t)*HULL.y*float(HULL_DEEPS[k])+0.02,float(HULL_ZS[k])*HULL.z))
+	var cabin := PackedVector3Array()
+	for corner: Vector2 in [Vector2(-1,-1),Vector2(1,-1),Vector2(-1,1),Vector2(1,1)]:
+		cabin.append(CABIN_AT+Vector3(corner.x*0.72,0.0,corner.y*0.95))
+		cabin.append(CABIN_AT+Vector3(corner.x*0.86,0.98,corner.y*1.08))
+	for end: float in [-1.0,1.0]: cabin.append(CABIN_AT+Vector3(0.0,1.55,end*1.1))
+	return [hull,cabin]
+
 static func _gondola(st: SurfaceTool) -> void:
 	# The hull: a half shell under the deck, round in section, drawn to a
 	# point at the bow and blunt at the stern.
-	var zs := [-1.0,-0.85,-0.6,-0.2,0.3,0.75,1.0]
-	var widths := [0.05,0.45,0.8,0.97,1.0,0.94,0.8]
-	var deeps := [0.05,0.55,0.85,1.0,1.0,0.9,0.7]
-	var sides := 7
+	var zs := HULL_ZS
+	var widths := HULL_WIDTHS
+	var deeps := HULL_DEEPS
+	var sides := HULL_SIDES
 	var inside := Vector3(0.0,-HULL.y*0.4,0.0)
 	for k in range(zs.size()-1):
 		for i in range(sides):
@@ -213,7 +238,7 @@ static func _gondola(st: SurfaceTool) -> void:
 		_beam(st,rail[k]+Vector3(0.0,0.47,0.0),rail[k+1]+Vector3(0.0,0.47,0.0),0.035,WOOD)
 	# The cabin aft of the foredeck: lime walls on a dark sill, a pitched
 	# roof of terracotta shakes, a little stovepipe.
-	var cabin_at := Vector3(0.0,0.0,0.85)
+	var cabin_at := CABIN_AT
 	Builds.box(st,cabin_at+Vector3(0.0,0.06,0.0),Basis.IDENTITY,Vector3(0.72,0.06,0.95),WOOD_DARK)
 	Builds.box(st,cabin_at+Vector3(0.0,0.58,0.0),Basis.IDENTITY,Vector3(0.68,0.48,0.92),LIME)
 	for corner in [Vector2(-1,-1),Vector2(1,-1),Vector2(-1,1),Vector2(1,1)]:
