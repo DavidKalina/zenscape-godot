@@ -2,12 +2,12 @@ extends SceneTree
 ## The watcher (scripts/kit_isle/watcher.gd, docs/design/watcher/round1.md),
 ## headless, on the aqueduct isle with --watcher: he stands on the south
 ## rim's turf near the start; with the serpent coming home in sight he
-## turns to its find and holds his binoculars up on it; the find glints
-## through the pilot's binoculars aimed his way, and not once they're down;
+## turns to its find and holds his telescope up on it; the find glints
+## through the pilot's telescope aimed his way, and not once it's down;
 ## near him his line streams in; on foot at the find, it's taken.
 ##   godot --headless --path . --script tests/test_watcher.gd
 const DT := 1.0/60.0
-const Binoculars = preload("res://scripts/binoculars.gd")
+const Telescope = preload("res://scripts/telescope.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 var failures := 0
 var study: Node3D
@@ -73,29 +73,29 @@ func _tracks() -> void:
 		if watcher.state == "watch" and watcher.up >= 1.0:
 			up_frames += 1
 			worst = maxf(worst,rad_to_deg(watcher.gaze().angle_to(watcher.find.global_position-watcher.eye())))
-	check(up_frames > 0 and worst < 10.0,"Binoculars up, his gaze stays on the find as it flies by (worst %.1f deg over %d frames; at first %.1f)" % [worst,up_frames,off])
+	check(up_frames > 0 and worst < 10.0,"Telescope up, his gaze stays on the find as it flies by (worst %.1f deg over %d frames; at first %.1f)" % [worst,up_frames,off])
 
 func _glints() -> void:
-	var b: Node = study.binoculars
+	var b: Node = study.telescope
 	var at: Vector3 = watcher.global_position+Vector3(5.0,0.0,-0.5)
 	study.place(at,Vector2(0.0,1.0))
 	_frames(0.5)
-	study.script_binoculars = true
+	study.script_telescope = true
 	for i in range(30):
 		var to: Vector3 = watcher.find.global_position-b.eye()
 		b.yaw = atan2(-to.x,-to.z)
 		b.pitch = atan2(to.y,Vector2(to.x,to.z).length())
 		_frames(DT)
 	var shown: Array = b.glints.map(func(g: Dictionary) -> Node: return g.node)
-	check(shown.has(watcher.find),"Through the binoculars, aimed his way, the find glints (%.0f m off)" % b.eye().distance_to(watcher.find.global_position))
-	study.script_binoculars = false
+	check(shown.has(watcher.find),"Through the telescope, aimed his way, the find glints (%.0f m off)" % b.eye().distance_to(watcher.find.global_position))
+	study.script_telescope = false
 	_frames(0.6)
 	check(b.glints.is_empty() and not b._overlay.visible,"Lowered, no glint and no overlay to draw one")
 
 func _line() -> void:
 	study.place(watcher.global_position+Vector3(2.5,0.0,0.0),Vector2(-1.0,0.0))
 	_frames(0.6)
-	check(watcher.speaking() and watcher.state == "rest","Near him his line starts and he lowers them (%s)" % watcher.state)
+	check(watcher.speaking() and watcher.state == "rest","Near him his line starts and he lowers it (%s)" % watcher.state)
 	var chars := int(watcher._line.visible_characters)
 	check(chars > 0 and chars < watcher.LINE.length(),"It streams in (%d of %d)" % [chars,watcher.LINE.length()])
 	check(not study.get_tree().paused,"Nothing pauses")
