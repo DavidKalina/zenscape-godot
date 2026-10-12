@@ -7,12 +7,15 @@ extends "res://scripts/enemies/enemy.gd"
 ## (half-angle), turns toward him; on his line (inside `line_angle`) it
 ## "tell"s. "tell" (`tell` s, 0.8): three scrapes of the front, the body
 ## going `tell_colour`, still aiming until the last `lock` s, then fixed.
-## "charge": straight along the locked line, to `charge_speed` (over the
-## pilot's run), no steering, for up to `charge_dist` m. Hitting him shoves
-## him `shove_out` m along the line (PilotMotor.knock). Missing, it keeps
-## going: over an edge it sails off; at the end of its distance it "skid"s
-## to rest and is stunned `stun_miss` s; into a wall it is stunned `stun_wall`
-## s. A pilot that slides into it from the side (`push_speed` along the line
+## "charge": straight along the locked line, no steering, winding up from
+## a standstill to `charge_speed` (over the pilot's run) over `wind_up` s,
+## and only as far as where he stood when it locked plus `overrun` m (at most
+## `charge_dist`): then it "skid"s, braking at `brake` m/s^2, and stands
+## winded `stun_miss` s before it turns to find him again. So a miss is a
+## juke, not a win: it comes round and goes again. It never runs itself off
+## an edge: it brakes in time and stops at the lip (only a push sends it
+## over). Hitting him shoves him `shove_out` m along the line
+## (PilotMotor.knock); into a wall it is stunned `stun_wall` s. A pilot that slides into it from the side (`push_speed` along the line
 ## to it) knocks it away instead. Stunned, it is a stone to stand on.
 ## Sizes and speeds all come from the pilot's numbers (enemy_field.gd
 ## `numbers()`): its back is a bit under his plain jump high.
@@ -25,7 +28,8 @@ func _init() -> void:
 func default_knobs(n: Dictionary) -> Dictionary:
 	return {
 		"wander_speed":n.walk*0.5,"turn":1.8,"sight":1.2,"notice":n.run*2.4,"line_angle":0.14,
-		"tell":0.8,"lock":0.3,"charge_speed":n.run*1.6,"charge_accel":n.run*8.0,"charge_dist":n.unit*13.0,
+		"tell":0.8,"lock":0.3,"charge_speed":n.run*1.6,"wind_up":0.7,"charge_dist":n.unit*13.0,
+		"overrun":n.run*0.8,"brake":n.run*3.0,"lip":n.unit*0.15,
 		"shove_out":n.run*1.9,"shove_up":n.unit*0.45,
 		"stun_miss":1.2,"stun_hit":0.6,"stun_wall":2.5,"edge_look":n.unit*0.8,
 	}
@@ -47,6 +51,7 @@ func _art(_root: Node3D) -> void:
 
 var _dir := Vector2.ZERO
 var _travelled := 0.0
+var _reach := 0.0
 var _walking := false
 var _wander_t := 0.0
 var _turn_to := 0.0
@@ -68,8 +73,7 @@ func think(delta: float) -> void:
 		"idle": _idle(delta)
 		"tell": _tell(delta)
 		"charge": _charge(delta)
-		"skid":
-			if grounded and slow(delta,float(knobs.skid_decel)): stun(float(knobs.stun_miss))
+		"skid": _skid(delta)
 
 ## Where the pilot is from its middle: [flat way (x, z), distance, height over its feet].
 func _pilot() -> Array:
@@ -135,19 +139,37 @@ func _tell(delta: float) -> void:
 		skin.rotation.x = 0.0
 		_dir = PilotMotor.forward(facing)
 		_travelled = 0.0
+		_reach = minf(float(_pilot()[1])+float(knobs.overrun),float(knobs.charge_dist))
 		state = "charge"
 		state_t = 0.0
 
 func _charge(delta: float) -> void:
 	if not grounded: return
 	var pace := Vector2(vel.x,vel.z).length()
-	pace = move_toward(pace,float(knobs.charge_speed),float(knobs.charge_accel)*delta)
+	var top := float(knobs.charge_speed)
+	pace = move_toward(pace,top,top/maxf(float(knobs.wind_up),0.01)*delta)
 	vel.x = _dir.x*pace
 	vel.z = _dir.y*pace
 	_travelled += pace*delta
-	if _travelled >= float(knobs.charge_dist):
+	# Brake so it stops at the end of its reach, or at the lip of an edge.
+	var stopping := pace*pace/(2.0*float(knobs.brake))
+	if _travelled+stopping >= _reach or _edge_within(stopping):
 		state = "skid"
 		state_t = 0.0
+
+## Braking to a stop, then winded; at the lip it stops dead.
+func _skid(delta: float) -> void:
+	if not grounded: return
+	if _edge_within(0.0):
+		vel.x = 0.0
+		vel.z = 0.0
+	if slow(delta,float(knobs.brake)): stun(float(knobs.stun_miss))
+
+## An edge ahead along its way within `dist` m past its front and the lip.
+func _edge_within(dist: float) -> bool:
+	var way := Vector2(vel.x,vel.z)
+	way = way.normalized() if way.length() > 0.1 else _dir
+	return edge_ahead(way,length*0.5+float(knobs.lip)+dist)
 
 func hits_pilot(m: PilotMotor) -> void:
 	var way := Vector2(vel.x,vel.z)
