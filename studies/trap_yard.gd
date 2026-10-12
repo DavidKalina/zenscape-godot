@@ -26,6 +26,8 @@ const WindBlaster = preload("res://scripts/traps/trap_wind_blaster.gd")
 const Sluice = preload("res://scripts/traps/trap_sluice.gd")
 const Logs = preload("res://scripts/traps/trap_logs.gd")
 const Flip = preload("res://scripts/traps/trap_flip.gd")
+const Tumble = preload("res://scripts/traps/trap_tumble.gd")
+const Ray = preload("res://scripts/traps/trap_ray.gd")
 
 ## The slots: name -> the trap's script. One line per trap.
 const TRAPS := {
@@ -39,6 +41,8 @@ const TRAPS := {
 	"sluice": Sluice,
 	"logs": Logs,
 	"flip": Flip,
+	"tumble": Tumble,
+	"ray": Ray,
 }
 
 ## Lanes are this far apart along x (m); decks this wide, the end deck this
@@ -69,9 +73,12 @@ func _load_pack() -> void:
 	var drop: float = DROP_JUMPS*float(Trap.pilot().jumps[1])
 	lost = -drop-8.0
 	var i := 0
+	var lane_x := 0.0
 	for key: String in TRAPS:
 		var trap: Node3D = (TRAPS[key] as GDScript).new()
-		var x := LANE*i
+		var x := lane_x
+		# A trap that flies wide (the ray's loop) asks for lane room east of it.
+		lane_x += LANE+(float(trap.call("lane_extra")) if trap.has_method("lane_extra") else 0.0)
 		var long: float = trap.length()
 		var run_up: float = trap.run_up()
 		var spawn := Vector3(x,0.0,run_up)
