@@ -146,12 +146,12 @@ func _round_trip() -> void:
 func _cards(book: Node) -> void:
 	book.reset()
 	var card: Dictionary = book.card("bell_spires",{"name":"X","epithet":"Y"})
-	check(card.name == "X" and card.epithet == "Y" and card.finds == [["wildflower","Glyphs",0,7]],"Bell spires' card: one Glyphs row, 0 of 7 %s" % [card.finds])
+	check(card.name == "X" and card.epithet == "Y" and card.finds == [["rune","Runes",0,7]],"Bell spires' card: one Glyphs row, 0 of 7 %s" % [card.finds])
 	book.mark_done("bell_spires/chimney")
 	book.mark_done("bell_spires/turret")
 	var motif: RefCounted = BellSpires.new()
 	var live: Dictionary = motif.isle_card()
-	check(live.finds == [["wildflower","Glyphs",2,7]] and live.name == "Spires of the Silent Bell","The motif's own card reads the ledger: 2 of 7 %s" % [live.finds])
+	check(live.finds == [["rune","Runes",2,7]] and live.name == "Spires of the Silent Bell","The motif's own card reads the ledger: 2 of 7 %s" % [live.finds])
 	check(book.card("nowhere",{"name":"Z"}).finds == [],"An isle the ledger doesn't list has no rows")
 	var counts := {}
 	for isle: String in book.registry.isles: counts[isle] = book.card(isle,{}).finds[0][3]
@@ -160,7 +160,7 @@ func _cards(book: Node) -> void:
 	stand_in.set_script(load("res://studies/aqueduct_isle.gd"))
 	check(LedgerScript.isle_id_of(stand_in) == "aqueduct_isle","The aqueduct isle's id is 'aqueduct_isle'")
 	book.mark_done("aqueduct_isle/span")
-	check(stand_in.isle_card().finds == [["wildflower","Glyphs",1,7]],"The aqueduct isle's card reads the ledger: %s" % [stand_in.isle_card().finds])
+	check(stand_in.isle_card().finds == [["rune","Runes",1,7]],"The aqueduct isle's card reads the ledger: %s" % [stand_in.isle_card().finds])
 	stand_in.free()
 	book.reset()
 
@@ -195,7 +195,7 @@ func _tokens(book: Node) -> void:
 	check(int(again.hud._got) == 2 and int(again.hud._of) == 6,"The readout counts the earlier one: 2 of 6 (%s of %s)" % [again.hud._got,again.hud._of])
 	again.take("turret")
 	check(book.region_progress("ruins").done == 2,"Taking a taken one again does nothing")
-	check(isle.isle_card().finds == [["wildflower","Glyphs",2,6]],"The isle's card shows it: %s" % [isle.isle_card().finds])
+	check(isle.isle_card().finds == [["rune","Runes",2,6]],"The isle's card shows it: %s" % [isle.isle_card().finds])
 	life.free()
 	isle.queue_free()
 	book.reset()

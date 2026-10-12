@@ -5,7 +5,7 @@
 		"token": {"row": "glyphs"}
 	},
 	"rows": [
-		{"id": "glyphs", "icon": "wildflower", "label": "Glyphs"}
+		{"id": "glyphs", "icon": "rune", "label": "Runes"}
 	],
 	"regions": ["ruins"]
 }

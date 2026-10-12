@@ -19,7 +19,7 @@ const Hud = preload("res://scripts/collectibles_hud.gd")
 const Lines = preload("res://scripts/collectible_lines.gd")
 const Ledger = preload("res://scripts/ledger/ledger.gd")
 
-const GLYPH := "wildflower"
+const GLYPH := "rune"
 const SIZE := 0.7
 ## A mover jumping further than this in a frame (a respawn, a placing)
 ## starts its sweep afresh.
