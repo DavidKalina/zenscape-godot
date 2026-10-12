@@ -25,6 +25,8 @@ const ENTRIES: Array[Dictionary] = [
 		"detail":"The ruin platforming isle: grass, look presets (L), the plane on F. Find the lodestone, fly where the nose points; the halls follow."},
 	{"id":"sky_dragon","group":"Ruins","title":"Sky dragon","scene":"res://studies/aqueduct_isle.tscn","args":["--dragon"],
 		"detail":"An experiment: a great dragon rises from the clouds and roams the isles, now and then low over yours. V puts the camera on it."},
+	{"id":"dragon_vision","group":"Ruins","title":"Dragon vision greybox","scene":"res://studies/dragon_vision_study.tscn","args":[],
+		"detail":"Grey isles with cover; the dragon loops overhead looking for you: unaware, suspicious, spotted. J: sight overlay, V: watch him."},
 	{"id":"bell_spires","group":"Ruins","title":"Bell spires","scene":"res://studies/bell_spires_isle.tscn","args":[],
 		"detail":"Rock spires joined by rope bridges, a belfry on the tallest. Look presets (L), the plane on F."},
 	{"id":"cloister_tarn","group":"Ruins","title":"Cloister tarn","scene":"res://studies/cloister_tarn_isle.tscn","args":[],
