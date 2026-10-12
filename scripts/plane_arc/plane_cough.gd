@@ -8,7 +8,9 @@ extends Node3D
 ## and falling back, and a puff of grey smoke out of the nose. Then still.
 ## Nothing moves the plane; its parked pose comes back as it was.
 const KitAudio = preload("res://scripts/kit_isle/kit_audio.gd")
-const START := preload("res://assets/audio/kit/engine-start.wav")
+## Loaded when the player is made, not preloaded: a const would hold the
+## stream past the scene's teardown (scripts/desktop_build_check.gd).
+const START := "res://assets/audio/kit/engine-start.wav"
 
 ## The beat's length and its coughs (s in), each one's length, loudness
 ## (linear) and pitch; how far the propeller kicks round (rad) and the
@@ -36,7 +38,7 @@ var _next := 0
 func _init() -> void:
 	name = "PlaneCough"
 	_player = AudioStreamPlayer3D.new()
-	_player.stream = START
+	_player.stream = load(START)
 	_player.bus = KitAudio.SFX
 	_player.unit_size = 6.0
 	_player.max_distance = 80.0
