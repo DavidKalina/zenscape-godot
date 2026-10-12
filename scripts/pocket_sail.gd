@@ -34,6 +34,9 @@ extends RefCounted
 ## its column the sail climbs, up to THERMAL_MOST m/s, taken up at
 ## THERMAL_TAKE m/s², with no ceiling (`riding` while it does). Thermals are
 ## placed and rare, so height stays what it spends everywhere else.
+## Air coming down (`wind.y` under 0: the dragon's downwash, scripts/
+## dragon_downwash.gd) takes the lift away and presses it down by that much
+## over its sink, a crouch's float too.
 ##
 ## Plain state and maths, as the motor and the glide are, so tests can step
 ## it. The motor (scripts/pilot_motor.gd) and the skydive
@@ -214,8 +217,10 @@ func step(delta: float, velocity: Vector3, y: float, steering: float, push: floa
 	drift = drift.lerp(Vector2(wind.x,wind.z)*wind_share,1.0-exp(-delta/WIND_EASE))
 	var gust := maxf(wind.y,0.0)*lift
 	var warm := maxf(float(air.get("thermal",0.0)),0.0)*thermal
-	lift_now = gust+warm
-	var target := minf(-want_sink+gust,rise_most)
+	var press := maxf(-wind.y,0.0)
+	lift_now = gust+warm-press
+	if press > 0.0: warm = maxf(warm-press,0.0)
+	var target := minf(-want_sink+gust-press,rise_most)
 	# A gust never lifts him back up over the airtime's peak (nor, over it,
 	# drops him faster than his sink).
 	if is_finite(peak): target = minf(target,maxf(peak+ceiling-y,-want_sink))

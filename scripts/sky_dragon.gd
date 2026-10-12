@@ -51,6 +51,13 @@ extends Node3D
 ## it on its way in to an attack (the grab about 8 s on);
 ## --dragon-target=<isle name> its first (or only) target;
 ## --dragon-attack-every=<s> (70) between attacks.
+##
+## The downwash (docs/design/dragon-downwash/round1.md): flying (here, or
+## on his wake's circuit, `wake_fly`), his wings push the air down under
+## him on each downstroke and lift it over him (`downwash`, scripts/
+## dragon_downwash.gd; the host reads it for the plane and the sail).
+## --dragon-downwash-test keeps him circling low round the home isle,
+## beating, no attacks (=glide: his own beats and glides).
 
 signal yielded
 
@@ -126,6 +133,20 @@ const RIDE_PANT := Vector2(2.5,3.5)
 ## back. --dragon-ride-repeat keeps round 5's instant swoop back.
 const RIDE_AWAY := 16.0
 const DragonGale = preload("res://scripts/dragon_gale.gd")
+const DragonDownwash = preload("res://scripts/dragon_downwash.gd")
+## The air his wings push (see the header), updated every frame.
+var downwash := DragonDownwash.new()
+var _ground_t := 0.0
+var _ground_y := -INF
+var _wake_flew := false
+## --dragon-downwash-test: a cloverleaf over the home isle, CIRCLE_UP m
+## over its top at `shadow_at`: straight over its middle, out CIRCLE_R m,
+## round and back over it the other way (at most CIRCLE_SPEED m/s), each
+## lap turned a little; beating unless "glide".
+const CIRCLE_R := 150.0
+const CIRCLE_UP := 45.0
+const CIRCLE_SPEED := 24.0
+var _circle := ""
 const StoneLampLights = preload("res://scripts/stone_lamp_lights.gd")
 ## Its night glow (night light round 1, docs/design/night-light/round1.md),
 ## eased in as the lamps are (StoneLampLights.night_for, over NIGHT_FADE s):
@@ -447,9 +468,14 @@ func setup(cam: Camera3D, args: PackedStringArray, sea: float, middle: Vector3, 
 		elif arg.begins_with("--dragon-orbit-up="): _orbit_up = float(arg.get_slice("=",1))
 		elif arg.begins_with("--dragon-orbit-far="): _orbit_far = float(arg.get_slice("=",1))
 		elif arg == "--dragon-watch": watch = "chase"
+		elif arg == "--dragon-downwash-test": _circle = "beat"
+		elif arg == "--dragon-downwash-test=glide": _circle = "glide"
 		elif arg.begins_with("--dragon-watch="): watch = arg.get_slice("=",1)
 	if _attack_now and not args_have(args,"--dragon-delay="): delay = 0.3
 	_attack_in = _attack_every*0.55
+	if _circle != "":
+		_attack_in = INF
+		if not args_have(args,"--dragon-delay="): delay = 0.5
 	_build()
 	_build_treasure()
 	gale = DragonGale.new()
@@ -867,7 +893,18 @@ func _start() -> void:
 	leg_kind = "rise"
 	# Then straight into a low pass, so it is seen soon.
 	_add_low_pass()
-	if _pass_now:
+	if _circle != "":
+		# --dragon-downwash-test: already on the circle, level.
+		route.clear()
+		_leg_kinds.clear()
+		var mid := _circle_mid()
+		pos = mid+Vector3(CIRCLE_R,0.0,0.0)
+		yaw = PI*0.5
+		gamma = 0.0
+		speed = CIRCLE_SPEED
+		route.append(mid)
+		_leg_kinds.append("low pass")
+	elif _pass_now:
 		# --dragon-pass: already on the low pass's way in, level.
 		route.pop_front()
 		_leg_kinds.pop_front()
@@ -1049,7 +1086,26 @@ func _add_climb_dive() -> void:
 	_leg_kinds.append("climb")
 	_leg_kinds.append("dive")
 
+## --dragon-downwash-test: the circle's middle, at its height.
+func _circle_mid() -> Vector3:
+	var aim := shadow_at if shadow_at != Vector3.INF else Vector3(home.x,home_top,home.z)
+	return Vector3(aim.x,home_top+CIRCLE_UP,aim.z)
+
+## One lap of the cloverleaf (flown through as a low pass): over the
+## middle and out one way, round, over it and out the other, round.
+func _add_circle() -> void:
+	var mid := _circle_mid()
+	var a0 := atan2(-cos(yaw),-sin(yaw))
+	for a: float in [a0,a0+0.9,INF,a0+0.9+PI,a0+1.8+PI]:
+		route.append(mid if a == INF else mid+Vector3(cos(a),0.0,sin(a))*CIRCLE_R)
+		_leg_kinds.append("low pass")
+	route.append(mid)
+	_leg_kinds.append("low pass")
+
 func _next_legs() -> void:
+	if _circle != "":
+		_add_circle()
+		return
 	if _attack_in <= 0.0 and not targets.is_empty():
 		_add_attack()
 		return
@@ -1108,6 +1164,7 @@ func open_eyes(open: bool) -> void:
 ## has none off its roost: `setup_roost` builds neither).
 func wake_fly(delta: float) -> void:
 	_clock += delta
+	_wake_flew = true
 	_ride_air(delta)
 	_fly(delta)
 	_pose(delta)
@@ -1127,6 +1184,8 @@ func advance(delta: float) -> void:
 	if roost != null:
 		if wake != null: wake.call("advance",delta)
 		else: roost.advance(delta)
+		_downwash(delta,_wake_flew)
+		_wake_flew = false
 		_night_glow(delta)
 		if awake(): _watch_camera(delta)
 		return
@@ -1137,6 +1196,7 @@ func advance(delta: float) -> void:
 			_step(minf(ahead,1.0/30.0))
 			ahead -= 1.0/30.0
 	_step(minf(delta,0.1))
+	_downwash(delta,state in ["roaming","rising"] and model.visible)
 	_night_glow(delta)
 	_watch_camera(delta)
 
@@ -1145,7 +1205,7 @@ func _step(delta: float) -> void:
 	_t += delta
 	if state == "waiting":
 		if _t < delay: return
-		state = "roaming" if _pass_now or _attack_now else "rising"
+		state = "roaming" if _pass_now or _attack_now or _circle != "" else "rising"
 		model.visible = true
 		_t = 0.0
 	if state == "roaming": _attack_in -= delta
@@ -1189,7 +1249,7 @@ func _step(delta: float) -> void:
 				sunk_after = 0.0
 				tip_speed = 0.0
 				tip_jerk = 0.0
-			else: print("sky dragon: t %.0f %s %s leg %s at (%.0f, %.0f, %.0f) %.1f m/s gamma %.2f roll %.2f flap %.2f, %.0f m from the isle's middle" % [_clock,state,mode,leg_kind,pos.x,pos.y,pos.z,speed,gamma,roll,flap_w,Vector2(pos.x-home.x,pos.z-home.z).length()])
+			else: print("sky dragon: t %.0f %s %s leg %s at (%.0f, %.0f, %.0f) %.1f m/s gamma %.2f roll %.2f flap %.2f, %.0f m from the isle's middle; downwash on the ground %.2f, gust %.2f" % [_clock,state,mode,leg_kind,pos.x,pos.y,pos.z,speed,gamma,roll,flap_w,Vector2(pos.x-home.x,pos.z-home.z).length(),downwash.reach_ground(),downwash.burst.w])
 
 func _fly(delta: float) -> void:
 	if route.is_empty(): _next_legs()
@@ -1243,6 +1303,7 @@ func _fly(delta: float) -> void:
 				_bout = true
 				_bout_left = _rng.randi_range(1,3)
 			elif _bout and speed > GLIDE_ABOVE and _bout_left <= 0: _bout = false
+	if _circle == "beat": _bout = true
 	flap_w = move_toward(flap_w,1.0 if _bout else 0.0,delta*(1.4 if _bout else 0.7))
 	# The push comes on the downstroke, so each beat surges.
 	var power := (1.4 if mode == "climb" else 1.0)*(1.8 if phase < DOWN else 0.2)
@@ -1251,6 +1312,7 @@ func _fly(delta: float) -> void:
 	# The swell's lift feeds the speed a little, as a soaring bird's does.
 	accel += _swell*0.12
 	speed = clampf(speed+accel*delta,24.0 if state == "rising" else MIN_SPEED,MAX_SPEED)
+	if _circle != "": speed = minf(speed,CIRCLE_SPEED)
 	var fwd := Vector3(-sin(yaw)*cos(gamma),sin(gamma),-cos(yaw)*cos(gamma))
 	pos += fwd*speed*delta
 	# Carried by the air: a drift down the wind (the swell is laid on in
@@ -1280,6 +1342,23 @@ func _ride_air(delta: float) -> void:
 	# Roll and pitch bumps, under-damped: a jolt, a sway, settled.
 	_bump_v += (-_bump*7.0-_bump_v*2.6)*delta
 	_bump += _bump_v*delta
+
+## The downwash's frame (scripts/dragon_downwash.gd): where he is, the beat,
+## and the turf under him (a ray every 0.2 s while flying) for its ring.
+func _downwash(delta: float, flying: bool) -> void:
+	var hz := lerpf(BEAT,BEAT_CLIMB,clampf(gamma/MAX_CLIMB,0.0,1.0))
+	var at := global_position if is_inside_tree() else pos
+	_ground_t -= delta
+	if not flying: _ground_y = -INF
+	elif _ground_t <= 0.0 and is_inside_tree():
+		_ground_t = 0.2
+		var reach := DragonDownwash.BELOW*DragonDownwash.MODEL_SPAN*size
+		_ray.from = at
+		_ray.to = at+Vector3.DOWN*reach
+		_ray.collision_mask = TURF_LAYER|SOLID_LAYER
+		var hit := get_world_3d().direct_space_state.intersect_ray(_ray)
+		_ground_y = (hit.position as Vector3).y if not hit.is_empty() else -INF
+	downwash.update(delta,flying,at,yaw,size,phase,flap_w,hz,_ground_y,is_inside_tree())
 
 ## Held in place for a pose check.
 func _held(delta: float) -> void:
