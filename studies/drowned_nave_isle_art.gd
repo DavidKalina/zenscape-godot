@@ -26,6 +26,7 @@ extends RefCounted
 const Art = preload("res://studies/aqueduct_isle_art.gd")
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 const Cloister = preload("res://scripts/ruin_kit_cloister.gd")
+const WorldScale = preload("res://scripts/world_scale.gd")
 const Build = RuinKit.Build
 const SkyIslets = preload("res://scripts/sky_islets.gd")
 const SkyFallThread = preload("res://scripts/sky_fall_thread.gd")
@@ -39,14 +40,58 @@ const K := W+0.5
 ## The nave's floor (under the water) and the rows' offset from its axis.
 const NAVE_FLOOR := W-0.4
 const ROW_Z := 5.4
-const PIERS := [-27.0,-21.6,-16.2,-10.8,-5.4,0.0,5.4,10.8,16.2,21.6,27.0]
-## The south row's fallen run (bays), its snapped piers; the north row's.
-const SOUTH_FALLEN := [2,3,4]
-const SOUTH_STUBS := {3:3.1,4:2.3}
-const NORTH_FALLEN := [6,7]
-const NORTH_STUBS := {7:2.9}
-## The arcade's walk (the tall bays', as the cloister's water gate).
+## The rows' bays (both rows alike, so they face each other across the
+## nave): BAYS of them, the walker's bay BAY pier to pier (the cloister's
+## 5.4 m: its arch 4.46 clear, its crown 4 m over the floor; walker-sized)
+## but the crossing bay CROSS_AT, where the plane goes out through the rows:
+## the south row's gap (fallen, a stub at each of its piers) and, facing it,
+## the north row's great arch standing (CROSS_WALK its walk). The crossing's
+## clear is an opening (scripts/world_scale.gd) on the toy era's clear of a
+## walker's bay (TOY_CROSS 4.46: the toy plane threaded any bay), 8.47 m at
+## the defaults; at `--plane-scale=1 --opening-ratio=1` it is a walker's bay
+## again (nine bays 5.4 apart).
+## PIERS: the piers' x along the nave (world x from C, west to east).
+const BAY := 5.4
+const BAYS := 9
+const CROSS_AT := 5
+## What a bay's arch keeps off its piers' middles (the cloister kit's `_bay`).
+const ARCH_OFF := Cloister.PIER_HALF+0.15
+const TOY_CROSS := BAY-2.0*ARCH_OFF
+static var CROSS_CLEAR: float = WorldScale.opening(TOY_CROSS)
+static var CROSS: float = CROSS_CLEAR+2.0*ARCH_OFF
+static var PIERS: Array = _piers()
+## The south row's fallen run (bays, west to east, as PIERS), its snapped
+## piers (pier index: height), the crossing's two; the north row's, east of
+## the great arch.
+const SOUTH_FALLEN := [CROSS_AT-1,CROSS_AT,CROSS_AT+1]
+const SOUTH_STUBS := {CROSS_AT:2.3,CROSS_AT+1:3.1}
+const NORTH_FALLEN := [CROSS_AT+1,CROSS_AT+2]
+const NORTH_STUBS := {CROSS_AT+2:2.9}
+## The rows' stepped buttresses (pier index), north and south.
+const NORTH_BUTTRESS := 1
+const SOUTH_BUTTRESS := 2
+## The arcade's walk (the tall bays', as the cloister's water gate), and
+## over the crossing's great arch: its crown's ring (the kit's two orders)
+## under the coping, never under TALL (TALL exactly at the toy's bay).
 const TALL := Cloister.WALK+0.38
+static var CROSS_WALK: float = maxf(TALL,Cloister.SPRING+CROSS_CLEAR*0.5+RuinKit.ORDER*2.0+0.04+Cloister.COPING)
+
+static func _piers() -> Array:
+	var out: Array = []
+	var x := -(BAY*(BAYS-1)+CROSS)*0.5
+	out.append(x)
+	for i in range(BAYS):
+		x += CROSS if i == CROSS_AT else BAY
+		out.append(x)
+	return out
+
+## The crossing's middle (world x from C).
+static func cross_mid() -> float:
+	return bay_mid(CROSS_AT)
+
+## The middle of bay `i` (world x from C).
+static func bay_mid(i: int) -> float:
+	return (float(PIERS[i])+float(PIERS[i+1]))*0.5
 ## The nave floor strip's half width and how fast it falls to the moat.
 const NAVE_HW := 7.4
 const NAVE_X := 30.0
@@ -282,15 +327,24 @@ static func nave(seed_value: int, weathered: float) -> Dictionary:
 	var node := Node3D.new()
 	node.name = "Nave"
 	var tall := {}
-	for i in range(PIERS.size()-1): tall[i] = TALL
+	for i in range(BAYS): tall[i] = CROSS_WALK if i == CROSS_AT else TALL
+	# The south row is turned round (its x runs east to west): its piers,
+	# bays and stubs counted from the east end.
+	var south_fallen: Array = SOUTH_FALLEN.map(func(i: int) -> int: return BAYS-1-i)
+	var south_stubs := {}
+	for j: int in SOUTH_STUBS: south_stubs[BAYS-j] = SOUTH_STUBS[j]
+	var south_tall := {}
+	for i: int in tall: south_tall[BAYS-1-i] = tall[i]
+	var south_piers: Array = PIERS.map(func(x: float) -> float: return -x)
+	south_piers.reverse()
 	var rows := {}
 	var specs := {
-		"north":{"ends":Vector2(0.6,0.6),"fallen":NORTH_FALLEN,"stubs":NORTH_STUBS,"tall":tall,"buttresses":[-21.6]},
-		"south":{"ends":Vector2(0.6,0.6),"fallen":SOUTH_FALLEN,"stubs":SOUTH_STUBS,"tall":tall,"buttresses":[16.2]},
+		"north":[PIERS,{"ends":Vector2(0.6,0.6),"fallen":NORTH_FALLEN,"stubs":NORTH_STUBS,"tall":tall,"buttresses":[PIERS[NORTH_BUTTRESS]]}],
+		"south":[south_piers,{"ends":Vector2(0.6,0.6),"fallen":south_fallen,"stubs":south_stubs,"tall":south_tall,"buttresses":[-float(PIERS[SOUTH_BUTTRESS])]}],
 	}
 	var k := 0
 	for side: String in specs:
-		var row: Node3D = Cloister.range_run(seed_value+k,weathered,PIERS,specs[side])
+		var row: Node3D = Cloister.range_run(seed_value+k,weathered,specs[side][0],specs[side][1])
 		row.name = "Row_"+side
 		row.transform = row_frame(side)
 		node.add_child(row)
