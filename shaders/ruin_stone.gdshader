@@ -10,6 +10,9 @@ render_mode diffuse_lambert, specular_schlick_ggx;
 // shelter in its vertex alpha): the light from outside bouncing round under
 // the roof, so the inside is dim but its stone reads.
 #define ZS_SHELTER_BOUNCE
+// The ruins at night: the moon caught in the stone and the lanterns' bounce
+// (shaders/folk_surface.gdshaderinc, scripts/kit_isle/kit_night_lights.gd).
+#define ZS_NIGHT_STONE
 uniform float shelter_fill = 4.5;
 uniform vec3 shelter_tint : source_color = vec3(1.0, 0.82, 0.6);
 #include "res://shaders/folk_surface.gdshaderinc"

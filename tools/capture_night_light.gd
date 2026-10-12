@@ -13,7 +13,7 @@ extends SceneTree
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const Art = preload("res://studies/aqueduct_isle_art.gd")
 const GAME := "res://studies/zenscape.tscn"
-const SHOTS := ["wide","circle","rune","aqueduct","arch","plane","airship","dragon","serpent"]
+const SHOTS := ["wide","circle","ruins","aqueduct","arch","plane","airship","dragon","serpent"]
 
 var game: Node3D
 var camera: Camera3D
@@ -111,17 +111,11 @@ func _aim(shot: String) -> Dictionary:
 			(ship.get("_halos") as Node3D).visible = shot != "airship_bare"
 			var far := 90.0 if shot == "airship_near" else 520.0
 			return {"eye":at+from*far+Vector3.UP*far*0.06,"at":at+Vector3.UP*4.0}
-		"rune":
-			# A carving of the night lights' (one on the stone circle if any).
-			var lights: Node = game.get("night_lights")
-			if lights == null or (lights.runes as Array).is_empty(): return {}
-			var pick: Dictionary = lights.runes[0]
-			for r: Dictionary in lights.runes:
-				if str(r.piece).to_lower().contains("circle"):
-					pick = r
-					break
-			var n: Vector3 = pick.normal
-			return {"eye":(pick.at as Vector3)+n*5.0+Vector3.UP*0.6+n.cross(Vector3.UP)*1.5,"at":pick.at}
+		"ruins":
+			# The ruins from a low pass, about 70 m off: the stone circle,
+			# the stair and the aqueduct's head (round 2's night stone).
+			var mid := Vector3(84.0,36.0,-8.0)
+			return {"eye":mid+Vector3(0.55,0.42,0.72).normalized()*70.0,"at":mid}
 		"dragon":
 			var dragon: Node3D = game.get("dragon")
 			if dragon == null: return {}

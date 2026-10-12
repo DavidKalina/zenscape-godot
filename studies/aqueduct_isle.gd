@@ -532,11 +532,12 @@ func _add_life() -> void:
 	if NightLights.wanted(preload("res://scripts/launch_args.gd").user_args()):
 		night_lights = NightLights.new()
 		add_child(night_lights)
-		night_lights.setup(self,night_lamp_spots,art)
+		night_lights.setup(self,night_lamp_spots)
 
 # --- The night's lights (scripts/kit_isle/kit_night_lights.gd) ----------------------
 
-## The isle's runes and lanterns after dark (docs/design/night-light/round1.md).
+## The isle's lanterns and its ruins' own light after dark
+## (docs/design/night-light/round1.md, round2.md).
 const NightLights = preload("res://scripts/kit_isle/kit_night_lights.gd")
 var night_lights: Node3D = null
 

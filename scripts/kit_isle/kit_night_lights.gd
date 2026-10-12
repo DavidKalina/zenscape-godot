@@ -1,19 +1,16 @@
 extends Node3D
 ## A kit isle's lights after dark (night light round 1, docs/design/
-## night-light/round1.md): the ruins' runes and a few lanterns where people
-## would have been, cool against warm.
+## night-light/round1.md, round2.md): the ruins catching the moon, a few
+## lanterns where people would have been, cool against warm.
 ##
-## - Runes: a few carvings cut into the ruins' stones (some stones, never
-##   every face), in the rune serpent's glyphs (shaders/rune_glyphs.
-##   gdshaderinc, drawn by shaders/ruin_runes.gdshader), glowing faintly
-##   cool at night, each breathing slowly on its own beat. They are laid
-##   once, on the stones' own faces: a stone (one of the kit's block hulls,
-##   its "Body" collision) is picked by a seeded hash, RUNE_SHARE of them
-##   (more on the landmarks: LANDMARK_SHARE by name), at least RUNE_APART m
-##   from another, at most MAX_RUNES; a ray cast in at it from outside finds
-##   an upright face of that very block (a face hidden behind another block
-##   is never hit), and a quad of one to three glyphs lies a hair off it.
-##   One MultiMesh, no light cast.
+## - The ruins' own light (round 2, docs/design/night-light/round2.md; the
+##   round 1 rune carvings are gone): the ruins' stone (shaders/
+##   ruin_stone.gdshader, ZS_NIGHT_STONE) catches and holds the moon, a
+##   cool lift on the faces turned to it and on the tops, and takes a soft
+##   warm bounce from every lantern within BOUNCE_REACH m (in the shader,
+##   no light cast); a few broad, faint washes (WASHES, real OmniLights, no
+##   shadows) lay soft pools of moonlit light over and round the
+##   landmarks, so the stone and the turf about it read from the air.
 ## - Lanterns: the stone lamp (scripts/stone_lamp.gd's mesh, in the ruins'
 ##   own stone material, darkened to sit with it) at the spots the isle
 ##   gives (`setup`'s `spots`: by the parked plane, along the stairs and
@@ -23,39 +20,37 @@ extends Node3D
 ##   cast real light (OmniLight3D, no shadows), picked again every
 ##   PICK_SECONDS and eased over HANDOFF_SECONDS; the rest just glow.
 ##
-## Both come up as the lamps do (StoneLampLights.night_for the sky's
+## All of it comes up as the lamps do (StoneLampLights.night_for the sky's
 ## daylight, eased over FADE_SECONDS) and are gone by day.
-## Flags: --no-night-lights (none of it), --no-runes, --no-lanterns.
+## Flags: --no-night-lights (none of it), --no-ruin-light (the stone's
+## catch, bounce and the washes), --no-lanterns.
 const StoneLamp = preload("res://scripts/stone_lamp.gd")
 const StoneLampLights = preload("res://scripts/stone_lamp_lights.gd")
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
-const RUNE_SHADER := preload("res://shaders/ruin_runes.gdshader")
 const HALO_SHADER := preload("res://shaders/stone_lamp_halo.gdshader")
 
-## The runes: their colour (a pale cool blue-teal, against the lanterns'
-## warm), strength, the share of stones carved, more on the landmarks
-## (by the piece's name), the least gap between two carvings (m), and the
-## most of them.
-const RUNE_COLOUR := Color(0.52,0.82,1.0)
-const RUNE_ENERGY := 1.2
-const RUNE_SHARE := 0.05
-const LANDMARK_SHARE := {"circle":0.4,"heel":1.0,"arch":0.3,"castellum":0.12}
-## Pieces never carved (by name): the land's own rock, the crag walls and
-## the loose floating stones are not masonry.
-const UNCARVED := ["island","islet","hillwalls","floating"]
-const RUNE_APART := 3.5
-const MAX_RUNES := 48
-## A carving's glyph height (m) as a share of the stone's least size, and
-## its least and most; how far off the face it lies (m).
-const RUNE_HEIGHT := 0.3
-const RUNE_HEIGHT_RANGE := Vector2(0.28,0.75)
-const RUNE_LIFT := 0.025
-## Stones smaller than this (m, their largest size) are passed over, and
-## hulls larger than this are not stones.
-const STONE_SIZE := Vector2(0.9,14.0)
-## A face counts as upright under this much of up in its normal.
-const UPRIGHT := 0.4
+## The stone's night: how much of the moon it catches (on the ruins' stone
+## material, shared by every kit isle's ruins), the lanterns' bounce on it
+## (strength, reach m) and its colour.
+const MOON_CATCH := 0.9
+const BOUNCE := 1.6
+const BOUNCE_REACH := 7.0
+const BOUNCE_COLOUR := Color(1.0,0.66,0.38)
+## The most lanterns the stone shader takes (its `night_lamps` array).
+const MAX_BOUNCE_LAMPS := 16
+## The washes: broad faint pools of cool light over the landmarks, each
+## [the isle's spot (x, z, the height above the ground there, m), reach m,
+## energy]; WASH_COLOUR their light.
+const WASHES := [
+	# The stone circle on its hill.
+	[Vector3(61.0,7.0,0.0),18.0,0.8],
+	# The aqueduct's arcade, over its middle.
+	[Vector3(100.0,10.0,-24.0),20.0,0.8],
+	# The gate on the far island.
+	[Vector3(100.0,6.0,-62.5),14.0,0.7],
+]
+const WASH_COLOUR := Color(0.62,0.74,1.0)
 
 ## The lanterns: their scale (the stone lamp is about 1.05 m at 1), how much
 ## darker their stone than the lamp's own pale grey, their real lights
@@ -80,22 +75,20 @@ var scene: Node3D
 var glow := 0.0
 ## For probes: >= 0 holds the daylight at this instead of the sky's.
 var daylight_override := -1.0
-## The carvings laid: {"at", "normal", "size", "piece"}; the lanterns:
-## {"at" (the core's middle), "foot"}.
-var runes: Array[Dictionary] = []
+## The lanterns: {"at" (the core's middle), "foot"}.
 var lamps: Array[Dictionary] = []
-var rune_mesh: MultiMeshInstance3D
+## The washes' lights, as laid.
+var washes: Array[OmniLight3D] = []
 var lamp_mesh: MultiMeshInstance3D
 var cores: MultiMeshInstance3D
 var halos: MultiMeshInstance3D
-var _rune_material: ShaderMaterial
+var _stone: ShaderMaterial
 var _core_material: StandardMaterial3D
 var _halo_material: ShaderMaterial
 var _slots: Array[Dictionary] = []
 var _pick_in := 0.0
-var _want_runes := true
+var _want_ruin_light := true
 var _want_lamps := true
-var _rune_root: Node3D
 var _seed := 0
 var _laid := false
 var _wait_frames := 2
@@ -106,20 +99,18 @@ static func wanted(args: PackedStringArray) -> bool:
 ## `isle` the kit isle (its `art`, its `_celestial`); `spots` where the
 ## lanterns stand (world x, z as Vector2s, each put down on what is under
 ## it), or a Callable giving them when they are laid (the plane's parked
-## spot is known only once the isle is up);
-## `rune_root` the ruins to carve (the isle's art).
-func setup(isle: Node3D, spots: Variant, rune_root: Node3D, seed_value := 1771) -> void:
+## spot is known only once the isle is up).
+func setup(isle: Node3D, spots: Variant, seed_value := 1771) -> void:
 	scene = isle
 	name = "NightLights"
 	_seed = seed_value
-	_rune_root = rune_root
 	var args := LaunchArgs.user_args()
-	_want_runes = not args.has("--no-runes")
+	_want_ruin_light = not args.has("--no-ruin-light")
 	_want_lamps = not args.has("--no-lanterns")
-	_rune_material = ShaderMaterial.new()
-	_rune_material.shader = RUNE_SHADER
-	_rune_material.set_shader_parameter("colour",RUNE_COLOUR)
-	_rune_material.set_shader_parameter("energy",RUNE_ENERGY)
+	if _want_ruin_light:
+		_stone = RuinKit.materials().stone as ShaderMaterial
+		_stone.set_shader_parameter("night_bounce_colour",BOUNCE_COLOUR)
+		_stone.set_shader_parameter("night_bounce_reach",BOUNCE_REACH)
 	_core_material = StandardMaterial3D.new()
 	_core_material.albedo_color = StoneLampLights.PAPER
 	_core_material.roughness = 0.9
@@ -152,122 +143,45 @@ func _physics_process(_delta: float) -> void:
 	_laid = true
 	var space := get_world_3d().direct_space_state
 	if _want_lamps: _lay_lamps(space)
-	if _want_runes and _rune_root != null: _lay_runes(space)
+	if _want_ruin_light:
+		_lay_washes(space)
+		_tell_stone()
+	print("night lights: %d lanterns, %d washes" % [lamps.size(),washes.size()])
 
-# --- The runes ------------------------------------------------------------------
+# --- The ruins' own light ------------------------------------------------------
 
-func _lay_runes(space: PhysicsDirectSpaceState3D) -> void:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = _seed
-	var bodies := _rune_root.find_children("*","StaticBody3D",true,false)
-	var found: Array[Dictionary] = []
+## The washes: a broad faint light over each landmark, its height taken
+## from the ground under it.
+func _lay_washes(space: PhysicsDirectSpaceState3D) -> void:
 	var ray := PhysicsRayQueryParameters3D.new()
-	ray.collide_with_areas = false
-	for b in bodies:
-		var body := b as StaticBody3D
-		var share := _share_for(body)
-		for holder in body.get_children():
-			if found.size() >= MAX_RUNES: break
-			var shape_node := holder as CollisionShape3D
-			if shape_node == null or not shape_node.shape is ConvexPolygonShape3D: continue
-			# The dice are thrown for every stone, so the picks hold as the
-			# stones before them are kept or not.
-			var roll := rng.randf()
-			var turn := rng.randf()*TAU
-			var glyphs := 1+int(rng.randf()*2.99)
-			var phase := rng.randf()
-			if roll > share: continue
-			var points: PackedVector3Array = (shape_node.shape as ConvexPolygonShape3D).points
-			if points.size() < 4: continue
-			var xf := shape_node.global_transform
-			var box := AABB(xf*points[0],Vector3.ZERO)
-			for p in points: box = box.expand(xf*p)
-			var big := maxf(box.size.x,maxf(box.size.y,box.size.z))
-			if big < STONE_SIZE.x or big > STONE_SIZE.y: continue
-			var middle := box.get_center()
-			var spot := _face(space,ray,body,shape_node,middle,box,turn)
-			if spot.is_empty(): continue
-			var clear := true
-			for other in found:
-				if (other.at as Vector3).distance_to(spot.at) < RUNE_APART:
-					clear = false
-					break
-			if not clear: continue
-			var least := minf(box.size.y,maxf(box.size.x,box.size.z))
-			var height := clampf(least*RUNE_HEIGHT,RUNE_HEIGHT_RANGE.x,RUNE_HEIGHT_RANGE.y)
-			spot["size"] = Vector2(height*0.62*glyphs,height)
-			spot["glyphs"] = glyphs
-			spot["phase"] = phase
-			spot["seed"] = rng.randf()*97.0
-			spot["piece"] = _piece_name(body)
-			found.append(spot)
-	runes = found
-	_draw_runes()
-	var by_piece := {}
-	for r in runes: by_piece[r.piece] = int(by_piece.get(r.piece,0))+1
-	print("night lights: %d runes on the ruins (%s), %d lanterns" % [runes.size(),by_piece,lamps.size()])
-
-## How likely a stone of `body`'s piece is to be carved.
-func _share_for(body: Node) -> float:
-	var named := _piece_name(body).to_lower()
-	for key: String in UNCARVED:
-		if named.contains(key): return 0.0
-	for key: String in LANDMARK_SHARE:
-		if named.contains(key): return float(LANDMARK_SHARE[key])
-	return RUNE_SHARE
-
-## The piece a body belongs to: the nearest named ancestor under the root.
-func _piece_name(body: Node) -> String:
-	var node := body.get_parent()
-	while node != null and node.get_parent() != _rune_root and node != _rune_root:
-		node = node.get_parent()
-	return str(node.name) if node != null else ""
-
-## An upright face of the block `shape` (of `body`): rays in at its middle
-## from four sides (starting at `turn`), the first that hits that very
-## block on a face that stands. {"at", "normal"} or {}.
-func _face(space: PhysicsDirectSpaceState3D, ray: PhysicsRayQueryParameters3D, body: StaticBody3D, shape: CollisionShape3D, middle: Vector3, box: AABB, turn: float) -> Dictionary:
-	var reach := box.size.length()*0.5+1.5
-	for k in range(4):
-		var a := turn+k*PI*0.5
-		var dir := Vector3(cos(a),0.0,sin(a))
-		ray.from = middle+dir*reach
-		ray.to = middle
+	for wash: Array in WASHES:
+		var spot: Vector3 = wash[0]
+		ray.from = Vector3(spot.x,200.0,spot.z)
+		ray.to = Vector3(spot.x,-60.0,spot.z)
 		var hit := space.intersect_ray(ray)
-		if hit.is_empty() or hit.collider != body: continue
-		var owner_id: int = body.shape_find_owner(int(hit.shape))
-		if body.shape_owner_get_owner(owner_id) != shape: continue
-		var normal: Vector3 = hit.normal
-		if absf(normal.y) > UPRIGHT: continue
-		return {"at":hit.position,"normal":normal}
-	return {}
+		if hit.is_empty(): continue
+		var light := OmniLight3D.new()
+		light.name = "Wash%d" % washes.size()
+		light.light_color = WASH_COLOUR
+		light.shadow_enabled = false
+		light.light_specular = 0.0
+		light.omni_range = float(wash[1])
+		light.omni_attenuation = 0.8
+		light.set_meta("energy",float(wash[2]))
+		light.visible = false
+		light.top_level = true
+		add_child(light)
+		light.global_position = (hit.position as Vector3)+Vector3.UP*spot.y
+		washes.append(light)
 
-func _draw_runes() -> void:
-	if runes.is_empty(): return
-	var quad := QuadMesh.new()
-	quad.size = Vector2.ONE
-	var multi := MultiMesh.new()
-	multi.transform_format = MultiMesh.TRANSFORM_3D
-	multi.use_custom_data = true
-	multi.mesh = quad
-	multi.instance_count = runes.size()
-	for i in range(runes.size()):
-		var r: Dictionary = runes[i]
-		var normal: Vector3 = r.normal
-		var side := Vector3.UP.cross(normal).normalized()
-		var up := normal.cross(side).normalized()
-		var size: Vector2 = r.size
-		var basis := Basis(side*size.x,up*size.y,normal)
-		multi.set_instance_transform(i,Transform3D(basis,(r.at as Vector3)+normal*RUNE_LIFT))
-		multi.set_instance_custom_data(i,Color(float(r.seed),float(r.glyphs),float(r.phase),1.0))
-	rune_mesh = MultiMeshInstance3D.new()
-	rune_mesh.name = "Runes"
-	rune_mesh.multimesh = multi
-	rune_mesh.material_override = _rune_material
-	rune_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	rune_mesh.top_level = true
-	rune_mesh.visible = false
-	add_child(rune_mesh)
+## The lanterns' places, for the stone's warm bounce.
+func _tell_stone() -> void:
+	var points := PackedVector4Array()
+	for i in range(mini(lamps.size(),MAX_BOUNCE_LAMPS)):
+		var at: Vector3 = lamps[i].at
+		points.append(Vector4(at.x,at.y,at.z,1.0))
+	while points.size() < MAX_BOUNCE_LAMPS: points.append(Vector4(0.0,-9999.0,0.0,0.0))
+	_stone.set_shader_parameter("night_lamps",points)
 
 # --- The lanterns ---------------------------------------------------------------
 
@@ -346,8 +260,12 @@ func daylight() -> float:
 func _process(delta: float) -> void:
 	var goal := StoneLampLights.night_for(daylight())
 	glow = goal if daylight_override >= 0.0 else move_toward(glow,goal,delta/FADE_SECONDS)
-	_rune_material.set_shader_parameter("night",glow)
-	if rune_mesh != null: rune_mesh.visible = glow > 0.001
+	if _stone != null:
+		_stone.set_shader_parameter("night_catch",MOON_CATCH*glow)
+		_stone.set_shader_parameter("night_bounce",BOUNCE*glow*glow)
+	for light in washes:
+		light.light_energy = float(light.get_meta("energy"))*glow
+		light.visible = light.light_energy > 0.001
 	_core_material.emission_energy_multiplier = CORE_GLOW*glow*glow
 	_halo_material.set_shader_parameter("glow",glow*HALO_STRENGTH)
 	if halos != null: halos.visible = glow > 0.001
