@@ -135,6 +135,11 @@ func _glints() -> void:
 	_ticks(0.3)
 	b.yaw = float(study.motor.facing)
 	b.pitch = 0.35
+	# A way with open sky 80 m out (the ferry rests by the start).
+	var space := study.get_world_3d().direct_space_state
+	for k in range(12):
+		if space.intersect_ray(PhysicsRayQueryParameters3D.create(b.eye(),b.eye()+b.look_way()*80.0)).is_empty(): break
+		b.yaw += TAU/12.0
 	var far := Node3D.new()
 	far.name = "FarFind"
 	study.add_child(far)
