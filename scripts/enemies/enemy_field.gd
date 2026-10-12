@@ -116,7 +116,8 @@ func under_pilot() -> RID:
 func before(delta: float) -> void:
 	_v_pre.push_front(Vector3(motor.velocity.x,0.0,motor.velocity.z))
 	if _v_pre.size() > HISTORY: _v_pre.pop_back()
-	enemies = enemies.filter(func(e: Node3D) -> bool: return is_instance_valid(e) and not e.gone)
+	# Untyped: a freed enemy can't be passed as a Node3D.
+	enemies = enemies.filter(func(e) -> bool: return is_instance_valid(e) and not e.gone)
 	var standing := RID()
 	if motor.grounded and motor.rider == null and not motor.swimming: standing = under_pilot()
 	for e: Node3D in enemies:
