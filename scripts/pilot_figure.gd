@@ -85,6 +85,17 @@ extends Node3D
 ## pilot_paint.gd, by surface name): soft toon bands, not the islanders'
 ## lacquer.
 ##
+## The wanderer's look (docs/design/wanderer-look/round1.md): no face to
+## see under the big hat, only two glowing eyes painted on the dark head.
+## They blink now and then, and take a face from the motor's moments
+## (`express`): happy (^ ^) after a pump, a flip, a twirl or a big jump's
+## landing; surprised, a little spark over the hat, when knocked; squinting
+## into a skid or down a wall. The cape streams on its clips (its bones the
+## old scarf tails') and on a spring of its own over them: lifted back
+## falling, swung out of a turn. Under the pocket sail the hat is off his
+## head and in his raised mitts, and he hangs from it (scripts/
+## pocket_sail_figure.gd draws it; `_hold_hat` reaches him to it).
+##
 ## Its origin is the feet, facing -Z; the walker (scripts/wanderer_eye.gd)
 ## puts it where the motor's feet are and turns it to its facing.
 
@@ -161,10 +172,24 @@ const WET_MOST := 0.8
 ## holds, radians), the slap onto a wall, the stretch of a kick off it.
 const MOVE_CLIPS := {"crouch":["crouch",1.0],"long":["long_jump",0.5],"wall":["wall_slide",0.5],"kick":["wall_kick",0.4],"pump":["pump",0.5],
 	"slide":["slide",0.8],"twirl":["twirl",0.4],"flip":["side_flip",0.7]}
-## Under the pocket sail: the arms' turn up overhead and the elbows' bend
-## (radians), and the seconds they take to go up.
-const SAIL_ARMS := Vector2(2.6,0.3)
+## Under the pocket sail, the sheet's "float with cap": he holds on to his
+## hat overhead (scripts/pocket_sail_figure.gd), a mitt gripping the brim
+## either side, and hangs from it. The seconds his arms take to go up; his
+## shoulders lifted to it (m out, up: his arms are short for a chibi with
+## a head this big), the arms stretched long as they reach up to it (along
+## the arm only: the sleeves keep their girth, the mitts their size), how far
+## short of the grip the wrist stops along the arm (m: the mitt round the
+## brim), the elbows' way out and back; the legs dangling loose, a little
+## behind (thighs', shins' turns, radians) and swinging slowly (radians,
+## Hz).
 const SAIL_ARMS_TIME := 0.12
+const SAIL_SHRUG := Vector2(0.03,0.13)
+const SAIL_ARM_GROW := 1.3
+const SAIL_WRIST := 0.1
+const SAIL_ELBOW := Vector3(1.0,-0.2,0.6)
+const SAIL_LEGS := Vector4(-0.45,-0.35,-0.3,-0.25)
+const SAIL_PADDLE := 0.1
+const SAIL_PADDLE_HZ := 0.8
 ## The moves' clips played once (held on their last frame).
 const ONCE := ["kick","pump","flip"]
 const MOVE_IN := 0.07
@@ -263,6 +288,34 @@ const CHEST_BANK := 0.03
 const CHEST_BANK_MOST := 0.25
 const CHEST_LEAD := 0.4
 const HEAD_UP := 0.5
+## The face (the eyes painted on the head, shaders/pilot_paint.gdshader):
+## seconds an expression takes to come and go, a blink's seconds, the
+## seconds between blinks (at random between), and the chance a blink is
+## doubled. Its cues: seconds happy after a pump, a side flip or a twirl,
+## and landing after at least BIG_AIR s in the air; surprised knocked
+## (and on after it); squinting skidding or sliding down a wall.
+const EXPRESS_EASE := 0.08
+const BLINK_TIME := 0.14
+const BLINK_EVERY := Vector2(2.2,5.5)
+const BLINK_TWICE := 0.18
+const HAPPY_TIME := 1.3
+const BIG_AIR := 0.9
+const SURPRISE_TIME := 0.8
+const SQUINT_TIME := 0.35
+## The surprise's spark (three little glowing strokes off the hat's right),
+## where it stands at rest (m, the model's frame) and its strokes' length.
+const SPARK_AT := Vector3(0.34,1.36,-0.04)
+const SPARK_LONG := 0.07
+## The cape's own spring over the clips (its bones are the old scarf
+## tails'): radians it lifts back per m/s of fall and the most, the most
+## it is dragged forward rising, radians it swings out per radian a second
+## of turn and the most, and the share the strip below takes.
+const CAPE_FALL := 0.06
+const CAPE_LIFT_MOST := 0.7
+const CAPE_DRAG_MOST := 0.12
+const CAPE_SWING := 0.07
+const CAPE_SWING_MOST := 0.2
+const CAPE_BELOW := 0.45
 
 ## The body turned about its feet (lean, yaw, bank), and in it the body
 ## about its hips (flip, squash and stretch).
@@ -373,6 +426,9 @@ var _forearms: Array[int] = []
 var _dive_a := Vector4.ZERO
 ## How far the arms are up holding the pocket sail (0 to 1).
 var _sail := 0.0
+var _sail_time := 0.0
+## Whether the arms were holding the hat last frame (shoulders lifted).
+var _held := false
 var _dive_b := Vector4.ZERO
 var _dive_time := 0.0
 ## Knocked: the somersault's turn (rad, about the hips), 0 to 1 sat down,
@@ -380,6 +436,31 @@ var _dive_time := 0.0
 var _tumble := 0.0
 var _tumble_low := 0.0
 var _flail_time := 0.0
+## The face: its paint, the mood held and its seconds left, each
+## expression's amount (0 to 1), the blink's seconds in (INF: none) and
+## seconds to the next, seconds in the air, the motor's move last seen.
+var _face: ShaderMaterial
+var _mood := ""
+var _mood_left := 0.0
+var _moods := {"happy":0.0,"surprise":0.0,"squint":0.0}
+var _blink_t := INF
+var _blink_next := 3.0
+var _airtime := 0.0
+var _cue_move := ""
+var _spark: Node3D
+var _spark_rest := Transform3D.IDENTITY
+## The hat's paint, and whether it is off the head (flying as the sail).
+var _hat_paints: Array[ShaderMaterial] = []
+var _hat_gone := false
+## The cape's springs (lift back, swing out), its bones (the top strips',
+## then the ones below), and what drives it: the rise (m/s) and the turn
+## (rad/s) this frame.
+var _cape_lift := Spring.new(2.4,0.3)
+var _cape_swing := Spring.new(2.0,0.35)
+var _cape_top: Array[int] = []
+var _cape_below: Array[int] = []
+var _cape_rise := 0.0
+var _cape_turn := 0.0
 
 func _init() -> void:
 	name = "Pilot"
@@ -416,7 +497,11 @@ func _init() -> void:
 		placed = (up as Node3D).transform*placed
 		up = up.get_parent()
 	_to_skeleton = placed.basis.inverse()
+	_cape_top = [_skeleton.find_bone("tail.L.0"),_skeleton.find_bone("tail.R.0")]
+	_cape_below = [_skeleton.find_bone("tail.L.1"),_skeleton.find_bone("tail.R.1")]
 	_rng.randomize()
+	_blink_next = _rng.randf_range(BLINK_EVERY.x,BLINK_EVERY.y)
+	_build_spark(placed)
 	var clips: Array[String] = ["idle","walk","run"]
 	if _has_skid: clips.append("skid")
 	if _has_ledge: clips.append_array(["hang","shimmy_left","shimmy_right","climb"])
@@ -541,11 +626,98 @@ func _dress() -> void:
 			if outfit.has(key): mesh.surface_set_material(i,outfit[key])
 		node.mesh = mesh
 	for key: String in outfit: _paints.append(outfit[key])
+	_face = outfit.get("pilot_face")
+	for key: String in PilotPaint.HAT: if outfit.has(key): _hat_paints.append(outfit[key])
+
+## The surprise's spark: three short glowing strokes fanned out over the
+## hat's right, riding the head (hidden till surprised).
+func _build_spark(placed: Transform3D) -> void:
+	_spark = Node3D.new()
+	_spark.name = "Spark"
+	var ink := StandardMaterial3D.new()
+	ink.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	ink.albedo_color = PilotPaint.GLOW
+	ink.emission_enabled = true
+	ink.emission = PilotPaint.GLOW
+	ink.emission_energy_multiplier = 1.5
+	var stroke := CapsuleMesh.new()
+	stroke.radius = 0.008
+	stroke.height = SPARK_LONG
+	stroke.radial_segments = 8
+	stroke.rings = 2
+	for i in range(3):
+		var m := MeshInstance3D.new()
+		m.mesh = stroke
+		m.material_override = ink
+		m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var a := -0.75+0.6*i
+		m.transform = Transform3D(Basis(Vector3.BACK,a),Vector3(-sin(a),cos(a),0.0)*SPARK_LONG*0.9)
+		_spark.add_child(m)
+	_spark.visible = false
+	_skeleton.add_child(_spark)
+	if _head >= 0:
+		_spark_rest = _skeleton.get_bone_global_rest(_head).affine_inverse()*placed.affine_inverse()*Transform3D(Basis(),SPARK_AT)
+
+## Shows a face for `seconds`: "happy", "surprise", "squint" ("" neutral).
+func express(mood: String, seconds: float) -> void:
+	_mood = mood
+	_mood_left = seconds
+
+## The face's cues this frame from the motor: happy after a pump, a flip, a
+## twirl or a big jump's landing; surprised knocked; squinting into a skid
+## or down a wall.
+func _face_cues(motor: RefCounted, delta: float) -> void:
+	var move: String = motor.move if "move" in motor else ""
+	if move != _cue_move:
+		match move:
+			"pump", "flip": express("happy",HAPPY_TIME)
+			"twirl": express("happy",HAPPY_TIME*0.7)
+			"tumble": express("surprise",SURPRISE_TIME)
+		_cue_move = move
+	if move == "tumble": express("surprise",SURPRISE_TIME)
+	elif ("skidding" in motor and motor.skidding) or move == "wall": express("squint",SQUINT_TIME)
+	var grounded: bool = motor.grounded if "grounded" in motor else true
+	if grounded or move == "sail" or ("hold" in motor and motor.hold != ""):
+		if grounded and _airtime > BIG_AIR and move != "tumble": express("happy",HAPPY_TIME)
+		_airtime = 0.0
+	else:
+		_airtime += delta
+	_cape_rise = float(motor.velocity.y) if "velocity" in motor else 0.0
+
+## The face this frame: the mood eased in and out, the blinks, the spark.
+func _face_step(delta: float) -> void:
+	_mood_left -= delta
+	if _mood_left <= 0.0: _mood = ""
+	for key: String in _moods:
+		_moods[key] = move_toward(_moods[key],1.0 if key == _mood else 0.0,delta/EXPRESS_EASE)
+	var blink := 0.0
+	if _blink_t != INF:
+		_blink_t += delta
+		blink = clampf(1.0-absf(_blink_t/BLINK_TIME*2.0-1.0),0.0,1.0)
+		if _blink_t >= BLINK_TIME:
+			_blink_t = INF
+			_blink_next = BLINK_TIME*1.4 if _rng.randf() < BLINK_TWICE else _rng.randf_range(BLINK_EVERY.x,BLINK_EVERY.y)
+	else:
+		_blink_next -= delta
+		if _blink_next <= 0.0 and _moods.happy < 0.5: _blink_t = 0.0
+	if _face != null:
+		_face.set_shader_parameter("blink",blink*(1.0-_moods.surprise))
+		for key: String in _moods: _face.set_shader_parameter(key,smoothstep(0.0,1.0,_moods[key]))
+	if _spark != null and _head >= 0:
+		var pop: float = _moods.surprise
+		_spark.visible = pop > 0.02
+		if _spark.visible:
+			var t := _skeleton.get_bone_global_pose(_head)*_spark_rest
+			_spark.transform = t.scaled_local(Vector3.ONE*maxf(smoothstep(0.0,1.0,pop),0.01))
+	for paint in _hat_paints: paint.set_shader_parameter("gone",1.0 if _hat_gone else 0.0)
 
 ## One frame of the motor's state. Returns what the body did this frame:
 ## "footfall" (0 the left boot touched down, 1 the right), "set_off" (moving
 ## from a stand), "turned" (whipped round out of a skid).
 func drive(motor: RefCounted, delta: float) -> Dictionary:
+	_face_cues(motor,delta)
+	_cape_turn = 0.0
+	_hat_gone = false
 	var swimming: bool = "swimming" in motor and motor.swimming
 	var depth := float(motor.get("wade")) if "wade" in motor else 0.0
 	_wade = move_toward(_wade,0.0 if swimming else clampf(depth/WADE_FULL,0.0,1.0),delta*4.0)
@@ -626,10 +798,16 @@ func drive(motor: RefCounted, delta: float) -> Dictionary:
 	if not motor.grounded and _grounded_was and rise > 0.0: _stretch.v -= TAKE_OFF_DIP
 	_grounded_was = motor.grounded
 	var aloft: bool = not motor.grounded and (move == "" or move == "jump")
-	# Under the sail, the arms up over the idle (as the dive's are), not
+	# Under the sail, the float's pose over the idle (as the dive's is), not
 	# over the air's clips, whose arms are already up.
 	_sail = move_toward(_sail,1.0 if move == "sail" else 0.0,delta/SAIL_ARMS_TIME)
+	_sail_time = _sail_time+delta if _sail > 0.0 else 0.0
 	if move == "sail": _moving = move_toward(_moving,0.0,delta/FADE)
+	# The hat is off his head while it flies as the sail (scripts/
+	# pocket_sail_figure.gd), back on as the arms come down (the sail folds
+	# over the same time).
+	_hat_gone = move == "sail" or _sail > 0.0
+	_cape_turn = turned
 	_air = move_toward(_air,1.0 if aloft else 0.0,delta/(AIR_IN if aloft else AIR_OUT))
 	_air_fall = move_toward(_air_fall,clampf((AIR_RISEN-rise)/(AIR_RISEN-AIR_FALLEN),0.0,1.0),delta*5.0)
 	_air_time = fmod(_air_time+delta,AIR_LENGTH)
@@ -952,8 +1130,8 @@ static func stride(running: float) -> float:
 ## flailing). Falling belly-down it is the classic box: arms out and bent
 ## up at the elbows, knees bent and boots up behind, head up to look ahead;
 ## spread, wider; tucked, arms swept back along the body and legs straight
-## for the dive. Under the sail his mitts are up overhead on its bar and his
-## legs hang. The walker turns the whole figure (onto the belly, upright
+## for the dive. Under the sail he hangs from his hat as on foot
+## (`_hold_hat`), the legs loose and a little behind. The walker turns the whole figure (onto the belly, upright
 ## under the sail): this is the limbs alone.
 func dive(spread: float, tuck: float, sail: float, pop: float, delta: float) -> void:
 	_moving = move_toward(_moving,0.0,delta/FADE)
@@ -975,15 +1153,19 @@ func dive(spread: float, tuck: float, sail: float, pop: float, delta: float) -> 
 	_feet_was = Vector3.INF
 	_grounded_was = false
 	_sail = 0.0
+	_hat_gone = sail > 0.01
+	_cape_rise = 0.0
+	_cape_turn = 0.0
 	_dive_time = _dive_time+delta if pop > 0.0 else 0.0
 	# Falling: the box, widened by the spread, swept back by the tuck.
 	var box := Vector4(1.35,1.1,-0.15,-1.25)
 	box = box.lerp(Vector4(1.6,0.6,-0.1,-0.75),spread)
 	box = box.lerp(Vector4(0.3,0.05,0.0,-0.15),tuck)
 	var box_b := Vector4(0.25,-0.55,0.0,0.0).lerp(Vector4(0.45,-0.6,0.0,0.0),spread).lerp(Vector4(0.02,-0.3,0.0,0.0),tuck)
-	# Under the sail: mitts up overhead on its bar, legs hanging.
-	var hang := Vector4(SAIL_ARMS.x,SAIL_ARMS.y,0.15,-0.2)
-	var hang_b := Vector4(0.06,0.0,0.0,0.0)
+	# Under the sail: hanging from his hat (`_hold_hat` reaches the arms),
+	# the legs loose under him and a little behind.
+	var hang := Vector4(0.0,0.0,SAIL_LEGS.x*0.7+SAIL_LEGS.z*0.3,SAIL_LEGS.y*0.6+SAIL_LEGS.w*0.4)
+	var hang_b := Vector4(0.04,0.0,0.0,0.0)
 	var want := box.lerp(hang,sail)
 	var want_b := box_b.lerp(hang_b,sail)
 	if pop > 0.0:
@@ -1006,6 +1188,7 @@ func dive(spread: float, tuck: float, sail: float, pop: float, delta: float) -> 
 	_turn_bone(_thighs[0],Vector3.BACK,-_dive_b.x)
 	_turn_bone(_thighs[1],Vector3.BACK,_dive_b.x)
 	if _head >= 0: _turn_bone(_head,Vector3.RIGHT,_dive_b.y)
+	_hold_hat(smoothstep(0.0,1.0,sail))
 
 ## A hop not driven by the motor (in and out of the plane): `rise` 1 going
 ## up to -1 coming down.
@@ -1040,9 +1223,13 @@ func settle() -> void:
 	_feet_was = Vector3.INF
 	_hunch_to = 0.0
 	_roll_to = 0.0
-	for spring: Spring in [_bank,_lean,_yaw,_look,_nod,_arms,_hunch,_roll]:
+	for spring: Spring in [_bank,_lean,_yaw,_look,_nod,_arms,_hunch,_roll,_cape_lift,_cape_swing]:
 		spring.x = 0.0
 		spring.v = 0.0
+	_cape_rise = 0.0
+	_cape_turn = 0.0
+	_hat_gone = false
+	_airtime = 0.0
 	_stretch.x = 1.0
 	_stretch.v = 0.0
 	_stretch_to = 1.0
@@ -1108,6 +1295,7 @@ func _advance(delta: float) -> void:
 	_apply()
 	_tree.advance(delta)
 	_springs(delta)
+	_face_step(delta)
 	# Squashed and stretched about the hips, its volume kept and its feet
 	# on the ground.
 	var stretch := clampf(_stretch.step(_stretch_to,delta),STRETCH_MOST.x,STRETCH_MOST.y)
@@ -1127,6 +1315,16 @@ func _springs(delta: float) -> void:
 	var arms := maxf(_arms.step(_arms_to,delta),-0.15)*ARMS_UP
 	var hunch := _hunch.step(_hunch_to,delta)
 	var roll := _roll.step(_roll_to,delta)
+	# The cape over its clips: lifted back falling, dragged a touch forward
+	# rising, swung out of a turn, a beat behind each.
+	var lift := _cape_lift.step(clampf(_cape_rise*CAPE_FALL,-CAPE_LIFT_MOST,CAPE_DRAG_MOST),delta)
+	var swing := _cape_swing.step(clampf(-_cape_turn*CAPE_SWING,-CAPE_SWING_MOST,CAPE_SWING_MOST),delta)
+	if not _cape_top.has(-1):
+		for bone in _cape_top:
+			_turn_bone(bone,Vector3.RIGHT,lift)
+			_turn_bone(bone,Vector3.BACK,swing)
+	if not _cape_below.has(-1):
+		for bone in _cape_below: _turn_bone(bone,Vector3.RIGHT,lift*CAPE_BELOW)
 	if _head < 0 or _neck < 0 or _chest < 0 or _upper_arms.has(-1): return
 	_turn_bone(_chest,Vector3.RIGHT,hunch)
 	_turn_bone(_chest,Vector3.BACK,roll)
@@ -1137,18 +1335,107 @@ func _springs(delta: float) -> void:
 	# Out is down the -X side for the left arm, +X for the right.
 	_turn_bone(_upper_arms[0],Vector3.BACK,-arms)
 	_turn_bone(_upper_arms[1],Vector3.BACK,arms)
-	if _sail > 0.001: _holding_sail()
+	_holding_sail()
 	if _wade > 0.001: _wading()
 
-## Under the pocket sail (the motor's move "sail"): both arms up overhead
-## holding its bar, the elbows a little bent, by how far it is out.
+## Under the pocket sail (the motor's move "sail"), the sheet's float with
+## cap: hanging from his hat, the legs loose under him and a little behind,
+## swinging slowly, by how far it is out.
 func _holding_sail() -> void:
 	var up := smoothstep(0.0,1.0,_sail)
-	_turn_bone(_upper_arms[0],Vector3.BACK,-SAIL_ARMS.x*up)
-	_turn_bone(_upper_arms[1],Vector3.BACK,SAIL_ARMS.x*up)
-	if _forearms.has(-1): return
-	_turn_bone(_forearms[0],Vector3.BACK,-SAIL_ARMS.y*up)
-	_turn_bone(_forearms[1],Vector3.BACK,SAIL_ARMS.y*up)
+	if not (_thighs.has(-1) or _shins.has(-1)):
+		var paddle := SAIL_PADDLE*sin(TAU*SAIL_PADDLE_HZ*_sail_time)
+		_turn_bone(_thighs[0],Vector3.RIGHT,(SAIL_LEGS.x+paddle)*up)
+		_turn_bone(_shins[0],Vector3.RIGHT,(SAIL_LEGS.y-0.5*paddle)*up)
+		_turn_bone(_thighs[1],Vector3.RIGHT,(SAIL_LEGS.z-paddle)*up)
+		_turn_bone(_shins[1],Vector3.RIGHT,(SAIL_LEGS.w+0.5*paddle)*up)
+	_hold_hat(up)
+
+## Holding on to the hat (scripts/pocket_sail_figure.gd, `sail_figure`),
+## `up` 0 to 1: his body swung under it a beat behind its tip
+## (about the grips' middle), his shoulders lifted to it and his arms
+## reached up by two-bone IK so each mitt closes round the brim at its grip.
+func _hold_hat(up: float) -> void:
+	if _upper_arms.has(-1) or _forearms.has(-1) or _hands.has(-1): return
+	if up < 0.001:
+		if _held:
+			_held = false
+			for bone in _upper_arms:
+				_skeleton.set_bone_pose_scale(bone,Vector3.ONE)
+				_skeleton.set_bone_pose_position(bone,_skeleton.get_bone_rest(bone).origin)
+			for bone in _hands: _skeleton.set_bone_pose_scale(bone,Vector3.ONE)
+		return
+	_held = true
+	var sail := sail_figure()
+	if sail == null: return
+	var grips: Array = sail.grips()
+	if grips.size() != 2: return
+	var to_skeleton := _skeleton.global_transform.affine_inverse()
+	var grip: Array[Vector3] = [to_skeleton*(grips[0] as Vector3),to_skeleton*(grips[1] as Vector3)]
+	# The body swings under the hat about the grips' middle.
+	var hips := _skeleton.find_bone("hips")
+	var swing: float = sail.get("swing")
+	if hips >= 0 and absf(swing) > 0.0005:
+		var middle := (grip[0]+grip[1])*0.5
+		var turn := Basis((_to_skeleton*Vector3.BACK).normalized(),swing*up)
+		var was := _skeleton.get_bone_global_pose(hips)
+		var now := Transform3D(turn*was.basis,middle+turn*(was.origin-middle))
+		var parent := _skeleton.get_bone_parent(hips)
+		var local := now if parent < 0 else _skeleton.get_bone_global_pose(parent).affine_inverse()*now
+		_skeleton.set_bone_pose_position(hips,local.origin)
+		_skeleton.set_bone_pose_rotation(hips,local.basis.get_rotation_quaternion())
+	for side in range(2):
+		var s := -1.0 if side == 0 else 1.0
+		var upper := _upper_arms[side]
+		# Shoulders up and out to it, the arm stretched along its length (the
+		# forearm rides the stretch; the mitt is given its size back).
+		var lift := (_to_skeleton*Vector3(SAIL_SHRUG.x*s,SAIL_SHRUG.y,0.0))*up
+		var parent := _skeleton.get_bone_parent(upper)
+		if parent >= 0: lift = _skeleton.get_bone_global_pose(parent).basis.inverse()*lift
+		_skeleton.set_bone_pose_position(upper,_skeleton.get_bone_rest(upper).origin+lift)
+		var grow := lerpf(1.0,SAIL_ARM_GROW,up)
+		_skeleton.set_bone_pose_scale(upper,Vector3(1.0,grow,1.0))
+		_skeleton.set_bone_pose_scale(_hands[side],Vector3(1.0,1.0/grow,1.0))
+		var shoulder := _skeleton.get_bone_global_pose(upper).origin
+		var elbow := _skeleton.get_bone_global_pose(_forearms[side]).origin
+		var wrist := _skeleton.get_bone_global_pose(_hands[side]).origin
+		var a := shoulder.distance_to(elbow)
+		var b := elbow.distance_to(wrist)
+		var goal := grip[side]-(grip[side]-shoulder).normalized()*SAIL_WRIST
+		var to := goal-shoulder
+		var d := clampf(to.length(),0.01,(a+b)*0.999)
+		var n := to.normalized()
+		var along := (a*a-b*b+d*d)/(2.0*d)
+		var out := sqrt(maxf(a*a-along*along,0.0))
+		var pole := (_to_skeleton*Vector3(SAIL_ELBOW.x*s,SAIL_ELBOW.y,SAIL_ELBOW.z)).normalized()
+		var bend := (pole-n*pole.dot(n)).normalized()
+		_aim_bone(upper,elbow-shoulder,n*along+bend*out,up)
+		elbow = _skeleton.get_bone_global_pose(_forearms[side]).origin
+		wrist = _skeleton.get_bone_global_pose(_hands[side]).origin
+		_aim_bone(_forearms[side],wrist-elbow,shoulder+n*d-elbow,up)
+		# The mitt along the forearm, closed round the brim.
+		wrist = _skeleton.get_bone_global_pose(_hands[side]).origin
+		var hand_tip := _skeleton.get_bone_global_pose(_hands[side])*Vector3(0.0,0.03,0.0)
+		_aim_bone(_hands[side],hand_tip-wrist,grip[side]-wrist,up)
+
+## The pocket sail's figure he holds (scripts/pocket_sail_figure.gd, named
+## "PocketSail"): his own child, or, as the game's hosts put it (studies/
+## character_study.gd and the kit isles, scripts/wanderer_eye.gd,
+## studies/landing_study.gd), his sibling under the walker's node; null
+## when there is none.
+func sail_figure() -> Node3D:
+	var sail := get_node_or_null("PocketSail")
+	if sail == null and get_parent() != null: sail = get_parent().get_node_or_null("PocketSail")
+	return sail if sail != null and sail.has_method("grips") else null
+
+## Turns `bone` so its `from` (skeleton space) points along `to`, `weight`
+## of the way.
+func _aim_bone(bone: int, from: Vector3, to: Vector3, weight: float) -> void:
+	var axis := from.cross(to)
+	if axis.length() < 1e-6: return
+	var angle := from.angle_to(to)*weight
+	var local := (_skeleton.get_bone_global_pose(bone).basis.inverse()*axis).normalized()
+	_skeleton.set_bone_pose_rotation(bone,_skeleton.get_bone_pose_rotation(bone)*Quaternion(local,angle))
 
 ## The wading gait over the walk and the run: each knee lifted higher
 ## through its swing (the shin tucked under, so the boot clears the water

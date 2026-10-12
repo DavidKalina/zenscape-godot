@@ -1,35 +1,33 @@
 extends Node3D
 ## The wanderer flying the little plane (scripts/sky_plane.gd), for the chase
-## camera (scripts/glide_camera.gd): a small 1920s biplane in warm wood
-## browns, cream doped wings tipped in terracotta, and the wanderer in the
-## open cockpit behind a little windscreen, in a leather cap and brass
-## goggles, the scarf's two tails streaming behind. It is what flies.
+## camera (scripts/glide_camera.gd): a chunky toy low-wing monoplane, as the
+## character sheet draws it (docs/design/plane-look/round1.md). A round
+## cream fuselage with its panel seams and rivets, terracotta wings, a little
+## dihedral, and a terracotta tail, the fin carrying the wanderer's hat in
+## cream; a round cowl with a glowing cyan ring in its lip, a terracotta
+## spinner and a two-blade wooden propeller; fixed fat-tyred wheels on short
+## legs under the wing. The wanderer sits in the open cockpit behind a little
+## windscreen, in the wide-brimmed hat, eyes glowing, the navy scarf's two
+## tails streaming behind (scripts/plane_pilot.gd). It is what flies.
 ##
-## Drawn as a real one is built, at a toy's size: a slim body tapering to a
-## knife-edged tail, a round cowl with louvres, a seam of rivets and
-## exhaust stacks bent back along the side, a padded coaming and a turtle
-## deck behind the pilot's head; thin wings, tapered, rounded at the tips,
-## with an airfoil's section, their cloth drawn tight over the ribs and
-## sagging a little between them (`_wing`), so every rib shows as a crease
-## in the light; roundels on the upper wing; fine struts, wires crossed
-## between the wings, a V undercarriage on an axle and spoked-over wheels.
-##
-## Faceted solids and soft light, as the style asks: every solid is a few
-## flat faces, lit as the folk are (shaders/folk_surface.gdshader, so it
-## never goes black in shade); the paint a deep glossy lacquer under a clear
-## coat, so each facet catches the sun as it turns; the wings a satin doped
-## cloth, the spinner and fittings bright brass, the propeller's varnish
-## glowing. How worn it is (`set_wear`) runs from that, kept and polished,
-## to dusty, sun-faded and scuffed, the coat gone dull and the brass
-## tarnished; a livery may carry its own (scripts/sky_traffic.gd). The scarf is soft wool, fluttering faster
-## the faster it flies. The propeller is a varnished wooden one with brass
-## tips; once it turns too fast to see, only a soft disc of air shows
-## (shaders/prop_blur.gdshader), its sweeps crawling round as a filmed one's
-## do. It is drawn turned by the bank and the barrel roll together. The
-## ailerons tip with the roll, the elevator with the pitch, so the stick
-## shows on the wings. A soft mark under it shows where it
-## would touch down, and close past rock vapour peels off its upper
-## wingtips.
+## Painted, not low poly: every form is a soft rounded solid, well
+## subdivided and shaded smooth (scripts/soft_mesh.gd), and the paint is
+## the walker's painterly treatment (shaders/plane_paint.gdshader, a
+## sibling of shaders/pilot_paint.gdshader): the sun in a few soft toon
+## bands, warm in the light and cool in the shade, a slow painted mottle and
+## brush streaks, a gentle sky rim, no gloss; the metal takes a soft painted
+## highlight. Only the cowl's cyan ring is clean and lit from within. How
+## worn it is (`set_wear`) runs from that, fresh, to dusty, sun-faded and
+## scuffed, the fittings tarnished; a livery may carry its own (scripts/
+## sky_traffic.gd), its colours on the same slots (the paint names are the
+## old biplane's: "wood" is the body, "cream" the wings). The scarf is soft
+## wool, fluttering faster the faster it flies. Once the propeller turns
+## too fast to see, only a soft disc of air shows (shaders/
+## prop_blur.gdshader), its sweeps crawling round as a filmed one's do. It
+## is drawn turned by the bank and the barrel roll together. The ailerons
+## tip with the roll, the elevator with the pitch, so the stick shows on
+## the wings. A soft mark under it shows where it would touch down, and
+## close past rock vapour peels off its wingtips.
 ##
 ## Its fixed parts are joined into one mesh for each material (`_join`), so
 ## a plane is a dozen draws however finely it is made (the sky's traffic
@@ -45,63 +43,77 @@ extends Node3D
 ## It can stand broken (`set_missing`): each of the six found parts
 ## (scripts/plane_parts.gd IDS) gone leaves damage where it was, so the
 ## plane reads as broken, not unfinished: a bare shaft and flange for the
-## propeller, the radial engine bare for the cowl, the right gear folded
-## up under a bare stub axle for the right wheel (the plane slumped onto
-## it, its lower wingtip down by the grass), a jagged stub and bare rudder
-## post for the fin, the upper wing's right end torn past its last rib,
-## spars and a broken rib showing, and for the windscreen its frame bent
-## open, the top rail hanging, a crazed shard and its splinters on the
-## deck. Broken, it is worn too: the more parts lost, the dustier and more
-## faded (`set_missing` sets the wear, BROKEN_WEAR). `set_found` seats a
-## part back: it eases in from just off its place, turning, and settles,
-## then a warm glint, a brass ring of light and a puff of dust, and the
-## paint eases a step cleaner; it keeps a faint glow a while after
-## (`afterglow`, or for good with `hold_glow`). The last part home, the
-## wear eases off to new and a gleam runs over the whole plane, nose to
-## tail. Nothing missing, the figure is built as ever: it only splits its
-## found parts off its joined meshes the first time one goes missing
-## (`_split`).
+## propeller, the radial engine bare for the cowl, the right leg buckled
+## under a bare stub axle for the right wheel (the plane slumped onto it,
+## its right wingtip down by the grass), a jagged stub and bare rudder post
+## for the fin, the wing's right end torn past its last rib, spars and a
+## broken rib showing, and for the windscreen its frame bent open, the top
+## rail hanging, a crazed shard and its splinters on the deck. Broken, it is
+## worn too: the more parts lost, the dustier and more faded (`set_missing`
+## sets the wear, BROKEN_WEAR). `set_found` seats a part back: it eases in
+## from just off its place, turning, and settles, then a warm glint, a ring
+## of light and a puff of dust, and the paint eases a step cleaner; it keeps
+## a faint glow a while after (`afterglow`, or for good with `hold_glow`).
+## The last part home, the wear eases off to new and a gleam runs over the
+## whole plane, nose to tail. Nothing missing, the figure is built as ever:
+## it only splits its found parts off its joined meshes the first time one
+## goes missing (`_split`).
 
 const PlanePilot = preload("res://scripts/plane_pilot.gd")
 const FacetMesh = preload("res://scripts/facet_mesh.gd")
+const SoftMesh = preload("res://scripts/soft_mesh.gd")
+const PLANE_PAINT := preload("res://shaders/plane_paint.gdshader")
 const WorldScale = preload("res://scripts/world_scale.gd")
 const PersonKit = preload("res://scripts/person_kit.gd")
 const PROP_BLUR := preload("res://shaders/prop_blur.gdshader")
 const FOLK_RIBBON := preload("res://shaders/folk_ribbon.gdshader")
 const PART_GLOW := preload("res://shaders/plane_part_glow.gdshader")
-const WOOD := Color("8f5234")
-const DARK := Color("6b3b28")
-const TRIM := Color("c8643b")
-const WING := Color("f3ead6")
-const LEATHER := Color("5e3522")
+## The character sheet's palette (the on-foot wanderer shares it):
+## terracotta, brown, cream, tan, navy, the cyan glow and charcoal.
+const TERRACOTTA := Color("c9644a")
+const BROWN := Color("5a3a2c")
+## The cream warmed a touch (was e9dfcb) so it reads cream, not grey, by
+## the walker (docs/design/wanderer-look/round2.md).
+const CREAM := Color("ecdcc0")
+const TAN := Color("d9bc9c")
+const NAVY := Color("2e4fa3")
+const CYAN := Color("5fe6e6")
+const CHARCOAL := Color("4a4848")
+## Each paint slot's colour: "wood" the body (cream), "dark" the fittings
+## and cockpit (brown), "trim" the tail and spinner, "cream" the wings
+## (both terracotta), "leather" the coaming, "brass" the small bright
+## fittings, "tan" the panel seams, "varnish" the propeller's wood, "steel"
+## the cowl's lip and the tyres (charcoal), "glow" the cowl's ring (cyan).
+const WOOD := CREAM
+const DARK := BROWN
+const TRIM := TERRACOTTA
+const WING := TERRACOTTA
+const LEATHER := BROWN
 const BRASS := Color("d6ad62")
 const STRIPE := Color("f3ead6")
-const PROPWOOD := Color("7a4429")
-const STEEL := Color("3b3430")
-## Each paint's finish from new to worn (`set_wear`): its roughness new
-## and worn, its clear coat new and worn, the coat's roughness new and
-## worn, and the shader's weathering (folk_surface `wear`) at worn. New is
-## a deep gloss: the lacquer and the varnish under a hard clear coat, the
-## doped cloth satin, the brass polished. Worn, the coat is gone dull.
+const PROPWOOD := Color("8a5636")
+const STEEL := CHARCOAL
+## How bright the cowl's ring glows (emission energy), new and worn.
+const GLOW := Vector2(2.2,1.2)
+## Each paint's weathering at worn (plane_paint `wear` at wear 1), its own
+## colour shift (`own`, so neighbouring paints read as painted apart) and
+## its painted highlight (`shine`, the metal's).
 const FINISH := {
-	"wood":[0.3,0.62,0.55,0.15,0.03,0.4,1.0],
-	"dark":[0.3,0.62,0.55,0.15,0.03,0.4,0.55],
-	"trim":[0.3,0.62,0.55,0.15,0.03,0.4,1.0],
-	"cream":[0.45,0.82,0.3,0.0,0.1,0.45,0.9],
-	"leather":[0.42,0.75,0.45,0.1,0.15,0.4,0.6],
-	"varnish":[0.22,0.6,0.7,0.1,0.03,0.4,0.8],
-	"brass":[0.22,0.55,0.5,0.0,0.05,0.12,0.55],
-	"steel":[0.3,0.68,0.0,0.0,0.12,0.12,0.6],
+	"wood":[1.0,0.35,0.0],
+	"dark":[0.55,0.6,0.0],
+	"trim":[1.0,0.2,0.0],
+	"cream":[0.9,0.75,0.0],
+	"leather":[0.6,0.5,0.0],
+	"varnish":[0.8,0.3,0.15],
+	"brass":[0.55,0.4,0.8],
+	"steel":[0.6,0.7,0.5],
+	"tan":[0.8,0.45,0.0],
 }
-## The cool sky rim the folk paint takes in shade (folk_surface `rim`),
-## new: less, so the deep lacquer keeps its own colour; worn, as the folk.
-const RIM_NEW := 0.22
-## Brass: how metal it is new and worn (less, it reads as a warm gold in
-## shade rather than mirroring the ground), and the dull brown it tarnishes
-## toward (its share at worn).
-const BRASS_METAL := Vector2(0.42,0.35)
+## Brass: the dull brown it tarnishes toward (its share at worn), and its
+## highlight's fall worn.
 const TARNISH := Color("7d6a45")
 const TARNISH_SHARE := 0.55
+const BRASS_SHINE_WORN := 0.35
 ## Broken, its wear: with one part still lost, and with all of them (the
 ## wear between runs with the count); mended, none (new). Seconds the
 ## paint takes to ease a step cleaner as a part seats.
@@ -114,37 +126,46 @@ const GLEAM := 0.9
 const GLEAM_TIME := 1.5
 const GLEAM_WIDTH := 0.1
 const GLEAM_SLANT := Vector3(0.35,0.3,1.0)
-## The wings: the upper's span (m) and the lower's, the chord at the root
-## and the tip, the thickness, the ribs out each side, the height of the
-## lower and upper wing over the body's middle, and how far the upper sits
-## forward. The cloth sags SAG (of the thickness) between the ribs above,
-## SAG_UNDER below; the tips round off past ROUND of the half span.
+## The wing: its span (m, the toy span WorldScale reads, TOY_SPAN), the
+## chord at the root and the tip, the thickness, the ribs out each side, the
+## height of its root under the body's middle (a low wing), how far forward
+## its middle sits, and its dihedral (m of rise per m out). The skin sags
+## SAG (of the thickness) between the ribs above, SAG_UNDER below; the tips
+## round off past ROUND of the half span.
 const SPAN := 1.4
-const LOWER_SPAN := 1.26
-const CHORD := 0.28
-const TIP_CHORD := 0.22
-const THICK := 0.028
-const RIBS := 7
-const SAG := 0.18
-const SAG_UNDER := 0.1
-const ROUND := 0.86
-const LOWER_Y := -0.1
-const UPPER_Y := 0.3
-const STAGGER := -0.06
-## The found wingtip (`piece` "wingtip") runs from this share of the upper
-## wing's half span out to its tip.
-const WINGTIP_FROM := 0.4
-## The ailerons, out along the upper wing's trailing edge (fractions of its
-## half span), and their depth (m); the elevator's depth.
-const AILERON_SPAN := Vector2(0.42,0.78)
-const AILERON_DEPTH := 0.06
+const CHORD := 0.32
+const TIP_CHORD := 0.24
+const THICK := 0.05
+const RIBS := 6
+const SAG := 0.06
+const SAG_UNDER := 0.04
+const ROUND := 0.8
+const WING_Y := -0.1
+const WING_Z := -0.2
+const DIHEDRAL := 0.09
+## The found wingtip (`piece` "wingtip") runs from this share of the wing's
+## half span out to its tip.
+const WINGTIP_FROM := 0.45
+## The ailerons, out along the wing's trailing edge (fractions of its half
+## span), and their depth (m); the elevator's depth.
+const AILERON_SPAN := Vector2(0.45,0.78)
+const AILERON_DEPTH := 0.065
 const ELEVATOR_DEPTH := 0.055
 ## The section of the wings, (along the chord, up) as fractions of the
 ## chord and the thickness: the upper surface from the leading edge back,
 ## then the lower forward.
-const AIRFOIL_TOP := [Vector2(0.0,0.0),Vector2(0.04,0.42),Vector2(0.14,0.78),Vector2(0.3,1.0),Vector2(0.55,0.86),Vector2(0.8,0.5),Vector2(1.0,0.08)]
-const AIRFOIL_UNDER := [Vector2(1.0,-0.02),Vector2(0.6,-0.135),Vector2(0.25,-0.22),Vector2(0.06,-0.2)]
-const AIRFOIL_SCALE := 0.72
+const AIRFOIL_TOP := [Vector2(0.0,0.0),Vector2(0.006,0.2),Vector2(0.02,0.38),Vector2(0.045,0.55),Vector2(0.09,0.72),Vector2(0.16,0.86),Vector2(0.24,0.95),Vector2(0.33,1.0),Vector2(0.45,0.97),Vector2(0.57,0.86),Vector2(0.7,0.66),Vector2(0.82,0.44),Vector2(0.92,0.24),Vector2(1.0,0.06)]
+const AIRFOIL_UNDER := [Vector2(1.0,-0.03),Vector2(0.85,-0.1),Vector2(0.65,-0.17),Vector2(0.42,-0.22),Vector2(0.22,-0.24),Vector2(0.1,-0.22),Vector2(0.035,-0.17),Vector2(0.008,-0.09)]
+const AIRFOIL_SCALE := 0.8
+## The body: rings of (z, half width, half height) nose to tail, a fat
+## round toy's, on the propeller's axis; where its panel seams run (z).
+const BODY := [Vector3(-0.47,0.162,0.165),Vector3(-0.36,0.168,0.172),Vector3(-0.15,0.166,0.174),Vector3(0.08,0.152,0.168),Vector3(0.3,0.112,0.132),Vector3(0.5,0.07,0.085),Vector3(0.68,0.03,0.042),Vector3(0.73,0.012,0.02)]
+const SEAMS := [-0.3,0.0,0.36]
+## The fin drawn this much taller than its outline, so its top stands where
+## the old upper wing's did (the plane's height kept).
+const FIN_TALL := 1.086
+## Where the windscreen's foot stands, before the cockpit.
+const SCREEN := Vector3(0.0,0.175,0.09)
 ## Control surfaces: radians of aileron per radian a second of roll, of
 ## elevator per radian a second of pitch, and the most either tips.
 const AILERON := 0.35
@@ -161,8 +182,8 @@ const PROP_SHOW := 8.5
 const BLUR := Vector2(0.22,0.55)
 const BLUR_CRAWL := 1.4
 ## The scarf: points of the long tail and the short, the gap between them
-## (m), its width, where its two pale stripes run (fractions of a tail's
-## length), and its flutter: the waves' rate (radians a second) slow and
+## (m), its width, where a livery pilot's two pale stripes run (fractions
+## of a tail's length), and its flutter: the waves' rate (radians a second) slow and
 ## fast, their reach at the tip (m), and the speed (m/s) it is fastest at.
 const SCARF := 12
 const SCARF_SHORT := 8
@@ -214,24 +235,23 @@ const SEATS := {
 	"cowl":{"at":Vector3(0.0,0.0,-0.53),"from":Vector3(0.0,0.06,-0.22),"axis":Vector3.RIGHT,"turn":0.35,"size":0.32},
 	"wheel":{"at":Vector3(0.2,-0.33,-0.28),"from":Vector3(0.2,0.07,0.0),"axis":Vector3.RIGHT,"turn":-3.0,"size":0.2},
 	"fin":{"at":Vector3(0.0,0.15,0.63),"from":Vector3(0.0,0.22,0.04),"axis":Vector3.UP,"turn":0.6,"size":0.3},
-	"wingtip":{"at":Vector3(0.49,UPPER_Y,STAGGER),"from":Vector3(0.2,0.07,0.0),"axis":Vector3.BACK,"turn":0.35,"size":0.45},
-	"windscreen":{"at":Vector3(0.0,0.235,0.11),"from":Vector3(0.0,0.16,-0.05),"axis":Vector3.RIGHT,"turn":0.6,"size":0.16},
+	"wingtip":{"at":Vector3(0.53,WING_Y+0.53*DIHEDRAL,WING_Z),"from":Vector3(0.2,0.07,0.0),"axis":Vector3.BACK,"turn":0.35,"size":0.45},
+	"windscreen":{"at":Vector3(0.0,0.21,0.1),"from":Vector3(0.0,0.16,-0.05),"axis":Vector3.RIGHT,"turn":0.6,"size":0.16},
 }
-## The upper wing's right end with its tip lost: the cloth whole to the rib
+## The wing's right end with its tip lost: the cloth whole to the rib
 ## TORN_RIB m out, torn ragged past it (TEAR, m, the tears' reach round the
 ## section, and TOOTH the teeth between them); the spars run on bare to
 ## SPARS m out, a broken rib at BARE_RIB.
-const TORN_RIB := 0.2
+const TORN_RIB := 0.24
 const TEAR := [0.032,0.012,0.05,0.02,0.058,0.014,0.04,0.026,0.052,0.01,0.03]
 const TOOTH := [0.05,0.008,0.066,0.022,0.03,0.07,0.012,0.045,0.02,0.06]
-const SPARS := Vector2(0.318,0.272)
-const BARE_RIB := 0.262
-## Lost the right wheel, the right gear folds up and it slumps over, about
-## the line from the left wheel's foot to the tail skid's, till its lower
-## right wingtip (LOW_TIP) is WING_CLEAR m off the grass; the folded gear
-## (the right V and the axle) meets the grass under where the V's foot was
-## (GEAR_FOOT).
-const LOW_TIP := Vector3(0.6,-0.106,-0.03)
+const SPARS := Vector2(0.36,0.31)
+const BARE_RIB := 0.3
+## Lost the right wheel, the right leg buckles and it slumps over, about
+## the line from the left wheel's foot to the tail skid's, till its right
+## wingtip's underside (LOW_TIP) is WING_CLEAR m off the grass; the buckled
+## leg meets the grass under where its foot was (GEAR_FOOT).
+const LOW_TIP := Vector3(0.66,WING_Y+0.66*DIHEDRAL-0.012,WING_Z)
 const WING_CLEAR := 0.012
 const GEAR_FOOT := Vector3(0.165,-0.33,-0.28)
 const LEFT_FOOT := Vector3(-0.2,-0.41,-0.28)
@@ -257,6 +277,9 @@ var _scarf_points := PackedVector3Array()
 var _short_points := PackedVector3Array()
 var _scarf: MeshInstance3D
 var _scarf_mesh: ImmediateMesh
+## The scarf's pale stripes: a livery's pilots wear them, the wanderer's
+## navy scarf is plain.
+var _stripes := false
 var _mark: MeshInstance3D
 var _mark_material: StandardMaterial3D
 var _mark_bright := 0.0
@@ -312,93 +335,86 @@ func _init(livery := {}) -> void:
 	var cream: Material = paint.cream
 	var leather: Material = paint.leather
 	var steel: Material = paint.steel
-	# The body runs along -Z, the nose forward: slim, deepest at the
-	# cockpit, tapering to a knife-edged tail post; a round terracotta cowl
-	# round the nose (`piece` "cowl") and the brass spinner.
-	_add(_hull([Vector3(-0.47,0.13,0.135),Vector3(-0.36,0.142,0.15),Vector3(-0.1,0.146,0.158),Vector3(0.1,0.14,0.15),Vector3(0.3,0.105,0.12),Vector3(0.52,0.06,0.085),Vector3(0.72,0.016,0.05)],10),wood,Vector3.ZERO,Vector3.ZERO)
+	var tan: Material = paint.tan
+	# The body runs along -Z, the nose forward: fat and round, deepest under
+	# the cockpit, tapering to a rounded tail; the cowl round the nose
+	# (`piece` "cowl") and the terracotta spinner.
+	_add(_hull(BODY,12),wood,Vector3.ZERO,Vector3.ZERO)
 	_add_piece("cowl",paint)
 	_add_piece("spinner",paint)
-	# A terracotta band round the body before the tail.
-	_add(_hull([Vector3(0.42,0.085,0.104),Vector3(0.47,0.075,0.097)],10),trim,Vector3.ZERO,Vector3.ZERO)
-	# The cockpit: a dark tub let into the back, a padded leather coaming,
-	# a small glass windscreen in a brass frame before it and a turtle deck
-	# behind, rising to a headrest. In it, the wanderer from the chest up,
-	# alive in the seat (scripts/plane_pilot.gd).
-	_add(_hull([Vector3(-0.12,0.095,0.06),Vector3(0.12,0.095,0.06)],8),dark,Vector3(0.0,0.15,0.22),Vector3.ZERO)
-	var rim := _add(FacetMesh.frustum(0.108,0.096,0.03,12),leather,Vector3(0.0,0.2,0.22),Vector3.ZERO)
+	# Panel seams round the body, each a raised tan band with a row of
+	# rivets over its top half.
+	for z: float in SEAMS:
+		var r := _body_at(z)
+		_add(_hull([Vector3(z-0.004,r.y+0.002,r.z+0.002),Vector3(z+0.004,r.y+0.002,r.z+0.002)],12),tan,Vector3.ZERO,Vector3.ZERO)
+		for k in range(6):
+			var a := TAU*(float(k)+0.5)/12.0
+			_add(_gem(0.0042),steel,Vector3(cos(a)*r.y,sin(a)*r.z,z+0.014),Vector3.ZERO)
+	# The cockpit: a cream tub raised on the top, a padded brown coaming, a
+	# small glass windscreen before it and a cream turtle deck behind,
+	# rising to a headrest. In it, the wanderer from the chest up, alive in
+	# the seat (scripts/plane_pilot.gd).
+	_add(_hull([Vector3(-0.12,0.098,0.05),Vector3(0.12,0.098,0.05)],8),wood,Vector3(0.0,0.13,0.22),Vector3.ZERO)
+	var rim := _add(_frustum(0.108,0.096,0.026,12),leather,Vector3(0.0,0.175,0.22),Vector3.ZERO)
 	rim.scale = Vector3(1.0,1.0,1.3)
-	_add(_hull([Vector3(0.0,0.052,0.05),Vector3(0.1,0.04,0.035),Vector3(0.27,0.0,0.0)],8),dark,Vector3(0.0,0.17,0.33),Vector3(0.2,0.0,0.0))
+	_add(_hull([Vector3(0.0,0.066,0.05),Vector3(0.12,0.05,0.038),Vector3(0.24,0.02,0.014),Vector3(0.27,0.0,0.0)],8),wood,Vector3(0.0,0.14,0.33),Vector3(0.1,0.0,0.0))
 	_add_piece("windscreen",paint)
-	_rig = PlanePilot.new(PersonKit.outfit(livery.get("scarf",PersonKit.SCARF)))
+	var wanderer := livery.is_empty()
+	_rig = PlanePilot.new(PersonKit.outfit(livery.get("scarf",PersonKit.SCARF)),wanderer)
 	# Drawn up by WorldScale.pilot_size so he is the walker's size in the
 	# grown plane (the plane itself never changes for him).
 	_rig.scale = Vector3.ONE*0.92*WorldScale.pilot_size
 	add_child(_rig)
 	_pilot.append(_rig)
-	# The wings: a lower wing through the body and a longer upper one on
-	# struts, the upper a little forward; cream doped cloth tight over the
-	# ribs, tipped in terracotta, the upper with roundels near its tips.
-	var rounded := SPAN*0.5*0.8
-	var ailerons := Vector3(SPAN*0.5*AILERON_SPAN.x,SPAN*0.5*AILERON_SPAN.y,_hinge_z())
-	_add(_wing(SPAN*0.5,-rounded,rounded,ailerons),cream,Vector3(0.0,UPPER_Y,STAGGER),Vector3.ZERO).set_meta("piece","upper_wing")
-	var lower_round := LOWER_SPAN*0.5*0.8
-	_add(_wing(LOWER_SPAN*0.5,-lower_round,lower_round),cream,Vector3(0.0,LOWER_Y,0.0),Vector3.ZERO)
+	# The wing: one low wing through the body's belly, a little dihedral,
+	# terracotta, its tips (`piece` "wingtip") the trim's.
+	var half := SPAN*0.5
+	var rounded := half*0.8
+	var ailerons := Vector3(half*AILERON_SPAN.x,half*AILERON_SPAN.y,_hinge_z())
+	var wing_at := Vector3(0.0,WING_Y,WING_Z)
+	_add(_main_wing(-rounded,rounded,ailerons),cream,wing_at,Vector3.ZERO).set_meta("piece","wing")
 	for side in [-1.0,1.0]:
-		var tip := Vector2(rounded,SPAN*0.5) if side > 0.0 else Vector2(-SPAN*0.5,-rounded)
-		var upper_tip := _add(_wing(SPAN*0.5,tip.x,tip.y),trim,Vector3(0.0,UPPER_Y,STAGGER),Vector3.ZERO)
-		if side > 0.0: upper_tip.set_meta("piece","wingtip")
-		var low := Vector2(lower_round,LOWER_SPAN*0.5) if side > 0.0 else Vector2(-LOWER_SPAN*0.5,-lower_round)
-		_add(_wing(LOWER_SPAN*0.5,low.x,low.y),trim,Vector3(0.0,LOWER_Y,0.0),Vector3.ZERO)
-		# A roundel on the upper wing, on the cloth as it lies.
-		var at := Vector2(SPAN*0.3*side,-CHORD*0.5+0.42*_chord_at(SPAN*0.5,SPAN*0.3))
-		var rings := [[0.062,dark],[0.046,trim],[0.018,cream]]
-		for k in range(rings.size()):
-			var ring := _add(_decal(SPAN*0.5,at,float(rings[k][0]),0.0015+0.0005*k),rings[k][1],Vector3(0.0,UPPER_Y,STAGGER),Vector3.ZERO)
-			if side > 0.0: ring.set_meta("piece","wingtip")
+		var tip := Vector2(rounded,half) if side > 0.0 else Vector2(-half,-rounded)
+		var wing_tip := _add(_main_wing(tip.x,tip.y),trim,wing_at,Vector3.ZERO)
+		if side > 0.0: wing_tip.set_meta("piece","wingtip")
 	for side in [-1.0,1.0]:
-		# The ailerons hinge into the upper wing's trailing edge, out towards
-		# the tips.
+		# The ailerons hinge into the wing's trailing edge, out towards the
+		# tips, tilted up with the dihedral.
 		var hinge := Node3D.new()
-		hinge.position = Vector3((ailerons.x+ailerons.y)*0.5*side,UPPER_Y+0.004,STAGGER+ailerons.z)
+		hinge.position = _aileron_at(side)
 		add_child(hinge)
 		var flap := MeshInstance3D.new()
-		flap.mesh = _scaled(_prism([Vector2(0.0,0.006),Vector2(AILERON_DEPTH,-0.001),Vector2(0.0,-0.006)]),Vector3(ailerons.y-ailerons.x-0.004,1.0,1.0))
+		flap.mesh = _aileron()
+		flap.rotation.z = atan(DIHEDRAL)*side
 		flap.material_override = cream
 		hinge.add_child(flap)
 		_ailerons.append(hinge)
-		# Interplane struts, a cabane from the upper wing to the body, and
-		# wires crossed between the wings, glinting.
-		var out: float = SPAN*0.34*side
-		for dz in [-0.075,0.075]:
-			_strut(Vector3(out,LOWER_Y,dz),Vector3(out,UPPER_Y,dz+STAGGER),dark,0.008)
-		for dz in [-0.05,0.05]:
-			_strut(Vector3(0.09*side,0.14,-0.25+dz),Vector3(0.13*side,UPPER_Y,STAGGER+dz),dark,0.007)
-		for dz in [-0.06,0.06]:
-			_strut(Vector3(out,UPPER_Y,STAGGER+dz),Vector3(0.15*side,LOWER_Y,dz),steel,0.0028)
-			_strut(Vector3(out,LOWER_Y,dz),Vector3(0.14*side,UPPER_Y,STAGGER+dz),steel,0.0028)
-		# The undercarriage: a V of legs either side to the axle, and the
-		# wheels on it, their spokes covered in cream, brass hubs.
-		var legs := [_strut(Vector3(0.07*side,-0.14,-0.38),Vector3(0.165*side,-0.33,-0.28),dark,0.009),_strut(Vector3(0.07*side,-0.14,-0.17),Vector3(0.165*side,-0.33,-0.28),dark,0.009)]
-		# The right gear folds up when its wheel is lost (`damage`).
+		# The undercarriage: two short brown legs from under the wing to the
+		# hub, and a fat-tyred wheel on its stub axle. The right leg buckles
+		# when its wheel is lost (`damage`).
+		var legs := []
+		for g: Array in _gear():
+			var from: Vector3 = g[0]
+			var to: Vector3 = g[1]
+			legs.append(_strut(from*Vector3(side,1.0,1.0),to*Vector3(side,1.0,1.0),dark,float(g[2])))
 		if side > 0.0:
 			for leg: Node in legs: leg.set_meta("piece","gear")
 		_add_piece("wheel",paint,null,side)
-	_strut(Vector3(-0.17,-0.33,-0.28),Vector3(0.17,-0.33,-0.28),dark,0.008).set_meta("piece","gear")
 	# A tail skid it rests on, parked (scripts/plane_strip.gd TAIL).
 	_strut(Vector3(0.0,-0.03,0.58),Vector3(0.0,-0.11,0.66),dark,0.01)
-	_add(FacetMesh.gem(0.018),steel,Vector3(0.0,-0.1,0.66),Vector3.ZERO)
-	# The tail: a terracotta fin with a cream rudder, a cream tailplane and
-	# its elevator either side of the rudder.
+	_add(_gem(0.018),steel,Vector3(0.0,-0.1,0.66),Vector3.ZERO)
+	# The tail: a terracotta fin and rudder, the wanderer's hat on the fin
+	# in cream, a terracotta tailplane and its elevator either side.
 	_add_piece("fin",paint)
-	_add(_wing(0.25,-0.25,0.25,Vector3.ZERO,0.13,0.1,0.016,3),cream,Vector3(0.0,0.03,0.62),Vector3.ZERO)
+	_add(_wing(0.27,-0.27,0.27,Vector3.ZERO,0.15,0.11,0.024,3),cream,Vector3(0.0,0.03,0.62),Vector3.ZERO)
 	_elevator = Node3D.new()
-	_elevator.position = Vector3(0.0,0.032,0.62+0.065)
+	_elevator.position = Vector3(0.0,0.032,0.62+0.07)
 	add_child(_elevator)
 	for side in [-1.0,1.0]:
 		var elevator := MeshInstance3D.new()
-		elevator.mesh = _scaled(_prism([Vector2(0.0,0.004),Vector2(ELEVATOR_DEPTH,0.0),Vector2(0.0,-0.004)]),Vector3(0.2,1.0,1.0))
+		elevator.mesh = _scaled(_prism([Vector2(0.0,0.007),Vector2(ELEVATOR_DEPTH,0.0),Vector2(0.0,-0.006)]),Vector3(0.21,1.0,1.0))
 		elevator.material_override = cream
-		elevator.position = Vector3(0.125*side,0.0,0.0)
+		elevator.position = Vector3(0.13*side,0.0,0.0)
 		_elevator.add_child(elevator)
 	# The propeller: two varnished wooden blades, brass-sheathed at the
 	# tips, and the soft disc of air they turn into, at the nose.
@@ -425,7 +441,12 @@ func _init(livery := {}) -> void:
 	var scarf_material := ShaderMaterial.new()
 	scarf_material.shader = FOLK_RIBBON
 	scarf_material.set_shader_parameter("roughness_value",0.95)
-	scarf_material.set_meta("scarf",livery.get("scarf",Color("d9573a")))
+	# The wanderer's tail is the walker's navy scarf (scripts/pilot_paint.gd):
+	# the ribbon multiplies its vertex colour in as linear, so it is turned
+	# from the sheet's sRGB first (as it was, it drew pale sky blue).
+	# (`_tail_navy`.)
+	scarf_material.set_meta("scarf",livery.get("scarf",_tail_navy()))
+	_stripes = livery.has("scarf")
 	_scarf.material_override = scarf_material
 	_scarf.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_scarf)
@@ -583,7 +604,7 @@ func _trail_scarf(delta: float, glide: RefCounted) -> void:
 	_drag_tail(_short_points,knot+side*0.014,wind,delta,fast)
 	var t := Time.get_ticks_msec()*0.001
 	var rate := lerpf(FLUTTER.x,FLUTTER.y,fast)
-	var color: Color = _scarf.material_override.get_meta("scarf",Color("d9573a"))
+	var color: Color = _scarf.material_override.get_meta("scarf",PlanePilot.NAVY)
 	_scarf_mesh.clear_surfaces()
 	_draw_tail(_scarf_points,side,up,t*rate,fast,1.0,color)
 	_draw_tail(_short_points,side,up,t*rate*1.13+1.7,fast,0.85,color)
@@ -602,7 +623,7 @@ func _draw_tail(points: PackedVector3Array, side: Vector3, up: Vector3, phase: f
 	var last := float(points.size()-1)
 	var cuts := []
 	for i in range(points.size()): cuts.append(float(i))
-	for stripe: Vector2 in SCARF_STRIPES:
+	for stripe: Vector2 in (SCARF_STRIPES if _stripes else []):
 		cuts.append(stripe.x*last)
 		cuts.append(stripe.y*last)
 	cuts.sort()
@@ -620,7 +641,7 @@ func _draw_tail(points: PackedVector3Array, side: Vector3, up: Vector3, phase: f
 		var normal := across.cross(along).normalized()
 		var f := u/last
 		var c := color
-		for stripe: Vector2 in SCARF_STRIPES:
+		for stripe: Vector2 in (SCARF_STRIPES if _stripes else []):
 			if f >= stripe.x-0.0001 and f < stripe.y-0.0001: c = STRIPE
 		if before.a > 0.0 and c != before:
 			# The stripe's edge: the same place again in the new colour.
@@ -635,10 +656,16 @@ func _draw_tail(points: PackedVector3Array, side: Vector3, up: Vector3, phase: f
 			_scarf_mesh.surface_add_vertex(p+across*e*_scarf_width(f,wide)*0.5)
 	_scarf_mesh.surface_end()
 
+## The wanderer's scarf tail's vertex colour: the walker's navy, linear,
+## a shade down for the folk ribbon's brighter fill, so the two match.
+static func _tail_navy() -> Color:
+	var navy := PlanePilot.NAVY.srgb_to_linear()
+	return Color(navy.r*0.6,navy.g*0.6,navy.b*0.6)
+
 static func _scarf_width(along: float, wide: float) -> float:
 	return SCARF_WIDTH*wide*(1.0-0.4*along)
 
-## The vapour: each upper wingtip lays a point every
+## The vapour: each wingtip lays a point every
 ## VAPOUR_EVERY seconds; the points hang, drifting and widening as they fade.
 func _trail_vapour(delta: float, near: float, side: float) -> void:
 	_vapour_clock += delta
@@ -654,7 +681,7 @@ func _trail_vapour(delta: float, near: float, side: float) -> void:
 				_vapour_strength[o+i] = _vapour_strength[o+i-1]
 		var drift := (Vector3.UP*VAPOUR_DRIFT.x+basis.x.normalized()*hand*VAPOUR_DRIFT.y)*delta
 		for i in range(1,VAPOUR): _vapour_points[o+i] += drift*float(i)/VAPOUR
-		_vapour_points[o] = transform*Vector3(SPAN*0.5*hand,UPPER_Y,STAGGER)
+		_vapour_points[o] = transform*Vector3(SPAN*0.5*hand,WING_Y+SPAN*0.5*DIHEDRAL,WING_Z)
 		_vapour_strength[o] = near*clampf(0.6+0.6*side*hand,0.25,1.0)
 		for i in range(VAPOUR): shown = shown or _vapour_strength[o+i] > 0.004
 	_vapour.visible = shown
@@ -1030,10 +1057,12 @@ static func _ground_up() -> Vector3:
 	var up := (RIGHT_FOOT-LEFT_FOOT).cross(SKID_FOOT-LEFT_FOOT).normalized()
 	return -up if up.y < 0.0 else up
 
-## The right gear, standing (from, to, radius): its two legs and the axle,
-## as the figure builds them.
+## The right gear, standing (from, to, radius): its two short legs from
+## under the wing to the hub, and the stub axle, as the figure builds them
+## (the left's mirrored).
 static func _gear() -> Array:
-	return [[Vector3(0.07,-0.14,-0.38),Vector3(0.165,-0.33,-0.28),0.009],[Vector3(0.07,-0.14,-0.17),Vector3(0.165,-0.33,-0.28),0.009],[Vector3(-0.17,-0.33,-0.28),Vector3(0.17,-0.33,-0.28),0.008]]
+	var root := WING_Y+GEAR_FOOT.x*DIHEDRAL-0.012
+	return [[Vector3(GEAR_FOOT.x,root,-0.33),GEAR_FOOT,0.013],[Vector3(GEAR_FOOT.x,root,-0.22),GEAR_FOOT,0.013],[GEAR_FOOT,GEAR_FOOT+Vector3(0.04,0.0,0.0),0.01]]
 
 ## Where the folded right gear meets the grass, slumped (`_tip`): under
 ## where its V's foot was, on the ground as it lies leaned over.
@@ -1085,7 +1114,7 @@ func _split() -> void:
 			remove_child(child)
 			child.free()
 	var half := SPAN*0.5
-	var wing := _placed(Vector3(0.0,UPPER_Y,STAGGER),Vector3.ZERO)
+	var wing := _placed(Vector3(0.0,WING_Y,WING_Z),Vector3.ZERO)
 	var ailerons := Vector3(half*AILERON_SPAN.x,half*AILERON_SPAN.y,_hinge_z())
 	for id: String in FOUND:
 		var whole := _holder("Part_"+id,self)
@@ -1107,15 +1136,15 @@ func _split() -> void:
 				_fill(whole,parts.slice(0,parts.size()-1))
 				rec.flap = _fill(whole,[parts[-1]])[0]
 				var inner := _holder("Wing_inner",self)
-				_fill(inner,[[_wing(half,-half*0.8,half*WINGTIP_FROM,ailerons),"cream",wing]])
+				_fill(inner,[[_main_wing(-half*0.8,half*WINGTIP_FROM,ailerons),"cream",wing]])
 				rec.base = [inner,_ailerons[1]]
 			"wheel":
-				# The right gear stands straight while the wheel is on; lost,
-				# it is folded up (`damage`).
+				# The right leg stands straight while the wheel is on; lost,
+				# it is buckled (`damage`).
 				_fill(whole,piece(id,1.0))
 				var gear := _holder("Gear_right",self)
 				var bars := []
-				for g: Array in _gear(): bars.append([FacetMesh.frustum(g[2],g[2],1.0,4),"dark",_strut_at(g[0],g[1])])
+				for g: Array in _gear(): bars.append([_frustum(g[2],g[2],1.0,4),"dark",_strut_at(g[0],g[1])])
 				_fill(gear,bars)
 				rec.base = [gear]
 			_:
@@ -1153,14 +1182,13 @@ func _fill(into: Node3D, parts: Array) -> Array:
 ##   "cowl"        the engine bare: a dark firewall and crankcase,
 ##                 five finned cylinders round it with brass heads and
 ##                 rocker boxes, and their pushrods
-##   "wheel"       the right gear folded up: its two legs buckled out at
-##                 the knee to a foot on the grass, the axle snapped short
-##                 of the middle, and the bare stub axle out of the foot,
-##                 a brass collar and the nut on its end (the plane
-##                 slumps onto it, `_tip`)
+##   "wheel"       the right leg buckled: its two struts bent out at the
+##                 knee to a foot on the grass, and the bare stub axle out
+##                 of the foot, a brass collar and the nut on its end (the
+##                 plane slumps onto it, `_tip`)
 ##   "fin"         a jagged terracotta stub of the fin and the bare rudder
 ##                 post, bent over at its top, its brass hinges
-##   "wingtip"     the upper wing's right end: the cloth whole to the last
+##   "wingtip"     the wing's right end: the skin whole to the last
 ##                 rib, torn ragged past it, the two spars running on bare
 ##                 to where they snapped, a broken rib on them
 ##   "windscreen"  the frame bent open: the rail along the bottom, the
@@ -1172,11 +1200,11 @@ static func damage(id: String) -> Array:
 	var out := []
 	match id:
 		"propeller":
-			out.append([FacetMesh.frustum(0.011,0.009,1.0,6),"steel",_strut_at(Vector3(0.0,0.0,-0.6),Vector3(0.0,0.0,-0.722))])
-			out.append([FacetMesh.frustum(0.036,0.036,0.012,8),"steel",_placed(Vector3(0.0,0.0,-0.668),Vector3(PI*0.5,0.0,0.0))])
+			out.append([_frustum(0.011,0.009,1.0,6),"steel",_strut_at(Vector3(0.0,0.0,-0.6),Vector3(0.0,0.0,-0.722))])
+			out.append([_frustum(0.036,0.036,0.012,8),"steel",_placed(Vector3(0.0,0.0,-0.668),Vector3(PI*0.5,0.0,0.0))])
 			for i in range(4):
 				var a := TAU*(i+0.5)/4.0
-				out.append([FacetMesh.gem(0.0065),"brass",_placed(Vector3(cos(a)*0.025,sin(a)*0.025,-0.676),Vector3(PI*0.5,0.0,0.0))])
+				out.append([_gem(0.0065),"brass",_placed(Vector3(cos(a)*0.025,sin(a)*0.025,-0.676),Vector3(PI*0.5,0.0,0.0))])
 			# The blades' roots, splintered off: a jagged stump each way.
 			var stump := [Vector2(-0.017,0.0),Vector2(0.017,0.0),Vector2(0.015,0.052),Vector2(0.007,0.04),Vector2(0.001,0.068),Vector2(-0.006,0.047),Vector2(-0.014,0.058)]
 			var short := [Vector2(-0.017,0.0),Vector2(0.017,0.0),Vector2(0.014,0.03),Vector2(0.004,0.022),Vector2(-0.003,0.036),Vector2(-0.015,0.026)]
@@ -1184,19 +1212,19 @@ static func damage(id: String) -> Array:
 				var lay := Transform3D(Basis(Vector3.BACK,0.6+PI*k)*Basis(Vector3.UP,PI*0.5),Vector3(0.0,0.0,-0.68))
 				out.append([_cut(stump if k == 0 else short,0.014),"varnish",lay])
 		"cowl":
-			out.append([_hull([Vector3(-0.478,0.13,0.136),Vector3(-0.468,0.133,0.139)],10),"dark",Transform3D.IDENTITY])
+			out.append([_hull([Vector3(-0.478,0.16,0.163),Vector3(-0.468,0.163,0.166)],12),"dark",Transform3D.IDENTITY])
 			out.append([_hull([Vector3(-0.64,0.022,0.022),Vector3(-0.625,0.045,0.045),Vector3(-0.6,0.062,0.062),Vector3(-0.53,0.064,0.064),Vector3(-0.5,0.052,0.052),Vector3(-0.47,0.05,0.05)],10),"dark",Transform3D.IDENTITY])
 			for i in range(5):
 				var a := PI*0.5+TAU*i/5.0
 				var d := Vector3(cos(a),sin(a),0.0)
 				var z := Vector3(0.0,0.0,-0.565)
-				out.append([FacetMesh.frustum(0.023,0.021,1.0,8),"steel",_strut_at(z+d*0.05,z+d*0.12)])
+				out.append([_frustum(0.023,0.021,1.0,8),"steel",_strut_at(z+d*0.05,z+d*0.12)])
 				for k in range(4):
 					var r := 0.072+0.014*k
-					out.append([FacetMesh.frustum(0.033,0.033,1.0,8),"steel",_strut_at(z+d*(r-0.0022),z+d*(r+0.0022))])
-				out.append([FacetMesh.frustum(0.029,0.022,1.0,8),"brass",_strut_at(z+d*0.12,z+d*0.142)])
-				out.append([FacetMesh.gem(0.011),"brass",_placed(z+d*0.146+Vector3(0.0,0.0,-0.012),Vector3(0.0,0.0,a-PI*0.5))])
-				out.append([FacetMesh.frustum(0.0032,0.0032,1.0,4),"steel",_strut_at(Vector3(0.0,0.0,-0.612)+d*0.05,Vector3(0.0,0.0,-0.585)+d*0.135)])
+					out.append([_frustum(0.033,0.033,1.0,8),"steel",_strut_at(z+d*(r-0.0022),z+d*(r+0.0022))])
+				out.append([_frustum(0.029,0.022,1.0,8),"brass",_strut_at(z+d*0.12,z+d*0.142)])
+				out.append([_gem(0.011),"brass",_placed(z+d*0.146+Vector3(0.0,0.0,-0.012),Vector3(0.0,0.0,a-PI*0.5))])
+				out.append([_frustum(0.0032,0.0032,1.0,4),"steel",_strut_at(Vector3(0.0,0.0,-0.612)+d*0.05,Vector3(0.0,0.0,-0.585)+d*0.135)])
 		"wheel":
 			var foot := _gear_foot()
 			var out_x := Vector3(1.0,-0.15,0.0).normalized()
@@ -1204,33 +1232,31 @@ static func damage(id: String) -> Array:
 			for k in range(2):
 				var root: Vector3 = gear[k][0]
 				var knee := (root+foot)*0.5+Vector3(0.04,-0.012,0.012*(1.0 if k == 0 else -1.0))
-				out.append([FacetMesh.frustum(0.009,0.009,1.0,4),"dark",_strut_at(root,knee)])
-				out.append([FacetMesh.frustum(0.009,0.008,1.0,4),"dark",_strut_at(knee,foot)])
-				out.append([FacetMesh.gem(0.011),"dark",_placed(knee,Vector3.ZERO)])
-			# The axle snapped short of the middle; its torn end on the foot.
-			var bar: Array = gear[2]
-			out.append([FacetMesh.frustum(0.008,0.006,1.0,4),"dark",_strut_at(bar[0],Vector3(0.025,-0.333,-0.28))])
-			out.append([FacetMesh.frustum(0.008,0.006,1.0,4),"dark",_strut_at(foot,foot+(Vector3(0.0,-0.33,-0.28)-foot).normalized()*0.07)])
-			out.append([FacetMesh.frustum(0.008,0.008,1.0,6),"steel",_strut_at(foot,foot+out_x*0.06)])
-			out.append([FacetMesh.frustum(0.017,0.017,0.009,8),"brass",_placed(foot+out_x*0.028,Vector3(0.0,0.0,PI*0.5))])
-			out.append([FacetMesh.gem(0.0095),"brass",_placed(foot+out_x*0.062,Vector3(0.0,0.0,PI*0.5))])
+				var r: float = gear[k][2]
+				out.append([_frustum(r,r,1.0,5),"dark",_strut_at(root,knee)])
+				out.append([_frustum(r,r*0.9,1.0,5),"dark",_strut_at(knee,foot)])
+				out.append([_gem(0.015),"dark",_placed(knee,Vector3.ZERO)])
+			out.append([_frustum(0.008,0.008,1.0,6),"steel",_strut_at(foot,foot+out_x*0.06)])
+			out.append([_frustum(0.017,0.017,0.009,8),"brass",_placed(foot+out_x*0.028,Vector3(0.0,0.0,PI*0.5))])
+			out.append([_gem(0.0095),"brass",_placed(foot+out_x*0.062,Vector3(0.0,0.0,PI*0.5))])
 		"fin":
-			var stub := [Vector2(-0.1,0.0),Vector2(0.1,0.0),Vector2(0.1,0.085),Vector2(0.075,0.068),Vector2(0.05,0.112),Vector2(0.028,0.078),Vector2(0.0,0.1),Vector2(-0.03,0.066),Vector2(-0.06,0.084),Vector2(-0.1,0.055)]
-			out.append([_cut(stub,0.012),"trim",_placed(Vector3(0.0,0.03,0.58),Vector3.ZERO)])
-			out.append([FacetMesh.frustum(0.0055,0.0055,1.0,5),"dark",_strut_at(Vector3(0.0,0.03,0.68),Vector3(0.0,0.17,0.684))])
-			out.append([FacetMesh.frustum(0.0055,0.004,1.0,5),"dark",_strut_at(Vector3(0.0,0.17,0.684),Vector3(0.024,0.2,0.702))])
-			for y: float in [0.085,0.14]: out.append([FacetMesh.gem(0.008),"brass",_placed(Vector3(0.0,y,0.682),Vector3.ZERO)])
+			var stub := [Vector2(-0.13,0.0),Vector2(0.1,0.0),Vector2(0.1,0.085),Vector2(0.075,0.068),Vector2(0.05,0.112),Vector2(0.028,0.078),Vector2(0.0,0.1),Vector2(-0.03,0.066),Vector2(-0.06,0.084),Vector2(-0.1,0.05),Vector2(-0.13,0.03)]
+			out.append([_cut(stub,0.022),"trim",_placed(Vector3(0.0,0.03,0.58),Vector3.ZERO)])
+			out.append([_frustum(0.0055,0.0055,1.0,5),"dark",_strut_at(Vector3(0.0,0.03,0.68),Vector3(0.0,0.17,0.684))])
+			out.append([_frustum(0.0055,0.004,1.0,5),"dark",_strut_at(Vector3(0.0,0.17,0.684),Vector3(0.024,0.2,0.702))])
+			for y: float in [0.085,0.14]: out.append([_gem(0.008),"brass",_placed(Vector3(0.0,y,0.682),Vector3.ZERO)])
 		"wingtip":
 			var half := SPAN*0.5
-			var wing := _placed(Vector3(0.0,UPPER_Y,STAGGER),Vector3.ZERO)
-			out.append([_wing(half,-half*0.8,TORN_RIB,Vector3(half*AILERON_SPAN.x,half*AILERON_SPAN.y,_hinge_z())),"cream",wing])
+			var wing := _placed(Vector3(0.0,WING_Y,WING_Z),Vector3.ZERO)
+			out.append([_main_wing(-half*0.8,TORN_RIB,Vector3(half*AILERON_SPAN.x,half*AILERON_SPAN.y,_hinge_z())),"cream",wing])
 			out.append([_tatters(half),"cream",wing])
 			# The spars run on bare, as the struts meet them, the rear one
 			# snapped and bent down; a rib stands broken on them.
 			var s := _station(half,TORN_RIB,CHORD,TIP_CHORD,THICK,RIBS)
 			var y := float(s.top)*0.25
-			out.append([FacetMesh.frustum(0.0062,0.005,1.0,4),"dark",wing*_strut_at(Vector3(TORN_RIB-0.012,y,-0.075),Vector3(SPARS.x,y-0.003,-0.075))])
-			out.append([FacetMesh.frustum(0.0062,0.005,1.0,4),"dark",wing*_strut_at(Vector3(TORN_RIB-0.012,y,0.075),Vector3(SPARS.y,y-0.016,0.082))])
+			var lift := func(x: float) -> float: return x*DIHEDRAL
+			out.append([_frustum(0.0075,0.006,1.0,4),"dark",wing*_strut_at(Vector3(TORN_RIB-0.012,y+lift.call(TORN_RIB-0.012),-0.08),Vector3(SPARS.x,y-0.003+lift.call(SPARS.x),-0.08))])
+			out.append([_frustum(0.0075,0.006,1.0,4),"dark",wing*_strut_at(Vector3(TORN_RIB-0.012,y+lift.call(TORN_RIB-0.012),0.08),Vector3(SPARS.y,y-0.016+lift.call(SPARS.y),0.087))])
 			var r := _station(half,BARE_RIB,CHORD,TIP_CHORD,THICK,RIBS)
 			var rib := []
 			for p: Vector2 in AIRFOIL_TOP:
@@ -1240,21 +1266,21 @@ static func damage(id: String) -> Array:
 			rib.append(Vector2(float(r.le)+0.62*float(r.chord),-0.15*float(r.under)))
 			for p: Vector2 in AIRFOIL_UNDER:
 				if p.x <= 0.56: rib.append(Vector2(float(r.le)+p.x*float(r.chord),p.y*float(r.under)))
-			out.append([_cut(rib,0.005),"dark",wing*_placed(Vector3(BARE_RIB,0.0,0.0),Vector3.ZERO)])
+			out.append([_cut(rib,0.006),"dark",wing*_placed(Vector3(BARE_RIB,BARE_RIB*DIHEDRAL,0.0),Vector3.ZERO)])
 		"windscreen":
-			out.append([FacetMesh.frustum(0.0035,0.0035,1.0,4),"brass",_strut_at(Vector3(-0.058,0.2,0.1),Vector3(0.058,0.2,0.1))])
-			out.append([FacetMesh.frustum(0.004,0.004,1.0,4),"brass",_strut_at(Vector3(-0.056,0.2,0.1),Vector3(-0.056,0.268,0.124))])
-			out.append([FacetMesh.frustum(0.004,0.004,1.0,4),"brass",_strut_at(Vector3(0.056,0.2,0.1),Vector3(0.058,0.238,0.112))])
-			out.append([FacetMesh.frustum(0.004,0.0035,1.0,4),"brass",_strut_at(Vector3(0.058,0.238,0.112),Vector3(0.092,0.256,0.104))])
+			out.append([_frustum(0.0035,0.0035,1.0,4),"steel",_screen()*_strut_at(Vector3(-0.058,0.2,0.1),Vector3(0.058,0.2,0.1))])
+			out.append([_frustum(0.004,0.004,1.0,4),"steel",_screen()*_strut_at(Vector3(-0.056,0.2,0.1),Vector3(-0.056,0.268,0.124))])
+			out.append([_frustum(0.004,0.004,1.0,4),"steel",_screen()*_strut_at(Vector3(0.056,0.2,0.1),Vector3(0.058,0.238,0.112))])
+			out.append([_frustum(0.004,0.0035,1.0,4),"steel",_screen()*_strut_at(Vector3(0.058,0.238,0.112),Vector3(0.092,0.256,0.104))])
 			# The top rail, torn off the right post, hanging off the left.
-			out.append([FacetMesh.frustum(0.0032,0.0032,1.0,4),"brass",_strut_at(Vector3(-0.056,0.268,0.124),Vector3(0.03,0.226,0.082))])
+			out.append([_frustum(0.0032,0.0032,1.0,4),"steel",_screen()*_strut_at(Vector3(-0.056,0.268,0.124),Vector3(0.03,0.226,0.082))])
 			# A big shard of crazed glass left in the frame, jagged across
 			# its top and right, a star of cracks in it; the right of the
 			# frame open.
 			var shard := [Vector2(-0.056,0.0),Vector2(0.024,0.0),Vector2(0.014,0.012),Vector2(0.027,0.022),Vector2(0.006,0.031),Vector2(0.013,0.046),Vector2(-0.01,0.051),Vector2(-0.018,0.066),Vector2(-0.033,0.058),Vector2(-0.041,0.0715),Vector2(-0.056,0.0715)]
 			var lean := Vector3(0.0,0.068,0.022).normalized()
 			var face := lean.cross(Vector3.RIGHT)
-			var screen := Transform3D(Basis(face,lean,Vector3.RIGHT),Vector3(0.0,0.2,0.1025))
+			var screen := Transform3D(Basis(face,lean,Vector3.RIGHT),Vector3(0.0,0.2,0.1025)+SCREEN-Vector3(0.0,0.2,0.1))
 			out.append([_cut(shard,0.003),"crazed",screen])
 			var star := Vector2(-0.028,0.03)
 			for a: float in [0.3,1.4,2.3,3.5,4.4,5.5]:
@@ -1262,16 +1288,18 @@ static func damage(id: String) -> Array:
 				var tip := star+Vector2(cos(a),sin(a))*reach
 				for side: float in [-1.0,1.0]:
 					var lift := face*0.0022*side
-					out.append([FacetMesh.frustum(0.0009,0.0005,1.0,3),"dark",Transform3D(Basis.IDENTITY,lift)*screen*_strut_at(Vector3(0.0,star.y,star.x),Vector3(0.0,tip.y,tip.x))])
+					out.append([_frustum(0.0009,0.0005,1.0,3),"dark",Transform3D(Basis.IDENTITY,lift)*screen*_strut_at(Vector3(0.0,star.y,star.x),Vector3(0.0,tip.y,tip.x))])
 			# Splinters of it on the deck before the cockpit.
 			var splinters := [[Vector3(0.02,0.149,0.03),0.4,[Vector2(0.0,0.0),Vector2(0.022,0.004),Vector2(0.008,0.016)]],[Vector3(-0.03,0.149,0.0),1.9,[Vector2(0.0,0.0),Vector2(0.016,-0.003),Vector2(0.012,0.012),Vector2(0.002,0.009)]],[Vector3(0.045,0.146,-0.03),2.8,[Vector2(0.0,0.0),Vector2(0.014,0.002),Vector2(0.006,0.011)]]]
 			for sp: Array in splinters:
 				var a: float = sp[1]
 				var y := Vector3(cos(a),0.0,sin(a))
-				out.append([_cut(sp[2],0.0025),"crazed",Transform3D(Basis(Vector3.UP,y,Vector3.UP.cross(y)),sp[0])])
+				var on: Vector3 = sp[0]
+				on.y = _body_at(on.z).z+0.003
+				out.append([_cut(sp[2],0.0025),"crazed",Transform3D(Basis(Vector3.UP,y,Vector3.UP.cross(y)),on)])
 	return out
 
-## The cloth torn past the rib at TORN_RIB on the upper wing (`half` its
+## The skin torn past the rib at TORN_RIB on the wing (`half` its
 ## span each side): a ragged fringe of flaps off the section's upper and
 ## lower surfaces, reaching TEAR out with TOOTH teeth between, the upper
 ## flaps lifting a little and the lower drooping.
@@ -1303,7 +1331,7 @@ static func _tatters(half: float) -> ArrayMesh:
 			var b1 := Vector3(TORN_RIB+lb,b.y+lb*sag,b.x)
 			var m := (a+b)*0.5
 			var m1 := Vector3(TORN_RIB+lm,m.y+lm*sag,m.x+(b.x-a.x)*0.1)
-			for t: Array in [[a0,b0,b1],[a0,b1,a1],[a1,b1,m1]]:
+			for t: Array in [[a0,b0,b1],[a0,b1,a1],[a1,b1,m1]].map(func(t: Array) -> Array: return t.map(func(q: Vector3) -> Vector3: return q+Vector3(0.0,q.x*DIHEDRAL,0.0))):
 				var out := Vector3(0.0,hand,0.0)
 				var mid: Vector3 = (t[0]+t[1]+t[2])/3.0
 				tris.append([t[0],t[1],t[2],mid-out*0.01])
@@ -1340,9 +1368,9 @@ static func _cut(section: Array, width: float) -> ArrayMesh:
 # --- The pieces ---------------------------------------------------------------------
 
 ## The plane's paints by name, `livery` (see `_init`) repainting the body,
-## dark, trim and wing and setting their wear (new without); the pieces
-## (`piece`) name theirs from these. "crazed" is the windscreen's cracked
-## glass, for its damage.
+## dark, trim and wing (and the cowl ring's "glow") and setting their wear
+## (new without); the pieces (`piece`) name theirs from these. "crazed" is
+## the windscreen's cracked glass, for its damage.
 static func paints(livery := {}) -> Dictionary:
 	var out := {
 		"wood":_paint(livery.get("body",WOOD)),
@@ -1352,6 +1380,8 @@ static func paints(livery := {}) -> Dictionary:
 		"leather":_paint(LEATHER),
 		"brass":_metal(BRASS,0.28),
 		"steel":_metal(STEEL,0.4),
+		"tan":_paint(TAN),
+		"glow":_glow_paint(livery.get("glow",CYAN)),
 		"glass":_glass(),
 		"crazed":_crazed(),
 		"varnish":_paint(PROPWOOD),
@@ -1359,97 +1389,119 @@ static func paints(livery := {}) -> Dictionary:
 	_finish(out,clampf(float(livery.get("wear",0.0)),0.0,1.0))
 	return out
 
-## Puts `paint` (`paints`) at wear `t` (`set_wear`): each paint's FINISH
-## between new and worn, the brass tarnishing, the glass filming over.
+## Puts `paint` (`paints`) at wear `t` (`set_wear`): each paint's
+## weathering, the brass tarnishing and dulling, the glass filming over,
+## the cowl's ring dimming.
 static func _finish(paint: Dictionary, t: float) -> void:
 	for key: String in FINISH:
 		if not paint.has(key): continue
 		var m := paint[key] as ShaderMaterial
 		var f: Array = FINISH[key]
-		m.set_shader_parameter("roughness_value",lerpf(f[0],f[1],t))
-		m.set_shader_parameter("coat",lerpf(f[2],f[3],t))
-		m.set_shader_parameter("coat_roughness",lerpf(f[4],f[5],t))
-		m.set_shader_parameter("wear",float(f[6])*t)
-		m.set_shader_parameter("rim",lerpf(RIM_NEW,0.5,t))
+		m.set_shader_parameter("wear",float(f[0])*t)
+		m.set_shader_parameter("own",float(f[1]))
+		m.set_shader_parameter("shine",float(f[2])*(lerpf(1.0,BRASS_SHINE_WORN,t) if key == "brass" else 1.0))
 	if paint.has("brass"):
-		var brass := paint.brass as ShaderMaterial
-		brass.set_shader_parameter("albedo",BRASS.lerp(TARNISH,TARNISH_SHARE*t))
-		brass.set_shader_parameter("metallic_value",lerpf(BRASS_METAL.x,BRASS_METAL.y,t))
+		(paint.brass as ShaderMaterial).set_shader_parameter("albedo",BRASS.lerp(TARNISH,TARNISH_SHARE*t))
 	if paint.has("glass"):
 		var glass := paint.glass as StandardMaterial3D
 		glass.albedo_color = Color(0.85,0.93,0.96,0.22).lerp(Color(0.8,0.79,0.72,0.45),t)
 		glass.roughness = lerpf(0.03,0.45,t)
+	if paint.has("glow"):
+		(paint.glow as StandardMaterial3D).emission_energy_multiplier = lerpf(GLOW.x,GLOW.y,t)
 
 ## Each paint's plain colour, for drawing a piece flat (scripts/
 ## plane_parts.gd's coins).
-const PAINT_COLOURS := {"wood":WOOD,"dark":DARK,"trim":TRIM,"cream":WING,"leather":LEATHER,"brass":BRASS,"steel":STEEL,"glass":Color(0.78,0.88,0.92),"crazed":Color(0.9,0.93,0.92),"varnish":PROPWOOD}
+const PAINT_COLOURS := {"wood":WOOD,"dark":DARK,"trim":TRIM,"cream":WING,"leather":LEATHER,"brass":BRASS,"steel":STEEL,"tan":TAN,"glow":CYAN,"glass":Color(0.78,0.88,0.92),"crazed":Color(0.9,0.93,0.92),"varnish":PROPWOOD}
 
 ## One of the plane's pieces, as [mesh, paint name (`paints`), transform]
-## parts placed as on the figure: "cowl" (the terracotta ring round the
-## nose, its brass lip and dark face, the rivets, louvres and exhaust
-## stacks), "spinner", "propeller" (in the propeller's own frame, its hub at
-## the origin), "windscreen" (glass in a brass frame), "wheel" (`side` -1
-## the left, 1 the right), "fin" (the terracotta fin and cream rudder) and
-## "wingtip" (the upper wing's right tip with its roundel and aileron; the
-## figure draws that as part of the whole wing). The figure is built from
-## these, and the found parts are too (scripts/plane_parts.gd), so a found
-## part matches the plane it goes back on.
+## parts placed as on the figure: "cowl" (the cream drum round the nose,
+## its charcoal lip with the glowing cyan ring in it, the dark face and the
+## rivets), "spinner" (terracotta), "propeller" (in the propeller's own
+## frame, its hub at the origin), "windscreen" (glass in a charcoal frame),
+## "wheel" (`side` -1 the left, 1 the right: a fat charcoal tyre, a cream
+## hub, a terracotta cap), "fin" (the terracotta fin and rudder, the hat in
+## cream on both sides) and "wingtip" (the wing's right end with its tip
+## and aileron; the figure draws that as part of the whole wing). The
+## figure is built from these, and the found parts are too (scripts/
+## plane_parts.gd), so a found part matches the plane it goes back on.
 static func piece(id: String, side := 1.0) -> Array:
 	var out := []
 	match id:
 		"cowl":
-			out.append([_hull([Vector3(-0.62,0.1,0.1),Vector3(-0.6,0.125,0.125),Vector3(-0.55,0.14,0.145),Vector3(-0.47,0.143,0.149),Vector3(-0.44,0.139,0.146)],12),"trim",Transform3D.IDENTITY])
-			out.append([FacetMesh.frustum(0.102,0.102,0.006,12),"brass",_placed(Vector3(0.0,0.0,-0.619),Vector3(PI*0.5,0.0,0.0))])
-			out.append([FacetMesh.frustum(0.082,0.082,0.006,12),"steel",_placed(Vector3(0.0,0.0,-0.623),Vector3(PI*0.5,0.0,0.0))])
-			# A seam of rivets where the cowl meets the body, louvres let
-			# into its sides, and the exhaust stacks bent back into a pipe
-			# along each side.
-			for i in range(14):
-				var a := TAU*(float(i)+0.5)/14.0
-				out.append([FacetMesh.gem(0.0055),"brass",_placed(Vector3(cos(a)*0.141,sin(a)*0.148,-0.452),Vector3.ZERO)])
-			for hand: float in [-1.0,1.0]:
-				for i in range(4):
-					out.append([_hull([Vector3(-0.035,0.0045,0.0045),Vector3(0.035,0.0045,0.0045)],4),"steel",_placed(Vector3(0.139*hand,0.042-0.026*i,-0.505),Vector3.ZERO)])
-				for i in range(3):
-					var z := -0.56+0.045*i
-					out.append([FacetMesh.frustum(0.009,0.009,1.0,4),"steel",_strut_at(Vector3(0.12*hand,-0.05,z),Vector3(0.168*hand,-0.075,z+0.03))])
-				out.append([FacetMesh.frustum(0.011,0.011,1.0,4),"steel",_strut_at(Vector3(0.168*hand,-0.075,-0.53),Vector3(0.152*hand,-0.098,-0.22))])
+			out.append([_hull([Vector3(-0.645,0.13,0.13),Vector3(-0.63,0.152,0.152),Vector3(-0.595,0.168,0.169),Vector3(-0.53,0.174,0.176),Vector3(-0.458,0.166,0.169)],12),"wood",Transform3D.IDENTITY])
+			# The lip: a charcoal rim, the cyan ring glowing in it, and the
+			# dark face of the engine inside.
+			out.append([SoftMesh.torus(0.134,0.014,48,10),"steel",_placed(Vector3(0.0,0.0,-0.645),Vector3(PI*0.5,0.0,0.0))])
+			out.append([SoftMesh.torus(0.113,0.0085,48,8),"glow",_placed(Vector3(0.0,0.0,-0.652),Vector3(PI*0.5,0.0,0.0))])
+			out.append([_frustum(0.106,0.106,0.008,12),"steel",_placed(Vector3(0.0,0.0,-0.647),Vector3(PI*0.5,0.0,0.0))])
+			# A seam of rivets where the cowl meets the body.
+			for i in range(12):
+				var a := TAU*(float(i)+0.5)/12.0
+				out.append([_gem(0.0048),"steel",_placed(Vector3(cos(a)*0.167,sin(a)*0.17,-0.47),Vector3.ZERO)])
 		"spinner":
-			out.append([_hull([Vector3(-0.76,0.0,0.0),Vector3(-0.73,0.03,0.03),Vector3(-0.67,0.052,0.052),Vector3(-0.63,0.056,0.056)],8),"brass",Transform3D.IDENTITY])
+			out.append([_hull([Vector3(-0.76,0.0,0.0),Vector3(-0.751,0.026,0.026),Vector3(-0.731,0.047,0.047),Vector3(-0.699,0.062,0.062),Vector3(-0.669,0.067,0.067),Vector3(-0.652,0.064,0.064)],10),"trim",Transform3D.IDENTITY])
 		"propeller":
-			# Two varnished wooden blades, brass-sheathed at the tips.
+			# Two broad wooden blades, rounded at the tips.
 			for turn: float in [0.0,PI]:
-				var lay := Transform3D(Basis(Vector3.BACK,turn)*Basis(Vector3.UP,0.32)*Basis(Vector3.RIGHT,-PI*0.5),Vector3.ZERO)
-				out.append([_hull([Vector3(0.0,0.012,0.009),Vector3(0.04,0.026,0.008),Vector3(0.16,0.024,0.006),Vector3(0.235,0.017,0.005)],6),"varnish",lay])
-				out.append([_hull([Vector3(0.232,0.0175,0.0055),Vector3(0.262,0.012,0.0045),Vector3(0.27,0.004,0.003)],6),"brass",lay])
+				var lay := Transform3D(Basis(Vector3.BACK,turn)*Basis(Vector3.UP,0.3)*Basis(Vector3.RIGHT,-PI*0.5),Vector3.ZERO)
+				out.append([_hull([Vector3(0.0,0.014,0.011),Vector3(0.05,0.036,0.011),Vector3(0.17,0.038,0.009),Vector3(0.245,0.03,0.007),Vector3(0.272,0.012,0.004)],6),"varnish",lay])
 		"windscreen":
-			out.append([_prism([Vector2(0.0,0.0),Vector2(0.005,0.0),Vector2(0.027,0.068),Vector2(0.022,0.068)],0.11),"glass",_placed(Vector3(0.0,0.2,0.1),Vector3.ZERO)])
-			for hand: float in [-1.0,1.0]: out.append([FacetMesh.frustum(0.004,0.004,1.0,4),"brass",_strut_at(Vector3(0.056*hand,0.2,0.1),Vector3(0.056*hand,0.268,0.124))])
-			out.append([FacetMesh.frustum(0.003,0.003,1.0,4),"brass",_strut_at(Vector3(-0.056,0.268,0.124),Vector3(0.056,0.268,0.124))])
+			var at := _screen()
+			out.append([_prism([Vector2(0.0,0.0),Vector2(0.005,0.0),Vector2(0.027,0.068),Vector2(0.022,0.068)],0.11),"glass",at*_placed(Vector3(0.0,0.2,0.1),Vector3.ZERO)])
+			for hand: float in [-1.0,1.0]: out.append([_frustum(0.0045,0.0045,1.0,4),"steel",at*_strut_at(Vector3(0.056*hand,0.2,0.1),Vector3(0.056*hand,0.268,0.124))])
+			out.append([_frustum(0.0035,0.0035,1.0,4),"steel",at*_strut_at(Vector3(-0.056,0.268,0.124),Vector3(0.056,0.268,0.124))])
 		"wheel":
-			# The spokes covered in cream, a brass hub.
-			out.append([FacetMesh.frustum(0.08,0.08,0.038,14),"steel",_placed(Vector3(0.2*side,-0.33,-0.28),Vector3(0.0,0.0,PI*0.5))])
-			out.append([FacetMesh.frustum(0.058,0.058,0.044,14),"cream",_placed(Vector3(0.2*side,-0.33,-0.28),Vector3(0.0,0.0,PI*0.5))])
-			out.append([FacetMesh.frustum(0.02,0.014,0.06,8),"brass",_placed(Vector3(0.21*side,-0.33,-0.28),Vector3(0.0,0.0,PI*0.5))])
+			# A fat round charcoal tyre, a cream hub and a terracotta cap.
+			var turn := Vector3(0.0,0.0,PI*0.5)
+			var hub := Vector3(0.2*side,-0.33,-0.28)
+			out.append([SoftMesh.torus(0.051,0.029,36,14),"steel",_placed(hub,turn)])
+			out.append([_frustum(0.034,0.034,0.05,12),"wood",_placed(hub,turn)])
+			out.append([SoftMesh.ball(0.018,12,Vector3(1.0,1.0,0.7)),"trim",_placed(hub+Vector3(0.026*side,0.0,0.0),Vector3(0.0,PI*0.5,0.0))])
 		"fin":
-			out.append([_prism([Vector2(-0.1,0.0),Vector2(0.1,0.0),Vector2(0.1,0.2),Vector2(0.065,0.24),Vector2(0.02,0.25),Vector2(-0.03,0.2)],0.012),"trim",_placed(Vector3(0.0,0.03,0.58),Vector3.ZERO)])
-			out.append([_prism([Vector2(0.1,-0.04),Vector2(0.15,-0.04),Vector2(0.165,0.1),Vector2(0.145,0.19),Vector2(0.1,0.2)],0.01),"cream",_placed(Vector3(0.0,0.03,0.58),Vector3.ZERO)])
+			var fin := Transform3D(Basis.from_scale(Vector3(1.0,FIN_TALL,1.0)),Vector3(0.0,0.03,0.58))
+			out.append([SoftMesh.slab([Vector2(-0.13,0.0),Vector2(0.1,0.0),Vector2(0.11,0.16),Vector2(0.1,0.21),Vector2(0.075,0.25),Vector2(0.045,0.268),Vector2(0.015,0.266),Vector2(-0.015,0.245),Vector2(-0.04,0.2)],0.026,0.011),"trim",fin])
+			out.append([SoftMesh.slab([Vector2(0.1,-0.03),Vector2(0.157,-0.03),Vector2(0.165,0.06),Vector2(0.161,0.13),Vector2(0.14,0.2),Vector2(0.11,0.232),Vector2(0.09,0.235)],0.02,0.009),"trim",fin])
+			# The wanderer's hat on both sides: a domed crown on a wide
+			# brim, a brown band round it.
+			for hand: float in [-1.0,1.0]:
+				out.append([SoftMesh.slab([Vector2(-0.055,0.112),Vector2(0.095,0.112),Vector2(0.08,0.126),Vector2(-0.04,0.126)],0.004,0.0015),"wood",fin*_placed(Vector3(0.0135*hand,0.0,0.0),Vector3.ZERO)])
+				out.append([SoftMesh.slab([Vector2(-0.015,0.125),Vector2(0.055,0.125),Vector2(0.05,0.165),Vector2(0.035,0.18),Vector2(0.005,0.18),Vector2(-0.01,0.165)],0.004,0.0015),"wood",fin*_placed(Vector3(0.0135*hand,0.0,0.0),Vector3.ZERO)])
+				out.append([SoftMesh.slab([Vector2(-0.014,0.128),Vector2(0.054,0.128),Vector2(0.053,0.141),Vector2(-0.013,0.141)],0.004,0.0015),"dark",fin*_placed(Vector3(0.0145*hand,0.0,0.0),Vector3.ZERO)])
 		"wingtip":
-			# The upper wing from WINGTIP_FROM out: the cloth cut back for
-			# the aileron, the terracotta tip, the roundel and the aileron.
+			# The wing from WINGTIP_FROM out: the skin cut back for the
+			# aileron, the tip and the aileron.
 			var half := SPAN*0.5
 			var rounded := half*0.8
 			var ailerons := Vector3(half*AILERON_SPAN.x,half*AILERON_SPAN.y,_hinge_z())
-			var wing := _placed(Vector3(0.0,UPPER_Y,STAGGER),Vector3.ZERO)
-			out.append([_wing(half,half*WINGTIP_FROM,rounded,ailerons),"cream",wing])
-			out.append([_wing(half,rounded,half),"trim",wing])
-			var at := Vector2(SPAN*0.3,-CHORD*0.5+0.42*_chord_at(half,SPAN*0.3))
-			var rings := [[0.062,"dark"],[0.046,"trim"],[0.018,"cream"]]
-			for k in range(rings.size()):
-				out.append([_decal(half,at,float(rings[k][0]),0.0015+0.0005*k),rings[k][1],wing])
-			var flap := _scaled(_prism([Vector2(0.0,0.006),Vector2(AILERON_DEPTH,-0.001),Vector2(0.0,-0.006)]),Vector3(ailerons.y-ailerons.x-0.004,1.0,1.0))
-			out.append([flap,"cream",_placed(Vector3((ailerons.x+ailerons.y)*0.5,UPPER_Y+0.004,STAGGER+ailerons.z),Vector3.ZERO)])
+			var wing := _placed(Vector3(0.0,WING_Y,WING_Z),Vector3.ZERO)
+			out.append([_main_wing(half*WINGTIP_FROM,rounded,ailerons),"cream",wing])
+			out.append([_main_wing(rounded,half),"trim",wing])
+			out.append([_aileron(),"cream",_placed(_aileron_at(1.0),Vector3(0.0,0.0,atan(DIHEDRAL)))])
 	return out
+
+## Where the windscreen stands, moved from where it was first drawn
+## (its foot at (0, 0.2, 0.1)) to SCREEN.
+static func _screen() -> Transform3D:
+	return Transform3D(Basis.IDENTITY,SCREEN-Vector3(0.0,0.2,0.1))
+
+## The body's ring at `z` (z, half width, half height), on the curve its
+## smooth hull runs through BODY's rings (scripts/soft_mesh.gd `hull`).
+static func _body_at(z: float) -> Vector3:
+	var n := BODY.size()
+	for k in range(n-1):
+		var b: Vector3 = BODY[k+1]
+		if z > b.x and k < n-2: continue
+		var p0: Vector3 = BODY[maxi(k-1,0)]
+		var p1: Vector3 = BODY[k]
+		var p3: Vector3 = BODY[mini(k+2,n-1)]
+		var lo := 0.0
+		var hi := 1.0
+		for i in range(24):
+			var mid := (lo+hi)*0.5
+			if SoftMesh._catmull(p0,p1,b,p3,mid).x < z: lo = mid
+			else: hi = mid
+		return SoftMesh._catmull(p0,p1,b,p3,(lo+hi)*0.5)
+	return BODY[0]
 
 ## A part at `at`, turned by `turn` (Euler angles, as Node3D.rotation).
 static func _placed(at: Vector3, turn: Vector3) -> Transform3D:
@@ -1457,13 +1509,30 @@ static func _placed(at: Vector3, turn: Vector3) -> Transform3D:
 
 # --- Building -----------------------------------------------------------------------
 
-## Paint, lit as the folk are (shaders/folk_surface.gdshader), under a
-## clear coat; its finish is set by its wear (`_finish`).
+## Paint, the painterly treatment (shaders/plane_paint.gdshader); its
+## weathering is set by its wear (`_finish`).
 static func _paint(color: Color) -> ShaderMaterial:
-	return PersonKit._lacquer(color,0.3,0.8)
+	var m := ShaderMaterial.new()
+	m.shader = PLANE_PAINT
+	m.set_shader_parameter("albedo",color)
+	return m
 
-static func _metal(color: Color, roughness: float) -> ShaderMaterial:
-	return PersonKit._metal(color,roughness)
+## Metal: the same paint with a soft painted highlight.
+static func _metal(color: Color, _roughness: float) -> ShaderMaterial:
+	var m := _paint(color)
+	m.set_shader_parameter("shine",0.6)
+	return m
+
+## The cowl's ring: the sheet's cyan glow, lit from within so it reads in
+## shade and at night; it dims a little worn (`_finish`).
+static func _glow_paint(color: Color) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.albedo_color = color
+	m.emission_enabled = true
+	m.emission = color
+	m.emission_energy_multiplier = GLOW.x
+	m.roughness = 0.4
+	return m
 
 ## The windscreen: faint, clear and sharp-shining.
 static func _glass() -> StandardMaterial3D:
@@ -1502,7 +1571,7 @@ func _add(mesh: Mesh, material: Material, at: Vector3, turn: Vector3, parent: No
 
 ## A thin strut (or, `radius` finer, a wire) from `from` to `to`.
 func _strut(from: Vector3, to: Vector3, material: Material, radius := 0.014) -> MeshInstance3D:
-	var part := _add(FacetMesh.frustum(radius,radius,1.0,4),material,Vector3.ZERO,Vector3.ZERO)
+	var part := _add(_frustum(radius,radius,1.0,4),material,Vector3.ZERO,Vector3.ZERO)
 	part.transform = _strut_at(from,to)
 	return part
 
@@ -1575,9 +1644,24 @@ func _join(parent: Node3D, first: Material) -> void:
 static func _chord_at(half: float, x: float, root := CHORD, tip := TIP_CHORD) -> float:
 	return lerpf(root,tip,minf(absf(x)/(half*ROUND),1.0))
 
-## Where the ailerons hinge, along the upper wing's chord from its middle.
+## Where the ailerons hinge, along the wing's chord from its middle.
 static func _hinge_z() -> float:
 	return -CHORD*0.5+_chord_at(SPAN*0.5,SPAN*0.5*(AILERON_SPAN.x+AILERON_SPAN.y)*0.5)-AILERON_DEPTH
+
+## The aileron's hinge on side `side` (-1 left, 1 right), in the figure.
+static func _aileron_at(side: float) -> Vector3:
+	var x := SPAN*0.5*(AILERON_SPAN.x+AILERON_SPAN.y)*0.5
+	return Vector3(x*side,WING_Y+x*DIHEDRAL,WING_Z+_hinge_z())
+
+## An aileron, its hinge at the origin, running back to the trailing edge.
+static func _aileron() -> ArrayMesh:
+	var a := SPAN*0.5*(AILERON_SPAN.y-AILERON_SPAN.x)
+	return _scaled(_prism([Vector2(0.0,0.016),Vector2(AILERON_DEPTH,0.001),Vector2(0.0,-0.004)]),Vector3(a-0.004,1.0,1.0))
+
+## The wing from `from` to `to` m out (negative to the left), `cut` as
+## `_wing`'s: SPAN across, its chord and thickness, lifted by the dihedral.
+static func _main_wing(from: float, to: float, cut := Vector3.ZERO) -> ArrayMesh:
+	return _wing(SPAN*0.5,from,to,cut,CHORD,TIP_CHORD,THICK,RIBS,DIHEDRAL)
 
 ## A wing's section `x` m out: its leading edge (z), chord, the scale of
 ## its upper and lower surface (m, sagging between the ribs) and where its
@@ -1617,11 +1701,13 @@ static func _section(s: Dictionary) -> Array:
 
 ## A wing of `half` span each side, the piece from `from` to `to` m out
 ## (negative to the left): an airfoil in section, tapering from `root` to
-## `tip` chord and rounded at the tips, `thick` deep, its cloth drawn over
+## `tip` chord and rounded at the tips, `thick` deep, its skin drawn over
 ## `ribs` ribs each side and sagging between them, so each rib is a crease
-## in the light. `cut` (out from, out to, z) cuts the trailing edge back to
-## z between those for the ailerons.
-static func _wing(half: float, from: float, to: float, cut := Vector3.ZERO, root := CHORD, tip := TIP_CHORD, thick := THICK, ribs := RIBS) -> ArrayMesh:
+## in the light, rising `dihedral` m per m out. `cut` (out from, out to, z)
+## cuts the trailing edge back to z between those for the ailerons.
+static func _wing(half: float, from: float, to: float, cut := Vector3.ZERO, root := CHORD, tip := TIP_CHORD, thick := THICK, ribs := RIBS, dihedral := 0.0) -> ArrayMesh:
+	var key := str([half,from,to,cut,root,tip,thick,ribs,dihedral])
+	if _wings.has(key): return _wings[key]
 	var edge := half*ROUND
 	var xs := [from,to]
 	for k in range(-ribs*2,ribs*2+1):
@@ -1646,8 +1732,9 @@ static func _wing(half: float, from: float, to: float, cut := Vector3.ZERO, root
 		var x: float = stations[i]
 		var s := _station(half,x,root,tip,thick,ribs,cut)
 		var points := []
-		for p: Vector2 in _section(s): points.append(Vector3(x,p.y,p.x))
-		var mid := Vector3(x,(s.top-s.under)*0.1,s.le+s.chord*0.35)
+		var lift := absf(x)*dihedral
+		for p: Vector2 in _section(s): points.append(Vector3(x,p.y+lift,p.x))
+		var mid := Vector3(x,(s.top-s.under)*0.1+lift,s.le+s.chord*0.35)
 		var n := points.size()
 		if i == 0 or i == stations.size()-1:
 			var inward := Vector3(0.001 if i == 0 else -0.001,0.0,0.0)
@@ -1663,34 +1750,11 @@ static func _wing(half: float, from: float, to: float, cut := Vector3.ZERO, root
 				tris.append([a0,b1,a1,inside])
 		before = points
 		before_mid = mid
-	return FacetMesh.shell(tris)
+	var made := SoftMesh.smooth(FacetMesh.shell(tris),80.0)
+	_wings[key] = made
+	return made
 
-## The upper wing's top at (x, z), sagging between its ribs as the cloth.
-static func _on_top(half: float, at: Vector2) -> Vector3:
-	var s := _station(half,at.x,CHORD,TIP_CHORD,THICK,RIBS)
-	var u := clampf((at.y-float(s.le))/float(s.chord),0.0,1.0)
-	var v := 0.0
-	for k in range(AIRFOIL_TOP.size()-1):
-		var p: Vector2 = AIRFOIL_TOP[k]
-		var q: Vector2 = AIRFOIL_TOP[k+1]
-		if u >= p.x and u <= q.x:
-			v = lerpf(p.y,q.y,(u-p.x)/maxf(q.x-p.x,1e-6))
-			break
-	return Vector3(at.x,v*float(s.top),at.y)
-
-## A painted disc of `radius` on the upper wing's top at `at` (x, z),
-## `lift` m over the cloth.
-static func _decal(half: float, at: Vector2, radius: float, lift: float) -> ArrayMesh:
-	var tris := []
-	var n := 20
-	var centre := _on_top(half,at)+Vector3.UP*lift
-	for i in range(n):
-		var a0 := TAU*i/n
-		var a1 := TAU*(i+1)/n
-		var p0 := _on_top(half,at+Vector2(cos(a0),sin(a0))*radius)+Vector3.UP*lift
-		var p1 := _on_top(half,at+Vector2(cos(a1),sin(a1))*radius)+Vector3.UP*lift
-		tris.append([centre,p0,p1,centre+Vector3.DOWN*0.01])
-	return FacetMesh.shell(tris)
+static var _wings := {}
 
 ## A copy of `mesh` stretched by `by`, its normals kept flat.
 static func _scaled(mesh: ArrayMesh, by: Vector3) -> ArrayMesh:
@@ -1706,11 +1770,21 @@ static func _scaled(mesh: ArrayMesh, by: Vector3) -> ArrayMesh:
 	out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
 	return out
 
-## A flat-shaded body along Z (scripts/facet_mesh.gd `hull`).
+## A smooth body along Z (scripts/soft_mesh.gd `hull`), more finely
+## divided than `sides` asks.
 static func _hull(rings: Array, sides: int) -> ArrayMesh:
-	return FacetMesh.hull(rings,sides)
+	return SoftMesh.hull(rings,clampi(sides*3,16,36))
 
-## A flat-shaded prism along X, from -0.5 to 0.5: `section` is its outline
+## A smooth cylinder along Y (scripts/soft_mesh.gd `cylinder`), finer than
+## `sides` asks, for a strut, a shaft or a disc.
+static func _frustum(bottom: float, top: float, height: float, sides: int) -> ArrayMesh:
+	return SoftMesh.cylinder(bottom,top,height,clampi(sides*3,10,32))
+
+## A small smooth ball, for a rivet, a bolt or a knuckle.
+static func _gem(r: float) -> ArrayMesh:
+	return SoftMesh.ball(r,8)
+
+## A prism along X, from -0.5 to 0.5, its rounded faces shaded smooth: `section` is its outline
 ## in (z, y), convex. With `width` it runs along X only that wide.
 static func _prism(section: Array, width := 1.0) -> ArrayMesh:
 	var tris := []
@@ -1726,7 +1800,7 @@ static func _prism(section: Array, width := 1.0) -> ArrayMesh:
 		tris.append([Vector3(-x,p.y,p.x),Vector3(x,q.y,q.x),Vector3(-x,q.y,q.x),inside])
 		for e in [-x,x]:
 			tris.append([Vector3(e,mid.y,mid.x),Vector3(e,p.y,p.x),Vector3(e,q.y,q.x),Vector3(0.0,mid.y,mid.x)])
-	return _shell(tris)
+	return SoftMesh.smooth(_shell(tris),60.0)
 
 ## Triangles as a flat-shaded mesh (scripts/facet_mesh.gd `shell`).
 static func _shell(tris: Array) -> ArrayMesh:

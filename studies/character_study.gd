@@ -88,7 +88,7 @@ const PocketSailFigure = preload("res://scripts/pocket_sail_figure.gd")
 ## round behind the run, and the mouse's and the right stick's look.
 const CAM_DISTANCE := 7.0
 const CAM_HEIGHT := 0.8
-const CAM_POLAR := PI*0.5-0.7
+const CAM_POLAR := PI*0.5-0.62
 const POLAR := Vector2(0.45,1.85)
 const EASE_CAM_Y := 0.08
 const EASE_CAM_Y_AIR := 0.35

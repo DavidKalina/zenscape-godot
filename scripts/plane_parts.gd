@@ -1,6 +1,6 @@
 extends Node3D
 ## The plane's lost parts, as the pilot finds them on foot: six of the
-## biplane's own pieces (scripts/plane_figure.gd `piece`), each a different
+## plane's own pieces (scripts/plane_figure.gd `piece`), each a different
 ## shape, so each find reads as the part it is and not as one generic
 ## "plane part". A look study (studies/plane_parts_gallery.gd), in two
 ## treatments to compare:

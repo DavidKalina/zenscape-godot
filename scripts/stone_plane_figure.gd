@@ -215,7 +215,7 @@ func _init(_livery := {}) -> void:
 	var scarf_material := ShaderMaterial.new()
 	scarf_material.shader = FOLK_RIBBON
 	scarf_material.set_shader_parameter("roughness_value",0.95)
-	scarf_material.set_meta("scarf",Color("d9573a"))
+	scarf_material.set_meta("scarf",PlanePilot.NAVY)
 	_scarf.material_override = scarf_material
 	_scarf.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_scarf)
@@ -511,7 +511,7 @@ func _trail_scarf(delta: float, glide: RefCounted) -> void:
 	_drag_tail(_short_points,knot+side*0.014,wind,delta,fast)
 	var t := Time.get_ticks_msec()*0.001
 	var rate := lerpf(FLUTTER.x,FLUTTER.y,fast)
-	var color: Color = _scarf.material_override.get_meta("scarf",Color("d9573a"))
+	var color: Color = _scarf.material_override.get_meta("scarf",PlanePilot.NAVY)
 	_scarf_mesh.clear_surfaces()
 	_draw_tail(_scarf_points,side,up,t*rate,fast,1.0,color)
 	_draw_tail(_short_points,side,up,t*rate*1.13+1.7,fast,0.85,color)

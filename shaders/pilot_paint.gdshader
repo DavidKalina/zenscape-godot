@@ -47,6 +47,29 @@ uniform float sheen = 0.0;
 uniform float wet = 0.0;
 uniform float wet_line = 0.0;
 uniform float wet_dark = 0.32;
+// Lit of itself (the bracelets' stripes): emission as this share of the
+// colour, clean over the paint.
+uniform float glow = 0.0;
+// Gone (the hat, flown off overhead as the pocket sail): not drawn.
+uniform float gone = 0.0;
+// The face (scripts/pilot_figure.gd drives these): two glowing pill eyes
+// painted on the dark head, placed in the rest position (Blender metres:
+// x right, y forward, z up; art/blender/pilot/pilot_build.py prints
+// PILOT_EYES): the point between them on the head's front, each one's
+// middle `eye_apart` out from it, `eye_half` its half height. The
+// expressions, 0 to 1 each, morph the pills: `blink` shuts them to a line,
+// `happy` bends them into ^ ^ arcs, `surprise` opens them wider and rounder,
+// `squint` flattens them under lids slanting down to the middle.
+uniform float eyes = 0.0;
+uniform vec3 eye_at = vec3(0.0, 0.21, 0.9348);
+uniform float eye_apart = 0.0721;
+uniform float eye_half = 0.0531;
+uniform vec4 eye_colour : source_color = vec4(0.373, 0.902, 0.902, 1.0);
+uniform float eye_glow = 2.4;
+uniform float blink = 0.0;
+uniform float happy = 0.0;
+uniform float surprise = 0.0;
+uniform float squint = 0.0;
 
 varying vec3 rest;
 varying float own;
@@ -74,7 +97,25 @@ float noise3(vec3 p) {
 
 varying float paint;
 
+// One eye's distance field (negative inside), in its half heights about
+// its middle, x out from the face's middle.
+float eye_field(vec2 q) {
+	float hh = mix(mix(1.0, 0.6, squint) * (1.0 + 0.14 * surprise), 0.13, blink);
+	vec2 b = vec2(0.4 + 0.14 * surprise + 0.08 * blink, hh);
+	float r = min(b.x, b.y);
+	vec2 d = abs(q) - b + r;
+	float pill = length(max(d, 0.0)) + min(max(d.x, d.y), 0.0) - r;
+	// The squint's lid, slanting down to the inner corner.
+	float lid = q.y - (0.12 + 0.55 * q.x);
+	pill = mix(pill, max(pill, lid), squint);
+	// A ^ arc, rounded at its ends.
+	vec2 c = q - vec2(0.0, -0.4);
+	float arc = c.y > 0.0 ? abs(length(c) - 0.72) - 0.19 : length(vec2(abs(c.x) - 0.72, c.y)) - 0.19;
+	return mix(pill, arc, happy);
+}
+
 void fragment() {
+	if (gone > 0.5) discard;
 	vec3 p = rest * paint_scale;
 	float m = noise3(p) * 0.6 + noise3(p * 2.3 + 7.1) * 0.4;
 	// Streaks: noise stretched along a slanting stroke.
@@ -96,6 +137,20 @@ void fragment() {
 		// The rim takes the sky's brightness, not its tint, so it doesn't
 		// glare green or blue on the edges in the sun.
 		+ mix(ALBEDO, vec3(1.0), 0.5) * dot(zs_hemi_sky, vec3(0.3333)) * zs_hemi_energy * edge * rim;
+	if (glow > 0.0) {
+		ALBEDO = albedo.rgb;
+		EMISSION += albedo.rgb * glow;
+	}
+	if (eyes > 0.0) {
+		vec2 e = vec2(abs(rest.x - eye_at.x) - eye_apart, rest.z - eye_at.z) / eye_half;
+		float front = smoothstep(eye_at.y - 0.09, eye_at.y - 0.05, rest.y) * eyes;
+		float d = eye_field(e);
+		float aa = max(fwidth(d), 0.03);
+		float lit = (1.0 - smoothstep(-aa, aa, d)) * front;
+		float halo = exp(-max(d, 0.0) * 3.5) * front * 0.22;
+		ALBEDO = mix(ALBEDO, eye_colour.rgb * 0.6, lit);
+		EMISSION = mix(EMISSION, vec3(0.0), lit) + eye_colour.rgb * (lit * eye_glow + halo);
+	}
 	if (sheen > 0.0) {
 		vec3 view = normalize((INV_VIEW_MATRIX * vec4(VIEW, 0.0)).xyz);
 		vec3 r = reflect(-view, normal);

@@ -138,7 +138,7 @@ const EASE_FOV := 0.2
 ## high over the pilot to low, looking up past them).
 const CAM_DISTANCE := 7.0
 const CAM_HEIGHT := 0.8
-const CAM_POLAR := PI*0.5-0.7
+const CAM_POLAR := PI*0.5-0.62
 const POLAR := Vector2(0.45,1.85)
 ## How the look point follows the feet up and down, on the ground and,
 ## lagging so a jump is not chased, in the air.
