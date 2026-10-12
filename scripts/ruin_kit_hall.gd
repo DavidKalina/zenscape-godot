@@ -311,14 +311,15 @@ static func slabs(seed_value: int, weathered := 0.0) -> Node3D:
 	b.lean = true
 	b.cull = true
 	var sleeper := 0.36
+	# A stack of the toy bay's slabs (a piece on its own, not a bay's roof).
 	for s: float in [-1.0,1.0]:
-		b.solid(RuinKit._box(b,Vector3(BAY*0.36,sleeper*0.5,0.42)),RuinKit._settle(b,Vector3(0.0,sleeper*0.5,s*1.6),0.4),RuinKit._stone(b,0.92))
+		b.solid(RuinKit._box(b,Vector3(TOY_BAY*0.36,sleeper*0.5,0.42)),RuinKit._settle(b,Vector3(0.0,sleeper*0.5,s*1.6),0.4),RuinKit._stone(b,0.92))
 	var strips := [-2.4,-0.8,0.8,2.4]
 	var gone: Array = [0] if weathered > 0.5 else []
 	for i in range(strips.size()-1):
 		if i in gone: continue
-		_slab(b,-BAY*0.36,BAY*0.36,float(strips[i]),float(strips[i+1]),sleeper,weathered > 0.4 and i == 2)
-	_feet(b,Vector3(0.0,0.0,2.8),BAY*0.3,int(1+weathered*5.0))
+		_slab(b,-TOY_BAY*0.36,TOY_BAY*0.36,float(strips[i]),float(strips[i+1]),sleeper,weathered > 0.4 and i == 2)
+	_feet(b,Vector3(0.0,0.0,2.8),TOY_BAY*0.3,int(1+weathered*5.0))
 	RuinKit._rubble(b,3.4,int(round(weathered*b.rng.randf_range(3.0,6.0))))
 	return _finish(b)
 
@@ -515,8 +516,10 @@ static func bay(seed_value: int, weathered := 0.0, plan := {}, ground := Callabl
 		var foot := b.floor_at(0.0,WALL_Z+WALL_THICK*0.5+1.0)
 		var sunk := 0.3 if b.terrain.is_valid() else 0.0
 		var stages := _plain_stages(foot-sunk)
-		if not stages.is_empty(): RuinKit._buttress(b,Transform3D(Basis.IDENTITY,Vector3(0.0,foot-sunk,WALL_Z+WALL_THICK*0.5-0.05)),stages,1.5,false,true)
-		feet.append(Vector3(0.0,foot-sunk,WALL_Z+1.4))
+		# Buried to near the roof, there is no buttress, and no foot.
+		if not stages.is_empty():
+			RuinKit._buttress(b,Transform3D(Basis.IDENTITY,Vector3(0.0,foot-sunk,WALL_Z+WALL_THICK*0.5-0.05)),stages,1.5,false,true)
+			feet.append(Vector3(0.0,foot-sunk,WALL_Z+1.4))
 	if buttress != "":
 		var foot := b.floor_at(0.0,-WALL_Z-WALL_THICK*0.5-1.0)
 		var sunk := 0.3 if b.terrain.is_valid() else 0.0
@@ -528,8 +531,9 @@ static func bay(seed_value: int, weathered := 0.0, plan := {}, ground := Callabl
 				stages.append([minf(RuinKit.SET_OFF*(k+1)+0.3,ROOF_TOP-0.3-foot+0.3),TREAD*(count-k)+0.5])
 		else:
 			stages = _plain_stages(foot-sunk)
-		if not stages.is_empty(): RuinKit._buttress(b,pose,stages,1.5,false,buttress == "plain")
-		feet.append(Vector3(0.0,foot-sunk,-WALL_Z-1.4))
+		if not stages.is_empty():
+			RuinKit._buttress(b,pose,stages,1.5,false,buttress == "plain")
+			feet.append(Vector3(0.0,foot-sunk,-WALL_Z-1.4))
 	_paving(b,plan)
 	for i in range(int(b.weathered*5.0)):
 		b.hang(Vector3(b.rng.randf_range(0.5,BAY-0.5),0.0,b.rng.randf_range(-ROW_Z,ROW_Z)),b.rng.randf_range(0.8,2.6)*b.weathered,true)

@@ -199,8 +199,15 @@ const WALK_OVERLAP := 0.05
 ## from the floor); the lintels' depth across the ring (TOP_ROOM and more:
 ## the ring is run round on them) and thickness. A lintel stands LINTEL.y
 ## over the bare top of a sarsen whose other lintel fell.
+## The sarsens stand as tall as the toy era's in wingspans (an opening on
+## its 3.4 m, scripts/world_scale.gd: 6.12 at the defaults), so the plane
+## passes under the lintels with the toy's vertical feel; HENGE_GROW how
+## much taller, and they grow a little chunkier with it (1.6 by 1.25 m at
+## the defaults; the toy's 1.5 by 1.1).
 const CIRCLE_STONES := 8
-const SARSEN := Vector3(1.5,3.4,1.1)
+const TOY_SARSEN := Vector3(1.5,3.4,1.1)
+static var HENGE_GROW: float = WorldScale.opening(TOY_SARSEN.y)/TOY_SARSEN.y
+static var SARSEN := Vector3(TOY_SARSEN.x*(1.0+0.08*(HENGE_GROW-1.0)),TOY_SARSEN.y*HENGE_GROW,TOY_SARSEN.z*(1.0+0.17*(HENGE_GROW-1.0)))
 const LINTEL := Vector2(1.3,0.6)
 const HENGE_ROOM := WorldScale.SNUG
 const TOY_HENGE := 2.1
@@ -213,25 +220,39 @@ static var CIRCLE_RADIUS: float = (HENGE_GAP+SARSEN.x)/(2.0*sin(PI/CIRCLE_STONES
 ## leaves the same end on the sarsen still standing.
 static var LINTEL_BREAK: float = 3.0*WorldScale.wanderer
 ## The great trilithon across the back of the ring: an upright's width,
-## height and thickness, the slot between the pair (a window along the
-## circle's axis, flown on a knife edge: WorldScale.knife), its middle's
-## distance in from the ring's middle (its lintel a jump-catch, 1.2 m up
-## and TRILITHON_IN in from the ring's back lintel: the circle's summit).
-const TRILITHON := Vector3(1.8,4.6,1.2)
+## height (the toy's 4.6 m grown as the sarsens: 8.28 at the defaults) and
+## thickness, the slot between the pair (a window along the circle's axis,
+## flown on a knife edge: WorldScale.knife), its middle's distance in from
+## the ring's middle (its lintel TRILITHON_IN in from the ring's back
+## lintel and over it: a jump-catch at the toy's 1.2 m, a pumped one, 2.16
+## m, at the defaults: the circle's summit).
+const TOY_TRILITHON := Vector3(1.8,4.6,1.2)
+static var TRILITHON := Vector3(TOY_TRILITHON.x,TOY_TRILITHON.y*HENGE_GROW,TOY_TRILITHON.z)
 static var TRILITHON_SLOT: float = WorldScale.knife()
 const TRILITHON_IN := 2.29
 static var TRILITHON_AT: float = CIRCLE_RADIUS*cos(PI/CIRCLE_STONES)-TRILITHON_IN
-## The fallen trilithon: its stub's height (a SET_OFF under the ring's
-## lintels, by the lintel STUB_AT's middle), its partner lying in toward
-## the middle (its top caught from the floor, the stub's from it).
-const STUB := 2.5
+## The fallen trilithon: its stub's height (1.5 m under the ring's lintels'
+## top, by the lintel STUB_AT's middle: 2.5 in the toy era), its partner
+## lying in toward the middle (its top caught from the floor, the stub's
+## from it; the taller stub's broken-off pieces lie stacked on the lying
+## stone's end as steps between, each 1.5 m and under: `stone_circle`).
+static var STUB: float = SARSEN.y+LINTEL.y-1.5
 const STUB_AT := 4
 ## The leaning stone: a sarsen fallen in against the ring's upright LEAN_AT,
-## its width and thickness, the slope of its top (walked up, surfed down)
-## and how high its head rests against the upright (under the lintels: a
-## jump-catch onto them).
-const LEAN := Vector3(1.5,0.8,30.0)
-const LEAN_TOP := 3.25
+## its width and thickness, the slope of its top (walked up, surfed down:
+## the toy's 30°, steeper as the sarsens grow, 40° at the defaults, under
+## the walker's 44° so it is still walked) and how high its head rests
+## against the upright: 0.75 m under the lintels' top (3.25 in the toy
+## era, a jump-catch onto them), but never reaching further in than the
+## toy's (LEAN_REACH: a longer one would lie across the ring's middle), so
+## 4.72 at the defaults, with a block on its head (LEAN_BLOCK) the step up
+## to the lintels.
+const LEAN_REACH := 3.25/0.57735
+static var LEAN := Vector3(1.5,0.8,30.0+12.5*(HENGE_GROW-1.0))
+static var LEAN_TOP: float = minf(SARSEN.y+LINTEL.y-0.75,LEAN_REACH*tan(deg_to_rad(LEAN.z)))
+## Where LEAN_TOP is under the toy's jump-catch, a block lies wedged on the
+## lean's head against the upright, this deep: its top the step between.
+const LEAN_BLOCK := 0.9
 const LEAN_AT := 1
 # --- Look --------------------------------------------------------------------
 
@@ -1550,9 +1571,24 @@ static func stone_circle(seed_value: int, weathered := 0.0, missing: Array = [])
 	var corner := Vector3(0.7,1.0,b.rng.randf_range(-0.3,0.3)).normalized()
 	var broken: Array[Plane] = [Plane(corner,corner.dot(Vector3(TRILITHON.x*0.5-0.45,(STUB+0.3)*0.5,0.0)))]
 	_sarsen(b,Transform3D(Basis(Vector3.UP,sa+PI*0.5),_round(sa,stub_r)),stub_size,0.06,broken)
-	var lie_r := stub_r-TRILITHON.x*0.5-0.15-TRILITHON.y*0.5
+	# The lying partner broke as it fell: the toy's length lies here, a
+	# little shorter as the stones grow (4.0 m at the defaults: a whole 8 m
+	# stone would block the ring's floor across its middle; its inner end
+	# keeps clear of a turret or an altar by the middle).
+	var lying := Vector3(TOY_TRILITHON.x,TOY_TRILITHON.y-0.75*(HENGE_GROW-1.0),TOY_TRILITHON.z)
+	var lie_r := stub_r-TRILITHON.x*0.5-0.15-lying.y*0.5
 	var lie := Basis(Vector3.UP,sa+b.rng.randf_range(-0.04,0.04))*Basis(Vector3.RIGHT,PI*0.5)*Basis(Vector3.UP,b.rng.randf_range(-0.03,0.03))
-	b.solid(_box(b,TRILITHON*0.5,0.1),Transform3D(lie,_round(sa,lie_r)+Vector3(0.0,TRILITHON.z*0.5-0.15,0.0)),_stone(b,1.1),true,true,[],-1,1.6)
+	b.solid(_box(b,lying*0.5,0.1),Transform3D(lie,_round(sa,lie_r)+Vector3(0.0,TRILITHON.z*0.5-0.15,0.0)),_stone(b,1.1),true,true,[],-1,1.6)
+	# The stub's broken-off pieces, stacked on the lying stone's end by it:
+	# steps up from the lying stone's top to the stub's, each the same and
+	# 1.5 m and under (none in the toy era, the stub one step up).
+	var lie_top := TRILITHON.z-0.15
+	var steps := ceili((STUB-lie_top)/1.5)-1
+	for k in range(steps):
+		var top := lie_top+(STUB-lie_top)*float(k+1)/float(steps+1)
+		var r := stub_r-TRILITHON.x*0.5-0.75-1.25*float(steps-1-k)
+		var piece := Vector3(TRILITHON.z*0.5,(top-lie_top)*0.5+0.05,0.6)
+		b.solid(_box(b,piece,0.06),Transform3D(Basis(Vector3.UP,sa+PI*0.5+b.rng.randf_range(-0.05,0.05)),_round(sa,r)+Vector3(0.0,lie_top+piece.y-0.1,0.0)),_stone(b,1.06),true,true,[],-1,1.4)
 	var la := sa-0.42
 	var piece_len := (span-0.4)*0.5
 	for s: float in [-1.0,1.0]:
@@ -1574,6 +1610,17 @@ static func stone_circle(seed_value: int, weathered := 0.0, missing: Array = [])
 	var lean_pose := Transform3D(Basis(Vector3.UP,al)*Basis(Vector3.RIGHT,-slope),_round(al,centre.x)+Vector3(0.0,centre.y,0.0))
 	var square: Array[Plane] = [lean_pose.affine_inverse()*Plane(_round(al,1.0),head)]
 	b.solid(_box(b,Vector3(LEAN.x*0.5,LEAN.y*0.5,(r_b-r_a)/cos(slope)*0.5),0.1),lean_pose,_stone(b,1.1),true,true,square,-1,1.4)
+	# Where its head rests lower than a jump-catch under the lintels (the
+	# taller sarsens), a block broken off the upright lies wedged on it
+	# against the sarsen: LEAN_BLOCK deep, its top a jump up from the slope
+	# at its foot, the lintels a jump up from it.
+	var lean_head := _round(al,head-0.35)+Vector3(0.0,LEAN_TOP-0.35*tan(slope),0.0)
+	if LEAN_TOP < ring_top-0.76:
+		var foot_y := LEAN_TOP-LEAN_BLOCK*tan(slope)
+		var top := minf(foot_y+1.55,ring_top-0.75)
+		var half := Vector3(LEAN.x*0.5,(top-foot_y)*0.5+0.2,LEAN_BLOCK*0.5)
+		b.solid(_box(b,half,0.06),Transform3D(Basis(Vector3.UP,al),_round(al,head-LEAN_BLOCK*0.5)+Vector3(0.0,top-half.y,0.0)),_stone(b,1.08),true,true,[],-1,1.4)
+		lean_head = _round(al,head-LEAN_BLOCK*0.5)+Vector3(0.0,top,0.0)
 	# Tufts at the stones' feet.
 	for k in range(CIRCLE_STONES):
 		if b.rng.randf() < 0.6 and not k in missing: b.tuft(_round((k+0.5)*pitch+b.rng.randf_range(-0.12,0.12),CIRCLE_RADIUS+b.rng.randf_range(-0.9,0.9)),b.rng.randf_range(0.25,0.45),5)
@@ -1582,7 +1629,7 @@ static func stone_circle(seed_value: int, weathered := 0.0, missing: Array = [])
 	root.set_meta("ring",{"top":ring_top,"lintels":lintels,"fallen":fallen,"missing":missing.duplicate(),"gone":gone,"break":LINTEL_BREAK,
 		"trilithon":Vector3(0.0,TRILITHON.y+LINTEL.y,-TRILITHON_AT),
 		"stub":stub_top,"lying":_round(sa,lie_r)+Vector3(0.0,TRILITHON.z-0.15,0.0),
-		"lean_foot":_round(al,low-0.6),"lean_head":_round(al,head-0.35)+Vector3(0.0,LEAN_TOP-0.35*tan(slope),0.0)})
+		"lean_foot":_round(al,low-0.6),"lean_head":lean_head})
 	return root
 
 ## A point `r` out from the middle at angle `a` (from +Z toward +X).
