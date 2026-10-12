@@ -64,6 +64,13 @@ var near_sea := not _flag("--dome-sea")
 const CloudVolume = preload("res://scripts/cloud_volume.gd")
 var cloud_volume: Node3D = CloudVolume.new() if CloudVolume.wanted() else null
 var shore := 1.0
+## Night light round 1 (docs/design/night-light/round1.md): the night's glow
+## kept tight. By day the bloom spreads over levels 2, 3 and 4; at night
+## the widest (4) falls to NIGHT_GLOW.y and the middle (3) to NIGHT_GLOW.x
+## of their weight, by the hour (celestial `zs_night`), so a lantern, a
+## window or a rune is a crisp light with a soft close glow, not a smear.
+const NIGHT_GLOW := Vector2(0.6, 0.25)
+var _night_glow := -1.0
 var _scene: Node3D
 ## The grade alone, drawn only while native volumetric fog (the redwood and
 ## woodland mist) hides the display-fog blend that normally carries it.
@@ -119,6 +126,7 @@ func apply_tier(index: int) -> void:
 	environment.glow_hdr_threshold = 1.0 if enabled else 1.8
 	environment.glow_bloom = 0.0
 	for level in range(7): environment.set_glow_level(level, 1.0 if (level in [2,3,4] if enabled else level in [2,4]) else 0.0)
+	_night_glow = -1.0
 	# The reference materials take no ambient light, so SSAO only touches the
 	# direct term; Ultra keeps it for that last bit of crease shading.
 	environment.ssao_enabled = tier == 2 or (not enabled and tier == 0)
@@ -136,6 +144,7 @@ func update(camera: Camera3D, celestial) -> void:
 	RenderingServer.global_shader_parameter_set("zs_look_ao", ao * on)
 	RenderingServer.global_shader_parameter_set("zs_look_rim", rim * on)
 	_update_ridges(on)
+	_update_night_glow(celestial)
 	_update_cloud_sea(on)
 	_update_near_sea(camera)
 	_update_cloud_volume(camera, celestial)
@@ -185,6 +194,17 @@ func update(camera: Camera3D, celestial) -> void:
 		# The sun's own light (gold low, near white high), not the air's.
 		var sun_light: Vector3 = celestial.state.get("zs_cloud_sun",Vector3.ONE)
 		target.set_shader_parameter("rays_color", sun_light / maxf(maxf(sun_light.x,sun_light.y),maxf(sun_light.z,0.001)) * RAYS_LIGHT)
+
+## The bloom's wide levels eased down at night (NIGHT_GLOW), with the pass on.
+func _update_night_glow(celestial) -> void:
+	if not enabled or _scene == null or _scene.get("_environment") == null: return
+	var night := 0.0
+	if celestial != null and celestial.get("state") is Dictionary: night = float(celestial.state.get("zs_night", 0.0))
+	if absf(night - _night_glow) < 0.01: return
+	_night_glow = night
+	var environment: Environment = _scene._environment
+	environment.set_glow_level(3, lerpf(1.0, NIGHT_GLOW.x, night))
+	environment.set_glow_level(4, lerpf(1.0, NIGHT_GLOW.y, night))
 
 static func _flag(name: String) -> bool:
 	return name in preload("res://scripts/launch_args.gd").user_args() or name in OS.get_cmdline_args()

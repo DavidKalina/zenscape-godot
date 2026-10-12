@@ -6,11 +6,16 @@ render_mode blend_add, unshaded, depth_draw_never, cull_disabled, shadows_disabl
 
 uniform float glow = 0.0;
 uniform vec4 tint : source_color = vec4(1.0, 0.7, 0.42, 1.0);
+// How far toward the eye the quad is drawn, as a share of its size, so a
+// halo set inside a mesh (the dragon's eyes) isn't cut by it. 0 for lamps.
+uniform float toward_eye = 0.0;
 
 void vertex() {
 	// Face the camera, keeping the instance's size and place.
 	float s = length(MODEL_MATRIX[0].xyz);
-	MODELVIEW_MATRIX = VIEW_MATRIX * mat4(INV_VIEW_MATRIX[0] * s, INV_VIEW_MATRIX[1] * s, INV_VIEW_MATRIX[2] * s, MODEL_MATRIX[3]);
+	vec4 o = MODEL_MATRIX[3];
+	o.xyz += normalize(CAMERA_POSITION_WORLD - o.xyz) * toward_eye * s;
+	MODELVIEW_MATRIX = VIEW_MATRIX * mat4(INV_VIEW_MATRIX[0] * s, INV_VIEW_MATRIX[1] * s, INV_VIEW_MATRIX[2] * s, o);
 	MODELVIEW_NORMAL_MATRIX = mat3(MODELVIEW_MATRIX);
 }
 

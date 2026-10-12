@@ -649,6 +649,29 @@ void vertex() {
 	}
 }
 
+// The near turf at night (see the fragment, night light round 3,
+// docs/design/night-light/round3.md): from where to where (m) it eases
+// back to the full moonlit tone.
+const vec2 NIGHT_NEAR = vec2(12.0, 70.0);
+// How dark the near turf goes: NIGHT_NEAR_DIM, and more for turf brighter
+// than NIGHT_NEAR_LEVEL.x (luma), by (level / luma) ^ NIGHT_NEAR_LEVEL.y, so
+// autumn's straw and sand go down much more than summer's dark green and
+// both seasons end up about as deep.
+const float NIGHT_NEAR_DIM = 1.0;
+const vec2 NIGHT_NEAR_LEVEL = vec2(0.06, 0.9);
+// How much colour it takes on before the night grade's rod grey
+// (look_grade.gdshaderinc zs_look_night) takes most of it away again, so
+// the season's hue is still there under the moon's blue.
+const float NIGHT_NEAR_RICH = 1.6;
+// Warm turf (autumn's tan and straw) leans from tan toward a deep gold-olive:
+// green up toward NIGHT_NEAR_GOLD of red, blue down to NIGHT_NEAR_BLUE.
+const float NIGHT_NEAR_GOLD = 0.8;
+const float NIGHT_NEAR_BLUE = 0.6;
+// The moon's soft cool sheen on blade tips (x strength, y how high up the
+// blade it starts), so the grass keeps its shape and movement.
+const vec2 NIGHT_TIP_SHEEN = vec2(0.5, 0.5);
+global uniform vec4 zs_moon_light;
+
 void fragment() {
 	float sea_mist = 0.0;
 	// A sky peak's point in its range's own frame (sky_peak_look).
@@ -853,6 +876,21 @@ void fragment() {
 		sea_level_view = mix(SEA_MIST_LEVEL, 1.0, smoothstep(0.02, 0.35, normalize(zs_camera_position - world_position).y));
 		tint = mix(tint, zs_sky_season_grade(SEA_MIST_ALBEDO, 1.0) * sea_level_view, sea_mist);
 	}
+	// Night light round 3 (docs/design/night-light/round3.md): the turf, its
+	// grass and flowers up close go dark and rich under the moon, keeping
+	// their season's hue through the night grade, easing back to the full
+	// moonlit tone by NIGHT_NEAR.y m, so the isle still reads from the air.
+	float night_near = 0.0;
+	if (zs_night > 0.0 && (terrain_growth || grass_blades || flower_heads)) {
+		float seen = length(zs_camera_position - world_position);
+		night_near = (1.0 - smoothstep(NIGHT_NEAR.x, NIGHT_NEAR.y, seen)) * zs_night;
+		float warm = clamp((tint.r - tint.b) / max(tint.r, 1e-3) * 2.0, 0.0, 1.0) * step(tint.g, tint.r);
+		tint.g = mix(tint.g, max(tint.g, tint.r * NIGHT_NEAR_GOLD), warm * night_near);
+		tint.b *= mix(1.0, NIGHT_NEAR_BLUE, warm * night_near);
+		float grey = dot(tint, vec3(0.2126, 0.7152, 0.0722));
+		tint = max(vec3(0.0), vec3(grey) + (tint - vec3(grey)) * mix(1.0, NIGHT_NEAR_RICH, night_near));
+		tint *= mix(1.0, NIGHT_NEAR_DIM * min(1.0, pow(NIGHT_NEAR_LEVEL.x / max(grey, 1e-3), NIGHT_NEAR_LEVEL.y)), night_near);
+	}
 	ALBEDO = tint;
 	ROUGHNESS = mix(roughness_value, mix(0.58, 0.20, mineral), surface_wet);
 	ROUGHNESS = mix(ROUGHNESS, 0.48, coat_wetness);
@@ -887,7 +925,16 @@ void fragment() {
 		float edge = pow(1.0 - abs(dot(light_normal, view_dir)), 4.0);
 		float backlit = 0.5 + 0.5 * max(dot(-view_dir, zs_sun_direction), 0.0);
 		float upright = 1.0 - smoothstep(0.6, 0.9, light_normal.y);
-		EMISSION += mix(tint, vec3(0.5), 0.35) * zs_hemi_sky * zs_hemi_energy * edge * backlit * upright * contact * zs_look_rim;
+		EMISSION += mix(tint, vec3(0.5), 0.35) * zs_hemi_sky * zs_hemi_energy * edge * backlit * upright * contact * zs_look_rim * (1.0 - night_near);
+	}
+	if (grass_blades && night_near > 0.0) {
+		// The moon's sheen along the blade tips: cool, soft, stronger
+		// on blades leaning to the moon and seen toward it.
+		vec3 view_dir = normalize(zs_camera_position - world_position);
+		float tip = smoothstep(NIGHT_TIP_SHEEN.y, 1.0, grass_along);
+		float moonward = 0.4 + 0.6 * max(dot(light_normal, zs_moon_direction), 0.0);
+		float against = 0.6 + 0.4 * max(dot(-view_dir, zs_moon_direction), 0.0);
+		EMISSION += zs_moon_light.rgb * mix(tint, vec3(dot(tint, vec3(0.333))), 0.5) * tip * moonward * against * NIGHT_TIP_SHEEN.x * night_near;
 	}
 	vec3 alpen_normal = normalize(cross(dFdx(world_position), dFdy(world_position)));
 	if (dot(alpen_normal, face_normal) < 0.0) alpen_normal = -alpen_normal;
