@@ -58,6 +58,10 @@ const LOOK := 0.0025
 const STICK_LOOK := Vector2(2.2,1.4)
 ## How far up and down he can look (radians from level).
 const PITCH := Vector2(-1.0,1.2)
+## As they come up, the chase camera's way is eased into this band (radians
+## from level): a camera dropped low looks far up, and the glass opens on the
+## sky instead of the isles near the horizon.
+const OPEN_PITCH := Vector2(-0.5,0.26)
 ## His pace while they're up, of what the stick asks.
 const SHUFFLE := 0.18
 ## The hands' sway (radians, the larger of two slow sines).
@@ -187,7 +191,7 @@ func step(delta: float, want: bool, allowed: bool, from_yaw: float, from_pitch: 
 	held = want and allowed
 	if held and up <= 0.0:
 		yaw = from_yaw
-		pitch = clampf(from_pitch,PITCH.x,PITCH.y)
+		pitch = clampf(from_pitch,OPEN_PITCH.x,OPEN_PITCH.y)
 		_sound("cloth",0.3)
 	if was and not held:
 		_let_card_go()
