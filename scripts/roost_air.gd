@@ -15,6 +15,9 @@ extends Node3D
 ## - A sky folk plane, crashed nose first into a crag under the ledge's
 ##   front, worn out and broken (scripts/plane_figure.gd `set_missing`,
 ##   `set_wear`): a warning to pilots who come too close.
+## - When he wakes (scripts/dragon_wake.gd): a burst of dust off the ledge
+##   as he leaves it and settles back (`dust`), and the birds put up wide
+##   and high (`scatter`).
 const Roost = preload("res://scripts/kit_isle/motif_dragon_roost.gd")
 const PlaneFigure = preload("res://scripts/plane_figure.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
@@ -200,6 +203,71 @@ func _build_birds() -> void:
 			"r":_rng.randf_range(BIRD_R.x,BIRD_R.y),"w":_rng.randf_range(BIRD_PACE.x,BIRD_PACE.y)/_rng.randf_range(BIRD_R.x,BIRD_R.y)*(1.0 if _rng.randf() < 0.7 else -1.0),
 			"a":_rng.randf()*TAU,"flap":_rng.randf_range(2.0,9.0),"beat":0.0})
 
+## The birds put up off the mountain (the dragon waking: scripts/
+## dragon_wake.gd): their circles FLEE.x wider and FLEE.y m higher, beating,
+## eased back over FLEE_SETTLE s.
+const FLEE := Vector2(2.2,60.0)
+const FLEE_SETTLE := 45.0
+var _flee := 0.0
+
+func scatter() -> void:
+	_flee = 1.0
+
+## A burst of dust and grit off the rock round `at` (world), `strength` 0..1
+## (the dragon leaving or settling on his ledge): big, slow, brown-grey
+## puffs rolling out and up, hiding the moment his coil turns to flight.
+const DUST := 48
+const DUST_TONE := Color(0.46,0.42,0.38)
+var _dust: CPUParticles3D
+
+func dust(at: Vector3, strength := 1.0) -> void:
+	if _dust == null:
+		_dust = CPUParticles3D.new()
+		_dust.name = "Dust"
+		_dust.one_shot = true
+		_dust.emitting = false
+		_dust.amount = DUST
+		_dust.lifetime = 7.0
+		_dust.explosiveness = 0.85
+		_dust.local_coords = false
+		var quad := QuadMesh.new()
+		quad.size = Vector2.ONE*14.0
+		var m := StandardMaterial3D.new()
+		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+		m.vertex_color_use_as_albedo = true
+		m.albedo_texture = _puff_texture()
+		m.disable_receive_shadows = true
+		m.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT_WRAP
+		m.roughness = 1.0
+		quad.material = m
+		_dust.mesh = quad
+		_dust.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+		_dust.emission_sphere_radius = 18.0
+		_dust.direction = Vector3.UP
+		_dust.spread = 80.0
+		_dust.initial_velocity_min = 6.0
+		_dust.initial_velocity_max = 16.0
+		_dust.gravity = Vector3(0.0,-1.2,0.0)
+		_dust.damping_min = 1.2
+		_dust.damping_max = 2.4
+		var grow := Curve.new()
+		grow.add_point(Vector2(0.0,0.6))
+		grow.add_point(Vector2(1.0,3.2))
+		_dust.scale_amount_curve = grow
+		var fade := Gradient.new()
+		fade.set_color(0,Color(DUST_TONE,0.0))
+		fade.set_color(1,Color(DUST_TONE,0.0))
+		fade.add_point(0.08,Color(DUST_TONE,0.55))
+		fade.add_point(0.5,Color(DUST_TONE.lightened(0.15),0.3))
+		_dust.color_ramp = fade
+		_dust.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(_dust)
+	_dust.global_position = at
+	_dust.scale_amount_min = lerpf(0.5,1.0,strength)
+	_dust.scale_amount_max = lerpf(0.9,1.8,strength)
+	_dust.restart()
+
 ## Its body: a slim faceted spindle, the head forward (-z).
 func _bird_body() -> ArrayMesh:
 	var st := SurfaceTool.new()
@@ -235,11 +303,15 @@ func _process(delta: float) -> void:
 	_t += delta
 	_wreath_frame()
 	_haze.rotation.y = -TAU*_t/(WREATH_TURN*2.3)
+	_flee = maxf(_flee-delta/FLEE_SETTLE,0.0)
+	var flee := smoothstep(0.0,1.0,_flee)
 	for bird: Dictionary in _birds:
-		bird.a = float(bird.a)+float(bird.w)*delta
+		bird.a = float(bird.a)+float(bird.w)*delta*(1.0+flee*0.8)
 		var a := float(bird.a)
-		var r := float(bird.r)
-		var c: Vector3 = bird.c
+		# Scattered (`scatter`): out wide and up, beating, coming back down.
+		var r := float(bird.r)*(1.0+flee*FLEE.x)
+		var c: Vector3 = (bird.c as Vector3)+Vector3.UP*flee*FLEE.y
+		if flee > 0.3 and float(bird.beat) <= 0.0: bird.beat = 3.0
 		var at := c+Vector3(cos(a)*r,3.0*sin(a*0.5+r),sin(a)*r)
 		var way := Vector3(-sin(a),0.0,cos(a))*signf(float(bird.w))
 		var node: Node3D = bird.node

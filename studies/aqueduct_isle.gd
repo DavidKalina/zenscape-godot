@@ -90,7 +90,11 @@ extends "res://studies/kit_isle.gd"
 ## The roost (docs/design/dragon-roost/round3.md), on by default: the
 ## dragon's mountain stands out past the motif isles (scripts/kit_isle/
 ## motif_dragon_roost.gd) and the dragon sleeps curled on its ledge, its neck
-## round the summit (scripts/dragon_roost.gd); it never wakes yet.
+## round the summit (scripts/dragon_roost.gd). Once a world day he wakes and
+## flies a circuit round the region, spectacle only, then settles back
+## (scripts/dragon_wake.gd, docs/design/dragon-wake/round1.md);
+## --dragon-wake wakes him a few seconds in, --dragon-wake-at=<s> then,
+## --no-dragon-wake keeps him asleep.
 ## --no-dragon-roost leaves both out; with --dragon he flies instead and the
 ## nest is empty.
 ## The dragon (an experiment: docs/design/rim-dragon.md), with --dragon: a
@@ -122,6 +126,8 @@ const DragonRoost = preload("res://scripts/dragon_roost.gd")
 ## The air round the roost: its wreath, haze, cold, carrion birds and the
 ## crashed plane (docs/design/dragon-roost/round3.md).
 const RoostAir = preload("res://scripts/roost_air.gd")
+## His wake on a schedule (docs/design/dragon-wake/round1.md).
+const DragonWake = preload("res://scripts/dragon_wake.gd")
 ## The flying dragon's attack targets (round 7): the sky's placed motif
 ## isles, whatever it places (scripts/kit_isle/motif_sky.gd `places`).
 const DragonIsleShape = preload("res://scripts/dragon_isle_shape.gd")
@@ -672,13 +678,25 @@ func _build_roost_dragon() -> void:
 	roost_air = RoostAir.new()
 	add_child(roost_air)
 	roost_air.setup()
+	var wake: RefCounted = DragonWake.new()
+	wake.setup(roost_dragon,roost_air,preload("res://scripts/launch_args.gd").user_args(),_world_hours,Vector3(IsleSky.MIDDLE.x,Art.TOP,IsleSky.MIDDLE.z))
+	roost_dragon.wake = wake
 
-## Its breath and glow, seen only once its mountain stands.
+## The world clock's hours so far (its day's 24 and the hour), or -1 while
+## the day is held (a look preset, a capture, the day length 0): the wake's
+## schedule runs on it.
+func _world_hours() -> float:
+	if weather == null or weather.clock == null or not weather.live or weather.day_length <= 0.0: return -1.0
+	return float(weather.clock.day)*24.0+float(weather.clock.hour)
+
+## Its breath and glow, seen only once its mountain stands; awake and off
+## it, wherever he is.
 func _roost_frame(delta: float) -> void:
 	if roost_dragon == null: return
 	var isle := _motif_isle("dragon_roost")
-	roost_dragon.visible = isle == null or isle.stands()
-	if roost_air != null: roost_air.visible = roost_dragon.visible
+	var stands: bool = isle == null or isle.stands()
+	roost_dragon.visible = stands or roost_dragon.awake()
+	if roost_air != null: roost_air.visible = stands
 	roost_dragon.advance(delta)
 
 ## The flying dragon (scripts/sky_dragon.gd) round the archipelago: the

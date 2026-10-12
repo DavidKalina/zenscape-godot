@@ -19,7 +19,10 @@ extends Node
 ##   stone grinding as it tips (by the sag's speed); the long draw in (the
 ##   tell) and the blow, a vast rush of air (not fire); the gale howling past
 ##   wherever its blast and ribbons go, a buffet and a wind slam on the plane
-##   as a gust strikes; letting go, a huge beat and the rubble.
+##   as a gust strikes; letting go, a huge beat and the rubble. Waking on
+##   its roost (scripts/dragon_wake.gd): a growl as it stirs, the launch
+##   beat and rubble off the ledge, its flight's sound while out, and the
+##   weight and grit as it settles back.
 ## - The serpent: its stone scales grinding along its body at the ring
 ##   nearest you, louder and higher with its pace; the runes' deep hum
 ##   there too; its slow breath at its head (its own 5.2 s cycle). Riding
@@ -102,6 +105,9 @@ const HOWL_UNIT := 40.0
 const HOWL_REACH := 600.0
 ## Letting go: the launch beat's gain over a beat's, the rubble.
 const LAUNCH := 1.6
+## Waking on its roost (scripts/dragon_wake.gd): the growl's share of a
+## rim growl's while it stirs (its roar is the call, as in flight).
+const WAKE_GROWL := 0.9
 ## The serpent: its scales (gain at the pace's top, PACE m/s) and their
 ## floor at rest, the hum, the breath; the beds' reach (m) and what each
 ## is heard at full within; serpents further off are left silent.
@@ -376,6 +382,12 @@ func _dragon(dragon: Node, delta: float, listener: Vector3) -> float:
 		for k: String in ["air","growl","grind","gale","howl"]: if b.has(k): (b[k] as Bed).goal = 0.0
 		b.state = state
 		return 0.0
+	# Settled back on its roost after its wake: the weight coming down, rock
+	# and grit off the ledge.
+	if state == "roosting" and str(b.state) == "landing":
+		var down: Vector3 = (dragon as Node3D).global_position
+		shot("dragon_grip",GRIP*0.8,0.8,down,DRAGON_UNIT,DRAGON_REACH,FAR)
+		shot("debris",DEBRIS,0.85,down,30.0,800.0)
 	if state == "roosting": return _roosting(dragon,b,listener)
 	var at: Vector3 = (dragon as Node3D).global_position
 	var dist := at.distance_to(listener)
@@ -397,8 +409,24 @@ func _dragon(dragon: Node, delta: float, listener: Vector3) -> float:
 	if state != "clinging" and float(b.roar) < 0.45 and roar >= 0.45: _call(dragon.mouth_at())
 	b.roar = roar
 	var ribbons := _rim(dragon,b,state,was_state,listener)
+	_waking(dragon,b,state,was_state)
 	b.state = state
 	return ribbons
+
+## Its wake (scripts/dragon_wake.gd): a growl as it stirs on the roost, and
+## off the ledge a huge beat, a slam of air and the rubble, as when it lets
+## go of a rim.
+func _waking(dragon: Node, b: Dictionary, state: String, was_state: String) -> void:
+	if state == "waking":
+		var growl: Bed = b.growl
+		(growl.player as Node3D).global_position = dragon.mouth_at()
+		growl.goal = GROWL*WAKE_GROWL
+		growl.pitch_goal = 0.8
+	if state == "taking off" and was_state == "waking":
+		var at: Vector3 = (dragon as Node3D).global_position
+		shot("dragon_beat",BEAT*LAUNCH,0.78,at,DRAGON_UNIT,DRAGON_REACH,FAR)
+		shot("wind_slam",0.3,0.7,at,40.0,700.0)
+		shot("debris",DEBRIS*1.2,0.9,at,30.0,800.0)
 
 ## The wingbeat: the whump fired ahead of the downstroke's middle by its
 ## sample's lead, the rustle on the way up.
@@ -414,7 +442,7 @@ func _wings(dragon: Node, b: Dictionary, at: Vector3, delta: float) -> void:
 	var down := fposmod(STROKE_MID-BEAT_PEAK*hz,1.0)
 	var state := str(dragon.state)
 	var heavy := 1.0
-	if state == "grabbing": heavy = 1.25
+	if state in ["grabbing","taking off","landing"]: heavy = 1.25
 	elif str(dragon.mode) == "climb": heavy = 1.15
 	if _crossed(was,phase,down) and flap > 0.15:
 		shot("dragon_beat",BEAT*heavy*(0.3+0.7*flap),_rng.randf_range(0.9,1.02)/sqrt(heavy),at,DRAGON_UNIT,DRAGON_REACH,FAR)
