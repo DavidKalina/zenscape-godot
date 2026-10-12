@@ -98,6 +98,24 @@ func _build_art() -> void:
 	bridges = motif.bridges
 	for land: Array in motif.lands: add_turf(land[0],land[1],land[2])
 	print("colonnade spine: %d triangles, %d prisms; the ridge built in %d ms, the rest in %d ms" % [triangles(art),int(spine.get_meta("prisms")),motif.spine_ms,Time.get_ticks_msec()-began-motif.spine_ms])
+## Room for the parked plane, never in a portal (the slalom flies through
+## it), and open sky over it to the walker's keep-off column's top
+## (PARKED_TALL): the rows stand wide enough (Spine ROW) for it to fit
+## under a lintel, where the column would stand across the lintel he walks.
+func _room_for_plane(top: Vector3, heading: float) -> bool:
+	if not super(top,heading): return false
+	for l: Array in Spine.LINES:
+		if l[2] == "portal" and absf(top.x-float(l[0])) < 4.0 and absf(top.z-Spine.zc(top.x)) < Spine.ROW+1.0: return false
+	var column := CylinderShape3D.new()
+	column.radius = PARKED_ROOM*sqrt(ground_scale.ground_size())+0.2
+	column.height = PARKED_TALL-1.0
+	var q := PhysicsShapeQueryParameters3D.new()
+	q.shape = column
+	q.collision_mask = plane_mask()
+	q.exclude = _turf_rids
+	q.transform = Transform3D(Basis.IDENTITY,top+Vector3.UP*(1.0+column.height*0.5))
+	return get_world_3d().direct_space_state.intersect_shape(q,1).is_empty()
+
 # --- The lodestone ------------------------------------------------------------------
 
 ## The lodestone rests on the last fragment of the tail, at the end of the
