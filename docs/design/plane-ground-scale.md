@@ -42,6 +42,205 @@ Where the cheat can show (keep these in mind for later features):
 - Ask scripts/world_scale.gd (sizes) and scripts/plane_ground_scale.gd (the
   size right now) how big the plane is; don't hard-code either in new code.
 
+## Opening ratio 2 (feature/opening-ratio-2): RATIO 0.95, the rest on opening()
+
+This round finished the openings left over from the last one and, at the
+user's ask, raised `RATIO` from 0.9 to 0.95. Where this section disagrees
+with the ones below, this one is current.
+
+**Widths at plane 2, ratio 0.95** (ratio 0.9 values in brackets; past each
+wingtip = (width - 2.8) / 2):
+
+| Opening | Toy | Was | Now |
+| --- | --- | --- | --- |
+| THREAD | 3.5 | 6.3 | 6.65 |
+| Gothic ARCH_SPAN | 4.2 | 7.56 | 7.98 |
+| Lancet WINDOW | 3.6 | 6.48 | 6.84 |
+| Hall lane | 4.0 | 7.2 | 7.6 (ROW_Z 13.0, WALL_Z 16.0) |
+| Hall breach corridor | 3.6 | 6.48 | 6.84 |
+| Hall broken ARCH | 5.2 | 9.36, springing 2.75 | 9.88, springing 5.4 (the toy's), crown lost (below) |
+| Hall BAY | 8 | 10.56 | 11.08 |
+| Kit aqueduct CLEAR | 4.7 | 8.46 | 8.93 |
+| Aqueduct isle arches | 4.0 | 7.2 (deck 9.2, END 66.4) | 7.6 (deck 9.6, END 69.2) |
+| Cloister tarn water gate (TOY_GATE_PITCH 5.4 less the piers) | 4.26 | 4.26 | 8.09, piers ±4.62, round arch crown 5.9 over the walk's floor |
+| Cloister tarn west gap, slot between the stubs | 2.46 | 2.46 | 4.92 (floored at SNUG), stubs ±3.03 |
+| Colonnade portal, 2 x (ROW - ORDER) | 6.16 | 6.16 | 11.70 (ROW 3.4 -> 6.17) |
+| Colonnade north-row bay (OUT_PITCH) | 5.55 | 5.55 | 10.54 |
+| Colonnade south-row bay (IN_PITCH) | 4.38 | 4.38 | 8.32 |
+| Drowned nave crossing (CROSS_CLEAR) | 4.46 | 4.46 | 8.47 (pier pitch 9.41) |
+| Token air gap GAP_ROOM | 3.2 | 5.76 | 6.08 |
+| Token wing box (WING both sides) | 1.6 -> 3.5 | 3.2 | 6.65 (THREAD's room, 1.93 past each tip) |
+| Sarsens / great trilithon | 3.4 / 4.6 | 6.12 / 8.28 | 6.46 / 8.59 (capped, below) |
+
+**Flown or walker-sized.**
+- Flown, now on `opening()`: everything in the table.
+- Walker-sized, kept on purpose:
+  - every cloister arcade bay (SPRING 1.75, crown about 3.5) and the lavabo;
+  - the drowned nave's other arcade bays (crown about 4) and its north gap;
+  - the colonnade's other bays and the height under its lintels (PIER_H
+    3.4: balance beams, about 0.9 m over the plane);
+  - the colonnade's cleft and saddle knife.
+- Left as is: the nave's own width (ROW_Z 5.4, about 9.8 m clear) and its
+  chancel vault. Both are wide corridors.
+
+**Hall broken arch** (scripts/ruin_kit_hall.gd):
+- The arch now springs at the toy's 5.4 (`ARCH_SPRING`) at every size, so
+  it keeps the toy's proportions.
+- At plane 2 its head (14.3 m) would stand over the roof (11.6), so
+  `arch_broken()` is true and its crown is lost:
+  - The wall over it is torn down to a notch from `ARCH_BROKE` (0.7) of its
+    rise. The two haunches stand, and their ring stones above the notch are
+    gone (`_wall`'s `crown`).
+  - The aisle roof strip over it is left out, so the breach is open to the
+    sky.
+  - The Sundered far block leaves no lintel over it.
+- At plane 1 it is the toy's whole arch, under the roof.
+- The Sundered line bot: 0 bumps (74.5 s). The hall chain: never a bump.
+
+**Ratio 0.95 follow-through** (what a ratio change used to break):
+- Aqueduct isle (studies/aqueduct_isle_art.gd):
+  - The outlines are now drawn data (`NEAR_DRAWN`, `FAR_DRAWN`) plus
+    `REF_EDGE` 37.2 and `REF_END` 66.4, the run they were drawn round at
+    ratio 0.9.
+  - `FAR_SHIFT` (END - REF_END, +2.8 at 0.95) moves the far island,
+    `GATE`, `GATE_FLOOR`, its rise and the life's leaf spot.
+  - `NEAR_SHIFT` moves the near island's north tip under the aqueduct. It
+    fades out 8 m either side of the aqueduct and south of z -30.
+  - The stumps derive: the slot's far stump keeps 3.15 m, the last two
+    follow the far island, and the twirled gaps (`STUMP_JUMPS` 3.4, 3.0)
+    stay the walker's. The two far stumps share the extra length.
+  - `AqueductIsle.PIECES` is now `pieces()`. A static var on the scene's
+    script leaked Variant pages at exit (test_isle_loop_played).
+- Stone circle: the great trilithon stands at most `TRILITHON_RISE`
+  (CHAIN_TOP - 0.45, 2.125 m) over the sarsens.
+  - 2.28 m at 0.95 wasn't caught from the back lintel.
+  - It is also capped at 0.9 now (8.25, was 8.28).
+  - The fallen trilithon's stub steps rise up to 1.55 m (2 pieces, not 3),
+    as the leaning stone's block does.
+- Sundered: wider bays made seed 16's line 1352 m, over LENGTH's 1300.
+  - `_trim_bays` takes bays off the longest pieces (never under
+    `MIN_BAYS` 6) until the line is as long as drawn at `ACT_BAY` 10.56
+    (ratio 0.9's bay).
+  - At 0.9 nothing changes.
+- Hollow keel: fewer, wider bays (7). Its breach spots past the last bay
+  are skipped, and the lane tokens spread over the hall's length.
+- Lancet window: its head ring is framed at the springing, so its stones
+  settle about there. Settling about the ground swung a wide window's
+  springers 0.01 m into THREAD.
+
+**Token clearance** (scripts/collectible_lines.gd):
+- `TOY_WING` is 1.75, a THREAD's toy 3.5 across: 6.65 m at the defaults,
+  1.93 m past each tip. It was 0.2.
+- Hand-laid air lines were measured from stone (level rays, turf excluded)
+  on the aqueduct isle and every motif isle. Each thread or break line now
+  keeps at least 3.3 m (half a THREAD), with these exceptions:
+  - The knife lines (aq:knife 1.05, bs:chimney 1.22) are knife slots on
+    purpose.
+  - ct:gap is 2.43 at the stub slot: that is the slot's own half width. The
+    slot is floored at SNUG, so a token there can't have more room.
+- Moved to get there:
+  - The stair clouds slot's last point is 1 m along and 3 m out (`SLOT`).
+  - The colonnade tail's under-bridge point is 1 m east and 2 m south.
+  - The gorge curtain token is 1 m east.
+  - ct:gate flies at K + SPRING, where the gate is widest.
+- The moments set pieces (`--moments`) are re-laid in the game's hall:
+  - `FlightCourse.LAID` holds the stations as laid. `STATIONS` holds the
+    moments pack's re-laid by `_game_hall`: bays chained BAY apart, every
+    point (parts, tokens, lines, moments) carried in its bay's frame,
+    stretched along the nave and widened across the lane.
+  - Their pinned hashes are now of the laid stations.
+  - The flight study's toy stations now draw TOY_BAY bays. They had drawn
+    the game's BAY at an 8 m pitch.
+- `--chain-style=halls` (hall_chain) builds the kit hall and its tokens
+  from Hall's sizes. Its test passes with 0 bumps.
+
+**Routes moved:**
+- Drowned nave (fork):
+  - PIERS derive (9 bays, crossing bay 5); the south gap faces a north
+    great arch.
+  - dn:gap and dn:bay are at `cross_mid()`.
+  - The stub and walk tokens and the robins' stub perches follow.
+  - Found: the south row is built mirrored, so the old dn:gap token ran
+    through a standing bay.
+- Cloister tarn (fork):
+  - The gate's walk (`GATE_WALK` 7.0) has kit steps up from the
+    neighbouring walks (`_steps_up`).
+  - The heaps derive from `GAP_END`.
+  - The stub-to-stub hop is gone: the stubs are 5.16 m apart. The on-foot
+    loop now goes down onto the lower stub, into the gap and up the south
+    heap.
+- Colonnade spine (fork):
+  - `WC` widens with the rows, and the south slabs move out.
+  - LINES is down to 13; STUBS, FALLEN and PORTAL_LOST are re-keyed.
+  - The slalom derives from LINES.
+  - `_room_for_plane` keeps the parked plane out of portals and from under
+    lintels.
+  - This also fixes motif_sky's "open turf 14 m long" base failure.
+
+**Assertions changed** (each encoded an old size or layout):
+- test_flight_moments:
+  - "keeps its source's stone and line" now compares the laid stations,
+    and a new check says each stands in the game's hall.
+  - The hash pins are of the laid stations.
+- test_moments_world: the free collectible flown through is the one whose
+  4 m run-in is clearest. The first one's run-in went through a bay line's
+  beam.
+- test_kit_isle_landing: the "stone ahead" spot also needs level turf
+  4 m all round. At 0.95 it found one by the island's edge, and turned away
+  it rolled off.
+- test_world_scale_fit: the trilithon expects min(opening, sarsen +
+  TRILITHON_RISE). It now covers the nave crossing, the tarn gate and stub
+  slot, and the colonnade portal and both row bays.
+- The forks' changes: test_cloister_tarn_isle (stub hop replaced, heap
+  climbs end over the pier), test_colonnade_spine_isle (the lintel climb's
+  run-up from ROW), test_drowned_nave_isle (lines at cross_mid, four lines
+  through the crossing).
+
+**Tests** (headless, ratio 0.95): 41 of 44 pass:
+- world_scale_fit and world_scale_guard;
+- ruin_kit, sundered_hall, hall_chain, hall_rise, isle_hall_chain,
+  sundered_gorge, hollow_keel;
+- cloister_tarn, colonnade_spine, drowned_nave, stair_clouds, broken_ring,
+  bell_spires;
+- motif_sky (passes now) and cluster_motifs;
+- serpent_route, collectibles_world, flight_moments, sky_moments,
+  flight_metrics, flight_study, flight_tokens, flight_lines;
+- aqueduct_isle, plus its _life, _plane, _sail and _sky tests;
+- glide_camera, plane_flight, plane_landing, sky_plane, kit_isle_landing;
+- isle_lodestone, isle_loop_played, isle_lock, lodestone_study,
+  pierced_isle, island_pack_ruins_archipelago.
+
+Three fail as on the base:
+- aqueduct_isle_look.
+- collectibles_pickup.
+- moments_world: all its checks pass, but the engine logs
+  `!isfinite(p_size)` from cozy_worlds `_layout_shell`. The same error is
+  logged on integrate/scale-camera.
+
+test_aqueduct_isle also passes at `--opening-ratio=0.9`.
+
+**Captured** (rendered, --no-title): the cloister tarn's water gate and
+its establishing view (tools/cloister_tarn_captures.sh).
+
+**Open:**
+- Still hand-tuned to a ratio:
+  - REF_EDGE/REF_END (0.9's run) and the drawn outlines' shapes;
+  - Sundered ACT_BAY 10.56;
+  - the aqueduct isle at `--opening-ratio=1` (plane 2) fails four routes:
+    the castellum climb, the buttress kicks, the stumps and the fallen
+    trilithon. Steps, kicks and jumps there are still laid for 0.9 to 0.95;
+  - the drowned nave's NAVE_X, basin, fallen pier and flag;
+  - the colonnade at plane 1, ratio 1 fails 2 checks: the plane parks on
+    the north shelf walk.
+- The gallery's hall bay capture wasn't framed well, so the broken arch
+  hasn't been looked at rendered. Look at it in a Sundered capture
+  (tools/capture_sundered.gd) or the gallery before tuning ARCH_BROKE.
+- The cloister stubs no longer make a walker hop.
+- The colonnade slalom weaves harder: about 6.2 m sideways over 9 to 14 m.
+- kit_isle `_room_for_plane` sizes its box from TOY_SPAN, not
+  WorldScale.span.
+- Nothing has been flown by a person.
+
 ## Opening ratio (feature/opening-ratio): the current openings
 
 The user flew world-spacing and the arches and aqueducts still felt too

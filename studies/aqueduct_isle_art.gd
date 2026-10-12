@@ -753,7 +753,7 @@ static func ground_material() -> ShaderMaterial:
 ## to 96), so its drops land on it. The 23 m of sky between them (the
 ## station's 16) kept open under the aqueduct.
 ## Drawn round the run at one size (REF_EDGE, REF_END: its first hanging
-## pier's near face less 0.6, and its END, when drawn) and moved with the
+## pier's middle less 0.6, and its END, when drawn: ratio 0.9) and moved with the
 ## run since (`_near`, `_far`): the far island, its gate, paving and rise by
 ## FAR_SHIFT (END past REF_END); the near island's north tip, under the
 ## aqueduct, by NEAR_SHIFT, fading out 8 m either side of the aqueduct's
@@ -761,7 +761,7 @@ static func ground_material() -> ShaderMaterial:
 ## takes its islands with it.
 const REF_EDGE := 37.2
 const REF_END := 66.4
-static var NEAR_SHIFT: float = (pier(3)-PIER.x*0.5-0.6)-REF_EDGE
+static var NEAR_SHIFT: float = (pier(3)-0.6)-REF_EDGE
 static var FAR_SHIFT: float = END-REF_END
 const NEAR_DRAWN := [Vector2(100.0,-37.2),Vector2(104.0,-37.0),Vector2(108.0,-36.0),Vector2(112.0,-32.5),Vector2(116.0,-28.6),
 	Vector2(120.0,-25.0),Vector2(124.0,-20.0),Vector2(127.0,-13.0),Vector2(126.0,-5.0),Vector2(128.0,2.0),Vector2(124.0,9.0),Vector2(119.0,14.0),
