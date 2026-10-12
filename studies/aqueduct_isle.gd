@@ -667,7 +667,11 @@ func _build_sky_dragon() -> void:
 	middle /= float(Art.NEAR.size())
 	dragon.shadow_at = Vector3(middle.x,Art.TOP,middle.y)
 	# Its attacks: the motif isles, their records once they stand, their
-	# birds; the pilot it can knock and who can take its treasure.
+	# birds; the pilot it can knock and who can take its treasure. Never
+	# this isle: it is the starter isle, and the player shouldn't have to
+	# mind the dragon here (`list` above is only what it flies round; its
+	# `_attackable` turns this isle away too). Of the motif isles, only
+	# those with room for its grip (scripts/sky_dragon.gd `_has_room`).
 	for place: Array in places:
 		dragon.targets.append({"name":str(place[0]),"home":place[1],"radius":float(place[2])*0.5})
 	dragon.find_isle = _dragon_isle

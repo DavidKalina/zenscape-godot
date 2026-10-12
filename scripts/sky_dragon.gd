@@ -179,6 +179,8 @@ var targets: Array = []
 var find_isle: Callable
 ## Round 7: --dragon-target picked the first; the last one it attacked.
 var _target_forced := false
+## Whether the last pick was --dragon-target's (held even without room).
+var _target_forced_was := false
 var _last_target := -1
 var _grip_note := ""
 var _best_score := 0.0
@@ -356,10 +358,11 @@ const SOLID_LAYER := 1
 const LIFT_SHARE := [0.4,0.3,0.2,0.1]
 ## The chin's gap over the turf when it lies there (m).
 const CHIN_GAP := 0.04
-## The thumbs' claws sit this far inside the lip (m).
+## The thumbs' claws sit this far inside the lip (m, at TUNED_SIZE; scaled
+## by `_k`).
 const THUMB_IN := 0.9
 ## A neck probe further under the turf than this is under the lip's
-## overhang beside the cliff, not in it.
+## overhang beside the cliff, not in it (m, at TUNED_SIZE; scaled by `_k`).
 const NECK_DEEP := 3.0
 ## Round 9: no auto-surf on the tipped isle (round 6's RIDE_SLIDE_AUTO is
 ## gone). He surfs only when he crouches (or carves), as on any slope.
@@ -881,7 +884,9 @@ func _start() -> void:
 		# --dragon-attack: already on its way in, level, far out.
 		route.clear()
 		_leg_kinds.clear()
+		grip = {}
 		_add_attack()
+		if grip.is_empty(): return
 		route.pop_front()
 		_leg_kinds.pop_front()
 		var to: Vector3 = route[0]
@@ -899,7 +904,7 @@ func _ride_in() -> void:
 	_attack_in = INF
 	route.clear()
 	_leg_kinds.clear()
-	_target_i = _choose_target()
+	_target_i = maxi(_choose_target(),0)
 	_ride_home = _target_i
 	_last_target = _target_i
 	_attacked_at[_target_i] = _clock
@@ -1556,9 +1561,11 @@ func _place_treasure(_delta: float) -> void:
 ## --dragon-ride, which wants him on it), not the one it last let go of,
 ## and in the camera's view (within 75° of its look, 900 m); failing the
 ## view, the first of the rest. --dragon-target's pick holds the first time.
+## Only an isle with room for its grip (`_has_room`); -1 when none has.
 func _choose_target() -> int:
 	var n := targets.size()
 	if n == 0: return 0
+	_target_forced_was = _target_forced
 	if _target_forced:
 		_target_forced = false
 		return _target_i%n
@@ -1570,6 +1577,7 @@ func _choose_target() -> int:
 		for i in range(n):
 			var rec := _record(targets[i])
 			if rec.is_empty() or not rec.has("shape") or not (rec.shape as RefCounted).has_method("open_at"): continue
+			if not _has_room(targets[i]): continue
 			_plan_grip(targets[i])
 			if _best_score > top:
 				top = _best_score
@@ -1581,8 +1589,14 @@ func _choose_target() -> int:
 	# favours what you can see but goes round all of them in time.
 	var best := -1
 	var top := -INF
+	var roomy := -1
 	for i in range(n):
 		var t: Dictionary = targets[i]
+		if not _has_room(t): continue
+		# Failing all else, the first with room from `_target_i` round (one
+		# not yet standing on its listed radius: planned again once it
+		# stands, `_replan_attack`).
+		if roomy < 0 or (i-_target_i+n)%n < (roomy-_target_i+n)%n: roomy = i
 		var rec := _record(t)
 		if find_isle.is_valid() and rec.is_empty(): continue
 		if rec.has("home"): t.home = rec.home
@@ -1602,7 +1616,63 @@ func _choose_target() -> int:
 		if score > top:
 			top = score
 			best = i
-	return best if best >= 0 else _target_i%n
+	return best if best >= 0 else roomy
+
+## Round 1 of the grip at 1.5 (docs/design/dragon-grip/round1.md): the
+## room a grip needs. A way round an isle counts only if its rim stands at
+## least ROOM out from the isle's middle (m at TUNED_SIZE, scaled by `_k`:
+## 35 m at 1.5; the chin lies about 13 m in from the lip at 0.85, 22 m at
+## 1.5, so it lies short of the middle, where the isle runs on past it;
+## tuned by tools/measure_dragon_grip.gd), both wrists find a
+## lip of their own (not `_rim_line`'s fallback in open air), and the band
+## the chin lies and sweeps on is at least ROOM_OPEN open turf with at most
+## ROOM_TALL samples standing tall (`_best_turn`). An isle with no such way
+## is never attacked: a ring 28 m across can't take a 30 m hand span, nor
+## a bell field a 1.5 head. The aqueduct isle, the starter isle, is never
+## a target at all (`_attackable`).
+const ROOM := 20.0
+const ROOM_OPEN := 0.75
+const ROOM_TALL := 2
+## A way without room (`ROOM`, a wrist on the fallback) loses this much in
+## `_best_turn`, so it is chosen only where no way has room (a forced
+## --dragon-target).
+const NO_ROOM := 100.0
+
+## The grip's distances tuned at TUNED_SIZE, as a factor for `size`.
+func _k() -> float:
+	return size/TUNED_SIZE
+
+## Whether the dragon may attack `t`: never the aqueduct isle (the starter
+## isle: the player shouldn't have to mind the dragon there; the host lists
+## only the motif isles, and this keeps it so if it is ever listed) nor its
+## own roost, and only an isle with room for its grip (`ROOM`): one way
+## round it at least, scored by `_best_turn` on the isle's shape. Known
+## once the isle stands (then kept on `t`); before that, its listed
+## radius against ROOM.
+func _has_room(t: Dictionary) -> bool:
+	if not _attackable(t): return false
+	if t.has("room"): return bool(t.room)
+	var rec := _record(t)
+	var shape: RefCounted = rec.get("shape") as RefCounted if rec.has("shape") else null
+	if shape == null or not shape.has_method("open_at"): return float(t.radius) >= ROOM*_k()
+	if rec.has("home"):
+		t.home = rec.home
+		t.radius = float(rec.radius)
+	var keep_note := _grip_note
+	var keep_score := _best_score
+	_best_turn(t,shape,Vector3.FORWARD)
+	t.room = _best_roomy
+	if not _best_roomy: print("sky dragon: %s has no room for its grip at size %.2f (%s); it won't attack it" % [str(t.name),size,_grip_note])
+	_grip_note = keep_note
+	_best_score = keep_score
+	return bool(t.room)
+
+## Not the aqueduct isle (the starter isle: anything listed within its
+## 60 m of `home`, its middle) nor the dragon's roost.
+func _attackable(t: Dictionary) -> bool:
+	if str(t.name) in ["aqueduct_isle","dragon_roost"]: return false
+	var at: Vector3 = t.home
+	return Vector2(at.x-home.x,at.z-home.z).length() > 60.0
 
 ## The isle's move since the grip was planned (its shudder), as a transform
 ## to carry grip points along with it.
@@ -1667,8 +1737,8 @@ func _plan_grip(t: Dictionary, turn := 0.0) -> Dictionary:
 			# Its holds on the real lip either side, at the reach of its
 			# wrists and feet (as on hills_ne's 14 m rim), wherever the
 			# lip runs.
-			w = _rim_line(t,out,right*k*HOLD_WRIST*size/TUNED_SIZE,rim)
-			f = _rim_line(t,out,right*k*HOLD_FOOT*size/TUNED_SIZE,rim)
+			w = _rim_line(t,out,right*k*HOLD_WRIST*_k(),rim)
+			f = _rim_line(t,out,right*k*HOLD_FOOT*_k(),rim)
 		else:
 			w = _rim_along(t,out.rotated(Vector3.UP,0.62*k))
 			f = _rim_along(t,out.rotated(Vector3.UP,0.2*k))
@@ -1694,7 +1764,9 @@ func _eye_for(t: Dictionary) -> Vector3:
 
 ## The lip along `out` from the line `by` (flat) off the isle's middle (the
 ## last land along it), at the ground there; else the main rim moved by
-## `by`.
+## `by` (no land on that line: a hold in open air), and `_rim_fell` says
+## so until the next call.
+var _rim_fell := false
 func _rim_line(t: Dictionary, out: Vector3, by: Vector3, rim: Vector3) -> Vector3:
 	var at: Vector3 = t.home
 	var shape: RefCounted = _record(t).get("shape") as RefCounted
@@ -1706,7 +1778,8 @@ func _rim_line(t: Dictionary, out: Vector3, by: Vector3, rim: Vector3) -> Vector
 		if shape.on_land(p): last = p
 		elif last != Vector2.INF and r > 2.0: break
 		r += 0.5
-	if last == Vector2.INF: return rim+by
+	_rim_fell = last == Vector2.INF
+	if _rim_fell: return rim+by
 	return at+Vector3(last.x,float(shape.ground_at(last)),last.y)
 
 ## A motif isle's grip (round 7): of 48 ways out round it, the best by
@@ -1716,13 +1789,20 @@ func _rim_line(t: Dictionary, out: Vector3, by: Vector3, rim: Vector3) -> Vector
 ## side at the rim's height, a rim not too near the middle (the tip goes as
 ## the sag over it), and (off the isle) a flank as seen from the eye, so
 ## the body shows in profile. The way as a turn from `view`.
+## Its distances were tuned at TUNED_SIZE and scale by `_k` (the grip at
+## 1.5): the chin lies about 13 m in from the lip at 0.85, 22 m at 1.5, so
+## the bands are sampled where it lands. A way without room (`ROOM`, or a
+## wrist with no lip of its own) loses NO_ROOM; `_best_roomy` says whether
+## the best way has room.
 const HOLD_WRIST := 8.5
 const HOLD_FOOT := 2.8
+var _best_roomy := false
 func _best_turn(t: Dictionary, shape: RefCounted, view: Vector3) -> float:
+	var k := _k()
 	var best := 1.5
 	var best_score := -INF
-	for k in range(48):
-		var turn := -PI+TAU*float(k)/48.0
+	for i in range(48):
+		var turn := -PI+TAU*float(i)/48.0
 		var out := view.rotated(Vector3.UP,turn)
 		var rim := _rim_along(t,out)
 		var at: Vector3 = t.home
@@ -1736,12 +1816,12 @@ func _best_turn(t: Dictionary, shape: RefCounted, view: Vector3) -> float:
 		var rise := 0.0
 		for d: float in [3.0,5.0,7.0,9.0,11.0,13.0,16.0]:
 			for side: float in [-3.0,0.0,3.0]:
-				var p: Vector2 = r_flat-Vector2(out.x,out.z)*d+Vector2(right.x,right.z)*side
+				var p: Vector2 = r_flat-Vector2(out.x,out.z)*d*k+Vector2(right.x,right.z)*side*k
 				count += 1
-				if shape.open_at(p,1.2): open += 1
+				if shape.open_at(p,1.2*k): open += 1
 				# The turf the chin lies on near the lip's height: not a
 				# ridge climbing away from it, nor a hollow.
-				if d <= 11.0 and shape.on_land(p): rise = maxf(rise,absf(at.y+float(shape.ground_at(p))-rim.y)-0.4*d)
+				if d <= 11.0 and shape.on_land(p): rise = maxf(rise,absf(at.y+float(shape.ground_at(p))-rim.y)-0.4*d*k)
 		score += 6.0*float(open)/float(count)
 		score -= minf(rise*0.5,4.0)
 		# Round 8: nothing tall where the head pants and sweeps (a bell's
@@ -1750,7 +1830,7 @@ func _best_turn(t: Dictionary, shape: RefCounted, view: Vector3) -> float:
 		if shape.has_method("solid_at"):
 			for d: float in [4.0,7.0,10.0,13.0]:
 				for side: float in [-6.0,-3.0,0.0,3.0,6.0]:
-					var p: Vector2 = r_flat-Vector2(out.x,out.z)*d+Vector2(right.x,right.z)*side
+					var p: Vector2 = r_flat-Vector2(out.x,out.z)*d*k+Vector2(right.x,right.z)*side*k
 					var top: Variant = shape.solid_at(p)
 					var turf: Variant = shape.turf_at(p)
 					if top != null and float(top)-(float(turf) if turf != null else 0.0) > 2.0: tall += 1
@@ -1758,23 +1838,33 @@ func _best_turn(t: Dictionary, shape: RefCounted, view: Vector3) -> float:
 		# Nothing under its body beyond the rim.
 		for d: float in [4.0,10.0,18.0,28.0,40.0,55.0]:
 			for side: float in [-12.0,0.0,12.0]:
-				var p: Vector2 = r_flat+Vector2(out.x,out.z)*d+Vector2(right.x,right.z)*side
+				var p: Vector2 = r_flat+Vector2(out.x,out.z)*d*k+Vector2(right.x,right.z)*side*k
 				if shape.on_land(p): score -= 1.5
-		# A lip at the wrists' reach either side, near the rim's height.
+		# A lip at the wrists' reach either side, near the rim's height; a
+		# wrist with none (the fallback, a claw in open air) has no room.
+		var roomy := r >= ROOM*k
 		for kk: float in [-1.0,1.0]:
-			var w := _rim_line(t,out,right*kk*HOLD_WRIST*size/TUNED_SIZE,rim)
-			var miss := absf(w.y-rim.y)+maxf(absf((w-rim).dot(out))-6.0,0.0)
+			var w := _rim_line(t,out,right*kk*HOLD_WRIST*k,rim)
+			if _rim_fell: roomy = false
+			var miss := absf(w.y-rim.y)+maxf(absf((w-rim).dot(out))-6.0*k,0.0)
 			score -= minf(miss*0.25,2.0)
+		# And the chin's band mostly open turf, with little standing tall
+		# in it: at 1.5 the head can't lie among bell spires or cloister
+		# walls, lifted over them it hangs, and in the blow it sweeps into
+		# them.
+		if float(open) < ROOM_OPEN*float(count) or tall > ROOM_TALL: roomy = false
+		if not roomy: score -= NO_ROOM
 		# A rim neither at the middle nor far out on a spit.
-		if r < 10.0: score -= (10.0-r)*0.4
-		if r > 34.0: score -= (r-34.0)*0.08
+		if r < 10.0*k: score -= (10.0*k-r)*0.4/k
+		if r > 34.0*k: score -= (r-34.0*k)*0.08/k
 		# Seen in profile from off the isle.
 		if not ride or not _is_ride_home(t): score += 1.5*(1.0-absf(absf(turn)-1.5)/1.5)
 		if score > best_score:
 			best_score = score
 			best = turn
 			_best_score = score
-			_grip_note = "open %.0f%%, rise %.1f m, %d tall, rim %.0f m out, score %.1f" % [100.0*float(open)/float(count),rise,tall,r,score]
+			_best_roomy = roomy
+			_grip_note = "open %.0f%%, rise %.1f m, %d tall, rim %.0f m out, score %.1f%s" % [100.0*float(open)/float(count),rise,tall,r,score,"" if roomy else ", no room"]
 	return best
 
 ## Which flank (1 or -1) shows from `eye`: the one whose rim stands
@@ -1801,7 +1891,13 @@ func _clear_side(t: Dictionary, view: Vector3, eye: Vector3) -> float:
 ## Off to attack the next target: in wide and banking round, then low
 ## outside its rim, where the grab begins.
 func _add_attack() -> void:
-	_target_i = _choose_target()
+	var pick := _choose_target()
+	if pick < 0:
+		# No isle with room for its grip: round again, and try later.
+		_add_circuit()
+		_attack_in = _attack_every*_rng.randf_range(0.85,1.2)
+		return
+	_target_i = pick
 	_last_target = _target_i
 	_attacked_at[_target_i] = _clock
 	var t: Dictionary = targets[_target_i%targets.size()]
@@ -1829,14 +1925,30 @@ func _grab_way(g: Dictionary) -> Vector3:
 func _replan_attack() -> void:
 	if grip.is_empty() or bool(grip.get("scored",true)) or _leg_kinds.is_empty() or not (_leg_kinds[0] in ["attack","grab"]): return
 	if _record(grip.target).is_empty(): return
+	if _turned_away(): return
 	grip = _plan_grip(grip.target)
 	if not bool(grip.scored): return
 	if _leg_kinds[0] == "attack": route = [_attack_way(grip),_grab_way(grip)]
 	else: route = [_grab_way(grip)]
 	print("sky dragon: %s stands now: its grip planned again (%s)" % [str(grip.target.name),_grip_note])
 
+## An isle picked before it stood (on its listed radius) that, standing,
+## has no room for the grip (`_has_room`): off round again, to try another
+## later. Not --dragon-target's pick, which is held regardless.
+func _turned_away() -> bool:
+	if grip.is_empty() or _target_forced_was or _record(grip.target).is_empty() or _has_room(grip.target): return false
+	print("sky dragon: %s stands now, with no room for its grip: it turns away" % str(grip.target.name))
+	state = "roaming"
+	route.clear()
+	_leg_kinds.clear()
+	grip = {}
+	_add_circuit()
+	_attack_in = _attack_every*_rng.randf_range(0.85,1.2)
+	return true
+
 ## The grab begins: from its flight into a hard flare and onto the rim.
 func _begin_grab() -> void:
+	if _turned_away(): return
 	# The isle may have stood up since the plan: the rim again, same side.
 	grip = _plan_grip(grip.target,float(grip.turn))
 	var fwd := Vector3(-sin(yaw)*cos(gamma),sin(gamma),-cos(yaw)*cos(gamma))
@@ -2057,7 +2169,7 @@ func _cling_pose(delta: float) -> void:
 		_turn("wing_f4."+n,[[Vector3.UP,side*fold*0.6]])
 		var wrist: Vector3 = xf*(grip.wrists[n] as Vector3)+Vector3.UP*0.8*size-out*1.2*size
 		_reach(["wing_arm."+n,"wing_fore."+n],"wing_hand."+n,sk_inv*wrist)
-		_seat_thumb(n,wrist,xf*(grip.wrists[n] as Vector3)-out*THUMB_IN,sk_inv)
+		_seat_thumb(n,wrist,xf*(grip.wrists[n] as Vector3)-out*THUMB_IN*_k(),sk_inv)
 		_turn("hind_upper."+n,[[Vector3.RIGHT,0.5]])
 		_turn("hind_lower."+n,[[Vector3.RIGHT,-0.3]])
 		_turn("hind_foot."+n,[[Vector3.RIGHT,0.9]])
@@ -2119,7 +2231,8 @@ const CLEAR_GAP := 0.25
 const CLEAR_W := 12.0
 const CLEAR_RATE := Vector2(1.2,1.8)
 const BODY_W := 6.0
-## The most the body is eased up out of the isle (m).
+## The most the body is eased up out of the isle (m, at TUNED_SIZE; scaled
+## by `_k`).
 const BODY_MOST := 6.0
 ## The most each neck bone and the head may turn against the body (rad/s):
 ## the last guard against a pop.
@@ -2162,7 +2275,7 @@ func _floor_gap(p: Vector3, head: bool) -> float:
 	var top: Variant = shape.solid_at(flat) if head else shape.top_at(flat)
 	if top != null and (not head or float(top) < l.y+5.0): under = maxf(under,float(top))
 	if under == -INF: return INF
-	if not head and l.y < under-NECK_DEEP: return INF
+	if not head and l.y < under-NECK_DEEP*_k(): return INF
 	return l.y-under
 
 ## The chin's two probes over the turf (m, less CHIN_GAP) bent `lift` and
@@ -2267,7 +2380,7 @@ func _clear_turf(delta: float) -> void:
 		sunk_after = minf(sunk_after,minf(left,0.0))
 		# Still in it (the neck lagging, the isle springing up under it): the
 		# body eased up out of it; clear by a margin, it eases back down.
-		_body_goal = clampf(_body_up-(left-CLEAR_GAP),0.0,BODY_MOST)
+		_body_goal = clampf(_body_up-(left-CLEAR_GAP),0.0,BODY_MOST*_k())
 	else: _body_goal = 0.0
 
 ## Off any isle: the clearance and the body's lift ease away.
@@ -2467,7 +2580,7 @@ func _ride_next() -> int:
 	var home_at: Vector3 = targets[_ride_home].home
 	var others: Array = []
 	for i in range(targets.size()):
-		if i == _ride_home or _record(targets[i]).is_empty(): continue
+		if i == _ride_home or _record(targets[i]).is_empty() or not _has_room(targets[i]): continue
 		others.append(i)
 	if others.is_empty(): return _ride_home
 	others.sort_custom(func(a: int, b: int) -> bool: return (targets[a].home as Vector3).distance_to(home_at) < (targets[b].home as Vector3).distance_to(home_at))
