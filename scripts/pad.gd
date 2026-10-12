@@ -55,6 +55,12 @@ const ACTIONS := {
 	"walk_twirl":[["key",KEY_X],["button",JOY_BUTTON_X]],
 	# On foot, pressed: spend the flow charge as an updraft (scripts/updraft.gd).
 	"walk_wind":[["key",KEY_Q],["button",JOY_BUTTON_RIGHT_SHOULDER]],
+	# At a cannon (scripts/cannon/cannon_field.gd): Jump (A) mans it and
+	# fires; these load the next keg, step away, and set the power.
+	"cannon_load":[["key",KEY_X],["button",JOY_BUTTON_X]],
+	"cannon_leave":[["key",KEY_E],["button",JOY_BUTTON_B]],
+	"cannon_power_up":[["key",KEY_PERIOD],["button",JOY_BUTTON_DPAD_RIGHT],["button",JOY_BUTTON_DPAD_UP]],
+	"cannon_power_down":[["key",KEY_COMMA],["button",JOY_BUTTON_DPAD_LEFT],["button",JOY_BUTTON_DPAD_DOWN]],
 	# On foot on the ground, held: the telescope up (scripts/telescope.gd).
 	"telescope":[["mouse",MOUSE_BUTTON_RIGHT],["button",JOY_BUTTON_LEFT_SHOULDER]],
 	"eye_leave":[["button",JOY_BUTTON_B],["button",JOY_BUTTON_BACK]],
