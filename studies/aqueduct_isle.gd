@@ -104,6 +104,8 @@ extends "res://studies/kit_isle.gd"
 ## --watcher: a stranger on the south rim, telescope up, watching a glint
 ## on the rune serpent's back, the plane's tail fin (scripts/kit_isle/
 ## watcher.gd, docs/design/watcher/round1.md).
+## --sluice: the Sluice Flush trap on the channel (scripts/traps/
+## sluice_aqueduct.gd); --sluice=head starts at the top of the rubble slope.
 ## The plane starts broken (scripts/plane_arc/plane_arc.gd, docs/design/
 ## plane-arc/round1.md): its six parts are spread over the region, found on
 ## foot, carried and fitted at the plane; --plane-fixed starts it repaired
@@ -314,6 +316,8 @@ func _build_art() -> void:
 	print("aqueduct isle: %d triangles" % triangles(art))
 	# The on-foot pieces' route (balustrades, ropes, a ferry, bobbing slabs).
 	preload("res://scripts/interactables/aqueduct_foot_route.gd").build(self)
+	# --sluice: the Sluice Flush on the channel (scripts/traps/sluice_aqueduct.gd).
+	preload("res://scripts/traps/sluice_aqueduct.gd").build(self)
 
 # --- The isle's hooks --------------------------------------------------------------
 
