@@ -19,7 +19,11 @@ extends Node3D
 ##               isles, propellers turning, crew waving when you pass, lit
 ##               at night, solid to the plane; one passing close hums with
 ##               the plane's own propeller drone (scripts/glide_air.gd
-##               `engine`). --no-airships.
+##               `engine`). One is the ferry (scripts/kit_isle/
+##               airship_ferry.gd): a bigger ship on its own loop that
+##               rests by the isle's south edge and by the bell spires,
+##               ridden on foot (--ferry-aboard starts on its deck;
+##               --no-ferry). --no-airships.
 ##   traffic     the game's CPU biplanes (scripts/sky_traffic.gd): laps
 ##               round the motif isles, buzzes of their tops and passes
 ##               through the drifting clouds, climbing over what stands.
@@ -66,6 +70,7 @@ const RuneSerpent = preload("res://scripts/rune_serpent.gd")
 const KitClouds = preload("res://scripts/kit_isle/kit_clouds.gd")
 const MotifSky = preload("res://scripts/kit_isle/motif_sky.gd")
 const SerpentRoute = preload("res://scripts/kit_isle/serpent_route.gd")
+const AirshipFerry = preload("res://scripts/kit_isle/airship_ferry.gd")
 
 ## The isle's own layers (studies/aqueduct_isle.gd TURF_LAYER): ground the
 ## plane skims and the pilot is set down on; and what bumps it.
@@ -75,12 +80,13 @@ const SOLID_LAYER := 1
 const MIDDLE := Vector3(85.0,30.0,-20.0)
 
 ## The airships' loops (world waypoints, flown round and round, a Catmull-Rom
-## through them) and their speeds (m/s). The first passes the isle close
-## (its drone heard on the isle's top) and out by the bell spires; the
-## second circles the colonnade spine; the third the cloister tarn. All
-## keep well off the rune serpent's way.
+## through them) and their speeds (m/s). The first circles the colonnade
+## spine; the second the cloister tarn. Both keep well off the rune
+## serpent's way. The ship that passed the isle close and out by the bell
+## spires is the ferry now (scripts/kit_isle/airship_ferry.gd: its own
+## loop, resting by the isle's south edge and the bell spires, ridden on
+## foot), last in `airships`.
 const ROUTES := [
-	[[Vector3(60.0,62.0,140.0),Vector3(270.0,58.0,190.0),Vector3(420.0,64.0,-60.0),Vector3(230.0,66.0,-130.0),Vector3(40.0,60.0,-70.0)],6.5],
 	[[Vector3(-190.0,64.0,-140.0),Vector3(-440.0,60.0,-230.0),Vector3(-380.0,64.0,-560.0),Vector3(-60.0,58.0,-520.0),Vector3(-40.0,60.0,-300.0)],7.5],
 	[[Vector3(60.0,70.0,210.0),Vector3(290.0,58.0,360.0),Vector3(60.0,62.0,590.0),Vector3(-170.0,60.0,360.0)],8.0],
 ]
@@ -123,6 +129,8 @@ var clouds: Node3D
 var life: Node3D
 var collectibles: Node3D
 var airships: Array[Dictionary] = []
+## The ferry (scripts/kit_isle/airship_ferry.gd), or null (--no-ferry).
+var ferry: Node3D
 var motes: Array[Node3D] = []
 var drone: Node3D
 ## What is on (flags).
@@ -245,21 +253,13 @@ class IsleTraffic extends SkyTraffic:
 
 ## The sky folk's airships: the tow event's own ship (SkyAirship `_make_ship`:
 ## envelope, gondola, crew, windows and lantern for the night), flown on
-## slow loops (ROUTES); a body each for the plane to bump; and the drone.
+## slow loops (ROUTES); a body each for the plane to bump; the ferry on its
+## own loop (scripts/kit_isle/airship_ferry.gd, its own body: he rides it);
+## and the drone.
 func _build_airships() -> void:
 	for k in range(ROUTES.size()):
 		var route: Array = ROUTES[k]
-		var ship: Node3D = SkyAirship.new()
-		ship.name = "Airship%d" % k
-		ship.scene = scene
-		# No islets: the tow event never runs (`_process` waits on them).
-		ship.islets = null
-		add_child(ship)
-		ship._make_ship()
-		ship._ship.visible = true
-		ship._lines.visible = false
-		for g: MeshInstance3D in ship._grapples: g.visible = false
-		ship._set_fade(0.0)
+		var ship := _new_airship("Airship%d" % k)
 		var body := AnimatableBody3D.new()
 		body.name = "Solid"
 		body.collision_layer = SOLID_LAYER
@@ -288,14 +288,36 @@ func _build_airships() -> void:
 		var points: Array = route[0]
 		var length := 0.0
 		for i in range(points.size()): length += (points[i] as Vector3).distance_to(points[(i+1)%points.size()])
+		# Their phases round their loops as when a third flew before them.
 		airships.append({"ship":ship,"points":points,"speed":float(route[1]),"length":length,
-			"u":float(k)*0.37,"heading":0.0,"bank":0.0,"at":Vector3.ZERO})
+			"u":float(k+1)*0.37,"heading":0.0,"bank":0.0,"at":Vector3.ZERO})
 		_place_airship(airships[-1],0.0)
+	if AirshipFerry.wanted():
+		var ship := _new_airship("Airship%d" % ROUTES.size())
+		ferry = AirshipFerry.new()
+		add_child(ferry)
+		ferry.setup(scene,ship)
+		airships.append({"ship":ship,"ferry":true,"points":AirshipFerry.loop_points(),"at":ferry.at()})
 	drone = GlideAir.new()
 	drone.name = "AirshipDrone"
 	add_child(drone)
 	drone.start()
 	drone.visible = false
+
+## A ship of the sky folk's, made and shown, its tow gear hidden.
+func _new_airship(ship_name: String) -> Node3D:
+	var ship: Node3D = SkyAirship.new()
+	ship.name = ship_name
+	ship.scene = scene
+	# No islets: the tow event never runs (`_process` waits on them).
+	ship.islets = null
+	add_child(ship)
+	ship._make_ship()
+	ship._ship.visible = true
+	ship._lines.visible = false
+	for g: MeshInstance3D in ship._grapples: g.visible = false
+	ship._set_fade(0.0)
+	return ship
 
 ## A point on a loop's Catmull-Rom at `u` (0 to 1 round it).
 static func _loop(points: Array, u: float) -> Vector3:
@@ -327,7 +349,9 @@ func _place_airship(a: Dictionary, delta: float) -> void:
 func _advance_airships(delta: float, eye: Vector3) -> void:
 	var nearest := INF
 	for a: Dictionary in airships:
-		_place_airship(a,delta)
+		# The ferry is moved on by its own frame, ahead of the pilot's step.
+		if a.has("ferry"): a.at = ferry.at()
+		else: _place_airship(a,delta)
 		var ship: Node3D = a.ship
 		for p: Node3D in ship._props: p.rotate_object_local(Vector3.BACK,14.0*delta)
 		var d := (a.at as Vector3).distance_to(eye)

@@ -37,8 +37,9 @@ extends Node3D
 ## a decent hit: Slam `decent`) swings the bell hard, and COWL_DELAY s later,
 ## as it swings, the cowl is knocked out: it tumbles down onto the belfry
 ## floor (PartSpots `cowl_floor`, COWL_FALL s, a bounce) and hovers there
-## to be taken as ever. Reaching the belfry needs the plane for now
-## (--plane-fixed) until the airship ferries come.
+## to be taken as ever. The belfry is reached on foot by the sky folk's
+## ferry (scripts/kit_isle/airship_ferry.gd): aboard by the start, off at
+## the bell spires' west edge, up the low stair and the hero's.
 ##
 ## The tail fin rides the rune serpent's back (the watcher's find:
 ## scripts/kit_isle/watcher.gd borrows it, `fin_holder`); the propeller hangs
@@ -54,7 +55,8 @@ extends Node3D
 ##   --part-at=<id>     starts the pilot by that part: wheel, wingtip, fin
 ##                      (on the home ledge, the serpent coming), windscreen,
 ##                      propeller (on the gate tower's crown, a pass coming),
-##                      cowl
+##                      cowl (on the belfry floor; the way there on foot:
+##                      --ferry-aboard, scripts/kit_isle/airship_ferry.gd)
 ## A script run (--script: the tests, the tools) starts repaired unless it
 ## asks for the arc with --plane-arc, so a test that flies from the parked
 ## plane still flies; so does the packaged self-check (--verify-desktop-build,
