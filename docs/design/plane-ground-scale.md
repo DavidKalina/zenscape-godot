@@ -214,6 +214,9 @@ the walker's eye under an arch, and the far island's gothic gate.
 
 ## World spacing (feature/world-spacing): sizes before the opening ratio
 
+The chase camera at these sizes (the plane always in view, game speed
+1.15x): docs/design/flight-camera.md.
+
 The user flew `--wanderer-scale=1 --plane-scale=2.0 --plane-ground-scale=1`
 and found the walker at 0.83 "too damn small" and the openings too tight.
 This round puts the walker back to his full size, keeps the bigger plane,

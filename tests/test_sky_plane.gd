@@ -16,6 +16,7 @@ var failures := 0
 
 func _initialize() -> void:
 	_cruise()
+	_game_speed()
 	_never_stalls()
 	_throttle()
 	_turns()
@@ -47,6 +48,33 @@ func flying() -> SkyPlane:
 
 func finite(v: Vector3) -> bool:
 	return is_finite(v.x) and is_finite(v.y) and is_finite(v.z)
+
+## The game's plane (`use_game_speed`) cruises GAME_SPEED times quicker and
+## turns as much quicker, so its turn radius stays the toy's.
+func _game_speed() -> void:
+	var radius := func(plane: SkyPlane) -> float:
+		fly(plane,4.0,{})
+		fly(plane,1.0,{"turn":-1.0})
+		var t := 0.0
+		var h0 := float(plane.heading)
+		while t < 1.0:
+			plane.step(DT,{"turn":-1.0},Callable(self,"air"))
+			t += DT
+		return float(plane.speed)*t/absf(angle_difference(h0,float(plane.heading)))
+	var toy := flying()
+	var game := flying()
+	game.use_game_speed()
+	check(is_equal_approx(game.cruise(),SkyPlane.CRUISE_SPEED*SkyPlane.GAME_SPEED),"The game's cruise is GAME_SPEED times the toy's (%.1f m/s)" % game.cruise())
+	fly(game,6.0,{})
+	check(absf(game.speed-game.cruise()) < 0.5,"And it settles to it (%.1f m/s)" % game.speed)
+	var r_toy: float = radius.call(toy)
+	var r_game: float = radius.call(flying_game())
+	check(absf(r_game/r_toy-1.0) < 0.05,"Its turn radius stays the toy's (%.1f m to %.1f m)" % [r_game,r_toy])
+
+func flying_game() -> SkyPlane:
+	var plane := flying()
+	plane.use_game_speed()
+	return plane
 
 ## Left alone it holds its cruise, level, and an island goes by in seconds.
 func _cruise() -> void:
