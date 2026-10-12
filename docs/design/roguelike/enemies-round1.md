@@ -20,7 +20,9 @@ placeholder sound. Rules and numbers come from ideas-enemies.md.
     field carries him with it.
   - Hooks to override: `default_knobs(n)`, `_size(n)`, `_art(root)`,
     `think(delta)`, `harmful()`, `bumped()`, `landed()`, `pushed(speed)`,
-    `hits_pilot(m)`. Stun ("stun" state) is in the base.
+    `hits_pilot(m)`, `_air_pose(delta)`. `_part(size, at, tinted, colour,
+    parent)` returns the mesh and can hang it on a pivot. Stun ("stun"
+    state) is in the base.
 - `scripts/enemies/enemy_field.gd`: steps all enemies from the character
   study's `foot_pieces` hook (same pattern as foot_pieces.gd), supplies
   `numbers()` (run, walk, head height, jump, gravity, radius, ...) and the
@@ -41,107 +43,157 @@ placeholder sound. Rules and numbers come from ideas-enemies.md.
 
     godot --path . res://studies/enemy_yard.tscn -- --no-title --enemy=ram
 
-A 24 x 29 m isle, open edges, a 1.2 m orange-lipped ledge along the north
-side. You start 11 m south of the ram, facing it. F1 shows the ram's state.
-R resets you and the ram. Stand on its line: it turns, paws (orange), charges.
-Sidestep and it sails off the south edge; get on the ledge and it stuns on the
-wall (2.5 s, a platform); slide into it from the side to throw it.
+The arena (`studies/enemy_yard.gd`): a 24 x 26 m isle with open rims all
+round (every rim hangs: step off slowly), open ground in the middle, a 2.5 m
+wide, 9 m long spit off the south rim (stand at its tip: any late dodge
+there sends it off the end, but a slide aside goes off with it unless you
+hang), two low boulders to bait it into (a wall stun), the orange-lipped
+ledge 1.2 m up along the north side (out of its reach), and west an islet
+over a 2.5 m gap (it won't charge across). You start 10 m south of the ram,
+facing it. F1 shows its state. R resets you and the ram. The enemies' sound
+calls play short synthesized placeholders (huff, paw thump, hooves, snort,
+scrape, scrabble, bellow, thud).
+
+## The bull (feature/enemy-ram, enhance/ram-bull)
+
+"You're the red flag." One bull, its states in order:
+
+- **idle**: wanders at `wander_speed`, turning back from every edge.
+- **notice**: he is within `notice`, inside `sight`, at a height it can
+  reach and with no gap in the ground between them: it stops, its head comes
+  up, it huffs and warms in colour, and turns to face him. Too close for a
+  run-up (`room`), it backs off facing him (never over a lip).
+- **tell** (`tell`, a second go `retell`): `scrapes` scrapes of the front
+  right hoof, each a dust kick and a paw thump; the head sinks and the body
+  heats to orange; it stops aiming for the last `lock`.
+- **charge**: hooves sound, winds up over `wind_up` to `charge_speed`
+  (run x 1.6), dust trailing, and HOMES: it turns at `chase_turn` toward
+  where he will be (his pace led on; off at more than a stroll he is reckoned
+  to keep running at his run). An early dodge is followed and hit. Short of
+  the commit it still sees the ground (a lip ahead is a safe stop).
+- **commit**: `commit` s (0.7) from its horns reaching him, his own pace
+  counted (so a fleeing pilot is locked on later and closer): the head snaps
+  onto his lead point (at most `lock_on` rad) and drops, it snorts, a dust
+  kick, it goes deep red. The line is now set; this is the cue to dodge.
+- **skid**: it lost him (more than `lose_angle` off its heading, or he is
+  over its horns): a big dust spray and a scrape, sliding on along its line,
+  braking so that from full speed it stops in `kill_band` m, its front
+  swinging round to him. If the rim is inside the distance it needs at the
+  pace it lost him at, it can't stop.
+- **teeter**: front feet at the lip, scrabbling and rocking for `teeter` s,
+  then a bellow and it tips over, nose first. A committed charge that meets a
+  lip (he dropped into a hang under it) teeters too.
+- **dig**: dug in, coming round to face him; winded (`stun_hit`) if it hit
+  him, else straight back to notice (no beat) and a short retell.
+
+Edge rules: idle it never walks off; a skid it did not lose him in (it hit
+him, he went out of range `give_up`, it ran `charge_dist`, or he dropped out
+of reach before it committed) stops dead at a lip; only a committed charge or
+a skid that lost him at speed near a rim goes over. Hit rules: only the
+horns hurt (the front `horns` share of its length, while charging or
+committed, his feet under `hop` of its height); a pilot hanging from a rim is
+never touched; moving faster than a walk the body is not solid, so a jump
+over it lands behind it rather than riding its back over the rim. Slow or
+stunned it is a stone to stand on, and a slide or long jump into it
+(`push_speed`) knocks it, off a rim if it is near one.
+
+### What was broken in play (found driving the real pad input)
+
+Measured by playing the old ram through the study's own input path (left
+stick axes, A, LT through the InputMap) rather than by setting velocities:
+
+- A real power slide never dodged it: from a run at it, every slide was hit.
+  The old slide test set his sideways pace directly.
+- An early dodge was not punished: running out of its line 1.2 s before
+  contact always worked, because homing on where he *is* can't catch a pilot
+  who keeps running. Now it leads him, and the head locks on at the commit.
+- The jump window was 0.15 s (0.10-0.25 s before contact); landing late on
+  its back rode it (over the rim with it).
+- A miss right beside him in the open left it too close to tell again, and
+  it wandered into him; now it backs off for a run-up.
+- Layers of fixes (a skid that hurt above `hurt_speed`, `lip_pace`, a
+  separate homing/commit flag) are gone: one state machine, one stopping
+  rule (`kill_band`), one hit rule (the horns).
+
+Not fixable here (the motor is outside these files): from a standstill, LT
+held with the stick is a crouch, not a slide (the slide needs his run's pace
+first, `LONG_PACE` 3 m/s), so the power-slide dodge is "stick across, then
+LT a beat later". Sliding carves at most pace / 2 rad/s, so a slide straight
+out of a flight from it barely leaves its line.
+
+### Dodge windows (measured, real input, standing 2 m from the rim)
+
+Seconds before its horns reach him when the dodge is begun (`tau`, his pace
+counted); the cue (commit) comes at 0.7 s.
+
+| dodge | works | too early | too late |
+|---|---|---|---|
+| jump (A) | 0.05-0.35 s | 0.4 s or more: he comes down on its horns | at contact |
+| run out of its line (stick across) | 0.3-0.8 s | 1.0 s or more: led and hit | under 0.3 s |
+| power slide (stick across, LT once running) | 0.3-0.8 s | 1.0 s or more: hit | under 0.3 s |
+| drop into a rim hang (ease off the rim) | 0.35-0.8 s: it goes over his hands | 1.0 s or more: it gives up short of the lip, no hit | under 0.35 s |
+| fleeing toward the rim, then jump | 0.05-0.35 s | 0.4 s or more: hit | at contact |
+| fleeing, then turn out of its line | 0.35-0.5 s (0.6-1.0 s: a miss, met too far from the rim) | 1.2 s: hit | under 0.35 s |
+| fleeing, then slide with the stick across (carve) | 0.6-0.7 s only | 0.8 s or more: hit | under 0.6 s |
+| running at it, then slide carving aside | 0.4-0.6 s: a miss | 0.7 s or more: hit | under 0.4 s |
+
+Kill band: a late jump or run aside sends it over with him up to 2.0 m from
+the rim; 2.4 m out it stops short and comes again (`kill_band` 1.9 m of
+stopping from full speed, plus its half length and the lip).
 
 ## Ram knobs and defaults (n = pilot numbers: run 4.8, walk 2.4, head 1.12, jump 0.8)
 
 | knob | default | meaning |
 |---|---|---|
-| notice | run x 2.4 = 11.5 m | sees him this far |
-| sight | 1.2 rad | half-angle it notices in (sneak up from behind) |
-| line_angle | 0.14 rad | how on-its-line he must be to start the tell |
-| turn | 2.6 rad/s (was 1.8) | turning to aim |
-| tell / lock | 0.6 s / 0.2 s (was 0.8 / 0.3) | paw time; it stops aiming for the last `lock` |
-| charge_speed / wind_up | run x 1.6 = 7.7 m/s / 0.5 s (was 0.7) | top speed; it homes (bullfight, below) |
-| chase_turn | 2.6 rad/s | how fast the charge turns toward him while homing |
-| commit | 0.4 s (x top speed = 3.1 m) | from this far out the line is set: the late-dodge window |
-| lose_angle | 1.3 rad | he is this far off its heading: passed, it brakes into the skid |
-| give_up | run x 3.6 = 17 m | farther than this it gives up (and is safe at a lip) |
-| lip_pace | walk = 2.4 m/s | a skid slower than this stops dead at a lip; faster, having lost him, it cannot |
-| hop | 0.4 | his feet over this share of its height are over it (a jump clears) |
-| charge_dist | head x 13 = 14.6 m | cap on one charge (then it gives up) |
-| overrun | (removed) | replaced by homing |
-| brake / lip_brake / lip | run x 2.2 = 10.6 (was x 3) / run x 5 / head x 0.15 | skid decel; a safe or slow skid brakes harder and stops dead at a lip |
-| skid_turn | 4.5 rad/s | how fast its front swings round to him while it slides |
-| hurt_speed | run x 0.9 | a sliding ram at this pace or more still shoves him |
-| dig / retell | 0.25 s / 0.35 s | dug in after the skid, then a short second tell and on again |
-| shove_out / shove_up | run x 1.9 = 9.1 m / 0.5 m | the knock, via `knock_velocity` |
-| push_speed / push_carry | run x 1.1 / 0.85 | his pace to throw it / share it takes |
-| stun_miss / hit / wall / knock | 1.2 / 0.6 / 2.5 / 1.5 s | stuns; a miss no longer stuns (skid, dig, tell again): stun_miss is only for landing from a fall; hit stuns after its skid |
-| wander_speed, edge_look, rest | walk x 0.5, head x 0.8, 0.8 s | idle wander turns back from edges |
+| wander_speed, rest, edge_look | walk x 0.5, 0.8 s, head x 0.8 | idle wander; turns back from edges |
+| notice / sight | run x 2.4 = 11.5 m / 1.2 rad | sees him this far, in this half-angle |
+| line_angle / turn | 0.14 rad / 2.6 rad/s | on its line to tell; turning to aim |
+| notice_beat | 0.35 s | head up, huff, before the tell |
+| room | head x 1.5 = 1.7 m | the run-up it backs off for (past its nose) |
+| tell / retell / lock / scrapes | 0.75 / 0.4 / 0.2 s / 3 | paws; it stops aiming for the last `lock` |
+| charge_speed / wind_up | run x 1.6 = 7.7 m/s / 0.5 s | top speed and its build-up |
+| chase_turn / lead | 2.6 rad/s / 1.2 s | homing on where he will be, led at most this long |
+| commit / lock_on | 0.7 s / 0.6 rad | time to reach him when the line is set; the snap onto his lead then |
+| lose_angle | 1.3 rad | off its heading this far: passed (or he is over its horns) |
+| kill_band | head x 1.7 = 1.9 m | stopping distance from full speed (the skid's braking) |
+| lip / lip_brake | head x 0.15 / run x 5 | the lip margin; a safe skid's hard stop at a lip |
+| teeter | 0.45 s | scrabbling at the lip before it goes |
+| skid_turn / dig | 4.5 rad/s / 0.3 s | its front swinging round in the skid; dug in |
+| give_up / charge_dist | run x 3.6 = 17 m / head x 13 = 14.6 m | it gives up (a safe stop) |
+| horns / hop | 0.35 / 0.25 | the front share of its length that hurts; feet over this share of its height are over it |
+| shove_out / shove_up | run x 1.9 = 9.1 m / head x 0.45 | the knock, via `knock_velocity` |
+| push_speed / push_carry | run x 1.1 / 0.85 | his pace to throw it / share it takes (base) |
+| stun_hit / stun_wall / stun_miss / stun_knock | 0.6 / 2.5 / 1.2 / 1.5 s | winded after a hit; into a wall; landing from a fall; pushed |
 
-Body: height = jump x 0.9 (0.72 m, a plain jump clears it), width = height,
-length = height x 2.2. Cost 3, tags knockable/pushes/loud.
-
-## The skid (feature/ram-skid)
-
-After its reach (or a hit) the ram skids like the pilot thrown back at a run:
-it keeps sliding along its line, braking, while its front swings round to him,
-dust puffs off its feet and a `ram_scrape` sound; then it digs in and, if he is
-still in notice, tells again (`retell`) and goes again. A miss is not a stun
-any more: a lazy sidestep is chased, a late sharp juke is the counter. It can
-be slid into in the skid or the dig. Fix: the "no hit" bug was that a ram in
-its skid was never harmful, and it began braking a whole stopping distance
-before a lip or its reach, so a pilot near an edge or past its brake point was
-safe; it now hurts while sliding over `hurt_speed` and brakes harder only at
-a lip.
-
-## The bullfight (feature/ram-bull)
-
-You are the red flag. After the tell and wind-up the charge HOMES: it turns
-toward him at `chase_turn` (2.6 rad/s), so an early sidestep is followed and
-punished. At `commit` s (0.4 s = 3.1 m at top speed) from him the head is down
-and the line is set, so only a LATE dodge beats it: a jump over it, a power
-slide aside, a drop into a rim hang. It looks at him, not the ground: charging
-it never checks an edge. Once he is more than `lose_angle` off its heading (it
-was passed) it brakes into the old skid (swing round, dig, retell). If a rim is
-inside its stopping distance it cannot stop and goes over; that is the only
-way it dies. A miss in the open costs it nothing: it skids round and comes
-again.
-
-- Stopping distance at full speed: charge_speed^2 / (2 brake) = 2.8 m. A skid
-  slower than `lip_pace` (2.4 m/s) still stops dead at a lip, so the real kill
-  band is (v^2 - lip_pace^2) / (2 brake) = 2.5 m from its middle to the rim at
-  the moment it loses him, about 1.7 m from its nose. In play: dodge within
-  roughly 2 m of a rim.
-- It does not go over when it hit him, or gave up (he is out of range, or it
-  has run `charge_dist`): those skids stop at the lip as before. Idle, it still
-  turns back from every edge.
-- Late-dodge windows measured in the test yard (seconds before its nose
-  reaches him, full speed): jump 0.10-0.25 s (a 0.15 s window; earlier he lands
-  in front of it, later he is run down); slide aside 0.25-0.6 s with the
-  run of it; a standing sidestep is not enough (0.84 m clearance takes ~0.4 s);
-  a rim hang counts from 0.35 s out, any time earlier. Late is the last ~0.25-0.6 s.
-- A pilot hanging from a rim (`on_ledge`) is never touched: it passes over his
-  hands and falls. While charging only its front half hurts, and feet over
-  `hop` of its height (0.29 m) are over it, so a plain jump (0.8 m, ~0.2 s of
-  air above that) can clear its 0.72 m back. Landing late on its back rides it.
-- Still shoves him on contact (a charge, or a skid over `hurt_speed`): dodging
-  too early or not at all near a rim is how he dies.
-- Yard: every rim hangs (step off slowly); the middle is open ground.
+Body: height = jump x 0.9 (0.72 m), width = height, length = height x 2.2;
+greybox torso, shoulders, a head on a pivot (horns, a yellow muzzle), four
+legs. Cost 3, tags knockable/pushes/loud.
 
 ## Test
 
-`tests/test_enemy_ram.gd` (headless): telegraphs then charges; an early sidestep
-is followed and hit; a late jump / late slide near the rim sends it over; a
-late jump in the open: it skids round, tells again, does not fall; a drop into
-a rim hang: it falls and he still hangs; never off an edge with no pilot to
-chase (soak); a standing pilot (also near the lip) is hit and shoved; slid into from the
-side near an edge it goes over. Only this test and the yard load were run.
+`tests/test_enemy_ram.gd` (headless) plays every bout through the study's
+own tick reading the InputMap as the pad drives it (stick axes relative to
+the camera, A, LT); only the start positions are set. Notice, tell, charge,
+commit in order with their sounds and colours, the line locked once
+committed; standing on its line he is knocked; near the rim a late jump (0.1,
+0.2, 0.3 s), a late run aside, a late power slide (0.4, 0.6 s) and a late
+drop into the hang send it over (he still hangs); early jump, run, slide are
+hit, an early hang is waited out; too late is run down; a late jump in the
+open: it skids round, comes again, does not fall; idle soak at four rims (one
+the spit) for 40 s; out-of-range stops at the rim; the ledge is a wall stun;
+across the gap it doesn't charge; a real long jump into its side knocks it
+over the rim; a late jump at the spit's tip sends it off the end. Run with
+it: test_gamepad, the import, a headless load of the yard. Not the suite.
 
 ## Unverified
 
-- Bullfight: the slide test sets his sideways pace directly (a power slide's run-up), not a real run-up; landing late on its back rides it (and over a rim with it); feel of the 0.15 s jump window.
-
-- Feel: the tell length, charge speed, shove distance, the 0.72 m back, the
-  sight cone, whether a dodge reads. Your call; all are knobs.
-- Windowed look, the dust/paw reading, the tint's glow.
-- Pushing the ram by a slide or long jump (`pilot_pushes`), standing on a
-  stunned ram and being carried, and the wall stun are written but have no
-  test. A "landing into it" has no special case: only horizontal pace counts.
-- Wandering is simple (turns back at edges, may jitter at corners).
-- The yard's `lost` is -20; a ram thrown off is gone at that height.
+- Everything visual: the poses (head up, sinking, the commit snap, the
+  skid's sit-back, the teeter's rocking, the nose-first fall), the colours,
+  the dust, and whether the commit reads at a glance. Headless only; no
+  rendered run was asked for.
+- The placeholder sounds are synthesized and played, never heard.
+- Feel on a real pad: the windows above are from scripted input at 60 Hz
+  with the stick at full tilt; a human's reaction to the snort (about
+  0.2-0.25 s) leaves roughly 0.2-0.45 s for the sideways dodges and the last
+  0.3 s for the jump.
+- Riding a stunned ram, and being carried by it, has no test.
