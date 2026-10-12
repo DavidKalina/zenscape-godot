@@ -66,6 +66,15 @@ extends Node3D
 ## else yet. A host may give him a fixed `loop` to fly (the vision greybox,
 ## studies/dragon_vision_study.gd) and turn his idle roars off
 ## (`idle_roars`), so a roar always means he has seen you.
+##
+## The body in flight (docs/design/dragon-spine/round1.md): the spine, neck,
+## head and hind legs on damped springs (`spine`, scripts/dragon_spine.gd,
+## every tuning constant there): each downstroke heaves the chest and the
+## push travels late along the neck and into the hips and tail; turns bend
+## the whole body into them; climbing he beats bigger and reaches, diving he
+## tucks, levelling out he flares; gliding he breathes and shifts; the head
+## held steady against the bob. The tail's rope carries on from the hips as
+## posed (no hinge). Here and on his wake's circuit (`wake_fly`).
 
 signal yielded
 
@@ -152,6 +161,10 @@ var sight := DragonSight.new()
 ## looks for no one.
 var sight_target := Callable()
 const DragonCyclone = preload("res://scripts/dragon_cyclone.gd")
+## His body in flight (docs/design/dragon-spine/round1.md): the spine,
+## neck, head and legs on springs, stepped in `_pose`.
+const DragonSpine = preload("res://scripts/dragon_spine.gd")
+var spine := DragonSpine.new()
 ## His cyclone blast once he spots you (scripts/dragon_cyclone.gd, docs/
 ## design/dragon-cyclone/round1.md): set `cyclone_on` before `setup` to
 ## have it (the vision greybox does); the host applies its knock and air.
@@ -1511,15 +1524,21 @@ static func _beat_fold(p: float) -> float:
 	return sin(PI*(p-DOWN)/(1.0-DOWN))
 
 func _pose(delta: float) -> void:
-	# The wings: a beat blended with the glide (or the dive's tuck).
-	var raise := lerpf(RAISE_GLIDE,_beat_raise(phase),flap_w)
-	var fold := lerpf(0.05,_beat_fold(phase)*0.95,flap_w)
-	var sweep := 0.0
+	# The body's part in the flight (scripts/dragon_spine.gd): springs on
+	# the spine, neck, head and legs, stepped from the beat and the flight.
+	var bob := -BOB*cos(TAU*phase)*flap_w*(1.3 if mode == "climb" else 1.0)
+	spine.step(delta,_clock,phase,DOWN,flap_w,gamma,yaw_rate/MAX_TURN,(_air_pitch+_bump.y)*_free,(_air_roll+_bump.x)*_free,bob)
+	# The wings: a beat (bigger climbing) blended with the glide (or the
+	# dive's tuck: part folded, swept back).
+	var mid := (RAISE_UP+RAISE_DOWN)*0.5
+	var raise := lerpf(RAISE_GLIDE,mid+(_beat_raise(phase)-mid)*spine.beat_gain,flap_w)
+	var fold := lerpf(0.05,_beat_fold(phase)*0.95,flap_w)+spine.fold
+	var sweep := spine.sweep
 	if mode == "dive":
 		var tuck := (1.0-flap_w)*smoothstep(0.2,0.45,-gamma)
 		raise = lerpf(raise,0.32,tuck)
 		fold = lerpf(fold,0.55,tuck)
-		sweep = 0.3*tuck
+		sweep += 0.3*tuck
 	# The grab's flare: wings cupped forward, beating back against the air.
 	sweep -= 0.55*_flare
 	# The tips lag the beat: they bend against the raise's speed.
@@ -1535,7 +1554,6 @@ func _pose(delta: float) -> void:
 	var twist := (_swell*0.02+0.06*sin(_clock*0.9))*still
 	# The body: bobbing against each beat, nodding with it, rolled and
 	# pitched by the air.
-	var bob := -BOB*cos(TAU*phase)*flap_w*(1.3 if mode == "climb" else 1.0)
 	var nod := 0.04*sin(TAU*phase)*flap_w
 	var pitch := gamma*0.75+0.05+nod+(_air_pitch+_bump.y)*_free
 	var body_roll := roll+air_roll
@@ -1555,19 +1573,23 @@ func _pose(delta: float) -> void:
 		_turn("wing_f2."+n,[[Vector3.UP,side*fold*0.15],[Vector3.BACK,side*(_tip_lag*0.5+flex)]])
 		_turn("wing_f3."+n,[[Vector3.UP,side*fold*0.3],[Vector3.BACK,side*_tip_lag*0.4]])
 		_turn("wing_f4."+n,[[Vector3.UP,side*fold*0.45],[Vector3.BACK,side*_tip_lag*0.3]])
-		# The hind legs tucked back under the tail's root; a little swing with
-		# the beat.
-		var swing := 0.06*sin(TAU*phase-0.8)*flap_w
-		# In the flare the legs swing down and forward, claws open, reaching.
-		_turn("hind_upper."+n,[[Vector3.RIGHT,lerpf(-1.5-swing,0.7,_flare)]])
-		_turn("hind_lower."+n,[[Vector3.RIGHT,lerpf(0.9,-0.4,_flare)]])
-		_turn("hind_foot."+n,[[Vector3.RIGHT,lerpf(-0.7,0.5,_flare)]])
+		# The hind legs tucked back under the tail's root, hanging on springs
+		# (`spine.leg`: swinging late with the beat's heave and out of turns,
+		# drawn up in a dive); in the grab's flare they swing down and
+		# forward, claws open, reaching.
+		var hang := spine.leg
+		_turn("hind_upper."+n,[[Vector3.RIGHT,lerpf(-1.5+hang.x,0.7,_flare)],[Vector3.BACK,hang.y*(1.0-_flare)]])
+		_turn("hind_lower."+n,[[Vector3.RIGHT,lerpf(0.9+hang.z,-0.4,_flare)]])
+		_turn("hind_foot."+n,[[Vector3.RIGHT,lerpf(-0.7-hang.z*0.5,0.5,_flare)]])
 	_mouth(delta)
-	# The body arching a little with the beat; the chest breathing.
-	var breath := sin(_clock*TAU*0.18)
-	_turn("chest",[[Vector3.RIGHT,0.03*sin(TAU*phase+0.6)*flap_w]])
-	_set_chest(Vector3(1.0+0.025*breath,1.0,1.0+0.03*breath),delta)
-	_turn("hips",[[Vector3.RIGHT,-0.03*sin(TAU*phase+0.6)*flap_w]])
+	# The spine: the chest and hips bent by the spring chain (the beat's
+	# push, the turn, the climb or tuck, the air); the chest swelling with
+	# each push and breathing.
+	var chest_t := spine.turn_of("chest")
+	var hips_t := spine.turn_of("hips")
+	_turn("chest",[[Vector3.RIGHT,chest_t.x],[Vector3.UP,chest_t.y]])
+	_set_chest(Vector3(1.0+spine.swell,1.0,1.0+spine.swell*1.2),delta)
+	_turn("hips",[[Vector3.RIGHT,hips_t.x],[Vector3.UP,hips_t.y]])
 	# The neck leads into the turn (a spring, so it overshoots a little) and
 	# holds the head level against the pitch, bank and bob; it sways in a
 	# slow S of its own; in a roar it draws back and the head lifts.
@@ -1591,19 +1613,25 @@ func _pose(delta: float) -> void:
 	_look_v += ((look_goal-_look)*3.0-_look_v*2.6)*delta
 	_look += _look_v*delta
 	var head_yaw := _lead+_look.x
-	var level := -pitch*0.7+_look.y
-	var neck_sway := 0.05*sin(TAU*phase-1.2)*flap_w+0.04*sin(_clock*0.37)
+	# The head held level against the flight's pitch (less climbing, as the
+	# neck reaches into it; little diving, in line with the neck) and steady
+	# against the body's nod, the air's pitch and the spine's own sway.
+	var level := -(gamma*0.75+0.05)*0.7*spine.head_level-(pitch-gamma*0.75-0.05)*DragonSpine.HEAD_STEADY+_look.y
+	var neck_sway := 0.04*sin(_clock*0.37)
 	var slither := 0.05*sin(_clock*0.29+0.8)
-	_turn("spine.2",[[Vector3.RIGHT,-0.06]])
-	# Each neck bone, root to head: the S's bend (root up, head end down),
-	# its share of the lead, the slow sway passing up it, and the roar's
-	# draw back.
+	var spine2 := spine.turn_of("spine.2")
+	_turn("spine.2",[[Vector3.RIGHT,-0.06+spine2.x],[Vector3.UP,spine2.y]])
+	# Each neck bone, root to head: the S's bend (root up, head end down;
+	# straightened in a dive), its share of the lead, the slow sway passing
+	# up it, the spring chain's bend (the beat's wave, the turn, the reach)
+	# and the roar's draw back.
 	for i in range(_neck_n):
 		var u := float(i)/maxf(_neck_n-1,1)
-		var bend := lerpf(0.04,-0.08,u)+_rear*lerpf(0.2,-0.14,u)
+		var bend := lerpf(0.04,-0.08,u)*spine.neck_s+_rear*lerpf(0.2,-0.14,u)
 		var wave := neck_sway*sin(PI*u+0.3)+slither*cos(PI*u)
-		_turn("neck.%d" % i,[[Vector3.RIGHT,bend+wave],[Vector3.UP,head_yaw*1.0/_neck_n+slither*0.6*(u-0.5)]])
-	_turn("head",[[Vector3.RIGHT,0.08+level-neck_sway*0.6+_rear*0.3],[Vector3.UP,head_yaw*0.2],[Vector3.BACK,-body_roll*0.5]])
+		var chain := spine.turn_of("neck.%d" % i)
+		_turn("neck.%d" % i,[[Vector3.RIGHT,bend+wave+chain.x],[Vector3.UP,head_yaw*1.0/_neck_n+slither*0.6*(u-0.5)+chain.y]])
+	_turn("head",[[Vector3.RIGHT,0.08*spine.neck_s+level-neck_sway*0.6+_rear*0.3+spine.head_steady.x],[Vector3.UP,head_yaw*0.2+spine.head_steady.y],[Vector3.BACK,-body_roll*0.5]])
 	_tail(delta)
 
 ## The mouth, all on springs: breathing (a slight part and close), chews
@@ -1682,11 +1710,20 @@ func _mouth(delta: float) -> void:
 ## length from the one before and pulled softly toward its rest line, so
 ## it trails the flight's curve, swings late out of turns and ripples with
 ## the bob. The bones are then turned to lie along it.
+## Round 11 (docs/design/dragon-spine/round1.md): its rest line and the
+## bones' turns are taken from the hips as posed, so it carries on the
+## spine's bend with no hinge where it leaves the hips, and in a turn its
+## rest line curls on into the turn (`spine.tail_curl`, a segment's share
+## more each segment out) and droops in a flare.
 func _tail(delta: float) -> void:
 	for i in range(_tail_n): _turn("tail.%d" % i,[])
 	var sk := skeleton.global_transform
-	var start := sk*(skeleton.get_bone_global_pose(_bone["hips"])*(skeleton.get_bone_global_rest(_bone["hips"]).affine_inverse()*_tail_start))
-	var basis := sk.basis
+	var hips_pose := skeleton.get_bone_global_pose(_bone["hips"])
+	var hips_rest := skeleton.get_bone_global_rest(_bone["hips"])
+	var start := sk*(hips_pose*(hips_rest.affine_inverse()*_tail_start))
+	var basis := sk.basis*(hips_pose.basis.orthonormalized()*hips_rest.basis.orthonormalized().inverse())
+	var curl := spine.tail_curl if state != "clinging" else 0.0
+	var droop := spine.tail_droop if state != "clinging" else 0.0
 	if not _rope_ready:
 		_rope = [start]
 		for i in range(_tail_n): _rope.append(_rope[i]+basis*((_seg_dir[i] as Vector3)*_seg_len[i]))
@@ -1699,7 +1736,8 @@ func _tail(delta: float) -> void:
 		var v := (p-_rope_prev[i])*0.94
 		_rope_prev[i] = p
 		p += v
-		var len_w := (basis*((_seg_dir[i-1] as Vector3)*_seg_len[i-1]))
+		var bent := Basis(Vector3.UP,curl*float(i))*Basis(Vector3.RIGHT,droop*float(i)/n)
+		var len_w := (basis*(bent*(_seg_dir[i-1] as Vector3)*_seg_len[i-1]))
 		# Its rest line from the point before, firmer near the hips; a slow
 		# wave down it, as a whip in the air.
 		var rest := _rope[i-1]+len_w
