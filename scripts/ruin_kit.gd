@@ -117,6 +117,9 @@ const TOY_ARCH_SPAN := 4.2
 static var ARCH_SPAN: float = WorldScale.opening(TOY_ARCH_SPAN)
 const SPRING := 3.2
 const ARCH_PITCH := 1.0
+## The arch's buttresses: their face out from the pier's middle, and their
+## foot's depth out from that face.
+const ARCH_BUTTRESS := Vector2(0.45,2.35)
 ## The arch's moulded orders: each order's radial depth, the inner one set
 ## back RECESS from the faces, and the hood mould over them.
 const ORDER := 0.32
@@ -498,6 +501,12 @@ static func pier(seed_value: int, weathered := 0.0) -> Node3D:
 	_rubble(b,1.5,int(round(weathered*b.rng.randf_range(3.0,6.0))))
 	return b.finish()
 
+## The pointed arch's footprint on its ground, about its middle: half its
+## width (buttress toe to toe, so it grows with ARCH_SPAN) and half its depth
+## (the buttresses' or the piers' sub-base, the wider).
+static func arch_foot() -> Vector2:
+	return Vector2(ARCH_SPAN*0.5+ORDER+ARCH_BUTTRESS.x+ARCH_BUTTRESS.y,maxf(BUTTRESS_WIDTH,SUB_BASE.y)*0.5)
+
 ## 2. A pointed arch on two clustered piers: equilateral, of two moulded
 ## orders under a hood mould, the spandrels coursed up into a steep gable
 ## over it; stepped buttresses either side give the way up to the
@@ -515,8 +524,8 @@ static func arch(seed_value: int, weathered := 0.0) -> Node3D:
 	for side: float in [-1.0,1.0]:
 		_pier(b,Transform3D(Basis.IDENTITY,Vector3(side*px,0.0,0.0)),SPRING,INF,false)
 		# The buttress at its outer side, stepped up to the springing.
-		var pose := Transform3D(Basis(Vector3.UP,side*PI*0.5),Vector3(side*(px+0.45),0.0,0.0))
-		_buttress(b,pose,[[SET_OFF,2.35],[SPRING,1.25]],BUTTRESS_WIDTH,weathered > 0.5 and b.rng.randf() < 0.5)
+		var pose := Transform3D(Basis(Vector3.UP,side*PI*0.5),Vector3(side*(px+ARCH_BUTTRESS.x),0.0,0.0))
+		_buttress(b,pose,[[SET_OFF,ARCH_BUTTRESS.y],[SPRING,1.25]],BUTTRESS_WIDTH,weathered > 0.5 and b.rng.randf() < 0.5)
 	var crown_lost := 0
 	if weathered > 0.35 and b.rng.randf() < 0.75*weathered: crown_lost = 1+int(b.rng.randf()*2.0*weathered)
 	var lost_side := -1.0 if b.rng.randf() < 0.5 else 1.0
@@ -2441,6 +2450,10 @@ class Build extends RefCounted:
 	var tops: Array = []
 	## Strands asked to hang free: [at, length, free, from height].
 	var hangs: Array = []
+	## Boxes (the piece's straight frame) no strand of growth hangs into: a
+	## flown lane or corridor kept clear (`kept_clear`; a strand stops at
+	## one).
+	var clear: Array[AABB] = []
 	## Applied to every block (a piece turned or leaning as a whole).
 	var frame := Transform3D.IDENTITY
 	## Blocks are cut off level under this height (the piece's frame, y):
@@ -2539,6 +2552,12 @@ class Build extends RefCounted:
 	## The ground's height at (x, z) in the piece's frame: 0 with no terrain.
 	func floor_at(x: float, z: float) -> float:
 		return float(terrain.call(x,z)) if terrain.is_valid() else 0.0
+
+	## Whether `p` is in a box kept clear of growth (`clear`).
+	func kept_clear(p: Vector3) -> bool:
+		for box: AABB in clear:
+			if box.has_point(p): return true
+		return false
 
 	func _init(seed_value: int, amount: float, label: String) -> void:
 		rng.seed = hash([seed_value,label,"gothic"])

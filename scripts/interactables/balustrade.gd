@@ -164,6 +164,10 @@ static func _grand(side: float) -> Dictionary:
 ## the line, the surface he slides.
 func _build() -> Node3D:
 	var b := RuinKit.Build.new(seed_value,weathered,"Balustrade")
+	# Its ground is the treads (`floor_at`): a baluster whose top the wear
+	# broke off the coping still stands on a step, not on nothing (RuinKit
+	# Build `check_floating`, tests/test_collision_audit.gd).
+	b.terrain = func(x: float, z: float) -> float: return floor_at(Vector3(x,0.0,z))
 	body = null
 	var walls: Array = []
 	for i in range(rail.size()-1):

@@ -275,12 +275,15 @@ func _build_airships() -> void:
 			envelope.shape = capsule
 			envelope.transform = Transform3D(Basis(Vector3.RIGHT,PI*0.5),AirshipBuild.ENVELOPE_AT+Vector3(0.0,0.0,(part.x+part.y)*0.5))
 			body.add_child(envelope)
-		var gondola := CollisionShape3D.new()
-		var box := BoxShape3D.new()
-		box.size = Vector3(AirshipBuild.HULL.x*2.0,AirshipBuild.HULL.y+1.6,AirshipBuild.HULL.z*2.0)
-		gondola.shape = box
-		gondola.position = Vector3(0.0,(1.6-AirshipBuild.HULL.y)*0.5,0.0)
-		body.add_child(gondola)
+		# The gondola as drawn (AirshipBuild `gondola_hulls`: the hull and
+		# the cabin); one box round both stood out over the bow's taper
+		# and the open deck.
+		for points: PackedVector3Array in AirshipBuild.gondola_hulls():
+			var gondola := CollisionShape3D.new()
+			var hull := ConvexPolygonShape3D.new()
+			hull.points = points
+			gondola.shape = hull
+			body.add_child(gondola)
 		ship._ship.add_child(body)
 		var points: Array = route[0]
 		var length := 0.0

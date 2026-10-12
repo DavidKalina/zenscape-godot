@@ -29,11 +29,13 @@ func run() -> void:
 				print("  ",name,": ",CollisionAudit.line(f))
 		print("collision audit: %s: %d shapes checked, %d stand off the drawn stone; tallest hull %.2f m (SARSEN %.2f, TRILITHON %.2f)" % [name,int(named[name].shapes),hits,float(named[name].tallest),RuinKit.SARSEN.y,RuinKit.TRILITHON.y])
 	var by_isle := {}
+	var by_isle_far := {}
 	for f: Dictionary in found:
 		var parts := str(f.path).split("/")
 		var key := "/".join(parts.slice(0,mini(3,parts.size()-1)))
 		if key.begins_with("@"): key = "(scene's own boxes)"
 		by_isle[key] = int(by_isle.get(key,0))+1
+		if float(f.worst) >= 1.0: by_isle_far[key] = int(by_isle_far.get(key,0))+1
 	var floaters: Array = []
 	for f: Dictionary in RuinKit.Build.floaters:
 		var root_node: Node3D = (f.root as WeakRef).get_ref()
@@ -47,8 +49,10 @@ func run() -> void:
 	print("floating stones: %d" % floaters.size())
 	for k: String in by_label: print("  %-50s %d" % [k,by_label[k]])
 	for i in range(mini(most,floaters.size())): print("  float ",floaters[i][0]," ",(floaters[i][1] as AABB).position.snapped(Vector3.ONE*0.1)," size ",(floaters[i][1] as AABB).size.snapped(Vector3.ONE*0.1))
-	print("collision audit: %d shapes stand off the drawn stone" % found.size())
-	for k: String in by_isle: print("  %-30s %d" % [k,by_isle[k]])
+	var far := 0
+	for f: Dictionary in found: if float(f.worst) >= 1.0: far += 1
+	print("collision audit: %d shapes stand off the drawn stone, %d by a metre or more" % [found.size(),far])
+	for k: String in by_isle: print("  %-30s %d (%d by a metre or more)" % [k,by_isle[k],int(by_isle_far.get(k,0))])
 	for i in range(mini(most,found.size())): print("  ",CollisionAudit.line(found[i]))
 	quit()
 

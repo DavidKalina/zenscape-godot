@@ -579,7 +579,7 @@ var night_lights: Node3D = null
 ## Where the lanterns stand (x, z): a pair behind the parked plane, the
 ## grand stair's foot and head, the path from the plane to it, the circle's
 ## way in, the aqueduct's head, the heel stone, and either side of the
-## gate on the far island.
+## gate on the far island (Art.GATE, which follows the aqueduct's run).
 func night_lamp_spots() -> Array:
 	var spots: Array = []
 	if parked:
@@ -589,6 +589,13 @@ func night_lamp_spots() -> Array:
 			var p := parked_at-forward*6.5+right*3.2*side
 			spots.append(Vector3(p.x,parked_at.y+3.5,p.z))
 	spots.append_array(NIGHT_LAMPS)
+	# The circle's way in: on the summit's east side, NIGHT_WAY_IN degrees
+	# round from the drift's landing (its last stone onto the summit at 30
+	# degrees, 11 m out), so a hop up or down the drift doesn't land on it.
+	var way_in := Art.at_polar(NIGHT_WAY_IN.x,NIGHT_WAY_IN.y)
+	spots.append(Vector3(way_in.x,44.0,way_in.y))
+	# The gate on the far island (Art.GATE), either side, in front of it.
+	for side: float in [-1.0,1.0]: spots.append(Vector3(Art.GATE.x+3.2*side,33.5,Art.GATE.y+2.3))
 	return spots
 
 ## A Vector3 spot is x, the top of its ray down, z: under the floating
@@ -598,13 +605,12 @@ const NIGHT_LAMPS := [
 	Vector3(88.6,33.5,-3.4),Vector3(88.6,33.5,3.4),Vector2(77.5,2.8),
 	# The path from the plane toward the stair.
 	Vector3(92.0,33.5,2.5),
-	# The stone circle's way in (Art.HILL 61, 0), on its east side.
-	Vector3(71.5,44.0,-5.5),
 	# The aqueduct's head and the heel stone (Art.HEEL 118, 0).
 	Vector3(105.5,33.5,3.5),Vector3(115.5,33.5,1.8),
-	# The gate on the far island (its arch at 100, -62.5), either side.
-	Vector3(96.8,33.5,-60.2),Vector3(103.2,33.5,-60.2),
 ]
+## The circle's way-in lantern (Art.at_polar: degrees, m from Art.HILL).
+## Main stood it at 27.6 degrees, on the drift's landing (30, 11 m out).
+const NIGHT_WAY_IN := Vector2(15.0,11.85)
 
 ## The kit's on-foot hint, and the dragon's line while it holds the treasure.
 func _foot_text() -> String:

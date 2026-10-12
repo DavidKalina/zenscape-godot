@@ -540,15 +540,18 @@ func _isle_route() -> void:
 		if m.grounded:
 			far = m.feet
 			break
-	check(far != Vector3.INF and far.z < -40.0 and far.y > TOP_Y-0.5,"...and lets go onto the far island (%s)" % far)
-	# The ferry, from the far rim when it comes in.
+	check(far != Vector3.INF and far.z < Route.far_rim(far.x) and far.y > TOP_Y-0.5,"...and lets go onto the far island (%s)" % far)
+	# The ferry, from the far rim when it comes in (its ends and the spot
+	# as the route lays them out from the isle).
 	spot = Route.SPOTS.ferry
+	var ferry_near: float = (Route.FERRY[0] as Vector3).z
+	var ferry_far: float = (Route.FERRY[1] as Vector3).z
 	study.place(spot[0],spot[1])
 	var ferry: Node3D = pieces.slabs[0]
 	var boarded := false
-	for t in range(1200):
-		var near: bool = ferry.transform.origin.z < -40.3
-		_input(Vector2(0.0,1.0) if near or not m.grounded else Vector2.ZERO,_jumping_if(near and m.feet.z > -42.3))
+	for t in range(ceili(Route.FERRY_PERIOD*1.8/DT)):
+		var near: bool = ferry.transform.origin.z < ferry_far+0.5
+		_input(Vector2(0.0,1.0) if near or not m.grounded else Vector2.ZERO,_jumping_if(near and m.feet.z > (spot[0] as Vector3).z+1.2))
 		_tick(1)
 		if pieces.on == ferry:
 			boarded = true
@@ -556,11 +559,11 @@ func _isle_route() -> void:
 		if m.feet.y < 20.0: break
 	_input(Vector2.ZERO)
 	var stayed := true
-	for k in range(600):
+	for k in range(ceili(Route.FERRY_PERIOD*0.5/DT)+120):
 		_tick(1)
 		if pieces.on != ferry: stayed = false
-		if ferry.transform.origin.z > -27.5: break
-	check(boarded and stayed and m.feet.z > -29.5,"From the far rim he boards the ferry and rides it back across (z %.1f)" % m.feet.z)
+		if ferry.transform.origin.z > ferry_near-0.5: break
+	check(boarded and stayed and m.feet.z > ferry_near-2.5,"From the far rim he boards the ferry and rides it back across (z %.1f)" % m.feet.z)
 
 ## Run from where he stands to the isle's first rope and jumped at it
 ## (`jump`; else run straight into it): whether he took hold.

@@ -114,7 +114,7 @@ func _crowns(l: Dictionary) -> void:
 	var low: Dictionary = l.spires.low
 	var arch: Node3D = RuinKit.arch(65,0.55)
 	var out := (Spires.HERO-(low.c as Vector2)).normalized()
-	var at: Vector2 = (low.c as Vector2)+out*1.2
+	var at: Vector2 = (low.c as Vector2)+out*float(Spires.ARCHED.low)
 	arch.transform = Transform3D(facing(out),Vector3(at.x,Spires.top_height(low,at)-0.1,at.y))
 	art.add_child(arch)
 	var fh: Dictionary = l.spires.fin_high

@@ -127,7 +127,14 @@ func _drift() -> void:
 	var speed := float(plane.speed)
 	_fly(0.1,{})
 	check(float(plane.speed) > speed+0.5,"Letting go gives the boost (%.1f to %.1f m/s)" % [speed,plane.speed])
-	check(study.air != null and study.air._player.playing and float(study.air._hum_goal) > 0.0,"Flying, the plane sounds: wind and the propeller's hum")
+	# The isle's sound (scripts/kit_isle/kit_audio.gd, sound round 1) voices
+	# the plane now; GlideAir only draws the streaks (`voiced` off).
+	var audio = study.audio
+	if audio != null:
+		for i in range(30):
+			study.fly_step(DT,{})
+			audio._process(DT)
+	check(audio != null and float(audio.rush.goal) > 0.0 and float(audio.engine.goal) > 0.0,"Flying, the plane sounds: the air's rush and the engine (%s)" % ("no audio" if audio == null else "%.3f, %.3f" % [audio.rush.goal,audio.engine.goal]))
 
 ## Flown straight at stone found round the start: bumped off and flying on.
 func _bump() -> void:

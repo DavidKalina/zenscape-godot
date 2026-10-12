@@ -176,6 +176,16 @@ static func arch_broken() -> bool:
 ## A breach's corridor floor over the ground: BREACH_FLOOR, or over the
 ## outer columns' carved feet (plinth, base and niche band) when the
 ## corridor is wider than the room between those (a big plane's THREAD).
+## A flyable breach's corridor in a bay (straight frame): `kind`, its wall's
+## side `s` (+1 or -1), the ground `mid` there. From the lane through the
+## wall to BREACH_OUT past it, BREACH_HALF either side of the bay's middle.
+static func breach_box(kind: String, s: float, mid: float) -> AABB:
+	var base := mid+breach_floor(kind)
+	var top := mid+float(BREACH_TOP.get(kind,0.0))
+	var inside := LANE.x if s > 0.0 else -(WALL_Z+WALL_THICK*0.5+BREACH_OUT)
+	var outside := WALL_Z+WALL_THICK*0.5+BREACH_OUT if s > 0.0 else LANE.y
+	return AABB(Vector3(BAY*0.5-BREACH_HALF,base,inside),Vector3(BREACH_HALF*2.0,top-base,outside-inside))
+
 static func breach_floor(kind: String) -> float:
 	var floor_y := float(BREACH_FLOOR.get(kind,0.0))
 	if BREACH_HALF*2.0 > BAY-2.0*(PLINTH.y+0.1): floor_y = maxf(floor_y,PLINTH.x+BASE_H+NICHE_BAND+0.2)
@@ -490,11 +500,7 @@ static func bay(seed_value: int, weathered := 0.0, plan := {}, ground := Callabl
 			for x: float in [0.9,BAY-0.9]:
 				RuinKit._drift(b,Vector3(x,0.0,s*(WALL_Z+1.6)),1.0,3+int(b.weathered*3.0))
 		if kind != "":
-			var base := mid+breach_floor(kind)
-			var top := mid+float(BREACH_TOP.get(kind,0.0))
-			var inside := LANE.x if s > 0.0 else -(WALL_Z+WALL_THICK*0.5+BREACH_OUT)
-			var outside := WALL_Z+WALL_THICK*0.5+BREACH_OUT if s > 0.0 else LANE.y
-			var box := AABB(Vector3(BAY*0.5-BREACH_HALF,base,inside),Vector3(BREACH_HALF*2.0,top-base,outside-inside))
+			var box := breach_box(kind,s,mid)
 			if kind == "door": weave.doors.append({"at":Vector3(BAY*0.5,mid,s*WALL_Z),"side":int(s)})
 			else: weave.breaches.append({"box":box,"side":int(s),"kind":kind})
 	# The screen: a wall across the left of the nave, the knife-edge slit
