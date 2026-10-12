@@ -155,7 +155,15 @@ static func cowl() -> Dictionary:
 	var frame := BellSpires.belfry_frame()
 	var at := frame*Vector3(0.0,Belfry.BEAM-Belfry.BELL.y-UNDER_BELL,0.0)+off
 	var stand := frame*Vector3(0.75,Belfry.FLOOR+0.05,0.75)+off
-	return _spot(at,at,stand,"Up the belfry's stair: it's jammed under the bell")
+	return _spot(at,at,stand,"Up the belfry's stair: it's jammed under the bell; a downdraft on the bell swings it loose")
+
+## Where the cowl comes to rest once a downdraft has swung the bell and
+## knocked it down: on the belfry floor, COWL_FLOOR off the bell's plumb
+## (the belfry's frame, m), hovering as a laid part does.
+const COWL_FLOOR := Vector2(-0.45,0.35)
+static func cowl_floor() -> Vector3:
+	var frame := BellSpires.belfry_frame()
+	return frame*Vector3(COWL_FLOOR.x,Belfry.FLOOR+HOVER,COWL_FLOOR.y)+offset("bell_spires")
 
 # --- The two that ride ------------------------------------------------------------------
 

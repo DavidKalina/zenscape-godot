@@ -13,6 +13,10 @@ extends Node3D
 ## and a ring blast spreads from his feet. It works anywhere: standing, out of
 ## a slide, in any jump, off a rope, falling.
 ##
+## With crouch held in the air the press is the downdraft instead (scripts/
+## downdraft.gd, `downdraft`, set by the host): the same charge, spent all
+## at once through `spend_down`, charging locked after it as after a burst.
+##
 ## It touches the motor only through `toss`. The host calls
 ## `update(delta, motor, pressed)` once a frame BEFORE stepping the motor and
 ## `apply_feel(camera)` after the camera is set.
@@ -97,6 +101,10 @@ const FLARE_TIME := 0.5         # s a burst flares the loose strands wider
 
 var charge := 0.0
 var updrafts := 0
+var downdrafts := 0
+## The downdraft (scripts/downdraft.gd), if the host has one: crouch + the
+## key in the air is its.
+var downdraft: Node3D
 var last_rise := 0.0            # m planned for the last updraft
 var _quiet := 0.0               # s since the last gain
 var _prev_move := ""
@@ -162,7 +170,9 @@ func update(delta: float, m: PilotMotor, pressed: bool, want := Vector2.ZERO) ->
 	_cool = maxf(_cool-delta,0.0)
 	_unlock(delta,m)
 	_charge(delta,m)
-	if pressed and not burst(m,want): updraft(m)
+	if pressed:
+		if downdraft != null and downdraft.wanted(m): downdraft.fire(self,m)
+		elif not burst(m,want): updraft(m)
 	_ride_top(delta,m)
 	_step_rings(delta)
 	_track(delta,m)
@@ -225,6 +235,22 @@ func updraft(m: PilotMotor) -> bool:
 	_dip_t = DIP_TIME
 	_dip_amp = DIP*p*UNIT
 	return true
+
+## The downdraft's spend (scripts/downdraft.gd): all the charge, the wake
+## let go drifting down, charging locked as after a burst (SPENT_*: so the
+## slam's own pace never refills it). The charge spent, or -1 with too
+## little (or knocked, held, swimming).
+func spend_down(m: PilotMotor) -> float:
+	if charge < MIN_RELEASE or m.recovering() or m.swimming or m.seized(): return -1.0
+	var p := charge
+	charge = 0.0
+	_quiet = 0.0
+	downdrafts += 1
+	spent = true
+	_spent_t = 0.0
+	_spent_pace = m.speed()
+	_let_go(Vector3.DOWN*LOOSE_DRIFT*UNIT)
+	return p
 
 ## The forward burst: stick toward his travel (or any way when slow) plus the
 ## key adds flat pace along it, scaled by charge and eased off near BURST_CAP.
@@ -400,6 +426,12 @@ func _draw() -> void:
 		var fade := 1.0 if r.t <= RING_TIME else clampf(1.0-(r.t-RING_TIME)/FADE,0.0,1.0)
 		for rib: Dictionary in r.ribs:
 			strokes.append({"path":rib.path,"width":lerpf(0.25,0.4,r.p)*UNIT,"alpha":lerpf(0.35,0.6,r.p)*fade,"seed":rib.seed})
+	draw_strokes(_mesh,strokes,WAKE_MIN_RUN*UNIT)
+
+## Strokes ({path, width, alpha, seed}) into `mesh` in the breeze ribbons'
+## brush (the layout breeze_ribbons.gd `_draw` feeds the shader), each run
+## at least `min_run` m. Shared with the downdraft's.
+static func draw_strokes(mesh: ImmediateMesh, strokes: Array, min_run: float) -> void:
 	var begun := false
 	for st in strokes:
 		var path: PackedVector3Array = st.path
@@ -408,9 +440,9 @@ func _draw() -> void:
 		var along := PackedFloat32Array([0.0])
 		for j in range(1,n): along.append(along[j-1]+path[j].distance_to(path[j-1]))
 		var total := along[n-1]
-		if total < WAKE_MIN_RUN*UNIT: continue
+		if total < min_run: continue
 		if not begun:
-			_mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
+			mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
 			begun = true
 		var size := Vector2(st.width,st.alpha)
 		var prev := Vector3.ZERO
@@ -419,10 +451,10 @@ func _draw() -> void:
 			if j > 0:
 				for corner in [[0,0.0],[1,0.0],[1,1.0],[0,0.0],[1,1.0],[0,1.0]]:
 					var k: int = corner[0]
-					_mesh.surface_set_normal(prev if k == 0 else tangent)
-					_mesh.surface_set_uv(Vector2(total-along[j-1+k],corner[1]))
-					_mesh.surface_set_uv2(size)
-					_mesh.surface_set_color(Color(0.0,0.0,float(st.seed)*0.01,along[j-1+k]/total))
-					_mesh.surface_add_vertex(path[j-1+k])
+					mesh.surface_set_normal(prev if k == 0 else tangent)
+					mesh.surface_set_uv(Vector2(total-along[j-1+k],corner[1]))
+					mesh.surface_set_uv2(size)
+					mesh.surface_set_color(Color(0.0,0.0,float(st.seed)*0.01,along[j-1+k]/total))
+					mesh.surface_add_vertex(path[j-1+k])
 			prev = tangent
-	if begun: _mesh.surface_end()
+	if begun: mesh.surface_end()

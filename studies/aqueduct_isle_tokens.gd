@@ -47,5 +47,26 @@ static func spots(isle: Node3D) -> Array[Dictionary]:
 	var last: Array = Art.stumps()[-1]
 	out.append({"name":"stumps","at":Vector3(Art.STUMPS_X,Art.TOP+1.25,float(last[2])-1.45),
 		"move":"Jump the stepping stumps back from the far island"})
+	# 8. Buried in the turf (scripts/buried_find.gd) a few metres in off the
+	# north edge's worn path to the stumps, BURIED_ALONG of its middle run,
+	# BURIED_IN inland: a faint shimmer in the grass, glinting through the
+	# telescope; a downdraft over it blows it open.
+	var ground := buried_ground()
+	out.append({"name":"buried","at":ground+Vector3.UP*BURIED_HOVER,"ground":ground,"buried":true,
+		"move":"Spot the shimmer off the north path and blow the turf off it with a downdraft"})
 	return out
+
+## The buried token: along the north path's middle run (Art.PATHS[1], its
+## second leg), and in from it, away from the edge (m).
+const BURIED_ALONG := 0.6
+const BURIED_IN := 3.6
+const BURIED_HOVER := 0.85
+static func buried_ground() -> Vector3:
+	var path: Array = Art.PATHS[1]
+	var a: Vector2 = path[1]
+	var b: Vector2 = path[2]
+	var way := (b-a).normalized()
+	# Inland is to the path's left going east (the edge lies to its right).
+	var p := a.lerp(b,BURIED_ALONG)+Vector2(-way.y,way.x)*BURIED_IN
+	return Vector3(p.x,Art.TOP,p.y)
 

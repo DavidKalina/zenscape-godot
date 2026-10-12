@@ -42,6 +42,11 @@ var _clock := 0.0
 var _accumulator := 0.0
 var _rng := RandomNumberGenerator.new()
 
+const Downdraft = preload("res://scripts/downdraft.gd")
+
+func _ready() -> void:
+	add_to_group(Downdraft.GROUP)
+
 func _init() -> void:
 	name = "WindLeafLitter"
 	cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -188,6 +193,27 @@ func _step(dt: float, air: Node) -> void:
 				leaf.airborne = false
 		leaf.position = p
 		leaf.velocity = velocity
+
+## A downdraft (scripts/downdraft.gd, its group) touched at `at`: every
+## leaf in its reach is thrown up and out from it, harder the nearer
+## (DOWNDRAFT_THROW out, DOWNDRAFT_LIFT up, m/s at full for a leaf of
+## weight 1), and lands where it lands.
+const DOWNDRAFT_THROW := 5.0
+const DOWNDRAFT_LIFT := 2.6
+func downdraft(at: Vector3, radius: float, strength: float) -> void:
+	var here := to_local(at)
+	for leaf in leaves:
+		if leaf.lost: continue
+		var p: Vector3 = leaf.position
+		var s := Downdraft.share(here,radius,p)*strength
+		if s <= 0.0: continue
+		var out := Vector3(p.x-here.x,0.0,p.z-here.z)
+		out = out.normalized() if out.length() > 0.05 else Vector3.FORWARD.rotated(Vector3.UP,_rng.randf()*TAU)
+		var weight := maxf(float(leaf.weight),0.3)
+		leaf.airborne = true
+		leaf.velocity = out*DOWNDRAFT_THROW*s/weight+Vector3.UP*minf(DOWNDRAFT_LIFT*s/weight,3.0)
+		leaf.cooldown = 0.5
+		leaf.stir = 1.0
 
 ## Leaves within `radius` of `point` (world) are lost, as blown away (the
 ## trash can sweeping them up): they fade and grow back under their trees.

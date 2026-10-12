@@ -16,9 +16,20 @@ extends Node3D
 ## transform) carries him, and the pace of a point on it (`velocity_at`)
 ## goes with him when he leaves it.
 ##
+## A downdraft (scripts/downdraft.gd: it joins its group) shoves it out
+## and down from where it touched, by its share there and its strength:
+## a kick down (WIND_SINK), tipped away (WIND_TIP) and pushed off sideways
+## on a spring of its own (WIND_SHOVE, the same spring), all coming back
+## as a landing's does.
+##
 ## Its feel is the subclass's: `sink`, `tilt`, `give`, `hz` (the spring,
 ## Hz), `damp` (its damping ratio), `bob`, `bob_time`.
 const Art = preload("res://studies/aqueduct_isle_art.gd")
+const Downdraft = preload("res://scripts/downdraft.gd")
+## A full downdraft at its middle: m/s down, rad/s of tip, m/s aside.
+const WIND_SINK := 2.6
+const WIND_TIP := 0.9
+const WIND_SHOVE := 1.6
 
 var size := Vector3(2.4,0.7,2.2)
 var seed_value := 0
@@ -40,6 +51,11 @@ var sag := 0.0
 var sag_v := 0.0
 var lean := Vector3.ZERO
 var lean_v := Vector3.ZERO
+## The shove aside (m, x z) and its pace, on the spring too.
+var shove := Vector3.ZERO
+var shove_v := Vector3.ZERO
+## Downdrafts that reached it.
+var winded := 0
 ## Where he stands on it this frame (its own frame), INF none.
 var _load := Vector3.INF
 var _time := 0.0
@@ -56,6 +72,7 @@ func setup(at: Transform3D, stone_size: Vector3, seed_in: int) -> void:
 	_phase = float(seed_in%97)*0.37
 
 func _ready() -> void:
+	add_to_group(Downdraft.GROUP)
 	stone = Art.floating_stones(seed_value,[{"name":"slab","at":Vector3.ZERO,"size":size,"yaw":0.0,"kind":"block"}])
 	add_child(stone)
 	body = stone.get_node("Body")
@@ -78,6 +95,24 @@ func land(p: Vector3, hard: float) -> void:
 	var q := transform.affine_inverse()*p
 	var flat := Vector3(q.x,0.0,q.z)
 	if flat.length() > 0.05: lean_v += Vector3.UP.cross(flat).normalized()*hard*give*0.6
+
+## A downdraft at `at` (scripts/downdraft.gd): shoved out and down.
+func downdraft(at: Vector3, radius: float, strength: float) -> void:
+	var s := Downdraft.share(at,radius,global_position)*strength
+	if s <= 0.0: return
+	winded += 1
+	sag_v -= WIND_SINK*s
+	var out := Vector3(global_position.x-at.x,0.0,global_position.z-at.z)
+	if out.length() > 0.05:
+		out = out.normalized()
+		shove_v += out*WIND_SHOVE*s
+		lean_v += Vector3.UP.cross(out)*-WIND_TIP*s
+	else:
+		# Square on its middle: straight down, a little tip off the way he
+		# stands on it.
+		var q := transform.affine_inverse()*at
+		var flat := Vector3(q.x,0.0,q.z)
+		if flat.length() > 0.05: lean_v += Vector3.UP.cross(flat).normalized()*WIND_TIP*s*0.5
 
 ## One frame: to its pose, sagged and tilted on the spring.
 func advance(delta: float) -> void:
@@ -103,6 +138,8 @@ func advance(delta: float) -> void:
 		sag += sag_v*dt
 		lean_v += (w*w*(lean_goal-lean)-2.0*damp*w*lean_v)*dt
 		lean += lean_v*dt
+		shove_v += (-w*w*shove-2.0*damp*w*shove_v)*dt
+		shove += shove_v*dt
 		left -= dt
 	var was := transform
 	var now := _posed(pose_at(_time))
@@ -114,7 +151,7 @@ func advance(delta: float) -> void:
 
 func _posed(base: Transform3D) -> Transform3D:
 	var tip := Basis(lean.normalized(),lean.length()) if lean.length() > 1e-6 else Basis.IDENTITY
-	return Transform3D(tip*base.basis,base.origin+Vector3.UP*sag)
+	return Transform3D(tip*base.basis,base.origin+Vector3.UP*sag+shove)
 
 ## What it moved since the last frame (the frame's).
 func moved() -> Transform3D:

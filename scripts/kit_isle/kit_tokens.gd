@@ -16,7 +16,12 @@ extends Node3D
 ## token done before isn't laid again; the readout counts it as found.
 ## Unfound, each glints far off through the telescope (scripts/
 ## telescope.gd `spottable`).
+##
+## A spot with `buried` (and `ground`, the turf's point under it) is laid
+## under the turf (scripts/buried_find.gd): a faint shimmer the telescope
+## glints until a downdraft blows it open; only then, up, can it be taken.
 const GlyphPickup = preload("res://scripts/glyph_pickup.gd")
+const BuriedFind = preload("res://scripts/buried_find.gd")
 const Hud = preload("res://scripts/collectibles_hud.gd")
 const Lines = preload("res://scripts/collectible_lines.gd")
 const Ledger = preload("res://scripts/ledger/ledger.gd")
@@ -36,6 +41,8 @@ var taken: Array[String] = []
 var isle_id := ""
 var hud: CanvasLayer
 var _holders := {}
+## name -> its BuriedFind, for the buried ones not yet taken.
+var buried := {}
 var _last := Vector3.INF
 ## A placed isle's (scripts/kit_isle/motif_isle.gd): where it stands from
 ## its own frame, which `spots_for` answers in.
@@ -75,6 +82,12 @@ func setup(isle: Node3D) -> void:
 		holder.motes_on(true)
 		Telescope.spottable(holder,objective(t.name))
 		_holders[t.name] = holder
+		if t.get("buried",false):
+			var ground: Vector3 = (t.ground as Vector3)+offset
+			var dig := BuriedFind.new()
+			dig.setup(holder,ground,objective(t.name),(t.at as Vector3).y-ground.y)
+			add_child(dig)
+			buried[t.name] = dig
 	hud = Hud.new()
 	add_child(hud)
 
@@ -102,6 +115,7 @@ func touch(point: Vector3) -> void:
 	_last = point
 	for t: Dictionary in tokens:
 		if taken.has(t.name): continue
+		if buried.has(t.name) and not buried[t.name].takeable(): continue
 		var at: Vector3 = t.at
 		var near := Geometry3D.get_closest_point_to_segment(at,from,point)
 		if near.distance_to(at) < Lines.WALKER_REACH+SIZE*0.5: take(t.name)

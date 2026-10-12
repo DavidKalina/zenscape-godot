@@ -31,6 +31,15 @@ extends Node3D
 ##   last). Fitted is saved as he presses, before the beat plays out. With
 ##   all six fitted, Space by it climbs in and takes off as ever.
 ##
+## The cowl is jammed up under the belfry's bell (PartSpots `cowl`): it
+## can't be taken there. A downdraft (scripts/downdraft.gd: the arc joins
+## its group) that reaches the bell (MotifBellSpires `bell_reach`, at
+## least COWL_NEED strong) swings the bell hard, and COWL_DELAY s later,
+## as it swings, the cowl is knocked out: it tumbles down onto the belfry
+## floor (PartSpots `cowl_floor`, COWL_FALL s, a bounce) and hovers there
+## to be taken as ever. Reaching the belfry needs the plane for now
+## (--plane-fixed) until the airship ferries come.
+##
 ## The tail fin rides the rune serpent's back (the watcher's find:
 ## scripts/kit_isle/watcher.gd borrows it, `fin_holder`); the propeller hangs
 ## on a rope under the salvager's plane (scripts/snag_plane.gd) flying its
@@ -65,6 +74,8 @@ const MomentsHud = preload("res://scripts/moments_hud.gd")
 const Lines = preload("res://scripts/collectible_lines.gd")
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const PlaneFigure = preload("res://scripts/plane_figure.gd")
+const Downdraft = preload("res://scripts/downdraft.gd")
+const BellSpires = preload("res://scripts/kit_isle/motif_bell_spires.gd")
 
 const IDS := PartSpots.IDS
 ## The names the pops use, and what each says as it's taken.
@@ -96,6 +107,18 @@ const FLY_TO := 0.35
 const SNAG_LAP := 30.0
 const SNAG_START := 9.0
 const SNAG_SOON := 7.0
+## The jammed cowl: the least downdraft strength that knocks it loose,
+## seconds from the blast to its fall (the bell swinging into it), and the
+## fall's seconds to the belfry floor.
+const COWL_NEED := 0.3
+const COWL_DELAY := 0.28
+const COWL_FALL := 0.55
+
+## "jammed" under the bell, "falling", "down" on the floor (or "" once
+## taken or never laid).
+var cowl := ""
+var _cowl_t := 0.0
+var _cowl_from := Vector3.ZERO
 
 var host: Node3D
 ## The plane flies whatever is fitted (--plane-fixed and its kin).
@@ -166,6 +189,8 @@ func setup(scene: Node3D) -> void:
 			holders[id] = _make(id,true)
 		elif state[id] == "laid": _lay(id)
 	_build_snag()
+	if state.cowl == "laid" and holders.has("cowl"): cowl = "jammed"
+	add_to_group(Downdraft.GROUP)
 	_follow(0.0,true)
 	var figure: Node3D = host.get("plane_figure")
 	if figure != null: dress(figure)
@@ -268,6 +293,7 @@ func advance(delta: float) -> void:
 	place_fin()
 	_follow(delta)
 	_fit_step(delta)
+	_cowl_step(delta)
 	_glow()
 
 ## A soft lantern after dark, as the tokens (scripts/kit_isle/kit_life.gd).
@@ -295,6 +321,8 @@ func touch(point: Vector3, scale := 1.0) -> void:
 	_last = point
 	for id: String in IDS:
 		if state[id] != "laid": continue
+		# Jammed under the bell (or on its way down), out of reach.
+		if id == "cowl" and cowl in ["jammed","falling"]: continue
 		var at := Vector3.INF
 		var reach := Lines.WALKER_REACH*scale+SIZE*0.5
 		if id == "propeller":
@@ -310,6 +338,7 @@ func take(id: String) -> void:
 	if state.get(id,"") != "laid": return
 	state[id] = "carried"
 	carried.append(id)
+	if id == "cowl": cowl = ""
 	if keep: Ledger.shared().carry_part(id,PartSpots.objective(id))
 	var holder: Node3D = holders.get(id)
 	if id == "propeller" and snag != null and snag.attached:
@@ -332,6 +361,44 @@ func take(id: String) -> void:
 	if _moments != null:
 		_moments.pop("%s: it rides with you to the plane" % TAKEN[id],2.6)
 		_moments.blip(2)
+
+## A downdraft at `at` (scripts/downdraft.gd): reaching the bell over the
+## jammed cowl, hard enough, it knocks the cowl loose (after COWL_DELAY).
+func downdraft(at: Vector3, radius: float, strength: float) -> void:
+	if cowl != "jammed" or strength < COWL_NEED or not is_instance_valid(holders.get("cowl")): return
+	var holder: Node3D = holders.cowl
+	if holder.global_position.distance_to(at) > BellSpires.bell_reach(radius): return
+	cowl = "falling"
+	_cowl_t = -COWL_DELAY
+	_cowl_from = holder.position
+
+## The cowl knocked loose: a beat as the bell swings into it, then down
+## onto the belfry floor, tumbling, with a bounce; there it hovers as any
+## laid part.
+func _cowl_step(delta: float) -> void:
+	if cowl != "falling": return
+	var holder: Node3D = holders.get("cowl")
+	if not is_instance_valid(holder):
+		cowl = ""
+		return
+	_cowl_t += delta
+	if _cowl_t < 0.0:
+		# Shaken in the bell's mouth.
+		holder.position = _cowl_from+Vector3(sin(_clock*53.0),0.0,cos(_clock*47.0))*0.03
+		return
+	var floor := PartSpots.cowl_floor()
+	var u := clampf(_cowl_t/COWL_FALL,0.0,1.0)
+	# Falling as a dropped thing (u squared), a little hop off the floor at
+	# the end.
+	var bounce := sin(clampf((u-0.8)/0.2,0.0,1.0)*PI)*0.18
+	holder.position = _cowl_from.lerp(floor,minf(u*u/0.64,1.0))+Vector3.UP*bounce
+	holder.rotation = Vector3(u*2.4,u*1.1,0.0)*(1.0-u)
+	if u >= 1.0:
+		cowl = "down"
+		holder.position = floor
+		holder.rotation = Vector3.ZERO
+		spots["cowl"] = PartSpots.spot("cowl",host).merged({"at":floor,"glint":floor},true)
+		if _moments != null: _moments.pop("The bell swings: the cowl drops to the belfry floor",2.2)
 
 ## The carried at his side: round him from one side behind to the other,
 ## easing after him (at once with `snap`, or after a long jump: a respawn).

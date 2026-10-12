@@ -112,7 +112,7 @@ func _registry() -> void:
 	check(r.region_objectives("ruins").all(func(id: String) -> bool: return r.objective(id).needs_plane is bool),"Every objective has a needs_plane flag")
 	var foot: Dictionary = book.region_progress("ruins",false)
 	var plane: Dictionary = book.region_progress("ruins",true)
-	check(foot.total == 63 and plane.total == 0 and foot.types.part.total == 6,"The region counts by it: 63 on foot (6 parts), 0 needing the plane (%d, %d)" % [foot.total,plane.total])
+	check(foot.total == 64 and plane.total == 0 and foot.types.part.total == 6,"The region counts by it: 64 on foot (6 parts), 0 needing the plane (%d, %d)" % [foot.total,plane.total])
 	check(book.card("bell_spires",{}).finds.has(["part","Plane",0,1]),"The bell spires' card has a Plane row: %s" % [book.card("bell_spires",{}).finds])
 
 # --- Broken -------------------------------------------------------------------------------

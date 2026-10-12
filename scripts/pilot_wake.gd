@@ -14,6 +14,13 @@ extends Node
 ## hard parts a wider ring a moment (KICK). Hidden (building, flying) his
 ## wake springs back and the shaders stop reading it.
 ##
+## A downdraft (scripts/downdraft.gd, its GROUP: `downdraft`) lays a ring
+## of it flat where it touched: a circle growing out to the blast's radius
+## over BLAST_GROW s, pressed down at its middle, held BLAST_HOLD s, then
+## springing back up as his wake does. While it lies flat it takes the
+## shaders' slots (his own wake drops out of sight for that second and is
+## kept, so it comes back whole).
+##
 ## Everything here is world x, z (the plants' roots are), from the figure's
 ## own place, so it holds on the plate and on an islet alike. `push_at` is
 ## the shaders' push on the CPU, for tests and probes.
@@ -66,6 +73,11 @@ const EASE_PACE := 0.1
 const CUT := 2.0
 ## Wading deeper than this (m), or swimming, he parts nothing: underwater.
 const UNDER := 0.2
+## A downdraft's flattened ring: seconds it grows out over, is held flat,
+## and its lean (by the blast's strength, least and full).
+const BLAST_GROW := 0.3
+const BLAST_HOLD := 0.45
+const BLAST_LEAN := Vector2(0.75,1.2)
 
 ## The motor he is moved by (scripts/pilot_motor.gd), for his height over the
 ## ground and his fall; without one he is always on the ground.
@@ -91,7 +103,12 @@ var _was_on := false
 var _fall := 0.0
 var _grounded := true
 
+## The last downdraft's ring: {at (x, z), radius, lean, t (on `clock`)},
+## {} none.
+var blast := {}
+
 func _ready() -> void:
+	add_to_group(&"downdraft")
 	published.resize(GLOBALS.size())
 	for i in range(published.size()): published[i] = Vector4(INF,0,0,0)
 
@@ -198,10 +215,33 @@ static func spring(age: float) -> float:
 	if t > LIFE: return 0.0
 	return exp(-DAMP*t)*(cos(RING*t)+DAMP/RING*sin(RING*t))
 
+## A downdraft touched at `at`, `radius` round (scripts/downdraft.gd): the
+## grass lies flat in a ring there.
+func downdraft(at: Vector3, radius: float, strength: float) -> void:
+	blast = {"at":Vector2(at.x,at.z),"radius":radius,"lean":lerpf(BLAST_LEAN.x,BLAST_LEAN.y,clampf(strength,0.0,1.0)),"t":clock}
+
+## The flattened ring's slot now ((x, z, reach, lean)), or none (w 0) once
+## it has sprung back.
+func blast_slot() -> Vector4:
+	if blast.is_empty(): return Vector4.ZERO
+	var age := clock-float(blast.t)
+	if age > BLAST_HOLD+LIFE:
+		blast = {}
+		return Vector4.ZERO
+	var grow := 1.0-pow(1.0-clampf(age/BLAST_GROW,0.0,1.0),2.0)
+	var at: Vector2 = blast.at
+	return Vector4(at.x,at.y,maxf(float(blast.radius)*grow,0.01),float(blast.lean)*spring(maxf(age-BLAST_HOLD,0.0)))
+
 ## The globals as they stand: all zero once there is nothing to part.
 func values() -> PackedVector4Array:
 	var out := PackedVector4Array()
 	out.resize(GLOBALS.size())
+	var ring := blast_slot()
+	if ring.z > 0.0 and not blast.is_empty():
+		# The ring alone: the rest left zero, so the path stops at it.
+		out[0] = ring
+		out[POINTS] = Vector4(ring.x-ring.z,ring.y-ring.z,ring.x+ring.z,ring.y+ring.z)
+		return out
 	if not _placed and path.is_empty(): return out
 	var widest := radius
 	out[0] = Vector4(head.x,head.y,maxf(radius,0.01),lean if _was_on else 0.0)

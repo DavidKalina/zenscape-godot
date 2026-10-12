@@ -12,6 +12,7 @@
 			{"slug": "trilithon", "type": "token", "needs_plane": false, "name": "Atop the Great Gate"},
 			{"slug": "drift", "type": "token", "needs_plane": false, "name": "Beneath the Drifting Lintel"},
 			{"slug": "stumps", "type": "token", "needs_plane": false, "name": "Back Across the Broken Piers"},
+			{"slug": "buried", "type": "token", "needs_plane": false, "name": "What the Turf Keeps"},
 			{"slug": "wheel", "type": "part", "needs_plane": false, "name": "What Rolled to the Stones"},
 			{"slug": "fin", "type": "part", "needs_plane": false, "name": "Riding the Old Serpent's Ridge"}
 		]},

@@ -53,9 +53,19 @@ extends RefCounted
 ## twirled back towards a wall just kicked off (the kick's lock lifted),
 ## he comes back to it to slide and kick again, or to a ledge over it. Once an airtime; landing, taking hold of a ledge,
 ## or swimming gives it back (a wall kick doesn't: one twirl back to the
-## wall, one more kick, then he falls away). Crouch does nothing in the air: held
-## from the ground (for the long jump, or the slide), or pressed there, it
-## is the slide on landing.
+## wall, one more kick, then he falls away). Crouch alone does nothing in
+## the air: held from the ground (for the long jump, or the slide), or
+## pressed there, it is the slide on landing. With the flow charge spent it
+## is the downdraft (below).
+##
+## The slam (`slam`, the downdraft's: scripts/downdraft.gd): driven straight
+## down (move "slam"), from the pace given on toward `pace` on SLAM_PULL
+## times his falling gravity, past TERMINAL; his flat pace kept, not
+## steered, no wall, wall run or ledge taking him. On the touch the step
+## says "slammed" (how hard, m/s) with "landed", and the landing is as any:
+## crouch held, it is the slide (or the surf on a slope) at his pace; Jump
+## buffered for the touch jumps out of it (it opens no sail). A twirl ends
+## it.
 ##
 ## The slide hop: in the air out of a slide (a long jump, a slide jump) the
 ## stick across his way bends his run round without losing it (HOP_TURN,
@@ -422,6 +432,8 @@ const SWIM_HOP := 0.9
 const TUMBLE_DOWN := 0.5
 const TUMBLE_SKID := 14.0
 const TUMBLE_IMMUNE := 0.8
+## The slam: its pull toward the pace asked, times his falling gravity.
+const SLAM_PULL := 2.0
 
 ## The feel, this motor's own: each starts as its constant above, which the
 ## game keeps; a study (studies/character_study.gd) may turn them live. The
@@ -546,7 +558,8 @@ var chain := 0
 ## "pump", "long" (the long jump), "kick" (off a wall), "wall" (sliding down
 ## one), "crouch", "twirl", "slide" (boot-surfing down a slope), "flip" (the
 ## side flip), "wallrun" (running along one), "tumble" (knocked: in the air,
-## then down on the ground getting up).
+## then down on the ground getting up), "slam" (driven down by the
+## downdraft).
 var move := ""
 ## Held by the caller: the crouch button, and the twirl's.
 var crouch := false
@@ -635,6 +648,8 @@ var sail := PocketSail.new()
 var air := Callable()
 ## Riding something that moves him itself (see the header), or null.
 var rider: Object = null
+## The slam's pace (m/s down) while move is "slam".
+var _slam := 0.0
 
 ## Stood at `at`, facing `towards`, moving `speed` the way it faces.
 func reset(at: Vector3, towards: float, speed := 0.0) -> void:
@@ -682,6 +697,7 @@ func reset(at: Vector3, towards: float, speed := 0.0) -> void:
 	sail.rest()
 	carving = 0.0
 	rider = null
+	_slam = 0.0
 
 ## Carried by what he stands on or hangs from, between steps (a moving
 ## body: studies/serpent_ride.gd's serpent): every place he keeps (the feet,
@@ -856,7 +872,7 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 		else: h = _run(h,want,top,delta)
 		surfing = move == "slide"
 		if surfing != surfed: out["slide"] = surfing
-	elif move == "wallrun": pass
+	elif move == "wallrun" or move == "slam": pass
 	elif move == "sail": h = _sail_step(delta,want,h)
 	elif move != "wall" and _hop_air and _lock <= 0.0: h = _strafe(h,want,top,delta,twirl_steer if move == "twirl" else air_accel)
 	elif move != "wall": h = _steer(h,Vector2.ZERO if _lock > 0.0 else want,side_speed if move == "flip" else top,delta,twirl_steer if move == "twirl" else air_accel)
@@ -926,9 +942,9 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 		out["sail"] = false
 	elif _buffer > 0.0 and not grounded and move == "wallrun":
 		h = _wallrun_kick(h,out)
-	elif _buffer > 0.0 and not grounded and (move == "wall" or _wall_since <= WALL_TOUCH):
+	elif _buffer > 0.0 and not grounded and move != "slam" and (move == "wall" or _wall_since <= WALL_TOUCH):
 		h = _kick_off(out)
-	elif pressed and not grounded and not _from_water and sail.can_open(feet.y-ground_y,velocity.y) \
+	elif pressed and not grounded and move != "slam" and not _from_water and sail.can_open(feet.y-ground_y,velocity.y) \
 			and _wall_near(want,h,ground,WALL_PROBE+0.8) == Vector2.ZERO:
 		h = _sail_open(h,out)
 	# The twirl: its button pressed anywhere in the air, once an airtime.
@@ -953,7 +969,7 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 	# The wall run: begun along a wall met at a glance, or run on.
 	if not grounded:
 		if move == "wallrun": h = _wallrun_step(delta,want,h,ground,out)
-		elif not _wallran and move != "wall" and move != "flip" and move != "sail": h = _wallrun_start(want,h,ground,out)
+		elif not _wallran and move != "wall" and move != "flip" and move != "sail" and move != "slam": h = _wallrun_start(want,h,ground,out)
 	var moved: Vector3 = slide.call(feet,h*delta)
 	var under: float = ground.call(Vector2(moved.x,moved.z))
 	if grounded and under > feet.y+STEP_UP:
@@ -992,7 +1008,7 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 			if move == "sail":
 				sail.speed = 0.0
 				sail.drift = Vector2.ZERO
-		if move != "wallrun" and move != "sail": h = _on_wall(delta,want,h,going,ground,under,out)
+		if move != "wallrun" and move != "sail" and move != "slam": h = _on_wall(delta,want,h,going,ground,under,out)
 		if move == "wall":
 			moved = feet
 			under = ground.call(Vector2(feet.x,feet.z))
@@ -1012,6 +1028,7 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 			return out
 		if y <= under and velocity.y <= 0.0:
 			out["landed"] = -velocity.y
+			if move == "slam": out["slammed"] = -velocity.y
 			if move == "wall": out["wall"] = false
 			if move == "wallrun": out["wallrun"] = false
 			if move == "sail": out["sail"] = false
@@ -1038,7 +1055,7 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 		elif y < under:
 			y = under
 		feet = Vector3(moved.x,y,moved.z)
-		if not grounded and ledge.is_valid() and _grab(ledge,ground,slide):
+		if not grounded and move != "slam" and ledge.is_valid() and _grab(ledge,ground,slide):
 			if move == "wall": out["wall"] = false
 			out["grabbed"] = "air"
 			return out
@@ -1166,6 +1183,25 @@ func toss(push: Vector3, hop := false) -> void:
 	if Vector2(push.x,push.z).length() > 0.3: facing = facing_of(Vector2(push.x,push.z))
 	feet.y += 0.02
 
+## Driven down by the downdraft (see the header): from `kick` m/s down on
+## toward `pace`, his flat pace as it is, the sail folded. Not from the
+## ground, a ledge, a rope or the water.
+func slam(pace: float, kick: float) -> void:
+	if grounded or swimming or hold != "" or rider != null or _seized: return
+	if move == "sail": sail.fold()
+	move = "slam"
+	_slam = pace
+	velocity.y = minf(velocity.y,-kick)
+	chain = 0
+	skidding = false
+	_light = false
+	_no_cut = true
+	_jumped = true
+	_twirl = 0.0
+	_wallrun = 0.0
+	_lock = 0.0
+	wall_out = Vector2.ZERO
+
 ## The rise or the fall over `delta` (m, up), velocity.y carried on: worked
 ## out exactly for each part of the step's own gravity (rising, then past
 ## the top falling; the long jump's lighter one throughout; a wall slide's
@@ -1177,8 +1213,10 @@ func _arc(delta: float, jump: bool) -> float:
 	for i in range(4):
 		if left <= 0.0: break
 		var v := velocity.y
-		var low := -wall_slide if move == "wall" else (-TWIRL_FALL if move == "twirl" else (-WALLRUN_FALL if move == "wallrun" else -terminal))
-		if v < low:
+		var low := -wall_slide if move == "wall" else (-TWIRL_FALL if move == "twirl" else (-WALLRUN_FALL if move == "wallrun" else (-maxf(terminal,_slam) if move == "slam" else -terminal)))
+		# (A hair under it is it: velocity is kept in 32 bits, so a pace
+		# like the slam's, set from a 64-bit one, reads back just past it.)
+		if v < low-1e-4:
 			# Faster down than it may go: held to it.
 			velocity.y = low
 			continue
@@ -1186,6 +1224,7 @@ func _arc(delta: float, jump: bool) -> float:
 		if move == "wall": g = WALL_GRAVITY
 		elif move == "twirl": g *= twirl_gravity
 		elif move == "wallrun": g *= wallrun_gravity
+		elif move == "slam": g *= fall*SLAM_PULL
 		elif _light: g = long_gravity
 		elif v <= 0.0: g *= fall
 		elif not jump and not _no_cut: g *= cut
