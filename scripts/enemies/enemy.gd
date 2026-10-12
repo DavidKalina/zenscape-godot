@@ -19,12 +19,15 @@ extends Node3D
 ## slides to rest on its own friction); off an edge it falls under the
 ## pilot's gravity and is gone below the study's `lost`.
 ## It is also a prop: a StaticBody3D the size of its body, so the pilot
-## stands on it and jumps off it (a stunned one, or one standing).
+## stands on it and jumps off it (a stunned one, or one standing). The body
+## is set in the physics space as it moves (not at the frame's flush), it
+## shoves him out when it moves into him (`push_out`), and stood on it
+## carries him unless it `bucks()` (then `buck` throws him off behind it).
 ##
 ## A new enemy extends this and overrides: `default_knobs(n)` (merged over
 ## the base's), `_art(skin)` (draw it; `_part` adds a box, tinted ones take
 ## the tell's colour), `think(delta)` (set `vel`, change `state`), and
-## optionally `harmful()`, `bumped()`, `landed()`. Then it is one line in a
+## optionally `harmful()`, `bucks()`, `bumped()`, `landed()`. Then it is one line in a
 ## scene's table (studies/enemy_yard.gd ENEMIES).
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
 
@@ -166,6 +169,9 @@ func step(delta: float) -> void:
 	else: think(delta)
 	_move(delta)
 	moved = position-was
+	# The body to where it is drawn in the physics space now, not at the
+	# tree's flush: the pilot's step this frame meets it here.
+	if not gone: body.force_update_transform()
 
 ## What it does this frame: set `vel` and `state`. Override.
 func think(_delta: float) -> void:
@@ -174,6 +180,11 @@ func think(_delta: float) -> void:
 ## Whether touching it now shoves the pilot (a charge, a swing). Override.
 func harmful() -> bool:
 	return false
+
+## Whether a pilot stood on its back is NOT carried (it runs out from under
+## him: a charge, a skid). Override.
+func bucks() -> bool:
+	return not grounded
 
 ## It ran into a wall (a body above the step) with `vel` ended. Override.
 func bumped() -> void:
@@ -258,6 +269,59 @@ func touch(m: PilotMotor, v_pre: Vector3) -> void:
 		pilot_pushes(m,to,toward)
 	elif harmful() and not m.recovering():
 		hits_pilot(m)
+
+## Whether `lip` (a ledge's edge the pilot holds) is on its back.
+func holds(lip: Vector3) -> bool:
+	if absf(lip.y-(position.y+height)) > 0.15: return false
+	var local := Basis(Vector3.UP,facing).inverse()*(lip-position)
+	return absf(local.x) <= width*0.5+0.1 and absf(local.z) <= length*0.5+0.1
+
+## A pilot on its back (or hanging from it) as it `bucks()`: thrown off
+## behind it (PilotMotor.knock: a tumble, no harm), not left standing on air
+## or hanging from an edge that ran off.
+func buck(m: PilotMotor) -> void:
+	var back := -PilotMotor.forward(facing)
+	var local := Basis(Vector3.UP,facing).inverse()*(m.feet-position)
+	var out := maxf(length*0.5-local.z,0.0)*0.5+float(knobs.radius)*2.0
+	m.knock(m.knock_velocity(back,out,height*0.3,maxf(m.feet.y-position.y,0.0)))
+	_cool = 0.3
+
+## It moved or turned into the pilot `m` (its body is a stone he can't walk
+## through, but he is no collider to it): he is shoved out of its box, the
+## shortest way, sliding along walls as he goes (`slide`, the study's
+## PhysicsGround.slide). Only where his body meets it: his feet under its top
+## by more than his body's lowest part (PhysicsGround.BODY_LOW; higher, the
+## motor's ground ray steps or lands him onto its back), his head over its
+## foot. A pilot hanging from a rim is never touched.
+func push_out(m: PilotMotor, slide: Callable, body_low: float, head: float) -> void:
+	if gone or m.on_ledge(): return
+	var top := position.y+height
+	if m.feet.y+body_low >= top or m.feet.y+head <= position.y: return
+	var basis := Basis(Vector3.UP,facing)
+	var local := basis.inverse()*(m.feet-position)
+	var p := Vector2(local.x,local.z)
+	var half := Vector2(width*0.5,length*0.5)
+	var r := float(knobs.radius)
+	var near := Vector2(clampf(p.x,-half.x,half.x),clampf(p.y,-half.y,half.y))
+	var off := p-near
+	var out := Vector2.ZERO
+	if off.length() > 0.0001:
+		if off.length() >= r: return
+		out = off.normalized()*(r-off.length())
+	else:
+		# His middle inside its box: out through the nearest side.
+		var gx := half.x-absf(p.x)
+		var gz := half.y-absf(p.y)
+		if gx < gz: out = Vector2(signf(p.x) if p.x != 0.0 else 1.0,0.0)*(gx+r)
+		else: out = Vector2(0.0,signf(p.y) if p.y != 0.0 else 1.0)*(gz+r)
+	var w := basis*Vector3(out.x,0.0,out.y)
+	var step := Vector2(w.x,w.z)*(1.0+0.02/maxf(out.length(),0.01))
+	# Its own body set aside so the cast sees only the walls round him.
+	var was := body.collision_layer
+	body.collision_layer = 0
+	var to: Vector3 = slide.call(m.feet,step)
+	body.collision_layer = was
+	m.carry(Transform3D(Basis.IDENTITY,Vector3(to.x-m.feet.x,0.0,to.z-m.feet.z)),0.0)
 
 ## The pilot ran or slid into it at `speed` along `way` (x, z): thrown
 ## along it, stunned; he loses most of his pace.

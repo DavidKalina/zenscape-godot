@@ -8,13 +8,19 @@ extends SceneTree
 ## dodge is input. "tau" is the time left before its horns reach him (his
 ## own pace counted) when the dodge is begun.
 ##   - notice, tell (paws, heating colour), charge (wind-up), commit (a
-##     snort, deep red, the line locked);
+##     snort, deep red); the charge curves after a pilot running sideways,
+##     still hooking after the lock but less, banking into the turn;
+##   - a stone animal: walked or run into in every state but a charge (idle,
+##     wandering, backing off, telling, skidding, dug in, stunned) he never
+##     passes into its body; still, he stands on its back; a jump that comes
+##     down on a charging back is bucked off behind it;
 ##   - a pilot standing on its line is hit and shoved (knocked, not hurt);
 ##   - near a rim, a late jump, a late run aside, a late power slide (run
 ##     aside then LT), a late drop into a rim hang: it goes over (a teeter
 ##     at the lip first); he is not hit, and still hangs;
-##   - early dodges (jump, run aside, slide) are followed and hit; a drop into
-##     the hang made early is waited out at the lip: it does not fall;
+##   - early dodges (jump, run aside, slide) are followed and hit, and so is
+##     a lazy slide just after the cue (hooked); a drop into the hang made
+##     early is waited out at the lip: it does not fall;
 ##   - a late dodge in the open: it skids round, tells again, comes again,
 ##     and does not fall;
 ##   - idle at the rims for a long while, it never walks off; a charge that
@@ -53,6 +59,9 @@ func run() -> void:
 	m = study.motor
 	check(study.enemies.enemies.size() == 1,"The yard has its one ram")
 	_telegraph_and_commit()
+	_the_charge_curves()
+	_solid_when_not_charging()
+	_stands_on_it_still()
 	_standing_is_hit()
 	_late_jump_near_rim()
 	_late_run_and_slide_near_rim()
@@ -183,7 +192,6 @@ func _telegraph_and_commit() -> void:
 	study.enemies.sounds.clear()
 	var seen := {}
 	var commit_facing := INF
-	var turned := 0.0
 	var colour_at_commit := Color.BLACK
 	var top := 0.0
 	var early_pace := -1.0
@@ -198,9 +206,6 @@ func _telegraph_and_commit() -> void:
 			if commit_facing == INF:
 				commit_facing = ram.facing
 				colour_at_commit = ram.get("_mat").albedo_color
-				# He starts off sideways now: the line must not follow.
-				stick(Vector2(1.0,0.0))
-			turned = maxf(turned,absf(angle_difference(ram.facing,commit_facing)))
 		top = maxf(top,Vector2(ram.vel.x,ram.vel.z).length())
 		if ram.state in ["skid","teeter","stun"]: break
 	release()
@@ -211,7 +216,155 @@ func _telegraph_and_commit() -> void:
 	check(colour_at_commit.is_equal_approx(ram.COMMIT_COLOUR),"Committed it is deep red")
 	check(early_pace >= 0.0 and early_pace < float(ram.knobs.charge_speed)*0.6,"It winds up: early in the charge it is well under its top speed (%.2f)" % early_pace)
 	check(top > m.run,"It charges above his run (%.2f over %.2f m/s)" % [top,m.run])
-	check(commit_facing != INF and turned < 0.01,"Committed, its line is set: it does not turn after him (%.3f rad)" % turned)
+
+## A charge at him from 12 m, he running sideways (+x) from the moment it
+## charges (`at_lock` false) or from the lock (true): per phase, its peak
+## turn rate (rad/s), the turn summed, and its bank and head into the turn.
+func _curve(at_lock: bool) -> Dictionary:
+	var ram := _arena(Vector2(LANE,6.0),Vector2(LANE,-6.0))
+	var out := {"pre":0.0,"post":0.0,"post_turn":0.0,"blind":0.0,"bank":0.0,"head":0.0,"snap":false}
+	var last := INF
+	for i in range(int(5.0/DT)):
+		if (ram.state == "commit" or (ram.state == "charge" and not at_lock)): stick(Vector2(1.0,0.0))
+		var was_state: String = ram.state
+		study.tick(DT)
+		if not _charging(ram):
+			if last != INF: break
+			continue
+		if last == INF:
+			last = ram.facing
+			continue
+		var d := absf(angle_difference(last,ram.facing))
+		last = ram.facing
+		# Toward +x from a run along +z is a turn to its left (facing
+		# rising): banked left (+z roll), the head looking left (+y).
+		out.bank = maxf(out.bank,ram.skin.rotation.z)
+		out.head = maxf(out.head,ram.get("_head").rotation.y)
+		if ram.state == "charge": out.pre = maxf(out.pre,d/DT)
+		elif was_state == "charge": out.snap = true # the lock's snap: the head's jerk, not a turn
+		elif _tau(ram) > float(ram.knobs.blind)+0.05:
+			out.post = maxf(out.post,d/DT)
+			out.post_turn += d
+		elif _tau(ram) < float(ram.knobs.blind)-0.05: out.blind += d
+	release()
+	return out
+
+## The charge curves: it hooks after him, hard before the lock and still
+## after it, but tighter, and blind (no turn) for its last `blind` s; it
+## banks and looks into the turn.
+func _the_charge_curves() -> void:
+	var early := _curve(false)
+	var late := _curve(true)
+	check(early.snap and early.pre > 1.0,"Charging, it hooks after him running sideways (%.2f rad/s at most)" % early.pre)
+	check(late.post_turn > 0.05,"After the lock it still turns after him: the path curves (%.3f rad)" % late.post_turn)
+	check(late.post > 0.1 and late.post < early.pre*0.75,"...but tighter than before the lock (%.2f rad/s at most after, %.2f before)" % [late.post,early.pre])
+	check(late.blind < 0.01 and early.blind < 0.01,"Head down for its last %.2f s it runs blind, its line set (%.3f / %.3f rad)" % [float(study.enemies.enemies[0].knobs.blind),early.blind,late.blind])
+	check(early.bank > 0.05 and early.head > 0.05 and late.bank > 0.02,"It banks and looks into the turn (body %.2f rad, head %.2f rad; after the lock %.2f rad)" % [early.bank,early.head,late.bank])
+
+## How far his feet are outside its body (m, the box's footprint; negative
+## inside), or INF when he is over its back.
+func _outside(ram: Node3D) -> float:
+	if m.feet.y-ram.position.y >= ram.height-0.15: return INF
+	var l: Vector3 = Basis(Vector3.UP,ram.facing).inverse()*(m.feet-ram.position)
+	return maxf(absf(l.x)-ram.width*0.5,absf(l.z)-ram.length*0.5)
+
+## Pushes the stick at it (`pace` of full tilt) while it is in `state` (or
+## for `seconds`): [nearest his feet came to its body, frames he was in it].
+func _press(ram: Node3D, state: String, seconds: float, pace := 1.0) -> Array:
+	var nearest := INF
+	var inside := 0
+	for i in range(int(seconds/DT)):
+		if state != "" and ram.state != state: break
+		stick(Vector2(ram.position.x-m.feet.x,ram.position.z-m.feet.z).normalized()*pace)
+		study.tick(DT)
+		var o := _outside(ram)
+		nearest = minf(nearest,o)
+		if o < -0.05: inside += 1
+	release()
+	return [nearest,inside]
+
+## Walked or run into in every state but a charge, it is a stone: he never
+## passes into its body (he stops against it).
+func _solid_when_not_charging() -> void:
+	var touching: float = float(study.enemies.numbers().radius)+0.15
+	for pace: float in [0.5,1.0]:
+		var how := "walking" if pace < 1.0 else "running"
+		# Idle, standing, looking away: into its back.
+		var ram := _arena(Vector2(LANE,-3.0),Vector2(LANE,0.0))
+		ram.facing = PilotMotor.facing_of(Vector2(0.0,1.0))
+		ram.rotation.y = ram.facing
+		ram.set("_wander_t",100.0)
+		ram.set("_walking",false)
+		var res := _press(ram,"",1.5,pace)
+		check(res[0] < touching and res[1] == 0,"Idle, %s into its back: he stops against it (%.2f m off, %d frames in it)" % [how,res[0],res[1]])
+		# Idle, wandering across his way: into its flank.
+		ram = _arena(Vector2(LANE-2.5,0.6),Vector2(LANE,0.0))
+		ram.facing = PilotMotor.facing_of(Vector2(0.0,1.0))
+		ram.rotation.y = ram.facing
+		ram.set("_wander_t",100.0)
+		ram.set("_walking",true)
+		ram.set("_turn_to",ram.facing)
+		res = _press(ram,"",1.5,pace)
+		check(res[0] < touching and res[1] == 0,"Wandering, %s into its flank: he stops against it (%.2f m off, %d frames in it)" % [how,res[0],res[1]])
+		# Noticing him too close, it backs off for a run-up: after it.
+		ram = _arena(Vector2(LANE,-1.4),Vector2(LANE,0.0))
+		study.tick(DT)
+		res = _press(ram,"notice",2.0,pace)
+		check(res[1] == 0,"Backing off, %s at its face: never in it (%.2f m off, %d frames in it)" % [how,res[0],res[1]])
+		# Telling (pawing): at its face till it charges (from just past the
+		# run-up it would back off for).
+		ram = _arena(Vector2(LANE,-(ram.length*0.5+float(ram.knobs.room)+0.1)),Vector2(LANE,0.0))
+		while ram.state != "tell": study.tick(DT)
+		res = _press(ram,"tell",1.0,pace)
+		check(res[0] < touching and res[1] == 0,"Telling, %s at its face: he stops against it (%.2f m off, %d frames in it)" % [how,res[0],res[1]])
+		# A miss in the open (run aside late), then at it as it skids and digs in.
+		ram = _arena(Vector2(LANE,2.0),Vector2(LANE,-8.0))
+		var dodged := false
+		for i in range(int(4.0/DT)):
+			if ram.state == "skid": break
+			if not dodged and _charging(ram) and _tau(ram) <= 0.4:
+				dodged = true
+				stick(Vector2(1.0,0.0))
+			study.tick(DT)
+		var skid := _press(ram,"skid",2.0,pace)
+		var dig := _press(ram,"dig",2.0,pace)
+		# (Walking, he doesn't catch it before it comes round to tell again.)
+		check(ram.told_count == 1 and (pace < 1.0 or minf(skid[0],dig[0]) < touching) and skid[1]+dig[1] == 0,"Skidding and dug in, %s at it: never in it (%.2f / %.2f m off, %d frames in it)" % [how,skid[0],dig[0],skid[1]+dig[1]])
+		# Stunned: into its side.
+		ram = _arena(Vector2(LANE,-3.0),Vector2(LANE,0.0))
+		ram.facing = PilotMotor.facing_of(Vector2(1.0,0.0))
+		ram.rotation.y = ram.facing
+		ram.stun(3.0)
+		res = _press(ram,"stun",1.5,pace)
+		check(res[0] < touching and res[1] == 0,"Stunned, %s into its side: he stops against it (%.2f m off, %d frames in it)" % [how,res[0],res[1]])
+	# Standing by its shoulder as it notices him and turns: its body sweeps
+	# round into him and shoves him out, never through.
+	var ram := _arena(Vector2(LANE+0.75,-0.3),Vector2(LANE,0.0))
+	ram.facing = PilotMotor.facing_of(Vector2(0.0,-1.0))
+	ram.rotation.y = ram.facing
+	var inside := 0
+	for i in range(int(2.0/DT)):
+		study.tick(DT)
+		if _outside(ram) < -0.05: inside += 1
+	check(inside == 0,"Stood by its shoulder as it turns to him, its body shoves him aside, never through (%d frames in it)" % inside)
+
+## Still, it is a stone to stand on: he jumps onto its back and stays there.
+func _stands_on_it_still() -> void:
+	var ram := _arena(Vector2(LANE,-1.9),Vector2(LANE,0.0))
+	ram.facing = PilotMotor.facing_of(Vector2(1.0,0.0))
+	ram.rotation.y = ram.facing
+	ram.stun(5.0)
+	var up := false
+	for i in range(int(1.2/DT)):
+		if not up: stick(Vector2(0.0,1.0))
+		if i == 2: button(JOY_BUTTON_A,true)
+		study.tick(DT)
+		if m.grounded and m.feet.y > ram.height-0.05:
+			up = true
+			release()
+	release()
+	for i in range(int(1.0/DT)): study.tick(DT)
+	check(up and m.grounded and absf(m.feet.y-ram.height) < 0.05,"Still (stunned), it is a stone he stands on (feet %.2f, its back %.2f)" % [m.feet.y,ram.height])
 
 func _standing_is_hit() -> void:
 	var res := _bout(Vector2(LANE,6.0),Vector2(LANE,-4.0),"none",0.0)
@@ -225,6 +378,10 @@ func _late_jump_near_rim() -> void:
 	for tau: float in [0.1,0.2,0.3]:
 		var res := _bout(Vector2(LANE,RIM-2.0),Vector2(LANE,RIM-12.0),"jump",tau)
 		check(not res.hit and res.over,"A late jump %.2f s out clears its horns and it goes over the rim (hit %s, over %s)" % [tau,res.hit,res.over])
+	# A little early: he comes down on its back, and is bucked off behind it,
+	# not carried over the rim.
+	var buck := _bout(Vector2(LANE,RIM-2.0),Vector2(LANE,RIM-12.0),"jump",0.45)
+	check(not buck.hit and buck.over and m.feet.y > -0.5 and m.feet.z < RIM,"A jump 0.45 s out lands on its back: bucked off behind it, it goes over, he stays on the isle (hit %s, over %s, feet %s)" % [buck.hit,buck.over,str(m.feet)])
 	var early := _bout(Vector2(LANE,RIM-2.0),Vector2(LANE,RIM-12.0),"jump",0.55)
 	check(early.hit,"A jump 0.55 s out comes down on its horns: hit")
 	var late := _bout(Vector2(LANE,RIM-2.0),Vector2(LANE,RIM-12.0),"jump",0.0)
@@ -238,8 +395,10 @@ func _late_run_and_slide_near_rim() -> void:
 		check(res.slid and not res.hit and res.over,"A late power slide (stick across, then LT) %.1f s out sends it over (slid %s, hit %s, over %s)" % [tau,res.slid,res.hit,res.over])
 	res = _bout(Vector2(LANE,RIM-1.5),Vector2(LANE,RIM-11.5),"slide",0.15)
 	check(res.hit,"A slide begun 0.15 s out is too late: hit")
-	res = _bout(Vector2(LANE,RIM-0.6),Vector2(LANE,RIM-12.0),"matador",0.45)
-	check(res.slid and not res.hit,"Run at it, then a power slide carving out of its line 0.45 s out: not hit (slid %s, hit %s)" % [res.slid,res.hit])
+	res = _bout(Vector2(LANE,RIM-0.6),Vector2(LANE,RIM-12.0),"matador",0.4)
+	check(res.slid and not res.hit,"Run at it, then a power slide carving out of its line 0.4 s out: not hit (slid %s, hit %s)" % [res.slid,res.hit])
+	res = _bout(Vector2(LANE,RIM-1.5),Vector2(LANE,RIM-11.5),"slide",0.75)
+	check(res.slid and res.hit,"A lazy power slide 0.75 s out (just after the cue): it hooks after him and hits (slid %s, hit %s)" % [res.slid,res.hit])
 
 func _hang_drops_it() -> void:
 	var res := _bout(Vector2(LANE,RIM-0.4),Vector2(LANE,RIM-10.0),"hang",0.5)
