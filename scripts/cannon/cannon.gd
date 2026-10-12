@@ -1,17 +1,19 @@
 extends Node3D
 ## The cannon (docs/design/roguelike/cannon-round1.md): a greybox barrel on a
-## base. It takes one keg (`load_keg`), and with the pilot inside (the
-## field, scripts/cannon/cannon_field.gd, boards him) he aims it with the
-## stick and fires: the pilot is the cannonball, launched along the barrel
-## at a speed from the keg's size. One keg is one shot; an empty cannon only
-## clicks. Every number is in `knobs`, sized from the pilot (`unit` is the
-## walker's half second of walking, 1.2 m at the knobs).
+## base. Climb in (the field, scripts/cannon/cannon_field.gd, boards the
+## pilot), aim it (yaw and pitch with the stick, power in notches) and fire
+## YOURSELF: free, no ammunition, always usable. Powder kegs are for ranging:
+## the field can fire a keg instead along exactly the same arc (same launch
+## velocity), and the mark where it lands is where you will, at that aim and
+## power. There is no arc preview; reading the keg's flight is the skill.
+## Every number is in `knobs`, sized from the pilot (`unit` is the walker's
+## half second of walking, 1.2 m at the knobs).
 ##
 ## The cannon's own frame: origin on the ground at the base's middle, the
 ## rest aim along -z (turn the node to turn the rest heading). `aim_yaw` is
 ## the aim turned off that heading (radians, PilotMotor.forward's
 ## convention, within `yaw_limit`); `pitch` is up from level within
-## `pitch_min`..`pitch_max`.
+## `pitch_min`..`pitch_max`; `power` indexes `power_notches`.
 const WorldScale = preload("res://scripts/world_scale.gd")
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
 
@@ -22,8 +24,7 @@ const FLASH := Color(0.96,0.55,0.16)
 signal sounded(kind: StringName, at: Vector3)
 
 var knobs: Dictionary = {}
-## The keg inside ("" none, else its kind).
-var loaded := ""
+var power := 0
 var aim_yaw := 0.0
 var pitch := 0.0
 var shots := 0
@@ -31,7 +32,6 @@ var heard: Array = []
 var _barrel: Node3D
 var _paint: StandardMaterial3D
 var _flash := 0.0
-var _dots: Array[MeshInstance3D] = []
 
 static func pilot() -> PilotMotor:
 	var p := PilotMotor.new()
@@ -48,29 +48,30 @@ static func defaults() -> Dictionary:
 		"base_width":unit*1.6,
 		"barrel_radius":unit*0.45,
 		"barrel_length":unit*2.2,
-		# Launch speed per keg kind, in runs (the pilot's top pace): range
-		# goes with the square, so a big shot goes about twice a small one.
-		"speed_small":p.run*3.8,
-		"speed_big":p.run*5.4,
+		# Launch speed at full power, in runs (the pilot's top pace), and the
+		# notches (shares of it); range goes with the square of the speed.
+		"speed_max":p.run*5.4,
+		"power_notches":[0.5,0.62,0.75,0.87,1.0],
+		"power_rest":2,
 		"yaw_limit":deg_to_rad(70.0),
 		"pitch_min":deg_to_rad(15.0),
 		"pitch_max":deg_to_rad(75.0),
 		"pitch_rest":deg_to_rad(40.0),
 		"yaw_rate":1.2,                # rad/s on a full stick
 		"pitch_rate":0.9,
-		"enter_reach":unit*2.4,        # from the base's middle: load and climb in
-		"preview_dots":9,
-		"preview_time":0.75,           # s of the flight shown (the first part)
+		"enter_reach":unit*2.4,        # from the base's middle: climb in
 		"flash_time":0.25,
 	}
 
 func _init() -> void:
 	knobs = defaults()
 	pitch = float(knobs.pitch_rest)
+	power = int(knobs.power_rest)
 
 func configure(over: Dictionary) -> Node3D:
 	knobs.merge(over,true)
 	pitch = float(knobs.pitch_rest)
+	power = int(knobs.power_rest)
 	return self
 
 ## The aim's yaw in the world.
@@ -88,48 +89,40 @@ func pivot() -> Vector3:
 func mouth() -> Vector3:
 	return pivot()+direction()*float(knobs.barrel_length)
 
-func speed_of(kind: String) -> float:
-	return float(knobs["speed_"+kind])
+## The launch speed at the power set.
+func speed() -> float:
+	return float(knobs.speed_max)*float(knobs.power_notches[power])
 
-## The launch velocity the loaded keg gives (zero when empty).
+## The launch velocity at this aim and power: the pilot's, and a keg's.
 func launch_velocity() -> Vector3:
-	if loaded == "": return Vector3.ZERO
-	return direction()*speed_of(loaded)
+	return direction()*speed()
 
 func set_aim(new_yaw: float, new_pitch: float) -> void:
 	aim_yaw = clampf(new_yaw,-float(knobs.yaw_limit),float(knobs.yaw_limit))
 	pitch = clampf(new_pitch,float(knobs.pitch_min),float(knobs.pitch_max))
 	_pose()
 
-## A keg of `kind` put in (false if one is in).
-func load_keg(kind: String) -> bool:
-	if loaded != "": return false
-	loaded = kind
-	_sound(&"fuse",pivot())
-	return true
+func set_power(index: int) -> void:
+	power = clampi(index,0,knobs.power_notches.size()-1)
 
-## Fired: the shot's launch velocity (and the keg spent), or zero with a dry
-## click when empty.
+## Fired (the pilot or a keg): the launch velocity, with the boom.
 func fire() -> Vector3:
-	if loaded == "":
-		_sound(&"click",pivot())
-		return Vector3.ZERO
-	var v := launch_velocity()
-	loaded = ""
 	shots += 1
 	_flash = float(knobs.flash_time)
 	_sound(&"boom",mouth())
-	return v
+	return launch_velocity()
+
+func click() -> void:
+	_sound(&"click",pivot())
 
 func reset() -> void:
-	loaded = ""
 	shots = 0
 	aim_yaw = 0.0
 	pitch = float(knobs.pitch_rest)
+	power = int(knobs.power_rest)
 	_flash = 0.0
 	heard.clear()
 	_pose()
-	show_preview([])
 
 func _sound(kind: StringName, at: Vector3) -> void:
 	heard.append([kind,at])
@@ -158,12 +151,20 @@ static func flight(from: Vector3, v: Vector3, p: PilotMotor, dt: float, t_max: f
 		pts.append(at)
 	return pts
 
-## How far (m, across) a shot of `speed` at `pitch_angle` flies from a mouth
-## `above` m over the landing, over a flat floor.
-static func reach(speed: float, pitch_angle: float, above: float) -> float:
-	var v := Vector3(cos(pitch_angle),sin(pitch_angle),0.0)*speed
-	var pts := flight(Vector3(0.0,above,0.0),v,pilot(),1.0/240.0,30.0,0.0)
-	return pts[pts.size()-1].x
+## Where a shot from `from` at `v` comes down on flat ground at `floor_y`.
+static func landing(from: Vector3, v: Vector3, floor_y: float) -> Vector3:
+	var pts := flight(from,v,pilot(),1.0/240.0,30.0,floor_y)
+	return pts[pts.size()-1]
+
+## Where a default cannon standing at `base` (rest heading -z) would land a
+## shot at `shot_yaw`, `shot_pitch`, power notch `notch`, on flat ground at
+## `floor_y`. For placing a yard's targets.
+static func landing_for(base: Vector3, shot_yaw: float, shot_pitch: float, notch: int, floor_y: float) -> Vector3:
+	var k := defaults()
+	var f := PilotMotor.forward(shot_yaw)
+	var dir := Vector3(f.x*cos(shot_pitch),sin(shot_pitch),f.y*cos(shot_pitch))
+	var from: Vector3 = base+Vector3.UP*float(k.base_height)+dir*float(k.barrel_length)
+	return landing(from,dir*float(k.speed_max)*float(k.power_notches[notch]),floor_y)
 
 func _ready() -> void:
 	var w := float(knobs.base_width)
@@ -199,17 +200,6 @@ func _ready() -> void:
 	tube.rotation.x = -PI*0.5
 	tube.position.z = -float(knobs.barrel_length)*0.5
 	_barrel.add_child(tube)
-	for i in int(knobs.preview_dots):
-		var d := MeshInstance3D.new()
-		var s := SphereMesh.new()
-		s.radius = float(knobs.unit)*0.06
-		s.height = s.radius*2.0
-		d.mesh = s
-		d.material_override = _mat(FLASH)
-		d.top_level = true
-		d.visible = false
-		add_child(d)
-		_dots.append(d)
 	_pose()
 
 static func _mat(c: Color) -> StandardMaterial3D:
@@ -225,19 +215,3 @@ func _process(delta: float) -> void:
 	if _flash > 0.0:
 		_flash = maxf(0.0,_flash-delta)
 		if _paint != null: _paint.albedo_color = BARREL.lerp(FLASH,_flash/float(knobs.flash_time))
-
-## The dotted arc of the first part of the loaded keg's flight from the
-## mouth (none when empty).
-func preview(p: PilotMotor) -> void:
-	if loaded == "":
-		show_preview([])
-		return
-	var n := int(knobs.preview_dots)
-	var dt := float(knobs.preview_time)/float(n)
-	var pts := flight(mouth(),launch_velocity(),p,dt,float(knobs.preview_time))
-	show_preview(pts.slice(1))
-
-func show_preview(pts: Array) -> void:
-	for i in _dots.size():
-		_dots[i].visible = i < pts.size()
-		if i < pts.size(): _dots[i].global_position = pts[i]

@@ -1,25 +1,27 @@
 extends Node3D
-## A powder keg (docs/design/roguelike/cannon-round1.md): greybox barrel
+## A powder keg (docs/design/roguelike/cannon-round1.md): a greybox barrel
 ## lying on an isle. Touched, it is picked up and hovers along behind the
-## pilot like a carried plane part (scripts/carried_follow.gd); a cannon
-## takes it from the hover. Two kinds: "small" (a hop) and "big" (a long
-## arc), the kind setting the shot's power (scripts/cannon/cannon.gd).
-## States: "laid", "carried", "spent" (loaded and fired, gone).
-const SIZES := {"small":0.5,"big":0.8}
-const COLOURS := {"small":Color(0.5,0.34,0.2),"big":Color(0.36,0.22,0.14)}
+## pilot like a carried plane part (scripts/carried_follow.gd). It is fired
+## from a cannon as a ranging shot: it flies the arc the pilot would at the
+## same aim and power and leaves a marker where it lands (the field,
+## scripts/cannon/cannon_field.gd, flies it). One kind: round 1's two sizes
+## set the shot's power, which now has notches on the cannon.
+## States: "laid", "carried", "flying", "spent" (landed or lost, gone).
+const SIZE := 0.6
+const COLOUR := Color(0.5,0.34,0.2)
 const BAND := Color(0.96,0.55,0.16)
 
-var kind := "small"
 var state := "laid"
 var home := Vector3.ZERO
 ## The keg's size (m, tall) as drawn, from the pilot's unit (set by the field).
 var height := 0.6
+## While flying: its velocity.
+var velocity := Vector3.ZERO
 var _body: Node3D
 
-func setup(keg_kind: String, unit: float) -> void:
-	kind = keg_kind
-	height = unit*float(SIZES[kind])
-	name = "Keg_"+kind
+func setup(unit: float) -> void:
+	height = unit*SIZE
+	name = "Keg"
 
 func _ready() -> void:
 	_body = Node3D.new()
@@ -31,7 +33,7 @@ func _ready() -> void:
 	cyl.height = height
 	cyl.radial_segments = 12
 	mesh.mesh = cyl
-	mesh.material_override = _paint(COLOURS[kind])
+	mesh.material_override = _paint(COLOUR)
 	mesh.position.y = height*0.5
 	_body.add_child(mesh)
 	for y in [0.25,0.75]:
@@ -42,7 +44,7 @@ func _ready() -> void:
 		ring.height = height*0.08
 		ring.radial_segments = 12
 		band.mesh = ring
-		band.material_override = _paint(BAND if kind == "big" else Color(0.3,0.3,0.32))
+		band.material_override = _paint(BAND)
 		band.position.y = height*y
 		_body.add_child(band)
 
@@ -54,9 +56,21 @@ static func _paint(c: Color) -> StandardMaterial3D:
 ## Hovering at `share` of its size, or laid at full size.
 func set_carried(on: bool, share: float) -> void:
 	state = "carried" if on else "laid"
+	_set_scale(share if on else 1.0)
+
+func _set_scale(share: float) -> void:
 	if _body == null: return
-	_body.scale = Vector3.ONE*(share if on else 1.0)
-	_body.position.y = -height*0.5*share if on else 0.0
+	_body.scale = Vector3.ONE*share
+	_body.position.y = -height*0.5*share if share < 1.0 else 0.0
+
+## Fired from `at` at `v`: flying at full size.
+func launch(at: Vector3, v: Vector3) -> void:
+	state = "flying"
+	velocity = v
+	visible = true
+	global_position = at
+	_set_scale(1.0)
+	if _body != null: _body.position.y = -height*0.5
 
 func spend() -> void:
 	state = "spent"
@@ -66,6 +80,4 @@ func lay() -> void:
 	state = "laid"
 	visible = true
 	position = home
-	if _body != null:
-		_body.scale = Vector3.ONE
-		_body.position.y = 0.0
+	_set_scale(1.0)
