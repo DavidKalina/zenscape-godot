@@ -2,11 +2,14 @@ extends Node3D
 ## The pilot in the plane's cockpit (scripts/plane_figure.gd), alive in the
 ## seat like a kart racer's driver, chest up out of the cockpit, both gloved
 ## hands on the stick. The wanderer (`wanderer`, the sheet's look,
-## docs/design/plane-look/round1.md), soft and rounded and painted as the
-## plane is (scripts/soft_mesh.gd, shaders/plane_paint.gdshader): a dark
-## faceless head under the big terracotta wide-brimmed hat with its brown
-## band, two pill eyes glowing cyan that blink now and then, a chunky navy
-## scarf wound at the neck, a charcoal coat, brown mitts. The sky's other
+## docs/design/plane-look/round1.md, docs/design/wanderer-look/round2.md) is
+## the walker himself: his own head and hat lifted off his model (assets/
+## models/pilot.glb, in his paint, scripts/pilot_paint.gd), the dark faceless
+## head with the glowing eyes painted on it that blink now and then, the
+## terracotta hat with its low crown, brown band and wide floppy brim; and
+## soft and rounded in the plane's paint (scripts/soft_mesh.gd, shaders/
+## plane_paint.gdshader) in his colours, a chunky navy scarf wound at the
+## neck, the charcoal-brown jacket, brown mitts. The sky's other
 ## pilots (a livery's) keep the folk's faceted leather cap and brass
 ## goggles (scripts/person_kit.gd `chest`, `head`).
 ##
@@ -24,6 +27,7 @@ extends Node3D
 const PersonKit = preload("res://scripts/person_kit.gd")
 const FacetMesh = preload("res://scripts/facet_mesh.gd")
 const SoftMesh = preload("res://scripts/soft_mesh.gd")
+const PilotPaint = preload("res://scripts/pilot_paint.gd")
 const PLANE_PAINT := preload("res://shaders/plane_paint.gdshader")
 const Spring = PersonKit.Spring
 
@@ -37,27 +41,23 @@ const STICK := Vector3(0.022,0.05,-0.09)
 const HEAD_SCALE := 0.9
 ## Seconds between idle moves, least and most.
 const IDLE_EVERY := Vector2(2.5,6.0)
-## The character sheet's colours (as scripts/plane_figure.gd's palette):
-## the hat's terracotta and its band's brown, the scarf's navy, the eyes'
-## cyan glow, the coat's charcoal, and the head's dark.
-const TERRACOTTA := Color("c9644a")
-const BROWN := Color("5a3a2c")
+## The walker's colours (scripts/pilot_paint.gd, the character sheet's):
+## the scarf's navy, the jacket's charcoal brown, the mitts' brown.
 const NAVY := Color("2e4fa3")
-const CYAN := Color("5fe6e6")
-const CHARCOAL := Color("4a4848")
-const HEAD_DARK := Color("33251f")
-## The wanderer's head against the body: the sheet's chibi, a big round
-## head as wide as the shoulders (the folk's is HEAD_SCALE).
-const WANDERER_HEAD := 1.45
-## The hat: its brim's reach and droop, the crown's height (head units):
-## the brim reaches past the shoulders, as on the sheet, and sits high
-## enough over the deck that the chase camera still sees the nose.
-const BRIM := 0.16
-const BRIM_DROOP := 0.012
-const CROWN := 0.093
-## The eyes' glow (emission energy) and their blink: seconds between,
-## least and most, and seconds shut.
-const EYE_GLOW := 2.6
+const JACKET := Color("4a403c")
+const MITT := Color("7a4e38")
+## The walker's head and hat, lifted off his model: the head's middle there
+## (m, rest; art/blender/pilot/pilot_build.py PILOT_HEAD, its radius), and
+## the head's radius here and its middle over the neck (the pilot's units).
+## The sheet's chibi, a big round head under a hat whose brim reaches past
+## the shoulders; round two drew him a little smaller and lower in the seat
+## (radius 0.116 to 0.1, the hat's top 0.06 lower), so the chase camera
+## sees more of the plane past him.
+const WALKER_HEAD := Vector3(0.0,0.9401,0.0)
+const WALKER_HEAD_RADIUS := 0.1607
+const HEAD_RADIUS := 0.1
+const HEAD_UP := 0.095
+## The eyes' blink: seconds between, least and most, and seconds shut.
 const BLINK_EVERY := Vector2(2.0,5.5)
 const BLINK := 0.12
 
@@ -83,9 +83,10 @@ var _idle := ""
 var _idle_left := 0.0
 var _idle_look := Vector2.ZERO
 var _idle_next := 2.0
-## The wanderer's eyes, and the blink's clock: seconds to the next, and
-## seconds left shut (below 0 open); a second blink may follow.
-var _eyes: Array[Node3D] = []
+## The wanderer's face paint (its eyes' `blink`), and the blink's clock:
+## seconds to the next, and seconds left shut (below 0 open); a second
+## blink may follow.
+var _face: ShaderMaterial
 var _blink_next := 3.0
 var _blink_left := -1.0
 var _blink_again := false
@@ -101,7 +102,7 @@ func _init(materials: Dictionary, wanderer := true) -> void:
 	_torso = Node3D.new()
 	add_child(_torso)
 	if wanderer:
-		materials = {"jacket":_painted(CHARCOAL,0.4),"scarf":_painted(NAVY,0.7),"leather":_painted(BROWN,0.55)}
+		materials = {"jacket":_painted(JACKET,0.4),"scarf":_painted(NAVY,0.7),"leather":_painted(MITT,0.55)}
 		_wanderer_chest(materials)
 	else:
 		PersonKit.chest(_torso,materials)
@@ -141,40 +142,37 @@ func _wanderer_chest(m: Dictionary) -> void:
 	PersonKit.part(_torso,SoftMesh.ball(0.022,12),m.scarf,PersonKit.KNOT,Vector3.ZERO)
 
 ## The wanderer's neck and head on the chest, returned [neck, head], each a
-## pivot to turn, as PersonKit `head`: a round dark head with no face but
-## two glowing pill eyes, and the wide-brimmed terracotta hat, its brim
-## curving down a little to the edge, a brown band round the crown.
-func _wanderer_head(_m: Dictionary) -> Array:
-	var dark := _painted(HEAD_DARK,0.6)
-	dark.set_shader_parameter("mottle",0.05)
-	var felt := _painted(TERRACOTTA,0.3)
-	var band := _painted(BROWN,0.5)
-	var glow := StandardMaterial3D.new()
-	glow.albedo_color = CYAN
-	glow.emission_enabled = true
-	glow.emission = CYAN
-	glow.emission_energy_multiplier = EYE_GLOW
-	var up := Vector3(-PI*0.5,0.0,0.0)
+## pivot to turn, as PersonKit `head`: the walker's own head and hat
+## (`head_mesh`), his face's paint its own here, to blink.
+func _wanderer_head(m: Dictionary) -> Array:
 	var neck := Node3D.new()
 	neck.position = Vector3(0.0,PersonKit.NECK,0.0)
 	_torso.add_child(neck)
-	PersonKit.part(neck,SoftMesh.cylinder(0.03,0.026,0.05,12),dark,Vector3(0.0,0.02,0.0),Vector3.ZERO)
+	PersonKit.part(neck,SoftMesh.cylinder(0.03,0.026,0.05,12),m.jacket,Vector3(0.0,0.02,0.0),Vector3.ZERO)
 	var pivot := Node3D.new()
 	pivot.position = Vector3(0.0,0.035,0.0)
-	pivot.scale = Vector3.ONE*WANDERER_HEAD
 	neck.add_child(pivot)
-	var mid := Vector3(0.0,0.055,0.0)
-	PersonKit.part(pivot,SoftMesh.hull([Vector3(-0.072,0.0,0.0),Vector3(-0.066,0.04,0.038),Vector3(-0.045,0.074,0.07),Vector3(0.0,0.086,0.08),Vector3(0.04,0.079,0.074),Vector3(0.066,0.046,0.043),Vector3(0.082,0.0,0.0)],24),dark,mid,up)
-	for side in [-1.0,1.0]:
-		var eye := PersonKit.part(pivot,SoftMesh.ball(0.012,12,Vector3(1.0,1.45,0.55)),glow,mid+Vector3(0.03*side,0.004,-0.074),Vector3(0.0,0.0,0.0))
-		eye.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		_eyes.append(eye)
-	var hat := mid+Vector3(0.0,0.045,0.0)
-	# The brim: thin, curving down to its edge, rolled round the rim.
-	PersonKit.part(pivot,SoftMesh.hull([Vector3(-BRIM_DROOP-0.004,BRIM*0.97,BRIM*0.97),Vector3(-BRIM_DROOP,BRIM,BRIM),Vector3(-BRIM_DROOP*0.55,BRIM*0.94,BRIM*0.94),Vector3(-BRIM_DROOP*0.15,BRIM*0.8,BRIM*0.8),Vector3(0.004,BRIM*0.62,BRIM*0.62),Vector3(0.01,0.084,0.082)],36,3,80.0),felt,hat,up)
-	PersonKit.part(pivot,SoftMesh.hull([Vector3(0.0,0.082,0.08),Vector3(CROWN*0.55,0.079,0.077),Vector3(CROWN*0.8,0.068,0.065),Vector3(CROWN*0.94,0.045,0.043),Vector3(CROWN,0.0,0.0)],28),felt,hat,up)
-	PersonKit.part(pivot,SoftMesh.hull([Vector3(0.008,0.0855,0.0835),Vector3(0.028,0.0835,0.0815)],28,1),band,hat,up)
+	var head := MeshInstance3D.new()
+	head.name = "Head"
+	head.mesh = head_mesh()
+	head.position = Vector3(0.0,HEAD_UP-pivot.position.y,0.0)
+	pivot.add_child(head)
+	for i in range(head.mesh.get_surface_count()):
+		var paint := head.mesh.surface_get_material(i)
+		if paint != null and paint.resource_name == "pilot_face":
+			_face = paint.duplicate()
+			head.set_surface_override_material(i,_face)
 	return [neck,pivot]
+
+static var _head_mesh: ArrayMesh
+
+## The walker's head and hat (scripts/pilot_paint.gd `lift`), the head's
+## middle at the origin, drawn to HEAD_RADIUS; made once.
+static func head_mesh() -> ArrayMesh:
+	if _head_mesh == null:
+		var at := Transform3D(Basis.from_scale(Vector3.ONE*HEAD_RADIUS/WALKER_HEAD_RADIUS),Vector3.ZERO)*Transform3D(Basis(),-WALKER_HEAD)
+		_head_mesh = PilotPaint.lift(["pilot_face"]+PilotPaint.HAT,at,PilotPaint.outfit())
+	return _head_mesh
 
 ## The scarf's knot in the figure's frame.
 func knot() -> Vector3:
@@ -219,11 +217,11 @@ func animate(delta: float, bank: float, pitch: float, roll_rate: float, pitch_ra
 
 ## Now and then the wanderer's eyes shut for a moment, sometimes twice.
 func _blink(delta: float) -> void:
-	if _eyes.is_empty(): return
+	if _face == null: return
 	if _blink_left >= 0.0:
 		_blink_left -= delta
 		if _blink_left < 0.0:
-			for eye in _eyes: eye.scale.y = 1.0
+			_face.set_shader_parameter("blink",0.0)
 			if _blink_again:
 				_blink_again = false
 				_blink_next = 0.12
@@ -234,7 +232,7 @@ func _blink(delta: float) -> void:
 	if _blink_next > 0.0: return
 	_blink_left = BLINK
 	_blink_again = _blink_again or _rng.randf() < 0.25
-	for eye in _eyes: eye.scale.y = 0.12
+	_face.set_shader_parameter("blink",1.0)
 
 ## Every few seconds an idle move: a glance down at the land, a look back
 ## over a shoulder, a head-bob, or a wave back at the follower.

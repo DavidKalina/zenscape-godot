@@ -13,6 +13,7 @@ extends RefCounted
 ## plane's livery shares them); the rest are shades between.
 
 const PAINT := preload("res://shaders/pilot_paint.gdshader")
+const MODEL := preload("res://assets/models/pilot.glb")
 ## The sheet's glow (the eyes, the bracelets' stripes, the cap's rotor).
 const GLOW := Color("5fe6e6")
 ## The surfaces that are the hat (hidden on the head while it flies as the
@@ -33,7 +34,7 @@ const SURFACES := {
 	"pilot_gold": [Color("d9a441"), {"mottle":0.05,"streaks":0.02,"rim":0.35,"sheen":0.35}],
 	"pilot_glow": [GLOW, {"mottle":0.0,"streaks":0.0,"glow":2.2}],
 	"pilot_mitt": [Color("7a4e38"), {}],
-	"pilot_trousers": [Color("2c3b62"), {"mottle":0.12,"streaks":0.09}],
+	"pilot_trousers": [Color("323847"), {"mottle":0.12,"streaks":0.09}],
 	"pilot_boots": [Color("7a4a32"), {}],
 	"pilot_fleece": [Color("d9bc9c"), {"mottle":0.1,"streaks":0.03,"paint_scale":22.0}],
 	"pilot_cape": [Color("4a4848"), {"mottle":0.12,"streaks":0.08,"rim":0.18}],
@@ -51,3 +52,38 @@ static func outfit() -> Dictionary:
 		for p: String in tweaks: m.set_shader_parameter(p,tweaks[p])
 		out[key] = m
 	return out
+
+## The model's surfaces named in `keys`, lifted off it once (unskinned, in
+## its rest pose) through `at`, each in `paint`'s material of its name: the
+## hat for the pocket sail (scripts/pocket_sail_figure.gd), the head and the
+## hat for the cockpit's wanderer (scripts/plane_pilot.gd). The paint's rest
+## coordinates ride along in the UVs, so the eyes stay painted on.
+static func lift(keys: Array, at: Transform3D, paint: Dictionary) -> ArrayMesh:
+	var lifted := ArrayMesh.new()
+	var model := MODEL.instantiate()
+	for node: MeshInstance3D in model.find_children("*","MeshInstance3D",true,false):
+		var placed := Transform3D.IDENTITY
+		var up: Node = node
+		while up != model:
+			placed = (up as Node3D).transform*placed
+			up = up.get_parent()
+		for i in range(node.mesh.get_surface_count()):
+			var material := node.mesh.surface_get_material(i)
+			var key := material.resource_name if material != null else ""
+			if not key in keys: continue
+			var arrays := node.mesh.surface_get_arrays(i)
+			arrays[Mesh.ARRAY_BONES] = null
+			arrays[Mesh.ARRAY_WEIGHTS] = null
+			var to := at*placed
+			var points: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+			var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+			for k in range(points.size()):
+				points[k] = to*points[k]
+				normals[k] = (to.basis*normals[k]).normalized()
+			arrays[Mesh.ARRAY_VERTEX] = points
+			arrays[Mesh.ARRAY_NORMAL] = normals
+			arrays[Mesh.ARRAY_TANGENT] = null
+			lifted.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
+			lifted.surface_set_material(lifted.get_surface_count()-1,paint[key])
+	model.free()
+	return lifted

@@ -14,11 +14,10 @@ extends Node3D
 ## surfaces lifted off the skinned mesh once and kept), in its paint.
 
 const PilotPaint = preload("res://scripts/pilot_paint.gd")
-const MODEL := preload("res://assets/models/pilot.glb")
 ## Where the hat sits on his head (m, the model's frame, art/blender/pilot/
 ## pilot_build.py PILOT_HAT: its brim's root, standing) and its forward tip
 ## there (radians), and how high it flies over his feet.
-const ON_HEAD := Vector3(0.0,0.95,0.0)
+const ON_HEAD := Vector3(0.0,1.002,0.0)
 const REST_HIPS_DROP := 0.029
 const TIP := -0.06
 const HIGH := 1.6
@@ -85,35 +84,8 @@ func _init() -> void:
 ## its brim's root at the origin, level, in the pilot's paint.
 static func hat_mesh() -> ArrayMesh:
 	if _hat_mesh != null: return _hat_mesh
-	_hat_mesh = ArrayMesh.new()
-	var model := MODEL.instantiate()
-	var paint := PilotPaint.outfit()
 	var at := Transform3D(Basis(Vector3.RIGHT,-TIP),Vector3.ZERO)*Transform3D(Basis(),-(ON_HEAD+Vector3.UP*REST_HIPS_DROP))
-	for node: MeshInstance3D in model.find_children("*","MeshInstance3D",true,false):
-		var placed := Transform3D.IDENTITY
-		var up: Node = node
-		while up != model:
-			placed = (up as Node3D).transform*placed
-			up = up.get_parent()
-		for i in range(node.mesh.get_surface_count()):
-			var material := node.mesh.surface_get_material(i)
-			var key := material.resource_name if material != null else ""
-			if not key in PilotPaint.HAT: continue
-			var arrays := node.mesh.surface_get_arrays(i)
-			arrays[Mesh.ARRAY_BONES] = null
-			arrays[Mesh.ARRAY_WEIGHTS] = null
-			var to := at*placed
-			var points: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
-			var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
-			for k in range(points.size()):
-				points[k] = to*points[k]
-				normals[k] = (to.basis*normals[k]).normalized()
-			arrays[Mesh.ARRAY_VERTEX] = points
-			arrays[Mesh.ARRAY_NORMAL] = normals
-			arrays[Mesh.ARRAY_TANGENT] = null
-			_hat_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
-			_hat_mesh.surface_set_material(_hat_mesh.get_surface_count()-1,paint[key])
-	model.free()
+	_hat_mesh = PilotPaint.lift(PilotPaint.HAT,at,PilotPaint.outfit())
 	return _hat_mesh
 
 ## Packed away at once.

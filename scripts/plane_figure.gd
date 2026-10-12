@@ -72,7 +72,9 @@ const PART_GLOW := preload("res://shaders/plane_part_glow.gdshader")
 ## terracotta, brown, cream, tan, navy, the cyan glow and charcoal.
 const TERRACOTTA := Color("c9644a")
 const BROWN := Color("5a3a2c")
-const CREAM := Color("e9dfcb")
+## The cream warmed a touch (was e9dfcb) so it reads cream, not grey, by
+## the walker (docs/design/wanderer-look/round2.md).
+const CREAM := Color("ecdcc0")
 const TAN := Color("d9bc9c")
 const NAVY := Color("2e4fa3")
 const CYAN := Color("5fe6e6")
@@ -439,7 +441,11 @@ func _init(livery := {}) -> void:
 	var scarf_material := ShaderMaterial.new()
 	scarf_material.shader = FOLK_RIBBON
 	scarf_material.set_shader_parameter("roughness_value",0.95)
-	scarf_material.set_meta("scarf",livery.get("scarf",PlanePilot.NAVY))
+	# The wanderer's tail is the walker's navy scarf (scripts/pilot_paint.gd):
+	# the ribbon multiplies its vertex colour in as linear, so it is turned
+	# from the sheet's sRGB first (as it was, it drew pale sky blue).
+	# (`_tail_navy`.)
+	scarf_material.set_meta("scarf",livery.get("scarf",_tail_navy()))
 	_stripes = livery.has("scarf")
 	_scarf.material_override = scarf_material
 	_scarf.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -649,6 +655,12 @@ func _draw_tail(points: PackedVector3Array, side: Vector3, up: Vector3, phase: f
 			_scarf_mesh.surface_set_normal(normal)
 			_scarf_mesh.surface_add_vertex(p+across*e*_scarf_width(f,wide)*0.5)
 	_scarf_mesh.surface_end()
+
+## The wanderer's scarf tail's vertex colour: the walker's navy, linear,
+## a shade down for the folk ribbon's brighter fill, so the two match.
+static func _tail_navy() -> Color:
+	var navy := PlanePilot.NAVY.srgb_to_linear()
+	return Color(navy.r*0.6,navy.g*0.6,navy.b*0.6)
 
 static func _scarf_width(along: float, wide: float) -> float:
 	return SCARF_WIDTH*wide*(1.0-0.4*along)

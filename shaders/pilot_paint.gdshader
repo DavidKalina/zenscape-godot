@@ -61,9 +61,9 @@ uniform float gone = 0.0;
 // `happy` bends them into ^ ^ arcs, `surprise` opens them wider and rounder,
 // `squint` flattens them under lids slanting down to the middle.
 uniform float eyes = 0.0;
-uniform vec3 eye_at = vec3(0.0, 0.1898, 0.8627);
-uniform float eye_apart = 0.0658;
-uniform float eye_half = 0.0455;
+uniform vec3 eye_at = vec3(0.0, 0.1607, 0.8794);
+uniform float eye_apart = 0.0582;
+uniform float eye_half = 0.0405;
 uniform vec4 eye_colour : source_color = vec4(0.373, 0.902, 0.902, 1.0);
 uniform float eye_glow = 2.4;
 uniform float blink = 0.0;
