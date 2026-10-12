@@ -1066,8 +1066,14 @@ func _next_legs() -> void:
 
 ## Asleep on its roost (--dragon-roost, docs/design/dragon-roost/round2.md):
 ## the pose (scripts/dragon_roost.gd) lays it on its mountain and
-## breathes it; it never flies, grips or blows.
+## breathes it; it never grips or blows. With a wake (scripts/dragon_wake.gd,
+## docs/design/dragon-wake/round1.md) it wakes on a schedule and flies a
+## circuit round the region, spectacle only, then settles back.
 var roost: RefCounted = null
+var wake: RefCounted = null
+## Its eyes (`_eye_points`) as found, kept for when it wakes: asleep they
+## are lids, with no halo.
+var _open_eyes: Array[Vector3] = []
 
 ## Built and laid asleep on its roost instead of `setup`: no route, gale or
 ## treasure; `pose` (scripts/dragon_roost.gd) poses it every frame.
@@ -1078,14 +1084,51 @@ func setup_roost(cam: Camera3D, pose: RefCounted) -> void:
 	_build()
 	model.visible = true
 	state = "roosting"
+	_open_eyes = _eye_points.duplicate()
 	roost = pose
 	roost.setup(self)
+
+## Whether it is off its roost (or waking on it): its wake's to say.
+func awake() -> bool:
+	return wake != null and bool(wake.call("out"))
+
+## Its eyes open (the eye surface its own, glowing, the night halos back)
+## or shut (worn as the hide, as asleep).
+func open_eyes(open: bool) -> void:
+	_eye_points.clear()
+	if open: _eye_points.append_array(_open_eyes)
+	elif _eye_halos != null: _eye_halos.visible = false
+	for mi: MeshInstance3D in model.find_children("*","MeshInstance3D",true,false):
+		for i in mi.mesh.get_surface_count():
+			var m := mi.mesh.surface_get_material(i)
+			if m != null and m.resource_name == "dragon_eye": mi.set_surface_override_material(i,_material("dragon_eye" if open else "dragon_hide"))
+
+## Its flight for the wake (scripts/dragon_wake.gd): the air, steering along
+## `route`, the pose and the body's ease; no attack, gale or treasure (it
+## has none off its roost: `setup_roost` builds neither).
+func wake_fly(delta: float) -> void:
+	_clock += delta
+	_ride_air(delta)
+	_fly(delta)
+	_pose(delta)
+	_ease_body(delta)
+
+## Its flight pose for the wake's takeoff and landing, flown by the wake
+## itself (`pos`, `yaw`, `gamma`, `flap_w`, `phase` set there); the body's
+## turn eased as in flight, so it carries on smoothly into and out of it.
+func wake_pose(delta: float) -> void:
+	_clock += delta
+	_ride_air(delta)
+	_pose(delta)
+	_ease_body(delta)
 
 func advance(delta: float) -> void:
 	if delta <= 0.0: return
 	if roost != null:
-		roost.advance(delta)
+		if wake != null: wake.call("advance",delta)
+		else: roost.advance(delta)
 		_night_glow(delta)
+		if awake(): _watch_camera(delta)
 		return
 	if _skip > 0.0:
 		var ahead := _skip
@@ -2768,7 +2811,8 @@ func _touch_treasure() -> void:
 # --- The watch camera ---------------------------------------------------------------
 
 func _unhandled_input(event: InputEvent) -> void:
-	if roost != null: return
+	# Asleep it takes no keys; awake (its wake's circuit) V still watches it.
+	if roost != null and not awake(): return
 	if event is InputEventKey and event.pressed and not event.echo and (event as InputEventKey).keycode == KEY_G and state == "clinging":
 		_say("It lets go")
 		_let_go()
