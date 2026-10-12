@@ -20,6 +20,7 @@ const Voussoirs = preload("res://scripts/traps/trap_voussoirs.gd")
 const Seesaw = preload("res://scripts/traps/trap_seesaw.gd")
 const Wind = preload("res://scripts/traps/trap_wind.gd")
 const WindBlaster = preload("res://scripts/traps/trap_wind_blaster.gd")
+const Sluice = preload("res://scripts/traps/trap_sluice.gd")
 
 ## The slots: name -> the trap's script. One line per trap.
 const TRAPS := {
@@ -27,6 +28,7 @@ const TRAPS := {
 	"seesaw": Seesaw,
 	"wind": Wind,
 	"wind_blaster": WindBlaster,
+	"sluice": Sluice,
 }
 
 ## Lanes are this far apart along x (m); decks this wide, the end deck this
