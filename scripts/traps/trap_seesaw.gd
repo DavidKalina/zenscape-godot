@@ -25,12 +25,26 @@ extends "res://scripts/traps/trap.gd"
 ## inertia), `bounce` (damping ratio; under 1 it overshoots), `slide`
 ## (m/s down the tilt), `launch` (x fall pace), `hard` (m/s fall that
 ## counts), `creak_gap` (s between creaks).
+##
+## Weight (round 2b): the tilt is a balance of moments, the pilot's
+## `pilot_mass` x his arm plus each load's mass x its arm over the slab
+## (`pilot_mass` x half length), so a heavy block on one end keeps that end
+## down and the pilot alone on the other end cannot lift it. A blow flings a
+## load by the blow's pace x `launch` (capped `load_cap` x the pilot's own
+## cap) x 2 pilot/(pilot+load) mass: a plain landing barely moves a heavy
+## block, a slam (the motor's "slammed" event, 20+ m/s against a jump's 6)
+## sends it far. A load goes up at v, and `load_along` x (v less `shove`, a first jump's takeoff: a hop goes nowhere) along (the pilot `along` x up) toward its own end's
+## outside (z), `veer` x that sideways (+x). `cap_mul` scales the pilot's
+## own launch cap (a heavy drop kicks harder than a jump).
+## `drop_hit(block, fall)` is a falling block's blow, momentum-scaled.
 const THICK := 0.4
 const STONE := Color(0.42,0.41,0.4)
 const STUMP := Color(0.5,0.47,0.42)
 ## The share of a jump height the raised end may rise.
 const RISE_OF_JUMP := 0.9
 const SPAN_OF_WALK := 2.5
+## Most a blow spins the slab (rad/s): a slam must not whip it past its stops.
+const SPIN_KICK := 1.2
 
 ## Tilt about the cross axis: positive raises the far (-z) end.
 var tilt := 0.0
@@ -45,6 +59,12 @@ var last_launch := Vector3.ZERO
 var _rider_arm := 0.0
 var _riding := false
 var _creak_t := 0.0
+## Loads' (RigidBody3D) glow materials, by instance id.
+var _glow: Dictionary = {}
+## Loads just flung, passing through the slab until they come down on it: rb -> s.
+var _free: Dictionary = {}
+## Impulses waiting a step for the slab to let go: [rb, impulse].
+var _pending: Array = []
 
 func _init() -> void:
 	super()
@@ -61,6 +81,7 @@ func defaults() -> Dictionary:
 		"length":span,"width":p.run*0.5,"pivot_offset":0.0,
 		"max_tilt":asin(clampf(rise/(span*0.5),0.0,0.9)),"tip_time":0.8,"bounce":0.55,
 		"slide":p.run*0.5,"launch":1.1,"hard":sqrt(2.0*p.gravity*p.jumps[0]*0.5),"creak_gap":0.45,
+		"pilot_mass":80.0,"load_cap":2.2,"cap_mul":1.0,"along":0.3,"load_along":1.6,"shove":sqrt(2.0*p.gravity*p.jumps[0]),"veer":0.0,
 	}
 
 func length() -> float:
@@ -131,9 +152,19 @@ func before(delta: float) -> void:
 	_riding = motor != null and motor.rider == null and not motor.swimming and (motor.grounded or motor.on_ledge()) and on_slab(motor.feet)
 	var half := length()*0.5
 	var target := rest_tilt()
+	var moment := 0.0
+	var weighed := false
 	if _riding:
 		_rider_arm = arm_of(to_local(motor.feet))
-		target = -clampf(_rider_arm/half,-1.0,1.0)*float(knob("max_tilt"))
+		moment += float(knob("pilot_mass"))*_rider_arm
+		weighed = true
+	for r: Variant in loads:
+		var rb := r as RigidBody3D
+		if rb != null and load_on(rb):
+			moment += rb.mass*arm_of(to_local(rb.global_position))
+			weighed = true
+	if weighed:
+		target = -clampf(moment/(float(knob("pilot_mass"))*half),-1.0,1.0)*float(knob("max_tilt"))
 	var w := 2.2/maxf(float(knob("tip_time")),0.05)
 	var zeta := float(knob("bounce"))
 	var was := _transform()
@@ -147,41 +178,113 @@ func before(delta: float) -> void:
 		# Down the tilt, toward the low end.
 		var down := global_transform.basis*Vector3(0.0,0.0,1.0)*(float(knob("slide"))*sin(tilt)*delta)
 		motor.carry(Transform3D(Basis.IDENTITY,down),0.0)
+	_land_flung(delta)
 	_creak(delta)
+	_prime_glow()
 	tell_sight(clampf(absf(spin)/maxf(float(knob("max_tilt"))*w*0.4,0.01),0.0,1.0))
 
 func after(_delta: float, events: Dictionary) -> void:
 	if motor == null or not events.has("landed"): return
 	if motor.rider != null or not on_slab(motor.feet): return
 	var arm := arm_of(to_local(motor.feet))
-	var speed := float(events.landed)
+	var speed := float(events.get("slammed",events.landed))
 	# Hard on the high end: its side was the up one.
 	if speed >= float(knob("hard")) and high_end() != 0 and signf(arm) == float(high_end()) and absf(tilt) > float(knob("max_tilt"))*0.25:
 		impact(arm,speed)
 
-## A blow of `speed` (m/s) at `arm` m from the pivot (+ far): that side
-## goes down hard and whatever stands on the other side is flung.
+## Is the load `rb` resting on the slab (over it, near its surface)?
+func load_on(rb: RigidBody3D) -> bool:
+	var l := to_local(rb.global_position)
+	return absf(l.x) <= float(knob("width"))*0.5+0.3 and l.z <= 0.0 and l.z >= -length() and l.y-_surface_y(l.z) < 1.6 and l.y-_surface_y(l.z) > -0.5
+
+## Is a load held down on the low end, the high end up (a slam would fling it)?
+func primed() -> float:
+	if absf(tilt) < float(knob("max_tilt"))*0.25: return 0.0
+	for r: Variant in loads:
+		var rb := r as RigidBody3D
+		if rb != null and load_on(rb) and signf(arm_of(to_local(rb.global_position))) == -float(high_end()):
+			return clampf(absf(tilt)/float(knob("max_tilt")),0.0,1.0)
+	return 0.0
+
+func _prime_glow() -> void:
+	var amount := primed()
+	for r: Variant in loads:
+		var rb := r as RigidBody3D
+		if rb == null: continue
+		for c in rb.get_children():
+			var mi := c as MeshInstance3D
+			if mi != null and mi.material_override is StandardMaterial3D:
+				var m := mi.material_override as StandardMaterial3D
+				if not _glow.has(m): _glow[m] = m.albedo_color
+				m.albedo_color = (_glow[m] as Color).lerp(TELL,amount*0.7)
+
+## A falling block (`rb`, RigidBody3D) hit the slab at `fall` m/s: the blow
+## of its momentum against the pilot's (heavy ones always launch).
+func drop_hit(rb: RigidBody3D, fall: float) -> void:
+	var arm := arm_of(to_local(rb.global_position))
+	impact(arm,fall*rb.mass/float(knob("pilot_mass")))
+
+## A blow of `speed` (m/s, as the pilot's own landing) at `arm` m from the
+## pivot (+ far): that side goes down hard and whatever stands on the other
+## side is flung.
 func impact(arm: float, speed: float) -> void:
 	var side := signf(arm)
 	if side == 0.0: return
 	var half := length()*0.5
-	var up := minf(float(knob("launch"))*speed*clampf(absf(arm)/half,0.3,1.0),_launch_cap())
-	spin += -side*speed/maxf(half,0.1)
+	var share := clampf(absf(arm)/half,0.3,1.0)
+	var pull := float(knob("launch"))*speed*share
+	var up := minf(pull,_launch_cap()*float(knob("cap_mul")))
+	spin += -side*minf(speed/maxf(half,0.1),SPIN_KICK)
 	launches += 1
-	# The low end's z direction away from the pivot: +z for the near end.
-	var out := global_transform.basis*Vector3(0.0,0.0,side)*(up*0.3)
+	var way := global_transform.basis*Vector3(0.0,0.0,side)
+	var out := way*(up*float(knob("along")))+global_transform.basis*Vector3(float(knob("veer"))*up,0.0,0.0)
 	last_launch = Vector3(out.x,up,out.z)
+	tell_sound(&"thunk",to_global(Vector3(0.0,0.0,pivot_z()-arm)))
 	tell_sound(&"creak",to_global(Vector3(0.0,0.0,pivot_z()-arm)))
 	# The pilot on the low end.
 	if motor != null and motor.rider == null and on_slab(motor.feet):
 		var mine := arm_of(to_local(motor.feet))
 		if signf(mine) == -side and absf(mine) > 0.3:
 			motor.toss(last_launch)
+	var mp := float(knob("pilot_mass"))
 	for r: Variant in loads:
 		var rb := r as RigidBody3D
 		if rb == null: continue
-		if signf(arm_of(to_local(rb.global_position))) == -side:
-			rb.apply_central_impulse(Vector3(0.0,up,0.0)*rb.mass)
+		var there := arm_of(to_local(rb.global_position))
+		if signf(there) == -side:
+			# Up and along its own end's outside, lighter flies faster.
+			var v := minf(pull,_launch_cap()*float(knob("load_cap")))*2.0*mp/(mp+rb.mass)
+			var dir := global_transform.basis*Vector3(float(knob("veer")),0.0,side)
+			# It leaves the slab clean: no shove from the swinging deck until it comes back down.
+			rb.add_collision_exception_with(body)
+			_free[rb] = 0.0
+			_pending.append([rb,(Vector3(0.0,v,0.0)+dir*(maxf(v-float(knob("shove")),0.0)*float(knob("load_along"))))*rb.mass])
+
+## A heavy greybox block (RigidBody3D) of `mass`, `side` m a side, falling
+## and flung at the pilot's own gravity; its glow material is its mesh's.
+func make_block(mass: float, side: float, colour: Color) -> RigidBody3D:
+	var rb := RigidBody3D.new()
+	rb.mass = mass
+	rb.gravity_scale = pilot().gravity/float(ProjectSettings.get_setting("physics/3d/default_gravity"))
+	rb.set_meta("half",side*0.5)
+	rb.contact_monitor = true
+	rb.max_contacts_reported = 6
+	var pm := PhysicsMaterial.new()
+	pm.friction = 1.0
+	pm.bounce = 0.0
+	rb.physics_material_override = pm
+	var cs := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3.ONE*side
+	cs.shape = box
+	rb.add_child(cs)
+	var mi := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = box.size
+	mi.mesh = bm
+	mi.material_override = paint(colour)
+	rb.add_child(mi)
+	return rb
 
 func _launch_cap() -> float:
 	var p := pilot()
@@ -193,6 +296,19 @@ func _transform() -> Transform3D:
 
 func _pose() -> void:
 	body.transform = _transform()
+
+func _land_flung(delta: float) -> void:
+	for p: Array in _pending: (p[0] as RigidBody3D).apply_central_impulse(p[1])
+	_pending.clear()
+	for r: Variant in _free.keys():
+		var rb := r as RigidBody3D
+		_free[r] = float(_free[r])+delta
+		var l := to_local(rb.global_position)
+		var clear := l.y-_surface_y(l.z)-float(rb.get_meta("half",0.5))
+		var over := absf(l.x) <= float(knob("width"))*0.5+0.3 and l.z <= 0.0 and l.z >= -length()
+		if float(_free[r]) > 0.1 and ((rb.linear_velocity.y <= 0.0 and clear < 0.3 and clear > 0.0) or not over or float(_free[r]) > 2.0):
+			rb.remove_collision_exception_with(body)
+			_free.erase(r)
 
 func _creak(delta: float) -> void:
 	_creak_t -= delta
@@ -207,6 +323,12 @@ func reset() -> void:
 	super()
 	spin = 0.0
 	launches = 0
+	for m: Variant in _glow: (m as StandardMaterial3D).albedo_color = _glow[m]
+	_glow.clear()
+	for r: Variant in _free:
+		(r as RigidBody3D).remove_collision_exception_with(body)
+	_free.clear()
+	_pending.clear()
 	_creak_t = 0.0
 	tilt = rest_tilt()
 	if body != null: _pose()
