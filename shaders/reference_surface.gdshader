@@ -649,6 +649,13 @@ void vertex() {
 	}
 }
 
+// The near turf at night (see the fragment): from where to where (m) it
+// eases back, how dark and how much colour goes to the cool grey.
+const vec2 NIGHT_NEAR = vec2(12.0, 70.0);
+const float NIGHT_NEAR_DIM = 0.5;
+const float NIGHT_NEAR_COOL = 0.25;
+const vec3 NIGHT_NEAR_HUE = vec3(0.88, 0.98, 1.1);
+
 void fragment() {
 	float sea_mist = 0.0;
 	// A sky peak's point in its range's own frame (sky_peak_look).
@@ -852,6 +859,17 @@ void fragment() {
 	if (sea_mist > 0.0) {
 		sea_level_view = mix(SEA_MIST_LEVEL, 1.0, smoothstep(0.02, 0.35, normalize(zs_camera_position - world_position).y));
 		tint = mix(tint, zs_sky_season_grade(SEA_MIST_ALBEDO, 1.0) * sea_level_view, sea_mist);
+	}
+	// Night light round 2 (docs/design/night-light/round2.md): the turf, its
+	// grass and flowers up close go moody under the moon, darker and cooler
+	// (NIGHT_NEAR_DIM, NIGHT_NEAR_COOL), easing back to the full moonlit
+	// tone by NIGHT_NEAR.y m, so the isle still reads from the air.
+	if (zs_night > 0.0 && (terrain_growth || grass_blades || flower_heads)) {
+		float seen = length(zs_camera_position - world_position);
+		float near = (1.0 - smoothstep(NIGHT_NEAR.x, NIGHT_NEAR.y, seen)) * zs_night;
+		float grey = dot(tint, vec3(0.2126, 0.7152, 0.0722));
+		tint = mix(tint, grey * NIGHT_NEAR_HUE, NIGHT_NEAR_COOL * near);
+		tint *= mix(1.0, NIGHT_NEAR_DIM, near);
 	}
 	ALBEDO = tint;
 	ROUGHNESS = mix(roughness_value, mix(0.58, 0.20, mineral), surface_wet);
