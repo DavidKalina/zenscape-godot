@@ -287,9 +287,10 @@ func _build_art() -> void:
 func isle_name() -> String:
 	return "aqueduct isle"
 
-## Placeholder name, line and finds until the isle is named.
+## Placeholder name and line until the isle is named; its finds are the
+## ledger's (scripts/ledger/ledger.gd `card`).
 func isle_card() -> Dictionary:
-	return {"name":"The Aqueduct of Veyl","epithet":"Where the old water still walks the sky","finds":[["wildflower","Glyphs",2,7],["crystal","Lodestones",0,1],["bridge","Hidden ways",1,3]]}
+	return Ledger.shared().card(Ledger.isle_id_of(self),{"name":"The Aqueduct of Veyl","epithet":"Where the old water still walks the sky"})
 
 func isle_top() -> float:
 	return Art.TOP

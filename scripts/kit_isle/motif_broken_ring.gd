@@ -25,8 +25,10 @@ func id() -> String:
 func isle_name() -> String:
 	return "broken ring"
 
+## Placeholder name and line until the isle is named; its finds are the
+## ledger's (scripts/ledger/ledger.gd `card`).
 func isle_card() -> Dictionary:
-	return {"name":"The Broken Ring","epithet":"A circle, taken apart a stone at a time","finds":[["wildflower","Glyphs",0,7],["bridge","Hidden ways",0,3]]}
+	return Ledger.shared().card(id(),{"name":"The Broken Ring","epithet":"A circle, taken apart a stone at a time"})
 
 func top() -> float:
 	return Ring.W

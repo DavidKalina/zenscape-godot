@@ -29,9 +29,10 @@ func id() -> String:
 func isle_name() -> String:
 	return "cloister tarn"
 
-## Placeholder name, line and finds until the isle is named.
+## Placeholder name and line until the isle is named; its finds are the
+## ledger's (scripts/ledger/ledger.gd `card`).
 func isle_card() -> Dictionary:
-	return {"name":"Cloister of the Still Tarn","epithet":"A mirror kept for no one","finds":[["wildflower","Glyphs",3,5],["lamp","Lanterns",0,3],["bridge","Hidden ways",0,2]]}
+	return Ledger.shared().card(id(),{"name":"Cloister of the Still Tarn","epithet":"A mirror kept for no one"})
 
 func top() -> float:
 	return TarnArt.W
