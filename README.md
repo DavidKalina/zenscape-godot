@@ -1,8 +1,8 @@
 # ZenScape
 
-A cozy landscape toy in Godot. You shape a small square plate of land with
-your hand, and life arrives on what you make in its own time: grass, flowers,
-trees, fish, frogs, birds and deer.
+A game in Godot about flying and exploring a world of sky islands. You fly a
+plane, and on foot you play a nimble character with a deep moveset. Set
+pieces in the clouds are played both in the air and on foot.
 
 ## Play
 
@@ -10,104 +10,38 @@ Double-click **`run-zenscape.command`**, or open `project.godot` in
 **Godot 4.7.2** (standard edition; no .NET needed) and press **F5**. Both open
 the front door, `studies/zenscape.tscn`: the title over the aqueduct isle
 (`studies/aqueduct_isle.gd`), the camera orbiting it. **Begin** puts you on
-foot beside your parked plane; **Scenes** opens every study and greybox
-(docs/design/scene-picker.md); **Settings** (look, day and night, weather,
-sound, controller); **Quit**. `-- --no-title` goes straight in. The sky is
-live: the day turns (8 minutes a day), the year turns from the real date's
-season, the weather drifts and storms flash in the clouds
-(`scripts/kit_isle/kit_weather.gd`; `--day-length=60 --weather=storm` to
-watch it fast). In the game, **Esc** or the
-pad's **Menu** pauses: Resume, Back to the plane (also **R** on foot),
+foot beside your parked plane; **Scenes** opens every study and greybox;
+**Settings** (look, day and night, weather, sound, controller); **Quit**.
+`-- --no-title` goes straight in. The sky is live: the day turns (8 minutes a
+day), the year turns from the real date's season, the weather drifts and
+storms flash in the clouds (`scripts/kit_isle/kit_weather.gd`;
+`--day-length=60 --weather=storm` to watch it fast). In the game, **Esc** or
+the pad's **Menu** pauses: Resume, Back to the plane (also **R** on foot),
 Settings, Scenes, Back to the title and Quit. The study's developer keys
 (F1-F12, the station keys, L, B) and capture flags work only in editor and
-debug runs. The plan behind it is docs/design/consolidation-audit.md.
+debug runs. Pad controls are in [gamepad](docs/gamepad.md).
 
-The old game (the plate builder below) is hidden for now: it's **Builder
-(old game)** under Scenes, or `run-cozy-flow.command`, which opens
-`studies/cozy_worlds.tscn`. Its own title is a generated world the camera
-orbits behind the menu:
-**Continue your world**, **Your worlds** (the library of saved worlds),
-**Build this world** (keep the land behind the menu), **Begin on a quiet
-plain** (a bare Genesis plain), **Settings** and **Quit**. In a world, **Esc**
-opens the pause panel: Resume, Save a copy, Field notes, Settings and
-Return to title. Worlds keep themselves a few seconds after each change.
-
-**[How to play](docs/HOW-TO-PLAY.md)** lists every control. In short:
-
-- **The hand.** There are no tool modes. The **left button is the hand**, and
-  what a press does depends on where you press: the land, the plate's rim and
-  walls, or the sky. The **right button is the eye**: drag to look round,
-  scroll or pinch to zoom.
-- **The tool roll** on the left edge holds the shaping tools, one per
-  landform gesture: the **Modeller** (fine work: thumb a stream bed, pinch a
-  knoll, palm a pan), **Hills** (scrub), **Mountain** (pull up a peak, or
-  sideways for a range), **Crater** (pull down),
-  **Island** (draw an isle in a lake, or spread land out to the water), **Ravine** (draw a line; a
-  loop sinks a basin), **Chisel** (mesa, shelf, notch, slice) and **Paddle**
-  (plane and pat). The strip along the top holds the tools that tend: the
-  **Feather** (wind), the **Watering can** and the **Brush** (colour).
-- **The materials case** along the bottom holds tree seeds, flowers, reeds,
-  water and a river stone. Take one and press or paint the land.
-- **The edge and the sky.** Push the rim to turn the world and wind time on;
-  pull it down and let go to spring the land up; flick it to flip to a new
-  world. Hold still in the sky to call the cloud; swipe the sky for a gust.
-- **First steps.** A new player gets a small card that walks through six
-  things in turn; **Field notes** on the pause panel lists everything the hand
-  can do ([first steps](docs/scenic/first-steps.md)).
-- **Keys.** **M** moods, **P** photo mode, **O** watch mode
-  ([watch](docs/scenic/watch.md)), **Esc** put down / pause, **R**
-  overview, **F** glide to what's under the pointer, arrows to pan,
-  **Cmd+Z** / **Shift+Cmd+Z** undo and redo, **Cmd+S** save now.
-
-Launch flags go after the launcher, for example
-`./run-cozy-flow.command --resume`: `--no-title` opens a new plain,
-`--watch` opens it in watch mode,
-`--resume` the last saved place, `--generated` or `--seed N` a generated
-world. HOW-TO-PLAY lists the rest.
+The old plate builder (`studies/cozy_worlds.tscn`) is still under Scenes as
+**Builder (old game)**, or `run-cozy-flow.command`.
 
 For a standalone Windows or Mac app, see
 [desktop builds](docs/desktop-builds.md).
 
-## Design notes
+## Notes
 
-- [The creation plan](docs/scenic/PLAN.md) and the hand scheme,
-  [modeless](docs/scenic/modeless.md); the other notes in `docs/scenic/`
-  cover water, life, sound, wind, the cloud and the look.
-- [The shaping tools](docs/design/tools/PLAN.md), the
-  [worlds and library](docs/design/worlds/README.md), the
-  [tool roll and materials case](docs/design/materials-tray/HUD-4c.md) and
-  the [almanac and HUD](docs/design/hud-5/README.md).
-- [Deprecated and retired](docs/DEPRECATED.md): what the game no longer
-  needs, and what has been removed.
-
-## Older study scenes
-
-The game's scene inherits a chain of older scripts:
-`cozy_worlds.gd` → `diorama.gd` → `fidelity_life.gd` → `fidelity.gd`. Their
-scenes (`studies/diorama.tscn`, `fidelity.tscn` and `fidelity_life.tscn`) are
-not part of the game, but many tests and tools load them, and
-`run-diorama.command`, `run-fidelity.command`, `run-fidelity-life.command`
-and `run-godot-comparison.command` still open them. The fidelity study, a port of the original Three.js scene, is the look
-reference: see [comparison and remaining gaps](docs/fidelity/NOTES.md) and
-the [parity checklist](docs/fidelity/PARITY.md).
+`docs/scenic/` describes the aqueduct isle, the ruin kit, the motif isles, the
+Sundered hall, the rune serpent, wind and clouds, and the
+[style rule](docs/scenic/style.md).
 
 ## Structure
 
-- `studies/cozy_worlds.gd`: the game's scene: title, worlds, the hand scheme.
-- `scripts/world_session.gd`, `scripts/world_library.gd`,
-  `scripts/world_lands.gd`: which world is open, the saved worlds, and the
-  lands a new world starts from.
-- `scripts/land_clay.gd` with `scripts/clay_tools/`: the land as clay; one
-  script per tool on the roll.
-- `scripts/tool_roll.gd`, `scripts/materials_tray.gd`,
-  `scripts/hand_materials.gd`: the tool roll, the materials case and the hand
-  that takes from them.
-- `scripts/native_chunk_editor.gd`: the editable chunk: terrain, water,
-  objects, undo and saves.
-- `scripts/land_life.gd`: life answering the land.
-- `scripts/first_steps.gd`, `scripts/first_steps_card.gd`,
-  `scripts/field_notes.gd`, `scripts/pause_panel.gd`: first steps, the field
-  notes and the pause panel.
+- `studies/zenscape.tscn` and `scripts/kit_isle/front_door.gd`: the title and
+  the game.
+- `studies/aqueduct_isle.gd` with `scripts/kit_isle/`: the isle, its land,
+  life, sky, sound and settings.
+- The old builder's scene inherits a chain of older scripts:
+  `cozy_worlds.gd` → `diorama.gd` → `fidelity_life.gd` → `fidelity.gd`. Many
+  tests and tools still load them.
 - `native/terrain_kernels/`: the optional native terrain kernels
   (`tools/build_native_kernels.py`); without a built kernel the GDScript
   versions run.

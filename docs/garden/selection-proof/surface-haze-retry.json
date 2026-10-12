@@ -1,8 +1,0 @@
-{
-  "test": "test_surface_haze.gd",
-  "status": "passed",
-  "exit_code": 0,
-  "seconds": 1.79,
-  "assertions_printed_pass": true,
-  "log": "test-logs/test_surface_haze-retry.log"
-}

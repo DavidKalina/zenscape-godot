@@ -66,7 +66,7 @@ func run() -> void:
 	scene.set_process(false)
 	var editor: Node = scene._chunk_editor
 	editor.content.set_process(false)
-	editor.save_path = "res://docs/garden/fall-world-proof.json"
+	editor.save_path = "res://tests/fixtures/fall-world-proof.json"
 	check("populated demo world opens", editor.open_garden())
 	check("world is the populated one", editor.data.objects.size() > 3000 and editor.data.landscape_waterfall)
 	editor.force_refresh()

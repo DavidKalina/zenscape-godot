@@ -44,7 +44,7 @@ func run() -> void:
 	var editor: NativeChunkEditor = scene._chunk_editor
 	editor.set_process(false)
 	await sweep(editor,"imported")
-	editor.save_path = "res://docs/garden/fall-world-proof.json"
+	editor.save_path = "res://tests/fixtures/fall-world-proof.json"
 	check(editor.open_garden(),"Load populated native terrain with ponds and streams")
 	check(not editor.content._stream_nodes.is_empty() and not editor.content.pond_vertices.is_empty(),"Native fixture contains both water overlays")
 	await sweep(editor,"native-water")
