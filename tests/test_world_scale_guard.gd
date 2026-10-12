@@ -1,7 +1,8 @@
 extends SceneTree
 ## The game's sizes live in one file (scripts/world_scale.gd, AGENTS.md
 ## "Sizes"), headless, a text scan of scripts/ and studies/: only
-## world_scale.gd parses `--plane-scale=` / `--wanderer-scale=`, and only it
+## world_scale.gd parses `--plane-scale=` / `--wanderer-scale=` /
+## `--opening-ratio=` (and no file the old `--room-scale=`), and only it
 ## and plane_figure.gd read the toy span (PlaneFigure.SPAN); everyone else
 ## asks WorldScale (`span`, `gap(room)`, or `TOY_SPAN` for a toy-sized base
 ## they scale themselves). Comment lines are skipped.
@@ -19,7 +20,7 @@ const ALLOW_SPAN := {}
 var failures := 0
 
 func _initialize() -> void:
-	var flags := RegEx.create_from_string("--(plane|wanderer)-scale=")
+	var flags := RegEx.create_from_string("--(plane|wanderer|room)-scale=|--opening-ratio=")
 	var span := RegEx.create_from_string("PlaneFigure\\.SPAN\\b|plane_figure\\.gd\"\\)\\.SPAN\\b")
 	var files := _gd_files()
 	var hits_flags: Array[String] = []
@@ -34,7 +35,8 @@ func _initialize() -> void:
 			if path != SIZES and path != FIGURE and not ALLOW_SPAN.has(path) and span.search(line) != null:
 				hits_span.append("%s:%d  %s" % [path,n,line.strip_edges()])
 	check(files.size() > 100 and SIZES in files,"scanned %d .gd files under scripts/ and studies/" % files.size())
-	check(hits_flags.is_empty(),"only world_scale.gd parses --plane-scale= / --wanderer-scale=%s" % _list(hits_flags))
+	check(hits_flags.is_empty(),"only world_scale.gd parses --plane-scale= / --wanderer-scale= / --opening-ratio=%s" % _list(hits_flags))
+	check(not "--room-scale=" in FileAccess.get_file_as_string(SIZES),"the temporary --room-scale= is gone")
 	check(hits_span.is_empty(),"only world_scale.gd and plane_figure.gd read PlaneFigure.SPAN%s" % _list(hits_span))
 	check(is_equal_approx(WorldScale.TOY_SPAN,PlaneFigure.SPAN),"WorldScale.TOY_SPAN is plane_figure.gd's SPAN (%.2f)" % PlaneFigure.SPAN)
 	print("PASS: world scale guard" if failures == 0 else "FAIL: world scale guard (%d)" % failures)

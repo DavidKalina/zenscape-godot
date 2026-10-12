@@ -1,17 +1,21 @@
 extends SceneTree
 ## The game's sizes still fit the world (scripts/world_scale.gd, docs/design/
 ## plane-ground-scale.md), headless, at the default sizes and again at
-## `--plane-scale=1 --wanderer-scale=1` (a second Godot run of this script,
-## since WorldScale reads its flags once): the flown openings (the
-## aqueduct's arch, the kit's gothic arch, THREAD, window and rose, the
-## stone circle's gaps, the hall's lane, breach and arch, the ring arch, the
-## token lines' and pierced isle's clearances) leave the plane at least
-## SNUG's 1.2 m past each wingtip, the knife-edge slots pass it only on its
-## wingtip, the cockpit pilot is the walker's size, and the walker,
-## sized as the game sizes him (PilotMotor.set_size), still catches the
-## ledges the kit's climbing routes are laid on (tests/test_ruin_kit.gd
-## `_scale`, the aqueduct isle's routes). A pure check of the derived
-## numbers: nothing is built.
+## `--plane-scale=1 --wanderer-scale=1 --opening-ratio=1` (a second Godot
+## run of this script, since WorldScale reads its flags once). Every flown
+## opening is its toy-era width through `WorldScale.opening` (toy width x
+## plane x RATIO, floored at SNUG's 1.2 m past each wingtip unless its toy
+## ratio was under that): the aqueduct's arch (the kit's and the aqueduct
+## isle's), the kit's gothic arch, THREAD, lancet and rose, the hall's lane,
+## breach and broken arch, the token lines' air gap and wing box, the
+## pierced isle's route, the ring arch (capped), the stone circle's gaps
+## (SNUG at least) and its stones' heights; at the default sizes each keeps
+## RATIO of its toy width in wingspans, and in the second run each is its
+## toy width exactly. The knife-edge slots pass the plane only on its
+## wingtip, the cockpit pilot is the walker's size, and the walker, sized as
+## the game sizes him (PilotMotor.set_size), still catches the ledges the
+## kit's climbing routes are laid on. A pure check of the derived numbers:
+## nothing is built.
 ##   godot --headless --path . --script tests/test_world_scale_fit.gd
 const WorldScale = preload("res://scripts/world_scale.gd")
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
@@ -22,15 +26,16 @@ const Lines = preload("res://scripts/collectible_lines.gd")
 const Pierced = preload("res://scripts/pierced_isle.gd")
 const AqIsle = preload("res://studies/aqueduct_isle.gd")
 const AqChain = preload("res://studies/aqueduct_isle_chain.gd")
-const OLD := ["--plane-scale=1","--wanderer-scale=1"]
+const AqArt = preload("res://studies/aqueduct_isle_art.gd")
+const OLD := ["--plane-scale=1","--wanderer-scale=1","--opening-ratio=1"]
 
 var failures := 0
 
 func _initialize() -> void:
 	var child := "--plane-scale=1" in OS.get_cmdline_user_args()
-	var tag := "plane %.2f, wanderer %.2f" % [WorldScale.plane,WorldScale.wanderer]
-	if child: check(is_equal_approx(WorldScale.plane,1.0) and is_equal_approx(WorldScale.wanderer,1.0),"the flags set the old sizes ("+tag+")")
-	else: check(is_equal_approx(WorldScale.plane,WorldScale.PLANE) and is_equal_approx(WorldScale.wanderer,WorldScale.WANDERER),"the knobs' sizes by default ("+tag+")")
+	var tag := "plane %.2f, wanderer %.2f, ratio %.2f" % [WorldScale.plane,WorldScale.wanderer,WorldScale.ratio]
+	if child: check(is_equal_approx(WorldScale.plane,1.0) and is_equal_approx(WorldScale.wanderer,1.0) and is_equal_approx(WorldScale.ratio,1.0),"the flags set the old sizes and ratio 1 ("+tag+")")
+	else: check(is_equal_approx(WorldScale.plane,WorldScale.PLANE) and is_equal_approx(WorldScale.wanderer,WorldScale.WANDERER) and is_equal_approx(WorldScale.ratio,WorldScale.RATIO),"the knobs' sizes and RATIO by default ("+tag+", ratio %.2f)" % WorldScale.ratio)
 	_gaps(tag)
 	_reach(tag)
 	if not child: _old_sizes()
@@ -41,37 +46,64 @@ func check(ok: bool, label: String) -> void:
 	if not ok: failures += 1
 	print(("OK   " if ok else "FAIL ")+label)
 
-## Each flown gap is the plane's span and room past its tips: at least
-## WorldScale.SNUG's 1.2 m past each tip (the world spaced out, feature/
-## world-spacing), but for the knife-edge slots, which a level plane can't
-## pass and one on its wingtip can.
+## Each flown opening from its toy width: [value, toy width, how] where
+## how is "ratio" (opening()), "cap" (opening() capped: the ring), "snug"
+## (no toy width flown: SNUG at least).
 func _gaps(tag: String) -> void:
+	var child := "--plane-scale=1" in OS.get_cmdline_user_args()
 	var span := WorldScale.span
 	check(is_equal_approx(span,WorldScale.TOY_SPAN*WorldScale.plane),"the span is the toy's times the plane (%.2f m, %s)" % [span,tag])
 	var least := WorldScale.past_tip(WorldScale.gap(WorldScale.SNUG))
-	check(least >= 1.2-0.001 and WorldScale.past_tip(WorldScale.gap()) >= least,"SNUG is 1.2 m past each tip and ROOM more (%.2f, %.2f, %s)" % [least,WorldScale.past_tip(WorldScale.gap()),tag])
+	check(least >= 1.2-0.001,"SNUG is 1.2 m past each tip (%.2f, %s)" % [least,tag])
+	# opening(): toy x plane x ratio, never under SNUG unless the toy width
+	# itself was, and exactly the toy width at plane 1 and ratio 1.
+	check(is_equal_approx(WorldScale.opening(3.5),maxf(3.5*WorldScale.plane*WorldScale.ratio,minf(WorldScale.gap(WorldScale.SNUG),3.5*WorldScale.plane))),"opening(3.5) is toy x plane x ratio, floored (%.2f, %s)" % [WorldScale.opening(3.5),tag])
 	# The stone circle's gap between two sarsens at their inner faces, where
 	# the ring is narrowest: the chord there less a sarsen's width.
 	var inner := RuinKit.CIRCLE_RADIUS-RuinKit.SARSEN.z*0.5
 	var henge := 2.0*inner*sin(PI/RuinKit.CIRCLE_STONES)-RuinKit.SARSEN.x
 	var gaps := {
-		"aqueduct arch clear (Aqueduct.CLEAR)":Aqueduct.CLEAR,
-		"gothic arch (RuinKit.ARCH_SPAN)":RuinKit.ARCH_SPAN,
-		"threaded gap (RuinKit.THREAD)":RuinKit.THREAD,
-		"lancet window (RuinKit.WINDOW.x)":RuinKit.WINDOW.x,
-		"rose's glass (RuinKit.ROSE)":2.0*(RuinKit.ROSE.y-RuinKit.ROSE.z),
-		"stone circle, sarsen to sarsen at their inner faces":henge,
-		"hall lane (Hall.LANE)":Hall.LANE.y-Hall.LANE.x,
-		"hall breach corridor (Hall.BREACH_HALF)":Hall.BREACH_HALF*2.0,
-		"hall broken arch (Hall.ARCH.x)":Hall.ARCH.x,
-		"ring arch on the lodestone's line (AqChain)":RuinKit.ARCH_SPAN*AqChain.RING_SCALE,
-		"air token gap (CollectibleLines.GAP_ROOM)":Lines.GAP_ROOM,
-		"pierced isle route corridor (ROUTE_CLEAR both sides)":Pierced.ROUTE_CLEAR*2.0,
-		"token wing clearance (CollectibleLines.WING both sides)":Lines.WING*2.0,
+		"aqueduct arch clear (Aqueduct.CLEAR)":[Aqueduct.CLEAR,Aqueduct.TOY_CLEAR,"ratio"],
+		"the aqueduct isle's arches (AqueductIsleArt.CLEAR)":[AqArt.CLEAR,AqArt.TOY_CLEAR,"ratio"],
+		"gothic arch (RuinKit.ARCH_SPAN)":[RuinKit.ARCH_SPAN,RuinKit.TOY_ARCH_SPAN,"ratio"],
+		"threaded gap (RuinKit.THREAD)":[RuinKit.THREAD,RuinKit.TOY_THREAD,"ratio"],
+		"lancet window (RuinKit.WINDOW.x)":[RuinKit.WINDOW.x,RuinKit.TOY_WINDOW,"ratio"],
+		"rose's glass (RuinKit.ROSE)":[2.0*(RuinKit.ROSE.y-RuinKit.ROSE.z),RuinKit.TOY_ROSE,"ratio"],
+		"hall lane (Hall.LANE)":[Hall.LANE.y-Hall.LANE.x,Hall.TOY_LANE,"ratio"],
+		"hall breach corridor (Hall.BREACH_HALF)":[Hall.BREACH_HALF*2.0,Hall.TOY_BREACH,"ratio"],
+		"hall broken arch (Hall.ARCH.x)":[Hall.ARCH.x,Hall.TOY_ARCH,"ratio"],
+		"air token gap (CollectibleLines.GAP_ROOM)":[Lines.GAP_ROOM,Lines.TOY_GAP_ROOM,"ratio"],
+		"token wing box (CollectibleLines.WING both sides)":[Lines.WING*2.0,Lines.TOY_WING*2.0,"ratio"],
+		"pierced isle route corridor (ROUTE_CLEAR both sides)":[Pierced.ROUTE_CLEAR*2.0,Pierced.TOY_ROUTE,"ratio"],
+		"ring arch on the lodestone's line (AqChain.RING_SPAN)":[RuinKit.ARCH_SPAN*AqChain.RING_SCALE,AqChain.TOY_RING,"cap"],
+		"stone circle, sarsen to sarsen at their inner faces":[henge,RuinKit.TOY_HENGE,"snug"],
 	}
 	for name: String in gaps:
-		var past := WorldScale.past_tip(float(gaps[name]))
-		check(past >= least-0.03,"%s %.2f m passes the %.2f m span, %.2f m past each tip (%s)" % [name,float(gaps[name]),span,past,tag])
+		var g: Array = gaps[name]
+		var w := float(g[0])
+		var toy := float(g[1])
+		var past := WorldScale.past_tip(w)
+		var want := WorldScale.opening(toy)
+		if g[2] == "cap": want = minf(want,AqChain.RING_MOST)
+		if g[2] == "snug": want = maxf(want,WorldScale.gap(WorldScale.SNUG))
+		check(absf(w-want) < 0.02,"%s %.2f m is its toy %.2f m's opening (%.2f; %.2f m past each tip, %s)" % [name,w,toy,want,past,tag])
+		if child and g[2] != "snug":
+			check(absf(w-toy) < 0.01,"%s is its toy width %.2f exactly at plane 1, ratio 1 (%.2f)" % [name,toy,w])
+		elif not child and g[2] == "ratio" and toy*WorldScale.plane*WorldScale.ratio >= WorldScale.gap(WorldScale.SNUG):
+			var spans := (w/span)/(toy/WorldScale.TOY_SPAN)
+			check(absf(spans-WorldScale.ratio) < 0.01,"%s keeps %.2f of its toy ratio to the wingspan (%.2f spans, the toy %.2f)" % [name,spans,w/span,toy/WorldScale.TOY_SPAN])
+		var floor_past := minf(least,WorldScale.past_tip(toy*WorldScale.plane))
+		check(past >= floor_past-0.03,"%s passes the %.2f m span, %.2f m past each tip (at least %.2f, %s)" % [name,span,past,floor_past,tag])
+	# The stone circle's stones stand as tall as the toy's in wingspans, and
+	# the great trilithon with them.
+	var heights := {"a sarsen (RuinKit.SARSEN.y)":[RuinKit.SARSEN.y,RuinKit.TOY_SARSEN.y],"the great trilithon (RuinKit.TRILITHON.y)":[RuinKit.TRILITHON.y,RuinKit.TOY_TRILITHON.y]}
+	for name: String in heights:
+		var h: Array = heights[name]
+		check(absf(float(h[0])-WorldScale.opening(float(h[1]))) < 0.02 and (not child or absf(float(h[0])-float(h[1])) < 0.01),"%s stands %.2f m, its toy %.2f m's opening (%s)" % [name,float(h[0]),float(h[1]),tag])
+	# The ring's lintels a jump-catch from the leaning stone's head and the
+	# fallen trilithon's stub (the walker's, whatever their height).
+	var ring_top := RuinKit.SARSEN.y+RuinKit.LINTEL.y
+	check(ring_top-RuinKit.STUB <= 1.5+0.01,"the fallen trilithon's stub %.2f m is a jump under the lintels' top %.2f (%s)" % [RuinKit.STUB,ring_top,tag])
 	# The knife-edge slots: under the span (level, the wings catch), over
 	# the plane's height on its wingtip.
 	var tall := WorldScale.TOY_TALL*WorldScale.plane
