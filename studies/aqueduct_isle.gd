@@ -87,9 +87,10 @@ extends "res://studies/kit_isle.gd"
 ## sky to settle, saves the view (from --at looking at the point, else the
 ## walker's camera) and quits; --place=x,y,z[,turn] starts the pilot there
 ## instead (turn: degrees from facing -z, clockwise).
-## --dragon-roost (docs/design/dragon-roost/round1.md): the dragon's mountain
+## --dragon-roost (docs/design/dragon-roost/round2.md): the dragon's mountain
 ## stands out past the motif isles (scripts/kit_isle/motif_dragon_roost.gd)
-## and the dragon sleeps coiled round its needle (scripts/dragon_roost.gd);
+## and the dragon sleeps curled on its ledge, its neck round the summit
+## (scripts/dragon_roost.gd);
 ## it doesn't roam (with --dragon too, it still only sleeps).
 ## The dragon (an experiment: docs/design/rim-dragon.md), with --dragon: a
 ## full-bodied dragon (scripts/sky_dragon.gd) rises out of the cloud sea and
@@ -633,7 +634,7 @@ func _foot_text() -> String:
 	return text
 
 ## The dragon asleep on its roost (--dragon-roost): its own body posed
-## coiled on the mountain (scripts/dragon_roost.gd), not flying.
+## lying on the mountain (scripts/dragon_roost.gd), not flying.
 func _build_roost_dragon() -> void:
 	roost_dragon = SkyDragon.new()
 	roost_dragon.name = "RoostDragon"

@@ -1,6 +1,6 @@
 extends SceneTree
 ## The dragon asleep on its roost, captured (docs/design/dragon-roost/
-## round1.md): the game (studies/zenscape.tscn) straight in with
+## round2.md): the game (studies/zenscape.tscn) straight in with
 ## --dragon-roost, the sky held, every motif isle stood at once, then fixed
 ## views saved one after another from one window: from the aqueduct isle
 ## looking out at the mountain (the landmark), the whole mountain, the head
@@ -12,7 +12,7 @@ extends SceneTree
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const Roost = preload("res://scripts/kit_isle/motif_dragon_roost.gd")
 const GAME := "res://studies/zenscape.tscn"
-const SHOTS := ["isle","mountain","close"]
+const SHOTS := ["isle","isle_zoom","mountain","nest","summit"]
 
 var game: Node3D
 var camera: Camera3D
@@ -75,37 +75,45 @@ func _aim(shot: String) -> Dictionary:
 	var dragon: Node3D = game.get("roost_dragon")
 	if dragon == null: return {}
 	var line: PackedVector3Array = dragon.roost.line_world
-	var axis := Vector3(Roost.AXIS.x+Roost.AT.x,Roost.shelf_y()+Roost.AT.y,Roost.AXIS.y+Roost.AT.z)
+	var span: float = Roost.SPAN
+	var t2 := Roost.own(Roost.TOWER_C)
+	var axis := Vector3(t2.x+Roost.AT.x,Roost.TOP+Roost.LEDGE_H*span+Roost.AT.y,t2.y+Roost.AT.z)
+	var l2 := Roost.own(Roost.LEDGE_C)
+	var ledge := Vector3(l2.x+Roost.AT.x,axis.y,l2.y+Roost.AT.z)
+	var toward := Vector3(Roost.V.x,0.0,Roost.V.y)
+	var across := Vector3(Roost.U.x,0.0,Roost.U.y)
 	var head := line[int(line.size()*0.08)]
-	var toward := Vector3(85.0,0.0,-20.0)-axis
-	toward.y = 0.0
-	toward = toward.normalized()
-	var across := toward.cross(Vector3.UP)
 	match shot:
 		"isle":
 			# Where the pilot stands on the aqueduct isle at the start (by
 			# the plane), at eye height, the mountain 800 m off.
 			var feet: Vector3 = game.motor.feet if game.get("motor") != null else Vector3(118.0,31.0,12.0)
 			var eye := feet+Vector3(0.0,1.7,0.0)
-			return {"eye":eye,"at":axis+Vector3(0.0,-20.0,0.0),"fov":55.0}
+			return {"eye":eye,"at":axis+Vector3(0.0,-10.0,0.0),"fov":55.0}
+		"isle_zoom":
+			# The same line of sight, narrowed (what the eye picks out).
+			var feet: Vector3 = game.motor.feet if game.get("motor") != null else Vector3(118.0,31.0,12.0)
+			var eye := feet+Vector3(0.0,1.7,0.0)
+			return {"eye":eye,"at":axis+Vector3(0.0,-10.0,0.0),"fov":14.0}
 		"mountain":
-			return {"eye":axis+toward*230.0+across*90.0+Vector3(0.0,-20.0,0.0),"at":axis+Vector3(0.0,-22.0,0.0),"fov":60.0}
-		"close":
-			var out := Vector3(head.x-axis.x,0.0,head.z-axis.z).normalized()
-			return {"eye":head+out*38.0+across*8.0+Vector3(0.0,12.0,0.0),"at":head+Vector3(0.0,-2.0,0.0)-out*6.0,"fov":55.0}
+			return {"eye":axis+toward*330.0*span+across*40.0*span+Vector3(0.0,-25.0*span,0.0),"at":axis+Vector3(0.0,-8.0*span,0.0),"fov":55.0}
+		"nest":
+			return {"eye":ledge+toward*55.0*span+across*45.0*span+Vector3(0.0,32.0*span,0.0),"at":ledge+Vector3(0.0,4.0,0.0),"fov":55.0}
+		"summit":
+			return {"eye":head+toward*55.0*span-across*35.0*span+Vector3(0.0,18.0*span,0.0),"at":axis+Vector3(0.0,22.0*span,0.0),"fov":55.0}
+		"low":
+			# Low across the nest, at the ledge's lip (where a gap under the
+			# body would show).
+			return {"eye":ledge+toward*12.0*span+across*40.0*span+Vector3(0.0,4.0*span,0.0),"at":ledge-across*6.0*span+Vector3(0.0,3.0*span,0.0),"fov":60.0}
+		"low_back":
+			return {"eye":ledge-toward*38.0*span+across*30.0*span+Vector3(0.0,5.0*span,0.0),"at":ledge-across*8.0*span+Vector3(0.0,5.0*span,0.0),"fov":60.0}
+		"back":
+			return {"eye":axis-toward*110.0*span+across*60.0*span+Vector3(0.0,30.0*span,0.0),"at":axis+Vector3(0.0,12.0*span,0.0),"fov":55.0}
 		"snout":
-			# Right at the nostrils (judging the breath's haze).
 			var tip := line[0]
-			var out := Vector3(tip.x-axis.x,0.0,tip.z-axis.z).normalized()
-			return {"eye":tip+out*14.0+Vector3(0.0,5.0,0.0)+across*4.0,"at":tip,"fov":55.0}
-		"side":
-			# Out from the chest, level with it (judging the folded wings).
-			var chest := line[int(line.size()*0.44)]
-			var out := Vector3(chest.x-axis.x,0.0,chest.z-axis.z).normalized()
-			return {"eye":chest+out*55.0+Vector3(0.0,8.0,0.0),"at":chest,"fov":55.0}
+			return {"eye":tip+toward*16.0+across*6.0+Vector3(0.0,6.0,0.0),"at":tip,"fov":55.0}
 		"top":
-			# Straight down on the shoulder (for judging the coil's lay).
-			return {"eye":axis+Vector3(0.5,95.0,0.0),"at":axis,"fov":50.0}
+			return {"eye":axis+Vector3(0.5,150.0*span,0.0),"at":axis,"fov":55.0}
 		"night":
-			return {"eye":axis+toward*150.0+across*60.0+Vector3(0.0,-5.0,0.0),"at":axis+Vector3(0.0,-8.0,0.0),"fov":60.0}
+			return {"eye":axis+toward*200.0*span+across*40.0*span+Vector3(0.0,-5.0,0.0),"at":axis+Vector3(0.0,4.0,0.0),"fov":60.0}
 	return {}

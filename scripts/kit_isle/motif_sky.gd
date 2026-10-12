@@ -18,7 +18,8 @@ extends Node3D
 ## plane tokens join the sky's collectibles at once, a source each.
 ##
 ## With --dragon-roost the dragon's mountain stands too, past the others
-## (scripts/kit_isle/motif_dragon_roost.gd, its own AT; not in `places`).
+## (scripts/kit_isle/motif_dragon_roost.gd, its own AT): not in the static
+## `places`, but in `stood_places` (what the sky's clouds keep off).
 ##
 ## Placed clear of the aqueduct isle's lock ring, of the lodestone's shard,
 ## its ring and the hall chain's line out north-north-east, and of the
@@ -62,6 +63,8 @@ const HEADLESS_NEAR := 200.0
 var scene: Node3D
 var sky: Node3D
 var isles: Array = []
+## Where each of these stands (`places`' kind), the roost too if it stands.
+var placed: Array = []
 ## The one building on a worker now, or null.
 var _building: Node3D = null
 ## Built on workers (rendered), or on the main thread (headless).
@@ -80,6 +83,10 @@ static func places() -> Array:
 		out.append([key,Vector3(mid.x+at.x,30.0+at.y,mid.y+at.z),float(REACH[key])])
 	return out
 
+## `places`, and the dragon's roost if it stands (--dragon-roost).
+func stood_places() -> Array:
+	return placed if not placed.is_empty() else places()
+
 func _init() -> void:
 	name = "Motifs"
 
@@ -89,12 +96,13 @@ func setup(study: Node3D, owner_sky: Node3D, args: PackedStringArray) -> void:
 	var began := Time.get_ticks_msec()
 	eager = threaded or args.has("--motifs-now")
 	var where := places()
+	placed = where
 	var specs: Array = PLACES.duplicate()
 	# --dragon-roost: the dragon's mountain too, out past the others
 	# (scripts/kit_isle/motif_dragon_roost.gd).
 	if args.has("--dragon-roost"):
 		specs.append([Roost,Roost.AT])
-		where.append(["dragon_roost",Vector3(Roost.O.x+Roost.AT.x,Roost.TOP+Roost.AT.y,Roost.O.y+Roost.AT.z),Roost.R])
+		where.append(Roost.place())
 	for k in range(specs.size()):
 		var spec: Array = specs[k]
 		var motif: RefCounted = (spec[0] as Script).new()

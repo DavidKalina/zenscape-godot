@@ -171,9 +171,9 @@ func _start_motifs(args: PackedStringArray) -> void:
 
 ## Where the motif isles stand: [id, middle (world; y its top), reach (m)]
 ## each, none without them (scripts/kit_isle/kit_clouds.gd keeps its towers
-## and puffs off them).
+## and puffs off them); the dragon's roost too, with --dragon-roost.
 func places() -> Array:
-	return MotifSky.places() if motifs != null else []
+	return motifs.stood_places() if motifs != null else []
 
 ## Every motif isle stood up at once (tests, captures), and the towers whole.
 func flush() -> void:
