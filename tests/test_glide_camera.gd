@@ -5,11 +5,18 @@ extends SceneTree
 ## catches up; the free look turns it round the glider and it swings back
 ## when let go, at once or, lingering, only after a while without a turn;
 ## it never goes into rock; first person puts it in the head.
+## Framed (the game's plane, docs/design/flight-camera.md): through chained
+## full-stick turns, boosted turns, mouse flicks and a dive the plane stays
+## inside the safe part of the view; with rock behind it swings round or
+## lifts over, and never comes nearer than its least; it leads into a turn;
+## and it reads speed against the plane's cruise, easing back at boost.
 ## The plane (scripts/plane_figure.gd) follows the glide and its mark
 ## shows near the ground.
 const SkyGlide = preload("res://scripts/sky_glide.gd")
 const GlideCamera = preload("res://scripts/glide_camera.gd")
 const PlaneFigure = preload("res://scripts/plane_figure.gd")
+const SkyPlane = preload("res://scripts/sky_plane.gd")
+const WorldScale = preload("res://scripts/world_scale.gd")
 const DT := 1.0/60.0
 var failures := 0
 
@@ -21,6 +28,10 @@ func _initialize() -> void:
 	_keeps_out()
 	_first_person()
 	_figure()
+	_framed_turns()
+	_framed_rock()
+	_framed_lead()
+	_framed_speed()
 	print("PASS: glide camera" if failures == 0 else "FAIL: glide camera")
 	quit(1 if failures else 0)
 
@@ -150,3 +161,114 @@ func _figure() -> void:
 	figure.update(DT,glide,0.0,high,false)
 	check(not mark.visible,"High up, no mark")
 	figure.free()
+
+# --- Framed: the game's plane ----------------------------------------------------
+
+## A plane at the game's size and speed and its framed camera, settled.
+func framed_plane() -> Array:
+	var size := WorldScale.plane
+	var plane := SkyPlane.new()
+	plane.use_game_speed()
+	plane.launch(Vector3(0.0,200.0,0.0),0.0,plane.cruise(),false)
+	var cam := GlideCamera.new()
+	cam.framed = true
+	cam.size = size
+	cam.near = WorldScale.TOY_SPAN*size*GlideCamera.NEAR_SPANS
+	cam.extent = WorldScale.TOY_SPAN*size*0.5
+	cam.cruise = plane.cruise()
+	cam.reset(plane,plane.position+Vector3(0.0,3.0,10.0))
+	fly_framed(plane,cam,3.0,{})
+	return [plane,cam]
+
+## Flies `plane` and its camera; the most the plane's edge was out in the view.
+func fly_framed(plane: SkyPlane, cam: GlideCamera, seconds: float, input: Dictionary, solid := Callable()) -> float:
+	var most := 0.0
+	for i in range(int(seconds/DT)):
+		plane.step(DT,input,open_air)
+		cam.step(DT,plane,0.0,solid)
+		most = maxf(most,on_screen(cam,plane.position))
+	return most
+
+## How far out the plane's edge is in the view, as a share of the
+## half-screen (the larger way; 16:9; behind the eye: 9).
+func on_screen(cam: GlideCamera, at: Vector3) -> float:
+	var basis := Basis.looking_at(cam.look-cam.eye,Vector3.UP)*Basis(Vector3.FORWARD,cam.roll)
+	var p := basis.inverse()*(at-cam.eye)
+	if p.z > -0.05: return 9.0
+	var half := tan(deg_to_rad(cam.fov)*0.5)
+	var pad := cam.extent/-p.z
+	return maxf((absf(p.x/-p.z)+pad)/(half*cam.aspect),(absf(p.y/-p.z)+pad)/half)
+
+func _framed_turns() -> void:
+	var got := framed_plane()
+	var plane: SkyPlane = got[0]
+	var cam: GlideCamera = got[1]
+	var most := 0.0
+	for turn in [-1.0,1.0,-1.0,1.0]: most = maxf(most,fly_framed(plane,cam,2.5,{"turn":turn}))
+	for turn in [-1.0,1.0]: most = maxf(most,fly_framed(plane,cam,2.0,{"turn":turn,"boost":1.0}))
+	for flick in [0.12,-0.12,0.12]: most = maxf(most,fly_framed(plane,cam,0.4,{"look":Vector2(flick,0.0)}))
+	most = maxf(most,fly_framed(plane,cam,1.2,{"pitch":-1.0}))
+	most = maxf(most,fly_framed(plane,cam,1.5,{"pitch":1.0,"turn":1.0}))
+	check(most <= GlideCamera.EDGE+0.01,"Framed, through chained turns, flicks and a dive the plane stays in the view's safe part (its edge out to %.2f of the half-screen, EDGE %.2f)" % [most,GlideCamera.EDGE])
+
+func _framed_rock() -> void:
+	var got := framed_plane()
+	var plane: SkyPlane = got[0]
+	var cam: GlideCamera = got[1]
+	# A slab over and behind the plane, where the eye trails: it lifts over
+	# or swings round rather than drawing in.
+	var slab := func(p: Vector3) -> bool:
+		var rel: Vector3 = p-plane.position
+		return rel.z > 3.0 and rel.z < 6.0 and rel.y > 0.5 and rel.y < 4.0 and absf(rel.x) < 3.0
+	var nearest := INF
+	var inside := 0
+	for i in range(int(2.0/DT)):
+		plane.step(DT,{},open_air)
+		cam.step(DT,plane,0.0,slab)
+		nearest = minf(nearest,cam.eye.distance_to(plane.position))
+		if slab.call(cam.eye): inside += 1
+	check(inside == 0 and nearest > cam.near*1.5,"A slab where it trails: it goes round or over, not in (nearest %.1f m, least %.1f, %d frames in it)" % [nearest,cam.near,inside])
+	# A wall all the way behind: it comes in, but never nearer than its least.
+	var wall := func(p: Vector3) -> bool: return p.z > plane.position.z+2.0
+	nearest = INF
+	var most := 0.0
+	for i in range(int(2.0/DT)):
+		plane.step(DT,{},open_air)
+		cam.step(DT,plane,0.0,wall)
+		nearest = minf(nearest,cam.eye.distance_to(plane.position))
+		most = maxf(most,on_screen(cam,plane.position))
+	check(nearest >= cam.near-0.01,"Rock all round behind: never nearer than %.1f m (nearest %.1f)" % [cam.near,nearest])
+	check(most <= GlideCamera.EDGE+0.01,"And the plane stays in view (%.2f)" % most)
+	# Clear again, it eases back out.
+	fly_framed(plane,cam,2.0,{})
+	check(cam.eye.distance_to(plane.position) > cam.near*1.8,"Clear again, it eases back out (%.1f m)" % cam.eye.distance_to(plane.position))
+
+func _framed_lead() -> void:
+	var got := framed_plane()
+	var plane: SkyPlane = got[0]
+	var cam: GlideCamera = got[1]
+	fly_framed(plane,cam,1.5,{"turn":-1.0})
+	# Turning left (heading growing), the look ahead swings left of its way.
+	var on := cam.look-plane.position
+	var way: Vector3 = cam._way
+	var left := Vector3(way.z,0.0,-way.x).normalized()
+	check(on.dot(left) > 0.5 and absf(cam._yaw_rate) > 1.0,"In a turn the view leads into it (%.1f m to the turn's side)" % on.dot(left))
+
+func _framed_speed() -> void:
+	var got := framed_plane()
+	var plane: SkyPlane = got[0]
+	var cam: GlideCamera = got[1]
+	var cruise_fov := cam.fov
+	var cruise_back := cam.eye.distance_to(plane.position)
+	fly_framed(plane,cam,4.0,{"boost":1.0})
+	check(cam.fov > cruise_fov+2.0,"At boost the view widens (%.1f deg from %.1f)" % [cam.fov,cruise_fov])
+	check(cam.eye.distance_to(plane.position) > cruise_back*1.04,"And it eases back rather than tucking in (%.1f m from %.1f)" % [cam.eye.distance_to(plane.position),cruise_back])
+	# Read against the cruise: a toy-speed plane at its cruise has the same view.
+	var toy := SkyPlane.new()
+	toy.launch(Vector3(0.0,200.0,0.0),0.0,toy.cruise(),false)
+	var cam2 := GlideCamera.new()
+	cam2.framed = true
+	cam2.cruise = toy.cruise()
+	cam2.reset(toy,toy.position+Vector3(0.0,3.0,10.0))
+	fly_framed(toy,cam2,3.0,{})
+	check(absf(cam2.fov-cruise_fov) < 0.3,"At cruise the view is the same whatever the plane's speed (%.1f, %.1f deg)" % [cam2.fov,cruise_fov])

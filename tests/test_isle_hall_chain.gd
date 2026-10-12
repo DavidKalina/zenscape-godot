@@ -147,8 +147,10 @@ func _appears() -> void:
 	var broke_at := -1.0
 	var puffs := 0
 	var t := 0.1
+	# Braked: started inside ring_near (as no flown approach is), the game's
+	# cruise (SkyPlane GAME_SPEED) would have it at the ring as it stands.
 	while c.state == "rising" and t < still+1.0:
-		study.fly_step(DT,{})
+		study.fly_step(DT,{"brake":1.0})
 		t += DT
 		if broke_at < 0.0 and c.ring_broke:
 			broke_at = t

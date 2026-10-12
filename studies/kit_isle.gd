@@ -86,7 +86,9 @@ extends "res://studies/character_study.gd"
 ## is the same moment run to run however slow the first frames are; with
 ## --at it holds too (its settling frames count as the first 4 s).
 ## --capture-seq=<count>,<s> saves that many, that far apart (out_0.png...),
-## to judge motion across frames.
+## to judge motion across frames. --capture-stick=<turn>,<pitch> holds that
+## stick (-1..1 each) while a flying capture flies (a hard turn's framing);
+## --fly-at=x,y,z,deg starts it flying there (heading deg clockwise from -z).
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 const LandscapeLighting = preload("res://scripts/landscape_lighting.gd")
 const Celestial = preload("res://studies/celestial.gd")
@@ -280,6 +282,7 @@ var plane_figure: Node3D
 var air: Node3D
 var _flaps_heard := 0
 var chase: RefCounted
+var _sight_ray: PhysicsRayQueryParameters3D
 var bumps := 0
 var _fly_look := Vector2.ZERO
 var _roll_asked := 0.0
@@ -388,6 +391,8 @@ var _plane_eye := Vector3.INF
 ## A capture from the walker's (or chase) camera waits this long (s;
 ## --capture-wait=<s>).
 var _capture_wait := 4.0
+## The stick a flying capture holds (--capture-stick=<turn>,<pitch>).
+var _capture_stick := Vector2.ZERO
 ## A capture saves this many frames, this many seconds apart
 ## (--capture-seq=<count>,<s>).
 var _capture_count := 1
@@ -444,6 +449,9 @@ func _ready() -> void:
 		elif arg.begins_with("--target="): lode_target = _vec(arg.get_slice("=",1))
 		elif arg.begins_with("--plane-eye="): _plane_eye = _vec(arg.get_slice("=",1))
 		elif arg.begins_with("--capture-wait="): _capture_wait = float(arg.get_slice("=",1))
+		elif arg.begins_with("--capture-stick="):
+			var held := arg.get_slice("=",1).split(",")
+			_capture_stick = Vector2(float(held[0]),float(held[1]) if held.size() > 1 else 0.0)
 		elif arg.begins_with("--capture-seq="):
 			var seq := arg.get_slice("=",1).split(",")
 			_capture_count = maxi(int(seq[0]),1)
@@ -480,6 +488,13 @@ func _ready() -> void:
 ## The start in the plane (--fly); an isle may start in the air elsewhere.
 func _start_in_plane() -> void:
 	if preload("res://scripts/launch_args.gd").user_args().has("--fly"): board()
+	# --fly-at=x,y,z,deg (captures): flying there, heading deg clockwise from -z.
+	for arg in preload("res://scripts/launch_args.gd").user_args():
+		if not arg.begins_with("--fly-at="): continue
+		var p := arg.get_slice("=",1).split(",")
+		if p.size() < 4: continue
+		board()
+		fly_from(Vector3(float(p[0]),float(p[1]),float(p[2])),-deg_to_rad(float(p[3])))
 
 static func _vec(text: String) -> Vector3:
 	var p := text.split(",")
@@ -904,8 +919,9 @@ func board() -> void:
 	var at := motor.feet+Vector3(way.x,0.0,way.y)*BOARD_AHEAD+Vector3.UP*BOARD_UP
 	_unpark()
 	plane = SkyPlane.new()
+	plane.use_game_speed()
 	plane.floor_y = isle_top()-FLOOR_BELOW
-	plane.launch(at,_yaw,SkyPlane.CRUISE_SPEED,false)
+	plane.launch(at,_yaw,plane.cruise(),false)
 	for i in range(12):
 		if not _in_stone(): break
 		plane.position += Vector3.UP*2.0
@@ -927,6 +943,7 @@ func board_parked() -> void:
 	var feet := motor.feet
 	_unpark()
 	plane = SkyPlane.new()
+	plane.use_game_speed()
 	plane.floor_y = isle_top()-FLOOR_BELOW
 	plane.launch(at,heading,SkyPlane.SLOW,false)
 	var r := PlaneStrip.rest(_floor_from(at.y),Vector2(at.x,at.z),heading)
@@ -970,10 +987,7 @@ func _into_plane() -> void:
 			_nose.target = lode_target
 			plane_figure.add_child(_nose)
 			_moments.pop("The lodestone wakes the compass",1.6)
-	chase = GlideCamera.new()
-	chase.reset(plane,camera.global_position,camera.fov)
-	chase.linger = LOOK_LINGER
-	_size_chase()
+	_new_chase(camera.global_position)
 	if air == null:
 		air = GlideAir.new()
 		add_child(air)
@@ -1328,6 +1342,9 @@ func _fly_input(delta: float) -> Dictionary:
 		"boost":Input.get_action_strength(&"fly_boost"),"brake":Input.get_action_strength(&"fly_brake"),"roll":_roll_asked}
 	_fly_look = Vector2.ZERO
 	_roll_asked = 0.0
+	if _capture != "" and _capture_stick != Vector2.ZERO:
+		input.turn = _capture_stick.x
+		input.pitch = _capture_stick.y
 	_lock_stick = stick
 	if isle_lock != null and isle_lock.locked: return isle_lock.steer(input,plane)
 	return input
@@ -1392,12 +1409,33 @@ func fly_step(delta: float, input: Dictionary) -> void:
 		_off_ground = INF
 	_show_fly_hint()
 
+## A new chase camera behind the plane, from `from` (the eye it takes
+## over), framed for the plane (docs/design/flight-camera.md): it sees the
+## plane past stone and turf by ray (`_sight`). `--cam-old` keeps the
+## camera as it was before (no framing; it stops short of stone), to A/B.
+func _new_chase(from: Vector3) -> void:
+	chase = GlideCamera.new()
+	if not preload("res://scripts/launch_args.gd").user_args().has("--cam-old"):
+		chase.framed = true
+		chase.sight = _sight
+	chase.reset(plane,from,camera.fov)
+	chase.linger = LOOK_LINGER
+	_size_chase()
+
 ## The chase camera stands back and frames higher as the plane grows on
-## its wheels (scripts/plane_ground_scale.gd).
+## its wheels (scripts/plane_ground_scale.gd); the least it comes in to,
+## the plane's reach round its middle and the speed it reads against
+## follow the plane.
 func _size_chase() -> void:
 	if chase == null: return
 	chase.size = ground_scale.size()
 	chase.lift = ground_scale.lift()
+	var span := WorldScale.TOY_SPAN*ground_scale.size()
+	chase.near = span*GlideCamera.NEAR_SPANS
+	chase.extent = span*0.5
+	if plane != null: chase.cruise = plane.cruise()
+	var view := get_viewport().get_visible_rect().size if is_inside_tree() else Vector2.ZERO
+	if view.y > 0.0: chase.aspect = view.x/view.y
 
 ## The chase camera behind the plane (shaken by a hard touch), framing the
 ## isle while locked onto it; a capture's plane eye over all.
@@ -1542,14 +1580,12 @@ func _fly_tick(_delta: float) -> void:
 func fly_from(at: Vector3, heading: float) -> void:
 	if not flying: return
 	takeoff = null
-	plane.launch(at,heading,SkyPlane.CRUISE_SPEED,false)
+	plane.launch(at,heading,plane.cruise(),false)
 	plane.velocity = plane.forward()*float(plane.speed)
 	hand_landing.begin(plane)
 	plane_figure.reset(plane)
 	figure.visible = false
-	chase = GlideCamera.new()
-	chase.reset(plane,at-plane.forward()*7.0+Vector3.UP*2.0,camera.fov)
-	chase.linger = LOOK_LINGER
+	_new_chase(at+(-plane.forward()*GlideCamera.BACK.x+Vector3.UP*GlideCamera.UP.x)*ground_scale.size())
 
 func _show_fly_hint() -> void:
 	if _switch_hint == null or plane == null: return
@@ -1777,6 +1813,19 @@ func _ride_top(space: PhysicsDirectSpaceState3D) -> bool:
 			return true
 	plane.position = from
 	return false
+
+## The share of the way from `from` to `to` clear of stone and turf (the
+## chase camera's sight of the plane), 1 clear.
+func _sight(from: Vector3, to: Vector3) -> float:
+	if _sight_ray == null:
+		_sight_ray = PhysicsRayQueryParameters3D.new()
+		_sight_ray.collision_mask = plane_mask()
+		_sight_ray.hit_back_faces = true
+	_sight_ray.from = from
+	_sight_ray.to = to
+	var hit := get_world_3d().direct_space_state.intersect_ray(_sight_ray)
+	if hit.is_empty(): return 1.0
+	return from.distance_to(hit.position)/maxf(from.distance_to(to),0.001)
 
 ## Whether a point is inside stone (the chase camera stays out of it).
 func _inside_stone(p: Vector3) -> bool:

@@ -60,6 +60,14 @@ const BRAKE_SPEED := 8.0
 const SLOW := 7.0
 const FAST := 30.0
 const LANDING_SPEED := 8.0
+## The game's plane flies GAME_SPEED times those (cruise, boost and brake
+## only; landing, flap and stall speeds stay): the speed the user found had
+## "a great sense of speed" at the 2x plane (docs/design/flight-camera.md).
+## Its turn rate grows with it (`turn_scale`), so its turn radius stays the
+## toy's: the isles' lines were laid for that radius. The game (studies/
+## kit_isle.gd) sets it with `use_game_speed`; a bare SkyPlane (the flight
+## study, its pinned benches) flies at 1 unless `--plane-speed=` says.
+const GAME_SPEED := 1.15
 ## Flaps down: the speed the engine holds, the floor it never drops below
 ## (m/s), and the extra sink (m/s).
 const FLAP_SPEED := 5.5
@@ -120,9 +128,13 @@ var knife := 0.0
 ## (0 to 1), the nose's lead over its path (radians, the travel is at
 ## heading+slip), and how long this one has been held (seconds).
 var drift_strength := drift_flag(preload("res://scripts/launch_args.gd").user_args())
-## `--plane-speed=<x>` (1 by default): times the cruise, boost and brake
-## speeds only; landing, flap and stall speeds stay as they are.
+## `--plane-speed=<x>` (1 by default, GAME_SPEED in the game): times the
+## cruise, boost and brake speeds only; landing, flap and stall speeds stay
+## as they are. `--plane-turn=<x>` times the turn rate (by default the same
+## as the speed's, so the turn radius stays the toy's; `=1` keeps the old
+## rate, a wider turn).
 var speed_scale := speed_flag(preload("res://scripts/launch_args.gd").user_args())
+var turn_scale := turn_flag(preload("res://scripts/launch_args.gd").user_args(),speed_scale)
 var drift := 0.0
 var slip := 0.0
 var drift_held := 0.0
@@ -187,10 +199,28 @@ static func drift_flag(args: PackedStringArray) -> float:
 		if arg.begins_with("--drift="): return maxf(0.0,float(arg.substr(8)))
 	return 1.0
 
-static func speed_flag(args: PackedStringArray) -> float:
+static func speed_flag(args: PackedStringArray, otherwise := 1.0) -> float:
 	for arg in args:
 		if arg.begins_with("--plane-speed="): return maxf(0.1,float(arg.substr(14)))
-	return 1.0
+	return otherwise
+
+static func turn_flag(args: PackedStringArray, speed: float) -> float:
+	for arg in args:
+		if arg.begins_with("--plane-turn="): return maxf(0.1,float(arg.substr(13)))
+	return speed
+
+## The game's speed: `--plane-speed=` or GAME_SPEED.
+static func game_speed() -> float:
+	return speed_flag(preload("res://scripts/launch_args.gd").user_args(),GAME_SPEED)
+
+## Flies at the game's speed (and turns to match, unless `--plane-turn=`).
+func use_game_speed() -> void:
+	speed_scale = game_speed()
+	turn_scale = turn_flag(preload("res://scripts/launch_args.gd").user_args(),speed_scale)
+
+## The speed the engine holds with the throttle let be (m/s).
+func cruise() -> float:
+	return CRUISE_SPEED*speed_scale
 
 ## The direction it travels: the nose's, swung back by the drift's slip.
 func travel() -> Vector3:
@@ -251,7 +281,7 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 		want = smoothstep(DRIFT_ONSET,DRIFT_FULL,absf(turn))
 		if signf(turn) != signf(knife): want *= DRIFT_COUNTER
 	drift = lerpf(drift,want,_ease(EASE_DRIFT,delta))
-	var rate := -_lean/BANK_HELD*TURN_RATE*(1.0+DRIFT_TURN*drift_strength*drift)
+	var rate := -_lean/BANK_HELD*TURN_RATE*turn_scale*(1.0+DRIFT_TURN*drift_strength*drift)
 	heading += rate*delta-look.x+aim+shove.y*delta
 	slip = lerpf(slip,-rate*DRIFT_SLIP*drift,_ease(EASE_DRIFT,delta))
 	var boost_out := 0.0
