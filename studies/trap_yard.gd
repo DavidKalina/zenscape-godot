@@ -17,10 +17,14 @@ extends "res://studies/character_study.gd"
 const Trap = preload("res://scripts/traps/trap.gd")
 const TrapField = preload("res://scripts/traps/trap_field.gd")
 const Voussoirs = preload("res://scripts/traps/trap_voussoirs.gd")
+const Wind = preload("res://scripts/traps/trap_wind.gd")
+const WindBlaster = preload("res://scripts/traps/trap_wind_blaster.gd")
 
 ## The slots: name -> the trap's script. One line per trap.
 const TRAPS := {
 	"voussoirs": Voussoirs,
+	"wind": Wind,
+	"wind_blaster": WindBlaster,
 }
 
 ## Lanes are this far apart along x (m); decks this wide, the end deck this
