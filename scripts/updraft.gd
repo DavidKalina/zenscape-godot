@@ -32,6 +32,12 @@ const FLOW_MOVES := ["slide","long","wallrun","kick","flip","twirl"]
 const GRACE := 0.9           # s after the last gain before it drains
 const DECAY := 0.4           # per s once draining
 const MIN_RELEASE := 0.15    # least charge that does anything
+## After a forward burst nothing charges until its ride is over, the slide it
+## rode has ended and his pace is back to what it was before the burst (or
+## SPENT_MOST s pass): the burst's own pace never refills it, so bursts can't
+## be chained by spamming the key. At least SPENT_LEAST s either way.
+const SPENT_LEAST := 1.2
+const SPENT_MOST := 5.0
 
 # --- The updraft
 const UP_RISE_MIN := 1.0       # m of rise from standing at charge 0...
@@ -43,14 +49,15 @@ const RING_PUSH_MIN := 0.3     # push power at the feet, weak
 const RING_PUSH := 1.0         # push power at the feet, full
 const RING_FALLOFF := 0.5      # share of the push lost at the rim
 const RING_LIFT := 0.3         # up-share of the push direction (before normalising)
-const RING_STREAKS := 28
+const RING_RIBBONS := 7       # strokes curling out from his feet
+const RING_TAIL := 0.35        # s of path each keeps
 const FADE := 0.3              # s a spent ring's streaks fade over
 const DIP := 0.35              # m the camera dips at full charge, then rises
 const DIP_TIME := 0.4          # s dip + rise
 
 # --- The directional burst (stick toward travel + Q): a flat kick, no lift
 const BURST_ON := true          # master toggle for the whole forward burst
-const BURST_AIR_ON := true      # the mid-air version; false = Q in the air is always the updraft
+const BURST_AIR_ON := false        # the mid-air version; off: Q in the air is always the updraft
 const BURST_CONE := 50.0        # deg: stick within this of his flat travel is "forward"
 const BURST_STICK := 0.5        # least stick length that counts
 const BURST_SLOW := 3.0         # m/s: slower than this, any stick way is "forward"
@@ -66,17 +73,27 @@ const BURST_GROUND_HOP := 0.0   # m/s of vy added on the ground (0 = stays down)
 const BURST_SLIDE_TOP := 28.0   # m/s the slide's own top is raised to while a burst rides
 const BURST_AIR_DRAG := 0.4     # share of the slide's air drag kept while a burst rides (it is v squared)
 const BURST_RIDE := 2.5         # s the raised top lasts after a burst
-const BURST_FOV := 7.0          # deg of FOV kick at full charge
+const BURST_FOV := 5.0          # deg of FOV kick at full charge
 const BURST_FOV_TIME := 0.5     # s the kick takes to settle
-const BURST_STREAKS := 10       # wind streaks left behind
-const BURST_STREAK_LEN := 1.6   # m long
 const UP_SLIDE_SCALE := 1.35    # rise multiplier when the updraft fires out of a fast slide
 const UP_SLIDE_PACE := 8.0      # m/s: "fast slide" for that
 
-# --- Look
-const STREAKS := 14
-const IDLE_COL := Color(0.75,0.92,1.0,0.8)
-const FULL_COL := Color(1.0,0.85,0.3,0.95)
+# --- Look: the charge is a wake of wind behind him, drawn in the breeze
+# ribbons' brush (shaders/breeze_ribbon.gdshader), as the dragon's breath is.
+const WAKE_STRANDS := 3         # strokes in the wake at full charge
+const WAKE_TAIL := 0.9          # s of his path the wake keeps
+const WAKE_SAMPLE := 1.0/30.0   # s between samples of it
+const WAKE_SIDE := [-0.35,0.3,0.05]   # m each strand rides off his line, at his heels...
+const WAKE_HIGH := [0.55,0.95,1.35]   # m over his feet
+const WAKE_SPREAD := 1.8        # ...the offsets grown this much by the tail: the wake opens
+const WAKE_RISE := 0.35         # m the tail drifts up
+const WAKE_WIDTH := 0.22        # m, at full charge
+const WAKE_ALPHA := 0.45        # peak opacity at full charge
+const WAKE_FADE := 0.4          # s the shown charge eases toward the charge
+const WAKE_MIN_RUN := 0.6       # m of path before a strand is drawn
+const LOOSE_LIFE := 0.7         # s a spent wake lingers, drifting back
+const LOOSE_DRIFT := 3.0        # m/s it drifts back along the burst
+const FLARE_TIME := 0.5         # s a burst flares the loose strands wider
 
 var charge := 0.0
 var updrafts := 0
@@ -96,53 +113,45 @@ var _fov := 0.0
 var _fov_applied := 0.0
 var _cam: Camera3D
 var _rings: Array = []
-var _streaks: Array[MeshInstance3D] = []
-var _streak_mat: StandardMaterial3D
-var _ring: MeshInstance3D
-var _ring_mat: StandardMaterial3D
+## Charging is locked after a forward burst (SPENT_*): s since, and the pace
+## he had before it.
+var spent := false
+var _spent_t := 0.0
+var _spent_pace := 0.0
+var _shown := 0.0               # the charge as drawn, eased (WAKE_FADE)
+var _trail: Array[Dictionary] = []   # {at, side, t}: his recent path, newest last
+var _trail_carry := 0.0
+var _loose: Array[Dictionary] = []   # {path, width, alpha, seed, t, drift}
+var _mesh: ImmediateMesh
+var _view: MeshInstance3D
 
 func setup(host: Node3D) -> void:
 	host.add_child(self)
-	var box := BoxMesh.new()
-	box.size = Vector3(0.04,0.04,0.5)*UNIT
-	_streak_mat = _glow(IDLE_COL)
-	for i in range(STREAKS):
-		var m := MeshInstance3D.new()
-		m.mesh = box
-		m.material_override = _streak_mat
-		m.visible = false
-		add_child(m)
-		_streaks.append(m)
-	var torus := TorusMesh.new()
-	torus.inner_radius = 0.8*UNIT
-	torus.outer_radius = 0.9*UNIT
-	torus.rings = 32
-	torus.ring_segments = 4
-	_ring = MeshInstance3D.new()
-	_ring.mesh = torus
-	_ring_mat = _glow(FULL_COL)
-	_ring.material_override = _ring_mat
-	_ring.scale.y = 0.15
-	_ring.visible = false
-	add_child(_ring)
-
-static func _glow(c: Color) -> StandardMaterial3D:
-	var m := StandardMaterial3D.new()
-	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	m.albedo_color = c
-	return m
+	_mesh = ImmediateMesh.new()
+	var mat := ShaderMaterial.new()
+	mat.shader = preload("res://shaders/breeze_ribbon.gdshader")
+	_view = MeshInstance3D.new()
+	_view.name = "UpdraftWake"
+	_view.mesh = _mesh
+	_view.material_override = mat
+	_view.top_level = true
+	_view.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_view.extra_cull_margin = 32.0
+	add_child(_view)
 
 func reset() -> void:
 	charge = 0.0
+	_shown = 0.0
 	_cool = 0.0
 	_ride = 0.0
 	_quiet = 0.0
 	_prev_move = ""
 	_dip_t = 0.0
-	for r: Dictionary in _rings: _free_ring(r)
+	spent = false
 	_rings.clear()
-	_draw(Vector3.ZERO)
+	_trail.clear()
+	_loose.clear()
+	if _mesh != null: _mesh.clear_surfaces()
 
 ## One frame, before the motor steps. `pressed` is the key's press edge.
 func update(delta: float, m: PilotMotor, pressed: bool, want := Vector2.ZERO) -> void:
@@ -151,15 +160,27 @@ func update(delta: float, m: PilotMotor, pressed: bool, want := Vector2.ZERO) ->
 		_cam.fov -= _fov_applied
 		_fov_applied = 0.0
 	_cool = maxf(_cool-delta,0.0)
+	_unlock(delta,m)
 	_charge(delta,m)
 	if pressed and not burst(m,want): updraft(m)
 	_ride_top(delta,m)
 	_step_rings(delta)
-	_draw(m.feet)
+	_track(delta,m)
+	_draw()
+
+## The lock after a burst: lifted once its ride is over, the slide has ended
+## and his pace is back to what it was before (SPENT_LEAST..SPENT_MOST s).
+func _unlock(delta: float, m: PilotMotor) -> void:
+	if not spent: return
+	_spent_t += delta
+	var settled := _ride <= 0.0 and m.move != "slide" and m.speed() <= _spent_pace+0.5*UNIT
+	if _spent_t >= SPENT_MOST or (_spent_t >= SPENT_LEAST and settled):
+		spent = false
+		_prev_move = m.move
 
 func _charge(delta: float, m: PilotMotor) -> void:
 	# Gliding on the pocket sail is riding the air, not flowing: it builds nothing.
-	if m.recovering() or m.swimming or m.sail.open:
+	if spent or m.recovering() or m.swimming or m.sail.open:
 		_decay(delta)
 		_prev_move = ""
 		return
@@ -199,6 +220,7 @@ func updraft(m: PilotMotor) -> bool:
 	var v := m.velocity
 	m.toss(Vector3(v.x,maxf(vy,v.y),v.z))
 	m.facing = face
+	_let_go(Vector3.ZERO)
 	_blast_ring(m.feet+Vector3(0.0,0.1*UNIT,0.0),p)
 	_dip_t = DIP_TIME
 	_dip_amp = DIP*p*UNIT
@@ -228,6 +250,9 @@ func burst(m: PilotMotor, want: Vector2) -> bool:
 	_quiet = 0.0
 	bursts += 1
 	_cool = BURST_COOLDOWN
+	spent = true
+	_spent_t = 0.0
+	_spent_pace = pace
 	var soft := clampf((BURST_CAP-pace/UNIT)/(BURST_CAP-BURST_SOFT),BURST_FLOOR,1.0)
 	var add := lerpf(BURST_ADD_MIN,BURST_ADD_MAX,p)*soft*UNIT
 	if not m.grounded: add *= BURST_AIR_SHARE
@@ -237,7 +262,7 @@ func burst(m: PilotMotor, want: Vector2) -> bool:
 	if m.grounded: m.velocity.y += BURST_GROUND_HOP*UNIT
 	else: m.velocity.y += BURST_AIR_LIFT*UNIT
 	_ride = BURST_RIDE
-	_streaks_behind(m.feet,dir,p)
+	_let_go(-Vector3(dir.x,0.0,dir.y)*LOOSE_DRIFT*UNIT)
 	_fov = BURST_FOV*p
 	return true
 
@@ -255,40 +280,6 @@ func _ride_top(delta: float, m: PilotMotor) -> void:
 		m.slide_air = _base_air
 		_base_top = -1.0
 
-func _streaks_behind(feet: Vector3, dir: Vector2, p: float) -> void:
-	var back := Vector3(-dir.x,0.0,-dir.y)
-	var box := BoxMesh.new()
-	box.size = Vector3(0.04,0.04,BURST_STREAK_LEN*UNIT)
-	for i in range(BURST_STREAKS):
-		var side := Vector3(-back.z,0.0,back.x)
-		var n := MeshInstance3D.new()
-		n.mesh = box
-		var mat := _glow(IDLE_COL.lerp(FULL_COL,p))
-		n.material_override = mat
-		n.top_level = true
-		add_child(n)
-		var from := feet+back*randf_range(0.3,0.9)*UNIT+side*randf_range(-0.7,0.7)*UNIT+Vector3(0.0,randf_range(0.1,1.3)*UNIT,0.0)
-		n.position = from
-		n.basis = Basis.looking_at(back,Vector3.UP)
-		var tw := create_tween().set_parallel(true)
-		tw.tween_property(n,"position",from+back*randf_range(2.0,4.0)*UNIT,0.35)
-		tw.tween_property(mat,"albedo_color:a",0.0,0.35)
-		tw.chain().tween_callback(n.queue_free)
-	var dust := BoxMesh.new()
-	dust.size = Vector3.ONE*0.16*UNIT
-	for i in range(6):
-		var d := MeshInstance3D.new()
-		d.mesh = dust
-		var dm := _glow(Color(0.6,0.55,0.5,0.5))
-		d.material_override = dm
-		d.top_level = true
-		add_child(d)
-		d.position = feet
-		var tw := create_tween().set_parallel(true)
-		tw.tween_property(d,"position",feet+back*randf_range(1.0,2.5)*UNIT+Vector3(randf_range(-0.5,0.5),randf_range(0.2,0.7),randf_range(-0.5,0.5))*UNIT,0.45)
-		tw.tween_property(dm,"albedo_color:a",0.0,0.45)
-		tw.chain().tween_callback(d.queue_free)
-
 ## The camera dips, then rises, after an updraft; a burst kicks the FOV.
 func apply_feel(camera: Camera3D) -> void:
 	_cam = camera
@@ -303,40 +294,12 @@ func apply_feel(camera: Camera3D) -> void:
 		camera.global_position.y += _dip_amp*y
 
 func _blast_ring(origin: Vector3, p: float) -> void:
-	var r := {"origin":origin,"p":p,"t":0.0,"R":lerpf(RING_R_MIN,RING_R_MAX,p)*UNIT,"hit":{},"streaks":[],
-		"mat":_glow(IDLE_COL.lerp(FULL_COL,p))}
-	var box := BoxMesh.new()
-	box.size = Vector3(0.05,0.05,0.8)*UNIT
-	for i in range(RING_STREAKS):
-		var s := MeshInstance3D.new()
-		s.mesh = box
-		s.material_override = r.mat
-		s.top_level = true
-		s.visible = false
-		add_child(s)
-		var a := (float(i)+randf()*0.6)*TAU/float(RING_STREAKS)
-		r.streaks.append({"node":s,"a":a,"k":randf_range(0.75,1.0)})
-	# Dust kicked up at his feet.
-	var dust := BoxMesh.new()
-	dust.size = Vector3.ONE*0.18*UNIT
-	for i in range(8):
-		var d := MeshInstance3D.new()
-		d.mesh = dust
-		var dm := _glow(Color(0.6,0.55,0.5,0.5))
-		d.material_override = dm
-		d.top_level = true
-		add_child(d)
-		var a := randf()*TAU
-		d.position = origin
-		var to := origin+Vector3(cos(a),0.5,sin(a))*randf_range(0.8,1.6)*UNIT*(0.5+p)
-		var tw := create_tween().set_parallel(true)
-		tw.tween_property(d,"position",to,0.5)
-		tw.tween_property(dm,"albedo_color:a",0.0,0.5)
-		tw.chain().tween_callback(d.queue_free)
+	var r := {"origin":origin,"p":p,"t":0.0,"R":lerpf(RING_R_MIN,RING_R_MAX,p)*UNIT,"hit":{},"ribs":[]}
+	for i in range(RING_RIBBONS):
+		var a := (float(i)+randf()*0.5)*TAU/float(RING_RIBBONS)
+		r.ribs.append({"a":a,"k":randf_range(0.7,1.0),"curl":randf_range(0.5,0.9),"h":randf_range(0.1,0.6)*UNIT,
+			"seed":randf()*100.0,"path":PackedVector3Array(),"times":PackedFloat32Array()})
 	_rings.append(r)
-
-func _free_ring(r: Dictionary) -> void:
-	for st: Dictionary in r.streaks: (st.node as Node).queue_free()
 
 func _step_rings(delta: float) -> void:
 	for i in range(_rings.size()-1,-1,-1):
@@ -344,14 +307,17 @@ func _step_rings(delta: float) -> void:
 		r.t += delta
 		var k := clampf(r.t/RING_TIME,0.0,1.0)
 		var radius: float = r.R*k
-		var fade := 1.0 if r.t <= RING_TIME else clampf(1.0-(r.t-RING_TIME)/FADE,0.0,1.0)
-		r.mat.albedo_color.a = 0.85*fade
-		for st: Dictionary in r.streaks:
-			var s: MeshInstance3D = st.node
-			var way := Vector3(cos(st.a),0.0,sin(st.a))
-			s.visible = radius > 0.3*UNIT and fade > 0.0
-			s.position = r.origin+way*radius*st.k
-			s.basis = Basis.looking_at(way,Vector3.UP)
+		# Each stroke's head runs out and curls round a little, easing off
+		# as it goes, and rises a touch: a soft gust ring, not a hoop.
+		var ease := 1.0-pow(1.0-clampf(r.t/(RING_TIME+FADE),0.0,1.0),2.0)
+		for rib: Dictionary in r.ribs:
+			var a: float = rib.a+rib.curl*ease
+			var head: Vector3 = r.origin+Vector3(cos(a),0.0,sin(a))*r.R*ease*rib.k+Vector3.UP*(0.15*UNIT+rib.h*ease)
+			rib.path.append(head)
+			rib.times.append(r.t)
+			while rib.times.size() > 2 and r.t-rib.times[0] > RING_TAIL:
+				rib.path.remove_at(0)
+				rib.times.remove_at(0)
 		# Anything in the group "wind_pushable" (swing ropes) is shoved once
 		# as the rim passes: wind_push(origin, dir, power).
 		for n: Node in get_tree().get_nodes_in_group(GROUP):
@@ -366,27 +332,97 @@ func _step_rings(delta: float) -> void:
 			var power: float = lerpf(RING_PUSH_MIN,RING_PUSH,r.p)*(1.0-RING_FALLOFF*flat.length()/r.R)
 			n.wind_push(r.origin,push,power)
 		if r.t > RING_TIME+FADE:
-			_free_ring(r)
 			_rings.remove_at(i)
 
-## The charge swirl on the wanderer; at full, all gold with a pulsing ring.
-func _draw(feet: Vector3) -> void:
-	var full := charge >= 0.999
-	_streak_mat.albedo_color = IDLE_COL.lerp(FULL_COL,clampf((charge-0.6)/0.4,0.0,1.0))
-	var shown := ceili(charge*STREAKS)
-	var spin := 3.0+9.0*charge
-	for i in range(STREAKS):
-		var s := _streaks[i]
-		s.visible = i < shown and charge > 0.02
-		if not s.visible: continue
-		var a := _clock*spin+float(i)*TAU/float(STREAKS)*2.0
-		var h := fposmod(float(i)*0.618,1.0)
-		var r := (0.55+0.08*sin(_clock*3.0+float(i)))*UNIT*(1.0+0.25*charge)
-		s.position = feet+Vector3(cos(a)*r,(0.12+1.5*h)*UNIT,sin(a)*r)
-		s.basis = Basis.looking_at(Vector3(-sin(a),0.25,cos(a)).normalized(),Vector3.UP)
-		s.scale = Vector3(1.0,1.0,0.5+charge)
-	_ring.visible = full
-	if full:
-		_ring.position = feet+Vector3(0.0,0.06,0.0)
-		var pulse := 1.0+0.15*sin(_clock*14.0)
-		_ring.scale = Vector3(pulse,0.15,pulse)
+## His path for the wake: a sample every WAKE_SAMPLE s, WAKE_TAIL s of it.
+func _track(delta: float, m: PilotMotor) -> void:
+	_shown = move_toward(_shown,charge,delta/WAKE_FADE)
+	for l: Dictionary in _loose:
+		l.t += delta
+		var drift: Vector3 = l.drift*delta
+		var path: PackedVector3Array = l.path
+		for j in range(path.size()): path[j] += drift
+		l.path = path
+	_loose = _loose.filter(func(l: Dictionary) -> bool: return l.t < LOOSE_LIFE)
+	_trail_carry += delta
+	if _trail_carry < WAKE_SAMPLE and not _trail.is_empty(): return
+	_trail_carry = 0.0
+	var h := Vector2(m.velocity.x,m.velocity.z)
+	var side := Vector3.RIGHT
+	if h.length() > 0.5: side = Vector3(-h.y,0.0,h.x).normalized()
+	elif not _trail.is_empty(): side = _trail[-1].side
+	_trail.append({"at":m.feet,"side":side,"t":_clock})
+	while _trail.size() > 2 and _clock-float(_trail[0].t) > WAKE_TAIL: _trail.pop_front()
+
+## One wake strand's path, oldest first: his path, each point off his line
+## by the strand's offset, opening and rising toward the tail, with a slow
+## sway so it breathes rather than flickers.
+func _strand(i: int) -> PackedVector3Array:
+	var out := PackedVector3Array()
+	for s: Dictionary in _trail:
+		var age := clampf((_clock-float(s.t))/WAKE_TAIL,0.0,1.0)
+		var open := 1.0+WAKE_SPREAD*age
+		var sway := 0.12*sin(float(s.t)*2.1+float(i)*2.0)*age
+		var p: Vector3 = s.at+s.side*(float(WAKE_SIDE[i])*open+sway)*UNIT+Vector3.UP*(float(WAKE_HIGH[i])+WAKE_RISE*age)*UNIT
+		if not out.is_empty() and p.distance_squared_to(out[-1]) < 0.0025: continue
+		out.append(p)
+	return out
+
+## The wake comes away when the charge is spent: its strands linger a moment,
+## drifting (`drift` m/s), and fade.
+func _let_go(drift: Vector3) -> void:
+	for i in range(WAKE_STRANDS):
+		var a := _strand_alpha(i)
+		if a <= 0.01: continue
+		_loose.append({"path":_strand(i),"width":WAKE_WIDTH*1.3*UNIT,"alpha":a*1.6,"seed":float(i)*13.0,"t":0.0,"drift":drift})
+	_shown = 0.0
+
+## A strand's opacity at the charge shown: the first shows from a little
+## charge, the rest join as it builds.
+func _strand_alpha(i: int) -> float:
+	var k := clampf((_shown-MIN_RELEASE*0.5)*float(WAKE_STRANDS)-float(i)*0.8,0.0,1.0)
+	return WAKE_ALPHA*k*lerpf(0.6,1.0,_shown)
+
+## Wake, loose strands and gust rings, all one mesh in the breeze's brush
+## (the layout breeze_ribbons.gd `_draw` feeds the shader).
+func _draw() -> void:
+	if _mesh == null: return
+	_mesh.clear_surfaces()
+	var strokes: Array[Dictionary] = []
+	for i in range(WAKE_STRANDS):
+		var a := _strand_alpha(i)
+		if a > 0.01: strokes.append({"path":_strand(i),"width":WAKE_WIDTH*lerpf(0.6,1.0,_shown)*UNIT,"alpha":a,"seed":float(i)*13.0})
+	for l: Dictionary in _loose:
+		var u: float = l.t/LOOSE_LIFE
+		var flare := 1.0+0.6*clampf(1.0-l.t/FLARE_TIME,0.0,1.0)
+		strokes.append({"path":l.path,"width":l.width*flare,"alpha":l.alpha*(1.0-u)*(1.0-u),"seed":l.seed})
+	for r: Dictionary in _rings:
+		var fade := 1.0 if r.t <= RING_TIME else clampf(1.0-(r.t-RING_TIME)/FADE,0.0,1.0)
+		for rib: Dictionary in r.ribs:
+			strokes.append({"path":rib.path,"width":lerpf(0.25,0.4,r.p)*UNIT,"alpha":lerpf(0.35,0.6,r.p)*fade,"seed":rib.seed})
+	var begun := false
+	for st in strokes:
+		var path: PackedVector3Array = st.path
+		var n := path.size()
+		if n < 3 or st.alpha <= 0.005: continue
+		var along := PackedFloat32Array([0.0])
+		for j in range(1,n): along.append(along[j-1]+path[j].distance_to(path[j-1]))
+		var total := along[n-1]
+		if total < WAKE_MIN_RUN*UNIT: continue
+		if not begun:
+			_mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
+			begun = true
+		var size := Vector2(st.width,st.alpha)
+		var prev := Vector3.ZERO
+		for j in range(n):
+			var tangent := (path[mini(j+1,n-1)]-path[maxi(j-1,0)]).normalized()
+			if j > 0:
+				for corner in [[0,0.0],[1,0.0],[1,1.0],[0,0.0],[1,1.0],[0,1.0]]:
+					var k: int = corner[0]
+					_mesh.surface_set_normal(prev if k == 0 else tangent)
+					_mesh.surface_set_uv(Vector2(total-along[j-1+k],corner[1]))
+					_mesh.surface_set_uv2(size)
+					_mesh.surface_set_color(Color(0.0,0.0,float(st.seed)*0.01,along[j-1+k]/total))
+					_mesh.surface_add_vertex(path[j-1+k])
+			prev = tangent
+	if begun: _mesh.surface_end()

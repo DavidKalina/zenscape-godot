@@ -99,7 +99,7 @@ func _initialize() -> void:
 			s.tick(DT)
 			pk = maxf(pk,m.feet.y)
 			if i == 14 or i == 29 or i == 59: rows.append(snappedf(m.speed(),0.1))
-		print(case," (move '",mv,"' then '",m.move,"') flat before/0.25s/0.5s/1s ",rows," add ",snappedf(u.last_add,0.1)," rise ",snappedf(pk-y1,0.2))
+		print(case," (move '",mv,"' then '",m.move,"') flat before/0.25s/0.5s/1s ",rows," add ",snappedf(u.last_add,0.1)," rise ",snappedf(pk-y1,0.2)," charge at 1s ",snappedf(u.charge,0.01)," locked ",u.spent)
 		s.script_crouch = false
 		s.script_want = Vector2.ZERO
 	# Sail after the updraft.
