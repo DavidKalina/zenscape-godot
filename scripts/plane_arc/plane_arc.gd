@@ -48,7 +48,8 @@ extends Node3D
 ##                      cowl
 ## A script run (--script: the tests, the tools) starts repaired unless it
 ## asks for the arc with --plane-arc, so a test that flies from the parked
-## plane still flies.
+## plane still flies; so does the packaged self-check (--verify-desktop-build,
+## scripts/desktop_build_check.gd), which boards and flies the parked plane.
 ##
 ## The host (studies/aqueduct_isle.gd) makes it in `_add_life`; the kit
 ## isle (studies/kit_isle.gd) calls `step_pilot` each foot step, `at_plane`
@@ -140,7 +141,7 @@ func setup(scene: Node3D) -> void:
 	host = scene
 	var args := LaunchArgs.user_args()
 	var script_run := OS.get_cmdline_args().has("--script") or OS.get_cmdline_args().has("-s")
-	fixed = args.has("--plane-fixed") or args.has("--fly") or args.has("--near-ring") or (script_run and not args.has("--plane-arc"))
+	fixed = args.has("--plane-fixed") or args.has("--fly") or args.has("--near-ring") or args.has("--verify-desktop-build") or (script_run and not args.has("--plane-arc"))
 	for arg: String in args:
 		if arg.begins_with("--fly-at=") or arg.begins_with("--dragon-fly-test"): fixed = true
 		elif arg.begins_with("--part-at="): _part_at = arg.get_slice("=",1)
