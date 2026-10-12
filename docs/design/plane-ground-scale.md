@@ -42,7 +42,177 @@ Where the cheat can show (keep these in mind for later features):
 - Ask scripts/world_scale.gd (sizes) and scripts/plane_ground_scale.gd (the
   size right now) how big the plane is; don't hard-code either in new code.
 
-## World spacing (feature/world-spacing): the current sizes
+## Opening ratio (feature/opening-ratio): the current openings
+
+The user flew world-spacing and the arches and aqueducts still felt too
+small. The toy era's flight felt right, so every opening the plane flies
+through now keeps its toy-era width in wingspans, at 0.9 of it. Where this
+section disagrees with the ones below, this one is current.
+
+**The knob** (scripts/world_scale.gd):
+- `RATIO := 0.9`. `--opening-ratio=<x>` overrides it for a run.
+- `opening(toy_width)` = max(toy x plane x ratio, min(gap(SNUG), toy x
+  plane)). That is 1.8x the toy width at the defaults.
+- The floor: an opening never closes under SNUG (1.2 m past each wingtip)
+  at a small ratio. The floor is capped at the toy width grown with the
+  plane, so it never acts at ratio 1, and a toy width that was itself under
+  SNUG's room (the token wing box) floors at its own toy ratio.
+- `--plane-scale=1 --opening-ratio=1` gives back every toy width exactly.
+  test_world_scale_fit checks this in its second run.
+- Each opening names its toy width in the file that owns it (`TOY_THREAD`,
+  `TOY_CLEAR`, `TOY_LANE`, ...). Knife slots keep `knife()`. `gap(room)` stays
+  for spacing with no toy width: the bell spires, unchanged.
+- The temporary `--room-scale` flag is gone. The guard test now covers
+  `--opening-ratio=` and checks that `--room-scale=` is not used.
+
+**Widths, world spacing → now** (plane 2; past each wingtip in brackets):
+
+| Opening | Toy (spans) | World spacing | Now |
+| --- | --- | --- | --- |
+| Kit aqueduct CLEAR (no longer THREAD) | 4.7 (3.4) | 5.2 | 8.46 (2.83); SPAN 10.16, deck 10.8 → 14.06, two-tier course 11.66, upper deck derived |
+| Gothic ARCH_SPAN | 4.2 (3.0) | 6.44 | 7.56 (2.38); SPRING kept 3.2, crown 9.75 |
+| Hall lane | 4.0 (2.9) | 6.16 | 7.2 (2.2); ROW_Z 12.6, WALL_Z 15.6 |
+| Lancet WINDOW | 3.6 (2.6) | 5.6 | 6.48 (1.84) |
+| THREAD | 3.5 (2.5) | 5.2 | 6.3 (1.75) |
+| Rose glass | 3.96 | 5.25 | 7.13; gable grown 1.8x |
+| Hall breach corridor | 3.6 | 5.24 | 6.48 |
+| Hall broken ARCH | 5.2 | 6.2 | 9.36; springing lowered to 2.75 so its head stays under the roof |
+| Hall BAY | 8 | 8 | 10.56: the broken arch and 0.6 jambs need it (8 at plane 1) |
+| Ring arch | 12.3 (8.8) | 14.0 | 15.0: capped (RING_MOST); the opening alone would be 22.1 |
+| Stone circle gap | 2.1 (not flown) | 5.2 | 5.2: max(gap(SNUG), opening(2.1)=4.2) |
+| Token air gap GAP_ROOM | 3.2 | 5.2 | 5.76 |
+| Pierced route (both sides) | 3.2 | 5.2 | 5.76 |
+| Token wing box WING (both sides) | 1.6 | 5.2 | 3.2: floored at its toy ratio (0.2 m past the tip) |
+| Aqueduct isle arches | 4.0 | 4.0 | 7.2 (2.2) |
+| Knife slots (trilithon, stumps, hall slit) | | 1.9 / 2.11 / 1.89 | unchanged (`knife()`) |
+
+Ring: at 15 m it keeps 0.62 of its toy ratio but leaves 6.1 m past each
+tip, more than the toy's 5.45. It is a gateway in open sky, so the cap
+costs nothing that matters, and its crown (about 19 m) stays the size it
+was.
+
+**Stone circle heights** (user feedback mid-round: "the stone henge are
+still too short"):
+- The sarsens are `opening(3.4)`, 6.12 m tall. The great trilithon is
+  `opening(4.6)`, 8.28 m.
+- Both are a little chunkier: sarsens 1.6 x 1.25 m (they were 1.5 x 1.1).
+  The ring radius is 9.43 and the gap stays 5.2.
+- Lintel thickness is kept. The ring top is 6.72 m (it was 4.0).
+- Ways onto the lintels, kept walkable:
+  - The fallen trilithon's stub is 1.5 m under the ring top (5.22). Its
+    broken pieces are stacked as steps on the lying stone, each 1.5 m or
+    less.
+  - The lying partner stone is 4.0 m long. At full length it lay across the
+    ring's middle and boxed the walker in against the broken ring's turret.
+  - The leaning stone keeps the toy's reach (a longer one would cross the
+    middle). It is steeper, 40°, still under the walker's 44°, and its head
+    is at 4.72. A block wedged on its head is the step up, so the lintels
+    are a jump from it.
+- From the back lintel, the jump up to the trilithon is now 2.16 m, a
+  pumped catch (the toy's was 1.2 m).
+- At plane 1, ratio 1, all of this is the toy circle again.
+
+**The aqueduct isle's aqueduct** (studies/aqueduct_isle_art.gd): it is now
+derived, not hand-laid.
+- Toy clear 4.0 → `CLEAR` 7.2. `GROW` 1.8.
+- `CROWN` 4.0 x GROW = 7.2. `DECK` = crown + the toy's 2 m spandrel = 9.2.
+- The pier stays 2.0 wide (stone/walker-sized). Pier pitch `PITCH_X` is
+  CLEAR + PIER = 9.2.
+- `arch(k)` and `pier(k)` lay 7 spans from HEAD 2: two blind, two open over
+  the near island, one over the sky, the fallen one, and the last. END is
+  66.4 (it was 44).
+- The fallen span keeps the walker's 3 m gap (`FALL_HALF`), with longer
+  stubs.
+- The hanging piers' feet grow with the deck (13.8 / 16.9 / 15.3 m under).
+- The rubble slope stays at 30°, so it runs from z 13.9 (`SLOPE_LOW`).
+- The start (`START`) moves to the slope's foot, (100, 30, 14.5). The
+  parked plane follows it.
+- The drops are `DROPS` 7 of 1.2 m.
+- The buttress is DECK - 0.8 = 8.4 tall. The wall run and kicks still make
+  the channel.
+- Castellum (`CASTELLUM`, derived):
+  - The high step is deck + 0.2 (9.4) and the crown is deck + 1.8 (11.0).
+  - The steps run 1.6 m apart down to 1.4, six of them.
+  - The drift stones lerp to the new crown.
+- Collision: `station_parts()` lays the station's boxes (ramp and fill,
+  blind wall, piers, spandrels, stubs, drops, buttress) at these numbers.
+  The greybox station 2 itself is unchanged; its pack test still drives it.
+- At plane 1, ratio 1, it is the station's aqueduct again.
+
+**Islands:**
+- The near island's north edge grows out under the aqueduct, from z -24.4
+  to -37.2, just inside the first hanging pier. Its outline is reshaped
+  from x 80 to 124.
+- The far island moves out and is drawn out north, from 39.8–66 to
+  60.4–96, so the drops land on it.
+- That leaves 23.2 m of sky under the aqueduct (it was 16). Nothing
+  overhangs.
+- The gate arch moves to (100, -91.3) and its paving to (94.5, -85.8). The
+  far rise moves with them.
+- The paths are re-laid: the slope foot is at z 15.4, and the north edge
+  runs to the stumps.
+
+**Routes moved:**
+- `KNIFE_Z` is now -arch(4) = -42.4, under the sky arch between the hanging
+  piers. It moved to Art; `AqueductIsle.stump_slot()` and `stumps()` stay as
+  wrappers.
+- The stumps are now five from the far edge (about -62.5) to the near
+  (-35): three twirled jumps (2.9, 3.0, 3.4), the 2.11 knife slot (a
+  running jump), 1.6 and 0.65.
+- The sky tokens (`aq:knife`, `aq:break`), the on-foot tokens (slot,
+  fallen span, stumps) and the birds' perches all follow Art.
+- Tests: the start, the channel walk and the fallen-span jump, the drops,
+  the castellum lines and crown height, the stumps (now `_stumps_back`), the
+  drift's crown and the life test's lines all read Art.
+- The wall-run approach walks round the longer slope first, so it doesn't
+  climb the ramp.
+
+**Assertions that encoded an old size:**
+- test_aqueduct_isle `_replays`: the station's two recordings no longer
+  replay true on the bigger aqueduct. The isle offers them only when
+  `Art.station_sized()` (plane 1, ratio 1), and the test checks that.
+- test_ruin_kit: the rose gable at 1.8x (31 m diagonal) joins the 45 m
+  sane-size class.
+- The hall_slab piece stays the toy bay's slab stack.
+- Fixed along the way: a hall buttress buried to the roof had reported a
+  foot with no stone over it. Feet now come only with a buttress.
+- Hollow keel: BAYS = round(80 / BAY) (8 now) and SHAFT_BAYS are derived
+  from the shaft's run.
+
+**Tests** (headless, all pass): world_scale_fit, world_scale_guard,
+ruin_kit, sundered_hall (the line bot: 0 bumps, 76 s), hall_chain,
+hall_rise, isle_hall_chain, sundered_gorge_isle, hollow_keel_isle,
+cloister_tarn_isle, colonnade_spine_isle, drowned_nave_isle,
+stair_clouds_isle, broken_ring_isle, bell_spires_isle, cluster_motifs,
+pierced_isle, collectibles_world, flight_metrics, lodestone_study,
+isle_lodestone, island_pack_ruins_archipelago, isle_loop_played, isle_lock,
+kit_isle_landing, manual_landing (+_game), hand_landing_exit,
+plane_landing, sky_plane, pocket_sail (+_study), pilot_figure, pilot_ledge,
+pilot_motor, character_climb, character_study, ruin_growth, and
+aqueduct_isle (+_life, _sky, _plane, _sail).
+
+- plane_flight failed once in the 46-test batch ("Clear of the ground 0.6
+  m"). It passed alone, and it doesn't touch the kit.
+- motif_sky and collectibles_pickup fail as they did on the base.
+- aqueduct_isle_look was not run.
+
+**Captured** (rendered, --no-title): the isle aqueduct from the air, from
+the walker's eye under an arch, and the far island's gothic gate.
+
+**Open:**
+- The hall's broken arch springs at 2.75 m so its crown stays under the
+  roof, so it is wide but squat.
+- The bigger BAY makes halls 32% longer per bay. The Sundered line is
+  longer, and its tests pass.
+- The token wing box is 0.2 m past the tip (its toy ratio), tighter than
+  world-spacing's 1.2. Raise TOY_WING if lines hug rock.
+- The trilithon summit from the back lintel is a pumped catch now.
+- The cloister arcades, colonnade portals and drowned nave openings are
+  still not on `opening()` (walker arches / not audited). The moments hall's
+  tokens are still toy-laid.
+- Nothing here has been flown by a person yet.
+
+## World spacing (feature/world-spacing): sizes before the opening ratio
 
 The user flew `--wanderer-scale=1 --plane-scale=2.0 --plane-ground-scale=1`
 and found the walker at 0.83 "too damn small" and the openings too tight.
