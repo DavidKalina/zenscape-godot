@@ -4,16 +4,18 @@ extends Node3D
 ##  - Touch a keg and it is picked up: it hovers along behind him like a
 ##    carried plane part (scripts/carried_follow.gd), up to `max_kegs`. The
 ##    tech is not muffled.
-##  - `use` (E, pad X) by a cannon climbs in; inside, the stick aims (left
-##    and right turn the barrel, up and down pitch it), Left/Right arrow
-##    (pad d-pad) set the power, Space (pad A) fires YOU: free, always. F
-##    (pad Y) fires a keg from the hover instead, a ranging shot.
+##  - Jump (A, Space) near a cannon mans it, and a keg in hand slides into
+##    the barrel. Inside, the stick aims, the d-pad (`cannon_power_up/down`)
+##    sets the power, A fires what is loaded: a keg if one is in the barrel
+##    (a ranging shot, the barrel then empty), else YOU, free. X
+##    (`cannon_load`) loads the next keg from the hover; B (`cannon_leave`)
+##    steps away. The actions are in scripts/pad.gd's table; edges are read
+##    from the InputMap (pad and keys alike), the raw device is never polled.
 ##  - A fired keg flies the arc you would fly at the same aim and power (the
 ##    same launch velocity under the motor's gravity, no sail, no steering),
 ##    lands, and leaves a marker that stays until reset: a glowing ring and
 ##    column where it came down, or, if it fell into the void, a grey puff
-##    where it crossed the cannon's height and a "lost" sound. With no keg,
-##    F only clicks.
+##    where it crossed the cannon's height and a "lost" sound.
 ##  - Fired, you leave by `PilotMotor.toss`: no tumble, the sail ready, a
 ##    little steering in the air.
 ## The field is the motor's `rider` while he is inside.
@@ -22,6 +24,7 @@ const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const CarriedFollow = preload("res://scripts/carried_follow.gd")
 const Keg = preload("res://scripts/cannon/keg.gd")
 const Cannon = preload("res://scripts/cannon/cannon.gd")
+const PadPrompt = preload("res://scripts/pad_prompt.gd")
 
 signal sounded(kind: StringName, at: Vector3)
 
@@ -34,6 +37,7 @@ var knobs := {
 	"carry_share":0.55,    # a carried keg's size share
 	"jump_from":6.0,       # a keg further than this from its hover goal snaps
 	"marker_height":3.0,   # the column over a landing (m, x unit/1.2)
+	"load_time":0.35,      # s for a keg to slide from the hover into the barrel
 }
 
 var study: Node3D
@@ -45,11 +49,9 @@ var aboard: Node3D = null
 ## Where fired kegs came down: {kind: "landed"|"lost", at: Vector3, node}.
 var markers: Array = []
 var heard: Array = []
-## Scripted input (tests): one-shot presses of `use` and the keg button,
-## and a power step (-1, +1).
-var script_use := false
-var script_keg := false
-var script_power := 0
+var _just_boarded := false
+var _sliding: Array = []
+var _prompt: Label
 var _clock := 0.0
 var _held := {}
 var _flying: Array = []
@@ -98,7 +100,9 @@ func pick_up(k: Node3D) -> bool:
 func before(delta: float) -> void:
 	_clock += delta
 	_use()
+	_slide(delta)
 	_step_kegs(delta)
+	_show_prompt()
 
 func after(delta: float, _events: Dictionary) -> void:
 	if aboard == null: _pick_up_near()
@@ -112,9 +116,10 @@ func pose(_figure: Node3D) -> void:
 func _pick_up_near() -> void:
 	var reach := float(knobs.pick_reach)*_unit/1.2
 	for k: Node3D in kegs:
-		if k.state == "laid" and carried.size() < int(knobs.max_kegs) \
-				and k.global_position.distance_to(motor.feet+Vector3.UP*k.height*0.5) <= reach:
-			pick_up(k)
+		if k.state != "laid" or carried.size() >= int(knobs.max_kegs): continue
+		# Across the ground within reach, and about his height (feet to head).
+		var d := k.global_position-motor.feet
+		if Vector2(d.x,d.z).length() <= reach and d.y > -0.5 and d.y < _unit*1.6: pick_up(k)
 
 func _near(c: Node3D) -> bool:
 	var d := motor.feet-c.global_position
@@ -131,44 +136,58 @@ func _follow(delta: float, snap := false) -> void:
 
 # --- In the cannon -------------------------------------------------------------------
 
-## A press (the edge) of a button, or the script's one-shot.
-func _edge(key: String, held: bool, script: bool) -> bool:
-	if study.scripted: return script
-	var was: bool = _held.get(key,false)
-	_held[key] = held
-	return held and not was
+## Whether the named input action went down since this was last asked (the
+## game's InputMap actions, scripts/pad.gd: the pad and the keys alike).
+func _edge(action: StringName) -> bool:
+	var down := Input.is_action_pressed(action)
+	var was: bool = _held.get(action,false)
+	_held[action] = down
+	return down and not was
 
 func _use() -> void:
-	var pressed := _edge("use",Input.is_physical_key_pressed(KEY_E) or Input.is_joy_button_pressed(0,JOY_BUTTON_X),script_use)
-	script_use = false
+	var a := _edge(&"walk_jump")
+	var load_key := _edge(&"cannon_load")
+	var leave_key := _edge(&"cannon_leave")
+	var up := _edge(&"cannon_power_up")
+	var down := _edge(&"cannon_power_down")
 	if aboard != null:
-		if pressed: leave()
-		var step := script_power
-		script_power = 0
-		if not study.scripted:
-			if _edge("up",Input.is_physical_key_pressed(KEY_RIGHT) or Input.is_joy_button_pressed(0,JOY_BUTTON_DPAD_RIGHT),false): step = 1
-			if _edge("down",Input.is_physical_key_pressed(KEY_LEFT) or Input.is_joy_button_pressed(0,JOY_BUTTON_DPAD_LEFT),false): step = -1
-		if step != 0 and aboard != null: aboard.set_power(aboard.power+step)
-		if _edge("keg",Input.is_physical_key_pressed(KEY_F) or Input.is_joy_button_pressed(0,JOY_BUTTON_Y),script_keg): fire_keg()
-		script_keg = false
+		if leave_key: leave()
+		elif load_key: load_next()
+		elif up: aboard.set_power(aboard.power+1)
+		elif down: aboard.set_power(aboard.power-1)
 		return
-	if motor.rider != null or not pressed: return
+	if motor.rider != null or not a: return
 	for c: Node3D in cannons:
 		if _near(c):
 			board(c)
 			return
 
-## Climbed in: still, the figure hidden, the camera along the barrel.
+## Manned: still, the figure hidden, the camera along the barrel; a keg in
+## hand goes into an empty barrel.
 func board(c: Node3D) -> void:
 	aboard = c
+	_just_boarded = true
 	motor.rider = self
 	motor.velocity = Vector3.ZERO
 	motor.feet = c.pivot()
 	study.figure.visible = false
 	study._yaw = c.yaw()
 	_sound(&"climb",c.pivot())
+	load_next()
 
-## Climbed out onto the ground at the cannon's back.
+## The next keg from the hover into the manned cannon's barrel, sliding in.
+## False with none in hand or the barrel full.
+func load_next() -> bool:
+	var c: Node3D = aboard
+	if c == null or c.loaded != null or carried.is_empty(): return false
+	var k: Node3D = carried.pop_front()
+	k.state = "loaded"
+	c.loaded = k
+	_sliding.append({"keg":k,"into":c,"t":0.0})
+	_sound(&"load",c.pivot())
+	return true
+
+## Steps away onto the ground at the cannon's back (a keg loaded stays in).
 func leave() -> void:
 	var c: Node3D = aboard
 	aboard = null
@@ -178,7 +197,8 @@ func leave() -> void:
 	motor.reset(Vector3(out.x,c.global_position.y,out.z),motor.facing)
 	study.figure.visible = true
 
-## The motor's rider contract: his step while inside.
+## The motor's rider contract: his step while inside. `pressed` is the
+## jump's (A's) press: it fires what is in the barrel.
 func ride(m: PilotMotor, delta: float, want: Vector2, pressed: bool) -> Dictionary:
 	var c: Node3D = aboard
 	var camera_forward := PilotMotor.forward(float(study._yaw))
@@ -190,11 +210,20 @@ func ride(m: PilotMotor, delta: float, want: Vector2, pressed: bool) -> Dictiona
 	m.feet = c.pivot()
 	m.velocity = Vector3.ZERO
 	m.facing = c.yaw()
-	if pressed: fire()
+	var fresh := _just_boarded
+	_just_boarded = false
+	if pressed and not fresh: fire()
 	return {}
 
-## Fires him from the cannon he is in, at its aim and power: free.
+## A: fires what is in the barrel: a keg (a ranging shot) if one is loaded,
+## else him, free.
 func fire() -> bool:
+	var c: Node3D = aboard
+	if c == null: return false
+	if c.loaded != null: return fire_keg()
+	return fire_self()
+
+func fire_self() -> bool:
 	var c: Node3D = aboard
 	if c == null: return false
 	var v: Vector3 = c.fire()
@@ -206,20 +235,32 @@ func fire() -> bool:
 	motor.toss(v)
 	return true
 
-## Fires a keg from the hover instead, a ranging shot; a click with none.
+## The loaded keg out of the barrel along his aim; he stays in.
 func fire_keg() -> bool:
 	var c: Node3D = aboard
-	if c == null: return false
-	if carried.is_empty():
-		c.click()
-		return false
-	var k: Node3D = carried.pop_front()
+	if c == null or c.loaded == null: return false
+	var k: Node3D = c.loaded
+	c.loaded = null
+	_sliding = _sliding.filter(func(s: Dictionary) -> bool: return s.keg != k)
 	var v: Vector3 = c.fire()
 	k.launch(c.mouth()+Vector3.UP*0.02,v)
 	k.set_meta("cross",Vector3.INF)
 	k.set_meta("y0",c.global_position.y)
 	_flying.append(k)
 	return true
+
+## Kegs sliding from the hover into a barrel.
+func _slide(delta: float) -> void:
+	for s: Dictionary in _sliding.duplicate():
+		var k: Node3D = s.keg
+		s.t = float(s.t)+delta
+		var f := clampf(float(s.t)/float(knobs.load_time),0.0,1.0)
+		k.global_position = k.global_position.lerp((s.into as Node3D).pivot(),f)
+		k.scale = Vector3.ONE*lerpf(1.0,0.4,f)
+		if f >= 1.0:
+			k.visible = false
+			k.scale = Vector3.ONE
+			_sliding.erase(s)
 
 ## The kegs in flight, the motor's own arc (gravity up, falling harder, to
 ## its terminal), no steering; ended at the ground or the void.
@@ -305,6 +346,7 @@ func reset() -> void:
 	aboard = null
 	carried.clear()
 	_flying.clear()
+	_sliding.clear()
 	heard.clear()
 	for m: Dictionary in markers: (m.node as Node).queue_free()
 	markers.clear()
@@ -313,13 +355,39 @@ func reset() -> void:
 	for k: Node3D in kegs: k.lay()
 	for c: Node3D in cannons: c.reset()
 
-## A line for the HUD and hint.
-func status() -> String:
-	var parts := PackedStringArray()
-	parts.append("kegs in hand: %d" % carried.size())
+## The prompt line at a cannon: [keys form, pad form] ("" when none).
+func prompt_lines() -> Array:
 	if aboard != null:
-		parts.append("in the cannon: power %d/%d · yaw %.0f° pitch %.0f° · Space fires you · F fires a keg · arrows power · E out" % [aboard.power+1,aboard.knobs.power_notches.size(),rad_to_deg(aboard.aim_yaw),rad_to_deg(aboard.pitch)])
-	else:
-		for c: Node3D in cannons:
-			if _near(c): parts.append("cannon: E climbs in")
-	return " · ".join(parts)
+		var held := carried.size()
+		var power := "power %d/%d" % [aboard.power+1,aboard.knobs.power_notches.size()]
+		if aboard.loaded != null:
+			return ["Space fire keg · X load keg (%d) · E leave · , . %s" % [held,power],"{A} fire keg  ·  {X} load keg (%d)  ·  {B} leave  ·  {DPAD} %s" % [held,power]]
+		return ["Space launch yourself · X load keg (%d) · E leave · , . %s" % [held,power],"{A} launch yourself  ·  {X} load keg (%d)  ·  {B} leave  ·  {DPAD} %s" % [held,power]]
+	for c: Node3D in cannons:
+		if _near(c): return ["Space man the cannon (%d kegs in hand)" % carried.size(),"{A} man the cannon (%d kegs in hand)" % carried.size()]
+	return ["",""]
+
+func _show_prompt() -> void:
+	if _prompt == null:
+		var layer := CanvasLayer.new()
+		layer.layer = 6
+		add_child(layer)
+		_prompt = PadPrompt.new()
+		_prompt.add_theme_font_size_override("font_size",16)
+		_prompt.add_theme_color_override("font_color",Color("fbf6ea"))
+		_prompt.add_theme_color_override("font_shadow_color",Color(0,0,0,0.55))
+		_prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_prompt.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
+		_prompt.offset_top = -110.0
+		_prompt.offset_bottom = -80.0
+		_prompt.offset_left = -480.0
+		_prompt.offset_right = 480.0
+		layer.add_child(_prompt)
+	var lines := prompt_lines()
+	_prompt.alternates = {lines[0]:lines[1]}
+	_prompt.text = lines[0]
+	_prompt.visible = lines[0] != ""
+
+## The prompt as on screen (for tests).
+func shown_prompt() -> String:
+	return _prompt.shown_text() if _prompt != null else ""

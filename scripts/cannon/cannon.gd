@@ -25,6 +25,8 @@ signal sounded(kind: StringName, at: Vector3)
 
 var knobs: Dictionary = {}
 var power := 0
+## The keg in the barrel (a Keg node), or null.
+var loaded: Node3D = null
 var aim_yaw := 0.0
 var pitch := 0.0
 var shots := 0
@@ -116,6 +118,7 @@ func click() -> void:
 	_sound(&"click",pivot())
 
 func reset() -> void:
+	loaded = null
 	shots = 0
 	aim_yaw = 0.0
 	pitch = float(knobs.pitch_rest)

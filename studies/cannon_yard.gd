@@ -13,8 +13,9 @@ extends "res://studies/character_study.gd"
 ## feel); a CannonField (scripts/cannon/cannon_field.gd) fills its
 ## `foot_pieces` slot.
 ##   touch a keg  picked up, hovers behind you
-##   E (pad X)  climb in / out · stick aims · arrows (d-pad) power
-##   Space (pad A)  fire yourself · F (pad Y)  fire a keg (a ranging shot)
+##   A (Space) at a cannon  man it; a keg in hand loads · stick aims
+##   d-pad (, .) power · A fires what is loaded: a keg (a ranging shot), or
+##   with the barrel empty, you · X loads the next keg · B (E) steps away
 ## `--cannon=in` starts by the first cannon with a keg in hand.
 ##   godot --path . res://studies/cannon_yard.tscn -- --no-title
 const CannonField = preload("res://scripts/cannon/cannon_field.gd")
@@ -94,9 +95,9 @@ func place(at: Vector3, face: Vector2) -> void:
 		_start_with_keg()
 
 func _hint_text() -> String:
-	return "Cannon yard: touch a keg to carry it · E climb in/out · stick aims · arrows power · F fires a keg (a ranging shot, it leaves a mark) · Space fires you · R reset · F1 numbers · F2 feel"
+	return "Cannon yard: touch a keg to carry it · A at a cannon mans it (loads a keg) · stick aims · d-pad power · A fires the keg (it leaves a mark), then A again launches you · X load another · B leave · R reset · F1 numbers · F2 feel"
 
 func _show_hud() -> void:
 	super._show_hud()
 	if not _hud.visible or cannon_field == null: return
-	_hud.text = "%s\n\n%s" % [_hud.text,cannon_field.status()]
+	_hud.text = "%s\n\n%s" % [_hud.text,"kegs in hand: %d" % cannon_field.carried.size()]
