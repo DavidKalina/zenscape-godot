@@ -23,15 +23,22 @@ const Spring = preload("res://scripts/person_kit.gd").Spring
 ## Where the hat sits on his head (m, the model's frame, standing: art/
 ## blender/pilot/pilot_build.py PILOT_HAT less the rest's 0.029 m) and its
 ## tip back there (radians, the build's HAT_TILT), and how high over that
-## he holds it up (m: as high as his short arms reach it, the brim gripped
-## GRIP m out either side of the crown, on its underside).
+## he holds it up (m: round four, clear of his head, as high as his arms
+## stretched long reach it; round three's 0.1 left it on his head's top).
+## The brim is gripped on its underside GRIP m out from the crown, either
+## side and swept GRIP_BACK (radians) round towards the back, so the mitts
+## show at its edge to the chase camera behind him.
 const ON_HEAD := Vector3(0.0,1.046,0.0)
 const REST_HIPS_DROP := 0.029
 const TIP := 0.03
-const HOLD := 0.1
-const GRIP := 0.39
+const HOLD := 0.26
+const GRIP := 0.44
+const GRIP_BACK := 0.6
+## Held, it tips forward (radians: the brim's back up, its front down, so
+## the chase camera behind him sees a little under it).
+const HOLD_PITCH := 0.12
 ## Seconds out and away; the swell over its height as it opens (m).
-const OPEN_TIME := 0.22
+const OPEN_TIME := 0.18
 const FOLD_TIME := 0.12
 const SWELL := 0.03
 ## Held: its tip into a turn (radians at a full turn) on a spring (Hz,
@@ -146,8 +153,8 @@ static func edge_glow() -> ArrayMesh:
 	_edge = tool.commit()
 	return _edge
 
-## How far under the brim's root its underside is GRIP out at the sides (m,
-## the hat's frame), read off the mesh once.
+## How far under the brim's root its underside is at the grips (m, the
+## hat's frame), read off the mesh once.
 static func grip_drop() -> float:
 	if not is_nan(_grip_y): return _grip_y
 	var low := 0.0
@@ -156,7 +163,7 @@ static func grip_drop() -> float:
 	for s in range(mesh.get_surface_count()):
 		var points: PackedVector3Array = mesh.surface_get_arrays(s)[Mesh.ARRAY_VERTEX]
 		for p in points:
-			if absf(absf(p.x)-GRIP) < 0.02 and absf(p.z) < 0.03 and (not found or p.y < low):
+			if absf(absf(p.x)-GRIP*cos(GRIP_BACK)) < 0.02 and absf(p.z-GRIP*sin(GRIP_BACK)) < 0.03 and (not found or p.y < low):
 				low = p.y
 				found = true
 	_grip_y = low if found else -0.05
@@ -166,7 +173,9 @@ static func grip_drop() -> float:
 func grips() -> Array[Vector3]:
 	if not visible: return []
 	var y := grip_drop()
-	return [_hat.global_transform*Vector3(-GRIP,y,0.0),_hat.global_transform*Vector3(GRIP,y,0.0)]
+	var x := GRIP*cos(GRIP_BACK)
+	var z := GRIP*sin(GRIP_BACK)
+	return [_hat.global_transform*Vector3(-x,y,z),_hat.global_transform*Vector3(x,y,z)]
 
 ## Packed away at once.
 func reset() -> void:
@@ -200,7 +209,7 @@ func _draw(lean: float) -> void:
 	var t := _time*TAU
 	var height := ON_HEAD.y+(HOLD+_swell+BOB*sin(t*BOB_HZ))*up
 	var rock := Basis(Vector3.RIGHT,ROCK*up*sin(t*ROCK_HZ))*Basis(Vector3.BACK,0.4*ROCK*up*sin(t*ROCK_HZ*0.7+1.0))
-	var tip := Basis(Vector3.RIGHT,TIP*(1.0-up))
+	var tip := Basis(Vector3.RIGHT,TIP*(1.0-up)-HOLD_PITCH*up)
 	_hat.transform = Transform3D(Basis(Vector3.BACK,lean)*rock*tip,Vector3(0.0,height,0.0))
 	# The ring glows once it is off his head, breathing, brighter in rising
 	# air.

@@ -176,6 +176,7 @@ TORSO_UP = 0.025
 HEAD_UP = 0.027
 HEAD_SIZE = 1.15
 HEAD_C = 0.0575         # the head's middle over its bone (head units)
+HAT_BASE = 0.0474       # the hat brim's root over the head's middle (head units)
 
 def G(x, y, z):
     """A point in the game's frame, build units, as Blender metres."""
@@ -304,6 +305,12 @@ for n, s in SIDES.items():
         top, low = cape_point(0.45 * s, i / CAPE_SEGMENTS), cape_point(0.45 * s, (i + 1) / CAPE_SEGMENTS)
         BONES[f"tail.{n}.{i}"] = (g(torso_at(*top)), g(torso_at(*low)), parent)
         parent = f"tail.{n}.{i}"
+# Round four: the hat on a bone of its own, a child of the head, its root
+# at the brim's root (where it pivots), so a clip may tip or tuck it (the
+# wall slide tips it back off the wall). Last, so no other bone's index
+# moves; in a clip that leaves it alone it rides the head as before.
+HAT_AT = HEAD_AT + Vector((0, HEAD_SIZE * (HEAD_C + HAT_BASE), 0))
+BONES["hat"] = (g(HAT_AT), g(HAT_AT + Vector((0, 0.08, 0))), "head")
 ORDER = list(BONES)
 
 arm_data = bpy.data.armatures.new("PilotRig")
@@ -718,9 +725,9 @@ part(ring_hull(capped(HEAD_RINGS, 0.2, end=False) + capped(HEAD_RINGS[-2:], 0.36
 EYE_X = 0.0285
 EYE_Y = -0.008
 EYE_H = 0.021
-HAT_BASE = 0.0474                      # the hat brim's root over the head's middle
 _eye = head @ (C + Vector((0, EYE_Y, -HR[3])))
 _hat = head @ (C + Vector((0, HAT_BASE, 0)))
+assert (_hat - HAT_AT).length < 1e-6, "the hat bone sits at the brim's root"
 # For scripts/pilot_paint.gd (the face's eyes, in the paint's rest
 # coordinates: Blender metres, x right, y forward, z up) and
 # scripts/pocket_sail_figure.gd (where the hat sits, in the game's metres).
@@ -749,36 +756,40 @@ HAT_TILT = 0.03
 CROWN = 0.092
 BRIM_IN, BRIM_OUT = 0.091, 0.19
 BRIM_DROOP = 0.044
+# Round four: the back of the brim flops less (its droop at the very back
+# 0.71 - BACK_LIFT of BRIM_DROOP's, was 0.71; the sides and front as they
+# were), so the chase camera behind him sees more of him under it.
+BACK_LIFT = 0.3
 BAND = 0.02
 hat = head @ place(C, (HAT_TILT, 0, 0))
 part(ring_hull(capped([(HAT_BASE - 0.004, CROWN, CROWN - 0.002), (HAT_BASE + 0.02, CROWN - 0.001, CROWN - 0.003),
                        (HAT_BASE + 0.036, CROWN - 0.008, CROWN - 0.01), (HAT_BASE + 0.045, CROWN - 0.019, CROWN - 0.021)],
                       0.42, start=False), 96, between=4),
-     "pilot_hat", "head", hat @ place(turn=UP))
+     "pilot_hat", "hat", hat @ place(turn=UP))
 part(ring_hull([(HAT_BASE + 0.0005, CROWN + 0.0035, CROWN + 0.0015), (HAT_BASE + BAND, CROWN + 0.0025, CROWN + 0.0005)], 128),
-     "pilot_hat_band", "head", hat @ place(turn=UP))
+     "pilot_hat_band", "hat", hat @ place(turn=UP))
 
 def brim_point(a, r):
     """The brim's top at angle `a` round (0 the front, the figure's right
     positive) and `r` out, in the hat's frame: drooping more at the sides
     and the back than at the front, rippling gently."""
     k = (r - BRIM_IN) / (BRIM_OUT - BRIM_IN)
-    droop = BRIM_DROOP * k ** 1.6 * (0.78 - 0.13 * math.cos(2 * a) - 0.06 * math.cos(a)) \
+    droop = BRIM_DROOP * k ** 1.6 * (0.78 - 0.13 * math.cos(2 * a) - 0.06 * math.cos(a) - BACK_LIFT * max(0.0, -math.cos(a)) ** 2) \
         + 0.0075 * k ** 2 * math.sin(3 * a + 0.7) + 0.0035 * k ** 2 * math.sin(5 * a + 2.1)
     return Vector((r * math.sin(a), HAT_BASE + 0.002 - droop, -r * math.cos(a)))
 
 BRIM_AROUND, BRIM_ACROSS = 192, 14
 slab(lambda i, j: brim_point(math.tau * i / BRIM_AROUND, BRIM_IN + (BRIM_OUT - BRIM_IN) * j / (BRIM_ACROSS - 1)),
-     BRIM_AROUND, BRIM_ACROSS, lambda i, j: 0.0085 - 0.0035 * j / (BRIM_ACROSS - 1), "pilot_hat", "head", hat, wrap=True)
+     BRIM_AROUND, BRIM_ACROSS, lambda i, j: 0.0085 - 0.0035 * j / (BRIM_ACROSS - 1), "pilot_hat", "hat", hat, wrap=True)
 # The brim's edge rolled over, thick and soft.
 tube([(brim_point(math.tau * k / BRIM_AROUND, BRIM_OUT) - Vector((0, 0.0042, 0)), 0.0072) for k in range(BRIM_AROUND + 3)],
-     "pilot_hat", "head", hat, 16, 1)
+     "pilot_hat", "hat", hat, 16, 1)
 # The band's buckle loop, front left as seen.
 la = math.radians(-38)
 lp = Vector(((CROWN + 0.0035) * math.sin(la), HAT_BASE + BAND * 0.5, -(CROWN + 0.0015) * math.cos(la)))
 loop = frame(lp, Vector((math.sin(la), 0, -math.cos(la))))
 tube([(Vector(p), 0.002) for p in ((-0.008, -0.0095, 0.0012), (0.008, -0.0095, 0.0012), (0.008, 0.0095, 0.0012), (-0.008, 0.0095, 0.0012), (-0.008, -0.0095, 0.0012))],
-     "pilot_hat_band", "head", hat @ loop, 6, 1)
+     "pilot_hat_band", "hat", hat @ loop, 6, 1)
 
 # ---------------------------------------------------------------- limbs
 # Sleeves to gold bracelets with a glowing stripe (a sign of the wanderer),
@@ -1541,6 +1552,11 @@ CROUCH_LENGTH = 1.0
 LONG_LENGTH = 0.5
 WALL_LENGTH = 0.5
 WALL_GAP = 0.3
+# The hat's tip on the wall slide (pitch, roll, yaw, degrees, over the
+# head's): back, and away from the wall at his right.
+WALL_HAT = (-30.0, -12.0, 0.0)
+# The pump's punch knocks the hat's brim up on that side (roll, degrees).
+PUMP_HAT = -16.0
 KICK_LENGTH = 0.4
 PUMP_LENGTH = 0.5
 
@@ -1593,6 +1609,9 @@ def wall_slide_pose(p):
     pose.turns["chest"] = turn(pitch=-14.0, roll=4.0, yaw=8.0 + 1.5 * sine(p, 2, 0.1))
     pose.turns["neck"] = turn(pitch=-8.0, yaw=-22.0)
     pose.turns["head"] = turn(pitch=-16.0 + 2.0 * sine(p, 3, 0.2), yaw=-26.0, roll=-5.0)
+    # The hat (its own bone) tipped back off the wall, its brim's front up
+    # and clear of it, rocking a little as he judders.
+    pose.turns["hat"] = turn(pitch=WALL_HAT[0] + 1.5 * shake, roll=WALL_HAT[1], yaw=WALL_HAT[2])
     # The boots braced flat on the wall, the right higher.
     pose.feet["R"] = (Vector((0.13, w - 0.08, 0.3 + 0.004 * chatter)), qz(deg(-10.0)) @ qx(deg(72.0 + 3.0 * shake)))
     pose.feet["L"] = (Vector((-0.1, w - 0.12, 0.2 + 0.004 * chatter)), qz(deg(8.0)) @ qx(deg(48.0)))
@@ -1670,6 +1689,7 @@ def pump_clip():
                        "R": (Vector((0.13, 0.04, 0.2)), -25.0, (0.3, 1.0, 0.2))},
                       {"L": (125.0, 45.0, 20.0), "R": (135.0, 40.0, 15.0)}, tails=-35.0)
     punched.turns["hand.R"] = turn(pitch=10.0)
+    punched.turns["hat"] = turn(roll=PUMP_HAT, pitch=6.0)
     return keyed([(0.0, gather), (0.32, punched), (0.62, punched), (1.0, wide)])
 
 # ------------------------------------------------------------------ round three
@@ -1986,6 +2006,22 @@ for clip, at in (("swim", swim_pose), ("tread", tread_pose)):
 for pb in rig.pose.bones:
     pb.location = (0, 0, 0)
     pb.rotation_quaternion = (1, 0, 0, 0)
+
+# The hat on its bone: how near the brim comes to the wall on the wall
+# slide (the wall WALL_GAP ahead of the feet, +Y), and to the punched
+# fist on the pump (the mitt's middle, a ball MITT_R round).
+_hat_group = body.vertex_groups["hat"].index
+HAT_POINTS = [v.co.copy() for v in body.data.vertices if any(e.group == _hat_group and e.weight > 0.5 for e in v.groups)]
+def hat_points(P):
+    m = P["hat"] @ REST["hat"].inverted()
+    return [m @ v for v in HAT_POINTS]
+_into = max(max(q.y for q in hat_points(solve(wall_slide_pose(f / 30))[0])) - WALL_GAP for f in range(30))
+print(f"PILOT_HAT_WALL the brim's front {_into:+.3f} m past the wall's face on the wall slide (+ is into it)")
+MITT_R = 0.06
+_pump = pump_clip()
+_near = min(min((q - (P["hand.R"] @ Vector((0, 0.05, 0)))).length for q in hat_points(P)) - MITT_R
+            for P in (solve(_pump(f / 30))[0] for f in range(31)))
+print(f"PILOT_HAT_PUMP the punched mitt {_near:+.3f} m clear of the brim at its nearest (- is into it)")
 
 # The ledge's measures, for pilot_preview.py's block (not exported).
 for key in ("HANG_DROP", "HANG_OUT", "CLIMB_IN", "WALL_GAP"):

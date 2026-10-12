@@ -176,14 +176,15 @@ const MOVE_CLIPS := {"crouch":["crouch",1.0],"long":["long_jump",0.5],"wall":["w
 ## hat overhead (scripts/pocket_sail_figure.gd), a mitt gripping the brim
 ## either side, and hangs from it. The seconds his arms take to go up; his
 ## shoulders lifted to it (m out, up: his arms are short for a chibi with
-## a head this big), the arms grown a touch as they stretch to it, how far
+## a head this big), the arms stretched long as they reach up to it (along
+## the arm only: the sleeves keep their girth, the mitts their size), how far
 ## short of the grip the wrist stops along the arm (m: the mitt round the
 ## brim), the elbows' way out and back; the legs dangling loose, a little
 ## behind (thighs', shins' turns, radians) and swinging slowly (radians,
 ## Hz).
 const SAIL_ARMS_TIME := 0.12
-const SAIL_SHRUG := Vector2(0.03,0.11)
-const SAIL_ARM_GROW := 1.1
+const SAIL_SHRUG := Vector2(0.03,0.13)
+const SAIL_ARM_GROW := 1.3
 const SAIL_WRIST := 0.1
 const SAIL_ELBOW := Vector3(1.0,-0.2,0.6)
 const SAIL_LEGS := Vector4(-0.45,-0.35,-0.3,-0.25)
@@ -1350,8 +1351,8 @@ func _holding_sail() -> void:
 		_turn_bone(_shins[1],Vector3.RIGHT,(SAIL_LEGS.w+0.5*paddle)*up)
 	_hold_hat(up)
 
-## Holding on to the hat (scripts/pocket_sail_figure.gd, his child
-## "PocketSail"), `up` 0 to 1: his body swung under it a beat behind its tip
+## Holding on to the hat (scripts/pocket_sail_figure.gd, `sail_figure`),
+## `up` 0 to 1: his body swung under it a beat behind its tip
 ## (about the grips' middle), his shoulders lifted to it and his arms
 ## reached up by two-bone IK so each mitt closes round the brim at its grip.
 func _hold_hat(up: float) -> void:
@@ -1362,10 +1363,11 @@ func _hold_hat(up: float) -> void:
 			for bone in _upper_arms:
 				_skeleton.set_bone_pose_scale(bone,Vector3.ONE)
 				_skeleton.set_bone_pose_position(bone,_skeleton.get_bone_rest(bone).origin)
+			for bone in _hands: _skeleton.set_bone_pose_scale(bone,Vector3.ONE)
 		return
 	_held = true
-	var sail := get_node_or_null("PocketSail")
-	if sail == null or not sail.has_method("grips"): return
+	var sail := sail_figure()
+	if sail == null: return
 	var grips: Array = sail.grips()
 	if grips.size() != 2: return
 	var to_skeleton := _skeleton.global_transform.affine_inverse()
@@ -1385,18 +1387,21 @@ func _hold_hat(up: float) -> void:
 	for side in range(2):
 		var s := -1.0 if side == 0 else 1.0
 		var upper := _upper_arms[side]
-		# Shoulders up and out to it, the arm grown a touch.
+		# Shoulders up and out to it, the arm stretched along its length (the
+		# forearm rides the stretch; the mitt is given its size back).
 		var lift := (_to_skeleton*Vector3(SAIL_SHRUG.x*s,SAIL_SHRUG.y,0.0))*up
 		var parent := _skeleton.get_bone_parent(upper)
 		if parent >= 0: lift = _skeleton.get_bone_global_pose(parent).basis.inverse()*lift
 		_skeleton.set_bone_pose_position(upper,_skeleton.get_bone_rest(upper).origin+lift)
-		_skeleton.set_bone_pose_scale(upper,Vector3.ONE*lerpf(1.0,SAIL_ARM_GROW,up))
+		var grow := lerpf(1.0,SAIL_ARM_GROW,up)
+		_skeleton.set_bone_pose_scale(upper,Vector3(1.0,grow,1.0))
+		_skeleton.set_bone_pose_scale(_hands[side],Vector3(1.0,1.0/grow,1.0))
 		var shoulder := _skeleton.get_bone_global_pose(upper).origin
 		var elbow := _skeleton.get_bone_global_pose(_forearms[side]).origin
 		var wrist := _skeleton.get_bone_global_pose(_hands[side]).origin
 		var a := shoulder.distance_to(elbow)
 		var b := elbow.distance_to(wrist)
-		var goal := grip[side]-(grip[side]-shoulder).normalized()*SAIL_WRIST*lerpf(1.0,SAIL_ARM_GROW,up)
+		var goal := grip[side]-(grip[side]-shoulder).normalized()*SAIL_WRIST
 		var to := goal-shoulder
 		var d := clampf(to.length(),0.01,(a+b)*0.999)
 		var n := to.normalized()
@@ -1412,6 +1417,16 @@ func _hold_hat(up: float) -> void:
 		wrist = _skeleton.get_bone_global_pose(_hands[side]).origin
 		var hand_tip := _skeleton.get_bone_global_pose(_hands[side])*Vector3(0.0,0.03,0.0)
 		_aim_bone(_hands[side],hand_tip-wrist,grip[side]-wrist,up)
+
+## The pocket sail's figure he holds (scripts/pocket_sail_figure.gd, named
+## "PocketSail"): his own child, or, as the game's hosts put it (studies/
+## character_study.gd and the kit isles, scripts/wanderer_eye.gd,
+## studies/landing_study.gd), his sibling under the walker's node; null
+## when there is none.
+func sail_figure() -> Node3D:
+	var sail := get_node_or_null("PocketSail")
+	if sail == null and get_parent() != null: sail = get_parent().get_node_or_null("PocketSail")
+	return sail if sail != null and sail.has_method("grips") else null
 
 ## Turns `bone` so its `from` (skeleton space) points along `to`, `weight`
 ## of the way.
