@@ -225,10 +225,11 @@ func _lintels() -> void:
 	var stubs: Array = study.colonnade.get_meta("stubs")
 	var drums: Array = study.colonnade.get_meta("drums")
 	var top0 := T+Spine.L0+Spine.LINTEL_TOP
-	# Up the drum and the stub onto the south row's lintel by the start.
+	# Up the drum and the stub onto the south row's lintel by the start
+	# (from 4.4 m in from the row, the toy's run-up to the drum).
 	var stub: Vector3 = stubs[stubs.size()-2].at
 	var drum: Vector3 = drums[drums.size()-2].at
-	var ok := climb(Spine.at3(126.5,-1.0,T+Spine.L0),[drum,stub,Spine.at3(126.5,Spine.ROW,top0)])
+	var ok := climb(Spine.at3(126.5,Spine.ROW-4.4,T+Spine.L0),[drum,stub,Spine.at3(126.5,Spine.ROW,top0)])
 	check(ok and absf(m.feet.y-top0) < 0.1,"Lintels: up the drum and the stub onto the low terrace's south lintels (feet %s)" % m.feet)
 	# Along them west, over the cross lintel to the north row, along it to
 	# the portal: a loop on the lintels.

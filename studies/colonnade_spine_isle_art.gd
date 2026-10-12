@@ -37,6 +37,11 @@ extends RefCounted
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 const Art = preload("res://studies/aqueduct_isle_art.gd")
 const Footbridge = preload("res://scripts/footbridge.gd")
+## The plane's size (scripts/world_scale.gd): the portals and the bays the
+## slalom flies out through keep their toy-era widths in wingspans
+## (`opening`); the rows stand out, the crest widens with them. At
+## `--plane-scale=1 --opening-ratio=1` each is its toy width.
+const WorldScale = preload("res://scripts/world_scale.gd")
 const Build = RuinKit.Build
 
 const TOP := 30.0
@@ -67,9 +72,19 @@ const CLEFT := Vector3(110.0,2.6,4.5)
 ## The cleft's floor over TOP: over the north shelf's there, so it opens
 ## onto the shelf (a way between the crest and the shelf).
 const CLEFT_FLOOR := 5.4
-## The crest's flat half width: the podium's, the colonnade's, the knife's.
+## The colonnade's rows: ROW m either side of the axis. A portal's clear
+## span between its piers' shafts (2 x (ROW - ORDER)) is a flown opening:
+## the toy era's 6.16 (TOY_ROW 3.4), 11.7 at the defaults, so ROW 6.17.
+## WIDEN how far the rows stand out past the toy's.
+const TOY_ROW := 3.4
+const TOY_PORTAL := 2.0*(TOY_ROW-RuinKit.ORDER)
+static var ROW: float = WorldScale.opening(TOY_PORTAL)*0.5+RuinKit.ORDER
+static var WIDEN: float = ROW-TOY_ROW
+## The crest's flat half width: the podium's (the temple's, kept), the
+## colonnade's (the toy's 5.4, 2 m past the rows, out with them), the
+## knife's.
 const WC_HEAD := 7.0
-const WC := 5.4
+static var WC: float = 5.4+WIDEN
 const WC_KNIFE := 0.75
 ## How steeply the flanks fall (m down a m out), and the crest's lip.
 const FLANK := 1.5
@@ -422,31 +437,45 @@ static func paths() -> Array:
 
 # --- The colonnade ---------------------------------------------------------------------
 
-## The rows: ROW m either side of the axis; the piers PIER_H to their
-## abacus's top; lintels LINTEL (across, deep) on them, walked LINTEL_TOP
-## over the terrace.
-const ROW := 3.4
+## The rows (ROW, at the head); the piers PIER_H to their abacus's top;
+## lintels LINTEL (across, deep) on them, walked LINTEL_TOP over the
+## terrace (walker-sized: the lintels are balance beams reached on foot from
+## a drum and a stub, so the height under them is the toy's 3.4).
 const PIER_H := 3.4
 const LINTEL := Vector2(0.95,0.6)
 const LINTEL_TOP := PIER_H+0.6
 const WEATHERED := 0.55
+## The bays the slalom flies out through (flown openings, between the
+## piers' shafts, PIER_SHAFT each side of a pier's middle): the plaza's
+## first bay (out through the north row; the toy era's 20/3 m pitch, 5.55
+## clear) and L2's first (out through the south row; the toy's 5.5 pitch,
+## 4.38 clear), OUT_PITCH and IN_PITCH pier to pier (11.66 and 9.44 at the
+## defaults). The rest of each terrace is one walker bay (lintels walked;
+## not flown). L1's and L0's bays (5.75, 6 m) are walker bays, kept.
+const PIER_SHAFT := RuinKit.SHAFT_MAIN.x+RuinKit.SHAFT_MAIN.y
+const TOY_OUT := 20.0/3.0-2.0*PIER_SHAFT
+const TOY_IN := 5.5-2.0*PIER_SHAFT
+static var OUT_PITCH: float = WorldScale.opening(TOY_OUT)+2.0*PIER_SHAFT
+static var IN_PITCH: float = WorldScale.opening(TOY_IN)+2.0*PIER_SHAFT
 ## The pier lines: [world x, terrace height over TOP (-1: the tail's
 ## falling crest), kind] ("" a plain line, "portal" a pointed arch over the
 ## way on its two piers, "cross" a lintel across the way tying the rows).
-const LINES := [
-	[47.5,L3,""],[54.17,L3,""],[60.83,L3,""],[67.5,L3,"portal"],
-	[71.5,L2,""],[77.0,L2,"cross"],[82.5,L2,""],[88.0,L2,"portal"],
+## The plaza's flown bay is 0-1, L2's 3-4.
+static var LINES: Array = [
+	[47.5,L3,""],[47.5+OUT_PITCH,L3,""],[67.5,L3,"portal"],
+	[71.5,L2,""],[71.5+IN_PITCH,L2,"cross"],[88.0,L2,"portal"],
 	[91.5,L1,""],[97.25,L1,""],[103.0,L1,""],
 	[117.5,L0,"portal"],[123.5,L0,"cross"],[129.5,L0,""],
 	[135.5,-1.0,""],
 ]
 ## Piers not standing whole: "line index,side" (-1 north, 1 south) -> the
-## stub's height (0: gone, toppled).
-const STUBS := {"6,-1":1.6,"9,1":0.0,"10,1":2.2,"14,-1":1.2,"14,1":2.0}
+## stub's height (0: gone, toppled: TOPPLED's south pier).
+const STUBS := {"7,1":0.0,"8,1":2.2,"12,-1":1.2,"12,1":2.0}
+const TOPPLED := 7
 ## Lintels fallen ("line index of their west end,side"): they lie in the way.
-const FALLEN := ["1,1","12,-1"]
+const FALLEN := ["1,1","4,-1","10,-1"]
 ## Portal arches: line index -> voussoirs lost from the crown.
-const PORTAL_LOST := {3:0,7:3,11:1}
+const PORTAL_LOST := {2:0,5:3,9:1}
 ## The ways up onto the lintels from the way: a drum lying in the way and a
 ## broken pier's stub beside the row ([world x, side]).
 const STACKS := [[126.5,1.0],[100.1,-1.0]]
@@ -560,12 +589,12 @@ static func colonnade(seed_value: int) -> Node3D:
 			_beam(b,a,e,LINTEL,true,false)
 	# The pier toppled across the way at L1, south: its drums in a line, its
 	# capital rolled further.
-	var tx: float = LINES[9][0]
+	var tx: float = LINES[TOPPLED][0]
 	for k in range(3):
 		var p := at(tx+b.rng.randf_range(-0.25,0.25)+k*0.15,ROW-0.5-k*1.15)
-		_lying_drum(b,p,TOP+line_y(9)+DRUM_TOP-k*0.04,along(tx),1.0)
-		drums.append({"at":Vector3(p.x,TOP+line_y(9)+DRUM_TOP,p.y)})
-	RuinKit._capital(b,Transform3D(Basis(Vector3.UP,0.4)*Basis(Vector3.RIGHT,1.4),at3(tx+0.8,-ROW+1.9,TOP+line_y(9)+0.55)))
+		_lying_drum(b,p,TOP+line_y(TOPPLED)+DRUM_TOP-k*0.04,along(tx),1.0)
+		drums.append({"at":Vector3(p.x,TOP+line_y(TOPPLED)+DRUM_TOP,p.y)})
+	RuinKit._capital(b,Transform3D(Basis(Vector3.UP,0.4)*Basis(Vector3.RIGHT,1.4),at3(tx+0.8,-ROW+1.9,TOP+line_y(TOPPLED)+0.55)))
 	# The ways up onto the lintels: a drum lying in the way, a broken pier's
 	# stub beside the row.
 	for s: Array in STACKS:
@@ -692,12 +721,13 @@ static func temple(seed_value: int) -> Node3D:
 ## top over TOP]. The south three are a way up from the bench's west end to the crest
 ## (each a jump-catch); the pulpit hangs off the podium's south flank (a
 ## vista dropped onto); the balcony under the north shelf.
-const SLABS := [
-	["south_1",97.0,9.9,1.8,4.55],
-	["south_2",94.4,9.0,1.7,5.9],
-	["south_3",91.9,8.1,1.6,7.25],
+## The south three and the balcony stand out with the crest (WIDEN).
+static var SLABS: Array = [
+	["south_1",97.0,9.9+WIDEN,1.8,4.55],
+	["south_2",94.4,9.0+WIDEN,1.7,5.9],
+	["south_3",91.9,8.1+WIDEN,1.6,7.25],
 	["pulpit",33.0,11.2,2.6,15.6],
-	["balcony",63.0,-12.2,2.4,8.6],
+	["balcony",63.0,-12.2-WIDEN,2.4,8.6],
 ]
 ## The tail's fragments, in the curl's order: [name, world x, z, radius,
 ## top over TOP].
@@ -842,11 +872,12 @@ static func anchors(seed_value: int) -> Node3D:
 ## stones, under the first rope bridge, between the third and fourth
 ## fragments, under the bridge home.
 static func plane_tokens() -> Array:
+	var mid := func(i: int) -> float: return (float(LINES[i][0])+float(LINES[i+1][0]))*0.5
 	var slalom := PackedVector3Array([
-		at3(57.5,-ROW,TOP+L3+1.8),
-		at3(67.5,0.0,TOP+L3+2.6),
-		at3(79.75,ROW,TOP+L2+1.8),
-		at3(88.0,0.0,TOP+L2+2.6),
+		at3(mid.call(0),-ROW,TOP+L3+1.8),
+		at3(float(LINES[2][0]),0.0,TOP+L3+2.6),
+		at3(mid.call(3),ROW,TOP+L2+1.8),
+		at3(float(LINES[5][0]),0.0,TOP+L2+2.6),
 		at3(CLEFT.x,0.0,TOP+crest(CLEFT.x)+2.2),
 		at3(117.5,0.0,TOP+L0+2.6),
 		at3(123.5,0.0,TOP+L0+2.0),
