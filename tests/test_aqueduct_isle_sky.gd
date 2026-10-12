@@ -50,12 +50,15 @@ func run() -> void:
 
 func _isles() -> void:
 	var motifs: Node3D = sky.motifs
-	check(motifs != null and motifs.isles.size() == MotifSky.PLACES.size(),"The four motif isles are in the sky (%d)" % (motifs.isles.size() if motifs != null else 0))
+	# The motif isles, and the dragon's roost past them (on by default,
+	# scripts/kit_isle/motif_dragon_roost.gd): its own checks, not a motif's.
+	check(motifs != null and motifs.isles.size() == MotifSky.PLACES.size()+1,"The eight motif isles and the roost are in the sky (%d)" % (motifs.isles.size() if motifs != null else 0))
 	check(sky.get("islets") == null and sky.get("clusters") == null and sky.get("pierced") == null,"No far isles, clusters or pierced isle")
 	check(motifs.all_stood() and sky.isles_ready(),"Every motif isle stands whole")
 	var ids := []
 	for isle: Node3D in motifs.isles:
 		var id: String = isle.motif.id()
+		if id == "dragon_roost": continue
 		ids.append(id)
 		var c: Vector3 = isle.circle()
 		var off := Vector2(c.x-sky.MIDDLE.x,c.y-sky.MIDDLE.z).length()

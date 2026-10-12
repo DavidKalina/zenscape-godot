@@ -33,10 +33,11 @@ const SkyDragon = preload("res://scripts/sky_dragon.gd")
 const RoostDress = preload("res://scripts/kit_isle/roost_dress.gd")
 
 ## Where it stands from its own frame (motif_sky.gd PLACES' way): its middle
-## about world (610, 455), 710 m south-east of the aqueduct isle's (120 m
-## clear of the hollow keel's reach, 250 m off the airships' loops), its turf
-## 55 m over the aqueduct isle's.
-const AT := Vector3(520.0,55.0,475.0)
+## about world (670, 480), some 770 m south-east of the aqueduct isle's, out
+## along the line from the hollow keel so the sky between them keeps the
+## region's 150 m (tests/test_aqueduct_isle_sky.gd), its turf 55 m over the
+## aqueduct isle's.
+const AT := Vector3(580.0,55.0,500.0)
 const SEED := 97
 const TOP := 30.0
 ## The dragon's size (the flying dragon's, sky_dragon.gd SIZE) and the

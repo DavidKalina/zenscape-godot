@@ -87,11 +87,12 @@ extends "res://studies/kit_isle.gd"
 ## sky to settle, saves the view (from --at looking at the point, else the
 ## walker's camera) and quits; --place=x,y,z[,turn] starts the pilot there
 ## instead (turn: degrees from facing -z, clockwise).
-## --dragon-roost (docs/design/dragon-roost/round3.md): the dragon's mountain
-## stands out past the motif isles (scripts/kit_isle/motif_dragon_roost.gd)
-## and the dragon sleeps curled on its ledge, its neck round the summit
-## (scripts/dragon_roost.gd);
-## it doesn't roam (with --dragon too, it still only sleeps).
+## The roost (docs/design/dragon-roost/round3.md), on by default: the
+## dragon's mountain stands out past the motif isles (scripts/kit_isle/
+## motif_dragon_roost.gd) and the dragon sleeps curled on its ledge, its neck
+## round the summit (scripts/dragon_roost.gd); it never wakes yet.
+## --no-dragon-roost leaves both out; with --dragon he flies instead and the
+## nest is empty.
 ## The dragon (an experiment: docs/design/rim-dragon.md), with --dragon: a
 ## full-bodied dragon (scripts/sky_dragon.gd) rises out of the cloud sea and
 ## roams the archipelago, now and then low over the isle; V puts the camera
@@ -201,9 +202,10 @@ var _fly_test_breath := ""
 var _fly_test_t := 0.0
 var _fly_test_log := 0.0
 var _fly_test_heading := 0.0
-## --dragon-roost: the dragon asleep on its mountain, shown once the
-## mountain stands.
-var dragon_roost := false
+## The dragon asleep on its mountain, shown once the mountain stands: on by
+## default (--dragon-roost is still accepted); --no-dragon-roost leaves the
+## mountain and him out; --dragon flies him instead, the nest left empty.
+var dragon_roost := true
 var roost_dragon: Node3D = null
 var roost_air: Node3D = null
 ## Each motif isle's record for the dragon, once it stands (its id ->
@@ -219,6 +221,7 @@ func _ready() -> void:
 		elif arg == "--capture-high": _capture_high = true
 		elif arg == "--dragon": dragon_on = true
 		elif arg == "--dragon-roost": dragon_roost = true
+		elif arg == "--no-dragon-roost": dragon_roost = false
 		elif arg == "--dragon-ride":
 			dragon_on = true
 			dragon_ride = true
@@ -573,8 +576,8 @@ func _capture_flying() -> void:
 ## The life, then the dragon over it.
 func _add_life() -> void:
 	super._add_life()
-	if dragon_roost: _build_roost_dragon()
-	elif dragon_on: _build_sky_dragon()
+	if dragon_on: _build_sky_dragon()
+	elif dragon_roost: _build_roost_dragon()
 	# The plane's arc, before the watcher, who watches its tail fin.
 	plane_arc = PlaneArc.new()
 	add_child(plane_arc)

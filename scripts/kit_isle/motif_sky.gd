@@ -90,6 +90,10 @@ func stood_places() -> Array:
 func _init() -> void:
 	name = "Motifs"
 
+## Whether the dragon's roost stands: always, unless --no-dragon-roost.
+static func roost_wanted(args: PackedStringArray) -> bool:
+	return not args.has("--no-dragon-roost")
+
 func setup(study: Node3D, owner_sky: Node3D, args: PackedStringArray) -> void:
 	scene = study
 	sky = owner_sky
@@ -98,9 +102,9 @@ func setup(study: Node3D, owner_sky: Node3D, args: PackedStringArray) -> void:
 	var where := places()
 	placed = where
 	var specs: Array = PLACES.duplicate()
-	# --dragon-roost: the dragon's mountain too, out past the others
-	# (scripts/kit_isle/motif_dragon_roost.gd).
-	if args.has("--dragon-roost"):
+	# The dragon's mountain too, out past the others (scripts/kit_isle/
+	# motif_dragon_roost.gd): stood by default, --no-dragon-roost leaves it out.
+	if roost_wanted(args):
 		specs.append([Roost,Roost.AT])
 		where.append(Roost.place())
 	for k in range(specs.size()):
