@@ -151,6 +151,12 @@ var sight := DragonSight.new()
 ## "airborne": bool} (DragonSight.pilot_points), or {} for none. Unset, he
 ## looks for no one.
 var sight_target := Callable()
+const DragonCyclone = preload("res://scripts/dragon_cyclone.gd")
+## His cyclone blast once he spots you (scripts/dragon_cyclone.gd, docs/
+## design/dragon-cyclone/round1.md): set `cyclone_on` before `setup` to
+## have it (the vision greybox does); the host applies its knock and air.
+var cyclone_on := false
+var cyclone: Node3D
 ## His head tracking the pilot once suspicious: the most it turns (rad,
 ## yaw either way; pitch down and up) and how fast it gets there.
 const TRACK_YAW := 1.2
@@ -515,6 +521,9 @@ func setup(cam: Camera3D, args: PackedStringArray, sea: float, middle: Vector3, 
 	gale = DragonGale.new()
 	gale.sea_y = sea_y
 	add_child(gale)
+	if cyclone_on:
+		cyclone = DragonCyclone.new()
+		add_child(cyclone)
 	_start()
 	if ride and not targets.is_empty():
 		# The isle is small for its neck: its chin sweeps most of it, and
@@ -1243,6 +1252,7 @@ func advance(delta: float) -> void:
 		else: roost.advance(delta)
 		_downwash(delta,_wake_flew)
 		_look_out(delta,_wake_flew)
+		_cyclone(delta,_wake_flew)
 		_wake_flew = false
 		_night_glow(delta)
 		if awake(): _watch_camera(delta)
@@ -1256,6 +1266,7 @@ func advance(delta: float) -> void:
 	_step(minf(delta,0.1))
 	_downwash(delta,state in ["roaming","rising"] and model.visible)
 	_look_out(delta,state in ["roaming","rising"] and model.visible)
+	_cyclone(delta,state in ["roaming","rising"] and model.visible)
 	_night_glow(delta)
 	_watch_camera(delta)
 
@@ -1428,6 +1439,23 @@ func _look_out(delta: float, flying: bool) -> void:
 		return
 	sight.update(delta,get_world_3d().direct_space_state,head_eye(),head_look(),want.points,bool(want.get("airborne",false)))
 
+## His cyclone (scripts/dragon_cyclone.gd): spotted (and his roar past its
+## peak, AFTER_ROAR s in) he
+## winds up, drawing air into his mouth from the pilot's way (the gale's
+## inhale), and fires at the pilot's middle as he sees it then.
+func _cyclone(delta: float, flying: bool) -> void:
+	if cyclone == null: return
+	cyclone.span = DragonDownwash.MODEL_SPAN*size
+	var spotted := flying and sight.state == "spotted" and (_roar_t < 0.0 or _roar_t >= DragonCyclone.AFTER_ROAR)
+	var mouth := mouth_at()
+	var aim := sight.target()
+	cyclone.advance(delta,get_world_3d().direct_space_state if is_inside_tree() else null,spotted,mouth,aim)
+	# The wind-up cuts the spotting roar's close short.
+	if cyclone.phase == "windup" and _roar_t >= 0.0 and _hold_pose != "roar": _roar_t = -1.0
+	if cyclone.phase == "windup" and aim != Vector3.INF:
+		var way := Vector3(aim.x-mouth.x,0.0,aim.z-mouth.z)
+		if way.length() > 0.1: gale.inhale(mouth,way.normalized(),delta)
+
 ## His eye (world): between his eyes on the head bone as posed (the head's
 ## middle without them).
 func head_eye() -> Vector3:
@@ -1594,7 +1622,19 @@ func _mouth(delta: float) -> void:
 		if _roar_next <= 0.0:
 			_roar_t = 0.0
 			_roar_next = _rng.randf_range(12.0,22.0)
-	if _roar_t >= 0.0:
+	var drawn: float = cyclone.windup_share() if cyclone != null else -1.0
+	var shot: float = float(cyclone.since_shot) if cyclone != null else INF
+	if _roar_t < 0.0 and drawn >= 0.0:
+		# The cyclone's wind-up: the jaw a little open, the head drawn
+		# back, drawing in more and more.
+		goal = lerpf(0.12,0.3,drawn)+0.02*sin(_clock*23.0)
+		rear_goal = 0.7*smoothstep(0.0,0.5,drawn)
+	elif _roar_t < 0.0 and shot < 0.7:
+		# Fired: the jaw flung wide, the head thrust forward, eased back.
+		var u := shot/0.7
+		goal = lerpf(0.6,0.05,u*u)
+		rear_goal = lerpf(-0.6,0.0,u)
+	elif _roar_t >= 0.0:
 		_roar_t += delta
 		var t := _roar_t
 		if t < 0.45:

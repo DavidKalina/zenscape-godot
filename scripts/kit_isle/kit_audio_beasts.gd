@@ -422,10 +422,29 @@ func _dragon(dragon: Node, delta: float, listener: Vector3) -> float:
 	var roar: float = dragon.roar_time() if dragon.has_method("roar_time") else -1.0
 	if state != "clinging" and float(b.roar) < 0.45 and roar >= 0.45: _call(dragon.mouth_at())
 	b.roar = roar
+	_cyclone(dragon,b)
 	var ribbons := _rim(dragon,b,state,was_state,listener)
 	_waking(dragon,b,state,was_state)
 	b.state = state
 	return ribbons
+
+## Its cyclone (scripts/dragon_cyclone.gd): the wind-up a sharp inhale, the
+## shot an exhale and a slam of air at the mouth, a landing a heavy slam on
+## the turf, a break on cover a lighter one.
+func _cyclone(dragon: Node, b: Dictionary) -> void:
+	var cy: Variant = dragon.get("cyclone")
+	if cy == null: return
+	var winding := str(cy.phase) == "windup"
+	if winding and not bool(b.get("cy_wind",false)): shot("inhale",INHALE*1.3,_rng.randf_range(1.15,1.25),dragon.mouth_at(),40.0,1100.0,FAR)
+	b.cy_wind = winding
+	if int(cy.shots) > int(b.get("cy_shots",0)):
+		shot("exhale",EXHALE,_rng.randf_range(1.1,1.2),dragon.mouth_at(),50.0,1400.0,FAR)
+		shot("wind_slam",0.3,1.1,dragon.mouth_at(),40.0,900.0)
+	b.cy_shots = int(cy.shots)
+	if int(cy.lands) > int(b.get("cy_lands",0)): shot("wind_slam",0.5,0.75,cy.last_at,40.0,700.0)
+	b.cy_lands = int(cy.lands)
+	if int(cy.breaks) > int(b.get("cy_breaks",0)): shot("wind_slam",0.3,1.3,cy.last_at,30.0,600.0)
+	b.cy_breaks = int(cy.breaks)
 
 ## Its wake (scripts/dragon_wake.gd): a growl as it stirs on the roost, and
 ## off the ledge a huge beat, a slam of air and the rubble, as when it lets
