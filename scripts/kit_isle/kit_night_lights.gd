@@ -68,6 +68,8 @@ const LIGHT_ENERGY := 1.4
 const HALO_SIZE := 1.0
 const HALO_STRENGTH := 0.5
 const CORE_GLOW := 3.2
+## The layer the lanterns' posts collide on (studies/kit_isle.gd PARKED_LAYER).
+const WALKER_LAYER := 1 << 13
 
 const FADE_SECONDS := StoneLampLights.FADE_SECONDS
 const PICK_SECONDS := 0.25
@@ -302,8 +304,12 @@ func _lay_lamps(space: PhysicsDirectSpaceState3D) -> void:
 		lamp_mesh.multimesh.set_instance_transform(i,Transform3D(turn.scaled(Vector3.ONE*LAMP_SCALE),lamp.foot))
 		cores.multimesh.set_instance_transform(i,Transform3D(turn.scaled(Vector3.ONE*LAMP_SCALE),lamp.at))
 		halos.multimesh.set_instance_transform(i,Transform3D(Basis.IDENTITY.scaled(Vector3.ONE*HALO_SIZE*LAMP_SCALE),lamp.at))
-		# Solid, as the isle's props are: a post to walk round.
+		# Solid to the walker only (the parked plane's layer, kit_isle.gd
+		# PARKED_LAYER): a post to walk round, which the plane, the ground
+		# surveys and the growth never see.
 		var body := StaticBody3D.new()
+		body.collision_layer = WALKER_LAYER
+		body.collision_mask = 0
 		body.name = "LanternBody%d" % i
 		var hull := CollisionShape3D.new()
 		var box := BoxShape3D.new()
