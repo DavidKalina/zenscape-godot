@@ -5,7 +5,10 @@ extends "res://studies/character_study.gd"
 ## the motor, figure, camera, F1 numbers, F2 feel and recorder are the
 ## character study's). A flat isle, 24 by 29 m, its edges open over the
 ## drop, and along its north side a narrow ledge 1.2 m up, orange-lipped
-## (jump or pump up to it; an enemy cannot follow). R sets him back and
+## (jump or pump up to it; an enemy cannot follow). Every rim of the isle can
+## be hung from (step off it slowly), and the middle is open ground, so both
+## a bull's end (dodged near a rim) and a dodge in the open can be played.
+## R sets him back and
 ## brings the enemies back.
 ##   --enemy=NAME   which enemy (ENEMIES; `none` for an empty yard); the
 ##                  pilot is set down facing it. Default: ram.
@@ -66,7 +69,7 @@ func place(at: Vector3, face: Vector2) -> void:
 	if enemies != null: enemies.reset()
 
 func _hint_text() -> String:
-	return "Enemy yard: %s · stand on its line and sidestep it; slide into it from the side; the ledge is out of its reach · R start (the enemies too) · F1 numbers · F2 feel · Esc mouse" % enemy_name
+	return "Enemy yard: %s · it chases you: jump / slide aside / drop into a rim hang at the last moment (near a rim it goes over; in the open it comes again) · slide into it from the side · the ledge is out of its reach · R start (the enemies too) · F1 numbers · F2 feel · Esc mouse" % enemy_name
 
 func _show_hud() -> void:
 	super._show_hud()
