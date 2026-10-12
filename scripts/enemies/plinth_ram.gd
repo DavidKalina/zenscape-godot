@@ -78,7 +78,7 @@ func default_knobs(n: Dictionary) -> Dictionary:
 		"wander_speed":n.walk*0.5,"rest":0.8,"edge_look":n.unit*0.8,
 		"notice":n.run*2.4,"sight":1.2,"line_angle":0.14,"turn":2.6,"notice_beat":0.35,
 		"tell":0.75,"retell":0.4,"lock":0.2,"scrapes":3,
-		"charge_speed":n.run*1.6,"wind_up":0.5,"chase_turn":3.4,"chase_top":2.4,"hook":0.5,"blind":0.45,"lean":0.04,"commit":0.7,"lock_on":0.6,"lead":1.2,"lose_angle":1.3,
+		"charge_speed":n.run*1.9,"wind_up":0.3,"chase_turn":3.4,"chase_top":2.4,"hook":0.5,"blind":0.45,"lean":0.04,"commit":0.7,"lock_on":0.6,"lead":1.2,"lose_angle":1.3,
 		"give_up":n.run*3.6,"charge_dist":n.unit*13.0,
 		"kill_band":n.unit*1.7,"lip":n.unit*0.15,"lip_brake":n.run*5.0,"teeter":0.45,
 		"skid_turn":4.5,"dig":0.3,"room":n.unit*1.5,
