@@ -11,7 +11,10 @@ extends "res://scripts/traps/trap.gd"
 ##     he is (plus `lead` x his pace x `delay`, so 0 aims where he stands and
 ##     1 ahead of him) inhale, then `delay` s later blast for `blast_time`.
 ##     Keep moving and the blast lands behind him; stop and he is shoved off.
-##     The plate re-arms `rearm` s after the blast.
+##     The plate re-arms `rearm` s after the blast. A blast is pressurized
+##     air, not a breeze: the first frame he is in a firing mouth's zone it
+##     knocks him (PilotMotor.knock, a tumble) `blast_out` m across and
+##     `blast_up` m up, out of a hang or the sail too; once per blast.
 ## A mouth's wind is a zone `reach` either side of it along the lane, as
 ## wide as the deck and `throw` past it, pushing at `force` (m/s; harder than
 ## the run, so steering cannot hold against it). It goes out through
@@ -56,6 +59,8 @@ var _plate_node: MeshInstance3D
 var _prev_feet := Vector3.ZERO
 var _pace_z := 0.0
 var _have_prev := false
+## This blast has knocked him already.
+var _blasted := false
 
 func _init() -> void:
 	super()
@@ -70,7 +75,7 @@ func defaults() -> Dictionary:
 	return {
 		"mode":"vent","count":3,"reach":reach,"width":p.run*0.6,"force":p.run*1.3,"throw":p.run*1.5,
 		"on":1.0,"off":4.0,"tell":0.3,"stagger":1.0,
-		"delay":0.5,"blast_time":0.5,"rearm":2.0,"plate_at":reach,"plate_len":p.walk*0.5,"lead":0.0,"spread":0.6,
+		"delay":0.5,"blast_time":0.3,"rearm":2.0,"blast_out":p.run*3.0,"blast_up":p.run*0.25,"plate_at":reach,"plate_len":p.walk*0.5,"lead":0.0,"spread":0.6,
 	}
 
 func is_blaster() -> bool:
@@ -161,6 +166,15 @@ func _mouth(i: int, z: float, wide: float) -> Dictionary:
 	streaks.mesh = sm
 	streaks.material_override = paint(Color(0.85,0.9,0.95))
 	streaks.position = hole.position+Vector3(0.1,0.0,0.0)
+	if is_blaster():
+		# A burst, not a breath: many, fast, at once.
+		streaks.amount = 48
+		streaks.lifetime = 0.35
+		streaks.explosiveness = 0.85
+		streaks.spread = 12.0
+		streaks.initial_velocity_min = float(knob("blast_out"))*2.0
+		streaks.initial_velocity_max = float(knob("blast_out"))*3.0
+		sm.size = Vector3(0.9,0.05,0.05)
 	body.add_child(streaks)
 	add_child(body)
 	return {"i":i,"z":z,"state":QUIET,"mat":mat,"streaks":streaks,"body":body}
@@ -250,6 +264,7 @@ func _trip(z: float) -> void:
 		targets.append(best.i)
 	blaster_state = COUNTDOWN
 	blaster_t = 0.0
+	_blasted = false
 	tell_sound(&"click",to_global(Vector3(0.0,0.0,-float(knob("plate_at")))))
 
 func _set_state(m: Dictionary, s: int) -> void:
@@ -288,14 +303,27 @@ func tell_sight(_amount: float) -> void:
 ## Not sailing: the wind at his feet moves him, as extra range in the air or
 ## a shove towards the edge on the ground.
 func _shove(delta: float) -> void:
-	if motor == null or motor.move == "sail" or motor.hold != "" or motor.rider != null or motor.swimming: return
+	if motor == null or motor.rider != null or motor.swimming: return
+	if is_blaster():
+		_blast()
+		return
+	if motor.move == "sail" or motor.hold != "": return
 	var w: Vector3 = air_at(motor.feet).get("wind",Vector3.ZERO)
 	if w == Vector3.ZERO: return
 	shoves += 1
 	motor.carry(Transform3D(Basis.IDENTITY,w*delta),0.0)
 
+## The blaster's bang: once per blast, a knock across the deck and off it.
+func _blast() -> void:
+	if blaster_state != BLAST or _blasted or air_at(motor.feet).is_empty(): return
+	_blasted = true
+	shoves += 1
+	var way := blow_dir()
+	motor.knock(motor.knock_velocity(Vector2(way.x,way.z),float(knob("blast_out")),float(knob("blast_up"))))
+
 func reset() -> void:
 	super()
+	_blasted = false
 	clock = float(knob("on"))
 	blaster_state = ARMED
 	blaster_t = 0.0
