@@ -891,7 +891,9 @@ static func plane_tokens() -> Array:
 		var a: Vector3 = ends[0]
 		var b: Vector3 = ends[1]
 		var span := Vector2(b.x-a.x,b.z-a.z).length()
-		tail.append(a.lerp(b,0.5)+Vector3.UP*(Footbridge.lift(span,0.5)-2.6))
+		# Under the bridge's middle, out 1 m east and 2 m south off the cliff
+		# under it (a THREAD's room from the rock, CollectibleLines WING).
+		tail.append(a.lerp(b,0.5)+Vector3.UP*(Footbridge.lift(span,0.5)-2.6)+Vector3(1.0,0.0,2.0))
 	var f3 := slab_at(slab("frag_3"))
 	var f4 := slab_at(slab("frag_4"))
 	tail.insert(tail.size()-1,Vector3((f3.x+f4.x)*0.5,TOP-1.2+2.0,(f3.y+f4.y)*0.5))

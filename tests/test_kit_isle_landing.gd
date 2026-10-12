@@ -240,6 +240,13 @@ func _stone_ahead() -> Dictionary:
 				for b in range(1,7):
 					var back: Vector3 = study._turf_top(space,top.x-way.x*b*0.5,top.z-way.z*b*0.5)
 					if back == Vector3.INF or absf(back.y-top.y) > 0.3 or study._stone_at(back+Vector3.UP*0.6,turn): room = false
+				# And level turf all round 4 m out (turned away, whichever way
+				# the spin leaves it, it rolls on over turf, not off an edge).
+				for e in range(8):
+					var round_way := Vector3(cos(TAU*e/8.0),0.0,sin(TAU*e/8.0))
+					if e == d: continue
+					var out: Vector3 = study._turf_top(space,top.x+round_way.x*4.0,top.z+round_way.z*4.0)
+					if out == Vector3.INF or absf(out.y-top.y) > 0.3: room = false
 				if not room: continue
 				for k in range(1,12):
 					var p := top+way*k*0.5

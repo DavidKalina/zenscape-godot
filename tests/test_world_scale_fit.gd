@@ -30,6 +30,7 @@ const AqArt = preload("res://studies/aqueduct_isle_art.gd")
 const NaveArt = preload("res://studies/drowned_nave_isle_art.gd")
 const TarnArt = preload("res://studies/cloister_tarn_isle_art.gd")
 const Cloister = preload("res://scripts/ruin_kit_cloister.gd")
+const Spine = preload("res://studies/colonnade_spine_isle_art.gd")
 const OLD := ["--plane-scale=1","--wanderer-scale=1","--opening-ratio=1"]
 
 var failures := 0
@@ -80,6 +81,9 @@ func _gaps(tag: String) -> void:
 		"pierced isle route corridor (ROUTE_CLEAR both sides)":[Pierced.ROUTE_CLEAR*2.0,Pierced.TOY_ROUTE,"ratio"],
 		"ring arch on the lodestone's line (AqChain.RING_SPAN)":[RuinKit.ARCH_SPAN*AqChain.RING_SCALE,AqChain.TOY_RING,"cap"],
 		"stone circle, sarsen to sarsen at their inner faces":[henge,RuinKit.TOY_HENGE,"snug"],
+		"colonnade portal clear (2 x (Spine.ROW - ORDER))":[2.0*(Spine.ROW-RuinKit.ORDER),Spine.TOY_PORTAL,"ratio"],
+		"colonnade north-row bay (Spine.OUT_PITCH)":[Spine.OUT_PITCH-2.0*Spine.PIER_SHAFT,Spine.TOY_OUT,"ratio"],
+		"colonnade south-row bay (Spine.IN_PITCH)":[Spine.IN_PITCH-2.0*Spine.PIER_SHAFT,Spine.TOY_IN,"ratio"],
 		"drowned nave crossing (NaveArt.CROSS_CLEAR)":[NaveArt.CROSS_CLEAR,NaveArt.TOY_CROSS,"ratio"],
 		"cloister tarn water gate (between the piers' shafts)":[float(TarnArt.EAST_PIERS[TarnArt.EAST_PIERS.size()/2])-float(TarnArt.EAST_PIERS[TarnArt.EAST_PIERS.size()/2-1])-2.0*Cloister.PIER_REACH,TarnArt.TOY_GATE_PITCH-2.0*Cloister.PIER_REACH,"ratio"],
 		"cloister tarn west gap stub slot (TarnArt.STUB_GAP)":[float(TarnArt.WEST_PIERS[4])-float(TarnArt.WEST_PIERS[3])-2.0*Cloister.PIER_REACH,TarnArt.TOY_STUB_PITCH-2.0*Cloister.PIER_REACH,"ratio"],

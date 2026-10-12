@@ -20,7 +20,7 @@ const GORGE_TOKENS := [
 	# passes under, not between (it was 21.0, grazing them at plane 2).
 	["sg:gorge","air","thread",[Vector3(86.6,24.0,-61.0),Vector3(87.6,18.8,-47.0),Vector3(88.3,23.5,-15.0),Vector3(87.0,24.5,4.0)]],
 	# Close by the curtain, where it falls past the lower ledge.
-	["sg:curtain","air","break",[Vector3(83.6,23.0,-56.0)]],
+	["sg:curtain","air","break",[Vector3(84.6,23.0,-56.0)]],
 	# Under the split, between the two halves' hanging keels.
 	["sg:keel","under","keel",[Vector3(88.0,2.0,-22.0)]],
 ]

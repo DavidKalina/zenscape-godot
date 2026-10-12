@@ -919,6 +919,8 @@ static func plane_tokens() -> Array:
 	return [["sc:slot","air","thread",slot],["sc:corkscrew","air","thread",corkscrew]]
 
 ## The slot's points: [u along the entry wall, v out of it, y over TOP].
-const SLOT := [[16.0,22.0,11.0],[8.0,9.0,17.0],[0.0,6.5,22.0],[-9.0,8.0,25.5]]
+## (The last out 1 m and 3 m off the wall: a token line keeps a THREAD's
+## room from the rock, CollectibleLines WING.)
+const SLOT := [[16.0,22.0,11.0],[8.0,9.0,17.0],[0.0,6.5,22.0],[-8.0,11.0,25.5]]
 const CORK_R := 31.0
 const CORK_UP := 3.0
