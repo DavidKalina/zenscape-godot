@@ -116,10 +116,11 @@ const SEED := 11
 ## seed, weathered, world x, z, yaw (degrees)], each standing on the ground
 ## there and colliding as the kit built it. Only the gate on the far
 ## island, where the aqueduct came down, and its paving.
-static var PIECES: Array = [
-	["arch",20,0.35,Art.GATE.x,Art.GATE.y,0.0],
-	["floor",23,0.6,Art.GATE_FLOOR.x,Art.GATE_FLOOR.y,15.0],
-]
+static func pieces() -> Array:
+	return [
+		["arch",20,0.35,Art.GATE.x,Art.GATE.y,0.0],
+		["floor",23,0.6,Art.GATE_FLOOR.x,Art.GATE_FLOOR.y,15.0],
+	]
 ## The landmarks from the kit: the grand stair up the henge's terrace and
 ## the stone circle on it, both facing east along the isle's axis.
 const STAIR_SEED := 31
@@ -269,7 +270,7 @@ func _build_art() -> void:
 	var islets: Array = Art.islets(SEED+11)
 	for islet: Node3D in islets: art.add_child(islet)
 	art.add_child(Art.heel_stone(SEED+8))
-	for spec: Array in PIECES:
+	for spec: Array in pieces():
 		var piece: Node3D = RuinKit.piece(spec[0],spec[1],spec[2])
 		var x: float = spec[3]
 		var z: float = spec[4]
