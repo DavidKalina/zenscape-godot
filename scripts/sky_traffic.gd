@@ -84,12 +84,13 @@ const TRICKS := [["roll",0.5],["loop",0.25],["swoop",0.25]]
 const AHEAD := [0.0,20.0,40.0,65.0]
 const CLEAR := 14.0
 ## The liveries, muted to sit with the land: never the wanderer's own
-## brown, cream and terracotta.
+## brown, cream and terracotta; a little worn (scripts/plane_figure.gd
+## `set_wear`), working planes, lived in, beside the wanderer's kept one.
 const LIVERIES := [
-	{"body":Color("5f7f96"),"dark":Color("3e4f5c"),"trim":Color("e8d9a8"),"wing":Color("eef0ea"),"scarf":Color("e2b84a")},
-	{"body":Color("6f8a5b"),"dark":Color("44543a"),"trim":Color("d98e4a"),"wing":Color("f0ead8"),"scarf":Color("cf6b4a")},
-	{"body":Color("c9a24a"),"dark":Color("6d5530"),"trim":Color("8a4f3a"),"wing":Color("f3ecd9"),"scarf":Color("6f8fa8")},
-	{"body":Color("8a5f78"),"dark":Color("4f3746"),"trim":Color("e6c48f"),"wing":Color("efe8e0"),"scarf":Color("7fa08a")},
+	{"body":Color("5f7f96"),"dark":Color("3e4f5c"),"trim":Color("e8d9a8"),"wing":Color("eef0ea"),"scarf":Color("e2b84a"),"wear":0.25},
+	{"body":Color("6f8a5b"),"dark":Color("44543a"),"trim":Color("d98e4a"),"wing":Color("f0ead8"),"scarf":Color("cf6b4a"),"wear":0.25},
+	{"body":Color("c9a24a"),"dark":Color("6d5530"),"trim":Color("8a4f3a"),"wing":Color("f3ecd9"),"scarf":Color("6f8fa8"),"wear":0.25},
+	{"body":Color("8a5f78"),"dark":Color("4f3746"),"trim":Color("e6c48f"),"wing":Color("efe8e0"),"scarf":Color("7fa08a"),"wear":0.25},
 ]
 
 ## What a PlaneFigure reads of a glide (scripts/sky_glide.gd, sky_plane.gd).

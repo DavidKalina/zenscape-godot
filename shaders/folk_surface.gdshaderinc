@@ -22,13 +22,24 @@ uniform float coat_roughness : hint_range(0.0, 1.0) = 0.12;
 // little over the land so they read as the focus up close.
 uniform float fill = 1.6;
 uniform float rim = 0.5;
-// Weathered paint: a soft mottle over the part's own shape (`wear_scale`
-// patches a metre), lighter where the sun has faded it and duller where
-// hands and weather wore the coat; 0 is new paint.
+// Weathered paint (the plane's, scripts/plane_figure.gd `set_wear`; 0 is
+// new paint): the colour drained a little by the sun, a soft mottle over
+// the part's own shape (`wear_scale` patches a metre) lighter where it
+// faded and duller where hands and weather wore the coat, fine scuffs
+// through it, and dust settled on the faces that look up.
 uniform float wear : hint_range(0.0, 1.0) = 0.0;
 uniform float wear_scale = 14.0;
+uniform vec3 wear_dust : source_color = vec3(0.71, 0.65, 0.55);
+// A gleam sweeping over the solid (the plane mended, `gleam`): a soft band
+// of warm light across the world along `gleam_dir`, its middle at
+// `gleam_at` (m along it), `gleam_width` m wide; 0 none.
+uniform float gleam = 0.0;
+uniform vec3 gleam_dir = vec3(0.0, 0.0, 1.0);
+uniform float gleam_at = 0.0;
+uniform float gleam_width = 0.12;
 
 varying vec3 local;
+varying vec3 gleam_world;
 #ifdef ZS_NIGHT_STONE
 // The ruins at night (night light round 2, docs/design/night-light/
 // round2.md; set by scripts/kit_isle/kit_night_lights.gd, 0 elsewhere):
@@ -48,6 +59,7 @@ varying vec3 world_at;
 
 void vertex() {
 	local = VERTEX;
+	gleam_world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 #ifdef ZS_NIGHT_STONE
 	world_at = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 #endif
@@ -75,24 +87,38 @@ void fragment() {
 	if (wear > 0.0) {
 		vec3 p = local * wear_scale;
 		float m = wear_noise(p) * 0.65 + wear_noise(p * 2.7 + 4.1) * 0.35;
-		// Faded patches lift toward a chalky pale; worn ones lose their coat.
+		// Sun-faded: the colour drains toward its own grey, and patches
+		// lift toward a chalky pale; worn ones lose their coat.
+		base = mix(base, vec3(dot(base, vec3(0.3, 0.55, 0.15))), 0.28 * wear);
 		base = mix(base, mix(base, vec3(0.93, 0.88, 0.78), 0.35), smoothstep(0.55, 0.85, m) * wear);
-		base *= 1.0 - (0.5 - m) * 0.18 * wear;
-		dull = smoothstep(0.35, 0.75, m) * wear;
+		base *= 1.0 - (0.5 - m) * 0.2 * wear;
+		// Scuffs: fine streaks through the coat, paler, along the part.
+		float s = wear_noise(local * vec3(wear_scale * 7.0, wear_scale * 7.0, wear_scale * 0.7) + 2.3);
+		float scuff = smoothstep(0.7, 0.86, s) * smoothstep(0.45, 0.75, m) * wear;
+		base = mix(base, vec3(0.78, 0.72, 0.62), scuff * 0.22);
+		// Dust settled on what faces up.
+		vec3 up = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
+		float dust = smoothstep(0.15, 0.85, up.y) * (0.5 + 0.5 * wear_noise(p * 0.5 + 9.0)) * wear;
+		base = mix(base, wear_dust, dust * 0.42);
+		dull = max(smoothstep(0.35, 0.75, m) * wear, dust);
 	}
 #ifdef ZS_FOLK_VERTEX_COLOR
 	base *= COLOR.rgb;
 #endif
 	ALBEDO = base;
-	ROUGHNESS = mix(roughness_value, 1.0, dull * 0.5);
+	ROUGHNESS = mix(roughness_value, 1.0, dull * 0.6);
 	METALLIC = metallic_value;
-	CLEARCOAT = coat * (1.0 - dull * 0.6);
+	CLEARCOAT = coat * (1.0 - dull * 0.8);
 	CLEARCOAT_ROUGHNESS = coat_roughness;
 	vec3 normal = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
 	vec3 hemi = mix(zs_hemi_ground, zs_hemi_sky, normal.y * 0.5 + 0.5) * zs_hemi_energy / PI;
 	float edge = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 3.0);
 	vec3 diffuse = base * (1.0 - metallic_value);
 	EMISSION = diffuse * hemi * fill + mix(diffuse, vec3(0.5), 0.4) * zs_hemi_sky * zs_hemi_energy * edge * rim;
+	if (gleam > 0.0) {
+		float band = 1.0 - smoothstep(0.0, gleam_width, abs(dot(gleam_world, gleam_dir) - gleam_at));
+		EMISSION += (base * 0.9 + vec3(1.0, 0.8, 0.5) * 0.4) * band * band * gleam * (0.6 + 0.4 * edge);
+	}
 #ifdef ZS_SHELTER_BOUNCE
 	// Under a roof (the ruins' halls): the vertex colour's alpha carries how
 	// sheltered a face is (1 open air, 0 deep under the roof). The sky
