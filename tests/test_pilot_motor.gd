@@ -112,6 +112,22 @@ func _initialize() -> void:
 	for i in range(8): m.step(DT,Vector2(1.0,0.0),PilotMotor.RUN,false,ground,slide)
 	var fly := m.step(DT,Vector2(1.0,0.0),PilotMotor.RUN,true,ground,slide)
 	check(fly.get("sail",false) and m.move == "sail" and not fly.has("fly"),"Jumped off the ledge, Space again opens the sail, and never asks to fly")
+	# Sailed into a wall (a deep drop, a cliff 8 m up past z -10), let go
+	# of the stick: the sail folds and he takes hold of the wall.
+	var cliff := func(p: Vector2) -> float: return 8.0 if p.y < -10.0 else -20.0
+	m.reset(Vector3(0.0,4.0,-2.0),PilotMotor.facing_of(Vector2(0.0,-1.0)),PilotMotor.RUN)
+	# (A press this soon off his start is a jump, as off a ledge.)
+	m.step(DT,Vector2(0.0,-1.0),PilotMotor.RUN,true,cliff,slide)
+	for i in range(12): m.step(DT,Vector2(0.0,-1.0),PilotMotor.RUN,false,cliff,slide)
+	m.step(DT,Vector2(0.0,-1.0),PilotMotor.RUN,true,cliff,slide)
+	check(m.move == "sail","Over the drop, Space opens the sail")
+	var walled := false
+	for i in range(120):
+		var out := m.step(DT,Vector2.ZERO,PilotMotor.RUN,false,cliff,slide)
+		if m.move == "wall":
+			walled = not m.sail.open
+			break
+	check(m.move == "wall" and walled,"Sailed into a wall, it folds and slides down it (%s)" % m.move)
 	var ok := true
 	for node: Node3D in figure.find_children("*","Node3D",true,false):
 		ok = ok and node.transform.origin.is_finite() and node.transform.basis.x.is_finite()

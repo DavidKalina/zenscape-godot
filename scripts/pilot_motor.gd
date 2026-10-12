@@ -40,7 +40,9 @@ extends RefCounted
 ## wall ending or the ground reached, he leaves it. Jump on it, or just
 ## after touching one in the air (WALL_TOUCH), kicks him up (WALL_JUMP) and
 ## out (WALL_KICK), turned round, the stick not steering for WALL_LOCK, so he
-## can kick up between two walls facing each other.
+## can kick up between two walls facing each other. Sailed into one, the
+## sail folds and he takes hold of it, the way he flew counting as the
+## stick held into it.
 ##
 ## The twirl: `twirl` pressed in the air (anywhere in it, at any moment)
 ## spins him round with his arms out, kicked up to at least TWIRL_RISE and
@@ -1009,7 +1011,18 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 			if move == "sail":
 				sail.speed = 0.0
 				sail.drift = Vector2.ZERO
-		if move != "wallrun" and move != "sail" and move != "slam": h = _on_wall(delta,want,h,going,ground,under,out)
+		if move == "sail" and h == Vector2.ZERO and going != Vector2.ZERO:
+			# Sailed into a wall: the sail folds and he takes hold of it,
+			# the way he flew counting as the stick held into it.
+			move = ""
+			var into := want if want.length() > 0.3 else going.normalized()
+			h = _on_wall(delta,into,h,going,ground,under,out)
+			if move == "wall":
+				sail.fold()
+				_no_cut = true
+				out["sail"] = false
+			else: move = "sail"
+		elif move != "wallrun" and move != "sail" and move != "slam": h = _on_wall(delta,want,h,going,ground,under,out)
 		if move == "wall":
 			moved = feet
 			under = ground.call(Vector2(feet.x,feet.z))

@@ -54,7 +54,7 @@ const SINK_FAST := 2.4
 ## The fastest across it ever goes (m/s), how fast pace over its own bleeds
 ## away (m/s², plus that share of the pace over, a second), and how fast it
 ## takes up a slower pace asked (s).
-const TOP := 24.0
+const TOP := 34.0
 const BLEED := 0.5
 const BLEED_SHARE := 0.2
 const EASE := 0.6
