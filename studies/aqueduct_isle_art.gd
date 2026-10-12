@@ -141,6 +141,9 @@ static func pools() -> Array:
 ## collision for what the station lacks: {node, parts}.
 static func aqueduct(seed_value: int) -> Dictionary:
 	var b := Build.new(seed_value,WEATHERED,"Aqueduct")
+	# Loose stones left resting on nothing have fallen (RuinKit Build `drop_loose`).
+	b.drop_floating = true
+	b.drop_loose = true
 	b.settle = Aqueduct.SETTLE
 	var parts: Array = []
 	var sp := spring()
@@ -917,6 +920,9 @@ static func _flower(b: Build, at: Vector3, height: float) -> void:
 ## west shelf's, and the ledge's south, gone in places.
 static func hill_walls(seed_value: int) -> Node3D:
 	var b := Build.new(seed_value,0.45,"HillWalls")
+	# Loose stones left resting on nothing have fallen (RuinKit Build `drop_loose`).
+	b.drop_floating = true
+	b.drop_loose = true
 	var east := Basis(Vector3.UP,PI*0.5)
 	var face_top := func(_x: float) -> float: return T1
 	for run: Vector2 in [Vector2(-11.7,-2.72),Vector2(2.72,11.7)]:

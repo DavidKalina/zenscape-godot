@@ -656,6 +656,9 @@ static func stair_frame(k: int) -> Transform3D:
 
 static func step_walls(seed_value: int) -> Node3D:
 	var b := Build.new(seed_value,0.4,"StepWalls")
+	# Loose stones left resting on nothing have fallen (RuinKit Build `drop_loose`).
+	b.drop_floating = true
+	b.drop_loose = true
 	for k in range(STEPS.size()):
 		var s: Array = STEPS[k]
 		var x: float = s[0]

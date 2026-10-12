@@ -122,6 +122,9 @@ const ARCH_PITCH := 1.0
 const ORDER := 0.32
 const RECESS := 0.17
 const HOOD := Vector2(0.13,0.1)
+## How far a hood mould is bedded into the ring it caps (radially and in
+## depth): hidden, it keeps the hood bearing on the ring as stones settle.
+const HOOD_BED := 0.1
 ## The thickness of an arch, a window wall or a gable.
 const ARCH_DEPTH := 1.1
 ## The lancet window: clear width (two lights under one head; with its
@@ -335,6 +338,12 @@ const HULL_THIN := 0.06
 ## (m; a joint thinner than this is closed) and the occluders' grid (m).
 const CULL_OFF := 0.03
 const CELL_CULL := 2.0
+## How near two stones (or a stone and the ground) count as touching, for
+## the floating-stone check (Build `floating`).
+const FLOAT_TOUCH := 0.2
+## The most stones a group resting on nothing may have and still count as
+## loose (in a piece that doesn't drop its floaters).
+const FLOAT_MOST := 3
 
 
 ## The piece with PIECES id `id`.
@@ -489,6 +498,7 @@ static func pier(seed_value: int, weathered := 0.0) -> Node3D:
 ## the opening stays clear.
 static func arch(seed_value: int, weathered := 0.0) -> Node3D:
 	var b := Build.new(seed_value,weathered,"Arch")
+	b.drop_floating = true
 	var h := ARCH_SPAN*0.5
 	var d := ARCH_DEPTH*0.5
 	var radius := ARCH_SPAN*ARCH_PITCH
@@ -534,6 +544,7 @@ static func arch(seed_value: int, weathered := 0.0) -> Node3D:
 ## in a ragged line, the window clear to fly through.
 static func lancet_wall(seed_value: int, weathered := 0.0) -> Node3D:
 	var b := Build.new(seed_value,weathered,"LancetWall")
+	b.drop_floating = true
 	var half_len := WINDOW_WALL.x*0.5
 	var d := ARCH_DEPTH*0.5
 	var w := WINDOW.x*0.5
@@ -572,10 +583,16 @@ static func lancet_wall(seed_value: int, weathered := 0.0) -> Node3D:
 	for side: float in [-1.0,1.0]:
 		if broken and b.rng.randf() < 0.55+0.4*weathered: continue
 		var keep := 99 if not broken else b.rng.randi_range(1,2)
-		_ring_order(b,Transform3D.IDENTITY,side*(0.12+light),WINDOW.z,light,light*2.0,0.0,0.13,t,4,keep,side,_stone(b,1.06))
-	var oculus := Vector3(0.0,WINDOW.z+_rise(light,light*2.0)+0.62,0.5)
-	if not broken or b.rng.randf() < 0.3:
-		_circle_ring(b,Transform3D.IDENTITY,Vector2(oculus.x,oculus.y),oculus.z,0.12,t,10,0.0 if not broken else 0.6)
+		# Broken, a light's head keeps only its springers off the jamb: the
+		# mullion under its inner springers is a stub.
+		_ring_order(b,Transform3D.IDENTITY,side*(0.12+light),WINDOW.z,light,light*2.0,0.0,LIGHT_RING,t,4,keep,side,_stone(b,1.06),0,Callable(),false,0.0,side if broken else 0.0)
+	# The oculus over the lights' heads, sized to the window (`oculus`).
+	# Broken, the lights' heads are gone under it, so it is gone too (its
+	# stones in the drift below): it never hangs in the window's head.
+	if broken: b.rng.randf()
+	else:
+		var oculus := _oculus(w,light)
+		_circle_ring(b,Transform3D.IDENTITY,Vector2(0.0,WINDOW.z+oculus.x),oculus.y,oculus.z,t,10)
 	if weathered > 0.0:
 		for i in range(int(1+weathered*4.0)):
 			b.hang(Vector3(b.rng.randf_range(-w*0.7,w*0.7),0.0,b.rng.randf_range(-d,d)),b.rng.randf_range(0.6,2.2)*weathered,true)
@@ -583,6 +600,29 @@ static func lancet_wall(seed_value: int, weathered := 0.0) -> Node3D:
 	_rubble(b,half_len+0.8,int(round(weathered*b.rng.randf_range(4.0,8.0))))
 	b.root.set_meta("sill",sill.size())
 	return b.finish()
+
+## A lancet window's oculus (half width `w`, its two lights each `light`
+## across half, their head rings LIGHT_RING deep): (its middle over the
+## springing, its ring's middle radius, its half depth radially). Its ring
+## rests on the two lights' heads (touching their extrados) and is
+## OCULUS_FIT of the widest that would also touch the window's own arc
+## (radius 2w), so it grows with the window: 0.63 m out in the toy's 3.6
+## m window, 1.2 m at 6.84. A fixed 0.62 m ring had hung in a wide
+## window's head with nothing under it.
+const OCULUS_FIT := 0.7
+const LIGHT_RING := 0.13
+static func _oculus(w: float, light: float) -> Vector3:
+	var reach := 0.12+2.0*light
+	var rests := func(outer: float) -> float: return sqrt(maxf(0.0,pow(2.0*light+LIGHT_RING+outer,2.0)-reach*reach))
+	var low := 0.0
+	var high := w
+	for i in range(40):
+		var mid := (low+high)*0.5
+		if w*w+pow(float(rests.call(mid)),2.0) < pow(2.0*w-mid,2.0): low = mid
+		else: high = mid
+	var outer := low*OCULUS_FIT
+	var dr := 0.12*outer/0.62
+	return Vector3(float(rests.call(outer)),outer-dr,dr)
 
 ## 4. The end gable: coursed walls up to the eaves and a steep gable over
 ## them with crocketed coping and a finial; a moulded pointed door below; a
@@ -592,6 +632,7 @@ static func lancet_wall(seed_value: int, weathered := 0.0) -> Node3D:
 ## its hub fallen, its inner ring mostly gone, ivy hanging over it all.
 static func rose_gable(seed_value: int, weathered := 0.0) -> Node3D:
 	var b := Build.new(seed_value,weathered,"RoseGable")
+	b.drop_floating = true
 	var half := GABLE.x*0.5
 	var d := ARCH_DEPTH*0.5
 	var gable := func(x: float) -> float: return minf(GABLE.z,GABLE.y+(GABLE.z-GABLE.y)*(1.0-absf(x)/half))
@@ -676,6 +717,7 @@ static func rose_gable(seed_value: int, weathered := 0.0) -> Node3D:
 ## out toward +X (its profile to the front), the wall's stub along Z.
 static func buttress(seed_value: int, weathered := 0.0) -> Node3D:
 	var b := Build.new(seed_value,weathered,"Buttress")
+	b.drop_floating = true
 	# Turned side on: its stepped profile and the flyer read from the front.
 	b.frame = Transform3D(Basis(Vector3.UP,PI*0.5),Vector3(-0.3,0.0,0.0))
 	var depth: Array = BUTTRESS_DEPTH
@@ -1844,18 +1886,27 @@ static func _spire(b: Build, pose: Transform3D, r: float, h: float, snapped: boo
 static func _arch_ring(b: Build, pose: Transform3D, cx: float, spring: float, h: float, radius: float, d: float, hood: bool, lost := 0, lost_side := 1.0, top := Callable()) -> void:
 	var n := maxi(5,int(round(radius*1.6)))
 	_ring_order(b,pose,cx,spring,h,radius,0.0,ORDER,d-RECESS,n,99,lost_side,_stone(b,1.03),lost,top,true)
-	_ring_order(b,pose,cx,spring,h,radius,ORDER,ORDER,d,n-1,99,lost_side,_stone(b,1.0),lost+int(b.rng.randf()*2.0*b.weathered),top)
+	var outer := _ring_order(b,pose,cx,spring,h,radius,ORDER,ORDER,d,n-1,99,lost_side,_stone(b,1.0),lost+int(b.rng.randf()*2.0*b.weathered),top)
 	if hood:
+		# The hood rests on the outer order's face: it never runs on past
+		# where that order still stands (`cap`), so no length of it hangs
+		# over a lost crown.
 		for s: float in [-1.0,1.0]:
-			var hp := pose*Transform3D(Basis.IDENTITY,Vector3(0.0,0.0,s*(d+HOOD.y*0.5)))
-			_ring_order(b,hp,cx,spring,h,radius,ORDER*2.0,HOOD.x,HOOD.y*0.5,n+2,99,lost_side,_stone(b,1.06),lost+1+int(b.rng.randf()*3.0*b.weathered),top,false,b.weathered*0.5)
+			# Set HOOD_BED into the outer order's face and back, so a settled
+			# stone of either still bears on the other.
+			var hp := pose*Transform3D(Basis.IDENTITY,Vector3(0.0,0.0,s*(d+HOOD.y*0.5-HOOD_BED*0.5)))
+			_ring_order(b,hp,cx,spring,h,radius,ORDER*2.0-HOOD_BED,HOOD.x+HOOD_BED,HOOD.y*0.5+HOOD_BED*0.5,n+2,99,lost_side,_stone(b,1.06),lost+1+int(b.rng.randf()*3.0*b.weathered),top,false,b.weathered*0.5,0.0,outer)
 
 ## One order of a pointed arch: voussoirs from `radius`+`r0` out `dr`,
 ## `d` deep (half), `n` a side; the first `keep` of each side (99, all);
 ## `lost` from the crown on `lost_side` gone; stones over `top` gone;
-## `chamfer` its inner arrises moulded; `gaps` odds a stone is missing.
-static func _ring_order(b: Build, pose: Transform3D, cx: float, spring: float, h: float, radius: float, r0: float, dr: float, d: float, n: int, keep: int, lost_side: float, tone: Color, lost := 0, top := Callable(), chamfer := false, gaps := 0.0) -> void:
+## `chamfer` its inner arrises moulded; `gaps` odds a stone is missing;
+## `only_side` (-1 or 1) builds only the half springing on that side.
+static func _ring_order(b: Build, pose: Transform3D, cx: float, spring: float, h: float, radius: float, r0: float, dr: float, d: float, n: int, keep: int, lost_side: float, tone: Color, lost := 0, top := Callable(), chamfer := false, gaps := 0.0, only_side := 0.0, cap := Vector2(2.0,2.0)) -> Vector2:
+	var stood := Vector2.ZERO
 	for side: float in [-1.0,1.0]:
+		if only_side != 0.0 and side != only_side: continue
+		var whole := true
 		var centre := Vector3(cx-side*(radius-h),spring,0.0)
 		var ri := radius+r0
 		var ro := ri+dr
@@ -1864,9 +1915,14 @@ static func _ring_order(b: Build, pose: Transform3D, cx: float, spring: float, h
 		var apex := (apex_in+apex_out)*0.5
 		for i in range(n):
 			if i >= keep: break
-			if side == lost_side and i >= n-lost: continue
-			if side != lost_side and i >= n-maxi(0,lost-1)-int(lost > 0 and b.rng.randf() < 0.5): continue
+			if side == lost_side and i >= n-lost:
+				whole = false
+				continue
+			if side != lost_side and i >= n-maxi(0,lost-1)-int(lost > 0 and b.rng.randf() < 0.5):
+				whole = false
+				continue
 			if gaps > 0.0 and b.rng.randf() < gaps: continue
+			if float(i)/n >= (cap.x if side < 0.0 else cap.y): continue
 			# Angles from the horizontal at the springing (0) up to the
 			# crown; the arc's centre lies across the opening from it.
 			var ta := apex*i/n
@@ -1891,9 +1947,15 @@ static func _ring_order(b: Build, pose: Transform3D, cx: float, spring: float, h
 					var cn := (-dir_m+Vector3(0.0,0.0,s)).normalized()
 					planes.append(Plane(cn,cn.dot(centre+dir_m*ri+Vector3(0.0,0.0,s*d))-0.07))
 			var mid := centre+dir_m*(ri+ro)*0.5
-			if top.is_valid() and float(top.call(mid.x)) < mid.y+0.1: continue
+			if top.is_valid() and float(top.call(mid.x)) < mid.y+0.1:
+				whole = false
+				continue
 			var loose := 0.4+0.6*float(i)/n
 			b.solid(planes,pose*_jiggle(b,Transform3D.IDENTITY,loose*0.18),tone*(1.0+b.rng.randf_range(-0.06,0.06)),true,true,[],-1,0.6)
+			if whole:
+				if side < 0.0: stood.x = float(i+1)/n
+				else: stood.y = float(i+1)/n
+	return stood
 
 ## How high a pointed arch of half span `h` and arc radius `radius` rises
 ## over its springing.
@@ -2433,6 +2495,28 @@ class Build extends RefCounted:
 	## every stone look when the looks draw the same numbers
 	## (tools/ruin_stone_dump.gd checks it).
 	static var draws := 0
+	## The floating-stone check (tools/collision_audit.gd, tests/
+	## test_ruin_floating.gd): on, every finished piece looks for drawn
+	## stones resting on nothing (`floating`) and adds them to `floaters`.
+	static var check_floating := false
+	static var floaters: Array = []
+	## How many blocks `drop_floating` took out of this piece.
+	var dropped := 0
+	static var _floaters_lock := Mutex.new()
+	## Each drawn block's corners and planes (the piece's frame), kept
+	## while `check_floating` or `drop_floating` is on: [points, planes,
+	## marks (where its faces, tops, hull and solid start in `pending`,
+	## `tops`, `hulls`, `solids`, then where they end)].
+	var blocks: Array = []
+	## A standing ruin whose stones are taken away by rule (a crown lost, a
+	## notch, a breach, a ragged head): its stones left resting on nothing
+	## (`floating`) have fallen, so `finish` takes them out (drawn, solid
+	## and grown on). Off for what floats on purpose (drifting stones).
+	var drop_floating := false
+	## With `drop_floating`: only loose stones (a group of FLOAT_MOST or
+	## fewer resting on nothing) are taken out, for a build whose walls
+	## stand on ground it doesn't know (coursed down a hill, over the sky).
+	var drop_loose := false
 
 	static func materials() -> Dictionary:
 		if _materials.is_empty():
@@ -2507,6 +2591,7 @@ class Build extends RefCounted:
 	## (whose corners are given back); its hull solid if `collide`. `rough`
 	## scales the weathering; `growable`: ivy and moss may grow on it.
 	func solid(planes: Array[Plane], pose: Transform3D, colour: Color, collide := true, wear := true, extra: Array[Plane] = [], open := -1, rough := 1.0, growable := true) -> PackedVector3Array:
+		var marks := PackedInt32Array([pending.size(),tops.size(),hulls.size(),solids.size()])
 		var cut: Array[Plane] = planes.duplicate()
 		for p in extra: cut.append(p)
 		# An eroded look: the block's own planes as built (its faces, worn
@@ -2560,6 +2645,13 @@ class Build extends RefCounted:
 			points = _unique(Geometry3D.compute_convex_mesh_points(cut))
 			made = _polys(cut,points,open)
 		if points.size() < 4: return PackedVector3Array()
+		var block: Array = []
+		if (check_floating or drop_floating) and growable:
+			var corners := PackedVector3Array()
+			for q in points: corners.append(xf*q)
+			var faces: Array[Plane] = []
+			for plane in cut: faces.append(xf*plane)
+			block = [corners,faces,marks]
 		var polys: Array = made[0]
 		var biggest: float = made[2]
 		var occluder := solids.size() if growable else -1
@@ -2637,6 +2729,10 @@ class Build extends RefCounted:
 			if thickness(hull) >= HULL_THIN:
 				hulls.append(hull)
 				hull_anchors.append(anchor)
+		if not block.is_empty():
+			marks.append_array([pending.size(),tops.size(),hulls.size(),solids.size()])
+			block[2] = marks
+			blocks.append(block)
 		return made[1]
 
 	## An eroded look's block (Style `erode`): its classic worn planes `cut`
@@ -2731,6 +2827,13 @@ class Build extends RefCounted:
 	## The piece: ivy and moss grown on it, then the mesh and the body.
 	func finish() -> Node3D:
 		frame = Transform3D.IDENTITY
+		if drop_floating: _drop_floating()
+		if check_floating:
+			var found := floating()
+			if not found.is_empty():
+				_floaters_lock.lock()
+				for box: AABB in found: floaters.append({"label":root.name,"root":weakref(root),"box":box})
+				_floaters_lock.unlock()
 		_ivy()
 		RuinGrowth.fringes(self)
 		_cushions()
@@ -2774,6 +2877,153 @@ class Build extends RefCounted:
 		root.set_meta("weathered",weathered)
 		draws = hash([draws,rng.state])
 		return root
+
+	## Drawn stones resting on nothing (with `check_floating`): the blocks
+	## joined to the ground (a block reaching within FLOAT_TOUCH of the
+	## ground under it, or under the piece's lowest stone's top) through
+	## blocks touching (within FLOAT_TOUCH: no face of either standing
+	## clear of the other) are set; any other is floating. Their boxes (the
+	## piece's frame, bent as drawn).
+	func floating() -> Array:
+		var out: Array = []
+		for i: int in _floating_blocks():
+			var box := _block_box(i)
+			if path != null:
+				var bent := AABB(bend(box.position),Vector3.ZERO)
+				for k in range(8): bent = bent.expand(bend(box.get_endpoint(k)))
+				box = bent
+			out.append(box)
+		return out
+
+	func _block_box(i: int) -> AABB:
+		var pts: PackedVector3Array = blocks[i][0]
+		var box := AABB(pts[0],Vector3.ZERO)
+		for q in pts: box = box.expand(q)
+		return box
+
+	## Takes out the floating blocks (`_floating_blocks`): their faces,
+	## tops and hulls; their solids stand far off (their indices are kept).
+	func _drop_floating() -> void:
+		var gone := _floating_blocks()
+		if gone.is_empty(): return
+		var drop_pending := {}
+		var drop_tops := {}
+		var drop_hulls := {}
+		for i: int in gone:
+			var m: PackedInt32Array = blocks[i][2]
+			for k in range(m[0],m[4]): drop_pending[k] = true
+			for k in range(m[1],m[5]): drop_tops[k] = true
+			for k in range(m[2],m[6]): drop_hulls[k] = true
+			for k in range(m[3],m[7]): solids[k] = [AABB(Vector3.ONE*1e6,Vector3.ZERO),[Plane(Vector3.UP,-1e7)]]
+		var kept: Array = []
+		for k in range(pending.size()):
+			if not drop_pending.has(k): kept.append(pending[k])
+		pending = kept
+		var kept_tops: Array = []
+		for k in range(tops.size()):
+			if not drop_tops.has(k): kept_tops.append(tops[k])
+		tops = kept_tops
+		var kept_hulls: Array[PackedVector3Array] = []
+		var kept_anchors := PackedFloat32Array()
+		for k in range(hulls.size()):
+			if drop_hulls.has(k): continue
+			kept_hulls.append(hulls[k])
+			kept_anchors.append(hull_anchors[k])
+		hulls = kept_hulls
+		hull_anchors = kept_anchors
+		var still: Array = []
+		var gone_set := {}
+		for i: int in gone: gone_set[i] = true
+		for i in range(blocks.size()):
+			if not gone_set.has(i): still.append(blocks[i])
+		blocks = still
+		dropped += gone.size()
+
+	## The indices of the blocks resting on nothing.
+	func _floating_blocks() -> Array:
+		var n := blocks.size()
+		if n == 0: return []
+		var boxes: Array[AABB] = []
+		var low := INF
+		for blk: Array in blocks:
+			var pts: PackedVector3Array = blk[0]
+			var box := AABB(pts[0],Vector3.ZERO)
+			for q in pts: box = box.expand(q)
+			boxes.append(box)
+			low = minf(low,box.position.y)
+		var held := PackedByteArray()
+		held.resize(n)
+		var frontier: Array[int] = []
+		for i in range(n):
+			var box := boxes[i]
+			var c := box.get_center()
+			var under := floor_at(c.x,c.z) if terrain.is_valid() else 0.0
+			if box.position.y <= maxf(under,low)+FLOAT_TOUCH or (ground > -INF and box.position.y <= ground+FLOAT_TOUCH):
+				held[i] = 1
+				frontier.append(i)
+		# A grid of the boxes, so each block meets only its neighbours.
+		var grid := {}
+		for i in range(n):
+			var box := boxes[i].grow(FLOAT_TOUCH)
+			for cx in range(floori(box.position.x/CELL_CULL),floori(box.end.x/CELL_CULL)+1):
+				for cy in range(floori(box.position.y/CELL_CULL),floori(box.end.y/CELL_CULL)+1):
+					for cz in range(floori(box.position.z/CELL_CULL),floori(box.end.z/CELL_CULL)+1):
+						var key := Vector3i(cx,cy,cz)
+						if not grid.has(key): grid[key] = PackedInt32Array()
+						grid[key].append(i)
+		while not frontier.is_empty():
+			var i: int = frontier.pop_back()
+			var box := boxes[i].grow(FLOAT_TOUCH)
+			var seen := {}
+			for cx in range(floori(box.position.x/CELL_CULL),floori(box.end.x/CELL_CULL)+1):
+				for cy in range(floori(box.position.y/CELL_CULL),floori(box.end.y/CELL_CULL)+1):
+					for cz in range(floori(box.position.z/CELL_CULL),floori(box.end.z/CELL_CULL)+1):
+						for j: int in grid.get(Vector3i(cx,cy,cz),PackedInt32Array()):
+							if held[j] == 1 or seen.has(j): continue
+							seen[j] = true
+							if not box.intersects(boxes[j]): continue
+							if _touch(blocks[i],blocks[j]):
+								held[j] = 1
+								frontier.append(j)
+		var out: Array = []
+		for i in range(n):
+			if held[i] == 0: out.append(i)
+		if (drop_floating and not drop_loose) or out.is_empty(): return out
+		# Not a piece that drops its floaters (walls coursed down a hill, a
+		# run of stumps, drifting stones): only a stone or two resting on
+		# nothing counts, not a whole structure standing on its own.
+		var small: Array = []
+		var left := {}
+		for i: int in out: left[i] = true
+		while not left.is_empty():
+			var first: int = left.keys()[0]
+			left.erase(first)
+			var group: Array[int] = [first]
+			var k := 0
+			while k < group.size():
+				var i := group[k]
+				k += 1
+				for j: int in left.keys():
+					if boxes[i].grow(FLOAT_TOUCH).intersects(boxes[j]) and _touch(blocks[i],blocks[j]):
+						left.erase(j)
+						group.append(j)
+			if group.size() <= FLOAT_MOST: small.append_array(group)
+		return small
+
+	## Whether two blocks ([points, planes]) touch within FLOAT_TOUCH: no
+	## face of either has all the other's corners past it.
+	static func _touch(a: Array, b: Array) -> bool:
+		for pair: Array in [[a,b],[b,a]]:
+			var faces: Array[Plane] = pair[0][1]
+			var pts: PackedVector3Array = pair[1][0]
+			for plane in faces:
+				var clear := true
+				for q in pts:
+					if plane.distance_to(q) <= FLOAT_TOUCH:
+						clear = false
+						break
+				if clear: return false
+		return true
 
 	## Where straight point `p` is drawn: along the bend (by its own x, or
 	## a rigid block's `anchor`), or where it is with no bend.

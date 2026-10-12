@@ -511,6 +511,9 @@ static func back_walls(seed_value: int, weathered: float) -> Node3D:
 		var n: Vector2 = sides[side]
 		var along := Vector2(-n.y,n.x)
 		var b := Build.new(seed_value+k,weathered,"BackWall_"+side)
+		# Loose stones left resting on nothing have fallen (RuinKit Build `drop_loose`).
+		b.drop_floating = true
+		b.drop_loose = true
 		b.settle = 0.4
 		k += 1
 		# Its frame: X along the back, +Z into the alley, foot on K.

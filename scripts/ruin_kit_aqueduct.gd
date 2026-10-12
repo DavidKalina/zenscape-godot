@@ -304,6 +304,7 @@ static func stump(seed_value: int, weathered := 0.0, ground := Callable()) -> No
 ## Weathered, the gablet and lip broken, ivy down the abutment.
 static func head(seed_value: int, weathered := 0.0, raised := true, wet := true, ground := Callable()) -> Node3D:
 	var b := Build.new(seed_value,weathered,"AqueductEnd")
+	b.drop_floating = true
 	b.settle = SETTLE
 	b.terrain = ground
 	var feet: Array = []

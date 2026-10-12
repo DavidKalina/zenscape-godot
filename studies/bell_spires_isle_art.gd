@@ -519,6 +519,7 @@ static func sector_planes(c: Vector2, st: Dictionary, bottom: float, top: float,
 ## A stair drawn (worn steps of the kit's stone over a corbel of rock
 ## each) and walked (each step's clean sector, down past the one under, so
 ## no joint is a gap).
+const WALK_LEAN := 1.4
 static func stair_node(stair: Dictionary, seed_value: int) -> Node3D:
 	var s: Dictionary = spire(stair.spire)
 	var c: Vector2 = s.c
@@ -549,7 +550,9 @@ static func stair_node(stair: Dictionary, seed_value: int) -> Node3D:
 			var over := OVERLAP/maxf(r_out,1.0)
 			walked.a0 = float(part.a0)-over
 			walked.a1 = float(part.a1)+over
-			RuinKit._walk_hull(b,Transform3D.IDENTITY,sector_planes(c,walked,y-RISER-0.4,y,r_in,r_out))
+			# Its outer face leans in under the tread as the corbel does, so it
+			# never stands out in the air past the drawn rock.
+			RuinKit._walk_hull(b,Transform3D.IDENTITY,sector_planes(c,walked,y-RISER-0.4,y,r_in,r_out,-WALK_LEAN))
 	return b.finish()
 
 # --- The turf -------------------------------------------------------------------------

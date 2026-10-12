@@ -202,6 +202,9 @@ const FACET_H := 4.6
 const FACET_BACK := Vector2(0.05,0.75)
 ## A step shorter than this (m) is not a wall.
 const WALL_MIN := 1.0
+## A turf triangle on a drawn wall steeper than this (its normal's height)
+## stops colliding (`_collide_as_drawn`): the drawn wall collides instead.
+const WALL_STEEP := 0.6
 ## The skirt (`skirt`): a column of rock every SKIRT_COL m round the rim,
 ## each down WALL_ROWS rows to WALL_BASE under TOP, then in KEEL_ROWS
 ## ([way in toward the middle, drop under TOP over KEEL]) to the keel's tip
@@ -411,24 +414,65 @@ static func dress_walls(node: Node3D, seed_value: int) -> PackedVector3Array:
 			have.append(Vector4(p.x,p.y,TOP+float(run.foot[i]),TOP+float(run.top[i])))
 			near[key] = have
 		facade(rock,run.line,tops,foots,intos,rng,0.85)
+	var on_wall := func(m: Vector3) -> bool:
+		var k := Vector2i(floori(m.x),floori(m.z))
+		for dx in range(-1,2):
+			for dz in range(-1,2):
+				for w: Vector4 in near.get(k+Vector2i(dx,dz),[]):
+					if Vector2(w.x,w.y).distance_to(Vector2(m.x,m.z)) < 1.0 and m.y > w.z-0.6 and m.y < w.w+0.6: return true
+		return false
 	var crags := node.get_node_or_null("Crags") as MeshInstance3D
 	if crags != null:
-		crags.mesh = filtered(crags.mesh,func(a: Vector3, b: Vector3, c: Vector3) -> bool:
-			var m := (a+b+c)/3.0
-			var k := Vector2i(floori(m.x),floori(m.z))
-			for dx in range(-1,2):
-				for dz in range(-1,2):
-					for w: Vector4 in near.get(k+Vector2i(dx,dz),[]):
-						if Vector2(w.x,w.y).distance_to(Vector2(m.x,m.z)) < 1.0 and m.y > w.z-0.6 and m.y < w.w+0.6: return true
-			return false)
+		crags.mesh = filtered(crags.mesh,func(a: Vector3, b: Vector3, c: Vector3) -> bool: return bool(on_wall.call((a+b+c)/3.0)))
 	var drawn := rock.node("Walls")
 	if drawn != null: node.add_child(drawn)
+	# The walls collide as drawn (set back into the rock, bulging), not as
+	# the heightfield's sheer slivers and cliff prisms they replace: those
+	# stood up to a metre and more proud of the drawn rock, invisible.
+	_collide_as_drawn(node,on_wall)
+	var wall_faces := rock.faces()
 	var sides := KitLook.RockMesh.new()
 	skirt(sides,Array(node.get_meta("outline") as PackedVector2Array),seed_value)
 	corner_spur(sides,rng)
 	for k in range(TORS.size()): tor(sides,TORS[k],rng)
 	node.add_child(sides.node("Skirt"))
-	return sides.faces()
+	var out := sides.faces()
+	out.append_array(wall_faces)
+	return out
+
+## The island's ground bodies (KitLand `bodies`) without what stands on a
+## drawn wall (`on_wall` of a triangle's or prism's middle): the turf's
+## steep triangles there and the cliff prisms there.
+static func _collide_as_drawn(node: Node3D, on_wall: Callable) -> void:
+	var body := node.get_node("Body") as StaticBody3D
+	for holder in body.get_children():
+		var shape := (holder as CollisionShape3D).shape
+		if shape is ConcavePolygonShape3D:
+			var faces := (shape as ConcavePolygonShape3D).get_faces()
+			var kept := PackedVector3Array()
+			for t in range(0,faces.size(),3):
+				var a := faces[t]
+				var b := faces[t+1]
+				var c := faces[t+2]
+				var n := (b-a).cross(c-a).normalized()
+				if absf(n.y) < WALL_STEEP and bool(on_wall.call((a+b+c)/3.0)): continue
+				kept.append_array([a,b,c])
+			(shape as ConcavePolygonShape3D).set_faces(kept)
+		elif shape is ConvexPolygonShape3D and _prism_on_wall(shape as ConvexPolygonShape3D,on_wall):
+			body.remove_child(holder)
+			holder.free()
+	var cliffs: Array = node.get_meta("cliff_bodies",[])
+	for more: StaticBody3D in cliffs:
+		for holder in more.get_children():
+			if _prism_on_wall((holder as CollisionShape3D).shape as ConvexPolygonShape3D,on_wall):
+				more.remove_child(holder)
+				holder.free()
+
+## A cliff prism (its top three corners the turf triangle's) on a wall.
+static func _prism_on_wall(prism: ConvexPolygonShape3D, on_wall: Callable) -> bool:
+	var pts := prism.points
+	if pts.size() < 3: return false
+	return bool(on_wall.call((pts[0]+pts[1]+pts[2])/3.0))
 
 # --- The summit's spur and tors -----------------------------------------------------------
 #

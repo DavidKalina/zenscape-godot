@@ -266,6 +266,11 @@ class Gather extends RefCounted:
 ## normal, shimmer, its mean height -> Color, linear). A prism hangs under
 ## each face touching a cliff point (`cliffy`, a byte a point) or, with
 ## `steep` > 0, under each face whose normal's y is under it.
+## A cliff prism's depth under its face's lowest corner (m); within
+## PRISM_RIM of the outline, PRISM_RIM_DROP.
+const PRISM_DROP := 1.5
+const PRISM_RIM := 2.0
+const PRISM_RIM_DROP := 0.3
 static func surface(points: PackedVector2Array, heights: PackedFloat32Array, poly: PackedVector2Array, rng: RandomNumberGenerator,
 		tone: Callable, rocky := Callable(), cliffy := PackedByteArray(), steep := 0.0) -> Dictionary:
 	var tris := Geometry2D.triangulate_delaunay(points)
@@ -288,7 +293,11 @@ static func surface(points: PackedVector2Array, heights: PackedFloat32Array, pol
 		if normal.y < 0.0: normal = -normal
 		var prism := (not cliffy.is_empty() and (cliffy[tris[t]] or cliffy[tris[t+1]] or cliffy[tris[t+2]])) or (steep > 0.0 and normal.y < steep)
 		if prism:
-			var deep := minf(pa.y,minf(pb.y,pc.y))-1.5
+			# Under the rim (within PRISM_RIM of the outline) a prism hangs
+			# only PRISM_RIM_DROP: the sides drawn below the rim turn in, and
+			# a deep one stood out under the lip in the air, invisible.
+			var drop := PRISM_DROP if edge_distance(mid,poly) > PRISM_RIM else PRISM_RIM_DROP
+			var deep := minf(pa.y,minf(pb.y,pc.y))-drop
 			var hull := PackedVector3Array([pa,pb,pc,Vector3(pa.x,deep,pa.z),Vector3(pb.x,deep,pb.z),Vector3(pc.x,deep,pc.z)])
 			if RuinKit.hull_thickness(hull) >= RuinKit.HULL_THIN: solid.append(hull)
 		var shimmer := rng.randf_range(-0.035,0.035)
