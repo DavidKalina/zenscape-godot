@@ -116,7 +116,9 @@ func run() -> void:
 	await tap_pad(JOY_BUTTON_DPAD_RIGHT)
 	await tap_pad(JOY_BUTTON_DPAD_RIGHT)
 	check(picker.entry_of.has(focus.call()) and picker.entry_of[focus.call()].group == "On-foot greyboxes","The pad's D-pad walks to the last column, and no further")
-	for i in 12: await tap_pad(JOY_BUTTON_DPAD_DOWN)
+	# One more than the column holds, however many greyboxes it lists.
+	var column: int = picker.entry_of.values().filter(func(e: Dictionary) -> bool: return e.group == "On-foot greyboxes").size()
+	for i in column+1: await tap_pad(JOY_BUTTON_DPAD_DOWN)
 	check(focus.call() == picker.back_button,"Down past a column's last row is Back")
 	await tap_pad(JOY_BUTTON_DPAD_UP)
 	check(picker.entry_of.has(focus.call()),"Up from Back is a row again")
