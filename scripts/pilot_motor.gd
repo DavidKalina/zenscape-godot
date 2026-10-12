@@ -40,7 +40,9 @@ extends RefCounted
 ## wall ending or the ground reached, he leaves it. Jump on it, or just
 ## after touching one in the air (WALL_TOUCH), kicks him up (WALL_JUMP) and
 ## out (WALL_KICK), turned round, the stick not steering for WALL_LOCK, so he
-## can kick up between two walls facing each other.
+## can kick up between two walls facing each other. Sailed into one, the
+## sail folds and he takes hold of it, the way he flew counting as the
+## stick held into it.
 ##
 ## The twirl: `twirl` pressed in the air (anywhere in it, at any moment)
 ## spins him round with his arms out, kicked up to at least TWIRL_RISE and
@@ -131,8 +133,9 @@ extends RefCounted
 ## height.
 ##
 ## The pocket sail (scripts/pocket_sail.gd, `sail`): Jump pressed again in
-## the air with room under him (`can_open`: off an edge, knocked away; never
-## from a jump over flat ground), with no wall at hand, pops it out overhead (move "sail"), kicked up a little
+## the air with room under him (`can_open`: from any ordinary jump, off an
+## edge, knocked away; not just off the ground, nor so close over it
+## falling that the press is the jump buffered for the touch), with no wall at hand, pops it out overhead (move "sail"), kicked up a little
 ## the first time an airtime; pressed again it folds and he falls. Open, it
 ## glides him on slowly down, turned towards the stick, crouch braking it
 ## to a float; the air (`air`: the feet's point, giving {wind, thermal})
@@ -1008,7 +1011,18 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 			if move == "sail":
 				sail.speed = 0.0
 				sail.drift = Vector2.ZERO
-		if move != "wallrun" and move != "sail" and move != "slam": h = _on_wall(delta,want,h,going,ground,under,out)
+		if move == "sail" and h == Vector2.ZERO and going != Vector2.ZERO:
+			# Sailed into a wall: the sail folds and he takes hold of it,
+			# the way he flew counting as the stick held into it.
+			move = ""
+			var into := want if want.length() > 0.3 else going.normalized()
+			h = _on_wall(delta,into,h,going,ground,under,out)
+			if move == "wall":
+				sail.fold()
+				_no_cut = true
+				out["sail"] = false
+			else: move = "sail"
+		elif move != "wallrun" and move != "sail" and move != "slam": h = _on_wall(delta,want,h,going,ground,under,out)
 		if move == "wall":
 			moved = feet
 			under = ground.call(Vector2(feet.x,feet.z))

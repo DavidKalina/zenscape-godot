@@ -112,12 +112,13 @@ it. The motor and the dive share it:
 
 ### Rules I picked
 
-- **Opening needs room under you:** more than CLEAR (1.6 m) plus 0.2 s of the
-  current fall speed. So it never opens from a jump over flat ground (the
-  pump tops out at 1.5 m). Mashing Jump through a long-jump chain to catch
-  the landing buffer still just buffers. A press that close to the ground is
-  the buffered jump, as before. Off an edge, or after being knocked away, it
-  opens at once.
+- **Opening needs room under you:** more than CLEAR (0.25 m) plus 0.25 s of
+  the current fall speed. So it opens from any ordinary jump, over flat
+  ground too: Space again near a plain jump's top glides a few metres and
+  sets him down. A press within the motor's buffer (0.15 s) of the touch is
+  still the buffered jump. Off an edge, or after being knocked away, it
+  opens at once. (Until docs/design/serpent-teleports-sail/round1.md it was
+  1.6 m plus 0.2 s: never from a jump over flat ground.)
   - I first allowed "always while rising". Two of the sky-village recordings
     mash Jump through every long jump, and that popped the sail at 0.7 m.
     That's why the rule is room only.
@@ -150,7 +151,7 @@ All are in `scripts/pocket_sail.gd`, and all except CLEAR are on F2.
 | SWOOP | 0.3 | share of the fall over SINK turned into pace on opening |
 | WIND / LIFT / THERMAL | 0.8 / 0.5 / 2.0 | a 4 m/s crosswind carries it 12.9 m in 3 s |
 | RISE_MOST / CEILING | 0.8 m/s / 1 m | 20 s in a strong thermal: at most 0.99 m over the peak |
-| REOPEN / CLEAR / CLEAR_AHEAD | 0.25 s / 1.6 m / 0.2 s | see the rules above |
+| REOPEN / CLEAR / CLEAR_AHEAD | 0.25 s / 0.25 m / 0.25 s | see the rules above |
 | BREEZE / GUST_PUSH / GUST_LIFT | 0.5 / 5 / 9 | atmosphere scenes; the lift is capped by RISE_MOST |
 
 Measured over a 40 m drop: opened at once, touchdown at 1.5 m/s; opened 6 m
@@ -223,10 +224,9 @@ suite.
    needs `--manual-landing`'s other rules too (a parked plane on entry,
    stranding). Since the aqueduct isle is becoming the main scene, the
    question may matter less there: its F key is how you fly.
-2. **Room to open.** 1.6 m makes it a drop-and-knock tool, not a jump
-   extender. If the user wants to pop it at a jump's top over flat ground
-   (as in BotW), lower CLEAR on F2 and watch long-jump chains with Jump
-   mashed.
+2. **Room to open.** Lowered to 0.25 m (the user asked for it from any
+   jump): Jump mashed through a long-jump chain now opens it mid-jump
+   rather than only buffering the next.
 3. **Not judged by hand.** Feel numbers (sink, turn, kick, catch) and gust
    strength need flying. The hurl coast-back works scripted, steered straight
    back. Whether a player can do it from the shove is untested.

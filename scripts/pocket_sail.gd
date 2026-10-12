@@ -14,8 +14,9 @@ extends RefCounted
 ## it saves him and opened late it barely slows him; some of the fall
 ## (SWOOP of the speed over SINK) goes into the pace, so folding to dive
 ## and opening again carries him further on, never higher. Pace he brings
-## (a long jump's, a slide hop's, a twirl's) is kept and bleeds away at
-## BLEED, never over TOP.
+## (a long jump's, a slide hop's, a twirl's, a burst's) is kept and bleeds
+## away at BLEED plus BLEED_SHARE of what's over a second, so a fast open
+## carries far before it settles, never over TOP.
 ##
 ## Steered (`steer`: the way asked against the way it flies) it turns at
 ## TURN radians a second; held back (`push` -1: crouch on foot, back or
@@ -51,9 +52,11 @@ const SINK_SLOW := 1.2
 const PACE_FAST := 7.5
 const SINK_FAST := 2.4
 ## The fastest across it ever goes (m/s), how fast pace over its own bleeds
-## away (m/s²), and how fast it takes up a slower pace asked (s).
-const TOP := 10.0
-const BLEED := 1.5
+## away (m/s², plus that share of the pace over, a second), and how fast it
+## takes up a slower pace asked (s).
+const TOP := 34.0
+const BLEED := 0.5
+const BLEED_SHARE := 0.2
 const EASE := 0.6
 ## Its turn at full stick (radians a second), and the angle off the way
 ## asked (radians) at which the turn is full.
@@ -88,13 +91,18 @@ const THERMAL_TAKE := 6.0
 const RIDING := 0.3
 ## Seconds after folding before it opens again; the least room under the
 ## feet it opens with (m), plus the fall's speed for this many seconds. So
-## it never opens over flat ground from a jump (the pump tops out at
-## 1.5 m), nor in a long jump's chain with Jump mashed for the landing (a
-## press that close is the jump buffered for the touch): it is for drops,
-## off edges and knocked away.
+## it opens from any ordinary jump, over flat ground too (Space again near
+## a plain jump's top: it glides a few metres and sets him down; the low
+## height ends it), off edges and knocked away; but a press just off the
+## ground, or falling within the motor's buffer (0.15 s) of the touch, is
+## the jump buffered for it, never the sail (falling at v, the room asked
+## is CLEAR + v*CLEAR_AHEAD, more than the buffer's fall). It used to ask
+## 1.6 m (over the pump's 1.5 m top): never from a jump over flat ground,
+## a frustrating sail off the serpent's back and low ledges
+## (docs/design/serpent-teleports-sail/round1.md).
 const REOPEN := 0.25
-const CLEAR := 1.6
-const CLEAR_AHEAD := 0.2
+const CLEAR := 0.25
+const CLEAR_AHEAD := 0.25
 
 ## The feel, this sail's own: each starts as its constant above; a study may
 ## turn them live.
@@ -199,7 +207,7 @@ func step(delta: float, velocity: Vector3, y: float, steering: float, push: floa
 		want_pace = lerpf(pace,PACE_FAST,push)
 		want_sink = lerpf(sink,SINK_FAST,push)
 	# Pace it brought bleeds away; a brake, or a pace under, eases.
-	if speed > want_pace and push >= 0.0: speed = move_toward(speed,want_pace,bleed*delta)
+	if speed > want_pace and push >= 0.0: speed = move_toward(speed,want_pace,(bleed+(speed-want_pace)*BLEED_SHARE)*delta)
 	else: speed = lerpf(speed,want_pace,1.0-exp(-delta/EASE))
 	speed = minf(speed,top)
 	var wind: Vector3 = air.get("wind",Vector3.ZERO)

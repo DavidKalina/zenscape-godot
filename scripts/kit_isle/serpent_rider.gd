@@ -20,9 +20,17 @@ extends Node3D
 ##      the air, by the frame he left it in (its velocity there).
 ## Then the scene's own frame steps him as ever.
 ##
-## Off its back in the air he keeps the frame he left in while he is within
-## AIR_HOLD m under where he left (a jump comes down on it where it went),
-## and loses it over AIR_FADE s once he drops past that or opens the sail.
+## Off its back in the air, while he is still over it (within AIR_OVER m
+## past its back's edge and AIR_HOLD m over its crest), he goes on with the
+## place on its back under him, as on it: a hop or a twirl comes down where
+## it went on its back however it slithers, turns or dives under him. (A
+## frame held straight let its slither and its turns in the dip slide its
+## back out from under a hop and a twirl, two or three metres in a second:
+## he came down past its flank, fell, and the stranding rule took him back
+## to the plane, round 1 of docs/design/serpent-teleports-sail.) Past its
+## edge he keeps the last of that frame while he is within AIR_HOLD m
+## under where he left (a jump off its side carries its pace), and loses
+## it over AIR_FADE s once he drops past that or opens the sail.
 ## Falling off is the game's own fall (studies/kit_isle.gd `_check_step_off`
 ## and on: Space opens the pocket sail; down on something he walks on, else
 ## stranded a moment and back beside the parked plane). There is no fade
@@ -46,6 +54,8 @@ const LIVE_NEAR := 40.0
 ## he left; past that, or under the sail, it fades over AIR_FADE s.
 const AIR_HOLD := 6.0
 const AIR_FADE := 1.5
+## Over its back in the air: within this far (m) past its back's edge.
+const AIR_OVER := 0.6
 
 var scene: Node3D
 var serpent: Node3D
@@ -69,6 +79,9 @@ var live := false
 ## The hulls' cost the last frame (µs).
 var hulls_usec := 0
 var _air_ref := 0.0
+## In the air over its back: the place on it under him (arc, across, its
+## crest's up), as it was posed when he last stepped; else x < 0.
+var _air_over := Vector3(-1.0,0.0,0.0)
 var _turn_owed := 0.0
 var _since_ridden := 99.0
 var _lost_was := NAN
@@ -123,6 +136,7 @@ func reset() -> void:
 	from_back = false
 	air_v = Vector3.ZERO
 	carry_v = Vector3.ZERO
+	_air_over = Vector3(-1.0,0.0,0.0)
 	_turn_owed = 0.0
 	if live: back.reset()
 
@@ -162,6 +176,15 @@ func _carry(step: float) -> void:
 		motor.carry(back.moved(anchor),turn)
 		carry_v = (motor.feet-was)/step
 		_carry_camera(was,motor.feet-was,turn)
+	elif riding_on == "air" and from_back and _air_over.x >= 0.0 and motor.move != "sail":
+		# Over its back: on with the place under him (its move, and its
+		# turn for his way and pace), as if he still stood there.
+		var moved := back.place(_air_over)-back.place(_air_over,true)
+		var turn := back.turn(_air_over.x)
+		motor.carry(Transform3D(Basis.IDENTITY,moved),turn)
+		air_v = moved/step
+		_air_ref += moved.y
+		_carry_camera(was,moved,turn)
 	elif riding_on == "air" and air_v != Vector3.ZERO:
 		if _air_ref-motor.feet.y > AIR_HOLD or motor.move == "sail":
 			air_v *= exp(-step/AIR_FADE)
@@ -209,18 +232,40 @@ func _contact(delta: float) -> void:
 			if was != "serpent" and not from_back: boardings += 1
 			_since_ridden = 0.0
 			air_v = Vector3.ZERO
+			_air_over = Vector3(-1.0,0.0,0.0)
 			from_back = false
 		"air":
 			if was != "air":
 				from_back = was == "serpent"
 				air_v = carry_v if from_back else Vector3.ZERO
 				_air_ref = motor.feet.y
+			_air_over = _over_back(motor.feet) if from_back else Vector3(-1.0,0.0,0.0)
 			_since_ridden += delta
 		_:
 			air_v = Vector3.ZERO
 			carry_v = Vector3.ZERO
+			_air_over = Vector3(-1.0,0.0,0.0)
 			from_back = false
 			_since_ridden += delta
+
+## The place on its back right under `p` (arc, across, its crest's up),
+## while `p` is over it: within AIR_OVER m past its back's edge and at most
+## AIR_HOLD m over its crest (nor under it); else x < 0. Read on the body as
+## posed when he last stepped.
+func _over_back(p: Vector3) -> Vector3:
+	var none := Vector3(-1.0,0.0,0.0)
+	if not live: return none
+	var c := back.locate(p,anchor.x)
+	if c.x < back.first_arc() or c.x > back.last_arc(): return none
+	if absf(c.y) > back.half_width(c.x)+AIR_OVER: return none
+	var crest := back.top(c.x)
+	if c.z < crest.z-0.3 or c.z > crest.z+AIR_HOLD: return none
+	return Vector3(c.x,c.y,crest.z)
+
+## Whether he is on its back, or in the air over it having left it (a hop,
+## a twirl): carried with it, nothing under him has gone.
+func carries() -> bool:
+	return riding_on == "serpent" or (riding_on == "air" and from_back and _air_over.x >= 0.0)
 
 ## Whether its back is right under `p`.
 func _on_back(p: Vector3) -> bool:
