@@ -14,10 +14,13 @@ extends Node3D
 ## do. Each is one of the isle's objectives in the ledger (scripts/ledger/
 ## ledger.gd, "<isle>/<name>"): taking it marks it done there, saved, and a
 ## token done before isn't laid again; the readout counts it as found.
+## Unfound, each glints far off through the binoculars (scripts/
+## binoculars.gd `spottable`).
 const GlyphPickup = preload("res://scripts/glyph_pickup.gd")
 const Hud = preload("res://scripts/collectibles_hud.gd")
 const Lines = preload("res://scripts/collectible_lines.gd")
 const Ledger = preload("res://scripts/ledger/ledger.gd")
+const Binoculars = preload("res://scripts/binoculars.gd")
 
 const GLYPH := "rune"
 const SIZE := 0.7
@@ -70,6 +73,7 @@ func setup(isle: Node3D) -> void:
 		holder.position = t.at
 		add_child(holder)
 		holder.motes_on(true)
+		Binoculars.spottable(holder,objective(t.name))
 		_holders[t.name] = holder
 	hud = Hud.new()
 	add_child(hud)

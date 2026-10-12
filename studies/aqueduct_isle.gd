@@ -339,6 +339,16 @@ func lock_target(at: Vector3) -> Dictionary:
 			best = target
 	return best
 
+## The binoculars' isles: this one and the motif isles that stand.
+func sight_isles() -> Array:
+	var isles := super.sight_isles()
+	if motifs == null: return isles
+	for isle: Node3D in motifs.isles:
+		if not isle.stands(): continue
+		var c: Vector3 = isle.circle()
+		isles.append({"middle":Vector3(c.x,0.0,c.y),"radius":c.z,"top":isle.isle_top(),"isle":isle})
+	return isles
+
 ## The cloister tarn's water (its surface on its own layer, scripts/
 ## kit_isle/motif_cloister_tarn.gd WATER_LAYER) is skimmed as the turf is,
 ## as on its own scene.

@@ -55,6 +55,8 @@ const ACTIONS := {
 	"walk_twirl":[["key",KEY_X],["button",JOY_BUTTON_X]],
 	# On foot, pressed: spend the flow charge as an updraft (scripts/updraft.gd).
 	"walk_wind":[["key",KEY_Q],["button",JOY_BUTTON_RIGHT_SHOULDER]],
+	# On foot on the ground, held: the binoculars up (scripts/binoculars.gd).
+	"binoculars":[["mouse",MOUSE_BUTTON_RIGHT],["button",JOY_BUTTON_LEFT_SHOULDER]],
 	"eye_leave":[["button",JOY_BUTTON_B],["button",JOY_BUTTON_BACK]],
 	"fly_boost":[["key",KEY_SPACE],["button",JOY_BUTTON_A],["axis",JOY_AXIS_TRIGGER_RIGHT,1.0]],
 	"fly_brake":[["key",KEY_SHIFT],["axis",JOY_AXIS_TRIGGER_LEFT,1.0]],
@@ -170,6 +172,11 @@ static func _event(spec: Array) -> InputEvent:
 			button.button_index = spec[1]
 			button.device = -1
 			return button
+		"mouse":
+			var click := InputEventMouseButton.new()
+			click.button_index = spec[1]
+			click.device = -1
+			return click
 	var motion := InputEventJoypadMotion.new()
 	motion.axis = spec[1]
 	motion.axis_value = float(spec[2])
