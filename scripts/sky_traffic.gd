@@ -1,5 +1,5 @@
 extends Node
-## Other planes in the sky (scripts/sky_islands.gd): a few little biplanes
+## Other planes in the sky (scripts/sky_islands.gd): a few little planes
 ## like the wanderer's own (scripts/plane_figure.gd), each in its own
 ## livery, flown by pilots enjoying themselves, so the sky is lived in
 ## before anyone has been helped.

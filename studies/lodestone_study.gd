@@ -11,7 +11,7 @@ extends Node3D
 ##   inspect  picked up: it floats down off the sill into his raised mitts,
 ##            the camera pushes in, and the player turns it to look at the
 ##            place it holds.
-##   cradle   on the plane: seated in a placeholder gimbal on the top wing
+##   cradle   on the plane: seated in a placeholder gimbal on the nose
 ##            (scripts/plane_figure.gd, its look untouched), seen from the
 ##            chase camera's place, its swirl streaming off toward the
 ##            place it knows: ahead, aside, up, down.
@@ -340,9 +340,9 @@ func _build_island() -> void:
 	_motor = FakeMotor.new()
 	_pilot.settle()
 
-## The plane, out off the island, cruising in place; its gimbal on the top
-## wing: a post, an outer ring turning about the wing's up, an inner ring
-## tipping in it, the stone's seat in the middle. Brass, as the plane's
+## The plane, out off the island, cruising in place; its gimbal on the
+## nose, before the windscreen: a post, an outer ring turning about its up,
+## an inner ring tipping in it, the stone's seat in the middle. Brass, as the plane's
 ## fittings (scripts/plane_figure.gd `_metal`).
 func _build_plane() -> void:
 	_plane = PlaneFigure.new()
@@ -356,7 +356,7 @@ func _build_plane() -> void:
 	var brass := PlaneFigure._metal(PlaneFigure.BRASS,0.35)
 	var mount := Node3D.new()
 	mount.name = "Cradle"
-	mount.position = Vector3(0.0,PlaneFigure.UPPER_Y+PlaneFigure.THICK*0.5,PlaneFigure.STAGGER-PlaneFigure.CHORD*0.1)
+	mount.position = Vector3(0.0,PlaneFigure._body_at(-0.3).z,-0.3)
 	_plane.add_child(mount)
 	var post := MeshInstance3D.new()
 	var post_mesh := CylinderMesh.new()
