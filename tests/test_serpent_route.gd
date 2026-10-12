@@ -6,7 +6,7 @@ extends SceneTree
 ##   - the serpent flies the route by default, round the aqueduct isle and
 ##     three motif isles, a lap in a few minutes; its way's tube is clear of
 ##     every isle's rock and ground (the ledges aside) and of the airships'
-##     loops;
+##     loops (the ferry's kept clear by tests/test_airship_ferry.gd);
 ##   - each isle's boarding ledge stands, and as the serpent passes it its
 ##     back goes by within a jump of the ledge's end (across and under it),
 ##     its body never touching the ledge;
@@ -121,6 +121,10 @@ func _tube() -> void:
 func _airships() -> void:
 	var worst := INF
 	for a: Dictionary in study.sky.airships:
+		# The ferry comes down to the isles by design, over the serpent's
+		# home run on its way out; tests/test_airship_ferry.gd keeps its
+		# loop (and its hull) clear of this way by its own measure.
+		if a.has("ferry"): continue
 		for i in range(300):
 			var ap: Vector3 = IsleSky._loop(a.points,i/300.0)
 			var t := 0.0

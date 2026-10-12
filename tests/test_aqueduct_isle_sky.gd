@@ -3,8 +3,8 @@ extends SceneTree
 ## the four ruin motif isles stand where they are placed (scripts/kit_isle/
 ## motif_sky.gd, docs/scenic/motif-sky.md), whole: their art, turf, grass,
 ## life and tokens; their ground meets the plane (skimmed); the CPU planes
-## fly their laps over what stands; the airships ply their loops, solid to
-## the plane; the open-air life stands on the nearest motif isles; the motes
+## fly their laps over what stands; the airships ply their loops (and the
+## ferry its own), solid to the plane; the open-air life stands on the nearest motif isles; the motes
 ## are out; and each token is taken on its flying line without a bump, the
 ## knife-edge pair only on knife edge (level, the plane is bumped off the
 ## stumps). The far isles, clusters and pierced isle are gone.
@@ -106,7 +106,9 @@ func _traffic() -> void:
 	await process_frame
 
 func _airships() -> void:
-	check(sky.airships.size() == IsleSky.ROUTES.size(),"%d airships ply their loops" % sky.airships.size())
+	# Their loops, and the ferry last on its own (scripts/kit_isle/
+	# airship_ferry.gd; tests/test_airship_ferry.gd rides it).
+	check(sky.airships.size() == IsleSky.ROUTES.size()+1 and sky.ferry != null and sky.airships[-1].has("ferry"),"%d airships ply their loops, the ferry last" % sky.airships.size())
 	var a: Dictionary = sky.airships[0]
 	var was: Vector3 = a.at
 	for i in range(60): sky._advance_airships(DT,study.camera.global_position)

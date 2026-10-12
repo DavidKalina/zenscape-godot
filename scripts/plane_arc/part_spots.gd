@@ -25,8 +25,11 @@ extends RefCounted
 ##               fallen quarter to its crown and leap off its gorge-side
 ##               edge into the load as it passes (about 3 m out and a metre
 ##               down; never in reach of anyone standing on the crown)
-##   cowl        jammed under the bell in the bell spires' belfry (reached
-##               with the plane for now; a ferry and the slam later)
+##   cowl        jammed under the bell in the bell spires' belfry: ride the
+##               sky folk's ferry from the aqueduct isle's south edge by
+##               the start to the bell spires' west edge (scripts/kit_isle/
+##               airship_ferry.gd), climb the low stair and the hero's to
+##               the belfry, and slam the bell to knock it loose
 const MotifSky = preload("res://scripts/kit_isle/motif_sky.gd")
 const TarnArt = preload("res://studies/cloister_tarn_isle_art.gd")
 const NaveArt = preload("res://studies/drowned_nave_isle_art.gd")
