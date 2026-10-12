@@ -34,8 +34,10 @@ func _init() -> void:
 func defaults() -> Dictionary:
 	var d := super()
 	var p := pilot()
-	d.merge({"block_mass":240.0,"block":p.jumps[0]*1.1,"hook":p.jumps[1]*2.4,"fuse":1.0,"period":4.0,
-		"warn":0.8,"rest":2.5,"plate":true,"ledge":2.0,"cap_mul":1.7,"hook_far":false},true)
+	# Heavy and from high, so the catapult throws past his own best boost
+	# (tried in play 2026-10-12: 600 kg from 12 m, the cap x3).
+	d.merge({"block_mass":600.0,"block":p.jumps[0]*1.1,"hook":p.jumps[1]*8.0,"fuse":1.0,"period":4.0,
+		"warn":0.8,"rest":2.5,"plate":true,"ledge":2.0,"cap_mul":3.0,"hook_far":false},true)
 	return d
 
 ## z of the block's hook (local), over the end opposite the plate.
@@ -74,9 +76,10 @@ func build() -> void:
 func arc_reach(rise: float) -> float:
 	var p := pilot()
 	var v := _launch_cap()*float(knob("cap_mul"))
-	var disc := v*v-2.0*p.gravity*rise
-	if disc < 0.0: return 0.0
-	var t := (v+sqrt(disc))/p.gravity
+	# Up on his gravity, down on his falling gravity (heavier), as he flies.
+	var peak := v*v/(2.0*p.gravity)
+	if peak < rise: return 0.0
+	var t := v/p.gravity+sqrt(2.0*(peak-rise)/(p.gravity*p.fall))
 	return v*float(knob("along"))*t
 
 ## Where the pilot stands to be flung (local z): the plate.
@@ -93,7 +96,8 @@ func _build_ledge() -> void:
 	var sb := StaticBody3D.new()
 	var cs := CollisionShape3D.new()
 	var box := BoxShape3D.new()
-	box.size = Vector3(float(knob("width"))*2.0,top,3.0)
+	# Deep enough to catch a big throw's spread (his steering, the blow's share).
+	box.size = Vector3(float(knob("width"))*2.0,top,maxf(3.0,reach*0.5))
 	cs.shape = box
 	sb.add_child(cs)
 	var mi := MeshInstance3D.new()
@@ -102,7 +106,9 @@ func _build_ledge() -> void:
 	mi.mesh = bmesh
 	mi.material_override = paint(STONE)
 	sb.add_child(mi)
-	sb.position = Vector3(0.0,top*0.5,launch_z()-reach)
+	# He flies a little past the estimate (his steering in the air): centred
+	# a tenth beyond it.
+	sb.position = Vector3(0.0,top*0.5,launch_z()-reach*1.1)
 	add_child(sb)
 
 func _hang() -> void:

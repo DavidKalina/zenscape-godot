@@ -173,7 +173,7 @@ func _round_2b() -> void:
 	var top := 0.0
 	var vy := 0.0
 	var dropped := false
-	for i in range(420):
+	for i in range(900):
 		await _tick(1)
 		vy = maxf(vy,m.velocity.y)
 		if dr.drops > 0: dropped = true
@@ -248,7 +248,7 @@ func _real_loop() -> void:
 	_put(dr.launch_z()+1.0,0.5,dr)
 	var vy := [0.0]
 	var blow := [INF]
-	await _play(420,func() -> void:
+	await _play(900,func() -> void:
 		vy[0] = maxf(vy[0],m.velocity.y)
 		var cl: Array = _clear(dr,dr.block)
 		if dr.released and cl[1]: blow[0] = minf(blow[0],cl[0]))

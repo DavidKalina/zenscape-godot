@@ -12,5 +12,7 @@ func _init() -> void:
 
 func defaults() -> Dictionary:
 	var d := super()
-	d.merge({"plate":false,"ledge":0.0,"cap_mul":1.0,"along":0.15,"veer":0.9},true)
+	var p := pilot()
+	# The trap keeps the lighter, lower block: a shove off the span, not a catapult.
+	d.merge({"block_mass":240.0,"hook":p.jumps[1]*2.4,"plate":false,"ledge":0.0,"cap_mul":1.0,"along":0.15,"veer":0.9},true)
 	return d
