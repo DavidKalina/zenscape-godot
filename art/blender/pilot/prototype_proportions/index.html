@@ -1,0 +1,527 @@
+<!doctype html>
+<!--
+PROTOTYPE, throw away when answered. Question: what proportions should the
+on-foot pilot have? Four builds of one aviator (helmet, goggles down, scarf
+up, bomber, mitts, boots), each on the same bones as the Blender rig
+(art/blender/pilot/pilot_build.py), next to the real pilot.glb playing its
+real clips. Variants switch with ?variant= and the bar at the bottom; the
+sliders retune the shown one; "Copy numbers" gives the pilot_build.py
+constants. The walk/run here are rough stand-ins: the real clips are
+re-solved by pilot_build.py for whatever lengths win.
+
+Run: art/blender/pilot/prototype_proportions/run.command
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PROTOTYPE: pilot proportions</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #b9c6cf; font: 13px/1.35 -apple-system, system-ui, sans-serif; color: #1d2328; }
+  canvas { display: block; }
+  #panel { position: fixed; top: 10px; right: 10px; width: 270px; max-height: calc(100% - 90px); overflow: auto; background: rgba(255,255,255,0.86); border-radius: 10px; padding: 10px 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.15); }
+  #panel h3 { margin: 4px 0 6px; font-size: 13px; }
+  #panel label { display: grid; grid-template-columns: 92px 1fr 44px; align-items: center; gap: 6px; font-size: 12px; margin: 2px 0; }
+  #panel input[type=range] { width: 100%; }
+  #panel .val { text-align: right; font-variant-numeric: tabular-nums; color: #555; }
+  #panel button { margin: 6px 6px 0 0; padding: 4px 9px; border-radius: 6px; border: 1px solid #889; background: #fff; cursor: pointer; }
+  #stats { position: fixed; top: 10px; left: 10px; background: rgba(255,255,255,0.86); border-radius: 10px; padding: 9px 12px; white-space: pre; font: 12px/1.45 ui-monospace, Menlo, monospace; box-shadow: 0 2px 12px rgba(0,0,0,0.15); }
+  #modes { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); display: flex; gap: 4px; background: rgba(255,255,255,0.86); padding: 5px; border-radius: 10px; box-shadow: 0 2px 12px rgba(0,0,0,0.15); }
+  #modes button { border: 0; background: transparent; padding: 5px 10px; border-radius: 7px; cursor: pointer; font-size: 12px; }
+  #modes button.on { background: #1d2328; color: #fff; }
+  #bar { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; background: #111; color: #fff; padding: 8px 14px; border-radius: 999px; box-shadow: 0 4px 18px rgba(0,0,0,0.35); font-weight: 600; user-select: none; }
+  #bar button { background: #333; color: #fff; border: 0; width: 30px; height: 30px; border-radius: 50%; cursor: pointer; font-size: 15px; }
+  #bar .lbl { min-width: 230px; text-align: center; }
+  .tag { position: fixed; transform: translate(-50%, 0); font-size: 12px; font-weight: 600; background: rgba(255,255,255,0.8); padding: 2px 7px; border-radius: 6px; pointer-events: none; white-space: nowrap; text-align: center; }
+  .tag small { font-weight: 400; color: #444; }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://unpkg.com/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.170.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="stats"></div>
+<div id="modes"></div>
+<div id="panel"></div>
+<div id="bar"><button id="prev">←</button><span class="lbl" id="lbl"></span><button id="next">→</button></div>
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+
+// ------------------------------------------------------------------ variants
+// Real metres. Every build keeps the rig's bones (hips, chest, neck, head,
+// upper_arm/forearm/hand, thigh/shin/foot, scarf tails); only lengths,
+// spacings and the volumes round them change.
+const BODY = { headR: 0.165, headEgg: 1.0, neckGap: 0.02, torsoLen: 0.25, shoulderW: 0.135, chestW: 0.15, bellyW: 0.165, hipW: 0.15, depth: 0.85,
+  hipX: 0.085, thigh: 0.17, shin: 0.16, legTop: 0.08, legKnee: 0.06, legAnkle: 0.05, bootH: 0.075, bootLen: 0.29,
+  upperArm: 0.135, forearm: 0.125, armTop: 0.052, armWrist: 0.04, handR: 0.068, armOut: 12, scarf: 1.0 };
+const VARIANTS = {
+  A: { ...BODY, head: "hood", name: "Flying hood", note: "face sunk in shade, only the nose lit; goggles up on the brow; flaps frame it" },
+  B: { ...BODY, head: "cap", headEgg: 0.95, name: "Brimmed cap", note: "eyes in the brim's shadow, a big nose over the scarf, goggles on the crown" },
+  C: { ...BODY, head: "visor", headEgg: 1.08, headR: 0.155, name: "Wraparound visor", note: "sleek helmet, one dark visor, no skin: little racer / test pilot" },
+  D: { ...BODY, head: "bird", name: "Bird aviator (wildcard)", note: "a beak instead of a face; goggles down, helmet, scarf" },
+};
+const KEYS = Object.keys(VARIANTS);
+const SLIDERS = [
+  ["Head", [["headR", 0.11, 0.23], ["headEgg", 0.85, 1.25], ["neckGap", 0, 0.08]]],
+  ["Torso", [["torsoLen", 0.15, 0.42], ["shoulderW", 0.08, 0.2], ["chestW", 0.09, 0.21], ["bellyW", 0.09, 0.22], ["hipW", 0.08, 0.2], ["depth", 0.6, 1.1]]],
+  ["Legs", [["hipX", 0.04, 0.13], ["thigh", 0.09, 0.3], ["shin", 0.09, 0.3], ["legTop", 0.03, 0.11], ["legKnee", 0.025, 0.09], ["legAnkle", 0.025, 0.08], ["bootH", 0.04, 0.12], ["bootLen", 0.18, 0.38]]],
+  ["Arms", [["upperArm", 0.07, 0.22], ["forearm", 0.07, 0.22], ["armTop", 0.025, 0.07], ["armWrist", 0.02, 0.06], ["handR", 0.035, 0.09], ["armOut", 0, 30]]],
+  ["Costume", [["scarf", 0.6, 1.5]]],
+];
+const live = structuredClone(VARIANTS);
+
+// ------------------------------------------------------------------ scene
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.body.prepend(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color("#b9c6cf");
+scene.fog = new THREE.Fog("#b9c6cf", 8, 20);
+const camera = new THREE.PerspectiveCamera(35, innerWidth / innerHeight, 0.05, 50);
+camera.position.set(1.4, 1.0, 2.9);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.55, 0);
+controls.enableDamping = true;
+
+scene.add(new THREE.HemisphereLight("#dfeaf5", "#6f6a52", 1.4));
+const sun = new THREE.DirectionalLight("#fff1dc", 2.4);
+sun.position.set(2.5, 4, 3);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -4, right: 4, top: 3, bottom: -1, near: 0.5, far: 12 });
+sun.shadow.radius = 4;
+scene.add(sun);
+const ground = new THREE.Mesh(new THREE.CircleGeometry(12, 64), new THREE.MeshStandardMaterial({ color: "#8c9a68", roughness: 1 }));
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// The pilot's own palette (pilot_build.py PALETTE).
+const PAL = { skin: "#c99a78", cap: "#5c3826", fleece: "#f1e6cf", jacket: "#a8743f", hem: "#7a4a2a", trousers: "#4f6478",
+  mitt: "#6b4029", boots: "#4a3226", strap: "#3a2418", brass: "#8a7046", lens: "#26343f", scarf: "#cc2f2f" };
+const MAT = {};
+for (const [k, c] of Object.entries(PAL)) MAT[k] = new THREE.MeshStandardMaterial({ color: c, roughness: k === "lens" ? 0.25 : k === "brass" ? 0.45 : 0.92, metalness: k === "brass" ? 0.5 : 0 });
+MAT.capShell = MAT.cap.clone(); MAT.capShell.side = THREE.DoubleSide;
+MAT.shade = new THREE.MeshStandardMaterial({ color: "#4a3529", roughness: 1 });   // a face sunk in the hood's shade
+MAT.nose = new THREE.MeshStandardMaterial({ color: "#d39c7a", roughness: 0.85 });
+MAT.skinSoft = new THREE.MeshStandardMaterial({ color: "#b8876a", roughness: 1 });
+MAT.glass = new THREE.MeshStandardMaterial({ color: "#7d9bb0", roughness: 0.15, metalness: 0.3 });
+MAT.visor = new THREE.MeshStandardMaterial({ color: "#2c3c48", roughness: 0.12, metalness: 0.4, side: THREE.DoubleSide });
+MAT.feather = new THREE.MeshStandardMaterial({ color: "#8b7356", roughness: 1 });
+MAT.beak = new THREE.MeshStandardMaterial({ color: "#d7a446", roughness: 0.7 });
+
+// ------------------------------------------------------------------ shapes
+function mesh(geo, mat, parent, pos = [0, 0, 0], rot = [0, 0, 0], scl = [1, 1, 1]) {
+  const m = new THREE.Mesh(geo, mat);
+  m.position.set(...pos); m.rotation.set(...rot); m.scale.set(...scl);
+  m.castShadow = true; m.receiveShadow = true;
+  parent.add(m);
+  return m;
+}
+// A smooth solid of revolution about Y through (r, y) keys, bottom to top.
+function lathe(keys, segs = 40) {
+  const pts = new THREE.SplineCurve(keys.map(([r, y]) => new THREE.Vector2(r, y))).getPoints(48);
+  pts.forEach(p => { p.x = Math.max(p.x, 0); });
+  return new THREE.LatheGeometry(pts, segs);
+}
+// A tapered limb hanging down -Y from its bone's origin, ends rounded.
+function limb(len, r0, r1) {
+  return lathe([[0, -len - r1 * 0.55], [r1 * 0.75, -len - r1 * 0.4], [r1, -len], [(r0 + r1) / 2 * 1.04, -len / 2], [r0, 0], [r0 * 0.75, r0 * 0.4], [0, r0 * 0.55]]);
+}
+const ball = (r = 1) => new THREE.SphereGeometry(r, 32, 20);
+const ring = (R, t) => new THREE.TorusGeometry(R, t, 14, 40);
+
+function bone(name, parent, pos) {
+  const b = new THREE.Object3D(); b.name = name; b.position.set(...pos); parent.add(b); return b;
+}
+
+// ------------------------------------------------------------------ heads
+// Four ways to hide the face without a ball-with-goggles (owl, Minion).
+const arc = (R, t, a, turn) => new THREE.TorusGeometry(R, t, 12, 48, a).rotateZ(turn);
+function scarfUp(H, r, sc, y = -0.5, tilt = 0.28) {
+  mesh(ring(r * 0.66, r * 0.3 * sc), MAT.scarf, H, [0, r * y, r * 0.08], [Math.PI / 2 + tilt, 0, 0], [1, 0.95, 1]);
+}
+function goggles(H, r, y, z, pitch, size = 1, lens = MAT.glass) {
+  for (const s of [-1, 1]) {
+    const g = bone("goggle", H, [s * r * 0.27 * size, y, z]);
+    g.rotation.set(pitch, s * 0.32, 0, "YXZ");
+    mesh(new THREE.CylinderGeometry(r * 0.17 * size, r * 0.19 * size, r * 0.14 * size, 32), MAT.brass, g, [0, 0, 0], [Math.PI / 2, 0, 0]);
+    mesh(new THREE.SphereGeometry(r * 0.15 * size, 32, 12, 0, Math.PI * 2, 0, Math.PI * 0.32), lens, g, [0, 0, r * 0.02], [Math.PI / 2, 0, 0], [1, 1.25, 1]);
+  }
+  const b = bone("bridge", H, [0, y, z + r * 0.06]); b.rotation.x = pitch;
+  mesh(new THREE.CylinderGeometry(r * 0.04, r * 0.04, r * 0.16 * size, 10), MAT.brass, b, [0, 0, 0], [0, 0, Math.PI / 2]);
+}
+const HEADS = {
+  // A flying hood: long flaps framing a face sunk in shade, only the nose
+  // catching light; goggles pushed up on the brow.
+  hood(H, r, sc) {
+    mesh(ball(r * 0.86), MAT.shade, H, [0, -r * 0.04, -r * 0.1]);
+    mesh(ball(1), MAT.nose, H, [0, -r * 0.02, r * 0.74], [0.35, 0, 0], [r * 0.15, r * 0.2, r * 0.2]);
+    mesh(ball(1), MAT.shade, H, [0, r * 0.12, r * 0.66], [0, 0, 0], [r * 0.5, r * 0.1, r * 0.2]);
+    const w = Math.PI * 0.22;
+    mesh(new THREE.SphereGeometry(r * 1.04, 48, 28, Math.PI / 2 + w, Math.PI * 2 - 2 * w, 0, Math.PI * 0.8), MAT.capShell, H);
+    mesh(new THREE.SphereGeometry(r * 1.045, 48, 14, 0, Math.PI * 2, 0, Math.PI * 0.36), MAT.cap, H);
+    mesh(arc(r * 0.98, r * 0.06, Math.PI, 0), MAT.cap, H, [0, -r * 0.02, r * 0.18], [0, 0, 0], [0.72, 0.84, 1]);
+    for (const s of [-1, 1]) mesh(ball(1), MAT.cap, H, [s * r * 0.84, -r * 0.62, r * 0.12], [0.15, 0, s * 0.18], [r * 0.24, r * 0.55, r * 0.34]);
+    mesh(ring(r * 0.88, r * 0.035), MAT.strap, H, [0, r * 0.54, 0], [Math.PI / 2 - 0.05, 0, 0]);
+    goggles(H, r, r * 0.62, r * 0.77, -0.75, 1.05);
+    scarfUp(H, r, sc, -0.48, 0.32);
+  },
+  // A soft flight cap with a short brim pulled low: the eyes in its shadow,
+  // a big nose out over the scarf, goggles strapped round the crown.
+  cap(H, r, sc) {
+    mesh(ball(r * 0.96), MAT.skinSoft, H);
+    mesh(ball(1), MAT.nose, H, [0, -r * 0.08, r * 0.97], [0.5, 0, 0], [r * 0.19, r * 0.24, r * 0.22]);
+    mesh(new THREE.SphereGeometry(r * 1.04, 48, 20, 0, Math.PI * 2, 0, Math.PI * 0.56), MAT.cap, H, [0, r * 0.02, -r * 0.02]);
+    mesh(ball(1), MAT.cap, H, [0, r * 0.2, r * 0.9], [0.12, 0, 0], [r * 0.78, r * 0.05, r * 0.46]);
+    for (const s of [-1, 1]) mesh(ball(1), MAT.cap, H, [s * r * 0.92, -r * 0.32, -r * 0.08], [0, 0, s * 0.12], [r * 0.2, r * 0.36, r * 0.3]);
+    mesh(ring(r * 1.0, r * 0.04), MAT.strap, H, [0, r * 0.32, 0], [Math.PI / 2, 0, 0]);
+    goggles(H, r, r * 0.42, r * 0.9, -0.35, 0.85);
+    scarfUp(H, r, sc, -0.6, 0.12);
+  },
+  // A sleek helmet and one wraparound visor: no skin at all, the scarf up
+  // to its edge; ear cups and a seam for the pilot read.
+  visor(H, r, sc) {
+    mesh(ball(r * 1.03), MAT.cap, H);
+    mesh(arc(r * 1.035, r * 0.03, Math.PI, -0.3), MAT.strap, H, [0, 0, 0], [0, Math.PI / 2, 0]);
+    mesh(new THREE.CylinderGeometry(r * 1.06, r * 1.0, r * 0.36, 48, 1, true, -Math.PI * 0.42, Math.PI * 0.84), MAT.visor, H, [0, r * 0.08, 0]);
+    for (const y of [0.26, -0.1]) mesh(arc(r * (y > 0 ? 1.06 : 1.0), r * 0.035, Math.PI * 0.84, Math.PI * 0.08), MAT.brass, H, [0, r * y, 0], [Math.PI / 2, 0, 0]);
+    for (const s of [-1, 1]) mesh(new THREE.CylinderGeometry(r * 0.24, r * 0.26, r * 0.12, 32), MAT.strap, H, [s * r * 1.0, -r * 0.05, -r * 0.05], [0, 0, Math.PI / 2]);
+    for (const s of [-1, 1]) mesh(new THREE.CylinderGeometry(r * 0.14, r * 0.14, r * 0.04, 24), MAT.brass, H, [s * r * 1.07, -r * 0.05, -r * 0.05], [0, 0, Math.PI / 2]);
+    scarfUp(H, r, sc, -0.42, 0.22);
+  },
+  // Wildcard: a bird aviator. Helmet and goggles down, a long beak out over
+  // the scarf breaking the round head.
+  bird(H, r, sc) {
+    mesh(ball(r * 0.97), MAT.feather, H);
+    mesh(new THREE.SphereGeometry(r * 1.03, 48, 20, 0, Math.PI * 2, 0, Math.PI * 0.5), MAT.cap, H, [0, r * 0.02, -r * 0.04]);
+    for (const s of [-1, 1]) mesh(ball(1), MAT.cap, H, [s * r * 0.9, -r * 0.18, -r * 0.1], [0, 0, s * 0.1], [r * 0.18, r * 0.36, r * 0.3]);
+    mesh(ring(r * 1.0, r * 0.035), MAT.strap, H, [0, r * 0.1, 0], [Math.PI / 2, 0, 0]);
+    goggles(H, r, r * 0.1, r * 0.9, 0.0, 0.95);
+    mesh(new THREE.ConeGeometry(r * 0.2, r * 0.8, 24), MAT.beak, H, [0, -r * 0.2, r * 1.2], [Math.PI / 2 + 0.25, 0, 0], [1, 1, 0.75]);
+    for (const s of [-1, 1]) mesh(ball(1), MAT.feather, H, [s * r * 0.3, r * 1.0, -r * 0.3], [-0.6, 0, s * 0.4], [r * 0.05, r * 0.2, r * 0.05]);
+    scarfUp(H, r, sc, -0.62, 0.15);
+  },
+};
+
+// ------------------------------------------------------------------ the pilot
+function buildPilot(P) {
+  const B = {};
+  const root = new THREE.Group();
+  const hipY = P.bootH + P.shin + P.thigh;
+  B.hips = bone("hips", root, [0, hipY, 0]);
+  B.chest = bone("chest", B.hips, [0, 0.02, 0]);
+  const L = P.torsoLen;
+  B.neck = bone("neck", B.chest, [0, L, 0]);
+  B.head = bone("head", B.neck, [0, P.neckGap, 0]);
+
+  // Seat of the trousers, the legs hung from its sides.
+  mesh(ball(1), MAT.trousers, B.hips, [0, -0.01, 0], [0, 0, 0], [P.hipW * 0.98, 0.085, P.hipW * 0.98 * P.depth]);
+  // The bomber: a soft lathe, hem to collar, oval in section.
+  const jacket = lathe([[0, -0.055], [P.hipW * 0.9, -0.05], [P.hipW, -0.025], [P.bellyW, L * 0.3], [P.chestW, L * 0.62],
+    [P.shoulderW * 0.98, L * 0.83], [P.shoulderW * 0.62, L * 0.97], [0.05, L * 1.0], [0, L * 1.0]]);
+  mesh(jacket, MAT.jacket, B.chest, [0, 0, 0], [0, 0, 0], [1, 1, P.depth]);
+  mesh(ring(P.hipW * 0.97, 0.022), MAT.hem, B.chest, [0, -0.035, 0], [Math.PI / 2, 0, 0], [1, P.depth, 1]);
+  for (const y of [0.3, 0.55]) mesh(ball(0.011), MAT.hem, B.chest, [0, L * y, (y < 0.4 ? P.bellyW : (P.bellyW + P.chestW) / 2) * P.depth * 1.0], [0, 0, 0], [1, 1, 0.6]);
+  mesh(ring(P.shoulderW * 0.5, 0.03), MAT.fleece, B.chest, [0, L * 0.95, 0], [Math.PI / 2, 0, 0], [1, P.depth, 0.8]);
+
+  // Head: one of the HEADS designs, every one hiding the eyes.
+  const r = P.headR, hc = [0, r * P.headEgg * 0.82, 0];
+  const H = bone("headShape", B.head, hc);
+  H.scale.set(1, P.headEgg, 1);
+  const sc = P.scarf;
+  HEADS[P.head](H, r, sc);
+  mesh(ring(r * 0.52, r * 0.27 * sc), MAT.scarf, B.neck, [0, P.neckGap * 0.5 + 0.005, 0.005], [Math.PI / 2 - 0.12, 0, 0], [1.05, 1, 1]);
+  B.knot = bone("knot", B.neck, [0, P.neckGap * 0.5 + r * 0.05, -r * 0.62]);
+  mesh(ball(r * 0.2 * sc), MAT.scarf, B.knot);
+  B.tails = [];
+  for (const s of [-1, 1]) {
+    let parent = B.knot; const seg = r * 0.42 * sc; const chain = [];
+    for (let i = 0; i < 3; i++) {
+      const t = bone("tail", parent, i ? [0, -seg, 0] : [s * r * 0.08, -r * 0.05, 0]);
+      mesh(limb(seg, r * 0.11 * sc, r * 0.1 * sc), MAT.scarf, t, [0, 0, 0], [0, 0, 0], [1, 1, 0.45]);
+      chain.push(t); parent = t;
+    }
+    B.tails.push(chain);
+  }
+
+  // Arms: from rounded shoulders, sleeves tapering to fleece cuffs, mitts.
+  B.upper = {}; B.fore = {}; B.hand = {}; B.thighB = {}; B.shinB = {}; B.foot = {};
+  for (const s of [-1, 1]) {
+    const sh = bone("upper_arm", B.chest, [s * P.shoulderW * 0.9, L * 0.82, 0]);
+    sh.rotation.z = s * THREE.MathUtils.degToRad(P.armOut);
+    mesh(ball(P.armTop * 1.12), MAT.jacket, sh);
+    mesh(limb(P.upperArm, P.armTop, (P.armTop + P.armWrist) / 2), MAT.jacket, sh);
+    const el = bone("forearm", sh, [0, -P.upperArm, 0]);
+    mesh(limb(P.forearm, (P.armTop + P.armWrist) / 2, P.armWrist), MAT.jacket, el);
+    const hd = bone("hand", el, [0, -P.forearm, 0]);
+    mesh(ring(P.armWrist * 1.08, P.armWrist * 0.38), MAT.fleece, hd, [0, 0.005, 0], [Math.PI / 2, 0, 0]);
+    const h = P.handR;
+    mesh(ball(1), MAT.mitt, hd, [0, -h * 0.85, 0], [0, 0, 0], [h * 0.72, h, h * 0.66]);
+    mesh(ball(1), MAT.mitt, hd, [-s * h * 0.25, -h * 0.55, h * 0.5], [0.5, 0, -s * 0.3], [h * 0.28, h * 0.42, h * 0.28]);
+    B.upper[s] = sh; B.fore[s] = el; B.hand[s] = hd;
+
+    // Legs: trousers tapering into fleece-topped boots.
+    const th = bone("thigh", B.hips, [s * P.hipX, 0, 0]);
+    mesh(limb(P.thigh, P.legTop, P.legKnee), MAT.trousers, th);
+    const kn = bone("shin", th, [0, -P.thigh, 0]);
+    mesh(limb(P.shin, P.legKnee, P.legAnkle), MAT.trousers, kn);
+    const ft = bone("foot", kn, [0, -P.shin, 0]);
+    const bw = Math.max(P.legAnkle * 1.45, P.bootLen * 0.36);
+    mesh(ring(P.legAnkle * 1.12, P.legAnkle * 0.4), MAT.fleece, ft, [0, -0.005, 0], [Math.PI / 2, 0, 0]);
+    mesh(lathe([[0, -P.bootH * 0.7], [P.legAnkle * 1.2, -P.bootH * 0.7], [P.legAnkle * 1.15, -0.01], [0, -0.01]]), MAT.boots, ft);
+    mesh(ball(1), MAT.boots, ft, [0, -P.bootH * 0.55, P.bootLen * 0.17], [0, 0, 0], [bw * 0.5, P.bootH * 0.45, P.bootLen * 0.5]);
+    mesh(ball(1), MAT.strap, ft, [0, -P.bootH + 0.012, P.bootLen * 0.17], [0, 0, 0], [bw * 0.52, 0.016, P.bootLen * 0.51]);
+    B.thighB[s] = th; B.shinB[s] = kn; B.foot[s] = ft;
+  }
+  root.userData = { B, P, hipY };
+  return root;
+}
+
+// Measurements: what the eye reads as proportion.
+function measure(P) {
+  const hipY = P.bootH + P.shin + P.thigh;
+  const top = hipY + 0.02 + P.torsoLen + P.neckGap + P.headR * P.headEgg * (0.82 + 1.07);
+  const headH = P.headR * P.headEgg * 2.1;
+  const shY = hipY + 0.02 + P.torsoLen * 0.82;
+  const tip = shY - (P.upperArm + P.forearm) * Math.cos(THREE.MathUtils.degToRad(P.armOut)) - P.handR * 1.85;
+  return { top, headH, heads: top / headH, legs: hipY / top, crotch: hipY - 0.07, tip,
+    width: Math.max(P.bellyW, P.shoulderW + P.armTop) * 2 };
+}
+
+// ------------------------------------------------------------------ motion
+// Rough stand-ins for judging shape in motion, not the real clips.
+let mode = "idle";
+function pose(fig, t, phase0 = 0) {
+  const { B, P, hipY } = fig.userData;
+  const reset = o => o.rotation.set(0, 0, o.name === "upper_arm" ? o.rotation.z : 0);
+  for (const s of [-1, 1]) [B.thighB[s], B.shinB[s], B.foot[s], B.fore[s], B.hand[s]].forEach(o => o.rotation.set(0, 0, 0));
+  B.hips.position.y = hipY; B.hips.rotation.set(0, 0, 0); B.chest.rotation.set(0, 0, 0); B.head.rotation.set(0, 0, 0); B.neck.rotation.set(0, 0, 0);
+  const out = THREE.MathUtils.degToRad(P.armOut);
+  let flutter = 0.15, stream = 0.2;
+  if (mode === "idle") {
+    const b = Math.sin(t * 1.6 + phase0);
+    B.chest.scale.set(1 + b * 0.008, 1 + b * 0.012, 1 + b * 0.01);
+    B.head.rotation.y = Math.sin(t * 0.37 + phase0) * 0.35 * Math.max(0, Math.sin(t * 0.21 + phase0));
+    B.head.rotation.x = -0.05 + b * 0.02;
+    B.hips.position.y = hipY - 0.006 + b * 0.002;
+    for (const s of [-1, 1]) {
+      B.upper[s].rotation.set(b * 0.02, 0, s * (out + 0.02 * b));
+      B.fore[s].rotation.x = -0.1;
+      B.thighB[s].rotation.x = -0.04; B.shinB[s].rotation.x = 0.08; B.foot[s].rotation.x = -0.04;
+    }
+  } else if (mode === "walk" || mode === "run") {
+    const run = mode === "run";
+    const f = run ? 3 : 2, p = (t + phase0) * Math.PI * 2 * f;
+    const amp = run ? 0.85 : 0.5;
+    B.chest.scale.set(1, 1, 1);
+    B.hips.position.y = hipY - (run ? 0.05 : 0.02) + Math.abs(Math.sin(p)) * (run ? 0.05 : 0.025);
+    B.hips.rotation.y = Math.sin(p) * 0.12;
+    B.chest.rotation.set(run ? 0.22 : 0.05, -Math.sin(p) * 0.2, 0);
+    B.head.rotation.x = run ? -0.18 : -0.04;
+    for (const s of [-1, 1]) {
+      const sw = Math.sin(p) * s;
+      B.thighB[s].rotation.x = -sw * amp - (run ? 0.25 : 0.05);
+      B.shinB[s].rotation.x = Math.max(0, Math.sin(p * 1 + (s > 0 ? 0 : Math.PI) + 1.3)) * (run ? 1.4 : 0.7) + 0.05;
+      B.foot[s].rotation.x = sw * 0.2;
+      B.upper[s].rotation.set(sw * (run ? 0.9 : 0.35), 0, s * (out + (run ? 0.25 : 0)));
+      B.fore[s].rotation.x = -(run ? 1.3 : 0.25);
+    }
+    flutter = run ? 0.5 : 0.3; stream = run ? 1.1 : 0.5;
+  } else {
+    B.chest.scale.set(1, 1, 1);
+    for (const s of [-1, 1]) B.upper[s].rotation.set(0, 0, s * out);
+  }
+  B.tails.forEach((chain, i) => chain.forEach((seg, j) => {
+    seg.rotation.x = (j === 0 ? -0.15 - stream * 0.6 : -stream * 0.3) + Math.sin(t * 7 + j * 0.9 + i) * flutter * 0.4;
+    seg.rotation.z = Math.sin(t * 5.3 + j + i * 2) * flutter * 0.25;
+  }));
+}
+
+// ------------------------------------------------------------------ the real pilot
+let real = null, realMixer = null, realActions = {};
+new GLTFLoader().load("../../../../assets/models/pilot.glb", g => {
+  real = g.scene;
+  real.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  real.rotation.y = Math.PI;   // the glb faces -Z
+  realMixer = new THREE.AnimationMixer(real);
+  for (const c of g.animations) realActions[c.name] = realMixer.clipAction(c);
+  const box = new THREE.Box3().setFromObject(real);
+  real.userData.top = box.max.y;
+  scene.add(real);
+  layout();
+  playReal();
+}, undefined, e => console.warn("pilot.glb not loaded (serve from the repo root)", e));
+function playReal() {
+  if (!realMixer) return;
+  const want = mode === "rest" ? null : realActions[mode] || realActions.idle;
+  for (const a of Object.values(realActions)) if (a !== want) a.stop();
+  if (want && !want.isRunning()) want.reset().play();
+  if (!want) realMixer.stopAllAction();
+}
+
+// ------------------------------------------------------------------ views
+let current = KEYS.includes(new URLSearchParams(location.search).get("variant")) ? new URLSearchParams(location.search).get("variant") : "A";
+let lineup = new URLSearchParams(location.search).get("view") !== "single";
+let figures = {};
+let guides = new THREE.Group(); scene.add(guides);
+const tags = {};
+
+function rebuild(key) {
+  if (figures[key]) scene.remove(figures[key]);
+  figures[key] = buildPilot(live[key]);
+  scene.add(figures[key]);
+}
+KEYS.forEach(rebuild);
+
+function tag(id) {
+  if (!tags[id]) { tags[id] = document.createElement("div"); tags[id].className = "tag"; document.body.appendChild(tags[id]); }
+  return tags[id];
+}
+const lineMat = new THREE.LineBasicMaterial({ color: "#2a3640", transparent: true, opacity: 0.35 });
+const headMat = new THREE.LineBasicMaterial({ color: "#9a2b2b", transparent: true, opacity: 0.5 });
+function hline(y, x0, x1, mat) {
+  guides.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(x0, y, -0.3), new THREE.Vector3(x1, y, -0.3)]), mat));
+}
+function layout() {
+  guides.clear();
+  const order = ["real", ...KEYS];
+  const gap = 0.75;
+  order.forEach((k, i) => {
+    const obj = k === "real" ? real : figures[k];
+    if (!obj) return;
+    const x = lineup ? (i - (order.length - 1) / 2) * gap : 0;
+    obj.position.x = x;
+    obj.visible = lineup || k === current;
+    if (k === "real" && !lineup) obj.visible = false;
+  });
+  // Metre ticks behind, and each figure's head units in red.
+  const span = lineup ? 2.2 : 0.6;
+  for (let y = 0; y <= 1.4001; y += 0.1) hline(y, -span, span, lineMat);
+  const shown = lineup ? KEYS : [current];
+  shown.forEach(k => {
+    const m = measure(live[k]), x = figures[k].position.x;
+    for (let n = 0; n <= Math.ceil(m.heads); n++) { const y = m.top - n * m.headH; if (y >= 0) hline(y, x - 0.3, x + 0.3, headMat); }
+  });
+  for (const k of order) if (tags[k]) tags[k].style.display = "none";
+  controls.target.set(0, 0.55, 0);
+  if (lineup) { camera.position.set(0.0, 0.9, 5.4); } else { camera.position.set(0.45, 0.8, 2.9); }
+  controls.update();
+}
+function placeTags() {
+  const order = ["real", ...KEYS];
+  order.forEach(k => {
+    const obj = k === "real" ? real : figures[k];
+    if (!obj || !obj.visible) return;
+    const top = k === "real" ? obj.userData.top : measure(live[k]).top;
+    const v = new THREE.Vector3(obj.position.x, top + 0.06, 0).project(camera);
+    const el = tag(k);
+    el.style.display = "";
+    el.style.left = ((v.x + 1) / 2 * innerWidth) + "px";
+    el.style.top = ((1 - v.y) / 2 * innerHeight - 40) + "px";
+    if (k === "real") el.innerHTML = `In game now<br><small>${(top * 100).toFixed(0)} cm · real clips</small>`;
+    else { const m = measure(live[k]); el.innerHTML = `${k}. ${VARIANTS[k].name}<br><small>${(m.top * 100).toFixed(0)} cm · ${m.heads.toFixed(1)} heads</small>`; }
+    el.style.outline = k === current && lineup ? "2px solid #1d2328" : "";
+  });
+}
+
+// ------------------------------------------------------------------ UI
+const lbl = document.getElementById("lbl"), stats = document.getElementById("stats"), panel = document.getElementById("panel");
+function setVariant(k) {
+  current = k;
+  const u = new URL(location); u.searchParams.set("variant", k); history.replaceState(null, "", u);
+  lbl.textContent = `${k} — ${VARIANTS[k].name}`;
+  drawPanel(); layout(); drawStats();
+}
+function drawStats() {
+  const P = live[current], m = measure(P);
+  stats.textContent =
+`${current}. ${VARIANTS[current].name}
+${VARIANTS[current].note}
+
+height        ${(m.top * 100).toFixed(0)} cm
+heads tall    ${m.heads.toFixed(2)}
+legs          ${(m.legs * 100).toFixed(0)} % of height
+width         ${(m.width * 100).toFixed(0)} cm
+mitt tips     ${((m.tip - m.crotch) * 100).toFixed(0)} cm vs crotch
+
+L lineup/single · 1 rest 2 idle 3 walk 4 run
+←/→ variants · drag to orbit`;
+}
+function drawPanel() {
+  const P = live[current];
+  let h = `<h3>${current}. ${VARIANTS[current].name} (metres)</h3>`;
+  for (const [group, list] of SLIDERS) {
+    h += `<h3>${group}</h3>`;
+    for (const [k, lo, hi] of list) h += `<label>${k}<input type="range" data-k="${k}" min="${lo}" max="${hi}" step="${(hi - lo) / 200}" value="${P[k]}"><span class="val" id="v_${k}">${(+P[k]).toFixed(3)}</span></label>`;
+  }
+  h += `<button id="reset">Reset ${current}</button><button id="copy">Copy numbers</button>`;
+  panel.innerHTML = h;
+  panel.querySelectorAll("input").forEach(inp => inp.addEventListener("input", () => {
+    live[current][inp.dataset.k] = +inp.value;
+    document.getElementById("v_" + inp.dataset.k).textContent = (+inp.value).toFixed(3);
+    rebuild(current); layout(); drawStats();
+  }));
+  document.getElementById("reset").onclick = () => { live[current] = structuredClone(VARIANTS[current]); rebuild(current); drawPanel(); layout(); drawStats(); };
+  document.getElementById("copy").onclick = () => {
+    const txt = exportNumbers(current);
+    navigator.clipboard?.writeText(txt); console.log(txt);
+    document.getElementById("copy").textContent = "Copied";
+  };
+}
+// pilot_build.py works in build units: metres / SCALE (2.2).
+function exportNumbers(k) {
+  const P = live[k], S = 2.2, f = v => (v / S).toFixed(4);
+  return `# variant ${k} (${VARIANTS[k].name}) from the proportions prototype\n` +
+    `# metres: ${JSON.stringify(Object.fromEntries(Object.entries(P).filter(([a]) => !["name", "note", "head"].includes(a)).map(([a, v]) => [a, +(+v).toFixed(4)])))}\n` +
+    `LEG = (${f(P.thigh)}, ${f(P.shin)})\nARM = (${f(P.upperArm)}, ${f(P.forearm)})\nHIP_X = ${f(P.hipX)}\nNECK = ${f(P.torsoLen)}\n` +
+    `SHOULDER = (${f(P.shoulderW * 0.9)}, NECK - ${f(P.torsoLen * 0.18)}, 0.0)\nANKLE_BUILD = ${f(P.bootH)}\n` +
+    `HEAD_SIZE = ${(P.headR / (0.075 * S)).toFixed(3)}\nARM_OUT = ${Math.tan(THREE.MathUtils.degToRad(P.armOut)).toFixed(3)}\n`;
+}
+const modesEl = document.getElementById("modes");
+function drawModes() {
+  modesEl.innerHTML = ["rest", "idle", "walk", "run"].map((m, i) => `<button data-m="${m}" class="${m === mode ? "on" : ""}">${i + 1} ${m}</button>`).join("") +
+    `<button data-l="1">${lineup ? "single" : "lineup"} (L)</button>`;
+  modesEl.querySelectorAll("button").forEach(b => b.onclick = () => { if (b.dataset.l) toggleLineup(); else setMode(b.dataset.m); });
+}
+function setMode(m) { mode = m; drawModes(); playReal(); }
+function toggleLineup() { lineup = !lineup; const u = new URL(location); u.searchParams.set("view", lineup ? "lineup" : "single"); history.replaceState(null, "", u); drawModes(); layout(); }
+const cycle = d => setVariant(KEYS[(KEYS.indexOf(current) + d + KEYS.length) % KEYS.length]);
+document.getElementById("prev").onclick = () => cycle(-1);
+document.getElementById("next").onclick = () => cycle(1);
+addEventListener("keydown", e => {
+  if (e.target.closest?.("input, textarea, [contenteditable]") && e.target.type !== "range") return;
+  if (e.key === "ArrowLeft") { cycle(-1); e.preventDefault(); }
+  else if (e.key === "ArrowRight") { cycle(1); e.preventDefault(); }
+  else if (e.key === "l" || e.key === "L") toggleLineup();
+  else if ("1234".includes(e.key)) setMode(["rest", "idle", "walk", "run"][+e.key - 1]);
+});
+addEventListener("resize", () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
+
+const startMode = new URLSearchParams(location.search).get("mode");
+if (["rest", "idle", "walk", "run"].includes(startMode)) mode = startMode;
+drawModes(); setVariant(current);
+
+const clock = new THREE.Clock();
+renderer.setAnimationLoop(() => {
+  const dt = clock.getDelta(), t = clock.elapsedTime;
+  KEYS.forEach((k, i) => pose(figures[k], t, i * 0.37));
+  realMixer?.update(dt);
+  controls.update();
+  renderer.render(scene, camera);
+  placeTags();
+});
+window.__ready = true;
+</script>
+</body>
+</html>

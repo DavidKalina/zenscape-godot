@@ -1,0 +1,408 @@
+<!doctype html>
+<!--
+PROTOTYPE, throw away when answered. The sky folk (scripts/person_kit.gd,
+scripts/islander_figure.gd) ported faithfully to three.js: the same faceted
+parts, colours and limb IK, so variant A is the islander as the game builds
+it. B-D vary it (head, body, limbs, costume) as candidates for the on-foot
+pilot, next to the current pilot.glb. Sliders retune the shown variant.
+
+Run: art/blender/pilot/prototype_proportions/run.command, then open folk.html
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PROTOTYPE: sky folk variations</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #b9c6cf; font: 13px/1.35 -apple-system, system-ui, sans-serif; color: #1d2328; }
+  canvas { display: block; }
+  #panel { position: fixed; top: 10px; right: 10px; width: 270px; max-height: calc(100% - 90px); overflow: auto; background: rgba(255,255,255,0.86); border-radius: 10px; padding: 10px 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.15); }
+  #panel h3 { margin: 4px 0 6px; font-size: 13px; }
+  #panel label { display: grid; grid-template-columns: 92px 1fr 44px; align-items: center; gap: 6px; font-size: 12px; margin: 2px 0; }
+  #panel input[type=range] { width: 100%; }
+  #panel .val { text-align: right; font-variant-numeric: tabular-nums; color: #555; }
+  #panel button { margin: 6px 6px 0 0; padding: 4px 9px; border-radius: 6px; border: 1px solid #889; background: #fff; cursor: pointer; }
+  #stats { position: fixed; top: 10px; left: 10px; background: rgba(255,255,255,0.86); border-radius: 10px; padding: 9px 12px; white-space: pre; font: 12px/1.45 ui-monospace, Menlo, monospace; box-shadow: 0 2px 12px rgba(0,0,0,0.15); }
+  #modes { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); display: flex; gap: 4px; background: rgba(255,255,255,0.86); padding: 5px; border-radius: 10px; box-shadow: 0 2px 12px rgba(0,0,0,0.15); }
+  #modes button { border: 0; background: transparent; padding: 5px 10px; border-radius: 7px; cursor: pointer; font-size: 12px; }
+  #modes button.on { background: #1d2328; color: #fff; }
+  #bar { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; background: #111; color: #fff; padding: 8px 14px; border-radius: 999px; box-shadow: 0 4px 18px rgba(0,0,0,0.35); font-weight: 600; user-select: none; }
+  #bar button { background: #333; color: #fff; border: 0; width: 30px; height: 30px; border-radius: 50%; cursor: pointer; font-size: 15px; }
+  #bar .lbl { min-width: 260px; text-align: center; }
+  .tag { position: fixed; transform: translate(-50%, 0); font-size: 12px; font-weight: 600; background: rgba(255,255,255,0.8); padding: 2px 7px; border-radius: 6px; pointer-events: none; white-space: nowrap; text-align: center; }
+  .tag small { font-weight: 400; color: #444; }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://unpkg.com/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.170.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="stats"></div>
+<div id="modes"></div>
+<div id="panel"></div>
+<div id="bar"><button id="prev">←</button><span class="lbl" id="lbl"></span><button id="next">→</button></div>
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+
+// ------------------------------------------------------------------ the kit (person_kit.gd)
+// Godot and three share axes (Y up, right-handed); the folk face -Z and
+// Godot's Euler order is YXZ.
+const V = (x, y, z) => new THREE.Vector3(x, y, z);
+const SKIN = "#e8c39e", JACKET = "#4a2a1e", LEATHER = "#5e3522", STRAP = "#6b3b28", BRASS = "#d6ad62", LENS = "#3b6370",
+  FLEECE = "#e6d8bb", TROUSERS = "#6b6250", BOOTS = "#3a2a22";
+const SCARVES = ["#d9573a", "#e2b84a", "#6f8fa8", "#7fa08a", "#cf6b4a", "#b85c7a"];
+const NECK = 0.15, SHOULDER = V(0.085, 0.125, 0), KNOT = V(0, 0.152, 0.06);
+
+function mat(color, rough, { coat = 0, metal = 0, coatRough = 0.3 } = {}) {
+  return new THREE.MeshPhysicalMaterial({ color, roughness: rough, metalness: metal, clearcoat: coat, clearcoatRoughness: coatRough, flatShading: true, side: THREE.DoubleSide });
+}
+function outfit(scarf, tint = {}) {
+  return {
+    skin: mat(SKIN, 0.8), jacket: mat(tint.jacket || JACKET, 0.6, { coat: 0.2 }), fleece: mat(FLEECE, 0.95),
+    leather: mat(tint.leather || LEATHER, 0.55, { coat: 0.3 }), strap: mat(STRAP, 0.4, { coat: 0.5 }), brass: mat(BRASS, 0.28, { metal: 1 }),
+    lens: mat(LENS, 0.05, { metal: 0.6, coat: 1, coatRough: 0.02 }), trousers: mat(tint.trousers || TROUSERS, 0.9),
+    boots: mat(BOOTS, 0.45, { coat: 0.35 }), scarf: mat(scarf, 0.95),
+  };
+}
+// Flat-shaded triangles; DoubleSide covers the winding.
+function faceted(tris) {
+  const pos = [];
+  for (const [a, b, c] of tris) pos.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  g.computeVertexNormals();
+  return g;
+}
+// FacetMesh.hull: rings (along, radius x, radius y) about Z.
+function hull(rings, sides) {
+  const at = (r, i) => { const a = Math.PI * 2 * (i + 0.5) / sides; return V(Math.cos(a) * r[1], Math.sin(a) * r[2], r[0]); };
+  const tris = [];
+  for (let k = 0; k < rings.length - 1; k++) for (let i = 0; i < sides; i++) {
+    const a0 = at(rings[k], i), a1 = at(rings[k], i + 1), b0 = at(rings[k + 1], i), b1 = at(rings[k + 1], i + 1);
+    tris.push([a0, b0, b1], [a0, b1, a1]);
+  }
+  for (const e of [0, rings.length - 1]) { const r = rings[e]; if (r[1] > 0.0001) for (let i = 0; i < sides; i++) tris.push([V(0, 0, r[0]), at(r, i), at(r, i + 1)]); }
+  return faceted(tris);
+}
+function frustum(bottom, top, h, sides) {
+  const tris = [];
+  for (let i = 0; i < sides; i++) {
+    const a0 = Math.PI * 2 * i / sides, a1 = Math.PI * 2 * (i + 1) / sides;
+    const b0 = V(Math.cos(a0) * bottom, -h / 2, Math.sin(a0) * bottom), b1 = V(Math.cos(a1) * bottom, -h / 2, Math.sin(a1) * bottom);
+    const t0 = V(Math.cos(a0) * top, h / 2, Math.sin(a0) * top), t1 = V(Math.cos(a1) * top, h / 2, Math.sin(a1) * top);
+    tris.push([b0, t0, t1], [b0, t1, b1], [V(0, h / 2, 0), t1, t0], [V(0, -h / 2, 0), b0, b1]);
+  }
+  return faceted(tris);
+}
+function gem(r) {
+  const top = V(0, r * 1.15, 0), bot = V(0, -r, 0), ring = [V(r, 0, 0), V(0, 0, r), V(-r, 0, 0), V(0, 0, -r * 1.1)];
+  const tris = [];
+  for (let i = 0; i < 4; i++) { const a = ring[i], b = ring[(i + 1) % 4]; tris.push([top, b, a], [bot, a, b]); }
+  return faceted(tris);
+}
+function part(parent, geo, m, at = V(0, 0, 0), turn = [0, 0, 0], size = [1, 1, 1]) {
+  const n = new THREE.Mesh(geo, m);
+  n.position.copy(at); n.rotation.set(turn[0], turn[1], turn[2], "YXZ"); n.scale.set(...size);
+  n.castShadow = true; n.receiveShadow = true;
+  parent.add(n); return n;
+}
+const UP = [-Math.PI / 2, 0, 0];
+function node(parent, at = V(0, 0, 0)) { const n = new THREE.Object3D(); n.rotation.order = "YXZ"; n.position.copy(at); parent.add(n); return n; }
+
+// The chest: jacket, shoulder gems, collar, scarf and its knot.
+function chest(parent, m, F) {
+  part(parent, hull([[0, 0.07, 0.055], [0.08, 0.085, 0.062], [0.125, 0.092, 0.058], [0.152, 0.05, 0.04]].map(([a, x, y]) => [a * F.torso, x * F.width, y * F.width * F.depth]), 8), m.jacket, V(0, 0, 0), UP);
+  if (F.coat > 0) part(parent, hull([[-0.03 - F.coat, 0.08, 0.062], [-0.03, 0.078, 0.06], [0.02, 0.072, 0.058]].map(([a, x, y]) => [a, x * F.width, y * F.width * F.depth]), 8), m.jacket, V(0, 0, 0), UP);
+  for (const s of [-1, 1]) part(parent, gem(0.036), m.jacket, V(SHOULDER.x * F.width * s, SHOULDER.y * F.torso + 0.005, 0));
+  part(parent, frustum(0.07, 0.056, 0.03, 10), m.fleece, V(0, NECK * F.torso - 0.012, 0.006), [0, 0, 0], [F.width, 1, 0.92 * F.width]);
+  part(parent, gem(0.05), m.scarf, V(0, NECK * F.torso, 0), [0, 0, 0], [1.3 * F.scarf, 0.55 * F.scarf, 1.2 * F.scarf]);
+  part(parent, gem(0.024), m.scarf, V(0, KNOT.y * F.torso, 0.05));
+}
+// The head in its cap, flaps, strap and goggles (down, or pushed up), a nose.
+function head(parent, m, F) {
+  const neck = node(parent, V(0, NECK * F.torso, 0));
+  part(neck, frustum(0.026, 0.023, 0.05, 6), m.skin, V(0, 0.02, 0));
+  const pivot = node(neck, V(0, 0.035, 0));
+  pivot.scale.setScalar(F.head);
+  const mid = V(0, 0.055, 0);
+  part(pivot, hull([[-0.08, 0.03, 0.03], [-0.05, 0.064, 0.064], [0, 0.075, 0.075], [0.045, 0.066, 0.068], [0.078, 0.03, 0.034]], 8), m.skin, mid, UP, [1, 1, F.headEgg]);
+  part(pivot, hull([[-0.005, 0.081, 0.083], [0.04, 0.073, 0.076], [0.072, 0.045, 0.048], [0.09, 0, 0]], 8), m.leather, mid.clone().add(V(0, 0.012, 0.012)), UP, [1, 1, F.headEgg]);
+  for (const s of [-1, 1]) part(pivot, gem(0.03), m.leather, mid.clone().add(V(0.078 * s, -0.02, 0.007)), [0, 0, 0], [0.45, 1.3 * F.flaps, 0.9]);
+  const gy = F.gogglesUp ? 0.062 : 0.012, gz = F.gogglesUp ? -0.052 : -0.073, tip = F.gogglesUp ? -0.75 : 0;
+  part(pivot, frustum(0.085, 0.085, 0.016, 10), m.strap, mid.clone().add(V(0, gy - (F.gogglesUp ? 0.01 : 0), 0.01)), [F.gogglesUp ? -0.25 : 0, 0, 0], [F.gogglesUp ? 0.92 : 1, 1, F.gogglesUp ? 0.92 : 1]);
+  for (const s of [-1, 1]) {
+    const turn = [Math.PI / 2 + tip, 0.35 * s, 0];
+    part(pivot, frustum(0.025 * F.goggles, 0.025 * F.goggles, 0.014, 8), m.brass, mid.clone().add(V(0.03 * s * F.goggles, gy, gz)), turn);
+    part(pivot, frustum(0.019 * F.goggles, 0.019 * F.goggles, 0.016, 8), m.lens, mid.clone().add(V(0.031 * s * F.goggles, gy, gz - 0.003)), turn);
+  }
+  if (F.gogglesUp) for (const s of [-1, 1]) part(pivot, gem(0.007), m.skin.clone(), mid.clone().add(V(0.03 * s, 0.012, -0.071)), [0, 0, 0], [1.2, 0.5, 0.6]).material.color.set("#3a2a22");
+  part(pivot, gem(0.011), m.skin, mid.clone().add(V(0, -0.012, -0.074)), [0, 0, 0], [0.8 * F.nose, 1.0 * F.nose, 1.2 * F.nose]);
+  if (F.mask) part(pivot, hull([[-0.03, 0.074, 0.072], [0.0, 0.077, 0.074], [0.02, 0.072, 0.07]], 8), m.scarf, mid.clone().add(V(0, -0.04, 0.002)), UP);
+  return [neck, pivot];
+}
+function limb(parent, upper, lower, m, end, endM, endSize = 1) {
+  const a = part(parent, frustum(upper[0], upper[1], 1, 5), m), b = part(parent, frustum(lower[0], lower[1], 1, 5), m);
+  const c = part(parent, end, endM, V(0, 0, 0), [0, 0, 0], [endSize, endSize, endSize]);
+  return [a, b, c];
+}
+const hand = () => gem(0.021);
+const boot = () => hull([[-0.055, 0.014, 0.01], [-0.035, 0.028, 0.02], [0.015, 0.027, 0.024], [0.03, 0.02, 0.02]], 6);
+// Stretches a unit-tall bone from `from` to `to` (PersonKit.bone).
+function bone(n, from, to) {
+  const y = to.clone().sub(from);
+  if (y.lengthSq() < 1e-8) return;
+  const fwd = Math.abs(y.clone().normalize().dot(V(0, 0, -1))) < 0.9 ? V(0, 0, -1) : V(1, 0, 0);
+  const x = y.clone().cross(fwd).normalize();
+  const z = x.clone().cross(y.clone().normalize()).normalize();
+  const mtx = new THREE.Matrix4().makeBasis(x, y, z).setPosition(from.clone().add(to).multiplyScalar(0.5));
+  mtx.decompose(n.position, n.quaternion, n.scale);
+}
+function pose(parts, root, tip, L, pole) {
+  const to = tip.clone().sub(root);
+  const d = THREE.MathUtils.clamp(to.length(), 0.02, L[0] + L[1] - 0.002);
+  const dir = to.length() > 1e-4 ? to.clone().normalize() : V(0, -1, 0);
+  tip = root.clone().add(dir.clone().multiplyScalar(d));
+  const along = (L[0] * L[0] - L[1] * L[1] + d * d) / (2 * d);
+  const out = Math.sqrt(Math.max(L[0] * L[0] - along * along, 0));
+  let bend = pole.clone().sub(dir.clone().multiplyScalar(pole.dot(dir)));
+  bend = bend.lengthSq() > 1e-8 ? bend.normalize() : V(0, 0, -1);
+  const joint = root.clone().add(dir.clone().multiplyScalar(along)).add(bend.multiplyScalar(out));
+  bone(parts[0], root, joint); bone(parts[1], joint, tip);
+  parts[2].position.copy(tip);
+}
+
+// ------------------------------------------------------------------ the islander (islander_figure.gd)
+// F: the variation. Defaults are the game's islander.
+const BASE = { head: 0.9, headEgg: 1.0, torso: 1.0, width: 1.0, depth: 1.0, hips: 0.17, hipX: 0.042, stance: 0.05,
+  thigh: 0.09, shin: 0.088, upperArm: 0.085, forearm: 0.08, limbThick: 1.0, hands: 1.0, boots: 1.0,
+  flaps: 1.0, goggles: 1.0, gogglesUp: 0, nose: 1.0, mask: 0, coat: 0, scarf: 1.0, scarfColour: 0, worldScale: 1.9 };
+function buildFolk(F) {
+  const m = outfit(SCARVES[F.scarfColour | 0], F.tint || {});
+  const root = new THREE.Group();
+  const fig = node(root); fig.rotation.y = Math.PI; fig.scale.setScalar(F.worldScale);
+  const hips = node(fig, V(0, F.hips, 0));
+  part(hips, hull([[-0.03, 0.06, 0.045], [0, 0.072, 0.052], [0.035, 0.07, 0.055]].map(([a, x, y]) => [a, x * F.width, y * F.width * F.depth]), 8), m.trousers, V(0, 0, 0), UP);
+  part(hips, frustum(0.075, 0.075, 0.014, 8), m.strap, V(0, 0.03, 0), [0, 0, 0], [F.width, 1, 0.78 * F.width * F.depth]);
+  part(hips, gem(0.011), m.brass, V(0, 0.03, -0.058 * F.width * F.depth), [0, 0, 0], [1.3, 1, 0.6]);
+  const torso = node(hips, V(0, 0.025, 0));
+  chest(torso, m, F);
+  const [neck, hd] = head(torso, m, F);
+  const t = F.limbThick, arms = [], legs = [], tails = [];
+  for (const s of [-1, 1]) {
+    arms.push(limb(torso, [0.02 * t, 0.017 * t], [0.017 * t, 0.015 * t], m.jacket, hand(), m.leather, F.hands));
+    legs.push(limb(fig, [0.03 * t, 0.026 * t], [0.025 * t, 0.021 * t], m.trousers, boot(), m.boots, F.boots));
+    let pivot = torso, at = V(KNOT.x + 0.011 * s, KNOT.y * F.torso - 0.004, KNOT.z);
+    const tail = [];
+    for (let i = 0; i < 3; i++) {
+      const seg = node(pivot, at);
+      part(seg, frustum(0.017 - i * 0.002, 0.015 - i * 0.002, 0.036 * F.scarf, 4), m.scarf, V(0, -0.018 * F.scarf, 0), [0, 0, 0], [1, 1, 0.3]);
+      tail.push(seg); pivot = seg; at = V(0, -0.036 * F.scarf, 0);
+    }
+    tails.push(tail);
+  }
+  root.userData = { F, fig, hips, torso, neck, hd, arms, legs, tails };
+  return root;
+}
+// Height (m): boots to the cap's crown.
+function measure(F) {
+  const top = F.hips + 0.025 + NECK * F.torso + 0.035 + (0.055 + 0.09 + 0.012) * F.head;
+  const headH = (0.08 + 0.09 + 0.012) * F.head;
+  return { top: top * F.worldScale, heads: top / headH, legs: F.hips / top };
+}
+
+// A rough port of the islander's idle and toddle (no springs).
+let mode = "idle";
+function animate(f, t, ph) {
+  const { F, hips, torso, neck, hd, arms, legs, tails } = f.userData;
+  const breathe = Math.sin((t + ph) * Math.PI * 2 * 0.25);
+  let bob = 0, twist = 0, stoop = 0, steps = [V(0, 0, 0), V(0, 0, 0)], toes = [0, 0], swing = [0, 0], lean = 0;
+  let look = [Math.sin((t + ph) * 0.4) * 0.5 * Math.max(0, Math.sin((t + ph) * 0.23)), 0];
+  const walk = mode === "walk" || mode === "run";
+  if (walk) {
+    const run = mode === "run", cyc = run ? 0.32 : 0.72, stride = run ? 0.16 : 0.07, lift = run ? 0.06 : 0.028;
+    const p = ((t + ph) / cyc) % 1;
+    for (let s = 0; s < 2; s++) {
+      const q = (p + s * 0.5) % 1, a = q * Math.PI * 2;
+      steps[s] = V(0, Math.max(0, Math.sin(a)) * lift, Math.cos(a) * stride * 0.5);
+      toes[s] = Math.sin(a) * 0.3;
+      swing[s] = Math.cos(a) * (run ? 0.085 : 0.05);
+    }
+    bob = Math.abs(Math.sin(p * Math.PI * 2)) * (run ? 0.02 : 0.013);
+    twist = Math.sin(p * Math.PI * 2) * 0.12;
+    stoop = run ? -0.32 : -0.08;
+    look = [0, 0];
+  }
+  hips.position.set(0, F.hips + bob, 0);
+  hips.rotation.set(0, twist, 0);
+  torso.rotation.set(0.02 * breathe + stoop, -twist * 1.6, lean);
+  neck.rotation.set(look[1] * 0.4 - stoop * 0.5, look[0] * 0.4, 0);
+  hd.rotation.set(look[1] * 0.6 - stoop * 0.3, look[0] * 0.6, 0);
+  const sh = SHOULDER.clone(); sh.y *= F.torso; sh.x *= F.width;
+  for (let s = 0; s < 2; s++) {
+    const side = s ? 1 : -1;
+    const reach = (F.upperArm + F.forearm) / 0.165;
+    const handAt = V(0.1 * side * F.width, -0.03 - (reach - 1) * 0.12 + breathe * 0.004, 0.01 + swing[s]);
+    pose(arms[s], sh.clone().multiply(V(side, 1, 1)), handAt, [F.upperArm, F.forearm], V(side, -0.3, 0.5));
+    const hip = V(F.hipX * side, 0, 0).applyEuler(hips.rotation).add(hips.position);
+    const foot = V(F.stance * side, 0.024, 0).add(steps[s]);
+    pose(legs[s], hip, foot, [F.thigh, F.shin], V(side * 0.2, 0, -1));
+    legs[s][2].rotation.set(toes[s], 0, 0);
+    tails[s].forEach((seg, i) => seg.rotation.set((i ? -0.15 : -0.35) - (walk ? 0.3 : 0) + Math.sin(t * 2.3 + i * 0.8 + side) * 0.12, 0, side * 0.08));
+  }
+}
+
+// ------------------------------------------------------------------ variants
+const VARIANTS = {
+  A: { name: "Islander (as in game)", note: "person_kit.gd + islander_figure.gd, ported 1:1", F: {} },
+  B: { name: "Big head, stout", note: "head up a third, shorter legs, chunkier limbs, bigger boots and gloves",
+    F: { head: 1.18, hips: 0.15, thigh: 0.08, shin: 0.078, width: 1.12, limbThick: 1.35, hands: 1.45, boots: 1.3, stance: 0.056, hipX: 0.046 } },
+  C: { name: "Goggles up, scarf mask", note: "goggles pushed up on the cap, scarf over the mouth, longer flaps, sheepskin coat skirt",
+    F: { head: 1.05, gogglesUp: 1, mask: 1, flaps: 1.5, coat: 0.03, width: 1.06, limbThick: 1.2, hands: 1.3, boots: 1.2, scarfColour: 1, nose: 1.3, hips: 0.16 } },
+  D: { name: "Pilot hero", note: "a touch taller and broader than the folk, big goggles, long scarf, distinct colours",
+    F: { head: 1.0, torso: 1.08, width: 1.1, depth: 1.05, thigh: 0.095, shin: 0.093, hips: 0.178, limbThick: 1.25, hands: 1.35, boots: 1.25, goggles: 1.2, scarf: 1.5, stance: 0.055, hipX: 0.045,
+      tint: { jacket: "#7a4a2a", trousers: "#4f6478" } } },
+};
+const KEYS = Object.keys(VARIANTS);
+const live = Object.fromEntries(KEYS.map(k => [k, { ...BASE, ...VARIANTS[k].F }]));
+const SLIDERS = [
+  ["Head", [["head", 0.6, 1.5], ["headEgg", 0.8, 1.3], ["nose", 0.5, 2], ["goggles", 0.7, 1.5], ["gogglesUp", 0, 1, 1], ["mask", 0, 1, 1], ["flaps", 0.5, 2]]],
+  ["Body", [["torso", 0.7, 1.4], ["width", 0.8, 1.4], ["depth", 0.8, 1.3], ["coat", 0, 0.08], ["hips", 0.12, 0.23]]],
+  ["Limbs", [["thigh", 0.06, 0.13], ["shin", 0.06, 0.13], ["hipX", 0.03, 0.06], ["stance", 0.03, 0.08], ["upperArm", 0.05, 0.12], ["forearm", 0.05, 0.12], ["limbThick", 0.7, 1.8], ["hands", 0.7, 2], ["boots", 0.7, 1.8]]],
+  ["Costume", [["scarf", 0.6, 2], ["scarfColour", 0, 5, 1]]],
+];
+
+// ------------------------------------------------------------------ scene
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.3;   // the game's folk shader reads lighter
+document.body.prepend(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color("#b9c6cf");
+scene.fog = new THREE.Fog("#b9c6cf", 8, 20);
+scene.environment = (() => { const p = new THREE.PMREMGenerator(renderer); const s = new THREE.Scene(); s.background = new THREE.Color("#9fb7cc"); return p.fromScene(s).texture; })();
+scene.environmentIntensity = 0.5;
+const camera = new THREE.PerspectiveCamera(35, innerWidth / innerHeight, 0.05, 50);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+scene.add(new THREE.HemisphereLight("#dfeaf5", "#6f6a52", 1.2));
+const sun = new THREE.DirectionalLight("#fff1dc", 2.6);
+sun.position.set(2.5, 4, 3); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -4, right: 4, top: 3, bottom: -1, near: 0.5, far: 12 });
+scene.add(sun);
+const ground = new THREE.Mesh(new THREE.CircleGeometry(12, 64), new THREE.MeshStandardMaterial({ color: "#8c9a68", roughness: 1 }));
+ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
+
+let real = null, mixer = null, actions = {};
+new GLTFLoader().load("../../../../assets/models/pilot.glb", g => {
+  real = g.scene; real.rotation.y = Math.PI;
+  real.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  mixer = new THREE.AnimationMixer(real);
+  for (const c of g.animations) actions[c.name] = mixer.clipAction(c);
+  real.userData.top = new THREE.Box3().setFromObject(real).max.y;
+  scene.add(real); layout(); playReal();
+});
+function playReal() {
+  if (!mixer) return;
+  const want = mode === "rest" ? null : actions[mode] || actions.idle;
+  for (const a of Object.values(actions)) if (a !== want) a.stop();
+  if (want) want.reset().play();
+}
+
+// ------------------------------------------------------------------ views + UI
+const qs = new URLSearchParams(location.search);
+let current = KEYS.includes(qs.get("variant")) ? qs.get("variant") : "A";
+let lineup = qs.get("view") !== "single";
+if (["rest", "idle", "walk", "run"].includes(qs.get("mode"))) mode = qs.get("mode");
+const figures = {}, tags = {};
+function rebuild(k) { if (figures[k]) scene.remove(figures[k]); figures[k] = buildFolk(live[k]); scene.add(figures[k]); }
+KEYS.forEach(rebuild);
+function layout() {
+  const order = ["real", ...KEYS];
+  order.forEach((k, i) => {
+    const o = k === "real" ? real : figures[k];
+    if (!o) return;
+    o.position.x = lineup ? (i - (order.length - 1) / 2) * 0.75 : 0;
+    o.visible = lineup || k === current;
+  });
+  for (const k in tags) tags[k].style.display = "none";
+  if (lineup) { camera.position.set(0, 0.9, 5.4); controls.target.set(0, 0.55, 0); }
+  else { camera.position.set(0.5, 0.85, 2.4); controls.target.set(0, 0.6, 0); }
+  controls.update();
+}
+function placeTags() {
+  ["real", ...KEYS].forEach(k => {
+    const o = k === "real" ? real : figures[k];
+    if (!o || !o.visible) return;
+    const top = k === "real" ? o.userData.top : measure(live[k]).top;
+    const v = V(o.position.x, top + 0.06, 0).project(camera);
+    if (!tags[k]) { tags[k] = document.createElement("div"); tags[k].className = "tag"; document.body.appendChild(tags[k]); }
+    const el = tags[k];
+    el.style.display = ""; el.style.left = ((v.x + 1) / 2 * innerWidth) + "px"; el.style.top = ((1 - v.y) / 2 * innerHeight - 40) + "px";
+    el.innerHTML = k === "real" ? `On-foot pilot now<br><small>${(top * 100).toFixed(0)} cm · real clips</small>`
+      : `${k}. ${VARIANTS[k].name}<br><small>${(top * 100).toFixed(0)} cm · ${measure(live[k]).heads.toFixed(1)} heads</small>`;
+    el.style.outline = lineup && k === current ? "2px solid #1d2328" : "";
+  });
+}
+const lbl = document.getElementById("lbl"), stats = document.getElementById("stats"), panel = document.getElementById("panel"), modesEl = document.getElementById("modes");
+function drawStats() {
+  const M = measure(live[current]);
+  stats.textContent = `${current}. ${VARIANTS[current].name}\n${VARIANTS[current].note}\n\nheight        ${(M.top * 100).toFixed(0)} cm\nheads tall    ${M.heads.toFixed(2)}\nlegs          ${(M.legs * 100).toFixed(0)} % of height\n\nL lineup/single · 1 rest 2 idle 3 walk 4 run\n←/→ variants · drag to orbit\nsmooth heads: index.html`;
+}
+function drawPanel() {
+  const P = live[current];
+  let h = `<h3>${current}. ${VARIANTS[current].name} (build units)</h3>`;
+  for (const [g, list] of SLIDERS) {
+    h += `<h3>${g}</h3>`;
+    for (const [k, lo, hi, step] of list) h += `<label>${k}<input type="range" data-k="${k}" min="${lo}" max="${hi}" step="${step || (hi - lo) / 200}" value="${P[k]}"><span class="val" id="v_${k}">${(+P[k]).toFixed(3)}</span></label>`;
+  }
+  h += `<button id="reset">Reset ${current}</button><button id="copy">Copy numbers</button>`;
+  panel.innerHTML = h;
+  panel.querySelectorAll("input").forEach(inp => inp.addEventListener("input", () => {
+    live[current][inp.dataset.k] = +inp.value;
+    document.getElementById("v_" + inp.dataset.k).textContent = (+inp.value).toFixed(3);
+    rebuild(current); layout(); drawStats();
+  }));
+  document.getElementById("reset").onclick = () => { live[current] = { ...BASE, ...VARIANTS[current].F }; rebuild(current); drawPanel(); layout(); drawStats(); };
+  document.getElementById("copy").onclick = () => {
+    const txt = `# folk variant ${current} (${VARIANTS[current].name}), islander build units\n${JSON.stringify(live[current], null, 1)}`;
+    navigator.clipboard?.writeText(txt); console.log(txt); document.getElementById("copy").textContent = "Copied";
+  };
+}
+function setVariant(k) {
+  current = k; const u = new URL(location); u.searchParams.set("variant", k); history.replaceState(null, "", u);
+  lbl.textContent = `${k} — ${VARIANTS[k].name}`; drawPanel(); layout(); drawStats();
+}
+function drawModes() {
+  modesEl.innerHTML = ["rest", "idle", "walk", "run"].map((m, i) => `<button data-m="${m}" class="${m === mode ? "on" : ""}">${i + 1} ${m}</button>`).join("") + `<button data-l="1">${lineup ? "single" : "lineup"} (L)</button>`;
+  modesEl.querySelectorAll("button").forEach(b => b.onclick = () => b.dataset.l ? toggleLineup() : setMode(b.dataset.m));
+}
+function setMode(m) { mode = m; drawModes(); playReal(); }
+function toggleLineup() { lineup = !lineup; const u = new URL(location); u.searchParams.set("view", lineup ? "lineup" : "single"); history.replaceState(null, "", u); drawModes(); layout(); }
+const cycle = d => setVariant(KEYS[(KEYS.indexOf(current) + d + KEYS.length) % KEYS.length]);
+document.getElementById("prev").onclick = () => cycle(-1);
+document.getElementById("next").onclick = () => cycle(1);
+addEventListener("keydown", e => {
+  if (e.key === "ArrowLeft") { cycle(-1); e.preventDefault(); }
+  else if (e.key === "ArrowRight") { cycle(1); e.preventDefault(); }
+  else if (e.key === "l" || e.key === "L") toggleLineup();
+  else if ("1234".includes(e.key)) setMode(["rest", "idle", "walk", "run"][+e.key - 1]);
+});
+addEventListener("resize", () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
+drawModes(); setVariant(current);
+const clock = new THREE.Clock();
+renderer.setAnimationLoop(() => {
+  const dt = clock.getDelta(), t = clock.elapsedTime;
+  KEYS.forEach((k, i) => animate(figures[k], t, i * 0.37));
+  mixer?.update(dt); controls.update(); renderer.render(scene, camera); placeTags();
+});
+</script>
+</body>
+</html>
