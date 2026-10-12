@@ -20,6 +20,13 @@ extends "res://scripts/traps/trap.gd"
 ## `gap_every` (every nth slab is missing, 0 none: a gap of one length),
 ## `first_tests`, `offset` (m of untruing), `fall_time` (s a fallen slab
 ## stays drawn, falling at the motor's gravity), `seed`.
+##
+## The chase (`chase`): the first touch also starts the row coming down
+## behind him from the way in, a front setting off each slab it passes,
+## `chase_warn` s from its orange to its fall. It starts at his walk
+## (`chase_speed`) and gains `chase_accel` m/s each second, so it passes
+## his run near the row's end: a run started late or slowed is caught, a
+## run at speed just makes it, a long-jump chain makes it easily.
 const DELAY_OF_WALK := 0.75
 const THICK := 0.4
 const STONE := Color(0.42,0.41,0.4)
@@ -37,6 +44,10 @@ const TESTED := 4
 var slabs: Array[Dictionary] = []
 var landed_count := 0
 var fallen_count := 0
+## The chase's front (m along the row from the way in, -1 not started) and
+## its pace.
+var front := -1.0
+var front_pace := 0.0
 
 func _init() -> void:
 	super()
@@ -51,6 +62,7 @@ func defaults() -> Dictionary:
 	return {
 		"count":8,"length":run_len,"width":p.run*0.5,"delay":DELAY_OF_WALK*run_len/p.walk,
 		"gap_every":0,"first_tests":true,"offset":0.04,"fall_time":2.5,"seed":7,
+		"chase":true,"chase_speed":p.walk,"chase_accel":p.run*0.5,"chase_warn":0.12,
 	}
 
 func length() -> float:
@@ -96,6 +108,7 @@ func after(delta: float, _events: Dictionary) -> void:
 	var under_him: Dictionary = {}
 	if motor != null and motor.grounded and motor.rider == null: under_him = slab_at(motor.feet)
 	var delay := float(knob("delay"))
+	_chase(delta)
 	for s: Dictionary in slabs:
 		match s.state:
 			SOUND:
@@ -104,7 +117,7 @@ func after(delta: float, _events: Dictionary) -> void:
 				s.t += delta
 				_warm(s)
 				if s.t >= delay:
-					if bool(knob("first_tests")) and s.index == _first_index():
+					if bool(knob("first_tests")) and s.index == _first_index() and not s.get("chased",false):
 						# It only tests: back to stone, never to fall.
 						s.state = TESTED
 						(s.mat as StandardMaterial3D).albedo_color = STONE
@@ -118,6 +131,26 @@ func after(delta: float, _events: Dictionary) -> void:
 					s.state = GONE
 					node.visible = false
 	tell_sight(_loudest())
+
+## The front comes down the row, setting off each sound slab it reaches:
+## each goes to the tell at once and falls `chase_warn` s later.
+func _chase(delta: float) -> void:
+	if not bool(knob("chase")): return
+	if front < 0.0:
+		if landed_count == 0: return
+		front = 0.0
+		front_pace = float(knob("chase_speed"))
+	front_pace += float(knob("chase_accel"))*delta
+	front += front_pace*delta
+	var slab_len := float(knob("length"))
+	var warn := float(knob("chase_warn"))
+	for s: Dictionary in slabs:
+		if front < float(s.index)*slab_len: continue
+		if s.state == SOUND or s.state == TESTED or (s.state == TOUCHED and not s.get("chased",false)):
+			var left := float(knob("delay"))-float(s.t) if s.state == TOUCHED else INF
+			s.state = TOUCHED
+			s.chased = true
+			s.t = float(knob("delay"))-minf(warn,left)
 
 func pilot_gravity() -> float:
 	return motor.gravity if motor != null else PilotMotor.GRAVITY
@@ -188,6 +221,8 @@ func reset() -> void:
 	super()
 	landed_count = 0
 	fallen_count = 0
+	front = -1.0
+	front_pace = 0.0
 	for s: Dictionary in slabs:
 		var node: Node3D = s.body
 		node.position = s.top
@@ -198,3 +233,4 @@ func reset() -> void:
 		s.t = 0.0
 		s.vy = 0.0
 		s.fell = 0.0
+		s.chased = false

@@ -5,7 +5,10 @@ extends SceneTree
 ##     one not stood on stays;
 ##   - the first slab only tests (puffs, never falls);
 ##   - run, he crosses the whole row and stands on the far deck; walked, a
-##     slab goes from under him and he falls to the floor below.
+##     slab goes from under him and he falls to the floor below;
+##   - the chase: after his run the front has brought the whole row down
+##     behind him, faster than it started; from a standing start it
+##     catches him.
 ##   godot --headless --path . --script tests/test_trap_voussoirs.gd
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const Trap =preload("res://scripts/traps/trap.gd")
@@ -35,7 +38,10 @@ func run() -> void:
 	var p := Trap.pilot()
 	check(is_equal_approx(trap.knob("length"),p.walk*0.5) and is_equal_approx(trap.knob("width"),p.run*0.5) and float(trap.knob("delay")) < float(trap.knob("length"))/p.walk,"Sized from the pilot: a slab is his half second walking long, the delay under his walk across it")
 	await _frames(2)
+	trap.knobs["chase"] = false
 	_stand_and_wait()
+	trap.reset()
+	trap.knobs["chase"] = true
 	_walk_and_run()
 	print("trap voussoirs: %d failure(s)" % failures)
 	quit(1 if failures > 0 else 0)
@@ -73,8 +79,8 @@ func _stand_and_wait() -> void:
 
 func _walk_and_run() -> void:
 	var p := Trap.pilot()
-	# Run the whole row.
-	study.place(Vector3(trap.global_position.x,0.0,trap.global_position.z+3.0),Vector2(0.0,-1.0))
+	# Run the whole row, from a run-up.
+	study.place(Vector3(trap.global_position.x,0.0,trap.global_position.z+trap.run_up()),Vector2(0.0,-1.0))
 	_tick(2)
 	var low := 0.0
 	var end_z: float = trap.exit().origin.z-0.5
@@ -84,6 +90,19 @@ func _walk_and_run() -> void:
 		low = minf(low,m.feet.y)
 		if m.feet.z < end_z: break
 	check(m.feet.z < end_z and low > -0.3 and m.grounded,"Run, he crosses the row and stands on the far deck (z %.1f, lowest y %.2f)" % [m.feet.z,low])
+	_tick(60)
+	check(trap.fallen_count == trap.slabs.size() and trap.front_pace > float(trap.knob("chase_speed"))*1.5,"The chase brought the whole row down behind him, gaining pace (%d of %d, %.1f m/s)" % [trap.fallen_count,trap.slabs.size(),trap.front_pace])
+	# From a standing start on the first slab, the front catches him.
+	trap.reset()
+	study.place(trap.to_global(trap.slabs[0].top),Vector2(0.0,-1.0))
+	_tick(2)
+	low = 0.0
+	for i in range(240):
+		_input(Vector2(0.0,-1.0))
+		_tick(1)
+		low = minf(low,m.feet.y)
+	check(low < -0.3 or m.hold != "","From a standing start the front catches him (lowest y %.2f, %s)" % [low,m.hold])
+	trap.reset()
 	# Walk it: the slab he is on goes from under him before he is off it,
 	# and he is left falling or hanging by a lip, never across.
 	study.place(Vector3(trap.global_position.x,0.0,trap.global_position.z+1.0),Vector2(0.0,-1.0))
