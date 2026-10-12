@@ -53,6 +53,32 @@ func run() -> void:
 		cam.make_current()
 		for i in range(3): await process_frame
 		await _save(shot[0])
+	# The faces (scripts/pilot_figure.gd `express`), close in front.
+	var body: Node = eye.body
+	cam.global_position = at+ahead*1.1+Vector3.UP*0.95
+	cam.look_at(at+Vector3.UP*0.88)
+	for mood: String in ["happy","surprise","squint"]:
+		body.express(mood,3.0)
+		for i in range(20): await process_frame
+		await _save("face_"+mood)
+	body.express("",0.0)
+	# The cap float: a jump, then Jump again in the air opens the pocket
+	# sail; the hat flies overhead, spinning. Seen from the side, following.
+	cam.global_position = at+side*3.2+Vector3.UP*1.4
+	cam.look_at(at+Vector3.UP*1.0)
+	Input.action_press(&"walk_jump")
+	for i in range(8): await process_frame
+	Input.action_release(&"walk_jump")
+	for i in range(14): await process_frame
+	Input.action_press(&"walk_jump")
+	for i in range(4): await process_frame
+	Input.action_release(&"walk_jump")
+	for i in range(30):
+		await process_frame
+		var p := figure.global_position
+		cam.global_position = p+side*3.2+Vector3.UP*1.4
+		cam.look_at(p+Vector3.UP*1.1)
+		if i == 8 or i == 28: await _save("cap_float_%d" % i)
 	print("PILOT LOOK captured ",out)
 	quit(0)
 
