@@ -18,6 +18,10 @@ run/max_fps.macos=60
 run/max_fps.windows=0
 config/icon="res://icon.svg"
 
+[autoload]
+
+GameState="*res://scripts/ledger/ledger.gd"
+
 [display]
 
 window/size/viewport_width=1440

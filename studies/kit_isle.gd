@@ -692,12 +692,15 @@ func _build_art() -> void:
 func isle_name() -> String:
 	return "kit isle"
 
+## What the player has done, kept across runs (scripts/ledger/ledger.gd).
+const Ledger = preload("res://scripts/ledger/ledger.gd")
+
 ## The isle's card as the plane locks onto it (scripts/isle_splash.gd):
 ## its name, a line of what it is, and what there is to find on it with
-## how much has been found. Placeholders until the isles are named.
+## how much has been found, from the ledger (`card`; no rows for an isle it
+## doesn't list). Placeholders until the isles are named.
 func isle_card() -> Dictionary:
-	return {"name":isle_name().capitalize(),"epithet":"An isle adrift over the cloud sea",
-		"finds":[["wildflower","Glyphs",0,7],["crystal","Lodestones",0,1],["bridge","Hidden ways",0,3]]}
+	return Ledger.shared().card(Ledger.isle_id_of(self),{"name":isle_name().capitalize(),"epithet":"An isle adrift over the cloud sea"})
 
 ## The isle's datum (world y): the turf near it; the rays down read from
 ## over it, the plane's cloud floor hangs FLOOR_BELOW under it.
