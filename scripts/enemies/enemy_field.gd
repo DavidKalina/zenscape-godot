@@ -8,7 +8,10 @@ extends Node
 ## `before` (ahead of the motor's step): every enemy thinks and moves, and
 ## the pilot stood on one is carried by what it moved. `after` (the step
 ## done): each enemy tests contact with him (scripts/enemies/enemy.gd
-## `touch`), judged by the pace he had going into the step.
+## `touch`), judged by the pace he had going into the step, then shoves him
+## out of its body if it moved into him (`push_out`: its body is a stone to
+## him, but he is nothing to it). A pilot stood on one is carried by it
+## unless it `bucks()` (a charge runs out from under him).
 ## The pilot's numbers an enemy sizes itself from are `numbers()`: nothing
 ## here copies a size (AGENTS.md, Sizes).
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
@@ -68,7 +71,11 @@ func _make(script: GDScript, at: Vector3, face: Vector2, overrides: Dictionary) 
 ## Every enemy back as it was spawned.
 func reset() -> void:
 	for e: Node3D in enemies:
-		if is_instance_valid(e): e.queue_free()
+		# Out of the physics space now, not at the frame's end: a body left
+		# standing till then is a stone where it last was.
+		if is_instance_valid(e):
+			if e.get_parent() == self: remove_child(e)
+			e.queue_free()
 	enemies.clear()
 	for s: Array in specs: _make(s[0],s[1],s[2],s[3])
 
@@ -121,13 +128,21 @@ func before(delta: float) -> void:
 	var standing := RID()
 	if motor.grounded and motor.rider == null and not motor.swimming: standing = under_pilot()
 	for e: Node3D in enemies:
+		var on: bool = standing.is_valid() and standing == e.body.get_rid()
+		var held: bool = motor.on_ledge() and e.holds(motor.lip)
 		e.step(delta)
-		if standing.is_valid() and standing == e.body.get_rid() and e.moved != Vector3.ZERO:
-			motor.carry(Transform3D(Basis.IDENTITY,e.moved),0.0)
+		if not (on or held) or e.gone: continue
+		# Stood on (or hung from), he rides it; a charging back bucks him
+		# off behind it.
+		if e.bucks(): e.buck(motor)
+		elif e.moved != Vector3.ZERO: motor.carry(Transform3D(Basis.IDENTITY,e.moved),0.0)
 
 func after(_delta: float, _events: Dictionary) -> void:
 	for e: Node3D in enemies:
-		if not e.gone: e.touch(motor,_best_pre(e))
+		if e.gone: continue
+		e.touch(motor,_best_pre(e))
+		# It moved or turned into him: he is shoved out of its body.
+		e.push_out(motor,study.ground.slide,PhysicsGround.BODY_LOW,study.ground.head_top)
 
 ## The pilot's recent velocity most toward `e`.
 func _best_pre(e: Node3D) -> Vector3:

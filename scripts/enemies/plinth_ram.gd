@@ -15,14 +15,20 @@ extends "res://scripts/enemies/enemy.gd"
 ##             the body heating to `tell_colour`; still aiming till the last
 ##             `lock` s.
 ##   "charge"  winds up from a stand to `charge_speed` over `wind_up` s and
-##             HOMES: it turns at `chase_turn` rad/s toward where he will be
-##             (his pace led on by the time to reach him, at most `commit`
-##             s), so a dodge made early is followed and run down.
+##             HOMES, a bull hooking after the cape: it turns toward where
+##             he will be (his pace led on by the time to reach him, at most
+##             `lead` s) at `chase_turn` rad/s from a stand, down to
+##             `chase_top` at its top speed, so a dodge made early is
+##             followed and run down. Its body banks and its head looks into
+##             the turn (`lean`).
 ##   "commit"  `commit` s from reaching him (his own pace counted, so a
-##             pilot running away is reached later) the head locks down,
-##             it snorts, dust kicks up, it goes deep red: the line is set.
-##             Now a dodge works: a jump over its horns, a run or a power
-##             slide out of its line, a drop into a rim hang.
+##             pilot running away is reached later) the head snaps down onto
+##             his lead (at most `lock_on`), it snorts, dust kicks up, it
+##             goes deep red: the cue. It still hooks after him, at `hook` of
+##             its chase turn (a lazy dodge is caught), till its last `blind`
+##             s, head down, its line set. So a late dodge works: a jump over
+##             its horns, a run or a power slide out of its line, a drop into
+##             a rim hang.
 ##   "skid"    it lost him (he is more than `lose_angle` off its heading:
 ##             passed, or over it) and skids on along its line, braking,
 ##             its front swinging round to him (`skid_turn`), dust spraying.
@@ -49,10 +55,12 @@ extends "res://scripts/enemies/enemy.gd"
 ## while charging or committed, and only a pilot whose feet are under `hop`
 ## of its height there (a jump clears it). A pilot hanging from a rim is
 ## never touched: it passes over his hands. Hit, he is shoved `shove_out` m
-## (PilotMotor.knock), never damaged. Moving faster than a walk it is no
-## platform (its body is not solid), so a jump over it lands behind it, not
-## on a back running off a rim. Slow, it is a stone he can stand on, and a
-## pilot sliding into it at `push_speed` knocks it away (the base's push).
+## (PilotMotor.knock), never damaged. Its body is always a stone: he can't
+## walk through it, he stands on it still, and moving or turning into him it
+## shoves him out (the base's `push_out`). Charging, skidding or teetering it
+## `bucks()`: a jump that comes down on its back is thrown off behind it
+## (the base's `buck`), not carried over a rim. A pilot sliding into it at
+## `push_speed` knocks it away (the base's push).
 ## Into a wall it is stunned `stun_wall` s; landing from a fall, `stun_miss`.
 ## Sizes and speeds all come from the pilot's numbers (enemy_field.gd
 ## `numbers()`): its back a bit under his plain jump.
@@ -70,7 +78,7 @@ func default_knobs(n: Dictionary) -> Dictionary:
 		"wander_speed":n.walk*0.5,"rest":0.8,"edge_look":n.unit*0.8,
 		"notice":n.run*2.4,"sight":1.2,"line_angle":0.14,"turn":2.6,"notice_beat":0.35,
 		"tell":0.75,"retell":0.4,"lock":0.2,"scrapes":3,
-		"charge_speed":n.run*1.6,"wind_up":0.5,"chase_turn":2.6,"commit":0.7,"lock_on":0.6,"lead":1.2,"lose_angle":1.3,
+		"charge_speed":n.run*1.6,"wind_up":0.5,"chase_turn":3.4,"chase_top":2.4,"hook":0.5,"blind":0.45,"lean":0.04,"commit":0.7,"lock_on":0.6,"lead":1.2,"lose_angle":1.3,
 		"give_up":n.run*3.6,"charge_dist":n.unit*13.0,
 		"kill_band":n.unit*1.7,"lip":n.unit*0.15,"lip_brake":n.run*5.0,"teeter":0.45,
 		"skid_turn":4.5,"dig":0.3,"room":n.unit*1.5,
@@ -180,13 +188,13 @@ var _doomed := false
 var _tipped := false
 ## This go is a second one (a short tell).
 var _again := false
-var _layer := 0
+## Its turn this frame (rad/s, + to its left), for the lean.
+var _yaw_rate := 0.0
 
 func setup(host: Node, at: Vector3, face: Vector2, overrides := {}) -> void:
 	super.setup(host,at,face,overrides)
 	_turn_to = facing
 	_rng.seed = hash(at)
-	_layer = body.collision_layer
 	# Ready from the start: no rest owed.
 	state_t = float(knobs.rest)
 
@@ -211,15 +219,22 @@ func think(delta: float) -> void:
 		"dig": _dig(delta)
 	_pose(delta)
 	var pace := Vector2(vel.x,vel.z).length()
-	_solid(grounded and pace <= float(knobs.wander_speed)*2.0 and state != "teeter")
 	_trail.global_position = global_position+Vector3.UP*0.05
 	_trail.emitting = grounded and (state == "charge" or state == "commit") and pace > float(knobs.charge_speed)*0.4
 	_spray.global_position = global_position+Vector3.UP*0.05
 	_spray.emitting = grounded and state == "skid" and pace > 1.0
 
-## Moving fast it is no platform: he passes over its back, not onto it.
-func _solid(on: bool) -> void:
-	body.collision_layer = _layer if on else 0
+## Charging, skidding or teetering it carries no one: a pilot come down on
+## its back is bucked off behind it (the base's `buck`), not ridden over a rim.
+func bucks() -> bool:
+	return not grounded or state in ["charge","commit","skid","teeter"]
+
+## Its turn toward him at `pace` (rad/s): `chase_turn` from a stand down to
+## `chase_top` at its top speed; after the lock, `hook` of that.
+func _chase_rate(pace: float, locked: bool) -> float:
+	var k := clampf(pace/float(knobs.charge_speed),0.0,1.0)
+	var rate := lerpf(float(knobs.chase_turn),float(knobs.chase_top),k)
+	return rate*(float(knobs.hook) if locked else 1.0)
 
 # --- Him -------------------------------------------------------------------------
 
@@ -414,11 +429,13 @@ func _charge(delta: float) -> void:
 		# The head locks on where he will be (a snap of at most `lock_on`).
 		_turn_toward(PilotMotor.facing_of(_lead(pace,ttc)),float(knobs.lock_on))
 		_dir = PilotMotor.forward(facing)
+		# The snap is the head's, not a turn to bank into.
+		_last_facing = facing
 		_start_commit()
 		_commit(delta)
 		return
-	# Homing on where he will be.
-	_turn_toward(PilotMotor.facing_of(_lead(pace,ttc)),float(knobs.chase_turn)*delta)
+	# Homing on where he will be, turning less the faster it goes.
+	_turn_toward(PilotMotor.facing_of(_lead(pace,ttc)),_chase_rate(pace,false)*delta)
 	_dir = PilotMotor.forward(facing)
 	# Short of the commit it still sees the ground: a lip ahead is a safe stop.
 	if edge_ahead(_dir,length*0.5+float(knobs.lip)+pace*delta*2.0):
@@ -432,7 +449,8 @@ func _start_commit() -> void:
 	tint(COMMIT_COLOUR)
 	_dust_kick()
 
-## The line is set: on along `_dir`, eyes on him only.
+## Locked on: still hooking after him (on where he will be), but at only
+## `hook` of its chase turn, so a dodge from here outruns the turn.
 func _commit(delta: float) -> void:
 	if not grounded: return
 	var pace := Vector2(vel.x,vel.z).length()
@@ -442,6 +460,11 @@ func _commit(delta: float) -> void:
 	if _travelled >= float(knobs.charge_dist):
 		_start_skid(true)
 		return
+	# Head down for the last `blind` s: it runs on blind, its line set.
+	var ttc := _reach_time(pace)
+	if ttc > float(knobs.blind):
+		_turn_toward(PilotMotor.facing_of(_lead(pace,ttc)),_chase_rate(pace,true)*delta)
+	_dir = PilotMotor.forward(facing)
 	if edge_ahead(_dir,length*0.5+float(knobs.lip)+pace*delta):
 		_start_teeter()
 		return
@@ -524,8 +547,20 @@ func _dig(delta: float) -> void:
 
 # --- Its pose --------------------------------------------------------------------
 
+var _last_facing := INF
+
 func _pose(delta: float) -> void:
 	var pace := Vector2(vel.x,vel.z).length()
+	if _last_facing == INF: _last_facing = facing
+	_yaw_rate = lerpf(_yaw_rate,angle_difference(_last_facing,facing)/maxf(delta,0.001),1.0-exp(-14.0*delta))
+	_last_facing = facing
+	# Into the turn: the body banks (its top toward the inside) and the head
+	# looks round, the more the faster it goes.
+	var bank := 0.0
+	var look := 0.0
+	if state == "charge" or state == "commit":
+		bank = clampf(_yaw_rate*pace*float(knobs.lean),-0.35,0.35)
+		look = clampf(_yaw_rate*0.35,-0.5,0.5)
 	var head := 0.0
 	var lean := 0.0
 	var head_rate := 10.0
@@ -566,7 +601,10 @@ func _pose(delta: float) -> void:
 			head = -0.2
 			lean = -0.04
 	_head.rotation.x = lerpf(_head.rotation.x,head,1.0-exp(-head_rate*delta))
-	if grounded: skin.rotation.x = lerpf(skin.rotation.x,lean,1.0-exp(-12.0*delta))
+	_head.rotation.y = lerpf(_head.rotation.y,look,1.0-exp(-12.0*delta))
+	if grounded:
+		skin.rotation.x = lerpf(skin.rotation.x,lean,1.0-exp(-12.0*delta))
+		skin.rotation.z = lerpf(skin.rotation.z,bank,1.0-exp(-12.0*delta))
 	for i in range(4): _legs[i].rotation.x = lerpf(_legs[i].rotation.x,float(legs[i])*swing,1.0-exp(-20.0*delta))
 
 ## Falling: its nose goes down, over the rim.
@@ -618,6 +656,9 @@ func stun(seconds: float) -> void:
 	if _trail != null:
 		_trail.emitting = false
 		_spray.emitting = false
-	_solid(true)
-	if _head != null: _head.rotation.x = 0.1
+	if _head != null:
+		_head.rotation.x = 0.1
+		_head.rotation.y = 0.0
+	skin.rotation.z = 0.0
+	_yaw_rate = 0.0
 	super.stun(seconds)
