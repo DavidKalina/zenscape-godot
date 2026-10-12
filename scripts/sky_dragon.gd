@@ -47,7 +47,7 @@ extends Node3D
 ## Flags: --dragon-delay=<s> (3) before
 ## it rises; --dragon-skip=<s> runs it on that far at the start;
 ## --dragon-watch[=chase|orbit|look] starts watching; --dragon-seed=<n> its
-## route's dice; --dragon-size=<x> (0.85) its scale; --dragon-attack starts
+## route's dice; --dragon-size=<x> (SIZE, 1.5) its scale; --dragon-attack starts
 ## it on its way in to an attack (the grab about 8 s on);
 ## --dragon-target=<isle name> its first (or only) target;
 ## --dragon-attack-every=<s> (70) between attacks.
@@ -156,7 +156,12 @@ var sea_y := -120.0
 var home := Vector3.ZERO
 var home_top := 30.0
 var isles: Array = []
-var size := 0.85
+## Its scale, flying and asleep on its roost alike (scripts/dragon_roost.gd;
+## docs/design/dragon-roost/round2.md). TUNED_SIZE is the size its grip's
+## reach and the treasure were tuned at (they scale from it).
+const SIZE := 1.5
+const TUNED_SIZE := 0.85
+var size := SIZE
 var delay := 3.0
 var _skip := 0.0
 var _rng := RandomNumberGenerator.new()
@@ -1054,8 +1059,29 @@ func _next_legs() -> void:
 
 # --- Each frame ---------------------------------------------------------------------
 
+## Asleep on its roost (--dragon-roost, docs/design/dragon-roost/round2.md):
+## the pose (scripts/dragon_roost.gd) lays it on its mountain and
+## breathes it; it never flies, grips or blows.
+var roost: RefCounted = null
+
+## Built and laid asleep on its roost instead of `setup`: no route, gale or
+## treasure; `pose` (scripts/dragon_roost.gd) poses it every frame.
+## Its size is the pose's (`size`: SIZE, the same as it flies at).
+func setup_roost(cam: Camera3D, pose: RefCounted) -> void:
+	camera = cam
+	size = float(pose.get("size"))
+	_build()
+	model.visible = true
+	state = "roosting"
+	roost = pose
+	roost.setup(self)
+
 func advance(delta: float) -> void:
 	if delta <= 0.0: return
+	if roost != null:
+		roost.advance(delta)
+		_night_glow(delta)
+		return
 	if _skip > 0.0:
 		var ahead := _skip
 		_skip = 0.0
@@ -1519,7 +1545,7 @@ func _place_treasure(_delta: float) -> void:
 	# own frame, so it lies in the mouth when the chin rests on the turf, in
 	# reach of a pilot up against the chin).
 	treasure.global_position = _probe(_gem_on)
-	treasure.scale = Vector3.ONE*size/0.85
+	treasure.scale = Vector3.ONE*size/TUNED_SIZE
 	var flare := pow(maxf(sin(_clock*TAU/2.3),0.0),14.0)+0.5*pow(maxf(sin(_clock*TAU/3.7+1.0),0.0),20.0)
 	_glint.scale = Vector3.ONE*(1.5+7.0*flare)
 	(_glint.material_override as StandardMaterial3D).albedo_color.a = 0.25+0.75*flare
@@ -1641,15 +1667,15 @@ func _plan_grip(t: Dictionary, turn := 0.0) -> Dictionary:
 			# Its holds on the real lip either side, at the reach of its
 			# wrists and feet (as on hills_ne's 14 m rim), wherever the
 			# lip runs.
-			w = _rim_line(t,out,right*k*HOLD_WRIST*size/0.85,rim)
-			f = _rim_line(t,out,right*k*HOLD_FOOT*size/0.85,rim)
+			w = _rim_line(t,out,right*k*HOLD_WRIST*size/TUNED_SIZE,rim)
+			f = _rim_line(t,out,right*k*HOLD_FOOT*size/TUNED_SIZE,rim)
 		else:
 			w = _rim_along(t,out.rotated(Vector3.UP,0.62*k))
 			f = _rim_along(t,out.rotated(Vector3.UP,0.2*k))
 		var n := "R" if (w-rim).dot(right) > 0.0 else "L"
 		wrists[n] = w
 		feet["R" if (f-rim).dot(right) > 0.0 else "L"] = f
-	var root := rim+out*CLING_OUT*size/0.85-Vector3.UP*CLING_DOWN*size/0.85
+	var root := rim+out*CLING_OUT*size/TUNED_SIZE-Vector3.UP*CLING_DOWN*size/TUNED_SIZE
 	return {"target":t,"turn":turn,"rim":rim,"out":out,"tangent":tangent,"side":signf(turn),
 		"wrists":wrists,"feet":feet,"root":root,"yaw":atan2(out.x,out.z),"scored":scored}
 
@@ -1736,7 +1762,7 @@ func _best_turn(t: Dictionary, shape: RefCounted, view: Vector3) -> float:
 				if shape.on_land(p): score -= 1.5
 		# A lip at the wrists' reach either side, near the rim's height.
 		for kk: float in [-1.0,1.0]:
-			var w := _rim_line(t,out,right*kk*HOLD_WRIST*size/0.85,rim)
+			var w := _rim_line(t,out,right*kk*HOLD_WRIST*size/TUNED_SIZE,rim)
 			var miss := absf(w.y-rim.y)+maxf(absf((w-rim).dot(out))-6.0,0.0)
 			score -= minf(miss*0.25,2.0)
 		# A rim neither at the middle nor far out on a spit.
@@ -2629,6 +2655,7 @@ func _touch_treasure() -> void:
 # --- The watch camera ---------------------------------------------------------------
 
 func _unhandled_input(event: InputEvent) -> void:
+	if roost != null: return
 	if event is InputEventKey and event.pressed and not event.echo and (event as InputEventKey).keycode == KEY_G and state == "clinging":
 		_say("It lets go")
 		_let_go()
