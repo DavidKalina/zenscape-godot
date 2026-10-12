@@ -23,7 +23,7 @@ func _check_scene() -> void:
 		_check(scene._celestial.state[pair[0]].distance_to(expected) < 0.00001, "Daylight state matches captured source: " + pair[1])
 	_check(absf(scene._lights[0].light_energy * PI - source.lights[0].intensity) < 0.00001, "Sun intensity matches the source at the reference hour")
 	_check(scene._precipitation.cloud_layer.is_equal_approx(Vector2(20, 12)), "Cloud slab retains the source mountain override")
-	var cloud_reference: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://docs/fidelity/source-clouds.json"))
+	var cloud_reference: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://tests/fixtures/source-clouds.json"))
 	scene._precipitation.cloud_override = 0.7
 	scene._process(0.0)
 	for pair: Array in [["zs_cloud_sun", "uSunColor"], ["zs_cloud_sky", "uSkyColor"], ["zs_cloud_direction", "uSunDir"]]:
