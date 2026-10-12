@@ -1,5 +1,11 @@
 # The binoculars, round 1
 
+> History: round 2 (docs/design/telescope/round2.md) turned these binoculars
+> into a brass spyglass and renamed the code: `scripts/telescope.gd`,
+> `shaders/telescope_view.gdshader`, the `telescope` action, the
+> `telescope_finds` group and `tests/test_telescope.gd`. Names below are
+> round 1's.
+
 The pilot carries a small brass pair. Hold a button on the ground and he
 raises them to his eyes. You look and zoom, an isle's card comes up when
 you rest on it, and far-off unfound finds glint. Let go and he lowers them.

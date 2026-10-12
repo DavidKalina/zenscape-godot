@@ -13,7 +13,7 @@ extends Node3D
 ##   catch (scripts/plane_arc/plane_cough.gd) and it stays put.
 ## - **Found.** Each part stands as its hovering piece (scripts/
 ##   plane_parts.gd, style "piece") and glints far off through the
-##   binoculars (`spot`, the one call into the binoculars' glint hook). Only
+##   telescope (`spot`, the one call into the telescope's glint hook). Only
 ##   the pilot on foot takes one (swimming counts; the plane passes
 ##   through): his middle within reach of it along the way he moved since
 ##   the last frame, as the rune tokens are taken (scripts/kit_isle/
@@ -59,7 +59,7 @@ const PartSpots = preload("res://scripts/plane_arc/part_spots.gd")
 const PlaneCough = preload("res://scripts/plane_arc/plane_cough.gd")
 const SnagPlane = preload("res://scripts/snag_plane.gd")
 const Ledger = preload("res://scripts/ledger/ledger.gd")
-const Binoculars = preload("res://scripts/binoculars.gd")
+const Telescope = preload("res://scripts/telescope.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const MomentsHud = preload("res://scripts/moments_hud.gd")
 const Lines = preload("res://scripts/collectible_lines.gd")
@@ -219,10 +219,10 @@ func _lay(id: String) -> void:
 			place_fin()
 		# The propeller is laid on the salvager's rope (`_build_snag`).
 
-## The one call into the binoculars' glint hook (a parallel branch renames
+## The one call into the telescope's glint hook (a parallel branch renamed
 ## it Telescope.spottable): `node` glints until objective `id` is done.
 static func spot(node: Node3D, id: String) -> void:
-	Binoculars.spottable(node,id)
+	Telescope.spottable(node,id)
 
 ## The fin on the serpent's back where it is now.
 func place_fin() -> void:
@@ -322,7 +322,7 @@ func take(id: String) -> void:
 			holder = token
 	if holder == null or not is_instance_valid(holder): holder = _make(id,false)
 	holders[id] = holder
-	holder.remove_from_group(Binoculars.GROUP)
+	holder.remove_from_group(Telescope.GROUP)
 	holder.set("turning",true)
 	holder.global_basis = Basis.IDENTITY
 	_shrink(holder)

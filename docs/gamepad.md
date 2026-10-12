@@ -49,22 +49,22 @@ The layout follows cozy builders on a pad, such as Townscaper and Tiny Glade on 
 | LT (held) | Crouch; at a run, then A, the long jump; on a slope, surf down it | Shift or C |
 | X (in the air) | Twirl; out of a slide, steer across to build speed and hop again on the touch | X |
 | RB | Spend the flow charge: the updraft, or forward out of a slide the burst (scripts/updraft.gd) | Q |
-| LB (held, on the ground) | Binoculars up; let go to lower (scripts/binoculars.gd). He stands or shuffles while they're up | Right mouse (held) |
+| LB (held, on the ground) | Telescope up; let go to lower (scripts/telescope.gd). He stands or shuffles while it's up | Right mouse (held) |
 | B or View | Step back out to building | V / Esc |
 | Menu | Pause (steps out) | — |
 
 Walking is already first person, so there is nothing for C, and Y does nothing while walking.
 
-#### Through the binoculars
+#### Through the telescope
 
 | Pad | Does | Keys / mouse |
 |---|---|---|
 | Right stick | Look, slower as the zoom grows | Mouse |
-| LT / RT | Zoom out / in, smoothly, 2x to 8x | Wheel, a step a notch |
+| LT / RT | Zoom out / in, smoothly, 3x to 12x | Wheel, a step a notch |
 | Left stick | Shuffle | WASD |
 | LB released | Lower | Right mouse released |
 
-While they're up A, Y, R3 and crouch do nothing; held on an isle a moment, its card shows.
+While it's up A, Y, R3 and crouch do nothing; held on an isle a moment, its card shows.
 
 ### Flying (the plane)
 
@@ -138,7 +138,7 @@ Keys sit in the same action where the code polls them:
 - `walk_jump`, `walk_crouch` and `walk_twirl`
 - `fly_boost` and `fly_brake`
 - `fly_eject` (the pad's X: eject, then open the canopy; the X key is the same verb, read as an event)
-- `binoculars` (the pad's LB and the right mouse button, held; `Pad.ACTIONS` takes a `["mouse", button]` spec for it)
+- `telescope` (the pad's LB and the right mouse button, held; `Pad.ACTIONS` takes a `["mouse", button]` spec for it)
 
 Keys read as events keep their own handlers.
 

@@ -1,8 +1,8 @@
 #!/bin/zsh
 # The game straight in (--no-title) with the watcher (--watcher, scripts/
 # kit_isle/watcher.gd, docs/design/watcher/round1.md): a stranger on the
-# south rim by the parked plane, binoculars up, following a glint on the rune
-# serpent's back. Hold right mouse / pad LB for your own binoculars.
+# south rim by the parked plane, telescope up, following a glint on the rune
+# serpent's back. Hold right mouse / pad LB for your own telescope.
 # Other flags pass through to the isle.
 set -u
 PROJECT_DIR="${0:A:h}"

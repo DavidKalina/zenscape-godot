@@ -91,7 +91,7 @@ extends "res://studies/kit_isle.gd"
 ## full-bodied dragon (scripts/sky_dragon.gd) rises out of the cloud sea and
 ## roams the archipelago, now and then low over the isle; V puts the camera
 ## on it. Its other flags are its own.
-## --watcher: a stranger on the south rim, binoculars up, watching a glint
+## --watcher: a stranger on the south rim, telescope up, watching a glint
 ## on the rune serpent's back, the plane's tail fin (scripts/kit_isle/
 ## watcher.gd, docs/design/watcher/round1.md).
 ## The plane starts broken (scripts/plane_arc/plane_arc.gd, docs/design/
@@ -346,7 +346,7 @@ func lock_target(at: Vector3) -> Dictionary:
 			best = target
 	return best
 
-## The binoculars' isles: this one and the motif isles that stand.
+## The telescope's isles: this one and the motif isles that stand.
 func sight_isles() -> Array:
 	var isles := super.sight_isles()
 	if motifs == null: return isles
@@ -572,7 +572,7 @@ func _add_life() -> void:
 
 # --- The watcher (scripts/kit_isle/watcher.gd, --watcher) ----------------------------
 
-## A stranger on the south rim, binoculars up, following a glint on the
+## A stranger on the south rim, telescope up, following a glint on the
 ## serpent's back (docs/design/watcher/round1.md): the plane's tail fin
 ## riding it (`watched_find`); null without --watcher.
 const Watcher = preload("res://scripts/kit_isle/watcher.gd")

@@ -30,7 +30,7 @@ const SnagPlane = preload("res://scripts/snag_plane.gd")
 const TarnArt = preload("res://studies/cloister_tarn_isle_art.gd")
 const NaveArt = preload("res://studies/drowned_nave_isle_art.gd")
 const Belfry = preload("res://scripts/ruin_kit_belfry.gd")
-const Binoculars = preload("res://scripts/binoculars.gd")
+const Telescope = preload("res://scripts/telescope.gd")
 var failures := 0
 var study: Node3D
 var arc: Node3D
@@ -165,7 +165,7 @@ func _laid() -> void:
 	var local := tip-tarn
 	var bed := TarnArt.ground(local.x,local.z)
 	check(local.y < TarnArt.W and local.y > bed and bed <= TarnArt.W-PartSpots.SWIM_DEEP,"The wingtip lies under the cloister tarn (%.2f under, %.1f m deep)" % [TarnArt.W-local.y,TarnArt.W-bed])
-	check(arc._glints.has("wingtip") and (arc._glints.wingtip as Node3D).global_position.y > TarnArt.W+tarn.y and (arc._glints.wingtip as Node3D).is_in_group(Binoculars.GROUP),"Its glint is over the water")
+	check(arc._glints.has("wingtip") and (arc._glints.wingtip as Node3D).global_position.y > TarnArt.W+tarn.y and (arc._glints.wingtip as Node3D).is_in_group(Telescope.GROUP),"Its glint is over the water")
 	check(_in_pool(study.motifs.isles,"cloister_tarn",tip),"In the tarn's water the pilot swims")
 	# The windscreen: in the drowned nave's water.
 	var nave := PartSpots.offset("drowned_nave")
@@ -186,7 +186,7 @@ func _laid() -> void:
 	var fin: Vector3 = arc.holders.fin.global_position
 	var frame: Transform3D = serpent.ring_frame(arc.fin_ring)
 	check(fin.distance_to(frame.origin) < 4.0 and (fin-frame.origin).dot(frame.basis.y.normalized()) > 0.5,"The tail fin rides the serpent's back (%.1f m off its ring's middle)" % fin.distance_to(frame.origin))
-	check(arc.holders.fin.is_in_group(Binoculars.GROUP) and arc.holders.wheel.is_in_group(Binoculars.GROUP),"The parts glint through the binoculars")
+	check(arc.holders.fin.is_in_group(Telescope.GROUP) and arc.holders.wheel.is_in_group(Telescope.GROUP),"The parts glint through the telescope")
 	# The propeller: on the salvager's rope; over a lap its pass comes by the
 	# gate tower's crown but never in reach of anyone standing on it.
 	var snag: Node3D = arc.snag
@@ -252,7 +252,7 @@ func _pickup() -> void:
 	study.place(wheel+Vector3.DOWN*0.85,Vector2(0.0,-1.0))
 	_frames(DT*2.0)
 	check(arc.state.wheel == "carried" and book.is_done("aqueduct_isle/wheel") and book.is_carried("wheel"),"On foot at the wheel it's taken: stamped in the ledger at once, carried")
-	check(not arc.holders.wheel.is_in_group(Binoculars.GROUP),"Taken, it no longer glints")
+	check(not arc.holders.wheel.is_in_group(Telescope.GROUP),"Taken, it no longer glints")
 	_frames(0.8)
 	var d: float = arc.holders.wheel.global_position.distance_to(study.figure.global_position)
 	check(d < 1.4 and is_equal_approx(arc.holders.wheel.scale.x,PlaneArc.CARRY),"It rides at his side, small (%.2f m off, %.2fx)" % [d,arc.holders.wheel.scale.x])
