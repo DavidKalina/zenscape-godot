@@ -20,8 +20,8 @@ extends "res://studies/character_study.gd"
 ##      flow charge, and updraft (Q / RB) into the load as it comes over
 ## The stations are laid against the loop at its default tunables, so the
 ## flags below make them harder or easier.
-## Tunables: --snag-lap=<s> (a lap, 26), --snag-rope=<m> (6),
-## --snag-dip=<m> (the belly's height over the pier at the dip, 9.5: the load a jump over its top).
+## Tunables: --snag-lap=<s> (a lap, 26), --snag-rope=<m> (7),
+## --snag-dip=<m> (the belly's height over the pier at the dip, 8.8: the load a short hop over its top).
 ##   ./run-snag-study.command [--snag-lap=20]
 ##   godot --path . res://studies/snag_study.tscn -- --no-title
 const SnagPlane = preload("res://scripts/snag_plane.gd")

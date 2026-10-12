@@ -30,8 +30,8 @@ const SwingRope = preload("res://scripts/interactables/swing_rope.gd")
 
 ## A lap (s), the rope (m), the belly's height over the ledge at the dip (m).
 const LAP := 26.0
-const ROPE := 6.0
-const DIP := 9.5
+const ROPE := 7.0
+const DIP := 8.8
 ## The loop: its radii (x along the dip's pass, z across), the belly's
 ## height over the dip's elsewhere (m), the dip's width (rad of the lap),
 ## the far side's sag (m) and width (rad).
