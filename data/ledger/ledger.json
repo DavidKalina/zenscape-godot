@@ -1,11 +1,13 @@
 {
 	"format": 1,
-	"note": "The ledger's index (docs/design/ledger/round1.md): the objective types, the isle card's rows they count under (in the card's order), and the region files under data/ledger/.",
+	"note": "The ledger's index (docs/design/ledger/round1.md): the objective types, the isle card's rows they count under (in the card's order), and the region files under data/ledger/. Parts: the plane's six (docs/design/plane-arc/round1.md).",
 	"types": {
-		"token": {"row": "glyphs"}
+		"token": {"row": "glyphs"},
+		"part": {"row": "plane"}
 	},
 	"rows": [
-		{"id": "glyphs", "icon": "rune", "label": "Runes"}
+		{"id": "glyphs", "icon": "rune", "label": "Runes"},
+		{"id": "plane", "icon": "part", "label": "Plane"}
 	],
 	"regions": ["ruins"]
 }

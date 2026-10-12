@@ -22,7 +22,11 @@ extends Node3D
 ## `snatch` takes the load off the rope: the rope's end flies free, the
 ## plane lurches (a roll toward the side the load hung and a nose-down jolt,
 ## ringing out over JOLT_TIME s) and its pilot looks back over his shoulder;
-## RESPAWN s on, a new load is on the rope's end.
+## RESPAWN s on, a new load is on the rope's end (unless `respawns` is off).
+##
+## In the region (scripts/plane_arc/plane_arc.gd) the loop is turned `yaw`
+## about its ledge (the pass heading along the Sundered gorge, not +x), the
+## load is the plane's propeller (`load_maker`), and there is one only.
 const PlaneFigure = preload("res://scripts/plane_figure.gd")
 const SkyTraffic = preload("res://scripts/sky_traffic.gd")
 const GlyphPickup = preload("res://scripts/glyph_pickup.gd")
@@ -88,6 +92,14 @@ var _jolt := -1.0
 var _jolt_side := 1.0
 var _respawn := 0.0
 var snatches := 0
+## The loop turned this much (rad) about the ledge's upright: 0 passes it
+## heading +x; PI/2 heading -z, the loop's middle off to the -x side.
+var yaw := 0.0
+## What hangs on the rope (a Node3D `load_maker.call()` makes, its middle
+## at its origin), or a rune token if none; whether a new one hangs after a
+## snatch.
+var load_maker := Callable()
+var respawns := true
 
 ## Set up: the loop's lap, rope and dip, the ledge it dips over, and where
 ## in the lap it starts.
@@ -119,18 +131,18 @@ func _ready() -> void:
 
 ## The belly's point at `theta` (rad round the lap, 0 over the ledge).
 func hook_at(theta: float) -> Vector3:
-	return path_point(theta,over,dip)
+	return path_point(theta,over,dip,yaw)
 
-static func path_point(theta: float, ledge: Vector3, dip_m: float) -> Vector3:
-	var centre := ledge-Vector3(0.0,0.0,RADII.y)
+static func path_point(theta: float, ledge: Vector3, dip_m: float, turn := 0.0) -> Vector3:
 	var near := exp(-pow(wrapf(theta,-PI,PI),2.0)/(2.0*DIP_WIDTH*DIP_WIDTH))
 	var far := exp(-pow(wrapf(theta-PI,-PI,PI),2.0)/(2.0*FAR_WIDTH*FAR_WIDTH))
 	var y := ledge.y+dip_m+CRUISE*(1.0-near)-FAR_DROP*far
-	return Vector3(centre.x+RADII.x*sin(theta),y,centre.z+RADII.y*cos(theta))
+	var off := Basis(Vector3.UP,turn)*Vector3(RADII.x*sin(theta),0.0,RADII.y*(cos(theta)-1.0))
+	return Vector3(ledge.x+off.x,y,ledge.z+off.z)
 
 ## Where the load hangs at rest at `theta` (straight under the hook).
-static func rest_load(theta: float, ledge: Vector3, dip_m: float, rope_m: float) -> Vector3:
-	return path_point(theta,ledge,dip_m)+Vector3.DOWN*rope_m
+static func rest_load(theta: float, ledge: Vector3, dip_m: float, rope_m: float, turn := 0.0) -> Vector3:
+	return path_point(theta,ledge,dip_m,turn)+Vector3.DOWN*rope_m
 
 func theta() -> float:
 	return TAU*fposmod(clock,lap)/lap
@@ -163,7 +175,7 @@ func advance(delta: float) -> void:
 		var dt := minf(STEP,left)
 		_step_rope(dt)
 		left -= dt
-	if not attached:
+	if not attached and respawns:
 		_respawn -= delta
 		if _respawn <= 0.0:
 			attached = true
@@ -250,8 +262,15 @@ func snatch() -> Node3D:
 	load_token = null
 	return token
 
+## Nothing on the rope, and none to come (its load taken in an earlier run).
+func empty() -> void:
+	attached = false
+	respawns = false
+	if load_token != null: load_token.queue_free()
+	load_token = null
+
 func _new_load() -> void:
-	load_token = GlyphPickup.make("rune",LOAD_SIZE)
+	load_token = load_maker.call() if load_maker.is_valid() else GlyphPickup.make("rune",LOAD_SIZE)
 	add_child(load_token)
 	load_token.scale = Vector3.ONE*0.05
 	create_tween().tween_property(load_token,"scale",Vector3.ONE,0.4).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)

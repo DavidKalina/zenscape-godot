@@ -56,7 +56,9 @@ extends "res://studies/character_study.gd"
 ## pocket sail (scripts/pocket_sail.gd; nothing opens by itself); down on
 ## something near the edge he walks on, else he is stranded a moment and
 ## back beside the plane. An isle that starts on foot has its plane parked
-## near the start (`plane_home`).
+## near the start (`plane_home`). An isle with the plane's arc (`plane_arc`,
+## scripts/plane_arc/plane_arc.gd) has it broken until its six parts are
+## fitted: Space by it fits what he carries, else the engine won't catch.
 ## --no-flora leaves the grass and flowers out (to compare cost).
 ## Life (scripts/kit_isle/kit_life.gd): undergrowth, butterflies, fireflies,
 ## songbirds on the stones, the wind made visible and the on-foot tokens;
@@ -415,6 +417,13 @@ var isle_up := false
 
 ## The ring and painted-sky flags (scripts/sky_homes.gd) to hand back when the isle leaves.
 var _ring_was: Array = []
+
+## The plane's arc (scripts/plane_arc/plane_arc.gd: broken until its six
+## parts are found, carried and fitted), or null for an isle without it.
+## An isle that has it makes it in `_add_life`; `board_parked` asks it
+## first, `tick` steps it, `_make_plane_figure` dresses the plane as it has
+## it, the foot hint shows its line.
+var plane_arc: Node3D = null
 
 func _exit_tree() -> void:
 	if _ring_was.is_empty(): return
@@ -949,6 +958,9 @@ func board() -> void:
 ## by rolling it off the isle's edge (it dips, then the wings catch).
 func board_parked() -> void:
 	if flying or not parked or not walk_ready: return
+	# Broken, Space fits what he carries or the engine won't catch
+	# (scripts/plane_arc/plane_arc.gd `at_plane`).
+	if plane_arc != null and plane_arc.at_plane(): return
 	if not _replay.is_empty(): _end_replay()
 	var at := parked_at
 	var heading := parked_heading
@@ -1022,6 +1034,7 @@ func _make_plane_figure() -> void:
 	plane_figure = StoneFigure.new() if stone_plane else PlaneFigure.new()
 	plane_figure.name = "Plane"
 	add_child(plane_figure)
+	if plane_arc != null: plane_arc.dress(plane_figure)
 
 ## Out of the plane. On its wheels (stopped and got out, or taxiing) it
 ## stays parked where it stands, and the pilot is beside it (or at `at`),
@@ -2076,6 +2089,7 @@ func tick(delta: float) -> void:
 	lost = keep
 	_lode_step(delta)
 	if life != null: life.step_pilot()
+	if plane_arc != null: plane_arc.step_pilot(delta)
 	if not flying:
 		_tread(delta,was_grounded,falling)
 		_check_step_off()
@@ -2249,7 +2263,10 @@ func _raise_arms(amount: float) -> void:
 
 ## The on-foot hint with the stone's line.
 func _foot_text() -> String:
-	var text := BOARD_LINE+"  ·  R3 camera back behind" if by_plane() else FOOT_HINT
+	var board: String = plane_arc.board_line() if plane_arc != null else ""
+	var text: String = (board if board != "" else BOARD_LINE)+"  ·  R3 camera back behind" if by_plane() else FOOT_HINT
+	var arc_line: String = plane_arc.hint() if plane_arc != null else ""
+	if arc_line != "": text += "\n"+arc_line
 	if _stranded_left >= 0.0: text = STRANDED_HINT
 	elif motor.move == "sail": text = SAIL_HINT
 	elif off_edge: text = FALL_HINT

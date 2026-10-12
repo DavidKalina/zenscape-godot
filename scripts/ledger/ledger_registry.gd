@@ -4,7 +4,9 @@ extends RefCounted
 ## index (ledger.json) names the objective types, the isle card's rows they
 ## count under (in the card's order) and the region files; a region file
 ## (ruins.json) lists its isles and, for each, its objectives: {slug, type,
-## name, row (optional: the type's row if left out)}.
+## name, row (optional: the type's row if left out), needs_plane (whether
+## it can only be done with the plane: false if left out; the 80/20 split,
+## docs/game-direction.md "The plane")}.
 ##
 ## An objective's id is "<isle>/<slug>" (the challenge recorder's key style,
 ## scripts/challenges/challenge_progress.gd on feature/challenge-recorder):
@@ -31,7 +33,7 @@ var rows: Array[Dictionary] = []
 var regions: Array[Dictionary] = []
 ## isle id -> {id, region, objectives: [objective ids, in order]}
 var isles := {}
-## objective id -> {id, isle, region, slug, type, name, row}
+## objective id -> {id, isle, region, slug, type, name, row, needs_plane}
 var objectives := {}
 ## What was wrong with the data (a duplicate id, an unknown type, a bad
 ## slug, a file that won't parse); an objective with an error is left out.
@@ -103,7 +105,11 @@ func _add(o: Dictionary, isle: String, region: String, listed: Array[String], pa
 	if row_spec(row).is_empty():
 		errors.append("%s: '%s' counts under an unknown row '%s'" % [path,id,row])
 		return
-	objectives[id] = {"id":id,"isle":isle,"region":region,"slug":slug,"type":type,"name":str(o.get("name",slug)),"row":row}
+	var needs: Variant = o.get("needs_plane",false)
+	if not needs is bool:
+		errors.append("%s: '%s' has needs_plane '%s', not true or false" % [path,id,str(needs)])
+		return
+	objectives[id] = {"id":id,"isle":isle,"region":region,"slug":slug,"type":type,"name":str(o.get("name",slug)),"row":row,"needs_plane":needs}
 	listed.append(id)
 
 func _json(path: String) -> Dictionary:
@@ -127,7 +133,8 @@ func has_isle(isle: String) -> bool:
 func has_region(region: String) -> bool:
 	return regions.any(func(r: Dictionary) -> bool: return r.id == region)
 
-## The objective `id` ({id, isle, region, slug, type, name, row}), {} if none.
+## The objective `id` ({id, isle, region, slug, type, name, row,
+## needs_plane}), {} if none.
 func objective(id: String) -> Dictionary:
 	return objectives.get(id,{})
 

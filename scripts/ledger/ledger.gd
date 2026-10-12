@@ -17,6 +17,11 @@ extends Node
 ## come from here (`card`), and so does a region's count for the gates to
 ## come (`region_progress`). Nothing gates on it yet.
 ##
+## The plane (docs/design/plane-arc/round1.md) keeps its state here too, in
+## the same file: which of its six parts the pilot carries (taken, not yet
+## fitted) and which are fitted (`plane`, `carry_part`, `fit_part`). Taking a
+## part also marks its objective done, so the card counts it at once.
+##
 ## Flags: --ledger=<path> keeps the progress in another file (tests, a second
 ## save); --fresh-ledger starts with nothing done, and the first thing done
 ## writes over the file. A script run (--script: the tests, the tools) keeps
@@ -39,6 +44,9 @@ var path := PATH
 ## objective id -> {done: true, at: ISO time}. Ids the registry no longer
 ## lists (a renamed slug) are kept as they were, not counted.
 var records := {}
+## The plane's parts: {carried: [part ids, in the order taken], fitted: [part
+## ids, in the order fitted]} (scripts/plane_figure.gd FOUND ids).
+var plane := _no_plane()
 
 ## The stand-in `shared()` answers with no autoload up.
 static var _stand_in: Node
@@ -64,7 +72,9 @@ func _ready() -> void:
 		if arg.begins_with("--ledger="): named = arg.trim_prefix("--ledger=")
 	if not named.is_empty(): path = named
 	elif _script_run(): path = ""
-	if args.has("--fresh-ledger"): records = {}
+	if args.has("--fresh-ledger"):
+		records = {}
+		plane = _no_plane()
 	else: load_saved()
 
 static func _args() -> PackedStringArray:
@@ -81,6 +91,7 @@ static func _script_run() -> bool:
 ## Reads what's done from `path` (nothing if there's no file, or memory only).
 func load_saved() -> void:
 	records = {}
+	plane = _no_plane()
 	if path.is_empty() or not FileAccess.file_exists(path): return
 	var json := JSON.new()
 	var parsed: Variant = json.data if json.parse(FileAccess.get_file_as_string(path)) == OK else null
@@ -92,6 +103,14 @@ func load_saved() -> void:
 	for id: Variant in saved:
 		var r: Variant = saved[id]
 		if r is Dictionary and bool(r.get("done",false)): records[str(id)] = {"done":true,"at":str(r.get("at",""))}
+	var kept: Variant = (parsed as Dictionary).get("plane",{})
+	if not kept is Dictionary: return
+	for key: String in ["carried","fitted"]:
+		var ids: Variant = (kept as Dictionary).get(key,[])
+		if not ids is Array: continue
+		for id: Variant in ids:
+			if not (plane[key] as Array).has(str(id)): (plane[key] as Array).append(str(id))
+	for id: String in plane.fitted: (plane.carried as Array).erase(id)
 
 ## Writes what's done to `path` (beside it first, then over it, so a crash
 ## mid-write leaves the last save whole). Nothing for memory only.
@@ -104,7 +123,7 @@ func save() -> void:
 	if f == null:
 		push_warning("Ledger: can't write %s (%s)" % [temp,error_string(FileAccess.get_open_error())])
 		return
-	f.store_string(JSON.stringify({"format":FORMAT,"saved":Time.get_datetime_string_from_system(true),"objectives":records},"\t"))
+	f.store_string(JSON.stringify({"format":FORMAT,"saved":Time.get_datetime_string_from_system(true),"objectives":records,"plane":plane},"\t"))
 	f.close()
 	var err := DirAccess.rename_absolute(temp,path)
 	if err != OK: push_warning("Ledger: can't move %s over %s (%s)" % [temp,path,error_string(err)])
@@ -112,7 +131,11 @@ func save() -> void:
 ## Forgets everything done (and saves that, if kept in a file).
 func reset() -> void:
 	records = {}
+	plane = _no_plane()
 	save()
+
+static func _no_plane() -> Dictionary:
+	return {"carried":[],"fitted":[]}
 
 # --- Doing ------------------------------------------------------------------------
 
@@ -131,6 +154,31 @@ func mark_done(id: String) -> bool:
 	changed.emit(id)
 	return true
 
+# --- The plane's parts ---------------------------------------------------------------
+
+## Part `part` taken (carried, not yet fitted) and its objective `id` done,
+## saved once; false if it was carried or fitted already.
+func carry_part(part: String, id: String) -> bool:
+	if is_carried(part) or is_fitted(part): return false
+	(plane.carried as Array).append(part)
+	if not mark_done(id): save()
+	return true
+
+## Part `part` fitted to the plane (off the carried list), saved; false if
+## it was fitted already.
+func fit_part(part: String) -> bool:
+	if is_fitted(part): return false
+	(plane.carried as Array).erase(part)
+	(plane.fitted as Array).append(part)
+	save()
+	return true
+
+func is_carried(part: String) -> bool:
+	return (plane.carried as Array).has(part)
+
+func is_fitted(part: String) -> bool:
+	return (plane.fitted as Array).has(part)
+
 # --- Asking -----------------------------------------------------------------------
 
 ## An isle's id, as the registry knows it: a placed or standalone motif
@@ -148,10 +196,12 @@ static func objective_id(isle: String, slug: String) -> String:
 	return Registry.objective_id(isle,slug)
 
 ## Done and total of `ids`, and by type: {done, total, types: {type: {done,
-## total}}}.
-func count(ids: Array[String]) -> Dictionary:
+## total}}}. With `needs_plane` true or false, only the objectives that do
+## (or don't) need the plane count.
+func count(ids: Array[String], needs_plane: Variant = null) -> Dictionary:
 	var out := {"done":0,"total":0,"types":{}}
 	for id in ids:
+		if needs_plane != null and bool(registry.objective(id).get("needs_plane",false)) != bool(needs_plane): continue
 		var type: String = registry.objective(id).type
 		if not out.types.has(type): out.types[type] = {"done":0,"total":0}
 		var done := 1 if is_done(id) else 0
@@ -161,13 +211,15 @@ func count(ids: Array[String]) -> Dictionary:
 		out.types[type].total += 1
 	return out
 
-## Isle `isle`'s count ({done, total, types}).
-func isle_progress(isle: String) -> Dictionary:
-	return count(registry.isle_objectives(isle))
+## Isle `isle`'s count ({done, total, types}); `needs_plane` as `count`'s.
+func isle_progress(isle: String, needs_plane: Variant = null) -> Dictionary:
+	return count(registry.isle_objectives(isle),needs_plane)
 
-## Region `region`'s count ({done, total, types}): what its beat will gate on.
-func region_progress(region: String) -> Dictionary:
-	return count(registry.region_objectives(region))
+## Region `region`'s count ({done, total, types}): what its beat will gate
+## on. `needs_plane` false counts only what's done on foot, true only what
+## needs the plane (the 80/20 split), null (left out) everything.
+func region_progress(region: String, needs_plane: Variant = null) -> Dictionary:
+	return count(registry.region_objectives(region),needs_plane)
 
 ## Isle `isle`'s card (scripts/isle_splash.gd) with its finds from the
 ## ledger: `base` (name, epithet, tag) and a [icon, label, found, of] row

@@ -784,6 +784,14 @@ func set_found(id: String, seat := true) -> void:
 	_seating.append(s)
 	set_process(true)
 
+## The propeller held turned `angle` (rad) on its shaft, the engine off (a
+## start that won't catch, scripts/plane_arc/plane_cough.gd): its blades,
+## or with it lost the bare shaft and its blade stumps.
+func twitch_prop(angle: float) -> void:
+	if _missing.has("propeller") and _parts.has("propeller"):
+		for n: Node3D in _parts.propeller.broken: n.rotation.z = angle
+	elif _prop != null: _prop.rotation.z = angle
+
 func _process(delta: float) -> void:
 	for s: Dictionary in _seating.duplicate():
 		s.t += delta

@@ -110,7 +110,9 @@ func _card() -> void:
 	check(b.carded == bell and b.splash.visible and str(b.splash._name.text) == "SPIRES OF THE SILENT BELL","After %.1f s their card shows (%s)" % [Binoculars.DWELL,str(b.splash._name.text)])
 	var finds: Array = b.splash.card.get("finds",[])
 	var total := int(Ledger.shared().isle_progress("bell_spires").total)
-	check(not finds.is_empty() and int(finds[0][3]) == total and total > 0,"The card counts the ledger's finds (%s, %d listed)" % [finds,total])
+	var rows := 0
+	for row: Array in finds: rows += int(row[3])
+	check(not finds.is_empty() and rows == total and total > 0,"The card counts the ledger's finds (%s, %d listed)" % [finds,total])
 	_ticks(6.0)
 	check(b.splash.visible,"It stays while they rest on the isle")
 	b.pitch = 1.1

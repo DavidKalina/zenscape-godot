@@ -92,8 +92,12 @@ extends "res://studies/kit_isle.gd"
 ## roams the archipelago, now and then low over the isle; V puts the camera
 ## on it. Its other flags are its own.
 ## --watcher: a stranger on the south rim, binoculars up, watching a glint
-## on the rune serpent's back (scripts/kit_isle/watcher.gd, docs/design/
-## watcher/round1.md).
+## on the rune serpent's back, the plane's tail fin (scripts/kit_isle/
+## watcher.gd, docs/design/watcher/round1.md).
+## The plane starts broken (scripts/plane_arc/plane_arc.gd, docs/design/
+## plane-arc/round1.md): its six parts are spread over the region, found on
+## foot, carried and fitted at the plane; --plane-fixed starts it repaired
+## (--fly too), --parts-carried carrying all six, --part-at=<id> by one.
 ## --dragon-ride (round 5) starts the pilot on foot on the isle it grips, to
 ## ride the sag and be flung by the snap; G makes it let go.
 ## The blast is a gust for the plane too (round 10, scripts/dragon_gale.gd
@@ -553,6 +557,10 @@ func _capture_flying() -> void:
 func _add_life() -> void:
 	super._add_life()
 	if dragon_on: _build_sky_dragon()
+	# The plane's arc, before the watcher, who watches its tail fin.
+	plane_arc = PlaneArc.new()
+	add_child(plane_arc)
+	plane_arc.setup(self)
 	if Watcher.wanted() and sky != null and sky.get("serpent") != null:
 		watcher = Watcher.new()
 		add_child(watcher)
@@ -565,9 +573,22 @@ func _add_life() -> void:
 # --- The watcher (scripts/kit_isle/watcher.gd, --watcher) ----------------------------
 
 ## A stranger on the south rim, binoculars up, following a glint on the
-## serpent's back (docs/design/watcher/round1.md); null without --watcher.
+## serpent's back (docs/design/watcher/round1.md): the plane's tail fin
+## riding it (`watched_find`); null without --watcher.
 const Watcher = preload("res://scripts/kit_isle/watcher.gd")
 var watcher: Node3D = null
+
+## What the watcher watches: the tail fin while it rides the serpent
+## (scripts/plane_arc/plane_arc.gd `fin_holder`), else null.
+func watched_find() -> Node3D:
+	return plane_arc.fin_holder() if plane_arc != null else null
+
+# --- The plane's arc (scripts/plane_arc/plane_arc.gd) ------------------------------------
+
+## The plane broken till its six parts are found on foot, carried and fitted
+## (docs/design/plane-arc/round1.md); its flags (--plane-fixed,
+## --parts-carried, --part-at=<id>) are its own.
+const PlaneArc = preload("res://scripts/plane_arc/plane_arc.gd")
 
 # --- The night's lights (scripts/kit_isle/kit_night_lights.gd) ----------------------
 

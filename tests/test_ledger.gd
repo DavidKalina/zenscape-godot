@@ -71,11 +71,14 @@ func _registry() -> void:
 	var listed: Array = registry.regions[0].isles if not registry.regions.is_empty() else []
 	var same := listed.size() == want.size() and want.all(func(i: String) -> bool: return listed.has(i))
 	check(same,"Ruins holds the aqueduct isle and the eight motif isles: %s" % [listed])
-	var ids: Array[String] = registry.region_objectives("ruins")
+	var ids: Array[String] = registry.region_objectives("ruins","token")
 	var shaped := ids.all(func(id: String) -> bool:
 		var o: Dictionary = registry.objective(id)
-		return id == "%s/%s" % [o.isle,o.slug] and o.type == "token" and o.row == "glyphs" and not str(o.name).is_empty())
-	check(ids.size() == 57 and shaped,"57 token objectives, each '<isle>/<slug>' with a name and the Glyphs row (%d)" % ids.size())
+		return id == "%s/%s" % [o.isle,o.slug] and o.type == "token" and o.row == "glyphs" and not str(o.name).is_empty() and o.needs_plane == false)
+	check(ids.size() == 57 and shaped,"57 token objectives, each '<isle>/<slug>' with a name, the Glyphs row and needs_plane false (%d)" % ids.size())
+	# The plane's six parts (docs/design/plane-arc/round1.md) beside them.
+	var parts: Array[String] = registry.region_objectives("ruins","part")
+	check(parts.size() == 6 and registry.region_objectives("ruins").size() == 63 and parts.all(func(id: String) -> bool: return registry.objective(id).row == "plane"),"6 part objectives under the Plane row, 63 in all (%d)" % parts.size())
 	# Every token the isles' code lays is listed (those that can be laid
 	# without the isle's geometry, and the three that need it).
 	var laid: Array[String] = []
@@ -146,12 +149,12 @@ func _round_trip() -> void:
 func _cards(book: Node) -> void:
 	book.reset()
 	var card: Dictionary = book.card("bell_spires",{"name":"X","epithet":"Y"})
-	check(card.name == "X" and card.epithet == "Y" and card.finds == [["rune","Runes",0,7]],"Bell spires' card: one Glyphs row, 0 of 7 %s" % [card.finds])
+	check(card.name == "X" and card.epithet == "Y" and card.finds == [["rune","Runes",0,7],["part","Plane",0,1]],"Bell spires' card: a Glyphs row, 0 of 7, then a Plane row, 0 of 1 (its cowl) %s" % [card.finds])
 	book.mark_done("bell_spires/chimney")
 	book.mark_done("bell_spires/turret")
 	var motif: RefCounted = BellSpires.new()
 	var live: Dictionary = motif.isle_card()
-	check(live.finds == [["rune","Runes",2,7]] and live.name == "Spires of the Silent Bell","The motif's own card reads the ledger: 2 of 7 %s" % [live.finds])
+	check(live.finds == [["rune","Runes",2,7],["part","Plane",0,1]] and live.name == "Spires of the Silent Bell","The motif's own card reads the ledger: 2 of 7 %s" % [live.finds])
 	check(book.card("nowhere",{"name":"Z"}).finds == [],"An isle the ledger doesn't list has no rows")
 	var counts := {}
 	for isle: String in book.registry.isles: counts[isle] = book.card(isle,{}).finds[0][3]
@@ -160,7 +163,7 @@ func _cards(book: Node) -> void:
 	stand_in.set_script(load("res://studies/aqueduct_isle.gd"))
 	check(LedgerScript.isle_id_of(stand_in) == "aqueduct_isle","The aqueduct isle's id is 'aqueduct_isle'")
 	book.mark_done("aqueduct_isle/span")
-	check(stand_in.isle_card().finds == [["rune","Runes",1,7]],"The aqueduct isle's card reads the ledger: %s" % [stand_in.isle_card().finds])
+	check(stand_in.isle_card().finds == [["rune","Runes",1,7],["part","Plane",0,2]],"The aqueduct isle's card reads the ledger (its wheel and tail fin on the Plane row): %s" % [stand_in.isle_card().finds])
 	stand_in.free()
 	book.reset()
 
@@ -204,10 +207,12 @@ func _tokens(book: Node) -> void:
 func _region(book: Node) -> void:
 	book.reset()
 	var none: Dictionary = book.region_progress("ruins")
-	check(none.done == 0 and none.total == 57 and none.types == {"token":{"done":0,"total":57}},"Ruins: 0 of 57, tokens 0 of 57 %s" % [none])
+	check(none.done == 0 and none.total == 63 and none.types == {"token":{"done":0,"total":57},"part":{"done":0,"total":6}},"Ruins: 0 of 63, tokens 0 of 57, parts 0 of 6 %s" % [none])
 	for id in ["aqueduct_isle/slot","bell_spires/drift","hollow_keel/vault"]: book.mark_done(id)
 	var some: Dictionary = book.region_progress("ruins")
 	check(some.done == 3 and some.types.token.done == 3,"Ruins: 3 done, 3 tokens %s" % [some])
+	# By the plane: everything listed today is reached on foot.
+	check(book.region_progress("ruins",false).total == 63 and book.region_progress("ruins",false).done == 3 and book.region_progress("ruins",true).total == 0,"By needs_plane: 63 on foot (3 done), none needing the plane")
 	check(book.isle_progress("hollow_keel") == {"done":1,"total":6,"types":{"token":{"done":1,"total":6}}},"Hollow keel: 1 of 6")
 	check(book.region_progress("elsewhere").total == 0,"An unknown region counts nothing")
 

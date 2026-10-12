@@ -92,10 +92,8 @@ func build(into: Node3D) -> void:
 ## the south stack, a broken arch the low stack's bridge goes out through,
 ## a broken pier on the fin's high stack, a broken pier on its low one.
 func _crowns(l: Dictionary) -> void:
-	var hero: Dictionary = l.spires.hero
-	var arrive: Dictionary = l.stairs.hero.landings[l.stairs.hero.landings.size()-1]
 	belfry = Belfry.belfry(BELFRY_SEED,0.45)
-	belfry.transform = Transform3D(facing(Vector2.from_angle(float(arrive.mid))),Vector3(Spires.HERO.x,float(hero.top)+0.3,Spires.HERO.y))
+	belfry.transform = belfry_frame(l)
 	art.add_child(belfry)
 	_add_bell(belfry.get_node("Bell"),1.0)
 	var needle: Dictionary = l.spires.needle
@@ -129,6 +127,15 @@ func _crowns(l: Dictionary) -> void:
 	art.add_child(pier)
 
 ## A basis turning a piece's front (+Z) toward `way` (x, z).
+## The belfry's frame on the hero's summit (its own frame), its front to the
+## stair's arrival: where it stands, without building it (`l` the layout,
+## Spires `layout`, its own if none).
+static func belfry_frame(l: Dictionary = {}) -> Transform3D:
+	if l.is_empty(): l = Spires.layout()
+	var hero: Dictionary = l.spires.hero
+	var arrive: Dictionary = l.stairs.hero.landings[l.stairs.hero.landings.size()-1]
+	return Transform3D(facing(Vector2.from_angle(float(arrive.mid))),Vector3(Spires.HERO.x,float(hero.top)+0.3,Spires.HERO.y))
+
 static func facing(way: Vector2) -> Basis:
 	return Basis(Vector3.UP,atan2(way.x,way.y))
 

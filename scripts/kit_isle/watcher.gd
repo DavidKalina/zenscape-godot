@@ -24,11 +24,16 @@ extends Node3D
 ##   march from STAND_FROM south over the turf to the rim's edge, and back
 ##   STAND_BACK m from it. A column on the parked plane's layer keeps the
 ##   pilot from walking through him.
-## - **The find:** a rune token riding RIDE_ARC m back from the serpent's
-##   snout, FIND_LIFT m over its back's crest, put with
-##   `Binoculars.spottable(find)` (no objective: it glints until taken), so
-##   it glints only through the binoculars. On foot within TAKE m of it (on
-##   the serpent's back) it is taken: a moments pop, nothing in the ledger.
+## - **The find:** the host's, if it has one (`watched_find`): on the
+##   aqueduct isle, the plane's tail fin riding the serpent's back
+##   (scripts/plane_arc/plane_arc.gd, which places it, makes it glint and
+##   takes it; docs/design/plane-arc/round1.md). On foot within TAKE m of it
+##   he takes it, and once it's gone (taken now or in an earlier run) the
+##   watcher is done. A host with no find of its own gets the old one: a
+##   rune token riding RIDE_ARC m back from the serpent's snout, FIND_LIFT m
+##   over its back's crest, put with `Binoculars.spottable(find)` (no
+##   objective: it glints until taken), so it glints only through the
+##   binoculars; taken, a moments pop, nothing in the ledger.
 ## - **His line:** within LINE_NEAR m he lowers them, looks at you and a
 ##   line streams in at the screen's foot (LINE_RATE characters a second),
 ##   without pausing anything; walk off past LINE_FAR m and it fades.
@@ -117,6 +122,8 @@ var pitch := 0.0
 ## Whether he sees the find now, and since when not.
 var sees := true
 var taken := false
+## The find is the host's (`watched_find`), not his own rune.
+var borrowed := false
 var _ring := -1
 var _state_left := 8.0
 var _unseen := 0.0
@@ -172,7 +179,13 @@ func setup(host: Node3D) -> void:
 	add_child(column)
 	position = stand_spot()
 	_build_line()
-	if serpent != null: _build_find()
+	if isle.has_method("watched_find"):
+		borrowed = true
+		find = isle.watched_find()
+		if find == null:
+			taken = true
+			_set_state("done")
+	elif serpent != null: _build_find()
 	facing = PilotMotor.facing_of(Vector2(0.0,1.0))
 	if find != null:
 		_place_find()
@@ -229,6 +242,10 @@ func _build_find() -> void:
 ## The find on the serpent's back where it is now: over the middle of its
 ## crest at ring `_ring`, FIND_LIFT m up off its back.
 func _place_find() -> void:
+	if borrowed:
+		var arc: Node3D = isle.get("plane_arc")
+		if arc != null: arc.place_fin()
+		return
 	var frame: Transform3D = serpent.ring_frame(_ring)
 	var corners: Array[Vector3] = serpent.ring_corners(_ring)
 	var crest := frame*((corners[0]+corners[1])*0.5)
@@ -237,6 +254,13 @@ func _place_find() -> void:
 ## Taken: gone, and a pop.
 func _take() -> void:
 	taken = true
+	if borrowed:
+		# The host takes it (the fin to the pilot's side) and says so.
+		var arc: Node3D = isle.get("plane_arc")
+		if arc != null: arc.take("fin")
+		find = null
+		_set_state("done")
+		return
 	find.queue_free()
 	find = null
 	var moments: Node = isle.get("_moments")
@@ -250,9 +274,14 @@ func _take() -> void:
 func _process(delta: float) -> void:
 	if isle == null or delta <= 0.0: return
 	_clock += delta
+	# The host's find gone from the serpent (the pilot took it): done.
+	if borrowed and find != null and isle.watched_find() != find:
+		find = null
+		taken = true
+		_set_state("done")
 	if find != null:
 		_place_find()
-		_spin.rotation.y += FIND_SPIN*delta
+		if _spin != null: _spin.rotation.y += FIND_SPIN*delta
 		_check_take()
 	_see(delta)
 	var pilot := _pilot()
