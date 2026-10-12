@@ -37,7 +37,7 @@ const IDS := ["propeller","wheel","cowl","fin","wingtip","windscreen"]
 ## turns.
 const PARTS := {
 	"propeller":{"name":"Propeller","pieces":[["propeller",Vector3(0.0,0.0,-0.68)],["spinner",Vector3.ZERO]],"view":Vector3(0.0,0.0,-1.0),"up":Vector3.UP,"roll":0.75,"pose":Vector3(0.0,0.0,0.75)},
-	"wheel":{"name":"Wheel","pieces":[["wheel",Vector3.ZERO]],"view":Vector3(1.0,0.0,0.0),"up":Vector3.UP,"roll":0.0,"pose":Vector3(0.0,1.2,0.0)},
+	"wheel":{"name":"Wheel","pieces":[["wheel",Vector3.ZERO]],"view":Vector3(1.0,0.0,0.0),"up":Vector3.UP,"roll":0.0,"pose":Vector3(0.0,1.2,0.45)},
 	"cowl":{"name":"Cowl","pieces":[["cowl",Vector3.ZERO]],"view":Vector3(1.0,0.35,-0.9),"up":Vector3.UP,"roll":0.0,"pose":Vector3(0.0,0.7,0.0)},
 	"fin":{"name":"Tail fin","pieces":[["fin",Vector3.ZERO]],"view":Vector3(1.0,0.0,0.0),"up":Vector3.UP,"roll":0.0,"pose":Vector3(0.0,1.25,0.0)},
 	"wingtip":{"name":"Wingtip","pieces":[["wingtip",Vector3.ZERO]],"view":Vector3(0.0,1.0,0.0),"up":Vector3(0.0,0.0,-1.0),"roll":0.6,"pose":Vector3(1.05,0.0,0.45)},

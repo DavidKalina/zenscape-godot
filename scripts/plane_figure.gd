@@ -38,12 +38,27 @@ extends Node3D
 ##
 ## Landed, it stands on its two wheels and a tail skid, nose up (`park`,
 ## scripts/plane_strip.gd `rest`), the pilot out, the propeller still.
+##
+## It can stand broken (`set_missing`): each of the six found parts
+## (scripts/plane_parts.gd IDS) gone leaves damage where it was, so the
+## plane reads as broken, not unfinished: a bare shaft and flange for the
+## propeller, the radial engine bare for the cowl, a stub axle for the right
+## wheel (the plane leaning onto it), a jagged stub and bare rudder post for
+## the fin, the upper wing's right end torn past its last rib, spars and a
+## broken rib showing, and bare brass mounts and a shard for the windscreen.
+## `set_found` seats a part back: it eases in from just off its place,
+## turning, and settles, then a warm flash, a brass ring of light and a
+## puff of dust; it keeps a faint glow a while after (`afterglow`, or for
+## good with `hold_glow`). Nothing missing, the figure is drawn as ever: it
+## only splits its found parts off its joined meshes the first time one
+## goes missing (`_split`).
 
 const PlanePilot = preload("res://scripts/plane_pilot.gd")
 const FacetMesh = preload("res://scripts/facet_mesh.gd")
 const PersonKit = preload("res://scripts/person_kit.gd")
 const PROP_BLUR := preload("res://shaders/prop_blur.gdshader")
 const FOLK_RIBBON := preload("res://shaders/folk_ribbon.gdshader")
+const PART_GLOW := preload("res://shaders/plane_part_glow.gdshader")
 const WOOD := Color("8f5234")
 const DARK := Color("6b3b28")
 const TRIM := Color("c8643b")
@@ -123,6 +138,56 @@ const VAPOUR_WIDTH := Vector2(0.06,0.55)
 const VAPOUR_ALPHA := 0.42
 const VAPOUR_DRIFT := Vector2(0.18,0.3)
 const VAPOUR_COLOR := Color(1.0,0.98,0.94)
+## The found parts (scripts/plane_parts.gd IDS), each of which can be
+## missing (`set_missing`).
+const FOUND := ["propeller","wheel","cowl","fin","wingtip","windscreen"]
+## Seating a part back (`set_found`): seconds it eases in, how far past its
+## seat it overshoots before it settles (the ease's back), the glow and
+## inner light it comes in with, the flash's at the snap and seconds it
+## falls in, the faint glow and inner light it keeps after, and seconds it
+## keeps them by default (`afterglow`).
+const SEAT := 0.6
+const SETTLE := 0.9
+const ARRIVE := Vector2(0.75,0.05)
+const FLASH := Vector2(1.9,0.5)
+const FLASH_FALL := 0.35
+const KEEP := Vector2(0.5,0.03)
+const AFTERGLOW := 40.0
+## The brass ring of light at the snap: its reach (times the part's size)
+## from and to, its strength and seconds; the puff's motes and seconds.
+const RING_REACH := Vector2(0.9,2.8)
+const RING_ALPHA := 0.95
+const RING_TIME := 0.85
+const PUFF := 16
+const PUFF_TIME := 1.1
+const SEAT_WARM := Color("ffd59a")
+const PUFF_DUST := Color(0.96,0.92,0.84)
+## Each part's seat: its middle (`at`), where it comes in from (m off the
+## seat), the axis it turns about on the way and how far (rad), and its
+## size (m), for the ring and the puff.
+const SEATS := {
+	"propeller":{"at":Vector3(0.0,0.0,-0.7),"from":Vector3(0.0,0.03,-0.26),"axis":Vector3.BACK,"turn":5.0,"size":0.55},
+	"cowl":{"at":Vector3(0.0,0.0,-0.53),"from":Vector3(0.0,0.06,-0.22),"axis":Vector3.RIGHT,"turn":0.35,"size":0.32},
+	"wheel":{"at":Vector3(0.2,-0.33,-0.28),"from":Vector3(0.2,0.07,0.0),"axis":Vector3.RIGHT,"turn":-3.0,"size":0.2},
+	"fin":{"at":Vector3(0.0,0.15,0.63),"from":Vector3(0.0,0.22,0.04),"axis":Vector3.UP,"turn":0.6,"size":0.3},
+	"wingtip":{"at":Vector3(0.49,UPPER_Y,STAGGER),"from":Vector3(0.2,0.07,0.0),"axis":Vector3.BACK,"turn":0.35,"size":0.45},
+	"windscreen":{"at":Vector3(0.0,0.235,0.11),"from":Vector3(0.0,0.16,-0.05),"axis":Vector3.RIGHT,"turn":0.6,"size":0.16},
+}
+## The upper wing's right end with its tip lost: the cloth whole to the rib
+## TORN_RIB m out, torn ragged past it (TEAR, m, the tears' reach round the
+## section, and TOOTH the teeth between them); the spars run on bare to
+## SPARS m out, a broken rib at BARE_RIB.
+const TORN_RIB := 0.2
+const TEAR := [0.032,0.012,0.05,0.02,0.058,0.014,0.04,0.026,0.052,0.01,0.03]
+const TOOTH := [0.05,0.008,0.066,0.022,0.03,0.07,0.012,0.045,0.02,0.06]
+const SPARS := Vector2(0.318,0.272)
+const BARE_RIB := 0.262
+## Lost the right wheel, it leans onto the bare axle's end (STUB_END), about
+## the line from the left wheel's foot to the tail skid's.
+const STUB_END := Vector3(0.222,-0.346,-0.28)
+const LEFT_FOOT := Vector3(-0.2,-0.41,-0.28)
+const RIGHT_FOOT := Vector3(0.2,-0.41,-0.28)
+const SKID_FOOT := Vector3(0.0,-0.118,0.66)
 
 var _prop: Node3D
 var _blur: MeshInstance3D
@@ -151,12 +216,35 @@ var _vapour_mesh: ImmediateMesh
 var _vapour_points := PackedVector3Array()
 var _vapour_strength := PackedFloat32Array()
 var _vapour_clock := 0.0
+## The paints it was built in, for the parts it splits off (`_split`).
+var _paints := {}
+## Where its found parts' triangles lie in its joined meshes: [the joined
+## MeshInstance3D, the part, first vertex, vertex count].
+var _spans := []
+## The parts missing, and each part's nodes once split (`_split`): "whole"
+## (the part itself, which seats), "base" (shown while it is on, not
+## seating: the wing's inner end, the aileron), "broken" (the damage), its
+## glow and where it seats.
+var _missing := {}
+var _parts := {}
+var _split_done := false
+## The seatings under way: {id, t, snapped, ring, puff}.
+var _seating := []
+## Seconds a seated part keeps its faint glow, and true to keep it on.
+var afterglow := AFTERGLOW
+var hold_glow := false
+## How far it leans onto the bare axle (0 to 1, `_tip`), and the transform
+## it was parked at.
+var _lean := 0.0
+var _lean_to := 0.0
+var _parked_at := Transform3D.IDENTITY
 
 ## `livery` repaints it (scripts/sky_traffic.gd): any of body, dark, trim,
 ## wing and scarf, each a Color; the wanderer's own plane takes none.
 func _init(livery := {}) -> void:
 	name = "Plane"
 	var paint := paints(livery)
+	_paints = paint
 	var wood: Material = paint.wood
 	var dark: Material = paint.dark
 	var trim: Material = paint.trim
@@ -189,19 +277,21 @@ func _init(livery := {}) -> void:
 	# ribs, tipped in terracotta, the upper with roundels near its tips.
 	var rounded := SPAN*0.5*0.8
 	var ailerons := Vector3(SPAN*0.5*AILERON_SPAN.x,SPAN*0.5*AILERON_SPAN.y,_hinge_z())
-	_add(_wing(SPAN*0.5,-rounded,rounded,ailerons),cream,Vector3(0.0,UPPER_Y,STAGGER),Vector3.ZERO)
+	_add(_wing(SPAN*0.5,-rounded,rounded,ailerons),cream,Vector3(0.0,UPPER_Y,STAGGER),Vector3.ZERO).set_meta("piece","upper_wing")
 	var lower_round := LOWER_SPAN*0.5*0.8
 	_add(_wing(LOWER_SPAN*0.5,-lower_round,lower_round),cream,Vector3(0.0,LOWER_Y,0.0),Vector3.ZERO)
 	for side in [-1.0,1.0]:
 		var tip := Vector2(rounded,SPAN*0.5) if side > 0.0 else Vector2(-SPAN*0.5,-rounded)
-		_add(_wing(SPAN*0.5,tip.x,tip.y),trim,Vector3(0.0,UPPER_Y,STAGGER),Vector3.ZERO)
+		var upper_tip := _add(_wing(SPAN*0.5,tip.x,tip.y),trim,Vector3(0.0,UPPER_Y,STAGGER),Vector3.ZERO)
+		if side > 0.0: upper_tip.set_meta("piece","wingtip")
 		var low := Vector2(lower_round,LOWER_SPAN*0.5) if side > 0.0 else Vector2(-LOWER_SPAN*0.5,-lower_round)
 		_add(_wing(LOWER_SPAN*0.5,low.x,low.y),trim,Vector3(0.0,LOWER_Y,0.0),Vector3.ZERO)
 		# A roundel on the upper wing, on the cloth as it lies.
 		var at := Vector2(SPAN*0.3*side,-CHORD*0.5+0.42*_chord_at(SPAN*0.5,SPAN*0.3))
 		var rings := [[0.062,dark],[0.046,trim],[0.018,cream]]
 		for k in range(rings.size()):
-			_add(_decal(SPAN*0.5,at,float(rings[k][0]),0.0015+0.0005*k),rings[k][1],Vector3(0.0,UPPER_Y,STAGGER),Vector3.ZERO)
+			var ring := _add(_decal(SPAN*0.5,at,float(rings[k][0]),0.0015+0.0005*k),rings[k][1],Vector3(0.0,UPPER_Y,STAGGER),Vector3.ZERO)
+			if side > 0.0: ring.set_meta("piece","wingtip")
 	for side in [-1.0,1.0]:
 		# The ailerons hinge into the upper wing's trailing edge, out towards
 		# the tips.
@@ -383,7 +473,7 @@ func _spin_prop(delta: float, pace: float, running: float) -> void:
 	_blur_material.set_shader_parameter("strength",lerpf(BLUR.x,BLUR.y,fast)*smoothstep(0.0,0.6,running))
 	_blur_material.set_shader_parameter("spread",fast)
 	_blur_material.set_shader_parameter("phase",fmod(Time.get_ticks_msec()*0.001*BLUR_CRAWL,TAU)*running)
-	_blur.visible = running > 0.01
+	_blur.visible = running > 0.01 and not _missing.has("propeller")
 
 ## The pilot in the cockpit, or not (hopped out).
 func show_pilot(on: bool) -> void:
@@ -400,7 +490,8 @@ static func pose(at: Vector3, heading: float, pitch: float, roll: float) -> Tran
 ## pilot out, no scarf, mark or vapour.
 func park(placed: Transform3D) -> void:
 	parked = true
-	transform = placed
+	_parked_at = placed
+	transform = placed*_leaning()
 	show_pilot(false)
 	_spin_prop(0.0,0.0,0.0)
 	_mark.visible = false
@@ -540,6 +631,505 @@ func _place_mark(delta: float, at: Vector3, ground: Callable, landable: bool) ->
 	var size := lerpf(1.2,2.8,clampf(height/12.0,0.0,1.0))
 	_mark.transform = Transform3D(Basis().scaled(Vector3(size,1.0,size)),Vector3(at.x,float(under)+0.06,at.z))
 	_mark_material.albedo_color = Color(1.0,0.97,0.88,close*lerpf(0.35,0.85,_mark_bright))
+
+# --- Missing and found --------------------------------------------------------------
+
+func _ready() -> void:
+	set_process(not _seating.is_empty() or _lean != _lean_to)
+
+## Stands it with the parts `ids` (of FOUND) missing, the damage showing
+## where each was, and the rest on, at once. A figure never broken, given
+## none, is left as it was built.
+func set_missing(ids: Array) -> void:
+	if ids.is_empty() and not _split_done: return
+	_split()
+	for s: Dictionary in _seating: _clear_seat(s)
+	_seating.clear()
+	_missing.clear()
+	for id in ids:
+		if FOUND.has(String(id)): _missing[String(id)] = true
+	for id: String in FOUND:
+		_show(id,not _missing.has(id))
+		_glow(id,0.0,0.0)
+	_lean = 1.0 if _missing.has("wheel") else 0.0
+	_lean_to = _lean
+	if parked: transform = _parked_at*_leaning()
+	set_process(false)
+
+## The parts missing now.
+func missing() -> Array:
+	return _missing.keys()
+
+func is_missing(id: String) -> bool:
+	return _missing.has(id)
+
+## Puts part `id` back on. With `seat` it eases in from just off its place,
+## turning, settles, and snaps home with a flash, a brass ring of light and
+## a puff; without, it is simply there. Either way it keeps a faint glow
+## `afterglow` seconds (for good with `hold_glow`).
+func set_found(id: String, seat := true) -> void:
+	if not _missing.has(id): return
+	_missing.erase(id)
+	_lean_to = 1.0 if _missing.has("wheel") else 0.0
+	var s := {"id":id,"t":0.0,"snapped":false,"ring":null,"puff":null}
+	if seat:
+		var rec: Dictionary = _parts[id]
+		for n: Node3D in rec.whole: n.visible = true
+		for n: Node3D in rec.base: n.visible = false
+		if rec.flap != null: rec.flap.visible = true
+		if id == "propeller": _prop.visible = true
+		_pose_part(id,1.0)
+	else:
+		s.t = SEAT+FLASH_FALL*8.0
+		s.snapped = true
+		_show(id,true)
+		_lean = _lean_to
+		if parked: transform = _parked_at*_leaning()
+	_seating.append(s)
+	set_process(true)
+
+func _process(delta: float) -> void:
+	for s: Dictionary in _seating.duplicate():
+		s.t += delta
+		var id: String = s.id
+		if not s.snapped:
+			var u := clampf(s.t/SEAT,0.0,1.0)
+			_pose_part(id,1.0-_settle(u))
+			_glow(id,lerpf(ARRIVE.x*0.5,ARRIVE.x,u),ARRIVE.y*u)
+			if s.t < SEAT: continue
+			# Home: the damage goes, and the flash, the ring and the puff.
+			s.snapped = true
+			_show(id,true)
+			s.ring = _seat_ring(id)
+			s.puff = _seat_puff(id)
+		var after: float = s.t-SEAT
+		var keep := 1.0 if hold_glow else 1.0-smoothstep(afterglow*0.5,afterglow,after)
+		var flash := exp(-after/FLASH_FALL)
+		_glow(id,KEEP.x*keep+(FLASH.x-KEEP.x)*flash,KEEP.y*keep+(FLASH.y-KEEP.y*keep)*flash)
+		if s.ring != null:
+			var r := clampf(after/RING_TIME,0.0,1.0)
+			var reach := lerpf(RING_REACH.x,RING_REACH.y,1.0-pow(1.0-r,3.0))*float(SEATS[id].size)
+			(s.ring as MeshInstance3D).scale = Vector3(reach,1.0,reach)
+			var fade := pow(1.0-r,1.5)*RING_ALPHA
+			((s.ring as MeshInstance3D).material_override as StandardMaterial3D).albedo_color = Color(SEAT_WARM.r,SEAT_WARM.g,SEAT_WARM.b,fade)
+			if r >= 1.0:
+				(s.ring as Node).queue_free()
+				s.ring = null
+		if s.puff != null and after > PUFF_TIME+0.2:
+			(s.puff as Node).queue_free()
+			s.puff = null
+		if not hold_glow and after >= afterglow and s.ring == null and s.puff == null:
+			_glow(id,0.0,0.0)
+			_seating.erase(s)
+	if _lean != _lean_to:
+		_lean = move_toward(_lean,_lean_to,delta/SEAT)
+		if parked: transform = _parked_at*_leaning()
+	if _seating.is_empty() and _lean == _lean_to: set_process(false)
+
+## The ease a part comes in on: past its seat a touch, and back.
+static func _settle(u: float) -> float:
+	var v := u-1.0
+	return 1.0+(SETTLE+1.0)*v*v*v+SETTLE*v*v
+
+## Stands part `id` `k` of the way back out along its way in (0 home).
+func _pose_part(id: String, k: float) -> void:
+	var seat: Dictionary = SEATS[id]
+	var at: Vector3 = seat.at
+	var moved := Transform3D(Basis((seat.axis as Vector3).normalized(),float(seat.turn)*k),at+(seat.from as Vector3)*k)*Transform3D(Basis.IDENTITY,-at)
+	for n: Node3D in _parts[id].whole:
+		var p := n.get_parent() as Node3D
+		n.transform = moved if p == self else p.transform.affine_inverse()*moved*p.transform
+
+## Part `id` on (and its damage gone), or off (the damage showing).
+func _show(id: String, on: bool) -> void:
+	var rec: Dictionary = _parts[id]
+	for n: Node3D in rec.whole:
+		n.transform = Transform3D.IDENTITY
+		n.visible = on and (n.get_parent() != _prop or _blades_shown)
+	for n: Node3D in rec.base: n.visible = on
+	for n: Node3D in rec.broken: n.visible = not on
+	if rec.flap != null: rec.flap.visible = false
+	if id == "propeller": _prop.visible = on
+
+## Part `id`'s warm glow (shaders/plane_part_glow.gdshader, as the found
+## parts glow), drawn over it while there is any.
+func _glow(id: String, glow: float, inner: float) -> void:
+	var rec: Dictionary = _parts[id]
+	var material: ShaderMaterial = rec.glow
+	var lit := glow > 0.001 or inner > 0.001
+	material.set_shader_parameter("glow",glow)
+	material.set_shader_parameter("inner",inner)
+	for n: Node3D in rec.whole:
+		for m in n.get_children():
+			if m is MeshInstance3D: (m as MeshInstance3D).material_overlay = material if lit else null
+
+func _clear_seat(s: Dictionary) -> void:
+	for key in ["ring","puff"]:
+		if s[key] != null: (s[key] as Node).queue_free()
+
+## The brass ring of light that spreads from a part as it seats, the found
+## parts' own (scripts/facet_mesh.gd `soft_ring`), lying level through it.
+func _seat_ring(id: String) -> MeshInstance3D:
+	var ring := MeshInstance3D.new()
+	var quad := QuadMesh.new()
+	quad.size = Vector2.ONE
+	quad.orientation = PlaneMesh.FACE_Y
+	ring.mesh = quad
+	var material := StandardMaterial3D.new()
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	material.albedo_texture = _ring_texture()
+	material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	material.albedo_color = Color(SEAT_WARM.r,SEAT_WARM.g,SEAT_WARM.b,0.0)
+	ring.material_override = material
+	ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	ring.position = SEATS[id].at
+	add_child(ring)
+	return ring
+
+## A small puff of dust knocked off as a part seats: soft motes bursting
+## out and drifting, fading as they spread.
+func _seat_puff(id: String) -> CPUParticles3D:
+	var size := float(SEATS[id].size)
+	var puff := CPUParticles3D.new()
+	puff.one_shot = true
+	puff.explosiveness = 0.95
+	puff.amount = PUFF
+	puff.lifetime = PUFF_TIME
+	puff.local_coords = true
+	puff.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+	puff.emission_sphere_radius = size*0.3
+	puff.direction = Vector3.UP
+	puff.spread = 180.0
+	puff.gravity = Vector3(0.0,0.06,0.0)
+	puff.initial_velocity_min = 0.25
+	puff.initial_velocity_max = 0.55
+	puff.damping_min = 0.6
+	puff.damping_max = 0.9
+	var mote := QuadMesh.new()
+	mote.size = Vector2.ONE*maxf(size*0.22,0.05)
+	var material := StandardMaterial3D.new()
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	material.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	material.vertex_color_use_as_albedo = true
+	material.albedo_texture = _puff_texture()
+	mote.material = material
+	puff.mesh = mote
+	var grow := Curve.new()
+	grow.add_point(Vector2(0.0,0.45))
+	grow.add_point(Vector2(1.0,1.0))
+	puff.scale_amount_curve = grow
+	var fade := Gradient.new()
+	fade.offsets = PackedFloat32Array([0.0,0.25,1.0])
+	fade.colors = PackedColorArray([Color(PUFF_DUST,0.7),Color(PUFF_DUST,0.45),Color(PUFF_DUST,0.0)])
+	puff.color_ramp = fade
+	puff.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	puff.position = SEATS[id].at
+	add_child(puff)
+	puff.emitting = true
+	return puff
+
+static var _ring_tex: Texture2D
+static var _puff_tex: Texture2D
+
+static func _ring_texture() -> Texture2D:
+	if _ring_tex == null: _ring_tex = FacetMesh.soft_ring()
+	return _ring_tex
+
+## A soft round blob, for a mote of dust.
+static func _puff_texture() -> Texture2D:
+	if _puff_tex != null: return _puff_tex
+	var gradient := Gradient.new()
+	gradient.offsets = PackedFloat32Array([0.0,0.5,1.0])
+	gradient.colors = PackedColorArray([Color(1,1,1,1.0),Color(1,1,1,0.5),Color(1,1,1,0.0)])
+	var texture := GradientTexture2D.new()
+	texture.gradient = gradient
+	texture.fill = GradientTexture2D.FILL_RADIAL
+	texture.fill_from = Vector2(0.5,0.5)
+	texture.fill_to = Vector2(1.0,0.5)
+	texture.width = 64
+	texture.height = 64
+	_puff_tex = texture
+	return texture
+
+## Leaning onto the bare axle, as far as `_lean` (none, the identity).
+func _leaning() -> Transform3D:
+	if _lean <= 0.0: return Transform3D.IDENTITY
+	var tip := _tip()
+	var turn := Basis(tip[1],float(tip[2])*smoothstep(0.0,1.0,_lean))
+	return Transform3D(turn,tip[0]-turn*tip[0])
+
+static var _tip_cache := []
+
+## [a point on the line it tips about, the line, the angle] that brings the
+## bare axle's end down onto the ground the other wheel and the skid stand
+## on.
+static func _tip() -> Array:
+	if not _tip_cache.is_empty(): return _tip_cache
+	var axis := (SKID_FOOT-LEFT_FOOT).normalized()
+	var up := (RIGHT_FOOT-LEFT_FOOT).cross(SKID_FOOT-LEFT_FOOT).normalized()
+	if up.y < 0.0: up = -up
+	var p := STUB_END-LEFT_FOOT
+	var hand := 1.0 if (Basis(axis,0.05)*p).dot(up) < p.dot(up) else -1.0
+	var lo := 0.0
+	var hi := 0.6
+	for i in range(32):
+		var mid := (lo+hi)*0.5
+		if (Basis(axis,mid*hand)*p).dot(up) > 0.0: lo = mid
+		else: hi = mid
+	_tip_cache = [LEFT_FOOT,axis,lo*hand]
+	return _tip_cache
+
+## Splits the found parts off the joined meshes (`_join`, `_spans`), once,
+## and builds each one apart, its damage, and what goes with it.
+func _split() -> void:
+	if _split_done: return
+	_split_done = true
+	var cut := {}
+	for span: Array in _spans:
+		if not cut.has(span[0]): cut[span[0]] = []
+		cut[span[0]].append(span)
+	for joined: MeshInstance3D in cut:
+		var arrays := joined.mesh.surface_get_arrays(0)
+		var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+		var keep := PackedByteArray()
+		keep.resize(vertices.size())
+		keep.fill(1)
+		for span: Array in cut[joined]:
+			for i in range(int(span[2]),int(span[2])+int(span[3])): keep[i] = 0
+		var kept := PackedVector3Array()
+		var facing := PackedVector3Array()
+		for i in range(vertices.size()):
+			if keep[i] == 0: continue
+			kept.append(vertices[i])
+			facing.append(normals[i])
+		if kept.is_empty():
+			joined.get_parent().remove_child(joined)
+			joined.free()
+			continue
+		var into := []
+		into.resize(Mesh.ARRAY_MAX)
+		into[Mesh.ARRAY_VERTEX] = kept
+		into[Mesh.ARRAY_NORMAL] = facing
+		var mesh := ArrayMesh.new()
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,into)
+		joined.mesh = mesh
+	_spans.clear()
+	# The windscreen's glass stood apart from the join.
+	for child in get_children():
+		if child is MeshInstance3D and child.has_meta("piece"):
+			remove_child(child)
+			child.free()
+	var half := SPAN*0.5
+	var wing := _placed(Vector3(0.0,UPPER_Y,STAGGER),Vector3.ZERO)
+	var ailerons := Vector3(half*AILERON_SPAN.x,half*AILERON_SPAN.y,_hinge_z())
+	for id: String in FOUND:
+		var whole := _holder("Part_"+id,self)
+		var glow := ShaderMaterial.new()
+		glow.shader = PART_GLOW
+		glow.set_shader_parameter("tint",SEAT_WARM)
+		glow.set_shader_parameter("reach",float(SEATS[id].size))
+		var rec := {"whole":[whole],"base":[],"broken":[],"glow":glow,"flap":null}
+		match id:
+			"propeller":
+				_fill(whole,piece("spinner"))
+				var blades := _holder("Part_propeller_blades",_prop)
+				_fill(blades,piece("propeller"))
+				rec.whole.append(blades)
+			"wingtip":
+				# The aileron comes back on its own hinge once home; till
+				# then the piece's own flies in with it.
+				var parts := piece("wingtip")
+				_fill(whole,parts.slice(0,parts.size()-1))
+				rec.flap = _fill(whole,[parts[-1]])[0]
+				var inner := _holder("Wing_inner",self)
+				_fill(inner,[[_wing(half,-half*0.8,half*WINGTIP_FROM,ailerons),"cream",wing]])
+				rec.base = [inner,_ailerons[1]]
+			_:
+				_fill(whole,piece(id,1.0))
+		var broken := _holder("Broken_"+id,self)
+		_fill(broken,damage(id))
+		broken.visible = false
+		rec.broken = [broken]
+		_parts[id] = rec
+
+func _holder(holder_name: String, parent: Node3D) -> Node3D:
+	var n := Node3D.new()
+	n.name = holder_name
+	parent.add_child(n)
+	return n
+
+## [mesh, paint name, transform] parts (as `piece` gives) drawn on `into`.
+func _fill(into: Node3D, parts: Array) -> Array:
+	var out := []
+	for p: Array in parts:
+		var m := MeshInstance3D.new()
+		m.mesh = p[0]
+		m.material_override = _paints[p[1]]
+		m.transform = p[2]
+		if p[1] == "glass": m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		into.add_child(m)
+		out.append(m)
+	return out
+
+## The damage part `id` leaves when it is lost, as [mesh, paint name,
+## transform] parts placed as on the figure (as `piece` gives the part):
+##   "propeller"   the bare shaft out of the nose, a steel flange on it with
+##                 its brass bolt heads, and the splintered stumps of the
+##                 blades
+##   "cowl"        the engine bare: a dark firewall and crankcase,
+##                 five finned cylinders round it with brass heads and
+##                 rocker boxes, and their pushrods
+##   "wheel"       the axle running on bare past the leg, a brass collar
+##                 and the nut on its end (the plane leans onto it)
+##   "fin"         a jagged terracotta stub of the fin and the bare rudder
+##                 post, bent over at its top, its brass hinges
+##   "wingtip"     the upper wing's right end: the cloth whole to the last
+##                 rib, torn ragged past it, the two spars running on bare
+##                 to where they snapped, a broken rib on them
+##   "windscreen"  the bare brass mounts: the rail along the bottom, one
+##                 post snapped short and the other bent out, a shard of
+##                 glass left in the corner
+static func damage(id: String) -> Array:
+	var out := []
+	match id:
+		"propeller":
+			out.append([FacetMesh.frustum(0.011,0.009,1.0,6),"steel",_strut_at(Vector3(0.0,0.0,-0.6),Vector3(0.0,0.0,-0.722))])
+			out.append([FacetMesh.frustum(0.036,0.036,0.012,8),"steel",_placed(Vector3(0.0,0.0,-0.668),Vector3(PI*0.5,0.0,0.0))])
+			for i in range(4):
+				var a := TAU*(i+0.5)/4.0
+				out.append([FacetMesh.gem(0.0065),"brass",_placed(Vector3(cos(a)*0.025,sin(a)*0.025,-0.676),Vector3(PI*0.5,0.0,0.0))])
+			# The blades' roots, splintered off: a jagged stump each way.
+			var stump := [Vector2(-0.017,0.0),Vector2(0.017,0.0),Vector2(0.015,0.052),Vector2(0.007,0.04),Vector2(0.001,0.068),Vector2(-0.006,0.047),Vector2(-0.014,0.058)]
+			var short := [Vector2(-0.017,0.0),Vector2(0.017,0.0),Vector2(0.014,0.03),Vector2(0.004,0.022),Vector2(-0.003,0.036),Vector2(-0.015,0.026)]
+			for k in range(2):
+				var lay := Transform3D(Basis(Vector3.BACK,0.6+PI*k)*Basis(Vector3.UP,PI*0.5),Vector3(0.0,0.0,-0.68))
+				out.append([_cut(stump if k == 0 else short,0.014),"varnish",lay])
+		"cowl":
+			out.append([_hull([Vector3(-0.478,0.13,0.136),Vector3(-0.468,0.133,0.139)],10),"dark",Transform3D.IDENTITY])
+			out.append([_hull([Vector3(-0.64,0.022,0.022),Vector3(-0.625,0.045,0.045),Vector3(-0.6,0.062,0.062),Vector3(-0.53,0.064,0.064),Vector3(-0.5,0.052,0.052),Vector3(-0.47,0.05,0.05)],10),"dark",Transform3D.IDENTITY])
+			for i in range(5):
+				var a := PI*0.5+TAU*i/5.0
+				var d := Vector3(cos(a),sin(a),0.0)
+				var z := Vector3(0.0,0.0,-0.565)
+				out.append([FacetMesh.frustum(0.023,0.021,1.0,8),"steel",_strut_at(z+d*0.05,z+d*0.12)])
+				for k in range(4):
+					var r := 0.072+0.014*k
+					out.append([FacetMesh.frustum(0.033,0.033,1.0,8),"steel",_strut_at(z+d*(r-0.0022),z+d*(r+0.0022))])
+				out.append([FacetMesh.frustum(0.029,0.022,1.0,8),"brass",_strut_at(z+d*0.12,z+d*0.142)])
+				out.append([FacetMesh.gem(0.011),"brass",_placed(z+d*0.146+Vector3(0.0,0.0,-0.012),Vector3(0.0,0.0,a-PI*0.5))])
+				out.append([FacetMesh.frustum(0.0032,0.0032,1.0,4),"steel",_strut_at(Vector3(0.0,0.0,-0.612)+d*0.05,Vector3(0.0,0.0,-0.585)+d*0.135)])
+		"wheel":
+			out.append([FacetMesh.frustum(0.008,0.008,1.0,6),"steel",_strut_at(Vector3(0.16,-0.33,-0.28),Vector3(0.216,-0.335,-0.28))])
+			out.append([FacetMesh.frustum(0.017,0.017,0.009,8),"brass",_placed(Vector3(0.19,-0.332,-0.28),Vector3(0.0,0.0,PI*0.5))])
+			out.append([FacetMesh.gem(0.0095),"brass",_placed(Vector3(0.219,-0.335,-0.28),Vector3(0.0,0.0,PI*0.5))])
+		"fin":
+			var stub := [Vector2(-0.1,0.0),Vector2(0.1,0.0),Vector2(0.1,0.085),Vector2(0.075,0.068),Vector2(0.05,0.112),Vector2(0.028,0.078),Vector2(0.0,0.1),Vector2(-0.03,0.066),Vector2(-0.06,0.084),Vector2(-0.1,0.055)]
+			out.append([_cut(stub,0.012),"trim",_placed(Vector3(0.0,0.03,0.58),Vector3.ZERO)])
+			out.append([FacetMesh.frustum(0.0055,0.0055,1.0,5),"dark",_strut_at(Vector3(0.0,0.03,0.68),Vector3(0.0,0.17,0.684))])
+			out.append([FacetMesh.frustum(0.0055,0.004,1.0,5),"dark",_strut_at(Vector3(0.0,0.17,0.684),Vector3(0.024,0.2,0.702))])
+			for y: float in [0.085,0.14]: out.append([FacetMesh.gem(0.008),"brass",_placed(Vector3(0.0,y,0.682),Vector3.ZERO)])
+		"wingtip":
+			var half := SPAN*0.5
+			var wing := _placed(Vector3(0.0,UPPER_Y,STAGGER),Vector3.ZERO)
+			out.append([_wing(half,-half*0.8,TORN_RIB,Vector3(half*AILERON_SPAN.x,half*AILERON_SPAN.y,_hinge_z())),"cream",wing])
+			out.append([_tatters(half),"cream",wing])
+			# The spars run on bare, as the struts meet them, the rear one
+			# snapped and bent down; a rib stands broken on them.
+			var s := _station(half,TORN_RIB,CHORD,TIP_CHORD,THICK,RIBS)
+			var y := float(s.top)*0.25
+			out.append([FacetMesh.frustum(0.0062,0.005,1.0,4),"dark",wing*_strut_at(Vector3(TORN_RIB-0.012,y,-0.075),Vector3(SPARS.x,y-0.003,-0.075))])
+			out.append([FacetMesh.frustum(0.0062,0.005,1.0,4),"dark",wing*_strut_at(Vector3(TORN_RIB-0.012,y,0.075),Vector3(SPARS.y,y-0.016,0.082))])
+			var r := _station(half,BARE_RIB,CHORD,TIP_CHORD,THICK,RIBS)
+			var rib := []
+			for p: Vector2 in AIRFOIL_TOP:
+				if p.x <= 0.56: rib.append(Vector2(float(r.le)+p.x*float(r.chord),p.y*float(r.top)))
+			rib.append(Vector2(float(r.le)+0.64*float(r.chord),0.4*float(r.top)))
+			rib.append(Vector2(float(r.le)+0.58*float(r.chord),0.1*float(r.top)))
+			rib.append(Vector2(float(r.le)+0.62*float(r.chord),-0.15*float(r.under)))
+			for p: Vector2 in AIRFOIL_UNDER:
+				if p.x <= 0.56: rib.append(Vector2(float(r.le)+p.x*float(r.chord),p.y*float(r.under)))
+			out.append([_cut(rib,0.005),"dark",wing*_placed(Vector3(BARE_RIB,0.0,0.0),Vector3.ZERO)])
+		"windscreen":
+			out.append([FacetMesh.frustum(0.0035,0.0035,1.0,4),"brass",_strut_at(Vector3(-0.058,0.2,0.1),Vector3(0.058,0.2,0.1))])
+			out.append([FacetMesh.frustum(0.004,0.004,1.0,4),"brass",_strut_at(Vector3(-0.056,0.2,0.1),Vector3(-0.056,0.222,0.107))])
+			out.append([FacetMesh.frustum(0.004,0.004,1.0,4),"brass",_strut_at(Vector3(0.056,0.2,0.1),Vector3(0.057,0.236,0.111))])
+			out.append([FacetMesh.frustum(0.004,0.0035,1.0,4),"brass",_strut_at(Vector3(0.057,0.236,0.111),Vector3(0.079,0.252,0.106))])
+			# A shard of the glass, still in the bottom corner, leaning as
+			# the windscreen did.
+			var shard := [Vector2(-0.056,0.0),Vector2(-0.008,0.0),Vector2(-0.018,0.011),Vector2(-0.031,0.007),Vector2(-0.041,0.029),Vector2(-0.049,0.02),Vector2(-0.056,0.046)]
+			var lean := Vector3(0.0,0.068,0.022).normalized()
+			out.append([_cut(shard,0.004),"glass",Transform3D(Basis(lean.cross(Vector3.RIGHT),lean,Vector3.RIGHT),Vector3(0.0,0.2,0.1025))])
+	return out
+
+## The cloth torn past the rib at TORN_RIB on the upper wing (`half` its
+## span each side): a ragged fringe of flaps off the section's upper and
+## lower surfaces, reaching TEAR out with TOOTH teeth between, the upper
+## flaps lifting a little and the lower drooping.
+static func _tatters(half: float) -> ArrayMesh:
+	var s := _station(half,TORN_RIB,CHORD,TIP_CHORD,THICK,RIBS)
+	var le := float(s.le)
+	var c := float(s.chord)
+	var top := []
+	for p: Vector2 in AIRFOIL_TOP: top.append(Vector2(le+p.x*c,p.y*float(s.top)))
+	var under := [Vector2(le+c,0.0)]
+	for p: Vector2 in AIRFOIL_UNDER: under.append(Vector2(le+p.x*c,p.y*float(s.under)))
+	under.append(Vector2(le,0.0))
+	var tris := []
+	var k := 0
+	for surface: Array in [[top,1.0],[under,-1.0]]:
+		var line: Array = surface[0]
+		var hand: float = surface[1]
+		for i in range(line.size()-1):
+			var a: Vector2 = line[i]
+			var b: Vector2 = line[i+1]
+			var la: float = TEAR[k%TEAR.size()]
+			var lb: float = TEAR[(k+1)%TEAR.size()]
+			var lm: float = TOOTH[k%TOOTH.size()]
+			k += 1
+			var sag := 0.12 if hand > 0.0 else -0.55
+			var a0 := Vector3(TORN_RIB,a.y,a.x)
+			var b0 := Vector3(TORN_RIB,b.y,b.x)
+			var a1 := Vector3(TORN_RIB+la,a.y+la*sag,a.x)
+			var b1 := Vector3(TORN_RIB+lb,b.y+lb*sag,b.x)
+			var m := (a+b)*0.5
+			var m1 := Vector3(TORN_RIB+lm,m.y+lm*sag,m.x+(b.x-a.x)*0.1)
+			for t: Array in [[a0,b0,b1],[a0,b1,a1],[a1,b1,m1]]:
+				var out := Vector3(0.0,hand,0.0)
+				var mid: Vector3 = (t[0]+t[1]+t[2])/3.0
+				tris.append([t[0],t[1],t[2],mid-out*0.01])
+				var lower := out*-0.0012
+				tris.append([t[0]+lower,t[1]+lower,t[2]+lower,mid+out*0.01])
+	return FacetMesh.shell(tris)
+
+## A flat-shaded slab along X, `width` thick and centred: `section` its
+## outline in (z, y), which may be ragged (concave), as a torn edge is.
+static func _cut(section: Array, width: float) -> ArrayMesh:
+	var outline := PackedVector2Array(section)
+	if Geometry2D.is_polygon_clockwise(outline): outline.reverse()
+	var x := width*0.5
+	var tris := []
+	var fan := Geometry2D.triangulate_polygon(outline)
+	for t in range(0,fan.size(),3):
+		var a := outline[fan[t]]
+		var b := outline[fan[t+1]]
+		var d := outline[fan[t+2]]
+		var mid := (a+b+d)/3.0
+		for e: float in [-x,x]:
+			tris.append([Vector3(e,a.y,a.x),Vector3(e,b.y,b.x),Vector3(e,d.y,d.x),Vector3(0.0,mid.y,mid.x)])
+	for i in range(outline.size()):
+		var p := outline[i]
+		var q := outline[(i+1)%outline.size()]
+		var along := q-p
+		var out := Vector2(along.y,-along.x).normalized()
+		var inside := (p+q)*0.5-out*0.001
+		var inner := Vector3(0.0,inside.y,inside.x)
+		tris.append([Vector3(-x,p.y,p.x),Vector3(x,p.y,p.x),Vector3(x,q.y,q.x),inner])
+		tris.append([Vector3(-x,p.y,p.x),Vector3(x,q.y,q.x),Vector3(-x,q.y,q.x),inner])
+	return FacetMesh.shell(tris)
 
 # --- The pieces ---------------------------------------------------------------------
 
@@ -681,18 +1271,24 @@ static func _strut_at(from: Vector3, to: Vector3) -> Transform3D:
 
 ## A piece's parts (`piece`) added as fixed parts on `parent`, in `paint`.
 ## The windscreen's glass casts no shadow and stays out of the join.
+##
+## Each is tagged with the found part it belongs to (the spinner goes with
+## the propeller; only the right wheel is ever lost), for `_split`.
 func _add_piece(id: String, paint: Dictionary, parent: Node3D = null, side := 1.0) -> void:
 	for p: Array in piece(id,side):
 		var part := _add(p[0],paint[p[1]],Vector3.ZERO,Vector3.ZERO,parent)
 		part.transform = p[2]
+		if not (id == "wheel" and side < 0.0): part.set_meta("piece","propeller" if id == "spinner" else id)
 		if p[1] == "glass":
 			part.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			part.remove_meta("join")
 
 ## Joins `parent`'s fixed parts (`_add`'s) into one mesh for each material,
-## that of `first` first among its children.
+## that of `first` first among its children, noting where each tagged
+## part's triangles land (`_spans`).
 func _join(parent: Node3D, first: Material) -> void:
 	var groups := {}
+	var spans := []
 	for child in parent.get_children():
 		if not (child is MeshInstance3D and child.has_meta("join")): continue
 		var part := child as MeshInstance3D
@@ -707,6 +1303,7 @@ func _join(parent: Node3D, first: Material) -> void:
 		var placed := part.transform
 		var turn := placed.basis.inverse().transposed()
 		var order: Variant = indices if indices is PackedInt32Array and (indices as PackedInt32Array).size() > 0 else range(vertices.size())
+		if part.has_meta("piece"): spans.append([material,part.get_meta("piece"),into.size(),order.size()])
 		for i: int in order:
 			into.append(placed*vertices[i])
 			facing.append((turn*normals[i]).normalized())
@@ -725,6 +1322,8 @@ func _join(parent: Node3D, first: Material) -> void:
 		joined.material_override = material
 		parent.add_child(joined)
 		if material == first: parent.move_child(joined,0)
+		for span: Array in spans:
+			if span[0] == material: _spans.append([joined,span[1],span[2],span[3]])
 
 # --- The wings ------------------------------------------------------------------------
 

@@ -92,6 +92,8 @@ const ENTRIES: Array[Dictionary] = [
 		"detail":"The glyph tokens hanging in open sky, to judge their look."},
 	{"id":"plane_parts","group":"On-foot greyboxes","title":"Plane parts gallery","scene":"res://studies/plane_parts_gallery.tscn","args":[],
 		"detail":"The plane's six lost parts as coins and as hovering pieces, beside the plane."},
+	{"id":"broken_plane","group":"On-foot greyboxes","title":"Broken plane gallery","scene":"res://studies/broken_plane_gallery.tscn","args":[],
+		"detail":"The plane broken, partly mended and mended; find a part to watch it seat back on."},
 ]
 
 ## The groups, in the order their first entry comes.
