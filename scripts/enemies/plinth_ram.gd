@@ -7,19 +7,29 @@ extends "res://scripts/enemies/enemy.gd"
 ## (half-angle), turns toward him; on his line (inside `line_angle`) it
 ## "tell"s. "tell" (`tell` s, 0.8): three scrapes of the front, the body
 ## going `tell_colour`, still aiming until the last `lock` s, then fixed.
-## "charge": straight along the locked line, no steering, winding up from
-## a standstill to `charge_speed` (over the pilot's run) over `wind_up` s,
-## and only as far as where he stood when it locked plus `overrun` m (at most
-## `charge_dist`). Then it "skid"s, as the pilot does thrown back at a run:
-## it keeps sliding along the line, braking at `brake` m/s^2, while it swings
-## round toward him at `skid_turn` rad/s (dust off its feet, a scrape sound).
-## A sliding ram faster than `hurt_speed` still hurts. Stopped, it "dig"s in
-## for `dig` s (still swinging till it faces him) and, if he is still in
-## notice, tells again for `retell` s and goes again; no long stun after a
-## miss, so a juke has to be late and sharp, and he can slide it off in the
-## skid or the dig. After a hit it is stunned `stun_hit` s instead. It never
-## runs itself off an edge: near a lip it brakes harder (`lip_brake`) and
-## stops dead at the lip; only a push sends it over. Hitting him shoves him
+## "charge": a bull's. It winds up from a standstill to `charge_speed`
+## (over the pilot's run) over `wind_up` s and HOMES on him, turning its
+## heading toward him at `chase_turn` rad/s (it can't turn faster, so a
+## sidestep made early is followed and punished) until it is `commit` s from
+## him (0.4 s at full speed, ~3 m): then its head is down and the line is set;
+## only a LATE dodge beats it: a jump over it, a slide sideways, a drop into a
+## ledge hang. It is fixated
+## on him, not the ground: charging it never looks for an edge. It loses him
+## when he is more than `lose_angle` off its heading (he was passed; it
+## can't turn on him) and then "skid"s, as the pilot does thrown back at a
+## run: it keeps sliding along its line, braking at `brake` m/s^2, while it
+## swings round toward him at `skid_turn` rad/s (dust, a scrape sound).
+## If an edge is within that stopping distance (about v^2/(2 brake) = 2.8 m
+## at full speed, so a dodge within ~2.5 m of a rim) it cannot stop and goes
+## over: that is the only way it dies. Dodged in the open, it stops, "dig"s
+## in for `dig` s (still swinging till it faces him) and, if he is still in
+## notice, tells again for `retell` s and comes again; a miss in the open
+## costs it nothing. A pilot hanging from a rim is not touched (it passes
+## over his hands); it runs over the lip above him and falls.
+## Safe, though: when it hit him, or gave up on him (he is out of range, or
+## it has gone `charge_dist`), or when it is slow (under `lip_pace`) it stops
+## dead at a lip (`lip_brake`); idle it turns back from every edge. After a
+## hit it is stunned `stun_hit` s after its skid. Hitting him shoves him
 ## `shove_out` m along its way (PilotMotor.knock); into a wall it is stunned
 ## `stun_wall` s. A pilot that slides into it from the side (`push_speed`
 ## along the line to it) knocks it away instead. Stunned, it is a stone to
@@ -36,7 +46,7 @@ func default_knobs(n: Dictionary) -> Dictionary:
 	return {
 		"wander_speed":n.walk*0.5,"turn":2.6,"sight":1.2,"notice":n.run*2.4,"line_angle":0.14,
 		"tell":0.6,"lock":0.2,"charge_speed":n.run*1.6,"wind_up":0.5,"charge_dist":n.unit*13.0,
-		"overrun":n.run*1.1,"brake":n.run*2.2,"lip_brake":n.run*5.0,"lip":n.unit*0.15,
+		"chase_turn":2.6,"commit":0.4,"lose_angle":1.3,"give_up":n.run*3.6,"lip_pace":n.walk,"hop":0.4,"brake":n.run*2.2,"lip_brake":n.run*5.0,"lip":n.unit*0.15,
 		"skid_turn":4.5,"hurt_speed":n.run*0.9,"dig":0.25,"retell":0.35,
 		"shove_out":n.run*1.9,"shove_up":n.unit*0.45,
 		"stun_miss":1.2,"stun_hit":0.6,"stun_wall":2.5,"edge_look":n.unit*0.8,
@@ -88,7 +98,6 @@ func _puffs() -> CPUParticles3D:
 
 var _dir := Vector2.ZERO
 var _travelled := 0.0
-var _reach := 0.0
 var _walking := false
 var _wander_t := 0.0
 var _turn_to := 0.0
@@ -97,6 +106,11 @@ var _dust: CPUParticles3D
 var _tell_len := 0.0
 ## Whether this charge hit him (then it is winded after its skid).
 var _hit := false
+## Whether this skid is one it must not go over the edge in (it hit him, or
+## gave up on him) rather than one it lost him in.
+var _safe := false
+## Whether the line is set (it is near enough to him that it no longer steers).
+var _committed := false
 
 func setup(host: Node, at: Vector3, face: Vector2, overrides := {}) -> void:
 	super.setup(host,at,face,overrides)
@@ -106,6 +120,7 @@ func setup(host: Node, at: Vector3, face: Vector2, overrides := {}) -> void:
 	state_t = float(knobs.rest)
 
 func harmful() -> bool:
+	if not grounded: return false
 	return state == "charge" or (state == "skid" and Vector2(vel.x,vel.z).length() >= float(knobs.hurt_speed))
 
 func think(delta: float) -> void:
@@ -184,6 +199,8 @@ func _start_tell(seconds: float) -> void:
 	state_t = 0.0
 	_tell_len = seconds
 	_hit = false
+	_safe = false
+	_committed = false
 	tell()
 
 func _tell(delta: float) -> void:
@@ -199,7 +216,6 @@ func _tell(delta: float) -> void:
 		skin.rotation.x = 0.0
 		_dir = PilotMotor.forward(facing)
 		_travelled = 0.0
-		_reach = minf(float(_pilot()[1])+float(knobs.overrun),float(knobs.charge_dist))
 		state = "charge"
 		state_t = 0.0
 
@@ -208,14 +224,31 @@ func _charge(delta: float) -> void:
 	var pace := Vector2(vel.x,vel.z).length()
 	var top := float(knobs.charge_speed)
 	pace = move_toward(pace,top,top/maxf(float(knobs.wind_up),0.01)*delta)
+	# Homing: toward where he is, as fast as it can turn; it keeps going over
+	# an edge, since it has eyes for him only.
+	var p := _pilot()
+	var flat: Vector2 = p[0]
+	var dist: float = p[1]
+	if dist > float(knobs.give_up) or _travelled >= float(knobs.charge_dist):
+		_safe = true
+		_start_skid()
+		return
+	# Homing, until it is `commit` s from him (at its top speed); then the head
+	# is down and the line is set: a late dodge is a miss.
+	if dist <= float(knobs.commit)*top: _committed = true
+	if dist > 0.4:
+		var off := angle_difference(facing,PilotMotor.facing_of(flat))
+		if absf(off) > float(knobs.lose_angle):
+			_start_skid()
+			return
+		if not _committed:
+			var max_turn := float(knobs.chase_turn)*delta
+			facing = wrapf(facing+clampf(off,-max_turn,max_turn),-PI,PI)
+			rotation.y = facing
+			_dir = PilotMotor.forward(facing)
 	vel.x = _dir.x*pace
 	vel.z = _dir.y*pace
 	_travelled += pace*delta
-	# Into its skid so that it stops at the end of its reach; near a lip, in
-	# time for the harder brake to stop it there.
-	var stopping := pace*pace/(2.0*float(knobs.brake))
-	if _travelled+stopping >= _reach or _edge_within(pace*pace/(2.0*float(knobs.lip_brake))+pace*delta*2.0):
-		_start_skid()
 
 func _start_skid() -> void:
 	state = "skid"
@@ -231,11 +264,14 @@ func _skid(delta: float) -> void:
 	_dust.emitting = pace > 1.0
 	_swing(delta)
 	var decel := float(knobs.brake)
-	if _edge_within(0.0):
-		vel.x = 0.0
-		vel.z = 0.0
-	elif _edge_within(pace*pace/(2.0*decel)):
-		decel = float(knobs.lip_brake)
+	# Slow, or it hit him or gave up: it stops at a lip. Having lost him at
+	# a run, it can't, and goes over.
+	if _hit or _safe or pace <= float(knobs.lip_pace):
+		if _edge_within(0.0):
+			vel.x = 0.0
+			vel.z = 0.0
+		elif _edge_within(pace*pace/(2.0*decel)):
+			decel = float(knobs.lip_brake)
 	if slow(delta,decel):
 		vel.x = 0.0
 		vel.z = 0.0
@@ -261,12 +297,26 @@ func _edge_within(dist: float) -> bool:
 	way = way.normalized() if way.length() > 0.1 else _dir
 	return edge_ahead(way,length*0.5+float(knobs.lip)+dist)
 
+## A pilot on a ledge, hanging under the rim, is not touched. Charging, only
+## its front half (head and horns) hurts, and a pilot with his feet over
+## `hop` of its back is over it: so a late jump clears it (and lands on its
+## back, if he is a hair late); the shove is for whoever is in its way.
+func touch(m: PilotMotor, v_pre: Vector3) -> void:
+	if m.on_ledge(): return
+	if harmful():
+		var local := Basis(Vector3.UP,facing).inverse()*(m.feet-position)
+		var to := Vector2(position.x-m.feet.x,position.z-m.feet.z).normalized()
+		var pushing := Vector2(v_pre.x,v_pre.z).dot(to) >= float(knobs.push_speed)
+		if not pushing and (local.z > 0.0 or m.feet.y > position.y+height*float(knobs.hop)): return
+	super.touch(m,v_pre)
+
 func hits_pilot(m: PilotMotor) -> void:
 	var way := Vector2(vel.x,vel.z)
 	if way.length() < 0.1: way = _dir
 	shove_pilot(m,way.normalized(),float(knobs.shove_out),float(knobs.shove_up))
 	# Proud: it slides on a little, then is winded.
 	_hit = true
+	_safe = true
 	if state != "skid": _start_skid()
 
 func bumped() -> void:

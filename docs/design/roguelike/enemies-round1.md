@@ -56,10 +56,16 @@ wall (2.5 s, a platform); slide into it from the side to throw it.
 | line_angle | 0.14 rad | how on-its-line he must be to start the tell |
 | turn | 2.6 rad/s (was 1.8) | turning to aim |
 | tell / lock | 0.6 s / 0.2 s (was 0.8 / 0.3) | paw time; it stops aiming for the last `lock` |
-| charge_speed / wind_up | run x 1.6 = 7.7 m/s / 0.5 s (was 0.7) | never steers after the tell |
-| overrun | run x 1.1 = 5.3 m (was run x 0.8) | goes this far past where he stood when it locked |
-| charge_dist | head x 13 = 14.6 m | cap on the reach |
-| brake / lip_brake / lip | run x 2.2 = 10.6 (was x 3) / run x 5 / head x 0.15 | skid decel; near an edge it brakes harder and stops dead at the lip |
+| charge_speed / wind_up | run x 1.6 = 7.7 m/s / 0.5 s (was 0.7) | top speed; it homes (bullfight, below) |
+| chase_turn | 2.6 rad/s | how fast the charge turns toward him while homing |
+| commit | 0.4 s (x top speed = 3.1 m) | from this far out the line is set: the late-dodge window |
+| lose_angle | 1.3 rad | he is this far off its heading: passed, it brakes into the skid |
+| give_up | run x 3.6 = 17 m | farther than this it gives up (and is safe at a lip) |
+| lip_pace | walk = 2.4 m/s | a skid slower than this stops dead at a lip; faster, having lost him, it cannot |
+| hop | 0.4 | his feet over this share of its height are over it (a jump clears) |
+| charge_dist | head x 13 = 14.6 m | cap on one charge (then it gives up) |
+| overrun | (removed) | replaced by homing |
+| brake / lip_brake / lip | run x 2.2 = 10.6 (was x 3) / run x 5 / head x 0.15 | skid decel; a safe or slow skid brakes harder and stops dead at a lip |
 | skid_turn | 4.5 rad/s | how fast its front swings round to him while it slides |
 | hurt_speed | run x 0.9 | a sliding ram at this pace or more still shoves him |
 | dig / retell | 0.25 s / 0.35 s | dug in after the skid, then a short second tell and on again |
@@ -84,16 +90,52 @@ before a lip or its reach, so a pilot near an edge or past its brake point was
 safe; it now hurts while sliding over `hurt_speed` and brakes harder only at
 a lip.
 
+## The bullfight (feature/ram-bull)
+
+You are the red flag. After the tell and wind-up the charge HOMES: it turns
+toward him at `chase_turn` (2.6 rad/s), so an early sidestep is followed and
+punished. At `commit` s (0.4 s = 3.1 m at top speed) from him the head is down
+and the line is set, so only a LATE dodge beats it: a jump over it, a power
+slide aside, a drop into a rim hang. It looks at him, not the ground: charging
+it never checks an edge. Once he is more than `lose_angle` off its heading (it
+was passed) it brakes into the old skid (swing round, dig, retell). If a rim is
+inside its stopping distance it cannot stop and goes over; that is the only
+way it dies. A miss in the open costs it nothing: it skids round and comes
+again.
+
+- Stopping distance at full speed: charge_speed^2 / (2 brake) = 2.8 m. A skid
+  slower than `lip_pace` (2.4 m/s) still stops dead at a lip, so the real kill
+  band is (v^2 - lip_pace^2) / (2 brake) = 2.5 m from its middle to the rim at
+  the moment it loses him, about 1.7 m from its nose. In play: dodge within
+  roughly 2 m of a rim.
+- It does not go over when it hit him, or gave up (he is out of range, or it
+  has run `charge_dist`): those skids stop at the lip as before. Idle, it still
+  turns back from every edge.
+- Late-dodge windows measured in the test yard (seconds before its nose
+  reaches him, full speed): jump 0.10-0.25 s (a 0.15 s window; earlier he lands
+  in front of it, later he is run down); slide aside 0.25-0.6 s with the
+  run of it; a standing sidestep is not enough (0.84 m clearance takes ~0.4 s);
+  a rim hang counts from 0.35 s out, any time earlier. Late is the last ~0.25-0.6 s.
+- A pilot hanging from a rim (`on_ledge`) is never touched: it passes over his
+  hands and falls. While charging only its front half hurts, and feet over
+  `hop` of its height (0.29 m) are over it, so a plain jump (0.8 m, ~0.2 s of
+  air above that) can clear its 0.72 m back. Landing late on its back rides it.
+- Still shoves him on contact (a charge, or a skid over `hurt_speed`): dodging
+  too early or not at all near a rim is how he dies.
+- Yard: every rim hangs (step off slowly); the middle is open ground.
+
 ## Test
 
-`tests/test_enemy_ram.gd` (headless): telegraphs then charges; a miss slides on
-and stops on the isle; at an edge with reach to spare it stops at the lip and
-never goes over; a standing pilot (also near the lip) is hit and shoved; a late
-sharp juke is missed; the skid carries on along the old line while the front
-swings round, then it tells and charges again, aimed at him; slid into from the
+`tests/test_enemy_ram.gd` (headless): telegraphs then charges; an early sidestep
+is followed and hit; a late jump / late slide near the rim sends it over; a
+late jump in the open: it skids round, tells again, does not fall; a drop into
+a rim hang: it falls and he still hangs; never off an edge with no pilot to
+chase (soak); a standing pilot (also near the lip) is hit and shoved; slid into from the
 side near an edge it goes over. Only this test and the yard load were run.
 
 ## Unverified
+
+- Bullfight: the slide test sets his sideways pace directly (a power slide's run-up), not a real run-up; landing late on its back rides it (and over a rim with it); feel of the 0.15 s jump window.
 
 - Feel: the tell length, charge speed, shove distance, the 0.72 m back, the
   sight cone, whether a dodge reads. Your call; all are knobs.
