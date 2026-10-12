@@ -1,9 +1,9 @@
 extends Node3D
 ## The watcher (a study, docs/design/watcher/round1.md; `--watcher`, off by
 ## default): a stranger on the aqueduct isle's south rim, a few steps west
-## of where the plane stands parked, his binoculars up, slowly following
-## something far off. Follow his gaze with your own binoculars (scripts/
-## binoculars.gd) and you find it: a glint on the rune serpent's back as it
+## of where the plane stands parked, his telescope up, slowly following
+## something far off. Follow his gaze with your own telescope (scripts/
+## telescope.gd) and you find it: a glint on the rune serpent's back as it
 ## flies its loop (scripts/kit_isle/serpent_route.gd). Ride the serpent and
 ## touch it to take it. The question: does following his gaze lead you to
 ## the find, with no text pointing and no aim help?
@@ -11,14 +11,16 @@ extends Node3D
 ## - **He** is the pilot's own body (scripts/pilot_figure.gd, assets/models/
 ##   pilot.glb) in his own colours (PALETTE: a teal cap, an olive coat, a
 ##   mustard scarf), so he reads as a stranger, not a double. He plays the
-##   idle; over it his arms lift a brass pair to his face the way the
-##   pilot's do (Binoculars.ARMS, `_make_pair`), his chest and head tilt by
+##   idle; over it his arms lift the brass spyglass to his eye the way the
+##   pilot's do (scripts/telescope.gd `make_glass`, `lift_arms`, `hold`),
+##   its sections sliding out as it comes up and in as it comes down, with
+##   the same swish and click heard near him; his chest and head tilt by
 ##   the gaze's pitch, and his whole body turns, on an ease (TRACK_EASE),
-##   to face the find. Every WATCH_TIME s or so he lowers them a while
+##   to face the find. Every WATCH_TIME s or so he lowers it a while
 ##   (REST s) and, if the pilot is within GLANCE_NEAR m, glances at him,
-##   then raises them and looks back. When the serpent is out of his sight
+##   then raises it and looks back. When the serpent is out of his sight
 ##   (behind the hill, in the gorge, a moment behind the home ledge's
-##   steps) he lowers them and waits, still turned to it if it's near, else
+##   steps) he lowers it and waits, still turned to it if it's near, else
 ##   to where it comes home.
 ## - **Where he stands:** from the isle's own ground, never moving it: a ray
 ##   march from STAND_FROM south over the turf to the rim's edge, and back
@@ -26,17 +28,17 @@ extends Node3D
 ##   pilot from walking through him.
 ## - **The find:** a rune token riding RIDE_ARC m back from the serpent's
 ##   snout, FIND_LIFT m over its back's crest, put with
-##   `Binoculars.spottable(find)` (no objective: it glints until taken), so
-##   it glints only through the binoculars. On foot within TAKE m of it (on
+##   `Telescope.spottable(find)` (no objective: it glints until taken), so
+##   it glints only through the telescope. On foot within TAKE m of it (on
 ##   the serpent's back) it is taken: a moments pop, nothing in the ledger.
-## - **His line:** within LINE_NEAR m he lowers them, looks at you and a
+## - **His line:** within LINE_NEAR m he lowers it, looks at you and a
 ##   line streams in at the screen's foot (LINE_RATE characters a second),
 ##   without pausing anything; walk off past LINE_FAR m and it fades.
 ##
 ## The host (studies/aqueduct_isle.gd) makes it in `_add_life` when `wanted`.
 const PilotFigure = preload("res://scripts/pilot_figure.gd")
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
-const Binoculars = preload("res://scripts/binoculars.gd")
+const Telescope = preload("res://scripts/telescope.gd")
 const RuneToken = preload("res://scripts/rune_token.gd")
 const HudIcons = preload("res://scripts/hud_icons.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
@@ -57,10 +59,10 @@ const STAND_FROM := Vector2(94.0,4.0)
 const STAND_STEP := 0.5
 const STAND_RISE := 1.0
 const STAND_BACK := 1.6
-## His eyes over his feet (m, at size 1), as Binoculars.EYE.
+## His eyes over his feet (m, at size 1), as Telescope.EYE.
 const EYE := 0.95
-## Seconds his body takes to come round to the gaze (an ease), the pair
-## up or down; how much of the gaze's pitch his chest takes, the rest his head.
+## Seconds his body takes to come round to the gaze (an ease), the
+## spyglass up or down; how much of the gaze's pitch his chest takes, the rest his head.
 const TRACK_EASE := 0.6
 const RAISE := 0.45
 const CHEST_PITCH := 0.45
@@ -104,13 +106,13 @@ const COLUMN_LAYER := 1 << 13
 var isle: Node3D
 var serpent: Node3D
 var body: Node3D
-var pair: Node3D
+var glass: Node3D
 var find: Node3D
 var size := 1.0
 ## "watch" (up, tracking), "rest" (down a while, glancing), "wait" (down,
 ## the serpent out of sight), "done" (the find taken).
 var state := "watch"
-## How far up the pair is (0 down, 1 at his eyes), his facing and gaze pitch.
+## How far up the spyglass is (0 down, 1 at his eyes), his facing and gaze pitch.
 var up := 0.0
 var facing := 0.0
 var pitch := 0.0
@@ -137,7 +139,7 @@ static func wanted() -> bool:
 func _init() -> void:
 	name = "Watcher"
 	# After the serpent (-101) and its rider (-100) move, before the
-	# scene's frame (0) reads the binoculars' glints.
+	# scene's frame (0) reads the telescope's glints.
 	process_priority = -50
 
 ## Him on the rim of `host` (the aqueduct isle), the find on its serpent.
@@ -155,9 +157,9 @@ func setup(host: Node3D) -> void:
 	add_child(body)
 	for paint: ShaderMaterial in body._paints:
 		if PALETTE.has(paint.resource_name): paint.set_shader_parameter("albedo",PALETTE[paint.resource_name])
-	pair = Binoculars._make_pair()
-	add_child(pair)
-	pair.top_level = true
+	glass = Telescope.make_glass()
+	add_child(glass)
+	glass.top_level = true
 	var column := StaticBody3D.new()
 	column.name = "WatcherRoom"
 	column.collision_layer = COLUMN_LAYER
@@ -218,7 +220,7 @@ func _build_find() -> void:
 	var ring := RuneToken.ring(FIND_SIZE,tint)
 	_spin.add_child(ring)
 	isle.add_child(find)
-	Binoculars.spottable(find)
+	Telescope.spottable(find)
 	var arcs: PackedFloat32Array = serpent.stations()
 	var best := INF
 	for k in range(arcs.size()):
@@ -308,7 +310,9 @@ func _states(delta: float, near: float) -> void:
 		"wait":
 			if sees: _set_state("watch")
 	var raised := state == "watch"
+	var was := Telescope.extension(up)
 	up = move_toward(up,1.0 if raised else 0.0,delta/RAISE)
+	_slide_sounds(was,Telescope.extension(up))
 
 ## His body and head round to the gaze: the find while watching, the way it
 ## comes home while waiting, the pilot (partly) in a glance.
@@ -339,7 +343,7 @@ func _turn(delta: float, pilot: Vector3, near: float) -> void:
 	_head_yaw = lerpf(_head_yaw,head,1.0-exp(-delta/0.25))
 	rotation.y = facing
 
-## The idle, then the gaze's tilt, the head's glance and the pair raised.
+## The idle, then the gaze's tilt, the head's glance and the spyglass raised.
 func _draw_pose(delta: float) -> void:
 	body._advance(delta)
 	if body._chest < 0 or body._head < 0: return
@@ -347,24 +351,22 @@ func _draw_pose(delta: float) -> void:
 	body._turn_bone(body._head,Vector3.RIGHT,pitch*(1.0-CHEST_PITCH))
 	body._turn_bone(body._head,Vector3.UP,_head_yaw)
 	var amount := smoothstep(0.0,0.7,up)
-	pair.visible = amount > 0.05
-	var arms: Array[int] = body._upper_arms
-	var forearms: Array[int] = body._forearms
-	if amount <= 0.0 or arms.has(-1): return
-	var lift: Vector4 = Binoculars.ARMS
-	body._turn_bone(arms[0],Vector3.BACK,-lift.x*amount)
-	body._turn_bone(arms[1],Vector3.BACK,lift.x*amount)
-	body._turn_bone(arms[0],Vector3.RIGHT,lift.y*amount)
-	body._turn_bone(arms[1],Vector3.RIGHT,lift.y*amount)
-	if not forearms.has(-1):
-		body._turn_bone(forearms[0],Vector3.BACK,lift.z*amount)
-		body._turn_bone(forearms[1],Vector3.BACK,-lift.z*amount)
-		body._turn_bone(forearms[0],Vector3.UP,lift.w*amount)
-		body._turn_bone(forearms[1],Vector3.UP,-lift.w*amount)
-	var hands: Vector3 = (body.mitt(0)+body.mitt(1))*0.5
+	glass.visible = amount > 0.05
+	if amount <= 0.0 or not Telescope.lift_arms(body,amount): return
 	var f := PilotMotor.forward(facing)
-	var ahead := Vector3(f.x*cos(pitch),sin(pitch),f.y*cos(pitch))
-	pair.global_transform = Transform3D(Basis.looking_at(ahead,Vector3.UP).scaled(Vector3.ONE*size),hands+Vector3.UP*0.03*size)
+	Telescope.hold(glass,body,Vector3(f.x*cos(pitch),sin(pitch),f.y*cos(pitch)),size)
+	Telescope.extend(glass,Telescope.extension(up))
+
+## The spyglass's swish as it starts out or in, its click as it locks out
+## or shuts (from `was` to `out` of its extension), heard where he stands.
+func _slide_sounds(was: float, out: float) -> void:
+	var audio: Node = isle.get("audio") if isle != null else null
+	if audio == null or not audio.has_method("shot") or was == out: return
+	var at := eye()
+	if out > was and was <= 0.0: audio.shot("swish",0.05,1.7,at)
+	elif out < was and was >= 1.0: audio.shot("swish",0.04,1.5,at)
+	if out >= 1.0: audio.shot("tick",0.22,0.75,at)
+	elif out <= 0.0: audio.shot("tick",0.14,0.9,at)
 
 ## Which way he looks now (unit, world): the body's facing and the gaze's pitch.
 func gaze() -> Vector3:

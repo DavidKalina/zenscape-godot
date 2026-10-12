@@ -33,8 +33,8 @@ extends Node3D
 ## Space kicks off it. Space in the air with room under him (off an edge,
 ## knocked away) pops out the pocket sail (scripts/pocket_sail.gd, drawn by
 ## scripts/pocket_sail_figure.gd), Space again folds it; crouch floats it.
-## Right mouse or pad LB, held on the ground, raises the binoculars
-## (scripts/binoculars.gd): the view from his eyes, zoomed with the wheel or
+## Right mouse or pad LB, held on the ground, raises the telescope
+## (scripts/telescope.gd): the view from his eyes, zoomed with the wheel or
 ## the triggers, while he stands or shuffles.
 ## The room's air is still (`motor.air` unset); studies/pocket_sail_study.gd
 ## adds wind. R sets him back at the start, F1 shows the
@@ -441,12 +441,12 @@ var _holes: Array[Rect2] = []
 const Updraft = preload("res://scripts/updraft.gd")
 var updraft: Node3D
 
-## The binoculars (scripts/binoculars.gd, docs/design/binoculars/round1.md):
-## held (right mouse, pad LB) on foot on the ground, they come up to his
-## eyes. A scripted run holds them with `script_binoculars`.
-const Binoculars = preload("res://scripts/binoculars.gd")
-var binoculars: Node
-var script_binoculars := false
+## The telescope (scripts/telescope.gd, docs/design/telescope/round2.md):
+## held (right mouse, pad LB) on foot on the ground, it comes up to his
+## eye. A scripted run holds it up with `script_telescope`.
+const Telescope = preload("res://scripts/telescope.gd")
+var telescope: Node
+var script_telescope := false
 
 func _ready() -> void:
 	for arg in preload("res://scripts/launch_args.gd").user_args():
@@ -462,8 +462,8 @@ func _ready() -> void:
 	if not preload("res://scripts/launch_args.gd").user_args().has("--no-updraft") and updraft == null:
 		updraft = Updraft.new()
 		updraft.setup(self)
-	binoculars = Binoculars.new()
-	binoculars.setup(self)
+	telescope = Telescope.new()
+	telescope.setup(self)
 	# The bodies are in the space after a physics step.
 	await get_tree().physics_frame
 	await get_tree().physics_frame
@@ -779,9 +779,9 @@ func resize(s: float) -> void:
 func place(at: Vector3, face: Vector2) -> void:
 	motor.reset(at,PilotMotor.facing_of(face))
 	if updraft != null: updraft.reset()
-	if binoculars != null:
-		binoculars.drop()
-		binoculars.restore(camera)
+	if telescope != null:
+		telescope.drop()
+		telescope.restore(camera)
 	_jump = {}
 	_sail_from = Vector3.INF
 	if sail_wing != null: sail_wing.reset()
@@ -824,7 +824,7 @@ func _process(delta: float) -> void:
 ## One frame of the pilot: the stick read, the motor stepped over the room,
 ## the body drawn, its sounds and puffs, the camera.
 func tick(delta: float) -> void:
-	if binoculars != null: binoculars.restore(camera)
+	if telescope != null: telescope.restore(camera)
 	var want := script_want
 	var jump := script_jump
 	motor.crouch = script_crouch
@@ -835,12 +835,12 @@ func tick(delta: float) -> void:
 		motor.crouch = Input.is_action_pressed(&"walk_crouch") and not _tuning()
 		motor.twirl = Input.is_action_pressed(&"walk_twirl") and not _tuning()
 	var looking := false
-	if binoculars != null:
-		var hold: bool = script_binoculars if scripted else Input.is_action_pressed(&"binoculars") and not _tuning()
-		binoculars.step(delta,hold,binoculars_allowed(),_yaw,_polar-CAM_POLAR)
-		looking = binoculars.busy()
+	if telescope != null:
+		var hold: bool = script_telescope if scripted else Input.is_action_pressed(&"telescope") and not _tuning()
+		telescope.step(delta,hold,telescope_allowed(),_yaw,_polar-CAM_POLAR)
+		looking = telescope.busy()
 		if looking:
-			want *= Binoculars.SHUFFLE
+			want *= Telescope.SHUFFLE
 			jump = false
 			motor.crouch = false
 			motor.twirl = false
@@ -875,27 +875,27 @@ func tick(delta: float) -> void:
 	_water_events(events,drawn,delta)
 	_frame(delta)
 	if updraft != null: updraft.apply_feel(camera)
-	if looking: _binocular_view(delta)
+	if looking: _telescope_view(delta)
 	_show_hud()
 
-## Whether the binoculars may come up: on foot on the ground, standing or
+## Whether the telescope may come up: on foot on the ground, standing or
 ## walking (not in a jump, a slide, the water, on a ledge or the sail).
-func binoculars_allowed() -> bool:
+func telescope_allowed() -> bool:
 	return walk_ready and _replay.is_empty() and motor.grounded and not motor.swimming and not motor.on_ledge() and motor.move in ["","crouch"]
 
-## The isles the binoculars can aim at ({middle, radius, top, isle}); the
+## The isles the telescope can aim at ({middle, radius, top, isle}); the
 ## room has none.
 func sight_isles() -> Array:
 	return []
 
-## Up: he turns to where they look, the chase camera follows their way (so
-## it is there as they come down), and they take over the camera.
-func _binocular_view(delta: float) -> void:
-	_yaw = binoculars.yaw
-	_polar = clampf(CAM_POLAR+binoculars.pitch,POLAR.x,POLAR.y)
+## Up: he turns to where it looks, the chase camera follows its way (so
+## it is there as it comes down), and it takes over the camera.
+func _telescope_view(delta: float) -> void:
+	_yaw = telescope.yaw
+	_polar = clampf(CAM_POLAR+telescope.pitch,POLAR.x,POLAR.y)
 	_look_rest = 0.0
-	motor.facing = lerp_angle(motor.facing,binoculars.yaw,_ease(0.15,delta))
-	binoculars.view(delta)
+	motor.facing = lerp_angle(motor.facing,telescope.yaw,_ease(0.15,delta))
+	telescope.view(delta)
 
 ## The glide measured from the sail's opening to the touch (or the next
 ## open, a catch, a splash): across, down and the ratio.
@@ -914,7 +914,7 @@ func _want(delta: float) -> Vector2:
 	if _tuning(): return Vector2.ZERO
 	var stick := Input.get_vector(&"move_left",&"move_right",&"move_forward",&"move_back")
 	var look := Pad.curve(Pad.stick(&"look_left",&"look_right",&"look_up",&"look_down"),1.6)
-	if look != Vector2.ZERO and (binoculars == null or not binoculars.busy()):
+	if look != Vector2.ZERO and (telescope == null or not telescope.busy()):
 		_yaw -= look.x*STICK_WALK_LOOK.x*delta
 		_polar = clampf(_polar-look.y*STICK_WALK_LOOK.y*delta,POLAR.x,POLAR.y)
 		_look_rest = 0.0
