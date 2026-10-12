@@ -89,6 +89,17 @@ const BUFFET_RESET := 0.1
 const WIND_SLAM := 0.3
 const BUFFET := 0.2
 const BUFFET_GAP := Vector2(0.18,0.5)
+## Asleep on its roost: its breath's gain, heard at full within SLEEP_UNIT
+## m and gone by SLEEP_REACH (the meadow under it is 60 to 120 m off, the
+## aqueduct isle 700), the growl under the out-breath; the wind in its
+## crags (gain between gusts and at one, its unit and reach, m).
+const SLEEP_BREATH := 0.5
+const SLEEP_UNIT := 45.0
+const SLEEP_REACH := 650.0
+const SLEEP_GROWL := 0.12
+const HOWL := Vector2(0.06,0.22)
+const HOWL_UNIT := 40.0
+const HOWL_REACH := 600.0
 ## Letting go: the launch beat's gain over a beat's, the rubble.
 const LAUNCH := 1.6
 ## The serpent: its scales (gain at the pace's top, PACE m/s) and their
@@ -360,11 +371,12 @@ func _dragon(dragon: Node, delta: float, listener: Vector3) -> float:
 	var b := _dragon_beds(dragon)
 	var state := str(dragon.state)
 	var model: Node3D = dragon.get("model")
-	var shown := model != null and model.visible and state != "waiting"
+	var shown := model != null and model.visible and (dragon as Node3D).is_visible_in_tree() and state != "waiting"
 	if not shown:
-		for k: String in ["air","growl","grind","gale"]: (b[k] as Bed).goal = 0.0
+		for k: String in ["air","growl","grind","gale","howl"]: if b.has(k): (b[k] as Bed).goal = 0.0
 		b.state = state
 		return 0.0
+	if state == "roosting": return _roosting(dragon,b,listener)
 	var at: Vector3 = (dragon as Node3D).global_position
 	var dist := at.distance_to(listener)
 	var was_state: String = b.state
@@ -418,6 +430,41 @@ func _call(at: Vector3) -> void:
 	if _call_wait > 0.0: return
 	_call_wait = CALL_GAP*_rng.randf_range(1.0,1.5)
 	shot("dragon_call",CALL,_rng.randf_range(0.92,1.04),at,CALL_UNIT,CALL_REACH,FAR)
+
+## Asleep on its roost (scripts/dragon_roost.gd, --dragon-roost;
+## docs/design/dragon-roost/round3.md): its slow breath, a deep draw in and
+## a long out-breath at its snout, heard from the meadow under the
+## mountain and fading out on the way to the aqueduct isle, a low growl
+## under the out-breath; and the wind howling through its crags round the
+## summit, rising and falling in slow gusts.
+func _roosting(dragon: Node, b: Dictionary, listener: Vector3) -> float:
+	var roost: RefCounted = dragon.get("roost")
+	var line: PackedVector3Array = roost.get("line_world") if roost != null else PackedVector3Array()
+	if roost == null or line.is_empty(): return 0.0
+	var snout: Vector3 = line[0]
+	var breath := str(roost.breath())
+	if breath != str(b.breath) and str(b.breath) != "":
+		if breath == "in": shot("inhale",SLEEP_BREATH*0.8,_rng.randf_range(0.66,0.72),snout,SLEEP_UNIT,SLEEP_REACH,FAR)
+		else: shot("exhale",SLEEP_BREATH,_rng.randf_range(0.6,0.68),snout,SLEEP_UNIT,SLEEP_REACH,FAR)
+	b.breath = breath
+	var growl: Bed = b.growl
+	(growl.player as Node3D).global_position = snout
+	growl.goal = SLEEP_GROWL if breath == "out" else 0.0
+	growl.pitch_goal = 0.7
+	if not b.has("howl"):
+		var howl := _bed(KIT+"air-howl-loop.wav",FAR,true,HOWL_UNIT,HOWL_REACH)
+		howl.attack = 0.6
+		howl.release = 0.6
+		b.howl = howl
+	var crag: Bed = b.howl
+	(crag.player as Node3D).global_position = roost.howl_at()
+	var t := Time.get_ticks_msec()/1000.0
+	var gust := 0.5+0.5*sin(t*0.37)*sin(t*0.11+1.3)
+	crag.goal = lerpf(HOWL.x,HOWL.y,gust)
+	crag.pitch_goal = 0.62+0.18*gust
+	for k: String in ["air","grind","gale"]: (b[k] as Bed).goal = 0.0
+	b.state = "roosting"
+	return 0.0
 
 ## On a rim: the slam, the growl and the stone, the breath, the gale, the
 ## let go. Returns the ribbons' air round the listener.

@@ -590,6 +590,17 @@ static func _puff_texture() -> Texture2D:
 func breathing_out() -> bool:
 	return sin(TAU*_t/BREATH) < -0.15
 
+## Its breath for the sound (scripts/kit_isle/kit_audio_beasts.gd): "in"
+## while the chest rises, "out" while it falls.
+func breath() -> String:
+	return "out" if sin(TAU*_t/BREATH) < 0.0 else "in"
+
+## Where the wind howls through its crags (world): the summit's crown, at
+## the old tower's foot.
+func howl_at() -> Vector3:
+	var t2 := Roost.own(Roost.TOWER_C)
+	return Vector3(t2.x,Roost.TOP+Roost.SHOULDER_H*Roost.SPAN,t2.y)+offset
+
 ## The haze puffs from the nostrils while it breathes out (the breath
 ## falling), the emitter at the snout facing out of it. The tail's twitch:
 ## a kick now and then, on a spring.

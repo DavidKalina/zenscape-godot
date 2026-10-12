@@ -1,6 +1,6 @@
 extends SceneTree
 ## The dragon asleep on its roost, captured (docs/design/dragon-roost/
-## round2.md): the game (studies/zenscape.tscn) straight in with
+## round3.md): the game (studies/zenscape.tscn) straight in with
 ## --dragon-roost, the sky held, every motif isle stood at once, then fixed
 ## views saved one after another from one window: from the aqueduct isle
 ## looking out at the mountain (the landmark), the whole mountain, the head
@@ -112,6 +112,22 @@ func _aim(shot: String) -> Dictionary:
 		"snout":
 			var tip := line[0]
 			return {"eye":tip+toward*16.0+across*6.0+Vector3(0.0,6.0,0.0),"at":tip,"fov":55.0}
+		"wreck":
+			# The airship's wreck caught on the spur, from the front and right.
+			var s2 := Roost.own(Vector2(Roost.SPUR.x,Roost.SPUR.y))
+			var spur := Vector3(s2.x+Roost.AT.x,Roost.TOP+Roost.SPUR_H*span+Roost.AT.y,s2.y+Roost.AT.z)
+			return {"eye":spur+toward*60.0*span-across*35.0*span+Vector3(0.0,4.0*span,0.0),"at":spur+Vector3(0.0,-4.0,0.0),"fov":55.0}
+		"crash":
+			# The crashed plane under the ledge's front.
+			var air: Node3D = game.get("roost_air")
+			if air == null or air.get("wreck") == null: return {}
+			var at: Vector3 = (air.wreck as Node3D).global_position
+			return {"eye":at+toward*9.0+across*5.0+Vector3(0.0,3.0,0.0),"at":at+Vector3(0.0,1.0,0.0),"fov":55.0}
+		"meadow":
+			# On the roost's own turf before the mountain, looking up at it.
+			var m2 := Roost.own(Vector2(10.0,62.0))
+			var feet := Vector3(m2.x+Roost.AT.x,Roost.ground(m2.x,m2.y)+Roost.AT.y,m2.y+Roost.AT.z)
+			return {"eye":feet+Vector3(0.0,1.7,0.0),"at":ledge+Vector3(0.0,10.0,0.0),"fov":65.0}
 		"top":
 			return {"eye":axis+Vector3(0.5,150.0*span,0.0),"at":axis,"fov":55.0}
 		"night":

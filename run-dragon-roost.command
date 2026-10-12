@@ -1,5 +1,5 @@
 #!/bin/zsh
-# The dragon's roost (docs/design/dragon-roost/round2.md): the game straight
+# The dragon's roost (docs/design/dragon-roost/round3.md): the game straight
 # in, with the dragon's mountain standing out past the motif isles, south-east
 # of the aqueduct isle (look past the parked plane's tail), and the sky dragon
 # asleep curled on its ledge, its neck round the summit. It doesn't roam.

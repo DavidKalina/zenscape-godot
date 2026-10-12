@@ -1,6 +1,6 @@
 extends "res://scripts/kit_isle/kit_motif.gd"
 ## The dragon's roost as a motif (scripts/kit_isle/kit_motif.gd; docs/design/
-## dragon-roost/round2.md): a craggy, lopsided mountain on its own floating
+## dragon-roost/round3.md): a craggy, lopsided mountain on its own floating
 ## rock, the sky dragon's home. A strip of turf round its foot on the side
 ## facing the aqueduct isle; a massif of stepped crags out of it; halfway up,
 ## standing out to one side, a broad ledge, its floor a little hollowed and
@@ -30,6 +30,7 @@ extends "res://scripts/kit_isle/kit_motif.gd"
 ## (`ground`) is one height function, so the dragon's pose reads the same
 ## rock the isle is built of, without a physics query.
 const SkyDragon = preload("res://scripts/sky_dragon.gd")
+const RoostDress = preload("res://scripts/kit_isle/roost_dress.gd")
 
 ## Where it stands from its own frame (motif_sky.gd PLACES' way): its middle
 ## about world (610, 455), 710 m south-east of the aqueduct isle's (120 m
@@ -51,13 +52,15 @@ const U := Vector2(0.686,-0.728)
 const ISLE_C := Vector2(14.0,12.0)
 const ISLE_R := 80.0
 ## The summit tower: its middle (u, v); its radius at the ledge's height
-## (TOWER_BASE) narrowing to TOWER_SHOULDER at SHOULDER_H, then the peak to
-## PEAK_H.
+## (TOWER_BASE) narrowing to TOWER_SHOULDER at SHOULDER_H, then a low
+## broken crown of rock (CROWN) the old tower stands in (RoostDress
+## `tower`), its broken top up to PEAK_H.
 const TOWER_C := Vector2(-2.0,-3.0)
 const TOWER_BASE := 20.0
 const TOWER_SHOULDER := 15.0
 const SHOULDER_H := 82.0
-const PEAK_H := 100.0
+const PEAK_H := 118.0
+const CROWN := 4.0
 ## The ledge: its middle (u, v), radius, floor height; how much its floor
 ## dishes and its rim lifts.
 const LEDGE_C := Vector2(40.0,0.0)
@@ -68,6 +71,9 @@ const LIP := 1.1
 ## The spur beside the tower: middle (u, v), radius, top.
 const SPUR := Vector3(-34.0,-6.0,10.0)
 const SPUR_H := 64.0
+## Crag fangs round the massif: (u, v, base radius, top) each, layout m,
+## clear of the ledge and the line.
+const FANGS := [Vector4(76.0,-16.0,9.0,70.0),Vector4(-30.0,34.0,8.0,50.0),Vector4(-50.0,-22.0,10.0,80.0),Vector4(58.0,40.0,7.0,36.0),Vector4(14.0,-40.0,9.0,74.0)]
 ## The massif under them: how far its crags reach out from the tower and
 ## ledge to the turf (layout m, by angle), its steps.
 const FALL := 27.0
@@ -101,10 +107,27 @@ const GROOVE_FLAT := 1.1
 const GROOVE_RISE := 3.0
 ## How far the neck's up leans out from the tower.
 const UP_OUT := 0.25
-## The rock round where it lies, paled and warmed this much (the hide reads
-## dark against it), within PALE m of the line.
-const PALE_TONE := Color(0.86,0.74,0.58)
-const PALE := 7.0
+## The rock (`_scorch`): darkened all over toward soot, more so in streaks
+## run down the faces under the ledge and round the tower (his fire's, long
+## ago); worn smooth and pale only where his body has lain for years: within
+## POLISH m of his hide and on the ledge's rim (POLISH_TONE, sRGB). The
+## nest's floor is worn to the same smooth stone (NEST_TONE).
+const SOOT := Color(0.07,0.06,0.055)
+const SOOTED := 0.5
+const POLISH_TONE := Color(0.6,0.57,0.52)
+const POLISH := 2.6
+const NEST_TONE := Color(0.5,0.47,0.42)
+## The turf round the mountain's foot scorched (char and ash) out to
+## SCORCH m past the crags' reach, fading over SCORCH_FADE; the rest of the
+## isle's grass dead and thin (DEAD_WEAR: no flowers).
+const CHAR_TONE := Color(0.13,0.11,0.095)
+const ASH_TONE := Color(0.36,0.34,0.32)
+const SCORCH := 14.0
+const SCORCH_FADE := 22.0
+const DEAD_WEAR := 0.16
+## The dead grass's tone (sRGB) and how far the turf goes to it.
+const DEAD_TONE := Color(0.34,0.31,0.25)
+const DEAD := 0.62
 
 static var _coil := {}
 ## The neck's shelf: its points [flat, floor (own y), girth], bucketed by
@@ -138,7 +161,7 @@ func summit() -> Vector3:
 	return Vector3(p.x,TOP+PEAK_H*SPAN,p.y)
 
 func flora_site() -> KitFlora.Site:
-	var site := KitFlora.Site.new(TOP,func(p: Vector2) -> float: return nest_wear(p))
+	var site := KitFlora.Site.new(TOP,func(p: Vector2) -> float: return worn_turf(p))
 	site.ray = Vector2(TOP+(PEAK_H+10.0)*SPAN,TOP-8.0)
 	return site
 
@@ -157,7 +180,7 @@ func build(into: Node3D) -> void:
 	super.build(into)
 	var began := Time.get_ticks_msec()
 	var land := island(SEED)
-	_pale(land)
+	_scorch(land)
 	art.add_child(land)
 	for spec: Array in RUINS:
 		var piece: Node3D = RuinKit.piece(spec[0],SEED+int(spec[1]),float(spec[2]))
@@ -166,6 +189,7 @@ func build(into: Node3D) -> void:
 		piece.transform = Transform3D(Basis(Vector3.UP,deg_to_rad(float(spec[5]))),at)
 		art.add_child(piece)
 	art.add_child(bones())
+	_dress(land)
 	turf(land)
 	built_ms = Time.get_ticks_msec()-began
 
@@ -266,7 +290,7 @@ static func ground(x: float, z: float) -> float:
 	if d < TOWER_BASE:
 		var tower: float
 		if d > TOWER_SHOULDER: tower = LEDGE_H+(TOWER_BASE-d)/(TOWER_BASE-TOWER_SHOULDER)*(SHOULDER_H-LEDGE_H)
-		else: tower = SHOULDER_H+(PEAK_H-SHOULDER_H)*(1.0-pow(d/TOWER_SHOULDER,1.6))
+		else: tower = SHOULDER_H+CROWN*(1.0-pow(d/TOWER_SHOULDER,1.6))
 		# Its faces broken into steps and leaning facets.
 		tower += 2.6*n+1.6*crag(x*2.3,z*2.3)
 		tower = lerpf(tower,floorf(tower/4.0)*4.0+4.0*smoothstep(0.75,1.0,fposmod(tower,4.0)/4.0),0.45)
@@ -275,6 +299,12 @@ static func ground(x: float, z: float) -> float:
 	var ps := q-Vector2(SPUR.x,SPUR.y)
 	var ds := ps.length()/(SPUR.z*_creased(atan2(ps.y,ps.x),3.1))
 	if ds < 1.0: h = maxf(h,SPUR_H-(SPUR_H-LEDGE_H*0.6)*pow(ds,1.3)+1.5*n)
+	# The fangs: crag teeth standing out of the massif's flanks, so its
+	# outline breaks into points rather than a mesa's line.
+	for f: Vector4 in FANGS:
+		var pf := q-Vector2(f.x,f.y)
+		var df := pf.length()/(f.z*_creased(atan2(pf.y,pf.x),f.x*0.1))
+		if df < 1.0: h = maxf(h,f.w-f.w*0.75*pow(df,0.8)+1.2*n)
 	var y := TOP+h*SPAN
 	var shelf := _groove(Vector2(x,z))
 	return minf(maxf(y,shelf.y),shelf.x)
@@ -283,6 +313,21 @@ static func ground(x: float, z: float) -> float:
 static func nest_wear(p: Vector2) -> float:
 	var q := layout(p)-LEDGE_C
 	return 1.0-smoothstep(0.82,1.02,q.length()/LEDGE_R)
+
+## How scorched the turf is at `p` (own x, z), 0..1: near the crags' foot,
+## in ragged tongues (and the crags' own step tops, all of it).
+static func scorch(p: Vector2) -> float:
+	var q := layout(p)
+	var e := _out_of_core(q)
+	var a := atan2(q.y-LEDGE_C.y*0.5,q.x-LEDGE_C.x*0.5)
+	var reach := FALL*(1.0+0.28*sin(a)-0.38*maxf(cos(a),0.0)*maxf(cos(a),0.0))*_creased(a,2.2)
+	var tongue := 0.6*_value(a*3.0,0.0,SEED+7)+0.4*grain(p.x*0.6,p.y*0.6)
+	return 1.0-smoothstep(SCORCH*(0.6+0.6*tongue),SCORCH*(0.6+0.6*tongue)+SCORCH_FADE,e-reach)
+
+## How worn the turf reads to the plants (KitFlora wear): the nest bare,
+## the scorch bare to thin, the rest dead and thin (no flowers).
+static func worn_turf(p: Vector2) -> float:
+	return maxf(maxf(nest_wear(p),DEAD_WEAR),scorch(p)*0.9)
 
 # --- The line ------------------------------------------------------------------------------
 
@@ -462,20 +507,47 @@ static func outline() -> Array:
 static func island(seed_value: int) -> Node3D:
 	var spec := {"outline":outline(),"depth":DEPTH*SPAN,"seed":seed_value,"ground":func(x: float, z: float) -> float: return ground(x,z),
 		"top":TOP,"hang":true,"cell":2.4,"fine":1.5,"fine_box":Rect2(own(Vector2(12.0,0.0))-Vector2.ONE*62.0*SPAN,Vector2.ONE*124.0*SPAN),
-		"resample":[60.0,140,64],"tone":KitLook.turf(seed_value,func(p: Vector2) -> float: return nest_wear(p))}
+		"resample":[60.0,140,64],"tone":turf_tone(seed_value)}
 	var node := KitLand.island(spec)
 	node.name = "Mountain"
 	return node
 
-## The rock where it lies paled and warmed (PALE_TONE), so its dark hide
-## reads against it from afar: the crag faces within PALE of the line and
-## the ledge's rim and underside.
-static func _pale(land: Node3D) -> void:
+## The turf's tone: the kit's (dead and thin: DEAD_WEAR), the nest's
+## floor worn to smooth pale stone with scuffs, the scorch toward char with
+## ashen patches.
+static func turf_tone(seed_value: int) -> Callable:
+	var base := KitLook.turf(seed_value,func(p: Vector2) -> float: return maxf(DEAD_WEAR,nest_wear(p)*0.4))
+	var nest := NEST_TONE.srgb_to_linear()
+	var char_tone := CHAR_TONE.srgb_to_linear()
+	var ash := ASH_TONE.srgb_to_linear()
+	var dead := DEAD_TONE.srgb_to_linear()
+	return func(mid: Vector2, normal: Vector3, shimmer: float, y: float) -> Color:
+		var c: Color = base.call(mid,normal,shimmer,y)
+		c = c.lerp(dead*(0.9+0.2*grain(mid.x,mid.y)),DEAD)
+		var w := nest_wear(mid)
+		if w > 0.0:
+			var scuff := 0.85+0.25*grain(mid.x*2.5,mid.y*2.5)
+			c = c.lerp(nest*scuff,w*0.92)
+		var sc := scorch(mid)
+		if sc > 0.0 and w < 1.0:
+			var patch := 0.5+0.5*grain(mid.x*1.7+11.0,mid.y*1.7)
+			var burnt := char_tone.lerp(ash,smoothstep(0.55,0.9,patch)*0.7)
+			c = c.lerp(burnt,sc*0.95*(1.0-w))
+		return Color(c.r,c.g,c.b,1.0)
+
+## The rock scorched and worn (SOOT, POLISH_TONE): every crag face sooted
+## SOOTED of the way, more in streaks running down from the ledge's rim and
+## round the tower's flanks, blackened just under the rim; worn smooth and
+## pale within POLISH of where his hide lies, and along the ledge's rim.
+## Answers the crag mesh drawn (for the claw marks).
+static func _scorch(land: Node3D) -> void:
 	var crags := land.get_node_or_null("Crags") as MeshInstance3D
 	if crags == null or crags.mesh == null: return
 	var mesh := crags.mesh as ArrayMesh
-	var tint := PALE_TONE.srgb_to_linear()
+	var soot := SOOT.srgb_to_linear()
+	var polish := POLISH_TONE.srgb_to_linear()
 	var out := ArrayMesh.new()
+	var rim_y := TOP+LEDGE_H*SPAN
 	for s in range(mesh.get_surface_count()):
 		var arrays := mesh.surface_get_arrays(s)
 		var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
@@ -484,22 +556,188 @@ static func _pale(land: Node3D) -> void:
 			for i in range(0,verts.size(),3):
 				var m := (verts[i]+verts[i+1]+verts[i+2])/3.0
 				var q := layout(Vector2(m.x,m.z))
-				# The ledge's rim and the crag just under it.
+				var hl := (m.y-TOP)/SPAN
+				# Soot: all over a little; in streaks running down from the
+				# rim (strongest just under it, gone 40 m down), and round
+				# the tower's flanks.
+				var al := atan2(q.y-LEDGE_C.y,q.x-LEDGE_C.x)
+				var at := atan2(q.y-TOWER_C.y,q.x-TOWER_C.x)
+				var under := LEDGE_H-hl
+				var streak := smoothstep(-0.1,0.5,_value(al*9.0,hl*0.06,SEED+11))
+				var tstreak := smoothstep(-0.1,0.5,_value(at*7.0,hl*0.05,SEED+13))
 				var dl := (q-LEDGE_C).length()/LEDGE_R
-				var under := (TOP+LEDGE_H*SPAN)-m.y
-				var k := (1.0-smoothstep(1.0,1.5,dl))*(1.0-smoothstep(6.0,16.0,under))
-				# Round the neck's shelf.
+				var below := (1.0-smoothstep(0.0,40.0,under))*(1.0 if under > -2.0 else 0.0)*(1.0-smoothstep(1.0,2.6,dl))
+				var flank := smoothstep(LEDGE_H-10.0,LEDGE_H+10.0,hl)*(1.0-smoothstep(TOWER_BASE,TOWER_BASE+10.0,(q-TOWER_C).length()))
+				var lip := (1.0-smoothstep(0.0,7.0,under))*(1.0 if under > 0.5 else 0.0)*(1.0-smoothstep(1.0,1.3,dl))
+				var k := SOOTED+0.5*maxf(below*streak,flank*tstreak)+0.32*below+0.45*lip
+				k = clampf(k,0.0,0.92)
+				# Worn smooth: where his hide lies, the rim he curls over.
 				var gap := line_gap(m)
-				k = maxf(k,1.0-smoothstep(1.0,PALE,gap))
-				if k <= 0.0: continue
+				var rim := (1.0-smoothstep(0.9,1.1,dl))*smoothstep(0.7,0.92,dl)*(1.0-smoothstep(0.8,2.6,absf(m.y-rim_y)))
+				var worn := maxf(1.0-smoothstep(0.4,POLISH,gap),rim)
 				for v in range(3):
 					var c := colours[i+v]
-					var lit := Color(tint.r,tint.g,tint.b,c.a)*lerpf(0.75,1.05,clampf(c.get_luminance()*6.0,0.0,1.0))
-					colours[i+v] = c.lerp(lit,k*0.85)
+					c = c.lerp(Color(soot.r,soot.g,soot.b,c.a),k)
+					if worn > 0.0:
+						var shine := lerpf(0.82,1.08,clampf(colours[i+v].get_luminance()*5.0,0.0,1.0))
+						c = c.lerp(Color(polish.r,polish.g,polish.b,c.a)*shine,worn*0.85)
+					colours[i+v] = c
 			arrays[Mesh.ARRAY_COLOR] = colours
 		out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
 		out.surface_set_material(out.get_surface_count()-1,mesh.surface_get_material(s))
 	crags.mesh = out
+
+# --- The lair's dress (scripts/kit_isle/roost_dress.gd) ----------------------------
+
+## The old tower on the crown: its height over the shoulder, its face's
+## reach and wall (layout m), its high side (deg round TOWER_C, u toward v:
+## away from the aqueduct isle, so its broken top slants down toward it).
+const TOWER_RISE := PEAK_H-SHOULDER_H
+const TOWER_OUTER := 8.6
+const TOWER_WALL := 1.8
+const TOWER_HIGH := -110.0
+## Dead trees: how many, the band they stand in past the crags' foot (m).
+const TREES := 13
+## The airship's wreck caught on the spur: its length and radius (m), turn
+## and droop (deg).
+const WRECK := Vector4(28.0,4.8,-20.0,24.0)
+## Claw marks: [where (u, v), height (layout m over TOP), along (deg, round
+## the rock face: 0 straight down), claws, length (m)] raked down the
+## faces under the ledge's rim and the tower's flank, and across the rim.
+const GOUGES := [
+	[Vector2(61.0,8.0),LEDGE_H-1.5,18.0,4,9.0],[Vector2(54.0,21.0),LEDGE_H-2.0,-12.0,4,11.0],
+	[Vector2(30.0,23.5),LEDGE_H-1.2,8.0,3,7.0],[Vector2(62.0,-6.0),LEDGE_H-3.0,25.0,4,8.0],
+	[Vector2(20.0,12.0),LEDGE_H+6.0,-30.0,4,10.0],[Vector2(-6.0,17.0),SHOULDER_H-6.0,10.0,4,12.0],
+]
+
+## The tower, the dead trees, the wreck on the spur, the claw marks and the
+## bones below the ledge.
+func _dress(land: Node3D) -> void:
+	var c := own(TOWER_C)
+	var base := TOP+SHOULDER_H*SPAN
+	var t := RoostDress.tower(SEED+21,TOWER_RISE*SPAN,TOWER_OUTER*SPAN,TOWER_WALL*SPAN,own_angle(TOWER_HIGH),
+		CROWN*SPAN+4.0,func(x: float, z: float) -> float: return ground(x+c.x,z+c.y)-base)
+	t.name = "OldTower"
+	t.position = Vector3(c.x,base,c.y)
+	art.add_child(t)
+	var mat := RoostDress.surface_material()
+	art.add_child(_trees(mat))
+	art.add_child(_wreck(mat))
+	var faces := RoostDress.Faces.new()
+	for part: String in ["Crags","Ground"]:
+		var mi := land.get_node_or_null(part) as MeshInstance3D
+		if mi != null and mi.mesh != null: faces.add_mesh(mi.mesh,mi.transform)
+	var marks := []
+	for g: Array in GOUGES:
+		var p := own(g[0])
+		var h := TOP+float(g[1])*SPAN
+		# Into the rock: toward the ledge's middle (or the tower's, for the
+		# tower's flank).
+		var mid := own(LEDGE_C) if float(g[1]) <= LEDGE_H+1.0 else own(TOWER_C)
+		var into := Vector3(mid.x-p.x,0.0,mid.y-p.y).normalized()
+		var across := into.cross(Vector3.UP).normalized()
+		var along := (Vector3.DOWN*cos(deg_to_rad(float(g[2])))+across*sin(deg_to_rad(float(g[2])))).normalized()
+		marks.append([Vector3(p.x,h,p.y)-into*2.0,along,into,float(g[4])*SPAN,int(g[3]),1.0*SPAN])
+	# Raked across the rim's top where he hauls himself up (clear of him).
+	for rim: Array in [[200.0,0.2],[250.0,-0.3]]:
+		var a := deg_to_rad(float(rim[0]))
+		var q := LEDGE_C+Vector2(cos(a),sin(a))*LEDGE_R*0.93
+		var p := own(q)
+		var dir := Vector3(cos(a+float(rim[1])),0.0,sin(a+float(rim[1])))
+		var o := own(q+Vector2(dir.x,dir.z))-p
+		marks.append([Vector3(p.x,TOP+(LEDGE_H+6.0)*SPAN,p.y),Vector3(o.x,0.0,o.y).normalized()*-1.0,Vector3.DOWN,6.0*SPAN,4,0.9*SPAN])
+	art.add_child(RoostDress.gouges(faces,marks,mat))
+	art.add_child(_bones_below())
+
+## A layout angle (deg, u toward v) as an own one (radians, x toward z).
+static func own_angle(deg: float) -> float:
+	var d := U*cos(deg_to_rad(deg))+V*sin(deg_to_rad(deg))
+	return atan2(d.y,d.x)
+
+## Dead trees on the lower slopes and the turf near the foot, leaning
+## away from the summit, charred the nearer they stand.
+func _trees(mat: Material) -> Node3D:
+	var root := Node3D.new()
+	root.name = "DeadTrees"
+	var rng := RandomNumberGenerator.new()
+	rng.seed = SEED+31
+	var summit2 := own(TOWER_C)
+	var tries := 0
+	while root.get_child_count() < TREES and tries < 600:
+		tries += 1
+		var a := rng.randf()*TAU
+		var q := ISLE_C+Vector2(cos(a),sin(a))*ISLE_R*sqrt(rng.randf_range(0.15,0.8))
+		var p := own(q)
+		if _out_of_core(q) < 6.0 or nest_wear(p) > 0.0: continue
+		var y := ground(p.x,p.y)
+		if (y-TOP)/SPAN > 22.0: continue
+		# Not on a steep face: the ground round it within a metre.
+		var flat := maxf(absf(ground(p.x+1.5,p.y)-y),absf(ground(p.x,p.y+1.5)-y))
+		if flat > 1.0: continue
+		var away := (p-summit2).normalized()
+		var sc := scorch(p)
+		var tall := rng.randf_range(5.0,9.5)*lerpf(0.7,1.0,1.0-sc)
+		var tree := RoostDress.dead_tree(SEED+40+tries,tall,away*rng.randf_range(0.18,0.38),clampf(sc*1.2,0.0,1.0),mat)
+		tree.position = Vector3(p.x,y,p.y)
+		tree.rotation.y = rng.randf()*0.4
+		root.add_child(tree)
+	return root
+
+## The airship's wreck caught on the spur's top, along u (across the view
+## from the aqueduct isle), its outer end drooping.
+func _wreck(mat: Material) -> Node3D:
+	var w := RoostDress.airship_wreck(SEED+51,WRECK.x,WRECK.y,mat)
+	var s := own(Vector2(SPUR.x,SPUR.y))
+	var top := ground(s.x,s.y)
+	var along := Vector3(-U.x,0.0,-U.y)
+	var basis := Basis.looking_at(along,Vector3.UP)
+	basis = Basis(along.cross(Vector3.UP).normalized(),deg_to_rad(-WRECK.w))*Basis(Vector3.UP,deg_to_rad(WRECK.z))*basis
+	w.transform = Transform3D(basis,Vector3(s.x,top-WRECK.y*0.15,s.y))
+	return w
+
+## Bones below the ledge: strewn on the crags' step tops and the turf under
+## its front and outer side, and a great beast's rib cage on the turf.
+func _bones_below() -> Node3D:
+	var root := Node3D.new()
+	root.name = "BonesBelow"
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.8,0.76,0.66)
+	mat.roughness = 0.95
+	var rng := RandomNumberGenerator.new()
+	rng.seed = SEED+61
+	var placed := 0
+	var tries := 0
+	while placed < 22 and tries < 900:
+		tries += 1
+		var a := rng.randf_range(-1.2,2.0)
+		var q := LEDGE_C+Vector2(cos(a),sin(a))*rng.randf_range(LEDGE_R+2.0,LEDGE_R+34.0)
+		var p := own(q)
+		var y := ground(p.x,p.y)
+		if absf(ground(p.x+1.2,p.y)-y) > 0.5 or absf(ground(p.x,p.y+1.2)-y) > 0.5: continue
+		if (y-TOP)/SPAN > LEDGE_H-4.0: continue
+		var len := rng.randf_range(1.6,4.8)*SPAN
+		var r := len*0.08
+		var bone := _bone_mesh(len,r,mat)
+		bone.transform = Transform3D(Basis(Vector3.UP,rng.randf()*TAU)*Basis(Vector3.RIGHT,PI*0.5+rng.randf_range(-0.2,0.2)),Vector3(p.x,y+r*0.6,p.y))
+		root.add_child(bone)
+		placed += 1
+	# The great beast's ribs on the turf before the mountain, half sunk.
+	var at := own(Vector2(36.0,46.0))
+	var y0 := ground(at.x,at.y)
+	var cage := Node3D.new()
+	cage.name = "GreatRibs"
+	cage.transform = Transform3D(Basis(Vector3.UP,0.9),Vector3(at.x,y0-1.2,at.y))
+	for k in range(7):
+		for side: float in [-1.0,1.0]:
+			var len := 11.0*SPAN*(1.0-absf(float(k)-3.0)*0.07)
+			var rib := _bone_mesh(len,0.38*SPAN,mat)
+			rib.transform = Transform3D(Basis(Vector3.BACK,side*(0.35+0.05*k))*Basis(Vector3.RIGHT,0.15*side),Vector3(side*1.2*SPAN,len*0.42,(float(k)-3.0)*2.4*SPAN))
+			cage.add_child(rib)
+	var spine := _bone_mesh(19.0*SPAN,0.6*SPAN,mat)
+	spine.transform = Transform3D(Basis(Vector3.RIGHT,PI*0.5),Vector3(0.0,0.9,0.0))
+	cage.add_child(spine)
+	root.add_child(cage)
+	return root
 
 # --- The ruins and the nest ------------------------------------------------------------------
 

@@ -87,7 +87,7 @@ extends "res://studies/kit_isle.gd"
 ## sky to settle, saves the view (from --at looking at the point, else the
 ## walker's camera) and quits; --place=x,y,z[,turn] starts the pilot there
 ## instead (turn: degrees from facing -z, clockwise).
-## --dragon-roost (docs/design/dragon-roost/round2.md): the dragon's mountain
+## --dragon-roost (docs/design/dragon-roost/round3.md): the dragon's mountain
 ## stands out past the motif isles (scripts/kit_isle/motif_dragon_roost.gd)
 ## and the dragon sleeps curled on its ledge, its neck round the summit
 ## (scripts/dragon_roost.gd);
@@ -114,6 +114,9 @@ const IsleChain = preload("res://studies/aqueduct_isle_chain.gd")
 const RuinBump = preload("res://scripts/ruin_bump.gd")
 const SkyDragon = preload("res://scripts/sky_dragon.gd")
 const DragonRoost = preload("res://scripts/dragon_roost.gd")
+## The air round the roost: its wreath, haze, cold, carrion birds and the
+## crashed plane (docs/design/dragon-roost/round3.md).
+const RoostAir = preload("res://scripts/roost_air.gd")
 ## The flying dragon's attack targets (round 7): the sky's placed motif
 ## isles, whatever it places (scripts/kit_isle/motif_sky.gd `places`).
 const DragonIsleShape = preload("res://scripts/dragon_isle_shape.gd")
@@ -198,6 +201,7 @@ var _fly_test_heading := 0.0
 ## mountain stands.
 var dragon_roost := false
 var roost_dragon: Node3D = null
+var roost_air: Node3D = null
 ## Each motif isle's record for the dragon, once it stands (its id ->
 ## {node, shape, home, radius, frame, pivot}).
 var _dragon_isles := {}
@@ -641,12 +645,16 @@ func _build_roost_dragon() -> void:
 	roost_dragon.sky_scene = self
 	add_child(roost_dragon)
 	roost_dragon.setup_roost(camera,DragonRoost.new())
+	roost_air = RoostAir.new()
+	add_child(roost_air)
+	roost_air.setup()
 
 ## Its breath and glow, seen only once its mountain stands.
 func _roost_frame(delta: float) -> void:
 	if roost_dragon == null: return
 	var isle := _motif_isle("dragon_roost")
 	roost_dragon.visible = isle == null or isle.stands()
+	if roost_air != null: roost_air.visible = roost_dragon.visible
 	roost_dragon.advance(delta)
 
 ## The flying dragon (scripts/sky_dragon.gd) round the archipelago: the
