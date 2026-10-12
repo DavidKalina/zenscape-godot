@@ -681,6 +681,7 @@ func _build_roost_dragon() -> void:
 	var wake: RefCounted = DragonWake.new()
 	wake.setup(roost_dragon,roost_air,preload("res://scripts/launch_args.gd").user_args(),_world_hours,Vector3(IsleSky.MIDDLE.x,Art.TOP,IsleSky.MIDDLE.z))
 	roost_dragon.wake = wake
+	_wash_air()
 
 ## The world clock's hours so far (its day's 24 and the hour), or -1 while
 ## the day is held (a look preset, a capture, the day length 0): the wake's
@@ -738,13 +739,30 @@ func _build_sky_dragon() -> void:
 		if _place != Vector4.INF: print("aqueduct isle: --dragon-ride starts the pilot at (%.1f, %.1f, %.1f) on %s" % [_place.x,_place.y,_place.z,str(dragon.grip.target.name)])
 	if _switch_hint != null and not flying: _switch_hint.text = _foot_text()
 	# Round 10: its blast is a gust for the plane.
+	_wash_air()
+
+## The dragon's air for the plane and the sail (docs/design/dragon-downwash/
+## round1.md): the flying dragon's or the roost dragon's downwash (scripts/
+## dragon_downwash.gd) on the plane (`plane_air`) and laid over the isle's
+## own air for the pocket sail (`motor.air`).
+func _wash_air() -> void:
 	plane_air = _dragon_air
+	var base: Callable = motor.air
+	motor.air = func(p: Vector3) -> Dictionary:
+		var here: Dictionary = base.call(p) if base.is_valid() else {}
+		var flier := dragon if dragon != null else roost_dragon
+		if flier == null: return here
+		return flier.downwash.merge(here,flier.downwash.pilot_air(p,PocketSail.THERMAL))
 
 ## The air the plane flies in: the dragon's blast (scripts/dragon_gale.gd
-## `plane_gust`), or still air.
+## `plane_gust`) and its downwash, or still air.
 func _dragon_air(p: Vector3) -> Dictionary:
-	if dragon == null or dragon.gale == null or plane == null: return {}
-	return dragon.gale.plane_gust(p,plane.forward())
+	if plane == null: return {}
+	var flier := dragon if dragon != null else roost_dragon
+	if flier == null: return {}
+	var wash: Dictionary = flier.downwash.plane_air(p,plane.forward())
+	if dragon == null or dragon.gale == null: return wash
+	return flier.downwash.merge(dragon.gale.plane_gust(p,plane.forward()),wash)
 
 ## --dragon-fly-test: each time the dragon breathes in on a rim, the plane
 ## is put on a pass through its blast (cross: 40 m to the side of the line
