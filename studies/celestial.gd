@@ -104,6 +104,13 @@ const NIGHT_FILL_ENERGY := 1.1
 const NIGHT_RIM := Vector2(0.16, 0.42)
 var moon_key := _arg_float("--moon-key=", MOON_KEY)
 var night_fill_energy := _arg_float("--night-fill=", NIGHT_FILL_ENERGY)
+## The moon's light on the clouds (zs_cloud_sun at night) under a new and a
+## full moon (was 0.12, 0.85): a full moon lit the drifting puffs, the
+## towers and the cloud sea near daytime white; now they stay moonlit and
+## cool, bright on the moon's side, in shade on the other. --night-cloud=X
+## scales the full moon's.
+const NIGHT_CLOUD_LIGHT := Vector2(0.1, 0.42)
+var night_cloud := _arg_float("--night-cloud=", 1.0)
 ## Moonlight's colour at new and full moon: a thin dim blue under a sliver,
 ## brighter silver-blue under a full moon (the source's b9cae8 sits between).
 const MOON_TINT := ["8a9ac4", "c4d3f4"]
@@ -359,7 +366,7 @@ func update_rig() -> void:
 	# The source lights air and cloud with the key's colour at full strength
 	# even when nothing is up. At night that left the mist lit like day (and
 	# orange under a new moon): lean it on the moon instead.
-	cloud_sun = cloud_sun.lerp(moon_tint.lerp(Vector3(0.78, 0.84, 0.95), cloud * 0.7) * lerpf(0.12, 0.85, moon_glow) * (0.9 + 0.5 * overcast), dark)
+	cloud_sun = cloud_sun.lerp(moon_tint.lerp(Vector3(0.78, 0.84, 0.95), cloud * 0.7) * lerpf(NIGHT_CLOUD_LIGHT.x, NIGHT_CLOUD_LIGHT.y * night_cloud, moon_glow) * (0.9 + 0.5 * overcast), dark)
 	_publish("zs_cloud_sun", cloud_sun)
 	_publish("zs_cloud_sky", hemi_sky * 0.55)
 	# Native night adaptation: a cool surface fill keeps the miniature readable.
