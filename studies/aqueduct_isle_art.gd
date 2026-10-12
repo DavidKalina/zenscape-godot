@@ -8,18 +8,20 @@ extends RefCounted
 ## and islets round the isle, and the heel stone east. The ground wears
 ## the game's terrain look (the sky islets' material and palette).
 ##
-## The station's numbers stand: the channel 2.4 m wide at 6 m, piers 2 m
-## thick, arches 4 m wide with 4 m clear, the blind wall 12 m, the 30° rubble
-## slope, 16 m of sky crossed on hanging piers, the 3 m fallen span, the
-## 1.2 m drops, the buttress 1 x 6 x 5.2 m 2.6 m off the wall. The aqueduct
-## is built here from the kit's own parts (its piers, pointed arch rings,
-## coursed spandrels, deck slabs, water and spill) at those numbers, since
-## the kit's own spans are 6.4 m apart with a deck at 10.8 m; its stone
-## draws only, and the station's boxes collide under it (invisible), so the
-## routes proven on the greybox hold. What the station never had collides
-## as built here: the parapet stones (`parts`, clean boxes), the arches'
-## haunches (clean boxes inside the stone), the islands' tops (their own
-## faces) and the playground's kit pieces (the kit's hulls).
+## The aqueduct is the station's (the channel 2.4 m wide, piers 2 m thick,
+## the 30° rubble slope, the 3 m fallen span, the 1.2 m drops, the buttress
+## 1 m thick 2.6 m off the wall), but sized for the plane: its arches keep
+## the toy era's 4 m clear in wingspans (scripts/world_scale.gd `opening`:
+## 7.2 m at the defaults), their crowns and the deck rise with them (7.2 and
+## 9.2 m), the piers stand CLEAR + PIER apart (9.2 m), so the run is about
+## 1.5x longer and taller and crosses some 23 m of sky (16 in the station).
+## It is built from the kit's own parts (its piers, pointed arch rings,
+## coursed spandrels, deck slabs, water and spill); its stone draws only,
+## and clean boxes (`station_parts`, the station's own boxes laid at these
+## numbers) collide under it. What the station never had collides as built
+## here: the parapet stones (`parts`, clean boxes), the arches' haunches
+## (clean boxes inside the stone), the islands' tops (their own faces) and
+## the playground's kit pieces (the kit's hulls).
 ##
 ## Everything is in the world's frame (the station's: the aqueduct's middle
 ## line on x 100, the islands' tops at 30 m). The aqueduct's own frame
@@ -27,6 +29,7 @@ extends RefCounted
 ## less 100), y over the island.
 
 const RuinKit = preload("res://scripts/ruin_kit.gd")
+const WorldScale = preload("res://scripts/world_scale.gd")
 const Aqueduct = preload("res://scripts/ruin_kit_aqueduct.gd")
 const Build = RuinKit.Build
 const CHANNEL_SHADER = preload("res://shaders/aqueduct_channel.gdshader")
@@ -38,32 +41,68 @@ const MID_X := 100.0
 ## from MID_X, y up from TOP.
 const AQ := Transform3D(Basis(Vector3.UP,PI*0.5),Vector3(MID_X,TOP,0.0))
 const WEATHERED := 0.6
-## The arcade (aqueduct frame): each pier's middle and foot (0 on the
-## island, under it where it hangs), the arches' middles (34, the fallen
-## span), the walled-up arches' in the blind wall.
-const PIERS := [[19.0,0.0],[25.0,-9.0],[31.0,-11.0],[37.0,-10.0],[43.0,0.0]]
-const ARCHES := [16.0,22.0,28.0,40.0]
-const BLIND := [4.0,10.0]
-const BLIND_PIERS := [7.0,13.0]
-const PIER := Vector2(2.0,2.4)
-## The arches: half the clear span, the arc's radius as a share of the
-## clear span (under 1: a drop arch, so the crown stands at 4 m with the
-## springing over a walker's head), the crown's height.
-const HALF := 2.0
+## The arches (scripts/world_scale.gd `opening`): the toy era's clear span
+## (4 m, 2.9 of the toy's spans) kept in wingspans, 7.2 m at the defaults;
+## half of it; the arc's radius as a share of the clear span (under 1: a
+## drop arch, the springing over a walker's head); how much the arch grew
+## (GROW), and the crown's height, the toy's 4 m grown with it.
+const TOY_CLEAR := 4.0
+static var CLEAR: float = WorldScale.opening(TOY_CLEAR)
+static var HALF: float = CLEAR*0.5
 const PITCH := 0.75
-const CROWN := 4.0
-## The deck's top (the channel's floor, walked), its floor slabs' depth,
-## the walls' half depth under it.
-const DECK := 6.0
+static var GROW: float = CLEAR/TOY_CLEAR
+static var CROWN: float = 4.0*GROW
+## A pier's width along the run and depth across (stone, kept: the walker
+## stands on its head), and the run's module, pier middle to pier middle
+## (the station's 6 m, 9.2 at the defaults).
+const PIER := Vector2(2.0,2.4)
+static var PITCH_X: float = CLEAR+PIER.x
+## The deck's top (the channel's floor, walked): the toy's 2 m of spandrel
+## over the crown (6 m in the station, 9.2 at the defaults); its floor
+## slabs' depth, the walls' half depth under it.
+const SPANDREL := 2.0
+static var DECK: float = CROWN+SPANDREL
+const TOY_DECK := 6.0
 const SLAB := 0.4
 const FACE := 1.2
-## The head (the blind wall's south end, where the rubble slope tops out),
-## the channel's snapped end and where it starts again past the fallen
-## span, the end of its last span.
+## The head (the blind wall's south end, where the rubble slope tops out).
+## From it the run's arches stand one module apart (`arch`): two walled up in
+## the blind wall, two open over the near island, one over the sky, the
+## fallen one and the last, down onto the far island; a pier between each
+## two (`pier`).
 const HEAD := 2.0
-const SNAP := 32.5
-const RESUME := 35.5
-const END := 44.0
+const SPANS := 7
+const FALLEN := 5
+## The arcade (aqueduct frame): each pier's middle and foot (0 on the
+## island, under it where it hangs: the station's 9, 11 and 10 m grown with
+## the deck), the open arches' middles, the walled-up arches' in the blind
+## wall, the blind wall's old piers.
+static var PIERS: Array = [[pier(2),0.0],[pier(3),-9.0*DECK/TOY_DECK],[pier(4),-11.0*DECK/TOY_DECK],[pier(5),-10.0*DECK/TOY_DECK],[pier(6),0.0]]
+static var ARCHES: Array = [arch(2),arch(3),arch(4),arch(6)]
+static var BLIND: Array = [arch(0),arch(1)]
+static var BLIND_PIERS: Array = [pier(0),pier(1)]
+## The fallen span: the gap between the channel's snapped ends (a walker's
+## twirled jump, kept 3 m), so the channel snaps FALL_HALF short of the
+## fallen arch's middle and starts again as far past it; the end of the
+## last span.
+const FALL_HALF := 1.5
+static var SNAP: float = arch(FALLEN)-FALL_HALF
+static var RESUME: float = arch(FALLEN)+FALL_HALF
+static var END: float = pier(SPANS-1)+PIER.x*0.5
+## The rubble slope's foot (aqueduct x): 30° up to the deck at the head.
+static var SLOPE_LOW: float = HEAD-DECK/tan(deg_to_rad(30.0))
+## The far end's rubble: drops of DROP (a step down) DROP_RUN long, down
+## from the deck to the far island.
+const DROP := 1.2
+const DROP_RUN := 2.4
+static var DROPS: int = ceili(DECK/DROP)-1
+## The walker's start: on the near island before the rubble slope's foot
+## (the station's spawn at its sizes).
+static var START := Vector3(MID_X,TOP,-SLOPE_LOW+0.6)
+
+## Whether the aqueduct is the station's own size (its recordings replay).
+static func station_sized() -> bool:
+	return absf(DECK-TOY_DECK) < 0.01
 ## The water in the channel: over the deck by WATER_LIFT (a film the feet
 ## splash through, under the wade's slowing), its half width.
 const WATER_LIFT := 0.06
@@ -74,6 +113,19 @@ const WATER_HALF := 0.7
 const PARAPET_Z := 0.95
 const PARAPET := Vector2(0.2,0.42)
 const EAST_CLEAR := Vector2(-1.0,16.0)
+## The buttress east of the blind wall (world x, z rect): 1 m thick, 2.6 m
+## off the wall's east face, 0.8 m under the deck (the last kick catches the
+## channel's lip).
+const BUTTRESS := Rect2(103.8,-12.0,1.0,6.0)
+static var BUTTRESS_TOP: float = DECK-0.8
+
+## The middle of arch `k` along the run (aqueduct x).
+static func arch(k: int) -> float:
+	return HEAD+HALF+PITCH_X*k
+
+## The middle of the pier after arch `k`.
+static func pier(k: int) -> float:
+	return HEAD+CLEAR+PIER.x*0.5+PITCH_X*k
 
 static func spring() -> float:
 	return CROWN-RuinKit._rise(HALF,HALF*2.0*PITCH)
@@ -132,7 +184,7 @@ static func aqueduct(seed_value: int) -> Dictionary:
 	# the ring where it comes down to the piers.
 	for cx: float in ARCHES:
 		for s: float in [-1.0,1.0]:
-			for step: Array in [[0.0,0.3],[0.3,0.7],[0.7,1.2]]:
+			for step: Array in [[0.0,0.3*GROW],[0.3*GROW,0.7*GROW],[0.7*GROW,1.2*GROW]]:
 				var x0: float = cx+s*(HALF-float(step[0]))
 				var x1: float = cx+s*(HALF-float(step[1]))
 				var u := float(step[1])
@@ -140,7 +192,7 @@ static func aqueduct(seed_value: int) -> Dictionary:
 				_part_box(parts,minf(x0,x1),maxf(x0,x1),-FACE,FACE,maxf(low,sp),CROWN)
 	# Ivy hanging from the deck's underside and the arches.
 	for i in range(18):
-		var x := b.rng.randf_range(15.0,42.0)
+		var x := b.rng.randf_range(arch(2)-HALF+1.0,END-2.0)
 		if x > SNAP-0.5 and x < RESUME+0.5: continue
 		b.hang(Vector3(x,0.0,b.rng.randf_range(-1.0,1.0)*FACE*0.8),b.rng.randf_range(0.8,2.6),true)
 	var node := b.finish()
@@ -154,11 +206,11 @@ static func aqueduct(seed_value: int) -> Dictionary:
 ## parapets' inner faces, tipping over the snap into the spill. So thin a
 ## film would be clear glass by the live water's shallows (shallow_clear),
 ## its stone barely darkened: the plate's teal tint stays all the way up
-## (CLEAR 0), so it reads as clear teal water over the stone, deeper where
+## (WATER_CLEAR 0), so it reads as clear teal water over the stone, deeper where
 ## a settled slab lies lower. The plate's running water over it read as a
 ## pale teal slab (docs/scenic/kit-isle-water.md), so only the wind's chop
 ## moves on it.
-const CLEAR := 0.0
+const WATER_CLEAR := 0.0
 static func channel_water() -> MeshInstance3D:
 	var inner := PARAPET_Z-PARAPET.x
 	var snap := SNAP-0.12
@@ -166,7 +218,7 @@ static func channel_water() -> MeshInstance3D:
 		"ground":func(_x: float, _z: float) -> float: return TOP+DECK,
 		"rect":Rect2(MID_X-inner-0.5,-snap-0.5,(inner+0.5)*2.0,snap-HEAD+0.5),
 		"inside":func(p: Vector2) -> bool: return absf(p.x-MID_X) < inner and p.y > -snap and p.y < -(HEAD+0.5),
-		"clear":CLEAR})
+		"clear":WATER_CLEAR})
 
 ## A span: the pointed arch at `cx` (aqueduct x), its spandrels coursed up
 ## from the springing to the deck's foot.
@@ -178,14 +230,15 @@ static func _span(b: Build, cx: float, sp: float, radius: float, d: float, wall_
 		if y < sp: return Vector2(0.0,99.0)
 		return Vector2(0.0,RuinKit._arc_half(HALF,radius,outer-radius,y-sp))
 	var top := func(_x: float) -> float: return wall_top
-	RuinKit._courses(b,pose,-3.0,3.0,sp,top,d-0.04,hole,0.55)
+	var reach := HALF+PIER.x*0.5
+	RuinKit._courses(b,pose,-reach,reach,sp,top,d-0.04,hole,0.55)
 
-## The fallen span between the piers at 31 and 37: the arch's springers
-## standing on either pier, a ragged stub of spandrel and deck over each
-## (the station's 0.5 m stubs: 32 to 32.5, 35.5 to 36), between them the
-## gap down to the sky.
+## The fallen span between the hanging piers either side of arch FALLEN:
+## the arch's springers standing on either pier, a ragged stub of spandrel
+## and deck over each, between them the gap down to the sky (FALL_HALF
+## either side of its middle: the station's 3 m).
 static func _fallen_span(b: Build, sp: float, radius: float, d: float, wall_top: float) -> void:
-	var cx := 34.0
+	var cx := arch(FALLEN)
 	var pose := Transform3D(Basis.IDENTITY,Vector3(cx,0.0,0.0))
 	var stands := func(x: float) -> float: return 99.0 if absf(x) > 1.15 else -99.0
 	RuinKit._arch_ring(b,pose,0.0,sp,HALF,radius,d,true,0,1.0,stands)
@@ -195,21 +248,23 @@ static func _fallen_span(b: Build, sp: float, radius: float, d: float, wall_top:
 		return Vector2(0.0,RuinKit._arc_half(HALF,radius,outer-radius,y-sp))
 	# The walling over each pier stands to the stub's end, then breaks off
 	# down and away in a ragged line.
-	var ragged := RuinKit._ruin_line(b,-3.0,3.0,0.0,1.0,1.0)
+	var wide := HALF+PIER.x*0.5
+	var ragged := RuinKit._ruin_line(b,-wide,wide,0.0,1.0,1.0)
 	var top := func(x: float) -> float:
 		var reach := absf(x)
-		if reach >= 1.5: return wall_top
-		return wall_top-(1.5-reach)*3.2+(float(ragged.call(x))-0.5)*0.6
-	RuinKit._courses(b,pose,-3.0,3.0,sp,top,d-0.04,hole,0.55)
+		if reach >= FALL_HALF: return wall_top
+		return wall_top-(FALL_HALF-reach)*3.2+(float(ragged.call(x))-0.5)*0.6
+	RuinKit._courses(b,pose,-wide,wide,sp,top,d-0.04,hole,0.55)
 	# A few voussoirs and a length of channel caught on the broken pier
 	# heads below the gap, and fallen stones hung up on the springers.
 	for i in range(3):
 		var tumble := Basis(Vector3.UP,b.rng.randf()*TAU)*Basis(Vector3.BACK,b.rng.randf_range(-0.5,0.5))
 		var s := Vector3(b.rng.randf_range(0.25,0.4),b.rng.randf_range(0.2,0.3),b.rng.randf_range(0.4,0.7))
 		var side := -1.0 if i%2 == 0 else 1.0
-		b.solid(RuinKit._box(b,s),Transform3D(tumble,Vector3(cx+side*b.rng.randf_range(1.6,1.9),sp+b.rng.randf_range(0.4,1.2),b.rng.randf_range(-0.6,0.6))),RuinKit._stone(b,0.98))
+		b.solid(RuinKit._box(b,s),Transform3D(tumble,Vector3(cx+side*b.rng.randf_range(FALL_HALF+0.1,FALL_HALF+0.4),sp+b.rng.randf_range(0.4,1.2),b.rng.randf_range(-0.6,0.6))),RuinKit._stone(b,0.98))
 
-## The blind wall from the head (x 2) to the first open arch (x 14): the
+## The blind wall from the head to the first open arch (x 2 to 20.4 at the
+## defaults): the
 ## arches walled up, their rings flush with the wall's faces (its east face
 ## the wall run's), the infill in smaller, paler courses set back a little,
 ## the old piers' strips between them; coursed solid to the deck's foot.
@@ -223,7 +278,7 @@ static func _blind_wall(b: Build, sp: float, radius: float) -> void:
 			if y < sp: return Vector2(0.0,-1.0)
 			return Vector2(0.0,RuinKit._arc_half(HALF,radius,outer-radius,y-sp))
 		var top := func(_x: float) -> float: return wall_top
-		RuinKit._courses(b,pose,-3.0,3.0,sp,top,FACE-0.02,hole,0.55)
+		RuinKit._courses(b,pose,-HALF-PIER.x*0.5,HALF+PIER.x*0.5,sp,top,FACE-0.02,hole,0.55)
 		# The infill: under the ring, smaller stones, set back 6 cm.
 		var inside := func(x: float) -> float:
 			if absf(x) >= HALF: return -1.0
@@ -233,10 +288,10 @@ static func _blind_wall(b: Build, sp: float, radius: float) -> void:
 		RuinKit._courses(b,pose,-HALF+0.02,HALF-0.02,0.0,inside,FACE-0.06,Callable(),0.36)
 		b.stone = keep
 	for x: float in BLIND_PIERS:
-		Aqueduct._pier(b,x,0.0,sp,wall_top,Vector2(2.0,FACE*2.0),0.0)
+		Aqueduct._pier(b,x,0.0,sp,wall_top,Vector2(PIER.x,FACE*2.0),0.0)
 	# The piers' height under the springing between the infills at the
-	# walled arches' feet (x 2 and the old pier at 13 joins the first
-	# open arch's span).
+	# walled arches' feet (at the head; the blind wall's last old pier joins
+	# the first open arch's span).
 	Aqueduct._pier(b,HEAD+0.6,0.0,sp,wall_top,Vector2(1.2,FACE*2.0),0.0)
 
 ## A hanging pier's foot at `foot`: the last courses broken off ragged and
@@ -278,11 +333,11 @@ static func _parapets(b: Build, parts: Array) -> void:
 				x = xb
 
 ## The rubble slope up onto the head: the station's 30° ramp (aqueduct x
-## -8.4 to 2, 2.4 m wide) laid as the fallen end's channel floor and
+## SLOPE_LOW to the head, 2.4 m wide) laid as the fallen end's channel floor and
 ## walling, broken into stones tilted up the slope, their tops in its plane
 ## (a stone a hair under, none over), the heap of fallen courses under them.
 static func _rubble_slope(b: Build) -> void:
-	var low := -8.4
+	var low := SLOPE_LOW
 	var high := HEAD
 	var angle := atan2(DECK,high-low)
 	var along := Vector3(cos(angle),sin(angle),0.0)
@@ -314,7 +369,7 @@ static func _rubble_slope(b: Build) -> void:
 static func rubble_heap(seed_value: int) -> Node3D:
 	var b := Build.new(seed_value,0.6,"RubbleHeap")
 	b.frame = AQ
-	var low := -8.4
+	var low := SLOPE_LOW
 	var angle := atan2(DECK,HEAD-low)
 	var x := low+1.0
 	while x < HEAD-0.3:
@@ -327,58 +382,98 @@ static func rubble_heap(seed_value: int) -> Node3D:
 		x += b.rng.randf_range(0.5,0.9)
 	for i in range(3):
 		var s := Vector3(b.rng.randf_range(0.2,0.32),b.rng.randf_range(0.1,0.16),b.rng.randf_range(0.2,0.3))
-		var at := Vector3(b.rng.randf_range(-7.8,-6.0),s.y*0.7,FACE+b.rng.randf_range(0.2,0.5))
+		var at := Vector3(b.rng.randf_range(low+0.6,low+2.4),s.y*0.7,FACE+b.rng.randf_range(0.2,0.5))
 		b.solid(RuinKit._box(b,s),Transform3D(Basis(Vector3.UP,b.rng.randf()*TAU),at),RuinKit._stone(b,0.95),false,true,[],-1,2.0)
 	return b.finish()
 
 ## The far end's rubble: its last span's walling broken down in the
-## station's 1.2 m drops (aqueduct x 44 to 53.6), each a level top.
+## station's 1.2 m drops (DROPS of them from END), each a level top.
 static func _drops(b: Build) -> void:
-	var tops := [4.8,3.6,2.4,1.2]
-	for i in range(4):
-		var x0 := END+2.4*i
-		var x1 := x0+2.4
-		var high: float = tops[i]
+	for i in range(DROPS):
+		var x0 := END+DROP_RUN*i
+		var x1 := x0+DROP_RUN
+		var high: float = DECK-DROP*(i+1)
 		var line := func(_x: float) -> float: return high
 		RuinKit._courses(b,Transform3D.IDENTITY,x0,x1,0.0,line,FACE-0.02,Callable(),0.5,true)
-	RuinKit._drift(b,Vector3(END+10.6,0.0,0.6),1.4,6)
+	RuinKit._drift(b,Vector3(END+DROP_RUN*DROPS+1.0,0.0,0.6),1.4,6)
 
-## The buttress east of the blind wall: 1 by 6 by 5.2 m, 2.6 m off the
-## wall's east face (world x 103.8 to 104.8, z -12 to -6), coursed, under a
-## coping; drawn only (the station's box collides).
+## The buttress east of the blind wall (BUTTRESS, BUTTRESS_TOP: 1 by 6 m,
+## 0.8 m under the deck), 2.6 m off the wall's east face, coursed, under a
+## coping; drawn only (its box in `station_parts` collides).
 static func buttress(seed_value: int) -> Node3D:
 	var b := Build.new(seed_value,0.45,"Buttress")
-	var top := func(_x: float) -> float: return 5.2
-	var pose := Transform3D(Basis(Vector3.UP,PI*0.5),Vector3(104.3,TOP,-9.0))
-	RuinKit._plinth_course(b,pose,3.0,0.5)
-	RuinKit._courses(b,pose,-3.0,3.0,RuinKit.PLINTH_COURSE.x,top,0.5,Callable(),0.5,true)
+	var high := BUTTRESS_TOP
+	var top := func(_x: float) -> float: return high
+	var c := BUTTRESS.get_center()
+	var half := BUTTRESS.size.y*0.5
+	var pose := Transform3D(Basis(Vector3.UP,PI*0.5),Vector3(c.x,TOP,c.y))
+	RuinKit._plinth_course(b,pose,half,0.5)
+	RuinKit._courses(b,pose,-half,half,RuinKit.PLINTH_COURSE.x,top,0.5,Callable(),0.5,true)
 	var node := b.finish()
 	node.get_node("Body").free()
 	return node
 
-static func _part_box(parts: Array, x0: float, x1: float, z0: float, z1: float, y0: float, y1: float) -> void:
+static func _part_box(parts: Array, x0: float, x1: float, z0: float, z1: float, y0: float, y1: float, kind := "lip") -> void:
 	# Aqueduct frame to the world's: x along -z, z along x.
 	var a := AQ*Vector3(x0,y0,z0)
 	var c := AQ*Vector3(x1,y1,z1)
 	var rect := Rect2(minf(a.x,c.x),minf(a.z,c.z),absf(c.x-a.x),absf(c.z-a.z))
-	parts.append(["box",rect,minf(a.y,c.y),maxf(a.y,c.y),"lip"])
+	parts.append(["box",rect,minf(a.y,c.y),maxf(a.y,c.y),kind])
+
+## The aqueduct's clean collision (the station's boxes, ruins_archipelago.gd
+## station 2, laid at this isle's numbers), in the station's part format:
+## the rubble slope (a ramp, boxes filling under it), the blind wall, each
+## pier from its foot to the deck, the spandrels over the open arches from
+## the crown, the fallen span's two stubs, the drops at the far end, the
+## buttress. The channel's walls are its piers' and spandrels' 2.4 m.
+static func station_parts() -> Array:
+	var parts: Array = []
+	var w := FACE
+	parts.append(["ramp",AQ*Vector3(SLOPE_LOW,0.0,0.0),AQ*Vector3(HEAD,DECK,0.0),w*2.0,"dark"])
+	var slope := tan(deg_to_rad(30.0))
+	var x1 := HEAD
+	var x0 := HEAD-2.4
+	while x0-SLOPE_LOW >= 1.9:
+		_part_box(parts,x0,x1,-w,w,0.0,(x0-SLOPE_LOW)*slope-0.05,"dark")
+		x1 = x0
+		x0 -= 2.0
+	_part_box(parts,HEAD,pier(1)+PIER.x*0.5,-w,w,0.0,DECK)
+	for p: Array in PIERS:
+		var x: float = p[0]
+		_part_box(parts,x-PIER.x*0.5,x+PIER.x*0.5,-w,w,float(p[1]),DECK)
+	for cx: float in ARCHES:
+		_part_box(parts,cx-HALF,cx+HALF,-w,w,CROWN,DECK)
+	var fallen := arch(FALLEN)
+	_part_box(parts,fallen-HALF,SNAP,-w,w,DECK-1.4,DECK,"dark")
+	_part_box(parts,RESUME,fallen+HALF,-w,w,DECK-1.2,DECK,"dark")
+	for i in range(DROPS):
+		_part_box(parts,END+DROP_RUN*i,END+DROP_RUN*(i+1),-w,w,0.0,DECK-DROP*(i+1),"dark")
+	parts.append(["box",BUTTRESS,TOP,TOP+BUTTRESS_TOP,"lip"])
+	return parts
 
 # --- The castellum: the summit --------------------------------------------------------
 
 ## The castellum at the aqueduct's head (world): the water tower, 4 m
-## square, its crown 7.8 m up, its south-east quarter fallen in SET_OFF
-## steps (each 1.6 m, a jump caught): rubble 1.4 m at its foot, then 3.0,
-## 4.6, 6.2 and the crown at 7.8. Its east face 1.8 m off the aqueduct's
-## west face: a running jump either way between the channel and its 6.2 m
-## step. Each block collides as a clean box (`parts`), the stone over
-## it drawn only.
-const CASTELLUM := [
-	[Rect2(93.0,-3.0,2.0,4.0),7.8],
-	[Rect2(95.0,-3.0,2.0,2.0),6.2],
-	[Rect2(95.0,-1.0,2.0,2.0),4.6],
-	[Rect2(95.0,1.0,2.0,2.0),3.0],
-	[Rect2(95.3,3.0,1.7,1.6),1.4],
-]
+## square, its crown CASTELLUM_CROWN up (the deck and 1.8: 7.8 m in the
+## station, 11 at the defaults), its south-east quarter fallen in SET_OFF
+## steps (each 1.6 m, a jump caught) running on south as rubble, from the
+## deck and 0.2 (the step a running jump either way from the channel: its
+## east face 1.8 m off the aqueduct's west face) down to 1.4 m at its foot.
+## Each block collides as a clean box (`parts`), the stone over it drawn
+## only.
+static var CASTELLUM_CROWN: float = DECK+1.8
+static var CASTELLUM: Array = _castellum()
+
+static func _castellum() -> Array:
+	var out: Array = [[Rect2(93.0,-3.0,2.0,4.0),CASTELLUM_CROWN]]
+	var high := DECK+0.2
+	var z := -3.0
+	while high > 1.4+0.8:
+		out.append([Rect2(95.0,z,2.0,2.0),high])
+		high -= RuinKit.SET_OFF
+		z += 2.0
+	out.append([Rect2(95.3,z,1.7,1.6),high])
+	return out
 
 static func castellum(seed_value: int) -> Dictionary:
 	var b := Build.new(seed_value,0.5,"Castellum")
@@ -397,14 +492,15 @@ static func castellum(seed_value: int) -> Dictionary:
 	# collided: knee high, stepped over), a slit window or two.
 	for edge: Array in [[Vector3(93.2,0.0,-1.0),PI*0.5,3.6],[Vector3(94.0,0.0,-2.8),0.0,1.8]]:
 		var at: Vector3 = edge[0]
-		var pose := Transform3D(Basis(Vector3.UP,float(edge[1])),Vector3(at.x,TOP+7.8,at.z))
+		var pose := Transform3D(Basis(Vector3.UP,float(edge[1])),Vector3(at.x,TOP+CASTELLUM_CROWN,at.z))
 		var len: float = edge[2]
 		var ragged := RuinKit._ruin_line(b,-len*0.5,len*0.5,0.0,0.42,0.8)
 		RuinKit._courses(b,pose,-len*0.5,len*0.5,0.0,ragged,0.18,Callable(),0.25)
 		var turned := float(edge[1]) != 0.0
 		var r := Rect2(at.x-0.2,at.z-len*0.5,0.4,len) if turned else Rect2(at.x-len*0.5,at.z-0.2,len,0.4)
-		parts.append(["box",r,TOP+7.8,TOP+7.8+0.3,"lip"])
-	RuinKit._drift(b,Vector3(97.4,TOP,4.6),0.9,4)
+		parts.append(["box",r,TOP+CASTELLUM_CROWN,TOP+CASTELLUM_CROWN+0.3,"lip"])
+	var foot: Rect2 = CASTELLUM[-1][0]
+	RuinKit._drift(b,Vector3(97.4,TOP,foot.end.y),0.9,4)
 	var node := b.finish()
 	node.get_node("Body").free()
 	return {"node":node,"parts":parts}
@@ -620,8 +716,8 @@ static func way_up() -> Array:
 ## castellum to the slope's foot, on to the heel stone; the north edge to
 ## the stumps; the way up the hill.
 const PATHS := [
-	[Vector2(90.8,0.0),Vector2(91.4,5.5),Vector2(96.0,8.6),Vector2(100.0,10.0),Vector2(106.0,6.5),Vector2(112.0,2.0),Vector2(117.0,0.4)],
-	[Vector2(72.0,-22.0),Vector2(80.0,-21.5),Vector2(87.0,-21.0),Vector2(92.0,-22.0)],
+	[Vector2(90.8,0.0),Vector2(91.6,6.0),Vector2(94.5,10.6),Vector2(100.0,15.4),Vector2(106.0,10.0),Vector2(112.0,3.0),Vector2(117.0,0.4)],
+	[Vector2(72.0,-22.0),Vector2(80.0,-21.5),Vector2(86.0,-25.5),Vector2(92.0,-33.6)],
 ]
 static var _paths: Array = []
 
@@ -649,21 +745,48 @@ static func ground_material() -> ShaderMaterial:
 # --- The islands --------------------------------------------------------------------
 
 ## The islands' outlines (world x, z), each round its own middle: the big
-## one under the head and the arcade, its west lobe round the hill; the far
-## one where the aqueduct comes down. The 16 m of sky between them kept
-## open under the aqueduct.
-const NEAR := [Vector2(100.0,-24.4),Vector2(104.0,-24.2),Vector2(109.0,-25.4),Vector2(114.0,-23.2),Vector2(119.0,-24.6),
-	Vector2(124.0,-20.0),Vector2(127.0,-13.0),Vector2(126.0,-5.0),Vector2(128.0,2.0),Vector2(124.0,9.0),Vector2(119.0,14.0),
+## one under the head and the arcade, its west lobe round the hill, its
+## north edge brought out under the aqueduct (to just inside its first
+## hanging pier, aqueduct x 37.2 at the defaults: the station's 24.4 grown
+## with the run); the far one where the aqueduct comes down, moved out and
+## drawn out north as the run grew (the station's at 39.8 to 66, now 60.4
+## to 96), so its drops land on it. The 23 m of sky between them (the
+## station's 16) kept open under the aqueduct.
+const NEAR := [Vector2(100.0,-37.2),Vector2(104.0,-37.0),Vector2(108.0,-36.0),Vector2(112.0,-32.5),Vector2(116.0,-28.6),
+	Vector2(120.0,-25.0),Vector2(124.0,-20.0),Vector2(127.0,-13.0),Vector2(126.0,-5.0),Vector2(128.0,2.0),Vector2(124.0,9.0),Vector2(119.0,14.0),
 	Vector2(112.0,16.0),Vector2(106.0,15.5),Vector2(100.0,17.5),Vector2(93.0,16.0),Vector2(86.0,18.0),
 	Vector2(80.0,19.5),Vector2(73.0,22.8),Vector2(66.0,24.3),Vector2(59.0,24.6),Vector2(52.0,22.8),Vector2(45.5,18.6),
 	Vector2(40.5,12.5),Vector2(37.6,5.5),Vector2(37.0,-2.0),Vector2(38.6,-9.5),Vector2(42.0,-16.0),Vector2(47.5,-21.5),
 	Vector2(54.0,-25.0),Vector2(61.0,-26.5),Vector2(68.0,-26.0),Vector2(74.5,-24.8),Vector2(80.0,-23.8),
-	Vector2(86.0,-22.6),Vector2(91.0,-24.8),Vector2(96.0,-24.2)]
-const FAR := [Vector2(100.0,-39.8),Vector2(104.0,-40.2),Vector2(109.0,-41.5),Vector2(114.0,-46.0),Vector2(116.0,-53.0),
-	Vector2(113.0,-60.0),Vector2(107.0,-64.5),Vector2(100.0,-66.0),Vector2(93.0,-64.0),Vector2(88.0,-59.0),
-	Vector2(85.0,-53.0),Vector2(86.0,-47.0),Vector2(90.0,-42.0),Vector2(95.0,-40.4)]
+	Vector2(85.0,-26.0),Vector2(88.5,-32.0),Vector2(91.0,-35.0),Vector2(94.0,-35.2),Vector2(97.0,-36.8)]
+const FAR := [Vector2(100.0,-60.4),Vector2(104.0,-60.9),Vector2(109.0,-62.7),Vector2(114.0,-68.8),Vector2(116.0,-78.3),
+	Vector2(113.0,-87.9),Vector2(107.0,-94.0),Vector2(100.0,-96.0),Vector2(93.0,-93.3),Vector2(88.0,-86.5),
+	Vector2(85.0,-78.3),Vector2(86.0,-70.2),Vector2(90.0,-63.4),Vector2(95.0,-61.2)]
+## The stepping stumps back from the far island (world x, z from, z to,
+## top): an older arcade's piers broken off at the islands' height, their
+## feet hanging in the sky; each collides as a clean box. Two leave the
+## knife-edge slot (WorldScale.knife with STUMP_KNIFE_ROOM: 2.11 m at plane
+## 2, the plane on its wingtip 0.32 m clear either side) centred on KNIFE_Z,
+## the line on under the aqueduct's sky arch (`arch(4)`), so on knife edge
+## the plane slips both; level, its wings catch the stumps. Walked back from
+## the far island: three twirled jumps (2.9, 3.0, 3.4 m), then running jumps
+## over the slot, 1.6 m and 0.65 m onto the near island (its edge at z -35
+## there).
+static var KNIFE_Z: float = -arch(4)
+const STUMP_KNIFE_ROOM := 0.45
+const STUMPS_X := 92.0
+static func stump_slot() -> float:
+	return WorldScale.knife(STUMP_KNIFE_ROOM)
+static func stumps() -> Array:
+	var slot := stump_slot()
+	return [[STUMPS_X,-35.65,-37.6,30.6],[STUMPS_X,-39.2,KNIFE_Z+slot*0.5,30.4],[STUMPS_X,KNIFE_Z-slot*0.5,-46.6,29.8],
+		[STUMPS_X,-50.0,-53.0,30.2],[STUMPS_X,-56.0,-59.6,30.0]]
+## The far island's gate (the kit's arch, where the aqueduct came down) and
+## the paving before it (world x, z).
+const GATE := Vector2(100.0,-91.3)
+const GATE_FLOOR := Vector2(94.5,-85.8)
 ## Grassy rises away from the routes (world x, z, radius, height).
-const RISES := [Vector3(117.0,-17.0,6.0),Vector3(108.0,-58.0,5.0),Vector3(108.0,11.0,4.0)]
+const RISES := [Vector3(117.0,-17.0,6.0),Vector3(108.0,-85.2,5.0),Vector3(108.0,11.0,4.0)]
 ## Where the ground keeps flat: round the aqueduct's line and the pieces.
 const FLAT_HALF := 7.0
 ## The ground's faces: cells this size (the hill's finer); the earth and
@@ -868,7 +991,7 @@ static func platforms() -> Array:
 	var from_y := summit(lip.x,lip.y)
 	for i in range(DRIFT.size()):
 		var at := Vector2(DRIFT[i][0],DRIFT[i][1])
-		var y := lerpf(from_y,TOP+7.8,float(i+1)/(DRIFT.size()+1))
+		var y := lerpf(from_y,TOP+CASTELLUM_CROWN,float(i+1)/(DRIFT.size()+1))
 		var nxt := Vector2(DRIFT[mini(i+1,DRIFT.size()-1)][0],DRIFT[mini(i+1,DRIFT.size()-1)][1])
 		var prv := Vector2(DRIFT[maxi(i-1,0)][0],DRIFT[maxi(i-1,0)][1])
 		var way := (nxt-prv).normalized()

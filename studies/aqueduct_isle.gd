@@ -6,16 +6,16 @@ extends "res://studies/kit_isle.gd"
 ## sky at the game's noon (its sky, sun, grade and the cumulus sea far
 ## below: scripts/landscape_lighting.gd, studies/celestial.gd, scripts/
 ## look_pass.gd, as the ruin kit gallery has them); the aqueduct striding
-## from its head on the near island over 16 m of sky to the far one, its
+## from its head on the near island over 23 m of sky to the far one, its
 ## channel still carrying water that spills through the fallen span.
 ##
 ## A kit isle (studies/kit_isle.gd, docs/scenic/kit-isle-shared.md: the
 ## pilot, the look rig, the plane, the lodestone, the grass, sky and life;
 ## the ground and rock the kit isles' one look). The pilot, camera, moves,
-## recorder and replays are the character study's: the station's own
-## boxes collide, invisible,
-## under the stone (studies/aqueduct_isle_art.gd), so its proven routes
-## hold. Round it, on one axis (z 0): the aqueduct with the castellum at
+## recorder and replays are the character study's: the station's boxes,
+## laid at the isle's own numbers (its arches sized for the plane, studies/
+## aqueduct_isle_art.gd `station_parts`), collide, invisible, under the
+## stone. Round it, on one axis (z 0): the aqueduct with the castellum at
 ## its head; to the west a hill rising in tiers of crag (the grand stair up
 ## onto the lower one, a way winding round it up a ramp and a ledge to the
 ## kit's stair into the crag), the stone circle crowning it, tilted with
@@ -117,8 +117,8 @@ const SEED := 11
 ## there and colliding as the kit built it. Only the gate on the far
 ## island, where the aqueduct came down, and its paving.
 const PIECES := [
-	["arch",20,0.35,100.0,-62.5,0.0],
-	["floor",23,0.6,94.5,-58.5,15.0],
+	["arch",20,0.35,Art.GATE.x,Art.GATE.y,0.0],
+	["floor",23,0.6,Art.GATE_FLOOR.x,Art.GATE_FLOOR.y,15.0],
 ]
 ## The landmarks from the kit: the grand stair up the henge's terrace and
 ## the stone circle on it, both facing east along the isle's axis.
@@ -129,24 +129,14 @@ const LANDMARK_WEATHERED := 0.55
 ## The stair less ruined than the circle: a ceremonial way up, its cheeks
 ## standing (one torn low), no newel's cap fallen.
 const STAIR_WEATHERED := 0.3
-## The stepping stumps back from the far island (world x, z from, z to,
-## top): an older arcade's piers broken off at the islands' height, their
-## feet hanging in the sky; each collides as a clean box. The first two
-## leave the knife-edge slot (WorldScale.knife with STUMP_KNIFE_ROOM: 2.11
-## m at plane 2, the plane on its wingtip 0.32 m clear either side; it was
-## 1.9) centred on KNIFE_Z, the line on under the aqueduct's arch at its
-## x 28 (z -26 to -30), so on knife edge the plane slips both; level, its
-## wings catch the stumps. The second runs on to its old far end, the first
-## from the slot toward the near island's edge (-24.75).
-const KNIFE_Z := -28.0
-const STUMP_KNIFE_ROOM := 0.45
+## The stepping stumps back from the far island and their knife-edge slot
+## (Art `stumps`, `KNIFE_Z`, `stump_slot`).
 static func stump_slot() -> float:
-	return WorldScale.knife(STUMP_KNIFE_ROOM)
+	return Art.stump_slot()
 ## (Funcs, not static vars: a static var on this scene's script left the
 ## engine reporting pages still in use at exit.)
 static func stumps() -> Array:
-	var slot := stump_slot()
-	return [[92.0,-25.4,KNIFE_Z+slot*0.5,30.4],[92.0,KNIFE_Z-slot*0.5,-32.6,29.8],[92.0,-36.0,-38.4,30.2]]
+	return Art.stumps()
 
 ## The lodestone's floating stone (Art `platforms`).
 const LODE_PLATFORM := "east_1"
@@ -227,18 +217,15 @@ func _load_pack() -> void:
 	for station: Dictionary in stations:
 		if station.key == STATION: kept.append(station)
 	stations = kept
-	start = kept[0].spawn
+	start = Art.START
 	start_face = kept[0].face
 	_last_stood = start
 
-## The station's parts as clean, invisible collision (the islands' slabs
-## and the moss pad left out: the islands are built), then the art.
+## The station's parts as clean, invisible collision, laid at the isle's
+## own numbers (Art `station_parts`: the greybox's own are the old toy
+## sizes, and the islands are built), then the art.
 func _build_room() -> void:
-	for station: Dictionary in stations:
-		for part: Array in station.parts:
-			if part[0] == "box" and float(part[3]) <= Art.TOP+0.11: continue
-			if part[0] == "label": continue
-			_part(part)
+	for part: Array in Art.station_parts(): _part(part)
 	ground.pools.append_array(Art.pools())
 	_build_art()
 
@@ -370,9 +357,13 @@ func lode_rest_at() -> Vector3:
 func lode_hint() -> String:
 	return "A lodestone hums on a floating stone east, past the heel stone: climb up to it"
 
-## Only the station's recordings replay here.
+## Only the station's recordings replay here, and only while the aqueduct
+## is the station's own size (`--plane-scale=1 --opening-ratio=1`): sized
+## for the bigger plane it is longer and taller, so they no longer replay
+## true.
 func _pack_runs() -> PackedStringArray:
 	var found := PackedStringArray()
+	if not Art.station_sized(): return found
 	for path in _station_runs():
 		if int(Recording.read(path).get("station",0)) == STATION: found.append(path)
 	return found

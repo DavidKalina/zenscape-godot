@@ -11,6 +11,7 @@ extends SceneTree
 ##   godot --headless --path . --script tests/test_aqueduct_isle_sky.gd
 const IsleSky = preload("res://studies/aqueduct_isle_sky.gd")
 const Study = preload("res://studies/aqueduct_isle.gd")
+const Art = preload("res://studies/aqueduct_isle_art.gd")
 const MotifSky = preload("res://scripts/kit_isle/motif_sky.gd")
 const DT := 1.0/60.0
 var failures := 0
@@ -155,13 +156,13 @@ func _tokens() -> void:
 	for l: Dictionary in c.sources.aqueduct.lines: count += (l.points as PackedVector3Array).size()
 	check(count >= 4 and count <= 6,"A few tokens for the plane (%d)" % count)
 	# Knife edge east along the stumps' slot: both taken, no bump.
-	var level := _fly(Vector3(70.0,25.0,Study.KNIFE_Z),-PI*0.5,2.2,0.0)
+	var level := _fly(Vector3(70.0,25.0,Art.KNIFE_Z),-PI*0.5,2.2,0.0)
 	check(level.bumps > 0,"Level, the stumps' gap bumps the plane (%d bumps)" % level.bumps)
 	c.collected.clear()
 	c.flush(Vector3(90.0,25.0,-20.0))
-	var knife := _fly(Vector3(70.0,25.0,Study.KNIFE_Z),-PI*0.5,3.0,1.0)
+	var knife := _fly(Vector3(70.0,25.0,Art.KNIFE_Z),-PI*0.5,3.0,1.0)
 	check(knife.bumps == 0 and knife.took == 2,"On knife edge it slips the stumps and the arch, taking both (%d bumps, %d taken, at %s)" % [knife.bumps,knife.took,str(knife.at)])
-	var lines := [["the fallen span",Vector3(80.0,31.5,-34.0),-PI*0.5,3.0],
+	var lines := [["the fallen span",Vector3(80.0,Art.TOP+1.5*Art.GROW,-Art.arch(Art.FALLEN)),-PI*0.5,3.0],
 		["under the keel",Vector3(65.0,-9.5,0.0),-PI*0.5,3.0],
 		["the west gap",Vector3(37.8,34.0,20.0),0.0,3.0],
 		["the east gap",Vector3(128.8,27.5,12.0),0.0,3.0]]

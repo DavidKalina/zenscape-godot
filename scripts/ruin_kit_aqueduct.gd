@@ -44,6 +44,7 @@ extends RefCounted
 ##   ./run-ruin-kit.command  (F2 frames the aqueduct)
 
 const RuinKit = preload("res://scripts/ruin_kit.gd")
+const WorldScale = preload("res://scripts/world_scale.gd")
 const Build = RuinKit.Build
 const POND_SHADER = preload("res://shaders/islet_pond.gdshader")
 
@@ -52,18 +53,24 @@ const PIECES := RuinKit.AQUEDUCT_PIECES
 # --- Scale -------------------------------------------------------------------
 
 ## The module: pier middle to pier middle (m). A run's spans stand SPAN
-## apart: a pier's width and the clear span, THREAD (scripts/world_scale.gd
-## SNUG room: 1.2 m past each wingtip at plane 2), so a plane threads
-## every arch: 6.9 at plane 2 (it was 6.4, 0.95 m a tip). The arch is
-## equilateral: its crown stands SPRING + CLEAR*0.866.
+## apart: a pier's width and the clear span, CLEAR, an opening (scripts/
+## world_scale.gd `opening`) on the toy era's 4.7 (3.4 spans): 8.46 at the
+## defaults, SPAN 10.16. No longer tied to THREAD. The arch is equilateral:
+## its crown stands SPRING + CLEAR*0.866.
 ## A pier: its width along the run and depth across it (m).
 const PIER := Vector2(1.7,2.8)
-static var CLEAR: float = RuinKit.THREAD
+const TOY_CLEAR := 4.7
+static var CLEAR: float = WorldScale.opening(TOY_CLEAR)
 static var SPAN: float = CLEAR+PIER.x
 const SPRING := 5.2
-## The deck: the channel's floor top (m), the floor slabs' thickness, the
-## whole deck's width (the channel and both parapets).
-const DECK := 10.8
+## How much higher the crowns stand than the toy era's (the arch's rise on
+## its wider span): the decks and the gallery course go up by as much, so
+## the spandrels over the arches keep their toy depth (1.1 m at 10.8).
+static var GROW: float = (CLEAR-TOY_CLEAR)*0.866
+## The deck: the channel's floor top (m: 10.8 in the toy era, 14.06 at the
+## defaults), the floor slabs' thickness, the whole deck's width (the
+## channel and both parapets).
+static var DECK: float = 10.8+GROW
 const FLOOR := 0.4
 const DECK_WIDTH := 2.3
 ## The channel: its clear width (a walk along it: TOP_ROOM and more), the
@@ -85,12 +92,20 @@ const STRIP := 1.05
 ## a share of its clear span (under 1: a lower, drop arch) and its deck.
 ## The lower springing: 3.0, or low enough that the lower arch (CLEAR
 ## wide, equilateral) crowns under the course (2.76 at plane 2).
+## The course and the upper deck go up as the arches do (GROW: 8.4 and
+## 14.8 in the toy era); the upper deck keeps its spandrel over the upper
+## arch's crown, which rises on its wider span too.
+static var MID: float = 8.4+GROW
 static var LOWER_SPRING: float = minf(3.0,MID-FLOOR-CLEAR*0.866-RuinKit.ORDER*2.0-0.1)
-const MID := 8.4
 const UPPER_PIER := Vector2(1.3,2.5)
 const UPPER_RISE := 1.2
 const UPPER_PITCH := 0.78
-const DECK_HIGH := 14.8
+static var DECK_HIGH: float = MID+(14.8-8.4)+_upper_rise(SPAN)-_upper_rise(TOY_CLEAR+PIER.x)
+
+## The upper arch's rise on a span `span` (pier middle to pier middle).
+static func _upper_rise(span: float) -> float:
+	var h := (span-UPPER_PIER.x)*0.5
+	return RuinKit._rise(h,h*2.0*UPPER_PITCH)
 ## The head: the abutment's treads (each SET_OFF or under over the next,
 ## each tread deep enough to stand on: the way up to the channel), the
 ## cistern's clear size (x, z) and its lip over the deck.
@@ -469,9 +484,8 @@ static func _finish(b: Build, deck: float, piers: int, arches: Array) -> Node3D:
 		if piers & (1 if side < 0.0 else 2): feet.append(Vector3(side*SPAN*0.5,_pier_foot(b,side*SPAN*0.5),0.0))
 	node.set_meta("feet",feet)
 	var corridors: Array = []
-	# THREAD wide, but never closer than 0.6 to a pier's face: the game's
-	# plane (2.8 m wings) threads CLEAR 4.7 with 0.95 m past each tip, a
-	# little under THREAD's 1.05, and the corridor stays the arch's.
+	# THREAD wide, but never closer than 0.6 to a pier's face (CLEAR is
+	# wider than THREAD now; at small ratios the arch's own keeps it).
 	var half := minf(RuinKit.THREAD,CLEAR-1.2)*0.5
 	for arch: Array in arches:
 		var low := -INF

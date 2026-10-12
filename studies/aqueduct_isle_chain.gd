@@ -72,16 +72,21 @@ const PUFF_SCALE := 2.2
 ## The ring: RING_PAST m on past the shard (on the line from the isle's
 ## middle, ISLE, to it) and RING_ASIDE m to its left, its opening's middle
 ## at RING_UP (world), facing along that line. The kit's pointed arch
-## grown to RING_SCALE so its clear span is WorldScale.gap(RING_ROOM): 14
-## m at plane 2, 5.6 m past each wingtip, a gateway rather than a thread
-## (it was 2.2 x the arch, 12.3 m), its crown some 19 m over its feet. The
-## plane threads it THREAD_UP m over its feet.
+## grown to RING_SCALE so its clear span is RING_SPAN: an opening
+## (scripts/world_scale.gd) on the toy era's 12.3 m, capped at RING_MOST.
+## The opening alone would be 22.1 m at the defaults; capped at 15 it is
+## 5.4 spans (0.62 of its toy ratio) but 6.1 m past each wingtip, more
+## than the toy's 5.45: a gateway in open sky, not a thread, and its crown
+## (some 19 m over its feet) stays the size it was. The plane threads it
+## THREAD_UP m over its feet.
 const ISLE := Vector2(85.0,-20.0)
 const RING_PAST := 90.0
 const RING_ASIDE := 35.0
 const RING_UP := 25.0
-const RING_ROOM := 8.0
-static var RING_SCALE: float = WorldScale.gap(RING_ROOM)/RuinKit.ARCH_SPAN
+const TOY_RING := 12.3
+const RING_MOST := 15.0
+static var RING_SPAN: float = minf(WorldScale.opening(TOY_RING),RING_MOST)
+static var RING_SCALE: float = RING_SPAN/RuinKit.ARCH_SPAN
 const THREAD_UP := 6.0
 const RING_SEED := 52
 const RING_WEATHERED := 0.25

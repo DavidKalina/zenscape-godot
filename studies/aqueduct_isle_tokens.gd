@@ -12,8 +12,8 @@ func spots_for(isle: Node3D) -> Array[Dictionary]:
 static func spots(isle: Node3D) -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
 	# 1. The slot between the castellum's high step and the blind wall:
-	# 1.8 m wide, 6 m deep; kicked up from wall to wall.
-	out.append({"name":"slot","at":Vector3(97.9,Art.TOP+3.9,-2.6),
+	# 1.8 m wide, the deck deep; kicked up from wall to wall.
+	out.append({"name":"slot","at":Vector3(97.9,Art.TOP+Art.DECK*0.65,-2.6),
 		"move":"Wall-kick up the slot between the castellum and the blind wall"})
 	# 2. Along the blind wall's east face, at the top of the wall run (a
 	# jump can't reach it: the run lifts him 3 m).
@@ -21,7 +21,7 @@ static func spots(isle: Node3D) -> Array[Dictionary]:
 		"move":"Run along the blind wall's east face (a running jump into it)"})
 	# 3. In the fallen span, under the channel's level: run off the snapped
 	# end without jumping, take it as he sinks, twirl to make the far lip.
-	out.append({"name":"span","at":Vector3(Art.MID_X,Art.TOP+Art.DECK-0.35,-33.7),
+	out.append({"name":"span","at":Vector3(Art.MID_X,Art.TOP+Art.DECK-0.35,-Art.arch(Art.FALLEN)+0.3),
 		"move":"Drop into the fallen span, then twirl up to the far lip"})
 	# 4. The floating sarsen over the bite: two twirled jumps on the lintel
 	# loop, onto it and off.
@@ -44,7 +44,8 @@ static func spots(isle: Node3D) -> Array[Dictionary]:
 			"move":"Hang off the drift lintel's north lip and shimmy along it"})
 	# 7. Back from the far island over the broken piers: over the first gap
 	# out over the sky, at the top of a running jump.
-	out.append({"name":"stumps","at":Vector3(92.0,Art.TOP+1.25,-39.3),
+	var last: Array = Art.stumps()[-1]
+	out.append({"name":"stumps","at":Vector3(Art.STUMPS_X,Art.TOP+1.25,float(last[2])-1.45),
 		"move":"Jump the stepping stumps back from the far island"})
 	return out
 

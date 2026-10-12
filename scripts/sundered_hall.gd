@@ -63,7 +63,7 @@ extends RefCounted
 const Hall = preload("res://scripts/ruin_kit_hall.gd")
 const HallPath = Hall.HallPath
 
-const BAY := Hall.BAY
+static var BAY: float = Hall.BAY
 ## The line's height over the floor (the lane's middle, LANE_Y) and its
 ## place across the nave (the lane's middle), both from the lane (which
 ## follows the plane, scripts/world_scale.gd): 2.55 and 7.08 at plane 2,

@@ -70,12 +70,14 @@ static var PLANE_REACH: float = 1.1+WorldScale.wider*0.5
 ## middle over the ground or the planks.
 const WALKER_MIDDLE := 0.5
 const FOOT_Y := 0.55
-## The plane: half its wingspan and the least steering room past each tip
-## (scripts/world_scale.gd SNUG: half of gap(SNUG), 2.6 at plane 2; it was
-## the half span and 0.1); how far over the ground it rides and under
-## rock it keeps (SkyGlide SKIM, CLEAR; drawn about its wheels a bigger
-## plane is taller, all of it upward: WorldScale.taller more).
-static var WING: float = WorldScale.gap(WorldScale.SNUG)*0.5
+## The plane: the box its wings keep off every solid round a token, half of
+## an opening (scripts/world_scale.gd) on the toy era's 1.6 across (the half
+## span and 0.1 a side): under SNUG's room, so it floors at its toy ratio,
+## 3.2 across at the defaults (WING 1.6); how far over the ground it rides
+## and under rock it keeps (SkyGlide SKIM, CLEAR; drawn about its wheels a
+## bigger plane is taller, all of it upward: WorldScale.taller more).
+const TOY_WING := 0.8
+static var WING: float = WorldScale.opening(TOY_WING*2.0)*0.5
 const SKIM := SkyGlide.SKIM
 static var CLEAR: float = SkyGlide.CLEAR+WorldScale.taller
 ## Nothing hangs lower than this (home y): the glide's floor (SkyGlide
@@ -88,11 +90,12 @@ const BRIDGE_COUNT := Vector2i(2,5)
 const UNDER_GAP := 3.2
 const UNDER_STEP := 5.0
 const UNDER_COUNT := Vector2i(4,7)
-## Air: a cluster's gap is threaded where it is GAP_ROOM wide at least
-## (WorldScale.gap(SNUG): 5.2 at plane 2; it was 3.2) and GAP_MOST at most
+## Air: a cluster's gap is threaded where it is GAP_ROOM wide at least (an
+## opening on the toy era's 3.2: 5.76 at the defaults) and GAP_MOST at most
 ## (rim to rim); the line's tokens apart and how many; how far under a
 ## bridge's deck it runs.
-static var GAP_ROOM: float = WorldScale.gap(WorldScale.SNUG)
+const TOY_GAP_ROOM := 3.2
+static var GAP_ROOM: float = WorldScale.opening(TOY_GAP_ROOM)
 const GAP_MOST := 16.0
 const GAP_STEP := 4.0
 const GAP_COUNT := Vector2i(5,6)

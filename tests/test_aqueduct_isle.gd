@@ -46,7 +46,7 @@ func run() -> void:
 	m = study.motor
 	var tris: int = study.triangles(study.art)
 	check(tris > 0 and tris < BUDGET,"The isle draws %d triangles (budget %d)" % [tris,BUDGET])
-	check(study.stations.size() == 1 and study.start.distance_to(Vector3(100.0,30.0,9.0)) < 0.01,"Station 2 alone, started at the rubble slope's foot")
+	check(study.stations.size() == 1 and study.start.distance_to(Art.START) < 0.01,"Station 2 alone, started at the rubble slope's foot (%s)" % Art.START)
 	_start_stands()
 	_aqueduct_easy()
 	_aqueduct_wallrun()
@@ -112,20 +112,21 @@ func _start_stands() -> void:
 ## across the sky to the far island and down its rubble.
 func _aqueduct_easy() -> void:
 	begin()
-	var ok := walk([Vector2(100.0,8.0),Vector2(100.0,-31.0)])
+	var deck := Art.TOP+Art.DECK
+	var ok := walk([Vector2(100.0,Art.START.z-1.0),Vector2(100.0,-(Art.SNAP-1.5))])
 	var waded: bool = m.wade > 0.0
 	check(ok and waded,"2 Aqueduct: up the rubble and along the channel, wading its water (feet %s, wade %.2f)" % [m.feet,m.wade])
 	var way := Vector2(0.0,-1.0)
 	var twirled := false
 	for i in range(240):
-		var jump: bool = m.feet.z < -32.1 and (m.grounded or m.velocity.y > 0.0) and not twirled
-		var twirl: bool = not m.grounded and m.velocity.y < 0.0 and not twirled and m.feet.z < -32.0
+		var jump: bool = m.feet.z < -(Art.SNAP-0.4) and (m.grounded or m.velocity.y > 0.0) and not twirled
+		var twirl: bool = not m.grounded and m.velocity.y < 0.0 and not twirled and m.feet.z < -(Art.SNAP-0.5)
 		twirled = twirled or twirl
 		tick(way,jump,false,twirl)
 		if twirled and m.grounded: break
-	ok = ok and twirled and m.grounded and m.feet.z < -35.5 and absf(m.feet.y-36.0) < 0.05
+	ok = ok and twirled and m.grounded and m.feet.z < -Art.RESUME and absf(m.feet.y-deck) < 0.05
 	check(ok,"2 Aqueduct: a twirled running jump over the 3 m fallen span (feet %s)" % m.feet)
-	ok = ok and walk([Vector2(100.0,-44.0),Vector2(100.0,-58.0)])
+	ok = ok and walk([Vector2(100.0,-Art.END),Vector2(100.0,-(Art.END+Art.DROP_RUN*Art.DROPS+4.4))])
 	check(ok and absf(m.feet.y-30.0) < 0.05,"2 Aqueduct: on across the sky and down the rubble to the far island (feet %s)" % m.feet)
 
 ## Expert: a running jump along the blind wall's east face into a wall
@@ -133,7 +134,7 @@ func _aqueduct_easy() -> void:
 ## channel's top.
 func _aqueduct_wallrun() -> void:
 	begin()
-	var ok := walk([Vector2(103.5,8.0),Vector2(102.1,7.0)],0.4)
+	var ok := walk([Vector2(103.5,Art.START.z),Vector2(103.5,8.0),Vector2(102.1,7.0)],0.4)
 	for i in range(10): tick(Vector2.ZERO)
 	var ran := false
 	var kicks := 0
@@ -158,7 +159,7 @@ func _aqueduct_wallrun() -> void:
 		was = m.move
 		tick(want,jump)
 		if ran and m.grounded: break
-	ok = ok and ran and m.grounded and m.feet.y > 35.0
+	ok = ok and ran and m.grounded and m.feet.y > Art.TOP+Art.DECK-1.0
 	check(ok,"2 Aqueduct: a wall run along the blind wall, kicked to the buttress and up between them to the top (%d kicks, feet %s)" % [kicks,m.feet])
 
 # --- The playground round it ------------------------------------------------------
@@ -168,18 +169,39 @@ func _aqueduct_wallrun() -> void:
 ## stumps back from the far island, the cloister's wall tops, the broken
 ## piers' heads.
 func _free_play() -> void:
-	var ok := climb(Vector3(95.8,30.0,6.5),[Vector2(95.9,4.0),Vector2(95.9,2.0),Vector2(95.9,0.0),Vector2(96.0,-2.0),Vector2(94.0,-2.0)])
-	check(ok and absf(m.feet.y-37.8) < 0.05,"Summit: up the castellum's fallen quarter, 1.6 m a step, to its crown at 7.8 m (feet %s)" % m.feet)
-	check(line(Vector3(100.6,36.0,-2.6),Vector3(96.0,36.2,-2.6),"jump"),"Summit: from the channel a running jump to the castellum's 6.2 m step (feet %s)" % m.feet)
-	check(line(Vector3(96.7,36.2,-2.0),Vector3(94.0,37.8,-2.0),"walk"),"Summit: and up onto the crown (feet %s)" % m.feet)
-	check(line(Vector3(93.3,37.8,-2.0),Vector3(100.0,36.0,-2.4),"jump_twirl"),"Summit: off the crown a twirled jump down onto the channel (feet %s)" % m.feet)
-	check(line(Vector3(95.2,36.2,-2.0),Vector3(100.0,36.0,-2.6),"jump"),"Summit: from the 6.2 m step a running jump back to the channel (feet %s)" % m.feet)
-	check(line(Vector3(98.0,30.0,-2.6),Vector3(99.5,-35.0,-2.6),"kick"),"Kicks up the slot between the castellum and the blind wall to the channel (feet %s)" % m.feet)
-	var back := line(Vector3(92.0,30.0,-44.5),Vector3(92.0,30.2,-37.2),"jump_twirl")
-	back = back and line(m.feet,Vector3(92.0,29.8,-31.6),"jump_twirl")
-	back = back and line(m.feet,Vector3(92.0,30.4,-26.3),"jump")
-	back = back and line(m.feet,Vector3(92.0,30.0,-21.0),"jump")
-	check(back,"Stumps: back from the far island over three broken piers, two twirled and two running jumps (feet %s)" % m.feet)
+	var deck := Art.TOP+Art.DECK
+	var crown := Art.TOP+Art.CASTELLUM_CROWN
+	var partner := deck+0.2
+	var steps: Array = Art.CASTELLUM.slice(1)
+	var foot: Rect2 = steps[-1][0]
+	var way: Array = []
+	for k in range(steps.size()-1,-1,-1): way.append(Vector2(95.9,(steps[k][0] as Rect2).get_center().y))
+	way.append(Vector2(94.0,-2.0))
+	var ok := climb(Vector3(95.8,30.0,foot.end.y+1.9),way)
+	check(ok and absf(m.feet.y-crown) < 0.05,"Summit: up the castellum's fallen quarter, 1.6 m a step, to its crown at %.1f m (feet %s)" % [Art.CASTELLUM_CROWN,m.feet])
+	check(line(Vector3(100.6,deck,-2.6),Vector3(96.0,partner,-2.6),"jump"),"Summit: from the channel a running jump to the castellum's high step (feet %s)" % m.feet)
+	check(line(Vector3(96.7,partner,-2.0),Vector3(94.0,crown,-2.0),"walk"),"Summit: and up onto the crown (feet %s)" % m.feet)
+	check(line(Vector3(93.3,crown,-2.0),Vector3(100.0,deck,-2.4),"jump_twirl"),"Summit: off the crown a twirled jump down onto the channel (feet %s)" % m.feet)
+	check(line(Vector3(95.2,partner,-2.0),Vector3(100.0,deck,-2.6),"jump"),"Summit: from the high step a running jump back to the channel (feet %s)" % m.feet)
+	check(line(Vector3(98.0,30.0,-2.6),Vector3(99.5,-(deck-1.0),-2.6),"kick"),"Kicks up the slot between the castellum and the blind wall to the channel (feet %s)" % m.feet)
+	check(_stumps_back(),"Stumps: back from the far island over %d broken piers, twirled jumps over the wide gaps, running jumps over the slot and onto the near island (feet %s)" % [Art.stumps().size(),m.feet])
+
+## Back from the far island over the stepping stumps (Art `stumps`): a
+## twirled jump over each gap of 2.5 m and more, a running jump over the
+## rest, then onto the near island.
+func _stumps_back() -> bool:
+	var stumps: Array = Art.stumps()
+	var x := Art.STUMPS_X
+	var last: Array = stumps[-1]
+	var ok := true
+	var from := Vector3(x,30.0,float(last[2])-5.4)
+	var edge := float(last[2])-2.9
+	for k in range(stumps.size()-1,-1,-1):
+		var st: Array = stumps[k]
+		var gap := edge-float(st[2]) if k == stumps.size()-1 else float((stumps[k+1] as Array)[1])-float(st[2])
+		var to := Vector3(x,float(st[3]),(float(st[1])+float(st[2]))*0.5)
+		ok = ok and line(from if k == stumps.size()-1 else m.feet,to,"jump_twirl" if absf(gap) >= 2.5 else "jump")
+	return ok and line(m.feet,Vector3(x,30.0,float((stumps[0] as Array)[1])+2.5),"jump")
 
 # --- The hill: the way up, the floating stones, the stone circle ----------------------------
 
@@ -276,9 +298,10 @@ func _hill() -> void:
 	var down := line(from,stone("drift_1"),"jump")
 	for k in range(2,7):
 		down = down and hop(stone("drift_%d" % (k-1)),stone("drift_%d" % k))
-	down = down and hop(stone("drift_6"),Vector3(94.3,37.8,-1.4))
+	var crown := Art.TOP+Art.CASTELLUM_CROWN
+	down = down and hop(stone("drift_6"),Vector3(94.3,crown,-1.4))
 	check(down,"Drift: down from the summit over six floating stones to the castellum's crown (feet %s)" % m.feet)
-	var up := line(Vector3(94.6,37.8,-1.6),stone("drift_6"),"jump")
+	var up := line(Vector3(94.6,crown,-1.6),stone("drift_6"),"jump")
 	for k in range(5,0,-1):
 		up = up and hop(stone("drift_%d" % (k+1)),stone("drift_%d" % k))
 	up = up and hop(stone("drift_1"),on_summit(30.0,11.0))
@@ -562,6 +585,9 @@ func climb(from: Vector3, points: Array) -> bool:
 ## replay in the art scene to where they ended on the greybox.
 func _replays() -> void:
 	var runs: PackedStringArray = study._pack_runs()
+	if not Art.station_sized():
+		check(runs.is_empty(),"The aqueduct sized for the plane is not the station's, so its recordings aren't offered for F6 (%d)" % runs.size())
+		return
 	check(runs.size() >= 2,"The station's %d recordings are offered for F6" % runs.size())
 	for path in runs:
 		study.respawn()

@@ -381,12 +381,12 @@ func _tokens() -> void:
 		if g != null:
 			check((t.at as Vector3).y-float(g) > 1.5+0.55+0.95,"Tokens: %s is out of a jump's reach from the turf under it (%.1f m up)" % [t.name,(t.at as Vector3).y-float(g)])
 	# The slot: kicked up between the castellum and the blind wall.
-	line(Vector3(98.0,30.0,-2.6),Vector3(99.5,-35.0,-2.6),"kick")
+	line(Vector3(98.0,30.0,-2.6),Vector3(99.5,-(Art.TOP+Art.DECK-1.0),-2.6),"kick")
 	check(taken("slot"),"Tokens: the slot's, wall-kicked up between the castellum and the blind wall")
 	# The wall run along the blind wall's east face.
 	study.respawn()
 	for i in range(10): tick(Vector2.ZERO)
-	walk([Vector2(103.5,8.0),Vector2(102.1,7.0)],0.4)
+	walk([Vector2(103.5,Art.START.z),Vector2(103.5,8.0),Vector2(102.1,7.0)],0.4)
 	for i in range(10): tick(Vector2.ZERO)
 	var ran := false
 	for i in range(240):
@@ -403,14 +403,15 @@ func _tokens() -> void:
 	# the far lip.
 	study.respawn()
 	for i in range(10): tick(Vector2.ZERO)
-	walk([Vector2(100.0,8.0),Vector2(100.0,-31.0)])
+	walk([Vector2(100.0,Art.START.z-1.0),Vector2(100.0,-(Art.SNAP-1.5))])
+	var deck := Art.TOP+Art.DECK
 	var twirled := false
 	for i in range(240):
-		var twirl: bool = not m.grounded and m.feet.y < 35.4 and not twirled
+		var twirl: bool = not m.grounded and m.feet.y < deck-0.6 and not twirled
 		twirled = twirled or twirl
 		tick(Vector2(0.0,-1.0),m.on_ledge() and i%20 < 3,false,twirl)
-		if m.grounded and m.feet.z < -35.6 and not m.on_ledge(): break
-	check(taken("span") and m.feet.z < -35.5 and absf(m.feet.y-36.0) < 0.1,"Tokens: the fallen span's, dropped into and twirled out of onto the far deck (feet %s)" % m.feet)
+		if m.grounded and m.feet.z < -(Art.RESUME+0.1) and not m.on_ledge(): break
+	check(taken("span") and m.feet.z < -Art.RESUME and absf(m.feet.y-deck) < 0.1,"Tokens: the fallen span's, dropped into and twirled out of onto the far deck (feet %s)" % m.feet)
 	# The floating sarsen: from the lintel before the bite, a twirled jump
 	# from the sarsen's top along the broken lintel's end (as the ring loop
 	# in tests/test_aqueduct_isle.gd).
@@ -447,7 +448,8 @@ func _tokens() -> void:
 		tick(Vector2(along.x,along.z).normalized())
 	check(hung and taken("drift"),"Tokens: the drift lintel's, hung off its north lip and shimmied along (hung %s)" % hung)
 	# The stumps: from the far island, a running jump out over the sky.
-	var stumps := line(Vector3(92.0,30.0,-44.5),Vector3(92.0,30.2,-37.2),"jump_twirl")
+	var last: Array = Art.stumps()[-1]
+	var stumps := line(Vector3(Art.STUMPS_X,30.0,float(last[2])-5.4),Vector3(Art.STUMPS_X,float(last[3]),(float(last[1])+float(last[2]))*0.5),"jump_twirl")
 	check(stumps and taken("stumps"),"Tokens: the stumps', jumped out over the sky from the far island")
 	check(tokens.left() == 0,"Tokens: all %d taken (%d left)" % [count,tokens.left()])
 	var hud: CanvasLayer = tokens.hud

@@ -127,10 +127,11 @@ const WINDOW_UP := Vector2(6.5,8.5)
 ## round it (m).
 const EYE_R := Vector2(8.0,9.5)
 const EYE_ROOM := 9.0
-## The routes: the corridor kept clear round each (m: half of
-## scripts/world_scale.gd gap(SNUG), the plane's half span and 1.2 m past
-## its tip; it was 0.9) and how far each runs on past a mouth (m).
-static var ROUTE_CLEAR: float = WorldScale.gap(WorldScale.SNUG)*0.5
+## The routes: the corridor kept clear round each (m: half of an opening,
+## scripts/world_scale.gd, on the toy era's 3.2 across, the half span and
+## 0.9: 2.88 at the defaults) and how far each runs on past a mouth (m).
+const TOY_ROUTE := 3.2
+static var ROUTE_CLEAR: float = WorldScale.opening(TOY_ROUTE)*0.5
 const LEAD := 45.0
 ## The plane through a hole: the least room (m) past its wingtips either
 ## side of the tube's middle line, wide and tight.

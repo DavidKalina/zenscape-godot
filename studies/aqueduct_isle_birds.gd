@@ -8,9 +8,12 @@ const Art = preload("res://studies/aqueduct_isle_art.gd")
 
 ## The flocks: [species, birds, home group].
 const FLOCKS := [["sparrow",5,"aqueduct"],["goldfinch",4,"circle"],["robin",2,"castellum"],["sparrow",3,"gate"]]
-## The stepping stumps' tops (studies/aqueduct_isle.gd STUMPS, x and the
-## middle of each z span).
-const STUMP_TOPS := [Vector2(92.0,-26.3),Vector2(92.0,-31.4),Vector2(92.0,-37.2)]
+## The stepping stumps' tops (studies/aqueduct_isle_art.gd `stumps`, x
+## and the middle of each z span).
+static func stump_tops() -> Array:
+	var out: Array = []
+	for st: Array in Art.stumps(): out.append(Vector2(float(st[0]),(float(st[1])+float(st[2]))*0.5))
+	return out
 
 func flock_specs() -> Array:
 	return FLOCKS
@@ -21,7 +24,7 @@ func spots(_space: PhysicsDirectSpaceState3D) -> Dictionary:
 	# and past the fallen span.
 	var aq: Array = []
 	var z := -2.6
-	while z > -43.5:
+	while z > -(Art.END-0.5):
 		if z > -Art.SNAP+0.3 or z < -Art.RESUME-0.3:
 			for side: float in [-1.0,1.0]: aq.append(Vector2(Art.MID_X+side*Art.PARAPET_Z,z))
 		z -= 0.9
@@ -55,8 +58,8 @@ func spots(_space: PhysicsDirectSpaceState3D) -> Dictionary:
 	# The gate on the far island and the stumps back from it.
 	var gate: Array = []
 	for dx in [-2.4,-1.6,-0.8,0.0,0.8,1.6,2.4]:
-		for dz in [-0.4,0.0,0.4]: gate.append(Vector2(100.0+dx,-62.5+dz))
-	for s: Vector2 in STUMP_TOPS: gate.append(s)
+		for dz in [-0.4,0.0,0.4]: gate.append(Vector2(Art.GATE.x+dx,Art.GATE.y+dz))
+	for s: Vector2 in stump_tops(): gate.append(s)
 	found["gate"] = gate
 	# The drift of floating stones from the summit to the castellum.
 	var drift: Array = []

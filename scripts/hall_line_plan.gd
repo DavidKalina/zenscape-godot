@@ -40,7 +40,7 @@ const Course = preload("res://scripts/flight_course.gd")
 const Plan = preload("res://scripts/sky_moments_plan.gd")
 const RisePlan = preload("res://scripts/hall_rise_plan.gd")
 
-const BAY := Hall.BAY
+static var BAY: float = Hall.BAY
 ## The lane: Sundered's line, LINE_Y over the floor, LANE_MID right of the
 ## nave's middle (clear of the inner columns and the low ties).
 static var LINE_Y: float = Sundered.LINE_Y

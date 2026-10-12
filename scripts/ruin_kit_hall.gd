@@ -50,9 +50,11 @@ extends RefCounted
 ##   ./run-ruin-kit.command  (F3 frames the hall, G flies it)
 
 const RuinKit = preload("res://scripts/ruin_kit.gd")
-## The plane's size (scripts/world_scale.gd): the lane, the slits, the
-## breaches and the low ties follow it (static vars, read once; at plane 1
-## each is its old number).
+## The plane's size (scripts/world_scale.gd): the lane, the breaches and
+## the bay they stand in keep their toy-era widths in wingspans
+## (`opening`), the slits and the low ties follow the plane (static vars,
+## read once; at `--plane-scale=1 --opening-ratio=1` each is its toy
+## number).
 const WorldScale = preload("res://scripts/world_scale.gd")
 const Build = RuinKit.Build
 
@@ -60,20 +62,20 @@ const PIECES := RuinKit.HALL_PIECES
 
 # --- Scale -------------------------------------------------------------------
 
-## A bay's length along the nave (m): bay lines BAY apart.
-const BAY := 8.0
+## A bay's length along the nave (m): bay lines BAY apart. 8 in the toy
+## era; long enough now for the broken arch breach (ARCH) and a jamb
+## ARCH_JAMB either side of it in its wall: 10.56 at the defaults.
+const TOY_BAY := 8.0
+const ARCH_JAMB := 0.6
 ## Across the hall: the outer column rows, the inner columns' offsets, the
 ## side walls' middles and their thickness. The outer rows and the walls
-## stand out by what the lane is wider than the old toy's 4 m (LANE_GROW;
-## 9.4 and 12.4 with that lane, 10.16 and 13.16 at plane 1 now, 11.56 and
-## 14.56 at plane 2).
-## The lane's width is a gap (LANE_ROOM, see LANE): 2.4 toy spans of
-## steering room, 1.68 m past each wingtip at plane 2 (it was 1.86, 1.3 m,
-## and the Sundered hall was too tight to fly; feature/world-spacing).
-## LANE_GROW what it is wider than 4 m. Before ROW_Z: static vars set in
-## order.
-const LANE_ROOM := 2.4
-static var LANE_GROW: float = WorldScale.gap(LANE_ROOM)-4.0
+## stand out by what the lane is wider than the toy's 4 m (LANE_GROW; 9.4
+## and 12.4 in the toy era, 12.6 and 15.6 at the defaults).
+## The lane's width is an opening (scripts/world_scale.gd): toy 4.0 (2.9
+## spans), 7.2 at the defaults, 2.2 m past each wingtip. LANE_GROW what it
+## is wider than 4 m. Before ROW_Z: static vars set in order.
+const TOY_LANE := 4.0
+static var LANE_GROW: float = WorldScale.opening(TOY_LANE)-TOY_LANE
 static var ROW_Z: float = 9.4+LANE_GROW
 const INNER_Z := 2.6
 static var WALL_Z: float = 12.4+LANE_GROW
@@ -111,9 +113,9 @@ static var TIE_LOW: float = minf(4.0+WorldScale.taller,COLUMN_H-CAPITAL_H-TIE_DE
 const TIE_HIGH := 6.0
 const TIE_DEPTH := 0.9
 ## The generous line: its z range (between the inner columns at +INNER_Z
-## and the outer row) and the heights it is clear between. Its width a gap
-## (WorldScale.gap: 4.76 at plane 1, 6.16 at 2), its top up as the low tie
-## goes up (3.6 at plane 1, 4.1 at 2).
+## and the outer row) and the heights it is clear between. Its width an
+## opening (TOY_LANE: 4.0 in the toy era, 7.2 at the defaults), its top up
+## as the low tie goes up (3.6 at plane 1, 4.1 at 2).
 static var LANE := Vector2(4.0,8.0+LANE_GROW)
 static var LANE_Y := Vector2(1.0,3.6+(TIE_LOW-4.0))
 ## The paving: thickness (stepped onto) and rough size.
@@ -142,14 +144,27 @@ const SETTLE := 0.4
 ## (LOW_WALL: one jump onto it, flown over); a wide broken arch (ARCH: flown
 ## through); the wall collapsed to its stumps (walked and flown through).
 const BREACHES := ["","door","low","arch","collapse"]
+## The broken arch ARCH: an opening on the toy era's 5.2 (9.36 at the
+## defaults), equilateral; its springing the toy's 5.4, or lower so its head
+## stays ARCH_UNDER under the roof's top (2.75 at the defaults: a big
+## pointed opening, not a slot torn to the parapet).
 const DOOR := Vector4(2.4,0.0,2.2,0.7)
-static var ARCH := Vector4(maxf(5.2,RuinKit.THREAD+1.0),0.0,5.4,1.0)
+const TOY_ARCH := 5.2
+const ARCH_UNDER := 0.4
+static var ARCH := _arch(WorldScale.opening(TOY_ARCH))
 const LOW_WALL := Vector2(1.2,1.6)
-## A flyable breach's corridor: half its width along the nave (x: THREAD
-## and more across: 1.8 at plane 1, 2.45 at 2; the broken arch ARCH is
-## THREAD and a metre wide, 5.2 at least), its floor and top over the
-## ground by kind, and how far it reaches out past the wall.
-static var BREACH_HALF: float = maxf(1.8,RuinKit.THREAD*0.5+0.02)
+## A flyable breach's corridor: half its width along the nave (an opening
+## on the toy era's 3.6 across: 1.8 in the toy era, 3.24 at the defaults),
+## its floor and top over the ground by kind, and how far it reaches out
+## past the wall.
+const TOY_BREACH := 3.6
+static var BREACH_HALF: float = WorldScale.opening(TOY_BREACH)*0.5
+## The bay (see TOY_BAY): the arch and its jambs, or the toy's 8.
+static var BAY: float = maxf(TOY_BAY,ARCH.x+2.0*ARCH_JAMB)
+
+static func _arch(width: float) -> Vector4:
+	var spring := minf(5.4,ROOF_TOP-ARCH_UNDER-0.35-RuinKit._rise(width*0.5,width))
+	return Vector4(width,0.0,spring,1.0)
 ## A breach's corridor floor over the ground: BREACH_FLOOR, or over the
 ## outer columns' carved feet (plinth, base and niche band) when the
 ## corridor is wider than the room between those (a big plane's THREAD).
@@ -394,8 +409,8 @@ static func bay(seed_value: int, weathered := 0.0, plan := {}, ground := Callabl
 	# An outer nave strip (1, 4: its architrave eats into it) is too narrow
 	# to fly out of alone once the plane is big: its inner neighbour goes
 	# with it, and the opening is the two (`runs` below).
-	if 1 in gaps and not 2 in gaps and WorldScale.gap(RuinKit.THREAD_ROOM) > ROW_Z*0.5-BEAM.y-0.3: gaps.append(2)
-	if 4 in gaps and not 3 in gaps and WorldScale.gap(RuinKit.THREAD_ROOM) > ROW_Z*0.5-BEAM.y-0.3: gaps.append(3)
+	if 1 in gaps and not 2 in gaps and RuinKit.THREAD > ROW_Z*0.5-BEAM.y-0.3: gaps.append(2)
+	if 4 in gaps and not 3 in gaps and RuinKit.THREAD > ROW_Z*0.5-BEAM.y-0.3: gaps.append(3)
 	if roof == "open":
 		weave.open.append(AABB(Vector3(ABACUS+0.6,OPEN_SKY,-ROW_Z+ABACUS+0.2),Vector3(BAY-2.0*ABACUS-1.2,ROOF_TOP+6.0-OPEN_SKY,(ROW_Z-ABACUS-0.2)*2.0)))
 	else:

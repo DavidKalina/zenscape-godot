@@ -23,10 +23,14 @@ const Art = preload("res://studies/aqueduct_isle_art.gd")
 const TOP := 30.0
 ## The isle's middle (x, z), the hall's.
 const MID := Vector2(80.0,-15.0)
-const BAYS := 10
-const LENGTH := Hall.BAY*BAYS
+## The hall's bays: as many as make it about HALL_LONG m (10 of the toy
+## era's 8 m; 8 of the wider bays at the defaults, scripts/ruin_kit_hall.gd
+## BAY), and its length.
+const HALL_LONG := 80.0
+static var BAYS: int = roundi(HALL_LONG/Hall.BAY)
+static var LENGTH: float = Hall.BAY*BAYS
 ## The hall's first mouth (world x); it runs along +x.
-const HALL_X := MID.x-LENGTH*0.5
+static var HALL_X: float = MID.x-LENGTH*0.5
 ## A grand stair's rise (its two flights): three switch back from the turf
 ## down to the hall's floor.
 const FLIGHT := 2.0*RuinKit.GRAND_STEPS*RuinKit.GRAND_RISER
@@ -36,8 +40,10 @@ const SOFFIT := YF+Hall.ROOF_TOP+0.15
 const HALL_SEED := 41
 const WEATHERED := 0.55
 const SEED := 43
-## The hall's bays open to the sky of the shaft (their roofs gone).
-const SHAFT_BAYS := [3,4,5]
+## The hall's bays open to the sky of the shaft (their roofs gone): those
+## the shaft's run along the hall (SHAFT_RUN, hall x) stands over.
+const SHAFT_RUN := Vector2(25.0,42.4)
+static var SHAFT_BAYS: Array = range(floori(SHAFT_RUN.x/Hall.BAY),ceili(SHAFT_RUN.y/Hall.BAY))
 ## The stairs: their middles along the hall (x from its mouth), the first
 ## and last climbing north, the second south, each a grand stair; their
 ## shared z offset from MID.
@@ -48,7 +54,7 @@ const STAIR_Z := -2.3
 const CURB := 0.55
 ## The shaft in the plate (x, z, world): flush with the first stair's head
 ## on the north and over its foot on the south.
-const SHAFT := Rect2(HALL_X+25.0,MID.y-8.5,17.4,14.0)
+static var SHAFT := Rect2(HALL_X+SHAFT_RUN.x,MID.y-8.5,SHAFT_RUN.y-SHAFT_RUN.x,14.0)
 ## The plate: the outline's half axes and its squareness.
 const PLATE_A := 47.0
 const PLATE_B := 40.0

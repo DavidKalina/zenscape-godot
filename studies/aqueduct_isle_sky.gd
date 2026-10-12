@@ -95,13 +95,16 @@ const WAVE_NEAR := 70.0
 
 ## The tokens: [line id, category, kind, points (world)]; each a moment
 ## (see the doc for the flying line each asks for).
-const TOKENS := [
-	# Knife edge (Q or E held) along z -28 (AqueductIsle KNIFE_Z), x east:
-	# between the first two stepping stumps (their `stump_slot`) and on under
-	# the aqueduct's arch.
-	["aq:knife","air","knife",[Vector3(91.8,25.0,-28.0),Vector3(100.0,25.0,-28.0)]],
-	# Through the fallen span, where the channel's water falls.
-	["aq:break","air","break",[Vector3(100.0,31.5,-34.0)]],
+## Laid off the isle's own numbers (studies/aqueduct_isle_art.gd).
+const IsleArt = preload("res://studies/aqueduct_isle_art.gd")
+static var TOKENS := [
+	# Knife edge (Q or E held) along IsleArt KNIFE_Z, x east: between two
+	# stepping stumps (their `stump_slot`) and on under the aqueduct's sky
+	# arch, between its hanging piers.
+	["aq:knife","air","knife",[Vector3(IsleArt.STUMPS_X-0.2,IsleArt.TOP-5.0,IsleArt.KNIFE_Z),Vector3(IsleArt.MID_X,IsleArt.TOP-5.0,IsleArt.KNIFE_Z)]],
+	# Through the fallen span, where the channel's water falls (a little over
+	# the springing, the toy's 1.5 m grown with the arch).
+	["aq:break","air","break",[Vector3(IsleArt.MID_X,IsleArt.TOP+1.5*IsleArt.GROW,-IsleArt.arch(IsleArt.FALLEN))]],
 	# Under the near island's keel, at its lowest point.
 	["aq:keel","under","keel",[Vector3(85.0,-9.5,0.0)]],
 	# Threading the gap between the west islet and the hill's crag.

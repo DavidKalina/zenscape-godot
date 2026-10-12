@@ -101,23 +101,20 @@ const WALL_LENGTH := 5.2
 ## The plinth course at a wall's foot: its height (under STEP_UP: stepped
 ## onto) and how far it stands out.
 const PLINTH_COURSE := Vector2(0.4,0.16)
-## The gaps the plane flies through follow the plane's size (scripts/
-## world_scale.gd): each is WorldScale.gap(room), its span and `room` toy
-## spans of steering room; static vars, read once. At plane 1 each is its
-## old number.
-## The least clear width of an opening meant to be flown through: the
-## wings and WorldScale.SNUG clear, 1.2 m past each wingtip at plane 2
-## (5.2; 3.8 at plane 1). It was 0.91 m a tip (4.62) and too tight to fly:
-## the world is spaced out now (feature/world-spacing).
-const THREAD_ROOM := WorldScale.SNUG
-static var THREAD: float = WorldScale.gap(THREAD_ROOM)
-## The pointed arch: clear span, the springing (capital tops) and the
-## arc's radius as a share of the span (1 is equilateral). Generous room
-## either side of the wings, 1.8 m past each tip at plane 2: 6.44 (5.04 at
-## plane 1; it was 5.6 with a toy span a side). Its crown stands SPRING +
-## ARCH_SPAN*0.866 (8.78 at plane 2): room for the plane over its SKIM.
-const ARCH_ROOM := 2.6
-static var ARCH_SPAN: float = WorldScale.gap(ARCH_ROOM)
+## The openings the plane flies through keep their toy-era widths in
+## wingspans (scripts/world_scale.gd `opening`: toy width x plane x RATIO,
+## 1.8x at the defaults); static vars, read once. At `--plane-scale=1
+## --opening-ratio=1` each is its toy width.
+## The least clear width of an opening meant to be flown through: toy 3.5
+## (2.5 spans), 6.3 at the defaults (1.75 m past each wingtip).
+const TOY_THREAD := 3.5
+static var THREAD: float = WorldScale.opening(TOY_THREAD)
+## The pointed arch: clear span (toy 4.2, 3.0 spans: 7.56 at the
+## defaults), the springing (capital tops: the walker's, kept) and the
+## arc's radius as a share of the span (1 is equilateral). Its crown stands
+## SPRING + ARCH_SPAN*0.866 (9.75 at the defaults): it rises with the width.
+const TOY_ARCH_SPAN := 4.2
+static var ARCH_SPAN: float = WorldScale.opening(TOY_ARCH_SPAN)
 const SPRING := 3.2
 const ARCH_PITCH := 1.0
 ## The arch's moulded orders: each order's radial depth, the inner one set
@@ -128,22 +125,23 @@ const HOOD := Vector2(0.13,0.1)
 ## The thickness of an arch, a window wall or a gable.
 const ARCH_DEPTH := 1.1
 ## The lancet window: clear width (two lights under one head; with its
-## mullion gone, flown: WorldScale.ROOM, wider than THREAD), sill height (caught from the
-## ground; the sill as deep as the wall, STAND and more) and springing; its
-## head equilateral. The width is a gap (5.6 at plane 2); the wall round it
-## is as much wider than the toy's 6.8 and taller than its 7.8 by the
-## head's rise on that (WINDOW_GROW).
-const WINDOW_ROOM := WorldScale.ROOM
-static var WINDOW := Vector3(WorldScale.gap(WINDOW_ROOM),1.6,3.4)
-static var WINDOW_GROW: float = WINDOW.x-3.6
+## mullion gone, flown: toy 3.6, 2.6 spans, 6.48 at the defaults), sill
+## height (caught from the ground; the sill as deep as the wall, STAND and
+## more) and springing; its head equilateral. The wall round it is as much
+## wider than the toy's 6.8 and taller than its 7.8 by the head's rise on
+## that (WINDOW_GROW).
+const TOY_WINDOW := 3.6
+static var WINDOW := Vector3(WorldScale.opening(TOY_WINDOW),1.6,3.4)
+static var WINDOW_GROW: float = WINDOW.x-TOY_WINDOW
 static var WINDOW_WALL := Vector2(6.8+WINDOW_GROW,7.8+WINDOW_GROW*0.866)
 ## The rose: its centre's height, outer radius (frame included) and the
-## frame's radial depth; the glass circle within is 3.96 m across at plane
-## 1, and grown to THREAD and more (5.25 at plane 2) so it is flown with
-## its spokes gone. The rose and the gable round it are the plane-1 ones
-## grown by ROSE_GROW (the gable 8.4 wide, 10.6 to its apex, the rose's
-## centre 6.6 up); the door under them stays.
-static var ROSE_GROW: float = maxf(1.0,THREAD*1.01/3.96)
+## frame's radial depth; the glass circle within is TOY_ROSE (3.96 m)
+## across in the toy era, an opening (7.13 at the defaults) flown with its
+## spokes gone. The rose and the gable round it are the toy ones grown by
+## ROSE_GROW (the gable 8.4 wide, 10.6 to its apex, the rose's centre 6.6
+## up); the door under them stays.
+const TOY_ROSE := 3.96
+static var ROSE_GROW: float = maxf(1.0,WorldScale.opening(TOY_ROSE)/TOY_ROSE)
 static var ROSE := Vector3(6.6*ROSE_GROW,2.4*ROSE_GROW-0.42*(ROSE_GROW-1.0),0.42)
 ## The gable: width, the height of its eaves, its apex.
 static var GABLE := Vector3(8.4*ROSE_GROW,5.2*ROSE_GROW,10.6*ROSE_GROW)
@@ -192,11 +190,12 @@ const GRAND_TREAD := 0.42
 ## the next flight's foot or into what it climbs to, so flights meet seamless.
 const WALK_OVERLAP := 0.05
 ## The stone circle: its sarsens, the gap the plane flies between two
-## (HENGE_ROOM: SNUG, 1.2 m past each wingtip at their inner faces, 5.2 m
-## at plane 2; it was 14 sarsens 1.7 wide, 2.1 m gaps against 2.8 m
-## wings) and the ring's radius (to its stones' middles) that gap sets:
-## 9.3 at plane 2, 8 sarsens. A sarsen's width along the ring, height and
-## thickness (over CHAIN_TOP: climbed by the ways the circle gives, not
+## (at their inner faces) and the ring's radius (to its stones' middles)
+## that gap sets: 9.3 at plane 2, 8 sarsens. The toy era's circle (14
+## sarsens 1.7 wide, TOY_HENGE 2.1 m gaps) wasn't flown, so the gap is the
+## wider of SNUG's (1.2 m past each wingtip, 5.2 at plane 2) and the toy
+## gap's opening (4.2 at the defaults, floored): 5.2. A sarsen's width
+## along the ring, height and thickness (over CHAIN_TOP: climbed by the ways the circle gives, not
 ## from the floor); the lintels' depth across the ring (TOP_ROOM and more:
 ## the ring is run round on them) and thickness. A lintel stands LINTEL.y
 ## over the bare top of a sarsen whose other lintel fell.
@@ -204,7 +203,8 @@ const CIRCLE_STONES := 8
 const SARSEN := Vector3(1.5,3.4,1.1)
 const LINTEL := Vector2(1.3,0.6)
 const HENGE_ROOM := WorldScale.SNUG
-static var HENGE_GAP: float = WorldScale.gap(HENGE_ROOM)
+const TOY_HENGE := 2.1
+static var HENGE_GAP: float = maxf(WorldScale.gap(HENGE_ROOM),WorldScale.opening(TOY_HENGE))
 static var CIRCLE_RADIUS: float = (HENGE_GAP+SARSEN.x)/(2.0*sin(PI/CIRCLE_STONES))+SARSEN.z*0.5
 ## A fallen lintel breaks in its middle: a piece LINTEL_BREAK long drops
 ## into the grass and the two ends stay on their sarsens, out over the gap,

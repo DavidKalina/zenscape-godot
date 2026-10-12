@@ -18,10 +18,13 @@ extends RefCounted
 ## from the scene picker with other flags keeps the command line's sizes
 ## (scripts/launch_args.gd's caveat).
 ##
-## A gap meant to be flown is the plane's span plus steering room
-## (`gap`): the room is counted in toy spans and does not grow with the
-## plane, since the flight's speeds and turns don't. At PLANE 1 each gap is
-## its old number exactly.
+## An opening meant to be flown keeps its toy-era width in wingspans
+## (`opening`): the toy width times the plane times RATIO (0.9: the toy
+## era's flight felt right, a tenth off to play it safe). Each file names
+## its openings' toy widths. `--opening-ratio=<x>` overrides RATIO for a
+## run; `--plane-scale=1 --opening-ratio=1` gives back every toy width
+## exactly. `gap(room)` (span plus steering room in toy spans) stays for
+## spacing with no toy width (the bell spires); SNUG floors `opening`.
 
 ## The game's sizes: the knobs.
 const PLANE := 2.0
@@ -73,24 +76,36 @@ static func ground_factor() -> float:
 	return 1.0 if f < 1.0+1e-4 else f
 
 ## Steering room past the wings, in toy spans (both sides together; at
-## PLANE 2 each toy span is 0.7 m past each wingtip). ROOM: what an
-## opening the plane is meant to fly through gets by default, 1.4 m past
-## each tip. SNUG: the least any flown opening gets, 1.2 m past each tip,
-## unless it is a deliberate knife-edge challenge (sized on its own). The
-## world is spaced out, not threading-tight (docs/design/plane-ground-
-## scale.md, feature/world-spacing).
+## PLANE 2 each toy span is 0.7 m past each wingtip). ROOM: the default
+## room for `gap`, 1.4 m past each tip. SNUG: 1.2 m past each tip, the
+## floor under `opening` (a knife-edge slot is sized on its own, `knife`).
 const ROOM := 2.0
 const SNUG := 2.4/TOY_SPAN
 
-## A gap the plane flies through: its span and `room` toy spans of
-## steering room (both sides together), ROOM by default. E.g. RuinKit
-## THREAD is gap(SNUG): 3.8 m for the toy, 5.2 for the plane at 2.
+## A gap the plane flies through sized by steering room, not by a toy
+## width: its span and `room` toy spans of room (both sides together),
+## ROOM by default. gap(SNUG) is 5.2 m at plane 2, 3.8 for the toy.
 static func gap(room := ROOM) -> float:
-	return span+TOY_SPAN*room*room_scale
+	return span+TOY_SPAN*room
 
-## `--room-scale=<x>` multiplies every flown gap's steering room (not the
-## knife slots), to try roomier openings for a run. 1 by default.
-static var room_scale: float = _flag("--room-scale=",1.0)
+## The share of its toy-era ratio to the wingspan every flown opening keeps:
+## RATIO by default, `--opening-ratio=<x>` for a run.
+const RATIO := 0.9
+static var ratio: float = _flag("--opening-ratio=",RATIO)
+
+## An opening the plane flies through, from its toy-era width (its width
+## when the plane was the 1.4 m toy): toy_width*plane*ratio, so it keeps
+## `ratio` of its old width in wingspans (1.8x the toy width at the
+## defaults: THREAD 3.5 -> 6.3).
+## Floored at gap(SNUG) (1.2 m past each wingtip) so a small ratio never
+## closes an opening onto the wings; but the floor never reaches past the
+## toy width grown with the plane (toy_width*plane), so at ratio 1 it never
+## acts (plane 1, ratio 1: every toy width exactly), and a toy width that
+## was itself under SNUG's room (a token's wing box) floors at its own toy
+## ratio, not wider.
+static func opening(toy_width: float) -> float:
+	var grown := toy_width*plane
+	return maxf(grown*ratio,minf(gap(SNUG),grown))
 
 ## A slot the plane is meant to pass only on a knife edge (on a wingtip):
 ## its height on its side (the toy's TOY_TALL times the plane) and `room`
