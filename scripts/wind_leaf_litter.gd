@@ -42,10 +42,10 @@ var _clock := 0.0
 var _accumulator := 0.0
 var _rng := RandomNumberGenerator.new()
 
-const Downdraft = preload("res://scripts/downdraft.gd")
+const Slam = preload("res://scripts/slam.gd")
 
 func _ready() -> void:
-	add_to_group(Downdraft.GROUP)
+	add_to_group(Slam.GROUP)
 
 func _init() -> void:
 	name = "WindLeafLitter"
@@ -194,24 +194,24 @@ func _step(dt: float, air: Node) -> void:
 		leaf.position = p
 		leaf.velocity = velocity
 
-## A downdraft (scripts/downdraft.gd, its group) touched at `at`: every
+## A slam (scripts/slam.gd, its group) touched at `at`: every
 ## leaf in its reach is thrown up and out from it, harder the nearer
-## (DOWNDRAFT_THROW out, DOWNDRAFT_LIFT up, m/s at full for a leaf of
+## (SLAM_THROW out, SLAM_LIFT up, m/s at full for a leaf of
 ## weight 1), and lands where it lands.
-const DOWNDRAFT_THROW := 5.0
-const DOWNDRAFT_LIFT := 2.6
-func downdraft(at: Vector3, radius: float, strength: float) -> void:
+const SLAM_THROW := 5.0
+const SLAM_LIFT := 2.6
+func slam(at: Vector3, radius: float, strength: float) -> void:
 	var here := to_local(at)
 	for leaf in leaves:
 		if leaf.lost: continue
 		var p: Vector3 = leaf.position
-		var s := Downdraft.share(here,radius,p)*strength
+		var s := Slam.share(here,radius,p)*strength
 		if s <= 0.0: continue
 		var out := Vector3(p.x-here.x,0.0,p.z-here.z)
 		out = out.normalized() if out.length() > 0.05 else Vector3.FORWARD.rotated(Vector3.UP,_rng.randf()*TAU)
 		var weight := maxf(float(leaf.weight),0.3)
 		leaf.airborne = true
-		leaf.velocity = out*DOWNDRAFT_THROW*s/weight+Vector3.UP*minf(DOWNDRAFT_LIFT*s/weight,3.0)
+		leaf.velocity = out*SLAM_THROW*s/weight+Vector3.UP*minf(SLAM_LIFT*s/weight,3.0)
 		leaf.cooldown = 0.5
 		leaf.stir = 1.0
 

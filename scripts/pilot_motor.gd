@@ -53,12 +53,12 @@ extends RefCounted
 ## twirled back towards a wall just kicked off (the kick's lock lifted),
 ## he comes back to it to slide and kick again, or to a ledge over it. Once an airtime; landing, taking hold of a ledge,
 ## or swimming gives it back (a wall kick doesn't: one twirl back to the
-## wall, one more kick, then he falls away). Crouch alone does nothing in
-## the air: held from the ground (for the long jump, or the slide), or
-## pressed there, it is the slide on landing. With the flow charge spent it
-## is the downdraft (below).
+## wall, one more kick, then he falls away). Crouch in the air is the
+## motor's only as the slide on landing: held from the ground (for the long
+## jump, or the slide), or pressed low over the ground. Pressed fresh with
+## height under him it is the slam (below; scripts/slam.gd decides).
 ##
-## The slam (`slam`, the downdraft's: scripts/downdraft.gd): driven straight
+## The slam (`slam`, called by scripts/slam.gd): driven straight
 ## down (move "slam"), from the pace given on toward `pace` on SLAM_PULL
 ## times his falling gravity, past TERMINAL; his flat pace kept, not
 ## steered, no wall, wall run or ledge taking him. On the touch the step
@@ -558,8 +558,8 @@ var chain := 0
 ## "pump", "long" (the long jump), "kick" (off a wall), "wall" (sliding down
 ## one), "crouch", "twirl", "slide" (boot-surfing down a slope), "flip" (the
 ## side flip), "wallrun" (running along one), "tumble" (knocked: in the air,
-## then down on the ground getting up), "slam" (driven down by the
-## downdraft).
+## then down on the ground getting up), "slam" (driven down: the slam,
+## scripts/slam.gd).
 var move := ""
 ## Held by the caller: the crouch button, and the twirl's.
 var crouch := false
@@ -1183,7 +1183,7 @@ func toss(push: Vector3, hop := false) -> void:
 	if Vector2(push.x,push.z).length() > 0.3: facing = facing_of(Vector2(push.x,push.z))
 	feet.y += 0.02
 
-## Driven down by the downdraft (see the header): from `kick` m/s down on
+## Driven down by the slam (see the header): from `kick` m/s down on
 ## toward `pace`, his flat pace as it is, the sail folded. Not from the
 ## ground, a ledge, a rope or the water.
 func slam(pace: float, kick: float) -> void:

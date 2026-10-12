@@ -19,7 +19,7 @@ extends Node3D
 ##
 ## A spot with `buried` (and `ground`, the turf's point under it) is laid
 ## under the turf (scripts/buried_find.gd): a faint shimmer the telescope
-## glints until a downdraft blows it open; only then, up, can it be taken.
+## glints until a slam from height breaks it open; only then, up, can it be taken.
 const GlyphPickup = preload("res://scripts/glyph_pickup.gd")
 const BuriedFind = preload("res://scripts/buried_find.gd")
 const Hud = preload("res://scripts/collectibles_hud.gd")

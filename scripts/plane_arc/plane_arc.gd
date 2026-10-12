@@ -32,9 +32,9 @@ extends Node3D
 ##   all six fitted, Space by it climbs in and takes off as ever.
 ##
 ## The cowl is jammed up under the belfry's bell (PartSpots `cowl`): it
-## can't be taken there. A downdraft (scripts/downdraft.gd: the arc joins
+## can't be taken there. A slam (scripts/slam.gd: the arc joins
 ## its group) that reaches the bell (MotifBellSpires `bell_reach`, at
-## least COWL_NEED strong) swings the bell hard, and COWL_DELAY s later,
+## a decent hit: Slam `decent`) swings the bell hard, and COWL_DELAY s later,
 ## as it swings, the cowl is knocked out: it tumbles down onto the belfry
 ## floor (PartSpots `cowl_floor`, COWL_FALL s, a bounce) and hovers there
 ## to be taken as ever. Reaching the belfry needs the plane for now
@@ -75,7 +75,7 @@ const MomentsHud = preload("res://scripts/moments_hud.gd")
 const Lines = preload("res://scripts/collectible_lines.gd")
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const PlaneFigure = preload("res://scripts/plane_figure.gd")
-const Downdraft = preload("res://scripts/downdraft.gd")
+const Slam = preload("res://scripts/slam.gd")
 const BellSpires = preload("res://scripts/kit_isle/motif_bell_spires.gd")
 
 const IDS := PartSpots.IDS
@@ -108,10 +108,9 @@ const FLY_TO := 0.35
 const SNAG_LAP := 30.0
 const SNAG_START := 9.0
 const SNAG_SOON := 7.0
-## The jammed cowl: the least downdraft strength that knocks it loose,
+## The jammed cowl (it takes a decent slam, Slam `decent`, to knock loose):
 ## seconds from the blast to its fall (the bell swinging into it), and the
 ## fall's seconds to the belfry floor.
-const COWL_NEED := 0.3
 const COWL_DELAY := 0.28
 const COWL_FALL := 0.55
 
@@ -191,7 +190,7 @@ func setup(scene: Node3D) -> void:
 		elif state[id] == "laid": _lay(id)
 	_build_snag()
 	if state.cowl == "laid" and holders.has("cowl"): cowl = "jammed"
-	add_to_group(Downdraft.GROUP)
+	add_to_group(Slam.GROUP)
 	_follow(0.0,true)
 	var figure: Node3D = host.get("plane_figure")
 	if figure != null: dress(figure)
@@ -363,10 +362,10 @@ func take(id: String) -> void:
 		_moments.pop("%s: it rides with you to the plane" % TAKEN[id],2.6)
 		_moments.blip(2)
 
-## A downdraft at `at` (scripts/downdraft.gd): reaching the bell over the
+## A slam at `at` (scripts/slam.gd): reaching the bell over the
 ## jammed cowl, hard enough, it knocks the cowl loose (after COWL_DELAY).
-func downdraft(at: Vector3, radius: float, strength: float) -> void:
-	if cowl != "jammed" or strength < COWL_NEED or not is_instance_valid(holders.get("cowl")): return
+func slam(at: Vector3, radius: float, strength: float) -> void:
+	if cowl != "jammed" or strength < Slam.decent() or not is_instance_valid(holders.get("cowl")): return
 	var holder: Node3D = holders.cowl
 	if holder.global_position.distance_to(at) > BellSpires.bell_reach(radius): return
 	cowl = "falling"

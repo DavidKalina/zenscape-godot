@@ -6,8 +6,8 @@ extends "res://scripts/kit_isle/kit_motif.gd"
 ## chockstone, the four rope bridges on their anchors (studies/
 ## bell_spires_isle_art.gd); and the bells, swinging as pendulums the breeze
 ## leans on, rung by a landing in the belfry, a plane passing close or a
-## downdraft (scripts/downdraft.gd: the belfry's `BellWind` joins its group
-## and hands it to `downdraft`) swinging them hard.
+## slam (scripts/slam.gd: the belfry's `BellEar` joins its group
+## and hands it to `slam`) swinging them hard.
 ## Built here for its study (studies/bell_spires_isle.gd) and for the
 ## aqueduct isle's sky alike.
 const Spires = preload("res://studies/bell_spires_isle_art.gd")
@@ -21,10 +21,10 @@ const BELL_DAMP := 0.35
 const BELL_LAND := 0.18
 const BELL_PLANE := 0.22
 const BELL_NEAR := 22.0
-## A downdraft within its radius and BELL_REACH m more of a bell's pivot
-## swings it this hard at full strength (BELL_DOWNDRAFT: nearly the most it
+## A slam within its radius and BELL_REACH m more of a bell's pivot
+## swings it this hard at full strength (BELL_SLAM: nearly the most it
 ## swings, 0.7 rad), less toward the edge of its reach.
-const BELL_DOWNDRAFT := 0.62
+const BELL_SLAM := 0.62
 const BELL_REACH := 2.5
 
 var spire_nodes := {}
@@ -103,8 +103,8 @@ func _crowns(l: Dictionary) -> void:
 	belfry.transform = belfry_frame(l)
 	art.add_child(belfry)
 	_add_bell(belfry.get_node("Bell"),1.0)
-	var wind := BellWind.new()
-	wind.name = "BellWind"
+	var wind := BellEar.new()
+	wind.name = "BellEar"
 	wind.motif = weakref(self)
 	art.add_child(wind)
 	var needle: Dictionary = l.spires.needle
@@ -234,9 +234,9 @@ func landed(feet: Vector3) -> void:
 	var local := belfry.global_transform.affine_inverse()*feet
 	if absf(local.x) < 1.4 and absf(local.z) < 1.4 and local.y > Belfry.FLOOR-0.3: ring(bells[0],BELL_LAND)
 
-## A downdraft at `at` (scripts/downdraft.gd) swings every bell within its
+## A slam at `at` (scripts/slam.gd) swings every bell within its
 ## radius and BELL_REACH m, away from where it touched; how many it swung.
-func downdraft(at: Vector3, radius: float, strength: float) -> int:
+func slam(at: Vector3, radius: float, strength: float) -> int:
 	var n := 0
 	for bell: Dictionary in bells:
 		var node: Node3D = bell.node
@@ -247,24 +247,24 @@ func downdraft(at: Vector3, radius: float, strength: float) -> int:
 		# Its swing is about its own x: away from the touch along its z.
 		var local: Vector3 = node.get_parent().global_transform.affine_inverse()*at-node.position
 		var way := signf(local.z) if absf(local.z) > 0.05 else (signf(float(bell.speed)) if absf(float(bell.speed)) > 0.01 else 1.0)
-		ring(bell,way*BELL_DOWNDRAFT*strength*(1.0-0.5*d/reach)/float(bell.size))
+		ring(bell,way*BELL_SLAM*strength*(1.0-0.5*d/reach)/float(bell.size))
 		bell.pushed = 1.5
 		n += 1
 	return n
 
-## How far from a bell's pivot a downdraft `radius` round reaches it.
+## How far from a bell's pivot a slam `radius` round reaches it.
 static func bell_reach(radius: float) -> float:
 	return radius+BELL_REACH
 
-## The belfry's ear for the downdraft: in its group, it hands the blast to
+## The belfry's ear for the slam: in its group, it hands the blast to
 ## the motif's bells.
-class BellWind extends Node3D:
+class BellEar extends Node3D:
 	var motif: WeakRef
 	func _ready() -> void:
-		add_to_group(&"downdraft")
-	func downdraft(at: Vector3, radius: float, strength: float) -> void:
+		add_to_group(&"slam")
+	func slam(at: Vector3, radius: float, strength: float) -> void:
 		var m: RefCounted = motif.get_ref() if motif != null else null
-		if m != null: m.downdraft(at,radius,strength)
+		if m != null: m.slam(at,radius,strength)
 
 ## A plane passing within BELL_NEAR m of a bell pushes it.
 func plane_near(at: Vector3) -> void:

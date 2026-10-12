@@ -118,7 +118,7 @@ func setup(at: Vector3, rope_length: float) -> void:
 	hands = anchor+Vector3.DOWN*length
 
 ## The updraft's ring blast (scripts/updraft.gd) swings the free end.
-const Downdraft = preload("res://scripts/downdraft.gd")
+const Slam = preload("res://scripts/slam.gd")
 const WIND_SWING := 9.0       # m/s of swing at full power
 
 func wind_point() -> Vector3: return hands
@@ -127,15 +127,15 @@ func wind_push(_origin: Vector3, dir: Vector3, power: float) -> void:
 	if held(): return
 	velocity += dir*WIND_SWING*power
 
-## The downdraft (scripts/downdraft.gd) swings it the same way, out and
+## The slam (scripts/slam.gd) swings it the same way, out and
 ## down from where it touched (the pendulum keeps what goes across it).
-func downdraft(at: Vector3, radius: float, strength: float) -> void:
-	var s := Downdraft.share(at,radius,hands)
-	if s > 0.0: wind_push(at,Downdraft.way(at,hands),strength*s)
+func slam(at: Vector3, radius: float, strength: float) -> void:
+	var s := Slam.share(at,radius,hands)
+	if s > 0.0: wind_push(at,Slam.way(at,hands),strength*s)
 
 func _ready() -> void:
 	add_to_group(&"wind_pushable")
-	add_to_group(Downdraft.GROUP)
+	add_to_group(Slam.GROUP)
 	var mesh := _rope_mesh()
 	_upper = MeshInstance3D.new()
 	_upper.mesh = mesh

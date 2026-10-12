@@ -1,7 +1,7 @@
 extends Node3D
-## A find buried in the turf, blown open by the downdraft (docs/design/
-## downdraft/round1.md; docs/game-direction.md "Ways to discover things":
-## the dig, done with wind). Any find can be buried: a rune token, a plane
+## A find buried in the turf, broken open by the slam (docs/design/slam/
+## round2.md; docs/game-direction.md "Ways to discover things": the dig,
+## done with his weight). Any find can be buried: a rune token, a plane
 ## part, anything that hovers to be taken.
 ##
 ## - **Buried.** The find waits DEPTH m under the turf, hidden. Over it a
@@ -9,26 +9,27 @@ extends Node3D
 ##   (SHIMMER, gold, never bright): easy to walk past, and the telescope
 ##   glints it from afar (scripts/telescope.gd `spottable`, with the
 ##   find's objective) so it can be spotted and walked to.
-## - **Blown open.** A downdraft (scripts/downdraft.gd: this joins its
-##   group) touching within REACH m of it (flat, at the walker's size, or
-##   its own radius if smaller; within LEVEL m up or down) blows the turf
-##   off in a burst: the hump and the shimmer gone, clods of turf thrown up
-##   and out (CLODS), and the find comes up out of the ground over RISE s,
-##   overshooting a little, to hover `over` m over the turf.
+## - **Broken open.** A slam (scripts/slam.gd: this joins its group) that
+##   hits hard enough (Slam `decent`: a drop of a few metres, so a hop
+##   won't do) and touches within REACH m of it (flat, at the walker's
+##   size, or its own radius if smaller; within LEVEL m up or down) breaks
+##   the turf open in a burst: the hump and the shimmer gone, clods of turf
+##   thrown up and out (CLODS), and the find comes up out of the ground
+##   over RISE s, overshooting a little, to hover `over` m over the turf.
 ## - **Up.** Then it's the find's own: its owner lets it be taken as ever
 ##   (`takeable`), and it glints through the telescope in its own right.
 ##
 ## Use: make one, `setup(find, at, id)` with `at` the turf's point in the
 ## find's parent's frame, and add it as the find's sibling. The owner asks
 ## `takeable()` before letting the find be taken; `revealed` says when it
-## blows open. `reveal()` blows it open from code.
+## breaks open. `reveal()` breaks it open from code.
 const Telescope = preload("res://scripts/telescope.gd")
-const Downdraft = preload("res://scripts/downdraft.gd")
+const Slam = preload("res://scripts/slam.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 
 signal revealed
 
-## Metres: the find under the turf; a downdraft's reach to it and up or
+## Metres: the find under the turf; a slam's reach to it and up or
 ## down; the shimmer across; the hump (across, high).
 const DEPTH := 0.6
 const REACH := 2.4
@@ -80,7 +81,7 @@ func setup(find_node: Node3D, where: Vector3, objective := "", hover := 0.85) ->
 		find.remove_from_group(Telescope.GROUP)
 
 func _ready() -> void:
-	add_to_group(Downdraft.GROUP)
+	add_to_group(Slam.GROUP)
 	if state != "buried": return
 	mound = MeshInstance3D.new()
 	mound.name = "Mound"
@@ -134,15 +135,15 @@ func covered() -> bool:
 func takeable() -> bool:
 	return state == "up"
 
-## A downdraft (scripts/downdraft.gd) at `blast_at` (world): over it, it
-## blows open.
-func downdraft(blast_at: Vector3, radius: float, _strength: float) -> void:
-	if state != "buried" or not is_inside_tree(): return
+## A slam (scripts/slam.gd) at `blast_at` (world): over it, hard enough
+## (Slam `decent`), it breaks open.
+func slam(blast_at: Vector3, radius: float, strength: float) -> void:
+	if state != "buried" or not is_inside_tree() or strength < Slam.decent(): return
 	var here := global_position
 	var flat := Vector2(here.x-blast_at.x,here.z-blast_at.z).length()
 	if flat <= minf(REACH*size,radius) and absf(here.y-blast_at.y) <= LEVEL*size: reveal()
 
-## Blown open: the turf off in a burst, the find coming up.
+## Broken open: the turf off in a burst, the find coming up.
 func reveal() -> void:
 	if state != "buried": return
 	state = "rising"

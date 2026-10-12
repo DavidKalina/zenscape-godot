@@ -46,9 +46,9 @@ The layout follows cozy builders on a pad, such as Townscaper and Tiny Glade on 
 | Left stick | Walk, analog | WASD / arrows |
 | Right stick | Look | Mouse |
 | A | Jump; again on landing, the higher pump; in a skid, the side flip; surfing a slope, the slide jump; on a wall (or just after touching one in the air), kick off it; again in the air to fly; beside the plane, take off | Space |
-| LT (held) | Crouch; at a run, then A, the long jump; on a slope, surf down it; in the air, with RB, the downdraft | Shift or C |
+| LT (held) | Crouch; at a run, then A, the long jump; on a slope, surf down it. Pressed fresh in the air a couple of metres up or more: the slam, driven straight down to hit with the height he fell (no charge spent; it pushes what's round him, opens buried finds from a decent height; scripts/slam.gd). Held from the ground, or pressed lower: the slide on landing | Shift or C |
 | X (in the air) | Twirl; out of a slide, steer across to build speed and hop again on the touch | X |
-| RB | Spend the flow charge: the updraft, or forward out of a slide the burst (scripts/updraft.gd); in the air with LT held, the downdraft: driven down into a ring of wind that pushes what's round him and blows buried finds open (scripts/downdraft.gd) | Q (with Shift or C in the air: the downdraft) |
+| RB | Spend the flow charge: the updraft, or forward out of a slide the burst (scripts/updraft.gd). Up out of an updraft, LT cashes the height in as the slam | Q |
 | LB (held, on the ground) | Telescope up; let go to lower (scripts/telescope.gd). He stands or shuffles while it's up | Right mouse (held) |
 | B or View | Step back out to building | V / Esc |
 | Menu | Pause (steps out) | — |

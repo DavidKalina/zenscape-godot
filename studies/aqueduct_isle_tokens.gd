@@ -50,10 +50,10 @@ static func spots(isle: Node3D) -> Array[Dictionary]:
 	# 8. Buried in the turf (scripts/buried_find.gd) a few metres in off the
 	# north edge's worn path to the stumps, BURIED_ALONG of its middle run,
 	# BURIED_IN inland: a faint shimmer in the grass, glinting through the
-	# telescope; a downdraft over it blows it open.
+	# telescope; a slam from height over it breaks it open.
 	var ground := buried_ground()
 	out.append({"name":"buried","at":ground+Vector3.UP*BURIED_HOVER,"ground":ground,"buried":true,
-		"move":"Spot the shimmer off the north path and blow the turf off it with a downdraft"})
+		"move":"Spot the shimmer off the north path and slam down onto it from a height"})
 	return out
 
 ## The buried token: along the north path's middle run (Art.PATHS[1], its

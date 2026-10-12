@@ -26,7 +26,7 @@ extends RefCounted
 ##               edge into the load as it passes (about 3 m out and a metre
 ##               down; never in reach of anyone standing on the crown)
 ##   cowl        jammed under the bell in the bell spires' belfry (reached
-##               with the plane for now; a ferry and the downdraft later)
+##               with the plane for now; a ferry and the slam later)
 const MotifSky = preload("res://scripts/kit_isle/motif_sky.gd")
 const TarnArt = preload("res://studies/cloister_tarn_isle_art.gd")
 const NaveArt = preload("res://studies/drowned_nave_isle_art.gd")
@@ -155,9 +155,9 @@ static func cowl() -> Dictionary:
 	var frame := BellSpires.belfry_frame()
 	var at := frame*Vector3(0.0,Belfry.BEAM-Belfry.BELL.y-UNDER_BELL,0.0)+off
 	var stand := frame*Vector3(0.75,Belfry.FLOOR+0.05,0.75)+off
-	return _spot(at,at,stand,"Up the belfry's stair: it's jammed under the bell; a downdraft on the bell swings it loose")
+	return _spot(at,at,stand,"Up the belfry's stair: it's jammed under the bell; a slam on the bell swings it loose")
 
-## Where the cowl comes to rest once a downdraft has swung the bell and
+## Where the cowl comes to rest once a slam has swung the bell and
 ## knocked it down: on the belfry floor, COWL_FLOOR off the bell's plumb
 ## (the belfry's frame, m), hovering as a laid part does.
 const COWL_FLOOR := Vector2(-0.45,0.35)

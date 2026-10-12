@@ -377,11 +377,11 @@ func _tokens() -> void:
 		query.transform = Transform3D(Basis.IDENTITY,t.at)
 		check(space.intersect_shape(query,1).is_empty(),"Tokens: %s stands in open air at %s" % [t.name,t.at])
 		# Not taken standing on the turf under it, nor by a pump jump there.
-		# The buried one is low, but under the turf till a downdraft blows
-		# it open (tests/test_downdraft.gd takes it that way).
+		# The buried one is low, but under the turf till a slam breaks it
+		# open (tests/test_slam.gd takes it that way).
 		var g: Variant = life.ground_at(Vector2((t.at as Vector3).x,(t.at as Vector3).z))
 		if t.get("buried",false):
-			check(tokens.buried.has(t.name) and tokens.buried[t.name].covered(),"Tokens: %s is buried, out of reach till a downdraft" % t.name)
+			check(tokens.buried.has(t.name) and tokens.buried[t.name].covered(),"Tokens: %s is buried, out of reach till a slam" % t.name)
 		elif g != null:
 			check((t.at as Vector3).y-float(g) > 1.5+0.55+0.95,"Tokens: %s is out of a jump's reach from the turf under it (%.1f m up)" % [t.name,(t.at as Vector3).y-float(g)])
 	# The slot: kicked up between the castellum and the blind wall.
@@ -455,24 +455,22 @@ func _tokens() -> void:
 	var last: Array = Art.stumps()[-1]
 	var stumps := line(Vector3(Art.STUMPS_X,30.0,float(last[2])-5.4),Vector3(Art.STUMPS_X,float(last[3]),(float(last[1])+float(last[2]))*0.5),"jump_twirl")
 	check(stumps and taken("stumps"),"Tokens: the stumps', jumped out over the sky from the far island")
-	# The buried one off the north path: a downdraft over it (crouch + Q in
-	# the air) blows it open, and it's taken up out of the turf.
+	# The buried one off the north path: a slam onto it from a height (crouch
+	# pressed fresh 6 m up) breaks it open, and it's taken up out of the turf.
 	var dig: Node3D = tokens.buried.get("buried")
 	if dig != null:
 		var under: Vector3 = dig.global_position
 		study.place(under,Vector2(0.0,-1.0))
 		for i in range(5): tick(Vector2.ZERO)
-		m.feet.y += 3.0
+		m.feet.y += 6.0
 		m.grounded = false
-		study.updraft.charge = 0.6
-		study.script_wind = true
 		for i in range(120):
 			tick(Vector2.ZERO,false,true)
 			if m.grounded and i > 2: break
 		for i in range(60): dig.advance(DT)
 		study.place(under,Vector2(0.0,-1.0))
 		for i in range(5): tick(Vector2.ZERO)
-	check(dig != null and taken("buried"),"Tokens: the buried one, blown open with a downdraft and taken")
+	check(dig != null and taken("buried"),"Tokens: the buried one, broken open with a slam and taken")
 	check(tokens.left() == 0,"Tokens: all %d taken (%d left)" % [count,tokens.left()])
 	var hud: CanvasLayer = tokens.hud
 	check(hud._got == count and hud._of == count,"Tokens: the readout counts the line whole (%d of %d)" % [hud._got,hud._of])

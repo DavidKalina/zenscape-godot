@@ -28,7 +28,7 @@ extends Node
 ##   found here (stone, grass, worn earth, a bridge's planks, water); over them jumps
 ##   rustle, wall kicks and twirls swish, grabs slap the stone, the sail
 ##   pops and folds, slides and carves scrape, heavy landings thud, the
-##   downdraft whumps, the bridges' planks creak.
+##   slam hits deep and heavy, the bridges' planks creak.
 ## - The place: leaves where the turf is green, an owl at night, water
 ##   near the isle's pools and channel, rain, a thin high wind in open sky
 ##   away from the isle, the cloud sea's hush below; the swing ropes' creak,
@@ -52,9 +52,15 @@ const AMBIENCE := &"Ambience"
 const FAR := &"Ambience Far"
 const MUSIC := &"Music"
 const DEFAULT_AMBIENCE := 0.8
-## The downdraft's touch: the low thump's gain and the wind's, at full.
-const DOWNDRAFT_WHUMP := 0.75
-const DOWNDRAFT_WIND := 0.3
+## The slam's touch (scripts/slam.gd), by its power: the thump's gain
+## (weakest, full) and pitch (weakest, full: lower the harder); the deep
+## impact under it (the dragon's strike through the rock) from IMPACT_FROM
+## power, its gain at full; the turf and grit thrown, at full.
+const SLAM_THUMP := Vector2(0.35,0.85)
+const SLAM_PITCH := Vector2(0.8,0.42)
+const SLAM_IMPACT := 0.55
+const SLAM_IMPACT_FROM := 0.2
+const SLAM_DEBRIS := 0.22
 const KIT := "res://assets/audio/kit/"
 const OLD := "res://assets/audio/"
 
@@ -353,7 +359,7 @@ func _ready() -> void:
 		"owl":[load(OLD+"owl.mp3")],
 		"chirp":_takes(KIT+"chirp-%d.wav",8),"twitter":_takes(KIT+"twitter-%d.wav",6),"wings":_takes(KIT+"wings-%d.wav",4),
 		"rope_creak":_takes(KIT+"rope-creak-%d.wav",4),"whip":_takes(KIT+"rope-whip-%d.wav",3),
-		"wind_slam":_takes(KIT+"wind-slam-%d.wav",2),
+		"impact":_takes(KIT+"dragon-slam-%d.wav",2),"debris":_takes(KIT+"rock-debris-%d.wav",3),
 	}
 	life = KitAudioLife.new()
 	life.audio = self
@@ -492,16 +498,16 @@ func body(events: Dictionary) -> void:
 		var hard := float(events.landed)
 		if hard > 6.5: shot("pat",clampf((hard-6.5)/12.0,0.0,1.0)*0.12,1.1)
 		if _surface == "wood": shot("creak",0.04+0.06*clampf(hard/10.0,0.0,1.0),1.15)
-	# The downdraft (scripts/downdraft.gd): a breath of wind drawn in, a
-	# rush down, and on the touch a deep whump, the thump pitched low under
-	# a slam of wind.
-	if events.has("downdraft_gather"): shot("whoosh",0.07,1.4)
-	if events.has("downdraft_slam"): shot("swish",0.11,0.72)
-	if events.has("downdraft"):
-		var k := clampf(float(events.downdraft.strength),0.0,1.0)
-		shot("thump",DOWNDRAFT_WHUMP*(0.6+0.4*k),0.5-0.08*k)
-		shot("wind_slam",DOWNDRAFT_WIND*(0.5+0.5*k),0.8)
-		if _surface == "wood": shot("creak",0.12,0.8)
+	# The slam (scripts/slam.gd): his body dropping through the air, and
+	# on the touch his weight: the thump, deeper and louder from higher,
+	# the deep impact under it from a real height, turf and grit thrown.
+	if events.has("slam_drive"): shot("swish",0.1,0.7)
+	if events.has("slam"):
+		var k := clampf(float(events.slam.power),0.0,1.0)
+		shot("thump",lerpf(SLAM_THUMP.x,SLAM_THUMP.y,k),lerpf(SLAM_PITCH.x,SLAM_PITCH.y,k))
+		if k >= SLAM_IMPACT_FROM: shot("impact",SLAM_IMPACT*pow((k-SLAM_IMPACT_FROM)/(1.0-SLAM_IMPACT_FROM),0.7),lerpf(1.3,0.9,k))
+		shot("debris",SLAM_DEBRIS*(0.3+0.7*k),lerpf(1.5,1.1,k))
+		if _surface == "wood": shot("creak",0.06+0.1*k,0.8)
 	if events.has("swam"): shot("splash",0.08+0.1*clampf(float(events.swam)/8.0,0.0,1.0))
 	if events.has("hopped"): shot("plop",0.06)
 	# The swing rope: caught, the hands slap it and it takes his weight; let

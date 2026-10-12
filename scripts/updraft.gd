@@ -13,9 +13,11 @@ extends Node3D
 ## and a ring blast spreads from his feet. It works anywhere: standing, out of
 ## a slide, in any jump, off a rope, falling.
 ##
-## With crouch held in the air the press is the downdraft instead (scripts/
-## downdraft.gd, `downdraft`, set by the host): the same charge, spent all
-## at once through `spend_down`, charging locked after it as after a burst.
+## The charge is the updraft's alone. Its pair is the slam (scripts/slam.gd),
+## which spends nothing: the updraft lifts him, and a fresh crouch press up
+## there cashes the height in as impact. Updraft then slam in one airtime
+## is the combo; it gains no height overall, as the next updraft needs the
+## charge built afresh from flow.
 ##
 ## It touches the motor only through `toss`. The host calls
 ## `update(delta, motor, pressed)` once a frame BEFORE stepping the motor and
@@ -101,10 +103,6 @@ const FLARE_TIME := 0.5         # s a burst flares the loose strands wider
 
 var charge := 0.0
 var updrafts := 0
-var downdrafts := 0
-## The downdraft (scripts/downdraft.gd), if the host has one: crouch + the
-## key in the air is its.
-var downdraft: Node3D
 var last_rise := 0.0            # m planned for the last updraft
 var _quiet := 0.0               # s since the last gain
 var _prev_move := ""
@@ -170,9 +168,7 @@ func update(delta: float, m: PilotMotor, pressed: bool, want := Vector2.ZERO) ->
 	_cool = maxf(_cool-delta,0.0)
 	_unlock(delta,m)
 	_charge(delta,m)
-	if pressed:
-		if downdraft != null and downdraft.wanted(m): downdraft.fire(self,m)
-		elif not burst(m,want): updraft(m)
+	if pressed and not burst(m,want): updraft(m)
 	_ride_top(delta,m)
 	_step_rings(delta)
 	_track(delta,m)
@@ -235,22 +231,6 @@ func updraft(m: PilotMotor) -> bool:
 	_dip_t = DIP_TIME
 	_dip_amp = DIP*p*UNIT
 	return true
-
-## The downdraft's spend (scripts/downdraft.gd): all the charge, the wake
-## let go drifting down, charging locked as after a burst (SPENT_*: so the
-## slam's own pace never refills it). The charge spent, or -1 with too
-## little (or knocked, held, swimming).
-func spend_down(m: PilotMotor) -> float:
-	if charge < MIN_RELEASE or m.recovering() or m.swimming or m.seized(): return -1.0
-	var p := charge
-	charge = 0.0
-	_quiet = 0.0
-	downdrafts += 1
-	spent = true
-	_spent_t = 0.0
-	_spent_pace = m.speed()
-	_let_go(Vector3.DOWN*LOOSE_DRIFT*UNIT)
-	return p
 
 ## The forward burst: stick toward his travel (or any way when slow) plus the
 ## key adds flat pace along it, scaled by charge and eased off near BURST_CAP.
@@ -430,7 +410,7 @@ func _draw() -> void:
 
 ## Strokes ({path, width, alpha, seed}) into `mesh` in the breeze ribbons'
 ## brush (the layout breeze_ribbons.gd `_draw` feeds the shader), each run
-## at least `min_run` m. Shared with the downdraft's.
+## at least `min_run` m. Shared with the slam's shockwave ring.
 static func draw_strokes(mesh: ImmediateMesh, strokes: Array, min_run: float) -> void:
 	var begun := false
 	for st in strokes:

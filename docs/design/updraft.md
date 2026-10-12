@@ -6,10 +6,10 @@ gust, rolling sentinels, blocks and yards; none of those are here. No enemies.
 
 ## Input
 **Q** (pad **RB**), input action `walk_wind` in `scripts/pad.gd`. A plain press,
-no crouch. Q and RB were free on foot (they are used only in the plane, the
-builder and the photo lens). In the air with crouch held the press is the
-downdraft instead (`scripts/downdraft.gd`, docs/design/downdraft/round1.md),
-spending the same charge. Fires whenever charge is at least `MIN_RELEASE`:
+crouch or not. Q and RB were free on foot (they are used only in the plane,
+the builder and the photo lens). The charge is the updraft's alone; its pair
+is the slam (`scripts/slam.gd`, docs/design/slam/round2.md), a fresh crouch
+press up in the air that cashes the height in and spends nothing. Fires whenever charge is at least `MIN_RELEASE`:
 standing, out of or during a slide, and in mid-air (jump, long jump, wall jump,
 rope release, fall). The pocket sail still opens after it.
 

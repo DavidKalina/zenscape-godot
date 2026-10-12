@@ -1,5 +1,9 @@
 # The downdraft, round 1
 
+Superseded by round 2, the slam (docs/design/slam/round2.md): the move
+now takes its power from height and spends no charge. This page is the
+round-1 record.
+
 The updraft's opposite, in the pilot's own wind. In the air, with crouch
 held, spending the flow charge drives a burst of wind straight down
 beneath him. He's slammed down, lands heavily and slides out of it. A ring

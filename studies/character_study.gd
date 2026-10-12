@@ -33,8 +33,9 @@ extends Node3D
 ## Space kicks off it. Space in the air with room under him (off an edge,
 ## knocked away) pops out the pocket sail (scripts/pocket_sail.gd, drawn by
 ## scripts/pocket_sail_figure.gd), Space again folds it; crouch floats it.
-## Q or pad RB spends the flow charge: the updraft (scripts/updraft.gd);
-## in the air with crouch held, the downdraft (scripts/downdraft.gd).
+## Q or pad RB spends the flow charge: the updraft (scripts/updraft.gd).
+## Crouch pressed fresh in the air, a couple of metres up or more, is the
+## slam (scripts/slam.gd): his height cashed in as impact.
 ## Right mouse or pad LB, held on the ground, raises the telescope
 ## (scripts/telescope.gd): the view from his eyes, zoomed with the wheel or
 ## the triggers, while he stands or shuffles.
@@ -444,13 +445,14 @@ var _holes: Array[Rect2] = []
 ## On unless `--no-updraft`.
 const Updraft = preload("res://scripts/updraft.gd")
 var updraft: Node3D
-## The downdraft (scripts/downdraft.gd, docs/design/downdraft/round1.md):
-## crouch + Q (pad RB) in the air spends the same charge driving him down.
-## With the updraft, unless `--no-downdraft`.
-const Downdraft = preload("res://scripts/downdraft.gd")
-var downdraft: Node3D
-## The dust thrown round on a downdraft's touch: puffs, out from his feet.
-const DOWNDRAFT_DUST := 7
+## The slam (scripts/slam.gd, docs/design/slam/round2.md): crouch pressed
+## fresh in the air with height under him drives him down, the height cashed
+## in as impact. Spends nothing. On unless `--no-slam`.
+const Slam = preload("res://scripts/slam.gd")
+var slam: Node3D
+## The dust thrown round on a slam's touch: puffs, out from his feet, the
+## weakest hit's and the full one's.
+const SLAM_DUST := Vector2i(5,12)
 
 ## The telescope (scripts/telescope.gd, docs/design/telescope/round2.md):
 ## held (right mouse, pad LB) on foot on the ground, it comes up to his
@@ -473,10 +475,9 @@ func _ready() -> void:
 	if not preload("res://scripts/launch_args.gd").user_args().has("--no-updraft") and updraft == null:
 		updraft = Updraft.new()
 		updraft.setup(self)
-		if not preload("res://scripts/launch_args.gd").user_args().has("--no-downdraft"):
-			downdraft = Downdraft.new()
-			downdraft.setup(self)
-			updraft.downdraft = downdraft
+	if not preload("res://scripts/launch_args.gd").user_args().has("--no-slam") and slam == null:
+		slam = Slam.new()
+		slam.setup(self)
 	telescope = Telescope.new()
 	telescope.setup(self)
 	# The bodies are in the space after a physics step.
@@ -794,7 +795,7 @@ func resize(s: float) -> void:
 func place(at: Vector3, face: Vector2) -> void:
 	motor.reset(at,PilotMotor.facing_of(face))
 	if updraft != null: updraft.reset()
-	if downdraft != null: downdraft.reset()
+	if slam != null: slam.reset()
 	if telescope != null:
 		telescope.drop()
 		telescope.restore(camera)
@@ -864,12 +865,12 @@ func tick(delta: float) -> void:
 	if updraft != null and not _tuning():
 		updraft.update(delta,motor,(script_wind if scripted else Input.is_action_just_pressed(&"walk_wind")) and not looking,want)
 	script_wind = false
-	if downdraft != null: downdraft.update(delta,motor)
+	if slam != null: slam.update(delta,motor,ground.ground_callable())
 	ground.head(delta)
 	if foot_pieces != null: foot_pieces.before(delta)
 	var was := motor.feet
 	var events := motor.step(delta,want,motor.run,jump,ground.ground_callable(),ground.slide_callable(),ground.ledge_callable())
-	if downdraft != null: events.merge(downdraft.after(events,motor))
+	if slam != null: events.merge(slam.after(events,motor))
 	if foot_pieces != null: foot_pieces.after(delta,events)
 	if _rec != null: _rec.add(delta,want,jump,motor.crouch,motor.twirl,_yaw,_polar,motor,state(),events)
 	if motor.grounded: _last_stood = motor.feet
@@ -894,7 +895,7 @@ func tick(delta: float) -> void:
 	_water_events(events,drawn,delta)
 	_frame(delta)
 	if updraft != null: updraft.apply_feel(camera)
-	if downdraft != null: downdraft.apply_feel(camera)
+	if slam != null: slam.apply_feel(camera)
 	if looking: _telescope_view(delta)
 	_show_hud()
 
@@ -1038,15 +1039,17 @@ func _motor_events(events: Dictionary) -> void:
 		steps.step(_surface(),clampf(hard/8.0,0.3,1.0))
 		body.land(hard)
 		if hard > PUFF_LAND: puffs.burst(_puff_at(figure.global_position),_surface(),(hard-PUFF_LAND)/PUFF_LAND_FULL)
-	if events.has("downdraft_gather"): puffs.swirl(figure.global_position+Vector3.UP*0.9*wanderer_scale,1.0,0.6)
-	if events.has("downdraft"):
-		# The touch: dust thrown out round his feet, the ring's way.
-		var blast: Dictionary = events.downdraft
+	if events.has("slam"):
+		# The touch: dust thrown out round his feet with the shockwave,
+		# more and further the harder.
+		var blast: Dictionary = events.slam
+		var p := float(blast.power)
 		var at := _puff_at(figure.global_position)
 		var turn := randf()*TAU
-		for i in range(DOWNDRAFT_DUST):
-			var way := Vector3.FORWARD.rotated(Vector3.UP,turn+TAU*float(i)/DOWNDRAFT_DUST)
-			puffs.burst(at+way*float(blast.radius)*0.15,_surface(),float(blast.strength),way*(1.5+2.5*float(blast.strength)))
+		var n := roundi(lerpf(float(SLAM_DUST.x),float(SLAM_DUST.y),p))
+		for i in range(n):
+			var way := Vector3.FORWARD.rotated(Vector3.UP,turn+TAU*float(i)/float(n))
+			puffs.burst(at+way*float(blast.radius)*0.15,_surface(),float(blast.strength),way*(1.5+4.0*p)*wanderer_scale)
 
 func _body_events(out: Dictionary, delta: float) -> void:
 	var speed: float = motor.speed()
@@ -1291,7 +1294,7 @@ func _build_ui() -> void:
 
 ## The help line along the bottom.
 func _hint_text() -> String:
-	return "F5 record · F6 replay · F7 older · F8 all paths · WASD run · Space jump (on landing: pump; in a skid: side flip) · Shift/C crouch: at a run slide, + Space long jump (crouch held, Space on landing: chain), on a slope surf · Q with flow: updraft, in the air with crouch held: downdraft · in the air X twirl; out of a slide, steer across to build speed, hop again on the touch · into a wall: slide, Space: kick · along a wall in the air: wall run, Space: kick off · with room under him (off an edge) Space: the sail (again: fold; crouch floats) · 1-9 0 - = [ ] \\ stations · R start · F1 numbers · F2 feel · F3 carve · Esc mouse"
+	return "F5 record · F6 replay · F7 older · F8 all paths · WASD run · Space jump (on landing: pump; in a skid: side flip) · Shift/C crouch: at a run slide, + Space long jump (crouch held, Space on landing: chain), on a slope surf · Q with flow: updraft · in the air, a couple of metres up, Shift/C: slam · in the air X twirl; out of a slide, steer across to build speed, hop again on the touch · into a wall: slide, Space: kick · along a wall in the air: wall run, Space: kick off · with room under him (off an edge) Space: the sail (again: fold; crouch floats) · 1-9 0 - = [ ] \\ stations · R start · F1 numbers · F2 feel · F3 carve · Esc mouse"
 
 func _tuning() -> bool:
 	return (_tune != null and _tune.visible) or (_name_panel != null and _name_panel.visible)
