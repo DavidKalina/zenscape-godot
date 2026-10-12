@@ -147,7 +147,7 @@ const FAR_SIZE := 0.03
 ## ...but never more than FAR_PIXELS pixels across (night light round 1:
 ## at 500 m FAR_SIZE alone made each light a 15 m disc, the ship a blob),
 ## so far off the ship is its dark shape with a few warm points on it.
-const FAR_PIXELS := 7.0
+const FAR_PIXELS := 4.0
 ## The cargo lamp under the keel at night, shining down on the load: its
 ## reach (m), cone (degrees) and energy.
 const CARGO_LAMP := Vector3(34.0,32.0,2.2)

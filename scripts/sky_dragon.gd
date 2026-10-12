@@ -138,7 +138,7 @@ const StoneLampLights = preload("res://scripts/stone_lamp_lights.gd")
 const NIGHT_FADE := 2.5
 const NIGHT_EYE := Vector2(2.2,7.5)
 const NIGHT_SPINES := Vector2(1.6,3.6)
-const NIGHT_MEMBRANE := Vector2(0.42,1.5)
+const NIGHT_MEMBRANE := Vector2(0.42,1.1)
 const NIGHT_MEMBRANE_REACH := 0.3
 const NIGHT_THROAT := Color("ff5a1e")
 const NIGHT_THROAT_ENERGY := Vector2(0.9,3.2)
@@ -554,6 +554,7 @@ func _dress(n: Node) -> void:
 		for i in mi.mesh.get_surface_count():
 			var m := mi.mesh.surface_get_material(i)
 			mi.set_surface_override_material(i,_material(m.resource_name if m != null else ""))
+			if m != null and m.resource_name == "dragon_eye": _find_eyes(mi,i)
 		# Its shadow over the isles: the wings' too (two-sided).
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_DOUBLE_SIDED
 		# The wings reach far from the rest pose's bounds.
@@ -658,6 +659,58 @@ void fragment() {
 	m.resource_name = "dragon_membrane_glow"
 	return m
 
+## The eyes' middles (the eye surface's vertices either side of the
+## midline, in the skeleton's rest frame), held in the head bone's frame
+## for their night halos.
+func _find_eyes(mi: MeshInstance3D, surface: int) -> void:
+	if not _bone.has("head"): return
+	var arrays := mi.mesh.surface_get_arrays(surface)
+	var points: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var sums := [Vector3.ZERO,Vector3.ZERO]
+	var counts := [0,0]
+	for p in points:
+		var k := 0 if p.x < 0.0 else 1
+		sums[k] += p
+		counts[k] += 1
+	var head_rest := skeleton.get_bone_global_rest(_bone["head"]).affine_inverse()
+	for k in range(2):
+		if counts[k] > 0: _eye_points.append(head_rest*(mi.transform*(sums[k]/float(counts[k]))))
+
+## The eyes' halos at night: soft warm glows round each eye (the stone
+## lamps' halo, shaders/stone_lamp_halo.gdshader), NIGHT_EYE_HALO m across
+## at the model's scale 1, at NIGHT_EYE_HALO_STRENGTH.
+const NIGHT_EYE_HALO := 2.6
+const NIGHT_EYE_HALO_STRENGTH := 0.85
+var _eye_points: Array[Vector3] = []
+var _eye_halos: MultiMeshInstance3D = null
+var _eye_halo_material: ShaderMaterial = null
+
+func _place_eye_halos() -> void:
+	if _eye_points.is_empty(): return
+	if _eye_halos == null:
+		_eye_halo_material = ShaderMaterial.new()
+		_eye_halo_material.shader = preload("res://shaders/stone_lamp_halo.gdshader")
+		_eye_halo_material.set_shader_parameter("tint",Color("ffb030"))
+		var quad := QuadMesh.new()
+		quad.size = Vector2.ONE
+		_eye_halos = MultiMeshInstance3D.new()
+		_eye_halos.name = "EyeHalos"
+		_eye_halos.multimesh = MultiMesh.new()
+		_eye_halos.multimesh.transform_format = MultiMesh.TRANSFORM_3D
+		_eye_halos.multimesh.mesh = quad
+		_eye_halos.multimesh.instance_count = _eye_points.size()
+		_eye_halos.material_override = _eye_halo_material
+		_eye_halos.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_eye_halos.top_level = true
+		add_child(_eye_halos)
+	_eye_halos.visible = night > 0.001 and model.visible
+	if not _eye_halos.visible: return
+	_eye_halo_material.set_shader_parameter("glow",night*NIGHT_EYE_HALO_STRENGTH)
+	var head := skeleton.global_transform*skeleton.get_bone_global_pose(_bone["head"])
+	var across := NIGHT_EYE_HALO*size
+	for k in range(_eye_points.size()):
+		_eye_halos.multimesh.set_instance_transform(k,Transform3D(Basis.IDENTITY.scaled(Vector3.ONE*across),head*_eye_points[k]))
+
 ## The night glow, eased in at dusk and out at dawn (NIGHT_*).
 func _night_glow(delta: float) -> void:
 	var goal := StoneLampLights.night_for(_daylight())
@@ -682,6 +735,7 @@ func _night_glow(delta: float) -> void:
 			m.emission_enabled = night > 0.001
 			m.emission = NIGHT_SHEEN
 			m.emission_energy_multiplier = NIGHT_SHEEN_ENERGY*night
+	_place_eye_halos()
 
 func _daylight() -> float:
 	var celestial: Variant = sky_scene.get("_celestial") if sky_scene != null else null

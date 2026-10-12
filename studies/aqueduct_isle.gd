@@ -552,7 +552,7 @@ func night_lamp_spots() -> Array:
 		for side: float in [-1.0,1.0]:
 			var p := parked_at-forward*6.5+right*3.2*side
 			spots.append(Vector2(p.x,p.z))
-	for p: Vector2 in NIGHT_LAMPS: spots.append(p)
+	spots.append_array(NIGHT_LAMPS)
 	return spots
 
 const NIGHT_LAMPS := [
@@ -562,8 +562,9 @@ const NIGHT_LAMPS := [
 	Vector2(92.0,2.5),
 	# The stone circle's way in (Art.HILL 61, 0), on its east side.
 	Vector2(71.5,-5.5),
-	# The aqueduct's head and the heel stone (Art.HEEL 118, 0).
-	Vector2(104.5,2.0),Vector2(115.5,1.8),
+	# The aqueduct's head and the heel stone (Art.HEEL 118, 0); the ray
+	# down starts under the floating stones (Vector3: x, its top, z).
+	Vector3(105.5,34.0,3.5),Vector3(115.5,34.0,1.8),
 	# The gate on the far island (its arch at 100, -62.5), either side.
 	Vector2(96.8,-60.2),Vector2(103.2,-60.2),
 ]

@@ -60,6 +60,7 @@ func run() -> void:
 			camera.look_at_from_position(aim.eye,aim.at)
 			await process_frame
 		await RenderingServer.frame_post_draw
+		if shot.begins_with("airship"): _say_airships()
 		var path := "%s_%s.png" % [out,shot]
 		root.get_texture().get_image().save_png(path)
 		print("capture_night_light: saved %s eye=%s at=%s" % [path,aim.eye,aim.at])
@@ -98,7 +99,7 @@ func _aim(shot: String) -> Dictionary:
 			var foot := p+side*9.0
 			foot.y = _ground(foot)+1.7
 			return {"eye":foot,"at":p+Vector3.UP*1.2}
-		"airship":
+		"airship","airship_bare","airship_near":
 			var sky: Node = game.get("sky")
 			if sky == null or sky.get("airships") == null or (sky.airships as Array).is_empty(): return {}
 			var ship: Node3D = sky.airships[0].ship
@@ -106,7 +107,10 @@ func _aim(shot: String) -> Dictionary:
 			var from := (Vector3(circle.x,at.y,circle.z)-at)
 			from.y = 0.0
 			from = from.normalized() if from.length() > 1.0 else Vector3.FORWARD
-			return {"eye":at+from*520.0+Vector3.UP*30.0,"at":at}
+			# airship_bare: its halos hidden, to tell them from the rest.
+			(ship.get("_halos") as Node3D).visible = shot != "airship_bare"
+			var far := 90.0 if shot == "airship_near" else 520.0
+			return {"eye":at+from*far+Vector3.UP*far*0.06,"at":at+Vector3.UP*4.0}
 		"rune":
 			# A carving of the night lights' (one on the stone circle if any).
 			var lights: Node = game.get("night_lights")
@@ -135,6 +139,18 @@ func _aim(shot: String) -> Dictionary:
 			var side := fwd.cross(Vector3.UP).normalized()
 			return {"eye":head+side*22.0+fwd*8.0+Vector3.UP*6.0,"at":head-fwd*12.0}
 	return {}
+
+## Where each airship (and the lodestone's shard) is on screen, and how far.
+func _say_airships() -> void:
+	var size := root.get_visible_rect().size
+	var things := {}
+	for a: Dictionary in game.sky.airships: things[str(a.ship.name)] = (a.ship._ship as Node3D).global_position
+	if game.get("shard") != null: things["shard"] = (game.shard as Node3D).global_position
+	for key: String in things:
+		var p: Vector3 = things[key]
+		if camera.is_position_behind(p): continue
+		var s := camera.unproject_position(p)/size
+		print("capture_night_light: %s on screen at (%.2f, %.2f), %.0f m" % [key,s.x,s.y,camera.global_position.distance_to(p)])
 
 ## The middle of a node's visible bounds (the dragon's body), else its origin.
 func _middle(node: Node3D) -> Vector3:

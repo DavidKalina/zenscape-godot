@@ -273,8 +273,9 @@ func _lay_lamps(space: PhysicsDirectSpaceState3D) -> void:
 	var ray := PhysicsRayQueryParameters3D.new()
 	var spots: Array = _spots.call() if _spots is Callable else _spots
 	for spot in spots:
+		# A Vector3 spot gives the ray's top too (under an overhang).
 		var xz: Vector2 = spot if spot is Vector2 else Vector2((spot as Vector3).x,(spot as Vector3).z)
-		ray.from = Vector3(xz.x,200.0,xz.y)
+		ray.from = Vector3(xz.x,200.0 if spot is Vector2 else (spot as Vector3).y,xz.y)
 		ray.to = Vector3(xz.x,-60.0,xz.y)
 		var hit := space.intersect_ray(ray)
 		if hit.is_empty(): continue

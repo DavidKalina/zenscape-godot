@@ -29,7 +29,7 @@ void vertex() {
 	float d = length(to_eye);
 	float floor_size = d * far_size;
 	if (far_pixels > 0.0) {
-		float pixel = 2.0 * d / max(PROJECTION_MATRIX[1][1] * VIEWPORT_SIZE.y, 1.0);
+		float pixel = 2.0 * d / max(abs(PROJECTION_MATRIX[1][1]) * VIEWPORT_SIZE.y, 1.0);
 		floor_size = min(floor_size, pixel * far_pixels);
 	}
 	float size = max(s, floor_size);
