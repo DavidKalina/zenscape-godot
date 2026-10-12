@@ -65,17 +65,68 @@ down; the pilot alone on the other end cannot lift it. Three lanes
 A load momentum: v = min(launch x blow pace x arm share, load_cap x cap) x
 2 pilot/(pilot + load), so the heavy block goes at half the speed a pilot-weight
 one would; a slam (20+ m/s) saturates, a jump landing (6 to 8) does not. A
-blow spins the slab at most 1.2 rad/s (`SPIN_KICK`); a flung load passes
-through the slab until it comes down on it (the swinging deck otherwise
-shoves it, and Jolt friction ate its sideways speed), and its impulse is
-applied a step after the blow for the same reason.
+blow spins the slab at most 1.2 rad/s (`SPIN_KICK`), so its rising tip stays
+slower than a slam's throw (round 2c below).
 
 Windowed: `godot --path . res://studies/trap_yard.tscn -- --no-title --trap=seesaw_slam`
 (or `seesaw_drop`, `seesaw_dropper`).
 
-Run test: `godot --headless --path . --script tests/test_trap_seesaw.gd` (about 70 s: it
-covers the original blows, a heavy block holding its end, slam against plain
-landing, the plate drop onto the ledge, and the timed throw off the span).
+Run test: `godot --headless --path . --script tests/test_trap_seesaw.gd` (about 60 s,
+`## suite: slow`: it covers the original blows, a heavy block holding its end,
+slam against plain landing, the plate drop onto the ledge, the timed throw off
+the span, and round 2c's blocks on the yard's own loop).
+
+## Round 2c: blocks fell through the slab (branch `fix/seesaw-blocks`, 2026-10-12)
+
+Played windowed, the blocks fell through the seesaw instead of sliding or
+launching. Reproduced headless on the yard's own loop (study `_process`,
+physics on its own clock, not the test's scripted tick): one plain landing on
+the slam lane's raised near end and the 240 kg block sank through the slab
+and came to rest on the floor a layer down (y -5.6), every time.
+
+Root cause: the round 2b throw added a collision exception between the load
+and the slab (`add_collision_exception_with`) at every blow, to be removed
+only once the load came back down within 0.3 m above the deck or after 2 s.
+A plain landing throws the heavy block only ~2 m/s, while the blow swings
+its end of the slab up into it: the block sat below the deck top, the
+exception never lifted, and it fell through. Under it, the slab was a
+StaticBody3D teleported each frame from `before` (the frame's `_process`),
+so Jolt saw no deck velocity; the exception and the one-step-late impulse
+(`_pending`) were patches over that.
+
+What changed (scripts/traps/trap_seesaw.gd, trap_seesaw_slam.gd):
+
+- The slab is an AnimatableBody3D. Its tilt (balance of moments, spring,
+  stops) is stepped and posed in `_physics_process`, once per physics step,
+  so Jolt moves it kinematically and loads resting on it get the deck's
+  contact velocity, at any frame rate (checked at 60 and 20 fps).
+- The pilot is carried in `before` by how far the slab moved since his last
+  frame (`_carried`), slide as before; `on_slab` is exact in the slab's own
+  frame (as posed when he last stepped).
+- A throw is one impulse on the load at the blow. No collision exception, no
+  pending impulse, no `_free` tracking. `SPIN_KICK` stays (1.2 rad/s), now
+  for a stated reason: the deck's rising tip (3.6 m/s at most) is slower than
+  a slam's throw, so the throw sends the load and the deck never shoves it;
+  a plain landing just lifts it with the deck. At a stop the slab stops
+  (spin pushing past the stop is spent).
+- Blocks have continuous collision on; slab and blocks share a friction,
+  the new knob `grip`.
+- The slam lane's block is set square on the tilted deck (it was set level,
+  on one edge).
+
+| knob (new) | default | meaning |
+|---|---|---|
+| grip | 0.5 | friction of slab and blocks; a block slides down a tilt steeper than atan(grip). The yard's full tilt is 14 deg (tan 0.25), so 0.5 holds; under 0.25 they slide |
+
+`block_arm` stays 0.5: a layout fact, not a physics patch (the slab's low end
+dips 0.7 m below the end deck's top, and a block at the very tip would be
+thrown into the deck's face).
+
+Headless numbers (yard's loop): at rest the block holds its end 4 s without
+moving; a plain landing lifts it 0.37 m with the deck and it stays on; a slam
+from 5 m throws it up 2.1 m and 5.4 m along, landing on the far deck; with
+`grip` 0.1 it slides down and off the low end; a dropped block launches the
+pilot (vy 18) onto the ledge and stays on the slab.
 
 ## Unverified
 
@@ -83,9 +134,13 @@ landing, the plate drop onto the ledge, and the timed throw off the span).
   from a jump onto the 0.7 m raised near end, the block's flight length, the
   catapult arc landing on the ledge with real air steering, the dropper's
   timing). Headless test uses `motor.slam` and scripted placement.
-- The block interacts with the yard's end deck only by its edge: it was flung
-  into the deck wall until `block_arm` came inboard (the low end dips below
-  the deck top). Flung loads landing on things or knocking them: no pins built.
+- Round 2c windowed: the fall-through was reproduced and fixed headless on
+  the yard's own loop at 60 and 20 fps; not replayed windowed. Whether blocks
+  should slide at the yard's 14 deg (`grip` under 0.25) is a feel call: at
+  the default they hold, as the slam lane needs (a sliding block ends against
+  the end deck's face, which would eat its throw).
+- The block interacts with the yard's end deck only by its edge (the low end
+  dips below the deck top). Flung loads knocking other things: no pins built.
 - Glow/click/thunk are placeholders; not rendered.
 
 - Feel: tip_time, bounce, slide, launch strength, how the tilted ends meet the

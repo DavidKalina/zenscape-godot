@@ -24,7 +24,9 @@ extends "res://scripts/traps/trap.gd"
 ## to the longer side), `max_tilt` (rad), `tip_time` (s the tilt takes: its
 ## inertia), `bounce` (damping ratio; under 1 it overshoots), `slide`
 ## (m/s down the tilt), `launch` (x fall pace), `hard` (m/s fall that
-## counts), `creak_gap` (s between creaks).
+## counts), `creak_gap` (s between creaks), `grip` (friction of the slab and
+## its blocks: 0.5 holds a block at full tilt, under tan(max_tilt) = 0.25 it
+## slides down the tilt).
 ##
 ## Weight (round 2b): the tilt is a balance of moments, the pilot's
 ## `pilot_mass` x his arm plus each load's mass x its arm over the slab
@@ -37,19 +39,31 @@ extends "res://scripts/traps/trap.gd"
 ## outside (z), `veer` x that sideways (+x). `cap_mul` scales the pilot's
 ## own launch cap (a heavy drop kicks harder than a jump).
 ## `drop_hit(block, fall)` is a falling block's blow, momentum-scaled.
+##
+## Physics (the fix of 2026-10-12, traps-round2-seesaw.md "Blocks fell
+## through"): the slab is an AnimatableBody3D, its tilt stepped and posed in
+## `_physics_process`, once per physics step, so Jolt moves it kinematically
+## and what rests on it gets the deck's real contact velocity. The pilot (a
+## kinematic motor stepped per frame in `before`) is carried by how far the
+## slab moved since his last frame. A throw is an impulse on the load at the
+## blow; the load is never excused from colliding with the slab. Blocks are
+## RigidBody3Ds with continuous collision, gripping the slab with `grip`
+## (friction: they slide down a tilt steeper than atan(grip)).
 const THICK := 0.4
 const STONE := Color(0.42,0.41,0.4)
 const STUMP := Color(0.5,0.47,0.42)
 ## The share of a jump height the raised end may rise.
 const RISE_OF_JUMP := 0.9
 const SPAN_OF_WALK := 2.5
-## Most a blow spins the slab (rad/s): a slam must not whip it past its stops.
+## Most a blow spins the slab (rad/s): its rising tip (x half the length, 3.6
+## m/s on 6 m) stays slower than a slam's throw, so the throw, not the
+## deck's shove, sends a load, and a plain landing only nudges it.
 const SPIN_KICK := 1.2
 
 ## Tilt about the cross axis: positive raises the far (-z) end.
 var tilt := 0.0
 var spin := 0.0
-var body: StaticBody3D
+var body: AnimatableBody3D
 var stump: MeshInstance3D
 var stump_mat: StandardMaterial3D
 ## RigidBody3Ds resting on it that a launch can fling.
@@ -61,10 +75,8 @@ var _riding := false
 var _creak_t := 0.0
 ## Loads' (RigidBody3D) glow materials, by instance id.
 var _glow: Dictionary = {}
-## Loads just flung, passing through the slab until they come down on it: rb -> s.
-var _free: Dictionary = {}
-## Impulses waiting a step for the slab to let go: [rb, impulse].
-var _pending: Array = []
+## The slab's pose the pilot was last carried from (local to the trap).
+var _carried := Transform3D.IDENTITY
 
 func _init() -> void:
 	super()
@@ -82,6 +94,7 @@ func defaults() -> Dictionary:
 		"max_tilt":asin(clampf(rise/(span*0.5),0.0,0.9)),"tip_time":0.8,"bounce":0.55,
 		"slide":p.run*0.5,"launch":1.1,"hard":sqrt(2.0*p.gravity*p.jumps[0]*0.5),"creak_gap":0.45,
 		"pilot_mass":80.0,"load_cap":2.2,"cap_mul":1.0,"along":0.3,"load_along":1.6,"shove":sqrt(2.0*p.gravity*p.jumps[0]),"veer":0.0,
+		"grip":0.5,
 	}
 
 func length() -> float:
@@ -97,7 +110,13 @@ func pivot_z() -> float:
 
 func build() -> void:
 	var wide := float(knob("width"))
-	body = StaticBody3D.new()
+	body = AnimatableBody3D.new()
+	# Posed in _physics_process; Jolt moves it kinematically from there.
+	body.sync_to_physics = false
+	var pm := PhysicsMaterial.new()
+	pm.friction = float(knob("grip"))
+	pm.bounce = 0.0
+	body.physics_material_override = pm
 	add_child(body)
 	var shape := CollisionShape3D.new()
 	var box := BoxShape3D.new()
@@ -126,6 +145,7 @@ func build() -> void:
 	add_child(stump)
 	tilt = rest_tilt()
 	_pose()
+	_carried = body.transform
 
 ## Tipped to the longer side when the pivot is off centre.
 func rest_tilt() -> float:
@@ -138,24 +158,43 @@ func arm_of(local: Vector3) -> float:
 func _surface_y(local_z: float) -> float:
 	return (local_z-pivot_z())*-tan(tilt)
 
-## Is `feet` (world) on the slab?
-func on_slab(feet: Vector3) -> bool:
-	var l := to_local(feet)
-	return absf(l.x) <= float(knob("width"))*0.5 and l.z <= 0.0 and l.z >= -length() and absf(l.y-_surface_y(l.z)) < 0.35
+## Is `feet` (world) on the slab (as it stands, or as posed at `pose`, local)?
+func on_slab(feet: Vector3, pose: Variant = null) -> bool:
+	if body == null: return false
+	var l: Vector3 = ((pose if pose != null else body.transform) as Transform3D).affine_inverse()*to_local(feet)
+	return absf(l.x) <= float(knob("width"))*0.5 and l.z <= 0.0 and l.z >= -length() and absf(l.y) < 0.35
 
 ## The end that is up: +1 far, -1 near, 0 level.
 func high_end() -> int:
 	return 0 if absf(tilt) < 0.02 else (1 if tilt > 0.0 else -1)
 
+## The pilot's frame: is he on the slab (his weight counts from the next
+## physics step), and carried by how far the slab moved since his last frame
+## and slid down its tilt.
 func before(delta: float) -> void:
 	if body == null or delta <= 0.0: return
-	_riding = motor != null and motor.rider == null and not motor.swimming and (motor.grounded or motor.on_ledge()) and on_slab(motor.feet)
+	# Where he stood when he last stepped: on the slab as it was then.
+	_riding = motor != null and motor.rider == null and not motor.swimming and (motor.grounded or motor.on_ledge()) and on_slab(motor.feet,_carried)
+	if _riding:
+		_rider_arm = arm_of(to_local(motor.feet))
+		var moved := global_transform*(body.transform*_carried.affine_inverse())*global_transform.affine_inverse()
+		motor.carry(moved,0.0)
+		# Down the tilt, toward the low end.
+		var down := global_transform.basis*Vector3(0.0,0.0,1.0)*(float(knob("slide"))*sin(tilt)*delta)
+		motor.carry(Transform3D(Basis.IDENTITY,down),0.0)
+	_carried = body.transform
+	_prime_glow()
+
+## The slab, once per physics step: the balance of moments sets the tilt it
+## chases, the spring moves it there, and the body is posed so Jolt moves it
+## (kinematically: what rests on it rides it).
+func _physics_process(delta: float) -> void:
+	if body == null or delta <= 0.0: return
 	var half := length()*0.5
 	var target := rest_tilt()
 	var moment := 0.0
 	var weighed := false
 	if _riding:
-		_rider_arm = arm_of(to_local(motor.feet))
 		moment += float(knob("pilot_mass"))*_rider_arm
 		weighed = true
 	for r: Variant in loads:
@@ -167,20 +206,14 @@ func before(delta: float) -> void:
 		target = -clampf(moment/(float(knob("pilot_mass"))*half),-1.0,1.0)*float(knob("max_tilt"))
 	var w := 2.2/maxf(float(knob("tip_time")),0.05)
 	var zeta := float(knob("bounce"))
-	var was := _transform()
 	spin += (w*w*(target-tilt)-2.0*zeta*w*spin)*delta
 	var cap := float(knob("max_tilt"))*1.15
-	tilt = clampf(tilt+spin*delta,-cap,cap)
+	var next := tilt+spin*delta
+	tilt = clampf(next,-cap,cap)
+	# At a stop the slab stops (a spin pushing past it is spent).
+	if tilt != next: spin = 0.0
 	_pose()
-	if _riding:
-		var moved := global_transform*(_transform()*was.affine_inverse())*global_transform.affine_inverse()
-		motor.carry(moved,0.0)
-		# Down the tilt, toward the low end.
-		var down := global_transform.basis*Vector3(0.0,0.0,1.0)*(float(knob("slide"))*sin(tilt)*delta)
-		motor.carry(Transform3D(Basis.IDENTITY,down),0.0)
-	_land_flung(delta)
 	_creak(delta)
-	_prime_glow()
 	tell_sight(clampf(absf(spin)/maxf(float(knob("max_tilt"))*w*0.4,0.01),0.0,1.0))
 
 func after(_delta: float, events: Dictionary) -> void:
@@ -255,10 +288,9 @@ func impact(arm: float, speed: float) -> void:
 			# Up and along its own end's outside, lighter flies faster.
 			var v := minf(pull,_launch_cap()*float(knob("load_cap")))*2.0*mp/(mp+rb.mass)
 			var dir := global_transform.basis*Vector3(float(knob("veer")),0.0,side)
-			# It leaves the slab clean: no shove from the swinging deck until it comes back down.
-			rb.add_collision_exception_with(body)
-			_free[rb] = 0.0
-			_pending.append([rb,(Vector3(0.0,v,0.0)+dir*(maxf(v-float(knob("shove")),0.0)*float(knob("load_along"))))*rb.mass])
+			# Thrown now: the deck under it rises slower than this (SPIN_KICK).
+			rb.sleeping = false
+			rb.apply_central_impulse((Vector3(0.0,v,0.0)+dir*(maxf(v-float(knob("shove")),0.0)*float(knob("load_along"))))*rb.mass)
 
 ## A heavy greybox block (RigidBody3D) of `mass`, `side` m a side, falling
 ## and flung at the pilot's own gravity; its glow material is its mesh's.
@@ -269,8 +301,10 @@ func make_block(mass: float, side: float, colour: Color) -> RigidBody3D:
 	rb.set_meta("half",side*0.5)
 	rb.contact_monitor = true
 	rb.max_contacts_reported = 6
+	# A flung block crosses its own size in a step or two: no tunnelling.
+	rb.continuous_cd = true
 	var pm := PhysicsMaterial.new()
-	pm.friction = 1.0
+	pm.friction = float(knob("grip"))
 	pm.bounce = 0.0
 	rb.physics_material_override = pm
 	var cs := CollisionShape3D.new()
@@ -297,19 +331,6 @@ func _transform() -> Transform3D:
 func _pose() -> void:
 	body.transform = _transform()
 
-func _land_flung(delta: float) -> void:
-	for p: Array in _pending: (p[0] as RigidBody3D).apply_central_impulse(p[1])
-	_pending.clear()
-	for r: Variant in _free.keys():
-		var rb := r as RigidBody3D
-		_free[r] = float(_free[r])+delta
-		var l := to_local(rb.global_position)
-		var clear := l.y-_surface_y(l.z)-float(rb.get_meta("half",0.5))
-		var over := absf(l.x) <= float(knob("width"))*0.5+0.3 and l.z <= 0.0 and l.z >= -length()
-		if float(_free[r]) > 0.1 and ((rb.linear_velocity.y <= 0.0 and clear < 0.3 and clear > 0.0) or not over or float(_free[r]) > 2.0):
-			rb.remove_collision_exception_with(body)
-			_free.erase(r)
-
 func _creak(delta: float) -> void:
 	_creak_t -= delta
 	if absf(spin) > 0.25 and _creak_t <= 0.0:
@@ -325,10 +346,12 @@ func reset() -> void:
 	launches = 0
 	for m: Variant in _glow: (m as StandardMaterial3D).albedo_color = _glow[m]
 	_glow.clear()
-	for r: Variant in _free:
-		(r as RigidBody3D).remove_collision_exception_with(body)
-	_free.clear()
-	_pending.clear()
 	_creak_t = 0.0
 	tilt = rest_tilt()
-	if body != null: _pose()
+	teleport()
+
+## The slab set to `tilt` at once (a reset, not a swing).
+func teleport() -> void:
+	if body == null: return
+	_pose()
+	_carried = body.transform

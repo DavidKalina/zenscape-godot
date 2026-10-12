@@ -1,4 +1,5 @@
 extends SceneTree
+## suite: slow
 ## Seesaw Slab (scripts/traps/trap_seesaw.gd) in the trap yard, headless:
 ##   - stood on the near end, the slab tips toward him (far end rises) and
 ##     he is carried with it;
@@ -10,6 +11,12 @@ extends SceneTree
 ##     the pilot's plain weight; a block dropped on the high end launches a
 ##     pilot on the low end (to the ledge on the catapult lane, off the span
 ##     on the timed one).
+##   - the blocks on the yard's own loop (the study's _process, physics on its
+##     own clock, as in play; 2026-10-12 they fell through the slab there):
+##     a block rests on its end for seconds, rides a plain landing without
+##     sinking into the slab, flies clear off a slam and lands on the far deck,
+##     slides down (and off) a slab tilted past its grip, and a dropped block
+##     launches the pilot.
 ##   godot --headless --path . --script tests/test_trap_seesaw.gd
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const Trap = preload("res://scripts/traps/trap.gd")
@@ -31,13 +38,30 @@ func _tick(n: int) -> void:
 		study.tick(DT)
 		await physics_frame
 
+## `n` frames of the yard's own loop: the study ticks in _process, physics
+## steps on its own clock (`watch`, if given, is called each frame).
+func _play(n: int, watch: Callable = Callable()) -> void:
+	study.scripted = false
+	for i in range(n):
+		await process_frame
+		if watch.is_valid(): watch.call()
+	study.scripted = true
+
+## How far the block's underside is above the slab's top where it is, and
+## whether it is over the slab (local x and z inside its span).
+func _clear(t: Node3D, b: RigidBody3D) -> Array:
+	var l: Vector3 = (t.body.transform as Transform3D).affine_inverse()*t.to_local(b.global_position)
+	var half: float = b.get_meta("half",0.5)
+	var over: bool = absf(l.x) <= float(t.knob("width"))*0.5 and l.z <= 0.0 and l.z >= -t.length()
+	return [l.y-half,over]
+
 func _put(z: float, up := 0.0, t: Node3D = null) -> void:
 	var at: Vector3 = (t if t != null else trap).to_global(Vector3(0.0,up,z))
 	study.place(at,Vector2(0.0,-1.0))
 	study.script_want = Vector2.ZERO
 
 func run() -> void:
-	create_timer(120.0).timeout.connect(func() -> void: push_error("trap seesaw test timed out"); quit(2))
+	create_timer(240.0).timeout.connect(func() -> void: push_error("trap seesaw test timed out"); quit(2))
 	study = load("res://studies/trap_yard.tscn").instantiate()
 	study.scripted = true
 	root.add_child(study)
@@ -87,6 +111,7 @@ func run() -> void:
 	await _tick(2)
 	check(not m.grounded and m.velocity.y > 1.0,"...and the pilot on the low end (vy %.1f)" % m.velocity.y)
 	await _round_2b()
+	await _real_loop()
 	print("trap seesaw: %d failure(s)" % failures)
 	quit(1 if failures > 0 else 0)
 
@@ -169,3 +194,66 @@ func _round_2b() -> void:
 		thrown = maxf(thrown,absf(m.feet.x-tm.to_global(Vector3.ZERO).x))
 		drops = maxi(drops,tm.drops)
 	check(drops >= 1 and thrown > float(tm.knob("width"))*0.5+1.5,"The timed drop throws the pilot off the span (%.1f m sideways, %d drop(s))" % [thrown,drops])
+
+## The blocks on the yard's own loop, as in play.
+func _real_loop() -> void:
+	var sl: Node3D = study.traps.named("seesaw_slam")
+	var b: RigidBody3D = sl.block
+	# At rest, the pilot elsewhere: the block stays on its end.
+	_put(8.0,0.0,sl)
+	var rest: Vector3 = b.global_position
+	var low := [INF]
+	await _play(240,func() -> void: low[0] = minf(low[0],_clear(sl,b)[0]))
+	check(low[0] > -0.06 and b.global_position.distance_to(rest) < 0.1,"Real loop: the block rests on its end for 4 s (lowest %.2f m over the top, moved %.2f m)" % [low[0],b.global_position.distance_to(rest)])
+	# A plain landing on the high end: the block rides the slab, never into it.
+	_put(-0.8,1.2,sl)
+	low[0] = INF
+	await _play(180,func() -> void: low[0] = minf(low[0],_clear(sl,b)[0]))
+	var c: Array = _clear(sl,b)
+	check(sl.launches >= 1 and low[0] > -0.1 and c[1] and absf(c[0]) < 0.1,"Real loop: after a plain landing the block is still on the slab (lowest %.2f, now %.2f over the top)" % [low[0],c[0]])
+	# A slam: flung clear, never below the slab's top while over it, and down on the far deck.
+	_put(8.0,0.0,sl)
+	await _play(30)
+	_put(-0.8,5.0,sl)
+	await _play(2)
+	m.slam(27.0,20.0)
+	var start: Vector3 = b.global_position
+	var launches: int = sl.launches
+	low[0] = INF
+	var top := [0.0]
+	await _play(240,func() -> void:
+		var cl: Array = _clear(sl,b)
+		if cl[1]: low[0] = minf(low[0],cl[0])
+		top[0] = maxf(top[0],b.global_position.y-start.y))
+	var deck_top: float = sl.to_global(Vector3.ZERO).y
+	var far_z: float = sl.to_local(b.global_position).z
+	check(sl.launches > launches and top[0] > 1.0 and low[0] > -0.1,"Real loop: a slam flings the block clear (rose %.2f m, lowest %.2f over the slab)" % [top[0],low[0]])
+	check(far_z < -sl.length() and absf(b.global_position.y-(deck_top+float(b.get_meta("half")))) < 0.1 and b.linear_velocity.length() < 0.3,"...and it comes to rest on the far deck (z %.2f past the slab's %.2f, y %.2f)" % [far_z,-sl.length(),b.global_position.y])
+	# Tilted past its grip, a block slides down the slab and off its low end.
+	var slick: Node3D = (load("res://scripts/traps/trap_seesaw_slam.gd") as GDScript).new()
+	slick.configure({"grip":0.1,"block_arm":0.2})
+	slick.position = Vector3(-60.0,0.0,0.0)
+	study.traps.add(slick)
+	var sb: RigidBody3D = slick.block
+	var z0: float = slick.to_local(sb.global_position).z
+	low[0] = INF
+	var off := [false]
+	await _play(240,func() -> void:
+		var cl: Array = _clear(slick,sb)
+		if cl[1]: low[0] = minf(low[0],cl[0])
+		elif slick.to_local(sb.global_position).z < -slick.length(): off[0] = true)
+	check(off[0] and low[0] > -0.1 and sb.global_position.y < slick.to_global(Vector3.ZERO).y-2.0,"Real loop: grip 0.1 under the tilt's %.2f, the block slides down and off the low end (from z %.2f; lowest %.2f over the top)" % [tan(float(slick.knob("max_tilt"))),z0,low[0]])
+	# A block dropped on the high end launches the pilot on the plate.
+	var dr: Node3D = study.traps.named("seesaw_drop")
+	_put(dr.launch_z()+1.0,0.5,dr)
+	var vy := [0.0]
+	var blow := [INF]
+	await _play(420,func() -> void:
+		vy[0] = maxf(vy[0],m.velocity.y)
+		var cl: Array = _clear(dr,dr.block)
+		if dr.released and cl[1]: blow[0] = minf(blow[0],cl[0]))
+	var ledge_y: float = dr.to_global(Vector3(0.0,dr.ledge_top(),0.0)).y
+	# A 12 m/s landing sinks a few cm for a step (and the slab's pose is read
+	# a step ahead of the block's); through the slab would be its own size.
+	check(dr.drops >= 1 and vy[0] > 8.0 and blow[0] > -0.15,"Real loop: the dropped block launches the pilot (vy %.1f) and lands on the slab (lowest %.2f over the top)" % [vy[0],blow[0]])
+	check(m.grounded and absf(m.feet.y-ledge_y) < 0.3,"...he comes down on the high ledge (feet y %.2f, ledge %.2f)" % [m.feet.y,ledge_y])
