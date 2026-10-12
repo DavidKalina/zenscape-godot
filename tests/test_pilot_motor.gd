@@ -7,7 +7,7 @@ extends SceneTree
 ## flip); a press just before landing is kept, one
 ## just after a ledge still jumps; a ledge drops it, a wall in the air stops
 ## it; Space again in the air opens the pocket sail with room under him
-## (off the ledge), over flat ground or near it falling it does not
+## (off the ledge), just off flat ground or near it falling it does not
 ## (tests/test_pocket_sail.gd holds the sail's own). The drawn pilot follows it through every state without its pose
 ## going wrong.
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
@@ -98,13 +98,14 @@ func _initialize() -> void:
 	m.reset(Vector3(0.0,0.0,-9.8),PilotMotor.facing_of(Vector2(0.0,-1.0)),PilotMotor.RUN)
 	for i in range(30): m.step(DT,Vector2(0.0,-1.0),PilotMotor.RUN,false,ground,slide)
 	check(m.feet.z >= -10.01 and m.feet.y < 0.01,"And on the ground (%.2f)" % m.feet.z)
-	# The sail: Space again on the way up over flat ground, nothing (no
-	# room); jumped off the ledge (2 m down past x 10), it opens.
+	# The sail: Space again just off flat ground on the way up, nothing
+	# (too close: a plain jump's top has the room); jumped off the ledge
+	# (2 m down past x 10), it opens.
 	_settle(m)
 	m.step(DT,Vector2.ZERO,PilotMotor.RUN,true,ground,slide)
 	m.step(DT,Vector2.ZERO,PilotMotor.RUN,false,ground,slide)
 	var low := m.step(DT,Vector2.ZERO,PilotMotor.RUN,true,ground,slide)
-	check(not low.has("sail") and not low.has("fly"),"Space again in a jump over flat ground: no sail, and never a flight")
+	check(not low.has("sail") and not low.has("fly"),"Space again just off flat ground in a jump: no sail, and never a flight")
 	m.reset(Vector3(9.5,0.0,0.0),PilotMotor.facing_of(Vector2(1.0,0.0)),PilotMotor.RUN)
 	m.step(DT,Vector2(1.0,0.0),PilotMotor.RUN,false,ground,slide)
 	m.step(DT,Vector2(1.0,0.0),PilotMotor.RUN,true,ground,slide)

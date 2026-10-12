@@ -131,8 +131,9 @@ extends RefCounted
 ## height.
 ##
 ## The pocket sail (scripts/pocket_sail.gd, `sail`): Jump pressed again in
-## the air with room under him (`can_open`: off an edge, knocked away; never
-## from a jump over flat ground), with no wall at hand, pops it out overhead (move "sail"), kicked up a little
+## the air with room under him (`can_open`: from any ordinary jump, off an
+## edge, knocked away; not just off the ground, nor so close over it
+## falling that the press is the jump buffered for the touch), with no wall at hand, pops it out overhead (move "sail"), kicked up a little
 ## the first time an airtime; pressed again it folds and he falls. Open, it
 ## glides him on slowly down, turned towards the stick, crouch braking it
 ## to a float; the air (`air`: the feet's point, giving {wind, thermal})

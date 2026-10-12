@@ -88,13 +88,18 @@ const THERMAL_TAKE := 6.0
 const RIDING := 0.3
 ## Seconds after folding before it opens again; the least room under the
 ## feet it opens with (m), plus the fall's speed for this many seconds. So
-## it never opens over flat ground from a jump (the pump tops out at
-## 1.5 m), nor in a long jump's chain with Jump mashed for the landing (a
-## press that close is the jump buffered for the touch): it is for drops,
-## off edges and knocked away.
+## it opens from any ordinary jump, over flat ground too (Space again near
+## a plain jump's top: it glides a few metres and sets him down; the low
+## height ends it), off edges and knocked away; but a press just off the
+## ground, or falling within the motor's buffer (0.15 s) of the touch, is
+## the jump buffered for it, never the sail (falling at v, the room asked
+## is CLEAR + v*CLEAR_AHEAD, more than the buffer's fall). It used to ask
+## 1.6 m (over the pump's 1.5 m top): never from a jump over flat ground,
+## a frustrating sail off the serpent's back and low ledges
+## (docs/design/serpent-teleports-sail/round1.md).
 const REOPEN := 0.25
-const CLEAR := 1.6
-const CLEAR_AHEAD := 0.2
+const CLEAR := 0.25
+const CLEAR_AHEAD := 0.25
 
 ## The feel, this sail's own: each starts as its constant above; a study may
 ## turn them live.

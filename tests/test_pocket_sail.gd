@@ -9,7 +9,9 @@ extends SceneTree
 ## climbs it over the airtime's peak by more than CEILING; a thermal climbs
 ## it for real (metres in seconds, over the peak), and out of the column it
 ## sinks again; landing packs it
-## and gives the kick back; a press close over the ground is still the
+## and gives the kick back; over flat ground a plain jump (held, tapped,
+## running) with Space again near its top opens it, glides a little and
+## sets him down soft; a press close over the ground is still the
 ## jump buffered for the touch; a knock is a fresh airtime. Nothing asks to
 ## fly. The skydive's sail (scripts/sky_dive.gd) flies the same maths.
 ##   godot --headless --path . --script tests/test_pocket_sail.gd
@@ -39,15 +41,15 @@ func _initialize() -> void:
 	check(glide.ratio > 3.0 and glide.ratio < 4.2,"The sail glides 3 to 4 m on for each metre down (%.2f)" % glide.ratio)
 	check(absf(glide.down-PocketSail.SINK) < 0.1,"Settled, it sinks at SINK (%.2f m/s)" % glide.down)
 	check(not flew,"Nothing in the air asks to fly")
-	# Over flat ground a jump (even the pump) has no room for it, and
-	# Jump mashed through a long jump does nothing but buffer the next.
-	m.reset(Vector3(-20.0,0.0,0.0),0.0)
-	_step(m,figure,flat,Vector2.ZERO,false)
-	var sailed_low := false
-	for k in range(90):
-		var out := _step(m,figure,flat,Vector2.ZERO,k%2 == 0)
-		sailed_low = sailed_low or out.has("sail")
-	check(not sailed_low,"Over flat ground, Jump mashed through jumps never opens it")
+	# Over flat ground any ordinary jump opens it: a plain jump with Space
+	# again near its top (held, and tapped: the tap's release cuts the
+	# jump), standing and running. It glides a little, the low height
+	# ending it soon, and sets him down soft, packed, staying down.
+	for spec: Array in [["held",Vector2.ZERO,true],["tapped",Vector2.ZERO,false],["running",Vector2(1.0,0.0),true]]:
+		var low := _flat_sail(m,figure,spec[1],spec[2])
+		print("MEASURE: a plain jump over flat ground (%s), Space again: opened at %.2f m %s, glided %.2f s and %.2f m on, down at %.2f m/s, stayed down %s" % [spec[0],low.at,str(low.opened),low.air,low.on,low.down,str(low.stayed)])
+		check(low.opened and low.air > 0.3 and low.air < 1.6 and low.on < 9.0,"A plain jump over flat ground (%s), Space again: it opens and glides a little (%.2f s, %.2f m)" % [spec[0],low.air,low.on])
+		check(low.down < PocketSail.SINK+0.6 and low.stayed,"And sets him down soft (%.2f m/s), packed, staying down" % low.down)
 	# The kick: jumped off the cliff's edge, at the jump's top over the drop,
 	# about 0.3 m more, once an airtime.
 	m.reset(Vector3(-0.6,0.0,0.0),PilotMotor.facing_of(Vector2(1.0,0.0)),PilotMotor.RUN)
@@ -235,6 +237,37 @@ func _step(m: RefCounted, figure: Node3D, ground: Callable, want: Vector2, jump:
 	figure.drive(m,DT)
 	flew = flew or out.has("fly")
 	return out
+
+## Over flat ground: a plain jump (Space held to its top, or tapped), Space
+## pressed again near its top, then let be till he is down and a half
+## second on. {opened, at (m over the ground), air (s from the open to the
+## touch), on (m), down (m/s at the touch), stayed (down, packed, after)}.
+func _flat_sail(m: RefCounted, figure: Node3D, want: Vector2, held: bool) -> Dictionary:
+	m.reset(Vector3(-200.0,0.0,0.0),PilotMotor.facing_of(Vector2(1.0,0.0)),PilotMotor.RUN if want != Vector2.ZERO else 0.0)
+	_step(m,figure,flat,want,false)
+	var k := 0
+	_step(m,figure,flat,want,true)
+	while m.velocity.y > 1.0 and k < 60:
+		_step(m,figure,flat,want,held or k < 3)
+		k += 1
+	if held: _step(m,figure,flat,want,false)
+	var at: float = m.feet.y
+	var from: Vector3 = m.feet
+	var opened: bool = _step(m,figure,flat,want,true).get("sail",false)
+	var air := 0.0
+	var down := 99.0
+	for i in range(240):
+		var out := _step(m,figure,flat,want,false)
+		air += DT
+		if out.has("landed"):
+			down = float(out.landed)
+			break
+	var on := Vector2(m.feet.x-from.x,m.feet.z-from.z).length()
+	var stayed: bool = m.grounded and not m.sail.open
+	for i in range(30):
+		var out := _step(m,figure,flat,Vector2.ZERO,false)
+		stayed = stayed and m.grounded and not out.has("sail") and m.move != "sail"
+	return {"opened":opened,"at":at,"air":air,"on":on,"down":down,"stayed":stayed}
 
 ## A tap of Space in the air (pressed, then let go).
 func _press(m: RefCounted, figure: Node3D, want: Vector2, ground := cliff) -> void:

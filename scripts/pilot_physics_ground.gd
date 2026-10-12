@@ -212,13 +212,22 @@ func wall(feet: Vector3, way: Vector2, reach: float) -> Vector2:
 	if absf(normal.y) > 0.35: return Vector2.ZERO
 	return Vector2(normal.x,normal.z).normalized()
 
-## The water's depth over the ground at `p`, 0 out of every pool.
+## The water's depth over the ground at `p`, 0 out of every pool. A pool
+## held up in something (the aqueduct's channel on its deck) is not over
+## him when he is under it: the ground he stands on lies under the pool's
+## own bed (the ground seen from its surface) by more than BED_UNDER m.
+## (Under the aqueduct's arches the channel overhead read as 10 m of water
+## over the turf: he floated up through the deck onto its top.)
+const BED_UNDER := 0.3
 func depth(p: Vector2) -> float:
 	for pool: Dictionary in pools:
 		var top := _pool_top(pool,p)
 		if top == -INF: continue
 		var bed := ground(p)
-		return maxf(top-bed,0.0) if is_finite(bed) else 0.0
+		if not is_finite(bed): return 0.0
+		var pool_bed := height_from(p,top)
+		if is_finite(pool_bed) and bed < pool_bed-BED_UNDER: return 0.0
+		return maxf(top-bed,0.0)
 	return 0.0
 
 ## The pool's surface at `p`, or -INF.
