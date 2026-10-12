@@ -91,11 +91,12 @@ const CARRY := 0.38
 ## Carried: how far round him (m, at the walker's size), how high, the
 ## spread round from one side behind to the other (rad either side of
 ## straight behind), the bob, the follow's ease (s).
-const CARRY_OUT := 0.62
-const CARRY_UP := 0.85
-const CARRY_SPREAD := 1.35
-const CARRY_BOB := 0.04
-const CARRY_EASE := 0.09
+const CarriedFollow = preload("res://scripts/carried_follow.gd")
+const CARRY_OUT := CarriedFollow.OUT
+const CARRY_UP := CarriedFollow.UP
+const CARRY_SPREAD := CarriedFollow.SPREAD
+const CARRY_BOB := CarriedFollow.BOB
+const CARRY_EASE := CarriedFollow.EASE
 ## The load on the salvager's rope is taken a little further off (the
 ## snag study's grab, studies/snag_study.gd).
 const SNAG_REACH := 1.05
@@ -409,16 +410,12 @@ func _follow(delta: float, snap := false) -> void:
 	var figure: Node3D = host.figure
 	var scale := float(host.get("wanderer_scale")) if host.get("wanderer_scale") != null else 1.0
 	var way := PilotMotor.forward(float(host.motor.facing))
-	var ahead := Vector3(way.x,0.0,way.y)
-	var right := Vector3(-way.y,0.0,way.x)
 	var n := carried.size()
 	for k in range(n):
 		var holder: Node3D = holders.get(carried[k])
 		if holder == null or not is_instance_valid(holder) or _flying_holder(holder): continue
-		var a := -1.0 if n == 1 else lerpf(-CARRY_SPREAD,CARRY_SPREAD,float(k)/(n-1))
-		var goal: Vector3 = figure.global_position+(right*sin(a)-ahead*cos(a))*CARRY_OUT*scale+Vector3.UP*(CARRY_UP+sin(_clock*1.6+k)*CARRY_BOB)*scale
-		if snap or delta <= 0.0 or holder.global_position.distance_to(goal) > JUMP: holder.global_position = goal
-		else: holder.global_position = holder.global_position.lerp(goal,1.0-exp(-delta/CARRY_EASE))
+		var goal := CarriedFollow.goal(figure.global_position,way,scale,k,n,_clock,CARRY_OUT,CARRY_UP,CARRY_SPREAD,CARRY_BOB)
+		CarriedFollow.ease_to(holder,goal,delta,snap,JUMP,CARRY_EASE)
 
 func _flying_holder(holder: Node3D) -> bool:
 	for f: Dictionary in _flying:
