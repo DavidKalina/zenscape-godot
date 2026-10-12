@@ -752,16 +752,42 @@ static func ground_material() -> ShaderMaterial:
 ## drawn out north as the run grew (the station's at 39.8 to 66, now 60.4
 ## to 96), so its drops land on it. The 23 m of sky between them (the
 ## station's 16) kept open under the aqueduct.
-const NEAR := [Vector2(100.0,-37.2),Vector2(104.0,-37.0),Vector2(108.0,-36.0),Vector2(112.0,-32.5),Vector2(116.0,-28.6),
+## Drawn round the run at one size (REF_EDGE, REF_END: its first hanging
+## pier's near face less 0.6, and its END, when drawn) and moved with the
+## run since (`_near`, `_far`): the far island, its gate, paving and rise by
+## FAR_SHIFT (END past REF_END); the near island's north tip, under the
+## aqueduct, by NEAR_SHIFT, fading out 8 m either side of the aqueduct's
+## line and south of z -30. So an opening ratio's bigger or smaller run
+## takes its islands with it.
+const REF_EDGE := 37.2
+const REF_END := 66.4
+static var NEAR_SHIFT: float = (pier(3)-PIER.x*0.5-0.6)-REF_EDGE
+static var FAR_SHIFT: float = END-REF_END
+const NEAR_DRAWN := [Vector2(100.0,-37.2),Vector2(104.0,-37.0),Vector2(108.0,-36.0),Vector2(112.0,-32.5),Vector2(116.0,-28.6),
 	Vector2(120.0,-25.0),Vector2(124.0,-20.0),Vector2(127.0,-13.0),Vector2(126.0,-5.0),Vector2(128.0,2.0),Vector2(124.0,9.0),Vector2(119.0,14.0),
 	Vector2(112.0,16.0),Vector2(106.0,15.5),Vector2(100.0,17.5),Vector2(93.0,16.0),Vector2(86.0,18.0),
 	Vector2(80.0,19.5),Vector2(73.0,22.8),Vector2(66.0,24.3),Vector2(59.0,24.6),Vector2(52.0,22.8),Vector2(45.5,18.6),
 	Vector2(40.5,12.5),Vector2(37.6,5.5),Vector2(37.0,-2.0),Vector2(38.6,-9.5),Vector2(42.0,-16.0),Vector2(47.5,-21.5),
 	Vector2(54.0,-25.0),Vector2(61.0,-26.5),Vector2(68.0,-26.0),Vector2(74.5,-24.8),Vector2(80.0,-23.8),
 	Vector2(85.0,-26.0),Vector2(88.5,-32.0),Vector2(91.0,-35.0),Vector2(94.0,-35.2),Vector2(97.0,-36.8)]
-const FAR := [Vector2(100.0,-60.4),Vector2(104.0,-60.9),Vector2(109.0,-62.7),Vector2(114.0,-68.8),Vector2(116.0,-78.3),
+const FAR_DRAWN := [Vector2(100.0,-60.4),Vector2(104.0,-60.9),Vector2(109.0,-62.7),Vector2(114.0,-68.8),Vector2(116.0,-78.3),
 	Vector2(113.0,-87.9),Vector2(107.0,-94.0),Vector2(100.0,-96.0),Vector2(93.0,-93.3),Vector2(88.0,-86.5),
 	Vector2(85.0,-78.3),Vector2(86.0,-70.2),Vector2(90.0,-63.4),Vector2(95.0,-61.2)]
+static var NEAR: Array = _near()
+static var FAR: Array = _far(FAR_DRAWN)
+
+static func _near() -> Array:
+	var out: Array = []
+	for p: Vector2 in NEAR_DRAWN:
+		var w := clampf((-p.y-30.0)/(REF_EDGE-30.0),0.0,1.0)*clampf(1.0-absf(p.x-MID_X)/8.0,0.0,1.0)
+		out.append(p-Vector2(0.0,NEAR_SHIFT*w))
+	return out
+
+## Points drawn on or by the far island, moved with it.
+static func _far(points: Array) -> Array:
+	var out: Array = []
+	for p: Vector2 in points: out.append(p-Vector2(0.0,FAR_SHIFT))
+	return out
 ## The stepping stumps back from the far island (world x, z from, z to,
 ## top): an older arcade's piers broken off at the islands' height, their
 ## feet hanging in the sky; each collides as a clean box. Two leave the
@@ -771,22 +797,35 @@ const FAR := [Vector2(100.0,-60.4),Vector2(104.0,-60.9),Vector2(109.0,-62.7),Vec
 ## the plane slips both; level, its wings catch the stumps. Walked back from
 ## the far island: three twirled jumps (2.9, 3.0, 3.4 m), then running jumps
 ## over the slot, 1.6 m and 0.65 m onto the near island (its edge at z -35
-## there).
+## there). The far two follow the far island (FAR_SHIFT) and share what the
+## run's growth leaves between the slot's far stump and them; the twirled
+## jumps (STUMP_JUMPS) stay the walker's.
 static var KNIFE_Z: float = -arch(4)
 const STUMP_KNIFE_ROOM := 0.45
 const STUMPS_X := 92.0
 static func stump_slot() -> float:
 	return WorldScale.knife(STUMP_KNIFE_ROOM)
+## The twirled jumps' gaps (slot's far stump to the next, then on to the
+## last), the slot's far stump's length and the last two's (as drawn: they
+## grow alike to fill the room), the last's far end before the far island.
+const STUMP_JUMPS := Vector2(3.4,3.0)
+const STUMP_FAR_LONG := 3.15
+const STUMP_LONGS := Vector2(3.0,3.6)
 static func stumps() -> Array:
 	var slot := stump_slot()
-	return [[STUMPS_X,-35.65,-37.6,30.6],[STUMPS_X,-39.2,KNIFE_Z+slot*0.5,30.4],[STUMPS_X,KNIFE_Z-slot*0.5,-46.6,29.8],
-		[STUMPS_X,-50.0,-53.0,30.2],[STUMPS_X,-56.0,-59.6,30.0]]
+	var s3 := KNIFE_Z-slot*0.5-STUMP_FAR_LONG
+	var s5 := -59.6-FAR_SHIFT
+	var grow := (s3-s5-STUMP_JUMPS.x-STUMP_JUMPS.y)/(STUMP_LONGS.x+STUMP_LONGS.y)
+	var s4 := s3-STUMP_JUMPS.x
+	return [[STUMPS_X,-35.65,-37.6,30.6],[STUMPS_X,-39.2,KNIFE_Z+slot*0.5,30.4],[STUMPS_X,KNIFE_Z-slot*0.5,s3,29.8],
+		[STUMPS_X,s4,s4-STUMP_LONGS.x*grow,30.2],[STUMPS_X,s5+STUMP_LONGS.y*grow,s5,30.0]]
 ## The far island's gate (the kit's arch, where the aqueduct came down) and
 ## the paving before it (world x, z).
-const GATE := Vector2(100.0,-91.3)
-const GATE_FLOOR := Vector2(94.5,-85.8)
-## Grassy rises away from the routes (world x, z, radius, height).
-const RISES := [Vector3(117.0,-17.0,6.0),Vector3(108.0,-85.2,5.0),Vector3(108.0,11.0,4.0)]
+static var GATE: Vector2 = Vector2(100.0,-91.3)-Vector2(0.0,FAR_SHIFT)
+static var GATE_FLOOR: Vector2 = Vector2(94.5,-85.8)-Vector2(0.0,FAR_SHIFT)
+## Grassy rises away from the routes (world x, z, radius, height; the
+## second on the far island).
+static var RISES: Array = [Vector3(117.0,-17.0,6.0),Vector3(108.0,-85.2-FAR_SHIFT,5.0),Vector3(108.0,11.0,4.0)]
 ## Where the ground keeps flat: round the aqueduct's line and the pieces.
 const FLAT_HALF := 7.0
 ## The ground's faces: cells this size (the hill's finer); the earth and

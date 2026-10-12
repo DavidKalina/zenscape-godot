@@ -483,6 +483,9 @@ static func plans() -> Array:
 		var spots := [1,8,6,2] if side == 0 else [2,7,6,1]
 		for i: int in spots:
 			if have >= 2: break
+			# Fewer, wider bays at a bigger opening ratio: a spot past the
+			# last isn't there.
+			if i >= BAYS: continue
 			var p: Dictionary = ps[i]
 			if Hall.BREACHES[p.breach[side]] != "": continue
 			var v: Vector2i = p.breach
@@ -677,8 +680,10 @@ static func right_breach() -> float:
 ## [line id, category, kind, points (the isle's frame)].
 static func plane_tokens() -> Array:
 	var lane := PackedVector3Array()
-	for x in [-3.0,6.0,16.0,24.0,34.0,46.0,56.0,66.0,76.0,84.0]:
-		lane.append(Vector3(HALL_X+x,YF+LANE_Y,MID.y+LANE_Z))
+	# Ten along the lane from just before the first mouth to just inside the
+	# last (the hall's length follows its bays).
+	for i in range(10):
+		lane.append(Vector3(HALL_X+lerpf(-3.0,LENGTH-0.5,i/9.0),YF+LANE_Y,MID.y+LANE_Z))
 	var out: Array = [["hk:undercroft","air","thread",lane]]
 	var bx := right_breach()
 	if bx > 0.0:

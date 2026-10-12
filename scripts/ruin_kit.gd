@@ -226,8 +226,12 @@ static var LINTEL_BREAK: float = 3.0*WorldScale.wanderer
 ## the ring's middle (its lintel TRILITHON_IN in from the ring's back
 ## lintel and over it: a jump-catch at the toy's 1.2 m, a pumped one, 2.16
 ## m, at the defaults: the circle's summit).
+## Its height over the sarsens never past TRILITHON_RISE (a pumped catch,
+## CHAIN_TOP and a margin: 2.16 m at ratio 0.9 was caught, 2.28 at 0.95
+## wasn't), so a bigger ratio keeps the summit a jump from the back lintel.
 const TOY_TRILITHON := Vector3(1.8,4.6,1.2)
-static var TRILITHON := Vector3(TOY_TRILITHON.x,TOY_TRILITHON.y*HENGE_GROW,TOY_TRILITHON.z)
+const TRILITHON_RISE := CHAIN_TOP-0.45
+static var TRILITHON := Vector3(TOY_TRILITHON.x,minf(TOY_TRILITHON.y*HENGE_GROW,SARSEN.y+TRILITHON_RISE),TOY_TRILITHON.z)
 static var TRILITHON_SLOT: float = WorldScale.knife()
 const TRILITHON_IN := 2.29
 static var TRILITHON_AT: float = CIRCLE_RADIUS*cos(PI/CIRCLE_STONES)-TRILITHON_IN
@@ -551,8 +555,10 @@ static func lancet_wall(seed_value: int, weathered := 0.0) -> Node3D:
 	_jambs(b,Transform3D.IDENTITY,w,WINDOW.y,WINDOW.z,d,top)
 	var lost := 0
 	if weathered > 0.5 and b.rng.randf() < weathered: lost = 1+int(b.rng.randf()*1.5)
-	# The head's ring outlasts the walling round it, as a window's does.
-	_arch_ring(b,Transform3D.IDENTITY,0.0,WINDOW.z,w,radius,d,true,lost,-1.0 if b.rng.randf() < 0.5 else 1.0)
+	# The head's ring outlasts the walling round it, as a window's does. Its
+	# frame at the springing, so its stones settle about there, not about the
+	# ground (a wide window's springers swung into its opening).
+	_arch_ring(b,Transform3D(Basis.IDENTITY,Vector3(0.0,WINDOW.z,0.0)),0.0,0.0,w,radius,d,true,lost,-1.0 if b.rng.randf() < 0.5 else 1.0)
 	# The tracery: the mullion, two lancet lights' heads, the oculus.
 	var t := 0.14
 	var light := (w-0.12)*0.5
@@ -1583,7 +1589,9 @@ static func stone_circle(seed_value: int, weathered := 0.0, missing: Array = [])
 	# steps up from the lying stone's top to the stub's, each the same and
 	# 1.5 m and under (none in the toy era, the stub one step up).
 	var lie_top := TRILITHON.z-0.15
-	var steps := ceili((STUB-lie_top)/1.5)-1
+	# (Rises to 1.55, as the leaning stone's block: three of 1.13 m packed
+	# 1.25 apart at ratio 0.95 weren't climbed, two of 1.5 are.)
+	var steps := ceili((STUB-lie_top)/1.55)-1
 	for k in range(steps):
 		var top := lie_top+(STUB-lie_top)*float(k+1)/float(steps+1)
 		var r := stub_r-TRILITHON.x*0.5-0.75-1.25*float(steps-1-k)

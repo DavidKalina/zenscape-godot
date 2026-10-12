@@ -81,6 +81,13 @@ const ACTS := [
 	["shafts",Vector2i(1,1),Vector2i(7,9)],
 	["apse",Vector2i(1,1),Vector2i(8,10)],
 ]
+## The bay the acts' counts were drawn for (m: Hall BAY at the opening
+## ratio 0.9, where the line's length was held to LENGTH). Where the bays
+## are wider (a bigger ratio) the drawn line is trimmed back to that
+## length a bay at a time off its longest pieces (never under MIN_BAYS),
+## so a piece keeps its metres, not its count; narrower, it is left.
+const ACT_BAY := 10.56
+const MIN_BAYS := 6
 ## Gaps (m, torn end to torn end along the line) and their steps up or
 ## down (m), the steepest grade a step may take (rise over run, held at
 ## cruise: about 17 degrees), the drop's step and gap, the aqueduct's gap.
@@ -137,6 +144,22 @@ static func layout(seed_value: int, yaw := 0.0) -> Dictionary:
 		if validate(out).is_empty(): return out
 	return out
 
+## Trim `acts` ([act, bays]) a bay at a time off the longest piece (the
+## first of the longest) till its bays at BAY are no longer than as drawn
+## at ACT_BAY (see ACT_BAY).
+static func _trim_bays(acts: Array) -> void:
+	var drawn := 0
+	for a: Array in acts: drawn += int(a[1])
+	var want := float(drawn)*ACT_BAY
+	var have := drawn
+	while float(have)*BAY > want+BAY*0.5:
+		var at := -1
+		for i in range(acts.size()):
+			if int(acts[i][1]) > MIN_BAYS and (at < 0 or int(acts[i][1]) > int(acts[at][1])): at = i
+		if at < 0: return
+		acts[at][1] = int(acts[at][1])-1
+		have -= 1
+
 static func _layout(seed_value: int, yaw: float, attempt: int) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([seed_value,"sundered",attempt])
@@ -147,6 +170,7 @@ static func _layout(seed_value: int, yaw: float, attempt: int) -> Dictionary:
 	for a: Array in ACTS:
 		var n := rng.randi_range((a[1] as Vector2i).x,(a[1] as Vector2i).y)
 		for k in range(n): acts.append([a[0],rng.randi_range((a[2] as Vector2i).x,(a[2] as Vector2i).y)])
+	_trim_bays(acts)
 	# Where the drop and the aqueduct fall: the drop after the shafts that
 	# follow the naves, the aqueduct before the slit.
 	var drop_after := -1

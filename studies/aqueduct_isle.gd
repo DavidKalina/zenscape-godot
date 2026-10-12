@@ -116,7 +116,7 @@ const SEED := 11
 ## seed, weathered, world x, z, yaw (degrees)], each standing on the ground
 ## there and colliding as the kit built it. Only the gate on the far
 ## island, where the aqueduct came down, and its paving.
-const PIECES := [
+static var PIECES: Array = [
 	["arch",20,0.35,Art.GATE.x,Art.GATE.y,0.0],
 	["floor",23,0.6,Art.GATE_FLOOR.x,Art.GATE_FLOOR.y,15.0],
 ]
