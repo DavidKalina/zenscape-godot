@@ -34,6 +34,13 @@ extends RefCounted
 ## (scripts/footbridge.gd, rope_bridge.gd) on the kit's stone anchors
 ## (RuinKit `bridge_anchor`); the last bridge comes back up to the south
 ## bench, so the tail is a loop.
+##
+## A family (scripts/kit_isle/motif_colonnade_spine.gd, docs/design/
+## roguelike/motif-families.md): what the ruin has lost takes a plan
+## (`rolled`: the piers snapped, the lintels fallen, the portals' crowns,
+## how much of the tail is left, which rope bridges hold), the authored
+## tables below when none is given (`authored`). The ridge itself, its
+## terraces and the temple are the one ridge's.
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 const Art = preload("res://studies/aqueduct_isle_art.gd")
 const Footbridge = preload("res://scripts/footbridge.gd")
@@ -490,35 +497,107 @@ static func line_y(i: int) -> float:
 	if y < 0.0: return crest(float(LINES[i][0]))
 	return y
 
-## The pier on line `i`, `side`: INF whole, else its stub's height (0 gone).
-static func pier_height(i: int, side: float) -> float:
-	var key := "%d,%d" % [i,int(side)]
-	if STUBS.has(key): return float(STUBS[key])
-	return INF
+# --- The plan ---------------------------------------------------------------------
 
-static func _run_on(i: int, side: float) -> bool:
+static var _authored: Dictionary = {}
+## The authored plan: {stubs (as STUBS), fallen (as FALLEN), portal_lost
+## (as PORTAL_LOST), tail (fragments left, of FRAGMENTS), bridges (each of
+## `bridge_ends` holding or snapped)}.
+static func authored() -> Dictionary:
+	if _authored.is_empty():
+		_authored = {"stubs":STUBS,"fallen":FALLEN,"portal_lost":PORTAL_LOST,"tail":FRAGMENTS.size(),"bridges":[true,true]}
+	return _authored
+
+static func _p(p: Dictionary) -> Dictionary:
+	return authored() if p.is_empty() else p
+
+## The lines whose piers may snap: plain ones (a portal's carry its arch, a
+## cross line's its lintel), on a terrace.
+static func stub_lines() -> Array:
+	var out: Array = []
+	for i in range(LINES.size()):
+		if LINES[i][2] == "" and float(LINES[i][1]) >= 0.0: out.append(i)
+	return out
+
+## Whether the lintel from line `i` on `side` may lie fallen: its piers
+## whole on one terrace, and no way up (STACKS) stands where it would lie.
+static func may_fall(i: int, side: float, p := {}) -> bool:
 	if i < 0 or i >= LINES.size()-1: return false
 	if float(LINES[i][1]) < 0.0 or float(LINES[i][1]) != float(LINES[i+1][1]): return false
-	if pier_height(i,side) < INF or pier_height(i+1,side) < INF: return false
-	return not FALLEN.has("%d,%d" % [i,int(side)])
+	if pier_height(i,side,p) < INF or pier_height(i+1,side,p) < INF: return false
+	for st: Array in STACKS:
+		if float(st[1]) == side and float(st[0]) > float(LINES[i][0]) and float(st[0]) < float(LINES[i+1][0]): return false
+	return true
+
+## A plan rolled from `seed_value` at `collapse` (0 whole to 1 as fallen as
+## it gets; the authored is 0.5), `tail` fragments left and `bridges`
+## ("intact", "one" snapped, "both" snapped): round(collapse x SNAP) piers
+## snapped to stubs, as many lintels fallen, each portal's crown losing up
+## to as many voussoirs (at most LOST_MOST). TOPPLED's pier is always down.
+const SNAP := 6
+const LOST_MOST := 4
+static func rolled(seed_value: int, collapse: float, tail: int, bridges: String) -> Dictionary:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_value*6151+29
+	var many := roundi(collapse*SNAP)
+	var stubs := {"%d,1" % TOPPLED:0.0}
+	var piers: Array = []
+	for i: int in stub_lines():
+		for side: int in [-1,1]:
+			if not stubs.has("%d,%d" % [i,side]): piers.append("%d,%d" % [i,side])
+	_shuffle(piers,rng)
+	for k in range(mini(many,piers.size())): stubs[piers[k]] = snappedf(rng.randf_range(1.0,2.6),0.1)
+	var p := {"stubs":stubs,"fallen":[],"portal_lost":{},"tail":clampi(tail,1,FRAGMENTS.size()),"bridges":[true,true]}
+	var spans: Array = []
+	for i in range(LINES.size()-1):
+		for side: int in [-1,1]:
+			if may_fall(i,side,p): spans.append("%d,%d" % [i,side])
+	_shuffle(spans,rng)
+	p.fallen = spans.slice(0,mini(many,spans.size()))
+	for i in range(LINES.size()):
+		if LINES[i][2] == "portal": p.portal_lost[i] = rng.randi_range(0,mini(many,LOST_MOST))
+	match bridges:
+		"one": p.bridges[rng.randi_range(0,1)] = false
+		"both": p.bridges = [false,false]
+	return p
+
+static func _shuffle(list: Array, rng: RandomNumberGenerator) -> void:
+	for i in range(list.size()):
+		var j := rng.randi_range(i,list.size()-1)
+		var t: Variant = list[i]
+		list[i] = list[j]
+		list[j] = t
+
+## The pier on line `i`, `side`: INF whole, else its stub's height (0 gone).
+static func pier_height(i: int, side: float, p := {}) -> float:
+	var key := "%d,%d" % [i,int(side)]
+	var stubs: Dictionary = _p(p).stubs
+	if stubs.has(key): return float(stubs[key])
+	return INF
+
+static func _run_on(i: int, side: float, p := {}) -> bool:
+	if i < 0 or i >= LINES.size()-1: return false
+	if float(LINES[i][1]) < 0.0 or float(LINES[i][1]) != float(LINES[i+1][1]): return false
+	if pier_height(i,side,p) < INF or pier_height(i+1,side,p) < INF: return false
+	return not (_p(p).fallen as Array).has("%d,%d" % [i,int(side)])
 
 ## Every lintel standing: {a, b (world: its top's middle line's ends), side
 ## (0 a cross lintel), top (world y), line}. Between consecutive whole
 ## piers on one terrace; at a run's open end it reaches on over the
 ## abacus; at a portal it stops at the arch's foot.
-static func lintels() -> Array:
+static func lintels(p := {}) -> Array:
 	var out: Array = []
 	for i in range(LINES.size()-1):
 		var j := i+1
 		for side: float in [-1.0,1.0]:
-			if not _run_on(i,side): continue
+			if not _run_on(i,side,p): continue
 			var xa: float = LINES[i][0]
 			var xb: float = LINES[j][0]
 			var top := TOP+line_y(i)+LINTEL_TOP
 			if LINES[i][2] == "portal": xa += 0.6
-			elif not _run_on(i-1,side): xa -= 0.6
+			elif not _run_on(i-1,side,p): xa -= 0.6
 			if LINES[j][2] == "portal": xb -= 0.6
-			elif not _run_on(j,side): xb += 0.6
+			elif not _run_on(j,side,p): xb += 0.6
 			out.append({"a":at3(xa,side*ROW,top),"b":at3(xb,side*ROW,top),"side":side,"top":top,"line":i})
 	for i in range(LINES.size()):
 		if LINES[i][2] != "cross": continue
@@ -557,7 +636,8 @@ static func _lying_drum(b: Build, p: Vector2, top: float, way: Vector3, length :
 ## "lintels" (as `lintels`), "portals" [{x, y (the springing), crown}],
 ## "stubs" [{at (top middle, world)}], "drums" [{at}], "wedged" (the
 ## cleft's drums' tops), "cleft_beam" {a, b}.
-static func colonnade(seed_value: int) -> Node3D:
+static func colonnade(seed_value: int, p := {}) -> Node3D:
+	p = _p(p)
 	var b := Build.new(seed_value,WEATHERED,"Colonnade")
 	b.settle = 0.5
 	var stubs: Array = []
@@ -566,7 +646,7 @@ static func colonnade(seed_value: int) -> Node3D:
 		var x: float = LINES[i][0]
 		var y := TOP+line_y(i)
 		for side: float in [-1.0,1.0]:
-			var hgt := pier_height(i,side)
+			var hgt := pier_height(i,side,p)
 			if hgt <= 0.0: continue
 			var f := frame(x,side*ROW,y)
 			f.basis = f.basis*Basis(Vector3.UP,b.rng.randf_range(-0.2,0.2))
@@ -577,10 +657,10 @@ static func colonnade(seed_value: int) -> Node3D:
 			var f := frame(x,0.0,y)
 			# No hood mould: with no wall behind it a hood stands proud of
 			# the ring's face, a loose-looking slab where the ring settles.
-			RuinKit._arch_ring(b,f,0.0,PIER_H,h,2.0*h,RuinKit.ARCH_DEPTH*0.5,false,int(PORTAL_LOST[i]),-1.0 if i%2 == 0 else 1.0)
-	for l: Dictionary in lintels(): _beam(b,l.a,l.b,LINTEL)
+			RuinKit._arch_ring(b,f,0.0,PIER_H,h,2.0*h,RuinKit.ARCH_DEPTH*0.5,false,int(p.portal_lost[i]),-1.0 if i%2 == 0 else 1.0)
+	for l: Dictionary in lintels(p): _beam(b,l.a,l.b,LINTEL)
 	# Fallen lintels: lying in the way beside their row, broken in two.
-	for key: String in FALLEN:
+	for key: String in p.fallen:
 		var i := int(key.get_slice(",",0))
 		var side := float(key.get_slice(",",1))
 		var xa: float = float(LINES[i][0])+0.4
@@ -596,9 +676,9 @@ static func colonnade(seed_value: int) -> Node3D:
 	# capital rolled further.
 	var tx: float = LINES[TOPPLED][0]
 	for k in range(3):
-		var p := at(tx+b.rng.randf_range(-0.25,0.25)+k*0.15,ROW-0.5-k*1.15)
-		_lying_drum(b,p,TOP+line_y(TOPPLED)+DRUM_TOP-k*0.04,along(tx),1.0)
-		drums.append({"at":Vector3(p.x,TOP+line_y(TOPPLED)+DRUM_TOP,p.y)})
+		var q := at(tx+b.rng.randf_range(-0.25,0.25)+k*0.15,ROW-0.5-k*1.15)
+		_lying_drum(b,q,TOP+line_y(TOPPLED)+DRUM_TOP-k*0.04,along(tx),1.0)
+		drums.append({"at":Vector3(q.x,TOP+line_y(TOPPLED)+DRUM_TOP,q.y)})
 	RuinKit._capital(b,Transform3D(Basis(Vector3.UP,0.4)*Basis(Vector3.RIGHT,1.4),at3(tx+0.8,-ROW+1.9,TOP+line_y(TOPPLED)+0.55)))
 	# The ways up onto the lintels: a drum lying in the way, a broken pier's
 	# stub beside the row.
@@ -625,16 +705,16 @@ static func colonnade(seed_value: int) -> Node3D:
 	for k in range(2):
 		var x := CLEFT.x+(-0.6 if k == 0 else 0.7)
 		var top := TOP+CLEFT_FLOOR+1.1
-		var p := at(x,0.6-1.2*k)
-		_lying_drum(b,p,top,Vector3(0.0,0.0,1.0),1.6)
-		wedged.append(Vector3(p.x,top,p.y))
+		var q := at(x,0.6-1.2*k)
+		_lying_drum(b,q,top,Vector3(0.0,0.0,1.0),1.6)
+		wedged.append(Vector3(q.x,top,q.y))
 	var node := b.finish()
 	var portals: Array = []
 	for i in range(LINES.size()):
 		if LINES[i][2] == "portal":
 			var h := ROW-RuinKit.ORDER
 			portals.append({"x":float(LINES[i][0]),"y":TOP+line_y(i)+PIER_H,"crown":TOP+line_y(i)+PIER_H+RuinKit._rise(h,2.0*h)})
-	node.set_meta("lintels",lintels())
+	node.set_meta("lintels",lintels(p))
 	node.set_meta("portals",portals)
 	node.set_meta("stubs",stubs)
 	node.set_meta("drums",drums)
@@ -747,10 +827,14 @@ const FRAGMENTS := [
 	["frag_5",134.5,12.0,2.3,-2.4],
 ]
 
-static func slab(name: String) -> Array:
-	for s: Array in SLABS+FRAGMENTS:
+static func slab(name: String, p := {}) -> Array:
+	for s: Array in SLABS+fragments(p):
 		if s[0] == name: return s
 	return []
+
+## The tail's fragments left (the first `tail` of the curl).
+static func fragments(p := {}) -> Array:
+	return FRAGMENTS.slice(0,int(_p(p).tail))
 
 ## A slab's or fragment's middle (world x, z).
 static func slab_at(s: Array) -> Vector2:
@@ -759,10 +843,10 @@ static func slab_at(s: Array) -> Vector2:
 
 const LAND_SOLID := 2.2
 
-static func lands(seed_value: int) -> Array:
+static func lands(seed_value: int, p := {}) -> Array:
 	var out: Array = []
 	var k := 0
-	for s: Array in SLABS+FRAGMENTS:
+	for s: Array in SLABS+fragments(p):
 		k += 1
 		var c := slab_at(s)
 		var top := TOP+float(s[4])
@@ -812,33 +896,43 @@ static func shelf_point(x: float) -> Vector3:
 	return Vector3(p.x,ground(p.x,p.y),p.y)
 
 ## The rope bridges' ends on the ground (world): frag_2 to frag_3; frag_5
-## back up to the south bench.
-static func bridge_ends() -> Array:
-	var f2 := slab_at(slab("frag_2"))
-	var f3 := slab_at(slab("frag_3"))
-	var a1 := edge("frag_2",Vector3(f3.x,0.0,f3.y),0.6)
-	var b1 := edge("frag_3",Vector3(f2.x,0.0,f2.y),0.6)
-	var bench := bench_point(131.0)
-	return [[a1,b1],[edge("frag_5",bench,0.5),bench]]
+## back up to the south bench (each while its fragments are left).
+static func bridge_ends(p := {}) -> Array:
+	var tail := int(_p(p).tail)
+	var out: Array = []
+	if tail >= 3:
+		var f2 := slab_at(slab("frag_2"))
+		var f3 := slab_at(slab("frag_3"))
+		out.append([edge("frag_2",Vector3(f3.x,0.0,f3.y),0.6),edge("frag_3",Vector3(f2.x,0.0,f2.y),0.6)])
+	if tail >= 5:
+		var bench := bench_point(131.0)
+		out.append([edge("frag_5",bench,0.5),bench])
+	return out
+
+## Each of `bridge_ends`' bridges holding (false: snapped, its anchors
+## standing over the gap).
+static func bridges_held(p := {}) -> Array:
+	p = _p(p)
+	var out: Array = []
+	if int(p.tail) >= 3:
+		out.append(bool(p.bridges[0]))
+	if int(p.tail) >= 5:
+		out.append(bool(p.bridges[1]))
+	return out
 
 ## The floating stones (Art `floating_stones` builds them from these):
 ## {name, at (its
 ## top's middle), size, yaw, kind, chain}, laid evenly across each gap.
-static func platforms() -> Array:
-	var f1 := slab_at(slab("frag_1"))
-	var f2 := slab_at(slab("frag_2"))
-	var f3 := slab_at(slab("frag_3"))
-	var f4 := slab_at(slab("frag_4"))
-	var f5 := slab_at(slab("frag_5"))
+static func platforms(p := {}) -> Array:
+	var tail := int(_p(p).tail)
+	var at := func(k: int) -> Vector2: return slab_at(FRAGMENTS[k])
 	var rim := func(name: String, toward: Vector2) -> Vector3:
 		return edge(name,Vector3(toward.x,0.0,toward.y),-0.3*float(slab(name)[3]))
 	var tip := tail_tip()
-	var chains := [
-		["tip",tip,rim.call("frag_1",Vector2(tip.x,tip.z))],
-		["f12",rim.call("frag_1",f2),rim.call("frag_2",f1)],
-		["f34",rim.call("frag_3",f4),rim.call("frag_4",f3)],
-		["f45",rim.call("frag_4",f5),rim.call("frag_5",f4)],
-	]
+	var chains := [["tip",tip,rim.call("frag_1",Vector2(tip.x,tip.z))]]
+	if tail >= 2: chains.append(["f12",rim.call("frag_1",at.call(1)),rim.call("frag_2",at.call(0))])
+	if tail >= 4: chains.append(["f34",rim.call("frag_3",at.call(3)),rim.call("frag_4",at.call(2))])
+	if tail >= 5: chains.append(["f45",rim.call("frag_4",at.call(4)),rim.call("frag_5",at.call(3))])
 	var out: Array = []
 	for c: Array in chains:
 		var a: Vector3 = c[1]
@@ -846,18 +940,18 @@ static func platforms() -> Array:
 		var n := maxi(1,int(Vector2(e.x-a.x,e.z-a.z).length()/2.9))
 		var way := Vector2(e.x-a.x,e.z-a.z)
 		for k in range(n):
-			var p := a.lerp(e,float(k+1)/(n+1))
-			out.append({"name":"%s_%d" % [c[0],k+1],"at":p+Vector3(0.0,0.12*(k%2),0.0),"size":Vector3(1.9,0.7,1.7),
+			var q := a.lerp(e,float(k+1)/(n+1))
+			out.append({"name":"%s_%d" % [c[0],k+1],"at":q+Vector3(0.0,0.12*(k%2),0.0),"size":Vector3(1.9,0.7,1.7),
 				"yaw":atan2(-way.y,way.x)+0.3*float(k%2*2-1),"kind":"block","chain":str(c[0])})
 	return out
 
 ## The rope bridges' anchors (RuinKit `bridge_anchor`), one at each end,
 ## facing out over the gap.
-static func anchors(seed_value: int) -> Node3D:
+static func anchors(seed_value: int, p := {}) -> Node3D:
 	var root := Node3D.new()
 	root.name = "Anchors"
 	var k := 0
-	for ends: Array in bridge_ends():
+	for ends: Array in bridge_ends(p):
 		for e in range(2):
 			var here: Vector3 = ends[e]
 			var there: Vector3 = ends[1-e]
@@ -879,7 +973,7 @@ static func anchors(seed_value: int) -> Node3D:
 ## then off the tail's tip and down the curl: between the first fragments'
 ## stones, under the first rope bridge, between the third and fourth
 ## fragments, under the bridge home.
-static func plane_tokens() -> Array:
+static func plane_tokens(p := {}) -> Array:
 	var mid := func(i: int) -> float: return (float(LINES[i][0])+float(LINES[i+1][0]))*0.5
 	var slalom := PackedVector3Array([
 		at3(mid.call(0),-ROW,TOP+L3+1.8),
@@ -893,16 +987,17 @@ static func plane_tokens() -> Array:
 	var tail := PackedVector3Array()
 	var tip := tail_tip()
 	tail.append(tip+Vector3(2.5,2.0,0.0))
-	for p: Dictionary in platforms():
-		if p.chain == "f12": tail.append((p.at as Vector3)+Vector3(0.0,2.4,0.0))
-	for ends: Array in bridge_ends():
+	for stone: Dictionary in platforms(p):
+		if stone.chain == "f12": tail.append((stone.at as Vector3)+Vector3(0.0,2.4,0.0))
+	for ends: Array in bridge_ends(p):
 		var a: Vector3 = ends[0]
 		var b: Vector3 = ends[1]
 		var span := Vector2(b.x-a.x,b.z-a.z).length()
 		# Under the bridge's middle, out 1 m east and 2 m south off the cliff
 		# under it (a THREAD's room from the rock, CollectibleLines WING).
 		tail.append(a.lerp(b,0.5)+Vector3.UP*(Footbridge.lift(span,0.5)-2.6)+Vector3(1.0,0.0,2.0))
-	var f3 := slab_at(slab("frag_3"))
-	var f4 := slab_at(slab("frag_4"))
-	tail.insert(tail.size()-1,Vector3((f3.x+f4.x)*0.5,TOP-1.2+2.0,(f3.y+f4.y)*0.5))
+	if int(_p(p).tail) >= 4:
+		var f3 := slab_at(FRAGMENTS[2])
+		var f4 := slab_at(FRAGMENTS[3])
+		tail.insert(tail.size()-1 if int(_p(p).tail) >= 5 else tail.size(),Vector3((f3.x+f4.x)*0.5,TOP-1.2+2.0,(f3.y+f4.y)*0.5))
 	return [["cs:slalom","air","thread",slalom],["cs:tail","air","thread",tail]]
