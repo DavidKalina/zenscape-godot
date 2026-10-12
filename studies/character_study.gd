@@ -894,6 +894,8 @@ func tick(delta: float) -> void:
 	_body_events(drawn,delta)
 	_water_events(events,drawn,delta)
 	_frame(delta)
+	# A foot piece may take the camera over (the cannon's operating view).
+	if foot_pieces != null and foot_pieces.has_method("frame"): foot_pieces.frame(camera,delta)
 	if updraft != null: updraft.apply_feel(camera)
 	if slam != null: slam.apply_feel(camera)
 	if looking: _telescope_view(delta)

@@ -1,8 +1,9 @@
 extends "res://studies/character_study.gd"
 ## The cannon yard (docs/design/roguelike/cannon-round1.md): a start isle with
 ## a cannon and three powder kegs, and targets whose distance you cannot
-## judge by eye. Firing yourself is free; the kegs are ranging shots: fire a
-## keg, see where it lands (a marker stays), adjust, fire yourself. Three
+## judge by eye. The kegs are ranging shots, fired from outside the cannon:
+## fire a keg, see where it lands (a marker stays), adjust, fire another;
+## then climb in and launch yourself at the aim and power you tested. Three
 ## kegs, so spend them where the judgement is hard.
 ##  - TARGET_1: a narrow isle off to the left of the first cannon's line.
 ##  - NEAR: a wide isle straight ahead with the second cannon on its back
@@ -13,9 +14,10 @@ extends "res://studies/character_study.gd"
 ## feel); a CannonField (scripts/cannon/cannon_field.gd) fills its
 ## `foot_pieces` slot.
 ##   touch a keg  picked up, hovers behind you
-##   A (Space) at a cannon  man it; a keg in hand loads · stick aims
-##   d-pad (, .) power · A fires what is loaded: a keg (a ranging shot), or
-##   with the barrel empty, you · X loads the next keg · B (E) steps away
+##   at a cannon: A (Space) operate it from outside · Y (F) climb in
+##   operating: stick aims · d-pad (, .) power · A fires a keg (loads it
+##     from your hover first; none, a click) · Y climb in · B (E) step away
+##   inside: A launch yourself · B climb out
 ## `--cannon=in` starts by the first cannon with a keg in hand.
 ##   godot --path . res://studies/cannon_yard.tscn -- --no-title
 const CannonField = preload("res://scripts/cannon/cannon_field.gd")
@@ -95,7 +97,7 @@ func place(at: Vector3, face: Vector2) -> void:
 		_start_with_keg()
 
 func _hint_text() -> String:
-	return "Cannon yard: touch a keg to carry it · A at a cannon mans it (loads a keg) · stick aims · d-pad power · A fires the keg (it leaves a mark), then A again launches you · X load another · B leave · R reset · F1 numbers · F2 feel"
+	return "Cannon yard: touch a keg to carry it · at a cannon A operates it from outside: stick aims, d-pad power, A fires a keg to see where it lands · Y climbs in, then A launches you · B steps away / climbs out · R reset · F1 numbers · F2 feel"
 
 func _show_hud() -> void:
 	super._show_hud()

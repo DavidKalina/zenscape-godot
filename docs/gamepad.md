@@ -53,7 +53,7 @@ The layout follows cozy builders on a pad, such as Townscaper and Tiny Glade on 
 | B or View | Step back out to building | V / Esc |
 | Menu | Pause (steps out) | — |
 
-Walking is already first person, so there is nothing for C, and Y does nothing while walking.
+Walking is already first person, so there is nothing for C, and Y does nothing while walking (except at a cannon, below).
 
 #### Through the telescope
 
@@ -65,6 +65,21 @@ Walking is already first person, so there is nothing for C, and Y does nothing w
 | LB released | Lower | Right mouse released |
 
 While it's up A, Y, R3 and crouch do nothing; held on an isle a moment, its card shows.
+
+#### At a cannon (studies/cannon_yard.tscn, scripts/cannon/cannon_field.gd)
+
+| Pad | Does | Keys |
+|---|---|---|
+| A (standing by it) | Operate it from outside (no jump) | Space |
+| Y (standing by it, or operating) | Climb into the barrel | F |
+| Operating: left stick | Aim the barrel (turn, pitch) | WASD |
+| Operating: D-pad | Power, 5 notches | , . |
+| Operating: A | Fire a keg from the hover (loads it, then fires); none left, a click | Space |
+| Operating: B | Step away | E |
+| Inside: A | Launch yourself, at the aim and power tested | Space |
+| Inside: B | Climb back out (operating again) | E |
+
+The cannon prompt names each button for the mode, the kegs in hand and the power.
 
 ### Flying (the plane)
 

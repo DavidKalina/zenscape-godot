@@ -1,11 +1,11 @@
 extends Node3D
 ## The cannon (docs/design/roguelike/cannon-round1.md): a greybox barrel on a
-## base. Climb in (the field, scripts/cannon/cannon_field.gd, boards the
-## pilot), aim it (yaw and pitch with the stick, power in notches) and fire
-## YOURSELF: free, no ammunition, always usable. Powder kegs are for ranging:
-## the field can fire a keg instead along exactly the same arc (same launch
+## base. Worked from outside (the field, scripts/cannon/cannon_field.gd): aim
+## it (yaw and pitch with the stick, power in notches) and fire powder kegs
+## as ranging shots; each flies exactly the arc you would (same launch
 ## velocity), and the mark where it lands is where you will, at that aim and
-## power. There is no arc preview; reading the keg's flight is the skill.
+## power. Then climb in and fire YOURSELF: free, always usable. There is no
+## arc preview; reading the keg's flight is the skill.
 ## Every number is in `knobs`, sized from the pilot (`unit` is the walker's
 ## half second of walking, 1.2 m at the knobs).
 ##
@@ -61,7 +61,8 @@ static func defaults() -> Dictionary:
 		"pitch_rest":deg_to_rad(40.0),
 		"yaw_rate":1.2,                # rad/s on a full stick
 		"pitch_rate":0.9,
-		"enter_reach":unit*2.4,        # from the base's middle: climb in
+		"enter_reach":unit*2.4,        # from the base's middle: operate or climb in
+		"stand_back":unit*1.35,        # from the base's middle: where he stands to operate it
 		"flash_time":0.25,
 	}
 
