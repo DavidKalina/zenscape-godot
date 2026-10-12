@@ -311,7 +311,9 @@ static func far(piece: Dictionary) -> ArrayMesh:
 				for s: float in [-1.0,1.0]:
 					_far_block(b,RuinKit._box(b,Vector3(side,high*0.5,half.z),0.0),Vector3(x0+Hall.BAY*0.5+s*(w+side),high*0.5,z),0.94)
 				var head := spring+w+0.5
-				if high > head: _far_block(b,RuinKit._box(b,Vector3(w,(high-head)*0.5,half.z),0.0),Vector3(x0+Hall.BAY*0.5,(high+head)*0.5,z),0.94)
+				# A broken arch whose crown is lost (Hall `arch_broken`) is open
+				# to the sky over it, no stone across.
+				if high > head and not (kind == "arch" and Hall.arch_broken()): _far_block(b,RuinKit._box(b,Vector3(w,(high-head)*0.5,half.z),0.0),Vector3(x0+Hall.BAY*0.5,(high+head)*0.5,z),0.94)
 			else:
 				_far_block(b,RuinKit._box(b,Vector3(half.x,high*0.5,half.z),0.0),Vector3(x0+Hall.BAY*0.5,high*0.5,z),0.94)
 			heads[k] = high

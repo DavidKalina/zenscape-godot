@@ -19,8 +19,8 @@ extends RefCounted
 ## (scripts/launch_args.gd's caveat).
 ##
 ## An opening meant to be flown keeps its toy-era width in wingspans
-## (`opening`): the toy width times the plane times RATIO (0.9: the toy
-## era's flight felt right, a tenth off to play it safe). Each file names
+## (`opening`): the toy width times the plane times RATIO (0.95: the toy
+## era's flight felt right, a twentieth off to play it safe). Each file names
 ## its openings' toy widths. `--opening-ratio=<x>` overrides RATIO for a
 ## run; `--plane-scale=1 --opening-ratio=1` gives back every toy width
 ## exactly. `gap(room)` (span plus steering room in toy spans) stays for
@@ -90,13 +90,13 @@ static func gap(room := ROOM) -> float:
 
 ## The share of its toy-era ratio to the wingspan every flown opening keeps:
 ## RATIO by default, `--opening-ratio=<x>` for a run.
-const RATIO := 0.9
+const RATIO := 0.95
 static var ratio: float = _flag("--opening-ratio=",RATIO)
 
 ## An opening the plane flies through, from its toy-era width (its width
 ## when the plane was the 1.4 m toy): toy_width*plane*ratio, so it keeps
-## `ratio` of its old width in wingspans (1.8x the toy width at the
-## defaults: THREAD 3.5 -> 6.3).
+## `ratio` of its old width in wingspans (1.9x the toy width at the
+## defaults: THREAD 3.5 -> 6.65).
 ## Floored at gap(SNUG) (1.2 m past each wingtip) so a small ratio never
 ## closes an opening onto the wings; but the floor never reaches past the
 ## toy width grown with the plane (toy_width*plane), so at ratio 1 it never

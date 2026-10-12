@@ -145,13 +145,18 @@ const SETTLE := 0.4
 ## through); the wall collapsed to its stumps (walked and flown through).
 const BREACHES := ["","door","low","arch","collapse"]
 ## The broken arch ARCH: an opening on the toy era's 5.2 (9.36 at the
-## defaults), equilateral; its springing the toy's 5.4, or lower so its head
-## stays ARCH_UNDER under the roof's top (2.75 at the defaults: a big
-## pointed opening, not a slot torn to the parapet).
+## defaults), equilateral, springing at the toy's 5.4 (ARCH_SPRING) at any
+## size, so it keeps the toy's proportions. Where its head would stand over
+## the roof's top (`arch_broken`: at the defaults it would crown at 13.5)
+## its crown is lost: the wall over it is torn down to a notch from
+## ARCH_BROKE of its rise (the two haunches stand, their ring broken off),
+## and the aisle roof over it is gone with it, the sky open over the breach
+## (`bay`). At plane 1 the toy's whole arch, under the roof.
 const DOOR := Vector4(2.4,0.0,2.2,0.7)
 const TOY_ARCH := 5.2
-const ARCH_UNDER := 0.4
-static var ARCH := _arch(WorldScale.opening(TOY_ARCH))
+const ARCH_SPRING := 5.4
+const ARCH_BROKE := 0.7
+static var ARCH := Vector4(WorldScale.opening(TOY_ARCH),0.0,ARCH_SPRING,1.0)
 const LOW_WALL := Vector2(1.2,1.6)
 ## A flyable breach's corridor: half its width along the nave (an opening
 ## on the toy era's 3.6 across: 1.8 in the toy era, 3.24 at the defaults),
@@ -162,9 +167,12 @@ static var BREACH_HALF: float = WorldScale.opening(TOY_BREACH)*0.5
 ## The bay (see TOY_BAY): the arch and its jambs, or the toy's 8.
 static var BAY: float = maxf(TOY_BAY,ARCH.x+2.0*ARCH_JAMB)
 
-static func _arch(width: float) -> Vector4:
-	var spring := minf(5.4,ROOF_TOP-ARCH_UNDER-0.35-RuinKit._rise(width*0.5,width))
-	return Vector4(width,0.0,spring,1.0)
+## The broken arch's head (the top of its ring) over the ground, and
+## whether it stands over the roof's top, so its crown is lost.
+static func arch_head() -> float:
+	return ARCH.y+ARCH.z+RuinKit._rise(ARCH.x*0.5,ARCH.x*ARCH.w)+0.35
+static func arch_broken() -> bool:
+	return arch_head() > ROOF_TOP
 ## A breach's corridor floor over the ground: BREACH_FLOOR, or over the
 ## outer columns' carved feet (plinth, base and niche band) when the
 ## corridor is wider than the room between those (a big plane's THREAD).
@@ -407,6 +415,11 @@ static func bay(seed_value: int, weathered := 0.0, plan := {}, ground := Callabl
 			var pick: int = nave[b.rng.randi()%nave.size()]
 			if not pick in gaps: gaps.append(pick)
 		if b.rng.randf() < 0.5: gaps.append(0 if b.rng.randf() < 0.5 else 5)
+	# Over a broken arch whose crown is lost the aisle's roof is gone too:
+	# the breach open to the sky.
+	if arch_broken():
+		for k in range(2):
+			if BREACHES[breach[k]] == "arch" and not (k*5) in gaps: gaps.append(k*5)
 	# An outer nave strip (1, 4: its architrave eats into it) is too narrow
 	# to fly out of alone once the plane is big: its inner neighbour goes
 	# with it, and the opening is the two (`runs` below).
@@ -471,7 +484,7 @@ static func bay(seed_value: int, weathered := 0.0, plan := {}, ground := Callabl
 			"collapse":
 				high = mid+b.rng.randf_range(0.6,1.0)
 				low = mid+0.25
-		feet.append(_wall(b,pose,BAY*0.5-0.02,high,opening,low))
+		feet.append(_wall(b,pose,BAY*0.5-0.02,high,opening,low,WALL_THICK,kind == "arch"))
 		if kind in ["low","collapse"]:
 			# What fell: drifts outside, either side of the gap.
 			for x: float in [0.9,BAY-0.9]:
@@ -1061,8 +1074,11 @@ static func _slab(b: Build, x0: float, x1: float, z0: float, z1: float, y: float
 ## opening under its head), and through its middle a pointed `opening`
 ## (clear width, sill over the ground there, height to the springing, the
 ## arc's radius as a share of the width; zero width, none) under a moulded
-## ring, on a sill stone. `thick` its thickness. Gives back its foot.
-static func _wall(b: Build, pose: Transform3D, span: float, high: float, opening: Vector4, low: float, thick := WALL_THICK) -> Vector3:
+## ring, on a sill stone. `thick` its thickness. `crown`: an opening whose
+## head stands over `high` keeps its arc, its crown lost (the wall over it
+## torn to a notch from ARCH_BROKE of its rise, the ring's stones over the
+## notch gone), not run up open to the top as a slot. Gives back its foot.
+static func _wall(b: Build, pose: Transform3D, span: float, high: float, opening: Vector4, low: float, thick := WALL_THICK, crown := false) -> Vector3:
 	var ground_low := INF
 	var ground_mid := b.floor_at(pose.origin.x,pose.origin.z)
 	var x := -span
@@ -1079,11 +1095,22 @@ static func _wall(b: Build, pose: Transform3D, span: float, high: float, opening
 	var head := spring+RuinKit._rise(w,radius)+0.35
 	# No room for its head under the wall's top (a slit under a tie): the
 	# opening runs up open to the top, no ring, the tie its lintel.
-	var slot := open and head > high
+	var lost := open and crown and head > high
+	var slot := open and head > high and not lost
 	var top: Callable = func(_x: float) -> float: return high
 	if b.weathered > 0.2:
 		var ragged := RuinKit._ruin_line(b,-span,span,lerpf(high,low,b.weathered),high,b.weathered)
 		top = func(xx: float) -> float: return minf(high,maxf(float(ragged.call(xx)),head+0.7 if open and absf(xx) < w+1.0 else low))
+	if lost:
+		# The crown lost: over the arch the wall comes down to a notch, its
+		# foot at the haunches' broken ends, rising to the wall's top past
+		# the jambs (a little ragged).
+		var broke := spring+RuinKit._rise(w,radius)*ARCH_BROKE+b.rng.randf_range(-0.3,0.3)
+		var reach := w+1.4
+		var wall_top := top
+		top = func(xx: float) -> float:
+			var t := clampf(absf(xx)/reach,0.0,1.0)
+			return minf(float(wall_top.call(xx)),lerpf(broke,high,t*t))
 	var hole := Callable()
 	if open:
 		hole = func(y: float) -> Vector2:
@@ -1094,7 +1121,7 @@ static func _wall(b: Build, pose: Transform3D, span: float, high: float, opening
 	RuinKit._courses(b,pose,-span,span,y0+(RuinKit.PLINTH_COURSE.x if not b.terrain.is_valid() else 0.0),top,thick*0.5,hole,COURSE)
 	if open:
 		var stones := maxi(4,int(radius*1.4))
-		if not slot: RuinKit._ring_order(b,pose,0.0,spring,w,radius,0.0,0.32,thick*0.5+0.02,stones,99,1.0,RuinKit._stone(b,1.08),0,Callable(),true)
+		if not slot: RuinKit._ring_order(b,pose,0.0,spring,w,radius,0.0,0.32,thick*0.5+0.02,stones,99,1.0,RuinKit._stone(b,1.08),0,top if lost else Callable(),true)
 		b.solid(RuinKit._box(b,Vector3(w+0.3,0.08,thick*0.5+0.05)),pose*RuinKit._settle(b,Vector3(0.0,sill-0.08,0.0),0.3),RuinKit._stone(b,1.08))
 	return Vector3(pose.origin.x,y0,pose.origin.z)
 
