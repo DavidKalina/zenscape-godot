@@ -2,9 +2,9 @@ extends SceneTree
 ## The cloister tarn (studies/cloister_tarn_isle.tscn), headless: the isle
 ## builds within its triangle budget and the pilot starts on the cloister
 ## walk; the ways round it, driven as a player would: the easy way onto the
-## wall-walk (walked, no jump); the wall-walk round as a loop (over the
-## water gate, across the west gap by a twirl between the stubs); the
-## gap's heaps and the buttresses up onto it; the stepping stones and the
+## wall-walk (walked, no jump); the wall-walk round as a loop (up the
+## water gate's steps over its raised walk; down the west gap's chunk and
+## stub, across it on the ground, up the far heap); the gap's heaps and the buttresses up onto it; the stepping stones and the
 ## lavabo's drums; wading and swimming the tarn; the crag walked up the
 ## ridge and the kit stair, and climbed by the north face's tiers; the
 ## leap over the north alley; each rope bridge walked across and back on
@@ -192,19 +192,19 @@ func _walk_loop() -> void:
 	settle(Vector3(c.x,top(),c.y+a),Vector2(1.0,0.0))
 	var walked := walk_only([c+Vector2(a,a),c+Vector2(a,0.0),c+Vector2(a,-a),c+Vector2(-a,-a),c+Vector2(-a,-6.0)])
 	check(walked.ok and walked.fell == 0 and absf(m.feet.y-top()) < 0.1,"Loop: round the wall-walk from the slab bridge over the water gate's raised walk to the west gap's north end, walked (%d falls, %s)" % [walked.fell,feet()])
-	var heap_n := Vector3(c.x-a-0.05,TarnArt.K+3.0,c.y-3.95)
-	var stub4 := Vector3(c.x-a,TarnArt.K+2.4,c.y-1.8)
-	var stub3 := Vector3(c.x-a,TarnArt.K+3.0,c.y+1.8)
-	var heap_s := Vector3(c.x-a-0.05,TarnArt.K+3.0,c.y+3.95)
+	var chunk := TarnArt.GAP_END-TarnArt.HEAP_CHUNK
+	var heap_n := Vector3(c.x-a-0.05,TarnArt.K+3.0,c.y-chunk)
+	var stub4 := Vector3(c.x-a,TarnArt.K+float(TarnArt.STUBS[4]),c.y-TarnArt.STUB_X)
 	var ok := leap(heap_n,"drop")
 	check(ok,"Loop: down off the north end onto the fallen chunk (%s)" % feet())
 	ok = ok and leap(stub4,"jump",Vector3.INF,0.5)
 	check(ok,"Loop: on down onto the lower stub (%s)" % feet())
-	ok = ok and leap(stub3)
-	check(ok,"Loop: a running jump from stub to stub over the gap's middle, 2.7 m and 0.6 m up (%s)" % feet())
-	ok = ok and leap(heap_s,"jump",Vector3.INF,0.5)
-	ok = ok and climb([c+Vector2(-a,6.5)])
-	check(ok and absf(m.feet.y-top()) < 0.1,"Loop: onto the south chunk and up onto the wall-walk past the gap (%s)" % feet())
+	# The stubs stand the plane's slot apart (TarnArt.STUB_GAP, 4.92 m at
+	# the defaults): across the gap on the ground, up the south heap.
+	ok = ok and leap(Vector3(c.x-a,TarnArt.K,c.y),"drop")
+	check(ok,"Loop: down off the stub into the gap, the plane's slot (%.2f m) between the stubs (%s)" % [TarnArt.STUB_GAP,feet()])
+	ok = ok and climb([c+Vector2(-a-1.8,0.0),c+Vector2(-a-1.8,TarnArt.GAP_END-TarnArt.HEAP_BLOCK-1.2),c+Vector2(-a-1.3,TarnArt.GAP_END-TarnArt.HEAP_BLOCK),c+Vector2(-a-0.05,chunk),c+Vector2(-a,TarnArt.GAP_END+0.3)])
+	check(ok and absf(m.feet.y-top()) < 0.1,"Loop: up the south heap and onto the wall-walk past the gap (%s)" % feet())
 	walked = walk_only([c+Vector2(-a,a),c+Vector2(0.0,a)])
 	check(ok and walked.ok and walked.fell == 0 and absf(m.feet.y-top()) < 0.1,"Loop: on round to the slab bridge, the loop closed (%s)" % feet())
 
@@ -213,8 +213,9 @@ func _walk_loop() -> void:
 func _gap_heaps() -> void:
 	var c := TarnArt.C
 	var a := TarnArt.ARC
+	var e := TarnArt.GAP_END
 	for s: float in [1.0,-1.0]:
-		var ok := climb([c+Vector2(-a-1.3,s*3.9),c+Vector2(-a-0.05,s*3.95),c+Vector2(-a,s*6.5)],Vector3(c.x-a-3.2,TarnArt.K,c.y+s*3.9))
+		var ok := climb([c+Vector2(-a-1.3,s*(e-TarnArt.HEAP_BLOCK)),c+Vector2(-a-0.05,s*(e-TarnArt.HEAP_CHUNK)),c+Vector2(-a,s*(e+0.3))],Vector3(c.x-a-3.2,TarnArt.K,c.y+s*(e-TarnArt.HEAP_BLOCK)))
 		check(ok and absf(m.feet.y-top()) < 0.1,"Heap: up the %s heap at the gap from the alley onto the wall-walk (%s)" % ["south" if s > 0.0 else "north",feet()])
 
 ## The north range's buttresses from the garth: their set-offs, then the

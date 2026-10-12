@@ -11,7 +11,7 @@ extends "res://studies/kit_isle.gd"
 ## gate and off the edge as a wide curtain. Round the tarn stands a ruined
 ## cloister (scripts/ruin_kit_cloister.gd): four ranges of pointed arches on
 ## clustered piers carrying a wall-walk that runs round as a loop, its west
-## range fallen in the middle (the cloister's gap: two snapped piers to hop,
+## range fallen in the middle (the cloister's gap: two snapped piers to perch on,
 ## heaps at its ends to climb), a lavabo on a little isle in the tarn
 ## (stepping stones out to it), a slab bridge from the south terrace onto
 ## the walk. Round the mother, four satellite isles at different heights,
@@ -20,7 +20,7 @@ extends "res://studies/kit_isle.gd"
 ## other by floating stones: a ring.
 ##
 ## The plane's line: in over the west saddle, through the cloister's gap
-## (between the stubs on knife edge, or over them), skimming the tarn, out
+## (between the stubs, level: TarnArt.STUB_GAP, or over them), skimming the tarn, out
 ## through the water gate and off over the fall.
 ##   R            back to the start (the cloister's south-east corner)
 ##   L / Shift+L  look presets · B gust · Space (pad A) by the parked plane

@@ -203,7 +203,9 @@ static func tarn_tokens() -> Array:
 	return [
 		["ct:gap","air","thread",[Vector3(c.x-TarnArt.ARC-6.0,TarnArt.K+2.2,c.y),Vector3(c.x-TarnArt.ARC,TarnArt.K+1.4,c.y)]],
 		["ct:skim","air","skim",[Vector3(c.x-5.0,TarnArt.W+1.0,c.y+1.5),Vector3(c.x+4.0,TarnArt.W+1.0,c.y+1.0)]],
-		["ct:gate","air","thread",[Vector3(c.x+TarnArt.ARC,TarnArt.W+1.2,c.y)]],
+		# Through the water gate at its springing, where it is widest
+		# (TarnArt.GATE), its round head over it.
+		["ct:gate","air","thread",[Vector3(c.x+TarnArt.ARC,TarnArt.K+Cloister.SPRING,c.y)]],
 		["ct:fall","air","dive",[Vector3(lip.x+3.0,TarnArt.W-5.0,lip.z),Vector3(lip.x+5.0,TarnArt.W-12.0,lip.z)]],
 		["ct:keel","under","keel",[Vector3(c.x,TarnArt.W-TarnArt.KEEL-4.0,c.y)]],
 	]
