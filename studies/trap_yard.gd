@@ -101,13 +101,16 @@ func _load_pack() -> void:
 		var spawn := Vector3(x,0.0,run_up)
 		trap.position = Vector3(x,0.0,0.0)
 		_laid.append(trap)
+		var parts: Array = [
+			["box",Rect2(x-DECK_WIDE*0.5,0.0,DECK_WIDE,run_up+4.0),-1.0,0.0,"pad"],
+			["box",Rect2(x-DECK_WIDE*0.5,-long-END_DECK,DECK_WIDE,END_DECK),-1.0,0.0,"pad"],
+			["label",Vector3(x,1.2,-long-END_DECK*0.5),"far deck"],
+		]
+		# A trap may ask for open void under it (`open_below`): no floor.
+		if not (trap.has_method("open_below") and bool(trap.call("open_below"))):
+			parts.append(["box",Rect2(x-DECK_WIDE*0.5,-long,DECK_WIDE,long),-drop-1.0,-drop,"floor"])
 		stations.append({"key":i+1,"name":"%s (cost %d)" % [key,trap.danger()],"spawn":spawn,"face":Vector2(0.0,-1.0),
-			"sign":Vector3(x,SIGN_UP,run_up+2.0),"parts":[
-				["box",Rect2(x-DECK_WIDE*0.5,0.0,DECK_WIDE,run_up+4.0),-1.0,0.0,"pad"],
-				["box",Rect2(x-DECK_WIDE*0.5,-long-END_DECK,DECK_WIDE,END_DECK),-1.0,0.0,"pad"],
-				["box",Rect2(x-DECK_WIDE*0.5,-long,DECK_WIDE,long),-drop-1.0,-drop,"floor"],
-				["label",Vector3(x,1.2,-long-END_DECK*0.5),"far deck"],
-			]})
+			"sign":Vector3(x,SIGN_UP,run_up+2.0),"parts":parts})
 		if _chosen == key or _chosen == str(i+1):
 			start = spawn
 		i += 1
