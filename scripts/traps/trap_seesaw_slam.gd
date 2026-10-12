@@ -32,11 +32,12 @@ func build() -> void:
 func _set_block() -> void:
 	tilt = -float(knob("max_tilt"))
 	spin = 0.0
-	_pose()
+	teleport()
 	var z := pivot_z()-length()*0.5*float(knob("block_arm"))
 	block.linear_velocity = Vector3.ZERO
 	block.angular_velocity = Vector3.ZERO
-	block.transform = Transform3D(Basis.IDENTITY,Vector3(0.0,_surface_y(z)+float(knob("block"))*0.5+0.02,z))
+	# Sat square on the tilted deck.
+	block.transform = body.transform*Transform3D(Basis.IDENTITY,Vector3(0.0,float(knob("block"))*0.5+0.01,z))
 
 func reset() -> void:
 	super()
