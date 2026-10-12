@@ -63,6 +63,12 @@ const CALL_UNIT := 140.0
 const CALL_REACH := 2600.0
 const CALL_GAP := 16.0
 const APPROACH := 420.0
+## His sight (scripts/dragon_sight.gd, docs/design/dragon-vision/round1.md):
+## turned suspicious, a short questioning call (SUSPECT of CALL's gain,
+## pitched up SUSPECT_PITCH); spotted, his roar's call always sounds (the
+## call's gap waived).
+const SUSPECT := 0.55
+const SUSPECT_PITCH := 1.2
 ## On a rim: the slam, the rubble, the growl (by the breath's beat), the
 ## grinding stone (a base while held, more with the sag's speed, m/s),
 ## the draw in and the blow.
@@ -368,7 +374,7 @@ func _dragon_beds(dragon: Node) -> Dictionary:
 	var gale := _bed(KIT+"gale-howl-loop.wav",SFX,true,40.0,GALE_REACH)
 	gale.attack = 3.0
 	gale.release = 0.8
-	var beds := {"air":air,"growl":growl,"grind":grind,"gale":gale,"phase":-1.0,"roar":-1.0,"state":"waiting","breath":"","dist":INF,"launched":0}
+	var beds := {"air":air,"growl":growl,"grind":grind,"gale":gale,"phase":-1.0,"roar":-1.0,"seen":"unaware","state":"waiting","breath":"","dist":INF,"launched":0}
 	_d[id] = beds
 	return beds
 
@@ -404,6 +410,14 @@ func _dragon(dragon: Node, delta: float, listener: Vector3) -> float:
 	var spd := float(dragon.speed) if state != "clinging" else 0.0
 	air.goal = PASS*smoothstep(PASS_SPEED.x,PASS_SPEED.y,spd) if dist < 500.0 else 0.0
 	air.pitch_goal = 0.5+0.2*smoothstep(PASS_SPEED.x,PASS_SPEED.y,spd)
+	# Its sight: a call as it turns suspicious; spotted, its roar's call.
+	var sight: Variant = dragon.get("sight")
+	if sight != null:
+		var seen := str(sight.state)
+		if seen != str(b.seen):
+			if seen == "suspicious" and str(b.seen) == "unaware": shot("dragon_call",CALL*SUSPECT,SUSPECT_PITCH*_rng.randf_range(0.97,1.03),dragon.mouth_at(),CALL_UNIT,CALL_REACH,FAR)
+			elif seen == "spotted": _call_wait = 0.0
+		b.seen = seen
 	# Its roars: the call as the jaw opens.
 	var roar: float = dragon.roar_time() if dragon.has_method("roar_time") else -1.0
 	if state != "clinging" and float(b.roar) < 0.45 and roar >= 0.45: _call(dragon.mouth_at())

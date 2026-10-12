@@ -58,6 +58,14 @@ extends Node3D
 ## dragon_downwash.gd; the host reads it for the plane and the sail).
 ## --dragon-downwash-test keeps him circling low round the home isle,
 ## beating, no attacks (=glide: his own beats and glides).
+##
+## Sight (docs/design/dragon-vision/round1.md): flying, he looks for the
+## pilot (`sight`, scripts/dragon_sight.gd) when the host gives him one
+## (`sight_target`). Suspicious, his head turns to track the pilot and his
+## eyes glow brighter (a call in the kit audio); spotted, he roars. Nothing
+## else yet. A host may give him a fixed `loop` to fly (the vision greybox,
+## studies/dragon_vision_study.gd) and turn his idle roars off
+## (`idle_roars`), so a roar always means he has seen you.
 
 signal yielded
 
@@ -136,6 +144,31 @@ const DragonGale = preload("res://scripts/dragon_gale.gd")
 const DragonDownwash = preload("res://scripts/dragon_downwash.gd")
 ## The air his wings push (see the header), updated every frame.
 var downwash := DragonDownwash.new()
+const DragonSight = preload("res://scripts/dragon_sight.gd")
+## What he sees (see the header), updated every frame he flies.
+var sight := DragonSight.new()
+## The host's pilot to look for: returns {"points": PackedVector3Array,
+## "airborne": bool} (DragonSight.pilot_points), or {} for none. Unset, he
+## looks for no one.
+var sight_target := Callable()
+## His head tracking the pilot once suspicious: the most it turns (rad,
+## yaw either way; pitch down and up) and how fast it gets there.
+const TRACK_YAW := 1.2
+const TRACK_PITCH := Vector2(-1.0,0.5)
+## His eyes' glow while alert: the day and night emission times up to
+## ALERT_EYE at spotted (half of that over 1 suspicious); the halos shown by
+## day too at ALERT_HALO of their night strength; eased at ALERT_EASE a second.
+const ALERT_EYE := 4.0
+const ALERT_HALO := 1.4
+const ALERT_EASE := 1.5
+var _alert := 0.0
+## His idle roars (every 12 to 22 s); off, he roars only on spotting you.
+var idle_roars := true
+## A fixed loop to fly (world points, flown through in order, round and
+## round), set before `setup`; empty: his own roaming.
+var loop: Array = []
+## The snout's way in the head bone's rest frame (head to the jaw's tip).
+var _snout := Vector3.FORWARD
 var _ground_t := 0.0
 var _ground_y := -INF
 var _wake_flew := false
@@ -431,6 +464,7 @@ var tip_jerk := 0.0
 
 func _init() -> void:
 	name = "SkyDragon"
+	sight.state_changed.connect(_on_sight)
 
 func setup(cam: Camera3D, args: PackedStringArray, sea: float, middle: Vector3, top: float, isle_list: Array) -> void:
 	camera = cam
@@ -473,7 +507,7 @@ func setup(cam: Camera3D, args: PackedStringArray, sea: float, middle: Vector3, 
 		elif arg.begins_with("--dragon-watch="): watch = arg.get_slice("=",1)
 	if _attack_now and not args_have(args,"--dragon-delay="): delay = 0.3
 	_attack_in = _attack_every*0.55
-	if _circle != "":
+	if _circle != "" or not loop.is_empty():
 		_attack_in = INF
 		if not args_have(args,"--dragon-delay="): delay = 0.5
 	_build()
@@ -513,6 +547,11 @@ func _build() -> void:
 	_build_probes()
 	_dress(model)
 	model.visible = false
+	if _bone.has("head") and _bone.has("jaw.tip"):
+		var head_rest := skeleton.get_bone_global_rest(_bone["head"])
+		var tip := head_rest.affine_inverse()*skeleton.get_bone_global_rest(_bone["jaw.tip"]).origin
+		if tip.length() > 0.001: _snout = tip.normalized()
+	if chin != null: sight.exclude = [chin.get_rid()]
 	# The tail's rest: the hips' end to the tip, in the skeleton's frame.
 	var pts: Array = []
 	for i in range(_tail_n): pts.append(skeleton.get_bone_global_rest(_bone["tail.%d" % i]).origin)
@@ -836,9 +875,9 @@ func _place_eye_halos() -> void:
 		_eye_halos.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		_eye_halos.top_level = true
 		add_child(_eye_halos)
-	_eye_halos.visible = night > 0.001 and model.visible
+	_eye_halos.visible = (night > 0.001 or _alert > 0.001) and model.visible
 	if not _eye_halos.visible: return
-	_eye_halo_material.set_shader_parameter("glow",night*NIGHT_EYE_HALO_STRENGTH)
+	_eye_halo_material.set_shader_parameter("glow",maxf(night*NIGHT_EYE_HALO_STRENGTH,_alert*ALERT_HALO))
 	var head := skeleton.global_transform*skeleton.get_bone_global_pose(_bone["head"])
 	var across := NIGHT_EYE_HALO*size
 	for k in range(_eye_points.size()):
@@ -850,8 +889,9 @@ func _night_glow(delta: float) -> void:
 	night = move_toward(night,goal,delta/NIGHT_FADE)
 	var open := clampf(_jaw*4.0,0.0,1.0)
 	if breath == "inhale": open = maxf(open,0.8)
+	_alert = move_toward(_alert,sight.alert(),delta*ALERT_EASE)
 	for m: StandardMaterial3D in _night_materials.get("dragon_eye",[]):
-		m.emission_energy_multiplier = lerpf(NIGHT_EYE.x,NIGHT_EYE.y,night)
+		m.emission_energy_multiplier = lerpf(NIGHT_EYE.x,NIGHT_EYE.y,night)*lerpf(1.0,ALERT_EYE,_alert)
 	for m: StandardMaterial3D in _night_materials.get("dragon_glow",[]):
 		m.emission_energy_multiplier = lerpf(NIGHT_SPINES.x,NIGHT_SPINES.y,night)
 	for m: ShaderMaterial in _night_materials.get("dragon_membrane_glow",[]):
@@ -893,7 +933,19 @@ func _start() -> void:
 	leg_kind = "rise"
 	# Then straight into a low pass, so it is seen soon.
 	_add_low_pass()
-	if _circle != "":
+	if not loop.is_empty():
+		# A fixed loop (the vision greybox): already on it, level.
+		route.clear()
+		_leg_kinds.clear()
+		pos = loop[0]
+		var to: Vector3 = loop[1%loop.size()]
+		yaw = atan2(-(to.x-pos.x),-(to.z-pos.z))
+		gamma = 0.0
+		speed = 30.0
+		for i in range(1,loop.size()+1):
+			route.append(loop[i%loop.size()])
+			_leg_kinds.append("low pass")
+	elif _circle != "":
 		# --dragon-downwash-test: already on the circle, level.
 		route.clear()
 		_leg_kinds.clear()
@@ -1103,6 +1155,11 @@ func _add_circle() -> void:
 	_leg_kinds.append("low pass")
 
 func _next_legs() -> void:
+	if not loop.is_empty():
+		for p: Vector3 in loop:
+			route.append(p)
+			_leg_kinds.append("low pass")
+		return
 	if _circle != "":
 		_add_circle()
 		return
@@ -1185,6 +1242,7 @@ func advance(delta: float) -> void:
 		if wake != null: wake.call("advance",delta)
 		else: roost.advance(delta)
 		_downwash(delta,_wake_flew)
+		_look_out(delta,_wake_flew)
 		_wake_flew = false
 		_night_glow(delta)
 		if awake(): _watch_camera(delta)
@@ -1197,6 +1255,7 @@ func advance(delta: float) -> void:
 			ahead -= 1.0/30.0
 	_step(minf(delta,0.1))
 	_downwash(delta,state in ["roaming","rising"] and model.visible)
+	_look_out(delta,state in ["roaming","rising"] and model.visible)
 	_night_glow(delta)
 	_watch_camera(delta)
 
@@ -1205,7 +1264,7 @@ func _step(delta: float) -> void:
 	_t += delta
 	if state == "waiting":
 		if _t < delay: return
-		state = "roaming" if _pass_now or _attack_now or _circle != "" else "rising"
+		state = "roaming" if _pass_now or _attack_now or _circle != "" or not loop.is_empty() else "rising"
 		model.visible = true
 		_t = 0.0
 	if state == "roaming": _attack_in -= delta
@@ -1360,6 +1419,36 @@ func _downwash(delta: float, flying: bool) -> void:
 		_ground_y = (hit.position as Vector3).y if not hit.is_empty() else -INF
 	downwash.update(delta,flying,at,yaw,size,phase,flap_w,hz,_ground_y,is_inside_tree())
 
+## His sight's frame (scripts/dragon_sight.gd): flying with a pilot to look
+## for, from his eye along his snout; else blind (the awareness drains).
+func _look_out(delta: float, flying: bool) -> void:
+	var want: Dictionary = sight_target.call() if flying and sight_target.is_valid() and is_inside_tree() else {}
+	if want.is_empty() or (want.get("points",PackedVector3Array()) as PackedVector3Array).is_empty():
+		sight.blind(delta)
+		return
+	sight.update(delta,get_world_3d().direct_space_state,head_eye(),head_look(),want.points,bool(want.get("airborne",false)))
+
+## His eye (world): between his eyes on the head bone as posed (the head's
+## middle without them).
+func head_eye() -> Vector3:
+	var head := skeleton.global_transform*skeleton.get_bone_global_pose(_bone["head"])
+	var points: Array[Vector3] = _eye_points if not _eye_points.is_empty() else _open_eyes
+	if points.is_empty(): return head.origin
+	var m := Vector3.ZERO
+	for p in points: m += head*p
+	return m/float(points.size())
+
+## Where his head points (world, unit): the head bone's snout as posed.
+func head_look() -> Vector3:
+	var head := skeleton.global_transform*skeleton.get_bone_global_pose(_bone["head"])
+	return (head.basis*_snout).normalized()
+
+## Each change of his sight's state: spotted, he roars (its call in the kit
+## audio, scripts/kit_isle/kit_audio_beasts.gd, as every roar's).
+func _on_sight(now: String, was: String) -> void:
+	print("sky dragon: sight %s -> %s (awareness %.2f, visibility %.2f, %.0f m)" % [was,now,sight.awareness,sight.visibility,sight.distance])
+	if now == "spotted" and _roar_t < 0.0: _roar_t = 0.0
+
 ## Held in place for a pose check.
 func _held(delta: float) -> void:
 	state = "roaming"
@@ -1458,7 +1547,13 @@ func _pose(delta: float) -> void:
 	_lead_v += ((want_lead-_lead)*6.0-_lead_v*3.2)*delta
 	_lead += _lead_v*delta
 	var look_goal := Vector2.ZERO
-	if camera != null and watch != "chase":
+	var track := sight.target() if sight.state != "unaware" else Vector3.INF
+	if track != Vector3.INF:
+		# Suspicious or spotted: the head turns to the pilot, wider than
+		# to the camera, and fully.
+		var off := global_transform.affine_inverse()*track
+		look_goal = Vector2(clampf(atan2(-off.x,-off.z),-TRACK_YAW,TRACK_YAW),clampf(atan2(off.y,Vector2(off.x,off.z).length()),TRACK_PITCH.x,TRACK_PITCH.y))
+	elif camera != null and watch != "chase":
 		var eye := camera.global_position
 		var off := global_transform.affine_inverse()*eye
 		var d := off.length()
@@ -1494,7 +1589,7 @@ func _mouth(delta: float) -> void:
 	if state == "clinging" and _jaw_goal >= 0.0:
 		# On the rim the breath sets the jaw (no chews, no roars).
 		goal = _jaw_goal
-	elif _roar_t < 0.0 and _hold_pose != "roar":
+	elif _roar_t < 0.0 and _hold_pose != "roar" and idle_roars:
 		_roar_next -= delta
 		if _roar_next <= 0.0:
 			_roar_t = 0.0
