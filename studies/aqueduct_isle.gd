@@ -91,6 +91,9 @@ extends "res://studies/kit_isle.gd"
 ## full-bodied dragon (scripts/sky_dragon.gd) rises out of the cloud sea and
 ## roams the archipelago, now and then low over the isle; V puts the camera
 ## on it. Its other flags are its own.
+## --watcher: a stranger on the south rim, binoculars up, watching a glint
+## on the rune serpent's back (scripts/kit_isle/watcher.gd, docs/design/
+## watcher/round1.md).
 ## --dragon-ride (round 5) starts the pilot on foot on the isle it grips, to
 ## ride the sag and be flung by the snap; G makes it let go.
 ## The blast is a gust for the plane too (round 10, scripts/dragon_gale.gd
@@ -550,10 +553,21 @@ func _capture_flying() -> void:
 func _add_life() -> void:
 	super._add_life()
 	if dragon_on: _build_sky_dragon()
+	if Watcher.wanted() and sky != null and sky.get("serpent") != null:
+		watcher = Watcher.new()
+		add_child(watcher)
+		watcher.setup(self)
 	if NightLights.wanted(preload("res://scripts/launch_args.gd").user_args()):
 		night_lights = NightLights.new()
 		add_child(night_lights)
 		night_lights.setup(self,night_lamp_spots)
+
+# --- The watcher (scripts/kit_isle/watcher.gd, --watcher) ----------------------------
+
+## A stranger on the south rim, binoculars up, following a glint on the
+## serpent's back (docs/design/watcher/round1.md); null without --watcher.
+const Watcher = preload("res://scripts/kit_isle/watcher.gd")
+var watcher: Node3D = null
 
 # --- The night's lights (scripts/kit_isle/kit_night_lights.gd) ----------------------
 
