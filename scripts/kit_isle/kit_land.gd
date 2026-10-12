@@ -272,7 +272,7 @@ const PRISM_DROP := 1.5
 const PRISM_RIM := 2.0
 const PRISM_RIM_DROP := 0.3
 static func surface(points: PackedVector2Array, heights: PackedFloat32Array, poly: PackedVector2Array, rng: RandomNumberGenerator,
-		tone: Callable, rocky := Callable(), cliffy := PackedByteArray(), steep := 0.0) -> Dictionary:
+		tone: Callable, rocky := Callable(), cliffy := PackedByteArray(), steep := 0.0, prism_drop := PRISM_DROP) -> Dictionary:
 	var tris := Geometry2D.triangulate_delaunay(points)
 	var pal := KitLook.palette()
 	var ground := KitLook.GroundMesh.new()
@@ -296,7 +296,7 @@ static func surface(points: PackedVector2Array, heights: PackedFloat32Array, pol
 			# Under the rim (within PRISM_RIM of the outline) a prism hangs
 			# only PRISM_RIM_DROP: the sides drawn below the rim turn in, and
 			# a deep one stood out under the lip in the air, invisible.
-			var drop := PRISM_DROP if edge_distance(mid,poly) > PRISM_RIM else PRISM_RIM_DROP
+			var drop := prism_drop if edge_distance(mid,poly) > PRISM_RIM else PRISM_RIM_DROP
 			var deep := minf(pa.y,minf(pb.y,pc.y))-drop
 			var hull := PackedVector3Array([pa,pb,pc,Vector3(pa.x,deep,pa.z),Vector3(pb.x,deep,pb.z),Vector3(pc.x,deep,pc.z)])
 			if RuinKit.hull_thickness(hull) >= RuinKit.HULL_THIN: solid.append(hull)
@@ -441,6 +441,8 @@ static func ring_sides(ring: Array, rim_y: PackedFloat32Array, centre: Vector2, 
 ##   tone      (mid (x, z), normal, shimmer, mean y) -> Color: its turf
 ##   hang      the lip and earth hang from a high rim's own height
 ##   apart     the cliffs' prisms in bodies apart from the ground's
+##   prism_drop  how far the cliffs' prisms hang under their faces away from
+##             the rim (PRISM_DROP)
 ## Meta: outline, ground_points, cliff_prisms.
 static func island(spec: Dictionary) -> Node3D:
 	var rng := RandomNumberGenerator.new()
@@ -466,7 +468,7 @@ static func island(spec: Dictionary) -> Node3D:
 		g.grid(fine,rng,ground,[fine_box],true,true)
 	else:
 		g.grid(fine if has_cliffs else cell,rng,ground,[],true,has_cliffs)
-	var built := surface(g.points,g.heights,g.poly,rng,spec.tone,Callable(),g.cliffy())
+	var built := surface(g.points,g.heights,g.poly,rng,spec.tone,Callable(),g.cliffy(),0.0,float(spec.get("prism_drop",PRISM_DROP)))
 	draw(node,built)
 	var rims := PackedFloat32Array()
 	for p: Vector2 in ring: rims.append(float(ground.call(p.x,p.y)))

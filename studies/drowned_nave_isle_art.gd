@@ -533,6 +533,11 @@ static func isle(seed_value: int) -> Node3D:
 		"walled":func(e: Vector2) -> bool: return walled(e),
 		"cell":1.8,"fine":1.1,"fine_box":Rect2(C.x-38.0,C.y-25.0,108.0,50.0),
 		"hang":true,"apart":true,
+		# The cliffs' prisms (the apse's tiers, the stair's cut) hang only
+		# PRISM_RIM_DROP under their faces: 1.5 m deep, those down the
+		# stair's cut came out under the cut's turf and the grand stair's
+		# bedded blocks, an invisible metre and more of rock.
+		"prism_drop":KitLand.PRISM_RIM_DROP,
 		"tone":KitLook.turf(seed_value,func(p: Vector2) -> float: return path_wear(p),wet_tone)}
 	var node: Node3D = KitLand.island(spec)
 	node.name = "NaveIsle"
