@@ -42,6 +42,39 @@ Where the cheat can show (keep these in mind for later features):
 - Ask scripts/world_scale.gd (sizes) and scripts/plane_ground_scale.gd (the
   size right now) how big the plane is; don't hard-code either in new code.
 
+## Merge with main (merge/scale-into-main)
+
+Main's walkable pieces, lanterns and sound were placed against the old
+aqueduct isle. Fix-ups:
+- **Rope route** (scripts/interactables/aqueduct_foot_route.gd) is now
+  laid out from Art:
+  - the ropes' z: the near and far rims at ROPE_X (`near_rim`/`far_rim`
+    on Art.NEAR/FAR). The gap there is 30.2 m now, 16 on main.
+  - the beams lie on the east parapet (TOP+DECK). That makes the ropes
+    9.3 m long, not 5.6, and a plain release reaches 26.5 m
+    (measure_rope_reach). Three ropes are 17.6 m apart.
+  - the ferry spans rim to rim at x 110, at main's pace (a 25 s period).
+  - the --foot-at spots.
+
+  test_foot_interactables's ferry and far-island z checks now read the
+  route's values, with main's margins.
+- **Balustrade floater** (audit): a baluster whose top the wear broke off
+  stood on the stair's treads, which its Build couldn't see. The Build's
+  `terrain` is now the treads (`floor_at`). The rail was already derived
+  from the stair.
+- **Drift up** (test_aqueduct_isle): main's way-in lantern (night lights)
+  stood on the drift's summit landing. With the crown 4 m higher, the drift
+  now comes down onto the summit and landed on the lantern. Moved to 15
+  degrees (`NIGHT_WAY_IN`). The gate's two lanterns follow Art.GATE; they
+  were in open sky. The moveset is unchanged.
+- **Plane sound check**: main's sound round 1 voices the plane in KitAudio
+  (GlideAir `voiced` off), so test_aqueduct_isle_plane now checks KitAudio's
+  rush and engine goals. Main has the same stale check.
+- test_stair_clouds_isle passes after the cleanup merge, and
+  test_manual_landing_game passed 3 of 3 alone.
+
+Related set (44): 41 pass. The 3 known base failures remain.
+
 ## Scale cleanup (feature/scale-cleanup)
 
 Closes the Open list of the section below, at ratio 1.0. Where they

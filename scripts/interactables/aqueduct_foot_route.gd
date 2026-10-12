@@ -5,11 +5,13 @@ extends RefCounted
 ##   1. the grand stair down from the henge terrace: a balustrade down each
 ##      cheek (slide it, flung off its foot east across the meadow);
 ##   2. beside the aqueduct, out over the near island's north meadow and
-##      the 16 m gap: three ropes hung from stone beams laid out over the
-##      aqueduct's east parapet, a cloth tag off each beam's end, the first
-##      over the meadow (run into it or jump to it), the second and third
-##      over the gap, each a plain release on from the last (rope, rope,
-##      rope), and from the third a release lands him on the far island;
+##      the gap (30 m at plane 2, ratio 1.0): three ropes hung from stone
+##      beams laid out over the aqueduct's east parapet, a cloth tag off
+##      each beam's end, the first over the meadow (run into it or jump to
+##      it), the second and third over the gap (laid out from the isle as
+##      drawn, so they follow its scale), each a plain release on from the
+##      last (rope, rope, rope), and from the third a release lands him on
+##      the far island;
 ##   3. back across the gap east of it on a drifting slab, a ferry out and
 ##      back;
 ##   4. off the near island's east rim, three bobbing slabs climbing out to
@@ -29,34 +31,70 @@ const LaunchArgs = preload("res://scripts/launch_args.gd")
 const SwingRope = preload("res://scripts/interactables/swing_rope.gd")
 
 const TOP := Art.TOP
-## The ropes: the anchor's x under the beam's outer end (the beam from the
-## deck out over the east face, clear of the buttress at x 104.3), their z
-## along the aqueduct, the anchor's height and the rope's length (its knot
-## SwingRope.KNOT over the turf, at a standing walker's hands). Measured
-## (tools/measure_rope_reach.gd, round 3), a 5.6 m rope's well-timed plain
-## release reaches 19.0 m held by the knot, a twirl 24.4 (22.8 held 0.7 m
-## up, as a running jump takes it), the sail 44.9. So the first hangs over
-## the near island's meadow, 7.7 m in from the rim, run into or jumped to;
-## the second over the gap 10.5 m on and the third 10.5 m past it, 2.8 m
-## short of the far rim: each well inside a plain release (the user asked
-## for rope, rope, rope across, 2026-10-11). From the third a release
-## lands well up the far island.
+## The ropes, laid out from the isle as drawn (Art: the aqueduct's deck,
+## the near and far islands' rims), so they follow its scale: the anchor's
+## x under the beam's outer end (the beam from the deck out over the east
+## face, clear of the buttress at x 104.3), lying on the east parapet, the
+## anchor ROPE_UNDER under the beam, the rope down to its knot SwingRope.KNOT
+## over the turf, at a standing walker's hands (9.3 m at deck 10). The
+## first hangs over the near island's meadow ROPE_IN in from its rim, run
+## into or jumped to; the third ROPE_SHORT short of the far rim; the second
+## halfway: rope, rope, rope across (the user, 2026-10-11). Measured
+## (tools/measure_rope_reach.gd), a 9.3 m rope's well-timed plain release
+## reaches 26.5 m (5.6 m: 19.0), so at plane 2, ratio 1.0 (a 30.2 m gap)
+## each 17.6 m on is well inside one. From the third a release lands well
+## up the far island.
 const ROPE_X := 106.3
-const ROPE_ZS := [-16.6,-27.1,-37.6]
-const ROPE_LENGTH := SwingRope.LENGTH
-const ROPE_TOP := TOP+SwingRope.KNOT+ROPE_LENGTH
-## The ferry: along z across the gap at x, there and back in PERIOD s.
-const FERRY := [Vector3(110.0,TOP+0.3,-27.0),Vector3(110.0,TOP+0.3,-40.8)]
-const FERRY_PERIOD := 11.0
+const ROPE_IN := 7.7
+const ROPE_SHORT := 2.8
+const ROPE_UNDER := 0.25
+const BEAM := Vector3(6.4,0.5,0.6)
+static var BEAM_Y: float = TOP+Art.DECK+Art.PARAPET.y+BEAM.y*0.5
+static var ROPE_TOP: float = BEAM_Y-BEAM.y*0.5-ROPE_UNDER
+static var ROPE_LENGTH: float = ROPE_TOP-TOP-SwingRope.KNOT
+static var ROPE_ZS: Array = _rope_zs()
+## The ferry: along z across the gap at FERRY_X, from FERRY_OUT out past the
+## near rim to FERRY_SHORT short of the far rim, there and back at
+## FERRY_PACE (m/s on average: main's 13.8 m in 5.5 s).
+const FERRY_X := 110.0
+const FERRY_OUT := 2.0
+const FERRY_SHORT := 1.6
+const FERRY_PACE := 13.8/5.5
+static var FERRY: Array = [Vector3(FERRY_X,TOP+0.3,near_rim(FERRY_X)-FERRY_OUT),Vector3(FERRY_X,TOP+0.3,far_rim(FERRY_X)+FERRY_SHORT)]
+static var FERRY_PERIOD: float = 2.0*absf((FERRY[1] as Vector3).z-(FERRY[0] as Vector3).z)/FERRY_PACE
 ## The bobbing slabs off the east rim to the east islet.
 const BOBS := [Vector3(129.6,TOP+0.3,3.4),Vector3(132.6,TOP+0.8,2.0),Vector3(135.0,TOP+1.4,-1.4)]
-## Where --foot-at= starts him: [feet, the way faced (x, z)].
-const SPOTS := {
+## Where --foot-at= starts him: [feet, the way faced (x, z)]. Ropes: 10 m
+## short of the first; ferry: 1.1 m in on the far island behind its end.
+static var SPOTS: Dictionary = {
 	"rail":[Vector3(77.8,TOP+4.48,-1.0),Vector2(1.0,0.0)],
-	"ropes":[Vector3(ROPE_X,TOP,-6.6),Vector2(0.0,-1.0)],
-	"ferry":[Vector3(110.0,TOP,-43.5),Vector2(0.0,1.0)],
+	"ropes":[Vector3(ROPE_X,TOP,float(ROPE_ZS[0])+10.0),Vector2(0.0,-1.0)],
+	"ferry":[Vector3(FERRY_X,TOP,far_rim(FERRY_X)-1.1),Vector2(0.0,1.0)],
 	"slabs":[Vector3(124.0,TOP,4.0),Vector2(1.0,-0.2)],
 }
+
+## The near island's north rim at `x` (world z), and the far island's south
+## rim (Art.NEAR, Art.FAR as moved with the aqueduct's run).
+static func near_rim(x: float) -> float:
+	return _crossing(Art.NEAR,x,true)
+
+static func far_rim(x: float) -> float:
+	return _crossing(Art.FAR,x,false)
+
+static func _crossing(outline: Array, x: float, north: bool) -> float:
+	var best := INF if north else -INF
+	for i in range(outline.size()):
+		var a: Vector2 = outline[i]
+		var b: Vector2 = outline[(i+1)%outline.size()]
+		if a.x == b.x or (a.x-x)*(b.x-x) > 0.0: continue
+		var z := lerpf(a.y,b.y,(x-a.x)/(b.x-a.x))
+		best = minf(best,z) if north else maxf(best,z)
+	return best
+
+static func _rope_zs() -> Array:
+	var first := near_rim(ROPE_X)+ROPE_IN
+	var third := far_rim(ROPE_X)+ROPE_SHORT
+	return [first,(first+third)*0.5,third]
 
 ## The camera's angle from straight up at a --foot-at= start (radians; the
 ## walker's own is PI/2-0.7, looking down at him).
@@ -74,7 +112,7 @@ static func build(study: Node3D) -> Node3D:
 	var beams: Array = []
 	for i in range(ROPE_ZS.size()):
 		var z: float = ROPE_ZS[i]
-		beams.append({"name":"beam","at":Vector3(ROPE_X-2.75,ROPE_TOP+0.5,z),"size":Vector3(6.4,0.5,0.6),"yaw":0.0,"kind":"lintel"})
+		beams.append({"name":"beam","at":Vector3(ROPE_X-2.75,BEAM_Y,z),"size":BEAM,"yaw":0.0,"kind":"lintel"})
 		var r: Node3D = host.rope(Vector3(ROPE_X,ROPE_TOP,z),ROPE_LENGTH)
 		r.add_tag(Vector3(ROPE_X+0.25,ROPE_TOP,z),0.0,321+i)
 	var beam_stones := Art.floating_stones(320,beams)
