@@ -5,7 +5,9 @@ extends "res://studies/kit_isle.gd"
 ## at about his wake circuit's height (scripts/dragon_wake.gd HOME_OVER over
 ## the turf), looking for you (scripts/dragon_sight.gd). His downwash is on
 ## (the plane and the sail feel it, as on the aqueduct isle). Spotted, he
-## only roars this round.
+## roars, then answers with his cyclone blast (scripts/dragon_cyclone.gd,
+## docs/design/dragon-cyclone/round1.md): a wind-up, a funnel fired at
+## where you were, broken by cover, knocking the pilot and the plane.
 ##
 ## The isles (TOP is the kit's datum, 30 m):
 ##   home  the start: a long wall (RuinKit WALL_HEIGHT: hide behind it, or
@@ -24,7 +26,9 @@ extends "res://studies/kit_isle.gd"
 ## dragon_sight_overlay.gd: on by default here); V cycles the dragon camera.
 ## Flags: --vision-low flies his loop lower (LOW_OVER over the turf);
 ## --vision-log prints the sight once a second; --no-sight-overlay starts
-## with the overlay hidden; the dragon's own --dragon-* flags hold
+## with the overlay hidden; --cyclone-fast shortens his cooldown between
+## shots (DragonCyclone.FAST_COOLDOWN); --no-cyclone leaves it off;
+## --cyclone-shot=<x>,<z> fires one at that spot at once (a look check); the dragon's own --dragon-* flags hold
 ## (--dragon-size=, --dragon-log, --dragon-watch=...).
 ##   ./run-dragon-vision.command [--vision-low] [--fly]
 ##   godot --path . res://studies/dragon_vision_study.tscn -- --no-title
@@ -70,12 +74,23 @@ var _low := false
 var _log := false
 var _log_t := 0.0
 var _overlay_on := true
+var _cyclone := true
+var _cyclone_fast := false
+## --cyclone-shot=<x>,<z>: a look check: one cyclone fired at once at that
+## spot on the turf from 60 m up to the west, sight or not (with --at, the
+## capture's frames see it land and spin).
+var _cyclone_shot := Vector2.INF
 
 func _ready() -> void:
 	for arg in preload("res://scripts/launch_args.gd").user_args():
 		if arg == "--vision-low": _low = true
 		elif arg == "--vision-log": _log = true
 		elif arg == "--no-sight-overlay": _overlay_on = false
+		elif arg == "--no-cyclone": _cyclone = false
+		elif arg == "--cyclone-fast": _cyclone_fast = true
+		elif arg.begins_with("--cyclone-shot="):
+			var xz := arg.get_slice("=",1).split(",")
+			_cyclone_shot = Vector2(float(xz[0]),float(xz[1]))
 	super._ready()
 
 ## No pack: one isle-group; the start on home, looking north-east to the
@@ -212,6 +227,7 @@ func _add_life() -> void:
 	dragon = SkyDragon.new()
 	dragon.sky_scene = self
 	dragon.idle_roars = false
+	dragon.cyclone_on = _cyclone
 	var over := LOW_OVER if _low else HIGH_OVER
 	for p: Vector2 in LOOP: dragon.loop.append(Vector3(p.x,TOP+over,p.y))
 	add_child(dragon)
@@ -219,6 +235,10 @@ func _add_life() -> void:
 	dragon.setup(camera,preload("res://scripts/launch_args.gd").user_args(),KitWeather.SEA_TOP,middle,TOP,[[middle,120.0]])
 	dragon.sight_target = _sight_target
 	dragon.sight.state_changed.connect(_sight_changed)
+	if dragon.cyclone != null:
+		if _cyclone_fast: dragon.cyclone.cooldown = dragon.cyclone.FAST_COOLDOWN
+		dragon.cyclone.winding_up.connect(func() -> void: _show_toast("He draws breath: take cover!"))
+		dragon.cyclone.broke.connect(func(_at: Vector3) -> void: _show_toast("The cyclone breaks on cover"))
 	overlay = SightOverlay.new()
 	add_child(overlay)
 	overlay.setup(dragon)
@@ -240,11 +260,14 @@ func _sight_changed(now: String, _was: String) -> void:
 		"spotted": _show_toast("Spotted!")
 		"unaware": _show_toast("He has lost you")
 
-## His downwash on the plane and the sail (as studies/aqueduct_isle.gd).
+## His downwash on the plane and the sail (as studies/aqueduct_isle.gd),
+## and his cyclone's air on the plane.
 func _wash_air() -> void:
 	plane_air = func(p: Vector3) -> Dictionary:
 		if plane == null or dragon == null: return {}
-		return dragon.downwash.plane_air(p,plane.forward())
+		var air: Dictionary = dragon.downwash.plane_air(p,plane.forward())
+		if dragon.cyclone != null: air = dragon.downwash.merge(air,dragon.cyclone.plane_air(p,plane.forward()))
+		return air
 	var base: Callable = motor.air
 	motor.air = func(p: Vector3) -> Dictionary:
 		var here: Dictionary = base.call(p) if base.is_valid() else {}
@@ -258,7 +281,12 @@ func _process(delta: float) -> void:
 		dragon.air = _atmosphere.breeze()
 		dragon.air_angle = _atmosphere._air_angle
 	dragon.on_foot = not flying
+	_look_shot()
 	dragon.advance(delta)
+	# His cyclone on the walker (or sailing pilot): a knock, as the gale's.
+	if dragon.cyclone != null and not flying:
+		var v: Vector3 = dragon.cyclone.pilot_knock(motor.feet,motor)
+		if v != Vector3.ZERO: motor.knock(v)
 	if _log and delta > 0.0:
 		_log_t += delta
 		if _log_t >= 1.0:
@@ -269,7 +297,15 @@ func _process(delta: float) -> void:
 
 ## A fixed-eye capture (--at) still flies the dragon.
 func _capture_tick(delta: float) -> void:
-	if dragon != null: dragon.advance(delta)
+	if dragon == null: return
+	_look_shot()
+	dragon.advance(delta)
+
+func _look_shot() -> void:
+	if _cyclone_shot == Vector2.INF or dragon.cyclone == null: return
+	var aim := Vector3(_cyclone_shot.x,TOP,_cyclone_shot.y)
+	dragon.cyclone.fire(aim+Vector3(-50.0,60.0,20.0),aim)
+	_cyclone_shot = Vector2.INF
 
 func _foot_text() -> String:
-	return super._foot_text()+"\nJ: the dragon's sight overlay  ·  V: watch the dragon"
+	return super._foot_text()+"\nJ: the dragon's sight overlay  ·  V: watch the dragon  ·  knocked: X twirl, then Space sail"
