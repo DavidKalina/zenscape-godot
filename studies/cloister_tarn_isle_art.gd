@@ -29,6 +29,7 @@ extends RefCounted
 const Art = preload("res://studies/aqueduct_isle_art.gd")
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 const Cloister = preload("res://scripts/ruin_kit_cloister.gd")
+const WorldScale = preload("res://scripts/world_scale.gd")
 const Build = RuinKit.Build
 const SkyIslets = preload("res://scripts/sky_islets.gd")
 const SkyFallThread = preload("res://scripts/sky_fall_thread.gd")
@@ -45,16 +46,52 @@ const ARC := 12.6
 const ARC_D := Cloister.THICK*0.5
 const ALLEY := 2.8
 const BACK := ARC+ARC_D+ALLEY
-## The wall-walk's top over K, and the water gate's (over the spill).
+## The wall-walk's top over K.
 const WALK := Cloister.WALK
-const GATE_WALK := WALK+0.38
-## The piers along a range (corner to corner) and the east range's (the
-## water gate the middle bay, wide enough for the plane).
+## The piers along a range (corner to corner): the arcade's bays are the
+## walker's (crown 3.5 m), not flown.
 const PIERS := [-12.6,-9.0,-5.4,-1.8,1.8,5.4,9.0,12.6]
-const EAST_PIERS := [-12.6,-9.3,-6.0,-2.7,2.7,6.0,9.3,12.6]
+## The two openings the plane flies (scripts/world_scale.gd `opening`),
+## each sized by its toy-era clear between two piers' shafts (the piers
+## TOY_..._PITCH apart less twice Cloister.PIER_REACH), the piers standing
+## that clear and their shafts apart:
+## - the water gate, the east range's middle bay over the spill: toy 5.4
+##   apart (4.26 clear, 3.0 toy spans), 8.09 m clear at the defaults;
+##   its walk (GATE_WALK) over its round arch, whole risers over the
+##   wall-walk, steps up to it either side (Cloister `tall`); the east
+##   range's other bays as near 3.3 m as fit either side of it.
+## - the west gap's slot between its two snapped piers (STUBS): toy 3.6
+##   apart (2.46 clear), 4.92 at the defaults; the gap's standing ends
+##   (GAP_END) the toy's 3.6 past the stubs, its heaps against them, the
+##   bays out to the corners split evenly.
+const TOY_GATE_PITCH := 5.4
+const TOY_STUB_PITCH := 3.6
+static var GATE: float = WorldScale.opening(TOY_GATE_PITCH-2.0*Cloister.PIER_REACH)
+static var GATE_HALF: float = GATE*0.5+Cloister.PIER_REACH
+static var GATE_WALK: float = WALK+ceilf((Cloister.bay_top(GATE_HALF*2.0)-WALK)/RuinKit.RISER-0.05)*RuinKit.RISER
+static var EAST_PIERS: Array = _side_piers(GATE_HALF,3.3)
+static var STUB_GAP: float = WorldScale.opening(TOY_STUB_PITCH-2.0*Cloister.PIER_REACH)
+static var STUB_X: float = STUB_GAP*0.5+Cloister.PIER_REACH
+static var GAP_END: float = STUB_X+TOY_STUB_PITCH
+static var WEST_PIERS: Array = _west_piers()
 ## The west range's fallen bays (the cloister's gap) and its two stubs.
 const FALLEN := [2,3,4]
 const STUBS := {3:3.0,4:2.4}
+
+## A range's piers from the corners (ARC) in to a middle bay `half` either
+## side of its middle, the bays out to the corners as near `bay` as fit.
+static func _side_piers(half: float, bay: float) -> Array:
+	var n := maxi(1,int(round((ARC-half)/bay)))
+	var out: Array = []
+	for k in range(n+1): out.append(-ARC+(ARC-half)*k/n)
+	for k in range(n+1): out.append(half+(ARC-half)*k/n)
+	return out
+
+## The west range's piers: two bays out to each corner, the gap's standing
+## ends at GAP_END, the stubs at STUB_X.
+static func _west_piers() -> Array:
+	var mid := (ARC+GAP_END)*0.5
+	return [-ARC,-mid,-GAP_END,-STUB_X,STUB_X,GAP_END,mid,ARC]
 ## The tarn: radius (wandering), its shelf, its deep; the spill channel's
 ## half width (east), its bed under the water.
 const TARN := 10.6
@@ -405,10 +442,17 @@ static func range_frame(side: String) -> Transform3D:
 	return Transform3D(Basis(Vector3.UP,PI*0.5),Vector3(C.x-ARC,K,C.y))
 
 ## The heaps at the west gap's broken ends, in the west range's frame: a
-## block in the alley, a chunk of the wall against the standing end.
-const HEAPS := [
-	[Vector3(-3.9,1.5,-1.32),Vector3(1.4,1.5,1.3),0.0],[Vector3(-3.95,3.0,-0.05),Vector3(1.3,3.0,1.2),-0.05],
-	[Vector3(3.9,1.5,-1.32),Vector3(1.4,1.5,1.3),0.0],[Vector3(3.95,3.0,-0.05),Vector3(1.3,3.0,1.2),0.08]]
+## block in the alley, a chunk of the wall against the standing end
+## (GAP_END; the toy's 5.4: the block at 3.9, the chunk at 3.95), a hop
+## from the chunk to the stub as in the toy.
+const HEAP_BLOCK := 1.5
+const HEAP_CHUNK := 1.45
+static func heaps() -> Array:
+	var out: Array = []
+	for s: float in [-1.0,1.0]:
+		out.append([Vector3(s*(GAP_END-HEAP_BLOCK),1.5,-1.32),Vector3(1.4,1.5,1.3),0.0])
+		out.append([Vector3(s*(GAP_END-HEAP_CHUNK),3.0,-0.05),Vector3(1.3,3.0,1.2),-0.05 if s < 0.0 else 0.08])
+	return out
 
 ## The cloister: its four ranges (north and south carry the corners; east
 ## the water gate; west fallen in the middle), the heaps at the gap, the
@@ -421,9 +465,9 @@ static func cloister(seed_value: int, weathered: float) -> Dictionary:
 	var ranges := {}
 	var specs := {
 		"north":[PIERS,{"ends":Vector2(0.6,0.6),"buttresses":[-9.0,9.0]}],
-		"east":[EAST_PIERS,{"ends":Vector2.ZERO,"skip_piers":[0,7],"tall":{3:GATE_WALK}}],
+		"east":[EAST_PIERS,{"ends":Vector2.ZERO,"skip_piers":[0,EAST_PIERS.size()-1],"tall":{EAST_PIERS.size()/2-1:GATE_WALK}}],
 		"south":[PIERS,{"ends":Vector2(0.6,0.6)}],
-		"west":[PIERS,{"ends":Vector2.ZERO,"skip_piers":[0,7],"fallen":FALLEN,"stubs":STUBS}],
+		"west":[WEST_PIERS,{"ends":Vector2.ZERO,"skip_piers":[0,7],"fallen":FALLEN,"stubs":STUBS}],
 	}
 	var k := 0
 	for side: String in specs:
@@ -434,10 +478,10 @@ static func cloister(seed_value: int, weathered: float) -> Dictionary:
 		node.add_child(r)
 		ranges[side] = r
 		k += 1
-	var heaps: Node3D = Cloister.heap(seed_value+10,weathered,HEAPS)
-	heaps.name = "GapHeaps"
-	heaps.transform = range_frame("west")
-	node.add_child(heaps)
+	var heap_node: Node3D = Cloister.heap(seed_value+10,weathered,heaps())
+	heap_node.name = "GapHeaps"
+	heap_node.transform = range_frame("west")
+	node.add_child(heap_node)
 	var lavabo: Node3D = Cloister.pavilion(seed_value+11,weathered*0.9,LAVABO,WALK,lavabo_steps())
 	lavabo.name = "Lavabo"
 	var sm := world(SHRINE)

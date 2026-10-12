@@ -34,6 +34,18 @@ const COPING := 0.2
 ## A pier's shafts stand this far each side of its middle at the arch's
 ## springing (the kit arch's px less its clear half span).
 const PIER_HALF := RuinKit.ORDER
+## How far a pier's shafts reach from its middle (a main shaft's centre
+## and its apothem's corner): the clear between two piers' shafts, the
+## room through a bay over their bases, is their spacing less twice this.
+static var PIER_REACH: float = RuinKit.SHAFT_MAIN.y+RuinKit.SHAFT_MAIN.x/cos(PI/8.0)
+## The least walk top over a bay whose piers stand `pitch` apart: its arch
+## (pointed; round where the bay is wide), the ring's two orders and the
+## hood under the coping, a hand of walling over them.
+static func bay_top(pitch: float) -> float:
+	var h := pitch*0.5-PIER_HALF-0.15
+	var rise := maxf(RISE,h)
+	var radius := maxf(h,(rise*rise+h*h)/(2.0*h))
+	return SPRING+RuinKit._rise(h,radius)+RuinKit.ORDER*2.0+RuinKit.HOOD.x+COPING+0.1
 ## A stub's walked top (m, square) and a rope bridge's stone head.
 const STUB_TOP := 0.9
 const ABUTMENT := Vector3(2.2,0.0,2.4)
@@ -43,7 +55,10 @@ const POST := Vector3(0.36,0.95,0.36)
 ##   fallen: Array of bay indices fallen (bay i between piers i and i+1);
 ##   stubs: {pier index: height} of piers snapped off;
 ##   tall: {bay index: walk top} for a bay whose walk stands higher (a
-##     wider arch, its crown over the arcade's);
+##     wider arch, its crown over the arcade's); where it stands a riser or
+##     more over a standing neighbour's walk, steps on that walk climb to
+##     it (`_steps_up`, the kit's RISER and TREAD): the wall-walk is still
+##     walked over it;
 ##   ends: Vector2 how far the wall-walk reaches past the first and last
 ##     piers (a corner);
 ##   buttresses: Array of x where a stepped buttress stands on the garth
@@ -96,6 +111,13 @@ static func range_run(seed_value: int, weathered: float, piers: Array, opts := {
 		_bay(b,x0,x1,top,d,x0-a,e-x1)
 		_walk_span(b,a,e,top,d)
 		walks.append({"from":Vector3(a,top,0.0),"to":Vector3(e,top,0.0),"top":top})
+		# Steps up from this walk onto a taller neighbour's.
+		for k: int in [i-1,i+1]:
+			if k < 0 or k > piers.size()-2 or fallen.has(k): continue
+			var high := float(tall.get(k,WALK))
+			if high-top < RuinKit.RISER*0.9: continue
+			var way := -1.0 if k < i else 1.0
+			_steps_up(b,x0 if k < i else x1,way,top,high,d)
 	for x: float in opts.get("buttresses",[]):
 		var pose := Transform3D(Basis.IDENTITY,Vector3(x,0.0,d))
 		RuinKit._buttress(b,pose,[[RuinKit.SET_OFF,1.9],[RuinKit.SET_OFF*2.0,1.05]],1.3,false,false)
@@ -147,6 +169,23 @@ static func _bay(b: Build, x0: float, x1: float, top: float, d: float, ea := 0.0
 				planes.append(Plane(n,n.dot(Vector3(0.0,half.y,s*(half.z-0.06)))))
 			b.solid(planes,RuinKit._jiggle(b,Transform3D(Basis.IDENTITY,Vector3((x+xb)*0.5,top-half.y,0.0)),0.3),RuinKit._stone(b,0.93),false,true)
 		x = xb
+
+## Steps set on a walk at `low`, up to `high` at `at` (along X), climbing
+## toward `way` (+1 or -1): the kit's TREAD, risers RISER or a little
+## under, each block the wall's depth, walked on a clean box.
+static func _steps_up(b: Build, at: float, way: float, low: float, high: float, d: float) -> void:
+	var count := maxi(1,int(round((high-low)/RuinKit.RISER)))
+	var riser := (high-low)/count
+	for k in range(count):
+		# Step k from the foot: its top, its run back from `at`.
+		var top := low+riser*(k+1)
+		var near := at-way*RuinKit.TREAD*(count-1-k)
+		var far := at-way*RuinKit.TREAD*(count-k)
+		var x0 := minf(near,far)
+		var x1 := maxf(near,far)
+		var half := Vector3((x1-x0)*0.5-0.01,(top-low+COPING)*0.5,d+0.01)
+		b.solid(RuinKit._box(b,half,0.03),RuinKit._jiggle(b,Transform3D(Basis.IDENTITY,Vector3((x0+x1)*0.5,top-half.y,0.0)),0.3),RuinKit._stone(b,0.97),false,true)
+		_walk_span(b,x0,x1,top,d)
 
 ## The walk's clean box from `a` to `b2` along X at `top`, `d` (half) deep.
 static func _walk_span(b: Build, a: float, b2: float, top: float, d: float) -> void:

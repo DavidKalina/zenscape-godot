@@ -61,7 +61,9 @@ class TarnBirds extends "res://scripts/kit_isle/kit_birds.gd":
 			for dz: float in [-1.6,0.0,1.6]: lavabo.append(c+TarnArt.SHRINE+Vector2(dx,dz))
 		found["lavabo"] = lavabo
 		var gap: Array = []
-		for z: float in [-1.8,1.8,-3.95,3.95,-7.0,7.0,-8.2,8.2]: gap.append(c+Vector2(-TarnArt.ARC,z))
+		var e := TarnArt.GAP_END
+		for z: float in [TarnArt.STUB_X,e-TarnArt.HEAP_CHUNK,e+1.6,e+2.8]:
+			for s: float in [-1.0,1.0]: gap.append(c+Vector2(-TarnArt.ARC,s*z))
 		found["gap"] = gap
 		var stones: Array = []
 		for p: Dictionary in TarnArt.platforms():
@@ -80,9 +82,11 @@ class TarnTokens extends "res://scripts/kit_isle/kit_tokens.gd":
 	static func tarn_spots() -> Array[Dictionary]:
 		var c := TarnArt.C
 		var out: Array[Dictionary] = []
-		# 1. Over the cloister's gap, between the two snapped piers: a twirled
-		# hop from one stub to the other takes it.
-		out.append({"name":"stubs","at":Vector3(c.x-TarnArt.ARC,TarnArt.K+3.75,c.y),"move":"Hop the snapped piers across the cloister's gap"})
+		# 1. Over the lower of the cloister gap's two snapped piers (the
+		# west range's pier 4, its x north in the world): down off the
+		# fallen chunk onto it. The stubs stand the plane's slot apart
+		# (TarnArt.STUB_GAP), too far to hop from one to the other.
+		out.append({"name":"stubs","at":Vector3(c.x-TarnArt.ARC,TarnArt.K+float(TarnArt.STUBS[4])+0.85,c.y-TarnArt.STUB_X),"move":"Down onto the snapped pier at the cloister's gap"})
 		# 2. On the lavabo's top: out over the stepping stones, up its drums.
 		var sm := TarnArt.world(TarnArt.SHRINE)
 		out.append({"name":"lavabo","at":Vector3(sm.x,TarnArt.SHRINE_TOP+TarnArt.WALK+0.85,sm.y),"move":"Out over the stepping stones and up the lavabo's fallen drums"})
