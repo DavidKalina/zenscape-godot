@@ -3,9 +3,12 @@ extends RefCounted
 ## dragon (scripts/dragon_roost.gd on scripts/sky_dragon.gd, on his
 ## mountain, scripts/kit_isle/motif_dragon_roost.gd) wakes on a schedule,
 ## flies one big circuit round the region and settles back into his coil.
-## Spectacle only: he never grips, blows, grabs or knocks anything (the
-## roost dragon has no gale, treasure or targets), and never troubles the
-## aqueduct isle (his pass over it is high, HOME_OVER over its turf).
+## He never grips, blows, grabs or knocks anything (the roost dragon has no
+## gale, treasure or targets), and his pass over the aqueduct isle is high
+## (HOME_OVER over its turf). The one air he moves is his downwash while he
+## flies the circuit (`wake_fly`; scripts/dragon_downwash.gd, docs/design/
+## dragon-downwash/round1.md): pressed down under him, lifted over him, for
+## the plane and the sail. Oblivious to who rides it.
 ##
 ## The beats:
 ##   - asleep: the roost's own breath (it hands its frames to the pose).
