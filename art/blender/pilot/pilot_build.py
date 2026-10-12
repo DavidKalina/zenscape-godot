@@ -9,8 +9,9 @@ drooping softly with a rolled edge; navy scarf rolls; a slender, fitted
 charcoal-brown jacket with soft folds, a strap across it, a belt and a
 satchel; gold bracelets with a glowing stripe; big round mitts; denim
 trousers into chunky boots with fleece cuffs; a torn charcoal cape from the
-shoulders. Inside the old helmeted pilot's envelope (as tall, as wide).
-About 84k triangles. Each part rides one bone (weight 1), so nothing
+shoulders. The body inside the old helmeted pilot's envelope; round three
+lets the head and hat past it (look only: docs/design/wanderer-look/
+round3.md). About 93k triangles. Each part rides one bone (weight 1), so nothing
 stretches, but the cape, skinned across its bones so it bends as cloth.
 
 The clips, each a seamless loop, in place (the game moves the body), walk and
@@ -141,9 +142,11 @@ GRIP_X = 0.17
 # them (the islanders stand at 1.9).
 SCALE = 2.2
 # The wanderer's sheet (docs/design/wanderer-look/round1.md): a big round
-# head under a wide hat on a short, slender body (round two), big round mitts and chunky
-# boots; inside the old figure's envelope (the hat's top where the old
-# helmet's was, about as wide). The legs (and so the hips, the gait and the
+# head under a big wide hat on a short, soft body (round three: a little
+# pear), big round mitts and chunky boots. Rounds one and two kept him
+# inside the old figure's envelope (the hat's top where the old helmet's
+# was, about as wide); round three lets the head and hat past it, look
+# only (1.264 m tall, the brim 1.0 m across). The legs (and so the hips, the gait and the
 # ledge's and the water's measures) are the old ones: the sheet's legs are
 # a third of him, as these are; the torso NECK is shorter by what the
 # bigger head and the hat took, the arms longer by what the shoulders
@@ -153,14 +156,18 @@ NECK = 0.106
 # Round two (docs/design/wanderer-look/round2.md): slender, not boxy. The
 # shoulders came in (0.08 to 0.066) with the narrower, tapered jacket, and
 # the arms hang a little further out (ARM_OUT 0.2 to 0.3) so they clear it.
-SHOULDER = (0.064, NECK - 0.022, 0.0)
+# Round three (docs/design/wanderer-look/round3.md): a soft pear, fuller
+# at the belt and the skirt, so the shoulders sit a touch wider (0.064 to
+# 0.07) and the arms hang a little further out (0.26 to 0.3) down its
+# sides, the mitts beside the skirt, not in it.
+SHOULDER = (0.07, NECK - 0.022, 0.0)
 HIP_X = 0.058
 LEG = (0.095, 0.091)
 # Arms hanging near straight, the mitts about at the hips.
 ARM = (0.068, 0.062)
 # The arms hang out from the shoulders this much (x over down, a lateral
 # raise of 17 degrees), clear of the belly and the skirt.
-ARM_OUT = 0.26
+ARM_OUT = 0.3
 ANKLE_BUILD = 0.024
 # In rest the legs hang straight, so the hips stand higher than they ever
 # do in play.
@@ -168,7 +175,7 @@ REST_HIPS = LEG[0] + LEG[1] + ANKLE_BUILD
 TORSO_UP = 0.025
 HEAD_UP = 0.027
 HEAD_SIZE = 1.15
-HEAD_C = 0.0516         # the head's middle over its bone (head units)
+HEAD_C = 0.0575         # the head's middle over its bone (head units)
 
 def G(x, y, z):
     """A point in the game's frame, build units, as Blender metres."""
@@ -263,8 +270,8 @@ def cape_point(u, v):
     between the arms (wrapped 64 degrees either side of the middle at the
     top, 56 at the hem), so an arm swung back passes beside it, not
     through it."""
-    wx = 0.07 + 0.026 * v
-    wz = 0.052 + 0.045 * v ** 0.8
+    wx = 0.076 + 0.032 * v
+    wz = 0.056 + 0.045 * v ** 0.8
     th = u * math.radians(64.0 - 8.0 * v)
     return (wx * math.sin(th), CAPE_TOP - CAPE_LENGTH * v, wz * math.cos(th))
 
@@ -585,9 +592,9 @@ torso = hips @ place((0, TORSO_UP, 0))
 # ---------------------------------------------------------------- hips
 # The seat of the denim trousers, rounded under the jacket's skirt, the
 # legs hung from its sides; the satchel at the left hip.
-part(ring_hull(capped([(-0.034, 0.064, 0.044), (-0.012, 0.072, 0.05), (0.02, 0.072, 0.05)], 0.7), 48),
+part(ring_hull(capped([(-0.034, 0.07, 0.05), (-0.012, 0.079, 0.056), (0.02, 0.079, 0.056)], 0.7), 48),
      "pilot_trousers", "hips", hips @ place(turn=UP))
-SATCHEL = hips @ place((-0.086, -0.006, -0.006), (0.0, 0.75, 0.06))
+SATCHEL = hips @ place((-0.1, -0.008, 0.012), (0.0, 1.3, 0.06))
 part(ring_hull(capped([(-0.011, 0.024, 0.021), (0.0, 0.026, 0.023), (0.011, 0.024, 0.021)], 0.35), 20),
      "pilot_strap", "hips", SATCHEL @ place(turn=(0.0, math.pi * 0.5, 0.0)))
 # Its flap over the top and front, and a little gold clasp.
@@ -599,9 +606,12 @@ part(blob(0.0045, 0.006, 0.0025, 10, 6), "pilot_gold", "hips", SATCHEL @ place((
 # round body over the belt, filling a little at the chest and tapering up
 # into sloping shoulders that round over into the arms (their domes under
 # them: no balls); under the belt its skirt flares a little over the hips.
-JACKET = [(-0.006, 0.063, 0.051), (0.008, 0.062, 0.051), (0.03, 0.066, 0.053), (0.052, 0.066, 0.052),
-          (0.07, 0.062, 0.049), (0.084, 0.055, 0.045), (0.095, 0.045, 0.038), (0.104, 0.032, 0.029)]
-SKIRT = [(-0.054, 0.081, 0.064), (-0.04, 0.077, 0.061), (-0.024, 0.071, 0.057), (-0.008, 0.066, 0.054), (0.006, 0.064, 0.053)]
+# Round three: a soft pear, not a stick: fullest at the belt (0.074, was
+# 0.063), tapering gently up to the sloping shoulders; the skirt longer
+# (its hem 0.018 lower) and flaring wider over the fuller trousers.
+JACKET = [(-0.006, 0.075, 0.059), (0.008, 0.074, 0.058), (0.03, 0.071, 0.057), (0.052, 0.067, 0.055),
+          (0.07, 0.062, 0.051), (0.084, 0.055, 0.046), (0.095, 0.046, 0.039), (0.104, 0.033, 0.03)]
+SKIRT = [(-0.072, 0.095, 0.076), (-0.056, 0.09, 0.072), (-0.038, 0.084, 0.067), (-0.018, 0.078, 0.062), (0.006, 0.075, 0.059)]
 part(ring_hull(capped(JACKET, 0.5, start=False), 56, between=3), "pilot_jacket", "chest", torso @ place(turn=UP))
 part(ring_hull(SKIRT, 64, between=2), "pilot_jacket", "chest", torso @ place(turn=UP))
 
@@ -623,7 +633,7 @@ def jacket_at(y):
 for k in range(6):
     a = math.radians(-110 + 220 * k / 5 + 9 * math.sin(k * 1.7))
     fold = []
-    for y, r, out in ((-0.006, 0.0018, 0.985), (-0.024, 0.0028, 0.99), (-0.044, 0.0018, 0.985)):
+    for y, r, out in ((-0.006, 0.0018, 0.985), (-0.032, 0.0028, 0.99), (-0.06, 0.0018, 0.985)):
         rx, rz = jacket_at(y)
         fold.append((Vector((rx * math.sin(a), y, -rz * math.cos(a))) * out, r))
     tube(fold, "pilot_jacket", "chest", torso, 12, 4)
@@ -677,31 +687,38 @@ def roll(R, r, sides=72):
         rings.append((r * math.sin(a), R + r * math.cos(a), (R + r * math.cos(a)) * 0.94))
     return ring_hull(rings, sides)
 
-# Round two: thinner rolls, lower, so the head shows over them.
-part(roll(0.055, 0.0135), "pilot_scarf", "chest", torso @ place((0, NECK - 0.012, 0.004), (-math.pi * 0.5 + 0.1, 0, 0.04)))
-part(roll(0.05, 0.013), "pilot_scarf", "chest", torso @ place((0, NECK + 0.008, 0.003), (-math.pi * 0.5 - 0.08, 0, -0.05)))
+# Round three: chunky rolls as wide as most of the big head, its chin
+# sunk in the top one, as the sheet's.
+part(roll(0.064, 0.016), "pilot_scarf", "chest", torso @ place((0, NECK - 0.02, 0.004), (-math.pi * 0.5 + 0.1, 0, 0.04)))
+part(roll(0.067, 0.0165), "pilot_scarf", "chest", torso @ place((0, NECK - 0.002, 0.003), (-math.pi * 0.5 - 0.08, 0, -0.05)))
 
 # ---------------------------------------------------------------- neck, head
 neck = torso @ place((0, NECK, 0))
 part(ring_hull([(-0.028, 0.026, 0.026), (0.028, 0.023, 0.023)], 32), "pilot_face", "neck", neck @ place((0, 0.02, 0), UP))
-part(roll(0.045, 0.0125), "pilot_scarf", "neck", neck @ place((0, 0.024, 0.002), (-math.pi * 0.5 + 0.12, 0, 0.03)))
+part(roll(0.069, 0.016), "pilot_scarf", "neck", neck @ place((0, 0.016, 0.002), (-math.pi * 0.5 + 0.12, 0, 0.03)))
 head = neck @ place((0, HEAD_UP, 0), size=(HEAD_SIZE,) * 3)
-# The head's middle over the head bone (head units): round two raised it
-# on its bone, the head a little smaller and the hat's crown lower, so the
-# hat's top stands where it did and the scarf rolls show under the chin.
+# The head's middle over the head bone (head units). Round three: the head
+# big again (0.43 m wide, a third of his height; round two's 0.32), its
+# middle a little lower on its bone, its chin sunk in the scarf's top roll;
+# the hat over it free of the old helmet's envelope (look only: no bone,
+# size or motor number moved).
 C = Vector((0, HEAD_C, 0))
-# No face to see: a dark brown round head in the hat's shade, a touch
-# taller than wide, the eyes painted on it glowing (shaders/pilot_paint.gdshader
-# `eyes`, placed by EYE_* below). Round two: about half the brim's width
-# (the sheet's brim is twice the head), still the biggest of him but the hat.
-HR = (0.0635, 0.066, 0.068, 0.0635)    # x, up, down, z
-part(blob(HR[0], HR[1], HR[3], 56, 28, down=HR[2]), "pilot_face", "head", head @ place(C))
+# No face to see: a dark brown head in the hat's shade, soft and round,
+# the eyes painted on it glowing (shaders/pilot_paint.gdshader `eyes`,
+# placed by EYE_* below), showing under the brim. Round three: a soft
+# mochi rather than a ball, full and wide down to the cheeks (what shows
+# under the brim), rounding off under the chin and over the top.
+HEAD_RINGS = [(-0.0652, 0.0672, 0.0632), (-0.0474, 0.085, 0.079), (-0.0237, 0.0893, 0.083), (0.0, 0.0889, 0.083),
+              (0.0277, 0.083, 0.0779), (0.0514, 0.0652, 0.0613), (0.0632, 0.0474, 0.0443)]
+HR = (0.0893, 0.079, 0.078, 0.083)     # x, up, down, z (its reach each way)
+part(ring_hull(capped(HEAD_RINGS, 0.2, end=False) + capped(HEAD_RINGS[-2:], 0.36, start=False)[2:], 72, between=3),
+     "pilot_face", "head", head @ place(C, UP))
 # The eyes (head units, off the head's middle): their middles this far out
 # either side and down, and their half height.
-EYE_X = 0.023
-EYE_Y = -0.024
-EYE_H = 0.016
-HAT_BASE = 0.036                       # the hat brim's root over the head's middle
+EYE_X = 0.0285
+EYE_Y = -0.008
+EYE_H = 0.021
+HAT_BASE = 0.0474                      # the hat brim's root over the head's middle
 _eye = head @ (C + Vector((0, EYE_Y, -HR[3])))
 _hat = head @ (C + Vector((0, HAT_BASE, 0)))
 # For scripts/pilot_paint.gd (the face's eyes, in the paint's rest
@@ -722,37 +739,45 @@ print("PILOT_HEAD at", tuple(round(c * SCALE, 4) for c in head @ C), "radius", r
 # 0.165 m over the brim's root, was 0.213) and softer, sitting higher on
 # the head, and the brim wider and floppier (1.9 times the smaller head's
 # width, was 1.6) inside the same reach (its rolled edge where it was).
-HAT_TILT = -0.06
-CROWN = 0.061
-BRIM_IN, BRIM_OUT = 0.061, 0.1145
-BRIM_DROOP = 0.024
+# Round three (look only, past the old envelope): the sheet's big hat. The
+# crown a little wider than the head (0.47 m) and soft, its top about
+# 0.18 m over the brim's root; the band 0.05 m deep; the brim about 2.3
+# times the head's width (1.0 m across), thick felt with a fat rolled
+# edge, flopping down at the sides and the back more than at the front,
+# rippling gently, the whole hat tipped a hair back so the eyes show.
+HAT_TILT = 0.03
+CROWN = 0.092
+BRIM_IN, BRIM_OUT = 0.091, 0.19
+BRIM_DROOP = 0.044
+BAND = 0.02
 hat = head @ place(C, (HAT_TILT, 0, 0))
-part(ring_hull(capped([(HAT_BASE - 0.004, CROWN, CROWN - 0.0015), (HAT_BASE + 0.016, CROWN - 0.0005, CROWN - 0.002),
-                       (HAT_BASE + 0.032, CROWN - 0.0055, CROWN - 0.007), (HAT_BASE + 0.04, CROWN - 0.0125, CROWN - 0.0135)],
-                      0.5, start=False), 72, between=4),
+part(ring_hull(capped([(HAT_BASE - 0.004, CROWN, CROWN - 0.002), (HAT_BASE + 0.02, CROWN - 0.001, CROWN - 0.003),
+                       (HAT_BASE + 0.036, CROWN - 0.008, CROWN - 0.01), (HAT_BASE + 0.045, CROWN - 0.019, CROWN - 0.021)],
+                      0.42, start=False), 96, between=4),
      "pilot_hat", "head", hat @ place(turn=UP))
-part(ring_hull([(HAT_BASE + 0.0005, CROWN + 0.0032, CROWN + 0.0017), (HAT_BASE + 0.016, CROWN + 0.0027, CROWN + 0.0012)], 96),
+part(ring_hull([(HAT_BASE + 0.0005, CROWN + 0.0035, CROWN + 0.0015), (HAT_BASE + BAND, CROWN + 0.0025, CROWN + 0.0005)], 128),
      "pilot_hat_band", "head", hat @ place(turn=UP))
 
 def brim_point(a, r):
     """The brim's top at angle `a` round (0 the front, the figure's right
-    positive) and `r` out, in the hat's frame."""
+    positive) and `r` out, in the hat's frame: drooping more at the sides
+    and the back than at the front, rippling gently."""
     k = (r - BRIM_IN) / (BRIM_OUT - BRIM_IN)
-    droop = BRIM_DROOP * k ** 1.5 * (0.78 + 0.22 * math.cos(2 * a)) + 0.005 * k ** 2 * math.sin(3 * a + 0.7) \
-        + 0.0025 * k ** 2 * math.sin(5 * a + 2.1)
+    droop = BRIM_DROOP * k ** 1.6 * (0.78 - 0.13 * math.cos(2 * a) - 0.06 * math.cos(a)) \
+        + 0.0075 * k ** 2 * math.sin(3 * a + 0.7) + 0.0035 * k ** 2 * math.sin(5 * a + 2.1)
     return Vector((r * math.sin(a), HAT_BASE + 0.002 - droop, -r * math.cos(a)))
 
-BRIM_AROUND, BRIM_ACROSS = 160, 12
+BRIM_AROUND, BRIM_ACROSS = 192, 14
 slab(lambda i, j: brim_point(math.tau * i / BRIM_AROUND, BRIM_IN + (BRIM_OUT - BRIM_IN) * j / (BRIM_ACROSS - 1)),
-     BRIM_AROUND, BRIM_ACROSS, lambda i, j: 0.0075 - 0.0035 * j / (BRIM_ACROSS - 1), "pilot_hat", "head", hat, wrap=True)
+     BRIM_AROUND, BRIM_ACROSS, lambda i, j: 0.0085 - 0.0035 * j / (BRIM_ACROSS - 1), "pilot_hat", "head", hat, wrap=True)
 # The brim's edge rolled over, thick and soft.
-tube([(brim_point(math.tau * k / BRIM_AROUND, BRIM_OUT) - Vector((0, 0.0035, 0)), 0.0052) for k in range(BRIM_AROUND + 3)],
+tube([(brim_point(math.tau * k / BRIM_AROUND, BRIM_OUT) - Vector((0, 0.0042, 0)), 0.0072) for k in range(BRIM_AROUND + 3)],
      "pilot_hat", "head", hat, 16, 1)
 # The band's buckle loop, front left as seen.
 la = math.radians(-38)
-lp = Vector(((CROWN + 0.0032) * math.sin(la), HAT_BASE + 0.0085, -(CROWN + 0.0017) * math.cos(la)))
+lp = Vector(((CROWN + 0.0035) * math.sin(la), HAT_BASE + BAND * 0.5, -(CROWN + 0.0015) * math.cos(la)))
 loop = frame(lp, Vector((math.sin(la), 0, -math.cos(la))))
-tube([(Vector(p), 0.0016) for p in ((-0.006, -0.0075, 0.001), (0.006, -0.0075, 0.001), (0.006, 0.0075, 0.001), (-0.006, 0.0075, 0.001), (-0.006, -0.0075, 0.001))],
+tube([(Vector(p), 0.002) for p in ((-0.008, -0.0095, 0.0012), (0.008, -0.0095, 0.0012), (0.008, 0.0095, 0.0012), (-0.008, 0.0095, 0.0012), (-0.008, -0.0095, 0.0012))],
      "pilot_hat_band", "head", hat @ loop, 6, 1)
 
 # ---------------------------------------------------------------- limbs
@@ -761,8 +786,8 @@ tube([(Vector(p), 0.0016) for p in ((-0.006, -0.0075, 0.001), (0.006, -0.0075, 0
 # rolled fleece tops, round toes and a soft flat sole.
 BOOT = [(-0.079, 0.019, 0.016), (-0.065, 0.035, 0.029), (-0.034, 0.038, 0.034), (0.006, 0.035, 0.034), (0.034, 0.03, 0.029), (0.043, 0.018, 0.017)]
 SOLE = 0.006       # the sole's rounding (build units)
-MITT = 1.08        # the mitts over the old ones (round one's 1.2: cute, not heavy)
-BOOTS = 1.03       # the boots' length and width over the old ones (round one's 1.12)
+MITT = 1.15        # the mitts over the old ones (round one's 1.2, two's 1.08)
+BOOTS = 1.15       # the boots' length and width over the old ones (round one's 1.12, two's 1.03)
 
 def sole(y):
     """Flattens what is under the sole onto it, softly."""
@@ -799,14 +824,17 @@ for n, s in SIDES.items():
          "pilot_glow", f"forearm.{n}", hand @ place((0, 0.012, 0), UP))
     mitt(hand @ place(size=(MITT,) * 3), s, f"hand.{n}")
     hp, kn, an = leg_joints(s)
-    part(limb(0.035, 0.031, LEG[0], 32), "pilot_trousers", f"thigh.{n}", bone_between(hp, kn))
-    part(limb(0.031, 0.025, LEG[1], 32), "pilot_trousers", f"shin.{n}", bone_between(kn, an))
+    # Round three: fuller denim (0.038 at the thigh, two's 0.035), so the
+    # legs read shorter and softer.
+    part(limb(0.038, 0.034, LEG[0], 32), "pilot_trousers", f"thigh.{n}", bone_between(hp, kn))
+    part(limb(0.034, 0.029, LEG[1], 32), "pilot_trousers", f"shin.{n}", bone_between(kn, an))
     part(boot(), "pilot_boots", f"foot.{n}", place(an))
-    part(ring_hull(capped([(-0.026, 0.034, 0.034), (0.026, 0.031, 0.031)], 0.4), 36), "pilot_boots", f"foot.{n}", place(an + Vector((0, 0.024, 0.004)), UP))
+    part(ring_hull(capped([(-0.026, 0.034 * BOOTS, 0.034 * BOOTS), (0.026, 0.031 * BOOTS, 0.031 * BOOTS)], 0.4), 36), "pilot_boots", f"foot.{n}", place(an + Vector((0, 0.024, 0.004)), UP))
     # The fleece rolled over the boot's top, round the shin: riding the
     # shin (round two; on the boot it slid behind the leg as the knees
     # bent, standing).
-    part(roll(0.027, 0.012, 48), "pilot_fleece", f"shin.{n}", place(an + Vector((0, 0.05, 0.002)), UP))
+    # Round three: fatter, taller, as the sheet's.
+    part(roll(0.032, 0.0148, 48), "pilot_fleece", f"shin.{n}", place(an + Vector((0, 0.058, 0.002)), UP))
 
 # ---------------------------------------------------------------- the cape
 # A tattered dark grey cape from the shoulders, wrapped round the back and

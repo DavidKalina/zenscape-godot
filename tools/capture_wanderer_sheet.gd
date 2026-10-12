@@ -2,8 +2,10 @@ extends SceneTree
 ## The wanderer beside his character sheet (docs/design/wanderer-look/): the
 ## walker's figure (scripts/pilot_figure.gd, assets/models/pilot.glb) standing
 ## on a dark stage lit as the sheet is, turned round front, side, back and
-## three-quarters, then floating under the cap (scripts/pocket_sail_figure.gd)
-## and seen from the chase camera's height behind him. Writes DIR/turnaround.png,
+## three-quarters, then floating under the cap (scripts/pocket_sail_figure.gd:
+## held over his head; front, three-quarters, side, from the chase camera's
+## height, and tipped into a turn) and seen from the chase camera's height
+## behind him. Writes DIR/turnaround.png,
 ## DIR/vs_sheet.png (the sheet's turnaround over ours, if --sheet= names the
 ## sheet), DIR/cap_float.png, DIR/chase.png, and quits.
 ## Rendered only when asked for (needs a window):
@@ -33,6 +35,7 @@ var figure: Node3D
 var sail: Node3D
 var camera: Camera3D
 var motor := Motor.new()
+var turning := 0.0
 
 func _initialize() -> void:
 	run.call_deferred()
@@ -98,14 +101,23 @@ func run() -> void:
 	# over him, behind), standing.
 	_aim(Vector3(0.0,sin(0.7),cos(0.7))*4.2,Vector3.UP*0.6)
 	var chase := await _grab()
-	# The cap float: off the ground, the sail out; three-quarters, then side.
+	# The cap float: off the ground, the sail out, held over his head; front,
+	# three-quarters, side, and from the chase camera's height behind; then
+	# leaning into a turn, from behind.
 	motor.grounded = false
 	motor.move = "sail"
 	for i in range(40): await _step(true)
 	var floats: Array[Image] = []
 	for a: float in [0.0,-PI*0.3,-PI*0.5]:
-		_aim(Vector3(sin(a),0.1,-cos(a))*5.4+Vector3.UP*1.0,Vector3.UP*1.05)
+		_aim(Vector3(sin(a),0.1,-cos(a))*5.4+Vector3.UP*0.9,Vector3.UP*0.8)
 		floats.append(await _grab(true))
+	_aim(Vector3(0.0,sin(0.7),cos(0.7))*5.4+Vector3.UP*0.8,Vector3.UP*0.8)
+	floats.append(await _grab(true))
+	turning = 1.0
+	for i in range(25): await _step(true)
+	_aim(Vector3(0.0,0.15,1.0)*5.4+Vector3.UP*0.8,Vector3.UP*0.8)
+	floats.append(await _grab(true))
+	turning = 0.0
 	_row(floats).save_png(out.path_join("cap_float.png"))
 	motor.grounded = true
 	motor.move = ""
@@ -118,7 +130,7 @@ func _step(open := false) -> void:
 	await process_frame
 	var delta := 1.0/60.0
 	figure.drive(motor,delta)
-	sail.update(delta,open)
+	sail.update(delta,open,turning)
 
 func _aim(at: Vector3, look: Vector3) -> void:
 	camera.global_position = at

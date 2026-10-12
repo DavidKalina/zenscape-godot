@@ -52,9 +52,12 @@ const MITT := Color("7a4e38")
 ## The sheet's chibi, a big round head under a hat whose brim reaches past
 ## the shoulders; round two drew him a little smaller and lower in the seat
 ## (radius 0.116 to 0.1, the hat's top 0.06 lower), so the chase camera
-## sees more of the plane past him.
-const WALKER_HEAD := Vector3(0.0,0.9401,0.0)
-const WALKER_HEAD_RADIUS := 0.1607
+## sees more of the plane past him. Round three's walker has a bigger head
+## and a wider brim (2.2 times the head); drawn to the same head radius
+## here, the brim reaches 0.22 (round two's 0.19) and the hat's top stands
+## a little lower.
+const WALKER_HEAD := Vector3(0.0,0.9551,0.0)
+const WALKER_HEAD_RADIUS := 0.2259
 const HEAD_RADIUS := 0.1
 const HEAD_UP := 0.095
 ## The eyes' blink: seconds between, least and most, and seconds shut.
