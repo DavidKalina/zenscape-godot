@@ -78,7 +78,10 @@ const LAYER := RuinBump.LAYER
 ## Bumped into the data format or the reach: older runs keep their own hash.
 const VERSION := 1
 
-const STATIONS := [
+## The stations as laid (in the toy's hall: TOY_BAY bays); STATIONS has the
+## moments pack's (the game's set pieces) moved into the game's hall
+## (`_game_hall`).
+const LAID := [
 	{"id":"gentle_arc","key":1,"name":"Gentle arc","intent":"easy","parts":[
 		["pillar",Vector2(40.0,-20.0),2.0],
 		["pillar",Vector2(-14.0,-50.0),1.5],
@@ -248,6 +251,92 @@ const STATIONS := [
 	]},
 	# <<< sundered_mix
 ]+PackLines.STATIONS+PackNature.STATIONS+PackSky.STATIONS+PackTokens.STATIONS+PackMoments.STATIONS
+static var STATIONS: Array = _game_stations(LAID)
+
+## The stations with the moments pack's moved into the game's hall: their
+## stone, tokens, lines, bonus and moments laid in the toy's hall (TOY_BAY
+## bays, TOY_ROW_Z rows) re-laid on the game's (Hall BAY, ROW_Z, WALL_Z) by
+## `_game_hall`. At plane 1, ratio 1 the game's hall is the toy's and they
+## stand as laid. The study's own stations stay in the toy's hall.
+static func _game_stations(laid: Array) -> Array:
+	var out := []
+	for s: Dictionary in laid:
+		out.append(_game_hall(s) if str(s.get("pack","")) == "moments" else s)
+	return out
+
+## Station `s` laid in the toy's hall, re-laid in the game's: its bays
+## chained BAY apart (not TOY_BAY), each run of bays (a section) starting
+## where the last's frame takes its start; every other point (parts, tokens,
+## moments) carried in the frame of the bay it is in or nearest: along the
+## nave stretched by BAY over TOY_BAY within the bay and shifted past it;
+## across, the lane between the inner columns and the rows stretched to the
+## game's ROW_Z and all beyond it moved out with it; heights kept. A station
+## with no bays is itself.
+static func _game_hall(s: Dictionary) -> Dictionary:
+	var parts: Array = s.get("parts",[])
+	var bays: Array[int] = []
+	for i in range(parts.size()):
+		if str(parts[i][0]) == "bay": bays.append(i)
+	if bays.is_empty() or (is_equal_approx(Hall.BAY,Hall.TOY_BAY) and is_equal_approx(Hall.ROW_Z,TOY_ROW_Z)): return s
+	var old_at: Array[Vector3] = []
+	var turns: Array[Basis] = []
+	for i: int in bays:
+		var part: Array = parts[i]
+		var turn := Basis(Vector3.UP,float(part[2])+PI*0.5)
+		var tilt := float((part[3] as Dictionary).get("pitch",0.0))
+		if tilt != 0.0: turn = turn*Basis(Vector3.BACK,tilt)
+		old_at.append(part[1])
+		turns.append(turn)
+	var new_at: Array[Vector3] = []
+	for k in range(bays.size()):
+		if k == 0: new_at.append(old_at[0])
+		elif old_at[k].distance_to(old_at[k-1]+turns[k-1]*Vector3(Hall.TOY_BAY,0.0,0.0)) < 0.5:
+			new_at.append(new_at[k-1]+turns[k-1]*Vector3(Hall.BAY,0.0,0.0))
+		else: new_at.append(_hall_point(old_at[k],old_at,new_at,turns,k))
+	var out := s.duplicate(true)
+	var moved := []
+	for i in range(parts.size()):
+		var part: Array = (parts[i] as Array).duplicate(true)
+		var k := bays.find(i)
+		if k >= 0: part[1] = new_at[k]
+		elif part[1] is Vector3: part[1] = _hall_point(part[1],old_at,new_at,turns,bays.size())
+		elif part[1] is Vector2:
+			var p := _hall_point(Vector3((part[1] as Vector2).x,0.0,(part[1] as Vector2).y),old_at,new_at,turns,bays.size())
+			part[1] = Vector2(p.x,p.z)
+		moved.append(part)
+	out.parts = moved
+	var carry := func(points: Array) -> Array:
+		var done := []
+		for p: Vector3 in points: done.append(_hall_point(p,old_at,new_at,turns,bays.size()))
+		return done
+	if s.has("tokens"): out.tokens = carry.call(s.tokens)
+	if s.has("bonus"): out.bonus = carry.call(s.bonus)
+	if s.has("lines"):
+		for name: String in (out.lines as Dictionary):
+			out.lines[name].tokens = carry.call(s.lines[name].tokens)
+	if s.has("moments"):
+		for m: Dictionary in out.moments: m.at = _hall_point(m.at,old_at,new_at,turns,bays.size())
+	return out
+
+## A point of a toy-hall station in the game's hall (see `_game_hall`),
+## carried by the bay (of the first `upto`) it is in or nearest.
+static func _hall_point(p: Vector3, old_at: Array[Vector3], new_at: Array[Vector3], turns: Array[Basis], upto: int) -> Vector3:
+	var best := -1
+	var best_off := INF
+	for k in range(mini(upto,old_at.size())):
+		var local := turns[k].inverse()*(p-old_at[k])
+		var off := maxf(0.0,maxf(-local.x,local.x-Hall.TOY_BAY))+absf(local.z)*0.001
+		if off < best_off:
+			best_off = off
+			best = k
+	var local := turns[best].inverse()*(p-old_at[best])
+	var x := local.x
+	if x > Hall.TOY_BAY: x += Hall.BAY-Hall.TOY_BAY
+	elif x > 0.0: x *= Hall.BAY/Hall.TOY_BAY
+	var a := absf(local.z)
+	if a > TOY_ROW_Z: a += Hall.ROW_Z-TOY_ROW_Z
+	elif a > Hall.INNER_Z: a = Hall.INNER_Z+(a-Hall.INNER_Z)*(Hall.ROW_Z-Hall.INNER_Z)/(TOY_ROW_Z-Hall.INNER_Z)
+	return new_at[best]+turns[best]*Vector3(x,local.y,signf(local.z)*a)
 
 ## The station with `id`, or {}. "id@line" is station id flown on one of
 ## its token lines (`flown`).
@@ -510,7 +599,7 @@ static func _bay(at: Vector3, yaw: float, plan: Dictionary, toy := true) -> Arra
 	if tilt != 0.0: turn = turn*Basis(Vector3.BACK,tilt)
 	var out := []
 	var put := func(middle: Vector3, size: Vector3) -> void: out.append(_box(at+turn*middle,size,turn))
-	var bay := Hall.BAY
+	var bay := Hall.TOY_BAY if toy else Hall.BAY
 	var torn := int(plan.get("torn",0))
 	var roof: String = plan.get("roof","whole")
 	var soffit := Hall.COLUMN_H+Hall.BEAM.x

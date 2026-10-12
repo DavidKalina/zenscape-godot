@@ -71,12 +71,14 @@ static var PLANE_REACH: float = 1.1+WorldScale.wider*0.5
 const WALKER_MIDDLE := 0.5
 const FOOT_Y := 0.55
 ## The plane: the box its wings keep off every solid round a token, half of
-## an opening (scripts/world_scale.gd) on the toy era's 1.6 across (the half
-## span and 0.1 a side): under SNUG's room, so it floors at its toy ratio,
-## 3.2 across at the defaults (WING 1.6); how far over the ground it rides
-## and under rock it keeps (SkyGlide SKIM, CLEAR; drawn about its wheels a
-## bigger plane is taller, all of it upward: WorldScale.taller more).
-const TOY_WING := 0.8
+## an opening (scripts/world_scale.gd) on a THREAD's toy 3.5 across (RuinKit
+## TOY_THREAD: the room a threaded gap gives), 6.65 across at the defaults
+## (WING 3.33, 1.93 m past each wingtip). It was the toy's span and 0.1 a
+## side (1.6 across, held at its toy ratio: 0.2 m past each tip), and lines
+## hugged the rock. How far over the ground it rides and under rock it
+## keeps (SkyGlide SKIM, CLEAR; drawn about its wheels a bigger plane is
+## taller, all of it upward: WorldScale.taller more).
+const TOY_WING := 1.75
 static var WING: float = WorldScale.opening(TOY_WING*2.0)*0.5
 const SKIM := SkyGlide.SKIM
 static var CLEAR: float = SkyGlide.CLEAR+WorldScale.taller

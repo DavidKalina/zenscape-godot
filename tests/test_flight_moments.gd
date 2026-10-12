@@ -54,7 +54,13 @@ func run() -> void:
 	for id: String in SOURCES:
 		var s := Course.station(id)
 		var from := Course.station(SOURCES[id])
-		check(s.parts == from.parts and s.tokens == from.tokens and str(s.from) == SOURCES[id],"%s keeps %s's stone and line" % [id,SOURCES[id]])
+		# As laid, the source's stone and line; in the game, the same re-laid in
+		# the game's hall (FlightCourse `_game_hall`: a hall station's bays at
+		# the game's BAY and ROW_Z).
+		var laid: Dictionary = Course.LAID.filter(func(l: Dictionary) -> bool: return l.id == id)[0]
+		var laid_from: Dictionary = Course.LAID.filter(func(l: Dictionary) -> bool: return l.id == SOURCES[id])[0]
+		check(laid.parts == laid_from.parts and laid.tokens == laid_from.tokens and str(s.from) == SOURCES[id],"%s keeps %s's stone and line" % [id,SOURCES[id]])
+		check(s == Course._game_hall(laid),"%s stands in the game's hall (its bays %.2f m)" % [id,Course.Hall.BAY])
 		check(Course.guides(s).size() == (s.tokens as Array).size(),"%s: its line is all guides" % id)
 		var roles := (s.moments as Array).map(func(m: Dictionary) -> String: return str(m.get("role","free")))
 		check(roles.count("starter") == 1 and roles.count("free") >= 2 and roles.count("free") <= 5 and roles.count("challenge") >= 2,
@@ -64,7 +70,10 @@ func run() -> void:
 		var all := Course.solids(s)
 		var inside := (Course.moments(s) as Array).filter(func(m: Dictionary) -> bool: return Course.clearance(all,m.at) < 0.25)
 		check(inside.is_empty(),"%s: every moment stands clear of the stone" % id)
-		if PINS[id] != "": check(Course.station_hash(s) == PINS[id],"%s keeps its hash %s (%s)" % [id,PINS[id],Course.station_hash(s)])
+		# The pin is the station as laid (re-laid in the game's hall its hash
+		# follows the plane's and the opening ratio's sizes).
+		var laid_s: Dictionary = Course.LAID.filter(func(l: Dictionary) -> bool: return l.id == id)[0]
+		if PINS[id] != "": check(Course.station_hash(laid_s) == PINS[id],"%s keeps its hash %s as laid (%s)" % [id,PINS[id],Course.station_hash(laid_s)])
 	var stage := Node3D.new()
 	root.add_child(stage)
 	for s: Dictionary in pack: Course.build(s,stage)

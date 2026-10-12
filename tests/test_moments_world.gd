@@ -87,9 +87,20 @@ func _run() -> void:
 	print("     the set pieces' frame (main thread): mean %.3f ms, worst %.3f ms over %d frames; stood in %.2f ms (made on a worker in %.1f ms)" % [
 		total/1000.0/maxi(frames,1),worst/1000.0,frames,float(moments.stats.get(p.key,{}).get("stand_usec",0))/1000.0,float(moments.stats.get(p.key,{}).get("make_usec",0))/1000.0])
 	# A free collectible flown through is taken and saved.
+	# (The one whose straight 4 m run-in, along the station's -z, keeps
+	# clearest of the stone: in the game's hall a free one by a bay line's
+	# beam has its run-in through the beam.)
 	var free: Dictionary = {}
+	var solids: Array = Plan.local_solids(int(p.layout))
+	var clearest := -INF
 	for m: Dictionary in Plan.moments(int(p.layout)):
-		if m.role == "free" and free.is_empty(): free = m
+		if m.role != "free": continue
+		var c := INF
+		for k in range(9):
+			for q: Dictionary in solids: c = minf(c,Plan.Course.distance(q,(m.at as Vector3)+Vector3(0,0,4.0-k)))
+		if c > clearest:
+			clearest = c
+			free = m
 	var from: Vector3 = Plan.place(p,(free.at as Vector3)+Vector3(0,0,4))+islands.cells.origin
 	glide.position = from
 	glide.velocity = Vector3.ZERO

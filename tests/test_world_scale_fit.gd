@@ -27,6 +27,9 @@ const Pierced = preload("res://scripts/pierced_isle.gd")
 const AqIsle = preload("res://studies/aqueduct_isle.gd")
 const AqChain = preload("res://studies/aqueduct_isle_chain.gd")
 const AqArt = preload("res://studies/aqueduct_isle_art.gd")
+const NaveArt = preload("res://studies/drowned_nave_isle_art.gd")
+const TarnArt = preload("res://studies/cloister_tarn_isle_art.gd")
+const Cloister = preload("res://scripts/ruin_kit_cloister.gd")
 const OLD := ["--plane-scale=1","--wanderer-scale=1","--opening-ratio=1"]
 
 var failures := 0
@@ -77,6 +80,9 @@ func _gaps(tag: String) -> void:
 		"pierced isle route corridor (ROUTE_CLEAR both sides)":[Pierced.ROUTE_CLEAR*2.0,Pierced.TOY_ROUTE,"ratio"],
 		"ring arch on the lodestone's line (AqChain.RING_SPAN)":[RuinKit.ARCH_SPAN*AqChain.RING_SCALE,AqChain.TOY_RING,"cap"],
 		"stone circle, sarsen to sarsen at their inner faces":[henge,RuinKit.TOY_HENGE,"snug"],
+		"drowned nave crossing (NaveArt.CROSS_CLEAR)":[NaveArt.CROSS_CLEAR,NaveArt.TOY_CROSS,"ratio"],
+		"cloister tarn water gate (between the piers' shafts)":[float(TarnArt.EAST_PIERS[TarnArt.EAST_PIERS.size()/2])-float(TarnArt.EAST_PIERS[TarnArt.EAST_PIERS.size()/2-1])-2.0*Cloister.PIER_REACH,TarnArt.TOY_GATE_PITCH-2.0*Cloister.PIER_REACH,"ratio"],
+		"cloister tarn west gap stub slot (TarnArt.STUB_GAP)":[float(TarnArt.WEST_PIERS[4])-float(TarnArt.WEST_PIERS[3])-2.0*Cloister.PIER_REACH,TarnArt.TOY_STUB_PITCH-2.0*Cloister.PIER_REACH,"ratio"],
 	}
 	for name: String in gaps:
 		var g: Array = gaps[name]
@@ -95,11 +101,14 @@ func _gaps(tag: String) -> void:
 		var floor_past := minf(least,WorldScale.past_tip(toy*WorldScale.plane))
 		check(past >= floor_past-0.03,"%s passes the %.2f m span, %.2f m past each tip (at least %.2f, %s)" % [name,span,past,floor_past,tag])
 	# The stone circle's stones stand as tall as the toy's in wingspans, and
-	# the great trilithon with them.
-	var heights := {"a sarsen (RuinKit.SARSEN.y)":[RuinKit.SARSEN.y,RuinKit.TOY_SARSEN.y],"the great trilithon (RuinKit.TRILITHON.y)":[RuinKit.TRILITHON.y,RuinKit.TOY_TRILITHON.y]}
+	# the great trilithon with them, but never more than a pumped catch
+	# (TRILITHON_RISE) over the sarsens.
+	var heights := {"a sarsen (RuinKit.SARSEN.y)":[RuinKit.SARSEN.y,RuinKit.TOY_SARSEN.y,INF],"the great trilithon (RuinKit.TRILITHON.y)":[RuinKit.TRILITHON.y,RuinKit.TOY_TRILITHON.y,RuinKit.SARSEN.y+RuinKit.TRILITHON_RISE]}
 	for name: String in heights:
 		var h: Array = heights[name]
-		check(absf(float(h[0])-WorldScale.opening(float(h[1]))) < 0.02 and (not child or absf(float(h[0])-float(h[1])) < 0.01),"%s stands %.2f m, its toy %.2f m's opening (%s)" % [name,float(h[0]),float(h[1]),tag])
+		var want := minf(WorldScale.opening(float(h[1])),float(h[2]))
+		check(absf(float(h[0])-want) < 0.02 and (not child or absf(float(h[0])-float(h[1])) < 0.01),"%s stands %.2f m, its toy %.2f m's opening, capped %.2f (%s)" % [name,float(h[0]),float(h[1]),want,tag])
+	check(RuinKit.TRILITHON.y-RuinKit.SARSEN.y <= RuinKit.TRILITHON_RISE+0.01,"the great trilithon stands %.2f m over the ring, a pumped catch from the back lintel (%s)" % [RuinKit.TRILITHON.y-RuinKit.SARSEN.y,tag])
 	# The ring's lintels a jump-catch from the leaning stone's head and the
 	# fallen trilithon's stub (the walker's, whatever their height).
 	var ring_top := RuinKit.SARSEN.y+RuinKit.LINTEL.y
