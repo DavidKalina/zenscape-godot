@@ -16,7 +16,7 @@ float sky_at(vec2 uv) {
 // near turf keeps its season's hue under the moon's blue (the turf itself
 // is darkened for it in reference_surface.gdshader, NIGHT_NEAR_*), easing
 // to the full share by NIGHT_NEAR_GRADE_FAR m, where the land is as before.
-const float NIGHT_NEAR_GRADE = 0.55;
+const float NIGHT_NEAR_GRADE = 0.6;
 const vec2 NIGHT_NEAR_GRADE_FAR = vec2(12.0, 70.0);
 
 float night_near_at(vec2 uv) {

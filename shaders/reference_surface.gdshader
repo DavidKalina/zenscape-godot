@@ -658,7 +658,7 @@ const vec2 NIGHT_NEAR = vec2(12.0, 70.0);
 // autumn's straw and sand go down much more than summer's dark green and
 // both seasons end up about as deep.
 const float NIGHT_NEAR_DIM = 1.0;
-const vec2 NIGHT_NEAR_LEVEL = vec2(0.09, 0.9);
+const vec2 NIGHT_NEAR_LEVEL = vec2(0.06, 0.9);
 // How much colour it takes on before the night grade's rod grey
 // (look_grade.gdshaderinc zs_look_night) takes most of it away again, so
 // the season's hue is still there under the moon's blue.
@@ -669,7 +669,7 @@ const float NIGHT_NEAR_GOLD = 0.8;
 const float NIGHT_NEAR_BLUE = 0.6;
 // The moon's soft cool sheen on blade tips (x strength, y how high up the
 // blade it starts), so the grass keeps its shape and movement.
-const vec2 NIGHT_TIP_SHEEN = vec2(0.4, 0.5);
+const vec2 NIGHT_TIP_SHEEN = vec2(0.5, 0.5);
 global uniform vec4 zs_moon_light;
 
 void fragment() {
