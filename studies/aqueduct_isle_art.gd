@@ -458,9 +458,10 @@ static func station_parts() -> Array:
 
 ## The castellum at the aqueduct's head (world): the water tower, 4 m
 ## square, its crown CASTELLUM_CROWN up (the deck and 1.8: 7.8 m in the
-## station, 11 at the defaults), its south-east quarter fallen in SET_OFF
-## steps (each 1.6 m, a jump caught) running on south as rubble, from the
-## deck and 0.2 (the step a running jump either way from the channel: its
+## station, 11.8 at the defaults), its south-east quarter fallen in even
+## steps (each SET_OFF 1.6 m at most, a jump caught: 1.47 m at the
+## defaults) running on south as rubble, from the
+## deck and CASTELLUM_HIGH (the step a running jump either way from the channel: its
 ## east face 1.8 m off the aqueduct's west face) down to 1.4 m at its foot.
 ## Each block collides as a clean box (`parts`), the stone over it drawn
 ## only.
@@ -468,15 +469,36 @@ static var CASTELLUM_CROWN: float = DECK+1.8
 static var CASTELLUM: Array = _castellum()
 
 static func _castellum() -> Array:
-	var out: Array = [[Rect2(93.0,-3.0,2.0,4.0),CASTELLUM_CROWN]]
-	var high := DECK+0.2
+	var out: Array = [[Rect2(CASTELLUM_X-2.0,-3.0,2.0,4.0),CASTELLUM_CROWN]]
+	# From the high step (deck + 0.2) down to CASTELLUM_FOOT, evenly, each
+	# no more than SET_OFF: however tall the deck grows (an opening ratio),
+	# the lowest is a jump caught from the turf.
+	var high := DECK+CASTELLUM_HIGH
+	var count := ceili((high-CASTELLUM_FOOT)/RuinKit.SET_OFF-0.001)
+	var drop := (high-CASTELLUM_FOOT)/count
 	var z := -3.0
-	while high > 1.4+0.8:
-		out.append([Rect2(95.0,z,2.0,2.0),high])
-		high -= RuinKit.SET_OFF
+	for k in range(count):
+		out.append([Rect2(CASTELLUM_X,z,2.0,2.0),high-drop*k])
 		z += 2.0
-	out.append([Rect2(95.3,z,1.7,1.6),high])
+	out.append([Rect2(CASTELLUM_X+0.3,z,1.7,1.6),CASTELLUM_FOOT])
 	return out
+const CASTELLUM_FOOT := 1.4
+## The block fallen into the kick slot (world x, z) and its top over the
+## turf: the kicks up the slot start from it, so the kick that clears the
+## castellum's high step comes off the castellum's face (over the parapet
+## onto the channel), not off the aqueduct's (onto the castellum). A kick
+## rises about 1.42 m; from the turf the 10 m deck of ratio 1 sent the
+## climb out onto the castellum.
+static var KICK_BLOCK := Rect2(CASTELLUM_X+2.05,-3.4,MID_X-FACE-(CASTELLUM_X+2.05)-0.05,1.6)
+const KICK_RISE := 1.4
+## Where the slot's kick climb starts (world, on the block's top).
+static func kick_from() -> Vector3:
+	return Vector3(KICK_BLOCK.get_center().x,TOP+KICK_RISE,-2.6)
+## The high step over the deck (m): a running jump up from the channel.
+const CASTELLUM_HIGH := 0.2
+## The castellum's steps' west face (world x; the crown west of it): the
+## slot between them and the aqueduct's west face is the wall-kick climb.
+const CASTELLUM_X := 95.0
 
 static func castellum(seed_value: int) -> Dictionary:
 	var b := Build.new(seed_value,0.5,"Castellum")
@@ -503,7 +525,14 @@ static func castellum(seed_value: int) -> Dictionary:
 		var r := Rect2(at.x-0.2,at.z-len*0.5,0.4,len) if turned else Rect2(at.x-len*0.5,at.z-0.2,len,0.4)
 		parts.append(["box",r,TOP+CASTELLUM_CROWN,TOP+CASTELLUM_CROWN+0.3,"lip"])
 	var foot: Rect2 = CASTELLUM[-1][0]
-	RuinKit._drift(b,Vector3(97.4,TOP,foot.end.y),0.9,4)
+	RuinKit._drift(b,Vector3(CASTELLUM_X+2.4,TOP,foot.end.y),0.9,4)
+	# A block fallen into the slot between the castellum and the aqueduct:
+	# the wall-kick climb starts from its top (`kick_from`).
+	var block := KICK_BLOCK
+	parts.append(["box",block,TOP,TOP+KICK_RISE,"lip"])
+	var bpose := Transform3D(Basis(Vector3.UP,PI*0.5),Vector3(block.get_center().x,TOP,block.get_center().y))
+	var btop := func(_x: float) -> float: return KICK_RISE
+	RuinKit._courses(b,bpose,-block.size.y*0.5,block.size.y*0.5,0.0,btop,block.size.x*0.5-0.01,Callable(),0.5,false)
 	var node := b.finish()
 	node.get_node("Body").free()
 	return {"node":node,"parts":parts}
@@ -762,8 +791,13 @@ static func ground_material() -> ShaderMaterial:
 ## aqueduct, by NEAR_SHIFT, fading out 8 m either side of the aqueduct's
 ## line and south of z -30. So an opening ratio's bigger or smaller run
 ## takes its islands with it.
-const REF_EDGE := 37.2
-const REF_END := 66.4
+## The run they were drawn round: the aqueduct at the knob's plane
+## (WorldScale.PLANE) and WorldScale.DRAWN_RATIO (0.9): clear 7.2, its
+## first hanging pier's middle less 0.6 37.2, END 66.4. Derived, so the
+## shifts follow any ratio or plane from there.
+static var REF_CLEAR: float = TOY_CLEAR*WorldScale.PLANE*WorldScale.DRAWN_RATIO
+static var REF_EDGE: float = HEAD+REF_CLEAR+PIER.x*0.5+(REF_CLEAR+PIER.x)*3.0-0.6
+static var REF_END: float = HEAD+REF_CLEAR+PIER.x*0.5+(REF_CLEAR+PIER.x)*(SPANS-1)+PIER.x*0.5
 static var NEAR_SHIFT: float = (pier(3)-0.6)-REF_EDGE
 static var FAR_SHIFT: float = END-REF_END
 const NEAR_DRAWN := [Vector2(100.0,-37.2),Vector2(104.0,-37.0),Vector2(108.0,-36.0),Vector2(112.0,-32.5),Vector2(116.0,-28.6),
@@ -799,8 +833,8 @@ static func _far(points: Array) -> Array:
 ## the line on under the aqueduct's sky arch (`arch(4)`), so on knife edge
 ## the plane slips both; level, its wings catch the stumps. Walked back from
 ## the far island: three twirled jumps (2.9, 3.0, 3.4 m), then running jumps
-## over the slot, 1.6 m and 0.65 m onto the near island (its edge at z -35
-## there). The far two follow the far island (FAR_SHIFT) and share what the
+## over the slot, 1.6 m (STUMP_NEAR_GAP) and 0.65 m onto the near island
+## (its edge at z -35 there); the first stump grows with the run. The far two follow the far island (FAR_SHIFT) and share what the
 ## run's growth leaves between the slot's far stump and them; the twirled
 ## jumps (STUMP_JUMPS) stay the walker's.
 static var KNIFE_Z: float = -arch(4)
@@ -814,13 +848,21 @@ static func stump_slot() -> float:
 const STUMP_JUMPS := Vector2(3.4,3.0)
 const STUMP_FAR_LONG := 3.15
 const STUMP_LONGS := Vector2(3.0,3.6)
+## The slot's near stump's length (a run-up on it to the next, as at ratio
+## 0.9), the running jump from it to the first stump, which runs on from
+## there to the near island's edge (0.65 m off it): so as the run grows
+## the first stump grows, never the slot's near one.
+const STUMP_SLOT_NEAR_LONG := 3.6
+const STUMP_NEAR_GAP := 1.6
 static func stumps() -> Array:
 	var slot := stump_slot()
 	var s3 := KNIFE_Z-slot*0.5-STUMP_FAR_LONG
 	var s5 := -59.6-FAR_SHIFT
 	var grow := (s3-s5-STUMP_JUMPS.x-STUMP_JUMPS.y)/(STUMP_LONGS.x+STUMP_LONGS.y)
 	var s4 := s3-STUMP_JUMPS.x
-	return [[STUMPS_X,-35.65,-37.6,30.6],[STUMPS_X,-39.2,KNIFE_Z+slot*0.5,30.4],[STUMPS_X,KNIFE_Z-slot*0.5,s3,29.8],
+	var s2 := KNIFE_Z+slot*0.5+STUMP_SLOT_NEAR_LONG
+	var s1 := s2+STUMP_NEAR_GAP
+	return [[STUMPS_X,-35.65,s1,30.6],[STUMPS_X,s2,KNIFE_Z+slot*0.5,30.4],[STUMPS_X,KNIFE_Z-slot*0.5,s3,29.8],
 		[STUMPS_X,s4,s4-STUMP_LONGS.x*grow,30.2],[STUMPS_X,s5+STUMP_LONGS.y*grow,s5,30.0]]
 ## The far island's gate (the kit's arch, where the aqueduct came down) and
 ## the paving before it (world x, z).

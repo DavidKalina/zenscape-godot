@@ -1154,8 +1154,10 @@ func _level(top: Vector3) -> bool:
 ## nothing but turf where it would stand.
 func _room_for_plane(top: Vector3, heading: float) -> bool:
 	var box := BoxShape3D.new()
+	# Its drawn size stood on its wheels: the span as drawn (WorldScale.span,
+	# the plane's own scale) times the ground cheat (1 at the knobs).
 	var f := ground_scale.ground_size()
-	box.size = Vector3(WorldScale.TOY_SPAN*f+0.4,1.2*f,maxf(3.0,1.6*f))
+	box.size = Vector3(WorldScale.span*ground_scale.factor+0.4,1.2*f,maxf(3.0,1.6*f))
 	var query := PhysicsShapeQueryParameters3D.new()
 	query.shape = box
 	query.collision_mask = plane_mask()

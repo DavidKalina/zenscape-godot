@@ -238,13 +238,24 @@ static var TRILITHON := Vector3(TOY_TRILITHON.x,minf(TOY_TRILITHON.y*HENGE_GROW,
 static var TRILITHON_SLOT: float = WorldScale.knife()
 const TRILITHON_IN := 2.29
 static var TRILITHON_AT: float = CIRCLE_RADIUS*cos(PI/CIRCLE_STONES)-TRILITHON_IN
-## The fallen trilithon: its stub's height (1.5 m under the ring's lintels'
+## The fallen trilithon: its stub's height (STUB_UNDER under the ring's lintels'
 ## top, by the lintel STUB_AT's middle: 2.5 in the toy era), its partner
 ## lying in toward the middle (its top caught from the floor, the stub's
 ## from it; the taller stub's broken-off pieces lie stacked on the lying
 ## stone's end as steps between, each 1.5 m and under: `stone_circle`).
-static var STUB: float = SARSEN.y+LINTEL.y-1.5
+static var STUB: float = SARSEN.y+LINTEL.y-STUB_UNDER
+## How far under the lintels' top the stub stands.
+const STUB_UNDER := 1.5
+## How far in from the lintels' inner face the stub stands (m): a hop out
+## and up onto the lintel from its top (0.25 was a near miss at ratio 1).
+const STUB_OFF := 0.25
+## How far in from its inner edge the stub's top is broken off (m): kept
+## small so the run-up for the hop out onto the lintel is on its flat top.
+const STUB_CORNER := 0.2
 const STUB_AT := 4
+## The most a step up the fallen trilithon's broken pieces rises: a jump
+## caught a quarter metre under the walker's catch top (GRAB_TOP).
+const STUB_STEP := GRAB_TOP-0.25
 ## The leaning stone: a sarsen fallen in against the ring's upright LEAN_AT,
 ## its width and thickness, the slope of its top (walked up, surfed down:
 ## the toy's 30°, steeper as the sarsens grow, 40° at the defaults, under
@@ -762,6 +773,7 @@ static func buttress(seed_value: int, weathered := 0.0) -> Node3D:
 ## jump).
 static func wall(seed_value: int, weathered := 0.0) -> Node3D:
 	var b := Build.new(seed_value,weathered,"Wall")
+	b.drop_floating = true
 	var half_len := WALL_LENGTH*0.5
 	var d := WALL_THICK*0.5
 	var top: Callable = _worn_top(b,-half_len,half_len,WALL_HEIGHT,0.25)
@@ -1614,10 +1626,10 @@ static func stone_circle(seed_value: int, weathered := 0.0, missing: Array = [])
 	# across its inner corner, its partner lying in from it, its lintel
 	# broken in two in the grass.
 	var sa := (STUB_AT+1.0)*pitch
-	var stub_r := CIRCLE_RADIUS*cos(pitch*0.5)-LINTEL.x*0.5-0.25-TRILITHON.x*0.5
+	var stub_r := CIRCLE_RADIUS*cos(pitch*0.5)-LINTEL.x*0.5-STUB_OFF-TRILITHON.x*0.5
 	var stub_size := Vector3(TRILITHON.x,STUB,TRILITHON.z)
 	var corner := Vector3(0.7,1.0,b.rng.randf_range(-0.3,0.3)).normalized()
-	var broken: Array[Plane] = [Plane(corner,corner.dot(Vector3(TRILITHON.x*0.5-0.45,(STUB+0.3)*0.5,0.0)))]
+	var broken: Array[Plane] = [Plane(corner,corner.dot(Vector3(TRILITHON.x*0.5-STUB_CORNER,(STUB+0.3)*0.5,0.0)))]
 	_sarsen(b,Transform3D(Basis(Vector3.UP,sa+PI*0.5),_round(sa,stub_r)),stub_size,0.06,broken)
 	# The lying partner broke as it fell: the toy's length lies here, a
 	# little shorter as the stones grow (4.0 m at the defaults: a whole 8 m
@@ -1631,9 +1643,9 @@ static func stone_circle(seed_value: int, weathered := 0.0, missing: Array = [])
 	# steps up from the lying stone's top to the stub's, each the same and
 	# 1.5 m and under (none in the toy era, the stub one step up).
 	var lie_top := TRILITHON.z-0.15
-	# (Rises to 1.55, as the leaning stone's block: three of 1.13 m packed
-	# 1.25 apart at ratio 0.95 weren't climbed, two of 1.5 are.)
-	var steps := ceili((STUB-lie_top)/1.55)-1
+	# (Rises up to STUB_STEP: three of 1.13 m packed 1.25 apart at ratio
+	# 0.95 weren't climbed, nor three of 1.21 at 1.0; two of 1.5 or 1.62 are.)
+	var steps := ceili((STUB-lie_top)/STUB_STEP)-1
 	for k in range(steps):
 		var top := lie_top+(STUB-lie_top)*float(k+1)/float(steps+1)
 		var r := stub_r-TRILITHON.x*0.5-0.75-1.25*float(steps-1-k)

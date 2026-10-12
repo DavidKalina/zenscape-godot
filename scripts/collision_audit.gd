@@ -151,7 +151,7 @@ func clear() -> void:
 
 ## Every collision shape under `root` on LAYERS (the drawn copies, Areas
 ## and `skip` left out), checked: [{path, layer, kind, box (world AABB),
-## points, exposed, worst (m, the band it stood off past), at (the worst
+## points, exposed, far (exposed 1 m or more), worst (m, the band it stood off past), at (the worst
 ## point)}] for each shape with an exposed point, worst first.
 func audit(root: Node) -> Array:
 	var found: Array = []
@@ -164,18 +164,20 @@ func audit(root: Node) -> Array:
 		if not owner_body.is_inside_tree(): continue
 		var samples := _samples(cs)
 		var exposed := 0
+		var far := 0
 		var worst := 0.0
 		var worst_at := Vector3.ZERO
 		for sample: Array in samples:
 			var off := _off(sample[0],sample[1])
 			if off > 0.0:
 				exposed += 1
+				if off >= 1.0: far += 1
 				if off > worst:
 					worst = off
 					worst_at = sample[0]
 		if exposed == 0: continue
 		found.append({"path":str(root.get_path_to(cs)),"layer":owner_body.collision_layer,"kind":cs.shape.get_class(),
-			"box":_world_box(cs),"points":samples.size(),"exposed":exposed,"worst":worst,"at":worst_at})
+			"box":_world_box(cs),"points":samples.size(),"exposed":exposed,"far":far,"worst":worst,"at":worst_at})
 	found.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return float(a.worst)*float(a.exposed) > float(b.worst)*float(b.exposed))
 	return found
 

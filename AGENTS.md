@@ -21,11 +21,11 @@ The plane's and the wanderer's sizes live only in `scripts/world_scale.gd`,
 the one parser of `--plane-scale=` / `--wanderer-scale=` / `--opening-ratio=`.
 Size a flown opening from its toy-era width (named in the file that owns it,
 e.g. `TOY_THREAD := 3.5`) with `WorldScale.opening(toy_width)`: toy width x
-plane x `RATIO` (0.95), floored at `SNUG` (1.2 m past each wingtip). At
+plane x `RATIO` (1.0), floored at `SNUG` (1.2 m past each wingtip). At
 `--plane-scale=1 --opening-ratio=1` every opening is its toy width exactly.
 Use `gap(room)` only for spacing with no toy width, and a knife-edge slot
 only on purpose with `knife()`. Derive walker reach, steps, ledges and jump
 gaps from the wanderer size (`PilotMotor.set_size`,
 `RuinKit.GRAB_TOP`/`CHAIN_TOP`). Other files ask WorldScale rather than
-copy 2.0, 2.4, 0.95, 1.2 (`pilot_size`) or the toy span 1.4. Guarded by
+copy 2.0, 2.4, the ratio, 1.2 (`pilot_size`) or the toy span 1.4. Guarded by
 `tests/test_world_scale_guard.gd` and `tests/test_world_scale_fit.gd`.

@@ -712,12 +712,14 @@ static func tower(seed_value: int) -> Dictionary:
 	for block: Array in TOWER:
 		var r: Rect2 = block[0]
 		var high: float = block[1]
-		parts.append([r,-2.0,high])
 		var long_x := r.size.x >= r.size.y
 		var length := r.size.x if long_x else r.size.y
 		var depth := r.size.y if long_x else r.size.x
 		var pose := Transform3D(Basis.IDENTITY if long_x else Basis(Vector3.UP,PI*0.5),Vector3(r.get_center().x,0.0,r.get_center().y))
 		var foot := -2.6 if r.end.x > 2.0 else -0.6
+		# Its box no deeper than its drawn foot: a box to -2 under a block
+		# coursed from -0.6 stood out under the lip, invisible.
+		parts.append([r,maxf(foot,-2.0),high])
 		var line := func(_x: float) -> float: return high
 		RuinKit._courses(b,pose,-length*0.5,length*0.5,foot,line,depth*0.5-0.01,Callable(),0.55,high > 2.0)
 	# A string course and slit windows' sills are left to the stone's own

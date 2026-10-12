@@ -153,7 +153,7 @@ func _piece(id: String, seed_value: int, weathered: float) -> void:
 	check(ok,label+" has a mesh")
 	if ok:
 		var box := mesh.mesh.get_aabb()
-		check(box.position.y > -0.5 and box.size.length() > 0.5 and box.size.length() < (45.0 if id in ["hall_bay","stone_circle","rose_gable"] else 30.0),label+" stands on the ground at a sane size: "+str(box))
+		check(box.position.y > -0.5 and box.size.length() > 0.5 and box.size.length() < (maxf(45.0,3.0*Hall.WALL_Z) if id == "hall_bay" else 45.0 if id in ["stone_circle","rose_gable"] else 30.0),label+" stands on the ground at a sane size: "+str(box))
 	var body := node.get_node_or_null("Body") as StaticBody3D
 	var hulls := 0
 	var thin := 0

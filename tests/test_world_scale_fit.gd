@@ -12,7 +12,9 @@ extends SceneTree
 ## (SNUG at least) and its stones' heights; at the default sizes each keeps
 ## RATIO of its toy width in wingspans, and in the second run each is its
 ## toy width exactly. The knife-edge slots pass the plane only on its
-## wingtip, the cockpit pilot is the walker's size, and the walker, sized as
+## wingtip, the cockpit pilot is the walker's size, the lancet's oculus fits
+## its window, the 0.9-drawn layouts derive their references (at ratio 1
+## each opening is its toy width x the plane exactly), and the walker, sized as
 ## the game sizes him (PilotMotor.set_size), still catches the ledges the
 ## kit's climbing routes are laid on. A pure check of the derived numbers:
 ## nothing is built.
@@ -102,8 +104,30 @@ func _gaps(tag: String) -> void:
 		elif not child and g[2] == "ratio" and toy*WorldScale.plane*WorldScale.ratio >= WorldScale.gap(WorldScale.SNUG):
 			var spans := (w/span)/(toy/WorldScale.TOY_SPAN)
 			check(absf(spans-WorldScale.ratio) < 0.01,"%s keeps %.2f of its toy ratio to the wingspan (%.2f spans, the toy %.2f)" % [name,spans,w/span,toy/WorldScale.TOY_SPAN])
+		# At ratio 1 (the game's RATIO) the floor never acts: every flown
+		# opening is its toy width grown with the plane, its toy-era width
+		# in wingspans exactly.
+		if not child and is_equal_approx(WorldScale.ratio,1.0) and g[2] == "ratio":
+			check(absf(w-toy*WorldScale.plane) < 0.02,"%s is its toy width x the plane at ratio 1 (%.2f = %.2f x %.1f)" % [name,w,toy,WorldScale.plane])
 		var floor_past := minf(least,WorldScale.past_tip(toy*WorldScale.plane))
 		check(past >= floor_past-0.03,"%s passes the %.2f m span, %.2f m past each tip (at least %.2f, %s)" % [name,span,past,floor_past,tag])
+	# The lancet's oculus grows with its window: its ring rests on the two
+	# lights' heads and stays inside the window's own arc (RuinKit
+	# `_oculus`), never a small ring hung in a wide head.
+	var w2 := RuinKit.WINDOW.x*0.5
+	var light := (w2-0.12)*0.5
+	var oc := RuinKit._oculus(w2,light)
+	var outer := oc.y+oc.z
+	var on_lights := Vector2(0.12+2.0*light,oc.x).length()-(2.0*light+RuinKit.LIGHT_RING+outer)
+	var in_arc := (2.0*w2-outer)-Vector2(w2,oc.x).length()
+	check(absf(on_lights) < 0.02 and in_arc > 0.05,"the lancet's oculus (%.2f m out) rests on the lights' heads (%.3f) inside the window's arc (%.2f m clear, %s)" % [outer,on_lights,in_arc,tag])
+	# Layouts drawn round ratio 0.9 at the knob's plane derive their
+	# reference from it (WorldScale.DRAWN_RATIO): the aqueduct isle's
+	# outlines (REF_EDGE 37.2, REF_END 66.4) and the Sundered line's bay
+	# (ACT_BAY 10.56).
+	const SunderedHall = preload("res://scripts/sundered_hall.gd")
+	check(absf(AqArt.REF_EDGE-37.2) < 0.01 and absf(AqArt.REF_END-66.4) < 0.01 and absf(SunderedHall.ACT_BAY-10.56) < 0.01,"the 0.9 references derive from the knobs (REF_EDGE %.2f, REF_END %.2f, ACT_BAY %.2f)" % [AqArt.REF_EDGE,AqArt.REF_END,SunderedHall.ACT_BAY])
+	check(absf(AqArt.FAR_SHIFT-(AqArt.END-AqArt.REF_END)) < 0.001,"the far island moves with the run (FAR_SHIFT %.2f, END %.2f, %s)" % [AqArt.FAR_SHIFT,AqArt.END,tag])
 	# The stone circle's stones stand as tall as the toy's in wingspans, and
 	# the great trilithon with them, but never more than a pumped catch
 	# (TRILITHON_RISE) over the sarsens.

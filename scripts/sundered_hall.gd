@@ -61,6 +61,7 @@ extends RefCounted
 ## boxes, slits) stands on each piece's near node (`weave`).
 
 const Hall = preload("res://scripts/ruin_kit_hall.gd")
+const WorldScale = preload("res://scripts/world_scale.gd")
 const HallPath = Hall.HallPath
 
 static var BAY: float = Hall.BAY
@@ -81,12 +82,12 @@ const ACTS := [
 	["shafts",Vector2i(1,1),Vector2i(7,9)],
 	["apse",Vector2i(1,1),Vector2i(8,10)],
 ]
-## The bay the acts' counts were drawn for (m: Hall BAY at the opening
-## ratio 0.9, where the line's length was held to LENGTH). Where the bays
+## The bay the acts' counts were drawn for (m: Hall BAY at the knob's
+## plane and WorldScale.DRAWN_RATIO 0.9, 10.56, where the line's length was held to LENGTH). Where the bays
 ## are wider (a bigger ratio) the drawn line is trimmed back to that
 ## length a bay at a time off its longest pieces (never under MIN_BAYS),
 ## so a piece keeps its metres, not its count; narrower, it is left.
-const ACT_BAY := 10.56
+static var ACT_BAY: float = maxf(Hall.TOY_BAY,Hall.TOY_ARCH*WorldScale.PLANE*WorldScale.DRAWN_RATIO+2.0*Hall.ARCH_JAMB)
 const MIN_BAYS := 6
 ## Gaps (m, torn end to torn end along the line) and their steps up or
 ## down (m), the steepest grade a step may take (rise over run, held at

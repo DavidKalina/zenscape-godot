@@ -171,7 +171,7 @@ func _aqueduct_wallrun() -> void:
 func _free_play() -> void:
 	var deck := Art.TOP+Art.DECK
 	var crown := Art.TOP+Art.CASTELLUM_CROWN
-	var partner := deck+0.2
+	var partner := deck+Art.CASTELLUM_HIGH
 	var steps: Array = Art.CASTELLUM.slice(1)
 	var foot: Rect2 = steps[-1][0]
 	var way: Array = []
@@ -183,7 +183,7 @@ func _free_play() -> void:
 	check(line(Vector3(96.7,partner,-2.0),Vector3(94.0,crown,-2.0),"walk"),"Summit: and up onto the crown (feet %s)" % m.feet)
 	check(line(Vector3(93.3,crown,-2.0),Vector3(100.0,deck,-2.4),"jump_twirl"),"Summit: off the crown a twirled jump down onto the channel (feet %s)" % m.feet)
 	check(line(Vector3(95.2,partner,-2.0),Vector3(100.0,deck,-2.6),"jump"),"Summit: from the high step a running jump back to the channel (feet %s)" % m.feet)
-	check(line(Vector3(98.0,30.0,-2.6),Vector3(99.5,-(deck-1.0),-2.6),"kick"),"Kicks up the slot between the castellum and the blind wall to the channel (feet %s)" % m.feet)
+	check(line(Art.kick_from(),Vector3(99.5,-(deck-1.0),-2.6),"kick"),"Kicks up the slot between the castellum and the blind wall from the fallen block to the channel (feet %s)" % m.feet)
 	check(_stumps_back(),"Stumps: back from the far island over %d broken piers, twirled jumps over the wide gaps, running jumps over the slot and onto the near island (feet %s)" % [Art.stumps().size(),m.feet])
 
 ## Back from the far island over the stepping stumps (Art `stumps`): a

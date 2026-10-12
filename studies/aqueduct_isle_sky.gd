@@ -265,13 +265,16 @@ func _build_airships() -> void:
 		body.collision_layer = SOLID_LAYER
 		body.collision_mask = 0
 		body.sync_to_physics = false
-		var envelope := CollisionShape3D.new()
-		var capsule := CapsuleShape3D.new()
-		capsule.radius = AirshipBuild.ENVELOPE_RADIUS*0.95
-		capsule.height = AirshipBuild.ENVELOPE_LENGTH
-		envelope.shape = capsule
-		envelope.transform = Transform3D(Basis(Vector3.RIGHT,PI*0.5),AirshipBuild.ENVELOPE_AT)
-		body.add_child(envelope)
+		# The envelope as two capsules inside its teardrop (`envelope_solid`):
+		# one capsule its whole length stood out round the tail's taper.
+		for part: Vector3 in envelope_solid():
+			var envelope := CollisionShape3D.new()
+			var capsule := CapsuleShape3D.new()
+			capsule.radius = part.z
+			capsule.height = part.y-part.x+2.0*part.z
+			envelope.shape = capsule
+			envelope.transform = Transform3D(Basis(Vector3.RIGHT,PI*0.5),AirshipBuild.ENVELOPE_AT+Vector3(0.0,0.0,(part.x+part.y)*0.5))
+			body.add_child(envelope)
 		var gondola := CollisionShape3D.new()
 		var box := BoxShape3D.new()
 		box.size = Vector3(AirshipBuild.HULL.x*2.0,AirshipBuild.HULL.y+1.6,AirshipBuild.HULL.z*2.0)
@@ -489,3 +492,16 @@ func _process(delta: float) -> void:
 		collectibles.advance(delta,eye)
 		if scene.flying and scene.plane_figure != null: collectibles.touch_plane(scene.plane_figure.global_position)
 		elif scene.figure != null: collectibles.touch_walker(scene.figure.global_position+Vector3.UP*Lines.WALKER_MIDDLE)
+
+## The airship envelope's solid: capsules (z from, z to along it from its
+## middle, radius) inside the drawn teardrop (AirshipBuild
+## `envelope_radius`): a fat middle and a long slimmer one to the nose and
+## down the tail, each ENVELOPE_INSIDE of the profile where it is thinnest.
+const ENVELOPE_INSIDE := 0.92
+static func envelope_solid() -> Array[Vector3]:
+	var h := AirshipBuild.ENVELOPE_LENGTH*0.5
+	var out: Array[Vector3] = []
+	for span: Vector2 in [Vector2(-0.35,0.2),Vector2(-0.75,0.6)]:
+		var r := minf(AirshipBuild.envelope_radius(span.x*h),AirshipBuild.envelope_radius(span.y*h))*ENVELOPE_INSIDE
+		out.append(Vector3(span.x*h,span.y*h,r))
+	return out

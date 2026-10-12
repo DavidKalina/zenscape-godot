@@ -19,8 +19,9 @@ extends RefCounted
 ## (scripts/launch_args.gd's caveat).
 ##
 ## An opening meant to be flown keeps its toy-era width in wingspans
-## (`opening`): the toy width times the plane times RATIO (0.95: the toy
-## era's flight felt right, a twentieth off to play it safe). Each file names
+## (`opening`): the toy width times the plane times RATIO (1.0: the toy
+## era's flight felt right, so every opening keeps its toy-era width in
+## wingspans exactly). Each file names
 ## its openings' toy widths. `--opening-ratio=<x>` overrides RATIO for a
 ## run; `--plane-scale=1 --opening-ratio=1` gives back every toy width
 ## exactly. `gap(room)` (span plus steering room in toy spans) stays for
@@ -90,13 +91,13 @@ static func gap(room := ROOM) -> float:
 
 ## The share of its toy-era ratio to the wingspan every flown opening keeps:
 ## RATIO by default, `--opening-ratio=<x>` for a run.
-const RATIO := 0.95
+const RATIO := 1.0
 static var ratio: float = _flag("--opening-ratio=",RATIO)
 
 ## An opening the plane flies through, from its toy-era width (its width
 ## when the plane was the 1.4 m toy): toy_width*plane*ratio, so it keeps
-## `ratio` of its old width in wingspans (1.9x the toy width at the
-## defaults: THREAD 3.5 -> 6.65).
+## `ratio` of its old width in wingspans (2x the toy width at the
+## defaults: THREAD 3.5 -> 7.0).
 ## Floored at gap(SNUG) (1.2 m past each wingtip) so a small ratio never
 ## closes an opening onto the wings; but the floor never reaches past the
 ## toy width grown with the plane (toy_width*plane), so at ratio 1 it never
@@ -104,8 +105,18 @@ static var ratio: float = _flag("--opening-ratio=",RATIO)
 ## was itself under SNUG's room (a token's wing box) floors at its own toy
 ## ratio, not wider.
 static func opening(toy_width: float) -> float:
+	return opening_at(toy_width,ratio)
+
+## `opening` at another ratio: for a layout drawn round the openings of an
+## older ratio (DRAWN_RATIO), so it can be told how far they have grown.
+static func opening_at(toy_width: float, at_ratio: float) -> float:
 	var grown := toy_width*plane
-	return maxf(grown*ratio,minf(gap(SNUG),grown))
+	return maxf(grown*at_ratio,minf(gap(SNUG),grown))
+
+## The ratio some hand-drawn layouts were drawn round (the aqueduct isle's
+## island outlines, the Sundered line's bay counts): they shift or trim by
+## how far `opening` has grown past `opening_at(DRAWN_RATIO)`.
+const DRAWN_RATIO := 0.9
 
 ## A slot the plane is meant to pass only on a knife edge (on a wingtip):
 ## its height on its side (the toy's TOY_TALL times the plane) and `room`
