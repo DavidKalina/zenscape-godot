@@ -75,6 +75,10 @@ aqueduct isle. Fix-ups:
 
 Related set (44): 41 pass. The 3 known base failures remain.
 
+## Bell spires fit (fix/bell-spires-fit)
+
+The south stack's bell gable and the low stack's arch (RuinKit.arch, 14.6 m toe to toe at ARCH_SPAN 8.4) hung off 6-7 m stack tops. Those two stacks now grow from `RuinKit.arch_foot()` until their tops hold the arch plus ARCH_SEAT (r 4.0/4.6 -> 10.5). PASS_ROOM went 4.0 -> 5.2 so no gap narrowed (least 10.05 m, now 10.09). The gable bridge is now 22.8 m (was ~13). The hero (r 8.2) wasn't grown.
+
 ## Scale cleanup (feature/scale-cleanup)
 
 Closes the Open list of the section below, at ratio 1.0. Where they
