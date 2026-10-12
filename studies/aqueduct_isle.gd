@@ -551,22 +551,23 @@ func night_lamp_spots() -> Array:
 		var right := Vector3(cos(parked_heading),0.0,-sin(parked_heading))
 		for side: float in [-1.0,1.0]:
 			var p := parked_at-forward*6.5+right*3.2*side
-			spots.append(Vector2(p.x,p.z))
+			spots.append(Vector3(p.x,parked_at.y+3.5,p.z))
 	spots.append_array(NIGHT_LAMPS)
 	return spots
 
+## A Vector3 spot is x, the top of its ray down, z: under the floating
+## stones and lintels, so a lantern stands on the turf, not on them.
 const NIGHT_LAMPS := [
 	# The grand stair (Art.STAIR_AT 83.6, 0): its foot either side, its head.
-	Vector2(88.6,-3.4),Vector2(88.6,3.4),Vector2(77.5,2.8),
+	Vector3(88.6,33.5,-3.4),Vector3(88.6,33.5,3.4),Vector2(77.5,2.8),
 	# The path from the plane toward the stair.
-	Vector2(92.0,2.5),
+	Vector3(92.0,33.5,2.5),
 	# The stone circle's way in (Art.HILL 61, 0), on its east side.
-	Vector2(71.5,-5.5),
-	# The aqueduct's head and the heel stone (Art.HEEL 118, 0); the ray
-	# down starts under the floating stones (Vector3: x, its top, z).
-	Vector3(105.5,34.0,3.5),Vector3(115.5,34.0,1.8),
+	Vector3(71.5,44.0,-5.5),
+	# The aqueduct's head and the heel stone (Art.HEEL 118, 0).
+	Vector3(105.5,33.5,3.5),Vector3(115.5,33.5,1.8),
 	# The gate on the far island (its arch at 100, -62.5), either side.
-	Vector2(96.8,-60.2),Vector2(103.2,-60.2),
+	Vector3(96.8,33.5,-60.2),Vector3(103.2,33.5,-60.2),
 ]
 
 ## The kit's on-foot hint, and the dragon's line while it holds the treasure.

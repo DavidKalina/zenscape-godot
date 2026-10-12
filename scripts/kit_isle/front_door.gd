@@ -183,12 +183,26 @@ func _process(delta: float) -> void:
 	if isle == null: return
 	if titled:
 		_orbit(delta)
+		_night_scrim()
 		return
 	if _ease_left <= 0.0: return
 	_ease_left = maxf(_ease_left-delta,0.0)
 	var camera: Camera3D = isle.camera
 	var t := 1.0-_ease_left/EASE
 	camera.global_transform = _ease_from.interpolate_with(camera.global_transform,smoothstep(0.0,1.0,t))
+
+## The title's scrim at night (night light round 1, docs/design/night-light/
+## round1.md): by day it darkens the lower screen as the source did; at
+## night the isle under it is dark already, so it eases to NIGHT_SCRIM of
+## itself (StoneLampLights.night_for the sky's daylight).
+const NIGHT_SCRIM := 0.5
+func _night_scrim() -> void:
+	if title == null or title.get("scrim_material") == null: return
+	var celestial: Variant = isle.get("_celestial")
+	var day := 1.0
+	if celestial != null and celestial.get("state") is Dictionary: day = float(celestial.state.get("zs_daylight",1.0))
+	var night := preload("res://scripts/stone_lamp_lights.gd").night_for(day)
+	(title.get("scrim_material") as ShaderMaterial).set_shader_parameter("strength",lerpf(1.0,NIGHT_SCRIM,night))
 
 ## Begin: the card fades, the HUD comes back, the pilot is given back by his
 ## plane and the camera eases from the orbit down behind him.
