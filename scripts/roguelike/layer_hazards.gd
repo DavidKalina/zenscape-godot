@@ -32,6 +32,9 @@ const Crossing = preload("res://studies/crossings/crossing.gd")
 const Viaduct = preload("res://studies/crossings/crossing_viaduct.gd")
 const GustArrows = preload("res://studies/crossings/gust_arrows.gd")
 const HornStandIn = preload("res://studies/crossings/horn_stand_in.gd")
+const HornPerch = preload("res://studies/crossings/horn_perch.gd")
+const RuinKitHorn = preload("res://scripts/ruin_kit_horn.gd")
+const Aqueduct = preload("res://scripts/ruin_kit_aqueduct.gd")
 const FootPieces = preload("res://scripts/interactables/foot_pieces.gd")
 const SkyCurrents = preload("res://scripts/sky_currents.gd")
 const Slam = preload("res://scripts/slam.gd")
@@ -454,11 +457,16 @@ func build(scene: Node3D, plan: Dictionary) -> void:
 			var mid: Vector3 = a.mid
 			var toward := rad_to_deg(atan2(mid.x-top.x,-(mid.z-top.z)))
 			var deg := toward+180.0
-			kit.column(top,Vector2(Viaduct.PERCH_TOP,Viaduct.PERCH_TOP),top.y-float(a.block),top.y,deg,"dark").name = "Perch%d_%s" % [i,a.kind]
-			var horn := HornStandIn.new()
-			horn.setup(paint)
+			# The viaduct's own perch (crossing_viaduct.gd `_perch`): a ruin-kit
+			# pillar under the stone wind horn.
+			var bottom := top.y-float(a.block)
+			var pillar: Node3D = kit.piece(Aqueduct.pillar(Viaduct.SEED+40+i,Viaduct.WEATHERED,top.y-bottom,Vector2(Viaduct.PERCH_TOP,Viaduct.PERCH_TOP)),Transform3D(Basis(Vector3.UP,Crossing.yaw_of(deg)),Vector3(top.x,bottom,top.z)))
+			pillar.name = "Perch%d_%s" % [i,a.kind]
+			var horn := HornPerch.new()
+			horn.setup(Viaduct.SEED+60+i,Viaduct.WEATHERED)
 			horn.rotation.y = Crossing.yaw_of(deg+180.0)
 			var l := arrows.add_launcher(top,_zone(a.zone),horn,Viaduct.PERCH_TOP*0.5,{})
+			l.cap_rise = RuinKitHorn.TOP_HEIGHT
 			l.name = "Perch%d_%sLauncher" % [i,a.kind]
 	var v: Dictionary = plan.get("viaduct",{})
 	if not v.is_empty(): _build_viaduct(v,paint)
