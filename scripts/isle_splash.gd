@@ -74,11 +74,7 @@ func _ready() -> void:
 	_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_frame.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(_frame)
-	_band = ColorRect.new()
-	_band.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var band := ShaderMaterial.new()
-	band.shader = BAND
-	_band.material = band
+	_band = make_band()
 	_frame.add_child(_band)
 	# The hairline and the slots, over the band, under the text.
 	var marks := Control.new()
@@ -169,15 +165,8 @@ func _layout(t: float) -> void:
 	for label: Label in [_name,_epithet]:
 		wide = maxf(wide,_text_width(label))
 	if not groups.is_empty(): wide = maxf(wide,groups[-1].x+groups[-1].y-groups[0].x)
-	var top := y-44.0*px
-	var bottom := _slots_y()+78.0*px
-	_band.size = Vector2(wide+BAND_PAST*2.0*px,bottom-top)
-	_band.position = Vector2(view.x*0.5-_band.size.x*0.5,top)
-	var band := _band.material as ShaderMaterial
-	band.set_shader_parameter("fade_from",clampf(wide/_band.size.x*0.7,0.1,0.9))
-	band.set_shader_parameter("feather",0.35)
 	var shown := _shown()
-	band.set_shader_parameter("strength",BAND_STRENGTH*shown)
+	lay_band(_band,view.x*0.5,y-44.0*px,_slots_y()+78.0*px,wide,px,BAND_STRENGTH*shown)
 	_tag.modulate = Color(1,1,1,0.62*shown)
 	_name.modulate = Color(1,1,1,shown)
 	_epithet.modulate = Color(1,1,1,0.85*smoothstep(0.35,1.0,t)*shown)
@@ -186,12 +175,7 @@ func _layout(t: float) -> void:
 	_frame.get_node("Marks").queue_redraw()
 
 func _style(label: Label, font: FontVariation, font_size: int, track: float, px: float) -> void:
-	if font != null: font.spacing_glyph = roundi(track*px)
-	label.add_theme_font_size_override("font_size",maxi(1,roundi(font_size*px)))
-	label.add_theme_color_override("font_color",INK if label != _name else Color.WHITE)
-	label.add_theme_constant_override("shadow_offset_y",roundi(1.5*px))
-	label.add_theme_constant_override("shadow_outline_size",roundi(4.0*px))
-	label.size = Vector2.ZERO
+	style(label,font,font_size,track,px,INK if label != _name else Color.WHITE)
 
 ## `label` across the screen, its text centred, its top at `top`.
 func _centre(label: Label, font: FontVariation, font_size: int, track: float, top: float, px: float) -> void:
@@ -253,11 +237,7 @@ func _draw_marks(on: Control) -> void:
 	var y := roundf((TOP+86.0)*px)
 	var reach := 240.0*px*smoothstep(0.15,1.0,t)
 	var line := Color(HAIRLINE,HAIRLINE.a*shown)
-	var gap := 11.0*px
-	if reach > gap:
-		on.draw_line(Vector2(mid-reach,y),Vector2(mid-gap,y),line,maxf(1.0,px))
-		on.draw_line(Vector2(mid+gap,y),Vector2(mid+reach,y),line,maxf(1.0,px))
-	_stud(on,_diamond(Vector2(mid,y),4.5*px*smoothstep(0.0,0.4,t)),line)
+	hairline(on,mid,y,reach,px,line,4.5*px*smoothstep(0.0,0.4,t))
 	var groups := _groups()
 	var row_y := _slots_y()
 	for g in range(groups.size()):
@@ -295,6 +275,64 @@ func _socket(on: Control, at: Vector2, id: String, found: bool, a: float) -> voi
 	else:
 		var shape := _icon(id,"locked")
 		if shape != null: on.draw_texture_rect(shape,box,false,Color(EMPTY,EMPTY.a*a))
+
+# --- The card's pieces, shared (scripts/roguelike/run_overlay.gd) ----------------
+
+## The inscription's face: Newsreader at weight 500, its tracking set per
+## use (`style`).
+static func inscription_font() -> FontVariation:
+	var font := FontVariation.new()
+	font.base_font = DISPLAY
+	font.variation_opentype = {"wght":500.0}
+	return font
+
+## A gilt material for a label in the inscription face, its glyph scale
+## kept by `gild` (design px of the type, the screen's scale).
+static func gilt_material() -> ShaderMaterial:
+	var gilt := ShaderMaterial.new()
+	gilt.shader = GILT
+	return gilt
+
+static func gild(label: Label, font_size: float, px: float) -> void:
+	(label.material as ShaderMaterial).set_shader_parameter("glyph_scale",px*font_size/58.0)
+
+## `label` in the card's type: `font_size` design px, tracked `track`
+## (on `font`, if one), in `colour`, its soft shadow scaled by `px`.
+static func style(label: Label, font: FontVariation, font_size: int, track: float, px: float, colour: Color) -> void:
+	if font != null: font.spacing_glyph = roundi(track*px)
+	label.add_theme_font_size_override("font_size",maxi(1,roundi(font_size*px)))
+	label.add_theme_color_override("font_color",colour)
+	label.add_theme_constant_override("shadow_offset_y",roundi(1.5*px))
+	label.add_theme_constant_override("shadow_outline_size",roundi(4.0*px))
+	label.size = Vector2.ZERO
+
+## The soft dark band, laid by `lay_band`.
+static func make_band() -> ColorRect:
+	var rect := ColorRect.new()
+	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var band := ShaderMaterial.new()
+	band.shader = BAND
+	rect.material = band
+	return rect
+
+## The band centred on `mid`, from `top` to `bottom` (screen px), `past`
+## design px past `wide` at each end, `strength` dark.
+static func lay_band(rect: ColorRect, mid: float, top: float, bottom: float, wide: float, px: float, strength: float, past := BAND_PAST) -> void:
+	rect.size = Vector2(wide+past*2.0*px,bottom-top)
+	rect.position = Vector2(mid-rect.size.x*0.5,top)
+	var band := rect.material as ShaderMaterial
+	band.set_shader_parameter("fade_from",clampf(wide/rect.size.x*0.7,0.1,0.9))
+	band.set_shader_parameter("feather",0.35)
+	band.set_shader_parameter("strength",strength)
+
+## The hairline at `y`, `reach` each way from `mid`, parted round its
+## diamond (`diamond` px from its middle to a point).
+static func hairline(on: Control, mid: float, y: float, reach: float, px: float, line: Color, diamond: float) -> void:
+	var gap := 11.0*px
+	if reach > gap:
+		on.draw_line(Vector2(mid-reach,y),Vector2(mid-gap,y),line,maxf(1.0,px))
+		on.draw_line(Vector2(mid+gap,y),Vector2(mid+reach,y),line,maxf(1.0,px))
+	_stud(on,_diamond(Vector2(mid,y),diamond),line)
 
 ## `points` filled, unless it has collapsed to (near) nothing: the title
 ## diamond grows from zero size as the card fades in, and one under a few

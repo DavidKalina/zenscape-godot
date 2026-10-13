@@ -8,14 +8,16 @@ extends Node
 ##   still with him.
 ## - **Into the void** (under every isle, the plan's `void_y`): he falls on
 ##   a moment (FALL_ON), the screen goes dark (FADE), and a quiet card says
-##   how far he got, the runes lost, how long, the deepest yet. Then Space
-##   (pad A) climbs again from layer 1 on a new seed, R (pad X) the same
-##   climb again. The new climb is laid behind the card while it is read.
+##   the height he fell from, the runes lost, how long, the highest yet.
+##   Then Space (pad A) climbs again from layer 1 on a new seed, R (pad X)
+##   the same climb again. The new climb is laid behind the card while it
+##   is read.
 ## - A fall onto a lower isle (its fall stun) is no end, just a setback.
 ## - Each layer begins at its start spot (scripts/roguelike/start_spot.gd)
 ##   with the way on lit (scripts/roguelike/way_lights.gd).
 ## - I shows the layer's long card (the study's); the corner keeps only the
-##   layer and the runes (scripts/roguelike/run_overlay.gd).
+##   height climbed and the runes (scripts/roguelike/run_overlay.gd). The
+##   player reads heights, never a layer count: every word is in WORDS.
 ##
 ## The study (studies/run_layer.gd) calls `before_tick` / `after_tick` round
 ## its own tick, `layer_stood` when a layer stands, `input` first in its
@@ -37,8 +39,34 @@ const FADE := 1.3
 const GATE_UP := 0.35
 const HOLD := 0.3
 const CLEAR := 1.6
-## The caption ("Layer 2"): in, held, out (s).
-const CAPTION := Vector3(0.7,1.6,1.2)
+## Every word the player reads about the run, in one place: rename here.
+## The player sees the height climbed (metres above the run's start, "412
+## m"), not a count; the layer count stays inside (the gate, the record),
+## its word ("stage") only in the study's dev lines.
+const WORDS := {
+	"unit": "m",                   # after a height: "1,180 m"
+	"readout": "%s",               # the corner: the height
+	"rune": "%d rune",             # beside it, if any
+	"runes": "%d runes",
+	"arrive_first": "THE CLIMB",   # the caption a new climb begins with
+	"arrive_first_line": "highest  %s",  # under it, once there is a record
+	"arrive": "HIGHER STILL",      # the caption through the gate
+	"arrive_line": "%s",           # under it: the height
+	"fell": "FELL FROM %s",        # the card's title
+	"lost_none": "nothing carried",
+	"lost_one": "1 rune lost",
+	"lost": "%d runes lost",
+	"highest": "highest: %s",
+	"highest_new": "the highest yet",
+	"prompt": "SPACE / A   A NEW CLIMB            R / X   THE SAME",
+	"waking": "...",
+	"stage": "layer %d",           # dev only (the study's card, its log)
+}
+## Seconds the readout stays up after a count changes, and standing still
+## before it comes up; the speed (m/s) under which he is still.
+const LOUD_FOR := 3.0
+const STILL_AFTER := 0.6
+const STILL_SPEED := 0.4
 
 var study: Node3D
 var run := RunState.new()
@@ -56,8 +84,12 @@ var last_fall := {}
 var _t := 0.0
 var _veil := 0.0
 var _veil_colour := RunOverlay.DARK
-var _caption_t := -1.0
-var _caption := ""
+## This layer's start's height (world y); the readout's loud time left,
+## the time stood still, the runes it last showed.
+var _start_y := 0.0
+var _loud := 0.0
+var _still := 0.0
+var _shown_runes := 0
 ## Behind the card: the seed drawn for a new climb, the one he goes on to,
 ## the one last asked for, the ask the standing layer answered and its
 ## seed as laid; whether he has asked to go on.
@@ -101,13 +133,9 @@ func before_tick(delta: float) -> bool:
 			moves = false
 		"card":
 			moves = false
-	if _caption_t >= 0.0:
-		_caption_t += delta
-		var a := clampf(_caption_t/CAPTION.x,0.0,1.0)*(1.0-clampf((_caption_t-CAPTION.x-CAPTION.y)/CAPTION.z,0.0,1.0))
-		overlay.set_caption(_caption,a)
-		if _caption_t > CAPTION.x+CAPTION.y+CAPTION.z: _caption_t = -1.0
 	overlay.set_veil(_veil_colour,_veil)
-	_readout()
+	_readout(delta)
+	overlay.step(delta)
 	return moves
 
 ## After the study's tick: the gate and the void.
@@ -116,12 +144,13 @@ func after_tick(_delta: float) -> void:
 	var stage: Node3D = study.stage
 	if stage == null or (study.layer as Dictionary).is_empty(): return
 	var feet: Vector3 = study.motor.feet
+	run.at(feet.y-_start_y,bool(study.motor.grounded))
 	if stage.at_exit(feet):
 		state = "gate"
 		_t = 0.0
 		_veil_colour = RunOverlay.WARM
 		pending = "gate"
-		study.request_layer(int(study.layer_seed)+1,"Through the gate: layer %d" % (run.depth+1))
+		study.request_layer(int(study.layer_seed)+1,"Through the gate: %s" % (WORDS.stage % (run.depth+1)))
 	elif feet.y < float(study.layer.void_y):
 		state = "falling"
 		_t = 0.0
@@ -135,28 +164,36 @@ func _to_card() -> void:
 	_veil = 1.0
 	last_fall = run.die()
 	last_fall.seed = run.run_seed
-	overlay.show_card(card_text(last_fall),_hint())
+	overlay.show_card(card_title(last_fall),card_facts(last_fall),_hint())
 	_wake = false
 	_laid_for = -1
 	_pre = _draw_seed()
 	_ask(_pre)
 	# (After the ask: laying a layer sets the study's own.)
-	study.last_end = "Into the void: fell from layer %d" % int(last_fall.depth)
+	study.last_end = "Into the void: fell from %s (%s)" % [metres(float(last_fall.height)),WORDS.stage % int(last_fall.depth)]
 
-static func card_text(fall: Dictionary) -> String:
-	var lines := PackedStringArray()
-	lines.append("Fell from layer %d" % int(fall.depth))
-	lines.append("")
+## "1,180 m" for 1180.4 (none under 0).
+static func metres(h: float) -> String:
+	var digits := str(maxi(0,roundi(h)))
+	var out := ""
+	for i in range(digits.length()):
+		if i > 0 and (digits.length()-i)%3 == 0: out += ","
+		out += digits[i]
+	return "%s %s" % [out,WORDS.unit]
+
+static func card_title(fall: Dictionary) -> String:
+	return WORDS.fell % metres(float(fall.height))
+
+## The card's facts: the runes lost, how long, a pause, the highest.
+static func card_facts(fall: Dictionary) -> PackedStringArray:
 	var n := int(fall.runes)
-	lines.append("nothing carried" if n == 0 else ("1 rune lost" if n == 1 else "%d runes lost" % n))
-	lines.append(RunState.clock(float(fall.time)))
-	lines.append("")
-	lines.append("the deepest yet" if bool(fall.record) else "deepest: layer %d" % int(fall.deepest))
-	return "\n".join(lines)
+	var lost: String = WORDS.lost_none if n == 0 else (WORDS.lost_one if n == 1 else WORDS.lost % n)
+	var high: String = WORDS.highest_new if bool(fall.high_record) else WORDS.highest % metres(float(fall.highest))
+	return PackedStringArray([lost,RunState.clock(float(fall.time)),"",high])
 
 func _hint() -> String:
-	if _wake: return "..."
-	return "space  climb again          r  the same climb"
+	if _wake: return WORDS.waking
+	return WORDS.prompt
 
 ## Seeds a test hands the next new climbs, in order (else drawn at random).
 static var next_seeds: Array = []
@@ -181,7 +218,7 @@ func _ask(seed_value: int) -> void:
 func continue_run(same := false, seed_value := -1) -> void:
 	if state != "card": return
 	_wake = true
-	overlay.set_hint(_hint())
+	overlay.set_prompt(_hint())
 	_want = int(last_fall.seed) if same else (seed_value if seed_value > 0 else _pre)
 	# Laid on a worker meanwhile, the ask waits for it (`layer_stood`).
 	if _laid_for != _want and int(study.get("_plan_task")) < 0: _ask(_want)
@@ -198,8 +235,12 @@ func _arrive(colour: Color) -> void:
 	_t = 0.0
 	_veil = 1.0
 	_veil_colour = colour
-	_caption = "Layer %d" % run.depth
-	_caption_t = 0.0
+	_loud = LOUD_FOR
+	if run.depth <= 1:
+		var line := "" if run.highest <= 0.0 else WORDS.arrive_first_line % metres(run.highest)
+		overlay.show_caption(WORDS.arrive_first,line)
+	else:
+		overlay.show_caption(WORDS.arrive,WORDS.arrive_line % metres(run.height))
 
 # --- The study's hooks ------------------------------------------------------------
 
@@ -220,6 +261,7 @@ func layer_stood() -> void:
 	study.start_face = Vector2(spot.face.x,spot.face.z).normalized()
 	study.respawn()
 	study.set("_last_stood",spot.start)
+	_start_y = float(study.start.y)
 	stage.rune_taken.connect(func(_left: int) -> void: run.take_rune())
 	var why := pending
 	pending = ""
@@ -236,14 +278,24 @@ func layer_stood() -> void:
 			_laid_seed = int(study.layer_seed)
 			if _wake and _laid_for != _want: _ask(_want)
 			_maybe_wake()
-	_readout()
+	_readout(0.0)
 
-func _readout() -> void:
+## The corner: the height and the runes; up when a count changes or he
+## stands still, quiet while he moves; gone under the card, the long card
+## (I) and before the first layer.
+func _readout(delta: float) -> void:
 	if overlay == null or overlay.readout == null: return
-	overlay.readout.visible = state != "card"
-	var text := "layer %d" % run.depth
-	if run.runes > 0: text += "   %d rune%s" % [run.runes,"" if run.runes == 1 else "s"]
-	overlay.readout.text = text
+	if run.runes != _shown_runes:
+		_shown_runes = run.runes
+		_loud = LOUD_FOR
+	_loud = maxf(_loud-delta,0.0)
+	var motor: Variant = study.get("motor")
+	var speed: float = (motor.velocity as Vector3).length() if motor != null else 0.0
+	_still = _still+delta if speed < STILL_SPEED else 0.0
+	var long_card: Variant = study.get("_card")
+	var shown := run.depth > 0 and state in ["play","arrive"] and not (long_card != null and (long_card as Label).visible)
+	var side := "" if run.runes == 0 else (WORDS.rune if run.runes == 1 else WORDS.runes) % run.runes
+	overlay.set_readout(WORDS.readout % metres(run.height),side.to_upper(),shown,_loud > 0.0 or _still > STILL_AFTER)
 
 ## Keys: on the card, Space / Enter / E (pad A) a new climb, R (pad X) the
 ## same; anywhere, I the layer's long card. True when used.
