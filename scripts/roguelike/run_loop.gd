@@ -30,6 +30,7 @@ const WayLights = preload("res://scripts/roguelike/way_lights.gd")
 ## needed (2026-10-12); `--way-lit` puts them back.
 static var WAY_LIT := "--way-lit" in preload("res://scripts/launch_args.gd").user_args()
 const Pad = preload("res://scripts/pad.gd")
+const LayerShapes = preload("res://scripts/roguelike/layer_shapes.gd")
 
 ## Past the void, falling on before the dark comes (s), the dark coming (s).
 const FALL_ON := 1.1
@@ -150,7 +151,8 @@ func after_tick(_delta: float) -> void:
 		_t = 0.0
 		_veil_colour = RunOverlay.WARM
 		pending = "gate"
-		study.request_layer(int(study.layer_seed)+1,"Through the gate: %s" % (WORDS.stage % (run.depth+1)))
+		# The next region in its own shape (a run alternates them by depth).
+		study.request_layer(int(study.layer_seed)+1,"Through the gate: %s" % (WORDS.stage % (run.depth+1)),LayerShapes.after(study.layer))
 	elif feet.y < float(study.layer.void_y):
 		state = "falling"
 		_t = 0.0
