@@ -175,3 +175,181 @@ passing three runs in a row:
 - The slammer's double lurch and the drifter's carry under drift were never
   exercised by a rider beyond the carry-each and stander checks.
 - Whole suite not run.
+
+## Round 3: ride it, don't step on it
+
+> "Too easy still. I was able to jump from point A to point B without even getting a scratch."
+
+The diagnosis, which the user agreed with ("Yeah, maybe they're too close
+together. I like that."): every hop was makable at any moment, so he could
+chain running jumps from A to B and spend under a second on each block.
+Round 2's aggression only punished lingering, and nothing made him linger.
+
+### What changed: the ferries
+
+The blocks are now spread out (63.8 m of route, was 31.5), and each one
+slides along the route: the **ferry**. It slides back toward the entry and
+on toward the exit, holds at each end, and lunges into the ends. It is
+quickest arriving and stops dead with a "dock" sound and a puff of dust.
+Every block runs on one shared **beat** (9.7 s), and neighbours slide
+against each other. A hop opens only when the block he is on is held **on**
+and the next one is held **back**. Their ends then overlap along the route
+by `meet` and are `gap` apart across x. Half a beat later the next hop
+opens. So he lands at a block's back end, rides it forward through its
+lurch, and goes from its front end. Outside the window the hop is a long
+diagonal across the void, past his jump.
+
+- Neighbours stay apart across x, and a cube turning about x never swings
+  out along x. So they slide past each other's ends without ever touching.
+  Blocks on the same side slide together and stay a body or more apart.
+  `clear_of` counts the ferries.
+- Jumping or stepping off a ferry, he keeps its slide's velocity. Landing
+  on one, that velocity becomes the ground's again (`ferry_velocity`, in
+  `trap_tumble.gd`'s `before`). Without this he hung in the air over a
+  sliding block and came down a metre off; with it, a jump made late, as
+  the ferry lunges away, carries him off backward.
+- His reach is no longer a formula. `Run.leap(kind, dy)` steps the real
+  motor (`pilot()`) off an edge at a run: a small hop, a hop caught by the
+  lip, the pump (the higher chained jump) caught by the lip, and the pump
+  with a twirl pressed at its best moment and caught. The plan and the
+  test both use it.
+
+### Layout
+
+In the pilot's units (`BLOCKS`). Metres are for the wanderer at size 1.0.
+The beat is `BEAT` (3.2) of the single cube's walk-across times. "Open" is a
+running small hop's reach (85% of it) both as he leaves and as he lands, an
+airtime later. "His jump" is the pump caught by the lip.
+
+| hop | at its window | held shut | rise | open each beat | within his jump | with a twirl | what makes the window |
+|---|---|---|---|---|---|---|---|
+| A to 1 | 0.86 m straight on | 8.0 m | +0.36 m | 1.1 to 1.7 s | 29% of the beat | 78% | 1 docks back against the start deck (its ferry is the longest, 3.6 m each way) |
+| 1 to 2 | 0.91 m across | 12.0 m | 0.0 | 1.6 s | 28% | 60% | 1 docks on, 2 docks back; they meet over a 1.0 m strip at 1's front end |
+| 2 to 3 | 0.84 m across | 11.0 m | +1.36 m, a climb (catch the lip) | 1.7 to 2.0 s | 28% | 55% | 2 on, 3 back; a narrower strip (0.6 of his height) |
+| 3 to 4 | 1.30 m across | 10.7 m | -0.80 m | 1.1 to 1.6 s | 21% | 60% | 3 on, 4 back; 4 holds its ends a little shorter (`hold` 0.1) and turns the other way |
+| 4 to 5 | 0.88 m across | 11.6 m | +0.24 m | 1.4 to 1.5 s | 31% | 63% | 4 on, 5 back |
+| 5 to B | 1.42 m straight on | 8.1 m | -1.16 m | 1.2 s | 24% | 100% | 5 docks on against the far deck |
+
+The next hop opens at least 3.1 s after the last one shuts. Each window
+recurs once a beat at the same place in it.
+
+What each block asks between its windows: land at its back end as it docks
+back, wake it, ride its lurch while it carries you forward, and get to its
+front end, by the edge facing the next block, before it docks on.
+
+- 1 (the waker) and 5 (the finale) lurch about once per ride.
+- 2 (the jitter) lurches about every 3 s and feints, so you usually ride two.
+- 3 (the slammer) double-lurches, and you climb onto it.
+- 4 tips its front end down because it turns the other way. Ride its lurch
+  at its back (uphill), then run down to the front for the window.
+
+A perfect run is about 6 half-beats (about 30 s). The scripted rider who
+waits made A to B in 45.8 s, missing a window on 4 and on 5.
+
+New knobs on `trap_tumble.gd` (all off by default, so the single `tumble`
+lane is unchanged):
+
+- `shuttle`, the ferry's travel each way (m)
+- `shuttle_time`, its cycle (s)
+- `shuttle_hold`, the share of the cycle it holds at each end
+- `shuttle_phase`, in cycles
+- `shuttle_ease`: 1 eases in and out of its ends, -1 lunges into them
+
+New reads:
+
+- `shuttle_wave()`
+- `docked()`
+- `top_span()`, the top face's extent and its heights along the route as it lies
+- `ferry_velocity`
+
+On `trap_tumble_run.gd`:
+
+- Row fields: `gap` (now the hop at its window: from the deck along the
+  route, otherwise across x), `meet`, `ferry` and `hold`.
+- Constants: `BEAT`, `FIRST`, `HOLD`, `LUNGE`.
+- Functions: `leap()`, `open_reach()`, `beat()`, and `hop_now(i)`, which
+  gives the gap and rise of hop `i` as the blocks lie.
+- Plan rows now carry `shut` and the three reaches.
+
+### Not done: the route through a face
+
+No face feature (step, lip, pocket) was made the way on. The neighbours sit
+across x and a block turns about x, so no face ever turns toward a
+neighbour. The ride from back end to front end through a lurch is the
+route through the block. A face-feature route would need neighbours laid
+along the route, with their corner swings kept clear.
+
+### Verified
+
+`tests/test_tumble_run.gd` (headless, the real yard loop, input actions;
+now `## suite: slow`, about 1:40). In its last full run:
+
+- The plan: every hop at its window is within 85% of a running small hop
+  (the climb within a lip he catches). Held shut, every hop is past his jump
+  (the pump caught by the lip) by more than 15%. No two blocks meet, the
+  ferries counted.
+- The windows, with the blocks stepped through two beats: every hop opens
+  once a beat for 0.8 to 2 s, at the same place in each beat. Every hop is
+  past his jump at least half of every beat (21 to 31% within it). No two
+  hops in a row are open at once.
+- A rider who chains running jumps from A without waiting gets on block 1
+  and falls into the void going for 2 (2.7 s).
+- A rider who waits for each window (keeping his block's station, riding
+  its lurches with a hop and a pump high up the slope, going to the front
+  edge and leaping when the hop opens) made A, 1, 2, 3, 4, 5, B in 45.8 s.
+  He rode each block 2.9 to 10.5 s and jumped 11 lurches.
+- Each block carries him alone. A rider who just stands there is put off
+  every block sooner than the same block calmed (ferry off too). A fall
+  resets the run.
+- Import and a headless `--trap=tumble_run` yard load (`--quit-after 300`)
+  are clean apart from the engine's usual exit notices.
+  `tests/test_trap_giants.gd` passes (the single cube unchanged), and so
+  does `tests/test_world_scale_guard.gd`.
+
+### Unverified
+
+- **The twirl, the long jump and the sail still outreach the shut gaps.**
+  The stepped motor gives these reaches on the flat:
+
+  | move | lands at | caught by the lip at |
+  |---|---|---|
+  | running small hop | 2.2 m | 3.1 m |
+  | pump | 3.0 m | 3.8 m |
+  | small hop + twirl | 5.2 m | 6.4 m |
+  | pump + twirl | 6.2 m | 7.2 m |
+  | long jump | 3.9 m | |
+  | long jump + twirl | 7.1 m | 8.5 m |
+
+  The pocket sail glides about 3.7:1.
+  - The middle hops beat the twirl only around their widest: a twirling
+    player can make them 55 to 63% of each beat.
+  - The deck hops (A to 1, 5 to B) are twirlable nearly always, because the
+    decks don't move.
+  - The long jump and the sail are not counted at all.
+
+  So a player who twirls everywhere can still hurry through, though not
+  chain freely: the next hop still opens half a beat later. Holding the
+  run against these moves is the user's call. Options: ferries about twice
+  as long (5 m or more each way), or the run folding the twirl and sail
+  while he is on it.
+- **Feel and look were never seen** (headless):
+  - whether the dock (the stop, the sound, the dust) and the slide read as
+    the window's tell;
+  - whether 1 to 2 s windows feel fair;
+  - whether 3 to 3.6 m ferries look like stone blocks or like moving
+    platforms.
+- **Ferry velocity is new physics.** He keeps the ferry's velocity
+  leaving it and loses it landing. A late jump as the ferry lunges away
+  flings him backward, which is meant as the window closing but was never
+  played.
+- **The test rider's timing varies.** The yard runs on real headless frame
+  times, so the rider gets up to three tries from A and the best counts.
+  - While developing, about 2 of 3 single tries reached B. The others got
+    to block 3 and fell going for 4, after the slammer's double lurch put
+    him off the strip.
+  - The rider is a bot: it rides each lurch with a hop and then a pump at
+    the ridge. A human may find another way (the pocket), or have a harder
+    time.
+- The window numbers use the gap at takeoff and at landing. A human's
+  real window is shorter than the 1.1 to 2.0 s measured.
+- Whole suite not run.

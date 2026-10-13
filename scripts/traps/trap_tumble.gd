@@ -64,6 +64,14 @@ extends "res://scripts/traps/trap.gd"
 ##   `sway_time` s; `motion_phase` (cycles) offsets them. `middle()` is the
 ##   centre as it moves.
 ## - `glow` (0 to 1): the faces glow with the tell, not only warm.
+## - The ferry (the Tumble Run's round 3): `shuttle` m along the route (z,
+##   + back toward the entry), over `shuttle_time` s: it holds at each end
+##   `shuttle_hold` of the cycle and slides between, back at
+##   `shuttle_phase` (cycles) 0; `shuttle_ease` 1 eases out of and into its
+##   ends, -1 lunges (quickest at its ends, slowest midway, stopping dead
+##   with a "dock"). `shuttle_wave()` is +1 back, -1 on. Jumping or
+##   stepping off it, he keeps its slide's velocity (`ferry_velocity`);
+##   landing on it, that much of his is the ground's (it carries him).
 ## Cost 4, over the void 5.
 ##
 ## Sizes from the pilot: `size` 6.5 of his heights (the body's HEAD x the
@@ -127,6 +135,10 @@ var _slam_t := INF
 var _off_t := INF
 var _woke_t := INF
 var _was_on := false
+var _dock_t := INF
+## Its middle's velocity (world, m/s) from its ferry and drift (none
+## without a ferry): what he keeps leaving it into the air.
+var ferry_velocity := Vector3.ZERO
 var feints := 0
 var wakes := 0
 
@@ -161,6 +173,7 @@ func defaults() -> Dictionary:
 		"wake":0.0,"wake_off":hop*3.0,"feint":0.0,"double":0,"chain_rest":hop,"dip":0.0,
 		"bob":0.0,"bob_time":across*1.5,"drift":0.0,"drift_time":across*2.0,
 		"sway":0.0,"sway_time":across*1.2,"motion_phase":0.0,"glow":0.0,
+		"shuttle":0.0,"shuttle_time":across*2.6,"shuttle_hold":0.2,"shuttle_phase":0.0,"shuttle_ease":1.0,
 	}
 
 func length() -> float:
@@ -312,7 +325,45 @@ func motion() -> Vector3:
 		# A quick drop at the slam, then a heave back up.
 		down = dip*(clampf(_slam_t/0.06,0.0,1.0)*clampf(1.0-(_slam_t-0.06)/0.5,0.0,1.0))
 	return Vector3(float(knob("drift"))*_wave(float(knob("drift_time"))),
-		float(knob("bob"))*_wave(float(knob("bob_time")))-down,0.0)
+		float(knob("bob"))*_wave(float(knob("bob_time")))-down,float(knob("shuttle"))*shuttle_wave())
+
+## The ferry's place now: +1 held back (toward the entry), -1 held on,
+## eased or lunging between (`shuttle_ease`); `at` (s of its clock) if given.
+func shuttle_wave(at := -1.0) -> float:
+	var period := float(knob("shuttle_time"))
+	if float(knob("shuttle")) == 0.0 or period <= 0.0: return 0.0
+	var f := fposmod((_clock if at < 0.0 else at)/period+float(knob("shuttle_phase")),1.0)
+	var e := minf(f,1.0-f)
+	var hold := clampf(float(knob("shuttle_hold")),0.0,0.45)
+	var v := clampf((e-hold*0.5)/(0.5-hold),0.0,1.0)
+	var ease := clampf(float(knob("shuttle_ease")),-1.0,1.0)
+	return 1.0-2.0*(v-ease*sin(TAU*v)/TAU)
+
+## Held at one of its ends now (the ferry's hold).
+func docked() -> bool:
+	return float(knob("shuttle")) != 0.0 and absf(shuttle_wave()) >= 0.999
+
+## The face on top now, as it lies: {x0, x1, z0, z1} its extent in the
+## trap's frame (x, z) and y0, y1 its height at z0 and z1 (it tips about x,
+## so its height runs along z).
+func top_span() -> Dictionary:
+	var half := float(knob("size"))*0.5
+	var k := top_face()
+	var t := _transform()
+	var pts := []
+	for c: Vector2 in [Vector2(-1,-1),Vector2(1,-1),Vector2(-1,1),Vector2(1,1)]:
+		pts.append(position+t*(_face_basis(k)*Vector3(c.x*half,half,c.y*half)))
+	var out := {"x0":INF,"x1":-INF,"z0":INF,"z1":-INF,"y0":0.0,"y1":0.0}
+	for q: Vector3 in pts:
+		out.x0 = minf(out.x0,q.x)
+		out.x1 = maxf(out.x1,q.x)
+		if q.z < out.z0:
+			out.z0 = q.z
+			out.y0 = q.y
+		if q.z > out.z1:
+			out.z1 = q.z
+			out.y1 = q.y
+	return out
 
 ## The yaw wobble now (rad).
 func sway_now() -> float:
@@ -505,16 +556,30 @@ func before(delta: float) -> void:
 	if body == null or delta <= 0.0: return
 	var on := riding()
 	if on and not _was_on: _wake()
+	# Its ferry's way, as any moving ground's: leaving it into the air (a
+	# jump, a step off) he keeps it; landing on it, it is the ground's, no
+	# longer his (it carries him). Only what it slides, not its turn (that
+	# is the throw's).
+	var fv := Vector3(ferry_velocity.x,0.0,ferry_velocity.z)
+	if _was_on and not on and motor != null and not motor.grounded and not motor.on_ledge() and motor.move != "tumble": motor.velocity += fv
+	elif on and not _was_on and motor.grounded: motor.velocity -= fv
 	_was_on = on
 	_off_t = 0.0 if on else _off_t+delta
 	var was := _transform()
 	var was_yaw := yaw+sway_now()
 	var was_phase := phase
+	var was_docked := docked()
+	var was_mid := middle()
 	_clock += delta
 	_slam_t += delta
 	_woke_t += delta
 	_advance(delta)
 	_pose()
+	ferry_velocity = (middle()-was_mid)/delta if float(knob("shuttle")) != 0.0 else Vector3.ZERO
+	_dock_t += delta
+	if docked() and not was_docked:
+		_dock_t = 0.0
+		tell_sound(&"dock",middle())
 	if on:
 		riding_time += delta
 		pace = minf(1.0+float(knob("ramp"))*riding_time,maxf(float(knob("ramp_top")),1.0))
@@ -640,7 +705,7 @@ func _tell(delta: float) -> void:
 	_shake_t += delta
 	var a := float(knob("shake"))*maxf(loud if phase in ["tip","rest"] else 0.0,woke)
 	if look != null: look.position = Vector3(sin(_shake_t*53.0),sin(_shake_t*71.0)*0.5,sin(_shake_t*61.0))*a
-	var slammed := float(knob("dip")) > 0.0 and _slam_t < 0.35
+	var slammed := (float(knob("dip")) > 0.0 and _slam_t < 0.35) or _dock_t < 0.3
 	for i in range(_dust.size()):
 		_dust[i].emitting = loud > 0.0 or slammed
 		_dust[i].position = centre()+motion()+Vector3(0.0,float(knob("size"))*0.5,(-1.0 if i == 0 else 1.0)*float(knob("size"))*0.5)
@@ -681,6 +746,8 @@ func reset() -> void:
 	_slam_t = INF
 	_off_t = INF
 	_woke_t = INF
+	_dock_t = INF
+	ferry_velocity = Vector3.ZERO
 	_was_on = false
 	feints = 0
 	wakes = 0
