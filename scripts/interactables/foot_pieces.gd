@@ -27,6 +27,7 @@ const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const FootSlab = preload("res://scripts/interactables/foot_slab.gd")
 const BobSlab = preload("res://scripts/interactables/bob_slab.gd")
 const DriftSlab = preload("res://scripts/interactables/drift_slab.gd")
+const SinkSlab = preload("res://scripts/interactables/sink_slab.gd")
 const SwingRope = preload("res://scripts/interactables/swing_rope.gd")
 const Balustrade = preload("res://scripts/interactables/balustrade.gd")
 
@@ -71,6 +72,14 @@ func attach(scene: Node3D) -> void:
 
 func bob_slab(at: Vector3, size := Vector3(2.4,0.7,2.2), yaw := 0.0, seed_value := 0) -> Node3D:
 	var slab: Node3D = BobSlab.new()
+	slab.setup(Transform3D(Basis(Vector3.UP,yaw),at),size,seed_value)
+	_add_slab(slab)
+	return slab
+
+## A slab that sinks while he stands on it (scripts/interactables/
+## sink_slab.gd).
+func sink_slab(at: Vector3, size := Vector3(2.4,0.7,2.2), yaw := 0.0, seed_value := 0) -> Node3D:
+	var slab: Node3D = SinkSlab.new()
 	slab.setup(Transform3D(Basis(Vector3.UP,yaw),at),size,seed_value)
 	_add_slab(slab)
 	return slab

@@ -571,6 +571,12 @@ var roll_time := ROLL_TIME
 var restun_gap := RESTUN_GAP
 var stun_chain_cap := STUN_CHAIN_CAP
 var slam_stuns := false
+## The sail out of a knock: seconds after a knock into the air from which
+## Jump opens the pocket sail out of the tumble (its stun ended, even a hard
+## hit's, the sail opened as from any fall: kicked, gliding on the throw's
+## way). Below 0 never (the default: the poise rule above as ever). The
+## crossing yard turns it on (docs/design/roguelike/crossing-viaduct-heights.md).
+var knock_sail := -1.0
 ## His size over the clips' (the walker drawn `size` times, studies/
 ## character_study.gd; 1 here, the game's 0.83 set by `set_size`), and
 ## what goes by his body: the hang (the clips' HANG_DROP, HANG_OUT,
@@ -1069,6 +1075,16 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 		_twirled = false
 		_regrab = 0.0
 		_hit_down = 0.0
+		out["poised"] = true
+	if move == "tumble" and knock_sail >= 0.0 and pressed and not grounded and _stun_t >= knock_sail and sail.can_open(feet.y-ground_y,velocity.y):
+		# The sail out of a knock (`knock_sail`): his own again, the sail
+		# opened below as from any fall.
+		move = ""
+		stunned = ""
+		_twirled = false
+		_regrab = 0.0
+		_hit_down = 0.0
+		_fall_top = feet.y
 		out["poised"] = true
 	if move == "tumble":
 		var how := _tech_press() if twirl_pressed else ""

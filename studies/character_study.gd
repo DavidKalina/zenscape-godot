@@ -365,6 +365,7 @@ var figure: Node3D
 var wanderer_scale: float = preload("res://scripts/world_scale.gd").wanderer
 var body: Node3D
 var puffs: Node3D
+var drop_shadow: MeshInstance3D
 var ripples: Node3D
 var steps: Node
 var camera: Camera3D
@@ -773,6 +774,8 @@ func _build_pilot() -> void:
 	figure.add_child(body)
 	puffs = PilotPuffs.new()
 	figure.add_child(puffs)
+	drop_shadow = preload("res://scripts/pilot_drop_shadow.gd").new()
+	figure.add_child(drop_shadow)
 	ripples = PilotRipples.new()
 	figure.add_child(ripples)
 	sail_wing = PocketSailFigure.new()
@@ -877,6 +880,7 @@ func tick(delta: float) -> void:
 	if foot_pieces != null: foot_pieces.after(delta,events)
 	if _rec != null: _rec.add(delta,want,jump,motor.crouch,motor.twirl,_yaw,_polar,motor,state(),events)
 	if motor.grounded: _last_stood = motor.feet
+	drop_shadow.update(motor,ground.ground_callable())
 	if motor.feet.y < lost:
 		# In a pack, back at the station nearest where he last stood.
 		if pack != "":
