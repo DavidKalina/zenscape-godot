@@ -365,6 +365,23 @@ class Undergrow extends RefCounted:
 			_phase = 3
 		return true
 
+## A multimesh's buffer (3D transforms and colours) for `transforms`
+## and `colours` (white past their end), as set_instance_transform and
+## set_instance_color would lay it out.
+static func batch_buffer(transforms: Array, colours: Array) -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	out.resize(transforms.size()*16)
+	var k := 0
+	for i in range(transforms.size()):
+		var t: Transform3D = transforms[i]
+		var c: Color = colours[i] if i < colours.size() else Color.WHITE
+		out[k] = t.basis.x.x; out[k+1] = t.basis.y.x; out[k+2] = t.basis.z.x; out[k+3] = t.origin.x
+		out[k+4] = t.basis.x.y; out[k+5] = t.basis.y.y; out[k+6] = t.basis.z.y; out[k+7] = t.origin.y
+		out[k+8] = t.basis.x.z; out[k+9] = t.basis.y.z; out[k+10] = t.basis.z.z; out[k+11] = t.origin.z
+		out[k+12] = c.r; out[k+13] = c.g; out[k+14] = c.b; out[k+15] = c.a
+		k += 16
+	return out
+
 ## The records drawn as the islets draw theirs, one multimesh a tile and
 ## catalog part, `tile_size` m a tile.
 static func draw(records: Array, ground: Ground, area: float, tile_size := TILE) -> Node3D:
@@ -419,9 +436,9 @@ class Draw extends RefCounted:
 				multimesh.use_colors = true
 				multimesh.mesh = meshes[key]
 				multimesh.instance_count = list.size()
-				for i in range(list.size()):
-					multimesh.set_instance_transform(i,list[i])
-					multimesh.set_instance_color(i,colours[i] if i < colours.size() else Color.WHITE)
+				# One upload, not two renderer calls an instance (each tile's
+				# went 20-30 ms over its slice rendered).
+				multimesh.buffer = KitFlora.batch_buffer(list,colours)
 				var batch := MultiMeshInstance3D.new()
 				batch.name = "%s_%d_%d" % [key.replace(":","_"),tile.x,tile.y]
 				batch.multimesh = multimesh
