@@ -28,10 +28,10 @@ const WorldScale = preload("res://scripts/world_scale.gd")
 const PhysicsGround = preload("res://scripts/pilot_physics_ground.gd")
 
 ## The cone (m, rad).
-const RANGE := 320.0
+const RANGE := 450.0
 const HALF_ANGLE := 1.1
 ## Distance: fully seen within NEAR m, FAR_SEEN of it at RANGE.
-const NEAR := 100.0
+const NEAR := 150.0
 const FAR_SEEN := 0.2
 ## Off the snout: EDGE_SEEN at the cone's rim (eased in, so most of the cone
 ## sees nearly fully).
