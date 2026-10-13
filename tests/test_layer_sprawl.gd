@@ -13,6 +13,11 @@ extends "res://tests/test_run_layer.gd"
 ##     the spawn faces it and from the spawn's eye a physics ray reaches
 ##     its landmark through the built layer; its silhouette is cheap
 ##     (COST) and not lost in its haze;
+##   - taller (4B-2): each gulf rises at least RISE_ROLL's least (or a share
+##     of its width), each neighbourhood stands higher than the last, holds
+##     3+ isles and a climb onto an isle TIER over its lowest;
+##   - laid on a worker the plan leaves its next region for later, and laid
+##     then it is the one laid at once;
 ##   - built and driven through the study's own `tick` (test_run_layer.gd's
 ##     moves): every route and chain edge crossed on foot, the chain's
 ##     cannon landing him on its catch, the greed cannon, every gulf ridden
@@ -24,10 +29,10 @@ extends "res://tests/test_run_layer.gd"
 const LayerSprawl = preload("res://scripts/roguelike/layer_sprawl.gd")
 const NextRegionLod = preload("res://scripts/roguelike/next_region_lod.gd")
 
-## Driven through the play loop (15: a serpent gulf, 2: a ferry gulf);
-## planned and checked only.
-var DRIVE := [15,2] if OS.get_environment("SPRAWL_SEEDS") == "" else Array(OS.get_environment("SPRAWL_SEEDS").split(",")).map(func(s: String) -> int: return int(s))
-const PLANNED := [1,3,4]
+## Driven through the play loop (6: a ferry gulf rising 30 m; 3: a serpent
+## gulf rising 35 m with a cannon up it); planned and checked only.
+var DRIVE := [6,3] if OS.get_environment("SPRAWL_SEEDS") == "" else Array(OS.get_environment("SPRAWL_SEEDS").split(",")).map(func(s: String) -> int: return int(s))
+const PLANNED := [15,2,1,12]
 ## The silhouette's budget: triangles, surfaces (draw calls), build (ms,
 ## headless on the main thread), and the most its landmark may be hazed
 ## from the spawn.
@@ -36,6 +41,12 @@ const COST := {"triangles":40000,"surfaces":1,"ms":80.0,"haze":0.6}
 ## along the exit side (m).
 const OVER_GATE := 50.0
 const PAST_GATE := 100.0
+## The spawn faces where the next region was to stand (laid before it), its
+## landmark within this of straight ahead (degrees).
+const FACING := 30.0
+## A neighbourhood's isles stand this much higher than the last's (m, the
+## mean of their highest walked points).
+const HOOD_CLIMB := 15.0
 
 func run() -> void:
 	create_timer(1200.0).timeout.connect(func() -> void: push_error("layer sprawl test timed out"); quit(2))
@@ -75,6 +86,7 @@ func _sprawl_plans() -> void:
 	var b := LayerSprawl.make(s)
 	check(a_text == _text(b),"seed %d: the same sprawl plan twice, laid from nothing (its chain, gate and next region)" % s)
 	print(LayerSprawl.overview(b))
+	_later(s)
 	for t: int in DRIVE+PLANNED:
 		var t0 := Time.get_ticks_msec()
 		var plan := LayerSprawl.make(t)
@@ -116,11 +128,18 @@ func _sprawl_plan(s: int, plan: Dictionary) -> void:
 	var threshold: Dictionary = (last_edge.stones as Array).filter(func(st: Dictionary) -> bool: return str(st.name).ends_with("threshold"))[0]
 	var on_slab := Vector2(gate.x-(threshold.at as Vector3).x,gate.z-(threshold.at as Vector3).z).length() < float((threshold.size as Vector3).x)*0.5-1.0 and absf(gate.y-(threshold.at as Vector3).y) < 0.01
 	check(on_slab,"seed %d: the gate on the chain's last slab" % s)
+	# Past every isle of the other neighbourhoods (the planner wants it past
+	# the last one's middle too, LayerSprawl GATE_PAST, but keeps the
+	# furthest gate it can lay: a bent layout's last isles may reach on).
 	var past := true
+	var behind := 0
 	for isle: Dictionary in plan.isles:
 		var c := LayerPlan._rect(isle).get_center()
-		past = past and Vector2(gate.x,gate.z).dot(h) > c.dot(h)
-	check(past,"seed %d: the gate stands past every isle's middle on the exit side" % s)
+		if Vector2(gate.x,gate.z).dot(h) <= c.dot(h):
+			behind += 1
+			if int(isle.hood) != hoods.size()-1: past = false
+	check(past,"seed %d: the gate stands past the other neighbourhoods on the exit side (%d isle middles of the last further out, %s its middle)" % [s,behind,
+		"past" if Vector2(gate.x,gate.z).dot(h) > last_mid.dot(h) else "short of"])
 	for i: int in chain:
 		var e: Dictionary = plan.edges[i]
 		if e.kind != "cannon": continue
@@ -132,6 +151,7 @@ func _sprawl_plan(s: int, plan: Dictionary) -> void:
 		check(off < 0.01 and Vector2((c.landing as Vector3).x-(c.target as Vector3).x,(c.landing as Vector3).z-(c.target as Vector3).z).length() < LayerPlan.SHOT_NEAR,
 			"seed %d: the chain's cannon is aimed at its catch's middle (%.0f m, notch %d, pitch %.0f deg)" % [s,Vector2((c.target as Vector3).x-(c.at as Vector3).x,(c.target as Vector3).z-(c.at as Vector3).z).length(),int(c.notch)+1,rad_to_deg(float(c.pitch))])
 	_reach(s,plan)
+	_tall(s,plan)
 	# The next region.
 	var nx: Dictionary = plan.next
 	var mark: Vector3 = nx.landmark
@@ -139,7 +159,7 @@ func _sprawl_plan(s: int, plan: Dictionary) -> void:
 	check(bool(nx.sight_ok),"seed %d: from the spawn's eye its landmark (%s) is in sight over this layer's isles (planned)" % [s,str(nx.landmark_id)])
 	var face: Vector3 = plan.spawn.face
 	var to := Vector2(mark.x-(plan.spawn.at as Vector3).x,mark.z-(plan.spawn.at as Vector3).z).normalized()
-	check(Vector2(face.x,face.z).dot(to) > 0.99,"seed %d: the spawn faces it" % s)
+	check(Vector2(face.x,face.z).dot(to) > cos(deg_to_rad(FACING)),"seed %d: the spawn faces it (within %.0f deg)" % [s,FACING])
 	var lod := NextRegionLod.build(nx)
 	var st: Dictionary = lod.get_meta("stats")
 	var haze := NextRegionLod.haze((nx.sight[0] as Vector3).distance_to(mark),1.0,true)
@@ -149,6 +169,47 @@ func _sprawl_plan(s: int, plan: Dictionary) -> void:
 	var aabb: AABB = (lod.transform*lod.mesh.get_aabb()) if lod.mesh.get_surface_count() > 0 else AABB()
 	check(absf(aabb.end.y-(mark.y+LayerSprawl.MARK_UNDER)) < 0.5,"seed %d: its landmark is the region's highest point (%.0f, %.0f)" % [s,aabb.end.y,mark.y+LayerSprawl.MARK_UNDER])
 	lod.free()
+
+## 4B-2: the gulfs rise, each neighbourhood higher than the last, 3+ isles
+## in each and a climb onto an upper tier.
+func _tall(s: int, plan: Dictionary) -> void:
+	for gi: int in plan.gulfs:
+		var e: Dictionary = plan.edges[gi]
+		var least := minf(LayerSprawl.RISE_ROLL.x,float(e.width)*LayerPlan.GULF_GRADE)
+		check(float(e.rise) >= least-0.01 and float(e.rise) <= LayerSprawl.RISE_ROLL.y+0.01,"seed %d: gulf %d->%d rises %.0f m over %.0f m" % [s,int(e.from[0]),int(e.to[0]),float(e.rise),float(e.width)])
+	var hoods: Array = plan.hoods
+	var tops: Array = []
+	for h: Array in hoods:
+		var sum := 0.0
+		for i: int in h: sum += LayerPlan._top_walked(plan.isles[i])
+		tops.append(sum/h.size())
+	for h in range(1,hoods.size()):
+		check(float(tops[h]) > float(tops[h-1])+HOOD_CLIMB,"seed %d: neighbourhood %d stands %.0f m over the last (its isles' highest walked, mean)" % [s,h,float(tops[h])-float(tops[h-1])])
+	for h in range(hoods.size()):
+		var isles: Array = hoods[h]
+		var route: int = isles.filter(func(i: int) -> bool: return plan.isles[i].role != "greed").size()
+		var climb := {}
+		for e: Dictionary in plan.edges:
+			if e.kind == "climb" and int(plan.isles[int(e.to[0])].hood) == h: climb = e
+		var low := INF
+		for i: int in isles: low = minf(low,LayerPlan._top_walked(plan.isles[i]))
+		var up := -INF if climb.is_empty() else LayerPlan._top_walked(plan.isles[int(climb.to[0])])-low
+		check(route >= 3 and not climb.is_empty() and up >= LayerSprawl.TIER-0.01,"seed %d: neighbourhood %d holds %d isles on the route and a climb (%s) onto one %.0f m over its lowest" % [s,h,route,
+			"" if climb.is_empty() else ", ".join(PackedStringArray(climb.parts)),up])
+
+## Laid on a worker, the next region waits (`dress` lays it once the layer
+## stands); laid then, it is the same as laid at once.
+func _later(s: int) -> void:
+	var at_once := LayerSprawl.make(s)
+	var seen := str(at_once.next.xform)
+	LayerSprawl.forget()
+	var out := {}
+	var task := WorkerThreadPool.add_task(func() -> void: out.plan = LayerSprawl.make(s),true)
+	WorkerThreadPool.wait_for_task_completion(task)
+	var later: Dictionary = out.plan
+	check((later.problems as Array).is_empty() and not later.has("next"),"seed %d: laid on a worker, its next region waits" % s)
+	var placed := LayerSprawl._place_next(later,LayerSprawl.next_plan(later))
+	check(str(placed.xform) == seen,"seed %d: laid later, its next region is the one laid at once (layer %d)" % [s,int(placed.seed)])
 
 # --- A built layer --------------------------------------------------------------
 

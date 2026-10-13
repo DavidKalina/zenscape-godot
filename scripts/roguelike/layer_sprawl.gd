@@ -26,9 +26,12 @@ extends RefCounted
 ##   - The next region (`plan.next`): the next seed's plan (made here and
 ##     kept, so going through the gate takes it as it was seen), turned so
 ##     its own exit side runs on the same way, its base DIST past the gate
-##     and RISE higher, raised till the line from the spawn's eye to its
-##     landmark (its highest isle's top) is clear of this layer's isles.
-##     The spawn faces it.
+##     and `next_rise` higher, raised till the line from the spawn's eye to
+##     its landmark (its highest isle's top) is clear of this layer's
+##     isles. The spawn is laid looking that way (`_spawn_view`), before
+##     the next region is (windowed, after this layer stands).
+##   - Taller than round 3 (4B-2): each gulf rises RISE_ROLL, each
+##     neighbourhood has an isle more and a tier reached by a climb.
 ## The same seed and knobs give the same plan.
 const LayerPlan = preload("res://scripts/roguelike/layer_plan.gd")
 const Footbridge = preload("res://scripts/footbridge.gd")
@@ -40,6 +43,17 @@ const LayerPieces = preload("res://scripts/roguelike/layer_pieces.gd")
 ## The lean's weight: points per 100 m stood toward the rolled heading
 ## (LayerPlan `_lean`; a step's random share is 0-2, a gulf's the same).
 const LEAN := 1.5
+## Taller and fuller than round 3 (LayerPlan's knobs): each gulf rises
+## RISE_ROLL m (rolled per gulf; `--knob=rise=` pins it), each
+## neighbourhood has HOOD_MORE isles more, and in each one step climbs (a
+## `climb` edge: stones stepping up, landings, a bridge up) onto an isle
+## standing TIER m over the neighbourhood's lowest.
+const RISE_ROLL := Vector2(25.0,60.0)
+const HOOD_MORE := 1
+const TIER := 8.0
+## A motif that is not a family may come this many times a layer (in
+## different neighbourhoods, mostly): three of them fill out fuller ones.
+const REPEATS := 2
 ## The exit side is the way to the last neighbourhood's middle unless that
 ## stands nearer the base than this (m, flat): then the rolled heading.
 const SIDE_LEAST := 40.0
@@ -54,6 +68,11 @@ const TURN := 40.0
 ## run-up (m); the best few rims tried, each this many rolls.
 const RIM_FACING := 80.0
 const RIM_RUN_UP := 2.5
+## A point for each RIM_OUT m a rim stands further out on the exit side.
+const RIM_OUT := 25.0
+## The gate at least this far past the last neighbourhood's middle on the
+## exit side (m).
+const GATE_PAST := 20.0
 const CHAIN_RIMS := 4
 const CHAIN_TRIES := 8
 ## The slabs' sides as shares of LayerPlan `landing_size` (his running
@@ -67,7 +86,7 @@ const GATE_ON := 0.3
 ## share of the layer cannon's flat reach (its top notch at 45 degrees),
 ## rising this many of his chained jumps (JUMPS[1]).
 const SHOT := Vector2(0.5,0.7)
-const SHOT_RISE := Vector2(0.7,2.5)
+const SHOT_RISE := Vector2(2.0,5.0)
 const SHOT_INLAND := 2.5
 ## Clear of a ride's tube past its reach, of a gulf's rims (its piers and
 ## steps), of a cannon or keg laid before (m).
@@ -81,7 +100,11 @@ const CANNON_CLEAR := 4.0
 ## bounds to bounds) from every isle of this layer; seeds tried past one
 ## that can't be laid (as studies/run_layer.gd SKIP_MOST).
 const DIST := 180.0
-const RISE := 90.0
+## Its base's turf over the gate: a gulf's rise (RISE_ROLL, rolled from the
+## seed) and RISE_OVER more; where the spawn looks before it is laid, this
+## far past the gate (m).
+const RISE_OVER := 20.0
+const NEXT_ON := 260.0
 const RISE_STEP := 20.0
 const RISE_MOST := 300.0
 const APART := 120.0
@@ -105,28 +128,42 @@ const SPOT_NEAR := 70.0
 ## side (`heading`, flat), the exit chain (`chain`, edge indices; the gate
 ## at its end in `exit`) and the next region (`next`: NextRegionLod's
 ## input, see `_place_next`), the spawn turned to face it.
+##
+## Laid on a worker (windowed play, studies/run_layer.gd), the next region
+## is left for later (`attach_next`): `dress` lays it on a worker once this
+## layer stands, so the first layer is up after one plan, not two.
 static func make(seed_value: int, knobs := {}) -> Dictionary:
 	var plan := core(seed_value,knobs)
 	if not (plan.problems as Array).is_empty(): return plan
+	if OS.get_thread_caller_id() == OS.get_main_thread_id(): attach_next(plan)
+	return plan
+
+## The next region laid into `plan` (`plan.next`), or a problem noted.
+static func attach_next(plan: Dictionary) -> void:
+	var nxt := next_plan(plan)
+	if (nxt.problems as Array).is_empty(): plan.next = _place_next(plan,nxt)
+	else: plan.problems.append("no next region laid past seed %d" % int(plan.seed))
+
+## The plan the gate leads to (as studies/run_layer.gd takes it: on past a
+## seed that can't be laid).
+static func next_plan(plan: Dictionary) -> Dictionary:
+	var knobs: Dictionary = plan.get("user_knobs",{})
 	var nxt := {}
 	for k in range(1,SKIP_MOST+1):
-		nxt = core(seed_value+k,knobs)
+		nxt = core(int(plan.seed)+k,knobs)
 		if (nxt.problems as Array).is_empty(): break
-	if (nxt.problems as Array).is_empty():
-		plan.next = _place_next(plan,nxt)
-		plan.spawn.at = (plan.next.spawn as Vector3)+Vector3.UP*0.2
-		var to: Vector3 = (plan.next.landmark as Vector3)-(plan.spawn.at as Vector3)
-		plan.spawn.face = Vector3(to.x,0.0,to.z).normalized()
-	else: plan.problems.append("no next region laid past seed %d" % seed_value)
-	return plan
+	return nxt
 
 ## Plans made, kept by seed and knobs (each plan is made once as the next
 ## region and taken again as the layer when its gate is reached); a few
-## only. studies/run_layer.gd lays one plan at a time (on a worker
-## windowed, on the main thread headless), so no lock: a static Mutex
-## aborted the engine's exit.
+## only. A worker may lay the next region while another lays a layer
+## asked for, hence the lock (made on first use, dropped by `forget`).
 static var _kept := {}
 static var _order: Array = []
+static var _lock: Mutex = null
+static func _mutex() -> Mutex:
+	if _lock == null: _lock = Mutex.new()
+	return _lock
 const KEEP := 4
 
 ## The layer for `seed_value` without its next region: round 3's laid with
@@ -134,24 +171,74 @@ const KEEP := 4
 ## again (as LayerPlan `make` does).
 static func core(seed_value: int, knobs := {}) -> Dictionary:
 	var key := "%d %s" % [seed_value,str(knobs)]
+	var lock := _mutex()
+	lock.lock()
 	var had: Dictionary = _kept.get(key,{})
+	lock.unlock()
 	if not had.is_empty(): return had
 	var lean := rolled_heading(seed_value)
 	var k := knobs.duplicate()
 	k.lean = lean*LEAN
 	k.shape = "sprawl"
+	k.rise_roll = RISE_ROLL
+	k.hood_more = HOOD_MORE
+	k.tier = TIER
+	k.repeats = REPEATS
 	var plan := {}
 	for attempt in range(LayerPlan.ATTEMPTS):
 		plan = LayerPlan._make(seed_value,attempt,k)
 		if not (plan.problems as Array).is_empty(): continue
 		var rng := RandomNumberGenerator.new()
 		rng.seed = hash([seed_value,attempt,"sprawl"])
-		if _chain(plan,lean,rng): break
+		if _chain(plan,lean,rng):
+			_spawn_view(plan)
+			break
 		plan.problems.append("no exit chain")
+	plan.user_knobs = knobs.duplicate()
+	lock.lock()
 	_kept[key] = plan
 	_order.append(key)
 	while _order.size() > KEEP: _kept.erase(_order.pop_front())
+	lock.unlock()
 	return plan
+
+## The spawn moved where its eye sees past the gate to where the next
+## region will stand (its base's middle, NEXT_UP over it): round 3's spawn,
+## else the nearest of the base's clear spots that does; faced that way.
+const NEXT_UP := 40.0
+## The swings tried off the exit side (degrees), the straight way first.
+const YAWS := [0.0,12.0,-12.0,24.0,-24.0,36.0,-36.0]
+static func _spawn_view(plan: Dictionary) -> void:
+	var h3 := Vector3(plan.heading.x,0.0,plan.heading.y)
+	var gate: Vector3 = plan.exit.at
+	var target: Vector3 = gate+h3*(DIST+NEXT_ON)+Vector3.UP*(next_rise(int(plan.seed))+NEXT_UP)
+	var eyes: Array = [plan.spawn.at]
+	var spots: Array = LayerPieces.sockets(LayerPlan.BASE).filter(func(s: Dictionary) -> bool: return s.kind == "perch" and float(s.room) >= SPOT_ROOM \
+		and (s.at as Vector3).distance_to(plan.spawn.at) < SPOT_NEAR)
+	spots.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return (a.at as Vector3).distance_to(plan.spawn.at) < (b.at as Vector3).distance_to(plan.spawn.at))
+	for spot: Dictionary in spots: eyes.append((spot.at as Vector3)+Vector3.UP*0.2)
+	plan.next_yaw = 0.0
+	var found := false
+	for yaw: float in YAWS:
+		var aim := gate+Basis(Vector3.UP,deg_to_rad(yaw))*h3*(DIST+NEXT_ON)+Vector3.UP*(next_rise(int(plan.seed))+NEXT_UP)
+		for at: Vector3 in eyes:
+			if sight_clear(plan,at+Vector3.UP*EYE,aim):
+				plan.spawn.at = at
+				plan.next_yaw = yaw
+				target = aim
+				found = true
+				break
+		if found: break
+	plan.next_aim = target
+	var to: Vector3 = target-(plan.spawn.at as Vector3)
+	plan.spawn.face = Vector3(to.x,0.0,to.z).normalized()
+
+## How far over the gate the next region's base stands (m), rolled from
+## the seed: a gulf's rise and RISE_OVER more.
+static func next_rise(seed_value: int) -> float:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([seed_value,"next rise"])
+	return rng.randf_range(RISE_ROLL.x,RISE_ROLL.y)+RISE_OVER
 
 ## The seed's lean (flat, unit): where its neighbourhoods are drawn toward.
 static func rolled_heading(seed_value: int) -> Vector2:
@@ -184,27 +271,50 @@ static func _chain(plan: Dictionary, lean: Vector2, rng: RandomNumberGenerator) 
 			var f := Vector2((s.face as Vector3).x,(s.face as Vector3).z).normalized()
 			if f.dot(heading) < cos(deg_to_rad(RIM_FACING)): continue
 			if not (plan.ram as Dictionary).is_empty() and int(plan.ram.isle) == i and (plan.ram.at as Vector3).distance_to(s.at) < LayerPlan.RAM_CLEAR: continue
-			rims.append([f.dot(heading)*2.0+(s.at as Vector3).y*0.05+rng.randf(),i,s])
+			# Facing the exit side, high, and furthest out that way.
+			var out_on := Vector2((s.at as Vector3).x,(s.at as Vector3).z).dot(heading)/RIM_OUT
+			rims.append([f.dot(heading)*2.0+(s.at as Vector3).y*0.05+out_on+rng.randf(),i,s])
 	rims.sort_custom(func(a: Array, b: Array) -> bool: return float(a[0]) > float(b[0]))
+	# The first chain each rim takes; the one whose gate stands furthest out
+	# kept, at once if it is GATE_PAST the last neighbourhood's middle.
+	var best: Array = []
+	var best_on := -INF
+	var best_rim: Array = []
 	for r: Array in rims.slice(0,CHAIN_RIMS):
 		for t in range(CHAIN_TRIES):
 			var links := _lay(plan,int(r[1]),r[2],heading,rng)
 			if links.is_empty(): continue
-			# Each slab the chain turns on is built with the crossing that
-			# leaves it (the edge's stones), not the one that comes to it:
-			# an edge's stones are what he crosses on to its far rim.
-			for k in range(links.size()-1,0,-1):
-				var before: Array = links[k-1].stones
-				var slab: Dictionary = before.pop_back()
-				(links[k].stones as Array).push_front(slab)
-			plan.chain = []
-			for e: Dictionary in links:
-				plan.chain.append((plan.edges as Array).size())
-				plan.edges.append(e)
-			var gate: Dictionary = links[links.size()-1].gate
-			plan.exit = {"isle":-1,"rim":"gate","at":gate.at,"face":gate.face,"from":[int(r[1]),str(r[2].name)]}
-			return true
-	return false
+			var g: Vector3 = links[links.size()-1].gate.at
+			var on := Vector2(g.x,g.z).dot(heading)
+			if on > best_on:
+				best_on = on
+				best = links
+				best_rim = r
+			break
+		if best_on >= mid.dot(heading)+GATE_PAST: break
+	if best.is_empty(): return false
+	# A clear exit side: the gate past the last neighbourhood's middle and
+	# every isle of the others; else this draw is laid again.
+	var out_most := mid.dot(heading)+GATE_PAST
+	for i in range((plan.isles as Array).size()):
+		if int(plan.isles[i].get("hood",0)) != (plan.hoods as Array).size()-1: out_most = maxf(out_most,LayerPlan._rect(plan.isles[i]).get_center().dot(heading))
+	if best_on < out_most: return false
+	var links := best
+	# Each slab the chain turns on is built with the crossing that leaves it
+	# (the edge's stones), not the one that comes to it: an edge's stones
+	# are what he crosses on to its far rim. Listed last: the first stone
+	# is the one he jumps for off the slab's edge.
+	for k in range(links.size()-1,0,-1):
+		var before: Array = links[k-1].stones
+		var slab: Dictionary = before.pop_back()
+		(links[k].stones as Array).push_back(slab)
+	plan.chain = []
+	for e: Dictionary in links:
+		plan.chain.append((plan.edges as Array).size())
+		plan.edges.append(e)
+	var gate: Dictionary = links[links.size()-1].gate
+	plan.exit = {"isle":-1,"rim":"gate","at":gate.at,"face":gate.face,"from":[int(best_rim[1]),str(best_rim[2].name)]}
+	return true
 
 ## The crossings' kinds in order: stones, a bridge, the voussoirs and the
 ## cannon, a fifth (stones or a bridge) now and then; never the cannon
@@ -255,10 +365,10 @@ static func _lay(plan: Dictionary, from: int, rim: Dictionary, heading: Vector2,
 		var q := p
 		match kind:
 			"stones":
-				q = LayerPlan._lay_stones(out,p,d,rng.randi_range(STONES.x,STONES.y),false,rng,chain)
+				q = LayerPlan._lay_stones(out,p,d,rng.randi_range(STONES.x,STONES.y),false,rng,chain,LayerPlan.CLIMB_LIFT)
 			"bridge":
 				var span := clampf(KitMotif.hop_reach()*rng.randf_range(LayerPlan.SPAN_HOPS.x,LayerPlan.SPAN_HOPS.y),Footbridge.TIMBER_SPAN,Footbridge.MAX_SPAN)
-				var rise := span*Footbridge.MAX_GRADE*LayerPlan.GRADE*rng.randf_range(0.3,1.0)
+				var rise := span*Footbridge.MAX_GRADE*LayerPlan.GRADE*rng.randf_range(0.7,1.0)
 				q = p+d*span+Vector3.UP*rise
 				out.bridges.append([p,q])
 				out.parts.append("bridge %.1f m" % span)
@@ -426,11 +536,56 @@ static func _place_next(plan: Dictionary, nxt: Dictionary) -> Dictionary:
 			back = minf(back,w.dot(h3))
 	var gate: Vector3 = plan.exit.at
 	var eye: Vector3 = (plan.spawn.at as Vector3)+Vector3.UP*EYE
-	var dist := DIST
 	var out := {}
-	# Pushed on till its bounds keep APART from this layer's isles.
+	# Raised till its landmark is in sight from the spawn (laid looking
+	# that way, `_spawn_view`), swung a little off the exit side if this
+	# layer's own climb stands in the way (the way the spawn looks first).
+	var yaws: Array = [float(plan.get("next_yaw",0.0))]
+	for y: float in YAWS: if not yaws.has(y): yaws.append(y)
+	var rise := next_rise(int(plan.seed))
+	var first := {}
+	while out.is_empty():
+		for yaw: float in yaws:
+			var turn := Basis(Vector3.UP,deg_to_rad(yaw))
+			var way := turn*h3
+			var b := turn*basis
+			var reach := 0.0
+			var swung: Array = []
+			for w: Vector3 in corners:
+				var t := turn*w
+				swung.append(t)
+				reach = minf(reach,t.dot(way))
+			var dist := _apart_dist(plan,gate,way,reach,swung)
+			var origin := gate+way*(dist-reach)
+			origin.y = gate.y+rise
+			var xform := Transform3D(b,origin-b*pivot)
+			var top: Vector3 = xform*mark_at+Vector3.DOWN*MARK_UNDER
+			var ok := sight_clear(plan,eye,top)
+			var placing := {"seed":int(nxt.seed),"xform":xform,"isles":isles,"landmark":top,"landmark_id":str(nxt.isles[mark].id),"sight":[eye,top],"sight_ok":ok,
+				"dist":dist,"rise":rise,"yaw":yaw,"heading":heading}
+			if first.is_empty(): first = placing
+			if ok:
+				out = placing
+				break
+		if out.is_empty():
+			if rise >= RISE_MOST: out = first
+			rise += RISE_STEP
+	# How far its nearest reach stands from the spawn.
+	var xf: Transform3D = out.xform
+	var least := INF
+	for w: Vector3 in corners:
+		var at := xf*(pivot+w)
+		least = minf(least,Vector2(at.x-eye.x,at.z-eye.z).length())
+	out.near = least
+	out.far = eye.distance_to(out.landmark)
+	return out
+
+## How far past the gate (along `way`) its nearest reach must stand to
+## keep APART (flat, bounds to bounds) from every isle of this layer.
+static func _apart_dist(plan: Dictionary, gate: Vector3, way: Vector3, reach: float, corners: Array) -> float:
+	var dist := DIST
 	for k in range(12):
-		var origin := gate+h3*(dist-back)
+		var origin := gate+way*(dist-reach)
 		var bounds := Rect2(Vector2(origin.x,origin.z),Vector2.ZERO)
 		for w: Vector3 in corners: bounds = bounds.expand(Vector2(origin.x+w.x,origin.z+w.z))
 		var near := true
@@ -441,38 +596,7 @@ static func _place_next(plan: Dictionary, nxt: Dictionary) -> Dictionary:
 			if Vector2(dx,dz).length() < APART: near = false
 		if near: break
 		dist += 40.0
-	# Raised till its landmark is in sight from the spawn, or from a spot
-	# of the base near it (the spawn moved there).
-	var eyes: Array = [plan.spawn.at]
-	var spots: Array = LayerPieces.sockets(LayerPlan.BASE).filter(func(s: Dictionary) -> bool: return s.kind == "perch" and float(s.room) >= SPOT_ROOM \
-		and (s.at as Vector3).distance_to(plan.spawn.at) < SPOT_NEAR)
-	spots.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return (a.at as Vector3).distance_to(plan.spawn.at) < (b.at as Vector3).distance_to(plan.spawn.at))
-	for spot: Dictionary in spots: eyes.append(spot.at)
-	var rise := RISE
-	while true:
-		var origin := gate+h3*(dist-back)
-		origin.y = gate.y+rise
-		var xform := Transform3D(basis,origin-basis*pivot)
-		var top: Vector3 = xform*mark_at+Vector3.DOWN*MARK_UNDER
-		var ok := false
-		for at: Vector3 in eyes:
-			eye = at+Vector3.UP*EYE
-			ok = sight_clear(plan,eye,top)
-			if ok: break
-		if not ok: eye = (plan.spawn.at as Vector3)+Vector3.UP*EYE
-		out = {"seed":int(nxt.seed),"xform":xform,"isles":isles,"landmark":top,"landmark_id":str(nxt.isles[mark].id),"sight":[eye,top],"sight_ok":ok,
-			"dist":dist,"rise":rise,"heading":heading,"spawn":eye-Vector3.UP*EYE}
-		if ok or rise >= RISE_MOST: break
-		rise += RISE_STEP
-	# How far its nearest reach stands from the spawn.
-	var xf: Transform3D = out.xform
-	var least := INF
-	for w: Vector3 in corners:
-		var at := xf*(pivot+w)
-		least = minf(least,Vector2(at.x-eye.x,at.z-eye.z).length())
-	out.near = least
-	out.far = eye.distance_to(out.landmark)
-	return out
+	return dist
 
 ## An isle's highest solid cell's middle (its plan's world).
 static func _top_of(isle: Dictionary) -> Vector3:
@@ -516,6 +640,13 @@ static func dress(stage: Node3D, plan: Dictionary) -> void:
 	if plan.has("next"):
 		var lod := NextRegionLod.build(plan.next)
 		stage.add_child(lod)
+	else:
+		# Laid on a worker once this layer stands (scripts/roguelike/
+		# next_region_loader.gd).
+		_mutex()
+		var loader: Node = load("res://scripts/roguelike/next_region_loader.gd").new()
+		loader.setup(stage,plan)
+		stage.add_child(loader)
 	# The kept plans go with the study (held past it, their motifs outlive
 	# the engine's servers and abort its exit).
 	var study: Node = stage.get("study")
@@ -525,6 +656,7 @@ static func dress(stage: Node3D, plan: Dictionary) -> void:
 static func forget() -> void:
 	_kept.clear()
 	_order.clear()
+	_lock = null
 
 ## The exit side as a compass word (north is -z).
 static func compass(heading: Vector2) -> String:

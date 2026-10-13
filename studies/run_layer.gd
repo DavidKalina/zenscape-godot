@@ -71,7 +71,7 @@ func _ready() -> void:
 	if _planning_away():
 		# Laid while the aqueduct isle builds; its sky starts empty.
 		LayerPlan.warm()
-		_plan_task = WorkerThreadPool.add_task(_plan_job.bind(layer_seed,layer_knobs.duplicate()))
+		_plan_task = WorkerThreadPool.add_task(_plan_job.bind(layer_seed,layer_knobs.duplicate()),true,"layer plan")
 	else: _lay(layer_seed)
 	isle_ready.connect(_first_layer,CONNECT_ONE_SHOT)
 	super._ready()
@@ -120,7 +120,7 @@ func request_layer(seed_value: int, why := "") -> void:
 	if _plan_task >= 0: return
 	_plan_why = why
 	_show_toast("%sLaying layer %d..." % [why+"  " if why != "" else "",seed_value])
-	_plan_task = WorkerThreadPool.add_task(_plan_job.bind(seed_value,layer_knobs.duplicate()))
+	_plan_task = WorkerThreadPool.add_task(_plan_job.bind(seed_value,layer_knobs.duplicate()),true,"layer plan")
 
 ## The layer's motif isles for the sky: [motif, offset, place].
 func layer_entries() -> Array:

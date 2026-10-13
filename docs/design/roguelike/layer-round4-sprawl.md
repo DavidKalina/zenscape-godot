@@ -10,6 +10,10 @@ drawn far off and cheap. One side of the region is the exit side: "one
 side of the region has a series of crossings that take you to the next
 section."
 
+> **Round 4B-2 changed the shape** (taller, fuller, faster to the first
+> layer). The seeds, numbers and checks in the sections below are round
+> 4's. For the current ones, see "4B-2" at the end.
+
 ## Run it
 
 ```sh
@@ -298,3 +302,205 @@ From the side along the exit side (north to the right, up is up; a character 11 
   differently.
 - A plan cache (`LayerSprawl._kept`, 4 plans) is cleared when the study
   leaves the tree. Without that, the engine aborted on exit.
+
+## 4B-2: taller clusters, an upper tier in each, and the first layer sooner
+
+The user played seed 6 windowed (no shader errors, a clean quit). Three
+asks:
+
+1. More verticality, still mostly horizontal: each cluster a little
+   higher than the last.
+2. One more isle per cluster, with at least one isle in it clearly above
+   another.
+3. Faster windowed planning. The first sprawl plan took 38.7 s and stood
+   whole at 51.5 s.
+
+### Run it
+
+```sh
+/Users/davidkalina/Applications/Godot.app/Contents/MacOS/Godot --path . res://studies/run_layer.tscn -- --no-title --shape=sprawl --seed=11
+```
+
+Good seeds now (the layouts changed):
+
+| Seed | Plan time | What you get |
+|---|---|---|
+| 11 | 1-2.5 s | A serpent gulf rising 38 m. Climbs of 9 and 6 m. Exit south. |
+| 3 | ~3.5 s | A serpent gulf rising 35 m with a cannon up it. Exit south. |
+| 13 | ~2 s | A ferry gulf rising 52 m. Exit east. |
+| 15 | ~3.5 s | A serpent gulf rising 51 m. Exit north-west. |
+| 6 | 15-18 s | A ferry gulf rising 47 m. It now plans slowly: unlucky draws. |
+
+`--knob=rise=<m>` pins every gulf's rise (it works in round 3's shape
+too; 0, the default, keeps that shape's 2-9 m roll). `--knob=hoods=3`
+still gives three clusters.
+
+### What changed
+
+**Each cluster stands higher than the last.**
+- Under the sprawl, each gulf's rise is rolled per gulf in
+  `RISE_ROLL` = 25-60 m (LayerPlan's `rise_roll` knob), capped at 30% of
+  the gulf's width (`GULF_GRADE`). The test checks that each
+  neighbourhood's isles stand 15 m+ over the last's. Seeds 1-16 run
+  48-79 m.
+- Over a tall gulf the ferry climbs across: its lanes run 8 m over the
+  straight way between its stops instead of level at the higher stop.
+  This only applies when the stops differ by more than 11 m, so round
+  3's plans are unchanged.
+- The serpent's lanes already rose with the way, and the bot rides both
+  up.
+- A gulf cannon is laid only where its arc still reaches (its existing
+  speed search, capped at 16 runs). Seeds 3 and 9 got one, at 14.6 and
+  16.1 runs.
+- The chain climbs more:
+  - its stones step up 0.34-0.40 m a stride;
+  - its bridges are near full grade;
+  - the cannon's catch is 3-7.5 m up.
+- The next region stands 45-80 m over the gate (`RISE_ROLL` plus
+  `RISE_OVER`), raised as needed.
+- If this layer's own climb blocks the sight line, the region swings up
+  to 36 degrees off the exit side (`YAWS`).
+
+**Fuller clusters, each with an upper tier.**
+- Each neighbourhood gets one isle more (`HOOD_MORE`), so 3-5 counting
+  the greed isle.
+- A motif that isn't a family may come twice a layer (`REPEATS`, the
+  LayerPlan knob `repeats`). Without that, the extra isles were mostly
+  broken rings, and draws failed 20-40 times.
+- In each neighbourhood, the first step that needn't be the trap is a
+  **climb**, a new edge kind made only of existing pieces:
+  - 2-3 runs of stones, each stride rising 0.34-0.40 m (`CLIMB_LIFT`,
+    within round 2's reach rules);
+  - a floating landing after each run;
+  - a rope bridge up at the footbridge's grade.
+
+  It lands on an isle whose highest walked ground stands `TIER` = 8 m+
+  over the neighbourhood's lowest. That comes to 9-34 m over the seeds
+  tested, since the edge climbs 6-10 m and the isle's own shape the
+  rest. Its far rim wants 2.5 m of clear ground behind it
+  (`CLIMB_RUN_UP`).
+- The exit chain's gate must stand past the last neighbourhood's middle
+  and every isle of the others on the exit side (else the draw is laid
+  again). Of the rims tried, the one furthest out on the exit side is
+  preferred.
+
+**The first layer sooner.** I measured what was slow:
+- **Two plans before the first layer.** Round 4 laid the next seed's plan
+  too, up front.
+  - Now `make` on a worker lays only this layer, and `dress` adds
+    `scripts/roguelike/next_region_loader.gd`. That loader waits until
+    this layer stands whole, then lays the next region on a worker and
+    stands its silhouette.
+  - The spawn's view is chosen before the next region exists
+    (`_spawn_view`: toward where it will stand). The next region is then
+    raised or swung until its landmark is in sight from that spawn.
+  - Headless and in tests it is still laid at once. The test checks that
+    the late one is identical.
+- **The first plan built the families' kit pieces cold:** about 2.2 s
+  headless (KitMotif `piece_block`, 16 pieces). On a worker windowed
+  that work makes meshes and debug meshes off the main thread, which
+  waits on the renderer. `LayerPlan.warm()` (main thread, before the
+  worker) now reads one isle of each motif. This benefits round 3's
+  shape too.
+- **The plan task ran at low priority** in the same WorkerThreadPool
+  slots as the isles' builds. It is now high priority (`run_layer.gd`,
+  both `add_task` calls).
+
+Numbers:
+
+| | Before (round 4) | After (4B-2) |
+|---|---|---|
+| Headless, first layer | Two plans: seed 6 10.7 s; seeds 1-12 1.4-11 s | One plan, seeds 1-16 (taller, fuller shape, warm caches, machine shared with another agent): mean 5.2 s, 0.9-16 s; seed 6 15-18 s, 11/12/13/14 1-4.5 s |
+| Windowed, first plan | 38.7 s (seed 6) | Unmeasured; estimate below |
+| Windowed, first stand | 51.5 s (seed 6) | Unmeasured; estimate below |
+| Standing the isles, headless flushed | 7-12 s | 17-21 s (7-10 isles a layer) |
+
+The windowed estimate: the old 38.7 s against ~11 s headless suggests
+about 3.5x. If that came mostly from the off-thread piece builds and the
+shared low-priority slot, which are both now fixed, I expect about 1.5-2x
+headless: 2-10 s on most seeds. That is inside the aqueduct isle's own
+~17 s build, so most seeds should be planned by the time you can walk.
+Seed 6 should still take about 25-30 s.
+
+After the layer stands, the next region takes one more plan on a worker
+(about 5 s) and a 15-30 ms silhouette build on the main thread. The card
+shows no next region until then. More isles also mean standing the layer
+takes longer: the Backspace replay's 15.3 s will grow to roughly 20-25 s.
+
+### The shape from the side (seed 11)
+
+```
+From the side along the exit side (south to the right, up is up; a character 11 m across and 13 m up):
+|                                                                                                     ###@# ## |
+|                                                                                                '###  ########|
+|                                                                                          '' ''############## |
+|                                                                                     ' ''    #################|
+|                                                                                ' ''         ###########  ####|
+|                                                            ######         ' ##'              ###########     |
+|                                                              ##################               ##########     |
+|                                                            ####################                    ####      |
+|                                                            ##############                                    |
+|                                                     ' '' '  #############                                    |
+|                                  55             '' '       ###                                               |
+|                                 555555     '' '                                                              |
+|                          66666  555555' ::::G                                                                |
+|                      333......44....5::::                                                                    |
+|                     3333.666664455 555                                                                       |
+|                    ~~33344444444    55                                                                       |
+|        111  22 ~~~~~333333 444                                                                               |
+|0 00000011.22~~~~   3333333                                                                                   |
+|000000011S~~~.22222   333                                                                                     |
+|   000111122222222                                                                                            |
+|    0  11 12222222                                                                                            |
+|             2                                                                                                |
+```
+
+The base (0) and its cluster (1, 2) are at the left. The serpent gulf
+(`~`) rises 38 m to the second cluster (3-6). Within it the climb (`.`)
+goes up a tier, and the chain (`:`) runs to the gate (G). The next
+region (`#`, landmark `@`) stands high to the right.
+
+### Checks (4B-2)
+
+- **tests/test_layer_sprawl.gd passes** (about 4 min headless on a
+  shared machine).
+  - Driven seeds:
+    - **6:** a ferry gulf rising 30-47 m, ridden aboard;
+    - **3:** a serpent gulf rising 35 m, ridden; its gulf cannon fired up
+      it, landing 0.8 m off its mark.
+  - On both driven seeds:
+    - every climb, route, greed and chain crossing is made on foot;
+    - the chain cannon and greed cannon land;
+    - the ray from the start reaches the landmark;
+    - the gate leads to the region that was seen.
+  - New plan checks on 6, 3, 15, 2, 1 and 12:
+    - gulf rises in range, each neighbourhood 15 m+ over the last;
+    - each neighbourhood has 3+ route isles and a climb onto an isle 8 m+
+      over its lowest;
+    - a plan laid on a worker has no next region, and the one laid later
+      is identical to the one laid at once.
+  - "The spawn faces it" is now "within 30 degrees", since the spawn is
+    laid before the region.
+  - LOD: 13.6k-18.9k triangles, 1 surface, 18-30 ms; landmarks 1.0-1.4 km
+    off, 37-52% hazed.
+- **tests/test_run_layer.gd** (default shape) **passes**.
+- **test_world_scale_guard** passes. The full suite was not run.
+
+### Unverified and weak (4B-2)
+
+- **The windowed times above are estimates.** The 3.5x could have causes
+  I haven't fixed, such as the GDScript planner simply running slower
+  next to the renderer.
+- **Repeats.** A layer may show the same non-family motif twice, as
+  exact copies (seed 13 has two gorges in one cluster and two bell
+  spires in another). This was the price of planning speed.
+- **The climbs are long:** 50-80 m of stone runs and landings. They read
+  as stairways in the sky, not a tight stack; whether that feels
+  "vertical inside the cluster" is a look question.
+- **Long falls:** a fall from a high cluster into the void is long, and
+  the clusters 40-60 m up don't stand over the lower ones.
+- **The next region now appears a few seconds after the layer stands**
+  (windowed). From the start you see the gate's beam first, then the
+  silhouette. The spawn already faces where it will be.
+- **The rides climbing 30-54 m:** the camera on the serpent's back and the
+  ferry's 8 m lift over a rising way were never seen.
