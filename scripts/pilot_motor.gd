@@ -178,16 +178,45 @@ extends RefCounted
 ## the water (SWIM_HOP), onto a bank or back in with a splash; that hop never
 ## opens the sail. Never drowning, never hurt.
 ##
-## Knocked (`knock`, by a guardian's blow: scripts/henge_guardian.gd): thrown
+## Knocked (`knock`, by a blow: an enemy's, a trap's, a guardian's): thrown
 ## off whatever he was on (a ledge, a wall, the water) at the velocity given,
-## tumbling (move "tumble"): no steering, no jump, no catching a ledge or a
-## wall, gravity as ever. Landed, he is down for TUMBLE_DOWN (sliding to a
-## stop at TUMBLE_SKID), then up, and for TUMBLE_IMMUNE after that
-## `recovering` still says so (a guardian holds off). A twirl pressed while
-## tumbling in the air takes him out of it at once, into the twirl (its once
-## an airtime as ever: a knock does not give a spent one back). `seize`
-## holds him still where the caller puts his feet (a guardian's grab) till
-## the next `knock` throws him. Only position and time are lost; never hurt.
+## tumbling (move "tumble", `stunned` "knock"): no steering, no jump, no
+## catching a ledge or a wall, gravity as ever. Landed, he is down for
+## TUMBLE_DOWN (sliding to a stop at TUMBLE_SKID), longer if the tumble fell
+## far (the fall stun's time, below), then up, and for `tumble_immune`
+## after that `recovering` still says so (0 by default: the world may chain
+## its hits). `seize` holds him still where the caller puts his feet (a
+## guardian's grab) till the next `knock` throws him. Only position and
+## time are lost; never hurt.
+##
+## The stun (docs/design/roguelike/stun-round1.md). A stunned body is an
+## object: the world carries, washes, blows and launches it as it would a
+## crate (`toss` throws a stunned body on, still stunned).
+## - Poise: knocked into the air he has no control (no sail, twirl, steer
+##   or catch) for `poise_for(v)` s (`poise` plus `poise_hit` a m/s of the
+##   blow, up to `poise_most`); then he gathers himself mid-air ("poised")
+##   and all of it is his again, the twirl given back. A long fall gives
+##   him time to; a short knock over the void may not. Landed still
+##   stunned, he is laid down (below).
+## - The tech (`tech`, the skill on top of the poise, Smash's): stunned,
+##   the twirl button arms `tech_window` s; meeting a surface in it
+##   recovers him at once ("teched"): the ground, landed in the roll (no
+##   time down); a wall, kicked off it; a lip in reach, caught (the Sky Ray
+##   latches him onto a rail off a "land" tech on its back). Every press
+##   locks the button out `tech_lockout` s past the window it armed, so a
+##   mistimed or mashed press can't tech.
+## - The fall stun: landing from a fall of `fall_stun_pumps` times his pump
+##   (the drop from the airtime's top; the sail, a wall, a wall run and a
+##   twirl each start it again) lays him down (move "tumble", `stunned`
+##   "fall") for STUN_DOWN.x s at it to STUN_DOWN.y at FALL_STUN_FULL times
+##   it. The twirl pressed with the touch under `tech_window` s off, from
+##   such a fall, is the roll instead of the twirl: he lands rolling, his
+##   pace kept (move "roll", `roll_time` s). The sail, a ledge, deep water
+##   and the slam (`slam_stuns` off: his own move) never stun.
+## - The lock: a source (`knock`'s `source`) that stunned him can't stun
+##   him again for `restun_gap` s (its blow only throws him: stunned, his
+##   poise starts again; on his feet, a `toss`), and after `stun_chain_cap` s stunned in a row any press
+##   breaks out (in the air the twirl, on the ground up at once).
 ##
 ## Ridden (`rider`: a swing rope, scripts/interactables/):
 ## while set, the step reads the buttons and hands itself to the rider's
@@ -431,10 +460,36 @@ const SWIM_DAMP := 0.6
 const SWIM_ENTRY := 0.35
 const SWIM_HOP := 0.9
 ## Knocked: seconds down after the tumble lands, his slide to a stop there
-## (m/s²), and seconds after getting up that he still counts as recovering.
+## (m/s²), and seconds after getting up that he still counts as recovering
+## (it was 0.8; 0 lets the world chain hits, `restun_gap` keeps one source
+## from pinning him).
 const TUMBLE_DOWN := 0.5
 const TUMBLE_SKID := 14.0
-const TUMBLE_IMMUNE := 0.8
+const TUMBLE_IMMUNE := 0.0
+## The stun (see the header): the fall that stuns, in pumps (the size's
+## jumps[1], so 6 m at the wanderer's 1.0, the trap yard's drop to its
+## floor); the seconds down at it and at FALL_STUN_FULL times it (the most).
+const FALL_STUN_PUMPS := 4.0
+const FALL_STUN_FULL := 2.0
+const STUN_DOWN := Vector2(0.7,1.6)
+## Poise: knocked, seconds with no control in the air before he gathers
+## himself (sail, twirl, steer, catch his again): POISE, and POISE_HIT more
+## a m/s of the blow, up to POISE_MOST. A blow of 8 m/s: about 0.8 s.
+const POISE := 0.5
+const POISE_HIT := 0.04
+const POISE_MOST := 1.2
+## The tech (`tech`): seconds a press is armed for a surface, and the
+## lockout past it.
+const TECH_WINDOW := 0.2
+const TECH_LOCKOUT := 0.4
+## The roll out of a landing: its seconds.
+const ROLL_TIME := 0.35
+## The lock's guards: seconds before one source may stun him again, the
+## seconds stunned in a row after which any press breaks out, and the
+## seconds with his feet his own that end a row.
+const RESTUN_GAP := 1.2
+const STUN_CHAIN_CAP := 3.0
+const STUN_CALM := 1.0
 ## The slam: its pull toward the pace asked, times his falling gravity.
 const SLAM_PULL := 2.0
 
@@ -502,6 +557,20 @@ var side_speed := SIDE_SPEED
 var climb_time := CLIMB_TIME
 var tumble_down := TUMBLE_DOWN
 var tumble_immune := TUMBLE_IMMUNE
+## The stun's knobs (see the header; studies/stun_yard.gd's `--stun-knob=`).
+var fall_stun := true
+var poise := POISE
+var poise_hit := POISE_HIT
+var poise_most := POISE_MOST
+var tech := false
+var fall_stun_pumps := FALL_STUN_PUMPS
+var stun_down := STUN_DOWN
+var tech_window := TECH_WINDOW
+var tech_lockout := TECH_LOCKOUT
+var roll_time := ROLL_TIME
+var restun_gap := RESTUN_GAP
+var stun_chain_cap := STUN_CHAIN_CAP
+var slam_stuns := false
 ## His size over the clips' (the walker drawn `size` times, studies/
 ## character_study.gd; 1 here, the game's 0.83 set by `set_size`), and
 ## what goes by his body: the hang (the clips' HANG_DROP, HANG_OUT,
@@ -643,6 +712,29 @@ var _from_water := false
 var _down := 0.0
 var _immune := 0.0
 var _seized := false
+## Stunned: why ("" not, "knock", "fall"); the knocks taken (the figure's
+## cue for a fresh throw); the top of this airtime's fall (the frame's
+## height); seconds since the knock; seconds stunned in a row and seconds
+## calm since; a press armed for a surface, the button's lockout, a roll
+## armed for the touch and the roll's seconds left; the clock, and when
+## each source last stunned him (by instance id, 0 for none given).
+var stunned := ""
+var knocks := 0
+var _fall_top := 0.0
+var _stun_t := 0.0
+var _poise := 0.0
+var _stunned_for := 0.0
+## A hard hit's time down (`knock`'s `down`): no poise in the air, then
+## laid down this long once his skid has stopped (kept over a skid's hop
+## off an edge); 0 for none.
+var _hit_down := 0.0
+var _calm := 0.0
+var _tech := 0.0
+var _tech_lock := 0.0
+var _roll := 0.0
+var _roll_left := 0.0
+var _clock := 0.0
+var _sources := {}
 ## The pocket sail (see the header), and the air it flies in: anything
 ## `air` answers for the feet's point (Vector3, the frame's), {wind,
 ## thermal}; none, still air.
@@ -697,6 +789,17 @@ func reset(at: Vector3, towards: float, speed := 0.0) -> void:
 	_down = 0.0
 	_immune = 0.0
 	_seized = false
+	stunned = ""
+	_fall_top = at.y
+	_stun_t = 0.0
+	_stunned_for = 0.0
+	_hit_down = 0.0
+	_calm = 0.0
+	_tech = 0.0
+	_tech_lock = 0.0
+	_roll = 0.0
+	_roll_left = 0.0
+	_sources.clear()
 	sail.rest()
 	carving = 0.0
 	rider = null
@@ -713,6 +816,7 @@ func carry(by: Transform3D, turn: float) -> void:
 	var was := feet
 	feet = by*feet
 	ground_y += feet.y-was.y
+	_fall_top += feet.y-was.y
 	if is_finite(surface): surface += feet.y-was.y
 	lip = by*lip
 	_hang_feet = by*_hang_feet
@@ -731,8 +835,47 @@ static func _turned(way: Vector2, turn: float) -> Vector2:
 	return Vector2(v.x,v.z)
 
 ## Knocked away at `v` (m/s, in the frame): off any ledge, wall or swim,
-## tumbling (see above), facing back the way the blow came from.
-func knock(v: Vector3) -> void:
+## tumbling (see above), facing back the way the blow came from. `source`
+## (the enemy or trap that hit him) keeps one source from stunning him
+## again within `restun_gap` s: then, and past `stun_chain_cap` s stunned
+## in a row, the blow only throws him (stunned, he tumbles on as he was;
+## on his feet, a `toss`). `down` > 0 makes it a hard hit: his poise doesn't
+## come back in the air (the chain cap's breakout still does), and he lands
+## laid down at least `down` s from where his skid stops.
+func knock(v: Vector3, source: Object = null, down := 0.0) -> void:
+	if not _seized:
+		var key := source.get_instance_id() if source != null else 0
+		var last: float = _sources.get(key,-INF)
+		if _clock-last < restun_gap or _stunned_for >= stun_chain_cap:
+			knocks += 1
+			if move == "tumble":
+				_throw_stunned(v)
+				var flat := Vector2(v.x,v.z)
+				if flat.length() > 0.3: facing = facing_of(-flat)
+			else: toss(v)
+			return
+		_sources[key] = _clock
+	_knock(v)
+	if down > 0.0:
+		_poise = INF
+		_hit_down = down
+
+## Whether a knock from `source` now would stun him (not only throw him).
+func stunnable(source: Object = null) -> bool:
+	var key := source.get_instance_id() if source != null else 0
+	return not _seized and _clock-float(_sources.get(key,-INF)) >= restun_gap and _stunned_for < stun_chain_cap
+
+func _knock(v: Vector3) -> void:
+	knocks += 1
+	stunned = "knock"
+	_stun_t = 0.0
+	_poise = poise_for(v)
+	_hit_down = 0.0
+	_tech = 0.0
+	_tech_lock = 0.0
+	_roll = 0.0
+	_roll_left = 0.0
+	_fall_top = feet.y
 	sail.rest()
 	rider = null
 	hold = ""
@@ -778,8 +921,31 @@ func knock_velocity(away: Vector2, out: float, up: float, drop := 0.0) -> Vector
 
 ## Held still (a grab): his feet are the caller's to set till `knock`.
 func seize() -> void:
-	knock(Vector3.ZERO)
+	_knock(Vector3.ZERO)
 	_seized = true
+
+## A stunned body thrown on at `v` (a launch, a spill, a blow that may not
+## stun again): off the ground, still tumbling, its air window to come again
+## (each throw is a fresh chance to recover).
+func _throw_stunned(v: Vector3) -> void:
+	rider = null
+	hold = ""
+	grounded = false
+	skidding = false
+	velocity = v
+	_down = 0.0
+	_stun_t = 0.0
+	_poise = INF if _hit_down > 0.0 else poise_for(v)
+	_fall_top = feet.y
+	feet.y += 0.02
+
+## Seconds without poise after a blow of `v` (m/s).
+func poise_for(v: Vector3) -> float:
+	return minf(poise+poise_hit*v.length(),poise_most)
+
+## Seconds left before he gathers himself in the air (0 not stunned).
+func poise_left() -> float:
+	return maxf(0.0,_poise-_stun_t) if move == "tumble" and not grounded and not _seized else 0.0
 
 ## Whether he is knocked, held, down, or just up from it.
 func recovering() -> bool:
@@ -788,6 +954,63 @@ func recovering() -> bool:
 ## Whether he is held by a grab.
 func seized() -> bool:
 	return _seized
+
+## Whether a tech press is armed now (for the figure's tell).
+func tech_armed() -> bool:
+	return _tech > 0.0 and move == "tumble"
+
+## Down on the ground stunned (knocked or from a fall), not yet up.
+func downed() -> bool:
+	return move == "tumble" and grounded and not _seized
+
+## The fall that stuns (m): `fall_stun_pumps` of his pump.
+func fall_stun_height() -> float:
+	return fall_stun_pumps*float(jumps[jumps.size()-1])
+
+## Seconds down after a fall of `drop` m: 0 under the stun's height, then
+## STUN_DOWN.x up to STUN_DOWN.y at FALL_STUN_FULL times it.
+func fall_stun_time(drop: float) -> float:
+	var at := fall_stun_height()
+	if not fall_stun or drop < at: return 0.0
+	return lerpf(stun_down.x,stun_down.y,clampf((drop-at)/(at*(FALL_STUN_FULL-1.0)),0.0,1.0))
+
+## Seconds till the feet meet the ground under them falling as now (INF
+## rising, or over none).
+func _time_to_ground(ground: Callable) -> float:
+	var under: float = ground.call(Vector2(feet.x,feet.z))
+	if not is_finite(under): return INF
+	var h := feet.y-under
+	var v := -velocity.y
+	if h <= 0.0: return 0.0
+	if v >= terminal-0.01: return h/v
+	var g := gravity*fall
+	var d := v*v+2.0*g*h
+	return (-v+sqrt(d))/g if d >= 0.0 else INF
+
+## The twirl pressed while stunned: "up" (the chain's cap passed: out at
+## once, in the air into the twirl, on the ground up, though not from a
+## hard hit's time down), or "" (with `tech`
+## on and the button not locked out, a press armed for `tech_window` s, the
+## button then locked out `tech_lockout` s past it).
+func _tech_press() -> String:
+	if _stunned_for >= stun_chain_cap and not (grounded and _hit_down > 0.0): return "up"
+	if not tech or _tech_lock > 0.0: return ""
+	_tech = tech_window
+	_tech_lock = tech_window+tech_lockout
+	return ""
+
+## Laid down stunned on the ground for `seconds` (a fall's or a tumble's
+## landing): no jump kept for the touch, the sail packed.
+func _lay_down(seconds: float, why: String) -> void:
+	move = "tumble"
+	stunned = why
+	grounded = true
+	_down = seconds
+	_buffer = 0.0
+	_roll = 0.0
+	_roll_left = 0.0
+	_no_cut = true
+	sail.rest()
 
 ## The way `towards` faces, in the frame's plane (x, z).
 static func forward(towards: float) -> Vector2:
@@ -825,15 +1048,43 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 	_regrab = maxf(0.0,_regrab-delta)
 	carving = 0.0
 	_immune = maxf(0.0,_immune-delta)
+	_clock += delta
+	_tech = maxf(0.0,_tech-delta)
+	_tech_lock = maxf(0.0,_tech_lock-delta)
+	_roll = maxf(0.0,_roll-delta)
+	if move == "tumble" or _seized:
+		_stunned_for += delta
+		_calm = 0.0
+	else:
+		_calm += delta
+		if _calm >= STUN_CALM: _stunned_for = 0.0
+	if grounded or hold != "" or swimming or rider != null: _fall_top = feet.y
 	if rider != null: return rider.ride(self,delta,want,pressed)
 	if _seized: return out
+	if move == "tumble" and not grounded and not _seized and _stun_t >= _poise:
+		# Poise back in the air: his own again (the sail, the twirl given
+		# back, the stick, a catch).
+		move = ""
+		stunned = ""
+		_twirled = false
+		_regrab = 0.0
+		_hit_down = 0.0
+		out["poised"] = true
 	if move == "tumble":
-		if twirl_pressed and not grounded and not _twirled:
-			# Out of the tumble: the twirl below takes him on.
+		var how := _tech_press() if twirl_pressed else ""
+		if how == "up" and not grounded:
+			# Out of a long lock in the air: the twirl below takes him on,
+			# given back for it.
 			move = ""
+			stunned = ""
 			_no_cut = false
+			_twirled = false
+			_fall_top = feet.y
+			_hit_down = 0.0
 			out["recovered"] = true
-		else: return _tumble_step(delta,ground,slide,out)
+		else:
+			if how == "up": _down = 0.0
+			return _tumble_step(delta,ground,slide,ledge,out)
 	if hold != "": return _hold_step(delta,want,pressed,ground,slide,ledge)
 	if swimming: return _swim_step(delta,want,pressed,ground,slide)
 	_wet_at(Vector2(feet.x,feet.z),ground)
@@ -867,6 +1118,9 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 			if along.length_squared() > slope.length_squared(): slope = along
 		surfing = _surfing(crouched,ground)
 		move = "slide" if surfing else ("crouch" if crouched else "")
+		# Rolling out of a landing (the roll, a tech): his pace his own.
+		_roll_left = maxf(0.0,_roll_left-delta)
+		if _roll_left > 0.0 and not surfing: move = "roll"
 		_skid_left = SIDE_GRACE if skidding else maxf(0.0,_skid_left-delta)
 	var h := Vector2(velocity.x,velocity.z)
 	if grounded:
@@ -950,6 +1204,17 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 	elif pressed and not grounded and move != "slam" and not _from_water and sail.can_open(feet.y-ground_y,velocity.y) \
 			and _wall_near(want,h,ground,WALL_PROBE+0.8) == Vector2.ZERO:
 		h = _sail_open(h,out)
+	# The roll: falling from a height that stuns, the twirl pressed with the
+	# touch under `tech_window` s off is the roll, not the twirl; pressed
+	# earlier with the twirl spent, the button is locked out a while.
+	if twirl_pressed and not grounded and fall_stun and velocity.y < 0.0 and move != "sail" and move != "wall" and (move != "slam" or slam_stuns):
+		var under: float = ground.call(Vector2(feet.x,feet.z))
+		if is_finite(under) and _fall_top-under >= fall_stun_height() and _tech_lock <= 0.0:
+			if _time_to_ground(ground) <= tech_window:
+				_roll = tech_window+delta
+				twirl_pressed = false
+				out["roll_ready"] = true
+			elif _twirled: _tech_lock = tech_lockout
 	# The twirl: its button pressed anywhere in the air, once an airtime.
 	if twirl_pressed and not grounded and not _twirled and move != "wall" and move != "sail":
 		_twirled = true
@@ -1030,6 +1295,10 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 		var y := feet.y+(velocity.y*delta if move == "sail" else _arc(delta,jump))
 		if move != "sail": sail.track(y,delta)
 		ground_y = under
+		# The fall's top: rising, or held up (the sail, a wall, a wall run, a
+		# twirl), it starts again.
+		if velocity.y > 0.0 or move in ["sail","wall","wallrun","twirl"]: _fall_top = y
+		else: _fall_top = maxf(_fall_top,y)
 		var deep := _depth(Vector2(moved.x,moved.z))
 		if deep > swim_in and is_finite(under) and velocity.y <= 0.0 and y <= under+deep-swim_draft:
 			# Fallen into deep water: in with a splash, afloat.
@@ -1041,6 +1310,8 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 			_wet_at(Vector2(feet.x,feet.z),ground)
 			return out
 		if y <= under and velocity.y <= 0.0:
+			var came := move
+			var drop := _fall_top-under
 			out["landed"] = -velocity.y
 			if move == "slam": out["slammed"] = -velocity.y
 			if move == "wall": out["wall"] = false
@@ -1066,6 +1337,21 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 			_twirled = false
 			_wallrun = 0.0
 			_wallran = false
+			# From a fall that stuns: the roll if pressed for, else laid down.
+			var stun := fall_stun_time(drop) if came != "sail" and (came != "slam" or slam_stuns) else 0.0
+			if stun > 0.0:
+				if _roll > 0.0:
+					_roll = 0.0
+					_roll_left = roll_time
+					move = "roll"
+					out["rolled"] = drop
+					out["teched"] = "land"
+				else:
+					_lay_down(stun,"fall")
+					_stun_t = 0.0
+					out["stunned"] = "fall"
+					out["downed"] = stun
+			_fall_top = y
 		elif y < under:
 			y = under
 		feet = Vector3(moved.x,y,moved.z)
@@ -1079,11 +1365,14 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 
 ## One step knocked: through the air unsteered, stopped by what he meets,
 ## into deep water with a splash (afloat, the tumble over); landed, down a
-## while, sliding to a stop (off an edge, tumbling on), then up.
-func _tumble_step(delta: float, ground: Callable, slide: Callable, out: Dictionary) -> Dictionary:
+## while (longer from a fall that stuns), sliding to a stop (off an edge,
+## tumbling on), then up. A press armed for a surface (`_tech`) lands him in
+## the roll, or catches a lip in reach (either way he faces).
+func _tumble_step(delta: float, ground: Callable, slide: Callable, ledge: Callable, out: Dictionary) -> Dictionary:
 	var h := Vector2(velocity.x,velocity.z)
 	if grounded:
-		_down -= delta
+		# A hard hit's time down starts once he lies still.
+		if _hit_down <= 0.0 or h.length() < 0.5: _down -= delta
 		h = h.move_toward(Vector2.ZERO,TUMBLE_SKID*delta)
 		var slid: Vector3 = slide.call(feet,h*delta)
 		var low: float = ground.call(Vector2(slid.x,slid.z))
@@ -1094,19 +1383,40 @@ func _tumble_step(delta: float, ground: Callable, slide: Callable, out: Dictiona
 		if not is_finite(low) or low < feet.y-SNAP-h.length()*delta*1.5:
 			grounded = false
 			velocity.y = 0.0
+			_stun_t = 0.0
+			_fall_top = feet.y
 			feet = Vector3(slid.x,feet.y,slid.z)
 		else:
 			feet = Vector3(slid.x,low,slid.z)
 			ground_y = low
 			if _down <= 0.0:
 				move = ""
+				stunned = ""
 				_no_cut = false
 				_immune = tumble_immune
 				_since_land = 99.0
+				_hit_down = 0.0
 				out["got_up"] = true
 		velocity.x = h.x
 		velocity.z = h.y
 		return out
+	_stun_t += delta
+	if _tech > 0.0 and h.length() > 0.5:
+		var off := _wall_at(h.normalized(),ground,WALL_PROBE)
+		if off != Vector2.ZERO:
+			# The tech off a wall: a kick off it, his own again.
+			_tech = 0.0
+			stunned = ""
+			_immune = tumble_immune
+			_wall_seen = off
+			move = ""
+			_twirled = false
+			h = _kick_off(out)
+			out["teched"] = "wall"
+			velocity.x = h.x
+			velocity.z = h.y
+			_fall_top = feet.y
+			return out
 	var moved: Vector3 = slide.call(feet,h*delta)
 	var under: float = ground.call(Vector2(moved.x,moved.z))
 	if under > feet.y+STEP_UP:
@@ -1115,6 +1425,8 @@ func _tumble_step(delta: float, ground: Callable, slide: Callable, out: Dictiona
 		moved = feet
 		under = ground.call(Vector2(feet.x,feet.z))
 	var y := feet.y+_arc(delta,true)
+	if velocity.y > 0.0: _fall_top = y
+	else: _fall_top = maxf(_fall_top,y)
 	ground_y = under
 	var deep := _depth(Vector2(moved.x,moved.z))
 	if deep > swim_in and is_finite(under) and velocity.y <= 0.0 and y <= under+deep-swim_draft:
@@ -1125,8 +1437,11 @@ func _tumble_step(delta: float, ground: Callable, slide: Callable, out: Dictiona
 		velocity.y *= SWIM_ENTRY
 		_wet_at(Vector2(feet.x,feet.z),ground)
 		_immune = tumble_immune
+		stunned = ""
+		_hit_down = 0.0
 		return out
 	if y <= under and velocity.y <= 0.0:
+		var drop := _fall_top-under
 		out["landed"] = -velocity.y
 		y = under
 		grounded = true
@@ -1143,12 +1458,50 @@ func _tumble_step(delta: float, ground: Callable, slide: Callable, out: Dictiona
 		_twirled = false
 		_wallrun = 0.0
 		_wallran = false
+		_fall_top = y
+		if _tech > 0.0:
+			# The tech: landed rolling, his pace kept, on his feet.
+			_tech = 0.0
+			move = "roll"
+			stunned = ""
+			_no_cut = false
+			_roll_left = roll_time
+			_immune = tumble_immune
+			_hit_down = 0.0
+			out["teched"] = "land"
+			out["rolled"] = drop
+		else:
+			_lay_down(maxf(maxf(tumble_down,fall_stun_time(drop)),_hit_down),stunned if stunned != "" else "knock")
+			out["downed"] = _down
 	elif y < under:
 		y = under
 	feet = Vector3(moved.x,y,moved.z)
 	velocity.x = h.x
 	velocity.z = h.y
+	if not grounded and _tech > 0.0 and ledge.is_valid() and _tech_grab(ledge,ground,slide,h):
+		out["grabbed"] = "air"
+		out["teched"] = "ledge"
 	return out
+
+## The tech's catch: a lip in reach, faced as he faces or as he flies.
+func _tech_grab(ledge: Callable, ground: Callable, slide: Callable, h: Vector2) -> bool:
+	var was := facing
+	var ways: Array[float] = [facing]
+	if h.length() > 0.3: ways.append(facing_of(h))
+	for way in ways:
+		facing = way
+		var regrab := _regrab
+		_regrab = 0.0
+		var caught := _grab(ledge,ground,slide)
+		_regrab = regrab
+		if caught:
+			_tech = 0.0
+			stunned = ""
+			_no_cut = false
+			_immune = tumble_immune
+			return true
+	facing = was
+	return false
 
 ## Jump in the air: the sail out overhead, kicked up the first time this
 ## airtime, gliding on the way he goes. The run's new pace.
@@ -1182,6 +1535,10 @@ func _sail_step(delta: float, want: Vector2, h: Vector2) -> Vector2:
 ## with `hop`, the slide hop's weave in the air after it.
 func toss(push: Vector3, hop := false) -> void:
 	if swimming: return
+	if move == "tumble" and not _seized:
+		# Stunned, he is thrown as a body: still tumbling.
+		_throw_stunned(push)
+		return
 	rider = null
 	hold = ""
 	hold_t = 0.0

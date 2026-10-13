@@ -51,6 +51,21 @@ extends Node3D
 ## it on its way in to an attack (the grab about 8 s on);
 ## --dragon-target=<isle name> its first (or only) target;
 ## --dragon-attack-every=<s> (70) between attacks.
+##
+## The downwash (docs/design/dragon-downwash/round1.md): flying (here, or
+## on his wake's circuit, `wake_fly`), his wings push the air down under
+## him on each downstroke and lift it over him (`downwash`, scripts/
+## dragon_downwash.gd; the host reads it for the plane and the sail).
+## --dragon-downwash-test keeps him circling low round the home isle,
+## beating, no attacks (=glide: his own beats and glides).
+##
+## Sight (docs/design/dragon-vision/round1.md): flying, he looks for the
+## pilot (`sight`, scripts/dragon_sight.gd) when the host gives him one
+## (`sight_target`). Suspicious, his head turns to track the pilot and his
+## eyes glow brighter (a call in the kit audio); spotted, he roars. Nothing
+## else yet. A host may give him a fixed `loop` to fly (the vision greybox,
+## studies/dragon_vision_study.gd) and turn his idle roars off
+## (`idle_roars`), so a roar always means he has seen you.
 
 signal yielded
 
@@ -126,6 +141,60 @@ const RIDE_PANT := Vector2(2.5,3.5)
 ## back. --dragon-ride-repeat keeps round 5's instant swoop back.
 const RIDE_AWAY := 16.0
 const DragonGale = preload("res://scripts/dragon_gale.gd")
+const DragonDownwash = preload("res://scripts/dragon_downwash.gd")
+## The air his wings push (see the header), updated every frame.
+var downwash := DragonDownwash.new()
+const DragonSight = preload("res://scripts/dragon_sight.gd")
+## What he sees (see the header), updated every frame he flies.
+var sight := DragonSight.new()
+## The host's pilot to look for: returns {"points": PackedVector3Array,
+## "airborne": bool} (DragonSight.pilot_points), or {} for none. Unset, he
+## looks for no one.
+var sight_target := Callable()
+const DragonCyclone = preload("res://scripts/dragon_cyclone.gd")
+## His cyclone blast once he spots you (scripts/dragon_cyclone.gd, docs/
+## design/dragon-cyclone/round1.md): set `cyclone_on` before `setup` to
+## have it (the vision greybox does); the host applies its knock and air.
+var cyclone_on := false
+var cyclone: Node3D
+const DragonAirBlast = preload("res://scripts/dragon_air_blast.gd")
+## His air blast (scripts/dragon_air_blast.gd, docs/design/dragon-air-blast/
+## round1.md): a swift ball of air, his attack (the cyclone kept to
+## compare). Set `blast_on` before `setup` to have it; with both, `attack`
+## says which one he uses ("blast", the default, "cyclone" or "none":
+## `set_attack` swaps it live).
+var blast_on := false
+var air_blast: Node3D
+var attack := "blast"
+## His head tracking the pilot once suspicious: the most it turns (rad,
+## yaw either way; pitch down and up) and how fast it gets there.
+const TRACK_YAW := 1.2
+const TRACK_PITCH := Vector2(-1.0,0.5)
+## His eyes' glow while alert: the day and night emission times up to
+## ALERT_EYE at spotted (half of that over 1 suspicious); the halos shown by
+## day too at ALERT_HALO of their night strength; eased at ALERT_EASE a second.
+const ALERT_EYE := 4.0
+const ALERT_HALO := 1.4
+const ALERT_EASE := 1.5
+var _alert := 0.0
+## His idle roars (every 12 to 22 s); off, he roars only on spotting you.
+var idle_roars := true
+## A fixed loop to fly (world points, flown through in order, round and
+## round), set before `setup`; empty: his own roaming.
+var loop: Array = []
+## The snout's way in the head bone's rest frame (head to the jaw's tip).
+var _snout := Vector3.FORWARD
+var _ground_t := 0.0
+var _ground_y := -INF
+var _wake_flew := false
+## --dragon-downwash-test: a cloverleaf over the home isle, CIRCLE_UP m
+## over its top at `shadow_at`: straight over its middle, out CIRCLE_R m,
+## round and back over it the other way (at most CIRCLE_SPEED m/s), each
+## lap turned a little; beating unless "glide".
+const CIRCLE_R := 150.0
+const CIRCLE_UP := 45.0
+const CIRCLE_SPEED := 24.0
+var _circle := ""
 const StoneLampLights = preload("res://scripts/stone_lamp_lights.gd")
 ## Its night glow (night light round 1, docs/design/night-light/round1.md),
 ## eased in as the lamps are (StoneLampLights.night_for, over NIGHT_FADE s):
@@ -410,6 +479,7 @@ var tip_jerk := 0.0
 
 func _init() -> void:
 	name = "SkyDragon"
+	sight.state_changed.connect(_on_sight)
 
 func setup(cam: Camera3D, args: PackedStringArray, sea: float, middle: Vector3, top: float, isle_list: Array) -> void:
 	camera = cam
@@ -447,14 +517,28 @@ func setup(cam: Camera3D, args: PackedStringArray, sea: float, middle: Vector3, 
 		elif arg.begins_with("--dragon-orbit-up="): _orbit_up = float(arg.get_slice("=",1))
 		elif arg.begins_with("--dragon-orbit-far="): _orbit_far = float(arg.get_slice("=",1))
 		elif arg == "--dragon-watch": watch = "chase"
+		elif arg == "--dragon-downwash-test": _circle = "beat"
+		elif arg == "--dragon-downwash-test=glide": _circle = "glide"
 		elif arg.begins_with("--dragon-watch="): watch = arg.get_slice("=",1)
 	if _attack_now and not args_have(args,"--dragon-delay="): delay = 0.3
 	_attack_in = _attack_every*0.55
+	if _circle != "" or not loop.is_empty():
+		_attack_in = INF
+		if not args_have(args,"--dragon-delay="): delay = 0.5
 	_build()
 	_build_treasure()
 	gale = DragonGale.new()
 	gale.sea_y = sea_y
 	add_child(gale)
+	if cyclone_on:
+		cyclone = DragonCyclone.new()
+		add_child(cyclone)
+	if blast_on:
+		air_blast = DragonAirBlast.new()
+		add_child(air_blast)
+	# A host with only the cyclone gets it.
+	if attack == "blast" and air_blast == null and cyclone != null: attack = "cyclone"
+	set_attack(attack)
 	_start()
 	if ride and not targets.is_empty():
 		# The isle is small for its neck: its chin sweeps most of it, and
@@ -487,6 +571,11 @@ func _build() -> void:
 	_build_probes()
 	_dress(model)
 	model.visible = false
+	if _bone.has("head") and _bone.has("jaw.tip"):
+		var head_rest := skeleton.get_bone_global_rest(_bone["head"])
+		var tip := head_rest.affine_inverse()*skeleton.get_bone_global_rest(_bone["jaw.tip"]).origin
+		if tip.length() > 0.001: _snout = tip.normalized()
+	if chin != null: sight.exclude = [chin.get_rid()]
 	# The tail's rest: the hips' end to the tip, in the skeleton's frame.
 	var pts: Array = []
 	for i in range(_tail_n): pts.append(skeleton.get_bone_global_rest(_bone["tail.%d" % i]).origin)
@@ -810,9 +899,9 @@ func _place_eye_halos() -> void:
 		_eye_halos.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		_eye_halos.top_level = true
 		add_child(_eye_halos)
-	_eye_halos.visible = night > 0.001 and model.visible
+	_eye_halos.visible = (night > 0.001 or _alert > 0.001) and model.visible
 	if not _eye_halos.visible: return
-	_eye_halo_material.set_shader_parameter("glow",night*NIGHT_EYE_HALO_STRENGTH)
+	_eye_halo_material.set_shader_parameter("glow",maxf(night*NIGHT_EYE_HALO_STRENGTH,_alert*ALERT_HALO))
 	var head := skeleton.global_transform*skeleton.get_bone_global_pose(_bone["head"])
 	var across := NIGHT_EYE_HALO*size
 	for k in range(_eye_points.size()):
@@ -824,8 +913,9 @@ func _night_glow(delta: float) -> void:
 	night = move_toward(night,goal,delta/NIGHT_FADE)
 	var open := clampf(_jaw*4.0,0.0,1.0)
 	if breath == "inhale": open = maxf(open,0.8)
+	_alert = move_toward(_alert,sight.alert(),delta*ALERT_EASE)
 	for m: StandardMaterial3D in _night_materials.get("dragon_eye",[]):
-		m.emission_energy_multiplier = lerpf(NIGHT_EYE.x,NIGHT_EYE.y,night)
+		m.emission_energy_multiplier = lerpf(NIGHT_EYE.x,NIGHT_EYE.y,night)*lerpf(1.0,ALERT_EYE,_alert)
 	for m: StandardMaterial3D in _night_materials.get("dragon_glow",[]):
 		m.emission_energy_multiplier = lerpf(NIGHT_SPINES.x,NIGHT_SPINES.y,night)
 	for m: ShaderMaterial in _night_materials.get("dragon_membrane_glow",[]):
@@ -867,7 +957,30 @@ func _start() -> void:
 	leg_kind = "rise"
 	# Then straight into a low pass, so it is seen soon.
 	_add_low_pass()
-	if _pass_now:
+	if not loop.is_empty():
+		# A fixed loop (the vision greybox): already on it, level.
+		route.clear()
+		_leg_kinds.clear()
+		pos = loop[0]
+		var to: Vector3 = loop[1%loop.size()]
+		yaw = atan2(-(to.x-pos.x),-(to.z-pos.z))
+		gamma = 0.0
+		speed = 30.0
+		for i in range(1,loop.size()+1):
+			route.append(loop[i%loop.size()])
+			_leg_kinds.append("low pass")
+	elif _circle != "":
+		# --dragon-downwash-test: already on the circle, level.
+		route.clear()
+		_leg_kinds.clear()
+		var mid := _circle_mid()
+		pos = mid+Vector3(CIRCLE_R,0.0,0.0)
+		yaw = PI*0.5
+		gamma = 0.0
+		speed = CIRCLE_SPEED
+		route.append(mid)
+		_leg_kinds.append("low pass")
+	elif _pass_now:
 		# --dragon-pass: already on the low pass's way in, level.
 		route.pop_front()
 		_leg_kinds.pop_front()
@@ -1049,7 +1162,31 @@ func _add_climb_dive() -> void:
 	_leg_kinds.append("climb")
 	_leg_kinds.append("dive")
 
+## --dragon-downwash-test: the circle's middle, at its height.
+func _circle_mid() -> Vector3:
+	var aim := shadow_at if shadow_at != Vector3.INF else Vector3(home.x,home_top,home.z)
+	return Vector3(aim.x,home_top+CIRCLE_UP,aim.z)
+
+## One lap of the cloverleaf (flown through as a low pass): over the
+## middle and out one way, round, over it and out the other, round.
+func _add_circle() -> void:
+	var mid := _circle_mid()
+	var a0 := atan2(-cos(yaw),-sin(yaw))
+	for a: float in [a0,a0+0.9,INF,a0+0.9+PI,a0+1.8+PI]:
+		route.append(mid if a == INF else mid+Vector3(cos(a),0.0,sin(a))*CIRCLE_R)
+		_leg_kinds.append("low pass")
+	route.append(mid)
+	_leg_kinds.append("low pass")
+
 func _next_legs() -> void:
+	if not loop.is_empty():
+		for p: Vector3 in loop:
+			route.append(p)
+			_leg_kinds.append("low pass")
+		return
+	if _circle != "":
+		_add_circle()
+		return
 	if _attack_in <= 0.0 and not targets.is_empty():
 		_add_attack()
 		return
@@ -1108,6 +1245,7 @@ func open_eyes(open: bool) -> void:
 ## has none off its roost: `setup_roost` builds neither).
 func wake_fly(delta: float) -> void:
 	_clock += delta
+	_wake_flew = true
 	_ride_air(delta)
 	_fly(delta)
 	_pose(delta)
@@ -1127,6 +1265,10 @@ func advance(delta: float) -> void:
 	if roost != null:
 		if wake != null: wake.call("advance",delta)
 		else: roost.advance(delta)
+		_downwash(delta,_wake_flew)
+		_look_out(delta,_wake_flew)
+		_cyclone(delta,_wake_flew)
+		_wake_flew = false
 		_night_glow(delta)
 		if awake(): _watch_camera(delta)
 		return
@@ -1137,6 +1279,9 @@ func advance(delta: float) -> void:
 			_step(minf(ahead,1.0/30.0))
 			ahead -= 1.0/30.0
 	_step(minf(delta,0.1))
+	_downwash(delta,state in ["roaming","rising"] and model.visible)
+	_look_out(delta,state in ["roaming","rising"] and model.visible)
+	_cyclone(delta,state in ["roaming","rising"] and model.visible)
 	_night_glow(delta)
 	_watch_camera(delta)
 
@@ -1145,7 +1290,7 @@ func _step(delta: float) -> void:
 	_t += delta
 	if state == "waiting":
 		if _t < delay: return
-		state = "roaming" if _pass_now or _attack_now else "rising"
+		state = "roaming" if _pass_now or _attack_now or _circle != "" or not loop.is_empty() else "rising"
 		model.visible = true
 		_t = 0.0
 	if state == "roaming": _attack_in -= delta
@@ -1189,7 +1334,7 @@ func _step(delta: float) -> void:
 				sunk_after = 0.0
 				tip_speed = 0.0
 				tip_jerk = 0.0
-			else: print("sky dragon: t %.0f %s %s leg %s at (%.0f, %.0f, %.0f) %.1f m/s gamma %.2f roll %.2f flap %.2f, %.0f m from the isle's middle" % [_clock,state,mode,leg_kind,pos.x,pos.y,pos.z,speed,gamma,roll,flap_w,Vector2(pos.x-home.x,pos.z-home.z).length()])
+			else: print("sky dragon: t %.0f %s %s leg %s at (%.0f, %.0f, %.0f) %.1f m/s gamma %.2f roll %.2f flap %.2f, %.0f m from the isle's middle; downwash on the ground %.2f, gust %.2f" % [_clock,state,mode,leg_kind,pos.x,pos.y,pos.z,speed,gamma,roll,flap_w,Vector2(pos.x-home.x,pos.z-home.z).length(),downwash.reach_ground(),downwash.burst.w])
 
 func _fly(delta: float) -> void:
 	if route.is_empty(): _next_legs()
@@ -1243,6 +1388,7 @@ func _fly(delta: float) -> void:
 				_bout = true
 				_bout_left = _rng.randi_range(1,3)
 			elif _bout and speed > GLIDE_ABOVE and _bout_left <= 0: _bout = false
+	if _circle == "beat": _bout = true
 	flap_w = move_toward(flap_w,1.0 if _bout else 0.0,delta*(1.4 if _bout else 0.7))
 	# The push comes on the downstroke, so each beat surges.
 	var power := (1.4 if mode == "climb" else 1.0)*(1.8 if phase < DOWN else 0.2)
@@ -1251,6 +1397,7 @@ func _fly(delta: float) -> void:
 	# The swell's lift feeds the speed a little, as a soaring bird's does.
 	accel += _swell*0.12
 	speed = clampf(speed+accel*delta,24.0 if state == "rising" else MIN_SPEED,MAX_SPEED)
+	if _circle != "": speed = minf(speed,CIRCLE_SPEED)
 	var fwd := Vector3(-sin(yaw)*cos(gamma),sin(gamma),-cos(yaw)*cos(gamma))
 	pos += fwd*speed*delta
 	# Carried by the air: a drift down the wind (the swell is laid on in
@@ -1280,6 +1427,93 @@ func _ride_air(delta: float) -> void:
 	# Roll and pitch bumps, under-damped: a jolt, a sway, settled.
 	_bump_v += (-_bump*7.0-_bump_v*2.6)*delta
 	_bump += _bump_v*delta
+
+## The downwash's frame (scripts/dragon_downwash.gd): where he is, the beat,
+## and the turf under him (a ray every 0.2 s while flying) for its ring.
+func _downwash(delta: float, flying: bool) -> void:
+	var hz := lerpf(BEAT,BEAT_CLIMB,clampf(gamma/MAX_CLIMB,0.0,1.0))
+	var at := global_position if is_inside_tree() else pos
+	_ground_t -= delta
+	if not flying: _ground_y = -INF
+	elif _ground_t <= 0.0 and is_inside_tree():
+		_ground_t = 0.2
+		var reach := DragonDownwash.BELOW*DragonDownwash.MODEL_SPAN*size
+		_ray.from = at
+		_ray.to = at+Vector3.DOWN*reach
+		_ray.collision_mask = TURF_LAYER|SOLID_LAYER
+		var hit := get_world_3d().direct_space_state.intersect_ray(_ray)
+		_ground_y = (hit.position as Vector3).y if not hit.is_empty() else -INF
+	downwash.update(delta,flying,at,yaw,size,phase,flap_w,hz,_ground_y,is_inside_tree())
+
+## His sight's frame (scripts/dragon_sight.gd): flying with a pilot to look
+## for, from his eye along his snout; else blind (the awareness drains).
+func _look_out(delta: float, flying: bool) -> void:
+	var want: Dictionary = sight_target.call() if flying and sight_target.is_valid() and is_inside_tree() else {}
+	if want.is_empty() or (want.get("points",PackedVector3Array()) as PackedVector3Array).is_empty():
+		sight.blind(delta)
+		return
+	sight.update(delta,get_world_3d().direct_space_state,head_eye(),head_look(),want.points,bool(want.get("airborne",false)))
+
+## The attack he uses now ("blast", "cyclone" or "none"): the other's
+## wind-up dropped, its shots in the air left to finish.
+func set_attack(kind: String) -> void:
+	attack = kind
+	if cyclone != null:
+		cyclone.on = kind == "cyclone"
+		if not cyclone.on: cyclone.phase = "idle"
+	if air_blast != null:
+		air_blast.on = kind == "blast"
+		if not air_blast.on: air_blast.phase = "idle"
+
+## The attack in use (null for none).
+func attack_node() -> Node3D:
+	if attack == "blast": return air_blast
+	if attack == "cyclone": return cyclone
+	return null
+
+## His cyclone (scripts/dragon_cyclone.gd) or air blast (scripts/
+## dragon_air_blast.gd): spotted (and his roar far enough on, each's
+## AFTER_ROAR s in) he winds up, drawing air into his mouth from the
+## pilot's way (the gale's inhale), and fires at the pilot as he sees him.
+func _cyclone(delta: float, flying: bool) -> void:
+	var space: PhysicsDirectSpaceState3D = get_world_3d().direct_space_state if is_inside_tree() and (cyclone != null or air_blast != null) else null
+	var mouth := mouth_at() if cyclone != null or air_blast != null else Vector3.ZERO
+	var aim := sight.target()
+	var seen := flying and sight.state == "spotted"
+	if cyclone != null:
+		cyclone.span = DragonDownwash.MODEL_SPAN*size
+		cyclone.advance(delta,space,seen and (_roar_t < 0.0 or _roar_t >= DragonCyclone.AFTER_ROAR),mouth,aim)
+	if air_blast != null:
+		air_blast.span = DragonDownwash.MODEL_SPAN*size
+		air_blast.advance(delta,space,seen and (_roar_t < 0.0 or _roar_t >= DragonAirBlast.AFTER_ROAR),mouth,aim)
+	var on := attack_node()
+	if on == null: return
+	# The wind-up cuts the spotting roar's close short.
+	if on.phase == "windup" and _roar_t >= 0.0 and _hold_pose != "roar": _roar_t = -1.0
+	if on.phase == "windup" and aim != Vector3.INF:
+		var way := Vector3(aim.x-mouth.x,0.0,aim.z-mouth.z)
+		if way.length() > 0.1: gale.inhale(mouth,way.normalized(),delta*(2.0 if on == air_blast else 1.0))
+
+## His eye (world): between his eyes on the head bone as posed (the head's
+## middle without them).
+func head_eye() -> Vector3:
+	var head := skeleton.global_transform*skeleton.get_bone_global_pose(_bone["head"])
+	var points: Array[Vector3] = _eye_points if not _eye_points.is_empty() else _open_eyes
+	if points.is_empty(): return head.origin
+	var m := Vector3.ZERO
+	for p in points: m += head*p
+	return m/float(points.size())
+
+## Where his head points (world, unit): the head bone's snout as posed.
+func head_look() -> Vector3:
+	var head := skeleton.global_transform*skeleton.get_bone_global_pose(_bone["head"])
+	return (head.basis*_snout).normalized()
+
+## Each change of his sight's state: spotted, he roars (its call in the kit
+## audio, scripts/kit_isle/kit_audio_beasts.gd, as every roar's).
+func _on_sight(now: String, was: String) -> void:
+	print("sky dragon: sight %s -> %s (awareness %.2f, visibility %.2f, %.0f m)" % [was,now,sight.awareness,sight.visibility,sight.distance])
+	if now == "spotted" and _roar_t < 0.0: _roar_t = 0.0
 
 ## Held in place for a pose check.
 func _held(delta: float) -> void:
@@ -1379,14 +1613,23 @@ func _pose(delta: float) -> void:
 	_lead_v += ((want_lead-_lead)*6.0-_lead_v*3.2)*delta
 	_lead += _lead_v*delta
 	var look_goal := Vector2.ZERO
-	if camera != null and watch != "chase":
+	var track := sight.target() if sight.state != "unaware" else Vector3.INF
+	if track != Vector3.INF:
+		# Suspicious or spotted: the head turns to the pilot, wider than
+		# to the camera, and fully.
+		var off := global_transform.affine_inverse()*track
+		look_goal = Vector2(clampf(atan2(-off.x,-off.z),-TRACK_YAW,TRACK_YAW),clampf(atan2(off.y,Vector2(off.x,off.z).length()),TRACK_PITCH.x,TRACK_PITCH.y))
+	elif camera != null and watch != "chase":
 		var eye := camera.global_position
 		var off := global_transform.affine_inverse()*eye
 		var d := off.length()
 		if d < 260.0 and off.z < 20.0:
 			var w := 1.0-smoothstep(150.0,260.0,d)
 			look_goal = Vector2(clampf(atan2(-off.x,-off.z),-0.8,0.8),clampf(atan2(off.y,Vector2(off.x,off.z).length()),-0.6,0.35))*w
-	_look_v += ((look_goal-_look)*3.0-_look_v*2.6)*delta
+	# The air blast's wind-up: the head snaps onto the pilot.
+	var snap := air_blast != null and air_blast == attack_node() and str(air_blast.phase) == "windup"
+	if snap: _look_v += ((look_goal-_look)*60.0-_look_v*14.0)*delta
+	else: _look_v += ((look_goal-_look)*3.0-_look_v*2.6)*delta
 	_look += _look_v*delta
 	var head_yaw := _lead+_look.x
 	var level := -pitch*0.7+_look.y
@@ -1415,12 +1658,25 @@ func _mouth(delta: float) -> void:
 	if state == "clinging" and _jaw_goal >= 0.0:
 		# On the rim the breath sets the jaw (no chews, no roars).
 		goal = _jaw_goal
-	elif _roar_t < 0.0 and _hold_pose != "roar":
+	elif _roar_t < 0.0 and _hold_pose != "roar" and idle_roars:
 		_roar_next -= delta
 		if _roar_next <= 0.0:
 			_roar_t = 0.0
 			_roar_next = _rng.randf_range(12.0,22.0)
-	if _roar_t >= 0.0:
+	var hit_with := attack_node()
+	var drawn: float = hit_with.windup_share() if hit_with != null else -1.0
+	var shot: float = float(hit_with.since_shot) if hit_with != null else INF
+	if _roar_t < 0.0 and drawn >= 0.0:
+		# The cyclone's wind-up: the jaw a little open, the head drawn
+		# back, drawing in more and more.
+		goal = lerpf(0.12,0.3,drawn)+0.02*sin(_clock*23.0)
+		rear_goal = 0.7*smoothstep(0.0,0.5,drawn)
+	elif _roar_t < 0.0 and shot < 0.7:
+		# Fired: the jaw flung wide, the head thrust forward, eased back.
+		var u := shot/0.7
+		goal = lerpf(0.6,0.05,u*u)
+		rear_goal = lerpf(-0.6,0.0,u)
+	elif _roar_t >= 0.0:
 		_roar_t += delta
 		var t := _roar_t
 		if t < 0.45:
@@ -2684,7 +2940,7 @@ func _blow_on_pilot(delta: float, mouth: Vector3) -> void:
 	var away := flat/hard
 	var dist := Vector2(mid.x-mouth.x,mid.z-mouth.z).length()
 	if hard >= KNOCK_AIR and float(gale.gust_env) > 0.3 and not _knocked:
-		walker.knock(walker.knock_velocity(away,lerpf(KNOCK_OUT.x,KNOCK_OUT.y,clampf(dist/REACH,0.0,1.0))*clampf(hard/20.0,0.75,1.2),KNOCK_UP))
+		walker.knock(walker.knock_velocity(away,lerpf(KNOCK_OUT.x,KNOCK_OUT.y,clampf(dist/REACH,0.0,1.0))*clampf(hard/20.0,0.75,1.2),KNOCK_UP),self)
 		_knocked = true
 		knocks += 1
 		print("sky dragon: a ground gust knocks the pilot, %.1f m from the mouth, air %.1f m/s" % [dist,hard])
@@ -2722,7 +2978,7 @@ func _ride_isle(delta: float) -> void:
 	if gale.phase != "snap" or v.y < 3.0 or accel > -float(walker.get("gravity")): return
 	var up := minf(v.y*LAUNCH_GAIN,LAUNCH_MOST)
 	var inward := -(grip.out as Vector3)*up*LAUNCH_IN if not grip.is_empty() else Vector3.ZERO
-	walker.knock(Vector3(v.x+inward.x,up,v.z+inward.z))
+	walker.knock(Vector3(v.x+inward.x,up,v.z+inward.z),self)
 	_ride_vy = 0.0
 	launched += 1
 	var rim_at: Vector3 = grip.rim if not grip.is_empty() else feet
