@@ -170,6 +170,14 @@ var spine := DragonSpine.new()
 ## have it (the vision greybox does); the host applies its knock and air.
 var cyclone_on := false
 var cyclone: Node3D
+const DragonAirBlast = preload("res://scripts/dragon_air_blast.gd")
+## His air blast (scripts/dragon_air_blast.gd, docs/design/dragon-air-blast/
+## round1.md): a swift ball of air in place of the cyclone. Set `blast_on`
+## before `setup` to have it; with both, `attack` says which one he uses
+## ("blast", "cyclone" or "none": `set_attack` swaps it live).
+var blast_on := false
+var air_blast: Node3D
+var attack := "cyclone"
 ## His head tracking the pilot once suspicious: the most it turns (rad,
 ## yaw either way; pitch down and up) and how fast it gets there.
 const TRACK_YAW := 1.2
@@ -537,6 +545,10 @@ func setup(cam: Camera3D, args: PackedStringArray, sea: float, middle: Vector3, 
 	if cyclone_on:
 		cyclone = DragonCyclone.new()
 		add_child(cyclone)
+	if blast_on:
+		air_blast = DragonAirBlast.new()
+		add_child(air_blast)
+	set_attack(attack)
 	_start()
 	if ride and not targets.is_empty():
 		# The isle is small for its neck: its chin sweeps most of it, and
@@ -1452,22 +1464,45 @@ func _look_out(delta: float, flying: bool) -> void:
 		return
 	sight.update(delta,get_world_3d().direct_space_state,head_eye(),head_look(),want.points,bool(want.get("airborne",false)))
 
-## His cyclone (scripts/dragon_cyclone.gd): spotted (and his roar past its
-## peak, AFTER_ROAR s in) he
-## winds up, drawing air into his mouth from the pilot's way (the gale's
-## inhale), and fires at the pilot's middle as he sees it then.
+## The attack he uses now ("blast", "cyclone" or "none"): the other's
+## wind-up dropped, its shots in the air left to finish.
+func set_attack(kind: String) -> void:
+	attack = kind
+	if cyclone != null:
+		cyclone.on = kind == "cyclone"
+		if not cyclone.on: cyclone.phase = "idle"
+	if air_blast != null:
+		air_blast.on = kind == "blast"
+		if not air_blast.on: air_blast.phase = "idle"
+
+## The attack in use (null for none).
+func attack_node() -> Node3D:
+	if attack == "blast": return air_blast
+	if attack == "cyclone": return cyclone
+	return null
+
+## His cyclone (scripts/dragon_cyclone.gd) or air blast (scripts/
+## dragon_air_blast.gd): spotted (and his roar far enough on, each's
+## AFTER_ROAR s in) he winds up, drawing air into his mouth from the
+## pilot's way (the gale's inhale), and fires at the pilot as he sees him.
 func _cyclone(delta: float, flying: bool) -> void:
-	if cyclone == null: return
-	cyclone.span = DragonDownwash.MODEL_SPAN*size
-	var spotted := flying and sight.state == "spotted" and (_roar_t < 0.0 or _roar_t >= DragonCyclone.AFTER_ROAR)
-	var mouth := mouth_at()
+	var space: PhysicsDirectSpaceState3D = get_world_3d().direct_space_state if is_inside_tree() and (cyclone != null or air_blast != null) else null
+	var mouth := mouth_at() if cyclone != null or air_blast != null else Vector3.ZERO
 	var aim := sight.target()
-	cyclone.advance(delta,get_world_3d().direct_space_state if is_inside_tree() else null,spotted,mouth,aim)
+	var seen := flying and sight.state == "spotted"
+	if cyclone != null:
+		cyclone.span = DragonDownwash.MODEL_SPAN*size
+		cyclone.advance(delta,space,seen and (_roar_t < 0.0 or _roar_t >= DragonCyclone.AFTER_ROAR),mouth,aim)
+	if air_blast != null:
+		air_blast.span = DragonDownwash.MODEL_SPAN*size
+		air_blast.advance(delta,space,seen and (_roar_t < 0.0 or _roar_t >= DragonAirBlast.AFTER_ROAR),mouth,aim)
+	var on := attack_node()
+	if on == null: return
 	# The wind-up cuts the spotting roar's close short.
-	if cyclone.phase == "windup" and _roar_t >= 0.0 and _hold_pose != "roar": _roar_t = -1.0
-	if cyclone.phase == "windup" and aim != Vector3.INF:
+	if on.phase == "windup" and _roar_t >= 0.0 and _hold_pose != "roar": _roar_t = -1.0
+	if on.phase == "windup" and aim != Vector3.INF:
 		var way := Vector3(aim.x-mouth.x,0.0,aim.z-mouth.z)
-		if way.length() > 0.1: gale.inhale(mouth,way.normalized(),delta)
+		if way.length() > 0.1: gale.inhale(mouth,way.normalized(),delta*(2.0 if on == air_blast else 1.0))
 
 ## His eye (world): between his eyes on the head bone as posed (the head's
 ## middle without them).
@@ -1610,7 +1645,10 @@ func _pose(delta: float) -> void:
 		if d < 260.0 and off.z < 20.0:
 			var w := 1.0-smoothstep(150.0,260.0,d)
 			look_goal = Vector2(clampf(atan2(-off.x,-off.z),-0.8,0.8),clampf(atan2(off.y,Vector2(off.x,off.z).length()),-0.6,0.35))*w
-	_look_v += ((look_goal-_look)*3.0-_look_v*2.6)*delta
+	# The air blast's wind-up: the head snaps onto the pilot.
+	var snap := air_blast != null and air_blast == attack_node() and str(air_blast.phase) == "windup"
+	if snap: _look_v += ((look_goal-_look)*60.0-_look_v*14.0)*delta
+	else: _look_v += ((look_goal-_look)*3.0-_look_v*2.6)*delta
 	_look += _look_v*delta
 	var head_yaw := _lead+_look.x
 	# The head held level against the flight's pitch (less climbing, as the
@@ -1650,8 +1688,9 @@ func _mouth(delta: float) -> void:
 		if _roar_next <= 0.0:
 			_roar_t = 0.0
 			_roar_next = _rng.randf_range(12.0,22.0)
-	var drawn: float = cyclone.windup_share() if cyclone != null else -1.0
-	var shot: float = float(cyclone.since_shot) if cyclone != null else INF
+	var hit_with := attack_node()
+	var drawn: float = hit_with.windup_share() if hit_with != null else -1.0
+	var shot: float = float(hit_with.since_shot) if hit_with != null else INF
 	if _roar_t < 0.0 and drawn >= 0.0:
 		# The cyclone's wind-up: the jaw a little open, the head drawn
 		# back, drawing in more and more.
