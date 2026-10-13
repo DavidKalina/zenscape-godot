@@ -6,14 +6,16 @@ extends Node3D
 ## (scripts/dragon_air_blast.gd: its wind-up shimmer and inhale at the
 ## perch as the tell, the ball, its lead, bursting on him or on a floor,
 ## popping on stone met side on, the shock hidden by stone between), here
-## a slower, gently homing ball and a lighter knock.
+## a slower, gently homing ball led on his flat pace only (aimed at his
+## height now: a pump's rise and fall aren't led), and a lighter knock.
 ##
 ## Each launcher fires while the pilot is in its zone (a Callable of his
 ## feet in the crossing's frame) and within RANGE m. A hit:
-##   - in the air (a jump, a pump): a hard hit, thrown AIR_OUT walker
+##   - in the air or mid-pump (a jump, a pump, a landing he may pump off:
+##     on the ground under the motor's `chain_window`): a hard hit, thrown AIR_OUT walker
 ##     heights out from the burst (PilotMotor `knock_velocity`), stunned
 ##     the throw and laid down STUN_DOWN s: off the piers to the floor;
-##   - on his feet: a shove (PilotMotor `toss`), PUSH m/s out and PUSH_UP
+##   - standing (on the ground longer than that): a shove (PilotMotor `toss`), PUSH m/s out and PUSH_UP
 ##     up, his control kept: a stagger he can save by steering back.
 ## The host steps it each frame (`step`) after the pilot's motor; `on`
 ## false stops the tells and shots (flights in the air fly on and burst).
@@ -30,6 +32,13 @@ const COOLDOWN := 2.0
 ## The most it turns toward him a second (radians): it bends after a
 ## sidestep, but a late one (or a twirl) still beats it.
 const HOMING := 0.8
+## The share of his flat travel led at the shot (the pier field rises
+## ahead of him: a full lead aims into the next pier's face).
+const LEAD := 0.0
+## Aimed (and homed) this far over his middle (walker heights): a ball
+## skimming the next pier's edge on its way to him pops; aimed a little
+## high it clears it and still bursts on him (its fuse reaches down).
+const AIM_UP := 0.5
 ## How near (m) the perch winds up at him, and how far a ball flies.
 const RANGE := 55.0
 const FLY := 90.0
@@ -55,6 +64,8 @@ var look := true
 ## "pushed"), at (the pilot's feet), launcher (its index), t (s)}.
 var hits: Array = []
 var _clock := 0.0
+## Seconds he has been on the ground (0 in the air).
+var _footed := 0.0
 var launchers: Array[Launcher] = []
 
 ## One launch point: its blast, where its ball leaves (`mouth`, world),
@@ -87,6 +98,8 @@ func add_launcher(at: Vector3, zone: Callable) -> Launcher:
 	b.knock_out = AIR_OUT
 	b.knock_up = AIR_UP
 	b.fuse = FUSE
+	b.lead_flat = true
+	b.lead_share = LEAD
 	b.span = TRAIL/0.12
 	l.air_blast = b
 	l.add_child(b)
@@ -106,18 +119,19 @@ func step(delta: float, motor: Object, space: PhysicsDirectSpaceState3D) -> Stri
 	var host := get_parent() as Node3D
 	var feet: Vector3 = motor.feet
 	var local := host.to_local(feet) if host != null else feet
-	var chest := feet+Vector3.UP*0.55*DragonAirBlast.walker_tall()
+	var aim := feet+Vector3.UP*(0.55+AIM_UP)*DragonAirBlast.walker_tall()
 	var out := ""
+	_footed = _footed+delta if motor.grounded else 0.0
+	var standing: bool = motor.grounded and _footed > float(motor.chain_window)
 	for i in range(launchers.size()):
 		var l := launchers[i]
 		var b := l.air_blast
 		b.on = on
 		var seen := bool(l.zone.call(local))
-		b.advance(delta,space,seen,l.mouth_at(),chest)
-		var grounded: bool = motor.grounded
+		b.advance(delta,space,seen,l.mouth_at(),aim)
 		var v: Vector3 = b.pilot_knock(feet,motor)
 		if v == Vector3.ZERO: continue
-		if grounded:
+		if standing:
 			var flat := Vector2(v.x,v.z).normalized()
 			motor.toss(Vector3(flat.x*PUSH,PUSH_UP,flat.y*PUSH))
 			out = "pushed"
@@ -125,7 +139,7 @@ func step(delta: float, motor: Object, space: PhysicsDirectSpaceState3D) -> Stri
 			motor.knock(v,b,STUN_DOWN)
 			out = "thrown"
 		hits.append({"kind":out,"at":feet,"launcher":i,"t":_clock})
-		print("gust arrows: %s (launcher %d, %s)" % [out,i,"on his feet" if grounded else "in the air"])
+		print("gust arrows: %s (launcher %d, %s)" % [out,i,"standing" if standing else ("mid-pump, on the touch" if motor.grounded else "in the air")])
 	return out
 
 ## The launchers, each read by the isle's sound as a dragon's air blast

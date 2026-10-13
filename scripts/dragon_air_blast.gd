@@ -136,6 +136,11 @@ var homing := 0.0
 ## The fuse (walker heights): a ball passing this near the pilot bursts on
 ## him (FUSE, the dragon's).
 var fuse := FUSE
+## The share of his travel led (LEAD, the dragon's), and whether only his
+## flat velocity is (a jumper's rise and fall not led; false, the
+## dragon's, leads it all).
+var lead_share := LEAD
+var lead_flat := false
 var _target := Vector3.INF
 ## His span (m), set by the dragon each frame (the trail's length).
 var span := DragonDownwash.MODEL_SPAN*1.5
@@ -227,7 +232,7 @@ func advance(delta: float, space: PhysicsDirectSpaceState3D, spotted: bool, mout
 			windup_t += delta
 			if windup_t >= windup:
 				phase = "idle"
-				fire(mouth,lead(mouth,aim,aim_vel,speed))
+				fire(mouth,lead(mouth,aim,Vector3(aim_vel.x,0.0,aim_vel.z) if lead_flat else aim_vel,speed,lead_share))
 	elif can and cooldown_left <= 0.0:
 		phase = "windup"
 		windup_t = 0.0
@@ -262,13 +267,13 @@ func _read_velocity(delta: float, aim: Vector3) -> void:
 	_last_aim = aim
 
 ## Where to shoot from `from` at a pilot at `aim` moving `vel` (m/s): where
-## he will be when a ball at `pace` (SPEED) gets there, LEAD of his travel
-## led.
-static func lead(from: Vector3, aim: Vector3, vel: Vector3, pace := SPEED) -> Vector3:
+## he will be when a ball at `pace` (SPEED) gets there, `share` (LEAD) of
+## his travel led.
+static func lead(from: Vector3, aim: Vector3, vel: Vector3, pace := SPEED, share := LEAD) -> Vector3:
 	var v := vel.limit_length(LEAD_MOST)
 	var t := from.distance_to(aim)/pace
-	for i in range(3): t = from.distance_to(aim+v*t*LEAD)/pace
-	return aim+v*t*LEAD
+	for i in range(3): t = from.distance_to(aim+v*t*share)/pace
+	return aim+v*t*share
 
 ## A ball from `from` toward `aim`, on along that line.
 func fire(from: Vector3, aim: Vector3) -> void:

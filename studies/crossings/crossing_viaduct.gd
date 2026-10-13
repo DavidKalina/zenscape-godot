@@ -35,9 +35,9 @@ extends "res://studies/crossings/crossing.gd"
 ## run gains at most about a metre; see the doc).
 ## The hazard (docs/design/roguelike/crossing-viaduct-arrows.md): gust
 ## arrows (studies/crossings/gust_arrows.gd) from a perch off the pier
-## field's left, ahead and low (`archer_at`): the lower piers ahead stand
-## between it and a pilot standing on the first piers, and the plinth
-## covers the last; mid-pump he is in the open.
+## field's left, low (`archer_at`): the piers are in the open to it, and
+## they stand between it and the safe stair on their right, so the slow
+## line is the covered one.
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 const Aqueduct = preload("res://scripts/ruin_kit_aqueduct.gd")
 const RuinKitTower = preload("res://scripts/ruin_kit_tower.gd")
@@ -102,16 +102,17 @@ const STAND_SHAFT := Vector2(0.99,1.3)
 const STAND_DOOR := Vector2(1.3,2.6)
 const STAND_LOW := 1.0
 
-## The gust arrows' perch: past the plinth's near edge along the piers
-## (m), out to their left (m), up over the turn platform (m); the perch's
-## stone stops under the ball's mouth by ARCHER_CLEAR (m). The zone it
-## fires on: the piers' line from the turn platform's edge to the plinth,
-## ARCHER_ZONE across (m), from the turn platform's top up.
-const ARCHER_PAST := 5.5
-const ARCHER_ASIDE := 14.0
-const ARCHER_UP := 1.5
+## The gust arrows' perch: along the piers from the turn platform's
+## middle (m), out to their left (m), up over the turn platform (m); the
+## perch's stone stops under the ball's mouth by ARCHER_CLEAR (m). The
+## zone it fires on: the piers' line from the turn platform's edge to the
+## plinth, ARCHER_ZONE.x to their left and the safe stair's line plus
+## ARCHER_ZONE.y to their right (m), from the turn platform's top up.
+const ARCHER_ALONG := 26.0
+const ARCHER_ASIDE := 18.0
+const ARCHER_UP := 0.0
 const ARCHER_CLEAR := 1.2
-const ARCHER_ZONE := Vector2(3.0,2.6)
+const ARCHER_ZONE := Vector2(3.0,2.0)
 
 var m: PilotMotor
 ## Worked out by `lay_out` (local).
@@ -381,16 +382,17 @@ func _arrows(low: float) -> void:
 
 ## The perch's ball mouth (local).
 func archer_at() -> Vector3:
-	return at(turn_mid,TURN_B,plinth_near+ARCHER_PAST,-ARCHER_ASIDE,ARCHER_UP)
+	return at(turn_mid,TURN_B,ARCHER_ALONG,-ARCHER_ASIDE,ARCHER_UP)
 
-## Whether `feet` (local) are over the pier field (the turn platform's
-## edge to the plinth, ARCHER_ZONE across, not down on the floor).
+## Whether `feet` (local) are over the pier field or on the safe stair
+## beside it (the turn platform's edge to the plinth, not down on the
+## floor).
 func on_pier_field(feet: Vector3) -> bool:
 	var w := way(TURN_B)
 	var d := Vector2(feet.x-turn_mid.x,feet.z-turn_mid.z)
 	var along := d.dot(w)
 	var aside := d.dot(right_of(w))
-	return along > TURN_PAD.y*0.5-0.5 and along < plinth_near and aside > -ARCHER_ZONE.x and aside < ARCHER_ZONE.y and feet.y > turn_mid.y-1.0
+	return along > TURN_PAD.y*0.5-0.5 and along < plinth_near and aside > -ARCHER_ZONE.x and aside < SAFE_ASIDE+ARCHER_ZONE.y and feet.y > turn_mid.y-1.0
 
 func has_hazards() -> bool:
 	return arrows != null
