@@ -95,6 +95,10 @@ var _low := 0.0
 var _ray := PhysicsRayQueryParameters3D.new()
 var _blast_way := Vector3.FORWARD
 var _turned := 0.0
+## Set by its headless body (scripts/enemies/headless_body.gd) as they meet:
+## the head is carried to its neck (`head_seat()`, `head_facing()`), its
+## drift and its breath stopped, its eyes lit.
+var perch: Node3D = null
 
 func _init() -> void:
 	cost = 4
@@ -167,6 +171,9 @@ func ground_at(p: Vector3) -> float:
 func think(delta: float) -> void:
 	_clock += delta
 	state_t += delta
+	if perch != null:
+		_perched(delta)
+		return
 	var m: PilotMotor = field.motor
 	var chest := _chest(m)
 	var sees := _sees(m,chest)
@@ -235,6 +242,19 @@ func think(delta: float) -> void:
 	air.draw(draw_share,delta)
 	_pull(m,chest,delta)
 
+## Carried by its body: the jaw shut, no draw, the eyes lit.
+func _perched(delta: float) -> void:
+	state = "perched"
+	vel = Vector3.ZERO
+	_shake = 0.0
+	_open = move_toward(_open,0.0,1.6*delta)
+	_glow = move_toward(_glow,1.0,1.0*delta)
+	look.open(_open)
+	look.glow(_glow)
+	draw_share = 0.0
+	pulling = 0.0
+	air.draw(0.0,delta)
+
 func _go(to: String) -> void:
 	state = to
 	state_t = 0.0
@@ -288,6 +308,13 @@ func _aim_off(p: Vector3) -> float:
 	return angle_difference(facing,PilotMotor.facing_of(to.normalized()))
 
 func _move(delta: float) -> void:
+	if perch != null:
+		position = perch.head_seat()
+		facing = perch.head_facing()
+		rotation.y = facing
+		skin.rotation = perch.head_tilt()
+		skin.position = Vector3.ZERO
+		return
 	position.x += vel.x*delta
 	position.z += vel.z*delta
 	var g := ground_at(position)
