@@ -34,6 +34,14 @@ const SkyCurrents = preload("res://scripts/sky_currents.gd")
 ## the tumble (PilotMotor `knock_sail`): the blow's first jolt is his to
 ## take, then the sail is his.
 const KNOCK_SAIL := 0.35
+## The updrafts' look, bolder than the sky's thermals (SkyCurrents' ribbon
+## shader): how many times each column's ribbons are drawn (a second,
+## look-only SkyCurrents: the air reads the one), and the ribbons'
+## opacity, width and glow, so a falling player can see one to steer for.
+const UPDRAFT_DRAWS := 4
+const UPDRAFT_OPACITY := 0.75
+const UPDRAFT_WIDTH := 2.2
+const UPDRAFT_GLOW := 2.4
 ## The fade back from a fall to his death (s).
 const FALL_FADE := 0.8
 
@@ -54,6 +62,7 @@ var hazards_on := true
 var _voice_beds: Array = []
 ## The crossing's updrafts (thermals the sail climbs, drawn as the sky's).
 var currents: SkyCurrents
+var _updraft_look: SkyCurrents
 ## Fallen past the void's floor (world y): lost. Falls so far.
 var kill_y := -INF
 var falls := 0
@@ -129,17 +138,28 @@ func _build_art() -> void:
 ## The crossing's updrafts as the sky's thermals (SkyCurrents `add_thermal`,
 ## its ribbons spiralling up each column), in the world's frame.
 func _build_updrafts() -> void:
-	if currents != null:
-		currents.queue_free()
-		currents = null
+	for old: SkyCurrents in [currents,_updraft_look]:
+		if old != null: old.queue_free()
+	currents = null
+	_updraft_look = null
 	var drafts: Array = crossing.updrafts()
 	if drafts.is_empty(): return
 	currents = SkyCurrents.new()
 	currents.name = "Updrafts"
 	add_child(currents)
+	_updraft_look = SkyCurrents.new()
+	_updraft_look.name = "UpdraftLook"
+	add_child(_updraft_look)
 	for d: Dictionary in drafts:
 		var base: Vector3 = crossing.position+(d.base as Vector3)
-		currents.add_thermal(base,"crossing",crossing.position.y+float(d.top),float(d.radius))
+		var top: float = crossing.position.y+float(d.top)
+		currents.add_thermal(base,"crossing",top,float(d.radius))
+		for k in range(UPDRAFT_DRAWS-1): _updraft_look.add_thermal(base,"crossing",top,float(d.radius))
+	for drawn: SkyCurrents in [currents,_updraft_look]:
+		var look := drawn.wisp_material()
+		look.set_shader_parameter("opacity",UPDRAFT_OPACITY)
+		look.set_shader_parameter("width_scale",UPDRAFT_WIDTH)
+		look.set_shader_parameter("glow",UPDRAFT_GLOW)
 
 ## Only the cloud sea's own towers in the sky, no grass, no life, no plane.
 func sky_script() -> Script:

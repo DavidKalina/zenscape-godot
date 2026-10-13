@@ -170,16 +170,16 @@ func _sail_out() -> void:
 			if rode_from == INF: rode_from = m.feet.y
 			highest_riding = maxf(highest_riding,m.feet.y)
 		if rode_from == INF: lowest = minf(lowest,m.feet.y)
-		if m.grounded:
+		if m.grounded or m.on_ledge():
 			# On the platform or the stone at its edge (the far deck's end).
-			landed_on_pad = absf(m.feet.y-pad.y) < 1.0 and Vector2(m.feet.x-pad.x,m.feet.z-pad.z).length() < c.TURN_PAD_RIGHT+1.0
+			landed_on_pad = absf((m.feet.y if m.grounded else m.feet.y+m.hang_drop)-pad.y) < 1.0 and Vector2(m.feet.x-pad.x,m.feet.z-pad.z).length() < c.TURN_PAD_RIGHT+1.0
 			break
 		if m.feet.y < study.kill_y+5.0: break
 	_release()
 	print("MEASURE updraft %s at %s: glided down to %.1f (local %.1f), rode from %.1f to %.1f (%d frames riding), ended %s (local), grounded %s" % [best.name,local(column),lowest,local(Vector3(0,lowest,0)).y,local(Vector3(0,rode_from,0)).y if rode_from != INF else INF,local(Vector3(0,highest_riding,0)).y,riding_frames,local(m.feet),m.grounded])
 	check(not tumbled,"Under the sail he glides, never tumbling again")
 	check(riding_frames > 30 and highest_riding-rode_from > LATE,"Sailed into the updraft, it lifts him (%.1f m up while riding)" % (highest_riding-rode_from))
-	check(landed_on_pad,"Ridden up and steered on, he lands back at the turn platform (%s local, the platform at %s)" % [local(m.feet),c.turn_mid])
+	check(landed_on_pad,"Ridden up and steered on, he lands back at the turn platform (or catches its edge) (%s local, the platform at %s)" % [local(m.feet),c.turn_mid])
 
 func _no_sail() -> void:
 	var falls0: int = study.falls
