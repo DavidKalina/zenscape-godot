@@ -234,6 +234,7 @@ func runes_left() -> int:
 func before(delta: float) -> void:
 	if inner != null: inner.before(delta)
 	traps.before(delta)
+	if heads != null: heads.before(delta)
 	enemies.before(delta)
 	cannons.before(delta)
 	if hazards != null: hazards.before(delta)
@@ -256,6 +257,7 @@ func pose(figure: Node3D) -> void:
 func frame(camera: Camera3D, delta: float) -> void:
 	if inner != null and inner.has_method("frame"): inner.frame(camera,delta)
 	cannons.frame(camera,delta)
+	if heads != null: heads.frame(camera,delta)
 
 func reset() -> void:
 	traps.reset()

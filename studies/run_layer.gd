@@ -33,6 +33,9 @@ extends "res://studies/aqueduct_isle.gd"
 ##     layer_hazards.gd)
 ##     [--knob=heads=<n>]  (the inhaler heads, sprawl and ring: scripts/
 ##     roguelike/layer_enemies.gd; 0 none)
+##     [--knob=bodies=<0|1>]  (each head's headless body coming up a cliff
+##     near the walker: scripts/roguelike/layer_bodies.gd, scripts/enemies/
+##     body_spawner.gd; 0 none)
 ## Without --seed= a seed is drawn. The isle's own flags still work; the
 ## hall chain and the lodestone are left out, and the aqueduct isle's own
 ## dragon's roost. Under the sprawl a layer has its own roost

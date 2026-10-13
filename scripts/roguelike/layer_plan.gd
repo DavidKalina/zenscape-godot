@@ -250,10 +250,11 @@ static func make(seed_value: int, knobs := {}) -> Dictionary:
 ## onto an isle standing that much over its lowest, by a `climb` edge).
 ## `arrows` / `viaduct`: the sprawl's hazards (scripts/roguelike/
 ## layer_hazards.gd), -1 rolled; `heads` the inhaler heads (scripts/
-## roguelike/layer_enemies.gd), -1 rolled.
+## roguelike/layer_enemies.gd), -1 rolled; `bodies` (1 or 0) their headless
+## bodies coming up the isles' cliffs (scripts/roguelike/layer_bodies.gd).
 ## `alternate` (0 or 1) and `ring` (isles round it, 0 rolls) are the run's
 ## and the ring shape's (scripts/roguelike/layer_shapes.gd, layer_ring.gd).
-const KNOBS := {"hoods":0,"gulf":0.0,"ride":"","rise":0.0,"arrows":-1,"viaduct":-1,"heads":-1,"alternate":1,"ring":0}
+const KNOBS := {"hoods":0,"gulf":0.0,"ride":"","rise":0.0,"arrows":-1,"viaduct":-1,"heads":-1,"bodies":1,"alternate":1,"ring":0}
 const KNOB_CHOICES := {"hoods":[0,1,2,3],"ride":["","serpent","ferry"]}
 
 ## `--knob=key=value` arguments as the layer's knobs (unknown keys warned).

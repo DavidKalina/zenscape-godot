@@ -65,6 +65,9 @@ const Look = preload("res://scripts/enemies/headless_body_look.gd")
 
 ## The head it looks for (found among the field's enemies: the one with a mouth).
 var head: Node3D = null
+## Where its own head was set down (InhalerHead `home()`), where a field
+## holds several heads (scripts/enemies/body_spawner.gd); INF any head.
+var head_home := Vector3.INF
 ## Reunited: the head on its neck.
 var whole := false
 ## Counted, for the HUD and checks.
@@ -157,6 +160,17 @@ func default_knobs(n: Dictionary) -> Dictionary:
 		# the beat of triumph once whole (s; it was straight to listening).
 		"stride":Look.WALK_STEP,"stride_home":Look.STRIDE_STEP,"triumph":1.8,
 	}
+
+## Its build (m) from its knobs `k` and the walker's `unit`, as `_size` and
+## `cling` make it, for those that plan round it without one (scripts/
+## roguelike/layer_bodies.gd): {hh, neck, arm, length, width, hang (lip to
+## its feet, hung by `cling`), chest (its chest ray over its feet)}.
+static func build_of(k: Dictionary, unit: float) -> Dictionary:
+	var h := float(k.head_size)*unit
+	var neck := h*(float(k.legs)+float(k.torso))
+	var arm := h*float(k.arm)
+	return {"hh":h,"neck":neck,"arm":arm,"length":h*float(k.depth),"width":h*float(k.breadth),
+		"hang":neck+arm*0.75+float(k.cling),"chest":neck*0.55}
 
 ## Its build in head heights: the box the walker meets is its torso's
 ## breadth and depth, up to the neck.
@@ -265,7 +279,10 @@ func _find_head() -> void:
 	if head != null and is_instance_valid(head): return
 	head = null
 	for e in field.enemies:
-		if is_instance_valid(e) and e != self and e.has_method("mouth"): head = e
+		if not is_instance_valid(e) or e == self or not e.has_method("mouth"): continue
+		# Its own head where there are several (set down at `head_home`).
+		if head_home != Vector3.INF and e.has_method("home") and (e.home() as Vector3).distance_to(head_home) > 0.5: continue
+		head = e
 
 func _forward3() -> Vector3:
 	var f := PilotMotor.forward(facing)
@@ -443,10 +460,13 @@ func _climb(delta: float) -> void:
 		_face_pt = hit.position
 	else:
 		_face_pt = position+fwd*(length*0.5+float(knobs.standoff))+Vector3.UP*neck_h*0.55
-	# The lip: a ray down past the face from over its reach.
+	# The lip: a ray down past the face from over its reach (down to a
+	# step over its feet: a ledge too tall to step, too low for its chest
+	# ray, is mantled at once; round 9 found those on the generator's
+	# isles, where it dropped back off them, landing, again and again).
 	var reach := neck_h+arm_l*0.75
 	var past := _face_pt+fwd*float(knobs.lip_in)
-	var lip := _cast(Vector3(past.x,position.y+reach,past.z),Vector3(past.x,position.y+neck_h*0.2,past.z))
+	var lip := _cast(Vector3(past.x,position.y+reach,past.z),Vector3(past.x,position.y+float(knobs.step),past.z))
 	_lip_y = (lip.position as Vector3).y if not lip.is_empty() and (lip.normal as Vector3).y > 0.6 else INF
 	if _lip_y != INF and _lip_y-position.y <= neck_h*0.55:
 		_mantle_from = position
@@ -505,8 +525,10 @@ func _meet_edge(fwd: Vector3) -> void:
 ## (`_ledge`), else down onto a lower floor: {at, kind} or {}.
 func _landing(dir: Vector3) -> Dictionary:
 	var ledge := _ledge(dir)
-	if not ledge.is_empty(): return ledge
-	return _drop(dir)
+	if not ledge.is_empty() and _arc_clear(ledge.at,"jump"): return ledge
+	var drop := _drop(dir)
+	if not drop.is_empty() and _arc_clear(drop.at,"drop"): return drop
+	return {}
 
 ## The widest gap it jumps ledge to ledge (m): `jump_gap` head heights.
 func jump_gap() -> float:
@@ -562,23 +584,51 @@ func _windup(delta: float) -> void:
 	var to := Vector2(_leap_to.x-position.x,_leap_to.z-position.z)
 	facing = lerp_angle(facing,PilotMotor.facing_of(to.normalized()),1.0-exp(-5.0*delta))
 	if state_t < float(knobs.windup): return
-	var g := float(knobs.leap_gravity)
-	var drop := position.y-_leap_to.y
-	var up := float(knobs.leap_up)
-	if leap_kind == "jump":
-		# Across: a longer, flatter throw, peaking a share of its length
-		# (and over the far ledge if that stands higher).
-		up = maxf(up,float(knobs.jump_arc)*to.length())+maxf(0.0,-drop)
-		jumps += 1
-	var vy := sqrt(2.0*g*up)
-	var t := (vy+sqrt(maxf(vy*vy+2.0*g*drop,0.0)))/g
-	var flat := to/t
-	_flight = t
-	vel = Vector3(flat.x,vy,flat.y)
+	if leap_kind == "jump": jumps += 1
+	var throw := _throw(position,_leap_to,leap_kind)
+	_flight = throw[1]
+	vel = throw[0]
 	grounded = false
 	leaps += 1
 	_go("leap")
 	field.sound(&"body_leap",position)
+
+## The throw from `from` to `to` ("jump" across, else a drop): [its
+## velocity, its time in the air]. A jump's is longer and flatter, peaking
+## a share of its length (and over the far ledge if that stands higher).
+func _throw(from: Vector3, to: Vector3, kind: String) -> Array:
+	var g := float(knobs.leap_gravity)
+	var flat := Vector2(to.x-from.x,to.z-from.z)
+	var drop := from.y-to.y
+	var up := float(knobs.leap_up)
+	if kind == "jump": up = maxf(up,float(knobs.jump_arc)*flat.length())+maxf(0.0,-drop)
+	var vy := sqrt(2.0*g*up)
+	var t := (vy+sqrt(maxf(vy*vy+2.0*g*drop,0.0)))/g
+	return [Vector3(flat.x/t,vy,flat.y/t),t]
+
+## Whether the throw to `to` comes down there: its arc flown as `_move`
+## flies it (its feet ray-cast along it), nothing met on the way but the
+## floor it lands on, within ARC_LAND of `to`. Round 9 (layer-round9-
+## bodies.md): on the generator's isles a throw into a far wall dropped it
+## into the void.
+const ARC_LAND := 2.0
+const ARC_DT := 1.0/30.0
+func _arc_clear(to: Vector3, kind: String) -> bool:
+	var throw := _throw(position,to,kind)
+	var v: Vector3 = throw[0]
+	var p := position
+	var g := float(knobs.leap_gravity)
+	var t := 0.0
+	while t < float(throw[1])+1.0:
+		v.y -= g*ARC_DT
+		var next := p+v*ARC_DT
+		var hit := _cast(p+Vector3.UP*0.05,next)
+		if not hit.is_empty():
+			if (hit.normal as Vector3).y > 0.5 and v.y <= 0.0: return (hit.position as Vector3).distance_to(to) <= ARC_LAND
+			return false
+		p = next
+		t += ARC_DT
+	return false
 
 func _fall() -> void:
 	grounded = false

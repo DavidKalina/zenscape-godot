@@ -33,6 +33,8 @@ const KitMotif = preload("res://scripts/kit_isle/kit_motif.gd")
 const PhysicsGround = preload("res://scripts/pilot_physics_ground.gd")
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const InhalerHead = preload("res://scripts/enemies/inhaler_head.gd")
+const BodySpawner = preload("res://scripts/enemies/body_spawner.gd")
+const LayerBodies = preload("res://scripts/roguelike/layer_bodies.gd")
 const EnemyYard = preload("res://studies/enemy_yard.gd")
 
 ## How many heads a layer rolls.
@@ -91,10 +93,7 @@ static var _numbers_lock := Mutex.new()
 static func head_knobs() -> Dictionary:
 	_numbers_lock.lock()
 	if _numbers.is_empty():
-		var p: PilotMotor = KitMotif.pilot()
-		var n := {"run":p.run,"walk":p.walk,"unit":maxf(PhysicsGround.HEAD*p.size,PhysicsGround.BODY_LOW+0.3),"gravity":p.gravity,
-			"fall":p.fall,"jump":float(p.jumps[0]),"size":p.size,"step_up":PilotMotor.STEP_UP,
-			"radius":PhysicsGround.RADIUS*p.size,"skid":PilotMotor.TUMBLE_SKID}
+		var n := numbers()
 		var head: Node3D = InhalerHead.new()
 		var k: Dictionary = head.default_knobs(n)
 		head.free()
@@ -105,6 +104,13 @@ static func head_knobs() -> Dictionary:
 	var out := _numbers
 	_numbers_lock.unlock()
 	return out
+
+## The pilot's numbers, as EnemyField `numbers()` gives them in play.
+static func numbers() -> Dictionary:
+	var p: PilotMotor = KitMotif.pilot()
+	return {"run":p.run,"walk":p.walk,"unit":maxf(PhysicsGround.HEAD*p.size,PhysicsGround.BODY_LOW+0.3),"gravity":p.gravity,
+		"fall":p.fall,"jump":float(p.jumps[0]),"size":p.size,"step_up":PilotMotor.STEP_UP,
+		"radius":PhysicsGround.RADIUS*p.size,"skid":PilotMotor.TUMBLE_SKID}
 
 ## The heads laid into `plan` (`plan.heads`: [{isle, at, face, route, void,
 ## on}]).
@@ -118,17 +124,30 @@ static func lay(plan: Dictionary, attempt: int) -> void:
 	var cands := _candidates(plan,rng)
 	# The longest rounds, out over the void a little first; one an isle.
 	cands.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return float(a.score) > float(b.score))
-	var isles := {}
-	for c: Dictionary in cands:
-		if (plan.heads as Array).size() >= n: break
-		if isles.has(int(c.isle)): continue
-		var near := false
-		for h: Dictionary in plan.heads:
-			if _flat(h.at,c.at) < APART: near = true
-		if near: continue
-		isles[int(c.isle)] = true
-		c.erase("score")
-		plan.heads.append(c)
+	# With bodies (round 9, scripts/roguelike/layer_bodies.gd), a head
+	# whose body has no cliff it can come up and get to it from waits
+	# behind those with one; laid bodiless only if nothing else fits.
+	var bodies := int((plan.knobs as Dictionary).get("bodies",1)) != 0
+	var bodiless: Array = []
+	for pass_ in range(2 if bodies else 1):
+		var pool: Array = cands if pass_ == 0 else bodiless
+		for c: Dictionary in pool:
+			if (plan.heads as Array).size() >= n: break
+			if not _fits(plan,c): continue
+			c.cliffs = []
+			if bodies and pass_ == 0:
+				c.cliffs = LayerBodies.cliffs(plan,c,numbers())
+				if (c.cliffs as Array).is_empty():
+					bodiless.append(c)
+					continue
+			c.erase("score")
+			plan.heads.append(c)
+
+## Whether head candidate `c` goes with those laid: one an isle, APART.
+static func _fits(plan: Dictionary, c: Dictionary) -> bool:
+	for h: Dictionary in plan.heads:
+		if int(h.isle) == int(c.isle) or _flat(h.at,c.at) < APART: return false
+	return true
 
 ## Every spot that takes a round, with its best round.
 static func _candidates(plan: Dictionary, rng: RandomNumberGenerator) -> Array:
@@ -320,7 +339,12 @@ static func card(plan: Dictionary) -> String:
 	var heads: Array = plan.get("heads",[])
 	if heads.is_empty(): return ""
 	var words := PackedStringArray()
-	for h: Dictionary in heads: words.append("%d %s%s" % [int(h.isle),str(h.on).replace("_"," "),", out over the void" if float(h.void) > 0.0 else ""])
+	var bodies := int((plan.knobs as Dictionary).get("bodies",1)) != 0
+	for h: Dictionary in heads:
+		var cliffs: Array = h.get("cliffs",[])
+		var body := ""
+		if bodies: body = ", body up %d cliff%s" % [cliffs.size(),"" if cliffs.size() == 1 else "s"] if not cliffs.is_empty() else ", no body (no cliff reaches it)"
+		words.append("%d %s%s%s" % [int(h.isle),str(h.on).replace("_"," "),", out over the void" if float(h.void) > 0.0 else "",body])
 	return "Inhaler head%s: %s" % ["" if heads.size() == 1 else "s","; ".join(words)]
 
 # --- On the stage -------------------------------------------------------------------
@@ -335,28 +359,39 @@ const VOICES := {
 
 var study: Node3D
 var field: Node
+## The heads' bodies coming up their cliffs (scripts/enemies/
+## body_spawner.gd), or null (`--knob=bodies=0`).
+var spawner: Node = null
 var _air_was: Callable
 var _plane_was: Callable
 var _voices := {}
 
 ## The plan's heads spawned into `stage`'s EnemyField, their air on the
-## sail's wind and the plane's; null where there are none.
+## sail's wind and the plane's, their bodies' spawner; null where there are
+## none.
 static func dress(stage: Node3D, plan: Dictionary) -> Node:
 	var heads: Array = plan.get("heads",[])
 	if heads.is_empty() or stage.get("enemies") == null: return null
 	var node := new()
 	node.name = "LayerEnemies"
 	stage.add_child(node)
-	node.build(stage.study,stage.enemies,heads)
+	node.build(stage.study,stage.enemies,heads,int((plan.knobs as Dictionary).get("bodies",1)) != 0,float(plan.void_y))
 	return node
 
-func build(scene: Node3D, enemies: Node, heads: Array) -> void:
+func build(scene: Node3D, enemies: Node, heads: Array, bodies := true, void_y := -INF) -> void:
 	study = scene
 	field = enemies
 	if not field.sound_hook.is_valid(): field.sound_hook = _voice
 	for h: Dictionary in heads:
 		var face: Vector3 = h.face
 		field.spawn(InhalerHead,h.at,Vector2(face.x,face.z),{"route":(h.route as Array).duplicate()})
+	if bodies:
+		spawner = BodySpawner.new()
+		add_child(spawner)
+		spawner.setup(study,field)
+		# Under the void a body is gone (and its head's next comes up).
+		spawner.lost_y = void_y
+		for h: Dictionary in heads: spawner.add_head(h.at,h.get("cliffs",[]))
 	var motor: Object = study.motor
 	_air_was = motor.air
 	var was := _air_was
@@ -393,6 +428,14 @@ func _head_air(p: Vector3, how: String) -> Vector3:
 		if is_instance_valid(e) and e.has_method(how): sum += e.call(how,p)
 	return sum
 
+## Ahead of the enemies' step: the bodies come up their cliffs.
+func before(delta: float) -> void:
+	if spawner != null: spawner.step(delta)
+
+## The camera placed: shaken by the bodies' landings.
+func frame(camera: Camera3D, _delta: float) -> void:
+	if spawner != null: spawner.shake(camera)
+
 ## Whether a head holds him now (the stage hides the figure).
 func holding() -> bool:
 	if field == null: return false
@@ -403,8 +446,9 @@ func holding() -> bool:
 ## Plays enemy sound `sound_name` at `at` (the study's placeholder synth).
 func _voice(sound_name: StringName, at: Vector3) -> void:
 	var key := String(sound_name)
-	if not VOICES.has(key): return
-	if not _voices.has(key): _voices[key] = EnemyYard._synth(VOICES[key])
+	var spec: Variant = VOICES.get(key,BodySpawner.VOICES.get(key))
+	if spec == null: return
+	if not _voices.has(key): _voices[key] = EnemyYard._synth(spec)
 	var player := AudioStreamPlayer3D.new()
 	player.stream = _voices[key]
 	player.position = at

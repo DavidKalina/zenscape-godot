@@ -5,7 +5,8 @@ extends "res://studies/character_study.gd"
 ## (scripts/enemies/inhaler_head.gd) drifting its ring on the highest, and its
 ## lost body (scripts/enemies/headless_body.gd) to find it. The body comes up
 ## a cliff: it is spawned on a cliff face under a lip (`CLIFFS`), out of the
-## walker's sight, and hauls itself over. Its way, if it hears right:
+## walker's sight, and hauls itself over (the spawner, shared with the
+## generator: scripts/enemies/body_spawner.gd). Its way, if it hears right:
 ##   the low isle (A, top 0)  ->  climbs the mesa's south face (B, 16 m)
 ##   -> jumps the 6 m gap ledge to ledge onto the step (E, 16 m)
 ##   -> the 12 m gap on to the far pillar (F, 16 m) is too wide: it drops
@@ -26,6 +27,7 @@ extends "res://studies/character_study.gd"
 const EnemyField = preload("res://scripts/enemies/enemy_field.gd")
 const InhalerHead = preload("res://scripts/enemies/inhaler_head.gd")
 const HeadlessBody = preload("res://scripts/enemies/headless_body.gd")
+const BodySpawner = preload("res://scripts/enemies/body_spawner.gd")
 const EnemyYard = preload("res://studies/enemy_yard.gd")
 
 const ISLE_LOST := -40.0
@@ -59,19 +61,10 @@ const CLIFFS := [
 	["C west",Vector3(-24.0,6.0,-60.0),Vector2(-1.0,0.0)],
 	["D east",Vector3(10.0,17.0,-86.0),Vector2(1.0,0.0)],
 ]
-## [seconds, tone (Hz, 0 none), tone at the end, noise share, low-pass (0-1),
-## attack (s), tremolo (Hz, 0 none)] (enemy_yard.gd `_synth`).
+## The head's voices: [seconds, tone (Hz, 0 none), tone at the end, noise
+## share, low-pass (0-1), attack (s), tremolo (Hz, 0 none)] (enemy_yard.gd
+## `_synth`). The body's are BodySpawner.VOICES.
 const VOICES := {
-	"body_step":[0.3,45.0,30.0,0.5,0.12,0.004,0.0],
-	"body_listen":[0.9,0.0,0.0,1.0,0.06,0.2,6.0],
-	"body_found":[0.7,90.0,60.0,0.3,0.3,0.05,0.0],
-	"body_grip":[0.25,0.0,0.0,1.0,0.35,0.005,18.0],
-	"body_windup":[0.8,0.0,0.0,1.0,0.1,0.3,10.0],
-	"body_leap":[0.5,0.0,0.0,1.0,0.5,0.02,0.0],
-	"body_land":[0.9,40.0,25.0,0.6,0.15,0.003,0.0],
-	"body_shock":[1.6,30.0,20.0,0.75,0.09,0.002,0.0],
-	"body_reach":[1.2,0.0,0.0,1.0,0.07,0.3,13.0],
-	"body_whole":[1.0,70.0,110.0,0.3,0.25,0.01,0.0],
 	"head_grind":[0.9,0.0,0.0,1.0,0.07,0.05,13.0],
 	"head_inhale":[3.0,0.0,0.0,1.0,0.22,0.9,0.0],
 	"head_yank":[0.35,0.0,0.0,1.0,0.4,0.01,0.0],
@@ -80,18 +73,15 @@ const VOICES := {
 }
 
 var enemies: Node
-## The cliff spawns' rules (`--spawn-knob=`). A body comes up on its own
-## once the head has had none for `wait` s (the start, after R, after one
-## falls), at the nearest cliff that is: `near` to `far` m from him (flat),
-## its lip within `level` m of his feet's height (he is up on that isle),
-## within `view` rad of where the camera looks (he will see it come over),
-## and, with `hidden` 1, out of the camera's sight (the cliff hides it).
-## `natural` 0: only G spawns.
-var spawn_knobs := {"wait":2.0,"near":8.0,"far":40.0,"level":3.5,"view":1.0,"hidden":1.0,"natural":1.0}
-## Spawns made, the last cliff's name.
-var spawns := 0
-var last_cliff := ""
-var _bodiless := 0.0
+## The cliff spawns (scripts/enemies/body_spawner.gd, its RULES): a body
+## comes up on its own once the head has had none for `wait` s (the start,
+## after R, after one falls), at the nearest cliff that is `near` to `far`
+## m from him (flat), its lip within `level` m of his feet's height (he is
+## up on that isle), within `view` rad of where the camera looks (he will
+## see it come over), and, with `hidden` 1, out of the camera's sight (the
+## cliff hides it). `natural` 0: only G spawns. `--spawn-knob=` sets them.
+var spawner: Node
+var spawn_knobs := {}
 var _stand := false
 var _voices := {}
 var _body_knobs := {}
@@ -150,11 +140,13 @@ func _build_room() -> void:
 	var head_knobs := {"ring":ground.head_top*5.5}
 	head_knobs.merge(_head_knobs,true)
 	enemies.spawn(InhalerHead,HEAD_AT,Vector2(0.0,1.0),head_knobs)
+	spawner = BodySpawner.new()
+	add_child(spawner)
+	spawner.setup(self,enemies,spawn_knobs,_body_knobs)
+	spawner.add_head(HEAD_AT,CLIFFS)
 
 func stone_body() -> Node3D:
-	for e in enemies.enemies:
-		if is_instance_valid(e) and not e.gone and e.get("whole") != null: return e
-	return null
+	return spawner.body_of(0) if spawner != null else null
 
 func stone_head() -> Node3D:
 	for e in enemies.enemies:
@@ -167,102 +159,20 @@ func place(at: Vector3, face: Vector2) -> void:
 	super.place(at,face)
 	if enemies != null: enemies.reset()
 	if figure != null: figure.visible = true
-	_bodiless = 0.0
+	if spawner != null:
+		for h: Dictionary in spawner.heads: h.bodiless = 0.0
 
 ## The camera shakes with its landings and its steps; a body comes up a
 ## cliff when the rules say.
 func tick(delta: float) -> void:
 	super.tick(delta)
-	_spawner(delta)
-	var b := stone_body()
-	if b == null or camera == null: return
-	var near := clampf(1.0-camera.global_position.distance_to(b.global_position)/60.0,0.0,1.0)
-	var q: float = b.quake*near
-	if q > 0.001:
-		var t := Time.get_ticks_msec()/1000.0
-		camera.position += Vector3(sin(t*61.0),sin(t*53.0+1.0),sin(t*47.0+2.0))*q*0.5
-
-# --- Cliff spawns -----------------------------------------------------------------------
-
-func _spawner(delta: float) -> void:
-	if enemies == null or stone_body() != null:
-		_bodiless = 0.0
-		return
-	_bodiless += delta
-	if float(spawn_knobs.natural) < 0.5 or _bodiless < float(spawn_knobs.wait): return
-	var i := pick_cliff(true)
-	if i >= 0: spawn_climber(i)
-
-## The cliff a body should come up now: the nearest one meeting every rule
-## (`strict`), or, not strict (G), the nearest meeting the most (out of
-## sight, then `near` to `far` m, then any); -1 none.
-func pick_cliff(strict: bool) -> int:
-	var best := -1
-	var best_score := INF
-	for i in CLIFFS.size():
-		var lip: Vector3 = CLIFFS[i][1]
-		var d := Vector2(lip.x-motor.feet.x,lip.z-motor.feet.z).length()
-		var ranged := d >= float(spawn_knobs.near) and d <= float(spawn_knobs.far)
-		var level := absf(motor.feet.y-lip.y) <= float(spawn_knobs.level)
-		var hid := _cliff_hidden(i)
-		var seen := _cliff_in_view(lip)
-		var score := d
-		if strict:
-			if not (ranged and level and hid and seen): continue
-		else:
-			score += (0.0 if ranged else 1000.0)+(0.0 if hid else 500.0)+(0.0 if level else 200.0)+(0.0 if seen else 100.0)
-		if score < best_score:
-			best_score = score
-			best = i
-	return best
-
-## Whether the camera's line to a body hanging on cliff `i` is blocked.
-func _cliff_hidden(i: int) -> bool:
-	if float(spawn_knobs.hidden) < 0.5 or camera == null: return true
-	var lip: Vector3 = CLIFFS[i][1]
-	var out: Vector2 = CLIFFS[i][2]
-	var hands := lip+Vector3(out.x,0.0,out.y)*2.0-Vector3.UP*1.5
-	var q := PhysicsRayQueryParameters3D.create(camera.global_position,hands,ground.mask)
-	return not get_world_3d().direct_space_state.intersect_ray(q).is_empty()
-
-## Whether `lip` is within `view` rad of the camera's look (flat).
-func _cliff_in_view(lip: Vector3) -> bool:
-	if camera == null: return true
-	var look := -camera.global_basis.z
-	var to := lip-camera.global_position
-	var a := Vector2(look.x,look.z)
-	var b := Vector2(to.x,to.z)
-	if a.length() < 0.01 or b.length() < 0.01: return true
-	return absf(a.angle_to(b)) <= float(spawn_knobs.view)
-
-## A body up cliff `i` now, the head's one body: the old one goes (and if
-## it had its head, the head goes back to its ring).
-func spawn_climber(i: int) -> Node3D:
-	var h := stone_head()
-	if h != null and h.perch != null:
-		enemies.reset()
-	for e in enemies.enemies.duplicate():
-		if is_instance_valid(e) and e.get("whole") != null:
-			enemies.enemies.erase(e)
-			if e.get_parent() == enemies: enemies.remove_child(e)
-			e.queue_free()
-	var c: Array = CLIFFS[i]
-	var b: Node3D = enemies.add(HeadlessBody,c[1],-(c[2] as Vector2),_body_knobs)
-	# First in the field, so the head reads its neck where it is this frame.
-	enemies.enemies.erase(b)
-	enemies.enemies.push_front(b)
-	b.cling(c[1],c[2])
-	b.body.force_update_transform()
-	spawns += 1
-	last_cliff = c[0]
-	_bodiless = 0.0
-	return b
+	if spawner == null: return
+	spawner.step(delta)
+	spawner.shake(camera)
 
 ## G: a body up the best cliff now.
 func spawn_on_demand() -> Node3D:
-	var i := pick_cliff(true)
-	if i < 0: i = pick_cliff(false)
-	return spawn_climber(i) if i >= 0 else null
+	return spawner.spawn_on_demand(0)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo and (event as InputEventKey).keycode == KEY_G and not _name_panel.visible:
@@ -285,15 +195,18 @@ func _show_hud() -> void:
 		var to := (h.global_position-b.global_position).length() if h != null else -1.0
 		lines.append("body  %s %.1fs · %s · %.1f m/s · y %.1f · to head %.1f m · climbs %d · leaps %d (jumps %d, last %s) · listens %d" % [b.state,b.state_t,"whole" if b.whole else ("has it" if b.homed else "searching"),Vector2(b.vel.x,b.vel.z).length(),b.position.y,to,b.climbs,b.leaps,b.jumps,b.leap_kind if b.leap_kind != "" else "-",b.listens])
 		lines.append("shocks %d · threw you %d · jump gap %.1f m · clip %s" % [b.shocks,b.shock_hits,b.jump_gap(),b.look.clip_now()])
-	else: lines.append("body  none yet (%.1f s) · next cliff %s" % [_bodiless,CLIFFS[pick_cliff(true)][0] if pick_cliff(true) >= 0 else "none fits"])
+	else:
+		var next: int = spawner.pick_cliff(0,true)
+		lines.append("body  none yet (%.1f s) · next cliff %s" % [float(spawner.heads[0].bodiless),spawner.heads[0].cliffs[next][0] if next >= 0 else "none fits"])
 	if h != null: lines.append("head  %s %.1fs · draw %.2f · pull on him %.1f m/s" % [h.state,h.state_t,h.draw_share,h.pulling])
-	lines.append("cliff spawns %d (last %s) · fallen and gone: %d" % [spawns,last_cliff if last_cliff != "" else "-",enemies.gone_count])
+	lines.append("cliff spawns %d (last %s) · fallen and gone: %d" % [spawner.spawns,spawner.last_cliff if spawner.last_cliff != "" else "-",enemies.gone_count])
 	_hud.text = "\n".join(lines)
 
 func _voice(sound_name: StringName, at: Vector3) -> void:
 	var key := String(sound_name)
-	if not VOICES.has(key): return
-	if not _voices.has(key): _voices[key] = EnemyYard._synth(VOICES[key])
+	var spec: Variant = VOICES.get(key,BodySpawner.VOICES.get(key))
+	if spec == null: return
+	if not _voices.has(key): _voices[key] = EnemyYard._synth(spec)
 	var player := AudioStreamPlayer3D.new()
 	player.stream = _voices[key]
 	player.position = at

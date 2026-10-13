@@ -166,6 +166,23 @@ func ground_y() -> float:
 func ground_at(p: Vector3) -> float:
 	return field.floor_under(Vector3(p.x,_ground,p.z),6.0,12.0,body.get_rid())
 
+## Where it was set down (its home over the turf): its body
+## (scripts/enemies/body_spawner.gd) knows it by this.
+func home() -> Vector3:
+	return _home
+
+## Off its body's neck and back home drifting its round (the body that had
+## it taken away: scripts/enemies/body_spawner.gd).
+func go_home() -> void:
+	perch = null
+	vel = Vector3.ZERO
+	_ground = _home.y
+	position = _home+Vector3.UP*float(knobs.hover)
+	_leg = 0
+	_low = 0.0
+	_go("drift")
+	rotation.y = facing
+
 # --- A frame ---------------------------------------------------------------------------
 
 func think(delta: float) -> void:
