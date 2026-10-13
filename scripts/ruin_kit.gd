@@ -54,8 +54,10 @@ const HALL_PIECES := ["hall_column","hall_beam","hall_slab","hall_bay"]
 ## The tower (scripts/ruin_kit_tower.gd): the broken shell with a wall-kick
 ## chimney inside.
 const TOWER_PIECES := ["tower_shell"]
-const FAMILIES := {"gothic":PIECES,"aqueduct":AQUEDUCT_PIECES,"hall":HALL_PIECES,"tower":TOWER_PIECES}
-const ALL_PIECES := PIECES+AQUEDUCT_PIECES+HALL_PIECES+TOWER_PIECES
+## The wind-horn (scripts/ruin_kit_horn.gd): the pedestal and its turning head.
+const HORN_PIECES := ["wind_horn"]
+const FAMILIES := {"gothic":PIECES,"aqueduct":AQUEDUCT_PIECES,"hall":HALL_PIECES,"tower":TOWER_PIECES,"horn":HORN_PIECES}
+const ALL_PIECES := PIECES+AQUEDUCT_PIECES+HALL_PIECES+TOWER_PIECES+HORN_PIECES
 const NAMES := {"pier":"Clustered pier","arch":"Pointed arch","lancet_wall":"Lancet window wall",
 	"rose_gable":"Rose window gable","buttress":"Buttress","wall":"Wall","stairs":"Stair flight",
 	"turret":"Stair turret","vault":"Vault ribs","fallen_pier":"Fallen pier","tomb_chest":"Carved chest",
@@ -63,7 +65,7 @@ const NAMES := {"pier":"Clustered pier","arch":"Pointed arch","lancet_wall":"Lan
 	"aqueduct_span":"Aqueduct span","aqueduct_two_tier":"Two-tier span","aqueduct_broken":"Broken span",
 	"aqueduct_stump":"Pier stump","aqueduct_end":"Aqueduct head",
 	"hall_column":"Colossus column","hall_beam":"Architrave beam","hall_slab":"Roof slabs",
-	"hall_bay":"Hall bay","tower_shell":"Tower shell"}
+	"hall_bay":"Hall bay","tower_shell":"Tower shell","wind_horn":"Wind-horn"}
 
 # --- Scale: what the pilot on foot and the plane can do drives these ---------
 # (scripts/pilot_motor.gd, scripts/plane_figure.gd, scripts/sky_glide.gd)
@@ -381,6 +383,7 @@ static func piece(id: String, seed_value: int, weathered := 0.0) -> Node3D:
 	if id in AQUEDUCT_PIECES: return load("res://scripts/ruin_kit_aqueduct.gd").piece(id,seed_value,weathered)
 	if id in HALL_PIECES: return load("res://scripts/ruin_kit_hall.gd").piece(id,seed_value,weathered)
 	if id in TOWER_PIECES: return load("res://scripts/ruin_kit_tower.gd").piece(id,seed_value,weathered)
+	if id in HORN_PIECES: return load("res://scripts/ruin_kit_horn.gd").piece(id,seed_value,weathered)
 	return null
 
 ## How thick a hull's points stand at their thinnest (m): their spread

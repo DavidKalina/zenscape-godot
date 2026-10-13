@@ -12,8 +12,11 @@ extends Node3D
 ## - **When.** Only a fresh press, with LOW m (by his size) of air over the
 ##   ground under him. Crouch held from the ground (the long jump, the
 ##   slide) carries into the air as ever and never slams; a press lower
-##   than LOW keeps its old meaning, the slide on landing. Not under the
-##   sail (crouch brakes it), on a ledge or a rope, in the water or knocked.
+##   than LOW keeps its old meaning, the slide on landing. Not on a ledge
+##   or a rope, in the water or knocked. Under the sail a tap slams and a
+##   hold brakes: a press is kept from the sail's brake for SAIL_TAP s;
+##   let go inside it, the sail folds and he slams; held past it, it
+##   brakes as ever.
 ## - **The energy.** A drop, m: the height fallen from the press to the
 ##   touch, plus his downward speed at the press as the height it's worth
 ##   (v²/2g at his falling gravity). `power_for` maps it by his size from
@@ -66,6 +69,7 @@ const GROUP := &"slam"
 
 # --- When and how hard (m at size 1)
 const LOW := 1.8                 # m of air under him for a fresh press to slam
+const SAIL_TAP := 0.2            # s: under the sail, let go inside this slams, held past it brakes
 const DROP := Vector2(1.8,11.0)  # m of drop: the weakest hit, and full
 const DECENT := 4.0              # m of drop that opens a buried find, drops the cowl
 # --- The drive
@@ -124,6 +128,7 @@ var lands := 0
 ## `hit` how many in GROUP heard it.
 var last := {}
 var _crouch_was := false
+var _sail_t := -1.0              # s since a crouch press under the sail (-1 none)
 var _from_y := 0.0               # where he pressed (y)
 var _v0 := 0.0                   # m/s down at the press
 var _ahead := 0.0                # power by the drop ahead at the press
@@ -263,9 +268,11 @@ func update(delta: float, m: PilotMotor, ground := Callable()) -> void:
 	if _cam != null:
 		if _fov_applied != 0.0: _cam.fov -= _fov_applied
 		_fov_applied = 0.0
-	var pressed := m.crouch and not _crouch_was
-	_crouch_was = m.crouch
-	if pressed and wanted(m): fire(m)
+	var held := m.crouch
+	var pressed := held and not _crouch_was
+	_crouch_was = held
+	if _sail_tap(delta,m,held,pressed): fire(m)
+	elif pressed and wanted(m): fire(m)
 	elif phase == "hang":
 		_t += delta
 		if m.swimming or m.hold != "" or m.rider != null or m.recovering(): _end()
@@ -274,6 +281,26 @@ func update(delta: float, m: PilotMotor, ground := Callable()) -> void:
 	_step_rings(delta)
 	_step_clods(delta)
 	_draw(m)
+
+## Under the sail: a press is kept from the brake (`m.crouch` off) for
+## SAIL_TAP s; let go inside it with LOW of air under him, the sail folds
+## and this is the slam's (true); held past it, the brake has it.
+func _sail_tap(delta: float, m: PilotMotor, held: bool, pressed: bool) -> bool:
+	if m.move != "sail" or phase != "":
+		_sail_t = -1.0
+		return false
+	if pressed: _sail_t = 0.0
+	if _sail_t < 0.0: return false
+	if held:
+		_sail_t += delta
+		if _sail_t < SAIL_TAP: m.crouch = false
+		else: _sail_t = -1.0
+		return false
+	_sail_t = -1.0
+	if m.recovering() or m.seized() or air_under(m) < LOW*m.size: return false
+	m.sail.fold()
+	m.move = ""
+	return true
 
 func _drive(m: PilotMotor) -> void:
 	var keep := _flat*SLAM_KEEP
