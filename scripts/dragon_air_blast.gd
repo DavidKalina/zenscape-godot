@@ -61,6 +61,11 @@ const LEAD_MOST := 60.0
 ## reach for it (it bursts on him passing within the ball plus his radius).
 const BALL := 0.55
 const SHOCK_R := 3.2
+## Out of the mouth: for its first CARRY s a ball rides along with his
+## mouth (he flies 22-54 m/s; left alone it hangs off to his side), and in
+## the wind-up it swells in his jaw to GATHER of its size.
+const CARRY := 0.15
+const GATHER := 0.8
 ## The knock on the pilot (PilotMotor `knock_velocity`): out and up in the
 ## walker's heights at the burst's heart, EDGE of it at the shock's rim.
 ## Out 42 heights flies him some 40 m (the tumble skids less than the
@@ -127,6 +132,10 @@ var last_at := Vector3.INF
 ## The pilot's middle as last seen and its velocity, eased (m/s).
 var aim_vel := Vector3.ZERO
 var _last_aim := Vector3.INF
+## His mouth this frame and its move since the last (a jump of more than
+## 20 m starts it over).
+var _mouth := Vector3.INF
+var _mouth_step := Vector3.ZERO
 ## The balls in flight: each {pos, was, vel, aim, age, travelled}.
 var balls: Array = []
 ## The bursts still catching: each {at, way, age, hit_pilot, hit_plane}.
@@ -152,7 +161,7 @@ func _init() -> void:
 
 func _ready() -> void:
 	if not look: return
-	_lens = _batch("BlastLens",_lens_mesh(),MOST)
+	_lens = _batch("BlastLens",_lens_mesh(),MOST+1)
 	_streaks = _batch("BlastStreaks",DragonCyclone._streak_mesh(),TRAIL_STREAKS*MOST)
 	_puffs = _batch("BlastPuffs",DragonGale._puff_mesh(),TRAIL_PUFFS*MOST+FREE_PUFFS)
 	for i in range(FREE_PUFFS): _free.append({"life":0.0})
@@ -185,6 +194,8 @@ func advance(delta: float, space: PhysicsDirectSpaceState3D, spotted: bool, mout
 	cooldown_left = maxf(0.0,cooldown_left-delta)
 	since_shot += delta
 	_read_velocity(delta,aim)
+	_mouth_step = mouth-_mouth if _mouth != Vector3.INF and mouth.distance_to(_mouth) < 20.0 else Vector3.ZERO
+	_mouth = mouth
 	var can := on and spotted and aim != Vector3.INF and mouth.distance_to(aim) <= FIRE_RANGE
 	if phase == "windup":
 		if not can: phase = "idle"
@@ -237,7 +248,7 @@ static func lead(from: Vector3, aim: Vector3, vel: Vector3) -> Vector3:
 ## A ball from `from` toward `aim`, on along that line.
 func fire(from: Vector3, aim: Vector3) -> void:
 	var way := (aim-from).normalized() if aim.distance_to(from) > 0.01 else Vector3.DOWN
-	balls.append({"pos":from,"was":from,"vel":way*SPEED,"aim":aim,"age":0.0,"travelled":0.0,"trail":[]})
+	balls.append({"pos":from,"was":from,"vel":way*SPEED,"aim":aim,"age":0.0,"travelled":0.0,"trail":[],"fresh":true})
 	while balls.size() > MOST: balls.pop_front()
 	cooldown_left = cooldown
 	since_shot = 0.0
@@ -257,6 +268,13 @@ func _step_balls(delta: float, space: PhysicsDirectSpaceState3D) -> void:
 		b.age = float(b.age)+delta
 		var from: Vector3 = b.pos
 		var to := from+(b.vel as Vector3)*delta
+		# (Not on the frame it's fired: it left from this frame's mouth.)
+		if b.get("fresh",false): b.fresh = false
+		elif float(b.age) <= CARRY+delta:
+			to += _mouth_step*clampf((CARRY-(float(b.age)-delta))/delta,0.0,1.0)
+			# Out of his mouth's carry: set back on its aim.
+			if float(b.age) > CARRY and (b.aim as Vector3).distance_to(to) > 1.0:
+				b.vel = ((b.aim as Vector3)-to).normalized()*SPEED
 		b.was = from
 		if space != null:
 			ray.from = from
@@ -514,7 +532,7 @@ func _draw() -> void:
 		var grown := smoothstep(0.0,0.08,float(b.age))
 		var fade := grown*(1.0-smoothstep(RANGE*0.8,RANGE,float(b.travelled)))
 		var pulse := 1.0+0.08*sin(_clock*40.0+float(b.age)*7.0)
-		lm.set_instance_transform(li,Transform3D(Basis.from_scale(Vector3.ONE*r*2.6*pulse*lerpf(0.4,1.0,grown)),at))
+		lm.set_instance_transform(li,Transform3D(Basis.from_scale(Vector3.ONE*r*2.6*pulse*lerpf(GATHER,1.0,grown)),at))
 		lm.set_instance_custom_data(li,Color(fade,0,0,0))
 		lm.set_instance_color(li,AIR_TINT)
 		li += 1
@@ -544,6 +562,13 @@ func _draw() -> void:
 			pm.set_instance_custom_data(pj,Color(fade*0.22*(1.0-u),0,0,0))
 			pm.set_instance_color(pj,AIR_TINT)
 			pj += 1
+	# The wind-up: the ball gathering in his jaw.
+	if phase == "windup" and _mouth != Vector3.INF:
+		var g := windup_share()
+		lm.set_instance_transform(li,Transform3D(Basis.from_scale(Vector3.ONE*r*2.6*GATHER*g*(1.0+0.12*sin(_clock*50.0))),_mouth))
+		lm.set_instance_custom_data(li,Color(g,0,0,0))
+		lm.set_instance_color(li,AIR_TINT)
+		li += 1
 	for s: Dictionary in _free:
 		if float(s.life) <= 0.0: continue
 		var u := float(s.age)/float(s.life)
