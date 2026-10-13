@@ -1,21 +1,26 @@
 extends "res://studies/aqueduct_isle.gd"
 ## One generated layer of the climb, played on foot (docs/design/roguelike/
-## layer-round2.md): the aqueduct isle (studies/aqueduct_isle.gd: its look,
-## light, weather, life and sky, unchanged) as the base, and round it a
-## layer laid out from a seed (scripts/roguelike/layer_plan.gd): 3 or 4
-## ruin motif isles stepping up off it, joined rim to rim by stones, rope
-## bridges and the Loose Voussoirs along a route to the exit gate on the
-## highest, a greed branch to a rune set (hard stones, and a cannon where a
-## shot lands it), the Plinth Ram on an arena (scripts/roguelike/
-## layer_stage.gd). The isles are built on a worker and stood a slice a
+## layer-round2.md, layer-round3.md): the aqueduct isle (studies/
+## aqueduct_isle.gd: its look, light, weather, life and sky, unchanged) as
+## the base, and round it a layer laid out from a seed (scripts/roguelike/
+## layer_plan.gd): 2 or 3 neighbourhoods of ruin motif isles, each a few
+## isles joined rim to rim by stones, rope bridges and the Loose Voussoirs,
+## a gulf of open sky between two, crossed on a rune serpent's loop or the
+## sky folk's ferry (and a cannon where it is narrow enough), along a route
+## to the exit gate on the last neighbourhood's highest isle; a greed
+## branch to a rune set (hard stones, and a cannon where a shot lands it),
+## the Plinth Ram on an arena (scripts/roguelike/layer_stage.gd,
+## layer_rides.gd). The isles are built on a worker and stood a slice a
 ## frame by the sky (studies/run_layer_sky.gd, scripts/kit_isle/
-## motif_sky.gd), so the pilot walks the base at once.
+## motif_sky.gd), nearest first, so the pilot walks the base at once; a
+## gulf's rides open once the isles at both its ends stand.
 ##
 ## Through the gate, or down into the void under every isle, a new layer
 ## comes up (the next seed); a fall onto a lower isle is just a fall.
 ##   N / Shift+N   the next / previous seed's layer
 ##   Backspace     this layer again
 ##   godot --path . res://studies/run_layer.tscn -- --no-title [--seed=<n>]
+##     [--knob=gulf=<m>] [--knob=hoods=<2|3>] [--knob=ride=<serpent|ferry>]
 ## Without --seed= a seed is drawn. The isle's own flags still work; the
 ## hall chain, the lodestone and the dragon's roost are left out.
 const LayerPlan = preload("res://scripts/roguelike/layer_plan.gd")
@@ -26,6 +31,8 @@ const RunLayerSky = preload("res://studies/run_layer_sky.gd")
 const SKIP_MOST := 8
 ## The plan, its stage, and what stood in the slot before any layer.
 static var layer_seed := -1
+## The layer's knobs (`--knob=`, LayerPlan KNOBS), kept from layer to layer.
+static var layer_knobs := {}
 var layer: Dictionary = {}
 var stage: Node3D = null
 var _slot_was: Node = null
@@ -37,11 +44,17 @@ var plan_ms := 0
 ## Layers played this run, and why the last one ended.
 var layers := 0
 var last_end := ""
+## Windowed, a plan (1-8 s) is laid on a worker while the last layer stays
+## (`request_layer`); headless or scripted, at once.
+var _plan_task := -1
+var _plan_out: Dictionary = {}
+var _plan_why := ""
 
 func _ready() -> void:
 	if layer_seed < 0:
 		for arg in preload("res://scripts/launch_args.gd").user_args():
 			if arg.begins_with("--seed="): layer_seed = int(arg.get_slice("=",1))
+		layer_knobs = LayerPlan.knobs_from(preload("res://scripts/launch_args.gd").user_args())
 		if layer_seed < 0:
 			var rng := RandomNumberGenerator.new()
 			rng.randomize()
@@ -49,7 +62,11 @@ func _ready() -> void:
 	chain_on = false
 	dragon_roost = false
 	_no_lode = true
-	_lay(layer_seed)
+	if _planning_away():
+		# Laid while the aqueduct isle builds; its sky starts empty.
+		LayerPlan.warm()
+		_plan_task = WorkerThreadPool.add_task(_plan_job.bind(layer_seed,layer_knobs.duplicate()))
+	else: _lay(layer_seed)
 	isle_ready.connect(_first_layer,CONNECT_ONE_SHOT)
 	super._ready()
 
@@ -58,20 +75,51 @@ func sky_script() -> Script:
 
 ## The layer's plan for `seed_value` (on past a seed that can't be laid).
 func _lay(seed_value: int) -> void:
+	_take(_plan_for(seed_value,layer_knobs))
+
+## A plan for `seed_value` and on: {plan, ms}. Touches nothing of the
+## scene's (a worker lays it, `_plan_job`).
+static func _plan_for(seed_value: int, knobs: Dictionary) -> Dictionary:
 	var began := Time.get_ticks_msec()
+	var plan := {}
 	for k in range(SKIP_MOST):
-		layer = LayerPlan.make(seed_value+k)
-		if (layer.problems as Array).is_empty(): break
-		print("run layer: seed %d can't be laid (%s), on to the next" % [seed_value+k,str(layer.problems)])
+		plan = LayerPlan.make(seed_value+k,knobs)
+		if (plan.problems as Array).is_empty(): break
+		print("run layer: seed %d can't be laid (%s), on to the next" % [seed_value+k,str(plan.problems)])
+	return {"plan":plan,"ms":Time.get_ticks_msec()-began}
+
+func _plan_job(seed_value: int, knobs: Dictionary) -> void:
+	_plan_out = _plan_for(seed_value,knobs)
+
+func _take(laid: Dictionary) -> void:
+	layer = laid.plan
 	layer_seed = int(layer.seed)
-	plan_ms = Time.get_ticks_msec()-began
+	plan_ms = int(laid.ms)
 	lost = float(layer.void_y)-200.0
 	print("run layer: seed %d planned in %d ms\n%s" % [layer_seed,plan_ms,LayerPlan.describe(layer)])
+
+## Whether plans are laid on a worker (windowed play; --plan-away asks for
+## it headless too).
+func _planning_away() -> bool:
+	if scripted: return false
+	return DisplayServer.get_name() != "headless" or preload("res://scripts/launch_args.gd").user_args().has("--plan-away")
+
+## The layer for `seed_value` asked for: at once headless or scripted;
+## windowed, laid on a worker and stood up when it's ready (one at a
+## time: asked again meanwhile, the ask is dropped).
+func request_layer(seed_value: int, why := "") -> void:
+	if not _planning_away():
+		start_layer(seed_value,why)
+		return
+	if _plan_task >= 0: return
+	_plan_why = why
+	_show_toast("%sLaying layer %d..." % [why+"  " if why != "" else "",seed_value])
+	_plan_task = WorkerThreadPool.add_task(_plan_job.bind(seed_value,layer_knobs.duplicate()))
 
 ## The layer's motif isles for the sky: [motif, offset, place].
 func layer_entries() -> Array:
 	var out: Array = []
-	for isle: Dictionary in layer.isles:
+	for isle: Dictionary in layer.get("isles",[]):
 		if isle.role == "base": continue
 		var r: Rect2 = LayerPlan._rect(isle)
 		var c := r.get_center()
@@ -81,6 +129,10 @@ func layer_entries() -> Array:
 func _first_layer() -> void:
 	_slot_was = foot_pieces
 	_build_card()
+	# Laid on a worker while the isle built: stood up once it's done
+	# (`_process`; never waited for here: the worker's servers' calls wait
+	# on this thread).
+	if layer.is_empty(): return
 	_stand_layer()
 
 ## The stage built and the pilot at the spawn.
@@ -110,7 +162,7 @@ func _stand_layer() -> void:
 
 ## A new layer from `seed_value`: the old isles and stage freed, the new
 ## planned, the sky's isles made again, the pilot at its spawn.
-func start_layer(seed_value: int, why := "") -> void:
+func start_layer(seed_value: int, why := "", laid := {}) -> void:
 	last_end = why
 	var old: Array = sky.motifs.isles.duplicate() if sky != null and sky.motifs != null else []
 	if stage != null:
@@ -118,7 +170,8 @@ func start_layer(seed_value: int, why := "") -> void:
 		remove_child(stage)
 		stage.free()
 		stage = null
-	_lay(seed_value)
+	if laid.is_empty(): _lay(seed_value)
+	else: _take(laid)
 	if sky != null:
 		sky.restart(layer_entries())
 		# The old isles' water no longer stands.
@@ -136,17 +189,34 @@ func tick(delta: float) -> void:
 	super.tick(delta)
 	if stage == null or flying: return
 	if stage.at_exit(motor.feet):
-		start_layer(layer_seed+1,"Through the gate: layer %d" % (layer_seed+1))
+		request_layer(layer_seed+1,"Through the gate: layer %d" % (layer_seed+1))
 	elif motor.feet.y < float(layer.void_y):
-		start_layer(layer_seed+1,"Into the void: layer %d" % (layer_seed+1))
+		request_layer(layer_seed+1,"Into the void: layer %d" % (layer_seed+1))
+		# Laid on a worker: back at this one's spawn meanwhile.
+		if _plan_task >= 0: respawn()
 
 ## Down off the edge he falls till he lands (a lower isle) or the void
 ## takes him; never stranded back to the plane.
 func _strand() -> void:
 	pass
 
+var _card_due := 0.0
+
 func _process(delta: float) -> void:
 	super._process(delta)
+	if _plan_task >= 0 and _card != null and WorkerThreadPool.is_task_completed(_plan_task):
+		WorkerThreadPool.wait_for_task_completion(_plan_task)
+		_plan_task = -1
+		if stage != null: start_layer(int(_plan_out.plan.seed),_plan_why,_plan_out)
+		else:
+			# The first: its isles into the sky, then stood.
+			_take(_plan_out)
+			sky.restart(layer_entries())
+			_stand_layer()
+	_card_due -= delta
+	if _card_due <= 0.0:
+		_card_due = 0.5
+		_update_card()
 	if layer_up_ms < 0 and sky != null and sky.motifs != null and sky.motifs.all_stood():
 		layer_up_ms = Time.get_ticks_msec()-_layer_asked
 		print("run layer: seed %d stood whole in %d ms (planned in %d ms)" % [layer_seed,layer_up_ms,plan_ms])
@@ -157,10 +227,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		var key := event as InputEventKey
 		match key.keycode:
 			KEY_N:
-				start_layer(maxi(layer_seed+(-1 if key.shift_pressed else 1),1))
+				request_layer(maxi(layer_seed+(-1 if key.shift_pressed else 1),1))
 				return
 			KEY_BACKSPACE:
-				start_layer(layer_seed)
+				request_layer(layer_seed)
 				return
 	super._unhandled_input(event)
 
@@ -178,10 +248,20 @@ func _build_card() -> void:
 	holder.add_child(_card)
 
 func _update_card() -> void:
-	if _card == null: return
-	var names := PackedStringArray()
-	for isle: Dictionary in layer.isles:
-		if isle.role != "base": names.append(str(isle.id).replace("_"," ")+(" (greed)" if isle.role == "greed" else ""))
+	if _card == null or layer.is_empty(): return
+	# Each neighbourhood's isles, the gulf (and its rides) after it.
+	var parts := PackedStringArray()
+	for h in range((layer.hoods as Array).size()):
+		var names := PackedStringArray()
+		for i: int in layer.hoods[h]:
+			var isle: Dictionary = layer.isles[i]
+			names.append(str(isle.id).replace("_"," ")+(" (greed)" if isle.role == "greed" else ""))
+		parts.append(", ".join(names))
+		if h < (layer.gulfs as Array).size():
+			var e: Dictionary = layer.edges[layer.gulfs[h]]
+			parts.append("~ %.0f m gulf: %s%s ~" % [float(e.width),str(e.ride),", cannon" if not (e.get("cannon",{}) as Dictionary).is_empty() else ""])
 	var up := "standing up..." if layer_up_ms < 0 else "up in %.1f s" % (layer_up_ms/1000.0)
 	var runes := "runes %d/%d" % [stage.taken,LayerPlan.RUNES] if stage != null else ""
-	_card.text = "Layer · seed %d  ·  %s  ·  %s\n%s\nN next seed · Shift+N previous · Backspace again" % [layer_seed,runes,up,", ".join(names)]
+	var ride := ""
+	if stage != null and stage.rides != null and motor != null: ride = stage.rides.schedule(motor.feet)
+	_card.text = "Layer · seed %d  ·  %s  ·  %s\n%s\n%sN next seed · Shift+N previous · Backspace again" % [layer_seed,runes,up,"\n".join(parts),ride+"\n" if ride != "" else ""]

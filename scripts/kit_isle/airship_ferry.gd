@@ -162,6 +162,13 @@ var _length := 0.0
 ## Each stop: {name, arc (m round the loop), at (s into the lap its rest
 ## begins)}; each leg after one: its length (m) and how long it takes (s).
 var stops: Array[Dictionary] = []
+## The loop: ROUTE unless another sets it before `setup` (a generated
+## layer's gulf, scripts/roguelike/layer_rides.gd): [point, stop or "",
+## and for a stop optionally its isle's side, +1 starboard, -1 port].
+var route: Array = ROUTE
+## The envelope's capsules (the sky's `envelope_solid`); empty: asked of
+## the ship's parent, the sky.
+var envelope_parts: Array = []
 
 func _init() -> void:
 	name = "Ferry"
@@ -187,7 +194,9 @@ func setup(study: Node3D, airship: Node3D) -> void:
 		if arg == "--ferry-aboard": start_aboard = "home"
 		elif arg.begins_with("--ferry-aboard="): start_aboard = arg.get_slice("=",1)
 		elif arg.begins_with("--ferry-at="): start_at = arg.get_slice("=",1)
-	clock = fposmod(stop("home").at-START_LEAD,lap)
+	var first := stop("home")
+	if first.is_empty(): first = stops[0]
+	clock = fposmod(float(first.at)-START_LEAD,lap)
 	_place(clock)
 	if (start_aboard != "" or start_at != "") and scene.has_signal("isle_ready"):
 		scene.isle_ready.connect(_flag_start,CONNECT_ONE_SHOT)
@@ -199,7 +208,7 @@ func _build_body() -> void:
 	body.name = "FerrySolid"
 	body.collision_layer = LAYER
 	body.collision_mask = 0
-	for part: Vector3 in ship.get_parent().envelope_solid():
+	for part: Vector3 in (envelope_parts if not envelope_parts.is_empty() else ship.get_parent().envelope_solid()):
 		var envelope := CollisionShape3D.new()
 		var capsule := CapsuleShape3D.new()
 		capsule.radius = part.z*SCALE
@@ -226,21 +235,28 @@ func _build_body() -> void:
 static func loop_points() -> Array:
 	return ROUTE.map(func(r: Array) -> Vector3: return r[0])
 
+## This ferry's loop's points.
+func loop() -> Array:
+	return route.map(func(r: Array) -> Vector3: return r[0])
+
 ## A point on the loop's Catmull-Rom at `u` (0 to 1 round it).
-static func _spline(u: float) -> Vector3:
-	var n := ROUTE.size()
+func _spline(u: float) -> Vector3:
+	return spline_of(route,u)
+
+static func spline_of(points: Array, u: float) -> Vector3:
+	var n := points.size()
 	var f := fposmod(u,1.0)*n
 	var i := int(f)
 	var t := f-i
-	var p0: Vector3 = ROUTE[(i-1+n)%n][0]
-	var p1: Vector3 = ROUTE[i%n][0]
-	var p2: Vector3 = ROUTE[(i+1)%n][0]
-	var p3: Vector3 = ROUTE[(i+2)%n][0]
+	var p0: Vector3 = points[(i-1+n)%n][0]
+	var p1: Vector3 = points[i%n][0]
+	var p2: Vector3 = points[(i+1)%n][0]
+	var p3: Vector3 = points[(i+2)%n][0]
 	return 0.5*((2.0*p1)+(-p0+p2)*t+(2.0*p0-5.0*p1+4.0*p2-p3)*t*t+(-p0+3.0*p1-3.0*p2+p3)*t*t*t)
 
 ## The loop sampled finely, then laid out every SAMPLE m along it.
 func _lay_table() -> void:
-	var fine := ROUTE.size()*FINE
+	var fine := route.size()*FINE
 	var at := PackedVector3Array()
 	var arcs := PackedFloat32Array()
 	var run := 0.0
@@ -268,9 +284,11 @@ func _lay_table() -> void:
 ## the leg to the next stop eased in and out.
 func _lay_stops() -> void:
 	stops.clear()
-	for i in range(ROUTE.size()):
-		if str(ROUTE[i][1]) == "": continue
-		stops.append({"name":str(ROUTE[i][1]),"arc":_fine_arcs[i*FINE]})
+	for i in range(route.size()):
+		if str(route[i][1]) == "": continue
+		var side := 1.0 if str(route[i][1]) == "home" else -1.0
+		if (route[i] as Array).size() > 2: side = float(route[i][2])
+		stops.append({"name":str(route[i][1]),"arc":_fine_arcs[i*FINE],"side":side})
 	var t := 0.0
 	for k in range(stops.size()):
 		var a: float = stops[k].arc
@@ -503,7 +521,7 @@ func wait_spot(n: String) -> Dictionary:
 	var h := heading_at(float(s.arc))
 	var basis := Basis(Vector3.UP,h)
 	# The isle's side: home has it to starboard (+X), the bell spires to port.
-	var side := 1.0 if n == "home" else -1.0
+	var side := float(s.get("side",1.0 if n == "home" else -1.0))
 	var deck := basis*FOREDECK+p
 	var out := basis.x*side
 	var spot := deck+out*(AirshipBuild.HULL.x*SCALE+1.4)

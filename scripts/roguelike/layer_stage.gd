@@ -8,7 +8,9 @@ extends Node3D
 ## trap_voussoirs.gd) in a TrapField, the Plinth Ram (scripts/enemies/
 ## plinth_ram.gd) in an EnemyField, the cannon and its kegs (scripts/
 ## cannon/cannon_field.gd), the rune set on the greed isle's perch
-## (scripts/glyph_pickup.gd runes) and the exit gate.
+## (scripts/glyph_pickup.gd runes) and the exit gate; the gulfs' rides
+## (scripts/roguelike/layer_rides.gd: serpents, ferries, their piers and
+## the gulf cannons).
 ##
 ## It stands in the study's `foot_pieces` slot round what stood there (the
 ## aqueduct isle's foot pieces, `inner`) and steps the traps, the enemies
@@ -25,6 +27,7 @@ const CannonField = preload("res://scripts/cannon/cannon_field.gd")
 const GlyphPickup = preload("res://scripts/glyph_pickup.gd")
 const Lines = preload("res://scripts/collectible_lines.gd")
 const LayerPlan = preload("res://scripts/roguelike/layer_plan.gd")
+const LayerRides = preload("res://scripts/roguelike/layer_rides.gd")
 
 const GATE := Color(1.0,0.82,0.45)
 const RUNE_SIZE := 0.7
@@ -48,6 +51,7 @@ var bridges: Array[MeshInstance3D] = []
 var runes: Array = []
 var taken := 0
 var gate: Node3D
+var rides: Node3D
 var _last := Vector3.INF
 
 func _init() -> void:
@@ -101,6 +105,9 @@ func setup(scene: Node3D, layer: Dictionary, was: Node) -> void:
 	scene.foot_pieces = self
 	_runes()
 	_gate()
+	rides = LayerRides.new()
+	add_child(rides)
+	rides.setup(scene,layer,self)
 
 ## The rope bridges and their anchors (the broken ring's own).
 func _bridges(seed_value: int) -> void:
