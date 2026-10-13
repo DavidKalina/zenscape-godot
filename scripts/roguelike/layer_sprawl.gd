@@ -46,6 +46,7 @@ const Cannon = preload("res://scripts/cannon/cannon.gd")
 const NextRegionLod = preload("res://scripts/roguelike/next_region_lod.gd")
 const LayerPieces = preload("res://scripts/roguelike/layer_pieces.gd")
 const Roost = preload("res://scripts/kit_isle/motif_dragon_roost.gd")
+const LayerHazards = preload("res://scripts/roguelike/layer_hazards.gd")
 
 ## The lean's weight: points per 100 m stood toward the rolled heading
 ## (LayerPlan `_lean`; a step's random share is 0-2, a gulf's the same).
@@ -198,6 +199,10 @@ static func core(seed_value: int, knobs := {}) -> Dictionary:
 		var rng := RandomNumberGenerator.new()
 		rng.seed = hash([seed_value,attempt,"sprawl"])
 		if _chain(plan,lean,rng):
+			# The hazards (the viaduct may move the gate) before the view.
+			if not LayerHazards.lay(plan,attempt):
+				plan.problems.append("no viaduct")
+				continue
 			_spawn_view(plan)
 			var roost_began := Time.get_ticks_usec()
 			if _roost(plan):
@@ -860,6 +865,7 @@ static func dress(stage: Node3D, plan: Dictionary) -> void:
 		var node: Node3D = stage.cannons.add_cannon(c.at,float(c.heading),{"speed_max":float(c.speed)})
 		node.name = "ExitCannon%d" % i
 		for at: Vector3 in c.kegs: stage.cannons.add_keg(at)
+	stage.hazards = LayerHazards.dress(stage,plan)
 	if plan.has("next"):
 		var lod := NextRegionLod.build(plan.next)
 		stage.add_child(lod)
@@ -893,6 +899,8 @@ static func card(plan: Dictionary) -> String:
 	for i: int in plan.get("chain",[]): kinds.append(str(plan.edges[i].kind).replace("trap","voussoirs"))
 	var line := "Exit side: %s (%s, then the gate)" % [compass(plan.heading),", ".join(kinds)]
 	if plan.has("next"): line += "  ·  next region (layer %d) %.0f m off, %.0f m up" % [int(plan.next.seed),float(plan.next.far),float(plan.next.rise)]
+	var hz := LayerHazards.card(plan)
+	if hz != "": line += "\n"+hz
 	var roost: Dictionary = plan.get("roost",{})
 	if not roost.is_empty():
 		var at: Vector3 = roost.at
