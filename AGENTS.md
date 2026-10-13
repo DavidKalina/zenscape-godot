@@ -25,6 +25,19 @@ left uncommitted. Committed tests come in a lock-in round the user asks for,
 which also reconciles the tests prototypes broke. A round's handoff lists any
 existing test its change breaks.
 
+# Subagent models
+
+Pick a subagent's model by what it makes:
+
+- **Opus**, the default: physics, moving bodies, input, movement and feel,
+  complex logic, graphics, shaders, art, new kit pieces. Brief it to prove the
+  work through the real play loop and input path, not only scripted test ticks.
+- **Sonnet**, assembly: putting pieces that already exist together into a
+  scene, motifs, layouts.
+- **Haiku**: names, labels and other small brainstorms.
+
+A task that mixes kinds goes to Opus.
+
 # Sizes
 
 The plane's and the wanderer's sizes live only in `scripts/world_scale.gd`,
