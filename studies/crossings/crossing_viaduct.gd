@@ -46,6 +46,8 @@ const Aqueduct = preload("res://scripts/ruin_kit_aqueduct.gd")
 const RuinKitTower = preload("res://scripts/ruin_kit_tower.gd")
 const GustArrows = preload("res://studies/crossings/gust_arrows.gd")
 const HornStandIn = preload("res://studies/crossings/horn_stand_in.gd")
+const HornPerch = preload("res://studies/crossings/horn_perch.gd")
+const RuinKitHorn = preload("res://scripts/ruin_kit_horn.gd")
 const Slam = preload("res://scripts/slam.gd")
 const PocketSail = preload("res://scripts/pocket_sail.gd")
 
@@ -132,7 +134,7 @@ const STAND_LOW := 1.0
 ## ARCHER_TO of the way to the plinth, ARCHER_ZONE.x to their left and the
 ## safe stair's line plus ARCHER_ZONE.y to their right (m), from the turn
 ## platform's top up; and its own route.
-const ARCHER_CLEAR := HornStandIn.MOUTH_UP
+const ARCHER_CLEAR := RuinKitHorn.PED_H+RuinKitHorn.AXIS
 const ARCHER_ZONE := Vector2(3.0,2.0)
 ## The far side's perch stands at the end of its route off the plinth
 ## (FAR_TURN). It fires on the piers and the safe stair from FAR_ARCHER_FROM
@@ -225,6 +227,9 @@ var lip_end := Vector3.ZERO
 var far_near := Vector3.ZERO
 var numbers := {}
 var arrows: GustArrows
+## The horns' own bodies: their balls fly out through them (a slow head
+## still turning onto him).
+var _horn_rids: Array[RID] = []
 ## The perches' routes, worked out by `lay_out` (`_route`): "left" and
 ## "far", each {from (departure top, local), deg, sail_gap, stones
 ## [{kind, at, yaw}], top (perch top's middle), draft {base, top}}.
@@ -437,7 +442,9 @@ func updrafts() -> Array:
 ## The stones' bodies once made (`foot_stones`): the gust arrows fly
 ## through them, so a route doesn't shield the line its perch guards.
 func stones_made(rids: Array[RID]) -> void:
-	if arrows != null: arrows.set_see_through(rids)
+	var all: Array[RID] = _horn_rids.duplicate()
+	all.append_array(rids)
+	if arrows != null: arrows.set_see_through(all)
 
 ## The floating stones out to the perches ({kind "bob" or "sink", at (the
 ## top's middle, local), yaw, size}): the yard makes them as foot pieces
@@ -561,17 +568,19 @@ func _perch(called: String, top: Vector3, deg: float, bottom: float, zone: Calla
 	horn.position = at(Vector3.ZERO,deg,back)
 	horn.rotation.y = yaw_of(deg+180.0)
 	var l := arrows.add_launcher(top,zone,horn,PERCH_TOP*0.5,opts)
+	l.cap_rise = RuinKitHorn.TOP_HEIGHT
+	for b: Node in horn.find_children("*","StaticBody3D",true,false): _horn_rids.append((b as StaticBody3D).get_rid())
+	arrows.set_see_through(_horn_rids)
 	l.name = called+"Launcher"
 	return l
 
-## THE PERCH'S HORN: the greybox stand-in (studies/crossings/
-## horn_stand_in.gd: a "Head" that turns, a "Mouth" marker, `aim_at`,
-## `tell`, `fired`, `disabled`, `is_disabled`). The stone wind horn has the
-## same nodes and methods; the swap is this one line:
-##     return RuinKitHorn.wind_horn(seed_value,weathered)
-## (with `const RuinKitHorn = preload("res://scripts/ruin_kit_horn.gd")`).
+## THE PERCH'S HORN: the stone wind horn (studies/crossings/horn_perch.gd
+## over scripts/ruin_kit_horn.gd). `_horn_stand_in` below is the greybox it
+## replaced, the same nodes and methods.
 func perch_piece(seed_value: int, weathered: float) -> Node3D:
-	return _horn_stand_in(seed_value,weathered)
+	var horn := HornPerch.new()
+	horn.setup(seed_value,weathered)
+	return horn
 
 func _horn_stand_in(_seed_value: int, _weathered: float) -> Node3D:
 	var horn := HornStandIn.new()

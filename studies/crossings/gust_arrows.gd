@@ -104,6 +104,9 @@ class Launcher extends Node3D:
 	var horn: Node3D
 	## The top's half size (m); 0: no top to slam.
 	var top_half := 0.0
+	## The horn's own standable top over the perch's top (m; 0 none): a
+	## slam on it counts too.
+	var cap_rise := 0.0
 	## Fires only at a pilot in the air, off his feet and not tumbling (the
 	## low perches: at a falling or sailing pilot, never one on the route).
 	var airborne := false
@@ -123,7 +126,8 @@ class Launcher extends Node3D:
 	func slam(at: Vector3, _radius: float, _strength: float) -> void:
 		if top_half <= 0.0: return
 		var q := to_local(at)
-		if absf(q.y) > SLAM_UP*WorldScale.wanderer or Vector2(q.x,q.z).length() > top_half+SLAM_EDGE: return
+		var up := SLAM_UP*WorldScale.wanderer
+		if (absf(q.y) > up and (cap_rise <= 0.0 or q.y < -up or q.y > cap_rise+up)) or Vector2(q.x,q.z).length() > top_half+SLAM_EDGE: return
 		down_left = DISABLE_TIME
 		slams += 1
 		fresh = true
