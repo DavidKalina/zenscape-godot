@@ -173,3 +173,54 @@ committed tests and the slow layer tests were not run.
   - "the same climb" kept in the record so a seed can be shared;
   - a better start position on seeds where the first crossing is off to
     the side (move the spawn, which is layer_sprawl.gd's call).
+
+## UI (2026-10-12, branch `ui/run-splash`)
+
+The user: "the UI is pretty bad", reuse the splash, a corner. All the run's
+UI now speaks the isle card's language (scripts/isle_splash.gd). Its pieces
+are shared from there as statics (`inscription_font`, `gilt_material` /
+`gild`, `style`, `make_band` / `lay_band`, `hairline`); the isle card calls
+the same ones, so it looks as before (test_isle_card_marks and
+test_isle_lock pass).
+
+```sh
+/Users/davidkalina/Applications/Godot.app/Contents/MacOS/Godot --path . res://studies/run_layer.tscn -- --no-title --shape=sprawl --seed=11
+```
+
+- **Heights, not layers.** The player reads the height climbed in metres
+  above the run's start spot, never a count. Through the gate the height
+  he reached it at carries over: the next start counts as that height.
+  Only footing counts toward the best (a jump's peak doesn't). The layer
+  count stays inside for the gate and the record. The record file gains
+  `highest` (m); an old file reads it as 0 m and gains the key on its next
+  save.
+- **The one naming table** is `WORDS` at the top of
+  scripts/roguelike/run_loop.gd: the unit, the readout, the rune words, the
+  captions, the card's title and facts, the prompt, and the dev-only
+  "stage" word. Rename there.
+- **The readout**, top left (the top right is the collectibles' pickup
+  readout; the top left only holds the study's I card and F1 HUD, both
+  hidden by default, and the readout hides while the I card shows): `412 m`
+  gilt in the inscription face (22 px, tracked), `3 RUNES` in small caps
+  beside it, a hairline with a small diamond under both, a faint band. It
+  sinks to 28% while you move and comes up when you stand still (0.6 s),
+  take a rune or arrive (3 s).
+- **The arrival caption**: a small isle card in the upper middle (236 px
+  down at 1080). A new climb: `THE CLIMB`, with `highest  1,180 m` under it
+  once there's a record. Through the gate: `HIGHER STILL` over the height.
+  The title settles from wide tracking, the hairline draws out from its
+  diamond, the line fades in; it holds 2.2 s and fades.
+- **The death card**, centred a little above the middle, over the dark:
+  `FELL FROM 412 m` gilt (40 px), the hairline and diamond, then the facts
+  one after another in the reading face (`2 runes lost`, `6:41`, a pause,
+  `highest: 1,180 m` or `the highest yet`), and the prompt `SPACE / A   A
+  NEW CLIMB   R / X   THE SAME` in small caps near the bottom, coming up
+  last at half strength.
+
+Checked headless (throwaway, uncommitted): the import, the sprawl on seed
+11 for 400 frames with no script errors, and a scripted fall showing the
+caption, readout and card texts above, the old record migrated, and the
+isle card still building. **Unverified visually**: how any of it looks;
+whether the 22 px gilt reads in the corner over bright sky; the band
+strengths; whether `FELL FROM 412 m` (caps with a lower-case unit) looks
+right in the tracked face. No existing test is broken by this change.
