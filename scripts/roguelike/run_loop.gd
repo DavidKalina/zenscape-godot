@@ -24,6 +24,9 @@ const RunState = preload("res://scripts/roguelike/run_state.gd")
 const RunOverlay = preload("res://scripts/roguelike/run_overlay.gd")
 const StartSpot = preload("res://scripts/roguelike/start_spot.gd")
 const WayLights = preload("res://scripts/roguelike/way_lights.gd")
+## The way on lit (lanterns, the hung lights): off, the user found them not
+## needed (2026-10-12); `--way-lit` puts them back.
+static var WAY_LIT := "--way-lit" in preload("res://scripts/launch_args.gd").user_args()
 const Pad = preload("res://scripts/pad.gd")
 
 ## Past the void, falling on before the dark comes (s), the dark coming (s).
@@ -206,9 +209,10 @@ func _arrive(colour: Color) -> void:
 func layer_stood() -> void:
 	var stage: Node3D = study.stage
 	var layer: Dictionary = study.layer
-	var lights := WayLights.new()
-	stage.add_child(lights)
-	lights.setup(study,layer)
+	if WAY_LIT:
+		var lights := WayLights.new()
+		stage.add_child(lights)
+		lights.setup(study,layer)
 	var spot := StartSpot.new()
 	stage.add_child(spot)
 	spot.setup(study,layer)
