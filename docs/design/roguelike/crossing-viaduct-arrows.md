@@ -134,3 +134,13 @@ pop on the stair. Captures are in `captures/viaduct_arrows/` in the worktree
   shot can't be baited out yet.
 - No second launcher for the aqueduct deck.
 - The archer model.
+
+## Round 2 (more perches)
+
+Two more perches after the user played round 1 ("pretty damn good... we need to add more"):
+the far side's (right of the safe stair, three quarters along the piers, `FAR_ARCHER_*`,
+firing on the piers from 45% on, never on the stair) and the deck's (right of the run-up,
+`DECK_ARCHER_*`, firing on the deck). Launchers take turns (`GustArrows.TURN_GAP`): one winds
+up only when no other is winding up, has a ball in flight or fired within 1 s. Without it the
+two pier perches fired together and a standing shove became a throw from the second ball.
+The deck perch is unverified: whether its shots clear the parapets and reach a pilot on the deck.

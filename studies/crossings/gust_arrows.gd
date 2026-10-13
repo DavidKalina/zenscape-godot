@@ -63,6 +63,10 @@ const STUN_DOWN := 0.8
 ## The shove on his feet (m/s), out from the burst and up.
 const PUSH := 3.2
 const PUSH_UP := 2.4
+## Launchers take turns: one winds up only when no other is winding up,
+## has a ball in flight, or fired within TURN_GAP s (no shove into a second
+## shot's throw).
+const TURN_GAP := 1.0
 
 ## Off: no tells, no new shots.
 var on := true
@@ -137,7 +141,7 @@ func step(delta: float, motor: Object, space: PhysicsDirectSpaceState3D) -> Stri
 		var l := launchers[i]
 		var b := l.air_blast
 		b.on = on
-		var seen := bool(l.zone.call(local))
+		var seen := bool(l.zone.call(local)) and (b.phase == "windup" or not _others_busy(i))
 		b.advance(delta,space,seen,l.mouth_at(),aim)
 		var v: Vector3 = b.pilot_knock(feet,motor)
 		if v == Vector3.ZERO: continue
@@ -151,6 +155,15 @@ func step(delta: float, motor: Object, space: PhysicsDirectSpaceState3D) -> Stri
 		hits.append({"kind":out,"at":feet,"launcher":i,"t":_clock})
 		print("gust arrows: %s (launcher %d, %s)" % [out,i,"standing" if standing else ("mid-pump, on the touch" if motor.grounded else "in the air")])
 	return out
+
+## Whether a launcher other than `me` is winding up, has a ball in
+## flight, or fired within TURN_GAP.
+func _others_busy(me: int) -> bool:
+	for i in range(launchers.size()):
+		if i == me: continue
+		var o := launchers[i].air_blast
+		if o.phase == "windup" or not o.balls.is_empty() or o.since_shot < TURN_GAP: return true
+	return false
 
 ## The launchers, each read by the isle's sound as a dragon's air blast
 ## (scripts/kit_isle/kit_audio_beasts.gd `_air_blast`: its `air_blast` and

@@ -113,6 +113,21 @@ const ARCHER_ASIDE := 18.0
 const ARCHER_UP := 0.0
 const ARCHER_CLEAR := 1.2
 const ARCHER_ZONE := Vector2(3.0,2.0)
+## The second perch, the far side's: along the piers (share of the way to
+## the plinth), right of the safe stair (m), over the pier there (m). It
+## fires on the piers from that share on, not on the stair (the stair stays
+## the covered line), so the two perches take turns down the field.
+const FAR_ARCHER_ALONG := 0.75
+const FAR_ARCHER_ASIDE := 16.0
+const FAR_ARCHER_UP := 4.0
+const FAR_ARCHER_FROM := 0.45
+## The deck's perch: along the run-up (share of the way to the lip), right
+## of it (m), over the deck there (m: over the parapets), and how far
+## either side of the deck's line it fires on (m).
+const DECK_ARCHER_ALONG := 0.55
+const DECK_ARCHER_ASIDE := 16.0
+const DECK_ARCHER_UP := 2.5
+const DECK_ARCHER_ZONE := 3.0
 
 var m: PilotMotor
 ## Worked out by `lay_out` (local).
@@ -379,10 +394,41 @@ func _arrows(low: float) -> void:
 	arrows = GustArrows.new()
 	add_child(arrows)
 	arrows.add_launcher(mouth,on_pier_field)
+	var far := far_archer_at()
+	column(far,Vector2(1.0,1.0),low,far.y-ARCHER_CLEAR,TURN_B,"dark").name = "FarArcherPerch"
+	arrows.add_launcher(far,on_far_piers)
+	var by_deck := deck_archer_at()
+	column(by_deck,Vector2(1.0,1.0),low,by_deck.y-ARCHER_CLEAR,0.0,"dark").name = "DeckArcherPerch"
+	arrows.add_launcher(by_deck,on_deck)
 
 ## The perch's ball mouth (local).
 func archer_at() -> Vector3:
 	return at(turn_mid,TURN_B,ARCHER_ALONG,-ARCHER_ASIDE,ARCHER_UP)
+
+## The far side's perch's ball mouth (local).
+func far_archer_at() -> Vector3:
+	var along := plinth_near*FAR_ARCHER_ALONG
+	var i := clampi(int(PIERS*FAR_ARCHER_ALONG),0,PIERS-1)
+	return at(turn_mid,TURN_B,along,SAFE_ASIDE+FAR_ARCHER_ASIDE,pier_tops[i].y-turn_mid.y+FAR_ARCHER_UP)
+
+## The deck's perch's ball mouth (local).
+func deck_archer_at() -> Vector3:
+	var run := -lip.z
+	return at(Vector3.ZERO,0.0,run*DECK_ARCHER_ALONG,DECK_ARCHER_ASIDE,run_rise*DECK_ARCHER_ALONG+DECK_ARCHER_UP)
+
+## Whether `feet` (local) are on the far half of the piers themselves (not
+## the stair beside them).
+func on_far_piers(feet: Vector3) -> bool:
+	var w := way(TURN_B)
+	var d := Vector2(feet.x-turn_mid.x,feet.z-turn_mid.z)
+	var along := d.dot(w)
+	var aside := d.dot(right_of(w))
+	return along > plinth_near*FAR_ARCHER_FROM and along < plinth_near and absf(aside) < PIER_TOP.x*0.5+1.0 and feet.y > turn_mid.y-1.0
+
+## Whether `feet` (local) are on the run-up deck, start rim's edge to the
+## fallen span's lip.
+func on_deck(feet: Vector3) -> bool:
+	return feet.z < -0.5 and feet.z > lip.z-0.5 and absf(feet.x) < DECK_ARCHER_ZONE and feet.y > -1.0
 
 ## Whether `feet` (local) are over the pier field or on the safe stair
 ## beside it (the turn platform's edge to the plinth, not down on the
