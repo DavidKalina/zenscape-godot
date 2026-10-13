@@ -149,6 +149,10 @@ var tint := AIR_TINT
 ## dragon's).
 var gather := GATHER
 var lead_flat := false
+## Bodies its balls fly through and its shock isn't hidden by (none, the
+## dragon's): the crossing yard's floating stones out to a perch, so a
+## perch's own route doesn't shield the line it guards.
+var see_through: Array[RID] = []
 var _target := Vector3.INF
 ## His span (m), set by the dragon each frame (the trail's length).
 var span := DragonDownwash.MODEL_SPAN*1.5
@@ -302,6 +306,7 @@ func fire(from: Vector3, aim: Vector3) -> void:
 func _step_balls(delta: float, space: PhysicsDirectSpaceState3D) -> void:
 	var ray := PhysicsRayQueryParameters3D.new()
 	ray.collision_mask = MASK
+	ray.exclude = see_through
 	for b: Dictionary in balls.duplicate():
 		b.age = float(b.age)+delta
 		var from: Vector3 = b.pos
@@ -402,6 +407,7 @@ func _shielded(at: Vector3, p: Vector3) -> bool:
 	if _space == null or at.distance_to(p) < 0.3: return false
 	var ray := PhysicsRayQueryParameters3D.new()
 	ray.collision_mask = SOLID
+	ray.exclude = see_through
 	ray.from = at
 	ray.to = p
 	var hit := _space.intersect_ray(ray)

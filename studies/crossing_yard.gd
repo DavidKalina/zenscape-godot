@@ -29,6 +29,8 @@ extends "res://studies/kit_isle.gd"
 ##   godot --path . res://studies/crossing_yard.tscn -- --no-title
 const Crossing = preload("res://studies/crossings/crossing.gd")
 const SkyCurrents = preload("res://scripts/sky_currents.gd")
+const GustArrows = preload("res://studies/crossings/gust_arrows.gd")
+const FootPieces = preload("res://scripts/interactables/foot_pieces.gd")
 
 ## Seconds after a knock into the air before Jump opens the sail out of
 ## the tumble (PilotMotor `knock_sail`): the blow's first jolt is his to
@@ -63,6 +65,8 @@ var _voice_beds: Array = []
 ## The crossing's updrafts (thermals the sail climbs, drawn as the sky's).
 var currents: SkyCurrents
 var _updraft_look: SkyCurrents
+## The crossing's floating stones (foot pieces), or null.
+var stones: Node3D
 ## Fallen past the void's floor (world y): lost. Falls so far.
 var kill_y := -INF
 var falls := 0
@@ -134,6 +138,31 @@ func _build_art() -> void:
 	var floor_body := crossing.get_node_or_null("Floor") as StaticBody3D
 	if floor_body != null: floor_body.collision_layer |= TURF_LAYER
 	_build_updrafts()
+	_build_stones()
+
+## The crossing's floating stones (its `foot_stones`, if it has them: the
+## viaduct's routes out to its perches) as foot pieces (scripts/
+## interactables/foot_pieces.gd: bobbing, sinking, carrying him).
+func _build_stones() -> void:
+	if stones != null:
+		if foot_pieces == stones: foot_pieces = null
+		stones.queue_free()
+		stones = null
+	if not crossing.has_method("foot_stones"): return
+	stones = FootPieces.new()
+	stones.name = "CrossingStones"
+	add_child(stones)
+	stones.attach(self)
+	var k := 0
+	for st: Dictionary in crossing.foot_stones():
+		var p: Vector3 = crossing.position+(st.at as Vector3)
+		if st.kind == "sink": stones.sink_slab(p,st.size,float(st.yaw),900+k)
+		else: stones.bob_slab(p,st.size,float(st.yaw),900+k)
+		k += 1
+	if crossing.has_method("stones_made"):
+		var rids: Array[RID] = []
+		for slab: Node3D in stones.slabs: rids.append(slab.rid())
+		crossing.stones_made(rids)
 
 ## The crossing's updrafts as the sky's thermals (SkyCurrents `add_thermal`,
 ## its ribbons spiralling up each column), in the world's frame.
@@ -218,7 +247,8 @@ func tick(delta: float) -> void:
 ## The crossing's hazards after the pilot's step, and their sound.
 func _hazards(delta: float) -> void:
 	if not crossing.has_hazards(): return
-	crossing.step_hazards(delta,motor,get_world_3d().direct_space_state)
+	var word := crossing.step_hazards(delta,motor,get_world_3d().direct_space_state)
+	if word == "silenced": _show_toast("Slammed the horn: silenced for %.0f s" % GustArrows.DISABLE_TIME)
 	if audio == null or audio.beasts == null: return
 	var voices: Array = crossing.hazard_voices()
 	while _voice_beds.size() < voices.size(): _voice_beds.append({})
@@ -261,6 +291,7 @@ func next_crossing() -> void:
 	crossing.build(_material)
 	crossing.set_hazards(hazards_on)
 	_build_updrafts()
+	_build_stones()
 	_voice_beds = []
 	await get_tree().physics_frame
 	respawn()
@@ -270,6 +301,7 @@ func _foot_text() -> String:
 	var names := []
 	for s: Dictionary in stations: names.append("%d %s" % [s.key,s.name])
 	var hazard := ("  ·  K arrows: %s" % ("on" if hazards_on else "off")) if crossing != null and crossing.has_hazards() else ""
+	if crossing != null and crossing.has_method("foot_stones"): hazard += "  ·  stones out to a horn: Space, Space again for the sail; off the last stone Shift/C slams its top (silenced)"
 	hazard += "  ·  falls %d" % falls
 	if motor != null and motor.move == "tumble" and not motor.grounded: hazard += "\nKnocked: Space (pad A) opens the sail  ·  ride an updraft's swirl back up"
 	elif motor != null and motor.move == "sail": hazard += "\nUnder the sail: WASD steer into an updraft's swirl to climb  ·  Shift/C float  ·  Space fold"

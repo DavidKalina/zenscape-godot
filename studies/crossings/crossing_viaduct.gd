@@ -45,6 +45,9 @@ const RuinKit = preload("res://scripts/ruin_kit.gd")
 const Aqueduct = preload("res://scripts/ruin_kit_aqueduct.gd")
 const RuinKitTower = preload("res://scripts/ruin_kit_tower.gd")
 const GustArrows = preload("res://studies/crossings/gust_arrows.gd")
+const HornStandIn = preload("res://studies/crossings/horn_stand_in.gd")
+const Slam = preload("res://scripts/slam.gd")
+const PocketSail = preload("res://scripts/pocket_sail.gd")
 
 const SEED := 4107
 ## Weathering of the stone (0 new to 1 ruin).
@@ -123,24 +126,18 @@ const STAND_SHAFT := Vector2(0.99,1.3)
 const STAND_DOOR := Vector2(1.3,2.6)
 const STAND_LOW := 1.0
 
-## The gust arrows' perch: along the piers from the turn platform's
-## middle (m), out to their left (m), up over the turn platform (m); the
-## perch's stone stops under the ball's mouth by ARCHER_CLEAR (m). The
-## zone it fires on: the piers' line from the turn platform's edge to the
-## plinth, ARCHER_ZONE.x to their left and the safe stair's line plus
-## ARCHER_ZONE.y to their right (m), from the turn platform's top up.
-const ARCHER_ALONG := 26.0
-const ARCHER_ASIDE := 18.0
-const ARCHER_UP := 0.0
-const ARCHER_CLEAR := 1.2
+## The gust arrows' left perch stands at the end of its route (`routes`,
+## LEFT_*), its mouth ARCHER_CLEAR over its top (the stand-in horn's). The
+## zone it fires on: the piers' line from the turn platform's edge to
+## ARCHER_TO of the way to the plinth, ARCHER_ZONE.x to their left and the
+## safe stair's line plus ARCHER_ZONE.y to their right (m), from the turn
+## platform's top up; and its own route.
+const ARCHER_CLEAR := HornStandIn.MOUTH_UP
 const ARCHER_ZONE := Vector2(3.0,2.0)
-## The second perch, the far side's: along the piers (share of the way to
-## the plinth), right of the safe stair (m), over the pier there (m). It
-## fires on the piers from that share on, not on the stair (the stair stays
-## the covered line), so the two perches take turns down the field.
-const FAR_ARCHER_ALONG := 0.75
-const FAR_ARCHER_ASIDE := 16.0
-const FAR_ARCHER_UP := 4.0
+## The far side's perch stands at the end of its route off the plinth
+## (FAR_TURN). It fires on the piers and the safe stair from FAR_ARCHER_FROM
+## of the way on (the stair is covered from the left perch only), and on its
+## route.
 const FAR_ARCHER_FROM := 0.45
 ## The deck's perch: along the run-up (share of the way to the lip), right
 ## of it (m), over the deck there (m: over the parapets), and how far
@@ -149,6 +146,62 @@ const DECK_ARCHER_ALONG := 0.55
 const DECK_ARCHER_ASIDE := 16.0
 const DECK_ARCHER_UP := 2.5
 const DECK_ARCHER_ZONE := 3.0
+## The left perch fires on the field up to this share of the way to the
+## plinth (the last piers are the far perch's; docs/design/roguelike/
+## crossing-viaduct-perches.md).
+const ARCHER_TO := 0.7
+
+## THE PERCHES (docs/design/roguelike/crossing-viaduct-perches.md): each a
+## wind horn (`perch_piece`: ONE function, the stand-in now, the stone horn
+## later) on a dark stone column whose top, PERCH_TOP m square, he can stand
+## on and slam to disable it (GustArrows DISABLE_TIME). The horn stands
+## HORN_BACK m back of the top's middle, away from his way in. Its mouth is
+## the horn's (its "Mouth" marker), ARCHER_CLEAR over the top in the stand-in.
+const PERCH_TOP := 3.2
+const HORN_BACK := 0.9
+## A perch's route out (`_route`): from a departure on the line, a gap a
+## plain long jump can't make but a jump and the sail can (the first stone
+## ROUTE_DROP m down, SAIL_SPARE m past the plain long jump's reach to it),
+## then a plain floating stone, a sinking one (scripts/interactables/
+## sink_slab.gd), a plain one, STEP_GAP apart (a running hop); the last
+## stands `slam_over` (the slam's least air plus a pump's height) over the perch's
+## top, PERCH_STEP m off its edge: off it, Shift/C in the air slams the top.
+const ROUTE_DROP := 1.5
+const SAIL_SPARE := 1.5
+const STONE := Vector3(2.4,0.7,2.2)
+const STEP_GAP := 1.4
+const PERCH_STEP := 0.6
+## The left perch's route: off pier LEFT_FROM, LEFT_TURN degrees left of
+## the piers' heading. The far perch's: off the slot's plinth, FAR_TURN
+## degrees right of the piers' heading.
+const LEFT_FROM := 3
+const LEFT_TURN := 70.0
+const FAR_TURN := 125.0
+## A perch fires on its own route too (a detour under fire): ROUTE_ZONE m
+## either side of it, from ROUTE_UNDER under the departure to over it.
+const ROUTE_ZONE := 3.0
+const ROUTE_UNDER := 8.0
+## The way back: an updraft just past each routed perch (PERCH_DRAFT_RADIUS
+## round), topping out so a ridden sail glides back to the departure: the
+## sail settles DRAFT_SETTLE m under a thermal's top, and loses a metre in
+## PocketSail PACE/SINK on the way back, DRAFT_SPARE m to spare.
+const PERCH_DRAFT_RADIUS := 4.5
+const DRAFT_SETTLE := 6.0
+const DRAFT_SPARE := 1.5
+## The low perches: in the void band under the route, firing at him only
+## off his feet (falling, under the sail; never tumbling or on the route).
+## Each (along, aside, up) from the turn platform's middle along the piers.
+## LOW_BLOCK m of stone under the top; they fire while he is ROUTE_CLEAR m
+## under the turn platform, within LOW_REACH m above or below the top;
+## a slower turn (LOW_COOLDOWN), a shorter reach (LOW_RANGE), and they lead
+## him (LOW_LEAD: a sail flies steady, so the counter is a turn).
+const LOW_PERCHES := [Vector3(16.0,-21.0,-22.0),Vector3(10.0,24.0,-32.0),Vector3(-30.0,-18.0,-18.0)]
+const LOW_BLOCK := 5.0
+const ROUTE_CLEAR := 3.0
+const LOW_REACH := 30.0
+const LOW_COOLDOWN := 3.0
+const LOW_RANGE := 45.0
+const LOW_LEAD := 0.6
 
 var m: PilotMotor
 ## Worked out by `lay_out` (local).
@@ -172,6 +225,12 @@ var lip_end := Vector3.ZERO
 var far_near := Vector3.ZERO
 var numbers := {}
 var arrows: GustArrows
+## The perches' routes, worked out by `lay_out` (`_route`): "left" and
+## "far", each {from (departure top, local), deg, sail_gap, stones
+## [{kind, at, yaw}], top (perch top's middle), draft {base, top}}.
+var routes := {}
+var slam_over := 0.0
+var sail_gap := 0.0
 
 func title() -> String:
 	return "The Broken Viaduct"
@@ -224,7 +283,15 @@ func lay_out() -> void:
 	far_gap = maxf(bare,bare_catch)+LAUNCH_SPARE
 	assert(far_gap < twirled,"viaduct: the twirl does not reach past the spare")
 	far_near = at(lip_end,c_deg,far_gap,0.0,-FAR_DROP)
-	numbers = {"run_rise":run_rise,"fall_gap":fall_gap,"plain_catch":miss,"chain3_land":make,"chain2_land":long_reach(chain2,FALL_DROP),
+	# The perches' routes: a jump and the sail out, stones, the slam.
+	slam_over = Slam.LOW*m.size+float(m.jumps[1])
+	sail_gap = long_reach(m.long_speed,ROUTE_DROP)+SAIL_SPARE
+	assert(sail_gap+1.0 < sail_reach(ROUTE_DROP),"viaduct: a perch route's sail gap is past the sail's reach")
+	var left_deg := TURN_B-LEFT_TURN
+	routes["left"] = _route(pier_tops[LEFT_FROM],left_deg,_edge_out(PIER_TOP*0.5,LEFT_TURN))
+	var far_deg := TURN_B+FAR_TURN
+	routes["far"] = _route(slot_foot,far_deg,_edge_out(Vector2(SLOT_PLINTH,SLOT_PLINTH),FAR_TURN))
+	numbers = {"slam_over":slam_over,"sail_gap":sail_gap,"sail_reach":sail_reach(ROUTE_DROP),"left_perch_top":routes.left.top,"far_perch_top":routes.far.top,"run_rise":run_rise,"fall_gap":fall_gap,"plain_catch":miss,"chain3_land":make,"chain2_land":long_reach(chain2,FALL_DROP),
 		"chain2_catch":catch_reach(chain2,FALL_DROP),"plain_land":long_reach(plain,FALL_DROP),
 		"pier_gap":pier_gap,"pier_rise":pier_rise,"first_rise":first_rise,"pump_flight":flight,
 		"slot_foot":slot_foot,"slot_top":slot_foot.y+SLOT_HEIGHT,"launch_pace":launch_pace,"bare_land":bare,
@@ -251,6 +318,41 @@ func catch_reach(pace: float, drop: float) -> float:
 	var g := m.long_gravity
 	var low := m.long_height+drop+m.hang_drop+PilotMotor.GRAB_HIGH
 	return pace*(sqrt(2.0*m.long_height/g)+sqrt(2.0*low/g))+PilotMotor.GRAB_REACH
+
+## About how far a running jump opened into the sail at its top carries
+## him, coming down `drop` m under its takeoff (no kick, no swoop: a
+## cautious reach): the jump's rise at a run, then the sail's glide
+## (PocketSail PACE on for SINK down) down the jump's height and the drop.
+func sail_reach(drop: float) -> float:
+	var up := float(m.jumps[0])
+	return m.run*sqrt(2.0*up/m.gravity)+PocketSail.PACE/PocketSail.SINK*(up+drop)
+
+## How far out from its middle a top `half` m round (across, along) ends,
+## going `turn` degrees off its along.
+static func _edge_out(half: Vector2, turn: float) -> float:
+	var a := deg_to_rad(turn)
+	var along := absf(cos(a))
+	var across := absf(sin(a))
+	return minf(half.y/along if along > 0.001 else INF,half.x/across if across > 0.001 else INF)
+
+## A perch's route off the top `from` (its middle, local), heading `deg`,
+## its edge `edge` m out that way: the sail gap, the plain stone, the
+## sinking one, the last (high) stone, the perch's top `slam_over` under
+## it; and its updraft back, just past the perch.
+func _route(from: Vector3, deg: float, edge: float) -> Dictionary:
+	var s := edge+sail_gap+STONE.z*0.5
+	var y := from.y-ROUTE_DROP
+	var stones := []
+	for kind: String in ["bob","sink","bob"]:
+		stones.append({"kind":kind,"at":at(Vector3(from.x,y,from.z),deg,s),"yaw":yaw_of(deg)})
+		s += STONE.z+STEP_GAP
+	s += -STEP_GAP-STONE.z*0.5+PERCH_STEP+PERCH_TOP*0.5
+	var top := at(Vector3(from.x,y-slam_over,from.z),deg,s)
+	var out := PERCH_TOP*0.5+PERCH_DRAFT_RADIUS+1.0
+	var base := at(top,deg,out)
+	var back := Vector2(base.x-from.x,base.z-from.z).length()
+	var draft_top := from.y+DRAFT_SETTLE+back*PocketSail.SINK/PocketSail.PACE+DRAFT_SPARE
+	return {"from":from,"deg":deg,"edge":edge,"stones":stones,"top":top,"draft":{"base":Vector3(base.x,-DROP,base.z),"top":draft_top}}
 
 ## The slide's pace off the launch's lip: in at a run, surfed down the slab
 ## (the motor's pull, drag and air), slid along half the flat lip.
@@ -321,11 +423,31 @@ func floor_y() -> float:
 func updrafts() -> Array:
 	var left := at(turn_mid,TURN_B,UPDRAFT_TURN_LEFT.x,UPDRAFT_TURN_LEFT.y)
 	var right := at(turn_mid,TURN_B,UPDRAFT_TURN_RIGHT.x,UPDRAFT_TURN_RIGHT.y)
-	return [
+	var all := [
 		{"name":"start rim","base":Vector3(UPDRAFT_START.x,-DROP,UPDRAFT_START.y),"top":UPDRAFT_OVER,"radius":UPDRAFT_RADIUS},
 		{"name":"turn platform, left","base":Vector3(left.x,-DROP,left.z),"top":turn_mid.y+UPDRAFT_OVER,"radius":UPDRAFT_RADIUS},
 		{"name":"turn platform, right","base":Vector3(right.x,-DROP,right.z),"top":turn_mid.y+UPDRAFT_OVER,"radius":UPDRAFT_RADIUS},
 	]
+	# The way back from each routed perch.
+	for key: String in routes:
+		var d: Dictionary = routes[key].draft
+		all.append({"name":"%s perch" % key,"base":d.base,"top":d.top,"radius":PERCH_DRAFT_RADIUS})
+	return all
+
+## The stones' bodies once made (`foot_stones`): the gust arrows fly
+## through them, so a route doesn't shield the line its perch guards.
+func stones_made(rids: Array[RID]) -> void:
+	if arrows != null: arrows.set_see_through(rids)
+
+## The floating stones out to the perches ({kind "bob" or "sink", at (the
+## top's middle, local), yaw, size}): the yard makes them as foot pieces
+## (scripts/interactables/foot_pieces.gd), which carry him as they move.
+func foot_stones() -> Array:
+	var all := []
+	for key: String in routes:
+		for st: Dictionary in routes[key].stones:
+			all.append({"kind":st.kind,"at":st.at,"yaw":st.yaw,"size":STONE,"route":key})
+	return all
 
 ## The chimney slot's middle at its foot (local).
 func slot_at() -> Vector3:
@@ -411,44 +533,96 @@ func _launch(low: float) -> void:
 	column(at(slab_low,c_deg,LIP_RUN*0.5),Vector2(1.6,1.6),low,slab_low.y-0.5,c_deg,"wall")
 	column(at(far_near,c_deg,FAR_RIM.x*0.5),Vector2(FAR_RIM.y,FAR_RIM.x),low,far_near.y,c_deg,"lip")
 
-## The gust arrows' perch (a stone column off the field, its ball's mouth
-## over it) and the zone it fires on.
+## The gust arrows' perches (docs/design/roguelike/crossing-viaduct-
+## perches.md), each a horn on a dark column with a standable top, and the
+## zones they fire on: the left perch (launcher 0) and the far perch (1) at
+## the ends of their routes, the deck's (2), the low ones (3..).
 func _arrows(low: float) -> void:
-	var mouth := archer_at()
-	column(mouth,Vector2(1.0,1.0),low,mouth.y-ARCHER_CLEAR,TURN_B,"dark").name = "ArcherPerch"
 	arrows = GustArrows.new()
 	add_child(arrows)
-	arrows.add_launcher(mouth,on_pier_field)
-	var far := far_archer_at()
-	column(far,Vector2(1.0,1.0),low,far.y-ARCHER_CLEAR,TURN_B,"dark").name = "FarArcherPerch"
-	arrows.add_launcher(far,on_far_piers)
-	var by_deck := deck_archer_at()
-	column(by_deck,Vector2(1.0,1.0),low,by_deck.y-ARCHER_CLEAR,0.0,"dark").name = "DeckArcherPerch"
-	arrows.add_launcher(by_deck,on_deck)
+	var left: Dictionary = routes.left
+	_perch("ArcherPerch",left.top,left.deg,low,func(f: Vector3) -> bool: return on_pier_field(f) or on_route(f,"left"),{},0)
+	var far: Dictionary = routes.far
+	_perch("FarArcherPerch",far.top,far.deg,low,func(f: Vector3) -> bool: return on_far_piers(f) or on_route(f,"far"),{},1)
+	var by_deck := deck_archer_at()-Vector3.UP*ARCHER_CLEAR
+	_perch("DeckArcherPerch",by_deck,90.0,low,on_deck,{},2,0.0)
+	for i in range(LOW_PERCHES.size()):
+		var top := low_perch_at(i)
+		var face := rad_to_deg(atan2(turn_mid.x-top.x,-(turn_mid.z-top.z)))
+		var zone := func(f: Vector3) -> bool: return in_the_drop(f,top)
+		_perch("LowPerch%d" % i,top,face+180.0,top.y-LOW_BLOCK,zone,{"airborne":true,"lead":LOW_LEAD,"cooldown":LOW_COOLDOWN,"range":LOW_RANGE},3+i,0.0)
 
-## The perch's ball mouth (local).
+## A perch: its column (`top` its top's middle, `bottom` its foot), facing
+## heading `deg` (the way he comes in on its route), its horn (`perch_piece`)
+## HORN_BACK further on, facing back; and its launcher.
+func _perch(called: String, top: Vector3, deg: float, bottom: float, zone: Callable, opts: Dictionary, k: int, back := HORN_BACK) -> GustArrows.Launcher:
+	column(top,Vector2(PERCH_TOP,PERCH_TOP),bottom,top.y,deg,"dark").name = called
+	var horn := perch_piece(SEED+60+k,WEATHERED)
+	horn.position = at(Vector3.ZERO,deg,back)
+	horn.rotation.y = yaw_of(deg+180.0)
+	var l := arrows.add_launcher(top,zone,horn,PERCH_TOP*0.5,opts)
+	l.name = called+"Launcher"
+	return l
+
+## THE PERCH'S HORN: the greybox stand-in (studies/crossings/
+## horn_stand_in.gd: a "Head" that turns, a "Mouth" marker, `aim_at`,
+## `tell`, `fired`, `disabled`, `is_disabled`). The stone wind horn has the
+## same nodes and methods; the swap is this one line:
+##     return RuinKitHorn.wind_horn(seed_value,weathered)
+## (with `const RuinKitHorn = preload("res://scripts/ruin_kit_horn.gd")`).
+func perch_piece(seed_value: int, weathered: float) -> Node3D:
+	return _horn_stand_in(seed_value,weathered)
+
+func _horn_stand_in(_seed_value: int, _weathered: float) -> Node3D:
+	var horn := HornStandIn.new()
+	horn.setup(_paint)
+	return horn
+
+## The left perch's ball mouth (local; the stand-in's).
 func archer_at() -> Vector3:
-	return at(turn_mid,TURN_B,ARCHER_ALONG,-ARCHER_ASIDE,ARCHER_UP)
+	return at(routes.left.top,routes.left.deg,HORN_BACK,0.0,ARCHER_CLEAR)
 
-## The far side's perch's ball mouth (local).
+## The far side's perch's ball mouth (local; the stand-in's).
 func far_archer_at() -> Vector3:
-	var along := plinth_near*FAR_ARCHER_ALONG
-	var i := clampi(int(PIERS*FAR_ARCHER_ALONG),0,PIERS-1)
-	return at(turn_mid,TURN_B,along,SAFE_ASIDE+FAR_ARCHER_ASIDE,pier_tops[i].y-turn_mid.y+FAR_ARCHER_UP)
+	return at(routes.far.top,routes.far.deg,HORN_BACK,0.0,ARCHER_CLEAR)
 
 ## The deck's perch's ball mouth (local).
 func deck_archer_at() -> Vector3:
 	var run := -lip.z
 	return at(Vector3.ZERO,0.0,run*DECK_ARCHER_ALONG,DECK_ARCHER_ASIDE,run_rise*DECK_ARCHER_ALONG+DECK_ARCHER_UP)
 
-## Whether `feet` (local) are on the far half of the piers themselves (not
-## the stair beside them).
+## The `i`th low perch's top's middle (local).
+func low_perch_at(i: int) -> Vector3:
+	var p: Vector3 = LOW_PERCHES[i]
+	return at(turn_mid,TURN_B,p.x,p.y,p.z)
+
+## Whether `feet` (local) are in a low perch's band: under the route (the
+## turn platform less ROUTE_CLEAR), within LOW_REACH of its top's height.
+func in_the_drop(feet: Vector3, top: Vector3) -> bool:
+	return feet.y < turn_mid.y-ROUTE_CLEAR and absf(feet.y-top.y) < LOW_REACH
+
+## Whether `feet` (local) are on (or over) a perch's route ("left", "far"):
+## off its departure's edge to its last stone, ROUTE_ZONE either side.
+func on_route(feet: Vector3, key: String) -> bool:
+	var r: Dictionary = routes[key]
+	var from: Vector3 = r.from
+	var w := way(float(r.deg))
+	var d := Vector2(feet.x-from.x,feet.z-from.z)
+	var along := d.dot(w)
+	var aside := d.dot(right_of(w))
+	var last: Vector3 = r.stones[r.stones.size()-1].at
+	var end := Vector2(last.x-from.x,last.z-from.z).length()+STONE.z*0.5
+	return along > float(r.edge)-0.5 and along < end and absf(aside) < ROUTE_ZONE and feet.y > from.y-ROUTE_UNDER and feet.y < from.y+4.0
+
+## Whether `feet` (local) are on the far half of the field: the piers and
+## the safe stair beside them (on its side of the stair, the far perch has
+## no stone between: the stair is the covered line only from the left).
 func on_far_piers(feet: Vector3) -> bool:
 	var w := way(TURN_B)
 	var d := Vector2(feet.x-turn_mid.x,feet.z-turn_mid.z)
 	var along := d.dot(w)
 	var aside := d.dot(right_of(w))
-	return along > plinth_near*FAR_ARCHER_FROM and along < plinth_near and absf(aside) < PIER_TOP.x*0.5+1.0 and feet.y > turn_mid.y-1.0
+	return along > plinth_near*FAR_ARCHER_FROM and along < plinth_near and aside > -(PIER_TOP.x*0.5+1.0) and aside < SAFE_ASIDE+ARCHER_ZONE.y and feet.y > turn_mid.y-1.0
 
 ## Whether `feet` (local) are on the run-up deck, start rim's edge to the
 ## fallen span's lip.
@@ -463,7 +637,7 @@ func on_pier_field(feet: Vector3) -> bool:
 	var d := Vector2(feet.x-turn_mid.x,feet.z-turn_mid.z)
 	var along := d.dot(w)
 	var aside := d.dot(right_of(w))
-	return along > TURN_PAD.y*0.5-0.5 and along < plinth_near and aside > -ARCHER_ZONE.x and aside < SAFE_ASIDE+ARCHER_ZONE.y and feet.y > turn_mid.y-1.0
+	return along > TURN_PAD.y*0.5-0.5 and along < plinth_near*ARCHER_TO and aside > -ARCHER_ZONE.x and aside < SAFE_ASIDE+ARCHER_ZONE.y and feet.y > turn_mid.y-1.0
 
 func has_hazards() -> bool:
 	return arrows != null
