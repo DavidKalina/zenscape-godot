@@ -120,6 +120,23 @@ var look := true
 var publish := true
 var windup := WINDUP
 var cooldown := COOLDOWN
+## A host's own knobs (another launcher than the dragon: the crossing
+## yard's gust arrows, studies/crossings/gust_arrows.gd); the defaults are
+## the dragon's, so he is unchanged. The ball's speed (m/s), how far it
+## flies (m), how near he winds up (m), the knock (walker heights), the
+## fuse (below), and
+## `homing`: the most it turns toward the pilot's middle a second
+## (radians; 0 none, the dragon's), given up once it has passed him.
+var speed := SPEED
+var flight := RANGE
+var fire_range := FIRE_RANGE
+var knock_out := KNOCK_OUT
+var knock_up := KNOCK_UP
+var homing := 0.0
+## The fuse (walker heights): a ball passing this near the pilot bursts on
+## him (FUSE, the dragon's).
+var fuse := FUSE
+var _target := Vector3.INF
 ## His span (m), set by the dragon each frame (the trail's length).
 var span := DragonDownwash.MODEL_SPAN*1.5
 ## "idle" or "windup"; seconds into the wind-up; seconds of cooldown left;
@@ -202,14 +219,15 @@ func advance(delta: float, space: PhysicsDirectSpaceState3D, spotted: bool, mout
 	_read_velocity(delta,aim)
 	_mouth_step = mouth-_mouth if _mouth != Vector3.INF and mouth.distance_to(_mouth) < 20.0 else Vector3.ZERO
 	_mouth = mouth
-	var can := on and spotted and aim != Vector3.INF and mouth.distance_to(aim) <= FIRE_RANGE
+	_target = aim
+	var can := on and spotted and aim != Vector3.INF and mouth.distance_to(aim) <= fire_range
 	if phase == "windup":
 		if not can: phase = "idle"
 		else:
 			windup_t += delta
 			if windup_t >= windup:
 				phase = "idle"
-				fire(mouth,lead(mouth,aim,aim_vel))
+				fire(mouth,lead(mouth,aim,aim_vel,speed))
 	elif can and cooldown_left <= 0.0:
 		phase = "windup"
 		windup_t = 0.0
@@ -244,17 +262,18 @@ func _read_velocity(delta: float, aim: Vector3) -> void:
 	_last_aim = aim
 
 ## Where to shoot from `from` at a pilot at `aim` moving `vel` (m/s): where
-## he will be when a ball at SPEED gets there, LEAD of his travel led.
-static func lead(from: Vector3, aim: Vector3, vel: Vector3) -> Vector3:
+## he will be when a ball at `pace` (SPEED) gets there, LEAD of his travel
+## led.
+static func lead(from: Vector3, aim: Vector3, vel: Vector3, pace := SPEED) -> Vector3:
 	var v := vel.limit_length(LEAD_MOST)
-	var t := from.distance_to(aim)/SPEED
-	for i in range(3): t = from.distance_to(aim+v*t*LEAD)/SPEED
+	var t := from.distance_to(aim)/pace
+	for i in range(3): t = from.distance_to(aim+v*t*LEAD)/pace
 	return aim+v*t*LEAD
 
 ## A ball from `from` toward `aim`, on along that line.
 func fire(from: Vector3, aim: Vector3) -> void:
 	var way := (aim-from).normalized() if aim.distance_to(from) > 0.01 else Vector3.DOWN
-	balls.append({"pos":from,"was":from,"vel":way*SPEED,"aim":aim,"age":0.0,"travelled":0.0,"trail":[],"fresh":true})
+	balls.append({"pos":from,"was":from,"vel":way*speed,"aim":aim,"age":0.0,"travelled":0.0,"trail":[],"fresh":true})
 	while balls.size() > MOST: balls.pop_front()
 	cooldown_left = cooldown
 	since_shot = 0.0
@@ -273,6 +292,7 @@ func _step_balls(delta: float, space: PhysicsDirectSpaceState3D) -> void:
 	for b: Dictionary in balls.duplicate():
 		b.age = float(b.age)+delta
 		var from: Vector3 = b.pos
+		if homing > 0.0 and float(b.age) > CARRY: _home(b,from,delta)
 		var to := from+(b.vel as Vector3)*delta
 		# (Not on the frame it's fired: it left from this frame's mouth.)
 		if b.get("fresh",false): b.fresh = false
@@ -280,7 +300,7 @@ func _step_balls(delta: float, space: PhysicsDirectSpaceState3D) -> void:
 			to += _mouth_step*clampf((CARRY-(float(b.age)-delta))/delta,0.0,1.0)
 			# Out of his mouth's carry: set back on its aim.
 			if float(b.age) > CARRY and (b.aim as Vector3).distance_to(to) > 1.0:
-				b.vel = ((b.aim as Vector3)-to).normalized()*SPEED
+				b.vel = ((b.aim as Vector3)-to).normalized()*speed
 		b.was = from
 		if space != null:
 			ray.from = from
@@ -297,9 +317,23 @@ func _step_balls(delta: float, space: PhysicsDirectSpaceState3D) -> void:
 				continue
 		b.pos = to
 		b.travelled = float(b.travelled)+from.distance_to(to)
-		if float(b.travelled) >= RANGE:
+		if float(b.travelled) >= flight:
 			balls.erase(b)
 			_puff_out(to,AIR_TINT,8,0.4)
+
+## Turned toward the pilot's middle (`homing` radians a second at most);
+## once he is behind it, it flies on straight.
+func _home(b: Dictionary, from: Vector3, delta: float) -> void:
+	if _target == Vector3.INF or not b.get("homing",true): return
+	var v: Vector3 = b.vel
+	var want := _target-from
+	if want.length() < 0.3 or v.dot(want) <= 0.0:
+		b.homing = false
+		return
+	var turn := v.angle_to(want)
+	var axis := v.cross(want)
+	if turn < 0.0001 or axis.length() < 0.000001: return
+	b.vel = v.rotated(axis.normalized(),minf(turn,homing*delta))
 
 ## The ball bursts at `at`: a shock that knocks the pilot and the plane in
 ## reach (on their next ask), the grass flattened in a ring.
@@ -371,7 +405,7 @@ func pilot_knock(feet: Vector3, motor: Object) -> Vector3:
 	var t := walker_tall()
 	var chest := feet+Vector3.UP*0.55*t
 	var reach := PhysicsGround.RADIUS*WorldScale.wanderer
-	_catch(chest,ball_radius()+reach+FUSE*t)
+	_catch(chest,ball_radius()+reach+fuse*t)
 	if motor.has_method("recovering") and motor.recovering(): return Vector3.ZERO
 	for s: Dictionary in shocks:
 		if bool(s.hit_pilot): continue
@@ -381,7 +415,7 @@ func pilot_knock(feet: Vector3, motor: Object) -> Vector3:
 		if _shielded(at,chest): continue
 		s.hit_pilot = true
 		var k := lerpf(1.0,EDGE,clampf(d/shock_radius(),0.0,1.0))
-		var v: Vector3 = motor.knock_velocity(_away(s,chest),KNOCK_OUT*t*k,KNOCK_UP*t*k)
+		var v: Vector3 = motor.knock_velocity(_away(s,chest),knock_out*t*k,knock_up*t*k)
 		knocks += 1
 		print("dragon air blast: knocks the pilot %.1f m from the burst, out (%.1f, %.1f) up %.1f m/s" % [d,v.x,v.z,v.y])
 		return v
@@ -536,7 +570,7 @@ func _draw() -> void:
 		var at: Vector3 = b.pos
 		var way := (b.vel as Vector3).normalized()
 		var grown := smoothstep(0.0,0.08,float(b.age))
-		var fade := grown*(1.0-smoothstep(RANGE*0.8,RANGE,float(b.travelled)))
+		var fade := grown*(1.0-smoothstep(flight*0.8,flight,float(b.travelled)))
 		var pulse := 1.0+0.08*sin(_clock*40.0+float(b.age)*7.0)
 		lm.set_instance_transform(li,Transform3D(Basis.from_scale(Vector3.ONE*r*2.6*pulse*lerpf(GATHER,1.0,grown)),at))
 		lm.set_instance_custom_data(li,Color(fade,0,0,0))

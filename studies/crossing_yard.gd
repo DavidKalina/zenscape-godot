@@ -13,6 +13,9 @@ extends "res://studies/kit_isle.gd"
 ##   R          back to the start rim
 ##   1..        each beat's start (practice)
 ##   N          the next crossing (built afresh)
+##   K          its hazards on or off (the viaduct's gust arrows:
+##              docs/design/roguelike/crossing-viaduct-arrows.md);
+##              `--arrows=0` starts with them off (default on)
 ## Crossed (stood on the far rim), the time from leaving the start rim
 ## shows. Fallen, he lands on the soft floor and walks (and climbs) back.
 ## `--crossing=<name>` starts on that crossing; `--beat=<n>` at that beat.
@@ -31,12 +34,17 @@ var _beat := 0
 ## The run's clock: from leaving the start rim to the far rim.
 var _run_t := -1.0
 var _crossed := false
+## The crossing's hazards on (K, --arrows=0/1), and the sound's state for
+## each of their voices.
+var hazards_on := true
+var _voice_beds: Array = []
 
 func _ready() -> void:
 	crossing_name = CROSSINGS.keys()[0]
 	for arg in preload("res://scripts/launch_args.gd").user_args():
 		if arg.begins_with("--crossing=") and CROSSINGS.has(arg.get_slice("=",1)): crossing_name = arg.get_slice("=",1)
 		elif arg.begins_with("--beat="): _beat = int(arg.get_slice("=",1))
+		elif arg.begins_with("--arrows="): hazards_on = arg.get_slice("=",1) != "0"
 	super._ready()
 
 func isle_name() -> String:
@@ -67,6 +75,7 @@ func _build_art() -> void:
 	super._build_art()
 	art.add_child(crossing)
 	crossing.build(_material)
+	crossing.set_hazards(hazards_on)
 	var floor_body := crossing.get_node_or_null("Floor") as StaticBody3D
 	if floor_body != null: floor_body.collision_layer |= TURF_LAYER
 
@@ -112,14 +121,32 @@ func tick(delta: float) -> void:
 	var local := motor.feet-crossing.position
 	if _run_t < 0.0 and not _crossed and local.distance_to(crossing.entry().at) > 4.0: _run_t = 0.0
 	elif _run_t >= 0.0: _run_t += delta
+	_hazards(delta)
 	if not _crossed and motor.grounded and crossing.exit_reached(local):
 		_crossed = true
 		if _run_t >= 0.0: _show_toast("Crossed: %s in %.1f s" % [crossing.title(),_run_t])
 		_run_t = -1.0
 
+## The crossing's hazards after the pilot's step, and their sound.
+func _hazards(delta: float) -> void:
+	if not crossing.has_hazards(): return
+	crossing.step_hazards(delta,motor,get_world_3d().direct_space_state)
+	if audio == null or audio.beasts == null: return
+	var voices: Array = crossing.hazard_voices()
+	while _voice_beds.size() < voices.size(): _voice_beds.append({})
+	for i in range(voices.size()): audio.beasts._air_blast(voices[i],_voice_beds[i])
+
+func set_hazards(on: bool) -> void:
+	hazards_on = on
+	crossing.set_hazards(on)
+
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo and (event as InputEventKey).keycode == KEY_N:
 		next_crossing()
+		return
+	if event is InputEventKey and event.pressed and not event.echo and (event as InputEventKey).keycode == KEY_K and crossing.has_hazards():
+		set_hazards(not hazards_on)
+		_show_toast("Gust arrows on" if hazards_on else "Gust arrows off")
 		return
 	super._unhandled_input(event)
 
@@ -133,6 +160,8 @@ func next_crossing() -> void:
 	_load_pack()
 	art.add_child(crossing)
 	crossing.build(_material)
+	crossing.set_hazards(hazards_on)
+	_voice_beds = []
 	await get_tree().physics_frame
 	respawn()
 	_show_toast(crossing.title())
@@ -140,4 +169,5 @@ func next_crossing() -> void:
 func _foot_text() -> String:
 	var names := []
 	for s: Dictionary in stations: names.append("%d %s" % [s.key,s.name])
-	return "%s  ·  R start rim  ·  %s  ·  N next crossing\nShift/C at a run: slide, + Space: long jump (again on each landing: chain)  ·  Space on landing: pump  ·  X twirl  ·  into a wall: slide, Space kick" % [crossing.title() if crossing != null else "",", ".join(names)]
+	var hazard := ("  ·  K arrows: %s" % ("on" if hazards_on else "off")) if crossing != null and crossing.has_hazards() else ""
+	return "%s  ·  R start rim  ·  %s  ·  N next crossing%s\nShift/C at a run: slide, + Space: long jump (again on each landing: chain)  ·  Space on landing: pump  ·  X twirl  ·  into a wall: slide, Space kick" % [crossing.title() if crossing != null else "",", ".join(names),hazard]

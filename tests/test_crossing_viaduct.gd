@@ -30,6 +30,8 @@ func run() -> void:
 	create_timer(240.0).timeout.connect(func() -> void: push_error("crossing viaduct test timed out"); quit(2))
 	study = load("res://studies/crossing_yard.tscn").instantiate()
 	study.scripted = true
+	# Its gust arrows off (tests/test_crossing_viaduct_arrows.gd has them).
+	study.hazards_on = false
 	root.add_child(study)
 	current_scene = study
 	while not study.walk_ready: await process_frame

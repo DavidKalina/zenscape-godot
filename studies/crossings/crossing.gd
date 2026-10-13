@@ -21,6 +21,11 @@ extends Node3D
 ## - `beats()`: practice spawns in order, [{name, at, face}] (local).
 ## - `floor_y()`: the soft floor under it all (local), the turn below.
 ## - `title()`.
+## - Hazards (optional, none here): `has_hazards()`, `set_hazards(on)`,
+##   `step_hazards(delta, motor, space)` (the yard calls it each frame
+##   after the pilot's motor; returns a word for a hit, "" for none) and
+##   `hazard_voices()` (nodes with an `air_blast` and `mouth_at()`: the
+##   yard's sound reads each as a dragon's blast).
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 
@@ -51,6 +56,18 @@ func beats() -> Array:
 
 func floor_y() -> float:
 	return -10.0
+
+func has_hazards() -> bool:
+	return false
+
+func set_hazards(_on: bool) -> void:
+	pass
+
+func step_hazards(_delta: float, _motor: Object, _space: PhysicsDirectSpaceState3D) -> String:
+	return ""
+
+func hazard_voices() -> Array:
+	return []
 
 ## A motor fitted to the walker's size (scripts/world_scale.gd), to read
 ## his moves' numbers from: nothing in a crossing holds its own copy.

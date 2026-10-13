@@ -33,9 +33,15 @@ extends "res://studies/crossings/crossing.gd"
 ##    launch (`launch_reach`).
 ## The optional wall-run line that skips the chimney is not built (a wall
 ## run gains at most about a metre; see the doc).
+## The hazard (docs/design/roguelike/crossing-viaduct-arrows.md): gust
+## arrows (studies/crossings/gust_arrows.gd) from a perch off the pier
+## field's left, ahead and low (`archer_at`): the lower piers ahead stand
+## between it and a pilot standing on the first piers, and the plinth
+## covers the last; mid-pump he is in the open.
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 const Aqueduct = preload("res://scripts/ruin_kit_aqueduct.gd")
 const RuinKitTower = preload("res://scripts/ruin_kit_tower.gd")
+const GustArrows = preload("res://studies/crossings/gust_arrows.gd")
 
 const SEED := 4107
 ## Weathering of the stone (0 new to 1 ruin).
@@ -96,6 +102,17 @@ const STAND_SHAFT := Vector2(0.99,1.3)
 const STAND_DOOR := Vector2(1.3,2.6)
 const STAND_LOW := 1.0
 
+## The gust arrows' perch: past the plinth's near edge along the piers
+## (m), out to their left (m), up over the turn platform (m); the perch's
+## stone stops under the ball's mouth by ARCHER_CLEAR (m). The zone it
+## fires on: the piers' line from the turn platform's edge to the plinth,
+## ARCHER_ZONE across (m), from the turn platform's top up.
+const ARCHER_PAST := 5.5
+const ARCHER_ASIDE := 14.0
+const ARCHER_UP := 1.5
+const ARCHER_CLEAR := 1.2
+const ARCHER_ZONE := Vector2(3.0,2.6)
+
 var m: PilotMotor
 ## Worked out by `lay_out` (local).
 var deck := 0.0
@@ -117,6 +134,7 @@ var slab_top := Vector3.ZERO
 var lip_end := Vector3.ZERO
 var far_near := Vector3.ZERO
 var numbers := {}
+var arrows: GustArrows
 
 func title() -> String:
 	return "The Broken Viaduct"
@@ -283,6 +301,7 @@ func build(paint: Callable) -> void:
 	slot.transform = Transform3D(Basis(Vector3.UP,deg_to_rad(SLOT_YAW_DEG)),slot_foot)
 	add_child(slot)
 	_launch(low)
+	_arrows(low)
 
 ## 1. The spans (tilted, their piers grown down to the floor), a clean walk
 ## over their channel, the fallen span's stones on the floor, the far deck.
@@ -350,6 +369,40 @@ func _launch(low: float) -> void:
 	box(Vector3(SLAB_WIDE,0.5,LIP_RUN),at(slab_low,c_deg,LIP_RUN*0.5,0.0,-0.25),c_deg,"lane")
 	column(at(slab_low,c_deg,LIP_RUN*0.5),Vector2(1.6,1.6),low,slab_low.y-0.5,c_deg,"wall")
 	column(at(far_near,c_deg,FAR_RIM.x*0.5),Vector2(FAR_RIM.y,FAR_RIM.x),low,far_near.y,c_deg,"lip")
+
+## The gust arrows' perch (a stone column off the field, its ball's mouth
+## over it) and the zone it fires on.
+func _arrows(low: float) -> void:
+	var mouth := archer_at()
+	column(mouth,Vector2(1.0,1.0),low,mouth.y-ARCHER_CLEAR,TURN_B,"dark").name = "ArcherPerch"
+	arrows = GustArrows.new()
+	add_child(arrows)
+	arrows.add_launcher(mouth,on_pier_field)
+
+## The perch's ball mouth (local).
+func archer_at() -> Vector3:
+	return at(turn_mid,TURN_B,plinth_near+ARCHER_PAST,-ARCHER_ASIDE,ARCHER_UP)
+
+## Whether `feet` (local) are over the pier field (the turn platform's
+## edge to the plinth, ARCHER_ZONE across, not down on the floor).
+func on_pier_field(feet: Vector3) -> bool:
+	var w := way(TURN_B)
+	var d := Vector2(feet.x-turn_mid.x,feet.z-turn_mid.z)
+	var along := d.dot(w)
+	var aside := d.dot(right_of(w))
+	return along > TURN_PAD.y*0.5-0.5 and along < plinth_near and aside > -ARCHER_ZONE.x and aside < ARCHER_ZONE.y and feet.y > turn_mid.y-1.0
+
+func has_hazards() -> bool:
+	return arrows != null
+
+func set_hazards(on: bool) -> void:
+	if arrows != null: arrows.set_on(on)
+
+func step_hazards(delta: float, motor: Object, space: PhysicsDirectSpaceState3D) -> String:
+	return arrows.step(delta,motor,space) if arrows != null else ""
+
+func hazard_voices() -> Array:
+	return arrows.voices() if arrows != null else []
 
 ## THE CHIMNEY SLOT: the ruin kit's tower shell (scripts/ruin_kit_tower.gd).
 ## `_stand_in` below is the greybox it replaced, the same footprint, shaft,
