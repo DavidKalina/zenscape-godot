@@ -836,7 +836,7 @@ func _process(delta: float) -> void:
 		elif walk_ready and not scripted: fly_step(delta,_fly_input(delta))
 	_advance_look(delta)
 	_lode_frame(delta)
-	if life != null: life.advance(delta)
+	if life != null: life.advance(delta,_life_gap())
 	if _toast_left > 0.0 and _look_toast != null:
 		_toast_left = maxf(_toast_left-delta,0.0)
 		_look_toast.modulate.a = clampf(_toast_left/TOAST_FADE,0.0,1.0)
@@ -1325,6 +1325,19 @@ func release_lock() -> void:
 	isle_lock.release()
 	if splash != null: splash.fade()
 	if chase != null: chase.set(&"free",Vector2.ZERO)
+
+## How far the eye is from the isle's edge (m, 0 on it): the life's
+## small things hold still past their reach (scripts/kit_isle/kit_life.gd
+## `advance`). The circle kept till the outlines change.
+var _gap_circle := Vector3.INF
+var _gap_outlines := -1
+func _life_gap() -> float:
+	if camera == null: return 0.0
+	if _gap_outlines != _outlines.size():
+		_gap_outlines = _outlines.size()
+		_gap_circle = isle_circle()
+	var eye := camera.global_position
+	return maxf(Vector2(eye.x-_gap_circle.x,eye.z-_gap_circle.y).length()-_gap_circle.z,0.0)
 
 ## The circle round the isle's outlines: (x, z) its middle, z its radius.
 func isle_circle() -> Vector3:

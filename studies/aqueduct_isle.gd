@@ -310,6 +310,8 @@ func _build_art() -> void:
 		piece.transform = Transform3D(Basis(Vector3.UP,deg_to_rad(float(spec[5]))),Vector3(x,Art.ground(x,z),z))
 		art.add_child(piece)
 	art.add_child(_stumps())
+	# Its ruins' levels of detail (scripts/ruin_lod.gd): less drawn far off.
+	preload("res://scripts/ruin_lod.gd").add_async(art)
 	# The turf the grass and flowers grow on (`_grow`, once it all stands
 	# in the physics space): the islands' and islets' ground.
 	for land: Node3D in [near,far]+islets: add_turf(land)
