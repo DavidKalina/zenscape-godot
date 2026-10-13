@@ -17,6 +17,11 @@ extends "res://studies/aqueduct_isle.gd"
 ##
 ## Through the gate, or down into the void under every isle, a new layer
 ## comes up (the next seed); a fall onto a lower isle is just a fall.
+## Under --shape=sprawl it is a run (scripts/roguelike/run_loop.gd, docs/
+## design/roguelike/stakes-experiment.md): the gate a layer deeper, the
+## runes carried; the void the run's end, its card, then a new climb from
+## layer 1 (Space) or the same again (R); each layer begun at a start spot,
+## the way on lit; I shows the long card.
 ##   N / Shift+N   the next / previous seed's layer
 ##   Backspace     this layer again
 ##   godot --path . res://studies/run_layer.tscn -- --no-title [--seed=<n>]
@@ -35,6 +40,7 @@ const LayerStage = preload("res://scripts/roguelike/layer_stage.gd")
 const RunLayerSky = preload("res://studies/run_layer_sky.gd")
 const LayerSprawl = preload("res://scripts/roguelike/layer_sprawl.gd")
 const RoostMotif = preload("res://scripts/kit_isle/motif_dragon_roost.gd")
+const RunLoop = preload("res://scripts/roguelike/run_loop.gd")
 
 ## Seeds tried past a seed whose plan could not be laid.
 const SKIP_MOST := 8
@@ -60,6 +66,9 @@ var last_end := ""
 var _plan_task := -1
 var _plan_out: Dictionary = {}
 var _plan_why := ""
+## Under --shape=sprawl, the run: a climb from layer 1, the void its end
+## (scripts/roguelike/run_loop.gd); null in round 3's shape.
+var run_loop: Node = null
 
 func _ready() -> void:
 	if layer_seed < 0:
@@ -147,6 +156,11 @@ func layer_entries() -> Array:
 func _first_layer() -> void:
 	_slot_was = foot_pieces
 	_build_card()
+	if layer_shape == "sprawl":
+		run_loop = RunLoop.new()
+		add_child(run_loop)
+		run_loop.setup(self)
+		_card.visible = false
 	# Laid on a worker while the isle built: stood up once it's done
 	# (`_process`; never waited for here: the worker's servers' calls wait
 	# on this thread).
@@ -178,6 +192,7 @@ func _stand_layer() -> void:
 	respawn()
 	_last_stood = start
 	layers += 1
+	if run_loop != null: run_loop.layer_stood()
 	_update_card()
 
 ## A new layer from `seed_value`: the old isles and stage freed, the new
@@ -201,7 +216,7 @@ func start_layer(seed_value: int, why := "", laid := {}) -> void:
 				var p: Dictionary = pools[i]
 				if p.has("node") and (not is_instance_valid(p.node) or old.has(p.node)): (pools as Array).remove_at(i)
 	_stand_layer()
-	if why != "": _show_toast(why)
+	if why != "" and run_loop == null: _show_toast(why)
 
 # --- The dragon's roost (the sprawl's) ------------------------------------------
 
@@ -259,8 +274,12 @@ func _drop_roost() -> void:
 # --- The loop -------------------------------------------------------------------
 
 func tick(delta: float) -> void:
+	if run_loop != null and not run_loop.before_tick(delta): return
 	super.tick(delta)
 	if stage == null or flying: return
+	if run_loop != null:
+		run_loop.after_tick(delta)
+		return
 	if stage.at_exit(motor.feet):
 		request_layer(layer_seed+1,"Through the gate: layer %d" % (layer_seed+1))
 	elif motor.feet.y < float(layer.void_y):
@@ -296,6 +315,7 @@ func _process(delta: float) -> void:
 		_update_card()
 
 func _unhandled_input(event: InputEvent) -> void:
+	if run_loop != null and run_loop.input(event): return
 	if event is InputEventKey and event.pressed and not event.echo and walk_ready and stage != null:
 		var key := event as InputEventKey
 		match key.keycode:
