@@ -19,6 +19,8 @@ extends Node3D
 ## the face toward -Z (the enemy's front). Posed by the enemy:
 ##   open(share)     the jaw dropped, 0 shut to 1 at JAW_OPEN rad
 ##   glow(share)     the eyes lit, 0 dark to 1 full
+##   hinge()         the jaw's hinge (local): a head on the ground tips
+##                   back about it as the jaw opens
 ##   mouth()         the lips' parting (global), the way in
 ##   face_way()      the way it faces (global, unit)
 
@@ -157,6 +159,10 @@ func open(share: float) -> void:
 
 func opened() -> float:
 	return _open
+
+## The jaw's hinge in this node's space (the jaw turns about it).
+func hinge() -> Vector3:
+	return jaw.position*model.scale if jaw != null else Vector3.ZERO
 
 ## The eyes lit `share` (0 dark, 1 full); the maw's deep glow with them.
 func glow(share: float) -> void:

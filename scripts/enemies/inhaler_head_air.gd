@@ -141,6 +141,23 @@ func grind(at: Vector3) -> void:
 	if not look: return
 	_puff(at,Vector3(_rng.randf_range(-0.4,0.4),-0.3,_rng.randf_range(-0.4,0.4)),0.18,0.7,0.9,0.4)
 
+## A thud on the turf: a low skirt of dust kicked out along its chin's edge
+## at `at` (the edge `span` m wide, `way` its face), `size` 1 a full heave.
+func thud(at: Vector3, way: Vector3, size: float, span: float) -> void:
+	if not look: return
+	var side := Vector3(-way.z,0.0,way.x)
+	var n := int(clampf(4.0+size*4.0,3.0,12.0))
+	for i in range(n):
+		var across := (float(i)/maxf(n-1,1)-0.5)*span
+		var out := (way*0.8+side*signf(across)*0.6).normalized() if absf(across) > span*0.3 else way
+		_puff(at+side*across+Vector3.UP*0.12,out*_rng.randf_range(1.2,2.6)*size+Vector3.UP*_rng.randf_range(0.2,0.6),0.15*size,_rng.randf_range(0.45,0.8)*sqrt(size),_rng.randf_range(0.6,1.0),0.38)
+
+## A call: a little breath of dust out of its mouth at `at`, along `way`.
+func call_out(at: Vector3, way: Vector3) -> void:
+	if not look: return
+	for i in range(3):
+		_puff(at+way*0.2,(way+Vector3(_rng.randf_range(-0.3,0.3),_rng.randf_range(0.0,0.3),_rng.randf_range(-0.3,0.3))).normalized()*_rng.randf_range(1.0,2.0),0.1,0.4,0.7,0.22)
+
 ## Holding what it swallowed: dust jets out of its ear flaps and its seams.
 func swallowing(at_left: Vector3, at_right: Vector3, out: Vector3) -> void:
 	if not look: return

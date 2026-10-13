@@ -2,7 +2,7 @@ extends "res://studies/character_study.gd"
 ## The headless body's study (docs/design/roguelike/headless-body-round1.md,
 ## round 2: headless-body-round2.md): greybox isles in open sky (the
 ## character study's grey structure, as the enemy yard is), the inhaler head
-## (scripts/enemies/inhaler_head.gd) drifting its ring on the highest, and its
+## (scripts/enemies/inhaler_head.gd) heaving round its ring on the highest, and its
 ## lost body (scripts/enemies/headless_body.gd) to find it. The body comes up
 ## a cliff: it is spawned on a cliff face under a lip (`CLIFFS`), out of the
 ## walker's sight, and hauls itself over (the spawner, shared with the
@@ -64,13 +64,7 @@ const CLIFFS := [
 ## The head's voices: [seconds, tone (Hz, 0 none), tone at the end, noise
 ## share, low-pass (0-1), attack (s), tremolo (Hz, 0 none)] (enemy_yard.gd
 ## `_synth`). The body's are BodySpawner.VOICES.
-const VOICES := {
-	"head_grind":[0.9,0.0,0.0,1.0,0.07,0.05,13.0],
-	"head_inhale":[3.0,0.0,0.0,1.0,0.22,0.9,0.0],
-	"head_yank":[0.35,0.0,0.0,1.0,0.4,0.01,0.0],
-	"head_gulp":[0.45,70.0,40.0,0.4,0.15,0.005,0.0],
-	"head_blast":[0.9,0.0,0.0,1.0,0.55,0.005,0.0],
-}
+const VOICES := InhalerHead.VOICES
 
 var enemies: Node
 ## The cliff spawns (scripts/enemies/body_spawner.gd, its RULES): a body
