@@ -232,6 +232,8 @@ const STAIR_ROOT := 7.0
 const LIP_ROOT := 13.0
 const SLAB_THICK := 0.9
 const GATE_IN := Vector2(1.6,1.8)
+## The growth (RuinKit `set_detail`) on the piers' and the stair's kit stone.
+const COLUMN_DETAIL := 0.45
 
 var m: PilotMotor
 ## Worked out by `lay_out` (local).
@@ -584,7 +586,12 @@ func _clod(middle: Vector3, deg: float, half: Vector2, depth: float, seed_value:
 func _kit_column(foot: Vector3, size: Vector2, bottom: float, top: float, deg: float, seed_value: int) -> void:
 	column(foot,size,bottom,top,deg,"")
 	var drawn := Vector2(size.x-Aqueduct.IMPOST.y*2.0,size.y-0.12)
+	# Sixteen tall piers: their ivy and moss thinned (RuinKit `set_detail`;
+	# the stone is the same) to keep the frame's triangles sane.
+	var was := RuinKit.Build.detail
+	RuinKit.set_detail(minf(was,COLUMN_DETAIL))
 	piece(Aqueduct.pillar(seed_value,WEATHERED,top-bottom,drawn),Transform3D(Basis(Vector3.UP,yaw_of(deg)),Vector3(foot.x,bottom,foot.z)),false)
+	RuinKit.set_detail(was)
 
 ## 1. The spans (tilted, their piers grown down to the floor), a clean walk
 ## over their channel, the far deck; each pier's foot on a clod; the turn
