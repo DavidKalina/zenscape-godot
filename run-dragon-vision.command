@@ -1,4 +1,6 @@
 #!/bin/zsh
+# Usage: ./run-dragon-vision.command [--attack=blast|cyclone|none] [--blast-fast|--cyclone-fast] [--vision-low] [--fly]
+#   The air blast is his default attack; K in play swaps blast, cyclone, none.
 set -u
 PROJECT_DIR="${0:A:h}"
 GODOT_BIN="${GODOT_BIN:-$HOME/Applications/Godot.app/Contents/MacOS/Godot}"
