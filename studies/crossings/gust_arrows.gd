@@ -48,6 +48,13 @@ const FUSE := 0.3
 ## The streak trail behind a ball (m); the blast draws it a share of its
 ## `span` (DragonAirBlast `_draw`: 0.12 of it).
 const TRAIL := 4.0
+## The look's boost over the dragon's shimmer (DragonAirBlast `glow`) and
+## its tint: bright enough to see coming against the pale floor.
+const GLOW := 1.6
+const TINT := Color(0.92,0.97,1.0)
+## The tell's ball at full gather on the perch (shares of the ball): big
+## enough to catch the eye from the piers.
+const GATHER := 1.8
 ## The hard hit in the air: out and up in walker heights at the burst's
 ## heart (DragonAirBlast EDGE of it at the shock's rim), down this long (s).
 const AIR_OUT := 9.0
@@ -100,6 +107,9 @@ func add_launcher(at: Vector3, zone: Callable) -> Launcher:
 	b.fuse = FUSE
 	b.lead_flat = true
 	b.lead_share = LEAD
+	b.glow = GLOW
+	b.tint = TINT
+	b.gather = GATHER
 	b.span = TRAIL/0.12
 	l.air_blast = b
 	l.add_child(b)

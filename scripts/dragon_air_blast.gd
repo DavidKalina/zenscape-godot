@@ -140,6 +140,14 @@ var fuse := FUSE
 ## flat velocity is (a jumper's rise and fall not led; false, the
 ## dragon's, leads it all).
 var lead_share := LEAD
+## The look's boost (0, the dragon's: the plain shimmer): a brighter rim
+## and core and a stronger trail, so a ball reads against a pale floor at
+## play distance; and the ball's tint.
+var glow := 0.0
+var tint := AIR_TINT
+## The wind-up's ball at full gather, a share of the ball (GATHER, the
+## dragon's).
+var gather := GATHER
 var lead_flat := false
 var _target := Vector3.INF
 ## His span (m), set by the dragon each frame (the trail's length).
@@ -510,8 +518,10 @@ render_mode unshaded, cull_disabled, depth_draw_never, blend_mix, shadows_disabl
 uniform sampler2D screen : hint_screen_texture, filter_linear_mipmap;
 varying float fade;
 varying vec3 tint;
+varying float boost;
 void vertex() {
 	fade = INSTANCE_CUSTOM.r;
+	boost = INSTANCE_CUSTOM.g;
 	tint = COLOR.rgb;
 	float s = length(MODEL_MATRIX[0].xyz);
 	MODELVIEW_MATRIX = VIEW_MATRIX * mat4(INV_VIEW_MATRIX[0], INV_VIEW_MATRIX[1], INV_VIEW_MATRIX[2], MODEL_MATRIX[3]);
@@ -527,7 +537,8 @@ void fragment() {
 	vec2 swirl = vec2(-c.y, c.x) * sin(TIME * 11.0 + r * 9.0) * 0.4;
 	vec2 bend = (c * -0.9 + swirl) * ring * 0.035 * fade;
 	vec3 behind = textureLod(screen, SCREEN_UV + bend, 0.0).rgb;
-	float glow = ring * 0.35 + (1.0 - smoothstep(0.0, 0.45, r)) * 0.15;
+	float core = 1.0 - smoothstep(0.0, 0.45, r);
+	float glow = ring * 0.35 + core * 0.15 + boost * (ring * 0.5 + core * 0.4);
 	ALBEDO = mix(behind, tint, clamp(glow, 0.0, 1.0));
 	ALPHA = clamp(body * fade, 0.0, 1.0);
 }
@@ -578,8 +589,8 @@ func _draw() -> void:
 		var fade := grown*(1.0-smoothstep(flight*0.8,flight,float(b.travelled)))
 		var pulse := 1.0+0.08*sin(_clock*40.0+float(b.age)*7.0)
 		lm.set_instance_transform(li,Transform3D(Basis.from_scale(Vector3.ONE*r*2.6*pulse*lerpf(GATHER,1.0,grown)),at))
-		lm.set_instance_custom_data(li,Color(fade,0,0,0))
-		lm.set_instance_color(li,AIR_TINT)
+		lm.set_instance_custom_data(li,Color(fade,glow,0,0))
+		lm.set_instance_color(li,tint)
 		li += 1
 		# The trail: thin streaks behind it, fanned a little, shorter on the
 		# way out of the mouth.
@@ -596,23 +607,23 @@ func _draw() -> void:
 			across = across.normalized()
 			var normal := way.cross(across).normalized()
 			sm.set_instance_transform(si,Transform3D(Basis(way*long*lerpf(0.7,0.35,u),across*r*lerpf(0.5,0.25,u),normal),mid))
-			sm.set_instance_custom_data(si,Color(fade*lerpf(0.55,0.15,u),0,0,0))
-			sm.set_instance_color(si,AIR_TINT)
+			sm.set_instance_custom_data(si,Color(minf(1.0,fade*lerpf(0.55,0.15,u)*(1.0+glow)),0,0,0))
+			sm.set_instance_color(si,tint)
 			si += 1
 		for i in range(TRAIL_PUFFS):
 			var u := float(i+1)/float(TRAIL_PUFFS+1)
 			var size := r*lerpf(1.1,2.2,u)
 			var wob := Vector3(sin(_clock*7.0+i*1.7),cos(_clock*6.0+i*2.3),sin(_clock*5.0+i))*r*0.3*u
 			pm.set_instance_transform(pj,Transform3D(Basis.from_scale(Vector3.ONE*size),at-way*long*u*0.8+wob))
-			pm.set_instance_custom_data(pj,Color(fade*0.22*(1.0-u),0,0,0))
-			pm.set_instance_color(pj,AIR_TINT)
+			pm.set_instance_custom_data(pj,Color(minf(1.0,fade*0.22*(1.0-u)*(1.0+glow)),0,0,0))
+			pm.set_instance_color(pj,tint)
 			pj += 1
 	# The wind-up: the ball gathering in his jaw.
 	if phase == "windup" and _mouth != Vector3.INF:
 		var g := windup_share()
-		lm.set_instance_transform(li,Transform3D(Basis.from_scale(Vector3.ONE*r*2.6*GATHER*g*(1.0+0.12*sin(_clock*50.0))),_mouth))
-		lm.set_instance_custom_data(li,Color(g,0,0,0))
-		lm.set_instance_color(li,AIR_TINT)
+		lm.set_instance_transform(li,Transform3D(Basis.from_scale(Vector3.ONE*r*2.6*gather*g*(1.0+0.12*sin(_clock*50.0))),_mouth))
+		lm.set_instance_custom_data(li,Color(g,glow,0,0))
+		lm.set_instance_color(li,tint)
 		li += 1
 	for s: Dictionary in _free:
 		if float(s.life) <= 0.0: continue
