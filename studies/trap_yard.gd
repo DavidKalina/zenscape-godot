@@ -30,6 +30,7 @@ const Logs = preload("res://scripts/traps/trap_logs.gd")
 const Flip = preload("res://scripts/traps/trap_flip.gd")
 const Tumble = preload("res://scripts/traps/trap_tumble.gd")
 const Ray = preload("res://scripts/traps/trap_ray.gd")
+const TumbleRun = preload("res://scripts/traps/trap_tumble_run.gd")
 
 ## The slots: name -> the trap's script. One line per trap.
 const TRAPS := {
@@ -45,6 +46,7 @@ const TRAPS := {
 	"flip": Flip,
 	"tumble": Tumble,
 	"ray": Ray,
+	"tumble_run": TumbleRun,
 }
 
 ## Lanes are this far apart along x (m); decks this wide, the end deck this
