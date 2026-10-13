@@ -23,6 +23,8 @@ extends Node3D
 ## The node stands at the world's origin; its art at `offset`; its plants and
 ## life in the world's frame.
 const TURF_LAYER := 1 << 11
+## Its ruins' levels of detail, added on its worker once built.
+const RuinLod = preload("res://scripts/ruin_lod.gd")
 
 ## The scene, the motif, where it stands from its own frame.
 var study: Node3D
@@ -164,7 +166,9 @@ func start_build() -> void:
 	_staging.name = "Staging"
 	var built: RefCounted = motif
 	var into := _staging
-	_task = WorkerThreadPool.add_task(func() -> void: built.build(into),false,"Motif isle "+str(motif.id()))
+	_task = WorkerThreadPool.add_task(func() -> void:
+		built.build(into)
+		RuinLod.add(into),false,"Motif isle "+str(motif.id()))
 
 ## Its art built here and now (no worker: tests, captures).
 func build_now() -> void:
@@ -172,6 +176,7 @@ func build_now() -> void:
 		_staging = Node3D.new()
 		var began := Time.get_ticks_msec()
 		motif.build(_staging)
+		RuinLod.add(_staging)
 		timings.build = Time.get_ticks_msec()-began
 		stage = "built"
 	elif stage == "building":
@@ -286,13 +291,19 @@ func _register() -> void:
 			# it tips with the isle when the dragon holds it.
 			(ground.pools as Array).append({"rect":Rect2(r.position+flat,r.size),"top":float(pool.top)+offset.y,"node":self,"rest":transform})
 
-## One readout for its tokens and the sky's (as kit_isle `_add_life`).
-func _share_hud() -> void:
+## The sky's tokens' readout, which its tokens share (scripts/kit_isle/
+## kit_tokens.gd `setup`); null for none.
+func token_hud() -> Node:
 	var sky: Variant = study.get("sky") if study != null else null
 	var sky_tokens: Variant = sky.get("collectibles") if sky != null else null
-	if life.tokens != null and sky_tokens != null and sky_tokens.get("hud") != null:
+	return sky_tokens.get("hud") if sky_tokens != null else null
+
+## One readout for its tokens and the sky's (as kit_isle `_add_life`).
+func _share_hud() -> void:
+	var shared := token_hud()
+	if life.tokens != null and shared != null and life.tokens.hud != shared:
 		life.tokens.hud.queue_free()
-		life.tokens.hud = sky_tokens.get("hud")
+		life.tokens.hud = shared
 
 # --- Each frame -------------------------------------------------------------------------
 
@@ -313,6 +324,7 @@ func advance(delta: float, eye: Vector3) -> void:
 		motif.plane_near(study.plane.position)
 	if life != null and is_up():
 		var c := circle()
-		if Vector2(eye.x-c.x,eye.z-c.y).length() < c.z+LIFE_NEAR:
-			life.advance(delta)
+		var gap := Vector2(eye.x-c.x,eye.z-c.y).length()-c.z
+		if gap < LIFE_NEAR:
+			life.advance(delta,maxf(gap,0.0))
 			life.step_pilot()

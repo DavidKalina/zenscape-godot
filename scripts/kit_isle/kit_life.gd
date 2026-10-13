@@ -89,6 +89,7 @@ var shares_wind := false
 ## grid's next row, the undergrowth's job.
 var _stage := 0
 var _row := 0
+var _col := 0
 var _under: KitFlora.Undergrow
 
 static func wanted(args: PackedStringArray) -> Dictionary:
@@ -110,13 +111,14 @@ func begin(isle: Node3D, args: PackedStringArray) -> void:
 	flags = wanted(args)
 	_stage = 0
 	_row = 0
+	_col = 0
 
 func step(usec: int) -> bool:
 	var end := Time.get_ticks_usec()+usec
 	var space := scene.get_world_3d().direct_space_state
 	var t := Time.get_ticks_msec()
 	if _stage == 0:
-		if _row == 0: _ground_grid()
+		if _row == 0 and _col == 0: _ground_grid()
 		var done := _read_rows(space,end if usec >= 0 else -1)
 		timings.ground = int(timings.get("ground",0))+Time.get_ticks_msec()-t
 		if not done: return false
@@ -253,10 +255,13 @@ func _read_rows(space: PhysicsDirectSpaceState3D, end: int) -> bool:
 	turf.collision_mask = TURF_LAYER
 	var all := PhysicsRayQueryParameters3D.new()
 	while _row < _h:
-		if end >= 0 and Time.get_ticks_usec() > end: return false
 		var j := _row
-		_row += 1
-		for i in range(_w):
+		# A row is read a few cells at a time (a long row's rays ran
+		# 15-40 ms over the slice rendered), `_col` where it left off.
+		while _col < _w:
+			if end >= 0 and _col % 8 == 0 and Time.get_ticks_usec() > end: return false
+			var i := _col
+			_col += 1
 			var p := _origin+Vector2(i,j)*CELL
 			turf.from = Vector3(p.x,span.x,p.y)
 			turf.to = Vector3(p.x,span.y,p.y)
@@ -272,6 +277,8 @@ func _read_rows(space: PhysicsDirectSpaceState3D, end: int) -> bool:
 			all.to = Vector3(p.x,y-0.05,p.y)
 			var top := space.intersect_ray(all)
 			_standing[k] = 1 if not top.is_empty() and (top.position as Vector3).y > y+STANDING else 0
+		_col = 0
+		_row += 1
 	return true
 
 ## The turf's height at `p` (world x, z), or null off it.
@@ -461,11 +468,24 @@ func _leaf_anchors() -> Array:
 
 # --- Each frame ---------------------------------------------------------------------
 
-## One frame of the isle's life, after the look (its air, its light).
-func advance(delta: float) -> void:
+## Past these from the isle's edge (m, `advance`'s gap) its small life
+## holds still, hidden: the loose leaves, chaff, kicked blades and
+## butterflies, a few centimetres, are under a pixel past SMALL_NEAR at
+## 1080 lines; the songbirds past BIRDS_NEAR. Their steps are the most of a
+## frame's script time (docs/design/roguelike/perf-round1.md): a layer has
+## four or five lives in reach of the eye.
+const SMALL_NEAR := 60.0
+const BIRDS_NEAR := 150.0
+
+## One frame of the isle's life, after the look (its air, its light);
+## `gap` how far the eye is from the isle's edge (m, 0 on it).
+func advance(delta: float, gap := 0.0) -> void:
 	if delta <= 0.0: return
 	var day := float(scene._celestial.state.get("zs_daylight",1.0))
-	for meadow in meadows: meadow.flies.advance(delta)
+	var small := gap < SMALL_NEAR
+	for meadow in meadows:
+		meadow.visible = small
+		if small: meadow.flies.advance(delta)
 	if fireflies != null:
 		var weather: Variant = scene._precipitation.surface_weather
 		fireflies.update_conditions(day,float(scene._precipitation.state.x),float(weather.cold),1.0)
@@ -473,10 +493,14 @@ func advance(delta: float) -> void:
 	if flags.wind and atmosphere.wind_trails != null:
 		var fronts: RefCounted = atmosphere.fronts
 		atmosphere.wind_trails.set_bounds(fronts.center,fronts.radius)
-		leaf_litter.advance(delta,false,atmosphere)
-		grass_chaff.advance(delta,false,atmosphere)
-		kicked_blades.advance(delta,false,atmosphere.wind_trails,atmosphere)
-	if birds != null: birds.advance(delta)
+		for bits: Node3D in [leaf_litter,grass_chaff,kicked_blades]: bits.visible = small
+		if small:
+			leaf_litter.advance(delta,false,atmosphere)
+			grass_chaff.advance(delta,false,atmosphere)
+			kicked_blades.advance(delta,false,atmosphere.wind_trails,atmosphere)
+	if birds != null:
+		birds.visible = gap < BIRDS_NEAR
+		if birds.visible: birds.advance(delta)
 	if tokens != null: tokens.glow_for(1.0-smoothstep(0.1,0.5,day))
 
 ## After each step of the pilot on foot (or the plane): his middle takes
