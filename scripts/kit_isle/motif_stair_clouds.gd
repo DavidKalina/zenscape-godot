@@ -82,3 +82,8 @@ func build(into: Node3D) -> void:
 	turf(mesa,null,false)
 	turf(pinnacle)
 	built_ms = Time.get_ticks_msec()-began
+
+## Roughly how long `build` takes (ms, headless, this Mac): its sockets,
+## footprint and height span are the bake's (scripts/kit_isle/kit_motif.gd).
+func build_cost() -> int:
+	return 2500

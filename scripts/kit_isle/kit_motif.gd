@@ -41,6 +41,9 @@ const Footbridge = preload("res://scripts/footbridge.gd")
 const Ledger = preload("res://scripts/ledger/ledger.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
+## What the bake read off the built isles (sockets, occupancy): a motif not
+## yet a family answers its sockets, footprint and height span from it.
+const LayerPieces = preload("res://scripts/roguelike/layer_pieces.gd")
 
 ## The socket kinds.
 const SOCKET_KINDS := ["rim","arena","cover","perch"]
@@ -193,22 +196,27 @@ static func _nearest(choices: Array, value: Variant) -> Variant:
 		if (c is float or c is int) and absf(float(c)-float(value)) < absf(float(best)-float(value)): best = c
 	return best
 
-## Where it connects and what it holds (its frame): `socket` each.
+## Where it connects and what it holds (its frame): `socket` each. A
+## motif not yet a family answers what the bake found on it (scripts/
+## roguelike/layer_pieces.gd: its rims, each with its `lip`, and its clear
+## spots as perches and arenas; no cover), none if it was never baked.
 func sockets() -> Array:
-	return []
+	return LayerPieces.sockets(id()) if LayerPieces.has(id()) else []
 
 ## "hero" (a landmark the layer is built round), "filler" (a stretch of
 ## route between), "arena" (an isle given over to a fight or a trap).
 func role() -> String:
 	return "filler"
 
-## Its x z rect in its own frame (everything it builds stands over it).
+## Its x z rect in its own frame (everything it builds stands over it);
+## a motif not yet a family, the bake's.
 func footprint() -> Rect2:
-	return Rect2()
+	return LayerPieces.footprint(id()) if LayerPieces.has(id()) else Rect2()
 
-## Its lowest keel to its highest top (y, its frame).
+## Its lowest keel to its highest top (y, its frame); a motif not yet a
+## family, the bake's lowest and highest solid.
 func height_span() -> Vector2:
-	return Vector2(top()-30.0,top())
+	return LayerPieces.height_span(id()) if LayerPieces.has(id()) else Vector2(top()-30.0,top())
 
 ## Roughly how long `build` takes (ms, headless, this Mac): a generator
 ## spreads the slow ones over frames.

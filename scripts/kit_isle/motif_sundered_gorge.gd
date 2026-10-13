@@ -146,3 +146,8 @@ func build(into: Node3D) -> void:
 	# The turf the grass grows on and the plane skims.
 	for land: Node3D in [west_half,east_half]+fragments: turf(land)
 	built_ms = Time.get_ticks_msec()-began
+
+## Roughly how long `build` takes (ms, headless, this Mac): its sockets,
+## footprint and height span are the bake's (scripts/kit_isle/kit_motif.gd).
+func build_cost() -> int:
+	return 1900

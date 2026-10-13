@@ -475,7 +475,7 @@ func _falls(listener: Vector3, open: float) -> void:
 	var roars := []
 	var spills := []
 	for i in range(falls.size()-1,-1,-1):
-		var node: Node = falls[i][0]
+		var node: Variant = falls[i][0]
 		if not is_instance_valid(node):
 			falls.remove_at(i)
 			continue
