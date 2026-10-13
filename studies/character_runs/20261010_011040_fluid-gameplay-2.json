@@ -3,6 +3,7 @@
 	"label": "Fluid Gameplay 2",
 	"station": 5,
 	"started": "2026-10-10T01:10:40Z",
+	"amended": "Amended 2026-10-12 (fix/test-failures): one tick of twirl added at 30.099 s, 0.10 s before the landing at 30.199 s, the roll. That landing ends a 6.99 m fall (twirled at 29.20 s, its top 6.99 m over the floor), past the fall stun's 6 m (scripts/pilot_motor.gd, ported to main at 0c2110ab, after this run was made). Without the roll he is laid down and the rest replays blind; with it the whole run replays as recorded, path unchanged.",
 	"feel": {
 		"walk": 2.4,
 		"run": 4.8,
@@ -12282,7 +12283,7 @@
 			0,
 			0,
 			0,
-			0,
+			1,
 			0,
 			0,
 			0,
