@@ -61,6 +61,11 @@ func spawn(script: GDScript, at: Vector3, face: Vector2, overrides := {}) -> Nod
 	specs.append([script,at,face,overrides])
 	return _make(script,at,face,overrides)
 
+## An enemy set down now and not remembered: `reset` takes it away (a
+## scene's own spawns, made as it plays).
+func add(script: GDScript, at: Vector3, face: Vector2, overrides := {}) -> Node3D:
+	return _make(script,at,face,overrides)
+
 func _make(script: GDScript, at: Vector3, face: Vector2, overrides: Dictionary) -> Node3D:
 	var e: Node3D = script.new()
 	e.setup(self,at,face,overrides)

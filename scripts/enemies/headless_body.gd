@@ -27,14 +27,22 @@ extends "res://scripts/enemies/enemy.gd"
 ##             `climb_max`, it does not take.
 ##   "mantle"  its hands over the lip: it hauls itself up and rolls over
 ##             onto the top (`mantle` s).
-##   "windup"  at an edge, with a lower floor out along its way within
-##             `leap_max` m across and `drop_max` m down: it crouches, arms
-##             back, `windup` s.
-##   "leap"    the throw: a ballistic arc (`leap_up` m over the takeoff) to
-##             that floor, its feet ray-cast along the arc; a wall on the
-##             way stops it dead and it drops.
-##   "land"    a heavy landing, squashed for `land` s; dust and a quake;
-##             a walker within `shock_r` m is thrown off his feet.
+##   "windup"  at an edge: a ledge across the gap at about its height
+##             (`jump_gap` Hh across at most, `jump_rise` Hh up, `jump_sink`
+##             Hh down) it jumps to ("jump"); failing that, a lower floor
+##             out along its way within `leap_max` m across and `drop_max` m
+##             down it drops to ("drop"). It crouches, arms back, `windup` s.
+##   "leap"    the throw: a ballistic arc (`leap_up` m over the takeoff, a
+##             jump's higher by `jump_arc` of its length) to that floor, its
+##             feet ray-cast along the arc; a wall on the way stops it dead
+##             and it drops.
+##   "land"    a heavy landing, squashed for `land` s; dust, a quake and a
+##             shockwave (`_shock`) running out along the ground: a walker
+##             on the ground as the front passes him is thrown back and up,
+##             less the farther out; one in the air over it is clear. The
+##             mantle's end sends a smaller one.
+## Set down by `cling` it starts on a cliff face, climbing, out of sight
+## under the lip, and hauls itself over.
 ##   "fall"    walked off something unseen: it falls (below the study's
 ##             `lost`, it is gone).
 ##   "reach"   the head is in arm's reach: it stops, faces it and lifts its
@@ -43,8 +51,9 @@ extends "res://scripts/enemies/enemy.gd"
 ## lit, its breath stopped), roaming any way, climbing and leaping still.
 ##
 ## The walker: it is a stone he stands on and rides (the base's box); walked
-## into while it moves (or landing near him), he is shoved through his own
-## motor (PilotMotor.knock). No damage. He can't push it.
+## into while it moves (or met by its shockwave), he is shoved through his
+## own motor (PilotMotor.knock). No damage. He can't push it.
+## Round 2: docs/design/roguelike/headless-body-round2.md.
 
 signal reunited(enemy)
 
@@ -55,7 +64,16 @@ var whole := false
 ## Counted, for the HUD and checks.
 var climbs := 0
 var leaps := 0
+## Of the leaps, those ledge to ledge.
+var jumps := 0
 var listens := 0
+## Shockwaves sent, and those that threw the walker.
+var shocks := 0
+var shock_hits := 0
+## The last leap's kind ("jump" ledge to ledge, "drop" down), for the HUD.
+var leap_kind := ""
+## Climbing up from a cliff spawn (cleared once it is over the lip).
+var spawned_on_cliff := false
 var homed := false
 ## The camera's quake now (m), from its landings.
 var quake := 0.0
@@ -83,6 +101,8 @@ var _seat_from := Vector3.ZERO
 var _seat_k := 1.0
 var _ray := PhysicsRayQueryParameters3D.new()
 var _dust: Array = []
+## Live shockwaves: {at, r, max, power, done (the walker met), parts}.
+var _waves: Array = []
 ## Pivots of the greybox figure.
 var _hips: Node3D
 var _trunk: Node3D
@@ -114,10 +134,21 @@ func default_knobs(n: Dictionary) -> Dictionary:
 		"head_size":3.0,"legs":0.75,"torso":1.2,"breadth":1.3,"depth":0.72,"arm":1.1,
 		"walk":n.walk*0.9,"home":n.run*0.7,"accel":3.0,"turn":0.9,"step":n.unit*0.6,"look":0.9,
 		"listen":2.6,"listen_every":7.0,"hear":n.unit*80.0,"sense":n.unit*15.0,"noise":0.35,"lose":2.0,
-		"climb":n.unit*1.25,"climb_max":n.unit*20.0,"standoff":0.25,"lip_in":0.8,"mantle":1.4,
+		"climb":n.unit*1.25,"haul":0.55,"climb_max":n.unit*20.0,"standoff":0.25,"lip_in":0.8,"mantle":1.4,
 		"leap_max":n.unit*11.0,"drop_max":n.unit*20.0,"windup":1.1,"leap_up":n.unit*1.6,"land":1.0,
 		"leap_gravity":n.gravity*0.7,
-		"shove_out":n.unit*5.0,"shove_up":n.unit*1.0,"shock_r":n.unit*7.0,"shock_out":n.unit*6.0,"shock_up":n.unit*1.2,
+		# Ledge to ledge: a gap up to `jump_gap` Hh, onto a ledge up to
+		# `jump_rise` Hh over or `jump_sink` Hh under its feet; the arc
+		# peaks `jump_arc` of the way's length over the takeoff.
+		"jump_gap":3.0,"jump_rise":0.5,"jump_sink":1.5,"jump_arc":0.22,
+		"shove_out":n.unit*5.0,"shove_up":n.unit*1.0,
+		# Shockwaves: radius in Hh, speed of the front, the shove at the
+		# middle (m out, m up), its share left at the rim, the band over
+		# the wave's ground that is hit (a walker higher off the ground
+		# than `shock_air` m as it passes is jumped clear).
+		"shock_r":4.0,"shock_speed":n.unit*16.0,"shock_out":n.unit*9.0,"shock_up":n.unit*2.2,
+		"shock_edge":0.2,"shock_band":n.unit*1.7,"shock_air":n.unit*0.45,"shock_mantle":0.5,
+		"cling":1.0,
 		"reunite":n.unit*1.6,"settle":2.2,"whole_climb":0.6,"seed":1,
 	}
 
@@ -139,6 +170,23 @@ func setup(host: Node, at: Vector3, face: Vector2, overrides := {}) -> void:
 	_heading = facing
 	grounded = true
 	_go("listen")
+
+## Set on a cliff face, already climbing: `lip` the top edge of the face
+## over it, `out` (x, z) the face's outward way. Its raised hands sit `cling`
+## m under the lip, so none of it shows over the top till it hauls up.
+func cling(lip: Vector3, out: Vector2) -> void:
+	var n := out.normalized()
+	facing = PilotMotor.facing_of(-n)
+	rotation.y = facing
+	position = Vector3(lip.x,lip.y-(neck_h+arm_l*0.75)-float(knobs.cling),lip.z)+Vector3(n.x,0.0,n.y)*(length*0.5+float(knobs.standoff))
+	grounded = false
+	vel = Vector3.ZERO
+	_climb_from = position.y
+	_lip_y = INF
+	climbs += 1
+	spawned_on_cliff = true
+	_go("climb")
+	_pose(1.0)
 
 # --- The figure -------------------------------------------------------------------------
 
@@ -213,6 +261,7 @@ func think(delta: float) -> void:
 	quake = maxf(0.0,quake-delta*1.2)
 	_find_head()
 	_dusts(delta)
+	_shocks(delta)
 	if whole: _seat_k = minf(1.0,_seat_k+delta/float(knobs.settle))
 	match state:
 		"listen": _listen(delta)
@@ -439,7 +488,7 @@ func _climb(delta: float) -> void:
 	if position.y-_climb_from > float(knobs.climb_max):
 		_fall()
 		return
-	var rise := float(knobs.climb)*delta*(0.55 if _lip_y != INF else 1.0)
+	var rise := float(knobs.climb)*delta*(float(knobs.haul) if _lip_y != INF else 1.0)
 	position.y += rise
 	var was := _phase
 	_phase += rise/(arm_l*0.45)
@@ -452,6 +501,9 @@ func _mantle(delta: float) -> void:
 	position = Vector3(lerpf(_mantle_from.x,_mantle_to.x,over),lerpf(_mantle_from.y,_mantle_to.y,up),lerpf(_mantle_from.z,_mantle_to.z,over))
 	if k >= 1.0:
 		grounded = true
+		spawned_on_cliff = false
+		# Its weight comes down on the top: a smaller wave.
+		_shock(position,float(knobs.shock_mantle))
 		_go("listen")
 
 # --- Edges and leaps ------------------------------------------------------------------------
@@ -464,13 +516,54 @@ func _meet_edge(fwd: Vector3) -> void:
 		_go("listen")
 		return
 	_leap_to = land.at
+	leap_kind = land.kind
 	_go("windup")
 	field.sound(&"body_windup",position)
 
-## A floor out along `dir` lower than its feet (or level), within
-## `leap_max` m across and `drop_max` m down, room on it for its body:
-## {at} or {}.
+## Where it would come down going off the edge along `dir`: across the
+## gap onto a ledge at about its height if the gap is narrow enough
+## (`_ledge`), else down onto a lower floor: {at, kind} or {}.
 func _landing(dir: Vector3) -> Dictionary:
+	var ledge := _ledge(dir)
+	if not ledge.is_empty(): return ledge
+	return _drop(dir)
+
+## The widest gap it jumps ledge to ledge (m): `jump_gap` head heights.
+func jump_gap() -> float:
+	return float(knobs.jump_gap)*hh
+
+## A ledge across the gap along `dir`: the far rim within `jump_gap()` of
+## the near one, its top no more than `jump_rise` Hh over its feet or
+## `jump_sink` Hh under, room on it for its body: {at, kind "jump", gap}
+## or {}.
+func _ledge(dir: Vector3) -> Dictionary:
+	var step := float(knobs.step)
+	var rim := -1.0
+	var d := 0.0
+	while d <= length*0.5+float(knobs.look)+1.0:
+		if _floor(position+dir*d,step,step*2.0) == -INF:
+			rim = d
+			break
+		d += 0.25
+	if rim < 0.0: return {}
+	var over := float(knobs.jump_rise)*hh
+	var under := float(knobs.jump_sink)*hh
+	d = rim+0.25
+	while d <= rim+jump_gap():
+		var p := position+dir*d
+		var hit := _cast(Vector3(p.x,position.y+over+step,p.z),Vector3(p.x,position.y-under,p.z))
+		if not hit.is_empty() and (hit.normal as Vector3).y > 0.7:
+			var y := (hit.position as Vector3).y
+			var onto := position+dir*(d+length*0.5+1.0)
+			var g := _floor(Vector3(onto.x,y,onto.z),1.0,1.0)
+			if g == -INF: return {}
+			return {"at":Vector3(onto.x,g,onto.z),"kind":"jump","gap":d-rim}
+		d += 0.25
+	return {}
+
+## A floor out along `dir` lower than its feet, within `leap_max` m across
+## and `drop_max` m down, room on it for its body: {at, kind "drop"} or {}.
+func _drop(dir: Vector3) -> Dictionary:
 	var d := length*0.5+float(knobs.look)
 	while d <= float(knobs.leap_max):
 		var p := position+dir*d
@@ -480,7 +573,7 @@ func _landing(dir: Vector3) -> Dictionary:
 			if y < position.y-float(knobs.step):
 				var onto := position+dir*(d+length*0.5+1.0)
 				var g := _floor(Vector3(onto.x,y,onto.z),1.0,1.0)
-				if g != -INF: return {"at":Vector3(onto.x,g,onto.z)}
+				if g != -INF: return {"at":Vector3(onto.x,g,onto.z),"kind":"drop"}
 		d += 0.75
 	return {}
 
@@ -490,8 +583,14 @@ func _windup(delta: float) -> void:
 	facing = lerp_angle(facing,PilotMotor.facing_of(to.normalized()),1.0-exp(-5.0*delta))
 	if state_t < float(knobs.windup): return
 	var g := float(knobs.leap_gravity)
-	var vy := sqrt(2.0*g*float(knobs.leap_up))
 	var drop := position.y-_leap_to.y
+	var up := float(knobs.leap_up)
+	if leap_kind == "jump":
+		# Across: a longer, flatter throw, peaking a share of its length
+		# (and over the far ledge if that stands higher).
+		up = maxf(up,float(knobs.jump_arc)*to.length())+maxf(0.0,-drop)
+		jumps += 1
+	var vy := sqrt(2.0*g*up)
 	var t := (vy+sqrt(maxf(vy*vy+2.0*g*drop,0.0)))/g
 	var flat := to/t
 	vel = Vector3(flat.x,vy,flat.y)
@@ -505,18 +604,126 @@ func _fall() -> void:
 	vel = Vector3(vel.x,minf(vel.y,0.0),vel.z)
 	_go("fall")
 
+## Down: the harder it came down, the bigger the wave (a head height's
+## fall is 1; 0.6 to 1.5).
 func _landed() -> void:
+	var impact := maxf(0.0,-vel.y)
 	grounded = true
 	vel = Vector3.ZERO
 	_go("land")
-	quake = 0.5
 	_puff(position,hh*2.2)
 	field.sound(&"body_land",position)
+	_shock(position,clampf(impact/sqrt(2.0*float(knobs.leap_gravity)*hh),0.6,1.5))
+
+# --- Shockwaves -------------------------------------------------------------------------------
+
+## A shockwave from `at`, `power` (1 a leap's landing): a ring and a dust
+## wall running out along the ground to `shock_r` Hh × √power, stones
+## kicked up; the walker it passes on the ground is thrown back and up
+## through his motor, less the farther out.
+func _shock(at: Vector3, power: float) -> void:
+	shocks += 1
+	quake = maxf(quake,0.35+0.45*power)
+	var reach := float(knobs.shock_r)*hh*sqrt(power)
+	var parts: Array = []
+	# The front: a thin bright ring hugging the ground.
+	var ring := MeshInstance3D.new()
+	var torus := TorusMesh.new()
+	torus.inner_radius = 0.9
+	torus.outer_radius = 1.0
+	torus.rings = 48
+	ring.mesh = torus
+	ring.material_override = _wave_mat(Color(0.95,0.88,0.74,0.9))
+	parts.append(ring)
+	# Behind it, a skirt of dust thrown up off the ground.
+	var wall := MeshInstance3D.new()
+	var tube := CylinderMesh.new()
+	tube.top_radius = 1.0
+	tube.bottom_radius = 1.0
+	tube.height = 1.0
+	tube.cap_top = false
+	tube.cap_bottom = false
+	tube.radial_segments = 48
+	wall.mesh = tube
+	wall.material_override = _wave_mat(Color(0.74,0.68,0.58,0.55))
+	parts.append(wall)
+	for p: MeshInstance3D in parts:
+		field.add_child(p)
+		p.global_position = at+Vector3.UP*0.15
+		p.scale = Vector3(0.1,0.1,0.1)
+	# Stones kicked up round it.
+	var chips: Array = []
+	for i in 10:
+		var chip := MeshInstance3D.new()
+		var box := BoxMesh.new()
+		box.size = Vector3.ONE*hh*_rng.randf_range(0.08,0.16)*sqrt(power)
+		chip.mesh = box
+		chip.material_override = _wave_mat(Color(0.6,0.56,0.5,1.0))
+		field.add_child(chip)
+		var a := TAU*(i+_rng.randf())/10.0
+		chip.global_position = at+Vector3(sin(a),0.3,cos(a))*hh*0.6
+		chips.append([chip,Vector3(sin(a)*_rng.randf_range(3.0,7.0),_rng.randf_range(5.0,10.0)*sqrt(power),cos(a)*_rng.randf_range(3.0,7.0))])
+	_waves.append({"at":at,"r":0.0,"max":reach,"power":power,"done":false,"t":0.0,"parts":parts,"chips":chips})
+	field.sound(&"body_shock",at)
+
+func _wave_mat(c: Color) -> StandardMaterial3D:
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = c
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	return mat
+
+func _shocks(delta: float) -> void:
+	for w: Dictionary in _waves:
+		w.t += delta
+		w.r = minf(w.max,w.r+float(knobs.shock_speed)*delta)
+		var k: float = w.r/w.max
+		var fade := 1.0-smoothstep(0.55,1.0,k) if w.r < w.max else maxf(0.0,1.0-(w.t-w.max/float(knobs.shock_speed))/0.35)
+		var ring: MeshInstance3D = w.parts[0]
+		var wall: MeshInstance3D = w.parts[1]
+		var thick := hh*0.35*sqrt(w.power)
+		ring.scale = Vector3(w.r,thick*(1.0-0.6*k),w.r)
+		var high := hh*0.9*sqrt(w.power)*sin(minf(k,1.0)*PI*0.5+0.35)*(1.0-0.7*k)
+		wall.scale = Vector3(maxf(w.r-thick*0.4,0.1),maxf(high,0.05),maxf(w.r-thick*0.4,0.1))
+		wall.global_position.y = (w.at as Vector3).y+high*0.5
+		(ring.material_override as StandardMaterial3D).albedo_color.a = 0.9*fade
+		(wall.material_override as StandardMaterial3D).albedo_color.a = 0.55*fade
+		for c: Array in w.chips:
+			var chip: MeshInstance3D = c[0]
+			c[1].y -= float(knobs.leap_gravity)*delta
+			chip.global_position += c[1]*delta
+			chip.rotation += Vector3(3.0,2.0,1.0)*delta
+			if chip.global_position.y < (w.at as Vector3).y: chip.visible = false
+		if not w.done: _shock_meets(w)
+	for w: Dictionary in _waves:
+		if w.t > w.max/float(knobs.shock_speed)+0.6:
+			for p: Node in w.parts+w.chips.map(func(c: Array) -> Node: return c[0]):
+				if is_instance_valid(p): p.queue_free()
+	_waves = _waves.filter(func(w: Dictionary) -> bool: return w.t <= w.max/float(knobs.shock_speed)+0.6)
+
+## The front reaching the walker: on the ground in the wave's band (or
+## barely off it), he is thrown; airborne over it, he is clear.
+func _shock_meets(w: Dictionary) -> void:
 	var m: PilotMotor = field.motor
-	var off := Vector2(m.feet.x-position.x,m.feet.z-position.z)
-	if m.grounded and off.length() < float(knobs.shock_r) and absf(m.feet.y-position.y) < float(knobs.step)*3.0 and not m.seized():
-		var way := off.normalized() if off.length() > 0.1 else Vector2(1.0,0.0)
-		shove_pilot(m,way,float(knobs.shock_out)*(1.0-0.5*off.length()/float(knobs.shock_r)),float(knobs.shock_up))
+	var at: Vector3 = w.at
+	var off := Vector2(m.feet.x-at.x,m.feet.z-at.z)
+	var d := off.length()
+	if d > w.max:
+		w.done = true
+		return
+	if d > w.r: return
+	w.done = true
+	if m.seized() or m.rider != null: return
+	var dy := m.feet.y-at.y
+	if absf(dy) > float(knobs.shock_band): return
+	if not m.grounded and m.feet.y-_floor(m.feet,0.1,float(knobs.shock_band)*2.0) > float(knobs.shock_air): return
+	# On its shoulders he rides it out.
+	if m.grounded and field.under_pilot() == body.get_rid(): return
+	var f := lerpf(1.0,float(knobs.shock_edge),d/w.max)*float(w.power)
+	var way := off.normalized() if d > 0.1 else PilotMotor.forward(facing)
+	shock_hits += 1
+	shove_pilot(m,way,float(knobs.shock_out)*f,float(knobs.shock_up)*f)
 
 # --- Reunion -----------------------------------------------------------------------------------
 
@@ -723,6 +930,10 @@ func _exit_tree() -> void:
 	for d: Array in _dust:
 		if is_instance_valid(d[0]): d[0].queue_free()
 	_dust.clear()
+	for w: Dictionary in _waves:
+		for p: Node in w.parts+w.chips.map(func(c: Array) -> Node: return c[0]):
+			if is_instance_valid(p): p.queue_free()
+	_waves.clear()
 
 # --- The walker -------------------------------------------------------------------------------------
 
