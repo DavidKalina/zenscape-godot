@@ -833,6 +833,7 @@ static func _step(plan: Dictionary, from: int, m: Dictionary, kinds: Array, bran
 		score += 0.15*(lip_b.y-lip_a.y)
 		score += OVER_WEIGHT*over_share(plan,placed)
 		score -= 0.01*mid.distance_to(anchor)
+		score += _lean(plan,mid)
 		if score > best_score:
 			best_score = score
 			best = {"edge":edge,"isle":placed}
@@ -1186,7 +1187,7 @@ static func _gulf(plan: Dictionary, hood_from: int, m: Dictionary, hood_to: int,
 			why.tubes = why.get("tubes",0)+1
 			continue
 		# The best: off a high rim (seen from far), near the base.
-		var score := rng.randf()*2.0+0.08*lip_a.y-0.004*mid.distance_to(Vector2(MIDDLE.x,MIDDLE.z))
+		var score := rng.randf()*2.0+0.08*lip_a.y-0.004*mid.distance_to(Vector2(MIDDLE.x,MIDDLE.z))+_lean(plan,mid)
 		fits.append([score,edge,placed])
 	fits.sort_custom(func(p: Array, q: Array) -> bool: return float(p[0]) > float(q[0]))
 	# The ride's loop, the best first, till one stands clear of every isle.
@@ -1223,6 +1224,14 @@ static func _gulf(plan: Dictionary, hood_from: int, m: Dictionary, hood_to: int,
 	used[_key(int(e.from[0]),e.from[1])] = true
 	used[_key(int(e.to[0]),e.to[1])] = true
 	return e
+
+## A lean to one side (the sprawl shape's exit side, scripts/roguelike/
+## layer_sprawl.gd): the knob `lean`, a flat heading as long as its weight,
+## gives points per 100 m stood that way off MIDDLE. None without it.
+static func _lean(plan: Dictionary, mid: Vector2) -> float:
+	var lean: Variant = (plan.knobs as Dictionary).get("lean")
+	if not lean is Vector2: return 0.0
+	return (mid-Vector2(MIDDLE.x,MIDDLE.z)).dot(lean)/100.0
 
 ## Whether `isle` keeps HOOD_APART (flat, rect to rect) from every isle of
 ## another neighbourhood: the gulfs stay open sky.

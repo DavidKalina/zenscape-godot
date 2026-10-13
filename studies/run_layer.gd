@@ -21,11 +21,14 @@ extends "res://studies/aqueduct_isle.gd"
 ##   Backspace     this layer again
 ##   godot --path . res://studies/run_layer.tscn -- --no-title [--seed=<n>]
 ##     [--knob=gulf=<m>] [--knob=hoods=<2|3>] [--knob=ride=<serpent|ferry>]
+##     [--shape=sprawl]  (scripts/roguelike/layer_sprawl.gd: an exit side, a
+##     chain of crossings out to the gate, the next region seen far off)
 ## Without --seed= a seed is drawn. The isle's own flags still work; the
 ## hall chain, the lodestone and the dragon's roost are left out.
 const LayerPlan = preload("res://scripts/roguelike/layer_plan.gd")
 const LayerStage = preload("res://scripts/roguelike/layer_stage.gd")
 const RunLayerSky = preload("res://studies/run_layer_sky.gd")
+const LayerSprawl = preload("res://scripts/roguelike/layer_sprawl.gd")
 
 ## Seeds tried past a seed whose plan could not be laid.
 const SKIP_MOST := 8
@@ -33,6 +36,8 @@ const SKIP_MOST := 8
 static var layer_seed := -1
 ## The layer's knobs (`--knob=`, LayerPlan KNOBS), kept from layer to layer.
 static var layer_knobs := {}
+## The layer's shape (`--shape=`): "" round 3's, "sprawl" LayerSprawl's.
+static var layer_shape := ""
 var layer: Dictionary = {}
 var stage: Node3D = null
 var _slot_was: Node = null
@@ -54,6 +59,7 @@ func _ready() -> void:
 	if layer_seed < 0:
 		for arg in preload("res://scripts/launch_args.gd").user_args():
 			if arg.begins_with("--seed="): layer_seed = int(arg.get_slice("=",1))
+			if arg.begins_with("--shape="): layer_shape = arg.get_slice("=",1)
 		layer_knobs = LayerPlan.knobs_from(preload("res://scripts/launch_args.gd").user_args())
 		if layer_seed < 0:
 			var rng := RandomNumberGenerator.new()
@@ -83,7 +89,7 @@ static func _plan_for(seed_value: int, knobs: Dictionary) -> Dictionary:
 	var began := Time.get_ticks_msec()
 	var plan := {}
 	for k in range(SKIP_MOST):
-		plan = LayerPlan.make(seed_value+k,knobs)
+		plan = LayerSprawl.make(seed_value+k,knobs) if layer_shape == "sprawl" else LayerPlan.make(seed_value+k,knobs)
 		if (plan.problems as Array).is_empty(): break
 		print("run layer: seed %d can't be laid (%s), on to the next" % [seed_value+k,str(plan.problems)])
 	return {"plan":plan,"ms":Time.get_ticks_msec()-began}
@@ -145,6 +151,7 @@ func _stand_layer() -> void:
 	stage = LayerStage.new()
 	add_child(stage)
 	stage.setup(self,layer,_slot_was)
+	if layer.has("chain"): LayerSprawl.dress(stage,layer)
 	stage.rune_taken.connect(func(_left: int) -> void: _update_card())
 	var spawn: Dictionary = layer.spawn
 	var face: Vector3 = spawn.face
@@ -264,4 +271,5 @@ func _update_card() -> void:
 	var runes := "runes %d/%d" % [stage.taken,LayerPlan.RUNES] if stage != null else ""
 	var ride := ""
 	if stage != null and stage.rides != null and motor != null: ride = stage.rides.schedule(motor.feet)
+	if layer.has("chain"): parts.append(LayerSprawl.card(layer))
 	_card.text = "Layer · seed %d  ·  %s  ·  %s\n%s\n%sN next seed · Shift+N previous · Backspace again" % [layer_seed,runes,up,"\n".join(parts),ride+"\n" if ride != "" else ""]
