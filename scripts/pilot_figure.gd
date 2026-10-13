@@ -46,10 +46,18 @@ extends Node3D
 ## leaning back, and coming out of it whips round to face the new way with
 ## a little hop.
 ##
-## Knocked (the motor's move "tumble"): in the air it somersaults backward
-## about the hips (TUMBLE_SPIN), flailing, arms flung out; down on the
-## ground it sits back on its seat, legs out ahead, and comes upright as he
-## gets up; out of it (up, or a twirl) the somersault unwinds.
+## Knocked (the motor's move "tumble"): a procedural ragdoll. The throw
+## sets the body spinning about the axis it was hit over (head back along
+## the throw, RAG_SPIN by the blow's pace, a little twist and roll at
+## random), kept spinning through the air; the limbs go limp, each on a
+## soft spring (RAG_HZ, RAG_DAMP) chasing where the air and gravity pull it
+## in the body's own frame and flung out by the spin, so they trail, flop
+## and overshoot rather than hold a pose. Down on the ground (stunned) it
+## eases over to lying flat on whichever side it came down, sprawled, three
+## little lights circling over the head (the dizzy); getting up it springs
+## upright. His poise back in the air, it gathers itself: the ragdoll
+## unwinds fast, a stretch and a squint. The roll (move "roll") is a
+## forward roll over ROLL_SPIN s.
 ##
 ## On a ledge (the motor's `hold`) it plays the hang, blended into the
 ## shimmy by its pace and in its step as the walk is (the gripping mitts stay
@@ -225,12 +233,32 @@ const AIR_FALLEN := -2.0
 const AIR_ARMS := 0.3
 ## The pelvis over the feet (pilot_build.py HIPS).
 const HIPS := 0.4329
-## Knocked: the somersault (rad/s, backward), sat back on the ground
-## (radians tipped back, m lower), and seconds it unwinds over after.
-const TUMBLE_SPIN := 11.0
-const TUMBLE_SIT := 0.55
+## Knocked: m the body is lowered lying down.
 const TUMBLE_LOW := 0.3
-const TUMBLE_EASE := 0.09
+## The ragdoll: its spin (rad/s per m/s of the throw, least and most), the
+## twist and roll it may have on top (rad/s, at random either way), the
+## air's drag on it (a share a second); the limbs' springs (Hz, damping),
+## the pull of the air past them (per m/s) and how far the spin flings
+## them out (rad per rad/s, most); seconds it eases flat down and upright
+## after; the roll's seconds; the gather's stretch and seconds; the dizzy
+## lights' turn (rad/s), height over the head and radius (m).
+const RAG_SPIN := 0.9
+const RAG_SPIN_MOST := Vector2(5.0,14.0)
+const RAG_TWIST := 2.5
+const RAG_DRAG := 0.3
+const RAG_HZ := 2.2
+const RAG_DAMP := 0.28
+const RAG_AIR := 0.07
+const RAG_FLING := 0.08
+const RAG_FLING_MOST := 1.1
+const RAG_LIE := 0.08
+const RAG_UP := 0.1
+const ROLL_SPIN := 0.35
+const GATHER_STRETCH := 1.4
+const GATHER_TIME := 0.3
+const DIZZY_TURN := 5.0
+const DIZZY_UP := 0.22
+const DIZZY_RADIUS := 0.13
 ## Radians of bank per radian a second of turn at a full run, and the most.
 const BANK := 0.06
 const BANK_MOST := 0.35
@@ -431,11 +459,23 @@ var _sail_time := 0.0
 var _held := false
 var _dive_b := Vector4.ZERO
 var _dive_time := 0.0
-## Knocked: the somersault's turn (rad, about the hips), 0 to 1 sat down,
-## and the flail's clock.
-var _tumble := 0.0
+## Knocked: 0 to 1 lowered lying down, and seconds tumbling.
 var _tumble_low := 0.0
 var _flail_time := 0.0
+## The ragdoll: the body's turn (about the hips, in the figure's frame) and
+## spin (rad/s, an axis), the knocks seen, the limp limbs' springs and
+## weight, the roll's seconds in (INF: none), the gather's seconds left and
+## the dizzy lights.
+var _rag := Quaternion.IDENTITY
+var _rag_w := Vector3.ZERO
+var _knocks_seen := -1
+var _limp := []
+var _limp_w := 0.0
+var _roll_t := INF
+var _gather := 0.0
+var _dizzy: Node3D
+var _dizzy_t := 0.0
+var _was_tumble := false
 ## The face: its paint, the mood held and its seconds left, each
 ## expression's amount (0 to 1), the blink's seconds in (INF: none) and
 ## seconds to the next, seconds in the air, the motor's move last seen.
@@ -502,6 +542,8 @@ func _init() -> void:
 	_rng.randomize()
 	_blink_next = _rng.randf_range(BLINK_EVERY.x,BLINK_EVERY.y)
 	_build_spark(placed)
+	_build_dizzy()
+	for i in range(11): _limp.append(Spring.new(RAG_HZ,RAG_DAMP))
 	var clips: Array[String] = ["idle","walk","run"]
 	if _has_skid: clips.append("skid")
 	if _has_ledge: clips.append_array(["hang","shimmy_left","shimmy_right","climb"])
@@ -819,46 +861,169 @@ func drive(motor: RefCounted, delta: float) -> Dictionary:
 	# turn.
 	_hunch_to = -(RUN_LEAN*pace*_running+clampf(climb*SLOPE_LEAN,-SLOPE_MOST,SLOPE_MOST)) if motor.grounded and not motor.skidding and move != "crouch" and move != "slide" else 0.0
 	_roll_to = clampf(turned*CHEST_BANK*pace,-CHEST_BANK_MOST,CHEST_BANK_MOST) if motor.grounded else 0.0
-	_pivot.rotation = _spun(delta)+Vector3(_tumbled(motor,move,delta),0.0,0.0)
+	var spun := _spun(delta)
+	_pivot.quaternion = Quaternion.from_euler(spun)*_ragdoll(motor,move,delta)
 	_advance(delta)
-	if move == "tumble": _flail(motor.grounded)
+	_limp_step(motor,move,delta)
+	_dizzy_step(motor,move,delta)
 	return out
 
-## Knocked (move "tumble"): the somersault about the hips in the air, sat
-## back on the ground; out of it, unwound. The pivot's turn about its side.
-func _tumbled(motor: RefCounted, move: String, delta: float) -> float:
-	if move == "tumble":
+## The ragdoll's turn of the body this frame (see the header): spun by
+## the throw in the air, eased flat down on the ground, held tipped in a
+## grab, unwound after; the roll on top of it.
+func _ragdoll(motor: RefCounted, move: String, delta: float) -> Quaternion:
+	var tumbling := move == "tumble"
+	var knocks: int = int(motor.get("knocks")) if "knocks" in motor else 0
+	if tumbling and knocks != _knocks_seen: _throw(motor)
+	_knocks_seen = knocks
+	if _was_tumble and not tumbling and not motor.grounded and move != "roll":
+		# Poise back in the air: he gathers himself.
+		_gather = GATHER_TIME
+		_stretch.v += GATHER_STRETCH
+		express("squint",GATHER_TIME)
+	_was_tumble = tumbling
+	_gather = maxf(0.0,_gather-delta)
+	if move == "roll" and _roll_t == INF:
+		_roll_t = 0.0
+		_stretch.v -= CROUCH_SQUASH
+	if tumbling:
 		_flail_time += delta
 		var held: bool = motor.has_method("seized") and motor.seized()
 		if held:
-			_tumble = lerp_angle(_tumble,0.35,1.0-exp(-delta/0.1))
+			_rag = _rag.slerp(Quaternion(Vector3.RIGHT,0.35),1.0-exp(-delta/0.1)).normalized()
+			_rag_w = Vector3.ZERO
 			_tumble_low = move_toward(_tumble_low,0.0,delta/0.1)
 		elif motor.grounded:
-			_tumble = lerp_angle(_tumble,TUMBLE_SIT,1.0-exp(-delta/0.06))
-			_tumble_low = move_toward(_tumble_low,1.0,delta/0.1)
+			# Down: over to lying flat, on the side it came down on.
+			var up := _rag*Vector3.UP
+			var flat := Vector3(up.x,0.0,up.z)
+			if flat.length() < 0.2: flat = _rag*Vector3.BACK
+			flat = Vector3(flat.x,0.0,flat.z)
+			if flat.length() < 0.01: flat = Vector3.BACK
+			var lie := (Quaternion(up.normalized(),flat.normalized())*_rag).normalized()
+			_rag = _rag.slerp(lie,1.0-exp(-delta/RAG_LIE)).normalized()
+			_rag_w = Vector3.ZERO
+			_tumble_low = move_toward(_tumble_low,1.0,delta/0.12)
 		else:
-			_tumble = wrapf(_tumble+TUMBLE_SPIN*delta,-PI,PI)
+			if _rag_w == Vector3.ZERO: _throw(motor)
+			var w := _rag_w.length()
+			if w > 1e-4: _rag = (Quaternion(_rag_w/w,w*delta)*_rag).normalized()
+			_rag_w *= exp(-RAG_DRAG*delta)
 			_tumble_low = move_toward(_tumble_low,0.0,delta/0.1)
-		_arms_to = 1.0
-	elif _tumble == 0.0 and _tumble_low == 0.0:
-		return 0.0
 	else:
-		_tumble = lerp_angle(_tumble,0.0,1.0-exp(-delta/TUMBLE_EASE))
-		if absf(_tumble) < 0.002: _tumble = 0.0
+		_rag_w = Vector3.ZERO
+		if not _rag.is_equal_approx(Quaternion.IDENTITY):
+			_rag = _rag.slerp(Quaternion.IDENTITY,1.0-exp(-delta/(RAG_UP*(0.5 if _gather > 0.0 else 1.0)))).normalized()
+			if _rag.angle_to(Quaternion.IDENTITY) < 0.01: _rag = Quaternion.IDENTITY
 		_tumble_low = move_toward(_tumble_low,0.0,delta/0.25)
 	_tilt.position.y = -TUMBLE_LOW*smoothstep(0.0,1.0,_tumble_low)
-	return _tumble
+	var turn := _rag
+	if _roll_t != INF:
+		_roll_t += delta
+		var u := clampf(_roll_t/ROLL_SPIN,0.0,1.0)
+		turn = turn*Quaternion(Vector3.RIGHT,-TAU*smoothstep(0.0,1.0,u))
+		_tilt.position.y -= TUMBLE_LOW*0.8*sin(PI*u)
+		if u >= 1.0: _roll_t = INF
+	return turn
 
-## The limbs knocked about: flailing in the air; sat down, the legs out ahead.
-func _flail(down: bool) -> void:
-	if _upper_arms.has(-1) or _thighs.has(-1) or _shins.has(-1): return
-	var t := _flail_time
-	var arms := 0.9 if down else 2.0+0.4*sin(t*13.0)
-	_turn_bone(_upper_arms[0],Vector3.BACK,-arms)
-	_turn_bone(_upper_arms[1],Vector3.BACK,arms)
-	for side in range(2):
-		_turn_bone(_thighs[side],Vector3.RIGHT,1.3 if down else 0.5+0.4*sin(t*11.0+PI*side))
-		_turn_bone(_shins[side],Vector3.RIGHT,-0.2 if down else -0.7)
+## Thrown (a fresh knock): spinning head back along the throw, by its pace,
+## with a little twist and roll at random.
+func _throw(motor: RefCounted) -> void:
+	var v: Vector3 = motor.velocity
+	var facing: float = motor.facing
+	var local := Basis(Vector3.UP,facing).inverse()*v
+	var flat := Vector3(local.x,0.0,local.z)
+	var rate := clampf(v.length()*RAG_SPIN,RAG_SPIN_MOST.x,RAG_SPIN_MOST.y)
+	var axis := Vector3.UP.cross(flat.normalized()) if flat.length() > 0.3 else Vector3.RIGHT*(1.0 if _rng.randf() < 0.5 else -1.0)
+	var side := flat.normalized() if flat.length() > 0.3 else Vector3.FORWARD
+	_rag_w = axis*rate+Vector3.UP*_rng.randf_range(-RAG_TWIST,RAG_TWIST)+side*_rng.randf_range(-RAG_TWIST,RAG_TWIST)*0.4
+	_roll_t = INF
+
+## The limp limbs (see the header): each angle on its soft spring after
+## where the air and gravity pull it, in the body's frame, the spin
+## flinging them out; blended in as he tumbles and out as he gets up.
+func _limp_step(motor: RefCounted, move: String, delta: float) -> void:
+	var tumbling: bool = move == "tumble" and not (motor.has_method("seized") and motor.seized())
+	_limp_w = move_toward(_limp_w,1.0 if tumbling else 0.0,delta/(0.06 if tumbling else 0.2))
+	if _limp_w <= 0.0:
+		for spring: Spring in _limp:
+			spring.x = 0.0
+			spring.v = 0.0
+		return
+	if _upper_arms.has(-1) or _thighs.has(-1) or _shins.has(-1) or _head < 0: return
+	var facing: float = motor.facing
+	var v: Vector3 = Basis(Vector3.UP,facing).inverse()*(motor.velocity as Vector3)
+	var pull := Vector3.DOWN if motor.grounded else (Vector3.DOWN*0.6-v*RAG_AIR)
+	if pull.length() < 0.01: pull = Vector3.DOWN
+	var d := _rag.inverse()*pull.normalized()
+	var p := atan2(-d.z,-d.y)
+	var q := atan2(d.x,-d.y)
+	var fling := minf(_rag_w.length()*RAG_FLING,RAG_FLING_MOST)+(0.9 if motor.grounded else 0.0)
+	var goals := [
+		clampf(p,-1.5,2.8),clampf(q-fling,-2.6,0.2),
+		clampf(p,-1.5,2.8),clampf(q+fling,-0.2,2.6),
+		clampf(p,-0.5,1.6),clampf(q-fling*0.35,-0.9,0.1),
+		clampf(p,-0.5,1.6),clampf(q+fling*0.35,-0.1,0.9),
+		-0.15 if motor.grounded else -0.6,-0.15 if motor.grounded else -0.6,
+		clampf(p*0.4,-0.6,0.6)]
+	var a: Array[float] = []
+	for i in range(_limp.size()): a.append((_limp[i] as Spring).step(float(goals[i]),delta)*_limp_w)
+	_turn_bone(_upper_arms[0],Vector3.RIGHT,a[0])
+	_turn_bone(_upper_arms[0],Vector3.BACK,a[1])
+	_turn_bone(_upper_arms[1],Vector3.RIGHT,a[2])
+	_turn_bone(_upper_arms[1],Vector3.BACK,a[3])
+	_turn_bone(_thighs[0],Vector3.RIGHT,a[4])
+	_turn_bone(_thighs[0],Vector3.BACK,a[5])
+	_turn_bone(_thighs[1],Vector3.RIGHT,a[6])
+	_turn_bone(_thighs[1],Vector3.BACK,a[7])
+	_turn_bone(_shins[0],Vector3.RIGHT,a[8])
+	_turn_bone(_shins[1],Vector3.RIGHT,a[9])
+	_turn_bone(_head,Vector3.RIGHT,a[10])
+
+## The dizzy: three little lights circling over the head, down stunned.
+func _build_dizzy() -> void:
+	_dizzy = Node3D.new()
+	_dizzy.name = "Dizzy"
+	var ink := StandardMaterial3D.new()
+	ink.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	ink.albedo_color = PilotPaint.GLOW
+	ink.emission_enabled = true
+	ink.emission = PilotPaint.GLOW
+	ink.emission_energy_multiplier = 1.5
+	var dot := SphereMesh.new()
+	dot.radius = 0.022
+	dot.height = 0.044
+	dot.radial_segments = 12
+	dot.rings = 6
+	for i in range(3):
+		var m := MeshInstance3D.new()
+		m.mesh = dot
+		m.material_override = ink
+		m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var a := TAU*i/3.0
+		m.position = Vector3(cos(a),0.0,sin(a))*DIZZY_RADIUS
+		_dizzy.add_child(m)
+	_dizzy.visible = false
+	add_child(_dizzy)
+
+## The dizzy over the head while he is down stunned, turning.
+func _dizzy_step(motor: RefCounted, move: String, delta: float) -> void:
+	if _dizzy == null: return
+	var down: bool = move == "tumble" and motor.grounded and not (motor.has_method("seized") and motor.seized())
+	_dizzy.visible = down and _head >= 0
+	if not _dizzy.visible:
+		_dizzy_t = 0.0
+		return
+	_dizzy_t += delta
+	# The head in this node's frame (the skeleton's place in it walked up).
+	var placed := Transform3D.IDENTITY
+	var up: Node = _skeleton
+	while up != self and up != null:
+		placed = (up as Node3D).transform*placed
+		up = up.get_parent()
+	var head := placed*_skeleton.get_bone_global_pose(_head).origin
+	var grow := maxf(smoothstep(0.0,0.2,_dizzy_t),0.01)
+	_dizzy.transform = Transform3D(Basis(Vector3.UP,_dizzy_t*DIZZY_TURN).scaled(Vector3.ONE*grow),head+Vector3.UP*DIZZY_UP)
 
 ## The spins this frame (a twirl's about up, a side flip's about forward),
 ## each run through to its whole turns whatever the motor does meanwhile:
@@ -1248,8 +1413,13 @@ func settle() -> void:
 	_air = 0.0
 	_spin = Vector2.ZERO
 	_spin_t = Vector2(INF,INF)
-	_tumble = 0.0
 	_tumble_low = 0.0
+	_rag = Quaternion.IDENTITY
+	_rag_w = Vector3.ZERO
+	_roll_t = INF
+	_gather = 0.0
+	_limp_w = 0.0
+	_was_tumble = false
 	_pivot.rotation = Vector3.ZERO
 	_idle_anywhere()
 	_apply()

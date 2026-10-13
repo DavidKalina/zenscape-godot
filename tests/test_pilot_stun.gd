@@ -120,6 +120,7 @@ func _initialize() -> void:
 	_step(m,Vector2.ZERO,false)
 	m.knock(Vector3(6.0,6.0,0.0))
 	var steered := m.velocity
+	var spun := 0.0
 	var poised_at := -1.0
 	var opened := -1.0
 	var early_sail := false
@@ -129,9 +130,11 @@ func _initialize() -> void:
 			if poised_at < 0.0: early_sail = true
 			if opened < 0.0: opened = i*DT
 		if out.has("poised"): poised_at = i*DT
+		if poised_at < 0.0: spun = maxf(spun,(figure._rag as Quaternion).get_angle())
 		if poised_at < 0.0 and m.move == "tumble": check_quiet(absf(m.velocity.x-steered.x) < 1e-4,"no steer stunned")
 		if opened >= 0.0: break
 	check(not early_sail and poised_at > 0.0 and absf(poised_at-m.poise_for(Vector3(6.0,6.0,0.0))) < 0.05,"No sail till his poise is back (poised at %.2f s)" % poised_at)
+	check(spun > 2.0,"Drawn tumbling with the throw (%.1f rad round)" % spun)
 	check(opened >= poised_at and opened < poised_at+0.1,"Then the sail opens (%.2f s)" % opened)
 	# Landed stunned.
 	m.reset(Vector3.ZERO,0.0)
@@ -142,7 +145,10 @@ func _initialize() -> void:
 		hit.merge(_step(m,Vector2.ZERO,false),true)
 		if m.grounded: break
 	check(m.downed() and hit.has("downed") and not hit.has("poised"),"Landed before his poise: laid down")
-	check(_until_up(m) > PilotMotor.TUMBLE_DOWN-0.05,"Then up")
+	for i in range(12): _step(m,Vector2.ZERO,false)
+	var lying: Vector3 = figure._rag*Vector3.UP
+	check(absf(lying.y) < 0.35 and figure._dizzy.visible,"Drawn lying flat (up %.2f), the dizzy over his head" % lying.y)
+	check(_until_up(m) > PilotMotor.TUMBLE_DOWN-0.3,"Then up")
 	# Tossed stunned.
 	m.reset(Vector3.ZERO,0.0)
 	_step(m,Vector2.ZERO,false)
