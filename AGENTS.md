@@ -37,10 +37,13 @@ existing test its change breaks.
 Pick a subagent's model by what it makes:
 
 - **Opus**, the default: physics, moving bodies, input, movement and feel,
-  complex logic, graphics, shaders, art, new kit pieces. Brief it to prove the
-  work through the real play loop and input path, not only scripted test ticks.
-- **Sonnet**, assembly: putting pieces that already exist together into a
-  scene, motifs, layouts.
+  complex logic, animation (new clips and changes to existing ones), new
+  models, new kit pieces. Brief it to prove
+  the work through the real play loop and input path, not only scripted test
+  ticks.
+- **Sonnet**, assembly and looks: putting pieces that already exist together
+  into a scene, motifs, layouts; shaders, materials, textures, reskins and
+  other surface changes that leave shape, motion and collision alone.
 - **Haiku**: names, labels and other small brainstorms.
 
 A task that mixes kinds goes to Opus.
