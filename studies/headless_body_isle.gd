@@ -284,7 +284,7 @@ func _show_hud() -> void:
 	if b != null:
 		var to := (h.global_position-b.global_position).length() if h != null else -1.0
 		lines.append("body  %s %.1fs · %s · %.1f m/s · y %.1f · to head %.1f m · climbs %d · leaps %d (jumps %d, last %s) · listens %d" % [b.state,b.state_t,"whole" if b.whole else ("has it" if b.homed else "searching"),Vector2(b.vel.x,b.vel.z).length(),b.position.y,to,b.climbs,b.leaps,b.jumps,b.leap_kind if b.leap_kind != "" else "-",b.listens])
-		lines.append("shocks %d · threw you %d · jump gap %.1f m" % [b.shocks,b.shock_hits,b.jump_gap()])
+		lines.append("shocks %d · threw you %d · jump gap %.1f m · clip %s" % [b.shocks,b.shock_hits,b.jump_gap(),b.look.clip_now()])
 	else: lines.append("body  none yet (%.1f s) · next cliff %s" % [_bodiless,CLIFFS[pick_cliff(true)][0] if pick_cliff(true) >= 0 else "none fits"])
 	if h != null: lines.append("head  %s %.1fs · draw %.2f · pull on him %.1f m/s" % [h.state,h.state_t,h.draw_share,h.pulling])
 	lines.append("cliff spawns %d (last %s) · fallen and gone: %d" % [spawns,last_cliff if last_cliff != "" else "-",enemies.gone_count])

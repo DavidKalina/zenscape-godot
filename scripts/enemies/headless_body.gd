@@ -1,8 +1,11 @@
 extends "res://scripts/enemies/enemy.gd"
 ## The headless body (docs/design/roguelike/headless-body-round1.md): the
 ## inhaler head's (scripts/enemies/inhaler_head.gd) lost stone body, a
-## hulking greybox figure with an empty neck stump, walking the isles to
-## find its head. Greybox: boxes on pivots, no model yet.
+## hulking Olmec figure of masonry with an empty neck stump, walking the
+## isles to find its head. Round 3 (headless-body-round3-anim.md) gave it
+## its model and authored clips (scripts/enemies/headless_body_look.gd,
+## art/blender/headless_body/headless_body_build.py), driven from these
+## states; its hands are put on the real wall and lip on top of them.
 ##
 ## Sized off its head (`head_size` of the walker's heights, the head's own
 ## `size` knob): legs, torso, arms, breadth in head heights, so a bigger head
@@ -47,6 +50,7 @@ extends "res://scripts/enemies/enemy.gd"
 ##             `lost`, it is gone).
 ##   "reach"   the head is in arm's reach: it stops, faces it and lifts its
 ##             arms; the head comes down onto its neck over `settle` s.
+##   "triumph" whole again: a beat of triumph, `triumph` s, then on.
 ## Reunited (`whole`), it walks on whole, the head on its shoulders (eyes
 ## lit, its breath stopped), roaming any way, climbing and leaping still.
 ##
@@ -56,6 +60,8 @@ extends "res://scripts/enemies/enemy.gd"
 ## Round 2: docs/design/roguelike/headless-body-round2.md.
 
 signal reunited(enemy)
+
+const Look = preload("res://scripts/enemies/headless_body_look.gd")
 
 ## The head it looks for (found among the field's enemies: the one with a mouth).
 var head: Node3D = null
@@ -100,28 +106,24 @@ var _unsensed := 0.0
 var _seat_from := Vector3.ZERO
 var _seat_k := 1.0
 var _ray := PhysicsRayQueryParameters3D.new()
+## The model and its clips.
+var look: Look
+var _clock := 0.0
+## The leap's time in the air (s), the landing's clip, the haul's own clock,
+## the slap of its hands onto the lip (s since, -1 not yet), the lip it
+## mantles over, the cross-fade into the state now, the state it had.
+var _flight := 1.0
+var _land_clip := "land"
+var _haul_t := 0.0
+var _grab_t := -1.0
+var _mantle_lip := Vector3.ZERO
+var _fade := 0.2
+var _was := ""
+var _snap := true
+var _triumph_thud := false
 var _dust: Array = []
 ## Live shockwaves: {at, r, max, power, done (the walker met), parts}.
 var _waves: Array = []
-## Pivots of the greybox figure.
-var _hips: Node3D
-var _trunk: Node3D
-var _seat: Node3D
-var _arms: Array[Node3D] = []
-var _fores: Array[Node3D] = []
-var _thighs: Array[Node3D] = []
-var _knees: Array[Node3D] = []
-## The pose eased toward: crouch (m the hips drop), lean (rad forward),
-## twist (rad), cock (rad, the stump tipped), arm reach [left, right] (rad
-## about x, 0 hanging, PI straight up), forearm bend (rad), leg swing.
-var _crouch := 0.0
-var _lean := 0.0
-var _twist := 0.0
-var _cock := 0.0
-var _reach := [0.0,0.0]
-var _bend := [0.0,0.0]
-var _swing := 0.0
-
 func _init() -> void:
 	cost = 5
 	tags = PackedStringArray(["heavy","climbs","leaps","pushes"])
@@ -150,6 +152,10 @@ func default_knobs(n: Dictionary) -> Dictionary:
 		"shock_edge":0.2,"shock_band":n.unit*1.7,"shock_air":n.unit*0.45,"shock_mantle":0.5,
 		"cling":1.0,
 		"reunite":n.unit*1.6,"settle":2.2,"whole_climb":0.6,"seed":1,
+		# Round 3, the clips: a step's length walking and striding home (Hh;
+		# the clips are made for these, other values slide the feet), and
+		# the beat of triumph once whole (s; it was straight to listening).
+		"stride":Look.WALK_STEP,"stride_home":Look.STRIDE_STEP,"triumph":1.8,
 	}
 
 ## Its build in head heights: the box the walker meets is its torso's
@@ -186,62 +192,28 @@ func cling(lip: Vector3, out: Vector2) -> void:
 	climbs += 1
 	spawned_on_cliff = true
 	_go("climb")
-	_pose(1.0)
+	_snap = true
+	_animate(0.0)
 
 # --- The figure -------------------------------------------------------------------------
 
+## The model, sized off its head: the build's head height to ours.
 func _art(root: Node3D) -> void:
-	var leg_w := hh*0.38
-	var arm_w := hh*0.3
-	var cut := Color(0.42,0.3,0.26)
-	_hips = Node3D.new()
-	_hips.position.y = legs_h
-	root.add_child(_hips)
-	for side in [-1.0,1.0]:
-		var thigh := Node3D.new()
-		thigh.position.x = side*width*0.26
-		_hips.add_child(thigh)
-		_part(Vector3(leg_w,legs_h*0.55,leg_w),Vector3(0.0,-legs_h*0.26,0.0),true,Color.WHITE,thigh)
-		var knee := Node3D.new()
-		knee.position.y = -legs_h*0.5
-		thigh.add_child(knee)
-		_part(Vector3(leg_w*0.92,legs_h*0.52,leg_w*0.92),Vector3(0.0,-legs_h*0.25,0.0),true,Color.WHITE,knee)
-		_part(Vector3(leg_w*1.05,legs_h*0.1,leg_w*1.5),Vector3(0.0,-legs_h*0.46,-leg_w*0.2),true,Color.WHITE,knee)
-		_thighs.append(thigh)
-		_knees.append(knee)
-	_trunk = Node3D.new()
-	_hips.add_child(_trunk)
-	# Pelvis, belly, the broad chest, the shoulders' slab.
-	_part(Vector3(width*0.8,torso_h*0.22,length*0.9),Vector3(0.0,torso_h*0.08,0.0),true,Color.WHITE,_trunk)
-	_part(Vector3(width*0.86,torso_h*0.4,length),Vector3(0.0,torso_h*0.36,0.0),true,Color.WHITE,_trunk)
-	_part(Vector3(width,torso_h*0.42,length*1.05),Vector3(0.0,torso_h*0.74,-length*0.02),true,Color.WHITE,_trunk)
-	_part(Vector3(width*1.06,torso_h*0.12,length*0.9),Vector3(0.0,torso_h*0.95,0.0),true,Color.WHITE,_trunk)
-	# The stump: a short neck block, its cut face raw.
-	var stump := hh*0.12
-	_part(Vector3(hh*0.55,stump,hh*0.5),Vector3(0.0,torso_h+stump*0.5,0.0),true,Color.WHITE,_trunk)
-	_part(Vector3(hh*0.5,0.06,hh*0.45),Vector3(0.0,torso_h+stump+0.03,0.0),false,cut,_trunk)
-	_seat = Node3D.new()
-	_seat.position.y = torso_h+stump-hh*0.06
-	_trunk.add_child(_seat)
-	for side in [-1.0,1.0]:
-		var arm := Node3D.new()
-		arm.position = Vector3(side*(width*0.5+arm_w*0.45),torso_h*0.88,0.0)
-		_trunk.add_child(arm)
-		_part(Vector3(arm_w*1.2,arm_w*1.0,arm_w*1.2),Vector3.ZERO,true,Color.WHITE,arm)
-		_part(Vector3(arm_w,arm_l*0.5,arm_w),Vector3(0.0,-arm_l*0.25,0.0),true,Color.WHITE,arm)
-		var fore := Node3D.new()
-		fore.position.y = -arm_l*0.5
-		arm.add_child(fore)
-		_part(Vector3(arm_w*0.9,arm_l*0.42,arm_w*0.9),Vector3(0.0,-arm_l*0.21,0.0),true,Color.WHITE,fore)
-		_part(Vector3(arm_w*1.35,arm_l*0.16,arm_w*1.35),Vector3(0.0,-arm_l*0.48,0.0),true,Color.WHITE,fore)
-		_arms.append(arm)
-		_fores.append(fore)
+	look = Look.new()
+	look.name = "Look"
+	root.add_child(look)
+	look.build(hh/Look.HH)
+
+## The tell: the stump's raw cut glows.
+func tint(colour: Color) -> void:
+	super.tint(colour)
+	if look != null: look.warm(0.0 if colour == rest_colour else 1.0)
 
 # --- What the head asks ------------------------------------------------------------------
 
 ## Where the head's chin sits now: on the neck, or on its way there.
 func head_seat() -> Vector3:
-	var seat := _seat.global_position
+	var seat := look.seat().origin
 	if _seat_k >= 1.0: return seat
 	var k := smoothstep(0.0,1.0,_seat_k)
 	var p := _seat_from.lerp(seat,k)
@@ -249,15 +221,17 @@ func head_seat() -> Vector3:
 	return p
 
 func head_facing() -> float:
-	return wrapf(facing+_twist,-PI,PI)
+	return facing
 
+## The stump's turn off its facing (the head's skin takes it as Euler).
 func head_tilt() -> Vector3:
-	return Vector3(skin.rotation.x+_lean*0.6,0.0,skin.rotation.z+_cock)
+	return (Basis(Vector3.UP,facing).inverse()*look.seat().basis.orthonormalized()).get_euler()
 
 # --- A frame -------------------------------------------------------------------------------
 
 func think(delta: float) -> void:
 	state_t += delta
+	_clock += delta
 	quake = maxf(0.0,quake-delta*1.2)
 	_find_head()
 	_dusts(delta)
@@ -273,7 +247,8 @@ func think(delta: float) -> void:
 			_brake(delta)
 			if state_t >= float(knobs.land): _go("listen")
 		"reach": _reach_head(delta)
-	_pose(delta)
+		"triumph": _triumph(delta)
+	_animate(delta)
 
 func _go(to: String) -> void:
 	state = to
@@ -478,6 +453,7 @@ func _climb(delta: float) -> void:
 		var onto := Vector3(_face_pt.x,_lip_y,_face_pt.z)+fwd*(length*0.5+0.6)
 		var g := _floor(onto,1.0,1.5)
 		_mantle_to = Vector3(onto.x,g if g != -INF else _lip_y,onto.z)
+		_mantle_lip = Vector3(_face_pt.x,_lip_y,_face_pt.z)
 		_go("mantle")
 		field.sound(&"body_grip",Vector3(_face_pt.x,_lip_y,_face_pt.z))
 		return
@@ -488,6 +464,10 @@ func _climb(delta: float) -> void:
 	if position.y-_climb_from > float(knobs.climb_max):
 		_fall()
 		return
+	if _lip_y != INF: _haul_t += delta
+	else:
+		_haul_t = 0.0
+		_grab_t = -1.0
 	var rise := float(knobs.climb)*delta*(float(knobs.haul) if _lip_y != INF else 1.0)
 	position.y += rise
 	var was := _phase
@@ -593,6 +573,7 @@ func _windup(delta: float) -> void:
 	var vy := sqrt(2.0*g*up)
 	var t := (vy+sqrt(maxf(vy*vy+2.0*g*drop,0.0)))/g
 	var flat := to/t
+	_flight = t
 	vel = Vector3(flat.x,vy,flat.y)
 	grounded = false
 	leaps += 1
@@ -608,6 +589,7 @@ func _fall() -> void:
 ## fall is 1; 0.6 to 1.5).
 func _landed() -> void:
 	var impact := maxf(0.0,-vel.y)
+	_land_clip = "drop_land" if state == "leap" and leap_kind == "drop" else "land"
 	grounded = true
 	vel = Vector3.ZERO
 	_go("land")
@@ -736,11 +718,23 @@ func _reach_head(delta: float) -> void:
 		whole = true
 		homed = false
 		rest()
-		_puff(_seat.global_position,hh*1.2)
+		_puff(look.seat().origin,hh*1.2)
 		quake = 0.3
 		field.sound(&"body_whole",position)
 		reunited.emit(self)
-		_go("listen")
+		_triumph_thud = false
+		_go("triumph")
+
+## Whole: arms up, then the fists down with a thud (at the clip's 1.34 of
+## its 1.8 s), then on.
+func _triumph(delta: float) -> void:
+	_brake(delta)
+	var t := float(knobs.triumph)
+	if not _triumph_thud and state_t >= t*1.34/1.8:
+		_triumph_thud = true
+		quake = maxf(quake,0.25)
+		field.sound(&"body_step",position)
+	if state_t >= t: _go("listen")
 
 # --- Moving -------------------------------------------------------------------------------------
 
@@ -772,109 +766,109 @@ func _move(delta: float) -> void:
 		var g := _floor(position,float(knobs.step),float(knobs.step))
 		if g == -INF: _fall()
 		else: position.y = move_toward(position.y,g,maxf(absf(g-position.y)*8.0,2.0)*delta) if g > position.y else g
+		# A step each phase (the clips' feet come down on whole phases).
 		var was := _phase
-		_phase += Vector2(vel.x,vel.z).length()*delta/(legs_h*1.2)
-		if int(was*2.0) != int(_phase*2.0):
+		_phase += Vector2(vel.x,vel.z).length()*delta/(hh*float(knobs.stride_home if state == "home" else knobs.stride))
+		if floori(was) != floori(_phase):
 			field.sound(&"body_step",position)
 			quake = maxf(quake,0.06)
 	rotation.y = facing
 
-# --- The pose -----------------------------------------------------------------------------------
+# --- The clips ------------------------------------------------------------------------------
 
-func _pose(delta: float) -> void:
-	var c := 0.0
-	var lean := 0.0
-	var twist := 0.0
-	var cock := 0.0
-	var reach := [0.0,0.0]
-	var bend := [0.0,0.0]
-	var swing := 0.0
-	var spd := Vector2(vel.x,vel.z).length()
+## The cross-fade into each state (s); others take FADE.
+const FADE := 0.22
+const FADES := {"land":0.05,"leap":0.08,"fall":0.15,"mantle":0.12,"windup":0.1,"triumph":0.08,"reach":0.3}
+## The slap of the hands onto a lip: up and over (s), then down on it.
+const GRAB := 0.32
+
+## The clips its state wants, at the places its own clocks say (the walk's
+## and the climb's phase, its state's time over that state's knob), then
+## the corrections on top: hands on the real wall and lip.
+func _animate(delta: float) -> void:
+	if look == null: return
+	if state != _was:
+		_was = state
+		_fade = float(FADES.get(state,FADE))
+	var idle := fposmod(_clock,float(look.lengths.idle))
 	match state:
-		"roam","home":
-			var amount := clampf(spd/maxf(float(knobs.walk),0.1),0.0,1.3)
-			swing = sin(_phase*PI)*0.45*amount
-			lean = 0.08*amount
-			if state == "home":
-				lean = 0.2
-				reach = [1.25+swing*0.3,1.25-swing*0.3]
-				bend = [-0.3,-0.3]
-			else:
-				reach = [-swing*0.7,swing*0.7]
-				bend = [-0.25,-0.25]
-			c = absf(sin(_phase*PI))*legs_h*0.04
 		"listen":
-			var k := state_t/float(knobs.listen)
-			cock = sin(minf(k,0.7)/0.7*TAU)*0.18*(1.0 if not whole else 0.4)
-			twist = sin(minf(k,0.7)/0.7*TAU)*0.25
-			if not whole:
-				# A hand cupped up by where its ear was.
-				var side := 0 if sin(minf(k,0.7)/0.7*TAU) > 0.0 else 1
-				reach[side] = 2.5
-				bend[side] = -1.9
+			if whole: look.want("idle",idle)
+			else: look.want("listen",state_t/float(knobs.listen)*float(look.lengths.listen))
+		"roam","home":
+			var gait := "stride" if state == "home" else "walk"
+			var pace := float(knobs.home) if state == "home" else float(knobs.walk)
+			var m := clampf(Vector2(vel.x,vel.z).length()/maxf(pace*0.5,0.1),0.0,1.0)
+			look.want(gait,look.loop_time(gait,_phase,2.0),m)
+			look.want("idle",idle,1.0-m)
 		"climb":
-			# Hand over hand: one up, one pulling down; the legs kick in turn.
-			var s := sin(_phase*PI)
-			var top := 2.95 if _lip_y == INF else clampf(acos(clampf(-(_lip_y-position.y-legs_h-torso_h*0.88)/arm_l,-1.0,1.0)),1.6,3.0)
-			if _lip_y == INF: reach = [top-0.55*(1.0+s),top-0.55*(1.0-s)]
-			else: reach = [top,top]
-			bend = [-0.2,-0.2]
-			swing = s*0.35
-			lean = 0.1
-			c = legs_h*0.12
+			if _lip_y == INF: look.want("climb",look.loop_time("climb",_phase,2.0))
+			else:
+				var clip := "spawn_haul" if spawned_on_cliff else "haul"
+				look.want(clip,fposmod(_haul_t,float(look.lengths[clip])))
+		"mantle": look.want("mantle",state_t/float(knobs.mantle)*float(look.lengths.mantle))
+		"windup": look.want("windup",state_t/float(knobs.windup)*float(look.lengths.windup))
+		"leap":
+			var clip := "drop_air" if leap_kind == "drop" else "jump_air"
+			look.want(clip,state_t/maxf(_flight,0.1)*float(look.lengths[clip]))
+		"fall": look.want("drop_air",minf(state_t+0.3,float(look.lengths.drop_air)*0.9))
+		"land": look.want(_land_clip,state_t/float(knobs.land)*float(look.lengths[_land_clip]))
+		"reach": look.want("reach",state_t/float(knobs.settle)*float(look.lengths.reach))
+		"triumph": look.want("triumph",state_t/float(knobs.triumph)*float(look.lengths.triumph))
+		_: look.want("idle",idle)
+	look.advance(delta,0.0 if _snap else _fade)
+	_snap = false
+	_hands(delta)
+
+## Its right (global, flat).
+func _right3() -> Vector3:
+	var f := _forward3()
+	return Vector3(-f.z,0.0,f.x)
+
+## The hands onto the world: climbing, each hand moved in or out to the
+## real face (the clip has a flat wall `standoff` off its front); hauling,
+## both on the lip (slapped down onto it once they can reach it); early in
+## the mantle, pressing on it.
+func _hands(delta: float) -> void:
+	var fwd := _forward3()
+	var right := _right3()
+	var k := look.k
+	match state:
+		"climb":
+			if _lip_y == INF:
+				var face := position+fwd*(length*0.5+float(knobs.standoff))
+				for side in ["L","R"]:
+					var w := look.wrist(side)
+					var hit := _cast(w-fwd*1.6*k,w+fwd*2.2*k)
+					if hit.is_empty() or absf((hit.normal as Vector3).y) > 0.7: continue
+					look.reach(side,w+fwd*((hit.position as Vector3)-face).dot(fwd),1.0)
+				return
+			var lip := Vector3(_face_pt.x,_lip_y,_face_pt.z)
+			var reach := look.arm_reach()
+			var lift := 0.0
+			if _grab_t < 0.0:
+				var near := look.shoulder("L").distance_to(lip+Vector3.UP*0.42*k-right*1.5*k)
+				if near <= reach*1.02: _grab_t = 0.0
+			if _grab_t >= 0.0:
+				var was := _grab_t
+				_grab_t += delta
+				# Up over the lip, a beat, then slammed down on it.
+				lift = 1.3*k*smoothstep(0.0,0.12,_grab_t)*(1.0-smoothstep(0.2,GRAB,_grab_t))
+				if was < GRAB and _grab_t >= GRAB:
+					field.sound(&"body_grip",lip)
+					quake = maxf(quake,0.12)
+					for s in [-1.0,1.0]: _puff(lip+right*s*1.5*k+fwd*0.4*k,hh*0.45)
+			var w := smoothstep(0.0,0.2,_haul_t)
+			for side in ["L","R"]:
+				var s := -1.0 if side == "L" else 1.0
+				var at := lip+fwd*0.35*k+right*s*1.5*k+Vector3.UP*(0.42*k+lift)
+				look.reach(side,at,w,fwd,Vector3.DOWN)
 		"mantle":
-			var k := clampf(state_t/float(knobs.mantle),0.0,1.0)
-			reach = [lerpf(2.9,0.5,k),lerpf(2.9,0.5,k)]
-			bend = [-0.1,-0.1]
-			lean = lerpf(-0.05,0.45,smoothstep(0.3,0.8,k))-0.45*smoothstep(0.8,1.0,k)
-			c = legs_h*0.35*sin(k*PI)
-			swing = 0.6*sin(k*PI)
-		"windup":
-			var k := clampf(state_t/float(knobs.windup),0.0,1.0)
-			c = legs_h*0.4*smoothstep(0.0,0.7,k)
-			lean = 0.35*k
-			reach = [-0.9*k,-0.9*k]
-			bend = [-0.3,-0.3]
-		"leap","fall":
-			var rising := vel.y > 0.0
-			reach = [2.6,2.6] if rising else [1.6,1.6]
-			bend = [-0.4,-0.4]
-			lean = -0.1 if rising else 0.12
-			c = legs_h*(0.25 if rising else 0.05)
-			swing = 0.3 if rising else -0.1
-		"land":
-			var k := clampf(state_t/float(knobs.land),0.0,1.0)
-			c = legs_h*0.45*(1.0-smoothstep(0.15,1.0,k))
-			lean = 0.3*(1.0-k)
-			reach = [0.7*(1.0-k),0.7*(1.0-k)]
-			bend = [-0.5,-0.5]
-		"reach":
-			var k := clampf(state_t/0.8,0.0,1.0)
-			reach = [lerpf(0.0,2.75,k),lerpf(0.0,2.75,k)]
-			bend = [-0.6*k,-0.6*k]
-			lean = -0.12*k
-	var e := 1.0-exp(-8.0*delta)
-	_crouch = lerpf(_crouch,c,e)
-	_lean = lerpf(_lean,lean,e)
-	_twist = lerpf(_twist,twist,e)
-	_cock = lerpf(_cock,cock,e)
-	_swing = lerpf(_swing,swing,e)
-	for i in 2:
-		_reach[i] = lerpf(_reach[i],reach[i],e)
-		_bend[i] = lerpf(_bend[i],bend[i],e)
-	# Bent legs: the hips drop `_crouch`, the thighs forward, the knees back.
-	var thigh_len := legs_h*0.5
-	var a := acos(clampf(1.0-_crouch/(2.0*thigh_len),-1.0,1.0))
-	_hips.position.y = legs_h-_crouch
-	for i in 2:
-		var sgn := 1.0 if i == 0 else -1.0
-		_thighs[i].rotation.x = a+_swing*sgn
-		_knees[i].rotation.x = -2.0*a+minf(0.0,-_swing*sgn)*0.6
-		_arms[i].rotation.x = _reach[i]
-		_arms[i].rotation.z = 0.0
-		_fores[i].rotation.x = _bend[i]
-	_trunk.rotation = Vector3(-_lean,_twist,_cock)
-	skin.rotation = Vector3.ZERO
+			var kk := clampf(state_t/float(knobs.mantle),0.0,1.0)
+			var w := 1.0-smoothstep(0.16,0.34,kk)
+			for side in ["L","R"]:
+				var s := -1.0 if side == "L" else 1.0
+				look.reach(side,_mantle_lip+fwd*0.3*k+right*s*1.7*k+Vector3.UP*0.42*k,w,fwd,Vector3.DOWN)
 
 # --- The world, as it asks ------------------------------------------------------------------------
 
