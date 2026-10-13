@@ -50,17 +50,20 @@ const AFTER_ROAR := 0.8
 ## The shot: its speed (m/s), the farthest it goes (m); he only winds up
 ## with you within FIRE_RANGE m of his mouth.
 const SPEED := 110.0
-const RANGE := 320.0
-const FIRE_RANGE := 230.0
+const RANGE := 460.0
+const FIRE_RANGE := 330.0
 ## The lead: the share of the way your velocity is led to the meeting, and
 ## how fast he reads your velocity (an ease a second) and the most he leads.
-const LEAD := 0.9
-const LEAD_EASE := 8.0
+const LEAD := 1.0
+const LEAD_EASE := 14.0
 const LEAD_MOST := 60.0
 ## The ball's radius and the shock's, in the walker's heights; the pilot's
 ## reach for it (it bursts on him passing within the ball plus his radius).
 const BALL := 0.55
 const SHOCK_R := 3.2
+## The fuse: a ball passing within FUSE walker heights of the pilot (more
+## than his body) bursts on him, so a near miss still lands.
+const FUSE := 1.2
 ## Out of the mouth: for its first CARRY s a ball rides along with his
 ## mouth (he flies 22-54 m/s; left alone it hangs off to his side), and in
 ## the wind-up it swells in his jaw to GATHER of its size.
@@ -365,7 +368,7 @@ func pilot_knock(feet: Vector3, motor: Object) -> Vector3:
 	var t := walker_tall()
 	var chest := feet+Vector3.UP*0.55*t
 	var reach := PhysicsGround.RADIUS*WorldScale.wanderer
-	_catch(chest,ball_radius()+reach)
+	_catch(chest,ball_radius()+reach+FUSE*t)
 	if motor.has_method("recovering") and motor.recovering(): return Vector3.ZERO
 	for s: Dictionary in shocks:
 		if bool(s.hit_pilot): continue
@@ -396,7 +399,7 @@ func _away(s: Dictionary, p: Vector3) -> Vector2:
 ## kicked down and the wings rolled hard: a tumble out of the sky; lingering
 ## THROW_LINGER s. Empty with none.
 func plane_air(p: Vector3, nose: Vector3) -> Dictionary:
-	_catch(p,ball_radius()+WorldScale.span*0.5)
+	_catch(p,ball_radius()+WorldScale.span*0.5+FUSE*walker_tall())
 	for s: Dictionary in shocks:
 		if bool(s.hit_plane): continue
 		var at: Vector3 = s.at

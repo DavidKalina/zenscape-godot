@@ -18,7 +18,7 @@ out of it.
     `sky_dragon.gd` `_pose`), his jaw draws air, and the gale's inhale runs
     at double rate.
   - **Shot:** a pilot-sized ball (0.55 walker heights in radius) at 110 m/s.
-    It leads your velocity, eased from the sight target's motion, 0.9 of the
+    It leads your velocity, eased from the sight target's motion, all of the
     way to the meeting point. It doesn't home.
   - **Impact:** it bursts on turf or a floor it hits, or on the pilot or
     plane it passes within reach of (tested on a swept segment, so it can't
@@ -99,7 +99,7 @@ out of it.
   grass are all unverified too.
 - **Feel.**
   - Whether 0.45 s is a fair tell.
-  - Whether a 0.9 lead is too cruel or too soft.
+  - Whether a full lead is too cruel or too soft.
   - Whether a ~40 m throw is right on the bigger isles.
   - Whether the plane's drop is recoverable or always fatal: it fell into
     the cloud-sea floor in the headless run, and what that means for the
@@ -119,3 +119,13 @@ out of it.
 - Remove the cyclone if the blast wins, or keep it as a slower second attack
   for when you hide too long.
 - A near-miss camera shake and a whoosh as it passes.
+
+## After play (2026-10-12)
+
+The user loved it. Tuned after: the ball gathers in his jaw through the
+wind-up and rides along with his mouth for its first CARRY 0.15 s before
+setting back on its aim ("still not quite" from the mouth: fine tuning
+later). He sees farther (scripts/dragon_sight.gd RANGE 320 to 450, NEAR
+100 to 150) and fires farther (FIRE_RANGE 230 to 330, RANGE 320 to 460);
+he's more accurate: LEAD 0.9 to 1.0, LEAD_EASE 8 to 14, and a fuse (FUSE
+1.2 walker heights) bursts a near miss on the pilot or the plane.
