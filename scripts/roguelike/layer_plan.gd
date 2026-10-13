@@ -69,6 +69,9 @@ const TURN_MOST := 30.0
 const BAND := 240.0
 ## The void: this far under the lowest solid of any isle.
 const VOID_UNDER := 25.0
+## How much a placing that stands over another isle (a soft fall) is
+## preferred: points per share of it over.
+const OVER_WEIGHT := 12.0
 ## The pilot starts this far back along the first rim's run-up (at most).
 const SPAWN_BACK := 6.0
 ## The cannon stands this far behind its rim; its shot lands this far in
@@ -571,7 +574,7 @@ static func _step(plan: Dictionary, from: int, m: Dictionary, kinds: Array, bran
 		# The best: climbing, over another isle (a soft fall), near the base.
 		var score := rng.randf()*2.0
 		score += 0.15*(lip_b.y-lip_a.y)
-		score += 4.0*over_share(plan,placed)
+		score += OVER_WEIGHT*over_share(plan,placed)
 		score -= 0.01*mid.distance_to(Vector2(MIDDLE.x,MIDDLE.z))
 		if score > best_score:
 			best_score = score
@@ -855,7 +858,8 @@ static func describe(plan: Dictionary) -> String:
 		var isle: Dictionary = plan.isles[i]
 		var knobs := ""
 		if not (isle.knobs as Dictionary).is_empty(): knobs = " seed %d %s" % [int(isle.seed),str(isle.knobs)]
-		lines.append("%d %s (%s)%s at %s" % [i,isle.id,isle.role,knobs,str((isle.offset as Vector3).round())])
+		var over := "" if i == 0 else ", %d%% over another" % roundi(over_share(plan,isle)*100.0)
+		lines.append("%d %s (%s)%s at %s%s" % [i,isle.id,isle.role,knobs,str((isle.offset as Vector3).round()),over])
 	for e: Dictionary in plan.edges:
 		var extra := ": "+", ".join(PackedStringArray(e.parts))
 		if not (e.trap as Dictionary).is_empty(): extra += " over the %s" % str(e.trap.under)
