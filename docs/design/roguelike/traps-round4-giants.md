@@ -212,57 +212,164 @@ aft, open back between) and two across.
 - **Tilt cap.** Bank and pitch together stay 2 degrees under the motor's own
   slide angle (SLIDE_AUTO 44), past which the motor would surf him itself.
 
+(The loop round the yard, the rhythm's placing over its far part and the
+round 4b knob table are replaced by round 4c below; the slide, rim, ridges,
+dives, momentum and tells above stand.)
+
+### Round 4c: the big roll, and a ride from A to B (branch `enhance/sky-ray-roll`, 2026-10-12)
+
+The user played 4b: "It's alright. Definitely better. But it's not like the
+sand bird. The sand bird could turn completely vertical and you had to hang
+on, and then it'd go back. But I love how it pops you in the air." And: "the
+idea is it has like a path in the sky. It'll just take you wherever, and it's
+up to you to hang on."
+
+**A ride, not a loop round the yard.** The ray flies `path`, a closed list of
+waypoints (local to the trap; a Catmull-Rom through them), and waits at its
+`stops` (waypoint indices). By default it waits beside the start deck (A),
+flies out along -z, climbing and swinging east (5 of his heights up, 12 out)
+and back down to beside the far deck (B, `ride` = 100 of his heights = 112 m
+off, out of reach any other way), slows and waits there, flies on past it,
+round east and back north, round west and down to A, and again. Out of a stop
+it eases up to its pace over `ease` s and eases into the next; it waits
+`dwell` s. A trip round is about 84 s (A to B 27.5 s, B round to A 48 s, two
+4 s waits). The yard follows without a change to it: `length()` is `ride`, so
+the yard's far deck sits at B, and `lane_extra()` reads the east-most
+waypoint. A generator lays another ride by setting `path`, `stops` and
+`moves`. The player never steers it.
+
+**Moves along the path, not on a timer.** `moves` ([kind, at as a share of
+the loop, size]) places them; empty, they are laid from `pattern` over each
+leg between stops (a `calm` run clear at each end, the rest spread evenly),
+the leg's last `big` banks made big rolls with their wing kept low: "RDLDR"
+with `big` 1 is bank R, dive, bank L, dive, big roll (right wing low) on each
+leg, about 2 s apart on the A to B leg. Banks ramp per leg (0.22 then 0.72
+rad). Tells are keyed to where the move comes on the path (`tell` s ahead at
+its pace). The dive's pop is kept as 4b had it.
+
+**The big roll ("V").** `big_tell` (1.5) s ahead: a long screech
+(`screech_long`), the whole drawn body shudders (the drawn boxes only: the
+back he stands on keeps still, so the shudder throws nobody), the high wing
+lifts nearly twice a bank's tell and glows (emission), and the handholds'
+lips light up. Then it rolls onto its side (`big_tilt`, 90 degrees) over
+`big_roll` (1.2) s, holds there `big_hold` (2.0) s, and rolls back level over
+`big_roll`. The tilt cap (bank and pitch 2 degrees under the motor's
+SLIDE_AUTO) still holds every other move; the big roll is added past it.
+
+**Handholds.** Three rails along the back (`rails`, `rail_gap` 1.34 m apart,
+the middle one on the centre line, 60% of its length), low (`rail_high`, half
+his body's radius: 0.15 m, a step he walks over without falling) with a
+bright yellow lip that glows through a big roll.
+
+**How he holds on (on a pad: the left stick, nothing else).** Through a big
+roll (from its tell until it starts rolling back), on its back and *moving
+toward the high wing* (the one lifting and glowing) at `grab_pace` (his walk
+x 0.25), with a rail within `grab_reach` (0.78 m) that way, or one he has just
+passed, he catches the nearest. From the middle he is on the middle rail
+already, so pushing toward the glowing wing as it starts is enough; from the
+low side he has to get up to one first. Holding it, the trap is the motor's
+`rider` (the swing rope's hook, already in the motor: no motor change). While
+the back is gentle he crouches gripping it on its low side; past `hang_from`
+(40 degrees) he hangs from its lip with the motor's ledge hang (`hold` "hang",
+`lip`, `lip_out`, so the figure plays the hang), carried with the ray, his
+hands on the rail at vertical, his body kept clear of the back. The stick
+along the rail shimmies him along it (the motor's SHIMMY); held away from the
+back (DROP_HOLD, 0.12 s) he lets go and falls with the ray's velocity; Jump
+does nothing (no climbing a wall: the roll brings him back). Rolled back under
+`stand_tilt` (20 degrees) he is set on his feet beside the rail, on top.
+Changes of pose (the catch, crouch to hang and back) are eased over the
+motor's GRAB_SNAP, so he never jumps.
+
+**Not holding on.** Past SLIDE_AUTO (44) the motor boot-surfs him down the
+back as on any too-steep slope, and the back rolling away under him lifts him
+off it; past `shed_tilt` (50 degrees) a rider still on it is shed (tossed off
+down the back at his slide or `shed_slide`, pushed out at `shed_push`), so he
+never stands on a wall. A motor rim hang through a big roll is shaken off past
+`hang_from` (the roll would turn the hang into the body); a motor catch on a
+rail is taken over as a handhold. On the low side as it rolls, he is off
+unless he already holds a rail.
+
+Rails and the slide: a rail is a step, and stepping down off one counted as
+leaving the back, which ended his slide (standing still he rode out the
+hardest bank on the middle rail). The slide now runs on over a rail's step;
+only a real leave (higher than a rail plus 0.3 m) ends it.
+
 | knob | default | meaning |
 |---|---|---|
 | width / long / thick | 6.7 / 9.0 / 0.8 m | the back (6 and 8 of his heights) |
 | hide / inset | 0.2 / 0.78 m | the rim's thin hide; the thick body starts his hang plus his body's width in |
-| speed | 4.8 m/s (his run) | pace along the loop |
-| radius | 8.4 m | turn radius |
-| pattern | "RDLDR" | the beats: L/R a bank dropping that wing, D a dive |
-| max_bank / ramp | 0.72 rad / 0.7 | the last bank; the first is (1 - ramp) of it |
-| turn_bank | 0 rad | banked into the turns as well (0: the beats only) |
+| path / stops | [] / [] (laid: 14 waypoints, stops 0 and 6) | the ride: local waypoints, closed; where it waits |
+| ride / board_z / deck_in | 112 m / 3.8 m / 4 m | A to B along -z (the far deck); A's z (the start deck's middle); B past `ride` (the far deck's middle) |
+| speed / ease / dwell | 4.8 m/s (his run) / 1.5 s / 4 s | cruise; easing out of and into a stop; the wait at one |
+| radius | 8.4 m | the default path's turns |
+| moves / pattern / big / calm | [] / "RDLDR" / 1 / 9 m | given moves; else the pattern per leg, its last `big` banks big rolls, clear runs at a leg's ends |
+| max_bank / ramp | 0.72 rad / 0.7 | a leg's last bank; its first is (1 - ramp) of it |
+| turn_bank | 0 | banked into turns as well (0: the moves only) |
 | roll / hold | 0.5 / 1.0 s | a bank's roll in and out, and its hold |
 | height / climb | 7.8 m / 2.0 s | a dive's climb |
 | dive / plunge | 1.4 / 0.35 s | the plunge: his fall's acceleration x dive, for plunge s |
-| max_pitch | 0.25 rad | the back's pitch in a dive's climb and plunge |
-| shake / shake_rate | 0.04 rad / 4 rad/s | the rider-shedding wobble (0 off) |
-| tell | 1.0 s | how far ahead the wing and head cues show |
+| max_pitch | 0.25 rad | the back's pitch in a dive; the most the path's climbs pitch it |
+| shake / shake_rate | 0.04 rad / 4 rad/s | the wobble (a whole number of waves round the loop) |
+| tell | 1.0 s | how far ahead a bank's and a dive's cues show |
+| big_tilt / big_roll / big_hold / big_tell | 1.57 rad / 1.2 s / 2.0 s / 1.5 s | the big roll: how far, each roll, the hold on its side, the tell |
+| rails / rail_gap / rail_long / rail_high / rail_thick | 3 / 1.34 m / 0.6 / 0.15 m / 0.22 m | the handholds |
+| grab_pace / grab_reach | 0.6 m/s / 0.78 m | moving toward the high wing this fast, a rail this near that way |
+| hang_from / stand_tilt | 0.7 / 0.35 rad | crouched gripping under hang_from, hanging past it; set on his feet under stand_tilt rolling back |
+| shed_tilt / shed_slide / shed_push | 50 deg / 2.4 m/s / 2 m/s | not holding, shed past this, down the back and out |
 | grip / lean / lean_pace | 0.3 / 0.8 / 1.2 m/s | friction standing; more leaning in, full at lean_pace uphill |
 | pull / swing | 1 / 1 | shares of gravity and of the flight's swing in the slide |
 | catch_pace | 2.6 m/s (the motor's CATCH_PACE) | over the rim faster than this, not leaning, he is thrown |
-| ride | 22.4 m | route length (deck to deck) |
 | edge_x / gap | 5.0 / 1.07 m | decks' east edge; jump gap to the ray's side (0.45 x reach) |
-| lead_in / lead_out | 10 m | straight past the decks |
-| arrive | 3.0 s | after a reset, how long till it passes the start deck |
-
-A lap is about 138 m / 4.8 m/s, roughly 29 s wait if he misses it.
+| arrive | 3.0 s | after a reset, how long till it stops at the start deck |
 
 ## Verified (headless, tests/test_trap_giants.gd)
 
 The cube (round 4b): see its section above.
 
-The ray, on its real schedule through the yard's frame (`study.tick`, the
-motor, the trap field; nothing pinned by hand): carried 14 m in 3 s with it;
-standing still through the hardest bank he is slid off and falls, 0.97 s into
-the roll; a rider holding the middle and leaning uphill stays on the whole
-28.7 s loop (two floats); in a plunge he is 1.05 m clear of the back for
-0.6 s and lands on it again; slid off the rim leaning in he catches it and
-hangs, carried (the lip fixed on the rim); a scripted rider jumps on from the
-start deck's edge, rides the loop and jumps off onto the far deck. Also run
-by hand in the real `_process` loop: standing still in the middle he rides out
-the gentle first bank (slid 1.3 m) and is thrown off in the second.
+The ray (round 4c), on its real schedule through the yard's frame
+(`study.tick`, the motor, the trap field; nothing pinned by hand): its path
+stops beside the far deck, 112 m off; carried 15 m in 3 s with it; standing
+still through the hardest bank he is slid off and falls, 1.07 s into the
+roll; a rider holding the middle and leaning uphill, pushing toward the high
+wing for the big roll, rides from the start deck to the far deck (31.5 s, 5.5
+s of it on a handhold); in a plunge he is 1.3 m clear of the back for 0.6 s
+and lands on it again; slid off the rim leaning in he catches it and hangs,
+carried (2.0 s, the lip fixed on the rim); a scripted rider jumps on from the
+start deck's edge while it waits, rides, and jumps off onto the far deck
+while it waits there. Through the real play loop (its own frames, the stick
+pressed as InputMap actions, the camera held): before the big roll the long
+screech; holding the stick toward the high wing he catches the middle rail
+and hangs from it at vertical (92 degrees), carried (his hands 0.00 m off the
+rail across it), his feet never more than 0.09 m a frame off the back's point
+under them; the stick along the rail shimmies him 0.37 m; as it rolls level he
+is set on his feet on top. Not grabbing (the stick let go) he is off the back
+before it is vertical and never stands on it past 50 degrees. Also run: the
+import, tests/test_gamepad.gd, a headless load of the yard (`--quit-after
+300`). Not the full suite.
 
 ## Unverified
 
 - Feel and pacing in a window: no render here. The cube's list is in its
   section.
-- The ray in a window: whether the slide, the throw and the float read and
-  feel fair at 60 fps with a real stick and camera (the stick is camera-
-  relative; on a turning ray "uphill" turns under it), whether the tells are
-  readable soon enough, and the default knobs (grip, lean, ramp, shake).
-- The figure while sliding: he slides standing (no slide pose), and the
-  camera does not follow the ray's roll.
+- The ray in a window: whether the slide, the throw, the float and the big
+  roll read and feel fair at 60 fps with a real pad and camera (the stick is
+  camera-relative; on a turning ray "toward the high wing" turns under it;
+  once hanging the push need not be held), whether the tells (the shudder,
+  the glowing wing, the lit rails, the long screech) are readable soon
+  enough, and the default knobs (grip, lean, ramp, shake, grab_pace,
+  grab_reach, hang_from, the 2 s hold, the 84 s trip).
+- The figure: crouched gripping is the plain crouch pose; the hang is the
+  motor's hang clip, hands at the rail's lip, but the body is not laid along a
+  tilted back between 40 and 90 degrees. He slides standing (no slide pose);
+  the camera does not follow the ray's roll.
+- A rider starting at the low rim or between rails as it rolls (only the
+  middle start is tested), letting go at vertical, shimmying to a rail's end
+  (it stops him), the big roll on the return leg.
+- The default path in the sky: climb heights, the swing east, the return
+  leg's 48 s of mostly calm flying, and whether a missed ride (an 84 s wait)
+  is too long for the yard.
 - The rim hang through a whole bank and a climb back up from it on a tilted
   back; letting go from it. Only the catch and the carried hang are tested.
-- Coriolis is left out of the slide (the ray turns at 0.57 rad/s).
-- Tells are colour and placeholder sounds only.
+- Coriolis is left out of the slide.
+- Tells are colour, emission and placeholder sounds only (`screech_long` is a
+  new name for the audio hook).

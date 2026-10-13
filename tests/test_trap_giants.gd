@@ -10,14 +10,20 @@ extends SceneTree
 ##     prize; the pocket carries him through a lurch to a step he hops up
 ##     from;
 ##   - the Sky Ray, flying its real schedule through the yard's own frame
-##     (study.tick, the pilot's motor, the trap field): it carries a pilot
-##     along its path; standing still through its hardest bank he slides off
-##     its back within a couple of seconds; a rider who holds the middle,
-##     leaning uphill, stays on through the whole loop; in a dive's plunge he
-##     leaves its back and lands on it again; slid slowly off its rim, leaning
-##     in, he catches the rim and hangs, carried; and a careful rider jumps
-##     on from the start deck's edge, rides the loop and jumps off onto the
-##     far deck.
+##     (study.tick, the pilot's motor, the trap field): its path runs from
+##     the start deck to a far deck; it carries a pilot along it; standing
+##     still through its hardest bank he slides off its back within a couple
+##     of seconds; a rider who holds the middle, leaning uphill, and catches
+##     a handhold for the big roll rides from the start deck to the far deck;
+##     in a dive's plunge he leaves its back and lands on it again; slid
+##     slowly off its rim, leaning in, he catches the rim and hangs, carried;
+##     a careful rider jumps on from the start deck's edge while it waits,
+##     rides, and jumps off onto the far deck while it waits there; and,
+##     through the real play loop with the stick pressed as input actions,
+##     through the big roll a rider holding toward the high wing catches a
+##     handhold, hangs from it at vertical carried, shimmies along it and is
+##     back on his feet on top as it rolls level, while one who doesn't grab
+##     is off before it is vertical.
 ##   godot --headless --path . --script tests/test_trap_giants.gd
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const Trap = preload("res://scripts/traps/trap.gd")
@@ -218,12 +224,13 @@ func _tumble() -> void:
 	study.scripted = true
 	trap.reset()
 
-## On the ray's back at `at` (its frame), the ray at `d` along its loop.
+
+## On the ray's back at `at` (its frame), the ray at `d` along its loop,
+## moving.
 func _ray_board(trap: Node3D, d: float, at: Vector3) -> void:
 	study.place(trap.to_global(Vector3(trap.line_x(),0.0,0.0)),Vector2(0.0,-1.0))
-	trap.s = d
-	trap._pose()
-	m.reset(trap.to_global(trap.body.transform*at),PI)
+	trap.set_at(d)
+	m.reset(trap.world_of(at),PI)
 	study.script_want = Vector2.ZERO
 	study.script_jump = false
 	await _tick(1)
@@ -244,36 +251,53 @@ func _ray_down(trap: Node3D) -> Vector2:
 
 ## A rider holding the middle of its back (he is at `l`, its frame): toward
 ## it (out past a long ridge, along it to the open back between them first),
-## leaning uphill on a slope.
+## leaning uphill on a slope; through a big roll (its tell on), toward the
+## high wing, to catch a handhold; holding one, still.
 func _ray_keep(trap: Node3D, l: Vector3) -> Vector2:
+	if trap.holds_rail(): return Vector2.ZERO
+	var big: Dictionary = trap.big_at()
+	if not big.is_empty() and big.phase != "out":
+		return Vector2(trap._high_side(big.beat),-l.z*0.3).normalized()
 	var want := Vector2(-l.x,-l.z)*0.6
 	if absf(l.x) > float(trap.knob("width"))*0.3 and absf(l.z) > 0.6: want = Vector2(0.0,-signf(l.z))
 	var down := _ray_down(trap)
 	if down != Vector2.ZERO: want -= down.normalized()*0.4
 	return want
 
+## Still with it: on its back (or over it in a float), or on a handhold.
+func _ray_with(trap: Node3D) -> bool:
+	if trap.holds_rail(): return true
+	var l: Vector3 = trap.local_of(m.feet)
+	return absf(l.x) <= float(trap.knob("width"))*0.5+0.3 and absf(l.z) <= float(trap.knob("long"))*0.5+0.3 and l.y >= -0.5
+
 func _ray() -> void:
 	var trap: Node3D = study.traps.named("ray")
 	check(trap != null and trap.danger() == 5,"The yard has the Sky Ray, cost 4 over the void")
 	var v: float = trap.knob("speed")
 	var w: float = float(trap.knob("width"))*0.5
-	# Carried along the path, from the start deck.
-	await _ray_board(trap,trap.near_at(0.0),Vector3.ZERO)
+	# A ride from A to B: the far stop beside the far deck.
+	var far_deck: Vector3 = trap.to_global(Vector3(0.0,0.0,-float(trap.knob("ride"))-4.0))
+	var b_point: Vector3 = trap.to_global(trap.path_at(trap.far_stop()))
+	check(absf(b_point.z-far_deck.z) < 1.0 and trap.length() > 60.0,"Its path runs from the start deck to a far deck %.0f m off (it stops beside it, %.1f m off its middle)" % [trap.length(),absf(b_point.z-far_deck.z)])
+	# Carried along the path, out from the start deck.
+	await _ray_board(trap,trap.stop_at(0)+v*3.0,Vector3.ZERO)
 	var start: Vector3 = m.feet
 	var start_body: Vector3 = trap.body.global_position
 	await _tick(180)
 	var moved := m.feet.distance_to(start)
 	check(trap.on_back(m.feet),"He rides it: still on its back after 3 s (local %s)" % str(trap.local_of(m.feet).snapped(Vector3.ONE*0.01)))
 	check(moved > v*3.0*0.8 and trap.body.global_position.distance_to(start_body) > 5.0,"...his world position follows it (moved %.1f m, it moved %.1f)" % [moved,trap.body.global_position.distance_to(start_body)])
-	# The beats: the hardest bank, the first dive.
+	# The moves: the hardest bank, the first dive, the first big roll.
 	var hardest := {}
 	var dive := {}
+	var big := {}
 	for beat: Dictionary in trap.beats():
-		if beat.kind != "D" and (hardest.is_empty() or float(beat.size) > float(hardest.size)): hardest = beat
+		if (beat.kind == "L" or beat.kind == "R") and (hardest.is_empty() or float(beat.size) > float(hardest.size)): hardest = beat
 		if beat.kind == "D" and dive.is_empty(): dive = beat
-	check(not hardest.is_empty() and not dive.is_empty(),"Its loop has banks and dives (%s)" % trap.knob("pattern"))
+		if beat.kind == "V" and big.is_empty(): big = beat
+	check(not hardest.is_empty() and not dive.is_empty() and not big.is_empty(),"Its path has banks, dives and a big roll (%s, big %d a leg)" % [trap.knob("pattern"),int(trap.knob("big"))])
 	# Standing still through the hardest bank: slid off. Clear of the ridges
-	# on the low side (the right wing low: +x).
+	# on the low side.
 	var low := 1.0 if hardest.kind == "R" else -1.0
 	var still_z: float = float(trap.knob("long"))*(-0.2 if low > 0.0 else 0.2)
 	var roll_start: float = float(hardest.at)
@@ -287,30 +311,31 @@ func _ray() -> void:
 		if off_at < 0.0 and not trap.on_back(m.feet) and not trap.holds_rim(): off_at = t-1.0
 		fell = off_at >= 0.0 and not m.on_ledge() and trap.local_of(m.feet).y < -1.0
 	check(off_at >= 0.0 and off_at < 2.5 and fell,"Standing still through its hardest bank (%.2f rad) he is slid off its back, %.2f s into the roll, and falls (thrown %d)" % [hardest.size,off_at,trap.throws])
-	# Holding the middle, leaning uphill, through the whole loop from the
-	# start deck: on its back (or floating over it in a dive) throughout.
-	await _ray_board(trap,trap.near_at(0.0),Vector3.ZERO)
-	var lap: float = trap.loop_length()/v
+	# Holding the middle, leaning uphill, toward the high wing through the big
+	# roll: from the start stop to the far one, with it throughout.
+	await _ray_board(trap,trap.stop_at(0),Vector3.ZERO)
+	var legs: Array = trap.get("_legs")
+	var to_far: float = float(trap.knob("dwell"))+float(legs[0].time)
+	trap.clock = float(legs[0].start)
 	var stayed := true
 	var high := 0.0
-	var worst := 0.0
 	var leans := 0
+	var held := 0.0
 	t = 0.0
-	while t < lap:
+	while t < to_far+0.5:
 		var l: Vector3 = trap.local_of(m.feet)
-		var want := _ray_keep(trap,l)
 		if _ray_down(trap) != Vector2.ZERO: leans += 1
-		study.script_want = _ray_way(trap,want)
+		study.script_want = _ray_way(trap,_ray_keep(trap,l))
 		await _tick(1)
 		t += DT
-		l = trap.local_of(m.feet)
-		worst = maxf(worst,maxf(absf(l.x)-w,0.0))
-		if not m.grounded: high = maxf(high,l.y)
-		if absf(l.x) > w+0.3 or absf(l.z) > float(trap.knob("long"))*0.5+0.3 or l.y < -0.5:
+		if trap.holds_rail(): held += DT
+		if not m.grounded and not trap.holds_rail(): high = maxf(high,trap.local_of(m.feet).y)
+		if not _ray_with(trap):
 			stayed = false
 			break
 	study.script_want = Vector2.ZERO
-	check(stayed and trap.on_back(m.feet) and leans > 60,"Holding the middle, leaning uphill, he stays on through the whole loop (%.1f s of %.1f, %d floats)" % [t,lap,trap.floats])
+	var at_far: bool = absf(trap.s-trap.far_stop()) < 0.5
+	check(stayed and trap.on_back(m.feet) and at_far and leans > 60 and held > 1.0,"Holding the middle, leaning uphill, and catching a handhold for the big roll, he rides from the start deck to the far deck (%.1f s of %.1f, %d floats, %.1f s on a handhold)" % [t,to_far,trap.floats,held])
 	# Standing still into a dive: the plunge lifts him off its back, and it
 	# pulls up under him.
 	await _ray_board(trap,float(dive.at)+float(dive.plunge)-v*0.5,Vector3.ZERO)
@@ -332,7 +357,8 @@ func _ray() -> void:
 	var lip_drift := 0.0
 	var lip_local := Vector3.INF
 	t = 0.0
-	while t < 1.0+float(hardest.long)/v:
+	# Through the bank, and a while hanging after it.
+	while t < 1.0+float(hardest.long)/v+1.5:
 		var down := _ray_down(trap)
 		study.script_want = _ray_way(trap,-down.normalized()*float(trap.knob("lean_pace"))*0.6/m.run) if down != Vector2.ZERO and m.grounded else Vector2.ZERO
 		await _tick(1)
@@ -345,50 +371,52 @@ func _ray() -> void:
 	study.script_want = Vector2.ZERO
 	check(hung > 0.5 and lip_drift < 0.3,"Slid off its rim leaning in, he catches the rim and hangs, carried (%.2f s hanging, the lip %.2f m off where he took it)" % [hung,lip_drift])
 	await _ray_route(trap)
-	print("     ray: hardest bank %.2f rad, still off at %.2f s; keeper lap %.1f s; dive %.2f m clear for %.2f s; hung %.2f s" % [hardest.size,off_at,lap,lifted,air,hung])
+	var rolled := await _ray_big(trap,big)
+	print("     ray: hardest bank %.2f rad, still off at %.2f s; to the far deck %.1f s (%.1f on a handhold); dive %.2f m clear for %.2f s; hung %.2f s; %s" % [hardest.size,off_at,to_far,held,lifted,air,hung,rolled])
+	study.scripted = true
+	_let_go_ray()
 	trap.reset()
 
-## The route: on from the start deck's edge as it passes, the loop ridden
-## holding the middle, off onto the far deck as it passes that.
+## The route: on from the start deck's edge while it waits there, ridden
+## holding the middle (a handhold through the big roll), off onto the far
+## deck while it waits there.
 func _ray_route(trap: Node3D) -> void:
 	var lane: Vector3 = trap.global_position
-	var v: float = trap.knob("speed")
-	study.place(lane+Vector3(float(trap.knob("edge_x"))-0.4,0.0,1.0),Vector2(1.0,0.0))
-	trap.s = trap.near_at(0.0)-v*2.0
+	study.place(lane+Vector3(float(trap.knob("edge_x"))-0.4,0.0,float(trap.knob("board_z"))),Vector2(1.0,0.0))
+	var legs: Array = trap.get("_legs")
+	trap.clock = float(legs[0].start)+0.5
+	trap.s = trap.d_at(trap.clock)
 	trap._pose()
 	await _tick(2)
 	var t := 0.0
 	var boarded := false
-	while t < 6.0 and not boarded:
-		var c: Vector3 = trap.body.global_position
-		study.script_jump = c.z > m.feet.z-1.5 and c.z < m.feet.z and m.grounded
-		study.script_want = Vector2(1.0,0.0) if study.script_jump or not m.grounded else Vector2.ZERO
+	while t < 3.0 and not boarded:
+		study.script_jump = m.grounded and t > 0.2
+		study.script_want = Vector2(1.0,0.0)
 		await _tick(1)
 		t += DT
 		boarded = m.grounded and trap.on_back(m.feet)
 	study.script_jump = false
-	check(boarded,"A careful rider jumps on from the start deck's edge as it passes (local %s)" % str(trap.local_of(m.feet).snapped(Vector3.ONE*0.01)))
+	check(boarded,"A careful rider jumps on from the start deck's edge while it waits (local %s)" % str(trap.local_of(m.feet).snapped(Vector3.ONE*0.01)))
 	var far: float = -float(trap.knob("ride"))
 	var landed := false
 	var off := false
 	var rim: float = float(trap.knob("width"))*0.5
+	var waiting := false
 	t = 0.0
-	while t < trap.loop_length()/v+4.0 and boarded:
-		var d: float = fposmod(trap.s,trap.loop_length())
+	while t < trap.cycle() and boarded:
 		var l: Vector3 = trap.local_of(m.feet)
-		var b: Basis = trap.global_transform.basis*trap.body.transform.basis
-		# Beside the far deck (it flies +z there, its +x the deck's side).
-		var beside: bool = d < trap.straight() and trap.path_at(d).z > far-6.0 and trap.path_at(d).z < far-1.0
+		# Waiting beside the far deck (its -x the deck's side: it flies -z).
+		waiting = absf(trap.s-trap.far_stop()) < 0.05
 		var want := _ray_keep(trap,l)
-		if d < v and not beside: want = Vector2(rim-0.6-l.x,-l.z)
 		study.script_want = _ray_way(trap,want)
 		study.script_jump = false
-		if beside or off:
+		if waiting or off:
 			study.script_want = Vector2(-1.0,0.0)
-			study.script_jump = m.grounded and trap.on_back(m.feet) and l.x > rim-0.9
+			study.script_jump = m.grounded and trap.on_back(m.feet) and l.x < -rim+0.9
 		await _tick(1)
 		t += DT
-		if beside and not m.grounded and not trap.on_back(m.feet): off = true
+		if waiting and not m.grounded and not trap.on_back(m.feet): off = true
 		var rel: Vector3 = m.feet-lane
 		if off and m.grounded and rel.x < float(trap.knob("edge_x")) and rel.z < far and rel.z > far-8.0:
 			landed = true
@@ -396,4 +424,111 @@ func _ray_route(trap: Node3D) -> void:
 		if m.feet.y < lane.y-3.0: break
 	study.script_want = Vector2.ZERO
 	study.script_jump = false
-	check(landed,"...rides the loop and jumps off onto the far deck as it passes (%.1f s, at %s)" % [t,str((m.feet-lane).snapped(Vector3.ONE*0.01))])
+	check(landed,"...rides to the far deck and jumps off onto it while it waits there (%.1f s, at %s)" % [t,str((m.feet-lane).snapped(Vector3.ONE*0.01))])
+
+# ---- the big roll, played through the real play loop: the study not
+# scripted, its own frames, the stick pressed as input actions (the camera
+# held looking -z, so the stick's x is the frame's x, its y the frame's z) ----
+
+func _stick(way: Vector2) -> void:
+	study.set("_yaw",0.0)
+	for action: StringName in [&"move_left",&"move_right",&"move_forward",&"move_back"]: Input.action_release(action)
+	if way.length() < 0.2: return
+	way = way.normalized()
+	if way.x > 0.0: Input.action_press(&"move_right",way.x)
+	elif way.x < 0.0: Input.action_press(&"move_left",-way.x)
+	if way.y > 0.0: Input.action_press(&"move_back",way.y)
+	elif way.y < 0.0: Input.action_press(&"move_forward",-way.y)
+
+func _let_go_ray() -> void:
+	_stick(Vector2.ZERO)
+
+## The frame way of the back's `local` (x z) now, flattened.
+func _flat(trap: Node3D, local: Vector3) -> Vector2:
+	var b: Basis = trap.global_transform.basis*trap.body.transform.basis
+	var w := b*local
+	return Vector2(w.x,w.z)
+
+## Through the big roll from its tell: a rider holding toward the high wing
+## catches a handhold, hangs from it at vertical, carried, shimmies along it,
+## and is back on his feet on top as it rolls level; one who doesn't grab is
+## off before it is vertical. Returns a line for the summary.
+func _ray_big(trap: Node3D, big: Dictionary) -> String:
+	var v: float = trap.knob("speed")
+	var hs: float = trap._high_side(big)
+	var roll: float = trap.knob("big_roll")
+	var hold: float = trap.knob("big_hold")
+	var lead: float = float(trap.knob("big_tell"))+0.5
+	# Downhill of the middle rail, a body's width.
+	var at := Vector3(-hs*0.6,0.0,0.0)
+	await _ray_board(trap,float(big.at)-v*lead,at)
+	study.scripted = false
+	var t := 0.0
+	var vertical := false
+	var lip_at := Vector3.INF
+	var lip_drift := 0.0
+	var tilt_most := 0.0
+	var shimmied := 0.0
+	var z_was := INF
+	var gone := false
+	var heard_long := false
+	var jump_most := 0.0
+	while t < lead+2.0*roll+hold+1.0:
+		var phase: String = trap.big_at().get("phase","")
+		var into: float = trap.big_at().get("t",-99.0)
+		var want := _flat(trap,Vector3(hs,0.0,0.0))
+		# Half way through the hold: along the rail a moment (the shimmy).
+		if phase == "hold" and into > roll+hold*0.3 and into < roll+hold*0.6:
+			want = _flat(trap,Vector3(0.0,0.0,-1.0)).normalized()
+			if z_was == INF: z_was = trap.grip_z
+			shimmied = absf(trap.grip_z-z_was)
+		elif phase == "out" or phase == "": want = Vector2.ZERO
+		_stick(want)
+		var was_local: Vector3 = trap.local_of(m.feet)
+		t += await _frame_ray()
+		# Moved with the back, give or take his own shimmy and the ease onto
+		# the hang: never jumped.
+		jump_most = maxf(jump_most,m.feet.distance_to(trap.world_of(was_local)))
+		tilt_most = maxf(tilt_most,trap.tilt())
+		if phase == "hold":
+			if not vertical and trap.tilt() > float(trap.knob("big_tilt"))-0.1:
+				vertical = trap.holds_rail() and m.hold == "hang" and m.rider == trap
+			if trap.holds_rail() and m.hold == "hang":
+				var here: Vector3 = trap.local_of(m.lip)
+				if lip_at == Vector3.INF: lip_at = here
+				lip_drift = maxf(lip_drift,Vector2(here.x-lip_at.x,here.y-lip_at.y).length())
+		if not _ray_with(trap) and not trap.holds_rim(): gone = true
+		if "screech_long" in trap.heard.map(func(h: Array) -> String: return String(h[0])): heard_long = true
+	_let_go_ray()
+	var top: bool = not gone and m.grounded and trap.on_back(m.feet) and not trap.holds_rail() and trap.local_of(m.feet).y > -0.1
+	check(heard_long,"Before the big roll, a long screech (its tell)")
+	check(vertical and tilt_most > 1.45,"Holding the stick toward the high wing he catches a handhold and hangs from it at vertical, carried (tilt %.0f deg, grabs %d)" % [rad_to_deg(tilt_most),trap.grabs])
+	check(lip_drift < 0.25,"...the hold carried with the ray (his hands %.2f m off the rail across it)" % lip_drift)
+	check(jump_most < 0.25,"...no jumps: his feet never more than %.2f m a frame off the back's point under them" % jump_most)
+	check(shimmied > 0.15,"...the stick along the rail shimmies him along it (%.2f m)" % shimmied)
+	check(top and trap.set_ons >= 1,"...and as it rolls level he is set back on his feet on top (local %s)" % str(trap.local_of(m.feet).snapped(Vector3.ONE*0.01)))
+	# Not grabbing: the stick let go, standing in the same place.
+	await _ray_board(trap,float(big.at)-v*lead,at)
+	t = 0.0
+	var off_before := false
+	var no_wall := true
+	while t < lead+roll+hold*0.5:
+		_stick(Vector2.ZERO)
+		t += await _frame_ray()
+		var phase: String = trap.big_at().get("phase","")
+		if phase == "hold" and not off_before and trap.tilt() > float(trap.knob("big_tilt"))-0.1:
+			off_before = not trap.on_back(m.feet) and not trap.holds_rail() and not m.on_ledge()
+		# Never stood on its back past the shed tilt (no standing on a wall).
+		if m.grounded and trap.on_back(m.feet) and trap.tilt() > float(trap.knob("shed_tilt"))+0.1: no_wall = false
+	check(off_before and trap.grabs == 0,"Not grabbing, he slides down the back and off before it is vertical (shed %d, lifted %d, thrown %d)" % [trap.sheds,trap.floats,trap.throws])
+	check(no_wall,"...never standing on its back past %.0f deg" % rad_to_deg(float(trap.knob("shed_tilt"))))
+	study.scripted = true
+	return "big roll: %.0f deg, held, shimmied %.2f m" % [rad_to_deg(tilt_most),shimmied]
+
+## One real frame; its seconds.
+func _frame_ray() -> float:
+	await process_frame
+	if OS.get_environment("TRACE") != "":
+		var trap: Node3D = study.traps.named("ray")
+		print("  %s tilt %.2f local %s grounded %s move %s hold %s rail %d grabs %d stick %s" % [str(trap.big_at().get("phase","")),trap.tilt(),str(trap.local_of(m.feet).snapped(Vector3.ONE*0.01)),m.grounded,m.move,m.hold,trap.grip_rail,trap.grabs,Input.get_vector(&"move_left",&"move_right",&"move_forward",&"move_back")])
+	return study.get_process_delta_time()
