@@ -102,7 +102,21 @@ forever.
   --seed=1` for 600 frames, no script errors.
 - Throwaway play check through the real loop (`tools/_tmp_head_play.gd`,
   not committed; the stick through `Input.action_press`), sprawl seed 2:
-  RESULTS
+  - Both planned heads stood in the stage's EnemyField.
+  - **Drift, 40 s each:**
+    - The gorge's head stayed within 15 m of its spot, its chin 1.1-1.6 m
+      over the turf (its hover and bob). It never touched stone.
+    - The stair's head stayed within 12 m. Its chin went 0.6-5.9 m over
+      the turf: it rode over a drop on its round and settled back. Worth
+      a look windowed.
+  - **Stood 7 m in its way:**
+    - It noticed and told, then inhaled at 1.4 s and gulped him at 2.5 s
+      (figure hidden). It blasted at 3.5 s.
+    - The blast threw him 194 m off the gorge into the void. That ended
+      the run and laid a new layer.
+  - **Ran away when it told:** he escaped with no gulp. The inhale ended
+    at 3.6 s with him 23 m off. (The script then held the stick for 14 s
+    and ran him off the far rim. That was the script, not the head.)
 
 ## Unverified
 
