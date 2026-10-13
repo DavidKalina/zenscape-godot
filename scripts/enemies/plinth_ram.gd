@@ -620,7 +620,7 @@ func touch(m: PilotMotor, v_pre: Vector3) -> void:
 	if gone or _cool > 0.0 or m.on_ledge(): return
 	if state == "teeter": return
 	if harmful():
-		if m.recovering(): return
+		if m.seized() or (m.recovering() and not m.stunnable(self)): return
 		var local := Basis(Vector3.UP,facing).inverse()*(m.feet-position)
 		var r := float(knobs.radius)
 		var nose := -length*0.5

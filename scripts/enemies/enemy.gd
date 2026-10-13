@@ -267,7 +267,9 @@ func touch(m: PilotMotor, v_pre: Vector3) -> void:
 	var toward := Vector2(v_pre.x,v_pre.z).dot(to)
 	if toward >= float(knobs.push_speed) and not m.recovering():
 		pilot_pushes(m,to,toward)
-	elif harmful() and not m.recovering():
+	elif harmful() and not m.seized() and (not m.recovering() or m.stunnable(self)):
+		# A stunned body is hit again once this one's own gap is past
+		# (PilotMotor `restun_gap`): the world may chain its hits.
 		hits_pilot(m)
 
 ## Whether `lip` (a ledge's edge the pilot holds) is on its back.
@@ -283,7 +285,7 @@ func buck(m: PilotMotor) -> void:
 	var back := -PilotMotor.forward(facing)
 	var local := Basis(Vector3.UP,facing).inverse()*(m.feet-position)
 	var out := maxf(length*0.5-local.z,0.0)*0.5+float(knobs.radius)*2.0
-	m.knock(m.knock_velocity(back,out,height*0.3,maxf(m.feet.y-position.y,0.0)))
+	m.knock(m.knock_velocity(back,out,height*0.3,maxf(m.feet.y-position.y,0.0)),self)
 	_cool = 0.3
 
 ## It moved or turned into the pilot `m` (its body is a stone he can't walk
@@ -341,7 +343,7 @@ func pushed(_speed: float) -> void:
 ## Shoves the pilot: PilotMotor.knock out `out` m along `way` (x, z),
 ## peaking `up` m.
 func shove_pilot(m: PilotMotor, way: Vector2, out: float, up: float) -> void:
-	m.knock(m.knock_velocity(way,out,up))
+	m.knock(m.knock_velocity(way,out,up),self)
 	_cool = 0.3
 	hit_pilot.emit(self)
 

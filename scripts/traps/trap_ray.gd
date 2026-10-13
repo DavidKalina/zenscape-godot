@@ -29,6 +29,10 @@ extends "res://scripts/traps/trap.gd"
 ## would fall (a dive's plunge) he lifts off (`toss` with its velocity) and
 ## floats till it pulls up under him. Leaving its back any way, he keeps its
 ## velocity; landing on it, his own run is taken relative to it.
+## Stunned (the motor's "tumble", docs/design/roguelike/stun-round1.md) he
+## rides it as a body: down on its back he is carried and slid, shed and
+## thrown off as ever, but grabs no rail; teched onto it (the stun tech, a
+## press just before the touch) he latches onto the nearest rail (`_latch`).
 ##
 ## The moves sit along the path (`moves`, or laid from `pattern` over each
 ## leg between stops, a calm run each end): "L"/"R" a roll that drops that
@@ -101,10 +105,12 @@ var rails: Array = []
 var rail_half := 0.0
 var riding_time := 0.0
 ## Counted for tests and tuning: lift-offs (a dive), throws off the rim,
-## handholds caught, set back on his feet off one, shed off the steep back.
+## handholds caught (and of them latched by a stun tech), set back on his
+## feet off one, shed off the steep back.
 var floats := 0
 var throws := 0
 var grabs := 0
+var latches := 0
 var set_ons := 0
 var sheds := 0
 ## The handhold he holds (an index into `rails`, -1 none), where along it
@@ -697,7 +703,9 @@ func before(delta: float) -> void:
 	if body == null or delta <= 0.0: return
 	if grip_rail >= 0 and not holds_rail(): grip_rail = -1
 	var gripping := holds_rail()
-	var riding := gripping or (motor != null and motor.rider == null and not motor.swimming and not motor.recovering() \
+	# A stunned body down on its back rides it as a body does (carried,
+	# slid, shed or thrown off), never grabbing a rail itself.
+	var riding := gripping or (motor != null and motor.rider == null and not motor.swimming and not motor.seized() \
 		and ((motor.grounded and on_back(motor.feet)) or holds_rim()))
 	_was_riding = riding
 	_tossed = false
@@ -744,7 +752,7 @@ func before(delta: float) -> void:
 	# as the frame began, as it moves on under him).
 	var to := lp
 	if motor.grounded:
-		if not big.is_empty() and big.phase != "out" and _try_grab(lp,big.beat,moved,turn):
+		if not big.is_empty() and big.phase != "out" and motor.move != "tumble" and _try_grab(lp,big.beat,moved,turn):
 			_tells()
 			return
 		if steep > float(knob("shed_tilt")):
@@ -1016,7 +1024,31 @@ func after(_delta: float, events: Dictionary) -> void:
 		motor.velocity.z -= v.z
 		# Down off a rail's step, the slide runs on.
 		if _air_high > float(knob("rail_high"))+0.3 or not _was_riding: slip = Vector2.ZERO
+		# Teched onto its back (the motor's stun tech, a press just before
+		# the touch): latched onto the nearest rail, held by it.
+		if events.get("teched","") == "land": _latch()
 	if motor.grounded: _air_high = -INF
+
+## A stunned pilot teched onto its back: the nearest rail (within
+## `grab_reach` and a body's width) is caught, from the side he is on.
+## Whether he latched.
+func _latch() -> bool:
+	if rails.is_empty() or motor.rider != null: return false
+	var lp := local_of(motor.feet)
+	if absf(lp.z) > rail_half+0.2: return false
+	var best := -1
+	var near := INF
+	for i in range(rails.size()):
+		var dx := absf(float(rails[i])-lp.x)
+		if dx < near:
+			near = dx
+			best = i
+	if best < 0 or near > float(knob("grab_reach"))+Ground.RADIUS*WorldScale.wanderer*2.0: return false
+	var hs := signf(float(rails[best])-lp.x)
+	if hs == 0.0: hs = 1.0
+	_grab(best,lp.z,hs)
+	latches += 1
+	return true
 
 ## The beat coming (or under way, for a roll), and how far off: {beat, lead
 ## (s to its moment: a roll's start, a dive's plunge)}, or {}.
@@ -1105,6 +1137,7 @@ func reset() -> void:
 	floats = 0
 	throws = 0
 	grabs = 0
+	latches = 0
 	set_ons = 0
 	sheds = 0
 	grip_rail = -1
