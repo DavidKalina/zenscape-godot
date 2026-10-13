@@ -63,6 +63,7 @@ func run() -> void:
 	_fresh()
 	_low()
 	_held()
+	_sail()
 	_combo()
 	_drive()
 	_energy()
@@ -201,6 +202,30 @@ func _held() -> void:
 	study.script_crouch = false
 	study.script_want = Vector2.ZERO
 	_frames(0.5)
+
+## Under the sail: a tap of crouch folds it and slams; a hold brakes, the
+## sail kept, no slam.
+func _sail() -> void:
+	var s: Node3D = study.slam
+	var m: PilotMotor = study.motor
+	for tap: bool in [true,false]:
+		_airborne(OPEN,14.0)
+		_frames(0.15)
+		study.script_jump = true
+		_frame()
+		study.script_jump = false
+		_frames(0.3)
+		var sailing := m.move == "sail"
+		var lands: int = s.lands
+		study.script_crouch = true
+		_frames(0.1 if tap else 0.6)
+		var kept := m.move == "sail"
+		if tap: study.script_crouch = false
+		_until_down(6.0)
+		study.script_crouch = false
+		_frames(0.3)
+		if tap: check(sailing and s.lands == lands+1,"Under the sail (%s), a tap of crouch folds it and slams" % sailing)
+		else: check(sailing and kept and s.lands == lands,"Under the sail (%s), crouch held brakes: still sailing (%s), no slam" % [sailing,kept])
 
 func _combo() -> void:
 	var u: Node3D = study.updraft
