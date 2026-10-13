@@ -216,6 +216,10 @@ func sockets() -> Array:
 	var fa := lc+away*(reach_out(poly,lc,away)-step)
 	out.append(socket("rim","tail",Vector3(fa.x,Spine.TOP+float(last[4]),fa.y),Vector3(away.x,0.0,away.y),step,
 		clear_run(fa,-away,blocks,fa.distance_to(lc)+reach_out(poly,lc,-away)-step)))
+	# Each rim's lip: where its flank has fallen LIP_DROP under it (the
+	# ridge falls as a slope, not a cliff: further out than its step in).
+	for s: Dictionary in out:
+		if s.kind == "rim" and s.name != "tail": s.lip = _lip(s.at,s.face)
 	var arena: Array = _clearest(_terraces(),Spine.ROW-PIER_REACH,blocks)
 	out.append(_spot("arena","terrace",arena))
 	# Cover: the south stair turret's doorstep, in the angle of the turret and
@@ -230,6 +234,17 @@ func sockets() -> Array:
 	var perch: Array = _clearest([[HEAD.x,Spine.GATE_X]],Spine.WC_HEAD-1.0,blocks)
 	out.append(_spot("perch","podium",perch))
 	return out
+
+## How far ahead of `at` along `face` the ridge's ground has fallen LIP_DROP
+## (m): a rim's lip (KitMotif `socket`'s optional `lip`).
+const LIP_DROP := 0.2
+static func _lip(at: Vector3, face: Vector3) -> float:
+	var t := 0.0
+	while t < 6.0:
+		t += 0.1
+		var q := at+face*t
+		if Spine.ground(q.x,q.z) < at.y-LIP_DROP: return t
+	return t
 
 ## The head rim's place: x along the axis and d across it (the prow's
 ## crest still flat there, beside the altar).

@@ -33,6 +33,12 @@ static var pinned: Dictionary = {}
 
 var motif: KitMotif
 var markers: Node3D
+## Pages asked for (N, M: [key, step] each) not yet shown, oldest first.
+## A press while an isle is still coming up waits for it to stand (a reload
+## then dropped the half-built scene: its build lost, an await in the
+## character study's `_ready` meeting no tree); then one page a reload, so
+## every seed paged through is built and shown.
+static var queued: Array = []
 
 func _ready() -> void:
 	if shown_family == "":
@@ -54,6 +60,9 @@ func _ready() -> void:
 	await ready_to_walk
 	_build_card()
 	print("family gallery: %s seed %d %s, built in %d ms, %d sockets" % [shown_family,shown_seed,motif.knobs,motif.built_ms,motif.sockets().size()])
+	# The next page asked for, after the rest of the scene's own coming up
+	# (it waits on the same signal), not in the middle of it.
+	if not queued.is_empty(): _page.call_deferred()
 
 ## The start: on its arena, looking at its first rim.
 func _load_pack() -> void:
@@ -113,19 +122,26 @@ func _add_life() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
 		var key := event as InputEventKey
-		match key.keycode:
-			KEY_N:
-				shown_seed = maxi(shown_seed+(-1 if key.shift_pressed else 1),0)
-				get_tree().reload_current_scene()
-				return
-			KEY_M:
-				var ids: Array = FAMILIES.keys()
-				shown_family = ids[posmod(ids.find(shown_family)+(-1 if key.shift_pressed else 1),ids.size())]
-				shown_seed = -1
-				pinned = {}
-				get_tree().reload_current_scene()
-				return
+		if key.keycode in [KEY_N,KEY_M]:
+			queued.append([key.keycode,-1 if key.shift_pressed else 1])
+			# Still coming up: it pages on once it stands.
+			if walk_ready and queued.size() == 1: _page()
+			return
 	super._unhandled_input(event)
+
+## The oldest page asked for, shown: a reload.
+func _page() -> void:
+	if queued.is_empty() or not is_inside_tree(): return
+	var a: Array = queued.pop_front()
+	match int(a[0]):
+		KEY_N:
+			shown_seed = maxi(shown_seed+int(a[1]),0)
+		KEY_M:
+			var ids: Array = FAMILIES.keys()
+			shown_family = ids[posmod(ids.find(shown_family)+int(a[1]),ids.size())]
+			shown_seed = -1
+			pinned = {}
+	get_tree().reload_current_scene()
 
 # --- The markers ------------------------------------------------------------------
 

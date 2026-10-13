@@ -305,3 +305,8 @@ static func spire_tokens() -> Array:
 	# Under the isle's keel.
 	out.append(["bs:keel","under","keel",[Vector3(Spires.HERO.x+6.0,Spires.TOP-26.0,Spires.HERO.y+8.0)]])
 	return out
+
+## Roughly how long `build` takes (ms, headless, this Mac): its sockets,
+## footprint and height span are the bake's (scripts/kit_isle/kit_motif.gd).
+func build_cost() -> int:
+	return 1200

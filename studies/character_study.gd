@@ -480,9 +480,12 @@ func _ready() -> void:
 		slam.setup(self)
 	telescope = Telescope.new()
 	telescope.setup(self)
-	# The bodies are in the space after a physics step.
+	# The bodies are in the space after a physics step. (A scene changed or
+	# reloaded meanwhile has left the tree: nothing more to do.)
 	await get_tree().physics_frame
+	if not is_inside_tree(): return
 	await get_tree().physics_frame
+	if not is_inside_tree(): return
 	respawn()
 	walk_ready = true
 	ready_to_walk.emit()

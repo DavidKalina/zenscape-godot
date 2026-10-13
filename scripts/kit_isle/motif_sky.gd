@@ -109,18 +109,36 @@ func setup(study: Node3D, owner_sky: Node3D, args: PackedStringArray) -> void:
 		where.append(Roost.place())
 	for k in range(specs.size()):
 		var spec: Array = specs[k]
-		var motif: RefCounted = (spec[0] as Script).new()
-		if motif.get("still_bells") != null: motif.set("still_bells",args.has("--no-bell"))
-		motif.warm()
-		var isle: Node3D = MotifIsle.new()
-		isle.setup(study,motif,spec[1],args)
-		isle.threaded = threaded
-		var at: Vector3 = where[k][1]
-		isle.guess = Vector3(at.x,at.z,float(where[k][2]))
-		add_child(isle)
-		isles.append(isle)
+		_add_isle((spec[0] as Script).new(),spec[1],where[k],args)
 	_next_build()
 	print("motif isles: set up in %d ms, built %s" % [Time.get_ticks_msec()-began,"on a worker" if threaded else "on the main thread, one a frame"])
+
+## A generated layer's isles instead of PLACES (studies/run_layer.gd,
+## scripts/roguelike/layer_plan.gd): `entries` [motif (configured), offset
+## from its own frame, its place ([id, middle (world), reach])], built
+## and stood as the others, nearest the eye first. No roost.
+func setup_layer(study: Node3D, owner_sky: Node3D, args: PackedStringArray, entries: Array) -> void:
+	scene = study
+	sky = owner_sky
+	var began := Time.get_ticks_msec()
+	eager = threaded or args.has("--motifs-now")
+	placed = []
+	for e: Array in entries:
+		placed.append(e[2])
+		_add_isle(e[0],e[1],e[2],args)
+	_next_build()
+	print("motif isles: a layer of %d set up in %d ms, built %s" % [entries.size(),Time.get_ticks_msec()-began,"on a worker" if threaded else "on the main thread, one a frame"])
+
+func _add_isle(motif: RefCounted, offset: Vector3, place: Array, args: PackedStringArray) -> void:
+	if motif.get("still_bells") != null: motif.set("still_bells",args.has("--no-bell"))
+	motif.warm()
+	var isle: Node3D = MotifIsle.new()
+	isle.setup(scene,motif,offset,args)
+	isle.threaded = threaded
+	var at: Vector3 = place[1]
+	isle.guess = Vector3(at.x,at.z,float(place[2]))
+	add_child(isle)
+	isles.append(isle)
 
 ## The plane's tokens of every motif, a source each on the sky's
 ## collectibles, moved to where they stand.
