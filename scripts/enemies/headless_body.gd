@@ -16,7 +16,9 @@ extends "res://scripts/enemies/enemy.gd"
 ##   "listen"  it stands, turns its stump one way and the other, a hand
 ##             cupped by where its ear was: it hears the head (within
 ##             `hear` m) and turns to its bearing, off by up to `noise` rad,
-##             less the nearer it is. Out of hearing it picks any way.
+##             less the nearer it is. Out of hearing it picks any way, and
+##             any way too while lost (no nearer the head for `lost_after`
+##             s: it wanders `lost_for` s, then hears afresh).
 ##   "roam"    it walks the way it heard, heavily, `walk` m/s; every
 ##             `listen_every` s (give or take) it stops to listen again.
 ##   "home"    the head is within `sense` m with nothing between its neck
@@ -34,7 +36,10 @@ extends "res://scripts/enemies/enemy.gd"
 ##             (`jump_gap` Hh across at most, `jump_rise` Hh up, `jump_sink`
 ##             Hh down) it jumps to ("jump"); failing that, a lower floor
 ##             out along its way within `leap_max` m across and `drop_max` m
-##             down it drops to ("drop"). It crouches, arms back, `windup` s.
+##             down it drops to ("drop"), headless and not lost never more
+##             than `drop_under` m under its head's ground (off here; the
+##             generator's bodies set it). It crouches, arms back,
+##             `windup` s.
 ##   "leap"    the throw: a ballistic arc (`leap_up` m over the takeoff, a
 ##             jump's higher by `jump_arc` of its length) to that floor, its
 ##             feet ray-cast along the arc; a wall on the way stops it dead
@@ -62,9 +67,14 @@ extends "res://scripts/enemies/enemy.gd"
 signal reunited(enemy)
 
 const Look = preload("res://scripts/enemies/headless_body_look.gd")
+const Dust = preload("res://scripts/enemies/body_dust.gd")
+const Routes = preload("res://scripts/enemies/body_routes.gd")
 
 ## The head it looks for (found among the field's enemies: the one with a mouth).
 var head: Node3D = null
+## Where its own head was set down (InhalerHead `home()`), where a field
+## holds several heads (scripts/enemies/body_spawner.gd); INF any head.
+var head_home := Vector3.INF
 ## Reunited: the head on its neck.
 var whole := false
 ## Counted, for the HUD and checks.
@@ -80,6 +90,10 @@ var shock_hits := 0
 var leap_kind := ""
 ## Climbing up from a cliff spawn (cleared once it is over the lip).
 var spawned_on_cliff := false
+## Came up a far cliff, in the walker's view (body_spawner.gd `pick_far`).
+var far_spawn := false
+## Hands put on the face climbing (each a puff of dust, stones knocked off).
+var grips := 0
 var homed := false
 ## The camera's quake now (m), from its landings.
 var quake := 0.0
@@ -103,8 +117,40 @@ var _leap_to := Vector3.ZERO
 var _listen_from := 0.0
 var _picked := false
 var _unsensed := 0.0
+## Lost (round 9): its nearest yet to the head (m) and the time since it
+## got nearer; `lost_after` s without, it wanders any way for `lost_for` s.
+var _best_d := INF
+var _since_better := 0.0
+## Its nearest ever to the head, and the time since (s): the spawner takes
+## a body stalled too long away, out of sight (scripts/enemies/
+## body_spawner.gd).
+var _best_ever := INF
+var stalled := 0.0
 var _seat_from := Vector3.ZERO
 var _seat_k := 1.0
+## Round 11, its route (scripts/enemies/body_routes.gd): the places it
+## fits and its moves between them, the search running, the route's legs
+## ({kind, to, from, node, from_node, d}), the leg it is on and its time on
+## it walking, the goal planned for, the moves it found it couldn't make.
+## Counted: plans, legs given up, routes that got to the goal or only near
+## it, bail-outs, lips it climbed on from.
+var routes: Routes = null
+var _search: Routes.Search = null
+var _route: Array = []
+var _leg := 0
+var _leg_t := 0.0
+var _goal := Vector3.INF
+var _banned := {}
+var plans := 0
+var leg_fails := 0
+var routed_to := 0
+var routed_near := 0
+var bails := 0
+var perches := 0
+## Why the last leg was given up, for checks.
+var fail_why := ""
+var _fall_from := Vector3.INF
+var _fall_t := 0.0
 var _ray := PhysicsRayQueryParameters3D.new()
 ## The model and its clips.
 var look: Look
@@ -134,10 +180,19 @@ func _init() -> void:
 func default_knobs(n: Dictionary) -> Dictionary:
 	return {
 		"head_size":3.0,"legs":0.75,"torso":1.2,"breadth":1.3,"depth":0.72,"arm":1.1,
-		"walk":n.walk*0.9,"home":n.run*0.7,"accel":3.0,"turn":0.9,"step":n.unit*0.6,"look":0.9,
-		"listen":2.6,"listen_every":7.0,"hear":n.unit*80.0,"sense":n.unit*15.0,"noise":0.35,"lose":2.0,
+		"walk":n.walk*0.9,"home":n.run*0.7,"accel":3.0,"turn":0.9,"step":n.unit*1.1,"look":0.9,
+		"listen":2.6,"listen_every":7.0,"lost_after":20.0,"lost_for":15.0,"hear":n.unit*80.0,"sense":n.unit*15.0,"noise":0.35,"lose":2.0,
 		"climb":n.unit*1.25,"haul":0.55,"climb_max":n.unit*20.0,"standoff":0.25,"lip_in":0.8,"mantle":1.4,
-		"leap_max":n.unit*11.0,"drop_max":n.unit*20.0,"windup":1.1,"leap_up":n.unit*1.6,"land":1.0,
+		"leap_max":n.unit*11.0,"drop_max":n.unit*20.0,"drop_under":INF,"windup":1.1,"leap_up":n.unit*1.6,"land":1.0,
+		# Round 11 (layer-round11-body-routes.md): a drop goes further
+		# across the deeper it is (`leap_fall` m a m down, `leap_far` at
+		# most), so it leaps down onto another isle.
+		"leap_far":n.unit*20.0,"leap_fall":0.6,
+		# Its routes over places it fits (scripts/enemies/body_routes.gd):
+		# 1 on, 0 round 9's bearing and turns. A leg not made in
+		# `leg_slack` s walking is given up and the way planned again
+		# without it.
+		"routes":1,"leg_slack":6.0,
 		"leap_gravity":n.gravity*0.7,
 		# Ledge to ledge: a gap up to `jump_gap` Hh, onto a ledge up to
 		# `jump_rise` Hh over or `jump_sink` Hh under its feet; the arc
@@ -157,6 +212,17 @@ func default_knobs(n: Dictionary) -> Dictionary:
 		# the beat of triumph once whole (s; it was straight to listening).
 		"stride":Look.WALK_STEP,"stride_home":Look.STRIDE_STEP,"triumph":1.8,
 	}
+
+## Its build (m) from its knobs `k` and the walker's `unit`, as `_size` and
+## `cling` make it, for those that plan round it without one (scripts/
+## roguelike/layer_bodies.gd): {hh, neck, arm, length, width, hang (lip to
+## its feet, hung by `cling`), chest (its chest ray over its feet)}.
+static func build_of(k: Dictionary, unit: float) -> Dictionary:
+	var h := float(k.head_size)*unit
+	var neck := h*(float(k.legs)+float(k.torso))
+	var arm := h*float(k.arm)
+	return {"hh":h,"neck":neck,"arm":arm,"length":h*float(k.depth),"width":h*float(k.breadth),
+		"hang":neck+arm*0.75+float(k.cling),"chest":neck*0.55}
 
 ## Its build in head heights: the box the walker meets is its torso's
 ## breadth and depth, up to the neck.
@@ -179,12 +245,16 @@ func setup(host: Node, at: Vector3, face: Vector2, overrides := {}) -> void:
 
 ## Set on a cliff face, already climbing: `lip` the top edge of the face
 ## over it, `out` (x, z) the face's outward way. Its raised hands sit `cling`
-## m under the lip, so none of it shows over the top till it hauls up.
-func cling(lip: Vector3, out: Vector2) -> void:
+## m under the lip, so none of it shows over the top till it hauls up;
+## `below` m lower still, it climbs that much of the face first (a far
+## spawn, `far`, seen from across a gulf: a rumble as it sets off).
+func cling(lip: Vector3, out: Vector2, below := 0.0, far := false) -> void:
 	var n := out.normalized()
 	facing = PilotMotor.facing_of(-n)
 	rotation.y = facing
-	position = Vector3(lip.x,lip.y-(neck_h+arm_l*0.75)-float(knobs.cling),lip.z)+Vector3(n.x,0.0,n.y)*(length*0.5+float(knobs.standoff))
+	position = Vector3(lip.x,lip.y-(neck_h+arm_l*0.75)-float(knobs.cling)-below,lip.z)+Vector3(n.x,0.0,n.y)*(length*0.5+float(knobs.standoff))
+	far_spawn = far
+	if far: field.sound(&"body_rumble",position)
 	grounded = false
 	vel = Vector3.ZERO
 	_climb_from = position.y
@@ -237,6 +307,8 @@ func think(delta: float) -> void:
 	_dusts(delta)
 	_shocks(delta)
 	if whole: _seat_k = minf(1.0,_seat_k+delta/float(knobs.settle))
+	_progress(delta)
+	_searching()
 	match state:
 		"listen": _listen(delta)
 		"roam","home": _walking(delta)
@@ -265,7 +337,10 @@ func _find_head() -> void:
 	if head != null and is_instance_valid(head): return
 	head = null
 	for e in field.enemies:
-		if is_instance_valid(e) and e != self and e.has_method("mouth"): head = e
+		if not is_instance_valid(e) or e == self or not e.has_method("mouth"): continue
+		# Its own head where there are several (set down at `head_home`).
+		if head_home != Vector3.INF and e.has_method("home") and (e.home() as Vector3).distance_to(head_home) > 0.5: continue
+		head = e
 
 func _forward3() -> Vector3:
 	var f := PilotMotor.forward(facing)
@@ -284,22 +359,53 @@ func _listen(delta: float) -> void:
 	if k < 0.7:
 		facing = wrapf(_listen_from+sin(k/0.7*TAU)*0.55,-PI,PI)
 		return
-	# Heard: turns to the bearing, then goes.
+	# Heard: turns to the bearing, then goes. Round 11: the bearing a route
+	# to it over places it fits, planned while it listens.
 	if not _picked:
 		_picked = true
 		_heading = _pick_way()
+		_plan()
+	if _search != null and state_t < float(knobs.listen)*2.0: return
+	if _routed(): _heading = _route_heading()
 	var step := clampf(angle_difference(facing,_heading),-float(knobs.turn)*1.5*delta,float(knobs.turn)*1.5*delta)
 	facing = wrapf(facing+step,-PI,PI)
 	if k >= 1.0 and absf(angle_difference(facing,_heading)) < 0.15:
 		if not whole and _senses(): _home()
 		else: _go("roam")
 
+## Whether it is lost: no nearer its head for `lost_after` s (it goes any
+## way, `lost_for` s, then hears afresh). Round 9 (layer-round9-bodies.md):
+## on the generator's isles the head's bearing often runs into a wall or
+## off a drop too deep, and it turned back and forth there for good.
+func _progress(delta: float) -> void:
+	if whole or head == null:
+		_since_better = 0.0
+		_best_d = INF
+		stalled = 0.0
+		return
+	var d := head.global_position.distance_to(position)
+	_since_better += delta
+	stalled += delta
+	if d < _best_ever-1.0:
+		_best_ever = d
+		stalled = 0.0
+	if d < _best_d-1.0:
+		_best_d = d
+		_since_better = 0.0
+	if _since_better > float(knobs.lost_after)+float(knobs.lost_for):
+		_best_d = d
+		_since_better = 0.0
+
+func lost() -> bool:
+	return _since_better > float(knobs.lost_after)
+
 ## The way it heard the head (noisy, less so near), or any way out of
-## hearing (or whole); turned off a dead end (a rim with nothing below, a
-## wall it won't climb).
+## hearing (or whole, or lost); turned off a dead end (a rim with nothing
+## below, a wall it won't climb).
 func _pick_way() -> float:
 	var way := facing+_rng.randf_range(-1.2,1.2)
-	if not whole and head != null:
+	if lost(): way = facing+_rng.randf_range(-PI,PI)
+	elif not whole and head != null:
 		var to := head.global_position-global_position
 		var d := Vector2(to.x,to.z).length()
 		if d <= float(knobs.hear):
@@ -337,12 +443,29 @@ func _walking(delta: float) -> void:
 			return
 		var to := head.global_position-position
 		_heading = PilotMotor.facing_of(Vector2(to.x,to.z).normalized())
+	# Round 11: on its route, the way its next leg goes (homing, straight at
+	# the head once only walking is left); turned to it before it steps on.
+	if _routed():
+		if not _follow(delta): return
+	if _routed():
+		if not (state == "home" and _walk_left()): _heading = _route_heading()
+		if absf(angle_difference(facing,_heading)) > ROUTE_TURN:
+			_brake(delta)
+			facing = wrapf(facing+clampf(angle_difference(facing,_heading),-float(knobs.turn)*delta,float(knobs.turn)*delta),-PI,PI)
+			return
 	var fwd := _forward3()
 	var wall := _wall_along(fwd,length*0.5+float(knobs.look))
 	if not wall.is_empty():
 		_meet_wall(wall)
 		return
-	if _floor(position+fwd*(length*0.5+float(knobs.look)),float(knobs.step),float(knobs.step)*2.0) == -INF:
+	# Walking its route, the floor is looked for no further on than where
+	# the leg goes (a narrow way's next place, by a rim, is the planner's
+	# to know); a leap leg's edge, as far as ever.
+	var ahead := length*0.5+float(knobs.look)
+	if _routed() and _route[_leg].kind == "walk":
+		var to: Vector3 = _route[_leg].to
+		ahead = clampf(Vector2(to.x-position.x,to.z-position.z).length()+0.3,0.6,ahead)
+	if _floor(position+fwd*ahead,float(knobs.step)*STAIR,float(knobs.step)*2.0) == -INF:
 		_meet_edge(fwd)
 		return
 	var speed := float(knobs.home) if state == "home" else float(knobs.walk)*(1.15 if whole else 1.0)
@@ -396,12 +519,27 @@ func _reunite_near() -> bool:
 # --- Walls and climbing -----------------------------------------------------------------------
 
 ## A wall (steep) along `dir` from its knees, within `reach` m: the hit, or {}.
+## Round 11: a riser whose top is within STAIR × `step` of its feet is a
+## stair's step it walks up, not a wall.
+const STAIR := 1.6
 func _wall_along(dir: Vector3, reach: float) -> Dictionary:
-	for up: float in [float(knobs.step)+0.1,neck_h*0.5]:
+	var knee := float(knobs.step)+0.1
+	for up: float in [knee,neck_h*0.5]:
 		var from := position+Vector3.UP*up
 		var hit := _cast(from,from+dir*reach)
-		if not hit.is_empty() and absf((hit.normal as Vector3).y) < 0.5: return hit
+		if hit.is_empty() or absf((hit.normal as Vector3).y) >= 0.5: continue
+		if up == knee and _riser(hit): continue
+		return hit
 	return {}
+
+## Whether the face `hit` (met at the knee) tops out within STAIR × `step`
+## of its feet.
+func _riser(hit: Dictionary) -> bool:
+	var n := hit.normal as Vector3
+	var past := (hit.position as Vector3)-Vector3(n.x,0.0,n.z).normalized()*0.4
+	var high := position.y+float(knobs.step)*STAIR
+	var top := _cast(Vector3(past.x,high+0.2,past.z),Vector3(past.x,position.y+0.05,past.z))
+	return not top.is_empty() and (top.normal as Vector3).y > 0.6 and (top.position as Vector3).y <= high
 
 ## The top of the wall `hit` (a ray down past its face from `climb_max`
 ## over its feet), INF if it is taller than that.
@@ -418,6 +556,14 @@ func _meet_wall(hit: Dictionary) -> void:
 	vel.z = 0.0
 	var climbing := _climbable(hit) != INF and _wants_up()
 	if climbing and whole: climbing = _rng.randf() < float(knobs.whole_climb)
+	# On its route: a climb leg's wall it climbs; any other, it gives the
+	# leg up and plans again without it.
+	if _routed():
+		if _route[_leg].kind != "climb":
+			routes.block(hit.position)
+			_leg_failed("wall")
+			return
+		climbing = true
 	if not climbing:
 		_go("listen")
 		return
@@ -443,14 +589,25 @@ func _climb(delta: float) -> void:
 		_face_pt = hit.position
 	else:
 		_face_pt = position+fwd*(length*0.5+float(knobs.standoff))+Vector3.UP*neck_h*0.55
-	# The lip: a ray down past the face from over its reach.
+	# The lip: a ray down past the face from over its reach (down to a
+	# step over its feet: a ledge too tall to step, too low for its chest
+	# ray, is mantled at once; round 9 found those on the generator's
+	# isles, where it dropped back off them, landing, again and again).
 	var reach := neck_h+arm_l*0.75
 	var past := _face_pt+fwd*float(knobs.lip_in)
-	var lip := _cast(Vector3(past.x,position.y+reach,past.z),Vector3(past.x,position.y+neck_h*0.2,past.z))
+	var lip := _cast(Vector3(past.x,position.y+reach,past.z),Vector3(past.x,position.y+float(knobs.step),past.z))
 	_lip_y = (lip.position as Vector3).y if not lip.is_empty() and (lip.normal as Vector3).y > 0.6 else INF
 	if _lip_y != INF and _lip_y-position.y <= neck_h*0.55:
 		_mantle_from = position
-		var onto := Vector3(_face_pt.x,_lip_y,_face_pt.z)+fwd*(length*0.5+0.6)
+		# In over the lip, short of a wall over it (a stair's tread, a
+		# sliver under a higher face: round 11 stands it there, against the
+		# next wall, to climb on, not inside it).
+		var lip_at := Vector3(_face_pt.x,_lip_y,_face_pt.z)
+		var inward := length*0.5+0.6
+		var ahead := _cast(lip_at+Vector3.UP*(float(knobs.step)+0.3),lip_at+Vector3.UP*(float(knobs.step)+0.3)+fwd*(length+0.6))
+		if not ahead.is_empty() and absf((ahead.normal as Vector3).y) < 0.5:
+			inward = clampf(lip_at.distance_to(ahead.position as Vector3)-length*0.5-float(knobs.standoff),0.3,inward)
+		var onto := lip_at+fwd*inward
 		var g := _floor(onto,1.0,1.5)
 		_mantle_to = Vector3(onto.x,g if g != -INF else _lip_y,onto.z)
 		_mantle_lip = Vector3(_face_pt.x,_lip_y,_face_pt.z)
@@ -472,7 +629,35 @@ func _climb(delta: float) -> void:
 	position.y += rise
 	var was := _phase
 	_phase += rise/(arm_l*0.45)
-	if int(was) != int(_phase): field.sound(&"body_grip",position+Vector3.UP*(neck_h+arm_l*0.6))
+	if int(was) != int(_phase):
+		field.sound(&"body_grip",position+Vector3.UP*(neck_h+arm_l*0.6))
+		if _lip_y == INF: _grip_dust(int(_phase))
+	# Hauling, its feet scrabble on the face.
+	if _lip_y != INF and int((_haul_t-delta)/0.45) != int(_haul_t/0.45):
+		var feet := position+fwd*(length*0.5)+Vector3.UP*hh*0.3
+		var tk := _tell_k()
+		Dust.puff(field,feet,hh*1.0*tk,-fwd)
+		Dust.rocks(field,feet,-fwd,2,hh*0.1*tk)
+
+## A hand put on the face (the `k`-th): a puff off the face by it, a
+## stone or two knocked down.
+func _grip_dust(k: int) -> void:
+	grips += 1
+	var fwd := _forward3()
+	var side := -1.0 if k%2 == 0 else 1.0
+	var at := position+Vector3.UP*(neck_h+arm_l*0.55)+_right3()*side*hh*0.45+fwd*(length*0.5)
+	var tk := _tell_k()
+	Dust.puff(field,at-fwd*hh*0.3,hh*1.2*tk,-fwd)
+	Dust.rocks(field,at-fwd*hh*0.2,-fwd,3 if k%2 == 0 else 4,hh*0.12*tk)
+
+## The tells grown with the camera's distance (1 within TELL_NEAR m, up to
+## TELL_MOST times), so a far body's dust and stones still read.
+const TELL_NEAR := 60.0
+const TELL_MOST := 2.5
+func _tell_k() -> float:
+	var camera: Camera3D = field.study.get("camera") if field != null and field.study != null else null
+	if camera == null: return 1.0
+	return clampf(camera.global_position.distance_to(global_position)/TELL_NEAR,1.0,TELL_MOST)
 
 func _mantle(delta: float) -> void:
 	var k := clampf(state_t/float(knobs.mantle),0.0,1.0)
@@ -484,6 +669,13 @@ func _mantle(delta: float) -> void:
 		spawned_on_cliff = false
 		# Its weight comes down on the top: a smaller wave.
 		_shock(position,float(knobs.shock_mantle))
+		Dust.plume(field,position,hh*2.6*_tell_k())
+		# Round 11: over a lip it doesn't fit on, with its climb leg's wall
+		# over it, it goes straight on climbing (no listen).
+		if _routed() and _route[_leg].kind == "climb" and not _at_leg_end():
+			perches += 1
+			_go("roam")
+			return
 		_go("listen")
 
 # --- Edges and leaps ------------------------------------------------------------------------
@@ -491,6 +683,26 @@ func _mantle(delta: float) -> void:
 func _meet_edge(fwd: Vector3) -> void:
 	vel.x = 0.0
 	vel.z = 0.0
+	# On its route: a leap leg's landing it throws itself to (or one of its
+	# own along the way, if the arc there is blocked); any other leg it
+	# gives up.
+	if _routed():
+		var leg: Dictionary = _route[_leg]
+		var land := {}
+		if leg.kind in ["jump","drop"]:
+			var to: Vector3 = leg.to
+			var g := _floor(to,2.0,3.0)
+			if g != -INF: to.y = g
+			if _arc_clear(to,leg.kind): land = {"at":to,"kind":leg.kind}
+			else: land = _landing(fwd)
+		if land.is_empty():
+			_leg_failed("edge")
+			return
+		_leap_to = land.at
+		leap_kind = land.kind
+		_go("windup")
+		field.sound(&"body_windup",position)
+		return
 	var land := _landing(fwd)
 	if land.is_empty() or (head == null and not whole):
 		_go("listen")
@@ -505,8 +717,20 @@ func _meet_edge(fwd: Vector3) -> void:
 ## (`_ledge`), else down onto a lower floor: {at, kind} or {}.
 func _landing(dir: Vector3) -> Dictionary:
 	var ledge := _ledge(dir)
-	if not ledge.is_empty(): return ledge
-	return _drop(dir)
+	if not ledge.is_empty() and _arc_clear(ledge.at,"jump"): return ledge
+	var drop := _drop(dir)
+	if not drop.is_empty() and _drop_ok(drop.at) and _arc_clear(drop.at,"drop"): return drop
+	return {}
+
+## Whether it drops to `at`: headless and not lost, not more than
+## `drop_under` m under its head's ground (it hears it up there). Round 9
+## (layer-round9-bodies.md): on the generator's isles it dropped onto spurs
+## and ledges down a cliff with no way back up, and stood there for good;
+## lost, it takes the drop (the study's way to the head goes down and up).
+func _drop_ok(at: Vector3) -> bool:
+	if whole or head == null or lost(): return true
+	var ground: float = minf(head.ground_y(),(head.home() as Vector3).y) if head.has_method("home") else head.ground_y()
+	return at.y >= ground-float(knobs.drop_under)
 
 ## The widest gap it jumps ledge to ledge (m): `jump_gap` head heights.
 func jump_gap() -> float:
@@ -562,23 +786,51 @@ func _windup(delta: float) -> void:
 	var to := Vector2(_leap_to.x-position.x,_leap_to.z-position.z)
 	facing = lerp_angle(facing,PilotMotor.facing_of(to.normalized()),1.0-exp(-5.0*delta))
 	if state_t < float(knobs.windup): return
-	var g := float(knobs.leap_gravity)
-	var drop := position.y-_leap_to.y
-	var up := float(knobs.leap_up)
-	if leap_kind == "jump":
-		# Across: a longer, flatter throw, peaking a share of its length
-		# (and over the far ledge if that stands higher).
-		up = maxf(up,float(knobs.jump_arc)*to.length())+maxf(0.0,-drop)
-		jumps += 1
-	var vy := sqrt(2.0*g*up)
-	var t := (vy+sqrt(maxf(vy*vy+2.0*g*drop,0.0)))/g
-	var flat := to/t
-	_flight = t
-	vel = Vector3(flat.x,vy,flat.y)
+	if leap_kind == "jump": jumps += 1
+	var throw := _throw(position,_leap_to,leap_kind)
+	_flight = throw[1]
+	vel = throw[0]
 	grounded = false
 	leaps += 1
 	_go("leap")
 	field.sound(&"body_leap",position)
+
+## The throw from `from` to `to` ("jump" across, else a drop): [its
+## velocity, its time in the air]. A jump's is longer and flatter, peaking
+## a share of its length (and over the far ledge if that stands higher).
+func _throw(from: Vector3, to: Vector3, kind: String) -> Array:
+	var g := float(knobs.leap_gravity)
+	var flat := Vector2(to.x-from.x,to.z-from.z)
+	var drop := from.y-to.y
+	var up := float(knobs.leap_up)
+	if kind == "jump": up = maxf(up,float(knobs.jump_arc)*flat.length())+maxf(0.0,-drop)
+	var vy := sqrt(2.0*g*up)
+	var t := (vy+sqrt(maxf(vy*vy+2.0*g*drop,0.0)))/g
+	return [Vector3(flat.x/t,vy,flat.y/t),t]
+
+## Whether the throw to `to` comes down there: its arc flown as `_move`
+## flies it (its feet ray-cast along it), nothing met on the way but the
+## floor it lands on, within ARC_LAND of `to`. Round 9 (layer-round9-
+## bodies.md): on the generator's isles a throw into a far wall dropped it
+## into the void.
+const ARC_LAND := 2.0
+const ARC_DT := 1.0/30.0
+func _arc_clear(to: Vector3, kind: String) -> bool:
+	var throw := _throw(position,to,kind)
+	var v: Vector3 = throw[0]
+	var p := position
+	var g := float(knobs.leap_gravity)
+	var t := 0.0
+	while t < float(throw[1])+1.0:
+		v.y -= g*ARC_DT
+		var next := p+v*ARC_DT
+		var hit := _cast(p+Vector3.UP*0.05,next)
+		if not hit.is_empty():
+			if (hit.normal as Vector3).y > 0.5 and v.y <= 0.0: return (hit.position as Vector3).distance_to(to) <= ARC_LAND
+			return false
+		p = next
+		t += ARC_DT
+	return false
 
 func _fall() -> void:
 	grounded = false
@@ -594,7 +846,9 @@ func _landed() -> void:
 	vel = Vector3.ZERO
 	_go("land")
 	_puff(position,hh*2.2)
+	Dust.plume(field,position,hh*3.5*_tell_k())
 	field.sound(&"body_land",position)
+	field.sound(&"body_rumble",position)
 	_shock(position,clampf(impact/sqrt(2.0*float(knobs.leap_gravity)*hh),0.6,1.5))
 
 # --- Shockwaves -------------------------------------------------------------------------------
@@ -707,6 +961,233 @@ func _shock_meets(w: Dictionary) -> void:
 	shock_hits += 1
 	shove_pilot(m,way,float(knobs.shock_out)*f,float(knobs.shock_up)*f)
 
+# --- Routes (round 11) ---------------------------------------------------------------------------
+# docs/design/roguelike/layer-round11-body-routes.md. Where `routes` is on,
+# it hears the head as before, but goes the way a route over places it fits
+# goes (scripts/enemies/body_routes.gd): walking, climbing (on up over lips
+# it doesn't fit on), jumping and dropping; a leg it can't make it gives up
+# and plans round; where its head can't be got to, it goes to the place
+# nearest it it can, then out (`_bail`).
+
+## The search's slice of a frame (µs).
+const ROUTE_US := 1500
+## Turned further off its leg's way than this (rad), it turns on the spot.
+const ROUTE_TURN := 0.4
+## The head moved more than this from the goal planned for (m): planned again.
+const GOAL_MOVED := 6.0
+## Wandering (whole, out of hearing, lost): a goal this far off (m).
+const WANDER := Vector2(25.0,45.0)
+## A leap down out of a pocket: a goal this far off and down (m); a route
+## ending within BAIL_NEAR m of it (not at its goal) is no way out.
+const BAIL := Vector2(35.0,18.0)
+const BAIL_NEAR := 4.0
+var _bailing := 0
+var _route_found := false
+## Out along its leap or climb leg's way, at its start.
+var _leg_out := false
+
+## On a route now.
+func _routed() -> bool:
+	return _leg < _route.size()
+
+## A route planned where it is to its head (heard, not lost), or to a goal
+## off any way (whole, out of hearing, lost); the one it is on kept if its
+## head is still where it was going and it is still on it.
+func _plan() -> void:
+	if float(knobs.routes) < 0.5: return
+	if routes == null: routes = Routes.new(self)
+	var goal := Vector3.INF
+	var reach := 3.0
+	# Lost (no nearer for `lost_after` s) counts only off a route that gets
+	# there: a way round can lead away a while.
+	if not whole and head != null and (not lost() or (_route_found and _routed())) and Vector2(head.global_position.x-position.x,head.global_position.z-position.z).length() <= float(knobs.hear):
+		goal = Vector3(head.global_position.x,head.ground_y(),head.global_position.z)
+		reach = length*0.5+float(head.length)*0.5+float(knobs.reunite)
+	else:
+		goal = _wander_goal(WANDER.x,WANDER.y,0.0)
+		reach = 6.0
+	if _routed() and goal.distance_to(_goal) < GOAL_MOVED and _on_leg(): return
+	_start_search(goal,reach)
+
+func _start_search(goal: Vector3, reach: float) -> void:
+	_goal = goal
+	_route = []
+	_leg = 0
+	_leg_out = false
+	plans += 1
+	_search = Routes.Search.new(routes,position,goal,reach,_banned)
+
+## A goal `near`-`far` m off any way, `down` m under its feet.
+func _wander_goal(near: float, far: float, down: float) -> Vector3:
+	var a := _rng.randf_range(-PI,PI)
+	var d := _rng.randf_range(near,far)
+	return position+Vector3(sin(a)*d,-down,cos(a)*d)
+
+## The search stepped; done, its route taken (none: out, `_bail`).
+func _searching() -> void:
+	if _search == null: return
+	if not _search.step(ROUTE_US): return
+	var s := _search
+	_search = null
+	_route = s.path
+	_leg = 0
+	_leg_out = false
+	_leg_t = 0.0
+	_route_found = s.found
+	if s.found:
+		routed_to += 1
+		_bailing = 0
+		return
+	routed_near += 1
+	if s.start == Routes.NONE: return
+	# Nowhere much nearer (its route ends within BAIL_NEAR m): out of
+	# here, down and away; a second time running, its old bearing.
+	var end: Vector3 = _route[-1].to if not _route.is_empty() else position
+	if Vector2(end.x-position.x,end.z-position.z).length() > BAIL_NEAR or _bailing >= 2:
+		_bailing = 0
+		return
+	_bail()
+
+## Nothing nearer its goal to get to from here: a route down and away (a
+## drop off to a lower place, an isle under it), then it hears afresh.
+func _bail() -> void:
+	bails += 1
+	_bailing += 1
+	_start_search(_wander_goal(BAIL.x*0.6,BAIL.x,BAIL.y),8.0)
+
+## Its legs walked: on to the next where it stands at a leg's end; a leg not
+## made in `leg_slack` s given up (false: it stopped for that).
+func _follow(delta: float) -> bool:
+	_leg_t += delta
+	while _routed() and _at_leg_end(): _next_leg()
+	# Walking, past its leg's end toward the next (nearer the next's end
+	# than its own is): on, not back.
+	while _routed() and _leg+1 < _route.size() and _route[_leg].kind == "walk":
+		var a: Vector3 = _route[_leg].to
+		var b: Vector3 = _route[_leg+1].to
+		if Vector2(a.x-position.x,a.z-position.z).length() > Routes.CELL*1.6 or Vector2(b.x-position.x,b.z-position.z).length() >= Vector2(b.x-a.x,b.z-a.z).length() or absf(a.y-position.y) > float(knobs.step)*2.0: break
+		_next_leg()
+	# Walking, a later walk leg's end it is at (it cut a corner): on to it.
+	for i in range(_leg+1,mini(_leg+4,_route.size())):
+		if _route[i-1].kind != "walk": break
+		var to: Vector3 = _route[i].to
+		if Vector2(to.x-position.x,to.z-position.z).length() <= Routes.CELL*0.9 and absf(to.y-position.y) <= float(knobs.step)*2.0:
+			_leg = i+1
+			_leg_t = 0.0
+			_leg_out = false
+	if not _routed():
+		# Its route's end: homing, straight on at the head; else it hears
+		# again (its head may have moved on).
+		_route = []
+		if state == "home": return true
+		_go("listen")
+		return false
+	var leg: Dictionary = _route[_leg]
+	var slack := float(knobs.leg_slack)*(1.0 if leg.kind == "walk" else 1.6)
+	if _leg_t > slack:
+		_leg_failed("slow")
+		return false
+	return true
+
+func _next_leg() -> void:
+	_leg += 1
+	_leg_t = 0.0
+	_leg_out = false
+
+## Stood at the end of the leg it is on (its place, within a cell flat).
+func _at_leg_end() -> bool:
+	var to: Vector3 = _route[_leg].to
+	var near := Routes.CELL*(0.9 if _route[_leg].kind == "walk" else 1.4)
+	return Vector2(to.x-position.x,to.z-position.z).length() <= near and absf(to.y-position.y) <= float(knobs.step)*2.0
+
+## Back where it was on its leg (within a cell or so of its start or end).
+func _on_leg() -> bool:
+	if not _routed(): return false
+	for p: Vector3 in [_route[_leg].from,_route[_leg].to]:
+		if Vector2(p.x-position.x,p.z-position.z).length() <= Routes.CELL*1.6 and absf(p.y-position.y) <= float(knobs.step)*2.0: return true
+	return false
+
+## Only walking left to its route's end.
+func _walk_left() -> bool:
+	for i in range(_leg,_route.size()):
+		if _route[i].kind != "walk": return false
+	return true
+
+## The way its leg goes: walking, at the furthest of the next few walk legs
+## within a few metres; a climb or a leap, to the leg's start, then out
+## along its way.
+func _route_heading() -> float:
+	var leg: Dictionary = _route[_leg]
+	var aim: Vector3 = leg.to
+	if leg.kind == "walk":
+		for i in range(_leg+1,mini(_leg+4,_route.size())):
+			var next: Dictionary = _route[i]
+			if next.kind != "walk": break
+			var p: Vector3 = next.to
+			if Vector2(p.x-position.x,p.z-position.z).length() > 6.0: break
+			aim = p
+	else:
+		# To the leg's start, then out along its way; once there it keeps
+		# on out (it doesn't turn back for its start as it walks on from
+		# it: that turned it back and forth at the rim).
+		var from: Vector3 = leg.from
+		var d: Vector2 = leg.d
+		var off := Vector2(from.x-position.x,from.z-position.z).length()
+		if off <= Routes.CELL*1.2: _leg_out = true
+		elif off > Routes.CELL*3.0: _leg_out = false
+		if _leg_out: aim = position+Vector3(d.x,0.0,d.y)*Routes.CELL*3.0
+		else: aim = from
+	var to := Vector2(aim.x-position.x,aim.z-position.z)
+	if to.length() < 0.05: return facing
+	return PilotMotor.facing_of(to.normalized())
+
+## The leg it's on can't be made (a wall or an edge where it walks, a leap
+## with no landing, too slow): never again this way; it stops, hears and
+## plans round it.
+func _leg_failed(why: String) -> void:
+	var leg: Dictionary = _route[_leg]
+	fail_why = "%s %s leg %d/%d at %s to %s" % [why,leg.kind,_leg,_route.size(),str(position.snapped(Vector3.ONE*0.1)),str((leg.to as Vector3).snapped(Vector3.ONE*0.1))]
+	_banned[Routes.Search._key(leg.from_node,leg.node)] = true
+	leg_fails += 1
+	_route = []
+	_leg = 0
+	_leg_out = false
+	vel.x = 0.0
+	vel.z = 0.0
+	# A short beat (not a whole listen) and it plans again.
+	_go("listen")
+	state_t = float(knobs.listen)*0.6
+	_listen_from = facing
+
+## A fall that doesn't fall (wedged between faces): a second with less than
+## half a metre down, it is eased out toward the most open way.
+func _unwedge(delta: float) -> void:
+	if state != "fall":
+		_fall_from = Vector3.INF
+		_fall_t = 0.0
+		return
+	_fall_t += delta
+	if _fall_t < 1.0: return
+	if _fall_from != Vector3.INF and _fall_from.y-position.y < 0.5:
+		var best := Vector3.ZERO
+		var far := 0.0
+		for k in 8:
+			var d := _way3(k*TAU/8.0)
+			var hit := _cast(position+Vector3.UP*1.0,position+Vector3.UP*1.0+d*4.0)
+			var free := 4.0 if hit.is_empty() else (hit.position as Vector3).distance_to(position+Vector3.UP*1.0)
+			if free > far:
+				far = free
+				best = d
+		position += best*0.6
+		vel.x = best.x*2.0
+		vel.z = best.z*2.0
+	_fall_from = position
+	_fall_t = 0.0
+
+## Its routes' numbers, for checks.
+func route_stats() -> String:
+	return "plans %d to %d near %d fails %d bails %d perches %d rays %d" % [plans,routed_to,routed_near,leg_fails,bails,perches,routes.rays if routes != null else 0]
+
 # --- Reunion -----------------------------------------------------------------------------------
 
 func _reach_head(delta: float) -> void:
@@ -739,6 +1220,7 @@ func _triumph(delta: float) -> void:
 # --- Moving -------------------------------------------------------------------------------------
 
 func _move(delta: float) -> void:
+	_unwedge(delta)
 	if state in ["leap","fall"]:
 		vel.y -= float(knobs.leap_gravity)*delta
 		var to := position+vel*delta
@@ -763,7 +1245,7 @@ func _move(delta: float) -> void:
 	elif state not in ["climb","mantle"]:
 		position.x += vel.x*delta
 		position.z += vel.z*delta
-		var g := _floor(position,float(knobs.step),float(knobs.step))
+		var g := _feet_floor(float(knobs.step)*STAIR,float(knobs.step))
 		if g == -INF: _fall()
 		else: position.y = move_toward(position.y,g,maxf(absf(g-position.y)*8.0,2.0)*delta) if g > position.y else g
 		# A step each phase (the clips' feet come down on whole phases).
@@ -782,11 +1264,38 @@ const FADES := {"land":0.05,"leap":0.08,"fall":0.15,"mantle":0.12,"windup":0.1,"
 ## The slap of the hands onto a lip: up and over (s), then down on it.
 const GRAB := 0.32
 
+## Posed every frame within ANIM_FAR[0] m of the camera; past each
+## [m, s] in ANIM_FAR, no oftener than every s.
+const ANIM_FAR := [[90.0,1.0/30.0],[180.0,1.0/20.0]]
+var _pose_debt := 0.0
+## Frames posed (for checks).
+var poses := 0
+
+## How often it is posed at its distance from the camera now (s; 0 every
+## frame).
+func _pose_every() -> float:
+	var camera: Camera3D = field.study.get("camera") if field != null and field.study != null else null
+	if camera == null: return 0.0
+	var d := camera.global_position.distance_to(global_position)
+	var every := 0.0
+	for a: Array in ANIM_FAR:
+		if d > float(a[0]): every = float(a[1])
+	return every
+
 ## The clips its state wants, at the places its own clocks say (the walk's
 ## and the climb's phase, its state's time over that state's knob), then
 ## the corrections on top: hands on the real wall and lip.
 func _animate(delta: float) -> void:
 	if look == null: return
+	# Far off, posed less often (ANIM_FAR): the clips' blend and the hands'
+	# IK are the body's main cost on the CPU.
+	if not _snap:
+		var every := _pose_every()
+		if every > 0.0:
+			_pose_debt += delta
+			if _pose_debt < every: return
+			delta = _pose_debt
+		_pose_debt = 0.0
 	if state != _was:
 		_was = state
 		_fade = float(FADES.get(state,FADE))
@@ -816,6 +1325,7 @@ func _animate(delta: float) -> void:
 		"reach": look.want("reach",state_t/float(knobs.settle)*float(look.lengths.reach))
 		"triumph": look.want("triumph",state_t/float(knobs.triumph)*float(look.lengths.triumph))
 		_: look.want("idle",idle)
+	poses += 1
 	look.advance(delta,0.0 if _snap else _fade)
 	_snap = false
 	_hands(delta)
@@ -856,8 +1366,14 @@ func _hands(delta: float) -> void:
 				lift = 1.3*k*smoothstep(0.0,0.12,_grab_t)*(1.0-smoothstep(0.2,GRAB,_grab_t))
 				if was < GRAB and _grab_t >= GRAB:
 					field.sound(&"body_grip",lip)
+					field.sound(&"body_rumble",lip)
 					quake = maxf(quake,0.12)
 					for s in [-1.0,1.0]: _puff(lip+right*s*1.5*k+fwd*0.4*k,hh*0.45)
+					# Its hands slam onto the lip: a cloud off the top, the
+					# rim's stones knocked off down the face.
+					var tk := _tell_k()
+					Dust.plume(field,lip,hh*2.2*tk)
+					Dust.rocks(field,lip-fwd*0.6,-fwd,10,hh*0.14*tk)
 			var w := smoothstep(0.0,0.2,_haul_t)
 			for side in ["L","R"]:
 				var s := -1.0 if side == "L" else 1.0
@@ -887,10 +1403,30 @@ func _cast(from: Vector3, to: Vector3) -> Dictionary:
 	return field.study.get_world_3d().direct_space_state.intersect_ray(_ray)
 
 ## The floor under `p`, looked for from `up` over it to `down` under it; -INF none.
+## The floor under its feet: under its middle, else under its feet's
+## spread (round 11: its feet span a gap its middle is over, stepping
+## stones, a crack between two blocks), the highest of them.
+func _feet_floor(up: float, down: float) -> float:
+	var g := _floor(position,up,down)
+	if g != -INF: return g
+	var fwd := _forward3()
+	var right := _right3()
+	for off: Vector3 in [fwd*length*0.35,-fwd*length*0.35,right*width*0.25,-right*width*0.25]:
+		g = maxf(g,_floor(position+off,up,down))
+	return g
+
+## Round 11: a steep face met on the way down (a rail's rounded top, a
+## lamp, a prop's side) is looked past to the floor under it.
 func _floor(p: Vector3, up: float, down: float) -> float:
-	var hit := _cast(p+Vector3.UP*up,p-Vector3.UP*down)
-	if hit.is_empty() or (hit.normal as Vector3).y < 0.5: return -INF
-	return (hit.position as Vector3).y
+	var from := p+Vector3.UP*up
+	var to := p-Vector3.UP*down
+	for i in 3:
+		var hit := _cast(from,to)
+		if hit.is_empty(): return -INF
+		if (hit.normal as Vector3).y >= 0.5: return (hit.position as Vector3).y
+		from = (hit.position as Vector3)-Vector3.UP*0.05
+		if from.y <= to.y: return -INF
+	return -INF
 
 # --- Dust (greybox: a ring that spreads and fades) ------------------------------------------------
 

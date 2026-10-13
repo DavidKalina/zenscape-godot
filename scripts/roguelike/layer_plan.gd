@@ -46,6 +46,7 @@ const RuneSerpent = preload("res://scripts/rune_serpent.gd")
 const SerpentRoute = preload("res://scripts/kit_isle/serpent_route.gd")
 const AirshipBuild = preload("res://scripts/airship_build.gd")
 const Ferry = preload("res://scripts/kit_isle/airship_ferry.gd")
+const BodySpawner = preload("res://scripts/enemies/body_spawner.gd")
 
 ## The pool: [id, script, weight]. The colonnade spine and the Sundered
 ## gorge weighted up (the user's strongest), the stair to the clouds a
@@ -250,10 +251,14 @@ static func make(seed_value: int, knobs := {}) -> Dictionary:
 ## onto an isle standing that much over its lowest, by a `climb` edge).
 ## `arrows` / `viaduct`: the sprawl's hazards (scripts/roguelike/
 ## layer_hazards.gd), -1 rolled; `heads` the inhaler heads (scripts/
-## roguelike/layer_enemies.gd), -1 rolled.
+## roguelike/layer_enemies.gd), -1 rolled; `bodies` (1 or 0) their headless
+## bodies coming up the isles' cliffs (scripts/roguelike/layer_bodies.gd);
+## `spawn_<rule>` (not in KNOBS: any of BodySpawner RULES, e.g.
+## `spawn_far_share=1` every spawn a far one) their spawns' rules over the
+## generator's (LayerBodies SPAWN).
 ## `alternate` (0 or 1) and `ring` (isles round it, 0 rolls) are the run's
 ## and the ring shape's (scripts/roguelike/layer_shapes.gd, layer_ring.gd).
-const KNOBS := {"hoods":0,"gulf":0.0,"ride":"","rise":0.0,"arrows":-1,"viaduct":-1,"heads":-1,"alternate":1,"ring":0}
+const KNOBS := {"hoods":0,"gulf":0.0,"ride":"","rise":0.0,"arrows":-1,"viaduct":-1,"heads":-1,"bodies":1,"alternate":1,"ring":0}
 const KNOB_CHOICES := {"hoods":[0,1,2,3],"ride":["","serpent","ferry"]}
 
 ## `--knob=key=value` arguments as the layer's knobs (unknown keys warned).
@@ -264,8 +269,12 @@ static func knobs_from(args: PackedStringArray) -> Dictionary:
 		var pair := arg.trim_prefix("--knob=")
 		var key := pair.get_slice("=",0)
 		var value := pair.get_slice("=",1)
+		# The bodies' spawn rules (BodySpawner RULES), `spawn_<rule>`.
+		if key.begins_with("spawn_") and BodySpawner.RULES.has(key.trim_prefix("spawn_")):
+			out[key] = float(value)
+			continue
 		if not KNOBS.has(key):
-			push_warning("layer: no knob '%s' (%s)" % [key,", ".join(PackedStringArray(KNOBS.keys()))])
+			push_warning("layer: no knob '%s' (%s, spawn_<%s>)" % [key,", ".join(PackedStringArray(KNOBS.keys())),"|".join(PackedStringArray(BodySpawner.RULES.keys()))])
 			continue
 		match typeof(KNOBS[key]):
 			TYPE_INT: out[key] = int(value)
