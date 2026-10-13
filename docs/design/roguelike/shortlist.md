@@ -50,9 +50,13 @@ Courteous Statue.
 
 ## Rule bends to fix before building
 
-- Ivy Fuse stun and Lintel Drop trapping you: no stuns or cages, shoves only.
+- Ivy Fuse stun and Lintel Drop trapping you: stuns are in now (the user,
+  2026-10-12: Spelunky's stun, fall stun and mid-air ragdoll; stun-round1.md),
+  so a stun is fine if it costs position, not a run: no cages that hold him
+  still, and every stun must be recoverable (poise, the chain cap).
 - Hush is "run-ending": make it a shove into void with a long tell, or cut it.
-- Spring boots "remove fall damage": there is none; keep the bounce only.
+- Spring boots "remove fall damage": there is no damage, but there is the
+  fall stun now (stun-round1.md): boots that cancel it are a real item.
 - Cape duplicates the pocket sail; make it something else or drop it.
 - Weeper with the plane's wide camera: needs a fairness test.
 - Spindle and Reliquary Hand assume the motor's seize/toss; unchecked.
