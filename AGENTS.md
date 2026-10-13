@@ -15,6 +15,16 @@ that takes over a minute headless gets `## suite: slow`, and one with a timing b
 `tests/known_failures.txt` to get a run green. That file holds only failures
 the user has accepted, each with its reason.
 
+# Prototyping
+
+The game is being prototyped: the user judges work by playing it. Until the
+user asks to lock a feature in, a round proves its work with a smoke check (a
+headless import, then its scene loaded for a few hundred frames with no script
+errors) plus whatever throwaway check through the real play loop it needs,
+left uncommitted. Committed tests come in a lock-in round the user asks for,
+which also reconciles the tests prototypes broke. A round's handoff lists any
+existing test its change breaks.
+
 # Sizes
 
 The plane's and the wanderer's sizes live only in `scripts/world_scale.gd`,
