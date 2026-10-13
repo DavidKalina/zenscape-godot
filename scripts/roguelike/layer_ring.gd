@@ -21,6 +21,9 @@ extends RefCounted
 ##     base out (`_cannons`, LayerPlan `_gulf_cannon`): the fast, risky way.
 ##   - A greed branch (hard stones, the rune set, its cannon) off a ring isle
 ##     and the Plinth Ram, as round 3's (LayerPlan `_step`, `_cannon`, `_ram`).
+##   - The sprawl's gust arrows (scripts/roguelike/layer_hazards.gd; no
+##     exit chain, so no viaduct) and the inhaler heads (scripts/roguelike/
+##     layer_enemies.gd).
 ##   - The gate on the gate isle's rim facing out (`plan.heading`, the exit
 ##     side), and beyond it the next region (the sprawl's machinery:
 ##     LayerSprawl `_spawn_view`, `attach_next`, `_place_next`), and the
@@ -31,6 +34,8 @@ extends RefCounted
 ## The same seed and knobs give the same plan.
 const LayerPlan = preload("res://scripts/roguelike/layer_plan.gd")
 const LayerSprawl = preload("res://scripts/roguelike/layer_sprawl.gd")
+const LayerHazards = preload("res://scripts/roguelike/layer_hazards.gd")
+const LayerEnemies = preload("res://scripts/roguelike/layer_enemies.gd")
 const SerpentRoute = preload("res://scripts/kit_isle/serpent_route.gd")
 const SkyDragon = preload("res://scripts/sky_dragon.gd")
 
@@ -127,6 +132,9 @@ static func core(seed_value: int, knobs := {}) -> Dictionary:
 		if not (plan.problems as Array).is_empty():
 			if LayerPlan.trace: print("layer ring: seed %d attempt %d: %s" % [seed_value,attempt,str(plan.problems)])
 			continue
+		# The gust arrows (no exit chain, so no viaduct) and the heads.
+		LayerHazards.lay(plan,attempt)
+		LayerEnemies.lay(plan,attempt)
 		LayerSprawl._spawn_view(plan)
 		if LayerSprawl._roost(plan):
 			plan.ring.ms = (Time.get_ticks_usec()-began)/1000.0
@@ -883,6 +891,8 @@ static func card(plan: Dictionary) -> String:
 		var spawn: Vector3 = plan.spawn.at
 		var to := Vector2(at.x-spawn.x,at.z-spawn.z)
 		line += "\nThe dragon's roost: %s, %.0f m off, its turf %.0f m up" % [LayerSprawl.compass(to.normalized()),to.length(),at.y-spawn.y]
+	for extra: String in [LayerHazards.card(plan),LayerEnemies.card(plan)]:
+		if extra != "": line += "\n"+extra
 	return line
 
 ## The plan for LayerSprawl `overview` with the ring serpent's loop drawn

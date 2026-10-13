@@ -47,6 +47,7 @@ const NextRegionLod = preload("res://scripts/roguelike/next_region_lod.gd")
 const LayerPieces = preload("res://scripts/roguelike/layer_pieces.gd")
 const Roost = preload("res://scripts/kit_isle/motif_dragon_roost.gd")
 const LayerHazards = preload("res://scripts/roguelike/layer_hazards.gd")
+const LayerEnemies = preload("res://scripts/roguelike/layer_enemies.gd")
 
 ## The lean's weight: points per 100 m stood toward the rolled heading
 ## (LayerPlan `_lean`; a step's random share is 0-2, a gulf's the same).
@@ -206,6 +207,8 @@ static func core(seed_value: int, knobs := {}) -> Dictionary:
 			if not LayerHazards.lay(plan,attempt):
 				plan.problems.append("no viaduct")
 				continue
+			# The heads, off the hazards' perches.
+			LayerEnemies.lay(plan,attempt)
 			_spawn_view(plan)
 			var roost_began := Time.get_ticks_usec()
 			if _roost(plan):
@@ -904,6 +907,8 @@ static func card(plan: Dictionary) -> String:
 	if plan.has("next"): line += "  ·  next region (layer %d) %.0f m off, %.0f m up" % [int(plan.next.seed),float(plan.next.far),float(plan.next.rise)]
 	var hz := LayerHazards.card(plan)
 	if hz != "": line += "\n"+hz
+	var en := LayerEnemies.card(plan)
+	if en != "": line += "\n"+en
 	var roost: Dictionary = plan.get("roost",{})
 	if not roost.is_empty():
 		var at: Vector3 = roost.at

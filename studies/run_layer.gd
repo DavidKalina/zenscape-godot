@@ -29,7 +29,10 @@ extends "res://studies/aqueduct_isle.gd"
 ##     [--shape=sprawl]  (scripts/roguelike/layer_sprawl.gd: an exit side, a
 ##     chain of crossings out to the gate, the next region seen far off)
 ##     [--knob=arrows=<n>] [--knob=viaduct=<0|1>]  (the sprawl's gust-arrow
-##     perches and the Broken Viaduct: scripts/roguelike/layer_hazards.gd)
+##     perches, the ring's too, and the Broken Viaduct: scripts/roguelike/
+##     layer_hazards.gd)
+##     [--knob=heads=<n>]  (the inhaler heads, sprawl and ring: scripts/
+##     roguelike/layer_enemies.gd; 0 none)
 ## Without --seed= a seed is drawn. The isle's own flags still work; the
 ## hall chain and the lodestone are left out, and the aqueduct isle's own
 ## dragon's roost. Under the sprawl a layer has its own roost

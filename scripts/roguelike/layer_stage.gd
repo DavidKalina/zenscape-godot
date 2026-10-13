@@ -28,6 +28,7 @@ const GlyphPickup = preload("res://scripts/glyph_pickup.gd")
 const Lines = preload("res://scripts/collectible_lines.gd")
 const LayerPlan = preload("res://scripts/roguelike/layer_plan.gd")
 const LayerRides = preload("res://scripts/roguelike/layer_rides.gd")
+const LayerEnemies = preload("res://scripts/roguelike/layer_enemies.gd")
 
 const GATE := Color(1.0,0.82,0.45)
 const RUNE_SIZE := 0.7
@@ -54,6 +55,9 @@ var gate: Node3D
 var rides: Node3D
 ## The sprawl's hazards (scripts/roguelike/layer_hazards.gd), or null.
 var hazards: Node3D = null
+## The generator's inhaler heads (scripts/roguelike/layer_enemies.gd), or
+## null.
+var heads: Node = null
 var _last := Vector3.INF
 
 func _init() -> void:
@@ -88,7 +92,7 @@ func setup(scene: Node3D, layer: Dictionary, was: Node) -> void:
 		trap.transform = e.trap.frame
 		traps.add(trap)
 		k += 1
-	# The ram on its arena.
+	# The ram on its arena, the heads on theirs.
 	enemies = EnemyField.new()
 	enemies.study = scene
 	enemies.motor = scene.motor
@@ -97,6 +101,8 @@ func setup(scene: Node3D, layer: Dictionary, was: Node) -> void:
 	if not (layer.ram as Dictionary).is_empty():
 		var face: Vector3 = layer.ram.face
 		enemies.spawn(PlinthRam,layer.ram.at,Vector2(face.x,face.z))
+	# The inhaler heads on their rounds.
+	heads = LayerEnemies.dress(self,layer)
 	# The cannon and its kegs.
 	cannons = CannonField.new()
 	add_child(cannons)
@@ -244,6 +250,8 @@ func pose(figure: Node3D) -> void:
 	if inner != null: inner.pose(figure)
 	enemies.pose(figure)
 	cannons.pose(figure)
+	# Hidden while a head holds him.
+	if heads != null: figure.visible = not heads.holding()
 
 func frame(camera: Camera3D, delta: float) -> void:
 	if inner != null and inner.has_method("frame"): inner.frame(camera,delta)
