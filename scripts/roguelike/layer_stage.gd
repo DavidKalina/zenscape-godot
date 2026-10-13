@@ -52,6 +52,8 @@ var runes: Array = []
 var taken := 0
 var gate: Node3D
 var rides: Node3D
+## The sprawl's hazards (scripts/roguelike/layer_hazards.gd), or null.
+var hazards: Node3D = null
 var _last := Vector3.INF
 
 func _init() -> void:
@@ -228,12 +230,14 @@ func before(delta: float) -> void:
 	traps.before(delta)
 	enemies.before(delta)
 	cannons.before(delta)
+	if hazards != null: hazards.before(delta)
 
 func after(delta: float, events: Dictionary) -> void:
 	if inner != null: inner.after(delta,events)
 	traps.after(delta,events)
 	enemies.after(delta,events)
 	cannons.after(delta,events)
+	if hazards != null: hazards.after(delta,events)
 	if study.get("figure") != null: touch(study.figure.global_position+Vector3.UP*Lines.WALKER_MIDDLE)
 
 func pose(figure: Node3D) -> void:

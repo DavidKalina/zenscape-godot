@@ -248,7 +248,9 @@ static func make(seed_value: int, knobs := {}) -> Dictionary:
 ## roguelike/layer_sprawl.gd) also passes `hood_more` (isles more in each
 ## neighbourhood) and `tier` (m: in each neighbourhood one step climbs
 ## onto an isle standing that much over its lowest, by a `climb` edge).
-const KNOBS := {"hoods":0,"gulf":0.0,"ride":"","rise":0.0}
+## `arrows` / `viaduct`: the sprawl's hazards (scripts/roguelike/
+## layer_hazards.gd), -1 rolled.
+const KNOBS := {"hoods":0,"gulf":0.0,"ride":"","rise":0.0,"arrows":-1,"viaduct":-1}
 const KNOB_CHOICES := {"hoods":[0,1,2,3],"ride":["","serpent","ferry"]}
 
 ## `--knob=key=value` arguments as the layer's knobs (unknown keys warned).
