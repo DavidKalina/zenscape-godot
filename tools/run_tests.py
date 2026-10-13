@@ -45,10 +45,11 @@ import re
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_GODOT = "/Users/davidkalina/Applications/Godot.app/Contents/MacOS/Godot"
+DEFAULT_GODOT = os.environ.get("GODOT", "/Users/davidkalina/Applications/Godot.app/Contents/MacOS/Godot")
 KNOWN_FAILURES = ROOT / "tests" / "known_failures.txt"
 NATIVE = ROOT / "native" / "terrain_kernels"
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
@@ -152,7 +153,10 @@ def run_one(test: Path, args: argparse.Namespace, output_dir: Path, home: Path |
             process.wait(timeout=timeout)
         except (subprocess.TimeoutExpired, KeyboardInterrupt) as error:
             # Kill this test's own process group, never another agent's Godot.
-            os.killpg(process.pid, signal.SIGKILL)
+            if hasattr(os, "killpg"):
+                os.killpg(process.pid, signal.SIGKILL)
+            else:  # Windows: no process groups; the test's Godot is the one process.
+                process.kill()
             process.wait()
             if isinstance(error, KeyboardInterrupt):
                 raise
@@ -179,7 +183,7 @@ def main() -> int:
     parser.add_argument("--quick", action="store_true", help="Skip tests tagged slow")
     parser.add_argument("--timeout", type=float, default=180.0, help="Wall-clock seconds per test (default: 180)")
     parser.add_argument("--tests", action="append", default=[], help="Glob under tests/; repeat for multiple patterns")
-    parser.add_argument("--output", type=Path, default=Path("/tmp") / ("zs-tests-" + datetime.now().strftime("%Y%m%d-%H%M%S")))
+    parser.add_argument("--output", type=Path, default=Path(tempfile.gettempdir()) / ("zs-tests-" + datetime.now().strftime("%Y%m%d-%H%M%S")))
     parser.add_argument("--list", action="store_true", help="List selected scripts and their tags without launching Godot")
     parser.add_argument("--jobs", "-j", type=int, default=8, help="Tests to run at once (default: 8); each worker gets its own HOME")
     parser.add_argument("--strict-engine-errors", action="store_true", help="Also fail known renderer/environment/exit-leak signatures")
