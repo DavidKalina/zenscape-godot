@@ -59,3 +59,12 @@ gaps from the wanderer size (`PilotMotor.set_size`,
 `RuinKit.GRAB_TOP`/`CHAIN_TOP`). Other files ask WorldScale rather than
 copy 2.0, 2.4, the ratio, 1.2 (`pilot_size`) or the toy span 1.4. Guarded by
 `tests/test_world_scale_guard.gd` and `tests/test_world_scale_fit.gd`.
+
+# Animation
+
+Characters and enemies animate to a Nintendo-like bar: authored key poses
+that read at a glance, anticipation, squash and stretch, follow-through,
+snappy timing with holds, and weight that matches size. Author clips in
+Blender (rig + actions exported to glb) and layer procedural corrections,
+such as hands placed on the real wall, on top of them. Judge animation by
+eye in rendered captures.
