@@ -67,6 +67,7 @@ extends "res://scripts/enemies/enemy.gd"
 signal reunited(enemy)
 
 const Look = preload("res://scripts/enemies/headless_body_look.gd")
+const Dust = preload("res://scripts/enemies/body_dust.gd")
 
 ## The head it looks for (found among the field's enemies: the one with a mouth).
 var head: Node3D = null
@@ -88,6 +89,10 @@ var shock_hits := 0
 var leap_kind := ""
 ## Climbing up from a cliff spawn (cleared once it is over the lip).
 var spawned_on_cliff := false
+## Came up a far cliff, in the walker's view (body_spawner.gd `pick_far`).
+var far_spawn := false
+## Hands put on the face climbing (each a puff of dust, stones knocked off).
+var grips := 0
 var homed := false
 ## The camera's quake now (m), from its landings.
 var quake := 0.0
@@ -207,12 +212,16 @@ func setup(host: Node, at: Vector3, face: Vector2, overrides := {}) -> void:
 
 ## Set on a cliff face, already climbing: `lip` the top edge of the face
 ## over it, `out` (x, z) the face's outward way. Its raised hands sit `cling`
-## m under the lip, so none of it shows over the top till it hauls up.
-func cling(lip: Vector3, out: Vector2) -> void:
+## m under the lip, so none of it shows over the top till it hauls up;
+## `below` m lower still, it climbs that much of the face first (a far
+## spawn, `far`, seen from across a gulf: a rumble as it sets off).
+func cling(lip: Vector3, out: Vector2, below := 0.0, far := false) -> void:
 	var n := out.normalized()
 	facing = PilotMotor.facing_of(-n)
 	rotation.y = facing
-	position = Vector3(lip.x,lip.y-(neck_h+arm_l*0.75)-float(knobs.cling),lip.z)+Vector3(n.x,0.0,n.y)*(length*0.5+float(knobs.standoff))
+	position = Vector3(lip.x,lip.y-(neck_h+arm_l*0.75)-float(knobs.cling)-below,lip.z)+Vector3(n.x,0.0,n.y)*(length*0.5+float(knobs.standoff))
+	far_spawn = far
+	if far: field.sound(&"body_rumble",position)
 	grounded = false
 	vel = Vector3.ZERO
 	_climb_from = position.y
@@ -534,7 +543,35 @@ func _climb(delta: float) -> void:
 	position.y += rise
 	var was := _phase
 	_phase += rise/(arm_l*0.45)
-	if int(was) != int(_phase): field.sound(&"body_grip",position+Vector3.UP*(neck_h+arm_l*0.6))
+	if int(was) != int(_phase):
+		field.sound(&"body_grip",position+Vector3.UP*(neck_h+arm_l*0.6))
+		if _lip_y == INF: _grip_dust(int(_phase))
+	# Hauling, its feet scrabble on the face.
+	if _lip_y != INF and int((_haul_t-delta)/0.45) != int(_haul_t/0.45):
+		var feet := position+fwd*(length*0.5)+Vector3.UP*hh*0.3
+		var tk := _tell_k()
+		Dust.puff(field,feet,hh*1.0*tk,-fwd)
+		Dust.rocks(field,feet,-fwd,2,hh*0.1*tk)
+
+## A hand put on the face (the `k`-th): a puff off the face by it, a
+## stone or two knocked down.
+func _grip_dust(k: int) -> void:
+	grips += 1
+	var fwd := _forward3()
+	var side := -1.0 if k%2 == 0 else 1.0
+	var at := position+Vector3.UP*(neck_h+arm_l*0.55)+_right3()*side*hh*0.45+fwd*(length*0.5)
+	var tk := _tell_k()
+	Dust.puff(field,at-fwd*hh*0.3,hh*1.2*tk,-fwd)
+	Dust.rocks(field,at-fwd*hh*0.2,-fwd,3 if k%2 == 0 else 4,hh*0.12*tk)
+
+## The tells grown with the camera's distance (1 within TELL_NEAR m, up to
+## TELL_MOST times), so a far body's dust and stones still read.
+const TELL_NEAR := 60.0
+const TELL_MOST := 2.5
+func _tell_k() -> float:
+	var camera: Camera3D = field.study.get("camera") if field != null and field.study != null else null
+	if camera == null: return 1.0
+	return clampf(camera.global_position.distance_to(global_position)/TELL_NEAR,1.0,TELL_MOST)
 
 func _mantle(delta: float) -> void:
 	var k := clampf(state_t/float(knobs.mantle),0.0,1.0)
@@ -546,6 +583,7 @@ func _mantle(delta: float) -> void:
 		spawned_on_cliff = false
 		# Its weight comes down on the top: a smaller wave.
 		_shock(position,float(knobs.shock_mantle))
+		Dust.plume(field,position,hh*2.6*_tell_k())
 		_go("listen")
 
 # --- Edges and leaps ------------------------------------------------------------------------
@@ -696,7 +734,9 @@ func _landed() -> void:
 	vel = Vector3.ZERO
 	_go("land")
 	_puff(position,hh*2.2)
+	Dust.plume(field,position,hh*3.5*_tell_k())
 	field.sound(&"body_land",position)
+	field.sound(&"body_rumble",position)
 	_shock(position,clampf(impact/sqrt(2.0*float(knobs.leap_gravity)*hh),0.6,1.5))
 
 # --- Shockwaves -------------------------------------------------------------------------------
@@ -884,11 +924,38 @@ const FADES := {"land":0.05,"leap":0.08,"fall":0.15,"mantle":0.12,"windup":0.1,"
 ## The slap of the hands onto a lip: up and over (s), then down on it.
 const GRAB := 0.32
 
+## Posed every frame within ANIM_FAR[0] m of the camera; past each
+## [m, s] in ANIM_FAR, no oftener than every s.
+const ANIM_FAR := [[90.0,1.0/30.0],[180.0,1.0/20.0]]
+var _pose_debt := 0.0
+## Frames posed (for checks).
+var poses := 0
+
+## How often it is posed at its distance from the camera now (s; 0 every
+## frame).
+func _pose_every() -> float:
+	var camera: Camera3D = field.study.get("camera") if field != null and field.study != null else null
+	if camera == null: return 0.0
+	var d := camera.global_position.distance_to(global_position)
+	var every := 0.0
+	for a: Array in ANIM_FAR:
+		if d > float(a[0]): every = float(a[1])
+	return every
+
 ## The clips its state wants, at the places its own clocks say (the walk's
 ## and the climb's phase, its state's time over that state's knob), then
 ## the corrections on top: hands on the real wall and lip.
 func _animate(delta: float) -> void:
 	if look == null: return
+	# Far off, posed less often (ANIM_FAR): the clips' blend and the hands'
+	# IK are the body's main cost on the CPU.
+	if not _snap:
+		var every := _pose_every()
+		if every > 0.0:
+			_pose_debt += delta
+			if _pose_debt < every: return
+			delta = _pose_debt
+		_pose_debt = 0.0
 	if state != _was:
 		_was = state
 		_fade = float(FADES.get(state,FADE))
@@ -918,6 +985,7 @@ func _animate(delta: float) -> void:
 		"reach": look.want("reach",state_t/float(knobs.settle)*float(look.lengths.reach))
 		"triumph": look.want("triumph",state_t/float(knobs.triumph)*float(look.lengths.triumph))
 		_: look.want("idle",idle)
+	poses += 1
 	look.advance(delta,0.0 if _snap else _fade)
 	_snap = false
 	_hands(delta)
@@ -958,8 +1026,14 @@ func _hands(delta: float) -> void:
 				lift = 1.3*k*smoothstep(0.0,0.12,_grab_t)*(1.0-smoothstep(0.2,GRAB,_grab_t))
 				if was < GRAB and _grab_t >= GRAB:
 					field.sound(&"body_grip",lip)
+					field.sound(&"body_rumble",lip)
 					quake = maxf(quake,0.12)
 					for s in [-1.0,1.0]: _puff(lip+right*s*1.5*k+fwd*0.4*k,hh*0.45)
+					# Its hands slam onto the lip: a cloud off the top, the
+					# rim's stones knocked off down the face.
+					var tk := _tell_k()
+					Dust.plume(field,lip,hh*2.2*tk)
+					Dust.rocks(field,lip-fwd*0.6,-fwd,10,hh*0.14*tk)
 			var w := smoothstep(0.0,0.2,_haul_t)
 			for side in ["L","R"]:
 				var s := -1.0 if side == "L" else 1.0

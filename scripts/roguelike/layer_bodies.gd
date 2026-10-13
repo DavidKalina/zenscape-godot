@@ -53,6 +53,12 @@ const HEAD_CELLS := 2
 const HEAD_LEVEL := 2.5
 const DIRS := [Vector2i(1,0),Vector2i(-1,0),Vector2i(0,1),Vector2i(0,-1)]
 
+## The generator's spawn rules over BodySpawner RULES (round 10, layer-
+## round10-far-bodies.md): now and then a body comes up a far cliff in
+## the walker's view, to watch it climb across a gulf. `--knob=spawn_<rule>=`
+## over these.
+const SPAWN := {"far_share":0.3}
+
 static var _build := {}
 static var _build_lock := Mutex.new()
 
@@ -62,6 +68,13 @@ static var _build_lock := Mutex.new()
 ## and ledges down the isles' cliffs.
 static func knobs(n: Dictionary) -> Dictionary:
 	return {"drop_under":float(n.unit)*3.0}
+
+## The spawn rules for a plan's knobs: SPAWN, then its `spawn_<rule>`s.
+static func spawn_rules(plan_knobs: Dictionary) -> Dictionary:
+	var out := SPAWN.duplicate()
+	for key: String in plan_knobs:
+		if key.begins_with("spawn_"): out[key.trim_prefix("spawn_")] = float(plan_knobs[key])
+	return out
 
 ## The body's moves and build (m), from its knobs at the walker's numbers
 ## (LayerEnemies `numbers`) and the generator's (`knobs`).

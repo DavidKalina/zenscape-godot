@@ -210,7 +210,7 @@ func _voice(sound_name: StringName, at: Vector3) -> void:
 	var player := AudioStreamPlayer3D.new()
 	player.stream = _voices[key]
 	player.position = at
-	player.unit_size = 14.0
+	player.unit_size = float(BodySpawner.REACH.get(key,14.0))
 	add_child(player)
 	player.finished.connect(player.queue_free)
 	player.play()

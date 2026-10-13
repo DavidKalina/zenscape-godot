@@ -36,6 +36,12 @@ extends "res://studies/aqueduct_isle.gd"
 ##     [--knob=bodies=<0|1>]  (each head's headless body coming up a cliff
 ##     near the walker: scripts/roguelike/layer_bodies.gd, scripts/enemies/
 ##     body_spawner.gd; 0 none)
+##     [--knob=spawn_<rule>=<value>]  (the bodies' spawn rules, BodySpawner
+##     RULES over LayerBodies SPAWN: spawn_far_share=1 brings every body up
+##     a far cliff in view, 60-250 m off, to watch it climb; docs/design/
+##     roguelike/layer-round10-far-bodies.md)
+##   B             set down where the next head's body comes up a far cliff
+##                 in view (the far spawn, to watch it climb)
 ## Without --seed= a seed is drawn. The isle's own flags still work; the
 ## hall chain and the lodestone are left out, and the aqueduct isle's own
 ## dragon's roost. Under the sprawl a layer has its own roost
@@ -341,7 +347,42 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_BACKSPACE:
 				request_layer(layer_seed,"",LayerShapes.shape_of(layer))
 				return
+			KEY_B:
+				_watch_body()
+				return
 	super._unhandled_input(event)
+
+## B: a far body to watch (layer-round10-far-bodies.md): set down off the
+## next head's cliffs where a far spawn is seen (stand to stand, a few
+## frames each, so the camera settles), and its body comes up.
+var _watch_head := -1
+var _watching := false
+func _watch_body() -> void:
+	var heads: Node = stage.get("heads")
+	if _watching or heads == null or heads.spawner == null or heads.spawner.heads.is_empty():
+		if not _watching: print("run layer: no head's body to watch")
+		return
+	_watching = true
+	var sp: Node = heads.spawner
+	var was: Vector3 = motor.feet
+	var was_face: Vector2 = PilotMotor.forward(motor.facing)
+	var stage_was := stage
+	for k in range(sp.heads.size()):
+		_watch_head = (_watch_head+1)%sp.heads.size()
+		for v: Array in sp.vantages(_watch_head):
+			place(v[0],v[1])
+			for f in range(3): await get_tree().process_frame
+			if stage != stage_was:
+				_watching = false
+				return
+			var b: Node3D = sp.spawn_far_now(_watch_head)
+			if b != null:
+				print("run layer: watching head %d's body come up %s, %.0f m off" % [_watch_head,sp.last_cliff,sp.last_far])
+				_watching = false
+				return
+	place(was,was_face)
+	print("run layer: no spot found to watch a body from (are the far isles built yet?)")
+	_watching = false
 
 # --- The card -------------------------------------------------------------------
 

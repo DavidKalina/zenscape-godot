@@ -375,10 +375,10 @@ static func dress(stage: Node3D, plan: Dictionary) -> Node:
 	var node := new()
 	node.name = "LayerEnemies"
 	stage.add_child(node)
-	node.build(stage.study,stage.enemies,heads,int((plan.knobs as Dictionary).get("bodies",1)) != 0,float(plan.void_y))
+	node.build(stage.study,stage.enemies,heads,int((plan.knobs as Dictionary).get("bodies",1)) != 0,float(plan.void_y),LayerBodies.spawn_rules(plan.knobs))
 	return node
 
-func build(scene: Node3D, enemies: Node, heads: Array, bodies := true, void_y := -INF) -> void:
+func build(scene: Node3D, enemies: Node, heads: Array, bodies := true, void_y := -INF, spawn_rules := {}) -> void:
 	study = scene
 	field = enemies
 	if not field.sound_hook.is_valid(): field.sound_hook = _voice
@@ -388,7 +388,7 @@ func build(scene: Node3D, enemies: Node, heads: Array, bodies := true, void_y :=
 	if bodies:
 		spawner = BodySpawner.new()
 		add_child(spawner)
-		spawner.setup(study,field,{},LayerBodies.knobs(numbers()))
+		spawner.setup(study,field,spawn_rules,LayerBodies.knobs(numbers()))
 		# Under the void a body is gone (and its head's next comes up).
 		spawner.lost_y = void_y
 		for h: Dictionary in heads: spawner.add_head(h.at,h.get("cliffs",[]))
@@ -452,7 +452,7 @@ func _voice(sound_name: StringName, at: Vector3) -> void:
 	var player := AudioStreamPlayer3D.new()
 	player.stream = _voices[key]
 	player.position = at
-	player.unit_size = 10.0
+	player.unit_size = float(BodySpawner.REACH.get(key,10.0))
 	add_child(player)
 	player.finished.connect(player.queue_free)
 	player.play()

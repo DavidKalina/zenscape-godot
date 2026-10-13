@@ -96,11 +96,19 @@ func build(h: float, seed_value := 7) -> void:
 	maw.material_override = _maw_mat
 	for m: MeshInstance3D in [eyes,maw]: m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
+## The dressed meshes' LODs: normals merged under this angle (the
+## importer's own default), split over this.
+const LOD_MERGE := 60.0
+const LOD_SPLIT := 25.0
+
 ## The mesh's vertices coloured as the kit's stone: `shade` by each
 ## vertex's normal and place (`offset` the part's place in the model),
 ## times its baked occlusion, moss on what faces up.
 static func _dressed(mesh: Mesh, stone: Color, offset: Vector3) -> ArrayMesh:
-	var out := ArrayMesh.new()
+	# Built as an ImporterMesh so its LODs are made again (round 10, layer-
+	# round10-far-bodies.md: an ArrayMesh made from the arrays had none, so
+	# the head and body drew every triangle at any distance).
+	var out := ImporterMesh.new()
 	var noise := FastNoiseLite.new()
 	noise.seed = 31
 	noise.frequency = 1.6
@@ -138,8 +146,9 @@ static func _dressed(mesh: Mesh, stone: Color, offset: Vector3) -> ArrayMesh:
 		arrays[Mesh.ARRAY_COLOR] = colours
 		arrays[Mesh.ARRAY_TEX_UV] = rest_a
 		arrays[Mesh.ARRAY_TEX_UV2] = rest_b
-		out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
-	return out
+		out.add_surface(Mesh.PRIMITIVE_TRIANGLES,arrays)
+	out.generate_lods(LOD_MERGE,LOD_SPLIT,[])
+	return out.get_mesh()
 
 ## The jaw dropped `share` of JAW_OPEN.
 func open(share: float) -> void:
