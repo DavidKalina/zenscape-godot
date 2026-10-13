@@ -155,7 +155,7 @@ const ARCHER_TO := 0.7
 
 ## THE PERCHES (docs/design/roguelike/crossing-viaduct-perches.md): each a
 ## wind horn (`perch_piece`: ONE function, the stand-in now, the stone horn
-## later) on a dark stone column whose top, PERCH_TOP m square, he can stand
+## later) on a ruin-kit pillar (RuinKitAqueduct `pillar`) whose top, PERCH_TOP m square, he can stand
 ## on and slam to disable it (GustArrows DISABLE_TIME). The horn stands
 ## HORN_BACK m back of the top's middle, away from his way in. Its mouth is
 ## the horn's (its "Mouth" marker), ARCHER_CLEAR over the top in the stand-in.
@@ -173,6 +173,13 @@ const SAIL_SPARE := 1.5
 const STONE := Vector3(2.4,0.7,2.2)
 const STEP_GAP := 1.4
 const PERCH_STEP := 0.6
+## The route's stones stand ROUTE_ASIDE m off the sightline from the
+## departure to the horn (the last one steps in beside the perch's top),
+## on the side LEFT_SIDE / FAR_SIDE (1 right, -1 left): the horn in plain
+## view past them, the way out a curve to it.
+const ROUTE_ASIDE := 4.8
+const LEFT_SIDE := -1.0
+const FAR_SIDE := 1.0
 ## The left perch's route: off pier LEFT_FROM, LEFT_TURN degrees left of
 ## the piers' heading. The far perch's: off the slot's plinth, FAR_TURN
 ## degrees right of the piers' heading.
@@ -227,9 +234,6 @@ var lip_end := Vector3.ZERO
 var far_near := Vector3.ZERO
 var numbers := {}
 var arrows: GustArrows
-## The horns' own bodies: their balls fly out through them (a slow head
-## still turning onto him).
-var _horn_rids: Array[RID] = []
 ## The perches' routes, worked out by `lay_out` (`_route`): "left" and
 ## "far", each {from (departure top, local), deg, sail_gap, stones
 ## [{kind, at, yaw}], top (perch top's middle), draft {base, top}}.
@@ -293,9 +297,9 @@ func lay_out() -> void:
 	sail_gap = long_reach(m.long_speed,ROUTE_DROP)+SAIL_SPARE
 	assert(sail_gap+1.0 < sail_reach(ROUTE_DROP),"viaduct: a perch route's sail gap is past the sail's reach")
 	var left_deg := TURN_B-LEFT_TURN
-	routes["left"] = _route(pier_tops[LEFT_FROM],left_deg,_edge_out(PIER_TOP*0.5,LEFT_TURN))
+	routes["left"] = _route(pier_tops[LEFT_FROM],left_deg,PIER_TOP*0.5,-LEFT_TURN,LEFT_SIDE)
 	var far_deg := TURN_B+FAR_TURN
-	routes["far"] = _route(slot_foot,far_deg,_edge_out(Vector2(SLOT_PLINTH,SLOT_PLINTH),FAR_TURN))
+	routes["far"] = _route(slot_foot,far_deg,Vector2(SLOT_PLINTH,SLOT_PLINTH),FAR_TURN,FAR_SIDE)
 	numbers = {"slam_over":slam_over,"sail_gap":sail_gap,"sail_reach":sail_reach(ROUTE_DROP),"left_perch_top":routes.left.top,"far_perch_top":routes.far.top,"run_rise":run_rise,"fall_gap":fall_gap,"plain_catch":miss,"chain3_land":make,"chain2_land":long_reach(chain2,FALL_DROP),
 		"chain2_catch":catch_reach(chain2,FALL_DROP),"plain_land":long_reach(plain,FALL_DROP),
 		"pier_gap":pier_gap,"pier_rise":pier_rise,"first_rise":first_rise,"pump_flight":flight,
@@ -340,24 +344,41 @@ static func _edge_out(half: Vector2, turn: float) -> float:
 	var across := absf(sin(a))
 	return minf(half.y/along if along > 0.001 else INF,half.x/across if across > 0.001 else INF)
 
-## A perch's route off the top `from` (its middle, local), heading `deg`,
-## its edge `edge` m out that way: the sail gap, the plain stone, the
-## sinking one, the last (high) stone, the perch's top `slam_over` under
-## it; and its updraft back, just past the perch.
-func _route(from: Vector3, deg: float, edge: float) -> Dictionary:
-	var s := edge+sail_gap+STONE.z*0.5
+## A perch's route off the top `from` (its middle, local; `half` its half
+## size, across and along the piers, the route leaving `turn` degrees off
+## them), heading `deg` at the perch: the stones off to its `side` (1
+## right, -1 left) of the sightline, so the horn stands clear past them
+## from the departure. The sail gap out on a slant to the plain stone
+## (ROUTE_ASIDE off the line), the sinking one beside it, the last stone
+## stepped in (PERCH_STEP off the top's side, `slam_over` over it), the
+## perch's top beside its far end; and its updraft back, just past the
+## perch.
+func _route(from: Vector3, deg: float, half: Vector2, turn: float, side: float) -> Dictionary:
 	var y := from.y-ROUTE_DROP
+	var aside := side*ROUTE_ASIDE
+	# The slant out to the first stone: its edge on the departure that way,
+	# the sail gap, half a stone.
+	var slant := 0.0
+	var edge := _edge_out(half,turn)
+	var reach := edge+sail_gap+STONE.z*0.5
+	for i in range(3):
+		slant = asin(clampf(ROUTE_ASIDE/reach,-1.0,1.0))
+		edge = _edge_out(half,turn+rad_to_deg(slant)*side)
+		reach = edge+sail_gap+STONE.z*0.5
+	var s := reach*cos(slant)
+	var beside := side*(PERCH_TOP*0.5+PERCH_STEP+STONE.x*0.5)
 	var stones := []
 	for kind: String in ["bob","sink","bob"]:
-		stones.append({"kind":kind,"at":at(Vector3(from.x,y,from.z),deg,s),"yaw":yaw_of(deg)})
+		var last := stones.size() == 2
+		stones.append({"kind":kind,"at":at(Vector3(from.x,y,from.z),deg,s,beside if last else aside),"yaw":yaw_of(deg)})
 		s += STONE.z+STEP_GAP
-	s += -STEP_GAP-STONE.z*0.5+PERCH_STEP+PERCH_TOP*0.5
+	s += -STEP_GAP-STONE.z*0.5
 	var top := at(Vector3(from.x,y-slam_over,from.z),deg,s)
 	var out := PERCH_TOP*0.5+PERCH_DRAFT_RADIUS+1.0
 	var base := at(top,deg,out)
 	var back := Vector2(base.x-from.x,base.z-from.z).length()
 	var draft_top := from.y+DRAFT_SETTLE+back*PocketSail.SINK/PocketSail.PACE+DRAFT_SPARE
-	return {"from":from,"deg":deg,"edge":edge,"stones":stones,"top":top,"draft":{"base":Vector3(base.x,-DROP,base.z),"top":draft_top}}
+	return {"from":from,"deg":deg,"edge":edge,"side":side,"slant":rad_to_deg(slant)*side,"stones":stones,"top":top,"draft":{"base":Vector3(base.x,-DROP,base.z),"top":draft_top}}
 
 ## The slide's pace off the launch's lip: in at a run, surfed down the slab
 ## (the motor's pull, drag and air), slid along half the flat lip.
@@ -442,9 +463,7 @@ func updrafts() -> Array:
 ## The stones' bodies once made (`foot_stones`): the gust arrows fly
 ## through them, so a route doesn't shield the line its perch guards.
 func stones_made(rids: Array[RID]) -> void:
-	var all: Array[RID] = _horn_rids.duplicate()
-	all.append_array(rids)
-	if arrows != null: arrows.set_see_through(all)
+	if arrows != null: arrows.set_see_through(rids)
 
 ## The floating stones out to the perches ({kind "bob" or "sink", at (the
 ## top's middle, local), yaw, size}): the yard makes them as foot pieces
@@ -541,7 +560,7 @@ func _launch(low: float) -> void:
 	column(at(far_near,c_deg,FAR_RIM.x*0.5),Vector2(FAR_RIM.y,FAR_RIM.x),low,far_near.y,c_deg,"lip")
 
 ## The gust arrows' perches (docs/design/roguelike/crossing-viaduct-
-## perches.md), each a horn on a dark column with a standable top, and the
+## perches.md), each a horn on a ruin-kit pillar with a standable top, and the
 ## zones they fire on: the left perch (launcher 0) and the far perch (1) at
 ## the ends of their routes, the deck's (2), the low ones (3..).
 func _arrows(low: float) -> void:
@@ -563,14 +582,13 @@ func _arrows(low: float) -> void:
 ## heading `deg` (the way he comes in on its route), its horn (`perch_piece`)
 ## HORN_BACK further on, facing back; and its launcher.
 func _perch(called: String, top: Vector3, deg: float, bottom: float, zone: Callable, opts: Dictionary, k: int, back := HORN_BACK) -> GustArrows.Launcher:
-	column(top,Vector2(PERCH_TOP,PERCH_TOP),bottom,top.y,deg,"dark").name = called
+	var pillar := piece(Aqueduct.pillar(SEED+40+k,WEATHERED,top.y-bottom,Vector2(PERCH_TOP,PERCH_TOP)),Transform3D(Basis(Vector3.UP,yaw_of(deg)),Vector3(top.x,bottom,top.z)))
+	pillar.name = called
 	var horn := perch_piece(SEED+60+k,WEATHERED)
 	horn.position = at(Vector3.ZERO,deg,back)
 	horn.rotation.y = yaw_of(deg+180.0)
 	var l := arrows.add_launcher(top,zone,horn,PERCH_TOP*0.5,opts)
 	l.cap_rise = RuinKitHorn.TOP_HEIGHT
-	for b: Node in horn.find_children("*","StaticBody3D",true,false): _horn_rids.append((b as StaticBody3D).get_rid())
-	arrows.set_see_through(_horn_rids)
 	l.name = called+"Launcher"
 	return l
 
@@ -615,13 +633,16 @@ func in_the_drop(feet: Vector3, top: Vector3) -> bool:
 func on_route(feet: Vector3, key: String) -> bool:
 	var r: Dictionary = routes[key]
 	var from: Vector3 = r.from
-	var w := way(float(r.deg))
-	var d := Vector2(feet.x-from.x,feet.z-from.z)
-	var along := d.dot(w)
-	var aside := d.dot(right_of(w))
-	var last: Vector3 = r.stones[r.stones.size()-1].at
-	var end := Vector2(last.x-from.x,last.z-from.z).length()+STONE.z*0.5
-	return along > float(r.edge)-0.5 and along < end and absf(aside) < ROUTE_ZONE and feet.y > from.y-ROUTE_UNDER and feet.y < from.y+4.0
+	if feet.y <= from.y-ROUTE_UNDER or feet.y >= from.y+4.0: return false
+	# The way out: the departure's edge, then stone to stone.
+	var first: Vector3 = r.stones[0].at
+	var out := Vector2(first.x-from.x,first.z-from.z).normalized()
+	var pts: Array[Vector2] = [Vector2(from.x,from.z)+out*(float(r.edge)-0.5)]
+	for st: Dictionary in r.stones: pts.append(Vector2(st.at.x,st.at.z))
+	var p := Vector2(feet.x,feet.z)
+	for i in range(pts.size()-1):
+		if Geometry2D.get_closest_point_to_segment(p,pts[i],pts[i+1]).distance_to(p) < ROUTE_ZONE: return true
+	return false
 
 ## Whether `feet` (local) are on the far half of the field: the piers and
 ## the safe stair beside them (on its side of the stair, the far perch has

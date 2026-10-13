@@ -294,6 +294,34 @@ static func stump(seed_value: int, weathered := 0.0, ground := Callable()) -> No
 	node.set_meta("walk",[{"from":Vector3(-0.5,height,0.0),"to":Vector3(0.5,height,0.0),"width":PIER.x}])
 	return node
 
+## A lone pillar for a perch (the crossing yard's horn perches,
+## studies/crossings/crossing_viaduct.gd): a pier `height` m tall, `size`
+## across (x) and along (z), coursed as a span's, under its impost, whose
+## top at `height` is a flat stone to stand on (a true hull). Its foot, at
+## y 0, is broken off over the void: a ragged course hangs under it, ivy
+## trailing from it. Not in PIECES (it hangs on nothing).
+static func pillar(seed_value: int, weathered: float, height: float, size: Vector2) -> Node3D:
+	var b := Build.new(seed_value,weathered,"AqueductPillar")
+	b.settle = SETTLE
+	# The void under it, for the trailing ivy's room.
+	b.terrain = func(_x: float, _z: float) -> float: return -8.0
+	_pier(b,0.0,0.0,height,0.0,size,0.0,INF,false)
+	RuinKit._walk_box(b,Transform3D.IDENTITY,size.x*0.5,height-0.3,height,size.y*0.5,size.y*0.5)
+	# The broken foot: what's left of the next course down, ragged.
+	var hx := size.x*0.5
+	var hz := size.y*0.5
+	for i in range(4):
+		var cx := (float(i%2)-0.5)*hx
+		var cz := ((1.0 if i >= 2 else 0.0)-0.5)*hz
+		var deep := b.rng.randf_range(0.3,0.9)
+		var m := Vector3(b.rng.randf_range(-0.8,0.8),-1.0,b.rng.randf_range(-0.8,0.8)).normalized()
+		var cut: Array[Plane] = [Plane(m,m.dot(Vector3(0.0,-deep*0.5*b.rng.randf_range(0.2,0.9),0.0)))]
+		b.solid(RuinKit._box(b,Vector3(hx*0.5-0.01,deep*0.5,hz*0.5-0.01)),RuinKit._settle(b,Vector3(cx,-deep*0.5,cz),0.5),RuinKit._stone(b,0.94),true,true,cut)
+		b.hang(Vector3(cx,0.0,cz),b.rng.randf_range(1.2,3.0)*(0.4+weathered),true,0.0)
+	var node := b.finish()
+	node.set_meta("height",height)
+	return node
+
 ## 5. The head: where the channel meets the land. A stepped abutment of
 ## coursed walling (`raised`: its treads each a jump over the last, the way
 ## up from the ground to the channel; otherwise the land stands at the

@@ -28,3 +28,9 @@ func disabled(seconds: float) -> void:
 
 func is_disabled() -> bool:
 	return rig.is_disabled()
+
+func aim_error(p: Vector3) -> float:
+	return rig.aim_error(p)
+
+func facing() -> Vector3:
+	return rig.facing()

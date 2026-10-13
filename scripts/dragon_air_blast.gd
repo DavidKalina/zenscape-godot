@@ -153,6 +153,12 @@ var lead_flat := false
 ## dragon's): the crossing yard's floating stones out to a perch, so a
 ## perch's own route doesn't shield the line it guards.
 var see_through: Array[RID] = []
+## A host's launcher that must face its target to fire (the crossing's
+## stone horns): while `hold` the wind-up waits at its end, unfired; and a
+## `face` (unit, world; zero none, the dragon's) sends the ball out along
+## it rather than straight at the lead (its homing does the rest).
+var hold := false
+var face := Vector3.ZERO
 var _target := Vector3.INF
 ## His span (m), set by the dragon each frame (the trail's length).
 var span := DragonDownwash.MODEL_SPAN*1.5
@@ -242,9 +248,12 @@ func advance(delta: float, space: PhysicsDirectSpaceState3D, spotted: bool, mout
 		if not can: phase = "idle"
 		else:
 			windup_t += delta
-			if windup_t >= windup:
+			if windup_t >= windup and hold: windup_t = windup
+			elif windup_t >= windup:
 				phase = "idle"
-				fire(mouth,lead(mouth,aim,Vector3(aim_vel.x,0.0,aim_vel.z) if lead_flat else aim_vel,speed,lead_share))
+				var at := lead(mouth,aim,Vector3(aim_vel.x,0.0,aim_vel.z) if lead_flat else aim_vel,speed,lead_share)
+				if face != Vector3.ZERO: at = mouth+face*maxf(mouth.distance_to(at),1.0)
+				fire(mouth,at)
 	elif can and cooldown_left <= 0.0:
 		phase = "windup"
 		windup_t = 0.0

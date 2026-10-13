@@ -69,6 +69,12 @@ const PUSH_UP := 2.4
 ## has a ball in flight, or fired within TURN_GAP s (no shove into a second
 ## shot's throw).
 const TURN_GAP := 1.0
+## A horn fires where it points (docs/design/roguelike/crossing-viaduct-
+## polish.md): it starts its wind-up only once its barrel is within
+## START_CONE of him (rad), finishes it only within AIM_CONE (the wind-up
+## held at its end meanwhile), and the ball leaves along the barrel.
+const START_CONE := 0.6
+const AIM_CONE := 0.1
 
 ## Slammed on its top (scripts/slam.gd, docs/design/roguelike/
 ## crossing-viaduct-perches.md), a perch is disabled this long (s): no tell,
@@ -226,8 +232,16 @@ func step(delta: float, motor: Object, space: PhysicsDirectSpaceState3D) -> Stri
 		var l := launchers[i]
 		var b := l.air_blast
 		b.on = on and not l.is_down()
-		var seen := wants[i] and (b.phase == "windup" or (not _others_busy(i) and (next < 0 or next == i)))
-		if l.horn != null and wants[i]: l.horn.aim_at(aim,delta)
+		# The horn turns onto him (onto his lead, for a leading perch), and
+		# fires only facing him.
+		var target := aim
+		if b.lead_share > 0.0: target = DragonAirBlast.lead(l.mouth_at(),aim,Vector3(b.aim_vel.x,0.0,b.aim_vel.z),b.speed,b.lead_share)
+		var facing := l.horn != null and l.horn.has_method("aim_error")
+		if l.horn != null and wants[i]: l.horn.aim_at(target,delta)
+		var off: float = l.horn.aim_error(target) if facing else 0.0
+		b.hold = facing and off > AIM_CONE
+		b.face = l.horn.facing() if facing else Vector3.ZERO
+		var seen := wants[i] and (b.phase == "windup" or (off < START_CONE and not _others_busy(i) and (next < 0 or next == i)))
 		b.advance(delta,space,seen,l.mouth_at(),aim)
 		if l.horn != null: l.horn.tell(maxf(b.windup_share(),0.0))
 		var v: Vector3 = b.pilot_knock(feet,motor)
