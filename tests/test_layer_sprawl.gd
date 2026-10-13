@@ -23,7 +23,12 @@ extends "res://tests/test_run_layer.gd"
 ##     cannon landing him on its catch, the greed cannon, every gulf ridden
 ##     over on its serpent or ferry;
 ##   - through the gate the next layer is the region seen (its seed, its
-##     isles where they were drawn), and it has a next region of its own.
+##     isles where they were drawn), and it has a next region of its own;
+##   - the dragon's roost (round 5, docs/design/roguelike/
+##     layer-round5-roost.md) stands in every sprawl layer: its turf over
+##     every isle's highest solid, ROOST_GAP clear of every isle, edge and
+##     ride, off the exit side; built, a physics ray from the start's eye
+##     meets its tower first, and its dragon lies on its ledge.
 ##   godot --headless --path . --script tests/test_layer_sprawl.gd
 ## SPRAWL_SEEDS=15,2 picks the driven seeds (RL_TRACE=<seed> as before).
 const LayerSprawl = preload("res://scripts/roguelike/layer_sprawl.gd")
@@ -167,8 +172,66 @@ func _sprawl_plan(s: int, plan: Dictionary) -> void:
 		"seed %d: its silhouette costs %d triangles in %d surface, built in %.1f ms (budget %d, %d, %.0f ms)" % [s,int(st.triangles),int(st.surfaces),float(st.ms),int(COST.triangles),int(COST.surfaces),float(COST.ms)])
 	check(haze <= float(COST.haze),"seed %d: its landmark %.0f m off is %.0f%% hazed from the spawn (at most %.0f%%)" % [s,(nx.sight[0] as Vector3).distance_to(mark),haze*100.0,float(COST.haze)*100.0])
 	var aabb: AABB = (lod.transform*lod.mesh.get_aabb()) if lod.mesh.get_surface_count() > 0 else AABB()
-	check(absf(aabb.end.y-(mark.y+LayerSprawl.MARK_UNDER)) < 0.5,"seed %d: its landmark is the region's highest point (%.0f, %.0f)" % [s,aabb.end.y,mark.y+LayerSprawl.MARK_UNDER])
 	lod.free()
+	# The landmark the highest of its isles (its roost, if drawn, stands
+	# apart and higher, as this layer's does).
+	var bare := nx.duplicate()
+	bare.erase("roost")
+	var lod_bare := NextRegionLod.build(bare)
+	var aabb_bare: AABB = lod_bare.transform*lod_bare.mesh.get_aabb()
+	check(absf(aabb_bare.end.y-(mark.y+LayerSprawl.MARK_UNDER)) < 0.5,"seed %d: its landmark is the highest point of the region's isles (%.0f, %.0f)%s" % [s,aabb_bare.end.y,mark.y+LayerSprawl.MARK_UNDER,
+		"; its roost drawn too, %.0f m high" % aabb.end.y if nx.has("roost") else ""])
+	lod_bare.free()
+	_roost_plan(s,plan)
+
+## Round 5: the roost apart and over the layer, off the exit side.
+func _roost_plan(s: int, plan: Dictionary) -> void:
+	var roost: Dictionary = plan.get("roost",{})
+	check(not roost.is_empty(),"seed %d: the layer has its dragon's roost" % s)
+	if roost.is_empty(): return
+	var at: Vector3 = roost.at
+	var flat := Vector2(at.x,at.z)
+	var reach: float = roost.reach
+	# Above every cluster: its turf over every isle's highest solid.
+	var high := -INF
+	for isle: Dictionary in plan.isles: high = maxf(high,LayerPlan._span(isle).y)
+	check(at.y >= high+LayerSprawl.ROOST_OVER-0.01 and LayerPlan._span(roost).y > high+100.0,"seed %d: the roost's turf stands %.0f m over the layer's highest solid, its peak %.0f m" % [s,at.y-high,LayerPlan._span(roost).y-high])
+	# Its reach holds every cell of it.
+	var o: Dictionary = roost.occ
+	var off: Vector3 = roost.offset
+	var holds := true
+	for k in range((o.lo as PackedFloat32Array).size()):
+		if (o.lo as PackedFloat32Array)[k] == INF: continue
+		var cell := (o.origin as Vector2)+Vector2(k%int(o.cols)+0.5,k/int(o.cols)+0.5)*float(o.cell)+Vector2(off.x,off.z)
+		holds = holds and cell.distance_to(flat) < reach
+	# Apart from everything: isles' bounds, every edge, ride and cannon.
+	var least := INF
+	var what := ""
+	for i in range((plan.isles as Array).size()):
+		var r: Rect2 = LayerPlan._rect(plan.isles[i])
+		var d := Vector2(maxf(maxf(r.position.x-flat.x,flat.x-r.end.x),0.0),maxf(maxf(r.position.y-flat.y,flat.y-r.end.y),0.0)).length()-reach
+		if d < least:
+			least = d
+			what = "isle %d" % i
+	for e: Dictionary in plan.edges:
+		for sp: Array in e.path:
+			var d := Vector2((sp[0] as Vector3).x-flat.x,(sp[0] as Vector3).z-flat.y).length()-reach
+			if d < least:
+				least = d
+				what = "%s %s" % [e.branch,e.kind]
+	for t: Array in plan.tubes:
+		var d := Vector2((t[0] as Vector3).x-flat.x,(t[0] as Vector3).z-flat.y).length()-float(t[1])-reach
+		if d < least:
+			least = d
+			what = "a ride's tube"
+	check(holds and least >= LayerSprawl.ROOST_GAP,"seed %d: the roost stands %.0f m clear of everything (nearest: %s; at least %.0f)" % [s,least,what,LayerSprawl.ROOST_GAP])
+	# Off the exit side: from the gate, well off the heading.
+	var gate: Vector3 = plan.exit.at
+	var off_exit := rad_to_deg(acos(clampf(Vector2(at.x-gate.x,at.z-gate.z).normalized().dot(plan.heading),-1.0,1.0)))
+	var spawn: Vector3 = plan.spawn.at
+	check(off_exit >= LayerSprawl.ROOST_OFF_EXIT,"seed %d: the roost stands %.0f deg off the exit side from the gate (%s of the spawn, %.0f deg off its facing, seen from %d of %d neighbourhoods)" % [s,off_exit,
+		LayerSprawl.compass(Vector2(at.x-spawn.x,at.z-spawn.z).normalized()),float(roost.view),int(roost.seen[0]),int(roost.seen[1])])
+	check(LayerSprawl.sight_clear(plan,spawn+Vector3.UP*LayerSprawl.EYE,roost.mark,false),"seed %d: from the spawn's eye the roost's tower is in sight (planned)" % s)
 
 ## 4B-2: the gulfs rise, each neighbourhood higher than the last, 3+ isles
 ## in each and a climb onto an upper tier.
@@ -216,7 +279,9 @@ func _later(s: int) -> void:
 func _sprawl_layer(s: int) -> void:
 	var plan: Dictionary = study.layer
 	var space: PhysicsDirectSpaceState3D = study.get_world_3d().direct_space_state
-	check(study.sky.motifs.all_stood() and study.sky.motifs.isles.size() == plan.isles.size()-1,"seed %d: its %d motif isles stand" % [s,plan.isles.size()-1])
+	var stood: int = plan.isles.size()-1+(1 if plan.has("roost") else 0)
+	check(study.sky.motifs.all_stood() and study.sky.motifs.isles.size() == stood,"seed %d: its %d motif isles stand (the roost too)" % [s,stood])
+	_roost_built(s,plan,space)
 	# The silhouette stands in the layer.
 	var lod: MeshInstance3D = study.stage.find_child("NextRegion",true,false)
 	check(lod != null and lod.is_inside_tree() and lod.mesh.get_surface_count() == 1,"seed %d: the next region's silhouette stands in the layer" % s)
@@ -252,6 +317,28 @@ func _sprawl_layer(s: int) -> void:
 		if e.kind == "cannon": _chain_cannon(s,i,e)
 	_cannon(s,plan)
 	await _gulfs(s,plan)
+
+## Round 5: the roost built where it was laid, a ray from the start's eye
+## meeting its tower first, his dragon asleep on its ledge.
+func _roost_built(s: int, plan: Dictionary, space: PhysicsDirectSpaceState3D) -> void:
+	var isle: Node3D = study._motif_isle(LayerSprawl.ROOST)
+	check(isle != null and isle.stands(),"seed %d: the roost stands" % s)
+	if isle == null: return
+	print("layer sprawl test: seed %d: the roost's art built in %d ms; its dragon and air laid in %d ms" % [s,int(isle.motif.built_ms),int(study.roost_ms)])
+	var eye: Vector3 = (study.start as Vector3)+Vector3.UP*LayerSprawl.EYE
+	var mark: Vector3 = plan.roost.mark
+	var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(eye,mark,0xFFFFFFFF))
+	var on := not hit.is_empty() and isle.is_ancestor_of(hit.collider as Node)
+	check(on,"seed %d: from the start a ray meets the roost's tower %.0f m off%s" % [s,eye.distance_to(mark),
+		" (missed)" if hit.is_empty() else ("" if on else " (%s at %s first)" % [(hit.collider as Node).get_path(),(hit.position as Vector3).round()])])
+	# Shown once his mountain stands (the study's frame).
+	study._roost_frame(1.0/60.0)
+	var dragon: Node3D = study.roost_dragon
+	var ledge := Vector3.INF
+	var l2 := LayerSprawl.Roost.own(LayerSprawl.Roost.LEDGE_C)
+	ledge = Vector3(l2.x,LayerSprawl.Roost.TOP+LayerSprawl.Roost.LEDGE_H*LayerSprawl.Roost.SPAN,l2.y)+(plan.roost.offset as Vector3)
+	var away := dragon.global_position.distance_to(ledge) if dragon != null else INF
+	check(dragon != null and dragon.visible and away < 60.0,"seed %d: his dragon lies on the roost's ledge (%.0f m from its middle)" % [s,away])
 
 ## The chain's cannon at its found aim fires him onto its catch slab.
 func _chain_cannon(s: int, i: int, e: Dictionary) -> void:
@@ -293,6 +380,7 @@ func _sprawl_gate() -> void:
 			same = same and str(study.layer.isles[k].id) == str(seen.isles[k].id) and (study.layer.isles[k].offset as Vector3).is_equal_approx(seen.isles[k].offset)
 	check(same,"Its isles are the ones drawn far off, where they were drawn")
 	check(study.layer.has("next") and study.stage.find_child("NextRegion",true,false) != null,"It has a next region of its own (layer %d)" % int(study.layer.get("next",{}).get("seed",-1)))
+	check(study.layer.has("roost") and study.roost_dragon != null,"And a dragon's roost of its own")
 	var spawn: Vector3 = study.layer.spawn.at
 	check(Vector2(m.feet.x-spawn.x,m.feet.z-spawn.z).length() < 1.0 and absf(m.feet.y-spawn.y) < 2.0,"He starts the new layer at its spawn (%s, the spawn %s)" % [_feet(),spawn.snapped(Vector3.ONE*0.01)])
 	was = study.layer_seed

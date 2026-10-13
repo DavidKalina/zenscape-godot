@@ -32,6 +32,12 @@ extends RefCounted
 ##     the next region is (windowed, after this layer stands).
 ##   - Taller than round 3 (4B-2): each gulf rises RISE_ROLL, each
 ##     neighbourhood has an isle more and a tier reached by a climb.
+##   - The dragon's roost (`plan.roost`, round 5: docs/design/roguelike/
+##     layer-round5-roost.md): the roost motif (scripts/kit_isle/
+##     motif_dragon_roost.gd, as it is) stood off to one side of the layer,
+##     high over every isle and ROOST_GAP clear of everything, in sight from
+##     the spawn and from most neighbourhoods, never in the way of the exit
+##     side's view of the next region (`_roost`). No way onto it yet.
 ## The same seed and knobs give the same plan.
 const LayerPlan = preload("res://scripts/roguelike/layer_plan.gd")
 const Footbridge = preload("res://scripts/footbridge.gd")
@@ -39,6 +45,7 @@ const KitMotif = preload("res://scripts/kit_isle/kit_motif.gd")
 const Cannon = preload("res://scripts/cannon/cannon.gd")
 const NextRegionLod = preload("res://scripts/roguelike/next_region_lod.gd")
 const LayerPieces = preload("res://scripts/roguelike/layer_pieces.gd")
+const Roost = preload("res://scripts/kit_isle/motif_dragon_roost.gd")
 
 ## The lean's weight: points per 100 m stood toward the rolled heading
 ## (LayerPlan `_lean`; a step's random share is 0-2, a gulf's the same).
@@ -192,7 +199,12 @@ static func core(seed_value: int, knobs := {}) -> Dictionary:
 		rng.seed = hash([seed_value,attempt,"sprawl"])
 		if _chain(plan,lean,rng):
 			_spawn_view(plan)
-			break
+			var roost_began := Time.get_ticks_usec()
+			if _roost(plan):
+				plan.roost.ms = (Time.get_ticks_usec()-roost_began)/1000.0
+				break
+			plan.problems.append("no roost")
+			continue
 		plan.problems.append("no exit chain")
 	plan.user_knobs = knobs.duplicate()
 	lock.lock()
@@ -578,6 +590,11 @@ static func _place_next(plan: Dictionary, nxt: Dictionary) -> Dictionary:
 		least = minf(least,Vector2(at.x-eye.x,at.z-eye.z).length())
 	out.near = least
 	out.far = eye.distance_to(out.landmark)
+	# Its own roost in the silhouette too, where it keeps clear.
+	var far_roost: Dictionary = nxt.get("roost",{})
+	if not far_roost.is_empty():
+		var entry := {"id":ROOST,"occ":far_roost.occ,"offset":far_roost.offset,"landmark":false}
+		if _far_roost_ok(plan,out,entry): out.roost = entry
 	return out
 
 ## How far past the gate (along `way`) its nearest reach must stand to
@@ -589,7 +606,9 @@ static func _apart_dist(plan: Dictionary, gate: Vector3, way: Vector3, reach: fl
 		var bounds := Rect2(Vector2(origin.x,origin.z),Vector2.ZERO)
 		for w: Vector3 in corners: bounds = bounds.expand(Vector2(origin.x+w.x,origin.z+w.z))
 		var near := true
-		for isle: Dictionary in plan.isles:
+		var solids: Array = plan.isles
+		if not (plan.get("roost",{}) as Dictionary).is_empty(): solids = solids+[plan.roost]
+		for isle: Dictionary in solids:
 			var r: Rect2 = LayerPlan._rect(isle)
 			var dx := maxf(maxf(r.position.x-bounds.end.x,bounds.position.x-r.end.x),0.0)
 			var dz := maxf(maxf(r.position.y-bounds.end.y,bounds.position.y-r.end.y),0.0)
@@ -610,10 +629,13 @@ static func _top_of(isle: Dictionary) -> Vector3:
 	return Vector3(origin.x+(best%int(o.cols)+0.5)*float(o.cell)+off.x,hi[best]+off.y,origin.y+(best/int(o.cols)+0.5)*float(o.cell)+off.z)
 
 ## Whether the straight line from `a` to `b` misses every isle of the plan
-## (its occupancy, sampled every SIGHT_STEP m).
-static func sight_clear(plan: Dictionary, a: Vector3, b: Vector3) -> bool:
+## (its occupancy, sampled every SIGHT_STEP m), and its roost (if laid, and
+## `roost`).
+static func sight_clear(plan: Dictionary, a: Vector3, b: Vector3, roost := true) -> bool:
 	var n := maxi(int(ceil(a.distance_to(b)/SIGHT_STEP)),1)
-	for isle: Dictionary in plan.isles:
+	var solids: Array = plan.isles
+	if roost and not (plan.get("roost",{}) as Dictionary).is_empty(): solids = solids+[plan.roost]
+	for isle: Dictionary in solids:
 		var r: Rect2 = LayerPlan._rect(isle)
 		var span := LayerPlan._span(isle)
 		for i in range(1,n):
@@ -621,6 +643,207 @@ static func sight_clear(plan: Dictionary, a: Vector3, b: Vector3) -> bool:
 			if p.y > span.y+1.0 or not r.has_point(Vector2(p.x,p.z)): continue
 			var o := LayerPlan.occ_at(isle,p.x,p.z)
 			if o.x < INF and p.y > o.x-SIGHT_MARGIN and p.y < o.y+SIGHT_MARGIN: return false
+	return true
+
+# --- The dragon's roost ---------------------------------------------------------------
+
+## The roost (scripts/kit_isle/motif_dragon_roost.gd as it is, its dragon
+## curled on its ledge: scripts/dragon_roost.gd) stood apart from the layer
+## (`_roost`): its footprint ROOST_GAP clear (flat) of every isle's bounds,
+## every edge's path (the chain and the gulfs' lines too), the rides' tubes
+## and the cannons and their marks; its turf ROOST_OVER over the highest
+## solid of every isle (so the whole mountain stands over the layer's
+## skyline, its peak some 118 m more); its middle within ROOST_RING of the
+## layer's MIDDLE (the clouds thin over it: studies/run_layer_sky.gd
+## `keep_roost`; the cumulus towers stand 340 m+ off at that ring).
+##
+## Its side: bearings round the layer's middle, each taken out to the
+## first spot clear by the gap. A spot stands off the exit side (from the
+## gate at least ROOST_OFF_EXIT off the heading, so the chain and the gate
+## look past it at the next region) and off the spawn's line to where the
+## next region will be (ROOST_OFF_NEXT), and its tower is in sight from the
+## spawn's eye. Of those, the best: seen from the most neighbourhoods (from
+## any of its isles' highest rim or spot), within ROOST_VIEW of the spawn's
+## facing (in the first frame with the next region), its front (Roost V,
+## the side it was laid out to be seen from: the dragon's neck, the hoard)
+## toward the spawn, and nearer. Moved, never turned (the dragon's pose
+## reads the mountain's own ground in its own frame).
+const ROOST := "dragon_roost"
+const ROOST_GAP := 150.0
+const ROOST_OVER := 15.0
+const ROOST_RING := 680.0
+const ROOST_BEARINGS := 36
+const ROOST_STEP := 15.0
+const ROOST_OFF_EXIT := 55.0
+const ROOST_OFF_NEXT := 25.0
+const ROOST_VIEW := 35.0
+## What "in sight" aims at: the summit tower's axis this far under its
+## shoulder (m, inside the rock, so a ray that gets there hits the tower).
+const ROOST_MARK_UNDER := 12.0
+
+## The roost's occupancy (the bake's, its own frame), its keel added: the
+## bake reads only the turf and crags (its keel has no collision), so each
+## cell's lowest is taken down the hanging keel's cone (Roost DEPTH under
+## its turf at the middle, to the turf at its outline). Its reach: the
+## farthest occupied cell from its middle (m). Made once.
+static var _roost_occ := {}
+static func roost_occ() -> Dictionary:
+	var lock := _mutex()
+	lock.lock()
+	if _roost_occ.is_empty():
+		var o: Dictionary = LayerPieces.occupancy(ROOST)
+		var lo: PackedFloat32Array = (o.lo as PackedFloat32Array).duplicate()
+		var hi: PackedFloat32Array = (o.hi as PackedFloat32Array).duplicate()
+		var mid := Roost.own(Roost.ISLE_C)
+		var r_out := Roost.ISLE_R*Roost.SPAN
+		var reach := 0.0
+		var cols := int(o.cols)
+		var cell := float(o.cell)
+		for k in range(lo.size()):
+			if lo[k] == INF: continue
+			var at := (o.origin as Vector2)+Vector2(k%cols+0.5,k/cols+0.5)*cell
+			var r := at.distance_to(mid)
+			reach = maxf(reach,r+cell*0.71)
+			lo[k] = minf(lo[k],Roost.TOP-Roost.DEPTH*Roost.SPAN*pow(clampf(1.0-r/r_out,0.0,1.0),0.7))
+		_roost_occ = {"origin":o.origin,"cell":o.cell,"cols":o.cols,"rows":o.rows,"lo":lo,"hi":hi,"reach":reach,"mid":mid}
+	lock.unlock()
+	return _roost_occ
+
+## The roost laid into `plan` (`plan.roost`: {id, occ, offset, at (its
+## middle, on its turf), reach, mark (see ROOST_MARK_UNDER), gap (m, the
+## least found), seen ([neighbourhoods it is in sight from, of how many]),
+## view (deg off the spawn's facing)}), or false where no side takes it.
+static func _roost(plan: Dictionary) -> bool:
+	var occ := roost_occ()
+	var reach: float = occ.reach
+	var own_mid: Vector2 = occ.mid
+	# What it keeps clear of: the isles' bounds, and points (each with its
+	# own reach) along every edge, tube and cannon shot.
+	var rects: Array = []
+	var middle := Vector2.ZERO
+	var high := -INF
+	for isle: Dictionary in plan.isles:
+		var r: Rect2 = LayerPlan._rect(isle)
+		rects.append(r)
+		middle += r.get_center()
+		high = maxf(high,LayerPlan._span(isle).y)
+	middle /= maxf((plan.isles as Array).size(),1.0)
+	var pts := {}
+	var add := func(p: Vector3, rad: float) -> void:
+		var key := Vector2i(floori(p.x/6.0),floori(p.z/6.0))
+		pts[key] = maxf(float(pts.get(key,0.0)),rad)
+	for e: Dictionary in plan.edges:
+		for sp: Array in e.path: add.call(sp[0],0.0)
+		var c: Dictionary = e.get("cannon",{})
+		if not c.is_empty():
+			add.call(c.at,0.0)
+			add.call(c.target,0.0)
+	for t: Array in plan.tubes: add.call(t[0],float(t[1]))
+	if not (plan.cannon as Dictionary).is_empty():
+		add.call(plan.cannon.at,0.0)
+		add.call(plan.cannon.target,0.0)
+	# Each as (x, its reach plus half a bucket's diagonal, z).
+	var flat_pts: Array = []
+	for key: Vector2i in pts: flat_pts.append(Vector3((key.x+0.5)*6.0,float(pts[key])+4.3,(key.y+0.5)*6.0))
+	var gap_at := func(p: Vector2) -> float:
+		var least := INF
+		for r: Rect2 in rects:
+			var dx := maxf(maxf(r.position.x-p.x,p.x-r.end.x),0.0)
+			var dz := maxf(maxf(r.position.y-p.y,p.y-r.end.y),0.0)
+			least = minf(least,Vector2(dx,dz).length())
+		for q: Vector3 in flat_pts: least = minf(least,Vector2(q.x-p.x,q.z-p.y).length()-q.y)
+		return least-reach
+	var turf := high+ROOST_OVER
+	var tower := Roost.own(Roost.TOWER_C)
+	var mark_own := Vector3(tower.x,Roost.TOP+Roost.SHOULDER_H*Roost.SPAN-ROOST_MARK_UNDER,tower.y)
+	var eye: Vector3 = (plan.spawn.at as Vector3)+Vector3.UP*EYE
+	var face: Vector3 = plan.spawn.face
+	var gate: Vector3 = plan.exit.at
+	var heading: Vector2 = plan.heading
+	var to_next := Vector2((plan.next_aim as Vector3).x-eye.x,(plan.next_aim as Vector3).z-eye.z).normalized()
+	# Each neighbourhood's eyes: each of its isles' highest rim or spot.
+	var hood_eyes: Array = []
+	for h: Array in plan.hoods:
+		var eyes: Array = []
+		for i: int in h:
+			var top := Vector3(0.0,-INF,0.0)
+			for sk: Dictionary in plan.isles[i].sockets:
+				if (sk.at as Vector3).y > top.y: top = sk.at
+			if top.y > -INF: eyes.append(top+Vector3.UP*EYE)
+		hood_eyes.append(eyes)
+	var ring_mid := Vector2(LayerPlan.MIDDLE.x,LayerPlan.MIDDLE.z)
+	var front := Roost.V.normalized()
+	var best := {}
+	var best_score := -INF
+	for b in range(ROOST_BEARINGS):
+		var u := Vector2.from_angle(TAU*float(b)/ROOST_BEARINGS)
+		var t := 0.0
+		var p := middle
+		var gap := -INF
+		while true:
+			p = middle+u*t
+			if p.distance_to(ring_mid) > ROOST_RING: break
+			gap = gap_at.call(p)
+			if gap >= ROOST_GAP: break
+			t += maxf(ROOST_STEP,(ROOST_GAP-gap)*0.5)
+		if gap < ROOST_GAP or p.distance_to(ring_mid) > ROOST_RING: continue
+		var off := Vector3(p.x-own_mid.x,turf-Roost.TOP,p.y-own_mid.y)
+		var mark := mark_own+off
+		# Off the exit side, off the line to the next region.
+		var from_gate := Vector2(p.x-gate.x,p.y-gate.z).normalized()
+		if rad_to_deg(acos(clampf(from_gate.dot(heading),-1.0,1.0))) < ROOST_OFF_EXIT: continue
+		var to_mark := Vector2(mark.x-eye.x,mark.z-eye.z).normalized()
+		if rad_to_deg(acos(clampf(to_mark.dot(to_next),-1.0,1.0))) < ROOST_OFF_NEXT: continue
+		if not sight_clear(plan,eye,mark,false): continue
+		var view := rad_to_deg(acos(clampf(to_mark.dot(Vector2(face.x,face.z).normalized()),-1.0,1.0)))
+		var score := 2.0*(1.0 if view <= ROOST_VIEW else maxf(1.0-(view-ROOST_VIEW)/40.0,0.0))
+		score += 0.75*front.dot(-to_mark)
+		score -= t/300.0
+		# Only a spot that could still win is looked at from the others.
+		if score+3.0 <= best_score: continue
+		var seen := 0
+		for eyes: Array in hood_eyes:
+			for he: Vector3 in eyes:
+				if sight_clear(plan,he,mark,false):
+					seen += 1
+					break
+		score += 3.0*float(seen)/maxf(hood_eyes.size(),1.0)
+		if score > best_score:
+			best_score = score
+			best = {"id":ROOST,"occ":occ,"offset":off,"at":Vector3(p.x,turf,p.y),"reach":reach,"mark":mark,"gap":gap,"seen":[seen,hood_eyes.size()],"view":view}
+	if best.is_empty(): return false
+	plan.roost = best
+	return true
+
+## The next region's own roost for its silhouette (`entry`: an isle of
+## NextRegionLod's, in the next plan's frame, under `out.xform`), if it
+## stands APART from this layer's isles and roost and off the spawn's sight
+## line to the landmark.
+static func _far_roost_ok(plan: Dictionary, out: Dictionary, entry: Dictionary) -> bool:
+	var xf: Transform3D = out.xform
+	var r: Rect2 = LayerPlan._rect(entry)
+	var bounds := Rect2()
+	var first := true
+	for c: Vector2 in [r.position,Vector2(r.end.x,r.position.y),r.end,Vector2(r.position.x,r.end.y)]:
+		var w := xf*Vector3(c.x,0.0,c.y)
+		if first: bounds = Rect2(Vector2(w.x,w.z),Vector2.ZERO)
+		else: bounds = bounds.expand(Vector2(w.x,w.z))
+		first = false
+	var solids: Array = plan.isles
+	if not (plan.get("roost",{}) as Dictionary).is_empty(): solids = solids+[plan.roost]
+	for isle: Dictionary in solids:
+		var o: Rect2 = LayerPlan._rect(isle)
+		var dx := maxf(maxf(o.position.x-bounds.end.x,bounds.position.x-o.end.x),0.0)
+		var dz := maxf(maxf(o.position.y-bounds.end.y,bounds.position.y-o.end.y),0.0)
+		if Vector2(dx,dz).length() < APART: return false
+	var a: Vector3 = out.sight[0]
+	var b: Vector3 = out.sight[1]
+	var inv := xf.affine_inverse()
+	var n := maxi(int(ceil(a.distance_to(b)/SIGHT_STEP)),1)
+	for i in range(1,n):
+		var q := inv*a.lerp(b,float(i)/n)
+		var o := LayerPlan.occ_at(entry,q.x,q.z)
+		if o.x < INF and q.y > o.x-SIGHT_MARGIN and q.y < o.y+SIGHT_MARGIN: return false
 	return true
 
 # --- On the stage ---------------------------------------------------------------------
@@ -670,18 +893,28 @@ static func card(plan: Dictionary) -> String:
 	for i: int in plan.get("chain",[]): kinds.append(str(plan.edges[i].kind).replace("trap","voussoirs"))
 	var line := "Exit side: %s (%s, then the gate)" % [compass(plan.heading),", ".join(kinds)]
 	if plan.has("next"): line += "  ·  next region (layer %d) %.0f m off, %.0f m up" % [int(plan.next.seed),float(plan.next.far),float(plan.next.rise)]
+	var roost: Dictionary = plan.get("roost",{})
+	if not roost.is_empty():
+		var at: Vector3 = roost.at
+		var spawn: Vector3 = plan.spawn.at
+		var to := Vector2(at.x-spawn.x,at.z-spawn.z)
+		line += "
+The dragon's roost: %s, %.0f m off, its turf %.0f m up (its peak %.0f m)" % [compass(to.normalized()),to.length(),at.y-spawn.y,at.y+Roost.PEAK_H*Roost.SPAN-spawn.y]
 	return line
 
 # --- Reading it -----------------------------------------------------------------------
 
 ## A map of the plan from above, and from the side along the exit side,
-## in text: isles by index (0 the base), the edges' stones and slabs `.`,
-## a gulf's line `~`, the gate `G`, the spawn `S`, the next region `#`
-## with its landmark `@`, the sight line `'` (above only).
+## in text: isles by index (0 the base), the dragon's roost `R`, the edges'
+## stones and slabs `.`, a gulf's line `~`, the gate `G`, the spawn `S`, the
+## next region `#` (its roost too) with its landmark `@`, the sight line `'`
+## (above only).
 static func overview(plan: Dictionary, wide := 110, tall := 44) -> String:
 	var dots: Array = []  # [world point, char, priority]
-	for i in range((plan.isles as Array).size()):
-		var isle: Dictionary = plan.isles[i]
+	var mine: Array = (plan.isles as Array).duplicate()
+	if not (plan.get("roost",{}) as Dictionary).is_empty(): mine.append(plan.roost)
+	for i in range(mine.size()):
+		var isle: Dictionary = mine[i]
 		var c := LayerPlan._coarse(isle.occ)
 		var off: Vector3 = isle.offset
 		var lo: PackedFloat32Array = c.lo
@@ -690,7 +923,7 @@ static func overview(plan: Dictionary, wide := 110, tall := 44) -> String:
 			if lo[k] == INF: continue
 			var x := (c.origin as Vector2).x+off.x+(k%int(c.cols)+0.5)*float(c.cell)
 			var z := (c.origin as Vector2).y+off.z+(k/int(c.cols)+0.5)*float(c.cell)
-			dots.append([Vector3(x,hi[k]+off.y,z),str(i%10),1,lo[k]+off.y])
+			dots.append([Vector3(x,hi[k]+off.y,z),"R" if str(isle.id) == ROOST else str(i%10),1,lo[k]+off.y])
 	for e: Dictionary in plan.edges:
 		if e.kind == "gulf":
 			for s: Array in e.path: dots.append([s[0],"~",2,(s[0] as Vector3).y])
@@ -698,7 +931,9 @@ static func overview(plan: Dictionary, wide := 110, tall := 44) -> String:
 			for s: Array in e.path: dots.append([s[0],"." if e.branch != "exit" else ":",2,(s[0] as Vector3).y])
 	if plan.has("next"):
 		var xf: Transform3D = plan.next.xform
-		for isle: Dictionary in plan.next.isles:
+		var far: Array = (plan.next.isles as Array).duplicate()
+		if not (plan.next.get("roost",{}) as Dictionary).is_empty(): far.append(plan.next.roost)
+		for isle: Dictionary in far:
 			var c := LayerPlan._coarse(isle.occ)
 			var off: Vector3 = isle.offset
 			var lo: PackedFloat32Array = c.lo

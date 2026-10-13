@@ -1,7 +1,8 @@
 extends SceneTree
 ## The sprawl shape's layers as text maps (scripts/roguelike/
 ## layer_sprawl.gd `overview`), headless, no scene built: the plan, its
-## exit chain, the next region's silhouette's cost and where it stands.
+## exit chain, the next region's silhouette's cost and where it stands, and
+## where the dragon's roost stands.
 ##   godot --headless --path . --script tools/layer_sprawl_map.gd -- --seeds=15,1,2
 const LayerSprawl = preload("res://scripts/roguelike/layer_sprawl.gd")
 const LayerPlan = preload("res://scripts/roguelike/layer_plan.gd")
@@ -28,5 +29,11 @@ func _initialize() -> void:
 			int(nx.seed),nx.landmark_id,(nx.landmark as Vector3).round(),float(nx.far),float(nx.near),float(nx.rise),"clear" if nx.sight_ok else "BLOCKED",
 			int(st.triangles),int(st.vertices),int(st.surfaces),float(st.ms)])
 		lod.free()
+		var r: Dictionary = plan.roost
+		var high := -INF
+		for isle: Dictionary in plan.isles: high = maxf(high,LayerPlan._span(isle).y)
+		print("roost: middle %s, turf %.0f m (%.0f over the highest isle), gap %.0f m, %.0f deg off the spawn's facing, in sight from %d of %d neighbourhoods, laid in %.0f ms; in the next region's silhouette: %s" % [
+			(r.at as Vector3).round(),(r.at as Vector3).y,(r.at as Vector3).y-high,float(r.gap),float(r.view),int(r.seen[0]),int(r.seen[1]),float(r.get("ms",0.0)),
+			"yes" if nx.has("roost") else "no"])
 		if maps: print(LayerSprawl.overview(plan))
 	quit()

@@ -9,7 +9,8 @@ extends "res://studies/aqueduct_isle_sky.gd"
 ## route) is left out: those places are empty here.
 ##
 ## The clouds keep off one place, the layer's whole band round the isle
-## (LayerPlan BAND), so a new layer never stands in a puff laid for the last.
+## (LayerPlan BAND), so a new layer never stands in a puff laid for the last,
+## and a sprawl layer's dragon's roost (`keep_roost`).
 
 const LayerPlan = preload("res://scripts/roguelike/layer_plan.gd")
 
@@ -35,6 +36,17 @@ func restart(entries: Array) -> void:
 	add_child(motifs)
 	motifs.setup_layer(scene,self,flags(),entries)
 	if lived: _build_life()
+
+## The dragon's roost of a sprawl layer (scripts/roguelike/layer_sprawl.gd
+## `plan.roost`; {} for none) kept clear too: the drifting puffs thin away
+## over it as over the band (it may stand past the band's edge).
+func keep_roost(roost: Dictionary) -> void:
+	if clouds == null: return
+	var keep: Array = clouds.keeps()
+	if not roost.is_empty():
+		var at: Vector3 = roost.at
+		keep.append(Vector4(at.x,at.z,0.0,float(roost.reach)+KitClouds.ISLE_CLEAR))
+	clouds.keep = keep
 
 ## The band the layers stand in, as one place (the clouds' keep).
 func places() -> Array:

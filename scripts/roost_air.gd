@@ -62,14 +62,28 @@ var axis := Vector3.ZERO
 var ledge := Vector3.ZERO
 ## The crashed plane (null until set up).
 var wreck: Node3D
+## Where the mountain stands from its own frame (world = own + offset; the
+## dragon's pose's own, scripts/dragon_roost.gd): Roost AT in the aqueduct
+## isle's sky, a generated layer's roost elsewhere (scripts/roguelike/
+## layer_sprawl.gd). Set before `setup`; `move_to` after.
+var offset := Roost.AT
+
+## Moved whole with its mountain (a new layer's roost: studies/run_layer.gd):
+## every part a child laid in this node's frame, so the node is shifted.
+func move_to(at: Vector3) -> void:
+	var by := at-offset
+	offset = at
+	position += by
+	axis += by
+	ledge += by
 
 func setup() -> void:
 	name = "RoostAir"
 	_rng.seed = 73
 	var t2 := Roost.own(Roost.TOWER_C)
-	axis = Vector3(t2.x,Roost.TOP+Roost.SHOULDER_H*Roost.SPAN,t2.y)+Roost.AT
+	axis = Vector3(t2.x,Roost.TOP+Roost.SHOULDER_H*Roost.SPAN,t2.y)+offset
 	var l2 := Roost.own(Roost.LEDGE_C)
-	ledge = Vector3(l2.x,Roost.TOP+Roost.LEDGE_H*Roost.SPAN,l2.y)+Roost.AT
+	ledge = Vector3(l2.x,Roost.TOP+Roost.LEDGE_H*Roost.SPAN,l2.y)+offset
 	_toward = Roost.V.normalized()
 	_build_wreath()
 	_build_haze()
@@ -346,7 +360,7 @@ func _build_wreck() -> void:
 		var h := (y-Roost.TOP)/Roost.SPAN
 		if h > 4.0: continue
 		if absf(Roost.ground(p.x+3.0,p.y)-y) > 0.5 or absf(Roost.ground(p.x,p.y+3.0)-y) > 0.5: continue
-		spot = Vector3(p.x,y,p.y)+Roost.AT
+		spot = Vector3(p.x,y,p.y)+offset
 		break
 	if spot == Vector3.INF: return
 	var plane := PlaneFigure.new()
