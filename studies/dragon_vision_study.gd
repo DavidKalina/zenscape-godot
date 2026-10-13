@@ -41,6 +41,7 @@ extends "res://studies/kit_isle.gd"
 const SkyDragon = preload("res://scripts/sky_dragon.gd")
 const DragonWake = preload("res://scripts/dragon_wake.gd")
 const DragonSight = preload("res://scripts/dragon_sight.gd")
+const DragonAirBlast = preload("res://scripts/dragon_air_blast.gd")
 const SightOverlay = preload("res://scripts/dragon_sight_overlay.gd")
 const PhysicsGroundSize = preload("res://scripts/pilot_physics_ground.gd")
 
@@ -310,13 +311,14 @@ func _process(delta: float) -> void:
 	_look_shot()
 	dragon.advance(delta)
 	# His cyclone and air blast on the walker (or sailing pilot): a knock,
-	# as the gale's.
+	# as the gale's, so a stun and the ragdoll (PilotMotor `knock`), the
+	# dragon its source (his own restun gap).
 	if not flying:
 		for hit_with: Node3D in [dragon.cyclone,dragon.air_blast]:
 			if hit_with == null: continue
 			var v: Vector3 = hit_with.pilot_knock(motor.feet,motor)
 			if v != Vector3.ZERO:
-				motor.knock(v)
+				motor.knock(v,dragon,DragonAirBlast.STUN_DOWN if hit_with == dragon.air_blast else 0.0)
 				if hit_with == dragon.air_blast: _show_toast("Blasted!")
 	if _log and delta > 0.0:
 		_log_t += delta

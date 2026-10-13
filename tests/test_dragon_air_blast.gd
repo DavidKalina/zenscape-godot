@@ -69,6 +69,13 @@ func _run() -> void:
 	check(k.x > 0.0 and k.y > 0.0 and absf(k.z) < k.x*0.5,"the pilot is thrown outward (%.1f) and up (%.1f)" % [k.x,k.y])
 	check(Vector2(k.x,k.z).length() > Vector2(cyclone.x,cyclone.z).length()*1.8,"far harder than the cyclone (%.1f vs %.1f m/s out)" % [Vector2(k.x,k.z).length(),Vector2(cyclone.x,cyclone.z).length()])
 	check(b.pilot_knock(east,pilot) == Vector3.ZERO,"once a burst")
+	# Its knock is a hit stun: the ragdoll's tumble, poise held off a while,
+	# and no second blast while he is down.
+	var hit := PilotMotor.new()
+	hit.knock(k,b)
+	check(hit.stunned == "knock" and hit.move == "tumble" and hit.recovering(),"the blast stuns him (%s, %s)" % [hit.stunned,hit.move])
+	check(hit.poise_left() >= hit.poise,"his poise is held off at least %.2f s (%.2f)" % [hit.poise,hit.poise_left()])
+	check(not hit.stunnable(b),"the same blast can't stun him again at once")
 	var far := _blast()
 	far.fire(Vector3(0.0,40.0,0.0),Vector3.ZERO)
 	for i in range(int(1.0/STEP)): far.advance(STEP,space,false,mouth,Vector3.INF)
