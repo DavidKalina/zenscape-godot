@@ -32,7 +32,7 @@ func _initialize() -> void:
 			var high := -INF
 			for holder in head.get_node("Body").get_children():
 				for p in ((holder as CollisionShape3D).shape as ConvexPolygonShape3D).points: high = maxf(high,p.y)
-			check(absf(head.position.y+high-top) < 0.02,"the head's hull tops out at the cap"+tag)
+			check(head.position.y+high > top-0.02,"the head's hull reaches the cap (the horn's staves collide too, the bell may stand over it)"+tag)
 			# Turn toward a point off to the right: the mouth swings toward it, no faster than TURN_RATE.
 			var rig := Horn.rig(horn)
 			var target := horn.to_global(Vector3(8.0,1.5,2.0))

@@ -13,7 +13,8 @@ class_name RuinKitHorn
 ## and "Body" (the pedestal). On it:
 ##   "Head"  Node3D at the pedestal's top, the pivot: it yaws (and pitches a
 ##           little) about its own origin. Its own "Mesh", a "Body" (the
-##           chest's hull: the standable top) and:
+##           chest's hull, the standable top, and each stave of the horn,
+##           so the pilot can't pass through it; the mouth is open) and:
 ##   "Mouth" Marker3D at the horn's mouth, which looks out along the head's
 ##           +Z (the piece's front, like the kit's other fronts). Its
 ##           global_position is where a blast leaves; the head's global
@@ -173,4 +174,4 @@ static func _ring(hb: Build, za: float, zb: float, ia: float, ib: float, wa: flo
 			var edge := a+s*half
 			planes.append(Plane(Vector3(-sin(edge),cos(edge),0.0)*s,0.004))
 		var tone := RuinKit._stone(hb,1.04 if not lip else 1.1)
-		hb.solid(planes,RuinKit._settle(hb,Vector3(0.0,AXIS,0.0),0.12),tone,false,true)
+		hb.solid(planes,RuinKit._settle(hb,Vector3(0.0,AXIS,0.0),0.12),tone,true,true)
