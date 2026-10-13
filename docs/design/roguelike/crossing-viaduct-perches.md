@@ -185,3 +185,16 @@ ran slower; there were 0 tells and 0 shots. Captures are in `captures/viaduct_pe
 - The deck perch has no route, and its shots over the parapets are still untested.
 - From the piers, a tipped horn is small at 20+ m. A bigger "down" cue may be needed.
 - The low perches' placement is a first guess. Only one low perch's hit is tested.
+
+## Combined (the stone horns in)
+
+`feature/wind-horn` merged in (the stone wind horn, its collision fix, the pilot's drop
+shadow, the slam out of the sail). `perch_piece` now builds the stone horn through
+studies/crossings/horn_perch.gd (the stand-in's face over the horn's rig); the stand-in
+stays beside it. A slam on the horn's own cap counts as well as one on the column's top
+(`Launcher.cap_rise`). The horns' bodies are in the balls' see-through list: the stone
+head turns slowly, and shots fired before it faces him used to pop on its own bell.
+Test notes: the viaduct, arrows and perches tests have 0 failures but the runner flags an
+exit-only allocator leak (also present on this branch before the merge); the heights
+test's "no sail, falls to the void" case now lands on the turn platform's edge, because the
+stone horn's higher mouth throws him on a different line. Unfixed: prototype tests.

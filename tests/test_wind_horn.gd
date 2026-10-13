@@ -23,7 +23,7 @@ func _initialize() -> void:
 			await process_frame
 			check(horn.get_node_or_null("Mesh") is MeshInstance3D and horn.get_node_or_null("Body") is StaticBody3D,"Mesh and Body"+tag)
 			var head := horn.get_node_or_null("Head") as Node3D
-			var mouth := horn.get_node_or_null("Head/Mouth") as Marker3D
+			var mouth := horn.get_node_or_null("Head/Barrel/Mouth") as Marker3D
 			check(head != null and mouth != null and Horn.rig(horn) != null,"Head, Mouth, Rig"+tag)
 			if head == null or mouth == null: continue
 			check(float(horn.get_meta("mouth_radius")) >= AirBlast.ball_radius(),"the mouth fits the air ball"+tag)

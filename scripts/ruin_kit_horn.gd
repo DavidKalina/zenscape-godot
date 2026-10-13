@@ -11,14 +11,17 @@ class_name RuinKitHorn
 ##
 ## The piece, as the kit's: a Node3D, foot on y 0 round the origin, "Mesh"
 ## and "Body" (the pedestal). On it:
-##   "Head"  Node3D at the pedestal's top, the pivot: it yaws (and pitches a
-##           little) about its own origin. Its own "Mesh", a "Body" (the
-##           chest's hull, the standable top, and each stave of the horn,
-##           so the pilot can't pass through it; the mouth is open) and:
-##   "Mouth" Marker3D at the horn's mouth, which looks out along the head's
-##           +Z (the piece's front, like the kit's other fronts). Its
-##           global_position is where a blast leaves; the head's global
-##           basis.z is the way it points.
+##   "Head"  Node3D at the pedestal's top, the pivot: it yaws about its
+##           own origin. Its own "Mesh", a "Body" (the chest's hull, the
+##           standable top) and:
+##   "Head/Barrel"  the horn itself on its trunnion at the chest's face
+##           (AXIS up, PIVOT_Z out): it pitches about its own x. Its own
+##           "Mesh", "Body" (each stave, so the pilot can't pass through
+##           it; the mouth is open) and:
+##   "Head/Barrel/Mouth" Marker3D at the horn's mouth, which looks out along
+##           the barrel's +Z (the piece's front, like the kit's other
+##           fronts). Its global_position is where a blast leaves; its
+##           global basis.z is the way it points.
 ##   "Rig"   the runtime (scripts/wind_horn.gd): `aim_at`, `tell`, `fired`,
 ##           `disabled`, `is_disabled`.
 ## Meta: "mouth_radius" (the clear radius at the mouth, m), "top" (the
@@ -52,6 +55,9 @@ const CAP_H := 0.2
 ## ring's foot (inside the chest), how many rings, the staves a ring, and
 ## the horn's length (to the lip's front).
 const AXIS := 1.0
+## The barrel's trunnion, this far out of the head's middle along +Z (in
+## the chest, near its face): the horn pitches about it.
+const PIVOT_Z := 0.85
 const THROAT := 0.5
 const RINGS := 4
 const STAVES := 8
@@ -116,7 +122,14 @@ static func wind_horn(seed_value: int, weathered := 0.0) -> Node3D:
 	# The standable top: true hulls (chest, then cap).
 	RuinKit._walk_hull(hb,Transform3D.IDENTITY,RuinKit._prism(8,CHEST_R,CHEST_R,0.0,chest_top+0.01,PI/8.0))
 	RuinKit._walk_hull(hb,Transform3D.IDENTITY,RuinKit._prism(8,CAP_R,CAP_R,chest_top,top,PI/8.0))
-	# The horn: rings of staves, the radius widening with a curve.
+	var head := hb.finish()
+	head.name = "Head"
+	head.position = Vector3(0.0,PED_H,0.0)
+	node.add_child(head)
+	# The horn: rings of staves, the radius widening with a curve, built
+	# apart on its trunnion so it can pitch.
+	var bb := Build.new(seed_value+11,weathered,"WindHornBarrel")
+	bb.frame = Transform3D(Basis.IDENTITY,-Vector3(0.0,AXIS,PIVOT_Z))
 	var mouth := mouth_radius()
 	var throat := mouth*THROAT_SHARE
 	var z0 := 0.55
@@ -131,16 +144,16 @@ static func wind_horn(seed_value: int, weathered := 0.0) -> Node3D:
 		var ib := lerpf(throat,mouth,tb)
 		var wa := lerpf(WALL.x,WALL.y,ta)
 		var wb := lerpf(WALL.x,WALL.y,tb)
-		_ring(hb,za,zb,ia,ib,wa,wb,r%2,0.0)
-	_ring(hb,z_lip-0.02,LENGTH,mouth,mouth,WALL.y,WALL.y+LIP.x,0,weathered*0.35,true)
-	var head := hb.finish()
-	head.name = "Head"
-	head.position = Vector3(0.0,PED_H,0.0)
-	node.add_child(head)
+		_ring(bb,za,zb,ia,ib,wa,wb,r%2,0.0)
+	_ring(bb,z_lip-0.02,LENGTH,mouth,mouth,WALL.y,WALL.y+LIP.x,0,weathered*0.35,true)
+	var barrel := bb.finish()
+	barrel.name = "Barrel"
+	barrel.position = Vector3(0.0,AXIS,PIVOT_Z)
+	head.add_child(barrel)
 	var marker := Marker3D.new()
 	marker.name = "Mouth"
-	marker.position = Vector3(0.0,AXIS,LENGTH+0.02)
-	head.add_child(marker)
+	marker.position = Vector3(0.0,0.0,LENGTH-PIVOT_Z+0.02)
+	barrel.add_child(marker)
 	node.set_meta("mouth_radius",mouth)
 	node.set_meta("top",TOP_HEIGHT)
 	node.set_meta("top_radius",CAP_R)

@@ -67,7 +67,10 @@ extends RefCounted
 ## says "slammed" (how hard, m/s) with "landed", and the landing is as any:
 ## crouch held, it is the slide (or the surf on a slope) at his pace; Jump
 ## buffered for the touch jumps out of it (it opens no sail). A twirl ends
-## it.
+## it. Jump pressed in the drive with room for the sail (its `can_open`,
+## so a press within the buffer of the touch is still the jump out)
+## cancels it: the pace past TERMINAL given up, the sail opens (the step
+## says "slam_cancel"); scripts/slam.gd ends its catch the same way.
 ##
 ## The slide hop: in the air out of a slide (a long jump, a slide jump) the
 ## stick across his way bends his run round without losing it (HOP_TURN,
@@ -1217,6 +1220,13 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 		h = _wallrun_kick(h,out)
 	elif _buffer > 0.0 and not grounded and move != "slam" and (move == "wall" or _wall_since <= WALL_TOUCH):
 		h = _kick_off(out)
+	elif pressed and not grounded and move == "slam" and not _from_water and sail.can_open(feet.y-ground_y,velocity.y):
+		# The slam cancelled: its drive past his fall given up, the sail out.
+		move = ""
+		_slam = 0.0
+		velocity.y = maxf(velocity.y,-terminal)
+		out["slam_cancel"] = true
+		h = _sail_open(h,out)
 	elif pressed and not grounded and move != "slam" and not _from_water and sail.can_open(feet.y-ground_y,velocity.y) \
 			and _wall_near(want,h,ground,WALL_PROBE+0.8) == Vector2.ZERO:
 		h = _sail_open(h,out)

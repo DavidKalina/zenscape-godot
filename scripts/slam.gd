@@ -32,6 +32,11 @@ extends Node3D
 ##   falling pace; his flat pace kept (SLAM_KEEP), the view widening
 ##   (FOV_DRIVE), a short pale smear behind him (SMEAR_*): weight and speed,
 ##   no wind.
+## - **The cancel.** A fresh Jump in the catch or the drive, with room for
+##   the sail (PocketSail `can_open`: a press just before the touch is
+##   still the jump out of the landing), opens the sail and ends the slam
+##   with no touch (the motor's "slam_cancel"; the drive's pace past his
+##   falling pace given up). A miss isn't a sure fall.
 ## - **The touch.** He lands heavy: the view punches in, the camera drops
 ##   and shakes, the pad thumps. A shockwave ring runs out flat through the
 ##   grass and the dust (RING_*: air pushed out by the hit, in the breeze
@@ -319,6 +324,7 @@ func after(events: Dictionary, m: PilotMotor) -> Dictionary:
 		if events.has("slammed") or (m.grounded and m.move != "slam"): _touch(m)
 		elif m.swimming or m.move != "slam": _end()
 		else: _trail.append({"at":m.feet,"t":_clock})
+	elif phase == "hang" and m.move == "sail": _end()
 	elif phase == "hang" and m.grounded: _touch(m)
 	while _trail.size() > 2 and _clock-float(_trail[0].t) > SMEAR_TAIL: _trail.pop_front()
 	var out := _events
