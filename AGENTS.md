@@ -25,6 +25,13 @@ left uncommitted. Committed tests come in a lock-in round the user asks for,
 which also reconciles the tests prototypes broke. A round's handoff lists any
 existing test its change breaks.
 
+# The generator
+
+"The generator" is the roguelike run's level generator (roguelike branch):
+`studies/run_layer.tscn -- --shape=sprawl|ring --seed=N`, code in
+`scripts/roguelike/`, its history in `docs/design/roguelike/layer-round*.md`
+(start with the newest).
+
 # Subagent models
 
 Pick a subagent's model by what it makes:
