@@ -483,7 +483,7 @@ func _put_off(how: String, v: Vector3) -> void:
 	put_off = how
 	thrown += 1
 	slide = 0.0
-	motor.knock(v+Vector3.UP*0.5)
+	motor.knock(v+Vector3.UP*0.5,self)
 
 func _sweep_start() -> float:
 	var half := float(knob("size"))*0.5

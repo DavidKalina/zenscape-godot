@@ -319,7 +319,7 @@ func _blast() -> void:
 	_blasted = true
 	shoves += 1
 	var way := blow_dir()
-	motor.knock(motor.knock_velocity(Vector2(way.x,way.z),float(knob("blast_out")),float(knob("blast_up"))))
+	motor.knock(motor.knock_velocity(Vector2(way.x,way.z),float(knob("blast_out")),float(knob("blast_up"))),self)
 
 func reset() -> void:
 	super()
