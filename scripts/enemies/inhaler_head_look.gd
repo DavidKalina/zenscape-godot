@@ -7,6 +7,11 @@ extends Node3D
 ## (scripts/ruin_stone_style.gd `shade`: the eroded basalt's tone by facing,
 ## its height bands, its undersides), darkened in the carving's crevices by
 ## the occlusion baked in the model's COLOR_0, and moss on what faces up.
+## The stone is weathered in shaders/olmec_stone.gdshader (`stone_material`),
+## the same for the headless body, so the two read as one figure: grain and
+## pits, cracks, chipped pale high points, grime in the crevices, a hint of
+## lichen. The mesh carries its rest position in UV and UV2 for that, and
+## its occlusion in the colour's alpha.
 ## The eyes are polished stone that lights when it locks on; the maw and
 ## nostrils are near black.
 ##
@@ -20,6 +25,7 @@ extends Node3D
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 const Style = preload("res://scripts/ruin_stone_style.gd")
 const MODEL := "res://assets/models/inhaler_head.glb"
+const STONE_SHADER := preload("res://shaders/olmec_stone.gdshader")
 ## The model's height (m) as authored: chin to crown, the band's boss
 ## and the dome's swell left out.
 const MODEL_HEIGHT := 3.2
@@ -50,6 +56,16 @@ var mouth_marker: Node3D
 var _eye_mat := StandardMaterial3D.new()
 var _maw_mat := StandardMaterial3D.new()
 var _open := 0.0
+static var _stone_material: ShaderMaterial = null
+
+## The weathered stone both halves of the Olmec wear, lit as the kit's stone.
+static func stone_material() -> ShaderMaterial:
+	if _stone_material == null:
+		_stone_material = ShaderMaterial.new()
+		_stone_material.shader = STONE_SHADER
+		_stone_material.set_shader_parameter("roughness_value",0.95)
+	Style.dress(_stone_material)
+	return _stone_material
 
 ## Builds the head `h` m tall from the stone of `seed_value`.
 func build(h: float, seed_value := 7) -> void:
@@ -61,7 +77,7 @@ func build(h: float, seed_value := 7) -> void:
 	eyes = model.get_node("Eyes")
 	maw = model.get_node("Maw")
 	mouth_marker = model.get_node("Mouth")
-	var stone_mat: Material = RuinKit.materials().stone
+	var stone_mat: Material = stone_material()
 	var stone := Style.stone_of(seed_value) if Style.ruled() else Color("5a5d63")
 	for part: MeshInstance3D in [model.get_node("Head"),jaw]:
 		part.mesh = _dressed(part.mesh,stone,part.position)
@@ -95,6 +111,10 @@ static func _dressed(mesh: Mesh, stone: Color, offset: Vector3) -> ArrayMesh:
 		var ao: PackedColorArray = arrays[Mesh.ARRAY_COLOR] if arrays[Mesh.ARRAY_COLOR] != null else PackedColorArray()
 		var colours := PackedColorArray()
 		colours.resize(verts.size())
+		var rest_a := PackedVector2Array()
+		var rest_b := PackedVector2Array()
+		rest_a.resize(verts.size())
+		rest_b.resize(verts.size())
 		var moss := MOSS.srgb_to_linear()
 		var moss_light := MOSS_LIGHT.srgb_to_linear()
 		for i in range(verts.size()):
@@ -111,9 +131,13 @@ static func _dressed(mesh: Mesh, stone: Color, offset: Vector3) -> ArrayMesh:
 				var patch := clampf(noise.get_noise_3dv(p)*0.9+0.45,0.0,1.0)
 				var tone := moss.lerp(moss_light,clampf(noise.get_noise_3dv(p*3.0)+0.5,0.0,1.0))
 				c = c.lerp(tone,up*patch*MOSS_MOST*occ)
-			c.a = 1.0
+			c.a = occ
 			colours[i] = c
+			rest_a[i] = Vector2(p.x,p.y)
+			rest_b[i] = Vector2(p.z,0.0)
 		arrays[Mesh.ARRAY_COLOR] = colours
+		arrays[Mesh.ARRAY_TEX_UV] = rest_a
+		arrays[Mesh.ARRAY_TEX_UV2] = rest_b
 		out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
 	return out
 

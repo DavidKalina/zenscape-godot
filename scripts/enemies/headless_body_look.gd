@@ -68,7 +68,7 @@ func build(scale_k: float) -> void:
 		var stone := Style.stone_of(7) if Style.ruled() else Color("5a5d63")
 		_dressed_mesh = HeadLook._dressed(body.mesh,stone,Vector3.ZERO)
 	body.mesh = _dressed_mesh
-	body.set_surface_override_material(0,RuinKit.materials().stone)
+	body.set_surface_override_material(0,HeadLook.stone_material())
 	_cut_mat.albedo_color = CUT
 	_cut_mat.roughness = 1.0
 	_cut_mat.vertex_color_use_as_albedo = true
