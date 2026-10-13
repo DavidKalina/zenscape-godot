@@ -35,6 +35,7 @@ extends "res://studies/crossings/crossing.gd"
 ## run gains at most about a metre; see the doc).
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 const Aqueduct = preload("res://scripts/ruin_kit_aqueduct.gd")
+const RuinKitTower = preload("res://scripts/ruin_kit_tower.gd")
 
 const SEED := 4107
 ## Weathering of the stone (0 new to 1 ruin).
@@ -350,12 +351,11 @@ func _launch(low: float) -> void:
 	column(at(slab_low,c_deg,LIP_RUN*0.5),Vector2(1.6,1.6),low,slab_low.y-0.5,c_deg,"wall")
 	column(at(far_near,c_deg,FAR_RIM.x*0.5),Vector2(FAR_RIM.y,FAR_RIM.x),low,far_near.y,c_deg,"lip")
 
-## THE CHIMNEY SLOT: the one function to swap. The real piece is
-##   return RuinKitTower.tower_shell(seed_value,weathered,height)
-## (scripts/ruin_kit_tower.gd; preload it as RuinKitTower). Until then a
-## greybox stand-in of the same footprint, shaft, doorway and rims.
+## THE CHIMNEY SLOT: the ruin kit's tower shell (scripts/ruin_kit_tower.gd).
+## `_stand_in` below is the greybox it replaced, the same footprint, shaft,
+## doorway and rims.
 func slot_piece(seed_value: int, weathered: float, height: float) -> Node3D:
-	return _stand_in(seed_value,weathered,height)
+	return RuinKitTower.tower_shell(seed_value,weathered,height)
 
 ## The stand-in, in the kit's conventions (foot on y 0 round the origin,
 ## front +Z): a hollow tower STAND_HALF round, the shaft STAND_SHAFT clear
