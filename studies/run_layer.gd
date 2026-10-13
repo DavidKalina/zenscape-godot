@@ -87,6 +87,9 @@ func _first_layer() -> void:
 func _stand_layer() -> void:
 	_layer_asked = Time.get_ticks_msec()
 	layer_up_ms = -1
+	# The study's own net (back to the isle's station) only far under the
+	# void, which ends the layer first.
+	lost = float(layer.void_y)-200.0
 	stage = LayerStage.new()
 	add_child(stage)
 	stage.setup(self,layer,_slot_was)

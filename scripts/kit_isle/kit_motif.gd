@@ -227,7 +227,8 @@ func build_cost() -> int:
 ## its frame), `face` (flat, unit: a rim's way out over the drop; the way
 ## the others open), `room` (m: an arena's clear radius, the flat round
 ## the others), `run_up` (m of clear ground behind `at` along -face: what
-## a rim gives to build speed before it).
+## a rim gives to build speed before it). A rim may also answer `lip`: how
+## far ahead of `at` its walked ground ends (its `room`, a step, if not).
 static func socket(kind: String, name: String, at: Vector3, face: Vector3, room: float, run_up := 0.0) -> Dictionary:
 	var flat := Vector3(face.x,0.0,face.z)
 	return {"kind":kind,"name":name,"at":at,"face":flat.normalized() if flat.length() > 0.001 else Vector3.FORWARD,"room":room,"run_up":run_up}

@@ -98,6 +98,15 @@ static func reach(rise: float) -> float:
 	if rise >= j: return 0.0
 	return p.run*(sqrt(2.0*j/p.gravity)+sqrt(2.0*(j-rise)/(p.gravity*p.fall)))
 
+## The same for the pump (his second jump in a chain, JUMPS[1]): what he
+## jumps if he leaps again within the chain's window of landing, as a
+## runner across stones does.
+static func pump_reach(rise: float) -> float:
+	var p := pilot()
+	var j := float(p.jumps[1])
+	if rise >= j: return 0.0
+	return p.run*(sqrt(2.0*j/p.gravity)+sqrt(2.0*(j-rise)/(p.gravity*p.fall)))
+
 ## How far (m, flat) before the same jump has risen `rise` (a gap rising
 ## `rise` shorter than this he meets the far side's face, not its top).
 static func clears(rise: float) -> float:
@@ -112,6 +121,13 @@ static func clears(rise: float) -> float:
 ## branch's smaller.
 static func stone_length(hard := false) -> float:
 	return pilot().walk*(0.45 if hard else 0.7)
+
+## A route stride's gap as a share of his small jump's reach at its rise;
+## the greed branch's; how far past the pump's reach a stone's far end
+## stands (a share of it).
+const GAP_SHARE := Vector2(0.72,0.84)
+const GAP_HARD := Vector2(0.86,0.93)
+const PUMP_ROOM := 1.08
 
 ## A rope bridge's span (m): from SPAN_HOPS of his running hops; its grade
 ## at most a share of the footbridge's.
@@ -637,9 +653,13 @@ static func slab_length() -> float:
 static func _lay_stones(out: Dictionary, p: Vector3, dir: Vector3, n: int, hard: bool, rng: RandomNumberGenerator, chain: String) -> Vector3:
 	var j := float(pilot().jumps[0])
 	var h := j*(rng.randf_range(0.0,0.4) if hard else rng.randf_range(0.15,0.5))
-	var gap := reach(h)*(rng.randf_range(0.8,0.9) if hard else rng.randf_range(0.45,0.68))
+	# Each gap a share of his small jump's reach at its rise (the greed
+	# branch's nearer it); each stone long enough that the pump (a jump
+	# straight off a landing, as a runner chains them) still comes down on
+	# the next, not past it.
+	var gap := reach(h)*(rng.randf_range(GAP_HARD.x,GAP_HARD.y) if hard else rng.randf_range(GAP_SHARE.x,GAP_SHARE.y))
 	gap = maxf(gap,clears(h)+0.3)
-	var length := stone_length(hard)
+	var length := maxf(stone_length(hard),pump_reach(h)*PUMP_ROOM-gap)
 	var yaw := atan2(-dir.z,dir.x)
 	var first: int = (out.stones as Array).size()
 	for k in range(n):
@@ -733,40 +753,68 @@ static func _under(edge: Dictionary, isles: Array) -> String:
 ## clear of every isle; kegs beside it to range it. None if no shot lands.
 static func _cannon(plan: Dictionary, edge: Dictionary, _rng: RandomNumberGenerator) -> void:
 	var rim: Dictionary = edge.from_rim
+	# Further back along the run-up, further in past the far rim, till a
+	# shot lands clear.
+	for back: float in [CANNON_BACK,CANNON_BACK+1.5,CANNON_BACK+3.0,CANNON_BACK+5.0]:
+		if back > float(rim.run_up)-0.5 and back > CANNON_BACK: break
+		for inland: float in [SHOT_IN,SHOT_IN+2.0,SHOT_IN+4.0]:
+			if _cannon_at(plan,edge,back,inland): return
+
+## The layer's cannon: the cannon's own knobs but its launch a little
+## faster (CANNON_RUNS of the pilot's run at full power, the cannon's own
+## 5.4), so a shot carries a greed gap tens of metres wide.
+const CANNON_RUNS := 6.6
+static func cannon_knobs() -> Dictionary:
+	var k := Cannon.defaults()
+	k.speed_max = pilot().run*CANNON_RUNS
+	return k
+
+## Where a shot from the layer's cannon at `base` comes down on flat ground
+## at `floor_y` (the cannon's `landing_for`, at its knobs).
+static func _shot(base: Vector3, yaw: float, pitch: float, notch: int, floor_y: float) -> Vector3:
+	var k := cannon_knobs()
+	var f := PilotMotor.forward(yaw)
+	var dir := Vector3(f.x*cos(pitch),sin(pitch),f.y*cos(pitch))
+	var from: Vector3 = base+Vector3.UP*float(k.base_height)+dir*float(k.barrel_length)
+	return Cannon.landing(from,dir*float(k.speed_max)*float(k.power_notches[notch]),floor_y)
+
+static func _cannon_at(plan: Dictionary, edge: Dictionary, back: float, inland: float) -> bool:
+	var rim: Dictionary = edge.from_rim
 	var to: Dictionary = edge.to_rim
 	var face: Vector3 = rim.face
-	var base: Vector3 = (rim.at as Vector3)-face*CANNON_BACK
-	var target: Vector3 = (to.at as Vector3)-(to.face as Vector3)*SHOT_IN
+	var base: Vector3 = (rim.at as Vector3)-face*back
+	var target: Vector3 = (to.at as Vector3)-(to.face as Vector3)*inland
 	var flat := Vector2(target.x-base.x,target.z-base.z)
 	var yaw := atan2(-flat.x,-flat.y)
-	var k := Cannon.defaults()
+	var k := cannon_knobs()
 	for notch in range((k.power_notches as Array).size()):
 		var lo := float(k.pitch_min)
 		var hi := deg_to_rad(45.0)
 		# The low arc: further as it pitches up to 45 degrees.
-		var far := Cannon.landing_for(base,yaw,hi,notch,target.y)
-		var near := Cannon.landing_for(base,yaw,lo,notch,target.y)
+		var far := _shot(base,yaw,hi,notch,target.y)
+		var near := _shot(base,yaw,lo,notch,target.y)
 		var want := flat.length()
 		if Vector2(far.x-base.x,far.z-base.z).length() < want or Vector2(near.x-base.x,near.z-base.z).length() > want: continue
 		for i in range(30):
 			var mid := (lo+hi)*0.5
-			var land := Cannon.landing_for(base,yaw,mid,notch,target.y)
+			var land := _shot(base,yaw,mid,notch,target.y)
 			if Vector2(land.x-base.x,land.z-base.z).length() < want: lo = mid
 			else: hi = mid
 		var pitch := (lo+hi)*0.5
-		var landing := Cannon.landing_for(base,yaw,pitch,notch,target.y)
+		var landing := _shot(base,yaw,pitch,notch,target.y)
 		if Vector2(landing.x-target.x,landing.z-target.z).length() > SHOT_NEAR: continue
-		if not _arc_clear(plan,base,yaw,pitch,notch,target,edge): continue
+		if not _arc_clear(plan,base,yaw,pitch,notch,target,edge,back,inland): continue
 		var side := face.cross(Vector3.UP).normalized()
 		var keg_at := (rim.at as Vector3)-face*0.6
 		plan.cannon = {"at":base,"heading":yaw,"pitch":pitch,"notch":notch,"target":target,"landing":landing,
-			"kegs":[keg_at+side*1.4+Vector3.UP*0.05,keg_at-side*1.4+Vector3.UP*0.05,base-face*1.8+Vector3.UP*0.05]}
-		return
+			"kegs":[keg_at+side*1.4+Vector3.UP*0.05,keg_at-side*1.4+Vector3.UP*0.05,base+face*1.2+side*1.6+Vector3.UP*0.05]}
+		return true
+	return false
 
 ## The shot's arc clear of every isle (but the two it leaves and lands on
 ## near its ends).
-static func _arc_clear(plan: Dictionary, base: Vector3, yaw: float, pitch: float, notch: int, target: Vector3, edge: Dictionary) -> bool:
-	var k := Cannon.defaults()
+static func _arc_clear(plan: Dictionary, base: Vector3, yaw: float, pitch: float, notch: int, target: Vector3, edge: Dictionary, back: float, inland: float) -> bool:
+	var k := cannon_knobs()
 	var f := PilotMotor.forward(yaw)
 	var dir := Vector3(f.x*cos(pitch),sin(pitch),f.y*cos(pitch))
 	var from: Vector3 = base+Vector3.UP*float(k.base_height)+dir*float(k.barrel_length)
@@ -775,8 +823,8 @@ static func _arc_clear(plan: Dictionary, base: Vector3, yaw: float, pitch: float
 	var b: int = edge.to[0]
 	for p: Vector3 in pts:
 		for i in range(plan.isles.size()):
-			if i == a and Vector2(p.x-base.x,p.z-base.z).length() < CANNON_BACK+OWN_NEAR: continue
-			if i == b and Vector2(p.x-target.x,p.z-target.z).length() < SHOT_IN+OWN_NEAR: continue
+			if i == a and Vector2(p.x-base.x,p.z-base.z).length() < back+OWN_NEAR: continue
+			if i == b and Vector2(p.x-target.x,p.z-target.z).length() < inland+OWN_NEAR: continue
 			var o := occ_at(plan.isles[i],p.x,p.z)
 			if o.x < INF and o.x < p.y+1.5 and p.y-1.0 < o.y: return false
 	return true

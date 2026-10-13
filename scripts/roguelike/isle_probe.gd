@@ -33,6 +33,8 @@ const DROP := 1.5
 const AIR_UNDER := 10.0
 const AIR_OVER := 4.0
 const AIR_OUT := 8.0
+## A lip: where the ground ahead has fallen this far under the rim (m).
+const LIP_DROP := 0.2
 ## The most run-up measured (m).
 const RUN_MOST := 12.0
 
@@ -43,8 +45,8 @@ static func step_in() -> float:
 
 ## The first thing under (x, z) from `from` down to `to` (world y): the
 ## ray's hit ({position, normal, rid, collider}) or {}.
-static func down(space: PhysicsDirectSpaceState3D, x: float, z: float, from: float, to: float, mask := SOLID) -> Dictionary:
-	var ray := PhysicsRayQueryParameters3D.create(Vector3(x,from,z),Vector3(x,to,z),mask)
+static func down(space: PhysicsDirectSpaceState3D, x: float, z: float, from: float, to: float, mask := SOLID, exclude: Array[RID] = []) -> Dictionary:
+	var ray := PhysicsRayQueryParameters3D.create(Vector3(x,from,z),Vector3(x,to,z),mask,exclude)
 	return space.intersect_ray(ray)
 
 static func clear(space: PhysicsDirectSpaceState3D, a: Vector3, b: Vector3, mask := SOLID) -> bool:
@@ -63,8 +65,8 @@ static func walked(space: PhysicsDirectSpaceState3D, turf: Dictionary, x: float,
 
 ## The ground under (x, z) near `y` (any solid, from a step over it to DROP
 ## under it): its height, or NAN for none (a drop).
-static func near_ground(space: PhysicsDirectSpaceState3D, x: float, z: float, y: float) -> float:
-	var hit := down(space,x,z,y+PilotMotor.STEP_UP+0.05,y-DROP)
+static func near_ground(space: PhysicsDirectSpaceState3D, x: float, z: float, y: float, exclude: Array[RID] = []) -> float:
+	var hit := down(space,x,z,y+PilotMotor.STEP_UP+0.05,y-DROP,SOLID,exclude)
 	return (hit.position as Vector3).y if not hit.is_empty() else NAN
 
 ## Per cell of `rect` (x, z), `cell` m square: its lowest and highest solid
@@ -169,7 +171,9 @@ static func rim_at(space: PhysicsDirectSpaceState3D, turf: Dictionary, p: Vector
 	while t <= step*1.6:
 		var q := p+way*t
 		var g := near_ground(space,q.x,q.z,p.y)
-		if is_nan(g):
+		# The lip: where the ground has fallen LIP_DROP (a slope's top, not
+		# its foot).
+		if is_nan(g) or g < p.y-LIP_DROP:
 			lip = t
 			break
 		if g > p.y+0.3: return {}
@@ -207,13 +211,16 @@ static func run_up(space: PhysicsDirectSpaceState3D, turf: Dictionary, p: Vector
 
 ## Whether a rim socket (`s`, world) stands on walked ground with the drop
 ## and the air ahead of it (the layer's test): "" if so, else why not.
-static func rim_ok(space: PhysicsDirectSpaceState3D, s: Dictionary) -> String:
+## `exclude`: what the edge leaving it lays (its stones, its slabs).
+static func rim_ok(space: PhysicsDirectSpaceState3D, s: Dictionary, exclude: Array[RID] = []) -> String:
 	var at: Vector3 = s.at
 	var face: Vector3 = s.face
 	var g := near_ground(space,at.x,at.z,at.y)
 	if is_nan(g) or absf(g-at.y) > 0.35: return "no ground under it (%.2f)" % g
-	var ahead := at+face*(step_in()*1.6)
-	if not is_nan(near_ground(space,ahead.x,ahead.z,at.y)): return "ground ahead past its lip"
+	# The contract's (scripts/kit_isle/kit_motif.gd): 4 m out the ground is
+	# gone or DROP under it.
+	var ahead := at+face*maxf(float(s.get("lip",step_in()))+0.5,4.0)
+	if not is_nan(near_ground(space,ahead.x,ahead.z,at.y,exclude)): return "ground ahead past its lip"
 	return ""
 
 ## The rims round the walked `grid`: every walked sample by a drop tried

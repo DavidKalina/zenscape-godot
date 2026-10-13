@@ -24,6 +24,7 @@ const PlinthRam = preload("res://scripts/enemies/plinth_ram.gd")
 const CannonField = preload("res://scripts/cannon/cannon_field.gd")
 const GlyphPickup = preload("res://scripts/glyph_pickup.gd")
 const Lines = preload("res://scripts/collectible_lines.gd")
+const LayerPlan = preload("res://scripts/roguelike/layer_plan.gd")
 
 const GATE := Color(1.0,0.82,0.45)
 const RUNE_SIZE := 0.7
@@ -95,7 +96,7 @@ func setup(scene: Node3D, layer: Dictionary, was: Node) -> void:
 	add_child(cannons)
 	cannons.attach(scene)
 	if not (layer.cannon as Dictionary).is_empty():
-		cannons.add_cannon(layer.cannon.at,float(layer.cannon.heading))
+		cannons.add_cannon(layer.cannon.at,float(layer.cannon.heading),{"speed_max":float(LayerPlan.cannon_knobs().speed_max)})
 		for at: Vector3 in layer.cannon.kegs: cannons.add_keg(at)
 	scene.foot_pieces = self
 	_runes()
