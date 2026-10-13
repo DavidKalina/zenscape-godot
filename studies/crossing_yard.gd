@@ -202,8 +202,31 @@ class CloudSky extends "res://studies/aqueduct_isle_sky.gd":
 			on.clouds = true
 			_build_clouds()
 
+## The grass and flowers on the crossing's sky isles (its `flora_turf`, if
+## it has them: scripts/kit_isle/kit_flora.gd, as the kit isles grow theirs).
 func _grow() -> void:
-	pass
+	if crossing == null or not crossing.has_method("flora_turf"): return
+	var turf: Array = crossing.flora_turf()
+	if turf.is_empty(): return
+	var by := Vector2(crossing.position.x,crossing.position.z)
+	var outlines: Array = []
+	var high := -INF
+	var low := INF
+	for body: StaticBody3D in turf:
+		high = maxf(high,body.global_position.y)
+		low = minf(low,body.global_position.y)
+	for o: PackedVector2Array in crossing.flora_outlines():
+		var moved := PackedVector2Array()
+		for p in o: moved.append(p+by)
+		outlines.append(moved)
+	var wear: Callable = crossing.flora_wear()
+	var site := KitFlora.Site.new(high,func(p: Vector2) -> float: return float(wear.call(p-by)))
+	site.ray = Vector2(high+40.0,low-8.0)
+	var began := Time.get_ticks_msec()
+	flora = KitFlora.grow(flora_seed(),get_world_3d().direct_space_state,turf,outlines,site)
+	art.add_child(flora)
+	flora_ready = true
+	print("%s: flora %s grown in %d ms" % [isle_name(),flora.get_meta("counts"),Time.get_ticks_msec()-began])
 
 func _add_life() -> void:
 	pass

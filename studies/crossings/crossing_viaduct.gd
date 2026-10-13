@@ -49,6 +49,7 @@ const HornStandIn = preload("res://studies/crossings/horn_stand_in.gd")
 const HornPerch = preload("res://studies/crossings/horn_perch.gd")
 const RuinKitHorn = preload("res://scripts/ruin_kit_horn.gd")
 const Slam = preload("res://scripts/slam.gd")
+const ViaductArt = preload("res://studies/crossings/viaduct_art.gd")
 const PocketSail = preload("res://scripts/pocket_sail.gd")
 
 const SEED := 4107
@@ -212,6 +213,26 @@ const LOW_COOLDOWN := 3.0
 const LOW_RANGE := 45.0
 const LOW_LEAD := 0.6
 
+## ART (docs/design/roguelike/crossing-viaduct-art.md; studies/crossings/
+## viaduct_art.gd): the walk tops' clean boxes' depth (m) under the isles;
+## the isles' keels (m under their tops: the start rim's, the turn
+## platform's, the plinth's, the far rim's); the clods under the piers'
+## feet (half across and along, keel depth); how deep the safe stair's
+## broken piers and the launch lip's reach under their tops; the launch's
+## lintel's thickness; the far rim's broken gate, in from its back corners
+## (along, across).
+const TOP_SOLID := 2.2
+const START_DEPTH := 15.0
+const TURN_DEPTH := 10.0
+const PLINTH_DEPTH := 12.0
+const FAR_DEPTH := 15.0
+const CLOD_PIER := Vector2(2.6,1.9)
+const CLOD_DEPTH := 7.0
+const STAIR_ROOT := 7.0
+const LIP_ROOT := 13.0
+const SLAB_THICK := 0.9
+const GATE_IN := Vector2(1.6,1.8)
+
 var m: PilotMotor
 ## Worked out by `lay_out` (local).
 var deck := 0.0
@@ -240,6 +261,11 @@ var arrows: GustArrows
 var routes := {}
 var slam_over := 0.0
 var sail_gap := 0.0
+## The art's: the isles' walk boxes and outlines (the plants' ground) and
+## the floors laid on them ([middle (x, z), heading]).
+var turf_bodies: Array = []
+var turf_outlines: Array = []
+var paved: Array = []
 
 func title() -> String:
 	return "The Broken Viaduct"
@@ -485,7 +511,12 @@ func build(paint: Callable) -> void:
 	super.build(paint)
 	# The stone ends ROOTS under the walk, over the void.
 	var low := -ROOTS
-	column(Vector3(0.0,0.0,RIM.y*0.5),RIM,low,0.0,0.0,"pad")
+	turf_bodies = []
+	turf_outlines = []
+	paved = []
+	# The start rim: a sky isle, a paved apron where the deck begins.
+	_isle_under("StartIsle",Vector3(0.0,0.0,RIM.y*0.5),0.0,RIM*0.5,START_DEPTH,SEED+100)
+	_pave(Vector3(0.0,0.0,RuinKit.FLOOR.x*0.5),0.0,SEED+110)
 	_run_up(low)
 	_piers(low)
 	_safe_stair(low)
@@ -496,8 +527,68 @@ func build(paint: Callable) -> void:
 	_launch(low)
 	_arrows(low)
 
+## ART (docs/design/roguelike/crossing-viaduct-art.md): a walk top's clean
+## collision (a box TOP_SOLID deep, its top and edges the greybox's) under a
+## sky isle drawn over it (ViaductArt `isle`: turf, a keel of hanging rock
+## `depth` deep); `half` (across, along) round `middle`, heading `deg`.
+## Its box is the plants' turf (`flora_turf`).
+func _isle_under(called: String, middle: Vector3, deg: float, half: Vector2, depth: float, seed_value: int) -> void:
+	var walk := box(Vector3(half.x*2.0,TOP_SOLID,half.y*2.0),middle-Vector3(0.0,TOP_SOLID*0.5,0.0),deg,"")
+	walk.name = called+"Walk"
+	turf_bodies.append(walk)
+	var ring := ViaductArt.rect_ring(middle,deg,half,seed_value)
+	var isle := ViaductArt.isle(ring,middle.y,depth,seed_value,_paved_wear(),TOP_SOLID)
+	isle.name = called
+	add_child(isle)
+	turf_outlines.append(isle.get_meta("outline"))
+
+## A kit floor (RuinKit `floor_slabs`, drawn only) laid on a walk top: its
+## slabs' tops flush with `middle`'s height, turned to heading `deg`; the
+## turf under it worn bare and no plants on it (`paved`).
+func _pave(middle: Vector3, deg: float, seed_value: int) -> void:
+	piece(RuinKit.floor_slabs(seed_value,0.45),Transform3D(Basis(Vector3.UP,yaw_of(deg)),middle-Vector3(0.0,RuinKit.FLOOR.z-0.01,0.0)),false)
+	paved.append([Vector2(middle.x,middle.z),deg])
+
+## Worn bare under the floors (`paved`): (x, z) local -> 0..1.
+func _paved_wear() -> Callable:
+	return func(p: Vector2) -> float:
+		var most := 0.0
+		for f: Array in paved:
+			var w := way(float(f[1]))
+			var d := p-(f[0] as Vector2)
+			var out := maxf(absf(d.dot(w)),absf(d.dot(right_of(w))))-RuinKit.FLOOR.x*0.5
+			most = maxf(most,clampf(1.0-out/0.6,0.0,1.0))
+		return most
+
+## The plants' ground (the yard grows its grass and flowers on it,
+## scripts/kit_isle/kit_flora.gd): the isles' walk boxes, their outlines
+## (local x, z), and the wear (`_paved_wear`).
+func flora_turf() -> Array:
+	return turf_bodies
+
+func flora_outlines() -> Array:
+	return turf_outlines
+
+func flora_wear() -> Callable:
+	return _paved_wear()
+
+## A clod of turf and rock (ViaductArt `clod`) with its top at `middle`'s
+## height, `half` round it (heading `deg`): piers' feet stand on it.
+func _clod(middle: Vector3, deg: float, half: Vector2, depth: float, seed_value: int) -> void:
+	add_child(ViaductArt.clod(ViaductArt.blob_ring(middle,deg,half,seed_value),middle.y,depth,seed_value))
+
+## A pier's coursed stone (RuinKitAqueduct `pillar`, drawn only) over a
+## column's clean collision (`column`, drawn nothing): its impost's top the
+## column's top, its edge the column's edge (the shaft under it stands in
+## by the impost's reach).
+func _kit_column(foot: Vector3, size: Vector2, bottom: float, top: float, deg: float, seed_value: int) -> void:
+	column(foot,size,bottom,top,deg,"")
+	var drawn := Vector2(size.x-Aqueduct.IMPOST.y*2.0,size.y-0.12)
+	piece(Aqueduct.pillar(seed_value,WEATHERED,top-bottom,drawn),Transform3D(Basis(Vector3.UP,yaw_of(deg)),Vector3(foot.x,bottom,foot.z)),false)
+
 ## 1. The spans (tilted, their piers grown down to the floor), a clean walk
-## over their channel, the fallen span's stones on the floor, the far deck.
+## over their channel, the far deck; each pier's foot on a clod; the turn
+## platform a sky isle.
 func _run_up(low: float) -> void:
 	var span := Aqueduct.SPAN
 	var tilt := deg_to_rad(RUN_DEG)
@@ -517,20 +608,42 @@ func _run_up(low: float) -> void:
 	var far_ground := func(_x: float, _z: float) -> float: return low-far_origin.y
 	piece(Aqueduct.span(SEED+9,WEATHERED,3,false,far_ground),Transform3D(Basis(Vector3.UP,PI*0.5),far_origin))
 	box(Vector3(Aqueduct.CHANNEL,0.3,span),far_mid-Vector3(0.0,0.15,0.0),0.0,"")
-	# The turn platform.
+	# The piers' feet, each on its clod.
+	var feet: Array[float] = []
+	for i in range(RUN_SPANS+1): feet.append(-span*i)
+	feet.append_array([far_start.z,far_start.z-span])
+	for k in range(feet.size()):
+		_clod(Vector3(0.0,low,feet[k]),0.0,CLOD_PIER,CLOD_DEPTH+float(k%3)*1.5,SEED+120+k)
+	# The turn platform: a sky isle, paved where the route crosses it.
 	var pad_mid := at(turn_mid,TURN_B,0.0,(TURN_PAD_RIGHT-TURN_PAD.x*0.5)*0.5)
-	column(pad_mid,Vector2(TURN_PAD.x*0.5+TURN_PAD_RIGHT,TURN_PAD.y),low,turn_mid.y,TURN_B,"grey")
+	_isle_under("TurnIsle",pad_mid,TURN_B,Vector2((TURN_PAD.x*0.5+TURN_PAD_RIGHT)*0.5,TURN_PAD.y*0.5),TURN_DEPTH,SEED+130)
+	_pave(turn_mid,TURN_B,SEED+131)
+	_pave(at(turn_mid,TURN_B,0.0,RuinKit.FLOOR.x),TURN_B,SEED+132)
 
-## 2. The piers, lip-capped, from the floor; the slot's plinth.
+## 2. The piers (the kit's coursed stone over their clean columns), their
+## feet on clods in runs; the slot's plinth a sky isle, paved under the
+## tower.
 func _piers(low: float) -> void:
-	for top: Vector3 in pier_tops:
-		column(top,PIER_TOP,low,top.y,TURN_B,"lip")
-	column(slot_foot,Vector2(SLOT_PLINTH,SLOT_PLINTH)*2.0,low,slot_foot.y,TURN_B,"grey")
+	for i in range(pier_tops.size()):
+		var top: Vector3 = pier_tops[i]
+		_kit_column(top,PIER_TOP,low,top.y,TURN_B,SEED+140+i)
+	for g: Array in [[0,1,2],[3,4,5],[6,7],[8,9]]:
+		var a: Vector3 = pier_tops[g[0]]
+		var b: Vector3 = pier_tops[g[g.size()-1]]
+		var mid := (a+b)*0.5
+		var half_along := Vector2(a.x,a.z).distance_to(Vector2(b.x,b.z))*0.5+PIER_TOP.y*0.5+0.7
+		_clod(Vector3(mid.x,low,mid.z),TURN_B,Vector2(CLOD_PIER.x*0.75,half_along),CLOD_DEPTH+g.size(),SEED+150+int(g[0]))
+	_isle_under("PlinthIsle",slot_foot,TURN_B,Vector2(SLOT_PLINTH,SLOT_PLINTH),PLINTH_DEPTH,SEED+160)
+	for sx: float in [-1.0,1.0]:
+		for sz: float in [-1.0,1.0]:
+			_pave(at(slot_foot,TURN_B,sz*RuinKit.FLOOR.x*0.5,sx*RuinKit.FLOOR.x*0.5),TURN_B,SEED+161+int(sx+1.0)+int(sz+1.0)*2)
 
 ## The safe line: stair flights up beside the piers, a rest between each,
 ## the last arriving at the plinth's edge; the first's foot at or under the
-## turn platform (stepped down onto from it).
-func _safe_stair(low: float) -> void:
+## turn platform (stepped down onto from it). Each flight and rest on a
+## kit pier STAIR_ROOT or so deep, broken off over the sky: the crumbling
+## stair hangs.
+func _safe_stair(_low: float) -> void:
 	var climb := float(RuinKit.STEPS)*RuinKit.RISER
 	var run := float(RuinKit.STEPS-1)*RuinKit.TREAD+RuinKit.LANDING
 	var from := TURN_PAD.y*0.5
@@ -542,22 +655,35 @@ func _safe_stair(low: float) -> void:
 	for i in range(safe_flights):
 		var y := foot_y+climb*i
 		var mid := at(turn_mid,TURN_B,s+run*0.5,SAFE_ASIDE)
-		column(mid,Vector2(RuinKit.STAIR_WIDTH+0.8,run),low,y,TURN_B,"wall")
+		_kit_column(mid,Vector2(RuinKit.STAIR_WIDTH+0.8,run),y-STAIR_ROOT-float(i%2)*2.5,y,TURN_B,SEED+170+i)
 		piece(RuinKit.stairs(SEED+30+i,0.6),Transform3D(Basis(Vector3.UP,yaw_of(TURN_B)),Vector3(mid.x,y,mid.z)))
 		s += run
 		if i < safe_flights-1:
-			column(at(turn_mid,TURN_B,s+rest*0.5,SAFE_ASIDE),Vector2(RuinKit.STAIR_WIDTH+0.8,rest+0.02),low,y+climb,TURN_B,"grey")
+			_kit_column(at(turn_mid,TURN_B,s+rest*0.5,SAFE_ASIDE),Vector2(RuinKit.STAIR_WIDTH+0.8,rest+0.02),y+climb-STAIR_ROOT*0.6,y+climb,TURN_B,SEED+180+i)
 			s += rest
 
-## 4. The slab off the east head, its lip on a broken pier, the far rim.
-func _launch(low: float) -> void:
+## 4. The slab off the east head (a great lintel fallen from the tower,
+## tilted, its clean walk under it), its lip a broken end on a broken pier,
+## the far rim a sky isle with a broken gate's piers at its back.
+func _launch(_low: float) -> void:
 	var c_deg := TURN_B+90.0
 	var drop := SLAB_RUN*tan(deg_to_rad(SLAB_DEG))
 	var slab_low := at(slab_top,c_deg,SLAB_RUN,0.0,-drop)
-	slab(slab_top,slab_low,SLAB_WIDE,0.5,"lane")
-	box(Vector3(SLAB_WIDE,0.5,LIP_RUN),at(slab_low,c_deg,LIP_RUN*0.5,0.0,-0.25),c_deg,"lane")
-	column(at(slab_low,c_deg,LIP_RUN*0.5),Vector2(1.6,1.6),low,slab_low.y-0.5,c_deg,"wall")
-	column(at(far_near,c_deg,FAR_RIM.x*0.5),Vector2(FAR_RIM.y,FAR_RIM.x),low,far_near.y,c_deg,"lip")
+	var walk := slab(slab_top,slab_low,SLAB_WIDE,0.5,"")
+	# The lintel: its top the walk's, in the slab's own frame.
+	var length := slab_top.distance_to(slab_low)
+	var stone := ViaductArt.slab_stone(SEED+190,WEATHERED,Vector3(SLAB_WIDE+0.1,SLAB_THICK,length+0.25),3)
+	piece(stone,Transform3D(walk.transform.basis,(slab_top+slab_low)*0.5),false)
+	box(Vector3(SLAB_WIDE,0.5,LIP_RUN),at(slab_low,c_deg,LIP_RUN*0.5,0.0,-0.25),c_deg,"")
+	var lip_stone := ViaductArt.slab_stone(SEED+191,WEATHERED,Vector3(SLAB_WIDE+0.1,SLAB_THICK,LIP_RUN),1)
+	piece(lip_stone,Transform3D(Basis(Vector3.UP,yaw_of(c_deg)),at(slab_low,c_deg,LIP_RUN*0.5)),false)
+	var lip_top := slab_low.y-0.5
+	_kit_column(at(slab_low,c_deg,LIP_RUN*0.5),Vector2(1.6,1.6),lip_top-LIP_ROOT,lip_top,c_deg,SEED+192)
+	var far_mid := at(far_near,c_deg,FAR_RIM.x*0.5)
+	_isle_under("FarIsle",far_mid,c_deg,Vector2(FAR_RIM.y*0.5,FAR_RIM.x*0.5),FAR_DEPTH,SEED+200)
+	for side: float in [-1.0,1.0]:
+		var gate := at(far_near,c_deg,FAR_RIM.x-GATE_IN.x,side*(FAR_RIM.y*0.5-GATE_IN.y))
+		piece(RuinKit.pier(SEED+210+int(side+1.0),0.55),Transform3D(Basis(Vector3.UP,yaw_of(c_deg+180.0)),gate))
 
 ## The gust arrows' perches (docs/design/roguelike/crossing-viaduct-
 ## perches.md), each a horn on a ruin-kit pillar with a standable top, and the
