@@ -1,7 +1,7 @@
 extends SceneTree
 ## The pilot's tricks on foot (scripts/pilot_motor.gd), over heights alone
 ## (the game's own way): the twirl pressed in the air twirls him, once an
-## airtime, giving back some airtime, never from crouch, and a second jump press low over the ground neither flies nor opens the sail; held crouched
+## airtime, giving back some airtime, never from crouch, and a second jump press twirling opens the sail on the way up but, falling within the jump buffer of the touch, is the jump kept for it, never the sail, never a flight; held crouched
 ## on a slope he boot-surfs down it, faster and faster past 11 m/s, steers
 ## across it, and on one too steep to stand on surfs without the crouch;
 ## jumped out of the surf uncrouched he flies on at its pace over a gap no
@@ -105,7 +105,9 @@ func _twirl() -> void:
 		spun = spun or o.has("twirl")
 		if m.grounded: break
 	check(out.has("long") and not spun,"Crouch held into the long jump, or pressed again in the air, does not twirl")
-	# Jump pressed again twirling low over the ground: no sail (no room).
+	# Jump pressed again twirling: on the way up (0.7 m over flat ground)
+	# there is room for the sail, which since 2385272c opens from any
+	# ordinary jump (scripts/pocket_sail.gd `can_open`), and never a flight.
 	m.reset(Vector3.ZERO,0.0)
 	m.crouch = false
 	_step(m,Vector2.ZERO,false)
@@ -114,8 +116,34 @@ func _twirl() -> void:
 	m.twirl = true
 	_step(m,Vector2.ZERO,false)
 	m.twirl = false
+	var up_at: float = m.feet.y
 	out = _step(m,Vector2.ZERO,true)
-	check(not out.has("sail") and not out.has("fly") and m.move == "twirl","Twirling low, Jump pressed again neither opens the sail nor flies")
+	check(out.has("sail") and not out.has("fly"),"Twirling on the way up (%.2f m over flat ground), Jump pressed again opens the sail, never a flight" % up_at)
+	# Twirled, then Jump pressed low over the ground falling, the touch
+	# within the jump buffer: no sail and no flight, the press kept for the
+	# touch, where he jumps.
+	m.reset(Vector3.ZERO,0.0)
+	_step(m,Vector2.ZERO,false)
+	_step(m,Vector2.ZERO,true)
+	for i in range(30):
+		if m.velocity.y < 0.0: break
+		_step(m,Vector2.ZERO,true)
+	m.twirl = true
+	var spun_low := _step(m,Vector2.ZERO,false).has("twirl")
+	m.twirl = false
+	for i in range(240):
+		if m.grounded or m.feet.y < -m.velocity.y*PilotMotor.BUFFER*0.5: break
+		_step(m,Vector2.ZERO,false)
+	var low_at: float = m.feet.y
+	var opened := false
+	var jumped_on := false
+	for i in range(30):
+		out = _step(m,Vector2.ZERO,true)
+		opened = opened or out.has("sail") or out.has("fly")
+		if out.has("jumped"):
+			jumped_on = true
+			break
+	check(spun_low and not opened and jumped_on,"Twirled, Jump pressed again %.2f m over flat ground falling neither opens the sail nor flies: it jumps on the touch" % low_at)
 
 ## A slope `degrees` steep falling to +x from x 0 to `length`, a platform
 ## over it before, flat after, then a gap from `gap_at` `gap` wide (the
