@@ -388,7 +388,7 @@ func build(scene: Node3D, enemies: Node, heads: Array, bodies := true, void_y :=
 	if bodies:
 		spawner = BodySpawner.new()
 		add_child(spawner)
-		spawner.setup(study,field)
+		spawner.setup(study,field,{},LayerBodies.knobs(numbers()))
 		# Under the void a body is gone (and its head's next comes up).
 		spawner.lost_y = void_y
 		for h: Dictionary in heads: spawner.add_head(h.at,h.get("cliffs",[]))

@@ -15,6 +15,10 @@ extends Node
 ##   - with `hidden` 1, the camera's line to where it hangs blocked by the
 ##     cliff itself;
 ##   - `natural` 0: only asked-for spawns (`spawn_on_demand`).
+## A headless body no nearer its head for `stale` s (stuck: round 9 found
+## spurs down the generator's cliffs it can't leave) is taken away once
+## it is out of the camera's view, and its head's next comes up as above
+## (0: never).
 ## Each cliff is fitted to the real face first (`fit`): the face found by
 ## rays under the lip, the lip on its real top; a cliff with no face there
 ## is passed over.
@@ -24,7 +28,7 @@ extends Node
 const HeadlessBody = preload("res://scripts/enemies/headless_body.gd")
 
 ## The rules' defaults (the study's `--spawn-knob=`).
-const RULES := {"wait":2.0,"near":8.0,"far":40.0,"level":3.5,"view":1.0,"hidden":1.0,"natural":1.0}
+const RULES := {"wait":2.0,"near":8.0,"far":40.0,"level":3.5,"view":1.0,"hidden":1.0,"natural":1.0,"stale":120.0}
 ## The body's placeholder voices: [seconds, tone (Hz, 0 none), tone at the
 ## end, noise share, low-pass (0-1), attack (s), tremolo (Hz, 0 none)]
 ## (studies/enemy_yard.gd `_synth`).
@@ -67,6 +71,8 @@ var heads: Array = []
 var spawns := 0
 var last_cliff := ""
 var unfit := 0
+## Bodies taken away stalled (`stale`).
+var stale := 0
 ## Why the last `fit` failed ({reason: count}).
 var fit_why := ""
 
@@ -122,6 +128,9 @@ func step(delta: float) -> void:
 	for i in range(heads.size()):
 		var b := body_of(i)
 		if b != null and b.position.y < lost_y: _take_away(b)
+		elif b != null and float(rules.stale) > 0.0 and not b.whole and b.stalled > float(rules.stale) and not in_view(b.position):
+			stale += 1
+			_take_away(b)
 		if body_of(i) != null or head_of(i) == null:
 			heads[i].bodiless = 0.0
 			continue

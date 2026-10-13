@@ -16,7 +16,9 @@ extends "res://scripts/enemies/enemy.gd"
 ##   "listen"  it stands, turns its stump one way and the other, a hand
 ##             cupped by where its ear was: it hears the head (within
 ##             `hear` m) and turns to its bearing, off by up to `noise` rad,
-##             less the nearer it is. Out of hearing it picks any way.
+##             less the nearer it is. Out of hearing it picks any way, and
+##             any way too while lost (no nearer the head for `lost_after`
+##             s: it wanders `lost_for` s, then hears afresh).
 ##   "roam"    it walks the way it heard, heavily, `walk` m/s; every
 ##             `listen_every` s (give or take) it stops to listen again.
 ##   "home"    the head is within `sense` m with nothing between its neck
@@ -34,7 +36,10 @@ extends "res://scripts/enemies/enemy.gd"
 ##             (`jump_gap` Hh across at most, `jump_rise` Hh up, `jump_sink`
 ##             Hh down) it jumps to ("jump"); failing that, a lower floor
 ##             out along its way within `leap_max` m across and `drop_max` m
-##             down it drops to ("drop"). It crouches, arms back, `windup` s.
+##             down it drops to ("drop"), headless and not lost never more
+##             than `drop_under` m under its head's ground (off here; the
+##             generator's bodies set it). It crouches, arms back,
+##             `windup` s.
 ##   "leap"    the throw: a ballistic arc (`leap_up` m over the takeoff, a
 ##             jump's higher by `jump_arc` of its length) to that floor, its
 ##             feet ray-cast along the arc; a wall on the way stops it dead
@@ -106,6 +111,15 @@ var _leap_to := Vector3.ZERO
 var _listen_from := 0.0
 var _picked := false
 var _unsensed := 0.0
+## Lost (round 9): its nearest yet to the head (m) and the time since it
+## got nearer; `lost_after` s without, it wanders any way for `lost_for` s.
+var _best_d := INF
+var _since_better := 0.0
+## Its nearest ever to the head, and the time since (s): the spawner takes
+## a body stalled too long away, out of sight (scripts/enemies/
+## body_spawner.gd).
+var _best_ever := INF
+var stalled := 0.0
 var _seat_from := Vector3.ZERO
 var _seat_k := 1.0
 var _ray := PhysicsRayQueryParameters3D.new()
@@ -138,9 +152,9 @@ func default_knobs(n: Dictionary) -> Dictionary:
 	return {
 		"head_size":3.0,"legs":0.75,"torso":1.2,"breadth":1.3,"depth":0.72,"arm":1.1,
 		"walk":n.walk*0.9,"home":n.run*0.7,"accel":3.0,"turn":0.9,"step":n.unit*0.6,"look":0.9,
-		"listen":2.6,"listen_every":7.0,"hear":n.unit*80.0,"sense":n.unit*15.0,"noise":0.35,"lose":2.0,
+		"listen":2.6,"listen_every":7.0,"lost_after":20.0,"lost_for":15.0,"hear":n.unit*80.0,"sense":n.unit*15.0,"noise":0.35,"lose":2.0,
 		"climb":n.unit*1.25,"haul":0.55,"climb_max":n.unit*20.0,"standoff":0.25,"lip_in":0.8,"mantle":1.4,
-		"leap_max":n.unit*11.0,"drop_max":n.unit*20.0,"windup":1.1,"leap_up":n.unit*1.6,"land":1.0,
+		"leap_max":n.unit*11.0,"drop_max":n.unit*20.0,"drop_under":INF,"windup":1.1,"leap_up":n.unit*1.6,"land":1.0,
 		"leap_gravity":n.gravity*0.7,
 		# Ledge to ledge: a gap up to `jump_gap` Hh, onto a ledge up to
 		# `jump_rise` Hh over or `jump_sink` Hh under its feet; the arc
@@ -251,6 +265,7 @@ func think(delta: float) -> void:
 	_dusts(delta)
 	_shocks(delta)
 	if whole: _seat_k = minf(1.0,_seat_k+delta/float(knobs.settle))
+	_progress(delta)
 	match state:
 		"listen": _listen(delta)
 		"roam","home": _walking(delta)
@@ -311,12 +326,39 @@ func _listen(delta: float) -> void:
 		if not whole and _senses(): _home()
 		else: _go("roam")
 
+## Whether it is lost: no nearer its head for `lost_after` s (it goes any
+## way, `lost_for` s, then hears afresh). Round 9 (layer-round9-bodies.md):
+## on the generator's isles the head's bearing often runs into a wall or
+## off a drop too deep, and it turned back and forth there for good.
+func _progress(delta: float) -> void:
+	if whole or head == null:
+		_since_better = 0.0
+		_best_d = INF
+		stalled = 0.0
+		return
+	var d := head.global_position.distance_to(position)
+	_since_better += delta
+	stalled += delta
+	if d < _best_ever-1.0:
+		_best_ever = d
+		stalled = 0.0
+	if d < _best_d-1.0:
+		_best_d = d
+		_since_better = 0.0
+	if _since_better > float(knobs.lost_after)+float(knobs.lost_for):
+		_best_d = d
+		_since_better = 0.0
+
+func lost() -> bool:
+	return _since_better > float(knobs.lost_after)
+
 ## The way it heard the head (noisy, less so near), or any way out of
-## hearing (or whole); turned off a dead end (a rim with nothing below, a
-## wall it won't climb).
+## hearing (or whole, or lost); turned off a dead end (a rim with nothing
+## below, a wall it won't climb).
 func _pick_way() -> float:
 	var way := facing+_rng.randf_range(-1.2,1.2)
-	if not whole and head != null:
+	if lost(): way = facing+_rng.randf_range(-PI,PI)
+	elif not whole and head != null:
 		var to := head.global_position-global_position
 		var d := Vector2(to.x,to.z).length()
 		if d <= float(knobs.hear):
@@ -527,8 +569,18 @@ func _landing(dir: Vector3) -> Dictionary:
 	var ledge := _ledge(dir)
 	if not ledge.is_empty() and _arc_clear(ledge.at,"jump"): return ledge
 	var drop := _drop(dir)
-	if not drop.is_empty() and _arc_clear(drop.at,"drop"): return drop
+	if not drop.is_empty() and _drop_ok(drop.at) and _arc_clear(drop.at,"drop"): return drop
 	return {}
+
+## Whether it drops to `at`: headless and not lost, not more than
+## `drop_under` m under its head's ground (it hears it up there). Round 9
+## (layer-round9-bodies.md): on the generator's isles it dropped onto spurs
+## and ledges down a cliff with no way back up, and stood there for good;
+## lost, it takes the drop (the study's way to the head goes down and up).
+func _drop_ok(at: Vector3) -> bool:
+	if whole or head == null or lost(): return true
+	var ground: float = minf(head.ground_y(),(head.home() as Vector3).y) if head.has_method("home") else head.ground_y()
+	return at.y >= ground-float(knobs.drop_under)
 
 ## The widest gap it jumps ledge to ledge (m): `jump_gap` head heights.
 func jump_gap() -> float:

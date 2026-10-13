@@ -19,7 +19,8 @@ extends RefCounted
 ##     edges' paths, the rides' tubes, the piers and the cannons.
 ##   - the body's moves, column to column (`_can`): a walk (the tops within
 ##     WALK); a climb up a wall to `climb_max`; down off an edge onto a
-##     lower top within `drop_max`, `leap_max` across; a jump across open
+##     lower top within `drop_max`, `leap_max` across, no lower than
+##     `drop_under` under the head's ground; a jump across open
 ##     sky to a top `jump_gap` across at most, `jump_rise` over or
 ##     `jump_sink` under (the body's knobs: its `default_knobs`).
 ##   - a cliff is kept if the head's ground can be got to from it (flooded
@@ -55,18 +56,27 @@ const DIRS := [Vector2i(1,0),Vector2i(-1,0),Vector2i(0,1),Vector2i(0,-1)]
 static var _build := {}
 static var _build_lock := Mutex.new()
 
+## The generator's bodies' own knobs (over the study's): headless, they
+## drop no more than 3 walker heads under their head's ground unless lost
+## (HeadlessBody `_drop_ok`), so they don't strand themselves on the spurs
+## and ledges down the isles' cliffs.
+static func knobs(n: Dictionary) -> Dictionary:
+	return {"drop_under":float(n.unit)*3.0}
+
 ## The body's moves and build (m), from its knobs at the walker's numbers
-## (LayerEnemies `numbers`).
+## (LayerEnemies `numbers`) and the generator's (`knobs`).
 static func body(n: Dictionary) -> Dictionary:
 	_build_lock.lock()
 	if _build.is_empty():
 		var probe: Node3D = HeadlessBody.new()
 		var k: Dictionary = probe.default_knobs(n)
 		probe.free()
+		k.merge(knobs(n),true)
 		var b := HeadlessBody.build_of(k,float(n.unit))
 		b.climb_max = float(k.climb_max)
 		b.drop_max = float(k.drop_max)
 		b.leap_max = float(k.leap_max)
+		b.drop_under = float(k.drop_under)
 		b.jump_gap = float(k.jump_gap)*float(b.hh)
 		b.jump_rise = float(k.jump_rise)*float(b.hh)
 		b.jump_sink = float(k.jump_sink)*float(b.hh)
@@ -162,7 +172,7 @@ static func _reach(g: Dictionary, head: Dictionary, b: Dictionary) -> Dictionary
 			for k in range(1,most+1):
 				for u: Vector3i in g.at.get(vc-d*k,[]):
 					if reached.has(u): continue
-					if _can(g,u,v,d,k,b):
+					if _can(g,u,v,d,k,b,at.y):
 						reached[u] = true
 						front.append(u)
 	return reached
@@ -176,8 +186,9 @@ static func _stands(g: Dictionary, u: Vector3i, b: Dictionary) -> bool:
 	return true
 
 ## Whether the body stood on place `u` gets onto place `v` (`k` columns on
-## along `d`) by one move.
-static func _can(g: Dictionary, u: Vector3i, v: Vector3i, d: Vector2i, k: int, b: Dictionary) -> bool:
+## along `d`) by one move (a drop no lower than `drop_under` under the
+## head's ground `head_y`, as the body won't).
+static func _can(g: Dictionary, u: Vector3i, v: Vector3i, d: Vector2i, k: int, b: Dictionary, head_y: float) -> bool:
 	var tops: Dictionary = g.tops
 	var hu: float = (tops[u] as Vector3).y
 	var hv: float = (tops[v] as Vector3).y
@@ -186,12 +197,12 @@ static func _can(g: Dictionary, u: Vector3i, v: Vector3i, d: Vector2i, k: int, b
 	if k == 1:
 		if absf(dh) <= WALK: return true
 		if dh > 0.0: return dh <= float(b.climb_max)
-		return -dh <= float(b.drop_max)
+		return -dh <= float(b.drop_max) and hv >= head_y-float(b.drop_under)
 	# Across: what lies between is open sky, or deep enough under him that
 	# he doesn't come down on it first (or high enough over that he passes
 	# under it).
 	var jump := (k-1)*CELL <= float(b.jump_gap) and dh <= float(b.jump_rise) and dh >= -float(b.jump_sink)
-	var drop := k*CELL <= float(b.leap_max) and dh < -WALK and -dh <= float(b.drop_max)
+	var drop := k*CELL <= float(b.leap_max) and dh < -WALK and -dh <= float(b.drop_max) and hv >= head_y-float(b.drop_under)
 	if not (jump or drop): return false
 	var under := float(b.jump_sink) if jump else float(b.drop_max)
 	var over := hu+float(b.neck)+float(b.jump_rise)
