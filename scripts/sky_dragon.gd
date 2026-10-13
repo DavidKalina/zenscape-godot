@@ -77,6 +77,11 @@ extends Node3D
 ## posed (no hinge). Here and on his wake's circuit (`wake_fly`).
 
 signal yielded
+## The grip's beats as they happen, for a host's toasts (the vision
+## greybox): "grab" (on the rim), "staggered" (the slam knocked the pilot),
+## "inhale" (the tell), "blown" (the gale knocked him), "pull" (the last
+## haul, the tell), "let go", "thrown" (the snap launched him).
+signal grip_beat(what: String)
 
 const MODEL := "res://assets/models/rim_dragon_c.glb"
 
@@ -128,6 +133,23 @@ const PUSH := 5.0
 const KNOCK_OUT := Vector2(12.0,6.0)
 const KNOCK_UP := 1.6
 const TAKE_R := 3.2
+## The grip's hits are hit stuns (PilotMotor `knock`, docs/design/
+## roguelike/stun-round1.md; docs/design/dragon-grip/round2-greybox.md),
+## the dragon their source, so they share his one restun gap with his air
+## blast: the gale's knock is a hard hit, laid down BLOW_STUN_DOWN s once
+## the skid stops; the snap's launch a hard throw, laid down
+## LAUNCH_STUN_DOWN s where he lands. The slam staggers a pilot on the isle
+## within SLAM_STAGGER_R m of the gripped rim (at TUNED_SIZE, scaled by
+## `_k`: 21 m at 1.5, about where the chin comes down): a light knock in
+## from the rim, SLAM_KNOCK_OUT walker heights along and SLAM_KNOCK_UP up
+## (DragonAirBlast.walker_tall), down SLAM_STUN_DOWN s (0: only the
+## tumble's own short lie, PilotMotor `tumble_down`).
+const BLOW_STUN_DOWN := 0.8
+const LAUNCH_STUN_DOWN := 1.5
+const SLAM_STAGGER_R := 12.0
+const SLAM_KNOCK_OUT := 3.0
+const SLAM_KNOCK_UP := 0.5
+const SLAM_STUN_DOWN := 0.0
 ## The spring launch (round 5): standing on the isle as it snaps back, the
 ## pilot leaves it the moment it comes up faster than he can fall (it
 ## slows harder than gravity), at its speed where he stands (LAUNCH_GAIN,
@@ -179,6 +201,20 @@ const DragonAirBlast = preload("res://scripts/dragon_air_blast.gd")
 var blast_on := false
 var air_blast: Node3D
 var attack := "blast"
+## Round 2 of the grip (docs/design/dragon-grip/round2-greybox.md): with
+## `attack` "grip", spotted with the pilot on (or over) an isle he can grip
+## (`grip_pick`, the host's: its index in `targets`, or -1), he breaks off
+## his flight to grip it (`grip_isle`), holding on `grip_hold` s (below 0,
+## CLING_HOLD); let go, he rejoins his `loop` and leaves the pilot be for
+## GRIP_REST s. Anywhere else he answers with his air blast.
+const GRIP_REST := 8.0
+var grip_pick := Callable()
+var grip_hold := -1.0
+var _grip_rest := 0.0
+var grips := 0
+## Whether the host's middle (`home`) is the starter isle, never attacked
+## (`_attackable`); the vision greybox's isles are all fair game.
+var spare_home := true
 ## His head tracking the pilot once suspicious: the most it turns (rad,
 ## yaw either way; pitch down and up) and how fast it gets there.
 const TRACK_YAW := 1.2
@@ -1013,17 +1049,7 @@ func _start() -> void:
 		grip = {}
 		_add_attack()
 		if grip.is_empty(): return
-		route.pop_front()
-		_leg_kinds.pop_front()
-		var to: Vector3 = route[0]
-		var away: Vector3 = grip.out
-		var along: Vector3 = grip.tangent
-		pos = to+away*170.0+along*float(grip.side)*70.0+Vector3.UP*22.0
-		yaw = atan2(-(to.x-pos.x),-(to.z-pos.z))
-		gamma = 0.0
-		speed = 32.0
-		flap_w = 0.0
-		_bout = false
+		_on_the_way_in()
 
 ## --dragon-ride: it comes in close and low on its grab at once.
 func _ride_in() -> void:
@@ -1294,6 +1320,7 @@ func advance(delta: float) -> void:
 	_step(minf(delta,0.1))
 	_downwash(delta,state in ["roaming","rising"] and model.visible)
 	_look_out(delta,state in ["roaming","rising"] and model.visible)
+	_grip_attack(delta)
 	_cyclone(delta,state in ["roaming","rising"] and model.visible)
 	_night_glow(delta)
 	_watch_camera(delta)
@@ -1475,12 +1502,13 @@ func set_attack(kind: String) -> void:
 		cyclone.on = kind == "cyclone"
 		if not cyclone.on: cyclone.phase = "idle"
 	if air_blast != null:
-		air_blast.on = kind == "blast"
+		# The grip falls back to the blast off an isle (`_grip_attack`).
+		air_blast.on = kind in ["blast","grip"]
 		if not air_blast.on: air_blast.phase = "idle"
 
-## The attack in use (null for none).
+## The attack in use (null for none): the grip's fallback is the blast.
 func attack_node() -> Node3D:
-	if attack == "blast": return air_blast
+	if attack == "blast" or attack == "grip": return air_blast
 	if attack == "cyclone": return cyclone
 	return null
 
@@ -1506,6 +1534,71 @@ func _cyclone(delta: float, flying: bool) -> void:
 	if on.phase == "windup" and aim != Vector3.INF:
 		var way := Vector3(aim.x-mouth.x,0.0,aim.z-mouth.z)
 		if way.length() > 0.1: gale.inhale(mouth,way.normalized(),delta*(2.0 if on == air_blast else 1.0))
+
+## The grip as his attack (see `grip_pick`): the blast held while the
+## pilot is on an isle he can grip or a grip is under way, and the grip
+## begun once he has spotted him there.
+func _grip_attack(delta: float) -> void:
+	_grip_rest = maxf(0.0,_grip_rest-delta)
+	if attack != "grip": return
+	var i: int = int(grip_pick.call()) if grip_pick.is_valid() else -1
+	var can := i >= 0 and i < targets.size() and not _record(targets[i]).is_empty() and _has_room(targets[i])
+	if air_blast != null: air_blast.on = grip.is_empty() and not can
+	if can and state == "roaming" and grip.is_empty() and _grip_rest <= 0.0 and sight.state == "spotted":
+		print("sky dragon: he spots the pilot on %s and breaks off to grip it" % str(targets[i].name))
+		grip_isle(i,grip_hold)
+
+## Off to grip target `i` now, whatever he was flying (held `hold` s, below
+## 0 his own CLING_HOLD); `near` starts him on the way in already, close
+## (--grip-now, as --dragon-attack).
+func grip_isle(i: int, hold := -1.0, near := false) -> void:
+	if i < 0 or i >= targets.size(): return
+	if hold > 0.0: _cling_for = hold
+	_target_i = i
+	_target_forced = true
+	route.clear()
+	_leg_kinds.clear()
+	grip = {}
+	_add_attack()
+	if grip.is_empty(): return
+	grips += 1
+	if state == "waiting":
+		state = "roaming"
+		_t = 0.0
+	model.visible = true
+	if near: _on_the_way_in()
+
+## Already on the attack's way in, level, far out (--dragon-attack): the
+## wide leg skipped.
+func _on_the_way_in() -> void:
+	route.pop_front()
+	_leg_kinds.pop_front()
+	var to: Vector3 = route[0]
+	var away: Vector3 = grip.out
+	var along: Vector3 = grip.tangent
+	pos = to+away*170.0+along*float(grip.side)*70.0+Vector3.UP*22.0
+	yaw = atan2(-(to.x-pos.x),-(to.z-pos.z))
+	gamma = 0.0
+	speed = 32.0
+	flap_w = 0.0
+	_bout = false
+
+## Back onto his `loop` after a grip: from its point nearest ahead of him
+## (the nearest at all if none is ahead), round.
+func _rejoin_loop() -> void:
+	var fwd := Vector2(-sin(yaw),-cos(yaw))
+	var best := 0
+	var near := INF
+	for i in range(loop.size()):
+		var p: Vector3 = loop[i]
+		var to := Vector2(p.x-pos.x,p.z-pos.z)
+		var d := to.length()+(0.0 if to.dot(fwd) > 0.0 else 1000.0)
+		if d < near:
+			near = d
+			best = i
+	for k in range(loop.size()):
+		route.append(loop[(best+k)%loop.size()])
+		_leg_kinds.append("low pass")
 
 ## His eye (world): between his eyes on the head bone as posed (the head's
 ## middle without them).
@@ -2008,6 +2101,7 @@ func _has_room(t: Dictionary) -> bool:
 ## 60 m of `home`, its middle) nor the dragon's roost.
 func _attackable(t: Dictionary) -> bool:
 	if str(t.name) in ["aqueduct_isle","dragon_roost"]: return false
+	if not spare_home: return true
 	var at: Vector3 = t.home
 	return Vector2(at.x-home.x,at.z-home.z).length() > 60.0
 
@@ -2346,6 +2440,8 @@ func _slam() -> void:
 	_set_breath("settle",2.6)
 	_c_look_next = 0.0
 	_roar_t = -1.0
+	grip_beat.emit("grab")
+	_stagger_pilot()
 	print("sky dragon: it grips %s's rim at (%.0f, %.0f, %.0f); lets go in %.0f s (%s)" % [str(t.name),(grip.rim as Vector3).x,(grip.rim as Vector3).y,(grip.rim as Vector3).z,_cling_left,_grip_note])
 
 func _set_breath(to: String, length: float) -> void:
@@ -2372,7 +2468,11 @@ func _clinging(delta: float) -> void:
 					# then it lets go.
 					_set_breath("pull",PULL)
 					gale.pull_down()
-				else: _set_breath("inhale",INHALE)
+					grip_beat.emit("pull")
+					print("sky dragon: the last haul on %s's rim, isle tipped %.0f°" % [str(grip.target.name),rad_to_deg(gale.tip())])
+				else:
+					_set_breath("inhale",INHALE)
+					grip_beat.emit("inhale")
 			"pull":
 				_let_go()
 				return
@@ -2833,6 +2933,7 @@ func _let_go() -> void:
 	flap_w = 1.0
 	phase = 0.55
 	_bout = true
+	grip_beat.emit("let go")
 	print("sky dragon: it lets go of %s" % str(grip.target.name))
 
 const LEAVE := 3.2
@@ -2882,6 +2983,13 @@ func _leaving(delta: float) -> void:
 			_target_forced = true
 			grip = {}
 			_add_attack()
+			return
+		if not loop.is_empty():
+			# A fixed loop (the vision greybox): back onto it, and the
+			# pilot left be a while.
+			grip = {}
+			_grip_rest = GRIP_REST
+			_rejoin_loop()
 			return
 		_add_circuit()
 		_target_i = (_target_i+1)%maxi(targets.size(),1)
@@ -2978,10 +3086,12 @@ func _blow_on_pilot(delta: float, mouth: Vector3) -> void:
 	var away := flat/hard
 	var dist := Vector2(mid.x-mouth.x,mid.z-mouth.z).length()
 	if hard >= KNOCK_AIR and float(gale.gust_env) > 0.3 and not _knocked:
-		walker.knock(walker.knock_velocity(away,lerpf(KNOCK_OUT.x,KNOCK_OUT.y,clampf(dist/REACH,0.0,1.0))*clampf(hard/20.0,0.75,1.2),KNOCK_UP),self)
+		var stuns := _stuns_pilot()
+		walker.knock(walker.knock_velocity(away,lerpf(KNOCK_OUT.x,KNOCK_OUT.y,clampf(dist/REACH,0.0,1.0))*clampf(hard/20.0,0.75,1.2),KNOCK_UP),self,BLOW_STUN_DOWN)
 		_knocked = true
 		knocks += 1
-		print("sky dragon: a ground gust knocks the pilot, %.1f m from the mouth, air %.1f m/s" % [dist,hard])
+		grip_beat.emit("blown")
+		print("sky dragon: a ground gust knocks the pilot, %.1f m from the mouth, air %.1f m/s (%s)" % [dist,hard,"a hard hit stun, down %.1f s" % BLOW_STUN_DOWN if stuns else "within his restun gap: thrown, not stunned again"])
 		return
 	if slide.is_valid() and bool(walker.get("grounded")):
 		var push := away*PUSH*clampf(hard/14.0,0.0,1.4)*delta
@@ -3016,11 +3126,38 @@ func _ride_isle(delta: float) -> void:
 	if gale.phase != "snap" or v.y < 3.0 or accel > -float(walker.get("gravity")): return
 	var up := minf(v.y*LAUNCH_GAIN,LAUNCH_MOST)
 	var inward := -(grip.out as Vector3)*up*LAUNCH_IN if not grip.is_empty() else Vector3.ZERO
-	walker.knock(Vector3(v.x+inward.x,up,v.z+inward.z),self)
+	var stuns := _stuns_pilot()
+	walker.knock(Vector3(v.x+inward.x,up,v.z+inward.z),self,LAUNCH_STUN_DOWN)
 	_ride_vy = 0.0
 	launched += 1
+	grip_beat.emit("thrown")
 	var rim_at: Vector3 = grip.rim if not grip.is_empty() else feet
-	print("sky dragon: the isle springs back and flings the pilot up at %.1f m/s, %.1f m from the rim it held" % [up,Vector2(feet.x-rim_at.x,feet.z-rim_at.z).length()])
+	print("sky dragon: the isle springs back and flings the pilot up at %.1f m/s, %.1f m from the rim it held (%s)" % [up,Vector2(feet.x-rim_at.x,feet.z-rim_at.z).length(),"a hard throw stun, down %.1f s where he lands" % LAUNCH_STUN_DOWN if stuns else "within his restun gap: thrown, not stunned again"])
+
+## Whether his knock now would stun the pilot (PilotMotor `stunnable`: not
+## within his restun gap or past the chain cap), for the log.
+func _stuns_pilot() -> bool:
+	return walker != null and walker.has_method("stunnable") and bool(walker.stunnable(self))
+
+## The slam's stagger (round 2 of the grip): a pilot standing on the isle
+## within SLAM_STAGGER_R (scaled) of the rim it slams onto is knocked a
+## little way in from it, a light stun (SLAM_STUN_DOWN).
+var staggered := 0
+func _stagger_pilot() -> void:
+	if walker == null or not on_foot or gale == null or gale.isle == null or grip.is_empty(): return
+	if walker.has_method("recovering") and walker.recovering(): return
+	var feet: Vector3 = walker.get("feet")
+	if not gale.stands_on(feet,1.5): return
+	var rim: Vector3 = grip.rim
+	var dist := Vector2(feet.x-rim.x,feet.z-rim.z).length()
+	if dist > SLAM_STAGGER_R*_k(): return
+	var out: Vector3 = grip.out
+	var tall := DragonAirBlast.walker_tall()
+	var stuns := _stuns_pilot()
+	walker.knock(walker.knock_velocity(Vector2(-out.x,-out.z),SLAM_KNOCK_OUT*tall,SLAM_KNOCK_UP*tall),self,SLAM_STUN_DOWN)
+	staggered += 1
+	grip_beat.emit("staggered")
+	print("sky dragon: the slam staggers the pilot %.1f m from the rim, knocked in from it (%s)" % [dist,"a light stun" if stuns else "within his restun gap: shoved, not stunned"])
 
 ## Round 9's check (--dragon-walk-check, headless): the stick pressed
 ## forward, then back, 1.4 s each, so the pilot runs to and fro: on the

@@ -10,19 +10,31 @@ extends "res://studies/kit_isle.gd"
 ## wind-up, a swift ball of air fired where you will be, popped by stone
 ## cover, its burst throwing the pilot off the isle and the plane out of the
 ## sky. --attack=cyclone brings back his slower cyclone (scripts/
-## dragon_cyclone.gd, docs/design/dragon-cyclone/round1.md) to compare; K
-## swaps blast, cyclone and none live.
+## dragon_cyclone.gd, docs/design/dragon-cyclone/round1.md) to compare;
+## --attack=grip (docs/design/dragon-grip/round2-greybox.md): spotted on or
+## over an isle, he breaks off his loop, slams onto its rim (the slam
+## staggers you near it), tips it, pants, draws breath (the tell) and blows
+## his gale across it (a hard hit stun), hauls on the rim one last time (the
+## tell) and lets go, and the isle snaps back and throws you (a hard throw
+## stun); then he rejoins his loop. Off the isles, the grip falls back to the
+## blast. K swaps blast, grip, cyclone and none live.
 ##
-## The isles (TOP is the kit's datum, 30 m):
-##   home  the start: a long wall (RuinKit WALL_HEIGHT: hide behind it, or
-##         pump-jump onto it), two tall pillars, an open east half where the
-##         plane stands parked.
-##   roof  east, higher: a roof on posts (the plane flies under it), and a
-##         block with a ledge jutting from it to stand under (its underside at
-##         RuinKit GRAB_TOP, its top at CHAIN_TOP: the pump catches it).
-##   flat  south, lower: open, nothing to hide behind.
-## Walkways join home to each. Sizes come from scripts/world_scale.gd and
-## the walker's (AGENTS.md "Sizes").
+## The isles (TOP is the kit's datum, 30 m), each its own node (GreyIsle:
+## its body, turf and cover under it, so a grip tips it all) with a record
+## the dragon samples (`_isle_record`, scripts/dragon_isle_shape.gd). Each
+## runs at least ROOM (35 m at 1.5) from its middle to a rim along one way
+## at least, so all three pass his room rule (scripts/sky_dragon.gd
+## `_has_room`):
+##   home  the start, 84 m square: a long wall (RuinKit WALL_HEIGHT: hide
+##         behind it, or pump-jump onto it), two tall pillars, an open east
+##         half where the plane stands parked.
+##   roof  east, higher, 80 m long: a roof on posts (the plane flies under
+##         it), and a block with a ledge jutting from it to stand under (its
+##         underside at RuinKit GRAB_TOP, its top at CHAIN_TOP: the pump
+##         catches it).
+##   flat  south, lower, 80 m long: open, nothing to hide behind.
+## Walkways join home to each (they stay put while an isle tips). Sizes
+## come from scripts/world_scale.gd and the walker's (AGENTS.md "Sizes").
 ##
 ## The kit isle's moves and plane hold (studies/kit_isle.gd): Space by the
 ## parked plane boards it, F gets out stopped; off an edge Space opens the
@@ -34,15 +46,17 @@ extends "res://studies/kit_isle.gd"
 ## (blast the default; --no-cyclone is --attack=none); --cyclone-fast and
 ## --blast-fast shorten each's cooldown between shots (FAST_COOLDOWN);
 ## --cyclone-shot=<x>,<z> and --blast-shot=<x>,<z> fire one at that spot at
-## once (a look check); the dragon's own --dragon-* flags hold
+## once (a look check); --grip-now starts him on his way in to grip home
+## at once, seen or not; the dragon's own --dragon-* flags hold
 ## (--dragon-size=, --dragon-log, --dragon-watch=...).
-##   ./run-dragon-vision.command [--attack=cyclone] [--vision-low] [--fly]
+##   ./run-dragon-vision.command [--attack=grip] [--grip-now] [--vision-low] [--fly]
 ##   godot --path . res://studies/dragon_vision_study.tscn -- --no-title
 const SkyDragon = preload("res://scripts/sky_dragon.gd")
 const DragonWake = preload("res://scripts/dragon_wake.gd")
 const DragonSight = preload("res://scripts/dragon_sight.gd")
 const DragonAirBlast = preload("res://scripts/dragon_air_blast.gd")
 const SightOverlay = preload("res://scripts/dragon_sight_overlay.gd")
+const DragonIsleShape = preload("res://scripts/dragon_isle_shape.gd")
 const PhysicsGroundSize = preload("res://scripts/pilot_physics_ground.gd")
 
 ## His loop's height over the turf (m): his wake circuit's pass over the
@@ -52,14 +66,21 @@ const LOW_OVER := 28.0
 ## His loop (x, z; world), laid so each leg comes at an isle head on: in
 ## over home from the west, over the roof isle, out east, round south and
 ## back over the flat isle and home, out west.
-const LOOP := [Vector2(-190.0,60.0),Vector2(-70.0,20.0),Vector2(95.0,-5.0),Vector2(220.0,-40.0),
+const LOOP := [Vector2(-190.0,60.0),Vector2(-70.0,20.0),Vector2(110.0,-5.0),Vector2(220.0,-40.0),
 	Vector2(200.0,-170.0),Vector2(60.0,-110.0),Vector2(-80.0,-60.0),Vector2(-230.0,-90.0)]
 ## The isles: name, middle (x, z), size (x, z), top over TOP, thickness.
+## Round 2 of the grip: each runs at least the dragon's ROOM (35 m at 1.5)
+## out from its middle along one way (home 42 m every way, roof and flat
+## 40 m along their length), so he can grip it.
 const ISLES := [
-	["home",Vector2(0.0,0.0),Vector2(64.0,64.0),0.0,10.0],
-	["roof",Vector2(95.0,-5.0),Vector2(48.0,40.0),4.0,9.0],
-	["flat",Vector2(20.0,-100.0),Vector2(50.0,36.0),-4.0,8.0],
+	["home",Vector2(0.0,0.0),Vector2(84.0,84.0),0.0,10.0],
+	["roof",Vector2(110.0,-5.0),Vector2(80.0,40.0),4.0,9.0],
+	["flat",Vector2(20.0,-100.0),Vector2(80.0,36.0),-4.0,8.0],
 ]
+## The grip here: how long he holds on (s: one blow, then the last haul),
+## and how far over an isle's top the pilot still counts as over it (m).
+const GRIP_HOLD := 12.0
+const OVER_ISLE := 60.0
 ## Toy-era widths of the flown openings (WorldScale.opening): the roof's span
 ## between its posts and its height clear over the floor.
 const TOY_ROOF := 4.0
@@ -81,9 +102,17 @@ var _low := false
 var _log := false
 var _log_t := 0.0
 var _overlay_on := true
-## His attack: "blast", "cyclone" or "none" (K cycles them).
-const ATTACKS := ["blast","cyclone","none"]
+## His attack: "blast", "grip", "cyclone" or "none" (K cycles them).
+const ATTACKS := ["blast","grip","cyclone","none"]
 var _attack := "blast"
+## --grip-now: off to grip home GRIP_NOW_AFTER s in (the isles sampled).
+const GRIP_NOW_AFTER := 0.6
+var _grip_now := false
+var _grip_now_t := 0.0
+## The isles' nodes and the dragon's records of them, by name.
+var _isle_nodes := {}
+var _isle_records := {}
+var _up_t := 0.0
 var _cyclone_fast := false
 var _blast_fast := false
 ## --blast-shot=<x>,<z>: as --cyclone-shot, a ball fired at that spot.
@@ -102,7 +131,8 @@ func _ready() -> void:
 		elif arg.begins_with("--attack="):
 			var kind := arg.get_slice("=",1)
 			if kind in ATTACKS: _attack = kind
-			else: push_warning("dragon vision greybox: --attack=%s unknown (blast, cyclone, none)" % kind)
+			else: push_warning("dragon vision greybox: --attack=%s unknown (blast, grip, cyclone, none)" % kind)
+		elif arg == "--grip-now": _grip_now = true
 		elif arg == "--cyclone-fast": _cyclone_fast = true
 		elif arg == "--blast-fast": _blast_fast = true
 		elif arg.begins_with("--cyclone-shot="):
@@ -155,39 +185,49 @@ func _build_art() -> void:
 		var mid: Vector2 = isle[1]
 		var size: Vector2 = isle[2]
 		var top: float = TOP+float(isle[3])
-		var land := Node3D.new()
+		var land := GreyIsle.new()
 		land.name = "Isle_%s" % isle[0]
+		land.top = top
 		art.add_child(land)
 		var body := _grey(Vector3(size.x,float(isle[4]),size.y),Vector3(mid.x,top-float(isle[4])*0.5,mid.y),0.0,"floor",land)
 		body.name = "Body"
 		var half := size*0.5
-		add_turf(land,PackedVector2Array([mid-half,Vector2(mid.x+half.x,mid.y-half.y),mid+half,Vector2(mid.x-half.x,mid.y+half.y)]),false)
+		var outline := PackedVector2Array([mid-half,Vector2(mid.x+half.x,mid.y-half.y),mid+half,Vector2(mid.x-half.x,mid.y+half.y)])
+		add_turf(land,outline,false)
+		land._outlines = [outline]
+		land._turf = [body]
+		_isle_nodes[str(isle[0])] = land
+	var home: Node3D = _isle_nodes.home
+	var roof: Node3D = _isle_nodes.roof
 	# Home: the long wall across its west half, two pillars north-east.
 	var wall_len := RuinKit.WALL_LENGTH*WALL_RUNS
-	_grey(Vector3(wall_len,RuinKit.WALL_HEIGHT,RuinKit.WALL_THICK),Vector3(-8.0,TOP+RuinKit.WALL_HEIGHT*0.5,-6.0),0.0,"wall")
+	_grey(Vector3(wall_len,RuinKit.WALL_HEIGHT,RuinKit.WALL_THICK),Vector3(-8.0,TOP+RuinKit.WALL_HEIGHT*0.5,-6.0),0.0,"wall",home)
 	for p: Vector2 in [Vector2(14.0,-16.0),Vector2(22.0,-4.0)]:
-		_pillar(p,PILLAR_R*tall,TOP,TOP+PILLAR_TALL*tall)
+		_pillar(p,PILLAR_R*tall,TOP,TOP+PILLAR_TALL*tall,home)
 	# Roof isle: a roof on four posts, its span and clearance flown openings.
 	var roof_top: float = TOP+float(ISLES[1][3])
+	var roof_west: float = (ISLES[1][1] as Vector2).x-(ISLES[1][2] as Vector2).x*0.5
 	var span := WorldScale.opening(TOY_ROOF)
 	var clear := WorldScale.opening(TOY_ROOF_HIGH)
-	var roof_mid := Vector2(84.0,-12.0)
+	var roof_mid := Vector2(roof_west+29.0,-12.0)
 	var roof_long := span*1.6
 	var post := 0.35*tall
 	for sx: float in [-1.0,1.0]:
 		for sz: float in [-1.0,1.0]:
-			_pillar(roof_mid+Vector2(sx*(span*0.5+post),sz*(roof_long*0.5-post)),post,roof_top,roof_top+clear)
-	_grey(Vector3(span+4.0*post+1.0,0.8,roof_long+1.0),Vector3(roof_mid.x,roof_top+clear+0.4,roof_mid.y),0.0,"wall")
+			_pillar(roof_mid+Vector2(sx*(span*0.5+post),sz*(roof_long*0.5-post)),post,roof_top,roof_top+clear,roof)
+	_grey(Vector3(span+4.0*post+1.0,0.8,roof_long+1.0),Vector3(roof_mid.x,roof_top+clear+0.4,roof_mid.y),0.0,"wall",roof)
 	# The block and its ledge, facing south (+z), its underside to stand
 	# under, its top for the pump to catch.
-	var block_mid := Vector2(104.0,-16.0)
-	_grey(BLOCK,Vector3(block_mid.x,roof_top+BLOCK.y*0.5,block_mid.y),0.0,"dark")
+	var block_mid := Vector2(roof_west+49.0,-16.0)
+	_grey(BLOCK,Vector3(block_mid.x,roof_top+BLOCK.y*0.5,block_mid.y),0.0,"dark",roof)
 	var under := RuinKit.GRAB_TOP
 	var over := RuinKit.CHAIN_TOP
-	_grey(Vector3(LEDGE_WIDE,over-under,LEDGE_OUT),Vector3(block_mid.x,roof_top+(under+over)*0.5,block_mid.y+BLOCK.z*0.5+LEDGE_OUT*0.5),0.0,"lip")
+	_grey(Vector3(LEDGE_WIDE,over-under,LEDGE_OUT),Vector3(block_mid.x,roof_top+(under+over)*0.5,block_mid.y+BLOCK.z*0.5+LEDGE_OUT*0.5),0.0,"lip",roof)
 	# The walkways: home to the roof isle (a gentle rise), home to the flat.
-	_walk(Vector3(32.0,TOP,-4.0),Vector3(71.0,roof_top,-4.0))
-	_walk(Vector3(16.0,TOP,-32.0),Vector3(16.0,TOP+float(ISLES[2][3]),-82.0))
+	var home_half: Vector2 = (ISLES[0][2] as Vector2)*0.5
+	var flat_north: float = (ISLES[2][1] as Vector2).y+(ISLES[2][2] as Vector2).y*0.5
+	_walk(Vector3(home_half.x,TOP,-4.0),Vector3(roof_west+1.0,roof_top,-4.0))
+	_walk(Vector3(16.0,TOP,-home_half.y),Vector3(16.0,TOP+float(ISLES[2][3]),flat_north))
 	print("dragon vision greybox: wall %.1f x %.1f m, roof %.1f m across, %.1f m clear, ledge underside %.2f m, top %.2f m" % [wall_len,RuinKit.WALL_HEIGHT,span,clear,under,over])
 
 func _grey_material(colour: String) -> Material:
@@ -212,7 +252,7 @@ func _grey(size: Vector3, middle: Vector3, yaw: float, colour: String, parent: N
 	(parent if parent != null else art).add_child(solid)
 	return solid
 
-func _pillar(at: Vector2, radius: float, bottom: float, top: float) -> void:
+func _pillar(at: Vector2, radius: float, bottom: float, top: float, parent: Node3D = null) -> void:
 	var solid := StaticBody3D.new()
 	solid.position = Vector3(at.x,(bottom+top)*0.5,at.y)
 	var shape := CylinderShape3D.new()
@@ -229,7 +269,7 @@ func _pillar(at: Vector2, radius: float, bottom: float, top: float) -> void:
 	drawn.mesh = mesh
 	drawn.material_override = _grey_material("wall")
 	solid.add_child(drawn)
-	art.add_child(solid)
+	(parent if parent != null else art).add_child(solid)
 
 ## A walkway WALK_WIDE across from `a` to `b` (their tops), 0.6 m thick.
 func _walk(a: Vector3, b: Vector3) -> void:
@@ -253,11 +293,26 @@ func _add_life() -> void:
 	dragon.attack = _attack
 	var over := LOW_OVER if _low else HIGH_OVER
 	for p: Vector2 in LOOP: dragon.loop.append(Vector3(p.x,TOP+over,p.y))
+	# The grip (round 2): every isle a target (none is a starter isle here),
+	# its record sampled once it stands (`_isle_record`); the pilot it can
+	# stagger, blow and throw; held GRIP_HOLD s.
+	dragon.spare_home = false
+	for isle: Array in ISLES:
+		var size: Vector2 = isle[2]
+		dragon.targets.append({"name":str(isle[0]),"home":Vector3((isle[1] as Vector2).x,TOP+float(isle[3]),(isle[1] as Vector2).y),"radius":size.length()*0.5})
+	dragon.find_isle = _isle_record
+	dragon.grip_pick = _pilot_isle
+	dragon.grip_hold = GRIP_HOLD
+	dragon.walker = motor
+	dragon.slide = ground.slide_callable()
 	add_child(dragon)
 	var middle := Vector3(40.0,TOP,-35.0)
 	dragon.setup(camera,preload("res://scripts/launch_args.gd").user_args(),KitWeather.SEA_TOP,middle,TOP,[[middle,120.0]])
+	# No treasure on his tongue here.
+	dragon.taken = true
 	dragon.sight_target = _sight_target
 	dragon.sight.state_changed.connect(_sight_changed)
+	dragon.grip_beat.connect(_grip_beat)
 	if dragon.cyclone != null:
 		if _cyclone_fast: dragon.cyclone.cooldown = dragon.cyclone.FAST_COOLDOWN
 		dragon.cyclone.winding_up.connect(func() -> void: _show_toast("He draws breath: take cover!"))
@@ -280,6 +335,56 @@ func _sight_target() -> Dictionary:
 		return {"points":DragonSight.pilot_points(Vector3.ZERO,true,plane.position,plane.forward()),"airborne":true}
 	return {"points":DragonSight.pilot_points(motor.feet,false),"airborne":not motor.grounded}
 
+## An isle as the dragon's grip reads it (scripts/dragon_isle_shape.gd
+## `build`, made for a motif isle): its outline, its turf body and its top.
+## Its node stands at the world's origin, its body and cover under it at
+## their world places, so the gale (scripts/dragon_gale.gd) tips it all
+## about its middle, collision and all.
+class GreyIsle extends Node3D:
+	var _outlines: Array = []
+	var _turf: Array = []
+	var top := 0.0
+	func isle_top() -> float:
+		return top
+
+## The dragon's record of isle `id` ({node, shape, home, radius, exclude,
+## frame, pivot}, as the aqueduct isle's `_dragon_isle`), sampled once at
+## rest, a moment in (the physics space has its bodies); {} till then.
+func _isle_record(id: String) -> Dictionary:
+	if _isle_records.has(id): return _isle_records[id]
+	var isle: Node3D = _isle_nodes.get(id)
+	if isle == null or _up_t < 0.3 or not isle.is_inside_tree(): return {}
+	var shape: RefCounted = DragonIsleShape.new()
+	shape.build(isle,get_world_3d().direct_space_state)
+	if not shape.ok: return {}
+	var home: Vector3 = shape.home
+	var rec := {"node":isle,"shape":shape,"home":home,"radius":float(shape.radius),"exclude":shape.exclude,
+		"frame":isle.global_transform.affine_inverse()*Transform3D(Basis.IDENTITY,home),"pivot":home}
+	_isle_records[id] = rec
+	print("dragon vision greybox: the dragon knows %s: %.0f m to its corners about (%.0f, %.0f, %.0f)" % [id,float(shape.radius),home.x,home.y,home.z])
+	return rec
+
+## The isle the pilot is on or over (its index in ISLES, the dragon's
+## `targets`), its outline at rest: the walker's feet, or the plane flying,
+## from a little under its top to OVER_ISLE m over it; -1 for none.
+func _pilot_isle() -> int:
+	var at: Vector3 = plane.position if flying and plane != null else motor.feet
+	for i in range(ISLES.size()):
+		var mid: Vector2 = ISLES[i][1]
+		var half: Vector2 = (ISLES[i][2] as Vector2)*0.5
+		var top: float = TOP+float(ISLES[i][3])
+		if absf(at.x-mid.x) <= half.x and absf(at.z-mid.y) <= half.y and at.y > top-3.0 and at.y < top+OVER_ISLE: return i
+	return -1
+
+## The grip's beats as toasts.
+func _grip_beat(what: String) -> void:
+	var said: String = {"grab":"He grabs the isle!","staggered":"Staggered!","inhale":"He draws breath: take cover!",
+		"blown":"Blown off your feet!","pull":"He hauls on the rim: hold on!","thrown":"Thrown!"}.get(what,"")
+	if said != "": _show_toast(said)
+	print("dragon vision greybox: grip %s, %s tipped %.1f°, pilot %s at (%.1f, %.1f, %.1f) %s%s" % [what,
+		str(dragon.grip.target.name) if not dragon.grip.is_empty() else "-",rad_to_deg(dragon.gale.tip()),motor.move if motor.move != "" else "standing",
+		motor.feet.x,motor.feet.y,motor.feet.z,"stunned "+motor.stunned if motor.stunned != "" else "on his feet",", down" if motor.downed() else ""])
+
 func _sight_changed(now: String, _was: String) -> void:
 	match now:
 		"suspicious": _show_toast("The dragon is suspicious")
@@ -287,13 +392,15 @@ func _sight_changed(now: String, _was: String) -> void:
 		"unaware": _show_toast("He has lost you")
 
 ## His downwash on the plane and the sail (as studies/aqueduct_isle.gd),
-## and his cyclone's and air blast's air on the plane.
+## and his cyclone's, air blast's and grip gale's air on the plane.
 func _wash_air() -> void:
 	plane_air = func(p: Vector3) -> Dictionary:
 		if plane == null or dragon == null: return {}
 		var air: Dictionary = dragon.downwash.plane_air(p,plane.forward())
 		if dragon.cyclone != null: air = dragon.downwash.merge(air,dragon.cyclone.plane_air(p,plane.forward()))
 		if dragon.air_blast != null: air = dragon.downwash.merge(air,dragon.air_blast.plane_air(p,plane.forward()))
+		# The grip's gale as a gust (scripts/dragon_gale.gd `plane_gust`).
+		if dragon.gale != null: air = dragon.downwash.merge(dragon.gale.plane_gust(p,plane.forward()),air)
 		return air
 	var base: Callable = motor.air
 	motor.air = func(p: Vector3) -> Dictionary:
@@ -304,6 +411,14 @@ func _wash_air() -> void:
 func _process(delta: float) -> void:
 	super._process(delta)
 	if dragon == null: return
+	_up_t += delta
+	if _grip_now:
+		# --grip-now: on his way in to grip home, once the isles are sampled.
+		_grip_now_t += delta
+		if _grip_now_t >= GRIP_NOW_AFTER and not _isle_record("home").is_empty():
+			_grip_now = false
+			dragon.grip_isle(0,GRIP_HOLD,true)
+			print("dragon vision greybox: --grip-now: he comes in to grip home")
 	if _atmosphere != null:
 		dragon.air = _atmosphere.breeze()
 		dragon.air_angle = _atmosphere._air_angle
@@ -344,7 +459,7 @@ func _look_shot() -> void:
 	dragon.cyclone.fire(aim+Vector3(-50.0,60.0,20.0),aim)
 	_cyclone_shot = Vector2.INF
 
-## K: his attack cycled blast, cyclone, none.
+## K: his attack cycled blast, grip, cyclone, none.
 func _unhandled_input(event: InputEvent) -> void:
 	if dragon != null and event is InputEventKey and event.pressed and not event.echo and (event as InputEventKey).keycode == KEY_K:
 		swap_attack()
@@ -355,9 +470,9 @@ func _unhandled_input(event: InputEvent) -> void:
 func swap_attack() -> void:
 	_attack = ATTACKS[(ATTACKS.find(_attack)+1)%ATTACKS.size()]
 	dragon.set_attack(_attack)
-	var said: String = {"blast":"His attack: the air blast","cyclone":"His attack: the cyclone","none":"His attack: none"}[_attack]
+	var said: String = {"blast":"His attack: the air blast","grip":"His attack: the grip (on an isle; the blast off them)","cyclone":"His attack: the cyclone","none":"His attack: none"}[_attack]
 	_show_toast(said)
 	print("dragon vision greybox: "+said)
 
 func _foot_text() -> String:
-	return super._foot_text()+"\nJ: the dragon's sight overlay  ·  K: his attack (blast, cyclone, none)  ·  V: watch the dragon  ·  knocked: X twirl, then Space sail"
+	return super._foot_text()+"\nJ: the dragon's sight overlay  ·  K: his attack (blast, grip, cyclone, none)  ·  V: watch the dragon  ·  knocked: X twirl, then Space sail"
