@@ -19,7 +19,11 @@ extends Node3D
 ##   where the start rim sets him down and the far rim's landing.
 ## - `exit_reached(feet)`: true stood on the far rim.
 ## - `beats()`: practice spawns in order, [{name, at, face}] (local).
-## - `floor_y()`: the soft floor under it all (local), the turn below.
+## - `floor_y()`: the void's floor under it all (local): fallen past it he
+##   is lost, and the yard sends him back to the start rim.
+## - `updrafts()`: the rising air beside it (thermals the pocket sail climbs,
+##   scripts/sky_currents.gd's), [{name, base: Vector3 (local, its foot),
+##   top (local y), radius}]; none by default.
 ## - `title()`.
 ## - Hazards (optional, none here): `has_hazards()`, `set_hazards(on)`,
 ##   `step_hazards(delta, motor, space)` (the yard calls it each frame
@@ -56,6 +60,9 @@ func beats() -> Array:
 
 func floor_y() -> float:
 	return -10.0
+
+func updrafts() -> Array:
+	return []
 
 func has_hazards() -> bool:
 	return false

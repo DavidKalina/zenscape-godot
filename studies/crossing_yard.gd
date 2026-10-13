@@ -17,11 +17,25 @@ extends "res://studies/kit_isle.gd"
 ##              docs/design/roguelike/crossing-viaduct-arrows.md);
 ##              `--arrows=0` starts with them off (default on)
 ## Crossed (stood on the far rim), the time from leaving the start rim
-## shows. Fallen, he lands on the soft floor and walks (and climbs) back.
+## shows. The crossing hangs over the void (its `floor_y` under its walk,
+## docs/design/roguelike/crossing-viaduct-heights.md): fallen past the
+## void's floor he is lost, a short fade and back at the start rim, the
+## falls counted on the foot card. Knocked into the air, Jump after
+## KNOCK_SAIL s opens the pocket sail out of the tumble (PilotMotor
+## `knock_sail`), and the crossing's updrafts (`updrafts`, thermals as the
+## sky's: scripts/sky_currents.gd) climb the sail back up.
 ## `--crossing=<name>` starts on that crossing; `--beat=<n>` at that beat.
 ##   ./run-crossing-yard.command
 ##   godot --path . res://studies/crossing_yard.tscn -- --no-title
 const Crossing = preload("res://studies/crossings/crossing.gd")
+const SkyCurrents = preload("res://scripts/sky_currents.gd")
+
+## Seconds after a knock into the air before Jump opens the sail out of
+## the tumble (PilotMotor `knock_sail`): the blow's first jolt is his to
+## take, then the sail is his.
+const KNOCK_SAIL := 0.35
+## The fade back from a fall to his death (s).
+const FALL_FADE := 0.8
 
 ## The slots: name -> the crossing's script. One line per crossing.
 const CROSSINGS := {
@@ -38,6 +52,13 @@ var _crossed := false
 ## each of their voices.
 var hazards_on := true
 var _voice_beds: Array = []
+## The crossing's updrafts (thermals the sail climbs, drawn as the sky's).
+var currents: SkyCurrents
+## Fallen past the void's floor (world y): lost. Falls so far.
+var kill_y := -INF
+var falls := 0
+var _fade: ColorRect
+var _fade_left := 0.0
 
 func _ready() -> void:
 	crossing_name = CROSSINGS.keys()[0]
@@ -46,6 +67,29 @@ func _ready() -> void:
 		elif arg.begins_with("--beat="): _beat = int(arg.get_slice("=",1))
 		elif arg.begins_with("--arrows="): hazards_on = arg.get_slice("=",1) != "0"
 	super._ready()
+	motor.knock_sail = KNOCK_SAIL
+	# The sail reads the game's air and the crossing's updrafts together.
+	var game_air: Callable = motor.air
+	motor.air = func(p: Vector3) -> Dictionary: return _air_at(game_air,p)
+	var layer := CanvasLayer.new()
+	layer.name = "FallFade"
+	layer.layer = 7
+	add_child(layer)
+	_fade = ColorRect.new()
+	_fade.color = Color(0.02,0.03,0.05)
+	_fade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_fade.modulate.a = 0.0
+	layer.add_child(_fade)
+
+## The air at `p`: the game's (`game_air`: its breeze and gusts) with the
+## crossing's updrafts' rise and thermal on it.
+func _air_at(game_air: Callable, p: Vector3) -> Dictionary:
+	var here: Dictionary = game_air.call(p) if game_air.is_valid() else {}
+	if currents == null: return here
+	var lift: Dictionary = currents.air_at(p)
+	var wind: Vector3 = here.get("wind",Vector3.ZERO)
+	return {"wind":wind+(lift.wind as Vector3),"thermal":maxf(float(here.get("thermal",0.0)),float(lift.thermal))}
 
 func isle_name() -> String:
 	return "crossing yard"
@@ -54,12 +98,14 @@ func isle_name() -> String:
 func _load_pack() -> void:
 	crossing = (CROSSINGS[crossing_name] as GDScript).new()
 	crossing.name = "Crossing"
-	crossing.position = Vector3(0.0,TOP,0.0)
 	crossing.lay_out()
+	# Its void's floor at the isle's datum, the walk high over it.
+	crossing.position = Vector3(0.0,TOP-crossing.floor_y(),0.0)
 	var e: Dictionary = crossing.entry()
 	start = crossing.position+(e.at as Vector3)
 	start_face = e.face
-	lost = TOP+crossing.floor_y()-30.0
+	kill_y = crossing.position.y+crossing.floor_y()
+	lost = -INF
 	stations = []
 	var beats: Array = crossing.beats()
 	for i in range(beats.size()):
@@ -78,6 +124,22 @@ func _build_art() -> void:
 	crossing.set_hazards(hazards_on)
 	var floor_body := crossing.get_node_or_null("Floor") as StaticBody3D
 	if floor_body != null: floor_body.collision_layer |= TURF_LAYER
+	_build_updrafts()
+
+## The crossing's updrafts as the sky's thermals (SkyCurrents `add_thermal`,
+## its ribbons spiralling up each column), in the world's frame.
+func _build_updrafts() -> void:
+	if currents != null:
+		currents.queue_free()
+		currents = null
+	var drafts: Array = crossing.updrafts()
+	if drafts.is_empty(): return
+	currents = SkyCurrents.new()
+	currents.name = "Updrafts"
+	add_child(currents)
+	for d: Dictionary in drafts:
+		var base: Vector3 = crossing.position+(d.base as Vector3)
+		currents.add_thermal(base,"crossing",crossing.position.y+float(d.top),float(d.radius))
 
 ## Only the cloud sea's own towers in the sky, no grass, no life, no plane.
 func sky_script() -> Script:
@@ -100,7 +162,7 @@ func _add_life() -> void:
 func park_home() -> void:
 	pass
 
-## No stranding: the soft floor is the net.
+## No stranding: the void's floor is the net (`tick`).
 func _check_step_off() -> void:
 	pass
 
@@ -108,7 +170,7 @@ func capture_look() -> Vector3:
 	return crossing.position+crossing.call("slot_at") if crossing.has_method("slot_at") else crossing.position
 
 func isle_summit() -> Vector3:
-	return Vector3(0.0,TOP+20.0,-50.0)
+	return Vector3(0.0,(crossing.position.y if crossing != null else TOP)+20.0,-50.0)
 
 func place(at: Vector3, face: Vector2) -> void:
 	super.place(at,face)
@@ -117,7 +179,13 @@ func place(at: Vector3, face: Vector2) -> void:
 
 func tick(delta: float) -> void:
 	super.tick(delta)
+	if _fade != null and _fade_left > 0.0:
+		_fade_left = maxf(_fade_left-delta,0.0)
+		_fade.modulate.a = clampf(_fade_left/FALL_FADE,0.0,1.0)
 	if crossing == null or flying: return
+	if motor.feet.y < kill_y:
+		fall_to_death()
+		return
 	var local := motor.feet-crossing.position
 	if _run_t < 0.0 and not _crossed and local.distance_to(crossing.entry().at) > 4.0: _run_t = 0.0
 	elif _run_t >= 0.0: _run_t += delta
@@ -135,6 +203,17 @@ func _hazards(delta: float) -> void:
 	var voices: Array = crossing.hazard_voices()
 	while _voice_beds.size() < voices.size(): _voice_beds.append({})
 	for i in range(voices.size()): audio.beasts._air_blast(voices[i],_voice_beds[i])
+
+## Fallen past the void's floor: counted, a short fade, back at the start
+## rim (the crossing's entry, whatever beat he practised from).
+func fall_to_death() -> void:
+	falls += 1
+	var e: Dictionary = crossing.entry()
+	place(crossing.position+(e.at as Vector3),e.face)
+	_last_stood = motor.feet
+	_fade_left = FALL_FADE
+	if _fade != null: _fade.modulate.a = 1.0
+	_show_toast("Fallen into the void: back to the start rim  ·  falls %d" % falls)
 
 func set_hazards(on: bool) -> void:
 	hazards_on = on
@@ -161,6 +240,7 @@ func next_crossing() -> void:
 	art.add_child(crossing)
 	crossing.build(_material)
 	crossing.set_hazards(hazards_on)
+	_build_updrafts()
 	_voice_beds = []
 	await get_tree().physics_frame
 	respawn()
@@ -170,4 +250,7 @@ func _foot_text() -> String:
 	var names := []
 	for s: Dictionary in stations: names.append("%d %s" % [s.key,s.name])
 	var hazard := ("  ·  K arrows: %s" % ("on" if hazards_on else "off")) if crossing != null and crossing.has_hazards() else ""
+	hazard += "  ·  falls %d" % falls
+	if motor != null and motor.move == "tumble" and not motor.grounded: hazard += "\nKnocked: Space (pad A) opens the sail  ·  ride an updraft's swirl back up"
+	elif motor != null and motor.move == "sail": hazard += "\nUnder the sail: WASD steer into an updraft's swirl to climb  ·  Shift/C float  ·  Space fold"
 	return "%s  ·  R start rim  ·  %s  ·  N next crossing%s\nShift/C at a run: slide, + Space: long jump (again on each landing: chain)  ·  Space on landing: pump  ·  X twirl  ·  into a wall: slide, Space kick" % [crossing.title() if crossing != null else "",", ".join(names),hazard]

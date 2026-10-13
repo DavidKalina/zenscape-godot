@@ -57,9 +57,11 @@ const TINT := Color(0.92,0.97,1.0)
 const GATHER := 1.8
 ## The hard hit in the air: out and up in walker heights at the burst's
 ## heart (DragonAirBlast EDGE of it at the shock's rim), down this long (s).
-const AIR_OUT := 9.0
-const AIR_UP := 1.2
-const STUN_DOWN := 0.8
+## A notch under the first round's 9 / 1.2 / 0.8 (crossing-viaduct-heights.md):
+## a scare he can sail out of, still well off his line.
+const AIR_OUT := 7.0
+const AIR_UP := 1.0
+const STUN_DOWN := 0.6
 ## The shove on his feet (m/s), out from the burst and up.
 const PUSH := 3.2
 const PUSH_UP := 2.4

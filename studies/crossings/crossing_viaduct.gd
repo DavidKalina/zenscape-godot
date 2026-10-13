@@ -2,9 +2,12 @@ extends "res://studies/crossings/crossing.gd"
 ## The Broken Viaduct (docs/design/roguelike/crossing-viaduct-round1.md):
 ## a ruined aqueduct curving up about 15 m from the start rim to the far
 ## rim, a pure-skill crossing on the pilot's own moves (scripts/
-## pilot_motor.gd). Everything hangs over the soft floor (the turn below,
-## the aqueduct's own valley floor DECK under its channel); fallen, he
-## climbs back up the aqueduct head's treads beside the start rim.
+## pilot_motor.gd). Everything hangs DROP m over the void
+## (docs/design/roguelike/crossing-viaduct-heights.md), its stone ending
+## ROOTS under the walk, broken off over the sky: fallen past the void's
+## floor he is lost (the yard sends him back to the start rim). Knocked
+## off, he may sail out (PilotMotor `knock_sail`) and ride an updraft
+## (`updrafts`) back up to the start rim or the turn platform.
 ##
 ## The beats, each sized from the walker's moves (a motor fitted to his
 ## size, `walker()`), never from copied numbers:
@@ -47,6 +50,24 @@ const SEED := 4107
 ## Weathering of the stone (0 new to 1 ruin).
 const WEATHERED := 0.35
 
+## The void under the walk top (m): falling past it is a fall to his death.
+## The stone (piers, spans, stair) reaches ROOTS under the walk top and
+## ends there, broken off over the sky (deeper than the aqueduct's deck
+## over its springing, so its spans stand whole).
+const DROP := 100.0
+const ROOTS := 26.0
+## The updrafts (thermals, scripts/sky_currents.gd): their radius (m), and
+## how far their tops stand over the landing each serves (m: a ridden sail
+## settles about 6 m under a thermal's top, as its lift fades, so it hovers
+## a few metres over the landing and glides onto it).
+const UPDRAFT_RADIUS := 6.0
+const UPDRAFT_OVER := 10.0
+## Where: the start rim's, left of the run-up (x, z local: the deck's perch
+## throws to the left); the turn platform's, left of the piers' foot and
+## right past the platform and the safe stair (along the piers, aside).
+const UPDRAFT_START := Vector2(-12.0,1.0)
+const UPDRAFT_TURN_LEFT := Vector2(6.0,-11.0)
+const UPDRAFT_TURN_RIGHT := Vector2(2.0,14.0)
 ## The start rim: across and deep (m).
 const RIM := Vector2(12.0,12.0)
 ## 1. The run-up: spans, their tilt end to end (degrees: under the
@@ -292,7 +313,19 @@ func beats() -> Array:
 	]
 
 func floor_y() -> float:
-	return -deck
+	return -DROP
+
+## The updrafts back up (none to the far end: a recovery costs progress,
+## not the run): beside the start rim, and either side of the turn
+## platform, each rising from the void to UPDRAFT_OVER over its landing.
+func updrafts() -> Array:
+	var left := at(turn_mid,TURN_B,UPDRAFT_TURN_LEFT.x,UPDRAFT_TURN_LEFT.y)
+	var right := at(turn_mid,TURN_B,UPDRAFT_TURN_RIGHT.x,UPDRAFT_TURN_RIGHT.y)
+	return [
+		{"name":"start rim","base":Vector3(UPDRAFT_START.x,-DROP,UPDRAFT_START.y),"top":UPDRAFT_OVER,"radius":UPDRAFT_RADIUS},
+		{"name":"turn platform, left","base":Vector3(left.x,-DROP,left.z),"top":turn_mid.y+UPDRAFT_OVER,"radius":UPDRAFT_RADIUS},
+		{"name":"turn platform, right","base":Vector3(right.x,-DROP,right.z),"top":turn_mid.y+UPDRAFT_OVER,"radius":UPDRAFT_RADIUS},
+	]
 
 ## The chimney slot's middle at its foot (local).
 func slot_at() -> Vector3:
@@ -302,13 +335,9 @@ func slot_at() -> Vector3:
 
 func build(paint: Callable) -> void:
 	super.build(paint)
-	var low := floor_y()
-	# The soft floor, the start rim, the aqueduct head beside it (the way
-	# back up from the floor: its treads, a jump each).
-	box(Vector3(260.0,2.0,260.0),Vector3(20.0,low-1.0,-50.0),0.0,"floor").name = "Floor"
+	# The stone ends ROOTS under the walk, over the void.
+	var low := -ROOTS
 	column(Vector3(0.0,0.0,RIM.y*0.5),RIM,low,0.0,0.0,"pad")
-	var head := Aqueduct.head(SEED,WEATHERED,true,false)
-	piece(head,Transform3D(Basis.IDENTITY,Vector3(-RIM.x*0.5,low,RIM.y*0.6)))
 	_run_up(low)
 	_piers(low)
 	_safe_stair(low)
@@ -340,10 +369,6 @@ func _run_up(low: float) -> void:
 	var far_ground := func(_x: float, _z: float) -> float: return low-far_origin.y
 	piece(Aqueduct.span(SEED+9,WEATHERED,3,false,far_ground),Transform3D(Basis(Vector3.UP,PI*0.5),far_origin))
 	box(Vector3(Aqueduct.CHANNEL,0.3,span),far_mid-Vector3(0.0,0.15,0.0),0.0,"")
-	# What fell, on the floor under the gap.
-	for k in range(2):
-		var p := Vector3(-1.5+3.0*k,low,lip.z-fall_gap*(0.3+0.4*k))
-		piece(RuinKit.fallen_pier(SEED+20+k,0.6),Transform3D(Basis(Vector3.UP,0.7+1.9*k),p))
 	# The turn platform.
 	var pad_mid := at(turn_mid,TURN_B,0.0,(TURN_PAD_RIGHT-TURN_PAD.x*0.5)*0.5)
 	column(pad_mid,Vector2(TURN_PAD.x*0.5+TURN_PAD_RIGHT,TURN_PAD.y),low,turn_mid.y,TURN_B,"grey")
