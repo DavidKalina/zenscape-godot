@@ -392,13 +392,15 @@ func _sight_changed(now: String, _was: String) -> void:
 		"unaware": _show_toast("He has lost you")
 
 ## His downwash on the plane and the sail (as studies/aqueduct_isle.gd),
-## and his cyclone's and air blast's air on the plane.
+## and his cyclone's, air blast's and grip gale's air on the plane.
 func _wash_air() -> void:
 	plane_air = func(p: Vector3) -> Dictionary:
 		if plane == null or dragon == null: return {}
 		var air: Dictionary = dragon.downwash.plane_air(p,plane.forward())
 		if dragon.cyclone != null: air = dragon.downwash.merge(air,dragon.cyclone.plane_air(p,plane.forward()))
 		if dragon.air_blast != null: air = dragon.downwash.merge(air,dragon.air_blast.plane_air(p,plane.forward()))
+		# The grip's gale as a gust (scripts/dragon_gale.gd `plane_gust`).
+		if dragon.gale != null: air = dragon.downwash.merge(dragon.gale.plane_gust(p,plane.forward()),air)
 		return air
 	var base: Callable = motor.air
 	motor.air = func(p: Vector3) -> Dictionary:
