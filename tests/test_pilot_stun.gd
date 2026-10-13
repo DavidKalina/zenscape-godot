@@ -149,6 +149,36 @@ func _initialize() -> void:
 	var lying: Vector3 = figure._rag*Vector3.UP
 	check(absf(lying.y) < 0.35 and figure._dizzy.visible,"Drawn lying flat (up %.2f), the dizzy over his head" % lying.y)
 	check(_until_up(m) > PilotMotor.TUMBLE_DOWN-0.3,"Then up")
+	# A hard hit (`down`, a blast's throw): no poise back in a long throw,
+	# laid down `down` s from where his skid stops.
+	m.reset(Vector3.ZERO,0.0)
+	_step(m,Vector2.ZERO,false)
+	m.knock(Vector3(0.0,20.0,18.0),null,1.2)
+	var hard := {}
+	var aloft := 0.0
+	for i in range(600):
+		hard.merge(_step(m,Vector2(-1.0,0.0),i % 2 == 0),true)
+		if m.grounded: break
+		aloft += DT
+	check(aloft > PilotMotor.POISE_MOST and not hard.has("poised") and not hard.has("sail") and hard.has("downed"),"A hard hit: stunned the whole throw (%.2f s up), then laid down" % aloft)
+	var skid := 0.0
+	while m.speed() >= 0.5 and m.move == "tumble" and skid < 5.0:
+		_step(m,Vector2.ZERO,false)
+		skid += DT
+	# Mashed past the chain's cap: no getting up early from a hard hit.
+	var hard_up := 0.0
+	while m.move == "tumble" and hard_up < 10.0:
+		m.twirl = int(hard_up/DT) % 2 == 0
+		_step(m,Vector2.ZERO,false)
+		hard_up += DT
+	m.twirl = false
+	check(skid > 0.8 and absf(hard_up-1.2) < 0.1,"Down for the hit's time once his %.2f s skid stops, mashed (%.2f s)" % [skid,hard_up])
+	for i in range(int(PilotMotor.STUN_CALM/DT)+5): _step(m,Vector2.ZERO,false)
+	m.knock(Vector3(1.0,1.0,0.0),Node.new())
+	for i in range(120):
+		_step(m,Vector2.ZERO,false)
+		if m.grounded: break
+	check(absf(_until_up(m)-PilotMotor.TUMBLE_DOWN) < 0.1,"The next plain knock is plain again")
 	# Tossed stunned.
 	m.reset(Vector3.ZERO,0.0)
 	_step(m,Vector2.ZERO,false)

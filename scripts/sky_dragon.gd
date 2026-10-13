@@ -2940,7 +2940,7 @@ func _blow_on_pilot(delta: float, mouth: Vector3) -> void:
 	var away := flat/hard
 	var dist := Vector2(mid.x-mouth.x,mid.z-mouth.z).length()
 	if hard >= KNOCK_AIR and float(gale.gust_env) > 0.3 and not _knocked:
-		walker.knock(walker.knock_velocity(away,lerpf(KNOCK_OUT.x,KNOCK_OUT.y,clampf(dist/REACH,0.0,1.0))*clampf(hard/20.0,0.75,1.2),KNOCK_UP))
+		walker.knock(walker.knock_velocity(away,lerpf(KNOCK_OUT.x,KNOCK_OUT.y,clampf(dist/REACH,0.0,1.0))*clampf(hard/20.0,0.75,1.2),KNOCK_UP),self)
 		_knocked = true
 		knocks += 1
 		print("sky dragon: a ground gust knocks the pilot, %.1f m from the mouth, air %.1f m/s" % [dist,hard])
@@ -2978,7 +2978,7 @@ func _ride_isle(delta: float) -> void:
 	if gale.phase != "snap" or v.y < 3.0 or accel > -float(walker.get("gravity")): return
 	var up := minf(v.y*LAUNCH_GAIN,LAUNCH_MOST)
 	var inward := -(grip.out as Vector3)*up*LAUNCH_IN if not grip.is_empty() else Vector3.ZERO
-	walker.knock(Vector3(v.x+inward.x,up,v.z+inward.z))
+	walker.knock(Vector3(v.x+inward.x,up,v.z+inward.z),self)
 	_ride_vy = 0.0
 	launched += 1
 	var rim_at: Vector3 = grip.rim if not grip.is_empty() else feet

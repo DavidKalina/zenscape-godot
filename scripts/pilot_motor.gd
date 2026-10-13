@@ -724,6 +724,10 @@ var _fall_top := 0.0
 var _stun_t := 0.0
 var _poise := 0.0
 var _stunned_for := 0.0
+## A hard hit's time down (`knock`'s `down`): no poise in the air, then
+## laid down this long once his skid has stopped (kept over a skid's hop
+## off an edge); 0 for none.
+var _hit_down := 0.0
 var _calm := 0.0
 var _tech := 0.0
 var _tech_lock := 0.0
@@ -789,6 +793,7 @@ func reset(at: Vector3, towards: float, speed := 0.0) -> void:
 	_fall_top = at.y
 	_stun_t = 0.0
 	_stunned_for = 0.0
+	_hit_down = 0.0
 	_calm = 0.0
 	_tech = 0.0
 	_tech_lock = 0.0
@@ -834,8 +839,10 @@ static func _turned(way: Vector2, turn: float) -> Vector2:
 ## (the enemy or trap that hit him) keeps one source from stunning him
 ## again within `restun_gap` s: then, and past `stun_chain_cap` s stunned
 ## in a row, the blow only throws him (stunned, he tumbles on as he was;
-## on his feet, a `toss`).
-func knock(v: Vector3, source: Object = null) -> void:
+## on his feet, a `toss`). `down` > 0 makes it a hard hit: his poise doesn't
+## come back in the air (the chain cap's breakout still does), and he lands
+## laid down at least `down` s from where his skid stops.
+func knock(v: Vector3, source: Object = null, down := 0.0) -> void:
 	if not _seized:
 		var key := source.get_instance_id() if source != null else 0
 		var last: float = _sources.get(key,-INF)
@@ -849,6 +856,9 @@ func knock(v: Vector3, source: Object = null) -> void:
 			return
 		_sources[key] = _clock
 	_knock(v)
+	if down > 0.0:
+		_poise = INF
+		_hit_down = down
 
 ## Whether a knock from `source` now would stun him (not only throw him).
 func stunnable(source: Object = null) -> bool:
@@ -860,6 +870,7 @@ func _knock(v: Vector3) -> void:
 	stunned = "knock"
 	_stun_t = 0.0
 	_poise = poise_for(v)
+	_hit_down = 0.0
 	_tech = 0.0
 	_tech_lock = 0.0
 	_roll = 0.0
@@ -924,7 +935,7 @@ func _throw_stunned(v: Vector3) -> void:
 	velocity = v
 	_down = 0.0
 	_stun_t = 0.0
-	_poise = poise_for(v)
+	_poise = INF if _hit_down > 0.0 else poise_for(v)
 	_fall_top = feet.y
 	feet.y += 0.02
 
@@ -977,11 +988,12 @@ func _time_to_ground(ground: Callable) -> float:
 	return (-v+sqrt(d))/g if d >= 0.0 else INF
 
 ## The twirl pressed while stunned: "up" (the chain's cap passed: out at
-## once, in the air into the twirl, on the ground up), or "" (with `tech`
+## once, in the air into the twirl, on the ground up, though not from a
+## hard hit's time down), or "" (with `tech`
 ## on and the button not locked out, a press armed for `tech_window` s, the
 ## button then locked out `tech_lockout` s past it).
 func _tech_press() -> String:
-	if _stunned_for >= stun_chain_cap: return "up"
+	if _stunned_for >= stun_chain_cap and not (grounded and _hit_down > 0.0): return "up"
 	if not tech or _tech_lock > 0.0: return ""
 	_tech = tech_window
 	_tech_lock = tech_window+tech_lockout
@@ -1056,6 +1068,7 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 		stunned = ""
 		_twirled = false
 		_regrab = 0.0
+		_hit_down = 0.0
 		out["poised"] = true
 	if move == "tumble":
 		var how := _tech_press() if twirl_pressed else ""
@@ -1067,6 +1080,7 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 			_no_cut = false
 			_twirled = false
 			_fall_top = feet.y
+			_hit_down = 0.0
 			out["recovered"] = true
 		else:
 			if how == "up": _down = 0.0
@@ -1357,7 +1371,8 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 func _tumble_step(delta: float, ground: Callable, slide: Callable, ledge: Callable, out: Dictionary) -> Dictionary:
 	var h := Vector2(velocity.x,velocity.z)
 	if grounded:
-		_down -= delta
+		# A hard hit's time down starts once he lies still.
+		if _hit_down <= 0.0 or h.length() < 0.5: _down -= delta
 		h = h.move_toward(Vector2.ZERO,TUMBLE_SKID*delta)
 		var slid: Vector3 = slide.call(feet,h*delta)
 		var low: float = ground.call(Vector2(slid.x,slid.z))
@@ -1380,6 +1395,7 @@ func _tumble_step(delta: float, ground: Callable, slide: Callable, ledge: Callab
 				_no_cut = false
 				_immune = tumble_immune
 				_since_land = 99.0
+				_hit_down = 0.0
 				out["got_up"] = true
 		velocity.x = h.x
 		velocity.z = h.y
@@ -1422,6 +1438,7 @@ func _tumble_step(delta: float, ground: Callable, slide: Callable, ledge: Callab
 		_wet_at(Vector2(feet.x,feet.z),ground)
 		_immune = tumble_immune
 		stunned = ""
+		_hit_down = 0.0
 		return out
 	if y <= under and velocity.y <= 0.0:
 		var drop := _fall_top-under
@@ -1450,10 +1467,11 @@ func _tumble_step(delta: float, ground: Callable, slide: Callable, ledge: Callab
 			_no_cut = false
 			_roll_left = roll_time
 			_immune = tumble_immune
+			_hit_down = 0.0
 			out["teched"] = "land"
 			out["rolled"] = drop
 		else:
-			_lay_down(maxf(tumble_down,fall_stun_time(drop)),stunned if stunned != "" else "knock")
+			_lay_down(maxf(maxf(tumble_down,fall_stun_time(drop)),_hit_down),stunned if stunned != "" else "knock")
 			out["downed"] = _down
 	elif y < under:
 		y = under

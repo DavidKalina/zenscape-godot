@@ -75,6 +75,9 @@ const GATHER := 0.8
 ## model asks): off any greybox isle from its middle.
 const KNOCK_OUT := 42.0
 const KNOCK_UP := 3.5
+## A hard hit (PilotMotor `knock`'s `down`): stunned the whole throw, then
+## laid down, dizzy, this long (s) where he lands.
+const STUN_DOWN := 1.2
 const EDGE := 0.45
 ## The plane: the ball bursts within its half span plus the ball; the shock
 ## reaches PLANE_SHOCK of its spans. The wind (m/s: out along the shot and
