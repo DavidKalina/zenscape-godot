@@ -81,6 +81,10 @@ const NECK := 17.0
 const HEAD_GIRTH := 1.15
 const HEAD_SECTIONS := [[0.92,0.78,0.0],[1.24,0.72,0.28],[1.08,0.62,0.56],[0.7,0.46,0.82],[0.36,0.28,0.97]]
 const EYE_SIZE := Vector2(0.34,0.24)
+## The eye's patch (`_eye_patch`): cells along and across, and how far
+## off the face it lies (m).
+const EYE_GRID := Vector2i(10,8)
+const EYE_LIFT := 0.03
 ## Rings along the body, and points on the neck's curve.
 const STATIONS := 48
 const NECK_SAMPLES := 12
@@ -279,11 +283,21 @@ const BAND_SKIP := 0.15
 const GLOW := Color(1.0,0.72,0.38)
 const DAY_GLOW := 1.5
 const NIGHT_GLOW := 2.1
-const EYE_DAY := 3.5
-const EYE_NIGHT := 5.0
+## The eyes are the Olmec's (scripts/enemies/inhaler_head_look.gd): polished
+## pale stone under a heavy lid, that light when it looks at you. At rest a
+## faint warm light (EYE_DAY, EYE_NIGHT: the eyes' strength by day and
+## night), watching or pacing you the Olmec's lit eyes (EYE_WATCH, its
+## EYE_ENERGY), easing in and out over EYE_EASE s.
+const EYE_DAY := 0.3
+const EYE_NIGHT := 1.2
+const EYE_WATCH := 3.2
+const EYE_EASE := 0.6
 const EYE_GLOW := Color(1.0,0.72,0.36)
+## The eyes' haze (radius m, strength by day and night at rest), and what
+## it gains when they light.
 const HAZE := 1.4
-const HAZE_STRENGTH := Vector2(0.12,0.7)
+const HAZE_STRENGTH := Vector2(0.04,0.35)
+const HAZE_WATCH := 0.3
 const RUNE_RUN := 0.45
 ## Night light round 1 (docs/design/night-light/round1.md): at night the
 ## runes stay strong (NIGHT_GLOW, was 1.25 to keep them from white) and white
@@ -437,6 +451,8 @@ var _skeleton: Skeleton3D
 var _body: MeshInstance3D
 var _material: ShaderMaterial
 var _haze: ShaderMaterial
+## The eyes' light, 0 at rest to 1 watching (eased).
+var _eye_lit := 0.0
 var _solid: AnimatableBody3D
 var _capsules: Array[CollisionShape3D] = []
 var _ribbons: MeshInstance3D
@@ -1022,15 +1038,18 @@ func _pose(_delta: float) -> void:
 	_body.custom_aabb = AABB(lo-pad,hi-lo+pad*2.0)
 
 ## The runes' run and the light by the hour: brighter after dark.
-func _light(_delta: float) -> void:
+func _light(delta: float) -> void:
 	var night := StoneLampLights.night_for(_daylight())
+	_eye_lit = move_toward(_eye_lit,1.0 if mode in ["watch","pace"] else 0.0,delta/EYE_EASE)
+	var lit := _eye_lit*_eye_lit
 	_material.set_shader_parameter("scroll",_scroll)
 	_material.set_shader_parameter("energy",lerpf(DAY_GLOW,NIGHT_GLOW,night))
 	_material.set_shader_parameter("glow",GLOW.lerp(NIGHT_RUNE_COLOUR,night))
 	_material.set_shader_parameter("halo",lerpf(0.32,NIGHT_HALO.x,night))
 	_material.set_shader_parameter("halo_spread",lerpf(10.0,NIGHT_HALO.y,night))
-	_material.set_shader_parameter("eye_energy",lerpf(EYE_DAY,EYE_NIGHT,night))
-	_haze.set_shader_parameter("strength",lerpf(HAZE_STRENGTH.x,HAZE_STRENGTH.y,night))
+	_material.set_shader_parameter("eye_energy",lerpf(lerpf(EYE_DAY,EYE_NIGHT,night),EYE_WATCH,lit))
+	_material.set_shader_parameter("eye_lit",lit)
+	_haze.set_shader_parameter("strength",lerpf(HAZE_STRENGTH.x,HAZE_STRENGTH.y,night)+HAZE_WATCH*lit)
 	_ribbon_material.set_shader_parameter("night",night)
 
 func _daylight() -> float:
@@ -1488,11 +1507,10 @@ func _build_mesh() -> ArrayMesh:
 		if out.dot(Vector3(center.x,center.y,0.0)) < 0.0: out = -out
 		center += out*0.05
 		eyes.append(center+out*0.25)
-		var length := along*EYE_SIZE.x*hr
-		var width := across*EYE_SIZE.y*hr
-		# A socket the shader lights as an almond of light with a slit pupil.
-		mesh.paint(Color(0.1,0.1,0.1),4,1.0,0.0,1.0)
-		mesh.quad(center+length-width,h,center+length+width,h,center-length-width,h,center-length+width,h,0.0,0.0,HEAD*0.4,HEAD*0.4,false,true)
+		# The eye, as the Olmec's (shaders/rune_serpent_runes.gdshaderinc
+		# `rs_eye`): carved into a patch laid on the face itself.
+		mesh.paint(STONE*float(FACE_TONE[j])*1.04,4,1.0,0.0,1.0)
+		_eye_patch(mesh,secs,j,behind.lerp(ahead,0.62),along,across,hr)
 	# A forked tongue of light, flat both ways.
 	var t := STATIONS+1
 	var w := 0.08
@@ -1508,6 +1526,91 @@ func _build_mesh() -> ArrayMesh:
 	for e in eyes: haze.light(e,h,HAZE,1.0)
 	haze.commit(built,_haze)
 	return built
+
+## The eye on the head's face `j` (between its sections 1 and 2): a grid
+## EYE_SIZE times the head's girth `hr` about `center`, `along` the head
+## and `across` the face, each point laid EYE_LIFT off the face's own two
+## triangles (quad's split), its normal, tone, occlusion and grain theirs,
+## so the patch is the face itself where the eye is not. (A flat quad
+## stood through that face, folded along its diagonal: one way on the
+## left, the other on the right, so one eye was half under the stone.)
+## Its square runs from the eye's back (x 0) to its front (1) and from
+## its foot (y 0) to the brow (1), the same on both sides.
+func _eye_patch(mesh: MeshParts, secs: Array, j: int, center: Vector3, along: Vector3, across: Vector3, hr: float) -> void:
+	var n := (j+1)%8
+	var a: Vector3 = secs[2][j]
+	var b: Vector3 = secs[2][n]
+	var c: Vector3 = secs[1][j]
+	var d: Vector3 = secs[1][n]
+	var arc_f := HEAD*(1.0-float(HEAD_SECTIONS[2][2]))
+	var arc_b := HEAD*(1.0-float(HEAD_SECTIONS[1][2]))
+	var tris := [[a,c,d,Vector3(arc_f,arc_b,arc_b)],[a,d,b,Vector3(arc_f,arc_b,arc_f)]]
+	var outs: Array[Vector3] = []
+	for t: Array in tris:
+		var t0: Vector3 = t[0]
+		var t1: Vector3 = t[1]
+		var t2: Vector3 = t[2]
+		var nrm := (t2-t0).cross(t1-t0).normalized()
+		var mid := (t0+t1+t2)/3.0
+		if nrm.dot(Vector3(mid.x,mid.y,0.0)) < 0.0: nrm = -nrm
+		outs.append(nrm)
+	var up := across if across.y > 0.0 else -across
+	var out := along.cross(up).normalized()
+	if out.dot(Vector3(center.x,center.y,0.0)) < 0.0: out = -out
+	# Each grid point: where it falls on the face (the outermost triangle
+	# along `out`), lifted; which triangle; its barycentric weights there.
+	var grid := []
+	for iv in range(EYE_GRID.y+1):
+		var row := []
+		for iu in range(EYE_GRID.x+1):
+			var e := Vector2(float(iu)/EYE_GRID.x*2.0-1.0,float(iv)/EYE_GRID.y*2.0-1.0)
+			var q := center+along*EYE_SIZE.x*hr*e.x+up*EYE_SIZE.y*hr*e.y
+			var best := -INF
+			var pick := [0,q,Vector3(1,0,0)]
+			for ti in range(2):
+				var t: Array = tris[ti]
+				var hit: Variant = Plane(outs[ti],t[0]).intersects_ray(q+out*2.0,-out)
+				if hit == null: continue
+				var w := Geometry3D.get_triangle_barycentric_coords(hit,t[0],t[1],t[2])
+				var inside := w.x >= -0.001 and w.y >= -0.001 and w.z >= -0.001
+				var height := (hit as Vector3).dot(out)+(0.0 if inside else -1.0)
+				if height > best:
+					best = height
+					pick = [ti,hit,w]
+			row.append(pick)
+		grid.append(row)
+	for iv in range(EYE_GRID.y):
+		for iu in range(EYE_GRID.x):
+			var cell := [[iu,iv],[iu+1,iv],[iu+1,iv+1],[iu,iv+1]]
+			for k: Array in [[0,1,2],[0,2,3]]:
+				var pts := []
+				for m: int in k: pts.append(cell[m])
+				# The face's triangle most of its corners fall on gives its normal.
+				var votes := 0
+				for pt: Array in pts: votes += int(grid[pt[1]][pt[0]][0])
+				var ti := 1 if votes >= 2 else 0
+				var corners := []
+				for pt: Array in pts:
+					var g: Array = grid[pt[1]][pt[0]]
+					var t: Array = tris[int(g[0])]
+					var w: Vector3 = g[2]
+					var on: Vector3 = g[1]
+					var arcs: Vector3 = t[3]
+					corners.append([on+outs[int(g[0])]*EYE_LIFT,
+						[mesh.dress_corner(t[0],arcs.x),mesh.dress_corner(t[1],arcs.y),mesh.dress_corner(t[2],arcs.z)],w,
+						Vector2(float(pt[0])/EYE_GRID.x,float(pt[1])/EYE_GRID.y)])
+				# Wound as tri() winds: the face's outside shows.
+				var p0: Vector3 = corners[0][0]
+				var p1: Vector3 = corners[1][0]
+				var p2: Vector3 = corners[2][0]
+				if (p1-p0).cross(p2-p0).dot(outs[ti]) > 0.0: corners = [corners[0],corners[2],corners[1]]
+				for cr: Array in corners:
+					var from: Array = cr[1]
+					var w: Vector3 = cr[2]
+					var colour: Color = (from[0][0] as Color)*w.x+(from[1][0] as Color)*w.y+(from[2][0] as Color)*w.z
+					var rest: Vector3 = (from[0][1] as Vector3)*w.x+(from[1][1] as Vector3)*w.y+(from[2][1] as Vector3)*w.z
+					var arc: float = float(from[0][2])*w.x+float(from[1][2])*w.y+float(from[2][2])*w.z
+					mesh.raw(cr[0],STATIONS,outs[ti],colour,rest,arc,cr[3])
 
 ## An octagon ring (8 corners, corner j at 67.5 + 45 j degrees, so face 0
 ## is the back, 4 the belly): `w` wide and `hgt` high shares of `r`, the
@@ -1577,18 +1680,31 @@ class MeshParts:
 		var corners := [[a,ba,ua,arcs.x],[c,bc,uc,arcs.z],[b,bb,ub,arcs.y]]
 		for corner: Array in corners:
 			var p: Vector3 = corner[0]
-			var rest := Vector3(p.x,p.y,-float(corner[3]))*GRAIN
-			var occ := _occlusion(p,rest)
-			vertices.append(p)
-			normals.append(normal)
-			var shade := lerpf(AO_FLOOR,1.0,occ)
-			colors.append(Color(_colour.r*shade,_colour.g*shade,_colour.b*shade,occ))
-			uvs.append(Vector2(rest.x,rest.y))
-			uv2s.append(Vector2(rest.z,0.0))
-			custom.append_array([_what,_aspect,float(corner[3]),_seed])
-			custom1.append_array([(corner[2] as Vector2).x,(corner[2] as Vector2).y,_count,0.0])
-			bones.append_array([int(corner[1]),0,0,0])
-			weights.append_array([1.0,0.0,0.0,0.0])
+			var made := dress_corner(p,float(corner[3]))
+			raw(p,int(corner[1]),normal,made[0],made[1],float(corner[3]),corner[2])
+
+	## A corner at `p`, `arc` m back from the snout, in the paint now: its
+	## colour (its tone times its occlusion, the occlusion in alpha), its
+	## grain's rest place, and `arc`.
+	func dress_corner(p: Vector3, arc: float) -> Array:
+		var rest := Vector3(p.x,p.y,-arc)*GRAIN
+		var occ := _occlusion(p,rest)
+		var shade := lerpf(AO_FLOOR,1.0,occ)
+		return [Color(_colour.r*shade,_colour.g*shade,_colour.b*shade,occ),rest,arc]
+
+	## A vertex as it is: at `p` on `bone`, its normal, colour, rest place,
+	## metres back from the snout and place on its face's square; the
+	## paint's what, aspect, seed and glyphs along.
+	func raw(p: Vector3, bone: int, normal: Vector3, colour: Color, rest: Vector3, arc: float, square: Vector2) -> void:
+		vertices.append(p)
+		normals.append(normal)
+		colors.append(colour)
+		uvs.append(Vector2(rest.x,rest.y))
+		uv2s.append(Vector2(rest.z,0.0))
+		custom.append_array([_what,_aspect,arc,_seed])
+		custom1.append_array([square.x,square.y,_count,0.0])
+		bones.append_array([bone,0,0,0])
+		weights.append_array([1.0,0.0,0.0,0.0])
 
 	## A corner's occlusion: by where it sits round its ring or the head
 	## (`p`, about the body's axis), the belly darkest, the same for every

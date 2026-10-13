@@ -23,6 +23,11 @@ uniform vec3 glow : source_color = vec3(1.0, 0.8, 0.5);
 uniform float energy = 1.0;
 uniform vec3 eye_glow : source_color = vec3(1.0, 0.86, 0.56);
 uniform float eye_energy = 5.0;
+// The eyes are the Olmec's (scripts/enemies/inhaler_head_look.gd): pale
+// polished stone (its EYE_STONE), warming toward the light as they light
+// (`eye_lit`, 0 at rest to 1 watching).
+uniform vec3 eye_stone : source_color = vec3(0.62, 0.58, 0.48);
+uniform float eye_lit = 0.0;
 // The spine's runes: metres they have run back (integrated by the script),
 // a glyph's length along the spine (m), and how far down the body they
 // still show (m from the snout, fading out over the last few).
@@ -91,18 +96,6 @@ float rs_serpent(vec4 info, vec4 face, float t, out vec3 tint, out float boost, 
 		lit *= pulse;
 		if (what == 3.0) boost = 1.5;
 		if (what == 7.0) boost = 1.2;
-	} else if (what == 4.0) {
-		// The eye: an almond of light in a dark socket (along the head,
-		// across), brightest at its middle, with a slit pupil standing
-		// across it, as a snake's.
-		vec2 e = (uv - 0.5) * 2.0;
-		float aa = fwidth(e.y) * 1.5;
-		float almond = 1.0 - smoothstep(0.82 - aa, 0.82 + aa, length(vec2(e.x * 1.05, e.y * 1.3)) + 0.18 * abs(e.x));
-		float slit = smoothstep(0.07, 0.15, abs(e.x) + 0.05 * e.y * e.y);
-		lit = almond * mix(0.12, 0.7 + 0.3 * (1.0 - dot(e, e)), slit);
-		tint = eye_glow;
-		boost = eye_energy / max(energy, 0.05);
-		dark = 0.2;
 	} else if (what == 5.0) {
 		lit = 0.5 + 0.25 * wave;
 		boost = 0.8;
@@ -112,5 +105,38 @@ float rs_serpent(vec4 info, vec4 face, float t, out vec3 tint, out float boost, 
 		boost = 0.8;
 	}
 	return lit;
+}
+
+// The eye (what 4), carved as the Olmec's are (art/blender/inhaler_head/
+// inhaler_head_build.py): an almond eyeball set back between a heavy upper
+// lid, drooping at its outer (back) corner, and a thin lower lid, a deep
+// crease round it. `e` the eye's square from its middle, -1..1, x back to
+// front, y foot to brow (the patch the script lays on the face). Returns
+// the eyeball's share; `crease` the dark carved line round it and under
+// the lid, `lid` the upper lid's stone, `dome` the eyeball's swell (0 at
+// its rim, 1 at its middle), `h` the carving's height (m).
+float rs_eye(vec2 e, out float crease, out float lid, out float dome, out float h) {
+	float aa = max(fwidth(e.x) + fwidth(e.y), 1e-4);
+	// The opening: an almond, pinched at the ends, a little low.
+	float r = length(vec2(e.x, (e.y + 0.06) * 1.6)) + 0.2 * abs(e.x);
+	float open = 1.0 - smoothstep(0.78 - aa, 0.78 + aa, r);
+	// The upper lid's edge, across the opening's top, drooping behind.
+	float back = max(0.0, -e.x);
+	float lid_y = 0.18 - 0.3 * back * back + 0.04 * (1.0 - e.x * e.x);
+	float under = 1.0 - smoothstep(lid_y - aa, lid_y + aa, e.y);
+	float ball = open * under;
+	lid = open * (1.0 - under);
+	dome = sqrt(max(0.0, 1.0 - (r / 0.78) * (r / 0.78)));
+	// The crease: round the opening and along under the lid's edge, kept
+	// a pixel and a half wide so it reads from a distance.
+	float cw = max(0.06, aa * 1.5);
+	crease = max(exp(-pow((r - 0.78) / cw, 2.0)), open * exp(-pow((e.y - lid_y) / cw, 2.0)));
+	// The lower lid: a thin roll just under the opening.
+	float low = exp(-pow((r - 0.9) / 0.07, 2.0)) * smoothstep(0.1, -0.25, e.y);
+	// All of it gone by the patch's edge, where it is the face again.
+	float frame = 1.0 - smoothstep(0.95, 1.15, r);
+	h = (ball * (-0.03 + 0.06 * dome) + lid * 0.035 + low * 0.025 - crease * 0.05) * frame;
+	crease *= frame;
+	return ball;
 }
 #endif

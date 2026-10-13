@@ -22,7 +22,8 @@ render_mode diffuse_lambert, specular_schlick_ggx;
 // The rune serpent (scripts/rune_serpent.gd) wears it too, `runes` on: its
 // runes, eyes, mouth and tongue (shaders/rune_serpent_runes.gdshaderinc,
 // read from CUSTOM0 and CUSTOM1) cut into the weathered stone as lit
-// grooves; the eyes, mouth and tongue are not stone and stay smooth.
+// grooves; its eyes carved as the Olmec's are, polished pale eyeballs under
+// heavy lids (`rs_eye`); the mouth and tongue are not stone and stay smooth.
 
 global uniform vec3 zs_hemi_sky;
 global uniform vec3 zs_hemi_ground;
@@ -113,16 +114,32 @@ void fragment() {
 	float occ = clamp(COLOR.a, 0.0, 1.0);
 	float w = weather;
 	// The serpent's light: how lit, its colour and gain; the carved share
-	// (the stone's runes, not the eyes, mouth or tongue, which stay smooth).
+	// (the stone's runes, not the mouth or tongue, which stay smooth); its
+	// eye, carved in the stone (the eyeball's share, the crease, the lid,
+	// the eyeball's swell, the carving's height).
 	vec3 r_tint = vec3(0.0);
 	float r_boost = 0.0;
 	float r_dark = 1.0;
 	float r_lit = 0.0;
 	float carve = 0.0;
+	vec2 eye_e = vec2(0.0);
+	float eye = 0.0;
+	float e_crease = 0.0;
+	float e_lid = 0.0;
+	float e_dome = 0.0;
+	float e_h = 0.0;
 	if (runes) {
 		r_lit = rs_serpent(rune_info, rune_face, TIME, r_tint, r_boost, r_dark);
 		float what = floor(rune_info.x + 0.5);
-		if (what > 3.5 && what < 6.5) w = 0.0;
+		// (Worked out on every face, kept on the eye's, so its derivatives
+		// are taken in step.)
+		float is_eye = what == 4.0 ? 1.0 : 0.0;
+		eye_e = (rune_face.xy - 0.5) * 2.0;
+		eye = rs_eye(eye_e, e_crease, e_lid, e_dome, e_h) * is_eye;
+		e_crease *= is_eye;
+		e_lid *= is_eye;
+		e_h *= is_eye;
+		if (what > 4.5 && what < 6.5) w = 0.0;
 		carve = clamp(r_lit, 0.0, 1.0) * step(what, 3.5);
 		base *= r_dark;
 	}
@@ -209,9 +226,17 @@ void fragment() {
 	c = mix(c, li_col, li * 0.78 * w * clamp(base.g * 12.0 + 0.3, 0.0, 1.0));
 	// A lit groove darkens the stone round its light (carved, not painted).
 	c *= 1.0 - groove * carve;
+	// The eye: the eyeball's polished pale stone, darker toward its rim and
+	// in the lid's shadow, warming as it lights; the lid a worn high point;
+	// the crease cut dark round them.
+	vec3 ball = eye_stone * mix(0.6, 1.0, e_dome) * mix(1.0, 0.62, smoothstep(-0.25, 0.2, eye_e.y));
+	ball = mix(ball, eye_glow, eye_lit * 0.5);
+	c = mix(c, ball, eye);
+	c = mix(c, c * pale_mul, e_lid * 0.3 * w);
+	c *= 1.0 - 0.85 * e_crease;
 
 	// The normal: pits and cracks cut in, the grain a little raised.
-	float height = (tooth * 0.35 - pit * 0.6 - cracks * 0.9 + fleck_light * 0.1) * 0.02 * w - carve * rune_cut * 0.02;
+	float height = (tooth * 0.35 - pit * 0.6 - cracks * 0.9 + fleck_light * 0.1) * 0.02 * w * (1.0 - eye) - carve * rune_cut * 0.02;
 	vec3 sx = dFdx(VERTEX);
 	vec3 sy = dFdy(VERTEX);
 	vec3 r1 = cross(sy, NORMAL);
@@ -219,14 +244,17 @@ void fragment() {
 	float det = dot(sx, r1);
 	vec3 grad = sign(det) * (dFdx(height) * r1 + dFdy(height) * r2);
 	float bump = bump_strength * (0.2 + 0.8 * f_mid);
-	NORMAL = normalize(abs(det) * NORMAL - bump * grad);
+	// The eye's carving, full strength at any range.
+	vec3 grad_eye = sign(det) * (dFdx(e_h) * r1 + dFdy(e_h) * r2);
+	NORMAL = normalize(abs(det) * NORMAL - bump * grad - grad_eye);
 
 	ALBEDO = c;
-	ROUGHNESS = clamp(roughness_value + (pit + cracks) * 0.05 - worn * 0.1, 0.5, 1.0);
+	ROUGHNESS = mix(clamp(roughness_value + (pit + cracks) * 0.05 - worn * 0.1, 0.5, 1.0), 0.35, eye);
 	METALLIC = 0.0;
 	vec3 normal = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
 	vec3 hemi = mix(zs_hemi_ground, zs_hemi_sky, normal.y * 0.5 + 0.5) * zs_hemi_energy / PI;
 	float edge = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 3.0);
 	EMISSION = c * hemi * fill + mix(c, vec3(0.5), 0.4) * zs_hemi_sky * zs_hemi_energy * edge * rim;
 	EMISSION += r_tint * r_lit * energy * r_boost;
+	EMISSION += eye_glow * eye_energy * eye * (0.45 + 0.55 * e_dome);
 }
