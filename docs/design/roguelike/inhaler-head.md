@@ -1,5 +1,8 @@
 # Inhaler head, round 1 (prototype)
 
+> Round 2 (`inhaler-head-round2-scoot.md`) put it on the ground: it heaves
+> itself along, and the drift, hover and many knobs below are gone.
+
 A colossal carved stone head that floats over the isle and breathes in. It
 pulls the wanderer toward its mouth, swallows him, then blows him out hard.
 The face is Olmec in spirit, built as squared ruin-kit masonry.

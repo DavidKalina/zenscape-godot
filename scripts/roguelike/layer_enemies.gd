@@ -8,21 +8,19 @@ extends Node
 ## which steps the field round the motor).
 ##
 ## A head is set down over a clear spot (SPOT_ROOM round) of an isle and
-## its round laid on the open ground round it: the ground it can ride
-## flood filled from the spot (`_open`, `_under`: as its `ground_at` finds
-## the turf under its middle, nothing under its body between its chin and
-## its crown, a rise no steeper than CLIMB; out over the void a few cells
-## past the turf, keeping the last turf's height, as the study's round goes
-## out past the east rim), then ROUND points picked far apart on it, each
-## leg straight over open cells (`_round`). At most VOID_SHARE of the round
-## over the void. Its body over every leg clear of the edges' paths, the
+## its round laid on the open ground round it: the ground it can heave
+## itself over flood filled from the spot (`_open`, `_under`; round 2,
+## inhaler-head-round2-scoot.md: it is ground bound, so turf under its
+## middle and all round its jaw's foot, no stone under its body higher
+## than its `climb` up to its crown, a rise or fall from cell to cell no
+## more than its `climb` or its `slope` over a cell, never out over the
+## void), then ROUND points picked far apart on it, each leg straight over
+## open cells (`_round`). Its body over every leg clear of the edges' paths, the
 ## rides' tubes, the piers and the cannons (LayerHazards `_lumps_clear`)
 ## and ARROW_CLEAR of a gust arrow's perch and where it fires; the spot
 ## SPAWN_CLEAR from the spawn, GATE_CLEAR from the gate, RAM_CLEAR from the
 ## ram, PRIZE_CLEAR from the rune perch; heads APART and one an isle. The
-## longest rounds first, one partly over the void before one that isn't
-## (his rim hang torn off toward its mouth); the base (where he starts)
-## last.
+## longest rounds first; the base (where he starts) last.
 ##
 ## Knob (LayerPlan KNOBS): `heads` (-1 rolled HEADS, 0 none, n as many as
 ## fit).
@@ -57,18 +55,16 @@ const ROUND_TRIES := 4
 ## A round on the base (the aqueduct isle, where he starts) rates this
 ## less: the isles out on the way first.
 const BASE_LESS := 0.6
-## Over the void it rides at most this many cells out past the turf.
-const VOID_CELLS := 3
-## Its ride over the turf (`_under`): its body's half width more this (m);
-## the turf it finds under it from FLOOR_UP over its last down to
-## FLOOR_DOWN under (its `ground_at`'s); a rise more than CLIMB from one
-## sample to the next is a wall to it; stone CHIN_MARGIN under its chin
-## (m) is in its way, and up to CROWN_MARGIN over its crown.
+## Over the void it goes no cells out past the turf (it is ground bound).
+const VOID_CELLS := 0
+## Its ground (`_under`): its body's half width more this (m); the turf it
+## finds under it from FLOOR_UP over its last down to FLOOR_DOWN under (its
+## `ground_at`'s); its jaw's foot, FOOT of that half width round, all on
+## turf; stone up to CROWN_MARGIN over its crown is in its way.
 const BODY_MORE := 0.3
 const FLOOR_UP := 6.0
 const FLOOR_DOWN := 12.0
-const CLIMB := 1.6
-const CHIN_MARGIN := 0.3
+const FOOT := 0.75
 const CROWN_MARGIN := 0.5
 ## At most this share of a round's samples over the void.
 const VOID_SHARE := 0.35
@@ -192,11 +188,12 @@ static func _candidates(plan: Dictionary, rng: RandomNumberGenerator) -> Array:
 ## out past the turf): {Vector2i: [kind, its turf's height]}.
 static func _open(plan: Dictionary, at: Vector3, k: Dictionary) -> Dictionary:
 	var half: float = float(k.half)+BODY_MORE
-	var hover: float = k.hover
-	var top: float = hover+float(k.height)+CROWN_MARGIN
+	var rise: float = k.climb
+	var climb: float = maxf(float(k.climb),CELL*tan(float(k.slope)))
+	var top: float = float(k.height)+CROWN_MARGIN
 	var reach: float = float(k.ring)*REACH
 	var cells := {Vector2i.ZERO:["turf",at.y,0]}
-	var first := _under(plan,at,at.y,half,hover,top)
+	var first := _under(plan,at,at.y,half,rise,top,climb)
 	if str(first[0]) != "turf": return {}
 	var front: Array = [Vector2i.ZERO]
 	while not front.is_empty():
@@ -207,7 +204,7 @@ static func _open(plan: Dictionary, at: Vector3, k: Dictionary) -> Dictionary:
 			if cells.has(n): continue
 			var p := at+Vector3(n.x,0.0,n.y)*CELL
 			if Vector2(n.x,n.y).length()*CELL > reach: continue
-			var met := _under(plan,p,float(was[1]),half,hover,top)
+			var met := _under(plan,p,float(was[1]),half,rise,top,climb)
 			var out := 0 if str(met[0]) == "turf" else int(was[2])+1
 			if str(met[0]) == "stone" or out > VOID_CELLS:
 				cells[n] = ["stone",0.0,0]
@@ -265,7 +262,6 @@ static func _leg_open(cells: Dictionary, a: Vector2i, b: Vector2i) -> bool:
 ## over turf and void; {} where it won't do.
 static func _rate(plan: Dictionary, bare: Dictionary, at: Vector3, cells: Dictionary, picks: Array, k: Dictionary) -> Dictionary:
 	var half: float = float(k.half)+BODY_MORE
-	var hover: float = k.hover
 	var tall: float = k.height
 	var route: Array = []
 	for c: Vector2i in picks: route.append(at+Vector3(c.x,0.0,c.y)*CELL)
@@ -284,7 +280,7 @@ static func _rate(plan: Dictionary, bare: Dictionary, at: Vector3, cells: Dictio
 			var cell: Array = cells[Vector2i(roundi(v.x),roundi(v.y))]
 			if str(cell[0]) == "void": voids += 1
 			else: turf += 1
-			if m%2 == 0: lumps.append([at+Vector3(v.x*CELL,float(cell[1])-at.y+hover+tall*0.5,v.y*CELL),half,tall*0.5,tall*0.5])
+			if m%2 == 0: lumps.append([at+Vector3(v.x*CELL,float(cell[1])-at.y+tall*0.5,v.y*CELL),half,tall*0.5,tall*0.5])
 	var count := turf+voids
 	if length < float(k.ring)*LOOP_LEAST: return {}
 	if float(voids)/count > VOID_SHARE: return {}
@@ -296,14 +292,15 @@ static func _rate(plan: Dictionary, bare: Dictionary, at: Vector3, cells: Dictio
 	return {"route":route,"face":Vector3(first.x-at.x,0.0,first.z-at.z).normalized(),"void":float(voids)/count,
 		"length":length,"score":minf(length/(float(k.ring)*TAU),1.5)+(0.3 if voids > 0 else 0.0)}
 
-## What the head meets at `p` riding over `ground` (the last turf's height
-## under it), as its `ground_at` does (the first stone under its middle, from
+## What the head meets at `p` heaving over from `ground` (the last turf's
+## height), as its `ground_at` does (the first stone under its middle, from
 ## FLOOR_UP over that down to FLOOR_DOWN under): ["turf", the turf's height]
-## with nothing under its body (`half` round) standing over its chin
-## (`hover` m up) and under its crown (`top` m up), or no more than CLIMB
-## over the last; ["void", ground] with nothing under it; ["stone", 0] where
-## stone is in its way.
-static func _under(plan: Dictionary, p: Vector3, ground: float, half: float, hover: float, top: float) -> Array:
+## no more than `climb` over or under the last, with nothing under its body
+## (`half` round) standing more than `rise` over the turf and under its
+## crown (`top` m up), and turf all round its foot (FOOT of `half`);
+## ["void", ground] with nothing under its middle; ["stone", 0] where stone
+## is in its way or its foot would hang over a rim.
+static func _under(plan: Dictionary, p: Vector3, ground: float, half: float, rise: float, top: float, climb: float) -> Array:
 	var floor_y := -INF
 	var near: Array = []
 	for isle: Dictionary in plan.isles:
@@ -314,22 +311,24 @@ static func _under(plan: Dictionary, p: Vector3, ground: float, half: float, hov
 		# Stone over where its ray starts: an arch or a wall it would meet.
 		if o.y > ground+FLOOR_UP and o.x < ground+top: return ["stone",0.0]
 		if o.y < ground+FLOOR_UP and o.y > ground-FLOOR_DOWN: floor_y = maxf(floor_y,o.y)
-	var solid := floor_y != -INF
-	if not solid: floor_y = ground
-	elif floor_y-ground > CLIMB: return ["stone",0.0]
+	if floor_y == -INF: return ["void",ground]
+	if absf(floor_y-ground) > climb: return ["stone",0.0]
+	var foot := half*FOOT
 	var x := -half
 	while x <= half+0.01:
 		var z := -half
 		while z <= half+0.01:
 			if x*x+z*z <= half*half+0.5:
+				var under := false
 				for isle: Dictionary in near:
 					var o := LayerPlan.occ_at(isle,p.x+x,p.z+z)
 					if o.x == INF: continue
-					if o.y > floor_y+hover-CHIN_MARGIN and o.x < floor_y+top: return ["stone",0.0]
-					if o.y > floor_y-FLOOR_DOWN: solid = true
+					if o.y > floor_y+rise and o.x < floor_y+top: return ["stone",0.0]
+					if o.y > floor_y-climb: under = true
+				if not under and x*x+z*z <= foot*foot+0.1: return ["stone",0.0]
 			z += half*0.5
 		x += half*0.5
-	return ["turf",floor_y] if solid else ["void",ground]
+	return ["turf",floor_y]
 
 static func _flat(a: Vector3, b: Vector3) -> float:
 	return Vector2(a.x-b.x,a.z-b.z).length()
@@ -349,13 +348,7 @@ static func card(plan: Dictionary) -> String:
 
 # --- On the stage -------------------------------------------------------------------
 
-const VOICES := {
-	"head_grind":[0.9,0.0,0.0,1.0,0.07,0.05,13.0],
-	"head_inhale":[3.0,0.0,0.0,1.0,0.22,0.9,0.0],
-	"head_yank":[0.35,0.0,0.0,1.0,0.4,0.01,0.0],
-	"head_gulp":[0.45,70.0,40.0,0.4,0.15,0.005,0.0],
-	"head_blast":[0.9,0.0,0.0,1.0,0.55,0.005,0.0],
-}
+const VOICES := InhalerHead.VOICES
 
 var study: Node3D
 var field: Node
