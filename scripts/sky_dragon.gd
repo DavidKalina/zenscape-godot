@@ -172,12 +172,13 @@ var cyclone_on := false
 var cyclone: Node3D
 const DragonAirBlast = preload("res://scripts/dragon_air_blast.gd")
 ## His air blast (scripts/dragon_air_blast.gd, docs/design/dragon-air-blast/
-## round1.md): a swift ball of air in place of the cyclone. Set `blast_on`
-## before `setup` to have it; with both, `attack` says which one he uses
-## ("blast", "cyclone" or "none": `set_attack` swaps it live).
+## round1.md): a swift ball of air, his attack (the cyclone kept to
+## compare). Set `blast_on` before `setup` to have it; with both, `attack`
+## says which one he uses ("blast", the default, "cyclone" or "none":
+## `set_attack` swaps it live).
 var blast_on := false
 var air_blast: Node3D
-var attack := "cyclone"
+var attack := "blast"
 ## His head tracking the pilot once suspicious: the most it turns (rad,
 ## yaw either way; pitch down and up) and how fast it gets there.
 const TRACK_YAW := 1.2
@@ -548,6 +549,8 @@ func setup(cam: Camera3D, args: PackedStringArray, sea: float, middle: Vector3, 
 	if blast_on:
 		air_blast = DragonAirBlast.new()
 		add_child(air_blast)
+	# A host with only the cyclone gets it.
+	if attack == "blast" and air_blast == null and cyclone != null: attack = "cyclone"
 	set_attack(attack)
 	_start()
 	if ride and not targets.is_empty():
