@@ -341,21 +341,26 @@ func step(delta: float, listener: Vector3) -> void:
 	_call_wait -= delta
 	var ribbons := 0.0
 	gust = 0.0
-	for dragon: Node in dragons.duplicate():
-		if not is_instance_valid(dragon) or not dragon.is_inside_tree():
-			dragons.erase(dragon)
-			continue
+	# A beast freed (a generated layer's serpents go with their layer)
+	# dropped.
+	dragons = _standing(dragons)
+	serpents = _standing(serpents)
+	riders = _standing(riders)
+	for dragon: Node in dragons:
 		ribbons = maxf(ribbons,_dragon(dragon,delta,listener))
 	_plane_gust(delta)
 	_gale_near.goal = GALE_NEAR*clampf(maxf(ribbons/RIBBON_AIR,gust),0.0,1.2)
 	_gale_near.pitch_goal = 0.85+0.25*clampf(ribbons/RIBBON_AIR,0.0,1.0)
-	for serpent: Node in serpents.duplicate():
-		if not is_instance_valid(serpent) or not serpent.is_inside_tree():
-			serpents.erase(serpent)
-			continue
-		_serpent(serpent,listener)
+	for serpent: Node in serpents: _serpent(serpent,listener)
 	_riding(delta)
 	for bed in _beds: bed.step(delta)
+
+## Those of `list` still standing in the tree.
+static func _standing(list: Array[Node]) -> Array[Node]:
+	var keep: Array[Node] = []
+	for node in list:
+		if is_instance_valid(node) and (node as Node).is_inside_tree(): keep.append(node)
+	return keep
 
 # --- The dragon --------------------------------------------------------------------
 
@@ -693,7 +698,7 @@ func _riding(_delta: float) -> void:
 	var on: Node = null
 	if host != null and str(host.get("riding_on")) == "serpent": on = host.get("serpent")
 	for rider: Node in riders:
-		if is_instance_valid(rider) and str(rider.riding_on) == "serpent": on = rider.serpent
+		if str(rider.riding_on) == "serpent": on = rider.serpent
 	var motor = host.get("motor") if host != null else null
 	if on == null or not is_instance_valid(on) or motor == null:
 		_ride.goal = 0.0

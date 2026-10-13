@@ -158,6 +158,24 @@ var rider: Node3D
 var spots: Array[Dictionary] = []
 ## The isle to start at (--serpent-board), or "".
 var board := ""
+## The way, its marks, its start and its ledges: the authored loop's
+## unless another sets them before `setup` (a generated layer's gulf,
+## scripts/roguelike/layer_rides.gd). A spot's spec may carry a fifth
+## entry, the side its ledge stands on (+1 the way's right), in place of
+## the side toward its isle's middle.
+var route_points: Array = ROUTE
+var route_marks: Dictionary = MARKS
+var start_mark: String = START
+var spot_specs: Array = SPOTS
+## Where the serpent goes (null: the sky).
+var holder: Node = null
+## The isle node for a spot's isle name (null: the sky's motif isle of
+## that id), and whether ledges are built as their isles stand (false:
+## the owner calls `build`).
+var isle_lookup: Callable
+var auto_build := true
+## A ledge's depth from its end back (m): LEDGE_DEEP, or a pier's.
+var ledge_deep := LEDGE_DEEP
 
 static func wanted() -> bool:
 	return not LaunchArgs.user_args().has("--serpent-old-route")
@@ -174,19 +192,19 @@ func setup(study: Node3D, owner_sky: Node3D) -> Node3D:
 	for arg: String in LaunchArgs.user_args():
 		if arg.begins_with("--serpent-board="): board = arg.get_slice("=",1)
 	serpent = RuneSerpent.new()
-	serpent.route = ROUTE
-	serpent.route_marks = MARKS
-	serpent.start_mark = START
+	serpent.route = route_points
+	serpent.route_marks = route_marks
+	serpent.start_mark = start_mark
 	serpent.girth = GIRTH
 	# It advances before the rider carries him and the pilot steps.
 	serpent.process_priority = -101
-	sky.add_child(serpent)
+	(holder if holder != null else sky).add_child(serpent)
 	serpent.setup(scene)
 	rider = SerpentRider.new()
 	add_child(rider)
 	rider.setup(scene,serpent)
 	_lay_spots()
-	_build_ready()
+	if auto_build: _build_ready()
 	if board != "" and scene.has_signal("isle_ready"):
 		scene.isle_ready.connect(_board_start,CONNECT_ONE_SHOT)
 	return serpent
@@ -197,15 +215,18 @@ func setup(study: Node3D, owner_sky: Node3D) -> Node3D:
 func _lay_spots() -> void:
 	var flank := widest_flank()
 	var crest := ride_crest()
-	for spec: Array in SPOTS:
+	for spec: Array in spot_specs:
 		var at := float(serpent.marks()[spec[2]])
 		var p := pass_point(at)
 		var ahead: Vector3 = serpent.route_point(at+2.0)-serpent.route_point(at-2.0)
 		var way := Vector2(ahead.x,ahead.z).normalized()
 		var right := Vector2(-way.y,way.x)
 		# The ledge on the side toward the isle's middle.
-		var isle := isle_middle(str(spec[1]))
-		var side := 1.0 if (isle-Vector2(p.x,p.z)).dot(right) > 0.0 else -1.0
+		var side := 1.0
+		if spec.size() > 4: side = float(spec[4])
+		else:
+			var isle := isle_middle(str(spec[1]))
+			side = 1.0 if (isle-Vector2(p.x,p.z)).dot(right) > 0.0 else -1.0
 		var out: float = flank+serpent.weave_reach()*float(serpent.route_shares(at).x)+LEDGE_GAP
 		var end2 := Vector2(p.x,p.z)+right*side*out
 		# Under its back's crest as it passes (its heave there is the
@@ -231,22 +252,30 @@ func pass_point(at: float) -> Vector3:
 
 ## Its widest half width (m): the body's rings' and the head's sections'.
 func widest_flank() -> float:
+	return flank_of(serpent)
+
+## The same of any serpent whose stations are laid (RuneSerpent
+## `_stations`: a plan's, never set up).
+static func flank_of(on: Node3D) -> float:
 	var most := 0.0
 	for k in range(RuneSerpent.STATIONS):
-		for c: Vector3 in serpent.ring_corners(k): most = maxf(most,absf(c.x))
+		for c: Vector3 in on.ring_corners(k): most = maxf(most,absf(c.x))
 	for i in range(RuneSerpent.HEAD_SECTIONS.size()):
-		for c: Vector3 in serpent.head_corners(i): most = maxf(most,absf(c.x))
+		for c: Vector3 in on.head_corners(i): most = maxf(most,absf(c.x))
 	# Its breath swells it a little.
 	return most*1.03
 
 ## Its back's crest over its spine (m) where riders stand (RIDE_ARCS m
 ## back from its snout), at its highest.
 func ride_crest() -> float:
+	return crest_of(serpent)
+
+static func crest_of(on: Node3D) -> float:
 	var most := 0.0
-	var arcs: PackedFloat32Array = serpent.stations()
+	var arcs: PackedFloat32Array = on.stations()
 	for k in range(RuneSerpent.STATIONS):
 		if arcs[k] < RIDE_ARCS.x or arcs[k] > RIDE_ARCS.y: continue
-		for c: Vector3 in serpent.ring_corners(k): most = maxf(most,c.y)
+		for c: Vector3 in on.ring_corners(k): most = maxf(most,c.y)
 	return most
 
 ## An isle's middle (x, z): the aqueduct isle's, or a motif isle's.
@@ -258,6 +287,7 @@ func isle_middle(id: String) -> Vector2:
 
 ## The motif isle `id` (scripts/kit_isle/motif_isle.gd), or null.
 func motif_isle(id: String) -> Node3D:
+	if isle_lookup.is_valid(): return isle_lookup.call(id)
 	var motifs: Variant = sky.get("motifs")
 	if motifs == null: return null
 	for isle: Node3D in motifs.isles:
@@ -286,7 +316,15 @@ func build_all() -> void:
 ## to it from the turf, toward the way. The flight's foot fitted to the
 ## turf (rays), so its steps start on it.
 func build(s: Dictionary) -> Node3D:
-	var space := get_world_3d().direct_space_state
+	var node := make_ledge(get_world_3d().direct_space_state,s,ledge_deep)
+	add_child(node)
+	s.built = node
+	return node
+
+## The same ledge as a node (not yet in the tree), `deep` m from its end
+## back over the turf: a long one is a pier jutting off a rim (a generated
+## layer's, scripts/roguelike/layer_rides.gd). Sets s.steps and s.foot.
+static func make_ledge(space: PhysicsDirectSpaceState3D, s: Dictionary, deep: float) -> Node3D:
 	var toward: Vector2 = s.toward
 	var end: Vector3 = s.end
 	var top: float = s.top
@@ -297,13 +335,13 @@ func build(s: Dictionary) -> Node3D:
 	for i in range(5):
 		steps = clampi(roundi((top-turf)/RuinKit.RISER),1,48)
 		run = (steps-1)*RuinKit.TREAD+RuinKit.LANDING
-		var y: Variant = _turf_y(space,end2-toward*(LEDGE_DEEP+run),top)
+		var y: Variant = _turf_y(space,end2-toward*(deep+run),top)
 		if y == null: break
 		turf = float(y)
 	# The lowest turf under it, for its walls' depth.
 	var low := turf
 	for f: float in [0.0,0.5,1.0]:
-		var y: Variant = _turf_y(space,end2-toward*(LEDGE_DEEP+run*f),top)
+		var y: Variant = _turf_y(space,end2-toward*(deep+run*f),top)
 		if y != null: low = minf(low,float(y))
 	var depth := maxf(top-low+0.4,LEDGE_DEPTH)
 	# Its own frame: the origin the end's middle on its top, -Z toward the
@@ -311,7 +349,7 @@ func build(s: Dictionary) -> Node3D:
 	var z := Vector3(-toward.x,0.0,-toward.y)
 	var x := Vector3.UP.cross(z).normalized()
 	var b := RuinKit.Build.new(hash(str(s.id))&0xffff,LEDGE_WEATHERED,"SerpentLedge")
-	var half := Vector3(LEDGE_SPAN*0.5,LEDGE_SLAB*0.5,LEDGE_DEEP*0.5)
+	var half := Vector3(LEDGE_SPAN*0.5,LEDGE_SLAB*0.5,deep*0.5)
 	var slab := Transform3D(Basis.IDENTITY,Vector3(0.0,-half.y,half.z))
 	b.lean = true
 	b.solid(RuinKit._box(b,half),slab,RuinKit._stone(b,1.04),false,true)
@@ -325,15 +363,13 @@ func build(s: Dictionary) -> Node3D:
 	var lower := Vector3(half.x-0.45,lower_h,half.z-0.35)
 	b.solid(RuinKit._box(b,lower),Transform3D(Basis.IDENTITY,Vector3(0.0,-LEDGE_SLAB-upper.y*2.0-lower_h,half.z+0.25)),RuinKit._stone(b,0.92))
 	# The flight up to it from the turf.
-	var flight := Transform3D(Basis.IDENTITY,Vector3(0.0,-steps*RuinKit.RISER,LEDGE_DEEP+run*0.5-0.02))
+	var flight := Transform3D(Basis.IDENTITY,Vector3(0.0,-steps*RuinKit.RISER,deep+run*0.5-0.02))
 	RuinKit._flight(b,flight,steps,LEDGE_WIDTH,RuinKit.LANDING,maxf(top-steps*RuinKit.RISER-low+0.4,0.4))
 	var node := b.finish()
 	node.name = "Ledge_%s" % s.id
 	node.transform = Transform3D(Basis(x,Vector3.UP,z),end)
-	add_child(node)
-	s.built = node
 	s.steps = steps
-	s.foot = Vector3(end.x-toward.x*(LEDGE_DEEP+run),turf,end.z-toward.y*(LEDGE_DEEP+run))
+	s.foot = Vector3(end.x-toward.x*(deep+run),turf,end.z-toward.y*(deep+run))
 	return node
 
 ## The turf's (or stone's) top at (x, z) within reach under `over`, or null.
@@ -352,7 +388,7 @@ func spot(name_or_isle: String) -> Dictionary:
 
 func _process(_delta: float) -> void:
 	if serpent == null: return
-	_build_ready()
+	if auto_build: _build_ready()
 	# Its head kept to its way by a ledge.
 	var near := INF
 	for s: Dictionary in spots:
