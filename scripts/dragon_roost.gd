@@ -595,6 +595,16 @@ func breathing_out() -> bool:
 func breath() -> String:
 	return "out" if sin(TAU*_t/BREATH) < 0.0 else "in"
 
+## Moved whole with its mountain, by a translation (a new layer's roost:
+## studies/run_layer.gd): the ground it reads (`offset`), its line and its
+## frame; the pose and the settling hold (they read the mountain's own
+## frame), so nothing is laid again.
+func move_to(at: Vector3) -> void:
+	var by := at-offset
+	offset = at
+	for i in range(line_world.size()): line_world[i] += by
+	dragon.global_position += by
+
 ## Where the wind howls through its crags (world): the summit's crown, at
 ## the old tower's foot.
 func howl_at() -> Vector3:

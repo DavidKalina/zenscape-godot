@@ -50,7 +50,11 @@ static func build(next: Dictionary) -> MeshInstance3D:
 		low = minf(low,span.x)
 		high = maxf(high,span.y)
 	var k := 0
-	for isle: Dictionary in next.isles:
+	# Its isles, and its dragon's roost standing apart if it was kept
+	# (LayerSprawl `_place_next`: `roost`), merged as the others.
+	var hulls: Array = (next.isles as Array).duplicate()
+	if not (next.get("roost",{}) as Dictionary).is_empty(): hulls.append(next.roost)
+	for isle: Dictionary in hulls:
 		_hull(isle.occ,isle.offset,1 if isle.landmark else MERGE,bool(isle.landmark),k,Vector2(low,high),verts,normals,colors,uvs,index)
 		k += 1
 	for i in range(normals.size()): normals[i] = normals[i].normalized() if normals[i].length_squared() > 1e-12 else Vector3.UP
@@ -75,7 +79,7 @@ static func build(next: Dictionary) -> MeshInstance3D:
 	material.set_shader_parameter("keel_mist",KEEL_MIST)
 	material.set_shader_parameter("landmark_clear",LANDMARK_CLEAR)
 	node.material_override = material
-	node.set_meta("stats",{"ms":(Time.get_ticks_usec()-began)/1000.0,"triangles":index.size()/3,"vertices":verts.size(),"isles":(next.isles as Array).size(),
+	node.set_meta("stats",{"ms":(Time.get_ticks_usec()-began)/1000.0,"triangles":index.size()/3,"vertices":verts.size(),"isles":(next.isles as Array).size(),"roost":next.has("roost"),
 		"surfaces":mesh.get_surface_count()})
 	return node
 

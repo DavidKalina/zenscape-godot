@@ -24,11 +24,17 @@ extends "res://studies/aqueduct_isle.gd"
 ##     [--shape=sprawl]  (scripts/roguelike/layer_sprawl.gd: an exit side, a
 ##     chain of crossings out to the gate, the next region seen far off)
 ## Without --seed= a seed is drawn. The isle's own flags still work; the
-## hall chain, the lodestone and the dragon's roost are left out.
+## hall chain and the lodestone are left out, and the aqueduct isle's own
+## dragon's roost. Under the sprawl a layer has its own roost
+## (LayerSprawl `plan.roost`, docs/design/roguelike/layer-round5-roost.md):
+## the roost motif stood apart and high, its dragon curled asleep on its
+## ledge (`_stand_roost`; his wake's circuit is the aqueduct isle's sky's,
+## so he never wakes here).
 const LayerPlan = preload("res://scripts/roguelike/layer_plan.gd")
 const LayerStage = preload("res://scripts/roguelike/layer_stage.gd")
 const RunLayerSky = preload("res://studies/run_layer_sky.gd")
 const LayerSprawl = preload("res://scripts/roguelike/layer_sprawl.gd")
+const RoostMotif = preload("res://scripts/kit_isle/motif_dragon_roost.gd")
 
 ## Seeds tried past a seed whose plan could not be laid.
 const SKIP_MOST := 8
@@ -130,6 +136,12 @@ func layer_entries() -> Array:
 		var r: Rect2 = LayerPlan._rect(isle)
 		var c := r.get_center()
 		out.append([isle.motif,isle.offset,[isle.id,Vector3(c.x,LayerPlan._span(isle).y,c.y),r.size.length()*0.5]])
+	# The dragon's roost, apart (the sprawl's): the furthest from the eye, so
+	# stood after the isles he walks.
+	var roost: Dictionary = layer.get("roost",{})
+	if not roost.is_empty():
+		var at: Vector3 = roost.at
+		out.append([RoostMotif.new(),roost.offset,[roost.id,Vector3(at.x,LayerPlan._span(roost).y,at.z),float(roost.reach)]])
 	return out
 
 func _first_layer() -> void:
@@ -152,6 +164,7 @@ func _stand_layer() -> void:
 	add_child(stage)
 	stage.setup(self,layer,_slot_was)
 	if layer.has("chain"): LayerSprawl.dress(stage,layer)
+	_stand_roost()
 	stage.rune_taken.connect(func(_left: int) -> void: _update_card())
 	var spawn: Dictionary = layer.spawn
 	var face: Vector3 = spawn.face
@@ -189,6 +202,59 @@ func start_layer(seed_value: int, why := "", laid := {}) -> void:
 				if p.has("node") and (not is_instance_valid(p.node) or old.has(p.node)): (pools as Array).remove_at(i)
 	_stand_layer()
 	if why != "": _show_toast(why)
+
+# --- The dragon's roost (the sprawl's) ------------------------------------------
+
+## The roost's dragon asleep on his ledge (scripts/dragon_roost.gd, its
+## offset the layer's roost's) and the air round the mountain (scripts/
+## roost_air.gd: its wreath, haze, cold, birds and the crashed plane), as
+## the aqueduct isle's own (`_build_roost_dragon`) but without his wake: its
+## circuit is laid over the aqueduct isle's sky's isles, not a layer's. The
+## study's `_roost_frame` shows them once the mountain stands. The clouds
+## thin away over it too (studies/run_layer_sky.gd `keep_roost`).
+func _stand_roost() -> void:
+	var roost: Dictionary = layer.get("roost",{})
+	if sky != null and sky.has_method("keep_roost"): sky.keep_roost(roost)
+	if roost.is_empty():
+		_drop_roost()
+		return
+	var began := Time.get_ticks_msec()
+	# Laid once; a new layer's roost moves him (and his air) there.
+	if roost_dragon != null and is_instance_valid(roost_dragon):
+		roost_dragon.roost.move_to(roost.offset)
+		roost_air.move_to(roost.offset)
+		roost_dragon.visible = false
+		roost_air.visible = false
+		roost_ms = Time.get_ticks_msec()-began
+		return
+	roost_dragon = SkyDragon.new()
+	roost_dragon.name = "RoostDragon"
+	roost_dragon.sky_scene = self
+	add_child(roost_dragon)
+	var pose: RefCounted = DragonRoost.new()
+	pose.set("offset",roost.offset)
+	roost_dragon.setup_roost(camera,pose)
+	roost_air = RoostAir.new()
+	roost_air.set("offset",roost.offset)
+	add_child(roost_air)
+	roost_air.setup()
+	# Hidden till his mountain stands (`_roost_frame`).
+	roost_dragon.visible = false
+	roost_air.visible = false
+	roost_ms = Time.get_ticks_msec()-began
+	print("run layer: the roost's dragon laid in %d ms" % roost_ms)
+
+## How long the roost's dragon and air took to lay or move (ms, main
+## thread).
+var roost_ms := 0
+
+func _drop_roost() -> void:
+	for node: Node in [roost_dragon,roost_air]:
+		if node != null and is_instance_valid(node):
+			remove_child(node)
+			node.free()
+	roost_dragon = null
+	roost_air = null
 
 # --- The loop -------------------------------------------------------------------
 

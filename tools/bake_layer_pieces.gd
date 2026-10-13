@@ -8,11 +8,14 @@ extends SceneTree
 ## data/layer/pieces.json. Run again when an isle's art changes:
 ##   godot --headless --path . --script tools/bake_layer_pieces.gd -- --no-sky --no-life --no-flora --no-lode --no-chain --no-dragon-roost
 ## (The flags keep the aqueduct isle bare: its rims are its land's.)
+## `--only=<id>[,<id>...]` bakes just those motifs (of MOTIFS) into the
+## file as it stands, the rest kept as baked: e.g. `--only=dragon_roost`
+## (the roost's occupancy, docs/design/roguelike/layer-round5-roost.md).
 const Probe = preload("res://scripts/roguelike/isle_probe.gd")
 const OUT := "res://data/layer/pieces.json"
 ## The motifs read: [id, whether its rims and spots are baked (else only
 ## its occupancy: a family answers its own sockets)].
-const MOTIFS := [["sundered_gorge",true],["stair_clouds",true],["bell_spires",true],["colonnade_spine",false]]
+const MOTIFS := [["sundered_gorge",true],["stair_clouds",true],["bell_spires",true],["colonnade_spine",false],["dragon_roost",false]]
 const CELL := 2.0
 const WALK_CELL := 1.0
 ## Rims at least this far apart (m), at most this many; spots with this
@@ -31,11 +34,28 @@ func _initialize() -> void:
 	run.call_deferred()
 
 func run() -> void:
-	for spec: Array in MOTIFS: await _motif(spec[0],spec[1])
-	await _base()
+	var only := PackedStringArray()
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--only="): only = arg.trim_prefix("--only=").split(",",false)
+	for spec: Array in MOTIFS:
+		if only.is_empty() or only.has(spec[0]): await _motif(spec[0],spec[1])
+	if only.is_empty() or only.has("aqueduct_isle"): await _base()
+	var text := JSON.stringify(out,"",false)
+	if not only.is_empty():
+		# The others kept as they were baked: a new entry appended to the
+		# file's text, one baked before replaced in the whole.
+		var was := FileAccess.get_file_as_string(OUT).strip_edges()
+		var had: Variant = JSON.parse_string(was)
+		if had is Dictionary:
+			var fresh := true
+			for id: String in out.keys(): fresh = fresh and not (had as Dictionary).has(id)
+			if fresh: text = was.trim_suffix("}")+","+text.trim_prefix("{")
+			else:
+				(had as Dictionary).merge(out,true)
+				text = JSON.stringify(had,"",false)
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(OUT.get_base_dir()))
 	var f := FileAccess.open(OUT,FileAccess.WRITE)
-	f.store_string(JSON.stringify(out,"",false))
+	f.store_string(text)
 	f.close()
 	print("bake: wrote %s" % OUT)
 	quit(0)
