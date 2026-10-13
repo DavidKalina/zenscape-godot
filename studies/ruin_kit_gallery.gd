@@ -21,7 +21,7 @@ extends Node3D
 ## stands about for scale and the plane (scripts/plane_figure.gd) hangs in
 ## the pointed arch, under an aqueduct arch and inside the hall.
 ##   Drag            orbit          Wheel     zoom
-##   F1 F2 F3        frame the gothic, aqueduct or hall family
+##   F1 F2 F3 F4     frame the gothic, aqueduct, hall or tower family
 ##   1-9 0 - = \     frame a piece of the family  Left/Right the next piece
 ##   C               the family's centrepiece (the run, the hall)
 ##   Space or Tab    the whole layout     L  light shafts in the hall
@@ -69,16 +69,17 @@ const WorldScale = preload("res://scripts/world_scale.gd")
 
 ## The families left to right on the plate, their names, and each one's
 ## rows, back to front, and where each row stands (z, m).
-const ORDER := ["hall","gothic","aqueduct"]
-const FAMILY_NAMES := {"gothic":"Gothic abbey","aqueduct":"Aqueduct","hall":"Colossus hall"}
+const ORDER := ["hall","gothic","aqueduct","tower"]
+const FAMILY_NAMES := {"gothic":"Gothic abbey","aqueduct":"Aqueduct","hall":"Colossus hall","tower":"Tower"}
 const ROWS := {"gothic":[["rose_gable","arch","lancet_wall"],["turret","vault","buttress","pier"],["wall","stairs","fallen_pier","tomb_chest","floor"],["grand_stair","stone_circle"]],
 	"aqueduct":[["aqueduct_end","aqueduct_two_tier","aqueduct_span","aqueduct_broken","aqueduct_stump"]],
-	"hall":[["hall_bay"],["hall_column","hall_beam","hall_slab"]]}
-const ROW_Z := {"gothic":[-13.0,-1.5,9.0,33.0],"aqueduct":[0.0],"hall":[0.0,27.0]}
+	"hall":[["hall_bay"],["hall_column","hall_beam","hall_slab"]],
+	"tower":[["tower_shell"]]}
+const ROW_Z := {"gothic":[-13.0,-1.5,9.0,33.0],"aqueduct":[0.0],"hall":[0.0,27.0],"tower":[0.0]}
 ## The room between families on the plate (m), and how far behind its rows
 ## a family's centrepiece stands (to its middle).
 const FAMILY_GAP := 10.0
-const CENTRE_BACK := {"gothic":22.0,"aqueduct":22.0,"hall":44.0}
+const CENTRE_BACK := {"gothic":22.0,"aqueduct":22.0,"hall":44.0,"tower":10.0}
 ## The aqueduct run: spans, which one is broken, its weathering; the strip
 ## of water under it (its half width, m) and the stumps standing in it past
 ## its end.
@@ -142,7 +143,7 @@ const DEPTH := 4.0
 const SIDE := 0.55
 const SHOWS := ["pairs","intact","weathered"]
 const KEYS := [KEY_1,KEY_2,KEY_3,KEY_4,KEY_5,KEY_6,KEY_7,KEY_8,KEY_9,KEY_0,KEY_MINUS,KEY_EQUAL,KEY_BACKSLASH]
-const FAMILY_KEYS := [KEY_F1,KEY_F2,KEY_F3]
+const FAMILY_KEYS := [KEY_F1,KEY_F2,KEY_F3,KEY_F4]
 
 ## What the look pass reads off the scene it dresses (scripts/look_pass.gd).
 var _environment: Environment
@@ -340,7 +341,7 @@ func _build_world() -> void:
 	_label.add_theme_color_override("font_shadow_color",Color(0.0,0.0,0.0,0.4))
 	layer.add_child(_label)
 	var help := Label.new()
-	help.text = "F1 Gothic · F2 Aqueduct · F3 Hall · 1-9 0 - = \\ frame a piece · C centrepiece · G fly the long hall · ←/→ next · Space/Tab whole layout · W intact/weathered · T stone look · R reseed · N night · L shafts · V wind on/off · B gust · Drag orbit · Wheel zoom"
+	help.text = "F1 Gothic · F2 Aqueduct · F3 Hall · F4 Tower · 1-9 0 - = \\ frame a piece · C centrepiece · G fly the long hall · ←/→ next · Space/Tab whole layout · W intact/weathered · T stone look · R reseed · N night · L shafts · V wind on/off · B gust · Drag orbit · Wheel zoom"
 	help.add_theme_font_size_override("font_size",15)
 	help.add_theme_color_override("font_color",Color(1.0,0.98,0.92,0.5))
 	help.add_theme_color_override("font_shadow_color",Color(0.0,0.0,0.0,0.3))
@@ -962,7 +963,7 @@ func _say() -> void:
 	var what := "The ruin kit" if _frame < 0 else "%s %d · %s" % [FAMILY_NAMES[_slots[_frame].family],(RuinKit.FAMILIES[_slots[_frame].family] as Array).find(_slots[_frame].id)+1,RuinKit.NAMES[_slots[_frame].id]]
 	if _frame < 0 and _focus_goal != Vector3.ZERO and _areas.has(_family) and (_centred or _distance_goal < _bounds.size.x*0.5):
 		what = FAMILY_NAMES[_family]+(" · centrepiece" if _centred else "")
-	var keys := "F1 Gothic · F2 Aqueduct · F3 Hall · G fly the long hall"
+	var keys := "F1 Gothic · F2 Aqueduct · F3 Hall · F4 Tower · G fly the long hall"
 	if _flying:
 		_label.text = "Flying the long hall   ·   %.0f m/s   ·   bumps %d   ·   shafts %s\nA D bank and turn · W S pitch (W nose down) · mouse steers · Space boost · Shift brake · hold Q E or LB RB knife-edge, twice quick or click barrel roll · hold right mouse to look round · R or pad Back restart at the entrance · L shafts · N night · V wind · B gust · G or Esc to stop flying" % [float(_plane_flight.speed),_bumps,"on" if _shafts else "off"]
 		return
@@ -1089,7 +1090,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			if at >= 0: _frame_piece(at)
 			return
 		if event.keycode in FAMILY_KEYS:
-			_frame_family(ORDER[[1,2,0][FAMILY_KEYS.find(event.keycode)]])
+			_frame_family(ORDER[[1,2,0,3][FAMILY_KEYS.find(event.keycode)]])
 			return
 		match event.keycode:
 			KEY_RIGHT: _frame_piece((_frame+1)%_slots.size())
