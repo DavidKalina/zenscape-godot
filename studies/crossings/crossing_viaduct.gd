@@ -9,17 +9,18 @@ extends "res://studies/crossings/crossing.gd"
 ## The beats, each sized from the walker's moves (a motor fitted to his
 ## size, `walker()`), never from copied numbers:
 ## 1. The run-up: RUN_SPANS aqueduct spans (RuinKitAqueduct `span`, real
-##    stone and colliders), tilted to rise RUN_RISE, their channel the
-##    deck; the next span fallen, and its far neighbour FALL_DROP lower.
-##    The gap `fall_gap` is sized so a plain running long jump (LONG_SPEED)
-##    comes down short of even a catch at the far lip, a chain of two
-##    catches the lip, and a chain of three lands on the deck.
+##    stone and colliders), tilted RUN_DEG up, their channel the deck;
+##    the next span fallen, and its far neighbour FALL_DROP lower. The gap
+##    `fall_gap` is FALL_SPARE past the furthest a plain running long jump
+##    (LONG_SPEED) taken at the lip can still catch the far lip: a chain of
+##    two (LONG_ADD on) catches it, a chain of three lands on the deck.
+##    (A plain jump twirled at its peak also lands: the twirl is the save.)
 ## 2. The piers: from a turn platform the route bends TURN_B right, over
 ##    PIERS standing piers: the first a plain jump up (FIRST_RISE under the
 ##    jump), each after PIER_RISE higher (the pump's height less
 ##    PUMP_SPARE). Spaced so a pump taken anywhere in the chain window on
 ##    one top lands on the next (`pier_gap`). Then the slot's plinth.
-##    The safe line: a crumbling stair (RuinKit `stairs`, SAFE_FLIGHTS
+##    The safe line: a crumbling stair (RuinKit `stairs`, `safe_flights`
 ##    flights with rests between) up beside them on the inside of the bend.
 ## 3. The chimney slot: `slot_piece` (ONE function: the swap to the real
 ##    tower is one line in it), SLOT_HEIGHT tall, turned SLOT_YAW_DEG, its
@@ -41,12 +42,16 @@ const WEATHERED := 0.35
 
 ## The start rim: across and deep (m).
 const RIM := Vector2(12.0,12.0)
-## 1. The run-up: spans, their rise end to end (m: 4.5°, under the
+## 1. The run-up: spans, their tilt end to end (degrees: under the
 ## motor's SLIDE_END, so it is flat ground to the slide and long jump),
-## the fallen span's far side under the lip (m).
+## the fallen span's far side under the lip (m: deep enough that a faster
+## long jump's longer reach outgrows a slower one's catch by more than
+## where a chain's last takeoff falls), and how far past a plain jump's
+## furthest catch the far deck starts (m).
 const RUN_SPANS := 3
-const RUN_RISE := 2.4
-const FALL_DROP := 1.5
+const RUN_DEG := 4.5
+const FALL_DROP := 4.0
+const FALL_SPARE := 0.5
 ## The turn platform past the far deck: along, across, and how far right
 ## of the pier line it reaches (for the safe stair).
 const TURN_PAD := Vector2(6.0,6.0)
@@ -55,12 +60,12 @@ const TURN_PAD_RIGHT := 7.0
 ## one's rise under the plain jump, and how much under the pump each rise
 ## is kept.
 const TURN_B := 55.0
-const PIERS := 7
+const PIERS := 10
 const PIER_TOP := Vector2(2.4,2.0)
 const FIRST_SPARE := 0.3
 const PUMP_SPARE := 0.6
-## The safe stair: its flights, and how far right of the pier line.
-const SAFE_FLIGHTS := 3
+## The safe stair: how far right of the pier line (its flights: as many
+## as climb to the plinth, `safe_flights`).
 const SAFE_ASIDE := 4.6
 ## 3. THE CHIMNEY SLOT. Its plinth's half size round it (room for a piece
 ## up to 8 x 8 m and its rubble), the turn (degrees about up: its +Z front
@@ -76,6 +81,9 @@ const SLAB_RUN := 7.5
 const SLAB_WIDE := 2.6
 const LIP_RUN := 2.0
 const FAR_DROP := 0.5
+## How far past the bare launch's furthest catch the far rim starts (m):
+## the twirl's landing reaches about 0.75 m past that catch.
+const LAUNCH_SPARE := 0.3
 const FAR_RIM := Vector2(12.0,14.0)
 
 ## The stand-in's numbers: the real piece's (RuinKitTower.tower_shell):
@@ -90,6 +98,8 @@ const STAND_LOW := 1.0
 var m: PilotMotor
 ## Worked out by `lay_out` (local).
 var deck := 0.0
+var run_rise := 0.0
+var safe_flights := 0
 var fall_gap := 0.0
 var lip := Vector3.ZERO
 var far_start := Vector3.ZERO
@@ -115,15 +125,16 @@ func lay_out() -> void:
 	deck = Aqueduct.DECK
 	# 1. The fallen span.
 	var span := Aqueduct.SPAN
-	lip = Vector3(0.0,RUN_RISE,-span*RUN_SPANS)
+	run_rise = span*RUN_SPANS*tan(deg_to_rad(RUN_DEG))
+	lip = Vector3(0.0,run_rise,-span*RUN_SPANS)
 	var plain := m.long_speed
 	var chain2 := minf(plain+m.long_add,m.long_top)
 	var chain3 := minf(chain2+m.long_add,m.long_top)
 	var miss := catch_reach(plain,FALL_DROP)
 	var make := long_reach(chain3,FALL_DROP)
-	assert(miss < make,"viaduct: the chain of three does not outreach a plain catch")
-	fall_gap = (miss+make)*0.5
-	var y2 := RUN_RISE-FALL_DROP
+	fall_gap = miss+FALL_SPARE
+	assert(fall_gap+1.0 < make,"viaduct: the chain of three does not outreach a plain catch by a takeoff's slack")
+	var y2 := run_rise-FALL_DROP
 	far_start = Vector3(0.0,y2,lip.z-fall_gap)
 	var far_end := far_start.z-span
 	turn_mid = Vector3(0.0,y2,far_end-TURN_PAD.y*0.5)
@@ -140,6 +151,8 @@ func lay_out() -> void:
 		s += PIER_TOP.y+pier_gap
 		y += pier_rise
 	plinth_near = s
+	var climb := float(RuinKit.STEPS)*RuinKit.RISER
+	safe_flights = ceili((y-y2)/climb-0.05)
 	slot_foot = at(turn_mid,TURN_B,s+SLOT_PLINTH,0.0,y-turn_mid.y)
 	# 4. The launch: off the east head, slid down, long-jumped, twirled.
 	var c_deg := TURN_B+90.0
@@ -152,13 +165,14 @@ func lay_out() -> void:
 	var twirled := launch_reach(launch_pace,true)
 	var bare_catch := catch_reach(launch_pace,FAR_DROP)
 	assert(maxf(bare,bare_catch) < twirled,"viaduct: the twirl does not outreach the bare launch")
-	far_gap = (maxf(bare,bare_catch)+twirled)*0.5
+	far_gap = maxf(bare,bare_catch)+LAUNCH_SPARE
+	assert(far_gap < twirled,"viaduct: the twirl does not reach past the spare")
 	far_near = at(lip_end,c_deg,far_gap,0.0,-FAR_DROP)
-	numbers = {"fall_gap":fall_gap,"plain_catch":miss,"chain3_land":make,"chain2_land":long_reach(chain2,FALL_DROP),
+	numbers = {"run_rise":run_rise,"fall_gap":fall_gap,"plain_catch":miss,"chain3_land":make,"chain2_land":long_reach(chain2,FALL_DROP),
 		"chain2_catch":catch_reach(chain2,FALL_DROP),"plain_land":long_reach(plain,FALL_DROP),
 		"pier_gap":pier_gap,"pier_rise":pier_rise,"first_rise":first_rise,"pump_flight":flight,
 		"slot_foot":slot_foot,"slot_top":slot_foot.y+SLOT_HEIGHT,"launch_pace":launch_pace,"bare_land":bare,
-		"bare_catch":bare_catch,"twirl_land":twirled,"far_gap":far_gap,"far_top":far_near.y}
+		"bare_catch":bare_catch,"twirl_land":twirled,"far_gap":far_gap,"far_top":far_near.y,"safe_flights":safe_flights}
 
 # --- The walker's reach ------------------------------------------------------------
 
@@ -273,7 +287,7 @@ func build(paint: Callable) -> void:
 ## over their channel, the fallen span's stones on the floor, the far deck.
 func _run_up(low: float) -> void:
 	var span := Aqueduct.SPAN
-	var tilt := atan(RUN_RISE/(span*RUN_SPANS))
+	var tilt := deg_to_rad(RUN_DEG)
 	# A span runs along its x: turned so +x runs down -Z, nose up by tilt.
 	var basis := Basis(Vector3.UP,PI*0.5)*Basis(Vector3.BACK,tilt)
 	for i in range(RUN_SPANS):
@@ -305,23 +319,24 @@ func _piers(low: float) -> void:
 	column(slot_foot,Vector2(SLOT_PLINTH,SLOT_PLINTH)*2.0,low,slot_foot.y,TURN_B,"grey")
 
 ## The safe line: stair flights up beside the piers, a rest between each,
-## the last arriving at the plinth's edge.
+## the last arriving at the plinth's edge; the first's foot at or under the
+## turn platform (stepped down onto from it).
 func _safe_stair(low: float) -> void:
 	var climb := float(RuinKit.STEPS)*RuinKit.RISER
 	var run := float(RuinKit.STEPS-1)*RuinKit.TREAD+RuinKit.LANDING
 	var from := TURN_PAD.y*0.5
 	var length := plinth_near-from
-	var rest := (length-run*SAFE_FLIGHTS)/float(SAFE_FLIGHTS-1)
-	var foot_y := slot_foot.y-climb*SAFE_FLIGHTS
-	assert(absf(foot_y-turn_mid.y)+RuinKit.RISER < PilotMotor.STEP_UP,"viaduct: the safe stair's first step is no step")
+	var rest := (length-run*safe_flights)/float(safe_flights-1)
+	var foot_y := slot_foot.y-climb*safe_flights
+	assert(foot_y < turn_mid.y+PilotMotor.STEP_UP-RuinKit.RISER and rest > 0.5,"viaduct: the safe stair does not fit")
 	var s := from
-	for i in range(SAFE_FLIGHTS):
+	for i in range(safe_flights):
 		var y := foot_y+climb*i
 		var mid := at(turn_mid,TURN_B,s+run*0.5,SAFE_ASIDE)
 		column(mid,Vector2(RuinKit.STAIR_WIDTH+0.8,run),low,y,TURN_B,"wall")
 		piece(RuinKit.stairs(SEED+30+i,0.6),Transform3D(Basis(Vector3.UP,yaw_of(TURN_B)),Vector3(mid.x,y,mid.z)))
 		s += run
-		if i < SAFE_FLIGHTS-1:
+		if i < safe_flights-1:
 			column(at(turn_mid,TURN_B,s+rest*0.5,SAFE_ASIDE),Vector2(RuinKit.STAIR_WIDTH+0.8,rest+0.02),low,y+climb,TURN_B,"grey")
 			s += rest
 
@@ -345,21 +360,25 @@ func slot_piece(seed_value: int, weathered: float, height: float) -> Node3D:
 ## The stand-in, in the kit's conventions (foot on y 0 round the origin,
 ## front +Z): a hollow tower STAND_HALF round, the shaft STAND_SHAFT clear
 ## (kicked between its east and west walls), a doorway STAND_DOOR in the
-## front wall at its foot, the walkable rims the east and west walls'
-## heads at `height` (lip-capped), the front and back walls STAND_LOW
-## under them.
+## front wall at its foot. As the real piece: the east and west (kick)
+## walls run only the shaft's depth (z within STAND_SHAFT.y), their heads
+## the walkable rims at `height` (lip-capped, x STAND_SHAFT.x to
+## STAND_HALF.x); the front and back walls run the whole width across
+## their ends, STAND_LOW under the rims (the real one's, weathered, ragged
+## and lower still).
 func _stand_in(_seed_value: int, _weathered: float, height: float) -> Node3D:
 	var root := Node3D.new()
 	var built: Array[Node] = []
 	var wall := STAND_HALF.x-STAND_SHAFT.x
 	var end := STAND_HALF.y-STAND_SHAFT.y
-	# The east and west walls, full depth.
+	# The east and west walls, the shaft's depth.
 	for sx: float in [-1.0,1.0]:
-		built.append(box(Vector3(wall,height,STAND_HALF.y*2.0),Vector3(sx*(STAND_SHAFT.x+wall*0.5),height*0.5,0.0),0.0,"lip"))
-	# The back wall; the front wall either side of the door and over it.
+		built.append(box(Vector3(wall,height,STAND_SHAFT.y*2.0),Vector3(sx*(STAND_SHAFT.x+wall*0.5),height*0.5,0.0),0.0,"lip"))
+	# The back wall, the whole width; the front wall either side of the
+	# door and over it.
 	var low := height-STAND_LOW
-	built.append(box(Vector3(STAND_SHAFT.x*2.0,low,end),Vector3(0.0,low*0.5,-(STAND_SHAFT.y+end*0.5)),0.0,"wall"))
-	var jamb := STAND_SHAFT.x-STAND_DOOR.x*0.5
+	built.append(box(Vector3(STAND_HALF.x*2.0,low,end),Vector3(0.0,low*0.5,-(STAND_SHAFT.y+end*0.5)),0.0,"wall"))
+	var jamb := STAND_HALF.x-STAND_DOOR.x*0.5
 	for sx: float in [-1.0,1.0]:
 		built.append(box(Vector3(jamb,low,end),Vector3(sx*(STAND_DOOR.x*0.5+jamb*0.5),low*0.5,STAND_SHAFT.y+end*0.5),0.0,"wall"))
 	built.append(box(Vector3(STAND_DOOR.x,low-STAND_DOOR.y,end),Vector3(0.0,(low+STAND_DOOR.y)*0.5,STAND_SHAFT.y+end*0.5),0.0,"wall"))
