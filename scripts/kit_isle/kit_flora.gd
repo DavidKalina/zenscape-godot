@@ -322,7 +322,7 @@ class Undergrow extends RefCounted:
 				_n = 0
 				_placed = 0
 				continue
-			if usec >= 0 and _n % 16 == 15 and Time.get_ticks_usec() > end: return false
+			if usec >= 0 and Time.get_ticks_usec() > end: return false
 			_n += 1
 			var p := Vector2(_rng.randf_range(_box.position.x,_box.end.x),_rng.randf_range(_box.position.y,_box.end.y))
 			var e := KitFlora.edge(p,_outlines)
@@ -345,7 +345,7 @@ class Undergrow extends RefCounted:
 				_phase = 2
 				_draw = Draw.new(_records,_ground,_area,UNDER_TILE)
 				break
-			if usec >= 0 and _n % 16 == 15 and Time.get_ticks_usec() > end: return false
+			if usec >= 0 and Time.get_ticks_usec() > end: return false
 			_n += 1
 			var p := Vector2(_rng.randf_range(_box.position.x,_box.end.x),_rng.randf_range(_box.position.y,_box.end.y))
 			if KitFlora.edge(p,_outlines) < 2.0 or _site.worn(p) > 0.02 or not _at_foot(p): continue

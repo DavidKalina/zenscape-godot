@@ -88,8 +88,13 @@ func setup(isle: Node3D) -> void:
 			dig.setup(holder,ground,objective(t.name),(t.at as Vector3).y-ground.y)
 			add_child(dig)
 			buried[t.name] = dig
-	hud = Hud.new()
-	add_child(hud)
+	# A placed isle shares the sky's readout (scripts/kit_isle/motif_isle.gd
+	# `token_hud`): one made here would only be freed (100-160 ms rendered).
+	var shared: Node = isle.call("token_hud") if isle != null and isle.has_method("token_hud") else null
+	if shared != null: hud = shared
+	else:
+		hud = Hud.new()
+		add_child(hud)
 
 ## Token `name`'s objective id in the ledger.
 func objective(token_name: String) -> String:

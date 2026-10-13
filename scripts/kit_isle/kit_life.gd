@@ -461,11 +461,24 @@ func _leaf_anchors() -> Array:
 
 # --- Each frame ---------------------------------------------------------------------
 
-## One frame of the isle's life, after the look (its air, its light).
-func advance(delta: float) -> void:
+## Past these from the isle's edge (m, `advance`'s gap) its small life
+## holds still, hidden: the loose leaves, chaff, kicked blades and
+## butterflies, a few centimetres, are under a pixel past SMALL_NEAR at
+## 1080 lines; the songbirds past BIRDS_NEAR. Their steps are the most of a
+## frame's script time (docs/design/roguelike/perf-round1.md): a layer has
+## four or five lives in reach of the eye.
+const SMALL_NEAR := 60.0
+const BIRDS_NEAR := 150.0
+
+## One frame of the isle's life, after the look (its air, its light);
+## `gap` how far the eye is from the isle's edge (m, 0 on it).
+func advance(delta: float, gap := 0.0) -> void:
 	if delta <= 0.0: return
 	var day := float(scene._celestial.state.get("zs_daylight",1.0))
-	for meadow in meadows: meadow.flies.advance(delta)
+	var small := gap < SMALL_NEAR
+	for meadow in meadows:
+		meadow.visible = small
+		if small: meadow.flies.advance(delta)
 	if fireflies != null:
 		var weather: Variant = scene._precipitation.surface_weather
 		fireflies.update_conditions(day,float(scene._precipitation.state.x),float(weather.cold),1.0)
@@ -473,10 +486,14 @@ func advance(delta: float) -> void:
 	if flags.wind and atmosphere.wind_trails != null:
 		var fronts: RefCounted = atmosphere.fronts
 		atmosphere.wind_trails.set_bounds(fronts.center,fronts.radius)
-		leaf_litter.advance(delta,false,atmosphere)
-		grass_chaff.advance(delta,false,atmosphere)
-		kicked_blades.advance(delta,false,atmosphere.wind_trails,atmosphere)
-	if birds != null: birds.advance(delta)
+		for bits: Node3D in [leaf_litter,grass_chaff,kicked_blades]: bits.visible = small
+		if small:
+			leaf_litter.advance(delta,false,atmosphere)
+			grass_chaff.advance(delta,false,atmosphere)
+			kicked_blades.advance(delta,false,atmosphere.wind_trails,atmosphere)
+	if birds != null:
+		birds.visible = gap < BIRDS_NEAR
+		if birds.visible: birds.advance(delta)
 	if tokens != null: tokens.glow_for(1.0-smoothstep(0.1,0.5,day))
 
 ## After each step of the pilot on foot (or the plane): his middle takes

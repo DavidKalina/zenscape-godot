@@ -222,6 +222,7 @@ func _process(delta: float) -> void:
 				best = isle
 		if best == null: break
 		var began := Time.get_ticks_usec()
+		var was: String = best.stage
 		best.work(maxi(SkyCommits.BUDGET_USEC-SkyCommits.used(),SLICE_LEAST))
-		SkyCommits.spend("motif isle",Time.get_ticks_usec()-began)
+		SkyCommits.spend("motif isle %s %s" % [best.name,was] if SkyCommits.recording else "motif isle",Time.get_ticks_usec()-began)
 	for isle: Node3D in isles: isle.advance(delta,eye)

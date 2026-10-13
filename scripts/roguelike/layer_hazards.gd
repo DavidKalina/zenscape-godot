@@ -493,6 +493,8 @@ func _build_viaduct(v: Dictionary, paint: Callable) -> void:
 	viaduct.transform = v.xform
 	add_child(viaduct)
 	viaduct.build(paint)
+	# Its stone's and growth's levels of detail (scripts/ruin_lod.gd).
+	preload("res://scripts/ruin_lod.gd").add_async(viaduct)
 	var xf: Transform3D = v.xform
 	stones = FootPieces.new()
 	stones.name = "ViaductStones"
