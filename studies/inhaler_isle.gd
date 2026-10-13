@@ -2,25 +2,27 @@ extends "res://studies/aqueduct_isle.gd"
 ## The inhaler head's study (docs/design/roguelike/inhaler-head.md): the
 ## aqueduct isle (studies/aqueduct_isle.gd: its look, light, grass, sky and
 ## life; no lodestone, no hall chain, no dragon) with the inhaler head
-## (scripts/enemies/inhaler_head.gd) drifting its round over the open turf
-## east of the aqueduct and out past the east rim, and kit stone to hide
-## behind: two clustered piers, a wall, a carved chest and a fallen pier.
+## (scripts/enemies/inhaler_head.gd) heaving itself round the open turf
+## east of the aqueduct, up onto a slab of floor and to the east rim (where
+## it won't go over), and kit stone to hide behind: two clustered piers, a
+## wall, a carved chest and a fallen pier.
 ## The wanderer starts on the turf's south side, out of its sight.
 ##   R   back to the start, the head back to its round too
 ##   F1  numbers (the head's state, its draw and its pull on him)
 ##   godot --path . res://studies/inhaler_isle.tscn -- --no-title
 ##     [--head-at=x,z] [--head-knob=<knob>=<value>] (repeatable, e.g.
 ##     --head-knob=pull=9 --head-knob=reach=16)
-## Placeholder sounds: the enemy yard's synthesized ones (a grind, a long
-## hiss, a gulp, a whoosh).
+## Placeholder sounds: the enemy yard's synthesized ones (InhalerHead.VOICES:
+## a grind, a long hiss, a gulp, a whoosh, thuds, a strain, a scrape, a call).
 const EnemyField = preload("res://scripts/enemies/enemy_field.gd")
 const InhalerHead = preload("res://scripts/enemies/inhaler_head.gd")
 const EnemyYard = preload("res://studies/enemy_yard.gd")
 
-## Where the head is set down (x, z) and its round (x, z): over the turf,
-## out over the void past the east rim, back.
+## Where the head is set down (x, z) and its round (x, z): on the turf, up
+## over the floor slab to the east rim (one point past it: it stops at the
+## rim and turns), back round the piers.
 const HEAD_AT := Vector2(118.0,-6.0)
-const ROUTE := [Vector2(118.0,-17.0),Vector2(125.0,-9.0),Vector2(133.0,-2.0),Vector2(124.0,8.0),Vector2(112.0,-5.0)]
+const ROUTE := [Vector2(122.0,-11.0),Vector2(130.0,-6.0),Vector2(124.0,3.0),Vector2(117.0,8.0),Vector2(111.0,-6.0)]
 ## Where the wanderer starts (x, z), facing the head.
 const START_AT := Vector2(110.0,11.0)
 ## The cover: [piece, seed, (x, z), yaw, weathered].
@@ -30,14 +32,9 @@ const COVER := [
 	["wall",5,Vector2(115.0,-15.0),0.1,0.4],
 	["tomb_chest",2,Vector2(124.0,-12.0),0.6,0.3],
 	["fallen_pier",4,Vector2(108.5,3.5),1.1,0.5],
+	["floor",6,Vector2(125.0,-7.5),0.35,0.3],
 ]
-const VOICES := {
-	"head_grind":[0.9,0.0,0.0,1.0,0.07,0.05,13.0],
-	"head_inhale":[3.0,0.0,0.0,1.0,0.22,0.9,0.0],
-	"head_yank":[0.35,0.0,0.0,1.0,0.4,0.01,0.0],
-	"head_gulp":[0.45,70.0,40.0,0.4,0.15,0.005,0.0],
-	"head_blast":[0.9,0.0,0.0,1.0,0.55,0.005,0.0],
-}
+const VOICES := InhalerHead.VOICES
 
 var enemies: Node
 var head: Node3D
@@ -170,7 +167,8 @@ func _show_hud() -> void:
 	var lines := PackedStringArray([_hud.text,""])
 	for e in enemies.enemies:
 		if not is_instance_valid(e): continue
-		lines.append("head  %s %.1fs · draw %.2f · pull on him %.1f m/s · gulps %d" % [e.state,e.state_t,e.draw_share,e.pulling,e.gulps])
+		lines.append("head  %s %.1fs · %s · draw %.2f · pull on him %.1f m/s · gulps %d" % [e.state,e.state_t,e._act if e._act != "" else "rest",e.draw_share,e.pulling,e.gulps])
+		lines.append("      heaves %d · notches %d · balks %d · calls %d%s · falls %d · y over turf %.2f" % [e.heaves,e.notches,e.balks,e.calls," (calling)" if e.calling() else "",e.falls,e.position.y-e.ground_y()])
 	_hud.text = "\n".join(lines)
 
 ## Plays enemy sound `sound_name` at `at` (a short synthesized placeholder).
