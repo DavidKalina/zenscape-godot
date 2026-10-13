@@ -29,6 +29,7 @@ extends RefCounted
 const Builds = preload("res://scripts/showcase_builds.gd")
 const ForestBuilds = preload("res://scripts/forest_builds.gd")
 const Footbridge = preload("res://scripts/footbridge.gd")
+const RopeBridge = preload("res://scripts/rope_bridge.gd")
 const Woodland = preload("res://scripts/woodland.gd")
 
 ## Footprints (m): the hut (a cabin's), and how far its middle keeps off
@@ -452,7 +453,7 @@ static func prepare(member: Dictionary, plan: Dictionary) -> Dictionary:
 			for k in range(BRIDGE_AT.size()):
 				var t: float = BRIDGE_AT[k]
 				var side := 1.0 if k % 2 == 0 else -1.0
-				var rope: Vector3 = a.lerp(b,t)+Vector3.UP*(Footbridge.HAND_ROPE+Footbridge.lift(span,t)*0.55)+across*side*(Footbridge.WIDTH*0.5+0.04)
+				var rope: Vector3 = a.lerp(b,t)+Vector3.UP*(Footbridge.HAND_ROPE+Footbridge.lift(span,t)*0.55)+across*side*(Footbridge.WIDTH*0.5+0.04*RopeBridge.chunk)
 				var hook := rope+across*side*0.1+Vector3.DOWN*ForestBuilds.CORD
 				ForestBuilds.cord(st,rope,hook)
 				_hang(out,hook,SMALL,HALO_STRING)
