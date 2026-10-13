@@ -242,8 +242,13 @@ static func make(seed_value: int, knobs := {}) -> Dictionary:
 
 ## The layer's knobs: how many neighbourhoods (0 rolls 2 or 3), the gulf's
 ## width rim to rim (m, flat; 0 rolls each in GULF), the honest ride across
-## each ("" alternates from a roll; "serpent" or "ferry" pins every gulf's).
-const KNOBS := {"hoods":0,"gulf":0.0,"ride":""}
+## each ("" alternates from a roll; "serpent" or "ferry" pins every gulf's),
+## each gulf's rise rim to rim (m; 0 rolls GULF_RISE, or the knob
+## `rise_roll`, a Vector2, the sprawl shape's). The sprawl shape (scripts/
+## roguelike/layer_sprawl.gd) also passes `hood_more` (isles more in each
+## neighbourhood) and `tier` (m: in each neighbourhood one step climbs
+## onto an isle standing that much over its lowest, by a `climb` edge).
+const KNOBS := {"hoods":0,"gulf":0.0,"ride":"","rise":0.0}
 const KNOB_CHOICES := {"hoods":[0,1,2,3],"ride":["","serpent","ferry"]}
 
 ## `--knob=key=value` arguments as the layer's knobs (unknown keys warned).
@@ -271,6 +276,11 @@ static func warm() -> void:
 	_serpent_shape()
 	cannon_knobs()
 	LayerPieces.sockets(BASE)
+	# One isle of each motif read here: the families' sockets build their
+	# kit pieces once (KitMotif `piece_block`, about 2 s), which off the main
+	# thread windowed waits on the renderer.
+	var rng := RandomNumberGenerator.new()
+	for p: Array in POOL: _motif_isle(p,rng)
 
 ## Prints each step's cost (the bake and the test's).
 static var trace := false
@@ -289,10 +299,11 @@ static func _make(seed_value: int, attempt: int, knobs: Dictionary) -> Dictionar
 	hoods = clampi(hoods,1,3)
 	var sizes: Array[int] = []
 	for h in range(hoods): sizes.append(rng.randi_range(1,2) if h == 0 else (3 if rng.randf() < HOOD_THREE else 2))
+	for h in range(hoods): sizes[h] += int(k_all.get("hood_more",0))
 	var count := 1
 	for n: int in sizes: count += n
 	var motifs: Array = []
-	for p: Array in _draw(count,rng): motifs.append(_motif_isle(p,rng))
+	for p: Array in _draw(count,rng,int(k_all.get("repeats",1))): motifs.append(_motif_isle(p,rng))
 	var base := _base_isle()
 	base.sockets = base.own.duplicate()
 	base.hood = 0
@@ -345,6 +356,8 @@ static func _make(seed_value: int, attempt: int, knobs: Dictionary) -> Dictionar
 	var traps_left := 1
 	var gulf_n := 0
 	var ride_roll: String = RIDES[rng.randi_range(0,RIDES.size()-1)]
+	var tier := float(k_all.get("tier",0.0))
+	var tiered := {}
 	for h in range(hoods):
 		var group: Array = groups[h]
 		for k in range(group.size()):
@@ -379,6 +392,14 @@ static func _make(seed_value: int, attempt: int, knobs: Dictionary) -> Dictionar
 			var least := -INF
 			if last:
 				for i: int in plan.hoods[h]: least = maxf(least,_top_walked(plan.isles[i])+1.0)
+			# A tier (the `tier` knob): the first step of a neighbourhood that
+			# needn't be the trap climbs onto an isle standing over its lowest.
+			if tier > 0.0 and not tiered.has(h) and not (last and traps_left > 0):
+				tiered[h] = true
+				kinds = ["climb"]
+				var low := INF
+				for i: int in plan.hoods[h]: low = minf(low,_top_walked(plan.isles[i]))
+				least = maxf(least,low+tier)
 			# Off the last isle laid in the neighbourhood, else off another of
 			# it (the one before is then a side isle); one that won't stand
 			# anywhere: another drawn in its place.
@@ -473,17 +494,17 @@ static func _make(seed_value: int, attempt: int, knobs: Dictionary) -> Dictionar
 static func _substitute(plan: Dictionary, groups: Array, greed: Dictionary, h: int, rng: RandomNumberGenerator) -> Dictionary:
 	var taken := {}
 	var hero := false
-	for isle: Dictionary in plan.isles: taken[isle.id] = true
+	for isle: Dictionary in plan.isles: taken[isle.id] = int(taken.get(isle.id,0))+1
 	for g: Array in groups:
-		for m: Dictionary in g: taken[m.id] = true
-	taken[greed.id] = true
+		for m: Dictionary in g: taken[m.id] = int(taken.get(m.id,0))+1
+	taken[greed.id] = int(taken.get(greed.id,0))+1
 	for m: Dictionary in groups[h]: if m.has("motif") and m.motif.role() == "hero": hero = true
 	for i: int in plan.hoods[h] if h < (plan.hoods as Array).size() else []:
 		if plan.isles[i].has("motif") and plan.isles[i].motif.role() == "hero": hero = true
 	var pool: Array = []
 	for p: Array in POOL:
 		var probe: RefCounted = (p[1] as Script).new()
-		if not probe.family() and taken.has(str(p[0])): continue
+		if not probe.family() and int(taken.get(str(p[0]),0)) >= int(plan.knobs.get("repeats",1)): continue
 		if hero and probe.role() == "hero": continue
 		pool.append(p)
 	if pool.is_empty(): return {}
@@ -504,7 +525,10 @@ static func _substitute(plan: Dictionary, groups: Array, greed: Dictionary, h: i
 
 ## `count` pool picks by weight: a family any number of times (its own seed
 ## and knobs each), the rest at most once a layer.
-static func _draw(count: int, rng: RandomNumberGenerator) -> Array:
+## `repeats` (a knob, the sprawl shape's): how many times one that is not
+## a family may come a layer.
+static func _draw(count: int, rng: RandomNumberGenerator, repeats := 1) -> Array:
+	var drawn := {}
 	var picks: Array = []
 	var pool: Array = POOL.duplicate()
 	while picks.size() < count and not pool.is_empty():
@@ -516,7 +540,8 @@ static func _draw(count: int, rng: RandomNumberGenerator) -> Array:
 			if roll <= 0.0 or i == pool.size()-1:
 				picks.append(pool[i])
 				var probe: RefCounted = (pool[i][1] as Script).new()
-				if not probe.family(): pool.remove_at(i)
+				drawn[pool[i][0]] = int(drawn.get(pool[i][0],0))+1
+				if not probe.family() and int(drawn[pool[i][0]]) >= repeats: pool.remove_at(i)
 				break
 	return picks
 
@@ -782,8 +807,10 @@ static func _step(plan: Dictionary, from: int, m: Dictionary, kinds: Array, bran
 		var fb: Vector3 = rb.face
 		var dir := (fa-fb).normalized()
 		if dir.dot(fa) < cos(deg_to_rad(TURN_MOST)) or dir.dot(-fb) < cos(deg_to_rad(TURN_MOST)): continue
-		if kind in ["stones","hard"] and float(ra.run_up) < 1.5: continue
+		if kind in ["stones","hard","climb"] and float(ra.run_up) < 1.5: continue
 		if kind == "hard" and float(ra.run_up) < CANNON_BACK+1.0: continue
+		# A climb comes up onto clear ground (its bridge's anchor and him).
+		if kind == "climb" and float(rb.run_up) < CLIMB_RUN_UP: continue
 		var lip_a: Vector3 = (ra.at as Vector3)+off_a+fa*float(ra.lip)
 		var shape := _shape(kind,lip_a,dir,rng)
 		if shape.is_empty(): continue
@@ -833,6 +860,7 @@ static func _step(plan: Dictionary, from: int, m: Dictionary, kinds: Array, bran
 		score += 0.15*(lip_b.y-lip_a.y)
 		score += OVER_WEIGHT*over_share(plan,placed)
 		score -= 0.01*mid.distance_to(anchor)
+		score += _lean(plan,mid)
 		if score > best_score:
 			best_score = score
 			best = {"edge":edge,"isle":placed}
@@ -882,6 +910,19 @@ static func _shape(kind: String, a: Vector3, dir: Vector3, rng: RandomNumberGene
 			out.parts.append("bridge %.1f m" % span)
 			out.path.append_array(_line(p,b,Footbridge.bow(span)+0.6))
 			p = b
+		"climb":
+			# Up a tier: runs of stones each stepping up as steeply as his
+			# small jump keeps easy, a landing after each, a bridge up at the
+			# footbridge's grade to the far rim.
+			for r in range(rng.randi_range(2,3)):
+				p = _lay_stones(out,p,dir,rng.randi_range(4,6),false,rng,"%s_%d" % [chain,r],CLIMB_LIFT)
+				p = _landing(out,p,dir,"%s_%d" % [chain,r])
+			var span := clampf(KitMotif.hop_reach()*rng.randf_range(SPAN_HOPS.x,SPAN_HOPS.y),Footbridge.TIMBER_SPAN,Footbridge.MAX_SPAN)
+			var b := p+dir*span+Vector3.UP*span*Footbridge.MAX_GRADE*GRADE
+			out.bridges.append([p,b])
+			out.parts.append("bridge up %.1f m" % span)
+			out.path.append_array(_line(p,b,Footbridge.bow(span)+0.6))
+			p = b
 		"trap":
 			if rng.randf() < 0.7:
 				p = _lay_stones(out,p,dir,rng.randi_range(2,5),false,rng,chain)
@@ -910,9 +951,13 @@ static func slab_length() -> float:
 ## `n` stones on from `p` (the lip or a landing's far edge) along `dir`,
 ## each stride a gap a share of his reach at its rise, into `out`; answers
 ## where the next part's near edge stands (one more stride on).
-static func _lay_stones(out: Dictionary, p: Vector3, dir: Vector3, n: int, hard: bool, rng: RandomNumberGenerator, chain: String) -> Vector3:
+## A climb's stones step up this share of his small jump.
+const CLIMB_LIFT := Vector2(0.42,0.5)
+## A climb's far rim wants this much clear ground behind it (m).
+const CLIMB_RUN_UP := 2.5
+static func _lay_stones(out: Dictionary, p: Vector3, dir: Vector3, n: int, hard: bool, rng: RandomNumberGenerator, chain: String, lift := Vector2(0.15,0.5)) -> Vector3:
 	var j := float(pilot().jumps[0])
-	var h := j*(rng.randf_range(0.0,0.4) if hard else rng.randf_range(0.15,0.5))
+	var h := j*(rng.randf_range(0.0,0.4) if hard else rng.randf_range(lift.x,lift.y))
 	# Each gap a share of his small jump's reach at its rise (the greed
 	# branch's nearer it); each stone long enough that the pump (a jump
 	# straight off a landing, as a runner chains them) still comes down on
@@ -1155,7 +1200,7 @@ static func _gulf(plan: Dictionary, hood_from: int, m: Dictionary, hood_to: int,
 		var dir := (fa-fb).normalized()
 		if dir.dot(fa) < cos(deg_to_rad(GULF_TURN)) or dir.dot(-fb) < cos(deg_to_rad(GULF_TURN)): continue
 		var lip_a: Vector3 = (ra.at as Vector3)+(a.offset as Vector3)+fa*float(ra.lip)
-		var rise := rng.randf_range(GULF_RISE.x,GULF_RISE.y)
+		var rise := _rise(plan,width,rng)
 		var lip_b := lip_a+dir*width+Vector3.UP*rise
 		var off_b: Vector3 = lip_b-fb*float(rb.lip)-(rb.at as Vector3)
 		var placed := m.duplicate()
@@ -1186,7 +1231,7 @@ static func _gulf(plan: Dictionary, hood_from: int, m: Dictionary, hood_to: int,
 			why.tubes = why.get("tubes",0)+1
 			continue
 		# The best: off a high rim (seen from far), near the base.
-		var score := rng.randf()*2.0+0.08*lip_a.y-0.004*mid.distance_to(Vector2(MIDDLE.x,MIDDLE.z))
+		var score := rng.randf()*2.0+0.08*lip_a.y-0.004*mid.distance_to(Vector2(MIDDLE.x,MIDDLE.z))+_lean(plan,mid)
 		fits.append([score,edge,placed])
 	fits.sort_custom(func(p: Array, q: Array) -> bool: return float(p[0]) > float(q[0]))
 	# The ride's loop, the best first, till one stands clear of every isle.
@@ -1223,6 +1268,23 @@ static func _gulf(plan: Dictionary, hood_from: int, m: Dictionary, hood_to: int,
 	used[_key(int(e.from[0]),e.from[1])] = true
 	used[_key(int(e.to[0]),e.to[1])] = true
 	return e
+
+## A lean to one side (the sprawl shape's exit side, scripts/roguelike/
+## layer_sprawl.gd): the knob `lean`, a flat heading as long as its weight,
+## gives points per 100 m stood that way off MIDDLE. None without it.
+static func _lean(plan: Dictionary, mid: Vector2) -> float:
+	var lean: Variant = (plan.knobs as Dictionary).get("lean")
+	if not lean is Vector2: return 0.0
+	return (mid-Vector2(MIDDLE.x,MIDDLE.z)).dot(lean)/100.0
+
+## A gulf's rise rim to rim: the `rise` knob, else rolled in GULF_RISE (or
+## the knob `rise_roll`), at most GULF_GRADE of its width.
+const GULF_GRADE := 0.3
+static func _rise(plan: Dictionary, width: float, rng: RandomNumberGenerator) -> float:
+	var k: Dictionary = plan.knobs
+	if float(k.get("rise",0.0)) > 0.0: return minf(float(k.rise),width*GULF_GRADE)
+	var roll: Vector2 = k.get("rise_roll",GULF_RISE)
+	return minf(rng.randf_range(roll.x,roll.y),width*GULF_GRADE)
 
 ## Whether `isle` keeps HOOD_APART (flat, rect to rect) from every isle of
 ## another neighbourhood: the gulfs stay open sky.
@@ -1477,6 +1539,12 @@ static func _ferry_loop(e: Dictionary, isles: Array, rng: RandomNumberGenerator)
 		piers.append({"end":end,"top":top,"toward":Vector2(f2.x,f2.z)})
 		stops.append([Vector3(end.x,top-Ferry.DECK,end.z)+f2*(half+FERRY_OFF),f2])
 	var high := maxf((stops[0][0] as Vector3).y,(stops[1][0] as Vector3).y)+FERRY_LIFT
+	# Over a tall gulf (the `rise` knobs) it climbs across, FERRY_LIFT over
+	# the straight way between its stops, not level at the higher's.
+	var steep := absf((stops[0][0] as Vector3).y-(stops[1][0] as Vector3).y) > GULF_RISE.y+2.0
+	var high_a := (stops[0][0] as Vector3).y+FERRY_LIFT if steep else high
+	var high_b := (stops[1][0] as Vector3).y+FERRY_LIFT if steep else high
+	var lane_y := func(q: Vector3) -> float: return q.y+FERRY_LIFT if steep else high
 	for side: float in ([1.0,-1.0] if rng.randf() < 0.5 else [-1.0,1.0]):
 		var sv := v*side
 		var oa: Vector3 = stops[0][0]
@@ -1497,15 +1565,15 @@ static func _ferry_loop(e: Dictionary, isles: Array, rng: RandomNumberGenerator)
 		route.append([oa+(-ea+fa)*FERRY_ALONG,""])
 		route.append([oa,"a",_ferry_side(ea,fa)])
 		route.append([oa+(ea+fa)*FERRY_ALONG,""])
-		route.append([lift.call(oa+(ea+fa)*FERRY_CORNER,lerpf(oa.y,high,0.5)),""])
-		for p: Vector3 in _lane(oa,ob,sv*FERRY_LANE,0.3): route.append([lift.call(p,high),""])
-		route.append([lift.call(ob+(-eb+fb)*FERRY_CORNER,lerpf(ob.y,high,0.5)),""])
+		route.append([lift.call(oa+(ea+fa)*FERRY_CORNER,lerpf(oa.y,high_a,0.5)),""])
+		for p: Vector3 in _lane(oa,ob,sv*FERRY_LANE,0.3): route.append([lift.call(p,lane_y.call(p)),""])
+		route.append([lift.call(ob+(-eb+fb)*FERRY_CORNER,lerpf(ob.y,high_b,0.5)),""])
 		route.append([ob+(-eb+fb)*FERRY_ALONG,""])
 		route.append([ob,"b",_ferry_side(eb,fb)])
 		route.append([ob+(eb+fb)*FERRY_ALONG,""])
-		route.append([lift.call(ob+(eb+fb)*FERRY_CORNER,lerpf(ob.y,high,0.5)),""])
-		for p: Vector3 in _lane(ob,oa,-sv*FERRY_LANE,0.3): route.append([lift.call(p,high),""])
-		route.append([lift.call(oa+(-ea+fa)*FERRY_CORNER,lerpf(oa.y,high,0.5)),""])
+		route.append([lift.call(ob+(eb+fb)*FERRY_CORNER,lerpf(ob.y,high_b,0.5)),""])
+		for p: Vector3 in _lane(ob,oa,-sv*FERRY_LANE,0.3): route.append([lift.call(p,lane_y.call(p)),""])
+		route.append([lift.call(oa+(-ea+fa)*FERRY_CORNER,lerpf(oa.y,high_a,0.5)),""])
 		# Its hull and its envelope along the loop.
 		var hull: Array = []
 		var envelope: Array = []
