@@ -68,3 +68,9 @@ snappy timing with holds, and weight that matches size. Author clips in
 Blender (rig + actions exported to glb) and layer procedural corrections,
 such as hands placed on the real wall, on top of them. Judge animation by
 eye in rendered captures.
+
+# Models
+
+A round that makes or changes a model assesses the geometry tricks in
+`docs/art/model-budget.md` and lists in its handoff which apply, with
+estimated triangle and frame-time savings.
