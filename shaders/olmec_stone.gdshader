@@ -19,6 +19,10 @@ render_mode diffuse_lambert, specular_schlick_ggx;
 // photographic; pits and cracks also nudge the normal so the light finds
 // them. Fine layers fade with distance so they never shimmer; the patches,
 // streaks, cracks and flecks carry the look at gameplay range.
+// The rune serpent (scripts/rune_serpent.gd) wears it too, `runes` on: its
+// runes, eyes, mouth and tongue (shaders/rune_serpent_runes.gdshaderinc,
+// read from CUSTOM0 and CUSTOM1) cut into the weathered stone as lit
+// grooves; the eyes, mouth and tongue are not stone and stay smooth.
 
 global uniform vec3 zs_hemi_sky;
 global uniform vec3 zs_hemi_ground;
@@ -34,11 +38,21 @@ uniform vec3 grime_mul = vec3(0.34, 0.33, 0.32);
 uniform vec3 pale_mul = vec3(1.7, 1.62, 1.5);
 uniform vec3 lichen_a : source_color = vec3(0.46, 0.52, 0.34);
 uniform vec3 lichen_b : source_color = vec3(0.70, 0.60, 0.33);
+// The rune serpent's light carved in (off for the Olmec), and how deep a
+// lit groove is cut into the normal.
+uniform bool runes = false;
+uniform float rune_cut = 0.6;
+
+#include "res://shaders/rune_serpent_runes.gdshaderinc"
 
 varying vec3 rest;
+varying vec4 rune_info;
+varying vec4 rune_face;
 
 void vertex() {
 	rest = vec3(UV, UV2.x);
+	rune_info = runes ? CUSTOM0 : vec4(0.0);
+	rune_face = runes ? CUSTOM1 : vec4(0.0);
 }
 
 float h31(vec3 p) {
@@ -98,6 +112,20 @@ void fragment() {
 	vec3 base = COLOR.rgb;
 	float occ = clamp(COLOR.a, 0.0, 1.0);
 	float w = weather;
+	// The serpent's light: how lit, its colour and gain; the carved share
+	// (the stone's runes, not the eyes, mouth or tongue, which stay smooth).
+	vec3 r_tint = vec3(0.0);
+	float r_boost = 0.0;
+	float r_dark = 1.0;
+	float r_lit = 0.0;
+	float carve = 0.0;
+	if (runes) {
+		r_lit = rs_serpent(rune_info, rune_face, TIME, r_tint, r_boost, r_dark);
+		float what = floor(rune_info.x + 0.5);
+		if (what > 3.5 && what < 6.5) w = 0.0;
+		carve = clamp(r_lit, 0.0, 1.0) * step(what, 3.5);
+		base *= r_dark;
+	}
 	// How big a pixel is on the stone (m): fine layers fade as it grows.
 	float px = length(fwidth(rest));
 	float f_fine = 1.0 - smoothstep(0.012, 0.05, px);
@@ -175,20 +203,22 @@ void fragment() {
 	float li_bloom = smoothstep(0.58, 0.74, fbm(rest * 3.3 + 61.0));
 	vec3 lc = cells(rest * 13.0 + 71.0);
 	float li_dot = (1.0 - smoothstep(0.1, 0.34, lc.x)) * step(0.45, lc.z);
-	float li = li_zone * clamp(li_bloom * (0.5 + 0.7 * li_dot) , 0.0, 1.0);
+	float li = li_zone * clamp(li_bloom * (0.5 + 0.7 * li_dot) , 0.0, 1.0) * (1.0 - carve);
 	vec3 li_col = mix(lichen_a, lichen_b, smoothstep(0.35, 0.65, vnoise(rest * 6.0 + 5.0)));
 	li_col *= 0.55 + 0.45 * tone;
 	c = mix(c, li_col, li * 0.78 * w * clamp(base.g * 12.0 + 0.3, 0.0, 1.0));
+	// A lit groove darkens the stone round its light (carved, not painted).
+	c *= 1.0 - groove * carve;
 
 	// The normal: pits and cracks cut in, the grain a little raised.
-	float height = (tooth * 0.35 - pit * 0.6 - cracks * 0.9 + fleck_light * 0.1) * 0.02;
+	float height = (tooth * 0.35 - pit * 0.6 - cracks * 0.9 + fleck_light * 0.1) * 0.02 * w - carve * rune_cut * 0.02;
 	vec3 sx = dFdx(VERTEX);
 	vec3 sy = dFdy(VERTEX);
 	vec3 r1 = cross(sy, NORMAL);
 	vec3 r2 = cross(NORMAL, sx);
 	float det = dot(sx, r1);
 	vec3 grad = sign(det) * (dFdx(height) * r1 + dFdy(height) * r2);
-	float bump = bump_strength * w * (0.2 + 0.8 * f_mid);
+	float bump = bump_strength * (0.2 + 0.8 * f_mid);
 	NORMAL = normalize(abs(det) * NORMAL - bump * grad);
 
 	ALBEDO = c;
@@ -198,4 +228,5 @@ void fragment() {
 	vec3 hemi = mix(zs_hemi_ground, zs_hemi_sky, normal.y * 0.5 + 0.5) * zs_hemi_energy / PI;
 	float edge = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 3.0);
 	EMISSION = c * hemi * fill + mix(c, vec3(0.5), 0.4) * zs_hemi_sky * zs_hemi_energy * edge * rim;
+	EMISSION += r_tint * r_lit * energy * r_boost;
 }

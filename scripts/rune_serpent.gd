@@ -57,7 +57,9 @@ extends Node3D
 const Variety = preload("res://scripts/seeded_variety.gd")
 const StoneLampLights = preload("res://scripts/stone_lamp_lights.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
-const SHADER := preload("res://shaders/rune_serpent.gdshader")
+## The Olmec's weathered basalt (docs/design/roguelike/olmec-weathered.md),
+## its runes carved in (`runes`: shaders/rune_serpent_runes.gdshaderinc).
+const SHADER := preload("res://shaders/olmec_stone.gdshader")
 const GLOW_SHADER := preload("res://shaders/rune_serpent_glow.gdshader")
 const RIBBON_SHADER := preload("res://shaders/rune_serpent_ribbon.gdshader")
 
@@ -236,6 +238,24 @@ const SPRING_EASE := [0.6,0.8,0.8,0.25,0.25,0.4,0.4,0.1,0.4]
 ## segment a shade apart (SEGMENT_TONE), a few faces worn lighter.
 const FILL := 1.6
 const RIM := 0.4
+## Weathered as the Olmec is (shaders/olmec_stone.gdshader; scripts/enemies/
+## inhaler_head_look.gd): washes, rain streaks, flecks and pits, cracks,
+## chipped pale high points, grime underneath, a hint of lichen, at the
+## Olmec's amount (WEATHER, BUMP: the shader's `weather`, `bump_strength`).
+## Its grain is laid over the straight body (x, y round the ring, metres
+## back from the snout), times GRAIN, so it rides on the rings as they bend:
+## a little coarser than the Olmec's, for a creature seen mostly at range.
+## Its occlusion (the shader's crevices and high points) by where a corner
+## sits round its ring, the belly's OCC.x to the back's OCC.y, give or take
+## OCC_VARY; the stone's tone keeps AO_FLOOR of itself where it is darkest.
+## The runes are cut into it as lit grooves, RUNE_CUT deep.
+const WEATHER := 1.0
+const BUMP := 0.8
+const GRAIN := 0.75
+const OCC := Vector2(0.5,0.98)
+const OCC_VARY := 0.1
+const AO_FLOOR := 0.8
+const RUNE_CUT := 0.6
 const STONE := Color("5a5d63")
 const COOL := Color("52575f")
 const UNDER := Color("706b64")
@@ -250,7 +270,7 @@ const WORN := 0.06
 ## runs, nor the belly).
 const BAND_EVERY := 3
 const BAND_SKIP := 0.15
-## The runes' light (shaders/rune_serpent.gdshader): their colour (the stone
+## The runes' light (shaders/rune_serpent_runes.gdshaderinc): their colour (the stone
 ## plane's and the lodestone's warm gold) and strength by day and by night
 ## (stronger at night, NIGHT_RUNE_COLOUR and NIGHT_HALO keeping it from
 ## blowing out to white), the eyes' colour and strength by day and by night, and the
@@ -1364,6 +1384,11 @@ func _build_body() -> void:
 	_material.set_shader_parameter("rim",RIM)
 	_material.set_shader_parameter("spine_reach",LENGTH*0.86)
 	_material.set_shader_parameter("spine_cell",SPINE_CELL)
+	_material.set_shader_parameter("roughness_value",0.95)
+	_material.set_shader_parameter("weather",WEATHER)
+	_material.set_shader_parameter("bump_strength",BUMP)
+	_material.set_shader_parameter("runes",true)
+	_material.set_shader_parameter("rune_cut",RUNE_CUT)
 	_haze = ShaderMaterial.new()
 	_haze.shader = GLOW_SHADER
 	_haze.set_shader_parameter("colour",EYE_GLOW)
@@ -1504,9 +1529,11 @@ static func _octagon(r: float, w: float, hgt: float, z: float, k: int, hewn: flo
 	return points
 
 ## The stone's faces, each a flat facet (its normal from where its corners
-## lie with the rings laid out straight), skinned a bone a corner; what it
-## is painted (`paint`) carried by its colour, UV, UV2 and CUSTOM0 (shaders/
-## rune_serpent.gdshader).
+## lie with the rings laid out straight), skinned a bone a corner; as
+## shaders/olmec_stone.gdshader reads them: COLOR its tone times its
+## occlusion (alpha the occlusion), UV and UV2.x where it lies on the
+## straight body (the grain's rest); what it is painted (`paint`) in CUSTOM0
+## and CUSTOM1 (shaders/rune_serpent_runes.gdshaderinc).
 class MeshParts:
 	var vertices := PackedVector3Array()
 	var normals := PackedVector3Array()
@@ -1514,6 +1541,7 @@ class MeshParts:
 	var uvs := PackedVector2Array()
 	var uv2s := PackedVector2Array()
 	var custom := PackedFloat32Array()
+	var custom1 := PackedFloat32Array()
 	var bones := PackedInt32Array()
 	var weights := PackedFloat32Array()
 	var _colour := Color.WHITE
@@ -1548,14 +1576,28 @@ class MeshParts:
 		# side the normal points to is the side that shows.
 		var corners := [[a,ba,ua,arcs.x],[c,bc,uc,arcs.z],[b,bb,ub,arcs.y]]
 		for corner: Array in corners:
-			vertices.append(corner[0])
+			var p: Vector3 = corner[0]
+			var rest := Vector3(p.x,p.y,-float(corner[3]))*GRAIN
+			var occ := _occlusion(p,rest)
+			vertices.append(p)
 			normals.append(normal)
-			colors.append(_colour)
-			uvs.append(corner[2])
-			uv2s.append(Vector2(_seed,_count))
-			custom.append_array([_what,_aspect,float(corner[3]),0.0])
+			var shade := lerpf(AO_FLOOR,1.0,occ)
+			colors.append(Color(_colour.r*shade,_colour.g*shade,_colour.b*shade,occ))
+			uvs.append(Vector2(rest.x,rest.y))
+			uv2s.append(Vector2(rest.z,0.0))
+			custom.append_array([_what,_aspect,float(corner[3]),_seed])
+			custom1.append_array([(corner[2] as Vector2).x,(corner[2] as Vector2).y,_count,0.0])
 			bones.append_array([int(corner[1]),0,0,0])
 			weights.append_array([1.0,0.0,0.0,0.0])
+
+	## A corner's occlusion: by where it sits round its ring or the head
+	## (`p`, about the body's axis), the belly darkest, the same for every
+	## face that shares it (`rest`).
+	static func _occlusion(p: Vector3, rest: Vector3) -> float:
+		var round_ := Vector2(p.x,p.y)
+		var up := round_.y/round_.length() if round_.length() > 0.001 else 0.0
+		var vary := (Variety.unit([roundi(rest.x*50.0),roundi(rest.y*50.0),roundi(rest.z*50.0),83])-0.5)*2.0*OCC_VARY
+		return clampf(lerpf(OCC.x,OCC.y,up*0.5+0.5)+vary,0.0,1.0)
 
 	## Front edge a-b, back edge c-d; za/zb the front and back edges' places
 	## along the straight body (normals), arc_f/arc_b their metres back from
@@ -1578,10 +1620,12 @@ class MeshParts:
 		arrays[Mesh.ARRAY_TEX_UV] = uvs
 		arrays[Mesh.ARRAY_TEX_UV2] = uv2s
 		arrays[Mesh.ARRAY_CUSTOM0] = custom
+		arrays[Mesh.ARRAY_CUSTOM1] = custom1
 		arrays[Mesh.ARRAY_BONES] = bones
 		arrays[Mesh.ARRAY_WEIGHTS] = weights
 		var mesh := ArrayMesh.new()
-		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays,[],{},Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT)
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays,[],{},
+			(Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT)|(Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM1_SHIFT))
 		mesh.surface_set_material(0,material)
 		return mesh
 

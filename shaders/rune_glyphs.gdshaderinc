@@ -1,6 +1,6 @@
 #ifndef ZS_RUNE_GLYPHS
 #define ZS_RUNE_GLYPHS
-// The rune language (the rune serpent's, shaders/rune_serpent.gdshader, and
+// The rune language (the rune serpent's, shaders/rune_serpent_runes.gdshaderinc, and
 // the ruins' night runes, shaders/ruin_runes.gdshader): a glyph's strokes as
 // a distance field, picked by a hash.
 

@@ -21,3 +21,9 @@ Headless import; `headless_body_isle` and `inhaler_isle` each run 400 frames hea
 - Is the amount right? It is bold on purpose to read at distance; `weather` 0.6-0.8 would calm it. The head's blocky chip cells and the body's dark pit speckle are the busiest bits.
 - The head sits in the warm aqueduct light and the body in the grey greybox light, so they look differently tinted in the studies; the stone itself is the same.
 - Lichen is subtle; no real geometric chipping at block edges (texture only).
+
+## The rune serpent wears it too (look/serpent-olmec)
+- `scripts/rune_serpent.gd` builds its body with `shaders/olmec_stone.gdshader` (its own material, `runes` on), at the Olmec's amount (`weather` 1.0, `bump_strength` 0.8). Its own fill and rim stay (1.6, 0.4: the sky folk's rule, so it reads against the sky).
+- The mesh now carries what the Olmec's does: the rest position (x, y round the ring, metres back from the snout, times GRAIN 0.75, a little coarser than the Olmec's grain for a creature seen at range) in UV/UV2, and an occlusion in the colour's alpha (by where a corner sits round its ring: belly 0.5 to back 0.98, give or take 0.1). The rune data moved to CUSTOM0/CUSTOM1.
+- The runes (spine line, flank bands, collar, brow sigil), eyes, mouth and tongue moved from `shaders/rune_serpent.gdshader` (deleted) into `shaders/rune_serpent_runes.gdshaderinc`, which the shared shader includes. Behind the `runes` knob (off by default, so the Olmec is unchanged), they are cut into the weathered stone as lit grooves: the groove darkens the stone round its light, dents the normal (`rune_cut` 0.6), and keeps lichen off; their light is added on top unchanged. Eyes, mouth and tongue stay smooth (no weathering).
+- No change to its geometry, skeleton, motion or capsules.
