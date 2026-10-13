@@ -46,6 +46,24 @@ extends "res://scripts/traps/trap.gd"
 ##
 ## `lurch` 0 is round 4's steady roll: `spin` rad/s, or 90 degree turns with
 ## a `pause` between. Optional `yaw` (rad/s), a slow turn about the vertical.
+##
+## Alive and aggressive (the Tumble Run's round 2; every one off at its
+## default, so the single `tumble` lane is as it was):
+## - `wake` s: he lands on it (after `wake_off` s off it) and it wakes: a
+##   short shudder and "wake", and a rest with more than `wake` s left is cut
+##   to `wake`, so the tip (the real tell) starts soon after.
+## - `feint` s: a fake-out shudder (shake, dust, "grind") that ends at each
+##   rest's middle; the face never tips, so the tip stays the honest read.
+## - `double`: quarter turns chained onto each lurch: after the slam it rests
+##   `chain_rest` s, then tips over `tell` s (all of it shuddering) and
+##   lurches again.
+## - `dip` m: the slam drops the block and it heaves back up.
+## - Motion, carrying him with it (the transform delta): `bob` m up and down
+##   over `bob_time` s, `drift` m along its axis (x, toward and away from its
+##   neighbours) over `drift_time` s, `sway` rad of yaw wobble over
+##   `sway_time` s; `motion_phase` (cycles) offsets them. `middle()` is the
+##   centre as it moves.
+## - `glow` (0 to 1): the faces glow with the tell, not only warm.
 ## Cost 4, over the void 5.
 ##
 ## Sizes from the pilot: `size` 6.5 of his heights (the body's HEAD x the
@@ -101,6 +119,16 @@ var _prize: MeshInstance3D
 var _dust: Array[CPUParticles3D] = []
 var _plate_mats: Array[StandardMaterial3D] = []
 var _shake_t := 0.0
+## Round 2: the motion clock, the chained turns done this cycle, seconds
+## since the slam (the dip, the slam's dust), off him, since he woke it.
+var _clock := 0.0
+var _chain := 0
+var _slam_t := INF
+var _off_t := INF
+var _woke_t := INF
+var _was_on := false
+var feints := 0
+var wakes := 0
 
 func _init() -> void:
 	super()
@@ -130,6 +158,9 @@ func defaults() -> Dictionary:
 		"wall_h":float(p.jumps[0])*0.7,"step_h":float(p.jumps[0])*0.9,
 		"pocket":float(p.jumps[0]),"sweep":p.walk*0.4,"prize":true,
 		"shake":height*0.04,
+		"wake":0.0,"wake_off":hop*3.0,"feint":0.0,"double":0,"chain_rest":hop,"dip":0.0,
+		"bob":0.0,"bob_time":across*1.5,"drift":0.0,"drift_time":across*2.0,
+		"sway":0.0,"sway_time":across*1.2,"motion_phase":0.0,"glow":0.0,
 	}
 
 func length() -> float:
@@ -263,9 +294,33 @@ func build() -> void:
 	sweep = _sweep_start()
 	_pose()
 
-## The block's pose: roll about x, then yaw, at its centre.
+## The block's pose: roll about x, then yaw, at its centre (moved by its
+## bob, drift and dip).
 func _transform() -> Transform3D:
-	return Transform3D(Basis(Vector3.UP,yaw)*Basis(Vector3.RIGHT,roll),centre())
+	return Transform3D(Basis(Vector3.UP,yaw+sway_now())*Basis(Vector3.RIGHT,roll),centre()+motion())
+
+## Its own clock on a cycle of `period` s, as a sine (0 at the start).
+func _wave(period: float) -> float:
+	if period <= 0.0: return 0.0
+	return sin(TAU*(_clock/period+float(knob("motion_phase"))))
+
+## Where its middle is moved to now (the trap's frame, from `centre()`).
+func motion() -> Vector3:
+	var down := 0.0
+	var dip := float(knob("dip"))
+	if dip > 0.0 and is_finite(_slam_t):
+		# A quick drop at the slam, then a heave back up.
+		down = dip*(clampf(_slam_t/0.06,0.0,1.0)*clampf(1.0-(_slam_t-0.06)/0.5,0.0,1.0))
+	return Vector3(float(knob("drift"))*_wave(float(knob("drift_time"))),
+		float(knob("bob"))*_wave(float(knob("bob_time")))-down,0.0)
+
+## The yaw wobble now (rad).
+func sway_now() -> float:
+	return float(knob("sway"))*_wave(float(knob("sway_time")))
+
+## The middle now (world), moving.
+func middle() -> Vector3:
+	return to_global(centre()+motion())
 
 func _pose() -> void:
 	if body != null: body.transform = _transform()
@@ -332,8 +387,8 @@ func in_pocket(p: Vector3) -> bool:
 
 ## The stone's velocity (world, m/s) at `p` turning at `omega` rad/s.
 func surface_velocity(p: Vector3, omega: float) -> Vector3:
-	var axis := (global_transform.basis*(Basis(Vector3.UP,yaw)*Vector3.RIGHT)).normalized()
-	return (axis*omega).cross(p-to_global(centre()))
+	var axis := (global_transform.basis*(Basis(Vector3.UP,yaw+sway_now())*Vector3.RIGHT)).normalized()
+	return (axis*omega).cross(p-middle())
 
 ## The lurch's turn rate (rad/s, signed).
 func lurch_rate() -> float:
@@ -342,9 +397,24 @@ func lurch_rate() -> float:
 ## Seconds left of the shudder before the lurch (INF outside it), and
 ## whether it is shuddering now.
 func until_lurch() -> float:
-	if phase == "rest": return float(knob("tip_time"))/pace+float(knob("rest"))/pace-phase_t
-	if phase == "tip": return float(knob("tip_time"))/pace-phase_t
+	if phase == "rest": return tip_len()+rest_len()-phase_t
+	if phase == "tip": return tip_len()-phase_t
 	return INF
+
+## This rest's and this tip's length (s): the ramped rhythm's, or, chained
+## onto a lurch (`double`), `chain_rest` and a tip that is all tell.
+func rest_len() -> float:
+	return float(knob("chain_rest")) if _chain > 0 else float(knob("rest"))/pace
+
+func tip_len() -> float:
+	return float(knob("tell")) if _chain > 0 else float(knob("tip_time"))/pace
+
+## In a rest's fake-out shudder (`feint`): the `feint` s up to its middle.
+func feinting() -> bool:
+	var feint := float(knob("feint"))
+	if feint <= 0.0 or phase != "rest" or _chain > 0: return false
+	var mid := rest_len()*0.5
+	return phase_t >= mid-feint and phase_t < mid
 
 func shuddering() -> bool:
 	return phase == "tip" and until_lurch() <= float(knob("tell"))
@@ -365,20 +435,24 @@ func _advance(delta: float) -> void:
 	match phase:
 		"rest":
 			roll = _base
-			if phase_t >= float(knob("rest"))/pace:
+			if feinting() and not _told:
+				_told = true
+				feints += 1
+				tell_sound(&"grind",middle())
+			if phase_t >= rest_len():
 				phase = "tip"
 				phase_t = 0.0
 				_told = false
 		"tip":
-			var tt := float(knob("tip_time"))/pace
+			var tt := tip_len()
 			roll = _base+dir*tip*minf(phase_t/tt,1.0)
 			if not _told and shuddering():
 				_told = true
-				tell_sound(&"grind",to_global(centre()))
+				tell_sound(&"grind",middle())
 			if phase_t >= tt:
 				phase = "lurch"
 				phase_t = 0.0
-				tell_sound(&"lurch",to_global(centre()))
+				tell_sound(&"lurch",middle())
 		"lurch":
 			var k := minf(phase_t/maxf(float(knob("lurch")),0.05),1.0)
 			roll = _base+dir*(tip+(PI*0.5-tip)*k)
@@ -388,7 +462,10 @@ func _advance(delta: float) -> void:
 				lurches += 1
 				phase = "rest"
 				phase_t = 0.0
-				tell_sound(&"slam",to_global(centre()))
+				_told = false
+				_slam_t = 0.0
+				_chain = _chain+1 if _chain < int(knob("double")) else 0
+				tell_sound(&"slam",middle())
 
 ## Round 4's roll: continuous at `spin`, or quarter turns with a `pause`.
 func _advance_steady(delta: float) -> void:
@@ -427,20 +504,37 @@ func riding() -> bool:
 func before(delta: float) -> void:
 	if body == null or delta <= 0.0: return
 	var on := riding()
+	if on and not _was_on: _wake()
+	_was_on = on
+	_off_t = 0.0 if on else _off_t+delta
 	var was := _transform()
+	var was_yaw := yaw+sway_now()
 	var was_phase := phase
+	_clock += delta
+	_slam_t += delta
+	_woke_t += delta
 	_advance(delta)
 	_pose()
 	if on:
 		riding_time += delta
 		pace = minf(1.0+float(knob("ramp"))*riding_time,maxf(float(knob("ramp_top")),1.0))
 		var moved := global_transform*(_transform()*was.affine_inverse())*global_transform.affine_inverse()
-		motor.carry(moved,0.0)
+		motor.carry(moved,yaw+sway_now()-was_yaw)
 		if motor.grounded: _underfoot(delta,was_phase == "lurch" and phase == "rest")
 		elif motor.on_ledge(): _on_lip()
 	else: slide = 0.0
 	_sweep_step(delta)
 	_tell(delta)
+
+## He lands on it after a while off it: it wakes (`wake`), shudders and
+## cuts its rest short.
+func _wake() -> void:
+	var wake := float(knob("wake"))
+	if wake <= 0.0 or _off_t < float(knob("wake_off")): return
+	wakes += 1
+	_woke_t = 0.0
+	tell_sound(&"wake",middle())
+	if phase == "rest" and _chain == 0: phase_t = maxf(phase_t,rest_len()-wake)
 
 ## Stood on it: thrown by the lurch, jolted by its stop, slid on the slick.
 func _underfoot(delta: float, stopped: bool) -> void:
@@ -533,17 +627,24 @@ func _tell(delta: float) -> void:
 	var loud := 0.0
 	var coming := 0.0
 	if phase == "lurch": loud = 1.0
+	elif feinting(): loud = clampf(1.0-(rest_len()*0.5-phase_t)/float(knob("feint")),0.3,1.0)
 	elif phase == "tip":
-		coming = clampf(phase_t/maxf(float(knob("tip_time"))/pace,0.01),0.0,1.0)
+		coming = clampf(phase_t/maxf(tip_len(),0.01),0.0,1.0)
 		var tell := float(knob("tell"))
 		if tell > 0.0: loud = clampf(1.0-until_lurch()/tell,0.0,1.0) if shuddering() else 0.0
 	elif phase == "roll":
 		var pause := float(knob("pause"))
 		if pause > 0.0 and _pausing > 0.0: loud = clampf(1.0-_pausing/minf(float(knob("tell")),pause),0.0,1.0)
+	# Woken: a short startled shudder.
+	var woke := clampf(1.0-_woke_t/maxf(float(knob("tell"))*0.5,0.01),0.0,1.0) if float(knob("wake")) > 0.0 else 0.0
 	_shake_t += delta
-	var a := float(knob("shake"))*(loud if phase == "tip" else 0.0)
+	var a := float(knob("shake"))*maxf(loud if phase in ["tip","rest"] else 0.0,woke)
 	if look != null: look.position = Vector3(sin(_shake_t*53.0),sin(_shake_t*71.0)*0.5,sin(_shake_t*61.0))*a
-	for dust in _dust: dust.emitting = loud > 0.0
+	var slammed := float(knob("dip")) > 0.0 and _slam_t < 0.35
+	for i in range(_dust.size()):
+		_dust[i].emitting = loud > 0.0 or slammed
+		_dust[i].position = centre()+motion()+Vector3(0.0,float(knob("size"))*0.5,(-1.0 if i == 0 else 1.0)*float(knob("size"))*0.5)
+	loud = maxf(loud,woke)
 	var dir := signf(float(knob("dir")))
 	for k in range(_plate_mats.size()):
 		# The face rising to the top: its normal swinging up from the
@@ -552,6 +653,10 @@ func _tell(delta: float) -> void:
 		var rising := n.y > -0.2 and n.y < 0.9 and Vector3(0.0,0.0,-dir).dot(global_transform.basis.inverse()*n) > 0.3
 		var share := maxf(loud*0.7,coming if rising else 0.0)
 		_plate_mats[k].albedo_color = STONES[k].lerp(TELL,share)
+		var glow := float(knob("glow"))
+		if glow > 0.0:
+			_plate_mats[k].emission_enabled = true
+			_plate_mats[k].emission = TELL*share*glow
 	tell_sight(loud)
 
 func reset() -> void:
@@ -571,6 +676,14 @@ func reset() -> void:
 	thrown = 0
 	slide = 0.0
 	prize_taken = false
+	_clock = 0.0
+	_chain = 0
+	_slam_t = INF
+	_off_t = INF
+	_woke_t = INF
+	_was_on = false
+	feints = 0
+	wakes = 0
 	if _prize != null: _prize.visible = true
 	sweep = _sweep_start()
 	if _sweep_shape != null:
