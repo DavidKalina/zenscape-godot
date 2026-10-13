@@ -42,8 +42,12 @@ func setup(scene: Node3D, layer: Dictionary, owner_stage: Node3D) -> void:
 	for gi: int in layer.gulfs:
 		var e: Dictionary = layer.edges[gi]
 		var g := {"edge":e,"ride":str(e.ride),"a":int(e.from[0]),"b":int(e.to[0]),"ready":false,"cannon":null,"opened_ms":-1}
+		# A ring's serpent opens once every isle it passes stands
+		# (scripts/roguelike/layer_ring.gd `stops`); a "cannon" gulf has no
+		# ride, only its cannon.
+		g.isles = e.get("stops",[g.a,g.b])
 		if g.ride == "serpent": g.route = _serpent(e,gulfs.size())
-		else: _ferry(e,g,gulfs.size())
+		elif g.ride == "ferry": _ferry(e,g,gulfs.size())
 		gulfs.append(g)
 	_open_ready()
 
@@ -78,7 +82,8 @@ func _serpent(e: Dictionary, n: int) -> Node3D:
 		specs.append([str(spot.name),isle_name(int(spot.isle)),str(spot.name),[str(spot.name)],float(spot.side)])
 	route.spot_specs = specs
 	route.isle_lookup = _lookup
-	route.auto_build = false
+	# A ring's serpent (many piers) builds each as its isle stands.
+	route.auto_build = e.has("stops")
 	route.ledge_deep = LayerPlan.LEDGE_JUT+LayerPlan.PIER_OVER
 	add_child(route)
 	route.holder = route
@@ -112,12 +117,12 @@ func _ferry(e: Dictionary, g: Dictionary, n: int) -> void:
 ## Every gulf whose two isles stand opened: its piers built, its cannon set.
 func _open_ready() -> void:
 	for g: Dictionary in gulfs:
-		if g.ready or not isle_up(int(g.a)) or not isle_up(int(g.b)): continue
+		if g.ready or not (g.isles as Array).all(isle_up): continue
 		g.ready = true
 		g.opened_ms = Time.get_ticks_msec()-_made
 		if g.has("route"):
-			for s: Dictionary in g.route.spots: g.route.build(s)
-		else:
+			for s: Dictionary in g.route.spots: if s.built == null: g.route.build(s)
+		elif g.has("piers"):
 			var space := get_world_3d().direct_space_state
 			for pier: Array in g.piers:
 				var node := SerpentRoute.make_ledge(space,pier[0],LayerPlan.LEDGE_JUT+LayerPlan.PIER_OVER)
@@ -152,7 +157,8 @@ func schedule(feet: Vector3) -> String:
 	var best := ""
 	var near := NEAR
 	for g: Dictionary in gulfs:
-		for k in range(2):
+		var piers: int = (g.route.spots as Array).size() if g.has("route") else (g.piers as Array).size() if g.has("piers") else 0
+		for k in range(piers):
 			var at := _pier_at(g,k)
 			var d := Vector2(at.x-feet.x,at.z-feet.z).length()
 			if d >= near: continue

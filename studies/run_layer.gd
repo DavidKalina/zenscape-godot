@@ -43,6 +43,7 @@ const RunLayerSky = preload("res://studies/run_layer_sky.gd")
 const LayerSprawl = preload("res://scripts/roguelike/layer_sprawl.gd")
 const RoostMotif = preload("res://scripts/kit_isle/motif_dragon_roost.gd")
 const RunLoop = preload("res://scripts/roguelike/run_loop.gd")
+const LayerShapes = preload("res://scripts/roguelike/layer_shapes.gd")
 
 ## Seeds tried past a seed whose plan could not be laid.
 const SKIP_MOST := 8
@@ -50,8 +51,12 @@ const SKIP_MOST := 8
 static var layer_seed := -1
 ## The layer's knobs (`--knob=`, LayerPlan KNOBS), kept from layer to layer.
 static var layer_knobs := {}
-## The layer's shape (`--shape=`): "" round 3's, "sprawl" LayerSprawl's.
+## The layer's shape (`--shape=`): "" round 3's, "sprawl" LayerSprawl's,
+## "ring" LayerRing's; a run's first (scripts/roguelike/layer_shapes.gd: a
+## run alternates sprawl and ring by depth).
 static var layer_shape := ""
+## The shape the layer asked for is laid in ("": `layer_shape`).
+var shape_asked := ""
 var layer: Dictionary = {}
 var stage: Node3D = null
 var _slot_was: Node = null
@@ -98,21 +103,21 @@ func sky_script() -> Script:
 
 ## The layer's plan for `seed_value` (on past a seed that can't be laid).
 func _lay(seed_value: int) -> void:
-	_take(_plan_for(seed_value,layer_knobs))
+	_take(_plan_for(seed_value,layer_knobs,shape_asked))
 
 ## A plan for `seed_value` and on: {plan, ms}. Touches nothing of the
 ## scene's (a worker lays it, `_plan_job`).
-static func _plan_for(seed_value: int, knobs: Dictionary) -> Dictionary:
+static func _plan_for(seed_value: int, knobs: Dictionary, shape := "") -> Dictionary:
 	var began := Time.get_ticks_msec()
 	var plan := {}
 	for k in range(SKIP_MOST):
-		plan = LayerSprawl.make(seed_value+k,knobs) if layer_shape == "sprawl" else LayerPlan.make(seed_value+k,knobs)
+		plan = LayerShapes.make(shape if shape != "" else layer_shape,seed_value+k,knobs)
 		if (plan.problems as Array).is_empty(): break
 		print("run layer: seed %d can't be laid (%s), on to the next" % [seed_value+k,str(plan.problems)])
 	return {"plan":plan,"ms":Time.get_ticks_msec()-began}
 
-func _plan_job(seed_value: int, knobs: Dictionary) -> void:
-	_plan_out = _plan_for(seed_value,knobs)
+func _plan_job(seed_value: int, knobs: Dictionary, shape := "") -> void:
+	_plan_out = _plan_for(seed_value,knobs,shape)
 
 func _take(laid: Dictionary) -> void:
 	layer = laid.plan
@@ -129,15 +134,18 @@ func _planning_away() -> bool:
 
 ## The layer for `seed_value` asked for: at once headless or scripted;
 ## windowed, laid on a worker and stood up when it's ready (one at a
-## time: asked again meanwhile, the ask is dropped).
-func request_layer(seed_value: int, why := "") -> void:
+## time: asked again meanwhile, the ask is dropped). In `shape` ("": the
+## run's first, `layer_shape`).
+func request_layer(seed_value: int, why := "", shape := "") -> void:
 	if not _planning_away():
+		shape_asked = shape
 		start_layer(seed_value,why)
 		return
 	if _plan_task >= 0: return
 	_plan_why = why
 	_show_toast("%sLaying layer %d..." % [why+"  " if why != "" else "",seed_value])
-	_plan_task = WorkerThreadPool.add_task(_plan_job.bind(seed_value,layer_knobs.duplicate()),true,"layer plan")
+	shape_asked = shape
+	_plan_task = WorkerThreadPool.add_task(_plan_job.bind(seed_value,layer_knobs.duplicate(),shape),true,"layer plan")
 
 ## The layer's motif isles for the sky: [motif, offset, place].
 func layer_entries() -> Array:
@@ -158,7 +166,7 @@ func layer_entries() -> Array:
 func _first_layer() -> void:
 	_slot_was = foot_pieces
 	_build_card()
-	if layer_shape == "sprawl":
+	if LayerShapes.RUN.has(layer_shape):
 		run_loop = RunLoop.new()
 		add_child(run_loop)
 		run_loop.setup(self)
@@ -179,7 +187,7 @@ func _stand_layer() -> void:
 	stage = LayerStage.new()
 	add_child(stage)
 	stage.setup(self,layer,_slot_was)
-	if layer.has("chain"): LayerSprawl.dress(stage,layer)
+	LayerShapes.dress(stage,layer)
 	_stand_roost()
 	stage.rune_taken.connect(func(_left: int) -> void: _update_card())
 	var spawn: Dictionary = layer.spawn
@@ -322,10 +330,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		var key := event as InputEventKey
 		match key.keycode:
 			KEY_N:
-				request_layer(maxi(layer_seed+(-1 if key.shift_pressed else 1),1))
+				request_layer(maxi(layer_seed+(-1 if key.shift_pressed else 1),1),"",LayerShapes.after(layer))
 				return
 			KEY_BACKSPACE:
-				request_layer(layer_seed)
+				request_layer(layer_seed,"",LayerShapes.shape_of(layer))
 				return
 	super._unhandled_input(event)
 
@@ -359,5 +367,6 @@ func _update_card() -> void:
 	var runes := "runes %d/%d" % [stage.taken,LayerPlan.RUNES] if stage != null else ""
 	var ride := ""
 	if stage != null and stage.rides != null and motor != null: ride = stage.rides.schedule(motor.feet)
-	if layer.has("chain"): parts.append(LayerSprawl.card(layer))
+	var shaped := LayerShapes.card(layer)
+	if shaped != "": parts.append(shaped)
 	_card.text = "Layer · seed %d  ·  %s  ·  %s\n%s\n%sN next seed · Shift+N previous · Backspace again" % [layer_seed,runes,up,"\n".join(parts),ride+"\n" if ride != "" else ""]

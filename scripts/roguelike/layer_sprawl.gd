@@ -153,12 +153,15 @@ static func attach_next(plan: Dictionary) -> void:
 	else: plan.problems.append("no next region laid past seed %d" % int(plan.seed))
 
 ## The plan the gate leads to (as studies/run_layer.gd takes it: on past a
-## seed that can't be laid).
+## seed that can't be laid), in the shape it will have (a run alternates
+## them: scripts/roguelike/layer_shapes.gd `after`; a ring plan's too).
 static func next_plan(plan: Dictionary) -> Dictionary:
 	var knobs: Dictionary = plan.get("user_knobs",{})
+	var shapes: GDScript = load("res://scripts/roguelike/layer_shapes.gd")
+	var shape: String = shapes.after(plan)
 	var nxt := {}
 	for k in range(1,SKIP_MOST+1):
-		nxt = core(int(plan.seed)+k,knobs)
+		nxt = shapes.core(shape,int(plan.seed)+k,knobs)
 		if (nxt.problems as Array).is_empty(): break
 	return nxt
 
