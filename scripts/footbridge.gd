@@ -59,13 +59,17 @@ const WET := 0.03
 const CLEARANCE := 0.02
 ## Spans this long and longer have hand rails; shorter ones only end posts.
 const RAILS_FROM := 2.5
-## A rope bridge: its hand ropes' height over the deck (m), and the tones of
-## rope and of its posts.
-const HAND_ROPE := 0.8
+## A rope bridge: its hand ropes' height over the deck (m: RopeBridge
+## `hand_rope`, grown with the wanderer), and the tones of rope and of its
+## posts.
+static var HAND_ROPE: float = RopeBridge.hand_rope
 const ROPE := Color("9a8360")
 const POST := Color("5a4330")
-## The deck: width (m) and the planks' depth.
-const WIDTH := 0.74
+## The deck: width (m: RopeBridge `width`, grown with the wanderer) and the
+## planks' depth. A rope bridge's planks are laid ROPE_PITCH m apart, times
+## RopeBridge `chunk` (`rope_planks`).
+static var WIDTH: float = RopeBridge.width
+const ROPE_PITCH := 0.27
 const PLANK := 0.2
 const DECK_DEPTH := 0.12
 ## Timber tones (sRGB): weathered deck, darker stringers and sills, rails.
@@ -426,7 +430,12 @@ func _drawn(a: Vector3, b: Vector3, seed: int) -> MeshInstance3D:
 ## rope_bridge.gd), its deck the walker reads `record` (or none).
 static func live(mesh: Mesh, a: Vector3, b: Vector3, seed: int, record := {}) -> MeshInstance3D:
 	var span := Vector2(b.x-a.x,b.z-a.z).length()
-	return RopeBridge.make(mesh,a,b,seed,bow(span),WIDTH,maxi(8,roundi(span/0.27)),record)
+	return RopeBridge.make(mesh,a,b,seed,bow(span),WIDTH,rope_planks(span),record)
+
+## A rope bridge `span` m long has this many planks, ROPE_PITCH times
+## RopeBridge `chunk` apart.
+static func rope_planks(span: float) -> int:
+	return maxi(8,roundi(span/(ROPE_PITCH*RopeBridge.chunk)))
 
 ## A record's two ends on the ground (plate), or [] when one is off the land.
 static func ends_of(data: NativeTerrainData, item: Dictionary) -> PackedVector3Array:
@@ -614,7 +623,8 @@ static func _rope_bridge(st: SurfaceTool, a: Vector3, b: Vector3, span: float, a
 	var flat_way := Vector3(way.x,0.0,way.z).normalized()
 	var hand := func(t: float) -> Vector3: return a.lerp(b,t)+Vector3.UP*(HAND_ROPE+lift(span,t)*0.55)
 	# Planks across the sag, with gaps between, each on the curve's slope.
-	var planks := maxi(8,roundi(span/0.27))
+	var planks := rope_planks(span)
+	var k := RopeBridge.chunk
 	for i in range(planks):
 		var t := (i+0.5)/planks
 		var along: Vector3 = (curve.call(minf(t+0.01,1.0))-curve.call(maxf(t-0.01,0.0))).normalized()
@@ -622,32 +632,32 @@ static func _rope_bridge(st: SurfaceTool, a: Vector3, b: Vector3, span: float, a
 		if up.y < 0.0: up = -up
 		var yaw := Basis(up,rng.randf_range(-0.07,0.07))
 		var centre: Vector3 = curve.call(t)+across*rng.randf_range(-0.03,0.03)
-		var half := Vector3(span/planks*0.34,0.022+rng.randf_range(0.0,0.006),WIDTH*0.5+rng.randf_range(-0.05,0.02))
+		var half := Vector3(span/planks*0.34,(0.022+rng.randf_range(0.0,0.006))*k,WIDTH*0.5+rng.randf_range(-0.05,0.02))
 		_box(st,centre-up*half.y,yaw*along,up,yaw*across,half,DECK.darkened(rng.randf_range(0.0,0.16)),rng)
 	var pieces := maxi(12,roundi(span*2.0))
 	for side in [-1.0,1.0]:
 		# The foot ropes under the planks' ends, the hand ropes above.
-		_beam(st,curve,across*side*WIDTH*0.42+Vector3.DOWN*0.05,pieces,Vector2(0.02,0.02),ROPE,rng)
-		var rail: Vector3 = across*side*(WIDTH*0.5+0.04)
-		_beam(st,hand,rail,pieces,Vector2(0.022,0.022),ROPE,rng,0.0,1.0)
+		_beam(st,curve,across*side*WIDTH*0.42+Vector3.DOWN*0.05*k,pieces,Vector2(0.02,0.02)*k,ROPE,rng)
+		var rail: Vector3 = across*side*(WIDTH*0.5+0.04*k)
+		_beam(st,hand,rail,pieces,Vector2(0.022,0.022)*k,ROPE,rng,0.0,1.0)
 		# Cords from the hand rope down to the deck's edge, about every 0.5 m.
 		var cords := maxi(4,roundi(span/0.5))
-		for k in range(1,cords):
-			var t := float(k)/cords
+		for c in range(1,cords):
+			var t := float(c)/cords
 			var top: Vector3 = hand.call(t)+rail
 			var foot: Vector3 = curve.call(t)+across*side*WIDTH*0.46
 			var up := (top-foot).normalized()
 			var side_axis := up.cross(flat_way).normalized()
-			_box(st,(top+foot)*0.5,flat_way,up,side_axis,Vector3(0.01,top.distance_to(foot)*0.5,0.01),ROPE.darkened(rng.randf_range(0.05,0.15)),rng)
+			_box(st,(top+foot)*0.5,flat_way,up,side_axis,Vector3(0.01*k,top.distance_to(foot)*0.5,0.01*k),ROPE.darkened(rng.randf_range(0.05,0.15)),rng)
 		# A tall post at each end, sunk in the footing, just outside the deck.
 		for t in [0.0,1.0]:
 			var outward := -flat_way if t == 0.0 else flat_way
-			var foot: Vector3 = curve.call(t)+rail+outward*0.08+Vector3.DOWN*0.15
-			var tall := HAND_ROPE+0.15+0.15
-			_box(st,foot+Vector3.UP*tall*0.5,flat_way,Vector3.UP,across,Vector3(0.055,tall*0.5,0.055),POST.darkened(rng.randf_range(0.0,0.12)),rng)
+			var foot: Vector3 = curve.call(t)+rail+outward*0.08*k+Vector3.DOWN*0.15*k
+			var tall := HAND_ROPE+(0.15+0.15)*k
+			_box(st,foot+Vector3.UP*tall*0.5,flat_way,Vector3.UP,across,Vector3(0.055,tall*0.5,0.055)*Vector3(k,1.0,k),POST.darkened(rng.randf_range(0.0,0.12)),rng)
 	# A sill log across under each end of the deck.
 	for t in [0.0,1.0]:
-		_box(st,curve.call(t)+Vector3.DOWN*0.1,flat_way,Vector3.UP,across,Vector3(0.09,0.08,WIDTH*0.62),SILL.darkened(rng.randf_range(0.0,0.1)),rng)
+		_box(st,curve.call(t)+Vector3.DOWN*0.1*k,flat_way,Vector3.UP,across,Vector3(0.09*k,0.08*k,WIDTH*0.62),SILL.darkened(rng.randf_range(0.0,0.1)),rng)
 
 ## A beam along the arch from `t0` to `t1` in `pieces` straight lengths,
 ## `offset` from the curve, `size` (half height, half width).

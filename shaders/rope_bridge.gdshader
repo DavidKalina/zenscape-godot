@@ -20,6 +20,7 @@ uniform float width = 0.74;
 uniform int nodes = 10;
 uniform float planks = 30.0;
 uniform float rattle = 0.0;
+uniform float hand_rope = 0.8;
 uniform vec4 deck[SAMPLES];
 uniform vec4 hand[SAMPLES];
 
@@ -42,7 +43,7 @@ void vertex() {
 	float right = clamp(0.5 + side / width, 0.0, 1.0);
 	vec2 low = vec2(mix(d.x, d.y, right), d.z);
 	vec2 high = side < 0.0 ? vec2(r.x, r.z) : vec2(r.y, r.w);
-	vec2 move = mix(low, high, smoothstep(0.3, 0.65, h));
+	vec2 move = mix(low, high, smoothstep(hand_rope * 0.375, hand_rope * 0.81, h));
 	// The planks' rattle, each its own beat, only at deck height.
 	float plank = floor(t * planks);
 	float beat = fract(sin(plank * 12.9898 + 1.7) * 43758.5453);

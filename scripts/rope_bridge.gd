@@ -21,6 +21,23 @@ extends MeshInstance3D
 
 const Sim = preload("res://scripts/rope_bridge_sim.gd")
 const SHADER = preload("res://shaders/rope_bridge.gdshader")
+const WorldScale = preload("res://scripts/world_scale.gd")
+const PhysicsGround = preload("res://scripts/pilot_physics_ground.gd")
+
+## A rope bridge's sizes, every rope bridge's and footbridge's (Footbridge
+## WIDTH, HAND_ROPE read these), grown with the wanderer (WorldScale): the
+## deck WIDE_BODIES of his bodies across (PhysicsGround.RADIUS twice, at
+## his size): 1.01 m at the knobs (it was 0.74); the hand ropes ROPE_AT of
+## his height (PhysicsGround.HEAD at his size) over the planks, at his
+## shoulders: 1.04 m (it was 0.8); the timber (planks' depth and pitch, the
+## ropes, cords, posts and sills) CHUNK times its first cut, by his size.
+## Spans are the gaps they cross; only the cross-section grows.
+const WIDE_BODIES := 1.8
+const ROPE_AT := 0.93
+const CHUNK := 1.35
+static var width: float = WIDE_BODIES*2.0*PhysicsGround.RADIUS*WorldScale.wanderer
+static var hand_rope: float = ROPE_AT*PhysicsGround.HEAD*WorldScale.wanderer
+static var chunk: float = CHUNK*WorldScale.wanderer
 
 ## Within WAKE m of the eye a bridge lives; over the next FADE m its swing
 ## dies away; past WAKE+FADE, once still, it sleeps.
@@ -31,10 +48,9 @@ const FADE := 25.0
 ## them in a hop).
 const STAND_SLACK := 0.1
 const STAND_OVER := 0.25
-## The hand ropes' height over the deck (m) (Footbridge HAND_ROPE), and the
-## walker's room inside them (m from the deck's edge). Jumped this far over
-## the hand ropes, he is let over them.
-const HAND_ROPE := 0.8
+## The walker's room inside the hand ropes (`hand_rope` over the deck; m
+## from the deck's edge). Jumped this far over the hand ropes, he is let
+## over them.
 const ROPE_ROOM := 0.14
 const OVER_ROPE := 0.15
 ## The wind: m/s at a strength of 1 (PollenWind DRIFT), m/s per unit of a
@@ -94,6 +110,7 @@ func _setup(mesh_in: Mesh, end_a: Vector3, end_b: Vector3, seed_value: int, sag:
 	_shader.set_shader_parameter("width",width)
 	_shader.set_shader_parameter("nodes",sim.nodes)
 	_shader.set_shader_parameter("planks",float(planks))
+	_shader.set_shader_parameter("hand_rope",hand_rope)
 	material_override = _shader
 	# Room for the swing outside the static mesh's box.
 	extra_cull_margin = 1.0
@@ -208,7 +225,7 @@ static func hold(frame: Node3D, feet: Vector3, to: Vector2) -> Vector2:
 		var on: Vector3 = bridge._on_deck(into*feet)
 		var width := float(bridge.sim.width)
 		if on.x <= 0.0 or on.x >= 1.0 or absf(on.y-bridge.sim.sway(on.x)) > width*0.5+STAND_SLACK: continue
-		if on.z > HAND_ROPE+OVER_ROPE or on.z < -0.5: continue
+		if on.z > hand_rope+OVER_ROPE or on.z < -0.5: continue
 		var next: Vector3 = into*Vector3(to.x,feet.y,to.y)
 		var rel := Vector2(next.x-bridge.a.x,next.z-bridge.a.z)
 		var way: Vector2 = Vector2(bridge.b.x-bridge.a.x,bridge.b.z-bridge.a.z)/bridge.span
