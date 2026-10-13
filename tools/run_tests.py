@@ -22,7 +22,7 @@ reason (one `test_x.gd  # reason` per line). They still run; a failure there
 is reported as known and doesn't fail the run, and one that now passes is
 called out so the line can go. Anything else that fails, fails the run.
 
-Each worker gets its own HOME under the output directory, so user:// never
+Each worker gets its own HOME (APPDATA on Windows) under the output directory, so user:// never
 collides between tests running at once. Slow tests start first.
 
 A classified engine message (a renderer light unpair, the macOS certificate
@@ -145,7 +145,8 @@ def run_one(test: Path, args: argparse.Namespace, output_dir: Path, home: Path |
     timed_out = False
     env = None
     if home is not None:
-        env = dict(os.environ, HOME=str(home))
+        # Windows Godot keeps user:// under APPDATA, not HOME.
+        env = dict(os.environ, HOME=str(home), APPDATA=str(home))
     with stdout_path.open("w") as log:
         process = subprocess.Popen(command, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT,
                                    start_new_session=True, env=env)
