@@ -10,11 +10,13 @@ extends RefCounted
 ## offered in the Settings dialog (studies/diorama.gd) by `build`. Until the
 ## player chooses, a discrete GPU draws at the window's own resolution and
 ## anything else (integrated, Apple's) at 1080 lines (`default_cap`).
+## Every scene draws at the kept cap from boot: the RenderCap
+## autoload (scripts/render_resolution_boot.gd) attaches the root window.
 
 const SETTINGS_PATH := "user://look.cfg"
 ## Each choice's most lines high; 0 draws at the window's own resolution.
-const CAPS := [0,1440,1080,900,720]
-const CAP_NAMES := ["Native","1440p","1080p","900p","720p"]
+const CAPS := [0,1440,1080,900,720,540]
+const CAP_NAMES := ["Native","1440p","1080p","900p","720p","540p"]
 const DEFAULT_CAP := 1080
 
 ## The cap until the player chooses: none on a discrete GPU, full fidelity

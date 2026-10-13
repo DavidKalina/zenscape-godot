@@ -21,6 +21,7 @@ config/icon="res://icon.svg"
 [autoload]
 
 GameState="*res://scripts/ledger/ledger.gd"
+RenderCap="*res://scripts/render_resolution_boot.gd"
 
 [display]
 
