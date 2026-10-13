@@ -105,6 +105,12 @@ func finish(label: String) -> void:
 func on(y: float) -> bool:
 	return m.grounded and absf(m.feet.y-y) < 0.03
 
+## Falling, the touch under the motor's jump buffer away: a Jump pressed now
+## is kept for the landing. Pressed higher, it opens the pocket sail
+## (scripts/pocket_sail.gd `can_open`, since 2385272c).
+func near_touch() -> bool:
+	return not m.grounded and m.velocity.y < 0.0 and m.feet.y-m.ground_y < -m.velocity.y*PilotMotor.BUFFER
+
 # --- 1 Market square -------------------------------------------------------------
 
 func _market() -> void:
@@ -125,7 +131,7 @@ func _market() -> void:
 		var chaining := flat().x < 1.0
 		var jump := false
 		if m.grounded and m.move != "long" and hops == 0: jump = i%2 == 0
-		elif not m.grounded and m.velocity.y < 0.0 and chaining: jump = i%2 == 0
+		elif near_touch() and chaining: jump = i%2 == 0
 		var was_air: bool = not m.grounded
 		tk(to(aim),jump,chaining or hops == 0,false)
 		if was_air and m.grounded: hops += 1
@@ -311,11 +317,15 @@ func _roofline() -> void:
 	var top := 0.0
 	var longed := false
 	var twirled := false
+	# Jump off the roof's edge as he leaves it, then Jump for the street's
+	# touch, kept for it (pressed higher it would be the sail).
+	var hopped := false
 	for i in range(600):
 		var crouch := flat().x > 258.0
-		var jump: bool = not m.grounded and flat().x > 270.0 and m.velocity.y < -1.0 and not longed and i%2 == 0
+		var jump: bool = not m.grounded and flat().x > 270.0 and m.velocity.y < -1.0 and not longed and i%2 == 0 and (not hopped or near_touch())
 		var twirl: bool = longed and m.velocity.y < 0.0
 		tk(Vector2(1.0,0.0),jump,crouch,twirl)
+		hopped = hopped or m.move == "jump"
 		if m.move == "slide": top = maxf(top,m.speed())
 		longed = longed or m.move == "long"
 		twirled = twirled or m.move == "twirl"
