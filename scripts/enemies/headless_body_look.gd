@@ -37,7 +37,14 @@ const WALK_STEP := 0.5
 const STRIDE_STEP := 0.68
 const CLIMB_RISE := 0.99
 const CLIPS := ["idle","listen","walk","stride","climb","haul","spawn_haul","mantle","windup",
-	"jump_air","drop_air","land","drop_land","reach","triumph"]
+	"jump_air","drop_air","land","drop_land","reach","triumph","feel","mantle_pull",
+	"turn_open_l","turn_close_l","turn_open_r","turn_close_r"]
+## Round 4: the turn steps (headless_body_steps.gd), blended over the trunk
+## and legs only (the arms keep the clip under them), faded in and out fast.
+const TURNS := ["turn_open_l","turn_close_l","turn_open_r","turn_close_r"]
+const TURN_BONES := ["root","hips","spine","chest","neck","thigh.L","shin.L","foot.L","thigh.R","shin.R","foot.R"]
+const TURN_FADE := 0.06
+const Steps = preload("res://scripts/enemies/headless_body_steps.gd")
 ## The cut's stone and its glow.
 const CUT := Color(0.66,0.5,0.4)
 const CUT_GLOW := Color(1.0,0.62,0.28)
@@ -54,6 +61,9 @@ var _cut_mat := StandardMaterial3D.new()
 var _arm := {}
 var _neck := -1
 var _seat_off := Transform3D.IDENTITY
+var _leg := {}
+## Its turns and feet (round 4).
+var steps: Steps
 static var _dressed_mesh: ArrayMesh = null
 
 ## Builds the body at `scale` times the model's size.
@@ -79,9 +89,12 @@ func build(scale_k: float) -> void:
 	for side in ["L","R"]:
 		_arm[side] = [skeleton.find_bone("upper_arm."+side),skeleton.find_bone("forearm."+side),
 			skeleton.find_bone("hand."+side),skeleton.find_bone("fingers."+side)]
+	for side in ["L","R"]:
+		_leg[side] = [skeleton.find_bone("thigh."+side),skeleton.find_bone("shin."+side),skeleton.find_bone("foot."+side)]
 	_neck = skeleton.find_bone("neck")
 	_seat_off = skeleton.get_bone_global_rest(_neck).affine_inverse()*Transform3D(Basis.IDENTITY,Vector3(0.0,SEAT_Y,0.0))
 	_build_tree(model.find_child("AnimationPlayer",true,false) as AnimationPlayer)
+	steps = Steps.new(self)
 
 ## Every clip seeked, chained in Blend2s so any weights can be had: the
 ## k-th mix's amount is the k-th clip's weight over the sum to it.
@@ -103,7 +116,13 @@ func _build_tree(player: AnimationPlayer) -> void:
 		if i == 0: last = StringName(clip+"_at")
 		else:
 			var mix := StringName(clip+"_mix")
-			blend.add_node(mix,AnimationNodeBlend2.new())
+			var mixer := AnimationNodeBlend2.new()
+			if clip in TURNS:
+				mixer.filter_enabled = true
+				for track in range(animation.get_track_count()):
+					var path := animation.track_get_path(track)
+					if path.get_concatenated_subnames() in TURN_BONES: mixer.set_filter_path(path,true)
+			blend.add_node(mix,mixer)
 			blend.connect_node(mix,0,last)
 			blend.connect_node(mix,1,StringName(clip+"_at"))
 			last = mix
@@ -139,7 +158,7 @@ func advance(delta: float, fade: float) -> void:
 	var step := 1.0 if fade <= 0.0 else delta/fade
 	for c: String in CLIPS:
 		var goal: float = float(_want.get(c,0.0))/total if total > 0.0 else _weights[c]
-		_weights[c] = move_toward(_weights[c],goal,step)
+		_weights[c] = move_toward(_weights[c],goal,maxf(step,delta/TURN_FADE) if c in TURNS else step)
 	var sum := 0.0
 	for i in CLIPS.size():
 		var c: String = CLIPS[i]
@@ -177,15 +196,23 @@ func arm_reach() -> float:
 ## and `palm` (the way the palm faces), if given, turn the hand `w` to them.
 func reach(side: String, target: Vector3, w: float, fingers := Vector3.ZERO, palm := Vector3.ZERO) -> void:
 	if w <= 0.0: return
-	var bones: Array = _arm[side]
 	var to_sk := skeleton.global_transform.affine_inverse()
+	var hand := Basis()
+	if fingers != Vector3.ZERO and palm != Vector3.ZERO: hand = _hand_basis(side,to_sk.basis*fingers,to_sk.basis*palm)
+	_two_bone(_arm[side],to_sk*target,w,hand,fingers != Vector3.ZERO and palm != Vector3.ZERO)
+
+## Bones `bones` (upper, lower, end) pulled `w` of the way to `target`
+## (skeleton space) by two-bone IK, the bend kept in the clip's plane; with
+## `turn_end` the end bone turned `w` to `end` (skeleton space), else it
+## keeps its turn under the lower bone.
+func _two_bone(bones: Array, target: Vector3, w: float, end: Basis, turn_end: bool) -> void:
 	var up_g := skeleton.get_bone_global_pose(bones[0])
 	var fo_g := skeleton.get_bone_global_pose(bones[1])
 	var hd_g := skeleton.get_bone_global_pose(bones[2])
 	var s := up_g.origin
 	var e := fo_g.origin
 	var wr := hd_g.origin
-	var t := wr.lerp(to_sk*target,clampf(w,0.0,1.0))
+	var t := wr.lerp(target,clampf(w,0.0,1.0))
 	var a := s.distance_to(e)
 	var b := e.distance_to(wr)
 	var to := t-s
@@ -204,13 +231,44 @@ func reach(side: String, target: Vector3, w: float, fingers := Vector3.ZERO, pal
 	var up_new := Transform3D(r1*up_g.basis,s)
 	var fo_new := Transform3D(r2*r1*fo_g.basis,e2)
 	var hd_basis := r2*r1*hd_g.basis
-	if fingers != Vector3.ZERO and palm != Vector3.ZERO:
-		var goal := _hand_basis(side,to_sk.basis*fingers,to_sk.basis*palm)
-		hd_basis = Basis(hd_basis.get_rotation_quaternion().slerp(goal.get_rotation_quaternion(),clampf(w,0.0,1.0)))
+	if turn_end:
+		hd_basis = Basis(hd_basis.get_rotation_quaternion().slerp(end.get_rotation_quaternion(),clampf(w,0.0,1.0)))
 	var parent := skeleton.get_bone_global_pose(skeleton.get_bone_parent(bones[0]))
 	skeleton.set_bone_pose_rotation(bones[0],(parent.basis.inverse()*up_new.basis).get_rotation_quaternion())
 	skeleton.set_bone_pose_rotation(bones[1],(up_new.basis.inverse()*fo_new.basis).get_rotation_quaternion())
 	skeleton.set_bone_pose_rotation(bones[2],(fo_new.basis.inverse()*hd_basis).get_rotation_quaternion())
+
+# --- Round 4: turns and feet (headless_body_steps.gd) ------------------------------------
+
+## Before the clips: the figure turned off `facing` and a turn step wanted
+## (`mode` Steps.OFF, STAND or WALK; walking, `gait_u` its cycle's place).
+func turn(facing: float, mode: int, delta: float, gait_u := 0.0, striding := false) -> void:
+	steps.turn(facing,mode,delta,gait_u,striding)
+
+## After the clips: the feet held or carried by IK.
+func plant_feet(delta: float) -> void:
+	steps.plant(delta)
+
+## The ankle of `side`, global.
+func ankle(side: String) -> Vector3:
+	return skeleton.global_transform*skeleton.get_bone_global_pose(_leg[side][2]).origin
+
+## The leg of `side` pulled so its ankle is at `target` (global), the foot
+## turned `turn` rad about up off the clip's.
+func leg(side: String, target: Vector3, turn_by: float) -> void:
+	var bones: Array = _leg[side]
+	var foot := skeleton.get_bone_global_pose(bones[2]).basis
+	_two_bone(bones,skeleton.global_transform.affine_inverse()*target,1.0,Basis(Vector3.UP,turn_by)*foot,true)
+
+## Bone `bone` (a trunk bone) twisted `a` rad about its own length (+ left).
+func twist(bone: String, a: float) -> void:
+	var b := skeleton.find_bone(bone)
+	skeleton.set_bone_pose_rotation(b,skeleton.get_bone_pose_rotation(b)*Quaternion(Vector3.UP,a))
+
+## Bone `bone` (a trunk bone) leaned `a` rad to its left.
+func lean(bone: String, a: float) -> void:
+	var b := skeleton.find_bone(bone)
+	skeleton.set_bone_pose_rotation(b,skeleton.get_bone_pose_rotation(b)*Quaternion(Vector3.BACK,a))
 
 ## A hand's global frame (skeleton space) with its fingers along `fingers`
 ## and its palm facing `palm`: the rest frame turned so its fingers (down)
