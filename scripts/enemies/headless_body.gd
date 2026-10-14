@@ -276,14 +276,14 @@ func default_knobs(n: Dictionary) -> Dictionary:
 		# is at its chest, then the press-up.
 		"mantle_pull":1,
 		# The periscope (olmec-periscope-round1.md): 1 on (whole, with
-		# `chase` on; its study's), 0 off. Its sight lost, it lifts its head
+		# `chase` on: always, the generator included), 0 off. Its sight lost, it lifts its head
 		# overhead (`scope_lift` s), turns it `scope_sweep` rad either way
 		# about where it lost him over `scope_look` s, and lowers it
 		# (`scope_lower` s); seen `scope_spot` s from up there, he's found
 		# (and drawn in, in reach). Once a loss, `scope_rest` s apart; lost
 		# `scope_wait` s within `scope_near` Hh of where it last saw him it
 		# plants at once. It leans `scope_lean` rad out over low cover.
-		"periscope":0,"scope_lift":1.7,"scope_look":5.0,"scope_lower":1.6,"scope_sweep":1.0,"scope_wide":1.5,"scope_spot":0.35,
+		"periscope":1,"scope_lift":1.7,"scope_look":5.0,"scope_lower":1.6,"scope_sweep":1.0,"scope_wide":1.5,"scope_spot":0.35,
 		"scope_rest":8.0,"scope_near":1.6,"scope_wait":1.0,"scope_lean":0.38,
 	}
 

@@ -120,13 +120,13 @@ overlay line says "periscope" with the beat it's on and its count.
 
 ## Knobs
 
-Set these with `--body-knob=`. `periscope` is on only in this study. The
-study sets it through `_study_body_knobs`, so the leap-grab study, the
-headless body isle and the generator play as before.
+Set these with `--body-knob=`. `periscope` is on by default: wherever the
+whole body hunts (`chase` on), the generator included. Turn it off with
+`--body-knob=periscope=0`.
 
 | Knob | Default | What it sets |
 |---|---|---|
-| `periscope` | 0 (1 in the chase study) | On or off (whole, with `chase` on) |
+| `periscope` | 1 | On or off (whole, with `chase` on) |
 | `scope_lift` / `scope_look` / `scope_lower` | 1.7 / 5.0 / 1.6 s | The lift, the look (one sweep), the lower |
 | `scope_sweep` | 1.0 rad | How far he turns it either way |
 | `scope_wide` | 1.5 | His sight cone held up, times `sight_half` |
@@ -181,8 +181,8 @@ headless body isle and the generator play as before.
   is kept out of walls by the lean cap only.
 - **The hands:** they're flat palms on the head's sides, and the thumbs
   aren't placed.
-- **The generator:** untried there. It's off there, and it would need
-  `periscope` in `LayerBodies.knobs`.
+- **The generator:** on there since the merge (the default went to 1), but
+  only smoke-checked, not played.
 - **Not played:** GPU-only behaviour and the feel in interactive play are
   unverified.
 
