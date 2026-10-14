@@ -12,8 +12,10 @@ extends "res://scripts/kit_isle/kit_motif.gd"
 ## computed from its parts (no bake: tools/bake_layer_pieces.gd never sees
 ## it, scripts/roguelike/layer_plan.gd `_motif_isle` asks `occupancy`),
 ## `sockets` from its rims and spots, `build` its parts into a node (no
-## physics queries, safe on a worker), `role` "hero" (never the greed isle,
-## one a neighbourhood).
+## physics queries, safe on a worker), `role` "filler" (a subclass that is
+## a neighbourhood's landmark answers "hero": never the greed isle, one a
+## neighbourhood; with the greybox motifs most of the pool, heroes would
+## leave a layer short of isles).
 ##
 ## HOW TO CONVERT THE NEXT GREYBOX (one file, one registry line):
 ## 1. Copy scripts/kit_isle/greybox/gb_sunken_giant.gd to gb_<slug>.gd. Copy
@@ -32,7 +34,9 @@ extends "res://scripts/kit_isle/kit_motif.gd"
 ##    walked ground, ~1 m in from the edge), face (out over the drop),
 ##    run_up (clear ground behind), lip (m from `at` to the edge)}. At least
 ##    two: the way in (the study's start) and the way out (where its exit
-##    chain throws you: put the rim there so a crossing catches it). Rims
+##    chain throws you: put the rim there so a crossing catches it). The
+##    first is taken as the way in and the last the way out (`way`: "in",
+##    "out" or "" both, to say otherwise); the route keeps to them. Rims
 ##    at the top let the route skip the climb, so keep them few.
 ## 5. `spots()`: {kind "arena" | "cover" | "perch", name, at, room}.
 ## 6. `heads()`: the study's inhaler heads, {at, face (x, z), knobs} with
@@ -118,7 +122,7 @@ func isle_card() -> Dictionary:
 	return {"name":isle_name(),"epithet":epithet()}
 
 func role() -> String:
-	return "hero"
+	return "filler"
 
 func top() -> float:
 	return start().y
@@ -137,9 +141,15 @@ func pools() -> Array:
 
 func sockets() -> Array:
 	var out: Array = []
-	for r: Dictionary in rims():
+	var all := rims()
+	for k in range(all.size()):
+		var r: Dictionary = all[k]
 		var s := socket("rim",str(r.name),r.at,_v3(r.face),float(r.get("lip",1.0)),float(r.run_up))
 		s.lip = float(r.get("lip",1.0))
+		# Its way: the first rim the way in, the last the way out (a rim's
+		# own "way" wins), so the generator's route runs the chain forwards
+		# (scripts/roguelike/layer_plan.gd `ins_of`, `can_out`).
+		s.way = str(r.get("way","in" if k == 0 else ("out" if k == all.size()-1 else "")))
 		out.append(s)
 	for s: Dictionary in spots():
 		out.append(socket(str(s.kind),str(s.name),s.at,_v3(s.get("face",Vector3.FORWARD)),float(s.room)))

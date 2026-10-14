@@ -134,6 +134,10 @@ const LAYOUT := {
 func slug() -> String:
 	return "sunken_giant"
 
+## The landmark of its neighbourhood (one a neighbourhood, never the greed isle).
+func role() -> String:
+	return "hero"
+
 func isle_name() -> String:
 	return "The Sunken Giant"
 

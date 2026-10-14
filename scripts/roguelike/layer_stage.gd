@@ -107,7 +107,6 @@ func setup(scene: Node3D, layer: Dictionary, was: Node) -> void:
 		enemies.spawn(PlinthRam,layer.ram.at,Vector2(face.x,face.z))
 	# The inhaler heads on their rounds.
 	heads = LayerEnemies.dress(self,layer)
-	greybox = LayerGreybox.dress(self,layer)
 	# The cannon and its kegs.
 	cannons = CannonField.new()
 	add_child(cannons)
@@ -115,6 +114,9 @@ func setup(scene: Node3D, layer: Dictionary, was: Node) -> void:
 	if not (layer.cannon as Dictionary).is_empty():
 		cannons.add_cannon(layer.cannon.at,float(layer.cannon.heading),{"speed_max":float(LayerPlan.cannon_knobs().speed_max)})
 		for at: Vector3 in layer.cannon.kegs: cannons.add_keg(at)
+	# The greybox isles' live bits, after the cannons (a motif's `live` may
+	# add its own to them).
+	greybox = LayerGreybox.dress(self,layer)
 	scene.foot_pieces = self
 	_runes()
 	_gate()

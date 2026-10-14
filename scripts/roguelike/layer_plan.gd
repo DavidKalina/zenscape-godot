@@ -61,17 +61,48 @@ const POOL := [
 	["broken_ring",preload("res://scripts/kit_isle/motif_broken_ring.gd"),1.0],
 	["bell_spires",preload("res://scripts/kit_isle/motif_bell_spires.gd"),1.0],
 ]
+## The kit motifs the "motifs" pool keeps beside the greybox motifs (the
+## `pool` knob, `draw_pool`).
+const KEPT := ["sundered_gorge"]
 
-## The pool a layer draws from: POOL, and the greybox motifs its `greybox`
-## knob asks for (none by default).
+## The pool a layer draws from, by its `pool` knob (mix and match, to see
+## what works; docs/design/roguelike/greybox-pool.md):
+## - "motifs" (the default, a prototype): the kit motifs in KEPT and every
+##   greybox motif (or those the `greybox` knob names);
+## - "classic": POOL, and the greybox motifs the `greybox` knob asks for
+##   (none by default), the pool as it was;
+## - "all": POOL and every greybox motif;
+## - a list (comma or "+" separated): any of POOL's ids
+##   and the greybox slugs (`gb_` optional), e.g.
+##   `--knob=pool=sundered_gorge+sunken_giant+plumb_well`.
 static func draw_pool(knobs := {}) -> Array:
-	var extra := Greybox.entries(knobs)
-	return POOL if extra.is_empty() else POOL+extra
+	var asked := str(knobs.get("pool","motifs")).strip_edges()
+	match asked:
+		"classic":
+			var extra := Greybox.entries(knobs)
+			return POOL if extra.is_empty() else POOL+extra
+		"motifs", "":
+			var kept := POOL.filter(func(p: Array) -> bool: return KEPT.has(str(p[0])))
+			var wanted := Greybox.entries(knobs)
+			return kept+(wanted if not wanted.is_empty() else Greybox.entries({"greybox":"all"}))
+		"all":
+			return POOL+Greybox.entries({"greybox":"all"})
+	var out: Array = []
+	var greys := PackedStringArray()
+	for word: String in asked.replace(",","+").split("+",false):
+		var id := word.strip_edges()
+		var kit := POOL.filter(func(p: Array) -> bool: return str(p[0]) == id)
+		if not kit.is_empty(): out.append(kit[0])
+		else: greys.append(id)
+	if not greys.is_empty(): out += Greybox.entries({"greybox":",".join(greys)})
+	return out
 
 ## How many times a pool pick may come a layer (one not a family; a
-## greybox motif once).
-static func _most(id: String, repeats: int) -> int:
-	return Greybox.MOST if Greybox.has(id) else repeats
+## greybox motif once, or `repeats` in the "motifs" pool, which has no
+## family to fill a layer).
+static func _most(id: String, repeats: int, knobs := {}) -> int:
+	if Greybox.has(id) and str(knobs.get("pool","motifs")) == "classic": return Greybox.MOST
+	return repeats
 const BASE := "aqueduct_isle"
 ## The aqueduct isle's middle (world), what the layer keeps round.
 const MIDDLE := Vector3(85.0,30.0,-20.0)
@@ -274,9 +305,13 @@ static func make(seed_value: int, knobs := {}) -> Dictionary:
 ## and the ring shape's (scripts/roguelike/layer_shapes.gd, layer_ring.gd).
 ## `greybox` ("" none, "all", or slugs comma separated) the greybox motifs
 ## in the pool, `greybox_force` (1) at least one a layer (scripts/kit_isle/
-## greybox/registry.gd).
-const KNOBS := {"hoods":0,"gulf":0.0,"ride":"","rise":0.0,"arrows":-1,"viaduct":-1,"heads":-1,"bodies":1,"alternate":1,"ring":0,"greybox":"","greybox_force":1}
-const KNOB_CHOICES := {"hoods":[0,1,2,3],"ride":["","serpent","ferry"]}
+## greybox/registry.gd). `pool` ("motifs" or "classic") which pool the
+## layer draws from (`draw_pool`). `one_way` how the route keeps to
+## greybox motifs' ways in and out: -1 (the default) prefers them edge by
+## edge (`way_score`), 1 only ever takes them (`can_out`, `ins_of`), 0
+## ignores them.
+const KNOBS := {"hoods":0,"gulf":0.0,"ride":"","rise":0.0,"arrows":-1,"viaduct":-1,"heads":-1,"bodies":1,"alternate":1,"ring":0,"greybox":"","greybox_force":1,"pool":"motifs","one_way":-1}
+const KNOB_CHOICES := {"hoods":[0,1,2,3],"ride":["","serpent","ferry"],"pool":["motifs","classic"]}
 
 ## `--knob=key=value` arguments as the layer's knobs (unknown keys warned).
 static func knobs_from(args: PackedStringArray) -> Dictionary:
@@ -316,7 +351,25 @@ static func warm() -> void:
 ## Prints each step's cost (the bake and the test's).
 static var trace := false
 
+## One attempt; with `one_way` -1 and a greybox motif in the pool, a plan
+## that fails keeping to the motifs' ways is laid again ignoring them (the
+## same attempt, the same draw): taking every fit forwards can leave a
+## later motif nowhere to stand, and a layer with motifs backwards beats
+## none.
 static func _make(seed_value: int, attempt: int, knobs: Dictionary) -> Dictionary:
+	var plan := _make_once(seed_value,attempt,knobs)
+	if not ways_retry(plan): return plan
+	var loose := knobs.duplicate()
+	loose.one_way = 0
+	return _make_once(seed_value,attempt,loose)
+
+## Whether a failed plan is worth laying again with `one_way` 0.
+static func ways_retry(plan: Dictionary) -> bool:
+	if (plan.problems as Array).is_empty(): return false
+	if int((plan.knobs as Dictionary).get("one_way",-1)) != -1: return false
+	return draw_pool(plan.knobs).any(func(p: Array) -> bool: return Greybox.has(str(p[0])))
+
+static func _make_once(seed_value: int, attempt: int, knobs: Dictionary) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([seed_value,attempt,"layer"])
 	var k_all := KNOBS.duplicate()
@@ -335,6 +388,11 @@ static func _make(seed_value: int, attempt: int, knobs: Dictionary) -> Dictionar
 	for n: int in sizes: count += n
 	var motifs: Array = []
 	for p: Array in _draw(count,rng,int(k_all.get("repeats",1)),k_all): motifs.append(_motif_isle(p,rng))
+	# A pool with no family can run dry (the "motifs" pool, a narrow
+	# `greybox` knob).
+	if motifs.size() < count:
+		plan.problems.append("too few motifs drawn")
+		return plan
 	var base := _base_isle()
 	base.sockets = base.own.duplicate()
 	base.hood = 0
@@ -343,6 +401,10 @@ static func _make(seed_value: int, attempt: int, knobs: Dictionary) -> Dictionar
 	# The greed isle: drawn, the smaller the likelier (never the hero, a
 	# landmark of the route).
 	var can: Array = motifs.filter(func(m: Dictionary) -> bool: return m.motif.role() != "hero")
+	# Nor one that runs one way (a greybox motif: its chain ends at a way
+	# out a dead end would leave unused), while another will do.
+	var two_way := can.filter(func(m: Dictionary) -> bool: return not one_way(m))
+	if not two_way.is_empty(): can = two_way
 	if can.is_empty(): can = motifs.duplicate()
 	var total_inv := 0.0
 	for m: Dictionary in can: total_inv += 1.0/_area(m)
@@ -461,8 +523,8 @@ static func _make(seed_value: int, attempt: int, knobs: Dictionary) -> Dictionar
 	var top: Dictionary = plan.isles[from]
 	var exit := {}
 	for s: Dictionary in top.sockets:
-		if s.kind != "rim" or used.has(_key(from,s.name)): continue
-		if exit.is_empty() or (s.at as Vector3).y > (exit.at as Vector3).y: exit = s
+		if s.kind != "rim" or used.has(_key(from,s.name)) or not can_out(s,plan.knobs): continue
+		if exit.is_empty() or (s.at as Vector3).y+way_score(s,{},plan.knobs) > (exit.at as Vector3).y+way_score(exit,{},plan.knobs): exit = s
 	if exit.is_empty():
 		plan.problems.append("no exit rim on %s" % top.id)
 		return plan
@@ -536,7 +598,7 @@ static func _substitute(plan: Dictionary, groups: Array, greed: Dictionary, h: i
 	var pool: Array = []
 	for p: Array in draw_pool(plan.knobs):
 		var probe: RefCounted = (p[1] as Script).new()
-		if not probe.family() and int(taken.get(str(p[0]),0)) >= _most(str(p[0]),int(plan.knobs.get("repeats",1))): continue
+		if not probe.family() and int(taken.get(str(p[0]),0)) >= _most(str(p[0]),int(plan.knobs.get("repeats",1)),plan.knobs): continue
 		if hero and probe.role() == "hero": continue
 		pool.append(p)
 	if pool.is_empty(): return {}
@@ -578,9 +640,40 @@ static func _draw(count: int, rng: RandomNumberGenerator, repeats := 1, knobs :=
 				picks.append(pool[i])
 				var probe: RefCounted = (pool[i][1] as Script).new()
 				drawn[pool[i][0]] = int(drawn.get(pool[i][0],0))+1
-				if not probe.family() and int(drawn[pool[i][0]]) >= _most(str(pool[i][0]),repeats): pool.remove_at(i)
+				if not probe.family() and int(drawn[pool[i][0]]) >= _most(str(pool[i][0]),repeats,knobs): pool.remove_at(i)
 				break
 	return picks
+
+## What a crossing that keeps to a motif's ways adds to its score (with
+## `one_way` -1): more than any other reason, so a fit forwards always wins
+## and one backwards stands only where none forwards does (a motif's single
+## way in, facing one way, often won't fit; better backwards than the
+## layer short).
+const WAY_WEIGHT := 1000.0
+
+## A rim's way (a greybox motif's, motif_greybox.gd `sockets`): one marked
+## "in" is never left by, one marked "out" never come in at, so the route
+## runs a motif's chain forwards.
+static func can_out(s: Dictionary, knobs: Dictionary) -> bool:
+	return int(knobs.get("one_way",-1)) != 1 or str(s.get("way","")) != "in"
+
+## The rims of `rims` an edge may come in at: those marked "in" where any
+## is, else all but those marked "out".
+static func ins_of(rims: Array, knobs: Dictionary) -> Array:
+	if int(knobs.get("one_way",-1)) != 1: return rims
+	var marked := rims.filter(func(s: Dictionary) -> bool: return str(s.get("way","")) == "in")
+	return marked if not marked.is_empty() else rims.filter(func(s: Dictionary) -> bool: return str(s.get("way","")) != "out")
+
+## What a crossing out of rim `ra` (or {}) into rim `rb` (or {}) adds to its
+## score for keeping to their ways (WAY_WEIGHT, the `one_way` knob).
+static func way_score(ra: Dictionary, rb: Dictionary, knobs: Dictionary) -> float:
+	if int(knobs.get("one_way",-1)) == 0: return 0.0
+	return WAY_WEIGHT if str(ra.get("way","")) != "in" and str(rb.get("way","")) != "out" else 0.0
+
+## Whether an isle runs one way (its rims marked), so it belongs on the route,
+## not as the greed branch's dead end.
+static func one_way(m: Dictionary) -> bool:
+	return (m.own as Array).any(func(s: Dictionary) -> bool: return str(s.get("way","")) != "")
 
 static func _key(isle: int, rim: String) -> String:
 	return "%d/%s" % [isle,rim]
@@ -810,8 +903,8 @@ static func over_share(plan: Dictionary, b: Dictionary) -> float:
 static func _step(plan: Dictionary, from: int, m: Dictionary, kinds: Array, branch: String, used: Dictionary, rng: RandomNumberGenerator,
 		least := -INF, most := INF, hood := 0) -> Dictionary:
 	var a: Dictionary = plan.isles[from]
-	var outs: Array = a.own.filter(func(s: Dictionary) -> bool: return s.kind == "rim" and not used.has(_key(from,s.name)))
-	var ins: Array = m.own.filter(func(s: Dictionary) -> bool: return s.kind == "rim")
+	var outs: Array = a.own.filter(func(s: Dictionary) -> bool: return s.kind == "rim" and not used.has(_key(from,s.name)) and can_out(s,plan.knobs))
+	var ins: Array = ins_of(m.own.filter(func(s: Dictionary) -> bool: return s.kind == "rim"),plan.knobs)
 	# A family's way through: in at its entry, out at its exit (the ring).
 	if ins.any(func(s: Dictionary) -> bool: return s.name == "entry"): ins = ins.filter(func(s: Dictionary) -> bool: return s.name == "entry")
 	if from > 0 and outs.any(func(s: Dictionary) -> bool: return s.name == "exit"): outs = outs.filter(func(s: Dictionary) -> bool: return s.name == "exit")
@@ -836,6 +929,10 @@ static func _step(plan: Dictionary, from: int, m: Dictionary, kinds: Array, bran
 		var swap: Variant = combos[i]
 		combos[i] = combos[j]
 		combos[j] = swap
+	# Those keeping to a motif's ways tried first (none marked: as shuffled).
+	var ahead := combos.filter(func(c: Array) -> bool: return way_score(c[0],c[1],plan.knobs) > 0.0)
+	if not ahead.is_empty() and ahead.size() < combos.size():
+		combos = ahead+combos.filter(func(c: Array) -> bool: return way_score(c[0],c[1],plan.knobs) <= 0.0)
 	for t in range(TRIES):
 		if combos.is_empty(): break
 		var combo: Array = combos[t%combos.size()]
@@ -900,6 +997,7 @@ static func _step(plan: Dictionary, from: int, m: Dictionary, kinds: Array, bran
 		score += OVER_WEIGHT*over_share(plan,placed)
 		score -= 0.01*mid.distance_to(anchor)
 		score += _lean(plan,mid)
+		score += way_score(ra,rb,plan.knobs)
 		if score > best_score:
 			best_score = score
 			best = {"edge":edge,"isle":placed}
@@ -1216,13 +1314,13 @@ static func _ram(plan: Dictionary, used: Dictionary) -> void:
 ## fits.
 static func _gulf(plan: Dictionary, hood_from: int, m: Dictionary, hood_to: int, width: float, ride: String, pinned: bool, used: Dictionary, rng: RandomNumberGenerator) -> Dictionary:
 	var began := Time.get_ticks_msec()
-	var ins: Array = m.own.filter(func(s: Dictionary) -> bool: return s.kind == "rim" and float(s.run_up) >= GULF_RUN_UP)
+	var ins: Array = ins_of(m.own.filter(func(s: Dictionary) -> bool: return s.kind == "rim" and float(s.run_up) >= GULF_RUN_UP),plan.knobs)
 	if ins.any(func(s: Dictionary) -> bool: return s.name == "entry"): ins = ins.filter(func(s: Dictionary) -> bool: return s.name == "entry")
 	var combos: Array = []
 	for i: int in plan.hoods[hood_from]:
 		var a: Dictionary = plan.isles[i]
 		for ra: Dictionary in a.own:
-			if ra.kind != "rim" or used.has(_key(i,ra.name)) or float(ra.run_up) < GULF_RUN_UP: continue
+			if ra.kind != "rim" or used.has(_key(i,ra.name)) or float(ra.run_up) < GULF_RUN_UP or not can_out(ra,plan.knobs): continue
 			for rb: Dictionary in ins:
 				if (ra.face as Vector3).dot(-(rb.face as Vector3)) < cos(deg_to_rad(GULF_TURN*2.0)): continue
 				combos.append([i,ra,rb])
@@ -1271,6 +1369,7 @@ static func _gulf(plan: Dictionary, hood_from: int, m: Dictionary, hood_to: int,
 			continue
 		# The best: off a high rim (seen from far), near the base.
 		var score := rng.randf()*2.0+0.08*lip_a.y-0.004*mid.distance_to(Vector2(MIDDLE.x,MIDDLE.z))+_lean(plan,mid)
+		score += way_score(ra,rb,plan.knobs)
 		fits.append([score,edge,placed])
 	fits.sort_custom(func(p: Array, q: Array) -> bool: return float(p[0]) > float(q[0]))
 	# The ride's loop, the best first, till one stands clear of every isle.

@@ -10,6 +10,11 @@ extends RefCounted
 ## Kept free of the generator's scripts (layer_plan.gd preloads this).
 const MOTIFS := {
 	"sunken_giant":preload("res://scripts/kit_isle/greybox/gb_sunken_giant.gd"),
+	"wardens_well":preload("res://scripts/kit_isle/greybox/gb_wardens_well.gd"),
+	"lidstack":preload("res://scripts/kit_isle/greybox/gb_lidstack.gd"),
+	"plumb_well":preload("res://scripts/kit_isle/greybox/gb_plumb_well.gd"),
+	"vigil_bellows":preload("res://scripts/kit_isle/greybox/gb_vigil_bellows.gd"),
+	"noon_weir":preload("res://scripts/kit_isle/greybox/gb_noon_weir.gd"),
 }
 ## A greybox motif's weight in the draw (the pool's own run 1-3), and how
 ## many times one may come a layer.

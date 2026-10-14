@@ -148,7 +148,16 @@ static func core(seed_value: int, knobs := {}) -> Dictionary:
 	lock.unlock()
 	return plan
 
+## One attempt, laid again ignoring the greybox motifs' ways where keeping
+## to them failed (LayerPlan `_make`).
 static func _make(seed_value: int, attempt: int, knobs: Dictionary) -> Dictionary:
+	var plan := _make_once(seed_value,attempt,knobs)
+	if not LayerPlan.ways_retry(plan): return plan
+	var loose := knobs.duplicate()
+	loose.one_way = 0
+	return _make_once(seed_value,attempt,loose)
+
+static func _make_once(seed_value: int, attempt: int, knobs: Dictionary) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([seed_value,attempt,"ring"])
 	var k_all := LayerPlan.KNOBS.duplicate()
@@ -227,9 +236,10 @@ static func _make(seed_value: int, attempt: int, knobs: Dictionary) -> Dictionar
 	var exit := {}
 	var exit_score := -INF
 	for s: Dictionary in plan.isles[gate_i].sockets:
-		if s.kind != "rim" or float(s.run_up) < GATE_RUN_UP: continue
+		if s.kind != "rim" or float(s.run_up) < GATE_RUN_UP or not LayerPlan.can_out(s,plan.knobs): continue
 		var f := Vector2((s.face as Vector3).x,(s.face as Vector3).z).normalized()
 		var score := f.dot(heading)*2.0+(s.at as Vector3).y*0.05+Vector2((s.at as Vector3).x,(s.at as Vector3).z).dot(heading)/25.0
+		score += LayerPlan.way_score(s,{},plan.knobs)
 		if score > exit_score:
 			exit_score = score
 			exit = s
@@ -272,7 +282,7 @@ static func _another(plan: Dictionary, motifs: Array, greed: Dictionary, rng: Ra
 	var total := 0.0
 	for p: Array in LayerPlan.draw_pool(plan.knobs):
 		var probe: RefCounted = (p[1] as Script).new()
-		if not probe.family() and int(taken.get(str(p[0]),0)) >= LayerPlan._most(str(p[0]),REPEATS): continue
+		if not probe.family() and int(taken.get(str(p[0]),0)) >= LayerPlan._most(str(p[0]),REPEATS,plan.knobs): continue
 		pool.append(p)
 		total += float(p[2])
 	if pool.is_empty(): return {}
@@ -677,9 +687,9 @@ static func _fits(plan: Dictionary, a: int, b: int, used: Dictionary, rng: Rando
 	var ib: Dictionary = plan.isles[b]
 	var fits: Array = []
 	for ra: Dictionary in ia.sockets:
-		if ra.kind != "rim" or used.has(LayerPlan._key(a,str(ra.name))) or float(ra.run_up) < run_up: continue
-		for rb: Dictionary in ib.sockets:
-			if rb.kind != "rim" or used.has(LayerPlan._key(b,str(rb.name))) or float(rb.run_up) < run_up: continue
+		if ra.kind != "rim" or used.has(LayerPlan._key(a,str(ra.name))) or float(ra.run_up) < run_up or not LayerPlan.can_out(ra,plan.knobs): continue
+		for rb: Dictionary in LayerPlan.ins_of(ib.sockets.filter(func(s: Dictionary) -> bool: return s.kind == "rim"),plan.knobs):
+			if used.has(LayerPlan._key(b,str(rb.name))) or float(rb.run_up) < run_up: continue
 			var fa: Vector3 = ra.face
 			var fb: Vector3 = rb.face
 			if fa.dot(-fb) < cos(deg_to_rad(turn*2.0)): continue
@@ -695,7 +705,7 @@ static func _fits(plan: Dictionary, a: int, b: int, used: Dictionary, rng: Rando
 			if not LayerPlan._corridor_clear(edge,plan.isles,a,b): continue
 			if LayerPlan._crosses(edge,plan.edges): continue
 			# Facing each other square, short, and off a high rim.
-			fits.append([dir.dot(fa)+dir.dot(-fb)-width/150.0+0.02*lip_a.y+rng.randf(),edge])
+			fits.append([dir.dot(fa)+dir.dot(-fb)-width/150.0+0.02*lip_a.y+rng.randf()+LayerPlan.way_score(ra,rb,plan.knobs),edge])
 	fits.sort_custom(func(p: Array, q: Array) -> bool: return float(p[0]) > float(q[0]))
 	return fits.map(func(p: Array) -> Dictionary: return p[1])
 
