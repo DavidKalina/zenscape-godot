@@ -8,6 +8,7 @@ extends Node
 ## isles' builds.
 const LayerSprawl = preload("res://scripts/roguelike/layer_sprawl.gd")
 const NextRegionLod = preload("res://scripts/roguelike/next_region_lod.gd")
+const IsleStore = preload("res://scripts/roguelike/isle_store.gd")
 
 var stage: Node3D
 var plan: Dictionary
@@ -48,12 +49,17 @@ func _process(_delta: float) -> void:
 	var lod := NextRegionLod.build(next)
 	stage.add_child(lod)
 	print("next region: layer %d laid and stood in %d ms, after this layer stood" % [int(next.seed),Time.get_ticks_msec()-_began])
+	preload("res://scripts/roguelike/layer_loading.gd").mark("next region stood")
 
 ## On the worker: the plan's next region, into `out`.
 static func _job(out: Dictionary) -> void:
 	var plan: Dictionary = out.plan
 	var nxt := LayerSprawl.next_plan(plan)
-	if (nxt.problems as Array).is_empty(): out.next = LayerSprawl._place_next(plan,nxt)
+	if (nxt.problems as Array).is_empty():
+		out.next = LayerSprawl._place_next(plan,nxt)
+		# With --forge-ahead, the next layer's isles built ahead into the isle
+		# store by helpers during play (scripts/roguelike/isle_store.gd).
+		IsleStore.forge_plan(nxt,true)
 
 func _exit_tree() -> void:
 	if _task >= 0:

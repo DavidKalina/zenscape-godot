@@ -32,6 +32,18 @@ const CHAR := Color("1a1512")
 ## octagonal, `outer` m to the middle of a face, its wall `wall` thick, its
 ## high side toward `high_side` (radians, from +x toward +z). `ground`
 ## (x, z) -> y in its frame: where its fallen blocks lie.
+## The tower's shell's top at angle `a`: a long slant from the high side
+## round to the low, a broken tooth standing just off the high side, ragged.
+static func tower_top(a: float, high_side: float, height: float, jag: PackedFloat32Array) -> float:
+	var off := wrapf(a-high_side,-PI,PI)
+	var t := 0.5+0.5*cos(off)
+	var h := height*(0.38+0.5*pow(t,1.3))
+	h += height*0.2*maxf(0.0,1.0-absf(off-0.42)/0.3)
+	var u := fposmod(a,TAU)/TAU*36.0
+	var i := int(u)
+	h += 1.3*lerpf(jag[i],jag[i+1],u-float(i))
+	return h
+
 static func tower(seed_value: int, height: float, outer: float, wall: float, high_side: float, sunk: float, ground: Callable) -> Node3D:
 	var b := RuinKit.Build.new(seed_value,0.8,"DragonTower")
 	b.terrain = ground
@@ -39,17 +51,9 @@ static func tower(seed_value: int, height: float, outer: float, wall: float, hig
 	var half_side := outer*tan(PI/8.0)
 	var jag := PackedFloat32Array()
 	for i in range(37): jag.append(b.rng.randf_range(-1.0,1.0))
-	# The shell's top by angle: a long slant from the high side round to the
-	# low, a broken tooth standing just off the high side, ragged.
-	var top := func(a: float) -> float:
-		var off := wrapf(a-high_side,-PI,PI)
-		var t := 0.5+0.5*cos(off)
-		var h := height*(0.38+0.5*pow(t,1.3))
-		h += height*0.2*maxf(0.0,1.0-absf(off-0.42)/0.3)
-		var u := fposmod(a,TAU)/TAU*36.0
-		var i := int(u)
-		h += 1.3*lerpf(jag[i],jag[i+1],u-float(i))
-		return h
+	# The shell's top by angle (`tower_top`; a static function bound, not a
+	# lambda, so the isle store can keep the tower's "top" meta).
+	var top := tower_top.bind(high_side,height,jag)
 	var slits := [1,3,5,6]
 	var bands := [height*0.3,height*0.58]
 	for side in range(8):

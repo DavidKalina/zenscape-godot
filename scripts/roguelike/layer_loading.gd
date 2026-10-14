@@ -27,6 +27,7 @@ extends Node
 const LoadingScreen = preload("res://scripts/roguelike/loading_screen.tscn")
 const SkyCommits = preload("res://scripts/sky_commits.gd")
 const HeadlessBody = preload("res://scripts/enemies/headless_body.gd")
+const IsleStore = preload("res://scripts/roguelike/isle_store.gd")
 
 ## The sky's frame budget while loading (usec): a frame of about this long.
 const LIFT_USEC := 45000
@@ -62,8 +63,19 @@ var _began := 0
 var _first := false
 var _warm_share := 0.0
 var _flat := ""
+var _next_peek := 0
+var _peek_frame := 0
 ## Warm-up done once for the session: the plane, the dragon, a body.
 static var warmed_extras := false
+## The load's milestones (ms since the engine started), printed with
+## --loading-trace: [what, ms] (any thread).
+static var marks: Array = []
+static var _marks_lock := Mutex.new()
+
+static func mark(what: String) -> void:
+	_marks_lock.lock()
+	marks.append([what,Time.get_ticks_msec()])
+	_marks_lock.unlock()
 
 ## Whether this scene should hold play behind the screen: rendered, not
 ## scripted, and not `--no-loading-screen`.
@@ -72,8 +84,38 @@ static func wanted(scene: Node) -> bool:
 	if bool(scene.get("scripted")): return false
 	return not "--no-loading-screen" in preload("res://scripts/launch_args.gd").user_args()
 
+## The full sweep (every isle, the plane, the dragon, a body): on by default
+## except on macOS, where round 1 measured no gain from it (Metal's shader
+## cache and ubershaders) and round 2 kept it off (loading-screen-round2.md);
+## --shader-warmup asks for it there, --no-shader-warmup turns it off anywhere.
+## Without it the pilot's own view is still drawn WARM_SELF frames under the
+## screen before it goes.
 static func warm_wanted() -> bool:
-	return not "--no-shader-warmup" in preload("res://scripts/launch_args.gd").user_args()
+	var args := preload("res://scripts/launch_args.gd").user_args()
+	if "--no-shader-warmup" in args: return false
+	if "--shader-warmup" in args: return true
+	return OS.get_name() != "macOS"
+
+## Frames the pilot's own view is drawn under the screen before it goes.
+const WARM_SELF := 4
+
+## While loading, the world is drawn under the screen as round 1 drew it.
+## --loading-hide-world draws it only one frame in DRAW_EVERY (the frames go
+## to the build): round 2 measured the load shorter but a slow patch of a
+## couple of seconds early in play (frames to 150 ms, none at every frame).
+const DRAW_EVERY := 4
+var _hidden := false
+
+static func hide_world_wanted() -> bool:
+	return "--loading-hide-world" in preload("res://scripts/launch_args.gd").user_args()
+
+func _hide_world(on: bool) -> void:
+	_hidden = on and hide_world_wanted()
+	_draw_now(not _hidden)
+
+func _draw_now(draw: bool) -> void:
+	var viewport := study.get_viewport() if study != null and study.is_inside_tree() else null
+	if viewport != null: viewport.disable_3d = not draw
 
 func _init() -> void:
 	name = "LayerLoading"
@@ -118,6 +160,9 @@ func _start(line: String) -> void:
 	screen.set_progress(0.0)
 	screen.set_line(line)
 	SkyCommits.lifted = LIFT_USEC
+	_hide_world(true)
+	# Helpers building the next layer ahead wait while the screen is up.
+	IsleStore.background = false
 	if "--loading-trace" in preload("res://scripts/launch_args.gd").user_args(): SkyCommits.recording = true
 	set_process(true)
 
@@ -132,20 +177,34 @@ func _exit_tree() -> void:
 
 func _process(_delta: float) -> void:
 	if not active or study == null: return
+	if _hidden: _draw_now(Engine.get_process_frames()%DRAW_EVERY == 0)
 	match phase:
 		"plan":
 			screen.set_progress(0.0 if _first else 0.01)
 			if int(study.get("layers")) > _layers_at and study.get("stage") != null:
 				phase = "isles"
 				times.planned = Time.get_ticks_msec()
+				mark("layer stood (plan taken)")
 				_ready_next()
 		"isles":
+			if SkyCommits.recording and Time.get_ticks_msec() >= _next_peek:
+				_next_peek = Time.get_ticks_msec()+500
+				var motifs := _motifs()
+				var line := PackedStringArray()
+				if motifs != null:
+					for isle: Node3D in motifs.isles: line.append("%s:%s" % [str(isle.motif.id()).left(6),isle.stage])
+				var spent := 0
+				for e: Array in SkyCommits.log:
+					if int(e[0]) > _peek_frame: spent += int(e[2])
+				mark("peek f%d +%d frames, commits %d ms: %s" % [Engine.get_process_frames(),Engine.get_process_frames()-_peek_frame,spent/1000," ".join(line)])
+				_peek_frame = Engine.get_process_frames()
 			var info := _isles()
 			screen.set_progress(BAR_PLAN+(BAR_ISLES-BAR_PLAN)*float(info.share))
 			screen.set_line(str(info.line))
 			if bool(info.done):
 				phase = "extras"
 				times.isles = Time.get_ticks_msec()
+				mark("isles all up")
 		"extras":
 			var info := _extras()
 			screen.set_progress(BAR_ISLES+(BAR_EXTRAS-BAR_ISLES)*float(info.share))
@@ -153,6 +212,7 @@ func _process(_delta: float) -> void:
 			if bool(info.done):
 				phase = "warm"
 				times.extras = Time.get_ticks_msec()
+				mark("extras done (viaduct, next region)")
 				_warm()
 		"warm":
 			pass
@@ -222,8 +282,13 @@ func _extras() -> Dictionary:
 ## goes back to the pilot's camera after.
 func _warm() -> void:
 	var began := Time.get_ticks_msec()
+	_hide_world(false)
 	if warm_wanted():
 		await _sweep()
+	else:
+		screen.set_line("readying the light")
+		await _hold(WARM_SELF)
+		times.views = 1
 	times.warm = Time.get_ticks_msec()-began
 	_finish()
 
@@ -333,6 +398,7 @@ func _body_out(body: Node3D) -> void:
 
 func _finish() -> void:
 	SkyCommits.lifted = 0
+	IsleStore.background = true
 	active = false
 	phase = ""
 	times.done = Time.get_ticks_msec()
@@ -352,7 +418,21 @@ func _finish() -> void:
 		var keys := sums.keys()
 		keys.sort_custom(func(a: Variant, b: Variant) -> bool: return sums[a] > sums[b])
 		for k in keys.slice(0,14): print("loading trace: %s %d ms" % [k,int(sums[k])/1000])
-		for isle: Node3D in _motifs().isles: print("loading trace: isle %s timings %s" % [isle.name,str(isle.timings)])
+		var all := {}
+		for isle: Node3D in _motifs().isles:
+			print("loading trace: isle %s timings %s" % [isle.name,str(isle.timings)])
+			var parts := PackedStringArray()
+			for k: String in isle.usecs:
+				parts.append("%s %d" % [k,int(isle.usecs[k])/1000])
+				all[k] = int(all.get(k,0))+int(isle.usecs[k])
+			print("loading trace: isle %s %s ms by step: %s" % [isle.name,str(isle.motif.id()),", ".join(parts)])
+		var total := PackedStringArray()
+		for k: String in all: total.append("%s %d" % [k,int(all[k])/1000])
+		print("loading trace: all isles, ms by step: %s" % ", ".join(total))
 		print("loading trace: %d frames with commits, loading frames in all %d" % [per_frame.size(),Engine.get_process_frames()])
+		mark("screen drops")
+		_marks_lock.lock()
+		for m: Array in marks: print("loading mark: %6d ms  %s" % [int(m[1]),str(m[0])])
+		_marks_lock.unlock()
 	study.call("_loading_done")
 	screen.conceal(FADE_OUT)

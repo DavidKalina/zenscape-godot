@@ -29,6 +29,7 @@ const MotifIsle = preload("res://scripts/kit_isle/motif_isle.gd")
 const SkyCommits = preload("res://scripts/sky_commits.gd")
 const Lines = preload("res://scripts/collectible_lines.gd")
 const Roost = preload("res://scripts/kit_isle/motif_dragon_roost.gd")
+const IsleStore = preload("res://scripts/roguelike/isle_store.gd")
 
 ## [motif script, offset from its own frame (m)]. Their middles (world x, z)
 ## and turf: the bell spires east (420, 60) at 42 m, the cloister tarn south
@@ -71,6 +72,21 @@ var _building: Node3D = null
 var threaded := DisplayServer.get_name() != "headless"
 ## Every isle built from the start, near or not (rendered; --motifs-now).
 var eager := true
+## Rendered, isles come from the isle store (scripts/roguelike/isle_store.gd):
+## kept ones loaded on workers, LOADS_AT_ONCE at a time; the rest built by
+## helper processes into it first (each its own GDScript; this engine runs
+## one process's GDScript one thread at a time), then loaded. An isle the
+## store can't keep, or with no helpers, is built here on a worker as before,
+## one at a time. --no-isle-store: all built here.
+var stored := false
+const LOADS_AT_ONCE := 3
+## With the store, the order the isles stand in, one whole before the next
+## begins: the order the one worker built them in before (nearest the eye
+## when the layer was set up first, then nearest the eye after), however
+## the loads come in. `_first` is fixed at setup, the rest on the first
+## frame. (Their plants look past each other: MotifIsle `looks_past_neighbours`.)
+var _order: Array = []
+var _first: Node3D = null
 
 ## Where each stands, without making any: [id, middle (world; y its top),
 ## reach (m)].
@@ -122,10 +138,12 @@ func setup_layer(study: Node3D, owner_sky: Node3D, args: PackedStringArray, entr
 	sky = owner_sky
 	var began := Time.get_ticks_msec()
 	eager = threaded or args.has("--motifs-now")
+	stored = threaded and IsleStore.enabled()
 	placed = []
 	for e: Array in entries:
 		placed.append(e[2])
 		_add_isle(e[0],e[1],e[2],args)
+	if stored: _first = _nearest_waiting()
 	_next_build()
 	print("motif isles: a layer of %d set up in %d ms, built %s" % [entries.size(),Time.get_ticks_msec()-began,"on a worker" if threaded else "on the main thread, one a frame"])
 
@@ -135,6 +153,10 @@ func _add_isle(motif: RefCounted, offset: Vector3, place: Array, args: PackedStr
 	var isle: Node3D = MotifIsle.new()
 	isle.setup(scene,motif,offset,args)
 	isle.threaded = threaded
+	# Its plants read its own ground and the stage, not the isles beside it
+	# nor the viaduct (when those stand depends on how fast the layer
+	# loads; the plants shouldn't): the same plants every time.
+	isle.looks_past_neighbours = true
 	var at: Vector3 = place[1]
 	isle.guess = Vector3(at.x,at.z,float(place[2]))
 	add_child(isle)
@@ -151,9 +173,51 @@ func add_tokens(collectibles: Node3D, seed_value: int) -> void:
 			lines.append(Lines.line(t[0],t[1],t[2],points,seed_value))
 		collectibles.add_source(str(isle.motif.token_source()),lines)
 
-## The nearest isle not yet built, onto a worker (one at a time).
+## The nearest isle not yet built, onto a worker (one at a time); with the
+## store, every kept one loading (LOADS_AT_ONCE at a time), the rest asked
+## of helpers, nearest first.
 func _next_build() -> void:
-	if _building != null or not threaded: return
+	if not threaded: return
+	var eye := _eye()
+	var order: Array = []
+	for isle: Node3D in isles:
+		if isle.stage != "waiting": continue
+		var c: Vector3 = isle.circle()
+		order.append([Vector2(eye.x-c.x,eye.z-c.y).length(),isle])
+	if order.is_empty(): return
+	order.sort_custom(func(a: Array, b: Array) -> bool: return float(a[0]) < float(b[0]))
+	if stored:
+		var loading := 0
+		var files := {}
+		for isle: Node3D in isles:
+			if isle.stage == "building" and isle.source == "store":
+				loading += 1
+				files[IsleStore.path_of(isle.motif)] = true
+		for o: Array in order:
+			var isle: Node3D = o[1]
+			match IsleStore.state(isle.motif):
+				"ready":
+					# (One load of a file at a time: a repeated motif's second
+					# copy waits for the first's.)
+					var file := IsleStore.path_of(isle.motif)
+					if loading < LOADS_AT_ONCE and not files.has(file):
+						isle.start_load()
+						loading += 1
+						files[file] = true
+				"none": IsleStore.forge(isle.motif)
+				"later": IsleStore.hurry(isle.motif)
+		IsleStore.pump()
+	if _building != null: return
+	for o: Array in order:
+		var isle: Node3D = o[1]
+		if isle.stage != "waiting": continue
+		if stored and IsleStore.can_forge() and IsleStore.state(isle.motif) != "failed": continue
+		if stored and not IsleStore.can_forge() and IsleStore.state(isle.motif) == "ready": continue
+		_building = isle
+		isle.start_build()
+		return
+
+func _nearest_waiting() -> Node3D:
 	var eye := _eye()
 	var best: Node3D = null
 	var near := INF
@@ -164,9 +228,25 @@ func _next_build() -> void:
 		if d < near:
 			near = d
 			best = isle
-	if best == null: return
-	_building = best
-	best.start_build()
+	return best
+
+## Whether `isle` may stand now (the store's order: every isle before it up).
+func _its_turn(isle: Node3D) -> bool:
+	if not stored or _order.is_empty(): return true
+	for other: Node3D in _order:
+		if other == isle: return true
+		if not other.is_up(): return false
+	return true
+
+func _settle_order() -> void:
+	if not stored or not _order.is_empty() or isles.is_empty(): return
+	var eye := _eye()
+	var rest: Array = isles.filter(func(i: Node3D) -> bool: return i != _first)
+	rest.sort_custom(func(a: Node3D, b: Node3D) -> bool:
+		var ca: Vector3 = a.circle()
+		var cb: Vector3 = b.circle()
+		return Vector2(eye.x-ca.x,eye.z-ca.y).length() < Vector2(eye.x-cb.x,eye.z-cb.y).length())
+	_order = ([_first] if _first != null else [])+rest
 
 func _eye() -> Vector3:
 	var camera: Variant = scene.get("camera") if scene != null else null
@@ -201,17 +281,23 @@ func isle_near(at: Vector3, reach: Callable) -> Node3D:
 
 func _process(delta: float) -> void:
 	if scene == null: return
-	if _building != null and not _building.building():
-		_building = null
-		_next_build()
+	if _building != null and not _building.building(): _building = null
+	if stored:
+		for isle: Node3D in isles:
+			if isle.source == "store": isle.building()
+		# (The helpers' queue moves on even once every isle stands: the next
+		# layer's are built ahead.)
+		IsleStore.pump()
+	_next_build()
 	var eye := _eye()
+	_settle_order()
 	# The main thread's share: one isle's work a slice, nearest first, while
 	# the frame's budget is open.
 	while SkyCommits.open():
 		var best: Node3D = null
 		var near := INF
 		for isle: Node3D in isles:
-			if not isle.wants_work(): continue
+			if not isle.wants_work() or not _its_turn(isle): continue
 			var c: Vector3 = isle.circle()
 			var d := Vector2(eye.x-c.x,eye.z-c.y).length()
 			# Headless, an isle's art is built here, a whole isle in one
@@ -224,5 +310,6 @@ func _process(delta: float) -> void:
 		var began := Time.get_ticks_usec()
 		var was: String = best.stage
 		best.work(maxi(SkyCommits.budget()-SkyCommits.used(),SLICE_LEAST))
+		best.us("commit_"+was,Time.get_ticks_usec()-began)
 		SkyCommits.spend("motif isle %s %s" % [best.name,was] if SkyCommits.recording else "motif isle",Time.get_ticks_usec()-began)
 	for isle: Node3D in isles: isle.advance(delta,eye)

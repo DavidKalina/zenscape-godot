@@ -95,6 +95,7 @@ var run_loop: Node = null
 var loading: Node = null
 
 func _ready() -> void:
+	LayerLoading.mark("run_layer ready")
 	if layer_seed < 0:
 		for arg in preload("res://scripts/launch_args.gd").user_args():
 			if arg.begins_with("--seed="): layer_seed = int(arg.get_slice("=",1))
@@ -107,9 +108,20 @@ func _ready() -> void:
 	chain_on = false
 	dragon_roost = false
 	_no_lode = true
+	# The isles any layer builds alike asked of helper processes at once
+	# (scripts/roguelike/isle_store.gd), before the plan is laid.
+	if _planning_away() and IsleStore.can_forge():
+		var began := Time.get_ticks_msec()
+		IsleStore.prune()
+		IsleStore.forge_fixed()
+		print("isle store: code hashed, store pruned and helpers asked in %d ms" % (Time.get_ticks_msec()-began))
 	if _planning_away():
 		# Laid while the aqueduct isle builds; its sky starts empty.
+		# (The piece footprints it measures kept from the last launch.)
+		IsleStore.boxes_load()
 		LayerPlan.warm()
+		IsleStore.boxes_save()
+		LayerLoading.mark("plan warm done")
 		_plan_task = WorkerThreadPool.add_task(_plan_job.bind(layer_seed,layer_knobs.duplicate()),true,"layer plan")
 	else: _lay(layer_seed)
 	isle_ready.connect(_first_layer,CONNECT_ONE_SHOT)
@@ -124,7 +136,9 @@ func _ready() -> void:
 		await RenderingServer.frame_post_draw
 		await RenderingServer.frame_post_draw
 		set_process(true)
+	LayerLoading.mark("base build begins")
 	super._ready()
+	LayerLoading.mark("base built (to its first await)")
 
 func sky_script() -> Script:
 	return RunLayerSky
@@ -145,7 +159,12 @@ static func _plan_for(seed_value: int, knobs: Dictionary, shape := "") -> Dictio
 	return {"plan":plan,"ms":Time.get_ticks_msec()-began}
 
 func _plan_job(seed_value: int, knobs: Dictionary, shape := "") -> void:
-	_plan_out = _plan_for(seed_value,knobs,shape)
+	LayerLoading.mark("plan begins (worker)")
+	var laid := _plan_for(seed_value,knobs,shape)
+	LayerLoading.mark("plan laid (worker)")
+	# Its isles asked of the helpers now, while the base is still building.
+	IsleStore.forge_plan(laid.plan)
+	_plan_out = laid
 
 func _take(laid: Dictionary) -> void:
 	layer = laid.plan
@@ -195,6 +214,7 @@ func layer_entries() -> Array:
 	return out
 
 func _first_layer() -> void:
+	LayerLoading.mark("base isle ready (flora, life)")
 	_slot_was = foot_pieces
 	_build_card()
 	if LayerShapes.RUN.has(layer_shape):
@@ -215,11 +235,15 @@ func _stand_layer() -> void:
 	# The study's own net (back to the isle's station) only far under the
 	# void, which ends the layer first.
 	lost = float(layer.void_y)-200.0
+	LayerLoading.mark("stage setup begins")
 	stage = LayerStage.new()
 	add_child(stage)
 	stage.setup(self,layer,_slot_was)
+	LayerLoading.mark("stage set up")
 	LayerShapes.dress(stage,layer)
+	LayerLoading.mark("stage dressed")
 	_stand_roost()
+	LayerLoading.mark("roost dragon laid")
 	stage.rune_taken.connect(func(_left: int) -> void: _update_card())
 	var spawn: Dictionary = layer.spawn
 	var face: Vector3 = spawn.face
@@ -354,7 +378,9 @@ func _process(delta: float) -> void:
 		else:
 			# The first: its isles into the sky, then stood.
 			_take(_plan_out)
+			LayerLoading.mark("plan taken")
 			sky.restart(layer_entries())
+			LayerLoading.mark("sky restarted")
 			_stand_layer()
 	_card_due -= delta
 	if _card_due <= 0.0:

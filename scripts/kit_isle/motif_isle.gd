@@ -26,6 +26,7 @@ const TURF_LAYER := 1 << 11
 ## Its ruins' levels of detail, added on its worker once built.
 const RuinLod = preload("res://scripts/ruin_lod.gd")
 const LateShapes = preload("res://scripts/late_shapes.gd")
+const IsleStore = preload("res://scripts/roguelike/isle_store.gd")
 
 ## The scene, the motif, where it stands from its own frame.
 var study: Node3D
@@ -51,6 +52,11 @@ var _held: Array = []
 var _grounded := true
 ## What each stage cost (ms on the main thread; the art's on its worker).
 var timings := {}
+## Where its art came from: "built" (here, on a worker or the main thread)
+## or "store" (scripts/roguelike/isle_store.gd, loaded on a worker).
+var source := ""
+## A load's result while its worker runs ({root, ms}).
+var _loaded := {}
 ## Its circle before its turf is registered (x, z its middle, z its reach;
 ## scripts/kit_isle/motif_sky.gd `places`), INF for none.
 var guess := Vector3.INF
@@ -100,6 +106,9 @@ func _forget() -> void:
 	if _task >= 0:
 		WorkerThreadPool.wait_for_task_completion(_task)
 		_task = -1
+	var root: Variant = _loaded.get("root")
+	if root is Node and is_instance_valid(root) and (root as Node).get_parent() == null and root != _staging: (root as Node).free()
+	_loaded = {}
 	if _staging != null and is_instance_valid(_staging) and _staging.get_parent() == null:
 		_staging.free()
 	_staging = null
@@ -121,7 +130,34 @@ func isle_summit() -> Vector3:
 
 ## Its ground as the plants read it, in the world's frame.
 func flora_site() -> KitFlora.Site:
-	return placed_site(motif.flora_site(),offset)
+	var site := placed_site(motif.flora_site(),offset)
+	if looks_past_neighbours: site.looks_past = _neighbour
+	return site
+
+## Physics steps it waits once stood before its turf and plants, and when
+## it stood.
+const SETTLE_STEPS := 2
+var _stood_at := -1000
+
+## Whether its plants' rays look past the other motif isles, the Broken
+## Viaduct and anything that moves (when those stand or where they are
+## depends on how fast the layer loads; the plants should not), reading its
+## own ground and stone (whole: SETTLE_STEPS), the base and the stage.
+var looks_past_neighbours := false
+
+func _neighbour(collider: Object) -> bool:
+	var node := collider as Node
+	# Anything that moves (a ferry, a ride, a beast): where it is when the
+	# plants grow is a matter of time.
+	if node != null and node.get_class() != "StaticBody3D": return true
+	while node != null:
+		if node == self: return false
+		if node.get_script() == get_script(): return true
+		# The Broken Viaduct and what stands with it when it is done
+		# (scripts/roguelike/layer_hazards.gd `_finish_viaduct`).
+		if node.name in [&"BrokenViaduct",&"ViaductStones",&"ViaductUpdrafts"]: return true
+		node = node.get_parent()
+	return false
 
 ## A site in an isle's own frame as it reads standing `by` from it.
 static func placed_site(site: KitFlora.Site, by: Vector3) -> KitFlora.Site:
@@ -165,6 +201,7 @@ func stands() -> bool:
 func start_build() -> void:
 	if stage != "waiting": return
 	stage = "building"
+	source = "built"
 	_staging = Node3D.new()
 	_staging.name = "Staging"
 	var built: RefCounted = motif
@@ -173,6 +210,28 @@ func start_build() -> void:
 		built.build(into)
 		RuinLod.add(into)
 		LateShapes.defer(into),false,"Motif isle "+str(motif.id()))
+
+## Its art loaded from the isle store on a worker (scripts/roguelike/
+## isle_store.gd: as its build would leave it, levels and held shapes too);
+## if the file can't be read it goes back to "waiting", to be built.
+func start_load() -> void:
+	if stage != "waiting": return
+	stage = "building"
+	source = "store"
+	var built: RefCounted = motif
+	var path := IsleStore.path_of(motif)
+	var out := {}
+	_loaded = out
+	_task = WorkerThreadPool.add_task(func() -> void:
+		var began := Time.get_ticks_msec()
+		var root := IsleStore.load_art(built,path,out)
+		if root != null:
+			root.name = "Staging"
+			var t := Time.get_ticks_usec()
+			LateShapes.defer(root)
+			out.defer_us = Time.get_ticks_usec()-t
+		out.root = root
+		out.ms = Time.get_ticks_msec()-began,true,"Motif isle load "+str(motif.id()))
 
 ## Its art built here and now (no worker: tests, captures).
 func build_now() -> void:
@@ -187,8 +246,8 @@ func build_now() -> void:
 	elif stage == "building":
 		WorkerThreadPool.wait_for_task_completion(_task)
 		_task = -1
-		stage = "built"
-		timings.build = int(motif.built_ms)
+		_took()
+		if stage == "waiting": build_now()
 
 ## Whether its worker is busy.
 func building() -> bool:
@@ -196,9 +255,29 @@ func building() -> bool:
 	if not WorkerThreadPool.is_task_completed(_task): return true
 	WorkerThreadPool.wait_for_task_completion(_task)
 	_task = -1
-	stage = "built"
-	timings.build = int(motif.built_ms)
+	_took()
 	return false
+
+## Its worker's art taken: "built", or back to "waiting" if a load failed.
+func _took() -> void:
+	preload("res://scripts/roguelike/layer_loading.gd").mark("isle art in (%s): %s" % [source,str(motif.id())])
+	if source == "store":
+		var root: Variant = _loaded.get("root")
+		timings.load = int(_loaded.get("ms",0))
+		for k: String in _loaded:
+			if k.ends_with("_us"): us("load_"+k.trim_suffix("_us"),int(_loaded[k]))
+		_loaded = {}
+		if root == null:
+			push_warning("%s: its kept isle couldn't be read; built instead" % isle_name())
+			IsleStore.failed(motif)
+			source = "built"
+			stage = "waiting"
+			return
+		_staging = root
+		timings.build = 0
+		timings.forged = int(motif.built_ms)
+	else: timings.build = int(motif.built_ms)
+	stage = "built"
 
 ## Whether it has main-thread work left (its worker done; or, not
 ## `threaded`, its art to build).
@@ -218,6 +297,7 @@ func work(usec: int) -> String:
 			"built":
 				motif.set("art",art)
 				stage = "standing"
+				_work_began = Time.get_ticks_usec()
 			"standing":
 				var began := Time.get_ticks_usec()
 				# A part at a time: what the worker built, into the art at
@@ -226,55 +306,90 @@ func work(usec: int) -> String:
 				if _staging != null and _staging.get_child_count() > 0:
 					var part := _staging.get_child(0)
 					_staging.remove_child(part)
+					var t0 := Time.get_ticks_usec()
 					art.add_child(part)
+					us("stand_add",Time.get_ticks_usec()-t0)
+					t0 = Time.get_ticks_usec()
 					_held.append_array(LateShapes.held_bodies(part))
+					us("stand_held",Time.get_ticks_usec()-t0)
 				elif not _held.is_empty():
+					var t0 := Time.get_ticks_usec()
 					LateShapes.drain(_held,maxi(end-Time.get_ticks_usec(),0) if usec >= 0 else -1)
+					us("stand_drain",Time.get_ticks_usec()-t0)
 				if _staging != null and _staging.get_child_count() == 0 and _held.is_empty():
 					_staging.free()
 					_staging = null
 					stage = "turf"
+					_stood_at = Engine.get_physics_frames()
 				var spent := (Time.get_ticks_usec()-began)/1000
 				timings.stand = int(timings.get("stand",0))+spent
 				timings.stand_worst = maxi(int(timings.get("stand_worst",0)),spent)
 				if usec >= 0: return stage
+			"turf" when usec >= 0 and looks_past_neighbours and Engine.get_physics_frames() < _stood_at+SETTLE_STEPS:
+				# Its last shapes are in the physics space only after a step:
+				# its plants' rays wait for all of them.
+				return stage
 			"turf":
+				var t0 := Time.get_ticks_usec()
 				_register()
+				us("turf",Time.get_ticks_usec()-t0)
 				stage = "flora"
 			"flora" when _args.has("--no-flora"):
 				stage = "life"
 			"flora":
 				var began := Time.get_ticks_msec()
-				if _grow == null: _grow = KitFlora.Grow.new(int(motif.flora_seed()),get_world_3d().direct_space_state,_turf,_outlines,flora_site())
+				if _grow == null:
+					var tg := Time.get_ticks_usec()
+					_grow = KitFlora.Grow.new(int(motif.flora_seed()),get_world_3d().direct_space_state,_turf,_outlines,flora_site())
+					us("flora_new",Time.get_ticks_usec()-tg)
+				var t0 := Time.get_ticks_usec()
 				var done := _grow.step(maxi(end-Time.get_ticks_usec(),0) if usec >= 0 else -1)
+				us("flora_%d" % mini(_grow._phase,2),Time.get_ticks_usec()-t0)
 				timings.flora = int(timings.get("flora",0))+Time.get_ticks_msec()-began
 				if not done: return stage
 				flora = _grow.node
 				_grow = null
+				var ta := Time.get_ticks_usec()
 				add_child(flora)
+				us("flora_add",Time.get_ticks_usec()-ta)
 				stage = "life"
 				print("%s (placed): flora %s grown in %d ms" % [isle_name(),flora.get_meta("counts"),int(timings.flora)])
+				preload("res://scripts/roguelike/layer_loading.gd").mark("isle plants grown: "+str(motif.id()))
 				if usec >= 0 and Time.get_ticks_usec() > end: return stage
 			"life" when life == null and (_args.has("--no-life") or motif.life_script() == null):
 				stage = "up"
+				preload("res://scripts/roguelike/layer_loading.gd").mark("isle up: "+str(motif.id()))
 			"life":
 				var began := Time.get_ticks_msec()
 				if life == null:
 					life = motif.life_script().new()
 					life.offset = offset
 					life.shares_wind = true
+					var tb := Time.get_ticks_usec()
 					add_child(life)
 					life.begin(self,_args)
+					us("life_begin",Time.get_ticks_usec()-tb)
+				var t0 := Time.get_ticks_usec()
 				var done: bool = life.step(maxi(end-Time.get_ticks_usec(),0) if usec >= 0 else -1)
+				us("life",Time.get_ticks_usec()-t0)
 				timings.life = int(timings.get("life",0))+Time.get_ticks_msec()-began
 				if not done: return stage
 				_share_hud()
 				stage = "up"
+				us("wall_built_to_up",Time.get_ticks_usec()-_work_began)
+				preload("res://scripts/roguelike/layer_loading.gd").mark("isle up: "+str(motif.id()))
 				print("%s (placed): life in %d ms %s" % [isle_name(),int(timings.life),life.timings])
 			_:
 				return stage
 		if usec >= 0 and Time.get_ticks_usec() > end: return stage
 	return stage
+
+## Microseconds by step, for the trace.
+var usecs := {}
+var _work_began := 0
+
+func us(what: String, n: int) -> void:
+	usecs[what] = int(usecs.get(what,0))+n
 
 ## Its turf on the turf layer (skimmed, set down on, walked) and kept off
 ## the plane's stone query (the study's `_turf_rids`); its water for the
