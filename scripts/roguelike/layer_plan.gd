@@ -351,7 +351,25 @@ static func warm() -> void:
 ## Prints each step's cost (the bake and the test's).
 static var trace := false
 
+## One attempt; with `one_way` -1 and a greybox motif in the pool, a plan
+## that fails keeping to the motifs' ways is laid again ignoring them (the
+## same attempt, the same draw): taking every fit forwards can leave a
+## later motif nowhere to stand, and a layer with motifs backwards beats
+## none.
 static func _make(seed_value: int, attempt: int, knobs: Dictionary) -> Dictionary:
+	var plan := _make_once(seed_value,attempt,knobs)
+	if not ways_retry(plan): return plan
+	var loose := knobs.duplicate()
+	loose.one_way = 0
+	return _make_once(seed_value,attempt,loose)
+
+## Whether a failed plan is worth laying again with `one_way` 0.
+static func ways_retry(plan: Dictionary) -> bool:
+	if (plan.problems as Array).is_empty(): return false
+	if int((plan.knobs as Dictionary).get("one_way",-1)) != -1: return false
+	return draw_pool(plan.knobs).any(func(p: Array) -> bool: return Greybox.has(str(p[0])))
+
+static func _make_once(seed_value: int, attempt: int, knobs: Dictionary) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([seed_value,attempt,"layer"])
 	var k_all := KNOBS.duplicate()

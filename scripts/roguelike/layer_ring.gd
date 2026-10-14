@@ -148,7 +148,16 @@ static func core(seed_value: int, knobs := {}) -> Dictionary:
 	lock.unlock()
 	return plan
 
+## One attempt, laid again ignoring the greybox motifs' ways where keeping
+## to them failed (LayerPlan `_make`).
 static func _make(seed_value: int, attempt: int, knobs: Dictionary) -> Dictionary:
+	var plan := _make_once(seed_value,attempt,knobs)
+	if not LayerPlan.ways_retry(plan): return plan
+	var loose := knobs.duplicate()
+	loose.one_way = 0
+	return _make_once(seed_value,attempt,loose)
+
+static func _make_once(seed_value: int, attempt: int, knobs: Dictionary) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([seed_value,attempt,"ring"])
 	var k_all := LayerPlan.KNOBS.duplicate()
