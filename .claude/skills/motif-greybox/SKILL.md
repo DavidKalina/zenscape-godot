@@ -35,7 +35,13 @@ Output: one playable study per card in `studies/greybox/<slug>.tscn`.
    line) and launch only the hub, one window: `--path .
    res://studies/greybox/hub.tscn -- --no-title [--start=<slug>]`, Page
    Up/Down to switch. Never open one window per greybox.
-6. Leave everything uncommitted (AGENTS.md, Prototyping). Hand the user
+6. A greybox that moves into the generator (`scripts/kit_isle/greybox/
+   gb_<slug>.gd`, the header of `scripts/kit_isle/motif_greybox.gd`) has
+   its chains checked in the motif yard (`studies/motif_yard.tscn
+   --motif=<slug>`, a driver on `tools/harness/chain.gd`; tools/README.md
+   "The motif yard"), 10 trials each in seconds, then confirmed once in a
+   full layer (`--in=layer`) at the end.
+7. Leave everything uncommitted (AGENTS.md, Prototyping). Hand the user
    what to try first; they judge by playing. Remind them
    the grey look is a sketch: picks go on to the turf pass
    (`/motif-turf`).

@@ -55,10 +55,16 @@ extends "res://scripts/kit_isle/kit_motif.gd"
 ##    the stage's EnemyField), `g.cannons()`. Pass world points (w()).
 ##    Use the study's own trap classes (`load(STUDY).Updraft`) so they keep
 ##    their numbers.
-## 8. One line in scripts/kit_isle/greybox/registry.gd MOTIFS. Then check:
-##    run_layer with `--knob=greybox=<slug>` for a few sprawl and ring
-##    seeds, and the chains through the real tick in the layer (the doc has
-##    the throwaway harness).
+## 8. One line in scripts/kit_isle/greybox/registry.gd MOTIFS (and its grey
+##    flag in studies/motif_yard.gd GREY_FLAGS and tools/harness/chain.gd).
+##    Then check: the motif alone in the motif yard (`python tools/smoke.py
+##    studies/motif_yard.tscn -- --motif=<slug> [--grey]`), its chains
+##    there through the real input, 10 jittered trials each, grey and turf
+##    (a driver on tools/harness/chain.gd; tools/harness/examples/
+##    plumb_well_chain.gd is the one to copy; tools/README.md "The motif
+##    yard"); run_layer with `--knob=greybox=<slug>` for a few sprawl and
+##    ring seeds; and, last, each chain once in a full layer (the same
+##    driver with `--in=layer`) as the final confirmation.
 const COLOURS := {
 	"grey":Color(0.62,0.62,0.6),"floor":Color(0.64,0.64,0.62),"wall":Color(0.52,0.54,0.57),
 	"lip":Color(0.96,0.55,0.16),"pad":Color(0.44,0.74,0.4),"dark":Color(0.34,0.35,0.38),
