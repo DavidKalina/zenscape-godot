@@ -54,6 +54,10 @@ itself (headless_body_look.gd), so a clip's length is only its span:
   drop_land    once, LAND s: a fist driven into the ground, a knee down
   reach        once, SETTLE s: gathers, arms up for the head, guides it down
   triumph      once, TRIUMPH s: a crouch, arms flung up, the fists down
+  scope_lift   once, SCOPE_LIFT s (Olmec periscope round 1): his own head
+               lifted off the stump and heaved up overhead in both hands
+  scope_look   loop, SCOPE_LOOK s: held up there, straining a little
+  scope_lower  once, SCOPE_LOWER s: lowered carefully, seated, let go
 The phase-driven loops start on their first contact (walk and stride: the
 left foot down; climb: the left hand on the wall).
 
@@ -1497,6 +1501,117 @@ clip(Clip("feel", FEEL, [
     (1.0, {"np": 1.0, "hy": -0.14, "sq": 1.0, "aLp": 3.0, "eL": 20.0, "aLo": 8.0, "fL": 70.0}, ""),
 ]))
 
+# ------------------------------------------------------------------ the periscope (Olmec periscope round 1)
+## Whole, his sight broken, he lifts his own head off his shoulders and
+## holds it up overhead in both hands to see past the cover
+## (docs/design/roguelike/olmec-periscope-round1.md). The hands grip the
+## head's sides, the wrists SCOPE_GRIP over its chin, the palms flat on it
+## and the fingers up; the game carries the head between them (the wrists'
+## middle, SCOPE_GRIP down) from the grip (SCOPE_TAKE of the lift) till it
+## is seated again (SCOPE_SEAT of the lower), and turns the trunk and the
+## head on top of the look to where he is searching.
+##   scope_lift   once, SCOPE_LIFT s: hands up to the head, the grip, a pry
+##                with a tremble, the dip, the heave up overhead (a stretch,
+##                overshot), the weight of it settling him into the key pose
+##   scope_look   loop, SCOPE_LOOK s: the key pose held, the arms straining
+##                a little under it, a breath and a weight shift
+##   scope_lower  once, SCOPE_LOWER s: a small lift, then down slowly and
+##                carefully, the seat (a clunk, a squash), a pat, let go
+SCOPE_LIFT = 1.7
+SCOPE_LOOK = 3.0
+SCOPE_LOWER = 1.6
+SCOPE_HEAD_W = 2.6 * 1.12 * 1.04   # the head it wears (inhaler_head.gd: size 2.6, width 1.04 of it)
+SCOPE_X = SCOPE_HEAD_W * 0.5 + 0.28  # the wrist off the head's middle: the palm on its side
+SCOPE_GRIP = 0.3                     # the wrists over its chin
+SCOPE_UP = 9.1                       # the wrists held up (the key pose)
+SCOPE_FWD = 0.55
+SCOPE_TAKE = 0.42 / 1.7
+SCOPE_SEAT = 0.92 / 1.6
+
+
+def _grip(y, fwd=0.0, x=SCOPE_X, w=1.0, curl=12.0):
+    """Both wrists at the head's sides, `y` up, `fwd` forward; palms in,
+    fingers up."""
+    out = {}
+    for n, s in SIDES:
+        out.update({f"h{n}x": s * x, f"h{n}y": y, f"h{n}z": fwd, f"h{n}w": w,
+                    f"p{n}w": w, f"p{n}fx": 0.0, f"p{n}fy": 1.0, f"p{n}fz": 0.08,
+                    f"p{n}nx": -s * 1.0, f"p{n}ny": 0.0, f"p{n}nz": 0.0, f"f{n}": curl, f"t{n}": 24.0})
+    return out
+
+
+## The key pose: the head up in both hands over the empty stump, the arms
+## near straight, the elbows out, the chest arched a little back, the
+## weight sunk a hair under it.
+SCOPE_KEY = {"hy": -0.12, "sq": 0.985, "sp": 2.0, "cp": -4.0, "np": -4.0, "kLx": 0.22, "kRx": 0.22,
+             **_grip(SCOPE_UP, SCOPE_FWD)}
+
+
+def _scope_lift_extra(t, v):
+    # The pry: a shiver through the arms as the head cracks off the stump.
+    k = smooth01(0.42, 0.5, t) * (1 - smooth01(0.6, 0.68, t))
+    for n, s in SIDES:
+        v[f"h{n}y"] += tremble(t, 0.045 * k, 12.0, 1.0 + s)
+    v["hy"] += tremble(t, 0.02 * k, 9.0, 3.0)
+    # Held up there: the strain.
+    k2 = smooth01(1.15, 1.35, t)
+    for n, s in SIDES:
+        v[f"h{n}y"] += tremble(t, 0.02 * k2, 7.0, 2.0 + s)
+
+
+clip(Clip("scope_lift", SCOPE_LIFT, [
+    (0.0, {}, ""),
+    # The reach: both hands up to the head's sides, a little sink.
+    (0.3, {"hy": -0.2, "sq": 0.975, "sp": 7.0, "cp": 5.0, "np": 3.0, **_grip(SEAT + 0.15, 0.15, SCOPE_X + 0.22, 0.95, 8.0)}, ""),
+    # The grip: palms flat on it, the fingers closing, the shoulders hunched.
+    (0.42, {"hy": -0.24, "sp": 8.0, "cp": 8.0, "np": 2.0, **_grip(SEAT + SCOPE_GRIP, 0.0)}, "o"),
+    # The pry: it cracks off the stump (the game's tremble on top).
+    (0.6, {"hy": -0.2, "sp": 7.0, "cp": 6.0, **_grip(SEAT + SCOPE_GRIP + 0.14, 0.02, curl=22.0)}, ""),
+    # The dip: down with it, knees bent, coiled under the weight.
+    (0.8, {"hy": -0.66, "sq": 0.935, "sp": 12.0, "cp": 6.0, "np": 6.0, "kLx": 0.3, "kRx": 0.3,
+           **_grip(SEAT + SCOPE_GRIP + 0.14 - 0.6, 0.18, curl=22.0)}, "o"),
+    # The heave: up overhead, stretched tall, overshot.
+    (1.02, {"hy": 0.04, "sq": 1.06, "sp": -3.0, "cp": -8.0, "np": -8.0, "kLx": 0.22, "kRx": 0.22,
+            **_grip(SCOPE_UP + 0.28, SCOPE_FWD - 0.1)}, ""),
+    # Its weight comes down on him: he sinks into the key pose.
+    (1.24, {"hy": -0.22, "sq": 0.965, "sp": 3.0, "cp": -3.0, "np": -3.0, **_grip(SCOPE_UP - 0.18, SCOPE_FWD)}, ""),
+    (1.45, SCOPE_KEY, "o"),
+    (SCOPE_LIFT, SCOPE_KEY, "h"),
+], extra=_scope_lift_extra))
+
+
+def _scope_look_extra(t, v):
+    b = math.sin(t / SCOPE_LOOK * 6.283 - 0.6)
+    v["cp"] += -1.4 * b
+    v["hy"] += 0.03 * b
+    v["hx"] += 0.06 * math.sin(t / SCOPE_LOOK * 6.283 * 0.5)
+    for n, s in SIDES:
+        v[f"h{n}y"] += 0.04 * b + tremble(t, 0.018, 6.0, 1.5 + s)
+
+
+clip(Clip("scope_look", SCOPE_LOOK, [
+    (0.0, SCOPE_KEY, ""),
+    (SCOPE_LOOK * 0.5, {**SCOPE_KEY, "hy": -0.16, "sq": 0.98}, ""),
+], loop=True, extra=_scope_look_extra))
+
+SL_ = SCOPE_LOWER
+clip(Clip("scope_lower", SL_, [
+    (0.0, SCOPE_KEY, ""),
+    # A small lift first (the anticipation), then down, slow and careful.
+    (0.18, {**SCOPE_KEY, "hy": -0.04, "sq": 1.0, **_grip(SCOPE_UP + 0.16, SCOPE_FWD)}, ""),
+    (0.55, {"hy": -0.2, "sq": 0.98, "sp": 6.0, "cp": 4.0, "np": 2.0, **_grip(SEAT + SCOPE_GRIP + 0.9, 0.3)}, ""),
+    (0.8, {"hy": -0.28, "sq": 0.97, "sp": 8.0, "cp": 6.0, "np": 3.0, **_grip(SEAT + SCOPE_GRIP + 0.2, 0.06)}, "i"),
+    # The seat: a clunk, squashed under it, held.
+    (0.92, {"hy": -0.48, "sq": 0.93, "sp": 7.0, "cp": 4.0, "np": 1.0, **_grip(SEAT + SCOPE_GRIP - 0.04, 0.0, curl=22.0)}, "h"),
+    (1.06, {"hy": -0.42, "sq": 0.945, "np": 4.0, **_grip(SEAT + SCOPE_GRIP, 0.0, curl=20.0)}, "h"),
+    # Let go: the hands open and drop, a nod to settle it.
+    (1.24, {"hy": -0.2, "sq": 0.99, "sp": 6.0, "cp": 3.0, "np": -3.0,
+            **_grip(SEAT - 0.6, 0.3, SCOPE_X + 0.5, 0.45, 4.0)}, ""),
+    (1.42, {"hy": -0.1, "np": 2.0, "hLw": 0.0, "hRw": 0.0, "pLw": 0.0, "pRw": 0.0, "fL": 30.0, "fR": 30.0,
+            "aLo": 14.0, "aRo": 14.0, "eL": 22.0, "eR": 22.0}, ""),
+    (SL_, {"_base": 1}, ""),
+]))
+
 
 # ================================================================== keying
 rig.animation_data_create()
@@ -1621,6 +1736,15 @@ if RENDER:
         else:
             wall.location = (0, CLIMB_WALL + 4.0, (SHOULDER_Y + 2.3 if c.name != "climb" else 30.0) - 15.0)
         floor.hide_render = climbing
+        # The periscope: a stand-in for the head it wears, on the stump or
+        # held between the wrists (as the game carries it).
+        scoping = c.name.startswith("scope_")
+        if scoping and "ScopeHead" not in bpy.data.objects:
+            bpy.ops.mesh.primitive_cube_add(size=1)
+            hd = bpy.context.active_object
+            hd.name = "ScopeHead"
+            hd.scale = (SCOPE_HEAD_W, 2.6 * 1.12 * 0.84, 2.6 * 1.12)
+        if "ScopeHead" in bpy.data.objects: bpy.data.objects["ScopeHead"].hide_render = not scoping
         n = 8
         for i in range(n):
             f = round(frames * i / (n - 1)) if not c.loop else round(frames * i / n)
@@ -1634,7 +1758,20 @@ if RENDER:
                 rig.location = (0, 0, CLIMB_RISE * f / frames)
             if climbing:
                 look(F(-15, 6.0, -8), F(0, 5.0, 0.5))
+            elif scoping:
+                look(F(-12, 8.0, 17), F(0, 6.4, 0))
             else:
                 look(F(-10, 6.0, 12), F(0, 4.3, 0))
+            if scoping:
+                bpy.context.view_layer.update()
+                pbs = rig.pose.bones
+                u = f / max(frames, 1)
+                held = (c.name == "scope_lift" and u >= SCOPE_TAKE) or c.name == "scope_look" or \
+                    (c.name == "scope_lower" and u < SCOPE_SEAT)
+                if held:
+                    chin = (pbs["hand.L"].head + pbs["hand.R"].head) * 0.5 - V((0, 0, SCOPE_GRIP * pbs["root"].scale[2]))
+                else:
+                    chin = pbs["neck"].matrix @ V((0, SEAT - NECK, 0))
+                bpy.data.objects["ScopeHead"].location = rig.matrix_world @ chin + V((0, 0, 2.6 * 1.12 * 0.5))
             shot(out / f"{c.name}_{i:02d}.png")
         print("BODY_RENDERED", c.name)

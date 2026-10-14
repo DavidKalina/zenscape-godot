@@ -275,6 +275,16 @@ func default_knobs(n: Dictionary) -> Dictionary:
 		# feet, by a press-up). 0: round 3's haul up the face till the lip
 		# is at its chest, then the press-up.
 		"mantle_pull":1,
+		# The periscope (olmec-periscope-round1.md): 1 on (whole, with
+		# `chase` on: always, the generator included), 0 off. Its sight lost, it lifts its head
+		# overhead (`scope_lift` s), turns it `scope_sweep` rad either way
+		# about where it lost him over `scope_look` s, and lowers it
+		# (`scope_lower` s); seen `scope_spot` s from up there, he's found
+		# (and drawn in, in reach). Once a loss, `scope_rest` s apart; lost
+		# `scope_wait` s within `scope_near` Hh of where it last saw him it
+		# plants at once. It leans `scope_lean` rad out over low cover.
+		"periscope":1,"scope_lift":1.7,"scope_look":5.0,"scope_lower":1.6,"scope_sweep":1.0,"scope_wide":1.5,"scope_spot":0.35,
+		"scope_rest":8.0,"scope_near":1.6,"scope_wait":1.0,"scope_lean":0.38,
 	}
 
 ## Its build (m) from its knobs `k` and the walker's `unit`, as `_size` and
@@ -351,6 +361,7 @@ func tint(colour: Color) -> void:
 ## Where the head's chin sits now: on the neck, or on its way there.
 func head_seat() -> Vector3:
 	var seat := look.seat().origin
+	if state == "scope" and _held_w > 0.0: return seat.lerp(_held_at,_held_w)
 	if _seat_k >= 1.0: return seat
 	var k := smoothstep(0.0,1.0,_seat_k)
 	var p := _seat_from.lerp(seat,k)
@@ -358,11 +369,15 @@ func head_seat() -> Vector3:
 	return p
 
 func head_facing() -> float:
+	if state == "scope" and _held_w > 0.0: return lerp_angle(facing,_held_yaw,_held_w)
 	return facing
 
 ## The stump's turn off its facing (the head's skin takes it as Euler).
 func head_tilt() -> Vector3:
-	return (Basis(Vector3.UP,facing).inverse()*look.seat().basis.orthonormalized()).get_euler()
+	var tilt := (Basis(Vector3.UP,facing).inverse()*look.seat().basis.orthonormalized()).get_euler()
+	# Held up: upright, its face tipped down a little as he leans out.
+	if state == "scope" and _held_w > 0.0: return tilt.lerp(Vector3(-_peer*0.6,0.0,0.0),_held_w)
+	return tilt
 
 # --- A frame -------------------------------------------------------------------------------
 
@@ -401,6 +416,7 @@ func think(delta: float) -> void:
 			_brake(delta)
 			if state_t >= float(knobs.spent): _go(_resume())
 		"feel": _feel(delta)
+		"scope": _scope(delta)
 	_animate(delta)
 
 func _go(to: String) -> void:
@@ -1553,6 +1569,8 @@ func _see(delta: float) -> void:
 		sight.tune(knobs)
 	var m: PilotMotor = field.motor
 	sight.mask = field.study.ground.mask
+	# Held up, it looks down and about more widely (`scope_wide` times its cone).
+	sight.half = float(knobs.sight_half)*(float(knobs.scope_wide) if state == "scope" and _held_w > 0.5 else 1.0)
 	sight.exclude = _skip()
 	if m.seized():
 		# In its mouth: held, not looked for.
@@ -1560,10 +1578,11 @@ func _see(delta: float) -> void:
 		seen_at = m.feet
 		seen_t = 0.0
 		return
-	sight.update(delta,field.study.get_world_3d().direct_space_state,_eye(),_forward3(),Sight.pilot_points(m.feet,false),not m.grounded)
+	sight.update(delta,field.study.get_world_3d().direct_space_state,_eye(),_look_way(),Sight.pilot_points(m.feet,false),not m.grounded)
 	if sight.seeing():
 		seen_at = m.feet
 		seen_t = 0.0
+		if state != "scope": _scoped = false
 	else: seen_t += delta
 	if sight.state == "spotted" and sight.seeing() and (state in ["listen","roam","alert","seek","return"] or (not hunting and state == "triumph")):
 		_spot()
@@ -1596,7 +1615,10 @@ func doing() -> String:
 	var d := Vector2(m.feet.x-position.x,m.feet.z-position.z).length()
 	var line := "%s %.1fs · %.1f m/s\nyou %.1f m (%.1f Hh) off, %+.1f m up" % [state,state_t,Vector2(vel.x,vel.z).length(),d,d/hh,m.feet.y-position.y]
 	if not _chases(): return line
-	line += "\nswat ≤%.1f m · pounce %.1f-%.1f m %s\nsuck %.1f-%.1f m %s" % [float(knobs.catch_reach)*hh,float(knobs.pounce_min)*hh,float(knobs.pounce_max)*hh,
+	if _scopes() or state == "scope":
+		line += "\nperiscope %s · %d up, %d found%s" % [scope_phase if state == "scope" else "-",scopes,scope_finds,
+			"" if _clock >= _scope_ready else " · resting %.1fs" % (_scope_ready-_clock)]
+	line +="\nswat ≤%.1f m · pounce %.1f-%.1f m %s\nsuck %.1f-%.1f m %s" % [float(knobs.catch_reach)*hh,float(knobs.pounce_min)*hh,float(knobs.pounce_max)*hh,
 		_ready_text(_pounce_ready),float(knobs.suck_min)*hh,float(knobs.suck_max)*hh,_ready_text(_suck_ready)]
 	return line
 
@@ -1614,8 +1636,11 @@ func _chase(delta: float) -> void:
 	var flat := Vector2(to.x,to.z).length()
 	if not seeing:
 		if flat <= float(knobs.search_reach) or seen_t > float(knobs.chase_memory):
+			if _scope_try("seek"): return
 			_seek_start()
 			return
+		# Lost him near where it saw him last: it plants and looks over.
+		if seen_t > float(knobs.scope_wait) and flat <= float(knobs.scope_near)*hh and _scope_try("chase"): return
 	elif _attack(m,flat,to.y): return
 	# Right under him, him up out of its reach: a moment, then it looks
 	# about (round 2: it paced under him for good).
@@ -1714,6 +1739,8 @@ func _pursue(delta: float, goal: Vector3, speed: float) -> void:
 func _hunt_wall(hit: Dictionary, goal: Vector3) -> void:
 	vel.x = 0.0
 	vel.z = 0.0
+	# Cover in the way to where it lost him: it looks over it first.
+	if state == "chase" and not sight.seeing() and _scope_try("chase"): return
 	var top := _climbable(hit)
 	if top != INF and goal.y > position.y+float(knobs.step)*2.0:
 		_start_climb(hit)
@@ -1849,13 +1876,19 @@ func worn_draw() -> float:
 	match state:
 		"plant": return clampf(state_t/float(knobs.suck_tell),0.01,0.99)
 		"suck","gulp": return 1.0
+		"scope": return _scope_draw()
 	return 0.0
 
 ## Whether he is drawn in to its feet (its head swallows him there): in
 ## front of it within `suck_gulp` m of its front, no higher than its neck.
 func worn_gulp(feet: Vector3) -> bool:
-	if state != "suck": return false
+	var scoped := state == "scope" and scope_phase == "suck"
+	if state != "suck" and not scoped: return false
 	var local := Basis(Vector3.UP,facing).inverse()*(feet-position)
+	# Drawn in under its raised head: at its front, anywhere up to the head.
+	if scoped:
+		return local.z < 0.0 and local.z > -(length*0.5+float(knobs.suck_gulp)) and absf(local.x) < width*0.5+float(knobs.suck_gulp) \
+			and feet.y < _held_at.y+float(head.height) and feet.y > position.y-1.0
 	return local.z < 0.0 and local.z > -(length*0.5+float(knobs.suck_gulp)) and absf(local.x) < width*0.5+float(knobs.suck_gulp)*0.5 \
 		and feet.y < position.y+neck_h and feet.y > position.y-1.0
 
@@ -1890,6 +1923,310 @@ func _catch(m: PilotMotor, how: String) -> void:
 	quake = maxf(quake,0.45)
 	chase_beat.emit("caught "+how)
 
+
+# --- The periscope (olmec-periscope-round1.md) ----------------------------------------------------
+# Whole, hunting, with `periscope` on: his sight broken behind cover, he
+# plants, lifts his own head off his shoulders and holds it up overhead in
+# both hands (the clips scope_lift, scope_look, scope_lower), turns it slowly
+# about where he lost you, and holds; his sight is cast from it up there, so
+# low cover no longer hides you (tall cover and an overhang still do). Seen,
+# his head draws you in from up there (the worn suck); not, he lowers it,
+# puts it back and searches on. He doesn't walk while it is up.
+
+## The clips' beats (the build's SCOPE_TAKE, SCOPE_SEAT): the head leaves the
+## stump at this share of the lift, is seated at this share of the lower.
+const SCOPE_TAKE := 0.42/1.7
+const SCOPE_SEAT := 0.92/1.6
+## The wrists over the held head's chin (model m), its palm off its side.
+const SCOPE_GRIP := 0.3
+const SCOPE_PALM := 0.28
+## The most the trunk twists toward where it looks (rad), and how much more
+## the head turns in his hands.
+const SCOPE_TWIST := 0.9
+const SCOPE_HEAD_TURN := 0.3
+var scopes := 0
+var scope_finds := 0
+## Its beat up there: "lift", "look", "draw", "suck", "gulp", "lower".
+var scope_phase := ""
+var _scope_t := 0.0
+var _scope_ready := 0.0
+## Scoped since it last saw him (once a loss).
+var _scoped := false
+var _scope_then := ""
+var _scope_found := false
+var _scope_saw := 0.0
+## Where it searches about (world yaw), where it looks now, the trunk's
+## twist toward it, the lean out over what is in front.
+var _scope_base := 0.0
+var _look_yaw := 0.0
+var _twist := 0.0
+var _peer := 0.0
+var _peer_cap := INF
+## The held head's chin (global) and its yaw; how much it is held (0 on the
+## stump, 1 in his hands) and how much the hands are on it.
+var _held_at := Vector3.ZERO
+var _held_yaw := 0.0
+var _held_w := 0.0
+var _grip_w := 0.0
+var _head_box := BoxShape3D.new()
+var _head_q := PhysicsShapeQueryParameters3D.new()
+var head_bumps := 0
+## Stepping up to low cover first: it stands its front this far off the
+## face (m), steps at most this far (m) and this long (s).
+const SCOPE_STANDOFF := 0.45
+const SCOPE_STEP_MOST := 5.0
+const SCOPE_STEP_FOR := 3.0
+var _scope_face := INF
+
+func _scopes() -> bool:
+	return _chases() and float(knobs.periscope) >= 0.5 and head != null and is_instance_valid(head) and head.perch == self
+
+## Lost him: up goes the head, if it may (once a loss, rested).
+func _scope_try(then: String) -> bool:
+	if not _scopes() or _scoped or _clock < _scope_ready or field.motor.seized(): return false
+	scopes += 1
+	_scoped = true
+	_scope_then = then
+	_scope_found = false
+	_scope_saw = 0.0
+	vel.x = 0.0
+	vel.z = 0.0
+	var to := Vector2(seen_at.x-position.x,seen_at.z-position.z) if seen_at != Vector3.INF else Vector2.ZERO
+	_scope_base = PilotMotor.facing_of(to.normalized()) if to.length() > 0.5 else facing
+	_look_yaw = _scope_base
+	_twist = 0.0
+	_peer = 0.0
+	_peer_cap = INF
+	_go("scope")
+	# Low cover a little way ahead (under its head held up): it steps up to
+	# it first, so the head goes up over it.
+	# The nearest low cover about the way it lost him: it squares up to it.
+	var best := {}
+	for a: float in [0.0,0.4,-0.4,0.8,-0.8]:
+		var hit := _cover_hit(_way3(wrapf(_scope_base+a,-PI,PI)))
+		if not hit.is_empty() and (best.is_empty() or float(hit.d) < float(best.d)): best = hit
+	_scope_face = INF
+	if not best.is_empty():
+		var n: Vector3 = best.n
+		_scope_base = PilotMotor.facing_of(Vector2(-n.x,-n.z).normalized())
+		_look_yaw = _scope_base
+		_scope_face = _cover_ahead(_way3(_scope_base))
+	if (_scope_face != INF and _scope_face > length*0.5+SCOPE_STANDOFF+0.3) or absf(angle_difference(facing,_scope_base)) > 0.3 \
+			or Vector2(vel.x,vel.z).length() > 0.4: _scope_go("step")
+	else:
+		_scope_go("lift")
+		field.sound(&"body_windup",position)
+	chase_beat.emit("scope")
+	return true
+
+## Low cover along `dir` within reach: how far its face is from its middle
+## (m), INF none (or none it could see over held up).
+func _cover_ahead(dir: Vector3) -> float:
+	var hit := _cover_hit(dir)
+	return INF if hit.is_empty() else float(hit.d)
+
+## The same: {d, n (the face's normal, flat)}, {} none.
+func _cover_hit(dir: Vector3) -> Dictionary:
+	var reach := length*0.5+SCOPE_STEP_MOST
+	var from := position+Vector3.UP*(float(knobs.step)*STAIR+0.4)
+	var low := _cast(from,from+dir*reach)
+	if low.is_empty() or absf((low.normal as Vector3).y) > 0.5: return {}
+	var d := ((low.position as Vector3)-position).dot(dir)
+	# Over the top of it, at the height of its eyes held up: clear, it's low.
+	var high := position+Vector3.UP*(neck_h+hh*0.75)
+	if not _cast(high,high+dir*(d+1.0)).is_empty(): return {}
+	var n := low.normal as Vector3
+	return {"d":d,"n":Vector3(n.x,0.0,n.z).normalized()}
+
+func _scope_go(phase: String) -> void:
+	scope_phase = phase
+	_scope_t = 0.0
+	_fade = 0.15
+
+## How far into the look's sweep (a share of `scope_sweep` either way): a
+## hold, slowly one way, a hold, the other, a hold, back.
+static func _sweep(u: float) -> float:
+	var keys := [[0.0,0.0],[0.1,0.0],[0.34,1.0],[0.46,1.0],[0.76,-1.0],[0.88,-1.0],[1.0,0.0]]
+	for i in range(1,keys.size()):
+		if u <= float(keys[i][0]):
+			var a: Array = keys[i-1]
+			var b: Array = keys[i]
+			return lerpf(float(a[1]),float(b[1]),smoothstep(float(a[0]),float(b[0]),u))
+	return 0.0
+
+func _scope(delta: float) -> void:
+	_scope_t += delta
+	if scope_phase != "step": _brake(delta)
+	var m: PilotMotor = field.motor
+	var to_him := Vector2(m.feet.x-position.x,m.feet.z-position.z)
+	match scope_phase:
+		"step":
+			var dir := _way3(_scope_base)
+			var off := angle_difference(facing,_scope_base)
+			var turn := float(knobs.turn)*delta
+			facing = wrapf(facing+clampf(off,-turn,turn),-PI,PI)
+			var left := _cover_ahead(dir)-(length*0.5+SCOPE_STANDOFF)
+			if left <= 0.05 or left == INF or _scope_t > SCOPE_STEP_FOR:
+				_brake(delta)
+				# Squared up to where it will look (its turn's steps done)
+				# before the head comes off: no step turns with it up.
+				var square := (absf(off) < 0.3 and not look.steps.busy() and look.turn_weight() < 0.05) or _scope_t > SCOPE_STEP_FOR+2.0
+				if Vector2(vel.x,vel.z).length() < 0.4 and square:
+					vel.x = 0.0
+					vel.z = 0.0
+					_scope_go("lift")
+					field.sound(&"body_windup",position)
+				return
+			var aligned := clampf(cos(off),0.0,1.0)
+			var want := Vector2(dir.x,dir.z)*minf(float(knobs.walk),left*1.5+0.3)*aligned*aligned
+			var flat := Vector2(vel.x,vel.z).move_toward(want,float(knobs.accel)*delta)
+			vel.x = flat.x
+			vel.z = flat.y
+			return
+		"lift","look":
+			var lift_s := float(knobs.scope_lift)
+			if scope_phase == "look":
+				_look_yaw = wrapf(_scope_base+_sweep(_scope_t/float(knobs.scope_look))*float(knobs.scope_sweep),-PI,PI)
+			# Up (or nearly), it looks: seen a moment, he's found.
+			var up := scope_phase == "look" or _scope_t > lift_s*0.8
+			if up and sight.seeing() and not m.seized(): _scope_saw += delta
+			else: _scope_saw = maxf(0.0,_scope_saw-delta*0.5)
+			if _scope_saw >= float(knobs.scope_spot):
+				scope_finds += 1
+				_scope_found = true
+				hunting = true
+				seen_at = m.feet
+				sight.awareness = 1.0
+				field.sound(&"head_call",_eye())
+				chase_beat.emit("scope saw")
+				# In its draw's reach with nothing between (it turns its mouth
+				# to him as its jaw opens): it draws him in from up there.
+				var chest: Vector3 = head._chest(m)
+				if head.has_method("worn_reaches") and (head.worn_reaches(m) or \
+						(head.mouth().distance_to(chest) < float(head.knobs.worn_reach)*0.8 and head._clear(head.mouth(),chest))):
+					sucks += 1
+					_suck_unseen = 0.0
+					field.sound(&"head_inhale",head.mouth())
+					chase_beat.emit("suck")
+					_scope_go("draw")
+				else: _scope_go("lower")
+				return
+			if scope_phase == "lift" and _scope_t >= lift_s: _scope_go("look")
+			elif scope_phase == "look" and _scope_t >= float(knobs.scope_look):
+				chase_beat.emit("scope none")
+				_scope_go("lower")
+		"draw","suck","gulp":
+			if to_him.length() > 0.1 and scope_phase != "gulp": _look_yaw = PilotMotor.facing_of(to_him.normalized())
+			if head.swallowed:
+				if scope_phase != "gulp":
+					gulps += 1
+					_scope_go("gulp")
+					chase_beat.emit("gulped")
+				return
+			if scope_phase == "gulp":
+				chase_beat.emit("blown out")
+				_suck_ready = _clock+float(knobs.suck_rest)
+				_scope_go("lower")
+				return
+			_suck_unseen = 0.0 if sight.seeing() else _suck_unseen+delta
+			if scope_phase == "draw" and _scope_t >= float(knobs.suck_tell): _scope_go("suck")
+			elif scope_phase == "suck" and (_scope_t >= float(knobs.suck_for) or _suck_unseen > float(knobs.suck_lose)):
+				_suck_ready = _clock+float(knobs.suck_rest)
+				_scope_go("lower")
+		"lower":
+			if _scope_t >= float(knobs.scope_lower):
+				_scope_ready = _clock+float(knobs.scope_rest)
+				scope_phase = ""
+				quake = maxf(quake,0.1)
+				if _scope_found or _scope_then == "chase":
+					hunting = true
+					_go("chase")
+				else: _seek_start()
+		_:
+			_go(_resume())
+
+## Its draw from up there, as `worn_draw` asks.
+func _scope_draw() -> float:
+	match scope_phase:
+		"draw": return clampf(_scope_t/float(knobs.suck_tell),0.01,0.99)
+		"suck","gulp": return 1.0
+	return 0.0
+
+## The share of the clip it is in (0 to 1).
+func _scope_u() -> float:
+	match scope_phase:
+		"lift": return clampf(_scope_t/float(knobs.scope_lift),0.0,1.0)
+		"lower": return clampf(_scope_t/float(knobs.scope_lower),0.0,1.0)
+	return 1.0
+
+## After the clips: the trunk turned toward where it looks and leaned out
+## over what is in front; then the head carried between the wrists.
+func _scope_pose(delta: float) -> void:
+	var u := _scope_u()
+	match scope_phase:
+		"step":
+			_held_w = 0.0
+			_grip_w = 0.0
+			return
+		"lift":
+			_held_w = smoothstep(SCOPE_TAKE-0.03,SCOPE_TAKE+0.02,u)
+			_grip_w = smoothstep(0.08,SCOPE_TAKE,u)
+		"lower":
+			_held_w = 1.0-smoothstep(SCOPE_SEAT-0.04,SCOPE_SEAT+0.01,u)
+			_grip_w = 1.0-smoothstep(0.66,0.76,u)
+		_:
+			_held_w = 1.0
+			_grip_w = 1.0
+	# The turn: slow and deliberate; the trunk takes what it can.
+	var off := angle_difference(facing,_look_yaw)
+	var up_k := _held_w if scope_phase != "lower" else 1.0-smoothstep(0.1,0.5,u)
+	var want_twist := clampf(off,-SCOPE_TWIST,SCOPE_TWIST)*up_k
+	var rate := 1.4 if scope_phase in ["draw","suck","gulp"] else 0.9
+	_twist = move_toward(_twist,want_twist,rate*delta)
+	# The lean: out over low cover; back, looking up at a ledge over him;
+	# never into what is there (the cap, once it bumps).
+	var want_peer := 0.0
+	if scope_phase in ["look","draw","suck","gulp"]:
+		var ledge := seen_at != Vector3.INF and seen_at.y > position.y+neck_h*0.9
+		want_peer = -0.12 if ledge else float(knobs.scope_lean)
+	want_peer = minf(want_peer,_peer_cap)
+	_peer = move_toward(_peer,want_peer,(1.5 if _peer > want_peer else 0.3)*delta)
+	look.twist("hips",_twist*0.15)
+	look.twist("spine",_twist*0.35)
+	look.twist("chest",_twist*0.5)
+	look.pitch("spine",_peer*0.55)
+	look.pitch("chest",_peer*0.45)
+	# The head between the wrists, upright, turned a little past the trunk.
+	var mid := (look.wrist("L")+look.wrist("R"))*0.5
+	_held_at = mid-Vector3.UP*SCOPE_GRIP*look.k
+	_held_yaw = wrapf(facing+_twist*(1.0+SCOPE_HEAD_TURN/SCOPE_TWIST),-PI,PI)
+	# Bumped (the held head in a wall or a ledge's face): it leans less.
+	if _held_w > 0.9 and head != null and is_instance_valid(head):
+		_head_box.size = Vector3(float(head.width),float(head.height),float(head.length))*0.92
+		_head_q.shape = _head_box
+		_head_q.transform = Transform3D(Basis(Vector3.UP,_held_yaw),_held_at+Vector3.UP*float(head.height)*0.5)
+		_head_q.collision_mask = field.study.ground.mask
+		_head_q.exclude = _skip()
+		var space: PhysicsDirectSpaceState3D = field.study.get_world_3d().direct_space_state
+		if not space.intersect_shape(_head_q,1).is_empty():
+			head_bumps += 1
+			_peer_cap = maxf(-0.25,minf(_peer_cap,_peer-0.1))
+
+## The hands on the head's sides (where it is now), palms flat on it.
+func _scope_hands() -> void:
+	if _grip_w <= 0.0 or head == null or not is_instance_valid(head): return
+	var chin := head_seat()
+	var yaw := head_facing()
+	var right := Basis(Vector3.UP,yaw)*Vector3.RIGHT
+	var off := float(head.width)*0.5+SCOPE_PALM*look.k
+	for side in ["L","R"]:
+		var s := -1.0 if side == "L" else 1.0
+		look.reach(side,chin+Vector3.UP*SCOPE_GRIP*look.k+right*s*off,_grip_w,Vector3.UP,-right*s)
+
+## Where its sight looks (flat): the held head's way, else its own.
+func _look_way() -> Vector3:
+	if state == "scope" and _held_w > 0.5: return _way3(head_facing())
+	return _forward3()
 
 # --- Leap up and grab (whole-body-leap-grab-round2.md) -------------------------------------------
 # Whole, with the chase and `leap_grab` on: where its goal (him, where it
@@ -2385,7 +2722,7 @@ func _tuck(delta: float) -> void:
 
 ## The cross-fade into each state (s); others take FADE.
 const FADE := 0.22
-const FADES := {"land":0.05,"leap":0.08,"fall":0.15,"mantle":0.12,"windup":0.1,"triumph":0.08,"reach":0.3,"swat":0.08,"plant":0.15,
+const FADES := {"scope":0.12,"land":0.05,"leap":0.08,"fall":0.15,"mantle":0.12,"windup":0.1,"triumph":0.08,"reach":0.3,"swat":0.08,"plant":0.15,
 	"grab_windup":0.12,"grab_leap":0.06,"hang":0.05}
 ## The slap of the hands onto a lip: up and over (s), then down on it.
 const GRAB := 0.32
@@ -2467,6 +2804,15 @@ func _animate(delta: float) -> void:
 			look.want("idle",idle)
 		"plant": look.want("windup",clampf(state_t/float(knobs.suck_tell),0.0,1.0)*float(look.lengths.windup)*BRACE)
 		"suck","gulp": look.want("windup",float(look.lengths.windup)*BRACE)
+		"scope":
+			match scope_phase:
+				"step":
+					var mv := clampf(Vector2(vel.x,vel.z).length()/maxf(float(knobs.walk)*0.5,0.1),0.0,1.0)
+					look.want("walk",look.loop_time("walk",_phase,2.0),mv)
+					look.want("idle",idle,1.0-mv)
+				"lift": look.want("scope_lift",_scope_u()*float(look.lengths.scope_lift))
+				"lower": look.want("scope_lower",_scope_u()*float(look.lengths.scope_lower))
+				_: look.want("scope_look",fposmod(_clock,float(look.lengths.scope_look)))
 		"swat":
 			# The triumph's arms up, then its fists down at the hit.
 			var whole_t := float(look.lengths.triumph)
@@ -2490,6 +2836,8 @@ func _animate(delta: float) -> void:
 	poses += 1
 	look.advance(delta,0.0 if _snap else _fade)
 	_snap = false
+	if state == "scope": _scope_pose(delta)
+	else: _held_w = 0.0
 	look.plant_feet(delta)
 	_hands(delta)
 
@@ -2502,6 +2850,11 @@ func _turn_goal() -> float:
 	match state:
 		"chase","return","roam","home": return _heading
 		"listen": return _heading if _picked else facing
+		"scope":
+			# Squaring up first; with the head off, its trunk turns, not its feet
+			# (a turn step would swing its arms off the head).
+			if scope_phase == "step": return _scope_base
+			return facing
 		"alert":
 			if seen_at != Vector3.INF:
 				var to := Vector2(seen_at.x-position.x,seen_at.z-position.z)
@@ -2513,6 +2866,7 @@ func _turn_goal() -> float:
 func _steps_mode() -> int:
 	match state:
 		"listen","reach","triumph","feel","alert": return Look.Steps.STAND
+		"scope": return Look.Steps.WALK if scope_phase == "step" and Vector2(vel.x,vel.z).length() > 0.15 else Look.Steps.STAND
 		"roam","home","chase","return","seek": return Look.Steps.WALK if Vector2(vel.x,vel.z).length() > 0.15 else Look.Steps.STAND
 	return Look.Steps.OFF
 
@@ -2529,8 +2883,9 @@ func _hands(delta: float) -> void:
 	var fwd := _forward3()
 	var right := _right3()
 	var k := look.k
-	if state not in BULK_FREE: _tuck(delta)
+	if state not in BULK_FREE and state != "scope": _tuck(delta)
 	match state:
+		"scope": _scope_hands()
 		"climb","hang":
 			if not _hauling():
 				var face := position+fwd*(length*0.5+float(knobs.standoff))

@@ -19,7 +19,15 @@ extends "res://studies/character_study.gd"
 ##                 it leaps after you;
 ##   north shelf   across the same gap, NORTH_DROP m lower: it leaps down
 ##                 after you; a ramp back up its east end.
+##   cover yard   south of your start (Olmec periscope round 1,
+##                docs/design/roguelike/olmec-periscope-round1.md): what
+##                hides you once it lifts its head overhead to look: a low
+##                wall (under its eyes: hides you from its eyes on its neck,
+##                not from its head held up), a tall wall, a ledge over it
+##                (a ramp up its west side) and an arch whose lintel hangs
+##                over you.
 ## You start behind the long wall, out of its sight; it stands north of it.
+## Its periscope is on here (`--body-knob=periscope=0` turns it off).
 ##   B   the body back where it started, whole, unaware of you
 ##   , . the head smaller, bigger (its `size`, 0.1 a press; the body back
 ##       where it started)
@@ -67,6 +75,22 @@ const RAMPS := [
 ## the north shelf's drop (m).
 const WALKER_GAP := 2.5
 const NORTH_DROP := 2.5
+## The cover yard (Olmec periscope round 1): [name, rect, bottom, top]. The
+## low wall is under its eyes on its neck (about 9.6 m), the tall wall over
+## its head held up (about 12-13 m); the ledge's top is over its eyes on its
+## neck, under them held up; the arch's lintel hangs over the walker (its
+## underside YARD_ARCH_UNDER m) between two side walls.
+const YARD_ARCH_UNDER := 2.6
+const YARD := [
+	["low wall",Rect2(-10.0,32.0,14.0,1.2),0.0,5.5,"lip"],
+	["tall wall",Rect2(8.0,32.0,12.0,1.2),0.0,14.0,"wall"],
+	["ledge over it",Rect2(-49.0,32.0,17.0,14.0),0.0,9.0,"grey"],
+	["arch",Rect2(-26.0,36.0,2.0,8.0),0.0,4.0,"wall"],
+	["",Rect2(-16.0,36.0,2.0,8.0),0.0,4.0,"wall"],
+	["",Rect2(-26.0,36.0,12.0,8.0),YARD_ARCH_UNDER,4.0,"wall"],
+]
+## The walker's ramp up the ledge (along its west side, from the north).
+const YARD_RAMP := [Vector3(-47.5,0.0,8.0),Vector3(-47.5,9.0,32.0),3.0]
 ## Where the body stands, where you start.
 const BODY_AT := Vector3(-8.0,0.0,-22.0)
 const PILOT_AT := Vector3(0.0,0.0,22.0)
@@ -129,6 +153,12 @@ func _load_pack() -> void:
 		parts.append(["box",r,0.0,top,"lip" if i == 0 else "grey"])
 		parts.append(["label",Vector3(r.get_center().x,top+0.8,r.get_center().y),"%s · %.1f m" % [l[0],top]])
 	for ramp: Array in RAMPS: parts.append(["ramp",ramp[0],ramp[1],ramp[2],"lane"])
+	for y: Array in YARD:
+		var r: Rect2 = y[1]
+		parts.append(["box",r,float(y[2]),float(y[3]),y[4]])
+		if y[0] != "": parts.append(["label",Vector3(r.get_center().x,float(y[3])+0.8,r.get_center().y),"%s · %.1f m" % [y[0],float(y[3])]])
+	parts.append(["label",Vector3(-20.0,0.8,40.0),"under the arch · %.1f m" % YARD_ARCH_UNDER])
+	parts.append(["ramp",YARD_RAMP[0],YARD_RAMP[1],YARD_RAMP[2],"lane"])
 	# West, level across the gap; north, lower across it, a ramp back up.
 	var west := Rect2(FLOOR.position.x-gap-24.0,-18.0,24.0,36.0)
 	parts.append(["box",west,UNDER,0.0,"pad"])
@@ -165,7 +195,7 @@ func _build_room() -> void:
 
 ## The body's knobs this study sets (over the chase's own; the flags over these).
 func _study_body_knobs() -> Dictionary:
-	return {}
+	return {"periscope":1}
 
 ## The head on the body's neck, the overlay on the body, its beats heard.
 func _wire() -> void:
@@ -205,7 +235,8 @@ func reset_body() -> void:
 func _beat(what: String) -> void:
 	var said: String = {"spotted":"It sees you!","lost":"It lost you: it looks where it last saw you","gave up":"It gives up, and goes back",
 		"pounce":"It crouches to pounce!","suck":"It plants and opens its jaw: it will suck you in!","gulped":"Swallowed!","blown out":"Blown out!",
-		"swat":"It raises its fists!","caught swat":"Caught: swatted down","caught pounce":"Caught: pounced on","missed":"It missed"}.get(what,what)
+		"swat":"It raises its fists!","caught swat":"Caught: swatted down","scope":"It lifts its own head up overhead to look…",
+		"scope saw":"Its raised head sees you!","scope none":"Nothing: it puts its head back","caught pounce":"Caught: pounced on","missed":"It missed"}.get(what,what)
 	_say(said,2.5)
 
 ## The camera shakes with its landings and its steps; a body gone off the
@@ -241,7 +272,7 @@ func _unhandled_input(event: InputEvent) -> void:
 # --- The HUD and the sounds ---------------------------------------------------------------
 
 func _hint_text() -> String:
-	return "Whole body chase · J its sight · near it swats, mid it pounces, further it sucks · B body back · , . head size · R start · F1 numbers · Esc mouse"
+	return "Whole body chase · J its sight · near it swats, mid it pounces, further it sucks · lose it and it lifts its head to look (cover yard south) · B body back · , . head size · R start · F1 numbers · Esc mouse"
 
 func _show_hud() -> void:
 	super._show_hud()
