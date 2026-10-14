@@ -172,9 +172,13 @@ func _first_layer() -> void:
 		motifs = MotifSky.new()
 		add_child(motifs)
 		motifs.setup_layer(self,null,LaunchArgs.user_args(),layer_entries())
-	for isle: Node3D in motifs.isles:
-		isle.build_now()
-		while str(isle.stage) in ["built","standing"]: isle.work(1 << 30)
+	# Headless the art is built here, at once. Rendered it is on a worker
+	# already (never waited for here: the worker's servers' calls wait on
+	# this thread), and he is held at the start till it stands (`tick`).
+	if not motifs.threaded:
+		for isle: Node3D in motifs.isles:
+			isle.build_now()
+			while str(isle.stage) in ["built","standing"]: isle.work(1 << 30)
 	stage = LayerStage.new()
 	add_child(stage)
 	stage.setup(self,layer,_slot_was)
@@ -256,7 +260,21 @@ func _strand() -> void:
 
 # --- The loop --------------------------------------------------------------------------
 
+## True once the motif's art stands (rendered, it is built on a worker).
+func motif_stands() -> bool:
+	if motifs == null: return false
+	for isle: Node3D in motifs.isles:
+		if not isle.stands(): return false
+	return true
+
+var _held := true
+
 func tick(delta: float) -> void:
+	if _held:
+		# Held at the start till the motif stands under him.
+		if not motif_stands(): return
+		_held = false
+		respawn()
 	super.tick(delta)
 	if flying: return
 	# The net (off the edge the study's own `lost` is held off).

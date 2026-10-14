@@ -113,14 +113,15 @@ of the Plumb Well column take about 10 s.
 python tools/smoke.py studies/motif_yard.tscn -- --motif=lidstack [--grey] [--bodies=0] [--rims] [--at=x,y,z] [--sky]
 python tools/drive.py tools/harness/examples/plumb_well_chain.gd -- --trials=10 --scene-args --motif=plumb_well --bodies=0 [--grey]
 python tools/bg.py start pw_layer -- python tools/drive.py tools/harness/examples/plumb_well_chain.gd --timeout 2400 -- --in=layer --trials=10 --scene-args --seed=1 --shape=sprawl --knob=pool=classic --knob=bodies=0
-python tools/shot.py studies/motif_yard.tscn --at 30,45,-40 --look 0,8,0 -- --motif=vigil_bellows --sky
+python tools/shot.py studies/motif_yard.tscn --frame Motif_gb_vigil_bellows --view three -- --motif=vigil_bellows [--sky]
 ```
 
 - `--motif=` takes a greybox slug (`scripts/kit_isle/greybox/registry.gd`)
   or a kit pool id (`bell_spires`: stood, no heads). `--grey` sets the
   motif's own grey flag (`--well-grey` and so on). `--bodies=0` turns the
   headless bodies off, `--rims` adds a pad a route stride off each rim,
-  `--at=` moves the motif, and `--sky` adds the clouds and life for stills.
+  `--at=` moves the motif, and `--sky` adds the clouds and life for stills
+  (a drifting puff can hide a low motif; shoot it without `--sky` then).
   R in the yard resets the stage and sets him at the start.
 - **The trial helper.** `tools/harness/chain.gd` extends drive.gd.
   `open_motif(slug)` opens the yard, or run_layer with `--in=layer`. In
