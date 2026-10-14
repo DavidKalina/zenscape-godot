@@ -13,6 +13,7 @@ const MOTIFS := {
 	"wardens_well":preload("res://scripts/kit_isle/greybox/gb_wardens_well.gd"),
 	"lidstack":preload("res://scripts/kit_isle/greybox/gb_lidstack.gd"),
 	"plumb_well":preload("res://scripts/kit_isle/greybox/gb_plumb_well.gd"),
+	"vigil_bellows":preload("res://scripts/kit_isle/greybox/gb_vigil_bellows.gd"),
 }
 ## A greybox motif's weight in the draw (the pool's own run 1-3), and how
 ## many times one may come a layer.
