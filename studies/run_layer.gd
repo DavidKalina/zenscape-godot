@@ -56,6 +56,7 @@ const LayerSprawl = preload("res://scripts/roguelike/layer_sprawl.gd")
 const RoostMotif = preload("res://scripts/kit_isle/motif_dragon_roost.gd")
 const RunLoop = preload("res://scripts/roguelike/run_loop.gd")
 const LayerShapes = preload("res://scripts/roguelike/layer_shapes.gd")
+const LayerLoading = preload("res://scripts/roguelike/layer_loading.gd")
 
 ## Seeds tried past a seed whose plan could not be laid.
 const SKIP_MOST := 8
@@ -88,6 +89,10 @@ var _plan_why := ""
 ## Under --shape=sprawl, the run: a climb from layer 1, the void its end
 ## (scripts/roguelike/run_loop.gd); null in round 3's shape.
 var run_loop: Node = null
+## The loading screen that holds play until the layer stands whole (scripts/
+## roguelike/layer_loading.gd; rendered play only, `--no-loading-screen`
+## leaves the layer to stream in round the player), or null.
+var loading: Node = null
 
 func _ready() -> void:
 	if layer_seed < 0:
@@ -104,10 +109,24 @@ func _ready() -> void:
 	_no_lode = true
 	if _planning_away():
 		# Laid while the aqueduct isle builds; its sky starts empty.
+		# (The piece footprints it measures kept from the last launch.)
+		FixedCache.boxes_load()
 		LayerPlan.warm()
+		FixedCache.boxes_save()
 		_plan_task = WorkerThreadPool.add_task(_plan_job.bind(layer_seed,layer_knobs.duplicate()),true,"layer plan")
 	else: _lay(layer_seed)
 	isle_ready.connect(_first_layer,CONNECT_ONE_SHOT)
+	if LayerLoading.wanted(self):
+		# The screen up and drawn before the long build of the base begins.
+		loading = LayerLoading.new()
+		loading.study = self
+		add_child(loading)
+		loading.begin_first()
+		loading.screen.set_line("raising the base")
+		set_process(false)
+		await RenderingServer.frame_post_draw
+		await RenderingServer.frame_post_draw
+		set_process(true)
 	super._ready()
 
 func sky_script() -> Script:
@@ -149,6 +168,9 @@ func _planning_away() -> bool:
 ## time: asked again meanwhile, the ask is dropped). In `shape` ("": the
 ## run's first, `layer_shape`).
 func request_layer(seed_value: int, why := "", shape := "") -> void:
+	# (Behind the fall's card the layer is laid while it is read; the screen
+	# comes up when he goes on: run_loop `_maybe_wake`.)
+	if loading != null and not (run_loop != null and run_loop.state == "card"): loading.begin_change()
 	if not _planning_away():
 		shape_asked = shape
 		start_layer(seed_value,why)
@@ -240,6 +262,15 @@ func start_layer(seed_value: int, why := "", laid := {}) -> void:
 	_stand_layer()
 	if why != "" and run_loop == null: _show_toast(why)
 
+## The loading screen is lifting: play begins.
+func _loading_done() -> void:
+	_update_card()
+
+## The player has gone on (off the fall's card) before the layer laid behind
+## it stands whole: the screen over it till it does.
+func hold_for_layer() -> void:
+	if loading != null: loading.begin_late()
+
 # --- The dragon's roost (the sprawl's) ------------------------------------------
 
 ## The roost's dragon asleep on his ledge (scripts/dragon_roost.gd, its
@@ -296,6 +327,7 @@ func _drop_roost() -> void:
 # --- The loop -------------------------------------------------------------------
 
 func tick(delta: float) -> void:
+	if loading != null and loading.active: return
 	if run_loop != null and not run_loop.before_tick(delta): return
 	super.tick(delta)
 	if stage == null or flying: return
@@ -336,7 +368,9 @@ func _process(delta: float) -> void:
 		print("run layer: seed %d stood whole in %d ms (planned in %d ms)" % [layer_seed,layer_up_ms,plan_ms])
 		_update_card()
 
+## Held behind the screen while the layer stands (a key does nothing).
 func _unhandled_input(event: InputEvent) -> void:
+	if loading != null and loading.active: return
 	if run_loop != null and run_loop.input(event): return
 	if event is InputEventKey and event.pressed and not event.echo and walk_ready and stage != null:
 		var key := event as InputEventKey

@@ -312,6 +312,18 @@ static func room_at(p: Vector2, blocks: Array) -> float:
 	return best
 
 static var _boxes := {}
+## Whether `_boxes` gained a piece since `boxes_kept` (scripts/roguelike/
+## isle_store.gd keeps them between launches: a piece's footprint is its
+## build's, so the same code gives the same box).
+static var boxes_new := false
+
+## The footprints kept (the isle store's), merged in.
+static func boxes_take(kept: Dictionary) -> void:
+	for k: String in kept:
+		if not _boxes.has(k): _boxes[k] = kept[k]
+
+static func boxes_all() -> Dictionary:
+	return _boxes
 ## The kit's piece `id` (RuinKit `piece`, its seed and weathering) as a
 ## block standing at `pose` (its frame in the isle's): its colliders'
 ## footprint (x, z) in its own frame, grown by `margin`, measured off the
@@ -336,6 +348,7 @@ static func piece_block(id: String, seed_value: int, weathered: float, pose: Tra
 			first = false
 		piece.free()
 		_boxes[key] = box
+		boxes_new = true
 	var x := Vector2(pose.basis.x.x,pose.basis.x.z)
 	var z := Vector2(pose.basis.z.x,pose.basis.z.z)
 	return [Transform2D(x,z,Vector2(pose.origin.x,pose.origin.z)),(_boxes[key] as Rect2).grow(margin)]
