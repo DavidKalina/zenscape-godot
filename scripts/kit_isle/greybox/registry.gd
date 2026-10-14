@@ -11,6 +11,7 @@ extends RefCounted
 const MOTIFS := {
 	"sunken_giant":preload("res://scripts/kit_isle/greybox/gb_sunken_giant.gd"),
 	"wardens_well":preload("res://scripts/kit_isle/greybox/gb_wardens_well.gd"),
+	"lidstack":preload("res://scripts/kit_isle/greybox/gb_lidstack.gd"),
 }
 ## A greybox motif's weight in the draw (the pool's own run 1-3), and how
 ## many times one may come a layer.
