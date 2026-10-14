@@ -119,6 +119,8 @@ extends "res://studies/kit_isle.gd"
 ## approach over the held isle's turf instead, to land in the blast.
 const Art = preload("res://studies/aqueduct_isle_art.gd")
 const Aqueduct = preload("res://scripts/ruin_kit_aqueduct.gd")
+const BaseArt = preload("res://studies/aqueduct_isle_base.gd")
+const FixedCache = preload("res://scripts/roguelike/fixed_cache.gd")
 const Life = preload("res://studies/aqueduct_isle_life.gd")
 const IsleChain = preload("res://studies/aqueduct_isle_chain.gd")
 ## The hall chain's halls collide on the ruins' layer (scripts/hall_rise.gd).
@@ -264,52 +266,31 @@ func _build_room() -> void:
 	_build_art()
 
 func _build_art() -> void:
-	art = Node3D.new()
+	# The art as one build (studies/aqueduct_isle_base.gd): kept (scripts/
+	# roguelike/fixed_cache.gd; the same for every run) and loaded when it is
+	# there, rendered; else built here as before and a copy kept for the next
+	# launch. The parts and fields after, in the order they stood.
+	var base: RefCounted = BaseArt.new()
+	var began := Time.get_ticks_msec()
+	var kept: Node3D = null
+	var keeps := FixedCache.enabled() and DisplayServer.get_name() != "headless"
+	if keeps and FixedCache.has_base(): kept = FixedCache.load_base(base)
+	if kept != null:
+		art = kept
+		print("aqueduct isle: art loaded from the fixed cache in %d ms (built in %d ms when kept)" % [Time.get_ticks_msec()-began,int(base.built_ms)])
+	else:
+		art = Node3D.new()
+		base.build(art)
+		if keeps: FixedCache.save_base(base,art)
 	art.name = "Art"
 	add_child(art)
-	var near := Art.island(Art.NEAR,30.0,SEED,Art.ground,Art.TOP,true)
-	near.name = "NearIsland"
-	art.add_child(near)
-	var far := Art.island(Art.FAR,20.0,SEED+1,Art.base)
-	far.name = "FarIsland"
-	art.add_child(far)
-	var built: Dictionary = Art.aqueduct(SEED)
-	art.add_child(built.node)
-	# Its channel's water, in the world's frame (none with --old-water: the
-	# old film is the aqueduct's own).
-	if built.water != null: art.add_child(built.water)
-	for part: Array in built.parts: _part(part)
-	var castellum: Dictionary = Art.castellum(SEED+2)
-	art.add_child(castellum.node)
-	for part: Array in castellum.parts: _part(part)
-	art.add_child(Art.buttress(SEED+3))
-	art.add_child(Art.rubble_heap(SEED+6))
-	# The hill: its walls and kerbs, the grand stair up its east face onto
-	# the lower tier, the kit's stair up into the crag, the stone circle
-	# crowning it (tilted with the summit, its sarsen over the bite gone);
-	# the floating stones and islets round the isle; the heel stone out
-	# east on the axis.
-	art.add_child(Art.hill_walls(SEED+7))
-	stair = RuinKit.grand_stair(STAIR_SEED,STAIR_WEATHERED)
-	stair.transform = Transform3D(Basis(Vector3.UP,PI*0.5),Art.STAIR_AT)
-	art.add_child(stair)
-	kit_stairs = RuinKit.stairs(STEPS_SEED,STAIR_WEATHERED)
-	kit_stairs.transform = Art.stairs_frame()
-	art.add_child(kit_stairs)
-	circle = RuinKit.stone_circle(CIRCLE_SEED,LANDMARK_WEATHERED,[Art.MISSING])
-	circle.transform = Art.circle_transform()
-	art.add_child(circle)
-	art.add_child(Art.floating_stones(SEED+10))
-	var islets: Array = Art.islets(SEED+11)
-	for islet: Node3D in islets: art.add_child(islet)
-	art.add_child(Art.heel_stone(SEED+8))
-	for spec: Array in pieces():
-		var piece: Node3D = RuinKit.piece(spec[0],spec[1],spec[2])
-		var x: float = spec[3]
-		var z: float = spec[4]
-		piece.transform = Transform3D(Basis(Vector3.UP,deg_to_rad(float(spec[5]))),Vector3(x,Art.ground(x,z),z))
-		art.add_child(piece)
-	art.add_child(_stumps())
+	for part: Array in base.parts: _part(part)
+	stair = base.stair
+	kit_stairs = base.kit_stairs
+	circle = base.circle
+	var near: Node3D = base.near
+	var far: Node3D = base.far
+	var islets: Array = base.islets
 	# Its ruins' levels of detail (scripts/ruin_lod.gd): less drawn far off.
 	preload("res://scripts/ruin_lod.gd").add_async(art)
 	# The turf the grass and flowers grow on (`_grow`, once it all stands
@@ -320,6 +301,12 @@ func _build_art() -> void:
 	preload("res://scripts/interactables/aqueduct_foot_route.gd").build(self)
 	# --sluice: the Sluice Flush on the channel (scripts/traps/sluice_aqueduct.gd).
 	preload("res://scripts/traps/sluice_aqueduct.gd").build(self)
+
+## A quit while the base's copy is still being kept: the save finished
+## first (scripts/roguelike/fixed_cache.gd `finish_save`).
+func _exit_tree() -> void:
+	FixedCache.finish_save()
+	super._exit_tree()
 
 # --- The isle's hooks --------------------------------------------------------------
 
@@ -419,30 +406,6 @@ func _pack_runs() -> PackedStringArray:
 		if int(Recording.read(path).get("station",0)) == STATION: found.append(path)
 	return found
 
-## The stepping stumps (`stumps`): an older arcade's piers, coursed solid
-## to their tops, mossed and tufted there, their feet broken off under the
-## islands; collided as clean boxes.
-func _stumps() -> Node3D:
-	var b := RuinKit.Build.new(SEED+5,0.6,"Stumps")
-	b.settle = Aqueduct.SETTLE
-	for s: Array in stumps():
-		var x: float = s[0]
-		var z0: float = s[1]
-		var z1: float = s[2]
-		var high: float = float(s[3])-Art.TOP
-		var foot := -7.0-absf(z0)*0.1
-		var pose := Transform3D(Basis(Vector3.UP,PI*0.5),Vector3(x,Art.TOP,(z0+z1)*0.5))
-		var line := func(_x: float) -> float: return high
-		RuinKit._courses(b,pose,-absf(z1-z0)*0.5,absf(z1-z0)*0.5,foot,line,1.2,Callable(),0.55)
-		b.frame = pose
-		Art._broken_foot(b,0.0,foot)
-		b.frame = Transform3D.IDENTITY
-		for i in range(5):
-			Art._tuft(b,Vector3(x+b.rng.randf_range(-0.9,0.9),Art.TOP+high,b.rng.randf_range(z1,z0)),0.3,4)
-		_part(["box",Rect2(x-1.2,minf(z0,z1),2.4,absf(z1-z0)),Art.TOP+foot,float(s[3]),"lip"])
-	var node := b.finish()
-	node.get_node("Body").free()
-	return node
 
 # --- The ring and the hall chain ---------------------------------------------------------
 

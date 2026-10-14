@@ -72,8 +72,19 @@ static func wanted(scene: Node) -> bool:
 	if bool(scene.get("scripted")): return false
 	return not "--no-loading-screen" in preload("res://scripts/launch_args.gd").user_args()
 
+## The full sweep (every isle, the plane, the dragon, a body): on by default
+## except on macOS, where round 1 measured no gain from it (Metal's shader
+## cache and ubershaders); --shader-warmup asks for it there,
+## --no-shader-warmup turns it off anywhere. Without it the pilot's own view
+## is still drawn WARM_SELF frames under the screen before it goes.
 static func warm_wanted() -> bool:
-	return not "--no-shader-warmup" in preload("res://scripts/launch_args.gd").user_args()
+	var args := preload("res://scripts/launch_args.gd").user_args()
+	if "--no-shader-warmup" in args: return false
+	if "--shader-warmup" in args: return true
+	return OS.get_name() != "macOS"
+
+## Frames the pilot's own view is drawn under the screen before it goes.
+const WARM_SELF := 4
 
 func _init() -> void:
 	name = "LayerLoading"
@@ -224,6 +235,10 @@ func _warm() -> void:
 	var began := Time.get_ticks_msec()
 	if warm_wanted():
 		await _sweep()
+	else:
+		screen.set_line("readying the light")
+		await _hold(WARM_SELF)
+		times.views = 1
 	times.warm = Time.get_ticks_msec()-began
 	_finish()
 

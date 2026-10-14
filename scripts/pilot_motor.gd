@@ -227,7 +227,9 @@ extends RefCounted
 ## facing, `move` or `hold` for the figure: "swing" hangs as the ledge's
 ## hang) and gives the step's events back. The rider lets go with `toss`
 ## (which clears it), `hop` keeping the slide hop's weave for the air after
-## it. A reset or a knock clears it too.
+## it. A reset or a knock clears it too. A rope may snag him tumbling: he
+## rides it still stunned (move "tumble"), the twirl arming the tech, till
+## the rope gives him his poise back (`regain`) or throws him on stunned.
 
 ## Speeds, metres a second, and how fast they are reached and lost.
 const WALK := 2.4
@@ -948,6 +950,19 @@ func _throw_stunned(v: Vector3) -> void:
 	_fall_top = feet.y
 	feet.y += 0.02
 
+## His poise back while a rider holds him (a rope that snagged him limp,
+## docs/design/roguelike/rope-catch.md): his own again on it, the twirl
+## given back. The rider says "poised" (or "teched").
+func regain() -> void:
+	move = ""
+	stunned = ""
+	_tech = 0.0
+	_twirled = false
+	_regrab = 0.0
+	_hit_down = 0.0
+	_no_cut = false
+	_immune = tumble_immune
+
 ## Seconds without poise after a blow of `v` (m/s).
 func poise_for(v: Vector3) -> float:
 	return minf(poise+poise_hit*v.length(),poise_most)
@@ -1068,7 +1083,12 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 		_calm += delta
 		if _calm >= STUN_CALM: _stunned_for = 0.0
 	if grounded or hold != "" or swimming or rider != null: _fall_top = feet.y
-	if rider != null: return rider.ride(self,delta,want,pressed)
+	if rider != null:
+		# Snagged stunned (a rope's catch of a tumbling body, still move
+		# "tumble"): the twirl arms the tech as in the air, and past the
+		# chain cap any press arms it too; the rider reads `tech_armed`.
+		if move == "tumble" and twirl_pressed and _tech_press() == "up": _tech = tech_window
+		return rider.ride(self,delta,want,pressed)
 	if _seized: return out
 	if move == "tumble" and not grounded and not _seized and _stun_t >= _poise:
 		# Poise back in the air: his own again (the sail, the twirl given

@@ -29,6 +29,7 @@ const Lines = preload("res://scripts/collectible_lines.gd")
 const LayerPlan = preload("res://scripts/roguelike/layer_plan.gd")
 const LayerRides = preload("res://scripts/roguelike/layer_rides.gd")
 const LayerEnemies = preload("res://scripts/roguelike/layer_enemies.gd")
+const LayerGreybox = preload("res://scripts/roguelike/layer_greybox.gd")
 
 const GATE := Color(1.0,0.82,0.45)
 const RUNE_SIZE := 0.7
@@ -58,6 +59,9 @@ var hazards: Node3D = null
 ## The generator's inhaler heads (scripts/roguelike/layer_enemies.gd), or
 ## null.
 var heads: Node = null
+## The greybox isles' live bits and card (scripts/roguelike/
+## layer_greybox.gd), or null.
+var greybox: Node = null
 var _last := Vector3.INF
 
 func _init() -> void:
@@ -103,6 +107,7 @@ func setup(scene: Node3D, layer: Dictionary, was: Node) -> void:
 		enemies.spawn(PlinthRam,layer.ram.at,Vector2(face.x,face.z))
 	# The inhaler heads on their rounds.
 	heads = LayerEnemies.dress(self,layer)
+	greybox = LayerGreybox.dress(self,layer)
 	# The cannon and its kegs.
 	cannons = CannonField.new()
 	add_child(cannons)
@@ -234,6 +239,7 @@ func runes_left() -> int:
 func before(delta: float) -> void:
 	if inner != null: inner.before(delta)
 	traps.before(delta)
+	if greybox != null: greybox.before(delta)
 	if heads != null: heads.before(delta)
 	enemies.before(delta)
 	cannons.before(delta)
@@ -242,6 +248,7 @@ func before(delta: float) -> void:
 func after(delta: float, events: Dictionary) -> void:
 	if inner != null: inner.after(delta,events)
 	traps.after(delta,events)
+	if greybox != null: greybox.after(delta,events)
 	enemies.after(delta,events)
 	cannons.after(delta,events)
 	if hazards != null: hazards.after(delta,events)
@@ -251,6 +258,7 @@ func pose(figure: Node3D) -> void:
 	if inner != null: inner.pose(figure)
 	enemies.pose(figure)
 	cannons.pose(figure)
+	if greybox != null: greybox.pose(figure)
 	# Hidden while a head holds him.
 	if heads != null: figure.visible = not heads.holding()
 
@@ -258,8 +266,10 @@ func frame(camera: Camera3D, delta: float) -> void:
 	if inner != null and inner.has_method("frame"): inner.frame(camera,delta)
 	cannons.frame(camera,delta)
 	if heads != null: heads.frame(camera,delta)
+	if greybox != null: greybox.frame(camera,delta)
 
 func reset() -> void:
 	traps.reset()
 	enemies.reset()
 	cannons.reset()
+	if greybox != null: greybox.reset()

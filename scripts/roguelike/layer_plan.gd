@@ -47,6 +47,9 @@ const SerpentRoute = preload("res://scripts/kit_isle/serpent_route.gd")
 const AirshipBuild = preload("res://scripts/airship_build.gd")
 const Ferry = preload("res://scripts/kit_isle/airship_ferry.gd")
 const BodySpawner = preload("res://scripts/enemies/body_spawner.gd")
+## The greybox motifs, opt-in on the `greybox` knob (scripts/kit_isle/
+## greybox/registry.gd; docs/design/roguelike/greybox-in-generator.md).
+const Greybox = preload("res://scripts/kit_isle/greybox/registry.gd")
 
 ## The pool: [id, script, weight]. The colonnade spine and the Sundered
 ## gorge weighted up (the user's strongest), the stair to the clouds a
@@ -58,6 +61,17 @@ const POOL := [
 	["broken_ring",preload("res://scripts/kit_isle/motif_broken_ring.gd"),1.0],
 	["bell_spires",preload("res://scripts/kit_isle/motif_bell_spires.gd"),1.0],
 ]
+
+## The pool a layer draws from: POOL, and the greybox motifs its `greybox`
+## knob asks for (none by default).
+static func draw_pool(knobs := {}) -> Array:
+	var extra := Greybox.entries(knobs)
+	return POOL if extra.is_empty() else POOL+extra
+
+## How many times a pool pick may come a layer (one not a family; a
+## greybox motif once).
+static func _most(id: String, repeats: int) -> int:
+	return Greybox.MOST if Greybox.has(id) else repeats
 const BASE := "aqueduct_isle"
 ## The aqueduct isle's middle (world), what the layer keeps round.
 const MIDDLE := Vector3(85.0,30.0,-20.0)
@@ -258,7 +272,10 @@ static func make(seed_value: int, knobs := {}) -> Dictionary:
 ## generator's (LayerBodies SPAWN).
 ## `alternate` (0 or 1) and `ring` (isles round it, 0 rolls) are the run's
 ## and the ring shape's (scripts/roguelike/layer_shapes.gd, layer_ring.gd).
-const KNOBS := {"hoods":0,"gulf":0.0,"ride":"","rise":0.0,"arrows":-1,"viaduct":-1,"heads":-1,"bodies":1,"alternate":1,"ring":0}
+## `greybox` ("" none, "all", or slugs comma separated) the greybox motifs
+## in the pool, `greybox_force` (1) at least one a layer (scripts/kit_isle/
+## greybox/registry.gd).
+const KNOBS := {"hoods":0,"gulf":0.0,"ride":"","rise":0.0,"arrows":-1,"viaduct":-1,"heads":-1,"bodies":1,"alternate":1,"ring":0,"greybox":"","greybox_force":1}
 const KNOB_CHOICES := {"hoods":[0,1,2,3],"ride":["","serpent","ferry"]}
 
 ## `--knob=key=value` arguments as the layer's knobs (unknown keys warned).
@@ -317,7 +334,7 @@ static func _make(seed_value: int, attempt: int, knobs: Dictionary) -> Dictionar
 	var count := 1
 	for n: int in sizes: count += n
 	var motifs: Array = []
-	for p: Array in _draw(count,rng,int(k_all.get("repeats",1))): motifs.append(_motif_isle(p,rng))
+	for p: Array in _draw(count,rng,int(k_all.get("repeats",1)),k_all): motifs.append(_motif_isle(p,rng))
 	var base := _base_isle()
 	base.sockets = base.own.duplicate()
 	base.hood = 0
@@ -500,6 +517,7 @@ static func _make(seed_value: int, attempt: int, knobs: Dictionary) -> Dictionar
 	var low := INF
 	for isle: Dictionary in plan.isles: low = minf(low,_span(isle).x)
 	plan.void_y = low-VOID_UNDER
+	if Greybox.missing(plan): plan.problems.append("no greybox isle placed")
 	return plan
 
 ## A motif drawn for neighbourhood `h` in place of one that won't stand:
@@ -516,9 +534,9 @@ static func _substitute(plan: Dictionary, groups: Array, greed: Dictionary, h: i
 	for i: int in plan.hoods[h] if h < (plan.hoods as Array).size() else []:
 		if plan.isles[i].has("motif") and plan.isles[i].motif.role() == "hero": hero = true
 	var pool: Array = []
-	for p: Array in POOL:
+	for p: Array in draw_pool(plan.knobs):
 		var probe: RefCounted = (p[1] as Script).new()
-		if not probe.family() and int(taken.get(str(p[0]),0)) >= int(plan.knobs.get("repeats",1)): continue
+		if not probe.family() and int(taken.get(str(p[0]),0)) >= _most(str(p[0]),int(plan.knobs.get("repeats",1))): continue
 		if hero and probe.role() == "hero": continue
 		pool.append(p)
 	if pool.is_empty(): return {}
@@ -540,22 +558,27 @@ static func _substitute(plan: Dictionary, groups: Array, greed: Dictionary, h: i
 ## `count` pool picks by weight: a family any number of times (its own seed
 ## and knobs each), the rest at most once a layer.
 ## `repeats` (a knob, the sprawl shape's): how many times one that is not
-## a family may come a layer.
-static func _draw(count: int, rng: RandomNumberGenerator, repeats := 1) -> Array:
+## a family may come a layer. `knobs` the layer's: its greybox motifs in
+## the pool, the first draw one of them where forced.
+static func _draw(count: int, rng: RandomNumberGenerator, repeats := 1, knobs := {}) -> Array:
 	var drawn := {}
 	var picks: Array = []
-	var pool: Array = POOL.duplicate()
+	var pool: Array = draw_pool(knobs).duplicate()
+	var forced := Greybox.forced(knobs)
 	while picks.size() < count and not pool.is_empty():
+		var from: Array = pool
+		if forced and picks.is_empty(): from = pool.filter(func(p: Array) -> bool: return Greybox.has(str(p[0])))
 		var total := 0.0
-		for p: Array in pool: total += float(p[2])
+		for p: Array in from: total += float(p[2])
 		var roll := rng.randf()*total
-		for i in range(pool.size()):
-			roll -= float(pool[i][2])
-			if roll <= 0.0 or i == pool.size()-1:
+		for k in range(from.size()):
+			roll -= float(from[k][2])
+			if roll <= 0.0 or k == from.size()-1:
+				var i := pool.find(from[k])
 				picks.append(pool[i])
 				var probe: RefCounted = (pool[i][1] as Script).new()
 				drawn[pool[i][0]] = int(drawn.get(pool[i][0],0))+1
-				if not probe.family() and int(drawn[pool[i][0]]) >= repeats: pool.remove_at(i)
+				if not probe.family() and int(drawn[pool[i][0]]) >= _most(str(pool[i][0]),repeats): pool.remove_at(i)
 				break
 	return picks
 
@@ -590,6 +613,8 @@ static func _motif_isle(pick: Array, rng: RandomNumberGenerator) -> Dictionary:
 	var occ := LayerPieces.occupancy(m.id())
 	# A rolled ring moves its isles: its occupancy from its plan.
 	if m.id() == "broken_ring": occ = _ring_occ(m)
+	# A greybox motif computes its own (scripts/kit_isle/motif_greybox.gd).
+	elif occ.is_empty() and m.has_method("occupancy"): occ = m.occupancy()
 	elif occ.is_empty(): occ = _box_occ(m.footprint(),m.height_span())
 	return {"key":"%s_%d_%d" % [m.id(),isle_seed,rng.randi()%100000],"id":m.id(),"script":script,"seed":isle_seed,"knobs":m.knobs.duplicate(),"role":"",
 		"offset":Vector3.ZERO,"own":own,"occ":occ,"sockets":[],"motif":m}

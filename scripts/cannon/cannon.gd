@@ -34,6 +34,14 @@ var heard: Array = []
 var _barrel: Node3D
 var _paint: StandardMaterial3D
 var _flash := 0.0
+## The catch's look: the tube, seconds since a gulp (INF none), the windup's
+## share (0..1, set by the field) and the shot's kick (1 at the boom).
+var _tube: MeshInstance3D
+var _gulp_t := INF
+var _charge := 0.0
+var _kick := 0.0
+## Seconds left before it catches again (after a shot).
+var catch_cool := 0.0
 
 static func pilot() -> PilotMotor:
 	var p := PilotMotor.new()
@@ -64,6 +72,18 @@ static func defaults() -> Dictionary:
 		"enter_reach":unit*2.4,        # from the base's middle: operate or climb in
 		"stand_back":unit*1.35,        # from the base's middle: where he stands to operate it
 		"flash_time":0.25,
+		# The catch (docs/design/roguelike/cannon-catch.md): a body arriving
+		# in the mouth (falling, thrown, tumbling, stunned) is caught, held,
+		# wound up and fired along the aim at the power set.
+		"catch":true,
+		"catch_radius":unit*0.95,      # from the mouth (swept): caught
+		"catch_pull":unit*2.2,         # from the mouth: a body heading in is funnelled to it
+		"catch_pull_rate":12.0,        # 1/s: how fast its velocity is turned toward the mouth (speed kept)
+		"catch_in":1.0,                # m/s it must be moving into the mouth (against the aim)
+		"catch_cone":deg_to_rad(72.0), # the most its way in may be off the barrel's axis (a body skimming past isn't swallowed)
+		"catch_hold":0.45,             # s: the gulp, held
+		"catch_windup":0.4,            # s: the anticipation (drawn back, swelling, shaking, glowing)
+		"catch_cool":0.6,              # s after a shot before it catches again
 	}
 
 func _init() -> void:
@@ -112,8 +132,27 @@ func set_power(index: int) -> void:
 func fire() -> Vector3:
 	shots += 1
 	_flash = float(knobs.flash_time)
+	_kick = 1.0
+	_charge = 0.0
+	catch_cool = float(knobs.catch_cool)
 	_sound(&"boom",mouth())
 	return launch_velocity()
+
+## The catch's tell: a body swallowed (the gulp, a squash and wobble).
+func swallow() -> void:
+	_gulp_t = 0.0
+	_charge = 0.0
+	_sound(&"gulp",mouth())
+
+## The windup's share (0 to 1): drawn back toward the breech, swelling,
+## shaking, glowing toward the flash.
+func set_charge(f: float) -> void:
+	if _charge <= 0.0 and f > 0.0: _sound(&"charge",pivot())
+	_charge = clampf(f,0.0,1.0)
+
+## Whether it catches now.
+func catching() -> bool:
+	return bool(knobs.catch) and catch_cool <= 0.0
 
 func click() -> void:
 	_sound(&"click",pivot())
@@ -125,6 +164,10 @@ func reset() -> void:
 	pitch = float(knobs.pitch_rest)
 	power = int(knobs.power_rest)
 	_flash = 0.0
+	_gulp_t = INF
+	_charge = 0.0
+	_kick = 0.0
+	catch_cool = 0.0
 	heard.clear()
 	_pose()
 
@@ -198,6 +241,7 @@ func _ready() -> void:
 	cyl.height = float(knobs.barrel_length)
 	cyl.radial_segments = 16
 	tube.mesh = cyl
+	_tube = tube
 	_paint = _mat(BARREL)
 	tube.material_override = _paint
 	# The cylinder stands along y: laid along -z, its middle half out.
@@ -215,7 +259,30 @@ func _pose() -> void:
 	if _barrel == null: return
 	_barrel.rotation = Vector3(pitch,aim_yaw,0.0)
 
+## The catch's cooldown, stepped by the field each frame (so a scripted
+## tick and a played frame count it alike).
+func step_catch(delta: float) -> void:
+	catch_cool = maxf(0.0,catch_cool-delta)
+
 func _process(delta: float) -> void:
-	if _flash > 0.0:
-		_flash = maxf(0.0,_flash-delta)
-		if _paint != null: _paint.albedo_color = BARREL.lerp(FLASH,_flash/float(knobs.flash_time))
+	_flash = maxf(0.0,_flash-delta)
+	_kick = maxf(0.0,_kick-delta/0.3)
+	if _gulp_t < 2.0: _gulp_t += delta
+	_shape()
+
+## The tube squashed and stretched by the catch: the gulp (fat and short,
+## wobbling out), the windup (drawn back, swollen, shaking), the kick (long
+## and thin, snapping back), the paint glowing with the windup and the flash.
+func _shape() -> void:
+	if _tube == null: return
+	var l := float(knobs.barrel_length)
+	var gulp := exp(-_gulp_t*7.0)*cos(_gulp_t*24.0) if _gulp_t < 2.0 else 0.0
+	var c := _charge*_charge
+	var k := _kick*_kick
+	var fat := 1.0+0.35*gulp+0.18*c-0.15*k
+	var long := 1.0-0.22*gulp-0.12*c+0.3*k
+	_tube.scale = Vector3(fat,long,fat)
+	_tube.position.z = -l*0.5*long+l*0.15*c
+	var shake := 0.035*c*sin(Time.get_ticks_msec()*0.09)
+	if _barrel != null: _barrel.rotation = Vector3(pitch+shake,aim_yaw+shake*0.6,0.0)
+	if _paint != null: _paint.albedo_color = BARREL.lerp(FLASH,maxf(_flash/float(knobs.flash_time),0.65*c))

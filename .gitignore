@@ -39,3 +39,6 @@ captures/
 
 # Python bytecode from the Blender scripts.
 __pycache__/
+
+# Throwaway drivers and checks (tools/README.md); Godot skips it (.gdignore).
+/scratch/

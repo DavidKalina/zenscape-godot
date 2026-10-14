@@ -144,6 +144,10 @@ func _add_isle(motif: RefCounted, offset: Vector3, place: Array, args: PackedStr
 	var isle: Node3D = MotifIsle.new()
 	isle.setup(scene,motif,offset,args)
 	isle.threaded = threaded
+	# Its plants read its own ground and the stage, not the isles beside it
+	# nor the viaduct (when those stand depends on how fast the layer
+	# loads; the plants shouldn't): the same plants every time.
+	isle.looks_past_neighbours = true
 	var at: Vector3 = place[1]
 	isle.guess = Vector3(at.x,at.z,float(place[2]))
 	add_child(isle)

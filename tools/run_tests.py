@@ -50,6 +50,16 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_GODOT = os.environ.get("GODOT", "/Users/davidkalina/Applications/Godot.app/Contents/MacOS/Godot")
+if not os.environ.get("GODOT") and not Path(DEFAULT_GODOT).is_file():
+    # tools/godot.py's search (the WinGet install, C:\Tools\Godot, PATH); it
+    # imports this file, so it's asked here, late, rather than at the top.
+    import glob as _glob
+    for _pattern in (os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\WinGet\Packages\GodotEngine.GodotEngine_*\Godot_v4*_console.exe"),
+                     r"C:\Tools\Godot\Godot_v4*_console.exe", "/Applications/Godot.app/Contents/MacOS/Godot"):
+        _hits = sorted(_glob.glob(_pattern))
+        if _hits:
+            DEFAULT_GODOT = _hits[-1]
+            break
 KNOWN_FAILURES = ROOT / "tests" / "known_failures.txt"
 NATIVE = ROOT / "native" / "terrain_kernels"
 ANSI = re.compile(r"\x1b\[[0-9;]*m")

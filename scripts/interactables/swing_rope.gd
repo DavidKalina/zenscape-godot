@@ -22,7 +22,10 @@ extends Node3D
 ## The twirl, the wall run and the sail are fresh after it. Crouch drops
 ## off (no boost, no pop). Let go, the same rope can't be caught for
 ## REGRAB s; another can, so ropes chain. On the ground he takes it only
-## running into it (RUN_IN): his hands meet its knot.
+## running into it (RUN_IN): his hands meet its knot. Knocked (tumbling,
+## stunned) past it, it snags him out of the air (SNAG, below): it whips,
+## he swings round on it limp, and his poise comes back on it
+## (docs/design/roguelike/rope-catch.md); a dry one snaps and throws him on.
 ##
 ## Free, its end swings on as a pendulum and settles (and sways a little in
 ## the air), drawn as a faceted rope in the footbridges' rope tone
@@ -65,6 +68,33 @@ const CATCH_BODY := 0.32
 const CHEST := 0.6
 const GRIP_HIGH := 0.35
 const REGRAB := 0.45
+## The snag (docs/design/roguelike/rope-catch.md): a tumbling body (a
+## knock's, stunned) whose chest passes within SNAG_REACH of its lower part
+## (swept over the frame: a ragdoll's limbs flung out) is caught by it. His
+## hands go to the rope HANG_DROP-CHEST over where his chest met it, his pace
+## across the rope its swing (what went along it is lost: the rope takes
+## the blow), and he hangs limp, still stunned, for what his poise has left,
+## held between SNAG_LEAST and SNAG s; then his poise is back on the rope
+## ("poised") and he rides it as if he had jumped into it. A tech press (or
+## past the chain cap any press) takes hold at once ("teched" "rope"). The
+## rope whips: its tail below his hands flung back WHIP rad against the
+## swing, easing out over WHIP_TIME s. `snag` off, it refuses a tumbling
+## body as before.
+const SNAG := 0.5
+const SNAG_LEAST := 0.25
+const SNAG_REACH := 0.55
+const WHIP := 1.1
+const WHIP_TIME := 0.45
+## A dry rope (`dry`, the Root Curtain's dry root, kit-k1-grab.md): it
+## snags a tumbling body too but holds him only DRY_SNAG s, then snaps and
+## throws him on along its swing, still stunned (a `toss` of a stunned body:
+## a fresh poise). Held as a rider, it snaps after DRY_HOLD s and he keeps
+## its arc (not stunned). Snapped, a stub DRY_STUB of its length is left,
+## too high to catch, for good.
+const DRY_SNAG := 0.3
+const DRY_HOLD := 2.5
+const DRY_STUB := 0.3
+const DRY_TONE := Color("b8a684")
 ## Free, its end's damping a second, and its sway (m/s² at the end).
 const FREE_DAMP := 0.35
 const SWAY := 0.25
@@ -87,6 +117,17 @@ static var t_best := BEST
 static var t_window := WINDOW
 static var t_catch := CATCH
 static var t_catch_body := CATCH_BODY
+static var t_snag_reach := SNAG_REACH
+static var t_snag := SNAG
+
+## Whether it snags a tumbling body; dry (see DRY_SNAG); snapped.
+var snag := true
+var dry := false
+var snapped := false
+## The snag's limp seconds left, seconds held, the whip's seconds left.
+var _limp := 0.0
+var _held_t := 0.0
+var _whip := 0.0
 
 var anchor := Vector3.ZERO
 var length := 5.0
@@ -136,7 +177,7 @@ func slam(at: Vector3, radius: float, strength: float) -> void:
 func _ready() -> void:
 	add_to_group(&"wind_pushable")
 	add_to_group(Slam.GROUP)
-	var mesh := _rope_mesh()
+	var mesh := _rope_mesh(DRY_TONE if dry else Footbridge.ROPE)
 	_upper = MeshInstance3D.new()
 	_upper.mesh = mesh
 	add_child(_upper)
@@ -155,13 +196,23 @@ func _ready() -> void:
 func held() -> bool:
 	return motor != null and motor.rider == self
 
+## Made dry (or live again), its rope drawn pale (or in the rope tone).
+func set_dry(on: bool) -> void:
+	dry = on
+	if _upper == null: return
+	var mesh := _rope_mesh(DRY_TONE if dry else Footbridge.ROPE)
+	_upper.mesh = mesh
+	_lower.mesh = mesh
+
 ## Free: its end on as a pendulum, settling, swaying a little.
 func advance(delta: float) -> void:
 	if delta <= 0.0: return
 	_time += delta
 	_cool = maxf(_cool-delta,0.0)
+	_whip = maxf(_whip-delta,0.0)
 	if not held():
 		motor = null
+		_limp = 0.0
 		grip = length
 		var sway := Vector3(sin(_time*0.7+anchor.x),0.0,cos(_time*0.53+anchor.z))*SWAY
 		_swing(delta,sway,FREE_DAMP)
@@ -188,8 +239,12 @@ func add_tag(at: Vector3, yaw := 0.0, seed_value := 0) -> void:
 ## it; in the air, or on the ground running into it (at RUN_IN or more,
 ## toward it: the knot hangs at his hands). Nothing pulls him in: taken
 ## hold of, the rope comes to his hands where they are, and he rides it.
-func try_catch(walker: PilotMotor) -> bool:
-	if _cool > 0.0 or walker.rider != null or walker.on_ledge() or walker.swimming or walker.move == "tumble": return false
+## Tumbling (stunned), he is snagged instead (`_try_snag`). `delta` is the
+## frame just stepped, for the snag's sweep.
+func try_catch(walker: PilotMotor, delta := 0.0) -> bool:
+	if snapped: return false
+	if walker.move == "tumble": return _try_snag(walker,delta)
+	if _cool > 0.0 or walker.rider != null or walker.on_ledge() or walker.swimming: return false
 	var hand := hand_of(walker)
 	if walker.grounded:
 		# On the ground only run into: at a run, toward it.
@@ -206,6 +261,23 @@ func try_catch(walker: PilotMotor) -> bool:
 	_take(walker,hand)
 	return true
 
+## The snag (see SNAG): a tumbling body in the air whose chest swept within
+## t_snag_reach of its lower part this frame, caught limp, still stunned.
+func _try_snag(walker: PilotMotor, delta: float) -> bool:
+	if not snag or _cool > 0.0 or walker.rider != null or walker.grounded or walker.swimming or walker.seized(): return false
+	var u := (hands-anchor).normalized()
+	var low := anchor+u*length*GRIP_HIGH
+	var chest := walker.feet+Vector3.UP*CHEST
+	var was := chest-walker.velocity*maxf(delta,0.0)
+	var near := Geometry3D.get_closest_points_between_segments(was,chest,low,hands)
+	if near[0].distance_to(near[1]) > t_snag_reach: return false
+	var left := walker.poise_left()
+	_take(walker,near[1]-u*(PilotMotor.HANG_DROP-CHEST),false)
+	walker.move = "tumble"
+	_limp = DRY_SNAG if dry else clampf(left,SNAG_LEAST,t_snag)
+	_whip = WHIP_TIME
+	return true
+
 ## Where his hands are, reaching up and ahead as they hang from a ledge
 ## (PilotFigure GRIP).
 static func hand_of(walker: PilotMotor) -> Vector3:
@@ -216,14 +288,17 @@ static func hand_of(walker: PilotMotor) -> Vector3:
 ## that far from the anchor, inside its length), his pace across the rope
 ## its swing, all of it kept (what went along the rope turned into the
 ## swing, up to TOP).
-func _take(walker: PilotMotor, at: Vector3) -> void:
+func _take(walker: PilotMotor, at: Vector3, along := true) -> void:
 	motor = walker
+	_held_t = 0.0
+	_limp = 0.0
 	grip = clampf(anchor.distance_to(at),length*GRIP_HIGH,length)
 	var u := (at-anchor).normalized() if at.distance_to(anchor) > 0.01 else Vector3.DOWN
 	hands = anchor+u*grip
 	var v := walker.velocity
 	velocity = v-u*v.dot(u)
-	if velocity.length() > 0.5: velocity = velocity.normalized()*minf(v.length(),maxf(velocity.length(),t_top))
+	if along and velocity.length() > 0.5: velocity = velocity.normalized()*minf(v.length(),maxf(velocity.length(),t_top))
+	if not along: velocity = velocity.limit_length(t_top)
 	var flat := Vector2(v.x,v.z)
 	facing = PilotMotor.facing_of(flat) if flat.length() > 1.0 else walker.facing
 	walker.rider = self
@@ -240,6 +315,37 @@ func _take(walker: PilotMotor, at: Vector3) -> void:
 ## let go by Jump (with the pop) or crouch (without).
 func ride(walker: PilotMotor, delta: float, want: Vector2, pressed: bool) -> Dictionary:
 	var out := {}
+	_held_t += delta
+	if walker.move == "tumble":
+		# Snagged: limp on it, no stick, no buttons, till his poise is back
+		# (or a tech press); dry, it snaps first.
+		_limp -= delta
+		if walker.tech_armed():
+			walker.regain()
+			out["poised"] = true
+			out["teched"] = "rope"
+		elif _limp <= 0.0 and dry:
+			_snap(walker)
+			out["swing"] = false
+			out["snapped"] = true
+			return out
+		elif _limp <= 0.0:
+			walker.regain()
+			out["poised"] = true
+		else:
+			_swing(delta,Vector3.ZERO,t_damp)
+			_place(walker)
+			return out
+		_crouch_was = walker.crouch
+		_swing(delta,Vector3.ZERO,t_damp)
+		_place(walker)
+		return out
+	if dry and _held_t >= DRY_HOLD:
+		# Dry, held too long: it snaps, and he keeps its arc.
+		_snap(walker)
+		out["swing"] = false
+		out["snapped"] = true
+		return out
 	var dropped := walker.crouch and not _crouch_was
 	_crouch_was = walker.crouch
 	if pressed or dropped:
@@ -311,6 +417,23 @@ func _let_go(walker: PilotMotor, pop: bool) -> void:
 	motor = null
 	grip = length
 
+## Dry, snapped under him: he goes on with its pace at his hands (a stunned
+## body thrown on still stunned, a fresh poise; a rider tossed with its
+## arc), a stub left hanging, never caught again.
+func _snap(walker: PilotMotor) -> void:
+	var u := (hands-anchor).normalized()
+	_cool = REGRAB
+	walker.toss(velocity.limit_length(t_top))
+	walker.feet.y -= 0.02
+	motor = null
+	_limp = 0.0
+	snapped = true
+	length = maxf(length*DRY_STUB,0.3)
+	grip = length
+	hands = anchor+u*length
+	velocity = Vector3.ZERO
+	_draw()
+
 ## His body under his hands: the hang's grip on the rope, hanging along it.
 func _place(walker: PilotMotor) -> void:
 	walker.facing = facing
@@ -337,6 +460,13 @@ func _draw() -> void:
 	if _upper == null: return
 	var u := (hands-anchor).normalized()
 	var end := anchor+u*length
+	if _whip > 0.0 and length-grip > 0.05 and velocity.length() > 0.5:
+		# The snag's whip: the tail flung back against the swing, easing out.
+		var back := -velocity.normalized()
+		back = (back-u*back.dot(u)).normalized()
+		var a := WHIP*smoothstep(0.0,1.0,_whip/WHIP_TIME)
+		end = hands+(u*cos(a)+back*sin(a))*(length-grip)
+		u = (end-hands).normalized()
 	_segment(_upper,anchor,hands)
 	_lower.visible = grip < length-0.05
 	if _lower.visible: _segment(_lower,hands,end)
@@ -357,7 +487,7 @@ static func _segment_basis(from: Vector3, to: Vector3) -> Basis:
 
 ## A faceted rope, a unit long down y: six faces, twisted bands of the rope
 ## tone, flat-shaded.
-static func _rope_mesh() -> ArrayMesh:
+static func _rope_mesh(tone_of := Footbridge.ROPE) -> ArrayMesh:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var sides := 6
@@ -377,7 +507,7 @@ static func _rope_mesh() -> ArrayMesh:
 			var p2 := Vector3(cos(a1+twist1)*RADIUS,y1,sin(a1+twist1)*RADIUS)
 			var p3 := Vector3(cos(a0+twist1)*RADIUS,y1,sin(a0+twist1)*RADIUS)
 			var n := Vector3(cos((a0+a1)*0.5+(twist0+twist1)*0.5),0.0,sin((a0+a1)*0.5+(twist0+twist1)*0.5))
-			var tone := Footbridge.ROPE.darkened(rng.randf_range(0.0,0.18) if (i+k)%2 == 0 else rng.randf_range(0.12,0.28))
+			var tone := tone_of.darkened(rng.randf_range(0.0,0.18) if (i+k)%2 == 0 else rng.randf_range(0.12,0.28))
 			for p: Vector3 in [p0,p2,p1,p0,p3,p2]:
 				st.set_color(tone)
 				st.set_normal(n)

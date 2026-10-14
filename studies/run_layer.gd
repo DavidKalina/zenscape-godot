@@ -109,7 +109,10 @@ func _ready() -> void:
 	_no_lode = true
 	if _planning_away():
 		# Laid while the aqueduct isle builds; its sky starts empty.
+		# (The piece footprints it measures kept from the last launch.)
+		FixedCache.boxes_load()
 		LayerPlan.warm()
+		FixedCache.boxes_save()
 		_plan_task = WorkerThreadPool.add_task(_plan_job.bind(layer_seed,layer_knobs.duplicate()),true,"layer plan")
 	else: _lay(layer_seed)
 	isle_ready.connect(_first_layer,CONNECT_ONE_SHOT)
@@ -342,6 +345,13 @@ func tick(delta: float) -> void:
 ## takes him; never stranded back to the plane.
 func _strand() -> void:
 	pass
+
+## A layer's plan still laid on a worker at a quit is waited out: the task
+## (bound to this node) left running crashed the engine's teardown.
+func _exit_tree() -> void:
+	FixedCache.drain(_plan_task)
+	_plan_task = -1
+	super._exit_tree()
 
 var _card_due := 0.0
 

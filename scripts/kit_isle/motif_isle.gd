@@ -123,7 +123,34 @@ func isle_summit() -> Vector3:
 
 ## Its ground as the plants read it, in the world's frame.
 func flora_site() -> KitFlora.Site:
-	return placed_site(motif.flora_site(),offset)
+	var site := placed_site(motif.flora_site(),offset)
+	if looks_past_neighbours: site.looks_past = _neighbour
+	return site
+
+## Physics steps it waits once stood before its turf and plants, and when
+## it stood.
+const SETTLE_STEPS := 2
+var _stood_at := -1000
+
+## Whether its plants' rays look past the other motif isles, the Broken
+## Viaduct and anything that moves (when those stand or where they are
+## depends on how fast the layer loads; the plants should not), reading its
+## own ground and stone (whole: SETTLE_STEPS), the base and the stage.
+var looks_past_neighbours := false
+
+func _neighbour(collider: Object) -> bool:
+	var node := collider as Node
+	# Anything that moves (a ferry, a ride, a beast): where it is when the
+	# plants grow is a matter of time.
+	if node != null and node.get_class() != "StaticBody3D": return true
+	while node != null:
+		if node == self: return false
+		if node.get_script() == get_script(): return true
+		# The Broken Viaduct and what stands with it when it is done
+		# (scripts/roguelike/layer_hazards.gd `_finish_viaduct`).
+		if node.name in [&"BrokenViaduct",&"ViaductStones",&"ViaductUpdrafts"]: return true
+		node = node.get_parent()
+	return false
 
 ## A site in an isle's own frame as it reads standing `by` from it.
 static func placed_site(site: KitFlora.Site, by: Vector3) -> KitFlora.Site:
@@ -246,10 +273,15 @@ func work(usec: int) -> String:
 					_staging.free()
 					_staging = null
 					stage = "turf"
+					_stood_at = Engine.get_physics_frames()
 				var spent := (Time.get_ticks_usec()-began)/1000
 				timings.stand = int(timings.get("stand",0))+spent
 				timings.stand_worst = maxi(int(timings.get("stand_worst",0)),spent)
 				if usec >= 0: return stage
+			"turf" when usec >= 0 and looks_past_neighbours and Engine.get_physics_frames() < _stood_at+SETTLE_STEPS:
+				# Its last shapes are in the physics space only after a step:
+				# its plants' rays wait for all of them.
+				return stage
 			"turf":
 				_register()
 				stage = "flora"
