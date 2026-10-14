@@ -15,6 +15,11 @@ extends "res://scripts/kit_isle/motif_greybox.gd"
 ## catching isle). The rim out is the landing's far (east) edge. Missed, the
 ## terrace still catches him and the cannon is a cannon: climb in, fire.
 ## The cap is the rim in.
+##
+## Turf pass (below `parts`): the cap, the foot, the terrace and the landing
+## are KitLand islands at the greybox's tops; the shaft's masonry is cut
+## stone collided as the greybox's boxes. `--well-grey` builds the grey
+## boxes (A/B).
 
 # --- The study's numbers, verbatim (studies/greybox/plumb_well.gd) -------------------
 const PUMP := 1.5
@@ -194,3 +199,258 @@ func live(g: Node) -> void:
 		if is_instance_valid(g) and g.cannons() != null: g.cannons().add_cannon(at,CANNON_HEADING)
 	if g.cannons() != null: add.call()
 	else: add.call_deferred()
+
+# --- Turf pass: the land and the stone --------------------------------------------------
+## Ground the sky sees (the cap, the foot, the cannon terrace, the landing)
+## is KitLand islands, flat at the greybox's tops to the centimetre; the
+## shaft's masonry (plates 2-4, the plumb wall, the kerb, the spine, oculus
+## 1's collar, the masons' bench, the windlass posts) is cut stone in the
+## giant's basalt (giant_stone.gd), each collided as its greybox walk box.
+## The rune line on the plumb wall shortens plate by plate (the card's
+## mystery). `--well-grey` builds the grey boxes instead (A/B checks).
+
+const GiantStone = preload("res://scripts/kit_isle/greybox/giant_stone.gd")
+const KitLife = preload("res://scripts/kit_isle/kit_life.gd")
+
+const TURF_SEED := 4400
+## The islands' keels (m under their tops).
+const CAP_DEPTH := 3.0
+const FOOT_DEPTH := 8.0
+const TERRACE_DEPTH := 5.0
+const LANDING_DEPTH := 6.0
+## A keel's spurs reach about this times its depth (KitLand ring_sides).
+const KEEL_REACH := 1.4
+## Oculus 1's stone collar (m round the hole) and how far the cap's turf
+## keeps back from the hole under it: the turf's wobbled edge stays under
+## the collar, so the hole's edge is the collar's, exact.
+const COLLAR := 1.2
+const TURF_BACK := 0.8
+## The collar stands this proud of the turf (no z-fight).
+const PROUD := 0.03
+
+static func grey() -> bool:
+	return OS.get_cmdline_user_args().has("--well-grey")
+
+static func cap_top() -> float:
+	return float(PLATES[0].top)
+
+## The cap's ground: the plate with a notch round oculus 1 (open north,
+## onto the plumb wall).
+static func cap_outline() -> Array:
+	var r: Rect2 = PLATES[0].rect
+	var h: Rect2 = (PLATES[0].holes[0] as Rect2).grow(TURF_BACK)
+	return [Vector2(r.position.x,r.position.y),Vector2(r.end.x,r.position.y),Vector2(r.end.x,r.end.y),
+		Vector2(h.end.x,r.end.y),Vector2(h.end.x,h.position.y),Vector2(h.position.x,h.position.y),
+		Vector2(h.position.x,r.end.y),Vector2(r.position.x,r.end.y)]
+
+static func foot_outline() -> Array:
+	return _rounded(PLATES[4].rect,1.0)
+
+static func terrace_outline() -> Array:
+	return _rounded(TERRACE,1.6)
+
+static func landing_outline() -> Array:
+	return _rounded(LANDING,1.6)
+
+## A rect's outline with its corners cut `cut` m.
+static func _rounded(r: Rect2, cut: float) -> Array:
+	var a := r.position
+	var b := r.end
+	return [Vector2(a.x+cut,a.y),Vector2(b.x-cut,a.y),Vector2(b.x,a.y+cut),Vector2(b.x,b.y-cut),
+		Vector2(b.x-cut,b.y),Vector2(a.x+cut,b.y),Vector2(a.x,b.y-cut),Vector2(a.x,a.y+cut)]
+
+## The worn ways: the cap from its rim to the oculus, the foot from the
+## head to rim S, across the landing to its rim.
+static func paths() -> Array:
+	return [[Vector2(0.0,-13.0),Vector2(0.0,7.0)],[Vector2(-2.4,5.0),Vector2(-2.4,-3.5)],
+		[Vector2(15.0,-9.2),Vector2(26.0,-10.0)]]
+
+func flora_site() -> KitFlora.Site:
+	var site := KitFlora.Site.new(top(),KitLand.wear_of(paths()))
+	# Rays from over the cap down past the landing (the plates are stone).
+	site.ray = Vector2(top()+60.0,LANDING_Y-8.0)
+	return site
+
+func flora_seed() -> int:
+	return TURF_SEED+9
+
+func life_script() -> Script:
+	return null if grey() else KitLife
+
+func warm() -> void:
+	super.warm()
+	if grey(): return
+	KitLook.palette()
+	KitLook.ground_material()
+	KitLook.rock_material()
+	KitLook.rock_tone(Vector3.ZERO,30.0,Vector3.UP)
+	GiantStone.warm()
+
+## The greybox's solids and the islands' keels (their spurs' reach).
+func _solids() -> Array:
+	var out := super._solids()
+	if grey(): return out
+	for keel: Array in [[cap_outline(),cap_top(),CAP_DEPTH],[foot_outline(),0.0,FOOT_DEPTH],
+			[terrace_outline(),TERRACE_Y,TERRACE_DEPTH],[landing_outline(),LANDING_Y,LANDING_DEPTH]]:
+		var ring: Array = keel[0]
+		var box := Rect2(ring[0],Vector2.ZERO)
+		for p: Vector2 in ring: box = box.expand(p)
+		out.append([box.grow(-1.0),float(keel[1])-float(keel[2])*KEEL_REACH,float(keel[1]),null])
+	return out
+
+## Measured headless (the turf build).
+func build_cost() -> int:
+	return 0 if grey() else 350
+
+func build(into: Node3D) -> void:
+	if grey():
+		super.build(into)
+		return
+	art = into
+	var began := Time.get_ticks_msec()
+	var root := Node3D.new()
+	root.name = "PlumbWell"
+	into.add_child(root)
+	var tone := KitLook.turf(TURF_SEED,KitLand.wear_of(paths()))
+	var lands := [
+		["Cap",cap_outline(),cap_top(),CAP_DEPTH,[90.0,220,64]],
+		["Foot",foot_outline(),0.0,FOOT_DEPTH,[60.0,120,40]],
+		["Terrace",terrace_outline(),TERRACE_Y,TERRACE_DEPTH,[50.0,90,32]],
+		["Landing",landing_outline(),LANDING_Y,LANDING_DEPTH,[50.0,90,32]],
+	]
+	for k in range(lands.size()):
+		var spec: Array = lands[k]
+		var y: float = spec[2]
+		var land := KitLand.island({"outline":spec[1],"seed":TURF_SEED+k,"ground":func(_x: float, _z: float) -> float: return y,
+			"top":y,"depth":float(spec[3]),"hang":true,"resample":spec[4],"tone":tone})
+		land.name = str(spec[0])
+		_collide_sides(land)
+		root.add_child(land)
+		turf(land)
+	_stone(root)
+	built_ms = Time.get_ticks_msec()-began
+
+## An island's hanging sides collided as drawn (the giant's rule: the
+## greybox's plates were solid to their bottoms).
+static func _collide_sides(land: Node3D) -> void:
+	var sides := land.get_node_or_null("Mesh") as MeshInstance3D
+	if sides == null or sides.mesh == null: return
+	var body := StaticBody3D.new()
+	body.name = "Sides"
+	var shape := ConcavePolygonShape3D.new()
+	shape.set_faces(sides.mesh.get_faces())
+	shape.backface_collision = true
+	var holder := CollisionShape3D.new()
+	holder.shape = shape
+	body.add_child(holder)
+	land.add_child(body)
+
+## The shaft's masonry: drawn as one mesh of cut stone, collided as the
+## greybox's walk boxes.
+func _stone(root: Node3D) -> void:
+	var m: RefCounted = GiantStone.mesher()
+	var solids := Node3D.new()
+	solids.name = "Walk"
+	root.add_child(solids)
+	# Plates 2-4: cut-stone floors round their oculi (the greybox's rects),
+	# slabs about 4 m, those at a hole a shade lighter (the rope-worn lip).
+	for i in range(1,4):
+		var pl: Dictionary = PLATES[i]
+		var top: float = pl.top
+		var holes: Array[Rect2] = []
+		for h: Rect2 in pl.holes: holes.append(h)
+		for r: Rect2 in _floor_rects(pl.rect,holes):
+			_walk(solids,r,top-THICK,top)
+			_slabs(m,r,top-THICK,top,holes)
+	# Oculus 1's collar on the cap (the hole's exact edge; the turf under it).
+	var o1: Rect2 = PLATES[0].holes[0]
+	for r: Rect2 in [Rect2(o1.position.x-COLLAR,o1.position.y-COLLAR,o1.size.x+COLLAR*2.0,COLLAR),
+			Rect2(o1.position.x-COLLAR,o1.position.y,COLLAR,o1.size.y),Rect2(o1.end.x,o1.position.y,COLLAR,o1.size.y)]:
+		_block(m,solids,r,cap_top()-THICK,cap_top()+PROUD,0.12,NAN,1.12)
+	# The plumb wall, the kerb, the spine.
+	for w: Dictionary in WALLS:
+		_block(m,solids,w.rect,float(w.bottom),float(w.top),0.2 if str(w.name) == "plumb wall" else 0.1)
+	var centre: Vector2 = SPINE.at
+	var radius := float(SPINE.radius)
+	_walk_cyl(solids,centre,radius,-THICK,cap_top())
+	m.cylinder(Transform3D(Basis.IDENTITY,Vector3(centre.x,(cap_top()-THICK)*0.5,centre.y)),radius,cap_top()+THICK,16,0.14,-THICK)
+	# The rune line on the plumb wall (its south face, over the oculus
+	# line), shorter plate by plate, ending over the head.
+	var lengths := [12.0,9.0,6.0,4.0,2.4]
+	for i in range(PLATES.size()):
+		var y := float(PLATES[i].top)+2.6
+		var half: float = lengths[i]*0.5
+		m.runes(Vector3(-half,y,WALL_Z),Vector3(half,y,WALL_Z),Vector3.UP,Vector3(0,0,-1),11.0+i)
+	# The masons' bench on the foot.
+	var bench: Dictionary = PLATES[4].tiers[0]
+	_block(m,solids,bench.rect,-0.3,float(bench.rise),0.15,0.0)
+	# The windlass: two stone posts and a wooden drum, collided as the
+	# greybox's drum.
+	var wc: Vector2 = WINDLASS.at
+	var wr := float(WINDLASS.radius)
+	var rise := float(WINDLASS.rise)
+	_walk_cyl(solids,wc,wr,cap_top(),cap_top()+rise)
+	for sx: float in [-1.0,1.0]:
+		var post := Rect2(wc.x+sx*wr-0.16,wc.y-0.16,0.32,0.32)
+		m.box(_at(post,cap_top()-0.2,cap_top()+rise),_size(post,cap_top()-0.2,cap_top()+rise),0.05,cap_top())
+	var body := MeshInstance3D.new()
+	body.name = "Stone"
+	body.mesh = GiantStone.mesh_of(m)
+	root.add_child(body)
+	root.set_meta("stone_triangles",m.triangles())
+	var bark := StandardMaterial3D.new()
+	bark.albedo_color = Color(0.24,0.17,0.11)
+	bark.roughness = 1.0
+	var drum := MeshInstance3D.new()
+	var dm := CylinderMesh.new()
+	dm.top_radius = 0.36
+	dm.bottom_radius = 0.36
+	dm.height = wr*2.0
+	dm.radial_segments = 12
+	drum.mesh = dm
+	drum.transform = Transform3D(Basis(Vector3.BACK,PI*0.5),Vector3(wc.x,cap_top()+rise-0.45,wc.y))
+	drum.material_override = bark
+	root.add_child(drum)
+
+## A floor rect laid as slabs about 4 m long; a slab at a hole a shade
+## lighter (the rope-worn lip).
+static func _slabs(m: RefCounted, r: Rect2, bottom: float, high: float, holes: Array[Rect2]) -> void:
+	var along_x := r.size.x >= r.size.y
+	var length := r.size.x if along_x else r.size.y
+	var n := maxi(int(round(length/4.0)),1)
+	for k in range(n):
+		var s := Rect2(r.position.x+r.size.x*k/n,r.position.y,r.size.x/n,r.size.y) if along_x else Rect2(r.position.x,r.position.y+r.size.y*k/n,r.size.x,r.size.y/n)
+		var worn := false
+		for h: Rect2 in holes:
+			if s.grow(0.05).intersects(h): worn = true
+		m.box(_at(s,bottom,high),_size(s,bottom,high),0.1,bottom,1.1 if worn else 1.0)
+
+static func _block(m: RefCounted, solids: Node3D, r: Rect2, bottom: float, high: float, bevel: float, foot := NAN, tone := 1.0) -> void:
+	_walk(solids,r,bottom,high)
+	m.box(_at(r,bottom,high),_size(r,bottom,high),bevel,foot,tone)
+
+static func _at(r: Rect2, bottom: float, high: float) -> Transform3D:
+	return Transform3D(Basis.IDENTITY,Vector3(r.get_center().x,(bottom+high)*0.5,r.get_center().y))
+
+static func _size(r: Rect2, bottom: float, high: float) -> Vector3:
+	return Vector3(r.size.x,high-bottom,r.size.y)
+
+## A walk box (the greybox's), collided only.
+static func _walk(solids: Node3D, r: Rect2, bottom: float, high: float) -> void:
+	var body := StaticBody3D.new()
+	body.transform = _at(r,bottom,high)
+	var c := CollisionShape3D.new()
+	c.shape = _box_shape(_size(r,bottom,high))
+	body.add_child(c)
+	solids.add_child(body)
+
+static func _walk_cyl(solids: Node3D, centre: Vector2, radius: float, bottom: float, high: float) -> void:
+	var body := StaticBody3D.new()
+	body.position = Vector3(centre.x,(bottom+high)*0.5,centre.y)
+	var c := CollisionShape3D.new()
+	var shape := CylinderShape3D.new()
+	shape.radius = radius
+	shape.height = high-bottom
+	c.shape = shape
+	body.add_child(c)
+	solids.add_child(body)
