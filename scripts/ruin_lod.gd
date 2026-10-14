@@ -32,6 +32,7 @@ extends RefCounted
 ## (`shadow_range`, 0 for the old way: every shadow cast at every distance).
 
 const RuinGrowth = preload("res://scripts/ruin_growth.gd")
+const NativeIsleKernels = preload("res://scripts/native_isle_kernels.gd")
 
 ## A growth group is thin under this across (m) and this long for its width.
 const THIN_WIDTH := 0.03
@@ -158,11 +159,21 @@ static func leveled_mesh(mesh: ArrayMesh) -> ArrayMesh:
 		if is_growth:
 			var withindex := arrays.duplicate()
 			var index := PackedInt32Array()
-			index.resize(n)
-			for k in range(n): index[k] = k
+			var levels := {}
+			# The native kernel's index and levels are these loops'
+			# (native/terrain_kernels/isle_kernels.h `growth_levels`).
+			var kernel: Object = NativeIsleKernels.get_kernel()
+			if kernel != null:
+				var made: Dictionary = kernel.growth_levels(arrays[Mesh.ARRAY_VERTEX],GROWTH_LEVELS,THIN_WIDTH,THIN_ASPECT)
+				index = made.index
+				levels = made.lods
+			else:
+				index.resize(n)
+				for k in range(n): index[k] = k
+				levels = growth_lods(arrays[Mesh.ARRAY_VERTEX])
 			withindex[Mesh.ARRAY_INDEX] = index
 			var grown := ArrayMesh.new()
-			grown.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,withindex,[],growth_lods(arrays[Mesh.ARRAY_VERTEX]),RuinGrowth.FORMAT)
+			grown.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,withindex,[],levels,RuinGrowth.FORMAT)
 			grown.surface_set_material(0,material)
 			growth_mesh = grown
 			if shadow_range > 0.0: shade = shade_chunks(arrays)
@@ -192,6 +203,16 @@ static func leveled_mesh(mesh: ArrayMesh) -> ArrayMesh:
 ## mesh when it all lies within about a cell and a half), each a surface of
 ## the surface's own arrays, in the growth's format.
 static func shade_chunks(arrays: Array) -> Array:
+	# The native kernel splits the arrays as below (isle_kernels.h `growth_chunks`).
+	var kernel: Object = NativeIsleKernels.get_kernel()
+	if kernel != null:
+		var meshes: Array = []
+		for part: Array in kernel.growth_chunks(arrays,GROWTH_CELL):
+			var mesh := ArrayMesh.new()
+			mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,part,[],{},RuinGrowth.FORMAT)
+			mesh.surface_set_material(0,RuinGrowth.material())
+			meshes.append(mesh)
+		return meshes
 	var v: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
 	var groups := _groups(v)
 	var starts: PackedInt32Array = groups[0]

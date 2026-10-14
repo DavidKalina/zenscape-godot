@@ -11,6 +11,8 @@ extends RefCounted
 ## slice a frame. Every shape gets back, (in order): the wanderer's collision
 ## is the same, only complete a few frames later (a part is not "up" before).
 
+const NativeIsleKernels = preload("res://scripts/native_isle_kernels.gd")
+
 ## A body keeps this many shapes while it enters the tree.
 const KEEP := 16
 ## Only a body with more convex shapes than this has them held back (a
@@ -77,6 +79,9 @@ static func defer_body(body: StaticBody3D) -> int:
 ## `faces` (triangle corners) cut into pieces of about PIECE_TRIS triangles:
 ## the triangles sorted by their middle along the longest side.
 static func _cut(faces: PackedVector3Array) -> Array:
+	# The native kernel cuts the same pieces (isle_kernels.h `cut_faces`).
+	var kernel: Object = NativeIsleKernels.get_kernel()
+	if kernel != null: return kernel.cut_faces(faces,PIECE_TRIS)
 	var tris := faces.size()/3
 	var box := AABB(faces[0],Vector3.ZERO)
 	for p in faces: box = box.expand(p)

@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <vector>
 #include "water_flow.h"
+#include "isle_kernels.h"
 
 using namespace godot;
 
@@ -317,6 +318,7 @@ static void initialize(ModuleInitializationLevel level) {
     if (level != MODULE_INITIALIZATION_LEVEL_SCENE) return;
     ClassDB::register_class<ZenScapeTerrainKernels>();
     ClassDB::register_class<ZenScapeWaterFlow>();
+    ClassDB::register_class<ZenScapeIsleKernels>();
 }
 extern "C" GDExtensionBool GDE_EXPORT zenscape_kernels_init(GDExtensionInterfaceGetProcAddress get_proc,
         GDExtensionClassLibraryPtr library, GDExtensionInitialization *initialization) {

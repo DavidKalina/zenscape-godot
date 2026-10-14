@@ -43,6 +43,7 @@ const STONE_SHADER = preload("res://shaders/ruin_stone.gdshader")
 const RuinGrowth = preload("res://scripts/ruin_growth.gd")
 ## The stone's look (classic, or a clean one: docs/scenic/ruin-stone.md).
 const Style = preload("res://scripts/ruin_stone_style.gd")
+const NativeIsleKernels = preload("res://scripts/native_isle_kernels.gd")
 
 ## The pieces, in the kit's order: the gothic abbey's, here.
 const PIECES := ["pier","arch","lancet_wall","rose_gable","buttress","wall","stairs","turret","vault","fallen_pier","tomb_chest","floor","grand_stair","stone_circle"]
@@ -2518,6 +2519,7 @@ class Build extends RefCounted:
 	## its roll (a share of the odds), its share, the block's depth across].
 	var worn_cuts: Array = []
 	static var _materials := {}
+	static var _dressed := ""
 	## How much of the small growth and scatter is built (RuinKit
 	## `set_detail`): 1 all of it; under 1 fewer ivy strands, moss
 	## cushions, tufts and rubble stones; 0 none (a far or cheap ruin).
@@ -2557,7 +2559,11 @@ class Build extends RefCounted:
 			s.set_shader_parameter("rim",0.14)
 			s.set_shader_parameter("roughness_value",0.95)
 			_materials = {"stone":s,"growth":RuinGrowth.material()}
-		Style.dress(_materials.stone)
+		# Dressed when the look changes (the same values every time else):
+		# isles built side by side on workers call this at once.
+		if _dressed != Style.current:
+			Style.dress(_materials.stone)
+			_dressed = Style.current
 		return _materials
 
 	## The ground's height at (x, z) in the piece's frame: 0 with no terrain.
@@ -2584,6 +2590,8 @@ class Build extends RefCounted:
 
 	## How thick `points` stand at their thinnest (RuinKit `hull_thickness`).
 	static func thickness(points: PackedVector3Array) -> float:
+		var kernel: Object = NativeIsleKernels.get_kernel()
+		if kernel != null: return kernel.thickness(points)
 		if points.size() < 4: return 0.0
 		var mean := Vector3.ZERO
 		for p in points: mean += p
@@ -2628,6 +2636,9 @@ class Build extends RefCounted:
 	## (whose corners are given back); its hull solid if `collide`. `rough`
 	## scales the weathering; `growable`: ivy and moss may grow on it.
 	func solid(planes: Array[Plane], pose: Transform3D, colour: Color, collide := true, wear := true, extra: Array[Plane] = [], open := -1, rough := 1.0, growable := true) -> PackedVector3Array:
+		# The native kernel does all of this (the classic and eroded looks).
+		var kernel: Object = NativeIsleKernels.get_kernel()
+		if kernel != null and not (growable and Style.clean()): return _solid_native(kernel,planes,pose,colour,collide,wear,extra,open,rough,growable)
 		var marks := PackedInt32Array([pending.size(),tops.size(),hulls.size(),solids.size()])
 		var cut: Array[Plane] = planes.duplicate()
 		for p in extra: cut.append(p)
@@ -2772,6 +2783,41 @@ class Build extends RefCounted:
 			blocks.append(block)
 		return made[1]
 
+	## `solid` in the native kernel (isle_kernels.h `ruin_solid`): the very
+	## same draws, faces, tops, solid, hull and block, appended here.
+	func _solid_native(kernel: Object, planes: Array[Plane], pose: Transform3D, colour: Color, collide: bool, wear: bool, extra: Array[Plane], open: int, rough: float, growable: bool) -> PackedVector3Array:
+		var flags := int(collide)|int(wear)<<1|int(growable)<<2|int(lean)<<3|int(rigid)<<4|int(path != null)<<5|int(check_floating)<<6|int(drop_floating)<<7
+		var out: Array = kernel.ruin_solid(_solid_consts(),noise,bevels,rng.state,PackedFloat64Array([weathered,age,ground,pending.size(),tops.size(),hulls.size(),solids.size()]),
+			flags,planes,extra,pose,frame,colour,stone,open,rough,grow)
+		rng.state = out[0]
+		pending.append_array(out[2])
+		tops.append_array(out[3])
+		if out[4] != null: solids.append(out[4])
+		if out[5] != null:
+			hulls.append(out[5])
+			hull_anchors.append(out[6])
+		if out[7] != null: blocks.append(out[7])
+		return out[1]
+
+	## The kit's constants the native `solid` reads, by look (made once each).
+	static var _solid_consts_by_look := {}
+
+	static func _solid_consts() -> Dictionary:
+		var key := Style.current
+		_native_lock.lock()
+		if not _solid_consts_by_look.has(key):
+			var lichen: Array = []
+			for c: Color in LICHEN: lichen.append(c.srgb_to_linear())
+			_solid_consts_by_look[key] = {"ruled":Style.ruled(),"eroded":Style.eroded(),"erode":(Style.LOOKS[key] as Dictionary).get("erode",{}),
+				"wobble":WOBBLE,"chips":CHIPS,"chip":CHIP,"chunk":CHUNK,"chunk_odds":CHUNK_ODDS,"facets":FACETS,"edge_mix":EDGE_MIX,
+				"streak":STREAK,"streak_scale":STREAK_SCALE,"damp":DAMP,"damp_rise":DAMP_RISE,"under":UNDER,"lichen_odds":LICHEN_ODDS,
+				"moss_up":MOSS_UP,"moss_scale":MOSS_SCALE,"moss_age":MOSS_AGE,"moss_cover":MOSS_COVER,"hull_thin":HULL_THIN,
+				"edge_linear":Color(EDGE).srgb_to_linear(),"moss":Color(MOSS),"moss_light":Color(MOSS_LIGHT),
+				"moss_linear":Color(MOSS).srgb_to_linear(),"lichen_linear":lichen}
+		var out: Dictionary = _solid_consts_by_look[key]
+		_native_lock.unlock()
+		return out
+
 	## An eroded look's block (Style `erode`): its classic worn planes `cut`
 	## (the block's own as built, `source`, then the wear's chips and chunk,
 	## then the ground's), dialled: each face's wobble scaled back toward
@@ -2871,10 +2917,11 @@ class Build extends RefCounted:
 				_floaters_lock.lock()
 				for box: AABB in found: floaters.append({"label":root.name,"root":weakref(root),"box":box})
 				_floaters_lock.unlock()
-		_ivy()
-		RuinGrowth.fringes(self)
-		_cushions()
-		_draw()
+		if not _finish_native():
+			_ivy()
+			RuinGrowth.fringes(self)
+			_cushions()
+			_draw()
 		var mesh := ArrayMesh.new()
 		var m := materials()
 		for part: Array in [[faces,m.stone]]:
@@ -2914,6 +2961,69 @@ class Build extends RefCounted:
 		root.set_meta("weathered",weathered)
 		draws = hash([draws,rng.state])
 		return root
+
+	## The kit's constants the native finish reads (made once).
+	static var _native_consts := {}
+	static var _native_lock := Mutex.new()
+
+	static func _native_constants() -> Dictionary:
+		_native_lock.lock()
+		if _native_consts.is_empty():
+			var ivy: Array = []
+			for c: Color in IVY: ivy.append(c.srgb_to_linear())
+			var vine: Array = []
+			for c: Color in RuinGrowth.VINE: vine.append(c.srgb_to_linear())
+			_native_consts = {"ivy_linear":ivy,"vine_linear":vine,"ivy_leaf":IVY_LEAF,"ivy_strands":IVY_STRANDS,"ivy_length":IVY_LENGTH,
+				"ivy_most":IVY_MOST,"ivy_lean":IVY_LEAN,"cushion":CUSHION,"moss":Color(MOSS),"moss_light":Color(MOSS_LIGHT),
+				"stem_colour":Color("3b4a26").srgb_to_linear(),"cull_off":CULL_OFF,"cell_cull":CELL_CULL,"leaf":RuinGrowth.LEAF,
+				"leaf_width":RuinGrowth.LEAF_WIDTH,"stem":RuinGrowth.STEM,"node_step":RuinGrowth.NODE_STEP,"stem_step":RuinGrowth.STEM_STEP,
+				"lean_scale":RuinGrowth.LEAN_SCALE,"tendril":RuinGrowth.TENDRIL,"spacing":RuinGrowth.SPACING,"strands":RuinGrowth.STRANDS,
+				"strands_lean":RuinGrowth.STRANDS_LEAN,"length_gain":RuinGrowth.LENGTH_GAIN,"longest":RuinGrowth.LONGEST,
+				"fringe_rate":RuinGrowth.FRINGE_RATE,"fringes":RuinGrowth.FRINGES,"fringes_lean":RuinGrowth.FRINGES_LEAN,
+				"fringe_length":RuinGrowth.FRINGE_LENGTH}
+		var out := _native_consts
+		_native_lock.unlock()
+		return out
+
+	## `finish`'s ivy, fringes, curtains, cushions and drawing in the native
+	## kernel (scripts/native_isle_kernels.gd), the very same faces and draws;
+	## false (nothing done) without it, or for what it does not draw (a ground
+	## callable, shelter, a bend, a carved look), which `finish` then does here.
+	func _finish_native() -> bool:
+		if terrain.is_valid() or shelter.is_valid() or path != null: return false
+		var kernel: Object = NativeIsleKernels.get_kernel()
+		if kernel == null: return false
+		var build := _native_constants().duplicate()
+		build.state = rng.state
+		build.weathered = weathered
+		build.age = age
+		build.detail = detail
+		build.ground = ground
+		build.lean = lean
+		build.vines = RuinGrowth.vines
+		build.cull = cull
+		build.clean_stone = clean_stone
+		build.look = Style.LOOKS[Style.current]
+		build.solids = solids
+		build.tops = tops
+		build.hangs = hangs
+		build.clear = clear
+		build.pending = pending
+		var out: Dictionary = kernel.ruin_finish(build)
+		if out.is_empty(): return false
+		rng.state = int(out.state)
+		faces.v.append_array(out.v)
+		faces.n.append_array(out.n)
+		faces.c.append_array(out.c)
+		growth.v.append_array(out.gv)
+		growth.n.append_array(out.gn)
+		growth.c.append_array(out.gc)
+		growth.uv.append_array(out.guv)
+		growth.uv2.append_array(out.guv2)
+		growth.cu.append_array(out.gcu)
+		pending.clear()
+		grow = PackedFloat32Array()
+		return true
 
 	## Drawn stones resting on nothing (with `check_floating`): the blocks
 	## joined to the ground (a block reaching within FLOAT_TOUCH of the
