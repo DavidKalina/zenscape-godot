@@ -51,7 +51,7 @@ var _tilt_left := 0.0
 ## Counted for the HUD and tests: landings on slabs, rope catches, times on
 ## a balustrade's coping; the last rope release's pace and the fastest on
 ## the coping this time on it (or the last).
-var counts := {"slab":0,"swing":0,"rail":0}
+var counts := {"slab":0,"swing":0,"rail":0,"snag":0}
 var last_release := Vector3.ZERO
 ## The last rope release's timing (SwingRope `timing`, 0 to 1).
 var last_timing := 0.0
@@ -178,9 +178,13 @@ func after(_delta: float, events: Dictionary) -> void:
 	if on != null and motor.grounded: on.weigh(motor.feet)
 	if motor.rider == null and not motor.swimming:
 		for r: Node3D in ropes:
-			if r.anchor.distance_to(motor.feet) < NEAR and r.try_catch(motor):
+			if r.anchor.distance_to(motor.feet) < NEAR and r.try_catch(motor,_delta):
 				events["swing"] = true
 				counts.swing += 1
+				if motor.move == "tumble":
+					# Snagged stunned (docs/design/roguelike/rope-catch.md).
+					events["snag"] = true
+					counts.snag += 1
 				break
 	# On a balustrade's coping: only noted.
 	var rail: Node3D = null

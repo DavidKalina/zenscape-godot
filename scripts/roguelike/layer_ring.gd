@@ -160,7 +160,7 @@ static func _make(seed_value: int, attempt: int, knobs: Dictionary) -> Dictionar
 	# The motifs: n round the ring and one for the greed branch (the
 	# smaller the likelier, never a hero).
 	var motifs: Array = []
-	for p: Array in LayerPlan._draw(n+1,rng,REPEATS): motifs.append(LayerPlan._motif_isle(p,rng))
+	for p: Array in LayerPlan._draw(n+1,rng,REPEATS,k_all): motifs.append(LayerPlan._motif_isle(p,rng))
 	if motifs.size() < n+1:
 		plan.problems.append("too few motifs drawn")
 		return plan
@@ -260,6 +260,7 @@ static func _make(seed_value: int, attempt: int, knobs: Dictionary) -> Dictionar
 	for isle: Dictionary in plan.isles: lowest = minf(lowest,LayerPlan._span(isle).x)
 	plan.void_y = lowest-LayerPlan.VOID_UNDER
 	for i: int in order: plan.isles[i].grip = _grip(plan.isles[i])
+	if LayerPlan.Greybox.missing(plan): plan.problems.append("no greybox isle placed")
 	return plan
 
 ## Another pool pick in place of one that won't stand (a family any
@@ -269,9 +270,9 @@ static func _another(plan: Dictionary, motifs: Array, greed: Dictionary, rng: Ra
 	for m: Dictionary in motifs+[greed]+plan.isles: taken[m.id] = int(taken.get(m.id,0))+1
 	var pool: Array = []
 	var total := 0.0
-	for p: Array in LayerPlan.POOL:
+	for p: Array in LayerPlan.draw_pool(plan.knobs):
 		var probe: RefCounted = (p[1] as Script).new()
-		if not probe.family() and int(taken.get(str(p[0]),0)) >= REPEATS: continue
+		if not probe.family() and int(taken.get(str(p[0]),0)) >= LayerPlan._most(str(p[0]),REPEATS): continue
 		pool.append(p)
 		total += float(p[2])
 	if pool.is_empty(): return {}

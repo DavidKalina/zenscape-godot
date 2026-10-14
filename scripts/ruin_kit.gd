@@ -1415,7 +1415,7 @@ static func bridge_anchor(seed_value: int, weathered := 0.4, width := 0.74, spec
 ## with its edge chamfered deep. No figure, no lettering: a carved block.
 ## Weathered, the lid is cracked across and half slid off askew, a corner
 ## post broken away, moss in the niches.
-static func tomb_chest(seed_value: int, weathered := 0.0) -> Node3D:
+static func tomb_chest(seed_value: int, weathered := 0.0, with_lid := true) -> Node3D:
 	var b := Build.new(seed_value,weathered,"Chest")
 	var hl := CHEST.x*0.5
 	var hw := CHEST.y*0.5
@@ -1447,6 +1447,10 @@ static func tomb_chest(seed_value: int, weathered := 0.0) -> Node3D:
 	# The ends: a quatrefoil-ish boss in a square panel.
 	for s: float in [-1.0,1.0]:
 		b.solid(_axial_prism(8,0.16,0.05),Transform3D(Basis(Vector3.BACK,PI*0.5)*Basis(Vector3.RIGHT,PI*0.5),Vector3(s*(hl-0.02),y0+body*0.5,0.0)),_stone(b,1.0),false,true)
+	# Without its lid (the treasure chest, scripts/chest/, builds its own to lift).
+	if not with_lid:
+		_rubble(b,1.7,int(round(weathered*b.rng.randf_range(2.0,4.0))))
+		return b.finish()
 	# The lid.
 	var lid := Vector3(hl+0.07,CHEST.w*0.5,hw+0.07)
 	var lid_y := CHEST.z-CHEST.w*0.5
