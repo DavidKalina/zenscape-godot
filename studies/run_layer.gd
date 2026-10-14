@@ -346,6 +346,13 @@ func tick(delta: float) -> void:
 func _strand() -> void:
 	pass
 
+## A layer's plan still laid on a worker at a quit is waited out: the task
+## (bound to this node) left running crashed the engine's teardown.
+func _exit_tree() -> void:
+	FixedCache.drain(_plan_task)
+	_plan_task = -1
+	super._exit_tree()
+
 var _card_due := 0.0
 
 func _process(delta: float) -> void:

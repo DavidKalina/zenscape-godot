@@ -30,6 +30,7 @@ func _initialize() -> void:
 	FixedCache.save_base(a,root_a)
 	var began := Time.get_ticks_msec()
 	while not FixedCache.saved(): await process_frame
+	FixedCache.finish_save()
 	print("CHECK saved in %d ms" % (Time.get_ticks_msec()-began))
 	print("CHECK file %s: %d MB" % [path.get_file(),_size(path)/1048576])
 	var b: RefCounted = base_script.new()

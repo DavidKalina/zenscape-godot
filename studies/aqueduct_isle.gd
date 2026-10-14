@@ -302,6 +302,12 @@ func _build_art() -> void:
 	# --sluice: the Sluice Flush on the channel (scripts/traps/sluice_aqueduct.gd).
 	preload("res://scripts/traps/sluice_aqueduct.gd").build(self)
 
+## A quit while the base's copy is still being kept: the save finished
+## first (scripts/roguelike/fixed_cache.gd `finish_save`).
+func _exit_tree() -> void:
+	FixedCache.finish_save()
+	super._exit_tree()
+
 # --- The isle's hooks --------------------------------------------------------------
 
 func isle_name() -> String:

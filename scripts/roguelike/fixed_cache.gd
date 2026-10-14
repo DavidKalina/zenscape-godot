@@ -32,8 +32,14 @@ const LOOSE_FLAGS := ["--seed=","--shape=","--knob=","--no-title","--loading-tra
 
 static var _hash := ""
 static var _hash_lock := Mutex.new()
-## Set once the base's copy has been handed to a worker to save.
-static var _saving := -1
+## Set once the base's save has been asked (one a launch).
+static var _asked := false
+## The save's worker task till it is waited (-1: none), and what it leaves
+## for the main thread: the copy to free, the live materials to untag.
+static var _task := -1
+static var _dst: Node
+static var _live := {}
+static var _began := 0
 
 ## Whether the cache is in use: not with --no-fixed-cache.
 static func enabled() -> bool:
@@ -120,7 +126,8 @@ static func _drop_others(prefix: String, keep: String) -> void:
 ## and `motif` is read here, now; the copy is packed and written on a worker
 ## (engine work: it does not slow the GDScript the game runs). Once.
 static func save_base(motif: RefCounted, src: Node3D) -> void:
-	if not enabled() or _saving >= 0: return
+	if not enabled() or _asked: return
+	_asked = true
 	make_dir()
 	var dst := src.duplicate() as Node3D
 	var enc := Enc.new()
@@ -155,7 +162,6 @@ static func save_base(motif: RefCounted, src: Node3D) -> void:
 			state.scripts.append([where,enc.script_ref(script,where),vars])
 	if enc.fail != "":
 		push_warning("fixed cache: the base art can't be kept (%s)" % enc.fail)
-		_saving = 0
 		dst.free()
 		return
 	state.objs = enc.objs
@@ -166,26 +172,78 @@ static func save_base(motif: RefCounted, src: Node3D) -> void:
 	for node: Node in all:
 		if node != dst: node.owner = dst
 	dst.set_meta(STATE,state)
+	# The four shared materials tagged here, on the main thread, and untagged
+	# when the save is reaped (`_reap`), as the copy is freed there: the
+	# worker touches nothing live and frees nothing.
 	var live := enc.shared
-	_saving = WorkerThreadPool.add_task(func() -> void:
-		for key_name: String in live: (live[key_name] as Material).set_meta(SHARED_TAG,key_name)
+	for key_name: String in live: (live[key_name] as Material).set_meta(SHARED_TAG,key_name)
+	var path := base_path()
+	_dst = dst
+	_live = live
+	_began = Time.get_ticks_msec()
+	_task = WorkerThreadPool.add_task(func() -> void:
 		var packed := PackedScene.new()
 		var err := packed.pack(dst)
-		var path := base_path()
 		var tmp := path.get_basename()+".part%d.scn" % OS.get_process_id()
 		if err == OK: err = ResourceSaver.save(packed,tmp)
-		for key_name: String in live: (live[key_name] as Material).remove_meta(SHARED_TAG)
-		dst.free()
+		packed = null
 		if err != OK:
 			push_warning("fixed cache: the base art wasn't kept (%d)" % err)
+			DirAccess.remove_absolute(tmp)
 			return
 		DirAccess.rename_absolute(tmp,path)
 		_drop_others("base_",path.get_file()),false,"Fixed cache: keep the base")
+	(Engine.get_main_loop() as SceneTree).process_frame.connect(_poll)
 
 ## Whether the base's save is done (or none was asked). A worker's read of a
 ## mesh's arrays waits on the main thread's next frame, so tools run frames.
 static func saved() -> bool:
-	return _saving <= 0 or WorkerThreadPool.is_task_completed(_saving)
+	return _task < 0 or WorkerThreadPool.is_task_completed(_task)
+
+## The save, if one is under way, finished now (a quit: the scene that asked
+## it leaving the tree, `aqueduct_isle.gd` `_exit_tree`), so the file is whole
+## and renamed, not left as a .part, and the task waited before the engine's
+## teardown.
+static func finish_save() -> void:
+	if _task < 0: return
+	if not WorkerThreadPool.is_task_completed(_task): print("fixed cache: quit mid-save, finishing it")
+	_flush_till_done(_task)
+	_reap()
+
+## The save's task waited (on the main thread, once it is done), its copy
+## freed and the materials untagged. A task never waited keeps its Callable,
+## and with it the four live shared materials it captured, till the engine's
+## last teardown, after the RenderingServer is gone: their free there crashed
+## the quit of every session that saved (signal 11 in a mutex lock).
+static func _reap() -> void:
+	var tree := Engine.get_main_loop() as SceneTree
+	if tree != null and tree.process_frame.is_connected(_poll): tree.process_frame.disconnect(_poll)
+	if _task < 0: return
+	WorkerThreadPool.wait_for_task_completion(_task)
+	_task = -1
+	for key_name: String in _live: (_live[key_name] as Material).remove_meta(SHARED_TAG)
+	_live = {}
+	if is_instance_valid(_dst): _dst.free()
+	_dst = null
+	print("fixed cache: the base kept in %d ms" % (Time.get_ticks_msec()-_began))
+
+## Waits out a worker's `task` on the main thread when the frames have
+## stopped (a quit: the tree torn down), flushing the RenderingServer's queue
+## meanwhile: a worker's read of a mesh waits on the main thread to flush it,
+## so a plain wait there would never end. Then the task is waited (freed).
+static func drain(task: int) -> void:
+	if task < 0: return
+	_flush_till_done(task)
+	WorkerThreadPool.wait_for_task_completion(task)
+
+static func _flush_till_done(task: int) -> void:
+	while not WorkerThreadPool.is_task_completed(task):
+		RenderingServer.force_sync()
+		OS.delay_msec(1)
+
+## Each frame while the save runs: reaped once done (`_reap`).
+static func _poll() -> void:
+	if saved(): _reap()
 
 # --- Loading ----------------------------------------------------------------------------------
 
