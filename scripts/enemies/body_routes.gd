@@ -124,6 +124,22 @@ func block(p: Vector3) -> void:
 	for dx in range(-1,2):
 		for dz in range(-1,2): _blocked[c+Vector2i(dx,dz)] = true
 
+## The world changed in `box` (rubble come to rest: docs/design/roguelike/
+## olmec-destruction-round1.md): its columns, and those a footprint off it,
+## read afresh; what was known of fitting and walking there let go.
+func forget(box: AABB) -> void:
+	var lo := cell_of(box.position)-Vector2i(2,2)
+	var hi := cell_of(box.end)+Vector2i(2,2)
+	var inside := func(x: int, z: int) -> bool: return x >= lo.x and x <= hi.x and z >= lo.y and z <= hi.y
+	for x in range(lo.x,hi.x+1):
+		for z in range(lo.y,hi.y+1):
+			cols.erase(Vector2i(x,z))
+			_blocked.erase(Vector2i(x,z))
+	for u: Vector3i in _fits.keys():
+		if inside.call(u.x,u.y): _fits.erase(u)
+	for k: Vector3i in _between.keys():
+		if inside.call(floori(k.x*0.25/CELL),floori(k.y*0.25/CELL)): _between.erase(k)
+
 ## Widest a drop `down` m deep goes across (m).
 func across(down: float) -> float:
 	return minf(leap_far,leap_max+maxf(down,0.0)*leap_fall)

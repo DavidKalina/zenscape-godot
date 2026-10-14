@@ -208,6 +208,17 @@ var _feel_from := -1.0
 var _dust: Array = []
 ## Live shockwaves: {at, r, max, power, done (the walker met), parts}.
 var _waves: Array = []
+## The Olmec's destruction (docs/design/roguelike/olmec-destruction-round1.md):
+## what he breaks (scripts/kit_isle/colonnade_breaks.gd), or null. What
+## still stands of it is left out of his rays (he plans and walks through
+## it), his bulk and his shockwaves break it (`met`, `wave`), and the
+## rubble once settled is read afresh (`world_changed`).
+var breaker: Object = null
+## A stagger after he plows through something (s left): slowed, not stopped.
+var _stagger := 0.0
+const STAGGER := 0.5
+## The reach the route he is on was planned to (for planning it again).
+var _goal_reach := 3.0
 func _init() -> void:
 	cost = 5
 	tags = PackedStringArray(["heavy","climbs","leaps","pushes"])
@@ -370,6 +381,7 @@ func think(delta: float) -> void:
 	state_t += delta
 	_clock += delta
 	quake = maxf(0.0,quake-delta*1.2)
+	_stagger = maxf(0.0,_stagger-delta)
 	_find_head()
 	_dusts(delta)
 	_shocks(delta)
@@ -531,6 +543,9 @@ func _walking(delta: float) -> void:
 		if not _follow(delta): return
 	if _routed():
 		if not (state == "home" and _walk_left()): _heading = _route_heading()
+		# The Olmec's destruction: a pier standing just off his way draws
+		# him into it (a brute's veer, under ROUTE_TURN: he never stops for it).
+		if breaker != null: _heading = breaker.veer(self,_heading)
 		if absf(angle_difference(facing,_heading)) > ROUTE_TURN or look.steps.busy():
 			_brake(delta)
 			# Olmec round 1: stopped first, then it steps round (its feet turn it).
@@ -554,6 +569,7 @@ func _walking(delta: float) -> void:
 		_meet_edge(fwd)
 		return
 	var speed := float(knobs.home) if state == "home" else float(knobs.walk)*(1.15 if whole else 1.0)
+	speed *= 1.0-0.7*clampf(_stagger/STAGGER,0.0,1.0)
 	var step := clampf(angle_difference(facing,_heading),-float(knobs.turn)*delta,float(knobs.turn)*delta)
 	facing = wrapf(facing+step,-PI,PI)
 	var aligned := clampf(cos(angle_difference(facing,_heading)),0.0,1.0)
@@ -1213,6 +1229,7 @@ func _shocks(delta: float) -> void:
 			chip.rotation += Vector3(3.0,2.0,1.0)*delta
 			if chip.global_position.y < (w.at as Vector3).y: chip.visible = false
 		if not w.done: _shock_meets(w)
+		if breaker != null and w.r < w.max: breaker.wave(self,w)
 	for w: Dictionary in _waves:
 		if w.t > w.max/float(knobs.shock_speed)+0.6:
 			for p: Node in w.parts+w.chips.map(func(c: Array) -> Node: return c[0]):
@@ -1295,6 +1312,7 @@ func _plan() -> void:
 
 func _start_search(goal: Vector3, reach: float) -> void:
 	_goal = goal
+	_goal_reach = reach
 	_route = []
 	_leg = 0
 	_leg_out = false
@@ -2192,6 +2210,21 @@ func _move(delta: float) -> void:
 			field.sound(&"body_step",position)
 			quake = maxf(quake,0.06)
 	rotation.y = facing
+	if breaker != null: breaker.met(self)
+
+## Plowed through something (`k` 0 to 1, how much): slowed for a beat and a
+## jolt, never stopped dead.
+func stagger(k: float) -> void:
+	_stagger = maxf(_stagger,STAGGER*clampf(k,0.0,1.0))
+	vel.x *= 1.0-0.55*k
+	vel.z *= 1.0-0.55*k
+	quake = maxf(quake,0.25+0.25*k)
+
+## The world changed in `box` (rubble come to rest): its columns read
+## afresh, and the route it is on planned again from here.
+func world_changed(box: AABB) -> void:
+	if routes != null: routes.forget(box)
+	if _goal != Vector3.INF and (_routed() or _search != null): _start_search(_goal,_goal_reach)
 
 # --- Olmec round 1: its bulk against the world (olmec-turn-clip-round1.md) -------------------
 
@@ -2234,7 +2267,10 @@ func _bulk_at(p: Vector3, motion := Vector3.ZERO) -> PhysicsShapeQueryParameters
 	_bulk_q.shape = _bulk
 	_bulk_q.transform = Transform3D(Basis(Vector3.UP,facing),p+Vector3.UP*(low+top)*0.5)
 	_bulk_q.collision_mask = field.study.ground.mask
-	_bulk_q.exclude = _skip()
+	var skip := _skip()
+	# The Olmec's destruction: rubble is waded through, not shoved off.
+	if breaker != null: skip.append_array(breaker.rubble_rids())
+	_bulk_q.exclude = skip
 	_bulk_q.motion = motion
 	_bulk_q.margin = 0.02
 	return _bulk_q
@@ -2613,6 +2649,7 @@ func _skip() -> Array[RID]:
 	var out: Array[RID] = [body.get_rid()]
 	for e in field.enemies:
 		if is_instance_valid(e) and e.get("body") != null: out.append(e.body.get_rid())
+	if breaker != null: out.append_array(breaker.standing_rids())
 	return out
 
 func _cast(from: Vector3, to: Vector3) -> Dictionary:

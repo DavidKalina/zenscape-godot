@@ -636,12 +636,18 @@ static func _lying_drum(b: Build, p: Vector2, top: float, way: Vector3, length :
 ## "lintels" (as `lintels`), "portals" [{x, y (the springing), crown}],
 ## "stubs" [{at (top middle, world)}], "drums" [{at}], "wedged" (the
 ## cleft's drums' tops), "cleft_beam" {a, b}.
-static func colonnade(seed_value: int, p := {}) -> Node3D:
+## `breakable` (the Olmec's destruction, scripts/kit_isle/colonnade_breaks.gd;
+## docs/design/roguelike/olmec-destruction-round1.md): the piers not under a
+## portal and every standing lintel are left out of the one Build, for the
+## breaks to stand each on its own (meta "breakable": {piers [{line, side,
+## frame, height}], lintels (as `lintels`)}).
+static func colonnade(seed_value: int, p := {}, breakable := false) -> Node3D:
 	p = _p(p)
 	var b := Build.new(seed_value,WEATHERED,"Colonnade")
 	b.settle = 0.5
 	var stubs: Array = []
 	var drums: Array = []
+	var loose: Array = []
 	for i in range(LINES.size()):
 		var x: float = LINES[i][0]
 		var y := TOP+line_y(i)
@@ -650,7 +656,8 @@ static func colonnade(seed_value: int, p := {}) -> Node3D:
 			if hgt <= 0.0: continue
 			var f := frame(x,side*ROW,y)
 			f.basis = f.basis*Basis(Vector3.UP,b.rng.randf_range(-0.2,0.2))
-			RuinKit._pier(b,f,PIER_H,hgt)
+			if breakable and LINES[i][2] != "portal": loose.append({"line":i,"side":side,"frame":f,"height":hgt})
+			else: RuinKit._pier(b,f,PIER_H,hgt)
 			if hgt < INF: stubs.append({"at":at3(x,side*ROW,y+hgt)})
 		if LINES[i][2] == "portal":
 			var h := ROW-RuinKit.ORDER
@@ -658,7 +665,8 @@ static func colonnade(seed_value: int, p := {}) -> Node3D:
 			# No hood mould: with no wall behind it a hood stands proud of
 			# the ring's face, a loose-looking slab where the ring settles.
 			RuinKit._arch_ring(b,f,0.0,PIER_H,h,2.0*h,RuinKit.ARCH_DEPTH*0.5,false,int(p.portal_lost[i]),-1.0 if i%2 == 0 else 1.0)
-	for l: Dictionary in lintels(p): _beam(b,l.a,l.b,LINTEL)
+	if not breakable:
+		for l: Dictionary in lintels(p): _beam(b,l.a,l.b,LINTEL)
 	# Fallen lintels: lying in the way beside their row, broken in two.
 	for key: String in p.fallen:
 		var i := int(key.get_slice(",",0))
@@ -720,6 +728,7 @@ static func colonnade(seed_value: int, p := {}) -> Node3D:
 	node.set_meta("drums",drums)
 	node.set_meta("wedged",wedged)
 	node.set_meta("cleft_beam",{"a":ca,"b":cb})
+	if breakable: node.set_meta("breakable",{"piers":loose,"lintels":lintels(p)})
 	return node
 
 # --- The terraces' steps -----------------------------------------------------------------

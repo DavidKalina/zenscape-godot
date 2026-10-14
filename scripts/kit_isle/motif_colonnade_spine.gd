@@ -32,6 +32,11 @@ var colonnade: Node3D
 var temple: Node3D
 var spine: Node3D
 var bridges: Array[MeshInstance3D] = []
+## The Olmec's destruction (docs/design/roguelike/olmec-destruction-round1.md):
+## the colonnade's plain piers and its lintels built apart (Spine
+## `colonnade`'s `breakable`) for scripts/kit_isle/colonnade_breaks.gd to
+## stand. Off, the one Build as ever.
+var breakable := false
 ## The ridge's own build (ms).
 var spine_ms := 0
 var _plan: Dictionary = {}
@@ -80,7 +85,7 @@ func build(into: Node3D) -> void:
 	spine = Spine.spine_island(SPINE_SEED)
 	spine_ms = Time.get_ticks_msec()-began
 	art.add_child(spine)
-	colonnade = Spine.colonnade(SPINE_SEED+1+shift,p)
+	colonnade = Spine.colonnade(SPINE_SEED+1+shift,p,breakable)
 	art.add_child(colonnade)
 	art.add_child(Spine.step_walls(SPINE_SEED+2))
 	for k in range(Spine.STEPS.size()):
