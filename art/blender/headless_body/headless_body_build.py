@@ -32,9 +32,14 @@ arms and the stump trailing the trunk a few frames; legs and, where they
 grip, hands by two-bone IK; baked on every frame). The game seeks every clip
 itself (headless_body_look.gd), so a clip's length is only its span:
   idle         loop: breathing, a weight shift, the fingers flexing
-  listen       once, LISTEN s (the `listen` knob): perks up, a hand cupped
-               by the stump's left while the game sweeps left, then the
-               right, then "heard it": a snap of the stump, fists
+  listen       once, LISTEN s (the `listen` knob; round 4): no gesture:
+               a breath out, settled still and held, then "heard it": the
+               stump up, the fists closed
+  turn_*       once, STEP s (round 4): one step of a turn on the spot
+               (open: the foot on the turn's side steps out; close: the
+               other comes round), the game turning the root
+  feel         once, FEEL s (round 4): a hand laid flat on the wall before
+               a climb, slid up, a nod
   walk         loop over two steps of WALK_STEP m (the phase from distance)
   stride       loop over two steps of STRIDE_STEP m: homing, arms out for it
   climb        loop over two hand moves, CLIMB_RISE m up: hand over hand,
@@ -872,23 +877,53 @@ def _down(n):
     return {f"h{n}w": 0.0, f"p{n}w": 0.0, f"f{n}": 30.0, f"t{n}": 10.0}
 
 
+## Round 4 (headless-body-round4-anim-polish.md): no gesture. He goes
+## still to listen: a slow breath out, the weight sinking a little, the
+## arms hanging slack, held; on "heard" (as the game turns him) a small
+## lift of the stump and the fists closing, then back to standing. No arm
+## raised, no twist.
 L_ = LISTEN
 clip(Clip("listen", L_, [
     (0.0, {}, ""),
-    (0.12 * L_ / 2.6, {"hy": -0.18, "np": 6.0, "sq": 0.97}, ""),       # a breath held
-    (0.3, {"hy": 0.0, "np": -8.0, "sp": 0.0, "cp": -3.0, "sq": 1.02, **_cup("L", -1, -0.3)}, ""),  # perks up
-    (0.45, {**_cup("L", -1), "ct": 12.0, "nr": -13.0, "nt": 8.0, "hr": -2.0, "np": -2.0, "sq": 1.0}, "o"),
-    (0.75, {"ct": 14.0, "nr": -16.0, "sp": 7.0}, "h"),                     # leaning into it
-    (0.88, {"ct": 4.0, "nr": -4.0, **_down("L")}, ""),
-    (1.0, {**_cup("R", 1, -0.3), "ct": -6.0, "nr": 6.0, "nt": -6.0, "hr": 1.0}, ""),
-    (1.15, {**_cup("R", 1), "ct": -12.0, "nr": 14.0, "nt": -8.0, "hr": 2.0, "sp": 4.0}, "o"),
-    (1.68, {"ct": -14.0, "nr": 17.0, "sp": 8.0}, "h"),
-    # Heard: the hand drops, the stump snaps toward it, fists.
-    (1.8, {**_down("R"), "ct": 0.0, "nr": -3.0, "nt": 0.0, "np": 14.0, "hy": -0.22, "sp": 12.0, "sq": 0.96,
-           "fL": 85.0, "fR": 85.0, "tL": 40.0, "tR": 40.0, "eL": 40.0, "eR": 40.0, "aLo": 14.0, "aRo": 14.0}, ""),
-    (1.95, {"np": 8.0, "nr": 0.0, "hy": -0.16, "sq": 1.0}, "h"),
-    (2.6, {"_base": 1}, ""),
+    (0.5 * L_ / 2.6, {"hy": -0.16, "sq": 0.98, "sp": 8.0, "cp": 3.0, "np": 5.0, "aLo": 8.0, "aRo": 8.0,
+                      "eL": 10.0, "eR": 10.0, "fL": 18.0, "fR": 18.0}, "o"),            # settled, still
+    (1.2 * L_ / 2.6, {"hy": -0.18, "np": 6.0}, "h"),
+    (1.72 * L_ / 2.6, {"hy": -0.18, "np": 6.0}, "h"),
+    # Heard: the stump comes up, the fists close.
+    (1.88 * L_ / 2.6, {"hy": -0.1, "sq": 1.01, "np": -3.0, "sp": 5.0, "cp": 4.0, "fL": 60.0, "fR": 60.0,
+                       "tL": 30.0, "tR": 30.0}, "o"),
+    (L_, {"_base": 1}, ""),
 ]))
+
+
+# ------------------------------------------------------------------ mirrors
+def _mirror(v):
+    """A pose's values mirrored left to right: each side's channels swapped,
+    the root-frame x's and the trunk's side leans and twists negated."""
+    out = {}
+    for c, x in v.items():
+        if len(c) >= 2 and c[1] in "LR":
+            m = c[0] + ("R" if c[1] == "L" else "L") + c[2:]
+            out[m] = -x if c[0] + c[2:] in ("hx", "pfx", "pnx") else x
+        elif c in ("hx", "hr", "ht", "sr", "st", "cr", "ct", "nr", "nt"):
+            out[c] = -x
+        else:
+            out[c] = x
+    return out
+
+
+class Mirror:
+    """Clip `of` mirrored left to right, as `name`."""
+
+    def __init__(self, name, of):
+        self.name = name
+        self.of = of
+        self.length = of.length
+        self.loop = of.loop
+
+    def values(self, t):
+        return _mirror(self.of.values(t))
+
 
 # ------------------------------------------------------------------ walk and stride
 def gait(step, stance, lift, swing_ease=0.85):
@@ -1097,53 +1132,151 @@ clip(Clip("spawn_haul", 2.4, [(0.0, {"hy": -0.1, "sp": -4.0, "cp": -8.0, "np": -
           loop=True, extra=haul_extra(1.0)))
 
 
-# ------------------------------------------------------------------ mantle
-def mantle_root(k):
+# ------------------------------------------------------------------ mantle (round 4)
+## Up over the lip, MANTLE s, two ways (the game's `mantle_pull` knob):
+##   mantle       the press: from the climb's end, hands on the lip at his
+##                chest. A gather (he sinks, the elbows bend, the stump
+##                bows), a hard press down through the arms that pops him up
+##                (the hands leave the lip at the top of the press), the
+##                legs tucked under him as he rises past the lip, a held
+##                beat at the top, then down onto it: a heavy squash, held,
+##                a rebound and the settle.
+##   mantle_pull  the pull-up: from a hang (his hands just slapped onto a
+##                lip over his head). Knees tucked, a hard pull that brings
+##                his chest to the lip, let go, popped on up past it, the
+##                feet swung under him, then the same landing.
+## The game moves the root on these same curves (headless_body.gd
+## `_mantle_up`), rise R from where it started to the top (MANTLE_UP or
+## PULL_UP here) and over MANTLE_OVER, and pins the hands on the real lip
+## till they let go. LAND_K is when the feet come down on the top.
+PULL_UP = SHOULDER_Y + 2.0
+## The wrists on the lip: this far out from the face (the forearm up the face
+## outside it, the hand laid flat over the edge), 0.5 over the top.
+LIP_OUT = 0.65
+LAND_K = 0.66
+PULL_LAND_K = 0.68
+
+
+def mantle_up(k, pull=False):
+    """The root's rise over the mantle at `k` (0 to 1), a share of the
+    whole rise (over 1 at the top of the pop)."""
+    if not pull:
+        if k < 0.2: return -0.07 * smooth01(0.0, 0.2, k)
+        if k < 0.36:
+            e = (k - 0.2) / 0.16
+            return -0.07 + 0.40 * e * e
+        if k < 0.5:
+            e = (k - 0.36) / 0.14
+            return 0.33 + 0.78 * (1 - (1 - e) ** 2)
+        if k < 0.56: return 1.11
+        if k < LAND_K:
+            e = (k - 0.56) / (LAND_K - 0.56)
+            return 1.11 - 0.11 * e * e
+        return 1.0
+    if k < 0.18: return -0.03 * smooth01(0.0, 0.18, k)
+    if k < 0.4: return -0.03 + 0.4 * smooth01(0.18, 0.4, k)
+    if k < 0.56:
+        e = (k - 0.4) / 0.16
+        return 0.37 + 0.71 * (1 - (1 - e) ** 2)
+    if k < 0.6: return 1.08
+    if k < PULL_LAND_K:
+        e = (k - 0.6) / (PULL_LAND_K - 0.6)
+        return 1.08 - 0.08 * e * e
+    return 1.0
+
+
+def mantle_over(k, pull=False):
+    return smooth01(0.48, 0.66, k) if pull else smooth01(0.42, 0.64, k)
+
+
+def mantle_root(k, pull=False):
     """Where the game has the root over the mantle (at the defaults):
     (up, forward) off where it started."""
-    return MANTLE_UP * smooth01(0.0, 0.6, k), MANTLE_OVER * smooth01(0.45, 1.0, k)
+    return (PULL_UP if pull else MANTLE_UP) * mantle_up(k, pull), MANTLE_OVER * mantle_over(k, pull)
 
 
-def mantle_extra(t, v):
-    k = t / MANTLE
-    up, over = mantle_root(k)
-    # The hands pressing on the lip, held there by IK as the body comes up,
-    # let go as it swings over.
-    w = 1.0 - smooth01(0.16, 0.34, k)
-    for n, s in SIDES:
-        if w > 0.0:
-            v[f"h{n}x"] = s * 1.7
-            v[f"h{n}y"] = MANTLE_UP + 0.42 - up
-            v[f"h{n}z"] = CLIMB_WALL + 0.3 - over
-            v[f"h{n}w"] = w
-            v[f"p{n}w"] = w
-            v[f"p{n}fx"], v[f"p{n}fy"], v[f"p{n}fz"] = s * 0.2, 0.0, 1.0
-            v[f"p{n}nx"], v[f"p{n}ny"], v[f"p{n}nz"] = 0.0, -1.0, 0.0
-    # The right foot onto the top: planted on it, carried back as the body goes over.
-    ground = MANTLE_UP - up      # the top's height in the root's frame
-    pr = smooth01(0.3, 0.42, k) * (1 - smooth01(0.72, 0.84, k))
-    if pr > 0.0:
-        v["kRy"] = v["kRy"] * (1 - pr) + (ground + 0.02) * pr
-        v["kRz"] = v["kRz"] * (1 - pr) + (CLIMB_WALL + 0.9 - over) * pr
+def mantle_release(k, pull=False):
+    """The hands' hold on the lip (1 planted, 0 let go)."""
+    return 1.0 - (smooth01(0.38, 0.44, k) if pull else smooth01(0.34, 0.42, k))
 
 
-clip(Clip("mantle", MANTLE, [
-    (0.0, {"hy": -0.1, "sp": 4.0, "cp": -2.0, "np": -10.0, "kLy": 0.7, "kLz": 0.6, "kRy": 0.9, "kRz": 0.7,
-           "aLp": 60.0, "aRp": 60.0, "eL": 60.0, "eR": 60.0}, ""),
-    (0.2, {"hy": -0.35, "sp": 10.0, "cp": 4.0, "np": -16.0, "kLy": 1.1, "kRy": 1.3, "kRz": 1.0, "sq": 0.96}, ""),
-    (0.48, {"hy": -0.1, "sp": 28.0, "cp": 10.0, "np": 6.0, "kRy": 1.6, "kRz": 1.5, "kLy": 0.6, "kLz": 0.0,
-            "aLp": 28.0, "aRp": 28.0, "aLo": 22.0, "aRo": 22.0, "eL": 35.0, "eR": 35.0, "sq": 1.03}, ""),
-    (0.78, {"hy": -0.55, "sp": 32.0, "cp": 8.0, "np": 10.0, "kLy": 0.4, "kLz": 0.4, "kLp": -10.0,
-            "aLp": 40.0, "aRp": 25.0, "aLo": 30.0, "aRo": 26.0, "eL": 40.0, "eR": 30.0, "sq": 1.0}, ""),
-    (1.0, {"hy": -0.62, "sp": 22.0, "np": 4.0, "kLy": 0.0, "kLz": 0.2, "kLp": 0.0}, ""),
-    # Up, the right foot raised for the stomp.
-    (1.16, {"hy": -0.08, "sp": 6.0, "cp": -4.0, "np": -6.0, "kRy": 0.75, "kRz": 0.25, "kRp": 8.0,
-            "aLp": 30.0, "aRp": 30.0, "aLo": 44.0, "aRo": 44.0, "eL": 50.0, "eR": 50.0, "fL": 90.0, "fR": 90.0,
-            "sq": 1.04}, "o"),
-    (1.33, {"hy": -0.6, "sp": 18.0, "cp": 8.0, "np": 14.0, "kRy": 0.0, "kRz": 0.2, "kRp": 0.0,
-            "aLp": -4.0, "aRp": -4.0, "aLo": 30.0, "aRo": 30.0, "eL": 18.0, "eR": 18.0, "sq": 0.88}, "i"),
-    (1.4, {"hy": -0.66, "sq": 0.86}, "h"),
-], extra=mantle_extra))
+def mantle_extra_of(pull):
+    rise = PULL_UP if pull else MANTLE_UP
+
+    def extra(t, v):
+        k = t / MANTLE
+        up, over = mantle_root(k, pull)
+        w = mantle_release(k, pull)
+        for n, s in SIDES:
+            if w > 0.0:
+                v[f"h{n}x"] = s * 1.7
+                v[f"h{n}y"] = rise + 0.5 - up
+                v[f"h{n}z"] = CLIMB_WALL - LIP_OUT - over
+                v[f"h{n}w"] = w
+                v[f"p{n}w"] = w
+                v[f"p{n}fx"], v[f"p{n}fy"], v[f"p{n}fz"] = s * 0.2, 0.0, 1.0
+                v[f"p{n}nx"], v[f"p{n}ny"], v[f"p{n}nz"] = 0.0, -1.0, 0.0
+                v[f"f{n}"] = 4.0
+                v[f"t{n}"] = 8.0
+    return extra
+
+
+def _landing(k0):
+    """The heavy landing on the top, from `k0` (shares of MANTLE)."""
+    return [
+        (k0, {"hy": -1.0, "sq": 0.8, "sp": 26.0, "cp": 8.0, "np": 18.0, "aLp": -10.0, "aRp": -10.0, "aLo": 38.0,
+              "aRo": 38.0, "eL": 14.0, "eR": 14.0, "fL": 90.0, "fR": 90.0, "kLx": 0.3, "kRx": 0.3, "kLy": 0.0,
+              "kRy": 0.0, "kLz": 0.15, "kRz": -0.1, "kLp": 0.0, "kRp": 0.0}, "i"),
+        (k0 + 0.06, {"hy": -1.12, "sq": 0.77, "sp": 30.0, "np": 22.0}, "h"),
+        (k0 + 0.16, {"hy": -0.62, "sq": 1.04, "sp": 18.0, "np": 8.0, "aLo": 28.0, "aRo": 28.0}, ""),
+        (k0 + 0.24, {"hy": -0.74, "sq": 0.98, "sp": 20.0, "np": 10.0, "aLp": 4.0, "aRp": 4.0, "fL": 60.0,
+                     "fR": 60.0}, "o"),
+        (1.0, {"_base": 1, "hy": -0.2, "sp": 8.0}, ""),
+    ]
+
+
+def _mk(keys):
+    return [(k * MANTLE, p, e) for k, p, e in keys]
+
+
+clip(Clip("mantle", MANTLE, _mk([
+    # From the climb's end: hands on the lip at his chest, feet on the face.
+    (0.0, {"hy": -0.1, "sp": -2.0, "cp": -4.0, "np": -10.0, "kLy": 0.4, "kLz": -0.25, "kRy": 0.5,
+           "kRz": -0.25}, ""),
+    # The gather: sunk, the elbows bent, the stump bowed, the legs hanging.
+    (0.2, {"hy": -0.45, "sq": 0.93, "sp": -4.0, "cp": -5.0, "np": 12.0, "kLy": 0.25, "kRy": 0.3, "kLz": -0.35,
+           "kRz": -0.35}, "h"),
+    # The press: up and long, the legs driving down.
+    (0.36, {"hy": 0.05, "sq": 1.1, "sp": -8.0, "cp": -6.0, "np": -10.0, "kLy": 0.0, "kRy": 0.0, "kLz": -0.3,
+            "kRz": -0.3, "kLp": -30.0, "kRp": -30.0}, ""),
+    # Popped: the hands off, the arms flung out, the knees tucked under.
+    (0.47, {"hy": 0.1, "sq": 1.0, "sp": 16.0, "cp": 6.0, "np": 6.0, "kLy": 1.7, "kRy": 1.7, "kLz": 0.2,
+            "kRz": 0.2, "kLp": 10.0, "kRp": 10.0, "aLp": 30.0, "aRp": 30.0, "aLo": 48.0, "aRo": 48.0, "eL": 40.0,
+            "eR": 40.0, "fL": 85.0, "fR": 85.0}, "o"),
+    (0.56, {"kLy": 1.6, "kRy": 1.6, "aLo": 52.0, "aRo": 52.0}, "h"),
+    # The legs down for the top.
+    (0.62, {"hy": -0.05, "sq": 1.05, "sp": 10.0, "np": 2.0, "kLy": 0.35, "kRy": 0.3, "kLz": 0.15, "kRz": -0.05,
+            "kLx": 0.25, "kRx": 0.25, "aLp": 10.0, "aRp": 10.0, "aLo": 56.0, "aRo": 56.0}, ""),
+] + _landing(LAND_K)), extra=mantle_extra_of(False)))
+
+clip(Clip("mantle_pull", MANTLE, _mk([
+    # From the hang: hands on the lip over his head, legs on the face.
+    (0.0, {"hy": -0.1, "sp": -2.0, "cp": -6.0, "np": -12.0, "kLy": 0.9, "kRy": 0.8, "kLz": WALL_ANKLE - 0.15,
+           "kRz": WALL_ANKLE - 0.15}, ""),
+    # The gather: knees tucked, the stump tipped up at the lip.
+    (0.18, {"hy": 0.1, "sq": 0.94, "sp": -4.0, "cp": -6.0, "np": -18.0, "kLy": 1.3, "kRy": 1.3, "kLz": -0.6,
+            "kRz": -0.6, "kLp": 15.0, "kRp": 15.0}, "h"),
+    # The pull: chest to the lip, the legs kicked down and straight.
+    (0.4, {"hy": 0.2, "sq": 1.08, "sp": -12.0, "cp": -10.0, "np": -8.0, "kLy": 0.1, "kRy": 0.1, "kLz": -0.4,
+           "kRz": -0.4, "kLp": -30.0, "kRp": -30.0}, ""),
+    # Let go and popped: arms flung up and out, knees up under him.
+    (0.5, {"hy": 0.1, "sq": 1.0, "sp": 18.0, "cp": 6.0, "np": 8.0, "kLy": 1.8, "kRy": 1.8, "kLz": 0.3,
+           "kRz": 0.3, "kLp": 10.0, "kRp": 10.0, "aLp": -10.0, "aRp": -10.0, "aLo": 60.0, "aRo": 60.0, "eL": 40.0,
+           "eR": 40.0, "fL": 85.0, "fR": 85.0}, "o"),
+    (0.6, {"kLy": 1.7, "kRy": 1.7, "aLo": 54.0, "aRo": 54.0}, "h"),
+    (0.64, {"hy": -0.05, "sq": 1.05, "sp": 10.0, "np": 2.0, "kLy": 0.35, "kRy": 0.3, "kLz": 0.15, "kRz": -0.05,
+            "kLx": 0.25, "kRx": 0.25, "aLp": 10.0, "aRp": 10.0, "aLo": 56.0, "aRo": 56.0}, ""),
+] + _landing(PULL_LAND_K)), extra=mantle_extra_of(True)))
 
 # ------------------------------------------------------------------ windup
 W_ = WINDUP
@@ -1264,6 +1397,86 @@ clip(Clip("triumph", T_, [
 ], extra=lambda t, v: [v.__setitem__(c, v[c] + tremble(t, 1.6 * smooth01(0.45, 0.55, t) * (1 - smooth01(1.0, 1.1, t)), 13.0, i))
                       for i, c in enumerate(("aLp", "aRp", "np"))]))
 
+# ------------------------------------------------------------------ turning on the spot (round 4)
+## One step of a turn, STEP s: the game turns him (the root) through the
+## step's angle while the swing foot is up (from 0.18 to 0.6 of it) and
+## holds the other foot where it stands; these are the body's beats over
+## it. The anticipation (the weight onto the standing foot, a dip, the hips
+## turned a hair against the turn), the lift (the hips leading into the
+## turn, the shoulders and the stump lagging), the plant (fast and flat, a
+## squash held, the shoulders swinging past), the settle. The feet here go
+## up and down on their spot; the game carries them round (the swing foot
+## from where it stood to under the turned hips). Only the trunk and legs
+## are blended in (the arms keep what the body is doing).
+##   turn_open_l   turning left, the left foot stepping out (on the right)
+##   turn_close_l  turning left, the right foot stepping round (on the left)
+##   turn_open_r / turn_close_r  their mirrors
+STEP = 0.66
+
+
+def _step_keys(n, s, lift, lead, lag):
+    """A step of foot `n` (side `s`) turning toward the stepping foot's side
+    (s = -1 left), `lift` m up, the hips `lead` deg ahead, the shoulders
+    `lag` deg behind. Twists are + left, so a left turn's lead is +."""
+    t = -s     # + turning left
+    o = "R" if n == "L" else "L"
+    keys = [
+        (0.0, {}, ""),
+        (0.15, {"hx": -s * 0.28, "hy": -0.2, "sq": 0.97, "hr": -s * 3.0, "sr": -s * 3.0, "ht": -t * 3.0,
+                "ct": t * 2.0, f"k{n}p": -12.0}, ""),
+        (0.3, {f"k{n}y": lift, f"k{n}p": 6.0, f"k{n}x": 0.2, "ht": t * lead, "ct": -t * lag, "nt": -t * lag * 0.5,
+               "hy": -0.06, "sq": 1.02, "hx": -s * 0.3, "sp": 3.0, f"a{n}o": 19.0, f"a{o}p": 10.0}, ""),
+        (0.48, {f"k{n}y": lift * 0.5, f"k{n}p": 4.0, "ht": t * lead * 0.6, "ct": -t * lag * 0.25,
+                "nt": -t * lag * 0.2}, ""),
+        (0.6, {f"k{n}y": 0.0, f"k{n}p": 0.0, f"k{n}x": 0.16, "hy": -0.27, "sq": 0.95, "hx": -s * 0.08,
+               "ht": t * 2.0, "ct": t * lag * 0.4, "nt": t * lag * 0.4, "sp": 7.0, f"a{n}o": 13.0,
+               f"a{o}p": 4.0}, "i"),
+        (0.68, {"hy": -0.29, "sq": 0.945}, "h"),
+        (0.85, {"hy": -0.12, "sq": 1.0, "ct": t * 1.0, "nt": t * 1.0, "hx": -s * 0.02, "ht": 0.0,
+                f"k{n}x": 0.12, "sp": 5.0}, ""),
+        (1.0, {"_base": 1}, ""),
+    ]
+    return [(u * STEP, p, e) for u, p, e in keys]
+
+
+clip(Clip("turn_open_l", STEP, _step_keys("L", -1, 0.42, 10.0, 9.0)))
+# The closing step: the right foot comes round under him, the weight on the
+# left (the turn still to the left: the leads keep their sign).
+clip(Clip("turn_close_l", STEP, [
+    (t, {c: (-x if c in ("ht", "ct", "nt") else x) for c, x in p.items()}, e) for t, p, e in _step_keys("R", 1, 0.36, 7.0, 6.0)
+]))
+clip(Mirror("turn_open_r", CLIPS[-2]))
+clip(Mirror("turn_close_r", CLIPS[-2]))
+
+# ------------------------------------------------------------------ feeling the wall (round 4)
+## Before a climb, FEEL s: he lays his right hand flat on the face, presses,
+## slides it up and in a little, holds as if sensing it, gives a small nod
+## ("here"), and his left arm flexes ready for the climb. The wall is
+## FEEL_WALL m ahead of his middle here: the climb's standoff and half a
+## metre more, where the game stands him while he feels it (measured off the
+## face's nearest point over his height), and the game puts the palm on the
+## real face (headless_body.gd `_feel`, `_hands`). He leans in only a little
+## and nothing but the right hand reaches the wall.
+FEEL = 1.0
+FEEL_WALL = CLIMB_WALL + 0.5
+_fw = FEEL_WALL - 0.9    # the wrist off the face, the palm flat on it (the game's FEEL_PALM)
+_palm = {"pRw": 1.0, "pRfx": 0.1, "pRfy": 1.0, "pRfz": 0.0, "pRnx": 0.0, "pRny": 0.0, "pRnz": 1.0}
+clip(Clip("feel", FEEL, [
+    (0.0, {}, ""),
+    # The hand drawn up close by his side, its fingers turned up and the palm
+    # to the face before it goes out (the fingers never swing into it).
+    (0.12, {"hy": -0.16, "sq": 0.98, "sp": 4.0, "np": 4.0, "hz": -0.05, "hRw": 0.75, "hRx": 2.45,
+            "hRy": SHOULDER_Y - 2.4, "hRz": 0.3, **_palm, "fR": 12.0, "aLo": 4.0, "aLp": 0.0}, ""),
+    (0.22, {"hRw": 0.9, "hRx": 2.3, "hRy": SHOULDER_Y - 1.8, "hRz": _fw - 0.6, "fR": 10.0}, ""),
+    (0.3, {"hRw": 1.0, "hRx": 2.2, "hRy": SHOULDER_Y - 1.5, "hRz": _fw, **_palm, "fR": 6.0, "tR": 14.0,
+           "hy": -0.12, "sp": 4.0, "hz": 0.0, "cp": 1.0, "np": 2.0, "nr": 3.0, "nt": -3.0}, "o"),
+    (0.4, {"hy": -0.18, "sq": 0.975, "fR": 2.0}, "h"),
+    (0.66, {"hRy": SHOULDER_Y - 1.2, "hRx": 2.05, "nr": 6.0, "nt": -5.0, "np": 1.0, "fR": 4.0, "hy": -0.16}, ""),
+    (0.8, {"nr": 6.0, "nt": -5.0}, "h"),
+    (0.88, {"np": 6.0, "hy": -0.2, "sq": 0.97, "fR": 14.0, "aLp": 2.0, "aLo": 6.0, "eL": 18.0}, ""),
+    (1.0, {"np": 1.0, "hy": -0.14, "sq": 1.0, "aLp": 3.0, "eL": 20.0, "aLo": 8.0, "fL": 70.0}, ""),
+]))
+
 
 # ================================================================== keying
 rig.animation_data_create()
@@ -1381,10 +1594,10 @@ if RENDER:
         if ONLY and c.name not in ONLY: continue
         rig.animation_data.action = ACTIONS[c.name]
         frames = round(c.length * FPS)
-        climbing = c.name in ("climb", "haul", "spawn_haul", "mantle")
+        climbing = c.name in ("climb", "haul", "spawn_haul", "mantle", "mantle_pull")
         wall.hide_render = not climbing
-        if c.name == "mantle":
-            wall.location = (0, CLIMB_WALL + 4.0, MANTLE_UP - 15.0)
+        if c.name in ("mantle", "mantle_pull"):
+            wall.location = (0, CLIMB_WALL + 4.0, (PULL_UP if c.name == "mantle_pull" else MANTLE_UP) - 15.0)
         else:
             wall.location = (0, CLIMB_WALL + 4.0, (SHOULDER_Y + 2.3 if c.name != "climb" else 30.0) - 15.0)
         floor.hide_render = climbing
@@ -1394,8 +1607,8 @@ if RENDER:
             scene.frame_set(f)
             # The root's way as the game moves it, so the stills show it.
             rig.location = (0, 0, 0)
-            if c.name == "mantle":
-                up, over = mantle_root(f / frames)
+            if c.name in ("mantle", "mantle_pull"):
+                up, over = mantle_root(f / frames, c.name == "mantle_pull")
                 rig.location = (0, over, up)
             elif c.name == "climb":
                 rig.location = (0, 0, CLIMB_RISE * f / frames)

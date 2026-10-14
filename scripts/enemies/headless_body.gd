@@ -167,6 +167,14 @@ var _fade := 0.2
 var _was := ""
 var _snap := true
 var _triumph_thud := false
+## Round 4: the wall it feels before a climb.
+var _feel_hit := {}
+## This mantle a pull-up (round 4), and its landing come.
+var _pull := false
+var _mantle_landed := false
+## When its feel began (s into the state; -1 while it still steps round to
+## the wall: it squares up first, FEEL_WAIT s at most).
+var _feel_from := -1.0
 var _dust: Array = []
 ## Live shockwaves: {at, r, max, power, done (the walker met), parts}.
 var _waves: Array = []
@@ -211,6 +219,13 @@ func default_knobs(n: Dictionary) -> Dictionary:
 		# the clips are made for these, other values slide the feet), and
 		# the beat of triumph once whole (s; it was straight to listening).
 		"stride":Look.WALK_STEP,"stride_home":Look.STRIDE_STEP,"triumph":1.8,
+		# Round 4 (headless-body-round4-anim-polish.md): before a climb it
+		# feels the wall, a hand laid flat on it, `feel` s (0 skips it).
+		"feel":1.0,
+		# Round 4: over the lip by a press-up from the climb's end (0), or
+		# (1) by a pull-up as soon as its hands are on a lip over its head
+		# (a shorter climb, the same mantle time).
+		"mantle_pull":0,
 	}
 
 ## Its build (m) from its knobs `k` and the walker's `unit`, as `_size` and
@@ -320,6 +335,7 @@ func think(delta: float) -> void:
 			if state_t >= float(knobs.land): _go("listen")
 		"reach": _reach_head(delta)
 		"triumph": _triumph(delta)
+		"feel": _feel(delta)
 	_animate(delta)
 
 func _go(to: String) -> void:
@@ -355,10 +371,9 @@ func _way3(angle: float) -> Vector3:
 func _listen(delta: float) -> void:
 	_brake(delta)
 	var k := state_t/float(knobs.listen)
-	# A sweep one way and the other, the stump cocked as it turns.
-	if k < 0.7:
-		facing = wrapf(_listen_from+sin(k/0.7*TAU)*0.55,-PI,PI)
-		return
+	# Round 4: it stands still and listens (it swept its facing one way and
+	# the other, a turntable spin; the clip turns the stump instead).
+	if k < 0.7: return
 	# Heard: turns to the bearing, then goes. Round 11: the bearing a route
 	# to it over places it fits, planned while it listens.
 	if not _picked:
@@ -521,7 +536,7 @@ func _reunite_near() -> bool:
 # --- Walls and climbing -----------------------------------------------------------------------
 
 ## A wall (steep) along `dir` from its knees, within `reach` m: the hit, or {}.
-## Round 11: a riser whose top is within STAIR × `step` of its feet is a
+## Round 11: a riser whose top is within STAIR Ã— `step` of its feet is a
 ## stair's step it walks up, not a wall.
 const STAIR := 1.6
 func _wall_along(dir: Vector3, reach: float) -> Dictionary:
@@ -534,7 +549,7 @@ func _wall_along(dir: Vector3, reach: float) -> Dictionary:
 		return hit
 	return {}
 
-## Whether the face `hit` (met at the knee) tops out within STAIR × `step`
+## Whether the face `hit` (met at the knee) tops out within STAIR Ã— `step`
 ## of its feet.
 func _riser(hit: Dictionary) -> bool:
 	var n := hit.normal as Vector3
@@ -571,6 +586,74 @@ func _meet_wall(hit: Dictionary) -> void:
 		return
 	var n := hit.normal as Vector3
 	facing = PilotMotor.facing_of(-Vector2(n.x,n.z).normalized())
+	if float(knobs.feel) > 0.0:
+		_feel_hit = hit
+		_feel_from = -1.0
+		_go("feel")
+		return
+	_climb_on(hit)
+
+## Round 4: a hand laid on the wall, `feel` s, then up it.
+func _feel(delta: float) -> void:
+	_brake(delta)
+	# Stood clear of the face: its nearest point over his height (an
+	# undercut, a bulge, a step at his feet) FEEL_BACK past the climb's
+	# standoff, eased there (his feet step after); the clip's hand is made
+	# for that distance. Met slantwise, his turned figure's shoulder would
+	# be in the face: then it squares up at once, not step by step.
+	var n := _feel_hit.normal as Vector3
+	n = Vector3(n.x,0.0,n.z).normalized()
+	var a := absf(angle_difference(look.steps.yaw,facing))
+	var near := _face_near(n)
+	var reach_out := length*0.5*cos(minf(a,PI*0.5))+width*0.72*sin(minf(a,PI*0.5))
+	look.steps.hurry = reach_out+0.15 > near
+	var want := length*0.5+float(knobs.standoff)+FEEL_BACK*hh/Look.HH
+	# Walked in close (his toes, slantwise his chest, in it), out faster.
+	var ease := FEEL_EASE*(6.0 if near < length*0.5+0.1 else 3.0 if near < want-0.3 else 1.0)
+	var move := n*clampf(want-near,-ease*delta,ease*delta)
+	# Never back off a rim (the floor behind him where he would stand).
+	if want > near and _floor(position+n*(want-near+0.3),float(knobs.step)*STAIR,float(knobs.step)*2.0) == -INF: move = Vector3.ZERO
+	position += move
+	# His feet shuffle with him (a planted toe would be left in the face).
+	look.steps.carry(move)
+	look.steps.keep_off(_feel_hit.position,n,FEEL_TOE*hh/Look.HH)
+	if _feel_from < 0.0 and ((a < FEEL_SQUARE and absf(want-near) < 0.15) or state_t >= FEEL_WAIT): _feel_from = state_t
+	if _feel_from >= 0.0 and state_t-_feel_from >= float(knobs.feel): _climb_on(_feel_hit)
+
+## Squared up to the wall within FEEL_SQUARE rad (or FEEL_WAIT s on), it
+## starts to feel it.
+const FEEL_SQUARE := 0.3
+const FEEL_WAIT := 0.8
+## Further off the face than the climb stands him while he feels it (m at
+## the model's size): the clip leans him in and reaches.
+const FEEL_BACK := 0.5
+## His ankles kept this far off the face while he feels it (m at the
+## model's size: the slab foot reaches about 1.45 ahead of the ankle).
+const FEEL_TOE := 1.6
+## How fast he is eased off (or onto) the face (m/s).
+const FEEL_EASE := 2.0
+## The wrist off the face with the palm flat on it (m at the model's size:
+## the hand's half thickness, its bracelet clear; the build's _fw).
+## Its bracelet is wider than the hand: a forearm slanted to the face
+## would put it in nearer.
+const FEEL_PALM := 0.9
+
+## The face's nearest (m, along its normal `n`) to its middle, over its
+## height: rays at its knee, hips, chest, shoulders and stump; the face it
+## met if none of them hit.
+func _face_near(n: Vector3) -> float:
+	var near := INF
+	for up: float in [float(knobs.step)+0.1,neck_h*0.3,neck_h*0.55,neck_h*0.8,neck_h*1.05]:
+		var from := position+Vector3.UP*up
+		var hit := _cast(from,from-n*(length+hh))
+		if not hit.is_empty() and absf((hit.normal as Vector3).y) < 0.7: near = minf(near,(from-(hit.position as Vector3)).dot(n))
+	return near if near != INF else (position-(_feel_hit.position as Vector3)).dot(n)
+
+## How far through its feel it is (0 to 1; 0 while it squares up).
+func _feel_k() -> float:
+	return 0.0 if _feel_from < 0.0 else clampf((state_t-_feel_from)/float(knobs.feel),0.0,1.0)
+
+func _climb_on(hit: Dictionary) -> void:
 	_climb_from = position.y
 	_lip_y = INF
 	climbs += 1
@@ -599,7 +682,9 @@ func _climb(delta: float) -> void:
 	var past := _face_pt+fwd*float(knobs.lip_in)
 	var lip := _cast(Vector3(past.x,position.y+reach,past.z),Vector3(past.x,position.y+float(knobs.step),past.z))
 	_lip_y = (lip.position as Vector3).y if not lip.is_empty() and (lip.normal as Vector3).y > 0.6 else INF
-	if _lip_y != INF and _lip_y-position.y <= neck_h*0.55:
+	if _lip_y != INF and (_lip_y-position.y <= neck_h*0.55 or (float(knobs.mantle_pull) > 0.5 and _haul_t >= PULL_AFTER)):
+		_pull = _lip_y-position.y > neck_h*0.55
+		_mantle_landed = false
 		_mantle_from = position
 		# In over the lip, short of a wall over it (a stair's tread, a
 		# sliver under a higher face: round 11 stands it there, against the
@@ -667,15 +752,21 @@ func _tell_k() -> float:
 
 func _mantle(delta: float) -> void:
 	var k := clampf(state_t/float(knobs.mantle),0.0,1.0)
-	var up := smoothstep(0.0,0.6,k)
-	var over := smoothstep(0.45,1.0,k)
+	# Round 4: a press-up (or a pull-up) that pops it up past the lip, then
+	# down onto the top (the build's mantle_up / mantle_over curves).
+	var up := _mantle_up(k,_pull)
+	var over := smoothstep(0.48,0.66,k) if _pull else smoothstep(0.42,0.64,k)
 	position = Vector3(lerpf(_mantle_from.x,_mantle_to.x,over),lerpf(_mantle_from.y,_mantle_to.y,up),lerpf(_mantle_from.z,_mantle_to.z,over))
-	if k >= 1.0:
-		grounded = true
-		spawned_on_cliff = false
+	if not _mantle_landed and k >= (PULL_LAND_K if _pull else LAND_K):
+		_mantle_landed = true
 		# Its weight comes down on the top: a smaller wave.
 		_shock(position,float(knobs.shock_mantle))
 		Dust.plume(field,position,hh*2.6*_tell_k())
+		quake = maxf(quake,0.2)
+		field.sound(&"body_step",position)
+	if k >= 1.0:
+		grounded = true
+		spawned_on_cliff = false
 		# Round 11: over a lip it doesn't fit on, with its climb leg's wall
 		# over it, it goes straight on climbing (no listen).
 		if _routed() and _route[_leg].kind == "climb" and not _at_leg_end():
@@ -683,6 +774,27 @@ func _mantle(delta: float) -> void:
 			_go("roam")
 			return
 		_go("listen")
+
+## Round 4: the mantle's rise at `k` (a share of from its start to the top;
+## over 1 at the top of the pop), the build's `mantle_up`.
+const LAND_K := 0.66
+const PULL_LAND_K := 0.68
+## Pull-ups: hanging this long (s) with its hands on the lip, it pulls.
+const PULL_AFTER := 0.45
+static func _mantle_up(k: float, pull: bool) -> float:
+	if not pull:
+		if k < 0.2: return -0.07*smoothstep(0.0,0.2,k)
+		if k < 0.36: return -0.07+0.4*pow((k-0.2)/0.16,2.0)
+		if k < 0.5: return 0.33+0.78*(1.0-pow(1.0-(k-0.36)/0.14,2.0))
+		if k < 0.56: return 1.11
+		if k < LAND_K: return 1.11-0.11*pow((k-0.56)/(LAND_K-0.56),2.0)
+		return 1.0
+	if k < 0.18: return -0.03*smoothstep(0.0,0.18,k)
+	if k < 0.4: return -0.03+0.4*smoothstep(0.18,0.4,k)
+	if k < 0.56: return 0.37+0.71*(1.0-pow(1.0-(k-0.4)/0.16,2.0))
+	if k < 0.6: return 1.08
+	if k < PULL_LAND_K: return 1.08-0.08*pow((k-0.6)/(PULL_LAND_K-0.6),2.0)
+	return 1.0
 
 # --- Edges and leaps ------------------------------------------------------------------------
 
@@ -860,7 +972,7 @@ func _landed() -> void:
 # --- Shockwaves -------------------------------------------------------------------------------
 
 ## A shockwave from `at`, `power` (1 a leap's landing): a ring and a dust
-## wall running out along the ground to `shock_r` Hh × √power, stones
+## wall running out along the ground to `shock_r` Hh Ã— âˆšpower, stones
 ## kicked up; the walker it passes on the ground is thrown back and up
 ## through his motor, less the farther out.
 func _shock(at: Vector3, power: float) -> void:
@@ -975,7 +1087,7 @@ func _shock_meets(w: Dictionary) -> void:
 # and plans round; where its head can't be got to, it goes to the place
 # nearest it it can, then out (`_bail`).
 
-## The search's slice of a frame (µs).
+## The search's slice of a frame (Âµs).
 const ROUTE_US := 1500
 ## Turned further off its leg's way than this (rad), it turns on the spot.
 const ROUTE_TURN := 0.4
@@ -1309,7 +1421,10 @@ func _animate(delta: float) -> void:
 	match state:
 		"listen":
 			if whole: look.want("idle",idle)
+			# Past its listen (still planning its way), it breathes.
+			elif state_t > float(knobs.listen): look.want("idle",idle)
 			else: look.want("listen",state_t/float(knobs.listen)*float(look.lengths.listen))
+		"feel": look.want("feel",_feel_k()*float(look.lengths.feel))
 		"roam","home":
 			var gait := "stride" if state == "home" else "walk"
 			var pace := float(knobs.home) if state == "home" else float(knobs.walk)
@@ -1321,7 +1436,9 @@ func _animate(delta: float) -> void:
 			else:
 				var clip := "spawn_haul" if spawned_on_cliff else "haul"
 				look.want(clip,fposmod(_haul_t,float(look.lengths[clip])))
-		"mantle": look.want("mantle",state_t/float(knobs.mantle)*float(look.lengths.mantle))
+		"mantle":
+			var clip := "mantle_pull" if _pull else "mantle"
+			look.want(clip,state_t/float(knobs.mantle)*float(look.lengths[clip]))
 		"windup": look.want("windup",state_t/float(knobs.windup)*float(look.lengths.windup))
 		"leap":
 			var clip := "drop_air" if leap_kind == "drop" else "jump_air"
@@ -1331,10 +1448,21 @@ func _animate(delta: float) -> void:
 		"reach": look.want("reach",state_t/float(knobs.settle)*float(look.lengths.reach))
 		"triumph": look.want("triumph",state_t/float(knobs.triumph)*float(look.lengths.triumph))
 		_: look.want("idle",idle)
+	# Round 4: turns stepped and feet planted (headless_body_steps.gd).
+	look.turn(facing,_steps_mode(),delta,fposmod(_phase/2.0,1.0),state == "home")
 	poses += 1
 	look.advance(delta,0.0 if _snap else _fade)
 	_snap = false
+	look.plant_feet(delta)
 	_hands(delta)
+
+## How its turns and feet go: stepping round where it stands, walking, or
+## the clips' own (climbing, leaping, landing).
+func _steps_mode() -> int:
+	match state:
+		"listen","reach","triumph","feel": return Look.Steps.STAND
+		"roam","home": return Look.Steps.WALK if Vector2(vel.x,vel.z).length() > 0.15 else Look.Steps.STAND
+	return Look.Steps.OFF
 
 ## Its right (global, flat).
 func _right3() -> Vector3:
@@ -1385,12 +1513,34 @@ func _hands(delta: float) -> void:
 				var s := -1.0 if side == "L" else 1.0
 				var at := lip+fwd*0.35*k+right*s*1.5*k+Vector3.UP*(0.42*k+lift)
 				look.reach(side,at,w,fwd,Vector3.DOWN)
+		"feel":
+			# The palm flat on the real face, where the clip's wrist is.
+			# The face where the wrist and where the fingertips are (an
+			# uneven or leaning face): the palm on the nearer, the wrist the
+			# hand's thickness off it along its normal.
+			var wr := look.wrist("R")
+			var best := INF
+			var n := Vector3.ZERO
+			for up: float in [0.0,1.2*k]:
+				var p := wr+Vector3.UP*up
+				var hit := _cast(p-fwd*2.0*k,p+fwd*3.0*k)
+				if hit.is_empty() or absf((hit.normal as Vector3).y) > 0.7: continue
+				var d := ((hit.position as Vector3)-p).dot(fwd)
+				if d < best:
+					best = d
+					n = Vector3((hit.normal as Vector3).x,0.0,(hit.normal as Vector3).z).normalized()
+			if best == INF: return
+			var w := smoothstep(0.1,0.3,_feel_k())*(1.0-smoothstep(0.92,1.0,_feel_k()))
+			look.reach("R",wr+fwd*best+n*FEEL_PALM*k,w,Vector3.UP,-n)
 		"mantle":
 			var kk := clampf(state_t/float(knobs.mantle),0.0,1.0)
-			var w := 1.0-smoothstep(0.16,0.34,kk)
+			# Round 4: planted through the gather and the press, let go at its top.
+			var w := 1.0-(smoothstep(0.38,0.44,kk) if _pull else smoothstep(0.34,0.42,kk))
 			for side in ["L","R"]:
 				var s := -1.0 if side == "L" else 1.0
-				look.reach(side,_mantle_lip+fwd*0.3*k+right*s*1.7*k+Vector3.UP*0.42*k,w,fwd,Vector3.DOWN)
+				# The wrist just out from the face over the top (the build's
+				# LIP_OUT): the forearm up the face, the hand over the edge.
+				look.reach(side,_mantle_lip-fwd*0.65*k+right*s*1.7*k+Vector3.UP*0.5*k,w,fwd,Vector3.DOWN)
 
 # --- The world, as it asks ------------------------------------------------------------------------
 
