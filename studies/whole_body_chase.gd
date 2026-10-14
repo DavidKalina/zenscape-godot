@@ -21,6 +21,8 @@ extends "res://studies/character_study.gd"
 ##                 after you; a ramp back up its east end.
 ## You start behind the long wall, out of its sight; it stands north of it.
 ##   B   the body back where it started, whole, unaware of you
+##   , . the head smaller, bigger (its `size`, 0.1 a press; the body back
+##       where it started)
 ##   R   you back at the start, the body too
 ##   J   its sight overlay (on: the cone on the ground, its rays to you, the
 ##       awareness meter, what it is doing and its ranges)
@@ -74,6 +76,8 @@ var overlay: Node3D
 var _voices := {}
 var _body_knobs := {}
 var _head_knobs := {}
+## The head's knobs as spawned (the field's spec holds this one: , . size it).
+var _head_spawned := {}
 var _overlay_on := true
 ## Where the body stands and faces (a study built on this one sets its own).
 var body_at := BODY_AT
@@ -153,8 +157,8 @@ func _build_room() -> void:
 	body_knobs.merge(_body_knobs,true)
 	enemies.spawn(HeadlessBody,body_at,body_face,body_knobs)
 	# Worn, its draw reaches out over its suck range: its own worn_* knobs.
-	var head_knobs := _head_knobs.duplicate()
-	enemies.spawn(InhalerHead,body_at,body_face,head_knobs)
+	_head_spawned = _head_knobs.duplicate()
+	enemies.spawn(InhalerHead,body_at,body_face,_head_spawned)
 	overlay = SightOverlay.new()
 	add_child(overlay)
 	_wire()
@@ -224,12 +228,20 @@ func _unhandled_input(event: InputEvent) -> void:
 		reset_body()
 		_say("The body is back where it began",2.0)
 		return
+	if event is InputEventKey and event.pressed and (event as InputEventKey).keycode in [KEY_COMMA,KEY_PERIOD] and not _name_panel.visible:
+		var h := stone_head()
+		var size := float(h.knobs.size) if h != null else float(_head_spawned.get("size",2.6))
+		size = clampf(snappedf(size+(0.1 if (event as InputEventKey).keycode == KEY_PERIOD else -0.1),0.1),1.0,5.0)
+		_head_spawned["size"] = size
+		reset_body()
+		_say("Head size %.1f (--head-knob=size=%.1f)" % [size,size],3.0)
+		return
 	super._unhandled_input(event)
 
 # --- The HUD and the sounds ---------------------------------------------------------------
 
 func _hint_text() -> String:
-	return "Whole body chase · J its sight · near it swats, mid it pounces, further it sucks · B body back · R start · F1 numbers · Esc mouse"
+	return "Whole body chase · J its sight · near it swats, mid it pounces, further it sucks · B body back · , . head size · R start · F1 numbers · Esc mouse"
 
 func _show_hud() -> void:
 	super._show_hud()

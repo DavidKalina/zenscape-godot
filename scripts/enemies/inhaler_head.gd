@@ -219,7 +219,7 @@ func _init() -> void:
 
 func default_knobs(n: Dictionary) -> Dictionary:
 	return {
-		"size":3.0,"ring":n.unit*6.0,
+		"size":2.6,"ring":n.unit*6.0,
 		"heave":1.0,"heave_step":n.unit*0.72,"rest_min":0.3,"rest_max":0.95,"false_start":0.18,
 		"pant_every":4,"pant":1.6,"notch":0.32,"pivot":1.0,
 		"climb":n.unit*0.4,"drop":n.unit*0.75,"slope":0.42,

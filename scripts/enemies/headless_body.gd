@@ -7,9 +7,9 @@ extends "res://scripts/enemies/enemy.gd"
 ## art/blender/headless_body/headless_body_build.py), driven from these
 ## states; its hands are put on the real wall and lip on top of them.
 ##
-## Sized off its head (`head_size` of the walker's heights, the head's own
-## `size` knob): legs, torso, arms, breadth in head heights, so a bigger head
-## has a bigger body. The walker's numbers come from enemy_field.gd
+## Sized off its head (`head_size` of the walker's heights, the model's head;
+## the head it wears is drawn smaller, its own `size` knob 2.6, to fit the
+## body): legs, torso, arms, breadth in head heights. The walker's numbers come from enemy_field.gd
 ## `numbers()` (AGENTS.md, Sizes).
 ##
 ## In states (`state`):
