@@ -61,17 +61,29 @@ const POOL := [
 	["broken_ring",preload("res://scripts/kit_isle/motif_broken_ring.gd"),1.0],
 	["bell_spires",preload("res://scripts/kit_isle/motif_bell_spires.gd"),1.0],
 ]
+## The kit motifs the "motifs" pool keeps beside the greybox motifs (the
+## `pool` knob, `draw_pool`).
+const KEPT := ["sundered_gorge"]
 
-## The pool a layer draws from: POOL, and the greybox motifs its `greybox`
-## knob asks for (none by default).
+## The pool a layer draws from, by its `pool` knob: "motifs" (the default,
+## a prototype: docs/design/roguelike/greybox-pool.md) the kit motifs in
+## KEPT and every greybox motif (or those the `greybox` knob names);
+## "classic" POOL, and the greybox motifs its `greybox` knob asks for (none
+## by default).
 static func draw_pool(knobs := {}) -> Array:
-	var extra := Greybox.entries(knobs)
-	return POOL if extra.is_empty() else POOL+extra
+	if str(knobs.get("pool","motifs")) == "classic":
+		var extra := Greybox.entries(knobs)
+		return POOL if extra.is_empty() else POOL+extra
+	var kept := POOL.filter(func(p: Array) -> bool: return KEPT.has(str(p[0])))
+	var asked := Greybox.entries(knobs)
+	return kept+(asked if not asked.is_empty() else Greybox.entries({"greybox":"all"}))
 
 ## How many times a pool pick may come a layer (one not a family; a
-## greybox motif once).
-static func _most(id: String, repeats: int) -> int:
-	return Greybox.MOST if Greybox.has(id) else repeats
+## greybox motif once, or `repeats` in the "motifs" pool, which has no
+## family to fill a layer).
+static func _most(id: String, repeats: int, knobs := {}) -> int:
+	if Greybox.has(id) and str(knobs.get("pool","motifs")) == "classic": return Greybox.MOST
+	return repeats
 const BASE := "aqueduct_isle"
 ## The aqueduct isle's middle (world), what the layer keeps round.
 const MIDDLE := Vector3(85.0,30.0,-20.0)
@@ -274,9 +286,10 @@ static func make(seed_value: int, knobs := {}) -> Dictionary:
 ## and the ring shape's (scripts/roguelike/layer_shapes.gd, layer_ring.gd).
 ## `greybox` ("" none, "all", or slugs comma separated) the greybox motifs
 ## in the pool, `greybox_force` (1) at least one a layer (scripts/kit_isle/
-## greybox/registry.gd).
-const KNOBS := {"hoods":0,"gulf":0.0,"ride":"","rise":0.0,"arrows":-1,"viaduct":-1,"heads":-1,"bodies":1,"alternate":1,"ring":0,"greybox":"","greybox_force":1}
-const KNOB_CHOICES := {"hoods":[0,1,2,3],"ride":["","serpent","ferry"]}
+## greybox/registry.gd). `pool` ("motifs" or "classic") which pool the
+## layer draws from (`draw_pool`).
+const KNOBS := {"hoods":0,"gulf":0.0,"ride":"","rise":0.0,"arrows":-1,"viaduct":-1,"heads":-1,"bodies":1,"alternate":1,"ring":0,"greybox":"","greybox_force":1,"pool":"motifs"}
+const KNOB_CHOICES := {"hoods":[0,1,2,3],"ride":["","serpent","ferry"],"pool":["motifs","classic"]}
 
 ## `--knob=key=value` arguments as the layer's knobs (unknown keys warned).
 static func knobs_from(args: PackedStringArray) -> Dictionary:
@@ -335,6 +348,11 @@ static func _make(seed_value: int, attempt: int, knobs: Dictionary) -> Dictionar
 	for n: int in sizes: count += n
 	var motifs: Array = []
 	for p: Array in _draw(count,rng,int(k_all.get("repeats",1)),k_all): motifs.append(_motif_isle(p,rng))
+	# A pool with no family can run dry (the "motifs" pool, a narrow
+	# `greybox` knob).
+	if motifs.size() < count:
+		plan.problems.append("too few motifs drawn")
+		return plan
 	var base := _base_isle()
 	base.sockets = base.own.duplicate()
 	base.hood = 0
@@ -536,7 +554,7 @@ static func _substitute(plan: Dictionary, groups: Array, greed: Dictionary, h: i
 	var pool: Array = []
 	for p: Array in draw_pool(plan.knobs):
 		var probe: RefCounted = (p[1] as Script).new()
-		if not probe.family() and int(taken.get(str(p[0]),0)) >= _most(str(p[0]),int(plan.knobs.get("repeats",1))): continue
+		if not probe.family() and int(taken.get(str(p[0]),0)) >= _most(str(p[0]),int(plan.knobs.get("repeats",1)),plan.knobs): continue
 		if hero and probe.role() == "hero": continue
 		pool.append(p)
 	if pool.is_empty(): return {}
@@ -578,7 +596,7 @@ static func _draw(count: int, rng: RandomNumberGenerator, repeats := 1, knobs :=
 				picks.append(pool[i])
 				var probe: RefCounted = (pool[i][1] as Script).new()
 				drawn[pool[i][0]] = int(drawn.get(pool[i][0],0))+1
-				if not probe.family() and int(drawn[pool[i][0]]) >= _most(str(pool[i][0]),repeats): pool.remove_at(i)
+				if not probe.family() and int(drawn[pool[i][0]]) >= _most(str(pool[i][0]),repeats,knobs): pool.remove_at(i)
 				break
 	return picks
 

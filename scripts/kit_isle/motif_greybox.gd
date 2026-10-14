@@ -12,8 +12,10 @@ extends "res://scripts/kit_isle/kit_motif.gd"
 ## computed from its parts (no bake: tools/bake_layer_pieces.gd never sees
 ## it, scripts/roguelike/layer_plan.gd `_motif_isle` asks `occupancy`),
 ## `sockets` from its rims and spots, `build` its parts into a node (no
-## physics queries, safe on a worker), `role` "hero" (never the greed isle,
-## one a neighbourhood).
+## physics queries, safe on a worker), `role` "filler" (a subclass that is
+## a neighbourhood's landmark answers "hero": never the greed isle, one a
+## neighbourhood; with the greybox motifs most of the pool, heroes would
+## leave a layer short of isles).
 ##
 ## HOW TO CONVERT THE NEXT GREYBOX (one file, one registry line):
 ## 1. Copy scripts/kit_isle/greybox/gb_sunken_giant.gd to gb_<slug>.gd. Copy
@@ -118,7 +120,7 @@ func isle_card() -> Dictionary:
 	return {"name":isle_name(),"epithet":epithet()}
 
 func role() -> String:
-	return "hero"
+	return "filler"
 
 func top() -> float:
 	return start().y

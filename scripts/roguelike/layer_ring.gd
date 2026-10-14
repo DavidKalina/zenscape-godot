@@ -272,7 +272,7 @@ static func _another(plan: Dictionary, motifs: Array, greed: Dictionary, rng: Ra
 	var total := 0.0
 	for p: Array in LayerPlan.draw_pool(plan.knobs):
 		var probe: RefCounted = (p[1] as Script).new()
-		if not probe.family() and int(taken.get(str(p[0]),0)) >= LayerPlan._most(str(p[0]),REPEATS): continue
+		if not probe.family() and int(taken.get(str(p[0]),0)) >= LayerPlan._most(str(p[0]),REPEATS,plan.knobs): continue
 		pool.append(p)
 		total += float(p[2])
 	if pool.is_empty(): return {}
