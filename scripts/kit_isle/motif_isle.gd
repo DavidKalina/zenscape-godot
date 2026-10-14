@@ -100,7 +100,9 @@ func _notification(what: int) -> void:
 ## Its worker waited out, and the art it built freed if it never stood.
 func _forget() -> void:
 	if _task >= 0:
-		WorkerThreadPool.wait_for_task_completion(_task)
+		# A quit mid-build: the worker's renderer calls wait on the main
+		# thread's flush, so a plain wait could hang (fixed_cache `drain`).
+		preload("res://scripts/roguelike/fixed_cache.gd").drain(_task)
 		_task = -1
 	if _staging != null and is_instance_valid(_staging) and _staging.get_parent() == null:
 		_staging.free()
@@ -149,6 +151,11 @@ func _neighbour(collider: Object) -> bool:
 		# The Broken Viaduct and what stands with it when it is done
 		# (scripts/roguelike/layer_hazards.gd `_finish_viaduct`).
 		if node.name in [&"BrokenViaduct",&"ViaductStones",&"ViaductUpdrafts"]: return true
+		# The enemies and the traps (scripts/enemies/enemy_field.gd, scripts/
+		# traps/): their bodies are static ones moved by their scripts (a
+		# head bobbing, a seesaw tipping), so where they are when the plants
+		# grow is a matter of time too.
+		if node.name in [&"EnemyField",&"TrapField"]: return true
 		node = node.get_parent()
 	return false
 
