@@ -408,8 +408,10 @@ func _pick_way() -> float:
 	elif not whole and head != null:
 		var to := head.global_position-global_position
 		var d := Vector2(to.x,to.z).length()
-		if d <= float(knobs.hear):
-			var noise := float(knobs.noise)*clampf(d/float(knobs.hear),0.25,1.0)
+		var calling: bool = head.has_method("calling") and head.calling()
+		var hear := float(knobs.hear)*(CALL_HEAR if calling else 1.0)
+		if d <= hear:
+			var noise := float(knobs.noise)*(CALL_NOISE if calling else 1.0)*clampf(d/hear,0.25,1.0)
 			way = PilotMotor.facing_of(Vector2(to.x,to.z).normalized())+_rng.randf_range(-noise,noise)
 	for turn in [0.0,0.6,-0.6,1.2,-1.2,1.9,-1.9,PI]:
 		if _way_ok(way+turn): return wrapf(way+turn,-PI,PI)
@@ -653,6 +655,10 @@ func _grip_dust(k: int) -> void:
 ## The tells grown with the camera's distance (1 within TELL_NEAR m, up to
 ## TELL_MOST times), so a far body's dust and stones still read.
 const TELL_NEAR := 60.0
+## While the head calls (head.calling()), the body hears it this much farther
+## and its bearing is this much less noisy (multipliers on `hear` and `noise`).
+const CALL_HEAR := 2.0
+const CALL_NOISE := 0.4
 const TELL_MOST := 2.5
 func _tell_k() -> float:
 	var camera: Camera3D = field.study.get("camera") if field != null and field.study != null else null
