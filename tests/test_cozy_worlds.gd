@@ -36,7 +36,7 @@ func open_world(path: String) -> Node3D:
 func run() -> void:
 	create_timer(180).timeout.connect(func() -> void: push_error("Cozy worlds test timed out"); quit(2))
 	root.size = Vector2i(1440,900)
-	var path := "/private/tmp/cozy-worlds-test-%d/places.json" % Time.get_ticks_usec()
+	var path := OS.get_temp_dir().path_join("cozy-worlds-test-%d/places.json" % Time.get_ticks_usec())
 	var primary := await open_world(path)
 	var flow: Node = primary.places
 	primary._process(0.01)

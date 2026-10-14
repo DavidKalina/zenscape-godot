@@ -9,7 +9,7 @@ func run() -> void:
 	create_timer(90).timeout.connect(func(): quit(2))
 	var scene = load("res://studies/diorama.tscn").instantiate()
 	scene.title_seed = 37
-	scene.library_path = "/private/tmp/world-reference-test-"+str(Time.get_ticks_usec())
+	scene.library_path = OS.get_temp_dir().path_join("world-reference-test-"+str(Time.get_ticks_usec()))
 	scene.recent_file = scene.library_path+"/recent.cfg"
 	root.add_child(scene)
 	while not scene.title_loaded: await process_frame

@@ -21,7 +21,7 @@ func run() -> void:
 	Desert.on = true
 	create_timer(600).timeout.connect(func() -> void: print("FAIL: timed out"); quit(2))
 	root.size = Vector2i(1440,900)
-	var dir := "/private/tmp/world-session-scene-%d" % Time.get_ticks_usec()
+	var dir := OS.get_temp_dir().path_join("world-session-scene-%d" % Time.get_ticks_usec())
 	var world: Node3D = load("res://studies/cozy_worlds.tscn").instantiate()
 	world.set_meta("movie_capture",true)
 	world.set_meta("manage_worlds",true)

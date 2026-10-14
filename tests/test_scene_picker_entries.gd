@@ -57,7 +57,7 @@ func run() -> void:
 		var scene: Node = load(str(entry.scene)).instantiate()
 		var game := "places_path" in scene
 		if game:
-			var dir := "/private/tmp/scene-picker-entries-%s-%d" % [entry.id,Time.get_ticks_usec()]
+			var dir := OS.get_temp_dir().path_join("scene-picker-entries-%s-%d" % [entry.id,Time.get_ticks_usec()])
 			DirAccess.make_dir_recursive_absolute(dir)
 			scene.places_path = dir.path_join("places.json")
 		root.add_child(scene)

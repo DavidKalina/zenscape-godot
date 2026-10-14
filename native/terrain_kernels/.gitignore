@@ -3,3 +3,4 @@ bin/
 *.gdextension.uid
 .sconsign*
 *.os
+build/

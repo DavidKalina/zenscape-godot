@@ -47,7 +47,7 @@ func focus() -> Control:
 func run() -> void:
 	create_timer(600).timeout.connect(func() -> void: print("FAIL: timed out"); quit(2))
 	root.size = Vector2i(1440,900)
-	var dir := "/private/tmp/scene-picker-title-%d" % Time.get_ticks_usec()
+	var dir := OS.get_temp_dir().path_join("scene-picker-title-%d" % Time.get_ticks_usec())
 	DirAccess.make_dir_recursive_absolute(dir)
 	world = load("res://studies/cozy_worlds.tscn").instantiate()
 	world.set_meta("movie_capture",true)

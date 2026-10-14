@@ -59,7 +59,7 @@ func run() -> void:
 	Desert.on = true
 	create_timer(900).timeout.connect(func() -> void: print("FAIL: timed out"); quit(2))
 	root.size = Vector2i(1440,900)
-	var dir := "/private/tmp/worlds-flow-%d" % Time.get_ticks_usec()
+	var dir := OS.get_temp_dir().path_join("worlds-flow-%d" % Time.get_ticks_usec())
 	var seeded := Library.new(dir.path_join("worlds"))
 	var now := Time.get_unix_time_from_system()
 	var fern: Dictionary = seeded.create("Fern bank","plain","fern-owl-0001",now-600.0)

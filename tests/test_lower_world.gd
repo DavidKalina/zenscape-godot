@@ -529,7 +529,7 @@ func _live() -> void:
 	var scene: Node3D = load("res://studies/cozy_worlds.tscn").instantiate()
 	scene.set_meta("movie_capture",true)
 	scene.set_meta("no_title",true)
-	scene.places_path = "/private/tmp/lower-world-%d/places.json" % Time.get_ticks_usec()
+	scene.places_path = OS.get_temp_dir().path_join("lower-world-%d/places.json" % Time.get_ticks_usec())
 	DirAccess.make_dir_recursive_absolute(scene.places_path.get_base_dir())
 	root.size = Vector2i(1440,900)
 	root.content_scale_size = Vector2i(1440,900)
