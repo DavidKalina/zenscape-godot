@@ -87,6 +87,11 @@ var _want := NAN
 var turning := 0.0
 ## How fast its steps go (1 calm; hunting, quicker: the body sets it).
 var pace := 1.0
+## The floor's height under a point (global; -INF none): the body's own
+## floor rays (Olmec round 1), so a foot rests on a step or a ledge under it.
+var floor_at: Callable = Callable()
+## A foot lifted onto what is under it by this much at most (model m).
+const FOOT_UP := 1.6
 var _last_foot := ""
 var _since := 9.0
 var _look: Node3D
@@ -305,3 +310,17 @@ func plant(delta: float) -> void:
 		f.at_yaw = at_yaw
 		f.slip = Vector2(at.x-a.x,at.z-a.z).length()/k
 		_look.leg(side,a.lerp(at,f.lock),angle_difference(yaw,at_yaw)*f.lock)
+		# Olmec round 1: a toe or heel pitched into the ground lifts the
+		# ankle till the sole rests on it.
+		var ground: float = _look.global_position.y
+		if floor_at.is_valid():
+			# What is under its ankle and its sole's corners (a step, a
+			# ledge it walks beside): the highest within a high step.
+			var base := ground
+			var under_pts: PackedVector3Array = _look.sole(side)
+			under_pts.append(_look.ankle(side))
+			for q: Vector3 in under_pts:
+				var g: float = floor_at.call(Vector3(q.x,base,q.z))
+				if g != -INF and g > ground and g-base < FOOT_UP*k: ground = g
+		var under: float = _look.sole_under(side,ground)
+		if under > 0.02: _look.leg(side,_look.ankle(side)+Vector3.UP*under,0.0)

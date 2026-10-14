@@ -184,6 +184,21 @@ func loop_time(clip: String, phase: float, per := 1.0) -> float:
 func wrist(side: String) -> Vector3:
 	return skeleton.global_transform*skeleton.get_bone_global_pose(_arm[side][2]).origin
 
+## The fingertips of `side` (the fingers' far end), global (Olmec round 1).
+func fingertip(side: String) -> Vector3:
+	var t := skeleton.global_transform*skeleton.get_bone_global_pose(_arm[side][3])
+	return t.origin+t.basis.y*0.72
+
+## The thumb's tip of `side`, global (Olmec round 1).
+func thumbtip(side: String) -> Vector3:
+	var b := skeleton.find_bone("thumb."+side)
+	var t := skeleton.global_transform*skeleton.get_bone_global_pose(b)
+	return t.origin+t.basis.y*0.5
+
+## The elbow of `side`, global.
+func elbow(side: String) -> Vector3:
+	return skeleton.global_transform*skeleton.get_bone_global_pose(_arm[side][1]).origin
+
 ## The shoulder of `side`, global.
 func shoulder(side: String) -> Vector3:
 	return skeleton.global_transform*skeleton.get_bone_global_pose(_arm[side][0]).origin
@@ -262,6 +277,27 @@ func leg(side: String, target: Vector3, turn_by: float) -> void:
 	var bones: Array = _leg[side]
 	var foot := skeleton.get_bone_global_pose(bones[2]).basis
 	_two_bone(bones,skeleton.global_transform.affine_inverse()*target,1.0,Basis(Vector3.UP,turn_by)*foot,true)
+
+## The slab foot's sole corners (the build's foot block: 0.78 either side,
+## 1.44 ahead of the ankle to 0.72 behind, at the ground; model m).
+const SOLE := [Vector3(-0.78,0.0,-1.44),Vector3(0.78,0.0,-1.44),Vector3(-0.78,0.0,0.72),Vector3(0.78,0.0,0.72)]
+
+## The sole of `side`'s corners as posed (global; Olmec round 1).
+func sole(side: String) -> PackedVector3Array:
+	var b: int = _leg[side][2]
+	var rest := skeleton.get_bone_global_rest(b)
+	var pose := skeleton.global_transform*skeleton.get_bone_global_pose(b)*rest.affine_inverse()
+	var ankle := rest.origin
+	var out := PackedVector3Array()
+	for c: Vector3 in SOLE: out.append(pose*Vector3(ankle.x+c.x,c.y,ankle.z+c.z))
+	return out
+
+## How far the sole of `side` is under `floor_y` (global; 0 none): its
+## lowest corner as posed (Olmec round 1).
+func sole_under(side: String, floor_y: float) -> float:
+	var low := INF
+	for p: Vector3 in sole(side): low = minf(low,p.y)
+	return maxf(0.0,floor_y-low)
 
 ## Bone `bone` (a trunk bone) twisted `a` rad about its own length (+ left).
 func twist(bone: String, a: float) -> void:

@@ -98,7 +98,9 @@ func _init(body: Node3D) -> void:
 	bottom = float(field.lost)
 	var k: Dictionary = body.knobs
 	step = float(k.step)
-	room = float(body.neck_h)*0.92
+	# Olmec round 1 (olmec-turn-clip-round1.md): room to its stump's top
+	# (0.92 of it put its shoulder slab into overhangs).
+	room = float(body.neck_h)*1.0
 	climb_max = float(k.climb_max)
 	drop_max = float(k.drop_max)
 	leap_max = float(k.leap_max)

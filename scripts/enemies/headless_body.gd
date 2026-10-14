@@ -499,7 +499,7 @@ func _pick_way() -> float:
 
 func _way_ok(angle: float) -> bool:
 	var dir := _way3(angle)
-	var wall := _wall_along(dir,length*0.5+3.0)
+	var wall := _wall_along(dir,length*0.5+3.0,true)
 	if not wall.is_empty(): return _climbable(wall) != INF and _wants_up()
 	var past := position+dir*(length*0.5+3.0)
 	if _floor(past,float(knobs.step),float(knobs.step)*2.0) != -INF: return true
@@ -537,7 +537,9 @@ func _walking(delta: float) -> void:
 			if Vector2(vel.x,vel.z).length() < 0.3: facing = wrapf(facing+clampf(angle_difference(facing,_heading),-float(knobs.turn)*delta,float(knobs.turn)*delta),-PI,PI)
 			return
 	var fwd := _forward3()
-	var wall := _wall_along(fwd,length*0.5+float(knobs.look))
+	# Olmec round 1: off a route its shoulders look ahead too (on one, the
+	# planner chose where it goes; its bulk is still eased off the walls).
+	var wall := _wall_along(fwd,length*0.5+float(knobs.look),not _routed())
 	if not wall.is_empty():
 		_meet_wall(wall)
 		return
@@ -605,14 +607,39 @@ func _reunite_near() -> bool:
 ## Round 11: a riser whose top is within STAIR Ã— `step` of its feet is a
 ## stair's step it walks up, not a wall.
 const STAIR := 1.6
-func _wall_along(dir: Vector3, reach: float) -> Dictionary:
+func _wall_along(dir: Vector3, reach: float, sides := false) -> Dictionary:
 	var knee := float(knobs.step)+0.1
-	for up: float in [knee,neck_h*0.5]:
+	# Olmec round 1: off a route, its shoulders too (and its head, whole),
+	# and an underside over it (a ramp's, an overhang's) is a wall it won't
+	# climb (on one, the planner gave it room to its stump's top).
+	var ups: Array[float] = [knee,neck_h*0.5]
+	if not _routed(): ups.append_array([neck_h*0.92,_bulk_top()-0.3])
+	for up: float in ups:
 		var from := position+Vector3.UP*up
 		var hit := _cast(from,from+dir*reach)
-		if hit.is_empty() or absf((hit.normal as Vector3).y) >= 0.5: continue
+		if hit.is_empty(): continue
+		var ny := (hit.normal as Vector3).y
+		if ny >= 0.5: continue
+		if ny <= -0.5:
+			if up <= neck_h*0.5: continue
+			hit["ceiling"] = true
 		if up == knee and _riser(hit): continue
 		return hit
+	return _shoulder_wall(dir,reach) if sides else {}
+
+## Olmec round 1: a wall in the way of its shoulders and swinging arms, not
+## of its middle (a pillar's corner, a wall's end met slantwise): rays along
+## `dir` out from each shoulder line, at its hips and its chest. The hit,
+## flagged "side" (it isn't climbed from), or {}.
+func _shoulder_wall(dir: Vector3, reach: float) -> Dictionary:
+	var across := Vector3(-dir.z,0.0,dir.x)*hh*BULK_W*0.85
+	for s: float in [-1.0,1.0]:
+		for up: float in [neck_h*0.45,neck_h*0.8]:
+			var from := position+Vector3.UP*up+across*s
+			var hit := _cast(from,from+dir*(reach+SHOULDER_AHEAD*hh))
+			if hit.is_empty() or (hit.normal as Vector3).y >= 0.5: continue
+			hit["side"] = true
+			return hit
 	return {}
 
 ## Whether the face `hit` (met at the knee) tops out within STAIR Ã— `step`
@@ -627,6 +654,7 @@ func _riser(hit: Dictionary) -> bool:
 ## The top of the wall `hit` (a ray down past its face from `climb_max`
 ## over its feet), INF if it is taller than that.
 func _climbable(hit: Dictionary) -> float:
+	if hit.get("ceiling",false) or hit.get("side",false): return INF
 	var n := hit.normal as Vector3
 	n = Vector3(n.x,0.0,n.z).normalized()
 	var past := (hit.position as Vector3)-n*float(knobs.lip_in)
@@ -642,15 +670,36 @@ func _meet_wall(hit: Dictionary) -> void:
 	# On its route: a climb leg's wall it climbs; any other, it gives the
 	# leg up and plans again without it.
 	if _routed():
+		# Olmec round 1: a walk leg ending at the foot of the next leg's
+		# climb is done when its wall is met (its bulk, held off the face,
+		# may never stand within a cell of that end).
+		if _route[_leg].kind == "walk" and _leg+1 < _route.size() and _route[_leg+1].kind == "climb" and not hit.get("side",false):
+			var end: Vector3 = _route[_leg].to
+			if Vector2((hit.position as Vector3).x-end.x,(hit.position as Vector3).z-end.z).length() < Routes.CELL*2.5:
+				_next_leg()
 		if _route[_leg].kind != "climb":
+			# The planner sending it into a wall it can climb and wants up,
+			# again and again: it climbs it (as off a route).
+			_wall_fails += 1
+			if _wall_fails > WALL_FAILS and climbing and not hit.get("side",false):
+				_wall_fails = 0
+				_route = []
+				_start_climb(hit)
+				return
 			routes.block(hit.position)
 			_leg_failed("wall")
 			return
 		climbing = true
+	_wall_fails = 0
 	if not climbing:
 		_go("listen")
 		return
 	_start_climb(hit)
+
+## Walk legs given up at walls in a row (Olmec round 1), and how many
+## before it climbs the wall instead.
+var _wall_fails := 0
+const WALL_FAILS := 2
 
 ## Faced to the wall `hit`, climbing.
 func _start_climb(hit: Dictionary) -> void:
@@ -1037,6 +1086,9 @@ func _throw(from: Vector3, to: Vector3, kind: String) -> Array:
 const ARC_LAND := 2.0
 const ARC_DT := 1.0/30.0
 func _arc_clear(to: Vector3, kind: String) -> bool:
+	# Olmec round 1: room for its bulk where it comes down (a shaft, a slot
+	# its shoulders don't fit, is no landing).
+	if not _room_at(to): return false
 	var throw := _throw(position,to,kind)
 	var v: Vector3 = throw[0]
 	var p := position
@@ -1049,6 +1101,8 @@ func _arc_clear(to: Vector3, kind: String) -> bool:
 		if not hit.is_empty():
 			if (hit.normal as Vector3).y > 0.5 and v.y <= 0.0: return (hit.position as Vector3).distance_to(to) <= ARC_LAND
 			return false
+		# Olmec round 1: its bulk would fly into a wall on the way.
+		if kind != "drop" and _bulk_sweep(p,next) < 1.0: return false
 		p = next
 		t += ARC_DT
 	return false
@@ -1330,6 +1384,8 @@ func _next_leg() -> void:
 func _at_leg_end() -> bool:
 	var to: Vector3 = _route[_leg].to
 	var near := Routes.CELL*(0.9 if _route[_leg].kind == "walk" else 1.4)
+	# Olmec round 1: a walk leg's end by a wall its bulk is held off.
+	if _route[_leg].kind == "walk" and _clock-_pushed_at < 0.3: near += hh*BULK_W
 	return Vector2(to.x-position.x,to.z-position.z).length() <= near and absf(to.y-position.y) <= float(knobs.step)*2.0
 
 ## Back where it was on its leg (within a cell or so of its start or end).
@@ -1586,7 +1642,9 @@ func _attack(m: PilotMotor, flat: float, dy: float) -> bool:
 	if flat >= float(knobs.pounce_min)*hh and flat <= float(knobs.pounce_max)*hh and _clock >= _pounce_ready \
 			and dy <= float(knobs.pounce_rise)*hh and dy >= -float(knobs.pounce_sink)*hh:
 		var at := _pounce_spot(m)
-		if at != Vector3.INF and _arc_clear(at,"pounce"):
+		# Olmec round 1: room for the crouch, its arms swept back, turned to him.
+		var to_at := Vector2(at.x-position.x,at.z-position.z) if at != Vector3.INF else Vector2.ZERO
+		if at != Vector3.INF and _arc_clear(at,"pounce") and _room_for(PilotMotor.facing_of(to_at.normalized()) if to_at.length() > 0.01 else facing,WINDUP_ROOM):
 			_leap_to = at
 			leap_kind = "pounce"
 			_go("windup")
@@ -1637,7 +1695,7 @@ func _pursue(delta: float, goal: Vector3, speed: float) -> void:
 		_brake(delta)
 		return
 	var fwd := _forward3()
-	var wall := _wall_along(fwd,length*0.5+float(knobs.look))
+	var wall := _wall_along(fwd,length*0.5+float(knobs.look),true)
 	if not wall.is_empty():
 		_hunt_wall(wall,goal)
 		return
@@ -1705,7 +1763,7 @@ func _skirt(goal: Vector3) -> float:
 		for s: float in [1.0,-1.0]:
 			var way := wrapf(base+a*s,-PI,PI)
 			var dir := _way3(way)
-			if not _wall_along(dir,length*0.5+float(knobs.look)+1.5).is_empty(): continue
+			if not _wall_along(dir,length*0.5+float(knobs.look)+1.5,true).is_empty(): continue
 			if _floor(position+dir*(length*0.5+float(knobs.look)),float(knobs.step)*STAIR,float(knobs.step)*2.0) == -INF: continue
 			return way
 	return INF
@@ -2089,10 +2147,21 @@ func _triumph(delta: float) -> void:
 func _move(delta: float) -> void:
 	_unwedge(delta)
 	if state in ["leap","fall"]:
+		# Olmec round 1: glanced off what its bulk is in (set off by a wall).
+		_clear_bulk(delta,false)
 		vel.y -= float(knobs.leap_gravity)*delta
 		var to := position+vel*delta
 		var hit := _cast(position+Vector3.UP*0.05,to)
-		if not hit.is_empty():
+		# Olmec round 1: its bulk swept too (its chest, its arms): a wall it
+		# would fly into stops it dead and it drops, as a wall at its feet does.
+		var bulk := _bulk_sweep(position,to) if state == "leap" and leap_kind != "drop" else 1.0
+		if bulk < 1.0 and (hit.is_empty() or bulk < position.distance_to(hit.position)/maxf(position.distance_to(to),0.0001)):
+			position = position.lerp(to,bulk)
+			vel.x = 0.0
+			vel.z = 0.0
+			bulk_stops += 1
+			if state == "leap": _go("fall")
+		elif not hit.is_empty():
 			var n := hit.normal as Vector3
 			if n.y > 0.5 and vel.y <= 0.0:
 				position = hit.position
@@ -2112,6 +2181,7 @@ func _move(delta: float) -> void:
 	elif state not in ["climb","mantle","grab_leap","hang"]:
 		position.x += vel.x*delta
 		position.z += vel.z*delta
+		if state not in BULK_FREE: _clear_bulk(delta)
 		var g := _feet_floor(float(knobs.step)*STAIR,float(knobs.step))
 		if g == -INF: _fall()
 		else: position.y = move_toward(position.y,g,maxf(absf(g-position.y)*8.0,2.0)*delta) if g > position.y else g
@@ -2122,6 +2192,194 @@ func _move(delta: float) -> void:
 			field.sound(&"body_step",position)
 			quake = maxf(quake,0.06)
 	rotation.y = facing
+
+# --- Olmec round 1: its bulk against the world (olmec-turn-clip-round1.md) -------------------
+
+## Its bulk, a box turned with it (in head heights at its size): half across
+## its shoulders and hanging arms, half along it; from over a stair's step
+## (what it walks up is not in it) to the top of its stump (whole, its head).
+const BULK_W := 1.0
+const BULK_L := 0.5
+## Its legs' box (head heights, half across its feet, half along them),
+## and the height (m) of a block beside them it is eased off.
+const LEG_W := 0.58
+const LEG_L := 0.45
+const LEG_BLOCK := 0.9
+## How far (head heights) a landing may be off its room by a wall.
+const ROOM_GIVE := 0.9
+## Two bodies kept this share of their breadths apart (middle to middle).
+const BODY_GAP := 1.15
+## Eased out of what it is in, at most this fast (m/s).
+const BULK_EASE := 8.0
+## Its arms swing out ahead of its bulk walking (head heights): the
+## shoulder rays look this much further.
+const SHOULDER_AHEAD := 0.25
+## States whose own code keeps it off the world (on a wall, over a lip, in
+## the air; the feel eases it off the face itself).
+const BULK_FREE := ["climb","mantle","grab_leap","hang","feel"]
+var _bulk := BoxShape3D.new()
+var _bulk_q := PhysicsShapeQueryParameters3D.new()
+## Counted, for checks: frames it was eased out, flights stopped by a wall.
+var bulk_pushes := 0
+var bulk_stops := 0
+var _pushed_at := -INF
+
+func _bulk_top() -> float:
+	return neck_h+(hh*0.8 if whole else 0.0)
+
+func _bulk_at(p: Vector3, motion := Vector3.ZERO) -> PhysicsShapeQueryParameters3D:
+	var low := float(knobs.step)*STAIR+0.15
+	var top := _bulk_top()
+	_bulk.size = Vector3(hh*BULK_W*2.0,top-low,hh*BULK_L*2.0)
+	_bulk_q.shape = _bulk
+	_bulk_q.transform = Transform3D(Basis(Vector3.UP,facing),p+Vector3.UP*(low+top)*0.5)
+	_bulk_q.collision_mask = field.study.ground.mask
+	_bulk_q.exclude = _skip()
+	_bulk_q.motion = motion
+	_bulk_q.margin = 0.02
+	return _bulk_q
+
+## Room for its bulk stood at `p` (any way it faces: its bulk's breadth
+## round), a little give for the push-out.
+func _room_at(p: Vector3) -> bool:
+	var space: PhysicsDirectSpaceState3D = field.study.get_world_3d().direct_space_state
+	var w := hh*BULK_W*2.0*0.85
+	var out := Vector3.ZERO
+	# By a wall is room (the push-out eases it off a little); a shaft or a
+	# slot it doesn't fit, pushed both ways, isn't.
+	for i in 4:
+		var q := _bulk_at(p+out)
+		_bulk.size = Vector3(w,_bulk.size.y,w)
+		var pts: Array[Vector3] = space.collide_shape(q,8)
+		if pts.is_empty(): return out.length() <= hh*ROOM_GIVE
+		var best := Vector3.ZERO
+		for j in range(0,pts.size()-1,2):
+			var d: Vector3 = pts[j+1]-pts[j]
+			d.y = 0.0
+			if d.length() > best.length(): best = d
+		if best.length() < 0.01: return false
+		out += best+best.normalized()*0.05
+	return false
+
+## The crouch's arms swept back past its bulk (head heights, along it).
+const WINDUP_ROOM := 0.6
+
+## Room for a pose here turned to `face`: its bulk `more_l` head heights
+## longer each way meets nothing (a wind-up's arms swung back by a wall).
+func _room_for(face: float, more_l: float) -> bool:
+	var was := facing
+	facing = face
+	var q := _bulk_at(position)
+	_bulk.size.z += 2.0*more_l*hh
+	var space: PhysicsDirectSpaceState3D = field.study.get_world_3d().direct_space_state
+	var clear := space.collide_shape(q,1).is_empty()
+	facing = was
+	return clear
+
+## How far (0 to 1) its bulk goes from `a` to `b` before it meets the world
+## (1 clear; 1 too if it starts in something: that is for the push-out).
+func _bulk_sweep(a: Vector3, b: Vector3) -> float:
+	var space: PhysicsDirectSpaceState3D = field.study.get_world_3d().direct_space_state
+	if not space.collide_shape(_bulk_at(a),1).is_empty(): return 1.0
+	var r: PackedFloat32Array = space.cast_motion(_bulk_at(a,b-a))
+	return r[0] if r.size() > 0 else 1.0
+
+## Eased (flat) out of the world its bulk is in: a wall it walked along, a
+## pillar's corner its shoulder met, an underside it walked under, the turn
+## that swung its arms into a wall. Never off its floor.
+func _clear_bulk(delta: float, floored := true) -> void:
+	var space: PhysicsDirectSpaceState3D = field.study.get_world_3d().direct_space_state
+	var out := Vector3.ZERO
+	for i in 4:
+		var pts: Array[Vector3] = space.collide_shape(_bulk_at(position+out),8)
+		if pts.is_empty(): break
+		var best := Vector3.ZERO
+		for j in range(0,pts.size()-1,2):
+			var d: Vector3 = pts[j+1]-pts[j]
+			d.y = 0.0
+			if d.length() > best.length(): best = d
+		if best.length() < 0.01: break
+		out += best+best.normalized()*0.02
+	# Its legs: a block it walks beside (taller than LEG_BLOCK, under its
+	# bulk's bottom) eases it off sideways only (one met head on is a
+	# stair's step it walks up, or a wall its rays meet).
+	if floored:
+		var right := _right3()
+		var q := _bulk_at(position+out)
+		var low := 0.35
+		var top := float(knobs.step)*STAIR+0.15
+		_bulk.size = Vector3(hh*LEG_W*2.0,top-low,hh*LEG_L*2.0)
+		q.transform.origin = position+out+Vector3.UP*(low+top)*0.5
+		var pts: Array[Vector3] = space.collide_shape(q,8)
+		var side := 0.0
+		for j in range(0,pts.size()-1,2):
+			var b: Vector3 = pts[j+1]
+			var a: Vector3 = pts[j]
+			var top_y := _floor(Vector3(b.x,position.y,b.z)+(a-b).normalized()*-0.1,float(knobs.step)*STAIR+1.0,0.5)
+			if top_y != -INF and top_y < position.y+LEG_BLOCK: continue
+			var d := (b-a).dot(right)
+			if absf(d) > absf(side): side = d
+		if absf(side) > 0.01: out += right*side
+	# Other bodies: eased apart (each its half), flat.
+	for e in field.enemies:
+		if e == self or not is_instance_valid(e) or not e.has_method("make_whole") or e.get("gone"): continue
+		var d := Vector3(position.x-e.position.x,0.0,position.z-e.position.z)
+		var most := (width+float(e.width))*0.5*BODY_GAP
+		if d.length() < most and absf(position.y-e.position.y) < neck_h:
+			out += (d.normalized() if d.length() > 0.01 else _right3())*(most-d.length())*0.5
+	if out == Vector3.ZERO: return
+	out = out.limit_length(BULK_EASE*delta)
+	var at := position+out
+	if floored and _floor(at,float(knobs.step)*STAIR,float(knobs.step)*2.0) == -INF: return
+	position = at
+	bulk_pushes += 1
+	_pushed_at = _clock
+	# Its planted feet go with it (they would slide otherwise).
+	if look != null: look.steps.carry(out)
+
+## Its hands drawn in off a wall beside them (Olmec round 1): each arm's
+## line from the shoulder out to the elbow, the wrist and the fingertips is
+## ray-cast; past a wall's face, the wrist is pulled back in along its normal
+## by the overlap and TUCK_CLEAR (the forearm's thickness), eased in and out.
+const TUCK_CLEAR := 0.75
+const TUCK_EASE := 0.15
+const TUCK_IN := 0.05
+var _tuck_w := {"L":0.0,"R":0.0}
+var _tuck_by := {"L":Vector3.ZERO,"R":Vector3.ZERO}
+## Frames a hand was drawn in (for checks).
+var tucks := 0
+
+func _tuck(delta: float) -> void:
+	var k := look.k
+	for side: String in ["L","R"]:
+		var sh := look.shoulder(side)
+		var by := Vector3.ZERO
+		var el := look.elbow(side)
+		var wr := look.wrist(side)
+		for p: Vector3 in [el,el.lerp(wr,0.5),wr,look.fingertip(side),look.thumbtip(side)]:
+			var out := p-sh
+			var hit := _cast(sh,p+out.normalized()*TUCK_CLEAR*k)
+			# The arm's line clear: its thickness, out from it (away from his
+			# middle), may still graze a face.
+			if hit.is_empty():
+				var away := Vector3(p.x-position.x,0.0,p.z-position.z)
+				if away.length() < 0.01: continue
+				hit = _cast(p,p+away.normalized()*TUCK_CLEAR*k)
+				if hit.is_empty(): continue
+			var n := hit.normal as Vector3
+			if n.y > 0.5: continue
+			n = Vector3(n.x,0.0,n.z).normalized() if absf(n.y) < 0.95 else -Vector3(out.x,0.0,out.z).normalized()
+			var past := ((hit.position as Vector3)-p).dot(n)+TUCK_CLEAR*k
+			if past > by.length(): by = n*past
+		var want := 1.0 if by != Vector3.ZERO else 0.0
+		if by != Vector3.ZERO:
+			if float(_tuck_w[side]) > 0.0: _tuck_by[side] = (_tuck_by[side] as Vector3).lerp(by,1.0-exp(-3.0*delta/TUCK_EASE))
+			else: _tuck_by[side] = by
+		_tuck_w[side] = move_toward(float(_tuck_w[side]),want,delta/(TUCK_IN if want > 0.0 else TUCK_EASE))
+		var w: float = _tuck_w[side]
+		if w <= 0.0: continue
+		tucks += 1
+		look.reach(side,look.wrist(side)+(_tuck_by[side] as Vector3)*w,1.0)
 
 # --- The clips ------------------------------------------------------------------------------
 
@@ -2218,6 +2476,7 @@ func _animate(delta: float) -> void:
 		_: look.want("idle",idle)
 	# Round 4: turns stepped and feet planted (headless_body_steps.gd).
 	var mode := _steps_mode()
+	if not look.steps.floor_at.is_valid(): look.steps.floor_at = func(p: Vector3) -> float: return _floor(p,float(knobs.step)*STAIR,float(knobs.step))
 	look.steps.pace = TURN_PACE_HUNT if hunting else 1.0
 	look.turn(facing,mode,delta,fposmod(_phase/2.0,1.0),state == "home",_turn_goal() if mode == Look.Steps.STAND else NAN)
 	# Olmec round 1: stood, it faces where its feet have turned it (its
@@ -2270,6 +2529,7 @@ func _hands(delta: float) -> void:
 	var fwd := _forward3()
 	var right := _right3()
 	var k := look.k
+	if state not in BULK_FREE: _tuck(delta)
 	match state:
 		"climb","hang":
 			if not _hauling():

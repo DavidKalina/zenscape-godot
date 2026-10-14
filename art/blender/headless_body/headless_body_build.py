@@ -1435,7 +1435,7 @@ def _step_keys(n, s, lift, lead, lag):
         # Anticipation: the weight over onto the standing foot, sunk, the
         # hips turned a little against the turn, the stepping heel up.
         (0.15, {"hx": -s * 0.55, "hy": -0.42, "sq": 0.95, "hr": -s * 6.0, "sr": -s * 4.0, "cr": -s * 2.0,
-                "ht": -t * 4.0, "ct": t * 3.0, f"k{n}p": -16.0, f"k{n}y": 0.08,
+                "ht": -t * 4.0, "ct": t * 3.0, f"k{n}p": -10.0, f"k{n}y": 0.27,
                 f"a{n}o": 17.0, f"a{o}o": 8.0, "np": 4.0}, ""),
         # The lift: the foot up high, knee forward, the hips swung into the
         # turn and up off the standing leg; shoulders and stump left behind;
