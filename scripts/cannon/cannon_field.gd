@@ -29,6 +29,19 @@ extends Node3D
 ##    where it crossed the cannon's height and a "lost" sound.
 ##  - Fired, he leaves by `PilotMotor.toss`: no tumble, the sail ready, a
 ##    little steering in the air.
+##  - THE CATCH (docs/design/roguelike/cannon-catch.md): a body arriving in
+##    a cannon's mouth, not by climbing in (falling off a ledge, thrown,
+##    knocked, tumbling stunned, blown out of an inhaler head), is caught:
+##    within `catch_pull` of the mouth and heading in, his drift off the line
+##    to it is turned toward it, his speed kept (a funnel); within `catch_radius` (swept), moving
+##    into it against the aim, he is swallowed (the gulp: squash, wobble,
+##    "gulp"), held `catch_hold` s, wound up `catch_windup` s (drawn back,
+##    swelling, shaking, glowing, "charge"), then fired along the aim at the
+##    power set (boom, kick). Poised, he leaves by `toss` as from climbing
+##    in; stunned, by `knock(v, cannon)`: the cannon names itself as the
+##    source, so a fresh stun only if `stunnable`, else thrown on still
+##    stunned (the restun gap and the chain cap hold). Only the pilot is
+##    caught: enemies and kegs fly past (see the doc).
 ## Hook: `attach(study)`; `add_cannon`, `add_keg`; `reset()`; the study calls
 ## `frame(camera, delta)` after its own camera.
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
@@ -90,6 +103,15 @@ var _watch: Node3D = null
 var _hold_at := Vector3.INF
 var _hold_t := 0.0
 var _last_cannon: Node3D = null
+## The catch: seconds since he was caught, whether he came in stunned, the
+## shot due after the motor's step, his feet before it (the sweep), and the
+## catches and shots so far ({cannon, stunned, at, t} each, for checks).
+var _catch_t := 0.0
+var _caught_stunned := false
+var _fire_caught := false
+var _feet_was := Vector3.INF
+var catches: Array = []
+var spits: Array = []
 
 func _init() -> void:
 	name = "CannonField"
@@ -133,8 +155,12 @@ func pick_up(k: Node3D) -> bool:
 
 func before(delta: float) -> void:
 	_clock += delta
+	for c: Node3D in cannons: c.step_catch(delta)
 	_use()
 	_load(delta)
+	_hold_caught(delta)
+	_funnel(delta)
+	_feet_was = motor.feet
 	_step_kegs(delta)
 	_show_prompt()
 
@@ -142,7 +168,15 @@ func after(delta: float, _events: Dictionary) -> void:
 	if _launch:
 		_launch = false
 		launch_self()
-	elif mode == "": _pick_up_near()
+	elif _fire_caught:
+		_fire_caught = false
+		spit()
+	elif mode == "caught" and motor.rider != self:
+		# Something else took him out of the barrel (a knock): let go.
+		_let_go()
+	elif mode == "":
+		_catch_in()
+		if mode == "": _pick_up_near()
 	_follow(delta)
 
 func pose(_figure: Node3D) -> void:
@@ -196,6 +230,9 @@ func _use() -> void:
 	var up := _edge(&"cannon_power_up")
 	var down := _edge(&"cannon_power_down")
 	match mode:
+		"caught":
+			# Held: the beat is the cannon's; no button cuts it short.
+			pass
 		"inside":
 			# Fired after the motor's step (`after`), so that step still
 			# takes the press as the rider's and he leaves with A held: the
@@ -325,6 +362,12 @@ func launch_self() -> bool:
 func ride(m: PilotMotor, delta: float, want: Vector2, _pressed: bool) -> Dictionary:
 	var c: Node3D = cannon
 	if c == null: return {}
+	if mode == "caught":
+		# In the barrel; the chase camera swings round to look down the shot.
+		m.velocity = Vector3.ZERO
+		m.feet = c.pivot()
+		study._yaw = lerp_angle(study._yaw,c.yaw(),1.0-exp(-delta*6.0))
+		return {}
 	if mode == "operating" and loading.is_empty():
 		var camera_forward := PilotMotor.forward(c.yaw())
 		var right := Vector2(-camera_forward.y,camera_forward.x)
@@ -338,6 +381,112 @@ func ride(m: PilotMotor, delta: float, want: Vector2, _pressed: bool) -> Diction
 	else:
 		m.feet = c.pivot()
 	return {}
+
+# --- The catch -----------------------------------------------------------------------
+
+## The point of him the mouth takes: his middle, a little under his chest.
+func _middle(feet: Vector3) -> Vector3:
+	return feet+Vector3.UP*float(study.ground.head_top)*0.4
+
+## Whether he can be caught now: in the air, his own or tumbling, not held,
+## hanging, swimming or riding anything.
+func _catchable() -> bool:
+	return mode == "" and motor.rider == null and not motor.grounded and motor.hold == "" and not motor.swimming and not motor.seized()
+
+## Whether `v` goes into `c`'s mouth: against its aim, fast enough, and
+## within `catch_cone` of the barrel's axis.
+static func _going_in(c: Node3D, v: Vector3) -> bool:
+	var into: float = -v.dot(c.direction())
+	return into > float(c.knobs.catch_in) and into > v.length()*cos(float(c.knobs.catch_cone))
+
+## The funnel: heading into a mouth within `catch_pull`, his velocity is
+## turned toward it at `catch_pull_rate` (his speed kept).
+func _funnel(delta: float) -> void:
+	if not _catchable(): return
+	var p := _middle(motor.feet)
+	for c: Node3D in cannons:
+		if not c.catching(): continue
+		var to: Vector3 = c.mouth()-p
+		var d := to.length()
+		if d > float(c.knobs.catch_pull) or d < 0.01: continue
+		var v := motor.velocity
+		var along := to/d
+		if v.dot(along) <= 0.0 or not _going_in(c,v): continue
+		# In front of the mouth, not behind the breech.
+		if (p-c.mouth()).dot(c.direction()) < -float(c.knobs.catch_radius): continue
+		# Turned toward the mouth, his speed kept.
+		var k := 1.0-exp(-float(c.knobs.catch_pull_rate)*delta)
+		motor.velocity = v.lerp(along*v.length(),k).normalized()*v.length()
+		return
+
+## After the motor's step: did his middle pass through a mouth this frame?
+func _catch_in() -> void:
+	if not _catchable() or _feet_was == Vector3.INF: return
+	var a := _middle(_feet_was)
+	var b := _middle(motor.feet)
+	for c: Node3D in cannons:
+		if not c.catching() or not _going_in(c,motor.velocity): continue
+		var m: Vector3 = c.mouth()
+		var ab := b-a
+		var t := clampf((m-a).dot(ab)/maxf(ab.length_squared(),1e-6),0.0,1.0)
+		if (a+ab*t).distance_to(m) <= float(c.knobs.catch_radius):
+			catch_body(c)
+			return
+
+## Caught by `c`: swallowed, held in the barrel for the beat.
+func catch_body(c: Node3D) -> void:
+	cannon = c
+	_last_cannon = c
+	mode = "caught"
+	_catch_t = 0.0
+	_fire_caught = false
+	_caught_stunned = motor.move == "tumble"
+	if not _caught_stunned:
+		motor.move = ""
+		motor.sail.rest()
+	catches.append({"cannon":c,"stunned":_caught_stunned,"at":motor.feet,"t":_clock})
+	motor.rider = self
+	motor.velocity = Vector3.ZERO
+	motor.grounded = false
+	motor.feet = c.pivot()
+	study.figure.visible = false
+	c.swallow()
+
+## The beat: held, then the windup, then the shot (after the motor's step).
+func _hold_caught(delta: float) -> void:
+	if mode != "caught" or cannon == null: return
+	_catch_t += delta
+	var hold := float(cannon.knobs.catch_hold)
+	var wind := maxf(float(cannon.knobs.catch_windup),1e-3)
+	if _catch_t > hold: cannon.set_charge((_catch_t-hold)/wind)
+	if _catch_t >= hold+wind: _fire_caught = true
+
+## Fired out along the aim at the power set. Stunned, the cannon knocks him
+## as itself (a fresh stun only if it may; else thrown on still stunned);
+## poised, a toss, as from climbing in.
+func spit() -> bool:
+	var c: Node3D = cannon
+	if c == null or mode != "caught": return false
+	var v: Vector3 = c.fire()
+	cannon = null
+	mode = ""
+	motor.rider = null
+	motor.grounded = false
+	motor.feet = c.mouth()-Vector3.UP*float(study.ground.head_top)*0.4
+	study.figure.visible = true
+	var stunned := motor.move == "tumble"
+	if stunned: motor.knock(v,c)
+	else: motor.toss(v)
+	spits.append({"cannon":c,"stunned":stunned,"v":v,"t":_clock})
+	return true
+
+## Taken out of the barrel by something else (a knock): let go, no shot.
+func _let_go() -> void:
+	if cannon != null: cannon.set_charge(0.0)
+	cannon = null
+	mode = ""
+	_fire_caught = false
+	study.figure.visible = true
 
 # --- Kegs in flight ------------------------------------------------------------------
 
@@ -433,7 +582,7 @@ static func _glow(c: Color) -> StandardMaterial3D:
 ## arc and the marker both read. Eased in and out over the study's chase
 ## camera, so leaving (or being fired) hands back smoothly.
 func frame(camera: Camera3D, delta: float) -> void:
-	var goal_w := 1.0 if mode != "" else 0.0
+	var goal_w := 1.0 if mode == "operating" or mode == "inside" else 0.0
 	_view_w = move_toward(_view_w,goal_w,delta/float(knobs.view_ease))
 	var c: Node3D = cannon if cannon != null else _last_cannon
 	if _view_w <= 0.0 or c == null:
@@ -469,6 +618,11 @@ func reset() -> void:
 	mode = ""
 	loading = {}
 	_launch = false
+	_fire_caught = false
+	_catch_t = 0.0
+	_feet_was = Vector3.INF
+	catches.clear()
+	spits.clear()
 	carried.clear()
 	_flying.clear()
 	heard.clear()
@@ -487,6 +641,7 @@ func reset() -> void:
 ## names what each button does in the mode he is in, the kegs in hand and
 ## the power notch.
 func prompt_lines() -> Array:
+	if mode == "caught": return ["",""]
 	var c: Node3D = cannon if cannon != null else near_cannon()
 	if c == null: return ["",""]
 	var held := carried.size()
