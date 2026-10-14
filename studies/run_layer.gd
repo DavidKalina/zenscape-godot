@@ -109,7 +109,10 @@ func _ready() -> void:
 	_no_lode = true
 	if _planning_away():
 		# Laid while the aqueduct isle builds; its sky starts empty.
+		# (The piece footprints it measures kept from the last launch.)
+		FixedCache.boxes_load()
 		LayerPlan.warm()
+		FixedCache.boxes_save()
 		_plan_task = WorkerThreadPool.add_task(_plan_job.bind(layer_seed,layer_knobs.duplicate()),true,"layer plan")
 	else: _lay(layer_seed)
 	isle_ready.connect(_first_layer,CONNECT_ONE_SHOT)

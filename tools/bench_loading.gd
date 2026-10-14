@@ -72,6 +72,9 @@ func run() -> void:
 		if loading != null:
 			if loading.active:
 				screen_seen = true
+				_load_frames += 1
+				_load_process += Performance.get_monitor(Performance.TIME_PROCESS)
+				_load_physics += Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS)
 				var share: float = loading.screen._shown if loading.screen != null else 0.0
 				if next_m < milestones.size() and share >= milestones[next_m]:
 					await RenderingServer.frame_post_draw
@@ -83,11 +86,13 @@ func run() -> void:
 			playable = Time.get_ticks_msec()
 		if Time.get_ticks_msec()-began > 600000: break
 	print("BENCH %s playable at %d ms since the engine started (%d ms since the scene was added)" % [_tag,playable,playable-began])
+	print("BENCH %s loading frames %d: process %.1f s, physics %.1f s (engine monitors, summed)" % [_tag,_load_frames,_load_process,_load_physics])
 	var play_from := _times.size()
 	var yaw_start := Time.get_ticks_msec()
 	_yaw_from = (scene.camera as Camera3D).global_rotation.y if scene.camera != null else 0.0
 	_holdout = [Time.get_ticks_msec(),secs]
 	print("BENCH %s nodes at playable: %d" % [_tag,int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT))])
+	if "--raygrid" in OS.get_cmdline_user_args(): _raygrid()
 	var shots := [1.0,10.0,secs-0.5]
 	var shot := 0
 	var whole_seen := -1
@@ -110,11 +115,18 @@ func run() -> void:
 		if t > 400.0: break
 	_yaw_from = -1.0
 	_report("first %.0f s of play" % secs,play_from,play_from+_count_until(playable,secs))
+	for argument: String in OS.get_cmdline_user_args():
+		if argument.begins_with("--change-after="): await _change(float(argument.get_slice("=",1)))
 	if not holds and whole >= 0: _report("%.0f s after it stood whole" % secs,whole,_times.size())
 	print("BENCH %s done" % _tag)
 	quit(0)
 
 var _holdout := []
+var _who := {}
+var _who_done := false
+var _load_frames := 0
+var _load_process := 0.0
+var _load_physics := 0.0
 
 func _count_until(from_ms: int, seconds: float) -> int:
 	var n := 0
@@ -152,7 +164,75 @@ func _report(label: String, from: int, to: int) -> void:
 	var over := func(ms: float) -> int: return window_times.filter(func(t: float) -> bool: return t > ms).size()
 	print("BENCH %s: %s: %d frames over %.1f s, p50 %.1f ms, p99 %.1f ms, over 33: %d, over 50: %d, over 100: %d, worst %.0f ms" % [
 		_tag,label,window_times.size(),total/1000.0,sorted[sorted.size()/2],sorted[mini(int(sorted.size()*0.99),sorted.size()-1)],over.call(33.0),over.call(50.0),over.call(100.0),sorted[sorted.size()-1]])
+	var long := PackedStringArray()
+	for i in range(from,to):
+		if float(_times[i]) > 100.0 and i < _stamp.size(): long.append("%.1fs:%.0f" % [(int(_stamp[i])-int(_holdout[0]))/1000.0,float(_times[i])])
+	if not long.is_empty(): print("BENCH %s: %s: frames over 100 ms at %s" % [_tag,label,", ".join(long)])
 	var worst := window_times.duplicate()
 	worst.sort()
 	worst.reverse()
 	print("BENCH %s: %s: worst five %s" % [_tag,label,str(worst.slice(0,5))])
+
+## Downward rays in a 40 x 40 grid over each placed isle's circle: hits (to
+## the millimetre) and what they hit, hashed per isle (moving bodies by class
+## only), to compare collision between builds.
+func _raygrid() -> void:
+	var space: PhysicsDirectSpaceState3D = scene.get_world_3d().direct_space_state
+	var q := PhysicsRayQueryParameters3D.new()
+	var all := 0
+	for isle: Node3D in scene.sky.motifs.isles:
+		var c: Vector3 = isle.circle()
+		var top: float = isle.isle_top()
+		var lines := PackedStringArray()
+		var hits := 0
+		for i in range(40):
+			for j in range(40):
+				var x := c.x-c.z+2.0*c.z*(i+0.5)/40.0
+				var z := c.y-c.z+2.0*c.z*(j+0.5)/40.0
+				q.from = Vector3(x,top+120.0,z)
+				q.to = Vector3(x,top-200.0,z)
+				var hit := q.from
+				var r := space.intersect_ray(q)
+				# Static collision only: past anything that moves.
+				var skipped: Array[RID] = []
+				while not r.is_empty() and (r.collider as Node).get_class() != "StaticBody3D" and skipped.size() < 16:
+					skipped.append(r.rid)
+					q.exclude = skipped
+					r = space.intersect_ray(q)
+				q.exclude = []
+				if r.is_empty():
+					lines.append("-")
+					continue
+				hits += 1
+				var n := r.collider as Node
+				if str(isle.motif.id()) == "stair_clouds" and not _who_done:
+					var key := str(n.get_path()).replace("/root/RunLayer/","")
+					_who[key] = int(_who.get(key,0))+1
+				var what := n.get_class() if n.get_class() != "StaticBody3D" else "static"
+				lines.append("%d,%s" % [roundi((r.position as Vector3).y*1000.0),what])
+		all += hits
+		if str(isle.motif.id()) == "stair_clouds" and not _who_done:
+			_who_done = true
+			var keys := _who.keys()
+			keys.sort()
+			for k: Variant in keys: print("RAYWHO %s x%d" % [str(k),int(_who[k])])
+		print("BENCH raygrid %s %s: %d of 1600 hit, hash %s" % [_tag,str(isle.motif.id()),hits,"".join(lines).md5_text().left(12)])
+	print("BENCH raygrid %s: %d hits in all" % [_tag,all])
+
+## The next layer asked for (as the gate does) `wait` s into play; how long
+## play is held (the request to the screen gone).
+func _change(wait: float) -> void:
+	var until := Time.get_ticks_msec()+int(maxf(wait-secs,0.0)*1000.0)
+	while Time.get_ticks_msec() < until: await process_frame
+	var shapes = load("res://scripts/roguelike/layer_shapes.gd")
+	var asked := Time.get_ticks_msec()
+	var from_seed := int(scene.layer_seed)
+	scene.request_layer(from_seed+1,"Through the gate",shapes.after(scene.layer))
+	var seen := false
+	while true:
+		await process_frame
+		var loading: Variant = scene.get("loading")
+		if loading != null and loading.active: seen = true
+		elif seen or (loading == null and int(scene.layer_seed) != from_seed and scene.get("stage") != null): break
+		if Time.get_ticks_msec()-asked > 300000: break
+	print("BENCH %s layer change %d -> %d held play %d ms" % [_tag,from_seed,int(scene.layer_seed),Time.get_ticks_msec()-asked])
