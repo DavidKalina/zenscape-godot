@@ -132,13 +132,21 @@ func setup(owner: Node3D, roost_air: Node3D, args: PackedStringArray, clock_hour
 	coil_xf = dragon.global_transform
 	var t2 := Roost.own(Roost.TOWER_C)
 	var l2 := Roost.own(Roost.LEDGE_C)
-	ledge = Vector3(l2.x,Roost.TOP+Roost.LEDGE_H*Roost.SPAN,l2.y)+Roost.AT
+	# The mountain's place (a generated layer's roost stands where its plan
+	# puts it: scripts/dragon_roost.gd `offset`; the aqueduct sky's at AT).
+	var at: Variant = roost.get("offset")
+	ledge = Vector3(l2.x,Roost.TOP+Roost.LEDGE_H*Roost.SPAN,l2.y)+(at as Vector3 if at is Vector3 else Roost.AT)
 	away = Vector3(l2.x-t2.x,0.0,l2.y-t2.y).normalized()
 	for arg in args:
 		if arg == "--dragon-wake": _wake_at = FLAG_AFTER
 		elif arg.begins_with("--dragon-wake-at="): _wake_at = maxf(float(arg.get_slice("=",1)),0.0)
 		elif arg == "--no-dragon-wake": _scheduled = false
 	if _wake_at >= 0.0: print("dragon wake: he wakes %.1f s after load" % _wake_at)
+
+## Wakes him now (a host's own call: the generator's dragon, scripts/
+## roguelike/layer_dragon.gd), if he is asleep.
+func wake_now() -> void:
+	if phase == "asleep": _wake_at = _since
 
 ## Whether he is awake (stirring, out or landing).
 func out() -> bool:

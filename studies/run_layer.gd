@@ -47,8 +47,11 @@ extends "res://studies/aqueduct_isle.gd"
 ## dragon's roost. Under the sprawl a layer has its own roost
 ## (LayerSprawl `plan.roost`, docs/design/roguelike/layer-round5-roost.md):
 ## the roost motif stood apart and high, its dragon curled asleep on its
-## ledge (`_stand_roost`; his wake's circuit is the aqueduct isle's sky's,
-## so he never wakes here).
+## ledge (`_stand_roost`). With --dragon-live he wakes a few seconds after
+## the layer stands and flies it: a high circuit, low swoops, a grip on a
+## roomy isle's rim, his air blast when he spots you (scripts/roguelike/
+## layer_dragon.gd, docs/design/roguelike/layer-round12-dragon.md; its
+## flags there). Keys then: U wakes him, J swoop, K grip, H his circuit.
 const LayerPlan = preload("res://scripts/roguelike/layer_plan.gd")
 const LayerStage = preload("res://scripts/roguelike/layer_stage.gd")
 const RunLayerSky = preload("res://studies/run_layer_sky.gd")
@@ -57,6 +60,7 @@ const RoostMotif = preload("res://scripts/kit_isle/motif_dragon_roost.gd")
 const RunLoop = preload("res://scripts/roguelike/run_loop.gd")
 const LayerShapes = preload("res://scripts/roguelike/layer_shapes.gd")
 const LayerLoading = preload("res://scripts/roguelike/layer_loading.gd")
+const LayerDragon = preload("res://scripts/roguelike/layer_dragon.gd")
 
 ## Seeds tried past a seed whose plan could not be laid.
 const SKIP_MOST := 8
@@ -93,12 +97,18 @@ var run_loop: Node = null
 ## roguelike/layer_loading.gd; rendered play only, `--no-loading-screen`
 ## leaves the layer to stream in round the player), or null.
 var loading: Node = null
+## --dragon-live: the roost's dragon wakes and flies the layer (scripts/
+## roguelike/layer_dragon.gd), made again for each layer; null without.
+var dragon_live := false
+var layer_dragon: Node = null
 
 func _ready() -> void:
 	if layer_seed < 0:
 		for arg in preload("res://scripts/launch_args.gd").user_args():
 			if arg.begins_with("--seed="): layer_seed = int(arg.get_slice("=",1))
 			if arg.begins_with("--shape="): layer_shape = arg.get_slice("=",1)
+	for arg in preload("res://scripts/launch_args.gd").user_args():
+		if arg == "--dragon-live" or arg.begins_with("--dragon-wake-at="): dragon_live = true
 		layer_knobs = LayerPlan.knobs_from(preload("res://scripts/launch_args.gd").user_args())
 		if layer_seed < 0:
 			var rng := RandomNumberGenerator.new()
@@ -283,6 +293,12 @@ func hold_for_layer() -> void:
 func _stand_roost() -> void:
 	var roost: Dictionary = layer.get("roost",{})
 	if sky != null and sky.has_method("keep_roost"): sky.keep_roost(roost)
+	if layer_dragon != null:
+		remove_child(layer_dragon)
+		layer_dragon.free()
+		layer_dragon = null
+	# Woken on the last layer (off his roost, or stirring on it): laid again.
+	if roost_dragon != null and is_instance_valid(roost_dragon) and roost_dragon.wake != null: _drop_roost()
 	if roost.is_empty():
 		_drop_roost()
 		return
@@ -294,6 +310,7 @@ func _stand_roost() -> void:
 		roost_dragon.visible = false
 		roost_air.visible = false
 		roost_ms = Time.get_ticks_msec()-began
+		_live_dragon()
 		return
 	roost_dragon = SkyDragon.new()
 	roost_dragon.name = "RoostDragon"
@@ -311,6 +328,15 @@ func _stand_roost() -> void:
 	roost_air.visible = false
 	roost_ms = Time.get_ticks_msec()-began
 	print("run layer: the roost's dragon laid in %d ms" % roost_ms)
+	_live_dragon()
+
+## --dragon-live: his behaviours over this layer (scripts/roguelike/
+## layer_dragon.gd).
+func _live_dragon() -> void:
+	if not dragon_live or roost_dragon == null: return
+	layer_dragon = LayerDragon.new()
+	add_child(layer_dragon)
+	layer_dragon.setup(self,layer,roost_dragon,preload("res://scripts/launch_args.gd").user_args(),IsleChain.SEA_TOP)
 
 ## How long the roost's dragon and air took to lay or move (ms, main
 ## thread).
@@ -357,6 +383,7 @@ var _card_due := 0.0
 
 func _process(delta: float) -> void:
 	super._process(delta)
+	if layer_dragon != null: layer_dragon.update(delta)
 	if _plan_task >= 0 and _card != null and WorkerThreadPool.is_task_completed(_plan_task):
 		WorkerThreadPool.wait_for_task_completion(_plan_task)
 		_plan_task = -1
@@ -390,6 +417,14 @@ func _unhandled_input(event: InputEvent) -> void:
 				return
 			KEY_B:
 				_watch_body()
+				return
+		if layer_dragon != null:
+			var ask: String = {KEY_U:"wake",KEY_J:"swoop",KEY_K:"grip",KEY_H:"monitor"}.get(key.keycode,"")
+			if ask == "wake":
+				layer_dragon.wake_up()
+				return
+			if ask != "":
+				layer_dragon.ask(ask)
 				return
 	super._unhandled_input(event)
 
@@ -457,4 +492,5 @@ func _update_card() -> void:
 	if stage != null and stage.rides != null and motor != null: ride = stage.rides.schedule(motor.feet)
 	var shaped := LayerShapes.card(layer)
 	if shaped != "": parts.append(shaped)
+	if layer_dragon != null: parts.append(layer_dragon.card_line())
 	_card.text = "Layer · seed %d  ·  %s  ·  %s\n%s\n%sN next seed · Shift+N previous · Backspace again" % [layer_seed,runes,up,"\n".join(parts),ride+"\n" if ride != "" else ""]
