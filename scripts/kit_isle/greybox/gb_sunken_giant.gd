@@ -233,7 +233,7 @@ const FOREARM_THICK := 2.6
 const THUMB_FOOT := 8.0
 
 static func grey() -> bool:
-	return OS.get_cmdline_user_args().has("--giant-grey")
+	return preload("res://scripts/launch_args.gd").user_args().has("--giant-grey")
 
 ## The hand's ground: the fingertip pad, flat at 0 (the knuckles stand on it).
 static func hand_outline() -> Array:

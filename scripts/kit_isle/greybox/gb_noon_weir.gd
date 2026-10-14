@@ -319,7 +319,7 @@ const KEEL_REACH := 1.4
 const STAIR_THICK := 1.4
 
 static func grey() -> bool:
-	return OS.get_cmdline_user_args().has("--weir-grey")
+	return preload("res://scripts/launch_args.gd").user_args().has("--weir-grey")
 
 static func _slab(prefix: String) -> Array:
 	for s: Array in LAYOUT.slabs:

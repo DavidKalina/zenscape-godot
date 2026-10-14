@@ -401,7 +401,7 @@ const KEEL_REACH := 1.4
 const RUNE_Y := 34.6
 
 static func grey() -> bool:
-	return OS.get_cmdline_user_args().has("--lidstack-grey")
+	return preload("res://scripts/launch_args.gd").user_args().has("--lidstack-grey")
 
 ## Terrace 1, the landing ring: the T1 square, corners cut.
 static func landing_outline() -> Array:

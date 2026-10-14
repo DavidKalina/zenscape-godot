@@ -321,7 +321,7 @@ const TERRACE := -3.0
 const SCREE := -1.2
 
 static func grey() -> bool:
-	return OS.get_cmdline_user_args().has("--vigil-grey")
+	return preload("res://scripts/launch_args.gd").user_args().has("--vigil-grey")
 
 ## The main island's ground (this frame): the garth at 0, the pool's bowl
 ## (bed and its north and south beaches), the scree under the fallen corner.

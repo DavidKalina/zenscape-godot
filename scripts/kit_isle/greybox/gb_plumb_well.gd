@@ -229,7 +229,7 @@ const TURF_BACK := 0.8
 const PROUD := 0.03
 
 static func grey() -> bool:
-	return OS.get_cmdline_user_args().has("--well-grey")
+	return preload("res://scripts/launch_args.gd").user_args().has("--well-grey")
 
 static func cap_top() -> float:
 	return float(PLATES[0].top)

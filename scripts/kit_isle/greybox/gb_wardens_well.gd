@@ -168,7 +168,7 @@ const KEEL_REACH := 1.4
 const WATER_TOP := Y_DAIS-0.4+0.3
 
 static func grey() -> bool:
-	return OS.get_cmdline_user_args().has("--wardens-well-grey")
+	return preload("res://scripts/launch_args.gd").user_args().has("--wardens-well-grey")
 
 ## The hall's ground: the dais at 0, the drowned floor at -0.4.
 static func hall_ground(x: float, z: float) -> float:
