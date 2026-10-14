@@ -12,6 +12,10 @@ const NextRegionLod = preload("res://scripts/roguelike/next_region_lod.gd")
 var stage: Node3D
 var plan: Dictionary
 var _task := -1
+## Laid at once, not after the layer stands (the loading screen's: scripts/
+## roguelike/layer_loading.gd), and whether it has finished (stood, or none).
+var eager := false
+var done := false
 var _out := {}
 ## When it was asked for and when it stood (ms), for the log.
 var _began := 0
@@ -26,7 +30,7 @@ func setup(owner_stage: Node3D, layer: Dictionary) -> void:
 func _process(_delta: float) -> void:
 	if _task < 0:
 		var study: Variant = stage.get("study")
-		if study == null or int(study.get("layer_up_ms")) < 0: return
+		if study == null or (int(study.get("layer_up_ms")) < 0 and not eager): return
 		_began = Time.get_ticks_msec()
 		_out = {"plan":plan}
 		_task = WorkerThreadPool.add_task(_job.bind(_out),true,"next region")
@@ -35,6 +39,7 @@ func _process(_delta: float) -> void:
 	WorkerThreadPool.wait_for_task_completion(_task)
 	_task = -1
 	set_process(false)
+	done = true
 	var next: Dictionary = _out.get("next",{})
 	if next.is_empty():
 		print("next region: none laid past seed %d" % int(plan.seed))
