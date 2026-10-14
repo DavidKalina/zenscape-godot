@@ -15,6 +15,30 @@ that takes over a minute headless gets `## suite: slow`, and one with a timing b
 `tests/known_failures.txt` to get a run green. That file holds only failures
 the user has accepted, each with its reason.
 
+# Running on Windows
+
+The user develops on a Mac and sometimes on a Windows PC. The `run-*.command`
+launchers, the Mac Godot path in the tools and the `/opt/homebrew/bin/blender`
+lines in the Blender scripts' docstrings are Mac-only. On Windows, work in
+PowerShell from the repo root:
+
+- Install Godot **4.7.2** standard (win64, not .NET), Python 3.13 and
+  Blender, e.g. `winget install Python.Python.3.13 BlenderFoundation.Blender`
+  and Godot unzipped to `C:\Tools\Godot\`. Git LFS isn't needed.
+- Point the tools at Godot's **console** build (the plain `.exe` prints
+  nothing to the terminal): `$env:GODOT = "C:\Tools\Godot\Godot_v4.7.2-stable_win64_console.exe"`.
+  `tools/run_tests.py` reads `GODOT`; other tools take `--godot $env:GODOT`.
+- Import: `& $env:GODOT --headless --editor --path . --import`.
+- Play: `& $env:GODOT --path . --rendering-method forward_plus --windowed --resolution 1440x900 -- --no-title`.
+  A study: put its scene after `--path .`, e.g. `studies/run_layer.tscn -- --shape=sprawl --seed=1`.
+  A `run-*.command` file shows the scene and flags it launches.
+- Tests: `py tools/run_tests.py` (same flags as above).
+- Blender scripts: `& "C:\Program Files\Blender Foundation\Blender 5.2\blender.exe" -b --python art/blender/plane/plane_build.py`
+  (or `blender` if it's on PATH).
+- The native terrain kernels are optional; without them the GDScript
+  versions run. Building them needs Visual Studio's C++ tools and SCons
+  (`docs/desktop-builds.md`).
+
 # Prototyping
 
 The game is being prototyped: the user judges work by playing it. Until the
@@ -37,10 +61,13 @@ existing test its change breaks.
 Pick a subagent's model by what it makes:
 
 - **Opus**, the default: physics, moving bodies, input, movement and feel,
-  complex logic, graphics, shaders, art, new kit pieces. Brief it to prove the
-  work through the real play loop and input path, not only scripted test ticks.
-- **Sonnet**, assembly: putting pieces that already exist together into a
-  scene, motifs, layouts.
+  complex logic, animation (new clips and changes to existing ones), new
+  models, new kit pieces. Brief it to prove
+  the work through the real play loop and input path, not only scripted test
+  ticks.
+- **Sonnet**, assembly and looks: putting pieces that already exist together
+  into a scene, motifs, layouts; shaders, materials, textures, reskins and
+  other surface changes that leave shape, motion and collision alone.
 - **Haiku**: names, labels and other small brainstorms.
 
 A task that mixes kinds goes to Opus.
