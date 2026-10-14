@@ -30,6 +30,15 @@ const CLIFF_PROBE := 0.5
 
 # --- Outlines ---------------------------------------------------------------------------
 
+## Stable jitter (the spec's `stable`, the motif editor's): the shared rng
+## is reseeded from the isle's seed and a point's position before that
+## point's draws, so an edit that adds or drops points elsewhere (a stamp's
+## cliff points) leaves every other point's jitter, shimmer and side as it
+## was. Off (the default) nothing is reseeded: every isle builds as before.
+static func pin(rng: RandomNumberGenerator, p: Vector2, salt := 0) -> void:
+	if not rng.has_meta("stable"): return
+	rng.seed = hash([int(rng.get_meta("stable")),roundi(p.x*64.0),roundi(p.y*64.0),salt])
+
 static func perimeter(outline: Array) -> float:
 	var total := 0.0
 	for i in range(outline.size()): total += (outline[i] as Vector2).distance_to(outline[(i+1)%outline.size()])
@@ -52,6 +61,7 @@ static func resample(outline: Array, count: int, rng: RandomNumberGenerator) -> 
 			if want-into <= length or seg >= outline.size()*2:
 				var p := a.lerp(b,clampf((want-into)/maxf(length,0.001),0.0,1.0))
 				var normal := Vector2(b.y-a.y,a.x-b.x).normalized()
+				pin(rng,p,1)
 				out.append(p+normal*rng.randf_range(-0.35,0.35))
 				break
 			into += length
@@ -125,9 +135,12 @@ static func wear_of(paths: Array, reach := 1.5) -> Callable:
 ## on a tall one a point between pushed in or out (`wobble`), so its face is
 ## a crag's facets. `walled` (world (x, z) -> bool): a face kept inside a
 ## retaining wall's thickness. `nudge`: the probes' start off the box's
-## corner (off the round numbers, where a ray is likely cast). {points,
-## heights}.
-static func cliff_points(ground: Callable, box: Rect2, rng: RandomNumberGenerator, walled := Callable(), foot_most := 0.8, wobble := 0.22, nudge := Vector2(0.137,0.213)) -> Dictionary:
+## corner (off the round numbers, where a ray is likely cast). `min_drop`:
+## the least change across a probe step that is a cliff (0.3; a steep
+## slope's own rise is under a larger one). `skip` (world (x, z) -> bool):
+## where no cliff is laid (the editor's smooth stamps; none: everywhere).
+## {points, heights}.
+static func cliff_points(ground: Callable, box: Rect2, rng: RandomNumberGenerator, walled := Callable(), foot_most := 0.8, wobble := 0.22, nudge := Vector2(0.137,0.213), min_drop := 0.3, skip := Callable()) -> Dictionary:
 	var points := PackedVector2Array()
 	var heights := PackedFloat32Array()
 	var seen := {}
@@ -140,7 +153,7 @@ static func cliff_points(ground: Callable, box: Rect2, rng: RandomNumberGenerato
 			for way: Vector2 in [Vector2(CLIFF_PROBE,0.0),Vector2(0.0,CLIFF_PROBE)]:
 				var c := a+way
 				var hc: float = ground.call(c.x,c.y)
-				if absf(ha-hc) < 0.3: continue
+				if absf(ha-hc) < min_drop: continue
 				var lo := a
 				var hi := c
 				for k in range(14):
@@ -149,6 +162,7 @@ static func cliff_points(ground: Callable, box: Rect2, rng: RandomNumberGenerato
 					if absf(hm-ha) < absf(hm-hc): lo = m
 					else: hi = m
 				var e := (lo+hi)*0.5
+				if skip.is_valid() and bool(skip.call(e)): continue
 				var key := Vector2i(floori(e.x/0.3),floori(e.y/0.3))
 				if seen.has(key): continue
 				seen[key] = true
@@ -159,6 +173,7 @@ static func cliff_points(ground: Callable, box: Rect2, rng: RandomNumberGenerato
 					down -= d*(float(ground.call(e.x+d.x*0.35,e.y+d.y*0.35))-h0)
 				if down.length() < 0.01: continue
 				down = down.normalized()
+				pin(rng,e,2)
 				e += down.orthogonal()*rng.randf_range(-0.04,0.04)
 				var top := e-down*0.04
 				var is_walled: bool = walled.is_valid() and bool(walled.call(e))
@@ -233,10 +248,15 @@ class Gather extends RefCounted:
 	func grid(cell: float, rng: RandomNumberGenerator, ground: Callable, rects: Array = [], inside := true, off_cliffs := true) -> void:
 		var box := Rect2(poly[0],Vector2.ZERO)
 		for p in poly: box = box.expand(p)
-		var gx := box.position.x+cell*0.5
+		var stable := rng.has_meta("stable")
+		# Stable: the lattice on world multiples of the cell, not the box.
+		var x0 := floorf(box.position.x/cell)*cell+cell*0.5 if stable else box.position.x+cell*0.5
+		var z0 := floorf(box.position.y/cell)*cell+cell*0.5 if stable else box.position.y+cell*0.5
+		var gx := x0
 		while gx < box.end.x:
-			var gz := box.position.y+cell*0.5
+			var gz := z0
 			while gz < box.end.y:
+				KitLand.pin(rng,Vector2(gx,gz),3)
 				var p := Vector2(gx+rng.randf_range(-0.3,0.3)*cell,gz+rng.randf_range(-0.3,0.3)*cell)
 				gz += cell
 				if not rects.is_empty():
@@ -304,6 +324,7 @@ static func surface(points: PackedVector2Array, heights: PackedFloat32Array, pol
 			var deep := minf(pa.y,minf(pb.y,pc.y))-drop
 			var hull := PackedVector3Array([pa,pb,pc,Vector3(pa.x,deep,pa.z),Vector3(pb.x,deep,pb.z),Vector3(pc.x,deep,pc.z)])
 			if RuinKit.hull_thickness(hull) >= RuinKit.HULL_THIN: solid.append(hull)
+		pin(rng,mid,4)
 		var shimmer := rng.randf_range(-0.035,0.035)
 		var is_rock: bool = bool(rocky.call(mid,normal)) if rocky.is_valid() else KitLook.is_rock(normal,pal)
 		if is_rock:
@@ -382,6 +403,7 @@ static func ring_sides(ring: Array, rim_y: PackedFloat32Array, centre: Vector2, 
 	# Each ring: [inset toward the middle, drop under the top, push out, stride].
 	var specs := [[0.0,0.45,0.28,1],[0.0,2.1,0.35,1],[0.1,depth*0.22,0.0,2],[0.32,depth*0.48,0.0,4],[0.6,depth*0.74,0.0,8],[0.82,depth*0.92,0.0,16]]
 	var hanging := {}
+	pin(rng,centre,5)
 	if spurs:
 		for i in range(3): hanging[rng.randi_range(0,maxi(count/16-1,0))] = rng.randf_range(0.15,0.3)*depth
 	for spec: Array in specs:
@@ -390,6 +412,7 @@ static func ring_sides(ring: Array, rim_y: PackedFloat32Array, centre: Vector2, 
 		var r: Array[Vector3] = []
 		for i in range(0,count,stride):
 			var p: Vector2 = ring[i]
+			pin(rng,p,10+stride)
 			var inset: float = float(spec[0])+rng.randf_range(-0.05,0.05)*float(spec[0] > 0.0)
 			var q := p.lerp(centre,clampf(inset,0.0,0.95))+out[i]*float(spec[2])*rng.randf_range(0.3,1.2)
 			var drop: float = float(spec[1])*rng.randf_range(0.85,1.15)
@@ -399,6 +422,7 @@ static func ring_sides(ring: Array, rim_y: PackedFloat32Array, centre: Vector2, 
 			r.append(Vector3(q.x,base_y-drop,q.y))
 		rims.append(r)
 		strides.append(stride)
+	pin(rng,centre,6)
 	var keel := Vector3(centre.x+rng.randf_range(-2.0,2.0),top-depth,centre.y+rng.randf_range(-2.0,2.0))
 	var rock := KitLook.RockMesh.new()
 	for k in range(rims.size()-1):
@@ -414,9 +438,11 @@ static func ring_sides(ring: Array, rim_y: PackedFloat32Array, centre: Vector2, 
 				var u0: Vector3 = upper[j*ratio+s]
 				var u1: Vector3 = upper[(j*ratio+s+1)%upper.size()]
 				var m := (u0+u1+l0)/3.0
+				pin(rng,Vector2(m.x,m.z),7)
 				rock.add([u0,l0,u1],rim_y[((j*ratio+s)*su)%count],out_from(centre,m),rng.randf_range(0.88,1.1))
 			var ue: Vector3 = upper[((j+1)*ratio)%upper.size()]
 			var m2 := (ue+l0+l1)/3.0
+			pin(rng,Vector2(m2.x,m2.z),8)
 			rock.add([ue,l0,l1],rim_y[(j*sl)%count],out_from(centre,m2),rng.randf_range(0.88,1.1))
 	var last: Array = rims[rims.size()-1]
 	var mean_rim := 0.0
@@ -426,6 +452,7 @@ static func ring_sides(ring: Array, rim_y: PackedFloat32Array, centre: Vector2, 
 		var a: Vector3 = last[j]
 		var b: Vector3 = last[(j+1)%last.size()]
 		var mid := (a+b+keel)/3.0
+		pin(rng,Vector2(mid.x,mid.z),9)
 		rock.add([a,keel,b],mean_rim,out_from(centre,mid)+Vector3.DOWN,rng.randf_range(0.88,1.1))
 	return rock
 
@@ -439,18 +466,25 @@ static func ring_sides(ring: Array, rim_y: PackedFloat32Array, centre: Vector2, 
 ##   seed, ground, top, depth
 ##   cliffs    a box (Rect2) its steps are laid in as cliff points (none:
 ##             no cliffs), `walled` keeping faces inside a wall,
-##             `cliffs_nudge` the probes' start off its corner
+##             `cliffs_nudge` the probes' start off its corner,
+##             `cliff_drop` the least step that is a cliff (0.3),
+##             `cliff_skip` (x, z) -> bool where none is laid
+##   rocky     (mid (x, z), normal) -> bool: a face drawn rock (none: past
+##             the palette's rock slope, `surface`)
 ##   cell      its grid (2 m); `fine` the finer cell inside `fine_box` (or
 ##             everywhere with cliffs and no fine_box)
 ##   tone      (mid (x, z), normal, shimmer, mean y) -> Color: its turf
 ##   hang      the lip and earth hang from a high rim's own height
 ##   apart     the cliffs' prisms in bodies apart from the ground's
+##   stable    jitter pinned to positions, not drawn in turn (`pin`): an
+##             edit changes the land only where it changed (the editor's)
 ##   prism_drop  how far the cliffs' prisms hang under their faces away from
 ##             the rim (PRISM_DROP)
 ## Meta: outline, ground_points, cliff_prisms.
 static func island(spec: Dictionary) -> Node3D:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = int(spec.seed)
+	if bool(spec.get("stable",false)): rng.set_meta("stable",int(spec.seed))
 	var outline: Array = spec.outline
 	var ground: Callable = spec.ground
 	var top: float = spec.top
@@ -463,7 +497,7 @@ static func island(spec: Dictionary) -> Node3D:
 	var g := Gather.new(ring,ground)
 	var cliffs: Rect2 = spec.get("cliffs",Rect2())
 	var has_cliffs := cliffs.size != Vector2.ZERO
-	if has_cliffs: g.add_cliffs(cliff_points(ground,cliffs,rng,spec.get("walled",Callable()),0.8,0.22,spec.get("cliffs_nudge",Vector2(0.137,0.213))))
+	if has_cliffs: g.add_cliffs(cliff_points(ground,cliffs,rng,spec.get("walled",Callable()),0.8,0.22,spec.get("cliffs_nudge",Vector2(0.137,0.213)),float(spec.get("cliff_drop",0.3)),spec.get("cliff_skip",Callable())))
 	var cell: float = spec.get("cell",2.0)
 	var fine: float = spec.get("fine",1.2)
 	var fine_box: Rect2 = spec.get("fine_box",Rect2())
@@ -472,7 +506,7 @@ static func island(spec: Dictionary) -> Node3D:
 		g.grid(fine,rng,ground,[fine_box],true,true)
 	else:
 		g.grid(fine if has_cliffs else cell,rng,ground,[],true,has_cliffs)
-	var built := surface(g.points,g.heights,g.poly,rng,spec.tone,Callable(),g.cliffy(),0.0,float(spec.get("prism_drop",PRISM_DROP)))
+	var built := surface(g.points,g.heights,g.poly,rng,spec.tone,spec.get("rocky",Callable()),g.cliffy(),0.0,float(spec.get("prism_drop",PRISM_DROP)))
 	draw(node,built)
 	var rims := PackedFloat32Array()
 	for p: Vector2 in ring: rims.append(float(ground.call(p.x,p.y)))

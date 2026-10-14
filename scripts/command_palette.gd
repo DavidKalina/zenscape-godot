@@ -201,6 +201,14 @@ func _ready() -> void:
 	modulate.a = 0.0
 	visible = false
 
+## The pockets' names and icons (a subclass with its own pockets answers
+## these: studies/motif_editor_palette.gd).
+func tabs() -> Array:
+	return TABS
+
+func tab_icons() -> Array:
+	return TAB_ICONS
+
 ## `hand_materials` (scripts/hand_materials.gd) holds the tray, the roll, the
 ## foot and the pages; its scene holds mood_look, land_life and camera_rig.
 func setup(owner_scene: Node, hand_materials: Node) -> void:
@@ -299,7 +307,7 @@ func _refresh() -> void:
 	var q := query.strip_edges().to_lower()
 	var hits: Array[Dictionary] = []
 	for item: Dictionary in _items:
-		if q.is_empty() or (str(item.name)+" "+str(item.sub)+" "+str(TABS[item.cat])).to_lower().contains(q): hits.append(item)
+		if q.is_empty() or (str(item.name)+" "+str(item.sub)+" "+str(tabs()[item.cat])).to_lower().contains(q): hits.append(item)
 	var groups := []
 	if tab == 0:
 		if q.is_empty() and not recent.is_empty():
@@ -308,12 +316,12 @@ func _refresh() -> void:
 				var item := _find(key)
 				if not item.is_empty(): lately.append(item)
 			groups.append(["Lately in hand",lately])
-		for c in range(1,TABS.size()):
+		for c in range(1,tabs().size()):
 			var its := hits.filter(func(it: Dictionary) -> bool: return it.cat == c)
-			if not its.is_empty(): groups.append([TABS[c],its])
+			if not its.is_empty(): groups.append([tabs()[c],its])
 	else:
 		var its := hits.filter(func(it: Dictionary) -> bool: return it.cat == tab)
-		if not its.is_empty(): groups.append([TABS[tab],its])
+		if not its.is_empty(): groups.append([tabs()[tab],its])
 	_lines.clear()
 	_rows.clear()
 	var y := 6.0
@@ -348,7 +356,7 @@ func _process(delta: float) -> void:
 	var icon_px := ICON*ui_scale
 	if _icons.is_empty() or not is_equal_approx(icon_px,_icon_px):
 		_icon_px = icon_px
-		var ids := TAB_ICONS.duplicate()
+		var ids := tab_icons().duplicate()
 		for item: Dictionary in _items:
 			if item.has("icon") and not item.icon in ids: ids.append(item.icon)
 		Linen.rasterise(_icons,ids,icon_px)
@@ -443,10 +451,10 @@ func _draw_tabs(origin: Vector2, line: float) -> void:
 	var room := _body.size.x-origin.x*2.0
 	var counts := []
 	var q := query.strip_edges().to_lower()
-	for i in range(TABS.size()):
+	for i in range(tabs().size()):
 		var n := 0
 		for item: Dictionary in _items:
-			if (i == 0 or item.cat == i) and (q.is_empty() or (str(item.name)+" "+str(item.sub)+" "+str(TABS[item.cat])).to_lower().contains(q)): n += 1
+			if (i == 0 or item.cat == i) and (q.is_empty() or (str(item.name)+" "+str(item.sub)+" "+str(tabs()[item.cat])).to_lower().contains(q)): n += 1
 		counts.append(n)
 	# Labels with counts if they fit, without if not, and the chosen's label
 	# alone when even that is too wide.
@@ -455,15 +463,15 @@ func _draw_tabs(origin: Vector2, line: float) -> void:
 	for plan: Array in plans:
 		widths.clear()
 		var total := 0.0
-		for i in range(TABS.size()):
+		for i in range(tabs().size()):
 			var w := 8.0*px+20.0*px+12.0*px
-			if plan[0] or i == tab: w += 6.0*px+_caps_width(TABS[i],TAB_TYPE,TAB_TRACK)*px
+			if plan[0] or i == tab: w += 6.0*px+_caps_width(tabs()[i],TAB_TYPE,TAB_TRACK)*px
 			if plan[1]: w += 6.0*px+_text_font.get_string_size(str(counts[i]),HORIZONTAL_ALIGNMENT_LEFT,-1,roundi(12.0*px)).x
 			widths.append(w)
 			total += w+2.0*px
 		if total <= room or plan == plans[-1]:
 			var x := origin.x
-			for i in range(TABS.size()):
+			for i in range(tabs().size()):
 				var on := i == tab
 				var rect := Rect2(Vector2(x,origin.y),Vector2(widths[i],TAB_H*px))
 				_tab_rects.append(rect)
@@ -475,11 +483,11 @@ func _draw_tabs(origin: Vector2, line: float) -> void:
 					box.anti_aliasing = true
 					_body.draw_style_box(box,rect)
 				var cx := x+8.0*px+10.0*px
-				Linen.icon(_body,_icons,TAB_ICONS[i],Vector2(cx,rect.get_center().y),20.0*px,px,"icon",1.0,Color(1,1,1,1.0 if on else 0.72))
+				Linen.icon(_body,_icons,tab_icons()[i],Vector2(cx,rect.get_center().y),20.0*px,px,"icon",1.0,Color(1,1,1,1.0 if on else 0.72))
 				var tx := cx+10.0*px+6.0*px
 				if plan[0] or on:
 					var colour := T1 if on else T2
-					var w := _caps(TABS[i],Vector2(tx,rect.get_center().y+5.0*px),TAB_TYPE,TAB_TRACK,colour)
+					var w := _caps(tabs()[i],Vector2(tx,rect.get_center().y+5.0*px),TAB_TYPE,TAB_TRACK,colour)
 					if on: _body.draw_line(Vector2(tx,rect.get_center().y+9.0*px),Vector2(tx+w,rect.get_center().y+9.0*px),TAB_LINE,line)
 					tx += w+6.0*px
 				if plan[1]:
@@ -670,7 +678,7 @@ func _key(event: InputEventKey) -> void:
 			sel = posmod(sel+(1 if event.keycode == KEY_DOWN else -1),_rows.size())
 			_keep_in_view = true
 		KEY_TAB:
-			_set_tab(posmod(tab+(-1 if event.shift_pressed else 1),TABS.size()))
+			_set_tab(posmod(tab+(-1 if event.shift_pressed else 1),tabs().size()))
 		KEY_ENTER, KEY_KP_ENTER:
 			if not _rows.is_empty(): _take(_rows[sel].item)
 		KEY_BACKSPACE:

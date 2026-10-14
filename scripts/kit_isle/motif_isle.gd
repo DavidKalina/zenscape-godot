@@ -164,6 +164,7 @@ static func placed_site(site: KitFlora.Site, by: Vector3) -> KitFlora.Site:
 	var out := KitFlora.Site.new()
 	out.ray = site.ray+Vector2.ONE*by.y
 	out.tufts = site.tufts
+	out.stable = site.stable
 	var flat := Vector2(by.x,by.z)
 	if site.wear.is_valid(): out.wear = func(p: Vector2) -> float: return float(site.wear.call(p-flat))
 	else: out.wear = Callable()

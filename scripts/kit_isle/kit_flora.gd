@@ -95,6 +95,11 @@ class Site extends RefCounted:
 	## there (a placed isle's neighbours: scripts/kit_isle/motif_isle.gd);
 	## none by default.
 	var looks_past := Callable()
+	## Stable scatter (the motif editor's): each candidate's draws are seeded
+	## from the seed and its index, not drawn in turn, so a plant refused
+	## (or newly let in) by an edit doesn't move every plant after it. Off
+	## by default: every isle grows as before.
+	var stable := false
 
 	func _init(top := 30.0, wear_fn := Callable(), wet_fn := Callable()) -> void:
 		ray = Vector2(top+60.0,top-8.0)
@@ -266,11 +271,13 @@ class Grow extends RefCounted:
 	var _phase := 0
 	var _draw: Draw
 	var _edges: EdgeIndex
+	var _seed := 0
 
 	func _init(seed_value: int, space: PhysicsDirectSpaceState3D, turf: Array, outlines: Array, site: Site) -> void:
 		_site = site
 		_outlines = outlines
 		_edges = EdgeIndex.new(outlines)
+		_seed = seed_value
 		_rng.seed = seed_value
 		_drift.seed = seed_value+5
 		_drift.frequency = DRIFT_FREQUENCY
@@ -305,6 +312,7 @@ class Grow extends RefCounted:
 			if usec >= 0 and _n % 32 == 0 and Time.get_ticks_usec() > end:
 				_n -= 1
 				return false
+			if _site.stable: _rng.seed = hash([_seed,0,_n])
 			var p := Vector2(_rng.randf_range(_box.position.x,_box.end.x),_rng.randf_range(_box.position.y,_box.end.y))
 			var thick := clampf(0.6+_drift.get_noise_2d(p.x,p.y)*1.3,THIN,1.0)
 			var worn := _site.worn(p)
@@ -322,6 +330,7 @@ class Grow extends RefCounted:
 			if usec >= 0 and _n % 32 == 0 and Time.get_ticks_usec() > end:
 				_n -= 1
 				return false
+			if _site.stable: _rng.seed = hash([_seed,1,_n])
 			var p := Vector2(_rng.randf_range(_box.position.x,_box.end.x),_rng.randf_range(_box.position.y,_box.end.y))
 			var presence := _meadow.presence(p)
 			var kind := _meadow.kind_at(p,_rng.randf())
@@ -352,6 +361,7 @@ static func undergrowth(seed_value: int, space: PhysicsDirectSpaceState3D, turf:
 
 ## `undergrowth` in steps, as `Grow` is `grow`'s.
 class Undergrow extends RefCounted:
+	const STABLE_TRIES := 3
 	var node: Node3D
 	var _site: Site
 	var _outlines: Array
@@ -371,11 +381,13 @@ class Undergrow extends RefCounted:
 	var _draw: Draw
 
 	var _edges: EdgeIndex
+	var _seed := 0
 
 	func _init(seed_value: int, space: PhysicsDirectSpaceState3D, turf: Array, outlines: Array, site: Site) -> void:
 		_site = site
 		_outlines = outlines
 		_edges = EdgeIndex.new(outlines)
+		_seed = seed_value
 		_rng.seed = seed_value
 		_probe = KitFlora.prober(space,turf,site)
 		var ba := KitFlora.box_and_area(outlines)
@@ -407,13 +419,17 @@ class Undergrow extends RefCounted:
 			var asset: String = entry[0]
 			var want := int(_area*float(entry[1]))
 			var sizes: Vector2 = entry[2]
-			if _placed >= want or _n >= want*14:
+			# Stable: a fixed run of candidates a kind (STABLE_TRIES each
+			# wanted), not "until enough are placed", so a plant refused by an
+			# edit doesn't let one in elsewhere.
+			if (not _site.stable and _placed >= want) or _n >= want*(STABLE_TRIES if _site.stable else 14):
 				_kind += 1
 				_n = 0
 				_placed = 0
 				continue
 			if usec >= 0 and Time.get_ticks_usec() > end: return false
 			_n += 1
+			if _site.stable: _rng.seed = hash([_seed,2,_kind,_n])
 			var p := Vector2(_rng.randf_range(_box.position.x,_box.end.x),_rng.randf_range(_box.position.y,_box.end.y))
 			var e := _edges.upto(p)
 			if e < UNDER_RIM or _site.worn(p) > 0.05: continue
@@ -431,12 +447,13 @@ class Undergrow extends RefCounted:
 					_add(asset,p+Vector2.from_angle(_rng.randf()*TAU)*_rng.randf_range(0.6,1.2),_rng.randf_range(sizes.x,sizes.y)*0.85)
 		# The logs: lying at a foot on open turf, a fern or two by each.
 		while _phase == 1:
-			if _n >= 400 or _logs >= LOGS:
+			if _n >= 400 or _logs >= (LOGS*2 if _site.stable else LOGS):
 				_phase = 2
 				_draw = Draw.new(_records,_ground,_area,UNDER_TILE)
 				break
 			if usec >= 0 and Time.get_ticks_usec() > end: return false
 			_n += 1
+			if _site.stable: _rng.seed = hash([_seed,3,_n])
 			var p := Vector2(_rng.randf_range(_box.position.x,_box.end.x),_rng.randf_range(_box.position.y,_box.end.y))
 			if _edges.upto(p) < 2.0 or _site.worn(p) > 0.02 or not _at_foot(p): continue
 			# A log wants its length clear: probe along it.

@@ -8,8 +8,17 @@ extends "res://scripts/kit_isle/motif_greybox.gd"
 ## registry.gd and the yard stands it (`--motif=<slug>`).
 ##
 ## The file holds recipes, not meshes (kit fixes carry through):
-##   {"format":1, "slug", "name", "preset":"whale_back",
-##    "sliders":{length, width, relief, step, jag}, "seed",
+##   {"format":2, "slug", "name", "preset" (PRESETS: whale_back, mesa,
+##    mountain, gorge, crater), "sliders":{length, width, relief, step,
+##    jag, and the preset's own}, "seed",
+##    "outline":[[x,z]...] (dragged handles; [] the preset's),
+##    "strokes":[{tool (raise lower smooth flatten ravine), r, s,
+##    pts:[[x,z]...]}, (format 3, round 3:) {tool "stamp", form
+##    (mountain hills crater mesa island), at:[x,z], r, h, seed, y?},
+##    {tool "basin" (a lake's bed), pts (a loop), depth, bank},
+##    {tool "fill" (new land), pts (a loop), y, bank}] (in order, over the
+##    preset), "waters":[{at:[x,z],
+##    fill}] (poured; the level found from the land as built),
 ##    "pieces":[{id, seed, weathered, at:[x,y,z], turn (deg), sink}],
 ##    "markers":{"spawn":[x,y,z], "rim_in":[x,y,z], "rim_out":[x,y,z]}}
 ## A piece's y in the file is where the editor seated it; the build seats
@@ -26,6 +35,7 @@ extends "res://scripts/kit_isle/motif_greybox.gd"
 const KitLife = preload("res://scripts/kit_isle/kit_life.gd")
 const Rootbound = preload("res://scripts/kit_isle/greybox/gb_rootbound_cut.gd")
 const HeroTrees = preload("res://scripts/hero_trees.gd")
+const RuinKitFit = preload("res://scripts/ruin_kit_fit.gd")
 
 ## The trees the palette offers beside the kit's pieces: the game's
 ## Blender-authored hero trees (scripts/hero_trees.gd, the glbs the flora
@@ -38,11 +48,14 @@ const TREES := {
 }
 const TREE_NAMES := {"tree_oak":"Oak","tree_birch":"Birch","tree_willow":"Willow"}
 
-const FORMAT := 1
+const FORMAT := 3
 const DIR := "res://motifs/authored"
 ## The presets and their sliders: [key, label, min, max, step, default].
-## The whale-back's cliff step defaults to the kit's climbing set-off, so
-## its terraces are climbed (RuinKit.SET_OFF, from the wanderer's reach).
+## Every preset has length, width, relief, step and jag (the outline and the
+## terraces read them); the rest are its own. The whale-back's cliff step
+## defaults to the kit's climbing set-off, so its terraces are climbed
+## (RuinKit.SET_OFF, from the wanderer's reach); the others' to none (smooth
+## slopes, brushes read as hills), the step slider there to terrace them.
 const PRESETS := {
 	"whale_back":[
 		["length","Length (m)",24.0,160.0,1.0,64.0],
@@ -51,7 +64,65 @@ const PRESETS := {
 		["step","Cliff step (m)",0.0,4.0,0.05,RuinKit.SET_OFF],
 		["jag","Jaggedness",0.0,1.0,0.01,0.4],
 	],
+	"mesa":[
+		["length","Length (m)",24.0,160.0,1.0,56.0],
+		["width","Width (m)",16.0,100.0,1.0,44.0],
+		["relief","Height (m)",2.0,30.0,0.1,10.0],
+		["step","Cliff step (m)",0.0,4.0,0.05,0.0],
+		["jag","Jaggedness",0.0,1.0,0.01,0.5],
+		["cap","Cap (share)",0.2,0.9,0.01,0.6],
+		["edge","Edge softness",0.02,0.4,0.01,0.08],
+	],
+	"mountain":[
+		["length","Length (m)",24.0,160.0,1.0,60.0],
+		["width","Width (m)",16.0,100.0,1.0,52.0],
+		["relief","Height (m)",4.0,50.0,0.1,22.0],
+		["step","Cliff step (m)",0.0,4.0,0.05,0.0],
+		["jag","Jaggedness",0.0,1.0,0.01,0.45],
+		["sharp","Sharpness",0.6,3.0,0.01,1.6],
+		["ridges","Ridges",0.0,1.0,0.01,0.5],
+	],
+	"gorge":[
+		["length","Length (m)",24.0,160.0,1.0,70.0],
+		["width","Width (m)",16.0,100.0,1.0,42.0],
+		["relief","Relief (m)",0.0,20.0,0.1,6.0],
+		["step","Cliff step (m)",0.0,4.0,0.05,0.0],
+		["jag","Jaggedness",0.0,1.0,0.01,0.4],
+		["gap","Gap (m)",2.0,16.0,0.1,6.0],
+		["deep","Gorge depth (m)",2.0,24.0,0.1,9.0],
+	],
+	"crater":[
+		["length","Length (m)",24.0,160.0,1.0,58.0],
+		["width","Width (m)",16.0,100.0,1.0,52.0],
+		["relief","Rim height (m)",2.0,30.0,0.1,9.0],
+		["step","Cliff step (m)",0.0,4.0,0.05,0.0],
+		["jag","Jaggedness",0.0,1.0,0.01,0.35],
+		["rim","Rim at (share)",0.35,0.9,0.01,0.62],
+		["bowl","Bowl depth (m)",1.0,24.0,0.1,8.0],
+	],
 }
+const PRESET_NAMES := {"whale_back":"Whale-back hill","mesa":"Mesa","mountain":"Mountain","gorge":"Split gorge","crater":"Crater bowl"}
+## The land brushes (the editor's): what one stamp of each does at strength
+## 1 in its middle (m) and the ravine's floor and wall.
+const BRUSH_LIFT := 0.35
+## The sculpt grid's cell (m): brushes are soft, so a bilinear grid of
+## changes over the preset's own crisp ground is enough.
+const SCULPT_CELL := 0.5
+## A ravine's wall: steps of RAVINE_STEP (the kit's climbing set-off, so
+## every lip is caught by a plain jump) on ledges RAVINE_LEDGE deep (a
+## pilot stands on one: RuinKit.STAND 0.58 and room), wobbling by
+## RAVINE_WOBBLE along the wall so it reads as crags, not a stair.
+const RAVINE_STEP := RuinKit.SET_OFF
+const RAVINE_LEDGE := 1.0
+const RAVINE_WOBBLE := 0.35
+## A ravine's depth at strength 0 and 1 (m), and its floor's half-width as
+## a share of the brush's radius.
+const RAVINE_DEPTH := Vector2(2.0,12.0)
+const RAVINE_HALF := 0.45
+## Pooled water: the grid it is found on (m) and how far under the spill
+## a full pond stands (m).
+const POOL_CELL := 0.5
+const POOL_FREEBOARD := 0.12
 ## How far a piece is sunk under the lowest ground beneath it (the
 ## Rootbound Cut's).
 const SINK := 0.15
@@ -64,7 +135,13 @@ const KEEL_REACH := 1.4
 ## The motif's file as read (or as the editor holds it).
 var data: Dictionary = {}
 var _ground := Callable()
+var _ground_parts := {}
 var _mine := {}
+var _span_cache := {}
+var _grid_cache := {}
+var _ponds_cache: Variant = null
+## A live stroke's coarse grid (m; 0: KitLand's 2.5).
+var fast_cell := 0.0
 
 func _init() -> void:
 	if file() != "": data = read(file())
@@ -92,7 +169,7 @@ static func read(path: String) -> Dictionary:
 	if not parsed is Dictionary:
 		push_error("motif authored: %s isn't a JSON object" % path)
 		return {}
-	return parsed
+	return normalise(parsed)
 
 ## Writes `d` to `path` (tabbed, keys in a fixed order: diffable). OK or an
 ## error.
@@ -118,22 +195,43 @@ static func saved() -> PackedStringArray:
 static func blank(slug_name: String, preset := "whale_back", seed_value := 1) -> Dictionary:
 	var sliders := {}
 	for s: Array in PRESETS[preset]: sliders[s[0]] = float(s[5])
-	var d := {"format":FORMAT,"slug":slug_name,"name":slug_name.capitalize(),"preset":preset,"sliders":sliders,"seed":seed_value,"pieces":[],"markers":{}}
+	var d := {"format":FORMAT,"slug":slug_name,"name":slug_name.capitalize(),"preset":preset,"sliders":sliders,"seed":seed_value,
+		"outline":[],"strokes":[],"waters":[],"pieces":[],"markers":{}}
 	default_markers(d)
+	return d
+
+## `d` brought up to FORMAT (a round-1 file has no outline, strokes or
+## waters), its sliders filled from its preset's defaults.
+static func normalise(d: Dictionary) -> Dictionary:
+	for key: String in ["outline","strokes","waters","pieces"]:
+		if not d.get(key) is Array: d[key] = []
+	if not d.get("markers") is Dictionary: d.markers = {}
+	if not d.get("sliders") is Dictionary: d.sliders = {}
+	d.preset = preset_of(d)
+	for spec: Array in PRESETS[d.preset]:
+		if not (d.sliders as Dictionary).has(spec[0]): d.sliders[spec[0]] = float(spec[5])
+	d.format = FORMAT
 	return d
 
 ## The spawn and the two rims where a fresh hill wants them: the spawn on
 ## the crest's east shoulder, the way in at the east end, out at the west.
 static func default_markers(d: Dictionary) -> void:
-	var s: Dictionary = d.sliders
-	var hx := float(s.length)*0.5
+	var hx := slider(d,"length")*0.5
 	var g := ground_of(d)
 	var m: Dictionary = d.markers
 	for k: String in ["spawn","rim_in","rim_out"]:
 		var x: float = {"spawn":hx*0.55,"rim_in":hx*0.82,"rim_out":-hx*0.82}[k]
 		m[k] = [x,float(g.call(x,0.0)),0.0]
 
-# --- The preset: the whale-back hill -------------------------------------------------
+# --- The land: preset, outline, sculpt, ravines, water -----------------------------------
+## The land is a recipe: the preset's raw ground (`raw_of`), the brush
+## strokes' soft changes over it on a grid (`Sculpt`, raise lower smooth
+## flatten, in order), the terraces (`step`), then the ravines (the
+## gorge's own and the ravine strokes: crisp stepped walls whose lips
+## KitLand finds as cliffs). The outline is the preset's unless the file
+## has its own ("outline", dragged handles). Water is poured: each pour's
+## level is found from the land as built (`pour`), so a pond follows the
+## hollow it was poured in.
 
 func sliders() -> Dictionary:
 	return data.get("sliders",{})
@@ -141,42 +239,89 @@ func sliders() -> Dictionary:
 func seed_of() -> int:
 	return int(data.get("seed",1))
 
-## The ground (x, z) -> y of `d`'s preset.
-static func ground_of(d: Dictionary) -> Callable:
-	var s: Dictionary = d.sliders
-	var hx := maxf(float(s.length)*0.5,4.0)
-	var hz := maxf(float(s.width)*0.5,4.0)
-	var relief := float(s.relief)
-	var step := float(s.step)
+static func preset_of(d: Dictionary) -> String:
+	var p := str(d.get("preset","whale_back"))
+	return p if PRESETS.has(p) else "whale_back"
+
+## A slider of `d`, its preset's default if missing.
+static func slider(d: Dictionary, key: String) -> float:
+	var s: Dictionary = d.get("sliders",{})
+	if s.has(key): return float(s[key])
+	for spec: Array in PRESETS[preset_of(d)]:
+		if str(spec[0]) == key: return float(spec[5])
+	return 0.0
+
+## The preset's raw ground (x, z) -> y: no terraces, no brushes.
+static func raw_of(d: Dictionary) -> Callable:
+	var hx := maxf(slider(d,"length")*0.5,4.0)
+	var hz := maxf(slider(d,"width")*0.5,4.0)
+	var relief := slider(d,"relief")
 	var rng := RandomNumberGenerator.new()
-	rng.seed = int(d.seed)*7919+11
-	# The crest's peak off the middle, its wobble's phase, the swells'.
+	rng.seed = int(d.get("seed",1))*7919+11
 	var peak := rng.randf_range(-0.3,0.3)*hx
 	var p1 := rng.randf_range(0.0,TAU)
 	var p2 := rng.randf_range(0.0,TAU)
 	var lean := rng.randf_range(-0.15,0.15)
-	return func(x: float, z: float) -> float:
-		var u := (x-peak)/(hx+absf(peak))
-		var crest := relief*(1.0-0.45*u*u)+relief*0.08*sin(x*0.11+p1)
-		var w := z/hz-lean*u
-		var y := crest-relief*0.85*w*w
-		# The old hill's swells under the turf (the Rootbound Cut's).
-		y += 0.45*sin(x*0.31+z*0.17+p2)*sin(z*0.23-x*0.07+1.3)+0.25*sin(x*0.71-z*0.53+p1)
-		if step > 0.3:
-			# Terraces: flat-ish treads, a cliff of most of a step between.
-			var band := floorf(y/step)
-			y = band*step+(y-band*step)*0.18
-		return y
+	var swell := func(x: float, z: float) -> float:
+		return 0.45*sin(x*0.31+z*0.17+p2)*sin(z*0.23-x*0.07+1.3)+0.25*sin(x*0.71-z*0.53+p1)
+	match preset_of(d):
+		"mesa":
+			var cap := slider(d,"cap")
+			var soft := slider(d,"edge")
+			return func(x: float, z: float) -> float:
+				var a := atan2(z/hz,x/hx)
+				var r := Vector2(x/hx,z/hz).length()*(1.0+0.06*sin(3.0*a+p1)+0.04*sin(7.0*a+p2))
+				var top := relief*(1.0-smoothstep(cap,cap+soft,r))
+				return top+relief*0.12*(1.0-r)+0.6*float(swell.call(x,z))
+		"mountain":
+			var sharp := slider(d,"sharp")
+			var ridges := slider(d,"ridges")
+			var px := rng.randf_range(-0.2,0.2)*hx
+			var pz := rng.randf_range(-0.2,0.2)*hz
+			var arms := rng.randi_range(3,5)
+			return func(x: float, z: float) -> float:
+				var u := Vector2((x-px)/hx,(z-pz)/hz)
+				var r := u.length()
+				var a := atan2(u.y,u.x)
+				# Arêtes: the slope lifted along a few arms, cut between.
+				var rib := absf(sin(a*arms*0.5+p1))
+				var r2 := r*(1.0-ridges*0.28*(rib-0.5))
+				var y := relief*pow(maxf(1.0-r2,0.0),sharp)
+				return y+0.5*float(swell.call(x,z))
+		"crater":
+			var rim := slider(d,"rim")
+			var bowl := slider(d,"bowl")
+			return func(x: float, z: float) -> float:
+				var a := atan2(z/hz,x/hx)
+				var r := Vector2(x/hx,z/hz).length()*(1.0+0.05*sin(4.0*a+p1))
+				var y := 0.0
+				if r < rim:
+					var t := r/rim
+					y = relief-bowl*(1.0-t*t*t)
+				else:
+					var t := (r-rim)/maxf(1.0-rim,0.05)
+					y = relief*(1.0-0.55*t*t)
+				return y+0.4*float(swell.call(x,z))
+		"gorge":
+			return func(x: float, z: float) -> float:
+				var u := x/hx
+				var w := z/hz
+				return relief*(1.0-0.3*u*u-0.6*w*w)+0.5*float(swell.call(x,z))
+		_:
+			return func(x: float, z: float) -> float:
+				var u := (x-peak)/(hx+absf(peak))
+				var crest := relief*(1.0-0.45*u*u)+relief*0.08*sin(x*0.11+p1)
+				var w := z/hz-lean*u
+				return crest-relief*0.85*w*w+float(swell.call(x,z))
 
-## The outline (x, z) of `d`'s preset: an ellipse round the hill, its rim
-## wandering by the jaggedness.
-static func outline_of(d: Dictionary) -> Array:
-	var s: Dictionary = d.sliders
-	var hx := maxf(float(s.length)*0.5,4.0)
-	var hz := maxf(float(s.width)*0.5,4.0)
-	var jag := float(s.jag)
+## The preset's outline (x, z): an ellipse, its rim wandering by the
+## jaggedness.
+static func preset_outline(d: Dictionary) -> Array:
+	var hx := maxf(slider(d,"length")*0.5,4.0)
+	var hz := maxf(slider(d,"width")*0.5,4.0)
+	var jag := slider(d,"jag")
 	var rng := RandomNumberGenerator.new()
-	rng.seed = int(d.seed)*104729+3
+	rng.seed = int(d.get("seed",1))*104729+3
 	var count := 28
 	var phase := rng.randf_range(0.0,TAU)
 	var out: Array = []
@@ -186,9 +331,470 @@ static func outline_of(d: Dictionary) -> Array:
 		out.append(Vector2(cos(a)*hx*r,sin(a)*hz*r))
 	return out
 
+## The outline (x, z) of `d`: its own (dragged handles) or the preset's.
+static func outline_of(d: Dictionary) -> Array:
+	var own: Array = d.get("outline",[])
+	if own.size() >= 3:
+		var out: Array = []
+		for p: Array in own: out.append(Vector2(float(p[0]),float(p[1])))
+		return out
+	return preset_outline(d)
+
+## The gorge preset's own ravine: across the isle near its middle, a
+## zigzag, as a ravine stroke is stored.
+static func preset_ravines(d: Dictionary) -> Array:
+	if preset_of(d) != "gorge": return []
+	var hx := maxf(slider(d,"length")*0.5,4.0)
+	var hz := maxf(slider(d,"width")*0.5,4.0)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = int(d.get("seed",1))*31337+5
+	var x0 := rng.randf_range(-0.15,0.15)*hx
+	var pts: Array = []
+	var n := 9
+	for k in range(n+1):
+		var t := float(k)/n
+		# Stopping short of the rim: run out through the outline, the hanging
+		# sides dropped dark shards into the gap (KitLand ring_sides hang
+		# from the rim's own height).
+		var z := lerpf(-hz*0.86,hz*0.86,t)
+		pts.append([x0+rng.randf_range(-1.0,1.0)*slider(d,"gap")*0.6+sin(t*PI*1.5)*hx*0.08,z])
+	return [{"tool":"ravine","pts":pts,"half":slider(d,"gap")*0.5,"depth":slider(d,"deep")}]
+
+## The brush changes over the raw ground: a grid of metres added (bilinear).
+class Sculpt extends RefCounted:
+	var origin := Vector2.ZERO
+	var cols := 0
+	var rows := 0
+	var cell := 0.5
+	var delta := PackedFloat32Array()
+	var any := false
+	## Where a landform stamp (mountain, hills, crater) or a lake's basin
+	## stands, 0..1: the landform's terraces give way to the stamp's own
+	## smooth slopes there, and no cliff is laid (`smooth_at`).
+	var smooth := PackedFloat32Array()
+	var smooth_any := false
+
+	func _init(box: Rect2, cell_size: float) -> void:
+		cell = cell_size
+		origin = box.position
+		cols = int(ceil(box.size.x/cell))+2
+		rows = int(ceil(box.size.y/cell))+2
+		delta.resize(cols*rows)
+		delta.fill(0.0)
+		smooth.resize(cols*rows)
+		smooth.fill(0.0)
+
+	## The smooth share at (x, z) (bilinear; 0 outside).
+	func smooth_at(x: float, z: float) -> float:
+		if not smooth_any: return 0.0
+		var fx := (x-origin.x)/cell
+		var fz := (z-origin.y)/cell
+		var c := int(floor(fx))
+		var r := int(floor(fz))
+		if c < 0 or r < 0 or c >= cols-1 or r >= rows-1: return 0.0
+		var tx := fx-c
+		var tz := fz-r
+		var k := r*cols+c
+		return lerpf(lerpf(smooth[k],smooth[k+1],tx),lerpf(smooth[k+cols],smooth[k+cols+1],tx),tz)
+
+	func _smooth(k: int, w: float) -> void:
+		if w <= 0.0: return
+		smooth[k] = maxf(smooth[k],w)
+		smooth_any = true
+
+	func sample(x: float, z: float) -> float:
+		if not any: return 0.0
+		var fx := (x-origin.x)/cell
+		var fz := (z-origin.y)/cell
+		var c := int(floor(fx))
+		var r := int(floor(fz))
+		if c < 0 or r < 0 or c >= cols-1 or r >= rows-1: return 0.0
+		var tx := fx-c
+		var tz := fz-r
+		var k := r*cols+c
+		return lerpf(lerpf(delta[k],delta[k+1],tx),lerpf(delta[k+cols],delta[k+cols+1],tx),tz)
+
+	func at(c: int, r: int) -> Vector2:
+		return origin+Vector2(c,r)*cell
+
+	## A box blur `reach` cells each way of `h` (w x hgt), rows then columns.
+	static func blur(h: PackedFloat32Array, w: int, hgt: int, reach: int) -> PackedFloat32Array:
+		var a := PackedFloat32Array()
+		a.resize(h.size())
+		for r in range(hgt):
+			for c in range(w):
+				var sum := 0.0
+				var n := 0
+				for o in range(-reach,reach+1):
+					var cc := c+o
+					if cc < 0 or cc >= w: continue
+					sum += h[r*w+cc]
+					n += 1
+				a[r*w+c] = sum/n
+		var b := PackedFloat32Array()
+		b.resize(h.size())
+		for r in range(hgt):
+			for c in range(w):
+				var sum := 0.0
+				var n := 0
+				for o in range(-reach,reach+1):
+					var rr := r+o
+					if rr < 0 or rr >= hgt: continue
+					sum += a[rr*w+c]
+					n += 1
+				b[r*w+c] = sum/n
+		return b
+
+	## The cells within `radius` of any of `pts`, each with its weight: 1 -
+	## the product of (1 - strength x falloff) over the points (so a dwell
+	## or an overlap builds up but never past 1). {index: weight}
+	func weights(pts: Array, radius: float, strength: float) -> Dictionary:
+		var keep := {}
+		for q: Vector2 in pts:
+			var c0 := maxi(int(floor((q.x-radius-origin.x)/cell)),0)
+			var c1 := mini(int(ceil((q.x+radius-origin.x)/cell)),cols-1)
+			var r0 := maxi(int(floor((q.y-radius-origin.y)/cell)),0)
+			var r1 := mini(int(ceil((q.y+radius-origin.y)/cell)),rows-1)
+			for r in range(r0,r1+1):
+				for c in range(c0,c1+1):
+					var t := at(c,r).distance_to(q)/radius
+					if t >= 1.0: continue
+					var f := (1.0-t*t)*(1.0-t*t)*strength
+					var k := r*cols+c
+					keep[k] = 1.0-(1.0-float(keep.get(k,0.0)))*(1.0-f)
+		return keep
+
+	## The ground as it stands so far at cell k: raw plus the changes.
+	func now_at(k: int, raw: Callable) -> float:
+		var p := at(k%cols,k/cols)
+		return float(raw.call(p.x,p.y))+delta[k]
+
+	## The cells' index range round `box` (clamped): [c0, c1, r0, r1].
+	func span(box: Rect2) -> Array:
+		return [maxi(int(floor((box.position.x-origin.x)/cell)),0),mini(int(ceil((box.end.x-origin.x)/cell)),cols-1),
+			maxi(int(floor((box.position.y-origin.y)/cell)),0),mini(int(ceil((box.end.y-origin.y)/cell)),rows-1)]
+
+	## A landform stamp (round 3, the old clay tools' Mountain, Hills,
+	## Crater, the Chisel's mesa and the Island's spread): a shape `r`
+	## across and `h` tall (a crater's `h` is its bowl's depth) at `at`,
+	## blended into the ground under it. A mesa and an island build up to a
+	## level ("y", the editor's; else the ground at the middle plus h) and
+	## never cut what already stands higher.
+	func stamp(stroke: Dictionary, raw: Callable) -> void:
+		var a0: Array = stroke.get("at",[0.0,0.0])
+		var q := Vector2(float(a0[0]),float(a0[1]))
+		var radius := maxf(float(stroke.get("r",6.0)),1.0)
+		var h := float(stroke.get("h",4.0))
+		var form := str(stroke.get("form","mountain"))
+		var rng := RandomNumberGenerator.new()
+		rng.seed = int(stroke.get("seed",1))*6151+17
+		var p1 := rng.randf_range(0.0,TAU)
+		var p2 := rng.randf_range(0.0,TAU)
+		var arms := rng.randi_range(3,5)
+		var bumps: Array = []
+		if form == "hills":
+			for i in range(rng.randi_range(4,7)):
+				var a := rng.randf_range(0.0,TAU)
+				var d := sqrt(rng.randf())*radius*0.62
+				# Rolling: each bump's own slope under ~0.45, so on a
+				# landform's fall it stays under the kit's rock slope (0.93)
+				# and the hills read green.
+				var rb := radius*rng.randf_range(0.4,0.6)
+				bumps.append([q+Vector2(cos(a),sin(a))*d,rb,minf(h*rng.randf_range(0.45,1.0),rb*0.28)])
+		var level := float(stroke.get("y",NAN))
+		if form in ["mesa","island"] and is_nan(level): level = float(raw.call(q.x,q.y))+sample(q.x,q.y)+h
+		any = true
+		var cr := span(Rect2(q-Vector2.ONE*radius*1.25,Vector2.ONE*radius*2.5))
+		for r in range(int(cr[2]),int(cr[3])+1):
+			for c in range(int(cr[0]),int(cr[1])+1):
+				var p := at(c,r)
+				var u := p-q
+				var t := u.length()/radius
+				if t >= 1.25: continue
+				var a := atan2(u.y,u.x)
+				var k := r*cols+c
+				# A mountain, hills or crater keeps its own smooth shape on a
+				# terraced landform (a mesa and an island keep the steps:
+				# their sides are cliffs).
+				if form in ["mountain","hills","crater"]: _smooth(k,1.0-smoothstep(1.05,1.25,t))
+				match form:
+					"mountain":
+						# Aretes: the slope lifted along a few arms, cut between.
+						var rib := absf(sin(a*arms*0.5+p1))
+						var t2 := t*(1.0-0.24*(rib-0.5))*(1.0+0.06*sin(5.0*a+p2))
+						if t2 < 1.0: delta[k] += h*pow(1.0-t2,1.7)*(1.0-0.15*smoothstep(0.0,0.25,0.25-t2))
+					"hills":
+						for b: Array in bumps:
+							var tb := p.distance_to(b[0])/float(b[1])
+							if tb < 1.0: delta[k] += float(b[2])*(1.0-tb*tb)*(1.0-tb*tb)
+					"crater":
+						var tc := t*(1.0+0.05*sin(4.0*a+p1))
+						if tc >= 1.0: continue
+						var y := 0.0
+						if tc < 0.72: y -= h*(1.0-pow(tc/0.72,2.5))
+						y += h*0.38*exp(-pow((tc-0.76)/0.13,2.0))
+						delta[k] += y*(1.0-smoothstep(0.88,1.0,tc))
+					"mesa":
+						var tm := t*(1.0+0.06*sin(3.0*a+p1)+0.04*sin(7.0*a+p2))
+						var m := 1.0-smoothstep(0.8,0.97,tm)
+						var now := float(raw.call(p.x,p.y))+delta[k]
+						if m > 0.0 and level > now: delta[k] += (level-now)*m
+					"island":
+						var ti := t*(1.0+0.07*sin(3.0*a+p1)+0.05*sin(5.0*a+p2))
+						var m := 1.0-smoothstep(0.7,1.0,ti)
+						var goal := level-h*0.35*ti*ti
+						var now := float(raw.call(p.x,p.y))+delta[k]
+						if m > 0.0 and goal > now: delta[k] += (goal-now)*m
+
+	## A loop drawn round (round 3): a "basin" sinks a level floor `depth`
+	## under the loop's lowest ground, its banks `bank` wide (a lake: the
+	## editor pours water in it); a "fill" builds up to level `y` inside (new
+	## land, the outline grown round it by the editor), never cutting.
+	func loop(stroke: Dictionary, raw: Callable) -> void:
+		var poly := PackedVector2Array()
+		for p: Array in stroke.get("pts",[]): poly.append(Vector2(float(p[0]),float(p[1])))
+		if poly.size() < 3: return
+		var bank := maxf(float(stroke.get("bank",3.0)),0.5)
+		var box := Rect2(poly[0],Vector2.ZERO)
+		for p: Vector2 in poly: box = box.expand(p)
+		var level := 0.0
+		if str(stroke.tool) == "basin":
+			level = INF
+			for p: Vector2 in poly: level = minf(level,float(raw.call(p.x,p.y))+sample(p.x,p.y))
+			level -= maxf(float(stroke.get("depth",2.5)),0.3)
+		else:
+			level = float(stroke.get("y",0.0))
+		any = true
+		var cr := span(box)
+		for r in range(int(cr[2]),int(cr[3])+1):
+			for c in range(int(cr[0]),int(cr[1])+1):
+				var p := at(c,r)
+				if not Geometry2D.is_point_in_polygon(p,poly): continue
+				var e := KitLand.edge_distance(p,poly)
+				var k := r*cols+c
+				var now := float(raw.call(p.x,p.y))+delta[k]
+				if str(stroke.tool) == "basin":
+					# A bowl: level in its middle, rounding up to the banks.
+					var w := smoothstep(0.0,bank,e)
+					_smooth(k,w)
+					if level < now: delta[k] += (level-now)*w*(2.0-w)
+				else:
+					var w := smoothstep(0.0,minf(bank,1.5),e)
+					if level > now: delta[k] += (level-now)*maxf(w,0.6)
+
+	## One stroke over `raw` (x, z) -> y.
+	func apply(stroke: Dictionary, raw: Callable) -> void:
+		if str(stroke.get("tool","")) == "stamp":
+			stamp(stroke,raw)
+			return
+		if str(stroke.get("tool","")) in ["basin","fill"]:
+			loop(stroke,raw)
+			return
+		var pts: Array = []
+		for p: Array in stroke.get("pts",[]): pts.append(Vector2(float(p[0]),float(p[1])))
+		if pts.is_empty(): return
+		var radius := maxf(float(stroke.get("r",4.0)),0.5)
+		var s := clampf(float(stroke.get("s",0.5)),0.0,1.0)
+		any = true
+		match str(stroke.tool):
+			"raise", "lower":
+				var sign := 1.0 if str(stroke.tool) == "raise" else -1.0
+				# Each stamp adds; the dwell's repeated points pile up.
+				for q: Vector2 in pts:
+					var c0 := maxi(int(floor((q.x-radius-origin.x)/cell)),0)
+					var c1 := mini(int(ceil((q.x+radius-origin.x)/cell)),cols-1)
+					var r0 := maxi(int(floor((q.y-radius-origin.y)/cell)),0)
+					var r1 := mini(int(ceil((q.y+radius-origin.y)/cell)),rows-1)
+					for r in range(r0,r1+1):
+						for c in range(c0,c1+1):
+							var t := at(c,r).distance_to(q)/radius
+							if t >= 1.0: continue
+							delta[r*cols+c] += sign*BRUSH_LIFT*s*(1.0-t*t)*(1.0-t*t)
+			"flatten":
+				var first: Vector2 = pts[0]
+				var target := float(raw.call(first.x,first.y))+sample(first.x,first.y)
+				var w := weights(pts,radius,minf(s*1.4,1.0))
+				for k: int in w:
+					var p := at(k%cols,k/cols)
+					var now := float(raw.call(p.x,p.y))+delta[k]
+					delta[k] += (target-now)*float(w[k])
+			"smooth":
+				var w := weights(pts,radius,s)
+				if w.is_empty(): return
+				# The heights over the touched cells' box (and a blur's reach),
+				# blurred by a box a few cells wide, twice.
+				var reach := maxi(int(ceil(maxf(radius*0.3,1.2)/cell)),1)
+				var lo := Vector2i(cols,rows)
+				var hi := Vector2i(-1,-1)
+				for k: int in w:
+					lo = Vector2i(mini(lo.x,k%cols),mini(lo.y,k/cols))
+					hi = Vector2i(maxi(hi.x,k%cols),maxi(hi.y,k/cols))
+				lo = Vector2i(maxi(lo.x-reach*2,0),maxi(lo.y-reach*2,0))
+				hi = Vector2i(mini(hi.x+reach*2,cols-1),mini(hi.y+reach*2,rows-1))
+				var bw := hi.x-lo.x+1
+				var bh := hi.y-lo.y+1
+				var h := PackedFloat32Array()
+				h.resize(bw*bh)
+				for r in range(bh):
+					for c in range(bw):
+						var p := at(lo.x+c,lo.y+r)
+						h[r*bw+c] = float(raw.call(p.x,p.y))+delta[(lo.y+r)*cols+lo.x+c]
+				var b := h
+				for pass_ in range(2): b = blur(b,bw,bh,reach)
+				for k: int in w:
+					var c := k%cols-lo.x
+					var r := k/cols-lo.y
+					delta[k] += (b[r*bw+c]-h[r*bw+c])*float(w[k])
+
+## A ravine over a ground: a stroke's polyline, its floor's half-width, its
+## floor falling from the stroke's first point to its last (never
+## climbing: water runs it), walls stepped RAVINE_STEP up on ledges.
+class Ravine extends RefCounted:
+	var pts := PackedVector2Array()
+	var floors := PackedFloat32Array()
+	var half := 2.0
+	var depth := 6.0
+	var box := Rect2()
+	var reach := 0.0
+	var phase := 0.0
+
+	func _init(stroke: Dictionary, under: Callable) -> void:
+		for p: Array in stroke.get("pts",[]):
+			var q := Vector2(float(p[0]),float(p[1]))
+			if pts.is_empty() or q.distance_to(pts[pts.size()-1]) > 0.3: pts.append(q)
+		if stroke.has("half"):
+			half = float(stroke.half)
+			depth = float(stroke.depth)
+		else:
+			var s := clampf(float(stroke.get("s",0.5)),0.0,1.0)
+			half = maxf(float(stroke.get("r",4.0))*RAVINE_HALF,0.8)
+			depth = lerpf(RAVINE_DEPTH.x,RAVINE_DEPTH.y,s)
+		var last := INF
+		for q: Vector2 in pts:
+			var f := float(under.call(q.x,q.y))-depth
+			last = minf(last,f)
+			floors.append(last)
+		if pts.size() == 1:
+			pts.append(pts[0]+Vector2(0.01,0.0))
+			floors.append(floors[0])
+		# The walls step up until they meet the ground: across a slope the
+		# high side rises past the ravine's depth, so the most a wall climbs
+		# is read off the ground beside the stroke (none left as a sheer
+		# face past the kit's reach).
+		var drop := depth
+		for i in range(pts.size()):
+			var a := pts[maxi(i-1,0)]
+			var b := pts[mini(i+1,pts.size()-1)]
+			var side := (b-a).orthogonal().normalized() if a.distance_to(b) > 0.01 else Vector2.RIGHT
+			for off: float in [3.0,6.0,10.0]:
+				for sgn: float in [-1.0,1.0]:
+					var q := pts[i]+side*(half+off)*sgn
+					drop = maxf(drop,minf(float(under.call(q.x,q.y))-floors[i],off*RAVINE_STEP/RAVINE_LEDGE))
+		var steps := ceilf(drop/RAVINE_STEP)
+		reach = half+steps*RAVINE_LEDGE*(1.0+RAVINE_WOBBLE)+0.5
+		box = Rect2(pts[0],Vector2.ZERO)
+		for q: Vector2 in pts: box = box.expand(q)
+		box = box.grow(reach)
+		phase = float(pts.size())*1.7
+
+	## The carved height at (x, z) under the ground `y` there.
+	func cut(x: float, z: float, y: float) -> float:
+		var p := Vector2(x,z)
+		if not box.has_point(p): return y
+		var best := INF
+		var floor_y := 0.0
+		for i in range(pts.size()-1):
+			var a := pts[i]
+			var b := pts[i+1]
+			var ab := b-a
+			var t := clampf((p-a).dot(ab)/maxf(ab.length_squared(),0.0001),0.0,1.0)
+			var d := p.distance_to(a+ab*t)
+			if d < best:
+				best = d
+				floor_y = lerpf(floors[i],floors[i+1],t)
+		if best >= reach: return y
+		if best <= half: return minf(y,floor_y)
+		# The wall: a ledge every RAVINE_LEDGE (wobbling along), a step up
+		# RAVINE_STEP at each.
+		var wob := 1.0+RAVINE_WOBBLE*sin(x*0.37+z*0.29+phase)*sin(x*0.13-z*0.21)
+		var k := ceilf((best-half)/(RAVINE_LEDGE*wob))
+		return minf(y,floor_y+k*RAVINE_STEP)
+
+## The ground (x, z) -> y of `d`: the preset, the brushes, the terraces,
+## the ravines.
+static func ground_of(d: Dictionary, parts := {}) -> Callable:
+	var raw := raw_of(d)
+	var step := slider(d,"step")
+	var ring := outline_of(d)
+	var box := Rect2(ring[0],Vector2.ZERO)
+	for p: Vector2 in ring: box = box.expand(p)
+	var sculpt := Sculpt.new(box.grow(12.0),SCULPT_CELL)
+	var ravines: Array = []
+	for stroke: Dictionary in d.get("strokes",[]):
+		if str(stroke.get("tool","")) != "ravine": sculpt.apply(stroke,raw)
+	parts.sculpt = sculpt
+	var soft := func(x: float, z: float) -> float:
+		var y := float(raw.call(x,z))+sculpt.sample(x,z)
+		if step > 0.3:
+			var band := floorf(y/step)
+			var stepped := band*step+(y-band*step)*0.18
+			# Under a smooth stamp the terraces give way to its slopes.
+			y = lerpf(stepped,y,sculpt.smooth_at(x,z))
+		return y
+	for stroke: Dictionary in preset_ravines(d)+(d.get("strokes",[]) as Array):
+		if str(stroke.get("tool","")) == "ravine" and not (stroke.get("pts",[]) as Array).is_empty():
+			# Each ravine's floor is read off the ground before it.
+			var under := soft if ravines.is_empty() else _carved(soft,ravines.duplicate())
+			ravines.append(Ravine.new(stroke,under))
+	if ravines.is_empty(): return soft
+	return _carved(soft,ravines)
+
+static func _carved(soft: Callable, ravines: Array) -> Callable:
+	return func(x: float, z: float) -> float:
+		var y := float(soft.call(x,z))
+		for r: Ravine in ravines: y = r.cut(x,z,y)
+		return y
+
+## Where the ravines' crisp walls are: one box round them all (none: no
+## ravines).
+func ravine_box() -> Rect2:
+	var out := Rect2()
+	var first := true
+	var g := ground_fn()
+	for stroke: Dictionary in preset_ravines(data)+(data.get("strokes",[]) as Array):
+		if str(stroke.get("tool","")) != "ravine" or (stroke.get("pts",[]) as Array).is_empty(): continue
+		var r := Ravine.new(stroke,g)
+		out = r.box if first else out.merge(r.box)
+		first = false
+	if first: return out
+	# Tight: only where the ravines really lowered the ground (the box above
+	# allows for the deepest a wall could climb), and 1.5 m round, so the
+	# fine grid (and its re-triangulation) stays where the ravine is.
+	var d := data.duplicate()
+	d.strokes = (data.get("strokes",[]) as Array).filter(func(s: Dictionary) -> bool: return str(s.get("tool","")) != "ravine")
+	var soft := ground_of(d)
+	var tight := Rect2()
+	var any := false
+	var x := out.position.x
+	while x <= out.end.x:
+		var z := out.position.y
+		while z <= out.end.y:
+			if float(g.call(x,z)) < float(soft.call(x,z))-0.02:
+				tight = Rect2(Vector2(x,z),Vector2.ZERO) if not any else tight.expand(Vector2(x,z))
+				any = true
+			z += 1.0
+		x += 1.0
+	return tight.grow(1.5) if any else out
+
 func ground_fn() -> Callable:
-	if not _ground.is_valid(): _ground = ground_of(data)
+	if not _ground.is_valid(): _ground = ground_of(data,_ground_parts)
 	return _ground
+
+## The share of the ground a smooth stamp stands on at (x, z), 0..1.
+func smooth_at(x: float, z: float) -> float:
+	ground_fn()
+	var sc: Variant = _ground_parts.get("sculpt")
+	return float(sc.smooth_at(x,z)) if sc != null else 0.0
 
 func ground(x: float, z: float) -> float:
 	return float(ground_fn().call(x,z))
@@ -196,29 +802,113 @@ func ground(x: float, z: float) -> float:
 func outline() -> Array:
 	return outline_of(data)
 
-## Its highest ground (the crest's peak, sampled).
-func crest_top() -> float:
-	var s: Dictionary = sliders()
-	var best := -INF
-	var hx := float(s.length)*0.5
-	for k in range(-10,11): best = maxf(best,ground(hx*k/10.0,0.0))
-	return best
-
-func depth() -> float:
-	return clampf(float(sliders().length)*0.3,12.0,30.0)
-
-## The land's KitLand.island spec (`tone` its turf).
-func land_spec(fast := false) -> Dictionary:
+func _box() -> Rect2:
 	var ring := outline()
 	var box := Rect2(ring[0],Vector2.ZERO)
 	for p: Vector2 in ring: box = box.expand(p)
-	var spec := {"outline":ring,"seed":seed_of(),"ground":ground_fn(),"top":crest_top(),"depth":depth(),"hang":true,
+	return box
+
+## The highest and lowest ground inside the outline, sampled every 2 m:
+## {top, low, summit}.
+func _span() -> Dictionary:
+	if _span_cache.is_empty():
+		var poly := PackedVector2Array(outline())
+		var box := _box()
+		var best := Vector3(0.0,-INF,0.0)
+		var low := INF
+		var x := box.position.x+1.0
+		while x < box.end.x:
+			var z := box.position.y+1.0
+			while z < box.end.y:
+				if Geometry2D.is_point_in_polygon(Vector2(x,z),poly):
+					var y := ground(x,z)
+					if y > best.y: best = Vector3(x,y,z)
+					low = minf(low,y)
+				z += 2.0
+			x += 2.0
+		if best.y == -INF: best = Vector3(0.0,ground(0.0,0.0),0.0)
+		_span_cache = {"top":best.y,"low":minf(low,best.y),"summit":best}
+	return _span_cache
+
+## Its highest ground.
+func crest_top() -> float:
+	return float(_span().top)
+
+## The landform's own crest and low (the preset's raw ground over the
+## outline, no strokes): the keel and the sides hang from these, so a
+## stamp or a lake changes the land where it is and not the isle's
+## underside (round 3's follow-up).
+var _raw_cache := {}
+func _raw_span() -> Dictionary:
+	if _raw_cache.is_empty():
+		var raw := raw_of(data)
+		var poly := PackedVector2Array(outline())
+		var box := _box()
+		var top := -INF
+		var low := INF
+		var x := box.position.x+1.0
+		while x < box.end.x:
+			var z := box.position.y+1.0
+			while z < box.end.y:
+				if Geometry2D.is_point_in_polygon(Vector2(x,z),poly):
+					var y := float(raw.call(x,z))
+					top = maxf(top,y)
+					low = minf(low,y)
+				z += 2.0
+			x += 2.0
+		if top == -INF:
+			top = float(raw.call(0.0,0.0))
+			low = top
+		_raw_cache = {"top":top,"low":low}
+	return _raw_cache
+
+## The top the keel and sides hang from: the landform's crest.
+func keel_top() -> float:
+	return float(_raw_span().top)
+
+func depth() -> float:
+	var s := _box().size
+	return clampf(maxf(s.x,s.y)*0.3+maxf(keel_top()-float(_raw_span().low),0.0)*0.3,12.0,36.0)
+
+## The land's KitLand.island spec (`tone` its turf). Crisp cliffs where
+## there are terraces (everywhere) or ravines (round them, a finer grid
+## there only); `fast` (a live stroke): a coarse grid, no crisp cliffs.
+func land_spec(fast := false) -> Dictionary:
+	var ring := outline()
+	var box := _box()
+	var spec := {"outline":ring,"seed":seed_of(),"ground":ground_fn(),"top":keel_top(),"depth":depth(),"hang":true,"stable":true,
 		"resample":[80.0,clampi(int(KitLand.perimeter(ring)/1.5),32,260),32],"tone":KitLook.turf(seed_of(),Callable())}
-	if float(sliders().get("step",0.0)) > 0.3 and not fast:
+	if fast:
+		spec.cell = 2.5 if fast_cell <= 0.0 else fast_cell
+		return spec
+	# Under a smooth stamp turf holds a steeper slope (a hill on the
+	# landform's fall stays green; a mountain's flanks still go to rock).
+	ground_fn()
+	var smooth_sc: Variant = _ground_parts.get("sculpt")
+	if smooth_sc != null and bool(smooth_sc.smooth_any):
+		var rock_slope := float(KitLook.palette().rock_slope)
+		spec.rocky = func(mid: Vector2, normal: Vector3) -> bool:
+			var slope := sqrt(maxf(0.0,1.0-normal.y*normal.y))/maxf(normal.y,0.001)
+			return slope > rock_slope*(1.0+0.45*float(smooth_sc.smooth_at(mid.x,mid.y)))
+	# A step is a cliff, a steep slope's own rise not (a mountain's flank
+	# would be all cliff points at the kit's 0.3).
+	var step := slider(data,"step")
+	spec.cliff_drop = clampf(step*0.5,0.3,0.8) if step > 0.3 else 0.8
+	if step > 0.3:
 		spec.cliffs = box.grow(1.0)
 		spec.fine = 1.3
-	elif fast:
-		spec.cell = 2.5
+		# No terrace cliffs under a smooth stamp (its own slopes).
+		ground_fn()
+		var sc: Variant = _ground_parts.get("sculpt")
+		if sc != null and bool(sc.smooth_any): spec.cliff_skip = func(p: Vector2) -> bool: return float(sc.smooth_at(p.x,p.y)) > 0.35
+	else:
+		var rb := ravine_box()
+		if rb.size != Vector2.ZERO:
+			spec.cliffs = rb.intersection(box.grow(1.0))
+			spec.fine_box = spec.cliffs
+			spec.fine = 1.0
+			# The isle's own cell kept (2 m) round the ravine's fine box: a
+			# ravine then changes the grid only where it is (stable).
 	return spec
 
 ## The bare land: the hill, collided, its sides collided as drawn.
@@ -227,6 +917,141 @@ func build_land(fast := false) -> Node3D:
 	land.name = "Hill"
 	Rootbound._collide_sides(land)
 	return land
+
+# --- Water -----------------------------------------------------------------------------
+
+## The ground on a POOL_CELL grid over the outline's box (outside: NAN),
+## built once.
+func _pool_grid() -> Dictionary:
+	if _grid_cache.is_empty():
+		var box := _box().grow(POOL_CELL)
+		var cols := int(ceil(box.size.x/POOL_CELL))+1
+		var rows := int(ceil(box.size.y/POOL_CELL))+1
+		var h := PackedFloat32Array()
+		h.resize(cols*rows)
+		var poly := PackedVector2Array(outline())
+		for r in range(rows):
+			for c in range(cols):
+				var p := box.position+Vector2(c,r)*POOL_CELL
+				h[r*cols+c] = ground(p.x,p.y) if Geometry2D.is_point_in_polygon(p,poly) else NAN
+		_grid_cache = {"origin":box.position,"cols":cols,"rows":rows,"h":h}
+	return _grid_cache
+
+## A pour at (x, z) filled `fill` (0 a skim, 1 to just under the spill):
+## {level, spill, cells (PackedInt32Array of the grid's), rect} or {} where
+## nothing holds water (no hollow: it runs off). The spill is the lowest
+## pass out of the hollow (a priority flood from the pour, on bands of 2
+## cm): where the water would leave the isle.
+func pour(x: float, z: float, fill: float) -> Dictionary:
+	var g := _pool_grid()
+	var cols: int = g.cols
+	var rows: int = g.rows
+	var h: PackedFloat32Array = g.h
+	var origin: Vector2 = g.origin
+	var c0 := clampi(int(round((x-origin.x)/POOL_CELL)),0,cols-1)
+	var r0 := clampi(int(round((z-origin.y)/POOL_CELL)),0,rows-1)
+	var seed_k := r0*cols+c0
+	if is_nan(h[seed_k]): return {}
+	# The lowest cell near the pour (water finds the bottom).
+	for pass_ in range(40):
+		var best := seed_k
+		for o: Vector2i in [Vector2i(1,0),Vector2i(-1,0),Vector2i(0,1),Vector2i(0,-1)]:
+			var c := seed_k%cols+o.x
+			var r := seed_k/cols+o.y
+			if c < 0 or r < 0 or c >= cols or r >= rows: continue
+			var k := r*cols+c
+			if not is_nan(h[k]) and h[k] < h[best]: best = k
+		if best == seed_k: break
+		seed_k = best
+	var bottom := h[seed_k]
+	var band := 0.02
+	var buckets := {}
+	var cost := {seed_k:bottom}
+	buckets[0] = [seed_k]
+	var at_band := 0
+	var spill := INF
+	var top_band := int(ceil((crest_top()-bottom)/band))+2
+	while at_band <= top_band and spill == INF:
+		var list: Array = buckets.get(at_band,[])
+		if list.is_empty():
+			at_band += 1
+			continue
+		var k: int = list.pop_back()
+		var here: float = cost[k]
+		for o: Vector2i in [Vector2i(1,0),Vector2i(-1,0),Vector2i(0,1),Vector2i(0,-1)]:
+			var c := k%cols+o.x
+			var r := k/cols+o.y
+			if c < 0 or r < 0 or c >= cols or r >= rows or is_nan(h[r*cols+c]):
+				spill = here
+				break
+			var n := r*cols+c
+			if cost.has(n): continue
+			var nc := maxf(here,h[n])
+			cost[n] = nc
+			var b := int((nc-bottom)/band)
+			if not buckets.has(b): buckets[b] = []
+			(buckets[b] as Array).append(n)
+	if spill == INF or spill-POOL_FREEBOARD < bottom+0.15: return {}
+	var level := lerpf(bottom+0.15,spill-POOL_FREEBOARD,clampf(fill,0.0,1.0))
+	# The pond: the cells under the level joined to the pour's.
+	var cells := PackedInt32Array([seed_k])
+	var seen := {seed_k:true}
+	var i := 0
+	var rect := Rect2(origin+Vector2(seed_k%cols,seed_k/cols)*POOL_CELL,Vector2.ZERO)
+	while i < cells.size():
+		var k := cells[i]
+		i += 1
+		for o: Vector2i in [Vector2i(1,0),Vector2i(-1,0),Vector2i(0,1),Vector2i(0,-1)]:
+			var c := k%cols+o.x
+			var r := k/cols+o.y
+			if c < 0 or r < 0 or c >= cols or r >= rows: continue
+			var n := r*cols+c
+			if seen.has(n) or is_nan(h[n]) or h[n] >= level: continue
+			seen[n] = true
+			cells.append(n)
+			rect = rect.expand(origin+Vector2(c,r)*POOL_CELL)
+	return {"level":level,"spill":spill,"cells":cells,"seen":seen,"rect":rect.grow(POOL_CELL*2.0)}
+
+## The poured water's ponds: [{level, rect, seen, at}] (the file's
+## "waters", each found again on this land).
+func ponds() -> Array:
+	if _ponds_cache == null:
+		_ponds_cache = []
+		for w: Dictionary in data.get("waters",[]):
+			var a: Array = w.at
+			var p := pour(float(a[0]),float(a[1]),float(w.get("fill",0.7)))
+			if not p.is_empty():
+				p.at = Vector2(float(a[0]),float(a[1]))
+				(_ponds_cache as Array).append(p)
+	return _ponds_cache
+
+## The ponds' water sheets (KitWater.still) into `into`.
+func build_water(into: Node3D) -> void:
+	var g := _pool_grid()
+	var cols: int = g.cols
+	var origin: Vector2 = g.origin
+	var gf := ground_fn()
+	var poly := PackedVector2Array(outline())
+	var n := 0
+	for p: Dictionary in ponds():
+		var seen: Dictionary = p.seen
+		# Wet where the pond's cells are (and a cell round them, so the bank
+		# is drawn), on the land.
+		var inside := func(q: Vector2) -> bool:
+			var c := int(round((q.x-origin.x)/POOL_CELL))
+			var r := int(round((q.y-origin.y)/POOL_CELL))
+			for dr in range(-1,2):
+				for dc in range(-1,2):
+					if seen.has((r+dr)*cols+c+dc): return Geometry2D.is_point_in_polygon(q,poly)
+			return false
+		into.add_child(KitWater.still({"name":"Pond%d" % n,"level":float(p.level),"ground":gf,"rect":p.rect,"inside":inside}))
+		n += 1
+
+## Its water for the pilot to wade (the contract's, MotifIsle `_register`).
+func pools() -> Array:
+	var out: Array = []
+	for p: Dictionary in ponds(): out.append({"rect":p.rect,"top":float(p.level)})
+	return out
 
 # --- The pieces ---------------------------------------------------------------------
 
@@ -317,24 +1142,98 @@ static func seat(g: Callable, piece: Node3D, x: float, z: float, turn: float, si
 		low = minf(low,float(g.call(x+w.x,z+w.z)))
 	return low-sink
 
-## Piece `k` of the data built and seated, named "P<k>".
+## A piece's whole drawn box (every mesh, its own frame).
+static func drawn_box(piece: Node3D) -> AABB:
+	var out := AABB()
+	var first := true
+	for n: Node in piece.find_children("*","MeshInstance3D",true,false):
+		var m := n as MeshInstance3D
+		var frame := piece.global_transform.affine_inverse()*m.global_transform if piece.is_inside_tree() else m.transform
+		var b := frame*m.get_aabb()
+		out = b if first else out.merge(b)
+		first = false
+	return out
+
+## Piece `k` of the data built and seated, named "P<k>". A piece set onto
+## another's connector (its "on": {to, at (the other's frame), turn, stand})
+## follows that piece wherever the land puts it; "stand" keeps only its
+## place and turn (it stands on its own ground: a pier under an arch's
+## foot). A "fit" aqueduct piece grows its piers down to the ground under
+## it (scripts/ruin_kit_aqueduct.gd `ground`).
 func make_piece(k: int) -> Node3D:
 	var p: Dictionary = data.pieces[k]
-	var piece: Node3D = make(str(p.id),int(p.seed),float(p.get("weathered",0.0)))
-	if piece == null: return null
+	var pose := pose_of(k)
 	var at: Array = p.at
-	var turn := float(p.get("turn",0.0))
-	var y := seat(ground_fn(),piece,float(at[0]),float(at[2]),turn,float(p.get("sink",SINK)))
-	at[1] = y
+	var y: float = (pose[0] as Vector3).y
+	var turn: float = pose[1]
+	at[0] = snappedf((pose[0] as Vector3).x,0.001)
+	at[1] = snappedf(y,0.001)
+	at[2] = snappedf((pose[0] as Vector3).z,0.001)
+	if p.has("on"): p.turn = snappedf(turn,0.001)
+	var piece: Node3D = null
+	if bool(p.get("fit",false)) and str(p.id) in RuinKit.AQUEDUCT_PIECES:
+		piece = fitted(str(p.id),int(p.seed),float(p.get("weathered",0.0)),Transform3D(Basis(Vector3.UP,deg_to_rad(turn)),pose[0]))
+	else: piece = make(str(p.id),int(p.seed),float(p.get("weathered",0.0)))
+	if piece == null: return null
 	piece.name = "P%d" % k
-	piece.transform = Transform3D(Basis(Vector3.UP,deg_to_rad(turn)),Vector3(float(at[0]),y,float(at[2])))
+	piece.transform = Transform3D(Basis(Vector3.UP,deg_to_rad(turn)),pose[0])
 	return piece
 
-## Every piece into `holder`.
+## Where piece `k` stands: [Vector3, turn (deg)]: seated on the land, or on
+## the piece it was set onto (its "on").
+func pose_of(k: int, depth := 0) -> Array:
+	var p: Dictionary = data.pieces[k]
+	var at: Array = p.at
+	var turn := float(p.get("turn",0.0))
+	var on: Variant = p.get("on")
+	if on is Dictionary and int(on.to) >= 0 and int(on.to) < k and depth < 16:
+		var under := pose_of(int(on.to),depth+1)
+		var frame := Transform3D(Basis(Vector3.UP,deg_to_rad(float(under[1]))),under[0])
+		var local: Array = on.at
+		var w := frame*Vector3(float(local[0]),float(local[1]),float(local[2]))
+		turn = fposmod(float(under[1])+float(on.get("turn",0.0)),360.0)
+		if bool(on.get("stand",false)): w.y = _seat_y(p,w.x,w.z,turn)
+		return [w,turn]
+	return [Vector3(float(at[0]),_seat_y(p,float(at[0]),float(at[2]),turn),float(at[2])),turn]
+
+func _seat_y(p: Dictionary, x: float, z: float, turn: float) -> float:
+	var box := box_of(str(p.id),int(p.seed),float(p.get("weathered",0.0)))
+	var holder := Node3D.new()
+	holder.set_meta("seat_box",box)
+	var y := seat(ground_fn(),holder,x,z,turn,float(p.get("sink",SINK)))
+	holder.free()
+	return y
+
+## An aqueduct piece standing at `frame` (world), its piers grown down to
+## the land under it.
+func fitted(id_name: String, seed_value: int, weathered: float, frame: Transform3D) -> Node3D:
+	var g := ground_fn()
+	var local := func(x: float, z: float) -> float:
+		var w := frame*Vector3(x,0.0,z)
+		return float(g.call(w.x,w.z))-frame.origin.y
+	var Aq: GDScript = load("res://scripts/ruin_kit_aqueduct.gd")
+	match id_name:
+		"aqueduct_span": return Aq.span(seed_value,weathered,3,true,local)
+		"aqueduct_two_tier": return Aq.two_tier(seed_value,weathered,3,true,local)
+		"aqueduct_broken": return Aq.broken(seed_value,weathered,true,"stump",true,local)
+		"aqueduct_stump": return Aq.stump(seed_value,weathered,local)
+		"aqueduct_end": return Aq.head(seed_value,weathered,true,true,local)
+	return make(id_name,seed_value,weathered)
+
+## Every piece into `holder`, then the runs ("Run<k>", laid on the land
+## as it is now: scripts/ruin_kit_fit.gd `build_run`).
 func build_pieces(holder: Node3D) -> void:
 	for k in range((data.get("pieces",[]) as Array).size()):
 		var piece := make_piece(k)
 		if piece != null: holder.add_child(piece)
+	for k in range((data.get("runs",[]) as Array).size()):
+		var run := make_run(k)
+		if run != null: holder.add_child(run)
+
+func make_run(k: int) -> Node3D:
+	var node: Node3D = RuinKitFit.build_run(data.runs[k],ground_fn())
+	if node != null: node.name = "Run%d" % k
+	return node
 
 static var _drawn := {}
 static var _box_lock := Mutex.new()
@@ -373,12 +1272,7 @@ func start() -> Vector3:
 	return _marker("spawn")
 
 func summit() -> Vector3:
-	var hx := float(sliders().length)*0.5
-	var best := Vector3(0.0,-INF,0.0)
-	for k in range(-10,11):
-		var x := hx*k/10.0
-		if ground(x,0.0) > best.y: best = Vector3(x,ground(x,0.0),0.0)
-	return best
+	return _span().summit
 
 func parts() -> Array:
 	return []
@@ -411,8 +1305,16 @@ func spots() -> Array:
 	return []
 
 func flora_site() -> KitFlora.Site:
-	var site := KitFlora.Site.new(crest_top())
-	site.ray = Vector2(crest_top()+40.0,-float(sliders().relief)-4.0)
+	var wet := Callable()
+	var found := ponds()
+	if not found.is_empty():
+		wet = func(p: Vector2) -> bool:
+			for pond: Dictionary in found:
+				if (pond.rect as Rect2).has_point(p) and ground(p.x,p.y) < float(pond.level)+0.08: return true
+			return false
+	var site := KitFlora.Site.new(crest_top(),Callable(),wet)
+	site.ray = Vector2(crest_top()+40.0,float(_span().low)-4.0)
+	site.stable = true
 	return site
 
 func flora_seed() -> int:
@@ -431,6 +1333,8 @@ func warm() -> void:
 	for p: Dictionary in data.get("pieces",[]):
 		if TREES.has(str(p.id)): _tree_parts(str(p.id))
 	for p: Dictionary in data.get("pieces",[]): box_of(str(p.id),int(p.seed),float(p.get("weathered",0.0)))
+	crest_top()
+	ponds()
 
 ## Measured headless on this Mac (2026-10-14), the 64 x 40 m default with
 ## a few pieces.
@@ -477,7 +1381,7 @@ func _solids() -> Array:
 	var poly := PackedVector2Array(ring)
 	var box := Rect2(ring[0],Vector2.ZERO)
 	for p: Vector2 in ring: box = box.expand(p)
-	var keel := crest_top()-depth()*KEEL_REACH
+	var keel := keel_top()-depth()*KEEL_REACH
 	var x := box.position.x
 	while x < box.end.x:
 		var z := box.position.y
@@ -499,8 +1403,11 @@ func _solids() -> Array:
 		for corner: Vector3 in [b.position,b.position+Vector3(b.size.x,0,0),b.position+Vector3(0,0,b.size.z),b.position+Vector3(b.size.x,0,b.size.z)]:
 			var w := turn*corner
 			r = r.expand(Vector2(float(at[0])+w.x,float(at[2])+w.z))
-		var base := ground(float(at[0]),float(at[2]))
-		out.append([r,base-1.0,base+b.end.y,null])
+		var base := float(at[1]) if p.has("on") else ground(float(at[0]),float(at[2]))
+		out.append([r,minf(base,ground(float(at[0]),float(at[2])))-1.0,base+b.end.y,null])
+	for r: Dictionary in data.get("runs",[]):
+		var rb := RuinKitFit.run_box(r,ground_fn())
+		out.append([rb[0],rb[1],rb[2],null])
 	return out
 
 # --- The build (nodes only: a worker may run it) --------------------------------------
@@ -514,6 +1421,7 @@ func build(into: Node3D) -> void:
 	var land := build_land()
 	root.add_child(land)
 	turf(land)
+	build_water(root)
 	var holder := Node3D.new()
 	holder.name = "Pieces"
 	root.add_child(holder)

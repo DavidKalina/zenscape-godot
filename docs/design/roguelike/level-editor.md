@@ -89,6 +89,38 @@ Enough to rebuild the Rootbound Cut by hand and compare:
 - save and load the file; `motif_authored.gd` reads it and the yard stands
   it (`--motif=<slug>`).
 
+### What the user put first (2026-10-14, after round 1 was briefed)
+
+1. **Terrain above all.** Slopes, hills, mountains, ravines and bodies of
+   water, made really easily, and changing the landform's shape and
+   silhouette. This is round 2: brushes in the old tools' spirit (raise,
+   lower, smooth, flatten, carve a ravine along a stroke, pour water) over
+   KitLand isles, plus dragging the outline for the silhouette, alongside
+   more presets (mesa, mountain, gorge, crater).
+2. **Kit pieces that know how to fit.** Attach an aqueduct and it fits and
+   connects: each piece declares its connectors (an aqueduct span's two
+   ends, an arch's springers, a wall's ends, a rope bridge's anchors) and
+   the editor snaps a new piece onto a free connector, follows the ground,
+   and fills a run between two points with spans.
+3. **Load a motif, copy it, edit it.** The kit motifs and greybox motifs
+   saved as editor files (their land as a recipe, their pieces as placed
+   pieces), so any motif opens in the editor, duplicates and changes.
+
+### Round 3: the old game's UI (2026-10-14, the user's ask)
+
+"I want to be able to build the levels sort of like a game... we've
+already built so much of it." The early game's build UI comes back on the
+editor: the searchable palette with thumbnails rendered from the real
+meshes and drag-in ghosts (scripts/native_build_palette.gd), its tool
+roll and styling (hud_icons.gd, hud_linen.gd), the clay tools
+(scripts/clay_tools/: mountain, hills, crater, bowl, island, chisel, drawn
+line, can...) re-pointed from the old chunk heightfield to the editor's
+recipe data, so a ravine is drawn, a lake circled and filled, a landform
+stamped; and their feel (stroke_feedback.gd, clay_sound.gd,
+clay_tremor.gd). The landform generator stays as a panel of sliders in the
+top left, in the same styling. Pieces that know how to fit move to round 4,
+load/copy/edit to round 5.
+
 Later rounds: more presets, stamps and outline nudges, piece-to-piece
 snapping, rope bridges, traps and enemies with patrol paths, undo, the
 pilot-scale guides, optional pieces.
