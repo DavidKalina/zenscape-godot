@@ -1264,6 +1264,36 @@ func setup_roost(cam: Camera3D, pose: RefCounted) -> void:
 	roost = pose
 	roost.setup(self)
 
+## Where a host wants his head to look while nothing else holds it (no
+## pilot in his sight): a world point, INF for none.
+var gaze := Vector3.INF
+
+## Off his wake's takeoff and into the whole flight (the generator's
+## dragon, scripts/roguelike/layer_dragon.gd, docs/design/roguelike/
+## layer-round12-dragon.md): the roost left behind, the gale (his grip)
+## and the air blast (with `blast_on`) built, no treasure; `_step` flies
+## him from here on, his `route` the host's. `wake` is kept (still out),
+## so `awake` holds and the host shows him; it is no longer stepped.
+func go_live(sea: float, middle: Vector3, top: float, isle_list: Array) -> void:
+	sea_y = sea
+	home = middle
+	home_top = top
+	isles = isle_list
+	roost = null
+	taken = true
+	_attack_in = INF
+	if gale == null:
+		gale = DragonGale.new()
+		gale.sea_y = sea_y
+		add_child(gale)
+	if blast_on and air_blast == null:
+		air_blast = DragonAirBlast.new()
+		add_child(air_blast)
+	set_attack(attack)
+	state = "roaming"
+	model.visible = true
+	_t = 0.0
+
 ## Whether it is off its roost (or waking on it): its wake's to say.
 func awake() -> bool:
 	return wake != null and bool(wake.call("out"))
@@ -1733,6 +1763,11 @@ func _pose(delta: float) -> void:
 		# Suspicious or spotted: the head turns to the pilot, wider than
 		# to the camera, and fully.
 		var off := global_transform.affine_inverse()*track
+		look_goal = Vector2(clampf(atan2(-off.x,-off.z),-TRACK_YAW,TRACK_YAW),clampf(atan2(off.y,Vector2(off.x,off.z).length()),TRACK_PITCH.x,TRACK_PITCH.y))
+	elif gaze != Vector3.INF:
+		# A host's point to watch (the layer under his circuit): the head
+		# turned to it, down and in, as far as it turns.
+		var off := global_transform.affine_inverse()*gaze
 		look_goal = Vector2(clampf(atan2(-off.x,-off.z),-TRACK_YAW,TRACK_YAW),clampf(atan2(off.y,Vector2(off.x,off.z).length()),TRACK_PITCH.x,TRACK_PITCH.y))
 	elif camera != null and watch != "chase":
 		var eye := camera.global_position
