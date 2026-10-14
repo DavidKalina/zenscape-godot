@@ -15,6 +15,18 @@ that takes over a minute headless gets `## suite: slow`, and one with a timing b
 `tests/known_failures.txt` to get a run green. That file holds only failures
 the user has accepted, each with its reason.
 
+# The harness
+
+Before writing a tool, read `tools/README.md`. It has a ready-made tool for
+each of these: finding Godot and keeping the import fresh (`tools/godot.py`),
+the smoke check (`tools/smoke.py`), checks through the real play loop
+(`tools/harness/drive.gd` with `tools/drive.py`), seed and knob tables
+(`tools/sweep.py`), the generator's plan as data (`tools/layer_dump.gd`),
+rendered stills (`tools/shot.py`) and runs longer than the tool-call
+limit (`tools/bg.py`). `python tools/index.py <word>` finds the older
+one-off tools. Throwaway drivers go in `scratch/` (git-ignored). If a
+round needs a tool the harness lacks, say so in its handoff.
+
 # Running on Windows
 
 The user develops on a Mac and sometimes on a Windows PC. The `run-*.command`
@@ -24,7 +36,11 @@ PowerShell from the repo root:
 
 - Install Godot **4.7.2** standard (win64, not .NET), Python 3.13 and
   Blender, e.g. `winget install Python.Python.3.13 BlenderFoundation.Blender`
-  and Godot unzipped to `C:\Tools\Godot\`. Git LFS isn't needed.
+  and Godot unzipped to `C:\Tools\Godot\` or from winget. Git LFS isn't needed.
+  This PC has Godot from winget
+  (`%LOCALAPPDATA%\Microsoft\WinGet\Packages\GodotEngine.GodotEngine_*\`) and
+  Python as `python` (no `py`). The harness (`tools/godot.py`) finds either
+  Godot on its own; `python tools/godot.py --where` prints the one it uses.
 - Point the tools at Godot's **console** build (the plain `.exe` prints
   nothing to the terminal): `$env:GODOT = "C:\Tools\Godot\Godot_v4.7.2-stable_win64_console.exe"`.
   `tools/run_tests.py` reads `GODOT`; other tools take `--godot $env:GODOT`.
@@ -32,7 +48,7 @@ PowerShell from the repo root:
 - Play: `& $env:GODOT --path . --rendering-method forward_plus --windowed --resolution 1440x900 -- --no-title`.
   A study: put its scene after `--path .`, e.g. `studies/run_layer.tscn -- --shape=sprawl --seed=1`.
   A `run-*.command` file shows the scene and flags it launches.
-- Tests: `py tools/run_tests.py` (same flags as above).
+- Tests: `python tools/run_tests.py` (same flags as above).
 - Blender scripts: `& "C:\Program Files\Blender Foundation\Blender 5.2\blender.exe" -b --python art/blender/plane/plane_build.py`
   (or `blender` if it's on PATH).
 - The native terrain kernels are optional; without them the GDScript
