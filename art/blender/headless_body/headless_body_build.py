@@ -1418,33 +1418,52 @@ STEP = 0.66
 def _step_keys(n, s, lift, lead, lag):
     """A step of foot `n` (side `s`) turning toward the stepping foot's side
     (s = -1 left), `lift` m up, the hips `lead` deg ahead, the shoulders
-    `lag` deg behind. Twists are + left, so a left turn's lead is +."""
+    `lag` deg behind. Twists are + left, so a left turn's lead is +.
+
+    Olmec round 1 (docs/design/roguelike/olmec-turn-clip-round1.md): the
+    poses pushed so they read on a 10 m stone giant at play distance. The
+    weight goes well over onto the standing leg and he sinks into it (the
+    game holds this pose through a turn's lead-in); the foot comes up high,
+    knee forward, the hips swung into the turn, the shoulders and stump left
+    behind and the arms swinging with them; the foot comes down flat and
+    hard into a deep held squash, the shoulders and arms swinging on past;
+    then he rises and settles."""
     t = -s     # + turning left
     o = "R" if n == "L" else "L"
     keys = [
         (0.0, {}, ""),
-        (0.15, {"hx": -s * 0.28, "hy": -0.2, "sq": 0.97, "hr": -s * 3.0, "sr": -s * 3.0, "ht": -t * 3.0,
-                "ct": t * 2.0, f"k{n}p": -12.0}, ""),
-        (0.3, {f"k{n}y": lift, f"k{n}p": 6.0, f"k{n}x": 0.2, "ht": t * lead, "ct": -t * lag, "nt": -t * lag * 0.5,
-               "hy": -0.06, "sq": 1.02, "hx": -s * 0.3, "sp": 3.0, f"a{n}o": 19.0, f"a{o}p": 10.0}, ""),
-        (0.48, {f"k{n}y": lift * 0.5, f"k{n}p": 4.0, "ht": t * lead * 0.6, "ct": -t * lag * 0.25,
-                "nt": -t * lag * 0.2}, ""),
-        (0.6, {f"k{n}y": 0.0, f"k{n}p": 0.0, f"k{n}x": 0.16, "hy": -0.27, "sq": 0.95, "hx": -s * 0.08,
-               "ht": t * 2.0, "ct": t * lag * 0.4, "nt": t * lag * 0.4, "sp": 7.0, f"a{n}o": 13.0,
-               f"a{o}p": 4.0}, "i"),
-        (0.68, {"hy": -0.29, "sq": 0.945}, "h"),
-        (0.85, {"hy": -0.12, "sq": 1.0, "ct": t * 1.0, "nt": t * 1.0, "hx": -s * 0.02, "ht": 0.0,
-                f"k{n}x": 0.12, "sp": 5.0}, ""),
+        # Anticipation: the weight over onto the standing foot, sunk, the
+        # hips turned a little against the turn, the stepping heel up.
+        (0.15, {"hx": -s * 0.55, "hy": -0.42, "sq": 0.95, "hr": -s * 6.0, "sr": -s * 4.0, "cr": -s * 2.0,
+                "ht": -t * 4.0, "ct": t * 3.0, f"k{n}p": -10.0, f"k{n}y": 0.27,
+                f"a{n}o": 17.0, f"a{o}o": 8.0, "np": 4.0}, ""),
+        # The lift: the foot up high, knee forward, the hips swung into the
+        # turn and up off the standing leg; shoulders and stump left behind;
+        # the arms swung by them (the outside arm across, the inside out).
+        (0.32, {f"k{n}y": lift, f"k{n}z": 0.35, f"k{n}p": 10.0, f"k{n}x": 0.3, "ht": t * lead, "ct": -t * lag,
+                "nt": -t * lag * 0.6, "hy": 0.02, "sq": 1.04, "hx": -s * 0.5, "hr": -s * 3.0, "sr": -s * 2.0,
+                "sp": 2.0, f"a{n}o": 26.0, f"a{n}p": -10.0, f"e{n}": 20.0, f"a{o}p": 20.0, f"e{o}": 26.0}, ""),
+        (0.47, {f"k{n}y": lift * 0.55, f"k{n}z": 0.2, f"k{n}p": 6.0, "ht": t * lead * 0.7, "ct": -t * lag * 0.2,
+                "nt": -t * lag * 0.3, "hy": -0.08, "sq": 1.01, "hx": -s * 0.3}, ""),
+        # The plant: flat and hard, the weight dropped between the feet into
+        # a deep squash; the shoulders, stump and arms swing on past.
+        (0.6, {f"k{n}y": 0.0, f"k{n}z": 0.0, f"k{n}p": 0.0, f"k{n}x": 0.2, "hy": -0.5, "sq": 0.91, "hx": -s * 0.08,
+               "hr": 0.0, "sr": 0.0, "cr": 0.0, "ht": t * 3.0, "ct": t * lag * 0.6, "nt": t * lag * 0.6, "sp": 9.0,
+               "np": 3.0, f"a{n}o": 14.0, f"a{n}p": 12.0, f"e{n}": 22.0, f"a{o}p": -8.0, f"e{o}": 18.0}, "i"),
+        (0.7, {"hy": -0.52, "sq": 0.905}, "h"),
+        # Up and settled.
+        (0.86, {"hy": -0.1, "sq": 1.01, "ct": t * 1.0, "nt": t * 1.5, "hx": -s * 0.02, "ht": 0.0,
+                f"k{n}x": 0.12, "sp": 5.0, f"a{n}p": 6.0, f"a{o}p": 2.0}, ""),
         (1.0, {"_base": 1}, ""),
     ]
     return [(u * STEP, p, e) for u, p, e in keys]
 
 
-clip(Clip("turn_open_l", STEP, _step_keys("L", -1, 0.42, 10.0, 9.0)))
+clip(Clip("turn_open_l", STEP, _step_keys("L", -1, 0.8, 14.0, 10.0)))
 # The closing step: the right foot comes round under him, the weight on the
 # left (the turn still to the left: the leads keep their sign).
 clip(Clip("turn_close_l", STEP, [
-    (t, {c: (-x if c in ("ht", "ct", "nt") else x) for c, x in p.items()}, e) for t, p, e in _step_keys("R", 1, 0.36, 7.0, 6.0)
+    (t, {c: (-x if c in ("ht", "ct", "nt") else x) for c, x in p.items()}, e) for t, p, e in _step_keys("R", 1, 0.62, 10.0, 7.0)
 ]))
 clip(Mirror("turn_open_r", CLIPS[-2]))
 clip(Mirror("turn_close_r", CLIPS[-2]))

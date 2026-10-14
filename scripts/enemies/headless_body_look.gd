@@ -42,7 +42,10 @@ const CLIPS := ["idle","listen","walk","stride","climb","haul","spawn_haul","man
 ## Round 4: the turn steps (headless_body_steps.gd), blended over the trunk
 ## and legs only (the arms keep the clip under them), faded in and out fast.
 const TURNS := ["turn_open_l","turn_close_l","turn_open_r","turn_close_r"]
-const TURN_BONES := ["root","hips","spine","chest","neck","thigh.L","shin.L","foot.L","thigh.R","shin.R","foot.R"]
+## Olmec round 1: the upper arms and forearms too (they swing with the turn;
+## the hands keep the clip under them).
+const TURN_BONES := ["root","hips","spine","chest","neck","thigh.L","shin.L","foot.L","thigh.R","shin.R","foot.R",
+	"upper_arm.L","forearm.L","upper_arm.R","forearm.R"]
 const TURN_FADE := 0.06
 const Steps = preload("res://scripts/enemies/headless_body_steps.gd")
 ## The cut's stone and its glow.
@@ -181,6 +184,21 @@ func loop_time(clip: String, phase: float, per := 1.0) -> float:
 func wrist(side: String) -> Vector3:
 	return skeleton.global_transform*skeleton.get_bone_global_pose(_arm[side][2]).origin
 
+## The fingertips of `side` (the fingers' far end), global (Olmec round 1).
+func fingertip(side: String) -> Vector3:
+	var t := skeleton.global_transform*skeleton.get_bone_global_pose(_arm[side][3])
+	return t.origin+t.basis.y*0.72
+
+## The thumb's tip of `side`, global (Olmec round 1).
+func thumbtip(side: String) -> Vector3:
+	var b := skeleton.find_bone("thumb."+side)
+	var t := skeleton.global_transform*skeleton.get_bone_global_pose(b)
+	return t.origin+t.basis.y*0.5
+
+## The elbow of `side`, global.
+func elbow(side: String) -> Vector3:
+	return skeleton.global_transform*skeleton.get_bone_global_pose(_arm[side][1]).origin
+
 ## The shoulder of `side`, global.
 func shoulder(side: String) -> Vector3:
 	return skeleton.global_transform*skeleton.get_bone_global_pose(_arm[side][0]).origin
@@ -242,8 +260,8 @@ func _two_bone(bones: Array, target: Vector3, w: float, end: Basis, turn_end: bo
 
 ## Before the clips: the figure turned off `facing` and a turn step wanted
 ## (`mode` Steps.OFF, STAND or WALK; walking, `gait_u` its cycle's place).
-func turn(facing: float, mode: int, delta: float, gait_u := 0.0, striding := false) -> void:
-	steps.turn(facing,mode,delta,gait_u,striding)
+func turn(facing: float, mode: int, delta: float, gait_u := 0.0, striding := false, want := NAN) -> void:
+	steps.turn(facing,mode,delta,gait_u,striding,want)
 
 ## After the clips: the feet held or carried by IK.
 func plant_feet(delta: float) -> void:
@@ -259,6 +277,27 @@ func leg(side: String, target: Vector3, turn_by: float) -> void:
 	var bones: Array = _leg[side]
 	var foot := skeleton.get_bone_global_pose(bones[2]).basis
 	_two_bone(bones,skeleton.global_transform.affine_inverse()*target,1.0,Basis(Vector3.UP,turn_by)*foot,true)
+
+## The slab foot's sole corners (the build's foot block: 0.78 either side,
+## 1.44 ahead of the ankle to 0.72 behind, at the ground; model m).
+const SOLE := [Vector3(-0.78,0.0,-1.44),Vector3(0.78,0.0,-1.44),Vector3(-0.78,0.0,0.72),Vector3(0.78,0.0,0.72)]
+
+## The sole of `side`'s corners as posed (global; Olmec round 1).
+func sole(side: String) -> PackedVector3Array:
+	var b: int = _leg[side][2]
+	var rest := skeleton.get_bone_global_rest(b)
+	var pose := skeleton.global_transform*skeleton.get_bone_global_pose(b)*rest.affine_inverse()
+	var ankle := rest.origin
+	var out := PackedVector3Array()
+	for c: Vector3 in SOLE: out.append(pose*Vector3(ankle.x+c.x,c.y,ankle.z+c.z))
+	return out
+
+## How far the sole of `side` is under `floor_y` (global; 0 none): its
+## lowest corner as posed (Olmec round 1).
+func sole_under(side: String, floor_y: float) -> float:
+	var low := INF
+	for p: Vector3 in sole(side): low = minf(low,p.y)
+	return maxf(0.0,floor_y-low)
 
 ## Bone `bone` (a trunk bone) twisted `a` rad about its own length (+ left).
 func twist(bone: String, a: float) -> void:
