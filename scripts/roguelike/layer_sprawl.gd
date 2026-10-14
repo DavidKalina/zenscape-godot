@@ -290,7 +290,7 @@ static func _chain(plan: Dictionary, lean: Vector2, rng: RandomNumberGenerator) 
 		var isle: Dictionary = plan.isles[i]
 		if isle.role == "greed": continue
 		for s: Dictionary in isle.sockets:
-			if s.kind != "rim" or used.has(LayerPlan._key(i,s.name)) or float(s.run_up) < RIM_RUN_UP: continue
+			if s.kind != "rim" or used.has(LayerPlan._key(i,s.name)) or float(s.run_up) < RIM_RUN_UP or not LayerPlan.can_out(s,plan.knobs): continue
 			var f := Vector2((s.face as Vector3).x,(s.face as Vector3).z).normalized()
 			if f.dot(heading) < cos(deg_to_rad(RIM_FACING)): continue
 			if not (plan.ram as Dictionary).is_empty() and int(plan.ram.isle) == i and (plan.ram.at as Vector3).distance_to(s.at) < LayerPlan.RAM_CLEAR: continue

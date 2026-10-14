@@ -153,6 +153,7 @@ static func _make(seed_value: int, attempt: int, knobs: Dictionary) -> Dictionar
 	rng.seed = hash([seed_value,attempt,"ring"])
 	var k_all := LayerPlan.KNOBS.duplicate()
 	k_all.merge(knobs,true)
+	k_all.one_way = LayerPlan.one_way_for(int(k_all.one_way),attempt)
 	var plan := {"seed":seed_value,"attempt":attempt,"knobs":k_all,"shape":"ring","isles":[],"edges":[],"hoods":[],"gulfs":[],"route":[],"exit":{},
 		"spawn":{},"prize":{},"cannon":{},"ram":{},"void_y":0.0,"tubes":[],"problems":[]}
 	var n := int(k_all.get("ring",0))
@@ -227,7 +228,7 @@ static func _make(seed_value: int, attempt: int, knobs: Dictionary) -> Dictionar
 	var exit := {}
 	var exit_score := -INF
 	for s: Dictionary in plan.isles[gate_i].sockets:
-		if s.kind != "rim" or float(s.run_up) < GATE_RUN_UP: continue
+		if s.kind != "rim" or float(s.run_up) < GATE_RUN_UP or not LayerPlan.can_out(s,plan.knobs): continue
 		var f := Vector2((s.face as Vector3).x,(s.face as Vector3).z).normalized()
 		var score := f.dot(heading)*2.0+(s.at as Vector3).y*0.05+Vector2((s.at as Vector3).x,(s.at as Vector3).z).dot(heading)/25.0
 		if score > exit_score:
@@ -677,9 +678,9 @@ static func _fits(plan: Dictionary, a: int, b: int, used: Dictionary, rng: Rando
 	var ib: Dictionary = plan.isles[b]
 	var fits: Array = []
 	for ra: Dictionary in ia.sockets:
-		if ra.kind != "rim" or used.has(LayerPlan._key(a,str(ra.name))) or float(ra.run_up) < run_up: continue
-		for rb: Dictionary in ib.sockets:
-			if rb.kind != "rim" or used.has(LayerPlan._key(b,str(rb.name))) or float(rb.run_up) < run_up: continue
+		if ra.kind != "rim" or used.has(LayerPlan._key(a,str(ra.name))) or float(ra.run_up) < run_up or not LayerPlan.can_out(ra,plan.knobs): continue
+		for rb: Dictionary in LayerPlan.ins_of(ib.sockets.filter(func(s: Dictionary) -> bool: return s.kind == "rim"),plan.knobs):
+			if used.has(LayerPlan._key(b,str(rb.name))) or float(rb.run_up) < run_up: continue
 			var fa: Vector3 = ra.face
 			var fb: Vector3 = rb.face
 			if fa.dot(-fb) < cos(deg_to_rad(turn*2.0)): continue

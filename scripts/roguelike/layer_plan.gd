@@ -306,8 +306,10 @@ static func make(seed_value: int, knobs := {}) -> Dictionary:
 ## `greybox` ("" none, "all", or slugs comma separated) the greybox motifs
 ## in the pool, `greybox_force` (1) at least one a layer (scripts/kit_isle/
 ## greybox/registry.gd). `pool` ("motifs" or "classic") which pool the
-## layer draws from (`draw_pool`).
-const KNOBS := {"hoods":0,"gulf":0.0,"ride":"","rise":0.0,"arrows":-1,"viaduct":-1,"heads":-1,"bodies":1,"alternate":1,"ring":0,"greybox":"","greybox_force":1,"pool":"motifs"}
+## layer draws from (`draw_pool`). `one_way` (1 always, 0 never, -1 the
+## first ONE_WAY_TRIES attempts) whether the route keeps to greybox
+## motifs' ways in and out (`can_out`, `ins_of`).
+const KNOBS := {"hoods":0,"gulf":0.0,"ride":"","rise":0.0,"arrows":-1,"viaduct":-1,"heads":-1,"bodies":1,"alternate":1,"ring":0,"greybox":"","greybox_force":1,"pool":"motifs","one_way":-1}
 const KNOB_CHOICES := {"hoods":[0,1,2,3],"ride":["","serpent","ferry"],"pool":["motifs","classic"]}
 
 ## `--knob=key=value` arguments as the layer's knobs (unknown keys warned).
@@ -353,6 +355,7 @@ static func _make(seed_value: int, attempt: int, knobs: Dictionary) -> Dictionar
 	rng.seed = hash([seed_value,attempt,"layer"])
 	var k_all := KNOBS.duplicate()
 	k_all.merge(knobs,true)
+	k_all.one_way = one_way_for(int(k_all.one_way),attempt)
 	var plan := {"seed":seed_value,"attempt":attempt,"knobs":k_all,"isles":[],"edges":[],"hoods":[],"gulfs":[],"route":[],"exit":{},"spawn":{},
 		"prize":{},"cannon":{},"ram":{},"void_y":0.0,"tubes":[],"problems":[]}
 	# The neighbourhoods: the base's holds 1-2 motif isles, each other 2
@@ -380,6 +383,10 @@ static func _make(seed_value: int, attempt: int, knobs: Dictionary) -> Dictionar
 	# The greed isle: drawn, the smaller the likelier (never the hero, a
 	# landmark of the route).
 	var can: Array = motifs.filter(func(m: Dictionary) -> bool: return m.motif.role() != "hero")
+	# Nor one that runs one way (a greybox motif: its chain ends at a way
+	# out a dead end would leave unused), while another will do.
+	var two_way := can.filter(func(m: Dictionary) -> bool: return not one_way(m))
+	if not two_way.is_empty(): can = two_way
 	if can.is_empty(): can = motifs.duplicate()
 	var total_inv := 0.0
 	for m: Dictionary in can: total_inv += 1.0/_area(m)
@@ -498,7 +505,7 @@ static func _make(seed_value: int, attempt: int, knobs: Dictionary) -> Dictionar
 	var top: Dictionary = plan.isles[from]
 	var exit := {}
 	for s: Dictionary in top.sockets:
-		if s.kind != "rim" or used.has(_key(from,s.name)): continue
+		if s.kind != "rim" or used.has(_key(from,s.name)) or not can_out(s,plan.knobs): continue
 		if exit.is_empty() or (s.at as Vector3).y > (exit.at as Vector3).y: exit = s
 	if exit.is_empty():
 		plan.problems.append("no exit rim on %s" % top.id)
@@ -618,6 +625,35 @@ static func _draw(count: int, rng: RandomNumberGenerator, repeats := 1, knobs :=
 				if not probe.family() and int(drawn[pool[i][0]]) >= _most(str(pool[i][0]),repeats,knobs): pool.remove_at(i)
 				break
 	return picks
+
+## Attempts at a seed that keep to the ways (the `one_way` knob -1) before
+## the route may take a one-way motif either way (a motif's single way in,
+## facing one way, often won't fit; then it is better placed backwards
+## than the layer short).
+const ONE_WAY_TRIES := 20
+
+## A rim's way (a greybox motif's, motif_greybox.gd `sockets`): one marked
+## "in" is never left by, one marked "out" never come in at, so the route
+## runs a motif's chain forwards.
+static func can_out(s: Dictionary, knobs: Dictionary) -> bool:
+	return int(knobs.get("one_way",0)) <= 0 or str(s.get("way","")) != "in"
+
+## The rims of `rims` an edge may come in at: those marked "in" where any
+## is, else all but those marked "out".
+static func ins_of(rims: Array, knobs: Dictionary) -> Array:
+	if int(knobs.get("one_way",0)) <= 0: return rims
+	var marked := rims.filter(func(s: Dictionary) -> bool: return str(s.get("way","")) == "in")
+	return marked if not marked.is_empty() else rims.filter(func(s: Dictionary) -> bool: return str(s.get("way","")) != "out")
+
+## The `one_way` knob for an attempt: 1 or 0 as pinned, -1 the first
+## ONE_WAY_TRIES.
+static func one_way_for(knob: int, attempt: int) -> int:
+	return knob if knob >= 0 else (1 if attempt < ONE_WAY_TRIES else 0)
+
+## Whether an isle runs one way (its rims marked), so it belongs on the route,
+## not as the greed branch's dead end.
+static func one_way(m: Dictionary) -> bool:
+	return (m.own as Array).any(func(s: Dictionary) -> bool: return str(s.get("way","")) != "")
 
 static func _key(isle: int, rim: String) -> String:
 	return "%d/%s" % [isle,rim]
@@ -847,8 +883,8 @@ static func over_share(plan: Dictionary, b: Dictionary) -> float:
 static func _step(plan: Dictionary, from: int, m: Dictionary, kinds: Array, branch: String, used: Dictionary, rng: RandomNumberGenerator,
 		least := -INF, most := INF, hood := 0) -> Dictionary:
 	var a: Dictionary = plan.isles[from]
-	var outs: Array = a.own.filter(func(s: Dictionary) -> bool: return s.kind == "rim" and not used.has(_key(from,s.name)))
-	var ins: Array = m.own.filter(func(s: Dictionary) -> bool: return s.kind == "rim")
+	var outs: Array = a.own.filter(func(s: Dictionary) -> bool: return s.kind == "rim" and not used.has(_key(from,s.name)) and can_out(s,plan.knobs))
+	var ins: Array = ins_of(m.own.filter(func(s: Dictionary) -> bool: return s.kind == "rim"),plan.knobs)
 	# A family's way through: in at its entry, out at its exit (the ring).
 	if ins.any(func(s: Dictionary) -> bool: return s.name == "entry"): ins = ins.filter(func(s: Dictionary) -> bool: return s.name == "entry")
 	if from > 0 and outs.any(func(s: Dictionary) -> bool: return s.name == "exit"): outs = outs.filter(func(s: Dictionary) -> bool: return s.name == "exit")
@@ -1253,13 +1289,13 @@ static func _ram(plan: Dictionary, used: Dictionary) -> void:
 ## fits.
 static func _gulf(plan: Dictionary, hood_from: int, m: Dictionary, hood_to: int, width: float, ride: String, pinned: bool, used: Dictionary, rng: RandomNumberGenerator) -> Dictionary:
 	var began := Time.get_ticks_msec()
-	var ins: Array = m.own.filter(func(s: Dictionary) -> bool: return s.kind == "rim" and float(s.run_up) >= GULF_RUN_UP)
+	var ins: Array = ins_of(m.own.filter(func(s: Dictionary) -> bool: return s.kind == "rim" and float(s.run_up) >= GULF_RUN_UP),plan.knobs)
 	if ins.any(func(s: Dictionary) -> bool: return s.name == "entry"): ins = ins.filter(func(s: Dictionary) -> bool: return s.name == "entry")
 	var combos: Array = []
 	for i: int in plan.hoods[hood_from]:
 		var a: Dictionary = plan.isles[i]
 		for ra: Dictionary in a.own:
-			if ra.kind != "rim" or used.has(_key(i,ra.name)) or float(ra.run_up) < GULF_RUN_UP: continue
+			if ra.kind != "rim" or used.has(_key(i,ra.name)) or float(ra.run_up) < GULF_RUN_UP or not can_out(ra,plan.knobs): continue
 			for rb: Dictionary in ins:
 				if (ra.face as Vector3).dot(-(rb.face as Vector3)) < cos(deg_to_rad(GULF_TURN*2.0)): continue
 				combos.append([i,ra,rb])
