@@ -110,6 +110,62 @@ The square-up waits until he is within `FEEL_SQUARE` (0.3 rad) and in
 place, and takes at most `FEEL_WAIT` (0.8 s), then the 1 s beat runs.
 Cliff spawns skip the feel.
 
+### The top of a climb: a spring, not a haul (round 4b)
+
+The user played b20d2767 and still saw the shimmy. It was round 3's
+`haul` and `spawn_haul` loop: once he found the lip he inched up the face,
+heaving and scrabbling, until the lip was at his chest, and only then did
+the mantle fire. The haul is gone by default (knob `mantle_pull` = 1):
+
+1. **He climbs hand over hand** at full climb speed until his hands can
+   reach the lip (`_hang_h`, about 8.2 m under it at the default size).
+2. **The slap:** his hands slap up over the lip and come down on it, with
+   the dust and the knocked-off rocks as before.
+   - The hands turn over (from fingers up the face to fingers over the
+     top) only once they are up past the lip.
+   - Each wrist sits 0.65 m out from the face and 0.5 m over the top.
+3. **The hang:** he hangs still (the first pose of the `mantle_pull` clip,
+   the legs slack under him) until `PULL_AFTER` (0.55 s) after the hands
+   met the lip.
+4. **The pull-up mantle** (below): a tuck, a hard pull, let go, popped
+   past the lip, the heavy landing on top.
+
+A lip found low over his feet (within `neck_h` × 0.55) still gets the
+press-up at once.
+
+**The cliff spawn** (`spawn_haul`) goes the same way: up hand over hand,
+slap, hang, spring. Its entrance is still loud from the slap's dust and
+rocks and the far spawn's rumble, so I dropped the wild haul there too.
+
+`mantle_pull` = 0 brings back round 3's haul followed by the press-up.
+
+**Climb times** (isle study, fixed 60 fps, climb state only):
+
+| Climb | Round 3 haul + mantle | This round (spring) |
+|---|---|---|
+| Cliff spawn | 8.2 s + 1.4 s | 2.1 s + 1.4 s |
+| B, a typical climb | 12.3 s + 1.4 s | 6.2 s + 1.4 s, plus the feel beat (1.0 to 1.8 s) |
+| F | 7.9 s + 1.4 s | 1.9 s + 1.4 s |
+
+**Time to whole** in the isle study: 169.2 s with the spring. The earlier
+numbers for comparison:
+
+- round 3's code: 187.9 s
+- b20d2767: 190.5 s and 172.7 s
+
+Runs vary by several seconds because the route search is budgeted by
+wall-clock time.
+
+**Penetration** while hanging and mantling, checked as before (every 7th
+skinned vertex against the collision):
+
+- one frame (0.05 s) at the slap's start, with the forearms up to 0.6 m in
+  the corner as the clips cross-fade from the climb
+- after that: thumbs 0.1 to 0.15 m, and the fingers 0.2 m for a moment
+  during the pull
+- the release no longer clips: the arms are overhead as the hands let go,
+  then flung out and up
+
 ### The mantle (rewritten, two styles)
 
 The old shimmy is gone. Both styles take the same `mantle` time (1.4 s),
@@ -117,8 +173,8 @@ start and end where the old mantle did (`_mantle_from` to `_mantle_to`),
 and end in the same states (listen, or roam on a perch). They are the same
 with or without the head.
 
-- **Press-up (`mantle`, the default)**, from where the climb hands over:
-  hands on the lip, the lip about 3.6 m over his feet.
+- **Press-up (`mantle`)**, used for a lip low over his feet, or always with
+  `mantle_pull` = 0: hands on the lip, the lip about 3.6 m over his feet.
   1. Gather, 0 to 0.28 s: he sinks, the elbows bend and the stump bows.
   2. Press, 0.28 to 0.5 s: a hard press down through the arms pops him
      up, the legs driving down. The hands leave the lip at the top of the
@@ -128,35 +184,36 @@ with or without the head.
   4. Land at 0.92 s: a squash of 0.77, held. The shockwave, a dust plume,
      a quake and a step sound fire now, not at the state's end.
   5. A rebound, the settle and the recovery until 1.4 s.
-- **Pull-up (`mantle_pull`, knob `mantle_pull` = 1):**
-  1. He pulls as soon as his hands have hung on a lip over his head for
-     `PULL_AFTER` (0.45 s).
-  2. A tuck, a hard pull that brings his chest to the lip, let go, popped
-     on past it with the feet swung under him.
+- **Pull-up (`mantle_pull`, the default since round 4b):**
+  1. From the still hang.
+  2. A tuck, a hard pull that brings his chest to the lip, let go (the arms
+     overhead), popped on past it with the arms flung out and up and the
+     feet swung under him.
   3. The same landing, at 0.95 s.
-  - He mantles from lower, so the climb is shorter: about 4 m less climbed
-    at haul speed. That changes his timing, which is why it is off by
-    default.
 - **The hands** are pinned to the real lip by IK through the gather and
   the press, then let go.
   - The wrists sit 0.65 m out from the face and 0.5 m over the top (the
     build's `LIP_OUT`), the palm down and fingers flat.
   - So the forearm runs up the face outside it, and the hand lies over
     the edge instead of through the corner.
-- **Why press is the default:**
-  - It keeps the climb exactly as it was, so routes and timing hold.
-  - Its clipping measured lowest (see "What was verified").
-  - The pull-up reads well too, maybe more dramatically (a clear hang,
-    pull and pop), but it shortens the climb and its hands clip more at
-    the hang and the release.
-  - Both are captured. The user may prefer the pull-up.
+- **Why the pull-up is the default now:**
+  - It starts from where his hands first reach the lip, so there's no haul
+    left to see.
+  - It reads as a clean hang, pull, pop and land. Rendered side and
+    three-quarter captures of all three climbs in the isle study show it.
+  - Its hand clipping is fixed: the legs hang slack off the face, the arms
+    are overhead at the release, and the hands turn over only above the
+    lip.
+  - In b20d2767, the press was the default because it kept round 3's haul
+    timing.
 
 ## Knobs
 
 | Knob / constant | Default | What |
 |---|---|---|
 | `feel` (knob) | 1.0 s | The wall-feel beat. 0 skips it. Squaring up first adds up to `FEEL_WAIT` = 0.8 s |
-| `mantle_pull` (knob) | 0 | 1 uses the pull-up mantle |
+| `mantle_pull` (knob) | 1 | 1: climb till the hands reach the lip, slap, hang still, pull-up spring. 0: round 3's haul, then the press-up |
+| `PULL_AFTER` | 0.55 s | The slap (0.32 s) and the still hang before the pull |
 | `listen` (knob) | 2.6 s | Unchanged. The still listen clip scales to it |
 | `Steps.STEP`, `HOLD` | 0.66 s, 0.1 s | A turn step and its held beat (the clip is made for 0.66) |
 | `Steps.TRIGGER`, `MOST` | 0.14 rad, 0.8 rad | Lag before a step; the most one step turns |
@@ -164,7 +221,6 @@ with or without the head.
 | `Steps.LEAD`, `LAG`, `LEAN` | 0.12 s, 0.16, 0.1 | Walking turns: the hips' lead, the shoulders' lag, the lean |
 | `FEEL_BACK`, `FEEL_PALM`, `FEEL_TOE` | 0.5, 0.9, 1.6 m | Feel clearances (model metres) |
 | `FEEL_SQUARE`, `FEEL_WAIT`, `FEEL_EASE` | 0.3 rad, 0.8 s, 2 m/s | Square-up before the feel |
-| `PULL_AFTER` | 0.45 s | Pull-up: how long he hangs on the lip before pulling |
 
 ## The pipeline without Blender
 

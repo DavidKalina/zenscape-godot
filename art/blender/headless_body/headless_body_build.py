@@ -1261,17 +1261,18 @@ clip(Clip("mantle", MANTLE, _mk([
 
 clip(Clip("mantle_pull", MANTLE, _mk([
     # From the hang: hands on the lip over his head, legs on the face.
-    (0.0, {"hy": -0.1, "sp": -2.0, "cp": -6.0, "np": -12.0, "kLy": 0.9, "kRy": 0.8, "kLz": WALL_ANKLE - 0.15,
-           "kRz": WALL_ANKLE - 0.15}, ""),
+    (0.0, {"hy": -0.1, "sp": -4.0, "cp": -6.0, "np": -12.0, "kLy": 0.35, "kRy": 0.25, "kLz": -0.3,
+           "kRz": -0.3, "kLp": -10.0, "kRp": -10.0}, ""),
     # The gather: knees tucked, the stump tipped up at the lip.
     (0.18, {"hy": 0.1, "sq": 0.94, "sp": -4.0, "cp": -6.0, "np": -18.0, "kLy": 1.3, "kRy": 1.3, "kLz": -0.6,
             "kRz": -0.6, "kLp": 15.0, "kRp": 15.0}, "h"),
     # The pull: chest to the lip, the legs kicked down and straight.
     (0.4, {"hy": 0.2, "sq": 1.08, "sp": -12.0, "cp": -10.0, "np": -8.0, "kLy": 0.1, "kRy": 0.1, "kLz": -0.4,
-           "kRz": -0.4, "kLp": -30.0, "kRp": -30.0}, ""),
+           "kRz": -0.4, "kLp": -30.0, "kRp": -30.0, "aLp": 150.0, "aRp": 150.0, "aLo": 25.0, "aRo": 25.0,
+           "eL": 20.0, "eR": 20.0, "fL": 30.0, "fR": 30.0}, ""),
     # Let go and popped: arms flung up and out, knees up under him.
     (0.5, {"hy": 0.1, "sq": 1.0, "sp": 18.0, "cp": 6.0, "np": 8.0, "kLy": 1.8, "kRy": 1.8, "kLz": 0.3,
-           "kRz": 0.3, "kLp": 10.0, "kRp": 10.0, "aLp": -10.0, "aRp": -10.0, "aLo": 60.0, "aRo": 60.0, "eL": 40.0,
+           "kRz": 0.3, "kLp": 10.0, "kRp": 10.0, "aLp": 70.0, "aRp": 70.0, "aLo": 65.0, "aRo": 65.0, "eL": 40.0,
            "eR": 40.0, "fL": 85.0, "fR": 85.0}, "o"),
     (0.6, {"kLy": 1.7, "kRy": 1.7, "aLo": 54.0, "aRo": 54.0}, "h"),
     (0.64, {"hy": -0.05, "sq": 1.05, "sp": 10.0, "np": 2.0, "kLy": 0.35, "kRy": 0.3, "kLz": 0.15, "kRz": -0.05,

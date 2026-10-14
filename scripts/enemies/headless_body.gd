@@ -172,6 +172,8 @@ var _feel_hit := {}
 ## This mantle a pull-up (round 4), and its landing come.
 var _pull := false
 var _mantle_landed := false
+## Hanging from the lip, still, before the pull (round 4, `mantle_pull`).
+var _hang := false
 ## When its feel began (s into the state; -1 while it still steps round to
 ## the wall: it squares up first, FEEL_WAIT s at most).
 var _feel_from := -1.0
@@ -222,10 +224,12 @@ func default_knobs(n: Dictionary) -> Dictionary:
 		# Round 4 (headless-body-round4-anim-polish.md): before a climb it
 		# feels the wall, a hand laid flat on it, `feel` s (0 skips it).
 		"feel":1.0,
-		# Round 4: over the lip by a press-up from the climb's end (0), or
-		# (1) by a pull-up as soon as its hands are on a lip over its head
-		# (a shorter climb, the same mantle time).
-		"mantle_pull":0,
+		# Round 4: over the lip. 1: no haul. It climbs hand over hand till
+		# its hands reach the lip, slaps them onto it, hangs still a beat
+		# (PULL_AFTER s) and springs up by a pull-up (a lip low over its
+		# feet, by a press-up). 0: round 3's haul up the face till the lip
+		# is at its chest, then the press-up.
+		"mantle_pull":1,
 	}
 
 ## Its build (m) from its knobs `k` and the walker's `unit`, as `_size` and
@@ -682,8 +686,12 @@ func _climb(delta: float) -> void:
 	var past := _face_pt+fwd*float(knobs.lip_in)
 	var lip := _cast(Vector3(past.x,position.y+reach,past.z),Vector3(past.x,position.y+float(knobs.step),past.z))
 	_lip_y = (lip.position as Vector3).y if not lip.is_empty() and (lip.normal as Vector3).y > 0.6 else INF
-	if _lip_y != INF and (_lip_y-position.y <= neck_h*0.55 or (float(knobs.mantle_pull) > 0.5 and _haul_t >= PULL_AFTER)):
+	# Round 4: springing, it hangs once its hands can reach the lip (and
+	# climbs on hand over hand till then).
+	_hang = _springs() and _lip_y != INF and _lip_y-position.y <= _hang_h()
+	if _lip_y != INF and (_lip_y-position.y <= neck_h*0.55 or (_hang and _haul_t >= PULL_AFTER)):
 		_pull = _lip_y-position.y > neck_h*0.55
+		_hang = false
 		_mantle_landed = false
 		_mantle_from = position
 		# In over the lip, short of a wall over it (a stair's tread, a
@@ -708,19 +716,20 @@ func _climb(delta: float) -> void:
 	if position.y-_climb_from > float(knobs.climb_max):
 		_fall()
 		return
-	if _lip_y != INF: _haul_t += delta
+	if _hauling(): _haul_t += delta
 	else:
 		_haul_t = 0.0
 		_grab_t = -1.0
 	var rise := float(knobs.climb)*delta*(float(knobs.haul) if _lip_y != INF else 1.0)
+	if _springs(): rise = 0.0 if _hang else float(knobs.climb)*delta
 	position.y += rise
 	var was := _phase
 	_phase += rise/(arm_l*0.45)
 	if int(was) != int(_phase):
 		field.sound(&"body_grip",position+Vector3.UP*(neck_h+arm_l*0.6))
-		if _lip_y == INF: _grip_dust(int(_phase))
+		if not _hauling(): _grip_dust(int(_phase))
 	# Hauling, its feet scrabble on the face.
-	if _lip_y != INF and int((_haul_t-delta)/0.45) != int(_haul_t/0.45):
+	if _lip_y != INF and not _springs() and int((_haul_t-delta)/0.45) != int(_haul_t/0.45):
 		var feet := position+fwd*(length*0.5)+Vector3.UP*hh*0.3
 		var tk := _tell_k()
 		Dust.puff(field,feet,hh*1.0*tk,-fwd)
@@ -775,12 +784,28 @@ func _mantle(delta: float) -> void:
 			return
 		_go("listen")
 
+## Round 4: whether it springs over lips (`mantle_pull`), hangs now, and
+## from how high under the lip it hangs (its hands on it, 0.5 m over the
+## top and LIP_OUT out from the face, the arms all but straight).
+func _springs() -> bool:
+	return float(knobs.mantle_pull) > 0.5
+
+func _hauling() -> bool:
+	return _hang if _springs() else _lip_y != INF
+
+func _hang_h() -> float:
+	var k := look.k
+	var r := look.arm_reach()*0.97
+	var side := 1.6*k
+	var out := (length*0.5+float(knobs.standoff))-0.65*k
+	return neck_h*0.927+sqrt(maxf(r*r-side*side-out*out,0.0))-0.5*k
+
 ## Round 4: the mantle's rise at `k` (a share of from its start to the top;
 ## over 1 at the top of the pop), the build's `mantle_up`.
 const LAND_K := 0.66
 const PULL_LAND_K := 0.68
 ## Pull-ups: hanging this long (s) with its hands on the lip, it pulls.
-const PULL_AFTER := 0.45
+const PULL_AFTER := 0.55
 static func _mantle_up(k: float, pull: bool) -> float:
 	if not pull:
 		if k < 0.2: return -0.07*smoothstep(0.0,0.2,k)
@@ -1432,7 +1457,8 @@ func _animate(delta: float) -> void:
 			look.want(gait,look.loop_time(gait,_phase,2.0),m)
 			look.want("idle",idle,1.0-m)
 		"climb":
-			if _lip_y == INF: look.want("climb",look.loop_time("climb",_phase,2.0))
+			if _springs() and _hang: look.want("mantle_pull",0.0)
+			elif not _hauling(): look.want("climb",look.loop_time("climb",_phase,2.0))
 			else:
 				var clip := "spawn_haul" if spawned_on_cliff else "haul"
 				look.want(clip,fposmod(_haul_t,float(look.lengths[clip])))
@@ -1479,7 +1505,7 @@ func _hands(delta: float) -> void:
 	var k := look.k
 	match state:
 		"climb":
-			if _lip_y == INF:
+			if not _hauling():
 				var face := position+fwd*(length*0.5+float(knobs.standoff))
 				for side in ["L","R"]:
 					var w := look.wrist(side)
@@ -1490,6 +1516,7 @@ func _hands(delta: float) -> void:
 			var lip := Vector3(_face_pt.x,_lip_y,_face_pt.z)
 			var reach := look.arm_reach()
 			var lift := 0.0
+			if _grab_t < 0.0 and _springs(): _grab_t = 0.0
 			if _grab_t < 0.0:
 				var near := look.shoulder("L").distance_to(lip+Vector3.UP*0.42*k-right*1.5*k)
 				if near <= reach*1.02: _grab_t = 0.0
@@ -1508,10 +1535,20 @@ func _hands(delta: float) -> void:
 					var tk := _tell_k()
 					Dust.plume(field,lip,hh*2.2*tk)
 					Dust.rocks(field,lip-fwd*0.6,-fwd,10,hh*0.14*tk)
-			var w := smoothstep(0.0,0.2,_haul_t)
+			# Springing, the hands are the slap's at once (the clips' blend from
+			# the climb would swing them through the lip's corner).
+			var w := smoothstep(0.0,0.05 if _springs() else 0.2,_haul_t)
 			for side in ["L","R"]:
 				var s := -1.0 if side == "L" else 1.0
 				var at := lip+fwd*0.35*k+right*s*1.5*k+Vector3.UP*(0.42*k+lift)
+				# Springing, hung as the pull-up starts (the mantle's hands).
+				if _springs():
+					at = lip-fwd*0.65*k+right*s*1.7*k+Vector3.UP*(0.5*k+lift)
+					# The hand turns over (fingers up the face to over the top)
+					# only once it is up past the lip: it never sweeps into it.
+					var over := smoothstep(0.06,0.16,maxf(_grab_t,0.0))
+					look.reach(side,at,w,Vector3.UP.slerp(fwd,over).normalized(),fwd.slerp(Vector3.DOWN,over).normalized())
+					continue
 				look.reach(side,at,w,fwd,Vector3.DOWN)
 		"feel":
 			# The palm flat on the real face, where the clip's wrist is.
