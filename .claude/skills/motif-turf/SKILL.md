@@ -42,6 +42,15 @@ change `motif_greybox.gd` for one motif.
      Olmec basalt (vertex colour as the head's, rest place in UV/UV2, a lit
      rune band via CUSTOM0/1). RuinKit pieces where the kit has the right
      size (a tomb chest); pieces it lacks stay labelled stand-ins.
+   - Build from the kit, not motif-local geometry. GDScript runs one thread
+     at a time across the process, so isles only build in parallel where
+     the work is in the kit's shared paths (RuinKit, KitLand, ruin_lod,
+     late_shapes), which `perf/native-isles` moves into C++ kernels for
+     every motif at once. A motif's own script stays light: layout and
+     placement. Heavy bespoke geometry (long loops over vertices, strands,
+     scatter) becomes a new kit piece any motif can reuse, or gets its own
+     kernel. Don't leave it in the motif. No work per shader parameter on a
+     worker either: each one waits a rendered frame.
 3. Keep the greybox's distances. Measure, don't assume: a throwaway probe
    (build the motif alone, raycast) for tier heights and edges. What the
    kit moves: the outline is resampled with ±0.35 m wobble, so an island's
@@ -73,5 +82,6 @@ change `motif_greybox.gd` for one motif.
    watchdog-closed; AGENTS.md, Test execution).
 7. Assess docs/art/model-budget.md for the new geometry (AGENTS.md,
    Models): count triangles per part from the built node, collision shapes,
-   build ms. Adding it to the generator's baked POOL is a separate step the
+   build ms (and how much of it is the motif's own GDScript rather than the
+   kit's). Adding it to the generator's baked POOL is a separate step the
    user asks for. Uncommitted until the user locks it in.
