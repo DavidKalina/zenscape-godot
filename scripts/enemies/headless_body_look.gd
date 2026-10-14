@@ -38,7 +38,7 @@ const STRIDE_STEP := 0.68
 const CLIMB_RISE := 0.99
 const CLIPS := ["idle","listen","walk","stride","climb","haul","spawn_haul","mantle","windup",
 	"jump_air","drop_air","land","drop_land","reach","triumph","feel","mantle_pull",
-	"turn_open_l","turn_close_l","turn_open_r","turn_close_r"]
+	"turn_open_l","turn_close_l","turn_open_r","turn_close_r","scope_lift","scope_look","scope_lower"]
 ## Round 4: the turn steps (headless_body_steps.gd), blended over the trunk
 ## and legs only (the arms keep the clip under them), faded in and out fast.
 const TURNS := ["turn_open_l","turn_close_l","turn_open_r","turn_close_r"]
@@ -174,6 +174,12 @@ func advance(delta: float, fade: float) -> void:
 	_want.clear()
 	_tree.advance(delta)
 
+## How much of the pose the turn steps hold now (0 none).
+func turn_weight() -> float:
+	var w := 0.0
+	for c: String in TURNS: w += float(_weights[c])
+	return w
+
 ## Loops: where `phase` (in loop units, one loop each `per` of it) falls in `clip`.
 func loop_time(clip: String, phase: float, per := 1.0) -> float:
 	return fposmod(phase/per,1.0)*float(lengths[clip])
@@ -308,6 +314,11 @@ func twist(bone: String, a: float) -> void:
 func lean(bone: String, a: float) -> void:
 	var b := skeleton.find_bone(bone)
 	skeleton.set_bone_pose_rotation(b,skeleton.get_bone_pose_rotation(b)*Quaternion(Vector3.BACK,a))
+
+## Bone `bone` (a trunk bone) pitched `a` rad forward (Olmec periscope).
+func pitch(bone: String, a: float) -> void:
+	var b := skeleton.find_bone(bone)
+	skeleton.set_bone_pose_rotation(b,skeleton.get_bone_pose_rotation(b)*Quaternion(Vector3.RIGHT,-a))
 
 ## A hand's global frame (skeleton space) with its fingers along `fingers`
 ## and its palm facing `palm`: the rest frame turned so its fingers (down)
