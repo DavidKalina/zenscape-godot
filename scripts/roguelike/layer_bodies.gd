@@ -67,12 +67,17 @@ static var _build_lock := Mutex.new()
 ## (HeadlessBody `_drop_ok`), so they don't strand themselves on the spurs
 ## and ledges down the isles' cliffs.
 ## Whole, its hunt is on (whole-body-chase-round1.md): `--body-chase=0`
-## turns it off (not a plan knob: those are layer_plan.gd's).
+## turns it off (not a plan knob: those are layer_plan.gd's). Any body knob
+## by `--body-knob=<knob>=<value>`, as the studies take it (e.g.
+## `--body-knob=leap_grab=1`).
 static func knobs(n: Dictionary) -> Dictionary:
-	var chase := 1.0
+	var out := {"drop_under":float(n.unit)*3.0,"chase":1.0}
 	for arg in preload("res://scripts/launch_args.gd").user_args():
-		if arg.begins_with("--body-chase="): chase = float(arg.get_slice("=",1))
-	return {"drop_under":float(n.unit)*3.0,"chase":chase}
+		if arg.begins_with("--body-chase="): out.chase = float(arg.get_slice("=",1))
+		elif arg.begins_with("--body-knob="):
+			var pair := arg.trim_prefix("--body-knob=")
+			out[pair.get_slice("=",0)] = float(pair.get_slice("=",1))
+	return out
 
 ## The spawn rules for a plan's knobs: SPAWN, then its `spawn_<rule>`s.
 static func spawn_rules(plan_knobs: Dictionary) -> Dictionary:
