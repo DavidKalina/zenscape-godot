@@ -65,18 +65,37 @@ const POOL := [
 ## `pool` knob, `draw_pool`).
 const KEPT := ["sundered_gorge"]
 
-## The pool a layer draws from, by its `pool` knob: "motifs" (the default,
-## a prototype: docs/design/roguelike/greybox-pool.md) the kit motifs in
-## KEPT and every greybox motif (or those the `greybox` knob names);
-## "classic" POOL, and the greybox motifs its `greybox` knob asks for (none
-## by default).
+## The pool a layer draws from, by its `pool` knob (mix and match, to see
+## what works; docs/design/roguelike/greybox-pool.md):
+## - "motifs" (the default, a prototype): the kit motifs in KEPT and every
+##   greybox motif (or those the `greybox` knob names);
+## - "classic": POOL, and the greybox motifs the `greybox` knob asks for
+##   (none by default), the pool as it was;
+## - "all": POOL and every greybox motif;
+## - a list (comma or "+" separated): any of POOL's ids
+##   and the greybox slugs (`gb_` optional), e.g.
+##   `--knob=pool=sundered_gorge+sunken_giant+plumb_well`.
 static func draw_pool(knobs := {}) -> Array:
-	if str(knobs.get("pool","motifs")) == "classic":
-		var extra := Greybox.entries(knobs)
-		return POOL if extra.is_empty() else POOL+extra
-	var kept := POOL.filter(func(p: Array) -> bool: return KEPT.has(str(p[0])))
-	var asked := Greybox.entries(knobs)
-	return kept+(asked if not asked.is_empty() else Greybox.entries({"greybox":"all"}))
+	var asked := str(knobs.get("pool","motifs")).strip_edges()
+	match asked:
+		"classic":
+			var extra := Greybox.entries(knobs)
+			return POOL if extra.is_empty() else POOL+extra
+		"motifs", "":
+			var kept := POOL.filter(func(p: Array) -> bool: return KEPT.has(str(p[0])))
+			var wanted := Greybox.entries(knobs)
+			return kept+(wanted if not wanted.is_empty() else Greybox.entries({"greybox":"all"}))
+		"all":
+			return POOL+Greybox.entries({"greybox":"all"})
+	var out: Array = []
+	var greys := PackedStringArray()
+	for word: String in asked.replace(",","+").split("+",false):
+		var id := word.strip_edges()
+		var kit := POOL.filter(func(p: Array) -> bool: return str(p[0]) == id)
+		if not kit.is_empty(): out.append(kit[0])
+		else: greys.append(id)
+	if not greys.is_empty(): out += Greybox.entries({"greybox":",".join(greys)})
+	return out
 
 ## How many times a pool pick may come a layer (one not a family; a
 ## greybox motif once, or `repeats` in the "motifs" pool, which has no
