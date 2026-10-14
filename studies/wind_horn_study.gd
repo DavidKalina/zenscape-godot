@@ -7,7 +7,9 @@ extends "res://studies/character_study.gd"
 ## onto the pedestal and its cap (the standable top).
 ##   P  knock it out for DISABLE s (slumps, grinds back up)
 ##   1  in front of it (R comes back)   2  30 m out   3  on the pedestal
-## Knobs: --horn-weathered=<0..1> (0.4), --horn-seed=<n> (1).
+## Knobs: --horn-weathered=<0..1> (0.4), --horn-seed=<n> (1). `--blow`: the
+## real blow (docs/design/roguelike/wind-horn-blows.md): it watches you and
+## gusts you when it notices you (run, hop, splash); creep past it unseen.
 ##   ./run-wind-horn.command
 const Horn = preload("res://scripts/ruin_kit_horn.gd")
 
@@ -23,12 +25,15 @@ var horn_seed := 1
 var horn: Node3D
 var rig: Node
 var _cycle := 0.0
+var blow := false
+var _watching := false
 
 func _ready() -> void:
 	pack = "wind_horn"
 	for arg in preload("res://scripts/launch_args.gd").user_args():
 		if arg.begins_with("--horn-weathered="): horn_weathered = clampf(arg.get_slice("=",1).to_float(),0.0,1.0)
 		elif arg.begins_with("--horn-seed="): horn_seed = arg.get_slice("=",1).to_int()
+		elif arg == "--blow": blow = true
 	super._ready()
 
 func _load_pack() -> void:
@@ -52,6 +57,11 @@ func _build_room() -> void:
 func _process(delta: float) -> void:
 	super._process(delta)
 	if rig == null or not walk_ready: return
+	if blow:
+		if not _watching:
+			rig.watch(motor)
+			_watching = true
+		return
 	rig.aim_at(motor.feet+Vector3(0.0,0.6,0.0),delta)
 	if rig.is_disabled():
 		_cycle = 0.0
@@ -73,4 +83,5 @@ func _unhandled_input(event: InputEvent) -> void:
 	super._unhandled_input(event)
 
 func _hint_text() -> String:
+	if blow: return "Wind-horn (blowing) · run or hop in its sight: it draws breath and gusts you · creep (light stick) to pass unseen · P knock it out · 1 front · 2 30 m out · 3 pedestal · R start · F1 numbers · Esc mouse"
 	return "Wind-horn · it tracks you, draws breath and blows · climb the pedestal and its cap · P knock it out · 1 front · 2 30 m out · 3 pedestal · R start · F1 numbers · Esc mouse"

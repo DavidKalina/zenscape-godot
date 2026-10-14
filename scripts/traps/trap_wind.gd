@@ -14,7 +14,9 @@ extends "res://scripts/traps/trap.gd"
 ##     The plate re-arms `rearm` s after the blast. A blast is pressurized
 ##     air, not a breeze: the first frame he is in a firing mouth's zone it
 ##     knocks him (PilotMotor.knock, a tumble) `blast_out` m across and
-##     `blast_up` m up, out of a hang or the sail too; once per blast.
+##     `blast_up` m up, out of a hang, a swim or the sail too; once per
+##     blast. The knock is the shared gust (scripts/traps/gust.gd), the
+##     wind horn's too.
 ## A mouth's wind is a zone `reach` either side of it along the lane, as
 ## wide as the deck and `throw` past it, pushing at `force` (m/s; harder than
 ## the run, so steering cannot hold against it). It goes out through
@@ -28,6 +30,7 @@ extends "res://scripts/traps/trap.gd"
 ## `force` (run x 1.3), `throw`, `on`, `off`, `tell`, `stagger`, `delay`,
 ## `blast_time`, `rearm`, `plate_at`, `plate_len`, `lead`, `spread` (how far
 ## from the aim, in mouth spacings, a mouth fires).
+const Gust = preload("res://scripts/traps/gust.gd")
 const STONE := Color(0.42,0.41,0.4)
 const MOUTH := Color(0.12,0.12,0.13)
 const DECK := Color(0.5,0.49,0.47)
@@ -72,11 +75,15 @@ func _init() -> void:
 func defaults() -> Dictionary:
 	var p := pilot()
 	var reach := p.run*0.25
-	return {
+	var out := {
 		"mode":"vent","count":3,"reach":reach,"width":p.run*0.6,"force":p.run*1.3,"throw":p.run*1.5,
 		"on":1.0,"off":4.0,"tell":0.3,"stagger":1.0,
-		"delay":0.5,"blast_time":0.3,"rearm":2.0,"blast_out":p.run*3.0,"blast_up":p.run*0.25,"plate_at":reach,"plate_len":p.walk*0.5,"lead":0.0,"spread":0.6,
+		"plate_at":reach,"plate_len":p.walk*0.5,"lead":0.0,"spread":0.6,
 	}
+	# The blast's knobs (delay, blast_time, rearm, blast_out, blast_up): the
+	# shared gust's.
+	out.merge(Gust.defaults(p))
+	return out
 
 func is_blaster() -> bool:
 	return String(knob("mode")) == "blaster"
@@ -303,10 +310,11 @@ func tell_sight(_amount: float) -> void:
 ## Not sailing: the wind at his feet moves him, as extra range in the air or
 ## a shove towards the edge on the ground.
 func _shove(delta: float) -> void:
-	if motor == null or motor.rider != null or motor.swimming: return
+	if not Gust.can_take(motor): return
 	if is_blaster():
 		_blast()
 		return
+	if motor.swimming: return
 	if motor.move == "sail" or motor.hold != "": return
 	var w: Vector3 = air_at(motor.feet).get("wind",Vector3.ZERO)
 	if w == Vector3.ZERO: return
@@ -318,8 +326,7 @@ func _blast() -> void:
 	if blaster_state != BLAST or _blasted or air_at(motor.feet).is_empty(): return
 	_blasted = true
 	shoves += 1
-	var way := blow_dir()
-	motor.knock(motor.knock_velocity(Vector2(way.x,way.z),float(knob("blast_out")),float(knob("blast_up"))),self)
+	Gust.knock(motor,blow_dir(),float(knob("blast_out")),float(knob("blast_up")),self)
 
 func reset() -> void:
 	super()
