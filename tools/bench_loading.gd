@@ -19,6 +19,9 @@ var secs := 30.0
 var cap := 1080
 var window := Vector2i(1920,1080)
 var turn := true
+## Stills saved (--no-stills: none; a PNG save blocks the main thread about
+## a second, and the loading ones fall inside the time measured).
+var stills := true
 var _times: Array = []
 var _stamp: Array = []
 var _last := 0
@@ -34,6 +37,7 @@ func run() -> void:
 		elif argument.begins_with("--secs="): secs = float(argument.trim_prefix("--secs="))
 		elif argument.begins_with("--cap="): cap = int(argument.trim_prefix("--cap="))
 		elif argument == "--turn=0": turn = false
+		elif argument == "--no-stills": stills = false
 		elif argument.begins_with("--window="): window = Vector2i(int(argument.trim_prefix("--window=").get_slice("x",0)),int(argument.trim_prefix("--window=").get_slice("x",1)))
 	DirAccess.make_dir_recursive_absolute(out)
 	create_timer(900).timeout.connect(func() -> void: push_error("bench timed out"); quit(2))
@@ -48,6 +52,14 @@ func run() -> void:
 	for argument: String in OS.get_cmdline_user_args():
 		if argument.begins_with("--shape="): shape = argument.trim_prefix("--shape=")
 		if argument.begins_with("--seed="): seed_value = argument.trim_prefix("--seed=")
+	if "--frames" in OS.get_cmdline_user_args():
+		_rows = []
+		_probe = preload("res://tools/frame_probe.gd").new(true)
+		var last := preload("res://tools/frame_probe.gd").new(false)
+		last.other = _probe
+		root.add_child(_probe)
+		root.add_child(last)
+		RenderingServer.viewport_set_measure_render_time(root.get_viewport_rid(),true)
 	var holds := not "--no-loading-screen" in OS.get_cmdline_user_args()
 	_tag = "%s-%s-%s%s" % [shape,seed_value,"after" if holds else "before","-nowarm" if "--no-shader-warmup" in OS.get_cmdline_user_args() else ""]
 	var began := Time.get_ticks_msec()
@@ -75,8 +87,13 @@ func run() -> void:
 				_load_frames += 1
 				_load_process += Performance.get_monitor(Performance.TIME_PROCESS)
 				_load_physics += Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS)
+				if _rows != null: _rows.append([Time.get_ticks_msec(),_times[-1] if not _times.is_empty() else 0.0,SkyCommits._used/1000.0,
+					Performance.get_monitor(Performance.TIME_PROCESS)*1000.0,Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS)*1000.0,
+					RenderingServer.viewport_get_measured_render_time_cpu(root.get_viewport_rid()),RenderingServer.viewport_get_measured_render_time_gpu(root.get_viewport_rid()),
+					RenderingServer.get_frame_setup_time_cpu(),str(loading.phase),
+					_probe.rows[-1][0] if not _probe.rows.is_empty() else 0,(_probe.rows[-1][1] if not _probe.rows.is_empty() else 0)/1000.0,(_probe.rows[-1][2] if not _probe.rows.is_empty() else 0)/1000.0,_stages()])
 				var share: float = loading.screen._shown if loading.screen != null else 0.0
-				if next_m < milestones.size() and share >= milestones[next_m]:
+				if stills and next_m < milestones.size() and share >= milestones[next_m]:
 					await RenderingServer.frame_post_draw
 					root.get_texture().get_image().save_png(out.path_join("%s-loading-%02d.png" % [_tag,int(milestones[next_m]*100)]))
 					next_m += 1
@@ -86,11 +103,25 @@ func run() -> void:
 			playable = Time.get_ticks_msec()
 		if Time.get_ticks_msec()-began > 600000: break
 	print("BENCH %s playable at %d ms since the engine started (%d ms since the scene was added)" % [_tag,playable,playable-began])
+	if _rows != null:
+		var f := FileAccess.open(out.path_join("%s-frames.csv" % _tag),FileAccess.WRITE)
+		f.store_line("ms,dt,sky_used_prev,process,physics,render_cpu,render_gpu,setup_cpu,phase,steps,phys_ms,proc_ms,stages")
+		for r: Array in _rows: f.store_line(",".join(r.map(func(v: Variant) -> String: return str(v))))
 	print("BENCH %s loading frames %d: process %.1f s, physics %.1f s (engine monitors, summed)" % [_tag,_load_frames,_load_process,_load_physics])
 	var play_from := _times.size()
 	var yaw_start := Time.get_ticks_msec()
 	_yaw_from = (scene.camera as Camera3D).global_rotation.y if scene.camera != null else 0.0
 	_holdout = [Time.get_ticks_msec(),secs]
+	var sky_now: Variant = scene.get("sky")
+	if sky_now != null and sky_now.get("motifs") != null:
+		var k := 0
+		for isle: Node3D in sky_now.motifs.isles:
+			var counts: Variant = isle.flora.get_meta("counts") if isle.get("flora") != null else {}
+			print("BENCH %s flora %d %s %s" % [_tag,k,str(isle.motif.id()),str(counts)])
+			if "--flora-records" in OS.get_cmdline_user_args() and isle.get("flora") != null:
+				var rf := FileAccess.open(out.path_join("flora-%d.txt" % k),FileAccess.WRITE)
+				for item: Dictionary in isle.flora.get_meta("records"): rf.store_line("%s %.4f %.4f" % [item.asset,float(item.x),float(item.z)])
+			k += 1
 	print("BENCH %s nodes at playable: %d" % [_tag,int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT))])
 	if "--raygrid" in OS.get_cmdline_user_args(): _raygrid()
 	var shots := [1.0,10.0,secs-0.5]
@@ -104,7 +135,7 @@ func run() -> void:
 			whole_seen = Time.get_ticks_msec()
 			print("BENCH %s stands whole at %d ms since the engine started (%d ms after playable)" % [_tag,whole_seen,whole_seen-playable])
 			whole = _times.size()
-		if shot < shots.size() and t >= shots[shot]:
+		if stills and shot < shots.size() and t >= shots[shot]:
 			await RenderingServer.frame_post_draw
 			root.get_texture().get_image().save_png(out.path_join("%s-play-%02ds.png" % [_tag,int(shots[shot])]))
 			print("BENCH %s nodes at +%.0f s: %d" % [_tag,shots[shot],int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT))])
@@ -125,8 +156,21 @@ var _holdout := []
 var _who := {}
 var _who_done := false
 var _load_frames := 0
+## Per loading frame (--frames): written to <out>/<tag>-frames.csv.
+var _rows = null
+var _probe: Node
+const SkyCommits = preload("res://scripts/sky_commits.gd")
 var _load_process := 0.0
 var _load_physics := 0.0
+
+## Each motif isle's stage, first letters (--frames).
+func _stages() -> String:
+	var sky: Variant = scene.get("sky")
+	var motifs: Variant = sky.get("motifs") if sky != null else null
+	if motifs == null: return ""
+	var out := PackedStringArray()
+	for isle: Node3D in motifs.isles: out.append(str(isle.stage).left(3))
+	return " ".join(out)
 
 func _count_until(from_ms: int, seconds: float) -> int:
 	var n := 0
@@ -217,6 +261,8 @@ func _raygrid() -> void:
 			keys.sort()
 			for k: Variant in keys: print("RAYWHO %s x%d" % [str(k),int(_who[k])])
 		print("BENCH raygrid %s %s: %d of 1600 hit, hash %s" % [_tag,str(isle.motif.id()),hits,"".join(lines).md5_text().left(12)])
+		var rf := FileAccess.open(out.path_join("raygrid-%s-%d.txt" % [_tag,all]),FileAccess.WRITE)
+		if rf != null: rf.store_string("\n".join(lines))
 	print("BENCH raygrid %s: %d hits in all" % [_tag,all])
 
 ## The next layer asked for (as the gate does) `wait` s into play; how long

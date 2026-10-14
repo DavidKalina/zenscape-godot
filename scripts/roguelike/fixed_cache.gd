@@ -28,7 +28,7 @@ const SHARED_TAG := &"fixed_cache_shared"
 ## Launch flags that change nothing a build reads (left out of the key).
 const LOOSE_FLAGS := ["--seed=","--shape=","--knob=","--no-title","--loading-trace","--no-shader-warmup","--shader-warmup","--no-loading-screen",
 	"--no-fixed-cache","--secs=","--out=","--cap=","--caps=","--stills","--parts=","--turn=","--window=","--no-next","--procs","--census",
-	"--motifs-now","--no-flora","--no-life","--no-bell","--quit-after","--plan-away","--raygrid","--change-after="]
+	"--motifs-now","--no-flora","--no-life","--no-bell","--quit-after","--plan-away","--raygrid","--change-after=","--no-stills","--frames","--isle-builds=","--flora-records"]
 
 static var _hash := ""
 static var _hash_lock := Mutex.new()

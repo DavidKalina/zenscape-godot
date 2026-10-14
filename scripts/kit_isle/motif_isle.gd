@@ -51,6 +51,8 @@ var _held: Array = []
 var _grounded := true
 ## What each stage cost (ms on the main thread; the art's on its worker).
 var timings := {}
+## Its worker's wall time and its wait for a thread (ms), set on the worker.
+var _worker_ms: Array = [0,0]
 ## Its circle before its turf is registered (x, z its middle, z its reach;
 ## scripts/kit_isle/motif_sky.gd `places`), INF for none.
 var guess := Vector3.INF
@@ -98,7 +100,9 @@ func _notification(what: int) -> void:
 ## Its worker waited out, and the art it built freed if it never stood.
 func _forget() -> void:
 	if _task >= 0:
-		WorkerThreadPool.wait_for_task_completion(_task)
+		# A quit mid-build: the worker's renderer calls wait on the main
+		# thread's flush, so a plain wait could hang (fixed_cache `drain`).
+		preload("res://scripts/roguelike/fixed_cache.gd").drain(_task)
 		_task = -1
 	if _staging != null and is_instance_valid(_staging) and _staging.get_parent() == null:
 		_staging.free()
@@ -147,6 +151,11 @@ func _neighbour(collider: Object) -> bool:
 		# The Broken Viaduct and what stands with it when it is done
 		# (scripts/roguelike/layer_hazards.gd `_finish_viaduct`).
 		if node.name in [&"BrokenViaduct",&"ViaductStones",&"ViaductUpdrafts"]: return true
+		# The enemies and the traps (scripts/enemies/enemy_field.gd, scripts/
+		# traps/): their bodies are static ones moved by their scripts (a
+		# head bobbing, a seesaw tipping), so where they are when the plants
+		# grow is a matter of time too.
+		if node.name in [&"EnemyField",&"TrapField"]: return true
 		node = node.get_parent()
 	return false
 
@@ -188,18 +197,25 @@ func stands() -> bool:
 
 # --- Coming up --------------------------------------------------------------------------
 
-## Its art built on a worker: nodes only, off the tree.
-func start_build() -> void:
+## Its art built on a worker: nodes only, off the tree. `high`: a
+## high-priority task (isles built side by side, scripts/kit_isle/motif_sky.gd).
+func start_build(high := false) -> void:
 	if stage != "waiting": return
 	stage = "building"
 	_staging = Node3D.new()
 	_staging.name = "Staging"
 	var built: RefCounted = motif
 	var into := _staging
+	var spent := _worker_ms
+	var asked := Time.get_ticks_usec()
 	_task = WorkerThreadPool.add_task(func() -> void:
+		var began := Time.get_ticks_usec()
 		built.build(into)
 		RuinLod.add(into)
-		LateShapes.defer(into),false,"Motif isle "+str(motif.id()))
+		LateShapes.defer(into)
+		# Its worker's wall time and its wait for a thread (ms; `timings`).
+		spent[0] = (Time.get_ticks_usec()-began)/1000
+		spent[1] = (began-asked)/1000,high,"Motif isle "+str(motif.id()))
 
 ## Its art built here and now (no worker: tests, captures).
 func build_now() -> void:
@@ -225,6 +241,9 @@ func building() -> bool:
 	_task = -1
 	stage = "built"
 	timings.build = int(motif.built_ms)
+	timings.worker = int(_worker_ms[0])
+	timings.queued = int(_worker_ms[1])
+	timings.built_at = Time.get_ticks_msec()
 	return false
 
 ## Whether it has main-thread work left (its worker done; or, not
@@ -289,6 +308,7 @@ func work(usec: int) -> String:
 				if usec >= 0 and Time.get_ticks_usec() > end: return stage
 			"life" when life == null and (_args.has("--no-life") or motif.life_script() == null):
 				stage = "up"
+				timings.up_at = Time.get_ticks_msec()
 			"life":
 				var began := Time.get_ticks_msec()
 				if life == null:
@@ -302,6 +322,7 @@ func work(usec: int) -> String:
 				if not done: return stage
 				_share_hud()
 				stage = "up"
+				timings.up_at = Time.get_ticks_msec()
 				print("%s (placed): life in %d ms %s" % [isle_name(),int(timings.life),life.timings])
 			_:
 				return stage

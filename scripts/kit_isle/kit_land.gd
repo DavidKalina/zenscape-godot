@@ -21,6 +21,7 @@ extends RefCounted
 ## number). `ring_sides` hangs the sides and keel from the outline.
 
 const RuinKit = preload("res://scripts/ruin_kit.gd")
+const NativeIsleKernels = preload("res://scripts/native_isle_kernels.gd")
 
 ## The most shapes one body holds.
 const SHAPES_A_BODY := 2048
@@ -76,6 +77,9 @@ static func area(ring: Array) -> float:
 	return s*0.5
 
 static func edge_distance(p: Vector2, poly: PackedVector2Array) -> float:
+	# The native kernel's is this very loop (native/terrain_kernels/isle_kernels.h).
+	var kernel: Object = NativeIsleKernels.get_kernel()
+	if kernel != null: return kernel.edge_distance(p,poly)
 	var best := INF
 	for i in range(poly.size()):
 		var q := Geometry2D.get_closest_point_to_segment(p,poly[i],poly[(i+1)%poly.size()])

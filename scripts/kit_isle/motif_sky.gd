@@ -65,8 +65,15 @@ var sky: Node3D
 var isles: Array = []
 ## Where each of these stands (`places`' kind), the roost too if it stands.
 var placed: Array = []
-## The one building on a worker now, or null.
-var _building: Node3D = null
+## Those building on workers now, nearest first when started.
+var _builds: Array = []
+## How many build at once (rendered): `--isle-builds=N` (0 every isle at
+## once), else the worker pool's threads less two (left for the engine's own
+## jobs), at least one. The isles' number crunching is native
+## (scripts/native_isle_kernels.gd), so their builds run side by side;
+## without the library they still do, but GDScript runs one thread at a time
+## here (docs/design/roguelike/native-isles-round1.md), so they gain little.
+var build_width := 1
 ## Built on workers (rendered), or on the main thread (headless).
 var threaded := DisplayServer.get_name() != "headless"
 ## Every isle built from the start, near or not (rendered; --motifs-now).
@@ -99,6 +106,7 @@ func setup(study: Node3D, owner_sky: Node3D, args: PackedStringArray) -> void:
 	sky = owner_sky
 	var began := Time.get_ticks_msec()
 	eager = threaded or args.has("--motifs-now")
+	build_width = width_for(args)
 	var where := places()
 	placed = where
 	var specs: Array = PLACES.duplicate()
@@ -122,12 +130,13 @@ func setup_layer(study: Node3D, owner_sky: Node3D, args: PackedStringArray, entr
 	sky = owner_sky
 	var began := Time.get_ticks_msec()
 	eager = threaded or args.has("--motifs-now")
+	build_width = width_for(args)
 	placed = []
 	for e: Array in entries:
 		placed.append(e[2])
 		_add_isle(e[0],e[1],e[2],args)
 	_next_build()
-	print("motif isles: a layer of %d set up in %d ms, built %s" % [entries.size(),Time.get_ticks_msec()-began,"on a worker" if threaded else "on the main thread, one a frame"])
+	print("motif isles: a layer of %d set up in %d ms, built %s" % [entries.size(),Time.get_ticks_msec()-began,("on workers, %d at once" % build_width) if threaded else "on the main thread, one a frame"])
 
 func _add_isle(motif: RefCounted, offset: Vector3, place: Array, args: PackedStringArray) -> void:
 	if motif.get("still_bells") != null: motif.set("still_bells",args.has("--no-bell"))
@@ -155,22 +164,35 @@ func add_tokens(collectibles: Node3D, seed_value: int) -> void:
 			lines.append(Lines.line(t[0],t[1],t[2],points,seed_value))
 		collectibles.add_source(str(isle.motif.token_source()),lines)
 
-## The nearest isle not yet built, onto a worker (one at a time).
+## How many isles build at once (`build_width`).
+static func width_for(args: PackedStringArray) -> int:
+	for a: String in args:
+		if a.begins_with("--isle-builds="):
+			var n := int(a.trim_prefix("--isle-builds="))
+			return 1000 if n <= 0 else n
+	var threads := int(ProjectSettings.get_setting("threading/worker_pool/max_threads",-1))
+	if threads <= 0: threads = OS.get_processor_count()
+	return maxi(1,threads-2)
+
+## The nearest isles not yet built, onto workers (`build_width` at once).
 func _next_build() -> void:
-	if _building != null or not threaded: return
+	if not threaded: return
 	var eye := _eye()
-	var best: Node3D = null
-	var near := INF
-	for isle: Node3D in isles:
-		if isle.stage != "waiting": continue
-		var c: Vector3 = isle.circle()
-		var d := Vector2(eye.x-c.x,eye.z-c.y).length()
-		if d < near:
-			near = d
-			best = isle
-	if best == null: return
-	_building = best
-	best.start_build()
+	while _builds.size() < build_width:
+		var best: Node3D = null
+		var near := INF
+		for isle: Node3D in isles:
+			if isle.stage != "waiting": continue
+			var c: Vector3 = isle.circle()
+			var d := Vector2(eye.x-c.x,eye.z-c.y).length()
+			if d < near:
+				near = d
+				best = isle
+		if best == null: return
+		_builds.append(best)
+		# High priority: the pool runs only a share of its threads (0.3) on
+		# low-priority tasks, one or two on a 6-8-thread machine.
+		best.start_build(build_width > 1)
 
 func _eye() -> Vector3:
 	var camera: Variant = scene.get("camera") if scene != null else null
@@ -187,7 +209,7 @@ func flush() -> void:
 	for isle: Node3D in isles:
 		isle.build_now()
 		isle.work(-1)
-	_building = null
+	_builds.clear()
 
 ## The isle whose circle (and lock ring) the plane at `at` is in reach of,
 ## nearest first; null for none (scripts/isle_lock.gd `in_reach`).
@@ -205,9 +227,12 @@ func isle_near(at: Vector3, reach: Callable) -> Node3D:
 
 func _process(delta: float) -> void:
 	if scene == null: return
-	if _building != null and not _building.building():
-		_building = null
-		_next_build()
+	var done := false
+	for isle: Node3D in _builds.duplicate():
+		if not isle.building():
+			_builds.erase(isle)
+			done = true
+	if done: _next_build()
 	var eye := _eye()
 	# The main thread's share: one isle's work a slice, nearest first, while
 	# the frame's budget is open.

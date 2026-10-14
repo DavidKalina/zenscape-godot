@@ -75,6 +75,7 @@ const TEA_TAKE := 0.85
 const FORMAT := WaterFlowView.FORMAT
 
 static var _base: ShaderMaterial
+static var _base_props: Array = []
 
 ## True with --old-water: the isles' water as it was, for A/B.
 static func old_water() -> bool:
@@ -311,7 +312,15 @@ static func material(spec := {}) -> ShaderMaterial:
 		var source: Node = preload("res://assets/zen_reference/geometry.scn").instantiate()
 		_base = source.get_node("mesh-30").mesh.surface_get_material(0).duplicate()
 		source.free()
-	var water: ShaderMaterial = _base.duplicate()
+		# Its stored properties in order, read once (here, on the main
+		# thread: KitMotif `warm`): what `duplicate` sets on its copy.
+		for p: Dictionary in _base.get_property_list():
+			if int(p.usage) & PROPERTY_USAGE_STORAGE and p.name != "script": _base_props.append([p.name,_base.get(p.name)])
+	# A copy of the base as `duplicate` makes it (each stored property set in
+	# turn), without asking the renderer for the shader's parameters, which
+	# on a worker waits a frame for each (docs/design/roguelike/native-isles-round1.md).
+	var water := ShaderMaterial.new()
+	for prop: Array in _base_props: water.set(prop[0],prop[1])
 	# The live still water's own settings.
 	water.set_shader_parameter("hide_pool_surface",false)
 	water.set_shader_parameter("planar_levels",Vector2(-1000000.0,-1000000.0))

@@ -11,6 +11,8 @@ extends RefCounted
 ## slice a frame. Every shape gets back, (in order): the wanderer's collision
 ## is the same, only complete a few frames later (a part is not "up" before).
 
+const NativeIsleKernels = preload("res://scripts/native_isle_kernels.gd")
+
 ## A body keeps this many shapes while it enters the tree.
 const KEEP := 16
 ## Only a body with more convex shapes than this has them held back (a
@@ -77,6 +79,9 @@ static func defer_body(body: StaticBody3D) -> int:
 ## `faces` (triangle corners) cut into pieces of about PIECE_TRIS triangles:
 ## the triangles sorted by their middle along the longest side.
 static func _cut(faces: PackedVector3Array) -> Array:
+	# The native kernel cuts the same pieces (isle_kernels.h `cut_faces`).
+	var kernel: Object = NativeIsleKernels.get_kernel()
+	if kernel != null: return kernel.cut_faces(faces,PIECE_TRIS)
 	var tris := faces.size()/3
 	var box := AABB(faces[0],Vector3.ZERO)
 	for p in faces: box = box.expand(p)
@@ -107,19 +112,40 @@ static func held_bodies(root: Node) -> Array:
 ## Puts the held shapes of `bodies` back, in order, for about `usec` (-1:
 ## all at once) and at most SLICE (when timed). Answers true once none is
 ## left.
+##
+## A body takes them out of the physics space (`_put_back`): Jolt rebuilds
+## a body's whole compound shape for every shape added while it is in the
+## space, so a slice put back in place cost the square of the body's shapes
+## (about 2.3 s of main thread for sprawl 2's isles); out of it, the
+## compound is built once, as it re-enters. The same shapes, in the same
+## order (docs/design/roguelike/native-isles-round1.md).
 static func drain(bodies: Array, usec: int) -> bool:
 	var end := Time.get_ticks_usec()+usec
-	var put := 0
+	var put := [0]
 	while not bodies.is_empty():
 		var body: StaticBody3D = bodies[0]
 		if not is_instance_valid(body):
 			bodies.pop_front()
 			continue
 		var late: Array = body.get_meta("late_shapes")
-		while not late.is_empty():
-			body.add_child(late.pop_back())
-			put += 1
-			if usec >= 0 and (put >= SLICE or (put % 8 == 0 and Time.get_ticks_usec() > end)): return false
+		if not _put_back(body,late,usec,end,put): return false
 		body.remove_meta("late_shapes")
 		bodies.pop_front()
 	return true
+
+## `late`'s shapes back into `body` till the slice ends (false) or none is
+## left (true), the body out of its space meanwhile.
+static func _put_back(body: StaticBody3D, late: Array, usec: int, end: int, put: Array) -> bool:
+	if late.is_empty(): return true
+	var rid := body.get_rid()
+	var space := PhysicsServer3D.body_get_space(rid)
+	if space.is_valid(): PhysicsServer3D.body_set_space(rid,RID())
+	var done := true
+	while not late.is_empty():
+		body.add_child(late.pop_back())
+		put[0] += 1
+		if usec >= 0 and (put[0] >= SLICE or (put[0] % 8 == 0 and Time.get_ticks_usec() > end)):
+			done = late.is_empty()
+			break
+	if space.is_valid(): PhysicsServer3D.body_set_space(rid,space)
+	return done

@@ -57,5 +57,6 @@ static func _job(out: Dictionary) -> void:
 
 func _exit_tree() -> void:
 	if _task >= 0:
-		WorkerThreadPool.wait_for_task_completion(_task)
+		# A quit mid-plan: drained as run_layer's own plan (fixed_cache `drain`).
+		preload("res://scripts/roguelike/fixed_cache.gd").drain(_task)
 		_task = -1

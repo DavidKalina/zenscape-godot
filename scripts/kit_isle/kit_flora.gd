@@ -131,18 +131,46 @@ static func prober(space: PhysicsDirectSpaceState3D, turf: Array, site: Site) ->
 			ray.to = Vector3(p.x+off.x,span.y,p.y+off.y)
 			var hit := space.intersect_ray(ray)
 			# Past what the site looks past, cast again without it.
+			var skipped: Array[RID] = []
 			if past.is_valid() and not hit.is_empty() and not turf_ids.has((hit.collider as Object).get_instance_id()) and bool(past.call(hit.collider)):
-				var skipped: Array[RID] = []
 				while not hit.is_empty() and not turf_ids.has((hit.collider as Object).get_instance_id()) and bool(past.call(hit.collider)) and skipped.size() < 16:
 					skipped.append(hit.rid)
 					ray.exclude = skipped
 					hit = space.intersect_ray(ray)
 				ray.exclude = []
+			# A placed isle's (one that looks past its neighbours): turf wins a
+			# tie. Where another body's face lies on the turf (a cliff's cap on
+			# its rim), which the ray meets first depends on the order the
+			# bodies were made in, so on how fast the layer loaded. Past such
+			# faces, turf at the same point counts.
+			if past.is_valid() and not hit.is_empty() and not turf_ids.has((hit.collider as Object).get_instance_id()):
+				hit = _turf_at_tie(space,ray,hit,turf_ids,skipped)
 			if hit.is_empty() or not turf_ids.has((hit.collider as Object).get_instance_id()): return NAN
 			var normal: Vector3 = hit.normal
 			if normal.y <= 0.0 or sqrt(maxf(0.0,1.0-normal.y*normal.y))/normal.y > steep: return NAN
 			if off == Vector2.ZERO: top = (hit.position as Vector3).y
 		return top
+
+## Ties nearer than this (m) along a plant ray are the same point.
+const TIE := 0.001
+
+## `hit` (not turf), or the turf the ray meets at the same point past it
+## and any other faces there (`prober`), still past what was `skipped`.
+static func _turf_at_tie(space: PhysicsDirectSpaceState3D, ray: PhysicsRayQueryParameters3D, hit: Dictionary, turf_ids: Dictionary, past: Array[RID]) -> Dictionary:
+	var at: Vector3 = hit.position
+	var skipped: Array[RID] = past.duplicate()
+	skipped.append(hit.rid)
+	var out := hit
+	for k in range(4):
+		ray.exclude = skipped
+		var next := space.intersect_ray(ray)
+		if next.is_empty() or (next.position as Vector3).distance_to(at) > TIE: break
+		if turf_ids.has((next.collider as Object).get_instance_id()):
+			out = next
+			break
+		skipped.append(next.rid)
+	ray.exclude = []
+	return out
 
 ## How far `p` is in from the rim of the outline holding it, -1 off them all.
 static func edge(p: Vector2, outlines: Array) -> float:
@@ -522,7 +550,17 @@ class Draw extends RefCounted:
 		node.set_meta("area",_area)
 		return true
 
+## Each mesh's triangle count, by its instance id: reading a mesh's arrays
+## back from the renderer waits for the GPU to finish every frame in flight,
+## and Draw asked it of the same few plant meshes for every batch.
+static var _triangles_of := {}
+
 static func _mesh_triangles(mesh: Mesh) -> int:
+	var id := mesh.get_instance_id()
+	if not _triangles_of.has(id): _triangles_of[id] = _count_triangles(mesh)
+	return int(_triangles_of[id])
+
+static func _count_triangles(mesh: Mesh) -> int:
 	var count := 0
 	for s in range(mesh.get_surface_count()):
 		var arrays := mesh.surface_get_arrays(s)
