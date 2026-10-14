@@ -8,6 +8,16 @@ taste moves.
 
 ## 1. Pillars (always)
 
+- **A place first.** A motif is a beautiful place before it is a level:
+  a landform and a silhouette (a ridge, a split gorge, a mesa, a crater
+  bowl), seen whole as you arrive, with ruins sitting *in* the terrain,
+  broken unevenly and half taken by growth. Mostly land with stone on it,
+  in the same world as the original kit motifs (sundered_gorge,
+  colonnade_spine, stair_clouds: the bar for effortless beauty). Play
+  comes from moving through it: platforming, the view, the threat. The
+  greybox round 1 motifs (2026-10-14 verdict: good, but "a different
+  game") began as box layouts tuned for chains and were dressed last;
+  grids, stacked plates and placed collapse are what that looks like.
 - **Rune-carved stone, overgrowth, mystery.** The ruins were made by someone,
   for something; the player pieces it together. Ancient and melancholy, not
   cozy (concept.md, Tone). Collapse and decay read as authored and hide the
@@ -21,20 +31,27 @@ taste moves.
 - **Every motif has a threat that belongs to it**: a trap, an enemy or a
   hazard born of the place, not dropped on top. Every danger is also a tool
   (shortlist.md, thread 4).
-- **Everything chains (the spirit of the game).** A physics game where
+- **Anything could chain (the spirit of the game).** A physics game where
   anything can happen: spat out of one Olmec head into another, shot from a
   cannon while ragdolled, caught by an updraft, dropped onto a seesaw that
   flings you on. Spelunky's chain: the world decides where you go, the cost
-  is position. Every motif and piece is designed as a link: what it
+  is position. Combos are **emergent**: they come out of consistent
+  systems, not out of the layout. Every *piece* is a link: what it
   **catches** (a body standing, airborne, tumbling/stunned, riding) and what
-  it **throws** (which way, how hard, still stunned or not). The machinery
+  it **throws** (which way, how hard, still stunned or not). A *motif* sets
+  hazards and enemies loosely within reach of each other (a seesaw in
+  throwing range of an updraft, a head that can see where a trap lands you)
+  and lets them meet wherever the player is; threats that hunt or aim at
+  the player do this best. The route never depends on a chain, and no
+  combo is a line the motif was built along (the Plumb Well, crossed out
+  2026-10-14: "too scripted of a combo sequence"). The machinery
   exists: PilotMotor `knock(v, source)` stuns and throws, `toss` throws (a
   stunned body stays stunned), every trap acts on a stunned body, the figure
   ragdolls procedurally (docs/design/roguelike/stun-round1.md). Different
   sources chain freely; one source can't restun for `restun_gap` (1.2 s);
   after `stun_chain_cap` (3 s) the player can always break out. So a combo
-  is a hand-off between *different* things, and a good one is also a route a
-  skilled player rides on purpose.
+  is a hand-off between *different* things, and a good one is also a
+  shortcut a skilled player can choose to ride.
 - **Physics, not damage.** Deaths are falls and knock-offs. Comedy from
   danger and physics, never jokes.
 - **The pilot is fast and nimble** (concept.md, The pilot's tech): run, jump,
@@ -106,17 +123,20 @@ not built yet: ideas-traps.md (22), ideas-enemies.md (15), shortlist.md.
 # <Name> — "<epithet in the ledger's voice>"
 Lenses: <the rolled ones>
 Pitch: two sentences, how it feels to arrive.
+Place: the landform and silhouette; the view on arrival (from where, what
+  you see first, what draws the eye); how the ruin sits in the land and
+  how it broke; what the land is and what the stone is.
 Top (ASCII, ~40x16, 1 char ≈ 4 m) and Side (ASCII) — symbols as
   LayerSprawl.overview: digits isles, '.' route, '~' gulf, 'R' roost-ish
   set piece, '@' landmark, plus '#' stone, '"' overgrowth, 'o' threat,
   '^' rim, 'A' arena, 'C' cover, 'P' perch.
-Play: the route through it, beat by beat, naming the pilot's moves.
+Play: at least two routes through it, beat by beat, naming the pilot's
+  moves; what the player chooses between.
 Threat: the trap/enemy/hazard that belongs here; how it's also a tool.
-Combos: 2-3 chains through it, link by link (e.g. "head blast → tumble
-  onto seesaw → toss into updraft → sail to rim"), at least one by accident
-  and one ridden on purpose. Ports: what it catches from outside (a body
-  thrown in from a neighbouring isle, the dragon's swipe) and what it throws
-  out, toward which rim/isle, so the generator could aim one motif at another.
+Could combo: which hazards and enemies sit within reach of each other, and
+  one or two things that might happen when they meet (a hunch, not a
+  sequence). Ports: what it catches from outside (a body thrown in from a
+  neighbouring isle, the dragon's swipe) and what it throws out.
 Mystery: what it was, what the player pieces together.
 Kit used: existing pieces by id (verify each exists).
 Kit asks: pieces it wishes it had (one line each), or "none".
@@ -148,29 +168,36 @@ Model budget: which tricks in docs/art/model-budget.md apply.
 
 ## 5. From card to isle
 
-1. **Card** (brainstorm round): text and ASCII, cheap, many.
-2. **Greybox** (`studies/greybox/<motif>.tscn`): the character study's grey
-   boxes in open sky with the real pilot, traps and enemies; judges
-   distances and chains in minutes. The layout lives in one data table.
-   Missing pieces and mechanics are labelled STAND-IN.
-3. **Turf pass** (the picks only): the table becomes a `kit_motif` built
-   on the real terrain (`KitLand.island`: outline, stepped height function
-   whose steps are grabbable cliffs, keel) with RuinKit pieces, shown in the
-   kit-isle look (sky, light, flora, water, weather, the plane). This is
-   where the magic comes back, and the form the generator places.
+1. **Card** (brainstorm round): text and ASCII, cheap, many. The Place
+   field comes first.
+2. **Place** (`/motif-greybox`: `scripts/kit_isle/greybox/gb_<slug>.gd`,
+   played in the motif yard, `studies/motif_yard.tscn --motif=<slug>`): the land
+   and the ruin first, on the real terrain and in the kit-isle look from
+   the start (`KitLand.island`: outline, stepped height function whose
+   steps are grabbable cliffs, keel; RuinKit pieces; sky, light, flora,
+   water). Judged first by rendered stills from the arrival view: does it
+   read as a place, beside the original kit motifs? Then the routes,
+   walked with the real pilot, distances from the pilot's numbers. Then
+   the hazards and enemies, set in loosely where the place gives them a
+   reason to be. Grey boxes only for a piece the kit lacks, labelled
+   STAND-IN. The layout still lives in one data table.
+3. **Dressing pass** (`/motif-turf`, the picks only): growth, wear,
+   collapse, life, the model budget; the form the generator places. A motif greyboxed under the old pipeline (grey boxes tuned to
+   chains) gets its place made here instead: the land leads, and the
+   hazards move to suit it.
 
 **Later: the combo lab** (a skill, once enough links exist and the combo
-blockers are fixed). Agents propose chains; a headless harness fires the
-real pilot through placed links across many parallel Godot processes,
-jittered, and logs each chain by its knock sources, landing and
-reliability; agents tune aims and spacing and report the reliable chains as
-greyboxes. Opus designs, places and reads the chains; the bulk trial runs
-are scripted. Needs: every trap/enemy/piece answering `ports()` (where it
-catches, what it throws; the kit cards' catches/throws fields are the
-spec), and the harness. The same ports let the generator lay combos as it
-lays crossings, checked by simulation.
+blockers are fixed). A headless harness drops the real pilot into placed
+motifs across many parallel Godot processes, jittered, and logs which
+hazards meet by themselves: their knock sources, landings and how often.
+It tunes pieces (throw strengths, reach) so systems combo more often; it
+never lines a motif up along one chain. Needs: every trap/enemy/piece
+answering `ports()` (where it catches, what it throws; the kit cards'
+catches/throws fields are the spec), and the harness.
 
 ## 6. Rounds
 
 - Round 1 (2026-10-13): docs/design/roguelike/brainstorm/round1/ (10 motif
   cards, 26 kit pieces, a makers family; README has the tally and picks)
+- Round 2 (2026-10-14): docs/design/roguelike/brainstorm/round2/ (2 motif
+  cards, the first place-first round: the Rootbound Cut, the Long Court)

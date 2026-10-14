@@ -53,11 +53,16 @@ Arguments: $ARGUMENTS
    - a spread pick: the 3 cards that differ most from each other (and, in
      spread mode, from the coverage table); in variations mode, say which
      beat the literal baseline and whether the contrarian found something;
-   - overlaps and duplicates between agents; engine gaps that block chains.
+   - overlaps and duplicates between agents; engine gaps that keep pieces
+     from combining.
 6. Add the round to the brief's "Rounds" list. Leave everything
    uncommitted (AGENTS.md, Prototyping). Hand the user the picks and let
    them choose. Next stages: `/motif-greybox`, then `/motif-turf`.
 
-Every card states its combos (motif) or what it catches and throws (kit):
-"everything chains" is the top pillar. If the user changes the brief mid
-round, message every running agent and re-brief any that already finished.
+A motif card is a **place** first: its Place field (landform, silhouette,
+the arrival view) carries the card, held to the original kit motifs'
+effortless beauty (the brief's first pillar), and its combos are hunches
+about hazards that could meet, never a sequence the layout is built along.
+A kit card states what it catches and throws. Rank the spread pick's cards
+on the place first. If the user changes the brief mid round, message every
+running agent and re-brief any that already finished.

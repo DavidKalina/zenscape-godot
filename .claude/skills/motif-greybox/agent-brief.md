@@ -1,63 +1,78 @@
-# Greybox agent brief (fill in CARD, SLUG, FOCUS)
+# Place agent brief (fill in CARD, SLUG, FOCUS)
 
-Build a playable GREYBOX of one motif card for this Godot 4.7 roguelike
-(branch roguelike). Your card: CARD. Read it, plus
-docs/design/roguelike/motif-brief.md (pillars; "everything chains") and
-AGENTS.md (Prototyping, Sizes, Test execution).
+Build one motif card as a PLACE for this Godot 4.7 roguelike (branch
+roguelike), playable in the motif yard. Your card: CARD. Read it, plus
+docs/design/roguelike/motif-brief.md (pillars: **a place first**,
+**anything could chain**) and AGENTS.md (Prototyping, Sizes, Test
+execution, Models).
 
-**What a greybox is:** a study scene where the user plays the motif with the
-real pilot, judging layout, distances and chains by feel. Grey boxes for
-structure (no art; RuinKit models only if trivial), but the REAL existing
-traps, enemies and cannon wherever the card uses them, since the combos are
-the point.
+**What this stage is:** the land and the ruin first, on the real terrain
+and in the real look, so the user judges whether it is a place worth being
+in, then how it plays. The bar is the original kit motifs: read
+scripts/kit_isle/motif_sundered_gorge.gd and motif_colonnade_spine.gd
+before you lay anything, and shoot one of them (below) to see the bar.
+Mostly land with stone on it; ruins sitting in the terrain, broken
+unevenly, taken by growth; a silhouette that reads whole from the arrival
+rim. Grids, stacked plates and boxes on a plinth are the look of the
+round 1 greyboxes the user called "a different game".
+
+**Work in this order, and look at each before the next:**
+1. **Land.** The landform and silhouette as `KitLand.island` islands
+   (outline, height function whose steps are grabbable cliffs, `hang`,
+   keel), with the turf and flora on. Shoot the arrival view. Does it read
+   as the card's Place? Fix it before going on.
+2. **Ruin.** RuinKit pieces (scripts/ruin_kit.gd and its family files)
+   sitting in the land, broken where the place's story says. Shoot again.
+3. **Routes.** At least two ways from rim in to rim out, sized from the
+   pilot's real numbers (`Trap.pilot()`, scripts/pilot_motor.gd,
+   WorldScale per AGENTS.md "Sizes"; fix the card's guesses and say so).
+   Walk each through the real input.
+4. **Threat.** The card's traps and enemies, set in loosely where the
+   place gives them a reason to be, within reach of each other where the
+   card's "Could combo" says. Place them for the place and the routes;
+   the route never depends on a hazard throwing you somewhere exact.
 
 **Templates (read first):**
-- studies/headless_body_isle.gd, studies/inhaler_isle.gd: greybox isles in
-  open sky extending studies/character_study.gd; an EnemyField; stations;
-  `place()`; R reset; `lost`.
-- studies/trap_yard.gd: a TrapField, `configure(knobs)`, reset on place,
-  `open_below`.
-- studies/character_study.gd header: the stations format (parts "box",
-  "obox", ramps, "label", "pad", water), number keys, colours (grey
-  structure, orange lips to hang from, green pads, blue water), F1 numbers.
-- studies/cannon_yard.gd and scripts/cannon/ for a cannon;
-  scripts/traps/*.gd and scripts/enemies/*.gd for the rest.
+- scripts/kit_isle/motif_greybox.gd header: the contract a generator
+  motif answers (`slug`, `isle_name`, `brief`, `parts()`, `rims()`,
+  `spots()`, the registry line). Skip its "copy the study's numbers"
+  advice: there is no study; your land is the layout.
+- scripts/kit_isle/greybox/gb_sunken_giant.gd: a motif built on KitLand
+  islands with turf, flora and life (its `build`, `warm`, `flora_site`,
+  `flora_seed`, `life_script`, `_solids`). Copy its shape, not its grid.
+- tools/README.md, "The motif yard": how the yard stands one motif.
+- scripts/traps/*.gd, scripts/enemies/*.gd, scripts/cannon/ for threats.
 
-Size every gap, ledge, shaft and run-up from the pilot's real numbers
-(`Trap.pilot()`, scripts/pilot_motor.gd, WorldScale per AGENTS.md "Sizes"),
-not the card's guesses; fix a wrong number and say so.
+**Deliverables:**
+- scripts/kit_isle/greybox/gb_SLUG.gd and its line in
+  scripts/kit_isle/greybox/registry.gd. No `class_name`; preload by path.
+  The layout in ONE const data table near the top (islands: outline, tiers;
+  pieces, traps, enemies: place and facing), built from that table.
+- A missing kit piece or mechanic (the card's "Kit asks") gets the nearest
+  stand-in, labelled "STAND-IN: ...". Do not edit any existing file other
+  than the registry (motor, traps, enemies, cannon, KitLand, RuinKit). If no
+  stand-in works, leave the gap labelled.
+- Append "## Place (round N)" to the card: yard command, the routes, the
+  threat, real vs stand-in, distances you changed, your read of the stills
+  against the kit motif, and the model-budget tricks that apply
+  (docs/art/model-budget.md).
 
-**Deliverables (new files only):**
-- studies/greybox/SLUG.gd and SLUG.tscn (a Node3D with the script, like
-  studies/headless_body_isle.tscn). No `class_name`; preload by path.
-- The layout in ONE const data table near the top (isles: name, outline or
-  rect, top, step heights/tiers; pieces, traps, enemies, stations: place and
-  facing), built from that table. A stepped mass (mesa, terraces, bench) is
-  one entry with tiers, so the turf pass can turn it into a `KitLand.island`
-  spec mechanically.
-- Number-key stations: the start, each beat, and the start of each combo
-  chain. Floating "label" parts naming beats and chains.
-- A missing kit piece or mechanic (the card's "Kit asks"; the round
-  README's "What blocks combos today") gets the nearest stand-in from boxes,
-  existing traps, or a small script in your study, labelled
-  "STAND-IN: ...". Do NOT edit any existing file (motor, traps, enemies,
-  cannon, character_study). If no stand-in works, leave the gap labelled.
-- Append "## Greybox (round N)" to the card: run command, stations, real vs
-  stand-in, which chains you made happen and which you couldn't (why),
-  distances you changed.
+**Prove it.** Use the harness (tools/README.md); don't hunt for Godot or
+write your own runner. Headless for everything but stills.
+1. Smoke: `python tools/smoke.py studies/motif_yard.tscn -- --motif=SLUG`.
+   It must PASS.
+2. Stills, one window at a time, watchdog-closed: `python tools/shot.py
+   studies/motif_yard.tscn --frame Motif_gb_SLUG --view three -- --motif=SLUG
+   --sky`, and the same for `--frame Motif_sundered_gorge ...
+   --motif=sundered_gorge`. Look at them yourself, and iterate on the land
+   and ruin until yours sits beside it.
+3. Routes through the real play loop: `scratch/SLUG_routes.gd` extending
+   `tools/harness/drive.gd`, run with `python tools/drive.py
+   scratch/SLUG_routes.gd -- --scene-args --motif=SLUG` (the driver calls
+   `open("studies/motif_yard.tscn")`, as tools/harness/chain.gd does): `walk_to` and
+   `jump` along each route through the input, rim in to rim out. Check
+   every trap and enemy builds and ticks. Then FOCUS. Report honestly what
+   you could and couldn't verify.
 
-**Prove it (headless only, never open a window).** Use the harness
-(tools/README.md), and don't hunt for Godot or write your own runner.
-1. Smoke: `python tools/smoke.py studies/greybox/SLUG.tscn`. It must
-   PASS. It runs the shared import itself if one is needed, under a lock,
-   so don't run `--import`.
-2. A throwaway check through the real play loop: `scratch/SLUG_check.gd`
-   extending `tools/harness/drive.gd`, run with
-   `python tools/drive.py scratch/SLUG_check.gd`. Stations first:
-   `python tools/drive.py tools/harness/stations.gd -- --scene=studies/greybox/SLUG.tscn`
-   (he stands at every one). Check every trap or enemy builds and ticks. Then FOCUS: `walk_to` and `jump` through the input.
-   For seeds or knob values, use `python tools/sweep.py`. Report honestly
-   what you could and couldn't verify.
-
-Do not commit. Final reply (200 words or fewer): run command, stations, real
-vs stand-in, which chains work, what you couldn't verify.
+Do not commit. Final reply (200 words or fewer): yard command, the routes,
+the threat, real vs stand-in, the still paths, what you couldn't verify.

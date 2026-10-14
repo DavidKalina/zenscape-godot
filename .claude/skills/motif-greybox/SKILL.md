@@ -1,47 +1,46 @@
 ---
 name: motif-greybox
-description: Build playable greybox studies of motif cards (from a motif-brainstorm round) so the user can judge layout, distances and combo chains by playing. Use when the user asks to greybox, block out or prototype motif cards.
+description: Build playable place studies of motif cards (from a motif-brainstorm round), on the real terrain and look, so the user can judge the place, its routes and its threat by playing. Use when the user asks to greybox, block out or prototype motif cards.
 ---
 
-# Motif greybox round
+# Motif place round
 
 Stage 2 of the motif pipeline (docs/design/roguelike/motif-brief.md, "From
-card to isle"). Input: motif cards in `docs/design/roguelike/brainstorm/roundN/`.
-Output: one playable study per card in `studies/greybox/<slug>.tscn`.
+card to isle"; its first pillar, **a place first**). Input: motif cards in
+`docs/design/roguelike/brainstorm/roundN/`. Output: one motif per card as
+`scripts/kit_isle/greybox/gb_<slug>.gd` on `scripts/kit_isle/motif_greybox.gd`
+(its header says how), one line in `scripts/kit_isle/greybox/registry.gd`,
+played in the motif yard (`studies/motif_yard.tscn --motif=<slug>`).
+Registering puts it in the generator's default "motifs" pool; that is how
+the user meets it in a run.
+
+The order inside each motif is the point: **land, then routes, then
+threat.** The place reads as a place before any hazard goes in.
 
 1. Pick the cards (the user's picks, or every motif card of the round).
 2. Launch one agent per card in one message, in the background, on
-   **Opus**: every card's chains need links placed so one throw lands in
-   the next, which is spatial physics work (AGENTS.md, combos). Round 1 ran
-   on Sonnet; it measured well but rarely found a layout that made a chain
-   hold. A card that needs a motor/trap/enemy change is still out of scope
-   for a greybox: stand it in and list it for a link-fix round. Each prompt is [agent-brief.md](agent-brief.md)
-   with the card path, the slug, and one **focus** line: the card's riskiest
-   link to test (e.g. "does head 1's blast land in head 2's pull", "does a
-   miss land on the bench below", "does a jump off the wave clear the gulf").
+   **Opus** (terrain, platforming distances and enemy placement through
+   the real motor; AGENTS.md, Subagent models). Each prompt is
+   [agent-brief.md](agent-brief.md) with the card path, the slug, and one
+   **focus** line: the card's riskiest *place* question (e.g. "does the
+   gorge read as one split mesa from the arrival rim", "is the cliff route
+   a real alternative to the stair"). A card that needs a motor/trap/enemy
+   change is out of scope: stand it in and list it.
 3. When all are back, check whether the branch moved under the round
-   (`git log` since the round began, for scripts/enemies, scripts/traps,
-   scripts/cannon, scripts/pilot_motor.gd): other sessions land work here.
-   If a link changed, resume the affected agents to rebuild on it before
-   reporting. Then smoke every scene yourself:
-   `python tools/smoke.py --greybox` (or the slugs' scenes). It runs
-   the one shared import first if one is needed, under a lock, and
-   reports PASS/FAIL with the errors (tools/README.md).
-4. Write a "Greybox" section into the round's README: a table of card, run
-   command, chains that work, chains stood in or broken, engine gaps found.
-   Gaps that block combos feed the next Opus round; check them against the
-   README's "What blocks combos today" list and update it.
-5. Add each new greybox to `GREYBOXES` in studies/greybox/hub.gd (one
-   line) and launch only the hub, one window: `--path .
-   res://studies/greybox/hub.tscn -- --no-title [--start=<slug>]`, Page
-   Up/Down to switch. Never open one window per greybox.
-6. A greybox that moves into the generator (`scripts/kit_isle/greybox/
-   gb_<slug>.gd`, the header of `scripts/kit_isle/motif_greybox.gd`) has
-   its chains checked in the motif yard (`studies/motif_yard.tscn
-   --motif=<slug>`, a driver on `tools/harness/chain.gd`; tools/README.md
-   "The motif yard"), 10 trials each in seconds, then confirmed once in a
-   full layer (`--in=layer`) at the end.
-7. Leave everything uncommitted (AGENTS.md, Prototyping). Hand the user
-   what to try first; they judge by playing. Remind them
-   the grey look is a sketch: picks go on to the turf pass
-   (`/motif-turf`).
+   (`git log` since the round began, for scripts/kit_isle, scripts/traps,
+   scripts/enemies, scripts/pilot_motor.gd): other sessions land work here.
+   If something a motif uses changed, resume that agent to rebuild on it.
+   Then smoke every motif yourself:
+   `python tools/smoke.py studies/motif_yard.tscn -- --motif=<slug>`.
+4. Look at every arrival still yourself (`python tools/shot.py
+   studies/motif_yard.tscn --frame Motif_gb_<slug> --view three --
+   --motif=<slug> --sky`) beside the same shot of an original kit motif
+   (`--frame Motif_sundered_gorge ... --motif=sundered_gorge`). A motif that reads as a different game
+   (grids, stacked plates, boxes on a plinth, more stone than land) goes
+   back to its agent with what you saw, before the user plays it.
+5. Write a "Place" section into the round's README: a table of card, yard
+   command, the routes, the threat, what is stood in, and your read of the
+   stills against the kit motifs.
+6. Leave everything uncommitted (AGENTS.md, Prototyping). Open the yard
+   for the user one motif at a time, one window. They judge by playing;
+   picks go on to the dressing pass (`/motif-turf`).

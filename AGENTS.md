@@ -79,9 +79,10 @@ existing test its change breaks.
 # Motifs
 
 New motifs and kit pieces go through the pipeline in
-`docs/design/roguelike/motif-brief.md`: card, then greybox, then turf pass
-(skills `motif-brainstorm`, `motif-greybox`, `motif-turf`). Everything
-chains: every motif and piece says what it catches and throws.
+`docs/design/roguelike/motif-brief.md`: card, then place, then dressing
+pass (skills `motif-brainstorm`, `motif-greybox`, `motif-turf`). A motif is
+a place first, held to the original kit motifs' beauty; combos emerge from
+its pieces, and every piece says what it catches and throws.
 
 # Subagent models
 
@@ -89,8 +90,8 @@ Pick a subagent's model by what it makes:
 
 - **Opus**, the default: physics, moving bodies, input, movement and feel,
   complex logic, animation (new clips and changes to existing ones), new
-  models, new kit pieces, and combos: anything placing links so one throw
-  lands in the next (greyboxes, the combo lab). Brief it to prove
+  models, new kit pieces, new motif places (land, routes and threat under
+  the real motor) and the combo lab. Brief it to prove
   the work through the real play loop and input path, not only scripted test
   ticks.
 - **Sonnet**, assembly and looks: putting pieces that already exist together
