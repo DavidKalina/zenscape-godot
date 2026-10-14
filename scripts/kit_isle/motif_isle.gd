@@ -25,6 +25,7 @@ extends Node3D
 const TURF_LAYER := 1 << 11
 ## Its ruins' levels of detail, added on its worker once built.
 const RuinLod = preload("res://scripts/ruin_lod.gd")
+const LateShapes = preload("res://scripts/late_shapes.gd")
 
 ## The scene, the motif, where it stands from its own frame.
 var study: Node3D
@@ -45,6 +46,8 @@ var _grow: KitFlora.Grow
 var _args := PackedStringArray()
 ## Its art built on a worker (else on the main thread, one frame).
 var threaded := true
+## Bodies in the tree with shapes still held back (LateShapes).
+var _held: Array = []
 var _grounded := true
 ## What each stage cost (ms on the main thread; the art's on its worker).
 var timings := {}
@@ -168,7 +171,8 @@ func start_build() -> void:
 	var into := _staging
 	_task = WorkerThreadPool.add_task(func() -> void:
 		built.build(into)
-		RuinLod.add(into),false,"Motif isle "+str(motif.id()))
+		RuinLod.add(into)
+		LateShapes.defer(into),false,"Motif isle "+str(motif.id()))
 
 ## Its art built here and now (no worker: tests, captures).
 func build_now() -> void:
@@ -177,6 +181,7 @@ func build_now() -> void:
 		var began := Time.get_ticks_msec()
 		motif.build(_staging)
 		RuinLod.add(_staging)
+		LateShapes.defer(_staging)
 		timings.build = Time.get_ticks_msec()-began
 		stage = "built"
 	elif stage == "building":
@@ -216,12 +221,16 @@ func work(usec: int) -> String:
 			"standing":
 				var began := Time.get_ticks_usec()
 				# A part at a time: what the worker built, into the art at
-				# its place.
-				if _staging.get_child_count() > 0:
+				# its place; then the big bodies' held shapes, a slice a
+				# frame (scripts/late_shapes.gd).
+				if _staging != null and _staging.get_child_count() > 0:
 					var part := _staging.get_child(0)
 					_staging.remove_child(part)
 					art.add_child(part)
-				if _staging.get_child_count() == 0:
+					_held.append_array(LateShapes.held_bodies(part))
+				elif not _held.is_empty():
+					LateShapes.drain(_held,maxi(end-Time.get_ticks_usec(),0) if usec >= 0 else -1)
+				if _staging != null and _staging.get_child_count() == 0 and _held.is_empty():
 					_staging.free()
 					_staging = null
 					stage = "turf"

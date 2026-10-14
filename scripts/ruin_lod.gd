@@ -23,6 +23,13 @@ extends RefCounted
 ## broken strings of dots in the before/after captures), the shares at
 ## about 230, 540 and 1200 m.
 ## docs/design/roguelike/perf-round1.md has the numbers.
+##
+## Round 2 (perf-round2.md): the growth is lifted out of the "Mesh" into
+## its own instance under it ("Growth", the very levels above, so it looks as
+## it did) drawn without casting shadows, and shadows-only twins ("Shade0",
+## ...) in chunks GROWTH_CELL across, at full detail, each seen only within
+## SHADOW_RANGE of the eye: far growth casts no shadow. SHADOW_RANGE is a knob
+## (`shadow_range`, 0 for the old way: every shadow cast at every distance).
 
 const RuinGrowth = preload("res://scripts/ruin_growth.gd")
 
@@ -31,6 +38,20 @@ const THIN_WIDTH := 0.03
 const THIN_ASPECT := 4.0
 ## [error (m), share of the other groups kept]; the first lets the thin go.
 const GROWTH_LEVELS := [[0.15,1.0],[0.3,0.5],[0.7,0.25],[1.6,0.1]]
+## Growth chunks are about this wide (m), by the groups' first corners.
+const GROWTH_CELL := 24.0
+## Growth casts shadows only within this of the eye (m), measured to a
+## chunk's middle.
+const SHADOW_RANGE := 40.0
+## The range in force (m); 0 leaves the growth casting its shadows as it
+## did (one instance, the levels for the shadow map too).
+static var shadow_range := _shadow_arg()
+
+## `--growth-shadow-range=M` on the command line (0: the old way).
+static func _shadow_arg() -> float:
+	for a: String in OS.get_cmdline_user_args():
+		if a.begins_with("--growth-shadow-range="): return float(a.trim_prefix("--growth-shadow-range="))
+	return SHADOW_RANGE
 ## The stone's simplifier: normals merged within this (degrees).
 const STONE_MERGE_ANGLE := 25.0
 
@@ -48,7 +69,7 @@ static func add(root: Node) -> Dictionary:
 		if mesh == null or mesh.has_meta("lods"): continue
 		var leveled := leveled_mesh(mesh)
 		if leveled == null: continue
-		node.mesh = leveled
+		attach(node,leveled)
 		stats.meshes += 1
 		stats.stone += int(leveled.get_meta("lods").stone)
 		stats.growth += int(leveled.get_meta("lods").growth)
@@ -76,6 +97,27 @@ static func add_async(root: Node) -> void:
 		swap.made = out,false,"Ruin LODs")
 	root.add_child(swap)
 
+## `node` given the levelled `mesh` (its stone), and its growth chunks as
+## instances under it.
+static func attach(node: MeshInstance3D, mesh: ArrayMesh) -> void:
+	node.mesh = mesh
+	if not mesh.has_meta("growth_mesh"): return
+	var grown: ArrayMesh = mesh.get_meta("growth_mesh")
+	var colour := MeshInstance3D.new()
+	colour.name = "Growth"
+	colour.mesh = grown
+	node.add_child(colour)
+	var chunks: Array = mesh.get_meta("shade_chunks",[])
+	if chunks.is_empty(): return
+	colour.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	for i in range(chunks.size()):
+		var shade := MeshInstance3D.new()
+		shade.name = "Shade"+str(i)
+		shade.mesh = chunks[i]
+		shade.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
+		shade.visibility_range_end = shadow_range
+		node.add_child(shade)
+
 class Swap extends Node:
 	var nodes: Array
 	var meshes: Array
@@ -87,7 +129,7 @@ class Swap extends Node:
 		task = -1
 		for i in range(made.size()):
 			var node: MeshInstance3D = nodes[i]
-			if made[i] != null and is_instance_valid(node) and node.mesh == meshes[i]: node.mesh = made[i]
+			if made[i] != null and is_instance_valid(node) and node.mesh == meshes[i]: load("res://scripts/ruin_lod.gd").attach(node,made[i])
 		queue_free()
 	func _exit_tree() -> void:
 		if task >= 0:
@@ -104,6 +146,8 @@ static func leveled_mesh(mesh: ArrayMesh) -> ArrayMesh:
 	if count == 0 or count > 2: return null
 	var out := ArrayMesh.new()
 	var info := {"stone":0,"growth":0}
+	var growth_mesh: ArrayMesh = null
+	var shade: Array = []
 	for i in range(count):
 		var material := mesh.surface_get_material(i)
 		var is_growth := material == growth_material
@@ -117,8 +161,13 @@ static func leveled_mesh(mesh: ArrayMesh) -> ArrayMesh:
 			index.resize(n)
 			for k in range(n): index[k] = k
 			withindex[Mesh.ARRAY_INDEX] = index
-			out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,withindex,[],growth_lods(arrays[Mesh.ARRAY_VERTEX]),RuinGrowth.FORMAT)
+			var grown := ArrayMesh.new()
+			grown.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,withindex,[],growth_lods(arrays[Mesh.ARRAY_VERTEX]),RuinGrowth.FORMAT)
+			grown.surface_set_material(0,material)
+			growth_mesh = grown
+			if shadow_range > 0.0: shade = shade_chunks(arrays)
 			info.growth += n/3
+			continue
 		else:
 			var weld := SurfaceTool.new()
 			weld.create_from_arrays(arrays)
@@ -131,15 +180,62 @@ static func leveled_mesh(mesh: ArrayMesh) -> ArrayMesh:
 				lods[importer.get_surface_lod_size(0,l)] = importer.get_surface_lod_indices(0,l)
 			out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,importer.get_surface_arrays(0),[],lods)
 			info.stone += n/3
-		out.surface_set_material(i,material)
+		out.surface_set_material(out.get_surface_count()-1,material)
+	if growth_mesh != null: out.set_meta("growth_mesh",growth_mesh)
+	out.set_meta("shade_chunks",shade)
 	for key: StringName in mesh.get_meta_list(): out.set_meta(key,mesh.get_meta(key))
 	out.set_meta("lods",info)
 	return out
 
-## The growth's levels as {error: indices}: whole face groups kept or let
-## go (see the header).
-static func growth_lods(v: PackedVector3Array) -> Dictionary:
-	# The groups: runs of triangles sharing their first corner.
+## The growth `arrays` (one surface's) as shadow meshes, no levels: its
+## face groups binned by their first corner into cells GROWTH_CELL wide (one
+## mesh when it all lies within about a cell and a half), each a surface of
+## the surface's own arrays, in the growth's format.
+static func shade_chunks(arrays: Array) -> Array:
+	var v: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var groups := _groups(v)
+	var starts: PackedInt32Array = groups[0]
+	var box := AABB(v[0],Vector3.ZERO)
+	for q in v: box = box.expand(q)
+	var bins := {}
+	var one := box.size.x < GROWTH_CELL*1.5 and box.size.z < GROWTH_CELL*1.5 and box.size.y < GROWTH_CELL*1.5
+	for g in range(starts.size()-1):
+		var key := Vector3i.ZERO
+		if not one:
+			var at := v[starts[g]*3]
+			key = Vector3i(floori(at.x/GROWTH_CELL),floori(at.y/GROWTH_CELL),floori(at.z/GROWTH_CELL))
+		if not bins.has(key): bins[key] = []
+		bins[key].append(g)
+	var keys := bins.keys()
+	keys.sort()
+	var out: Array = []
+	for key: Vector3i in keys:
+		var picked: Array = bins[key]
+		# The chunk's arrays: each per-vertex array's rows for its groups.
+		var part := []
+		part.resize(Mesh.ARRAY_MAX)
+		for slot in [Mesh.ARRAY_VERTEX,Mesh.ARRAY_NORMAL,Mesh.ARRAY_COLOR,Mesh.ARRAY_TEX_UV,Mesh.ARRAY_TEX_UV2,Mesh.ARRAY_CUSTOM0]:
+			if arrays[slot] != null: part[slot] = arrays[slot].duplicate() if one else _rows(arrays[slot],picked,starts,4 if slot == Mesh.ARRAY_CUSTOM0 else 1)
+		var mesh := ArrayMesh.new()
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,part,[],{},RuinGrowth.FORMAT)
+		mesh.surface_set_material(0,RuinGrowth.material())
+		out.append(mesh)
+	return out
+
+## `source`'s rows (`width` values a vertex) for the triangles of `picked`
+## groups (`starts` are triangle indices).
+static func _rows(source: Variant, picked: Array, starts: PackedInt32Array, width: int) -> Variant:
+	var out: Variant = source.duplicate()
+	out.clear()
+	for g: int in picked:
+		var a := starts[g]*3*width
+		var b := starts[g+1]*3*width
+		out.append_array(source.slice(a,b))
+	return out
+
+## [group starts (triangle indices, then the end), thin flags]: a growth
+## group is a fan's triangles (they share their first corner).
+static func _groups(v: PackedVector3Array) -> Array:
 	var starts := PackedInt32Array()
 	var thin := PackedByteArray()
 	var tris := v.size()/3
@@ -161,6 +257,15 @@ static func growth_lods(v: PackedVector3Array) -> Dictionary:
 		thin.append(1 if width < THIN_WIDTH and longest > width*THIN_ASPECT else 0)
 		k = end
 	starts.append(tris)
+	return [starts,thin]
+
+## The growth's levels as {error: indices}: whole face groups kept or let
+## go (see the header).
+static func growth_lods(v: PackedVector3Array) -> Dictionary:
+	var groups := _groups(v)
+	var starts: PackedInt32Array = groups[0]
+	var thin: PackedByteArray = groups[1]
+	var tris := v.size()/3
 	var lods := {}
 	for level: Array in GROWTH_LEVELS:
 		var share: float = level[1]
