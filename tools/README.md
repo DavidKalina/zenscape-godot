@@ -13,6 +13,8 @@ with `python` on Windows (there is no `py` there) and `python3` on the Mac.
 | Smoke a scene (400 frames, no errors) | `python tools/smoke.py studies/x.tscn [-- scene flags]` |
 | A check through the real play loop | write `scratch/x.gd` extending `tools/harness/drive.gd`, then `python tools/drive.py scratch/x.gd` |
 | The same over seeds, shapes, knobs | `python tools/sweep.py scratch/x.gd --seed 1..8 --shape sprawl,ring --knob gulf=40,60` |
+| One motif alone on the real stage (the yard) | `python tools/smoke.py studies/motif_yard.tscn -- --motif=plumb_well [--grey] [--bodies=0] [--rims]` |
+| A motif's chain, 10 jittered trials | write `scratch/x_chain.gd` extending `tools/harness/chain.gd`, then `python tools/drive.py scratch/x_chain.gd -- --trials=10 --scene-args --motif=x [--grey]` |
 | The generator's plan as data | `python tools/drive.py tools/layer_dump.gd -- --shape=ring --seed=2 --isles` |
 | Rendered stills to look at | `python tools/shot.py studies/x.tscn --frame Trap --view three,top --sheet` |
 | Anything that runs over ~8 min | `python tools/bg.py start NAME -- <command>`, then `python tools/bg.py wait NAME` |
@@ -95,6 +97,54 @@ func drive() -> void:
   parse error. Write `var d: Dictionary = x.get("k")`, not
   `var d := x.get("k")`. drive.py points this out when it happens. A
   script that doesn't parse fails in about a second.
+
+## The motif yard and chain.gd: prove in the yard, confirm once in the layer
+
+A chain check inside `studies/run_layer.tscn` waits for the whole layer to
+stand and steps every isle each frame: 15-18 min for 10 trials in the
+greybox-pool round. `studies/motif_yard.tscn` stands one motif and nothing
+else, on the same study base, pilot, motor, input and camera, and its live
+parts go through the generator's own `LayerStage.setup` (traps, ropes,
+cannons, heads laid by `LayerGreybox.lay_heads`, their bodies), so a chain
+that holds there holds in a layer. It stands in about 2 s, and 10 trials
+of the Plumb Well column take about 10 s.
+
+```
+python tools/smoke.py studies/motif_yard.tscn -- --motif=lidstack [--grey] [--bodies=0] [--rims] [--at=x,y,z] [--sky]
+python tools/drive.py tools/harness/examples/plumb_well_chain.gd -- --trials=10 --scene-args --motif=plumb_well --bodies=0 [--grey]
+python tools/bg.py start pw_layer -- python tools/drive.py tools/harness/examples/plumb_well_chain.gd --timeout 2400 -- --in=layer --trials=10 --scene-args --seed=1 --shape=sprawl --knob=pool=classic --knob=bodies=0
+python tools/shot.py studies/motif_yard.tscn --at 30,45,-40 --look 0,8,0 -- --motif=vigil_bellows --sky
+```
+
+- `--motif=` takes a greybox slug (`scripts/kit_isle/greybox/registry.gd`)
+  or a kit pool id (`bell_spires`: stood, no heads). `--grey` sets the
+  motif's own grey flag (`--well-grey` and so on). `--bodies=0` turns the
+  headless bodies off, `--rims` adds a pad a route stride off each rim,
+  `--at=` moves the motif, and `--sky` adds the clouds and life for stills.
+  R in the yard resets the stage and sets him at the start.
+- **The trial helper.** `tools/harness/chain.gd` extends drive.gd.
+  `open_motif(slug)` opens the yard, or run_layer with `--in=layer`. In
+  the layer it adds `--knob=greybox=<slug>`, turns `--grey` into the
+  motif's flag, drops the run loop, pushes the void down and stands the
+  motif's isle (`hold_layer`). `motif_point(p)` moves a point of the
+  motif's own table into the world. `motif_isle`, `motif_host` (its traps,
+  ropes) and `motif_heads` find its parts. `reset_all()` puts the stage
+  back as built. `trials(n, fn, jitter, delay)` runs `fn` n times from a
+  jittered start, after a jittered delay with the traps and heads running,
+  and prints a `ROW` per trial and `RESULT {passed, trials, rate}`.
+  `rest(region)` waits until he comes to rest. The header has the rest.
+- **Examples.** `tools/harness/examples/plumb_well_chain.gd` (the column,
+  and `--chain=cannon`) and `wardens_well_chain.gd` (the head relay, and
+  `--chain=cannon`, the missed relay). Copy one into `scratch/`.
+- **The workflow.** Prove every chain in the yard, grey and turf, as often
+  as you like. Then confirm once in a layer, on a seed where the generator
+  places the motif (`tools/layer_dump.gd --isles` with
+  `--knob=pool=classic --knob=greybox=<slug>`). Run that through `bg.py`,
+  one heavy run at a time.
+- **What the yard leaves out.** The generated crossings (`--rims` stands
+  in a pad), the neighbours a head's body can climb from (its cliffs are
+  the motif's own), the generator's own heads, hazards and ram, and the
+  rest of the layer's load on the frame.
 
 ## sweep.py: a table over seeds, shapes and knobs
 

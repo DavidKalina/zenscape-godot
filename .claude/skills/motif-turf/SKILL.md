@@ -72,12 +72,16 @@ change `motif_greybox.gd` for one motif.
    over seeds, use `python tools/sweep.py tools/layer_dump.gd --seed 1..10
    --shape sprawl,ring`. The checks are drivers on `tools/harness/drive.gd`
    (tools/README.md), with seeds and grey/turf as `tools/sweep.py` axes.
-   Then the chain harness (greybox-in-generator.md's `check_layer.gd`), **one
-   check per process** and both grey (`--giant-grey`) and turf in the same
-   tree, so other sessions' changes hit both. On sprawl the run loop's void
-   card lays a new layer when a trial falls: the harness must drop
-   `study.run_loop` and set `plan.void_y` far down, or every trial after
-   the first fall reads another layer. 10 trials a chain, ±0.5 m / ±0.2 s.
+   Then the chains, **in the motif yard** (`studies/motif_yard.tscn
+   --motif=<slug>`, tools/README.md "The motif yard"): a driver on
+   `tools/harness/chain.gd` (copy `tools/harness/examples/
+   plumb_well_chain.gd`), 10 trials a chain (±0.5 m start, 0.8-1.2 s
+   delay), grey (`--grey`) and turf in the same tree so other sessions'
+   changes hit both. A 10-trial chain takes seconds there, against 15
+   minutes in a layer. Then **one** full-layer run as the final
+   confirmation: the same driver with `--in=layer` on a seed that places
+   the motif (`tools/layer_dump.gd --isles --knob=pool=classic
+   --knob=greybox=<slug>`), through `tools/bg.py`, one heavy run at a time.
    Rendered stills to judge the look: `python tools/shot.py` (one window,
    watchdog-closed; AGENTS.md, Test execution).
 7. Assess docs/art/model-budget.md for the new geometry (AGENTS.md,
