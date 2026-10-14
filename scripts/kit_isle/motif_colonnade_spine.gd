@@ -37,6 +37,8 @@ var bridges: Array[MeshInstance3D] = []
 ## `colonnade`'s `breakable`) for scripts/kit_isle/colonnade_breaks.gd to
 ## stand. Off, the one Build as ever.
 var breakable := false
+## The temple's seed (its rose gable's, which the breaks build again cut).
+const TEMPLE_SEED := SPINE_SEED+10
 ## The ridge's own build (ms).
 var spine_ms := 0
 var _plan: Dictionary = {}
@@ -93,7 +95,7 @@ func build(into: Node3D) -> void:
 		s.name = "Stair%d" % k
 		s.transform = Spine.stair_frame(k)
 		art.add_child(s)
-	temple = Spine.temple(SPINE_SEED+10)
+	temple = Spine.temple(TEMPLE_SEED)
 	art.add_child(temple)
 	var lands: Array = [spine]
 	for land: Node3D in Spine.lands(SPINE_SEED+20,p):

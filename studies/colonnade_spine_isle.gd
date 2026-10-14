@@ -31,6 +31,10 @@ extends "res://studies/kit_isle.gd"
 ## (scripts/kit_isle/colonnade_breaks.gd): he plows through them, his
 ## landings' shockwaves topple them, and they lie where they fall as rubble
 ## to climb. R sets him and his head back; the breaks stay.
+## Round 2 (olmec-destruction-round2.md): his head heaves in the temple's
+## cella, behind the rose gable; he climbs the way and the grand stair to
+## it and punches through the gable's door, bringing it down in slabs; the
+## portals' arches come down too.
 ## [--body-knob=<knob>=<value>] [--head-knob=...] (repeatable),
 ## [--olmec-at=x,z] [--head-at=x,z] (along the axis, across it).
 const Spine = preload("res://studies/colonnade_spine_isle_art.gd")
@@ -70,9 +74,10 @@ const EnemyYard = preload("res://studies/enemy_yard.gd")
 const Breaks = preload("res://scripts/kit_isle/colonnade_breaks.gd")
 ## Where he and his head are set down: (x along the axis, d across it), on
 ## the ground there. He stands on the low terrace's east end, facing up the
-## way; his head heaves on the plaza (L3), three terraces up.
+## way; his head heaves in the temple's cella on the podium, behind the
+## rose gable (round 1's: on the plaza, `--head-at=58,0`).
 const OLMEC_AT := Vector2(127.0,0.0)
-const OLMEC_HEAD_AT := Vector2(58.0,0.0)
+const OLMEC_HEAD_AT := Vector2(36.0,0.0)
 const OLMEC_STEP := 2.4
 var olmec := false
 var enemies: Node
@@ -125,6 +130,7 @@ func _build_olmec() -> void:
 	breaks = Breaks.new()
 	art.add_child(breaks)
 	breaks.setup(colonnade,SPINE_SEED+1)
+	breaks.setup_gable(temple,Motif.TEMPLE_SEED)
 	breaks.lost_y = LOST_Y
 	breaks.sound_hook = _voice
 	enemies = EnemyField.new()
@@ -148,7 +154,8 @@ func _build_olmec() -> void:
 	# them, a stair's cheeks under his bulk.
 	# Whole again, he hunts the walker (the whole body's chase: whole-body-
 	# chase-round1.md), through the colonnade.
-	var knobs := {"step":OLMEC_STEP,"chase":1.0}
+	# Round 2: relentless; his searching stops to listen briefly and seldom.
+	var knobs := {"step":OLMEC_STEP,"chase":1.0,"listen":1.2,"listen_every":12.0}
 	knobs.merge(_body_knobs,true)
 	enemies.spawn(HeadlessBody,at,face,knobs)
 	var head_knobs := {"ring":ground.head_top*5.5}
@@ -179,13 +186,15 @@ func tick(delta: float) -> void:
 	var b := stone_body()
 	if b == null or camera == null: return
 	var q := float(b.quake)*clampf(1.0-camera.global_position.distance_to(b.global_position)/60.0,0.0,1.0)
+	# The ground's own shake from what falls (round 2).
+	if breaks != null: q = maxf(q,float(breaks.quake)*0.6)
 	if q > 0.001:
 		var t := Time.get_ticks_msec()/1000.0
 		camera.position += Vector3(sin(t*61.0),sin(t*53.0+1.0),sin(t*47.0+2.0))*q*0.5
 
 func _hint_text() -> String:
 	if not olmec: return super._hint_text()
-	return "The Olmec: his stone body walks up the colonnade to his head on the plaza, and the piers and lintels in his way go down · his landings' shockwaves topple piers · the rubble stays: climb it · R start (the breaks stay) · F1 numbers"
+	return "The Olmec: his stone body walks up the colonnade to his head in the temple, and the piers, lintels, arches and the rose gable in his way go down · his landings' shockwaves topple piers · the rubble stays: climb it · R start (the breaks stay) · F1 numbers"
 
 func _show_hud() -> void:
 	super._show_hud()
@@ -193,7 +202,7 @@ func _show_hud() -> void:
 	var lines := PackedStringArray([_hud.text,""])
 	var b := stone_body()
 	if b != null: lines.append("olmec  %s %.1fs · %s · %.1f m/s · x %.1f y %.1f · leaps %d · shocks %d" % [b.state,b.state_t,"whole" if b.whole else "searching",Vector2(b.vel.x,b.vel.z).length(),b.position.x,b.position.y,b.leaps,b.shocks])
-	lines.append("breaks  piers %d (standing %d) · lintels %d · pieces live %d (peak %d, cap %d, laid direct %d) · rubble heaps %d · build %.1f ms most" % [breaks.broken,breaks.standing(),breaks.lintels_down,breaks.live.size(),breaks.peak_live,Breaks.MAX_BODIES,breaks.landed_direct,breaks.settled_groups,breaks.build_ms])
+	lines.append("breaks  piers %d (standing %d) · lintels %d · portals %d · temple walls %d · gable %s · pieces live %d (peak %d, cap %d, laid direct %d) · bursts %d · rubble heaps %d · build %.1f ms most · pre-cut %.0f ms" % [breaks.broken,breaks.standing(),breaks.lintels_down,breaks.portals_down,breaks.walls_down,"down" if breaks.gable_down else "standing",breaks.live.size(),breaks.peak_live,Breaks.MAX_BODIES,breaks.landed_direct,breaks.bursts,breaks.settled_groups,breaks.build_ms,breaks.cut_ms])
 	_hud.text = "\n".join(lines)
 
 func _voice(sound_name: StringName, at: Vector3) -> void:

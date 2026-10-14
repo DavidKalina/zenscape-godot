@@ -641,6 +641,9 @@ static func _lying_drum(b: Build, p: Vector2, top: float, way: Vector3, length :
 ## portal and every standing lintel are left out of the one Build, for the
 ## breaks to stand each on its own (meta "breakable": {piers [{line, side,
 ## frame, height}], lintels (as `lintels`)}).
+## Round 2 (olmec-destruction-round2.md): the portals too, their piers among
+## the piers (`portal` their line) and their rings left out (meta
+## "breakable" "portals" [{line, frame, h, lost, lost_side}]).
 static func colonnade(seed_value: int, p := {}, breakable := false) -> Node3D:
 	p = _p(p)
 	var b := Build.new(seed_value,WEATHERED,"Colonnade")
@@ -648,6 +651,7 @@ static func colonnade(seed_value: int, p := {}, breakable := false) -> Node3D:
 	var stubs: Array = []
 	var drums: Array = []
 	var loose: Array = []
+	var rings: Array = []
 	for i in range(LINES.size()):
 		var x: float = LINES[i][0]
 		var y := TOP+line_y(i)
@@ -656,7 +660,7 @@ static func colonnade(seed_value: int, p := {}, breakable := false) -> Node3D:
 			if hgt <= 0.0: continue
 			var f := frame(x,side*ROW,y)
 			f.basis = f.basis*Basis(Vector3.UP,b.rng.randf_range(-0.2,0.2))
-			if breakable and LINES[i][2] != "portal": loose.append({"line":i,"side":side,"frame":f,"height":hgt})
+			if breakable: loose.append({"line":i,"side":side,"frame":f,"height":hgt,"portal":LINES[i][2] == "portal"})
 			else: RuinKit._pier(b,f,PIER_H,hgt)
 			if hgt < INF: stubs.append({"at":at3(x,side*ROW,y+hgt)})
 		if LINES[i][2] == "portal":
@@ -664,7 +668,8 @@ static func colonnade(seed_value: int, p := {}, breakable := false) -> Node3D:
 			var f := frame(x,0.0,y)
 			# No hood mould: with no wall behind it a hood stands proud of
 			# the ring's face, a loose-looking slab where the ring settles.
-			RuinKit._arch_ring(b,f,0.0,PIER_H,h,2.0*h,RuinKit.ARCH_DEPTH*0.5,false,int(p.portal_lost[i]),-1.0 if i%2 == 0 else 1.0)
+			if breakable: rings.append({"line":i,"frame":f,"h":h,"lost":int(p.portal_lost[i]),"lost_side":-1.0 if i%2 == 0 else 1.0})
+			else: RuinKit._arch_ring(b,f,0.0,PIER_H,h,2.0*h,RuinKit.ARCH_DEPTH*0.5,false,int(p.portal_lost[i]),-1.0 if i%2 == 0 else 1.0)
 	if not breakable:
 		for l: Dictionary in lintels(p): _beam(b,l.a,l.b,LINTEL)
 	# Fallen lintels: lying in the way beside their row, broken in two.
@@ -728,7 +733,7 @@ static func colonnade(seed_value: int, p := {}, breakable := false) -> Node3D:
 	node.set_meta("drums",drums)
 	node.set_meta("wedged",wedged)
 	node.set_meta("cleft_beam",{"a":ca,"b":cb})
-	if breakable: node.set_meta("breakable",{"piers":loose,"lintels":lintels(p)})
+	if breakable: node.set_meta("breakable",{"piers":loose,"lintels":lintels(p),"portals":rings})
 	return node
 
 # --- The terraces' steps -----------------------------------------------------------------
@@ -779,7 +784,9 @@ const ALTAR_X := 25.5
 ## The temple on the podium: the kit's rose gable as its gate, facing east
 ## down the way; a stair turret either side; the cella's lancet walls
 ## behind (one side fallen); floor slabs; the altar on the prow. The kit's
-## pieces, colliding as built. Meta "gate" (world), "turrets".
+## pieces, colliding as built. Meta "gate" (world), "turrets"; each turret
+## and lancet wall "kit" [id, seed, wear] (the Olmec's breaks build it again
+## cut: scripts/kit_isle/colonnade_breaks.gd).
 static func temple(seed_value: int) -> Node3D:
 	var root := Node3D.new()
 	root.name = "Temple"
@@ -790,6 +797,7 @@ static func temple(seed_value: int) -> Node3D:
 	var turrets: Array = []
 	for side: float in [-1.0,1.0]:
 		var t: Node3D = RuinKit.piece("turret",seed_value+(1 if side < 0.0 else 2),0.35 if side < 0.0 else 0.7)
+		t.set_meta("kit",["turret",seed_value+(1 if side < 0.0 else 2),0.35 if side < 0.0 else 0.7])
 		var f := frame(GATE_X-0.8,side*TURRET_D,y)
 		t.transform = Transform3D(f.basis*Basis(Vector3.UP,PI*0.5*side),f.origin)
 		root.add_child(t)
@@ -797,6 +805,7 @@ static func temple(seed_value: int) -> Node3D:
 	for k in range(CELLA.size()):
 		var c: Array = CELLA[k]
 		var w: Node3D = RuinKit.piece("lancet_wall",seed_value+3+k,0.5+0.15*k)
+		w.set_meta("kit",["lancet_wall",seed_value+3+k,0.5+0.15*k])
 		var f := frame(float(c[0]),float(c[1]),y)
 		var face := Basis(Vector3.UP,PI*0.5) if float(c[1]) < 0.0 else Basis(Vector3.UP,-PI*0.5)
 		w.transform = Transform3D(f.basis*face,f.origin)

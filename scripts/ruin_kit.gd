@@ -2554,6 +2554,14 @@ class Build extends RefCounted:
 	## fewer resting on nothing) are taken out, for a build whose walls
 	## stand on ground it doesn't know (coursed down a hill, over the sky).
 	var drop_loose := false
+	## Only the blocks this keeps are drawn, solid and grown on: a
+	## Callable(centre: Vector3, the block's corners' middle in the piece's
+	## frame) -> bool, or none. Set round one piece's build (the Olmec's
+	## destruction, scripts/kit_isle/colonnade_breaks.gd: a wall built again
+	## as its pre-cut slabs, each the same stones as the whole, by its
+	## joints). The blocks are laid as ever (the same draws), then those
+	## not kept taken out at `finish`, after `drop_floating`.
+	static var keep_only := Callable()
 
 	static func materials() -> Dictionary:
 		if _materials.is_empty():
@@ -2698,7 +2706,7 @@ class Build extends RefCounted:
 			made = _polys(cut,points,open)
 		if points.size() < 4: return PackedVector3Array()
 		var block: Array = []
-		if (check_floating or drop_floating) and growable:
+		if (check_floating or drop_floating or keep_only.is_valid()) and growable:
 			var corners := PackedVector3Array()
 			for q in points: corners.append(xf*q)
 			var faces: Array[Plane] = []
@@ -2790,7 +2798,7 @@ class Build extends RefCounted:
 	## `solid` in the native kernel (isle_kernels.h `ruin_solid`): the very
 	## same draws, faces, tops, solid, hull and block, appended here.
 	func _solid_native(kernel: Object, planes: Array[Plane], pose: Transform3D, colour: Color, collide: bool, wear: bool, extra: Array[Plane], open: int, rough: float, growable: bool) -> PackedVector3Array:
-		var flags := int(collide)|int(wear)<<1|int(growable)<<2|int(lean)<<3|int(rigid)<<4|int(path != null)<<5|int(check_floating)<<6|int(drop_floating)<<7
+		var flags := int(collide)|int(wear)<<1|int(growable)<<2|int(lean)<<3|int(rigid)<<4|int(path != null)<<5|int(check_floating or keep_only.is_valid())<<6|int(drop_floating)<<7
 		var out: Array = kernel.ruin_solid(_solid_consts(),noise,bevels,rng.state,PackedFloat64Array([weathered,age,ground,pending.size(),tops.size(),hulls.size(),solids.size()]),
 			flags,planes,extra,pose,frame,colour,stone,open,rough,grow)
 		rng.state = out[0]
@@ -2914,7 +2922,8 @@ class Build extends RefCounted:
 	## The piece: ivy and moss grown on it, then the mesh and the body.
 	func finish() -> Node3D:
 		frame = Transform3D.IDENTITY
-		if drop_floating: _drop_floating()
+		if keep_only.is_valid(): _keep_only()
+		elif drop_floating: _drop_floating()
 		if check_floating:
 			var found := floating()
 			if not found.is_empty():
@@ -3057,6 +3066,28 @@ class Build extends RefCounted:
 	func _drop_floating() -> void:
 		var gone := _floating_blocks()
 		if gone.is_empty(): return
+		_drop_blocks(gone)
+		dropped += gone.size()
+
+	## Takes out the blocks `keep_only` doesn't keep, and with
+	## `drop_floating` the floating ones (all at once: a block's marks are
+	## its places in `pending` as laid).
+	func _keep_only() -> void:
+		var gone: Array = _floating_blocks() if drop_floating else []
+		dropped += gone.size()
+		var floating_set := {}
+		for i: int in gone: floating_set[i] = true
+		for i in range(blocks.size()):
+			if floating_set.has(i): continue
+			var pts: PackedVector3Array = blocks[i][0]
+			var mid := Vector3.ZERO
+			for q in pts: mid += q
+			if pts.is_empty() or not bool(keep_only.call(mid/pts.size())): gone.append(i)
+		if not gone.is_empty(): _drop_blocks(gone)
+
+	## Blocks `gone` (indices into `blocks`) taken out: their faces, tops
+	## and hulls; their solids stand far off (their indices are kept).
+	func _drop_blocks(gone: Array) -> void:
 		var drop_pending := {}
 		var drop_tops := {}
 		var drop_hulls := {}
@@ -3088,7 +3119,6 @@ class Build extends RefCounted:
 		for i in range(blocks.size()):
 			if not gone_set.has(i): still.append(blocks[i])
 		blocks = still
-		dropped += gone.size()
 
 	## The indices of the blocks resting on nothing.
 	func _floating_blocks() -> Array:

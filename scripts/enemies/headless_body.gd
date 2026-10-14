@@ -219,6 +219,16 @@ var _stagger := 0.0
 const STAGGER := 0.5
 ## The reach the route he is on was planned to (for planning it again).
 var _goal_reach := 3.0
+## Round 2 (olmec-destruction-round2.md): a wall square across his way
+## (the breaker's `ahead`) he punches through: "smash", feet planted and
+## fists up SMASH_WINDUP s, the hit (`smash`), then straight on in the
+## state he was in, SMASH_AFTER s on. Slowed through it, never stopped.
+const SMASH_WINDUP := 0.42
+const SMASH_AFTER := 0.18
+const SMASH_EASE := 2.6
+var _smash_from := ""
+var _smash_hit := false
+var smashes := 0
 func _init() -> void:
 	cost = 5
 	tags = PackedStringArray(["heavy","climbs","leaps","pushes"])
@@ -389,6 +399,12 @@ func think(delta: float) -> void:
 	_progress(delta)
 	_searching()
 	if _chases(): _see(delta)
+	if breaker != null and state in ["roam","home","chase","return","seek"] and breaker.ahead(self):
+		_smash_from = state
+		_smash_hit = false
+		smashes += 1
+		_go("smash")
+		field.sound(&"body_windup",position)
 	match state:
 		"listen": _listen(delta)
 		"roam","home": _walking(delta)
@@ -406,6 +422,7 @@ func think(delta: float) -> void:
 		"return": _return(delta)
 		"plant","suck","gulp": _suck(delta)
 		"swat": _swat(delta)
+		"smash": _smash(delta)
 		"grab_windup": _grab_windup(delta)
 		"grab_leap": _grab_leap(delta)
 		"hang": _hang_grab(delta)
@@ -569,7 +586,7 @@ func _walking(delta: float) -> void:
 		_meet_edge(fwd)
 		return
 	var speed := float(knobs.home) if state == "home" else float(knobs.walk)*(1.15 if whole else 1.0)
-	speed *= 1.0-0.7*clampf(_stagger/STAGGER,0.0,1.0)
+	speed *= 1.0-0.2*clampf(_stagger/STAGGER,0.0,1.0)
 	var step := clampf(angle_difference(facing,_heading),-float(knobs.turn)*delta,float(knobs.turn)*delta)
 	facing = wrapf(facing+step,-PI,PI)
 	var aligned := clampf(cos(angle_difference(facing,_heading)),0.0,1.0)
@@ -1896,6 +1913,18 @@ func _swat(delta: float) -> void:
 			chase_beat.emit("missed")
 	if state_t >= float(knobs.swat_windup)+float(knobs.swat_after): _go(_resume())
 
+## The punch through a wall (round 2): eased, not braked, so his stride
+## carries on through it; the hit at SMASH_WINDUP, then on as he was.
+func _smash(delta: float) -> void:
+	var keep := exp(-SMASH_EASE*delta)
+	vel.x *= keep
+	vel.z *= keep
+	if not _smash_hit and state_t >= SMASH_WINDUP:
+		_smash_hit = true
+		quake = maxf(quake,0.6)
+		if breaker != null: breaker.smash(self)
+	if state_t >= SMASH_WINDUP+SMASH_AFTER: _go(_smash_from if _smash_from != "" else _resume())
+
 ## Caught him (`how`, "swat" or "pounce"): knocked down and away (no damage).
 func _catch(m: PilotMotor, how: String) -> void:
 	var way := Vector2(m.feet.x-position.x,m.feet.z-position.z)
@@ -2215,9 +2244,10 @@ func _move(delta: float) -> void:
 ## Plowed through something (`k` 0 to 1, how much): slowed for a beat and a
 ## jolt, never stopped dead.
 func stagger(k: float) -> void:
+	# Round 2: barely slowed (a hit should feel like nothing to him).
 	_stagger = maxf(_stagger,STAGGER*clampf(k,0.0,1.0))
-	vel.x *= 1.0-0.55*k
-	vel.z *= 1.0-0.55*k
+	vel.x *= 1.0-0.1*k
+	vel.z *= 1.0-0.1*k
 	quake = maxf(quake,0.25+0.25*k)
 
 ## The world changed in `box` (rubble come to rest): its columns read
@@ -2421,7 +2451,7 @@ func _tuck(delta: float) -> void:
 
 ## The cross-fade into each state (s); others take FADE.
 const FADE := 0.22
-const FADES := {"land":0.05,"leap":0.08,"fall":0.15,"mantle":0.12,"windup":0.1,"triumph":0.08,"reach":0.3,"swat":0.08,"plant":0.15,
+const FADES := {"land":0.05,"leap":0.08,"fall":0.15,"mantle":0.12,"windup":0.1,"triumph":0.08,"reach":0.3,"swat":0.08,"smash":0.06,"plant":0.15,
 	"grab_windup":0.12,"grab_leap":0.06,"hang":0.05}
 ## The slap of the hands onto a lip: up and over (s), then down on it.
 const GRAB := 0.32
@@ -2503,6 +2533,12 @@ func _animate(delta: float) -> void:
 			look.want("idle",idle)
 		"plant": look.want("windup",clampf(state_t/float(knobs.suck_tell),0.0,1.0)*float(look.lengths.windup)*BRACE)
 		"suck","gulp": look.want("windup",float(look.lengths.windup)*BRACE)
+		"smash":
+			# The triumph's arms up, then its fists down at the hit (the swat's).
+			var whole_t := float(look.lengths.triumph)
+			var at := TRIUMPH_HIT*whole_t
+			var t := state_t/SMASH_WINDUP*at if state_t < SMASH_WINDUP else at+(state_t-SMASH_WINDUP)/SMASH_AFTER*(whole_t-at)*0.5
+			look.want("triumph",t)
 		"swat":
 			# The triumph's arms up, then its fists down at the hit.
 			var whole_t := float(look.lengths.triumph)
