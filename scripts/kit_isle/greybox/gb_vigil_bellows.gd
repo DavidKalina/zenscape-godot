@@ -20,7 +20,15 @@ extends "res://scripts/kit_isle/motif_greybox.gd"
 ## - Satellite 1 (the study's stand-in for the next isle, where chain 4 and
 ##   the sill's slab bridge land) is part of the motif; the rim out is its
 ##   east edge. The rim in is satellite 2's west edge (the study's start).
-## - The seesaw on the south terrace is the real trap_seesaw_drop.
+## - The seesaw on the south terrace is the real trap_seesaw_drop. The
+##   study's chain 3 (the gate horn gusting the seesaw's throw on, mid-air)
+##   does not hold with the horn's ball (it leads flat pace only, so it
+##   misses a ballistic body: wind-horn-blows.md), so a catching cannon
+##   (CANNON) now takes the throw where it comes down in the south apron
+##   and fires it out through the fallen corner onto satellite 1: seesaw,
+##   cannon, the rim out. Climbed into by hand it is also a way out.
+## - Turfed (below): kit land, cut stone, still water; `--vigil-grey` for
+##   the grey boxes.
 ## - The tech stays the motor's default (off): chain 2 from the north apron
 ##   skids him into the shaft without it.
 
@@ -88,6 +96,14 @@ const HORNS := [
 const TRAPS := [
 	{"name":"seesaw_drop","pos":Vector3(7.5,-3.0,30.0),"yaw":0.0,"knobs":{"ledge":0.0}},
 ]
+## The catching cannon (scripts/cannon/cannon.gd, docs/design/roguelike/
+## cannon-catch.md) in the south apron, its mouth on the seesaw's throw as
+## it comes down (measured: the throw peaks 17.3 m over the south range and
+## falls at 18 m/s along x 7.5, 9.7 m/s north, 62 deg steep), its barrel
+## laid 55 deg up toward the NE satellite, so the throw goes in along it and
+## out at satellite 1 through the fallen corner. Foot, heading (deg, the
+## shot's yaw: PilotMotor.forward), pitch (deg), power notch.
+const CANNON := {"pos":Vector3(6.27,0.0,3.78),"heading":-54.5,"pitch":55.0,"power":4}
 const LABELS := [
 	[Vector3(-3.5,13.0,-22.0),"TOWER HORN (on the corbel; watches the court's middle, blows it SOUTH)"],
 	[Vector3(0.0,11.5,15.0),"GATE HORN (watches the north half, blows it NORTH)"],
@@ -101,7 +117,8 @@ const LABELS := [
 	[Vector3(-18.0,3.2,0.0),"WEST BAYS · roofed (cover from both)"],
 	[Vector3(17.0,2.0,-12.0),"NE CORNER FALLEN · the gust line out"],
 	[Vector3(-12.0,3.4,17.0),"WALL-WALK 2.4 m (the gate horn sees it past 10 m)"],
-	[Vector3(7.5,-1.0,33.0),"CHAIN 3 · seesaw_drop on the south terrace"],
+	[Vector3(7.5,-1.0,33.0),"CHAIN 3 · seesaw_drop: stand on its plate, thrown over the range"],
+	[Vector3(6.3,4.6,3.8),"CANNON · catches the seesaw's throw, fires it out to satellite 1"],
 	[Vector3(33.0,1.8,-20.0),"SATELLITE 1 · the way on leaves its east edge"],
 	[Vector3(-12.5,1.6,-8.5),"CHAIN 1 · splash here"],
 	[Vector3(0.0,1.6,-6.0),"CHAIN 2 · hop here: blown into the shaft, kick up to the sill"],
@@ -132,7 +149,7 @@ func epithet() -> String:
 	return "The horn still blows at anything that moves; learn to be a stone."
 
 func brief() -> String:
-	return "Two wind horns, one bellows: a run in their sight, a jump or a splash wakes them. Creep, or hide under the arcade roofs.\nOr ride the blast: hop on the north apron to be blown into the tower's kick shaft (kick up to the sill), or by the fallen NE corner to be blown out to the far satellite."
+	return "Two wind horns, one bellows: a run in their sight, a jump or a splash wakes them. Creep, or hide under the arcade roofs.\nOr ride the blast: hop on the north apron to be blown into the tower's kick shaft (kick up to the sill), or by the fallen NE corner to be blown out to the far satellite. Or stand on the terrace seesaw's plate: thrown into the cannon, fired out."
 
 func start() -> Vector3:
 	return STATIONS.start[0]
@@ -258,3 +275,269 @@ func live(g: Node) -> void:
 		trap.position = g.w(row.pos)
 		trap.rotation_degrees.y = float(row.yaw)
 		g.trap(trap)
+	# The stage makes its CannonField after the greybox isles' live bits
+	# (scripts/roguelike/layer_stage.gd `setup`), so the cannon goes in once
+	# the setup has run.
+	var add_cannon := func() -> void:
+		if not is_instance_valid(g) or g.cannons() == null: return
+		var cannon: Node3D = g.cannons().add_cannon(g.w(CANNON.pos),deg_to_rad(float(CANNON.heading)),
+			{"pitch_rest":deg_to_rad(float(CANNON.pitch)),"power_rest":int(CANNON.power)})
+		g.set_meta("cannon",cannon)
+	add_cannon.call_deferred()
+
+# --- Turf pass: the land and the stone ---------------------------------------------------
+## Built as kit terrain and cut stone, not grey boxes. The walked ground
+## (the garth with the pool's bowl, the fallen NE corner and its scree, the
+## NE bridge head and satellite 1) is one KitLand island whose ground
+## function is the greybox's tiers exactly; satellite 2 (the way in) and the
+## south terrace are islands of their own. Everything plumb (the ranges'
+## back walls, the wall-walk, the gate tower, the star tower and its shaft,
+## the sill, the corbel, the arcade bays' roofs and piers, the lavabo, the
+## stepping stone, the bridges and the stair) is a walk box with the
+## greybox's numbers, drawn as one mesh of chamfered stone in the kit's
+## stone colour (scripts/kit_isle/greybox/giant_stone.gd's mesher), with a
+## band of lit runes round the star tower (the star-watchers' carvings).
+## Where the land meets a wall, its edge stands 1 m inside the wall, under
+## the stone, so no leaning kit cliff shows past a plumb face. The pool is
+## the kit's still water (KitWater). The LAYOUT stays the one table: the
+## occupancy is still computed from parts() (plus the keels, `_solids`).
+## `--vigil-grey` builds the grey boxes instead (A/B checks).
+
+const GiantStone = preload("res://scripts/kit_isle/greybox/giant_stone.gd")
+const Style = preload("res://scripts/ruin_stone_style.gd")
+const KitLife = preload("res://scripts/kit_isle/kit_life.gd")
+
+const TURF_SEED := 5300
+## The stones' bottom (m): under the land, so a wall's face runs past its edge.
+const FOOT := -2.5
+## The keels (m under their datum) and how far a keel's spurs hang under
+## top-depth (the giant's KEEL_REACH), for the occupancy.
+const MAIN_DEPTH := 10.0
+const WEST_DEPTH := 6.0
+const TERRACE_DEPTH := 8.0
+const KEEL_REACH := 1.4
+## The south terrace's top and the scree's.
+const TERRACE := -3.0
+const SCREE := -1.2
+
+static func grey() -> bool:
+	return OS.get_cmdline_user_args().has("--vigil-grey")
+
+## The main island's ground (this frame): the garth at 0, the pool's bowl
+## (bed and its north and south beaches), the scree under the fallen corner.
+static func ground(x: float, z: float) -> float:
+	if x >= 12.0 and x <= 26.0 and z >= -30.0 and z < -18.0: return SCREE
+	var pool: Rect2 = POOL.rect
+	if pool.has_point(Vector2(x,z)):
+		var bed := float(POOL.bed)
+		if z < -9.6: return lerpf(0.0,bed,(z+12.0)/2.4)
+		if z > -1.4: return lerpf(bed,0.0,(z+1.4)/2.4)
+		return bed
+	return 0.0
+
+## The main island's edge: round the garth 1 m inside its walls (round the
+## tower 1 m inside its stone, the bridge W's gap in the west wall open),
+## the scree, satellite 1 and its bridge head.
+static func main_outline() -> Array:
+	return [Vector2(-21.0,-17.0),Vector2(-5.0,-17.0),Vector2(-5.0,-31.0),Vector2(5.0,-31.0),Vector2(5.0,-17.0),
+		Vector2(12.0,-17.0),Vector2(12.0,-30.0),Vector2(26.0,-30.0),Vector2(26.0,-34.0),Vector2(40.0,-34.0),
+		Vector2(40.0,8.0),Vector2(21.0,8.0),Vector2(21.0,17.0),Vector2(-21.0,17.0),Vector2(-21.0,8.0),
+		Vector2(-22.5,8.0),Vector2(-22.5,4.0),Vector2(-21.0,4.0)]
+
+static func west_outline() -> Array:
+	return _rounded(Rect2(-40.0,0.0,12.0,12.0),1.6)
+
+## The south terrace, its north edge under the wall-walk.
+static func terrace_outline() -> Array:
+	var r := Rect2(-22.0,17.0,44.0,17.0)
+	var cut := 2.0
+	return [Vector2(r.position.x,r.position.y),Vector2(r.end.x,r.position.y),Vector2(r.end.x,r.end.y-cut),
+		Vector2(r.end.x-cut,r.end.y),Vector2(r.position.x+cut,r.end.y),Vector2(r.position.x,r.end.y-cut)]
+
+static func _rounded(r: Rect2, cut: float) -> Array:
+	var a := r.position
+	var b := r.end
+	return [Vector2(a.x+cut,a.y),Vector2(b.x-cut,a.y),Vector2(b.x,a.y+cut),Vector2(b.x,b.y-cut),
+		Vector2(b.x-cut,b.y),Vector2(a.x+cut,b.y),Vector2(a.x,b.y-cut),Vector2(a.x,a.y+cut)]
+
+## The worn ways: over the bridge W into the west bays, along the south
+## apron (the blind band), the north apron to the shaft's door, out by the
+## fallen corner over the bridge head to the rim out.
+static func paths() -> Array:
+	return [[Vector2(-38.0,6.0),Vector2(-22.0,6.0),Vector2(-18.0,6.0),Vector2(-18.0,-8.0)],
+		[Vector2(-16.0,9.5),Vector2(0.0,9.0),Vector2(16.0,9.5)],
+		[Vector2(0.0,-5.0),Vector2(0.0,-12.6)],
+		[Vector2(10.0,-5.0),Vector2(22.0,-8.0),Vector2(30.0,-14.0),Vector2(39.0,-14.0)]]
+
+func flora_site() -> KitFlora.Site:
+	return KitFlora.Site.new(top(),KitLand.wear_of(paths()))
+
+func flora_seed() -> int:
+	return TURF_SEED+9
+
+func life_script() -> Script:
+	return null if grey() else KitLife
+
+func warm() -> void:
+	super.warm()
+	if grey(): return
+	KitLook.palette()
+	KitLook.ground_material()
+	KitLook.rock_material()
+	KitLook.rock_tone(Vector3.ZERO,30.0,Vector3.UP)
+	RuinKit.materials()
+	GiantStone.warm()
+
+## The greybox's solids and the keels under the three islands (their
+## spurs' reach), so the occupancy keeps the generator off the rock.
+func _solids() -> Array:
+	var out := super._solids()
+	if grey(): return out
+	for keel: Array in [[main_outline(),0.0,MAIN_DEPTH],[west_outline(),0.0,WEST_DEPTH],[terrace_outline(),TERRACE,TERRACE_DEPTH]]:
+		var ring: Array = keel[0]
+		var box := Rect2(ring[0],Vector2.ZERO)
+		for p: Vector2 in ring: box = box.expand(p)
+		out.append([box.grow(-1.0),float(keel[1])-float(keel[2])*KEEL_REACH,float(keel[1]),null])
+	return out
+
+## Measured headless on a loaded 4-core Linux box (the turf build, 2026-10-14: 958 ms).
+func build_cost() -> int:
+	return 0 if grey() else 950
+
+## Turf on the ground, the cloister in stone, the pool's water.
+func build(into: Node3D) -> void:
+	if grey():
+		super.build(into)
+		return
+	art = into
+	var began := Time.get_ticks_msec()
+	var root := Node3D.new()
+	root.name = "VigilBellows"
+	into.add_child(root)
+	var pool: Rect2 = POOL.rect
+	var wet := func(mid: Vector2, y: float) -> float: return 1.0 if pool.grow(0.3).has_point(mid) and y < -0.2 else 0.0
+	var tone := KitLook.turf(TURF_SEED,KitLand.wear_of(paths()),wet)
+	var main := KitLand.island({"outline":main_outline(),"seed":TURF_SEED,"ground":func(x: float, z: float) -> float: return ground(x,z),
+		"top":0.0,"depth":MAIN_DEPTH,"cliffs":Rect2(-16.5,-31.0,43.5,33.5),"fine":1.2,"hang":true,"resample":[60.0,260,32],"tone":tone})
+	main.name = "Garth"
+	var west := KitLand.island({"outline":west_outline(),"seed":TURF_SEED+1,"ground":func(_x: float, _z: float) -> float: return 0.0,
+		"top":0.0,"depth":WEST_DEPTH,"hang":true,"resample":[40.0,80,32],"tone":tone})
+	west.name = "WestSatellite"
+	var terrace := KitLand.island({"outline":terrace_outline(),"seed":TURF_SEED+2,"ground":func(_x: float, _z: float) -> float: return TERRACE,
+		"top":TERRACE,"depth":TERRACE_DEPTH,"hang":true,"resample":[60.0,160,32],"tone":tone})
+	terrace.name = "Terrace"
+	for land: Node3D in [main,west,terrace]:
+		_collide_sides(land)
+		root.add_child(land)
+		turf(land)
+	root.add_child(KitWater.still({"name":"Pool","level":float(POOL.surface),
+		"ground":func(x: float, z: float) -> float: return ground(x,z),
+		"rect":pool.grow(0.6),"inside":func(_p: Vector2) -> bool: return true,"tea":0.35}))
+	_stone(root)
+	built_ms = Time.get_ticks_msec()-began
+
+## An island's hanging sides collided as drawn (the giant's `_collide_sides`).
+static func _collide_sides(land: Node3D) -> void:
+	var sides := land.get_node_or_null("Mesh") as MeshInstance3D
+	if sides == null or sides.mesh == null: return
+	var body := StaticBody3D.new()
+	body.name = "Sides"
+	var shape := ConcavePolygonShape3D.new()
+	shape.set_faces(sides.mesh.get_faces())
+	shape.backface_collision = true
+	var holder := CollisionShape3D.new()
+	holder.shape = shape
+	body.add_child(holder)
+	land.add_child(body)
+
+## The cloister's stone: one mesh, collided as the greybox's walk boxes.
+func _stone(root: Node3D) -> void:
+	var m: RefCounted = GiantStone.Mesher.new(Style.stone_of(TURF_SEED) if Style.ruled() else RuinKit.STONE.srgb_to_linear())
+	var solids := Node3D.new()
+	solids.name = "Walk"
+	root.add_child(solids)
+	# The star tower: the sill's tier, the east (kick) tier, the back wall,
+	# and the sill walk behind.
+	for isle: Dictionary in ISLES:
+		if isle.has("tiers"):
+			for tier: Array in isle.tiers: _block(m,solids,tier[0],FOOT,float(tier[1]),0.25,0.0)
+		elif str(isle.name).begins_with("sill walk"): _block(m,solids,isle.rect,FOOT,float(isle.top),0.25,0.0)
+		elif isle.name == "lavabo isle": _block(m,solids,isle.rect,float(POOL.bed)-0.3,float(isle.top),0.15,float(POOL.bed))
+		elif str(isle.name).begins_with("bridge W"):
+			var r: Rect2 = isle.rect
+			_block(m,solids,Rect2(r.position.x-0.6,r.position.y,r.size.x+1.6,r.size.y),-0.7,0.0,0.12,-0.7)
+	# The walls, the wall-walk (down to the terrace), the gate tower, the
+	# corbel the tower horn stands on, the sill's parapet, the shaft's
+	# lintel, the stepping stone, the lavabo's basin and roof.
+	for b: Array in BOXES:
+		var r: Rect2 = b[1]
+		var bottom := float(b[2])
+		var high := float(b[3])
+		match str(b[0]):
+			"lavabo prize":
+				_walk(solids,r,bottom,high)
+				m.cylinder(Transform3D(Basis.IDENTITY,Vector3(r.get_center().x,(bottom+high)*0.5,r.get_center().y)),0.5,high-bottom,16,0.04,bottom,1.15)
+			"south wall-walk": _block(m,solids,r,TERRACE-1.0,high,0.2,0.0)
+			"stone E", "lavabo roof", "sill parapet", "shaft lintel", "tower corbel": _block(m,solids,r,bottom,high,0.1)
+			_: _block(m,solids,r,FOOT,high,0.2,0.0)
+	for p: Array in POSTS: _cyl(m,solids,p[0],float(p[1]),float(p[2]),float(p[3]))
+	# The arcade: each bay's roof on its four piers.
+	for bay: Rect2 in bays():
+		_block(m,solids,bay,ARCADE_ROOF.x,ARCADE_ROOF.y,0.12,ARCADE_ROOF.x)
+		for px: float in [bay.position.x+PIER_R,bay.end.x-PIER_R]:
+			for pz: float in [bay.position.y+PIER_R,bay.end.y-PIER_R]:
+				_cyl(m,solids,Vector2(px,pz),PIER_R,0.0,ARCADE_ROOF.x)
+	# The stair up the terrace, the slab bridge from the sill to satellite 1.
+	for ramp: Array in RAMPS:
+		if str(ramp[0]).begins_with("pool"): continue
+		_ramp(m,solids,ramp[1],ramp[2],float(ramp[3]))
+	# The star-watchers' carvings: a band of lit runes round the tower.
+	var band := 9.0-1.35
+	m.runes(Vector3(6.0,band,-12.0),Vector3(1.4,band,-12.0),Vector3.UP,Vector3(0,0,1),1.0)
+	m.runes(Vector3(6.0,band,-28.0),Vector3(6.0,band,-12.0),Vector3.UP,Vector3(1,0,0),2.0)
+	m.runes(Vector3(-6.0,6.0-1.35,-12.0),Vector3(-6.0,6.0-1.35,-28.0),Vector3.UP,Vector3(-1,0,0),3.0)
+	var body := MeshInstance3D.new()
+	body.name = "Stone"
+	body.mesh = GiantStone.mesh_of(m)
+	root.add_child(body)
+	root.set_meta("stone_triangles",m.triangles())
+
+static func _block(m: RefCounted, solids: Node3D, r: Rect2, bottom: float, high: float, bevel: float, foot := NAN) -> void:
+	_walk(solids,r,bottom,high)
+	m.box(Transform3D(Basis.IDENTITY,Vector3(r.get_center().x,(bottom+high)*0.5,r.get_center().y)),Vector3(r.size.x,high-bottom,r.size.y),bevel,foot)
+
+static func _cyl(m: RefCounted, solids: Node3D, c: Vector2, radius: float, bottom: float, high: float) -> void:
+	var body := StaticBody3D.new()
+	body.position = Vector3(c.x,(bottom+high)*0.5,c.y)
+	var holder := CollisionShape3D.new()
+	var shape := CylinderShape3D.new()
+	shape.radius = radius
+	shape.height = high-bottom
+	holder.shape = shape
+	body.add_child(holder)
+	solids.add_child(body)
+	m.cylinder(Transform3D(Basis.IDENTITY,body.position),radius,high-bottom,12,0.06,bottom)
+
+## A ramp as the greybox's (its walked top from `low` to `high`, 0.4 thick,
+## collided), drawn a slab twice as thick under it.
+static func _ramp(m: RefCounted, solids: Node3D, low: Vector3, high: Vector3, width: float) -> void:
+	var along := (high-low).normalized()
+	var side := Vector3.UP.cross(along).normalized()
+	var up := along.cross(side).normalized()
+	var length := low.distance_to(high)+0.02
+	var place := Transform3D(Basis(side,up,along),(low+high)*0.5-up*0.2)
+	var body := StaticBody3D.new()
+	body.transform = place
+	var holder := CollisionShape3D.new()
+	holder.shape = _box_shape(Vector3(width,0.4,length))
+	body.add_child(holder)
+	solids.add_child(body)
+	m.box(Transform3D(place.basis,(low+high)*0.5-up*0.4),Vector3(width,0.8,length),0.1)
+
+static func _walk(solids: Node3D, r: Rect2, bottom: float, high: float) -> void:
+	var body := StaticBody3D.new()
+	body.position = Vector3(r.get_center().x,(bottom+high)*0.5,r.get_center().y)
+	var holder := CollisionShape3D.new()
+	holder.shape = _box_shape(Vector3(r.size.x,high-bottom,r.size.y))
+	body.add_child(holder)
+	solids.add_child(body)
