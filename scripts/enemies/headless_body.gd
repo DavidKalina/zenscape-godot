@@ -1230,7 +1230,10 @@ func _plan() -> void:
 		goal = Vector3(head.global_position.x,head.ground_y(),head.global_position.z)
 		reach = length*0.5+float(head.length)*0.5+float(knobs.reunite)
 	else:
-		goal = _wander_goal(WANDER.x,WANDER.y,0.0)
+		# Along the way it picked as it listened (on as it faced, out of
+		# hearing; any way, lost): a goal any way paced it back and forth
+		# across one isle, never on into hearing.
+		goal = _wander_goal(WANDER.x,WANDER.y,0.0,_heading)
 		reach = 6.0
 	if _routed() and goal.distance_to(_goal) < GOAL_MOVED and _on_leg(): return
 	_start_search(goal,reach)
@@ -1243,10 +1246,12 @@ func _start_search(goal: Vector3, reach: float) -> void:
 	plans += 1
 	_search = Routes.Search.new(routes,position,goal,reach,_banned)
 
-## A goal `near`-`far` m off any way, `down` m under its feet.
-func _wander_goal(near: float, far: float, down: float) -> Vector3:
-	var a := _rng.randf_range(-PI,PI)
+## A goal `near`-`far` m off any way (or `way`'s, as `facing`), `down` m
+## under its feet.
+func _wander_goal(near: float, far: float, down: float, way := INF) -> Vector3:
 	var d := _rng.randf_range(near,far)
+	if way != INF: return position+_way3(way)*d+Vector3.DOWN*down
+	var a := _rng.randf_range(-PI,PI)
 	return position+Vector3(sin(a)*d,-down,cos(a)*d)
 
 ## The search stepped; done, its route taken (none: out, `_bail`).
