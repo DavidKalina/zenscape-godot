@@ -153,7 +153,6 @@ static func _make(seed_value: int, attempt: int, knobs: Dictionary) -> Dictionar
 	rng.seed = hash([seed_value,attempt,"ring"])
 	var k_all := LayerPlan.KNOBS.duplicate()
 	k_all.merge(knobs,true)
-	k_all.one_way = LayerPlan.one_way_for(int(k_all.one_way),attempt)
 	var plan := {"seed":seed_value,"attempt":attempt,"knobs":k_all,"shape":"ring","isles":[],"edges":[],"hoods":[],"gulfs":[],"route":[],"exit":{},
 		"spawn":{},"prize":{},"cannon":{},"ram":{},"void_y":0.0,"tubes":[],"problems":[]}
 	var n := int(k_all.get("ring",0))
@@ -231,6 +230,7 @@ static func _make(seed_value: int, attempt: int, knobs: Dictionary) -> Dictionar
 		if s.kind != "rim" or float(s.run_up) < GATE_RUN_UP or not LayerPlan.can_out(s,plan.knobs): continue
 		var f := Vector2((s.face as Vector3).x,(s.face as Vector3).z).normalized()
 		var score := f.dot(heading)*2.0+(s.at as Vector3).y*0.05+Vector2((s.at as Vector3).x,(s.at as Vector3).z).dot(heading)/25.0
+		score += LayerPlan.way_score(s,{},plan.knobs)
 		if score > exit_score:
 			exit_score = score
 			exit = s
@@ -696,7 +696,7 @@ static func _fits(plan: Dictionary, a: int, b: int, used: Dictionary, rng: Rando
 			if not LayerPlan._corridor_clear(edge,plan.isles,a,b): continue
 			if LayerPlan._crosses(edge,plan.edges): continue
 			# Facing each other square, short, and off a high rim.
-			fits.append([dir.dot(fa)+dir.dot(-fb)-width/150.0+0.02*lip_a.y+rng.randf(),edge])
+			fits.append([dir.dot(fa)+dir.dot(-fb)-width/150.0+0.02*lip_a.y+rng.randf()+LayerPlan.way_score(ra,rb,plan.knobs),edge])
 	fits.sort_custom(func(p: Array, q: Array) -> bool: return float(p[0]) > float(q[0]))
 	return fits.map(func(p: Array) -> Dictionary: return p[1])
 

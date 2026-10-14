@@ -296,7 +296,7 @@ static func _chain(plan: Dictionary, lean: Vector2, rng: RandomNumberGenerator) 
 			if not (plan.ram as Dictionary).is_empty() and int(plan.ram.isle) == i and (plan.ram.at as Vector3).distance_to(s.at) < LayerPlan.RAM_CLEAR: continue
 			# Facing the exit side, high, and furthest out that way.
 			var out_on := Vector2((s.at as Vector3).x,(s.at as Vector3).z).dot(heading)/RIM_OUT
-			rims.append([f.dot(heading)*2.0+(s.at as Vector3).y*0.05+out_on+rng.randf(),i,s])
+			rims.append([f.dot(heading)*2.0+(s.at as Vector3).y*0.05+out_on+rng.randf()+LayerPlan.way_score(s,{},plan.knobs),i,s])
 	rims.sort_custom(func(a: Array, b: Array) -> bool: return float(a[0]) > float(b[0]))
 	# The first chain each rim takes; the one whose gate stands furthest out
 	# kept, at once if it is GATE_PAST the last neighbourhood's middle.
