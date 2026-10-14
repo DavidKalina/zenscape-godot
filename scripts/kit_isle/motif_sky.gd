@@ -135,6 +135,10 @@ func _add_isle(motif: RefCounted, offset: Vector3, place: Array, args: PackedStr
 	var isle: Node3D = MotifIsle.new()
 	isle.setup(scene,motif,offset,args)
 	isle.threaded = threaded
+	# Its plants read its own ground and the stage, not the isles beside it
+	# nor the viaduct (when those stand depends on how fast the layer
+	# loads; the plants shouldn't): the same plants every time.
+	isle.looks_past_neighbours = true
 	var at: Vector3 = place[1]
 	isle.guess = Vector3(at.x,at.z,float(place[2]))
 	add_child(isle)
@@ -223,6 +227,6 @@ func _process(delta: float) -> void:
 		if best == null: break
 		var began := Time.get_ticks_usec()
 		var was: String = best.stage
-		best.work(maxi(SkyCommits.BUDGET_USEC-SkyCommits.used(),SLICE_LEAST))
+		best.work(maxi(SkyCommits.budget()-SkyCommits.used(),SLICE_LEAST))
 		SkyCommits.spend("motif isle %s %s" % [best.name,was] if SkyCommits.recording else "motif isle",Time.get_ticks_usec()-began)
 	for isle: Node3D in isles: isle.advance(delta,eye)

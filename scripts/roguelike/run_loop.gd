@@ -117,6 +117,9 @@ func setup(scene: Node3D) -> void:
 
 ## Whether the pilot moves this tick (false: held still behind the veil).
 func before_tick(delta: float) -> bool:
+	# Held still behind the loading screen (studies/run_layer.gd `loading`).
+	var loading: Variant = study.get("loading")
+	if loading != null and loading.active: return false
 	_t += delta
 	var moves := true
 	match state:
@@ -230,6 +233,7 @@ func _maybe_wake() -> void:
 	if state != "card" or not _wake or _laid_for != _want: return
 	run.begin(_laid_seed)
 	overlay.hide_card()
+	study.hold_for_layer()
 	_arrive(RunOverlay.DARK)
 
 func _arrive(colour: Color) -> void:
@@ -243,6 +247,11 @@ func _arrive(colour: Color) -> void:
 		overlay.show_caption(WORDS.arrive_first,line)
 	else:
 		overlay.show_caption(WORDS.arrive,WORDS.arrive_line % metres(run.height))
+
+## The loading screen is lifting: the arrival's dark veil is not needed
+## over a view the screen has just shown (its caption still comes).
+func loading_done() -> void:
+	if state == "arrive": _veil = 0.0
 
 # --- The study's hooks ------------------------------------------------------------
 

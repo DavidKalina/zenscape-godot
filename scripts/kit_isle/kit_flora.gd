@@ -91,6 +91,10 @@ class Site extends RefCounted:
 	var wet := Callable()
 	var ray := Vector2(90.0,22.0)
 	var tufts := 4.6
+	## (collider) -> bool: what a plant's ray looks past, as if it weren't
+	## there (a placed isle's neighbours: scripts/kit_isle/motif_isle.gd);
+	## none by default.
+	var looks_past := Callable()
 
 	func _init(top := 30.0, wear_fn := Callable(), wet_fn := Callable()) -> void:
 		ray = Vector2(top+60.0,top-8.0)
@@ -118,6 +122,7 @@ static func prober(space: PhysicsDirectSpaceState3D, turf: Array, site: Site) ->
 	var steep: float = float(KitLook.palette().rock_slope)*STEEP_SHARE
 	var ray := PhysicsRayQueryParameters3D.new()
 	var span := site.ray
+	var past := site.looks_past
 	return func(p: Vector2, reach: float) -> float:
 		var top := NAN
 		var offsets: Array = [Vector2.ZERO] if reach <= 0.0 else [Vector2.ZERO,Vector2(reach,0.0),Vector2(-reach,0.0),Vector2(0.0,reach),Vector2(0.0,-reach)]
@@ -125,6 +130,14 @@ static func prober(space: PhysicsDirectSpaceState3D, turf: Array, site: Site) ->
 			ray.from = Vector3(p.x+off.x,span.x,p.y+off.y)
 			ray.to = Vector3(p.x+off.x,span.y,p.y+off.y)
 			var hit := space.intersect_ray(ray)
+			# Past what the site looks past, cast again without it.
+			if past.is_valid() and not hit.is_empty() and not turf_ids.has((hit.collider as Object).get_instance_id()) and bool(past.call(hit.collider)):
+				var skipped: Array[RID] = []
+				while not hit.is_empty() and not turf_ids.has((hit.collider as Object).get_instance_id()) and bool(past.call(hit.collider)) and skipped.size() < 16:
+					skipped.append(hit.rid)
+					ray.exclude = skipped
+					hit = space.intersect_ray(ray)
+				ray.exclude = []
 			if hit.is_empty() or not turf_ids.has((hit.collider as Object).get_instance_id()): return NAN
 			var normal: Vector3 = hit.normal
 			if normal.y <= 0.0 or sqrt(maxf(0.0,1.0-normal.y*normal.y))/normal.y > steep: return NAN
@@ -136,6 +149,50 @@ static func edge(p: Vector2, outlines: Array) -> float:
 	for outline: PackedVector2Array in outlines:
 		if Geometry2D.is_point_in_polygon(p,outline): return KitLand.edge_distance(p,outline)
 	return -1.0
+
+## `edge` for many points over the same outlines, faster: each outline's
+## segments filed by the cells (REACH_INDEX across) their box grown by
+## REACH_INDEX touches, so a point looks only at the segments that could be
+## within REACH_INDEX of it, with the very calls `edge` makes. `upto(p)` is
+## `edge(p)` exactly when that is under REACH_INDEX (or -1 off the outlines),
+## and INF otherwise: every test against a distance under REACH_INDEX (the
+## rim, RIM_NEAR, a log's clearance) comes out as `edge`'s does.
+const REACH_INDEX := 3.5
+
+class EdgeIndex extends RefCounted:
+	var _outlines: Array
+	var _grids: Array = []
+
+	func _init(outlines: Array) -> void:
+		_outlines = outlines
+		var grow := REACH_INDEX*1.01+0.01
+		for outline: PackedVector2Array in outlines:
+			var grid := {}
+			var n := outline.size()
+			for i in range(n):
+				var a := outline[i]
+				var b := outline[(i+1)%n]
+				var lo := a.min(b)-Vector2.ONE*grow
+				var hi := a.max(b)+Vector2.ONE*grow
+				for cx in range(floori(lo.x/REACH_INDEX),floori(hi.x/REACH_INDEX)+1):
+					for cz in range(floori(lo.y/REACH_INDEX),floori(hi.y/REACH_INDEX)+1):
+						var key := Vector2i(cx,cz)
+						if not grid.has(key): grid[key] = []
+						(grid[key] as Array).append(i)
+			_grids.append(grid)
+
+	func upto(p: Vector2) -> float:
+		for k in range(_outlines.size()):
+			var outline: PackedVector2Array = _outlines[k]
+			if not Geometry2D.is_point_in_polygon(p,outline): continue
+			var segs: Variant = (_grids[k] as Dictionary).get(Vector2i(floori(p.x/REACH_INDEX),floori(p.y/REACH_INDEX)))
+			if segs == null: return INF
+			var n := outline.size()
+			var best := INF
+			for i: int in segs:
+				best = minf(best,p.distance_to(Geometry2D.get_closest_point_to_segment(p,outline[i],outline[(i+1)%n])))
+			return best if best < REACH_INDEX else INF
+		return -1.0
 
 ## [the outlines' box, their area].
 static func box_and_area(outlines: Array) -> Array:
@@ -180,10 +237,12 @@ class Grow extends RefCounted:
 	var _n := 0
 	var _phase := 0
 	var _draw: Draw
+	var _edges: EdgeIndex
 
 	func _init(seed_value: int, space: PhysicsDirectSpaceState3D, turf: Array, outlines: Array, site: Site) -> void:
 		_site = site
 		_outlines = outlines
+		_edges = EdgeIndex.new(outlines)
 		_rng.seed = seed_value
 		_drift.seed = seed_value+5
 		_drift.frequency = DRIFT_FREQUENCY
@@ -222,7 +281,7 @@ class Grow extends RefCounted:
 			var thick := clampf(0.6+_drift.get_noise_2d(p.x,p.y)*1.3,THIN,1.0)
 			var worn := _site.worn(p)
 			if worn > PATH_BARE or _rng.randf() > thick*(1.0-smoothstep(PATH_THIN,PATH_BARE,worn)): continue
-			if KitFlora.edge(p,_outlines) < RIM: continue
+			if _edges.upto(p) < RIM: continue
 			_add("grass_tuft",p,_rng.randf_range(TUFT_SIZE.x,TUFT_SIZE.y)*lerpf(1.0,0.75,worn))
 		# Flowers: the meadow type's drifts, sown sparse.
 		var sizes: Dictionary = _meadow.type.sizes
@@ -240,7 +299,7 @@ class Grow extends RefCounted:
 			var kind := _meadow.kind_at(p,_rng.randf())
 			var keep := pow(presence,1.2)*MeadowTypes.packing(kind)*FLOWER_SHARE
 			if _rng.randf() > maxf(keep,STRAY): continue
-			if _site.worn(p) > PATH_THIN or KitFlora.edge(p,_outlines) < RIM+0.3: continue
+			if _site.worn(p) > PATH_THIN or _edges.upto(p) < RIM+0.3: continue
 			var range_of: Array = sizes.get(kind,[0.85,1.1])
 			var formed: Array = MeadowTypes.form(kind,_rng.randf_range(float(range_of[0]),float(range_of[1])),_rng.randf()*TAU)
 			var extra := {}
@@ -283,9 +342,12 @@ class Undergrow extends RefCounted:
 	var _phase := 0
 	var _draw: Draw
 
+	var _edges: EdgeIndex
+
 	func _init(seed_value: int, space: PhysicsDirectSpaceState3D, turf: Array, outlines: Array, site: Site) -> void:
 		_site = site
 		_outlines = outlines
+		_edges = EdgeIndex.new(outlines)
 		_rng.seed = seed_value
 		_probe = KitFlora.prober(space,turf,site)
 		var ba := KitFlora.box_and_area(outlines)
@@ -325,7 +387,7 @@ class Undergrow extends RefCounted:
 			if usec >= 0 and Time.get_ticks_usec() > end: return false
 			_n += 1
 			var p := Vector2(_rng.randf_range(_box.position.x,_box.end.x),_rng.randf_range(_box.position.y,_box.end.y))
-			var e := KitFlora.edge(p,_outlines)
+			var e := _edges.upto(p)
 			if e < UNDER_RIM or _site.worn(p) > 0.05: continue
 			if e > RIM_NEAR and not _at_foot(p) and _rng.randf() > OPEN_KEEP: continue
 			if asset == "mushroom":
@@ -348,7 +410,7 @@ class Undergrow extends RefCounted:
 			if usec >= 0 and Time.get_ticks_usec() > end: return false
 			_n += 1
 			var p := Vector2(_rng.randf_range(_box.position.x,_box.end.x),_rng.randf_range(_box.position.y,_box.end.y))
-			if KitFlora.edge(p,_outlines) < 2.0 or _site.worn(p) > 0.02 or not _at_foot(p): continue
+			if _edges.upto(p) < 2.0 or _site.worn(p) > 0.02 or not _at_foot(p): continue
 			# A log wants its length clear: probe along it.
 			var angle := _rng.randf()*TAU
 			var along := Vector2.from_angle(angle)

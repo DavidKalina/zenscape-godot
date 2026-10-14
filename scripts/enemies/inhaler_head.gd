@@ -71,6 +71,12 @@ extends "res://scripts/enemies/enemy.gd"
 ## (`yank`); hanging from a rim his grip slips (`grip` s); in the air his
 ## velocity is drawn (`air_pull`); the sail and the plane feel it
 ## (`sail_wind`, `plane_wind`).
+## Worn (whole-body-chase-round1.md): on a whole body whose chase is on, it
+## still draws when its body asks (`_worn`, the body's `worn_draw()`): the
+## jaw opening as the body plants (a "tell"), then the "inhale" and its pull
+## from up on the neck; drawn in to the body's feet (`worn_gulp`) he is
+## swallowed, held and blasted out as ever, then "after". Off a body whose
+## chase is off, perched is as it was.
 ## Its body is a stone (the base's box): he stands on it (it carries him,
 ## heaves and all), he can't walk through it, it shoves him out moving into
 ## him. Its lurch onto its chin shoves him if he stands at its face. No
@@ -228,6 +234,10 @@ func default_knobs(n: Dictionary) -> Dictionary:
 		"call_r":n.unit*15.0,"call_every":3.0,"call_hold":4.0,
 		"dazed":2.4,"stone_skid":n.unit*7.0,
 		"sail_wind":1.6,"plane_wind":2.2,
+		# Worn on a whole body that hunts (whole-body-chase-round1.md), its
+		# draw reaches from up on the neck out over the body's suck range:
+		# these in place of `reach`, `pull_d0` and `pull` while worn.
+		"worn_reach":n.unit*28.0,"worn_pull_d0":n.unit*20.0,"worn_pull":n.run*1.3,
 	}
 
 ## Chin to crown `size` of his heights; as wide as the model, as deep.
@@ -416,6 +426,7 @@ func think(delta: float) -> void:
 
 ## Carried by its body: the jaw shut, no draw, the eyes lit.
 func _perched(delta: float) -> void:
+	if _worn(delta): return
 	state = "perched"
 	vel = Vector3.ZERO
 	_slide = Vector3.ZERO
@@ -434,6 +445,67 @@ func _go(to: String) -> void:
 	state = to
 	state_t = 0.0
 	_strain = 0.0
+
+# --- Worn on a whole body that hunts (whole-body-chase-round1.md) ---------------------
+
+## Whether its body asks it to draw now (or it holds him, or is spent from
+## a blast): it does, from the neck (true); else false, as perched ever was.
+func _worn(delta: float) -> bool:
+	if not _worn_now(): return false
+	air.reach = float(knobs.worn_reach)
+	var ask: float = perch.worn_draw()
+	if ask <= 0.0 and not swallowed and not (state == "after" and state_t < float(knobs.after)): return false
+	var m: PilotMotor = field.motor
+	var chest := _chest(m)
+	vel = Vector3.ZERO
+	_slide = Vector3.ZERO
+	_act = ""
+	var want_open := 0.0
+	var want_glow := 1.0
+	var want_draw := 0.0
+	if swallowed:
+		want_open = 0.0
+		_shake = 0.02
+		_hold(m)
+		if fmod(state_t,0.25) < delta:
+			var side := Vector3(-face_flat().z,0.0,face_flat().x)*width*0.55
+			var flaps := global_position+Vector3.UP*height*0.45
+			air.swallowing(flaps-side,flaps+side,face_flat())
+		if state_t >= float(knobs.hold):
+			_blast(m)
+			_slide = Vector3.ZERO
+	elif state == "after":
+		want_open = 0.0 if state_t > 0.6 else 1.1*(1.0-state_t/0.6)
+		want_glow = 1.0-clampf(state_t/float(knobs.after),0.0,1.0)*0.5
+	elif ask < 1.0:
+		if state != "tell":
+			_go("tell")
+			tell()
+		want_open = ask*0.7
+		want_draw = float(knobs.tell_draw)*ask
+	else:
+		if state != "inhale": _go("inhale")
+		want_open = 0.78+0.04*sin(_clock*17.0)
+		want_draw = 1.0
+	var jaw_rate := 9.0 if swallowed or (state == "after" and state_t < 0.6) else 1.4
+	_open = move_toward(_open,want_open,jaw_rate*delta)
+	_glow = move_toward(_glow,want_glow,1.5*delta)
+	look.open(_open)
+	look.glow(_glow)
+	draw_share = move_toward(draw_share,want_draw,(3.0 if want_draw > draw_share else 2.0)*delta)
+	air.draw(draw_share,delta)
+	if not swallowed: _pull(m,chest,delta)
+	return true
+
+## Worn on a body whose hunt is on: its worn draw.
+func _worn_now() -> bool:
+	return perch != null and is_instance_valid(perch) and perch.has_method("chasing_whole") and perch.chasing_whole()
+
+## Whether its draw would reach him from where it sits now (a full draw,
+## nothing between its mouth and his chest): its body plants for him.
+func worn_reaches(m: PilotMotor) -> bool:
+	var chest := _chest(m)
+	return pull_at(chest) > 0.05 and _clear(mouth(),chest)
 
 # --- Its calls -------------------------------------------------------------------------
 
@@ -690,7 +762,7 @@ func _clear(a: Vector3, b: Vector3) -> bool:
 	_ray.from = a
 	_ray.to = b
 	_ray.collision_mask = field.study.ground.mask
-	_ray.exclude = [body.get_rid()]
+	_ray.exclude = [body.get_rid()] if perch == null else [body.get_rid(),perch.body.get_rid()]
 	return field.study.get_world_3d().direct_space_state.intersect_ray(_ray).is_empty()
 
 # --- The pull ----------------------------------------------------------------------------
@@ -701,14 +773,16 @@ func pull_at(p: Vector3) -> float:
 	var mouth_at := mouth()
 	var off := p-mouth_at
 	var d := off.length()
-	if d > float(knobs.reach) or d < 0.001: return 0.0
-	var half := lerpf(float(knobs.cone_near),float(knobs.cone),smoothstep(0.0,float(knobs.reach)*0.5,d))
+	var worn := _worn_now()
+	var reach := float(knobs.worn_reach) if worn else float(knobs.reach)
+	if d > reach or d < 0.001: return 0.0
+	var half := lerpf(float(knobs.cone_near),float(knobs.cone),smoothstep(0.0,reach*0.5,d))
 	var flat_off := Vector3(off.x,0.0,off.z)
 	var angle := face_flat().angle_to(flat_off/maxf(flat_off.length(),0.001)) if flat_off.length() > 0.3 else 0.0
 	var in_cone := 1.0-smoothstep(half*0.7,half,angle)
-	var fade := 1.0-smoothstep(float(knobs.reach)*0.75,float(knobs.reach),d)
-	var k := d/float(knobs.pull_d0)
-	return float(knobs.pull)*in_cone*fade/(1.0+k*k)
+	var fade := 1.0-smoothstep(reach*0.75,reach,d)
+	var k := d/(float(knobs.worn_pull_d0) if worn else float(knobs.pull_d0))
+	return (float(knobs.worn_pull) if worn else float(knobs.pull))*in_cone*fade/(1.0+k*k)
 
 ## The air it draws at `p` for the sail and the plane: toward the mouth,
 ## `scale` times the pull there, cover counted.
@@ -728,6 +802,10 @@ func _pull(m: PilotMotor, chest: Vector3, delta: float) -> void:
 	var to := mouth_at-chest
 	var d := to.length()
 	if Vector2(Vector2(to.x,to.z).length(),to.y*0.5).length() <= float(knobs.gulp_reach):
+		_gulp(m)
+		return
+	# Worn up on a body's neck: drawn in to its feet is drawn in.
+	if perch != null and perch.has_method("worn_gulp") and perch.worn_gulp(m.feet):
 		_gulp(m)
 		return
 	var p := pull_at(chest)*draw_share
