@@ -430,6 +430,11 @@ var stones: Node3D
 var currents: Node3D
 var _air_was: Callable
 var _beds: Array = []
+## The viaduct while its worker builds and its children stand: {v, task, node, stand, held}.
+var _waiting := {}
+var _on_was: Variant = null
+## Time a frame gives to standing the viaduct's children (microseconds).
+const VIADUCT_STAND_USEC := 2000
 
 ## Built on `stage` from its plan, or null (nothing to build).
 static func dress(stage: Node3D, plan: Dictionary) -> Node3D:
@@ -487,14 +492,69 @@ static func _zone(z: Dictionary) -> Callable:
 ## The viaduct as the yard builds it, at its place: its stones (foot pieces,
 ## stepped here), its updrafts on the sail's air.
 func _build_viaduct(v: Dictionary, paint: Callable) -> void:
-	viaduct = Viaduct.new()
-	viaduct.name = "BrokenViaduct"
-	viaduct.lay_out()
-	viaduct.transform = v.xform
-	add_child(viaduct)
-	viaduct.build(paint)
-	# Its stone's and growth's levels of detail (scripts/ruin_lod.gd).
-	preload("res://scripts/ruin_lod.gd").add_async(viaduct)
+	# Headless (the dummy renderer's meshes aren't safe to make on a worker,
+	# godot#124183) it is built here, whole, as before.
+	if DisplayServer.get_name() == "headless":
+		var whole := _make_viaduct(v,paint)
+		add_child(whole)
+		_finish_viaduct(whole,v)
+		return
+	# Rendered: made on a worker, off the tree (the stone, growth, collision
+	# and their levels: 5.7 s), then stood here a few children a frame.
+	_waiting = {"v":v}
+	var lock := Mutex.new()
+	# The study's paint cache is shared with the main thread.
+	var safe := func(colour: String) -> Material:
+		lock.lock()
+		var m: Material = paint.call(colour)
+		lock.unlock()
+		return m
+	_waiting.task = WorkerThreadPool.add_task(func() -> void: _waiting.node = _make_viaduct(v,safe),false,"Broken Viaduct")
+
+## The viaduct built, off the tree (safe on a worker): its stone's and
+## growth's levels (scripts/ruin_lod.gd) made, its big bodies' shapes held
+## back (scripts/late_shapes.gd).
+func _make_viaduct(v: Dictionary, paint: Callable) -> Node3D:
+	var made: Node3D = Viaduct.new()
+	made.name = "BrokenViaduct"
+	made.lay_out()
+	made.transform = v.xform
+	made.build(paint)
+	preload("res://scripts/ruin_lod.gd").add(made)
+	if DisplayServer.get_name() != "headless": preload("res://scripts/late_shapes.gd").defer(made)
+	return made
+
+## Per frame while it waits: once its worker is done, its children into the
+## tree a few at a time, then its held shapes, then the rest of its setup.
+func _process(_delta: float) -> void:
+	if _waiting.is_empty(): return
+	if not _waiting.has("stand"):
+		if not WorkerThreadPool.is_task_completed(_waiting.task): return
+		WorkerThreadPool.wait_for_task_completion(_waiting.task)
+		var node: Node3D = _waiting.node
+		var kids := node.get_children()
+		for kid in kids: node.remove_child(kid)
+		add_child(node)
+		_waiting.stand = kids
+		_waiting.held = []
+		return
+	var end := Time.get_ticks_usec()+VIADUCT_STAND_USEC
+	var node: Node3D = _waiting.node
+	var kids: Array = _waiting.stand
+	while not kids.is_empty() and Time.get_ticks_usec() < end:
+		var kid: Node = kids.pop_front()
+		node.add_child(kid)
+		(_waiting.held as Array).append_array(preload("res://scripts/late_shapes.gd").held_bodies(kid))
+	if not kids.is_empty(): return
+	if not preload("res://scripts/late_shapes.gd").drain(_waiting.held,maxi(end-Time.get_ticks_usec(),0)): return
+	var v: Dictionary = _waiting.v
+	_waiting = {}
+	_finish_viaduct(node,v)
+
+## What the viaduct stands up with, once it is in the tree.
+func _finish_viaduct(made: Node3D, v: Dictionary) -> void:
+	viaduct = made
+	if _on_was != null: viaduct.set_hazards(_on_was)
 	var xf: Transform3D = v.xform
 	stones = FootPieces.new()
 	stones.name = "ViaductStones"
@@ -531,10 +591,13 @@ func _build_viaduct(v: Dictionary, paint: Callable) -> void:
 		return {"wind":(here.get("wind",Vector3.ZERO) as Vector3)+(lift.wind as Vector3),"thermal":maxf(float(here.get("thermal",0.0)),float(lift.thermal))}
 
 func _exit_tree() -> void:
+	if _waiting.has("task") and not _waiting.has("stand"):
+		WorkerThreadPool.wait_for_task_completion(_waiting.task)
 	if viaduct != null and study != null and _air_was.is_valid(): study.motor.air = _air_was
 
 func set_on(value: bool) -> void:
 	if arrows != null: arrows.set_on(value)
+	_on_was = value
 	if viaduct != null: viaduct.set_hazards(value)
 
 # --- The slot (LayerStage forwards) -------------------------------------------------

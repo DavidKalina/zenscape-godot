@@ -476,6 +476,10 @@ static func triangles(root: Node) -> int:
 		var mesh := (node as Node).get_node_or_null("Mesh") as MeshInstance3D
 		if mesh == null or mesh.mesh == null: continue
 		for s in range(mesh.mesh.get_surface_count()): count += mesh.mesh.surface_get_array_len(s)/3
+		# Growth lifted out into chunks under it (scripts/ruin_lod.gd).
+		for part in mesh.get_children():
+			if part is MeshInstance3D and (part as MeshInstance3D).mesh != null and part.name == &"Growth":
+				for s in range((part as MeshInstance3D).mesh.get_surface_count()): count += (part as MeshInstance3D).mesh.surface_get_array_len(s)/3
 	return count
 
 ## The shared materials: {stone, growth}.
