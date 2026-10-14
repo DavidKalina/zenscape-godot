@@ -784,7 +784,7 @@ func _build_pilot() -> void:
 	figure.add_child(wake)
 	var decks := DeckGround.new(get_world_3d().direct_space_state,motor)
 	# The parked plane's column stands in his way too.
-	decks.see(decks.mask|PARKED_LAYER)
+	decks.see(decks.mask|PARKED_LAYER|WalkerOnly.LAYER)
 	decks.frame = self
 	decks.pools = ground.pools
 	# His body's collider is sized with him (scripts/world_scale.gd

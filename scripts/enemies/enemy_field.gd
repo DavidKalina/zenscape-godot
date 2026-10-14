@@ -101,7 +101,7 @@ func sound(sound_name: StringName, at: Vector3) -> void:
 func floor_under(p: Vector3, up: float, down: float, exclude := RID()) -> float:
 	_ray.from = p+Vector3.UP*up
 	_ray.to = p-Vector3.UP*down
-	_ray.collision_mask = study.ground.mask
+	_ray.collision_mask = WalkerOnly.strip(study.ground.mask)
 	_ray.exclude = [exclude] if exclude.is_valid() else []
 	var hit := study.get_world_3d().direct_space_state.intersect_ray(_ray)
 	return -INF if hit.is_empty() else (hit.position as Vector3).y
@@ -110,7 +110,7 @@ func floor_under(p: Vector3, up: float, down: float, exclude := RID()) -> float:
 func blocked(from: Vector3, along: Vector3, exclude := RID()) -> bool:
 	_ray.from = from
 	_ray.to = from+along
-	_ray.collision_mask = study.ground.mask
+	_ray.collision_mask = WalkerOnly.strip(study.ground.mask)
 	_ray.exclude = [exclude] if exclude.is_valid() else []
 	return not study.get_world_3d().direct_space_state.intersect_ray(_ray).is_empty()
 
@@ -122,6 +122,16 @@ func under_pilot() -> RID:
 	_ray.exclude = []
 	var hit := study.get_world_3d().direct_space_state.intersect_ray(_ray)
 	return hit.rid if not hit.is_empty() else RID()
+
+## Whether what the pilot stands on is walker-only (scripts/walker_only.gd):
+## off the enemies' ground (a shockwave runs under him).
+func pilot_on_walker_only() -> bool:
+	_ray.from = motor.feet+Vector3.UP*0.3
+	_ray.to = motor.feet-Vector3.UP*0.35
+	_ray.collision_mask = study.ground.mask
+	_ray.exclude = []
+	var hit := study.get_world_3d().direct_space_state.intersect_ray(_ray)
+	return not hit.is_empty() and WalkerOnly.marked(hit.collider)
 
 # --- The frame -------------------------------------------------------------------
 

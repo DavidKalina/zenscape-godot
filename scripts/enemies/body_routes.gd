@@ -109,7 +109,7 @@ func _init(body: Node3D) -> void:
 	jump_gap = body.jump_gap()
 	jump_rise = float(k.jump_rise)*float(body.hh)
 	jump_sink = float(k.jump_sink)*float(body.hh)
-	_ray.collision_mask = field.study.ground.mask
+	_ray.collision_mask = WalkerOnly.strip(field.study.ground.mask)
 	_skip = body._skip
 
 ## The bodies left out of the rays as they are now (call before a batch

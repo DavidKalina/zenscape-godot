@@ -761,7 +761,7 @@ func _sees(m: PilotMotor, chest: Vector3) -> bool:
 func _clear(a: Vector3, b: Vector3) -> bool:
 	_ray.from = a
 	_ray.to = b
-	_ray.collision_mask = field.study.ground.mask
+	_ray.collision_mask = WalkerOnly.strip(field.study.ground.mask)
 	_ray.exclude = [body.get_rid()] if perch == null else [body.get_rid(),perch.body.get_rid()]
 	return field.study.get_world_3d().direct_space_state.intersect_ray(_ray).is_empty()
 
