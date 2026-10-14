@@ -34,6 +34,8 @@ const InhalerHead = preload("res://scripts/enemies/inhaler_head.gd")
 const BodySpawner = preload("res://scripts/enemies/body_spawner.gd")
 const LayerBodies = preload("res://scripts/roguelike/layer_bodies.gd")
 const EnemyYard = preload("res://studies/enemy_yard.gd")
+## The greybox motifs' own heads (scripts/roguelike/layer_greybox.gd).
+const LayerGreybox = preload("res://scripts/roguelike/layer_greybox.gd")
 
 ## How many heads a layer rolls.
 const HEADS := Vector2i(1,2)
@@ -116,7 +118,9 @@ static func lay(plan: Dictionary, attempt: int) -> void:
 	rng.seed = hash([int(plan.seed),attempt,"enemies"])
 	var n := int((plan.knobs as Dictionary).get("heads",-1))
 	if n < 0: n = rng.randi_range(HEADS.x,HEADS.y)
-	if n == 0: return
+	if n == 0:
+		LayerGreybox.lay_heads(plan,numbers())
+		return
 	var cands := _candidates(plan,rng)
 	# The longest rounds, out over the void a little first; one an isle.
 	cands.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return float(a.score) > float(b.score))
@@ -138,6 +142,8 @@ static func lay(plan: Dictionary, attempt: int) -> void:
 					continue
 			c.erase("score")
 			plan.heads.append(c)
+	# A greybox isle's own heads, the generator's kept off it.
+	LayerGreybox.lay_heads(plan,numbers())
 
 ## Whether head candidate `c` goes with those laid: one an isle, APART.
 static func _fits(plan: Dictionary, c: Dictionary) -> bool:
@@ -377,7 +383,10 @@ func build(scene: Node3D, enemies: Node, heads: Array, bodies := true, void_y :=
 	if not field.sound_hook.is_valid(): field.sound_hook = _voice
 	for h: Dictionary in heads:
 		var face: Vector3 = h.face
-		field.spawn(InhalerHead,h.at,Vector2(face.x,face.z),{"route":(h.route as Array).duplicate()})
+		var over := {"route":(h.route as Array).duplicate()}
+		# A greybox motif's head keeps its study's knobs.
+		over.merge(h.get("knobs",{}),false)
+		field.spawn(InhalerHead,h.at,Vector2(face.x,face.z),over)
 	if bodies:
 		spawner = BodySpawner.new()
 		add_child(spawner)

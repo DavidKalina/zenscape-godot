@@ -7,7 +7,11 @@ See README.md's Checks section for commands and rendering limitations.
 Do not automatically retry a failing headless test with a graphical renderer.
 Report GPU-dependent checks as unverified when headless cannot exercise them;
 do not weaken assertions or claim a full-suite pass. Use the runners' `--rendered`
-option only when the user explicitly requests a graphical test or visual capture.
+option only when the user explicitly requests a graphical test.
+
+Rendered captures to judge visual work (animation, models, looks, layouts)
+are allowed without asking: one window at a time, short, quit by a watchdog.
+Look at them yourself and iterate before handing off.
 
 Run the suite with `python3 tools/run_tests.py` (headless, 8 jobs). A new test
 that needs a real renderer gets a `## suite: gpu` line under `extends`, and one
@@ -72,13 +76,21 @@ existing test its change breaks.
 `scripts/roguelike/`, its history in `docs/design/roguelike/layer-round*.md`
 (start with the newest).
 
+# Motifs
+
+New motifs and kit pieces go through the pipeline in
+`docs/design/roguelike/motif-brief.md`: card, then greybox, then turf pass
+(skills `motif-brainstorm`, `motif-greybox`, `motif-turf`). Everything
+chains: every motif and piece says what it catches and throws.
+
 # Subagent models
 
 Pick a subagent's model by what it makes:
 
 - **Opus**, the default: physics, moving bodies, input, movement and feel,
   complex logic, animation (new clips and changes to existing ones), new
-  models, new kit pieces. Brief it to prove
+  models, new kit pieces, and combos: anything placing links so one throw
+  lands in the next (greyboxes, the combo lab). Brief it to prove
   the work through the real play loop and input path, not only scripted test
   ticks.
 - **Sonnet**, assembly and looks: putting pieces that already exist together
