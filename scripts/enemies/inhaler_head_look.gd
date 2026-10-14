@@ -47,6 +47,10 @@ const MOSS_MOST := 0.7
 const EYE_STONE := Color(0.62,0.58,0.48)
 const EYE_LIT := Color(1.0,0.72,0.32)
 const EYE_ENERGY := 3.2
+const Underground = preload("res://scripts/underground/underground.gd")
+## --underground: the eyes' lit share at rest and their energy there.
+const UNDER_REST := 0.7
+const UNDER_ENERGY := 4.5
 const MAW := Color(0.012,0.009,0.008)
 
 var height := MODEL_HEIGHT
@@ -168,6 +172,10 @@ func hinge() -> Vector3:
 func glow(share: float) -> void:
 	var s := clampf(share,0.0,1.0)
 	_eye_mat.emission_energy_multiplier = EYE_ENERGY*s*s
+	# --underground: the eyes burn in the dark even at rest, brighter when lit.
+	if Underground.on():
+		s = maxf(s,UNDER_REST)
+		_eye_mat.emission_energy_multiplier = UNDER_ENERGY*(0.5+s*s)
 	_eye_mat.albedo_color = EYE_STONE.lerp(EYE_LIT,s*0.5)
 	_maw_mat.emission_energy_multiplier = 0.06*s*_open
 

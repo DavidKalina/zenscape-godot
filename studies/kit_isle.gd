@@ -101,6 +101,7 @@ const Precipitation = preload("res://studies/precipitation.gd")
 const DisplayFog = preload("res://studies/display_fog.gd")
 const PilotWake = preload("res://scripts/pilot_wake.gd")
 const SkyPlane = preload("res://scripts/sky_plane.gd")
+const Underground = preload("res://scripts/underground/underground.gd")
 const PlaneFigure = preload("res://scripts/plane_figure.gd")
 ## The toy plane's span and the game's sizes (scripts/world_scale.gd).
 const WorldScale = preload("res://scripts/world_scale.gd")
@@ -482,6 +483,8 @@ func _ready() -> void:
 	if not preload("res://scripts/launch_args.gd").user_args().has("--no-flora"): _grow()
 	if not _no_lode: _build_lode()
 	_add_sky()
+	# --underground: the abyss, the torch and the murk over the day (scripts/underground/underground.gd).
+	Underground.attach(self)
 	_add_life()
 	# The isle's sound (docs/design/sound-round1.md).
 	audio = KitAudio.new()
@@ -644,6 +647,11 @@ func apply_look(id: String, show := true) -> void:
 
 ## The next (or previous) preset in the look editor's order.
 func step_look(by: int) -> void:
+	# --underground: the look key flips its presets (scripts/underground/underground.gd).
+	var under := get_node_or_null("Underground")
+	if under != null and under.has_method("cycle"):
+		under.cycle()
+		return
 	var i := _look_ids.find(look_id)
 	apply_look(_look_ids[posmod(i+by,_look_ids.size())])
 
