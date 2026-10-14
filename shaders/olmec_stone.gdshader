@@ -43,6 +43,13 @@ uniform vec3 lichen_b : source_color = vec3(0.70, 0.60, 0.33);
 // lit groove is cut into the normal.
 uniform bool runes = false;
 uniform float rune_cut = 0.6;
+// Pebbled scales carved all over (the rune serpent's pebbled look; 0 for
+// the Olmec): how strong, a scale's size in the grain's units, and the
+// head's plates (metres back from the snout where they end, how much
+// bigger they are; needs `runes` for where a face lies).
+uniform float pebble = 0.0;
+uniform float pebble_size = 0.3;
+uniform vec2 pebble_head = vec2(0.0, 1.0);
 
 #include "res://shaders/rune_serpent_runes.gdshaderinc"
 
@@ -178,6 +185,23 @@ void fragment() {
 	float pit = smoothstep(0.2, 0.06, g_mid) * (0.4 + 0.6 * f_mid);
 	tone *= 1.0 + fleck_light * 0.22 - fleck_dark * 0.24 + tooth * 0.3;
 
+	// Pebbled scales: each cell a domed bead of its own tone, a dark seam
+	// between; the seams kept a pixel and a half wide, the domes fading once
+	// a pixel is near a scale across.
+	float pb_seam = 0.0;
+	float pb_h = 0.0;
+	if (pebble > 0.0) {
+		float size = pebble_size * mix(1.0, pebble_head.y, 1.0 - smoothstep(pebble_head.x - 1.0, pebble_head.x, rune_info.z));
+		vec3 pc = cells(rest / size + 51.0);
+		float gap = pc.y - pc.x;
+		float pb_far = 1.0 - smoothstep(0.25, 0.9, px / size);
+		float seam_w = max(0.1, fwidth(gap) * 1.5);
+		float dome = smoothstep(0.0, 0.5, gap);
+		tone *= mix(1.0, mix(0.84, 1.12, pc.z) * mix(0.88, 1.07, dome * pb_far), pebble);
+		pb_seam = (1.0 - smoothstep(0.0, seam_w, gap)) * pebble * (0.4 + 0.6 * pb_far);
+		pb_h = sqrt(dome) * 0.2 * size * pebble * pb_far;
+	}
+
 	// Cracks: the cell borders, only where a slow mask lets them run, and
 	// kept at least a pixel and a half wide so they read from a distance.
 	vec3 cr = cells(rest * 2.1 + 17.0);
@@ -212,6 +236,7 @@ void fragment() {
 	c *= 1.0 - chip * (1.0 - chip_edge) * 0.35 * w;
 	c = mix(c, c * grime_mul, clamp(grime, 0.0, 1.0) * 0.8 * w);
 	c = mix(c, c * 0.22, cracks * 0.82 * w);
+	c *= 1.0 - pb_seam * 0.55;
 	c *= 1.0 - pit * 0.35 * w;
 
 	// Lichen: roundish rosettes and blooms on sheltered tops (not the crown
@@ -246,7 +271,10 @@ void fragment() {
 	float bump = bump_strength * (0.2 + 0.8 * f_mid);
 	// The eye's carving, full strength at any range.
 	vec3 grad_eye = sign(det) * (dFdx(e_h) * r1 + dFdy(e_h) * r2);
-	NORMAL = normalize(abs(det) * NORMAL - bump * grad - grad_eye);
+	// The scales' domes, at their own strength.
+	float pb = pb_h * (1.0 - eye);
+	vec3 grad_pb = sign(det) * (dFdx(pb) * r1 + dFdy(pb) * r2);
+	NORMAL = normalize(abs(det) * NORMAL - bump * grad - grad_eye - grad_pb);
 
 	ALBEDO = c;
 	ROUGHNESS = mix(clamp(roughness_value + (pit + cracks) * 0.05 - worn * 0.1, 0.5, 1.0), 0.35, eye);
