@@ -42,7 +42,10 @@ const CLIPS := ["idle","listen","walk","stride","climb","haul","spawn_haul","man
 ## Round 4: the turn steps (headless_body_steps.gd), blended over the trunk
 ## and legs only (the arms keep the clip under them), faded in and out fast.
 const TURNS := ["turn_open_l","turn_close_l","turn_open_r","turn_close_r"]
-const TURN_BONES := ["root","hips","spine","chest","neck","thigh.L","shin.L","foot.L","thigh.R","shin.R","foot.R"]
+## Olmec round 1: the upper arms and forearms too (they swing with the turn;
+## the hands keep the clip under them).
+const TURN_BONES := ["root","hips","spine","chest","neck","thigh.L","shin.L","foot.L","thigh.R","shin.R","foot.R",
+	"upper_arm.L","forearm.L","upper_arm.R","forearm.R"]
 const TURN_FADE := 0.06
 const Steps = preload("res://scripts/enemies/headless_body_steps.gd")
 ## The cut's stone and its glow.
@@ -242,8 +245,8 @@ func _two_bone(bones: Array, target: Vector3, w: float, end: Basis, turn_end: bo
 
 ## Before the clips: the figure turned off `facing` and a turn step wanted
 ## (`mode` Steps.OFF, STAND or WALK; walking, `gait_u` its cycle's place).
-func turn(facing: float, mode: int, delta: float, gait_u := 0.0, striding := false) -> void:
-	steps.turn(facing,mode,delta,gait_u,striding)
+func turn(facing: float, mode: int, delta: float, gait_u := 0.0, striding := false, want := NAN) -> void:
+	steps.turn(facing,mode,delta,gait_u,striding,want)
 
 ## After the clips: the feet held or carried by IK.
 func plant_feet(delta: float) -> void:

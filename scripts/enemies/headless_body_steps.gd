@@ -33,6 +33,26 @@ const HOLD := 0.1
 ## Behind its facing by this (rad) before a step; the most one step turns.
 const TRIGGER := 0.14
 const MOST := 0.8
+## Olmec round 1 (olmec-turn-clip-round1.md): a stood turn is planned whole,
+## toward where it is going (`want`), not chased step by step behind a
+## facing that runs ahead. Under SMALL (rad) it is a correction: the hips
+## ease round (SMALL_RATE rad/s), the feet pivot on their balls, no step.
+## Over it, steps: as few as cover it, none more than BIG (rad), all the
+## same size. The first step of a turn has a lead-in of ANTIC s (the weight
+## onto the standing foot, the shoulders wound against the turn by
+## WIND of it), the last a held settle of SETTLE s; the steps between run
+## on with only CHAIN s between them.
+const SMALL := 0.35
+const SMALL_RATE := 0.5
+const BIG := 1.15
+const ANTIC := 0.22
+const WIND := 0.1
+const SETTLE := 0.3
+const CHAIN := 0.03
+## The shoulders' wind-up against the turn and their follow-through past
+## it (rad of chest twist at most).
+const WIND_TWIST := 0.16
+const FOLLOW_TWIST := 0.08
 ## A standing foot this far (model m) off under its hip gets a step.
 const SLIP := 0.45
 ## A planted foot turns on its ball this far (rad) at most.
@@ -58,6 +78,15 @@ var step_clip := ""
 var step_foot := ""
 var _from := 0.0
 var _by := 0.0
+## This step's lead-in (s; ANTIC on a turn's first step, else 0) and its
+## held beat after (s), and whether a turn's steps are still to come.
+var _lead := 0.0
+var _hold := HOLD
+var _want := NAN
+## The turn going on (rad still to turn when the step began; 0 none).
+var turning := 0.0
+## How fast its steps go (1 calm; hunting, quicker: the body sets it).
+var pace := 1.0
 var _last_foot := ""
 var _since := 9.0
 var _look: Node3D
@@ -84,7 +113,8 @@ func _init(look: Node3D) -> void:
 ## gone on with (its clip wanted), the figure turned off the body's facing.
 ## `mode` OFF, STAND or WALK; walking, `gait_u` is where in its two-step
 ## cycle it is and `striding` which gait.
-func turn(facing: float, mode: int, delta: float, gait_u := 0.0, striding := false) -> void:
+func turn(facing: float, mode: int, delta: float, gait_u := 0.0, striding := false, want := NAN) -> void:
+	_want = want if not is_nan(want) else facing
 	if not _ready:
 		_ready = true
 		yaw = facing
@@ -101,14 +131,17 @@ func turn(facing: float, mode: int, delta: float, gait_u := 0.0, striding := fal
 	if step_t >= 0.0:
 		if mode != STAND:
 			step_t = -1.0
+			turning = 0.0
 		else:
-			step_t += delta
-			yaw = _from+_by*_curve(step_t/STEP)
-			if step_t >= STEP+HOLD:
+			step_t += delta*pace
+			var u := _u()
+			yaw = _from+_by*(_curve(u) if step_t >= _lead else -WIND*smoothstep(0.0,1.0,step_t/_lead))
+			if step_t >= _span():
 				step_t = -1.0
 				_since = 0.0
+				if _hold >= SETTLE*0.9: turning = 0.0
 			else:
-				_look.want(step_clip,minf(step_t,STEP-0.001),STEP_WEIGHT)
+				_look.want(step_clip,_clip_t(),STEP_WEIGHT)
 	if hurry and mode == STAND:
 		step_t = -1.0
 		yaw = lerp_angle(yaw,facing,1.0-exp(-12.0*delta))
@@ -116,34 +149,69 @@ func turn(facing: float, mode: int, delta: float, gait_u := 0.0, striding := fal
 		match mode:
 			OFF: yaw = lerp_angle(yaw,facing,1.0-exp(-14.0*delta))
 			WALK: yaw = lerp_angle(yaw,facing+clampf(_rate*LEAD,-0.3,0.3),1.0-exp(-8.0*delta))
-			STAND: _maybe_step(facing)
+			STAND: _maybe_step(_want,delta)
 	hurry = false
 	yaw = wrapf(yaw,-PI,PI)
 	_look.model.rotation.y = angle_difference(facing,yaw)
 
 ## The figure's turn over a step (share of its angle at `u` of it): held a
 ## hair back, round past it, settled.
-static func _curve(u: float) -> float:
-	if u < 0.15: return -0.04*smoothstep(0.0,0.15,u)
-	if u < 0.6: return lerpf(-0.04,1.05,smoothstep(0.15,0.6,u))
-	if u < 0.8: return lerpf(1.05,1.0,smoothstep(0.6,0.8,u))
+func _curve(u: float) -> float:
+	# Wound back (a hair, or the lead-in's WIND held), round past it as the
+	# foot plants, settled back.
+	var back := WIND if _lead > 0.0 else 0.04
+	if u < 0.15: return -back*(1.0 if _lead > 0.0 else smoothstep(0.0,0.15,u))
+	if u < 0.6: return lerpf(-back,1.06,smoothstep(0.15,0.6,u))
+	if u < 0.8: return lerpf(1.06,1.0,smoothstep(0.6,0.8,u))
 	return 1.0
 
-func _maybe_step(facing: float) -> void:
-	var lag := angle_difference(yaw,facing)
+## Where in the step's clip time is now (s): through the lead-in, the clip's
+## own anticipation (its first 0.15) slowed out to ANTIC; then on at its pace.
+func _clip_t() -> float:
+	return minf(_u()*STEP,STEP-0.001)
+
+## The step's share done (0 to 1): a lead-in stretches its first 0.15.
+func _u() -> float:
+	if _lead <= 0.0: return clampf(step_t/STEP,0.0,1.0)
+	if step_t < _lead: return 0.15*smoothstep(0.0,1.0,step_t/_lead)
+	return clampf(0.15+(step_t-_lead)/STEP,0.0,1.0)
+
+## The step's whole time, held beat and all (s).
+func _span() -> float:
+	return (_lead+0.85*STEP if _lead > 0.0 else STEP)+_hold
+
+## A stood turn going on (a step being taken, or more to come): the body
+## doesn't walk off till it is done.
+func busy() -> bool:
+	return turning != 0.0
+
+func _maybe_step(want: float, delta: float) -> void:
+	var lag := angle_difference(yaw,want)
 	var worst := "L" if float(feet.L.slip) >= float(feet.R.slip) else "R"
 	var slip: float = feet[worst].slip
-	if absf(lag) < TRIGGER and slip < SLIP: return
+	if absf(lag) < SMALL and slip < SLIP:
+		# A correction: the hips ease round, the feet pivot under them.
+		yaw += clampf(lag,-SMALL_RATE*delta,SMALL_RATE*delta)
+		if absf(lag) < 0.01: turning = 0.0
+		return
 	var by := lag
 	var foot := worst
-	if absf(lag) >= TRIGGER:
-		# On round ahead of a turn still going, as far as a step goes.
-		by = clampf(lag+_rate*STEP*0.6,-MOST,MOST)
-		if by*lag < 0.0: by = lag
+	var first := turning == 0.0
+	_lead = 0.0
+	_hold = HOLD
+	if absf(lag) >= SMALL:
+		# As few steps as cover the turn, all alike: this one's share.
+		var n := ceili(absf(lag)/BIG)
+		by = lag/n
+		_hold = SETTLE if n == 1 else CHAIN
+		if first: _lead = ANTIC
+		turning = lag
 		var inside := "L" if by > 0.0 else "R"
 		var outside := "R" if inside == "L" else "L"
 		# Out on the turn's side first, then the other round.
 		foot = outside if _last_foot == inside and _since < 0.5 else inside
+	else:
+		_hold = SETTLE*0.5
 	var left := by > 0.0 if absf(by) > 0.03 else foot == "L"
 	var opening := (foot == "L") == left
 	step_clip = ("turn_open_" if opening else "turn_close_")+("l" if left else "r")
@@ -180,7 +248,7 @@ func _swing(side: String) -> float:
 		if w < _stance: return -1.0
 		return (w-_stance)/(1.0-_stance)
 	if step_t >= 0.0 and side == step_foot:
-		var u := step_t/STEP
+		var u := _u()
 		if u > LIFT.x and u < LIFT.y: return (u-LIFT.x)/(LIFT.y-LIFT.x)
 	return -1.0
 
@@ -188,6 +256,15 @@ func _swing(side: String) -> float:
 ## foot held where it stands or carried to where the clip has it (the clip's
 ## height kept), by two-bone IK on the leg.
 func plant(delta: float) -> void:
+	if step_t >= 0.0 and _mode == STAND and absf(_by) > 0.05:
+		# The shoulders wound against the turn through the lead-in, then
+		# swung past as the foot plants, settling.
+		var u := _u()
+		var sgn := signf(_by)
+		var wind := smoothstep(0.0,1.0,step_t/_lead) if _lead > 0.0 and step_t < _lead else (1.0-smoothstep(0.15,0.4,u) if _lead > 0.0 else 0.0)
+		var follow := smoothstep(0.5,0.68,u)*(1.0-smoothstep(0.75,1.0,u))
+		var size := clampf(absf(_by)/BIG,0.4,1.0)
+		_look.twist("chest",sgn*size*(-WIND_TWIST*wind+FOLLOW_TWIST*follow))
 	if _walk_k > 0.0:
 		var r := _rate*_walk_k
 		_look.twist("chest",clampf(-r*LAG,-MOST_TWIST,MOST_TWIST))

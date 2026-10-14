@@ -449,7 +449,7 @@ func _listen(delta: float) -> void:
 	if _routed(): _heading = _route_heading()
 	var step := clampf(angle_difference(facing,_heading),-float(knobs.turn)*1.5*delta,float(knobs.turn)*1.5*delta)
 	facing = wrapf(facing+step,-PI,PI)
-	if k >= 1.0 and absf(angle_difference(facing,_heading)) < 0.15:
+	if k >= 1.0 and absf(angle_difference(facing,_heading)) < 0.15 and not look.steps.busy():
 		if not whole and _senses(): _home()
 		else: _go("roam")
 
@@ -531,9 +531,10 @@ func _walking(delta: float) -> void:
 		if not _follow(delta): return
 	if _routed():
 		if not (state == "home" and _walk_left()): _heading = _route_heading()
-		if absf(angle_difference(facing,_heading)) > ROUTE_TURN:
+		if absf(angle_difference(facing,_heading)) > ROUTE_TURN or look.steps.busy():
 			_brake(delta)
-			facing = wrapf(facing+clampf(angle_difference(facing,_heading),-float(knobs.turn)*delta,float(knobs.turn)*delta),-PI,PI)
+			# Olmec round 1: stopped first, then it steps round (its feet turn it).
+			if Vector2(vel.x,vel.z).length() < 0.3: facing = wrapf(facing+clampf(angle_difference(facing,_heading),-float(knobs.turn)*delta,float(knobs.turn)*delta),-PI,PI)
 			return
 	var fwd := _forward3()
 	var wall := _wall_along(fwd,length*0.5+float(knobs.look))
@@ -1628,8 +1629,11 @@ func _pursue(delta: float, goal: Vector3, speed: float) -> void:
 		if aim.length() > 0.3: _heading = PilotMotor.facing_of(aim.normalized())
 	var turn := float(knobs.turn)*float(knobs.chase_turn)
 	var off := angle_difference(facing,_heading)
-	facing = wrapf(facing+clampf(off,-turn*delta,turn*delta),-PI,PI)
-	if absf(off) > CHASE_TURN:
+	# Olmec round 1: a big turn plants first (braked, not swung round at
+	# speed), then steps round, and only then strides on.
+	var big := absf(off) > CHASE_TURN or look.steps.busy()
+	if not big or Vector2(vel.x,vel.z).length() < 0.3: facing = wrapf(facing+clampf(off,-turn*delta,turn*delta),-PI,PI)
+	if big:
 		_brake(delta)
 		return
 	var fwd := _forward3()
@@ -2201,9 +2205,8 @@ func _animate(delta: float) -> void:
 		"seek":
 			# A look-about with its head on: stepping round as it turns (the
 			# walk at the turn's share), else stood (never the listen clip).
-			var m := clampf(_seek_turn/SEEK_TURN_FULL,0.0,0.7)
-			look.want("walk",look.loop_time("walk",_phase,2.0),m)
-			look.want("idle",idle,1.0-m)
+			# Olmec round 1: its feet step it round (headless_body_steps.gd).
+			look.want("idle",idle)
 		"plant": look.want("windup",clampf(state_t/float(knobs.suck_tell),0.0,1.0)*float(look.lengths.windup)*BRACE)
 		"suck","gulp": look.want("windup",float(look.lengths.windup)*BRACE)
 		"swat":
@@ -2214,13 +2217,37 @@ func _animate(delta: float) -> void:
 			look.want("triumph",t)
 		_: look.want("idle",idle)
 	# Round 4: turns stepped and feet planted (headless_body_steps.gd).
-	look.turn(facing,_steps_mode(),delta,fposmod(_phase/2.0,1.0),state == "home")
+	var mode := _steps_mode()
+	look.steps.pace = TURN_PACE_HUNT if hunting else 1.0
+	look.turn(facing,mode,delta,fposmod(_phase/2.0,1.0),state == "home",_turn_goal() if mode == Look.Steps.STAND else NAN)
+	# Olmec round 1: stood, it faces where its feet have turned it (its
+	# sight, its box, its way on), not ahead of them; the feel squares up
+	# its own way.
+	if mode == Look.Steps.STAND and state != "feel":
+		facing = look.steps.yaw
+		rotation.y = facing
+		look.model.rotation.y = 0.0
 	if _grabs(): _lean_up(delta)
 	poses += 1
 	look.advance(delta,0.0 if _snap else _fade)
 	_snap = false
 	look.plant_feet(delta)
 	_hands(delta)
+
+## Its stood turns' steps, hunting: quicker (Olmec round 1).
+const TURN_PACE_HUNT := 1.3
+
+## Where a stood turn is going (rad): its way on, where it glimpsed him;
+## else its facing as its state sets it.
+func _turn_goal() -> float:
+	match state:
+		"chase","return","roam","home": return _heading
+		"listen": return _heading if _picked else facing
+		"alert":
+			if seen_at != Vector3.INF:
+				var to := Vector2(seen_at.x-position.x,seen_at.z-position.z)
+				if to.length() > 0.1: return PilotMotor.facing_of(to.normalized())
+	return facing
 
 ## How its turns and feet go: stepping round where it stands, walking, or
 ## the clips' own (climbing, leaping, landing).
