@@ -11,18 +11,25 @@ extends "res://scripts/kit_isle/motif_greybox.gd"
 ##   catch.md), the study's "cannon on a neighbouring isle" made part of the
 ##   motif and turned round: it stands on a plinth under the bell floor's
 ##   north edge, aimed east off the stack at its rest aim (40 deg, notch 2).
-##   Ring the bell (stand on the bell floor), then step off its north edge:
-##   you fall into its mouth, it gulps, winds up and fires you east onto the
+##   From the bell floor, jump off its north edge: you fall into the
+##   mouth (a slow careful step hangs you off the lip first; hold away to
+##   let go and drop in), it gulps, winds up and fires you east onto the
 ##   far landing, whose east edge is the rim out (`far`). Climbing in (Y)
 ##   and firing (A) is the same shot. The study's cannon fired DOWN the top
 ##   channel from an isle 8 m over the top that nothing in a layer reaches,
 ##   so its chain 3 is dropped; the card's "the top tier throws sideways off
 ##   the stack toward a lower isle" is what this is.
+## - The way back up, for a route the generator runs backwards (in at the
+##   far landing, out off the deck): a second cannon on the far landing
+##   fires you (Y in, A) onto the top landing; from there down the channels
+##   (or the Noon Flood) to the deck.
 ## - The rim in is the study's start deck (`deck`, its south edge). The
 ##   Noon Flood (chain 2) still rides you down all three spills onto it: in
 ##   a layer that is the free ride back to the foot, as the card has it.
 ## - The channels are the sluices' own build (floor, parapets, refuges), so
 ##   `_solids` adds them to the occupancy; parts() draws the slabs only.
+## - Turf pass (the section at the end): kit terrain and carved stone by
+##   default, the grey boxes with `--weir-grey` (A/B checks).
 const Cannon = preload("res://scripts/cannon/cannon.gd")
 const PlinthRam = preload("res://scripts/enemies/plinth_ram.gd")
 const Trap = preload("res://scripts/traps/trap.gd")
@@ -48,6 +55,17 @@ const NOTCH := 2
 ## can sail onto it) and where the rest shot comes down on it (measured
 ## with Cannon.landing_for: 20.57 m east of the base at 4 m below it).
 const FAR_TOP := 14.0
+## The way back up (the generator may enter at the far landing): a second
+## cannon on the far landing's south end, aimed west at the top landing at
+## its rest pitch BACK_PITCH and power BACK_NOTCH (its `pitch_rest` and
+## `power_rest`, so climbing in and firing needs no aiming): the arc peaks
+## 13.9 m over its base and comes down through the top landing's height
+## 15.95 m west (Cannon.flight, measured), at about (-4.5, 24, 54). It also
+## catches a body dropped east off the top landing and throws it back.
+const BACK_BASE := Vector3(11.5,14.0,54.0)
+const BACK_HEADING := PI*0.5
+const BACK_NOTCH := 4
+const BACK_PITCH := 65.0
 
 ## The study's LAYOUT, verbatim but for the cannon (now the catching cannon
 ## on its plinth under the bell floor, and the far landing it fires onto)
@@ -71,7 +89,7 @@ const LAYOUT := {
 		["gate head 3 (top landing)",Rect2(-14.0,49.5,18.0,8.0),24.0,22.0,"grey"],
 		["bell floor (belfry stand-in)",Rect2(-4.0,57.5,8.0,5.0),25.2,22.0,"lip"],
 		["the cannon's plinth",Rect2(-4.5,62.5,6.0,5.0),PLINTH_TOP,PLINTH_TOP-3.0,"grey"],
-		["far landing (rim out, east edge)",Rect2(10.0,58.5,14.0,12.0),FAR_TOP,FAR_TOP-2.0,"pad"],
+		["far landing (rim out, east edge)",Rect2(10.0,51.0,14.0,19.5),FAR_TOP,FAR_TOP-2.0,"pad"],
 	],
 	## [name, low middle edge, high middle edge, width]
 	"stairs":[
@@ -103,6 +121,7 @@ const LAYOUT := {
 		[Vector3(6.0,3.0,-25.0),"tier-1 spill lands here: back on the deck"],
 		[Vector3(0.0,22.0,66.5),"THE CATCHING CANNON: fall in, it fires you east (or Y in, A fire)"],
 		[Vector3(17.0,17.0,64.5),"FAR LANDING: the cannon's rest shot comes down here · the way on leaves its east edge"],
+		[Vector3(11.5,17.5,54.0),"THE WAY BACK UP: Y in, A fires you onto the top landing"],
 		[Vector3(-6.0,6.0,38.0),"STAND-IN: shared clock (one day 48 s, noon at its end)"],
 	],
 }
@@ -117,7 +136,7 @@ func epithet() -> String:
 	return "It keeps the hours. It has always kept the hours."
 
 func brief() -> String:
-	return "Climb the three channels in their dry spells: walk each north against the water, stair up beside the gate, bridge back. Mind the ram on the middle landing.\nOn top, step off the bell floor's north edge into the cannon: it fires you east to the way on. At noon all three gates flood: ride it down."
+	return "Climb the three channels in their dry spells: walk each north against the water, stair up beside the gate, bridge back. Mind the ram on the middle landing.\nOn top, jump off the bell floor's north edge into the cannon below: it catches you and fires you east to the way on. At noon all three gates flood: ride it down."
 
 func start() -> Vector3:
 	return Vector3(0.0,0.0,-34.0)
@@ -143,8 +162,8 @@ func parts() -> Array:
 
 ## The channels (the sluices build them: floor, parapets, refuges, the
 ## gate's header) as solids for the occupancy, not drawn by parts().
-func _solids() -> Array:
-	var out: Array = super()
+func _grey_solids() -> Array:
+	var out: Array = super._solids()
 	var w := float(LAYOUT.width)
 	for t: Dictionary in LAYOUT.tiers:
 		var g: Vector3 = t.gate
@@ -166,6 +185,7 @@ func spots() -> Array:
 		{"kind":"arena","name":"top_landing","at":Vector3(-6.0,24.0,53.5),"room":6.0},
 		{"kind":"cover","name":"gate_head_1","at":Vector3(-8.0,0.0,3.0),"room":2.5},
 		{"kind":"perch","name":"bell_floor","at":Vector3(0.0,25.2,60.0),"room":2.5},
+		{"kind":"arena","name":"far_landing","at":Vector3(18.0,FAR_TOP,61.0),"room":4.0},
 		{"kind":"perch","name":"deck","at":Vector3(0.0,0.0,-34.0),"room":6.0},
 	]
 
@@ -201,9 +221,8 @@ func live(g: Node) -> void:
 static func lay_cannon(g: Node) -> Node3D:
 	var field: Node3D = g.cannons()
 	if field == null: return null
-	var gun: Node3D = field.add_cannon(g.w(cannon_base()),HEADING)
-	gun.set_aim(0.0,deg_to_rad(PITCH))
-	gun.set_power(NOTCH)
+	var gun: Node3D = field.add_cannon(g.w(cannon_base()),HEADING,{"pitch_rest":deg_to_rad(PITCH),"power_rest":NOTCH})
+	field.add_cannon(g.w(BACK_BASE),BACK_HEADING,{"pitch_rest":deg_to_rad(BACK_PITCH),"power_rest":BACK_NOTCH})
 	return gun
 
 ## The study's shared clock (STAND-IN for kit ask 1), as a trap so the
@@ -271,3 +290,223 @@ class Clock extends "res://scripts/traps/trap.gd":
 	func reset() -> void:
 		super.reset()
 		set_clock(0.0)
+
+# --- Turf pass: the land and the stone -----------------------------------------------------
+## Built as kit terrain and carved stone, not grey boxes (`--weir-grey`
+## builds the grey boxes instead, for A/B checks). Three KitLand islands:
+## the start deck (flat 0), the weir's floor under the whole stack (flat
+## FOOT_Y: a fall off a channel's side, or past the cannon, lands on turf,
+## not in the void), and the far landing (flat FAR_TOP). The masonry (the
+## gate heads and landings, the bridges, the stairs, the bell floor, the
+## cannon's plinth, piers down to the floor) in carved stone (scripts/
+## kit_isle/greybox/giant_stone.gd), each collided as its greybox walk box
+## to the centimetre; piers only where no chain passes. The channels are
+## the sluices' own build, as in the greybox.
+const GiantStone = preload("res://scripts/kit_isle/greybox/giant_stone.gd")
+const KitLife = preload("res://scripts/kit_isle/kit_life.gd")
+
+const TURF_SEED := 5200
+## The weir's floor (m) and its rect (x, z): under the stack from just
+## north of tier 1's open end to past the cannon's plinth.
+const FOOT_Y := -1.2
+const FOOT := Rect2(-17.0,-19.0,24.0,92.0)
+## Keels (m under each island's top) and how far their spurs hang under.
+const DECK_DEPTH := 8.0
+const FOOT_DEPTH := 11.0
+const FAR_DEPTH := 9.0
+const KEEL_REACH := 1.4
+## The stairs' drawn beam under their walked top (m).
+const STAIR_THICK := 1.4
+
+static func grey() -> bool:
+	return OS.get_cmdline_user_args().has("--weir-grey")
+
+static func _slab(prefix: String) -> Array:
+	for s: Array in LAYOUT.slabs:
+		if str(s[0]).begins_with(prefix): return s
+	return []
+
+## The deck's turf stops short of its north edge; the sill (KERB, stone, a
+## walk box) is that edge, exact: the tier-1 spill lands a body on its lip
+## (z -22.4), where the kit's ±0.25 m wobble would drop it.
+const KERB := Rect2(-8.0,-23.6,16.0,1.2)
+
+static func deck_outline() -> Array:
+	return _rounded(Rect2(-8.0,-44.0,16.0,21.0),1.6)
+
+static func far_outline() -> Array:
+	return _rounded(_slab("far landing")[1],1.8)
+
+static func foot_outline() -> Array:
+	return _rounded(FOOT,3.0)
+
+static func _rounded(r: Rect2, cut: float) -> Array:
+	var a := r.position
+	var b := r.end
+	return [Vector2(a.x+cut,a.y),Vector2(b.x-cut,a.y),Vector2(b.x,a.y+cut),Vector2(b.x,b.y-cut),
+		Vector2(b.x-cut,b.y),Vector2(a.x+cut,b.y),Vector2(a.x,b.y-cut),Vector2(a.x,a.y+cut)]
+
+## The worn ways: the deck's run-up to the hop, the far landing from the
+## shot's fall to its rim.
+static func paths() -> Array:
+	return [[Vector2(0.0,-43.0),Vector2(0.0,-23.0)],[Vector2(16.0,64.5),Vector2(23.0,64.5)],[Vector2(16.0,64.5),Vector2(13.0,55.0)]]
+
+func flora_site() -> KitFlora.Site:
+	return KitFlora.Site.new(top(),KitLand.wear_of(paths()))
+
+func flora_seed() -> int:
+	return TURF_SEED+9
+
+func life_script() -> Script:
+	return null if grey() else KitLife
+
+func warm() -> void:
+	super.warm()
+	if grey(): return
+	KitLook.palette()
+	KitLook.ground_material()
+	KitLook.rock_material()
+	KitLook.rock_tone(Vector3.ZERO,30.0,Vector3.UP)
+	RuinKit.materials()
+	GiantStone.warm()
+
+## The piers: [rect, top] (their foot in the weir's floor), each under a
+## slab's or a channel's underside, clear of every spill's fall (at x 0
+## from each open end, south), the stairs (x -14..-10), the parapet hops
+## and the ram's landing.
+static func piers() -> Array:
+	return [
+		[Rect2(-1.9,-20.0,3.8,20.0),-0.4],          # under tier 1's channel
+		[Rect2(-4.2,-12.0,1.8,2.0),11.0],           # bridge 1
+		[Rect2(-1.9,11.0,3.8,2.4),11.6],            # tier 2's channel
+		[Rect2(-1.9,24.0,3.8,2.4),11.6],
+		[Rect2(-9.0,30.5,4.0,4.0),10.0],            # the ram's landing
+		[Rect2(-3.0,30.5,4.0,4.0),10.0],
+		[Rect2(-9.0,0.0,4.0,4.0),22.0],             # stair-2 top
+		[Rect2(-4.2,19.0,1.8,2.0),23.0],            # bridge 2
+		[Rect2(-1.9,38.0,3.8,2.4),23.6],            # tier 3's channel
+		[Rect2(-1.9,44.0,3.8,2.4),23.6],
+		[Rect2(-8.0,51.0,4.0,5.0),22.0],            # the top landing
+		[Rect2(-3.0,58.5,6.0,3.0),22.0],            # the bell floor
+		[Rect2(-4.0,63.0,5.0,4.0),PLINTH_TOP-3.0],  # the cannon's plinth
+	]
+
+## The greybox's solids, the channels, the keels under the three islands
+## and the piers, so the occupancy keeps the generator off the rock.
+func _solids() -> Array:
+	var out: Array = _grey_solids()
+	if grey(): return out
+	for keel: Array in [[deck_outline(),0.0,DECK_DEPTH],[foot_outline(),FOOT_Y,FOOT_DEPTH],[far_outline(),FAR_TOP,FAR_DEPTH]]:
+		var ring: Array = keel[0]
+		var box := Rect2(ring[0],Vector2.ZERO)
+		for p: Vector2 in ring: box = box.expand(p)
+		out.append([box.grow(-1.0),float(keel[1])-float(keel[2])*KEEL_REACH,float(keel[1]),null])
+	for p: Array in piers(): out.append([p[0],FOOT_Y,float(p[1]),null])
+	return out
+
+## Measured headless (the turf build, this container).
+func build_cost() -> int:
+	return 0 if grey() else 250
+
+## Turf on the deck, the floor and the far landing; the weir in stone.
+func build(into: Node3D) -> void:
+	if grey():
+		super.build(into)
+		return
+	art = into
+	var began := Time.get_ticks_msec()
+	var root := Node3D.new()
+	root.name = "NoonWeir"
+	into.add_child(root)
+	var tone := KitLook.turf(TURF_SEED,KitLand.wear_of(paths()))
+	var deck := KitLand.island({"outline":deck_outline(),"seed":TURF_SEED,"ground":func(_x: float, _z: float) -> float: return 0.0,
+		"top":0.0,"depth":DECK_DEPTH,"hang":true,"resample":[40.0,90,32],"tone":tone})
+	deck.name = "Deck"
+	var floor_land := KitLand.island({"outline":foot_outline(),"seed":TURF_SEED+1,"ground":func(_x: float, _z: float) -> float: return FOOT_Y,
+		"top":FOOT_Y,"depth":FOOT_DEPTH,"hang":true,"resample":[60.0,220,32],"tone":tone})
+	floor_land.name = "Floor"
+	var far := KitLand.island({"outline":far_outline(),"seed":TURF_SEED+2,"ground":func(_x: float, _z: float) -> float: return FAR_TOP,
+		"top":FAR_TOP,"depth":FAR_DEPTH,"hang":true,"resample":[40.0,90,32],"tone":tone})
+	far.name = "FarLanding"
+	for land: Node3D in [deck,floor_land,far]:
+		_collide_sides(land)
+		root.add_child(land)
+		turf(land)
+	_stone(root)
+	built_ms = Time.get_ticks_msec()-began
+
+## An island's hanging sides collided as drawn (as the giant's).
+static func _collide_sides(land: Node3D) -> void:
+	var sides := land.get_node_or_null("Mesh") as MeshInstance3D
+	if sides == null or sides.mesh == null: return
+	var body := StaticBody3D.new()
+	body.name = "Sides"
+	var shape := ConcavePolygonShape3D.new()
+	shape.set_faces(sides.mesh.get_faces())
+	shape.backface_collision = true
+	var holder := CollisionShape3D.new()
+	holder.shape = shape
+	body.add_child(holder)
+	land.add_child(body)
+
+## The masonry: drawn as one mesh of carved stone, collided as the
+## greybox's walk boxes (the deck and the far landing are turf).
+func _stone(root: Node3D) -> void:
+	var m: RefCounted = GiantStone.mesher()
+	var solids := Node3D.new()
+	solids.name = "Walk"
+	root.add_child(solids)
+	for slab: Array in LAYOUT.slabs:
+		var label := str(slab[0])
+		if label.begins_with("start deck") or label.begins_with("far landing"): continue
+		var r: Rect2 = slab[1]
+		var bottom := float(slab[3])
+		# Gate head 1 stands on the weir's floor, its foot buried in it.
+		if label.begins_with("gate head 1"): bottom = FOOT_Y-0.6
+		_block(m,solids,r,bottom,float(slab[2]),0.25)
+	for st: Array in LAYOUT.stairs:
+		var low: Vector3 = st[1]
+		var high: Vector3 = st[2]
+		var w := float(st[3])
+		var along := (high-low).normalized()
+		var side := Vector3.UP.cross(along).normalized()
+		var up := along.cross(side).normalized()
+		var basis := Basis(side,up,along)
+		var length := low.distance_to(high)+0.02
+		# Collided exactly as the greybox ramp; drawn as a thicker beam with
+		# that ramp its top, treads drawn on it.
+		_walk_shape(solids,Transform3D(basis,(low+high)*0.5-up*0.2),Vector3(w,0.4,length))
+		m.box(Transform3D(basis,(low+high)*0.5-up*STAIR_THICK*0.5),Vector3(w,STAIR_THICK,length),0.2)
+		var steps := int(floor(length/1.2))
+		for k in steps:
+			var t := (float(k)+0.5)/float(steps)
+			m.box(Transform3D(basis,low.lerp(high,t)+up*0.05),Vector3(w-0.3,0.1,0.5),0.03,NAN,1.08)
+	for p: Array in piers():
+		_block(m,solids,p[0],FOOT_Y-0.6,float(p[1]),0.3,FOOT_Y)
+	_block(m,solids,KERB,-1.6,0.0,0.06,-1.0)
+	# The notch where all three gates coincide, cut deepest, with a rune: a
+	# lit band on the top landing's west and east faces under its lip.
+	var gh: Rect2 = _slab("gate head 3")[1]
+	var band := 24.0-1.3
+	m.runes(Vector3(gh.position.x,band,gh.end.y),Vector3(gh.position.x,band,gh.position.y),Vector3.UP,Vector3(-1,0,0),1.0)
+	m.runes(Vector3(gh.end.x,band,gh.position.y),Vector3(gh.end.x,band,gh.end.y),Vector3.UP,Vector3(1,0,0),2.0)
+	var body := MeshInstance3D.new()
+	body.name = "Masonry"
+	body.mesh = GiantStone.mesh_of(m)
+	root.add_child(body)
+	root.set_meta("stone_triangles",m.triangles())
+
+## A block drawn and collided (its rect x z, bottom, top).
+static func _block(m: RefCounted, solids: Node3D, r: Rect2, bottom: float, high: float, bevel: float, foot := NAN) -> void:
+	var place := Transform3D(Basis.IDENTITY,Vector3(r.get_center().x,(bottom+high)*0.5,r.get_center().y))
+	var size := Vector3(r.size.x,high-bottom,r.size.y)
+	_walk_shape(solids,place,size)
+	m.box(place,size,bevel,foot)
+
+static func _walk_shape(solids: Node3D, place: Transform3D, size: Vector3) -> void:
+	var body := StaticBody3D.new()
+	body.transform = place
+	var c := CollisionShape3D.new()
+	c.shape = _box_shape(size)
+	body.add_child(c)
+	solids.add_child(body)
