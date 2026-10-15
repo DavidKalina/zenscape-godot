@@ -12,6 +12,12 @@
 global uniform vec3 zs_hemi_sky;
 global uniform vec3 zs_hemi_ground;
 global uniform float zs_hemi_energy;
+#ifdef ZS_STONE_WEATHER
+// The underground look's own fill for the stone (see olmec_stone.gdshader).
+global uniform float zs_under;
+global uniform vec3 zs_under_sky;
+global uniform vec3 zs_under_ground;
+#endif
 
 uniform vec4 albedo : source_color = vec4(1.0);
 uniform float roughness_value : hint_range(0.0, 1.0) = 1.0;
@@ -125,9 +131,14 @@ void fragment() {
 	CLEARCOAT_ROUGHNESS = coat_roughness;
 	vec3 normal = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
 	vec3 hemi = mix(zs_hemi_ground, zs_hemi_sky, normal.y * 0.5 + 0.5) * zs_hemi_energy / PI;
+	vec3 rim_sky = zs_hemi_sky * zs_hemi_energy;
+#ifdef ZS_STONE_WEATHER
+	hemi = mix(hemi, mix(zs_under_ground, zs_under_sky, normal.y * 0.5 + 0.5) / PI, zs_under);
+	rim_sky = mix(rim_sky, zs_under_sky, zs_under);
+#endif
 	float edge = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 3.0);
 	vec3 diffuse = base * (1.0 - metallic_value);
-	EMISSION = diffuse * hemi * fill + mix(diffuse, vec3(0.5), 0.4) * zs_hemi_sky * zs_hemi_energy * edge * rim;
+	EMISSION = diffuse * hemi * fill + mix(diffuse, vec3(0.5), 0.4) * rim_sky * edge * rim;
 	if (gleam > 0.0) {
 		float band = 1.0 - smoothstep(0.0, gleam_width, abs(dot(gleam_world, gleam_dir) - gleam_at));
 		EMISSION += (base * 0.9 + vec3(1.0, 0.8, 0.5) * 0.4) * band * band * gleam * (0.6 + 0.4 * edge);

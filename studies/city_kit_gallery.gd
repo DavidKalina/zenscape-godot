@@ -82,7 +82,6 @@ var _body_knobs := {}
 var _head_knobs := {}
 var _voices := {}
 var _built_ms := 0
-var _was_hemi := []
 var _no_flora := false
 
 ## Counts the cheek crests as rails (the walker on one, his top pace there),
@@ -139,7 +138,7 @@ func _ready() -> void:
 	super._ready()
 
 ## The underground's ground cover (scripts/underground/ground_cover.gd,
-## underground-ground-round1.md: `--ground=dust|grass|moss|off`, dust when
+## underground-ground-round1.md: `--ground=grass|dust|moss|off`, grass when
 ## the flags don't say; laid once as the gallery stands) on the pieces' flat walked tops
 ## (CityKit `walk_areas`): crowns, landings, summits, decks, flank tiers.
 ## Not the drum turns (its coil reads as bare stone in the cover) nor the
@@ -298,7 +297,6 @@ func _build_room() -> void:
 	under.name = "Underground"
 	add_child(under)
 	under.setup(self)
-	_dress_hemi()
 	if not _no_flora: _cover()
 	_built_ms = Time.get_ticks_msec()-began
 	print("city kit gallery: built %d ms, %d triangles" % [_built_ms,_triangles()])
@@ -336,25 +334,6 @@ func _triangles() -> int:
 	var n := 0
 	for p: Node3D in pieces: n += int(p.get_meta("triangles",0))
 	return n
-
-## The stone's fill (its hemisphere emission) in the look's own air, not
-## the sky's blue; set back as it was when the gallery goes.
-func _dress_hemi() -> void:
-	if _was_hemi.is_empty():
-		for k: String in ["zs_hemi_sky","zs_hemi_ground","zs_hemi_energy"]:
-			var g: Variant = ProjectSettings.get_setting("shader_globals/"+k)
-			_was_hemi.append((g as Dictionary).get("value") if g is Dictionary else null)
-	var amb: Color = under.p.ambient
-	RenderingServer.global_shader_parameter_set("zs_hemi_sky",Vector3(amb.r,amb.g,amb.b))
-	var low: Color = under.p.warm
-	RenderingServer.global_shader_parameter_set("zs_hemi_ground",Vector3(low.r,low.g,low.b))
-	RenderingServer.global_shader_parameter_set("zs_hemi_energy",0.55 if under.preset == "haze" else 0.35)
-
-func _exit_tree() -> void:
-	if _was_hemi.size() == 3 and _was_hemi[0] != null:
-		RenderingServer.global_shader_parameter_set("zs_hemi_sky",_was_hemi[0])
-		RenderingServer.global_shader_parameter_set("zs_hemi_ground",_was_hemi[1])
-		RenderingServer.global_shader_parameter_set("zs_hemi_energy",_was_hemi[2])
 
 ## A fire bowl at `at` (world): a stone bowl, a flame, a warm light (a
 ## shadow only where `shadow`).
@@ -456,7 +435,6 @@ func tick(delta: float) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo and (event as InputEventKey).keycode == KEY_L and under != null:
 		under.cycle()
-		_dress_hemi()
 		return
 	super._unhandled_input(event)
 

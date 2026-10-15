@@ -610,6 +610,18 @@ zs_hemi_energy={
 "type": "float",
 "value": 0.55825
 }
+zs_under={
+"type": "float",
+"value": 0.0
+}
+zs_under_sky={
+"type": "vec3",
+"value": Vector3(0, 0, 0)
+}
+zs_under_ground={
+"type": "vec3",
+"value": Vector3(0, 0, 0)
+}
 zs_cloud={
 "type": "vec4",
 "value": Vector4(0.06, 0, 20, 12)

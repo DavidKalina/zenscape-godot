@@ -54,6 +54,9 @@ const PRESETS := {
 		"sky_low":Color(0.18,0.145,0.11),"sky_horizon":Color(0.30,0.245,0.185),"sky_high":Color(0.22,0.18,0.14),
 		"knobs":{"fog":0.0016,"volume":0.0,"ambient":1.1,"moon":0.5,"exposure":1.05,"torch":2.2,"torch_range":16.0,"next_reach":520.0,"next_most":0.85}},
 }
+## How much of the ambient colour the stone is filled with (the torch lights
+## the rest): dim in the dark, the haze's lit air a good deal more.
+const STONE_FILL := {"torch":0.26,"haze":0.5}
 const KNOBS := {
 	"fog":0.0016,"volume":0.008,"ambient":1.3,"moon":0.55,"exposure":1.3,
 	"torch":5.5,"torch_range":24.0,"next_reach":420.0,"next_most":0.88,
@@ -171,10 +174,11 @@ func _demo() -> void:
 	if is_instance_valid(_demo_root): _demo_root.queue_free()
 	var fig: Node3D = study.get("figure")
 	var at: Vector3 = fig.global_position if fig != null else Vector3.ZERO
-	_demo_root = GroundCover.demo(study,at,ground if ground != "" else "dust")
+	_demo_root = GroundCover.demo(study,at,ground if ground != "" else "grass")
 	print("ground demo at ",at)
 
 func _exit_tree() -> void:
+	RenderingServer.global_shader_parameter_set("zs_under",0.0)
 	_free_motes()
 
 ## The motes' resources are let go with them, or the renderer reports the
@@ -269,6 +273,20 @@ func _publish_sky() -> void:
 	for pair: Array in [["zs_sky_down",p.sky_horizon],["zs_sky_up",p.sky_horizon],["zs_sky_glow",Color(0,0,0)]]:
 		var c: Color = pair[1]
 		RenderingServer.global_shader_parameter_set(pair[0],Vector3(c.r,c.g,c.b))
+	_publish_stone()
+
+## The weathered stone's fill (shaders/olmec_stone.gdshader, ruin_stone) in
+## the look's own air, not the day sky's hemisphere (which made the basalt
+## glow blue-white in the dark). Only the stone reads these globals, so the
+## turf and the rest keep the day's hemisphere. Held every frame, like the sky.
+func _publish_stone() -> void:
+	# The air's colour, eased toward grey so the basalt isn't one flat blue.
+	var amb: Color = (p.ambient as Color).lerp(Color(0.34,0.34,0.34),0.35)
+	var low: Color = p.warm
+	var e := float(STONE_FILL.get(preset,0.2))
+	RenderingServer.global_shader_parameter_set("zs_under",1.0)
+	RenderingServer.global_shader_parameter_set("zs_under_sky",Vector3(amb.r,amb.g,amb.b)*e)
+	RenderingServer.global_shader_parameter_set("zs_under_ground",Vector3(low.r,low.g,low.b)*e)
 
 ## The next region's far silhouettes (a real part of the layer, drawn by
 ## shaders/next_region_lod.gdshader) take the preset's own stone and haze, so

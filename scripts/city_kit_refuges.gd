@@ -34,8 +34,8 @@ extends RefCounted
 ##            go in the water; a lit lamp relights it as he passes
 ##   shade    the hush hall is dark to the Olmec's sight (a SightLight that
 ##            takes the look's ambient down to the torch preset's, inside)
-##   echo     his steps in the mouse run (moving, not standing still) and the
-##            trough's splash carry out of the nearer mouth: a Beacon there
+##   echo     the trough's splash carries out of the front mouth (the mouse run
+##            is a true safe room: its step echo is off, `MOUSE_ECHO`): a Beacon there
 ##            (no light, scripts/enemies/beacon.gd) draws a calm Olmec round
 ##            to it to look, so no refuge is safe forever
 ## Metadata on each root: "kind", "bounds" (AABB, local), "mouths" (Array of
@@ -53,6 +53,7 @@ const HeadlessBody = preload("res://scripts/enemies/headless_body.gd")
 const Underground = preload("res://scripts/underground/underground.gd")
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const GroundCover = preload("res://scripts/underground/ground_cover.gd")
+const CityStone = preload("res://scripts/city_kit_stone.gd")
 
 const PIECES := ["city_mouserun","city_niches","city_hush","city_slotwall"]
 const NAMES := {"city_mouserun":"Mouse run","city_niches":"Votive niches","city_hush":"Hush gallery","city_slotwall":"Slotted wall"}
@@ -73,6 +74,9 @@ const LAMP_ENERGY := 1.6
 const RELIGHT_REACH := 1.3
 ## The echo: how far its beacon draws (m), how long it holds once he stops
 ## (s), how long a splash carries (s).
+## The mouse run is a true safe room: his steps inside draw nothing to a mouth.
+## Flip on to bring the old echo back (off by default).
+const MOUSE_ECHO := false
 const ECHO_DRAW := 45.0
 const ECHO_HOLD := 6.0
 const SPLASH_FOR := 3.0
@@ -187,8 +191,8 @@ static func mouserun(seed_value := 1) -> Node3D:
 	_cover(r,wall,seed_value)
 	r.hide_boxes = legs.duplicate()
 	r.mouths = [{"at":Vector3(0.0,cill,hz),"out":Vector3(0,0,1)},{"at":Vector3(jog,cill,-hz),"out":Vector3(0,0,-1)}]
-	r.echo_steps = true
-	r._add_echoes(float(o.width)*0.9)
+	r.echo_steps = MOUSE_ECHO
+	if MOUSE_ECHO: r._add_echoes(float(o.width)*0.9)
 	r.set_meta("kind",r.kind)
 	r.set_meta("bounds",wall.grow(0.6))
 	r.set_meta("mouths",r.mouths)
@@ -598,14 +602,9 @@ const DUST_LIGHT := Color(0.55,0.5,0.43)
 const DUST_MOST := 0.38
 ## The tone left inside a refuge (its `dark` boxes).
 const LAMPBLACK := 0.32
-static var _stone_mat: ShaderMaterial = null
 
 static func stone_material() -> ShaderMaterial:
-	if _stone_mat == null:
-		_stone_mat = (load("res://scripts/enemies/inhaler_head_look.gd").stone_material() as ShaderMaterial).duplicate()
-		_stone_mat.set_shader_parameter("lichen_a",Color(0.36,0.34,0.31))
-		_stone_mat.set_shader_parameter("lichen_b",Color(0.5,0.45,0.38))
-	return _stone_mat
+	return CityStone.wear("refuge")
 
 ## The giant's mesher (scripts/kit_isle/greybox/giant_stone.gd) with dust
 ## for moss.

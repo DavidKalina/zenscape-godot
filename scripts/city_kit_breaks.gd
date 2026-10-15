@@ -29,6 +29,7 @@ const RuinKit = preload("res://scripts/ruin_kit.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 const Style = preload("res://scripts/ruin_stone_style.gd")
 const HeadLook = preload("res://scripts/enemies/inhaler_head_look.gd")
+const CityStone = preload("res://scripts/city_kit_stone.gd")
 
 const PIECES := ["maker_felled","colossus_drum"]
 const NAMES := {"maker_felled":"Felled column","colossus_drum":"Drum floor"}
@@ -145,7 +146,7 @@ static func mesh_of(m: GiantStone.Mesher) -> ArrayMesh:
 		_runes.set_shader_parameter("pulse_amp",0.0)
 		_runes.set_shader_parameter("halo",0.0)
 		Style.dress(_runes)
-	return m.mesh(HeadLook.stone_material(),_runes)
+	return m.mesh(CityStone.wear("break"),_runes)
 
 ## A mesher in the giant's stone with smooth round forms (the drums, the
 ## echinus, the stub): GiantStone's Mesher, its tone, occlusion, moss and

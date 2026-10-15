@@ -58,10 +58,46 @@ static func warm(glow := 0.0) -> void:
 		_runes.set_shader_parameter("pulse_wave",14.0)
 		Style.dress(_runes)
 
-## `m`'s mesh in the kit's materials.
-static func mesh_of(m: Mesher) -> ArrayMesh:
+## `m`'s mesh in the kit's materials, `kind` the piece's wear (WEAR).
+static func mesh_of(m: Mesher, kind := "pier") -> ArrayMesh:
 	if _stone == null: warm()
-	return m.mesh(_stone,_runes)
+	return m.mesh(wear(kind),_runes)
+
+## One basalt, a different wear per piece: the same shader, washes and
+## palette, a few knobs apart (weathered stone, kit-stone-weathered.md). The
+## lichen is the underground's: dry, olive-grey and ochre, kept dim so it
+## never glows in the dark.
+const LICHEN_A := Color(0.33,0.35,0.28)
+const LICHEN_B := Color(0.46,0.42,0.31)
+const WEAR := {
+	# The pillars' flanks and wells: the base stone.
+	"pier":{},
+	# Treads and cheek crests: walked pale, edges chipped, a little crisper.
+	"stair":{"pale_mul":Vector3(2.0,1.9,1.75),"weather":1.1,"bump_strength":0.9},
+	# The long deck: rain-washed, a touch more grime in its soffits.
+	"span":{"weather":1.1,"grime_mul":Vector3(0.28,0.28,0.27)},
+	# Fire stone: sooted dark in the crevices, little pale, lichen burnt off.
+	"fire":{"grime_mul":Vector3(0.2,0.19,0.18),"pale_mul":Vector3(1.4,1.35,1.28),"weather":0.95,
+		"lichen_a":Color(0.24,0.25,0.2),"lichen_b":Color(0.33,0.3,0.23)},
+	# What has broken: fresh pale chips and crisp faces, not yet greyed.
+	"break":{"pale_mul":Vector3(2.15,2.05,1.9),"weather":0.9,"bump_strength":1.05},
+	# The refuges: dust-greyed, lighter crevices, lichen turned to soot.
+	"refuge":{"grime_mul":Vector3(0.4,0.39,0.38),"weather":1.0,
+		"lichen_a":Color(0.36,0.34,0.31),"lichen_b":Color(0.5,0.45,0.38)},
+}
+static var _wears := {}
+
+## The stone material of wear `kind` (a ShaderMaterial of the Olmec's shader).
+static func wear(kind: String) -> ShaderMaterial:
+	if _wears.has(kind): return _wears[kind]
+	var base := HeadLook.stone_material()
+	var m := base.duplicate() as ShaderMaterial
+	m.set_shader_parameter("lichen_a",LICHEN_A)
+	m.set_shader_parameter("lichen_b",LICHEN_B)
+	var d: Dictionary = WEAR.get(kind,{})
+	for k: String in d: m.set_shader_parameter(k,d[k])
+	_wears[kind] = m
+	return m
 
 static func stone_colour() -> Color:
 	return Style.stone_of(STONE_SEED) if Style.ruled() else Color("5a5d63")
