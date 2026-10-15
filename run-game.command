@@ -16,7 +16,7 @@ fi
 # same flags. Flags after the `--`:
 #   --shape=sprawl     the run's first region; the run alternates sprawl and
 #                      ring by depth on its own (layer_shapes.gd RUN)
-#   --underground=torch  the underground look, the torch's light
+#   --under-look=torch   the underground regions in the torch look (the first two; the sky after)
 #   (no --seed=)       the run draws a new seed each launch; the card's R
 #                      keeps the same one, Space draws another
 #   (no --dragon-live) no dragon; the plane is not in this scene
@@ -24,7 +24,7 @@ fi
 #   --body-chase on), so nothing is passed for it
 # Extra flags win, e.g. ./run-game.command --seed=7 --shape=ring.
 print -r -- "Opening ZenScape. Launch log: $LAUNCH_LOG"
-"$GODOT_BIN" --path "$PROJECT_DIR" --rendering-method forward_plus --windowed --resolution 1440x900 res://studies/game_title.tscn -- --no-title --shape=sprawl --underground=torch "$@" 2>&1 | tee "$LAUNCH_LOG"
+"$GODOT_BIN" --path "$PROJECT_DIR" --rendering-method forward_plus --windowed --resolution 1440x900 res://studies/game_title.tscn -- --no-title --shape=sprawl --under-look=torch "$@" 2>&1 | tee "$LAUNCH_LOG"
 launch_status=${pipestatus[1]}
 # Godot can report script-load failures while returning a zero exit status.
 if (( launch_status == 0 )) && /usr/bin/grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load' "$LAUNCH_LOG"; then

@@ -68,7 +68,7 @@ const LAYOUT := {
 	# ragged edge grown out past the stone up to `grow` m (hanging earth and
 	# roots) but for the `keep` faces, tucked inside the lip (a seam to a
 	# neighbour, or a climb face whose lip is grabbed).
-	"forecourt":{"apothem":40.0,"crown":0,"wear":0.6,"cap":{"grow":4.0,"keep":[3],"seed":SEED+1},
+	"forecourt":{"apothem":40.0,"crown":0,"wear":0.6,"cap":{"grow":4.0,"keep":[3,0,1,5],"seed":SEED+1},
 		# Its turf's west terraces, each a set-off up (grabbable cliffs), their
 		# edges (local x) wandering; clear of the stair's flank (x -14.6).
 		"terraces":[-19.0,-30.0]},
@@ -227,10 +227,13 @@ func start() -> Vector3:
 ## In on F's south edge; out on T's far (north-east) edge. Underground the
 ## court is most of the pool (layer-round13-worlds.md), and the generator
 ## never turns an isle, so court must join court: more ways in on F's
-## south-east and south-west faces, and out on T's north face and U's
-## north-west one (each crown on a route). A way out north meets a way in
-## south, north-west meets south-east, north-east (the summit's) meets
-## south-west.
+## south-east and south-west faces, and out on T's north face. A way out
+## north meets a way in south, north-east (the summit's) meets south-west;
+## the south-east one meets the base's rims. F's turf is tucked inside the
+## stone on those faces (LAYOUT `keep`), each rim IN m in from the stone's
+## edge, its lip there. (A way out on U's north-west face was tried: its
+## collars stand under the lip.)
+const IN := 2.6
 func rims() -> Array:
 	var n := CityKit.hex_dir(int(LAYOUT.east.on_face))
 	var out := on("east",Vector2(n.x,n.z)*(float(LAYOUT.east.apothem)-1.4))
@@ -238,15 +241,13 @@ func rims() -> Array:
 	var se := CityKit.hex_dir(1)
 	var sw := CityKit.hex_dir(5)
 	# The south-west face toward its south corner, between the terraces.
-	var sw_at := Vector2(-46.2,0.0).lerp(Vector2(-23.1,40.0),0.85)*(a_f/40.0)-Vector2(sw.x,sw.z)*1.5
+	var sw_at := Vector2(-46.2,0.0).lerp(Vector2(-23.1,40.0),0.85)*(a_f/40.0)-Vector2(sw.x,sw.z)*IN
 	var t_n := CityKit.hex_dir(3)
-	var u_nw := CityKit.hex_dir(4)
 	return [
-		{"name":"forecourt","at":on("forecourt",Vector2(6.0,a_f-1.5)),"face":Vector3(0.0,0.0,1.0),"run_up":14.0,"lip":1.0},
-		{"name":"forecourt_se","at":on_forecourt(Vector2(se.x,se.z)*(a_f-1.5)),"face":se,"run_up":12.0,"lip":1.0,"way":"in"},
-		{"name":"forecourt_sw","at":on_forecourt(sw_at),"face":sw,"run_up":5.0,"lip":1.0,"way":"in"},
+		{"name":"forecourt","at":on("forecourt",Vector2(6.0,a_f-IN)),"face":Vector3(0.0,0.0,1.0),"run_up":14.0,"lip":IN},
+		{"name":"forecourt_se","at":on_forecourt(Vector2(se.x,se.z)*(a_f-IN)),"face":se,"run_up":12.0,"lip":IN,"way":"in"},
+		{"name":"forecourt_sw","at":on_forecourt(sw_at),"face":sw,"run_up":5.0,"lip":IN,"way":"in"},
 		{"name":"east_north","at":on("east",Vector2(t_n.x,t_n.z)*(float(LAYOUT.east.apothem)-1.4)),"face":t_n,"run_up":8.0,"lip":1.0,"way":"out"},
-		{"name":"west_crown","at":on("west",Vector2(u_nw.x,u_nw.z)*(float(LAYOUT.west.apothem)-1.4)),"face":u_nw,"run_up":8.0,"lip":1.0,"way":"out"},
 		{"name":"summit","at":out,"face":n,"run_up":10.0,"lip":1.0},
 	]
 
@@ -277,6 +278,12 @@ func parts() -> Array:
 			_hex_strips(out,Vector2(p.x,p.z),float(d.apothem)+k*CityKit.LEDGE,floor_y,p.y-k*COURSE,well if k == 0 else 0.0)
 		if well > 0.0:
 			_hex_strips(out,Vector2(p.x,p.z),well*cos(PI/6.0),floor_y,p.y-COURSE,0.0)
+		# The turf cap's ragged overhang (`cap_outline`, `grow` past the stone,
+		# its earth hanging a course): in the occupancy, so no crossing's
+		# corridor runs through it (layer-round13-worlds.md: a layer of courts
+		# put them in each other's way).
+		if d.has("cap"):
+			_hex_strips(out,Vector2(p.x,p.z),float(d.apothem)+float(d.cap.grow),p.y-COURSE,p.y,0.0)
 	var foot := stair_foot()
 	out.append(["ramp",foot+Vector3(0.0,0.0,CityKit.HEAD_LENGTH),foot+Vector3(0.0,CityKit.STAIR_FLIGHTS*COURSE,-stair_length()),CityKit.LANE+2.0*(CityKit.CHEEK+CityKit.FLANK),"grey"])
 	var ends := causeway_ends()
