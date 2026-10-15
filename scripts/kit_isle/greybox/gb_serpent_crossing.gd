@@ -60,7 +60,11 @@ const LAYOUT := {
 		Vector2(-37.0,-4.0),Vector2(-35.0,10.0),Vector2(-27.0,20.0),Vector2(-17.0,25.0)],
 		"terraces":[-19.0,-27.0],"depth":26.0,"seed":SEED+1,
 		# Fallen drums (offset, radius, length, turn deg): cover on the way.
-		"drums":[[Vector2(8.0,-6.0),1.7,5.0,25.0],[Vector2(-10.0,-4.0),1.5,4.2,-40.0],[Vector2(19.0,18.0),1.9,3.4,70.0]]},
+		"drums":[[Vector2(15.5,-12.5),1.7,5.0,55.0],[Vector2(-25.0,-11.0),1.5,4.2,-40.0],[Vector2(19.0,18.0),1.9,3.4,70.0]],
+		# The north-east shoulder (polish): A's ground falls away toward the
+		# ring in two broken set-offs (a set-off down past each edge line:
+		# x over `x`, z under `z`, both wandering).
+		"falls":[[10.5,-6.0],[16.0,-11.5]]},
 	# The dais (its middle; its trough on its east, the line up it).
 	"dais":Vector3(30.0,0.0,-2.0),
 	# The ash court: its middle (floor), half its side, the ash's radius.
@@ -69,11 +73,26 @@ const LAYOUT := {
 	"steps":{"x":Vector2(31.0,35.0),"z":10.0,"n":5},
 	# The ring over R: its z, its bore's height; R's crown and apothem; the
 	# alighting stage's tiers (x, z rect, top over R's crown).
-	"ring":{"z":-58.0,"y":5.0,"crown":0.0,"apothem":16.0,
-		"stage":[[Rect2(28.8,-53.0,6.8,9.0),SO],[Rect2(30.6,-52.0,5.0,7.0),2.0*SO]]},
+	# Polish: R's crown sunk four set-offs (it was A's level, a shelf in line
+	# with A from the rim): the ring stands up out of the gulf on long
+	# stepped abutments (their courses a set-off each, down to R's crown,
+	# R a little wider to keep their feet). The stage keeps its tops (over
+	# `stage_at`, the old crown): a pier, its low tier run north to the
+	# west abutment's side (a set-off under its course there).
+	"ring":{"z":-58.0,"y":5.0,"crown":-4.0*SO,"apothem":17.5,"stage_at":0.0,
+		"stage":[[Rect2(28.8,-56.1,6.8,12.1),SO],[Rect2(30.6,-52.0,5.0,7.0),2.0*SO]]},
 	# The coil: its axis (x, z), its ramp's foot height, turns, a turn's
 	# rise, the foot's angle (deg from +x toward -z).
-	"coil":{"at":Vector2(38.5,-168.0),"y":7.5,"turns":2.0,"rise":14.4,"foot":280.0},
+	"coil":{"at":Vector2(38.5,-168.0),"y":7.5,"turns":2.0,"rise":14.4,"foot":280.0,
+		# Polish: a wick spire on the cap's lower tier (deg, radius off the
+		# axis, tall), clear of the stela, the shrug's sector (south-east)
+		# and the serpent's face (north-east); a crown lamp on the cap (deg);
+		# lamps on the ramp's inner edge every `every` deg of it from `from`.
+		"spire":[160.0,4.0,18.0],"lamps":[230.0],"ramp_lamps":{"from":340.0,"every":120.0,"r":8.2}},
+	# How far the polish's lamps read (CityFires `beam`).
+	"beam":2.2,
+	# Polish: rune strips held dimly lit, by piece.
+	"glow":{"coil":0.45,"ring":0.3},
 	# The slow way: the wedge's origin, B (x, z, crown, apothem), the pit's
 	# origin, the wrap's origin (its foot's ground) and depth.
 	"wedge":Vector3(-0.5,0.0,-51.8),
@@ -86,11 +105,14 @@ const LAYOUT := {
 	"far":{"crown":32.0,"outline":[Vector2(-12.0,-146.4),Vector2(4.0,-146.4),Vector2(16.0,-147.0),Vector2(26.0,-149.0),Vector2(22.0,-160.0),
 		Vector2(18.0,-170.0),Vector2(22.0,-182.0),Vector2(16.0,-192.0),Vector2(4.0,-200.0),Vector2(-12.0,-203.0),Vector2(-26.0,-198.0),
 		Vector2(-35.0,-186.0),Vector2(-36.0,-168.0),Vector2(-28.0,-152.0)],
-		"terraces":[[-180.0,8.0],[-190.0,-6.0]],"depth":34.0,"keep":24.6,"ledge":[150.0,216.0],"ledge_r":Vector2(21.7,25.4),"seed":SEED+2},
+		"terraces":[[-180.0,8.0],[-190.0,-6.0],[-162.0,-19.0],[-170.0,-24.0]],"depth":34.0,"keep":24.6,"ledge":[150.0,216.0],"ledge_r":Vector2(21.7,25.4),"seed":SEED+2,
+		# Polish: the beacon tower on the west hill, lamps on the south lip.
+		"tower":Vector3(-29.0,0.0,-184.0),"lamps":[Vector2(-12.5,-149.8),Vector2(3.5,-149.6)]},
 	# The whole Olmec's beat on B (x, z), his first look.
 	"keeper":{"beat":[Vector2(-5.0,-64.0),Vector2(-5.0,-71.0),Vector2(-5.0,-79.0)],"face":Vector2(0.0,1.0)},
 	# The great cresset on A's west terrace (unlit: lit, it calls him).
-	"lure":Vector3(-12.0,0.0,6.0),
+	# Polish: nearer the rim, left of the path (it stood mid-view).
+	"lure":Vector3(-14.0,0.0,16.0),
 	# Alone (the yard): far pillars in the haze [x, z, crown (courses), apothem].
 	"far_pillars":[[-260.0,-200.0,4,30.0],[200.0,-330.0,12,26.0],[260.0,40.0,-1,34.0],[-300.0,120.0,1,38.0],[60.0,-480.0,16,32.0],[-200.0,-430.0,10,28.0],[150.0,230.0,-2,30.0]],
 }
@@ -134,8 +156,14 @@ static func b_at() -> Vector3:
 ## A's ground (frame x, z): 0, a set-off up west of each terrace edge
 ## (wandering), south of the tongue.
 static func arrival_ground(x: float, z: float) -> float:
-	if z < -17.0: return 0.0
 	var y := 0.0
+	var j := 0
+	for f: Array in LAYOUT.arrival.falls:
+		var wx := 1.6*sin(z*0.21+j*2.3)+0.8*sin(z*0.47+1.1)
+		var wz := 1.4*sin(x*0.19+j*1.7)+0.7*sin(x*0.43+0.6)
+		if x > float(f[0])+wx and z < float(f[1])+wz: y -= SO
+		j += 1
+	if z < -17.0: return y
 	var k := 0
 	for edge: float in LAYOUT.arrival.terraces:
 		var wander := 2.0*sin(z*0.13+k*1.9)+1.2*sin(z*0.31+0.4+k)
@@ -281,7 +309,7 @@ func spots() -> Array:
 		{"kind":"cover","name":"wrap_cell","at":wa+Vector3(0.0,8.0,1.8),"room":1.5},
 		{"kind":"perch","name":"ring_cap","at":r+Vector3(0.0,9.6,0.0),"room":1.2},
 		{"kind":"perch","name":"coil_cap","at":c+Vector3(0.0,coil_top()-c.y+0.8,0.0),"room":4.0},
-		{"kind":"perch","name":"far_summit","at":Vector3(-20.0,fc+2.0*SO,-196.0),"room":4.0},
+		{"kind":"perch","name":"far_summit","at":Vector3(-20.0,far_ground(-20.0,-196.0),-196.0),"room":4.0},
 		# Runes along the ways and just off them.
 		{"kind":"rune_line","name":"tongue","at":Vector3(0.0,0.0,-14.0),"room":1.0},
 		{"kind":"rune_line","name":"wedge_slab","at":(LAYOUT.wedge as Vector3)+Vector3(2.0,4.8,16.0),"room":1.0},
@@ -537,7 +565,7 @@ func _stage(root: Node3D) -> void:
 	var cr := float(LAYOUT.ring.crown)
 	for t: Array in LAYOUT.ring.stage:
 		var rr: Rect2 = t[0]
-		CS.Kit.span(m,shapes,Vector3(rr.position.x,cr-0.4,rr.position.y),Vector3(rr.end.x,cr+float(t[1]),rr.end.y),0.12,0.92)
+		CS.Kit.span(m,shapes,Vector3(rr.position.x,cr-0.4,rr.position.y),Vector3(rr.end.x,float(LAYOUT.ring.stage_at)+float(t[1]),rr.end.y),0.12,0.92)
 	var node := Node3D.new()
 	node.name = "AlightingStage"
 	root.add_child(node)
@@ -650,8 +678,48 @@ func live(g: Node) -> void:
 	var lure: Vector3 = LAYOUT.lure
 	lure.y = arrival_ground(lure.x,lure.z)
 	CityFires.cresset(fires,Transform3D(Basis.IDENTITY,g.w(lure)),{"size":"great","seed":SEED+44,"name":"LureCresset","lit":false,"draw":0.0})
-	var summit: Node3D = CityFires.tower(fires,Transform3D(Basis(Vector3.UP,0.5),g.w(Vector3(-22.0,far_ground(-22.0,-194.0),-194.0))),{"seed":SEED+45,"name":"FarTower","lit":true})
+	# Where you're going, read from the arrival rim (polish): F's beacon tower
+	# raised on its west hill, a tier taller, its crown read far off; two
+	# lamps on F's south lip where the slow way comes up; the coil's cap lit.
+	var tw: Vector3 = LAYOUT.far.tower
+	# Its foot at the lowest ground under it: the hill's steps bury the rest.
+	var foot := INF
+	for o: Vector2 in [Vector2.ZERO,Vector2(4.5,4.5),Vector2(-4.5,4.5),Vector2(4.5,-4.5),Vector2(-4.5,-4.5)]: foot = minf(foot,far_ground(tw.x+o.x,tw.z+o.y))
+	var summit: Node3D = CityFires.tower(fires,Transform3D(Basis(Vector3.UP,0.5),g.w(Vector3(tw.x,foot,tw.z))),
+		{"seed":SEED+45,"name":"FarTower","lit":true,"tiers":4,"beam":float(LAYOUT.beam)})
 	SC._still(summit)
+	k = 0
+	for p: Vector2 in LAYOUT.far.lamps:
+		var lamp := CityFires.cresset(fires,Transform3D(Basis.IDENTITY,g.w(Vector3(p.x,far_ground(p.x,p.y),p.y))),
+			{"size":"crown","seed":SEED+46+k,"name":"FarLamp%d" % k,"lit":true,"barge":false,"beam":float(LAYOUT.beam)})
+		SC._still(lamp)
+		k += 1
+	# The coil's rune spiral and the ring's bore held dimly lit (the strips'
+	# `hold`; the serpent's nearness still wakes them full): the spiral
+	# reads up out of the haze.
+	for key: String in LAYOUT.glow:
+		var piece: Node3D = pieces.get(key) as Node3D
+		if piece == null: continue
+		for st: Dictionary in piece.get_meta("strips",[]): st.hold = maxf(float(st.hold),float(LAYOUT.glow[key]))
+	var cc := coil_at()
+	var sp: Array = LAYOUT.coil.spire
+	var spire: Node3D = CityFires.spire(fires,Transform3D(Basis.IDENTITY,g.w(coil_point(float(sp[0]),float(sp[1]),coil_top()+0.4))),
+		{"tall":float(sp[2]),"radius":1.2,"lit":true,"seed":SEED+49,"name":"CoilSpire"})
+	SC._still(spire)
+	var rl: Dictionary = LAYOUT.coil.ramp_lamps
+	var phi := float(rl.from)
+	while phi < float(LAYOUT.coil.foot)+360.0*float(LAYOUT.coil.turns)-30.0:
+		var lamp := CityFires.cresset(fires,Transform3D(Basis.IDENTITY,g.w(coil_point(phi,float(rl.r),coil_ramp(phi)))),
+			{"size":"crown","seed":SEED+80+k,"name":"RampLamp%d" % k,"lit":true,"barge":false,"beam":float(LAYOUT.beam)})
+		SC._still(lamp)
+		phi += float(rl.every)
+		k += 1
+	for deg: float in LAYOUT.coil.lamps:
+		var at := cc+Vector3(cos(deg_to_rad(deg))*5.4,coil_top()-cc.y+0.4,-sin(deg_to_rad(deg))*5.4)
+		var lamp := CityFires.cresset(fires,Transform3D(Basis.IDENTITY,g.w(at)),
+			{"size":"crown","seed":SEED+50+k,"name":"CoilLamp%d" % k,"lit":true,"barge":false,"beam":float(LAYOUT.beam)})
+		SC._still(lamp)
+		k += 1
 	var hub: Node3D = Breakables.new()
 	hub.field = g.stage.enemies
 	g.add_child(hub)

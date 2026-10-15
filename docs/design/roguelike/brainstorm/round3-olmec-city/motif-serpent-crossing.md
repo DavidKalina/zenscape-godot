@@ -205,3 +205,70 @@ model.
   errors in `run_layer.gd` `_stand_layer` (`spawn.face` missing) on this
   base, so the motif hasn't stood in a layer.
 - The Olmec can't be dropped into the ash (his body reads no soft ground).
+
+## Polish (round 1)
+
+Branch `polish/city-serpent_crossing`, in place in `gb_serpent_crossing.gd`
+(all new numbers in `LAYOUT`).
+
+**What changed.**
+- *Where you're going, from the rim.* F's beacon tower stands a tier taller
+  (4) on a new west hill (two more terrace set-offs, x < -19/-24), its foot
+  sunk into the hill's steps; two crown lamps on F's south lip where the
+  wrap's ramp comes up. The coil: a wick spire (18 m, lit crown) on its
+  cap's lower tier, off the stela, clear of the shrug's sector and the
+  serpent's face; six crown lamps up the ramp's inner edge (every 120 deg),
+  so the spiral reads as a rising line of fires; one lamp on the cap. The
+  coil's rune spiral and the ring's bore are held dimly lit (strip `hold`
+  0.45 / 0.3; the serpent still wakes them full). All lamps `beam` 2.2,
+  barge off.
+- *Depth in the middle.* R's crown sunk four set-offs (0 to -6.4) and R a
+  little wider (apothem 17.5): the ring now stands up out of the gulf on
+  long stepped abutments instead of sitting on a shelf level with A. The
+  alighting stage keeps its tops (1.6/3.2) as a pier, its low tier run
+  north to the west abutment. A's north-east shoulder falls away toward
+  the ring in two broken set-offs. The great cresset moved from mid-view to
+  the left foreground (-14, 16); the drums moved off the middle row (one on
+  the NE fall, one by A's west edge).
+- Land and grass otherwise as they were.
+
+**Stills** (`captures/sc_polish/`, rendered): before `before_rim_haze.png`,
+`before_rim_torch.png`, `before_wide_haze.png`; after `after_rim_haze.png`,
+`after_rim_torch.png`, `after_wide_haze.png`; side by side
+`before_after_sheet.png`; the bar `bar_sundered_haze_three.png`.
+
+**Routes, re-walked through the real input** (yard, scratch drivers):
+the ride boarding to F 34.2 s (8 ticks lit), `--shrug` onto the cap; the
+bail onto the stage (no stun), down onto R's crown (8 m, no heart), up the
+west abutment's eight courses to the ring's cap in 10.3 s, back on the
+serpent from the cap with a tech roll (no heart); the slow way 84.2 s
+(slab) / 81.1 s (chimney + recess) with `--no-olmec`, 92.9 s with him live
+(2 hearts: a swat and a fall); the ash catch and the stone drop (1 heart).
+The lure: the torch lights the cresset and the Olmec comes off B to it in
+43 s (it stands further from B now). The rune_line / rune_risk / rare
+spots are unchanged except `ring_isle` (rare), which sank with R's crown,
+and the `far_summit` perch, now on F's ground there.
+
+**Budget.** 73.5k triangles under the motif (was 70.8k: R wider and
+deeper, longer abutments, F's hill), built in 657 ms. The live lamps,
+spire and tower add about 5.9k triangles and 10 omni lights (no shadows).
+Applies: visibility ranges/LODs on the coil, wrap and pit past ~80 m (as
+before, ~13k tris, ~0.1 ms); the lamps must stay visible far off, so no
+range on them; they could merge into one multimesh (~10 draws saved).
+
+**Generator.** `parts()` follows R (its crown and apothem): on
+`--shape=ring --world=under --seed=2` the motif's isle moves 1 m
+(413 to 412 in x); other edges unchanged.
+
+**Still rough.**
+- From A's rim the slow chain (wedge, B, wrap) still stacks straight ahead
+  in one line, with F behind the wrap; the lit tower, lip lamps and coil
+  lamps now say where to go, but F's own silhouette stays hidden behind
+  the wrap from the rim.
+- The ash court's and R's footings are still tall square/hex columns,
+  blockier than the gorge's rock.
+- Motor bug (not fixed, shared code): the serpent's frame velocity
+  survives a landing even when *not* stunned: after bailing onto the stage,
+  `frame_v` was (0, 0, -7.2) and still -1.3 m/s on the first jumps of the
+  abutment climb, drifting each jump north; it pushed the scripted climb
+  off the abutment's narrow side until steered.
