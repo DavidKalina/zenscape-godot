@@ -42,7 +42,6 @@ const LaunchArgs = preload("res://scripts/launch_args.gd")
 
 const YARD_LOST := -40.0
 ## The stone's hemisphere fill under each look.
-const HEMI := {"torch":0.12,"haze":0.55}
 ## The plaza (x, z), its top 0, its slab's depth.
 const PLAZA := Rect2(-48.0,-64.0,96.0,112.0)
 const PLAZA_DEEP := 8.0
@@ -366,7 +365,6 @@ func tick(delta: float) -> void:
 	super.tick(delta)
 	if under != null:
 		if _sun != null: _sun.visible = false
-		_hemi()
 	if camera == null: return
 	var q := float(hub.quake)*0.7 if hub != null else 0.0
 	var b := stone_body()
@@ -374,16 +372,6 @@ func tick(delta: float) -> void:
 	if q > 0.001:
 		var t := Time.get_ticks_msec()/1000.0
 		camera.position += Vector3(sin(t*61.0),sin(t*53.0+1.0),sin(t*47.0+2.0))*q*0.5
-
-## The stone's sky fill (the hemisphere the Olmec's stone is lit by) to
-## the underground's: its ambient colour, dim (the day's otherwise).
-func _hemi() -> void:
-	var p: Dictionary = under.get("p")
-	var amb: Color = p.get("ambient",Color(0.2,0.27,0.4))
-	var e := float(HEMI.get(str(under.get("preset")),0.2))
-	RenderingServer.global_shader_parameter_set("zs_hemi_sky",Vector3(amb.r,amb.g,amb.b))
-	RenderingServer.global_shader_parameter_set("zs_hemi_ground",Vector3(amb.r,amb.g,amb.b)*0.25)
-	RenderingServer.global_shader_parameter_set("zs_hemi_energy",e)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo and not _name_panel.visible:

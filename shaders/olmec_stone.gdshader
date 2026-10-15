@@ -28,6 +28,12 @@ render_mode diffuse_lambert, specular_schlick_ggx;
 global uniform vec3 zs_hemi_sky;
 global uniform vec3 zs_hemi_ground;
 global uniform float zs_hemi_energy;
+// The underground look's own fill for the stone (scripts/underground/underground.gd):
+// zs_under 1 swaps the day sky's hemisphere for its dim air (sky, ground already
+// times the energy), 0 is the day's.
+global uniform float zs_under;
+global uniform vec3 zs_under_sky;
+global uniform vec3 zs_under_ground;
 
 uniform float fill = 1.2;
 uniform float rim = 0.14;
@@ -281,8 +287,11 @@ void fragment() {
 	METALLIC = 0.0;
 	vec3 normal = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
 	vec3 hemi = mix(zs_hemi_ground, zs_hemi_sky, normal.y * 0.5 + 0.5) * zs_hemi_energy / PI;
+	vec3 rim_sky = zs_hemi_sky * zs_hemi_energy;
+	hemi = mix(hemi, mix(zs_under_ground, zs_under_sky, normal.y * 0.5 + 0.5) / PI, zs_under);
+	rim_sky = mix(rim_sky, zs_under_sky, zs_under);
 	float edge = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 3.0);
-	EMISSION = c * hemi * fill + mix(c, vec3(0.5), 0.4) * zs_hemi_sky * zs_hemi_energy * edge * rim;
+	EMISSION = c * hemi * fill + mix(c, vec3(0.5), 0.4) * rim_sky * edge * rim;
 	EMISSION += r_tint * r_lit * energy * r_boost;
 	EMISSION += eye_glow * eye_energy * eye * (0.45 + 0.55 * e_dome);
 }
