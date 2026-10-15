@@ -52,6 +52,8 @@ const CollectTally = preload("res://scripts/roguelike/collect_tally.gd")
 const ItemCatalog = preload("res://scripts/roguelike/item_catalog.gd")
 const RunFeatures = preload("res://scripts/roguelike/run_features.gd")
 const ItemStrip = preload("res://scripts/roguelike/item_strip.gd")
+# [linger] the serpent climbing out of the void the longer he stays (linger-serpent-round1.md).
+const Linger = preload("res://scripts/roguelike/linger.gd")
 ## [items] Whether --wallrun gave the wall run outright (else Gecko Wraps do).
 var _wallrun_flag := false
 
@@ -89,7 +91,8 @@ const WORDS := {
 	# The harm's causes (PilotMotor `harm`), as the card names them.
 	"causes": {"fall":"the fall","olmec":"the Olmec","ram":"the ram","trap":"a trap",
 		"wind":"the wind","stone":"falling stone","enemy":"the city's guardians",
-		"walker":"the Second Walker"},
+		"walker":"the Second Walker",
+		"serpent":"the risen serpent"},  # [linger]
 	"lost_none": "nothing carried",
 	"lost_one": "1 rune lost",
 	"lost": "%d runes lost",
@@ -430,6 +433,7 @@ func layer_stood() -> void:
 	study.respawn()
 	study.set("_last_stood",spot.start)
 	_start_y = float(study.start.y)
+	Linger.lay(self,stage,layer)  # [linger]
 	stage.rune_taken.connect(func(_left: int) -> void: run.take_rune())
 	# [collectibles] The layer's runes, rares and chests into the run.
 	var found: Node = stage.get("collectibles")
