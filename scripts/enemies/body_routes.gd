@@ -334,7 +334,7 @@ func moves(u: Vector3i) -> Array:
 			if f[k] > level+step and f[k] <= level+climb_max and f[k] < wall: wall = f[k]
 			# Something in the way up to its neck: no leap that way.
 			if f[k] > level+step and f[k] < level+room: blocked = true
-		if wall != INF:
+		if wall != INF and _face(base,d,level,wall):
 			var up := _climb_to(base,d,level,wall)
 			if up[0] != NONE: out.append([up[0],lead+len_d*float(up[1])+(at(up[0]).y-level)*2.0+COST_CLIMB,"climb",d])
 		if blocked: continue
@@ -342,6 +342,15 @@ func moves(u: Vector3i) -> Array:
 			leap[1] = float(leap[1])+lead
 			out.append(leap)
 	return out
+
+## A climb from column `c` (floor `level`) to `top` isn't under something:
+## the room over his floor there reaches the top. Climbing up out from under
+## a deck or a pier's corbels stepping out over him (the city kit's
+## causeway over the road a bay falls to, city-kit-round1.md) is an
+## overhang he can't climb.
+func _face(c: Vector2i, _d: Vector2i, level: float, top: float) -> bool:
+	var at := centre(c)
+	return _cast(Vector3(at.x,level+0.1,at.y),Vector3(at.x,top-0.3,at.y)).is_empty()
 
 ## A climb from column `c` (floor `y`) up the wall along `d` whose top is
 ## `top`: [the place it ends on, columns on], over lips it doesn't fit on
