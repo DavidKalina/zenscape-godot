@@ -97,6 +97,7 @@ const Look = preload("res://scripts/enemies/headless_body_look.gd")
 const Dust = preload("res://scripts/enemies/body_dust.gd")
 const Routes = preload("res://scripts/enemies/body_routes.gd")
 const Sight = preload("res://scripts/enemies/body_sight.gd")
+const Hearing = preload("res://scripts/enemies/body_hearing.gd")
 
 ## The head it looks for (found among the field's enemies: the one with a mouth).
 var head: Node3D = null
@@ -711,6 +712,9 @@ func _reunite_near() -> bool:
 
 ## The lit beacon it heeds, or null.
 var beacon: Beacon = null
+## Its ears for the layer's noise (scripts/enemies/body_hearing.gd,
+## noise-stealth-round1.md): a heard noise is a weaker beacon, under a lit one.
+var hearing := Hearing.new()
 ## Times a beacon turned it; times it stood and looked at one.
 var beacon_turns := 0
 var beacon_visits := 0
@@ -761,7 +765,11 @@ func _beacons(delta: float) -> void:
 	_beacon_t = BEACON_POLL
 	if beacon != null and not is_instance_valid(beacon): beacon = null
 	var b: Beacon = _beacon_pick() if _beacon_free() else null
-	if b == beacon: return
+	# A heard noise (noise-stealth-round1.md), when no beacon draws it.
+	var heard: Beacon = hearing.pick(self)
+	if b == null and _beacon_free(): b = heard
+	if b == beacon and not hearing.news(b): return
+	if hearing.is_lure(b): hearing.tell(self)
 	var was := beacon
 	beacon = b
 	_beacon_dwell = 0.0
@@ -1359,6 +1367,9 @@ func _landed() -> void:
 
 # --- Shockwaves -------------------------------------------------------------------------------
 
+## A landing's noise carries this many times its shockwave's reach (m).
+const SHOCK_HEARD := 2.5
+
 ## A shockwave from `at`, `power` (1 a leap's landing): a ring and a dust
 ## wall running out along the ground to `shock_r` Hh Ã— âˆšpower, stones
 ## kicked up; the walker it passes on the ground is thrown back and up
@@ -1407,6 +1418,9 @@ func _shock(at: Vector3, power: float) -> void:
 		chips.append([chip,Vector3(sin(a)*_rng.randf_range(3.0,7.0),_rng.randf_range(5.0,10.0)*sqrt(power),cos(a)*_rng.randf_range(3.0,7.0))])
 	_waves.append({"at":at,"r":0.0,"max":reach,"power":power,"done":false,"t":0.0,"parts":parts,"chips":chips})
 	field.sound(&"body_shock",at)
+	# Its landing heard across the layer (noise-stealth-round1.md); not by
+	# itself or another body (scripts/enemies/body_hearing.gd).
+	NoiseBus.make(self,at,reach*SHOCK_HEARD,&"olmec_land")
 
 func _wave_mat(c: Color) -> StandardMaterial3D:
 	var mat := StandardMaterial3D.new()

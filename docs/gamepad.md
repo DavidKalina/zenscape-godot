@@ -150,7 +150,7 @@ Every pad read goes through a named action in the InputMap (`Pad.ACTIONS`). `Pad
 
 Keys sit in the same action where the code polls them:
 - `move_*`
-- `walk_jump`, `walk_crouch` and `walk_twirl`
+- `walk_jump`, `walk_crouch`, `walk_twirl` and `walk_sneak` (Ctrl or Alt held; the pad has no button for it: the stick eased is a sneak)
 - `fly_boost` and `fly_brake`
 - `fly_eject` (the pad's X: eject, then open the canopy; the X key is the same verb, read as an event)
 - `telescope` (the pad's LB and the right mouse button, held; `Pad.ACTIONS` takes a `["mouse", button]` spec for it)

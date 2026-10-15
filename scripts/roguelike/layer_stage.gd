@@ -258,6 +258,9 @@ func at_exit(feet: Vector3) -> bool:
 	var at: Vector3 = exit.at
 	return Vector2(feet.x-at.x,feet.z-at.z).length() < GATE_WIDE*0.5 and absf(feet.y-at.y) < 1.5
 
+## How far a rune taken is heard (m) on the NoiseBus.
+const RUNE_HEARD := 4.0
+
 ## The runes the pilot's middle swept past since the last frame (the kit
 ## tokens' reach).
 func touch(point: Vector3) -> void:
@@ -268,6 +271,8 @@ func touch(point: Vector3) -> void:
 		var near := Geometry3D.get_closest_point_to_segment(holder.global_position,from,point)
 		if near.distance_to(holder.global_position) < Lines.WALKER_REACH+RUNE_SIZE*0.5:
 			runes.erase(holder)
+			# A rune's chime, heard close (noise-stealth-round1.md).
+			NoiseBus.make(holder,holder.global_position,RUNE_HEARD,&"rune")
 			holder.take(hash(holder.name) & 0xffff)
 			taken += 1
 			rune_taken.emit(runes.size())
