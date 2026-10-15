@@ -776,7 +776,7 @@ func _bake_hide(mi: MeshInstance3D, surface: int, key: String) -> void:
 		var mean := sum[id]/maxf(count[id],1.0)
 		# Metres of dip into the neighbours' mean, over a stride's length.
 		var dip := (mean-p).dot(n)/maxf((mean-p).length()+0.8,0.001)
-		var occ := clampf(0.78-dip*1.6+minf(n.y,0.0)*0.25,0.15,1.0)
+		var occ := clampf(0.8-dip*0.8+minf(n.y,0.0)*0.2,0.4,1.0)
 		var shade := lerpf(0.55,1.0,occ)
 		colours[k] = Color(tone.r*shade,tone.g*shade,tone.b*shade,occ)
 		var rest := p*GRAIN
@@ -865,6 +865,7 @@ func _material(key: String) -> Material:
 
 func _made_material(key: String) -> Material:
 	if key == "dragon_membrane_glow": return _glow_membrane()
+	if key == "dragon_glow": return _glow_spine()
 	if HIDE_TONES.has(key):
 		var h := ShaderMaterial.new()
 		h.shader = HIDE_SHADER
@@ -905,11 +906,6 @@ func _made_material(key: String) -> Material:
 			m.cull_mode = BaseMaterial3D.CULL_DISABLED
 			m.backlight_enabled = true
 			m.backlight = Color("40243e")
-		"dragon_glow":
-			m.albedo_color = Color("ffb874")
-			m.emission_enabled = true
-			m.emission = Color("ff9a52")
-			m.emission_energy_multiplier = 1.6
 		_:
 			m.albedo_color = Color("4a3d5a")
 	return m
@@ -945,6 +941,32 @@ uniform float night_vein = 0.45;
 uniform float night_body = 0.16;
 uniform float vein_width = 0.07;
 varying vec3 tag;
+varying vec3 mp;
+vec3 h33(vec3 p) {
+	p = fract(p * vec3(0.1031, 0.1030, 0.0973));
+	p += dot(p, p.yxz + 33.33);
+	return fract((p.xxy + p.yxx) * p.zyx);
+}
+// Cellular: x nearest distance, y second, z nearest cell's number.
+vec3 cells(vec3 p) {
+	vec3 i = floor(p);
+	vec3 f = fract(p);
+	float d1 = 9.0;
+	float d2 = 9.0;
+	float id = 0.0;
+	for (int z = -1; z <= 1; z++) {
+		for (int y = -1; y <= 1; y++) {
+			for (int x = -1; x <= 1; x++) {
+				vec3 g = vec3(float(x), float(y), float(z));
+				vec3 o = h33(i + g);
+				float d = length(g + o - f);
+				if (d < d1) { d2 = d1; d1 = d; id = o.x; }
+				else if (d < d2) { d2 = d; }
+			}
+		}
+	}
+	return vec3(d1, d2, id);
+}
 float h21(vec2 p) {
 	p = fract(p * vec2(0.1031, 0.1030));
 	p += dot(p, p.yx + 33.33);
@@ -958,6 +980,7 @@ float vn(vec2 p) {
 }
 void vertex() {
 	tag = COLOR.rgb;
+	mp = VERTEX;
 }
 void fragment() {
 	float v = UV.y;
@@ -974,9 +997,31 @@ void fragment() {
 	float scuff = smoothstep(0.7, 0.9, vn(q * vec2(0.5, 1.6) + 1.0));
 	float tone = mix(0.6, 1.4, wash) * (1.0 + (fleck - 0.5) * 0.5 * far) * (1.0 - scuff * 0.3);
 	base *= tone;
+	// Fine scales over the whole membrane, in the model's own space (so the
+	// grain is one size on every panel and rides the wing): a bead each
+	// with its own tone, dark seams, a slow wrinkle across them.
+	vec3 mq = mp * 1.7;
+	float mpx = length(fwidth(mq));
+	float mfar = 1.0 - smoothstep(0.35, 1.1, mpx);
+	vec3 mc = cells(mq);
+	float mgap = mc.y - mc.x;
+	float mseam = 1.0 - smoothstep(0.0, max(0.12, mpx * 1.5), mgap);
+	float mdome = smoothstep(0.0, 0.5, mgap);
+	float wrinkle = vn(mp.xz * 0.35 + mp.y * 0.2 + 7.0) * 0.6 + vn(mp.xz * 0.9 + 2.0) * 0.4;
+	base *= mix(1.0, mix(0.65, 1.35, mc.z) * mix(0.8, 1.15, mdome) * (1.0 - mseam * 0.6), 0.25 + 0.75 * mfar);
+	base *= mix(0.8, 1.2, wrinkle);
+	float grainmul = mix(1.0, mix(0.55, 1.35, mc.z) * (1.0 - mseam * 0.7), 0.3 + 0.7 * mfar) * mix(0.75, 1.25, wrinkle);
+	float mh = (mdome * 0.1 / 1.7 * mfar + (wrinkle - 0.5) * 0.35);
+	vec3 sx = dFdx(VERTEX);
+	vec3 sy = dFdy(VERTEX);
+	vec3 r1 = cross(sy, NORMAL);
+	vec3 r2 = cross(NORMAL, sx);
+	float det = dot(sx, r1);
+	vec3 grad = sign(det) * (dFdx(mh) * r1 + dFdy(mh) * r2);
+	NORMAL = normalize(abs(det) * NORMAL - 2.0 * grad);
 	float breathe = 0.85 + 0.15 * sin(TIME * 1.3 + UV.x * 4.0);
 	float band = smoothstep(0.55, 1.0, v);
-	vec3 day_emission = glow * glow_energy * band * breathe;
+	vec3 day_emission = glow * glow_energy * band * breathe * grainmul;
 	// Night: near the free edge (eased so it falls off smoothly), the veins
 	// (soft lines, brighter toward the edge), and the thin middle.
 	float trail = clamp(tag.r, 0.0, 1.0);
@@ -992,13 +1037,75 @@ void fragment() {
 	ALBEDO = mix(base * (1.0 - vein), night_hide, night);
 	ROUGHNESS = mix(0.8, 0.7, night);
 	SPECULAR = 0.25;
-	BACKLIGHT = mix(edge * 0.8, night_ember * 0.25, night);
+	BACKLIGHT = mix(edge * 0.8 * grainmul, night_ember * 0.25, night);
 	EMISSION = mix(day_emission, night_emission, night);
 }
 """
 	var m := ShaderMaterial.new()
 	m.shader = sh
 	m.resource_name = "dragon_membrane_glow"
+	return m
+
+## The back spines and the tail's blade: warm horn, ridged along its length
+## and ringed with growth, flecked and pitted, glowing dim and warm from
+## within (`energy`, NIGHT_SPINES) most through the grooves' thin horn. The
+## grain is the model's own space, so it rides the body.
+static func _glow_spine() -> ShaderMaterial:
+	var sh := Shader.new()
+	sh.code = """
+shader_type spatial;
+render_mode diffuse_burley;
+uniform vec3 horn : source_color = vec3(0.86, 0.62, 0.42);
+uniform vec3 dark : source_color = vec3(0.32, 0.2, 0.17);
+uniform vec3 glow : source_color = vec3(1.0, 0.6, 0.32);
+uniform float energy = 1.6;
+varying vec3 mp;
+float h31(vec3 p) {
+	p = fract(p * 0.3183099 + 0.1);
+	p *= 17.0;
+	return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
+}
+float vn(vec3 p) {
+	vec3 i = floor(p);
+	vec3 f = fract(p);
+	f = f * f * (3.0 - 2.0 * f);
+	return mix(mix(mix(h31(i), h31(i + vec3(1, 0, 0)), f.x), mix(h31(i + vec3(0, 1, 0)), h31(i + vec3(1, 1, 0)), f.x), f.y),
+		mix(mix(h31(i + vec3(0, 0, 1)), h31(i + vec3(1, 0, 1)), f.x), mix(h31(i + vec3(0, 1, 1)), h31(i + vec3(1, 1, 1)), f.x), f.y), f.z);
+}
+void vertex() {
+	mp = VERTEX;
+}
+void fragment() {
+	float foot = length(fwidth(mp));
+	float far = 1.0 - smoothstep(0.25, 1.0, foot);
+	// Ridges run up the spine (long in y), fine across; rings of growth.
+	float ridge = vn(vec3(mp.x * 5.0, mp.y * 0.7, mp.z * 5.0));
+	float ridge2 = vn(vec3(mp.x * 13.0, mp.y * 1.6, mp.z * 13.0));
+	float ring = smoothstep(0.55, 0.95, abs(sin(mp.y * 2.4 + ridge * 2.0)));
+	float fleck = vn(mp * 7.0 + 3.0);
+	float pit = smoothstep(0.78, 0.9, vn(mp * 11.0 + 9.0));
+	float grain = mix(0.5, ridge * 0.6 + ridge2 * 0.4, 0.4 + 0.6 * far);
+	vec3 c = mix(dark, horn, smoothstep(0.2, 0.8, grain));
+	c *= 1.0 - ring * 0.25 * (0.4 + 0.6 * far);
+	c *= 1.0 - pit * 0.5 * far;
+	c *= 0.85 + 0.3 * fleck;
+	// A little relief from the ridges.
+	float h = (grain - 0.5) * 0.06;
+	vec3 sx = dFdx(VERTEX);
+	vec3 sy = dFdy(VERTEX);
+	vec3 r1 = cross(sy, NORMAL);
+	vec3 r2 = cross(NORMAL, sx);
+	float det = dot(sx, r1);
+	NORMAL = normalize(abs(det) * NORMAL - sign(det) * (dFdx(h) * r1 + dFdy(h) * r2));
+	ALBEDO = c;
+	ROUGHNESS = 0.55;
+	SPECULAR = 0.35;
+	EMISSION = glow * energy * (0.35 + 0.65 * smoothstep(0.15, 0.85, grain)) * (1.0 - ring * 0.3);
+}
+"""
+	var m := ShaderMaterial.new()
+	m.shader = sh
+	m.resource_name = "dragon_glow"
 	return m
 
 ## The eyes' middles (the eye surface's vertices either side of the
@@ -1066,8 +1173,8 @@ func _night_glow(delta: float) -> void:
 	_alert = move_toward(_alert,sight.alert(),delta*ALERT_EASE)
 	for m: StandardMaterial3D in _night_materials.get("dragon_eye",[]):
 		m.emission_energy_multiplier = lerpf(NIGHT_EYE.x,NIGHT_EYE.y,night)*lerpf(1.0,ALERT_EYE,_alert)
-	for m: StandardMaterial3D in _night_materials.get("dragon_glow",[]):
-		m.emission_energy_multiplier = lerpf(NIGHT_SPINES.x,NIGHT_SPINES.y,night)
+	for m: ShaderMaterial in _night_materials.get("dragon_glow",[]):
+		m.set_shader_parameter("energy",lerpf(NIGHT_SPINES.x,NIGHT_SPINES.y,night))
 	for m: ShaderMaterial in _night_materials.get("dragon_membrane_glow",[]):
 		m.set_shader_parameter("glow_energy",NIGHT_MEMBRANE.x)
 		m.set_shader_parameter("night_energy",NIGHT_MEMBRANE.y)
