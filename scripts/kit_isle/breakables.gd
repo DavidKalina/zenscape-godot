@@ -104,6 +104,13 @@ func shake(k: float) -> void:
 
 func sound(sound_name: StringName, at: Vector3) -> void:
 	if sound_hook.is_valid(): sound_hook.call(sound_name,at)
+	# Heard across the layer (docs/design/roguelike/noise-stealth-round1.md).
+	var loud := float(BREAK_HEARD.get(sound_name,0.0))
+	if loud > 0.0 and is_inside_tree(): NoiseBus.make(self,at,loud,&"break")
+
+## How far the pieces' sounds carry (m) on the NoiseBus (scripts/noise/noise_bus.gd).
+const BREAK_HEARD := {&"ruin_crack":20.0,&"ruin_fall":28.0,&"ruin_boom":40.0,&"ruin_thud":18.0,
+	&"drum_ring":30.0,&"drum_thud":14.0}
 
 func changed(box: AABB) -> void:
 	if field == null: return
