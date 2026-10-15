@@ -1,7 +1,7 @@
 # Place agent brief (fill in CARD, SLUG, FOCUS)
 
-Build one motif card as a PLACE for this Godot 4.7 roguelike (branch
-roguelike), playable in the motif yard. Your card: CARD. Read it, plus
+Build one motif card as a PLACE for this Godot 4.7 game, playable in the
+motif yard. Your card: CARD. Read it, plus
 docs/design/roguelike/motif-brief.md (pillars: **a place first**,
 **anything could chain**) and AGENTS.md (Prototyping, Sizes, Test
 execution, Models).
@@ -33,7 +33,7 @@ round 1 greyboxes the user called "a different game".
    the route never depends on a hazard throwing you somewhere exact.
 
 **Templates (read first):**
-- scripts/kit_isle/motif_greybox.gd header: the contract a generator
+- scripts/kit_isle/motif_greybox.gd header: the contract a `gb_`
   motif answers (`slug`, `isle_name`, `brief`, `parts()`, `rims()`,
   `spots()`, the registry line). Skip its "copy the study's numbers"
   advice: there is no study; your land is the layout.

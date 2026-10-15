@@ -517,7 +517,7 @@ tell of a quiet one.
   - *Airborne:* a landing loads and blows by fall pace, so a high drop is a
     slam-lite: a pilot dropped from a throw sets off the field.
   - *Tumbling/stunned:* a downed body weighs and sinks, so a stunned pilot
-    sinks into a well while he is down, which is a real Spelunky moment.
+    sinks into a well while he is down.
   - *Hanging from a pillar's lip in a well:* carried up or down with it.
 - **Throws:**
   - *A risen pillar stopping dead at `high`:* `motor.toss` straight up at

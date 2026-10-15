@@ -43,7 +43,7 @@ The sizes come from the rig check below and use the wanderer at size 1.
 
 The pocket sail (`scripts/pocket_sail.gd`) is a base move in the run, so a
 "glide cloak" that glides further would only make the sail redundant, or
-trivialise the void. The cloak is a Spelunky-cape float instead. It catches
+trivialise the void. The cloak is a cape float instead. It catches
 your fall straight away, keeps the platformer's air control and makes landings
 safe. If the user wanted a glide upgrade, the knob is `CLOAK_FALL`, or the
 cloak could change the sail's own numbers instead.

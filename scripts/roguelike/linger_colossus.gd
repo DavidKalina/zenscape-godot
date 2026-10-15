@@ -1,6 +1,6 @@
 extends Node3D
 ## [linger] The linger threat as a colossal Olmec (docs/design/roguelike/
-## linger-colossus-round1.md): Spelunky's ghost, as a giant of the Olmec's
+## linger-colossus-round1.md): a giant of the Olmec's
 ## weathered stone standing in the void off the layer's flank, in a cloud
 ## bank he rises through. The clock is how much of him has risen, read from
 ## any isle; there is no timer on the screen. Timed from the layer's start

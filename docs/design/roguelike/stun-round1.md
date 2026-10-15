@@ -120,8 +120,8 @@ below.
   `STUN_CALM` (1 s).
 - **Why this can't freeze him in one spot:** each stun from one source is
   at least 1.2 s apart, and every blow moves him. After 3 s the player can
-  always leave. Different sources can chain freely. That is the Spelunky
-  chain the user asked for: the world decides where he goes, the cost is
+  always leave. Different sources can chain freely. That is the chain the
+  user asked for: the world decides where he goes, the cost is
   position, and the cap guarantees a way out.
 - A charging Ram now hits a stunned body once its own gap is past. Before,
   `recovering()` let a tumbling pilot through.

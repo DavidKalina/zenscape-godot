@@ -137,7 +137,7 @@ Pitch: a big cracked bell rings on a timer; the ring is a shockwave that bucks e
 - **Worked example:** the **castellum** crown (the water tower has a broken bell frame on it): the toll rattles the **drift** stones, whose 1.6 m gaps become much harder.
 
 ### 8. Gargoyle Spitter
-Pitch: a carved face in a wall spits rubble stones when you cross its line (Spelunky's arrow trap, but the arrow is a shove).
+Pitch: a carved face in a wall spits rubble stones when you cross its line (an arrow trap, but the arrow is a shove).
 - **Where:** any wall facing a route, 1-3 m up.
 - **Tell:** a mouth with a dark tongue, a stone lid on the lip, a trail of pebbles in front, a faint glow-less hiss. Spits a harmless pebble first at 2 s warning.
 - **Does:** fires a 0.4 m stone at 12 m/s along a line, knocking 3 m/s of push. It's a shove: harmless on a wide path, deadly at a ledge. The stones bounce and roll after the shot, becoming a hazard.
@@ -316,7 +316,7 @@ Pitch: a glass-thin stone floor over a deeper room; weight breaks sections open 
 
 ## Top 5 shortlist
 
-1. **Keystone Collapse** (5): the set-piece. A chase against a falling world, the Spelunky "boulder" of this game; it makes speed feel like the answer.
+1. **Keystone Collapse** (5): the set-piece. A chase against a falling world, the "boulder" of this game; it makes speed feel like the answer.
 2. **Sluice Flush** (3): uses the aqueduct (our authored theme) and turns water into a conveyor; both a hazard and a speedrun tool.
 3. **Seesaw Slab** (3): the best physics comedy and the most tool-like (load the far end, ride it); it works for the plane too.
 4. **Censer Pendulum** (3): readable in 3D, rhythm-based, combos with everything (fire, enemies, wind).

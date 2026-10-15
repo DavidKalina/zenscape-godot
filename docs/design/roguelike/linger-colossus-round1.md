@@ -1,6 +1,6 @@
 # Linger: the colossus, round 1 (2026-10-15)
 
-The linger threat (Spelunky's ghost) as a colossal Olmec. It's the comparison
+The linger threat as a colossal Olmec. It's the comparison
 to the rune serpent, which is the default linger. Branch
 `worktree-agent-a2407892278f47228`, off `roguelike` at a3990ab6. It isn't
 merged or pushed.

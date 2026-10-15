@@ -20,8 +20,7 @@ taste moves.
   grids, stacked plates and placed collapse are what that looks like.
 - **Rune-carved stone, overgrowth, mystery.** The ruins were made by someone,
   for something; the player pieces it together. Ancient and melancholy, not
-  cozy. Collapse and decay read as authored and hide the
-  generator.
+  cozy. Collapse and decay read as authored.
 - **The Olmec bar.** The hovering inhaler head and the headless stone body
   (scripts/enemies/, docs/design/roguelike/olmec-weathered.md,
   inhaler-head.md, headless-body-round*.md) are the user's favourites: heavy
@@ -31,11 +30,9 @@ taste moves.
 - **Every motif has a threat that belongs to it**: a trap, an enemy or a
   hazard born of the place, not dropped on top. Every danger is also a tool
   (shortlist.md, thread 4).
-- **Anything could chain (the spirit of the game).** A physics game where
-  anything can happen: spat out of one Olmec head into another, shot from a
-  cannon while ragdolled, caught by an updraft, dropped onto a seesaw that
-  flings you on. Spelunky's chain: the world decides where you go, the cost
-  is position. Combos are **emergent**: they come out of consistent
+- **Anything could chain.** Physics where anything can happen: spat out
+  of one Olmec head into another, caught by an updraft, dropped onto a
+  seesaw that flings you on. Combos are **emergent**: they come out of consistent
   systems, not out of the layout. Every *piece* is a link: what it
   **catches** (a body standing, airborne, tumbling/stunned, riding) and what
   it **throws** (which way, how hard, still stunned or not). A *motif* sets
@@ -57,11 +54,11 @@ taste moves.
 - **The pilot is fast and nimble**: run, jump,
   twirl, slide, rail slide, wall kick, ledge grab and chain, rope swing,
   pocket sail (glide), flow charge (updraft up, downdraft slam), binoculars.
-  Motifs are Odyssey/Galaxy playgrounds for that kit.
+  A motif is a playground for that kit.
 - **Hard limits.** The motif contract (scripts/kit_isle/kit_motif.gd:
   sockets rim/arena/cover/perch, role, footprint, height_span, knobs). Sizes
   from the pilot, never copied metres (AGENTS.md, Sizes; RuinKit's Scale
-  section; WorldScale). The generator only moves isles, never turns them.
+  section; WorldScale).
 
 ## 2. Lenses (roll two or three per brainstorm, or assign them)
 
@@ -72,25 +69,24 @@ taste moves.
 | Decay | intact and still working, half-collapsed, drowned, root-bound, frozen mid-ritual, dismantled on purpose |
 | Mood | quiet, oppressive, sacred, playful, wrong |
 | Purpose (what it was) | observatory, tomb, aqueduct, prison, shrine, mechanism, quarry, workshop, ballcourt, calendar, nursery |
-| Shape in a layer | spread wide, a tight cluster, a tall stack (isles over isles), a hanging underside, a ring, a line |
+| Shape among isles | spread wide, a tight cluster, a tall stack (isles over isles), a hanging underside, a ring, a line |
 | Twist on a pillar | runes that move, overgrowth as the threat, an Olmec piece as terrain not enemy, the threat as the only way across, the ruin still doing its old job |
 
 ## 3. Coverage (what exists)
 
-**Motifs** (scripts/kit_isle/motif_*.gd; in the generator's POOL or not,
-scripts/roguelike/layer_plan.gd):
+**Motifs** (scripts/kit_isle/motif_*.gd):
 
-| Motif | What it is | Family (knobs) | In pool |
-|---|---|---|---|
-| broken_ring | stone circle round a broken turret, spiral of 8 islets climbing 21 m, rope bridges, floating stones | yes | yes (1) |
-| colonnade_spine | knife-edge ridge, processional colonnade, terraces, temple gate, live rope bridges | yes | yes (3) |
-| sundered_gorge | two drifted halves, snapped bridge + rope bridge, gatehouse, leaning tower, chapel, spring pool | no | yes (3) |
-| stair_clouds | stepped mesa, grand stair in 8 flights, shrines on landings, summit gate, pinnacle | no | yes (1.5) |
-| bell_spires | rock spires, belfry with a swinging bell (rung by landing/plane/slam), four rope bridges | no | yes (1) |
-| cloister_tarn | crater bowl round a still tarn, ruined cloister, crag stair, 4 satellites, curtain fall | no | no |
-| drowned_nave | shallow basin, half-drowned gothic nave, apse with rose gable, causeway of fallen stones | no | no |
-| hollow_keel | plate with a shaft; a colossus hall hung under it (fly-through undercroft), switchback stairs | no | no |
-| dragon_roost | crag mountain with the dragon's nest ledge and hoard (set piece, the roost only) | no | roost |
+| Motif | What it is | Family (knobs) |
+|---|---|---|
+| broken_ring | stone circle round a broken turret, spiral of 8 islets climbing 21 m, rope bridges, floating stones | yes |
+| colonnade_spine | knife-edge ridge, processional colonnade, terraces, temple gate, live rope bridges | yes |
+| sundered_gorge | two drifted halves, snapped bridge + rope bridge, gatehouse, leaning tower, chapel, spring pool | no |
+| stair_clouds | stepped mesa, grand stair in 8 flights, shrines on landings, summit gate, pinnacle | no |
+| bell_spires | rock spires, belfry with a swinging bell (rung by landing/plane/slam), four rope bridges | no |
+| cloister_tarn | crater bowl round a still tarn, ruined cloister, crag stair, 4 satellites, curtain fall | no |
+| drowned_nave | shallow basin, half-drowned gothic nave, apse with rose gable, causeway of fallen stones | no |
+| hollow_keel | plate with a shaft; a colossus hall hung under it (fly-through undercroft), switchback stairs | no |
+| dragon_roost | crag mountain with the dragon's nest ledge and hoard (set piece, the roost only) | no |
 
 Where they bunch: almost all gothic or classical (abbey, nave, colonnade,
 belfry); verbs are mostly "climb stairs, cross rope bridges, hop floating
@@ -126,8 +122,7 @@ Pitch: two sentences, how it feels to arrive.
 Place: the landform and silhouette; the view on arrival (from where, what
   you see first, what draws the eye); how the ruin sits in the land and
   how it broke; what the land is and what the stone is.
-Top (ASCII, ~40x16, 1 char ≈ 4 m) and Side (ASCII) — symbols as
-  LayerSprawl.overview: digits isles, '.' route, '~' gulf, 'R' roost-ish
+Top (ASCII, ~40x16, 1 char ≈ 4 m) and Side (ASCII) — symbols: digits isles, '.' route, '~' gulf, 'R' roost-ish
   set piece, '@' landmark, plus '#' stone, '"' overgrowth, 'o' threat,
   '^' rim, 'A' arena, 'C' cover, 'P' perch.
 Play: at least two routes through it, beat by beat, naming the pilot's
@@ -142,7 +137,7 @@ Kit used: existing pieces by id (verify each exists).
 Kit asks: pieces it wishes it had (one line each), or "none".
 Family knobs: 2-4 knobs and their values (what a seed varies).
 Sockets: rims (where, facing), arenas, cover, perches.
-Generator fit: role, rough footprint and height span, layer shape it suits.
+Fit: role, rough footprint and height span, the shape among isles it suits.
 Distinct from: the nearest existing motif and why this isn't it.
 ```
 
@@ -160,7 +155,7 @@ Threat pairing: how it can be a trap as well as a tool.
 Catches / throws: body states it accepts (standing, airborne, tumbling/
   stunned, riding) and what it does to each; what it outputs (direction,
   speed in pilot terms, `knock` or `toss`, its source name), and whether it
-  can be aimed (so the generator can point it at the next link).
+  can be aimed (so it can be pointed at the next link).
 Chains with: existing traps/enemies/pieces it hands off to and from.
 Build cost: low/med/high, and why (Blender model? procedural? physics?).
 Model budget: which tricks in docs/art/model-budget.md apply.
@@ -182,7 +177,7 @@ Model budget: which tricks in docs/art/model-budget.md apply.
    reason to be. Grey boxes only for a piece the kit lacks, labelled
    STAND-IN. The layout still lives in one data table.
 3. **Dressing pass** (`/motif-turf`, the picks only): growth, wear,
-   collapse, life, the model budget; the form the generator places. A motif greyboxed under the old pipeline (grey boxes tuned to
+   collapse, life, the model budget; the finished form. A motif greyboxed under the old pipeline (grey boxes tuned to
    chains) gets its place made here instead: the land leads, and the
    hazards move to suit it.
 

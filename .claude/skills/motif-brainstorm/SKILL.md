@@ -1,6 +1,6 @@
 ---
 name: motif-brainstorm
-description: Run a brainstorm round of new level motifs and/or ruin-kit pieces for the roguelike generator, from the shared brief (docs/design/roguelike/motif-brief.md). With free text, spins many variations of that one idea. Use when the user asks to brainstorm motifs, isles, kit pieces, "a motif round", or variations of an idea.
+description: Run a brainstorm round of new level motifs and/or ruin-kit pieces from the shared brief (docs/design/roguelike/motif-brief.md). With free text, spins many variations of that one idea. Use when the user asks to brainstorm motifs, isles, kit pieces, "a motif round", or variations of an idea.
 argument-hint: "[count] [kit] [free-text idea]"
 ---
 
@@ -32,8 +32,8 @@ Arguments: $ARGUMENTS
 2. Ask nothing the user already said; the arguments and defaults above
    decide counts.
 3. Roll lenses so agents spread apart: each agent a different verb and
-   purpose (no two the same), plus one or two of scale, decay, mood, layer
-   shape, twist. Spread mode: favour empty coverage cells. Variations mode:
+   purpose (no two the same), plus one or two of scale, decay, mood, shape
+   among isles, twist. Spread mode: favour empty coverage cells. Variations mode:
    favour lenses that pull the seed furthest from its first reading. Kit
    agents each get a different theme (grab/climb, moving, launch/carry,
    state-change, the makers' architecture, or ones the user names).

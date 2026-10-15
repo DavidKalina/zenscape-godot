@@ -11,8 +11,6 @@ card to isle"; its first pillar, **a place first**). Input: motif cards in
 `scripts/kit_isle/greybox/gb_<slug>.gd` on `scripts/kit_isle/motif_greybox.gd`
 (its header says how), one line in `scripts/kit_isle/greybox/registry.gd`,
 played in the motif yard (`studies/motif_yard.tscn --motif=<slug>`).
-Registering puts it in the generator's default "motifs" pool; that is how
-the user meets it in a run.
 
 The order inside each motif is the point: **land, then routes, then
 threat.** The place reads as a place before any hazard goes in.

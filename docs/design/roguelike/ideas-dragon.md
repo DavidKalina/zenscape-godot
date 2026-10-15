@@ -18,7 +18,7 @@ all consequence and all awareness (what he knows about you).
 
 ## 1. Role per layer
 
-He is Spelunky's ghost with a body: leaving a layer is what makes him lose
+He is a ghost with a body: leaving a layer is what makes him lose
 interest, staying is what makes him arrive. No timer; a rising **Attention**
 number he owns (hidden, but every rise is audible/visible).
 
@@ -113,7 +113,7 @@ glide reach of the exit gap, and never more than N exposed seconds between
 covers on the main route. Danger cost per section includes "exposed to the
 sky" the way it already includes drops.
 
-## 5. Manipulating him (Spelunky combos)
+## 5. Manipulating him (combos)
 
 | Move | Setup | Result |
 |---|---|---|
@@ -133,7 +133,7 @@ sky" the way it already includes drops.
 My lean, in order:
 
 1. **Not killable on foot.** A dragon you kill is a boss fight with health;
-   a dragon you outplay is a world. Spelunky's ghost is never killed.
+   a dragon you outplay is a world.
 2. **Recurring across runs as a persona, not a stat.** He remembers the ledger,
    not the character: the sky folk tell stories about "the one who took the
    plane at the second gap". His scars, his ledger card, a kill count of

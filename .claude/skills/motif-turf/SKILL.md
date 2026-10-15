@@ -1,6 +1,6 @@
 ---
 name: motif-turf
-description: Dress a motif the user picked into the form the generator places (growth, wear, life, budget), or remake an old grey-box motif as a place on the real terrain and look (KitLand, RuinKit). Use when the user asks to turf, promote, dress or make real a motif.
+description: Dress a motif the user picked into its finished form (growth, wear, life, budget), or remake an old grey-box motif as a place on the real terrain and look (KitLand, RuinKit). Use when the user asks to turf, promote, dress or make real a motif.
 ---
 
 # Motif dressing pass
@@ -22,10 +22,8 @@ motifs are the bar). Two inputs, two jobs:
   example of the technique, not of the result (it kept the grid).
 
 Either way the motif lives in one data table, in `studies/greybox/<slug>.gd`
-(a round 1 study only) or in the generator as
-`scripts/kit_isle/greybox/gb_<slug>.gd` on `motif_greybox.gd`
-(docs/design/roguelike/greybox-in-generator.md). If it is in the generator,
-work **in place**: override `build` (and `warm`, `flora_site`,
+(a round 1 study only) or as `scripts/kit_isle/greybox/gb_<slug>.gd` on
+`motif_greybox.gd`. If it is a `gb_` motif, work **in place**: override `build` (and `warm`, `flora_site`,
 `flora_seed`, `life_script`, `build_cost`, `_solids`) in `gb_<slug>.gd`,
 keep `parts()`/LAYOUT as the data the occupancy is computed from, and keep
 the grey path behind a flag (`--giant-grey` style) for A/B checks. Never
@@ -78,31 +76,23 @@ change `motif_greybox.gd` for one motif.
    start inside a walk box pass through it (Jolt): probe from above.
 4. The occupancy: add the keels (and any body hanging under its greybox
    base) to `_solids`, at the spurs' reach (about 1.4 x depth under the
-   datum). That changes the generator's plans *with the knob* (the next
-   crossing can move); default plans must stay byte-identical (diff
-   `LayerPlan.describe` with and without the knob, before and after).
+   datum).
 5. Flora and life come almost free: `turf(land)` each island, a
    `flora_site` with worn paths, and `life_script` the plain
    `scripts/kit_isle/kit_life.gd` (undergrowth, butterflies, fireflies,
    wind; no birds or tokens until the isle has perches and moves).
-6. Prove, headless, through the generator's own tick. Smoke first with
-   `python tools/smoke.py` (it runs the import if needed). For the plan
-   over seeds, use `python tools/sweep.py tools/layer_dump.gd --seed 1..10
-   --shape sprawl,ring`. The checks are drivers on `tools/harness/drive.gd`
-   (tools/README.md), with seeds and grey/turf as `tools/sweep.py` axes.
-   Then the routes, **in the motif yard** (`studies/motif_yard.tscn
+6. Prove it headless. Smoke first with `python tools/smoke.py` (it runs
+   the import if needed). The checks are drivers on
+   `tools/harness/drive.gd` (tools/README.md), with seeds and grey/turf as
+   `tools/sweep.py` axes. Then the routes, **in the motif yard** (`studies/motif_yard.tscn
    --motif=<slug>`, tools/README.md "The motif yard"): a driver on
    `tools/harness/drive.gd` that walks each route rim in to rim out through
    the input (`tools/harness/chain.gd`'s trials and jitter help: ±0.5 m
-   start), and checks every trap and enemy builds and ticks. Then **one**
-   full-layer run as the final confirmation: the same driver with
-   `--in=layer` on a seed that places the motif (`tools/layer_dump.gd
-   --isles --knob=pool=classic --knob=greybox=<slug>`), through
-   `tools/bg.py`, one heavy run at a time. Rendered stills to judge the
+   start), and checks every trap and enemy builds and ticks. Long runs go
+   through `tools/bg.py`, one heavy run at a time. Rendered stills to judge the
    look, beside the kit motif's (step 1): `python tools/shot.py` (one
    window, watchdog-closed; AGENTS.md, Test execution).
 7. Assess docs/art/model-budget.md for the new geometry (AGENTS.md,
    Models): count triangles per part from the built node, collision shapes,
    build ms (and how much of it is the motif's own GDScript rather than the
-   kit's). Adding it to the generator's baked POOL is a separate step the
-   user asks for. Uncommitted until the user locks it in.
+   kit's). Uncommitted until the user locks it in.

@@ -1,6 +1,6 @@
 extends Node3D
 ## The linger threat, the serpent (docs/design/roguelike/linger-serpent-round1.md,
-## linger-serpent-round2.md): Spelunky's ghost for the Olmec city. Stay on a
+## linger-serpent-round2.md): the linger threat for the Olmec city. Stay on a
 ## layer and a colossal stone serpent with a feathered ruff (scripts/roguelike/
 ## linger_serpent.gd) climbs up out of the void toward you. No timer on the
 ## screen: the clock is read by looking back.

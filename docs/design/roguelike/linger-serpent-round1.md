@@ -1,6 +1,6 @@
 # The linger serpent, round 1 (prototype)
 
-Spelunky's ghost for the Olmec city. Stay on a layer and a colossal stone
+The linger threat for the Olmec city. Stay on a layer and a colossal stone
 serpent climbs up out of the void toward you, coiling round a column of
 open air off the isles. There is no timer on screen. You read the clock by
 looking back. On by default, gated by `RunFeatures.on(&"linger")` and

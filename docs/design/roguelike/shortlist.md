@@ -51,7 +51,7 @@ Courteous Statue.
 ## Rule bends to fix before building
 
 - Ivy Fuse stun and Lintel Drop trapping you: stuns are in now (the user,
-  2026-10-12: Spelunky's stun, fall stun and mid-air ragdoll; stun-round1.md),
+  2026-10-12: stun, fall stun and mid-air ragdoll; stun-round1.md),
   so a stun is fine if it costs position, not a run: no cages that hold him
   still, and every stun must be recoverable (poise, the chain cap).
 - Hush is "run-ending": make it a shove into void with a long tell, or cut it.

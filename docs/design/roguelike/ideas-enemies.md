@@ -471,5 +471,5 @@ Honourable: Gong Toad (cheap, funny, a prop), Sluice Eel (tied to the aqueduct).
 - Is the camera-freeze Weeper fair when the plane's camera is wide? Needs a
   test.
 - How many modules per section? Start at one (T1), two (T2), up to three (T3).
-- Do enemies respawn on a return to an isle? Spelunky says no; the dragon
+- Do enemies respawn on a return to an isle? Probably not; the dragon
   covers the need to hurry.
