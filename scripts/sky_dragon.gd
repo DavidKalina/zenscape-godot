@@ -715,10 +715,10 @@ func _dress(n: Node) -> void:
 ## serpent's stone): each surface's tone by the model's names (sRGB), the
 ## weathering's strength and the scale beads' (0 none).
 const HIDE_TONES := {
-	"dragon_hide": [Color("4a4c44"),0.55,1.0],
-	"dragon_belly": [Color("8a7a58"),0.55,0.8],
-	"dragon_horn": [Color("6e655a"),0.7,0.0],
-	"dragon_claw": [Color("5a5248"),0.7,0.0],
+	"dragon_hide": [Color("40364c"),0.4,1.0],
+	"dragon_belly": [Color("5c5064"),0.4,0.8],
+	"dragon_horn": [Color("8a8090"),0.6,0.0],
+	"dragon_claw": [Color("d8d0c2"),0.6,0.0],
 	"dragon_tooth": [Color("cbc2ae"),0.4,0.0],
 }
 ## The grain's rest place is the vertex's, this many times (the model is
@@ -875,6 +875,11 @@ func _made_material(key: String) -> Material:
 		# Scaled hide for the body, belly and the horn's and claws' keratin
 		# (long ridged and plain); the teeth stay enamel.
 		h.set_shader_parameter("reptile",1.0 if key != "dragon_tooth" else 0.0)
+		# The scales run from near black to a violet-slate, as the hide
+		# always did; the rim light a cool violet sheen.
+		h.set_shader_parameter("scale_a",Vector3(0.55,0.5,0.62))
+		h.set_shader_parameter("scale_b",Vector3(1.35,1.2,1.5))
+		h.set_shader_parameter("rim",0.3)
 		h.set_shader_parameter("roughness_value",0.8 if key == "dragon_hide" or key == "dragon_belly" else 0.6)
 		return h
 	var m := StandardMaterial3D.new()
@@ -922,9 +927,9 @@ static func _glow_membrane() -> ShaderMaterial:
 	sh.code = """
 shader_type spatial;
 render_mode cull_disabled, diffuse_burley;
-uniform vec3 deep : source_color = vec3(0.07, 0.08, 0.075);
-uniform vec3 edge : source_color = vec3(0.2, 0.22, 0.19);
-uniform vec3 glow : source_color = vec3(0.7, 0.62, 0.42);
+uniform vec3 deep : source_color = vec3(0.24, 0.17, 0.32);
+uniform vec3 edge : source_color = vec3(0.45, 0.32, 0.56);
+uniform vec3 glow : source_color = vec3(0.96, 0.64, 0.74);
 uniform float glow_energy = 0.42;
 // 0 by day, 1 at night.
 uniform float night = 0.0;
