@@ -25,8 +25,7 @@ Before writing a tool, read `tools/README.md`. It has a ready-made tool for
 each of these: finding Godot and keeping the import fresh (`tools/godot.py`),
 the smoke check (`tools/smoke.py`), checks through the real play loop
 (`tools/harness/drive.gd` with `tools/drive.py`), seed and knob tables
-(`tools/sweep.py`), the generator's plan as data (`tools/layer_dump.gd`),
-rendered stills (`tools/shot.py`) and runs longer than the tool-call
+(`tools/sweep.py`), rendered stills (`tools/shot.py`) and runs longer than the tool-call
 limit (`tools/bg.py`). `python tools/index.py <word>` finds the older
 one-off tools. Throwaway drivers go in `scratch/` (git-ignored). If a
 round needs a tool the harness lacks, say so in its handoff.
@@ -50,7 +49,7 @@ PowerShell from the repo root:
   `tools/run_tests.py` reads `GODOT`; other tools take `--godot $env:GODOT`.
 - Import: `& $env:GODOT --headless --editor --path . --import`.
 - Play: `& $env:GODOT --path . --rendering-method forward_plus --windowed --resolution 1440x900 -- --no-title`.
-  A study: put its scene after `--path .`, e.g. `studies/run_layer.tscn -- --shape=sprawl --seed=1`.
+  A study: put its scene after `--path .`, e.g. `studies/motif_yard.tscn -- --motif=sundered_gorge`.
   A `run-*.command` file shows the scene and flags it launches.
 - Tests: `python tools/run_tests.py` (same flags as above).
 - Blender scripts: `& "C:\Program Files\Blender Foundation\Blender 5.2\blender.exe" -b --python art/blender/plane/plane_build.py`
@@ -69,19 +68,11 @@ left uncommitted. Committed tests come in a lock-in round the user asks for,
 which also reconciles the tests prototypes broke. A round's handoff lists any
 existing test its change breaks.
 
-# The generator
-
-"The generator" is the roguelike run's level generator (roguelike branch):
-`studies/run_layer.tscn -- --shape=sprawl|ring --seed=N`, code in
-`scripts/roguelike/`.
-
 # Motifs
 
 New motifs and kit pieces go through the pipeline in
 `docs/design/motifs/motif-brief.md`: card, then place, then dressing
-pass (skills `motif-brainstorm`, `motif-greybox`, `motif-turf`). A motif is
-a place first, held to the original kit motifs' beauty; combos emerge from
-its pieces, and every piece says what it catches and throws.
+pass (skills `motif-brainstorm`, `motif-greybox`, `motif-turf`).
 
 # The motif editor
 
@@ -131,33 +122,6 @@ gaps from the wanderer size (`PilotMotor.set_size`,
 `RuinKit.GRAB_TOP`/`CHAIN_TOP`). Other files ask WorldScale rather than
 copy 2.0, 2.4, the ratio, 1.2 (`pilot_size`) or the toy span 1.4. Guarded by
 `tests/test_world_scale_guard.gd` and `tests/test_world_scale_fit.gd`.
-
-# Art direction
-
-The world is painterly and the things in it are real. The grass, terrain,
-sky and light are painted: soft shader grass, broad washes. Creatures,
-stone and the wanderer are near-realistic weathered materials: they read
-through real texture, not through bright colour or clean toy shapes.
-
-- **Stone**: weathered basalt with washes, rain streaks, flecks, pits,
-  cracks, chipped high points, grime in the crevices and dry lichen
-  (`shaders/olmec_stone.gdshader`, `docs/art/olmec-weathered.md`).
-  The rune serpent wears the same stone with pebbled scales carved in.
-- **The wanderer**: real, lived-in stuff: felt, knit, canvas, twill,
-  scuffed leather, tarnished brass, sun-fade, and ochre dust up the boots
-  (`shaders/pilot_paint.gdshader`, `scripts/pilot_paint.gd` LOOKS,
-  `--wanderer-look=worn|dust|paint`). His hat stays readable from the
-  high play camera.
-- **Menace comes from material, weight and restraint**, not genre
-  clichés. No horns, spikes, ember-red glows or black edgy stone; the
-  user rejected that as too edgy and stereotypical. Glows stay dim and warm
-  on stone.
-- **Detail fades with distance**: work the weathering in solid noise over
-  the model's rest pose, so it rides on a moving body. Fade fine layers
-  by pixel footprint so they never shimmer. Let the broad washes and the
-  value contrast carry the look at gameplay range.
-- **Judge it by eye**, in rendered stills, at gameplay range and close,
-  on the real painted turf, next to the Olmec.
 
 # Animation
 

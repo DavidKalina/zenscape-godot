@@ -7,7 +7,7 @@
 
 ```
 godot --path . res://studies/motif_editor.tscn -- --no-title [--load=editor_tarn_peak]
-godot --path . res://studies/motif_yard.tscn -- --no-title --motif=editor_tarn_peak   # the generator form, in the yard
+godot --path . res://studies/motif_yard.tscn -- --no-title --motif=editor_tarn_peak   # the motif form, in the yard
 ```
 
 ## Controls

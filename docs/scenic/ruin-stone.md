@@ -140,7 +140,7 @@ Use this list to check any future kit. It comes from the plate and the sky islet
    - The grass is its own cap and ends at the rim, with a thin dark topsoil skin (0.22 m at 0.55) under it.
    - Rock faces carry no painted green patches.
    - Soft, moving growth (grass, overgrowth) is a separate surface laid over the faceted solid.
-7. **Form comes from silhouette and big planes.** Ruin character (broken heads, fallen spans, arches) comes from massing, never from surface noise. This follows `docs/scenic/style.md`: neighbours carry similar detail.
+7. **Form comes from silhouette and big planes.** Ruin character (broken heads, fallen spans, arches) comes from massing, never from surface noise. Neighbours carry similar detail.
 
 ## What was wrong with the classic stone (verified by looking)
 

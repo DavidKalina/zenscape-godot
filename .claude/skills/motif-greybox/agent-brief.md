@@ -1,36 +1,22 @@
 # Place agent brief (fill in CARD, SLUG, FOCUS)
 
-Build one motif card as a PLACE for this Godot 4.7 game, playable in the
+Build one motif card as a playable place for this Godot 4.7 game, in the
 motif yard. Your card: CARD. Read it, plus
-docs/design/motifs/motif-brief.md (pillars: **a place first**,
-**anything could chain**) and AGENTS.md (Prototyping, Sizes, Test
+docs/design/motifs/motif-brief.md and AGENTS.md (Prototyping, Sizes, Test
 execution, Models).
 
-**What this stage is:** the land and the ruin first, on the real terrain
-and in the real look, so the user judges whether it is a place worth being
-in, then how it plays. The bar is the original kit motifs: read
-scripts/kit_isle/motif_sundered_gorge.gd and motif_colonnade_spine.gd
-before you lay anything, and shoot one of them (below) to see the bar.
-Mostly land with stone on it; ruins sitting in the terrain, broken
-unevenly, taken by growth; a silhouette that reads whole from the arrival
-rim. Grids, stacked plates and boxes on a plinth are the look of the
-round 1 greyboxes the user called "a different game".
-
 **Work in this order, and look at each before the next:**
-1. **Land.** The landform and silhouette as `KitLand.island` islands
-   (outline, height function whose steps are grabbable cliffs, `hang`,
-   keel), with the turf and flora on. Shoot the arrival view. Does it read
-   as the card's Place? Fix it before going on.
-2. **Ruin.** RuinKit pieces (scripts/ruin_kit.gd and its family files)
-   sitting in the land, broken where the place's story says. Shoot again.
-3. **Routes.** At least two ways from rim in to rim out, sized from the
-   pilot's real numbers (`Trap.pilot()`, scripts/pilot_motor.gd,
-   WorldScale per AGENTS.md "Sizes"; fix the card's guesses and say so).
-   Walk each through the real input.
-4. **Threat.** The card's traps and enemies, set in loosely where the
-   place gives them a reason to be, within reach of each other where the
-   card's "Could combo" says. Place them for the place and the routes;
-   the route never depends on a hazard throwing you somewhere exact.
+1. **Land.** The landform as `KitLand.island` islands (outline, height
+   function whose steps are grabbable cliffs, `hang`, keel), with the turf
+   and flora on. Shoot the arrival view. Does it read as the card's Place?
+   Fix it before going on.
+2. **Pieces.** RuinKit pieces (scripts/ruin_kit.gd and its family files)
+   as the card describes. Shoot again.
+3. **Routes.** The card's routes, sized from the pilot's real numbers
+   (`Trap.pilot()`, scripts/pilot_motor.gd, WorldScale per AGENTS.md
+   "Sizes"; fix the card's guesses and say so). Walk each through the real
+   input.
+4. **Threat.** The card's traps and enemies, if any.
 
 **Templates (read first):**
 - scripts/kit_isle/motif_greybox.gd header: the contract a `gb_`
@@ -39,7 +25,7 @@ round 1 greyboxes the user called "a different game".
   advice: there is no study; your land is the layout.
 - scripts/kit_isle/greybox/gb_sunken_giant.gd: a motif built on KitLand
   islands with turf, flora and life (its `build`, `warm`, `flora_site`,
-  `flora_seed`, `life_script`, `_solids`). Copy its shape, not its grid.
+  `flora_seed`, `life_script`, `_solids`).
 - tools/README.md, "The motif yard": how the yard stands one motif.
 - scripts/traps/*.gd, scripts/enemies/*.gd, scripts/cannon/ for threats.
 
@@ -53,9 +39,8 @@ round 1 greyboxes the user called "a different game".
   than the registry (motor, traps, enemies, cannon, KitLand, RuinKit). If no
   stand-in works, leave the gap labelled.
 - Append "## Place (round N)" to the card: yard command, the routes, the
-  threat, real vs stand-in, distances you changed, your read of the stills
-  against the kit motif, and the model-budget tricks that apply
-  (docs/art/model-budget.md).
+  threat, real vs stand-in, distances you changed, your read of the stills,
+  and the model-budget tricks that apply (docs/art/model-budget.md).
 
 **Prove it.** Use the harness (tools/README.md); don't hunt for Godot or
 write your own runner. Headless for everything but stills.
@@ -63,9 +48,7 @@ write your own runner. Headless for everything but stills.
    It must PASS.
 2. Stills, one window at a time, watchdog-closed: `python tools/shot.py
    studies/motif_yard.tscn --frame Motif_gb_SLUG --view three -- --motif=SLUG
-   --sky`, and the same for `--frame Motif_sundered_gorge ...
-   --motif=sundered_gorge`. Look at them yourself, and iterate on the land
-   and ruin until yours sits beside it.
+   --sky`. Look at them yourself and iterate.
 3. Routes through the real play loop: `scratch/SLUG_routes.gd` extending
    `tools/harness/drive.gd`, run with `python tools/drive.py
    scratch/SLUG_routes.gd -- --scene-args --motif=SLUG` (the driver calls

@@ -101,7 +101,7 @@ This is an estimate; nothing has been measured.
 
 ## Round three: a calm field (`beautification`, 2026-10-01)
 
-The user said the grass was "too noisy, too angular". The ground had become the grass since the blades were dropped (d367f2a), and it read as a mosaic of light and dark triangles. The tufts left on the plain (the `grass_tuft` part, which emergence, the inland places and the meadow brush still plant) read as dark shards beside the new soft flowers. The direction follows [the style rule](style.md): faceted shapes, soft light, and the field reading as one calm mass.
+The user said the grass was "too noisy, too angular". The ground had become the grass since the blades were dropped (d367f2a), and it read as a mosaic of light and dark triangles. The tufts left on the plain (the `grass_tuft` part, which emergence, the inland places and the meadow brush still plant) read as dark shards beside the new soft flowers. The aim: faceted shapes, soft light, and the field reading as one calm mass.
 
 ### What made the ground noisy
 

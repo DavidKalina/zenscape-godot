@@ -6,7 +6,7 @@
 
 ```
 godot --path . res://studies/motif_editor.tscn -- --no-title [--load=editor_hill]
-godot --path . res://studies/motif_yard.tscn -- --no-title --motif=editor_hill    # the generator form, in the yard
+godot --path . res://studies/motif_yard.tscn -- --no-title --motif=editor_hill    # the motif form, in the yard
 ```
 
 ## Controls
@@ -32,7 +32,7 @@ When you play, the pilot uses the real study base (motor, input, camera). The ne
 - **Kit pieces.** The palette holds every RuinKit piece plus three trees: the game's hero oak, birch and willow glbs (`scripts/hero_trees.gd` `_build`), each with a trunk collider. A piece is seated on the lowest ground under its footprint and sunk 0.15 m. A selected piece gets a yellow ring. A piece's y is worked out again from the ground on every build, so a re-rolled hill never leaves one floating.
 - **Markers.** The spawn, rim in and rim out are draggable poles. Each rim's arrow faces out from the hill's middle.
 - **Save and load** work, along with `--load=`.
-- **The generator form.** `scripts/kit_isle/motif_authored.gd` reads the file and answers the contract (see below). `scripts/kit_isle/greybox/au_editor_hill.gd` is the two-line subclass the registry uses. One registry line was added: `editor_hill`.
+- **The motif form.** `scripts/kit_isle/motif_authored.gd` reads the file and answers the contract (see below). `scripts/kit_isle/greybox/au_editor_hill.gd` is the two-line subclass the registry uses. One registry line was added: `editor_hill`.
   - The contract: footprint, height span and occupancy (a keel sampled every 4 m plus each piece's box), rim sockets (lip to the outline, run-up kept clear of the pieces), start, summit, flora site and life.
 
 ## Proof

@@ -7,7 +7,7 @@
 
 ```
 godot --path . res://studies/motif_editor.tscn -- --no-title [--load=editor_mountain]
-godot --path . res://studies/motif_yard.tscn -- --no-title --motif=editor_mountain   # the generator form, in the yard
+godot --path . res://studies/motif_yard.tscn -- --no-title --motif=editor_mountain   # the motif form, in the yard
 ```
 
 ## The mouse fix (it was locked in round 1)

@@ -14,29 +14,29 @@ Arguments: $ARGUMENTS
   coverage table's empty cells. Defaults: 5 motif agents (current kit only)
   and 5 kit agents.
 - **An idea given: variations.** The free text is the seed (an image, a
-  mechanic, a combo, a mood: "a rune bell that throws you when it rings").
+  mechanic, a combo, a mood: "a bell that throws you when it rings").
   Every agent keeps the seed and varies it along a different lens. Default 6
   agents, all motif cards (or kit pieces if the text says `kit` or the seed
   is plainly a piece). A leading number sets the count. One agent is
   **literal** (the seed as written, the baseline); one is **contrarian**
-  (the seed inverted: it catches instead of throws, the ruin uses it on you,
-  it's silent, it's tiny); the rest get rolled lenses. Variation agents may
+  (the seed inverted: it catches instead of throws, it's silent, it's
+  tiny); the rest get rolled lenses. Variation agents may
   ask for new kit (their "Kit asks"), since the seed may not exist yet.
 
 ## Steps
 
-1. Read `docs/design/motifs/motif-brief.md` (pillars, lenses, coverage,
-   card formats) and list `docs/design/motifs/brainstorm/` for the next
+1. Read `docs/design/motifs/motif-brief.md` (lenses, coverage, card
+   formats) and list `docs/design/motifs/brainstorm/` for the next
    round number N and what earlier rounds already proposed. In variations
    mode, name the round folder `roundN-<seed-slug>`.
 2. Ask nothing the user already said; the arguments and defaults above
    decide counts.
 3. Roll lenses so agents spread apart: each agent a different verb and
-   purpose (no two the same), plus one or two of scale, decay, mood, shape
-   among isles, twist. Spread mode: favour empty coverage cells. Variations mode:
+   purpose (no two the same), plus one or two of scale, mood and shape
+   among isles. Spread mode: favour empty coverage cells. Variations mode:
    favour lenses that pull the seed furthest from its first reading. Kit
    agents each get a different theme (grab/climb, moving, launch/carry,
-   state-change, the makers' architecture, or ones the user names).
+   state-change, or ones the user names).
 4. Launch all agents in one message, in the background. Models per
    AGENTS.md: motif cards from existing pieces → Sonnet; new kit pieces →
    Opus. Each prompt: read the brief first; the seed (variations mode),
@@ -59,10 +59,5 @@ Arguments: $ARGUMENTS
    uncommitted (AGENTS.md, Prototyping). Hand the user the picks and let
    them choose. Next stages: `/motif-greybox`, then `/motif-turf`.
 
-A motif card is a **place** first: its Place field (landform, silhouette,
-the arrival view) carries the card, held to the original kit motifs'
-effortless beauty (the brief's first pillar), and its combos are hunches
-about hazards that could meet, never a sequence the layout is built along.
-A kit card states what it catches and throws. Rank the spread pick's cards
-on the place first. If the user changes the brief mid round, message every
-running agent and re-brief any that already finished.
+If the user changes the brief mid round, message every running agent and
+re-brief any that already finished.

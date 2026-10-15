@@ -1,9 +1,5 @@
 # ZenScape
 
-A game in Godot about flying and exploring a world of sky islands. You fly a
-plane, and on foot you play a nimble character with a deep moveset. Set
-pieces in the clouds are played both in the air and on foot.
-
 ## Play
 
 Double-click **`run-zenscape.command`**, or open `project.godot` in
@@ -30,8 +26,7 @@ For a standalone Windows or Mac app, see
 ## Notes
 
 `docs/scenic/` describes the aqueduct isle, the ruin kit, the motif isles, the
-Sundered hall, the rune serpent, wind and clouds, and the
-[style rule](docs/scenic/style.md).
+Sundered hall, the rune serpent, wind and clouds.
 
 ## Structure
 

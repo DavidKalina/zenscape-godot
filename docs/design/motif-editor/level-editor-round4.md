@@ -7,7 +7,7 @@
 
 ```
 godot --path . res://studies/motif_editor.tscn -- --no-title [--load=editor_aqueduct_gorge]
-godot --path . res://studies/motif_yard.tscn -- --no-title --motif=editor_aqueduct_gorge   # the generator form
+godot --path . res://studies/motif_yard.tscn -- --no-title --motif=editor_aqueduct_gorge   # the motif form
 ```
 
 ## Controls (new this round)

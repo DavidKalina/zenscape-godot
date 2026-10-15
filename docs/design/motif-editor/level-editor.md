@@ -29,7 +29,7 @@ stroke_feedback.gd) for what carries over to KitLand isles.
 An **in-game** editor scene, `studies/motif_editor.tscn`, on the motif
 yard's base (studies/kit_isle.gd: the real look, sky, light, pilot, motor
 and camera), so the place is judged in the look it ships in. It authors one
-motif at a time and saves it to one text file the generator can place.
+motif at a time and saves it to one text file.
 
 Three tool groups:
 
@@ -76,7 +76,7 @@ with `--motif=<slug>`.
 ## Variation
 
 An authored motif is fixed per seed at first. Later: mark pieces and
-stamps as optional or ranged, so the generator's knobs can vary it.
+stamps as optional or ranged, so knobs can vary it.
 
 ## Round 1 (the first slice)
 

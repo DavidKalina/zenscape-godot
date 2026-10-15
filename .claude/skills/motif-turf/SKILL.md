@@ -6,20 +6,14 @@ description: Dress a motif the user picked into its finished form (growth, wear,
 # Motif dressing pass
 
 Stage 3 of the motif pipeline (docs/design/motifs/motif-brief.md, "From
-card to isle"; its first pillar, **a place first**: the original kit
-motifs are the bar). Two inputs, two jobs:
+card to isle"). Two inputs, two jobs:
 
 - **A place motif** (from `/motif-greybox`, already on KitLand with its
-  card's "Place" section): dress it. Growth, wear and collapse that tell
-  its story, life, the model budget. Its land, routes and threat stay.
-- **An old grey-box motif** (round 1: grids of boxes tuned so chains land
-  to the centimetre): remake it as a place. The land leads: give it a
-  landform and silhouette, break the grid, make it mostly land with stone
-  on it, and let tier heights, edges and hazards move to suit the place.
-  Its chains are not kept; its hazards and enemies are, set in loosely
-  (brief, "anything could chain"). Its routes are re-walked, not its
-  chains re-proved. The Sunken Giant's card "Turf pass" section is a worked
-  example of the technique, not of the result (it kept the grid).
+  card's "Place" section): dress it. Growth, wear, life, the model budget.
+  Its land, routes and threat stay.
+- **An old grey-box motif** (boxes tuned so chains land to the
+  centimetre): remake it on KitLand. Give it a landform, and let tier
+  heights, edges and hazards move to suit it. Its routes are re-walked.
 
 Either way the motif lives in one data table, in `studies/greybox/<slug>.gd`
 (a round 1 study only) or as `scripts/kit_isle/greybox/gb_<slug>.gd` on
@@ -33,10 +27,9 @@ change `motif_greybox.gd` for one motif.
    under the real motor) or when it needs a new kit piece, collision or
    motor/trap change; **Sonnet** for dressing a place motif whose land,
    routes and threat stay (looks; AGENTS.md, Subagent models). Brief it to
-   shoot the arrival view beside an original kit motif (`python
-   tools/shot.py studies/motif_yard.tscn --frame Motif_sundered_gorge
-   --view three -- --motif=sundered_gorge --sky`) before and after, and to
-   iterate until it sits beside it.
+   shoot the arrival view (`python tools/shot.py studies/motif_yard.tscn
+   --frame Motif_gb_<slug> --view three -- --motif=<slug> --sky`) before
+   and after, and to iterate on what it sees.
 2. Split a grey-box motif into **ground** and **body**:
    - Ground (walked tiers: pads, terraces, ledges, decks, catches) becomes
      `KitLand.island(spec)` islands: an outline (one simple polygon each;
@@ -47,16 +40,14 @@ change `motif_greybox.gd` for one motif.
      (1.6 m) or so stay terrain: the kit's prisms make the lips grabbable.
    - Body (anything the climb kicks off or needs plumb: shafts, chimneys,
      walls that are wall-kicked, columns used as cover) stays a **walk
-     box**, drawn as stone; as little of it as the routes need, broken and
-     sunk into the land rather than stacked on it. Where terrain meets
+     box**, drawn as stone; as little of it as the routes need. Where terrain meets
      a plumb stone wall, step the terrain up *inside* the stone (about 1 m
      behind its face) so the kit's leaning cliff face is hidden in it.
-   - Stone: RuinKit pieces first (the kit motifs' stone language).
+   - Stone: RuinKit pieces first.
      `scripts/kit_isle/greybox/giant_stone.gd` draws plain blocks in the
      Olmec basalt (vertex colour as the head's, rest place in UV/UV2, a lit
-     rune band via CUSTOM0/1) where the place is the makers'; weather and
-     bury it so it reads as the same world. Pieces the kit lacks stay
-     labelled stand-ins.
+     rune band via CUSTOM0/1). Pieces the kit lacks stay labelled
+     stand-ins.
    - Build from the kit, not motif-local geometry. GDScript runs one thread
      at a time across the process, so isles only build in parallel where
      the work is in the kit's shared paths (RuinKit, KitLand, ruin_lod,
@@ -90,7 +81,7 @@ change `motif_greybox.gd` for one motif.
    the input (`tools/harness/chain.gd`'s trials and jitter help: ±0.5 m
    start), and checks every trap and enemy builds and ticks. Long runs go
    through `tools/bg.py`, one heavy run at a time. Rendered stills to judge the
-   look, beside the kit motif's (step 1): `python tools/shot.py` (one
+   look: `python tools/shot.py` (one
    window, watchdog-closed; AGENTS.md, Test execution).
 7. Assess docs/art/model-budget.md for the new geometry (AGENTS.md,
    Models): count triangles per part from the built node, collision shapes,

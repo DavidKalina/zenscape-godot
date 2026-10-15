@@ -2,8 +2,7 @@
 
 Start here before writing a tool. The harness below covers what agents
 used to rewrite every round: finding Godot, the import, the smoke check,
-driving a study, seed and knob sweeps, the generator's plan as data,
-rendered stills, and runs past the 10-minute tool limit. Everything is
+driving a study, seed and knob sweeps, rendered stills, and runs past the 10-minute tool limit. Everything is
 Python or GDScript, so it runs the same on the Mac and on Windows. Call it
 with `python` on Windows (there is no `py` there) and `python3` on the Mac.
 
@@ -12,10 +11,9 @@ with `python` on Windows (there is no `py` there) and `python3` on the Mac.
 | Run any Godot command | `python tools/godot.py <godot args>` |
 | Smoke a scene (400 frames, no errors) | `python tools/smoke.py studies/x.tscn [-- scene flags]` |
 | A check through the real play loop | write `scratch/x.gd` extending `tools/harness/drive.gd`, then `python tools/drive.py scratch/x.gd` |
-| The same over seeds, shapes, knobs | `python tools/sweep.py scratch/x.gd --seed 1..8 --shape sprawl,ring --knob gulf=40,60` |
+| The same over seeds and knobs | `python tools/sweep.py scratch/x.gd --seed 1..8 --knob gulf=40,60` |
 | One motif alone on the real stage (the yard) | `python tools/smoke.py studies/motif_yard.tscn -- --motif=plumb_well [--grey] [--bodies=0] [--rims]` |
 | A motif's chain, 10 jittered trials | write `scratch/x_chain.gd` extending `tools/harness/chain.gd`, then `python tools/drive.py scratch/x_chain.gd -- --trials=10 --scene-args --motif=x [--grey]` |
-| The generator's plan as data | `python tools/drive.py tools/layer_dump.gd -- --shape=ring --seed=2 --isles` |
 | Rendered stills to look at | `python tools/shot.py studies/x.tscn --frame Trap --view three,top --sheet` |
 | Anything that runs over ~8 min | `python tools/bg.py start NAME -- <command>`, then `python tools/bg.py wait NAME` |
 | The test suite | `python tools/run_tests.py [--tests 'test_x*.gd'] [--quick]` |
@@ -41,14 +39,12 @@ exits 124.
 ```
 python tools/smoke.py studies/greybox/lidstack.tscn studies/trap_yard.tscn -j 4
 python tools/smoke.py --greybox
-python tools/smoke.py studies/run_layer.tscn -- --shape=ring --seed=2
 ```
 
 Each scene is opened the way the game opens it (`change_scene`), then runs
 400 frames at `--fixed-fps 60`. It prints one PASS/FAIL line per scene,
 with how long the scene took to be walkable and any errors with their
-`at:` lines. A trap yard takes about 8 s. run_layer takes about 90 s,
-because it builds the whole layer.
+`at:` lines. A trap yard takes about 8 s.
 
 ## drive.gd + drive.py: checks through the real play loop
 
@@ -65,7 +61,7 @@ func drive() -> void:
 	row({"seed": arg("seed"), "feet": motor.feet})
 ```
 
-`python tools/drive.py scratch/gap.gd -- --seed=2 --scene-args --shape=ring`
+`python tools/drive.py scratch/gap.gd -- --seed=2 --scene-args --motif=sundered_gorge`
 
 - **Args.** Args after `--` belong to the driver: `arg`, `arg_int`,
   `arg_float`, `arg_vec3`, `flag`. Args after `--scene-args` are the
@@ -98,21 +94,17 @@ func drive() -> void:
   `var d := x.get("k")`. drive.py points this out when it happens. A
   script that doesn't parse fails in about a second.
 
-## The motif yard and chain.gd: prove in the yard, confirm once in the layer
+## The motif yard and chain.gd
 
-A chain check inside `studies/run_layer.tscn` waits for the whole layer to
-stand and steps every isle each frame: 15-18 min for 10 trials in the
-greybox-pool round. `studies/motif_yard.tscn` stands one motif and nothing
-else, on the same study base, pilot, motor, input and camera, and its live
-parts go through the generator's own `LayerStage.setup` (traps, ropes,
-cannons, heads laid by `LayerGreybox.lay_heads`, their bodies), so a chain
-that holds there holds in a layer. It stands in about 2 s, and 10 trials
+`studies/motif_yard.tscn` stands one motif and nothing else, on the study
+base, with the pilot, motor, input and camera; its live parts (traps,
+ropes, cannons, heads and their bodies) are set up as they are anywhere
+else. It stands in about 2 s, and 10 trials
 of the Plumb Well column take about 10 s.
 
 ```
 python tools/smoke.py studies/motif_yard.tscn -- --motif=lidstack [--grey] [--bodies=0] [--rims] [--at=x,y,z] [--sky]
 python tools/drive.py tools/harness/examples/plumb_well_chain.gd -- --trials=10 --scene-args --motif=plumb_well --bodies=0 [--grey]
-python tools/bg.py start pw_layer -- python tools/drive.py tools/harness/examples/plumb_well_chain.gd --timeout 2400 -- --in=layer --trials=10 --scene-args --seed=1 --shape=sprawl --knob=pool=classic --knob=bodies=0
 python tools/shot.py studies/motif_yard.tscn --frame Motif_gb_vigil_bellows --view three -- --motif=vigil_bellows [--sky]
 ```
 
@@ -124,10 +116,7 @@ python tools/shot.py studies/motif_yard.tscn --frame Motif_gb_vigil_bellows --vi
   (a drifting puff can hide a low motif; shoot it without `--sky` then).
   R in the yard resets the stage and sets him at the start.
 - **The trial helper.** `tools/harness/chain.gd` extends drive.gd.
-  `open_motif(slug)` opens the yard, or run_layer with `--in=layer`. In
-  the layer it adds `--knob=greybox=<slug>`, turns `--grey` into the
-  motif's flag, drops the run loop, pushes the void down and stands the
-  motif's isle (`hold_layer`). `motif_point(p)` moves a point of the
+  `open_motif(slug)` opens the yard. `motif_point(p)` moves a point of the
   motif's own table into the world. `motif_isle`, `motif_host` (its traps,
   ropes) and `motif_heads` find its parts. `reset_all()` puts the stage
   back as built. `trials(n, fn, jitter, delay)` runs `fn` n times from a
@@ -137,22 +126,13 @@ python tools/shot.py studies/motif_yard.tscn --frame Motif_gb_vigil_bellows --vi
 - **Examples.** `tools/harness/examples/plumb_well_chain.gd` (the column,
   and `--chain=cannon`) and `wardens_well_chain.gd` (the head relay, and
   `--chain=cannon`, the missed relay). Copy one into `scratch/`.
-- **The workflow.** Prove every chain in the yard, grey and turf, as often
-  as you like. Then confirm once in a layer, on a seed where the generator
-  places the motif (`tools/layer_dump.gd --isles` with
-  `--knob=pool=classic --knob=greybox=<slug>`). Run that through `bg.py`,
-  one heavy run at a time.
-- **What the yard leaves out.** The generated crossings (`--rims` stands
-  in a pad), the neighbours a head's body can climb from (its cliffs are
-  the motif's own), the generator's own heads, hazards and ram, and the
-  rest of the layer's load on the frame.
+- **What the yard leaves out.** Neighbouring isles (`--rims` stands in a
+  pad off each rim), and the load of anything else on the frame.
 
-## sweep.py: a table over seeds, shapes and knobs
+## sweep.py: a table over seeds and knobs
 
 ```
-python tools/sweep.py tools/layer_dump.gd --seed 1..20 --shape sprawl,ring -j 8
-python tools/sweep.py scratch/gap.gd --seed 1..6 --knob gulf=40,60,80 --csv scratch/gap.csv
-python tools/sweep.py studies/run_layer.tscn --seed 1..4 --shape ring      # smoke each
+python tools/sweep.py scratch/gap.gd --seed 1..6 --knob gulf=40,60,80 --csv scratch/gap.csv -j 8
 ```
 
 Each axis becomes a scene flag: `--seed=N`, `--shape=S`, `--knob=k=v`, and
@@ -160,16 +140,6 @@ Each axis becomes a scene flag: `--seed=N`, `--shape=S`, `--knob=k=v`, and
 The columns are the driver's RESULT values, or one row per ROW line it
 printed, plus `ok` and seconds. To try a value, pass it as a flag. Don't
 `sed` it into the source.
-
-## layer_dump.gd: the generator's plan, nothing built
-
-This uses `LayerShapes.core(shape, seed, knobs)`, which takes 10 to 70 s a
-seed, against about 90 s to build the layer in run_layer. With `--isles`
-it prints the isles (id, role, hood, offset) and the edges (kind, lips,
-distance across, rise, ride). It also prints the plan's problems, and a
-RESULT holding the counts, the widest gulf, the longest edge and plan_ms.
-`--out=scratch/plan.json` writes the summary as JSON, and `--full` writes
-the whole plan. `--next` lays the next region too.
 
 ## shot.py: rendered stills
 
