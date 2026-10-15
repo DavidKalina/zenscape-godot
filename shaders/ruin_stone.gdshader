@@ -13,6 +13,9 @@ render_mode diffuse_lambert, specular_schlick_ggx;
 // The ruins at night: the moon caught in the stone and the lanterns' bounce
 // (shaders/folk_surface.gdshaderinc, scripts/kit_isle/kit_night_lights.gd).
 #define ZS_NIGHT_STONE
+// The weathered basalt, the Olmec's (shaders/kit_weather.gdshaderinc; off
+// at `stone_weather` 0, the kit's old smooth stone: --kit-stone=smooth).
+#define ZS_STONE_WEATHER
 uniform float shelter_fill = 4.5;
 uniform vec3 shelter_tint : source_color = vec3(1.0, 0.82, 0.6);
 #include "res://shaders/folk_surface.gdshaderinc"

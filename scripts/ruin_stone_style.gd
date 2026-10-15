@@ -122,6 +122,10 @@ const LOOKS := {
 		"band":1.6,"band_tone":0.06,"foot":0.12,"rise":3.0,"under":0.8,"recess":0.7,"fill":1.45,"rim":0.2},
 }
 
+## The kit stone's weathering by default (`weather`).
+const WEATHER := 1.0
+const LaunchArgs = preload("res://scripts/launch_args.gd")
+
 ## The look the kit builds with now.
 static var current := "eroded"
 
@@ -165,6 +169,19 @@ static func dress(material: ShaderMaterial) -> void:
 	var look: Dictionary = LOOKS[current]
 	material.set_shader_parameter("fill",float(look.fill))
 	material.set_shader_parameter("rim",float(look.rim))
+	material.set_shader_parameter("stone_weather",weather())
+
+## How weathered the kit's stone is drawn (shaders/kit_weather.gdshaderinc,
+## the Olmec's weathering): `--kit-stone=` weathered (1, the default),
+## smooth (0, the stone as it was), or an amount (0 to 2).
+static func weather() -> float:
+	for a: String in LaunchArgs.user_args():
+		if a.begins_with("--kit-stone="):
+			var v := a.get_slice("=",1)
+			if v == "smooth": return 0.0
+			if v == "weathered": return WEATHER
+			return clampf(v.to_float(),0.0,2.0) if v.is_valid_float() else WEATHER
+	return WEATHER
 
 ## The piece's stone (sRGB) in a clean look, from its seed.
 static func stone_of(seed_value: int) -> Color:

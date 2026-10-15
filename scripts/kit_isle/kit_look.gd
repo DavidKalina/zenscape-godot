@@ -29,6 +29,11 @@ extends RefCounted
 ## lying back (a ledge, a step) read a little paler, so walkable ledges
 ## stand out of the wall.
 const RockLooks = preload("res://scripts/rock_looks.gd")
+const LaunchArgs = preload("res://scripts/launch_args.gd")
+## The isles' rock weathering by default (`rock_weather`).
+const ROCK_WEATHER := 1.0
+## Its strengths (shares of the ruin stone's) and how much of FACETS it keeps.
+const ROCK_GRIT := {"tone":1.6,"streak":1.8,"crack":1.6,"facets":0.6}
 
 ## The rock look (scripts/rock_looks.gd), its tone and variant.
 const ROCK_LOOK := "basalt"
@@ -93,6 +98,8 @@ static func ground_material() -> ShaderMaterial:
 		# small; a kit isle's are 1 to 2 m, so its light leans this far to
 		# the smoothed ground too (the sky peaks' `facet_soft`).
 		_ground.set_shader_parameter("facet_soft",FACET_SOFT)
+		# Its bare steep faces weathered as the rock is.
+		_weather_rock(_ground)
 	return _ground
 
 ## The islets' rock material, its colours painted face by face (`rock_tone`).
@@ -108,7 +115,31 @@ static func rock_material() -> ShaderMaterial:
 		_rock.set_shader_parameter("side_facets",FACETS)
 		_rock.set_shader_parameter("side_own",true)
 		_rock.set_shader_parameter("side_painted",true)
+		_weather_rock(_rock)
 	return _rock
+
+## How weathered the isles' rock is drawn (shaders/kit_weather.gdshaderinc,
+## the ruin stone's and the Olmec's weathering): `--kit-rock=` weathered (1,
+## the default), smooth (0, the rock as it was), or an amount (0 to 2).
+static func rock_weather() -> float:
+	for a: String in LaunchArgs.user_args():
+		if a.begins_with("--kit-rock="):
+			var v := a.get_slice("=",1)
+			if v == "smooth": return 0.0
+			if v == "weathered": return ROCK_WEATHER
+			return clampf(v.to_float(),0.0,2.0) if v.is_valid_float() else ROCK_WEATHER
+	return ROCK_WEATHER
+
+## The rock's weathering, bolder than the ruin stone's (cliffs are seen
+## from farther and lit flatter): its washes, streaks and cracks stronger,
+## its facets' own light and dark spread eased so the grain carries it.
+static func _weather_rock(m: ShaderMaterial) -> void:
+	var w := rock_weather()
+	m.set_shader_parameter("stone_weather",w)
+	m.set_shader_parameter("weather_tone",ROCK_GRIT.tone)
+	m.set_shader_parameter("weather_streak",ROCK_GRIT.streak)
+	m.set_shader_parameter("weather_crack",ROCK_GRIT.crack)
+	if w > 0.0 and m == _rock: m.set_shader_parameter("side_facets",FACETS*float(ROCK_GRIT.facets))
 
 ## Whether a ground face facing `normal` is too steep for turf (past the
 ## palette's rock slope): drawn as rock.
