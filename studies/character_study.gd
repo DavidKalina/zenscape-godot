@@ -473,6 +473,7 @@ func _ready() -> void:
 		if arg.begins_with("--pack=") and pack == "": pack = arg.trim_prefix("--pack=")
 		elif arg == "--carve": motor.carve = true
 		elif arg == "--no-carve": motor.carve = false
+		elif arg == "--wallrun": motor.wallrun_on = true
 	if pack != "": _load_pack()
 	Pad.ensure()
 	_build_light()
