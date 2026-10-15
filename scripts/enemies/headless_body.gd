@@ -633,7 +633,7 @@ func _senses() -> bool:
 	if neck.distance_to(at) > float(knobs.sense): return false
 	_ray.from = neck
 	_ray.to = at
-	_ray.collision_mask = field.study.ground.mask
+	_ray.collision_mask = WalkerOnly.strip(field.study.ground.mask)
 	_ray.exclude = _skip()
 	return field.study.get_world_3d().direct_space_state.intersect_ray(_ray).is_empty()
 
@@ -1282,6 +1282,9 @@ func _shock_meets(w: Dictionary) -> void:
 	if d > w.r: return
 	w.done = true
 	if m.seized() or m.rider != null: return
+	# On walker-only stone (scripts/walker_only.gd) he is off its ground:
+	# the wave runs under him.
+	if m.grounded and field.pilot_on_walker_only(): return
 	var dy := m.feet.y-at.y
 	if absf(dy) > float(knobs.shock_band): return
 	if not m.grounded and m.feet.y-_floor(m.feet,0.1,float(knobs.shock_band)*2.0) > float(knobs.shock_air): return
@@ -1603,7 +1606,7 @@ func _see(delta: float) -> void:
 		sight = Sight.new()
 		sight.tune(knobs)
 	var m: PilotMotor = field.motor
-	sight.mask = field.study.ground.mask
+	sight.mask = WalkerOnly.strip(field.study.ground.mask)
 	# Held up, it looks down and about more widely (`scope_wide` times its cone).
 	sight.half = float(knobs.sight_half)*(float(knobs.scope_wide) if state == "scope" and _held_w > 0.5 else 1.0)
 	sight.exclude = _skip()
@@ -2252,7 +2255,7 @@ func _scope_pose(delta: float) -> void:
 		_head_box.size = Vector3(float(head.width),float(head.height),float(head.length))*0.92
 		_head_q.shape = _head_box
 		_head_q.transform = Transform3D(Basis(Vector3.UP,_held_yaw),_held_at+Vector3.UP*float(head.height)*0.5)
-		_head_q.collision_mask = field.study.ground.mask
+		_head_q.collision_mask = WalkerOnly.strip(field.study.ground.mask)
 		_head_q.exclude = _skip()
 		var space: PhysicsDirectSpaceState3D = field.study.get_world_3d().direct_space_state
 		if not space.intersect_shape(_head_q,1).is_empty():
@@ -2633,7 +2636,7 @@ func _bulk_at(p: Vector3, motion := Vector3.ZERO) -> PhysicsShapeQueryParameters
 	_bulk.size = Vector3(hh*BULK_W*2.0,top-low,hh*BULK_L*2.0)
 	_bulk_q.shape = _bulk
 	_bulk_q.transform = Transform3D(Basis(Vector3.UP,facing),p+Vector3.UP*(low+top)*0.5)
-	_bulk_q.collision_mask = field.study.ground.mask
+	_bulk_q.collision_mask = WalkerOnly.strip(field.study.ground.mask)
 	var skip := _skip()
 	# The Olmec's destruction: rubble is waded through, not shoved off.
 	if breaker != null: skip.append_array(breaker.rubble_rids())
@@ -3046,7 +3049,7 @@ func _skip() -> Array[RID]:
 func _cast(from: Vector3, to: Vector3) -> Dictionary:
 	_ray.from = from
 	_ray.to = to
-	_ray.collision_mask = field.study.ground.mask
+	_ray.collision_mask = WalkerOnly.strip(field.study.ground.mask)
 	_ray.exclude = _skip()
 	return field.study.get_world_3d().direct_space_state.intersect_ray(_ray)
 

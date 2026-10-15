@@ -32,6 +32,14 @@ window/vsync/vsync_mode=0
 window/size/min_width=960
 window/size/min_height=640
 
+[layer_names]
+
+3d_physics/layer_1="solid"
+3d_physics/layer_12="turf"
+3d_physics/layer_13="water"
+3d_physics/layer_14="walker_props"
+3d_physics/layer_15="walker_only"
+
 [physics]
 
 3d/physics_engine="Jolt Physics"

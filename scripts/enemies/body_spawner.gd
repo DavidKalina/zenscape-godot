@@ -230,7 +230,7 @@ func hidden(lip: Vector3, out: Vector2) -> bool:
 	var camera: Camera3D = scene.get("camera")
 	if float(rules.hidden) < 0.5 or camera == null: return true
 	var hands := lip+Vector3(out.x,0.0,out.y)*2.0-Vector3.UP*1.5
-	var q := PhysicsRayQueryParameters3D.create(camera.global_position,hands,scene.ground.mask)
+	var q := PhysicsRayQueryParameters3D.create(camera.global_position,hands,WalkerOnly.strip(scene.ground.mask))
 	return not scene.get_world_3d().direct_space_state.intersect_ray(q).is_empty()
 
 ## Whether `lip` is within `view` rad (or `cone`) of the camera's look (flat).
@@ -294,7 +294,7 @@ func on_screen(p: Vector3) -> bool:
 func seen(p: Vector3) -> bool:
 	var camera: Camera3D = scene.get("camera")
 	if camera == null: return true
-	var q := PhysicsRayQueryParameters3D.create(camera.global_position,p,scene.ground.mask)
+	var q := PhysicsRayQueryParameters3D.create(camera.global_position,p,WalkerOnly.strip(scene.ground.mask))
 	return scene.get_world_3d().direct_space_state.intersect_ray(q).is_empty()
 
 ## How far down past its hang a body can start on the face under `lip`
@@ -304,7 +304,7 @@ func seen(p: Vector3) -> bool:
 func face_below(lip: Vector3, out: Vector2, most: float) -> float:
 	if most <= 0.0: return 0.0
 	var space := scene.get_world_3d().direct_space_state
-	var mask: int = scene.ground.mask
+	var mask: int = WalkerOnly.strip(scene.ground.mask)
 	var n := out.normalized()
 	var f3 := Vector3(n.x,0.0,n.y)
 	var b := HeadlessBody.build_of(_body_k(),float(field.numbers().unit))
@@ -388,7 +388,7 @@ func vantages(i: int) -> Array:
 			for turn: float in [0.0,0.35,-0.35,0.7,-0.7]:
 				var w := o.rotated(turn)
 				var p := lip+Vector3(w.x,0.0,w.y)*d
-				var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(p.x,lip.y+80.0,p.z),Vector3(p.x,lip.y-80.0,p.z),scene.ground.mask))
+				var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(p.x,lip.y+80.0,p.z),Vector3(p.x,lip.y-80.0,p.z),WalkerOnly.strip(scene.ground.mask)))
 				if hit.is_empty() or (hit.normal as Vector3).y < 0.7: continue
 				var at: Vector3 = (hit.position as Vector3)+Vector3.UP*0.05
 				out.append([at,Vector2(lip.x-at.x,lip.z-at.z).normalized()])
@@ -430,7 +430,7 @@ func fit(lip: Vector3, out: Vector2, depth := 0.0) -> Array:
 ## The cliff fitted at `lip` (or [why it won't]).
 func _fit_at(lip: Vector3, n: Vector2, depth: float) -> Array:
 	var space := scene.get_world_3d().direct_space_state
-	var mask: int = scene.ground.mask
+	var mask: int = WalkerOnly.strip(scene.ground.mask)
 	var o3 := Vector3(n.x,0.0,n.y)
 	# The top: the outermost level ground near the lip's height, looked for
 	# from a little out past it to FIT_IN in.

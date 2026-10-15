@@ -765,6 +765,9 @@ func _label(at: Vector3, text: String, size: int) -> void:
 
 func _build_pilot() -> void:
 	ground = PhysicsGround.new(get_world_3d().direct_space_state,motor)
+	# He reads the walker-only layer too (scripts/walker_only.gd); the
+	# enemies, reading `ground.mask`, strip it.
+	ground.see(ground.mask|WalkerOnly.LAYER)
 	motor.water = ground.water_callable()
 	motor.wall = ground.wall_callable()
 	figure = Node3D.new()
