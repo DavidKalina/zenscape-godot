@@ -313,9 +313,9 @@ func default_knobs(n: Dictionary) -> Dictionary:
 		# him up to `sight_glow` times plainer. By day, no change.
 		"sight_dark_range":0.4,"sight_dark_seen":0.3,"sight_glow":1.3,
 		# 1: walker-only stone (scripts/walker_only.gd) blocks its sight (he
-		# hides in a niche it can't reach); 0: it looks through it, as it
-		# walks through it (the walker-only round's default).
-		"sight_walker_only":0,
+		# hides in a niche it can't reach; the default since city-refuges
+		# round 1); 0: it looks through it, as it walks through it.
+		"sight_walker_only":1,
 		# Beacons (scripts/enemies/beacon.gd): 1 it turns to a lit one in
 		# its draw and goes there, 0 it pays them no heed. Looked at its
 		# `dwell`, it tires of that one `beacon_rest` s (lit again: news).
