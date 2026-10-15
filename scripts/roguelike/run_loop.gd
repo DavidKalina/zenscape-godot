@@ -100,7 +100,8 @@ const WORDS := {
 	# The harm's causes (PilotMotor `harm`), as the card names them.
 	"causes": {"fall":"the fall","olmec":"the Olmec","ram":"the ram","trap":"a trap",
 		"wind":"the wind","stone":"falling stone","enemy":"the city's guardians",
-		"walker":"the Second Walker","thief":"the Collector","altar":"a bargain at the altar"},  # [merchant] [altars]
+		"walker":"the Second Walker","thief":"the Collector","altar":"a bargain at the altar",  # [merchant] [altars]
+		"beetle":"the millstone beetle"},  # [beetle]
 	"lost_none": "nothing carried",
 	"lost_one": "1 rune lost",
 	"lost": "%d runes lost",

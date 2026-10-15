@@ -38,6 +38,8 @@ const Merchant = preload("res://scripts/roguelike/merchant.gd")  # [merchant]
 const Altars = preload("res://scripts/roguelike/altars.gd")  # [altars]
 # [weeper] the stone mourners (weeper-round1.md), in the EnemyField.
 const LayerWeepers = preload("res://scripts/roguelike/layer_weepers.gd")
+# [beetle] the Millstone Beetles on their lanes (beetle-round1.md).
+const LayerBeetles = preload("res://scripts/roguelike/layer_beetles.gd")
 
 const GATE := Color(1.0,0.82,0.45)
 const RUNE_SIZE := 0.7
@@ -75,6 +77,7 @@ var greybox: Node = null
 var collectibles: Node3D = null
 ## [merchant] The stall and the Collector (scripts/roguelike/merchant.gd), or null.
 var merchant: Node3D = null
+var beetles: Node = null  # [beetle]
 var _last := Vector3.INF
 
 func _init() -> void:
@@ -143,6 +146,7 @@ func setup(scene: Node3D, layer: Dictionary, was: Node) -> void:
 	collectibles = Collectibles.dress(self,layer)  # [collectibles]
 	merchant = Merchant.dress(self,layer)  # [merchant]
 	Altars.dress(self,layer)  # [altars] pedestals, the cursed altar, the key and vault
+	beetles = LayerBeetles.dress(self,layer)  # [beetle]
 	_gate()
 	rides = LayerRides.new()
 	add_child(rides)
@@ -301,6 +305,7 @@ func before(delta: float) -> void:
 	if hazards != null: hazards.before(delta)
 	if collectibles != null: collectibles.before(delta)  # [collectibles]
 	if merchant != null: merchant.before(delta)  # [merchant]
+	if beetles != null: beetles.before(delta)  # [beetle]
 
 func after(delta: float, events: Dictionary) -> void:
 	if inner != null: inner.after(delta,events)
