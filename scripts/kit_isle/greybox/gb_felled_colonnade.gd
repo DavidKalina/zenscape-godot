@@ -101,10 +101,25 @@ const LAYOUT := {
 	# middle, drums, its top under the launch's reach, over a jump's).
 	"drum_floor":Vector2(-27.0,18.5),
 	"stump":{"at":Vector2(-13.3,25.0),"drums":2,"base":0.6},
+	# Fallen courses at the gate wall's foot (x z, size, turn deg, tilt deg).
+	"wall_rubble":[[Vector2(14.8,-12.6),Vector3(2.2,1.1,1.6),20.0,6.0],[Vector2(17.0,-11.9),Vector3(1.4,0.8,1.2),-35.0,-10.0],
+		[Vector2(14.0,-10.6),Vector3(1.0,0.6,0.9),50.0,12.0],[Vector2(35.4,-12.6),Vector3(2.6,1.2,1.8),-12.0,-5.0],
+		[Vector2(37.0,-11.2),Vector3(1.6,0.9,1.3),30.0,9.0],[Vector2(33.8,-10.8),Vector3(1.1,0.6,1.0),70.0,0.0]],
+	# The east steps' cover (x z, size over the ground there, turn deg): the
+	# broken screen on the terrace's lip west of the steps (out of his
+	# beat's sight), the lip along the void beside the steps and the apron.
+	"step_cover":[[Vector2(-9.8,11.9),Vector3(2.6,3.6,1.2),6.0],[Vector2(-12.4,11.6),Vector3(2.4,2.6,1.1),-4.0],[Vector2(-14.3,11.5),Vector3(1.6,1.5,1.0),15.0],[Vector2(-11.4,14.6),Vector3(2.2,0.9,1.4),25.0],
+		[Vector2(-2.1,14.5),Vector3(0.7,1.4,2.6),4.0],[Vector2(-2.7,17.6),Vector3(0.7,1.5,2.4),-6.0],
+		[Vector2(-3.4,20.4),Vector3(0.7,1.3,2.8),-18.0],[Vector2(-4.0,23.3),Vector3(0.7,1.2,2.6),-7.0],
+		[Vector2(0.0,9.6),Vector3(0.7,1.2,3.0),-8.0],[Vector2(0.7,6.4),Vector3(0.7,1.0,2.0),3.0]],
 	# The chocked slab: its near rim's middle on the gallery's east edge.
 	"chock":Vector2(0.0,-51.0),
 	# The plug: its middle on shelf A's north (the wall along x).
 	"plug":Vector2(25.5,-18.0),
+	# The ridge the gate is sunk in: its rock face's place before the wall's
+	# south face (m), the west shoulder (crest m, how far north it falls m),
+	# the east rise (crest, how far north, x where it has fallen away).
+	"gate_hill":{"front":0.8,"west":Vector2(29.0,16.0),"east":Vector3(29.4,20.0,54.0)},
 	# The causeway: its west end (x) and line (z), its spans.
 	"causeway":{"from":-3.0,"line":40.0,"spans":4,"wear":0.6},
 	# The mouse run: its middle (x z), the wall along x.
@@ -181,11 +196,64 @@ static func far_ground(x: float, z: float) -> float:
 		var t := clampf((-21.0-z)/20.0,0.0,1.0)
 		y = TERRACE+(GALLERY-TERRACE)*t*t*(3.0-2.0*t)
 	elif z < stair_summit_z(): y = CROWN
+	y = maxf(y,gate_hill(x,z))
 	var ch: Vector2 = LAYOUT.chock
 	var far_rim := ch.x+gap_chock()
 	if x < far_rim+CityKit.CELL+0.3 and absf(z-ch.y) < chock_half()+0.3: y = GALLERY-0.15
 	var cw: Dictionary = LAYOUT.causeway
 	if x < causeway_end()+2.0 and absf(z-float(cw.line)) < CityKit.DECK*0.5+0.6: y = -0.15
+	return y
+
+## The ridge the plug's gate wall is sunk in (polish round 1): rock
+## shoulders stand in front of the wall's jambs, so from the shelf only the
+## gate's own masonry frame shows, set back in a cliff; behind, the gate ramp
+## runs up a cutting between two grassy slopes falling to the upper walk.
+## The west shoulder a narrow one along the fault, the east a broad rise
+## falling away over the cleft. The rock's face is the barrier the wall was:
+## at least BARRIER over the shelf the whole width of the wall (past his
+## climb); within FRAME of the lane the ground steps up inside the wall's
+## stone (1 m behind its face); never in the lane (his way and the heap's).
+## -INF where none.
+const BARRIER := 23.6
+const FRAME := 1.8
+static func gate_hill(x: float, z: float) -> float:
+	var pl: Vector2 = LAYOUT.plug
+	var gh: Dictionary = LAYOUT.gate_hill
+	var half := CityKit.LANE*0.5
+	var wall_half := half+2.0*CityKit.CELL
+	var face := pl.y+CityKit.CELL*0.5
+	var off := absf(x-pl.x)
+	var south := -17.5
+	if off <= half+FRAME: south = face-1.0
+	elif off <= wall_half: south = face+float(gh.front)
+	if z > south: return -INF
+	# The cutting: the lane, its sides wandering back as it climbs (never
+	# into the lane).
+	var back := maxf(0.0,(pl.y-CityKit.CELL*0.5)-z)
+	var ragged := 0.4+0.12*back+0.5*(0.5+0.5*sin(z*0.45+x*0.1))
+	if off < half+ragged: return -INF
+	var crest: float
+	var f: float
+	var zz := z+1.6*sin(x*0.31+0.7)
+	var top := face-2.0*CityKit.CELL
+	if x < pl.x:
+		var w: Vector2 = gh.west
+		crest = w.x+0.6*sin(z*0.5+1.3)+0.5*sin(x*0.9)
+		f = smoothstep(top-w.y,top,zz)
+	else:
+		var e: Vector3 = gh.east
+		crest = e.x+0.8*sin(x*0.21+z*0.13)+0.5*sin(x*0.63+2.0)
+		f = smoothstep(top-e.y,top,zz)*(1.0-smoothstep(pl.x+wall_half,e.z,x+2.0*sin(z*0.27)))
+	var y := lerpf(GALLERY,crest,f) if f > 0.0 else -INF
+	# The face over the shelf: past his climb along the wall's whole width.
+	# Past the gate's frame its brow breaks up unevenly (a rough skyline, the
+	# east shoulder the higher); in the frame it stays under the wall's head.
+	if off <= wall_half and z > face-CityKit.CELL-1.0:
+		var brow := 0.4*sin(x*0.7)
+		if off > half+FRAME:
+			var o := (off-half-FRAME)/(wall_half-half-FRAME)
+			brow += sin(PI*minf(o*1.3,1.0))*(1.6+1.4*sin(x*0.55+z*0.4))+(1.4 if x > pl.x else 0.0)*o
+		y = maxf(y,TERRACE+BARRIER+brow)
 	return y
 
 static func gap_chock() -> float:
@@ -329,8 +397,18 @@ func heads() -> Array:
 
 # --- The land and the stone ------------------------------------------------------------
 
+## The plants' rays run from over the crown down past the drum floor's pit:
+## the Site's default stops 8 m under its top, which left every turf under
+## 22 m (the forecourt, the terrace, the gallery, shelf A, the upper walk)
+## bare olive with not one blade.
 func flora_site() -> KitFlora.Site:
-	return KitFlora.Site.new(CROWN+4.0,KitLand.wear_of(paths()))
+	var site := KitFlora.Site.new(CROWN+4.0,KitLand.wear_of(paths()))
+	site.ray = Vector2(CROWN+60.0,-6.0)
+	# The isles are big (about 30k m² of turf): a thinner drift than the
+	# small kit isles' keeps the instanced grass near the Sundered Gorge's
+	# per isle-in-view, the turf still green from the arrival.
+	site.tufts = 2.8
+	return site
 
 func flora_seed() -> int:
 	return SEED+9
@@ -417,13 +495,17 @@ func _stone(root: Node3D) -> void:
 	rng.seed = SEED+50
 	# Standing: the stubs, the launch stump (each on a low base, its top drum
 	# broken a little off true).
-	var stands: Array = LAYOUT.stubs.duplicate()
-	stands.append([LAYOUT.stump.at,int(LAYOUT.stump.drums)])
+	# The stubs' bases sunk to a hand's height in the turf (no plinth boxes);
+	# the stump keeps its base (its top is the launch's reach).
+	var stands: Array = []
+	for s: Array in LAYOUT.stubs: stands.append([s[0],s[1],0.2,r*2.0+0.7])
+	stands.append([LAYOUT.stump.at,int(LAYOUT.stump.drums),float(LAYOUT.stump.base),r*2.0+1.6])
 	for s: Array in stands:
 		var at := on_near(s[0])
-		var base := float(LAYOUT.stump.base)
-		g.box(Transform3D(Basis(Vector3.UP,rng.randf_range(-0.2,0.2)),at+Vector3.UP*(base*0.5-0.2)),Vector3(r*2.0+1.6,base+0.4,r*2.0+1.6),0.15,at.y-0.3,0.85)
-		_collide_box(solids,Transform3D(Basis.IDENTITY,at+Vector3.UP*(base*0.5-0.2)),Vector3(r*2.0+1.6,base+0.4,r*2.0+1.6))
+		var base := float(s[2])
+		var foot := float(s[3])
+		g.box(Transform3D(Basis(Vector3.UP,rng.randf_range(-0.5,0.5)),at+Vector3.UP*(base*0.5-0.2)),Vector3(foot,base+0.4,foot),0.15,at.y-0.3,0.85)
+		_collide_box(solids,Transform3D(Basis.IDENTITY,at+Vector3.UP*(base*0.5-0.2)),Vector3(foot,base+0.4,foot))
 		for k in int(s[1]):
 			var lean := Basis(Vector3(1.0,0.0,0.3).normalized(),0.025*k)*Basis(Vector3.UP,rng.randf_range(0.0,TAU))
 			var xf := Transform3D(lean,at+Vector3.UP*(base+h*(k+0.5)))
@@ -459,6 +541,29 @@ func _stone(root: Node3D) -> void:
 		var z_face := -signf((b[0] as Vector2).y-float(LAYOUT.column.y))
 		g.runes(at+Vector3(-size.x*0.5+0.2,size.y*0.6,z_face*size.z*0.5),at+Vector3(size.x*0.5-0.2,size.y*0.6,z_face*size.z*0.5),Vector3.UP,Vector3(0.0,0.0,z_face),float(SEED)+at.z)
 		_collide_box(solids,xf,size)
+	# Fallen courses at the gate wall's foot, either side of the lane: low
+	# (under his climb's margin: the wall above stays past his reach), half
+	# in the turf, tumbled.
+	for b: Array in LAYOUT.wall_rubble:
+		var p: Vector2 = b[0]
+		var size: Vector3 = b[1]
+		var at := on_far(p)
+		var turn := Basis(Vector3.UP,deg_to_rad(float(b[2])))*Basis(Vector3.RIGHT,deg_to_rad(float(b[3])))
+		var xf := Transform3D(turn,at+Vector3.UP*(size.y*0.5-0.35))
+		g.box(xf,size,0.22,at.y-0.3,rng.randf_range(0.8,1.0))
+		_collide_box(solids,xf,size)
+	# The east steps' cover (rule 2): a broken screen on the terrace's lip
+	# west of the steps, hiding them from his beat (his draw needs a clear
+	# line to your chest), and a low lip along the void at the steps' and
+	# the apron's east edge (a stumble or a swat stops on it, not off the
+	# rim). The column's own rim, between it and the gap, stays open.
+	for b: Array in LAYOUT.step_cover:
+		var p: Vector2 = b[0]
+		var size: Vector3 = b[1]
+		var base := near_ground(p.x,p.y)
+		var xf := Transform3D(Basis(Vector3.UP,deg_to_rad(float(b[2]))),Vector3(p.x,base+(size.y-0.4)*0.5,p.y))
+		g.box(xf,size+Vector3(0.0,0.4,0.0),0.18,base-0.3,rng.randf_range(0.85,1.05))
+		_collide_box(solids,xf,size+Vector3(0.0,0.4,0.0))
 	var mesh := MeshInstance3D.new()
 	mesh.name = "DressingMesh"
 	mesh.mesh = GiantStone.mesh_of(g)
@@ -657,5 +762,12 @@ class Dresser extends Node:
 				if not String(a.kind) in ON: continue
 				if GroundCover.cover(p,a.poly,kind,float(a.y),SEED+k,{}) != null: laid += 1
 				k += 1
+		# The gate wall's head, grown over: tufts against the haze along its
+		# top (the plug's frame: the wall along x, its head at WALL_H).
+		var plug: Node3D = (motif.get("live_parts") as Dictionary).get("plug")
+		if plug != null and is_instance_valid(plug):
+			var P := load("res://scripts/city_breaks/plug_stone.gd")
+			var half := CityKit.LANE*0.5+float(P.JAMB)
+			if GroundCover.cover(plug,Rect2(-half,-float(P.THICK)*0.5,half*2.0,float(P.THICK)),kind,float(P.WALL_H),SEED+40,{"tufts":1.6,"fade":0.9}) != null: laid += 1
 		print("felled colonnade: ground %s on %d tops" % [kind,laid])
 		set_physics_process(false)
