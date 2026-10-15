@@ -23,7 +23,13 @@ extends SceneTree
 ## --only=spawn,gulf,... , --no-next (skip the second layer's streaming),
 ## --stills (a still of each spot into --out, <shape>-<seed>-<spot>.png),
 ## --parts=shadows,ssao,... (each view measured again without each part:
-## shadows, ssao, glow, msaa, sea, clouds, fog, flora, next, life, sky_isles).
+## shadows, ssao, glow, msaa, sea, clouds, fog, flora, next, life, sky_isles;
+## underground: lights, light_shadows, torch_shadow, flames, particles,
+## bodies_drawn, bodies_step, hearing, vol_fog, env_fog, cover_skins,
+## flora_other, sun_lights, physics). --walk paces the pilot back and forth
+## (his footfalls on the noise bus) instead of standing. Views: spawn, gulf,
+## mid, next, olmec (near the enemy nearest the spawn), fires (the most
+## lights within 20 m). A BENCH lights line counts lights and shadows.
 var scene: Node3D
 var out := "/private/tmp/zs-bench"
 var measure_frames := 60
@@ -40,8 +46,12 @@ var caps: Array = []
 var _modes := {"bilinear":Viewport.SCALING_3D_MODE_BILINEAR,"fsr":Viewport.SCALING_3D_MODE_FSR,"fsr2":Viewport.SCALING_3D_MODE_FSR2,
 	"metalfx":Viewport.SCALING_3D_MODE_METALFX_SPATIAL,"metalfx_temporal":Viewport.SCALING_3D_MODE_METALFX_TEMPORAL}
 var procs := false
+var walk := false
+var _walk_frame := 0
 var _timed: Array = []
 var _proc_ms := {}
+var _proc_max := {}
+var _tick_max := 0.0
 var _tick_ms := 0.0
 var _viewport: RID
 var _eye := Transform3D()
@@ -66,6 +76,7 @@ func run() -> void:
 		elif argument.begins_with("--window="): window = Vector2i(int(argument.trim_prefix("--window=").get_slice("x",0)),int(argument.trim_prefix("--window=").get_slice("x",1)))
 		elif argument.begins_with("--caps="): caps = Array(argument.trim_prefix("--caps=").split(","))
 		elif argument == "--procs": procs = true
+		elif argument == "--walk": walk = true
 	DirAccess.make_dir_recursive_absolute(out)
 	create_timer(600).timeout.connect(func() -> void: push_error("bench timed out"); quit(2))
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
@@ -166,9 +177,14 @@ func run() -> void:
 func _hold_eye() -> void:
 	if not _holding or scene == null: return
 	scene.scripted = true
+	if walk:
+		# Paced back and forth (1.5 s each way), so his feet make noise.
+		_walk_frame += 1
+		scene.script_want = Vector2(0.0,-1.0 if (_walk_frame/90)%2 == 0 else 1.0)
 	var t0 := Time.get_ticks_usec()
 	scene.tick(1.0/60.0)
 	_tick_ms += (Time.get_ticks_usec()-t0)/1000.0
+	_tick_max = maxf(_tick_max,(Time.get_ticks_usec()-t0)/1000.0)
 	(scene.camera as Camera3D).global_transform = _eye
 	for timed: Variant in _timed:
 		if not is_instance_valid(timed): continue
@@ -181,7 +197,7 @@ func _hold_eye() -> void:
 				var ti := Time.get_ticks_usec()
 				isle.advance(1.0/60.0,(scene.camera as Camera3D).global_position)
 				var k: String = "  isle " + (isle.motif.get_script() as Script).resource_path.get_file()
-				_proc_ms[k] = float(_proc_ms.get(k,0.0))+(Time.get_ticks_usec()-ti)/1000.0
+				_add(k,(Time.get_ticks_usec()-ti)/1000.0)
 		elif node == scene:
 			if scene.life != null: _life_parts(scene.life,"base")
 			for part: Array in [["  _advance_look",func() -> void: scene._advance_look(1.0/60.0)],["  life.advance",func() -> void: if scene.life != null: scene.life.advance(1.0/60.0)],
@@ -189,11 +205,11 @@ func _hold_eye() -> void:
 					["  all_stood",func() -> void: scene.sky.motifs.all_stood()]]:
 				var ti := Time.get_ticks_usec()
 				part[1].call()
-				_proc_ms[part[0]] = float(_proc_ms.get(part[0],0.0))+(Time.get_ticks_usec()-ti)/1000.0
+				_add(part[0],(Time.get_ticks_usec()-ti)/1000.0)
 			t = Time.get_ticks_usec()
 		node._process(1.0/60.0)
 		var key: String = node.get_script().resource_path.get_file() if node.get_script() != null else node.get_class()
-		_proc_ms[key] = float(_proc_ms.get(key,0.0))+(Time.get_ticks_usec()-t)/1000.0
+		_add(key,(Time.get_ticks_usec()-t)/1000.0)
 
 func _frames(count: int) -> void:
 	for i in range(count): await process_frame
@@ -269,7 +285,7 @@ func _life_parts(life: Object, who: String) -> void:
 		var t := Time.get_ticks_usec()
 		part[1].call()
 		var k := "    life %s %s" % [who,part[0]]
-		_proc_ms[k] = float(_proc_ms.get(k,0.0))+(Time.get_ticks_usec()-t)/1000.0
+		_add(k,(Time.get_ticks_usec()-t)/1000.0)
 
 ## Every node's _process timed by hand (each stopped and called from here
 ## in the frame's start, the scene's own too), over 120 frames.
@@ -280,6 +296,8 @@ func _profile_procs() -> void:
 			node.set_process(false)
 			_timed.append(node)
 	_proc_ms = {}
+	_proc_max = {}
+	_tick_max = 0.0
 	_tick_ms = 0.0
 	var counts := {}
 	for node: Node in _timed:
@@ -290,8 +308,8 @@ func _profile_procs() -> void:
 	_timed = []
 	var keys := _proc_ms.keys()
 	keys.sort_custom(func(a: String, b: String) -> bool: return _proc_ms[a] > _proc_ms[b])
-	print("PROCS tick (pilot, stage) %.3f ms a frame" % (_tick_ms/120.0))
-	for k: String in keys.slice(0,40): print("PROCS\t%s\t%d nodes\t%.3f ms a frame" % [k,counts.get(k,0),_proc_ms[k]/120.0])
+	print("PROCS tick (pilot, stage) %.3f ms a frame, worst %.2f ms" % [_tick_ms/120.0,_tick_max])
+	for k: String in keys.slice(0,40): print("PROCS\t%s\t%d nodes\t%.3f ms a frame\tworst %.2f ms" % [k,counts.get(k,0),_proc_ms[k]/120.0,float(_proc_max.get(k,0.0))])
 
 ## Every drawn mesh in the scene, grouped: by its place in the tree (the
 ## sky's isles by isle) and by node name, triangles (instances counted),
@@ -450,8 +468,16 @@ func _parts() -> Array:
 		parts.append(["bodies_drawn",func() -> void:
 			for g: Variant in drawn: if is_instance_valid(g): (g as GeometryInstance3D).visible = false,func() -> void:
 			for g: Variant in drawn: if is_instance_valid(g): (g as GeometryInstance3D).visible = true])
-		var mode := field.process_mode
-		parts.append(["bodies_run",func() -> void: field.process_mode = Node.PROCESS_MODE_DISABLED,func() -> void: field.process_mode = mode])
+		# Their stepping (AI, sight, hearing, raycasts, physics moves): the
+		# field ticks them from the study's tick, so they are taken off its list.
+		if field.get("enemies") is Array:
+			var kept: Array = (field.get("enemies") as Array).duplicate()
+			parts.append(["bodies_step",func() -> void: field.set("enemies",[]),func() -> void: field.set("enemies",kept.filter(func(e) -> bool: return is_instance_valid(e)))])
+			# Their ears only (scripts/enemies/body_hearing.gd, the noise bus).
+			var ears: Array = kept.filter(func(e) -> bool: return is_instance_valid(e) and e.get("knobs") is Dictionary and e.get("hearing") != null)
+			parts.append(["hearing",func() -> void:
+				for e: Variant in ears: if is_instance_valid(e): (e.knobs as Dictionary)["hearing"] = 0,func() -> void:
+				for e: Variant in ears: if is_instance_valid(e): (e.knobs as Dictionary)["hearing"] = 1])
 	if env.volumetric_fog_enabled:
 		parts.append(["vol_fog",func() -> void: env.volumetric_fog_enabled = false,func() -> void: env.volumetric_fog_enabled = true])
 	if env.fog_enabled:
@@ -537,7 +563,7 @@ func _print_stream(label: String, f: _Frames) -> void:
 		var spent := PackedStringArray()
 		for e: Array in log:
 			if int(e[0]) == fr-1 or int(e[0]) == fr: spent.append("%s %.1fms" % [e[1],int(e[2])/1000.0])
-		print("BENCH   worst %.0f ms (frame %d): %s" % [f.times[order[k]],fr,"; ".join(spent) if not spent.is_empty() else "(no sky commit)"])
+		print("BENCH   worst %.0f ms (frame %d): %s" % [f.times[order[k]],fr,"; ".join(spent.slice(0,16))+(" (+%d more)" % (spent.size()-16) if spent.size() > 16 else "") if not spent.is_empty() else "(no sky commit)"])
 	log.clear()
 
 ## Wall time between frames.
@@ -556,3 +582,8 @@ class _Frames:
 		_last = now
 	func over(ms: float) -> int:
 		return times.filter(func(t: float) -> bool: return t > ms).size()
+
+## A timed part's sum and its worst single call.
+func _add(key: String, ms: float) -> void:
+	_proc_ms[key] = float(_proc_ms.get(key,0.0))+ms
+	_proc_max[key] = maxf(float(_proc_max.get(key,0.0)),ms)
