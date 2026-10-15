@@ -204,6 +204,19 @@ class Mesher extends RefCounted:
 			_face(on,pl.normal)
 		return pts
 
+	## A face of four corners `a`, `b`, `c`, `d` (in order round it, near
+	## flat: a swept surface's strip), facing `toward`; `foot` the y its
+	## occlusion rises from (its lowest corner if NAN), `tone` as `solid`'s.
+	func quad(a: Vector3, b: Vector3, c: Vector3, d: Vector3, toward: Vector3, foot := NAN, tone := 1.0) -> void:
+		var nl := (c-a).cross(d-b)
+		if nl.length_squared() < 1e-10: return
+		nl = nl.normalized()
+		if nl.dot(toward) < 0.0: nl = -nl
+		_centre = (a+b+c+d)*0.25
+		_foot = minf(minf(a.y,b.y),minf(c.y,d.y)) if is_nan(foot) else foot
+		_tone = tone
+		_face([a,b,c,d],nl)
+
 	## A band of carved runes on a flat face: `a`, `b` its bottom corners,
 	## `up` its height's way, `normal` out; `seed_value` its glyphs'.
 	func runes(a: Vector3, b: Vector3, up: Vector3, normal: Vector3, seed_value: float, height := RUNE_H) -> void:

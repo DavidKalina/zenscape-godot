@@ -141,7 +141,9 @@ func open(scene: String, args: Variant = null, ready_frames := 3000) -> int:
 	study = current_scene
 	motor = study.get("motor")
 	if not "walk_ready" in study: return 0
-	var waited := await until(func() -> bool: return bool(study.walk_ready),ready_frames)
+	# A study that holds him after walk_ready (run_layer's city layers wait
+	# for the landing to stand, then set him back at the spawn) says so.
+	var waited := await until(func() -> bool: return bool(study.walk_ready) and not (study.has_method("holding") and bool(study.holding())),ready_frames)
 	if waited < 0: check(false,"%s ready" % scene.get_file(),"walk_ready still false after %d frames" % ready_frames)
 	return waited
 

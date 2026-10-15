@@ -12,8 +12,17 @@ extends RefCounted
 ##             footbridge's grade, a curb each side a hand high, a pier under
 ##             each third of a long one
 ## Collision is clean (the plan's tops), drawn stone chipped.
+## Round 15's family (layer-round15-city-crossings.md, scripts/roguelike/
+## city_ways.gd), drawn with scripts/city_kit_ways.gd:
+##   spans     a causeway's spans in their states (whole, gone, sagged,
+##             slumped) on joint piers
+##   chute     the spillway, a banked channel on hex piers
+##   piers     (stones marked "pier") drum stacks; "step" a low stump
+## and the roots off all of them, one HangingRoots batch.
 const CityKit = preload("res://scripts/city_kit.gd")
 const Stone = preload("res://scripts/city_kit_stone.gd")
+const Ways = preload("res://scripts/city_kit_ways.gd")
+const HangingRoots = preload("res://scripts/kit_isle/hanging_roots.gd")
 
 ## A column top's shaft: how far down (m), its apothem as a share of the
 ## top's; a landing's pier.
@@ -31,10 +40,18 @@ const PIER_EVERY := 9.0
 ## "Mesh" and "Body").
 static func build(edges: Array, seed_value: int) -> Node3D:
 	var b := CityKit.Piece.new("CityCrossings",seed_value,0.55)
+	var roots: Array = []
 	for e: Dictionary in edges:
-		for s: Dictionary in e.stones: _stone(b,s)
+		for s: Dictionary in e.stones:
+			if bool(s.get("pier",false)): Ways.drum_pier(b,s.at,(s.size as Vector3).x,float(s.yaw),roots)
+			elif bool(s.get("step",false)): Ways.step_drum(b,s.at,(s.size as Vector3).x,float(s.yaw))
+			else: _stone(b,s)
 		for ends: Array in e.bridges: _causeway(b,ends[0],ends[1])
-	return b.finish()
+		if not (e.get("spans",[]) as Array).is_empty(): Ways.causeway(b,e.spans,roots)
+		if not (e.get("chute",{}) as Dictionary).is_empty(): Ways.chute(b,e.chute,roots)
+	var out := b.finish()
+	if not roots.is_empty(): out.add_child(HangingRoots.batch(roots,seed_value+7))
+	return out
 
 ## A stone of the plan ({at (its top's middle), size, yaw, landing}).
 static func _stone(b: CityKit.Piece, s: Dictionary) -> void:
