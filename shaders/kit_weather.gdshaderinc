@@ -24,6 +24,11 @@
 
 // How much (0 the kit's old smooth stone; RuinKit sets it from
 // --kit-stone=, scripts/ruin_stone_style.gd `weather`).
+// The underground oculus look's crisp stone (scripts/underground/underground.gd
+// sets it, 0 everywhere else): the tops laid in flagstones with cut joints and
+// a lit chamfer, each slab its own tone, the broad washes held down so no mud
+// shows, the colour a cooler basalt for the warm key to warm.
+global uniform float zs_under_crisp;
 uniform float stone_weather : hint_range(0.0, 2.0) = 0.0;
 uniform float weather_bump = 0.7;
 // How strong the washes and flecks, the rain streaks and the cracks are (1
@@ -160,12 +165,36 @@ float kit_weather(inout vec3 c, inout vec3 n, vec3 wn, vec3 p, vec3 vtx, float s
 	float grime = smoothstep(0.1, 0.65, crev * (0.6 + 0.8 * grime_n) + streak * 0.25 * (1.0 - up));
 
 	// Assemble.
-	tone = max(0.2, 1.0 + (tone - 1.0) * weather_tone);
+	float crisp = clamp(zs_under_crisp, 0.0, 1.0);
+	tone = max(0.2, 1.0 + (tone - 1.0) * mix(weather_tone, 0.55, crisp));
 	vec3 o = c * mix(1.0, tone, w);
+	float joint = 0.0;
+	float chamfer = 0.0;
+	if (crisp > 0.0) {
+		// Basalt: the earth's tan cooled and deepened, its own value kept.
+		float lum = dot(o, vec3(0.2126, 0.7152, 0.0722));
+		o = mix(o, vec3(lum) * vec3(0.93, 1.0, 1.04) * 0.82, 0.55 * crisp * w);
+		float flat_top = smoothstep(0.6, 0.9, up);
+		if (flat_top > 0.0 && f_far > 0.0) {
+			// Flagstones: a slab a couple of metres wide, its joint a hand's width cut
+			// clean (a pixel and a half at least, so it never shimmers), each slab its
+			// own tone and a slow tilt across it, a chamfer lit along the edge.
+			vec3 sl = kw_cells(vec3(p.x, 0.0, p.z) * 0.5 + 53.0);
+			float gap = (sl.y - sl.x) * 2.0;
+			float jw = max(0.045, px * 1.6);
+			joint = (1.0 - smoothstep(jw * 0.5, jw, gap)) * f_far;
+			chamfer = smoothstep(jw, jw * 3.0, gap) * (1.0 - smoothstep(jw * 3.0, jw * 8.0, gap)) * f_mid;
+			float slab_tone = mix(0.82, 1.14, fract(sl.z * 5.31));
+			float tilt = 1.0 + (kw_noise(vec3(p.x, 0.0, p.z) * 0.9 + sl.z * 40.0) - 0.5) * 0.28;
+			o *= mix(1.0, slab_tone * tilt, flat_top * crisp * w);
+		}
+	}
 	o = mix(o, o * weather_pale, clamp(worn * 0.45 + chip * 0.4, 0.0, 1.0) * 0.75 * w);
 	o *= 1.0 - chip * (1.0 - chip_edge) * 0.3 * w;
 	o = mix(o, o * weather_grime, clamp(grime, 0.0, 1.0) * 0.75 * w);
 	o = mix(o, o * 0.25, cracks * 0.75 * w);
+	o = mix(o, o * 0.16, joint * crisp * w);
+	o *= 1.0 + chamfer * 0.2 * crisp * w;
 	o *= 1.0 - pit * 0.22 * w;
 
 	// Lichen: blooms of rosettes on the tops, not on the worn crowns or under
@@ -182,7 +211,7 @@ float kit_weather(inout vec3 c, inout vec3 n, vec3 wn, vec3 p, vec3 vtx, float s
 	c = o;
 
 	// The normal: pits and cracks cut in, the grain a little raised.
-	float height = (tooth * 0.35 - pit * 0.6 - cracks * 0.9 + fleck_light * 0.1) * 0.02 * w;
+	float height = (tooth * 0.35 - pit * 0.6 - cracks * 0.9 + fleck_light * 0.1 - joint * 1.6 * crisp + chamfer * 0.3 * crisp) * 0.02 * w;
 	vec3 sx = dFdx(vtx);
 	vec3 sy = dFdy(vtx);
 	vec3 r1 = cross(sy, n);

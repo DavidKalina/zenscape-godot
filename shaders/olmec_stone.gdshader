@@ -34,6 +34,10 @@ global uniform float zs_hemi_energy;
 global uniform float zs_under;
 global uniform vec3 zs_under_sky;
 global uniform vec3 zs_under_ground;
+// The oculus look's crisp stone (scripts/underground/underground.gd; 0 elsewhere): the
+// muddy broad washes held down, the pits finer and fewer, and the flat tops laid
+// in flagstones: a clean cut joint, a lit chamfer, each slab its own tone.
+global uniform float zs_under_crisp;
 
 uniform float fill = 1.2;
 uniform float rim = 0.14;
@@ -122,6 +126,10 @@ vec3 cells(vec3 p) {
 	return vec3(d1, d2, id);
 }
 
+bool f_far_ok(float px) {
+	return px < 0.8;
+}
+
 void fragment() {
 	vec3 base = COLOR.rgb;
 	float occ = clamp(COLOR.a, 0.0, 1.0);
@@ -169,10 +177,11 @@ void fragment() {
 	// Broad patches: stone lighter and darker, in soft-edged washes.
 	float broad = fbm(rest * 1.1 + 3.0);
 	float patch = smoothstep(0.32, 0.68, broad);
-	float tone = mix(0.7, 1.2, patch);
+	float crisp = clamp(zs_under_crisp, 0.0, 1.0);
+	float tone = mix(mix(0.7, 0.88, crisp), mix(1.2, 1.1, crisp), patch);
 	// A second, smaller mottle across it.
 	float mid = fbm(rest * 3.6 + 11.0);
-	tone *= mix(0.86, 1.1, smoothstep(0.3, 0.7, mid));
+	tone *= mix(mix(0.86, 0.93, crisp), mix(1.1, 1.06, crisp), smoothstep(0.3, 0.7, mid));
 
 	// Rain streaks: stretched down the stone, dark where they run, and
 	// stronger toward the lower faces and under overhangs.
@@ -189,7 +198,22 @@ void fragment() {
 	float fleck_dark = smoothstep(0.34, 0.16, g_big) * 0.9 + smoothstep(0.28, 0.12, g_mid) * 0.8 * f_mid;
 	float tooth = (g_fine - 0.5) * f_fine + (g_mid - 0.5) * f_mid * 0.6;
 	float pit = smoothstep(0.2, 0.06, g_mid) * (0.4 + 0.6 * f_mid);
-	tone *= 1.0 + fleck_light * 0.22 - fleck_dark * 0.24 + tooth * 0.3;
+	tone *= 1.0 + fleck_light * 0.22 - fleck_dark * 0.24 * (1.0 - 0.5 * crisp) + tooth * 0.3;
+	// Flagstones on the flat tops: a slab about two metres across, a joint a hand wide
+	// cut clean (a pixel and a half at least), a chamfer catching the light along it.
+	float joint = 0.0;
+	float chamfer = 0.0;
+	float flat_top = smoothstep(0.65, 0.92, up) * crisp;
+	if (flat_top > 0.0 && f_far_ok(px)) {
+		vec3 sl = cells(vec3(rest.x, 0.0, rest.z) * 0.45 + 53.0);
+		float gap = (sl.y - sl.x) / 0.45 * 0.5;
+		float jw = max(fwidth(gap) * 1.1, 0.012);
+		joint = (1.0 - smoothstep(jw * 0.7, jw * 1.7, gap)) * flat_top;
+		chamfer = smoothstep(jw * 0.8, jw * 2.5, gap) * (1.0 - smoothstep(jw * 2.5, jw * 7.0 + 0.05, gap)) * flat_top * (0.4 + 0.6 * f_mid);
+		float slab = mix(0.78, 1.16, fract(sl.z * 5.31));
+		float tilt = 1.0 + (vnoise(vec3(rest.x, 0.0, rest.z) * 0.8 + sl.z * 40.0) - 0.5) * 0.3;
+		tone *= mix(1.0, slab * tilt, flat_top);
+	}
 
 	// Pebbled scales: each cell a domed bead of its own tone, a dark seam
 	// between; the seams kept a pixel and a half wide, the domes fading once
@@ -243,7 +267,11 @@ void fragment() {
 	c = mix(c, c * grime_mul, clamp(grime, 0.0, 1.0) * 0.8 * w);
 	c = mix(c, c * 0.22, cracks * 0.82 * w);
 	c *= 1.0 - pb_seam * 0.55;
-	c *= 1.0 - pit * 0.35 * w;
+	c *= 1.0 - pit * 0.35 * w * (1.0 - 0.55 * crisp);
+	c = mix(c, c * 0.3, joint);
+	float lum_c = dot(c, vec3(0.2126, 0.7152, 0.0722));
+	c = mix(c, vec3(lum_c) * vec3(0.9, 1.0, 1.05), 0.5 * crisp);
+	c *= 1.0 + chamfer * 0.22;
 
 	// Lichen: roundish rosettes and blooms on sheltered tops (not the crown
 	// of the exposed stone, not the deep crevice).
@@ -267,7 +295,7 @@ void fragment() {
 	c *= 1.0 - 0.85 * e_crease;
 
 	// The normal: pits and cracks cut in, the grain a little raised.
-	float height = (tooth * 0.35 - pit * 0.6 - cracks * 0.9 + fleck_light * 0.1) * 0.02 * w * (1.0 - eye) - carve * rune_cut * 0.02;
+	float height = (tooth * 0.35 - pit * 0.6 - cracks * 0.9 + fleck_light * 0.1 - joint * 1.8 + chamfer * 0.35) * 0.02 * w * (1.0 - eye) - carve * rune_cut * 0.02;
 	vec3 sx = dFdx(VERTEX);
 	vec3 sy = dFdy(VERTEX);
 	vec3 r1 = cross(sy, NORMAL);
