@@ -65,8 +65,11 @@ const CityLandmarks = preload("res://scripts/city_kit_landmarks.gd")
 ## Breaks round 2: corbel vault, facing sheet wall, chocked slab, plug-stone
 ## (docs/design/roguelike/city-breaks-round2.md).
 const CityBreaks2 = preload("res://scripts/city_kit_breaks2.gd")
+## Climb pieces, a lane for each body: wedge, terrace, wrapped pillar, hauling
+## lip, leaper's pit, giant's riser (docs/design/roguelike/city-climb-round1.md).
+const CityClimb = preload("res://scripts/city_kit_climb.gd")
 
-const PIECES := ["city_pillar","city_drum_stair","city_stair","city_causeway"]+CityBreaks.PIECES+CityRefuges.PIECES+CityLandmarks.PIECES+CityBreaks2.PIECES
+const PIECES := ["city_pillar","city_drum_stair","city_stair","city_causeway"]+CityBreaks.PIECES+CityRefuges.PIECES+CityLandmarks.PIECES+CityBreaks2.PIECES+CityClimb.PIECES
 const NAMES := {"city_pillar":"Basalt pillar-isle","city_drum_stair":"Drum stair","city_stair":"Epic stair","city_causeway":"Causeway"}
 
 ## Every id in the family: its pieces, its breaks, its fires.
@@ -85,7 +88,7 @@ static func stand(id: String, parent: Node3D, xform: Transform3D, seed_value := 
 
 ## A piece's name (the family's breakables' too).
 static func name_of(id: String) -> String:
-	return String(NAMES.get(id,CityBreaks.NAMES.get(id,CityRefuges.NAMES.get(id,CityLandmarks.NAMES.get(id,CityBreaks2.NAMES.get(id,id))))))
+	return String(NAMES.get(id,CityBreaks.NAMES.get(id,CityRefuges.NAMES.get(id,CityLandmarks.NAMES.get(id,CityBreaks2.NAMES.get(id,CityClimb.NAMES.get(id,id)))))))
 
 # --- The wanderer's numbers (the ruin kit's) ------------------------------------------
 const SET_OFF := RuinKit.SET_OFF
@@ -242,6 +245,7 @@ static func piece(id: String, seed_value: int, weathered := 0.4, opts := {}) -> 
 	if id in CityRefuges.PIECES: return CityRefuges.piece(id,seed_value,weathered)
 	if id in CityLandmarks.PIECES: return CityLandmarks.piece(id,seed_value,weathered,opts)
 	if id in CityBreaks2.PIECES: return CityBreaks2.piece(id,seed_value,weathered)
+	if id in CityClimb.PIECES: return CityClimb.piece(id,seed_value,weathered,opts)
 	match id:
 		"city_pillar": return pillar(seed_value,weathered,opts)
 		"city_drum_stair": return drum_stair(seed_value,weathered,opts)
