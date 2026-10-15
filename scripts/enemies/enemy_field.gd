@@ -16,6 +16,7 @@ extends Node
 ## here copies a size (AGENTS.md, Sizes).
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const PhysicsGround = preload("res://scripts/pilot_physics_ground.gd")
+const LaunchArgs = preload("res://scripts/launch_args.gd")
 
 var study: Node3D
 var motor: PilotMotor
@@ -40,6 +41,9 @@ const HISTORY := 4
 
 func _init() -> void:
 	name = "EnemyField"
+	# The light the Olmec's sight reckons with (beacons-light-sight-round1.md):
+	# the flags' `--ambient=` / `--torch=`, else the underground look's, else day.
+	LightLevel.from_args(LaunchArgs.user_args())
 
 ## Hooked into `scene` (a character study): stepped by its frame.
 func attach(scene: Node3D) -> void:

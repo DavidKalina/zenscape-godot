@@ -306,6 +306,20 @@ func default_knobs(n: Dictionary) -> Dictionary:
 		# plants at once. It leans `scope_lean` rad out over low cover.
 		"periscope":1,"scope_lift":1.7,"scope_look":5.0,"scope_lower":1.6,"scope_sweep":1.0,"scope_wide":1.5,"scope_spot":0.35,
 		"scope_rest":8.0,"scope_near":1.6,"scope_wait":1.0,"scope_lean":0.38,
+		# Light (beacons-light-sight-round1.md): in the dark (scripts/enemies/
+		# light_level.gd) its sight reaches `sight_dark_range` of
+		# `sight_range` and sees `sight_dark_seen` of him, eased up to all
+		# as he is lit; a light's glow on him (his torch, a lit beacon) makes
+		# him up to `sight_glow` times plainer. By day, no change.
+		"sight_dark_range":0.4,"sight_dark_seen":0.3,"sight_glow":1.3,
+		# 1: walker-only stone (scripts/walker_only.gd) blocks its sight (he
+		# hides in a niche it can't reach); 0: it looks through it, as it
+		# walks through it (the walker-only round's default).
+		"sight_walker_only":0,
+		# Beacons (scripts/enemies/beacon.gd): 1 it turns to a lit one in
+		# its draw and goes there, 0 it pays them no heed. Looked at its
+		# `dwell`, it tires of that one `beacon_rest` s (lit again: news).
+		"beacons":1,"beacon_rest":40.0,
 	}
 
 ## Its build (m) from its knobs `k` and the walker's `unit`, as `_size` and
@@ -412,6 +426,7 @@ func think(delta: float) -> void:
 	_shocks(delta)
 	if whole: _seat_k = minf(1.0,_seat_k+delta/float(knobs.settle))
 	_progress(delta)
+	_beacons(delta)
 	_searching()
 	if _chases(): _see(delta)
 	if breaker != null and state in ["roam","home","chase","return","seek"] and breaker.ahead(self):
@@ -491,6 +506,7 @@ func _listen(delta: float) -> void:
 		_heading = _pick_way()
 		_plan()
 	if _search != null and state_t < float(knobs.listen)*2.0: return
+	if _beacon_gaze(delta): return
 	if _routed(): _heading = _route_heading()
 	var step := clampf(angle_difference(facing,_heading),-float(knobs.turn)*1.5*delta,float(knobs.turn)*1.5*delta)
 	facing = wrapf(facing+step,-PI,PI)
@@ -529,7 +545,12 @@ func lost() -> bool:
 ## below, a wall it won't climb).
 func _pick_way() -> float:
 	var way := facing+_rng.randf_range(-1.2,1.2)
-	if lost(): way = facing+_rng.randf_range(-PI,PI)
+	if beacon != null:
+		# A lit beacon it heeds (`_beacon_pick`): its bearing, as a call's.
+		var to_b := beacon.stand_at()-global_position
+		var noise_b := float(knobs.noise)*CALL_NOISE
+		if Vector2(to_b.x,to_b.z).length() > 0.5: way = PilotMotor.facing_of(Vector2(to_b.x,to_b.z).normalized())+_rng.randf_range(-noise_b,noise_b)
+	elif lost(): way = facing+_rng.randf_range(-PI,PI)
 	elif not whole and head != null:
 		var to := head.global_position-global_position
 		var d := Vector2(to.x,to.z).length()
@@ -551,7 +572,10 @@ func _way_ok(angle: float) -> bool:
 	return not _landing(dir).is_empty()
 
 func _walking(delta: float) -> void:
-	if whole: pass
+	if whole:
+		if state == "roam" and beacon != null and _at_beacon():
+			_go("listen")
+			return
 	elif _reunite_near():
 		_go("reach")
 		head.perch = self
@@ -560,6 +584,9 @@ func _walking(delta: float) -> void:
 		field.sound(&"body_reach",position)
 		return
 	elif state == "roam" and _senses(): _home()
+	elif state == "roam" and beacon != null and _at_beacon():
+		_go("listen")
+		return
 	elif state == "home":
 		if _senses(): _unsensed = 0.0
 		else: _unsensed += delta
@@ -639,7 +666,7 @@ func _senses() -> bool:
 
 ## Whether it hears the head over it (it climbs for it).
 func _wants_up() -> bool:
-	if whole: return true
+	if whole or beacon != null: return true
 	if head == null: return false
 	if Vector2(head.global_position.x-position.x,head.global_position.z-position.z).length() > float(knobs.hear): return false
 	return head.ground_y() > position.y+float(knobs.step)*2.0
@@ -649,6 +676,121 @@ func _reunite_near() -> bool:
 	if absf(head.ground_y()-position.y) > float(knobs.step)*3.0: return false
 	var flat := Vector2(head.position.x-position.x,head.position.z-position.z).length()
 	return flat <= length*0.5+head.length*0.5+float(knobs.reunite)
+
+# --- Beacons (docs/design/roguelike/beacons-light-sight-round1.md) ----------------------------
+# A lit Beacon (scripts/enemies/beacon.gd: the great cresset, a beacon tower,
+# Mudge alight) within its `draw` is heard the way the head's call is: it
+# turns to its bearing (`_pick_way`), its routes go there (`_plan`), and
+# there it stands and looks at it the beacon's `dwell` s (`_beacon_gaze`),
+# then tires of that one `beacon_rest` s (lit again, it is news again).
+# Priorities, highest first:
+#   whole: him (chasing, or suspicious: alert, seek, the periscope) >
+#          a beacon > roaming, and walking back to its post;
+#   headless: its head in sight (`_senses`: home, reach, triumph) >
+#          its head calling within call hearing > a beacon > its head
+#          heard (not calling) > wandering.
+# It turns at once (stops and listens) only from listen, roam or return;
+# climbing, leaping and the rest, it takes the beacon up at its next listen.
+
+## The lit beacon it heeds, or null.
+var beacon: Beacon = null
+## Times a beacon turned it; times it stood and looked at one.
+var beacon_turns := 0
+var beacon_visits := 0
+var _beacon_t := 0.0
+var _beacon_dwell := 0.0
+var _beacon_near_as_can := false
+## Beacons it tired of: instance id -> [until (its clock), their lightings].
+var _beacon_tired := {}
+## How often it looks for beacons (s).
+const BEACON_POLL := 0.25
+## The beacon it heeds is kept unless another draws this much harder.
+const BEACON_KEEP := 1.25
+## The states a beacon turns it from at once.
+const BEACON_TURN_FROM := ["listen","roam","return"]
+
+## Free to heed a beacon (nothing higher on its mind).
+func _beacon_free() -> bool:
+	if float(knobs.get("beacons",1)) < 0.5: return false
+	if whole: return not hunting and (sight == null or sight.state == "unaware")
+	if state in ["home","reach","triumph"]: return false
+	if head != null and head.has_method("calling") and head.calling():
+		if Vector2(head.global_position.x-position.x,head.global_position.z-position.z).length() <= float(knobs.hear)*CALL_HEAR: return false
+	return true
+
+func _tired_of(b: Beacon) -> bool:
+	var t: Array = _beacon_tired.get(b.get_instance_id(),[])
+	return not t.is_empty() and _clock < float(t[0]) and b.lightings == int(t[1])
+
+## The lit beacon drawing it hardest (pull / (1 + d / draw), d flat), or null.
+func _beacon_pick() -> Beacon:
+	var best: Beacon = null
+	var best_s := 0.0
+	for b: Beacon in Beacon.all_lit(get_tree()):
+		var r := b.draw_range()
+		var d := Vector2(b.global_position.x-position.x,b.global_position.z-position.z).length()
+		if d > r or _tired_of(b): continue
+		var score := b.pull/(1.0+d/maxf(r,0.01))*(BEACON_KEEP if b == beacon else 1.0)
+		if score > best_s:
+			best_s = score
+			best = b
+	return best
+
+## Looks for beacons (every BEACON_POLL s); a new one (or the one it heeded
+## gone out) turns it from listening, roaming or walking back.
+func _beacons(delta: float) -> void:
+	_beacon_t -= delta
+	if _beacon_t > 0.0: return
+	_beacon_t = BEACON_POLL
+	if beacon != null and not is_instance_valid(beacon): beacon = null
+	var b: Beacon = _beacon_pick() if _beacon_free() else null
+	if b == beacon: return
+	var was := beacon
+	beacon = b
+	_beacon_dwell = 0.0
+	_beacon_near_as_can = false
+	if b != null: beacon_turns += 1
+	if state in BEACON_TURN_FROM and (b != null or was != null):
+		_route = []
+		_leg = 0
+		_search = null
+		_go("listen")
+
+## Where it goes to look at its beacon: the beacon's `stand`, on the floor.
+func _beacon_goal() -> Vector3:
+	var p := beacon.stand_at()
+	var y := _floor(p,0.5,80.0)
+	return Vector3(p.x,y if y != -INF else p.y,p.z)
+
+## There: within the beacon's `gather` of where it stands to look (flat), or
+## as near as its routes get.
+func _at_beacon() -> bool:
+	if beacon == null: return false
+	if _beacon_near_as_can and not _routed() and _search == null: return true
+	var p := beacon.stand_at()
+	return Vector2(p.x-position.x,p.z-position.z).length() <= length*0.5+beacon.gather+1.0
+
+## Listening, at its beacon: it faces the flame and looks, `dwell` s; then
+## tired of it, it hears afresh. True while it looks.
+func _beacon_gaze(delta: float) -> bool:
+	if beacon == null or not _at_beacon() or (not whole and _senses()):
+		_beacon_dwell = 0.0
+		return false
+	var to := beacon.global_position-position
+	if Vector2(to.x,to.z).length() > 0.3:
+		var want := PilotMotor.facing_of(Vector2(to.x,to.z).normalized())
+		facing = wrapf(facing+clampf(angle_difference(facing,want),-float(knobs.turn)*1.5*delta,float(knobs.turn)*1.5*delta),-PI,PI)
+	if _beacon_dwell == 0.0: beacon_visits += 1
+	_beacon_dwell += delta
+	if _beacon_dwell >= beacon.dwell:
+		_beacon_tired[beacon.get_instance_id()] = [_clock+float(knobs.get("beacon_rest",40.0)),beacon.lightings]
+		beacon = null
+		_beacon_dwell = 0.0
+		_beacon_near_as_can = false
+		_route = []
+		_search = null
+		_go("listen")
+	return true
 
 # --- Walls and climbing -----------------------------------------------------------------------
 
@@ -1334,7 +1476,12 @@ func _plan() -> void:
 	var reach := 3.0
 	# Lost (no nearer for `lost_after` s) counts only off a route that gets
 	# there: a way round can lead away a while.
-	if not whole and head != null and (not lost() or (_route_found and _routed())) and Vector2(head.global_position.x-position.x,head.global_position.z-position.z).length() <= float(knobs.hear):
+	if beacon != null:
+		# To the beacon (beacons-light-sight-round1.md): where it stands to
+		# look at it, as near as its routes get.
+		goal = _beacon_goal()
+		reach = length*0.5+beacon.gather
+	elif not whole and head != null and (not lost() or (_route_found and _routed())) and Vector2(head.global_position.x-position.x,head.global_position.z-position.z).length() <= float(knobs.hear):
 		goal = Vector3(head.global_position.x,head.ground_y(),head.global_position.z)
 		reach = length*0.5+float(head.length)*0.5+float(knobs.reunite)
 	else:
@@ -1380,6 +1527,14 @@ func _searching() -> void:
 		return
 	routed_near += 1
 	if s.start == Routes.NONE: return
+	if beacon != null:
+		# A beacon it can't get to (up a spire): it walks as near as its
+		# route gets, and looks from there (no bail).
+		var end_b: Vector3 = _route[-1].to if not _route.is_empty() else position
+		if Vector2(end_b.x-position.x,end_b.z-position.z).length() <= BAIL_NEAR:
+			_beacon_near_as_can = true
+			_route = []
+		return
 	# Nowhere much nearer (its route ends within BAIL_NEAR m): out of
 	# here, down and away; a second time running, its old bearing.
 	var end: Vector3 = _route[-1].to if not _route.is_empty() else position
@@ -1607,6 +1762,9 @@ func _see(delta: float) -> void:
 		sight.tune(knobs)
 	var m: PilotMotor = field.motor
 	sight.mask = WalkerOnly.strip(field.study.ground.mask)
+	# `sight_walker_only` 1: walker-only stone (a niche, a hush gallery)
+	# hides him from its eyes, though it can't walk or climb it.
+	if float(knobs.get("sight_walker_only",0)) >= 0.5: sight.mask |= WalkerOnly.LAYER
 	# Held up, it looks down and about more widely (`scope_wide` times its cone).
 	sight.half = float(knobs.sight_half)*(float(knobs.scope_wide) if state == "scope" and _held_w > 0.5 else 1.0)
 	sight.exclude = _skip()
@@ -1616,7 +1774,12 @@ func _see(delta: float) -> void:
 		seen_at = m.feet
 		seen_t = 0.0
 		return
-	sight.update(delta,field.study.get_world_3d().direct_space_state,_eye(),_look_way(),Sight.pilot_points(m.feet,false),not m.grounded)
+	var pts := Sight.pilot_points(m.feet,false)
+	# How lit he stands (beacons-light-sight-round1.md): by day, no change.
+	LightLevel.refresh(get_tree())
+	if LightLevel.daylight(): sight.light(1.0,0.0)
+	else: sight.light(LightLevel.exposure(get_tree(),pts[1]),LightLevel.glow(get_tree(),pts[1]))
+	sight.update(delta,field.study.get_world_3d().direct_space_state,_eye(),_look_way(),pts,not m.grounded)
 	if sight.seeing():
 		seen_at = m.feet
 		seen_t = 0.0
