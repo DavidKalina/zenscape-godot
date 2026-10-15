@@ -367,7 +367,11 @@ func _publish_stone() -> void:
 ## shaders/next_region_lod.gdshader) take the preset's own stone and haze, so
 ## they sit in the murk like the isles near them.
 func _tint_next_region() -> void:
-	for n: Node in study.find_children("NextRegion","MeshInstance3D",true,false):
+	# By its group (scripts/roguelike/next_region_lod.gd): a find_children
+	# down the whole layer here was an 11-12 ms hitch every 20th frame
+	# (docs/design/roguelike/perf-city-run-round1.md).
+	for n: Node in get_tree().get_nodes_in_group(&"next_region"):
+		if not n is MeshInstance3D or not study.is_ancestor_of(n): continue
 		var mi := n as MeshInstance3D
 		var m: ShaderMaterial = mi.material_override as ShaderMaterial
 		if m == null: continue

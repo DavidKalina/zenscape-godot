@@ -23,7 +23,13 @@ extends SceneTree
 ## --only=spawn,gulf,... , --no-next (skip the second layer's streaming),
 ## --stills (a still of each spot into --out, <shape>-<seed>-<spot>.png),
 ## --parts=shadows,ssao,... (each view measured again without each part:
-## shadows, ssao, glow, msaa, sea, clouds, fog, flora, next, life, sky_isles).
+## shadows, ssao, glow, msaa, sea, clouds, fog, flora, next, life, sky_isles;
+## underground: lights, light_shadows, torch_shadow, flames, particles,
+## bodies_drawn, bodies_step, hearing, vol_fog, env_fog, cover_skins,
+## flora_other, sun_lights, physics). --walk paces the pilot back and forth
+## (his footfalls on the noise bus) instead of standing. Views: spawn, gulf,
+## mid, next, olmec (near the enemy nearest the spawn), fires (the most
+## lights within 20 m). A BENCH lights line counts lights and shadows.
 var scene: Node3D
 var out := "/private/tmp/zs-bench"
 var measure_frames := 60
@@ -40,8 +46,12 @@ var caps: Array = []
 var _modes := {"bilinear":Viewport.SCALING_3D_MODE_BILINEAR,"fsr":Viewport.SCALING_3D_MODE_FSR,"fsr2":Viewport.SCALING_3D_MODE_FSR2,
 	"metalfx":Viewport.SCALING_3D_MODE_METALFX_SPATIAL,"metalfx_temporal":Viewport.SCALING_3D_MODE_METALFX_TEMPORAL}
 var procs := false
+var walk := false
+var _walk_frame := 0
 var _timed: Array = []
 var _proc_ms := {}
+var _proc_max := {}
+var _tick_max := 0.0
 var _tick_ms := 0.0
 var _viewport: RID
 var _eye := Transform3D()
@@ -66,6 +76,7 @@ func run() -> void:
 		elif argument.begins_with("--window="): window = Vector2i(int(argument.trim_prefix("--window=").get_slice("x",0)),int(argument.trim_prefix("--window=").get_slice("x",1)))
 		elif argument.begins_with("--caps="): caps = Array(argument.trim_prefix("--caps=").split(","))
 		elif argument == "--procs": procs = true
+		elif argument == "--walk": walk = true
 	DirAccess.make_dir_recursive_absolute(out)
 	create_timer(600).timeout.connect(func() -> void: push_error("bench timed out"); quit(2))
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
@@ -110,7 +121,15 @@ func run() -> void:
 	await _frames(30)
 	plan = scene.layer
 	if census: _census()
-	print("BENCH\tlayer\tview\tpart\twall_median_ms\twall_mean_ms\tgpu_ms\tphysics_etc_ms\tprocess_ms\tdraw_ms\trender_cpu_ms\tdraws\tprimitives\tobjects")
+	var lights: Array = scene.find_children("*","Light3D",true,false)
+	var shadowed := lights.filter(func(l: Light3D) -> bool: return l.shadow_enabled and l.is_visible_in_tree())
+	var env0: Environment = scene._environment
+	print("BENCH lights %d (%d visible, %d visible with shadows: %s); env ssao %s ssil %s sdfgi %s ssr %s vol_fog %s glow %s; particles %d; physics bodies %d" % [lights.size(),
+		lights.filter(func(l: Light3D) -> bool: return l.is_visible_in_tree()).size(),shadowed.size(),
+		", ".join(shadowed.map(func(l: Light3D) -> String: return "%s r%.0f" % [l.get_parent().name+"/"+l.name,(l as OmniLight3D).omni_range if l is OmniLight3D else 0.0])),
+		env0.ssao_enabled,env0.ssil_enabled,env0.sdfgi_enabled,env0.ssr_enabled,env0.volumetric_fog_enabled,env0.glow_enabled,
+		(scene.find_children("*","GPUParticles3D",true,false)).size(),scene.find_children("*","PhysicsBody3D",true,false).size()])
+	print("BENCH\tlayer\tview\tpart\twall_median_ms\twall_mean_ms\tgpu_ms\tbefore_process_ms\tprocess_ms\tdraw_ms\trender_cpu_ms\tdraws\tprimitives\tobjects\tp95_ms\tphysics_ms")
 	_holding = true
 	for view: Dictionary in _views(plan):
 		if not only.is_empty() and view.label not in only: continue
@@ -158,12 +177,18 @@ func run() -> void:
 func _hold_eye() -> void:
 	if not _holding or scene == null: return
 	scene.scripted = true
+	if walk:
+		# Paced back and forth (1.5 s each way), so his feet make noise.
+		_walk_frame += 1
+		scene.script_want = Vector2(0.0,-1.0 if (_walk_frame/90)%2 == 0 else 1.0)
 	var t0 := Time.get_ticks_usec()
 	scene.tick(1.0/60.0)
 	_tick_ms += (Time.get_ticks_usec()-t0)/1000.0
+	_tick_max = maxf(_tick_max,(Time.get_ticks_usec()-t0)/1000.0)
 	(scene.camera as Camera3D).global_transform = _eye
-	for node: Node in _timed:
-		if not is_instance_valid(node): continue
+	for timed: Variant in _timed:
+		if not is_instance_valid(timed): continue
+		var node: Node = timed
 		var t := Time.get_ticks_usec()
 		if node == scene.sky.motifs:
 			# Its parts: each isle's advance by motif, the rest after.
@@ -172,7 +197,7 @@ func _hold_eye() -> void:
 				var ti := Time.get_ticks_usec()
 				isle.advance(1.0/60.0,(scene.camera as Camera3D).global_position)
 				var k: String = "  isle " + (isle.motif.get_script() as Script).resource_path.get_file()
-				_proc_ms[k] = float(_proc_ms.get(k,0.0))+(Time.get_ticks_usec()-ti)/1000.0
+				_add(k,(Time.get_ticks_usec()-ti)/1000.0)
 		elif node == scene:
 			if scene.life != null: _life_parts(scene.life,"base")
 			for part: Array in [["  _advance_look",func() -> void: scene._advance_look(1.0/60.0)],["  life.advance",func() -> void: if scene.life != null: scene.life.advance(1.0/60.0)],
@@ -180,11 +205,11 @@ func _hold_eye() -> void:
 					["  all_stood",func() -> void: scene.sky.motifs.all_stood()]]:
 				var ti := Time.get_ticks_usec()
 				part[1].call()
-				_proc_ms[part[0]] = float(_proc_ms.get(part[0],0.0))+(Time.get_ticks_usec()-ti)/1000.0
+				_add(part[0],(Time.get_ticks_usec()-ti)/1000.0)
 			t = Time.get_ticks_usec()
 		node._process(1.0/60.0)
 		var key: String = node.get_script().resource_path.get_file() if node.get_script() != null else node.get_class()
-		_proc_ms[key] = float(_proc_ms.get(key,0.0))+(Time.get_ticks_usec()-t)/1000.0
+		_add(key,(Time.get_ticks_usec()-t)/1000.0)
 
 func _frames(count: int) -> void:
 	for i in range(count): await process_frame
@@ -224,6 +249,26 @@ func _views(plan: Dictionary) -> Array:
 		var aim: Vector3 = plan.get("next_aim",((next as Dictionary).xform as Transform3D).origin)
 		var gate: Vector3 = plan.exit.at
 		views.append({"label":"next","eye":gate-flat.call(aim-gate)*6.0+Vector3.UP*3.0,"look":aim})
+	# Near an Olmec (the field's enemy nearest the spawn) and among the most
+	# fires (the spot with the most lights within 20 m).
+	var fields: Array = scene.find_children("EnemyField","",true,false)
+	if not fields.is_empty():
+		var near: Node3D = null
+		for e: Node in (fields[0] as Node).get_children():
+			if e is Node3D and (near == null or (e as Node3D).global_position.distance_to(spawn) < near.global_position.distance_to(spawn)): near = e
+		if near != null:
+			var at := near.global_position
+			views.append({"label":"olmec","eye":at+flat.call(spawn-at)*9.0+Vector3.UP*5.0,"look":at+Vector3.UP*1.5})
+	var lit: Array = scene.find_children("*","OmniLight3D",true,false).filter(func(l: Node3D) -> bool: return l.is_visible_in_tree())
+	var best_at := Vector3.ZERO
+	var best_n := 0
+	for l: Node3D in lit:
+		var n := lit.filter(func(o: Node3D) -> bool: return o.global_position.distance_to(l.global_position) < 20.0).size()
+		if n > best_n:
+			best_n = n
+			best_at = l.global_position
+	if best_n > 0:
+		views.append({"label":"fires","eye":best_at+flat.call(spawn-best_at)*12.0+Vector3.UP*6.0,"look":best_at})
 	return views
 
 ## A kit life's parts timed (scripts/kit_isle/kit_life.gd `advance`).
@@ -240,7 +285,7 @@ func _life_parts(life: Object, who: String) -> void:
 		var t := Time.get_ticks_usec()
 		part[1].call()
 		var k := "    life %s %s" % [who,part[0]]
-		_proc_ms[k] = float(_proc_ms.get(k,0.0))+(Time.get_ticks_usec()-t)/1000.0
+		_add(k,(Time.get_ticks_usec()-t)/1000.0)
 
 ## Every node's _process timed by hand (each stopped and called from here
 ## in the frame's start, the scene's own too), over 120 frames.
@@ -251,18 +296,20 @@ func _profile_procs() -> void:
 			node.set_process(false)
 			_timed.append(node)
 	_proc_ms = {}
+	_proc_max = {}
+	_tick_max = 0.0
 	_tick_ms = 0.0
 	var counts := {}
 	for node: Node in _timed:
 		var key: String = node.get_script().resource_path.get_file()
 		counts[key] = int(counts.get(key,0))+1
 	await _frames(120)
-	for node: Node in _timed: if is_instance_valid(node): node.set_process(true)
+	for timed: Variant in _timed: if is_instance_valid(timed): (timed as Node).set_process(true)
 	_timed = []
 	var keys := _proc_ms.keys()
 	keys.sort_custom(func(a: String, b: String) -> bool: return _proc_ms[a] > _proc_ms[b])
-	print("PROCS tick (pilot, stage) %.3f ms a frame" % (_tick_ms/120.0))
-	for k: String in keys.slice(0,40): print("PROCS\t%s\t%d nodes\t%.3f ms a frame" % [k,counts.get(k,0),_proc_ms[k]/120.0])
+	print("PROCS tick (pilot, stage) %.3f ms a frame, worst %.2f ms" % [_tick_ms/120.0,_tick_max])
+	for k: String in keys.slice(0,40): print("PROCS\t%s\t%d nodes\t%.3f ms a frame\tworst %.2f ms" % [k,counts.get(k,0),_proc_ms[k]/120.0,float(_proc_max.get(k,0.0))])
 
 ## Every drawn mesh in the scene, grouped: by its place in the tree (the
 ## sky's isles by isle) and by node name, triangles (instances counted),
@@ -388,6 +435,66 @@ func _parts() -> Array:
 	var lod := root.mesh_lod_threshold
 	parts.append(["lod_off",func() -> void: root.mesh_lod_threshold = 0.0,func() -> void: root.mesh_lod_threshold = lod])
 	parts.append(["lod_x4",func() -> void: root.mesh_lod_threshold = lod*4.0,func() -> void: root.mesh_lod_threshold = lod])
+	# The underground's own (torch look, the city): the fires' lights and
+	# their shadows, the flame volumes, the particles, the Olmec bodies and
+	# heads (drawn; and their scripts and physics), volumetric fog, the
+	# ground-cover skins, the flora other than grass.
+	var omnis: Array = scene.find_children("*","Light3D",true,false).filter(func(l: Light3D) -> bool: return not (l is DirectionalLight3D))
+	var shadowed: Array = omnis.filter(func(l: Light3D) -> bool: return l.shadow_enabled)
+	parts.append(["lights",func() -> void:
+		for l: Variant in omnis: if is_instance_valid(l): (l as Light3D).visible = false,func() -> void:
+		for l: Variant in omnis: if is_instance_valid(l): (l as Light3D).visible = true])
+	parts.append(["light_shadows",func() -> void:
+		for l: Variant in shadowed: if is_instance_valid(l): (l as Light3D).shadow_enabled = false,func() -> void:
+		for l: Variant in shadowed: if is_instance_valid(l): (l as Light3D).shadow_enabled = true])
+	var under: Node = scene.get_node_or_null("Underground")
+	var torch: Variant = under.get("torch_light") if under != null else null
+	if torch is Light3D:
+		parts.append(["torch_shadow",func() -> void: (torch as Light3D).shadow_enabled = false,func() -> void: (torch as Light3D).shadow_enabled = true])
+	var flame_shader: Shader = preload("res://shaders/flame_volume.gdshader")
+	var flames: Array = scene.find_children("*","GeometryInstance3D",true,false).filter(func(g: GeometryInstance3D) -> bool:
+		return g.material_override is ShaderMaterial and (g.material_override as ShaderMaterial).shader == flame_shader)
+	parts.append(["flames",func() -> void:
+		for g: Variant in flames: if is_instance_valid(g): (g as Node3D).visible = false,func() -> void:
+		for g: Variant in flames: if is_instance_valid(g): (g as Node3D).visible = true])
+	var particles: Array = scene.find_children("*","GPUParticles3D",true,false)+scene.find_children("*","CPUParticles3D",true,false)
+	parts.append(["particles",func() -> void:
+		for g: Variant in particles: if is_instance_valid(g): (g as Node3D).visible = false,func() -> void:
+		for g: Variant in particles: if is_instance_valid(g): (g as Node3D).visible = true])
+	var fields: Array = scene.find_children("EnemyField","",true,false)
+	if not fields.is_empty():
+		var field: Node = fields[0]
+		var drawn: Array = field.find_children("*","GeometryInstance3D",true,false)
+		parts.append(["bodies_drawn",func() -> void:
+			for g: Variant in drawn: if is_instance_valid(g): (g as GeometryInstance3D).visible = false,func() -> void:
+			for g: Variant in drawn: if is_instance_valid(g): (g as GeometryInstance3D).visible = true])
+		# Their stepping (AI, sight, hearing, raycasts, physics moves): the
+		# field ticks them from the study's tick, so they are taken off its list.
+		if field.get("enemies") is Array:
+			var kept: Array = (field.get("enemies") as Array).duplicate()
+			parts.append(["bodies_step",func() -> void: field.set("enemies",[]),func() -> void: field.set("enemies",kept.filter(func(e) -> bool: return is_instance_valid(e)))])
+			# Their ears only (scripts/enemies/body_hearing.gd, the noise bus).
+			var ears: Array = kept.filter(func(e) -> bool: return is_instance_valid(e) and e.get("knobs") is Dictionary and e.get("hearing") != null)
+			parts.append(["hearing",func() -> void:
+				for e: Variant in ears: if is_instance_valid(e): (e.knobs as Dictionary)["hearing"] = 0,func() -> void:
+				for e: Variant in ears: if is_instance_valid(e): (e.knobs as Dictionary)["hearing"] = 1])
+	if env.volumetric_fog_enabled:
+		parts.append(["vol_fog",func() -> void: env.volumetric_fog_enabled = false,func() -> void: env.volumetric_fog_enabled = true])
+	if env.fog_enabled:
+		parts.append(["env_fog",func() -> void: env.fog_enabled = false,func() -> void: env.fog_enabled = true])
+	var skins: Array = get_nodes_in_group("ground_cover_skin")
+	parts.append(["cover_skins",func() -> void:
+		for g: Variant in skins: if is_instance_valid(g): (g as Node3D).visible = false,func() -> void:
+		for g: Variant in skins: if is_instance_valid(g): (g as Node3D).visible = true])
+	var other_flora: Array = flora.filter(func(f: Node) -> bool: return not str(f.name).begins_with("grass"))
+	parts.append(["flora_other",func() -> void:
+		for f: Variant in other_flora: if is_instance_valid(f): (f as Node3D).visible = false,func() -> void:
+		for f: Variant in other_flora: if is_instance_valid(f): (f as Node3D).visible = true])
+	var dirs: Array = scene.find_children("*","DirectionalLight3D",true,false)
+	parts.append(["sun_lights",func() -> void:
+		for l: Variant in dirs: if is_instance_valid(l): (l as Light3D).visible = false,func() -> void:
+		for l: Variant in dirs: if is_instance_valid(l): (l as Light3D).visible = true])
+	parts.append(["physics",func() -> void: PhysicsServer3D.set_active(false),func() -> void: PhysicsServer3D.set_active(true)])
 	parts.append(["all_3d",func() -> void: RenderingServer.viewport_set_disable_3d(_viewport,true),func() -> void: RenderingServer.viewport_set_disable_3d(_viewport,false)])
 	return parts
 
@@ -429,11 +536,12 @@ func _measure(take_away: Callable) -> Dictionary:
 	for key: String in sum: sum[key] /= measure_frames
 	walls.sort()
 	sum.wall = walls[walls.size()/2]
+	sum.p95 = walls[mini(int(walls.size()*0.95),walls.size()-1)]
 	sum.mean = walls.reduce(func(a: float, b: float) -> float: return a+b,0.0)/walls.size()
 	return sum
 
 func _print(view: String, part: String, m: Dictionary, whole := {}) -> void:
-	var line := "BENCH\t%s\t%s\t%s\t%.2f\t%.2f\t%.2f\t%.2f\t%.2f\t%.2f\t%.2f\t%d\t%d\t%d" % [_tag,view,part,m.wall,m.mean,m.gpu,m.before,m.process,m.draw,m.cpu,m.draws,m.primitives,m.objects]
+	var line := "BENCH\t%s\t%s\t%s\t%.2f\t%.2f\t%.2f\t%.2f\t%.2f\t%.2f\t%.2f\t%d\t%d\t%d\t%.2f\t%.2f" % [_tag,view,part,m.wall,m.mean,m.gpu,m.before,m.process,m.draw,m.cpu,m.draws,m.primitives,m.objects,m.p95,m.physics]
 	if not whole.is_empty(): line += "\tsaves wall %.2f process %.2f draw %.2f" % [whole.wall-m.wall,whole.process-m.process,whole.draw-m.draw]
 	print(line)
 
@@ -455,7 +563,7 @@ func _print_stream(label: String, f: _Frames) -> void:
 		var spent := PackedStringArray()
 		for e: Array in log:
 			if int(e[0]) == fr-1 or int(e[0]) == fr: spent.append("%s %.1fms" % [e[1],int(e[2])/1000.0])
-		print("BENCH   worst %.0f ms (frame %d): %s" % [f.times[order[k]],fr,"; ".join(spent) if not spent.is_empty() else "(no sky commit)"])
+		print("BENCH   worst %.0f ms (frame %d): %s" % [f.times[order[k]],fr,"; ".join(spent.slice(0,16))+(" (+%d more)" % (spent.size()-16) if spent.size() > 16 else "") if not spent.is_empty() else "(no sky commit)"])
 	log.clear()
 
 ## Wall time between frames.
@@ -474,3 +582,8 @@ class _Frames:
 		_last = now
 	func over(ms: float) -> int:
 		return times.filter(func(t: float) -> bool: return t > ms).size()
+
+## A timed part's sum and its worst single call.
+func _add(key: String, ms: float) -> void:
+	_proc_ms[key] = float(_proc_ms.get(key,0.0))+ms
+	_proc_max[key] = maxf(float(_proc_max.get(key,0.0)),ms)

@@ -61,6 +61,17 @@ const UNDER_TILE := 40.0
 const GRASS_RANGE := 95.0
 const FLOWER_RANGE := 65.0
 const FADE := 15.0
+## `--flora-fade=pop`: the grass and flowers stop at their range rather than
+## fading out over FADE (a visible trade, off by default, for a lower
+## graphics preset). A fading tile draws alpha-blended, in the transparent
+## pass: 13 ms of the city's 28 ms at the landing (docs/design/roguelike/
+## perf-city-run-round1.md).
+static var _fade_mode := -1
+static func fade_mode() -> int:
+	if _fade_mode < 0:
+		_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+		if "--flora-fade=pop" in preload("res://scripts/launch_args.gd").user_args(): _fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
+	return _fade_mode
 
 ## The undergrowth: [asset, count a square metre of the isle's turf, size
 ## range] (the mushrooms come in clusters, each counted once); fallen mossy
@@ -553,7 +564,7 @@ class Draw extends RefCounted:
 				batch.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 				batch.visibility_range_end = GRASS_RANGE if key.begins_with("grass") else FLOWER_RANGE
 				batch.visibility_range_end_margin = FADE
-				batch.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+				batch.visibility_range_fade_mode = KitFlora.fade_mode()
 				batch.set_meta("part",key)
 				node.add_child(batch)
 				_instances[key] = int(_instances.get(key,0))+list.size()

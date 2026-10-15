@@ -21,6 +21,8 @@ extends RefCounted
 ## landmark held a little clearer.
 const LayerPlan = preload("res://scripts/roguelike/layer_plan.gd")
 const SHADER := preload("res://shaders/next_region_lod.gdshader")
+## Every NextRegion node is in this group.
+const GROUP := &"next_region"
 
 ## Cells merged to a side on all but the landmark.
 const MERGE := 2
@@ -69,6 +71,8 @@ static func build(next: Dictionary) -> MeshInstance3D:
 	if not index.is_empty(): mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
 	var node := MeshInstance3D.new()
 	node.name = "NextRegion"
+	# Found by its group, not a walk of the whole tree (underground.gd).
+	node.add_to_group(GROUP)
 	node.mesh = mesh
 	node.transform = next.xform
 	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
