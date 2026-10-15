@@ -21,6 +21,7 @@ const MOTIFS := {
 	"felled_colonnade":preload("res://scripts/kit_isle/greybox/gb_felled_colonnade.gd"),
 	"face":preload("res://scripts/kit_isle/greybox/gb_face.gd"),
 	"lamplighters_stair":preload("res://scripts/kit_isle/greybox/gb_lamplighters_stair.gd"),
+	"coliseum_pit":preload("res://scripts/kit_isle/greybox/gb_coliseum_pit.gd"),
 	"editor_hill":preload("res://scripts/kit_isle/greybox/au_editor_hill.gd"),
 	"editor_mountain":preload("res://scripts/kit_isle/greybox/au_editor_mountain.gd"),
 	"editor_tarn_peak":preload("res://scripts/kit_isle/greybox/au_editor_tarn_peak.gd"),
@@ -37,6 +38,7 @@ const WORLD := {
 	"felled_colonnade":"under",
 	"face":"under",
 	"lamplighters_stair":"under",
+	"coliseum_pit":"under",
 }
 
 ## The world of a pool id or slug ("gb_" optional): "under" or "sky".
