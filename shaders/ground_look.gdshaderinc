@@ -16,6 +16,7 @@
 // sky chunk points at its own (shaders/reference_surface.gdshader).
 #ifndef ZS_GROUND_LOOK
 #define ZS_GROUND_LOOK
+#include "res://shaders/underground_dust.gdshaderinc"
 
 // NativeTerrainPalette.grass in linear: the middle, sunlit and deep greens
 // the mesh paints (tests/test_ground_look.gd keeps these in step).
@@ -45,6 +46,13 @@ uniform float ground_warm : hint_range(0.0, 1.0) = 0.5;
 uniform float ground_dry : hint_range(0.0, 1.0) = 0.45;
 uniform float ground_lush : hint_range(0.0, 1.0) = 0.6;
 uniform float ground_living : hint_range(0.0, 1.0) = 0.3;
+// The underground's dust ground (scripts/underground/ground_cover.gd): 0 is
+// the meadow, 1 drifted dust with wind ripples, gust sheen and grit.
+uniform float ground_dust : hint_range(0.0, 1.0) = 0.0;
+// The colour (linear) the ground that is not grass (the worn paths' earth, a
+// water's bed) is taken to, keeping its own light and dark; negative as the
+// day paints it. The underground dulls the clay with it.
+uniform vec3 ground_path = vec3(-1.0);
 
 // Round five, the land's own colour (docs/scenic/grass-look.md):
 // hue: how far the broad patches drift warm or cool as well as light or
@@ -139,6 +147,11 @@ vec3 zs_ground_color(vec3 g_face, vec3 g_p, float g_lush, float g_grass) {
 	vec3 g_tint = scene_palette_ground(g_source);
 	// Muted families keep their lightness but stay a living sage, not grey.
 	g_tint = mix(g_tint, zs_grass_living(g_tint, ground_living, 1.0), g_grass);
+	if (ground_path.r >= 0.0) {
+		float g_lum = dot(g_tint, vec3(0.30, 0.55, 0.15));
+		g_tint = mix(ground_path * clamp(g_lum * 2.6, 0.45, 1.5), g_tint, g_grass);
+	}
+	if (ground_dust > 0.0) g_tint = mix(g_tint, zs_dust_tone(g_tint, g_p.xz, ground_dust), g_grass);
 	return zs_ground_meadow_tint(g_tint, g_p);
 }
 

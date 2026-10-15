@@ -36,6 +36,7 @@ extends Node3D
 ##   torch_range  its range (m)
 const NEXT_SHADER = preload("res://shaders/underground_next.gdshader")
 const SKY_SHADER = preload("res://shaders/abyss_sky.gdshader")
+const GroundCover = preload("res://scripts/underground/ground_cover.gd")
 const FLAG := "--underground"
 const DEFAULT_PRESET := "torch"
 
@@ -78,6 +79,10 @@ var _sky_material: ShaderMaterial
 var _clock := 0.0
 var _next_t := 0
 var _noise := FastNoiseLite.new()
+## The ground cover worn (scripts/underground/ground_cover.gd: grass, dust,
+## moss, "" the day's own), --ground= and G; the air's motes for it.
+var ground := ""
+var _motes: GPUParticles3D
 
 ## True when the launch flags ask for the underground look.
 static func on() -> bool:
@@ -119,6 +124,9 @@ func setup(study_node: Node3D) -> void:
 	_build_sky()
 	_build_moon()
 	_build_torch()
+	ground = GroundCover.asked()
+	_set_motes()
+	if "--ground-demo" in preload("res://scripts/launch_args.gd").user_args(): get_tree().create_timer(3.0).timeout.connect(_demo)
 	RenderingServer.frame_pre_draw.connect(_publish_sky)
 	set_preset(preset)
 	print("underground: %s, torch on the wanderer" % preset)
@@ -144,6 +152,46 @@ func cycle() -> void:
 	var names: Array = PRESETS.keys()
 	set_preset(names[(names.find(preset)+1) % names.size()])
 	if study.has_method("_show_toast"): study.call("_show_toast",str(p.title))
+
+## The next ground cover (G): the day's own, then grass, dust, moss.
+func cycle_ground() -> void:
+	ground = GroundCover.next(ground)
+	_set_motes()
+	if is_instance_valid(_demo_root): _demo()
+	if study.has_method("_show_toast"): study.call("_show_toast",str(GroundCover.KINDS[ground].title) if ground != "" else "Ground: as the day paints it")
+
+func _unhandled_key_input(event: InputEvent) -> void:
+	var key := event as InputEventKey
+	if key != null and key.pressed and not key.echo and key.keycode == KEY_G and not key.ctrl_pressed and not key.meta_pressed:
+		cycle_ground()
+
+## `--ground-demo`: stone pieces by the start with the cover on their tops.
+var _demo_root: Node3D
+func _demo() -> void:
+	if is_instance_valid(_demo_root): _demo_root.queue_free()
+	var fig: Node3D = study.get("figure")
+	var at: Vector3 = fig.global_position if fig != null else Vector3.ZERO
+	_demo_root = GroundCover.demo(study,at,ground if ground != "" else "dust")
+	print("ground demo at ",at)
+
+func _exit_tree() -> void:
+	_free_motes()
+
+## The motes' resources are let go with them, or the renderer reports the
+## particle shader as leaked at exit.
+func _free_motes() -> void:
+	if not is_instance_valid(_motes): return
+	_motes.emitting = false
+	_motes.process_material = null
+	_motes.draw_pass_1 = null
+	_motes.free()
+	_motes = null
+
+## The air's motes for the ground (grit, spores), following the wanderer.
+func _set_motes() -> void:
+	_free_motes()
+	_motes = GroundCover.motes(ground)
+	if _motes != null: add_child(_motes)
 
 ## Where the place's middle is (kept for the generator).
 func recenter(at: Vector3) -> void:
@@ -246,6 +294,9 @@ func _tint_next_region() -> void:
 func _process(delta: float) -> void:
 	_clock += delta
 	_hold()
+	if is_instance_valid(_motes):
+		var fig: Node3D = study.get("figure")
+		if fig != null: _motes.global_position = fig.global_position+Vector3(0.0,1.5,0.0)
 	var f := _noise.get_noise_1d(_clock*9.0)*0.5+_noise.get_noise_1d(_clock*23.0+40.0)*0.25
 	torch_light.light_energy = float(knobs.torch)*(1.0+f*0.32)
 	torch_light.position = Vector3(f*0.03,0.62+f*0.04,0.0)
@@ -311,6 +362,9 @@ func _hold() -> void:
 	# The sky colours the far next-region silhouette (NextRegionLod) goes into:
 	# the abyss's, not the day's.
 	_publish_sky()
+	if GroundCover.grade(ground,preset):
+		var celestial: Object = study.get("_celestial")
+		if celestial != null and celestial.get("look") != null: (celestial.get("look") as Object).call("publish")
 	_next_t -= 1
 	if _next_t <= 0:
 		_next_t = 20
