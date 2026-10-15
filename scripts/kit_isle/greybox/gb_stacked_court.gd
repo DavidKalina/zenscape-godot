@@ -790,7 +790,7 @@ func _turf_cap(root: Node3D, key: String, spec: Dictionary) -> void:
 	land.name = "Turf_"+key
 	land.position = place_of(key)
 	root.add_child(land)
-	turf(land)
+	turf(land,_placed_outline(land))
 
 ## The land: F's turf and the west bank as one KitLand island on F's bare
 ## crown, its keel hanging under the bank and F's grown north-east edge.
@@ -818,7 +818,7 @@ func _land(root: Node3D) -> void:
 	land.name = "Turf_forecourt"
 	land.position = fp
 	root.add_child(land)
-	turf(land)
+	turf(land,_placed_outline(land))
 	land_node = land
 
 ## The hill's growth gone on up over M's south-west crown: a turf mantle on
@@ -853,7 +853,7 @@ func _mantle(root: Node3D) -> void:
 	land.name = "Turf_mantle"
 	land.position = place_of("well")
 	root.add_child(land)
-	turf(land)
+	turf(land,_placed_outline(land))
 
 ## Stone fallen from M's crown and the city's walls, tumbled on the land and
 ## half sunk in it (the kit's stone, collided): [world (x, z), half size,
@@ -869,6 +869,18 @@ func _fallen(root: Node3D) -> void:
 	var node := b.finish()
 	root.add_child(node)
 	pieces.fallen = node
+
+## A turf island's outline in the motif's frame. The placed isle registers
+## a land's outline (its KitLand meta, the island's own frame) moved only by
+## the isle's offset (motif_isle.gd `_register`), so an island stood off the
+## motif's origin (every land here: F's centre, the pillars' crowns) gives
+## its outline itself, else the plants' rim test finds no turf where it
+## really is and the grass never grows there.
+static func _placed_outline(land: Node3D) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	var at := Vector2(land.position.x,land.position.z)
+	for p: Vector2 in (land.get_meta("outline") as PackedVector2Array): out.append(p+at)
+	return out
 
 ## Where F's ground is at an offset from its centre (on its terraces).
 static func on_forecourt(off: Vector2) -> Vector3:
