@@ -23,9 +23,9 @@ extends RefCounted
 const WORLDS := ["under","sky"]
 const UNDER_REGIONS := 2
 ## The look an underground region wears (scripts/underground/underground.gd
-## PRESETS); `--under-look=torch` for the other. `--underground=...` still
+## PRESETS); `--under-look=torch` (or haze) for the older looks. `--underground=...` still
 ## forces a look on every layer, sky too.
-const UNDER_LOOK := "haze"
+const UNDER_LOOK := "oculus"
 ## Underground, one motif may come this many times a layer. The draw takes
 ## every city motif once before any comes again (LayerPlan `_draw`), so a
 ## repeat only comes once a layer holds more isles than the pool has
