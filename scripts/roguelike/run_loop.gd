@@ -49,6 +49,11 @@ const CLIMB_LIGHTEN_MOST := 0.6
 const Underground = preload("res://scripts/underground/underground.gd")
 # [collectibles] the corner's tally of runes and rares (game-v1-collectibles.md).
 const CollectTally = preload("res://scripts/roguelike/collect_tally.gd")
+const ItemCatalog = preload("res://scripts/roguelike/item_catalog.gd")
+const RunFeatures = preload("res://scripts/roguelike/run_features.gd")
+const ItemStrip = preload("res://scripts/roguelike/item_strip.gd")
+## [items] Whether --wallrun gave the wall run outright (else Gecko Wraps do).
+var _wallrun_flag := false
 
 ## Past the void, falling on before the dark comes (s), the dark coming (s).
 const FALL_ON := 1.1
@@ -100,6 +105,7 @@ const WORDS := {
 	"rares_none": "no sun glyph",  # the card: the run's rares
 	"rares_one": "1 sun glyph",
 	"rares": "%d sun glyphs",
+	"items_lost": "lost with him: %s",  # [items]
 	"most": "richest climb: %d runes, %s",
 	"most_new": "the richest climb yet",
 }
@@ -153,6 +159,12 @@ func setup(scene: Node3D) -> void:
 	overlay = RunOverlay.new()
 	scene.add_child(overlay)
 	watch(study.motor)
+	# [items] Carried items: their caption, the strip, the moves they give.
+	_wallrun_flag = bool(study.motor.wallrun_on)
+	_items = ItemStrip.new()
+	overlay.readout.add_child(_items)
+	run.item_taken.connect(_item_found)
+	run.item_dropped.connect(func(_id: StringName) -> void: _items.show_items(run.items))
 	# Until the first layer stands he walks the base as before; it comes
 	# up behind a moment's dark (`_arrive`).
 	_veil = 0.0
@@ -170,6 +182,7 @@ func before_tick(delta: float) -> bool:
 	match state:
 		"play":
 			run.tick(delta)
+			_item_moves()
 		"arrive":
 			run.tick(delta)
 			if _t > HOLD: _veil = move_toward(_veil,0.0,delta/CLEAR)
@@ -261,11 +274,42 @@ static func card_facts(fall: Dictionary) -> PackedStringArray:
 	var found := rares_words(r)
 	var most: String = WORDS.most_new if bool(fall.get("runes_record",false)) or bool(fall.get("rares_record",false)) \
 		else WORDS.most % [int(fall.get("most_runes",0)),rares_words(int(fall.get("most_rares",0)))]
-	return PackedStringArray([cause_line(fall),lost,found,RunState.clock(float(fall.time)),"",high,most])
+	var facts := PackedStringArray([cause_line(fall),lost,found])
+	# [items] What he carried, lost with him.
+	var held: Array = fall.get("items",[])
+	if not held.is_empty():
+		var names := PackedStringArray()
+		for id: StringName in held: names.append(ItemCatalog.title(id))
+		facts.append(WORDS.items_lost % ", ".join(names))
+	facts.append_array([RunState.clock(float(fall.time)),"",high,most])
+	return facts
 
 ## [collectibles] "no sun glyph", "1 sun glyph", "3 sun glyphs".
 static func rares_words(n: int) -> String:
 	return WORDS.rares_none if n == 0 else (WORDS.rares_one if n == 1 else WORDS.rares % n)
+
+# --- [items] Carried items -------------------------------------------------------------
+
+var _items: Control = null
+
+## An item taken: its caption, the strip.
+func _item_found(id: StringName) -> void:
+	_loud = LOUD_FOR
+	var info := ItemCatalog.info(id)
+	overlay.show_caption(ItemCatalog.title(id),String(info.get("line","")))
+	_items.show_items(run.items)
+
+## `--give=id,id` (a play and test knob): the run begins carrying them.
+func _give_asked() -> void:
+	_items.show_items(run.items)
+	for id in RunFeatures.value("give").split(",",false):
+		if ItemCatalog.has(StringName(id)): run.give_item(StringName(id))
+
+## The moves items give, read live (an item taken mid-layer works at once).
+func _item_moves() -> void:
+	var motor: Variant = study.get("motor")
+	if motor == null: return
+	motor.wallrun_on = _wallrun_flag or run.carrying(&"wallrun")
 
 # --- Hearts --------------------------------------------------------------------------
 
@@ -341,6 +385,7 @@ func continue_run(same := false, seed_value := -1) -> void:
 func _maybe_wake() -> void:
 	if state != "card" or not _wake or _laid_for != _want: return
 	run.begin(_laid_seed)
+	_give_asked()
 	overlay.hide_card()
 	study.hold_for_layer()
 	_arrive(RunOverlay.DARK)
@@ -396,6 +441,7 @@ func layer_stood() -> void:
 	match why:
 		"first":
 			run.begin(int(study.layer_seed))
+			_give_asked()
 			_arrive(RunOverlay.DARK)
 		"gate","skip":
 			run.ascend(_rise_through())

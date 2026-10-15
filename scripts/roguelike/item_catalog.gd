@@ -1,0 +1,54 @@
+extends RefCounted
+## Items (docs/design/roguelike/items-contract.md): the things a run finds,
+## buys or steals and keeps until it ends. A run carries them in
+## RunState.items (ids below); whoever an item changes asks
+## `RunState.holds(id)` and reads it live, so an item taken mid-layer
+## works at once and a new run starts with none.
+##
+## Each entry: `name` (the caption and the strip), `line` (the caption's
+## second line: what it does, in a few words), `kind` ("verb": a new move or
+## route; "passive": a standing help; "cursed": a gift with a cost), `price`
+## (runes at a merchant), `rarity` (1 common .. 3 rare: how often altars and
+## stalls lay it), `once` (true: taken, not kept in the strip; e.g. a heart).
+##
+## Add an item here first, then make it do its thing where it acts. Keep ids
+## stable: saves and the card name them.
+
+const ITEMS := {
+	&"wallrun": {"name":"Gecko Wraps","line":"run along walls","kind":"verb","price":9,"rarity":2,"once":false},
+}
+
+static func has(id: StringName) -> bool:
+	return ITEMS.has(id)
+
+## The entry for `id` ({} when unknown).
+static func info(id: StringName) -> Dictionary:
+	return ITEMS.get(id,{})
+
+static func title(id: StringName) -> String:
+	return String(info(id).get("name",String(id)))
+
+## Every id, or those of `kind`.
+static func ids(kind := "") -> Array[StringName]:
+	var out: Array[StringName] = []
+	for id: StringName in ITEMS.keys():
+		if kind == "" or String(ITEMS[id].get("kind","")) == kind: out.append(id)
+	return out
+
+## An id drawn by rarity (rarer less often) from `pool` (all when empty),
+## skipping those `run` already carries (kept ones only). "" when none.
+static func draw(rng: RandomNumberGenerator, pool: Array[StringName] = [], run: Object = null) -> StringName:
+	var from := pool if not pool.is_empty() else ids()
+	var weights := 0.0
+	var left: Array[StringName] = []
+	for id in from:
+		if not has(id): continue
+		if run != null and run.carrying(id) and not bool(info(id).get("once",false)): continue
+		left.append(id)
+		weights += 1.0/float(info(id).get("rarity",1))
+	if left.is_empty(): return &""
+	var roll := rng.randf()*weights
+	for id in left:
+		roll -= 1.0/float(info(id).get("rarity",1))
+		if roll <= 0.0: return id
+	return left[-1]

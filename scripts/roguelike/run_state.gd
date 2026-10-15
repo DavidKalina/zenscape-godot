@@ -15,7 +15,18 @@ extends RefCounted
 ## (`depth` / `deepest` are the layer count's old names, kept for the record
 ## file: not shown.)
 
+## [items] The run being played (the latest begun), so whatever an item
+## changes can ask `RunState.holds(id)` without a path to the run loop.
+static var current: RefCounted = null
+## [items] Items carried (scripts/roguelike/item_catalog.gd ids): found,
+## bought or stolen on any layer, kept through the gate, lost with the run.
+var items: Array[StringName] = []
+## An item taken (`give_item`), dropped (`drop_item`).
+signal item_taken(id: StringName)
+signal item_dropped(id: StringName)
+
 ## Where the record is kept. A test points it elsewhere.
+const ItemCatalog = preload("res://scripts/roguelike/item_catalog.gd")
 static var record_path := "user://run_record.json"
 
 ## The seed the run began from (its layer 1's), -1 before any.
@@ -83,6 +94,8 @@ func begin(seed_value: int) -> void:
 	footing = 0.0
 	best = 0.0
 	banked = 0.0
+	items.clear()
+	current = self
 	hearts.clear()
 	_safe.clear()
 	_cause.clear()
@@ -111,6 +124,25 @@ func at(above_start: float, grounded: bool) -> void:
 func take_rune(worth := 1) -> void:
 	runes += worth
 	haul += worth
+
+## [items] `id` taken: kept (a `once` item, e.g. a heart, is only
+## announced). Whoever it changes reads `carrying` / `holds` live.
+func give_item(id: StringName) -> void:
+	if not ItemCatalog.info(id).get("once",false): items.append(id)
+	item_taken.emit(id)
+
+func drop_item(id: StringName) -> bool:
+	if not items.has(id): return false
+	items.erase(id)
+	item_dropped.emit(id)
+	return true
+
+func carrying(id: StringName) -> bool:
+	return items.has(id)
+
+## Whether the run being played carries `id` (false with no run).
+static func holds(id: StringName) -> bool:
+	return current != null and current.carrying(id)
 
 ## [collectibles] A rare collectible found: counted for the run and ever.
 func take_rare() -> void:
@@ -151,7 +183,7 @@ func die() -> Dictionary:
 	highest = maxf(highest,best)
 	most_runes = maxi(most_runes,haul)
 	most_rares = maxi(most_rares,rares)
-	var out := {"depth":depth,"runes":runes,"time":time,
+	var out := {"items":items.duplicate(),"depth":depth,"runes":runes,"time":time,
 		"haul":haul,"rares":rares,"most_runes":most_runes,"most_rares":most_rares,"rares_ever":rares_ever,
 		"runes_record":haul > _before_runes and _before_runes > 0,"rares_record":rares > _before_rares and _before_rares > 0,"deepest":deepest,"record":depth > _before and _before > 0,
 		"height":footing,"best":best,"highest":highest,"high_record":best > _before_high and _before_high > 0.0}
