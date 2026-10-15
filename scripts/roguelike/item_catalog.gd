@@ -16,6 +16,13 @@ extends RefCounted
 
 const ITEMS := {
 	&"wallrun": {"name":"Gecko Wraps","line":"run along walls","kind":"verb","price":9,"rarity":2,"once":false},
+	# [items_passive] standing helps (scripts/roguelike/passive_items.gd)
+	&"heart_vessel": {"name":"Heart Vessel","line":"one more heart, mended","kind":"passive","price":14,"rarity":1,"once":true},
+	&"lantern": {"name":"Hand Lantern","line":"a warm light; the dark stands back","kind":"passive","price":10,"rarity":2,"once":false},
+	&"waystone": {"name":"Way-stone","line":"it leans toward the gate","kind":"passive","price":8,"rarity":2,"once":false},
+	&"quiet_soles": {"name":"Quiet Soles","line":"steps and landings hush","kind":"passive","price":9,"rarity":2,"once":false},
+	&"rune_magnet": {"name":"Lodestone","line":"runes drift to you","kind":"passive","price":8,"rarity":2,"once":false},
+	&"tithe_bell": {"name":"Tithe Bell","line":"runes count double; it rings as you go","kind":"cursed","price":6,"rarity":2,"once":false},
 }
 
 static func has(id: StringName) -> bool:

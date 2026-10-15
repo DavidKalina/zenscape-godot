@@ -22,6 +22,7 @@ extends RefCounted
 ##   water     a splash into it 11, a hop out 6
 ##   jump      the takeoff: his footfall's, +2
 
+const PassiveNoise = preload("res://scripts/roguelike/passive_noise.gd")  # [items_passive]
 const Ripples = preload("res://scripts/noise/noise_ripples.gd")
 
 ## A footfall's loudness (m) by his pace as a share of his run.
@@ -112,6 +113,7 @@ func step(study: Node3D, events: Dictionary, drawn: Dictionary, delta: float) ->
 	_top = feet.y if motor.grounded else maxf(_top,feet.y)
 
 func _make(figure: Node3D, at: Vector3, loudness: float, kind: StringName) -> void:
+	loudness *= PassiveNoise.mul(kind)  # [items_passive]
 	var n := NoiseBus.make(figure,at,loudness,kind)
 	if n == null: return
 	last = n

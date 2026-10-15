@@ -60,6 +60,8 @@ const HEARTS := 4
 ## heart as he gets up, short enough that a second blow soon after counts.
 const SAFE := 1.6
 var hearts := {}
+## [items_passive] Hearts added by Heart Vessels this run.
+var bonus_hearts := 0
 var _safe := {}
 var _cause := {}
 ## Metres above the run's start: now, where he last stood (on the ground),
@@ -97,6 +99,7 @@ func begin(seed_value: int) -> void:
 	items.clear()
 	current = self
 	hearts.clear()
+	bonus_hearts = 0  # [items_passive]
 	_safe.clear()
 	_cause.clear()
 	runs += 1
@@ -122,6 +125,7 @@ func at(above_start: float, grounded: bool) -> void:
 		best = maxf(best,footing)
 
 func take_rune(worth := 1) -> void:
+	if carrying(&"tithe_bell"): worth *= 2  # [items_passive] the cursed bell
 	runes += worth
 	haul += worth
 
@@ -154,7 +158,17 @@ func tick(delta: float) -> void:
 	for w: Variant in _safe.keys(): _safe[w] = maxf(0.0,float(_safe[w])-delta)
 
 func hearts_of(wanderer: Object) -> int:
-	return int(hearts.get(wanderer,HEARTS))
+	return int(hearts.get(wanderer,max_hearts()))
+
+## [items_passive] The most hearts now (HEARTS and the vessels'). 
+func max_hearts() -> int:
+	return HEARTS+bonus_hearts
+
+## [items_passive] A Heart Vessel: one more heart, and `mend` hearts back.
+func add_vessel(mend := 2) -> void:
+	bonus_hearts += 1
+	for w: Variant in hearts.keys():
+		if int(hearts[w]) > 0: hearts[w] = mini(int(hearts[w])+mend,max_hearts())
 
 func safe_for(wanderer: Object) -> float:
 	return float(_safe.get(wanderer,0.0))
