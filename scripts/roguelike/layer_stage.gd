@@ -35,6 +35,7 @@ const CityFires = preload("res://scripts/city_kit_fires.gd")
 # [collectibles] the layer's runes, rares and chests (game-v1-collectibles.md).
 const Collectibles = preload("res://scripts/roguelike/collectibles.gd")
 const Merchant = preload("res://scripts/roguelike/merchant.gd")  # [merchant]
+const Altars = preload("res://scripts/roguelike/altars.gd")  # [altars]
 
 const GATE := Color(1.0,0.82,0.45)
 const RUNE_SIZE := 0.7
@@ -138,6 +139,7 @@ func setup(scene: Node3D, layer: Dictionary, was: Node) -> void:
 	_runes()
 	collectibles = Collectibles.dress(self,layer)  # [collectibles]
 	merchant = Merchant.dress(self,layer)  # [merchant]
+	Altars.dress(self,layer)  # [altars] pedestals, the cursed altar, the key and vault
 	_gate()
 	rides = LayerRides.new()
 	add_child(rides)

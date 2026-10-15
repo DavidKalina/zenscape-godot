@@ -15,6 +15,8 @@ extends RefCounted
 ## stable: saves and the card name them.
 
 const ITEMS := {
+	# [altars] The vault's key: carried like an item (strip, lost with the run), never drawn.
+	&"vault_key": {"name":"Vault Key","line":"opens a vault on a deeper layer","kind":"key","price":0,"rarity":3,"once":false},
 	&"wallrun": {"name":"Gecko Wraps","line":"run along walls","kind":"verb","price":9,"rarity":2,"once":false},
 	# [items_passive] standing helps (scripts/roguelike/passive_items.gd)
 	&"heart_vessel": {"name":"Heart Vessel","line":"one more heart, mended","kind":"passive","price":14,"rarity":1,"once":true},
@@ -50,6 +52,7 @@ static func draw(rng: RandomNumberGenerator, pool: Array[StringName] = [], run: 
 	var left: Array[StringName] = []
 	for id in from:
 		if not has(id): continue
+		if String(info(id).get("kind","")) == "key": continue  # [altars]
 		if run != null and run.carrying(id) and not bool(info(id).get("once",false)): continue
 		left.append(id)
 		weights += 1.0/float(info(id).get("rarity",1))

@@ -94,7 +94,7 @@ const WORDS := {
 	# The harm's causes (PilotMotor `harm`), as the card names them.
 	"causes": {"fall":"the fall","olmec":"the Olmec","ram":"the ram","trap":"a trap",
 		"wind":"the wind","stone":"falling stone","enemy":"the city's guardians",
-		"walker":"the Second Walker","thief":"the Collector"},  # [merchant]
+		"walker":"the Second Walker","thief":"the Collector","altar":"a bargain at the altar"},  # [merchant] [altars]
 	"lost_none": "nothing carried",
 	"lost_one": "1 rune lost",
 	"lost": "%d runes lost",
@@ -355,7 +355,7 @@ func watch(wanderer: Object) -> void:
 ## always), the corner's heart drained, the flash; at none, "dying".
 func _harmed(amount: int, cause: String, _source: Object, wanderer: Object) -> void:
 	if state != "play" and state != "arrive": return
-	var took := run.hurt(wanderer,amount,cause,cause == "fall")
+	var took := run.hurt(wanderer,amount,cause,cause == "fall" or cause == "altar")  # [altars] a bargain always costs
 	if took <= 0: return
 	_loud = LOUD_FOR
 	overlay.hurt(run.hearts_of(wanderer),took)
