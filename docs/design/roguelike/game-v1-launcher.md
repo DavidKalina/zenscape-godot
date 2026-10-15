@@ -75,3 +75,41 @@ in AGENTS.md's "Running on Windows" section. It was kept out of that file
 for now because AGENTS.md has uncommitted edits from another session.
 
     & $env:GODOT --path . --rendering-method forward_plus --windowed --resolution 1440x900 studies/game_title.tscn -- --no-title --shape=sprawl --underground=torch
+
+## The 3D title (feature/v1-title-3d)
+
+The procedural backdrop is gone from the scene (`shaders/game_title_backdrop.gdshader`
+is kept, unused). The overlay (wordmark, hairline, breathing prompt, Space /
+Enter / A begins with the fade to black, Escape / B quits) lies over two real 3D
+shots, plus a soft dark wash down from the top so the wordmark holds on the clouds.
+
+- **Shot 1, the dark city** (`scripts/roguelike/game_title_scene.gd`): the city
+  kit's epic stair on pillar C, the causeway on from its summit to pillar A and
+  its drum stair (the city kit gallery's arrangement), fire bowls along them
+  (`city_kit_fires.gd` cresset, lit, supporting light only), painted grass
+  (`GroundCover` "grass") on C's crown, eight far pillar-isles with lit beacon
+  towers and a temple pyramid in the haze. The underground look in its haze
+  preset (ambient 0.62, exposure 0.95, fog 0.0032 over the preset).
+  Architecture is the subject.
+- **Shot 2, the sky** (`scripts/roguelike/game_title_sky.gd`): the Aqueduct of
+  Veyl (`studies/aqueduct_isle.tscn`, no title, scripted, HUD hidden, in its
+  own SubViewport) orbited from above, the sunlit world over the dark one the
+  run starts in. The title holds shot 1 for 11 s after the fade-in, goes to
+  black for 1.1 s while the isle stands, then comes up on the sky and stays.
+- **Orbits.** City: eye 62 m out and 36 m up from (0,6,-4) looking at
+  (0,4,-26), swung +-0.8 rad either side of the stair's foot by sin(t*0.028),
+  fastest turn 0.0224 rad/s (front_door's SPEED is 0.0230). Sky: front_door's
+  orbit (SPEED TAU/60*0.22), POLAR 1.28, LIFT 8, DISTANCE 1.0, FOV 50.
+- **Timing** (headless, M-series Mac): the city shot builds in about 1.3 s; the
+  sky isle in about 2.6 s (the fixed cache of the art helps after the first
+  launch), under black. The title is up in about 1.5 s.
+- Flags: `--title-shot=sky|city` shows one shot alone (stills),
+  `--orbit-t=<s>` starts the city sweep partway.
+- **Seams.** The sky build freezes the frame for its 2-3 s, hidden by the black
+  cut. The city shot's lights are the shared global shader params
+  (`zs_under`); freeing the city backdrop resets them, and `GroundCover.grade("")`
+  hands the shared grass back to the day before the sky isle stands. The sky
+  isle plays its own ambient life (birds, wind) behind the title. The sky
+  shot stays until a key; it does not cycle back to the city. Under run-game's
+  `--underground=torch` flag the sky isle's args are stripped of it while it
+  builds, then restored. Existing tests touching `game_title` not run.

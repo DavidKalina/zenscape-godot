@@ -1,14 +1,22 @@
 extends Control
 ## The game's title (docs/design/roguelike/game-v1-launcher.md): shown first
 ## by run-game.command. ZENSCAPE in the isle card's gilt inscription over a
-## dark underground backdrop (shaders/game_title_backdrop.gdshader), and one
+## slowly orbiting 3D scene of the game's own pieces
+## (scripts/roguelike/game_title_scene.gd), and one
 ## quiet line: Press Space / A to begin. Space, Enter or a pad's A begins the
 ## run (studies/run_layer.tscn with this scene's own launch flags, a seed
 ## drawn there); Escape or a pad's B quits. No menus, no options.
 ##
 ## `begin()` is the one way in, so a scripted check can call it.
 const Splash = preload("res://scripts/isle_splash.gd")
-const BACKDROP = preload("res://shaders/game_title_backdrop.gdshader")
+const Backdrop = preload("res://scripts/roguelike/game_title_scene.gd")
+const SkyShot = preload("res://scripts/roguelike/game_title_sky.gd")
+## The first shot (the dark city's stair) holds this long once the title is
+## up (s), then the screen goes to black for CUT s while the sky aqueduct
+## stands, and the sky shot comes up and stays. `--title-shot=sky|city`
+## shows one alone (stills); `--orbit-t=` starts the city's sweep partway.
+const HOLD := 11.0
+const CUT := 1.1
 const RUN_SCENE := "res://studies/run_layer.tscn"
 const TITLE := "ZENSCAPE"
 const PROMPT := "Press  Space  /  A  to begin"
@@ -25,6 +33,12 @@ var age := 0.0
 var starting := false
 ## The scene `begin` goes to (a check sets another).
 var run_scene := RUN_SCENE
+var scene: Node3D
+var sky: Control
+## 0 the city, 1 going to black, 2 the sky standing, 3 the sky.
+var stage := 0
+var stage_t := 0.0
+var only := ""
 var _bg: ColorRect
 var _title: Label
 var _rule: ColorRect
@@ -34,12 +48,35 @@ var _veil: ColorRect
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for a: String in preload("res://scripts/launch_args.gd").user_args():
+		if a.begins_with("--title-shot="): only = a.get_slice("=",1)
+	if only != "sky":
+		scene = Backdrop.new()
+		scene.name = "Backdrop"
+		add_child(scene)
+	# Black over the 3D view, lifting as the title comes up.
 	_bg = ColorRect.new()
-	_bg.material = ShaderMaterial.new()
-	(_bg.material as ShaderMaterial).shader = BACKDROP
+	_bg.color = Color.BLACK
 	_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_bg)
 	_bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	# A soft dark wash down from the top, under the type, so the wordmark
+	# holds over the sunlit clouds.
+	var wash := TextureRect.new()
+	var grad := Gradient.new()
+	grad.colors = PackedColorArray([Color(0.03,0.02,0.02,0.42),Color(0.03,0.02,0.02,0.0)])
+	var gt := GradientTexture2D.new()
+	gt.gradient = grad
+	gt.fill_from = Vector2(0.0,0.0)
+	gt.fill_to = Vector2(0.0,1.0)
+	gt.width = 4
+	gt.height = 128
+	wash.texture = gt
+	wash.stretch_mode = TextureRect.STRETCH_SCALE
+	wash.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(wash)
+	wash.anchor_right = 1.0
+	wash.anchor_bottom = 0.55
 	_title = Label.new()
 	var font := Splash.inscription_font()
 	font.spacing_glyph = 22
@@ -73,8 +110,6 @@ func _ready() -> void:
 
 func _layout() -> void:
 	var px := size.y/1080.0
-	var m := _bg.material as ShaderMaterial
-	m.set_shader_parameter("aspect",size.x/maxf(size.y,1.0))
 	var title_size := roundi(96.0*px)
 	_title.add_theme_font_size_override("font_size",title_size)
 	(_title.material as ShaderMaterial).set_shader_parameter("glyph_scale",96.0*px/58.0)
@@ -88,7 +123,7 @@ func _layout() -> void:
 
 func _process(delta: float) -> void:
 	age += delta
-	(_bg.material as ShaderMaterial).set_shader_parameter("fade_in",smoothstep(0.0,FADE*0.8,age))
+	_cover(delta)
 	_title.modulate.a = smoothstep(0.6,FADE,age)
 	_rule.modulate.a = smoothstep(1.0,FADE+0.4,age)
 	# The prompt comes in last, then breathes.
@@ -97,6 +132,49 @@ func _process(delta: float) -> void:
 	if starting:
 		_veil.color.a = minf(1.0,_veil.color.a+delta/LEAVE)
 		if _veil.color.a >= 1.0: _go()
+
+## The black over the 3D view: lifting as the title comes up, then dropping
+## for the cut to the sky shot and lifting on it.
+func _cover(delta: float) -> void:
+	stage_t += delta
+	if only == "sky" and stage == 0:
+		stage = 2
+		stage_t = 0.0
+		_stand_sky.call_deferred()
+	match stage:
+		0:
+			_bg.color.a = 1.0-smoothstep(0.0,FADE*0.8,age)
+			if only == "" and age >= FADE+HOLD:
+				stage = 1
+				stage_t = 0.0
+		1:
+			_bg.color.a = smoothstep(0.0,CUT*0.5,stage_t)
+			if stage_t >= CUT*0.5+0.1:
+				stage = 2
+				stage_t = 0.0
+				_stand_sky.call_deferred()
+		3:
+			_bg.color.a = 1.0-smoothstep(0.0,FADE*0.8,stage_t)
+
+## Past the black: the dark city out, the sky isle stood (blocking), its
+## shot lifted.
+func _stand_sky() -> void:
+	if scene != null:
+		scene.queue_free()
+		scene = null
+	# Two frames so the black is on screen before the freeze.
+	await get_tree().process_frame
+	await get_tree().process_frame
+	# The city's grass grade is on the shared ground and tufts: hand them back
+	# to the day's own before the sky isle stands on them.
+	preload("res://scripts/underground/ground_cover.gd").grade("")
+	sky = SkyShot.new()
+	sky.name = "Sky"
+	add_child(sky)
+	move_child(sky,_bg.get_index())
+	sky.build()
+	stage = 3
+	stage_t = 0.0
 
 func _unhandled_input(event: InputEvent) -> void:
 	if starting: return
