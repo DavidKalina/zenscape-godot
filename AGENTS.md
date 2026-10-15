@@ -52,6 +52,9 @@ PowerShell from the repo root:
 - Play: `& $env:GODOT --path . --rendering-method forward_plus --windowed --resolution 1440x900 -- --no-title`.
   A study: put its scene after `--path .`, e.g. `studies/run_layer.tscn -- --shape=sprawl --seed=1`.
   A `run-*.command` file shows the scene and flags it launches.
+- The game (title, then the run): `& $env:GODOT --path . --rendering-method forward_plus --windowed --resolution 1440x900 studies/game_title.tscn -- --no-title --shape=sprawl --underground=torch`
+  (what `run-game.command` launches; there is no `.ps1` pattern, so this
+  line is the Windows launcher).
 - Tests: `python tools/run_tests.py` (same flags as above).
 - Blender scripts: `& "C:\Program Files\Blender Foundation\Blender 5.2\blender.exe" -b --python art/blender/plane/plane_build.py`
   (or `blender` if it's on PATH).
