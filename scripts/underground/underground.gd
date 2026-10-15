@@ -90,14 +90,28 @@ var _noise := FastNoiseLite.new()
 var ground := ""
 var _motes: GPUParticles3D
 
-## True when the launch flags ask for the underground look.
+## The run's world sets the look (scripts/roguelike/layer_worlds.gd,
+## studies/run_layer.gd `_apply_world`): 1 on, 0 off, -1 the flags decide;
+## and its preset ("" the flags'). The flag `--underground` still wins: on
+## every layer.
+static var world_on := -1
+static var world_preset := ""
+
+## True when the look is asked: the launch flags, else the run's world.
 static func on() -> bool:
+	if flagged(): return true
+	return world_on == 1
+
+## True when the launch flags ask for the underground look.
+static func flagged() -> bool:
 	for a: String in preload("res://scripts/launch_args.gd").user_args():
 		if a == FLAG or a.begins_with(FLAG+"="): return true
 	return false
 
-## The preset the flags ask: --underground=haze, else the torch's.
+## The preset the flags ask: --underground=haze, else the torch's (the
+## run's world's when the flags don't ask the look).
 static func asked() -> String:
+	if not flagged() and world_preset != "" and PRESETS.has(world_preset): return world_preset
 	for a: String in preload("res://scripts/launch_args.gd").user_args():
 		if a.begins_with(FLAG+"="):
 			var k := a.get_slice("=",1)
@@ -107,17 +121,49 @@ static func asked() -> String:
 ## The look stood on `study_node` (a kit isle) if the flags ask; null otherwise.
 static func attach(study_node: Node3D) -> Node3D:
 	if not on(): return null
+	var had := study_node.get_node_or_null("Underground")
+	if had != null: return had as Node3D
 	var u: Node3D = (preload("res://scripts/underground/underground.gd") as GDScript).new()
 	u.name = "Underground"
 	study_node.add_child(u)
 	u.setup(study_node)
 	return u
 
+## The look taken off `study_node` live (the run's climb out of the dark):
+## the day's environment, sky, lights and air given back as they were, the
+## torch put out, the ground cover handed back to the day. Nothing if the
+## look isn't on.
+static func detach(study_node: Node3D) -> void:
+	var u := study_node.get_node_or_null("Underground")
+	if u == null or not u.has_method("restore"): return
+	u.restore()
+	# Renamed first, so a look stood again at once can take the name.
+	u.name = "UndergroundGone"
+	study_node.remove_child(u)
+	u.queue_free()
+
+## The environment's values the look holds, kept to give back (`restore`).
+const HELD := ["background_mode","ambient_light_source","ambient_light_color","ambient_light_energy","ambient_light_sky_contribution",
+	"reflected_light_source","tonemap_exposure","fog_enabled","fog_mode","fog_light_color","fog_light_energy","fog_density",
+	"fog_sky_affect","fog_aerial_perspective","volumetric_fog_enabled","volumetric_fog_density","volumetric_fog_albedo",
+	"volumetric_fog_emission","volumetric_fog_length","volumetric_fog_anisotropy","volumetric_fog_ambient_inject",
+	"volumetric_fog_sky_affect","glow_enabled","glow_hdr_threshold","glow_intensity","ssao_light_affect","sky"]
+var _env_was := {}
+## Each node the look hid and whether it was shown before; the look's cloud
+## sea before.
+var _hidden := {}
+var _cloud_sea_was: Variant = null
+
 func setup(study_node: Node3D) -> void:
 	study = study_node
 	process_priority = 1000
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	preset = asked()
+	var env: Environment = study.get("_environment")
+	if env != null:
+		for k: String in HELD: _env_was[k] = env.get(k)
+	var look_was: Object = study.get("_look")
+	if look_was != null: _cloud_sea_was = look_was.get("cloud_sea")
 	for a: String in preload("res://scripts/launch_args.gd").user_args():
 		if not a.begins_with(FLAG+"-") or not "=" in a: continue
 		var k := a.get_slice("=",0).trim_prefix(FLAG+"-")
@@ -426,29 +472,29 @@ func _hold() -> void:
 	# The day away: sun and moon of the clock, stars and planet, the air.
 	var lighting: Node = study.get("_lighting")
 	if lighting != null:
-		for l: DirectionalLight3D in lighting.lights: l.visible = false
+		for l: DirectionalLight3D in lighting.lights: _hide(l)
 		var objects: Node3D = lighting.get("sky_objects")
-		if objects != null: objects.visible = false
+		if objects != null: _hide(objects)
 	var fog_layer: Node = study.get("_display_fog")
-	if fog_layer != null and fog_layer is CanvasLayer: (fog_layer as CanvasLayer).visible = false
+	if fog_layer != null and fog_layer is CanvasLayer: _hide(fog_layer)
 	var look: Object = study.get("_look")
 	if look != null:
 		look.set("cloud_sea",0.0)
 		for n: String in ["sea","cloud_volume","_motes"]:
 			var v: Variant = look.get(n)
-			if v is Node3D: (v as Node3D).visible = false
+			if v is Node3D: _hide(v)
 	# The open sky's own life: clouds, gulls, motes, plane and ship traffic,
 	# plane tokens. The layer's isles (sky.motifs) are the real depth and stay.
 	var sky: Object = study.get("sky")
 	if sky != null:
 		for n: String in ["clouds","life","collectibles","traffic","ferry","drone","serpent","route","_hosts"]:
 			var v: Variant = sky.get(n)
-			if v is Node3D: (v as Node3D).visible = false
-		for m: Node3D in sky.get("motes"): m.visible = false
+			if v is Node3D: _hide(v)
+		for m: Node3D in sky.get("motes"): _hide(m)
 		var ships: Array = sky.get("airships")
 		for a: Dictionary in ships:
 			for k: Variant in a.values():
-				if k is Node3D: (k as Node3D).visible = false
+				if k is Node3D: _hide(k)
 	# The sky colours the far next-region silhouette (NextRegionLod) goes into:
 	# the abyss's, not the day's.
 	_publish_sky()
@@ -462,4 +508,31 @@ func _hold() -> void:
 	var air: Node = study.get("_atmosphere")
 	if air != null:
 		for c: Node in air.get_children():
-			if c is Node3D: (c as Node3D).visible = false
+			if c is Node3D: _hide(c)
+
+## A node of the day's hidden, its own visibility kept (the first time) to
+## give back.
+func _hide(n: Node) -> void:
+	if not _hidden.has(n): _hidden[n] = bool(n.get("visible"))
+	n.set("visible",false)
+
+## The day given back (`detach`): the environment as it was, every node the
+## look hid shown again as it was, the torch out, the cover the day's.
+func restore() -> void:
+	set_process(false)
+	if RenderingServer.frame_pre_draw.is_connected(_publish_sky): RenderingServer.frame_pre_draw.disconnect(_publish_sky)
+	if _env != null:
+		for k: String in _env_was: _env.set(k,_env_was[k])
+	for n: Variant in _hidden:
+		if is_instance_valid(n): (n as Node).set("visible",bool(_hidden[n]))
+	_hidden.clear()
+	var look: Object = study.get("_look")
+	if look != null and _cloud_sea_was != null: look.set("cloud_sea",_cloud_sea_was)
+	if is_instance_valid(torch):
+		torch.get_parent().remove_child(torch)
+		torch.queue_free()
+	_free_motes()
+	RenderingServer.global_shader_parameter_set("zs_under",0.0)
+	if GroundCover.grade("",preset):
+		var celestial: Object = study.get("_celestial")
+		if celestial != null and celestial.get("look") != null: (celestial.get("look") as Object).call("publish")

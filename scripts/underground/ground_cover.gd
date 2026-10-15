@@ -69,10 +69,8 @@ static var _preset := ""
 ## "" when --underground is not on (nothing is laid) or --ground=off.
 static func asked() -> String:
 	var args: Array = preload("res://scripts/launch_args.gd").user_args()
-	var under := false
-	for a: String in args:
-		if a == "--underground" or a.begins_with("--underground="): under = true
-	if not under: return ""
+	# The look's own answer: its flag, or the run's world (underground.gd `on`).
+	if not bool(load("res://scripts/underground/underground.gd").on()): return ""
 	for a: String in args:
 		if a.begins_with(FLAG+"="):
 			var k := a.get_slice("=",1)

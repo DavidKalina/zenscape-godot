@@ -136,6 +136,11 @@ static func core(seed_value: int, knobs := {}) -> Dictionary:
 		LayerHazards.lay(plan,attempt)
 		LayerEnemies.lay(plan,attempt)
 		LayerSprawl._spawn_view(plan)
+		# The dragon is the sky's: no roost underground.
+		if LayerPlan.LayerWorlds.world_of(k) == "under":
+			plan.roost = {}
+			plan.ring.ms = (Time.get_ticks_usec()-began)/1000.0
+			break
 		if LayerSprawl._roost(plan):
 			plan.ring.ms = (Time.get_ticks_usec()-began)/1000.0
 			break
@@ -162,7 +167,7 @@ static func _make_once(seed_value: int, attempt: int, knobs: Dictionary) -> Dict
 	rng.seed = hash([seed_value,attempt,"ring"])
 	var k_all := LayerPlan.KNOBS.duplicate()
 	k_all.merge(knobs,true)
-	var plan := {"seed":seed_value,"attempt":attempt,"knobs":k_all,"shape":"ring","isles":[],"edges":[],"hoods":[],"gulfs":[],"route":[],"exit":{},
+	var plan := {"seed":seed_value,"world":LayerPlan.LayerWorlds.world_of(k_all),"attempt":attempt,"knobs":k_all,"shape":"ring","isles":[],"edges":[],"hoods":[],"gulfs":[],"route":[],"exit":{},
 		"spawn":{},"prize":{},"cannon":{},"ram":{},"void_y":0.0,"tubes":[],"problems":[]}
 	var n := int(k_all.get("ring",0))
 	n = clampi(n,3,7) if n > 0 else rng.randi_range(COUNT.x,COUNT.y)
@@ -647,7 +652,10 @@ static func _links(plan: Dictionary, order: Array, used: Dictionary, rng: Random
 	var reached := {0: true}
 	for i: int in plan.edges[int(plan.ring.serpent)].stops: reached[i] = true
 	var n := order.size()
-	var ride_next := "ferry"
+	# Underground the rune serpent first (the ferry is the sky folk's; it
+	# stays the fallback where no serpent's loop fits).
+	var under := LayerPlan.LayerWorlds.world_of(plan.knobs) == "under"
+	var ride_next := "serpent" if under else "ferry"
 	var progress := true
 	while progress:
 		progress = false
@@ -672,7 +680,7 @@ static func _links(plan: Dictionary, order: Array, used: Dictionary, rng: Random
 			if got.is_empty(): continue
 			reached[u] = true
 			progress = true
-			ride_next = "serpent" if got.ride == "ferry" else "ferry"
+			ride_next = "serpent" if under or got.ride == "ferry" else "ferry"
 	for i: int in order:
 		if not reached.has(i):
 			plan.problems.append("no way onto ring isle %d (%s)" % [i,str(plan.isles[i].id)])

@@ -38,6 +38,7 @@ const WayLights = preload("res://scripts/roguelike/way_lights.gd")
 static var WAY_LIT := "--way-lit" in preload("res://scripts/launch_args.gd").user_args()
 const Pad = preload("res://scripts/pad.gd")
 const LayerShapes = preload("res://scripts/roguelike/layer_shapes.gd")
+const LayerWorlds = preload("res://scripts/roguelike/layer_worlds.gd")
 const LayerSprawl = preload("res://scripts/roguelike/layer_sprawl.gd")
 ## The underground look lightens as the run climbs (scripts/underground/
 ## underground.gd `climb_lift`): each layer past the first eases the torch's
@@ -72,6 +73,7 @@ const WORDS := {
 	"arrive_first": "THE CLIMB",   # the caption a new climb begins with
 	"arrive_first_line": "highest  %s",  # under it, once there is a record
 	"arrive": "HIGHER STILL",      # the caption through the gate
+	"arrive_sky": "OPEN SKY",      # through the last underground gate
 	"arrive_line": "%s",           # under it: the height
 	"fell": "FELL FROM %s",        # the card's title (the void)
 	"felled": "FELLED AT %s",      # the card's title (out of hearts)
@@ -192,7 +194,8 @@ func after_tick(_delta: float) -> void:
 		pending = "gate"
 		_note_way_up(feet)
 		# The next region in its own shape (a run alternates them by depth).
-		study.request_layer(int(study.layer_seed)+1,"Through the gate: %s" % (WORDS.stage % (run.depth+1)),LayerShapes.after(study.layer))
+		# The region one on: out of the dark past the last underground one.
+		study.request_layer(int(study.layer_seed)+1,"Through the gate: %s" % (WORDS.stage % (run.depth+1)),LayerShapes.after(study.layer),LayerWorlds.region_of(study.layer)+1)
 	elif feet.y < float(study.layer.void_y):
 		state = "falling"
 		_t = 0.0
@@ -300,7 +303,8 @@ func _ask(seed_value: int) -> void:
 	pending = "run"
 	_asked = seed_value
 	_want = seed_value
-	study.request_layer(seed_value,"")
+	# A new climb from the run's first region (underground).
+	study.request_layer(seed_value,"","",int(study.first_region()) if study.has_method("first_region") else 1)
 
 ## Off the card: a new climb (on the seed laid behind the card, or
 ## `seed_value` if given) or, `same`, the one that fell again.
@@ -331,7 +335,9 @@ func _arrive(colour: Color) -> void:
 		var line := "" if run.highest <= 0.0 else WORDS.arrive_first_line % metres(run.highest)
 		overlay.show_caption(WORDS.arrive_first,line)
 	else:
-		overlay.show_caption(WORDS.arrive,WORDS.arrive_line % metres(run.height))
+		# Out of the dark: the first sky region has its own caption.
+		var out_of_dark := LayerWorlds.first_sky(study.layer)
+		overlay.show_caption(WORDS.arrive_sky if out_of_dark else WORDS.arrive,WORDS.arrive_line % metres(run.height))
 
 ## The loading screen is lifting: the arrival's dark veil is not needed
 ## over a view the screen has just shown (its caption still comes).

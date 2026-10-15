@@ -22,6 +22,19 @@ const MOTIFS := {
 	"editor_tarn_peak":preload("res://scripts/kit_isle/greybox/au_editor_tarn_peak.gd"),
 	"editor_aqueduct_gorge":preload("res://scripts/kit_isle/greybox/au_editor_aqueduct_gorge.gd"),
 }
+## Each motif's world (scripts/roguelike/layer_worlds.gd): "under" the
+## underground Olmec city's, "sky" the open sky's. Untagged is "sky", so a
+## motif from before the worlds stays where it was. A region draws only its
+## own world's motifs (scripts/roguelike/layer_plan.gd `draw_pool`); the kit
+## motifs of LayerPlan POOL are all sky.
+const WORLD := {
+	"stacked_court":"under",
+}
+
+## The world of a pool id or slug ("gb_" optional): "under" or "sky".
+static func world_of(id: String) -> String:
+	return str(WORLD.get(id.trim_prefix("gb_"),"sky"))
+
 ## A greybox motif's weight in the draw (the pool's own run 1-3), and how
 ## many times one may come a layer.
 const WEIGHT := 3.0
