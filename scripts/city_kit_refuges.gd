@@ -58,6 +58,11 @@ const CityStone = preload("res://scripts/city_kit_stone.gd")
 const PIECES := ["city_mouserun","city_niches","city_hush","city_slotwall"]
 const NAMES := {"city_mouserun":"Mouse run","city_niches":"Votive niches","city_hush":"Hush gallery","city_slotwall":"Slotted wall"}
 
+## The lamps' real flame (a Flame candle, scaled up to a lamp's wick) and how
+## far it draws before the old bead takes over (m).
+const Flame = preload("res://scripts/flame.gd")
+const LAMP_FLAME := 1.25
+const LAMP_FAR := 26.0
 ## Lamp flame and clay.
 const FLAME := Color(1.0,0.6,0.25)
 const CLAY := Color(0.36,0.2,0.12)
@@ -672,13 +677,26 @@ static func _lamp(r: Refuge, at: Vector3, out: Vector3, light: bool, sight: bool
 	bowl_mi.position = Vector3(0.0,0.045,0.0)
 	bowl_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	lamp.add_child(bowl_mi)
-	var flame := MeshInstance3D.new()
-	flame.name = "Flame"
-	flame.mesh = _flame_mesh
-	flame.material_override = _flame_mat
-	flame.position = Vector3(0.0,0.15,0.0)
-	flame.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	lamp.add_child(flame)
+	# The real flame (scripts/flame.gd), near; past LAMP_FAR the old glowing
+	# bead stands in for it (a lamp's flame is 5 cm across: no volume reads
+	# from there, and a far lamp is one pixel).
+	var real: Node3D = Flame.new()
+	real.set("kind","candle")
+	real.set("scale_by",LAMP_FLAME)
+	real.set("with_light",false)
+	real.set("vis_end",LAMP_FAR)
+	real.name = "Flame"
+	real.position = Vector3(0.0,0.08,0.0)
+	lamp.add_child(real)
+	var bead := MeshInstance3D.new()
+	bead.name = "FarFlame"
+	bead.mesh = _flame_mesh
+	bead.material_override = _flame_mat
+	bead.position = Vector3(0.0,0.15,0.0)
+	bead.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	bead.visibility_range_begin = LAMP_FAR
+	bead.visibility_range_begin_margin = LAMP_FAR*0.1
+	lamp.add_child(bead)
 	if light:
 		var l := OmniLight3D.new()
 		l.light_color = FLAME

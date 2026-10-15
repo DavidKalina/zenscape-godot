@@ -66,6 +66,9 @@ const MURK := Color(0.085,0.115,0.17)
 const AMBIENT := Color(0.16,0.22,0.34)
 const MOON := Color(0.5,0.62,0.85)
 const FLAME := Color(1.0,0.58,0.22)
+const Flame = preload("res://scripts/flame.gd")
+## The torch flame's size against the torch kind (0.62 m tall at 1).
+const TORCH_FLAME := 0.72
 
 var study: Node3D
 var knobs: Dictionary = KNOBS.duplicate()
@@ -76,7 +79,7 @@ var center := Vector3.ZERO
 var moon: DirectionalLight3D
 var torch: Node3D
 var torch_light: OmniLight3D
-var flame: MeshInstance3D
+var flame: Node3D
 var _env: Environment
 var _sky_material: ShaderMaterial
 var _clock := 0.0
@@ -243,20 +246,16 @@ func _build_torch() -> void:
 	stick.material_override = wood
 	stick.position = Vector3(0.0,0.2,0.0)
 	torch.add_child(stick)
-	flame = MeshInstance3D.new()
-	var sph := SphereMesh.new()
-	sph.radius = 0.1
-	sph.height = 0.34
-	flame.mesh = sph
-	var fm := StandardMaterial3D.new()
-	fm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	fm.albedo_color = Color(1.0,0.78,0.4)
-	fm.emission_enabled = true
-	fm.emission = FLAME
-	fm.emission_energy_multiplier = 4.0
-	flame.material_override = fm
-	flame.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	flame.position = Vector3(0.0,0.5,0.0)
+	# The flame is the game's real fire (scripts/flame.gd), no light of its
+	# own: the torch's light below is the one that lights the stone.
+	var real: Node3D = Flame.new()
+	real.set("kind","torch")
+	real.set("scale_by",TORCH_FLAME)
+	real.set("with_light",false)
+	real.set("with_smoke",false)
+	flame = real
+	flame.name = "Flame"
+	flame.position = Vector3(0.0,0.44,0.0)
 	torch.add_child(flame)
 	torch_light = OmniLight3D.new()
 	torch_light.light_color = FLAME
@@ -318,7 +317,6 @@ func _process(delta: float) -> void:
 	var f := _noise.get_noise_1d(_clock*9.0)*0.5+_noise.get_noise_1d(_clock*23.0+40.0)*0.25
 	torch_light.light_energy = float(knobs.torch)*(1.0+f*0.32)
 	torch_light.position = Vector3(f*0.03,0.62+f*0.04,0.0)
-	flame.scale = Vector3(1.0+f*0.15,1.0+f*0.35,1.0+f*0.15)
 
 ## The look's values on the study's environment, lights and air, after the
 ## day's, the weather's and the air's (processed before this node).

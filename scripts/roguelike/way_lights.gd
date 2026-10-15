@@ -19,6 +19,9 @@ extends Node3D
 ## Lit by day too, softly (DAY_GLOW), fuller after dark. A lantern stands
 ## on what is under its spot; the motif isles stand a slice a frame, so a
 ## lantern waits (hidden) until the ground under it is there.
+const Flame = preload("res://scripts/flame.gd")
+## How far the real flame draws before the bead stands in (m).
+const FLAME_FAR := 28.0
 const StoneLamp = preload("res://scripts/stone_lamp.gd")
 const StoneLampLights = preload("res://scripts/stone_lamp_lights.gd")
 const RuinKit = preload("res://scripts/ruin_kit.gd")
@@ -203,17 +206,9 @@ func _stand(lamp: Dictionary) -> void:
 	body.mesh = StoneLamp.mesh()
 	body.material_override = _stone
 	holder.add_child(body)
-	var bead := MeshInstance3D.new()
-	var sphere := SphereMesh.new()
-	sphere.radius = StoneLamp.GLOW_RADIUS
-	sphere.height = StoneLamp.GLOW_RADIUS*2.4
-	sphere.radial_segments = 6
-	sphere.rings = 3
-	bead.mesh = sphere
-	bead.material_override = _core
-	bead.position = Vector3.UP*StoneLamp.GLOW_HEIGHT
-	bead.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	holder.add_child(bead)
+	# The real flame in the fire box (child 1); past FLAME_FAR the old glowing
+	# bead (added after the light, so child 3 stays the light) stands in.
+	Flame.in_lantern(holder,Vector3.UP*StoneLamp.BOX_LOW*StoneLamp.UNIT,FLAME_FAR)
 	var halo := MeshInstance3D.new()
 	var quad := QuadMesh.new()
 	quad.size = Vector2.ONE*HALO_SIZE
@@ -230,6 +225,19 @@ func _stand(lamp: Dictionary) -> void:
 	light.light_specular = 0.2
 	light.position = Vector3.UP*(StoneLamp.GLOW_HEIGHT+0.2)
 	holder.add_child(light)
+	var bead := MeshInstance3D.new()
+	var sphere := SphereMesh.new()
+	sphere.radius = StoneLamp.GLOW_RADIUS
+	sphere.height = StoneLamp.GLOW_RADIUS*2.4
+	sphere.radial_segments = 6
+	sphere.rings = 3
+	bead.mesh = sphere
+	bead.material_override = _core
+	bead.position = Vector3.UP*StoneLamp.GLOW_HEIGHT
+	bead.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	bead.visibility_range_begin = FLAME_FAR
+	bead.visibility_range_begin_margin = FLAME_FAR*0.1
+	holder.add_child(bead)
 	lamp.node = holder
 	_lamp_nodes.append(holder)
 
@@ -265,4 +273,5 @@ func _process(_delta: float) -> void:
 	for holder in _lamp_nodes:
 		var light := holder.get_child(3) as OmniLight3D
 		light.light_energy = LIGHT_ENERGY*glow
+		(holder.get_child(1) as Flame).burn = 0.55+0.45*glow
 	for light in hung: light.light_energy = TOP_ENERGY*glow

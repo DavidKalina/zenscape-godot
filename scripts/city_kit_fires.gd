@@ -618,6 +618,8 @@ class Cresset extends Node3D:
 	func _make_spill(at: Vector3) -> void:
 		spill = CityFire.new()
 		spill.name = "Spill"
+		spill.kind = "bonfire"
+		spill.smoke = false
 		spill.flame = fire.flame*0.75
 		spill.bed = radius*2.6
 		spill.light_range = fire.light_range*1.1
@@ -800,6 +802,8 @@ class Runnel extends Node3D:
 		Kit.mesh_node(self,m,"HeadPort")
 		flame = CityFire.new()
 		flame.name = "Front"
+		flame.kind = "torch"
+		flame.smoke = false
 		flame.flame = 0.55*Kit.size()
 		flame.bed = 0.35*Kit.size()
 		flame.light_range = 9.0
