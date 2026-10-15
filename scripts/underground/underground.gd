@@ -126,10 +126,13 @@ static func flagged() -> bool:
 	return false
 
 ## The preset the flags ask: --underground=haze, else the torch's (the
-## run's world's when the flags don't ask the look).
+## run's world's when the flags don't ask the look). The last flag wins, so
+## a launcher's extra flags override its own.
 static func asked() -> String:
 	if not flagged() and world_preset != "" and PRESETS.has(world_preset): return world_preset
-	for a: String in preload("res://scripts/launch_args.gd").user_args():
+	var args: Array = preload("res://scripts/launch_args.gd").user_args()
+	for i in range(args.size()-1,-1,-1):
+		var a: String = args[i]
 		if a.begins_with(FLAG+"="):
 			var k := a.get_slice("=",1)
 			if PRESETS.has(k): return k
