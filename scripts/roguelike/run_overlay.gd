@@ -9,6 +9,13 @@ extends CanvasLayer
 ##   runes carried beside it in small caps and a hairline under both, over
 ##   a faint band. It sinks low while he moves and comes up when he stands
 ##   still or a count changes (`set_readout`'s `loud`).
+## - **The hearts** (`set_hearts`), under the readout's hairline, straight
+##   over the view: the HUD's carved, faceted glyph (scripts/hud_icons.gd
+##   "heart") with a soft shadow while held, its pale silhouette when lost.
+##   A hit (`hurt`) pops the hearts lost (a flash, the lit glyph swelling
+##   and fading off the empty one) with a low madder bloom at the screen's
+##   edge; the last one left beats. They never sink below HEARTS_LOW while
+##   he moves.
 ## - **The caption** (`show_caption`): a small isle card in the upper
 ##   middle, a title settling from wider tracking, the hairline drawing out
 ##   from its diamond, a line under it; it holds, then fades.
@@ -21,6 +28,7 @@ extends CanvasLayer
 ## place the words live), and steps it (`step`) on the study's tick.
 ## Lengths are design px of a 1080-high screen, scaled.
 const Splash = preload("res://scripts/isle_splash.gd")
+const Icons = preload("res://scripts/hud_icons.gd")
 const DARK := Color(0.035,0.04,0.055)
 const WARM := Color(1.0,0.93,0.8)
 ## Seconds: the caption in, held, out; the card in; the readout's rise and
@@ -46,6 +54,23 @@ const FACT_SIZE := 19
 const FACT_GAP := 32.0
 const PROMPT_SIZE := 10
 const PROMPT_BOTTOM := 104.0
+## The hearts: their size and gap (design px), their row under the
+## hairline (px below CORNER.y); their least alpha while he moves; a lost
+## heart's pop (s); the edge's bloom on a hit (s, alpha); the last heart's
+## beat (Hz).
+const HEART := 24.0
+const HEART_GAP := 4.0
+const HEARTS_ROW := 58.0
+const HEARTS_LOW := 0.6
+const POP := 0.55
+const BLOOM := 0.45
+const BLOOM_A := 0.4
+const BEAT_HZ := 1.1
+## The bloom's warmth (a deep madder, kept low).
+const BLOOM_TINT := Color(0.40,0.08,0.06)
+## An empty heart's alpha (its pale silhouette), and the glyphs' shadow.
+const EMPTY_A := 0.34
+const SHADOW_TINT := Color(0.03,0.025,0.02,0.55)
 
 var veil: ColorRect
 var readout: Control
@@ -72,6 +97,17 @@ var _card_band: ColorRect
 var _card_font: FontVariation
 var _prompt_font: FontVariation
 var _card_age := INF
+var hearts_row: Control
+var _hearts := 4
+var _hearts_most := 4
+## Each heart's pop age (INF none), by its place in the row.
+var _pops: Array[float] = []
+var _bloom: TextureRect
+var _bloom_age := INF
+var _beat := 0.0
+## The heart glyph's textures by variant, and the size they were made at.
+var _glyph_tex := {}
+var _glyph_px := 0.0
 
 func _init() -> void:
 	name = "RunOverlay"
@@ -90,6 +126,23 @@ func _ready() -> void:
 	_side_font = Splash.inscription_font()
 	readout_main = _label(readout,_readout_font,true)
 	readout_side = _label(readout,_side_font,false)
+	hearts_row = Control.new()
+	hearts_row.name = "Hearts"
+	hearts_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hearts_row.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	hearts_row.draw.connect(_draw_hearts.bind(hearts_row))
+	readout.add_child(hearts_row)
+	_bloom = TextureRect.new()
+	_bloom.name = "Bloom"
+	_bloom.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_bloom.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_bloom.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_bloom.stretch_mode = TextureRect.STRETCH_SCALE
+	_bloom.texture = _bloom_texture()
+	_bloom.modulate = Color(1,1,1,0)
+	_bloom.visible = false
+	add_child(_bloom)
+	move_child(_bloom,1)
 	caption = _group("Caption",_draw_caption)
 	_caption_band = caption.get_child(0)
 	_caption_font = Splash.inscription_font()
@@ -145,6 +198,24 @@ func set_readout(main: String, side: String, shown: bool, loud: bool) -> void:
 	_readout_want = (READOUT_HIGH if loud else READOUT_LOW) if shown else 0.0
 	if not shown: _readout_a = 0.0
 
+## The hearts held of `most`.
+func set_hearts(held: int, most: int) -> void:
+	if most != _hearts_most or _pops.size() != most:
+		_pops.resize(most)
+		_pops.fill(INF)
+	_hearts = held
+	_hearts_most = most
+
+## A hit: `took` hearts lost, `held` left. The lost pop, the edge blooms.
+func hurt(held: int, took: int) -> void:
+	if _pops.size() != _hearts_most:
+		_pops.resize(_hearts_most)
+		_pops.fill(INF)
+	for i in range(held,mini(held+took,_hearts_most)): _pops[i] = 0.0
+	_hearts = held
+	_bloom_age = 0.0
+	_bloom.visible = true
+
 ## The caption from the start: `title` over the hairline, `line` under.
 func show_caption(title: String, line: String) -> void:
 	caption_title.text = title
@@ -179,6 +250,18 @@ func set_prompt(prompt: String) -> void:
 func step(delta: float) -> void:
 	_px = maxf(veil.get_viewport_rect().size.y,1.0)/1080.0
 	_readout_a = move_toward(_readout_a,_readout_want,delta*READOUT_RATE)
+	for i in range(_pops.size()):
+		if _pops[i] != INF:
+			_pops[i] += delta
+			if _pops[i] > POP: _pops[i] = INF
+	_beat += delta
+	if _bloom_age != INF:
+		_bloom_age += delta
+		var k := _bloom_age/BLOOM
+		_bloom.modulate = Color(1,1,1,BLOOM_A*(1.0-smoothstep(0.15,1.0,k))*smoothstep(0.0,0.08,k))
+		if _bloom_age > BLOOM:
+			_bloom_age = INF
+			_bloom.visible = false
 	_layout_readout()
 	if caption.visible:
 		_caption_age += delta
@@ -226,6 +309,7 @@ func _layout_readout() -> void:
 	var span := _readout_span()
 	Splash.lay_band(_readout_band,CORNER.x*px+span*0.5,top-22.0*px,top+58.0*px,span,px,0.4*a,70.0)
 	readout.get_node("Marks").queue_redraw()
+	hearts_row.queue_redraw()
 
 func _draw_readout(on: Control) -> void:
 	if not readout.visible or _readout_a <= 0.0: return
@@ -233,6 +317,80 @@ func _draw_readout(on: Control) -> void:
 	var span := _readout_span()
 	var line := Color(Splash.HAIRLINE,Splash.HAIRLINE.a*0.8*_readout_a)
 	Splash.hairline(on,CORNER.x*px+span*0.5,roundf((CORNER.y+36.0)*px),span*0.5+10.0*px,px,line,3.0*px)
+
+# --- The hearts --------------------------------------------------------------------
+
+## The hearts' alpha: the readout's, never under HEARTS_LOW while shown.
+func _hearts_a() -> float:
+	if not readout.visible or _readout_want <= 0.0: return _readout_a
+	return maxf(_readout_a,HEARTS_LOW)
+
+func _draw_hearts(on: Control) -> void:
+	var a := _hearts_a()
+	if not readout.visible or a <= 0.0: return
+	var px := _px
+	var y := (CORNER.y+HEARTS_ROW+HEART*0.5)*px
+	for i in range(_hearts_most):
+		var at := Vector2((CORNER.x+HEART*0.5+(HEART+HEART_GAP)*float(i))*px,y)
+		var pop: float = _pops[i] if i < _pops.size() else INF
+		_heart(on,at,roundf(HEART*px),i < _hearts,pop,a,_hearts == 1 and i == 0)
+
+## One heart at `at`, `size` px across, the carved glyph (scripts/
+## hud_icons.gd "heart"): held, its faceted stone with a soft shadow; lost,
+## its pale empty silhouette; `pop` s into its loss (INF none): the lit
+## glyph swelling and fading off the empty one, a flash at its start;
+## `last`, the beat.
+func _heart(on: Control, at: Vector2, size: float, held: bool, pop: float, a: float, last: bool) -> void:
+	_glyphs(size)
+	var swell := 1.0
+	if last and held: swell = 1.0+0.1*pow(maxf(0.0,sin(_beat*TAU*BEAT_HZ)),6.0)
+	if held:
+		_glyph(on,"icon",at,size*swell,Color(1,1,1,a),true)
+		return
+	_glyph(on,"locked",at,size,Color(1,1,1,EMPTY_A*a),false)
+	if pop != INF:
+		var k := clampf(pop/POP,0.0,1.0)
+		var flash := 1.0-smoothstep(0.0,0.35,k)
+		_glyph(on,"lit",at,size*(1.0+0.6*smoothstep(0.0,1.0,k)),Color(1.0+0.8*flash,1.0+0.7*flash,1.0+0.6*flash,a*(1.0-smoothstep(0.2,1.0,k))),false)
+
+## One variant of the heart glyph, its 24-unit box `size` px across round
+## `at` (the texture covers the icon's padded box), with its soft shadow.
+func _glyph(on: Control, variant: String, at: Vector2, size: float, tint: Color, shadow: bool) -> void:
+	var tex: Texture2D = _glyph_tex.get(variant)
+	if tex == null: return
+	var extent := size*Icons.BOX/24.0
+	var rect := Rect2(at-Vector2.ONE*extent*0.5,Vector2.ONE*extent)
+	if shadow:
+		var shade: Texture2D = _glyph_tex.get("shadow")
+		if shade != null:
+			for o: Vector2 in [Vector2(0.0,1.6),Vector2(0.0,2.6)]:
+				on.draw_texture_rect(shade,Rect2(rect.position+o*_px,rect.size),false,Color(SHADOW_TINT,SHADOW_TINT.a*0.5*tint.a))
+	on.draw_texture_rect(tex,rect,false,tint)
+
+## The heart's textures, made at `size` px (again when the screen's scale
+## changes it).
+func _glyphs(size: float) -> void:
+	if is_equal_approx(size,_glyph_px) and not _glyph_tex.is_empty(): return
+	_glyph_px = size
+	for variant: String in ["icon","lit","locked","shadow"]:
+		var tex: Texture2D = Icons.texture("heart",variant,size)
+		if tex != null: _glyph_tex[variant] = tex
+
+## The bloom's texture: clear in the middle, the edges' warmth.
+static func _bloom_texture() -> Texture2D:
+	var g := Gradient.new()
+	g.set_color(0,Color(BLOOM_TINT,0.0))
+	g.set_color(1,Color(BLOOM_TINT,1.0))
+	g.add_point(0.55,Color(BLOOM_TINT,0.0))
+	g.add_point(0.85,Color(BLOOM_TINT,0.45))
+	var tex := GradientTexture2D.new()
+	tex.gradient = g
+	tex.fill = GradientTexture2D.FILL_RADIAL
+	tex.fill_from = Vector2(0.5,0.5)
+	tex.fill_to = Vector2(1.08,1.08)
+	tex.width = 256
+	tex.height = 256
+	return tex
 
 ## How far in the caption is (0..1) and how shown.
 func _caption_t() -> float:

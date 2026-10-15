@@ -638,6 +638,10 @@ func _acting(delta: float) -> bool:
 	return true
 
 ## Whether harm: its lurch onto its chin, him at its face.
+## On the death card: the Olmec (the head is his).
+func harm_cause() -> String:
+	return "olmec"
+
 func harmful() -> bool:
 	if _act != "heave": return false
 	var u := _act_t/_act_len*HEAVE_LEN
@@ -869,6 +873,7 @@ func _blast(m: PilotMotor) -> void:
 	m.feet.y = maxf(m.feet.y,_ground+0.1)
 	var v := m.knock_velocity(Vector2(_blast_way.x,_blast_way.z),float(knobs.blast_out),float(knobs.blast_up))
 	m.knock(v,self,float(knobs.blast_down))
+	m.harm(harm_cause(),1,self)
 	_open = 1.1
 	air.blast(mouth(),_blast_way)
 	# The kick: reared back, slid back along the turf.

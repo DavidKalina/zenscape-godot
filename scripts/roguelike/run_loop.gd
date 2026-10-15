@@ -12,7 +12,14 @@ extends Node
 ##   Then Space (pad A) climbs again from layer 1 on a new seed, R (pad X)
 ##   the same climb again. The new climb is laid behind the card while it
 ##   is read.
-## - A fall onto a lower isle (its fall stun) is no end, just a setback.
+## - A fall onto a lower isle (its fall stun) is no end, just a setback;
+##   a long one costs hearts (docs/design/roguelike/game-v1-hearts.md).
+## - **Hearts**: RunState.HEARTS a run, kept through the gate. A fall, the
+##   Olmec, a trap or a hazard takes them through the motor's one damage
+##   call (PilotMotor `harm`, its `harmed` signal, heard here). After a hit
+##   he flickers, safe from the next for RunState.SAFE s. At none he lies
+##   where he fell (DOWN_HOLD), the dark comes (FADE), and the same card
+##   names what did it (WORDS.causes).
 ## - Each layer begins at its start spot (scripts/roguelike/start_spot.gd)
 ##   with the way on lit (scripts/roguelike/way_lights.gd).
 ## - I shows the layer's long card (the study's); the corner keeps only the
@@ -35,6 +42,11 @@ const LayerShapes = preload("res://scripts/roguelike/layer_shapes.gd")
 ## Past the void, falling on before the dark comes (s), the dark coming (s).
 const FALL_ON := 1.1
 const FADE := 1.3
+## Out of hearts: seconds he lies there before the dark comes. The flicker
+## while safe after a hit: blinks a second, and the share of each shown.
+const DOWN_HOLD := 1.0
+const FLICKER_HZ := 12.0
+const FLICKER_ON := 0.6
 ## The gate's light coming up (s, while the next layer is laid), held at
 ## the new start (s) and clearing (s).
 const GATE_UP := 0.35
@@ -53,7 +65,13 @@ const WORDS := {
 	"arrive_first_line": "highest  %s",  # under it, once there is a record
 	"arrive": "HIGHER STILL",      # the caption through the gate
 	"arrive_line": "%s",           # under it: the height
-	"fell": "FELL FROM %s",        # the card's title
+	"fell": "FELL FROM %s",        # the card's title (the void)
+	"felled": "FELLED AT %s",      # the card's title (out of hearts)
+	"cause_void": "into the void",  # the card's first fact: what did it
+	"cause": "by %s",
+	# The harm's causes (PilotMotor `harm`), as the card names them.
+	"causes": {"fall":"the fall","olmec":"the Olmec","ram":"the ram","trap":"a trap",
+		"wind":"the wind","stone":"falling stone","enemy":"the city's guardians"},
 	"lost_none": "nothing carried",
 	"lost_one": "1 rune lost",
 	"lost": "%d runes lost",
@@ -72,7 +90,8 @@ const STILL_SPEED := 0.4
 var study: Node3D
 var run := RunState.new()
 var overlay: CanvasLayer
-## "play", "falling" (past the void, the dark coming), "card" (the fall's
+## "play", "falling" (past the void, the dark coming), "dying" (out of
+## hearts, the dark coming), "card" (the fall's
 ## card up), "gate" (through it, the next layer laid), "arrive" (at a
 ## start, the veil clearing; he can move).
 var state := "play"
@@ -108,6 +127,7 @@ func setup(scene: Node3D) -> void:
 	study = scene
 	overlay = RunOverlay.new()
 	scene.add_child(overlay)
+	watch(study.motor)
 	# Until the first layer stands he walks the base as before; it comes
 	# up behind a moment's dark (`_arrive`).
 	_veil = 0.0
@@ -132,6 +152,10 @@ func before_tick(delta: float) -> bool:
 		"falling":
 			if _t > FALL_ON: _veil = move_toward(_veil,1.0,delta/FADE)
 			if _veil >= 1.0: _to_card()
+		"dying":
+			run.tick(delta)
+			if _t > DOWN_HOLD: _veil = move_toward(_veil,1.0,delta/FADE)
+			if _veil >= 1.0: _to_card(_dead_by)
 		"gate":
 			_veil = move_toward(_veil,1.0,delta/GATE_UP)
 			moves = false
@@ -139,6 +163,7 @@ func before_tick(delta: float) -> bool:
 			moves = false
 	overlay.set_veil(_veil_colour,_veil)
 	_readout(delta)
+	_flicker()
 	overlay.step(delta)
 	return moves
 
@@ -162,20 +187,22 @@ func after_tick(_delta: float) -> void:
 		_veil_colour = RunOverlay.DARK
 
 ## The card: the run's sums, the record kept, and a new climb laid behind
-## it at once (so it is ready when he is).
-func _to_card() -> void:
+## it at once (so it is ready when he is). `cause` what ended it: "" the
+## void, else the harm's (WORDS.causes).
+func _to_card(cause := "") -> void:
 	state = "card"
 	_t = 0.0
 	_veil = 1.0
 	last_fall = run.die()
 	last_fall.seed = run.run_seed
+	last_fall.cause = cause
 	overlay.show_card(card_title(last_fall),card_facts(last_fall),_hint())
 	_wake = false
 	_laid_for = -1
 	_pre = _draw_seed()
 	_ask(_pre)
 	# (After the ask: laying a layer sets the study's own.)
-	study.last_end = "Into the void: fell from %s (%s)" % [metres(float(last_fall.height)),WORDS.stage % int(last_fall.depth)]
+	study.last_end = "%s: %s (%s)" % [cause_line(last_fall),card_title(last_fall),WORDS.stage % int(last_fall.depth)]
 
 ## "1,180 m" for 1180.4 (none under 0).
 static func metres(h: float) -> String:
@@ -187,14 +214,59 @@ static func metres(h: float) -> String:
 	return "%s %s" % [out,WORDS.unit]
 
 static func card_title(fall: Dictionary) -> String:
+	if String(fall.get("cause","")) != "": return WORDS.felled % metres(float(fall.height))
 	return WORDS.fell % metres(float(fall.height))
 
-## The card's facts: the runes lost, how long, a pause, the highest.
+## What ended it, as the card says: "into the void", "by the Olmec".
+static func cause_line(fall: Dictionary) -> String:
+	var cause := String(fall.get("cause",""))
+	if cause == "": return WORDS.cause_void
+	return WORDS.cause % String((WORDS.causes as Dictionary).get(cause,cause))
+
+## The card's facts: what did it, the runes lost, how long, a pause, the
+## highest.
 static func card_facts(fall: Dictionary) -> PackedStringArray:
 	var n := int(fall.runes)
 	var lost: String = WORDS.lost_none if n == 0 else (WORDS.lost_one if n == 1 else WORDS.lost % n)
 	var high: String = WORDS.highest_new if bool(fall.high_record) else WORDS.highest % metres(float(fall.highest))
-	return PackedStringArray([lost,RunState.clock(float(fall.time)),"",high])
+	return PackedStringArray([cause_line(fall),lost,RunState.clock(float(fall.time)),"",high])
+
+# --- Hearts --------------------------------------------------------------------------
+
+## What ended the run when out of hearts (the harm's cause).
+var _dead_by := ""
+## The wanderers whose harm is heard (one, for now).
+var _watched: Array = []
+
+## Hears `wanderer`'s harm (his motor's `harmed`), keyed by him in the run.
+func watch(wanderer: Object) -> void:
+	if wanderer == null or wanderer in _watched: return
+	_watched.append(wanderer)
+	wanderer.connect(&"harmed",_harmed.bind(wanderer))
+
+## A hurt on `wanderer`: hearts off (none while safe from a hit; a fall's
+## always), the corner's heart drained, the flash; at none, "dying".
+func _harmed(amount: int, cause: String, _source: Object, wanderer: Object) -> void:
+	if state != "play" and state != "arrive": return
+	var took := run.hurt(wanderer,amount,cause,cause == "fall")
+	if took <= 0: return
+	_loud = LOUD_FOR
+	overlay.hurt(run.hearts_of(wanderer),took)
+	if run.hearts_of(wanderer) <= 0:
+		state = "dying"
+		_t = 0.0
+		_dead_by = cause
+		_veil_colour = RunOverlay.DARK
+
+## While safe after a hit, his figure blinks (the study's `body`); shown
+## steady otherwise, and under the card.
+func _flicker() -> void:
+	var body: Variant = study.get("body")
+	var motor: Variant = study.get("motor")
+	if not (body is Node3D) or motor == null: return
+	var safe := run.safe_for(motor) if state in ["play","arrive","dying"] else 0.0
+	var on := safe <= 0.0 or fposmod(safe*FLICKER_HZ,1.0) < FLICKER_ON
+	if (body as Node3D).visible != on: (body as Node3D).visible = on
 
 func _hint() -> String:
 	if _wake: return WORDS.waking
@@ -304,9 +376,11 @@ func _readout(delta: float) -> void:
 	var speed: float = (motor.velocity as Vector3).length() if motor != null else 0.0
 	_still = _still+delta if speed < STILL_SPEED else 0.0
 	var long_card: Variant = study.get("_card")
-	var shown := run.depth > 0 and state in ["play","arrive"] and not (long_card != null and (long_card as Label).visible)
+	var shown := run.depth > 0 and state in ["play","arrive","dying"] and not (long_card != null and (long_card as Label).visible)
 	var side := "" if run.runes == 0 else (WORDS.rune if run.runes == 1 else WORDS.runes) % run.runes
 	overlay.set_readout(WORDS.readout % metres(run.height),side.to_upper(),shown,_loud > 0.0 or _still > STILL_AFTER)
+	var motor_now: Variant = study.get("motor")
+	overlay.set_hearts(run.hearts_of(motor_now) if motor_now != null else RunState.HEARTS,RunState.HEARTS)
 
 ## Keys: on the card, Space / Enter / E (pad A) a new climb, R (pad X) the
 ## same; anywhere, I the layer's long card. True when used.
@@ -325,7 +399,7 @@ func input(event: InputEvent) -> bool:
 			continue_run(true)
 			return true
 		return key >= 0 and key != KEY_ESCAPE
-	if state == "gate" or state == "falling": return key >= 0 and key != KEY_ESCAPE
+	if state == "gate" or state == "falling" or state == "dying": return key >= 0 and key != KEY_ESCAPE
 	if key == KEY_N and state != "card": pending = "skip" if not (event as InputEventKey).shift_pressed else ""
 	if key == KEY_BACKSPACE: pending = ""
 	return false

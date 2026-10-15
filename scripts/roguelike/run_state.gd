@@ -22,6 +22,19 @@ var depth := 0
 var runes := 0
 ## Seconds played in the run.
 var time := 0.0
+## Hearts (docs/design/roguelike/game-v1-hearts.md): HEARTS a wanderer at a
+## run's start, none given back through the gate. Kept per wanderer (keyed
+## by his motor, so a second one later has his own): `hearts_of`, `hurt`,
+## the seconds he is safe from another hit after one (`safe_for`), and
+## what last hurt him (`cause_of`).
+const HEARTS := 4
+## Seconds safe after a hit: past the motor's RESTUN_GAP (1.2 s, one
+## source's own second stun) so the bump that stunned can't take another
+## heart as he gets up, short enough that a second blow soon after counts.
+const SAFE := 1.6
+var hearts := {}
+var _safe := {}
+var _cause := {}
 ## Metres above the run's start: now, where he last stood (on the ground),
 ## the most stood at this run, and what this layer's start counts as.
 var height := 0.0
@@ -50,6 +63,9 @@ func begin(seed_value: int) -> void:
 	footing = 0.0
 	best = 0.0
 	banked = 0.0
+	hearts.clear()
+	_safe.clear()
+	_cause.clear()
 	runs += 1
 	_reach()
 
@@ -74,8 +90,30 @@ func take_rune() -> void:
 
 func tick(delta: float) -> void:
 	time += delta
+	for w: Variant in _safe.keys(): _safe[w] = maxf(0.0,float(_safe[w])-delta)
 
-## The run ended in the void: what it came to ({depth, runes, time,
+func hearts_of(wanderer: Object) -> int:
+	return int(hearts.get(wanderer,HEARTS))
+
+func safe_for(wanderer: Object) -> float:
+	return float(_safe.get(wanderer,0.0))
+
+func cause_of(wanderer: Object) -> String:
+	return String(_cause.get(wanderer,""))
+
+## `wanderer` hurt `amount` by `cause`: the hearts it took (0 while he is
+## safe from a hit; a fall's always counts, `always`), then he is safe for
+## SAFE s.
+func hurt(wanderer: Object, amount: int, cause: String, always := false) -> int:
+	if amount <= 0 or hearts_of(wanderer) <= 0: return 0
+	if safe_for(wanderer) > 0.0 and not always: return 0
+	var took := mini(amount,hearts_of(wanderer))
+	hearts[wanderer] = hearts_of(wanderer)-took
+	_safe[wanderer] = SAFE
+	_cause[wanderer] = cause
+	return took
+
+## The run ended (in the void, or out of hearts): what it came to ({depth, runes, time,
 ## deepest, record, height, best, highest, high_record}: `height` where he
 ## last stood, record / high_record true when this run set the deepest /
 ## the highest over an earlier one), the record saved.
