@@ -1,7 +1,6 @@
 extends RefCounted
 ## The pocket sail: a little cloth wing held overhead, popped out with Jump
-## in mid-air (as Wind Waker's Deku Leaf, or the paraglider in Breath of
-## the Wild). Not a hang glider and not a parachute: it is for coasting.
+## in mid-air. Not a hang glider and not a parachute: it is for coasting.
 ## Knocked off an island, thrown high and far enough, the pilot coasts back
 ## down onto it; too low, or too far, he comes down short and climbs back.
 ## Height is what it spends, and nothing gives it back for good.

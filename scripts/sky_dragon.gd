@@ -465,7 +465,7 @@ var _ride_vy := 0.0
 var launched := 0
 ## On the rim (round 6): the head, jaw, neck and thumbs kept on or over the
 ## isle's turf as it is posed now (rays on its colliders), the chin laid flush
-## on the turf between blasts, Odyssey-style: the lower jaw lies on the
+## on the turf between blasts: the lower jaw lies on the
 ## ground and the head lifts off it to pant, inhale and blow.
 ## Probes are [bone, point in the bone's rest frame] on the mesh's underside
 ## (scripts measured off rim_dragon_c.glb: the jaw's floor, its sides, the

@@ -1,5 +1,5 @@
 extends Control
-## The forms wheel under Land (Mario Maker's parts wheel): the land forms
+## The forms wheel under Land: the land forms
 ## (scripts/mountain_forms.gd FORMS) swing down from behind the Land slot on an
 ## arc, each a moment after the last, joined to it by dotted threads. The
 ## shell opens it on a hold of Land, a second click of Land, or the 1 key, and

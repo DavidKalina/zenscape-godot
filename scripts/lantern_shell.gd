@@ -1,7 +1,7 @@
 extends Control
 ## The Lantern Maker creation shell (docs/ui/DIRECTIONS.md, "B2 · Lantern
-## Maker"): Lantern's glowing line glyphs laid out like Super Mario Maker 2's
-## editor. The brushes run along the top (Land carries its form as a badge and
+## Maker"): Lantern's glowing line glyphs in a maker-style
+## editor layout. The brushes run along the top (Land carries its form as a badge and
 ## opens the forms wheel), the hand modes and the Undo wisp run down the left,
 ## Mood, World and Craft down the right, Photo is the play button at the lower
 ## right, and a slim bottom holds one hint line. Size and strength live on the
@@ -24,7 +24,7 @@ const Cursor = preload("res://scripts/lantern_cursor.gd")
 const MoodVeil = preload("res://scripts/lantern_mood.gd")
 const Palette = preload("res://scripts/creation_palette.gd")
 const Forms = preload("res://scripts/mountain_forms.gd")
-## Holding Land this long opens the forms wheel (Mario Maker's parts wheel).
+## Holding Land this long opens the forms wheel.
 const HOLD_SECONDS := 0.3
 ## Empty dotted slots after the brushes, for brushes still to come.
 const EMPTY_SLOTS := 3

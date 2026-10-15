@@ -122,7 +122,7 @@ const LAYOUT := {
 		{"key":7,"name":"beat 6: in the hall (the dark)","at":Vector3(0.0,-1.0,-26.0),"face":Vector2(0.0,1.0),"label":""},
 		{"key":8,"name":"exit: the gallery (4.8 m)","at":Vector3(40.0,4.8,-24.0),"face":Vector2(1.0,-1.0),"label":"exit gallery"},
 		{"key":9,"name":"CHAIN 1: caught on the north rim (to the roof)","at":Vector3(-1.0,1.8,-13.0),"face":Vector2(-0.6,0.8),"head":300.0,"label":"chain 1 start"},
-		{"key":10,"name":"CHAIN 2: the Odyssey line (blast to the apron)","at":Vector3(12.0,1.8,-4.0),"face":Vector2(-0.9,-0.5),"head":20.0,"label":"chain 2 start"},
+		{"key":10,"name":"CHAIN 2: the blast line (blast to the apron)","at":Vector3(12.0,1.8,-4.0),"face":Vector2(-0.9,-0.5),"head":20.0,"label":"chain 2 start"},
 		{"key":11,"name":"CHAIN 3: the star it counts (lure on the sun gnomon)","at":Vector3(-12.7,5.0,4.6),"face":Vector2(1.0,0.4),"head":215.0,"label":"chain 3: be the star"},
 		{"key":12,"name":"the apron (blast landing, 0.8 m)","at":Vector3(22.0,0.8,-10.0),"face":Vector2(1.0,0.0),"label":"apron"},
 	],

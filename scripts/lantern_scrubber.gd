@@ -1,5 +1,5 @@
 extends Control
-## The bottom scrubber, like Mario Maker's course-scroll strip: one slim track
+## The bottom scrubber, a course-scroll strip: one slim track
 ## with two handles. The glowing orb on the line is the season (the four season
 ## glyphs sit at its detents); the small sun riding above the line is the time
 ## of day, placed by the sun's phase, with Turning day at the right end.

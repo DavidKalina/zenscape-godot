@@ -73,13 +73,12 @@ existing test its change breaks.
 
 "The generator" is the roguelike run's level generator (roguelike branch):
 `studies/run_layer.tscn -- --shape=sprawl|ring --seed=N`, code in
-`scripts/roguelike/`, its history in `docs/design/roguelike/layer-round*.md`
-(start with the newest).
+`scripts/roguelike/`.
 
 # Motifs
 
 New motifs and kit pieces go through the pipeline in
-`docs/design/roguelike/motif-brief.md`: card, then place, then dressing
+`docs/design/motifs/motif-brief.md`: card, then place, then dressing
 pass (skills `motif-brainstorm`, `motif-greybox`, `motif-turf`). A motif is
 a place first, held to the original kit motifs' beauty; combos emerge from
 its pieces, and every piece says what it catches and throws.
@@ -87,7 +86,7 @@ its pieces, and every piece says what it catches and throws.
 # The motif editor
 
 The user hand-authors motifs in `studies/motif_editor.tscn` (design and
-rounds: `docs/design/roguelike/level-editor*.md`). Its saves,
+rounds: `docs/design/motif-editor/level-editor*.md`). Its saves,
 `motifs/authored/*.json`, are recipes (piece ids, seeds, settings,
 transforms) rebuilt from the current code on every load. So when you change
 RuinKit pieces, KitLand, flora or the motif contract:
@@ -142,7 +141,7 @@ through real texture, not through bright colour or clean toy shapes.
 
 - **Stone**: weathered basalt with washes, rain streaks, flecks, pits,
   cracks, chipped high points, grime in the crevices and dry lichen
-  (`shaders/olmec_stone.gdshader`, `docs/design/roguelike/olmec-weathered.md`).
+  (`shaders/olmec_stone.gdshader`, `docs/art/olmec-weathered.md`).
   The rune serpent wears the same stone with pebbled scales carved in.
 - **The wanderer**: real, lived-in stuff: felt, knit, canvas, twill,
   scuffed leather, tarnished brass, sun-fade, and ochre dust up the boots
@@ -162,7 +161,7 @@ through real texture, not through bright colour or clean toy shapes.
 
 # Animation
 
-Characters and enemies animate to a Nintendo-like bar: authored key poses
+Characters and enemies animate to a high bar: authored key poses
 that read at a glance, anticipation, squash and stretch, follow-through,
 snappy timing with holds, and weight that matches size. Author clips in
 Blender (rig + actions exported to glb) and layer procedural corrections,

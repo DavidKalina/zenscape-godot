@@ -2,7 +2,7 @@
 
 Build one motif card as a PLACE for this Godot 4.7 game, playable in the
 motif yard. Your card: CARD. Read it, plus
-docs/design/roguelike/motif-brief.md (pillars: **a place first**,
+docs/design/motifs/motif-brief.md (pillars: **a place first**,
 **anything could chain**) and AGENTS.md (Prototyping, Sizes, Test
 execution, Models).
 

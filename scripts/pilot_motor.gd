@@ -457,7 +457,7 @@ const SLOPE_FAR := 1.0
 const RIDGE_FLAT := 0.02
 ## The ledge, as art/blender/pilot/pilot_build.py made the clips: hanging,
 ## the lip's top HANG_DROP over the feet and its edge HANG_OUT ahead; the
-## climb (CLIMB_TIME s, Mario quick) ends stood CLIMB_IN in from the edge;
+## climb (CLIMB_TIME s, quick) ends stood CLIMB_IN in from the edge;
 ## the shimmy's pace, m/s along the lip.
 const HANG_DROP := 0.825
 const HANG_OUT := 0.22

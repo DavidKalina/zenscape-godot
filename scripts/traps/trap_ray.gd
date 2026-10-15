@@ -1,6 +1,5 @@
 extends "res://scripts/traps/trap.gd"
-## The Sky Ray (the user's idea, a Mario Sunshine sand bird; docs/design/
-## roguelike/traps-round4-giants.md; built to the contract in scripts/traps/
+## The Sky Ray (the user's idea; built to the contract in scripts/traps/
 ## trap.gd): a broad flat creature, greybox, that flies a ride through the
 ## sky from A to B. It waits beside the start deck (a stop), flies a long
 ## authored `path` (a closed list of waypoints, local to the trap: climbs,

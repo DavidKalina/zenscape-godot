@@ -4,7 +4,7 @@ extends Node3D
 ## (studies/colonnade_spine_isle_art.gd `colonnade`, `breakable`) and the
 ## temple's rose gable, stood each on its own, for the headless body
 ## (scripts/enemies/headless_body.gd, `breaker`) to tear through.
-## Nintendo-style scripted breaks, not voxels:
+## Scripted breaks, not voxels:
 ##
 ##   a pier met by his bulk (`met`) or reached by his landing's shockwave
 ##   (`wave`) snaps at a drum joint near where it was hit: a stump stays

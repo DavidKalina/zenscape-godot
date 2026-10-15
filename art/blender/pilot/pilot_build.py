@@ -22,14 +22,14 @@ run starting on the left boot's touchdown so the game can blend them in step:
         free boot shuffled out and later back, a rock back on the heels, a
         sigh, breaths at an uneven pace, holds of different lengths between;
         the game may start it anywhere;
-  walk  a happy amble (Mario's walk), for a light touch on the stick, made
+  walk  a happy amble, for a light touch on the stick, made
         for WALK_SPEED m/s: short quick steps, bouncing up off each, the arms
         hanging at the sides and swinging a little, loose at the elbow;
   run   the pace he goes by default, made for RUN_SPEED m/s (the motor's
         RUN): fairly upright, leaning in a little, knees up and heels kicked
         back, a moment in the air every step, the head steady, the arms
         held out wide and bent sharp, pumping out at the sides against the
-        legs (Mario's in Odyssey), the scarf streaming;
+        legs, the scarf streaming;
   skid  SKID_LENGTH s, braking hard out of a run (the game slides the body
         and turns it round after): a held pose juddering, facing the way it
         ran, dropped low and leaning back, the left boot braced in front on
@@ -129,7 +129,7 @@ HANG_LENGTH = 4.0
 SHIMMY_SPEED = 0.7     # m/s along the lip
 SHIMMY_CYCLE = 0.5     # seconds a full cycle, both hands
 SHIMMY_STANCE = 0.57   # the share of the cycle a hand grips
-CLIMB_LENGTH = 0.4     # Mario quick: was 0.9
+CLIMB_LENGTH = 0.4     # quick: was 0.9
 CLIMB_IN = 0.3
 # Where the mitts grip: the wrists this far in over the edge and up off the
 # top, this far either side of the middle.
@@ -1104,7 +1104,7 @@ WALK = Gait(WALK_SPEED, WALK_CYCLE, WALK_STANCE, lift=0.05, peak=0.42,
             ahead=0.004)
 
 def walk_pose(p):
-    """A happy amble (Mario's walk): short quick steps, the body bouncing up
+    """A happy amble: short quick steps, the body bouncing up
     off each and swaying over it, the head bobbing and tipping with it, the
     arms hanging at the sides and swinging a little, loose at the elbow and
     the wrist."""
@@ -1140,7 +1140,7 @@ RUN = Gait(RUN_SPEED, RUN_CYCLE, RUN_STANCE, lift=0.17, peak=0.36,
            ahead=-0.05, tangent=0.55)
 
 def run_pose(p):
-    """A cartoon hero's run (Mario's, A Short Hike's): fairly upright,
+    """A cartoon hero's run: fairly upright,
     leaning in only a little, the knees driving up and the heels kicking
     back, low over each planted boot and up through the leap between, the
     head steady and looking ahead; the arms held out wide from the body
@@ -1163,7 +1163,7 @@ def run_pose(p):
         y, lift, pitch = RUN.at(q)
         pose.feet[n] = boot_on(Vector((s * 0.12, y, 0.0)), lift, pitch, -5.0 * s)
         pose.pole[n] = qz(deg(-4.0 * s)) @ Vector((0, 1, 0.0))
-        # Mario's arms (Odyssey): held out from the body, near straight
+        # The arms: held out from the body, near straight
         # (a little give at the elbow), swinging forward and back from the
         # shoulder out at the sides against the legs, loose and lagging;
         # flung out a little wider as the body comes down on each step.
@@ -1179,7 +1179,7 @@ def run_pose(p):
 
 # ------------------------------------------------------------------ skid
 def skid_pose(p):
-    """Braking hard out of a run, Mario's slide (the game slides the body
+    """Braking hard out of a run, a slide (the game slides the body
     and turns it round after; the clip stands in place, facing the way it
     ran): dropped low and leaning right back, the left boot braced out in
     front on its heel, toe up, the right under the body, the arms flung
@@ -1531,7 +1531,7 @@ def climb_clip():
 #   crouch     CROUCH_LENGTH s, a loop: dropped low on bent knees, set wide,
 #              leant forward, the head up to look ahead, the mitts down
 #              between the knees, breathing;
-#   long_jump  LONG_LENGTH s, a loop: Mario's long jump, stretched out flat
+#   long_jump  LONG_LENGTH s, a loop: the long jump, stretched out flat
 #              and diving forward, the arms reaching out ahead over the
 #              head, the legs trailing straight behind, toes pointed, the
 #              scarf streaming;

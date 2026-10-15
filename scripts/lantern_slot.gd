@@ -75,7 +75,7 @@ func setup(id: String, title: String, slot_size := Style.SLOT, side := "right") 
 
 var _hover_target := 0.0
 
-## A small badge at the lower right, as Mario Maker shows a part's variant
+## A small badge at the lower right showing a part's variant
 ## (Land's form in hand).
 func set_badge(id: String) -> void:
 	if badge == null:

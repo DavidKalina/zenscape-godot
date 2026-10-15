@@ -7,7 +7,7 @@
 
 ## What it is
 
-Odyssey's freeform parkour and polish, in a sky of distinct, dangerous,
+Freeform parkour with polish, in a sky of distinct, dangerous,
 beautiful regions, plus a plane. A playground you get lost in: it is fun to
 do nothing but move, slide, hop, fly and look. Objectives and set pieces point
 you at more to see; they are never the point.
@@ -15,8 +15,7 @@ you at more to see; they are never the point.
 **Tone:** a joyful, nimble pilot in a melancholy, ancient world. Not cozy.
 There is real danger, and the comedy comes from that danger and the physics
 (getting flung, the plane rolling off an isle, a dragon ruining your
-afternoon). It is never written as jokes. Region one, the ruins, happens to
-feel like Elden Ring's Limgrave; other regions get their own look.
+afternoon). It is never written as jokes. Each region gets its own look.
 
 **Why you push on:** to see more. More isles, regions, themes, spectacle,
 what's past the horizon. The reward for playing is more places to play:
@@ -24,11 +23,6 @@ every reward is a place, a theme or a set piece, never a stat.
 
 **What it isn't:** base building, farming, skill trees, crafting, survival,
 fuel, stats, upgrade loops.
-
-**References:** Mario Odyssey and Sunshine (the character is the game),
-Breath of the Wild (systems that touch: fire → updraft → glide), Wii Sports
-Resort's Island Flyover (the island is the collectible map), Tony Hawk's Pro
-Skater (levels as skateparks with a goal list), Elden Ring's Limgrave (tone).
 
 ## Structure
 
@@ -233,7 +227,7 @@ dark shows the way) · snag it from a passing plane · the blimp brings the
 isle to you (wait, time the jump as it swings past).
 
 **Never wait-and-grab.** Not ridiculously hard, but never "watch it, stand
-still, take it" (a gripe with Odyssey). Every find asks for a little
+still, take it". Every find asks for a little
 creativity: a ramp to slide down for momentum, a wall to kick off, a ledge
 to launch from. If you want to wait for something to come to you, the
 waiting spot itself takes platforming to reach. For the snag: no easy spot
@@ -320,8 +314,7 @@ perilous (an aqueduct gauntlet).
 
 ## Life and NPCs
 
-A small cast of sky folk, sparse and a little strange (more Elden Ring than
-Odyssey's chatty locals). A lone figure waving the plane down from a far isle
+A small cast of sky folk, sparse and a little strange, not chatty. A lone figure waving the plane down from a far isle
 marks something to do there and gives quests and deliveries. The airship
 crews already wave.
 

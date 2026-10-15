@@ -1,6 +1,6 @@
 extends Node3D
 ## Gust arrows (docs/design/roguelike/crossing-viaduct-arrows.md): a
-## crossing's hazard after Dark Souls 3's giant archers, shots from off
+## crossing's hazard: shots from off
 ## the path that knock you off your line. No archer yet: a launch point
 ## (a small stone perch) and the dragon's air blast fired from it
 ## (scripts/dragon_air_blast.gd: its wind-up shimmer and inhale at the

@@ -5,7 +5,7 @@ description: Dress a motif the user picked into its finished form (growth, wear,
 
 # Motif dressing pass
 
-Stage 3 of the motif pipeline (docs/design/roguelike/motif-brief.md, "From
+Stage 3 of the motif pipeline (docs/design/motifs/motif-brief.md, "From
 card to isle"; its first pillar, **a place first**: the original kit
 motifs are the bar). Two inputs, two jobs:
 

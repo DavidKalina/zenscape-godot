@@ -5,9 +5,9 @@ description: Build playable place studies of motif cards (from a motif-brainstor
 
 # Motif place round
 
-Stage 2 of the motif pipeline (docs/design/roguelike/motif-brief.md, "From
+Stage 2 of the motif pipeline (docs/design/motifs/motif-brief.md, "From
 card to isle"; its first pillar, **a place first**). Input: motif cards in
-`docs/design/roguelike/brainstorm/roundN/`. Output: one motif per card as
+`docs/design/motifs/brainstorm/roundN/`. Output: one motif per card as
 `scripts/kit_isle/greybox/gb_<slug>.gd` on `scripts/kit_isle/motif_greybox.gd`
 (its header says how), one line in `scripts/kit_isle/greybox/registry.gd`,
 played in the motif yard (`studies/motif_yard.tscn --motif=<slug>`).

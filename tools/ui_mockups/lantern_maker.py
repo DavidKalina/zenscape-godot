@@ -1,4 +1,4 @@
-"""Direction B2: Lantern Maker. Lantern's luminous glyphs in a Mario Maker 2 layout.
+"""Direction B2: Lantern Maker. Lantern's luminous glyphs in a maker-style layout.
 
 Layout (design units at 1440x900; every group is anchored to a screen edge and
 scaled by min(W/1440, H/900), the way Godot anchors plus a content scale would):
@@ -141,7 +141,7 @@ def top_bar(held="land", hover=None, wheel=True, form="form-alpine"):
         st = "held" if gid == held else ("hov" if gid == hover else "")
         out.append(slot(bar_x(i), BAR_Y, gid, st, glyph=36))
         if gid == "land" and st == "held":
-            # a tiny badge of the form in hand on the Land slot (Mario Maker shows the variant on the part)
+            # a tiny badge of the form in hand on the Land slot
             out.append(n(bar_x(i) + 20, BAR_Y + 20, f'<div style="width:22px;height:22px;border-radius:50%;background:rgba(8,18,24,.7);border:1px solid {GLOW["land"]};display:flex;align-items:center;justify-content:center">'
                                                    f'<img class="g-lit" src="{glyph_url(NAME, form)}" style="width:16px;height:16px"></div>'))
     if wheel and held == "land":
@@ -438,7 +438,7 @@ def sheet(bgs):
     photo = stage(bgs["forest"], 170, 170, f'<div style="position:absolute;left:170px;top:190px">{photo_button()}</div>', "90% 90%")
     scrub = stage(bgs["forest"], 780, 90, f'<div style="position:absolute;left:390px;top:90px">{scrubber()}{hint(LAND_HINT)}</div>', "50% 95%")
     body = (f'<div class="sheet-bg" style="background-image:url(file://{bgs["forest"]})"></div><div class="sheet">'
-            '<div class="sheet-title">B2 · Lantern Maker</div><div class="sheet-sub">Lantern\'s light, laid out like Mario Maker 2: parts on top, hands on the left, the world on the right, Photo as the play button.</div>'
+            '<div class="sheet-title">B2 · Lantern Maker</div><div class="sheet-sub">Lantern\'s light, laid out maker-style: parts on top, hands on the left, the world on the right, Photo as the play button.</div>'
             + _card("Glyph set (docs/ui/glyphs/lantern-maker)", glyph_panel)
             + '<div class="row">' + _card("Slot states, with the under-glow plate", f'<div style="display:flex;gap:12px">{states}</div>',
                                           "Every glyph sits on a soft dark under-glow and carries a 1.5 px dark rim before its light glow, so it holds up over bright fog and snow.")

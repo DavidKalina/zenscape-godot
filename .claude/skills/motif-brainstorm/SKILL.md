@@ -1,6 +1,6 @@
 ---
 name: motif-brainstorm
-description: Run a brainstorm round of new level motifs and/or ruin-kit pieces from the shared brief (docs/design/roguelike/motif-brief.md). With free text, spins many variations of that one idea. Use when the user asks to brainstorm motifs, isles, kit pieces, "a motif round", or variations of an idea.
+description: Run a brainstorm round of new level motifs and/or ruin-kit pieces from the shared brief (docs/design/motifs/motif-brief.md). With free text, spins many variations of that one idea. Use when the user asks to brainstorm motifs, isles, kit pieces, "a motif round", or variations of an idea.
 argument-hint: "[count] [kit] [free-text idea]"
 ---
 
@@ -25,8 +25,8 @@ Arguments: $ARGUMENTS
 
 ## Steps
 
-1. Read `docs/design/roguelike/motif-brief.md` (pillars, lenses, coverage,
-   card formats) and list `docs/design/roguelike/brainstorm/` for the next
+1. Read `docs/design/motifs/motif-brief.md` (pillars, lenses, coverage,
+   card formats) and list `docs/design/motifs/brainstorm/` for the next
    round number N and what earlier rounds already proposed. In variations
    mode, name the round folder `roundN-<seed-slug>`.
 2. Ask nothing the user already said; the arguments and defaults above
@@ -42,7 +42,7 @@ Arguments: $ARGUMENTS
    Opus. Each prompt: read the brief first; the seed (variations mode),
    verbatim; its lens roll or theme (or "literal" / "contrarian"); the docs
    and code to ground it (pilot numbers from scripts/pilot_motor.gd,
-   RuinKit's Scale section, WorldScale; docs/design/roguelike/stun-round1.md
+   RuinKit's Scale section, WorldScale; scripts/pilot_motor.gd's header
    for knocks, tosses and stun locks); write cards in the brief's format to
    the round folder (motif-mK-<slug>.md, one per card; kit-kK-<theme>.md,
    one per agent); brainstorm only, no code edits, no Godot runs.
