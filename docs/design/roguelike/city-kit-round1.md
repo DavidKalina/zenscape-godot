@@ -68,7 +68,12 @@ Flags:
     the drum floor)
   - `piece(id, seed, weathered, opts)`, which hands the breaks' ids to
     `CityBreaks.piece`
+  - `ALL` (also the fires, `CityFires.PIECES`) and `stand(id, parent, xform, ...)`,
+    which stands any of them and hands fires to `CityFires.build`
   - `name_of`, `walk_areas`, `crown_outline`, `drum_at`
+  - The gallery's fire bowls are still plain bowls and lights, not the
+    fires round's lightable cressets. The `mounts.cresset` points are where
+    those would stand.
 - `scripts/city_kit_stone.gd` draws the stone. Convex blocks (sets of
   planes) are drawn in the Olmec's weathered basalt, the material from
   `inhaler_head_look.gd`'s `stone_material`. The vertices are dressed the
@@ -286,7 +291,7 @@ motor):
 **Smoke checks, headless, 0 errors:**
 
 - `studies/city_kit_gallery.tscn`
-- `studies/run_layer.tscn`, twice:
+- `studies/run_layer.tscn`, twice (and `--shape=sprawl --seed=2` again after the last rebase):
   - `--shape=sprawl --seed=2`, before the last planner edit
   - `--shape=ring --seed=4 --underground=haze`, with the final code
 - `studies/city_breaks_yard.tscn`
