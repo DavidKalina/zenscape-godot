@@ -1,4 +1,12 @@
 extends RefCounted
+## Harm (docs/design/roguelike/game-v1-hearts.md): `harm` is the one call
+## everything that hurts him makes (a fall, the Olmec, a trap, a hazard),
+## beside its knock; the motor only tells it on. Whoever keeps his hearts
+## (scripts/roguelike/run_loop.gd, in its RunState, keyed by this motor)
+## listens. `cause` names it for the death card ("fall", "olmec", "trap",
+## "hazard", "stone", "ram").
+signal harmed(amount: int, cause: String, source: Object)
+
 ## The pilot on foot, moved like a platformer's hero: the stick asks for a
 ## way and a pace (in the world, the camera's way already taken out), and
 ## the pilot turns to face it and runs up to speed, quick at a walk and
@@ -230,6 +238,35 @@ extends RefCounted
 ## it. A reset or a knock clears it too. A rope may snag him tumbling: he
 ## rides it still stunned (move "tumble"), the twirl arming the tech, till
 ## the rope gives him his poise back (`regain`) or throws him on stunned.
+##
+## Moving ground (`mover`, docs/design/roguelike/city-serpent-round1.md): a
+## Callable taking a point (the feet, or just inside a lip he hangs from)
+## and giving the Node3D that carries what stands there (a moving body's
+## shape: the rune serpent's capsules, a collar's saddle, a moving slab),
+## or null for still ground (scripts/pilot_physics_ground.gd `mover`: only
+## bodies marked `moving_ground`). Unset, or null everywhere, nothing below
+## happens and the step is as it always was. Stood on it or hanging from
+## it, each step first carries him by its move since the last (`carry`:
+## its transform's change, so he goes with it exactly however its frames
+## and his fall, turned as it turns), then the step runs as ever on it as
+## it is now: his `velocity` is his own pace over it, and `platform_v` its
+## velocity at his feet (eased over PLATFORM_EASE, a frame's hitch not a
+## spike). Leaving it (a jump, a walk off its edge, a knock, a toss) he
+## keeps its motion: its rise added to his, its flat pace kept as the frame
+## he flies in (`frame_v`, the way serpent_ride.gd's air frame did), slid
+## round what stands in the way and faded under the sail (SAIL_FRAME).
+## Landing back on moving ground takes up its motion at once, his own pace
+## kept (a platformer's moving ground: no fling from the difference);
+## landing on still ground, the frame becomes his own pace, which his
+## run bleeds away as any carried pace. `ground_velocity` is the sum.
+##
+## Soft ground (`soft`: a point gives {} or {slow, catch, keep, depth};
+## pilot_physics_ground.gd `soft`, from a collider marked `soft_ground`):
+## ash, deep dust. Standing in it his run is `slow` of its pace (a wade);
+## landing in it a fall stuns only past `catch` m (the stun's own height
+## is moved up to it), his flat pace cut to `keep` of itself, and the step
+## says "soft" (the drop, m) so the study puffs it; a tumbling body landing
+## in it keeps `keep` of its slide. Unset, nothing changes.
 
 ## Speeds, metres a second, and how fast they are reached and lost.
 const WALK := 2.4
@@ -476,6 +513,12 @@ const TUMBLE_IMMUNE := 0.0
 ## floor); the seconds down at it and at FALL_STUN_FULL times it (the most).
 const FALL_STUN_PUMPS := 4.0
 const FALL_STUN_FULL := 2.0
+## The fall that hurts (docs/design/roguelike/game-v1-hearts.md), in pumps
+## as the stun: from FALL_HURT_PUMPS (9 m at the wanderer's 1.0, half again
+## the stun's) a heart, from FALL_HARD_PUMPS (18 m) two. A roll out of it
+## (the tech) takes one off. Under the stun's height nothing.
+const FALL_HURT_PUMPS := 6.0
+const FALL_HARD_PUMPS := 12.0
 const STUN_DOWN := Vector2(0.7,1.6)
 ## Poise: knocked, seconds with no control in the air before he gathers
 ## himself (sail, twirl, steer, catch his again): POISE, and POISE_HIT more
@@ -756,6 +799,25 @@ var air := Callable()
 var rider: Object = null
 ## The slam's pace (m/s down) while move is "slam".
 var _slam := 0.0
+## Moving ground (see the header): what carries him (or null), its frame
+## at the last step, its velocity at his feet (m/s, eased), the frame he
+## flies in off it (m/s, flat) and steps it has not moved.
+const PLATFORM_EASE := 0.08
+const SAIL_FRAME := 0.8
+var mover := Callable()
+var platform: Node3D = null
+var platform_v := Vector3.ZERO
+var frame_v := Vector3.ZERO
+var _plat_xf := Transform3D.IDENTITY
+var _plat_still := 0
+var _plat_fresh := false
+## What the moving ground did to him this step, before it: his feet moved
+## (m) and his way turned (radians about up), for a camera to go with him.
+var moved_by := Vector3.ZERO
+var turned_by := 0.0
+## Soft ground (see the header), and what it gave under him last.
+var soft := Callable()
+var soft_now := {}
 
 ## Stood at `at`, facing `towards`, moving `speed` the way it faces.
 func reset(at: Vector3, towards: float, speed := 0.0) -> void:
@@ -815,6 +877,11 @@ func reset(at: Vector3, towards: float, speed := 0.0) -> void:
 	carving = 0.0
 	rider = null
 	_slam = 0.0
+	platform = null
+	platform_v = Vector3.ZERO
+	frame_v = Vector3.ZERO
+	_plat_still = 0
+	soft_now = {}
 
 ## Carried by what he stands on or hangs from, between steps (a moving
 ## body: studies/serpent_ride.gd's serpent): every place he keeps (the feet,
@@ -991,6 +1058,18 @@ func downed() -> bool:
 func fall_stun_height() -> float:
 	return fall_stun_pumps*float(jumps[jumps.size()-1])
 
+## Hearts a fall of `drop` m costs (FALL_HURT_PUMPS, FALL_HARD_PUMPS of
+## his pump): 0, 1 or 2, one less `rolled` out of.
+func fall_hurt(drop: float, rolled := false) -> int:
+	var pump := float(jumps[jumps.size()-1])
+	var n := 2 if drop >= FALL_HARD_PUMPS*pump else (1 if drop >= FALL_HURT_PUMPS*pump else 0)
+	return maxi(0,n-(1 if rolled else 0))
+
+## Hurt `amount` hearts by `cause` (`source` the thing, if any): told on
+## (`harmed`), nothing more. Call it beside the knock.
+func harm(cause: String, amount := 1, source: Object = null) -> void:
+	if amount > 0: harmed.emit(amount,cause,source)
+
 ## Seconds down after a fall of `drop` m: 0 under the stun's height, then
 ## STUN_DOWN.x up to STUN_DOWN.y at FALL_STUN_FULL times it.
 func fall_stun_time(drop: float) -> float:
@@ -1063,6 +1142,113 @@ func speed() -> float:
 ## onto his feet), "hopped" (out of the water); knocked, "recovered" (a twirl
 ## out of the tumble) and "got_up".
 func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable, slide: Callable, ledge := Callable()) -> Dictionary:
+	if not mover.is_valid(): return _step(delta,want,top,jump,ground,slide,ledge)
+	_ride_before(delta,slide)
+	var out := _step(delta,want,top,jump,ground,slide,ledge)
+	_ride_after(delta)
+	return out
+
+## His velocity over the world (m/s): his own pace and the frame he is in
+## (the moving ground under him, or the one he left it with).
+func ground_velocity() -> Vector3:
+	return velocity+(platform_v if platform != null else frame_v)
+
+## Moving ground, before the step: carried by its move since the last step
+## (on it), or by the frame he left it in (in the air).
+func _ride_before(delta: float, slide: Callable) -> void:
+	moved_by = Vector3.ZERO
+	turned_by = 0.0
+	if _seized or rider != null or swimming:
+		platform = null
+		frame_v = Vector3.ZERO
+		return
+	if platform != null:
+		if not is_instance_valid(platform) or not platform.is_inside_tree():
+			platform = null
+			return
+		var now := platform.global_transform
+		if now.is_equal_approx(_plat_xf):
+			# Not moved this step (its physics frame not come): its pace
+			# held a moment, then it has stopped.
+			_plat_still += 1
+			if _plat_still > 3: platform_v = Vector3.ZERO
+			return
+		_plat_still = 0
+		var by := now*_plat_xf.affine_inverse()
+		var was := feet
+		var f := by.basis*Vector3.FORWARD
+		turned_by = atan2(-f.x,-f.z) if Vector2(f.x,f.z).length() > 0.05 else 0.0
+		carry(by,turned_by)
+		moved_by = feet-was
+		_plat_xf = now
+		if delta > 0.0:
+			# The first move on it is its pace at once (boarding); then eased.
+			var v := (feet-was)/delta
+			platform_v = v if _plat_fresh else platform_v.lerp(v,1.0-exp(-delta/PLATFORM_EASE))
+			_plat_fresh = false
+		return
+	if frame_v == Vector3.ZERO or grounded or hold != "": return
+	if move == "sail": frame_v *= exp(-delta/SAIL_FRAME)
+	var go := Vector2(frame_v.x,frame_v.z)*delta
+	if go.length_squared() < 1e-10:
+		frame_v = Vector3.ZERO
+		return
+	var slid: Vector3 = slide.call(feet,go)
+	var went := Vector2(slid.x-feet.x,slid.z-feet.z)
+	# Met a wall: the frame loses what it stopped.
+	if went.length() < go.length()-0.001 and delta > 0.0: frame_v = Vector3(went.x,0.0,went.y)/delta
+	feet = Vector3(slid.x,feet.y,slid.z)
+	moved_by = Vector3(went.x,0.0,went.y)
+
+## Moving ground, after the step: what he stands or hangs on now. Onto
+## another moving thing, its motion his frame at once (his own pace
+## kept); onto still ground, the frame folded into his own pace; off it
+## into the air, its motion kept as his frame.
+func _ride_after(_delta: float) -> void:
+	if _seized or rider != null or swimming: return
+	if grounded or hold != "":
+		var at := lip-Vector3(lip_out.x,0.0,lip_out.y)*0.1 if hold != "" else feet
+		var p: Variant = mover.call(at)
+		var under: Node3D = p as Node3D if p is Node3D else null
+		if under == platform: return
+		if under == null:
+			# Onto still ground: the frame he flew in is his own pace now
+			# (hanging, it is let go: the catch holds him).
+			if hold == "": velocity += Vector3(frame_v.x,0.0,frame_v.z)
+			frame_v = Vector3.ZERO
+			platform = null
+			platform_v = Vector3.ZERO
+			return
+		# Onto moving ground (or from one piece of it to the next): its
+		# motion taken up at once, his own pace kept.
+		_plat_fresh = platform == null
+		if platform == null: platform_v = frame_v
+		platform = under
+		_plat_xf = under.global_transform
+		_plat_still = 0
+		frame_v = Vector3.ZERO
+		return
+	if platform != null:
+		# Off it: its rise added to his, its flat pace his frame.
+		velocity.y += platform_v.y
+		frame_v = Vector3(platform_v.x,0.0,platform_v.z)
+		platform = null
+		platform_v = Vector3.ZERO
+
+## Soft ground at `p` (see the header), {} none.
+func _cushion(p: Vector3) -> Dictionary:
+	if not soft.is_valid(): return {}
+	var got: Variant = soft.call(p)
+	return got if got is Dictionary else {}
+
+## A fall of `drop` m onto `cushion`: the drop the stun reads (the stun's
+## height moved up to its `catch`).
+func _cushioned(drop: float, cushion: Dictionary) -> float:
+	if cushion.is_empty(): return drop
+	var lift := maxf(float(cushion.get("catch",0.0))-fall_stun_height(),0.0)
+	return maxf(drop-lift,0.0)
+
+func _step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable, slide: Callable, ledge := Callable()) -> Dictionary:
 	var out := {}
 	if want.length() > 1.0: want = want.normalized()
 	var pressed := jump and not _held
@@ -1133,6 +1319,10 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 		return _swim_step(delta,want,false,ground,slide,out)
 	# Wading, slowed by the water over the boots.
 	if grounded: top *= 1.0-WADE_SLOW*clampf((wade-WADE_FROM)/(swim_in-WADE_FROM),0.0,1.0)
+	# Soft ground (ash, deep dust): waded, slowed.
+	if soft.is_valid():
+		soft_now = _cushion(feet) if grounded else {}
+		if not soft_now.is_empty(): top *= float(soft_now.get("slow",1.0))
 	_buffer = buffer if pressed else maxf(0.0,_buffer-delta)
 	_since_land += delta
 	_wall_since += delta
@@ -1383,10 +1573,20 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 			_twirled = false
 			_wallrun = 0.0
 			_wallran = false
+			# Soft ground under him: the fall caught (the stun's height moved
+			# up to its catch), his flat pace cut.
+			if soft.is_valid():
+				var cushion := _cushion(Vector3(moved.x,under,moved.z))
+				soft_now = cushion
+				if not cushion.is_empty():
+					out["soft"] = drop
+					drop = _cushioned(drop,cushion)
+					h *= float(cushion.get("keep",1.0))
 			# From a fall that stuns: the roll if pressed for, else laid down.
 			var stun := fall_stun_time(drop) if came != "sail" and (came != "slam" or slam_stuns) else 0.0
 			if stun > 0.0:
-				if _roll > 0.0:
+				var rolled := _roll > 0.0
+				if rolled:
 					_roll = 0.0
 					_roll_left = roll_time
 					move = "roll"
@@ -1397,6 +1597,7 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 					_stun_t = 0.0
 					out["stunned"] = "fall"
 					out["downed"] = stun
+				harm("fall",fall_hurt(drop,rolled))
 			_fall_top = y
 		elif y < under:
 			y = under
@@ -1489,6 +1690,13 @@ func _tumble_step(delta: float, ground: Callable, slide: Callable, ledge: Callab
 	if y <= under and velocity.y <= 0.0:
 		var drop := _fall_top-under
 		out["landed"] = -velocity.y
+		if soft.is_valid():
+			var cushion := _cushion(Vector3(moved.x,under,moved.z))
+			soft_now = cushion
+			if not cushion.is_empty():
+				out["soft"] = drop
+				drop = _cushioned(drop,cushion)
+				h *= float(cushion.get("keep",1.0))
 		y = under
 		grounded = true
 		velocity.y = 0.0
@@ -1516,9 +1724,11 @@ func _tumble_step(delta: float, ground: Callable, slide: Callable, ledge: Callab
 			_hit_down = 0.0
 			out["teched"] = "land"
 			out["rolled"] = drop
+			harm("fall",fall_hurt(drop,true))
 		else:
 			_lay_down(maxf(maxf(tumble_down,fall_stun_time(drop)),_hit_down),stunned if stunned != "" else "knock")
 			out["downed"] = _down
+			harm("fall",fall_hurt(drop))
 	elif y < under:
 		y = under
 	feet = Vector3(moved.x,y,moved.z)

@@ -342,10 +342,16 @@ func pushed(_speed: float) -> void:
 
 ## Shoves the pilot: PilotMotor.knock out `out` m along `way` (x, z),
 ## peaking `up` m.
+## A shove hurts (a heart, PilotMotor.harm, named `harm_cause()`).
 func shove_pilot(m: PilotMotor, way: Vector2, out: float, up: float) -> void:
 	m.knock(m.knock_velocity(way,out,up),self)
+	m.harm(harm_cause(),1,self)
 	_cool = 0.3
 	hit_pilot.emit(self)
+
+## What its hits are called on the death card (run_loop.gd WORDS.causes).
+func harm_cause() -> String:
+	return "enemy"
 
 ## It hit the pilot (override: shove him with `shove_pilot`).
 func hits_pilot(_m: PilotMotor) -> void:

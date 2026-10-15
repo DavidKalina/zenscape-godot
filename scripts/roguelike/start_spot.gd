@@ -17,6 +17,9 @@ const RuinKit = preload("res://scripts/ruin_kit.gd")
 const StoneLamp = preload("res://scripts/stone_lamp.gd")
 const StoneLampLights = preload("res://scripts/stone_lamp_lights.gd")
 const WayLights = preload("res://scripts/roguelike/way_lights.gd")
+const Flame = preload("res://scripts/flame.gd")
+## How far the real flame draws before the bead stands in (m).
+const FLAME_FAR := 28.0
 const HALO_SHADER := preload("res://shaders/stone_lamp_halo.gdshader")
 
 ## The ground's rays: the ruins and the turf (studies/kit_isle.gd).
@@ -53,6 +56,7 @@ var parts: Array[String] = []
 var _core: StandardMaterial3D
 var _halo: ShaderMaterial
 var _light: OmniLight3D
+var _flame: Node3D
 
 func _init() -> void:
 	name = "StartSpot"
@@ -156,6 +160,7 @@ func _lamp(space: PhysicsDirectSpaceState3D, spawn: Vector3, frame: Basis, groun
 	_core.albedo_color = StoneLampLights.PAPER
 	_core.emission_enabled = true
 	_core.emission = StoneLampLights.LIGHT_COLOR
+	_flame = Flame.in_lantern(holder,Vector3.UP*StoneLamp.BOX_LOW*StoneLamp.UNIT,FLAME_FAR)
 	var bead := MeshInstance3D.new()
 	var sphere := SphereMesh.new()
 	sphere.radius = StoneLamp.GLOW_RADIUS
@@ -163,6 +168,8 @@ func _lamp(space: PhysicsDirectSpaceState3D, spawn: Vector3, frame: Basis, groun
 	bead.mesh = sphere
 	bead.material_override = _core
 	bead.position = Vector3.UP*StoneLamp.GLOW_HEIGHT
+	bead.visibility_range_begin = FLAME_FAR
+	bead.visibility_range_begin_margin = FLAME_FAR*0.1
 	holder.add_child(bead)
 	_halo = ShaderMaterial.new()
 	_halo.shader = HALO_SHADER
@@ -193,3 +200,4 @@ func _process(_delta: float) -> void:
 	_core.emission_energy_multiplier = StoneLampLights.CORE_GLOW*glow
 	_halo.set_shader_parameter("glow",glow*0.6)
 	_light.light_energy = LAMP_ENERGY*glow
+	if _flame != null: _flame.set("burn",0.55+0.45*glow)

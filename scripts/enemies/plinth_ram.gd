@@ -203,6 +203,10 @@ func brake() -> float:
 	var top := float(knobs.charge_speed)
 	return top*top/(2.0*maxf(float(knobs.kill_band),0.1))
 
+## On the death card: the ram.
+func harm_cause() -> String:
+	return "ram"
+
 func harmful() -> bool:
 	return grounded and (state == "charge" or state == "commit")
 

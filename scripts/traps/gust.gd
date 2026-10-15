@@ -35,4 +35,5 @@ static func knock(motor: PilotMotor, way: Vector3, out: float, up: float, source
 	if flat.length() < 0.05: return Vector3.ZERO
 	var v := motor.knock_velocity(flat,out,up)
 	motor.knock(v,source)
+	motor.harm("wind",1,source)
 	return v

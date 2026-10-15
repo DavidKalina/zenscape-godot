@@ -1,15 +1,19 @@
 extends RefCounted
-## A run of the climb (docs/design/roguelike/stakes-experiment.md): the seed
-## it began from, how deep it has gone (layer 1 is the first), how high it
+## A run of the climb (docs/design/roguelike/stakes-experiment.md,
+## game-v1-climb-up.md): the seed it began from, how many layers it has
+## gone through (layer 1 is the first), how high it
 ## has climbed (metres above the run's start spot), the runes carried, how
 ## long it has lasted; and, across runs, the deepest layer and the highest
 ## climb ever reached, kept in a small file (`record_path`).
 ##
 ## The player sees the height; the layer count stays for the gate and the
-## record. Through the gate the run goes on a layer down (`descend`), the
-## runes and the height climbed kept (the next layer's start counts as the
-## height he reached the gate at); into the void it ends (`die`), the runes
-## lost with it.
+## record. Through the gate the run goes on a layer UP (`ascend`): the next
+## layer stands above this one, and its start counts as its true height
+## over this layer's start (the rise the run loop measures through the
+## next region's placing), so the record is the run's true height; the
+## runes are kept. Into the void it ends (`die`), the runes lost with it.
+## (`depth` / `deepest` are the layer count's old names, kept for the record
+## file: not shown.)
 
 ## Where the record is kept. A test points it elsewhere.
 static var record_path := "user://run_record.json"
@@ -22,6 +26,19 @@ var depth := 0
 var runes := 0
 ## Seconds played in the run.
 var time := 0.0
+## Hearts (docs/design/roguelike/game-v1-hearts.md): HEARTS a wanderer at a
+## run's start, none given back through the gate. Kept per wanderer (keyed
+## by his motor, so a second one later has his own): `hearts_of`, `hurt`,
+## the seconds he is safe from another hit after one (`safe_for`), and
+## what last hurt him (`cause_of`).
+const HEARTS := 4
+## Seconds safe after a hit: past the motor's RESTUN_GAP (1.2 s, one
+## source's own second stun) so the bump that stunned can't take another
+## heart as he gets up, short enough that a second blow soon after counts.
+const SAFE := 1.6
+var hearts := {}
+var _safe := {}
+var _cause := {}
 ## Metres above the run's start: now, where he last stood (on the ground),
 ## the most stood at this run, and what this layer's start counts as.
 var height := 0.0
@@ -50,15 +67,21 @@ func begin(seed_value: int) -> void:
 	footing = 0.0
 	best = 0.0
 	banked = 0.0
+	hearts.clear()
+	_safe.clear()
+	_cause.clear()
 	runs += 1
 	_reach()
 
-## Through the gate: a layer deeper, the runes kept, the next start at the
-## height he last stood at (the gate's).
-func descend() -> void:
+## Through the gate: a layer on, the runes kept, the next start `rise` m
+## over this layer's start (its true height: the gate's climb and the next
+## layer's rise over the gate), stood on, so it counts toward the best.
+func ascend(rise: float) -> void:
 	depth += 1
-	banked = footing
-	height = footing
+	banked += rise
+	height = banked
+	footing = banked
+	best = maxf(best,footing)
 	_reach()
 
 ## Where he is: `above_start` metres above this layer's start, on the
@@ -74,8 +97,30 @@ func take_rune() -> void:
 
 func tick(delta: float) -> void:
 	time += delta
+	for w: Variant in _safe.keys(): _safe[w] = maxf(0.0,float(_safe[w])-delta)
 
-## The run ended in the void: what it came to ({depth, runes, time,
+func hearts_of(wanderer: Object) -> int:
+	return int(hearts.get(wanderer,HEARTS))
+
+func safe_for(wanderer: Object) -> float:
+	return float(_safe.get(wanderer,0.0))
+
+func cause_of(wanderer: Object) -> String:
+	return String(_cause.get(wanderer,""))
+
+## `wanderer` hurt `amount` by `cause`: the hearts it took (0 while he is
+## safe from a hit; a fall's always counts, `always`), then he is safe for
+## SAFE s.
+func hurt(wanderer: Object, amount: int, cause: String, always := false) -> int:
+	if amount <= 0 or hearts_of(wanderer) <= 0: return 0
+	if safe_for(wanderer) > 0.0 and not always: return 0
+	var took := mini(amount,hearts_of(wanderer))
+	hearts[wanderer] = hearts_of(wanderer)-took
+	_safe[wanderer] = SAFE
+	_cause[wanderer] = cause
+	return took
+
+## The run ended (in the void, or out of hearts): what it came to ({depth, runes, time,
 ## deepest, record, height, best, highest, high_record}: `height` where he
 ## last stood, record / high_record true when this run set the deepest /
 ## the highest over an earlier one), the record saved.

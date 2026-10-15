@@ -22,10 +22,6 @@ extends RefCounted
 
 const WORLDS := ["under","sky"]
 const UNDER_REGIONS := 2
-## Underground, the readout is the height under the surface: each region
-## underground stands this far (m) below the next, the first sky region's
-## start at the run's own climb (scripts/roguelike/run_loop.gd `_readout`).
-const UNDER_DEPTH := 250.0
 ## The look an underground region wears (scripts/underground/underground.gd
 ## PRESETS); `--under-look=torch` for the other. `--underground=...` still
 ## forces a look on every layer, sky too.
@@ -72,9 +68,3 @@ static func under_look() -> String:
 	for a: String in preload("res://scripts/launch_args.gd").user_args():
 		if a.begins_with("--under-look="): return a.get_slice("=",1)
 	return UNDER_LOOK
-
-## How far under the surface (m, positive) region `region` of a run whose
-## first `under_regions` are underground begins; 0 in the sky.
-static func depth_below(region: int, under_regions: int) -> float:
-	if region <= 0 or region > under_regions: return 0.0
-	return UNDER_DEPTH*float(under_regions-region+1)

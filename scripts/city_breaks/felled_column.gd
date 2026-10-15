@@ -527,7 +527,9 @@ func _rolled_into(m: PilotMotor, c: Vector3) -> void:
 	_hit_kinds["drum"] = fall_s
 	var v := dw*DRUM_HIT.x+Vector3.UP*DRUM_HIT.y
 	if m.move == "tumble": m.toss(v)
-	else: m.knock(v,src_drum)
+	else:
+		m.knock(v,src_drum)
+		m.harm("stone",1,src_drum)
 	dealt.append(["maker_drum","roll"])
 	if _hub != null: _hub.knocked("maker_drum","roll",v)
 
@@ -535,7 +537,9 @@ func _rolled_into(m: PilotMotor, c: Vector3) -> void:
 func _hit(m: PilotMotor, kind: String, v: Vector3, toss: bool) -> void:
 	_hit_kinds[kind] = true
 	if toss: m.toss(v)
-	else: m.knock(v,src_felled)
+	else:
+		m.knock(v,src_felled)
+		m.harm("stone",1,src_felled)
 	dealt.append(["maker_felled",kind])
 	if _hub != null: _hub.knocked("maker_felled",kind,v)
 

@@ -2019,6 +2019,9 @@ func _hunt_wall(hit: Dictionary, goal: Vector3) -> void:
 	if top != INF and goal.y > position.y+float(knobs.step)*2.0:
 		_start_climb(hit)
 		return
+	# City breaks round 2: a wall past his climb, him beyond it (through a
+	# gate he broke open): a route to him, as at an edge (`chase_routes`).
+	if top == INF and _chase_plan(goal): return
 	var way := _skirt(goal)
 	if way != INF:
 		_skirt_way = way
@@ -2203,6 +2206,7 @@ func _catch(m: PilotMotor, how: String) -> void:
 	var way := Vector2(m.feet.x-position.x,m.feet.z-position.z)
 	way = way.normalized() if way.length() > 0.1 else PilotMotor.forward(facing)
 	m.knock(m.knock_velocity(way,float(knobs.swat_out),float(knobs.swat_up)),self,float(knobs.swat_down))
+	m.harm(harm_cause(),1,self)
 	_cool = 0.3
 	hit_pilot.emit(self)
 	catches += 1
@@ -3366,6 +3370,10 @@ func touch(m: PilotMotor, _v_pre: Vector3) -> void:
 	var way := Vector2(m.feet.x-position.x,m.feet.z-position.z)
 	if way.length() < 0.01: way = PilotMotor.forward(facing)
 	shove_pilot(m,way.normalized(),float(knobs.shove_out),float(knobs.shove_up))
+
+## On the death card: the Olmec.
+func harm_cause() -> String:
+	return "olmec"
 
 func harmful() -> bool:
 	return state in ["leap","fall","mantle"] or Vector2(vel.x,vel.z).length() > 0.3

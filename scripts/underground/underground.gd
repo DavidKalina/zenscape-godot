@@ -52,20 +52,23 @@ const PRESETS := {
 		"vol_albedo":Color(0.6,0.5,0.38),"surface":0.0,
 		"warm":Color(0.3,0.2,0.12),
 		"sky_low":Color(0.18,0.145,0.11),"sky_horizon":Color(0.30,0.245,0.185),"sky_high":Color(0.22,0.18,0.14),
-		"knobs":{"fog":0.0016,"volume":0.0,"ambient":1.1,"moon":0.5,"exposure":1.05,"torch":2.2,"torch_range":16.0,"next_reach":520.0,"next_most":0.85}},
+		"knobs":{"fog":0.0016,"volume":0.0,"ambient":1.1,"moon":0.5,"exposure":1.05,"torch":2.2,"torch_range":16.0,"next_reach":800.0,"next_most":0.72}},
 }
 ## How much of the ambient colour the stone is filled with (the torch lights
 ## the rest): dim in the dark, the haze's lit air a good deal more.
 const STONE_FILL := {"torch":0.26,"haze":0.5}
 const KNOBS := {
 	"fog":0.0016,"volume":0.008,"ambient":1.3,"moon":0.55,"exposure":1.3,
-	"torch":5.5,"torch_range":24.0,"next_reach":420.0,"next_most":0.88,
+	"torch":5.5,"torch_range":24.0,"next_reach":900.0,"next_most":0.62,
 }
 ## The fog and the ambient's colours: cool, a little lighter than the rock.
 const MURK := Color(0.085,0.115,0.17)
 const AMBIENT := Color(0.16,0.22,0.34)
 const MOON := Color(0.5,0.62,0.85)
 const FLAME := Color(1.0,0.58,0.22)
+const Flame = preload("res://scripts/flame.gd")
+## The torch flame's size against the torch kind (0.62 m tall at 1).
+const TORCH_FLAME := 0.72
 
 var study: Node3D
 var knobs: Dictionary = KNOBS.duplicate()
@@ -76,7 +79,7 @@ var center := Vector3.ZERO
 var moon: DirectionalLight3D
 var torch: Node3D
 var torch_light: OmniLight3D
-var flame: MeshInstance3D
+var flame: Node3D
 var _env: Environment
 var _sky_material: ShaderMaterial
 var _clock := 0.0
@@ -186,6 +189,7 @@ func set_preset(name: String) -> void:
 	p = PRESETS[name]
 	knobs = KNOBS.duplicate()
 	knobs.merge(p.get("knobs",{}),true)
+	_lift_preset()
 	knobs.merge(_asked,true)
 	_sky_material.set_shader_parameter("low_color",p.sky_low)
 	_sky_material.set_shader_parameter("horizon_color",p.sky_horizon)
@@ -195,6 +199,34 @@ func set_preset(name: String) -> void:
 	moon.light_energy = float(knobs.moon)
 	torch_light.omni_range = float(knobs.torch_range)
 	_hold()
+
+## The run's climb out of the dark (scripts/roguelike/run_loop.gd
+## CLIMB_LIGHTEN): 0 the torch preset as authored, toward 1 its colours and
+## knobs eased toward the haze's. Static, so a look stood again keeps it.
+## Only light, air and the far silhouettes' tint: no growth is touched.
+static var climb_lift := 0.0
+
+func set_climb_lift(lift: float) -> void:
+	if is_equal_approx(lift,climb_lift): return
+	climb_lift = clampf(lift,0.0,1.0)
+	set_preset(preset)
+
+## The torch preset eased `climb_lift` toward the haze's (`set_preset`).
+func _lift_preset() -> void:
+	if preset != "torch" or climb_lift <= 0.0: return
+	var to: Dictionary = PRESETS.haze
+	var mixed := p.duplicate()
+	for k: String in p:
+		if p[k] is Color and to.get(k) is Color: mixed[k] = (p[k] as Color).lerp(to[k],climb_lift)
+		elif p[k] is float and to.get(k) is float: mixed[k] = lerpf(p[k],to[k],climb_lift)
+	p = mixed
+	var haze := KNOBS.duplicate()
+	haze.merge(to.get("knobs",{}),true)
+	# The torch kept as it is: the Olmec's sight reads it (scripts/enemies/
+	# light_level.gd), so the climb's air never changes who sees whom.
+	for k: String in knobs:
+		if k in ["torch","torch_range"]: continue
+		knobs[k] = lerpf(float(knobs[k]),float(haze[k]),climb_lift)
 
 ## The look key: the other preset, its title shown.
 func cycle() -> void:
@@ -289,20 +321,16 @@ func _build_torch() -> void:
 	stick.material_override = wood
 	stick.position = Vector3(0.0,0.2,0.0)
 	torch.add_child(stick)
-	flame = MeshInstance3D.new()
-	var sph := SphereMesh.new()
-	sph.radius = 0.1
-	sph.height = 0.34
-	flame.mesh = sph
-	var fm := StandardMaterial3D.new()
-	fm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	fm.albedo_color = Color(1.0,0.78,0.4)
-	fm.emission_enabled = true
-	fm.emission = FLAME
-	fm.emission_energy_multiplier = 4.0
-	flame.material_override = fm
-	flame.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	flame.position = Vector3(0.0,0.5,0.0)
+	# The flame is the game's real fire (scripts/flame.gd), no light of its
+	# own: the torch's light below is the one that lights the stone.
+	var real: Node3D = Flame.new()
+	real.set("kind","torch")
+	real.set("scale_by",TORCH_FLAME)
+	real.set("with_light",false)
+	real.set("with_smoke",false)
+	flame = real
+	flame.name = "Flame"
+	flame.position = Vector3(0.0,0.44,0.0)
 	torch.add_child(flame)
 	torch_light = OmniLight3D.new()
 	torch_light.light_color = FLAME
@@ -330,6 +358,7 @@ func _publish_stone() -> void:
 	var amb: Color = (p.ambient as Color).lerp(Color(0.34,0.34,0.34),0.35)
 	var low: Color = p.warm
 	var e := float(STONE_FILL.get(preset,0.2))
+	if preset == "torch": e = lerpf(e,float(STONE_FILL.haze),climb_lift)
 	RenderingServer.global_shader_parameter_set("zs_under",1.0)
 	RenderingServer.global_shader_parameter_set("zs_under_sky",Vector3(amb.r,amb.g,amb.b)*e)
 	RenderingServer.global_shader_parameter_set("zs_under_ground",Vector3(low.r,low.g,low.b)*e)
@@ -352,6 +381,50 @@ func _tint_next_region() -> void:
 		m.set_shader_parameter("turf",p.next_turf)
 		m.set_shader_parameter("stone",p.next_stone)
 		m.set_shader_parameter("earth",p.next_earth)
+		_far_fire(mi)
+
+## The next region's beacon (the climb up, docs/design/roguelike/
+## game-v1-climb-up.md): a far fire on its landmark's top, a soft warm glow
+## that reads up there in the dark where the silhouette alone would sink
+## into the murk. One billboard, no light, no shadow. FAR_FIRE 0 drops it.
+const FAR_FIRE := 14.0
+const FAR_FIRE_COLOUR := Color(1.0,0.62,0.3)
+const FAR_FIRE_STRENGTH := 1.5
+func _far_fire(mi: MeshInstance3D) -> void:
+	if FAR_FIRE <= 0.0 or mi.has_node("FarFire"): return
+	var layer: Variant = study.get("layer")
+	if not (layer is Dictionary) or not (layer as Dictionary).has("next"): return
+	var nxt: Dictionary = (layer as Dictionary).next
+	if not nxt.has("landmark"): return
+	var glow := MeshInstance3D.new()
+	glow.name = "FarFire"
+	var quad := QuadMesh.new()
+	quad.size = Vector2(FAR_FIRE,FAR_FIRE)
+	glow.mesh = quad
+	var tex := GradientTexture2D.new()
+	tex.fill = GradientTexture2D.FILL_RADIAL
+	tex.fill_from = Vector2(0.5,0.5)
+	tex.fill_to = Vector2(0.5,0.0)
+	var g := Gradient.new()
+	g.set_color(0,Color(1,1,1,1))
+	g.set_color(1,Color(1,1,1,0))
+	g.add_point(0.07,Color(1,1,1,0.6))
+	g.add_point(0.3,Color(1,1,1,0.12))
+	tex.gradient = g
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	mat.albedo_texture = tex
+	mat.albedo_color = FAR_FIRE_COLOUR*FAR_FIRE_STRENGTH
+	mat.disable_fog = true
+	mat.no_depth_test = false
+	glow.material_override = mat
+	glow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mi.add_child(glow)
+	# (The landmark mark sits MARK_UNDER, 3 m, under its highest cell.)
+	glow.global_position = (nxt.landmark as Vector3)+Vector3.UP*(3.0+FAR_FIRE*0.25)
 
 # --- Held every frame ------------------------------------------------------------------
 
@@ -364,7 +437,6 @@ func _process(delta: float) -> void:
 	var f := _noise.get_noise_1d(_clock*9.0)*0.5+_noise.get_noise_1d(_clock*23.0+40.0)*0.25
 	torch_light.light_energy = float(knobs.torch)*(1.0+f*0.32)
 	torch_light.position = Vector3(f*0.03,0.62+f*0.04,0.0)
-	flame.scale = Vector3(1.0+f*0.15,1.0+f*0.35,1.0+f*0.15)
 
 ## The look's values on the study's environment, lights and air, after the
 ## day's, the weather's and the air's (processed before this node).

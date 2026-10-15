@@ -545,6 +545,7 @@ func _step_ball(delta: float) -> void:
 	var v: Vector3 = b.pilot_knock(m.feet,m)
 	if v == Vector3.ZERO or not Gust.can_take(m): return
 	m.knock(v,get_parent())
+	m.harm("wind",1,get_parent())
 	hits += 1
 	last_knock = v
 	blew.emit(true)
