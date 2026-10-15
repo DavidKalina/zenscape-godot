@@ -70,14 +70,36 @@ const LAYOUT := {
 	# `long` m to the rock (the rest of the rise sheer: under the 9 m a
 	# fall costs a heart), but where something stands against the rock
 	# (`clear`: x ranges, per scarp).
-	"talus":{"high":5.5,"long":20.0,"clear":[[],[[16.0,54.0],[-63.0,-42.0]],[[-74.0,-36.0],[32.0,80.0]]]},
+	"talus":{"high":5.5,"long":20.0,"most":8.6,"clear":[[],[[16.0,54.0],[-63.0,-42.0]],[[-74.0,-36.0],[32.0,80.0]]]},
+	# Polish: the scarps' noses and bays [scarp, x, half-width (m), out (m:
+	# + the shelf above juts south over the one below, - a bay bitten into
+	# it)], kept off the stairs' crossings, the fuse wall, the tower, the
+	# hush gallery and the drum shelf.
+	"spurs":[[0,-30.0,9.0,5.5],[0,-14.0,5.0,-3.0],[0,30.0,6.0,-4.0],[0,47.0,8.0,6.5],[0,62.0,5.0,-3.0],
+		[1,-14.0,6.0,4.0],[1,4.0,7.0,-3.5],
+		[2,-38.0,5.0,-3.0],[2,-22.0,8.0,5.0],[2,24.0,5.0,3.5]],
+	# Polish: blocks of the shelf above slumped part way down a scarp
+	# [scarp, x0, x1, deep (m), down (m from the shelf above)]: the scarp
+	# broken in two faces, its talus kept a climb under the block's lip.
+	"benches":[[0,24.0,60.0,8.5,6.4],[0,-40.0,-21.0,5.0,7.6],[2,-44.0,-14.0,6.5,6.6],[2,18.0,32.0,4.0,5.6]],
+	# Polish: the scarps' lips rounded over in turf [scarp, x0, x1, down (m)]
+	# (over `wide` m back), so a scarp reads as a hillside with a band of
+	# rock in it (the band kept `band` m sheer: out of reach), not a wall.
+	"shoulders":{"wide":12.0,"band":5.6,"runs":[[0,-40.0,-6.0,4.2],[0,22.0,66.0,4.6],[1,-6.0,14.0,3.6],[2,-42.0,-10.0,4.4],[2,17.0,30.0,3.0]]},
+	# Polish: turf slumped off the shelves' void edges [x, z, radius x, radius
+	# z, down (m), level]: two set-offs where the bay bites the foot meadow.
+	"slumps":[[38.0,62.0,15.0,11.0,1.6,0],[43.0,64.0,8.0,6.0,1.6,0],[63.0,8.0,9.0,15.0,2.4,1],
+		[-66.0,-101.0,19.0,8.0,1.6,3],[60.0,-96.0,10.0,10.0,1.6,3]],
 	# The foot meadow's west shoulder (m up, from x to x) and the summit's
 	# rise north (m, starting m north of the scarp, over m).
 	"shoulder":[3.2,-32.0,-64.0],
 	"summit_rise":[2.4,12.0,40.0],
 	# The shelves' turf swells: m up and down, east of x, held flat within
 	# `keep` m of what stands (`keep_points`).
-	"rumple":{"high":1.3,"west":-38.0,"keep":9.0},
+	"rumple":{"high":2.1,"west":-38.0,"keep":9.0},
+	# Polish: knolls on the shelves [x, z, radius, high] (held off what
+	# stands, as the swells are).
+	"knolls":[[10.0,80.0,17.0,4.2],[30.0,92.0,10.0,2.2],[-12.0,96.0,9.0,1.6],[50.0,22.0,13.0,3.4],[-4.0,-4.0,8.0,2.4],[-6.0,-84.0,14.0,3.0],[-36.0,-82.0,10.0,2.0],[-28.0,-46.0,8.0,1.8]],
 	# Where a scarp comes apart into ragged steps (the dark way): west of
 	# `west` (wandering), `steps` a set-off each, `deep` m (wandering) each,
 	# on the lower side of the scarp line.
@@ -119,6 +141,37 @@ const LAYOUT := {
 	"cressets":[[10.0,23.0,1,"cresset"],[-40.0,-56.0,2,"cresset"]],
 	# The Keeper's beat on the upper shelf (x, z), his first look.
 	"keeper":{"beat":[Vector2(-14.0,-34.0),Vector2(4.0,-37.0),Vector2(20.0,-33.0)],"face":Vector2(-0.6,0.8),"knobs":{"drop_max":3.0}},
+	# Polish: the city's stone sunk in the hill, off every lane: fallen
+	# blocks and toppled column drums half in the turf, leaning stelae, the
+	# votive pier's fallen twin. ["block", x, z, size, yaw, pitch, roll
+	# (deg), sunk (m)], ["drum", x, z, radius, length, yaw, sunk].
+	"stones":[
+		# The foot meadow: a column fallen east of the arrival path, its
+		# capital rolled on; a block on the knoll; a stela by the arrival.
+		["drum",-2.0,62.0,1.5,2.4,62.0,0.7],["drum",3.5,59.0,1.5,2.2,70.0,0.8],["drum",9.0,56.5,1.45,2.3,55.0,0.9],["block",12.5,49.0,Vector3(4.2,2.0,4.2),20.0,8.0,-6.0,0.9],
+		["block",12.0,80.0,Vector3(5.0,2.6,3.4),-25.0,14.0,6.0,1.3],["block",16.5,77.5,Vector3(2.2,1.4,1.8),40.0,-10.0,18.0,0.6],
+		["block",-46.0,88.0,Vector3(1.4,5.2,0.9),12.0,-4.0,13.0,1.4],["block",-44.6,90.4,Vector3(1.6,1.0,1.2),50.0,20.0,0.0,0.5],
+		["block",28.0,94.0,Vector3(2.6,1.5,2.0),-15.0,-12.0,9.0,0.7],
+		# Off the scarps: blocks fallen from the slumped benches onto the talus.
+		["block",31.0,46.0,Vector3(3.6,2.2,2.6),35.0,18.0,-10.0,1.0],["block",39.0,49.0,Vector3(2.4,1.6,2.0),-20.0,-14.0,22.0,0.7],["block",54.0,43.0,Vector3(4.6,2.4,3.0),10.0,6.0,16.0,1.2],
+		["block",-35.0,40.0,Vector3(3.0,1.8,2.4),-35.0,12.0,10.0,0.8],["block",-29.0,43.5,Vector3(1.8,1.2,1.6),15.0,-25.0,8.0,0.5],
+		# The lower shelf: a lintel fallen across the knoll, drums by the east slump.
+		["block",-4.0,-3.5,Vector3(7.0,1.2,1.7),24.0,4.0,-5.0,0.5],["block",0.5,1.0,Vector3(2.0,1.4,1.6),-30.0,10.0,14.0,0.6],
+		["drum",57.0,1.0,1.3,2.0,10.0,0.6],["drum",60.5,4.0,1.3,1.9,-35.0,0.8],
+		# The upper shelf and the summit.
+		["block",-30.0,-48.0,Vector3(1.3,4.6,0.9),-20.0,9.0,-11.0,1.2],["block",-26.5,-46.0,Vector3(3.2,1.6,2.4),30.0,-8.0,12.0,0.8],
+		["drum",58.0,-21.0,1.4,2.2,80.0,0.7],
+		["block",-6.0,-84.0,Vector3(5.6,2.8,4.0),35.0,-12.0,7.0,1.4],["drum",-1.0,-88.5,1.5,2.4,-10.0,0.8],["block",-36.0,-82.0,Vector3(1.4,5.6,1.0),70.0,-7.0,14.0,1.5],
+		# The votive pier's twin, fallen toward the void, its top in two pieces;
+		# over the edge.
+		["block",-90.5,3.5,Vector3(6.0,6.0,6.5),22.0,5.0,-8.0,3.0],["block",-92.5,-4.5,Vector3(5.6,5.6,4.6),38.0,-12.0,9.0,3.2],
+		# Its stump, broken off a third up, its top course thrown askew; the
+		# pier's own cap shifted on its crown; stones banked at its foot.
+		["set",Vector3(-85.0,17.8,11.5),Vector3(5.8,8.6,5.8),12.0,0.0,0.0],["set",Vector3(-84.6,22.6,11.1),Vector3(5.2,1.8,4.2),24.0,11.0,-16.0],
+		["set",Vector3(-76.3,40.75,19.6),Vector3(7.9,1.7,7.9),7.0,4.0,-5.0],
+		["block",-81.5,15.0,Vector3(2.6,1.6,2.0),15.0,12.0,-20.0,0.7],["block",-80.5,25.5,Vector3(3.0,1.8,2.2),-40.0,-16.0,10.0,0.8],["block",-72.0,25.5,Vector3(2.0,1.2,1.6),60.0,8.0,25.0,0.5],
+		["block",-82.5,30.0,Vector3(4.0,1.8,3.2),-20.0,22.0,10.0,0.6],["block",-79.5,32.0,Vector3(1.8,1.2,1.4),30.0,-15.0,30.0,0.4],
+	],
 	# Far off west: a small lit isle where a headless body roams.
 	"far":{"at":Vector3(-170.0,22.0,-92.0),"radius":22.0},
 	# The arrival (start) and the rims.
@@ -136,7 +189,54 @@ static func scarp_z(k: int, x: float) -> float:
 	var fw: Dictionary = LAYOUT.fuse_wall
 	if k == 1 and x > float(fw.x0)-4.0 and x < float(fw.x1)+14.0: return float(fw.z)
 	if k == 2 and x > float(LAYOUT.drum.shelf.position.x)-2.0: return float(LAYOUT.drum.shelf.position.y)
-	return float(s.base)+float(s.a)*sin(x*float(s.f)+float(s.p))+float(s.b)*sin(x*float(s.g)+float(s.q))
+	var z := float(s.base)+float(s.a)*sin(x*float(s.f)+float(s.p))+float(s.b)*sin(x*float(s.g)+float(s.q))
+	# Polish: its noses and bays, a little jagged.
+	for sp: Array in LAYOUT.spurs:
+		if int(sp[0]) != k: continue
+		var d := absf(x-float(sp[1]))/float(sp[2])
+		if d < 1.0: z += float(sp[3])*pow(1.0-d,1.4)*(1.0+0.18*sin(x*0.9+k))
+	return z
+
+## Polish: the slumped block on scarp `k` at x, `out` m south of its line:
+## its top (m), or NAN where there is none (its depth wanders and tapers to
+## nothing at its ends).
+static func bench(k: int, x: float, out: float) -> float:
+	for b: Array in LAYOUT.benches:
+		if int(b[0]) != k: continue
+		var x0 := float(b[1])
+		var x1 := float(b[2])
+		if x <= x0 or x >= x1: continue
+		var end := minf(x-x0,x1-x)
+		var deep := float(b[3])*(0.7+0.3*sin(x*0.29+k*2.1))*sqrt(clampf(end/6.0,0.0,1.0))
+		if out < deep: return level(k+1)-float(b[4])
+	return NAN
+
+## Polish: how far scarp `k`'s lip is rounded down at x, `back` m north of
+## its line (0 off its runs, tapering in over 6 m at their ends).
+static func shoulder(k: int, x: float, back: float) -> float:
+	var sh: Dictionary = LAYOUT.shoulders
+	var w := float(sh.wide)
+	if back >= w: return 0.0
+	return shoulder_down(k,x)*pow(1.0-back/w,2.0)
+
+static func shoulder_down(k: int, x: float) -> float:
+	for r: Array in LAYOUT.shoulders.runs:
+		if int(r[0]) != k or x <= float(r[1]) or x >= float(r[2]): continue
+		var end := minf(x-float(r[1]),float(r[2])-x)
+		return float(r[3])*smoothstep(0.0,6.0,end)*(0.85+0.15*sin(x*0.37+k))
+	return 0.0
+
+## Polish: how far the shelf `lv` slumps at (x, z) off its void edge (m).
+static func slump(lv: int, x: float, z: float) -> float:
+	var down := 0.0
+	for s: Array in LAYOUT.slumps:
+		if int(s[5]) != lv: continue
+		var d := Vector2((x-float(s[0]))/float(s[2]),(z-float(s[1]))/float(s[3]))
+		if absf(d.x) > 1.25 or absf(d.y) > 1.25: continue
+		var a := atan2(d.y,d.x)
+		var wob := 1.0+0.12*sin(a*3.0+float(s[0]))+0.06*sin(a*7.0)
+		if d.length() < wob: down += float(s[4])
+	return down
 
 ## The stairs' frames: foot (world, on its shelf), basis (local -z up the run).
 static func stair_xform(i: int) -> Transform3D:
@@ -192,6 +292,15 @@ static func ground(x: float, z: float) -> float:
 		if x > float(d.steps_x):
 			var n := clampi(int(ceil((float(d.steps_from)-z)/2.3)),0,6)
 			y += n*SO
+	# Polish: the votive pier sunk in a mound of turf and fallen stone on
+	# three sides, its ladder face (east) kept clear.
+	var ni: Array = LAYOUT.niches
+	var px := x-float(ni[0])
+	var pz := z-float(ni[1])
+	if absf(px) < 12.0 and absf(pz) < 12.0:
+		var dd := Vector2(maxf(absf(px)-4.0,0.0),maxf(absf(pz)-4.0,0.0)).length()
+		var open := 1.0-smoothstep(0.5,3.5,px)
+		if dd < 7.5: y += 2.4*pow(1.0-dd/7.5,1.6)*open*(0.8+0.2*sin(z*0.9+x*0.4))
 	# The stairs: under the cheeks a hair under the treads, beside them no
 	# higher than a little under the crest.
 	for i in LAYOUT.stairs.size():
@@ -216,11 +325,19 @@ static func rumple(x: float, z: float) -> float:
 	var r: Dictionary = LAYOUT.rumple
 	var m := smoothstep(float(r.west),float(r.west)+10.0,x)
 	if m <= 0.0: return 0.0
+	var keep := float(r.keep)
+	var near := INF
 	for p: Vector2 in keep_points():
-		m = minf(m,smoothstep(float(r.keep),float(r.keep)+12.0,p.distance_to(Vector2(x,z))))
-		if m <= 0.0: return 0.0
+		near = minf(near,(p.x-x)*(p.x-x)+(p.y-z)*(p.y-z))
+	if near < keep*keep: return 0.0
+	m = minf(m,smoothstep(keep,keep+12.0,sqrt(near)))
 	var n := sin(x*0.045+z*0.031+1.0)*sin(z*0.052-x*0.02)+0.5*sin(x*0.11+2.0)*sin(z*0.093)
-	return float(r.high)*n*m
+	var y := float(r.high)*n
+	# Polish: the turf's knolls.
+	for k: Array in LAYOUT.knolls:
+		var d := Vector2(x-float(k[0]),z-float(k[1])).length()/float(k[2])
+		if d < 1.0: y += float(k[3])*pow(cos(d*PI*0.5),2.0)
+	return y*m
 
 static var _keep: Array = []
 static func keep_points() -> Array:
@@ -234,6 +351,13 @@ static func keep_points() -> Array:
 	out.append_array([LAYOUT.tower.at,LAYOUT.drum.at,LAYOUT.drum.cresset,LAYOUT.summit_tower.at,LAYOUT.start,LAYOUT.rim_in,LAYOUT.rim_out,
 		Vector2(20.0,-6.0),Vector2(34.0,-6.0),Vector2(48.0,-6.0),Vector2(LAYOUT.hush[0],LAYOUT.hush[1])])
 	for c: Array in LAYOUT.cressets: out.append(Vector2(float(c[0]),float(c[1])))
+	# Polish: his beat (walked flat), the tower's hop onto the upper shelf.
+	for p: Vector2 in LAYOUT.keeper.beat: out.append(p)
+	out.append(Vector2(-52.0,-24.0))
+	# The runnel's run over the fuse wall's lip to the great cresset (laid level).
+	out.append(Vector2(29.0,-17.0))
+	out.append(Vector2(41.0,-10.0))
+	out.append(Vector2(float(LAYOUT.drum.steps_x)+5.0,float(LAYOUT.drum.shelf.position.y)-3.0))
 	_keep = out
 	return out
 
@@ -246,26 +370,47 @@ static func _shelves(x: float, z: float) -> float:
 		var west := float(st.west)+3.0*sin(z*0.21+k)
 		if x < west:
 			var n := int(st.steps)
-			var deep := float(st.deep)+0.6*sin(x*0.23+k*1.3)
-			var ze := z+0.8*sin(x*0.41+k*2.0)
+			# Polish: ragged, not contoured: the treads' depth and line wander
+			# (a tongue here, a bite there), a set-off each still.
+			var deep := float(st.deep)+0.3*sin(x*0.17+k*1.3)+0.12*sin(x*0.5+k)
+			var ze := z+2.8*sin(x*0.08+z*0.045+k)+1.0*sin(x*0.19-z*0.1+k*2.0)+0.3*sin(x*0.5+k)
 			var up := clampi(int(ceil((sz+n*deep-ze)/deep)),0,n)
 			if ze <= sz: up = n
-			y = maxf(y,level(k)+up*(level(k+1)-level(k))/n)
+			# Polish: in patches a step's face has slumped to a turf slope (31°,
+			# walked), so the steps read as broken earth, not contours.
+			var upf := float(up)
+			var t := (sz+n*deep-ze)/deep
+			if up > 0 and up < n and ze > sz:
+				var r := smoothstep(0.2,0.5,sin(x*0.09+k*1.9)*sin(z*0.11+k*0.7))
+				if r > 0.0: upf = lerpf(upf,floor(t)+(t-floor(t)),r)
+			y = maxf(y,level(k)+upf*(level(k+1)-level(k))/n)
 			if up < n: return y
 		elif z <= sz:
-			y = level(k+1)
+			y = level(k+1)-shoulder(k,x,sz-z)
 		else:
-			return maxf(y,talus(k,x,z-sz))
+			var b := bench(k,x,z-sz)
+			if not is_nan(b): return maxf(y,b)-slump(k,x,z)
+			var ta := talus(k,x,z-sz)
+			# (Under the last scarp's rounded lip the talus rides the rounding.)
+			if y < level(k): return y+ta-level(k)-slump(k,x,z)
+			return maxf(y,ta)-slump(k,x,z)
 	var sr: Array = LAYOUT.summit_rise
-	return y+float(sr[0])*clampf((scarp_z(2,x)-float(sr[1])-z)/float(sr[2]),0.0,1.0)
+	return y+float(sr[0])*clampf((scarp_z(2,x)-float(sr[1])-z)/float(sr[2]),0.0,1.0)-slump(3,x,z)
 
 ## The turf talus at scarp `k`'s foot, `out` m south of its rock.
 static func talus(k: int, x: float, out: float) -> float:
 	var t: Dictionary = LAYOUT.talus
 	for r: Array in t.clear[k]:
 		if x > float(r[0]) and x < float(r[1]): return level(k)
-	var high := float(t.high)+2.4*sin(x*0.09+k*1.7)+0.8*sin(x*0.31+k)
-	var long := float(t.long)+4.0*sin(x*0.13+k)
+	var high := float(t.high)+2.4*sin(x*0.09+k*1.7)+0.8*sin(x*0.31+k)+1.6*sin(x*0.047+k*0.6)
+	var long := float(t.long)+4.0*sin(x*0.13+k)+3.0*sin(x*0.061+k)
+	# Polish: under a slumped block its lip stays out of reach.
+	for b: Array in LAYOUT.benches:
+		if int(b[0]) == k and x > float(b[1])-4.0 and x < float(b[2])+4.0: high = minf(high,level(k+1)-float(b[4])-level(k)-5.0)
+	high = minf(high,float(t.most))
+	# Under a rounded lip the rock band stays out of reach.
+	var sd := shoulder_down(k,x)
+	if sd > 0.0: high = minf(high,level(k+1)-level(k)-sd-float(LAYOUT.shoulders.band))
 	if out >= long: return level(k)
 	return level(k)+maxf(high,0.6)*pow(1.0-out/long,1.4)
 
@@ -416,7 +561,12 @@ func parts() -> Array:
 # --- The land and the stone ------------------------------------------------------------
 
 func flora_site() -> KitFlora.Site:
-	return KitFlora.Site.new(top(),KitLand.wear_of(paths()))
+	# The rays span the whole hill: the summit (about 49 m) to the slumped
+	# foot (about -3.2 m); thinner drifts on so big an isle.
+	var site := KitFlora.Site.new(top(),KitLand.wear_of(paths()))
+	site.ray = Vector2(level(3)+60.0,level(0)-10.0)
+	site.tufts = 3.2
+	return site
 
 func flora_seed() -> int:
 	return SEED+9
@@ -471,7 +621,7 @@ func build(into: Node3D) -> void:
 	for p: Vector2 in poly: box = box.expand(p)
 	var land := KitLand.island({"outline":poly,"seed":SEED+1,"ground":func(x: float, z: float) -> float: return ground(x,z),
 		"top":level(0),"depth":-float(LAYOUT.floor),"hang":true,"resample":[200.0,260,64],"cell":2.0,
-		"cliffs":box.grow(2.0),"fine":1.2,"fine_box":Rect2(-96.0,-100.0,40.0,160.0),
+		"cliffs":box.grow(2.0),"fine":1.2,"stable":true,"cliff_drop":0.55,"fine_box":Rect2(-96.0,-100.0,40.0,160.0),
 		"tone":KitLook.turf(SEED+1,KitLand.wear_of(paths()))})
 	land.name = "Hillside"
 	root.add_child(land)
@@ -502,6 +652,7 @@ func build(into: Node3D) -> void:
 		root.add_child(st)
 		pieces["stair%d" % (i+1)] = st
 	_fuse_wall(root)
+	_stones(root)
 	root.set_meta("triangles",_triangles())
 	built_ms = Time.get_ticks_msec()-began
 
@@ -569,6 +720,57 @@ func _fuse_wall(root: Node3D) -> void:
 	root.add_child(mesh)
 	root.add_child(solids)
 	pieces.fuse_wall = mesh
+
+## Polish: the city's stone sunk in the hill (LAYOUT `stones`): one mesh
+## in the Olmec's basalt, one body of boxes and cylinders.
+func _stones(root: Node3D) -> void:
+	var g: RefCounted = GiantStone.mesher()
+	var body := StaticBody3D.new()
+	body.name = "SunkStoneSolid"
+	for st: Array in LAYOUT.stones:
+		var x := float(st[1]) if st[0] != "set" else 0.0
+		var z := float(st[2]) if st[0] != "set" else 0.0
+		var y := ground(x,z) if st[0] != "set" else 0.0
+		var c := CollisionShape3D.new()
+		if st[0] == "set":
+			var size: Vector3 = st[2]
+			var b := Basis.from_euler(Vector3(deg_to_rad(float(st[4])),deg_to_rad(float(st[3])),deg_to_rad(float(st[5]))),EULER_ORDER_YXZ)
+			var at: Vector3 = st[1]
+			var xf := Transform3D(b,at)
+			g.box(xf,size,0.25,at.y-size.y*0.5,0.95)
+			var shape := BoxShape3D.new()
+			shape.size = size
+			c.shape = shape
+			c.transform = xf
+		elif st[0] == "block":
+			var size: Vector3 = st[3]
+			var b := Basis.from_euler(Vector3(deg_to_rad(float(st[5])),deg_to_rad(float(st[4])),deg_to_rad(float(st[6]))),EULER_ORDER_YXZ)
+			var xf := Transform3D(b,Vector3(x,y+size.y*0.5-float(st[7]),z))
+			g.box(xf,size,clampf(minf(size.x,minf(size.y,size.z))*0.12,0.06,0.3),y-0.4,0.9+0.2*fmod(absf(x*0.37+z*0.11),1.0))
+			var shape := BoxShape3D.new()
+			shape.size = size
+			c.shape = shape
+			c.transform = xf
+		else:
+			var r := float(st[3])
+			var length := float(st[4])
+			# Lying: its axis level, along the yaw.
+			var b := Basis(Vector3.UP,deg_to_rad(float(st[5])))*Basis(Vector3.BACK,PI*0.5)
+			var xf := Transform3D(b,Vector3(x,y+r-float(st[6]),z))
+			g.cylinder(xf,r,length,14,0.14,y-0.4,0.95)
+			var shape := CylinderShape3D.new()
+			shape.radius = r
+			shape.height = length
+			c.shape = shape
+			c.transform = xf
+		body.add_child(c)
+	var mesh := MeshInstance3D.new()
+	mesh.name = "SunkStone"
+	mesh.mesh = GiantStone.mesh_of(g)
+	mesh.set_meta("triangles",g.triangles())
+	root.add_child(mesh)
+	root.add_child(body)
+	pieces.sunk_stone = mesh
 
 func _triangles() -> int:
 	var n := 0
