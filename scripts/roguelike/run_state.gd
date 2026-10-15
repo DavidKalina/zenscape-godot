@@ -21,6 +21,8 @@ static var current: RefCounted = null
 ## [items] Items carried (scripts/roguelike/item_catalog.gd ids): found,
 ## bought or stolen on any layer, kept through the gate, lost with the run.
 var items: Array[StringName] = []
+## [merchant] Took from a stall unpaid: the Collector hunts him and the stalls are shut, the rest of the run.
+var thief := false
 ## An item taken (`give_item`), dropped (`drop_item`).
 signal item_taken(id: StringName)
 signal item_dropped(id: StringName)
@@ -95,6 +97,7 @@ func begin(seed_value: int) -> void:
 	best = 0.0
 	banked = 0.0
 	items.clear()
+	thief = false  # [merchant]
 	current = self
 	hearts.clear()
 	_safe.clear()

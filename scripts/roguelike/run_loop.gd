@@ -89,7 +89,7 @@ const WORDS := {
 	# The harm's causes (PilotMotor `harm`), as the card names them.
 	"causes": {"fall":"the fall","olmec":"the Olmec","ram":"the ram","trap":"a trap",
 		"wind":"the wind","stone":"falling stone","enemy":"the city's guardians",
-		"walker":"the Second Walker"},
+		"walker":"the Second Walker","thief":"the Collector"},  # [merchant]
 	"lost_none": "nothing carried",
 	"lost_one": "1 rune lost",
 	"lost": "%d runes lost",
@@ -302,6 +302,7 @@ func _item_found(id: StringName) -> void:
 ## `--give=id,id` (a play and test knob): the run begins carrying them.
 func _give_asked() -> void:
 	_items.show_items(run.items)
+	run.runes += int(RunFeatures.value("runes","0"))  # [merchant] --runes=N: the purse begins with N
 	for id in RunFeatures.value("give").split(",",false):
 		if ItemCatalog.has(StringName(id)): run.give_item(StringName(id))
 
