@@ -27,6 +27,9 @@ the generator doesn't have. The inhaler head is already the generator's.
 
 ## Play it
 
+> run-trim-round1.md cut the Sun-Keepers from the run: the Hollow Child
+> alone by default, both with `--sun-keepers` (or `--inhabitant=both`).
+
 ```sh
 # region 1 (a child, a sleeping Keeper)
 /Users/davidkalina/Applications/Godot.app/Contents/MacOS/Godot --path . res://studies/run_layer.tscn -- --no-title --shape=sprawl --seed=11

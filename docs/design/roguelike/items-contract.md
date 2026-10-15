@@ -32,6 +32,10 @@ a `--linger=` style knob. Feature names: `items_move`, `items_passive`,
 `merchant`, `altars`, `weeper`, `beetle`, `flyer`, `inhabitant`,
 `linger`, `summit`, `juice`.
 
+Cut features (run-trim-round1.md) stay in the code, off unless asked:
+`RunFeatures.opted(&"flyer")` is true only with `--flyer`, and the
+Sun-Keepers come back with `--sun-keepers`.
+
 ## Shared files: touch lightly
 
 `run_loop.gd`, `run_state.gd`, `run_overlay.gd`, `layer_stage.gd`,

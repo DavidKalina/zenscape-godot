@@ -20,12 +20,15 @@ const Collectibles = preload("res://scripts/roguelike/collectibles.gd")
 const LayerWorlds = preload("res://scripts/roguelike/layer_worlds.gd")
 const Collector = preload("res://scripts/roguelike/merchant_collector.gd")
 const PadPrompt = preload("res://scripts/pad_prompt.gd")
+const MerchantNook = preload("res://scripts/roguelike/merchant_nook.gd")
 
 ## Wares besides the heart, the heart's price (runes).
 const WARES := 3
 const HEART_PRICE := 6
 ## Stood when he is within NEAR m (flat); retried every RETRY s.
 const NEAR := 70.0
+## A nook's stall stands further off, its lamp seen across from the place.
+const NEAR_NOOK := 140.0
 const RETRY := 0.5
 ## A ware is reachable within REACH m (flat) of his feet.
 const REACH := 1.15
@@ -74,17 +77,21 @@ func _init() -> void:
 
 ## Whether `layer` has a stall (data only).
 static func lays(layer: Dictionary) -> bool:
-	if not RunFeatures.on(&"merchant"): return false
-	var mode := RunFeatures.value("merchant")
-	if mode == "always" or mode == "start": return true
-	var region := LayerWorlds.region_of(layer)
-	return region % 2 == 1 if region > 0 else int(layer.get("seed",0)) % 2 == 1
+	return MerchantNook.wanted(layer)
 
-## Where it stands (data only): {at, face, shut}. A spot of a route isle
-## off the base (cover or perch with room), else beside the spawn.
+## Where it stands (data only): {at, face, shut, nook}. The plan's nook (a
+## side spur off a place on the way, merchant_nook.gd: platform out to it),
+## else a spot of a route isle off the base (cover or perch with room), else
+## beside the spawn (`--merchant=start` there always).
 static func lay(layer: Dictionary) -> Dictionary:
 	var spawn: Dictionary = layer.get("spawn",{})
 	var from: Vector3 = spawn.get("at",Vector3.ZERO)
+	var shut: bool = RunState.current != null and bool(RunState.current.get("thief"))
+	var nook: Dictionary = layer.get("nook",{})
+	if not nook.is_empty() and RunFeatures.value("merchant") != "start":
+		# Back from the slab's middle, so the wares' front has the room.
+		var f: Vector3 = nook.face
+		return {"at":(nook.at as Vector3)-f*0.6,"face":f,"shut":shut,"isle":false,"nook":true}
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([int(layer.get("seed",0)),"merchant"])
 	var best := {}
@@ -99,8 +106,7 @@ static func lay(layer: Dictionary) -> Dictionary:
 	var face := from-at
 	face.y = 0.0
 	if face.length() < 0.1: face = Vector3(0,0,1)
-	return {"at":at,"face":face.normalized(),"shut":RunState.current != null and bool(RunState.current.get("thief")),
-		"isle":best.is_empty()}
+	return {"at":at,"face":face.normalized(),"shut":shut,"isle":best.is_empty(),"nook":false}
 
 ## The stall (and, once a thief, the Collector) stood on `stage`; null when
 ## the layer has neither.
@@ -247,7 +253,7 @@ func _try_stand() -> void:
 	var me: Variant = study.get("motor")
 	if me == null or not is_inside_tree(): return
 	var at: Vector3 = stall.at
-	if Vector2(at.x-me.feet.x,at.z-me.feet.z).length() > NEAR: return
+	if Vector2(at.x-me.feet.x,at.z-me.feet.z).length() > (NEAR_NOOK if bool(stall.get("nook",false)) else NEAR): return
 	var face: Vector3 = stall.face
 	var side := Vector3(face.z,0.0,-face.x)
 	# The spot and a few places round it, the first with flat ground.

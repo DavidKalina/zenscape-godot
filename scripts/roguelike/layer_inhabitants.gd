@@ -24,7 +24,9 @@ extends Node
 ##
 ## Laid from the plan's sockets and the places' lit lamps, a slot at a time
 ## as each place stands near him (its colliders), seeded by the layer's seed.
-## Knob: `--inhabitant=child|keepers|both` (both by default).
+## Knob: `--inhabitant=child|keepers|both`. The Sun-Keepers are cut from
+## the run (run-trim-round1.md): the child alone by default, both with
+## `--sun-keepers`; an explicit `--inhabitant=` wins.
 const LayerPlan = preload("res://scripts/roguelike/layer_plan.gd")
 const RunFeatures = preload("res://scripts/roguelike/run_features.gd")
 const SunKeeper = preload("res://scripts/enemies/sun_keeper.gd")
@@ -188,7 +190,7 @@ func _sound(sound_name: StringName, at: Vector3) -> void:
 
 ## How many of each, by the danger: [children, sleepers, households, its size].
 func counts() -> Dictionary:
-	var which := RunFeatures.value("inhabitant","both")
+	var which := RunFeatures.value("inhabitant","both" if RunFeatures.opted(&"sun-keepers") else "child")
 	var d := danger
 	var out := {"children":1+roundi(d),"sleepers":1+(1 if d >= 0.6 else 0),"households":roundi(2.0*d),"house":2+roundi(d)}
 	if which == "child":
