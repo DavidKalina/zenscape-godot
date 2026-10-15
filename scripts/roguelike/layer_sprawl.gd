@@ -49,6 +49,7 @@ const LayerPieces = preload("res://scripts/roguelike/layer_pieces.gd")
 const Roost = preload("res://scripts/kit_isle/motif_dragon_roost.gd")
 const LayerHazards = preload("res://scripts/roguelike/layer_hazards.gd")
 const LayerEnemies = preload("res://scripts/roguelike/layer_enemies.gd")
+const MerchantNook = preload("res://scripts/roguelike/merchant_nook.gd")  # [merchant]
 
 ## The lean's weight: points per 100 m stood toward the rolled heading
 ## (LayerPlan `_lean`; a step's random share is 0-2, a gulf's the same).
@@ -212,6 +213,11 @@ static func core(seed_value: int, knobs := {}) -> Dictionary:
 		var rng := RandomNumberGenerator.new()
 		rng.seed = hash([seed_value,attempt,"sprawl"])
 		if _chain(plan,lean,rng):
+			# [merchant] The stall's nook: a side spur off a place on the way
+			# (merchant_nook.gd), before the hazards and heads keep clear of it.
+			var nook_rng := RandomNumberGenerator.new()
+			nook_rng.seed = hash([seed_value,attempt,"nook"])
+			MerchantNook.lay(plan,nook_rng)
 			# The hazards (the viaduct may move the gate) before the view.
 			if not LayerHazards.lay(plan,attempt):
 				plan.problems.append("no viaduct")

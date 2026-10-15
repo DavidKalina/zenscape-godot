@@ -1085,8 +1085,10 @@ class Keeper extends Node:
 		if field == null: return
 		body = null
 		head = null
-		for e: Node3D in field.enemies:
-			if not is_instance_valid(e): continue
+		# Untyped: a freed one still listed is skipped, not assigned.
+		for v: Variant in field.enemies:
+			if not is_instance_valid(v): continue
+			var e: Node3D = v
 			if e.has_method("make_whole") and e.position.distance_to(post) < 6.0: body = e
 			elif e.has_method("mouth") and e.position.distance_to(post) < 12.0: head = e
 		if body != null and head != null:

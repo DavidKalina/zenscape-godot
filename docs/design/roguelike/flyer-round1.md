@@ -1,7 +1,8 @@
 # The flyer, round 1: the guácharo (2026-10-15)
 
-Feature `flyer` of the game-feel round (items-contract.md). On by default;
-`--no-flyer` (or `--loot=off`) turns it off.
+Feature `flyer` of the game-feel round (items-contract.md). **Cut from the
+run in run-trim-round1.md:** off unless `--flyer` (or `--flyers=N`); the
+flyer yard still lays its own bird. `--loot=off` turns it off.
 
 ## What it is
 

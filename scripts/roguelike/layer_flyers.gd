@@ -2,7 +2,9 @@ extends Node3D
 ## The layer's flyers (feature `flyer`, docs/design/roguelike/flyer-round1.md):
 ## the guacharos (scripts/enemies/guacharo.gd) laid over a generated layer's
 ## gulfs and stepped round the motor by scripts/roguelike/layer_stage.gd
-## (its `# [flyer]` hooks). Off with `--no-flyer` or `--loot=off`.
+## (its `# [flyer]` hooks). Cut from the run (run-trim-round1.md): off
+## unless `--flyer` (or `--flyers=N`, or a plan with its own `flyers`, the
+## flyer yard's); `--loot=off` turns it off.
 ##
 ## Laying (`lay`, data only): a layer with a gulf, or MANY_EDGES crossings or
 ## more, gets one; a second from DANGER_TWO of the danger (LayerWorlds
@@ -45,8 +47,9 @@ var _cam_fwd := Vector3.FORWARD
 
 ## The flyers laid for `plan`: [{home, grace}].
 static func lay(plan: Dictionary) -> Array:
-	if not RunFeatures.on(&"flyer"): return []
+	if "--loot=off" in OS.get_cmdline_user_args(): return []
 	if plan.has("flyers"): return plan.flyers
+	if not RunFeatures.opted(&"flyer") and RunFeatures.value("flyers","") == "": return []
 	var edges: Array = plan.get("edges",[])
 	if edges.is_empty(): return []
 	var gulfs: Array = plan.get("gulfs",[])

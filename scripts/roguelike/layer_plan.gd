@@ -200,10 +200,16 @@ const RUNES := 5
 ## apart (m, flat, rect to rect).
 const HOODS := Vector2i(2,3)
 const HOOD_THREE := 0.3
-## The city's neighbourhoods (underground): at least CITY_HOODS.x, each
-## CITY_HOOD places.
-const CITY_HOODS := Vector2i(2,3)
-const CITY_HOOD := 2
+## The city's neighbourhoods (underground): CITY_HOODS of them (the rolled
+## count clamped into it), each CITY_HOOD places. Trimmed to about five
+## minutes a layer (run-trim-round1.md): two neighbourhoods of one place,
+## a serpent gulf between. `--knob=city_size=full` lays round 14's (at least
+## two neighbourhoods of two, about ten minutes); `--knob=city_hood=N` pins
+## the places a neighbourhood, `--knob=hoods=N` the neighbourhoods.
+const CITY_HOODS := Vector2i(2,2)
+const CITY_HOOD := 1
+const CITY_HOODS_FULL := Vector2i(2,3)
+const CITY_HOOD_FULL := 2
 const HOOD_APART := 60.0
 ## A gulf: its width rim lip to rim lip (m, flat) rolled in GULF (a pinned
 ## width clamped to GULF_LIMITS), rising GULF_RISE across; its rims want
@@ -368,8 +374,9 @@ static func make(seed_value: int, knobs := {}) -> Dictionary:
 ## by region) say the layer's world (scripts/roguelike/layer_worlds.gd);
 ## `--world=` and `--under-regions=` are the same as their knobs.
 const KNOBS := {"hoods":0,"gulf":0.0,"ride":"","rise":0.0,"arrows":-1,"viaduct":-1,"heads":-1,"bodies":1,"alternate":1,"ring":0,"greybox":"","greybox_force":1,"pool":"motifs","one_way":-1,
-	"region":0,"under_regions":LayerWorlds.UNDER_REGIONS,"world":"","sky_kit":0,"danger":-1.0,"city_ring":0,"city_crossings":"varied"}
-const KNOB_CHOICES := {"hoods":[0,1,2,3],"ride":["","serpent","ferry"],"pool":["motifs","classic"]}
+	"region":0,"under_regions":LayerWorlds.UNDER_REGIONS,"world":"","sky_kit":0,"danger":-1.0,"city_ring":0,"city_crossings":"varied",
+	"city_size":"trim","city_hood":0}
+const KNOB_CHOICES := {"hoods":[0,1,2,3],"ride":["","serpent","ferry"],"pool":["motifs","classic"],"city_size":["trim","full"]}
 
 ## `--knob=key=value` arguments as the layer's knobs (unknown keys warned).
 static func knobs_from(args: PackedStringArray) -> Dictionary:
@@ -455,14 +462,19 @@ static func _make_once(seed_value: int, attempt: int, knobs: Dictionary) -> Dict
 	var sizes: Array[int] = []
 	for h in range(hoods): sizes.append(rng.randi_range(1,2) if h == 0 else (3 if rng.randf() < HOOD_THREE else 2))
 	for h in range(hoods): sizes[h] += int(k_all.get("hood_more",0))
-	# The city: each neighbourhood CITY_HOOD of its places (two hillsides
-	# joined by column tops or a causeway), so a layer's way up passes
-	# through four to six of them: about ten minutes (layer-round14-city-
-	# layers.md). The `hoods` knob still pins how many.
+	# The city: CITY_HOODS neighbourhoods of CITY_HOOD places, a gulf
+	# between each: the way up through two places, about five minutes
+	# (run-trim-round1.md; round 14's full size, four to six places and ten
+	# minutes, with `--knob=city_size=full`). The `hoods` knob still pins
+	# how many, `city_hood` the places in each.
 	if LayerWorlds.city(k_all):
-		if int(k_all.hoods) <= 0: hoods = maxi(hoods,CITY_HOODS.x)
+		var full := str(k_all.get("city_size","trim")) == "full"
+		var range_h: Vector2i = CITY_HOODS_FULL if full else CITY_HOODS
+		if int(k_all.hoods) <= 0: hoods = clampi(hoods,range_h.x,range_h.y)
+		var per := int(k_all.get("city_hood",0))
+		if per <= 0: per = CITY_HOOD_FULL if full else CITY_HOOD
 		sizes.clear()
-		for h in range(hoods): sizes.append(CITY_HOOD)
+		for h in range(hoods): sizes.append(per)
 	var count := 1
 	for n: int in sizes: count += n
 	var motifs: Array = []
