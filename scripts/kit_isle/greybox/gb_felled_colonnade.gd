@@ -39,6 +39,7 @@ extends "res://scripts/kit_isle/motif_greybox.gd"
 ## the cliffs. The breakables hub is every Olmec's breaker.
 ##
 ## Everything is one LAYOUT table; the land is two height functions over it.
+const OlmecPlaces = preload("res://scripts/enemies/olmec_places.gd")
 const CityKit = preload("res://scripts/city_kit.gd")
 const CityStone = preload("res://scripts/city_kit_stone.gd")
 const CityFires = preload("res://scripts/city_kit_fires.gd")
@@ -622,21 +623,24 @@ func live(g: Node) -> void:
 	_still(tower)
 	live_parts.cresset = CityFires.cresset(fires,Transform3D(Basis.IDENTITY,g.w(on_near(LAYOUT.cresset))),{"size":"cresset","seed":SEED+31,"name":"LureCresset","lit":false,"draw":0.0})
 	# The Feller: a whole Olmec on the terrace, chase and its routes on.
-	var fd: Dictionary = LAYOUT.feller
-	var beat: Array[Vector3] = []
-	for p: Vector2 in fd.beat: beat.append(g.w(on_near(p)))
-	var post: Vector3 = beat[0]
-	var body: Node3D = g.enemy(HeadlessBody,post+Vector3.UP*0.1,fd.face,{"chase":1,"chase_routes":1,"step":CityBreaks.OLMEC_STEP,"seed":SEED})
-	var head: Node3D = g.enemy(InhalerHead,post+Vector3.UP*0.1,fd.face,{})
-	var feller := Feller.new()
-	feller.name = "Feller_STANDIN"
-	feller.beat = beat
-	feller.post = post
-	feller.field = g.stage.enemies
-	feller.hub = hub
-	feller.wear(body,head)
-	g.add_child(feller)
-	live_parts.feller = feller
+	# In a generated layer the roaming Olmec comes instead (olmec-threat-
+	# round1.md; `--knob=olmecs=places` brings the Feller back).
+	if OlmecPlaces.keepers(g):
+		var fd: Dictionary = LAYOUT.feller
+		var beat: Array[Vector3] = []
+		for p: Vector2 in fd.beat: beat.append(g.w(on_near(p)))
+		var post: Vector3 = beat[0]
+		var body: Node3D = g.enemy(HeadlessBody,post+Vector3.UP*0.1,fd.face,{"chase":1,"chase_routes":1,"step":CityBreaks.OLMEC_STEP,"seed":SEED})
+		var head: Node3D = g.enemy(InhalerHead,post+Vector3.UP*0.1,fd.face,{})
+		var feller := Feller.new()
+		feller.name = "Feller_STANDIN"
+		feller.beat = beat
+		feller.post = post
+		feller.field = g.stage.enemies
+		feller.hub = hub
+		feller.wear(body,head)
+		g.add_child(feller)
+		live_parts.feller = feller
 	if str(g.stage.study.get_script().resource_path).ends_with("motif_yard.gd"): _far(g)
 	if Underground.on():
 		var dresser := Dresser.new()

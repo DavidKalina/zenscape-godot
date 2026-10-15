@@ -92,12 +92,17 @@ signal reunited(enemy)
 ## The chase's beats (whole, `chase` on): "spotted", "lost", "gave up",
 ## "pounce", "suck", "gulped", "blown out", "swat", "caught ...", "missed".
 signal chase_beat(what: String)
+## His weight come down (olmec-threat-round1.md): at `at`, `power` (a
+## mantle 0.5, a leap's landing 1 or more), `kind` ("haul", "land",
+## "pounce"): the isle under him tips (scripts/enemies/olmec_tilt.gd).
+signal weighed(at: Vector3, power: float, kind: String)
 
 const Look = preload("res://scripts/enemies/headless_body_look.gd")
 const Dust = preload("res://scripts/enemies/body_dust.gd")
 const Routes = preload("res://scripts/enemies/body_routes.gd")
 const Sight = preload("res://scripts/enemies/body_sight.gd")
 const Hearing = preload("res://scripts/enemies/body_hearing.gd")
+const OlmecVoid = preload("res://scripts/enemies/olmec_void.gd")
 
 ## The head it looks for (found among the field's enemies: the one with a mouth).
 var head: Node3D = null
@@ -230,6 +235,13 @@ const SMASH_EASE := 2.6
 var _smash_from := ""
 var _smash_hit := false
 var smashes := 0
+## Olmec threat round 1: the masonry breaker (scripts/enemies/
+## olmec_breach.gd, set by scripts/roguelike/layer_olmec.gd) and the wall
+## hit it smashes through now ({} none); scents taken (relentless).
+var breacher: Object = null
+var _breach_hit := {}
+var breaches := 0
+var scents := 0
 func _init() -> void:
 	cost = 5
 	tags = PackedStringArray(["heavy","climbs","leaps","pushes"])
@@ -337,6 +349,24 @@ func default_knobs(n: Dictionary) -> Dictionary:
 		# way up `after_ahead` m. `after_tries` routes a loss at most, none
 		# once `after_for` s unseen.
 		"climb_after":1,"after_tries":3,"after_for":60.0,"after_ahead":n.unit*10.0,"after_wait":0.6,
+		# Olmec threat round 1 (docs/design/roguelike/olmec-threat-round1.md):
+		# `relentless` 1 (the generator's), 0 off (as before). Whole, the hunt
+		# never falls back to idle searching: the head going on is a beat and
+		# he knows where you are; lost, he looks `hunt_search` s, then takes
+		# your scent (where you are now) and comes on. Hunting he sees
+		# further and wider (`hunt_range` m, `hunt_half` rad), loses you
+		# slower (`hunt_grace` s, `hunt_drain`, `hunt_memory` s) and the dark
+		# hides you less (`hunt_dark_range`, `hunt_dark_seen`: the torch
+		# matters for being spotted, not once he is on you). He leaps gaps
+		# to `hunt_gap` Hh. His leap's landing comes down `hunt_shock`
+		# times harder. `void_push`: a shove (his waves, his blast) bent
+		# this share toward the nearest void within VOID_REACH.
+		"relentless":0,"hunt_range":n.unit*60.0,"hunt_half":1.25,"hunt_grace":2.5,"hunt_drain":0.12,"hunt_memory":30.0,
+		"hunt_dark_range":0.85,"hunt_dark_seen":0.8,"hunt_gap":4.6,"hunt_rise":0.9,"hunt_search":4.0,"hunt_shock":1.35,"void_push":0.0,
+		# `breach` 1: hunting, a city wall, pillar or parapet in his way
+		# (not over him: he climbs to you) he smashes through
+		# (scripts/enemies/olmec_breach.gd, his `breacher`), not round.
+		"breach":0,
 	}
 
 ## Its build (m) from its knobs `k` and the walker's `unit`, as `_size` and
@@ -498,7 +528,7 @@ func _find_head() -> void:
 	for e in field.enemies:
 		if not is_instance_valid(e) or e == self or not e.has_method("mouth"): continue
 		# Its own head where there are several (set down at `head_home`).
-		if head_home != Vector3.INF and e.has_method("home") and (e.home() as Vector3).distance_to(head_home) > 0.5: continue
+		if head_home != Vector3.INF and e.has_method("home") and not preload("res://scripts/enemies/body_spawner.gd").same_home(e.home(),head_home): continue
 		head = e
 
 func _forward3() -> Vector3:
@@ -1117,6 +1147,7 @@ func _mantle(delta: float) -> void:
 		_mantle_landed = true
 		# Its weight comes down on the top: a smaller wave.
 		_shock(position,float(knobs.shock_mantle))
+		weighed.emit(position,float(knobs.shock_mantle),"haul")
 		Dust.plume(field,position,hh*2.6*_tell_k())
 		quake = maxf(quake,0.2)
 		field.sound(&"body_step",position)
@@ -1225,6 +1256,7 @@ func _drop_ok(at: Vector3) -> bool:
 
 ## The widest gap it jumps ledge to ledge (m): `jump_gap` head heights.
 func jump_gap() -> float:
+	if hunting and _relentless(): return maxf(float(knobs.jump_gap),float(knobs.hunt_gap))*hh
 	return float(knobs.jump_gap)*hh
 
 ## A ledge across the gap along `dir`: the far rim within `jump_gap()` of
@@ -1242,6 +1274,7 @@ func _ledge(dir: Vector3) -> Dictionary:
 		d += 0.25
 	if rim < 0.0: return {}
 	var over := float(knobs.jump_rise)*hh
+	if hunting and _relentless(): over = maxf(over,float(knobs.hunt_rise)*hh)
 	var under := float(knobs.jump_sink)*hh
 	d = rim+0.25
 	while d <= rim+jump_gap():
@@ -1358,7 +1391,11 @@ func _landed() -> void:
 	Dust.plume(field,position,hh*3.5*_tell_k())
 	field.sound(&"body_land",position)
 	field.sound(&"body_rumble",position)
-	_shock(position,float(knobs.pounce_shock) if pounced else clampf(impact/sqrt(2.0*float(knobs.leap_gravity)*hh),0.6,1.5))
+	var power := float(knobs.pounce_shock) if pounced else clampf(impact/sqrt(2.0*float(knobs.leap_gravity)*hh),0.6,1.5)
+	# Olmec threat round 1: hunting, his leaps come down harder.
+	if hunting and _relentless(): power *= float(knobs.hunt_shock)
+	_shock(position,power)
+	weighed.emit(position,power,"pounce" if pounced else "land")
 	# The pounce come down on him: caught.
 	if pounced:
 		var m: PilotMotor = field.motor
@@ -1485,6 +1522,8 @@ func _shock_meets(w: Dictionary) -> void:
 	if breaker != null and breaker.has_method("takes_shock") and breaker.takes_shock(self,w): return
 	var f := lerpf(1.0,float(knobs.shock_edge),d/w.max)*float(w.power)
 	var way := off.normalized() if d > 0.1 else PilotMotor.forward(facing)
+	# Olmec threat round 1: thrown toward the void near a rim.
+	if float(knobs.void_push) > 0.0 and _relentless(): way = OlmecVoid.toward(field,m.feet,way,float(knobs.void_push))
 	shock_hits += 1
 	shove_pilot(m,way,float(knobs.shock_out)*f,float(knobs.shock_up)*f)
 
@@ -1840,7 +1879,15 @@ func _see(delta: float) -> void:
 	# hides him from its eyes, though it can't walk or climb it.
 	if float(knobs.get("sight_walker_only",0)) >= 0.5: sight.mask |= WalkerOnly.LAYER
 	# Held up, it looks down and about more widely (`scope_wide` times its cone).
-	sight.half = float(knobs.sight_half)*(float(knobs.scope_wide) if state == "scope" and _held_w > 0.5 else 1.0)
+	# Olmec threat round 1: hunting (relentless) he sees further and wider,
+	# loses you slower, and the dark hides you less.
+	var hunt := hunting and _relentless()
+	sight.deep = float(knobs.hunt_range) if hunt else float(knobs.sight_range)
+	sight.grace = float(knobs.hunt_grace) if hunt else float(knobs.sight_grace)
+	sight.drain = float(knobs.hunt_drain) if hunt else float(knobs.sight_drain)
+	sight.dark_range = float(knobs.hunt_dark_range) if hunt else float(knobs.sight_dark_range)
+	sight.dark_seen = float(knobs.hunt_dark_seen) if hunt else float(knobs.sight_dark_seen)
+	sight.half = (float(knobs.hunt_half) if hunt else float(knobs.sight_half))*(float(knobs.scope_wide) if state == "scope" and _held_w > 0.5 else 1.0)
 	sight.exclude = _skip()
 	if m.seized():
 		# In its mouth: held, not looked for.
@@ -1921,7 +1968,10 @@ func _chase(delta: float) -> void:
 				_chase_drop()
 				_after_at = Vector3.INF
 				return
-		elif flat <= float(knobs.search_reach) or seen_t > float(knobs.chase_memory):
+		# Olmec threat round 1: relentless, where you were about his level
+		# he simply comes on (no scope, no route), till he's there.
+		elif _relentless() and absf(to.y) < neck_h*0.6 and flat > float(knobs.search_reach) and seen_t <= float(knobs.hunt_memory): pass
+		elif flat <= float(knobs.search_reach) or seen_t > (float(knobs.hunt_memory) if _relentless() else float(knobs.chase_memory)):
 			if _scope_try("seek"): return
 			if _after_try(): return
 			_seek_start()
@@ -2207,7 +2257,7 @@ func _attack(m: PilotMotor, flat: float, dy: float) -> bool:
 			field.sound(&"body_windup",position)
 			chase_beat.emit("pounce")
 			return true
-	if flat >= float(knobs.suck_min)*hh and flat <= float(knobs.suck_max)*hh and _clock >= _suck_ready and head != null and head.perch == self \
+	if flat >= float(knobs.suck_min)*hh and flat <= float(knobs.suck_max)*hh*(1.3 if _relentless() else 1.0) and _clock >= _suck_ready and head != null and head.perch == self \
 			and head.has_method("worn_reaches") and head.worn_reaches(m):
 		sucks += 1
 		_suck_unseen = 0.0
@@ -2271,11 +2321,15 @@ func _hunt_wall(hit: Dictionary, goal: Vector3) -> void:
 	vel.x = 0.0
 	vel.z = 0.0
 	# Cover in the way to where it lost him: it looks over it first.
-	if state == "chase" and not sight.seeing() and _scope_try("chase"): return
+	# (Relentless, he knows where you are: no looking over, on at it.)
+	if state == "chase" and not sight.seeing() and not _relentless() and _scope_try("chase"): return
 	var top := _climbable(hit)
 	if top != INF and goal.y > position.y+float(knobs.step)*2.0:
 		_start_climb(hit)
 		return
+	# Olmec threat round 1: masonry in his way, you past it about his
+	# level: he smashes through it (`breach`).
+	if state == "chase" and _breach_try(hit,goal): return
 	# City breaks round 2: a wall past his climb, him beyond it (through a
 	# gate he broke open): a route to him, as at an edge (`chase_routes`).
 	if top == INF and _chase_plan(goal): return
@@ -2354,6 +2408,9 @@ func _seek(delta: float) -> void:
 	# Turning to scan, it steps round on the spot (its feet's phase).
 	_seek_turn = absf(angle_difference(was,facing))/maxf(delta,0.0001)
 	_phase += _seek_turn*delta*SEEK_STEP
+	if _relentless() and state_t >= float(knobs.hunt_search):
+		_scent()
+		return
 	if state_t >= float(knobs.search_for):
 		hunting = false
 		gave_up += 1
@@ -2455,13 +2512,33 @@ func _smash(delta: float) -> void:
 	if not _smash_hit and state_t >= SMASH_WINDUP:
 		_smash_hit = true
 		quake = maxf(quake,0.6)
-		if breaker != null: breaker.smash(self)
+		if not _breach_hit.is_empty():
+			if breacher != null and is_instance_valid(breacher): breacher.smash(self,_breach_hit)
+			_breach_hit = {}
+		elif breaker != null: breaker.smash(self)
 	if state_t >= SMASH_WINDUP+SMASH_AFTER: _go(_smash_from if _smash_from != "" else _resume())
+
+## Olmec threat round 1: a wall hit in the hunt's way that its breacher
+## can take down, you past it no higher than a climb's worth: the punch.
+func _breach_try(hit: Dictionary, goal: Vector3) -> bool:
+	if float(knobs.breach) < 0.5 or breacher == null or not is_instance_valid(breacher): return false
+	if goal.y > position.y+neck_h*0.8: return false
+	if not breacher.can_breach(self,hit): return false
+	_breach_hit = hit
+	_smash_from = state
+	_smash_hit = false
+	smashes += 1
+	breaches += 1
+	_go("smash")
+	field.sound(&"body_windup",position)
+	chase_beat.emit("breach")
+	return true
 
 ## Caught him (`how`, "swat" or "pounce"): knocked down and away (no damage).
 func _catch(m: PilotMotor, how: String) -> void:
 	var way := Vector2(m.feet.x-position.x,m.feet.z-position.z)
 	way = way.normalized() if way.length() > 0.1 else PilotMotor.forward(facing)
+	if float(knobs.void_push) > 0.0: way = OlmecVoid.toward(field,m.feet,way,float(knobs.void_push))
 	m.knock(m.knock_velocity(way,float(knobs.swat_out),float(knobs.swat_up)),self,float(knobs.swat_down))
 	m.harm(harm_cause(),1,self)
 	_cool = 0.3
@@ -3027,7 +3104,48 @@ func _triumph(delta: float) -> void:
 		_triumph_thud = true
 		quake = maxf(quake,0.25)
 		field.sound(&"body_step",position)
-	if state_t >= t: _go("listen")
+	if state_t >= t:
+		# Olmec threat round 1: whole, he knows where you are.
+		if _relentless() and _chases():
+			_wake_hunt()
+			return
+		_go("listen")
+
+## Relentless (olmec-threat-round1.md): whole, with the hunt on.
+func _relentless() -> bool:
+	return float(knobs.get("relentless",0)) >= 0.5 and _chases()
+
+## The hunt woken (the head on, or brought up a cliff after you by the
+## layer's Olmec, scripts/roguelike/layer_olmec.gd): spotted, at you.
+func _wake_hunt() -> void:
+	if sight == null:
+		sight = Sight.new()
+		sight.tune(knobs)
+	sight.awareness = 1.0
+	sight.state = "spotted"
+	var was := hunting
+	hunting = true
+	_scent()
+	if not was:
+		spots += 1
+		chase_beat.emit("spotted")
+	tell(mark_colour)
+
+## Lost you: he takes your scent (where you are now) and comes on.
+func _scent() -> void:
+	var m: PilotMotor = field.motor
+	seen_at = m.feet
+	seen_t = 0.0
+	_after_n = 0
+	_after_k = 0
+	_after_at = Vector3.INF
+	_route = []
+	_leg = 0
+	_search = null
+	_skirt_t = 0.0
+	scents += 1
+	chase_beat.emit("scent")
+	_go("chase")
 
 # --- Moving -------------------------------------------------------------------------------------
 

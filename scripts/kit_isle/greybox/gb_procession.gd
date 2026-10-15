@@ -39,6 +39,7 @@ extends "res://scripts/kit_isle/motif_greybox.gd"
 ## (`hear_noise`): a hard landing near it, or standing on the sixth's back a
 ## while, wakes it, and it goes to the noise (climbing, leaping, its
 ## landings' shockwaves).
+const OlmecPlaces = preload("res://scripts/enemies/olmec_places.gd")
 const CityKit = preload("res://scripts/city_kit.gd")
 const CityStone = preload("res://scripts/city_kit_stone.gd")
 const CityFires = preload("res://scripts/city_kit_fires.gd")
@@ -1378,21 +1379,25 @@ func live(g: Node) -> void:
 		var sd: Dictionary = LAYOUT.sleeper
 		var post := on_body(live_i,float(sd.u),0.0,float(sd.w))
 		post.y = (origins()[live_i] as Vector3).y-float(sd.down)*body_k()
-		var body: Node3D = g.enemy(HeadlessBody,g.w(post)+Vector3.UP*0.1,Vector2(cos(heading(live_i)),-sin(heading(live_i))),{"hear_noise":float(sd.hear_noise),"seed":SEED})
-		var sleeper := Sleeper.new()
-		sleeper.name = "Sleeper_STANDIN"
-		sleeper.post = g.w(post)
-		sleeper.field = g.stage.enemies
-		sleeper.hub = hub
-		sleeper.body = body
-		sleeper.study = g.stage.study
-		sleeper.feel_for = float(sd.feel)
-		var q: Array = []
-		for c: Vector2 in [Vector2(0.0,-2.4),Vector2(NECK_U,-2.4),Vector2(NECK_U,2.4),Vector2(0.0,2.4)]:
-			var p: Vector3 = g.w(on_body(live_i,c.x,0.0,c.y*body_k()))
-			q.append(Vector2(p.x,p.z))
-		sleeper.back = PackedVector2Array(q)
-		g.add_child(sleeper)
+		# In a generated layer the roaming Olmec comes instead (olmec-threat-
+		# round1.md; `--knob=olmecs=places` brings the sleeper back). The
+		# pier stays.
+		if OlmecPlaces.keepers(g):
+			var body: Node3D = g.enemy(HeadlessBody,g.w(post)+Vector3.UP*0.1,Vector2(cos(heading(live_i)),-sin(heading(live_i))),{"hear_noise":float(sd.hear_noise),"seed":SEED})
+			var sleeper := Sleeper.new()
+			sleeper.name = "Sleeper_STANDIN"
+			sleeper.post = g.w(post)
+			sleeper.field = g.stage.enemies
+			sleeper.hub = hub
+			sleeper.body = body
+			sleeper.study = g.stage.study
+			sleeper.feel_for = float(sd.feel)
+			var q: Array = []
+			for c: Vector2 in [Vector2(0.0,-2.4),Vector2(NECK_U,-2.4),Vector2(NECK_U,2.4),Vector2(0.0,2.4)]:
+				var p: Vector3 = g.w(on_body(live_i,c.x,0.0,c.y*body_k()))
+				q.append(Vector2(p.x,p.z))
+			sleeper.back = PackedVector2Array(q)
+			g.add_child(sleeper)
 		# Its pier: a broken shaft under its feet.
 		var b := CityKit.Piece.new("SleeperPier",SEED+50,0.7)
 		var turn := Basis(Vector3.UP,heading(live_i))

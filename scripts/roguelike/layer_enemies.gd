@@ -36,6 +36,16 @@ const LayerBodies = preload("res://scripts/roguelike/layer_bodies.gd")
 const EnemyYard = preload("res://studies/enemy_yard.gd")
 ## The greybox motifs' own heads (scripts/roguelike/layer_greybox.gd).
 const LayerGreybox = preload("res://scripts/roguelike/layer_greybox.gd")
+## Olmec threat round 1 (docs/design/roguelike/olmec-threat-round1.md):
+## the layer's roaming Olmec, and whether the places keep their own.
+const LayerOlmec = preload("res://scripts/roguelike/layer_olmec.gd")
+const OlmecPlaces = preload("res://scripts/enemies/olmec_places.gd")
+## Underground, with the roaming Olmec (`olmecs` not "places"): one head
+## a layer (its body comes for it up the cliffs, then hunts you), two from
+## this danger on; `--knob=olmec_count=N` pins it.
+const ROAM_TWO := 0.66
+## A roaming head rated a point less each this far (m) from the spawn.
+const ROAM_NEAR := 150.0
 
 ## How many heads a layer rolls.
 const HEADS := Vector2i(1,2)
@@ -126,10 +136,23 @@ static func lay(plan: Dictionary, attempt: int) -> void:
 	# worlds.gd `danger`): none on the first region, up to DANGER_HEADS.
 	if int((plan.knobs as Dictionary).get("heads",-1)) < 0 and LayerPlan.LayerWorlds.city(plan.knobs):
 		n = roundi(float(DANGER_HEADS)*LayerPlan.LayerWorlds.danger(plan.knobs))
-	if n == 0:
+	# Olmec threat round 1: one roaming Olmec (two high up), the places'
+	# Keepers and heads left out.
+	var roam := roams(plan.knobs)
+	if roam:
+		n = int((plan.knobs as Dictionary).get("olmec_count",-1))
+		if n < 0: n = 2 if LayerPlan.LayerWorlds.danger(plan.knobs) >= ROAM_TWO else 1
+	if n == 0 and not roam:
 		LayerGreybox.lay_heads(plan,numbers())
 		return
-	var cands := _candidates(plan,rng)
+	var cands := _candidates(plan,rng) if n > 0 else []
+	# Roaming: his head on the way up, early (the climb to it seen, then
+	# him whole and after you for the rest of the layer).
+	if roam:
+		var from: Vector3 = (plan.spawn as Dictionary).get("at",Vector3.ZERO)
+		for c: Dictionary in cands:
+			var isle: Dictionary = plan.isles[int(c.isle)]
+			c.score = float(c.score)+(1.0 if str(isle.get("role","")) == "route" else 0.0)-0.2*float(c.isle)-_flat(c.at,from)/ROAM_NEAR
 	# The longest rounds, out over the void a little first; one an isle.
 	cands.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return float(a.score) > float(b.score))
 	# With bodies (round 9, scripts/roguelike/layer_bodies.gd), a head
@@ -150,8 +173,22 @@ static func lay(plan: Dictionary, attempt: int) -> void:
 					continue
 			c.erase("score")
 			plan.heads.append(c)
+	if roam:
+		# None of the generator's fit: a place's own head (with a cliff).
+		if (plan.heads as Array).size() < n:
+			var tmp := plan.duplicate()
+			tmp.heads = []
+			LayerGreybox.lay_heads(tmp,numbers())
+			for h: Dictionary in tmp.heads:
+				if (plan.heads as Array).size() < n and not (h.get("cliffs",[]) as Array).is_empty() and _fits(plan,h): plan.heads.append(h)
+		return
 	# A greybox isle's own heads, the generator's kept off it.
 	LayerGreybox.lay_heads(plan,numbers())
+
+## Whether the layer has the roaming Olmec (underground, `olmecs` not
+## "places", `heads` not pinned).
+static func roams(knobs: Dictionary) -> bool:
+	return LayerPlan.LayerWorlds.city(knobs) and OlmecPlaces.mode(knobs) == "roam" and int(knobs.get("heads",-1)) < 0
 
 ## Whether head candidate `c` goes with those laid: one an isle, APART.
 static func _fits(plan: Dictionary, c: Dictionary) -> bool:
@@ -375,6 +412,10 @@ var spawner: Node = null
 var _air_was: Callable
 var _plane_was: Callable
 var _voices := {}
+## Olmec threat round 1: the roaming Olmec (`roams`), his director
+## (scripts/roguelike/layer_olmec.gd) or null.
+var roaming := false
+var olmec: Node = null
 
 ## The plan's heads spawned into `stage`'s EnemyField, their air on the
 ## sail's wind and the plane's, their bodies' spawner; null where there are
@@ -385,7 +426,11 @@ static func dress(stage: Node3D, plan: Dictionary) -> Node:
 	var node := new()
 	node.name = "LayerEnemies"
 	stage.add_child(node)
+	node.roaming = roams(plan.knobs)
 	node.build(stage.study,stage.enemies,heads,int((plan.knobs as Dictionary).get("bodies",1)) != 0,float(plan.void_y),LayerBodies.spawn_rules(plan.knobs))
+	# Olmec threat round 1: the roaming Olmec's director (his travel, his
+	# weight on the isles, the masonry he breaks, the head-on beat).
+	if node.roaming: node.olmec = LayerOlmec.dress(node,stage,plan)
 	return node
 
 func build(scene: Node3D, enemies: Node, heads: Array, bodies := true, void_y := -INF, spawn_rules := {}) -> void:
@@ -401,7 +446,7 @@ func build(scene: Node3D, enemies: Node, heads: Array, bodies := true, void_y :=
 	if bodies:
 		spawner = BodySpawner.new()
 		add_child(spawner)
-		spawner.setup(study,field,spawn_rules,LayerBodies.knobs(numbers()))
+		spawner.setup(study,field,spawn_rules,LayerBodies.knobs(numbers(),roaming))
 		# Under the void a body is gone (and its head's next comes up).
 		spawner.lost_y = void_y
 		for h: Dictionary in heads: spawner.add_head(h.at,h.get("cliffs",[]))
@@ -443,11 +488,15 @@ func _head_air(p: Vector3, how: String) -> Vector3:
 
 ## Ahead of the enemies' step: the bodies come up their cliffs.
 func before(delta: float) -> void:
+	# (The roaming Olmec first: a body falling away is his before the
+	# spawner takes it under the void.)
+	if olmec != null: olmec.before(delta)
 	if spawner != null: spawner.step(delta)
 
 ## The camera placed: shaken by the bodies' landings.
-func frame(camera: Camera3D, _delta: float) -> void:
+func frame(camera: Camera3D, delta: float) -> void:
 	if spawner != null: spawner.shake(camera)
+	if olmec != null: olmec.frame(camera,delta)
 
 ## Whether a head holds him now (the stage hides the figure).
 func holding() -> bool:

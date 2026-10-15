@@ -30,6 +30,7 @@ extends "res://scripts/kit_isle/motif_greybox.gd"
 ##            going back up (the retreat).
 ## The machine (the sledges, the fenders, the chocks, the jolts) is
 ## haulway_sledge.gd. Everything stands on one LAYOUT table.
+const OlmecPlaces = preload("res://scripts/enemies/olmec_places.gd")
 const CityKit = preload("res://scripts/city_kit.gd")
 const CityStone = preload("res://scripts/city_kit_stone.gd")
 const CityFires = preload("res://scripts/city_kit_fires.gd")
@@ -1049,11 +1050,14 @@ func live(g: Node) -> void:
 	# passes with him on it, it pounces down onto it (and the deck goes on
 	# without it). A second walks B's terrace past the cradle, so the
 	# arrival is contested.
-	var ol: Dictionary = LAYOUT.olmecs
-	_olmec(g,hub,ol.pier,pier_top(),Vector2(0.0,1.0),SEED+60)
-	# (B's walks the terrace past the cradle, its feet on the turf there.)
-	var bp: Vector2 = ol.b[1]
-	_olmec(g,hub,ol.b,b_ground(bp.x,bp.y),Vector2(-1.0,0.0),SEED+61)
+	# In a generated layer the roaming Olmec comes instead (olmec-threat-
+	# round1.md; `--knob=olmecs=places` brings the riders back).
+	if OlmecPlaces.keepers(g):
+		var ol: Dictionary = LAYOUT.olmecs
+		_olmec(g,hub,ol.pier,pier_top(),Vector2(0.0,1.0),SEED+60)
+		# (B's walks the terrace past the cradle, its feet on the turf there.)
+		var bp: Vector2 = ol.b[1]
+		_olmec(g,hub,ol.b,b_ground(bp.x,bp.y),Vector2(-1.0,0.0),SEED+61)
 
 ## The lamps' beam (dim and warm: the city's cressets, turned down).
 const LAMP_BEAM := 1.5

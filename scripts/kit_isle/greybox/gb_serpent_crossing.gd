@@ -31,6 +31,7 @@ extends "res://scripts/kit_isle/motif_greybox.gd"
 ##   way        ramp or recess, F. The whole Olmec keeps this side.
 ## The serpent is the ride (serpent_crossing_line.gd steps it); the Olmec is
 ## lured by the unlit great cresset on A's west terrace.
+const OlmecPlaces = preload("res://scripts/enemies/olmec_places.gd")
 const CityKit = preload("res://scripts/city_kit.gd")
 const CityStone = preload("res://scripts/city_kit_stone.gd")
 const CityFires = preload("res://scripts/city_kit_fires.gd")
@@ -732,20 +733,23 @@ func live(g: Node) -> void:
 	if preload("res://scripts/launch_args.gd").user_args().has("--no-olmec"):
 		if str(g.stage.study.get_script().resource_path).ends_with("motif_yard.gd"): _far(g)
 		return
-	var kd: Dictionary = LAYOUT.keeper
-	var beat: Array[Vector3] = []
-	for p: Vector2 in kd.beat: beat.append(g.w(Vector3(p.x,b_at().y,p.y)))
-	var post: Vector3 = beat[1]
-	var body: Node3D = g.enemy(HeadlessBody,post+Vector3.UP*0.1,kd.face,{"chase":1,"chase_routes":1,"seed":SEED})
-	var head: Node3D = g.enemy(InhalerHead,post+Vector3.UP*0.1,kd.face,{})
-	var keeper: Node = SC.Keeper.new()
-	keeper.name = "Keeper_STANDIN"
-	keeper.beat = beat
-	keeper.post = post
-	keeper.field = g.stage.enemies
-	keeper.hub = hub
-	keeper.wear(body,head)
-	g.add_child(keeper)
+	# In a generated layer the roaming Olmec comes instead (olmec-threat-
+	# round1.md; `--knob=olmecs=places` brings the Keeper back).
+	if OlmecPlaces.keepers(g):
+		var kd: Dictionary = LAYOUT.keeper
+		var beat: Array[Vector3] = []
+		for p: Vector2 in kd.beat: beat.append(g.w(Vector3(p.x,b_at().y,p.y)))
+		var post: Vector3 = beat[1]
+		var body: Node3D = g.enemy(HeadlessBody,post+Vector3.UP*0.1,kd.face,{"chase":1,"chase_routes":1,"seed":SEED})
+		var head: Node3D = g.enemy(InhalerHead,post+Vector3.UP*0.1,kd.face,{})
+		var keeper: Node = SC.Keeper.new()
+		keeper.name = "Keeper_STANDIN"
+		keeper.beat = beat
+		keeper.post = post
+		keeper.field = g.stage.enemies
+		keeper.hub = hub
+		keeper.wear(body,head)
+		g.add_child(keeper)
 	if str(g.stage.study.get_script().resource_path).ends_with("motif_yard.gd"): _far(g)
 	if Underground.on():
 		var dresser: Node = SC.Dresser.new()

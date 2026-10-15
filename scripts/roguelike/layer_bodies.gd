@@ -34,6 +34,7 @@ extends RefCounted
 const LayerPlan = preload("res://scripts/roguelike/layer_plan.gd")
 const LayerHazards = preload("res://scripts/roguelike/layer_hazards.gd")
 const HeadlessBody = preload("res://scripts/enemies/headless_body.gd")
+const OlmecPlaces = preload("res://scripts/enemies/olmec_places.gd")
 
 const CELL := 2.0
 ## Isles within this of the head's isle (m, rect to rect) are in its reach.
@@ -58,6 +59,13 @@ const DIRS := [Vector2i(1,0),Vector2i(-1,0),Vector2i(0,1),Vector2i(0,-1)]
 ## the walker's view, to watch it climb across a gulf. `--knob=spawn_<rule>=`
 ## over these.
 const SPAWN := {"far_share":0.3}
+## Olmec threat round 1: the roaming Olmec's body knobs (HeadlessBody's),
+## and his spawn rules: mostly seen far off coming up a cliff (the main
+## entrance), soon, from a wider band and cone.
+const ROAM := {"relentless":1.0,"breach":1.0,"void_push":0.6}
+## (`natural` 0: the layer's Olmec, scripts/roguelike/layer_olmec.gd, brings
+## him up the cliffs it finds in view itself; the spawner keeps the books.)
+const ROAM_SPAWN := {"natural":0.0,"far_climb":12.0,"stale":40.0}
 ## Underground, by the danger (0 the first region, 1 the fourth): a bare
 ## head's body comes back after this long (s, BodySpawner `wait`), and this
 ## share of its comings are far ones.
@@ -75,10 +83,14 @@ static var _build_lock := Mutex.new()
 ## turns it off (not a plan knob: those are layer_plan.gd's). Any body knob
 ## by `--body-knob=<knob>=<value>`, as the studies take it (e.g.
 ## `--body-knob=leap_grab=1`).
-static func knobs(n: Dictionary) -> Dictionary:
+static func knobs(n: Dictionary, roaming := false) -> Dictionary:
 	# More of a threat (as the places' Keepers): round an edge he can't
 	# leap by a route (`chase_routes`), and up a lip by a leap and grab.
 	var out := {"drop_under":float(n.unit)*3.0,"chase":1.0,"chase_routes":1.0,"leap_grab":1.0}
+	# Olmec threat round 1 (olmec-threat-round1.md): the roaming Olmec,
+	# whole, hunts to the end, breaks the masonry in his way, and throws
+	# you toward the void.
+	if roaming: out.merge(ROAM,true)
 	for arg in preload("res://scripts/launch_args.gd").user_args():
 		if arg.begins_with("--body-chase="): out.chase = float(arg.get_slice("=",1))
 		elif arg.begins_with("--body-knob="):
@@ -96,6 +108,8 @@ static func spawn_rules(plan_knobs: Dictionary) -> Dictionary:
 	if LayerPlan.LayerWorlds.world_of(plan_knobs) == "under":
 		out.wait = lerpf(DANGER_WAIT.x,DANGER_WAIT.y,d)
 		out.far_share = lerpf(DANGER_FAR.x,DANGER_FAR.y,d)
+	if LayerPlan.LayerWorlds.city(plan_knobs) and OlmecPlaces.mode(plan_knobs) == "roam" and int(plan_knobs.get("heads",-1)) < 0:
+		out.merge(ROAM_SPAWN,true)
 	for key: String in plan_knobs:
 		if key.begins_with("spawn_"): out[key.trim_prefix("spawn_")] = float(plan_knobs[key])
 	return out
