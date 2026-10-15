@@ -38,6 +38,7 @@ extends "res://scripts/kit_isle/motif_greybox.gd"
 ##
 ## Everything is one LAYOUT table; the land's heights are `main_ground` and
 ## `shelf_ground` from it.
+const OlmecPlaces = preload("res://scripts/enemies/olmec_places.gd")
 const CityKit = preload("res://scripts/city_kit.gd")
 const CityStone = preload("res://scripts/city_kit_stone.gd")
 const CityFires = preload("res://scripts/city_kit_fires.gd")
@@ -1043,7 +1044,9 @@ func live(g: Node) -> void:
 	keepers.field = g.stage.enemies
 	keepers.hub = hub
 	g.add_child(keepers)
-	for who: String in ["player","watcher"]:
+	# In a generated layer the roaming Olmec comes instead (olmec-threat-
+	# round1.md; `--knob=olmecs=places` brings the keepers back).
+	for who: String in (["player","watcher"] if OlmecPlaces.keepers(g) else []):
 		var kd: Dictionary = LAYOUT[who]
 		var beat: Array[Vector3] = []
 		for p: Vector3 in kd.beat: beat.append(g.w(p))
@@ -1088,11 +1091,12 @@ class Keepers extends Node:
 			for e in field.enemies:
 				if is_instance_valid(e) and e.has_method("world_changed") and e.get("breaker") == null: e.breaker = hub
 		for k: Dictionary in keep:
-			var body: Node3D = k.body
-			var head: Node3D = k.head
-			if body == null or not is_instance_valid(body) or head == null or not is_instance_valid(head):
+			# Check before the typed assignment: a freed instance can't be put in a typed var.
+			if not is_instance_valid(k.body) or not is_instance_valid(k.head):
 				_refind(k)
 				continue
+			var body: Node3D = k.body
+			var head: Node3D = k.head
 			if not bool(k.landed):
 				var stone: StaticBody3D = body.body
 				k.landed = field.floor_under(k.post,2.0,6.0,stone.get_rid() if stone != null else RID()) > -INF
@@ -1127,8 +1131,8 @@ class Keepers extends Node:
 		var post: Vector3 = k.post
 		var body: Node3D = null
 		var head: Node3D = null
-		for e: Node3D in field.enemies:
-			if not is_instance_valid(e): continue
+		for e in field.enemies:
+			if not is_instance_valid(e) or not e is Node3D: continue
 			if e.has_method("make_whole") and e.position.distance_to(post) < 6.0: body = e
 			elif e.has_method("mouth") and e.position.distance_to(post) < 12.0: head = e
 		if body != null and head != null:

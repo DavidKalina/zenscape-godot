@@ -51,6 +51,7 @@ extends "res://scripts/kit_isle/motif_greybox.gd"
 ##
 ## Everything is one LAYOUT table; where the pillars stand is solved from it
 ## in `place_of`.
+const OlmecPlaces = preload("res://scripts/enemies/olmec_places.gd")
 const CityKit = preload("res://scripts/city_kit.gd")
 const CityStone = preload("res://scripts/city_kit_stone.gd")
 const CityFires = preload("res://scripts/city_kit_fires.gd")
@@ -954,20 +955,23 @@ func live(g: Node) -> void:
 	hub.field = g.stage.enemies
 	g.add_child(hub)
 	# The Keeper: a whole Olmec on M's north ring, chase on, his routes.
-	var kd: Dictionary = LAYOUT.keeper
-	var beat: Array[Vector3] = []
-	for p: Vector2 in kd.beat: beat.append(g.w(on("well",p)))
-	var post: Vector3 = beat[1]
-	var body: Node3D = g.enemy(HeadlessBody,post+Vector3.UP*0.1,kd.face,{"chase":1,"chase_routes":1,"seed":_seed})
-	var head: Node3D = g.enemy(InhalerHead,post+Vector3.UP*0.1,kd.face,{})
-	var keeper := Keeper.new()
-	keeper.name = "Keeper_STANDIN"
-	keeper.beat = beat
-	keeper.post = post
-	keeper.field = g.stage.enemies
-	keeper.hub = hub
-	keeper.wear(body,head)
-	g.add_child(keeper)
+	# In a generated layer the roaming Olmec comes instead (olmec-threat-
+	# round1.md; `--knob=olmecs=places` brings the Keeper back).
+	if OlmecPlaces.keepers(g):
+		var kd: Dictionary = LAYOUT.keeper
+		var beat: Array[Vector3] = []
+		for p: Vector2 in kd.beat: beat.append(g.w(on("well",p)))
+		var post: Vector3 = beat[1]
+		var body: Node3D = g.enemy(HeadlessBody,post+Vector3.UP*0.1,kd.face,{"chase":1,"chase_routes":1,"seed":_seed})
+		var head: Node3D = g.enemy(InhalerHead,post+Vector3.UP*0.1,kd.face,{})
+		var keeper := Keeper.new()
+		keeper.name = "Keeper_STANDIN"
+		keeper.beat = beat
+		keeper.post = post
+		keeper.field = g.stage.enemies
+		keeper.hub = hub
+		keeper.wear(body,head)
+		g.add_child(keeper)
 	if str(g.stage.study.get_script().resource_path).ends_with("motif_yard.gd"): _far(g)
 	if Underground.on():
 		var dresser := Dresser.new()

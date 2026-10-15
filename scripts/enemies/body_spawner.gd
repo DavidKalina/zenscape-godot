@@ -57,10 +57,16 @@ const VOICES := {
 	"body_reach":[1.2,0.0,0.0,1.0,0.07,0.3,13.0],
 	"body_whole":[1.0,70.0,110.0,0.3,0.25,0.01,0.0],
 	"body_rumble":[2.6,34.0,22.0,0.7,0.035,0.25,5.0],
+	# Olmec threat round 1 (olmec-threat-round1.md): the head-on roar, the
+	# masonry he breaks, an isle groaning as it tips under him.
+	"olmec_roar":[2.4,62.0,38.0,0.45,0.1,0.12,7.0],
+	"ruin_crack":[0.35,0.0,0.0,1.0,0.55,0.001,0.0],
+	"ruin_boom":[1.2,42.0,26.0,0.7,0.06,0.003,0.0],
+	"isle_groan":[2.2,28.0,19.0,0.8,0.03,0.4,3.0],
 }
 ## A voice's reach (its player's `unit_size`, m) where it carries farther
 ## than the scene's own: the rumble heard across a gulf.
-const REACH := {"body_rumble":90.0,"body_shock":30.0,"body_land":24.0}
+const REACH := {"body_rumble":90.0,"body_shock":30.0,"body_land":24.0,"olmec_roar":220.0,"ruin_crack":36.0,"ruin_boom":70.0,"isle_groan":80.0}
 ## A far cliff's face turned at least this much (cos) toward the walker.
 const FAR_FACING := 0.2
 ## A far spawn's haul this share of the screen in from its edges.
@@ -122,11 +128,18 @@ func add_head(home: Vector3, cliffs: Array) -> int:
 	heads.append({"home":home,"cliffs":cliffs.duplicate(true),"body":null,"bodiless":0.0,"mode":""})
 	return heads.size()-1
 
+## Whether two heads' homes are the same (olmec-threat-round1.md: within
+## 0.5 m flat and HOME_RISE m up or down; a head set on a top that stands
+## a little off its planned height was never found by its body).
+const HOME_RISE := 4.0
+static func same_home(a: Vector3, b: Vector3) -> bool:
+	return Vector2(a.x-b.x,a.z-b.z).length() < 0.5 and absf(a.y-b.y) < HOME_RISE
+
 ## Head `i` in the field now (it is made again on a reset), or null.
 func head_of(i: int) -> Node3D:
 	var home: Vector3 = heads[i].home
 	for e in field.enemies:
-		if is_instance_valid(e) and e.has_method("home") and (e.home() as Vector3).distance_to(home) < 0.5: return e
+		if is_instance_valid(e) and e.has_method("home") and same_home(e.home(),home): return e
 	return null
 
 ## Head `i`'s body now, or null.
@@ -139,7 +152,7 @@ func body_of(i: int) -> Node3D:
 	for e in field.enemies:
 		if not is_instance_valid(e) or e.gone or e.get("head_home") == null: continue
 		var home: Vector3 = e.head_home
-		if (home == Vector3.INF and heads.size() == 1) or (home != Vector3.INF and home.distance_to(heads[i].home) < 0.5):
+		if (home == Vector3.INF and heads.size() == 1) or (home != Vector3.INF and same_home(home,heads[i].home)):
 			heads[i].body = e
 			return e
 	return null
@@ -355,6 +368,31 @@ func spawn_climber(i: int, c: int, fitted := [], below := 0.0, far := false) -> 
 	heads[i].bodiless = 0.0
 	spawns += 1
 	last_cliff = str(cliff[0])
+	var feet: Vector3 = scene.motor.feet
+	last_far = Vector2(b.position.x-feet.x,b.position.z-feet.z).length()
+	last_below = below
+	if far: far_spawns += 1
+	return b
+
+## Olmec threat round 1 (olmec-threat-round1.md): a body for head `i` up
+## a cliff found by its caller (scripts/roguelike/layer_olmec.gd), already
+## fitted: `at` on the lip, `out` (x, z) the face's way, `below` m down it.
+func spawn_fitted(i: int, at: Vector3, out: Vector2, below := 0.0, far := false) -> Node3D:
+	var h := head_of(i)
+	var old := body_of(i)
+	if old != null: _take_away(old)
+	elif h != null and h.perch != null: h.go_home()
+	var b: Node3D = field.add(HeadlessBody,at,-out,body_knobs)
+	b.head_home = heads[i].home
+	field.enemies.erase(b)
+	var k: int = field.enemies.find(h) if h != null else 0
+	field.enemies.insert(maxi(k,0),b)
+	b.cling(at,out,below,far)
+	b.body.force_update_transform()
+	heads[i].body = b
+	heads[i].bodiless = 0.0
+	spawns += 1
+	last_cliff = "found %s" % str(at.round())
 	var feet: Vector3 = scene.motor.feet
 	last_far = Vector2(b.position.x-feet.x,b.position.z-feet.z).length()
 	last_below = below

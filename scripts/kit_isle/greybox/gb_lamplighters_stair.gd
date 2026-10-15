@@ -27,6 +27,7 @@ extends "res://scripts/kit_isle/motif_greybox.gd"
 ##   drum          the fuse wall's corbels, the drum terrace: his pounce on the
 ##                 court launches you onto the drum shelf, its steps to the summit
 ## Everything is one LAYOUT table; the ground is solved from it in `ground`.
+const OlmecPlaces = preload("res://scripts/enemies/olmec_places.gd")
 const CityKit = preload("res://scripts/city_kit.gd")
 const CityStone = preload("res://scripts/city_kit_stone.gd")
 const CityFires = preload("res://scripts/city_kit_fires.gd")
@@ -849,24 +850,27 @@ func live(g: Node) -> void:
 	hub.field = g.stage.enemies
 	g.add_child(hub)
 	# The Keeper: a whole Olmec on the upper landing, chase on.
-	var kd: Dictionary = LAYOUT.keeper
-	var beat: Array[Vector3] = []
-	for p: Vector2 in kd.beat: beat.append(g.w(at_level(p,2)))
-	var post: Vector3 = beat[1]
-	var bk := {"chase":1,"chase_routes":1,"seed":SEED}
-	bk.merge(kd.get("knobs",{}),true)
-	var body: Node3D = g.enemy(HeadlessBody,post+Vector3.UP*0.1,kd.face,bk)
-	var head: Node3D = g.enemy(InhalerHead,post+Vector3.UP*0.1,kd.face,{})
-	var keeper: Node = Keeper.new()
-	keeper.name = "Keeper_STANDIN"
-	keeper.beat = beat
-	keeper.post = post
-	keeper.field = g.stage.enemies
-	keeper.hub = hub
-	keeper.wear(body,head)
-	g.add_child(keeper)
-	# Far off: a headless body roaming the far isle.
-	g.enemy(HeadlessBody,g.w(far.at+Vector3(-4.0,0.1,6.0)),Vector2(1.0,0.0),{"seed":SEED+1})
+	# In a generated layer the roaming Olmec comes instead (olmec-threat-
+	# round1.md; `--knob=olmecs=places` brings the Keeper and the far roamer back).
+	if OlmecPlaces.keepers(g):
+		var kd: Dictionary = LAYOUT.keeper
+		var beat: Array[Vector3] = []
+		for p: Vector2 in kd.beat: beat.append(g.w(at_level(p,2)))
+		var post: Vector3 = beat[1]
+		var bk := {"chase":1,"chase_routes":1,"seed":SEED}
+		bk.merge(kd.get("knobs",{}),true)
+		var body: Node3D = g.enemy(HeadlessBody,post+Vector3.UP*0.1,kd.face,bk)
+		var head: Node3D = g.enemy(InhalerHead,post+Vector3.UP*0.1,kd.face,{})
+		var keeper: Node = Keeper.new()
+		keeper.name = "Keeper_STANDIN"
+		keeper.beat = beat
+		keeper.post = post
+		keeper.field = g.stage.enemies
+		keeper.hub = hub
+		keeper.wear(body,head)
+		g.add_child(keeper)
+		# Far off: a headless body roaming the far isle.
+		g.enemy(HeadlessBody,g.w(far.at+Vector3(-4.0,0.1,6.0)),Vector2(1.0,0.0),{"seed":SEED+1})
 	if Underground.on():
 		var dresser := Dresser.new()
 		dresser.name = "Dresser"

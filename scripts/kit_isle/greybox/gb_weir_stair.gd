@@ -32,6 +32,7 @@ extends "res://scripts/kit_isle/motif_greybox.gd"
 ## shelf's lip, inhaling whoever is in the air over W1-W2.
 ##
 ## Everything is one LAYOUT table; the ground is solved from it.
+const OlmecPlaces = preload("res://scripts/enemies/olmec_places.gd")
 const CityKit = preload("res://scripts/city_kit.gd")
 const CityStone = preload("res://scripts/city_kit_stone.gd")
 const CityFires = preload("res://scripts/city_kit_fires.gd")
@@ -1705,7 +1706,10 @@ func live(g: Node) -> void:
 	tn.name = "Tenders_STANDIN"
 	tn.g = g
 	tn.near = float(LAYOUT.tenders.near)
-	for e: Array in tenders(): tn.spots.append([g.w(e[0]),e[1]])
+	# In a generated layer the roaming Olmec comes instead (olmec-threat-
+	# round1.md; `--knob=olmecs=places` brings the tenders back).
+	if OlmecPlaces.keepers(g):
+		for e: Array in tenders(): tn.spots.append([g.w(e[0]),e[1]])
 	g.add_child(tn)
 
 ## STAND-IN for the card's surge down the weirs (the city_gate and

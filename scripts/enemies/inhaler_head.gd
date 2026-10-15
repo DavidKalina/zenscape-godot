@@ -83,6 +83,7 @@ extends "res://scripts/enemies/enemy.gd"
 ## damage anywhere. Sizes come from the walker's (enemy_field.gd
 ## `numbers()`).
 
+const OlmecVoid = preload("res://scripts/enemies/olmec_void.gd")
 const Look = preload("res://scripts/enemies/inhaler_head_look.gd")
 const Air = preload("res://scripts/enemies/inhaler_head_air.gd")
 
@@ -869,6 +870,11 @@ func _blast(m: PilotMotor) -> void:
 	swallowed = false
 	blasts += 1
 	_blast_way = face_flat()
+	# Olmec threat round 1 (olmec-threat-round1.md): worn by a relentless
+	# body (`void_push`), the blast is bent toward the nearest void.
+	if perch != null and is_instance_valid(perch) and float(perch.knobs.get("void_push",0.0)) > 0.0:
+		var bent: Vector2 = OlmecVoid.toward(field,perch.position,Vector2(_blast_way.x,_blast_way.z),float(perch.knobs.void_push))
+		_blast_way = Vector3(bent.x,0.0,bent.y)
 	m.feet = mouth()+_blast_way*(float(knobs.radius)+0.4)-Vector3.UP*field.study.ground.head_top*0.5
 	m.feet.y = maxf(m.feet.y,_ground+0.1)
 	var v := m.knock_velocity(Vector2(_blast_way.x,_blast_way.z),float(knobs.blast_out),float(knobs.blast_up))

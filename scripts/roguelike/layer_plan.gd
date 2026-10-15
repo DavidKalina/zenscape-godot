@@ -392,6 +392,11 @@ static func knobs_from(args: PackedStringArray) -> Dictionary:
 		if key.begins_with("spawn_") and BodySpawner.RULES.has(key.trim_prefix("spawn_")):
 			out[key] = float(value)
 			continue
+		# [olmec] The roaming Olmec (olmec-threat-round1.md): `olmecs`
+		# (roam | places) and `olmec_<x>`, not plan knobs.
+		if key == "olmecs" or key.begins_with("olmec_"):
+			out[key] = value if key == "olmecs" else float(value)
+			continue
 		if not KNOBS.has(key):
 			push_warning("layer: no knob '%s' (%s, spawn_<%s>)" % [key,", ".join(PackedStringArray(KNOBS.keys())),"|".join(PackedStringArray(BodySpawner.RULES.keys()))])
 			continue
