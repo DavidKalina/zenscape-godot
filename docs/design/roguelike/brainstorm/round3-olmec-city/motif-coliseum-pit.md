@@ -265,3 +265,79 @@ corbel 6.6k, pyramid 6.5k (its stair 4.1k of that).
   alley is 14.4 (1 heart) and readable.
 - Tests: none run or added (prototyping). No existing test is known to
   break; `registry.gd` gains one line.
+
+## Polish (round 1)
+
+Branch `polish/city-coliseum_pit`, in place in `gb_coliseum_pit.gd`, plus
+`coliseum_pit_life.gd` (kit_life's undergrowth and fireflies only).
+
+**What changed.**
+- **The grass.** Two causes. The plant rays (`KitFlora.Site`) ran from the
+  shelf's datum +60 to -8 m, so the gate hollow, the hollow way's low steps
+  and the fallen chunk grew nothing; and the flora is grown in slices after
+  the isle stands (2.7 s of work, ~1500 frames in a window), so a still at
+  150 frames (and the first ~20 s in the yard) shows bare olive turf.
+  `flora_site` now casts from 46 m down to -4 m, sows 2.8 tufts/m² (the
+  kit motifs' rate; was 4.6), and reads the worn paths off a grid. Stills
+  are taken at `--settle 2600`. In a layer the isle stands well ahead of
+  you, so the late growth is a yard effect.
+- **The pyramid** moved north to the brink of the high rim's cliff
+  (-180, -58), off the court's line from the arrival. Its north-east corner
+  slumped: earth heaped 11 m up it (part of the plateau's ground), each
+  tier's corner sagged out as a big tilted block, its courses down the
+  slump to the cliff edge and onto a ledge below it. Earth drifts (10 small
+  turfed islands) on its treads, ~40 fallen courses on the treads, a piece
+  of the comb on the summit court.
+- **The collapse, seen from the arrival:** a slab of the shelf's broken
+  north end heaved up over the void bay (its near edge a set-off under the
+  shelf's lip, its far tip 25 m up), the stand rows tumbled on it, a lamp
+  burning at its tip (a new `rune_risk`, `slab_tip`). Below in the bay,
+  three pieces of debris falling away into the dark, one with a lamp.
+- **The shoulder's set-off scarps** slump to turf ramps along part of
+  their length (not by the hollow way), so it reads less as bands.
+- **Build cost** 2.0 s → 1.6 s (headless, Mac): the ground's numbers are
+  unpacked into typed statics (3.7 → 1.0 µs a call) and the cliff scan's
+  lattice answers are kept (two calls in three were repeats). The plateau
+  is still 1.4 s of it (KitLand's scan and surface).
+- The Keepers STAND-IN lets a keeper heed a lit beacon over his beat.
+
+**Stills** (`captures/shots/cp_polish/`, gitignored): before
+`before_arrival_haze`, `before_arrival_torch`, `before_wide_haze_three`;
+after `after_arrival_haze`, `after_arrival_torch`, `after_pyramid_haze`,
+`after_wide_haze_three`, `r2_collapse_haze`, `r5_brink_haze`; the bar
+`bar_gorge_arrival_haze`.
+
+**Proven** (yard, real input, `scratch/coliseum_pit_routes.gd`,
+`scratch/cp_rooms.gd`): the hollow way 104.8-113.6 s (calm and live, haze
+and torch); the far tier 125 s (calm, one slip off the 4th prism). The
+lure: the torch lit the east court cresset from its plinth in 5.9 s, the
+Watcher turned to it and dropped off his promenade into the alley, where he
+stood under the east wall (16 m short: his planner finds no way up the
+stands) for the rest of the 50 s: the far tier is clear of him, but he is
+then in the alley. The shrine: up the stair in 17 s, a keeper on the summit
+court saw him and chased; in the sanctum he never came nearer than 12.9 m
+and gave up after 25 s; never knocked. Smokes: the yard haze and torch,
+sundered_gorge, run_layer sprawl/under/1 and ring/under/2 (the motif is not
+placed on those seeds).
+
+**Not proven / rough.**
+- **The corbel moment fails**, and fails the same on the unpolished
+  `roguelike` code: the Player swats him on entering the alley, then loses
+  him in the dark (scope, gulp, return) and never pounces at the mouth,
+  even with taunts or set 12-20 m off and awake. The enemy code changed
+  since the greybox round; this needs its own look.
+- The pyramid still reads mostly whole from far off: the piece can't be
+  cut from here (shared code), so the break is dressing on it. Kit ask: a
+  pyramid with a broken corner option.
+- The court is hidden in its trench from the arrival's eye height.
+- The motif in a generated layer: not run. `parts()` gained the slab,
+  debris and ledge (inside the old footprint), which changes plans with
+  this motif in them.
+
+**Budget** (docs/art/model-budget.md): triangles plateau 37.8k, court 9.8k,
+corbel 6.6k, pyramid 6.5k, stones 3.4k, drifts 4.3k (10), slab 0.9k,
+shelf 1.6k, the rest 2k; build 1.6 s; flora 2.7 s and life 1.2 s, sliced.
+LODs/visibility ranges on the pyramid and far plateau (~14k tris at range,
+~0.1 ms) and a coarser cell on the flat high rim (~10k tris) still apply;
+the stones are one merged mesh already; drifts could merge into one mesh
+(10 draw calls → 1).
