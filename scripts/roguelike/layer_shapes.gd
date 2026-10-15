@@ -40,7 +40,12 @@ static func shape_of(plan: Dictionary) -> String:
 static func after(plan: Dictionary) -> String:
 	var shape := shape_of(plan)
 	if not RUN.has(shape): return shape
-	if int((plan.get("user_knobs",{}) as Dictionary).get("alternate",1)) == 0: return shape
+	var user: Dictionary = plan.get("user_knobs",{})
+	if int(user.get("alternate",1)) == 0: return shape
+	# The city (underground) is the sprawl's: the ring's route there is a
+	# ride and a link, a few minutes, not a layer's ten
+	# (layer-round14-city-layers.md); `--knob=city_ring=1` alternates.
+	if LayerPlan.LayerWorlds.city(LayerPlan.LayerWorlds.next_knobs(user)) and int(user.get("city_ring",0)) == 0: return "sprawl"
 	return RUN[(RUN.find(shape)+1)%RUN.size()]
 
 ## What the shape adds to a built layer (its next region's silhouette, the

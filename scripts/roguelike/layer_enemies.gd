@@ -39,6 +39,9 @@ const LayerGreybox = preload("res://scripts/roguelike/layer_greybox.gd")
 
 ## How many heads a layer rolls.
 const HEADS := Vector2i(1,2)
+## Underground, the generator's own heads at the danger's top (the fourth
+## region on); the places' Keepers come besides.
+const DANGER_HEADS := 3
 ## The spots a head is set down over (m round clear), and its round: up to
 ## ROUND points (ROUND_LEAST at least), SPREAD of its `ring` (6 of the
 ## walker's heights) apart, on the open ground round the spot (flood
@@ -118,6 +121,11 @@ static func lay(plan: Dictionary, attempt: int) -> void:
 	rng.seed = hash([int(plan.seed),attempt,"enemies"])
 	var n := int((plan.knobs as Dictionary).get("heads",-1))
 	if n < 0: n = rng.randi_range(HEADS.x,HEADS.y)
+	# Underground the city's places bring their own Olmecs (each its
+	# Keeper); the generator's wandering heads come by height (layer_
+	# worlds.gd `danger`): none on the first region, up to DANGER_HEADS.
+	if int((plan.knobs as Dictionary).get("heads",-1)) < 0 and LayerPlan.LayerWorlds.city(plan.knobs):
+		n = roundi(float(DANGER_HEADS)*LayerPlan.LayerWorlds.danger(plan.knobs))
 	if n == 0:
 		LayerGreybox.lay_heads(plan,numbers())
 		return

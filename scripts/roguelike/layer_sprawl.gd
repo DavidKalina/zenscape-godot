@@ -397,7 +397,7 @@ static func _lay(plan: Dictionary, from: int, rim: Dictionary, heading: Vector2,
 			from_rim = {"kind":"rim","name":"way%d" % k,"at":p,"face":d,"run_up":float(slab.side)*0.5,"lip":0.0,"room":0.0}
 			from_at = [-1,"way%d" % k]
 		var chain := "exit_%d_%d_%d" % [k,roundi(p.x),roundi(p.z)]
-		var out := {"stones":[],"bridges":[],"trap":{},"parts":[],"path":[],"cannon":{}}
+		var out := {"stones":[],"bridges":[],"trap":{},"parts":[],"path":[],"cannon":{},"mean":LayerPlan.mean(plan.knobs)}
 		var q := p
 		match kind:
 			"stones":
