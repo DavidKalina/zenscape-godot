@@ -38,11 +38,9 @@ const BodySpawner = preload("res://scripts/enemies/body_spawner.gd")
 const EnemyYard = preload("res://studies/enemy_yard.gd")
 const KitLand = preload("res://scripts/kit_isle/kit_land.gd")
 const KitLook = preload("res://scripts/kit_isle/kit_look.gd")
-const KitFlora = preload("res://scripts/kit_isle/kit_flora.gd")
-## The walked tops grass grows on (CityKit `walk_areas` kinds), and how
-## thick (tufts a square metre at a drift's thickest: sparse, underground).
-const GRASS_ON := ["crown","landing","summit","turn","tier"]
-const GRASS_TUFTS := 2.2
+const GroundCover = preload("res://scripts/underground/ground_cover.gd")
+## The walked tops the ground cover lies on (CityKit `walk_areas` kinds).
+const COVER_ON := ["crown","landing","summit","deck","tier"]
 
 const SEED := 4207
 const WEATHERED := 0.45
@@ -85,7 +83,6 @@ var _head_knobs := {}
 var _voices := {}
 var _built_ms := 0
 var _was_hemi := []
-var flora: Node3D
 var _no_flora := false
 
 ## Counts the cheek crests as rails (the walker on one, his top pace there),
@@ -134,37 +131,39 @@ func _ready() -> void:
 			var v := arg.get_slice("=",1).split(",")
 			_body_at = Vector3(float(v[0]),float(v[1]),float(v[2]))
 		elif arg.begins_with("--broken="): _broken = arg.get_slice("=",1).split(",")
-		elif arg == "--no-flora": _no_flora = true
+		elif arg == "--no-flora" or arg == "--no-cover": _no_flora = true
 		for pair in [["--body-knob=",_body_knobs],["--head-knob=",_head_knobs]]:
 			if arg.begins_with(pair[0]):
 				var kv: String = arg.trim_prefix(pair[0])
 				pair[1][kv.get_slice("=",0)] = float(kv.get_slice("=",1))
-	if not _no_flora: ready_to_walk.connect(_grow_flora,CONNECT_ONE_SHOT)
 	super._ready()
 
-## The game's grass (scripts/kit_isle/kit_flora.gd) over the pieces' walked
-## tops (CityKit `walk_areas`), once they stand in the physics space: the
-## city isn't bare stone. A stand-in till the underground ground cover
-## (look/underground-ground) dresses the same areas.
-func _grow_flora() -> void:
+## The underground's ground cover (scripts/underground/ground_cover.gd,
+## underground-ground-round1.md: `--ground=dust|grass|moss|off`, dust when
+## the flags don't say; laid once as the gallery stands) on the pieces' flat walked tops
+## (CityKit `walk_areas`): crowns, landings, summits, decks, flank tiers.
+## Not the drum turns (its coil reads as bare stone in the cover) nor the
+## breaking floors (a cover would hang where they were).
+func _cover() -> void:
 	var began := Time.get_ticks_msec()
-	var outlines: Array = []
-	var turf: Array = []
+	var kind := GroundCover.asked()
+	var off := false
+	for a: String in preload("res://scripts/launch_args.gd").user_args():
+		if a == "--ground=off": off = true
+	if kind == "" and not off: kind = GroundCover.DEFAULT
+	if under != null and kind != under.ground:
+		under.ground = kind
+		under._set_motes()
+	if kind == "": return
+	var n := 0
 	for p: Node3D in pieces:
-		var areas := CityKit.walk_areas(p,GRASS_ON)
-		if areas.is_empty(): continue
-		turf.append(p.get_node("Body"))
-		for a: Dictionary in areas: outlines.append(a.poly)
-	var site := KitFlora.Site.new()
-	site.ray = Vector2(90.0,-60.0)
-	site.tufts = GRASS_TUFTS
-	flora = KitFlora.grow(SEED,get_world_3d().direct_space_state,turf,outlines,site)
-	flora.name = "Flora"
-	# Grass only: the meadow's flowers don't grow in the dark.
-	for m: Node in flora.find_children("*","MultiMeshInstance3D",true,false):
-		if not String(m.name).begins_with("grass"): m.queue_free()
-	add_child(flora)
-	print("city kit gallery: grass %s, %d instanced triangles, grown in %d ms" % [flora.get_meta("counts"),int(flora.get_meta("triangles")),Time.get_ticks_msec()-began])
+		var k := 0
+		for a: Dictionary in p.get_meta("walk_areas",[]):
+			if not String(a.kind) in COVER_ON: continue
+			var opts := {"tufts":0.5,"under":0.5} if String(a.kind) == "turn" else {}
+			if GroundCover.cover(p,a.poly,kind,float(a.y),SEED+k,opts) != null: n += 1
+			k += 1
+	print("city kit gallery: ground %s on %d tops, %d ms" % [kind,n,Time.get_ticks_msec()-began])
 
 ## The places (world), from the pieces' sizes.
 func stair_length() -> float:
@@ -300,6 +299,7 @@ func _build_room() -> void:
 	add_child(under)
 	under.setup(self)
 	_dress_hemi()
+	if not _no_flora: _cover()
 	_built_ms = Time.get_ticks_msec()-began
 	print("city kit gallery: built %d ms, %d triangles" % [_built_ms,_triangles()])
 

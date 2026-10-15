@@ -59,7 +59,7 @@ Flags:
 - `--broken=fault,bay` breaks those floors at the start.
 - `--body-at=x,y,z`
 - `--body-knob=k=v`, `--head-knob=k=v`
-- `--no-flora`
+- `--ground=dust|grass|moss|off`, `--no-cover`
 
 ## Files
 
@@ -224,11 +224,17 @@ gives them in world space.
 | Stair | `landing`, `fault`, `summit`, `flight` (y to y1), `tier` |
 | Causeway | `deck`, `bay`, `parapet` |
 
-The underground ground cover (look/underground-ground) can lay its layer
-over these. Until then the gallery grows KitFlora's grass (grass only, no
-flowers, 2.2 tufts/m²) over crowns, landings, summits, drum turns and
-tiers. It also catches the stair treads under C's crown outline. The grass
-is the sky's bright green, and the ground cover round should regrade it.
+The gallery lays the underground ground cover on them: `GroundCover.cover`
+from scripts/underground/ground_cover.gd, one cover a top, in the piece's
+own frame. It covers crowns, landings, summits, decks and flank tiers.
+
+- The cover is `--ground=dust` by default, or `grass`, `moss` or `off`.
+  It's laid once, as the gallery stands.
+- It doesn't go on the drum turns. Their coil reads best as bare stone
+  under the dusted crown.
+- It doesn't go on the breaking floors, the fault and the bay, or a cover
+  would hang in the air where they were.
+- `--no-cover` lays none.
 
 ## What he can and can't do on each
 
@@ -329,6 +335,8 @@ them.
 | `collar_chain_*.png` | A's collars and the prism chain |
 | `serpent_head_*.png` | the cheek's foot and its head |
 | `far_*.png` | the stack of pillars in the haze |
+| `*_haze.png`, the default look | the ground cover, dust |
+| `*_haze_grass.png` | `--ground=grass` |
 | `sheet_haze.png`, `sheet_torch.png` | contact sheets of the views |
 | `olmec_stair_walk_haze.png` | the Olmec on the stair |
 | `olmec_fault_break_haze.png`, `olmec_fault_fallen_haze.png` | the fault going |
@@ -352,8 +360,8 @@ What they show:
 The models are procedural basalt blocks. There's no Blender model this
 round.
 
-**Triangles, measured.** The whole gallery is about 30.6k stone triangles.
-The grass is up to 2.3M instanced triangles at most, tile-faded at 95 m.
+**Triangles, measured.** The whole gallery is about 30.3k stone triangles.
+The ground cover adds its skins and the tufts' instances, tile-faded.
 
 | Piece | Triangles | Shapes | Build |
 |---|---|---|---|
@@ -406,8 +414,13 @@ How each trick applies:
 - **Fire bowls are omni lights without shadows.** Shadowed lights under the
   torch preset's volumetric fog stalled the renderer at about 4 s a frame
   when many were in view (about 40 bowls), so none cast shadows.
-- **The grass** is the sky's bright green. It's a stand-in for the ground
-  cover round.
+- **The drum turns and the breaking floors are bare stone** under the
+  ground cover (see "Walk areas and ground cover").
+- **A rendered still run stalled** at about 4 s a frame twice: once in the
+  haze look with no shadowed lights, and once in the torch look before the
+  bowls' shadows went. The same run then passed in 8 s. It's intermittent
+  and unexplained. The other cause may be the window or the shot lock, not
+  the scene.
 - **Breaks are permanent.** R doesn't restore them. The pieces stay as
   their own meshes, not merged: 4 per break, a handful of draws.
 - **The bay falls only onto what the motif puts under it.** Over the void,
@@ -430,8 +443,8 @@ city kit.
 
 ## Open questions
 
-- Is the haze look's bright green grass acceptable until the ground cover
-  lands, or should the gallery go bare until then?
+- Dust or grass for the city by default? `arrival_haze_grass.png` and
+  `drum_arrival_haze_grass.png` show grass, and the others show dust.
 - Should the drum stair get the door onto a collar? It would be a tunnel
   under its top turn.
 - Is the 8.8 m lane right for his look? It's wider than the cards' 5 to
