@@ -7,6 +7,7 @@ extends Node
 ## is walkable after one plan, and the second plan never competes with the
 ## isles' builds.
 const LayerSprawl = preload("res://scripts/roguelike/layer_sprawl.gd")
+const Summit = preload("res://scripts/roguelike/summit.gd")  # [summit]
 const NextRegionLod = preload("res://scripts/roguelike/next_region_lod.gd")
 
 var stage: Node3D
@@ -28,6 +29,10 @@ func setup(owner_stage: Node3D, layer: Dictionary) -> void:
 	plan = layer
 
 func _process(_delta: float) -> void:
+	if _task < 0 and Summit.final_plan(plan):  # [summit] nothing lies past the summit
+		done = true
+		set_process(false)
+		return
 	if _task < 0:
 		var study: Variant = stage.get("study")
 		if study == null or (int(study.get("layer_up_ms")) < 0 and not eager): return

@@ -53,6 +53,10 @@ const ItemCatalog = preload("res://scripts/roguelike/item_catalog.gd")
 const RunFeatures = preload("res://scripts/roguelike/run_features.gd")
 const PassiveItems = preload("res://scripts/roguelike/passive_items.gd")  # [items_passive]
 const ItemStrip = preload("res://scripts/roguelike/item_strip.gd")
+# [summit] The run's end: the sun's gate far above, the climbing mark, the win.
+const Summit = preload("res://scripts/roguelike/summit.gd")
+const SummitCrown = preload("res://scripts/roguelike/summit_crown.gd")
+const SummitMark = preload("res://scripts/roguelike/summit_mark.gd")
 ## [items] Whether --wallrun gave the wall run outright (else Gecko Wraps do).
 var _wallrun_flag := false
 
@@ -175,6 +179,7 @@ func setup(scene: Node3D) -> void:
 		var juice: Node = preload("res://scripts/roguelike/juice.gd").new()
 		add_child(juice)
 		juice.call("setup",self)
+	_summit_setup()  # [summit]
 	# Until the first layer stands he walks the base as before; it comes
 	# up behind a moment's dark (`_arrive`).
 	_veil = 0.0
@@ -207,9 +212,14 @@ func before_tick(delta: float) -> bool:
 		"gate":
 			_veil = move_toward(_veil,1.0,delta/GATE_UP)
 			moves = false
+		"win":  # [summit]
+			_win_step(delta)
+			moves = false
 		"card":
 			moves = false
+			_summit_card_veil()  # [summit]
 	overlay.set_veil(_veil_colour,_veil)
+	_summit_step(delta)  # [summit]
 	_readout(delta)
 	_flicker()
 	overlay.step(delta)
@@ -222,7 +232,9 @@ func after_tick(_delta: float) -> void:
 	if stage == null or (study.layer as Dictionary).is_empty(): return
 	var feet: Vector3 = study.motor.feet
 	run.at(feet.y-_start_y,bool(study.motor.grounded))
-	if stage.at_exit(feet):
+	if stage.at_exit(feet) and _summit_final():  # [summit] the last gate is an ending
+		_win_begin()
+	elif stage.at_exit(feet):
 		state = "gate"
 		_t = 0.0
 		_veil_colour = RunOverlay.WARM
@@ -243,7 +255,7 @@ func _to_card(cause := "") -> void:
 	state = "card"
 	_t = 0.0
 	_veil = 1.0
-	last_fall = run.die()
+	last_fall = Summit.sums(run,metres(run.best)) if cause == "summit" else run.die()  # [summit]
 	last_fall.seed = run.run_seed
 	last_fall.cause = cause
 	overlay.show_card(card_title(last_fall),card_facts(last_fall),_hint())
@@ -264,6 +276,7 @@ static func metres(h: float) -> String:
 	return "%s %s" % [out,WORDS.unit]
 
 static func card_title(fall: Dictionary) -> String:
+	if bool(fall.get("summit",false)): return Summit.title(fall)  # [summit]
 	if String(fall.get("cause","")) != "": return WORDS.felled % metres(float(fall.height))
 	return WORDS.fell % metres(float(fall.height))
 
@@ -276,6 +289,7 @@ static func cause_line(fall: Dictionary) -> String:
 ## The card's facts: what did it, the runes lost, how long, a pause, the
 ## highest.
 static func card_facts(fall: Dictionary) -> PackedStringArray:
+	if bool(fall.get("summit",false)): return Summit.facts(fall)  # [summit]
 	var n := int(fall.runes)
 	var lost: String = WORDS.lost_none if n == 0 else (WORDS.lost_one if n == 1 else WORDS.lost % n)
 	var high: String = WORDS.highest_new if bool(fall.high_record) else WORDS.highest % metres(float(fall.highest))
@@ -285,6 +299,8 @@ static func card_facts(fall: Dictionary) -> PackedStringArray:
 	var most: String = WORDS.most_new if bool(fall.get("runes_record",false)) or bool(fall.get("rares_record",false)) \
 		else WORDS.most % [int(fall.get("most_runes",0)),rares_words(int(fall.get("most_rares",0)))]
 	var facts := PackedStringArray([cause_line(fall),lost,found])
+	var near := Summit.near_line(fall)  # [summit] how close he got
+	if near != "": facts.insert(1,near)
 	# [items] What he carried, lost with him.
 	var held: Array = fall.get("items",[])
 	if not held.is_empty():
@@ -361,6 +377,7 @@ func _flicker() -> void:
 
 func _hint() -> String:
 	if _wake: return WORDS.waking
+	if bool(last_fall.get("summit",false)): return Summit.WORDS.prompt  # [summit]
 	return WORDS.prompt
 
 ## Seeds a test hands the next new climbs, in order (else drawn at random).
@@ -415,6 +432,7 @@ func _arrive(colour: Color) -> void:
 		# Out of the dark: the first sky region has its own caption.
 		var out_of_dark := LayerWorlds.first_sky(study.layer)
 		overlay.show_caption(WORDS.arrive_sky if out_of_dark else WORDS.arrive,WORDS.arrive_line % metres(run.height))
+		_summit_caption(out_of_dark)  # [summit]
 
 ## The loading screen is lifting: the arrival's dark veil is not needed
 ## over a view the screen has just shown (its caption still comes).
@@ -463,6 +481,7 @@ func layer_stood() -> void:
 			_laid_seed = int(study.layer_seed)
 			if _wake and _laid_for != _want: _ask(_want)
 			_maybe_wake()
+	_summit_stood()  # [summit]
 	_readout(0.0)
 
 ## The corner: the height and the runes; up when a count changes or he
@@ -525,7 +544,7 @@ func input(event: InputEvent) -> bool:
 			continue_run(true)
 			return true
 		return key >= 0 and key != KEY_ESCAPE
-	if state == "gate" or state == "falling" or state == "dying": return key >= 0 and key != KEY_ESCAPE
+	if state == "gate" or state == "falling" or state == "dying" or state == "win": return key >= 0 and key != KEY_ESCAPE
 	if key == KEY_N and state != "card":
 		pending = "skip" if not (event as InputEventKey).shift_pressed else ""
 		if pending == "skip": _note_way_up(study.motor.feet)
@@ -569,3 +588,78 @@ func _lighten() -> void:
 
 func _exit_tree() -> void:
 	Underground.climb_lift = 0.0
+
+# --- [summit] The run's end ---------------------------------------------------------------
+# docs/design/roguelike/summit-round1.md. The sky crown (summit_crown.gd), the
+# climbing mark (summit_mark.gd), the last gate as an ending, the win card.
+
+## The win: the light blooms (WIN_BLOOM s), the whiteness takes the view
+## (WIN_WHITE), a held beat of it (WIN_HOLD), then the card on a warm dark.
+const WIN_BLOOM := 2.8
+const WIN_WHITE := 2.2
+const WIN_HOLD := 1.2
+const WIN_DARK := Color(0.075,0.055,0.035)
+const WIN_DARKEN := 2.0
+var _crown: Node3D = null
+var _mark: Control = null
+var _crown_depth := -1
+
+func _summit_setup() -> void:
+	if not Summit.on(): return
+	Summit.base_region = int(study.first_region()) if study.has_method("first_region") else 1
+	_crown = SummitCrown.new()
+	_crown.camera = study.get("camera")
+	study.add_child(_crown)
+	_mark = SummitMark.new()
+	_mark.overlay = overlay
+	overlay.readout.add_child(_mark)
+
+## Whether the layer he stands on is the summit's.
+func _summit_final() -> bool:
+	return Summit.on() and run.depth >= Summit.at()
+
+## A layer stood: the crown's heading toward the gate, the summit's gate
+## dressed with a halo.
+func _summit_stood() -> void:
+	if _crown == null: return
+	var layer: Dictionary = study.layer
+	var exit: Dictionary = layer.get("exit",{})
+	if not exit.is_empty(): _crown.set_heading(exit.face)
+	_crown.clear_halo()
+	var gate: Variant = study.stage.get("gate")
+	if Summit.final_plan(layer) and gate != null:
+		_crown.set_halo((gate as Node3D).global_position)
+
+func _summit_caption(_out_of_dark: bool) -> void:
+	if not Summit.on(): return
+	var line := metres(run.height)
+	if _summit_final():
+		overlay.show_caption(Summit.WORDS.arrive_last,Summit.WORDS.arrive_last_line % line)
+	else:
+		overlay.show_caption(WORDS.arrive,Summit.WORDS.arrive_line % [run.depth,Summit.at(),line])
+
+func _summit_step(delta: float) -> void:
+	if _crown == null: return
+	_crown.visible = state != "card"
+	if state in ["play","arrive"] and run.depth != _crown_depth:
+		_crown.set_progress(Summit.progress(run.depth),run.depth <= 1)
+		_mark.set_layers(run.depth,Summit.at())
+		_crown_depth = run.depth
+	_crown.step(delta)
+
+## The last gate reached: the light blooms, he is held, the chord rings.
+func _win_begin() -> void:
+	state = "win"
+	_t = 0.0
+	_veil_colour = Color(1.0,0.97,0.88)
+	if _crown != null: _crown.sound()
+
+func _win_step(delta: float) -> void:
+	if _crown != null: _crown.set_flare(smoothstep(0.0,WIN_BLOOM,_t))
+	if _t > WIN_BLOOM: _veil = move_toward(_veil,1.0,delta/WIN_WHITE)
+	if _veil >= 1.0 and _t > WIN_BLOOM+WIN_WHITE+WIN_HOLD: _to_card("summit")
+
+## On the win card the white darkens to a warm dark under the text.
+func _summit_card_veil() -> void:
+	if not bool(last_fall.get("summit",false)): return
+	_veil_colour = Color(1.0,0.97,0.88).lerp(WIN_DARK,smoothstep(0.0,WIN_DARKEN,_t))
