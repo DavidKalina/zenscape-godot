@@ -1,15 +1,19 @@
 extends RefCounted
-## A run of the climb (docs/design/roguelike/stakes-experiment.md): the seed
-## it began from, how deep it has gone (layer 1 is the first), how high it
+## A run of the climb (docs/design/roguelike/stakes-experiment.md,
+## game-v1-climb-up.md): the seed it began from, how many layers it has
+## gone through (layer 1 is the first), how high it
 ## has climbed (metres above the run's start spot), the runes carried, how
 ## long it has lasted; and, across runs, the deepest layer and the highest
 ## climb ever reached, kept in a small file (`record_path`).
 ##
 ## The player sees the height; the layer count stays for the gate and the
-## record. Through the gate the run goes on a layer down (`descend`), the
-## runes and the height climbed kept (the next layer's start counts as the
-## height he reached the gate at); into the void it ends (`die`), the runes
-## lost with it.
+## record. Through the gate the run goes on a layer UP (`ascend`): the next
+## layer stands above this one, and its start counts as its true height
+## over this layer's start (the rise the run loop measures through the
+## next region's placing), so the record is the run's true height; the
+## runes are kept. Into the void it ends (`die`), the runes lost with it.
+## (`depth` / `deepest` are the layer count's old names, kept for the record
+## file: not shown.)
 
 ## Where the record is kept. A test points it elsewhere.
 static var record_path := "user://run_record.json"
@@ -53,12 +57,15 @@ func begin(seed_value: int) -> void:
 	runs += 1
 	_reach()
 
-## Through the gate: a layer deeper, the runes kept, the next start at the
-## height he last stood at (the gate's).
-func descend() -> void:
+## Through the gate: a layer on, the runes kept, the next start `rise` m
+## over this layer's start (its true height: the gate's climb and the next
+## layer's rise over the gate), stood on, so it counts toward the best.
+func ascend(rise: float) -> void:
 	depth += 1
-	banked = footing
-	height = footing
+	banked += rise
+	height = banked
+	footing = banked
+	best = maxf(best,footing)
 	_reach()
 
 ## Where he is: `above_start` metres above this layer's start, on the

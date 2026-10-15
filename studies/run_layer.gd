@@ -18,7 +18,7 @@ extends "res://studies/aqueduct_isle.gd"
 ## Through the gate, or down into the void under every isle, a new layer
 ## comes up (the next seed); a fall onto a lower isle is just a fall.
 ## Under --shape=sprawl it is a run (scripts/roguelike/run_loop.gd, docs/
-## design/roguelike/stakes-experiment.md): the gate a layer deeper, the
+## design/roguelike/stakes-experiment.md): the gate a layer up, the
 ## runes carried; the void the run's end, its card, then a new climb from
 ## layer 1 (Space) or the same again (R); each layer begun at a start spot,
 ## the way on lit; I shows the long card.
