@@ -38,6 +38,8 @@ const CELL := 1.5
 const TOP := 2000.0
 ## Floors read in a column at most.
 const HITS := 8
+## A floor with less room than this over it (m) is not read.
+const SLOT := 0.5
 ## A column read with no floor is read again after this (ms).
 const EMPTY_AGAIN := 8000
 ## A wall climbed on from a lip it doesn't fit on, at most this many.
@@ -173,8 +175,13 @@ func col(c: Vector2i) -> PackedFloat32Array:
 		var p: Vector3 = hit.position
 		if (hit.normal as Vector3).y >= 0.55:
 			var up := _cast(p+Vector3.UP*0.1,p+Vector3.UP*(room+0.5))
-			out.append(p.y)
-			out.append(((up.position as Vector3).y-p.y) if not up.is_empty() else room+0.5)
+			var over := ((up.position as Vector3).y-p.y) if not up.is_empty() else room+0.5
+			# City breaks round 1: a floor with a solid just over it (a
+			# felled drum's or a heap's foot) is no floor, not the nearest
+			# one a place's neighbours take.
+			if over >= SLOT:
+				out.append(p.y)
+				out.append(over)
 		y = p.y-0.05
 	cols[c] = [Time.get_ticks_msec(),out]
 	return out
