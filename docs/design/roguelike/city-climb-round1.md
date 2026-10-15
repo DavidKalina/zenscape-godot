@@ -345,3 +345,10 @@ this breaks. The full suite wasn't run.
 - Should the lit brazier stay as the lip's lure?
 - The pieces need the hero sculpts (the riser faces, the lip's troughs, the
   wedge's broken ends). Is that a Blender round next?
+
+## Decisions (the user, 2026-10-14)
+
+- **Leaper's pit: keep the sail crossing.** The glide may later become a run
+  item or ability. With it, the sail across the 9.07 m gap is a shortcut;
+  without it, the inner cornice is the only way through. Every piece keeps
+  a route for the bare moveset; ability routes are extra.
