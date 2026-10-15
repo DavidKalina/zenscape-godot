@@ -320,6 +320,12 @@ func default_knobs(n: Dictionary) -> Dictionary:
 		# its draw and goes there, 0 it pays them no heed. Looked at its
 		# `dwell`, it tires of that one `beacon_rest` s (lit again: news).
 		"beacons":1,"beacon_rest":40.0,
+		# City breaks round 1 (docs/design/roguelike/city-breaks-round1.md):
+		# 1 on, 0 off (as ever). Hunting, an edge with no leap across and him
+		# beyond it: a route over places it fits to him (its planner's, as
+		# roaming's: a column felled across a gap is a way), walked, climbed
+		# and leapt; none, it tries again `chase_replan` s on.
+		"chase_routes":0,"chase_replan":3.0,
 	}
 
 ## Its build (m) from its knobs `k` and the walker's `unit`, as `_size` and
@@ -466,6 +472,7 @@ func think(delta: float) -> void:
 func _go(to: String) -> void:
 	state = to
 	state_t = 0.0
+	if _chase_routed and to in ["listen","roam","seek","return","alert","reach"]: _chase_drop()
 	if to == "listen":
 		_listen_from = facing
 		_picked = false
@@ -1432,6 +1439,9 @@ func _shock_meets(w: Dictionary) -> void:
 	if not m.grounded and m.feet.y-_floor(m.feet,0.1,float(knobs.shock_band)*2.0) > float(knobs.shock_air): return
 	# On its shoulders he rides it out.
 	if m.grounded and field.under_pilot() == body.get_rid(): return
+	# A breakable that takes the wave's hit on him itself (the city's drum
+	# floor: docs/design/roguelike/city-breaks-round1.md).
+	if breaker != null and breaker.has_method("takes_shock") and breaker.takes_shock(self,w): return
 	var f := lerpf(1.0,float(knobs.shock_edge),d/w.max)*float(w.power)
 	var way := off.normalized() if d > 0.1 else PilotMotor.forward(facing)
 	shock_hits += 1
@@ -1524,8 +1534,11 @@ func _searching() -> void:
 	if s.found:
 		routed_to += 1
 		_bailing = 0
+		if _chase_routed: chase_found += 1
 		return
 	routed_near += 1
+	# A hunt's route that doesn't get to him: no bail (the hunt goes on).
+	if _chase_routed: return
 	if s.start == Routes.NONE: return
 	if beacon != null:
 		# A beacon it can't get to (up a spire): it walks as near as its
@@ -1575,6 +1588,9 @@ func _follow(delta: float) -> bool:
 		# again (its head may have moved on).
 		_route = []
 		if state == "home": return true
+		if state == "chase":
+			_chase_routed = false
+			return false
 		_go("listen")
 		return false
 	var leg: Dictionary = _route[_leg]
@@ -1651,6 +1667,12 @@ func _leg_failed(why: String) -> void:
 	_leg_out = false
 	vel.x = 0.0
 	vel.z = 0.0
+	# Hunting on a route (city breaks round 1): still hunting, it plans
+	# again at once without that move.
+	if state == "chase" and _chase_routed:
+		_chase_drop()
+		_chase_plan_at = _clock
+		return
 	# A short beat (not a whole listen) and it plans again.
 	_go("listen")
 	state_t = float(knobs.listen)*0.6
@@ -1852,7 +1874,54 @@ func _chase(delta: float) -> void:
 			_seek_start()
 			return
 	else: _under_t = 0.0
+	if _chase_routing(delta,target): return
 	_pursue(delta,target,float(knobs.chase_speed))
+
+# --- City breaks round 1: the hunt over its planner's routes ----------------------------------
+
+## On a route to him (`chase_routes`), planned at an edge it couldn't leap.
+var _chase_routed := false
+var _chase_plan_at := -INF
+## Chase routes planned, and those found (counted, for checks).
+var chase_plans := 0
+var chase_found := 0
+
+## An edge it can't leap, him beyond it: a route to him, if it's time.
+func _chase_plan(goal: Vector3) -> bool:
+	if state != "chase" or float(knobs.chase_routes) < 0.5 or float(knobs.routes) < 0.5: return false
+	if _clock < _chase_plan_at: return false
+	_chase_plan_at = _clock+float(knobs.chase_replan)
+	if routes == null: routes = Routes.new(self)
+	_chase_routed = true
+	chase_plans += 1
+	_start_search(goal,length*0.5+2.0)
+	return true
+
+## On its route to him: planning (it waits), walking it as roaming does
+## (climbs and leaps by its legs), planned again if he moved far. False:
+## no route (it hunts as ever).
+func _chase_routing(delta: float, target: Vector3) -> bool:
+	if not _chase_routed: return false
+	if _search != null:
+		_brake(delta)
+		return true
+	if not _routed() or not _route_found:
+		_chase_drop()
+		return false
+	if target.distance_to(_goal) > GOAL_MOVED and _clock >= _chase_plan_at:
+		_chase_plan_at = _clock+float(knobs.chase_replan)
+		chase_plans += 1
+		_start_search(target,length*0.5+2.0)
+		_brake(delta)
+		return true
+	_walking(delta)
+	return true
+
+func _chase_drop() -> void:
+	_chase_routed = false
+	_route = []
+	_leg = 0
+	_search = null
 
 ## The attack his distance calls for (`flat` m off, `dy` up), if any: the
 ## swat within reach, the pounce a little way off, the suck further.
@@ -1968,6 +2037,7 @@ func _hunt_edge(fwd: Vector3, goal: Vector3) -> void:
 		_go("windup")
 		field.sound(&"body_windup",position)
 		return
+	if _chase_plan(goal): return
 	var way := _skirt(goal)
 	if way != INF:
 		_skirt_way = way
