@@ -47,10 +47,14 @@ func stand_at() -> Vector3:
 	if stand == Vector3.INF: return global_position
 	return to_global(stand)
 
-## The lit beacons in `tree`.
+## The lit beacons in `tree`. A flame a LightDrinker (scripts/enemies/
+## light_drinker.gd, the Hollow Child) drinks half or more of draws no one.
 static func all_lit(tree: SceneTree) -> Array:
 	var out := []
 	if tree == null: return out
+	var drinkers := tree.has_group(LightDrinker.GROUP)
 	for b in tree.get_nodes_in_group(BEACONS):
-		if b is Beacon and b.lit and b.is_inside_tree(): out.append(b)
+		if b is Beacon and b.lit and b.is_inside_tree():
+			if drinkers and LightDrinker.drunk(tree,(b as Beacon).global_position) >= 0.5: continue
+			out.append(b)
 	return out
