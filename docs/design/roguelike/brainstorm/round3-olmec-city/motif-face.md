@@ -270,3 +270,123 @@ collision is an 8k-triangle trimesh hull.
   `spawn.face` on an empty plan): not this motif's.
 - Tests: none run or added (prototyping). New files and one registry line;
   no existing test is known to break.
+
+## Polish (round 1)
+
+Branch `polish/city-face`. The lord was a stepped stack of clean blocks; now he
+is one seated figure who has sat in the dark for centuries.
+
+**What changed.**
+- **The lord** (`art/blender/face_colossus/colossus_build.py`, rebuilt glb):
+  carved as rounded Olmec pillows (superellipsoids, a little lumpy) instead of
+  coursed blocks. One trunk broadening to the shoulders. The upper arms hang
+  clear of his flanks, so there is air between arm and body, with the elbows
+  out. The forearms lie along his outer thighs to the hands, palms down on the
+  knees' fronts with broad fingers over them. The knees are domes cut flat for
+  the fire daises, and the shins cross in front. His right shoulder rides high
+  and round; the left is cut flat and grassed. The head (the inhaler head's
+  carving) is a little taller and bowed 5°, so he looks down at the ledge.
+- **The relief** (`LAYOUT.relief.width` 24 → 15): only its carved panel is
+  left, and his chest wraps it. The relief's box flanks read as a temple. The
+  collar's turf now runs from the relief's top west onto the shoulder, with a
+  cap east of it (`collar_e`). `collar_east` (rune_risk) moved onto that cap.
+- **Broken and weathered:**
+  - about 45 chips and 9 cracks on the carved masses;
+  - the top of his right shoulder is sheared off and lies on the ledge by his
+    right knee in its rubble;
+  - a fallen knuckle by his left shin;
+  - the head's east flank is pressed in (it is open shells, so no booleans
+    there);
+  - broken faces are paler and have no moss (B channel).
+- **Growth:**
+  - a moss shell on every up-face (`Moss`, `shaders/face_moss.gdshader`:
+    ragged, alpha-scissored patches);
+  - grass tufts in the hollows of his tops (`Tuft_NN`, laid by the Dresser
+    with the ground cover);
+  - 58 roots that crawl down the head's east flank, the shoulders, the arms,
+    the knees and the throne's back, and hang from his rock into the abyss
+    (`Roots`, a triplanar bark grain).
+- **The seat's foot:** a filler under the seat and thighs, so a knocked walker
+  can't end up in a crawl space under him. A filmed run ended there before.
+- **The gulf stone** moved 0.7 m nearer the ridge and dropped from 6.4 to
+  4.16. At 6.4 the jump was never makeable (0 of 8 tries: he hit its side).
+- **`flora_site`** casts its rays down to the ledge (`LOWEST_TURF` 0), with 2.8
+  tufts per m². This is the Felled Colonnade's fix: the default reach stops 8 m
+  under the top.
+
+**Stills** (`captures/face/`):
+- before: `before_arrival_haze.png`, `before_arrival_torch.png`,
+  `before_wide_haze.png`;
+- after: `after_arrival_{haze,torch}.png`, `after_wide_{haze,torch}.png`,
+  `after_face_haze.png`, `after_west_haze.png`;
+- `before_after_sheet.png` (the wide camera moved nearer for "after");
+- the tool moment: `film/{lit,climb,peel0-5,ramp,on_ramp}_haze.png` and
+  `film/sheet_haze.png`.
+
+**Routes, re-walked through the input** (`scratch/face_routes.gd`, haze and
+torch, the Olmec live):
+- **The ridge:** 51 s, 2/2.
+- **The face:** about 110 s, 4/4.
+  - Light the port, then wait in the knuckle's lee. He has climbed the skin
+    and peeled 3–4 columns by about 40 s.
+  - Wait until he's off the slumped earth, then go up a column's earth. Not
+    every column's slump is a ramp; the driver tries each one.
+  - Then the lap, the relief, the collar turf, the flank and the crown.
+  - Waiting out in the open by the shin, he saw and sucked the walker in 4 of
+    6 earlier runs. The lee is the knuckle now.
+- **The gulf stone** (`scratch/face_gulf.gd`): 12/12 out from a running start
+  off the ridge's terrace. Only 5/12 make it back: the return has a 2.6 m
+  run-up and the same gap. Hard, but you can see both ways.
+- **The Olmec over the crown** (`scratch/face_crown.gd`):
+  - He is set on the throne's back, and the walker climbs the flank in his
+    sight and walks out over the crown.
+  - He plans after the walker, climbs his zone of the hauling lip, mantles
+    over the crown's back edge at 35–37 s and leaps at the walker. Haze and
+    torch, 3/3.
+  - From the ledge he never followed beyond the lap's edge. From the shoulder
+    he knocks the walker off the flank before it gets anywhere.
+
+**Smoke:** yard haze and torch, stacked_court, `run_layer` sprawl/under seed 1
+and ring/under seed 2: all pass, 0 errors.
+
+**Generator:** the under plan (sprawl seed 1) keeps its isles and edges. Only
+the face isles' own occupancy (the gulf stone's box) and their spots differ.
+Default (sky) plans don't place the face.
+
+**Budget** (docs/art/model-budget.md):
+
+| Part | Triangles |
+|---|---|
+| Stone (one draw, LODs from `_dressed_relief`) | 26.7k |
+| Moss | 5.1k |
+| Roots | 8.9k |
+| Her bosses | 0.7k |
+| **Lord, drawn** | **41.4k** |
+| Hull (trimesh, as 4 pieces) | 9.0k |
+
+The lord was about 24k before. The motif builds in 440–810 ms (the
+colossus's warm takes 36–98 ms).
+
+- **Applied:**
+  - silhouette geometry: the chips, the shear and the fallen pieces are real
+    geometry on his outline;
+  - vertex-colour grime: occlusion, convexity and breaks are baked;
+  - import LODs on the stone;
+  - decimation of the smooth masses: 0.42 collapse, about −17k triangles and
+    roughly 0.05 ms.
+- **Would help:**
+  - a visibility range or LOD tuning on Moss and Roots: past about 80 m,
+    roughly −10k triangles;
+  - a hull of convex pieces instead of the trimesh, for the bodies' rays.
+- **Don't apply:** sculpt high/bake low, parallax and rigid parts.
+
+**Still rough.**
+- From the arrival, the skin wall's courses and the relief's flat-topped
+  collar still read a little architectural in the middle. They are kit pieces
+  and unchanged.
+- The ridge's first block hangs a faceted rock arch across the left of the
+  arrival view. That is KitLand's hang, and the ridge is in `parts()`, so it
+  wasn't touched.
+- The roots are smooth tubes; up close they read a bit like cables.
+- The moss is dense on the knees and forearms and thin on the shins.
+- The lip's undercut and behind-the-skin rare spots haven't been driven.
