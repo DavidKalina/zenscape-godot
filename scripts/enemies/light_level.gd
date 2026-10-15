@@ -15,7 +15,9 @@ extends RefCounted
 ##      bright as its `torch` knob against the torch preset's;
 ##   3. else daylight.
 ## Daylight (`ambient` 1) is no change at all: `exposure` is 1 whatever lights
-## stand about, and the sky game is untouched. To put his torch out (to
+## stand about, and the sky game is untouched. A LightDrinker (scripts/enemies/
+## light_drinker.gd, the Hollow Child) drinks the torch and the sight lights
+## where it reaches (at him, or at the light's own flame): none, no change. To put his torch out (to
 ## hide), hide the look's `torch` node; the sight reads him dark.
 
 const Underground = preload("res://scripts/underground/underground.gd")
@@ -73,12 +75,13 @@ static func daylight() -> bool:
 static func exposure(tree: SceneTree, p: Vector3, carried := true) -> float:
 	if daylight(): return 1.0
 	var e := ambient
-	if carried and torch: e += torch_strength
+	var dk := _drunk(tree,p)
+	if carried and torch: e += torch_strength*(1.0-dk)
 	if e >= 1.0: return 1.0
 	if tree != null:
 		for l in tree.get_nodes_in_group(SightLight.GROUP):
 			if l is SightLight and l.is_inside_tree():
-				e += (l as SightLight).light_at(p)
+				e += _light_at(tree,l as SightLight,p,dk)
 				if e >= 1.0: return 1.0
 	return clampf(e,0.0,1.0)
 
@@ -86,8 +89,21 @@ static func exposure(tree: SceneTree, p: Vector3, carried := true) -> float:
 ## ambient) put on `p` (0..1): how far past the dark he glows.
 static func glow(tree: SceneTree, p: Vector3, carried := true) -> float:
 	if daylight(): return 0.0
-	var g := torch_strength if carried and torch else 0.0
+	var dk := _drunk(tree,p)
+	var g := torch_strength*(1.0-dk) if carried and torch else 0.0
 	if tree != null:
 		for l in tree.get_nodes_in_group(SightLight.GROUP):
-			if l is SightLight and l.is_inside_tree(): g += (l as SightLight).light_at(p)
+			if l is SightLight and l.is_inside_tree(): g += _light_at(tree,l as SightLight,p,dk)
 	return clampf(g,0.0,1.0)
+
+## The share of the light at `p` the light drinkers drink (0 with none).
+static func _drunk(tree: SceneTree, p: Vector3) -> float:
+	if tree == null or not tree.has_group(LightDrinker.GROUP): return 0.0
+	return LightDrinker.drunk(tree,p)
+
+## `l`'s light at `p`, less what a drinker drinks of it there (`dk`) or at
+## its own flame.
+static func _light_at(tree: SceneTree, l: SightLight, p: Vector3, dk: float) -> float:
+	var v := l.light_at(p)
+	if v <= 0.0 or not tree.has_group(LightDrinker.GROUP): return v
+	return v*(1.0-maxf(dk,LightDrinker.drunk(tree,l.global_position)))

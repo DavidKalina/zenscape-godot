@@ -70,6 +70,7 @@ extends Node3D
 ##   godot --path . res://studies/character_study.tscn -- --no-title
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const PilotFigure = preload("res://scripts/pilot_figure.gd")
+const WandererNoise = preload("res://scripts/noise/wanderer_noise.gd")
 const PhysicsGround = preload("res://scripts/pilot_physics_ground.gd")
 const WandererSteps = preload("res://scripts/wanderer_steps.gd")
 const PilotPuffs = preload("res://scripts/pilot_puffs.gd")
@@ -353,6 +354,11 @@ var motor := PilotMotor.new()
 ## interactables/foot_pieces.gd: bobbing and drifting slabs, swing ropes,
 ## balustrades), or null: stepped round the motor's step each frame.
 var foot_pieces: Node = null
+## His noises on the layer's NoiseBus and his ring of dust on the loud ones
+## (scripts/noise/wanderer_noise.gd, noise-stealth-round1.md); null: none.
+var wanderer_noise: RefCounted = WandererNoise.new()
+## The sneak key (`walk_sneak`) eases the stick to this: a quiet pace.
+const SNEAK_STICK := 0.4
 ## The figure's and the camera's height over the feet, smoothed up and
 ## down steps (scripts/pilot_step_smooth.gd).
 var step_smooth := PilotStepSmooth.new()
@@ -909,6 +915,7 @@ func tick(delta: float) -> void:
 	_measure_glide(events)
 	_body_events(drawn,delta)
 	_water_events(events,drawn,delta)
+	if wanderer_noise != null: wanderer_noise.step(self,events,drawn,delta)
 	_frame(delta)
 	# A foot piece may take the camera over (the cannon's operating view).
 	if foot_pieces != null and foot_pieces.has_method("frame"): foot_pieces.frame(camera,delta)
@@ -973,6 +980,7 @@ func _measure_glide(events: Dictionary) -> void:
 func _want(delta: float) -> Vector2:
 	if _tuning(): return Vector2.ZERO
 	var stick := Input.get_vector(&"move_left",&"move_right",&"move_forward",&"move_back")
+	if InputMap.has_action(&"walk_sneak") and Input.is_action_pressed(&"walk_sneak"): stick = stick.limit_length(SNEAK_STICK)
 	var look := Pad.curve(Pad.stick(&"look_left",&"look_right",&"look_up",&"look_down"),1.6)
 	if look != Vector2.ZERO and (telescope == null or not telescope.busy()):
 		_yaw -= look.x*STICK_WALK_LOOK.x*delta
