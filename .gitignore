@@ -34,8 +34,13 @@ builds/
 # Do not ignore assets/, *.blend, or Godot *.uid / asset *.import files:
 # those are game content, editable source art, and resource/import settings.
 
-# Local film and still captures
-captures/
+# Local film and still captures; Godot skips them (.gdignore, kept in Git).
+/captures/*
+!/captures/.gdignore
 
 # Python bytecode from the Blender scripts.
 __pycache__/
+
+# Throwaway drivers and checks (tools/README.md); Godot skips it (.gdignore, kept in Git).
+/scratch/*
+!/scratch/.gdignore

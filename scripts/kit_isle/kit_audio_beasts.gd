@@ -63,6 +63,12 @@ const CALL_UNIT := 140.0
 const CALL_REACH := 2600.0
 const CALL_GAP := 16.0
 const APPROACH := 420.0
+## His sight (scripts/dragon_sight.gd, docs/design/dragon-vision/round1.md):
+## turned suspicious, a short questioning call (SUSPECT of CALL's gain,
+## pitched up SUSPECT_PITCH); spotted, his roar's call always sounds (the
+## call's gap waived).
+const SUSPECT := 0.55
+const SUSPECT_PITCH := 1.2
 ## On a rim: the slam, the rubble, the growl (by the breath's beat), the
 ## grinding stone (a base while held, more with the sag's speed, m/s),
 ## the draw in and the blow.
@@ -368,7 +374,7 @@ func _dragon_beds(dragon: Node) -> Dictionary:
 	var gale := _bed(KIT+"gale-howl-loop.wav",SFX,true,40.0,GALE_REACH)
 	gale.attack = 3.0
 	gale.release = 0.8
-	var beds := {"air":air,"growl":growl,"grind":grind,"gale":gale,"phase":-1.0,"roar":-1.0,"state":"waiting","breath":"","dist":INF,"launched":0}
+	var beds := {"air":air,"growl":growl,"grind":grind,"gale":gale,"phase":-1.0,"roar":-1.0,"seen":"unaware","state":"waiting","breath":"","dist":INF,"launched":0}
 	_d[id] = beds
 	return beds
 
@@ -404,14 +410,60 @@ func _dragon(dragon: Node, delta: float, listener: Vector3) -> float:
 	var spd := float(dragon.speed) if state != "clinging" else 0.0
 	air.goal = PASS*smoothstep(PASS_SPEED.x,PASS_SPEED.y,spd) if dist < 500.0 else 0.0
 	air.pitch_goal = 0.5+0.2*smoothstep(PASS_SPEED.x,PASS_SPEED.y,spd)
+	# Its sight: a call as it turns suspicious; spotted, its roar's call.
+	var sight: Variant = dragon.get("sight")
+	if sight != null:
+		var seen := str(sight.state)
+		if seen != str(b.seen):
+			if seen == "suspicious" and str(b.seen) == "unaware": shot("dragon_call",CALL*SUSPECT,SUSPECT_PITCH*_rng.randf_range(0.97,1.03),dragon.mouth_at(),CALL_UNIT,CALL_REACH,FAR)
+			elif seen == "spotted": _call_wait = 0.0
+		b.seen = seen
 	# Its roars: the call as the jaw opens.
 	var roar: float = dragon.roar_time() if dragon.has_method("roar_time") else -1.0
 	if state != "clinging" and float(b.roar) < 0.45 and roar >= 0.45: _call(dragon.mouth_at())
 	b.roar = roar
+	_cyclone(dragon,b)
+	_air_blast(dragon,b)
 	var ribbons := _rim(dragon,b,state,was_state,listener)
 	_waking(dragon,b,state,was_state)
 	b.state = state
 	return ribbons
+
+## Its cyclone (scripts/dragon_cyclone.gd): the wind-up a sharp inhale, the
+## shot an exhale and a slam of air at the mouth, a landing a heavy slam on
+## the turf, a break on cover a lighter one.
+func _cyclone(dragon: Node, b: Dictionary) -> void:
+	var cy: Variant = dragon.get("cyclone")
+	if cy == null: return
+	var winding := str(cy.phase) == "windup"
+	if winding and not bool(b.get("cy_wind",false)): shot("inhale",INHALE*1.3,_rng.randf_range(1.15,1.25),dragon.mouth_at(),40.0,1100.0,FAR)
+	b.cy_wind = winding
+	if int(cy.shots) > int(b.get("cy_shots",0)):
+		shot("exhale",EXHALE,_rng.randf_range(1.1,1.2),dragon.mouth_at(),50.0,1400.0,FAR)
+		shot("wind_slam",0.3,1.1,dragon.mouth_at(),40.0,900.0)
+	b.cy_shots = int(cy.shots)
+	if int(cy.lands) > int(b.get("cy_lands",0)): shot("wind_slam",0.5,0.75,cy.last_at,40.0,700.0)
+	b.cy_lands = int(cy.lands)
+	if int(cy.breaks) > int(b.get("cy_breaks",0)): shot("wind_slam",0.3,1.3,cy.last_at,30.0,600.0)
+	b.cy_breaks = int(cy.breaks)
+
+## Its air blast (scripts/dragon_air_blast.gd): the wind-up a short sharp
+## inhale, the shot a hard exhale and a crack of air at the mouth, a burst
+## a heavy slam where it hits, a pop on cover a light one.
+func _air_blast(dragon: Node, b: Dictionary) -> void:
+	var ab: Variant = dragon.get("air_blast")
+	if ab == null: return
+	var winding := str(ab.phase) == "windup"
+	if winding and not bool(b.get("ab_wind",false)): shot("inhale",INHALE*1.1,_rng.randf_range(1.5,1.6),dragon.mouth_at(),40.0,1100.0,FAR)
+	b.ab_wind = winding
+	if int(ab.shots) > int(b.get("ab_shots",0)):
+		shot("exhale",EXHALE*1.2,_rng.randf_range(1.4,1.5),dragon.mouth_at(),50.0,1400.0,FAR)
+		shot("wind_slam",0.45,1.35,dragon.mouth_at(),40.0,1000.0)
+	b.ab_shots = int(ab.shots)
+	if int(ab.lands) > int(b.get("ab_lands",0)): shot("wind_slam",0.8,0.65,ab.last_at,40.0,900.0)
+	b.ab_lands = int(ab.lands)
+	if int(ab.breaks) > int(b.get("ab_breaks",0)): shot("wind_slam",0.3,1.4,ab.last_at,30.0,600.0)
+	b.ab_breaks = int(ab.breaks)
 
 ## Its wake (scripts/dragon_wake.gd): a growl as it stirs on the roost, and
 ## off the ledge a huge beat, a slam of air and the rubble, as when it lets
