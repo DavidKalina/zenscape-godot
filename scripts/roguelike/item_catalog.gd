@@ -16,6 +16,10 @@ extends RefCounted
 
 const ITEMS := {
 	&"wallrun": {"name":"Gecko Wraps","line":"run along walls","kind":"verb","price":9,"rarity":2,"once":false},
+	# [items_move] movement verbs (scripts/roguelike/items_move.gd).
+	&"grapnel": {"name":"Grapnel","line":"V / RT: hook a lip, hold to haul up","kind":"verb","price":12,"rarity":3,"once":false},
+	&"cloak": {"name":"Drift Cloak","line":"hold Jump falling: drift down","kind":"verb","price":8,"rarity":2,"once":false},
+	&"picks": {"name":"Rock Picks","line":"stick into a wall: climb a few pulls","kind":"verb","price":10,"rarity":2,"once":false},
 }
 
 static func has(id: StringName) -> bool:

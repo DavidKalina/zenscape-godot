@@ -54,6 +54,9 @@ const RunFeatures = preload("res://scripts/roguelike/run_features.gd")
 const ItemStrip = preload("res://scripts/roguelike/item_strip.gd")
 ## [items] Whether --wallrun gave the wall run outright (else Gecko Wraps do).
 var _wallrun_flag := false
+# [items_move] The movement items' verbs, round the study's tick.
+const ItemsMove = preload("res://scripts/roguelike/items_move.gd")
+var _items_move: Node3D = null
 
 ## Past the void, falling on before the dark comes (s), the dark coming (s).
 const FALL_ON := 1.1
@@ -165,6 +168,9 @@ func setup(scene: Node3D) -> void:
 	overlay.readout.add_child(_items)
 	run.item_taken.connect(_item_found)
 	run.item_dropped.connect(func(_id: StringName) -> void: _items.show_items(run.items))
+	if ItemsMove.on():  # [items_move]
+		_items_move = ItemsMove.new()
+		_items_move.setup(scene)
 	# Until the first layer stands he walks the base as before; it comes
 	# up behind a moment's dark (`_arrive`).
 	_veil = 0.0
@@ -183,6 +189,7 @@ func before_tick(delta: float) -> bool:
 		"play":
 			run.tick(delta)
 			_item_moves()
+			if _items_move != null: _items_move.before(delta)  # [items_move]
 		"arrive":
 			run.tick(delta)
 			if _t > HOLD: _veil = move_toward(_veil,0.0,delta/CLEAR)
@@ -207,6 +214,7 @@ func before_tick(delta: float) -> bool:
 
 ## After the study's tick: the gate and the void.
 func after_tick(_delta: float) -> void:
+	if _items_move != null: _items_move.after(_delta)  # [items_move]
 	if state != "play" and state != "arrive": return
 	var stage: Node3D = study.stage
 	if stage == null or (study.layer as Dictionary).is_empty(): return
