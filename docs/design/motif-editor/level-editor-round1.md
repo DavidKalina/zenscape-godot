@@ -27,7 +27,7 @@ When you play, the pilot uses the real study base (motor, input, camera). The ne
 
 ## What works
 
-- **The scene.** `studies/motif_editor.tscn` and `.gd` extend `studies/kit_isle.gd` with the yard's sky (`studies/motif_yard_sky.gd`). The motif stands as a `MotifIsle` in a `MotifSky`, the same way the yard and the generator stand theirs, so the look matches what ships.
+- **The scene.** `studies/motif_editor.tscn` and `.gd` extend `studies/kit_isle.gd` with the yard's sky (`studies/motif_yard_sky.gd`). The motif stands as a `MotifIsle` in a `MotifSky`, the same way the yard stands its own.
 - **The land.** The whale-back preset has length, width, relief, cliff step (it defaults to `RuinKit.SET_OFF` so the terraces can be climbed), jaggedness and a seed. Moving a slider rebuilds the bare land and pieces as you drag. Letting go dresses the motif again with turf, flora and life. Re-roll draws a new seed and keeps the sliders. Markers the land shrinks away from move back inside the outline.
 - **Kit pieces.** The palette holds every RuinKit piece plus three trees: the game's hero oak, birch and willow glbs (`scripts/hero_trees.gd` `_build`), each with a trunk collider. A piece is seated on the lowest ground under its footprint and sunk 0.15 m. A selected piece gets a yellow ring. A piece's y is worked out again from the ground on every build, so a re-rolled hill never leaves one floating.
 - **Markers.** The spawn, rim in and rim out are draggable poles. Each rim's arrow faces out from the hill's middle.
