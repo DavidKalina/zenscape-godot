@@ -34,6 +34,16 @@ const CityCrossings = preload("res://scripts/roguelike/city_crossings.gd")
 const CityFires = preload("res://scripts/city_kit_fires.gd")
 # [collectibles] the layer's runes, rares and chests (game-v1-collectibles.md).
 const Collectibles = preload("res://scripts/roguelike/collectibles.gd")
+const Merchant = preload("res://scripts/roguelike/merchant.gd")  # [merchant]
+const Altars = preload("res://scripts/roguelike/altars.gd")  # [altars]
+# [weeper] the stone mourners (weeper-round1.md), in the EnemyField.
+const LayerWeepers = preload("res://scripts/roguelike/layer_weepers.gd")
+# [beetle] the Millstone Beetles on their lanes (beetle-round1.md).
+const LayerBeetles = preload("res://scripts/roguelike/layer_beetles.gd")
+# [inhabitant] the Hollow Child and the Sun-Keepers on the city's places.
+const LayerInhabitants = preload("res://scripts/roguelike/layer_inhabitants.gd")
+# [flyer] the guacharos over the gulfs (flyer-round1.md).
+const LayerFlyers = preload("res://scripts/roguelike/layer_flyers.gd")
 
 const GATE := Color(1.0,0.82,0.45)
 const RUNE_SIZE := 0.7
@@ -69,6 +79,12 @@ var greybox: Node = null
 ## [collectibles] The layer's runes, rares and chests (scripts/roguelike/
 ## collectibles.gd), or null.
 var collectibles: Node3D = null
+## [merchant] The stall and the Collector (scripts/roguelike/merchant.gd), or null.
+var merchant: Node3D = null
+var beetles: Node = null  # [beetle]
+var inhabitants: Node = null  # [inhabitant]
+## [flyer] The layer's guacharos (scripts/roguelike/layer_flyers.gd), or null.
+var flyers: Node3D = null
 var _last := Vector3.INF
 
 func _init() -> void:
@@ -121,6 +137,7 @@ func setup(scene: Node3D, layer: Dictionary, was: Node) -> void:
 		enemies.spawn(PlinthRam,layer.ram.at,Vector2(face.x,face.z))
 	# The inhaler heads on their rounds.
 	heads = LayerEnemies.dress(self,layer)
+	LayerWeepers.dress(self,layer)  # [weeper]
 	# The cannon and its kegs.
 	cannons = CannonField.new()
 	add_child(cannons)
@@ -131,9 +148,14 @@ func setup(scene: Node3D, layer: Dictionary, was: Node) -> void:
 	# The greybox isles' live bits, after the cannons (a motif's `live` may
 	# add its own to them).
 	greybox = LayerGreybox.dress(self,layer)
+	inhabitants = LayerInhabitants.dress(self,layer)  # [inhabitant]
 	scene.foot_pieces = self
 	_runes()
 	collectibles = Collectibles.dress(self,layer)  # [collectibles]
+	merchant = Merchant.dress(self,layer)  # [merchant]
+	Altars.dress(self,layer)  # [altars] pedestals, the cursed altar, the key and vault
+	beetles = LayerBeetles.dress(self,layer)  # [beetle]
+	flyers = LayerFlyers.dress(self,layer)  # [flyer]
 	_gate()
 	rides = LayerRides.new()
 	add_child(rides)
@@ -287,10 +309,14 @@ func before(delta: float) -> void:
 	traps.before(delta)
 	if greybox != null: greybox.before(delta)
 	if heads != null: heads.before(delta)
+	if inhabitants != null: inhabitants.before(delta)  # [inhabitant]
 	enemies.before(delta)
 	cannons.before(delta)
 	if hazards != null: hazards.before(delta)
 	if collectibles != null: collectibles.before(delta)  # [collectibles]
+	if merchant != null: merchant.before(delta)  # [merchant]
+	if beetles != null: beetles.before(delta)  # [beetle]
+	if flyers != null: flyers.before(delta)  # [flyer]
 
 func after(delta: float, events: Dictionary) -> void:
 	if inner != null: inner.after(delta,events)
@@ -300,6 +326,7 @@ func after(delta: float, events: Dictionary) -> void:
 	cannons.after(delta,events)
 	if hazards != null: hazards.after(delta,events)
 	if collectibles != null: collectibles.after(delta,events)  # [collectibles]
+	if flyers != null: flyers.after(delta,events)  # [flyer]
 	if study.get("figure") != null: touch(study.figure.global_position+Vector3.UP*Lines.WALKER_MIDDLE)
 
 func pose(figure: Node3D) -> void:
@@ -317,6 +344,7 @@ func frame(camera: Camera3D, delta: float) -> void:
 	if heads != null: heads.frame(camera,delta)
 	if greybox != null: greybox.frame(camera,delta)
 	if collectibles != null: collectibles.frame(camera,delta)  # [collectibles]
+	if flyers != null: flyers.frame(camera,delta)  # [flyer]
 
 func reset() -> void:
 	traps.reset()
@@ -324,3 +352,5 @@ func reset() -> void:
 	cannons.reset()
 	if greybox != null: greybox.reset()
 	if collectibles != null: collectibles.reset()  # [collectibles]
+	if inhabitants != null: inhabitants.reset()  # [inhabitant]
+	if flyers != null: flyers.reset()  # [flyer]

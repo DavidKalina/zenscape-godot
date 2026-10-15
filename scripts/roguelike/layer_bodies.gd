@@ -76,7 +76,9 @@ static var _build_lock := Mutex.new()
 ## by `--body-knob=<knob>=<value>`, as the studies take it (e.g.
 ## `--body-knob=leap_grab=1`).
 static func knobs(n: Dictionary) -> Dictionary:
-	var out := {"drop_under":float(n.unit)*3.0,"chase":1.0}
+	# More of a threat (as the places' Keepers): round an edge he can't
+	# leap by a route (`chase_routes`), and up a lip by a leap and grab.
+	var out := {"drop_under":float(n.unit)*3.0,"chase":1.0,"chase_routes":1.0,"leap_grab":1.0}
 	for arg in preload("res://scripts/launch_args.gd").user_args():
 		if arg.begins_with("--body-chase="): out.chase = float(arg.get_slice("=",1))
 		elif arg.begins_with("--body-knob="):

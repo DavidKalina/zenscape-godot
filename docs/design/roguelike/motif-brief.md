@@ -201,3 +201,9 @@ catches/throws fields are the spec), and the harness.
   cards, 26 kit pieces, a makers family; README has the tally and picks)
 - Round 2 (2026-10-14): docs/design/roguelike/brainstorm/round2/ (2 motif
   cards, the first place-first round: the Rootbound Cut, the Long Court)
+- Round 3 (2026-10-14): docs/design/roguelike/brainstorm/round3-olmec-city/
+  (39 kit cards for the underground Olmec city kit, 7 lenses; README has the
+  tally, the merged stair/causeway/pillar families and picks)
+- Round 4 (2026-10-15): docs/design/roguelike/brainstorm/round4-crossings/
+  (14 crossing cards from the sundered-hall seed, 7 lenses; README has the
+  causeway-family and body-stance tallies and picks)

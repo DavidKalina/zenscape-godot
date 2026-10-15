@@ -273,9 +273,9 @@ func default_knobs(n: Dictionary) -> Dictionary:
 		"stride":Look.WALK_STEP,"stride_home":Look.STRIDE_STEP,"triumph":1.8,
 		# The whole body's chase (whole-body-chase-round1.md): 1 on (its
 		# study's), 0 off (as ever: whole, it roams). Ranges in Hh, flat.
-		"chase":0,"chase_speed":n.run*0.9,"chase_turn":1.8,"chase_memory":8.0,
+		"chase":0,"chase_speed":n.run*0.9,"chase_turn":1.8,"chase_memory":16.0,
 		"sight_range":n.unit*40.0,"sight_half":0.9,"sight_near":n.unit*14.0,"sight_fill":1.4,"sight_grace":1.0,"sight_drain":0.3,
-		"search_for":5.0,"search_reach":n.unit*2.5,"return_for":30.0,
+		"search_for":12.0,"search_reach":n.unit*2.5,"return_for":30.0,
 		"catch_reach":1.3,"swat_windup":0.55,"swat_after":0.7,"swat_out":n.unit*9.0,"swat_up":n.unit*2.5,"swat_down":1.2,
 		"pounce_min":1.6,"pounce_max":4.5,"pounce_rise":1.0,"pounce_sink":1.5,"pounce_windup":0.8,"pounce_lock":0.3,
 		"pounce_arc":0.3,"pounce_rest":3.0,"pounce_hit":n.unit*2.0,"pounce_shock":0.7,

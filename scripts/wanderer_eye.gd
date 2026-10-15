@@ -622,6 +622,8 @@ func _build_figure() -> void:
 	motor.wall = _wall
 	# The sail rides the glide's air (scripts/pocket_sail.gd).
 	motor.air = _walker_air
+	# The wall run is an unlock; `--wallrun` gives it from the start.
+	motor.wallrun_on = "--wallrun" in preload("res://scripts/launch_args.gd").user_args()
 	sail_wing = PocketSailFigure.new()
 	figure.add_child(sail_wing)
 	# The low foliage parts round him and springs back (scripts/pilot_wake.gd).

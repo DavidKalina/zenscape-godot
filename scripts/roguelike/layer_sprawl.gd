@@ -43,6 +43,7 @@ const LayerPlan = preload("res://scripts/roguelike/layer_plan.gd")
 const Footbridge = preload("res://scripts/footbridge.gd")
 const KitMotif = preload("res://scripts/kit_isle/kit_motif.gd")
 const Cannon = preload("res://scripts/cannon/cannon.gd")
+const Summit = preload("res://scripts/roguelike/summit.gd")  # [summit]
 const NextRegionLod = preload("res://scripts/roguelike/next_region_lod.gd")
 const LayerPieces = preload("res://scripts/roguelike/layer_pieces.gd")
 const Roost = preload("res://scripts/kit_isle/motif_dragon_roost.gd")
@@ -149,6 +150,7 @@ static func make(seed_value: int, knobs := {}) -> Dictionary:
 
 ## The next region laid into `plan` (`plan.next`), or a problem noted.
 static func attach_next(plan: Dictionary) -> void:
+	if Summit.final_plan(plan): return  # [summit] nothing lies past the summit
 	var nxt := next_plan(plan)
 	if (nxt.problems as Array).is_empty(): plan.next = _place_next(plan,nxt)
 	else: plan.problems.append("no next region laid past seed %d" % int(plan.seed))

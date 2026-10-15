@@ -99,7 +99,8 @@ signal harmed(amount: int, cause: String, source: Object)
 ## from it, he drops off; Jump kicks him off it, up (WALLRUN_JUMP) and out
 ## (WALLRUN_KICK) with his pace along it kept. Once an airtime, as the
 ## twirl: landing, taking hold of a ledge, or swimming gives it back. A hop
-## out of the water never starts one.
+## out of the water never starts one. An ability to unlock: off until
+## `wallrun_on` is set (`--wallrun` in the studies).
 ##
 ## Slopes (the ground's own fall, `_gradient`, read from heights around the
 ## feet, so a step's edge is no slope; read along the world's axes and
@@ -302,6 +303,21 @@ const BUFFER := 0.15
 ## is a wall.
 const SNAP := 0.3
 const STEP_UP := 0.45
+## His soles' reach either side of his feet (m, by his size): ground that
+## drops away under him into a slot narrower than twice this (its lips both
+## more than STEP_UP over its floor, the nearer about where he stands: the
+## seam between a stair's treads and its cheek, the gap by a lamp's plinth)
+## is stood over on its lower lip (`_footing`), never fallen into: his body
+## does not fit it, and wedged in it every way out was a wall.
+const SOLE := 0.25
+## A grounded step whose end stands too high a step over the feet (a wall)
+## turned this far along it (radians, tried in turn toward the stick's share
+## along the wall's face, that share of the step kept, `_along`): angled
+## into a wall he slides along it rather than stopping dead, and a stick
+## pulled off it at a slant takes him off it. Met square he stops.
+const ALONG_TURNS := [0.35,0.7,1.05,1.4]
+## The stick's least share along a wall's face that turns him along it.
+const ALONG_LEAST := 0.15
 ## Carried pace over the run, bleeding away on the ground (m/s²): with the
 ## stick held on along his way (within about 25°), and without; and more
 ## (m/s² a m/s over the run), so a big carry (a slide hop chain's end) falls
@@ -583,6 +599,8 @@ var twirl_push := TWIRL_PUSH
 var twirl_top := TWIRL_TOP
 var twirl_steer := TWIRL_STEER
 var hop_turn := HOP_TURN
+## The wall run unlocked (see the header): off, it never starts.
+var wallrun_on := false
 var wallrun_pace := WALLRUN_PACE
 var wallrun_time := WALLRUN_TIME
 var wallrun_gravity := WALLRUN_GRAVITY
@@ -1476,14 +1494,20 @@ func _step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable
 	# The wall run: begun along a wall met at a glance, or run on.
 	if not grounded:
 		if move == "wallrun": h = _wallrun_step(delta,want,h,ground,out)
-		elif not _wallran and move != "wall" and move != "flip" and move != "sail" and move != "slam": h = _wallrun_start(want,h,ground,out)
+		elif wallrun_on and not _wallran and move != "wall" and move != "flip" and move != "sail" and move != "slam": h = _wallrun_start(want,h,ground,out)
 	var moved: Vector3 = slide.call(feet,h*delta)
-	var under: float = ground.call(Vector2(moved.x,moved.z))
+	var under := _footing(ground,Vector2(moved.x,moved.z))
 	if grounded and under > feet.y+STEP_UP:
-		# A wall: stood against it.
-		h = Vector2.ZERO
-		moved = feet
-		under = ground.call(Vector2(feet.x,feet.z))
+		# A wall: slid along it if the step meets it at a slant, else
+		# stood against it.
+		var along := _along(h*delta,ground,slide)
+		if along.is_empty():
+			h = Vector2.ZERO
+			moved = feet
+			under = _footing(ground,Vector2(feet.x,feet.z))
+		else:
+			moved = along[0]
+			under = along[1]
 	if grounded:
 		# Down a slope the ground falls away faster than the run goes.
 		if under < feet.y-SNAP-h.length()*delta*maxf(1.0,slope.length()*1.3):
@@ -1612,6 +1636,59 @@ func _step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable
 	velocity.x = h.x
 	velocity.z = h.y
 	return out
+
+## The ground he stands on at `p`: the ground there, but where it drops
+## away (more than SNAP under his feet) into a slot narrower than his soles
+## (SOLE either side, both lips more than STEP_UP over its floor), the lower
+## lip, if that is about where he stands (see SOLE).
+func _footing(ground: Callable, p: Vector2) -> float:
+	var c: float = ground.call(p)
+	if c >= feet.y-SNAP: return c
+	var r := SOLE*size
+	var lip := INF
+	for d: Vector2 in [Vector2(1.0,0.0),Vector2(0.0,1.0),Vector2(0.7071,0.7071),Vector2(0.7071,-0.7071)]:
+		var a: float = ground.call(p+d*r)
+		if not (is_finite(a) and a > c+STEP_UP): continue
+		var b: float = ground.call(p-d*r)
+		if not (is_finite(b) and b > c+STEP_UP): continue
+		lip = minf(lip,minf(a,b))
+	return c if lip == INF or lip > feet.y+SNAP else lip
+
+## A grounded step `step` (x, z) whose end stands too high a step over the
+## feet, turned along the wall (ALONG_TURNS): [the feet moved, the ground
+## there] for the least turn that clears it, or [] (met square, or boxed
+## in). The wall's face (`_wall_at`) picks the way to turn; with none found
+## (a low wall, a heightfield's rise under WALL_TALL) both ways are tried
+## and one is taken only if it alone clears, or goes clearly further.
+func _along(step: Vector2, ground: Callable, slide: Callable) -> Array:
+	if step.length_squared() < 1e-10: return []
+	var dir := step.normalized()
+	var off := _wall_at(dir,ground,WALL_PROBE+0.15)
+	var along := Vector2.ZERO
+	var ways: Array = [1.0,-1.0]
+	if off != Vector2.ZERO and dir.dot(off) < 0.0:
+		along = dir-off*dir.dot(off)
+		if along.length() < ALONG_LEAST: return []
+		ways = [signf(dir.cross(along))]
+	for t: float in ALONG_TURNS:
+		var got: Array = []
+		for way: float in ways:
+			var turned := step.rotated(t*way)*cos(t)
+			var m: Vector3 = slide.call(feet,turned)
+			var went := Vector2(m.x-feet.x,m.z-feet.z)
+			# Taken if the body goes most of the turned step, on along the
+			# stick (and the face), onto ground he can step to.
+			if went.length() < turned.length()*0.5 or went.dot(step) <= 0.0 or went.dot(along) < 0.0: continue
+			var u := _footing(ground,Vector2(m.x,m.z))
+			if u <= feet.y+STEP_UP: got.append([m,u])
+		if got.size() == 1: return got[0]
+		if got.size() == 2:
+			var a := Vector2((got[0][0] as Vector3).x-feet.x,(got[0][0] as Vector3).z-feet.z).length()
+			var b := Vector2((got[1][0] as Vector3).x-feet.x,(got[1][0] as Vector3).z-feet.z).length()
+			if a > b*1.25: return got[0]
+			if b > a*1.25: return got[1]
+			return []
+	return []
 
 ## One step knocked: through the air unsteered, stopped by what he meets,
 ## into deep water with a splash (afloat, the tumble over); landed, down a

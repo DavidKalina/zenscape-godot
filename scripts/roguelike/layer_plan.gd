@@ -53,6 +53,8 @@ const Greybox = preload("res://scripts/kit_isle/greybox/registry.gd")
 ## The run's worlds, under and sky (scripts/roguelike/layer_worlds.gd): a
 ## region draws only its own world's motifs.
 const LayerWorlds = preload("res://scripts/roguelike/layer_worlds.gd")
+## The city's crossings as a family (layer-round15-city-crossings.md).
+const CityWays = preload("res://scripts/roguelike/city_ways.gd")
 
 ## The pool: [id, script, weight]. The colonnade spine and the Sundered
 ## gorge weighted up (the user's strongest), the stair to the clouds a
@@ -366,7 +368,7 @@ static func make(seed_value: int, knobs := {}) -> Dictionary:
 ## by region) say the layer's world (scripts/roguelike/layer_worlds.gd);
 ## `--world=` and `--under-regions=` are the same as their knobs.
 const KNOBS := {"hoods":0,"gulf":0.0,"ride":"","rise":0.0,"arrows":-1,"viaduct":-1,"heads":-1,"bodies":1,"alternate":1,"ring":0,"greybox":"","greybox_force":1,"pool":"motifs","one_way":-1,
-	"region":0,"under_regions":LayerWorlds.UNDER_REGIONS,"world":"","sky_kit":0,"danger":-1.0,"city_ring":0}
+	"region":0,"under_regions":LayerWorlds.UNDER_REGIONS,"world":"","sky_kit":0,"danger":-1.0,"city_ring":0,"city_crossings":"varied"}
 const KNOB_CHOICES := {"hoods":[0,1,2,3],"ride":["","serpent","ferry"],"pool":["motifs","classic"]}
 
 ## `--knob=key=value` arguments as the layer's knobs (unknown keys warned).
@@ -403,6 +405,7 @@ static func knobs_from(args: PackedStringArray) -> Dictionary:
 ## lay plans (studies/run_layer.gd).
 static func warm() -> void:
 	pilot()
+	CityWays.warm()
 	slab_length()
 	_serpent_shape()
 	cannon_knobs()
@@ -556,6 +559,15 @@ static func _make_once(seed_value: int, attempt: int, knobs: Dictionary) -> Dict
 				plan.hoods.append([from])
 				continue
 			var kinds := ["trap"] if traps_left > 0 and (rng.randf() < 0.5 or last) else ["stones","bridge","stones"]
+			# The city's family (city_ways.gd): one kind drawn first (by the
+			# danger, not the one laid before), the rest if it won't stand.
+			var then: Array = []
+			if CityWays.on(k_all) and kinds[0] != "trap":
+				var prev := ""
+				for e: Dictionary in plan.edges: if e.branch == "route" and e.kind != "gulf": prev = e.kind
+				var order := CityWays.order(prev,LayerWorlds.danger(k_all),rng)
+				kinds = [order[0]]
+				then = order.slice(1)
 			# The last stands over every other in its neighbourhood (the exit
 			# is on the highest).
 			var least := -INF
@@ -585,6 +597,7 @@ static func _make_once(seed_value: int, attempt: int, knobs: Dictionary) -> Dict
 					groups[h][k] = m
 				for f: int in froms:
 					got = _step(plan,f,m,kinds,"route",used,rng,least,INF,h)
+					if got.is_empty() and not then.is_empty() and kinds[0] != "climb": got = _step(plan,f,m,then,"route",used,rng,least,INF,h)
 					if got.is_empty() and kinds[0] == "trap":
 						got = _step(plan,f,m,["stones","bridge"],"route",used,rng,least,INF,h)
 					elif not got.is_empty() and kinds[0] == "trap": traps_left -= 1
@@ -1071,12 +1084,12 @@ static func _step(plan: Dictionary, from: int, m: Dictionary, kinds: Array, bran
 		var fb: Vector3 = rb.face
 		var dir := (fa-fb).normalized()
 		if dir.dot(fa) < cos(deg_to_rad(TURN_MOST)) or dir.dot(-fb) < cos(deg_to_rad(TURN_MOST)): continue
-		if kind in ["stones","hard","climb"] and float(ra.run_up) < 1.5: continue
+		if kind in ["stones","hard","climb","piers","broken"] and float(ra.run_up) < 1.5: continue
 		if kind == "hard" and float(ra.run_up) < CANNON_BACK+1.0: continue
 		# A climb comes up onto clear ground (its bridge's anchor and him).
 		if kind == "climb" and float(rb.run_up) < CLIMB_RUN_UP: continue
 		var lip_a: Vector3 = (ra.at as Vector3)+off_a+fa*float(ra.lip)
-		var shape := _shape(kind,lip_a,dir,rng,mean(plan.knobs))
+		var shape := _shape(kind,lip_a,dir,rng,mean(plan.knobs),CityWays.on(plan.knobs))
 		if shape.is_empty(): continue
 		var lip_b: Vector3 = shape.b
 		var at_b: Vector3 = lip_b-fb*float(rb.lip)
@@ -1109,6 +1122,8 @@ static func _step(plan: Dictionary, from: int, m: Dictionary, kinds: Array, bran
 			continue
 		var edge := {"kind":kind,"branch":branch,"from":[from,ra.name],"to":[plan.isles.size(),rb.name],"a":lip_a,"b":lip_b,"dir":dir,
 			"stones":shape.stones,"bridges":shape.bridges,"parts":shape.parts,"trap":shape.trap,"path":shape.path,"from_rim":_world(ra,off_a),"to_rim":_world(rb,off_b)}
+		# The city family's own (city_ways.gd): its spans, its chute, its flanks.
+		for k: String in ["spans","chute","flank"]: if shape.has(k): edge[k] = shape[k]
 		var isles: Array = plan.isles+[placed]
 		if not _corridor_clear(edge,isles,from,isles.size()-1):
 			why.corridor = why.get("corridor",0)+1
@@ -1154,7 +1169,11 @@ static func _world(s: Dictionary, off: Vector3) -> Dictionary:
 ## apart, so most edges are made of parts: a run of stones up to a landing
 ## (a floating slab), then a rope bridge or the trap from it; or a long run
 ## of stones.
-static func _shape(kind: String, a: Vector3, dir: Vector3, rng: RandomNumberGenerator, meanness := 0.0) -> Dictionary:
+static func _shape(kind: String, a: Vector3, dir: Vector3, rng: RandomNumberGenerator, meanness := 0.0, ways := false) -> Dictionary:
+	# The city's family (city_ways.gd); the greed branch's hard edge its
+	# hard piers.
+	if ways and kind in CityWays.KINDS and kind != "stones": return CityWays.shape(kind,a,dir,rng,meanness)
+	if ways and kind == "hard": return CityWays.shape("piers",a,dir,rng,meanness,true)
 	var out := {"stones":[],"bridges":[],"trap":{},"parts":[],"path":[],"mean":meanness}
 	var chain := "%s_%d_%d" % [kind,roundi(a.x),roundi(a.z)]
 	var p := a
@@ -1278,7 +1297,7 @@ static func _corridor_clear(edge: Dictionary, isles: Array, from: int, to: int) 
 	var b: Vector3 = edge.b
 	var dir: Vector3 = edge.dir
 	var side := dir.cross(Vector3.UP).normalized()
-	for s: Array in edge.path:
+	for s: Array in edge.path+edge.get("flank",[]):
 		var p: Vector3 = s[0]
 		var lo := p.y-float(s[1])
 		var hi := p.y+float(s[2])
@@ -1294,10 +1313,12 @@ static func _corridor_clear(edge: Dictionary, isles: Array, from: int, to: int) 
 
 ## Whether the edge comes within CLEAR of another edge's corridor.
 static func _crosses(edge: Dictionary, edges: Array) -> bool:
+	var mine: Array = edge.path+edge.get("flank",[])
 	for e: Dictionary in edges:
-		for s: Array in edge.path:
+		var theirs: Array = e.path+e.get("flank",[])
+		for s: Array in mine:
 			var p: Vector3 = s[0]
-			for t: Array in e.path:
+			for t: Array in theirs:
 				var q: Vector3 = t[0]
 				if Vector2(p.x-q.x,p.z-q.z).length() < CLEAR and absf(p.y-q.y) < OVER+UNDER+CLEAR: return true
 	return false
@@ -1305,7 +1326,7 @@ static func _crosses(edge: Dictionary, edges: Array) -> bool:
 ## Whether the isle stands in an edge laid before.
 static func _covers_edges(isle: Dictionary, edges: Array) -> bool:
 	for e: Dictionary in edges:
-		for s: Array in e.path:
+		for s: Array in e.path+e.get("flank",[]):
 			var p: Vector3 = s[0]
 			var o := occ_at(isle,p.x,p.z)
 			if o.x < INF and o.x < p.y+float(s[2])+CLEAR*0.5 and p.y-float(s[1])-CLEAR*0.5 < o.y: return true

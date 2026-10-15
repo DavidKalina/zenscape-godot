@@ -187,7 +187,11 @@ static func level(i: int) -> float:
 static func scarp_z(k: int, x: float) -> float:
 	var s: Dictionary = LAYOUT.scarps[k]
 	var fw: Dictionary = LAYOUT.fuse_wall
-	if k == 1 and x > float(fw.x0)-4.0 and x < float(fw.x1)+14.0: return float(fw.z)
+	# (The scarp's own step is laid half the wall's thickness behind its
+	# face, so the turf's cliff, solved across a cell of the ground, stays
+	# inside the revetment: at the face it jutted half a metre through the
+	# corbels' backs, a jagged band he wedged in.)
+	if k == 1 and x > float(fw.x0)-4.0 and x < float(fw.x1)+14.0: return float(fw.z)-float(fw.thick)*0.5
 	if k == 2 and x > float(LAYOUT.drum.shelf.position.x)-2.0: return float(LAYOUT.drum.shelf.position.y)
 	var z := float(s.base)+float(s.a)*sin(x*float(s.f)+float(s.p))+float(s.b)*sin(x*float(s.g)+float(s.q))
 	# Polish: its noses and bays, a little jagged.
@@ -311,7 +315,10 @@ static func ground(x: float, z: float) -> float:
 		var u := absf(l.x)
 		var wall := CityKit.LANE*0.5+CityKit.CHEEK
 		var p := xf.origin.y+stair_profile(clampf(v,0.0,stair_length()))
-		if u < wall+0.4: y = minf(y,p-0.6)
+		# (Never under the stair's foot: cut there, the turf before the
+		# first tread sagged with it, half a metre at stairs 2 and 3, and the
+		# first step stood too high to step.)
+		if u < wall+0.4: y = minf(y,maxf(p-0.6,xf.origin.y))
 		elif u < wall+3.0: y = minf(y,maxf(p+0.9,xf.origin.y))
 	return y
 

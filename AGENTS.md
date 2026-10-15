@@ -84,6 +84,23 @@ pass (skills `motif-brainstorm`, `motif-greybox`, `motif-turf`). A motif is
 a place first, held to the original kit motifs' beauty; combos emerge from
 its pieces, and every piece says what it catches and throws.
 
+# The motif editor
+
+The user hand-authors motifs in `studies/motif_editor.tscn` (design and
+rounds: `docs/design/roguelike/level-editor*.md`). Its saves,
+`motifs/authored/*.json`, are recipes (piece ids, seeds, settings,
+transforms) rebuilt from the current code on every load. So when you change
+RuinKit pieces, KitLand, flora or the motif contract:
+
+- Keep piece ids stable; a rename breaks saved motifs.
+- A piece whose size or shape changes gets its connectors updated in
+  `scripts/ruin_kit_fit.gd`.
+- Keep KitLand and flora changes additive or opt-in (the editor's `stable`
+  mode), so existing motifs build as before. Smoke a kit motif and an
+  `editor_*` one in the motif yard.
+
+Work that touches none of these can ignore the editor.
+
 # Subagent models
 
 Pick a subagent's model by what it makes:
