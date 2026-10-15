@@ -20,7 +20,6 @@
 
 ## Every subagent reads first
 
-- `docs/design/roguelike/game-v1-brief.md`, all of it. It is the game.
 - `AGENTS.md`: Prototyping, Sizes, Art direction, Animation, Models,
   Subagent models.
 - `tools/README.md`: the harness (smoke check, play-loop driver, stills).

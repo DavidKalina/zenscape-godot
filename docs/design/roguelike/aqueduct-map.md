@@ -1,6 +1,6 @@
 # Aqueduct isle map (2D, for placing roguelike content)
 
-Read docs/design/roguelike/concept.md for why. This is a reference map of the
+This is a reference map of the
 authored aqueduct isle ("The Aqueduct of Veyl") at the **default sizes**
 (plane 2.0, walker 1.0, opening ratio 1.0; scripts/world_scale.gd). Every
 number below was worked out from the source at those defaults; "~" marks an

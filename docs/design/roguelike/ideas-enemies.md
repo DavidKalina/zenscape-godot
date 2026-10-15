@@ -1,6 +1,6 @@
 # Enemies and creatures: ideas (brainstorm, 2026-10-12)
 
-> **Status: spitball, not decided.** Read concept.md and aqueduct-map.md first.
+> **Status: spitball, not decided.** Read aqueduct-map.md first.
 > Traps, the dragon and the shop are other docs. Nothing here is built; every
 > number is a first guess to tune, using the pilot numbers in aqueduct-map.md
 > section 5 (run 4.8 m/s, plain jump 0.8 m, pump 1.5 m, twirl, slide to 20 m/s,
@@ -32,7 +32,7 @@ The section generator picks modules that fit a section's anchors and budget.
 |---|---|
 | anchor | the surface it needs: `turf`, `deck` (narrow walkway), `water` (channel), `arch` (underside or crown), `stone` (standing stone / sarsen), `air`, `rope`, `edge` (rim of an isle) |
 | footprint | clear plane area it needs, so a 2.4 m channel gets only channel-sized modules |
-| cost 1-5 | counts against the section's danger budget (concept.md); a tier has a min and max total |
+| cost 1-5 | counts against the section's danger budget; a tier has a min and max total |
 | group | solo / pair / pack (N); pack cost = cost x (1 + 0.5 x (N-1)) |
 | tags | `knockable`, `pushes`, `steals`, `grabs`, `flies`, `loud`, `flammable`, `wakes` |
 | pairs | modules that raise or lower its cost when placed together (listed per entry) |
@@ -381,7 +381,7 @@ Beetle wheel, Kite + Gnaw (cheese).
 
 ## Bosses (region one, ruins)
 
-One boss per region, guarding the way to the next region (concept.md). Fixed
+One boss per region, guarding the way to the next region. Fixed
 arenas, **composed from authored pieces with the isle's tier layout**, so a
 run's boss differs only by arena dressing and which minions spawn (the
 generator rolls a *tier of minions* from this doc).

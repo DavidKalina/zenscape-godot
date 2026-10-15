@@ -1,7 +1,7 @@
 # Traps and environmental hazards (ideas, 2026-10-12)
 
 > **Status: brainstorm, not decided.** Ideas only; no code. Companion to
-> concept.md and aqueduct-map.md (all numbers below come from its section 5:
+> aqueduct-map.md (all numbers below come from its section 5:
 > walk 2.4 / run 4.8 m/s, plain jump 0.8 m high / ~2.2 m long, pump 1.5 m,
 > long jump 4.2 m (6.7 chained), twirled jump ~3 m, grab 1.875 / chain 2.575,
 > wall kick 1.4 m, slide up to 20 m/s, glide 3.7 m across per m down, plane

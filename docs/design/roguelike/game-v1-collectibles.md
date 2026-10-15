@@ -1,6 +1,6 @@
 # The v1 game: collectibles (round handoff, 2026-10-14)
 
-Rule 5 and rule 0 of `game-v1-brief.md`: runes (the coin) on every layer,
+The v1 brief: runes (the coin) on every layer,
 a rare collectible in hidden and hard spots, both tallied in the corner, on
 the death card and in the saved record. The best haul is on the risky line.
 

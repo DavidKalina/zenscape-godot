@@ -20,7 +20,7 @@ taste moves.
   grids, stacked plates and placed collapse are what that looks like.
 - **Rune-carved stone, overgrowth, mystery.** The ruins were made by someone,
   for something; the player pieces it together. Ancient and melancholy, not
-  cozy (concept.md, Tone). Collapse and decay read as authored and hide the
+  cozy. Collapse and decay read as authored and hide the
   generator.
 - **The Olmec bar.** The hovering inhaler head and the headless stone body
   (scripts/enemies/, docs/design/roguelike/olmec-weathered.md,
@@ -54,7 +54,7 @@ taste moves.
   shortcut a skilled player can choose to ride.
 - **Physics, not damage.** Deaths are falls and knock-offs. Comedy from
   danger and physics, never jokes.
-- **The pilot is fast and nimble** (concept.md, The pilot's tech): run, jump,
+- **The pilot is fast and nimble**: run, jump,
   twirl, slide, rail slide, wall kick, ledge grab and chain, rope swing,
   pocket sail (glide), flow charge (updraft up, downdraft slam), binoculars.
   Motifs are Odyssey/Galaxy playgrounds for that kit.

@@ -1,6 +1,6 @@
 # Runes and the ledger in a run (ideas, 2026-10-12)
 
-> **Status: brainstorm, nothing decided.** Builds on concept.md. Hard rules:
+> **Status: brainstorm, nothing decided.** Hard rules:
 > no builds, no stat boosts, no skill trees, no crafting. Items are tools or
 > verbs, lost on death. Numbers are at default sizes (walker 1.0, plane 2.0;
 > jump 0.8/1.5 pumped, twirled gap 3 m, glide 3.7:1) and are guesses.

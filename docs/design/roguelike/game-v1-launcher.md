@@ -1,6 +1,6 @@
 # Game v1: the launcher and the title (2026-10-14)
 
-Part of the v1 stitch round (`game-v1-brief.md`). Branch `feature/v1-launcher`.
+Part of the v1 stitch round. Branch `feature/v1-launcher`.
 
 ## How to run it
 

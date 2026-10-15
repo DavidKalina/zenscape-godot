@@ -1,7 +1,7 @@
 # Game v1: hearts and damage (2026-10-14)
 
 > Branch `feature/v1-hearts`, cut from `roguelike` at 76ee7b19. Part of the
-> v1 stitch round (`game-v1-brief.md`).
+> v1 stitch round.
 
 ## Run it
 

@@ -16,8 +16,8 @@ fi
 # same flags. Flags after the `--`:
 #   --shape=sprawl     the run's first region; the city (underground) stays sprawl,
 #                      city layers of its six places (layer-round14-city-layers.md)
-#   --world=under      every region underground: v1 is the Olmec city only
-#                      (game-v1-brief.md); drop it to open into the sky
+#   --world=under      every region underground: v1 is the Olmec city only;
+#                      drop it to open into the sky
 #                      after the first two regions (layer-round13-worlds.md)
 #   (no --under-look=)  the underground regions wear the oculus look (run-oculus-round1.md); --under-look=torch brings the old torch look back
 #   (no --seed=)       the run draws a new seed each launch; the card's R

@@ -1,6 +1,5 @@
 extends Node3D
-## The layer's collectibles (docs/design/roguelike/game-v1-brief.md rule 5,
-## docs/design/roguelike/game-v1-collectibles.md): the runes (the coin) and
+## The layer's collectibles (docs/design/roguelike/game-v1-collectibles.md): the runes (the coin) and
 ## the rare collectible (no name or look yet: GlyphPickup's "sun" glyph
 ## stands in), laid from the plan, plus a chest or two that pay runes.
 ##

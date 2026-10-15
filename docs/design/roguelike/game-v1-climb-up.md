@@ -1,7 +1,7 @@
 # Game v1: the run climbs up (2026-10-14)
 
 > Branch `feature/v1-climb-up`, cut from `roguelike` at 76ee7b19. One part
-> of the v1 stitch round (`game-v1-brief.md`). Prototype: no committed tests.
+> of the v1 stitch round. Prototype: no committed tests.
 
 ## Run it
 

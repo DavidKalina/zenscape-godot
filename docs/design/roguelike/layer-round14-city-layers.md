@@ -1,7 +1,7 @@
 # The generated layer, round 14: city layers (2026-10-14)
 
 > Branch `layer/city-layers`, cut from `roguelike` at 6f57749a. This is
-> step 3 of `game-v1-brief.md` ("The city into the generator"). It's a
+> step 3 of the v1 brief ("The city into the generator"). It's a
 > prototype round, so it has smoke checks and throwaway drivers in
 > `scratch/` and no new tests.
 

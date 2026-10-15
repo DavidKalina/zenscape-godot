@@ -1,6 +1,6 @@
 # The dragon as the run's pressure system (ideas, 2026-10-12)
 
-> Brainstorm, not decided. Companion to concept.md. Spelunky's ghost, made
+> Brainstorm, not decided. A ghost made
 > alive: he is never a countdown on screen, but every layer he gets closer.
 
 ## What exists vs not
