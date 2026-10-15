@@ -770,6 +770,10 @@ func _build_pilot() -> void:
 	ground.see(ground.mask|WalkerOnly.LAYER)
 	motor.water = ground.water_callable()
 	motor.wall = ground.wall_callable()
+	# Moving ground and soft ground: only bodies marked for them
+	# (pilot_physics_ground.gd MOVING, SOFT); still ground is as ever.
+	motor.mover = ground.mover_callable()
+	motor.soft = ground.soft_callable()
 	figure = Node3D.new()
 	figure.name = "Pilot"
 	add_child(figure)
@@ -817,6 +821,7 @@ func place(at: Vector3, face: Vector2) -> void:
 	_cam_y = at.y+CAM_HEIGHT*wanderer_scale
 	_cam_at = Vector2(at.x,at.z)
 	_cam_pace = Vector2.ZERO
+	_cam_turn_owed = 0.0
 	_cam_distance = CAM_DISTANCE*wanderer_scale
 	_cam_out = 0.0
 	_look_rest = 0.0
@@ -879,6 +884,7 @@ func tick(delta: float) -> void:
 	if foot_pieces != null: foot_pieces.before(delta)
 	var was := motor.feet
 	var events := motor.step(delta,want,motor.run,jump,ground.ground_callable(),ground.slide_callable(),ground.ledge_callable())
+	_cam_go_with(delta)
 	if slam != null: events.merge(slam.after(events,motor))
 	if foot_pieces != null: foot_pieces.after(delta,events)
 	if _rec != null: _rec.add(delta,want,jump,motor.crouch,motor.twirl,_yaw,_polar,motor,state(),events)
@@ -910,6 +916,27 @@ func tick(delta: float) -> void:
 	if slam != null: slam.apply_feel(camera)
 	if looking: _telescope_view(delta)
 	_show_hud()
+
+## Carried by moving ground (PilotMotor `moved_by`, `turned_by`: a ridden
+## serpent's collar, a moving slab): the camera's follow point goes with
+## him, and takes up the ground's turn over CARRY_CAM_TURN (a boat's sway,
+## not a snap). On still ground nothing here moves.
+const CARRY_CAM_TURN := 0.6
+var _cam_turn_owed := 0.0
+func _cam_go_with(delta: float) -> void:
+	if motor.moved_by != Vector3.ZERO or motor.turned_by != 0.0:
+		var pivot := Vector3(_cam_at.x,_cam_y,_cam_at.y)+motor.moved_by
+		pivot = motor.feet+(pivot-motor.feet).rotated(Vector3.UP,motor.turned_by)
+		_cam_at = Vector2(pivot.x,pivot.z)
+		_cam_y = pivot.y
+		var pace := Vector3(_cam_pace.x,0.0,_cam_pace.y).rotated(Vector3.UP,motor.turned_by)
+		_cam_pace = Vector2(pace.x,pace.z)
+		_cam_turn_owed += motor.turned_by
+	if _cam_turn_owed != 0.0:
+		var take := _cam_turn_owed*(1.0-exp(-delta/CARRY_CAM_TURN))
+		_yaw += take
+		_cam_turn_owed -= take
+		if absf(_cam_turn_owed) < 1e-5: _cam_turn_owed = 0.0
 
 ## Whether the telescope may come up: on foot on the ground, standing or
 ## walking (not in a jump, a slide, the water, on a ledge or the sail).
@@ -1164,15 +1191,28 @@ func _cam_reach(pivot: Vector3, out: Vector3) -> float:
 		_cam_ball.shape = ball
 	_cam_ball.transform = Transform3D(Basis.IDENTITY,pivot)
 	_cam_ball.motion = Vector3.ZERO
+	# What he rides (moving ground: a serpent's collar) never draws the
+	# camera in; on still ground nothing is left out.
+	var ridden := _ridden_rid()
+	_cam_ball.exclude = [ridden] if ridden.is_valid() else []
 	if ground.space.intersect_shape(_cam_ball,1).is_empty():
 		_cam_ball.motion = out*length
 		var cast := ground.space.cast_motion(_cam_ball)
 		if float(cast[0]) >= 1.0: return CAM_DISTANCE*wanderer_scale
 		return clampf(float(cast[0])*length+CAM_BALL-0.3,CAM_NEAREST,CAM_DISTANCE*wanderer_scale)
 	var ray := PhysicsRayQueryParameters3D.create(pivot,pivot+out*length)
+	if ridden.is_valid(): ray.exclude = [ridden]
 	var hit := ground.space.intersect_ray(ray)
 	if hit.is_empty(): return CAM_DISTANCE*wanderer_scale
 	return clampf(pivot.distance_to(hit.position)-0.3,CAM_NEAREST,CAM_DISTANCE*wanderer_scale)
+
+## The body he rides (PilotMotor `platform`'s), or none.
+func _ridden_rid() -> RID:
+	var p: Node3D = motor.platform
+	if p == null or not is_instance_valid(p): return RID()
+	var body := p as CollisionObject3D
+	if body == null: body = p.get_parent() as CollisionObject3D
+	return body.get_rid() if body != null else RID()
 
 func _ease(rate: float, delta: float) -> float:
 	return 1.0-exp(-delta/rate)

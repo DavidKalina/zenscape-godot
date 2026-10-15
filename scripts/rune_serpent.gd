@@ -386,6 +386,9 @@ var look_back := false
 ## lift toward a watcher, times this. A route easing it by a boarding ledge
 ## (scripts/kit_isle/serpent_route.gd) keeps its head on its way there.
 var look_share := 1.0
+## The share of its heave it takes (live): 1 in the sky; a city's line that
+## runs it in a trough and under bridges holds it level (0).
+var heave_share := 1.0
 ## Its own draws (the tongue's flicks, how long it paces) and where its
 ## clock starts (s: its breath, its surge and its head's drift), set before
 ## `setup`; a line of them each its own, so they don't move in step.
@@ -653,7 +656,7 @@ func weave_reach() -> float:
 	return _wave*tan(WEAVE)/TAU
 
 func heave_reach() -> float:
-	return _heave_wave*tan(HEAVE)/TAU
+	return _heave_wave*tan(HEAVE)/TAU*heave_share
 
 ## How far from the route its body can ever reach at `at` (m): its girth,
 ## the weave at its most, the veer the route allows and the heave. Clear of
