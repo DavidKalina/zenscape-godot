@@ -22,6 +22,7 @@ const MOTIFS := {
 	"face":preload("res://scripts/kit_isle/greybox/gb_face.gd"),
 	"lamplighters_stair":preload("res://scripts/kit_isle/greybox/gb_lamplighters_stair.gd"),
 	"coliseum_pit":preload("res://scripts/kit_isle/greybox/gb_coliseum_pit.gd"),
+	"city_landing":preload("res://scripts/kit_isle/greybox/gb_city_landing.gd"),
 	"editor_hill":preload("res://scripts/kit_isle/greybox/au_editor_hill.gd"),
 	"editor_mountain":preload("res://scripts/kit_isle/greybox/au_editor_mountain.gd"),
 	"editor_tarn_peak":preload("res://scripts/kit_isle/greybox/au_editor_tarn_peak.gd"),
@@ -39,6 +40,9 @@ const WORLD := {
 	"face":"under",
 	"lamplighters_stair":"under",
 	"coliseum_pit":"under",
+	# The underground layers' start isle (LayerPlan `_base_isle`): never
+	# drawn into a pool (layer-round14-city-layers.md).
+	"city_landing":"base",
 }
 
 ## The world of a pool id or slug ("gb_" optional): "under" or "sky".
@@ -81,6 +85,9 @@ static func has(id: String) -> bool:
 ## Whether a forced plan lacks one (its isles' ids).
 static func missing(plan: Dictionary) -> bool:
 	if not forced(plan.get("knobs",{})): return false
+	# One the knob names, not the base (an underground layer's base is the
+	# city landing, a greybox motif too).
+	var asked := wanted(plan.get("knobs",{}))
 	for isle: Dictionary in plan.isles:
-		if has(str(isle.id)): return false
+		if str(isle.get("role","")) != "base" and asked.has(str(isle.id).trim_prefix("gb_")): return false
 	return true

@@ -58,6 +58,11 @@ const DIRS := [Vector2i(1,0),Vector2i(-1,0),Vector2i(0,1),Vector2i(0,-1)]
 ## the walker's view, to watch it climb across a gulf. `--knob=spawn_<rule>=`
 ## over these.
 const SPAWN := {"far_share":0.3}
+## Underground, by the danger (0 the first region, 1 the fourth): a bare
+## head's body comes back after this long (s, BodySpawner `wait`), and this
+## share of its comings are far ones.
+const DANGER_WAIT := Vector2(6.0,1.0)
+const DANGER_FAR := Vector2(0.2,0.45)
 
 static var _build := {}
 static var _build_lock := Mutex.new()
@@ -82,6 +87,13 @@ static func knobs(n: Dictionary) -> Dictionary:
 ## The spawn rules for a plan's knobs: SPAWN, then its `spawn_<rule>`s.
 static func spawn_rules(plan_knobs: Dictionary) -> Dictionary:
 	var out := SPAWN.duplicate()
+	# Danger by height (scripts/roguelike/layer_worlds.gd `danger`): higher
+	# up a body comes back sooner once its head is bare, and more often in
+	# view across a gulf (the climb gets watched).
+	var d := LayerPlan.LayerWorlds.danger(plan_knobs)
+	if LayerPlan.LayerWorlds.world_of(plan_knobs) == "under":
+		out.wait = lerpf(DANGER_WAIT.x,DANGER_WAIT.y,d)
+		out.far_share = lerpf(DANGER_FAR.x,DANGER_FAR.y,d)
 	for key: String in plan_knobs:
 		if key.begins_with("spawn_"): out[key.trim_prefix("spawn_")] = float(plan_knobs[key])
 	return out

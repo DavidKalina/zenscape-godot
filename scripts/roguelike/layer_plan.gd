@@ -87,9 +87,22 @@ static func draw_pool(knobs := {}) -> Array:
 	var asked := str(knobs.get("pool","motifs")).strip_edges()
 	if not asked in ["classic","motifs","","all"]: return _listed_pool(asked)
 	var world := LayerWorlds.world_of(knobs)
+	# The motifs the `greybox` knob names come in either world (to force one
+	# into a layer for a look: `--knob=greybox=face`).
+	var wanted := Greybox.entries(knobs)
+	var out: Array
 	if world == "under":
-		return Greybox.entries({"greybox":"all"}).filter(func(p: Array) -> bool: return Greybox.world_of(str(p[0])) == "under")
-	return _named_pool(asked,knobs).filter(func(p: Array) -> bool: return Greybox.world_of(str(p[0])) == world)
+		out = Greybox.entries({"greybox":"all"}).filter(func(p: Array) -> bool: return Greybox.world_of(str(p[0])) == "under")
+	else:
+		# The named pool as it is without the knob (the knob's motifs added
+		# below): "motifs" with the knob once meant only those, a pool too
+		# narrow for a layer once the city's motifs went underground.
+		var bare := knobs.duplicate()
+		bare.erase("greybox")
+		out = _named_pool(asked,bare).filter(func(p: Array) -> bool: return Greybox.world_of(str(p[0])) == world)
+	for w: Array in wanted:
+		if not out.any(func(p: Array) -> bool: return str(p[0]) == str(w[0])): out.append(w)
+	return out
 
 static func _named_pool(asked: String, knobs: Dictionary) -> Array:
 	match asked:
@@ -148,6 +161,20 @@ const TURN_MOST := 30.0
 ## isles within HOOD_BAND of its first.
 const BAND := 520.0
 const HOOD_BAND := 220.0
+## The city's (underground): its places are hillsides 150-250 m across, so
+## a neighbourhood of two spreads further (layer-round14-city-layers.md).
+const CITY_BAND := Vector2(1100.0,420.0)
+
+## How mean a layer's crossings are (0-1): underground the danger by height
+## (LayerWorlds `danger`) up to MEAN_MOST; the sky's as they were (0).
+const MEAN_MOST := 0.7
+static func mean(knobs: Dictionary) -> float:
+	if LayerWorlds.world_of(knobs) != "under": return 0.0
+	return LayerWorlds.danger(knobs)*MEAN_MOST
+
+## [BAND, HOOD_BAND] for a layer's knobs.
+static func band(knobs: Dictionary) -> Vector2:
+	return CITY_BAND if LayerWorlds.city(knobs) else Vector2(BAND,HOOD_BAND)
 ## The void: this far under the lowest solid of any isle.
 const VOID_UNDER := 25.0
 ## How much a placing that stands over another isle (a soft fall) is
@@ -171,6 +198,10 @@ const RUNES := 5
 ## apart (m, flat, rect to rect).
 const HOODS := Vector2i(2,3)
 const HOOD_THREE := 0.3
+## The city's neighbourhoods (underground): at least CITY_HOODS.x, each
+## CITY_HOOD places.
+const CITY_HOODS := Vector2i(2,3)
+const CITY_HOOD := 2
 const HOOD_APART := 60.0
 ## A gulf: its width rim lip to rim lip (m, flat) rolled in GULF (a pinned
 ## width clamped to GULF_LIMITS), rising GULF_RISE across; its rims want
@@ -335,7 +366,7 @@ static func make(seed_value: int, knobs := {}) -> Dictionary:
 ## by region) say the layer's world (scripts/roguelike/layer_worlds.gd);
 ## `--world=` and `--under-regions=` are the same as their knobs.
 const KNOBS := {"hoods":0,"gulf":0.0,"ride":"","rise":0.0,"arrows":-1,"viaduct":-1,"heads":-1,"bodies":1,"alternate":1,"ring":0,"greybox":"","greybox_force":1,"pool":"motifs","one_way":-1,
-	"region":0,"under_regions":LayerWorlds.UNDER_REGIONS,"world":""}
+	"region":0,"under_regions":LayerWorlds.UNDER_REGIONS,"world":"","sky_kit":0,"danger":-1.0,"city_ring":0}
 const KNOB_CHOICES := {"hoods":[0,1,2,3],"ride":["","serpent","ferry"],"pool":["motifs","classic"]}
 
 ## `--knob=key=value` arguments as the layer's knobs (unknown keys warned).
@@ -421,6 +452,14 @@ static func _make_once(seed_value: int, attempt: int, knobs: Dictionary) -> Dict
 	var sizes: Array[int] = []
 	for h in range(hoods): sizes.append(rng.randi_range(1,2) if h == 0 else (3 if rng.randf() < HOOD_THREE else 2))
 	for h in range(hoods): sizes[h] += int(k_all.get("hood_more",0))
+	# The city: each neighbourhood CITY_HOOD of its places (two hillsides
+	# joined by column tops or a causeway), so a layer's way up passes
+	# through four to six of them: about ten minutes (layer-round14-city-
+	# layers.md). The `hoods` knob still pins how many.
+	if LayerWorlds.city(k_all):
+		if int(k_all.hoods) <= 0: hoods = maxi(hoods,CITY_HOODS.x)
+		sizes.clear()
+		for h in range(hoods): sizes.append(CITY_HOOD)
 	var count := 1
 	for n: int in sizes: count += n
 	var motifs: Array = []
@@ -430,8 +469,7 @@ static func _make_once(seed_value: int, attempt: int, knobs: Dictionary) -> Dict
 	if motifs.size() < count:
 		plan.problems.append("too few motifs drawn")
 		return plan
-	var base := _base_isle()
-	base.sockets = base.own.duplicate()
+	var base := _base_isle(k_all)
 	base.hood = 0
 	plan.isles.append(base)
 	plan.hoods.append([0])
@@ -483,7 +521,8 @@ static func _make_once(seed_value: int, attempt: int, knobs: Dictionary) -> Dict
 	# The route: through each neighbourhood, a gulf to the next.
 	var used := {}
 	var from := 0
-	var traps_left := 1
+	# Underground no Loose Voussoirs (the sky kit's trap).
+	var traps_left := 0 if LayerWorlds.city(k_all) else 1
 	var gulf_n := 0
 	var ride_roll: String = RIDES[rng.randi_range(0,RIDES.size()-1)]
 	var tier := float(k_all.get("tier",0.0))
@@ -520,7 +559,9 @@ static func _make_once(seed_value: int, attempt: int, knobs: Dictionary) -> Dict
 			# The last stands over every other in its neighbourhood (the exit
 			# is on the highest).
 			var least := -INF
-			if last:
+			# (Not in the city: its places climb in themselves, in at the foot
+			# and out at the top, and the gate is the exit chain's.)
+			if last and not LayerWorlds.city(k_all):
 				for i: int in plan.hoods[h]: least = maxf(least,_top_walked(plan.isles[i])+1.0)
 			# A tier (the `tier` knob): the first step of a neighbourhood that
 			# needn't be the trap climbs onto an isle standing over its lowest.
@@ -597,7 +638,7 @@ static func _make_once(seed_value: int, attempt: int, knobs: Dictionary) -> Dict
 	# The highest of its neighbourhood: the exit's isle.
 	var exit_y := _top_walked(plan.isles[from])
 	for i: int in plan.hoods[hoods-1]:
-		if i == from: continue
+		if i == from or LayerWorlds.city(k_all): continue
 		if _top_walked(plan.isles[i]) > exit_y:
 			plan.problems.append("%s stands higher than the exit" % plan.isles[i].id)
 			return plan
@@ -639,6 +680,10 @@ static func _substitute(plan: Dictionary, groups: Array, greed: Dictionary, h: i
 		if hero and probe.role() == "hero": continue
 		pool.append(p)
 	if pool.is_empty(): return {}
+	# Underground one the layer hasn't got yet, where any is left.
+	if LayerWorlds.world_of(plan.knobs) == "under":
+		var fresh := pool.filter(func(p: Array) -> bool: return int(taken.get(str(p[0]),0)) == 0)
+		if not fresh.is_empty(): pool = fresh
 	var total := 0.0
 	for p: Array in pool: total += float(p[2])
 	var roll := rng.randf()*total
@@ -664,9 +709,22 @@ static func _draw(count: int, rng: RandomNumberGenerator, repeats := 1, knobs :=
 	var picks: Array = []
 	var pool: Array = draw_pool(knobs).duplicate()
 	var forced := Greybox.forced(knobs)
+	var asked := Greybox.wanted(knobs)
+	# Underground every city motif once before any comes again (a fresh
+	# round of the pool when it runs dry), so a layer holds as many
+	# different places as fit (layer-round14-city-layers.md).
+	var under := LayerWorlds.world_of(knobs) == "under"
+	var round_left: Array = pool.duplicate()
 	while picks.size() < count and not pool.is_empty():
 		var from: Array = pool
-		if forced and picks.is_empty(): from = pool.filter(func(p: Array) -> bool: return Greybox.has(str(p[0])))
+		if under:
+			round_left = round_left.filter(func(p: Array) -> bool: return pool.has(p))
+			if round_left.is_empty(): round_left = pool.duplicate()
+			from = round_left
+		# The first draw a motif the `greybox` knob forces.
+		if forced and picks.is_empty():
+			var named := pool.filter(func(p: Array) -> bool: return asked.has(str(p[0]).trim_prefix("gb_")))
+			if not named.is_empty(): from = named
 		var total := 0.0
 		for p: Array in from: total += float(p[2])
 		var roll := rng.randf()*total
@@ -675,6 +733,7 @@ static func _draw(count: int, rng: RandomNumberGenerator, repeats := 1, knobs :=
 			if roll <= 0.0 or k == from.size()-1:
 				var i := pool.find(from[k])
 				picks.append(pool[i])
+				round_left.erase(pool[i])
 				var probe: RefCounted = (pool[i][1] as Script).new()
 				drawn[pool[i][0]] = int(drawn.get(pool[i][0],0))+1
 				if not probe.family() and int(drawn[pool[i][0]]) >= _most(str(pool[i][0]),repeats,knobs): pool.remove_at(i)
@@ -717,10 +776,37 @@ static func _key(isle: int, rim: String) -> String:
 
 # --- The isles ----------------------------------------------------------------------
 
-## The aqueduct isle as an isle record (stood at the origin).
-static func _base_isle() -> Dictionary:
-	return {"key":BASE,"id":BASE,"script":null,"seed":-1,"knobs":{},"role":"base","offset":Vector3.ZERO,
+## The base as an isle record: the aqueduct isle (stood at the origin), or
+## underground the city landing (scripts/kit_isle/greybox/gb_city_landing.gd)
+## with its crown's middle at MIDDLE (layer-round14-city-layers.md). Its
+## sockets in the world.
+static func _base_isle(knobs := {}) -> Dictionary:
+	if LayerWorlds.city(knobs):
+		var slug := LayerWorlds.UNDER_BASE
+		var rng := RandomNumberGenerator.new()
+		rng.seed = 1
+		var land := _motif_isle(["gb_"+slug,Greybox.MOTIFS[slug],0.0],rng)
+		land.key = "gb_"+slug
+		land.role = "base"
+		land.offset = MIDDLE
+		land.sockets = []
+		for s: Dictionary in land.own: land.sockets.append(_world(s,MIDDLE))
+		return land
+	var aq := {"key":BASE,"id":BASE,"script":null,"seed":-1,"knobs":{},"role":"base","offset":Vector3.ZERO,
 		"own":LayerPieces.sockets(BASE).filter(func(s: Dictionary) -> bool: return s.kind == "rim"),"occ":LayerPieces.occupancy(BASE),"sockets":[]}
+	aq.sockets = (aq.own as Array).duplicate()
+	return aq
+
+## Whether `plan`'s base is the aqueduct isle (the study's own land), not a
+## motif stood like the others.
+static func aqueduct_base(plan: Dictionary) -> bool:
+	return (plan.get("isles",[]) as Array).is_empty() or str(plan.isles[0].id) == BASE
+
+## The base's spots of `kind` (world): the aqueduct's baked ones, else the
+## base isle's own sockets.
+static func base_spots(plan: Dictionary, kind: String) -> Array:
+	if aqueduct_base(plan): return LayerPieces.sockets(BASE).filter(func(s: Dictionary) -> bool: return s.kind == kind)
+	return (plan.isles[0].sockets as Array).filter(func(s: Dictionary) -> bool: return s.kind == kind)
 
 ## A pool pick as an isle record, a family configured from `rng` (its own
 ## seed and knobs), its sockets read in its own frame (`own`).
@@ -990,7 +1076,7 @@ static func _step(plan: Dictionary, from: int, m: Dictionary, kinds: Array, bran
 		# A climb comes up onto clear ground (its bridge's anchor and him).
 		if kind == "climb" and float(rb.run_up) < CLIMB_RUN_UP: continue
 		var lip_a: Vector3 = (ra.at as Vector3)+off_a+fa*float(ra.lip)
-		var shape := _shape(kind,lip_a,dir,rng)
+		var shape := _shape(kind,lip_a,dir,rng,mean(plan.knobs))
 		if shape.is_empty(): continue
 		var lip_b: Vector3 = shape.b
 		var at_b: Vector3 = lip_b-fb*float(rb.lip)
@@ -1004,7 +1090,7 @@ static func _step(plan: Dictionary, from: int, m: Dictionary, kinds: Array, bran
 			continue
 		# Kept within the band round the base.
 		var mid := _rect(placed).get_center()
-		if mid.distance_to(Vector2(MIDDLE.x,MIDDLE.z)) > BAND or mid.distance_to(anchor) > HOOD_BAND:
+		if mid.distance_to(Vector2(MIDDLE.x,MIDDLE.z)) > band(plan.knobs).x or mid.distance_to(anchor) > band(plan.knobs).y:
 			why.band = why.get("band",0)+1
 			continue
 		if not _apart(plan,placed):
@@ -1068,8 +1154,8 @@ static func _world(s: Dictionary, off: Vector3) -> Dictionary:
 ## apart, so most edges are made of parts: a run of stones up to a landing
 ## (a floating slab), then a rope bridge or the trap from it; or a long run
 ## of stones.
-static func _shape(kind: String, a: Vector3, dir: Vector3, rng: RandomNumberGenerator) -> Dictionary:
-	var out := {"stones":[],"bridges":[],"trap":{},"parts":[],"path":[]}
+static func _shape(kind: String, a: Vector3, dir: Vector3, rng: RandomNumberGenerator, meanness := 0.0) -> Dictionary:
+	var out := {"stones":[],"bridges":[],"trap":{},"parts":[],"path":[],"mean":meanness}
 	var chain := "%s_%d_%d" % [kind,roundi(a.x),roundi(a.z)]
 	var p := a
 	match kind:
@@ -1141,9 +1227,14 @@ static func _lay_stones(out: Dictionary, p: Vector3, dir: Vector3, n: int, hard:
 	# branch's nearer it); each stone long enough that the pump (a jump
 	# straight off a landing, as a runner chains them) still comes down on
 	# the next, not past it.
-	var gap := reach(h)*(rng.randf_range(GAP_HARD.x,GAP_HARD.y) if hard else rng.randf_range(GAP_SHARE.x,GAP_SHARE.y))
+	var share := rng.randf_range(GAP_HARD.x,GAP_HARD.y) if hard else rng.randf_range(GAP_SHARE.x,GAP_SHARE.y)
+	# Meaner higher up (`mean`): the route's gaps eased toward the greed
+	# branch's, the stones a little smaller.
+	var meanness := float(out.get("mean",0.0))
+	if not hard and meanness > 0.0: share = lerpf(share,rng.randf_range(GAP_HARD.x,GAP_HARD.y),meanness)
+	var gap := reach(h)*share
 	gap = maxf(gap,clears(h)+0.3)
-	var length := maxf(stone_length(hard),pump_reach(h)*PUMP_ROOM-gap)
+	var length := maxf(lerpf(stone_length(hard),stone_length(true),meanness*0.6),pump_reach(h)*PUMP_ROOM-gap)
 	var yaw := atan2(-dir.z,dir.x)
 	var first: int = (out.stones as Array).size()
 	for k in range(n):
@@ -1386,7 +1477,7 @@ static func _gulf(plan: Dictionary, hood_from: int, m: Dictionary, hood_to: int,
 		placed.offset = off_b
 		placed.hood = hood_to
 		var mid := _rect(placed).get_center()
-		if mid.distance_to(Vector2(MIDDLE.x,MIDDLE.z)) > BAND:
+		if mid.distance_to(Vector2(MIDDLE.x,MIDDLE.z)) > band(plan.knobs).x:
 			why.band = why.get("band",0)+1
 			continue
 		if plan.isles.any(func(o: Dictionary) -> bool: return clash(o,placed)):

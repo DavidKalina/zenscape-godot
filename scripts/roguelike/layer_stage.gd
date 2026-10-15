@@ -30,6 +30,8 @@ const LayerPlan = preload("res://scripts/roguelike/layer_plan.gd")
 const LayerRides = preload("res://scripts/roguelike/layer_rides.gd")
 const LayerEnemies = preload("res://scripts/roguelike/layer_enemies.gd")
 const LayerGreybox = preload("res://scripts/roguelike/layer_greybox.gd")
+const CityCrossings = preload("res://scripts/roguelike/city_crossings.gd")
+const CityFires = preload("res://scripts/city_kit_fires.gd")
 
 const GATE := Color(1.0,0.82,0.45)
 const RUNE_SIZE := 0.7
@@ -74,14 +76,21 @@ func setup(scene: Node3D, layer: Dictionary, was: Node) -> void:
 	plan = layer
 	inner = was
 	var seed_value: int = layer.seed
-	# The stones of every edge, one node.
-	var all: Array = []
-	for e: Dictionary in layer.edges: all.append_array(e.stones)
-	if not all.is_empty():
-		stones = Art.floating_stones(seed_value%100000+500,all)
+	# The city (underground): every crossing in the city's basalt, column
+	# tops and causeways (scripts/roguelike/city_crossings.gd).
+	if LayerPlan.LayerWorlds.city(layer.knobs):
+		stones = CityCrossings.build(layer.edges,seed_value%100000+500)
 		stones.name = "Stones"
 		add_child(stones)
-	_bridges(seed_value)
+	else:
+		# The stones of every edge, one node.
+		var all: Array = []
+		for e: Dictionary in layer.edges: all.append_array(e.stones)
+		if not all.is_empty():
+			stones = Art.floating_stones(seed_value%100000+500,all)
+			stones.name = "Stones"
+			add_child(stones)
+		_bridges(seed_value)
 	# The traps, stepped round the motor.
 	traps = TrapField.new()
 	traps.study = scene
@@ -210,6 +219,30 @@ func _gate() -> void:
 	beam.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	beam.position = Vector3(0.0,BEAM*0.5,0.0)
 	gate.add_child(beam)
+	if LayerPlan.LayerWorlds.city(plan.knobs): _city_gate(column,faint)
+
+## The way up, underground (layer-round14-city-layers.md): it has to read
+## from across the layer in the dark. Its beam CITY_BEAM tall and brighter,
+## a warm light on the threshold, and a crown cresset lit either side (the
+## city's own fires: the player knows a lit fire means a way on).
+const CITY_BEAM := 320.0
+const CITY_BEAM_ALPHA := 0.32
+func _city_gate(column: CylinderMesh, faint: StandardMaterial3D) -> void:
+	column.height = CITY_BEAM
+	column.top_radius = 3.2
+	column.bottom_radius = 1.0
+	faint.albedo_color = Color(GATE,CITY_BEAM_ALPHA)
+	faint.disable_fog = true
+	(gate.get_child(gate.get_child_count()-1) as Node3D).position = Vector3(0.0,CITY_BEAM*0.5,0.0)
+	var light := OmniLight3D.new()
+	light.name = "GateLight"
+	light.light_color = GATE
+	light.light_energy = 3.0
+	light.omni_range = 22.0
+	light.position = Vector3(0.0,2.4,0.0)
+	gate.add_child(light)
+	for side: float in [-1.0,1.0]:
+		CityFires.cresset(gate,Transform3D(Basis.IDENTITY,Vector3(side*(GATE_WIDE*0.5+1.6),0.0,0.6)),{"size":"crown","seed":int(plan.seed)+int(side),"name":"GateFire%d" % int(side+1.0),"lit":true,"draw":1.0,"barge":false})
 
 ## Whether feet at `feet` (world) are through the gate: within its width
 ## of it, on its level.

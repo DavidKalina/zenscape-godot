@@ -105,6 +105,11 @@ static func lay(plan: Dictionary, attempt: int) -> bool:
 	var want_v := int(knobs.get("viaduct",-1))
 	var roll := rng.randf()
 	plan.viaduct = {}
+	# The city (underground): no gust arrows and no Broken Viaduct, the sky
+	# kit's (layer-round14-city-layers.md); `--knob=sky_kit=1` brings them.
+	if LayerPlan.LayerWorlds.city(knobs):
+		plan.arrows = []
+		return true
 	if want_v > 0 or (want_v < 0 and roll < VIADUCT_CHANCE):
 		if not _viaduct(plan,rng) and want_v > 0: return false
 	_arrows(plan,rng)

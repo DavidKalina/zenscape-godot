@@ -191,8 +191,7 @@ static func _make_once(seed_value: int, attempt: int, knobs: Dictionary) -> Dict
 			break
 	motifs.erase(greed)
 	if attempt > 0: LayerPlan._shuffle(motifs,rng)
-	var base := LayerPlan._base_isle()
-	base.sockets = base.own.duplicate()
+	var base := LayerPlan._base_isle(k_all)
 	base.hood = 0
 	plan.isles.append(base)
 	# The ring: k = 0 the low isle, the gate isle across from it.
@@ -667,6 +666,8 @@ static func _links(plan: Dictionary, order: Array, used: Dictionary, rng: Random
 				var a: int = order[(k+d+n)%n]
 				if reached.has(a): froms.append(a)
 			var rides: Array = [ride_next,"serpent" if ride_next == "ferry" else "ferry"]
+			# The city: the serpent only (no ferry underground).
+			if LayerPlan.LayerWorlds.city(plan.knobs): rides = ["serpent"]
 			var got := {}
 			# A ring neighbour first (clear of the other rides, then not; then
 			# its rims turned further off the line), the base last.

@@ -92,6 +92,12 @@ func setup(scene: Node3D, layer: Dictionary) -> void:
 	var ground := _ground(space,spawn,1.5)
 	if ground == INF: ground = spawn.y-0.2
 	start = Vector3(spawn.x,ground,spawn.z)
+	# A city layer's base is the landing itself (its paving and its lit
+	# fires): none of the ruin kit's stones round him (layer-round14-city-
+	# layers.md).
+	if preload("res://scripts/roguelike/layer_worlds.gd").city(layer.get("knobs",{})):
+		start.y += 0.05
+		return
 	# The landing: the biggest that lies flat enough.
 	for scale: float in LANDING_SCALES:
 		var half := RuinKit.FLOOR.x*0.5*scale
