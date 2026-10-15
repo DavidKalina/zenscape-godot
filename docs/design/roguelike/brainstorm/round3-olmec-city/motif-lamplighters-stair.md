@@ -229,3 +229,149 @@ climbs; the hush gallery's hide. The layer: `--knob=greybox=...` fails on
 this base for every greybox (run_layer.gd:238, layer.spawn has no face,
 sunken_giant too), so the motif is not seen in a generated layer; plain
 sprawl seed 1 smokes clean. No tests run or added.
+
+## Polish (round 1)
+
+Branch `polish/city-lamplighters_stair`, in place in
+`scripts/kit_isle/greybox/gb_lamplighters_stair.gd` (all new land and stone
+is LAYOUT data: `spurs`, `benches`, `shoulders`, `slumps`, `knolls`,
+`stones`).
+
+**What changed.** The lit Z, the fuse, the Keeper's beat and every spot are
+as they were. The hillside under them was remade:
+- **Scarps.** They now have noses and bays (`spurs`) instead of long
+  straight walls. Five blocks of the shelf above have slumped part way down
+  (`benches`), which breaks a scarp into two faces. The lips are rounded
+  over in turf for 12 m (`shoulders`), so a scarp reads as hillside with a
+  band of rock in it. Under every bench and shoulder the talus is capped so
+  the sheer band stays at least 5.3 m (`scratch/ls_audit.gd` walks every
+  scarp profile). The talus height varies more.
+- **Shelves.** They swell more (±2.1 m) and carry eight turf knolls. The
+  foot meadow's bay edge, the lower shelf's east end and two summit edges
+  have slumped a set-off or two off the void (`slumps`). Everything walked
+  flat stays flat: the beat, the hop off the tower, the drum steps' top,
+  the runnel's upper run and the fuse port were added to `keep_points`.
+- **The dark way's ragged steps.** These were contour stripes. Now their
+  line wanders and their depth varies, and in patches a step face has
+  slumped to a 31° turf slope you walk up. Each step is still a set-off.
+- **Stone sunk in the land** (`_stones`, one GiantStone mesh and one body
+  of 34 shapes). A toppled column's drums and capital lie on the foot
+  meadow. There is a block on the knoll and a leaning stela by the arrival.
+  Blocks have fallen from the benches onto the talus. A lintel lies across
+  the lower-shelf knoll, and there are drums by the east slump, a stela on
+  the upper shelf and blocks on the summit.
+- **The votive pier.** It stands in a turf mound on three sides (its
+  ladder face is clear). Its twin is a stump broken a third of the way up,
+  with its top thrown askew, and two pieces of the twin lie over the void
+  edge. The pier's cap is shifted on its crown, and stones are banked at
+  its foot. The pier itself is the kit's `city_niches` (unchanged).
+- **The scarp-1 ledge was dropped.** The Keeper leapt down onto it and
+  stuck.
+- **Grass.** `flora_site` rays span the whole hill (summit +60 down to the
+  foot −10) at tufts 3.2. `cliff_drop` is 0.55, so the rounded lips don't
+  fill with cliff prisms.
+
+**Stills** (`captures/shots/`, gitignored):
+- Before: `ls_p0_arrival_haze.png`, `ls_p0_arrival_torch.png`,
+  `ls_p0_wide_haze.png`, `ls_p0_west_haze.png`, `ls_p3_scarp0.png` (mid).
+- After (settle 2400, grass grown): `ls_after_arrival_haze.png`,
+  `ls_after_arrival_torch.png`, `ls_after_wide_haze.png`,
+  `ls_after_wide_torch.png`, `ls_after_mid_haze.png`,
+  `ls_after_pier_haze.png`, `ls_after_upper_haze.png`.
+- Sheets: `ls_torch_before_after.png`, `ls_after_sheet_haze.png`,
+  `ls_p6_sheet.png` (west).
+- Sundered gorge reference: `ls_gorge_haze_three.png`.
+
+**Routes**, through the real input with the Keeper off
+(`scratch/ls_routes.gd`; its `leg` now jumps on lost headway and
+`climb_to` climbs up from a hang):
+
+| Route | Before | After |
+|---|---|---|
+| Processional | 56.7 s | 55.8 s |
+| Dark way | 85.2 s | 82.6 s |
+| Drum (shelf set) | 61.8 s | 61.5 s |
+| Tower to the upper shelf | 45.0 s | 44.2 s |
+
+**Proven through the input** (headless, the Keeper live):
+- **The fuse lure** (`scratch/ls_lure.gd`). The great cresset lights at
+  16 s. He turns to the fire twice and never spots you (nearest 37 m) while
+  you climb stairs 2 and 3. In the dark control he spots you, pounces and
+  closes to 2.8 m. To light the port the walker has to push into the wall:
+  the scarp's leaning cliff foot holds him 1.2 m off the face.
+- **The fault breaking under him** (`scratch/ls_fault2.gd`, 3/3). Climb
+  the plinth of the dead cresset by stair 2's foot to light it, then step
+  away. Its fire calls him off his beat and down stair 2, and its fault
+  landing drops him into the chamber (about 48 s). Being chased down the
+  stair does not do it: he doesn't follow past the head
+  (`scratch/ls_fault.gd`). The cresset is the lure.
+- **The spire** (`scratch/ls_climbs.gd --which=spire`). A hop across the
+  gap, then 8 glyph steps and the cup, about 11 s with no falls. Each step
+  is a running jump round the shaft at the next step's lip, and the crown
+  lights.
+- **The votive alcove** (`--which=alcove`). Up the 7 shelves into the
+  alcove in about 11 s. The refuge reads him as inside, and the rare is
+  1.1 m off.
+- **The hush gallery hide** (`--which=hush`). He sees you east of stair 3's
+  foot and hunts. You run round the foot and through the slit. He scopes
+  and seeks from about 40 m, drops the hunt at 16 to 17 s, and never swats.
+- **The drum launch with no hand placement** (`scratch/ls_drum2.gd`). The
+  chain is: light the fuse, climb the corbels, wait on the lip, step onto
+  the court, and back off when he is under 8.5 m to invite his pounce.
+  Not reliable. Over 9 headless tries his pounce launched the slab 3 times
+  and landed the wanderer clean on the drum shelf twice (34 s and 49 s; one
+  of those after 3 swats). On the final build it is 0 of 4,
+  deterministically: he hunts him from the runnel's light, comes to about
+  6 m, scopes and loses him, and he ends down in the court's pit. The
+  launch itself works when he pounces. Drawing the pounce out of him is
+  what needs a player's nerve, or a tuned pounce range.
+
+**Smoke.**
+- The yard is clean in haze and in torch. It once threw a dummy-renderer
+  PagedAllocator error at exit; two reruns were clean.
+- `run_layer` is clean for sprawl seed 1 and ring seed 2 (`--world=under`)
+  and for sprawl seed 3, which places the motif.
+
+**Budget.** No model; GiantStone blocks only.
+
+| Part | Before | After |
+|---|---|---|
+| Hillside triangles | 55.5k | 56.2k |
+| Cliff prisms | 39.2k | 39.8k |
+| Build | 4.1 s | 5.9 s |
+
+- The sunk stone adds 1.7k triangles and 34 shapes.
+- The extra build time is the richer `ground()` (spurs, benches, shoulders,
+  slumps, knolls, the mound) evaluated about half a million times. It
+  would go if the ground were sampled once onto a grid.
+- Applies from model-budget.md: vertex grime on the blocks (free) and
+  visibility ranges on the far isle (as before). The 34 stones could share
+  a visibility range past about 120 m, saving roughly 1.7k triangles at
+  range (small).
+
+**Still rough.**
+- The pier is still the kit's plain coursed block. The askew cap barely
+  shows from the ground, and it needs a kit change (a broken crown,
+  hanging growth) to really read.
+- There is no hanging growth on the scarps. RuinGrowth wants a RuinKit
+  Build, so it's a STAND-IN ask: a "lip curtain" kit helper for KitLand
+  scarps.
+- The island's west side under the summit is still a tall sheer slab from
+  the void.
+- The drum chain is not reliable. He often scopes at 6 m and doesn't
+  pounce, or swats first.
+
+**Making the dark way richer** (the routes run 45 to 83 s against the 2 to
+4 minute target):
+- Put the hush gallery and the votive alcove on the dark way's line, as
+  places you must pass through rather than past. For example, the goat
+  climb could start inside the hush hall's side passage.
+- Add a second dead cresset on the west steps that lights the way but calls
+  him to the upper shelf's west end. That gives a reason to go dark.
+- Use the wanderer-only refuges as checkpoints, with rune_line pickups
+  between them.
+- Gate the summit run with a break you trigger (a chocked slab, a
+  plug-stone), so the slow way ends in a choice.
+- Most of the time would come from height. A fourth shelf or a longer goat
+  climb with narrow treads over the void would add a minute without
+  padding.
