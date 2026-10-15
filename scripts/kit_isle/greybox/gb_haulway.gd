@@ -156,7 +156,7 @@ const LAYOUT := {
 	"rim_in":Vector2(-40.0,22.0),
 	"rim_out":Vector2(185.0,12.0),
 	# The Olmecs (STAND-IN for riders): one waits on the pier's capital, one
-	# walks B's cradle. Beats (x, z).
+	# walks B's terrace past the cradle. Beats (x, z).
 	"olmecs":{"pier":[Vector2(71.5,0.0),Vector2(74.0,0.0),Vector2(76.5,0.0)],"b":[Vector2(159.0,-3.0),Vector2(164.0,1.0),Vector2(159.0,4.0)]},
 }
 
@@ -525,7 +525,7 @@ func warm() -> void:
 	_computed()
 
 func build_cost() -> int:
-	return 0 if grey() else 500
+	return 0 if grey() else 1000
 
 var pieces := {}
 

@@ -264,3 +264,155 @@ still: hawsers about 16k, pier about 1.9k, houses about 2k, stones about
   beam.
 - Vertex-colour grime is already used.
 - Parallax, bones, and sculpt-and-bake don't apply.
+
+## Polish (round 4)
+
+A dressing pass on the Haul-Way, in place in
+`scripts/kit_isle/greybox/gb_haulway.gd`. `--haul-grey` builds the grey
+boxes instead, for A/B. It is not in the yard's `--grey` table
+(`studies/motif_yard.gd` GREY_FLAGS, `tools/harness/chain.gd`), so pass the
+flag itself. The machine (`haulway_sledge.gd`) and the `motor.mover`
+rewiring are unchanged; only the machine's numbers in LAYOUT moved. One new
+kit file: `scripts/kit_isle/hanging_roots.gd`.
+
+**The gulf, longer and deeper.** The user's read was that the isles were
+not far enough apart.
+
+| | Before | After |
+|---|---|---|
+| Lip to lip | 100 m | 140 m (A 4 to B 143.4) |
+| Docked decks' middles | 84 m | 124 m |
+| B's cradle under A's | 17.1 m | 24.1 m |
+| Pier (x, capital) | 54, -12.8 | 74, -19.3 |
+| Hawsers | 108 m, sag 9 | 148 m, sag 12 |
+| Ride | 3.2 m/s, 30 s, cycle 76.5 s | 4.0 m/s, 36 s, cycle 88 s |
+| Slide | 12 m/s, dies at x 83 | 12.2 m/s, dies at x 107.9 |
+
+- The hawser tilt keeps its shape: 27° at A, 11° at the pier, flat at
+  x 118, then about 7° up to B.
+- The slide still carries well past the pier. After it dies, he walks
+  about 40 m up the back to B's lintel.
+- B's lip was pulled to x 143.4, a 0.4 m gap from the docked deck. The
+  motor drops a walker into any crack, so it is a hop.
+- B's Olmec walks the terrace (x 159-164) at its own ground. On the
+  cradle floor it spawned inside the shoulder and fell, a bug that was
+  there before this round.
+
+**A, a quarry-cut headland.**
+- Every bench line and every step of the shore's fall wanders on its own
+  (`_cut`). Benches pinch into double cut faces and widen into shelves.
+- In patches a line is gone: a bench has slumped into the one below,
+  leaving a cross step where the patch ends.
+- Some faces have slumped to rounded scree.
+- Each bench's lip, and the rim's lip over the pit, is rounded over in
+  turf (`pit` knobs).
+- Four rough spoil heaps (`spoil`) with rubble on them.
+- A great half-dressed slab is sunk where it slid across two benches, its
+  rough end unworked.
+- Three wedge-split blocks, their wedges still in the split.
+- The grass is thicker (`tufts` 6).
+- I tried rounding the turf at the void's edge and dropped it: it made
+  dark notches where the hanging sides meet the turf.
+
+**B, a low green terrace worth arriving at.**
+- The shoulders are held low (`low` 3 set-offs), so B's lintel stands on
+  its two columns. From the docked deck the terrace opens past the empty
+  cradle.
+- Two more knolls.
+- The delivery, laid out on the turf: five dressed pieces of a great head
+  (brow ridges), brow to chin, with one place empty. The last slab is
+  still on its way.
+- The beacon tower's blaze is replaced by a dim cresset on a two-course
+  plinth on the knoll.
+
+**Wear and story.**
+- Hawsers: about 22% of the drum halves are spalled (smaller, nine faces,
+  a paler fresh break). Moss sits on their tops (GiantStone's up-face
+  moss).
+- The pier's capstan collar is in eight stones: one has fallen out and one
+  has slumped. One spoke is snapped short (its stub lies on the capital)
+  and one is gone.
+- Roots (HangingRoots, one MultiMesh) hang from under both shores' turf
+  lips, the capital's ends, the collar and the stepped root into the haze.
+- Lamps are dim, warm crown cressets (beam 1.5, was 2.4).
+
+**Routes.** All were walked through the real input in the yard
+(`scratch/haulway_routes.gd`, `scratch/haulway_chain.gd` with chain.gd
+jitter of ±0.5 m), with `--no-olmec`.
+
+| Route | Result |
+|---|---|
+| Ride | 5/5, carried 36 s, his feet drift 0.072 m, the jump off and back on mid-gulf holds, off at B to the rim out |
+| Slide | 5/5 |
+| Relay | Passes: deck to capital to sledge 1, carried home (drift 0.076 m) |
+| Fender | Knocks an inner-edge rider |
+
+- With the Olmecs on, the ride now fails 0/3 (before this round: 3/3).
+  About 15 m past the pier, the pier Olmec's worn head locks on (tell,
+  inhale) and pulls the rider in the open outer lane off the deck. With
+  only B's Olmec, the ride passes.
+- This is the stand-in threat landing harder on the longer, lower run, not
+  a geometry fault. Tune it (the head's `worn_reach`, or cover on the
+  deck) or keep it as the ride's price.
+
+**In a layer.**
+- `run_layer --world=under --shape=sprawl --seed=1 --knob=greybox=haulway`
+  places it (isle 5, greed). The layer smoke is clean, and the motif and
+  its machine stand (fenders swing).
+- I could not walk a route there. Under `drive.gd` the walker never ticks
+  in an underground run_layer: he takes no stick, and a deck leaves from
+  under him. The Lamplighters' Stair (seed 3) does the same, so this is a
+  harness gap, not this motif's.
+- Plans: sky plans are byte-identical. Underground plans move wherever the
+  Haul-Way is drawn, because its footprint is 40 m longer. Ring seed 3 no
+  longer fits it, and drops it.
+
+**Stills** (`captures/shots/haulway/`, `--underground=haze`):
+- Before: `p0_three`, `p0_lip`, `p0_rim`, `p0_own`.
+- After: `p6_three`, `p6_lip`, `p6_rim`, `p6_own`, plus B from the deck
+  (`p6_b`), B from above (`p6_bhigh`) and the pit's south side
+  (`p6_south`).
+- Reference: `ref3_lamplighters_three`. Side by side:
+  `sheet_before_after.png`.
+
+What the stills show:
+- The three view now reads as a long sag to a far, low shore.
+- B reads as a turf terrace with a colonnaded gate, a lamp on its knoll
+  and the head laid out.
+- Close up, the pit reads as broken quarry benches.
+- From the arrival camera the south benches' faces still read as dark,
+  shard-like slivers (KitLand prisms seen edge-on). That is the weakest
+  view left.
+- The white puffs in some stills are the stand-in Olmecs' dust.
+
+**Model budget** (`docs/art/model-budget.md`; the yard, headless):
+
+| Part | Before | After |
+|---|---|---|
+| A's land | 17.6k tris, 15.1k shapes | 16.1k tris, 13.3k shapes |
+| B's land | 6.1k tris, 3.5k shapes | 4.9k tris, 1.9k shapes |
+| Hawsers | 16.3k tris | 21.6k near tris in 17.6 m runs, plus 2.8k of far tubes |
+| Stones | 1.0k tris, 19 shapes | 3.0k tris, 41 shapes |
+| Roots | none | 6.4k tris (128 strands, one MultiMesh, no shadows) |
+| Pier | 1.9k tris | 2.0k tris |
+| Machine | 1.6k tris | 1.6k tris |
+
+- Import LODs and visibility ranges apply and are used. Each hawser run
+  swaps to a 7-sided tube past 70 m. At the arrival that draws about 8k
+  hawser tris where 16k drew before (estimated at about 0.1 ms a frame).
+  Roots are faded past 140 m.
+- Silhouette geometry applies and is used: spalled drums, the broken
+  collar, the snapped spoke, split blocks, the slab's rough end.
+- Vertex-colour grime applies and is used (GiantStone).
+- Bones, parallax and sculpt-and-bake don't apply.
+- Build: 625 ms before, 1.0-1.2 s after, headless on the Mac;
+  `build_cost` is now 1000. Most of the growth is A's ground function (the
+  wandering bench lines) under KitLand's cliff probes. That is motif
+  GDScript in the kit's callback; a cached height grid or a kernel would
+  win it back.
+
+**Unverified.**
+- Routes in a generated layer (the harness gap above).
+- Haze vs torch differ only in stills, and I shot haze only.
+- No tests were run or added (prototyping). No existing test is known to
+  depend on this motif's numbers.
