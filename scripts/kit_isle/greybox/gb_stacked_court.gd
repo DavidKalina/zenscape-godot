@@ -224,12 +224,29 @@ func brief() -> String:
 func start() -> Vector3:
 	return on("forecourt",Vector2(6.0,float(LAYOUT.forecourt.apothem)-6.0))
 
-## In on F's south edge; out on T's far (north-east) edge.
+## In on F's south edge; out on T's far (north-east) edge. Underground the
+## court is most of the pool (layer-round13-worlds.md), and the generator
+## never turns an isle, so court must join court: more ways in on F's
+## south-east and south-west faces, and out on T's north face and U's
+## north-west one (each crown on a route). A way out north meets a way in
+## south, north-west meets south-east, north-east (the summit's) meets
+## south-west.
 func rims() -> Array:
 	var n := CityKit.hex_dir(int(LAYOUT.east.on_face))
 	var out := on("east",Vector2(n.x,n.z)*(float(LAYOUT.east.apothem)-1.4))
+	var a_f := float(LAYOUT.forecourt.apothem)
+	var se := CityKit.hex_dir(1)
+	var sw := CityKit.hex_dir(5)
+	# The south-west face toward its south corner, between the terraces.
+	var sw_at := Vector2(-46.2,0.0).lerp(Vector2(-23.1,40.0),0.85)*(a_f/40.0)-Vector2(sw.x,sw.z)*1.5
+	var t_n := CityKit.hex_dir(3)
+	var u_nw := CityKit.hex_dir(4)
 	return [
-		{"name":"forecourt","at":on("forecourt",Vector2(6.0,float(LAYOUT.forecourt.apothem)-1.5)),"face":Vector3(0.0,0.0,1.0),"run_up":14.0,"lip":1.0},
+		{"name":"forecourt","at":on("forecourt",Vector2(6.0,a_f-1.5)),"face":Vector3(0.0,0.0,1.0),"run_up":14.0,"lip":1.0},
+		{"name":"forecourt_se","at":on_forecourt(Vector2(se.x,se.z)*(a_f-1.5)),"face":se,"run_up":12.0,"lip":1.0,"way":"in"},
+		{"name":"forecourt_sw","at":on_forecourt(sw_at),"face":sw,"run_up":5.0,"lip":1.0,"way":"in"},
+		{"name":"east_north","at":on("east",Vector2(t_n.x,t_n.z)*(float(LAYOUT.east.apothem)-1.4)),"face":t_n,"run_up":8.0,"lip":1.0,"way":"out"},
+		{"name":"west_crown","at":on("west",Vector2(u_nw.x,u_nw.z)*(float(LAYOUT.west.apothem)-1.4)),"face":u_nw,"run_up":8.0,"lip":1.0,"way":"out"},
 		{"name":"summit","at":out,"face":n,"run_up":10.0,"lip":1.0},
 	]
 
@@ -301,7 +318,35 @@ func flora_site() -> KitFlora.Site:
 	return KitFlora.Site.new(top(),KitLand.wear_of(paths()))
 
 func flora_seed() -> int:
-	return SEED+9
+	return _seed+9
+
+# --- One court of many (the underground layer: layer-round13-worlds.md) ----------------
+## Underground the court is most of the pool, so a layer holds several. The
+## generator never turns an isle and the occupancy is the motif's (one per
+## slug), so the shape stays; `vary` (scripts/roguelike/layer_plan.gd
+## `_motif_isle`, from the isle's own seed) changes what doesn't touch it:
+## the stone's seeds and weathering, the turf caps' ragged edges, the fallen
+## drums' lie, the Keeper's seed, and which of the unlit cressets someone
+## still keeps lit (a lit one draws no Olmec). The yard's court is SEED's.
+var _seed := SEED
+var _wear := 0.0
+var _lit: Array = []
+var _drum_turn := 0.0
+
+func vary(seed_value: int) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_value
+	_seed = SEED+seed_value*97
+	_wear = rng.randf_range(-0.15,0.2)
+	_drum_turn = rng.randf_range(-35.0,35.0)
+	_lit.clear()
+	for k in range((LAYOUT.cressets as Array).size()):
+		if rng.randf() < 0.3: _lit.append(k)
+	knobs = {"look":seed_value,"wear":snappedf(_wear,0.01),"lit":_lit.duplicate()}
+
+## A piece's wear, this court's.
+func _w(w: Variant) -> float:
+	return clampf(float(w)+_wear,0.1,0.95)
 
 ## The worn ways on F (the motif's frame): the arrival to the stair's foot,
 ## and to the tower's steps.
@@ -343,18 +388,18 @@ func build(into: Node3D) -> void:
 	# F: a bare crown, the KitLand turf on it (its west terraces).
 	var fd: Dictionary = LAYOUT.forecourt
 	var fp := place_of("forecourt")
-	var f := CityKit.pillar(SEED+2,float(fd.wear),{"apothem":fd.apothem,"courses":0,"climb":-1,"crown":"bare","depth":fp.y-floor_y})
+	var f := CityKit.pillar(_seed+2,_w(fd.wear),{"apothem":fd.apothem,"courses":0,"climb":-1,"crown":"bare","depth":fp.y-floor_y})
 	f.name = "Forecourt"
 	f.position = fp
 	root.add_child(f)
 	pieces.forecourt = f
 	var a_f := float(fd.apothem)
 	_turf_cap(root,"forecourt",{"ground":func(x: float, z: float) -> float: return forecourt_ground(x,z),"cliffs":Rect2(-a_f*1.2,-a_f*1.2,a_f*1.2,a_f*2.4),
-		"tone":KitLook.turf(int(fd.cap.seed),KitLand.wear_of(_local(paths(),fp)))})
+		"tone":KitLook.turf(int(fd.cap.seed)+_seed-SEED,KitLand.wear_of(_local(paths(),fp)))})
 	# M: the well and its drum stair.
 	var md: Dictionary = LAYOUT.well
 	var mp := place_of("well")
-	var m := CityKit.pillar(SEED+3,float(md.wear),{"apothem":md.apothem,"courses":0,"climb":-1,"crown":"flat","well":CityKit.DRUM_RADIUS,"depth":mp.y-floor_y})
+	var m := CityKit.pillar(_seed+3,_w(md.wear),{"apothem":md.apothem,"courses":0,"climb":-1,"crown":"flat","well":CityKit.DRUM_RADIUS,"depth":mp.y-floor_y})
 	m.name = "Well"
 	m.position = mp
 	root.add_child(m)
@@ -369,7 +414,7 @@ func build(into: Node3D) -> void:
 	for key: String in ["west","east","needle"]:
 		var d: Dictionary = LAYOUT[key]
 		var p := place_of(key)
-		var n := CityKit.pillar(SEED+5+k,float(d.wear),{"apothem":d.apothem,"courses":d.courses,"climb":int(d.get("climb",-1)),"crown":"bare","depth":p.y-floor_y})
+		var n := CityKit.pillar(_seed+5+k,_w(d.wear),{"apothem":d.apothem,"courses":d.courses,"climb":int(d.get("climb",-1)),"crown":"bare","depth":p.y-floor_y})
 		n.name = key.capitalize()
 		n.position = p
 		root.add_child(n)
@@ -403,7 +448,9 @@ func build(into: Node3D) -> void:
 ## `spec` adds to the island's (ground, cliffs, tone).
 func _turf_cap(root: Node3D, key: String, spec: Dictionary) -> void:
 	var d: Dictionary = LAYOUT[key]
-	var cap: Dictionary = d.cap
+	# This court's ragged edge (`vary`; the yard's is SEED's).
+	var cap: Dictionary = (d.cap as Dictionary).duplicate()
+	cap.seed = int(cap.seed)+_seed-SEED
 	var island := {"outline":cap_outline(float(d.apothem),cap),"seed":int(cap.seed),"ground":func(_x: float, _z: float) -> float: return 0.0,
 		"top":0.0,"depth":CityKit.COURSE*0.6,"hang":true,"resample":[60.0,120,48],"tone":KitLook.turf(int(cap.seed)),"cell":2.5}
 	island.merge(spec,true)
@@ -426,7 +473,7 @@ func _drums(root: Node3D) -> void:
 		var r := float(d[1])
 		var length := float(d[2])
 		var at := on_forecourt(d[0])
-		var turn := Basis(Vector3.UP,deg_to_rad(float(d[3])))*Basis(Vector3.FORWARD,PI/2.0)
+		var turn := Basis(Vector3.UP,deg_to_rad(float(d[3])+_drum_turn))*Basis(Vector3.FORWARD,PI/2.0)
 		var xf := Transform3D(turn,at+Vector3.UP*(r-0.25))
 		g.cylinder(xf,r,length,12,0.2,at.y-0.3,0.9)
 		var c := CollisionShape3D.new()
@@ -466,19 +513,19 @@ func live(g: Node) -> void:
 	var tw: Dictionary = LAYOUT.towers
 	var ft := forecourt_tower()
 	ft.origin = g.w(ft.origin)
-	CityFires.tower(fires,ft,{"seed":SEED+20,"name":"ForecourtTower","lit":bool(tw.forecourt.lit),"base":float(tw.forecourt.base)})
-	var summit: Node3D = CityFires.tower(fires,Transform3D(Basis(Vector3.UP,-PI/2.0),g.w(on("east",tw.summit.at))),{"seed":SEED+21,"name":"SummitTower","lit":bool(tw.summit.lit)})
+	CityFires.tower(fires,ft,{"seed":_seed+20,"name":"ForecourtTower","lit":bool(tw.forecourt.lit),"base":float(tw.forecourt.base)})
+	var summit: Node3D = CityFires.tower(fires,Transform3D(Basis(Vector3.UP,-PI/2.0),g.w(on("east",tw.summit.at))),{"seed":_seed+21,"name":"SummitTower","lit":bool(tw.summit.lit)})
 	_still(summit)
-	var needle: Node3D = CityFires.tower(fires,Transform3D(Basis(Vector3.UP,0.4),g.w(place_of("needle"))),{"seed":SEED+22,"name":"NeedleTower","lit":bool(tw.needle.lit),"steps":false,"base":9.0,"beam":3.0})
+	var needle: Node3D = CityFires.tower(fires,Transform3D(Basis(Vector3.UP,0.4),g.w(place_of("needle"))),{"seed":_seed+22,"name":"NeedleTower","lit":bool(tw.needle.lit),"steps":false,"base":9.0,"beam":3.0})
 	_still(needle)
 	var k := 0
 	for c: Array in LAYOUT.cressets:
-		var lit := bool(c[4])
+		var lit := bool(c[4]) or _lit.has(k)
 		var at := on_forecourt(c[1]) if str(c[0]) == "forecourt" else on(str(c[0]),c[1],float(c[2]))
-		CityFires.cresset(fires,Transform3D(Basis.IDENTITY,g.w(at)),{"size":c[3],"seed":SEED+30+k,"name":"Cresset%d_%s" % [k,str(c[0])],"lit":lit,"draw":1.0 if lit else 0.0})
+		CityFires.cresset(fires,Transform3D(Basis.IDENTITY,g.w(at)),{"size":c[3],"seed":_seed+30+k,"name":"Cresset%d_%s" % [k,str(c[0])],"lit":lit,"draw":1.0 if lit else 0.0})
 		k += 1
 	for at: Vector3 in lamp_points():
-		CityFires.cresset(fires,Transform3D(Basis.IDENTITY,g.w(at)),{"size":"crown","seed":SEED+40+k,"name":"Lamp%d" % k,"lit":true,"draw":1.0,"barge":false})
+		CityFires.cresset(fires,Transform3D(Basis.IDENTITY,g.w(at)),{"size":"crown","seed":_seed+40+k,"name":"Lamp%d" % k,"lit":true,"draw":1.0,"barge":false})
 		k += 1
 	# The hub: every Olmec's breaker (the bay, the fault, the cressets).
 	var hub: Node3D = Breakables.new()
@@ -489,7 +536,7 @@ func live(g: Node) -> void:
 	var beat: Array[Vector3] = []
 	for p: Vector2 in kd.beat: beat.append(g.w(on("well",p)))
 	var post: Vector3 = beat[1]
-	var body: Node3D = g.enemy(HeadlessBody,post+Vector3.UP*0.1,kd.face,{"chase":1,"chase_routes":1,"seed":SEED})
+	var body: Node3D = g.enemy(HeadlessBody,post+Vector3.UP*0.1,kd.face,{"chase":1,"chase_routes":1,"seed":_seed})
 	var head: Node3D = g.enemy(InhalerHead,post+Vector3.UP*0.1,kd.face,{})
 	var keeper := Keeper.new()
 	keeper.name = "Keeper_STANDIN"

@@ -50,6 +50,9 @@ const BodySpawner = preload("res://scripts/enemies/body_spawner.gd")
 ## The greybox motifs, opt-in on the `greybox` knob (scripts/kit_isle/
 ## greybox/registry.gd; docs/design/roguelike/greybox-in-generator.md).
 const Greybox = preload("res://scripts/kit_isle/greybox/registry.gd")
+## The run's worlds, under and sky (scripts/roguelike/layer_worlds.gd): a
+## region draws only its own world's motifs.
+const LayerWorlds = preload("res://scripts/roguelike/layer_worlds.gd")
 
 ## The pool: [id, script, weight]. The colonnade spine and the Sundered
 ## gorge weighted up (the user's strongest), the stair to the clouds a
@@ -75,8 +78,20 @@ const KEPT := ["sundered_gorge"]
 ## - a list (comma or "+" separated): any of POOL's ids
 ##   and the greybox slugs (`gb_` optional), e.g.
 ##   `--knob=pool=sundered_gorge+sunken_giant+plumb_well`.
+## The named pools keep to the layer's world (LayerWorlds `world_of`: the
+## registry's WORLD tags, untagged sky): a sky region draws them less its
+## underground motifs, an underground region every underground motif
+## (whichever pool is named: the named pools are the sky's). A list is
+## taken as asked, in either world.
 static func draw_pool(knobs := {}) -> Array:
 	var asked := str(knobs.get("pool","motifs")).strip_edges()
+	if not asked in ["classic","motifs","","all"]: return _listed_pool(asked)
+	var world := LayerWorlds.world_of(knobs)
+	if world == "under":
+		return Greybox.entries({"greybox":"all"}).filter(func(p: Array) -> bool: return Greybox.world_of(str(p[0])) == "under")
+	return _named_pool(asked,knobs).filter(func(p: Array) -> bool: return Greybox.world_of(str(p[0])) == world)
+
+static func _named_pool(asked: String, knobs: Dictionary) -> Array:
 	match asked:
 		"classic":
 			var extra := Greybox.entries(knobs)
@@ -87,6 +102,9 @@ static func draw_pool(knobs := {}) -> Array:
 			return kept+(wanted if not wanted.is_empty() else Greybox.entries({"greybox":"all"}))
 		"all":
 			return POOL+Greybox.entries({"greybox":"all"})
+	return []
+
+static func _listed_pool(asked: String) -> Array:
 	var out: Array = []
 	var greys := PackedStringArray()
 	for word: String in asked.replace(",","+").split("+",false):
@@ -101,6 +119,8 @@ static func draw_pool(knobs := {}) -> Array:
 ## greybox motif once, or `repeats` in the "motifs" pool, which has no
 ## family to fill a layer).
 static func _most(id: String, repeats: int, knobs := {}) -> int:
+	# Underground the pool is thin (one motif today): it fills the layer.
+	if LayerWorlds.world_of(knobs) == "under": return maxi(repeats,LayerWorlds.UNDER_REPEATS)
 	if Greybox.has(id) and str(knobs.get("pool","motifs")) == "classic": return Greybox.MOST
 	return repeats
 const BASE := "aqueduct_isle"
@@ -310,13 +330,27 @@ static func make(seed_value: int, knobs := {}) -> Dictionary:
 ## greybox motifs' ways in and out: -1 (the default) prefers them edge by
 ## edge (`way_score`), 1 only ever takes them (`can_out`, `ins_of`), 0
 ## ignores them.
-const KNOBS := {"hoods":0,"gulf":0.0,"ride":"","rise":0.0,"arrows":-1,"viaduct":-1,"heads":-1,"bodies":1,"alternate":1,"ring":0,"greybox":"","greybox_force":1,"pool":"motifs","one_way":-1}
+## `region` (the run's region, 1 the first; 0 none), `under_regions` (how
+## many from the first are underground) and `world` ("under", "sky", ""
+## by region) say the layer's world (scripts/roguelike/layer_worlds.gd);
+## `--world=` and `--under-regions=` are the same as their knobs.
+const KNOBS := {"hoods":0,"gulf":0.0,"ride":"","rise":0.0,"arrows":-1,"viaduct":-1,"heads":-1,"bodies":1,"alternate":1,"ring":0,"greybox":"","greybox_force":1,"pool":"motifs","one_way":-1,
+	"region":0,"under_regions":LayerWorlds.UNDER_REGIONS,"world":""}
 const KNOB_CHOICES := {"hoods":[0,1,2,3],"ride":["","serpent","ferry"],"pool":["motifs","classic"]}
 
 ## `--knob=key=value` arguments as the layer's knobs (unknown keys warned).
 static func knobs_from(args: PackedStringArray) -> Dictionary:
 	var out := {}
 	for arg: String in args:
+		# The worlds' own flags (scripts/roguelike/layer_worlds.gd).
+		if arg.begins_with("--world="):
+			var w := arg.get_slice("=",1)
+			if LayerWorlds.WORLDS.has(w): out.world = w
+			else: push_warning("layer: no world '%s' (%s)" % [w,", ".join(PackedStringArray(LayerWorlds.WORLDS))])
+			continue
+		if arg.begins_with("--under-regions="):
+			out.under_regions = int(arg.get_slice("=",1))
+			continue
 		if not arg.begins_with("--knob="): continue
 		var pair := arg.trim_prefix("--knob=")
 		var key := pair.get_slice("=",0)
@@ -374,7 +408,10 @@ static func _make_once(seed_value: int, attempt: int, knobs: Dictionary) -> Dict
 	rng.seed = hash([seed_value,attempt,"layer"])
 	var k_all := KNOBS.duplicate()
 	k_all.merge(knobs,true)
-	var plan := {"seed":seed_value,"attempt":attempt,"knobs":k_all,"isles":[],"edges":[],"hoods":[],"gulfs":[],"route":[],"exit":{},"spawn":{},
+	# Underground the gulfs are the rune serpent's (the ferry is the sky
+	# folk's), unless the knob pins one.
+	if LayerWorlds.world_of(k_all) == "under" and str(k_all.ride) == "": k_all.ride = "serpent"
+	var plan := {"seed":seed_value,"world":LayerWorlds.world_of(k_all),"attempt":attempt,"knobs":k_all,"isles":[],"edges":[],"hoods":[],"gulfs":[],"route":[],"exit":{},"spawn":{},
 		"prize":{},"cannon":{},"ram":{},"void_y":0.0,"tubes":[],"problems":[]}
 	# The neighbourhoods: the base's holds 1-2 motif isles, each other 2
 	# (now and then 3); one more isle is the greed branch's.
@@ -694,6 +731,11 @@ static func _motif_isle(pick: Array, rng: RandomNumberGenerator) -> Dictionary:
 	if m.family():
 		isle_seed = rng.randi_range(1,9999)
 		m.configure(isle_seed)
+	elif m.has_method("vary"):
+		# One not a family that varies its look from a seed (its shape kept:
+		# gb_stacked_court.gd, many a layer underground).
+		isle_seed = rng.randi_range(1,9999)
+		m.vary(isle_seed)
 	var own: Array = []
 	for s: Dictionary in m.sockets():
 		var c := s.duplicate()
@@ -1801,6 +1843,7 @@ static func describe(plan: Dictionary) -> String:
 	if not (plan.cannon as Dictionary).is_empty(): lines.append("cannon: notch %d pitch %.0f deg" % [int(plan.cannon.notch)+1,rad_to_deg(float(plan.cannon.pitch))])
 	if not (plan.ram as Dictionary).is_empty(): lines.append("ram on %d" % int(plan.ram.isle))
 	lines.append("hoods %s" % str(plan.get("hoods",[])))
+	lines.append("world %s, region %d" % [LayerWorlds.of(plan),LayerWorlds.region_of(plan)])
 	if not (plan.problems as Array).is_empty(): lines.append("problems: %s" % str(plan.problems))
 	return "\n".join(lines)
 

@@ -31,6 +31,7 @@ const WayLights = preload("res://scripts/roguelike/way_lights.gd")
 static var WAY_LIT := "--way-lit" in preload("res://scripts/launch_args.gd").user_args()
 const Pad = preload("res://scripts/pad.gd")
 const LayerShapes = preload("res://scripts/roguelike/layer_shapes.gd")
+const LayerWorlds = preload("res://scripts/roguelike/layer_worlds.gd")
 
 ## Past the void, falling on before the dark comes (s), the dark coming (s).
 const FALL_ON := 1.1
@@ -52,6 +53,7 @@ const WORDS := {
 	"arrive_first": "THE CLIMB",   # the caption a new climb begins with
 	"arrive_first_line": "highest  %s",  # under it, once there is a record
 	"arrive": "HIGHER STILL",      # the caption through the gate
+	"arrive_sky": "OPEN SKY",      # through the last underground gate
 	"arrive_line": "%s",           # under it: the height
 	"fell": "FELL FROM %s",        # the card's title
 	"lost_none": "nothing carried",
@@ -155,7 +157,8 @@ func after_tick(_delta: float) -> void:
 		_veil_colour = RunOverlay.WARM
 		pending = "gate"
 		# The next region in its own shape (a run alternates them by depth).
-		study.request_layer(int(study.layer_seed)+1,"Through the gate: %s" % (WORDS.stage % (run.depth+1)),LayerShapes.after(study.layer))
+		# The region one on: out of the dark past the last underground one.
+		study.request_layer(int(study.layer_seed)+1,"Through the gate: %s" % (WORDS.stage % (run.depth+1)),LayerShapes.after(study.layer),LayerWorlds.region_of(study.layer)+1)
 	elif feet.y < float(study.layer.void_y):
 		state = "falling"
 		_t = 0.0
@@ -177,14 +180,15 @@ func _to_card() -> void:
 	# (After the ask: laying a layer sets the study's own.)
 	study.last_end = "Into the void: fell from %s (%s)" % [metres(float(last_fall.height)),WORDS.stage % int(last_fall.depth)]
 
-## "1,180 m" for 1180.4 (none under 0).
+## "1,180 m" for 1180.4; "-340 m" under the surface (scripts/roguelike/
+## layer_worlds.gd).
 static func metres(h: float) -> String:
-	var digits := str(maxi(0,roundi(h)))
+	var digits := str(absi(roundi(h)))
 	var out := ""
 	for i in range(digits.length()):
 		if i > 0 and (digits.length()-i)%3 == 0: out += ","
 		out += digits[i]
-	return "%s %s" % [out,WORDS.unit]
+	return "%s%s %s" % ["-" if roundi(h) < 0 else "",out,WORDS.unit]
 
 static func card_title(fall: Dictionary) -> String:
 	return WORDS.fell % metres(float(fall.height))
@@ -216,7 +220,8 @@ func _ask(seed_value: int) -> void:
 	pending = "run"
 	_asked = seed_value
 	_want = seed_value
-	study.request_layer(seed_value,"")
+	# A new climb from the run's first region (underground).
+	study.request_layer(seed_value,"","",int(study.first_region()) if study.has_method("first_region") else 1)
 
 ## Off the card: a new climb (on the seed laid behind the card, or
 ## `seed_value` if given) or, `same`, the one that fell again.
@@ -246,7 +251,9 @@ func _arrive(colour: Color) -> void:
 		var line := "" if run.highest <= 0.0 else WORDS.arrive_first_line % metres(run.highest)
 		overlay.show_caption(WORDS.arrive_first,line)
 	else:
-		overlay.show_caption(WORDS.arrive,WORDS.arrive_line % metres(run.height))
+		# Out of the dark: the first sky region has its own caption.
+		var out_of_dark := LayerWorlds.first_sky(study.layer)
+		overlay.show_caption(WORDS.arrive_sky if out_of_dark else WORDS.arrive,WORDS.arrive_line % metres(shown_height()))
 
 ## The loading screen is lifting: the arrival's dark veil is not needed
 ## over a view the screen has just shown (its caption still comes).
@@ -306,7 +313,16 @@ func _readout(delta: float) -> void:
 	var long_card: Variant = study.get("_card")
 	var shown := run.depth > 0 and state in ["play","arrive"] and not (long_card != null and (long_card as Label).visible)
 	var side := "" if run.runes == 0 else (WORDS.rune if run.runes == 1 else WORDS.runes) % run.runes
-	overlay.set_readout(WORDS.readout % metres(run.height),side.to_upper(),shown,_loud > 0.0 or _still > STILL_AFTER)
+	overlay.set_readout(WORDS.readout % metres(shown_height()),side.to_upper(),shown,_loud > 0.0 or _still > STILL_AFTER)
+
+## The height the player reads: the run's climb, and underground less how
+## far under the surface this region stands (LayerWorlds `depth_below`), so
+## the dark reads below zero and the sky above it.
+func shown_height() -> float:
+	var plan: Dictionary = study.layer
+	if plan.is_empty() or LayerWorlds.of(plan) != "under": return run.height
+	var k: Dictionary = plan.get("knobs",{})
+	return run.height-LayerWorlds.depth_below(LayerWorlds.region_of(plan),int(k.get("under_regions",LayerWorlds.UNDER_REGIONS)))
 
 ## Keys: on the card, Space / Enter / E (pad A) a new climb, R (pad X) the
 ## same; anywhere, I the layer's long card. True when used.

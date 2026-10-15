@@ -61,6 +61,22 @@ const RunLoop = preload("res://scripts/roguelike/run_loop.gd")
 const LayerShapes = preload("res://scripts/roguelike/layer_shapes.gd")
 const LayerLoading = preload("res://scripts/roguelike/layer_loading.gd")
 const LayerDragon = preload("res://scripts/roguelike/layer_dragon.gd")
+const LayerWorlds = preload("res://scripts/roguelike/layer_worlds.gd")
+
+## The run's worlds (scripts/roguelike/layer_worlds.gd, docs/design/
+## roguelike/layer-round13-worlds.md): each region is "under" (the
+## abandoned Olmec city: the underground look, its motifs, no plane, no
+## dragon) or "sky" (the open sky: the old world, the plane parked by the
+## start, the roost's dragon); by default the first two regions under.
+##   --world=under|sky   every region in that world
+##   --under-regions=N   how many regions from the first are underground
+##   --region=N          the region a launch starts at (1)
+##   --under-look=torch  the underground's look (haze by default);
+##                       --underground=haze|torch still forces a look on
+##                       every layer, sky too
+## The region the launch starts at, and the one the next plan is laid for.
+static var start_region := 1
+var region_asked := 1
 
 ## Seeds tried past a seed whose plan could not be laid.
 const SKIP_MOST := 8
@@ -109,6 +125,7 @@ func _ready() -> void:
 			if arg.begins_with("--shape="): layer_shape = arg.get_slice("=",1)
 	for arg in preload("res://scripts/launch_args.gd").user_args():
 		if arg == "--dragon-live" or arg.begins_with("--dragon-wake-at="): dragon_live = true
+		if arg.begins_with("--region="): start_region = maxi(int(arg.get_slice("=",1)),1)
 		layer_knobs = LayerPlan.knobs_from(preload("res://scripts/launch_args.gd").user_args())
 		if layer_seed < 0:
 			var rng := RandomNumberGenerator.new()
@@ -117,13 +134,17 @@ func _ready() -> void:
 	chain_on = false
 	dragon_roost = false
 	_no_lode = true
+	region_asked = start_region
+	# The first region's world's look asked before the isle stands (kit_isle
+	# stands the look at its ready if it is on).
+	_world_look(LayerWorlds.world_of(_knobs_for(region_asked)))
 	if _planning_away():
 		# Laid while the aqueduct isle builds; its sky starts empty.
 		# (The piece footprints it measures kept from the last launch.)
 		FixedCache.boxes_load()
 		LayerPlan.warm()
 		FixedCache.boxes_save()
-		_plan_task = WorkerThreadPool.add_task(_plan_job.bind(layer_seed,layer_knobs.duplicate()),true,"layer plan")
+		_plan_task = WorkerThreadPool.add_task(_plan_job.bind(layer_seed,_knobs_for(region_asked)),true,"layer plan")
 	else: _lay(layer_seed)
 	isle_ready.connect(_first_layer,CONNECT_ONE_SHOT)
 	if LayerLoading.wanted(self):
@@ -144,7 +165,23 @@ func sky_script() -> Script:
 
 ## The layer's plan for `seed_value` (on past a seed that can't be laid).
 func _lay(seed_value: int) -> void:
-	_take(_plan_for(seed_value,layer_knobs,shape_asked))
+	_take(_plan_for(seed_value,_knobs_for(region_asked),shape_asked))
+
+## The layer's knobs for region `region` of the run (its world from it).
+func _knobs_for(region: int) -> Dictionary:
+	return LayerWorlds.at_region(layer_knobs,region)
+
+## The region a climb begins at (`--region=`, else 1).
+func first_region() -> int:
+	return start_region
+
+## The region the standing layer is (the start's before any).
+func region() -> int:
+	return LayerWorlds.region_of(layer) if not layer.is_empty() else start_region
+
+## The standing layer's world ("under" or "sky"; the start's before any).
+func world() -> String:
+	return LayerWorlds.of(layer) if not layer.is_empty() else LayerWorlds.world_of(_knobs_for(start_region))
 
 ## A plan for `seed_value` and on: {plan, ms}. Touches nothing of the
 ## scene's (a worker lays it, `_plan_job`).
@@ -166,6 +203,55 @@ func _take(laid: Dictionary) -> void:
 	plan_ms = int(laid.ms)
 	lost = float(layer.void_y)-200.0
 	print("run layer: seed %d planned in %d ms\n%s" % [layer_seed,plan_ms,LayerPlan.describe(layer)])
+	# Before its isles are made: they build in their world's look.
+	_world_look(world())
+
+# --- The worlds ------------------------------------------------------------------
+
+## The look a layer in `w` wears: the underground's ("under", its preset
+## LayerWorlds `under_look`) or the day's ("sky"); `--underground=...`
+## keeps the look on every layer. Before the isle stands only asked (the
+## kit isle stands it at its ready); after, stood or taken off live.
+func _world_look(w: String) -> void:
+	Underground.world_on = 1 if w == "under" else 0
+	Underground.world_preset = LayerWorlds.under_look()
+	if not walk_ready: return
+	var had := get_node_or_null("Underground")
+	if Underground.on() and had == null:
+		Underground.attach(self)
+		print("run layer: into the dark (%s)" % Underground.asked())
+	elif not Underground.on() and had != null:
+		Underground.detach(self)
+		print("run layer: out under the sky")
+
+## Whether the plane is offered (the sky's; never underground).
+func plane_offered() -> bool:
+	return world() != "under"
+
+## The plane by the world: underground none (not parked, not drawn, no
+## boarding); under the sky parked by the start as the kit isle parks it,
+## if it isn't already.
+func _world_plane() -> void:
+	if not plane_offered():
+		if parked: _unpark()
+		if plane_figure != null: plane_figure.visible = false
+		return
+	if plane_figure != null: plane_figure.visible = true
+	if not flying and not parked and walk_ready:
+		_home = Vector4.INF
+		park_home()
+
+func park_home() -> void:
+	if not plane_offered(): return
+	super.park_home()
+
+func board() -> void:
+	if not plane_offered(): return
+	super.board()
+
+func board_parked() -> void:
+	if not plane_offered(): return
+	super.board_parked()
 
 ## Whether plans are laid on a worker (windowed play; --plan-away asks for
 ## it headless too).
@@ -177,19 +263,24 @@ func _planning_away() -> bool:
 ## windowed, laid on a worker and stood up when it's ready (one at a
 ## time: asked again meanwhile, the ask is dropped). In `shape` ("": the
 ## run's first, `layer_shape`).
-func request_layer(seed_value: int, why := "", shape := "") -> void:
+## For the run's region `region_value` (0: the standing layer's; its world
+## from it, LayerWorlds).
+func request_layer(seed_value: int, why := "", shape := "", region_value := 0) -> void:
 	# (Behind the fall's card the layer is laid while it is read; the screen
 	# comes up when he goes on: run_loop `_maybe_wake`.)
 	if loading != null and not (run_loop != null and run_loop.state == "card"): loading.begin_change()
+	var r := region_value if region_value > 0 else region()
 	if not _planning_away():
 		shape_asked = shape
+		region_asked = r
 		start_layer(seed_value,why)
 		return
 	if _plan_task >= 0: return
 	_plan_why = why
 	_show_toast("%sLaying layer %d..." % [why+"  " if why != "" else "",seed_value])
 	shape_asked = shape
-	_plan_task = WorkerThreadPool.add_task(_plan_job.bind(seed_value,layer_knobs.duplicate(),shape),true,"layer plan")
+	region_asked = r
+	_plan_task = WorkerThreadPool.add_task(_plan_job.bind(seed_value,_knobs_for(r),shape),true,"layer plan")
 
 ## The layer's motif isles for the sky: [motif, offset, place].
 func layer_entries() -> Array:
@@ -247,6 +338,8 @@ func _stand_layer() -> void:
 	_last_stood = start
 	layers += 1
 	if run_loop != null: run_loop.layer_stood()
+	# The plane by the world (after the start is set: it parks by it).
+	_world_plane()
 	_update_card()
 
 ## A new layer from `seed_value`: the old isles and stage freed, the new
@@ -361,9 +454,9 @@ func tick(delta: float) -> void:
 		run_loop.after_tick(delta)
 		return
 	if stage.at_exit(motor.feet):
-		request_layer(layer_seed+1,"Through the gate: layer %d" % (layer_seed+1))
+		request_layer(layer_seed+1,"Through the gate: layer %d" % (layer_seed+1),"",region()+1)
 	elif motor.feet.y < float(layer.void_y):
-		request_layer(layer_seed+1,"Into the void: layer %d" % (layer_seed+1))
+		request_layer(layer_seed+1,"Into the void: layer %d" % (layer_seed+1),"",region()+1)
 		# Laid on a worker: back at this one's spawn meanwhile.
 		if _plan_task >= 0: respawn()
 
@@ -377,6 +470,9 @@ func _strand() -> void:
 func _exit_tree() -> void:
 	FixedCache.drain(_plan_task)
 	_plan_task = -1
+	# The world's look asked no more (another scene's flags decide).
+	Underground.world_on = -1
+	Underground.world_preset = ""
 	super._exit_tree()
 
 var _card_due := 0.0
@@ -410,11 +506,15 @@ func _unhandled_input(event: InputEvent) -> void:
 		var key := event as InputEventKey
 		match key.keycode:
 			KEY_N:
-				request_layer(maxi(layer_seed+(-1 if key.shift_pressed else 1),1),"",LayerShapes.after(layer))
+				# The next (previous) region too: its world by the count.
+				request_layer(maxi(layer_seed+(-1 if key.shift_pressed else 1),1),"",LayerShapes.after(layer),maxi(region()+(-1 if key.shift_pressed else 1),1))
 				return
 			KEY_BACKSPACE:
 				request_layer(layer_seed,"",LayerShapes.shape_of(layer))
 				return
+			KEY_F:
+				# No plane underground: F calls nothing.
+				if not plane_offered() and not flying: return
 			KEY_B:
 				_watch_body()
 				return
@@ -493,4 +593,5 @@ func _update_card() -> void:
 	var shaped := LayerShapes.card(layer)
 	if shaped != "": parts.append(shaped)
 	if layer_dragon != null: parts.append(layer_dragon.card_line())
+	parts.append("Region %d · %s%s" % [region(),"underground (the Olmec city)" if world() == "under" else "the sky","" if plane_offered() else " · no plane"])
 	_card.text = "Layer · seed %d  ·  %s  ·  %s\n%s\n%sN next seed · Shift+N previous · Backspace again" % [layer_seed,runes,up,"\n".join(parts),ride+"\n" if ride != "" else ""]

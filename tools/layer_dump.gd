@@ -75,6 +75,17 @@ func drive() -> void:
 	result("problems",problems.size())
 	result("first_problem",str(problems[0]) if not problems.is_empty() else "")
 	result("plan_ms",ms)
+	# The run's world (scripts/roguelike/layer_worlds.gd): its region and the
+	# motifs it drew (each id once, with its count).
+	var LayerWorlds: GDScript = load("res://scripts/roguelike/layer_worlds.gd")
+	result("world",LayerWorlds.of(plan))
+	result("region",LayerWorlds.region_of(plan))
+	var drawn := {}
+	for r: Dictionary in isle_rows:
+		if str(r.role) != "base": drawn[str(r.id)] = int(drawn.get(str(r.id),0))+1
+	var listed := PackedStringArray()
+	for id: String in drawn: listed.append("%s x%d" % [id,int(drawn[id])] if int(drawn[id]) > 1 else id)
+	result("motifs"," ".join(listed))
 	var out := String(arg("out",""))
 	if out != "":
 		var data: Variant = plan if flag("full") else {"seed":seed_value,"shape":shape,"knobs":plan.get("knobs",{}),

@@ -157,7 +157,8 @@ static func attach_next(plan: Dictionary) -> void:
 ## seed that can't be laid), in the shape it will have (a run alternates
 ## them: scripts/roguelike/layer_shapes.gd `after`; a ring plan's too).
 static func next_plan(plan: Dictionary) -> Dictionary:
-	var knobs: Dictionary = plan.get("user_knobs",{})
+	# The region one on (its world may be the other: the climb out of the dark).
+	var knobs: Dictionary = LayerPlan.LayerWorlds.next_knobs(plan.get("user_knobs",{}))
 	var shapes: GDScript = load("res://scripts/roguelike/layer_shapes.gd")
 	var shape: String = shapes.after(plan)
 	var nxt := {}
@@ -194,6 +195,9 @@ static func core(seed_value: int, knobs := {}) -> Dictionary:
 	k.shape = "sprawl"
 	k.rise_roll = RISE_ROLL
 	k.hood_more = HOOD_MORE
+	# Underground the court is a whole hill of pillars: no isle more a
+	# neighbourhood, or three courts won't sit in one.
+	if LayerPlan.LayerWorlds.world_of(k) == "under": k.hood_more = 0
 	k.tier = TIER
 	k.repeats = REPEATS
 	var plan := {}
@@ -211,6 +215,10 @@ static func core(seed_value: int, knobs := {}) -> Dictionary:
 			LayerEnemies.lay(plan,attempt)
 			_spawn_view(plan)
 			var roost_began := Time.get_ticks_usec()
+			# The dragon is the sky's: no roost underground.
+			if LayerPlan.LayerWorlds.world_of(k) == "under":
+				plan.roost = {}
+				break
 			if _roost(plan):
 				plan.roost.ms = (Time.get_ticks_usec()-roost_began)/1000.0
 				break
