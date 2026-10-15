@@ -34,6 +34,8 @@ const CityCrossings = preload("res://scripts/roguelike/city_crossings.gd")
 const CityFires = preload("res://scripts/city_kit_fires.gd")
 # [collectibles] the layer's runes, rares and chests (game-v1-collectibles.md).
 const Collectibles = preload("res://scripts/roguelike/collectibles.gd")
+# [flyer] the guacharos over the gulfs (flyer-round1.md).
+const LayerFlyers = preload("res://scripts/roguelike/layer_flyers.gd")
 
 const GATE := Color(1.0,0.82,0.45)
 const RUNE_SIZE := 0.7
@@ -69,6 +71,8 @@ var greybox: Node = null
 ## [collectibles] The layer's runes, rares and chests (scripts/roguelike/
 ## collectibles.gd), or null.
 var collectibles: Node3D = null
+## [flyer] The layer's guacharos (scripts/roguelike/layer_flyers.gd), or null.
+var flyers: Node3D = null
 var _last := Vector3.INF
 
 func _init() -> void:
@@ -134,6 +138,7 @@ func setup(scene: Node3D, layer: Dictionary, was: Node) -> void:
 	scene.foot_pieces = self
 	_runes()
 	collectibles = Collectibles.dress(self,layer)  # [collectibles]
+	flyers = LayerFlyers.dress(self,layer)  # [flyer]
 	_gate()
 	rides = LayerRides.new()
 	add_child(rides)
@@ -291,6 +296,7 @@ func before(delta: float) -> void:
 	cannons.before(delta)
 	if hazards != null: hazards.before(delta)
 	if collectibles != null: collectibles.before(delta)  # [collectibles]
+	if flyers != null: flyers.before(delta)  # [flyer]
 
 func after(delta: float, events: Dictionary) -> void:
 	if inner != null: inner.after(delta,events)
@@ -300,6 +306,7 @@ func after(delta: float, events: Dictionary) -> void:
 	cannons.after(delta,events)
 	if hazards != null: hazards.after(delta,events)
 	if collectibles != null: collectibles.after(delta,events)  # [collectibles]
+	if flyers != null: flyers.after(delta,events)  # [flyer]
 	if study.get("figure") != null: touch(study.figure.global_position+Vector3.UP*Lines.WALKER_MIDDLE)
 
 func pose(figure: Node3D) -> void:
@@ -317,6 +324,7 @@ func frame(camera: Camera3D, delta: float) -> void:
 	if heads != null: heads.frame(camera,delta)
 	if greybox != null: greybox.frame(camera,delta)
 	if collectibles != null: collectibles.frame(camera,delta)  # [collectibles]
+	if flyers != null: flyers.frame(camera,delta)  # [flyer]
 
 func reset() -> void:
 	traps.reset()
@@ -324,3 +332,4 @@ func reset() -> void:
 	cannons.reset()
 	if greybox != null: greybox.reset()
 	if collectibles != null: collectibles.reset()  # [collectibles]
+	if flyers != null: flyers.reset()  # [flyer]
