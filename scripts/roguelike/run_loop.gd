@@ -60,6 +60,8 @@ const SummitMark = preload("res://scripts/roguelike/summit_mark.gd")
 # [linger] The colossus (scripts/roguelike/linger_colossus.gd), laid with each layer.
 const LingerColossus = preload("res://scripts/roguelike/linger_colossus.gd")
 var _linger: Node3D = null
+# [linger] the serpent climbing out of the void the longer he stays (linger-serpent-round1.md).
+const Linger = preload("res://scripts/roguelike/linger.gd")
 ## [items] Whether --wallrun gave the wall run outright (else Gecko Wraps do).
 var _wallrun_flag := false
 # [items_move] The movement items' verbs, round the study's tick.
@@ -101,7 +103,8 @@ const WORDS := {
 	"causes": {"fall":"the fall","olmec":"the Olmec","ram":"the ram","trap":"a trap",
 		"wind":"the wind","stone":"falling stone","enemy":"the city's guardians",
 		"walker":"the Second Walker","thief":"the Collector","altar":"a bargain at the altar",  # [merchant] [altars]
-		"beetle":"the millstone beetle"},  # [beetle]
+		"beetle":"the millstone beetle",  # [beetle]
+		"serpent":"the risen serpent"},  # [linger]
 	"lost_none": "nothing carried",
 	"lost_one": "1 rune lost",
 	"lost": "%d runes lost",
@@ -473,6 +476,7 @@ func layer_stood() -> void:
 	study.set("_last_stood",spot.start)
 	_start_y = float(study.start.y)
 	_linger = LingerColossus.lay(study,stage,layer)  # [linger]
+	Linger.lay(self,stage,layer)  # [linger]
 	stage.rune_taken.connect(func(_left: int) -> void: run.take_rune())
 	# [collectibles] The layer's runes, rares and chests into the run.
 	var found: Node = stage.get("collectibles")
