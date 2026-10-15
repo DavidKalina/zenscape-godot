@@ -1210,7 +1210,10 @@ func _ride_after(_delta: float) -> void:
 		var at := lip-Vector3(lip_out.x,0.0,lip_out.y)*0.1 if hold != "" else feet
 		var p: Variant = mover.call(at)
 		var under: Node3D = p as Node3D if p is Node3D else null
-		if under == platform: return
+		# Still on the same ground. (Off moving ground platform is null, so
+		# a landing on still ground matches too: the frame he flew in must
+		# still be ended there, or it carries into his next jump.)
+		if under == platform and (under != null or frame_v == Vector3.ZERO): return
 		if under == null:
 			# Onto still ground: the frame he flew in is his own pace now
 			# (hanging, it is let go: the catch holds him).
