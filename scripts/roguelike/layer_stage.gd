@@ -34,6 +34,8 @@ const CityCrossings = preload("res://scripts/roguelike/city_crossings.gd")
 const CityFires = preload("res://scripts/city_kit_fires.gd")
 # [collectibles] the layer's runes, rares and chests (game-v1-collectibles.md).
 const Collectibles = preload("res://scripts/roguelike/collectibles.gd")
+# [beetle] the Millstone Beetles on their lanes (beetle-round1.md).
+const LayerBeetles = preload("res://scripts/roguelike/layer_beetles.gd")
 
 const GATE := Color(1.0,0.82,0.45)
 const RUNE_SIZE := 0.7
@@ -69,6 +71,7 @@ var greybox: Node = null
 ## [collectibles] The layer's runes, rares and chests (scripts/roguelike/
 ## collectibles.gd), or null.
 var collectibles: Node3D = null
+var beetles: Node = null  # [beetle]
 var _last := Vector3.INF
 
 func _init() -> void:
@@ -134,6 +137,7 @@ func setup(scene: Node3D, layer: Dictionary, was: Node) -> void:
 	scene.foot_pieces = self
 	_runes()
 	collectibles = Collectibles.dress(self,layer)  # [collectibles]
+	beetles = LayerBeetles.dress(self,layer)  # [beetle]
 	_gate()
 	rides = LayerRides.new()
 	add_child(rides)
@@ -291,6 +295,7 @@ func before(delta: float) -> void:
 	cannons.before(delta)
 	if hazards != null: hazards.before(delta)
 	if collectibles != null: collectibles.before(delta)  # [collectibles]
+	if beetles != null: beetles.before(delta)  # [beetle]
 
 func after(delta: float, events: Dictionary) -> void:
 	if inner != null: inner.after(delta,events)
