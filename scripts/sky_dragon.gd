@@ -254,7 +254,7 @@ const StoneLampLights = preload("res://scripts/stone_lamp_lights.gd")
 ## in), and a faint cool sheen on the hide so its shape reads against the
 ## night sky (NIGHT_SHEEN colour and energy).
 const NIGHT_FADE := 2.5
-const NIGHT_EYE := Vector2(2.2,7.5)
+const NIGHT_EYE := Vector2(0.9,6.0)
 const NIGHT_SPINES := Vector2(1.6,3.6)
 const NIGHT_MEMBRANE := Vector2(0.42,0.5)
 const NIGHT_MEMBRANE_REACH := 0.3
@@ -701,6 +701,7 @@ func _dress(n: Node) -> void:
 			var m := mi.mesh.surface_get_material(i)
 			if m != null and m.resource_name == "dragon_membrane_glow": _tag_membrane(mi,i)
 			elif m != null and HIDE_TONES.has(m.resource_name): _bake_hide(mi,i,m.resource_name)
+			elif m != null and m.resource_name == "dragon_eye": _bake_eye(mi,i)
 		for i in mi.mesh.get_surface_count():
 			var m := mi.mesh.surface_get_material(i)
 			mi.set_surface_override_material(i,_material(m.resource_name if m != null else ""))
@@ -866,6 +867,7 @@ func _material(key: String) -> Material:
 func _made_material(key: String) -> Material:
 	if key == "dragon_membrane_glow": return _glow_membrane()
 	if key == "dragon_glow": return _glow_spine()
+	if key == "dragon_eye": return _eye_material()
 	if HIDE_TONES.has(key):
 		var h := ShaderMaterial.new()
 		h.shader = HIDE_SHADER
@@ -895,11 +897,6 @@ func _made_material(key: String) -> Material:
 			m.albedo_color = Color("3d1820")
 			m.roughness = 0.55
 			m.metallic_specular = 0.35
-		"dragon_eye":
-			m.albedo_color = Color("ffc040")
-			m.emission_enabled = true
-			m.emission = Color("ffb030")
-			m.emission_energy_multiplier = 2.2
 		"dragon_membrane":
 			m.albedo_color = Color("3a2e46")
 			m.roughness = 0.75
@@ -995,12 +992,12 @@ void fragment() {
 	float wash = vn(q * 0.22 + 3.0) * 0.6 + vn(q * 0.5 + 9.0) * 0.4;
 	float fleck = vn(q * 2.2 + 5.0);
 	float scuff = smoothstep(0.7, 0.9, vn(q * vec2(0.5, 1.6) + 1.0));
-	float tone = mix(0.6, 1.4, wash) * (1.0 + (fleck - 0.5) * 0.5 * far) * (1.0 - scuff * 0.3);
+	float tone = mix(0.75, 1.25, wash) * (1.0 + (fleck - 0.5) * 0.15 * far) * (1.0 - scuff * 0.2);
 	base *= tone;
 	// Fine scales over the whole membrane, in the model's own space (so the
 	// grain is one size on every panel and rides the wing): a bead each
 	// with its own tone, dark seams, a slow wrinkle across them.
-	vec3 mq = mp * 1.7;
+	vec3 mq = mp * 2.4;
 	float mpx = length(fwidth(mq));
 	float mfar = 1.0 - smoothstep(0.35, 1.1, mpx);
 	vec3 mc = cells(mq);
@@ -1008,10 +1005,11 @@ void fragment() {
 	float mseam = 1.0 - smoothstep(0.0, max(0.12, mpx * 1.5), mgap);
 	float mdome = smoothstep(0.0, 0.5, mgap);
 	float wrinkle = vn(mp.xz * 0.35 + mp.y * 0.2 + 7.0) * 0.6 + vn(mp.xz * 0.9 + 2.0) * 0.4;
-	base *= mix(1.0, mix(0.65, 1.35, mc.z) * mix(0.8, 1.15, mdome) * (1.0 - mseam * 0.6), 0.25 + 0.75 * mfar);
+	// Soft: a leathery pebbling the light finds, not a mosaic of colours.
+	base *= mix(1.0, mix(0.93, 1.07, mc.z) * mix(0.9, 1.06, mdome) * (1.0 - mseam * 0.22), 0.25 + 0.75 * mfar);
 	base *= mix(0.8, 1.2, wrinkle);
-	float grainmul = mix(1.0, mix(0.55, 1.35, mc.z) * (1.0 - mseam * 0.7), 0.3 + 0.7 * mfar) * mix(0.75, 1.25, wrinkle);
-	float mh = (mdome * 0.1 / 1.7 * mfar + (wrinkle - 0.5) * 0.35);
+	float grainmul = mix(1.0, mix(0.92, 1.08, mc.z) * (1.0 - mseam * 0.2), 0.3 + 0.7 * mfar) * mix(0.82, 1.18, wrinkle);
+	float mh = (mdome * 0.1 / 2.4 * mfar + (wrinkle - 0.5) * 0.35);
 	vec3 sx = dFdx(VERTEX);
 	vec3 sy = dFdy(VERTEX);
 	vec3 r1 = cross(sy, NORMAL);
@@ -1108,6 +1106,107 @@ void fragment() {
 	m.resource_name = "dragon_glow"
 	return m
 
+## The eyes: each a small lozenge, the model's, swelled a little so there is
+## an eye to paint (EYE_SWELL: along x out, y up, z along) and given UV the
+## eye's own, (along, up) from its middle in -1..1, for `_eye_material`.
+const EYE_SWELL := Vector3(2.2,2.7,1.3)
+
+func _bake_eye(mi: MeshInstance3D, surface: int) -> void:
+	var src := mi.mesh as ArrayMesh
+	if src == null or src.get_blend_shape_count() > 0: return
+	var arrays := src.surface_get_arrays(surface)
+	var points: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	if points.is_empty(): return
+	var uv := PackedVector2Array()
+	uv.resize(points.size())
+	for side in [-1.0,1.0]:
+		var lo := Vector3(INF,INF,INF)
+		var hi := Vector3(-INF,-INF,-INF)
+		for p in points:
+			if signf(p.x) != side: continue
+			lo = lo.min(p)
+			hi = hi.max(p)
+		if lo.x == INF: continue
+		var mid := (lo+hi)*0.5
+		var half := (hi-lo)*0.5
+		for k in range(points.size()):
+			if signf(points[k].x) != side: continue
+			var d := points[k]-mid
+			uv[k] = Vector2(d.z/maxf(half.z,0.001),d.y/maxf(half.y,0.001))
+			points[k] = mid+d*EYE_SWELL
+	arrays[Mesh.ARRAY_VERTEX] = points
+	arrays[Mesh.ARRAY_TEX_UV] = uv
+	_replace_surface(mi,surface,arrays)
+
+## A dragon's eye, painted on the lozenge: an amber iris of fine radial
+## fibres, a dark limbus, a vertical slit pupil (`pupil`, its width as a share
+## of the iris), a dark worn lid over it and a corner of pale, a wet gloss.
+## It glows dim and warm from within (`energy`, NIGHT_EYE), most in the iris.
+static func _eye_material() -> ShaderMaterial:
+	var sh := Shader.new()
+	sh.code = """
+shader_type spatial;
+render_mode diffuse_burley;
+uniform vec3 iris_a : source_color = vec3(0.95, 0.62, 0.16);
+uniform vec3 iris_b : source_color = vec3(0.62, 0.22, 0.06);
+uniform vec3 white : source_color = vec3(0.55, 0.45, 0.3);
+uniform vec3 lid : source_color = vec3(0.12, 0.09, 0.12);
+uniform float energy = 2.2;
+uniform float pupil = 0.14;
+// The lozenge's half-size in metres (along, up) and the iris's radius.
+uniform vec2 half_size = vec2(0.78, 0.57);
+uniform float iris_r = 0.46;
+float h21(vec2 p) {
+	p = fract(p * vec2(0.1031, 0.1030));
+	p += dot(p, p.yx + 33.33);
+	return fract((p.x + p.y) * p.x);
+}
+float vn(vec2 p) {
+	vec2 i = floor(p);
+	vec2 f = fract(p);
+	f = f * f * (3.0 - 2.0 * f);
+	return mix(mix(h21(i), h21(i + vec2(1, 0)), f.x), mix(h21(i + vec2(0, 1)), h21(i + vec2(1, 1)), f.x), f.y);
+}
+varying vec2 eye_uv;
+void vertex() {
+	eye_uv = UV;
+}
+void fragment() {
+	vec2 q = eye_uv * half_size;
+	float r = length(q) / iris_r;
+	float ang = atan(q.y, q.x);
+	// Radial fibres, brighter toward the pupil, with a ring of collarette.
+	float fibre = vn(vec2(ang * 7.0, r * 2.0)) * 0.6 + vn(vec2(ang * 19.0, r * 5.0 + 3.0)) * 0.4;
+	vec3 iris = mix(iris_b, iris_a, smoothstep(0.15, 0.7, 1.0 - r) * 0.7 + fibre * 0.5);
+	iris *= 0.7 + 0.6 * fibre;
+	float limbus = smoothstep(0.78, 1.0, r);
+	iris = mix(iris, iris_b * 0.25, limbus);
+	float in_iris = 1.0 - smoothstep(0.97, 1.12, r);
+	// The slit pupil, soft-edged, a little taller than the iris.
+	float pw = max(pupil, 0.04) * iris_r;
+	float slit = 1.0 - smoothstep(pw * 0.7, pw * 1.3, abs(q.x) * (1.0 + 0.5 * q.y * q.y / (iris_r * iris_r)));
+	slit *= 1.0 - smoothstep(0.9, 1.2, abs(q.y) / (iris_r * 1.15));
+	// The lid: dark above and below, closing toward the corners.
+	float v = eye_uv.y;
+	float lid_edge = smoothstep(0.55, 1.0, abs(v) + 0.25 * eye_uv.x * eye_uv.x);
+	vec3 c = mix(white, iris, in_iris);
+	c = mix(c, vec3(0.0), slit * in_iris);
+	c = mix(c, lid, lid_edge * (v > 0.0 ? 0.95 : 0.7));
+	// A wet catch-light, high toward the brow.
+	float catch_l = 1.0 - smoothstep(0.05, 0.16, length(q - vec2(-0.14, 0.17)) / iris_r);
+	c = mix(c, vec3(1.0, 0.95, 0.85), catch_l * in_iris);
+	ALBEDO = c;
+	ROUGHNESS = 0.12;
+	SPECULAR = 0.8;
+	float lit = in_iris * (1.0 - slit) * (1.0 - lid_edge * 0.8);
+	EMISSION = iris_a * energy * lit * (0.4 + 0.9 * fibre) * (1.0 - limbus * 0.7) * (1.0 - catch_l) + vec3(0.9, 0.85, 0.7) * catch_l * in_iris * 0.6;
+}
+"""
+	var m := ShaderMaterial.new()
+	m.shader = sh
+	m.resource_name = "dragon_eye"
+	return m
+
 ## The eyes' middles (the eye surface's vertices either side of the
 ## midline, in the skeleton's rest frame), held in the head bone's frame
 ## for their night halos.
@@ -1171,8 +1270,10 @@ func _night_glow(delta: float) -> void:
 	var open := clampf(_jaw*4.0,0.0,1.0)
 	if breath == "inhale": open = maxf(open,0.8)
 	_alert = move_toward(_alert,sight.alert(),delta*ALERT_EASE)
-	for m: StandardMaterial3D in _night_materials.get("dragon_eye",[]):
-		m.emission_energy_multiplier = lerpf(NIGHT_EYE.x,NIGHT_EYE.y,night)*lerpf(1.0,ALERT_EYE,_alert)
+	for m: ShaderMaterial in _night_materials.get("dragon_eye",[]):
+		m.set_shader_parameter("energy",lerpf(NIGHT_EYE.x,NIGHT_EYE.y,night)*lerpf(1.0,ALERT_EYE,_alert))
+		# The pupil opens in the dark and narrows to a thread when it sights you.
+		m.set_shader_parameter("pupil",lerpf(0.1,0.26,night)*lerpf(1.0,0.45,_alert))
 	for m: ShaderMaterial in _night_materials.get("dragon_glow",[]):
 		m.set_shader_parameter("energy",lerpf(NIGHT_SPINES.x,NIGHT_SPINES.y,night))
 	for m: ShaderMaterial in _night_materials.get("dragon_membrane_glow",[]):
