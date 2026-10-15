@@ -40,6 +40,8 @@ const Altars = preload("res://scripts/roguelike/altars.gd")  # [altars]
 const LayerWeepers = preload("res://scripts/roguelike/layer_weepers.gd")
 # [beetle] the Millstone Beetles on their lanes (beetle-round1.md).
 const LayerBeetles = preload("res://scripts/roguelike/layer_beetles.gd")
+# [inhabitant] the Hollow Child and the Sun-Keepers on the city's places.
+const LayerInhabitants = preload("res://scripts/roguelike/layer_inhabitants.gd")
 
 const GATE := Color(1.0,0.82,0.45)
 const RUNE_SIZE := 0.7
@@ -78,6 +80,7 @@ var collectibles: Node3D = null
 ## [merchant] The stall and the Collector (scripts/roguelike/merchant.gd), or null.
 var merchant: Node3D = null
 var beetles: Node = null  # [beetle]
+var inhabitants: Node = null  # [inhabitant]
 var _last := Vector3.INF
 
 func _init() -> void:
@@ -141,6 +144,7 @@ func setup(scene: Node3D, layer: Dictionary, was: Node) -> void:
 	# The greybox isles' live bits, after the cannons (a motif's `live` may
 	# add its own to them).
 	greybox = LayerGreybox.dress(self,layer)
+	inhabitants = LayerInhabitants.dress(self,layer)  # [inhabitant]
 	scene.foot_pieces = self
 	_runes()
 	collectibles = Collectibles.dress(self,layer)  # [collectibles]
@@ -300,6 +304,7 @@ func before(delta: float) -> void:
 	traps.before(delta)
 	if greybox != null: greybox.before(delta)
 	if heads != null: heads.before(delta)
+	if inhabitants != null: inhabitants.before(delta)  # [inhabitant]
 	enemies.before(delta)
 	cannons.before(delta)
 	if hazards != null: hazards.before(delta)
@@ -339,3 +344,4 @@ func reset() -> void:
 	cannons.reset()
 	if greybox != null: greybox.reset()
 	if collectibles != null: collectibles.reset()  # [collectibles]
+	if inhabitants != null: inhabitants.reset()  # [inhabitant]
