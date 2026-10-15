@@ -18,6 +18,7 @@ const MOTIFS := {
 	"rootbound_cut":preload("res://scripts/kit_isle/greybox/gb_rootbound_cut.gd"),
 	"stacked_court":preload("res://scripts/kit_isle/greybox/gb_stacked_court.gd"),
 	"serpent_crossing":preload("res://scripts/kit_isle/greybox/gb_serpent_crossing.gd"),
+	"felled_colonnade":preload("res://scripts/kit_isle/greybox/gb_felled_colonnade.gd"),
 	"editor_hill":preload("res://scripts/kit_isle/greybox/au_editor_hill.gd"),
 	"editor_mountain":preload("res://scripts/kit_isle/greybox/au_editor_mountain.gd"),
 	"editor_tarn_peak":preload("res://scripts/kit_isle/greybox/au_editor_tarn_peak.gd"),
@@ -31,6 +32,7 @@ const MOTIFS := {
 const WORLD := {
 	"stacked_court":"under",
 	"serpent_crossing":"under",
+	"felled_colonnade":"under",
 }
 
 ## The world of a pool id or slug ("gb_" optional): "under" or "sky".
