@@ -73,7 +73,10 @@ const LAYOUT := {
 	# The lap's turf between his knees (behind the skin wall's core).
 	"lap":{"outline":[Vector2(-12.6,-6.3),Vector2(12.6,-6.3),Vector2(12.6,-15.8),Vector2(-12.6,-15.8)],"seed":SEED+2},
 	# His left shoulder's turf (cut flat), west of the relief's top.
-	"shoulder":{"outline":[Vector2(-12.4,-15.6),Vector2(-12.4,-22.4),Vector2(-10.0,-23.2),Vector2(-10.0,-36.4),Vector2(-15.0,-36.4),Vector2(-20.6,-34.6),Vector2(-21.2,-21.0),Vector2(-19.0,-17.0)],"seed":SEED+3},
+	# It runs on east along the collar to the relief's top (his collarbone).
+	"shoulder":{"outline":[Vector2(-7.6,-15.6),Vector2(-7.6,-22.4),Vector2(-10.0,-23.2),Vector2(-10.0,-36.4),Vector2(-15.0,-36.4),Vector2(-20.6,-34.6),Vector2(-21.2,-21.0),Vector2(-19.0,-17.0),Vector2(-12.4,-15.6)],"seed":SEED+3},
+	# The collar's turf east of the relief's top (his right collarbone).
+	"collar_e":{"outline":[Vector2(7.6,-15.6),Vector2(12.4,-15.6),Vector2(12.6,-22.4),Vector2(10.0,-23.2),Vector2(7.6,-22.4)],"seed":SEED+8},
 	# The throne's back behind his head: the lip's foot, the ridge's end.
 	"back":{"outline":[Vector2(-13.0,-40.6),Vector2(14.4,-40.6),Vector2(14.4,-50.4),Vector2(-13.0,-50.4)],"seed":SEED+7},
 	# The crown: the helmet's flat top.
@@ -87,12 +90,14 @@ const LAYOUT := {
 	# A stone standing alone in the gulf between the ridge and his left arm,
 	# a long jump off a ridge terrace (the rare find on it): its middle, its
 	# top, its radius.
-	"gulf_stone":{"at":Vector2(-38.4,-5.0),"top":4.0*SO,"r":1.8,"seed":SEED+6},
+	"gulf_stone":{"at":Vector2(-39.0,-4.6),"top":2.6*SO,"r":1.8,"seed":SEED+6},
 	# The kit's pieces: the skin wall (its face z 0), the relief (its foot's
 	# middle, width, depth back), the lip (its top's front middle, height),
 	# the jamb post west of the skin (x0, x1, z0, z1).
 	"skin":{"at":Vector3(0.0,0.0,0.0),"seed":SEED+10},
-	"relief":{"at":Vector3(0.0,LAP_Y,-16.0),"width":24.0,"deep":26.0,"seed":SEED+11},
+	# Its width the carved panel's and a hand's breadth (the lord's chest
+	# wraps it).
+	"relief":{"at":Vector3(0.0,LAP_Y,-16.0),"width":15.0,"deep":26.0,"seed":SEED+11},
 	# The lip is the back of his head, facing north (its +x end, her
 	# shelves, to the west).
 	"lip":{"at":Vector3(0.0,CROWN_Y,-40.3),"turn":180.0,"height":CROWN_Y-COLLAR_Y,"width":15.4,"seed":SEED+12},
@@ -277,7 +282,7 @@ func collect_spots() -> Array:
 	# seen, over the void); the collar shelf's east end under his chin, in
 	# his reach from the lap; the ledge's east point by his beat.
 	out.append({"kind":"rune_risk","name":"east_knee","at":Vector3(20.0,KNEE_Y,1.0),"room":1.0})
-	out.append({"kind":"rune_risk","name":"collar_east","at":Vector3(12.5,COLLAR_Y,-17.5),"room":1.0})
+	out.append({"kind":"rune_risk","name":"collar_east","at":Vector3(11.0,COLLAR_Y,-17.0),"room":1.0})
 	out.append({"kind":"rune_risk","name":"ledge_point","at":Vector3(31.0,0.0,13.0),"room":1.0})
 	# Rare: inside the lip's undercut (hidden); on the stone in the gulf (a
 	# long jump off the ridge over the void, and back); in the peeled skin's
@@ -351,8 +356,16 @@ static func _bounds(outline: Array) -> Rect2:
 
 # --- The land and the stone ------------------------------------------------------------
 
+## The flora's rays reach down from over the crown to under the ledge (the
+## lowest turf, 46 m under the top: the Site's default reach stops 8 m under
+## it, which left the ledge and the ridge without blades); fewer tufts a
+## square metre to hold the cost of so much turf.
+const LOWEST_TURF := 0.0
 func flora_site() -> KitFlora.Site:
-	return KitFlora.Site.new(top(),KitLand.wear_of(paths()))
+	var site := KitFlora.Site.new(top(),KitLand.wear_of(paths()))
+	site.ray = Vector2(top()+60.0,LOWEST_TURF-6.0)
+	site.tufts = 2.8
+	return site
 
 func flora_seed() -> int:
 	return SEED+9
@@ -401,6 +414,7 @@ func build(into: Node3D) -> void:
 		"top":0.0,"depth":float(ld.depth),"hang":true,"cliffs":b.grow(2.0),"resample":[60.0,140,48],"tone":tone,"cell":2.0},true)
 	_turf_cap(root,"Lap",LAYOUT.lap,LAP_Y,2.0)
 	_turf_cap(root,"Shoulder",LAYOUT.shoulder,COLLAR_Y,3.0)
+	_turf_cap(root,"CollarE",LAYOUT.collar_e,COLLAR_Y,2.4)
 	_turf_cap(root,"Crown",LAYOUT.crown,CROWN_Y,2.6)
 	_turf_cap(root,"Back",LAYOUT.back,COLLAR_Y,2.6)
 	var r: Dictionary = LAYOUT.ridge
@@ -653,4 +667,11 @@ class Dresser extends Node:
 				var x: float = skin.col_x(c)
 				var w := 1.5-0.02
 				if GroundCover.cover(core,Rect2(x-w,-6.0+0.05,w*2.0,5.95),kind,LAP_Y+0.002,SEED+70+c,{"tufts":0.6}) != null: laid += 1
+		# Grass in the hollows of the lord's tops (his moss is his own).
+		var lord: Node3D = pieces.get("colossus")
+		if lord != null and is_instance_valid(lord):
+			var i := 0
+			for t: Dictionary in Colossus.tufts():
+				if GroundCover.cover(lord,t.poly,kind,float(t.y),SEED+90+i,{"skin":false,"tufts":1.3}) != null: laid += 1
+				i += 1
 		set_physics_process(false)
