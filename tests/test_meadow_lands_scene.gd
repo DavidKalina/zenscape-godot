@@ -18,7 +18,7 @@ func check(ok: bool, message: String) -> void:
 func run() -> void:
 	create_timer(600).timeout.connect(func() -> void: print("FAIL: timed out"); quit(2))
 	root.size = Vector2i(1440,900)
-	var dir := "/private/tmp/meadow-lands-scene-%d" % Time.get_ticks_usec()
+	var dir := OS.get_temp_dir().path_join("meadow-lands-scene-%d" % Time.get_ticks_usec())
 	var world: Node3D = load("res://studies/cozy_worlds.tscn").instantiate()
 	world.set_meta("movie_capture",true)
 	world.set_meta("manage_worlds",true)

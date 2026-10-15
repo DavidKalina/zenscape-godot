@@ -40,15 +40,75 @@ const SURFACES := {
 	"pilot_cape": [Color("4a4848"), {"mottle":0.12,"streaks":0.08,"rim":0.18}],
 }
 
-## The materials, keyed by the model's surface names.
-static func outfit() -> Dictionary:
+## The worn looks (`--wanderer-look=worn|dust`, `paint` the clean one
+## above): the same surfaces in real stuff, lived in, to sit with the
+## weathered stone (shaders/olmec_stone.gdshader) over the painted turf.
+## Each surface: its colour (null keeps SURFACES'), then what it changes of
+## SURFACES' tweaks; ALL first, for every surface.
+##   worn  the sheet's colours, sun-faded and dusty: felt, knit, waxed
+##         canvas, denim, leather scuffed pale, brass tarnished, dust up
+##         the boots in the turf's ochre; the toon bands kept, softer.
+##   dust  earthier, cut from the stone and the turf: an oxblood hat, an
+##         ash-teal scarf, an olive oilskin coat, a slate cape mottled as
+##         the stone is, dark bronze with verdigris; the light's terminator
+##         soft as the stone's, more dust and grime.
+const LOOKS := {
+	"worn": {
+		"ALL": [null, {"dust":0.55,"fade":0.5,"grime":0.5,"wear":0.5,"bump":1.0,"soft":0.16,"mottle":0.14,"streaks":0.08}],
+		"pilot_face": [null, {"dust":0.0,"fade":0.0,"grime":0.0,"wear":0.0,"bump":0.0,"mottle":0.05,"streaks":0.02}],
+		"pilot_hat": [Color("aa553b"), {"felt":1.0,"fade":0.4,"dust":0.15,"wear":0.5,"paint_scale":18.0}],
+		"pilot_hat_band": [Color("3e2a20"), {"leather":0.8,"grime":0.8}],
+		"pilot_scarf": [Color("3b4a6b"), {"knit":1.0,"thread":0.012,"fade":0.7,"paint_scale":20.0}],
+		"pilot_jacket": [Color("534739"), {"cloth":0.8,"thread":0.006,"wear":0.7}],
+		"pilot_strap": [Color("5e3c2a"), {"leather":1.0}],
+		"pilot_gold": [Color("a8843f"), {"metal":1.0,"sheen":0.2,"dust":0.2,"wear":0.0}],
+		"pilot_glow": [null, {"dust":0.0,"fade":0.0,"grime":0.0,"wear":0.0,"bump":0.0,"mottle":0.0,"streaks":0.0}],
+		"pilot_mitt": [Color("6c4632"), {"leather":1.0,"wear":0.8}],
+		"pilot_trousers": [Color("434a5a"), {"cloth":1.0,"twill":1.0,"thread":0.005,"wear":0.8}],
+		"pilot_boots": [Color("664130"), {"leather":1.0,"wear":0.9,"dust":0.6}],
+		"pilot_fleece": [Color("c4ad8c"), {"felt":0.8,"grime":0.8,"dust":0.8,"paint_scale":30.0}],
+		"pilot_cape": [Color("4c4944"), {"cloth":0.9,"thread":0.007,"fade":0.8,"wear":0.6}],
+	},
+	"dust": {
+		"ALL": [null, {"dust":0.8,"fade":0.6,"grime":0.75,"wear":0.6,"bump":1.3,"bands":0.0,"fill":3.0,"mottle":0.16,"streaks":0.1}],
+		"pilot_face": [Color("2e241f"), {"dust":0.0,"fade":0.0,"grime":0.0,"wear":0.0,"bump":0.0,"bands":1.0,"fill":3.2,"mottle":0.05,"streaks":0.02}],
+		"pilot_hat": [Color("8e4b3b"), {"felt":1.0,"fade":0.5,"dust":0.2,"wear":0.9,"paint_scale":18.0}],
+		"pilot_hat_band": [Color("2f241d"), {"leather":0.8}],
+		"pilot_scarf": [Color("557570"), {"knit":1.0,"thread":0.012,"paint_scale":20.0}],
+		"pilot_jacket": [Color("4e4a36"), {"cloth":0.7,"thread":0.006,"wear":0.8}],
+		"pilot_strap": [Color("4f3424"), {"leather":1.0}],
+		"pilot_gold": [Color("7d6236"), {"metal":1.0,"sheen":0.12,"dust":0.2,"wear":0.0}],
+		"pilot_glow": [null, {"dust":0.0,"fade":0.0,"grime":0.0,"wear":0.0,"bump":0.0,"bands":1.0,"fill":3.2,"mottle":0.0,"streaks":0.0}],
+		"pilot_mitt": [Color("5e4130"), {"leather":1.0,"wear":0.8}],
+		"pilot_trousers": [Color("4a4438"), {"cloth":1.0,"twill":1.0,"thread":0.005,"wear":0.8}],
+		"pilot_boots": [Color("54392a"), {"leather":1.0,"wear":0.9,"dust":1.0}],
+		"pilot_fleece": [Color("b3a185"), {"felt":0.8,"dust":1.0,"paint_scale":30.0}],
+		"pilot_cape": [Color("55595a"), {"cloth":0.8,"thread":0.007,"fade":0.9,"wear":0.7,"mottle":0.22,"streaks":0.14,"paint_scale":5.0}],
+	},
+}
+
+## The look this run wears: `--wanderer-look=` (worn by default).
+static func look() -> String:
+	for a: String in preload("res://scripts/launch_args.gd").user_args():
+		if a.begins_with("--wanderer-look="): return a.get_slice("=",1)
+	return "worn"
+
+## The materials, keyed by the model's surface names, in `which` look
+## (look() if empty).
+static func outfit(which := "") -> Dictionary:
+	if which == "": which = look()
+	var worn: Dictionary = LOOKS.get(which,{})
+	var all: Dictionary = worn.get("ALL",[null,{}])[1]
 	var out := {}
 	for key: String in SURFACES:
 		var m := ShaderMaterial.new()
 		m.shader = PAINT
 		m.resource_name = key
-		m.set_shader_parameter("albedo",SURFACES[key][0])
-		var tweaks: Dictionary = SURFACES[key][1]
+		var over: Array = worn.get(key,[null,{}])
+		m.set_shader_parameter("albedo",SURFACES[key][0] if over[0] == null else over[0])
+		var tweaks: Dictionary = SURFACES[key][1].duplicate()
+		tweaks.merge(all,true)
+		tweaks.merge(over[1],true)
 		for p: String in tweaks: m.set_shader_parameter(p,tweaks[p])
 		out[key] = m
 	return out

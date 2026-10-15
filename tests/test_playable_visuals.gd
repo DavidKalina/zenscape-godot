@@ -16,7 +16,7 @@ func run() -> void:
 	root.add_child(viewport)
 	var scene = load("res://studies/diorama.tscn").instantiate()
 	scene.title_seed = 37
-	scene.library_path = "/private/tmp/zs-playable-visuals-library"
+	scene.library_path = OS.get_temp_dir().path_join("zs-playable-visuals-library")
 	scene.recent_file = scene.library_path+"/recent.cfg"
 	viewport.add_child(scene)
 	while not scene.title_loaded: await process_frame
@@ -97,14 +97,14 @@ func run() -> void:
 		for i in range(12):
 			await process_frame
 			RenderingServer.force_draw(false)
-		viewport.get_texture().get_image().save_png("/private/tmp/zs-playable-enhanced.png")
-		water.views[0].viewport.get_texture().get_image().save_png("/private/tmp/zs-playable-reflection.png")
+		viewport.get_texture().get_image().save_png(OS.get_temp_dir().path_join("zs-playable-enhanced.png"))
+		water.views[0].viewport.get_texture().get_image().save_png(OS.get_temp_dir().path_join("zs-playable-reflection.png"))
 		water.enabled = false
 		water.sync(scene)
 		for i in range(8):
 			await process_frame
 			RenderingServer.force_draw(false)
-		viewport.get_texture().get_image().save_png("/private/tmp/zs-playable-control.png")
+		viewport.get_texture().get_image().save_png(OS.get_temp_dir().path_join("zs-playable-control.png"))
 		water.enabled = true
 		water.sync(scene)
 		material_binding = water._material_bindings.values()[0]
@@ -127,7 +127,7 @@ func run() -> void:
 	check(water.revision != water_revision,"Full refresh exercises replacement water geometry")
 	check(shaders.keys().all(func(key): return water._shader_cache.get(key)==shaders[key]),"Changed terrain/water geometry preserves identical compiled reflection shaders")
 	check(water._shader_cache.size()==water._used_shaders.size(),"Shader retention is bounded to active reflection sources and levels")
-	editor.save_path = "/private/tmp/zs-playable-visuals-roundtrip.json"
+	editor.save_path = OS.get_temp_dir().path_join("zs-playable-visuals-roundtrip.json")
 	check(editor.save_garden(), "Effects allow normal garden save")
 	check(editor.open_garden(), "Effects allow normal garden reload")
 	water.sync(scene)

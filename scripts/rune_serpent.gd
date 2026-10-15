@@ -298,6 +298,22 @@ const EYE_GLOW := Color(1.0,0.72,0.36)
 const HAZE := 1.4
 const HAZE_STRENGTH := Vector2(0.04,0.35)
 const HAZE_WATCH := 0.3
+## The pebbled look (on unless --serpent-look=rune): a gargoyle in a
+## snake's form, of a piece with the Olmec. Its stone carved all over in
+## pebbled scales (the shader's `pebble`: PEBBLE_SIZE m across on the body,
+## PEBBLE_HEAD times that on the head's plates), a heavier brow over each
+## eye (PEBBLE_BROW: the brow's jut out and lift, shares of the head's
+## girth, and a ridge over it), small stone fangs past the lip and teeth
+## along it; its runes cut in and only faintly lit (PEBBLE_GLOW by day and
+## night, PEBBLE_HALO), its mouth a dark maw, no trailing lights.
+const PEBBLE := 1.0
+const PEBBLE_SIZE := 0.3
+const PEBBLE_HEAD := 1.9
+const PEBBLE_BROW := Vector2(0.1,0.2)
+const PEBBLE_FANG := Color("9c9178")
+const PEBBLE_MOUTH := Color("1a1210")
+const PEBBLE_GLOW := Vector2(0.35,1.1)
+const PEBBLE_HALO := Vector2(0.14,6.0)
 const RUNE_RUN := 0.45
 ## Night light round 1 (docs/design/night-light/round1.md): at night the
 ## runes stay strong (NIGHT_GLOW, was 1.25 to keep them from white) and white
@@ -358,6 +374,8 @@ var route: Array = ROUTE
 var route_marks: Dictionary = MARKS
 var start_mark := START
 var girth := 1.0
+## The pebbled look (PEBBLE*), or the old rune look (--serpent-look=rune).
+var pebbled := true
 var solid := true
 ## The share of its roll into turns it takes (1 all of it; a rider on its
 ## back may ease it), and whether a watcher behind it is glanced at over
@@ -487,6 +505,7 @@ func setup(study: Node3D) -> void:
 		elif arg.begins_with("--serpent-cam="): cam_mode = arg.get_slice("=",1)
 		elif arg == "--meet-serpent": _meet = true
 		elif arg.begins_with("--serpent-speed="): _speed_scale = clampf(float(arg.get_slice("=",1)),0.1,4.0)
+		elif arg.begins_with("--serpent-look="): pebbled = arg.get_slice("=",1) != "rune"
 	for spring in [_sx,_sv,_sf,_sg]: spring.resize(S_COUNT)
 	_tp.resize(TRAIL)
 	_tb.resize(TRAIL)
@@ -1043,10 +1062,15 @@ func _light(delta: float) -> void:
 	_eye_lit = move_toward(_eye_lit,1.0 if mode in ["watch","pace"] else 0.0,delta/EYE_EASE)
 	var lit := _eye_lit*_eye_lit
 	_material.set_shader_parameter("scroll",_scroll)
-	_material.set_shader_parameter("energy",lerpf(DAY_GLOW,NIGHT_GLOW,night))
 	_material.set_shader_parameter("glow",GLOW.lerp(NIGHT_RUNE_COLOUR,night))
-	_material.set_shader_parameter("halo",lerpf(0.32,NIGHT_HALO.x,night))
-	_material.set_shader_parameter("halo_spread",lerpf(10.0,NIGHT_HALO.y,night))
+	if pebbled:
+		_material.set_shader_parameter("energy",lerpf(PEBBLE_GLOW.x,PEBBLE_GLOW.y,night))
+		_material.set_shader_parameter("halo",PEBBLE_HALO.x)
+		_material.set_shader_parameter("halo_spread",PEBBLE_HALO.y)
+	else:
+		_material.set_shader_parameter("energy",lerpf(DAY_GLOW,NIGHT_GLOW,night))
+		_material.set_shader_parameter("halo",lerpf(0.32,NIGHT_HALO.x,night))
+		_material.set_shader_parameter("halo_spread",lerpf(10.0,NIGHT_HALO.y,night))
 	_material.set_shader_parameter("eye_energy",lerpf(lerpf(EYE_DAY,EYE_NIGHT,night),EYE_WATCH,lit))
 	_material.set_shader_parameter("eye_lit",lit)
 	_haze.set_shader_parameter("strength",lerpf(HAZE_STRENGTH.x,HAZE_STRENGTH.y,night)+HAZE_WATCH*lit)
@@ -1105,6 +1129,8 @@ func _build_ribbons() -> void:
 ## been, the fin along the path behind the tail's tip.
 func _ribbons_step() -> void:
 	if _ribbons == null or _whisker_roots.size() < 2: return
+	_ribbons.visible = not pebbled
+	if pebbled: return
 	var most := int(ceil(WHISKER/RIBBON_STEP))+2
 	var lines: Array = []
 	for i in range(2):
@@ -1279,7 +1305,8 @@ func head_corners(i: int) -> Array[Vector3]:
 	var spec: Array = HEAD_SECTIONS[i]
 	var section := _octagon(hr,float(spec[0]),float(spec[1])*SQUASH,0.0,-1,0.0,false)
 	if i == 2:
-		for j: int in [0,1]: section[j] += Vector3(signf(section[j].x)*0.06*hr,0.14*hr,0.0)
+		var brow := PEBBLE_BROW if pebbled else Vector2(0.06,0.14)
+		for j: int in [0,1]: section[j] += Vector3(signf(section[j].x)*brow.x*hr,brow.y*hr,0.0)
 	return section
 
 ## The head's back, its way, its snout; its pace now (m/s).
@@ -1408,6 +1435,10 @@ func _build_body() -> void:
 	_material.set_shader_parameter("bump_strength",BUMP)
 	_material.set_shader_parameter("runes",true)
 	_material.set_shader_parameter("rune_cut",RUNE_CUT)
+	if pebbled:
+		_material.set_shader_parameter("pebble",PEBBLE)
+		_material.set_shader_parameter("pebble_size",PEBBLE_SIZE*GRAIN)
+		_material.set_shader_parameter("pebble_head",Vector2(HEAD+COLLAR*0.5,PEBBLE_HEAD))
 	_haze = ShaderMaterial.new()
 	_haze.shader = GLOW_SHADER
 	_haze.set_shader_parameter("colour",EYE_GLOW)
@@ -1482,7 +1513,7 @@ func _build_mesh() -> ArrayMesh:
 		mesh.tri(tip,bone,secs[-1][j],bone,secs[-1][n],bone,0.0,0.0,0.0,false,Vector2.ZERO,Vector2.ZERO,Vector2.ZERO,Vector3(0.0,HEAD*0.03,HEAD*0.03))
 	# Inside the mouth, along the lip line (corners 3 and 6): a palate on the
 	# head and a floor on the jaw, warm with its light.
-	mesh.paint(MOUTH,5,1.0,0.0,1.0)
+	mesh.paint(PEBBLE_MOUTH if pebbled else MOUTH,5,1.0,0.0,1.0)
 	for bone: int in [h,jaw]:
 		for i in range(1,secs.size()):
 			var back_bone := h if i == 1 else bone
@@ -1511,6 +1542,7 @@ func _build_mesh() -> ArrayMesh:
 		# `rs_eye`): carved into a patch laid on the face itself.
 		mesh.paint(STONE*float(FACE_TONE[j])*1.04,4,1.0,0.0,1.0)
 		_eye_patch(mesh,secs,j,behind.lerp(ahead,0.62),along,across,hr)
+	if pebbled: _pebbled_parts(mesh,secs,hr,h)
 	# A forked tongue of light, flat both ways.
 	var t := STATIONS+1
 	var w := 0.08
@@ -1526,6 +1558,79 @@ func _build_mesh() -> ArrayMesh:
 	for e in eyes: haze.light(e,h,HAZE,1.0)
 	haze.commit(built,_haze)
 	return built
+
+## The pebbled look's carving on the head (on its bone `h`): a brow ridge
+## over each eye, small fangs past the lip and teeth along it. Tapered
+## stone tubes (`_tube`), weathered and pebbled as the rest.
+func _pebbled_parts(mesh: MeshParts, secs: Array, hr: float, h: int) -> void:
+	for side: float in [-1.0,1.0]:
+		# Its corners on this side: the brow's top (1 on the left, 0 on the
+		# right) and the lip's (3, 6).
+		var brow_c := 1 if side < 0.0 else 0
+		var lip_c := 3 if side < 0.0 else 6
+		var out := Vector3(side,0.0,0.0)
+		# The brow: a ridge from behind the eye to past it, jutting out over
+		# it, thickest over the eye.
+		mesh.paint(STONE*1.02,0,1.0,0.0,1.0)
+		var b0: Vector3 = (secs[1][brow_c] as Vector3).lerp(secs[0][brow_c],0.3)
+		var b1: Vector3 = secs[1][brow_c]
+		var b2: Vector3 = secs[2][brow_c]
+		var b3: Vector3 = (secs[2][brow_c] as Vector3).lerp(secs[3][brow_c],0.45)
+		var lift := Vector3(0.0,0.02*hr,0.0)
+		_tube(mesh,[b0,b1+out*0.05*hr+lift,b2+out*0.06*hr+lift,b3],[0.03*hr,0.11*hr,0.1*hr,0.0],h,6)
+		# The fangs: short, hung from the lip near the snout.
+		mesh.paint(PEBBLE_FANG,0,1.0,0.0,1.0)
+		var lip_at: Vector3 = (secs[3][lip_c] as Vector3).lerp(secs[2][lip_c],0.25)-out*0.05*hr
+		var fang := 0.26*hr
+		_tube(mesh,[lip_at+Vector3(0.0,0.04*hr,0.0),lip_at+Vector3(0.0,-fang*0.5,-0.02*hr),lip_at+Vector3(-side*0.02*hr,-fang,-0.07*hr)],[0.055*hr,0.04*hr,0.0],h,5)
+		# Teeth along the lip, seen when the jaw opens.
+		for i in range(5):
+			var t := float(i)/4.0
+			var at: Vector3 = (secs[1][lip_c] as Vector3).lerp(secs[3][lip_c],0.15+t*0.6)-out*0.06*hr
+			var tooth := lerpf(0.1,0.14,t)*hr
+			_tube(mesh,[at+Vector3(0.0,0.03*hr,0.0),at+Vector3(0.0,-tooth,-0.03*hr)],[0.03*hr,0.0],h,4)
+
+## A tapered stone tube on `bone` through `points` (the head's frame),
+## `radii` at each (0 closes it in a point), `sides` facets round; its faces
+## wound and lit outward from its own line, its root closed.
+func _tube(mesh: MeshParts, points: Array, radii: Array, bone: int, sides: int) -> void:
+	var loops: Array = []
+	for i in range(points.size()):
+		var p: Vector3 = points[i]
+		var dir: Vector3 = ((points[mini(i+1,points.size()-1)] as Vector3)-points[maxi(i-1,0)]).normalized()
+		var across := dir.cross(Vector3.UP)
+		if across.length_squared() < 1e-4: across = dir.cross(Vector3.RIGHT)
+		across = across.normalized()
+		var up := across.cross(dir).normalized()
+		var loop: Array[Vector3] = []
+		for k in range(sides):
+			var a := TAU*float(k)/float(sides)+0.4
+			loop.append(p+(across*cos(a)+up*sin(a))*float(radii[i]))
+		loops.append(loop)
+	for i in range(points.size()-1):
+		var axis: Vector3 = ((points[i] as Vector3)+points[i+1])*0.5
+		for k in range(sides):
+			var n := (k+1)%sides
+			var a: Vector3 = loops[i][k]
+			var b: Vector3 = loops[i][n]
+			var c: Vector3 = loops[i+1][k]
+			var d: Vector3 = loops[i+1][n]
+			var mid := (a+b+c+d)*0.25
+			_tube_tri(mesh,a,b,d,mid-axis,bone)
+			if float(radii[i+1]) > 0.0: _tube_tri(mesh,a,d,c,mid-axis,bone)
+	var first: Array = loops[0]
+	var back: Vector3 = ((points[0] as Vector3)-points[1]).normalized()
+	for k in range(1,sides-1): _tube_tri(mesh,first[0],first[k],first[k+1],back,bone)
+
+## A triangle of a tube, wound so its face shows toward `outward`.
+func _tube_tri(mesh: MeshParts, a: Vector3, b: Vector3, c: Vector3, outward: Vector3, bone: int) -> void:
+	var nrm := (b-a).cross(c-a)
+	if nrm.length_squared() < 1e-12: return
+	if nrm.dot(outward) < 0.0:
+		var t := b
+		b = c
+		c = t
+	mesh.tri(a,bone,b,bone,c,bone,0.0,0.0,0.0,true,Vector2.ZERO,Vector2.ZERO,Vector2.ZERO,Vector3(HEAD-a.z,HEAD-b.z,HEAD-c.z))
 
 ## The eye on the head's face `j` (between its sections 1 and 2): a grid
 ## EYE_SIZE times the head's girth `hr` about `center`, `along` the head

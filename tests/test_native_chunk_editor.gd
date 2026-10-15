@@ -3,7 +3,7 @@ extends SceneTree
 ## suite: gpu
 var failures := 0
 var capture_directory := ""
-var save_file := "/tmp/native-garden-test-%d.json" % OS.get_process_id()
+var save_file := OS.get_temp_dir().path_join("native-garden-test-%d.json" % OS.get_process_id())
 
 func _initialize() -> void:
 	for arg in OS.get_cmdline_user_args():

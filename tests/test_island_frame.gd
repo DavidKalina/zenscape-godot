@@ -68,7 +68,7 @@ func _scene() -> void:
 	var scene = load("res://studies/cozy_worlds.tscn").instantiate()
 	scene.set_meta("movie_capture",true)
 	scene.set_meta("no_title",true)
-	scene.places_path = "/private/tmp/island-frame-%d/places.json" % Time.get_ticks_usec()
+	scene.places_path = OS.get_temp_dir().path_join("island-frame-%d/places.json" % Time.get_ticks_usec())
 	root.size = Vector2i(1440,900)
 	root.content_scale_size = Vector2i(1440,900)
 	root.add_child(scene)

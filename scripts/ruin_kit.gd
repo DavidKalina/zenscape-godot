@@ -2573,9 +2573,10 @@ class Build extends RefCounted:
 			_materials = {"stone":s,"growth":RuinGrowth.material()}
 		# Dressed when the look changes (the same values every time else):
 		# isles built side by side on workers call this at once.
-		if _dressed != Style.current:
+		var key := "%s %s" % [Style.current,Style.weather()]
+		if _dressed != key:
 			Style.dress(_materials.stone)
-			_dressed = Style.current
+			_dressed = key
 		return _materials
 
 	## The ground's height at (x, z) in the piece's frame: 0 with no terrain.

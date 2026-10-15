@@ -630,7 +630,7 @@ func in_scene() -> void:
 	scene = load("res://studies/cozy_worlds.tscn").instantiate()
 	scene.set_meta("movie_capture",true)
 	scene.set_meta("no_title",true)
-	scene.places_path = "/private/tmp/zs-hand-flowers-%d/places.json" % Time.get_ticks_usec()
+	scene.places_path = OS.get_temp_dir().path_join("zs-hand-flowers-%d/places.json" % Time.get_ticks_usec())
 	root.add_child(scene)
 	current_scene = scene
 	while not scene.places_ready or not scene.shell_ready: await process_frame

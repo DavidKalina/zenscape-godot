@@ -8,7 +8,7 @@ func check(ok: bool,message: String) -> void:
 func run() -> void:
 	create_timer(300).timeout.connect(func(): push_error("World integration timed out"); quit(2))
 	var scene = load("res://studies/diorama.tscn").instantiate()
-	var folder := "/private/tmp/zenscape-world-integration-"+str(Time.get_ticks_usec())
+	var folder := OS.get_temp_dir().path_join("zenscape-world-integration-"+str(Time.get_ticks_usec()))
 	scene.library_path = folder
 	scene.recent_file = folder+"/recent.cfg"
 	scene.title_seed = 37

@@ -14,7 +14,7 @@ func run() -> void:
 	root.add_child(scene)
 	while not scene.title_loaded: await process_frame
 	var trace: Node = scene._performance_trace
-	trace.output_directory = "/tmp/zenscape-trace-test-%d" % OS.get_process_id()
+	trace.output_directory = OS.get_temp_dir().path_join("zenscape-trace-test-%d" % OS.get_process_id())
 	var paths: Array[String] = []
 	trace.saved.connect(func(path: String): paths.append(path))
 	var event := InputEventKey.new()

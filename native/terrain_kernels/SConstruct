@@ -8,5 +8,10 @@ env.Append(CXXFLAGS=['/fp:strict'] if env.get('is_msvc', False) else ['-ffp-cont
 # The descriptor names the Windows library without MinGW's 'lib' prefix (as MSVC builds it).
 if env['platform'] == 'windows':
     env['SHLIBPREFIX'] = ''
-library = env.SharedLibrary('bin/zenscape_kernels' + env['suffix'] + ('.dylib' if env['platform'] == 'macos' else env['SHLIBSUFFIX']), source=['kernels.cpp'])
+# Objects go to build/, which Godot skips (.gdignore): MSVC's .obj would import as meshes.
+build_dir = os.path.join(Dir('.').abspath, 'build')
+os.makedirs(build_dir, exist_ok=True)
+open(os.path.join(build_dir, '.gdignore'), 'a').close()
+VariantDir('build', '.', duplicate=False)
+library = env.SharedLibrary('bin/zenscape_kernels' + env['suffix'] + ('.dylib' if env['platform'] == 'macos' else env['SHLIBSUFFIX']), source=['build/kernels.cpp'])
 Default(library)

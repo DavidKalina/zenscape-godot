@@ -66,7 +66,7 @@ func _run() -> void:
 	var editor: NativeChunkEditor = scene._chunk_editor
 	editor.reactions_enabled = false
 	editor.set_process(false)
-	editor.save_path = "/tmp/zenscape-selection-test.json"
+	editor.save_path = OS.get_temp_dir().path_join("zenscape-selection-test.json")
 	editor.start_flat()
 	editor.set_active(true)
 	editor.data.begin_stroke()

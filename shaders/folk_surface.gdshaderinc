@@ -39,6 +39,9 @@ uniform float gleam_at = 0.0;
 uniform float gleam_width = 0.12;
 
 varying vec3 local;
+#ifdef ZS_STONE_WEATHER
+#include "res://shaders/kit_weather.gdshaderinc"
+#endif
 varying vec3 gleam_world;
 #ifdef ZS_NIGHT_STONE
 // The ruins at night (night light round 2, docs/design/night-light/
@@ -105,8 +108,18 @@ void fragment() {
 #ifdef ZS_FOLK_VERTEX_COLOR
 	base *= COLOR.rgb;
 #endif
+	float rough_add = 0.0;
+#ifdef ZS_STONE_WEATHER
+	// The kit's weathered basalt (shaders/kit_weather.gdshaderinc).
+	if (stone_weather > 0.0) {
+		vec3 wn = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
+		vec3 bumped = NORMAL;
+		rough_add = kit_weather(base, bumped, wn, local, VERTEX, 1.0 - clamp(COLOR.a, 0.0, 1.0), stone_weather);
+		NORMAL = bumped;
+	}
+#endif
 	ALBEDO = base;
-	ROUGHNESS = mix(roughness_value, 1.0, dull * 0.6);
+	ROUGHNESS = clamp(mix(roughness_value, 1.0, dull * 0.6) + rough_add, 0.0, 1.0);
 	METALLIC = metallic_value;
 	CLEARCOAT = coat * (1.0 - dull * 0.8);
 	CLEARCOAT_ROUGHNESS = coat_roughness;

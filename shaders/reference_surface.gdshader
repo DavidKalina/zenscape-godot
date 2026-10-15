@@ -17,6 +17,9 @@ shader_type spatial;
 #include "res://shaders/sky_season.gdshaderinc"
 #include "res://shaders/sky_peak_look.gdshaderinc"
 #include "res://shaders/cloud_volume_shadow.gdshaderinc"
+// The kit isles' weathered rock (shaders/kit_weather.gdshaderinc; KitLook sets
+// `stone_weather` on its rock and ground, 0 everywhere else).
+#include "res://shaders/kit_weather.gdshaderinc"
 render_mode cull_disabled, diffuse_lambert, specular_schlick_ggx;
 
 uniform bool brush_visible = false;
@@ -237,6 +240,8 @@ uniform bool side_own = false;
 uniform bool side_painted = false;
 uniform float earth_sides_top = 2.6;
 uniform float earth_sides_base = -2.8;
+// The kit rock's weathering grain (a share of the ruin stone's: under 1 coarser).
+uniform float rock_grain = 0.6;
 // The earth sides' depth below the rim, the rim's rise, height above the
 // base and position along the side, packed in one varying: the shader is at
 // the 31-varying limit (Metal), and four floats would take four. The grass
@@ -768,6 +773,23 @@ void fragment() {
 		tint = base_color.rgb * (side_painted ? COLOR.rgb : zs_strata(plate, plate.y + earth_side.x))
 			* (1.0 + side_facets * jitter) * mix(1.0, 0.5, side_mist);
 		if (!side_own) tint = scene_palette_ground(tint);
+	}
+	// The kit isles' rock weathered as their ruins' stone is (the Olmec's
+	// basalt, shaders/kit_weather.gdshaderinc): the earth sides and keels,
+	// and the ground's steep faces the turf leaves bare. In the isle's own
+	// frame, `rock_grain` times coarser than the stone's (cliffs are seen
+	// from farther).
+	if (stone_weather > 0.0 && !grass_blades && !flower_heads) {
+		vec3 wn = normalize(face_normal);
+		float rocky = earth_sides ? 1.0 : (ground ? (1.0 - ground_grass) * (1.0 - smoothstep(0.55, 0.8, wn.y)) : 0.0);
+		if (rocky > 0.0) {
+			vec3 rest = inverse(mat3(MODEL_MATRIX)) * (world_position - MODEL_MATRIX[3].xyz);
+			vec3 weathered = tint;
+			vec3 bumped = NORMAL;
+			kit_weather(weathered, bumped, wn, rest * rock_grain, VERTEX, 0.0, stone_weather);
+			tint = mix(tint, weathered, rocky);
+			NORMAL = normalize(mix(NORMAL, bumped, rocky));
+		}
 	}
 	if (grass_blades) {
 		// The family's grass leaned to living green, dark at the root and

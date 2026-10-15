@@ -11,7 +11,7 @@ func run() -> void:
 	scene._paused = true
 	var editor = scene._chunk_editor
 	var library = Library.new()
-	library.directory = "/private/tmp/zenscape-favorites-test-"+str(Time.get_ticks_usec())
+	library.directory = OS.get_temp_dir().path_join("zenscape-favorites-test-"+str(Time.get_ticks_usec()))
 	await editor.form_landscape("terraced_pools","woodland",false,174)
 	editor.data.begin_stroke()
 	editor.data.brush(Vector2(-8,7),2.0,0.7,"raise",0.0)
