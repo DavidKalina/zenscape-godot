@@ -116,6 +116,33 @@ gaps from the wanderer size (`PilotMotor.set_size`,
 copy 2.0, 2.4, the ratio, 1.2 (`pilot_size`) or the toy span 1.4. Guarded by
 `tests/test_world_scale_guard.gd` and `tests/test_world_scale_fit.gd`.
 
+# Art direction
+
+The world is painterly and the things in it are real. The grass, terrain,
+sky and light are painted: soft shader grass, broad washes. Creatures,
+stone and the wanderer are near-realistic weathered materials: they read
+through real texture, not through bright colour or clean toy shapes.
+
+- **Stone**: weathered basalt with washes, rain streaks, flecks, pits,
+  cracks, chipped high points, grime in the crevices and dry lichen
+  (`shaders/olmec_stone.gdshader`, `docs/design/roguelike/olmec-weathered.md`).
+  The rune serpent wears the same stone with pebbled scales carved in.
+- **The wanderer**: real, lived-in stuff: felt, knit, canvas, twill,
+  scuffed leather, tarnished brass, sun-fade, and ochre dust up the boots
+  (`shaders/pilot_paint.gdshader`, `scripts/pilot_paint.gd` LOOKS,
+  `--wanderer-look=worn|dust|paint`). His hat stays readable from the
+  high play camera.
+- **Menace comes from material, weight and restraint**, not genre
+  clichés. No horns, spikes, ember-red glows or black edgy stone; the
+  user rejected that as too edgy and stereotypical. Glows stay dim and warm
+  on stone.
+- **Detail fades with distance**: work the weathering in solid noise over
+  the model's rest pose, so it rides on a moving body. Fade fine layers
+  by pixel footprint so they never shimmer. Let the broad washes and the
+  value contrast carry the look at gameplay range.
+- **Judge it by eye**, in rendered stills, at gameplay range and close,
+  on the real painted turf, next to the Olmec.
+
 # Animation
 
 Characters and enemies animate to a Nintendo-like bar: authored key poses
