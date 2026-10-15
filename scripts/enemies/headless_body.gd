@@ -326,6 +326,16 @@ func default_knobs(n: Dictionary) -> Dictionary:
 		# roaming's: a column felled across a gap is a way), walked, climbed
 		# and leapt; none, it tries again `chase_replan` s on.
 		"chase_routes":0,"chase_replan":3.0,
+		# Climbing after him (docs/design/roguelike/body-climb-after-round1.md):
+		# 1 on (the default, wherever he hunts), 0 off (as before: lost
+		# up a wall or a stair, he scopes and gives up at the foot). Lost
+		# from sight up out of his walk (or him last seen going up), he
+		# plans a route (his planner's: walk, climb in `climb_max`, leap)
+		# to the place he fits nearest where he last saw him, climbs after
+		# him, comes over the top and looks; still not there, on along his
+		# way up `after_ahead` m. `after_tries` routes a loss at most, none
+		# once `after_for` s unseen.
+		"climb_after":1,"after_tries":3,"after_for":60.0,"after_ahead":n.unit*10.0,"after_wait":0.6,
 	}
 
 ## Its build (m) from its knobs `k` and the walker's `unit`, as `_size` and
@@ -898,6 +908,9 @@ func _meet_wall(hit: Dictionary) -> void:
 		return
 	_start_climb(hit)
 
+## Lips he let go of, no room over them (counted, for checks).
+var no_room_lips := 0
+
 ## Walk legs given up at walls in a row (Olmec round 1), and how many
 ## before it climbs the wall instead.
 var _wall_fails := 0
@@ -1003,6 +1016,15 @@ func _climb(delta: float) -> void:
 	var past := _face_pt+fwd*float(knobs.lip_in)
 	var lip := _cast(Vector3(past.x,position.y+reach,past.z),Vector3(past.x,position.y+float(knobs.step),past.z))
 	_lip_y = (lip.position as Vector3).y if not lip.is_empty() and (lip.normal as Vector3).y > 0.6 else INF
+	# Body climb-after round 1: a lip with no room over it for him (a
+	# refuge's floor under an overhang, the hauling lip's undercut): no
+	# top for him. He lets go (he'd haul himself into it).
+	if _lip_y != INF and _lip_y-position.y <= _hang_h()+0.5:
+		var at := lip.position as Vector3
+		if not _cast(at+Vector3.UP*0.1,at+Vector3.UP*neck_h*0.5).is_empty():
+			no_room_lips += 1
+			_fall()
+			return
 	# Round 4: springing, it hangs once its hands can reach the lip (and
 	# climbs on hand over hand till then).
 	_hang = _springs() and _lip_y != INF and _lip_y-position.y <= _hang_h()
@@ -1094,10 +1116,11 @@ func _mantle(delta: float) -> void:
 		grounded = true
 		spawned_on_cliff = false
 		# Round 11: over a lip it doesn't fit on, with its climb leg's wall
-		# over it, it goes straight on climbing (no listen).
+		# over it, it goes straight on climbing (no listen); hunting on a
+		# route, still hunting (roam would drop the route).
 		if _routed() and _route[_leg].kind == "climb" and not _at_leg_end():
 			perches += 1
-			_go("roam")
+			_go("chase" if _chase_routed and hunting and _chases() else "roam")
 			return
 		_go(_resume())
 
@@ -1527,6 +1550,8 @@ func _wander_goal(near: float, far: float, down: float, way := INF) -> Vector3:
 ## The search stepped; done, its route taken (none: out, `_bail`).
 func _searching() -> void:
 	if _search == null: return
+	# After her, he climbs beside her walker-only stone, not through it.
+	routes.shun_hers = _after and _chase_routed
 	if not _search.step(ROUTE_US): return
 	var s := _search
 	_search = null
@@ -1594,6 +1619,12 @@ func _follow(delta: float) -> bool:
 		if state == "home": return true
 		if state == "chase":
 			_chase_routed = false
+			if _after:
+				# Up where it went after him: a fresh look about from here
+				# (once a loss: on along his way, it presses on).
+				_after = false
+				after_got += 1
+				if _after_k == 0: _scoped = false
 			return false
 		_go("listen")
 		return false
@@ -1674,8 +1705,11 @@ func _leg_failed(why: String) -> void:
 	# Hunting on a route (city breaks round 1): still hunting, it plans
 	# again at once without that move.
 	if state == "chase" and _chase_routed:
+		var was_after := _after
 		_chase_drop()
 		_chase_plan_at = _clock
+		# After him: the same place again, round that move (a try).
+		if was_after: _after_again()
 		return
 	# A short beat (not a whole listen) and it plans again.
 	_go("listen")
@@ -1810,6 +1844,7 @@ func _see(delta: float) -> void:
 		seen_at = m.feet
 		seen_t = 0.0
 		if state != "scope": _scoped = false
+		_trail_seen(m.feet)
 	else: seen_t += delta
 	if sight.state == "spotted" and sight.seeing() and (state in ["listen","roam","alert","seek","return"] or (not hunting and state == "triumph")):
 		_spot()
@@ -1858,23 +1893,47 @@ func _ready_text(at: float) -> String:
 func _chase(delta: float) -> void:
 	var m: PilotMotor = field.motor
 	var seeing: bool = sight.seeing()
-	var target := m.feet if seeing else seen_at
+	# Unseen, it goes where it last saw him, or where it went after him.
+	var target := m.feet if seeing else (_after_at if _after_at != Vector3.INF else seen_at)
 	var to := target-position
 	var flat := Vector2(to.x,to.z).length()
+	var after := _chase_routed and _after
 	if not seeing:
-		if flat <= float(knobs.search_reach) or seen_t > float(knobs.chase_memory):
+		if after:
+			# Climbing after him: on up its route; unseen too long, it gives
+			# that up (and looks about where it is, next).
+			if seen_t > float(knobs.after_for):
+				after_why = "unseen %.0f s" % seen_t
+				_chase_drop()
+				_after_at = Vector3.INF
+				return
+		elif flat <= float(knobs.search_reach) or seen_t > float(knobs.chase_memory):
 			if _scope_try("seek"): return
+			if _after_try(): return
 			_seek_start()
 			return
 		# Lost him near where it saw him last: it plants and looks over.
-		if seen_t > float(knobs.scope_wait) and flat <= float(knobs.scope_near)*hh and _scope_try("chase"): return
+		elif seen_t > float(knobs.scope_wait) and flat <= float(knobs.scope_near)*hh and _scope_try("chase"): return
+		# Lost him up out of its walk: after him, by a route.
+		elif seen_t > float(knobs.after_wait) and _after_try(): return
 	elif _attack(m,flat,to.y): return
-	# Right under him, him up out of its reach: a moment, then it looks
-	# about (round 2: it paced under him for good).
-	if seeing and to.y > float(knobs.step)*STAIR*1.5 and flat < length*1.5+float(knobs.search_reach):
+	elif after and to.y <= _after_rise():
+		# Seen again about its own level: straight at him.
+		_chase_drop()
+		_after_at = Vector3.INF
+	elif after and m.feet.distance_to(_after_from) > GOAL_MOVED and _clock >= _chase_plan_at:
+		# Seen up there, moved on: after him afresh.
+		_chase_plan_at = _clock+float(knobs.chase_replan)
+		_chase_drop()
+		if _after_try(m.feet): return
+	# Right under him, him up out of its reach: a moment, then after him
+	# by a route (`climb_after`), or it looks about (round 2: it paced
+	# under him for good).
+	if seeing and not after and to.y > float(knobs.step)*STAIR*1.5 and flat < length*1.5+float(knobs.search_reach):
 		_under_t += delta
 		if _under_t > UNDER_GIVE:
 			_under_t = 0.0
+			if _after_try(m.feet): return
 			_seek_start()
 			return
 	else: _under_t = 0.0
@@ -1909,10 +1968,14 @@ func _chase_routing(delta: float, target: Vector3) -> bool:
 	if _search != null:
 		_brake(delta)
 		return true
-	if not _routed() or not _route_found:
+	if not _routed() or (not _route_found and not (_after and _after_gets_up())):
+		if _after:
+			after_why = "no way up there"
+			after_fails += 1
+			_after_at = Vector3.INF
 		_chase_drop()
 		return false
-	if target.distance_to(_goal) > GOAL_MOVED and _clock >= _chase_plan_at:
+	if not _after and target.distance_to(_goal) > GOAL_MOVED and _clock >= _chase_plan_at:
 		_chase_plan_at = _clock+float(knobs.chase_replan)
 		chase_plans += 1
 		_start_search(target,length*0.5+2.0)
@@ -1923,9 +1986,189 @@ func _chase_routing(delta: float, target: Vector3) -> bool:
 
 func _chase_drop() -> void:
 	_chase_routed = false
+	_after = false
 	_route = []
 	_leg = 0
 	_search = null
+
+# --- Climbing after him (body-climb-after-round1.md) -------------------------------------------
+# Hunting, with `climb_after` on: lost from sight up out of its walk (over a
+# lip it can climb, up a long stair), it doesn't give up at the foot. It
+# plans a route (its planner's moves: no refuge it doesn't fit, no wall
+# past `climb_max`) to the place it fits nearest where it last saw him,
+# climbs after him, hauls over the top and looks about from there (the
+# periscope afresh, then its search); not there, on along his last way up
+# `after_ahead` m. At most `after_tries` routes a loss, none once he's
+# been unseen `after_for` s; a route that doesn't get it up there is
+# given up, and it searches where it stands, then goes back.
+
+## The chase route now one after him, and how many this loss (reset when
+## it sees him), how far on along his way it pushed, where it goes (INF
+## none), the spot it planned from (his feet or where it last saw them).
+var _after := false
+var _after_n := 0
+var _after_k := 0
+var _after_at := Vector3.INF
+var _after_from := Vector3.INF
+var _after_ready := 0.0
+## Where it stood when it first went after him this loss.
+var _after_start := Vector3.INF
+## His feet seen these last AFTER_TRAIL s ([time, feet], oldest first), and
+## his way over them (m: where his feet went).
+var _trail: Array = []
+var _seen_way := Vector3.ZERO
+var _trail_dt := 0.0
+## Counted: routes after him, those that got it there, those that didn't;
+## why the last try didn't go.
+var afters := 0
+var after_got := 0
+var after_fails := 0
+var after_why := ""
+const AFTER_TRAIL := 2.5
+## Risen this much over the trail (m): he was going up.
+const AFTER_RISE := 0.8
+## Tries this far apart at least (s).
+const AFTER_GAP := 1.0
+## Where it goes is the place it fits nearest the spot, within this (m
+## flat), and this (m) over the spot at most.
+const AFTER_NEAR := 7.5
+const AFTER_UP := 4.0
+## Pushed on along his way this far at most (m).
+const AFTER_FAR := 45.0
+
+func _trail_seen(feet: Vector3) -> void:
+	_trail.append([_clock,feet])
+	while _trail.size() > 2 and _clock-float(_trail[0][0]) > AFTER_TRAIL: _trail.pop_front()
+	_seen_way = feet-(_trail[0][1] as Vector3)
+	_trail_dt = _clock-float(_trail[0][0])
+	_after_n = 0
+	_after_k = 0
+	if not _after: _after_at = Vector3.INF
+
+## Within this (m, flat) of where it went after him, it's there.
+func _after_near() -> float:
+	return maxf(float(knobs.search_reach)+length*0.5,float(knobs.scope_near)*hh)
+
+## Over this (m, on its feet) it can't walk up to: a wall, a ledge.
+func _after_rise() -> float:
+	return float(knobs.step)*STAIR*1.5
+
+## Its route after him, not all the way, gets it up near where it goes.
+func _after_gets_up() -> bool:
+	if _route.is_empty() or _after_at == Vector3.INF: return false
+	var end: Vector3 = _route[-1].to
+	return Vector2(end.x-_after_at.x,end.z-_after_at.z).length() <= AFTER_NEAR and end.y >= _after_at.y-float(knobs.step)*2.0 \
+		and end.y > position.y+float(knobs.step)
+
+## After him, if it may: lost up out of its walk (or `at`, his feet seen
+## up there with no way at him), to where it last saw him; there already,
+## on along his way, if he went up. True: a route is being planned.
+func _after_try(at := Vector3.INF) -> bool:
+	if float(knobs.get("climb_after",0)) < 0.5 or float(knobs.routes) < 0.5 or not hunting: return false
+	if _clock < _after_ready: return false
+	var seen := at if at != Vector3.INF else seen_at
+	if seen == Vector3.INF: return false
+	if at == Vector3.INF and seen_t > float(knobs.after_for):
+		after_why = "unseen %.0f s" % seen_t
+		return false
+	if _after_n >= int(knobs.after_tries):
+		after_why = "tried %d" % _after_n
+		return false
+	var rise := _after_rise()
+	var up := seen.y > position.y+rise
+	var here := (_after_at if _after_at != Vector3.INF else seen)
+	var near := Vector2(here.x-position.x,here.z-position.z).length() <= _after_near() and absf(here.y-position.y) < rise
+	var p := seen
+	if not near and not up:
+		after_why = "not there yet"
+		return false
+	if near:
+		# At where it last saw him (or went after him): on along his way,
+		# if that went up.
+		var went_up := _seen_way.y >= AFTER_RISE or (_after_start != Vector3.INF and seen.y > _after_start.y+rise)
+		if at != Vector3.INF or not went_up:
+			after_why = "he didn't go up"
+			return false
+		var way := Vector2(_seen_way.x,_seen_way.z)
+		# Straight up a face: on away from it, the way it came at him.
+		if way.length() < 1.0 and _after_start != Vector3.INF: way = Vector2(seen.x-_after_start.x,seen.z-_after_start.z)
+		if way.length() < 1.0: way = PilotMotor.forward(facing)
+		_after_k += 1
+		# As far on as he'd have gone at the pace it last saw him at, since
+		# (`after_ahead` m at least, AFTER_FAR at most), and as much up as
+		# his way rose: the place it fits nearest that, or nearer.
+		var flat_way := Vector2(_seen_way.x,_seen_way.z).length()
+		var pace := flat_way/maxf(_trail_dt,0.1)
+		var ahead := clampf(pace*seen_t,float(knobs.after_ahead)*_after_k,AFTER_FAR)
+		var slope := clampf(_seen_way.y/maxf(flat_way,1.0),0.0,1.0)
+		var dir := Vector3(way.normalized().x,0.0,way.normalized().y)
+		_after_ready = _clock+AFTER_GAP
+		var goal_p := Vector3.INF
+		for share: float in [1.0,0.6,0.3]:
+			goal_p = _after_goal(seen+(dir+Vector3.UP*slope)*ahead*share,seen)
+			if goal_p != Vector3.INF: break
+		p = goal_p
+	_after_ready = _clock+AFTER_GAP
+	var goal := p if near else _after_goal(p,seen)
+	if goal == Vector3.INF:
+		after_why = "no place up there"
+		return false
+	if Vector2(goal.x-position.x,goal.z-position.z).length() <= _after_near() and absf(goal.y-position.y) < rise:
+		after_why = "nowhere further"
+		return false
+	if _after_n == 0: _after_start = position
+	_after_n += 1
+	afters += 1
+	_after_at = goal
+	_after_from = seen
+	if routes == null: routes = Routes.new(self)
+	_chase_routed = true
+	_after = true
+	_chase_plan_at = _clock+float(knobs.chase_replan)
+	_start_search(goal,length*0.5+2.0)
+	after_why = "after him to %s" % str(goal.snapped(Vector3.ONE*0.1))
+	chase_beat.emit("after")
+	return true
+
+
+## A leg of its route after him failed: planned again to the same place,
+## round it, if it has a try left.
+func _after_again() -> bool:
+	if _after_at == Vector3.INF or _after_n >= int(knobs.after_tries) or seen_t > float(knobs.after_for): return false
+	_after_n += 1
+	afters += 1
+	_chase_routed = true
+	_after = true
+	_start_search(_after_at,length*0.5+2.0)
+	after_why = "after him again to %s" % str(_after_at.snapped(Vector3.ONE*0.1))
+	return true
+
+## The place it fits nearest `p` (looked for within AFTER_NEAR m flat of it,
+## from a little under `seen` to AFTER_UP over the higher of them, none
+## under its own feet): its floor, INF none.
+func _after_goal(p: Vector3, seen: Vector3) -> Vector3:
+	if routes == null: routes = Routes.new(self)
+	routes.refresh()
+	var lo := maxf(minf(seen.y,p.y)-float(knobs.step)*2.0,position.y-float(knobs.step))
+	var hi := maxf(seen.y,p.y)+AFTER_UP
+	var c := Routes.cell_of(p)
+	var n := ceili(AFTER_NEAR/Routes.CELL)
+	var best := Vector3.INF
+	var best_d := INF
+	for dx in range(-n,n+1):
+		for dz in range(-n,n+1):
+			var cc := c+Vector2i(dx,dz)
+			if Routes.centre(cc).distance_to(Vector2(p.x,p.z)) > AFTER_NEAR: continue
+			var f := routes.col(cc)
+			for i in range(0,f.size(),2):
+				if f[i] < lo or f[i] > hi: continue
+				var u := Vector3i(cc.x,cc.y,i/2)
+				var q := routes.at(u)
+				var d := q.distance_to(p)
+				if d >= best_d or not routes.fits(u): continue
+				best = q
+				best_d = d
+	return best
 
 ## The attack his distance calls for (`flat` m off, `dy` up), if any: the
 ## swat within reach, the pounce a little way off, the suck further.
@@ -2432,7 +2675,9 @@ func _scope(delta: float) -> void:
 				if _scope_found or _scope_then == "chase":
 					hunting = true
 					_go("chase")
-				else: _seek_start()
+				# Not seen from up there: after him, if he went up; else it
+				# searches about.
+				elif not _after_try(): _seek_start()
 		_:
 			_go(_resume())
 

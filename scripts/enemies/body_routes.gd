@@ -83,6 +83,13 @@ var _between := {}
 ## springing: thinner than a column, missed by the reads): {Vector2i: true}.
 var _blocked := {}
 var _ray := PhysicsRayQueryParameters3D.new()
+var _hers_box := BoxShape3D.new()
+var _hers_q := PhysicsShapeQueryParameters3D.new()
+## His breadth (m), for his climbing bulk.
+var breadth := 4.0
+## Climbs up through walker-only stone left out (set for a search after
+## her: scripts/enemies/headless_body.gd `_after_try`).
+var shun_hers := false
 var _skip: Callable
 ## Rays cast (for checks).
 var rays := 0
@@ -103,6 +110,7 @@ func _init(body: Node3D) -> void:
 	# Olmec round 1 (olmec-turn-clip-round1.md): room to its stump's top
 	# (0.92 of it put its shoulder slab into overhangs).
 	room = float(body.neck_h)*1.0
+	breadth = float(body.width)
 	climb_max = float(k.climb_max)
 	drop_max = float(k.drop_max)
 	leap_max = float(k.leap_max)
@@ -249,17 +257,22 @@ func between(xz: Vector2, y: float) -> bool:
 	var key := Vector3i(roundi(xz.x*4.0),roundi(xz.y*4.0),roundi(y))
 	var had: Variant = _between.get(key)
 	if had != null: return had
-	var from := Vector3(xz.x,y+step*1.6,xz.y)
-	var ok := false
-	for i in 3:
-		var hit := _cast(from,Vector3(xz.x,y-step,xz.y))
-		if hit.is_empty(): break
-		if (hit.normal as Vector3).y >= 0.55:
-			ok = absf((hit.position as Vector3).y-y) <= step
-			break
-		from = (hit.position as Vector3)-Vector3.UP*0.05
+	var ok := _between_at(xz,y)
+	# Body climb-after round 1: a ray straight down a riser's face (a stair
+	# whose risers stand on a column's edge: the city landmarks' epic
+	# stair) meets neither tread; a hair either side, it does.
+	if not ok: ok = _between_at(xz+Vector2(0.06,0.06),y) or _between_at(xz-Vector2(0.06,0.06),y)
 	_between[key] = ok
 	return ok
+
+func _between_at(xz: Vector2, y: float) -> bool:
+	var from := Vector3(xz.x,y+step*1.6,xz.y)
+	for i in 3:
+		var hit := _cast(from,Vector3(xz.x,y-step,xz.y))
+		if hit.is_empty(): return false
+		if (hit.normal as Vector3).y >= 0.55: return absf((hit.position as Vector3).y-y) <= step
+		from = (hit.position as Vector3)-Vector3.UP*0.05
+	return false
 
 ## The nearest place it fits to `p` within `r` m (flat) and `dy` up or
 ## down: NONE if none.
@@ -334,7 +347,7 @@ func moves(u: Vector3i) -> Array:
 			if f[k] > level+step and f[k] <= level+climb_max and f[k] < wall: wall = f[k]
 			# Something in the way up to its neck: no leap that way.
 			if f[k] > level+step and f[k] < level+room: blocked = true
-		if wall != INF and _face(base,d,level,wall):
+		if wall != INF and _face(base,d,level,wall) and not (shun_hers and _hers_on(base,d,level,wall)):
 			var up := _climb_to(base,d,level,wall)
 			if up[0] != NONE: out.append([up[0],lead+len_d*float(up[1])+(at(up[0]).y-level)*2.0+COST_CLIMB,"climb",d])
 		if blocked: continue
@@ -351,6 +364,24 @@ func moves(u: Vector3i) -> Array:
 func _face(c: Vector2i, _d: Vector2i, level: float, top: float) -> bool:
 	var at := centre(c)
 	return _cast(Vector3(at.x,level+0.1,at.y),Vector3(at.x,top-0.3,at.y)).is_empty()
+
+## Body climb-after round 1: walker-only stone (her shelves, ledges, a
+## chimney's leaves) on the face over column `c` along `d`, from `level` to
+## `top`, within his shoulders: he'd climb through it (it's air to him).
+## Climbing after her, he climbs the face beside it (`shun_hers`).
+func _hers_on(c: Vector2i, d: Vector2i, level: float, top: float) -> bool:
+	if top-level-step < 0.5: return false
+	var at := centre(c)
+	var dn := Vector2(d.x,d.y).normalized()
+	# His climbing bulk: his breadth across, from his column's middle to a
+	# little into the face's, his knees to the lip.
+	_hers_box.size = Vector3(breadth,top-level-step,CELL*1.6)
+	_hers_q.shape = _hers_box
+	_hers_q.collision_mask = WalkerOnly.LAYER
+	var mid := at+dn*CELL*0.6
+	_hers_q.transform = Transform3D(Basis(Vector3.UP,atan2(dn.x,dn.y)),Vector3(mid.x,(level+step+top)*0.5,mid.y))
+	rays += 1
+	return not field.study.get_world_3d().direct_space_state.intersect_shape(_hers_q,1).is_empty()
 
 ## A climb from column `c` (floor `y`) up the wall along `d` whose top is
 ## `top`: [the place it ends on, columns on], over lips it doesn't fit on
