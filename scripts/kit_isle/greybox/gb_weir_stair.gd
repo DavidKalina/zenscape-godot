@@ -745,6 +745,7 @@ func warm() -> void:
 	KitLook.rock_material()
 	KitLook.rock_tone(Vector3.ZERO,30.0,Vector3.UP)
 	CityStone.warm()
+	Hang.warm()
 	for k: String in CityStone.WEAR: CityStone.wear(k)
 	Veil.polish = polished
 	Veil.warm()
@@ -1326,6 +1327,10 @@ func _dress(root: Node3D) -> void:
 	if mesh != null:
 		root.add_child(mesh)
 		pieces.hang = mesh
+	var roots := Hang.roots(p,SEED+901)
+	if roots != null:
+		root.add_child(roots)
+		pieces.roots = roots
 
 ## Roots (and some ivy) hung every few metres off a polygon's lip.
 func _lip_growth(p: Hang.Probe, which: String, outline: Array, ground: Callable) -> void:
