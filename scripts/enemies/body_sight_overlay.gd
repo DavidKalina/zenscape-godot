@@ -23,13 +23,13 @@ func _process(_delta: float) -> void:
 	if sight == null: return
 	var tint: Color = TINT.get(str(sight.state),TINT.unaware)
 	_label.text = "Body sight: %s   (J hides)\nawareness %.2f · visibility %.2f · %d/%d points seen%s\ndoing: %s" % [str(sight.state).to_upper(),sight.awareness,sight.visibility,
-		(sight.seen as Array).count(true),(sight.points as PackedVector3Array).size()," · %.0f m" % sight.distance if is_finite(float(sight.distance)) else "",body.doing()]
+		(sight.seen as Array).count(true),(sight.points as PackedVector3Array).size(),(" · %.0f m" % sight.distance if is_finite(float(sight.distance)) else "")+(" · lit %.2f glow %.2f (x%.2f, %.0f m)" % [sight.lit,sight.glow,sight.light_k(),sight.reach()] if sight.lit < 1.0 or sight.glow > 0.0 else ""),body.doing()]
 	_label.add_theme_color_override("font_color",tint)
 	_fill.size.x = 296.0*float(sight.awareness)
 	_fill.color = tint
 	_cone_mesh.clear_surfaces()
 	_line_mesh.clear_surfaces()
-	_fan(body.position+Vector3.UP*0.25,sight.look,float(sight.deep),float(sight.half),float(sight.near),tint)
+	_fan(body.position+Vector3.UP*0.25,sight.look,float(sight.reach()),float(sight.half),float(sight.near_now()),tint)
 	_draw_flat_lines(sight)
 
 ## The cone flat on the ground: a fan from its feet out to `deep` m,
