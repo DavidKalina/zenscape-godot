@@ -192,6 +192,16 @@ static func _plan_for(seed_value: int, knobs: Dictionary, shape := "") -> Dictio
 		plan = LayerShapes.make(shape if shape != "" else layer_shape,seed_value+k,knobs)
 		if (plan.problems as Array).is_empty(): break
 		print("run layer: seed %d can't be laid (%s), on to the next" % [seed_value+k,str(plan.problems)])
+	# None laid with a forced motif (`--knob=greybox=<slug>`, a motif that
+	# won't fit this shape): laid without forcing it, rather than standing
+	# an empty plan (layer-round14-city-layers.md).
+	if not (plan.problems as Array).is_empty() and knobs.has("greybox"):
+		var loose := knobs.duplicate()
+		loose.greybox_force = 0
+		print("run layer: no seed laid holding greybox=%s; laid without forcing it" % str(knobs.greybox))
+		for k in range(SKIP_MOST):
+			plan = LayerShapes.make(shape if shape != "" else layer_shape,seed_value+k,loose)
+			if (plan.problems as Array).is_empty(): break
 	return {"plan":plan,"ms":Time.get_ticks_msec()-began}
 
 func _plan_job(seed_value: int, knobs: Dictionary, shape := "") -> void:
@@ -286,7 +296,9 @@ func request_layer(seed_value: int, why := "", shape := "", region_value := 0) -
 func layer_entries() -> Array:
 	var out: Array = []
 	for isle: Dictionary in layer.get("isles",[]):
-		if isle.role == "base": continue
+		# The aqueduct isle is the study's own land; a city landing base is
+		# stood like any isle.
+		if isle.role == "base" and str(isle.id) == LayerPlan.BASE: continue
 		var r: Rect2 = LayerPlan._rect(isle)
 		var c := r.get_center()
 		out.append([isle.motif,isle.offset,[isle.id,Vector3(c.x,LayerPlan._span(isle).y,c.y),r.size.length()*0.5]])
@@ -319,9 +331,17 @@ func _stand_layer() -> void:
 	# The study's own net (back to the isle's station) only far under the
 	# void, which ends the layer first.
 	lost = float(layer.void_y)-200.0
+	if (layer.spawn as Dictionary).is_empty():
+		# (A plan that never laid: stood at the middle rather than erroring.)
+		push_warning("run layer: seed %d has no spawn (%s)" % [layer_seed,str(layer.get("problems",[]))])
+		layer.spawn = {"at":LayerPlan.MIDDLE+Vector3.UP*2.0,"face":Vector3.FORWARD}
+	# The aqueduct isle's land only where it is the base (layer-round14-
+	# city-layers.md: underground the city landing is).
+	_aqueduct_world(LayerPlan.aqueduct_base(layer))
+	_base_wait = not LayerPlan.aqueduct_base(layer)
 	stage = LayerStage.new()
 	add_child(stage)
-	stage.setup(self,layer,_slot_was)
+	stage.setup(self,layer,_slot_was if _aqueduct_on else null)
 	LayerShapes.dress(stage,layer)
 	_stand_roost()
 	stage.rune_taken.connect(func(_left: int) -> void: _update_card())
@@ -447,6 +467,13 @@ func _drop_roost() -> void:
 
 func tick(delta: float) -> void:
 	if loading != null and loading.active: return
+	# A city layer's base (the landing) is an isle the sky stands like the
+	# others: he waits at the spawn till it stands under him.
+	if _base_wait:
+		if not _base_stands(): return
+		_base_wait = false
+		respawn()
+		print("run layer: the landing stands; play")
 	if run_loop != null and not run_loop.before_tick(delta): return
 	super.tick(delta)
 	if stage == null or flying: return
@@ -459,6 +486,60 @@ func tick(delta: float) -> void:
 		request_layer(layer_seed+1,"Into the void: layer %d" % (layer_seed+1),"",region()+1)
 		# Laid on a worker: back at this one's spawn meanwhile.
 		if _plan_task >= 0: respawn()
+
+## Waiting for a city layer's landing to stand before play (`tick`).
+var _base_wait := false
+
+## Whether the base isle (the sky's first: `layer_entries` keeps the plan's
+## order) stands: solid under the spawn.
+func _base_stands() -> bool:
+	if sky == null or sky.motifs == null or (sky.motifs.isles as Array).is_empty(): return false
+	var first: Node3D = sky.motifs.isles[0]
+	return first.stands()
+
+## The aqueduct isle's own land (its art, the station's solids, its foot
+## pieces, lamps, life and the plane's arc) shown and solid, or hidden and
+## out of the physics: a city layer stands its own base, the landing
+## (layer-round14-city-layers.md). Its water's pools go and come back with
+## it.
+var _aqueduct_on := true
+var _aqueduct_nodes: Array = []
+var _aqueduct_pools: Array = []
+func _aqueduct_world(on: bool) -> void:
+	if on == _aqueduct_on: return
+	if _aqueduct_nodes.is_empty():
+		if art != null: _aqueduct_nodes.append(art)
+		if _slot_was != null: _aqueduct_nodes.append(_slot_was)
+		for n: String in ["NightLights","PlaneArc","Life"]:
+			var node := get_node_or_null(n)
+			if node != null: _aqueduct_nodes.append(node)
+		for c: Node in get_children():
+			if c is StaticBody3D: _aqueduct_nodes.append(c)
+	_aqueduct_on = on
+	for node: Node in _aqueduct_nodes:
+		if not is_instance_valid(node): continue
+		node.process_mode = Node.PROCESS_MODE_INHERIT if on else Node.PROCESS_MODE_DISABLED
+		if node is Node3D: (node as Node3D).visible = on
+	var pools: Variant = ground.get("pools")
+	if pools is Array:
+		if on:
+			(pools as Array).append_array(_aqueduct_pools)
+			_aqueduct_pools = []
+		else:
+			_aqueduct_pools = (pools as Array).duplicate()
+			(pools as Array).clear()
+	print("run layer: the aqueduct isle %s" % ("back" if on else "away (the city landing is the base)"))
+
+## Underground there is no plane: the hint says where to go.
+const UNDER_HINT := "Climb toward the gate's light  ·  Space (pad A) jump, again in the air: the sail  ·  Shift or C (LT) high in the air: the slam  ·  hold right mouse (LB): look  ·  R3 camera back behind"
+func _foot_text() -> String:
+	if plane_offered(): return super._foot_text()
+	var text := UNDER_HINT
+	if motor.move == "sail": text = SAIL_HINT
+	elif off_edge: text = FALL_HINT
+	if _said_left > 0.0: text = _said+"  ·  "+text
+	if telescope != null and telescope.busy(): text = LOOK_HINT
+	return text
 
 ## Down off the edge he falls till he lands (a lower isle) or the void
 ## takes him; never stranded back to the plane.

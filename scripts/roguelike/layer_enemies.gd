@@ -162,7 +162,10 @@ static func _candidates(plan: Dictionary, rng: RandomNumberGenerator) -> Array:
 	for i in range((plan.isles as Array).size()):
 		var isle: Dictionary = plan.isles[i]
 		var spots: Array = (isle.sockets as Array).filter(func(s: Dictionary) -> bool: return (s.kind == "arena" or s.kind == "perch") and float(s.room) >= SPOT_ROOM)
-		if i == 0: spots = LayerPieces.sockets(LayerPlan.BASE).filter(func(s: Dictionary) -> bool: return s.kind == "perch" and float(s.room) >= SPOT_ROOM)
+		if i == 0:
+			# The city landing: no head where he arrives.
+			if not LayerPlan.aqueduct_base(plan): continue
+			spots = LayerPlan.base_spots(plan,"perch").filter(func(s: Dictionary) -> bool: return float(s.room) >= SPOT_ROOM)
 		LayerPlan._shuffle(spots,rng)
 		var taken: Array = []
 		for s: Dictionary in spots:

@@ -199,6 +199,9 @@ static func core(seed_value: int, knobs := {}) -> Dictionary:
 	# neighbourhood, or three courts won't sit in one.
 	if LayerPlan.LayerWorlds.world_of(k) == "under": k.hood_more = 0
 	k.tier = TIER
+	# The city's places climb in themselves (in at the foot, out at the top):
+	# no tier step forced between them.
+	if LayerPlan.LayerWorlds.city(k): k.tier = 0.0
 	k.repeats = REPEATS
 	var plan := {}
 	for attempt in range(LayerPlan.ATTEMPTS):
@@ -244,7 +247,7 @@ static func _spawn_view(plan: Dictionary) -> void:
 	var gate: Vector3 = plan.exit.at
 	var target: Vector3 = gate+h3*(DIST+NEXT_ON)+Vector3.UP*(next_rise(int(plan.seed))+NEXT_UP)
 	var eyes: Array = [plan.spawn.at]
-	var spots: Array = LayerPieces.sockets(LayerPlan.BASE).filter(func(s: Dictionary) -> bool: return s.kind == "perch" and float(s.room) >= SPOT_ROOM \
+	var spots: Array = LayerPlan.base_spots(plan,"perch").filter(func(s: Dictionary) -> bool: return float(s.room) >= SPOT_ROOM \
 		and (s.at as Vector3).distance_to(plan.spawn.at) < SPOT_NEAR)
 	spots.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return (a.at as Vector3).distance_to(plan.spawn.at) < (b.at as Vector3).distance_to(plan.spawn.at))
 	for spot: Dictionary in spots: eyes.append((spot.at as Vector3)+Vector3.UP*0.2)
@@ -350,8 +353,10 @@ static func _chain(plan: Dictionary, lean: Vector2, rng: RandomNumberGenerator) 
 ## The crossings' kinds in order: stones, a bridge, the voussoirs and the
 ## cannon, a fifth (stones or a bridge) now and then; never the cannon
 ## first (it stands on a deck the chain lays).
-static func _kinds(rng: RandomNumberGenerator) -> Array:
-	var kinds: Array = ["stones","bridge","trap","cannon"]
+static func _kinds(rng: RandomNumberGenerator, city := false) -> Array:
+	# The city (underground): a second run of column tops in place of the
+	# Loose Voussoirs (layer-round14-city-layers.md).
+	var kinds: Array = ["stones","bridge","stones" if city else "trap","cannon"]
 	if rng.randi_range(LINKS.x,LINKS.y) > 4: kinds.append("stones" if rng.randf() < 0.5 else "bridge")
 	LayerPlan._shuffle(kinds,rng)
 	if kinds[0] == "cannon":
@@ -362,7 +367,7 @@ static func _kinds(rng: RandomNumberGenerator) -> Array:
 ## One try at the chain off rim `rim` of isle `from`: its edges (the last's
 ## `gate`: {at, face}), or [] where a piece won't stand clear.
 static func _lay(plan: Dictionary, from: int, rim: Dictionary, heading: Vector2, rng: RandomNumberGenerator) -> Array:
-	var kinds := _kinds(rng)
+	var kinds := _kinds(rng,LayerPlan.LayerWorlds.city(plan.knobs))
 	var land := LayerPlan.landing_size()
 	var h3 := Vector3(heading.x,0.0,heading.y)
 	var face: Vector3 = rim.face

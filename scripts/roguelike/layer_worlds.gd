@@ -26,8 +26,38 @@ const UNDER_REGIONS := 2
 ## PRESETS); `--under-look=torch` for the other. `--underground=...` still
 ## forces a look on every layer, sky too.
 const UNDER_LOOK := "haze"
-## Underground, one motif may come this many times a layer (the pool is thin).
-const UNDER_REPEATS := 99
+## Underground, one motif may come this many times a layer. The draw takes
+## every city motif once before any comes again (LayerPlan `_draw`), so a
+## repeat only comes once a layer holds more isles than the pool has
+## motifs (docs/design/roguelike/layer-round14-city-layers.md).
+const UNDER_REPEATS := 2
+
+## The city layers (layer-round14-city-layers.md): what an underground
+## layer is laid with.
+##   base       the start isle: the city landing (scripts/kit_isle/greybox/
+##              gb_city_landing.gd), not the aqueduct isle
+##   no sky kit no Loose Voussoirs, no gust arrows, no Broken Viaduct, no
+##              ferry; the rope bridges stood as basalt causeways and the
+##              stones as basalt column tops (scripts/roguelike/
+##              city_crossings.gd)
+## `--knob=sky_kit=1` lets the old sky kit back underground (to compare).
+const UNDER_BASE := "city_landing"
+
+## Whether `knobs` lay a city (underground) layer with the sky kit stripped.
+static func city(knobs: Dictionary) -> bool:
+	return world_of(knobs) == "under" and int(knobs.get("sky_kit",0)) == 0
+
+## The danger by height (layer-round14-city-layers.md): 0 on the run's
+## first region, rising DANGER_STEP a region to 1. The `danger` knob (0-1)
+## pins it. Read by the heads' count (LayerEnemies), the bodies' spawn
+## rules (LayerBodies) and the stones' gaps (LayerPlan `_lay_stones`).
+const DANGER_STEP := 0.34
+static func danger(knobs: Dictionary) -> float:
+	var pinned := float(knobs.get("danger",-1.0))
+	if pinned >= 0.0: return clampf(pinned,0.0,1.0)
+	var region := int(knobs.get("region",0))
+	if region <= 0: return 0.0
+	return clampf(float(region-1)*DANGER_STEP,0.0,1.0)
 
 ## The world of a layer laid with `knobs`.
 static func world_of(knobs: Dictionary) -> String:
