@@ -113,6 +113,55 @@ func water_callable() -> Callable:
 func wall_callable() -> Callable:
 	return wall
 
+func mover_callable() -> Callable:
+	return mover
+
+func soft_callable() -> Callable:
+	return soft
+
+## Moving ground and soft ground (PilotMotor `mover`, `soft`) are opt-in:
+## a body carries him only if it has the MOVING meta (true), and is soft
+## only if it has the SOFT meta (a Dictionary: {slow, catch, keep}).
+const MOVING := &"moving_ground"
+const SOFT := &"soft_ground"
+## How far over and under the point the thing under it is looked for (m).
+const UNDER_OVER := 0.3
+const UNDER_DEPTH := 0.45
+
+## Marks `body` as moving ground: he rides it (PilotMotor `mover`).
+static func mark_moving(body: CollisionObject3D) -> void:
+	body.set_meta(MOVING,true)
+
+## Marks `body` as soft ground with `how` ({slow, catch, keep}).
+static func mark_soft(body: CollisionObject3D, how: Dictionary) -> void:
+	body.set_meta(SOFT,how)
+
+## What is right under `p` ({collider, shape} as a ray gives it), or {}.
+func _under(p: Vector3) -> Dictionary:
+	_ray.from = p+Vector3.UP*UNDER_OVER
+	_ray.to = p-Vector3.UP*UNDER_DEPTH
+	return space.intersect_ray(_ray)
+
+## The Node3D carrying what stands at `p` (the shape's owner of a body
+## marked MOVING, so each capsule of a serpent is its own), or null.
+func mover(p: Vector3) -> Node3D:
+	var hit := _under(p)
+	if hit.is_empty(): return null
+	var body := hit.get("collider") as CollisionObject3D
+	if body == null or not body.has_meta(MOVING): return null
+	var owner_id := body.shape_find_owner(int(hit.get("shape",0)))
+	if owner_id < 0: return body
+	var shape_owner := body.shape_owner_get_owner(owner_id) as Node3D
+	return shape_owner if shape_owner != null else body
+
+## The soft ground at `p` (its SOFT meta), or {}.
+func soft(p: Vector3) -> Dictionary:
+	var hit := _under(p)
+	if hit.is_empty(): return {}
+	var body := hit.get("collider") as CollisionObject3D
+	if body == null or not body.has_meta(SOFT): return {}
+	return body.get_meta(SOFT)
+
 ## The ground under plate point `p` as the motor sees it from its feet.
 func ground(p: Vector2) -> float:
 	return height_from(p,motor.feet.y)
