@@ -20,15 +20,22 @@ instance uniform vec2 lean = vec2(0.0);
 instance uniform float rise = 1.4;
 // How torn the flame is (0 a calm candle, 1 a roaring fire).
 instance uniform float turbulence = 0.6;
-uniform int steps = 22;
+uniform int steps = 18;
+// Fewer steps with distance, counted in box heights: full to near_far heights
+// away, down to far_steps by far_far heights (a far flame is small and soft).
+uniform int far_steps = 6;
+uniform float near_far = 5.0;
+uniform float far_far = 24.0;
 uniform float gain = 1.6;
 
 varying vec3 v_local;
 varying vec3 v_cam;
+varying float v_far;
 
 void vertex() {
 	v_local = VERTEX;
 	v_cam = (inverse(MODEL_MATRIX) * vec4(CAMERA_POSITION_WORLD, 1.0)).xyz;
+	v_far = distance(CAMERA_POSITION_WORLD, MODEL_MATRIX[3].xyz) / max(length(MODEL_MATRIX[1].xyz), 0.01);
 }
 
 float h31(vec3 p) {
@@ -108,7 +115,8 @@ void fragment() {
 	vec3 scene_local = (inverse(MODEL_MATRIX) * vec4(scene_world, 1.0)).xyz;
 	t1 = min(t1, dot(scene_local - ro, rd));
 	if (t1 <= t0) discard;
-	float dt = (t1 - t0) / float(steps);
+	int n_steps = int(mix(float(steps), float(far_steps), smoothstep(near_far, far_far, v_far)));
+	float dt = (t1 - t0) / float(n_steps);
 	// A jitter a pixel, so the steps never band.
 	float jitter = fract(sin(dot(FRAGCOORD.xy, vec2(12.9898, 78.233))) * 43758.5453);
 	float tt = TIME + seed * 13.0;
@@ -117,7 +125,7 @@ void fragment() {
 	// A step's length in the box's own units of height, so a thick flame
 	// glows more than a thin one whatever the box's shape.
 	float scale = length(rd * dt);
-	for (int i = 0; i < steps; i++) {
+	for (int i = 0; i < n_steps; i++) {
 		vec3 p = ro + rd * (t0 + (float(i) + jitter) * dt);
 		vec2 f = fire(p, tt);
 		if (f.x > 0.001) {

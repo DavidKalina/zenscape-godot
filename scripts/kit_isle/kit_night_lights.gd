@@ -28,6 +28,9 @@ const StoneLamp = preload("res://scripts/stone_lamp.gd")
 const StoneLampLights = preload("res://scripts/stone_lamp_lights.gd")
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
+const Flame = preload("res://scripts/flame.gd")
+## How far a lantern's real flame draws (m); past it the halo is what is seen.
+const FLAME_FAR := 60.0
 const HALO_SHADER := preload("res://shaders/stone_lamp_halo.gdshader")
 
 ## The stone's night: how much of the moon it catches (on the ruins' stone
@@ -79,6 +82,7 @@ var daylight_override := -1.0
 var lamps: Array[Dictionary] = []
 ## The washes' lights, as laid.
 var washes: Array[OmniLight3D] = []
+var _flames: Array[Node3D] = []
 var lamp_mesh: MultiMeshInstance3D
 var cores: MultiMeshInstance3D
 var halos: MultiMeshInstance3D
@@ -208,6 +212,15 @@ func _lay_lamps(space: PhysicsDirectSpaceState3D) -> void:
 	bead.radial_segments = 6
 	bead.rings = 3
 	cores = _batch("Cores",bead,_core_material,lamps.size())
+	# The real flame stands in the fire box (scripts/flame.gd); the glowing
+	# beads (cores) are no longer drawn, the halos carry the far read.
+	cores.visible = false
+	var flames_holder := Node3D.new()
+	flames_holder.name = "Flames"
+	flames_holder.top_level = true
+	add_child(flames_holder)
+	for lamp: Dictionary in lamps:
+		_flames.append(Flame.in_lantern(flames_holder,(lamp.foot as Vector3)+Vector3.UP*StoneLamp.BOX_LOW*StoneLamp.UNIT*LAMP_SCALE,FLAME_FAR))
 	var quad := QuadMesh.new()
 	quad.size = Vector2.ONE
 	halos = _batch("Halos",quad,_halo_material,lamps.size())
@@ -267,6 +280,7 @@ func _process(delta: float) -> void:
 		light.light_energy = float(light.get_meta("energy"))*glow
 		light.visible = light.light_energy > 0.001
 	_core_material.emission_energy_multiplier = CORE_GLOW*glow*glow
+	for f in _flames: f.set("burn",glow)
 	_halo_material.set_shader_parameter("glow",glow*HALO_STRENGTH)
 	if halos != null: halos.visible = glow > 0.001
 	_pick_in -= delta

@@ -33,9 +33,34 @@ const KINDS := {
 		"light": [22.0,1.4,9.0], "sparks": 18.0, "smoke": 5.0, "shadow": true},
 }
 const LIGHT_COLOUR := Color(1.0,0.62,0.32)
+## How far (m, per unit of scale_by) the volumes draw before they give way
+## to whatever far glow the piece keeps; clamped to VIS_MIN..VIS_MAX. A flame
+## costs per pixel it covers, so a far one is cheap, but it is also too small
+## to read as a volume: the cut is a saving, not a look.
+const VIS_PER_SCALE := 110.0
+const VIS_MIN := 24.0
+const VIS_MAX := 420.0
+## The light's fade with the camera (begin m, length m) when it has one.
+## Sparks and smoke draw this far (m, at scale 1 and up): a far fire is its
+## flame and glow; the grey puffs are faint and cost fill.
+const PARTICLE_REACH := 55.0
+const LIGHT_FADE := [60.0,24.0]
 
 @export var kind := "torch"
 @export var scale_by := 1.0
+## Parts (before it enters the tree): its own light (a piece that has a light
+## of its own turns it off), sparks, smoke.
+@export var with_light := true
+@export var with_sparks := true
+@export var with_smoke := true
+## How far its volumes draw (m); 0 takes VIS_PER_SCALE x scale_by.
+@export var vis_end := 0.0
+## How much it burns: 0 out (all hidden, nothing emits), 1 as the kind,
+## over 1 flaring (taller, brighter). A piece that eases its fire in and out
+## sets this each frame.
+var burn := 1.0:
+	set(v):
+		burn = maxf(v,0.0)
 var wind := Vector2.ZERO
 var night := 0.0:
 	set(v):
@@ -48,59 +73,117 @@ var _sparks: GPUParticles3D
 var _smoke: GPUParticles3D
 var _time := 0.0
 var _seed := 0.0
+var _base: Array[Vector4] = []   # each volume's x, z, width, height at scale
+var _shown := -1.0
+var _lean := Vector2(INF,INF)
+var _glow := -1.0
+static var _unit: ArrayMesh
+static var _mat: ShaderMaterial
 
-func _ready() -> void:
-	_spec = KINDS.get(kind,KINDS.torch)
-	_seed = fmod(absf(global_position.x*12.9898+global_position.z*78.233),97.0)
-	# A unit box with its foot at 0 (the shader's box runs y 0..1).
+## The volumes' unit box (foot at 0, the shader's y 0..1), shared.
+static func _unit_box() -> ArrayMesh:
+	if _unit != null: return _unit
 	var box := BoxMesh.new()
 	var arrays := box.get_mesh_arrays()
 	var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
 	for i in verts.size(): verts[i].y += 0.5
 	arrays[Mesh.ARRAY_VERTEX] = verts
-	var unit := ArrayMesh.new()
-	unit.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
-	var mat := ShaderMaterial.new()
-	mat.shader = FLAME_SHADER
+	_unit = ArrayMesh.new()
+	_unit.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
+	return _unit
+
+func _ready() -> void:
+	_spec = KINDS.get(kind,KINDS.torch)
+	_seed = fmod(absf(global_position.x*12.9898+global_position.z*78.233),97.0)
+	if _mat == null:
+		_mat = ShaderMaterial.new()
+		_mat.shader = FLAME_SHADER
+	var reach := vis_end if vis_end > 0.0 else clampf(VIS_PER_SCALE*scale_by,VIS_MIN,VIS_MAX)
 	for f: Array in _spec.flames:
 		var m := MeshInstance3D.new()
-		m.mesh = unit
-		m.material_override = mat
+		m.mesh = _unit_box()
+		m.material_override = _mat
 		m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		var w := float(f[2])*scale_by
-		var h := float(f[3])*scale_by
-		m.scale = Vector3(w,h,w)
-		m.position = Vector3(float(f[0])*scale_by,0.0,float(f[1])*scale_by)
+		m.visibility_range_end = reach
+		m.visibility_range_end_margin = reach*0.12
+		m.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
 		m.set_instance_shader_parameter("seed",float(f[4])+_seed)
 		m.set_instance_shader_parameter("turbulence",float(_spec.turb))
 		m.set_instance_shader_parameter("rise",float(_spec.rise))
 		add_child(m)
 		_flames.append(m)
+		_base.append(Vector4(float(f[0]),float(f[1]),float(f[2]),float(f[3]))*scale_by)
+	_place_volumes(burn)
 	var tallest := 0.0
 	for f: Array in _spec.flames: tallest = maxf(tallest,float(f[3])*scale_by)
-	_light = OmniLight3D.new()
-	_light.light_color = LIGHT_COLOUR
-	_light.omni_range = float(_spec.light[0])*scale_by
-	_light.omni_attenuation = 1.0
-	_light.shadow_enabled = bool(_spec.shadow)
-	_light.position = Vector3(0.0,tallest*0.62,0.0)
-	add_child(_light)
-	if float(_spec.sparks) > 0.0: _sparks = _make_sparks(tallest)
-	if float(_spec.smoke) > 0.0: _smoke = _make_smoke(tallest)
+	if with_light:
+		_light = OmniLight3D.new()
+		_light.light_color = LIGHT_COLOUR
+		_light.omni_range = float(_spec.light[0])*scale_by
+		_light.omni_attenuation = 1.0
+		_light.shadow_enabled = bool(_spec.shadow)
+		_light.position = Vector3(0.0,tallest*0.62,0.0)
+		_light.distance_fade_enabled = true
+		_light.distance_fade_begin = float(LIGHT_FADE[0])*maxf(scale_by,1.0)
+		_light.distance_fade_length = float(LIGHT_FADE[1])*maxf(scale_by,1.0)
+		add_child(_light)
+	if with_sparks and float(_spec.sparks) > 0.0: _sparks = _make_sparks(tallest)
+	if with_smoke and float(_spec.smoke) > 0.0: _smoke = _make_smoke(tallest)
+	for pt: GeometryInstance3D in [_sparks,_smoke]:
+		if pt != null: pt.visibility_range_end = minf(reach,PARTICLE_REACH*maxf(scale_by,1.0))
+
+## A lantern's flame (the stone lamp's fire box, scripts/stone_lamp.gd): a
+## candle volume standing in `parent` (the lantern's own space) with its foot
+## at `at`, for a lantern ~1 m tall. It draws to `far` m; give the lantern's
+## old glowing bead `visibility_range_begin = far` to stand in beyond. No light
+## of its own (the lantern has one).
+static func in_lantern(parent: Node3D, at: Vector3, far := 28.0) -> Node3D:
+	var f: Node3D = new()
+	f.set("kind","candle")
+	f.set("scale_by",1.5)
+	f.set("with_light",false)
+	f.set("vis_end",far)
+	f.name = "Flame"
+	f.position = at
+	parent.add_child(f)
+	return f
+
+## The volumes at burn `b`: the base sizes, taller by b, and wider by its root.
+func _place_volumes(b: float) -> void:
+	var on := b > 0.001
+	var w := sqrt(minf(b,1.4))
+	for i in _flames.size():
+		var v := _base[i]
+		var m := _flames[i]
+		m.visible = on
+		m.scale = Vector3(v.z*w,v.w*b,v.z*w)
+		m.position = Vector3(v.x,0.0,v.y)
+	if _sparks != null: _sparks.emitting = on
+	if _smoke != null: _smoke.emitting = on
+	if _light != null: _light.visible = on
 
 func _process(delta: float) -> void:
 	_time += delta
+	if absf(burn-_shown) > 0.004:
+		_shown = burn
+		_place_volumes(burn)
+	if burn <= 0.001: return
 	var t := _time+_seed
-	# Flicker: two slow swells and a quick shiver, never below 70%.
-	var f := 0.82+0.1*sin(t*2.3)*sin(t*0.71+1.3)+0.08*sin(t*11.0+sin(t*3.7)*2.0)
-	var base := lerpf(float(_spec.light[1]),float(_spec.light[2]),night)
-	_light.light_energy = base*f
-	_light.position.x = 0.04*scale_by*sin(t*5.3)
-	_light.position.z = 0.04*scale_by*sin(t*4.1+0.7)
+	if _light != null:
+		# Flicker: two slow swells and a quick shiver, never below 70%.
+		var f := 0.82+0.1*sin(t*2.3)*sin(t*0.71+1.3)+0.08*sin(t*11.0+sin(t*3.7)*2.0)
+		var base := lerpf(float(_spec.light[1]),float(_spec.light[2]),night)
+		_light.light_energy = base*f*minf(burn,1.3)
+		_light.position.x = 0.04*scale_by*sin(t*5.3)
+		_light.position.z = 0.04*scale_by*sin(t*4.1+0.7)
 	var lean := wind*0.6
-	for m in _flames:
-		m.set_instance_shader_parameter("lean",lean)
-		m.set_instance_shader_parameter("intensity",lerpf(1.0,1.25,night))
+	var glow := lerpf(1.0,1.25,night)*minf(burn,1.0+0.5*(burn-1.0))
+	if lean != _lean or absf(glow-_glow) > 0.003:
+		_lean = lean
+		_glow = glow
+		for m in _flames:
+			m.set_instance_shader_parameter("lean",lean)
+			m.set_instance_shader_parameter("intensity",glow)
 
 ## Sparks: tiny hot points, rising and whirled, cooling as they go out.
 func _make_sparks(tallest: float) -> GPUParticles3D:
