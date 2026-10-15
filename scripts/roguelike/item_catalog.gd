@@ -25,6 +25,10 @@ const ITEMS := {
 	&"quiet_soles": {"name":"Quiet Soles","line":"steps and landings hush","kind":"passive","price":9,"rarity":2,"once":false},
 	&"rune_magnet": {"name":"Lodestone","line":"runes drift to you","kind":"passive","price":8,"rarity":2,"once":false},
 	&"tithe_bell": {"name":"Tithe Bell","line":"runes count double; it rings as you go","kind":"cursed","price":6,"rarity":2,"once":false},
+	# [items_move] movement verbs (scripts/roguelike/items_move.gd).
+	&"grapnel": {"name":"Grapnel","line":"V / RT: hook a lip, hold to haul up","kind":"verb","price":12,"rarity":3,"once":false},
+	&"cloak": {"name":"Drift Cloak","line":"hold Jump falling: drift down","kind":"verb","price":8,"rarity":2,"once":false},
+	&"picks": {"name":"Rock Picks","line":"stick into a wall: climb a few pulls","kind":"verb","price":10,"rarity":2,"once":false},
 }
 
 static func has(id: StringName) -> bool:
