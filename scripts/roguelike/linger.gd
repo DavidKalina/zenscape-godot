@@ -41,6 +41,8 @@ const LayerPlan = preload("res://scripts/roguelike/layer_plan.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const Body = preload("res://scripts/roguelike/linger_serpent.gd")
 const Nav = preload("res://scripts/roguelike/linger_nav.gd")
+const Settle = preload("res://scripts/roguelike/linger_settle.gd")
+const Shell = preload("res://scripts/roguelike/linger_shell.gd")
 
 ## The clock (s from the layer's start).
 const STIR := 20.0
@@ -178,6 +180,13 @@ var sightings := 0
 var climbs := 0
 ## Strikes let go because stone came between in the rear.
 var aborts := 0
+## Round 3's body on (`--linger-settle=off` leaves it off).
+var settled := true
+## Waiting for his isle's bake before climbing it (s), at most BAKE_WAIT_MOST.
+const BAKE_WAIT_MOST := 6.0
+var _bake_wait := 0.0
+## Times it steered round drawn stone in the air (round 3).
+var avoids := 0
 ## Frames it was close enough to strike but stone stood between.
 var covered := 0
 ## Its frame's cost (µs), the worst yet.
@@ -189,6 +198,8 @@ var loop: Node
 var layer: Dictionary
 var body: Body
 var nav: Nav
+## The drawn world (round 3), its own physics space.
+var shell: Shell
 var _scale := SCALE
 var _pace_k := 1.0
 var _chase_k := CHASE_K
@@ -269,11 +280,26 @@ func setup(run_loop: Node, plan: Dictionary) -> void:
 	_ride = Body.RADIUS*_scale*RIDE_K
 	var skip: Array[RID] = [body.solid_rid()]
 	nav = Nav.new(get_world_3d().direct_space_state,layer.get("isles",[]),skip)
+	# Round 3: its rings settled off the drawn stone (its own space of the
+	# layer's meshes) and off its own coils.
+	var skips: Array[Node] = [self]
+	var fig: Variant = study.get("figure")
+	if fig is Node: skips.append(fig as Node)
+	shell = Shell.new(study,skips)
+	body.settle = Settle.new(shell,nav,Body.STATIONS)
+	# `--linger-settle=off`: round 2's body (no settle, no steering round
+	# stone in the air, any rim, the cliffs' feet not avoided), to compare.
+	settled = not ("--linger-settle=off" in LaunchArgs.user_args())
+	body.settle.on = settled
+	nav.cliffs = settled
 	_level_y = _feet().y
 	_anchor = _pick_anchor(false,_feet())
 	_lay_coiled()
 	_sounds()
 	_stage_now()
+
+func _exit_tree() -> void:
+	if shell != null: shell.free_all()
 
 # --- Him ----------------------------------------------------------------------
 
@@ -338,6 +364,7 @@ func _process(delta: float) -> void:
 	var began := Time.get_ticks_usec()
 	delta = minf(delta,0.1)*_pace_k
 	nav.bake_step(_feet())
+	shell.step(delta/_pace_k,_feet())
 	var playing := _playing()
 	if playing: clock += delta
 	_level_y = lerpf(_level_y,_feet().y,1.0-exp(-0.5*delta))
@@ -497,8 +524,8 @@ static func _back_out(k: float) -> float:
 
 ## Its mouth (world): a little back from the snout's tip.
 func _mouth() -> Vector3:
-	var s: Vector3 = body.to_global(body.snout())
-	var h: Vector3 = body.to_global(body.head())
+	var s: Vector3 = body.to_global(body.way_snout())
+	var h: Vector3 = body.to_global(body.way_head())
 	return s.lerp(h,MOUTH_BACK/Body.HEAD)
 
 ## Its head steered toward `goal` (world) at `_speed`, turning at most a
@@ -522,6 +549,7 @@ func _steer(goal: Vector3, delta: float, ground: bool) -> void:
 			flat = (flat+keep.normalized()*0.35).normalized()*0.35
 			want = Vector3(flat.x,signf(want.y)*sqrt(1.0-0.35*0.35),flat.y)
 		want = want.normalized()
+		want = _avoid(want,goal,delta)
 	var turn := ds/TURN_R
 	var angle := _dir.angle_to(want)
 	if angle > 1e-4:
@@ -539,8 +567,90 @@ func _steer(goal: Vector3, delta: float, ground: bool) -> void:
 	else:
 		var heave := Vector3.UP*0.05*sin(float(body.travelled)*_scale/38.0)
 		next = _head+(_dir+heave).normalized()*ds
-	_head = next
+	_head = _path_clear(next,ds,ground)
 	body.go_to(body.to_local(_head))
+
+## Round 3: on the ground, the head's way kept out of the drawn stone (a
+## ball of its ride pushed out, a little a frame: no kink in the way), so
+## the rings that follow it are. In the air it steers round (`_avoid`):
+## pushed there, it could not climb over a rim.
+func _path_clear(next: Vector3, ds: float, ground: bool) -> Vector3:
+	if not ground or not settled or body.settle == null or body.settle.space == null: return next
+	var push: Vector3 = body.settle.out_of_stone(next,_ride)
+	if push == Vector3.ZERO: return next
+	return next+push.limit_length(maxf(ds*1.2,0.12))
+
+## Round 3: in the air, round the drawn stone ahead (an isle's rock, a
+## column's shaft, a pier): a ball its girth cast AVOID_LOOK m along its
+## way; blocked, the nearest way round that is clear (turned, tilted).
+## Not near its goal (the rim it climbs over is its goal).
+const AVOID_LOOK := 30.0
+const AVOID_NEAR := 140.0
+const AVOID_DEEP := 85.0
+const AVOID_EVERY := 0.1
+const AVOID_YAW := [0.4,-0.4,0.8,-0.8,1.25,-1.25,1.7,-1.7]
+const AVOID_PITCH := [0.0,0.5,-0.5]
+var _avoid_t := 0.0
+var _avoid_dir := Vector3.ZERO
+var _cast := PhysicsShapeQueryParameters3D.new()
+var _cast_ball := SphereShape3D.new()
+func _avoid(want: Vector3, goal: Vector3, delta: float) -> Vector3:
+	if shell == null or not settled or not _avoiding(): return want
+	_avoid_t -= delta
+	if _avoid_t > 0.0: return _avoid_dir if _avoid_dir != Vector3.ZERO else want
+	_avoid_t = AVOID_EVERY
+	# Inside a hollow of stone already (its casts would meet nothing): out
+	# the nearest way.
+	if body.settle != null and body.settle.space != null:
+		var esc: Vector3 = body.settle._escape(_head,Body.RADIUS*_scale*Settle.BALL-Settle.SINK)
+		if esc != Vector3.ZERO:
+			_avoid_dir = (esc.normalized()+want*0.3).normalized()
+			avoids += 1
+			return _avoid_dir
+	var reach := minf(AVOID_LOOK,_head.distance_to(goal)-TURN_R*0.5)
+	_avoid_dir = Vector3.ZERO
+	if reach < 4.0 or _clear_cast(_head,want*reach): return want
+	var best := Vector3.ZERO
+	var score := INF
+	for pitch: float in AVOID_PITCH:
+		for yaw: float in AVOID_YAW:
+			var d := want.rotated(Vector3.UP,yaw*_spin)
+			var side := d.cross(Vector3.UP)
+			if pitch != 0.0 and side.length() > 0.01: d = d.rotated(side.normalized(),pitch)
+			d = d.normalized()
+			var s := d.angle_to(want)
+			if s >= score: continue
+			if _clear_cast(_head,d*reach):
+				score = s
+				best = d
+		if best != Vector3.ZERO: break
+	_avoid_dir = best
+	avoids += 1
+	return best if best != Vector3.ZERO else want
+
+## Whether it avoids stone now: coiling, and climbing or going down but
+## not at the rim (the last two of a climb, the first of a descent).
+func _avoiding() -> bool:
+	# Far off or deep in the haze it goes straight (its pace kept; its rings
+	# still settle off what they meet).
+	var f := _feet()
+	if Vector2(_head.x-f.x,_head.z-f.z).length() > AVOID_NEAR or _head.y < f.y-AVOID_DEEP: return false
+	match act:
+		"coil": return true
+		"climb": return _way_i < _ways.size()-2
+		"descend": return _way_i >= 1
+	return false
+
+## A ball of its girth from `a` along `move`, clear of the drawn stone.
+func _clear_cast(a: Vector3, move: Vector3) -> bool:
+	var st := shell.state()
+	if st == null: return true
+	_cast_ball.radius = Body.RADIUS*_scale*0.95
+	_cast.shape = _cast_ball
+	_cast.transform = Transform3D(Basis.IDENTITY,a)
+	_cast.motion = move
+	var got := st.cast_motion(_cast)
+	return got.size() < 1 or float(got[0]) >= 1.0
 
 func _under(goal: Vector3, far: float) -> Vector3:
 	if Vector2(goal.x-_head.x,goal.z-_head.z).length() <= far: return goal
@@ -599,6 +709,7 @@ func _follow_ways(delta: float) -> void:
 	_steer(goal,delta,false)
 	var reach := TURN_R*(1.1 if not last else 0.8)
 	if _head.distance_to(goal) < reach or _act_t > 30.0:
+		if _debug: print("[linger] %s way %d/%d reached in %.1f s (%.1f m off, %d avoids)" % [act,_way_i+1,_ways.size(),_act_t,_head.distance_to(goal),avoids])
 		_way_i += 1
 		_act_t = 0.0
 		if _way_i >= _ways.size(): _ways_done()
@@ -626,13 +737,29 @@ func _begin_climb() -> void:
 	var to := _his_isle()
 	if to < 0: to = _nearest_isle(_feet())
 	if to < 0: return
-	var r := nav.rim_off(to,_head,_feet(),ENTER_OFF)
+	# Round 3: not over a rim the bake has not reached yet (a stale rim lies
+	# inside the ground: its climb would run through the stone).
+	if settled and not nav.settled(to) and _bake_wait < BAKE_WAIT_MOST:
+		_bake_wait += get_process_delta_time()
+		return
+	_bake_wait = 0.0
+	var r := {}
+	# Round 3: of the best few rims, the first whose way up out of the void
+	# and over the lip is clear of the drawn stone (a crossing's piers, a
+	# spur of rock), else the best.
+	var tries := nav.rim_offs(to,_head,_feet(),ENTER_OFF,RIM_TRIES if settled else 1)
+	for c: Dictionary in tries:
+		if _climb_clear(c):
+			r = c
+			break
+	if r.is_empty() and not tries.is_empty(): r = tries[0]
 	if r.is_empty(): return
+	if _debug: print("[linger] climb isle %d over rim %s out %s (%d tried, clear %s)" % [to,str((r.at as Vector3).round()),str((r.out as Vector3).snapped(Vector3.ONE*0.01)),tries.size(),str(_climb_clear(r))])
 	_isle_to = to
 	var at: Vector3 = r.at
 	var out: Vector3 = r.out
 	_ways = PackedVector3Array()
-	var low := at+out*RIM_OUT+Vector3.DOWN*RIM_DOWN
+	var low := at+out*float(r.get("low_out",RIM_OUT))+Vector3.DOWN*RIM_DOWN
 	# From far off or high, under first (never over an isle).
 	if Vector2(low.x-_head.x,low.z-_head.z).length() > CROSS and _head.y > low.y-20.0:
 		_ways.append(Vector3(low.x+out.x*20.0,minf(low.y-30.0,_level_y-DIVE),low.z+out.z*20.0))
@@ -647,6 +774,27 @@ func _begin_climb() -> void:
 	_switch_t = 0.0
 	_set_act("climb")
 	_voice_play("dragon-growl-loop.wav",0.5,-6.0,1.8)
+
+## The way up from under rim `r` and over it, clear (round 3).
+const RIM_TRIES := 6
+const CLIMB_OUT := [15.0,22.0,30.0]
+func _climb_clear(r: Dictionary) -> bool:
+	if shell == null: return true
+	var at: Vector3 = r.at
+	var out: Vector3 = r.out
+	var over := at+out*6.0+Vector3.UP*(_ride+2.5)
+	var st: Settle = body.settle
+	var r_in := Body.RADIUS*_scale*Settle.BALL-Settle.SINK
+	# A cast begun inside a hollow (a pillar's body under its top) meets
+	# nothing: the way's points are asked whether they are inside too. The
+	# low point further out where the stone under the rim reaches out.
+	for low_out: float in CLIMB_OUT:
+		var low := at+out*low_out+Vector3.DOWN*RIM_DOWN
+		if st != null and (st.inside(low,r_in) or st.inside(low.lerp(over,0.5),r_in)): continue
+		if _clear_cast(low+Vector3.DOWN*20.0,Vector3.UP*20.0) and _clear_cast(low,over-low+Vector3.DOWN*2.0):
+			r["low_out"] = low_out
+			return true
+	return false
 
 ## Down off its isle over the rim toward `toward`, then `after` ("climb"
 ## onto his, or "coil" to give up).
@@ -792,7 +940,7 @@ func _check_hit() -> void:
 	if m == null or _bit or not _playing(): return
 	var chest := _chest()
 	var mouth := _mouth()
-	var snout: Vector3 = body.to_global(body.snout())
+	var snout: Vector3 = body.to_global(body.way_snout())
 	var near := Geometry3D.get_closest_point_to_segment(chest,_last_mouth,mouth)
 	var jaws := Geometry3D.get_closest_point_to_segment(chest,mouth,snout)
 	if _debug and act == "bite" and _act_t < 0.02: print("[linger] bite check: chest %s mouth %s snout %s near %.2f jaws %.2f" % [str(chest.round()),str(mouth.round()),str(snout.round()),chest.distance_to(near),chest.distance_to(jaws)])
@@ -852,6 +1000,24 @@ func _push_him(delta: float) -> void:
 
 # --- The drape ------------------------------------------------------------------------
 
+## Round 3: how far further out (m) the drape hangs from the rim so that it
+## clears the drawn stone under it; tried in DRAPE_OUT steps; eased at
+## DRAPE_OUT_PACE m/s.
+const DRAPE_OUT := [0.0,4.0,8.0,12.0,16.0]
+const DRAPE_TRIES := 5
+const DRAPE_EXTRA_COST := 2.5
+const DRAPE_OUT_PACE := 4.0
+var _drape_extra := 0.0
+func _drape_clearance(r: Dictionary) -> float:
+	if shell == null: return 0.0
+	var at: Vector3 = r.at
+	var out: Vector3 = r.out
+	for extra: float in DRAPE_OUT:
+		var over := at+out*(_ride*0.9+extra)+Vector3.UP*_ride*0.7
+		var lip := over+out*6.0+Vector3.DOWN*4.0
+		if _clear_cast(over,lip-over) and _clear_cast(lip,(Vector3.DOWN+out*0.4).normalized()*45.0): return extra
+	return float(DRAPE_OUT[DRAPE_OUT.size()-1])
+
 ## Past ON_ISLE m of body on an isle, the rest of it laid from there over
 ## the nearest rim and down into the void.
 func _drape_step(delta: float) -> void:
@@ -875,9 +1041,22 @@ func _drape_step(delta: float) -> void:
 		_drape_t = 0.5
 		var isle := nav.isle_of(nav.nearest(p0,4.0))
 		var r := nav.rim(isle,p0,p0,0.0)
+		# Round 3: of the nearest few rims, the one it hangs clear from
+		# soonest (out past a landing's corbel, a ledge, the rock's flare,
+		# away from a crossing's columns), a little further off allowed.
+		if settled and not r.is_empty():
+			var best := INF
+			for c: Dictionary in nav.rim_offs(isle,p0,p0,0.0,DRAPE_TRIES):
+				var extra := _drape_clearance(c)
+				var score := (c.at as Vector3).distance_to(p0)+extra*DRAPE_EXTRA_COST
+				if score < best:
+					best = score
+					r = c
+					r["extra"] = extra
 		if not r.is_empty():
-			var keep := not _drape_rim.is_empty() and (_drape_rim.at as Vector3).distance_to(p0) < (r.at as Vector3).distance_to(p0)+14.0
-			if not keep: _drape_rim = r
+			var keep := not _drape_rim.is_empty() and float(_drape_rim.get("score",(_drape_rim.at as Vector3).distance_to(p0))) < (r.at as Vector3).distance_to(p0)+float(r.get("extra",0.0))*DRAPE_EXTRA_COST+14.0
+			if keep: _drape_rim["score"] = (_drape_rim.at as Vector3).distance_to(p0)+float(_drape_rim.get("extra",0.0))*DRAPE_EXTRA_COST
+			else: _drape_rim = r
 	if _drape_rim.is_empty():
 		b.drape_w = 0.0
 		return
@@ -888,7 +1067,8 @@ func _drape_step(delta: float) -> void:
 	t0 = t0.normalized() if t0.length() > 0.01 else -_dir
 	var rim_at: Vector3 = _drape_rim.at
 	var out: Vector3 = _drape_rim.out
-	var over := rim_at+out*(_ride*0.9)+Vector3.UP*_ride*0.7
+	_drape_extra = move_toward(_drape_extra,float(_drape_rim.get("extra",0.0)),delta*DRAPE_OUT_PACE)
+	var over := rim_at+out*(_ride*0.9+_drape_extra)+Vector3.UP*_ride*0.7
 	var span := Vector2(over.x-p0.x,over.z-p0.z).length()
 	var pts := PackedVector3Array()
 	var n := maxi(2,ceili(span*1.3/step))

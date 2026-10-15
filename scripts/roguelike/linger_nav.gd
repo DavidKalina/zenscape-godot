@@ -27,6 +27,19 @@ const CELL := 3.0
 const STEP_MAX := 5.0
 const TALL_SIDES := 5
 const WALL_COST := 2.5
+## Round 3: a cell under a step up of more than CLIFF_UP m (a terrace's
+## wall, a plinth) is the foot of a cliff: its 10 m body there would lie in
+## the wall. It costs CLIFF_COST more, and the straight way never runs
+## along one (`clear_line`).
+const CLIFF_UP := 2.6
+const CLIFF_COST := 4.0
+## Round 3: a cell over another floor with room between (a spiral stair's
+## ramp over the turn below, a bridge or an arch over the ground) is a
+## built level its 10 m body can't lie on without passing through the one
+## under it: not its way (`passable`), though it is his ground. Within
+## STACK_DEPTH m under the top, a gap of at least STACK_GAP m.
+const STACK_DEPTH := 10.0
+const STACK_GAP := 1.5
 ## Rays a frame; isles further than BAKE_NEAR m from him wait.
 const BUDGET := 220
 const BAKE_NEAR := 220.0
@@ -40,6 +53,12 @@ var exclude: Array[RID] = []
 var _h := {}
 var _isle := {}
 var _tall := {}
+var _cliff := {}
+var _rim_of := {}
+var _stacked := {}
+var _probe := PhysicsRayQueryParameters3D.new()
+## The cliffs' feet kept off (round 3's; off: round 2's way).
+var cliffs := true
 ## By isle: its jobs [cell, ray top, ray bottom], where its pass is, its
 ## rect (world x, z), its passes with nothing new, whether it changed this
 ## pass, how many cells it has; its rim cells (a set).
@@ -61,6 +80,9 @@ func _init(physics: PhysicsDirectSpaceState3D, plan_isles: Array, skip: Array[RI
 	exclude = skip
 	_ray.collision_mask = 1
 	_ray.exclude = exclude
+	_probe.collision_mask = 1
+	_probe.exclude = exclude
+	_probe.hit_back_faces = false
 	var all := Rect2i()
 	var first := true
 	for i in range(isles.size()):
@@ -98,6 +120,11 @@ func _init(physics: PhysicsDirectSpaceState3D, plan_isles: Array, skip: Array[RI
 ## Any ground yet.
 func ready() -> bool:
 	return _h.size() > 0
+
+## Round 3: isle `i` baked whole at least once with nothing new (its rims
+## are its real rims, not where the bake has got to).
+func settled(i: int) -> bool:
+	return int(_quiet.get(i,0)) >= 1
 
 ## A frame's share of the bake, nearest `near` first; the cells it changed
 ## fitted again.
@@ -148,6 +175,28 @@ func _bake(job: Array, i: int) -> void:
 	_isle[c] = i
 	_changed[i] = true
 	_dirty[c] = true
+	if cliffs and _stack_under(w,y): _stacked[c] = true
+	else: _stacked.erase(c)
+
+## A floor under the top `y` at (w.x, w.z) with room between: a built level.
+func _stack_under(w: Vector3, y: float) -> bool:
+	_probe.from = Vector3(w.x,y-0.6,w.z)
+	_probe.to = Vector3(w.x,y-STACK_DEPTH,w.z)
+	var floor_hit := space.intersect_ray(_probe)
+	if floor_hit.is_empty() or (floor_hit.normal as Vector3).y < 0.5: return false
+	var yf := (floor_hit.position as Vector3).y
+	_probe.from = Vector3(w.x,yf+0.2,w.z)
+	_probe.to = Vector3(w.x,y,w.z)
+	var roof := space.intersect_ray(_probe)
+	# An underside of its own, apart from the top (a solid stone on the
+	# ground has none: the probe starts inside it).
+	if roof.is_empty() or (roof.normal as Vector3).y > -0.5: return false
+	var yu := (roof.position as Vector3).y
+	return yu < y-0.4 and yu-yf >= STACK_GAP
+
+## Its head's way: walkable, not a built level over another.
+func passable(c: Vector2i) -> bool:
+	return walkable(c) and not _stacked.has(c)
 
 ## The changed cells and their neighbours: tall or not, solid or not,
 ## beside a wall, at a rim.
@@ -170,16 +219,30 @@ func _fit() -> void:
 		if not _h.has(c) or not _grid.is_in_boundsv(c): continue
 		var i := int(_isle[c])
 		var walk := not _tall.has(c)
-		_grid.set_point_solid(c,not walk)
+		_grid.set_point_solid(c,not walk or _stacked.has(c))
 		var by_wall := false
 		var rim := false
+		var foot := false
+		var here := float(_h[c])
 		for d: Vector2i in AROUND:
 			if _tall.has(c+d): by_wall = true
 			if not _h.has(c+d): rim = true
-		_grid.set_point_weight_scale(c,1.0+(WALL_COST if by_wall else 0.0))
+			elif float(_h[c+d])-here > CLIFF_UP: foot = true
+		if not cliffs: foot = false
+		if foot: _cliff[c] = true
+		else: _cliff.erase(c)
+		_grid.set_point_weight_scale(c,1.0+(WALL_COST if by_wall else 0.0)+(CLIFF_COST if foot else 0.0))
+		# Round 3: a cell baked again for another isle leaves its old isle's
+		# rims (else a stale rim inside the ground).
+		var was := int(_rim_of.get(c,-1))
+		if was >= 0 and was != i: (_rims[was] as Dictionary).erase(c)
 		var rims: Dictionary = _rims[i]
-		if walk and rim: rims[c] = true
-		else: rims.erase(c)
+		if walk and rim:
+			rims[c] = true
+			_rim_of[c] = i
+		else:
+			rims.erase(c)
+			_rim_of.erase(c)
 
 # --- Cells -------------------------------------------------------------------
 
@@ -268,6 +331,29 @@ func rim_off(isle: int, from: Vector3, him: Vector3, want: float) -> Dictionary:
 	if best == NONE: return {}
 	return {"at":ground_point(best),"out":out_of(best),"cell":best}
 
+## The best `n` rims for `rim_off` (round 3), best first.
+func rim_offs(isle: int, from: Vector3, him: Vector3, want: float, n: int) -> Array:
+	var rims: Dictionary = _rims.get(isle,{})
+	var scored: Array = []
+	for c: Vector2i in rims:
+		var w := centre(c)
+		var dh := Vector2(w.x-him.x,w.z-him.z).length()
+		scored.append([Vector2(w.x-from.x,w.z-from.z).length()*0.35+absf(dh-want)*1.5,c])
+	scored.sort_custom(func(a: Array, b: Array) -> bool: return float(a[0]) < float(b[0]))
+	var out: Array = []
+	var taken: Array[Vector2i] = []
+	for e: Array in scored:
+		var c: Vector2i = e[1]
+		# Spread out: not within 3 cells of one taken.
+		var near := false
+		for t in taken:
+			if absi(t.x-c.x) <= 3 and absi(t.y-c.y) <= 3: near = true
+		if near: continue
+		taken.append(c)
+		out.append({"at":ground_point(c),"out":out_of(c),"cell":c})
+		if out.size() >= n: break
+	return out
+
 func out_of(c: Vector2i) -> Vector3:
 	var o := Vector3.ZERO
 	for dx in range(-2,3):
@@ -283,7 +369,7 @@ func clear_line(a: Vector3, b: Vector3) -> bool:
 	for i in range(n+1):
 		var p := a.lerp(b,float(i)/n)
 		var c := cell_of(p)
-		if not walkable(c): return false
+		if not passable(c) or (_cliff.has(c) and i > 0 and i < n): return false
 		var h := float(_h[c])
 		if not is_nan(last) and absf(h-last) > STEP_MAX: return false
 		last = h
@@ -297,6 +383,48 @@ func path(a: Vector3, b: Vector3) -> PackedVector3Array:
 	var ids := _grid.get_id_path(ca,cb,true)
 	for c: Vector2i in ids: out.append(ground_point(c))
 	return out
+
+## Round 3: where `p` is against the isles' ground seen from above (the
+## settle asks it before testing whether a ring is inside an isle's drawn
+## rock): {top (the highest ground round it), inside (m in from the rim,
+## less than 0 outside), out (the way out, flat)}, or {} away from every
+## isle.
+func under(p: Vector3, reach: float) -> Dictionary:
+	var c := cell_of(p)
+	var top := -INF
+	var r := ceili(reach/CELL)+1
+	var inside := false
+	if _h.has(c):
+		inside = true
+		top = float(_h[c])
+	var nearest := INF
+	var near_c := NONE
+	for dx in range(-r,r+1):
+		for dz in range(-r,r+1):
+			var n := c+Vector2i(dx,dz)
+			if not _h.has(n): continue
+			if absi(dx) <= 1 and absi(dz) <= 1: top = maxf(top,float(_h[n]))
+			if not inside:
+				var d := Vector2(dx,dz).length()
+				if d < nearest:
+					nearest = d
+					near_c = n
+	if not inside and near_c == NONE: return {}
+	if top == -INF: top = float(_h[near_c])
+	if not inside:
+		var w := centre(near_c)
+		var away := Vector3(p.x-w.x,0.0,p.z-w.z)
+		var dist := away.length()
+		return {"top":top,"inside":-(dist-CELL*0.5),"out":away/dist if dist > 0.01 else out_of(near_c)}
+	# Inside: march out along the way out until off the isle.
+	var out := out_of(c)
+	var gone := 0.0
+	var step := CELL*0.5
+	while gone < reach+CELL*4.0:
+		gone += step
+		var q := p+out*gone
+		if not _h.has(cell_of(q)): break
+	return {"top":top,"inside":gone,"out":out}
 
 func stats() -> Dictionary:
 	var by := {}

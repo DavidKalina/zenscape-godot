@@ -97,6 +97,12 @@ const DRAPE_STEP := 0.5
 ## Its capsules: one over this many rings, this share of their girth.
 const SOLID_RINGS := 2
 const SOLID_SHARE := 0.88
+## Round 3: its rings settled off stone and off its own coils
+## (scripts/roguelike/linger_settle.gd); the head's balls (shares of HEAD
+## along it) and their radius (share of the skull's girth).
+const Settle = preload("res://scripts/roguelike/linger_settle.gd")
+const HEAD_BALLS := [0.25,0.55,0.85]
+const HEAD_BALL := 0.62
 
 var stretch := 1.0
 ## The jaw's goal (radians); it follows with weight (`_jaw_x`).
@@ -120,6 +126,18 @@ var _lk := PackedFloat32Array([0.0,0.0,0.0,0.0])
 var _lv := PackedFloat32Array([0.0,0.0,0.0,0.0])
 var _lg := PackedFloat32Array([0.0,0.0,0.0,0.0])
 var _hr := 1.0
+## The settle (round 3), set by the threat once its ground is known; the
+## world places of the rings it was handed (for drivers: the way's, before).
+var settle: Settle
+var _wp := PackedVector3Array()
+var _wr := PackedFloat32Array()
+var _wa := PackedFloat32Array()
+var _raw := PackedVector3Array()
+var _settle_dt := 0.0
+## The head and snout on its way, before the settle lifted them (local):
+## the strike's bite is judged there, as in round 2.
+var _way_head := Vector3.ZERO
+var _way_snout := Vector3.ZERO
 
 func _init() -> void:
 	name = "LingerSerpent"
@@ -262,6 +280,8 @@ func jaw_now() -> float:
 
 func step(delta: float, snap := false) -> void:
 	_time += delta
+	# The settle eases by the real frame even when the pose snaps (the lunge).
+	_settle_dt = delta
 	_sg[S_SPEED] = 0.0
 	_sg[S_WEAVE] = 0.0
 	_sg[S_VEER] = 0.0
@@ -332,9 +352,85 @@ func _stretch_head() -> void:
 func _pose(delta: float) -> void:
 	super._pose(delta)
 	if _skeleton == null: return
+	_settle_rings(_settle_dt if _settle_dt > 0.0 else delta)
+	_settle_dt = 0.0
 	var hinge := Vector3(0.0,HINGE.x*_hr,HINGE.y*_hr)
+	# The open jaw's tip kept on the ground under it: it scrapes, never cuts.
+	if settle != null and _sx[S_JAW] > 0.02:
+		var tip := Vector3(0.0,-0.16*_hr,0.97*HEAD)
+		var room := settle.jaw_limit(global_transform*_head_xf,hinge,tip,_sx[S_JAW])
+		if room < _sx[S_JAW]:
+			_sx[S_JAW] = room
+			_jaw_x = minf(_jaw_x,room)
+			_jaw_v = minf(_jaw_v,0.0)
 	var r := Basis(Vector3.RIGHT,_sx[S_JAW])
 	_skeleton.set_bone_pose(STATIONS+2,_head_xf*Transform3D(r,hinge-r*hinge))
+
+# --- Settled (round 3) ------------------------------------------------------
+
+## The rings as laid on the way, moved off stone and off its own coils
+## (scripts/roguelike/linger_settle.gd), and posed again.
+func _settle_rings(delta: float) -> void:
+	if settle == null: return
+	var xf := global_transform
+	var s := xf.basis.get_scale().x
+	var n := STATIONS
+	if _wp.size() != n:
+		_wp.resize(n)
+		_wr.resize(n)
+		_wa.resize(n)
+		_raw.resize(n)
+		for k in range(n):
+			_wr[k] = _radius[k]*s
+			_wa[k] = _arc[k]*s
+	for k in range(n):
+		_wp[k] = xf*_pos[k]
+		_raw[k] = _wp[k]
+	var heads := PackedVector3Array()
+	for t: float in HEAD_BALLS: heads.append(xf*(_head_pos+_head_dir*HEAD*t))
+	var off := settle.settle(_wp,_wr,_wa,heads,_hr*HEAD_BALL*s,delta)
+	var inv := xf.basis.inverse()
+	var most := 0.0
+	for k in range(n):
+		_pos[k] += inv*off[k]
+		most = maxf(most,off[k].length())
+	var lo := inv*settle.head_offset
+	most = maxf(most,settle.head_offset.length())
+	_way_head = _head_pos
+	_way_snout = _snout
+	_head_pos += lo
+	_snout += lo
+	_head_xf.origin += lo
+	_skeleton.set_bone_pose(STATIONS,_head_xf)
+	var tongue := _skeleton.get_bone_pose(STATIONS+1)
+	tongue.origin += lo
+	_skeleton.set_bone_pose(STATIONS+1,tongue)
+	# The rings' bones again (the rune serpent's: along the body, rolled,
+	# breathing), on their settled places.
+	var breath := _beats(fposmod(_time/5.2,1.0),BREATH_KEYS)
+	for k in range(n):
+		var ahead := _pos[k-1] if k > 0 else _head_pos
+		var behind := _pos[k+1] if k < n-1 else _pos[k]
+		var t := (ahead-behind).normalized()
+		var up0 := (Vector3.UP-t*t.y).normalized()
+		var right0 := t.cross(up0)
+		var up := up0*cos(_rolls[k])+right0*sin(_rolls[k])
+		var sc := 1.0+0.025*breath*_breath_w[k]
+		_skeleton.set_bone_pose(k,Transform3D(Basis(up.cross(t)*sc,up*sc,t*sc),_pos[k]))
+	if most > 0.0:
+		var box := _body.custom_aabb
+		_body.custom_aabb = box.grow(most/s)
+
+## The head and snout on its way (local; the bite is judged there).
+func way_head() -> Vector3:
+	return _way_head if settle != null and settle.on else _head_pos
+
+func way_snout() -> Vector3:
+	return _way_snout if settle != null and settle.on else _snout
+
+## The rings' world places on the way before they were settled (drivers).
+func raw_rings() -> PackedVector3Array:
+	return _raw
 
 # --- Solid ------------------------------------------------------------------
 
