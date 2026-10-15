@@ -138,7 +138,7 @@ func _ready() -> void:
 	super._ready()
 
 ## The underground's ground cover (scripts/underground/ground_cover.gd,
-## underground-ground-round1.md: `--ground=dust|grass|moss|off`, dust when
+## underground-ground-round1.md: `--ground=grass|dust|moss|off`, grass when
 ## the flags don't say; laid once as the gallery stands) on the pieces' flat walked tops
 ## (CityKit `walk_areas`): crowns, landings, summits, decks, flank tiers.
 ## Not the drum turns (its coil reads as bare stone in the cover) nor the
@@ -435,7 +435,7 @@ func tick(delta: float) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo and (event as InputEventKey).keycode == KEY_L and under != null:
 		under.cycle()
-			return
+		return
 	super._unhandled_input(event)
 
 func _hint_text() -> String:

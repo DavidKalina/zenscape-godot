@@ -32,7 +32,7 @@ const SkyIslets = preload("res://scripts/sky_islets.gd")
 const SKIN :=preload("res://shaders/underground_cover.gdshader")
 const FLAG := "--ground"
 ## The cover the underground wears when the flags don't say.
-const DEFAULT := "dust"
+const DEFAULT := "grass"
 ## Per cover: `ground` where the field's mid green (FIELD_GREEN, ZS_GROUND_GREEN
 ## in shaders/ground_look.gdshaderinc) is taken to (linear), the ground
 ## material's knobs (`dust`, `hue`, `living`, `calm`), the skin's mode and

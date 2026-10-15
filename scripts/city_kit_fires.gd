@@ -43,6 +43,7 @@ const RuinKit = preload("res://scripts/ruin_kit.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 const RUNNEL_SHADER := preload("res://shaders/city_runnel.gdshader")
 const GroundCover = preload("res://scripts/underground/ground_cover.gd")
+const CityStone = preload("res://scripts/city_kit_stone.gd")
 
 const PIECES := {
 	"maker_cresset":"Great cresset: a fire bowl on a plinth; lit, a light, a sight light and a beacon; barged, it tips",
@@ -267,7 +268,8 @@ static func cyl_shape(radius: float, tall: float, at: Vector3) -> Array:
 static func mesh_node(parent: Node3D, m: GiantStone.Mesher, node_name := "Stone") -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
 	mi.name = node_name
-	mi.mesh = GiantStone.mesh_of(m)
+	GiantStone.warm()
+	mi.mesh = m.mesh(CityStone.wear("fire"),GiantStone._runes)
 	parent.add_child(mi)
 	return mi
 
@@ -381,7 +383,7 @@ class Cresset extends Node3D:
 		runes.set_shader_parameter("energy",RUNES_OUT)
 		var pm := MeshInstance3D.new()
 		pm.name = "Plinth"
-		pm.mesh = m.mesh(GiantStone._stone,runes)
+		pm.mesh = m.mesh(CityStone.wear("fire"),runes)
 		add_child(pm)
 		# The bowl and the shaft's head: one piece that tips.
 		bowl = Node3D.new()

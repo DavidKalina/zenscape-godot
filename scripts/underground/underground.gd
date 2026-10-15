@@ -56,7 +56,7 @@ const PRESETS := {
 }
 ## How much of the ambient colour the stone is filled with (the torch lights
 ## the rest): dim in the dark, the haze's lit air a good deal more.
-const STONE_FILL := {"torch":0.16,"haze":0.5}
+const STONE_FILL := {"torch":0.26,"haze":0.5}
 const KNOBS := {
 	"fog":0.0016,"volume":0.008,"ambient":1.3,"moon":0.55,"exposure":1.3,
 	"torch":5.5,"torch_range":24.0,"next_reach":420.0,"next_most":0.88,
@@ -174,7 +174,7 @@ func _demo() -> void:
 	if is_instance_valid(_demo_root): _demo_root.queue_free()
 	var fig: Node3D = study.get("figure")
 	var at: Vector3 = fig.global_position if fig != null else Vector3.ZERO
-	_demo_root = GroundCover.demo(study,at,ground if ground != "" else "dust")
+	_demo_root = GroundCover.demo(study,at,ground if ground != "" else "grass")
 	print("ground demo at ",at)
 
 func _exit_tree() -> void:
@@ -280,7 +280,8 @@ func _publish_sky() -> void:
 ## glow blue-white in the dark). Only the stone reads these globals, so the
 ## turf and the rest keep the day's hemisphere. Held every frame, like the sky.
 func _publish_stone() -> void:
-	var amb: Color = p.ambient
+	# The air's colour, eased toward grey so the basalt isn't one flat blue.
+	var amb: Color = (p.ambient as Color).lerp(Color(0.34,0.34,0.34),0.35)
 	var low: Color = p.warm
 	var e := float(STONE_FILL.get(preset,0.2))
 	RenderingServer.global_shader_parameter_set("zs_under",1.0)

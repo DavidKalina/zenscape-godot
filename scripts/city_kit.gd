@@ -52,8 +52,11 @@ const CityBreaks = preload("res://scripts/city_kit_breaks.gd")
 ## the wick spire (scripts/city_kit_fires.gd, city-fires-round1.md). They
 ## stand in a parent (`stand`), not as a returned piece.
 const CityFires = preload("res://scripts/city_kit_fires.gd")
+## The family's refuges: the mouse run, the votive niches, the hush gallery,
+## the slotted wall (scripts/city_kit_refuges.gd, city-refuges-round1.md).
+const CityRefuges = preload("res://scripts/city_kit_refuges.gd")
 
-const PIECES := ["city_pillar","city_drum_stair","city_stair","city_causeway"]+CityBreaks.PIECES
+const PIECES := ["city_pillar","city_drum_stair","city_stair","city_causeway"]+CityBreaks.PIECES+CityRefuges.PIECES
 const NAMES := {"city_pillar":"Basalt pillar-isle","city_drum_stair":"Drum stair","city_stair":"Epic stair","city_causeway":"Causeway"}
 
 ## Every id in the family: its pieces, its breaks, its fires.
@@ -71,7 +74,7 @@ static func stand(id: String, parent: Node3D, xform: Transform3D, seed_value := 
 
 ## A piece's name (the family's breakables' too).
 static func name_of(id: String) -> String:
-	return String(NAMES.get(id,CityBreaks.NAMES.get(id,id)))
+	return String(NAMES.get(id,CityBreaks.NAMES.get(id,CityRefuges.NAMES.get(id,id))))
 
 # --- The wanderer's numbers (the ruin kit's) ------------------------------------------
 const SET_OFF := RuinKit.SET_OFF
@@ -225,6 +228,7 @@ static func walk_areas(piece: Node3D, kinds: Array = []) -> Array:
 ## A piece by its id.
 static func piece(id: String, seed_value: int, weathered := 0.4, opts := {}) -> Node3D:
 	if id in CityBreaks.PIECES: return CityBreaks.piece(id,seed_value,weathered)
+	if id in CityRefuges.PIECES: return CityRefuges.piece(id,seed_value,weathered)
 	match id:
 		"city_pillar": return pillar(seed_value,weathered,opts)
 		"city_drum_stair": return drum_stair(seed_value,weathered,opts)
@@ -371,7 +375,8 @@ class Piece extends RefCounted:
 	func finish() -> Node3D:
 		var mesh := MeshInstance3D.new()
 		mesh.name = "Mesh"
-		mesh.mesh = Stone.mesh_of(m)
+		var kind := "stair" if String(root.name).ends_with("Stair") else ("span" if root.name == "CityCauseway" else "pier")
+		mesh.mesh = Stone.mesh_of(m,kind)
 		root.add_child(mesh)
 		root.add_child(body)
 		for k: String in meta: root.set_meta(k,meta[k])
@@ -388,7 +393,7 @@ static func _unit_piece(unit: Node3D, index: int, xf: Transform3D, mesher: Stone
 	holder.transform = xf
 	var mi := MeshInstance3D.new()
 	mi.name = "Mesh"
-	mi.mesh = Stone.mesh_of(mesher)
+	mi.mesh = Stone.mesh_of(mesher,"break")
 	holder.add_child(mi)
 	unit.add_child(holder)
 	var body: StaticBody3D = unit.get_node("Body")
