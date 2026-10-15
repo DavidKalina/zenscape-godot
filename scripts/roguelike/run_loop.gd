@@ -165,6 +165,11 @@ func setup(scene: Node3D) -> void:
 	overlay.readout.add_child(_items)
 	run.item_taken.connect(_item_found)
 	run.item_dropped.connect(func(_id: StringName) -> void: _items.show_items(run.items))
+	# [juice] Hits and finds land (scripts/roguelike/juice.gd).
+	if RunFeatures.on(&"juice"):
+		var juice: Node = preload("res://scripts/roguelike/juice.gd").new()
+		add_child(juice)
+		juice.call("setup",self)
 	# Until the first layer stands he walks the base as before; it comes
 	# up behind a moment's dark (`_arrive`).
 	_veil = 0.0
