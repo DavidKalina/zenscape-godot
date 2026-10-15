@@ -787,6 +787,10 @@ func _beacon_gaze(delta: float) -> bool:
 	if Vector2(to.x,to.z).length() > 0.3:
 		var want := PilotMotor.facing_of(Vector2(to.x,to.z).normalized())
 		facing = wrapf(facing+clampf(angle_difference(facing,want),-float(knobs.turn)*1.5*delta,float(knobs.turn)*1.5*delta),-PI,PI)
+		# Its feet turn it there too (stood, `_turn_goal` is its heading,
+		# and the steps' yaw is its facing): a `stand` off the flame
+		# otherwise left it looking back the way it came.
+		_heading = want
 	if _beacon_dwell == 0.0: beacon_visits += 1
 	_beacon_dwell += delta
 	if _beacon_dwell >= beacon.dwell:
