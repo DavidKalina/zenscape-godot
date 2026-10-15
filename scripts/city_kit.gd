@@ -55,17 +55,21 @@ const CityFires = preload("res://scripts/city_kit_fires.gd")
 ## The family's refuges: the mouse run, the votive niches, the hush gallery,
 ## the slotted wall (scripts/city_kit_refuges.gd, city-refuges-round1.md).
 const CityRefuges = preload("res://scripts/city_kit_refuges.gd")
+## The family's light pieces: the sun-mirror, the relief face
+## (scripts/city_kit_light2.gd, city-light2-round1.md); stood like the fires.
+const CityLight2 = preload("res://scripts/city_kit_light2.gd")
 
 const PIECES := ["city_pillar","city_drum_stair","city_stair","city_causeway"]+CityBreaks.PIECES+CityRefuges.PIECES
 const NAMES := {"city_pillar":"Basalt pillar-isle","city_drum_stair":"Drum stair","city_stair":"Epic stair","city_causeway":"Causeway"}
 
 ## Every id in the family: its pieces, its breaks, its fires.
-static var ALL: Array = PIECES+CityFires.PIECES.keys()
+static var ALL: Array = PIECES+CityFires.PIECES.keys()+CityLight2.PIECES.keys()
 
 ## Any of the family's pieces stood in `parent` at `xform` (a fire through
 ## CityFires `build`, the rest through `piece`).
 static func stand(id: String, parent: Node3D, xform: Transform3D, seed_value := 1, weathered := 0.4, opts := {}) -> Node3D:
 	if CityFires.PIECES.has(id): return CityFires.build(id,parent,xform,opts)
+	if CityLight2.PIECES.has(id): return CityLight2.build(id,parent,xform,opts)
 	var n := piece(id,seed_value,weathered,opts)
 	if n == null: return null
 	parent.add_child(n)
