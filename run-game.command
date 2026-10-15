@@ -14,8 +14,8 @@ fi
 # The game, v1 (docs/design/roguelike/game-v1-launcher.md). It opens on the
 # title (studies/game_title.tscn); Space / A there opens the run with these
 # same flags. Flags after the `--`:
-#   --shape=sprawl     the run's first region; the run alternates sprawl and
-#                      ring by depth on its own (layer_shapes.gd RUN)
+#   --shape=sprawl     the run's first region; the city (underground) stays sprawl,
+#                      city layers of its six places (layer-round14-city-layers.md)
 #   --world=under      every region underground: v1 is the Olmec city only
 #                      (game-v1-brief.md); drop it to open into the sky
 #                      after the first two regions (layer-round13-worlds.md)

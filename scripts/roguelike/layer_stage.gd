@@ -229,8 +229,8 @@ const CITY_BEAM := 320.0
 const CITY_BEAM_ALPHA := 0.32
 func _city_gate(column: CylinderMesh, faint: StandardMaterial3D) -> void:
 	column.height = CITY_BEAM
-	column.top_radius = 1.4
-	column.bottom_radius = 0.8
+	column.top_radius = 3.2
+	column.bottom_radius = 1.0
 	faint.albedo_color = Color(GATE,CITY_BEAM_ALPHA)
 	faint.disable_fog = true
 	(gate.get_child(gate.get_child_count()-1) as Node3D).position = Vector3(0.0,CITY_BEAM*0.5,0.0)
