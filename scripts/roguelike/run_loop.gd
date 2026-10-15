@@ -47,6 +47,8 @@ const LayerSprawl = preload("res://scripts/roguelike/layer_sprawl.gd")
 const CLIMB_LIGHTEN := 0.2
 const CLIMB_LIGHTEN_MOST := 0.6
 const Underground = preload("res://scripts/underground/underground.gd")
+# [collectibles] the corner's tally of runes and rares (game-v1-collectibles.md).
+const CollectTally = preload("res://scripts/roguelike/collect_tally.gd")
 
 ## Past the void, falling on before the dark comes (s), the dark coming (s).
 const FALL_ON := 1.1
@@ -90,6 +92,15 @@ const WORDS := {
 	"prompt": "SPACE / A   A NEW CLIMB            R / X   THE SAME",
 	"waking": "...",
 	"stage": "layer %d",           # dev only (the study's card, its log)
+	# [collectibles] The rare collectible: no name yet (the user's to give);
+	# GlyphPickup's sun glyph stands in for its look.
+	"rare": "SUN GLYPH",           # the caption a find comes up with
+	"rare_line": "%d of %d here",  # under it: this layer's found of laid
+	"rares_none": "no sun glyph",  # the card: the run's rares
+	"rares_one": "1 sun glyph",
+	"rares": "%d sun glyphs",
+	"most": "richest climb: %d runes, %s",
+	"most_new": "the richest climb yet",
 }
 ## Seconds the readout stays up after a count changes, and standing still
 ## before it comes up; the speed (m/s) under which he is still.
@@ -244,7 +255,16 @@ static func card_facts(fall: Dictionary) -> PackedStringArray:
 	var n := int(fall.runes)
 	var lost: String = WORDS.lost_none if n == 0 else (WORDS.lost_one if n == 1 else WORDS.lost % n)
 	var high: String = WORDS.highest_new if bool(fall.high_record) else WORDS.highest % metres(float(fall.highest))
-	return PackedStringArray([cause_line(fall),lost,RunState.clock(float(fall.time)),"",high])
+	# [collectibles] The rares found, and the most in a climb.
+	var r := int(fall.get("rares",0))
+	var found := rares_words(r)
+	var most: String = WORDS.most_new if bool(fall.get("runes_record",false)) or bool(fall.get("rares_record",false)) \
+		else WORDS.most % [int(fall.get("most_runes",0)),rares_words(int(fall.get("most_rares",0)))]
+	return PackedStringArray([cause_line(fall),lost,found,RunState.clock(float(fall.time)),"",high,most])
+
+## [collectibles] "no sun glyph", "1 sun glyph", "3 sun glyphs".
+static func rares_words(n: int) -> String:
+	return WORDS.rares_none if n == 0 else (WORDS.rares_one if n == 1 else WORDS.rares % n)
 
 # --- Hearts --------------------------------------------------------------------------
 
@@ -365,6 +385,11 @@ func layer_stood() -> void:
 	study.set("_last_stood",spot.start)
 	_start_y = float(study.start.y)
 	stage.rune_taken.connect(func(_left: int) -> void: run.take_rune())
+	# [collectibles] The layer's runes, rares and chests into the run.
+	var found: Node = stage.get("collectibles")
+	if found != null:
+		found.rune_taken.connect(func(_src: String, worth: int) -> void: run.take_rune(worth))
+		found.rare_taken.connect(_rare_found)
 	var why := pending
 	pending = ""
 	match why:
@@ -387,8 +412,9 @@ func layer_stood() -> void:
 ## (I) and before the first layer.
 func _readout(delta: float) -> void:
 	if overlay == null or overlay.readout == null: return
-	if run.runes != _shown_runes:
+	if run.runes != _shown_runes or run.rares != _shown_rares:
 		_shown_runes = run.runes
+		_shown_rares = run.rares
 		_loud = LOUD_FOR
 	_loud = maxf(_loud-delta,0.0)
 	var motor: Variant = study.get("motor")
@@ -396,10 +422,33 @@ func _readout(delta: float) -> void:
 	_still = _still+delta if speed < STILL_SPEED else 0.0
 	var long_card: Variant = study.get("_card")
 	var shown := run.depth > 0 and state in ["play","arrive","dying"] and not (long_card != null and (long_card as Label).visible)
-	var side := "" if run.runes == 0 else (WORDS.rune if run.runes == 1 else WORDS.runes) % run.runes
+	# [collectibles] The runes and rares are the tally's, by the hearts.
+	var side := ""
 	overlay.set_readout(WORDS.readout % metres(run.height),side.to_upper(),shown,_loud > 0.0 or _still > STILL_AFTER)
 	var motor_now: Variant = study.get("motor")
 	overlay.set_hearts(run.hearts_of(motor_now) if motor_now != null else RunState.HEARTS,RunState.HEARTS)
+	_tally().set_counts(run.runes,run.rares)
+
+# --- [collectibles] The tally and a rare's find -------------------------------------
+
+var _shown_rares := 0
+var _tally_node: Control = null
+
+## The corner's tally (scripts/roguelike/collect_tally.gd), made on first use.
+func _tally() -> Control:
+	if _tally_node == null:
+		_tally_node = CollectTally.new()
+		_tally_node.overlay = overlay
+		overlay.readout.add_child(_tally_node)
+	return _tally_node
+
+## A rare found: the caption, the tally's pop (the find's light, sound and
+## beat are scripts/roguelike/collectibles.gd's).
+func _rare_found(got: int, of: int) -> void:
+	run.take_rare()
+	_loud = LOUD_FOR
+	overlay.show_caption(WORDS.rare,WORDS.rare_line % [got,of])
+	_tally().pop_rare()
 
 ## Keys: on the card, Space / Enter / E (pad A) a new climb, R (pad X) the
 ## same; anywhere, I the layer's long card. True when used.

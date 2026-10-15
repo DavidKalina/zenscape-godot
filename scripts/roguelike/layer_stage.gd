@@ -32,6 +32,8 @@ const LayerEnemies = preload("res://scripts/roguelike/layer_enemies.gd")
 const LayerGreybox = preload("res://scripts/roguelike/layer_greybox.gd")
 const CityCrossings = preload("res://scripts/roguelike/city_crossings.gd")
 const CityFires = preload("res://scripts/city_kit_fires.gd")
+# [collectibles] the layer's runes, rares and chests (game-v1-collectibles.md).
+const Collectibles = preload("res://scripts/roguelike/collectibles.gd")
 
 const GATE := Color(1.0,0.82,0.45)
 const RUNE_SIZE := 0.7
@@ -64,6 +66,9 @@ var heads: Node = null
 ## The greybox isles' live bits and card (scripts/roguelike/
 ## layer_greybox.gd), or null.
 var greybox: Node = null
+## [collectibles] The layer's runes, rares and chests (scripts/roguelike/
+## collectibles.gd), or null.
+var collectibles: Node3D = null
 var _last := Vector3.INF
 
 func _init() -> void:
@@ -128,6 +133,7 @@ func setup(scene: Node3D, layer: Dictionary, was: Node) -> void:
 	greybox = LayerGreybox.dress(self,layer)
 	scene.foot_pieces = self
 	_runes()
+	collectibles = Collectibles.dress(self,layer)  # [collectibles]
 	_gate()
 	rides = LayerRides.new()
 	add_child(rides)
@@ -279,6 +285,7 @@ func before(delta: float) -> void:
 	enemies.before(delta)
 	cannons.before(delta)
 	if hazards != null: hazards.before(delta)
+	if collectibles != null: collectibles.before(delta)  # [collectibles]
 
 func after(delta: float, events: Dictionary) -> void:
 	if inner != null: inner.after(delta,events)
@@ -287,6 +294,7 @@ func after(delta: float, events: Dictionary) -> void:
 	enemies.after(delta,events)
 	cannons.after(delta,events)
 	if hazards != null: hazards.after(delta,events)
+	if collectibles != null: collectibles.after(delta,events)  # [collectibles]
 	if study.get("figure") != null: touch(study.figure.global_position+Vector3.UP*Lines.WALKER_MIDDLE)
 
 func pose(figure: Node3D) -> void:
@@ -294,6 +302,7 @@ func pose(figure: Node3D) -> void:
 	enemies.pose(figure)
 	cannons.pose(figure)
 	if greybox != null: greybox.pose(figure)
+	if collectibles != null: collectibles.pose(figure)  # [collectibles]
 	# Hidden while a head holds him.
 	if heads != null: figure.visible = not heads.holding()
 
@@ -302,9 +311,11 @@ func frame(camera: Camera3D, delta: float) -> void:
 	cannons.frame(camera,delta)
 	if heads != null: heads.frame(camera,delta)
 	if greybox != null: greybox.frame(camera,delta)
+	if collectibles != null: collectibles.frame(camera,delta)  # [collectibles]
 
 func reset() -> void:
 	traps.reset()
 	enemies.reset()
 	cannons.reset()
 	if greybox != null: greybox.reset()
+	if collectibles != null: collectibles.reset()  # [collectibles]

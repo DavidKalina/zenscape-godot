@@ -24,6 +24,18 @@ var run_seed := -1
 var depth := 0
 ## Runes carried: taken on any layer of the run, kept through the gate.
 var runes := 0
+## [collectibles] (docs/design/roguelike/game-v1-collectibles.md) The runes
+## taken this run in all (`runes` is the purse, which a merchant later
+## spends from; `haul` never goes down), the rare collectibles found this
+## run; across runs the most runes and rares in one run, and every rare
+## ever found.
+var haul := 0
+var rares := 0
+var most_runes := 0
+var most_rares := 0
+var rares_ever := 0
+var _before_runes := 0
+var _before_rares := 0
 ## Seconds played in the run.
 var time := 0.0
 ## Hearts (docs/design/roguelike/game-v1-hearts.md): HEARTS a wanderer at a
@@ -62,6 +74,10 @@ func begin(seed_value: int) -> void:
 	_before_high = highest
 	depth = 1
 	runes = 0
+	haul = 0
+	rares = 0
+	_before_runes = most_runes
+	_before_rares = most_rares
 	time = 0.0
 	height = 0.0
 	footing = 0.0
@@ -92,8 +108,14 @@ func at(above_start: float, grounded: bool) -> void:
 		footing = height
 		best = maxf(best,footing)
 
-func take_rune() -> void:
-	runes += 1
+func take_rune(worth := 1) -> void:
+	runes += worth
+	haul += worth
+
+## [collectibles] A rare collectible found: counted for the run and ever.
+func take_rare() -> void:
+	rares += 1
+	rares_ever += 1
 
 func tick(delta: float) -> void:
 	time += delta
@@ -127,7 +149,11 @@ func hurt(wanderer: Object, amount: int, cause: String, always := false) -> int:
 func die() -> Dictionary:
 	deaths += 1
 	highest = maxf(highest,best)
-	var out := {"depth":depth,"runes":runes,"time":time,"deepest":deepest,"record":depth > _before and _before > 0,
+	most_runes = maxi(most_runes,haul)
+	most_rares = maxi(most_rares,rares)
+	var out := {"depth":depth,"runes":runes,"time":time,
+		"haul":haul,"rares":rares,"most_runes":most_runes,"most_rares":most_rares,"rares_ever":rares_ever,
+		"runes_record":haul > _before_runes and _before_runes > 0,"rares_record":rares > _before_rares and _before_rares > 0,"deepest":deepest,"record":depth > _before and _before > 0,
 		"height":footing,"best":best,"highest":highest,"high_record":best > _before_high and _before_high > 0.0}
 	save_record()
 	return out
@@ -139,6 +165,8 @@ var _before_high := 0.0
 func _reach() -> void:
 	if depth > deepest: deepest = depth
 	highest = maxf(highest,best)
+	most_runes = maxi(most_runes,haul)  # [collectibles]
+	most_rares = maxi(most_rares,rares)
 	save_record()
 
 ## "6:41" for 401 s.
@@ -158,8 +186,12 @@ func load_record() -> void:
 		highest = float((data as Dictionary).get("highest",0.0))
 		runs = int((data as Dictionary).get("runs",0))
 		deaths = int((data as Dictionary).get("deaths",0))
+		most_runes = int((data as Dictionary).get("most_runes",0))
+		most_rares = int((data as Dictionary).get("most_rares",0))
+		rares_ever = int((data as Dictionary).get("rares_ever",0))
 
 func save_record() -> void:
 	var f := FileAccess.open(record_path,FileAccess.WRITE)
 	if f == null: return
-	f.store_string(JSON.stringify({"deepest":deepest,"highest":snappedf(highest,0.1),"runs":runs,"deaths":deaths}))
+	f.store_string(JSON.stringify({"deepest":deepest,"highest":snappedf(highest,0.1),"runs":runs,"deaths":deaths,
+		"most_runes":most_runes,"most_rares":most_rares,"rares_ever":rares_ever}))
