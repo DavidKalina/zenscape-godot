@@ -51,6 +51,7 @@ const Underground = preload("res://scripts/underground/underground.gd")
 const CollectTally = preload("res://scripts/roguelike/collect_tally.gd")
 const ItemCatalog = preload("res://scripts/roguelike/item_catalog.gd")
 const RunFeatures = preload("res://scripts/roguelike/run_features.gd")
+const PassiveItems = preload("res://scripts/roguelike/passive_items.gd")  # [items_passive]
 const ItemStrip = preload("res://scripts/roguelike/item_strip.gd")
 ## [items] Whether --wallrun gave the wall run outright (else Gecko Wraps do).
 var _wallrun_flag := false
@@ -164,6 +165,10 @@ func setup(scene: Node3D) -> void:
 	_items = ItemStrip.new()
 	overlay.readout.add_child(_items)
 	run.item_taken.connect(_item_found)
+	if RunFeatures.on(&"items_passive"):  # [items_passive]
+		var passive := PassiveItems.new()
+		passive.setup(study,run)
+		scene.add_child(passive)
 	run.item_dropped.connect(func(_id: StringName) -> void: _items.show_items(run.items))
 	# Until the first layer stands he walks the base as before; it comes
 	# up behind a moment's dark (`_arrive`).
@@ -473,7 +478,7 @@ func _readout(delta: float) -> void:
 	var side := ""
 	overlay.set_readout(WORDS.readout % metres(run.height),side.to_upper(),shown,_loud > 0.0 or _still > STILL_AFTER)
 	var motor_now: Variant = study.get("motor")
-	overlay.set_hearts(run.hearts_of(motor_now) if motor_now != null else RunState.HEARTS,RunState.HEARTS)
+	overlay.set_hearts(run.hearts_of(motor_now) if motor_now != null else run.max_hearts(),run.max_hearts())  # [items_passive] max_hearts
 	_tally().set_counts(run.runes,run.rares)
 
 # --- [collectibles] The tally and a rare's find -------------------------------------
