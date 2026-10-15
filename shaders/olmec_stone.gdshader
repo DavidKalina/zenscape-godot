@@ -31,6 +31,8 @@ global uniform float zs_hemi_energy;
 
 uniform float fill = 1.2;
 uniform float rim = 0.14;
+// Light added on top (the sky dragon's night sheen; 0 for the stone).
+uniform vec3 emit_add = vec3(0.0);
 uniform float roughness_value : hint_range(0.0, 1.0) = 0.95;
 // How much of the weathering (0 the old smooth stone).
 uniform float weather : hint_range(0.0, 2.0) = 1.0;
@@ -50,6 +52,13 @@ uniform float rune_cut = 0.6;
 uniform float pebble = 0.0;
 uniform float pebble_size = 0.3;
 uniform vec2 pebble_head = vec2(0.0, 1.0);
+// A reptile's hide rather than stone (the sky dragon): 0 stone, 1 the beads
+// become scales each with a colour of its own between scale_a and scale_b
+// (multipliers), a dark seam and a satin sheen on the dome; no cracks, chips
+// or lichen.
+uniform float reptile : hint_range(0.0, 1.0) = 0.0;
+uniform vec3 scale_a = vec3(0.7, 0.8, 0.78);
+uniform vec3 scale_b = vec3(1.3, 1.1, 0.85);
 
 #include "res://shaders/rune_serpent_runes.gdshaderinc"
 
@@ -190,6 +199,8 @@ void fragment() {
 	// a pixel is near a scale across.
 	float pb_seam = 0.0;
 	float pb_h = 0.0;
+	float pb_dome = 0.0;
+	vec3 hue = vec3(1.0);
 	if (pebble > 0.0) {
 		float size = pebble_size * mix(1.0, pebble_head.y, 1.0 - smoothstep(pebble_head.x - 1.0, pebble_head.x, rune_info.z));
 		vec3 pc = cells(rest / size + 51.0);
@@ -199,6 +210,12 @@ void fragment() {
 		float dome = smoothstep(0.0, 0.5, gap);
 		tone *= mix(1.0, mix(0.84, 1.12, pc.z) * mix(0.88, 1.07, dome * pb_far), pebble);
 		pb_seam = (1.0 - smoothstep(0.0, seam_w, gap)) * pebble * (0.4 + 0.6 * pb_far);
+		float pick = fract(pc.z * 5.31);
+		hue = mix(vec3(1.0), mix(scale_a, scale_b, smoothstep(0.1, 0.9, pick)), reptile * pebble);
+		// Lit scales' own shade: the dome's high side lighter, the seam's
+		// low side darker, the colours fading to their mean at range.
+		hue = mix(vec3(1.0), hue, 0.35 + 0.65 * pb_far);
+		pb_dome = dome * pb_far * reptile * pebble;
 		pb_h = sqrt(dome) * 0.2 * size * pebble * pb_far;
 	}
 
@@ -214,7 +231,7 @@ void fragment() {
 	float hair_w = max(0.07, px * 4.0);
 	float hair_mask = smoothstep(0.55, 0.78, fbm(rest * 3.0 + 41.0));
 	float hair = (1.0 - smoothstep(0.0, hair_w, cr2.y - cr2.x)) * hair_mask * (0.4 + 0.6 * f_mid);
-	float cracks = clamp(crack + hair * 0.5, 0.0, 1.0);
+	float cracks = clamp(crack + hair * 0.5, 0.0, 1.0) * (1.0 - reptile);
 
 	// The worn high points: what stands clear of the crevices is paler, and
 	// breaks into chipped facets, each its own tone, fresh-cut stone.
@@ -232,11 +249,13 @@ void fragment() {
 
 	// Assemble.
 	vec3 c = base * mix(vec3(1.0), vec3(tone), w);
-	c = mix(c, c * pale_mul, clamp(worn * 0.5 + chip * 0.5, 0.0, 1.0) * 0.8 * w);
-	c *= 1.0 - chip * (1.0 - chip_edge) * 0.35 * w;
+	float stone = 1.0 - reptile;
+	c *= hue;
+	c = mix(c, c * pale_mul, clamp(worn * 0.5 + chip * 0.5, 0.0, 1.0) * 0.8 * w * stone);
+	c *= 1.0 - chip * (1.0 - chip_edge) * 0.35 * w * stone;
 	c = mix(c, c * grime_mul, clamp(grime, 0.0, 1.0) * 0.8 * w);
-	c = mix(c, c * 0.22, cracks * 0.82 * w);
-	c *= 1.0 - pb_seam * 0.55;
+	c = mix(c, c * 0.22, cracks * 0.82 * w * stone);
+	c *= 1.0 - pb_seam * mix(0.55, 0.75, reptile);
 	c *= 1.0 - pit * 0.35 * w;
 
 	// Lichen: roundish rosettes and blooms on sheltered tops (not the crown
@@ -248,7 +267,7 @@ void fragment() {
 	float li = li_zone * clamp(li_bloom * (0.5 + 0.7 * li_dot) , 0.0, 1.0) * (1.0 - carve);
 	vec3 li_col = mix(lichen_a, lichen_b, smoothstep(0.35, 0.65, vnoise(rest * 6.0 + 5.0)));
 	li_col *= 0.55 + 0.45 * tone;
-	c = mix(c, li_col, li * 0.78 * w * clamp(base.g * 12.0 + 0.3, 0.0, 1.0));
+	c = mix(c, li_col, li * 0.78 * stone * w * clamp(base.g * 12.0 + 0.3, 0.0, 1.0));
 	// A lit groove darkens the stone round its light (carved, not painted).
 	c *= 1.0 - groove * carve;
 	// The eye: the eyeball's polished pale stone, darker toward its rim and
@@ -277,12 +296,13 @@ void fragment() {
 	NORMAL = normalize(abs(det) * NORMAL - bump * grad - grad_eye - grad_pb);
 
 	ALBEDO = c;
-	ROUGHNESS = mix(clamp(roughness_value + (pit + cracks) * 0.05 - worn * 0.1, 0.5, 1.0), 0.35, eye);
+	ROUGHNESS = mix(clamp(roughness_value + (pit + cracks) * 0.05 - worn * 0.1 - pb_dome * 0.3, 0.3, 1.0), 0.35, eye);
 	METALLIC = 0.0;
 	vec3 normal = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
 	vec3 hemi = mix(zs_hemi_ground, zs_hemi_sky, normal.y * 0.5 + 0.5) * zs_hemi_energy / PI;
 	float edge = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 3.0);
 	EMISSION = c * hemi * fill + mix(c, vec3(0.5), 0.4) * zs_hemi_sky * zs_hemi_energy * edge * rim;
+	EMISSION += emit_add * c;
 	EMISSION += r_tint * r_lit * energy * r_boost;
 	EMISSION += eye_glow * eye_energy * eye * (0.45 + 0.55 * e_dome);
 }

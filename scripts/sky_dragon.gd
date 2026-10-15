@@ -700,6 +700,7 @@ func _dress(n: Node) -> void:
 		for i in mi.mesh.get_surface_count():
 			var m := mi.mesh.surface_get_material(i)
 			if m != null and m.resource_name == "dragon_membrane_glow": _tag_membrane(mi,i)
+			elif m != null and HIDE_TONES.has(m.resource_name): _bake_hide(mi,i,m.resource_name)
 		for i in mi.mesh.get_surface_count():
 			var m := mi.mesh.surface_get_material(i)
 			mi.set_surface_override_material(i,_material(m.resource_name if m != null else ""))
@@ -709,6 +710,95 @@ func _dress(n: Node) -> void:
 		# The wings reach far from the rest pose's bounds.
 		mi.extra_cull_margin = 60.0
 	for c in n.get_children(): _dress(c)
+
+## The weathered hide (shaders/olmec_stone.gdshader, the Olmec's and the rune
+## serpent's stone): each surface's tone by the model's names (sRGB), the
+## weathering's strength and the scale beads' (0 none).
+const HIDE_TONES := {
+	"dragon_hide": [Color("4a4c44"),0.55,1.0],
+	"dragon_belly": [Color("8a7a58"),0.55,0.8],
+	"dragon_horn": [Color("6e655a"),0.7,0.0],
+	"dragon_claw": [Color("5a5248"),0.7,0.0],
+	"dragon_tooth": [Color("cbc2ae"),0.4,0.0],
+}
+## The grain's rest place is the vertex's, this many times (the model is
+## ~100 m across): a scale bead PEBBLE m, mottled washes some 10 m.
+const GRAIN := 0.3
+const PEBBLE := 0.8
+const HIDE_SHADER := preload("res://shaders/olmec_stone.gdshader")
+
+## Bakes what the stone shader reads onto a surface, as the rune serpent's
+## faces carry it: COLOR the tone times its occlusion (alpha the occlusion),
+## UV and UV2.x where the vertex lies at rest (so the grain rides on the
+## body). The occlusion is read off the mesh: a vertex below the mean of
+## its neighbours (across the flat-shaded seams, welded by position) lies in
+## a crevice, one above it stands clear; faces turned down are darker.
+func _bake_hide(mi: MeshInstance3D, surface: int, key: String) -> void:
+	var src := mi.mesh as ArrayMesh
+	if src == null or src.get_blend_shape_count() > 0: return
+	var arrays := src.surface_get_arrays(surface)
+	var points: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+	var index: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+	if points.is_empty() or normals.size() != points.size() or index.is_empty(): return
+	var keys := PackedInt32Array()
+	keys.resize(points.size())
+	var ids := {}
+	for k in range(points.size()):
+		var p := mi.transform*points[k]
+		var cell := Vector3i((p*50.0).round())
+		if not ids.has(cell): ids[cell] = ids.size()
+		keys[k] = ids[cell]
+	var sum := PackedVector3Array()
+	sum.resize(ids.size())
+	var count := PackedFloat32Array()
+	count.resize(ids.size())
+	var place := PackedVector3Array()
+	place.resize(ids.size())
+	for t in range(0,index.size(),3):
+		for e in range(3):
+			var a := index[t+e]
+			var b := index[t+(e+1)%3]
+			sum[keys[a]] += mi.transform*points[b]
+			count[keys[a]] += 1.0
+			place[keys[a]] = mi.transform*points[a]
+	var tone: Color = (HIDE_TONES[key][0] as Color).srgb_to_linear()
+	var colours := PackedColorArray()
+	colours.resize(points.size())
+	var uv := PackedVector2Array()
+	uv.resize(points.size())
+	var uv2 := PackedVector2Array()
+	uv2.resize(points.size())
+	for k in range(points.size()):
+		var id := keys[k]
+		var p := place[id]
+		var n := (mi.transform.basis*normals[k]).normalized()
+		var mean := sum[id]/maxf(count[id],1.0)
+		# Metres of dip into the neighbours' mean, over a stride's length.
+		var dip := (mean-p).dot(n)/maxf((mean-p).length()+0.8,0.001)
+		var occ := clampf(0.78-dip*1.6+minf(n.y,0.0)*0.25,0.15,1.0)
+		var shade := lerpf(0.55,1.0,occ)
+		colours[k] = Color(tone.r*shade,tone.g*shade,tone.b*shade,occ)
+		var rest := p*GRAIN
+		uv[k] = Vector2(rest.x,rest.y)
+		uv2[k] = Vector2(rest.z,0.0)
+	arrays[Mesh.ARRAY_COLOR] = colours
+	arrays[Mesh.ARRAY_TEX_UV] = uv
+	arrays[Mesh.ARRAY_TEX_UV2] = uv2
+	_replace_surface(mi,surface,arrays)
+
+## `mi`'s mesh with one surface's arrays swapped, the rest and the skin kept.
+func _replace_surface(mi: MeshInstance3D, surface: int, arrays: Array) -> void:
+	var src := mi.mesh as ArrayMesh
+	var mesh := ArrayMesh.new()
+	for i in range(src.get_surface_count()):
+		var a := arrays if i == surface else src.surface_get_arrays(i)
+		var format := src.surface_get_format(i) & ~(Mesh.ARRAY_FORMAT_VERTEX|Mesh.ARRAY_FORMAT_NORMAL|Mesh.ARRAY_FORMAT_TANGENT|Mesh.ARRAY_FORMAT_COLOR|Mesh.ARRAY_FORMAT_TEX_UV|Mesh.ARRAY_FORMAT_TEX_UV2|Mesh.ARRAY_FORMAT_BONES|Mesh.ARRAY_FORMAT_WEIGHTS|Mesh.ARRAY_FORMAT_INDEX)
+		format &= Mesh.ARRAY_FLAG_USE_8_BONE_WEIGHTS
+		mesh.add_surface_from_arrays(src.surface_get_primitive_type(i),a,[],{},format)
+		mesh.surface_set_material(i,src.surface_get_material(i))
+		mesh.surface_set_name(i,src.surface_get_name(i))
+	mi.mesh = mesh
 
 ## The membranes' panels, tagged for the night glow (night light round 2,
 ## docs/design/night-light/round2.md). The model's membrane is one grid
@@ -760,15 +850,7 @@ func _tag_membrane(mi: MeshInstance3D, surface: int) -> void:
 		else:
 			colours[k] = Color(u,pow(sin(PI*v),0.7)*smoothstep(0.0,0.12,u),v,1.0)
 	arrays[Mesh.ARRAY_COLOR] = colours
-	var mesh := ArrayMesh.new()
-	for i in range(src.get_surface_count()):
-		var a := arrays if i == surface else src.surface_get_arrays(i)
-		var format := src.surface_get_format(i) & ~(Mesh.ARRAY_FORMAT_VERTEX|Mesh.ARRAY_FORMAT_NORMAL|Mesh.ARRAY_FORMAT_TANGENT|Mesh.ARRAY_FORMAT_COLOR|Mesh.ARRAY_FORMAT_TEX_UV|Mesh.ARRAY_FORMAT_TEX_UV2|Mesh.ARRAY_FORMAT_BONES|Mesh.ARRAY_FORMAT_WEIGHTS|Mesh.ARRAY_FORMAT_INDEX)
-		format &= Mesh.ARRAY_FLAG_USE_8_BONE_WEIGHTS
-		mesh.add_surface_from_arrays(src.surface_get_primitive_type(i),a,[],{},format)
-		mesh.surface_set_material(i,src.surface_get_material(i))
-		mesh.surface_set_name(i,src.surface_get_name(i))
-	mi.mesh = mesh
+	_replace_surface(mi,surface,arrays)
 
 ## The game's materials, by the model's names: a dark basalt-violet hide
 ## (satin in a and b, matte stone in c), the lips the hide, the mouth a
@@ -783,30 +865,22 @@ func _material(key: String) -> Material:
 
 func _made_material(key: String) -> Material:
 	if key == "dragon_membrane_glow": return _glow_membrane()
+	if HIDE_TONES.has(key):
+		var h := ShaderMaterial.new()
+		h.shader = HIDE_SHADER
+		h.resource_name = key
+		h.set_shader_parameter("weather",HIDE_TONES[key][1])
+		h.set_shader_parameter("pebble",HIDE_TONES[key][2])
+		h.set_shader_parameter("pebble_size",PEBBLE*GRAIN)
+		# Scaled hide for the body, belly and the horn's and claws' keratin
+		# (long ridged and plain); the teeth stay enamel.
+		h.set_shader_parameter("reptile",1.0 if key != "dragon_tooth" else 0.0)
+		h.set_shader_parameter("roughness_value",0.8 if key == "dragon_hide" or key == "dragon_belly" else 0.6)
+		return h
 	var m := StandardMaterial3D.new()
 	m.resource_name = key
 	m.roughness = 0.6
 	match key:
-		"dragon_hide":
-			m.albedo_color = Color("40364c")
-			m.roughness = 0.85
-			m.metallic_specular = 0.3
-			m.rim_enabled = true
-			m.rim = 0.2
-			m.rim_tint = 0.6
-		"dragon_belly":
-			m.albedo_color = Color("5c5064")
-			m.roughness = 0.8
-		"dragon_horn":
-			m.albedo_color = Color("8a8090")
-			m.roughness = 0.5
-		"dragon_tooth":
-			m.albedo_color = Color("ede7da")
-			m.roughness = 0.5
-			m.metallic_specular = 0.3
-		"dragon_claw":
-			m.albedo_color = Color("d8d0c2")
-			m.roughness = 0.45
 		"dragon_mouth":
 			m.albedo_color = Color("2a1117")
 			m.roughness = 0.7
@@ -848,9 +922,9 @@ static func _glow_membrane() -> ShaderMaterial:
 	sh.code = """
 shader_type spatial;
 render_mode cull_disabled, diffuse_burley;
-uniform vec3 deep : source_color = vec3(0.24, 0.17, 0.32);
-uniform vec3 edge : source_color = vec3(0.45, 0.32, 0.56);
-uniform vec3 glow : source_color = vec3(0.96, 0.64, 0.74);
+uniform vec3 deep : source_color = vec3(0.07, 0.08, 0.075);
+uniform vec3 edge : source_color = vec3(0.2, 0.22, 0.19);
+uniform vec3 glow : source_color = vec3(0.7, 0.62, 0.42);
 uniform float glow_energy = 0.42;
 // 0 by day, 1 at night.
 uniform float night = 0.0;
@@ -866,6 +940,17 @@ uniform float night_vein = 0.45;
 uniform float night_body = 0.16;
 uniform float vein_width = 0.07;
 varying vec3 tag;
+float h21(vec2 p) {
+	p = fract(p * vec2(0.1031, 0.1030));
+	p += dot(p, p.yx + 33.33);
+	return fract((p.x + p.y) * p.x);
+}
+float vn(vec2 p) {
+	vec2 i = floor(p);
+	vec2 f = fract(p);
+	f = f * f * (3.0 - 2.0 * f);
+	return mix(mix(h21(i), h21(i + vec2(1, 0)), f.x), mix(h21(i + vec2(0, 1)), h21(i + vec2(1, 1)), f.x), f.y);
+}
 void vertex() {
 	tag = COLOR.rgb;
 }
@@ -873,6 +958,17 @@ void fragment() {
 	float v = UV.y;
 	float vein = smoothstep(0.92, 1.0, fract(UV.x * 3.0 + 0.5)) * (1.0 - v) * 0.25;
 	vec3 base = mix(deep, edge, smoothstep(0.2, 1.0, v));
+	// Weathered hide, as the body's stone: mottled washes, stippled flecks
+	// and scuffs, worked in the panel's own coordinates, faded by the
+	// pixel's footprint there so it never shimmers.
+	vec2 q = UV * vec2(40.0, 24.0);
+	float foot = length(fwidth(q));
+	float far = 1.0 - smoothstep(0.35, 1.2, foot);
+	float wash = vn(q * 0.22 + 3.0) * 0.6 + vn(q * 0.5 + 9.0) * 0.4;
+	float fleck = vn(q * 2.2 + 5.0);
+	float scuff = smoothstep(0.7, 0.9, vn(q * vec2(0.5, 1.6) + 1.0));
+	float tone = mix(0.6, 1.4, wash) * (1.0 + (fleck - 0.5) * 0.5 * far) * (1.0 - scuff * 0.3);
+	base *= tone;
 	float breathe = 0.85 + 0.15 * sin(TIME * 1.3 + UV.x * 4.0);
 	float band = smoothstep(0.55, 1.0, v);
 	vec3 day_emission = glow * glow_energy * band * breathe;
@@ -978,10 +1074,8 @@ func _night_glow(delta: float) -> void:
 			m.emission = NIGHT_THROAT
 			m.emission_energy_multiplier = night*lerpf(NIGHT_THROAT_ENERGY.x,NIGHT_THROAT_ENERGY.y,open)*(0.6 if key == "dragon_tongue" else 1.0)
 	for key in ["dragon_hide","dragon_belly"]:
-		for m: StandardMaterial3D in _night_materials.get(key,[]):
-			m.emission_enabled = night > 0.001
-			m.emission = NIGHT_SHEEN
-			m.emission_energy_multiplier = NIGHT_SHEEN_ENERGY*night
+		for m: ShaderMaterial in _night_materials.get(key,[]):
+			m.set_shader_parameter("emit_add",NIGHT_SHEEN.srgb_to_linear()*NIGHT_SHEEN_ENERGY*night)
 	_place_eye_halos()
 
 func _daylight() -> float:

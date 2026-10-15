@@ -84,6 +84,16 @@ func _aim(shot: String) -> Dictionary:
 	var across := Vector3(Roost.U.x,0.0,Roost.U.y)
 	var head := line[int(line.size()*0.08)]
 	match shot:
+		"head":
+			# The head from the front, near enough to see the hide's grain.
+			var sk: Skeleton3D = dragon.get("skeleton")
+			var hp := sk.global_transform*sk.get_bone_global_pose(sk.find_bone("head")).origin
+			var span2 := float(dragon.get("size"))
+			return {"eye":hp+toward*26.0*span2+across*12.0*span2+Vector3(0.0,7.0*span2,0.0),"at":hp+Vector3(0.0,0.5,0.0),"fov":45.0}
+		"neck":
+			var sk2: Skeleton3D = dragon.get("skeleton")
+			var np := sk2.global_transform*sk2.get_bone_global_pose(sk2.find_bone("neck.2")).origin
+			return {"eye":np+toward*14.0+across*6.0+Vector3(0.0,6.0,0.0),"at":np,"fov":50.0}
 		"isle":
 			# Where the pilot stands on the aqueduct isle at the start (by
 			# the plane), at eye height, the mountain 800 m off.
