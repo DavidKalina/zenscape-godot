@@ -270,3 +270,78 @@ Vertex grime is used; sculpt/bake and bones don't apply.
 - One sky-look yard smoke failed once with no error printed, then passed
   four times.
 - Tests: none run or added (prototyping).
+
+## Polish (round 1)
+
+Branch `polish/city-felled_colonnade`, in place in
+`scripts/kit_isle/greybox/gb_felled_colonnade.gd`. Nothing shared edited.
+
+**What changed.**
+- **Grass (the bug).** `flora_site` used `KitFlora.Site.new(top)`, whose
+  rays only reach 8 m under `top` (the crown's 30 m): every turf under
+  22 m (forecourt, terrace, gallery, shelf A, upper walk) grew no blades,
+  so the arrival was flat olive. The rays now run from over the crown down
+  past the drum floor's pit (5.4k tufts became 33k). `tufts` 2.8 (the
+  default 4.6 on 30k m² of turf was 55k tufts, 5.2M instanced triangles at
+  full; now 3.5M before the tiles' culling and fade).
+- **The plug's gate wall sunk in the land.** A rock ridge (`gate_hill`,
+  LAYOUT `gate_hill`) stands in front of the wall's jambs (0.8 m before its
+  face, at least 23.6 m over shelf A the whole wall's width: still past his
+  22.4 m climb), so from the arrival only the gate's masonry frame shows,
+  set back in a cliff with a broken brow. Within 1.8 m of the lane the land
+  steps up inside the wall's stone. Behind, the gate ramp runs up a cutting
+  between two grassy slopes falling to the upper walk; the lane is never
+  touched (his way and the heap's). Tufts on the wall's head (the Dresser),
+  fallen courses at its foot either side of the lane (low, out of the
+  plug's dodge).
+- **The east steps' cover (rule 2).** A broken screen (three stubs and a
+  fallen block) on the terrace's lip west of the steps, out of sight of his
+  beat; parapets (1.2-1.5 m) along the void beside both set-offs, down the
+  forecourt rim past the steps' foot, and on the apron's rim south of the
+  column. The column's own rim (the lure spot) stays open.
+- The stubs' square bases sunk to 0.2 m (no plinth boxes); the stump keeps
+  its base (the launch's reach).
+
+**Stills** (`captures/shots/`, gitignored): before
+`fcp_before_arrival_haze.png`, `fcp_before_arrival_torch.png`,
+`fcp_before_haze.png` (the yard's own camera: no blades); after
+`fcp_r5_arrival_haze.png`, `fcp_r5_arrival_torch.png`,
+`fcp_r4_gate_haze.png`, `fcp_r4_ridge_haze.png`, `fcp_r4_steps_close.png`,
+`fcp_r5_three_haze.png`; `fcp_before_after.png`, `fcp_vs_gorge.png`
+(beside the Sundered Gorge, haze).
+
+**Routes, re-walked through the input** (`scratch/fc_routes.gd`):
+- the long way 85.7 s (was 89 s), live Feller.
+- the bridge 173.6 s, the whole lure live from the forecourt: up the east
+  steps, peek, he walked into the column (`body`, east, a bridge), drums,
+  shelf A; SETUP he was let go behind the walker on the drums (calm while
+  crossing), followed over, his pounce at the plug's face broke it
+  (`body`); SETUP parked for the walk out; the cutting, the stair, the rim.
+- the ramp 69.1 s with the column felled west by code (geometry). The
+  bait lure (`--lure=bait`) now gets the column felled **east** or not at
+  all on this base, the same with the round-1 file (an enemy change since,
+  not the dressing).
+
+**Fairness, measured** (`scratch/fcp_steps.gd`: the walker paces the east
+steps for 120 s with the Feller live, five start times): before, 12 falls
+into the void in 5 runs; after, 1 (off the column's rim, the open spot).
+
+**Layers.** `run_layer` sprawl seed 1 and ring seed 2 (`--world=under`)
+smoke clean and both place the motif; their plans are unchanged
+(`tools/layer_dump.gd`, before and after).
+
+**Budget** (built, measured): dressing 1.1k to 1.8k triangles (one mesh,
+16 new collision boxes), far isle 20.7k to 21.7k, flora as above. Of
+`docs/art/model-budget.md`: the dressing is already one merged draw with
+vertex grime; visibility ranges on the flora tiles are the kit's. The
+big win left is the kit's (LODs on the chock's piers, the drum floor).
+
+**Still rough.**
+- The mouse run's 25 m wall is now the plainest block (seen from the
+  causeway and the three-quarter view); a ridge like the gate's would need
+  care round the refuge's mouths.
+- The gate ridge occludes the stair and the beacon from the arrival, as
+  the wall did; the beacon reads only once on shelf A.
+- No hanging growth on the wall's face (RuinGrowth needs a RuinKit build;
+  a city-kit growth pass would be a kit round).
+- Frame time of the denser grass not measured rendered.
