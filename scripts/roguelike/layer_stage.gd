@@ -34,6 +34,8 @@ const CityCrossings = preload("res://scripts/roguelike/city_crossings.gd")
 const CityFires = preload("res://scripts/city_kit_fires.gd")
 # [collectibles] the layer's runes, rares and chests (game-v1-collectibles.md).
 const Collectibles = preload("res://scripts/roguelike/collectibles.gd")
+# [inhabitant] the Hollow Child and the Sun-Keepers on the city's places.
+const LayerInhabitants = preload("res://scripts/roguelike/layer_inhabitants.gd")
 
 const GATE := Color(1.0,0.82,0.45)
 const RUNE_SIZE := 0.7
@@ -69,6 +71,7 @@ var greybox: Node = null
 ## [collectibles] The layer's runes, rares and chests (scripts/roguelike/
 ## collectibles.gd), or null.
 var collectibles: Node3D = null
+var inhabitants: Node = null  # [inhabitant]
 var _last := Vector3.INF
 
 func _init() -> void:
@@ -131,6 +134,7 @@ func setup(scene: Node3D, layer: Dictionary, was: Node) -> void:
 	# The greybox isles' live bits, after the cannons (a motif's `live` may
 	# add its own to them).
 	greybox = LayerGreybox.dress(self,layer)
+	inhabitants = LayerInhabitants.dress(self,layer)  # [inhabitant]
 	scene.foot_pieces = self
 	_runes()
 	collectibles = Collectibles.dress(self,layer)  # [collectibles]
@@ -287,6 +291,7 @@ func before(delta: float) -> void:
 	traps.before(delta)
 	if greybox != null: greybox.before(delta)
 	if heads != null: heads.before(delta)
+	if inhabitants != null: inhabitants.before(delta)  # [inhabitant]
 	enemies.before(delta)
 	cannons.before(delta)
 	if hazards != null: hazards.before(delta)
@@ -324,3 +329,4 @@ func reset() -> void:
 	cannons.reset()
 	if greybox != null: greybox.reset()
 	if collectibles != null: collectibles.reset()  # [collectibles]
+	if inhabitants != null: inhabitants.reset()  # [inhabitant]
