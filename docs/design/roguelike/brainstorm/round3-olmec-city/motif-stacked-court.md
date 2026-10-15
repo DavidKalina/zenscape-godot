@@ -284,3 +284,129 @@ headless on the Mac.
   (`--knob=greybox=stacked_court`): not run.
 - Tests: none run or added (prototyping). The registry gains one line; no
   existing test is known to break.
+
+## Polish (round 1)
+
+The user's read: "more architecture than land and very symmetric", and no
+door out of the drum pillar. Worked in place in
+`scripts/kit_isle/greybox/gb_stacked_court.gd`, plus a STAND-IN helper
+`stacked_court_door.gd`.
+
+**What changed.**
+- **F is land, not a pillar.** The forecourt's hex column is gone. F and a
+  new west bank are now one KitLand island hanging on its own rock keel
+  (45 m) beside the city's pillars. Its south, south-east and south-west
+  faces keep the old hex lines (`tuck` 0), so the rims stand where they
+  did with the same lips (IN 2.6 from the land's edge).
+- **A hill west of the stair.** It rises toward M in broad tilted meadows
+  broken by two scarps (a set-off each, the lines wandering), not stacked
+  plates. It runs on as the west bank into the corner between M and U,
+  banked against M's south-west flank up to about 10 m. The hill is the
+  stair's west flank, so the stair's pyramid flanks are off and its east
+  cheek stands free. The east forecourt swells gently and its north-east
+  edge is broken a step down (1.2 m: a double jump back up). The bank's
+  far west lip drops a set-off over the haze.
+- **The drum is a way up.** A walker-high door (3.6 m, too low for the
+  Keeper's 7.5 m) cuts through M's south-west flank. Its tunnel runs under
+  turn 0 and comes out on the drum's second turn at 5.6 m. Climb the coil
+  out of the dark onto M's south rim. A sunken way cuts through the hill
+  to the door, with two lamps on its rim, two at the mouth, and a carved
+  lintel and jambs. The kit's drum has no door, so
+  `stacked_court_door.gd` builds M and the drum the way CityKit `pillar`
+  and `drum_stair` do (the same planes, Piece and stone), with the tunnel
+  split out of the blocks it crosses. **Kit ask:** a `door` opt on
+  `pillar` and `drum_stair`. Then the helper goes.
+- **Growth and wear.** A turf mantle grows over M's south-west crown and
+  hangs over the door. U wears a hanging earth mantle (its south and west
+  faces grow 6.5-9 m) and a mound on its crown, so it no longer twins T,
+  which keeps its tower. The needle's cap grows 5 m. Five fallen crown
+  blocks of city stone lie on the bank and on F's broken edge (collided,
+  sunk in). The fallen drums moved off the hill.
+- **Spots for the collectibles round.** These were new in this round.
+  - `rune_line`: the stair, the worn way, the tunnel, the coil, M's west
+    ring, the causeway and the lintel.
+  - `rune_risk`: the cracked bay over the Keeper, F's broken shelf, the
+    bank's west lip and the stair's west cheek crest.
+  - `rare`: the fault's chamber (behind the break), the well's bottom by
+    the cold great cresset, and the summit tower's crown.
+
+**Routes** (yard, haze, through the real input,
+`scratch/stacked_court_routes.gd`; `--calm` turns the Keeper's chase off
+and sends the heads away):
+
+| Route | Calm | Live |
+|---|---|---|
+| The court | 77.9 s | 77.9 s, passed |
+| The tower | 67.9-97.9 s | 103.9 s, passed |
+| The well (new): worn way, door, tunnel, coil, M's rim, east round the ring, T's chain | 116 s (door 29 s, M's rim 67 s) | 116.8 s in torch, passed; in haze the Keeper spotted him on T's chain and knocked him off |
+
+On the well route, the driver squares up to the M/T seam before
+stepping over it. A shallow diagonal crossing drops him into the 0.5 m
+seam: that seam is a trap that doesn't read (see rough).
+
+**The enemy as a tool** (live tower route). The torch lit F's tower crown,
+and the Keeper left his post on the north ring: 29.9 m off. His states
+went listen, roam, alert, chase, fall, land, so the causeway and the north
+ring were clear behind him. The summit head's headless body now comes up
+M's east face when asked (`spawn_on_demand`); before this round it had
+"no room".
+
+**Generator.** `tools/sweep.py tools/layer_dump.gd --seed 1..6 --shape
+sprawl,ring -- --world=under` gives 11/12, the same as before this round.
+Sprawl 2 fails on `gb_felled_colonnade` ("no way onto"), both before and
+after. Plans moved a little: ring 2 and ring 4 lay one isle fewer, and
+sprawl 6 took more attempts. Smokes pass for run_layer sprawl seed 1
+under and ring seed 2 under, and for the yard in haze and torch.
+
+**Budget** (docs/art/model-budget.md; built headless, `scratch/bench_tris.gd`):
+
+| | Triangles | Collision shapes | Build |
+|---|---|---|---|
+| Before | 35.8k | 3.2k | 483 ms |
+| After | 33.7-35.5k | 5.0k | 480-860 ms (noisy; `build_cost` 650) |
+
+- The F pillar's 3.2k stone triangles are gone. The land island is about
+  10-12k triangles and 4.6k shapes, almost all cliff prisms on the scarps
+  and the cut. The cliffs probe runs only over the hill's box, at
+  `cliff_drop` 1.4.
+- The new stone: the mantle 0.6k, the fallen blocks 0.3k, the door frame
+  and split blocks about 0.3k.
+- Most of the build time is the kit's cliff probe running the ground
+  function every half metre over the hill. `land_y` caches its constants
+  and returns early off the hill (about 1.5 µs a call).
+- Tricks that apply:
+  - Import LODs or visibility ranges on the needle and the far pillars,
+    as before (about 13k triangles in the yard).
+  - Coarser cliff prisms on the cut's walls. They are walked past, never
+    climbed, so this would save about 1-2k shapes; not done.
+- Tricks that don't apply: silhouette geometry is already in use (ragged
+  caps, keel), and there are no new models to bake.
+
+**Stills** (worktree `captures/shots/sc/`, gitignored; `sheet.png` puts
+them side by side):
+- Before: `before_arrival_haze.png`, `before_arrival_torch.png`,
+  `before_wide_three.png`.
+- After: `after_arrival_haze.png`, `after_arrival_torch.png`,
+  `after_wide_sw.png`, `after_wide_three.png`, `after_door_haze.png`,
+  `after_door_torch.png`.
+
+**Still rough.**
+- **The arrival is still a temple front on its axis.** The hill climbs on
+  the left and the east is open land, but M, U, T, the causeway and the
+  needle still stack symmetrically above the stair. U's mantle and M's
+  mantle don't read from the low arrival. A bolder break needs the kit:
+  pillars of different heights (a causeway that rises) or a broken crown
+  course.
+- The land's cut walls render as jagged dark faces. The scarps read
+  better.
+- The 0.5 m M/T seam swallows a walker who crosses it at a shallow angle.
+  This predates the round. Narrowing `seam` or capping it would move U
+  and T.
+- Grass on the land is the turf shader plus sparse flora tufts
+  (about 2k). It is not the GroundCover skin that the stone tops wear.
+- Not verified:
+  - the bay or the fault dropping under the Keeper here;
+  - the core cresset drawing him down the drum;
+  - the sky look;
+  - joins between courts in a rendered layer (the smokes found no
+    errors).
