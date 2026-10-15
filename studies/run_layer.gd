@@ -490,6 +490,12 @@ func tick(delta: float) -> void:
 ## Waiting for a city layer's landing to stand before play (`tick`).
 var _base_wait := false
 
+## Whether play is held (a loading card up, or a city layer's landing not
+## yet stood): his input does nothing yet, and once it stands he is set back
+## at the spawn. tools/harness/drive.gd `open` waits on it.
+func holding() -> bool:
+	return _base_wait or (loading != null and loading.active)
+
 ## Whether the base isle (the sky's first: `layer_entries` keeps the plan's
 ## order) stands: solid under the spawn.
 func _base_stands() -> bool:
