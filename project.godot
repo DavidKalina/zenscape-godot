@@ -614,6 +614,10 @@ zs_under={
 "type": "float",
 "value": 0.0
 }
+zs_under_crisp={
+"type": "float",
+"value": 0.0
+}
 zs_under_sky={
 "type": "vec3",
 "value": Vector3(0, 0, 0)

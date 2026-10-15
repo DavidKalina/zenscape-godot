@@ -36,6 +36,10 @@ extends Node3D
 ##   torch_range  its range (m)
 const NEXT_SHADER = preload("res://shaders/underground_next.gdshader")
 const SKY_SHADER = preload("res://shaders/abyss_sky.gdshader")
+const OCULUS_SKY = preload("res://shaders/oculus_sky.gdshader")
+const OCULUS_SHAFT = preload("res://shaders/oculus_shaft.gdshader")
+const OCULUS_DUST = preload("res://shaders/oculus_dust.gdshader")
+const FarCities = preload("res://scripts/underground/far_cities.gd")
 const GroundCover = preload("res://scripts/underground/ground_cover.gd")
 const FLAG := "--underground"
 const DEFAULT_PRESET := "torch"
@@ -53,13 +57,27 @@ const PRESETS := {
 		"warm":Color(0.3,0.2,0.12),
 		"sky_low":Color(0.18,0.145,0.11),"sky_horizon":Color(0.30,0.245,0.185),"sky_high":Color(0.22,0.18,0.14),
 		"knobs":{"fog":0.0016,"volume":0.0,"ambient":1.1,"moon":0.5,"exposure":1.05,"torch":2.2,"torch_range":16.0,"next_reach":800.0,"next_most":0.72}},
+	# The oculus (docs/design/roguelike/underground-oculus-round1.md): a vast opening high in
+	# the roof with the real sky in it, a warm raking key light and a jade fill, the abyss a
+	# mist sea. `oculus:true` turns on _oculus_* below.
+	"oculus":{"title":"Underground: oculus","oculus":true,"fog_sky":0.0,"next_turf":Color(0.10,0.14,0.14),"next_stone":Color(0.14,0.17,0.2),"next_earth":Color(0.07,0.09,0.11),
+		"murk":Color(0.10,0.17,0.19),"ambient":Color(0.20,0.34,0.38),"moon":Color(1.0,0.77,0.52),
+		"vol_albedo":Color(0.55,0.66,0.66),"surface":0.0,
+		"warm":Color(0.17,0.13,0.10),
+		"sky_low":Color(0.05,0.09,0.10),"sky_horizon":Color(0.13,0.21,0.23),"sky_high":Color(0.03,0.05,0.07),
+		"knobs":{"fog":0.0011,"volume":0.007,"ambient":1.0,"moon":0.7,"exposure":1.15,"torch":4.0,"torch_range":20.0,"next_reach":1100.0,"next_most":0.6,
+			"fill":0.45,"shaft":0.12,"glory":0.6,"sea":0.55,"oculus_h":380.0,"oculus_r":190.0,"height_fog":0.012,"pool":9.0,"cities":1,"cities_glow":0.85}},
 }
 ## How much of the ambient colour the stone is filled with (the torch lights
 ## the rest): dim in the dark, the haze's lit air a good deal more.
-const STONE_FILL := {"torch":0.26,"haze":0.5}
+const STONE_FILL := {"torch":0.26,"haze":0.5,"oculus":0.55}
 const KNOBS := {
 	"fog":0.0016,"volume":0.008,"ambient":1.3,"moon":0.55,"exposure":1.3,
 	"torch":5.5,"torch_range":24.0,"next_reach":900.0,"next_most":0.62,
+	# The oculus preset's: the jade fill's energy, the shafts' strength, the
+	# opening's brightness, the mist sea's light, the opening's height over
+	# the gate (m, region 1) and radius (m), the height fog's density.
+	"fill":0.45,"shaft":0.12,"glory":0.6,"sea":0.55,"oculus_h":380.0,"oculus_r":190.0,"height_fog":0.012,"pool":9.0,"cities":0,"cities_glow":1.0,
 }
 ## The fog and the ambient's colours: cool, a little lighter than the rock.
 const MURK := Color(0.085,0.115,0.17)
@@ -109,10 +127,13 @@ static func flagged() -> bool:
 	return false
 
 ## The preset the flags ask: --underground=haze, else the torch's (the
-## run's world's when the flags don't ask the look).
+## run's world's when the flags don't ask the look). The last flag wins, so
+## a launcher's extra flags override its own.
 static func asked() -> String:
 	if not flagged() and world_preset != "" and PRESETS.has(world_preset): return world_preset
-	for a: String in preload("res://scripts/launch_args.gd").user_args():
+	var args: Array = preload("res://scripts/launch_args.gd").user_args()
+	for i in range(args.size()-1,-1,-1):
+		var a: String = args[i]
 		if a.begins_with(FLAG+"="):
 			var k := a.get_slice("=",1)
 			if PRESETS.has(k): return k
@@ -199,6 +220,7 @@ func set_preset(name: String) -> void:
 	moon.light_energy = float(knobs.moon)
 	torch_light.omni_range = float(knobs.torch_range)
 	_hold()
+	_oculus_apply()
 
 ## The run's climb out of the dark (scripts/roguelike/run_loop.gd
 ## CLIMB_LIGHTEN): 0 the torch preset as authored, toward 1 its colours and
@@ -257,7 +279,9 @@ func _demo() -> void:
 
 func _exit_tree() -> void:
 	RenderingServer.global_shader_parameter_set("zs_under",0.0)
+	RenderingServer.global_shader_parameter_set("zs_under_crisp",0.0)
 	_free_motes()
+	_oculus_free()
 
 ## The motes' resources are let go with them, or the renderer reports the
 ## particle shader as leaked at exit.
@@ -360,6 +384,7 @@ func _publish_stone() -> void:
 	var e := float(STONE_FILL.get(preset,0.2))
 	if preset == "torch": e = lerpf(e,float(STONE_FILL.haze),climb_lift)
 	RenderingServer.global_shader_parameter_set("zs_under",1.0)
+	RenderingServer.global_shader_parameter_set("zs_under_crisp",1.0 if bool(p.get("oculus",false)) else 0.0)
 	RenderingServer.global_shader_parameter_set("zs_under_sky",Vector3(amb.r,amb.g,amb.b)*e)
 	RenderingServer.global_shader_parameter_set("zs_under_ground",Vector3(low.r,low.g,low.b)*e)
 
@@ -430,6 +455,314 @@ func _far_fire(mi: MeshInstance3D) -> void:
 	# (The landmark mark sits MARK_UNDER, 3 m, under its highest cell.)
 	glow.global_position = (nxt.landmark as Vector3)+Vector3.UP*(3.0+FAR_FIRE*0.25)
 
+# --- The oculus preset ----------------------------------------------------------------------
+# A vast opening high in the cavern roof above the way up (the layer's exit gate),
+# shown by shaders/oculus_sky.gdshader with the real sky in it; a warm key
+# light and shafts from it, a cool jade fill, a mist sea in the abyss. The
+# opening is a real place (a world position and radius), so it grows as the
+# wanderer climbs toward it and, region by region, sits nearer and larger.
+
+## Where the opening lies over the exit, toward the start (share of the
+## way), so the light rakes in at about 40 degrees rather than straight down.
+const OCULUS_PULL := 0.3
+## The light's rake from the vertical down the gate's shaft (degrees), and how
+## fast the climb saturates (per region): the opening comes lower and wider as
+## the run climbs, region by region and step by step within each.
+const RAKE := 40.0
+const CLIMB_RATE := 0.9
+## Region by region the opening comes lower and larger, to these shares.
+const OCULUS_LOWER := 0.6
+const OCULUS_WIDER := 0.9
+## How far under the lowest isle the mist sea lies (m past the layer's void).
+const SEA_BELOW := 40.0
+## The shafts (start, middle, gate): the radius where each lands (m), the
+## top as a share of the opening's radius, and each one's strength.
+const SHAFT_LAND := [34.0,26.0,44.0]
+const SHAFT_TOP := 0.32
+const SHAFT_LEVEL := [0.8,0.45,1.0]
+## How far up the shaft a pool's light stands (m).
+const POOL_BACK := 110.0
+
+var _oculus_live := false
+var _oculus_material: ShaderMaterial
+var _abyss_sky: Sky
+var _oculus_sky: Sky
+var _shafts: Array[MeshInstance3D] = []
+var _fill: DirectionalLight3D
+## The pools of light (spot lights at the start's and the gate's shafts).
+var _pools: Array[SpotLight3D] = []
+var _dust: GPUParticles3D
+var _dust_material: ShaderMaterial
+var _cities: Node3D
+var _cities_seed := -1
+var _anchor_tag := -999999
+var _anchors := {}
+
+func _oculus_apply() -> void:
+	var want: bool = bool(p.get("oculus",false))
+	if want == _oculus_live: return
+	_oculus_live = want
+	if want:
+		_oculus_build()
+		_env.sky = _oculus_sky
+	else:
+		if _abyss_sky != null: _env.sky = _abyss_sky
+		_oculus_free()
+		moon.rotation_degrees = Vector3(-72.0,25.0,0.0)
+		moon.directional_shadow_max_distance = 140.0
+		moon.light_specular = 0.2
+		moon.light_volumetric_fog_energy = 1.0
+
+func _oculus_build() -> void:
+	_abyss_sky = _env.sky
+	_oculus_material = ShaderMaterial.new()
+	_oculus_material.shader = OCULUS_SKY
+	_oculus_sky = Sky.new()
+	_oculus_sky.sky_material = _oculus_material
+	# The sky is traced from the camera each frame; its radiance isn't read.
+	_oculus_sky.process_mode = Sky.PROCESS_MODE_QUALITY
+	_oculus_sky.radiance_size = Sky.RADIANCE_SIZE_32
+	_fill = DirectionalLight3D.new()
+	_fill.name = "JadeFill"
+	_fill.shadow_enabled = false
+	_fill.light_specular = 0.0
+	_fill.light_color = Color(0.45,0.78,0.82)
+	_fill.light_volumetric_fog_energy = 0.0
+	add_child(_fill)
+	for i in 3:
+		var shaft := MeshInstance3D.new()
+		shaft.name = "Shaft%d" % i
+		var cone := CylinderMesh.new()
+		cone.radial_segments = 28
+		cone.rings = 1
+		cone.cap_top = false
+		cone.cap_bottom = false
+		shaft.mesh = cone
+		var m := ShaderMaterial.new()
+		m.shader = OCULUS_SHAFT
+		shaft.material_override = m
+		shaft.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		shaft.extra_cull_margin = 4000.0
+		add_child(shaft)
+		_shafts.append(shaft)
+	_dust = GPUParticles3D.new()
+	_dust.name = "ShaftDust"
+	_dust.amount = 220
+	_dust.lifetime = 14.0
+	_dust.preprocess = 14.0
+	_dust.local_coords = false
+	_dust.visibility_aabb = AABB(Vector3(-60,-30,-60),Vector3(120,60,120))
+	_dust.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var pm := ParticleProcessMaterial.new()
+	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
+	pm.emission_box_extents = Vector3(38,14,38)
+	pm.direction = Vector3(0,1,0)
+	pm.spread = 180.0
+	pm.initial_velocity_min = 0.1
+	pm.initial_velocity_max = 0.5
+	pm.gravity = Vector3.ZERO
+	pm.turbulence_enabled = true
+	pm.turbulence_noise_strength = 0.5
+	pm.turbulence_noise_scale = 6.0
+	_dust.process_material = pm
+	var quad := QuadMesh.new()
+	quad.size = Vector2(1,1)
+	_dust_material = ShaderMaterial.new()
+	_dust_material.shader = OCULUS_DUST
+	quad.material = _dust_material
+	_dust.draw_pass_1 = quad
+	add_child(_dust)
+	for i in 2:
+		var pool := SpotLight3D.new()
+		pool.name = "Pool%d" % i
+		pool.light_color = Color(1.0,0.84,0.64) if i == 0 else Color(1.0,0.78,0.52)
+		pool.shadow_enabled = true
+		pool.shadow_bias = 0.08
+		pool.spot_angle_attenuation = 0.6
+		pool.spot_attenuation = 0.5
+		pool.light_specular = 0.6
+		add_child(pool)
+		_pools.append(pool)
+	_cities = FarCities.new()
+	_cities.name = "FarCities"
+	add_child(_cities)
+	_anchor_tag = -999999
+
+func _oculus_free() -> void:
+	_oculus_restore_gate_beam()
+	if is_instance_valid(_cities): _cities.queue_free()
+	_cities = null
+	for n: Node in _shafts:
+		if is_instance_valid(n): n.queue_free()
+	_shafts.clear()
+	if is_instance_valid(_fill): _fill.queue_free()
+	_fill = null
+	for n: Node in _pools:
+		if is_instance_valid(n): n.queue_free()
+	_pools.clear()
+	if is_instance_valid(_dust):
+		_dust.emitting = false
+		_dust.process_material = null
+		_dust.draw_pass_1 = null
+		_dust.free()
+	_dust = null
+	_oculus_live = false
+
+## Where things stand for the layer on the study: the exit, the start, the
+## abyss's depth; the opening over the way up and its light.
+func _oculus_anchors(near := 0.0) -> Dictionary:
+	var ascent := 0.0
+	var l: Variant = study.get("layer")
+	var start: Vector3 = study.get("start") if study.get("start") is Vector3 else center
+	var exit: Vector3
+	var void_y := start.y-120.0
+	# How far up the run has climbed: region by region and, within one, step by
+	# step as he nears the gate (`near`, 0 at the start to 1 at the gate).
+	if study.has_method("region"): ascent = 1.0-exp(-((float(study.call("region"))-1.0)+near)*CLIMB_RATE)
+	if l is Dictionary and (l as Dictionary).has("exit") and not ((l as Dictionary).exit as Dictionary).is_empty():
+		exit = ((l as Dictionary).exit as Dictionary).at
+		void_y = float((l as Dictionary).get("void_y",void_y))
+	else:
+		exit = start+Vector3(140.0,60.0,-260.0)
+	var flat := Vector3(start.x-exit.x,0.0,start.z-exit.z)
+	var reach := maxf(flat.length(),1.0)
+	var h := float(knobs.oculus_h)*(1.0-OCULUS_LOWER*ascent)
+	var radius := float(knobs.oculus_r)*(1.0+OCULUS_WIDER*ascent)
+	# The opening stands so the light rakes down the gate's shaft at RAKE degrees.
+	var pull := clampf(h*tan(deg_to_rad(RAKE))/reach,0.2,0.75)
+	var at := exit+flat/reach*reach*pull+Vector3.UP*h
+	var mid := (start+exit)*0.5
+	return {"ascent":ascent,"start":start,"exit":exit,"at":at,"radius":radius,"key":(at-mid).normalized(),"sea":void_y-SEA_BELOW,"reach":reach,"mid":mid}
+
+func _oculus_tick() -> void:
+	var seed_now := int(study.get("layer_seed")) if study.get("layer_seed") != null else 0
+	var start_now: Vector3 = study.get("start") if study.get("start") is Vector3 else Vector3.ZERO
+	var region := int(study.call("region")) if study.has_method("region") else 1
+	var fig: Node3D = study.get("figure")
+	var closeness := 0.0
+	if not _anchors.is_empty():
+		var here0: Vector3 = fig.global_position if fig != null else _anchors.start
+		var ex0: Vector3 = _anchors.exit
+		closeness = 1.0-clampf(Vector2(here0.x-ex0.x,here0.z-ex0.z).length()/float(_anchors.reach),0.0,1.0)
+	var tag := seed_now*7919+int(start_now.x*3.0+start_now.z)+region*104729+int(closeness*20.0)*31
+	if tag != _anchor_tag:
+		_anchor_tag = tag
+		_anchors = _oculus_anchors(closeness)
+		_oculus_place()
+	if _anchors.is_empty(): return
+	# The gate may be built after the opening is placed: aim its beam when it stands.
+	if not _beam_aimed and Engine.get_process_frames()%30 == 0: _oculus_aim_gate_beam()
+	var here: Vector3 = fig.global_position if fig != null else _anchors.start
+	var ascent := float(_anchors.ascent)
+	# Brighter region by region, and as he nears the way up.
+	_oculus_material.set_shader_parameter("glory",float(knobs.glory)*lerpf(1.0,1.5,ascent)*(0.8+0.5*closeness))
+	_oculus_material.set_shader_parameter("sea_glow",float(knobs.sea))
+	var level := float(knobs.shaft)*lerpf(1.0,1.4,ascent)*(0.8+0.5*closeness)
+	for i in _shafts.size():
+		(_shafts[i].material_override as ShaderMaterial).set_shader_parameter("strength",level*float(SHAFT_LEVEL[i]))
+	if is_instance_valid(_dust): _dust.global_position = here+Vector3(0.0,4.0,0.0)
+	for i in _pools.size():
+		_pools[i].light_energy = float(knobs.pool)*lerpf(1.0,1.3,ascent)*(0.3 if i == 0 else 1.25)
+	_env.fog_height = float(_anchors.sea)+120.0
+	_env.fog_height_density = float(knobs.height_fog)
+
+## The game's own gate beam (scripts/roguelike/layer_stage.gd), laid along the
+## gate's shaft instead of straight up, fainter, so the two read as one light.
+var _beam_was := {}
+var _beam_aimed := false
+func _oculus_aim_gate_beam() -> void:
+	var gate := study.find_child("ExitGate",true,false) as Node3D
+	if gate == null or gate.get_child_count() == 0:
+		_beam_aimed = false
+		return
+	_beam_aimed = true
+	var beam: MeshInstance3D = null
+	for c: Node in gate.get_children():
+		if c is MeshInstance3D and (c as MeshInstance3D).mesh is CylinderMesh and ((c as MeshInstance3D).mesh as CylinderMesh).height > 40.0: beam = c as MeshInstance3D
+	if beam == null: return
+	var col := beam.mesh as CylinderMesh
+	var mat := beam.material_override as StandardMaterial3D
+	if not _beam_was.has(beam):
+		_beam_was[beam] = {"xf":beam.transform,"alpha":mat.albedo_color.a if mat != null else 0.0}
+	var was: Dictionary = _beam_was[beam]
+	var up: Vector3 = ((_anchors.at as Vector3)-gate.global_position).normalized()
+	beam.global_transform = Transform3D(Basis(Quaternion(Vector3.UP,up)),gate.global_position+up*col.height*0.5)
+	if mat != null:
+		var c := mat.albedo_color
+		c.a = minf(float(was.alpha),0.12)
+		mat.albedo_color = c
+
+func _oculus_restore_gate_beam() -> void:
+	for b: Variant in _beam_was:
+		if not is_instance_valid(b): continue
+		var beam := b as MeshInstance3D
+		beam.transform = (_beam_was[b] as Dictionary).xf
+		var mat := beam.material_override as StandardMaterial3D
+		if mat != null:
+			var c := mat.albedo_color
+			c.a = float((_beam_was[b] as Dictionary).alpha)
+			mat.albedo_color = c
+	_beam_was.clear()
+
+## The opening, key light, fill and shafts set for the layer.
+func _oculus_place() -> void:
+	var a := _anchors
+	var key: Vector3 = a.key
+	_oculus_material.set_shader_parameter("oculus",a.at)
+	_oculus_material.set_shader_parameter("radius",float(a.radius))
+	_oculus_material.set_shader_parameter("throat",float(a.radius)*0.8)
+	_oculus_material.set_shader_parameter("cloud_height",float(a.at.y-a.exit.y)*2.4)
+	_oculus_aim_gate_beam()
+	if _cities != null and int(knobs.cities) > 0:
+		if _cities_seed != int(study.get("layer_seed")) or not _cities.has_node("FarCities"):
+			_cities_seed = int(study.get("layer_seed")) if study.get("layer_seed") != null else 0
+			(_cities as Object).call("build",a.mid,float(a.sea),float((a.start as Vector3).y),_cities_seed)
+		(_cities as Object).call("set_look",(p.sky_horizon as Color).lerp(Color(0.2,0.3,0.32),0.5),float(knobs.cities_glow),float(knobs.next_reach))
+		(_cities as Object).call("set_light",a.key)
+	_oculus_material.set_shader_parameter("sea_y",float(a.sea))
+	_oculus_material.set_shader_parameter("sun_dir",key)
+	_oculus_material.set_shader_parameter("pool_at",a.exit)
+	# The key light rakes along the shaft; the fill comes the other way, low.
+	moon.basis = Basis.looking_at(-key,Vector3.UP)
+	moon.directional_shadow_max_distance = 220.0
+	moon.light_specular = 0.6
+	moon.light_volumetric_fog_energy = 1.0
+	_fill.basis = Basis.looking_at(Vector3(key.x,-0.25,key.z).normalized(),Vector3.UP)
+	_fill.light_energy = float(knobs.fill)
+	var land: Array[Vector3] = [a.start,a.mid,a.exit]
+	_dust_material.set_shader_parameter("top",a.at)
+	_dust_material.set_shader_parameter("foot_a",a.start)
+	_dust_material.set_shader_parameter("foot_b",a.mid)
+	_dust_material.set_shader_parameter("foot_c",a.exit)
+	_dust_material.set_shader_parameter("land",Vector3(SHAFT_LAND[0],SHAFT_LAND[1],SHAFT_LAND[2]))
+	_dust_material.set_shader_parameter("top_r",float(a.radius)*SHAFT_TOP)
+	# The pools: a spot light on the start and on the gate, down the shaft.
+	for i in _pools.size():
+		var foot: Vector3 = land[i*2]
+		var back: Vector3 = ((a.at as Vector3)-foot).normalized()
+		var r := float(SHAFT_LAND[i*2])
+		var pool := _pools[i]
+		pool.position = foot+back*POOL_BACK
+		pool.basis = Basis.looking_at(-back,Vector3.UP)
+		pool.spot_range = POOL_BACK*1.7
+		pool.spot_angle = rad_to_deg(atan(r*1.25/POOL_BACK))
+	for i in _shafts.size():
+		var top: Vector3 = a.at
+		var foot: Vector3 = land[i]
+		var toward := (top-foot).normalized()
+		var low := foot-toward*((foot.y-float(a.sea)+10.0)/maxf(toward.y,0.2))
+		var cone := _shafts[i].mesh as CylinderMesh
+		cone.height = top.distance_to(low)
+		cone.top_radius = float(a.radius)*SHAFT_TOP
+		cone.bottom_radius = float(SHAFT_LAND[i])
+		var sm := _shafts[i].material_override as ShaderMaterial
+		sm.set_shader_parameter("r_low",float(SHAFT_LAND[i]))
+		sm.set_shader_parameter("r_top",float(a.radius)*SHAFT_TOP)
+		sm.set_shader_parameter("length_m",cone.height)
+		var y := (top-low).normalized()
+		var x := y.cross(Vector3.FORWARD if absf(y.z) < 0.9 else Vector3.RIGHT).normalized()
+		_shafts[i].transform = Transform3D(Basis(x,y,x.cross(y)),(top+low)*0.5)
+
 # --- Held every frame ------------------------------------------------------------------
 
 func _process(delta: float) -> void:
@@ -438,6 +771,7 @@ func _process(delta: float) -> void:
 	if is_instance_valid(_motes):
 		var fig: Node3D = study.get("figure")
 		if fig != null: _motes.global_position = fig.global_position+Vector3(0.0,1.5,0.0)
+	if _oculus_live: _oculus_tick()
 	var f := _noise.get_noise_1d(_clock*9.0)*0.5+_noise.get_noise_1d(_clock*23.0+40.0)*0.25
 	torch_light.light_energy = float(knobs.torch)*(1.0+f*0.32)
 	torch_light.position = Vector3(f*0.03,0.62+f*0.04,0.0)
@@ -460,6 +794,7 @@ func _hold() -> void:
 	_env.fog_density = float(knobs.fog)
 	_env.fog_sky_affect = float(p.fog_sky)
 	_env.fog_aerial_perspective = 0.0
+	if not _oculus_live: _env.fog_height_density = 0.0
 	var vol := float(knobs.volume)
 	_env.volumetric_fog_enabled = vol > 0.0
 	_env.volumetric_fog_density = vol
@@ -536,7 +871,9 @@ func restore() -> void:
 		torch.get_parent().remove_child(torch)
 		torch.queue_free()
 	_free_motes()
+	_oculus_free()
 	RenderingServer.global_shader_parameter_set("zs_under",0.0)
+	RenderingServer.global_shader_parameter_set("zs_under_crisp",0.0)
 	if GroundCover.grade("",preset):
 		var celestial: Object = study.get("_celestial")
 		if celestial != null and celestial.get("look") != null: (celestial.get("look") as Object).call("publish")
