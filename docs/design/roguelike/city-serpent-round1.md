@@ -521,6 +521,47 @@ Run headless: `python3 tools/run_tests.py --tests 'test_pilot*.gd' --tests
 
 No new tests (prototyping). The full suite was not run.
 
+## Fix: carry
+
+Branch `fix/moving-ground-carry`, off `roguelike`.
+
+**The bug.** The ridden ground's pace outlived the ride. Leaving moving
+ground by air sets `platform` to null and keeps its pace as `frame_v`. On
+landing on still ground, `_ride_after` found nothing under him (null), the
+same as `platform` (null), and returned early. So "onto still ground"
+never ran: `frame_v` stayed set while he stood, and slid him through his
+next jump. It was seen after a clean landing on the cap, after a stunned
+landing, and on R's stage in the Serpent Crossing.
+
+**The fix** (`scripts/pilot_motor.gd`, `_ride_after`): the early return now
+skips only when he's on the same moving piece, or on still ground with no
+frame. A landing on still ground now does what the header always said: the
+frame becomes his own pace and his run bleeds it away, or a catch lets it
+go. Landing on moving ground is unchanged: he takes up its motion.
+
+**Proof** (through the real input; drivers in `scratch/`, uncommitted):
+
+| Check | Before | After |
+|---|---|---|
+| Yard: ride, jump off onto the cap, then a jump straight up there | frame (5.4, 0, -1.8), drifts 2.36 m | frame 0, drifts 0.00 m |
+| Yard: off the saddle past the ring, a stunned 9.4 m landing on the plaza, then a jump straight up | frame (0, 0, -9.9), drifts 4.13 m | frame 0, drifts 0.00 m |
+| Serpent Crossing: bail onto R's stage, then a jump straight up | frame (0, 0, -7.19), drifts 3.00 m | frame 0, drifts 0.00 m |
+| Serpent Crossing: the abutment climb | up to 0.18 m/s of frame | 0 |
+| The shuttle: a jump straight up on the moving slab | lands 0.00 m from where it left | 0.00 m |
+
+- The ride (`ride.gd`), the bail's climb to the ring's cap, and the
+  re-board from it (onto the serpent's back) all pass as before.
+- **Static ground is still byte for byte the same.** The 1000-frame trace
+  hashes 8dc5ef80 before and after.
+
+**Tests:** the same 14 as above, with the same result. 13 pass, and
+`test_pilot_tricks.gd` fails its one check from the base, as before.
+
+**Smoke** (0 errors each):
+- `studies/city_serpent_yard.tscn`.
+- `studies/motif_yard.tscn --motif=serpent_crossing`.
+- `studies/run_layer.tscn --shape=sprawl --world=under --seed=1`.
+
 ## Open questions
 
 - **Boarding.** Is a running jump off the lip right, or should the trough's
