@@ -5,9 +5,7 @@ region one at the new scale. You find each on foot, a different way. A
 taken part stamps the ledger at once and rides at your side. Press Space by
 the plane and it's fitted. With all six fitted, the plane flies.
 
-Branch `feature/plane-arc-1` (from `main`). The direction is
-docs/game-direction.md ("The plane", "The plane's parts", "Never
-wait-and-grab", "The pilot's kit") and the brief is docs/briefs/plane-arc.md.
+Branch `feature/plane-arc-1` (from `main`).
 
 ## What's built, and where
 

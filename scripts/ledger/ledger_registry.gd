@@ -5,8 +5,7 @@ extends RefCounted
 ## count under (in the card's order) and the region files; a region file
 ## (ruins.json) lists its isles and, for each, its objectives: {slug, type,
 ## name, row (optional: the type's row if left out), needs_plane (whether
-## it can only be done with the plane: false if left out; the 80/20 split,
-## docs/game-direction.md "The plane")}.
+## it can only be done with the plane: false if left out; the 80/20 split)}.
 ##
 ## An objective's id is "<isle>/<slug>" (the challenge recorder's key style,
 ## scripts/challenges/challenge_progress.gd on feature/challenge-recorder):

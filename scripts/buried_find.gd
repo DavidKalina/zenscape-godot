@@ -1,7 +1,6 @@
 extends Node3D
 ## A find buried in the turf, broken open by the slam (docs/design/slam/
-## round2.md; docs/game-direction.md "Ways to discover things": the dig,
-## done with his weight). Any find can be buried: a rune token, a plane
+## round2.md: the dig, done with his weight). Any find can be buried: a rune token, a plane
 ## part, anything that hovers to be taken.
 ##
 ## - **Buried.** The find waits DEPTH m under the turf, hidden. Over it a

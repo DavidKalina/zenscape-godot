@@ -1,7 +1,5 @@
 extends Node3D
-## The plane's arc, round 1 (docs/design/plane-arc/round1.md; the direction:
-## docs/game-direction.md "The plane", "The plane's parts", "Never
-## wait-and-grab", "The pilot's kit"): the game starts with the plane
+## The plane's arc, round 1 (docs/design/plane-arc/round1.md): the game starts with the plane
 ## broken, its six parts spread over region one, each found a different way
 ## (scripts/plane_arc/part_spots.gd), carried to the plane and fitted there;
 ## with all six fitted, it flies.

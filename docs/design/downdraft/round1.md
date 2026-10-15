@@ -10,9 +10,7 @@ beneath him. He's slammed down, lands heavily and slides out of it. A ring
 of wind runs out from where he lands, pushing whatever is round him, and it
 blows buried finds out of the turf.
 
-Branch `feature/downdraft` (from `main`). The direction is
-docs/game-direction.md ("The downdraft", "The plane's parts", "Ways to
-discover things").
+Branch `feature/downdraft` (from `main`).
 
 ## Controls
 

@@ -1,6 +1,5 @@
 extends RefCounted
-## Where the plane's six lost parts are (docs/design/plane-arc/round1.md,
-## docs/game-direction.md "The plane's parts"), worked out by name from the
+## Where the plane's six lost parts are (docs/design/plane-arc/round1.md), worked out by name from the
 ## isles' own geometry, never from a world position: an isle can move (its
 ## place in scripts/kit_isle/motif_sky.gd PLACES) and a part goes with it.
 ## Each still part answers {at (its middle, world), glint (where the

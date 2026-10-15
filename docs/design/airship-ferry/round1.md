@@ -26,8 +26,7 @@ folk's airships is now a ferry that you can ride on foot.
   loops and phases. The ferry is last in `airships` and moves itself. The
   sky only reads its position for the drone and the crew's wave.
 - Docs: the cowl's lines in `scripts/plane_arc/part_spots.gd` and
-  `plane_arc.gd`, and the sky's header. `docs/game-direction.md` isn't in
-  this tree.
+  `plane_arc.gd`, and the sky's header.
 
 ## Route and stops
 
