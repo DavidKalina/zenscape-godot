@@ -51,6 +51,9 @@ const ACTIONS := {
 	"walk_jump":[["key",KEY_SPACE],["button",JOY_BUTTON_A]],
 	# On foot, held: crouch; crouched at a run, Jump is the long jump.
 	"walk_crouch":[["key",KEY_SHIFT],["key",KEY_C],["axis",JOY_AXIS_TRIGGER_LEFT,1.0]],
+	# On foot, held: sneak, the stick eased to a quiet pace (docs/design/
+	# roguelike/noise-stealth-round1.md); on the pad the stick eased does it.
+	"walk_sneak":[["key",KEY_CTRL],["key",KEY_ALT]],
 	# On foot, pressed in the air: the twirl.
 	"walk_twirl":[["key",KEY_X],["button",JOY_BUTTON_X]],
 	# On foot, pressed: spend the flow charge as an updraft (scripts/updraft.gd).
