@@ -34,6 +34,8 @@ const CityCrossings = preload("res://scripts/roguelike/city_crossings.gd")
 const CityFires = preload("res://scripts/city_kit_fires.gd")
 # [collectibles] the layer's runes, rares and chests (game-v1-collectibles.md).
 const Collectibles = preload("res://scripts/roguelike/collectibles.gd")
+# [weeper] the stone mourners (weeper-round1.md), in the EnemyField.
+const LayerWeepers = preload("res://scripts/roguelike/layer_weepers.gd")
 
 const GATE := Color(1.0,0.82,0.45)
 const RUNE_SIZE := 0.7
@@ -121,6 +123,7 @@ func setup(scene: Node3D, layer: Dictionary, was: Node) -> void:
 		enemies.spawn(PlinthRam,layer.ram.at,Vector2(face.x,face.z))
 	# The inhaler heads on their rounds.
 	heads = LayerEnemies.dress(self,layer)
+	LayerWeepers.dress(self,layer)  # [weeper]
 	# The cannon and its kegs.
 	cannons = CannonField.new()
 	add_child(cannons)
