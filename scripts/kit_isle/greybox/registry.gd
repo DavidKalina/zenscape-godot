@@ -21,7 +21,10 @@ const MOTIFS := {
 	"felled_colonnade":preload("res://scripts/kit_isle/greybox/gb_felled_colonnade.gd"),
 	"face":preload("res://scripts/kit_isle/greybox/gb_face.gd"),
 	"lamplighters_stair":preload("res://scripts/kit_isle/greybox/gb_lamplighters_stair.gd"),
+	"haulway":preload("res://scripts/kit_isle/greybox/gb_haulway.gd"),
 	"coliseum_pit":preload("res://scripts/kit_isle/greybox/gb_coliseum_pit.gd"),
+	"weir_stair":preload("res://scripts/kit_isle/greybox/gb_weir_stair.gd"),
+	"procession":preload("res://scripts/kit_isle/greybox/gb_procession.gd"),
 	"city_landing":preload("res://scripts/kit_isle/greybox/gb_city_landing.gd"),
 	"editor_hill":preload("res://scripts/kit_isle/greybox/au_editor_hill.gd"),
 	"editor_mountain":preload("res://scripts/kit_isle/greybox/au_editor_mountain.gd"),
@@ -39,7 +42,10 @@ const WORLD := {
 	"felled_colonnade":"under",
 	"face":"under",
 	"lamplighters_stair":"under",
+	"procession":"under",
+	"haulway":"under",
 	"coliseum_pit":"under",
+	"weir_stair":"under",
 	# The underground layers' start isle (LayerPlan `_base_isle`): never
 	# drawn into a pool (layer-round14-city-layers.md).
 	"city_landing":"base",
