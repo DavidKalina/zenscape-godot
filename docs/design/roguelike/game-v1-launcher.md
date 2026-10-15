@@ -67,3 +67,11 @@ None known; not run (prototype round, no full suite).
   them (none do: the title never loads `run_layer`).
 - No pause/quit-to-title from the run; Escape in the run is whatever the
   study does today.
+
+## Windows
+
+There is no `.ps1` pattern, so this line is the Windows launcher. It belongs
+in AGENTS.md's "Running on Windows" section. It was kept out of that file
+for now because AGENTS.md has uncommitted edits from another session.
+
+    & $env:GODOT --path . --rendering-method forward_plus --windowed --resolution 1440x900 studies/game_title.tscn -- --no-title --shape=sprawl --underground=torch
