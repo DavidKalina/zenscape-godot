@@ -68,18 +68,22 @@ const CityBreaks2 = preload("res://scripts/city_kit_breaks2.gd")
 ## Climb pieces, a lane for each body: wedge, terrace, wrapped pillar, hauling
 ## lip, leaper's pit, giant's riser (docs/design/roguelike/city-climb-round1.md).
 const CityClimb = preload("res://scripts/city_kit_climb.gd")
+## The serpent's pieces, stood like the fires: waiting dais, ring, coil, ash bowl;
+## the collar rides a serpent (docs/design/roguelike/city-serpent-round1.md).
+const CitySerpent = preload("res://scripts/city_kit_serpent.gd")
 
 const PIECES := ["city_pillar","city_drum_stair","city_stair","city_causeway"]+CityBreaks.PIECES+CityRefuges.PIECES+CityLandmarks.PIECES+CityBreaks2.PIECES+CityClimb.PIECES
 const NAMES := {"city_pillar":"Basalt pillar-isle","city_drum_stair":"Drum stair","city_stair":"Epic stair","city_causeway":"Causeway"}
 
 ## Every id in the family: its pieces, its breaks, its fires.
-static var ALL: Array = PIECES+CityFires.PIECES.keys()+CityLight2.PIECES.keys()
+static var ALL: Array = PIECES+CityFires.PIECES.keys()+CityLight2.PIECES.keys()+CitySerpent.PIECES.keys()
 
 ## Any of the family's pieces stood in `parent` at `xform` (a fire through
 ## CityFires `build`, the rest through `piece`).
 static func stand(id: String, parent: Node3D, xform: Transform3D, seed_value := 1, weathered := 0.4, opts := {}) -> Node3D:
 	if CityFires.PIECES.has(id): return CityFires.build(id,parent,xform,opts)
 	if CityLight2.PIECES.has(id): return CityLight2.build(id,parent,xform,opts)
+	if CitySerpent.PIECES.has(id): return CitySerpent.build(id,parent,xform,opts)
 	var n := piece(id,seed_value,weathered,opts)
 	if n == null: return null
 	parent.add_child(n)
