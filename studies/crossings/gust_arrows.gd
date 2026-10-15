@@ -254,6 +254,7 @@ func step(delta: float, motor: Object, space: PhysicsDirectSpaceState3D) -> Stri
 		else:
 			how = "under the sail" if motor.move == "sail" else ("mid-pump" if motor.grounded else "in the air")
 			motor.knock(v,b,STUN_DOWN)
+			motor.harm("wind",1,b)
 			out = "thrown"
 		hits.append({"kind":out,"at":feet,"launcher":i,"t":_clock,"how":how})
 		print("gust arrows: %s (launcher %d, %s)" % [out,i,how])

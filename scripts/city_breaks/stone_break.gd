@@ -158,7 +158,9 @@ func tell(box: AABB) -> void:
 ## toss, still stunned), or a toss (`toss`: no stun).
 func hit(m: PilotMotor, source_name: String, kind: String, v: Vector3, toss := false, down := 0.0) -> void:
 	if toss or m.move == "tumble": m.toss(v)
-	else: m.knock(v,source(source_name),down)
+	else:
+		m.knock(v,source(source_name),down)
+		m.harm("stone",1,source(source_name))
 	dealt.append([source_name,kind])
 	var h := hub()
 	if h != null: h.knocked(source_name,kind,v)

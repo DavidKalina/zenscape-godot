@@ -1,4 +1,12 @@
 extends RefCounted
+## Harm (docs/design/roguelike/game-v1-hearts.md): `harm` is the one call
+## everything that hurts him makes (a fall, the Olmec, a trap, a hazard),
+## beside its knock; the motor only tells it on. Whoever keeps his hearts
+## (scripts/roguelike/run_loop.gd, in its RunState, keyed by this motor)
+## listens. `cause` names it for the death card ("fall", "olmec", "trap",
+## "hazard", "stone", "ram").
+signal harmed(amount: int, cause: String, source: Object)
+
 ## The pilot on foot, moved like a platformer's hero: the stick asks for a
 ## way and a pace (in the world, the camera's way already taken out), and
 ## the pilot turns to face it and runs up to speed, quick at a walk and
@@ -476,6 +484,12 @@ const TUMBLE_IMMUNE := 0.0
 ## floor); the seconds down at it and at FALL_STUN_FULL times it (the most).
 const FALL_STUN_PUMPS := 4.0
 const FALL_STUN_FULL := 2.0
+## The fall that hurts (docs/design/roguelike/game-v1-hearts.md), in pumps
+## as the stun: from FALL_HURT_PUMPS (9 m at the wanderer's 1.0, half again
+## the stun's) a heart, from FALL_HARD_PUMPS (18 m) two. A roll out of it
+## (the tech) takes one off. Under the stun's height nothing.
+const FALL_HURT_PUMPS := 6.0
+const FALL_HARD_PUMPS := 12.0
 const STUN_DOWN := Vector2(0.7,1.6)
 ## Poise: knocked, seconds with no control in the air before he gathers
 ## himself (sail, twirl, steer, catch his again): POISE, and POISE_HIT more
@@ -991,6 +1005,18 @@ func downed() -> bool:
 func fall_stun_height() -> float:
 	return fall_stun_pumps*float(jumps[jumps.size()-1])
 
+## Hearts a fall of `drop` m costs (FALL_HURT_PUMPS, FALL_HARD_PUMPS of
+## his pump): 0, 1 or 2, one less `rolled` out of.
+func fall_hurt(drop: float, rolled := false) -> int:
+	var pump := float(jumps[jumps.size()-1])
+	var n := 2 if drop >= FALL_HARD_PUMPS*pump else (1 if drop >= FALL_HURT_PUMPS*pump else 0)
+	return maxi(0,n-(1 if rolled else 0))
+
+## Hurt `amount` hearts by `cause` (`source` the thing, if any): told on
+## (`harmed`), nothing more. Call it beside the knock.
+func harm(cause: String, amount := 1, source: Object = null) -> void:
+	if amount > 0: harmed.emit(amount,cause,source)
+
 ## Seconds down after a fall of `drop` m: 0 under the stun's height, then
 ## STUN_DOWN.x up to STUN_DOWN.y at FALL_STUN_FULL times it.
 func fall_stun_time(drop: float) -> float:
@@ -1386,7 +1412,8 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 			# From a fall that stuns: the roll if pressed for, else laid down.
 			var stun := fall_stun_time(drop) if came != "sail" and (came != "slam" or slam_stuns) else 0.0
 			if stun > 0.0:
-				if _roll > 0.0:
+				var rolled := _roll > 0.0
+				if rolled:
 					_roll = 0.0
 					_roll_left = roll_time
 					move = "roll"
@@ -1397,6 +1424,7 @@ func step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable,
 					_stun_t = 0.0
 					out["stunned"] = "fall"
 					out["downed"] = stun
+				harm("fall",fall_hurt(drop,rolled))
 			_fall_top = y
 		elif y < under:
 			y = under
@@ -1516,9 +1544,11 @@ func _tumble_step(delta: float, ground: Callable, slide: Callable, ledge: Callab
 			_hit_down = 0.0
 			out["teched"] = "land"
 			out["rolled"] = drop
+			harm("fall",fall_hurt(drop,true))
 		else:
 			_lay_down(maxf(maxf(tumble_down,fall_stun_time(drop)),_hit_down),stunned if stunned != "" else "knock")
 			out["downed"] = _down
+			harm("fall",fall_hurt(drop))
 	elif y < under:
 		y = under
 	feet = Vector3(moved.x,y,moved.z)
