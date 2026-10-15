@@ -68,6 +68,16 @@ const SEEN_TRIES := 3
 ## A clean face: nothing under these (m) out from the lip down his hang.
 const CLEAN_OUT := [0.5,1.2,2.2]
 const CLEAN_IN := 1.4
+## Room to haul onto: level ground (within ROOM_LEVEL m of the lip) behind
+## the lip his body's length deep and his breadth wide, so a pier top, a
+## crossing's stone or a causeway's deck is never a cliff of his.
+const ROOM_LEVEL := 1.5
+## A fall within BAN_AFTER s of coming up a lip bans cliffs within BAN_NEAR
+## m of it for the rest of the layer.
+const BAN_AFTER := 25.0
+const BAN_NEAR := 10.0
+## The lip his climb finds no more than this off the cliff's top (m).
+const SHELF_LEVEL := 1.0
 ## A rim on screen this share in from its edges counts as seen.
 const SEEN_EDGE := 0.04
 ## Entrances: the first after this long on the layer, again this long after
@@ -122,6 +132,8 @@ var beats := 0
 var tilts := 0
 var last_travel := ""
 var last_comeback := Vector3.INF
+var last_out := Vector2.ZERO
+var last_below := 0.0
 var entrances := 0
 ## Why the last `seen_rim` said no (for checks).
 var seen_why := ""
@@ -131,6 +143,12 @@ var _bodiless := {}
 var _enter_t := 0.0
 var _wide_ready := 0.0
 var _lax := false
+var _banned: Array = []
+var _up_at := -INF
+var _build := {}
+## The comeback's cliffs no more than this over or under your feet (m):
+## past TRAVEL_RISE he'd count you out of reach and leave at once.
+var max_rise := INF
 var _beat_t := -1.0
 var _was_scale := 1.0
 var _line: Label = null
@@ -374,6 +392,9 @@ func _send_away(b: Node3D, why: String) -> void:
 		field.enemies.erase(n)
 		if n.get_parent() == field: field.remove_child(n)
 	_watch.erase(b.get_instance_id())
+	if why == "fell" and last_comeback != Vector3.INF and _now()-_up_at < BAN_AFTER:
+		_banned.append(last_comeback)
+		print("olmec: fell soon after coming up at %s; that cliff is banned" % str(last_comeback.round()))
 	away.append({"body":b,"head":h,"from":from,"t":0.0,"due":due,"tries":0})
 	print("olmec: away (%s), back in %.0f s" % [why,due])
 
@@ -397,9 +418,10 @@ func _back(a: Dictionary) -> bool:
 	# Seen first, then any clean face (round you too), then a stepped one.
 	var tries := int(a.tries)
 	_lax = tries >= SEEN_TRIES+3
+	max_rise = TRAVEL_RISE-2.0
 	var rim := find_rim(m.feet,RIM_NEAR,RIM_FAR,-1.0,tries < SEEN_TRIES,tries >= SEEN_TRIES)
+	max_rise = INF
 	_lax = false
-	if not rim.is_empty() and tries >= SEEN_TRIES+3: rim.below = 0.0
 	if rim.is_empty():
 		a.tries = int(a.tries)+1
 		a.due = float(a.t)+RIM_AGAIN
@@ -423,6 +445,9 @@ func _bring(b: Node3D, h: Node3D, rim: Dictionary) -> void:
 	b._go("climb")
 	comebacks += 1
 	last_comeback = rim.lip
+	last_out = rim.out
+	last_below = float(rim.below)
+	_up_at = _now()
 	field.sound(&"body_rumble",rim.lip)
 	print("olmec: back up a cliff at %s (%.0f m off, %.0f m down the face%s)" % [str((rim.lip as Vector3).round()),
 		Vector2((rim.lip as Vector3).x-study.motor.feet.x,(rim.lip as Vector3).z-study.motor.feet.z).length(),float(rim.below)," in view" if bool(rim.seen) else ""])
@@ -460,8 +485,7 @@ func _rims_from(start: Vector3, around: Vector3, near: float, far: float, ideal:
 	var sp: Node = lay.get("spawner")
 	var hang: float = sp.hang()
 	var feet: Vector3 = study.motor.feet
-	var best := {}
-	var best_score := INF
+	var cands: Array = []
 	for i in dirs:
 		var w := Vector2.from_angle(TAU*i/dirs+0.13)
 		var w3 := Vector3(w.x,0.0,w.y)
@@ -484,15 +508,99 @@ func _rims_from(start: Vector3, around: Vector3, near: float, far: float, ideal:
 		if fitted.is_empty(): continue
 		var at: Vector3 = fitted[0]
 		var out: Vector2 = fitted[1]
+		if not _room(at,out) or _is_banned(at): continue
 		if not _lax and not _clean_face(at,out,hang): continue
 		var seen := seen_rim(at,out)
 		if need_seen and not seen: continue
+		if absf(at.y-feet.y) > max_rise: continue
 		var score := absf(flat-ideal)+(0.0 if seen else 200.0)+absf(at.y-feet.y)*0.5+extra
-		if score < best_score:
-			best_score = score
-			best = {"lip":at,"out":out,"below":0.0,"seen":seen,"score":score}
-	if not best.is_empty(): best.below = sp.face_below(best.lip,best.out,RIM_CLIMB)
-	return best
+		cands.append({"lip":at,"out":out,"below":0.0,"seen":seen,"score":score})
+	cands.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return float(a.score) < float(b.score))
+	# The best whose climb his own rays would make: started down the face
+	# if that holds, else at the lip.
+	for c: Dictionary in cands:
+		var below: float = sp.face_below(c.lip,c.out,RIM_CLIMB)
+		for bl: float in ([below,0.0] if below > 0.0 else [0.0]):
+			if _climb_ok(c.lip,c.out,bl):
+				c.below = bl
+				return c
+	return {}
+
+## Whether there's level ground behind the lip `at` (its face out `out`)
+## for his body to haul onto: his length deep, his breadth wide.
+func _room(at: Vector3, out: Vector2) -> bool:
+	if _build.is_empty():
+		var sp: Node = lay.get("spawner")
+		_build = HeadlessBody.build_of(sp._body_k(),float(field.numbers().unit))
+	var f3 := Vector3(out.x,0.0,out.y).normalized()
+	var side := Vector3(-f3.z,0.0,f3.x)
+	var deep := float(_build.length)
+	var half := float(_build.width)*0.5
+	var spans: Node = breach.get("spans") if breach != null else null
+	var space := study.get_world_3d().direct_space_state
+	var mask: int = WalkerOnly.strip(study.ground.mask)
+	for d: float in [1.0,deep*0.5,deep+1.0]:
+		for s: float in [-half,0.0,half]:
+			var p := at-f3*d+side*s
+			var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(p+Vector3.UP*ROOM_LEVEL,p-Vector3.UP*ROOM_LEVEL,mask))
+			if hit.is_empty(): return false
+			# A crossing's stone (a causeway's deck, a pier) is no cliff
+			# top: it cracks under him (olmec_breach.gd `on_span`).
+			if spans != null and is_instance_valid(spans) and hit.collider is Node and spans.is_ancestor_of(hit.collider): return false
+	return true
+
+## Whether his climb from `below` m down the face under the lip `at` (out
+## `out`) would hold, by the climb's own rays (headless_body.gd `_climb`):
+## the face before his chest all the way up till his reach finds the lip,
+## and room over the lip for him to haul into.
+func _climb_ok(at: Vector3, out: Vector2, below: float) -> bool:
+	if _build.is_empty(): _room(at,out)
+	var k: Dictionary = (lay.get("spawner") as Node)._body_k()
+	var n3 := Vector3(out.x,0.0,out.y).normalized()
+	var half := float(_build.length)*0.5+float(k.standoff)
+	var neck := float(_build.neck)
+	var reach := neck+float(_build.arm)*0.75
+	var space := study.get_world_3d().direct_space_state
+	var mask: int = WalkerOnly.strip(study.ground.mask)
+	# What his own rays skip (headless_body.gd `_skip`): bodies, and the
+	# standing masonry he'd break through.
+	var skip: Array[RID] = []
+	for e in field.enemies:
+		if is_instance_valid(e) and e.get("body") != null: skip.append(e.body.get_rid())
+	if hub != null and hub.has_method("standing_rids"): skip.append_array(hub.standing_rids())
+	var ray := func(from: Vector3, to: Vector3) -> Dictionary:
+		var q := PhysicsRayQueryParameters3D.create(from,to,mask)
+		q.exclude = skip
+		return space.intersect_ray(q)
+	var pos := Vector3(at.x,at.y-float(_build.hang)-below,at.z)+n3*half
+	var from := pos.y
+	while pos.y-from <= float(k.climb_max):
+		var chest := pos+Vector3.UP*neck*0.55
+		var hit: Dictionary = ray.call(chest,chest-n3*(half+1.5))
+		var wall := not hit.is_empty() and absf((hit.normal as Vector3).y) < 0.7
+		var face := chest-n3*half
+		if wall:
+			face = hit.position as Vector3
+			pos = Vector3(face.x,pos.y,face.z)+n3*half
+		var past := face-n3*float(k.lip_in)
+		var lip: Dictionary = ray.call(Vector3(past.x,pos.y+reach,past.z),Vector3(past.x,pos.y+float(k.step),past.z))
+		if not lip.is_empty() and (lip.normal as Vector3).y > 0.6:
+			# The lip his hands find: the top itself (not a shelf under it
+			# he'd haul onto and stand on, under the rim), with room over it.
+			var l := lip.position as Vector3
+			if absf(l.y-at.y) > SHELF_LEVEL: return false
+			return (ray.call(l+Vector3.UP*0.1,l+Vector3.UP*neck*0.5) as Dictionary).is_empty()
+		if not wall: return false
+		pos.y += 0.5
+	return false
+
+func _is_banned(at: Vector3) -> bool:
+	for b: Vector3 in _banned:
+		if b.distance_to(at) < BAN_NEAR: return true
+	return false
+
+func _now() -> float:
+	return Time.get_ticks_msec()*0.001
 
 ## Whether the face under `at` (out `out`) is clean down past his hang: no
 ## ledge or shelf just out from it he would mantle onto halfway (he'd stand
@@ -579,7 +687,6 @@ func _entrances(delta: float) -> void:
 					rim = find_rim(home,ENTER_NEAR,ENTER_FAR,ENTER_NEAR+4.0,false,true)
 					_lax = false
 					if not rim.is_empty():
-						rim.below = 0.0
 						enter(i,rim)
 			continue
 		enter(i,rim)
@@ -596,6 +703,8 @@ func enter(i: int, rim: Dictionary) -> Node3D:
 	if b == null: return null
 	entrances += 1
 	if bool(rim.seen): entrances_seen += 1
+	last_comeback = rim.lip
+	_up_at = _now()
 	_bodiless.erase(i)
 	var feet: Vector3 = study.motor.feet
 	print("olmec: up a cliff by his head at %s (%.0f m off you, %.0f m down the face%s)" % [str((rim.lip as Vector3).round()),
@@ -632,7 +741,6 @@ func come_now() -> String:
 	rim = find_rim(home,ENTER_NEAR,ENTER_FAR,ENTER_NEAR+4.0,false,true)
 	_lax = false
 	if not rim.is_empty():
-		rim.below = 0.0
 		if enter(0,rim) != null: return "climb by his head (a stepped face)"
 	return "none"
 

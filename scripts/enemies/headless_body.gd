@@ -1032,6 +1032,9 @@ func _climb_on(hit: Dictionary) -> void:
 	_go("climb")
 	field.sound(&"body_grip",hit.position)
 
+## Why the climb last let go (for drivers and F1).
+var let_go_why := ""
+
 func _climb(delta: float) -> void:
 	vel = Vector3.ZERO
 	var fwd := _forward3()
@@ -1061,6 +1064,7 @@ func _climb(delta: float) -> void:
 		var at := lip.position as Vector3
 		if not _cast(at+Vector3.UP*0.1,at+Vector3.UP*neck_h*0.5).is_empty():
 			no_room_lips += 1
+			let_go_why = "no room over the lip"
 			_fall()
 			return
 	# Round 4: springing, it hangs once its hands can reach the lip (and
@@ -1088,9 +1092,11 @@ func _climb(delta: float) -> void:
 		return
 	if hit.is_empty() and _lip_y == INF:
 		# The wall gone from under its hands with no top found: it lets go.
+		let_go_why = "no wall, no top"
 		_fall()
 		return
 	if position.y-_climb_from > float(knobs.climb_max):
+		let_go_why = "past climb_max"
 		_fall()
 		return
 	if _hauling(): _haul_t += delta
