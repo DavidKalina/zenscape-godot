@@ -1,11 +1,11 @@
 extends Node
 ## The run on the sprawl layer (studies/run_layer.tscn --shape=sprawl;
-## docs/design/roguelike/stakes-experiment.md): a climb from layer 1 on a
-## seed, the gate a layer deeper, the void the end of it.
+## docs/design/roguelike/stakes-experiment.md, game-v1-climb-up.md): a climb
+## from layer 1 on a seed, each gate leading up, the void the end of it.
 ##
 ## - **Through the gate**: a flash of warm light, and he stands at the next
-##   layer's start (the region he saw far off), a layer deeper, his runes
-##   still with him.
+##   layer's start (the region he saw far off and up), higher, his runes
+##   still with him. The height carried is the true one (`_rise_through`).
 ## - **Into the void** (under every isle, the plan's `void_y`): he falls on
 ##   a moment (FALL_ON), the screen goes dark (FADE), and a quiet card says
 ##   the height he fell from, the runes lost, how long, the highest yet.
@@ -38,6 +38,14 @@ const WayLights = preload("res://scripts/roguelike/way_lights.gd")
 static var WAY_LIT := "--way-lit" in preload("res://scripts/launch_args.gd").user_args()
 const Pad = preload("res://scripts/pad.gd")
 const LayerShapes = preload("res://scripts/roguelike/layer_shapes.gd")
+const LayerSprawl = preload("res://scripts/roguelike/layer_sprawl.gd")
+## The underground look lightens as the run climbs (scripts/underground/
+## underground.gd `climb_lift`): each layer past the first eases the torch's
+## dark this share toward the haze's air, at most CLIMB_LIGHTEN_MOST. Light
+## and air only, never the growth. 0 keeps the dark as authored.
+const CLIMB_LIGHTEN := 0.2
+const CLIMB_LIGHTEN_MOST := 0.6
+const Underground = preload("res://scripts/underground/underground.gd")
 
 ## Past the void, falling on before the dark comes (s), the dark coming (s).
 const FALL_ON := 1.1
@@ -119,6 +127,9 @@ var _asked := -1
 var _laid_for := -1
 var _laid_seed := -1
 var _wake := false
+## The way up taken (`_note_way_up`): the region the gate leads to as seen
+## from this layer, this layer's start and the feet at the gate.
+var _way_up := {}
 
 func _init() -> void:
 	name = "RunLoop"
@@ -179,6 +190,7 @@ func after_tick(_delta: float) -> void:
 		_t = 0.0
 		_veil_colour = RunOverlay.WARM
 		pending = "gate"
+		_note_way_up(feet)
 		# The next region in its own shape (a run alternates them by depth).
 		study.request_layer(int(study.layer_seed)+1,"Through the gate: %s" % (WORDS.stage % (run.depth+1)),LayerShapes.after(study.layer))
 	elif feet.y < float(study.layer.void_y):
@@ -314,6 +326,7 @@ func _arrive(colour: Color) -> void:
 	_veil = 1.0
 	_veil_colour = colour
 	_loud = LOUD_FOR
+	_lighten()
 	if run.depth <= 1:
 		var line := "" if run.highest <= 0.0 else WORDS.arrive_first_line % metres(run.highest)
 		overlay.show_caption(WORDS.arrive_first,line)
@@ -353,7 +366,7 @@ func layer_stood() -> void:
 			run.begin(int(study.layer_seed))
 			_arrive(RunOverlay.DARK)
 		"gate","skip":
-			run.descend()
+			run.ascend(_rise_through())
 			_arrive(RunOverlay.WARM)
 		"run":
 			# (Laid on past a seed that can't be, the one laid is the run's.)
@@ -400,6 +413,46 @@ func input(event: InputEvent) -> bool:
 			return true
 		return key >= 0 and key != KEY_ESCAPE
 	if state == "gate" or state == "falling" or state == "dying": return key >= 0 and key != KEY_ESCAPE
-	if key == KEY_N and state != "card": pending = "skip" if not (event as InputEventKey).shift_pressed else ""
+	if key == KEY_N and state != "card":
+		pending = "skip" if not (event as InputEventKey).shift_pressed else ""
+		if pending == "skip": _note_way_up(study.motor.feet)
 	if key == KEY_BACKSPACE: pending = ""
 	return false
+
+# --- The way up -------------------------------------------------------------------
+
+## Through a gate (or N): what the arrival needs to know how much higher the
+## next layer's start stands. Today a layer has one gate and `plan.next` is
+## where it leads; a layer with more (branching worlds) hands the gate's own
+## region here instead.
+func _note_way_up(feet: Vector3) -> void:
+	var layer: Dictionary = study.layer
+	_way_up = {"next":layer.get("next",{}),"start_y":_start_y,"feet_y":feet.y,"seed":int(study.layer_seed)}
+
+## How far over the left layer's start the new layer's start stands (m).
+## The region seen far off was placed by the generator (LayerSprawl
+## `_place_next`: its `xform` takes the next plan's frame into this one's,
+## its base RISE_ROLL + RISE_OVER over the gate, or more to be seen), so his
+## start there, taken into the old frame, is his true height. A layer laid
+## that isn't the region seen (a seed skipped, or none laid yet) counts the
+## gate's height and the seed's rolled rise over it.
+func _rise_through() -> float:
+	var way := _way_up
+	_way_up = {}
+	if way.is_empty(): return 0.0
+	var start: Vector3 = study.start
+	var nxt: Dictionary = way.next
+	if not nxt.is_empty() and int(nxt.get("seed",-1)) == int(study.layer_seed):
+		var xf: Transform3D = nxt.xform
+		return (xf*start).y-float(way.start_y)
+	return float(way.feet_y)-float(way.start_y)+LayerSprawl.next_rise(int(way.seed))
+
+## The underground's dark eased by the layers climbed (CLIMB_LIGHTEN).
+func _lighten() -> void:
+	var lift := clampf(CLIMB_LIGHTEN*float(maxi(run.depth-1,0)),0.0,CLIMB_LIGHTEN_MOST)
+	var u := study.get_node_or_null("Underground")
+	Underground.climb_lift = lift if u == null else Underground.climb_lift
+	if u != null and u.has_method("set_climb_lift"): u.call("set_climb_lift",lift)
+
+func _exit_tree() -> void:
+	Underground.climb_lift = 0.0
