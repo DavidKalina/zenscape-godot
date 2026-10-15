@@ -57,6 +57,9 @@ const ItemStrip = preload("res://scripts/roguelike/item_strip.gd")
 const Summit = preload("res://scripts/roguelike/summit.gd")
 const SummitCrown = preload("res://scripts/roguelike/summit_crown.gd")
 const SummitMark = preload("res://scripts/roguelike/summit_mark.gd")
+# [linger] The colossus (scripts/roguelike/linger_colossus.gd), laid with each layer.
+const LingerColossus = preload("res://scripts/roguelike/linger_colossus.gd")
+var _linger: Node3D = null
 ## [items] Whether --wallrun gave the wall run outright (else Gecko Wraps do).
 var _wallrun_flag := false
 
@@ -198,6 +201,7 @@ func before_tick(delta: float) -> bool:
 		"play":
 			run.tick(delta)
 			_item_moves()
+			if is_instance_valid(_linger): _linger.tick(delta)  # [linger]
 		"arrive":
 			run.tick(delta)
 			if _t > HOLD: _veil = move_toward(_veil,0.0,delta/CLEAR)
@@ -459,6 +463,7 @@ func layer_stood() -> void:
 	study.respawn()
 	study.set("_last_stood",spot.start)
 	_start_y = float(study.start.y)
+	_linger = LingerColossus.lay(study,stage,layer)  # [linger]
 	stage.rune_taken.connect(func(_left: int) -> void: run.take_rune())
 	# [collectibles] The layer's runes, rares and chests into the run.
 	var found: Node = stage.get("collectibles")
