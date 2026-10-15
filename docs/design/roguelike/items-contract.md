@@ -49,3 +49,5 @@ marked hooks (`# [merchant]`) in the shared ones, so the merges are easy.
 /Users/davidkalina/Applications/Godot.app/Contents/MacOS/Godot --path . res://studies/run_layer.tscn -- --no-title --shape=sprawl --seed=11
 ```
 - `--give=wallrun,lantern`: the run begins carrying those (play and test knob).
+
+- The linger serpent is cut from the run (2026-10-15): `--linger=serpent` brings it back; `--linger=colossus` lays the colossus. No linger threat by default.

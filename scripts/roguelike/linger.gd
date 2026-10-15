@@ -254,8 +254,9 @@ var _drape_w := 0.0
 var _drape_rim := {}
 var _drape_t := 0.0
 
+## Cut from the run (2026-10-15): laid only with `--linger=serpent`.
 static func lay(run_loop: Node, stage_node: Node3D, plan: Dictionary) -> Node3D:
-	if not RunFeatures.on(&"linger") or RunFeatures.value("linger","serpent") != "serpent": return null
+	if not RunFeatures.on(&"linger") or RunFeatures.value("linger","") != "serpent": return null
 	var l: Node3D = (load("res://scripts/roguelike/linger.gd") as GDScript).new()
 	l.name = "Linger"
 	stage_node.add_child(l)

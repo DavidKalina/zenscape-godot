@@ -137,7 +137,7 @@ var _knobs := {}
 
 ## Whether the colossus is the linger this run.
 static func wanted() -> bool:
-	return RunFeatures.on(&"linger") and arg("linger","serpent") == "colossus"
+	return RunFeatures.on(&"linger") and arg("linger","") == "colossus"
 
 ## A launch flag's value (the run's features' read, or the scene's own).
 static func arg(name: String, fallback := "") -> String:
