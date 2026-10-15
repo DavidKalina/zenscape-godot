@@ -17,6 +17,7 @@ const MOTIFS := {
 	"noon_weir":preload("res://scripts/kit_isle/greybox/gb_noon_weir.gd"),
 	"rootbound_cut":preload("res://scripts/kit_isle/greybox/gb_rootbound_cut.gd"),
 	"stacked_court":preload("res://scripts/kit_isle/greybox/gb_stacked_court.gd"),
+	"lamplighters_stair":preload("res://scripts/kit_isle/greybox/gb_lamplighters_stair.gd"), ## world: under
 	"editor_hill":preload("res://scripts/kit_isle/greybox/au_editor_hill.gd"),
 	"editor_mountain":preload("res://scripts/kit_isle/greybox/au_editor_mountain.gd"),
 	"editor_tarn_peak":preload("res://scripts/kit_isle/greybox/au_editor_tarn_peak.gd"),
