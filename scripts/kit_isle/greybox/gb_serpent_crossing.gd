@@ -480,7 +480,11 @@ func build(into: Node3D) -> void:
 	cap.name = "Turf_B"
 	cap.position = b
 	root.add_child(cap)
-	turf(cap)
+	# Registered where it stands (the Stacked Court's grass fix): the isle
+	# reads a land's outline in its own frame, moved only by the isle's offset.
+	var placed := PackedVector2Array()
+	for q: Vector2 in (cap.get_meta("outline") as PackedVector2Array): placed.append(q+Vector2(b.x,b.z))
+	turf(cap,placed)
 	made.pit = CityKit.stand("city_pit",root,Transform3D(Basis.IDENTITY,LAYOUT.pit),SEED+27,0.55)
 	made.wrap = CityKit.stand("city_wrap",root,Transform3D(Basis.IDENTITY,LAYOUT.wrap.at),SEED+28,0.6,{"deep":float(LAYOUT.wrap.deep)})
 	_ledge(root)
