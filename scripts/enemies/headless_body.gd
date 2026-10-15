@@ -2019,6 +2019,9 @@ func _hunt_wall(hit: Dictionary, goal: Vector3) -> void:
 	if top != INF and goal.y > position.y+float(knobs.step)*2.0:
 		_start_climb(hit)
 		return
+	# City breaks round 2: a wall past his climb, him beyond it (through a
+	# gate he broke open): a route to him, as at an edge (`chase_routes`).
+	if top == INF and _chase_plan(goal): return
 	var way := _skirt(goal)
 	if way != INF:
 		_skirt_way = way
