@@ -847,7 +847,9 @@ func _process(delta: float) -> void:
 		elif walk_ready and not scripted: fly_step(delta,_fly_input(delta))
 	_advance_look(delta)
 	_lode_frame(delta)
-	if life != null: life.advance(delta,_life_gap())
+	# Not while it is put away (the run's city layers hide the aqueduct
+	# isle's life): ~1 ms a frame of litter, chaff and birds no one sees.
+	if life != null and life.is_visible_in_tree(): life.advance(delta,_life_gap())
 	if _toast_left > 0.0 and _look_toast != null:
 		_toast_left = maxf(_toast_left-delta,0.0)
 		_look_toast.modulate.a = clampf(_toast_left/TOAST_FADE,0.0,1.0)

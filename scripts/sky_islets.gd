@@ -527,6 +527,11 @@ static func _plant_material(key: String) -> Material:
 	if material is ShaderMaterial:
 		for flag in ["instance_birth_enabled","instance_fire_enabled","tree_tread","plant_growth","flower_cycle","cozy_prop_growth"]:
 			(material as ShaderMaterial).set_shader_parameter(flag,false)
+		# Its switches are set: folded into its shader (scripts/shader_fold.gd).
+		# Its leaf fall is steady where its season never drops leaves (the
+		# only seasons it is given are scene_look's and the underground's 0).
+		var falls: float = preload("res://scripts/scene_look.gd").leaf_season(key).y
+		preload("res://scripts/shader_fold.gd").fold(material,[],["leaf_season.y"] if is_zero_approx(falls) else [])
 	_plant_materials[key] = material
 	return material
 

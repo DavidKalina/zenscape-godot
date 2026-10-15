@@ -100,6 +100,8 @@ static func ground_material() -> ShaderMaterial:
 		_ground.set_shader_parameter("facet_soft",FACET_SOFT)
 		# Its bare steep faces weathered as the rock is.
 		_weather_rock(_ground)
+		# Its switches set: folded into its shader (scripts/shader_fold.gd).
+		preload("res://scripts/shader_fold.gd").fold(_ground)
 	return _ground
 
 ## The islets' rock material, its colours painted face by face (`rock_tone`).
@@ -116,6 +118,7 @@ static func rock_material() -> ShaderMaterial:
 		_rock.set_shader_parameter("side_own",true)
 		_rock.set_shader_parameter("side_painted",true)
 		_weather_rock(_rock)
+		preload("res://scripts/shader_fold.gd").fold(_rock)
 	return _rock
 
 ## How weathered the isles' rock is drawn (shaders/kit_weather.gdshaderinc,
