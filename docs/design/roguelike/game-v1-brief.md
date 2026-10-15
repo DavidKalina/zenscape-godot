@@ -163,7 +163,8 @@ keys, secret rooms and secret levels.
 1. **Olmec city sets.** The user picks cards. Then `motif-greybox`, and the
    user plays them. Then `motif-turf` on the keepers. Opus for new kit and
    places.
-2. **The stitch round.** One coordinator with four subagents in parallel,
+2. **The stitch round.** Done 2026-10-14 for hearts, the launcher and title,
+   and the climb up; collectibles and danger tuning are still to come. One coordinator with four subagents in parallel,
    each in its own worktree:
    - **Hearts and damage** (Opus). Proved through the real play loop and
      input.
@@ -177,7 +178,21 @@ keys, secret rooms and secret levels.
    The coordinator merges, runs the smoke checks (AGENTS.md), and writes
    one handoff with a **seams list**: everything faked, rough, or where two
    pieces didn't fit. Then the user plays the whole game.
-3. **Follow-ups**, picked from the seams list and the user's play.
+3. **The city into the generator.** This is the round that makes real,
+   legible Olmec city levels. As of 2026-10-14 the city kit (climb pieces,
+   breaks, fire, landmarks, refuges, serpent) lives only in its yards
+   (`studies/city_*_yard.tscn`, `city_kit_gallery.tscn`); nothing in
+   `scripts/roguelike/` places it.
+   - Build city motifs from the kit through the motif pipeline (greybox,
+     then turf). Each motif is a place: a stair climb, a breakable
+     colonnade, a serpent crossing, a refuge. Each has its routes, its
+     threat and at least one enemy-as-tool moment (rules 0 and 1).
+   - Teach the generator to lay layers mostly from city motifs, the old
+     motifs mixed out or kept rare. Layers are sized for about 10 minutes,
+     and the next layer stands higher.
+   - Collectibles and danger tuning land on these city layers, not the old
+     ones.
+4. **Follow-ups**, picked from the seams list and the user's play.
 
 ## Later (v1 leaves room for these)
 
