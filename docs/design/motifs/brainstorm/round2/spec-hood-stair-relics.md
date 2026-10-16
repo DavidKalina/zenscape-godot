@@ -72,3 +72,12 @@ Prototyping (AGENTS.md): smoke checks plus throwaway drive checks in
 `scratch/`, no new committed tests, no full suite. The handoff lists any
 existing test a change breaks. Models: assess `docs/art/model-budget.md`
 for each piece and list the tricks applied.
+
+## Lanes (spec change)
+
+`relic_torana` and `keel_hung_stair` are being built at the same time in
+their own worktrees (branches `lane/torana`, `lane/hung-stair`), each by one
+agent. The orchestrator merges them into this branch. A loop iteration
+does not build either piece: after `relic_nimbus`, stop with the note
+"waiting on lanes". The place, routes and stills (Plan 5-6) start after
+the merge.
