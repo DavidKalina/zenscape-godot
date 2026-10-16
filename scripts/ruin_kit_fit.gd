@@ -21,6 +21,7 @@ const RuinKit = preload("res://scripts/ruin_kit.gd")
 const Aqueduct = preload("res://scripts/ruin_kit_aqueduct.gd")
 const Footbridge = preload("res://scripts/footbridge.gd")
 const Cloister = preload("res://scripts/ruin_kit_cloister.gd")
+const Relic = preload("res://scripts/ruin_kit_relic.gd")
 
 ## Which kinds mate (each way round).
 const MATES := {"column":["column"],"wall_end":["wall_end"],"channel":["channel"],"aq_pier":["aq_pier"],
@@ -92,6 +93,12 @@ static func connectors(id: String, node: Node3D = null) -> Array:
 			return [_c("left",Vector3(-h,0.0,zm),Vector3.LEFT,"wall_end","end"),
 				_c("right",Vector3(h,0.0,zm),Vector3.RIGHT,"wall_end","end"),
 				_c("top",Vector3(0.0,float(lines.wall_top),zm),Vector3.UP,"top","top")]
+		"relic_nimbus":
+			# Its two horns' perches (a rope hung off the high one, a bob
+			# stone onto the low).
+			var nl := Relic.nimbus_lines()
+			return [_c("low_horn",Vector3((float(nl.low_end)+float(nl.low_start))*0.5,float(nl.low_perch),0.0),Vector3.UP,"top","top"),
+				_c("high_horn",Vector3(float(nl.high_end)+0.5,float(nl.high_perch),0.0),Vector3.UP,"top","top")]
 	return []
 
 ## Whether a connector of kind `a` mates one of kind `b`.

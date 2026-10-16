@@ -60,8 +60,11 @@ const HORN_PIECES := ["wind_horn"]
 ## The cloister's pieces built by id (scripts/ruin_kit_cloister.gd): the
 ## pent hood (a lean-to roof over a hidden gallery).
 const CLOISTER_PIECES := ["pent_hood"]
-const FAMILIES := {"gothic":PIECES,"aqueduct":AQUEDUCT_PIECES,"hall":HALL_PIECES,"tower":TOWER_PIECES,"horn":HORN_PIECES,"cloister":CLOISTER_PIECES}
-const ALL_PIECES := PIECES+AQUEDUCT_PIECES+HALL_PIECES+TOWER_PIECES+HORN_PIECES+CLOISTER_PIECES
+## The relics built by id (scripts/ruin_kit_relic.gd): fragments of
+## colossal sacred works, the broken nimbus (a halo on edge).
+const RELIC_PIECES := ["relic_nimbus"]
+const FAMILIES := {"gothic":PIECES,"aqueduct":AQUEDUCT_PIECES,"hall":HALL_PIECES,"tower":TOWER_PIECES,"horn":HORN_PIECES,"cloister":CLOISTER_PIECES,"relic":RELIC_PIECES}
+const ALL_PIECES := PIECES+AQUEDUCT_PIECES+HALL_PIECES+TOWER_PIECES+HORN_PIECES+CLOISTER_PIECES+RELIC_PIECES
 const NAMES := {"pier":"Clustered pier","arch":"Pointed arch","lancet_wall":"Lancet window wall",
 	"rose_gable":"Rose window gable","buttress":"Buttress","wall":"Wall","stairs":"Stair flight",
 	"turret":"Stair turret","vault":"Vault ribs","fallen_pier":"Fallen pier","tomb_chest":"Carved chest",
@@ -70,7 +73,7 @@ const NAMES := {"pier":"Clustered pier","arch":"Pointed arch","lancet_wall":"Lan
 	"aqueduct_stump":"Pier stump","aqueduct_end":"Aqueduct head",
 	"hall_column":"Colossus column","hall_beam":"Architrave beam","hall_slab":"Roof slabs",
 	"hall_bay":"Hall bay","tower_shell":"Tower shell","wind_horn":"Wind-horn",
-	"pent_hood":"Pent hood"}
+	"pent_hood":"Pent hood","relic_nimbus":"Broken nimbus"}
 
 # --- Scale: what the pilot on foot and the plane can do drives these ---------
 # (scripts/pilot_motor.gd, scripts/plane_figure.gd, scripts/sky_glide.gd)
@@ -390,6 +393,7 @@ static func piece(id: String, seed_value: int, weathered := 0.0) -> Node3D:
 	if id in TOWER_PIECES: return load("res://scripts/ruin_kit_tower.gd").piece(id,seed_value,weathered)
 	if id in HORN_PIECES: return load("res://scripts/ruin_kit_horn.gd").piece(id,seed_value,weathered)
 	if id in CLOISTER_PIECES: return load("res://scripts/ruin_kit_cloister.gd").piece(id,seed_value,weathered)
+	if id in RELIC_PIECES: return load("res://scripts/ruin_kit_relic.gd").piece(id,seed_value,weathered)
 	return null
 
 ## How thick a hull's points stand at their thinnest (m): their spread
