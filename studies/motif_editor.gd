@@ -179,7 +179,7 @@ var feel: Feel = null
 var traps: EditorTraps = null
 ## The selected trap's knobs (studies/motif_editor_knobs.gd).
 var knobs: EditorKnobs = null
-## The pilot grid (H): cells of his jump, heights in ledge steps.
+## The pilot grid (H): cells of his jump; T held steps trap heights in ledges.
 var grid: EditorGrid = null
 ## The close views: F frame and orbit, V the eye view (motif_editor_views.gd).
 var views: EditorViews = null

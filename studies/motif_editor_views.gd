@@ -27,9 +27,12 @@ const MotifAuthored = preload("res://scripts/kit_isle/motif_authored.gd")
 
 ## The glide in or out (s).
 const EASE := 0.4
-## His eye over his feet at size 1 (m): the walker is about 1.1 m tall,
-## the painted eyes just under the hat's brim.
-const EYE := 0.95
+## His eye over his feet at size 1 (m): the painted eyes' height in the
+## figure's rest pose, `eye_at.z` in shaders/pilot_paint.gdshader (printed
+## as PILOT_EYES by art/blender/pilot/pilot_build.py; the glb is drawn 1:1
+## at size 1, head bone 0.81, hat bone 1.075). The shader's default can't be
+## read back headless (dummy renderer), so the number is kept here.
+const EYE := 0.9348
 ## The eye view starts this many of his heights behind a trap's way in.
 const BACK := 2.2
 ## Orbit: the nearest and farthest (m), and its pitch limits (rad).

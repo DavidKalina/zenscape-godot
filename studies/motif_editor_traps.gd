@@ -55,6 +55,8 @@ var reseats := 0
 ## the ground sampled round it (`reseat` moves only those it changed for).
 var _seats := {}
 const SEAT_REACH := 3.0
+## What a trap can be set on, saved as its "on" (ground when left out).
+const SEATS := MotifAuthored.TRAP_SEATS
 var _clay: StandardMaterial3D
 
 func setup(owner_editor: Node) -> void:
@@ -96,6 +98,7 @@ func rebuild() -> void:
 		if node == null: continue
 		node.name = "T%d" % k
 		placed.add_child(node)
+	_settle()
 	_built = var_to_str(list)
 	if field != null: _fill_field()
 	_note_seats()
@@ -159,10 +162,11 @@ func begin_ghost(key: String, at: Vector2) -> void:
 ## Where a trap goes under screen point `at`, in snap order: its way in on
 ## a cliff lip near the cursor (RuinKitFit.lip_near), facing out over the
 ## drop as in the trap yard; else a placed piece's top; else the ground.
-## With the pilot grid on, the ground spot is its cell centre at a ledge
-## level ("on": "grid"). Alt held skips the lip. {position, on, turn (lip
-## only)} or {}.
-func spot(at: Vector2) -> Dictionary:
+## With the pilot grid on, the ground spot is its cell centre on the
+## ground ("on": "grid"), or with T held at a ledge step clear of the
+## ground under `node`'s footprint turned `turn` ("on": "ledge"). Alt held
+## skips the lip. {position, on, turn (lip only)} or {}.
+func spot(at: Vector2, node: Node3D = null, turn := 0.0) -> Dictionary:
 	if not Input.is_key_pressed(KEY_ALT):
 		var lip := lip_spot(at)
 		if not lip.is_empty(): return lip
@@ -171,7 +175,7 @@ func spot(at: Vector2) -> Dictionary:
 	var hit: Dictionary = editor.ground_hit(at)
 	if hit.is_empty(): return {}
 	if editor.grid != null and editor.grid.on:
-		return editor.grid.trap_spot(Vector2(hit.position.x,hit.position.z))
+		return editor.grid.trap_spot(Vector2(hit.position.x,hit.position.z),EditorGrid.stepping(),foot(node),turn)
 	return {"position":hit.position,"on":"ground"}
 
 ## The cliff lip near the ground under `at`: the trap's origin (its way in)
@@ -227,7 +231,7 @@ static func lip_edge(g: Callable, from: Vector2, out: Vector2) -> Vector2:
 func ghost_to(at: Vector2) -> void:
 	if held.is_empty(): return
 	var node: Node3D = held.node
-	var s := spot(at)
+	var s := spot(at,node,float(held.turn))
 	held.spot = s
 	node.visible = not s.is_empty()
 	if s.is_empty():
@@ -254,7 +258,7 @@ func place_ghost(at: Vector2) -> int:
 		return -1
 	editor.snapshot()
 	var k := place(key,p,turn,where)
-	editor.say("Placed %s%s" % [TrapRegistry.display_name(key),{"piece":" on a piece","lip":" on the cliff lip"}.get(where,"")])
+	editor.say("Placed %s%s" % [TrapRegistry.display_name(key),{"piece":" on a piece","lip":" on the cliff lip","ledge":" on a ledge step"}.get(where,"")])
 	return k
 
 func drop_ghost() -> void:
@@ -272,7 +276,7 @@ func place(key: String, at: Vector3, turn := 0.0, on := "") -> int:
 	if not (editor.data as Dictionary).has("traps"): editor.data.traps = []
 	var list: Array = editor.data.traps
 	var e := {"id":key,"at":[snappedf(at.x,0.001),snappedf(at.y,0.001),snappedf(at.z,0.001)],"turn":snappedf(fposmod(turn,360.0),0.001)}
-	if on in ["lip","piece","grid"]: e.on = on
+	if on in SEATS: e.on = on
 	list.append(e)
 	rebuild()
 	traps_made += 1
@@ -333,13 +337,13 @@ func select(k: int) -> void:
 ## press that began the drag took it).
 func drag_to(at: Vector2) -> void:
 	if selected < 0: return
-	var s := spot(at)
+	var e: Dictionary = entries()[selected]
+	var s := spot(at,node_of(selected),float(e.get("turn",0.0)))
 	if s.is_empty(): return
 	var p: Vector3 = s.position
-	var e: Dictionary = entries()[selected]
 	e.at = [snappedf(p.x,0.001),snappedf(p.y,0.001),snappedf(p.z,0.001)]
 	if s.has("turn"): e.turn = float(s.turn)
-	if str(s.on) in ["lip","piece","grid"]: e.on = str(s.on)
+	if str(s.on) in SEATS: e.on = str(s.on)
 	else: e.erase("on")
 	_refit(selected)
 
@@ -382,7 +386,7 @@ func reseat() -> int:
 		if known == null or int(known) == ground: continue
 		var at := Vector3(p.x,float(g.call(p.x,p.y)),p.y)
 		var turn := float(e.get("turn",0.0))
-		if on == "grid": at.y = EditorGrid.level(at.y)
+		if on == "ledge": at.y = EditorGrid.ledge_y(g,p,foot(node_of(k)),turn)
 		if on == "lip":
 			var lip := lip_at(motif,p)
 			if lip.is_empty(): e.erase("on")
@@ -403,6 +407,41 @@ func reseat() -> int:
 		_built = var_to_str(entries())
 		show_marks()
 	reseats += moved
+	return moved
+
+## The footprint of trap node `node` in its own frame: its drawn box's
+## corners and centre on the xz plane (none for null).
+static func foot(node: Node3D) -> PackedVector2Array:
+	if node == null: return PackedVector2Array()
+	var b := MotifAuthored.drawn_box(node)
+	var lo := Vector2(b.position.x,b.position.z)
+	var hi := Vector2(b.end.x,b.end.z)
+	return PackedVector2Array([lo,Vector2(hi.x,lo.y),hi,Vector2(lo.x,hi.y),(lo+hi)*0.5])
+
+## Every grid trap set down by the grid's rule as the land stands (built
+## from a save made under an older rule, or after undo): "grid" on the
+## ground at its spot, "ledge" at its step clear of its footprint. Its
+## x, z and turn kept. How many moved.
+func _settle() -> int:
+	var motif: RefCounted = editor.motif
+	if motif == null: return 0
+	var g: Callable = motif.ground_fn()
+	var moved := 0
+	var list := entries()
+	for k in range(list.size()):
+		var e: Dictionary = list[k]
+		var on := str(e.get("on",""))
+		if on != "grid" and on != "ledge": continue
+		var a: Array = e.get("at",[0.0,0.0,0.0])
+		var p := Vector2(float(a[0]),float(a[2]))
+		var y := float(g.call(p.x,p.y))
+		if on == "ledge": y = EditorGrid.ledge_y(g,p,foot(node_of(k)),float(e.get("turn",0.0)))
+		y = snappedf(y,0.001)
+		if is_equal_approx(y,float(a[1])): continue
+		e.at = [a[0],y,a[2]]
+		var node := node_of(k)
+		if node != null: node.transform = _frame(e)
+		moved += 1
 	return moved
 
 ## The held ghost or the selected trap turned `deg` degrees.

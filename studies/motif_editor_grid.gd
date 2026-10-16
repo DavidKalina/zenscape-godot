@@ -16,9 +16,12 @@ extends Node3D
 ## through edits and loads, and the yard builds in the same frame.
 ##
 ## With it on: a trap that does not snap to a lip or a piece's top sets
-## its way in on the centre of the cell under the cursor, its height the
-## first ledge level at or over the ground there ("on": "grid", kept through a save,
-## the yard keeps the y). A kit piece that does not snap to a connector
+## its way in on the centre of the cell under the cursor and sits on the
+## ground there, as everywhere else in the editor ("on": "grid"). Holding
+## STEP_KEY (T) snaps its height to ledge steps for a stepped layout: the
+## level nearest the ground, raised only as far as needed not to bury the
+## trap's footprint ("on": "ledge"). Both re-seat by their rule on load and
+## on land edits; the yard keeps the saved y. A kit piece that does not snap to a connector
 ## stands on a cell centre; its height stays the kit's seat on the land
 ## (pieces stand from the ground on every build, so a stepped height would
 ## not survive a load).
@@ -99,16 +102,36 @@ func cell() -> float:
 		run = (m as PilotMotor).run
 	return run*2.0*sqrt(2.0*h/PilotMotor.GRAVITY)
 
+## Held while placing or dragging a trap: heights in ledge steps.
+const STEP_KEY := KEY_T
+
+static func stepping() -> bool:
+	return Input.is_key_pressed(STEP_KEY)
+
 ## A ledge step (m).
 static func step() -> float:
 	return RuinKit.SET_OFF
 
-## The ledge level at or just over ground height `y` (never more than
-## SINK under it: a trap sunk into the land is broken, one standing a
-## little proud of it is a ledge he climbs).
+## How far a ledge-stepped trap may sit under the ground under it (a trap
+## sunk into the land is broken).
 const SINK := 0.05
-static func level(y: float) -> float:
-	return ceilf((y-SINK)/step())*step()
+
+## The ledge level nearest ground height `y`.
+static func nearest(y: float) -> float:
+	return roundf(y/step())*step()
+
+## A ledge-stepped trap's y: the level nearest the ground at `mid`, raised
+## (not to the next step, only as far as needed) to SINK under the highest
+## ground under its footprint `foot` (local xz points, turned `turn` deg
+## about `mid`), so it is never buried.
+static func ledge_y(g: Callable, mid: Vector2, foot: PackedVector2Array, turn := 0.0) -> float:
+	var y := nearest(float(g.call(mid.x,mid.y)))
+	var top := -INF
+	for q: Vector2 in foot:
+		var w := mid+q.rotated(-deg_to_rad(turn))
+		top = maxf(top,float(g.call(w.x,w.y)))
+	if top > -INF: y = maxf(y,top-SINK)
+	return y
 
 ## The centre of the cell holding ground point `p`.
 func centre(p: Vector2) -> Vector2:
@@ -116,7 +139,7 @@ func centre(p: Vector2) -> Vector2:
 	return Vector2(roundf(p.x/c)*c,roundf(p.y/c)*c)
 
 func readout() -> String:
-	return "1 cell = one plain jump at a run, %.2f m · heights in ledge steps of %.2f m (a jump catches %.2f m)" % [cell(),step(),RuinKit.GRAB_TOP]
+	return "1 cell = one plain jump at a run, %.2f m · traps sit on the ground; hold T for ledge steps of %.2f m (a jump catches %.2f m)" % [cell(),step(),RuinKit.GRAB_TOP]
 
 func toggle() -> void:
 	on = not on
@@ -155,7 +178,8 @@ func draw_round(p: Vector2) -> void:
 	var g: Callable = editor.motif.ground_fn()
 	var c := cell()
 	var mid := centre(p)
-	var y := level(float(g.call(mid.x,mid.y)))
+	var y := float(g.call(mid.x,mid.y))
+	if stepping(): y = nearest(y)
 	shown_cell = Vector3(mid.x,y,mid.y)
 	_im.clear_surfaces()
 	_im.surface_begin(Mesh.PRIMITIVE_LINES)
@@ -200,9 +224,12 @@ func _line(a: Vector3, b: Vector3, col: Color) -> void:
 	_im.surface_set_color(col)
 	_im.surface_add_vertex(b)
 
-## Where a trap goes on the grid for ground point `p`: {position, on} or {}.
-func trap_spot(p: Vector2) -> Dictionary:
+## Where a trap goes on the grid for ground point `p`: on the ground at the
+## cell centre, or (`stepped`) at ledge_y for footprint `foot` turned
+## `turn`. {position, on} or {}.
+func trap_spot(p: Vector2, stepped := false, foot := PackedVector2Array(), turn := 0.0) -> Dictionary:
 	if not on or editor.motif == null: return {}
 	var mid := centre(p)
-	var y := level(float(editor.motif.ground(mid.x,mid.y)))
-	return {"position":Vector3(mid.x,y,mid.y),"on":"grid"}
+	var g: Callable = editor.motif.ground_fn()
+	if stepped: return {"position":Vector3(mid.x,ledge_y(g,mid,foot,turn),mid.y),"on":"ledge"}
+	return {"position":Vector3(mid.x,float(g.call(mid.x,mid.y)),mid.y),"on":"grid"}
