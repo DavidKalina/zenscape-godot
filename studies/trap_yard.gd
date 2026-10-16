@@ -6,7 +6,7 @@ extends "res://studies/character_study.gd"
 ## same motor, figure, camera, F1 numbers, F2 feel. The traps are stepped
 ## by a TrapField (scripts/traps/trap_field.gd) in the study's
 ## `foot_pieces` slot.
-##   1.. one station per trap in TRAPS order (the number key goes to it)
+##   1.. one station per trap in TrapRegistry order (the number key goes to it)
 ## `--trap=<name>` (or its number) starts at that trap's entry, a run-up
 ## back from it, facing along the route. R puts you back at the start; any
 ## placing (R, a number key, falling out) puts the traps back as built.
@@ -15,39 +15,10 @@ extends "res://studies/character_study.gd"
 ## `--trap=seesaw_drop --knob=block_mass=600 --knob=hook=12`.
 ##
 ## To add a trap: write it to scripts/traps/trap.gd's contract, then add
-## one line to TRAPS below.
+## one line to scripts/traps/trap_registry.gd (the one trap list).
 const Trap = preload("res://scripts/traps/trap.gd")
 const TrapField = preload("res://scripts/traps/trap_field.gd")
-const Voussoirs = preload("res://scripts/traps/trap_voussoirs.gd")
-const Seesaw = preload("res://scripts/traps/trap_seesaw.gd")
-const SeesawSlam = preload("res://scripts/traps/trap_seesaw_slam.gd")
-const SeesawDrop = preload("res://scripts/traps/trap_seesaw_drop.gd")
-const SeesawDropper = preload("res://scripts/traps/trap_seesaw_dropper.gd")
-const Wind = preload("res://scripts/traps/trap_wind.gd")
-const WindBlaster = preload("res://scripts/traps/trap_wind_blaster.gd")
-const Sluice = preload("res://scripts/traps/trap_sluice.gd")
-const Logs = preload("res://scripts/traps/trap_logs.gd")
-const Flip = preload("res://scripts/traps/trap_flip.gd")
-const Tumble = preload("res://scripts/traps/trap_tumble.gd")
-const Ray = preload("res://scripts/traps/trap_ray.gd")
-const TumbleRun = preload("res://scripts/traps/trap_tumble_run.gd")
-
-## The slots: name -> the trap's script. One line per trap.
-const TRAPS := {
-	"voussoirs": Voussoirs,
-	"seesaw": Seesaw,
-	"seesaw_slam": SeesawSlam,
-	"seesaw_drop": SeesawDrop,
-	"seesaw_dropper": SeesawDropper,
-	"wind": Wind,
-	"wind_blaster": WindBlaster,
-	"sluice": Sluice,
-	"logs": Logs,
-	"flip": Flip,
-	"tumble": Tumble,
-	"ray": Ray,
-	"tumble_run": TumbleRun,
-}
+const TrapRegistry = preload("res://scripts/traps/trap_registry.gd")
 
 ## Lanes are this far apart along x (m); decks this wide, the end deck this
 ## long past the trap, and the floor a layer down this many jump heights
@@ -92,8 +63,8 @@ func _load_pack() -> void:
 	lost = -drop-8.0
 	var i := 0
 	var lane_x := 0.0
-	for key: String in TRAPS:
-		var trap: Node3D = (TRAPS[key] as GDScript).new()
+	for key: String in TrapRegistry.keys():
+		var trap: Node3D = TrapRegistry.make(key)
 		if key == _chosen or str(i+1) == _chosen: trap.configure(_knob_args())
 		var x := lane_x
 		# A trap that flies wide (the ray's loop) asks for lane room east of it.
