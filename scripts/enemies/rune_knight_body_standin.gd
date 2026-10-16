@@ -39,7 +39,21 @@ extends Node3D
 ##   chest over a narrow belly, pauldrons, big gauntlets, legs on hip and
 ##   knee pivots; rune lines on the chest and gauntlets, dim, lit by
 ##   `rune_glow`.
+## - **The skid** (`skid`, beats `plant` as the heels dig in, `end`): the
+##   mind slides his root; his feet slide with it, braced one ahead of the
+##   other along the way he goes, heels leading, dust off them
+##   (scripts/enemies/body_dust.gd) while he moves fast; he leans into the
+##   push (the key's lean turned to face it), arms out for balance, low.
+## - **The teeter** (`teeter`, `end`): arms windmilling, leaning out over
+##   the drop and back (the way his last skid went), runes flickering.
+## - **The fall** (`fall`, looping till the mind plays another): arms
+##   flung up, legs hanging.
+## - **rune_crack** (`set_effect("rune_crack", on, form)`, form `chest`,
+##   `hand_l` or `hand_r`): that rune's lines flare, split apart, a dark
+##   crack shows across them, they flicker CRACK_FLICKER s and go dark for
+##   good (dust off the rune).
 const RuinKit = preload("res://scripts/ruin_kit.gd")
+const BodyDust = preload("res://scripts/enemies/body_dust.gd")
 const DragonCyclone = preload("res://scripts/dragon_cyclone.gd")
 
 signal beat_reached(clip: String, beat: String)
@@ -57,6 +71,9 @@ const CLIPS := {
 	"return": {"length": 0.5, "loop": false, "beats": {"release": 0.22}},
 	"stagger": {"length": 1.8, "loop": false, "beats": {"plant": 0.9, "recover": 1.8}},
 	"slash": {"length": 1.0, "loop": false, "beats": {"release": 0.52}},
+	"skid": {"length": 1.6, "loop": false, "beats": {"plant": 0.1}},
+	"teeter": {"length": 1.1, "loop": false, "beats": {}},
+	"fall": {"length": 0.8, "loop": true, "beats": {}},
 }
 const SOCKETS := ["hand_r","hand_l","hands_mid","blade","chest_rune","eye"]
 ## Key poses: clip -> [[time (s), [arm (rad, forward-up), spread (rad,
@@ -98,6 +115,16 @@ const KEYS := {
 	# held a beat, cut down across at `release`, followed through low to
 	# his left (bent over it), settled.
 	"slash:high": [[0.0,[1.35,0.0,0.2,-0.08,0.08,0.02,-0.35,1.25,0.4,1.35,0.0]],[0.3,[0.9,0.3,0.6,-0.22,0.2,-0.01,-0.55,0.9,1.25,0.35,0.0]],[0.44,[0.9,0.3,0.6,-0.25,0.22,-0.015,-0.6,0.95,1.35,0.35,0.0]],[0.52,[0.5,0.45,0.4,0.2,0.0,0.04,-0.1,0.2,0.05,0.0,0.0]],[0.64,[0.15,0.6,0.3,0.45,-0.15,0.09,0.55,-0.85,-1.0,0.05,0.0]],[1.0,[0.3,0.35,0.9,0.12,0.0,0.045,0.25,-0.5,-0.9,0.6,0.0]]],
+	# Struck: thrown back for a blink (head up, arms flung forward), then
+	# leaning hard into the push (turned to face it), arms out and low for
+	# balance, sunk deep, held while he scrapes; straightened back to his
+	# guard by `end`.
+	"skid": [[0.0,REST],[0.07,[1.1,1.0,0.3,-0.4,0.35,0.03]],[0.25,[0.95,0.9,0.5,0.38,-0.12,0.13]],[0.9,[0.8,0.8,0.6,0.34,-0.06,0.12]],[1.25,[0.45,0.5,0.8,0.15,0.0,0.06]],[1.6,[0.3,0.35,0.95,0.06,0.0,0.025]]],
+	# Over the drop: up on his toes, arms wide (they windmill on top of
+	# this), leaning out (turned to the drop, rocking on top of this).
+	"teeter": [[0.0,[0.8,0.8,0.6,0.34,-0.06,0.12]],[0.15,[1.5,1.2,0.3,0.3,0.25,-0.02]],[1.1,[1.5,1.2,0.3,0.25,0.2,0.0]]],
+	# Falling: arms flung up and wide, head back.
+	"fall": [[0.0,REST],[0.2,[2.6,1.0,0.2,-0.3,0.4,-0.02]],[0.8,[2.8,0.9,0.3,-0.25,0.35,-0.02]]],
 	"stagger": [[0.0,REST],[0.08,[0.9,1.15,0.3,-0.5,0.45,0.0]],[0.4,[1.8,0.95,0.5,-0.38,0.3,0.04]],[0.75,[0.7,0.8,0.4,-0.2,0.0,0.08]],[0.9,[0.25,0.6,0.6,0.25,-0.2,0.11]],[1.3,[0.3,0.45,0.8,0.18,-0.08,0.07]],[1.8,[0.3,0.35,0.95,0.06,0.0,0.025]]],
 }
 ## Steps in `stagger` are quick and short (s).
@@ -137,6 +164,21 @@ const RUNE := Color(0.45,0.85,1.0)
 const RUNE_DIM := 0.25
 const RUNE_LIT := 4.0
 const RUNE_EASE := 6.0
+## A crack: the flare (s), the flicker after it (s), how far the lines
+## split apart (share of tall).
+const CRACK_FLARE := 0.12
+const CRACK_FLICKER := 0.9
+const CRACK_SPLIT := 0.008
+## The skid: how far ahead and behind of his middle the braced feet go
+## (shares of tall, along the way he slides); the root speed (m/s) above
+## which his heels throw dust, and the dust's gap (s).
+const SKID_LEAD := 0.12
+const SKID_TRAIL := 0.1
+const SKID_DUST := 1.2
+const SKID_DUST_GAP := 0.07
+## The teeter's windmill (turns a second) and its rock (rad, a second).
+const WINDMILL := 1.7
+const ROCK := 0.18
 ## His stone's tones (the kit's, a touch lighter so he reads off the deck).
 const STONE := Color("6a645d")
 const STONE_DARK := Color("3d3934")
@@ -184,6 +226,16 @@ var _arm: Array[Node3D] = []
 var _forearm: Array[Node3D] = []
 var _sockets: Dictionary = {}
 var _rune_mat: StandardMaterial3D
+## Per rune (`chest`, `hand_l`, `hand_r`): its material, its lines and
+## their rest, its crack line, and the time since it cracked (-1 whole).
+var _rune_mats: Dictionary = {}
+var _rune_bars: Dictionary = {}
+var _crack_line: Dictionary = {}
+var crack_t: Dictionary = {"chest": -1.0, "hand_l": -1.0, "hand_r": -1.0}
+var _rng := RandomNumberGenerator.new()
+## The way his last skid went (world, flat), the dust's clock.
+var _skid_dir := Vector3.BACK
+var _dust_t := 0.0
 var _stone_mat: Material
 var _hip_y := 0.0
 var _thigh_len := 0.0
@@ -228,7 +280,14 @@ func play(name_: String, form := "") -> void:
 func socket(name_: String) -> Node3D:
 	return _sockets.get(name_)
 
-func set_effect(name_: String, on: bool) -> void:
+func set_effect(name_: String, on: bool, form := "") -> void:
+	if name_ == "rune_crack":
+		if not crack_t.has(form):
+			push_warning("rune knight body: no rune %s" % form)
+			return
+		crack_t[form] = 0.0 if on else -1.0
+		if on: _crack_burst(form)
+		return
 	effects[name_] = on
 
 # --- The frame ----------------------------------------------------------------------
@@ -252,7 +311,12 @@ func _process(delta: float) -> void:
 	_gather_fade = move_toward(_gather_fade,1.0 if effects.wind_gather else 0.0,delta*(3.0 if effects.wind_gather else 4.0))
 	glow = move_toward(glow,1.0 if effects.rune_glow else 0.0,delta*RUNE_EASE*0.5)
 	_blade_fade = move_toward(_blade_fade,1.0 if effects.wind_blade else 0.0,delta/(BLADE_GROW if effects.wind_blade else 0.12))
+	for r: String in crack_t:
+		if crack_t[r] >= 0.0: crack_t[r] += delta
+	var flat_v := Vector3(_root_v.x,0.0,_root_v.z)
+	if flat_v.length() > 0.8 and clip == "skid": _skid_dir = flat_v.normalized()
 	_step(delta)
+	_skid_dust(delta,flat_v.length())
 	_draw_gather()
 	_draw_blade()
 
@@ -276,6 +340,18 @@ func _step(delta: float) -> void:
 			_swing_from = feet[pick]
 			_swing_t = 0.0
 			_swing_len = float(CLIPS[clip].length) if moving else (STAGGER_STEP if clip == "stagger" else float(CLIPS.walk.length))
+	if clip == "skid" or (clip == "teeter" and _swing < 0):
+		# Braced, sliding with him: the lead foot (heel first) down the way
+		# he goes, the other behind; no steps.
+		_swing = -1
+		var g := global_transform
+		for i in range(2):
+			var side := g.basis.x.normalized()*_hip_x*(1.0 if i == 1 else -1.0)
+			var lead := _skid_dir*(SKID_LEAD if i == 0 else -SKID_TRAIL)*tall
+			feet[i] = g.origin+side*1.3+lead
+		_settle_t += delta
+		_pose(0.0,0.0)
+		return
 	var lift := 0.0
 	var s := 0.0
 	if _root_v.y < -2.0:
@@ -325,6 +401,20 @@ func _pose(lift: float, swing: float) -> void:
 	_hips.position = Vector3(sway,_hip_y+lift-float(k[5])*tall,0.0)
 	_hips.rotation.z = -sway*0.6
 	_waist.rotation = Vector3(-float(k[3]),float(k[6]),sway*0.9)
+	var u := Vector3.ZERO
+	if clip == "skid" or clip == "teeter":
+		# The lean turned: into the push in a skid, out over the drop
+		# (rocking back) teetering.
+		var d := global_transform.basis.inverse()*_skid_dir
+		d = Vector3(d.x,0.0,d.z).normalized()
+		var amt := float(k[3])
+		if clip == "teeter":
+			u = d
+			amt = amt*0.6+ROCK*sin(clip_time*TAU*1.3)
+		else:
+			u = -d
+		_waist.rotation.x = amt*u.z
+		_waist.rotation.z = -amt*u.x+sway*0.9
 	for i in range(2): _reach(i)
 	var arm := 0.0
 	if _swing >= 0 and clip == "walk":
@@ -335,11 +425,19 @@ func _pose(lift: float, swing: float) -> void:
 	if arm != 0.0: rq = rq*Quaternion(Vector3.RIGHT,-arm)
 	_arm[1].quaternion = rq
 	_forearm[1].rotation.x = float(kp[1])+maxf(-arm,0.0)*0.5
+	if clip == "teeter":
+		# Windmilling: each arm round and round at his side, out of step.
+		var w := clip_time*TAU*WINDMILL
+		var spread := float(k[1])
+		_arm[0].rotation = Vector3(float(k[0])+sin(w)*1.6,0.0,-spread+cos(w)*0.3)
+		_forearm[0].rotation.x = 0.3
+		_arm[1].quaternion = Basis.from_euler(Vector3(float(k[0])+sin(w+PI)*1.6,0.0,spread-cos(w+PI)*0.3),EULER_ORDER_ZXY).get_rotation_quaternion()
+		_forearm[1].rotation.x = 0.3
 	_head.rotation.x = -lift*2.5+float(k[4])
 	var hl: Node3D = _sockets.hand_l
 	var hr: Node3D = _sockets.hand_r
 	(_sockets.hands_mid as Node3D).global_position = (hl.global_position+hr.global_position)*0.5
-	_rune_mat.emission_energy_multiplier = lerpf(RUNE_DIM,RUNE_LIT,glow)
+	_light_runes()
 
 ## The clip's key pose now (REST for a clip with none), eased from the
 ## pose he was in over its first BLEND s.
@@ -509,10 +607,11 @@ func _build() -> void:
 	_box(_waist,"Chest",Vector3(0.0,0.21*h,-0.005*h),Vector3(0.38,0.18,0.22)*h,STONE,Vector3(-0.05,0,0))
 	_box(_waist,"Gorget",Vector3(0.0,0.31*h,0.0),Vector3(0.16,0.04,0.14)*h,STONE_DARK)
 	var front := -0.117*h
-	_rune(_waist,Vector3(0.0,0.2*h,front),Vector3(0.012,0.12,0.01)*h,0.0)
-	_rune(_waist,Vector3(-0.035*h,0.255*h,front),Vector3(0.012,0.07,0.01)*h,0.75)
-	_rune(_waist,Vector3(0.035*h,0.255*h,front),Vector3(0.012,0.07,0.01)*h,-0.75)
-	_rune(_waist,Vector3(0.0,0.14*h,front),Vector3(0.08,0.012,0.01)*h,0.0)
+	_rune(_waist,Vector3(0.0,0.2*h,front),Vector3(0.012,0.12,0.01)*h,0.0,"chest")
+	_rune(_waist,Vector3(-0.035*h,0.255*h,front),Vector3(0.012,0.07,0.01)*h,0.75,"chest")
+	_rune(_waist,Vector3(0.035*h,0.255*h,front),Vector3(0.012,0.07,0.01)*h,-0.75,"chest")
+	_rune(_waist,Vector3(0.0,0.14*h,front),Vector3(0.08,0.012,0.01)*h,0.0,"chest")
+	_crack(_waist,Vector3(0.004*h,0.21*h,front-0.004*h),Vector3(0.012,0.17,0.008)*h,0.45,"chest")
 	_sockets.chest_rune = _pivot(_waist,"chest_rune",Vector3(0.0,0.2*h,front))
 	_sockets.hands_mid = _pivot(_waist,"hands_mid",Vector3(0.0,0.2*h,-0.35*h))
 	# Head.
@@ -536,9 +635,11 @@ func _build() -> void:
 		var hand := _pivot(fore,"Gauntlet",Vector3(0.0,-0.15*h,0.0))
 		_box(hand,"Fist",Vector3(0.0,-0.035*h,0.0),Vector3(0.13,0.12,0.13)*h,STONE_DARK)
 		_box(hand,"Cuff",Vector3(0.0,0.035*h,0.0),Vector3(0.14,0.04,0.14)*h,STONE)
-		_rune(hand,Vector3(0.0,-0.03*h,-0.066*h),Vector3(0.012,0.08,0.01)*h,0.0)
-		_rune(hand,Vector3(0.016*h,-0.005*h,-0.066*h),Vector3(0.012,0.04,0.01)*h,-0.8)
-		_rune(hand,Vector3(-0.016*h,-0.005*h,-0.066*h),Vector3(0.012,0.04,0.01)*h,0.8)
+		var rn := "hand_r" if i == 1 else "hand_l"
+		_rune(hand,Vector3(0.0,-0.03*h,-0.066*h),Vector3(0.012,0.08,0.01)*h,0.0,rn)
+		_rune(hand,Vector3(0.016*h,-0.005*h,-0.066*h),Vector3(0.012,0.04,0.01)*h,-0.8,rn)
+		_rune(hand,Vector3(-0.016*h,-0.005*h,-0.066*h),Vector3(0.012,0.04,0.01)*h,0.8,rn)
+		_crack(hand,Vector3(0.003*h,-0.02*h,-0.07*h),Vector3(0.01,0.1,0.008)*h,-0.5,rn)
 		_sockets["hand_r" if i == 1 else "hand_l"] = _pivot(hand,"hand_r" if i == 1 else "hand_l",Vector3(0.0,-0.035*h,0.0))
 		if i == 1: _sockets.blade = _pivot(fore,"blade",Vector3(0.0,-0.4*h,0.0))
 		arm.rotation.z = 0.12*sx
@@ -619,15 +720,82 @@ func _box(parent: Node3D, label: String, at: Vector3, size: Vector3, tone: Color
 	parent.add_child(m)
 	return m
 
-## A rune line: a thin lit bar of `size` at `at`, turned `roll` in its face.
-func _rune(parent: Node3D, at: Vector3, size: Vector3, roll: float) -> void:
+## A rune line of rune `group`: a thin lit bar of `size` at `at`, turned
+## `roll` in its face.
+func _rune(parent: Node3D, at: Vector3, size: Vector3, roll: float, group: String) -> void:
 	var box := BoxMesh.new()
 	box.size = size
 	var m := MeshInstance3D.new()
 	m.name = "Rune"
 	m.mesh = box
-	m.material_override = _rune_mat
+	if not _rune_mats.has(group):
+		_rune_mats[group] = _rune_mat.duplicate()
+		_rune_bars[group] = []
+	m.material_override = _rune_mats[group]
+	(_rune_bars[group] as Array).append([m,at,roll])
 	m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	m.position = at
 	m.rotation.z = roll
 	parent.add_child(m)
+
+## Rune `group`'s crack: a dark line across its lines, hidden till it cracks.
+func _crack(parent: Node3D, at: Vector3, size: Vector3, roll: float, group: String) -> void:
+	var line := _box(parent,"Crack",at,size,Color(0.03,0.03,0.03),Vector3(0.0,0.0,roll))
+	line.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	line.visible = false
+	_crack_line[group] = line
+
+## Each rune's light: lit by `rune_glow` while whole (flickering while he
+## teeters); a cracked one flares, splits, flickers and goes dark.
+func _light_runes() -> void:
+	var lit := lerpf(RUNE_DIM,RUNE_LIT,glow)
+	if clip == "teeter": lit *= 1.0 if sin(clip_time*47.0)+sin(clip_time*29.0) > -0.3 else 0.35
+	for group: String in _rune_mats:
+		var mat: StandardMaterial3D = _rune_mats[group]
+		var t: float = crack_t[group]
+		if t < 0.0:
+			mat.emission_energy_multiplier = lit
+			continue
+		var split := smoothstep(0.0,CRACK_FLARE,t)
+		var base: Vector3 = Vector3.ZERO
+		var bars: Array = _rune_bars[group]
+		for b: Array in bars: base += b[1] as Vector3
+		base /= float(bars.size())
+		for j in range(bars.size()):
+			var b: Array = bars[j]
+			var off := (b[1] as Vector3)-base
+			off.z = 0.0
+			var out := off.normalized() if off.length() > 0.0001 else Vector3(1.0 if j%2 == 0 else -1.0,0.0,0.0)
+			(b[0] as Node3D).position = (b[1] as Vector3)+out*CRACK_SPLIT*tall*split
+			(b[0] as Node3D).rotation.z = float(b[2])+(0.18 if j%2 == 0 else -0.18)*split
+		(_crack_line[group] as Node3D).visible = true
+		if t < CRACK_FLARE:
+			mat.emission_energy_multiplier = RUNE_LIT*1.8
+		elif t < CRACK_FLARE+CRACK_FLICKER:
+			var fade := 1.0-(t-CRACK_FLARE)/CRACK_FLICKER
+			mat.emission_energy_multiplier = (RUNE_LIT*fade if _rng.randf() < 0.45 else 0.04)
+		else:
+			mat.emission_energy_multiplier = 0.0
+			mat.albedo_color = Color(0.06,0.06,0.065)
+
+## The crack's dust off the rune.
+func _crack_burst(group: String) -> void:
+	var at: Node3D = _sockets.chest_rune if group == "chest" else _sockets[group]
+	var host := get_parent().get_parent() if get_parent() != null and get_parent().get_parent() != null else self
+	BodyDust.puff(host,at.global_position,0.12*tall,-global_transform.basis.z)
+
+## Dust off his heels while he skids fast.
+func _skid_dust(delta: float, speed: float) -> void:
+	if clip != "skid" or speed < SKID_DUST:
+		_dust_t = 0.0
+		return
+	_dust_t -= delta
+	if _dust_t > 0.0: return
+	_dust_t = SKID_DUST_GAP
+	var host := get_parent().get_parent() if get_parent() != null and get_parent().get_parent() != null else self
+	for i in range(2):
+		BodyDust.puff(host,feet[i]+Vector3.UP*0.12*tall,clampf(speed*0.07,0.2,0.5)*tall*0.6,-_skid_dir*0.6+Vector3.UP*1.3)
+	if not _sent.has("_dug"):
+		# The heels dig in: a cloud thrown up off them.
+		_sent["_dug"] = true
+		BodyDust.plume(host,(feet[0]+feet[1])*0.5+Vector3.UP*0.12*tall,0.3*tall)
