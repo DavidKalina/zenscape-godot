@@ -34,7 +34,6 @@ const Tumble = preload("res://scripts/traps/trap_tumble.gd")
 const Voussoirs = preload("res://scripts/traps/trap_voussoirs.gd")
 const Cannon = preload("res://scripts/cannon/cannon.gd")
 const GiantStone = preload("res://scripts/kit_isle/greybox/giant_stone.gd")
-const KitLife = preload("res://scripts/kit_isle/kit_life.gd")
 
 # --- The study's numbers, verbatim (studies/greybox/lidstack.gd) -------------------------
 const UNDER := -20.0
@@ -391,16 +390,11 @@ static func _cannons(g: Node) -> void:
 # --- Turf pass: the land and the masonry -------------------------------------------------
 
 const TURF_SEED := 5200
-## The landing ring's keel and the exit isle's (m under their tops), and how
-## far a keel's spurs can hang under top-depth (the giant's KEEL_REACH).
+## The landing ring's keel and the exit isle's (m under their tops).
 const LANDING_DEPTH := 20.0
 const EXIT_DEPTH := 7.0
-const KEEL_REACH := 1.4
 ## The summit's rune band (y), under the top tier's lip.
 const RUNE_Y := 34.6
-
-static func grey() -> bool:
-	return preload("res://scripts/launch_args.gd").user_args().has("--lidstack-grey")
 
 ## Terrace 1, the landing ring: the T1 square, corners cut.
 static func landing_outline() -> Array:
@@ -423,40 +417,18 @@ static func paths() -> Array:
 	return [[Vector2(-20.5,19.0),Vector2(-6.0,18.5),Vector2(0.0,17.0)],[Vector2(0.0,18.0),Vector2(2.5,19.0),Vector2(3.0,17.0)],
 		[Vector2(0.0,e.position.y+1.0),Vector2(0.0,e.end.y-1.0)]]
 
-func flora_site() -> KitFlora.Site:
-	return KitFlora.Site.new(top(),KitLand.wear_of(paths()))
+func grey_flag() -> String:
+	return "--lidstack-grey"
 
-func flora_seed() -> int:
-	return TURF_SEED+9
+func turf_seed() -> int:
+	return TURF_SEED
 
-func life_script() -> Script:
-	return null if grey() else KitLife
-
-func warm() -> void:
-	super.warm()
-	if grey(): return
-	KitLook.palette()
-	KitLook.ground_material()
-	KitLook.rock_material()
-	KitLook.rock_tone(Vector3.ZERO,30.0,Vector3.UP)
-	RuinKit.materials()
-	GiantStone.warm()
-
-## The greybox's solids and the two keels' spurs, so the occupancy keeps the
-## generator off the hanging rock.
-func _solids() -> Array:
-	var out := super._solids()
-	if grey(): return out
-	for keel: Array in [[landing_outline(),0.0,LANDING_DEPTH],[exit_outline(),float(EXIT.centre.y),EXIT_DEPTH]]:
-		var ring: Array = keel[0]
-		var box := Rect2(ring[0],Vector2.ZERO)
-		for q: Vector2 in ring: box = box.expand(q)
-		out.append([box.grow(-1.0),float(keel[1])-float(keel[2])*KEEL_REACH,float(keel[1]),null])
-	return out
+func turf_paths() -> Array:
+	return paths()
 
 ## Measured headless (the turf build, 2026-10-14).
-func build_cost() -> int:
-	return 0 if grey() else 520
+func turf_cost() -> int:
+	return 520
 
 ## Whether a greybox part is ground (the islands take it): terrace 1's layer
 ## and the column's floor under it, and the exit isle's box.
@@ -465,44 +437,16 @@ static func _is_ground(p: Array) -> bool:
 	if float(p[2]) <= UNDER+0.001: return true
 	return (p[1] as Rect2).is_equal_approx(exit_rect())
 
-## Turf on the landing ring and the exit isle, the stack in stone.
-func build(into: Node3D) -> void:
-	if grey():
-		super.build(into)
-		return
-	art = into
-	var began := Time.get_ticks_msec()
-	var root := Node3D.new()
-	root.name = "Lidstack"
-	into.add_child(root)
-	var tone := KitLook.turf(TURF_SEED,KitLand.wear_of(paths()))
-	var landing := KitLand.island({"outline":landing_outline(),"seed":TURF_SEED,"ground":func(_x: float, _z: float) -> float: return 0.0,
-		"top":0.0,"depth":LANDING_DEPTH,"hang":true,"resample":[60.0,120,32],"tone":tone})
-	landing.name = "Landing"
-	var exit_y := float(EXIT.centre.y)
-	var exit := KitLand.island({"outline":exit_outline(),"seed":TURF_SEED+1,"ground":func(_x: float, _z: float) -> float: return exit_y,
-		"top":exit_y,"depth":EXIT_DEPTH,"hang":true,"resample":[40.0,48,28],"tone":tone})
-	exit.name = "ExitIsle"
-	for land: Node3D in [landing,exit]:
-		_collide_sides(land)
-		root.add_child(land)
-		turf(land)
-	_masonry(root)
-	built_ms = Time.get_ticks_msec()-began
+## Turf on the landing ring and the exit isle (their keels' spurs in the
+## occupancy), the stack in stone.
+func turf_islands() -> Array:
+	return [
+		{"name":"Landing","outline":landing_outline(),"top":0.0,"depth":LANDING_DEPTH,"resample":[60.0,120,32]},
+		{"name":"ExitIsle","outline":exit_outline(),"top":float(EXIT.centre.y),"depth":EXIT_DEPTH,"resample":[40.0,48,28]},
+	]
 
-## An island's hanging sides collided as drawn (the giant's `_collide_sides`).
-static func _collide_sides(land: Node3D) -> void:
-	var sides := land.get_node_or_null("Mesh") as MeshInstance3D
-	if sides == null or sides.mesh == null: return
-	var body := StaticBody3D.new()
-	body.name = "Sides"
-	var shape := ConcavePolygonShape3D.new()
-	shape.set_faces(sides.mesh.get_faces())
-	shape.backface_collision = true
-	var holder := CollisionShape3D.new()
-	holder.shape = shape
-	body.add_child(holder)
-	land.add_child(body)
+func dress(root: Node3D) -> void:
+	_masonry(root)
 
 ## The stack: every greybox box but the ground drawn as a chamfered block of
 ## the basalt and collided as its walk box; the summit pad a carved chest.

@@ -379,10 +379,7 @@ func life_script() -> Script:
 	return null if Underground.on() else KitLife
 
 func warm() -> void:
-	KitLook.palette()
-	KitLook.ground_material()
-	KitLook.rock_material()
-	KitLook.rock_tone(Vector3.ZERO,30.0,Vector3.UP)
+	warm_look()
 	CityStone.warm()
 	for k: String in CityStone.WEAR: CityStone.wear(k)
 	Colossus.warm()
@@ -474,10 +471,12 @@ func build(into: Node3D) -> void:
 ## A KitLand island in the motif's frame (its sides collided as drawn when
 ## `sides`: KitLand draws them only, and the bodies climb them).
 func _land(root: Node3D, node_name: String, spec: Dictionary, sides := false) -> Node3D:
+	if sides:
+		spec.collide_sides = true
+		spec.sides_backface = false
 	var land := KitLand.island(spec)
 	land.name = node_name
 	root.add_child(land)
-	if sides: _collide_sides(land)
 	turf(land)
 	return land
 
@@ -491,17 +490,6 @@ func _turf_cap(root: Node3D, node_name: String, d: Dictionary, y: float, depth: 
 	land.position = Vector3(0.0,y,0.0)
 	root.add_child(land)
 	turf(land)
-
-## An island's hanging sides collided as drawn (gb_sunken_giant's way).
-static func _collide_sides(land: Node3D) -> void:
-	var mesh := land.get_node_or_null("Mesh") as MeshInstance3D
-	if mesh == null or mesh.mesh == null: return
-	var body := StaticBody3D.new()
-	body.name = "Sides"
-	var shape := CollisionShape3D.new()
-	shape.shape = mesh.mesh.create_trimesh_shape()
-	body.add_child(shape)
-	land.add_child(body)
 
 func _triangles() -> int:
 	var n := 0

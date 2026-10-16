@@ -480,6 +480,11 @@ static func ring_sides(ring: Array, rim_y: PackedFloat32Array, centre: Vector2, 
 ##             edit changes the land only where it changed (the editor's)
 ##   prism_drop  how far the cliffs' prisms hang under their faces away from
 ##             the rim (PRISM_DROP)
+##   sides     false: no hanging sides drawn ("Mesh"; a caller that draws
+##             its own skirt, the Stair to the Clouds' mesa)
+##   collide_sides  the hanging sides collided as drawn ("Sides", last
+##             child: the bodies climb them, a fall past a flank meets it),
+##             `sides_backface` (true) its faces solid from both sides
 ## Meta: outline, ground_points, cliff_prisms.
 static func island(spec: Dictionary) -> Node3D:
 	var rng := RandomNumberGenerator.new()
@@ -510,9 +515,26 @@ static func island(spec: Dictionary) -> Node3D:
 	draw(node,built)
 	var rims := PackedFloat32Array()
 	for p: Vector2 in ring: rims.append(float(ground.call(p.x,p.y)))
-	var sides := ring_sides(ring,rims,centre,top,depth,rng,true,bool(spec.get("hang",false)))
-	node.add_child(sides.node("Mesh"))
+	var drawn: MeshInstance3D = null
+	if bool(spec.get("sides",true)):
+		var sides := ring_sides(ring,rims,centre,top,depth,rng,true,bool(spec.get("hang",false)))
+		drawn = sides.node("Mesh")
+		if drawn != null: node.add_child(drawn)
 	bodies(node,built.faces,built.solid,not bool(spec.get("apart",false)))
 	node.set_meta("outline",g.poly)
 	node.set_meta("ground_points",g.points.size())
+	if bool(spec.get("collide_sides",false)): collide_sides(node,drawn,bool(spec.get("sides_backface",true)))
 	return node
+
+## `drawn` (an island's hanging sides) collided as drawn: "Sides" under `node`.
+static func collide_sides(node: Node3D, drawn: MeshInstance3D, backface := true) -> void:
+	if drawn == null or drawn.mesh == null: return
+	var body := StaticBody3D.new()
+	body.name = "Sides"
+	var shape := ConcavePolygonShape3D.new()
+	shape.set_faces(drawn.mesh.get_faces())
+	shape.backface_collision = backface
+	var holder := CollisionShape3D.new()
+	holder.shape = shape
+	body.add_child(holder)
+	node.add_child(body)

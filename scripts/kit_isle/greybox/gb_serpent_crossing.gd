@@ -405,10 +405,7 @@ func life_script() -> Script:
 	return null if Underground.on() else KitLife
 
 func warm() -> void:
-	KitLook.palette()
-	KitLook.ground_material()
-	KitLook.rock_material()
-	KitLook.rock_tone(Vector3.ZERO,30.0,Vector3.UP)
+	warm_look()
 	CityStone.warm()
 	for k: String in CityStone.WEAR: CityStone.wear(k)
 	GiantStone.warm()
@@ -434,15 +431,14 @@ func build(into: Node3D) -> void:
 	var ad: Dictionary = LAYOUT.arrival
 	var tone := KitLook.turf(int(ad.seed),KitLand.wear_of(paths()))
 	var a_land := KitLand.island({"outline":ad.outline,"seed":int(ad.seed),"ground":func(x: float, z: float) -> float: return arrival_ground(x,z),
-		"top":0.0,"depth":float(ad.depth),"cliffs":Rect2(-40.0,-66.0,80.0,96.0),"hang":true,"resample":[60.0,260,48],"tone":tone,"cell":2.0})
+		"top":0.0,"depth":float(ad.depth),"cliffs":Rect2(-40.0,-66.0,80.0,96.0),"hang":true,"resample":[60.0,260,48],"tone":tone,"cell":2.0,"collide_sides":true})
 	a_land.name = "Arrival"
 	# F: the far isle.
 	var fd: Dictionary = LAYOUT.far
 	var f_land := KitLand.island({"outline":far_outline(),"seed":int(fd.seed),"ground":func(x: float, z: float) -> float: return far_ground(x,z),
-		"top":float(fd.crown),"depth":float(fd.depth),"cliffs":Rect2(-40.0,-206.0,70.0,62.0),"hang":true,"resample":[60.0,220,48],"tone":KitLook.turf(int(fd.seed)),"cell":2.0})
+		"top":float(fd.crown),"depth":float(fd.depth),"cliffs":Rect2(-40.0,-206.0,70.0,62.0),"hang":true,"resample":[60.0,220,48],"tone":KitLook.turf(int(fd.seed)),"cell":2.0,"collide_sides":true})
 	f_land.name = "FarIsle"
 	for land: Node3D in [a_land,f_land]:
-		_collide_sides(land)
 		root.add_child(land)
 		turf(land)
 	# The dais on A's east cliff, its footing down to the court.
@@ -623,20 +619,6 @@ static func _box(size: Vector3) -> BoxShape3D:
 	var b := BoxShape3D.new()
 	b.size = size
 	return b
-
-## An island's hanging sides collided as drawn (gb_sunken_giant's).
-static func _collide_sides(land: Node3D) -> void:
-	var sides := land.get_node_or_null("Mesh") as MeshInstance3D
-	if sides == null or sides.mesh == null: return
-	var body := StaticBody3D.new()
-	body.name = "Sides"
-	var shape := ConcavePolygonShape3D.new()
-	shape.set_faces(sides.mesh.get_faces())
-	shape.backface_collision = true
-	var holder := CollisionShape3D.new()
-	holder.shape = shape
-	body.add_child(holder)
-	land.add_child(body)
 
 func _triangles() -> int:
 	var n := 0

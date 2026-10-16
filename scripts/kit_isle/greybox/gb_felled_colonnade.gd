@@ -426,10 +426,7 @@ func life_script() -> Script:
 	return null if Underground.on() else KitLife
 
 func warm() -> void:
-	KitLook.palette()
-	KitLook.ground_material()
-	KitLook.rock_material()
-	KitLook.rock_tone(Vector3.ZERO,30.0,Vector3.UP)
+	warm_look()
 	CityStone.warm()
 	for k: String in CityStone.WEAR: CityStone.wear(k)
 	GiantStone.warm()

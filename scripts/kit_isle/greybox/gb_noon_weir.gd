@@ -160,8 +160,8 @@ func parts() -> Array:
 
 ## The channels (the sluices build them: floor, parapets, refuges, the
 ## gate's header) as solids for the occupancy, not drawn by parts().
-func _grey_solids() -> Array:
-	var out: Array = super._solids()
+func _part_solids() -> Array:
+	var out: Array = super._part_solids()
 	var w := float(LAYOUT.width)
 	for t: Dictionary in LAYOUT.tiers:
 		var g: Vector3 = t.gate
@@ -301,23 +301,18 @@ class Clock extends "res://scripts/traps/trap.gd":
 ## to the centimetre; piers only where no chain passes. The channels are
 ## the sluices' own build, as in the greybox.
 const GiantStone = preload("res://scripts/kit_isle/greybox/giant_stone.gd")
-const KitLife = preload("res://scripts/kit_isle/kit_life.gd")
 
 const TURF_SEED := 5200
 ## The weir's floor (m) and its rect (x, z): under the stack from just
 ## north of tier 1's open end to past the cannon's plinth.
 const FOOT_Y := -1.2
 const FOOT := Rect2(-17.0,-19.0,24.0,92.0)
-## Keels (m under each island's top) and how far their spurs hang under.
+## Keels (m under each island's top).
 const DECK_DEPTH := 8.0
 const FOOT_DEPTH := 11.0
 const FAR_DEPTH := 9.0
-const KEEL_REACH := 1.4
 ## The stairs' drawn beam under their walked top (m).
 const STAIR_THICK := 1.4
-
-static func grey() -> bool:
-	return preload("res://scripts/launch_args.gd").user_args().has("--weir-grey")
 
 static func _slab(prefix: String) -> Array:
 	for s: Array in LAYOUT.slabs:
@@ -349,24 +344,18 @@ static func _rounded(r: Rect2, cut: float) -> Array:
 static func paths() -> Array:
 	return [[Vector2(0.0,-43.0),Vector2(0.0,-23.0)],[Vector2(16.0,64.5),Vector2(23.0,64.5)],[Vector2(16.0,64.5),Vector2(13.0,55.0)]]
 
-func flora_site() -> KitFlora.Site:
-	return KitFlora.Site.new(top(),KitLand.wear_of(paths()))
+func grey_flag() -> String:
+	return "--weir-grey"
 
-func flora_seed() -> int:
-	return TURF_SEED+9
+func turf_seed() -> int:
+	return TURF_SEED
 
-func life_script() -> Script:
-	return null if grey() else KitLife
+func turf_paths() -> Array:
+	return paths()
 
-func warm() -> void:
-	super.warm()
-	if grey(): return
-	KitLook.palette()
-	KitLook.ground_material()
-	KitLook.rock_material()
-	KitLook.rock_tone(Vector3.ZERO,30.0,Vector3.UP)
-	RuinKit.materials()
-	GiantStone.warm()
+## Measured headless (the turf build, this container).
+func turf_cost() -> int:
+	return 250
 
 ## The piers: [rect, top] (their foot in the weir's floor), each under a
 ## slab's or a channel's underside, clear of every spill's fall (at x 0
@@ -392,60 +381,21 @@ static func piers() -> Array:
 ## The greybox's solids, the channels, the keels under the three islands
 ## and the piers, so the occupancy keeps the generator off the rock.
 func _solids() -> Array:
-	var out: Array = _grey_solids()
-	if grey(): return out
-	for keel: Array in [[deck_outline(),0.0,DECK_DEPTH],[foot_outline(),FOOT_Y,FOOT_DEPTH],[far_outline(),FAR_TOP,FAR_DEPTH]]:
-		var ring: Array = keel[0]
-		var box := Rect2(ring[0],Vector2.ZERO)
-		for p: Vector2 in ring: box = box.expand(p)
-		out.append([box.grow(-1.0),float(keel[1])-float(keel[2])*KEEL_REACH,float(keel[1]),null])
+	var out := super._solids()
+	if not has_turf(): return out
 	for p: Array in piers(): out.append([p[0],FOOT_Y,float(p[1]),null])
 	return out
 
-## Measured headless (the turf build, this container).
-func build_cost() -> int:
-	return 0 if grey() else 250
-
 ## Turf on the deck, the floor and the far landing; the weir in stone.
-func build(into: Node3D) -> void:
-	if grey():
-		super.build(into)
-		return
-	art = into
-	var began := Time.get_ticks_msec()
-	var root := Node3D.new()
-	root.name = "NoonWeir"
-	into.add_child(root)
-	var tone := KitLook.turf(TURF_SEED,KitLand.wear_of(paths()))
-	var deck := KitLand.island({"outline":deck_outline(),"seed":TURF_SEED,"ground":func(_x: float, _z: float) -> float: return 0.0,
-		"top":0.0,"depth":DECK_DEPTH,"hang":true,"resample":[40.0,90,32],"tone":tone})
-	deck.name = "Deck"
-	var floor_land := KitLand.island({"outline":foot_outline(),"seed":TURF_SEED+1,"ground":func(_x: float, _z: float) -> float: return FOOT_Y,
-		"top":FOOT_Y,"depth":FOOT_DEPTH,"hang":true,"resample":[60.0,220,32],"tone":tone})
-	floor_land.name = "Floor"
-	var far := KitLand.island({"outline":far_outline(),"seed":TURF_SEED+2,"ground":func(_x: float, _z: float) -> float: return FAR_TOP,
-		"top":FAR_TOP,"depth":FAR_DEPTH,"hang":true,"resample":[40.0,90,32],"tone":tone})
-	far.name = "FarLanding"
-	for land: Node3D in [deck,floor_land,far]:
-		_collide_sides(land)
-		root.add_child(land)
-		turf(land)
-	_stone(root)
-	built_ms = Time.get_ticks_msec()-began
+func turf_islands() -> Array:
+	return [
+		{"name":"Deck","outline":deck_outline(),"top":0.0,"depth":DECK_DEPTH,"resample":[40.0,90,32]},
+		{"name":"Floor","outline":foot_outline(),"top":FOOT_Y,"depth":FOOT_DEPTH,"resample":[60.0,220,32]},
+		{"name":"FarLanding","outline":far_outline(),"top":FAR_TOP,"depth":FAR_DEPTH,"resample":[40.0,90,32]},
+	]
 
-## An island's hanging sides collided as drawn (as the giant's).
-static func _collide_sides(land: Node3D) -> void:
-	var sides := land.get_node_or_null("Mesh") as MeshInstance3D
-	if sides == null or sides.mesh == null: return
-	var body := StaticBody3D.new()
-	body.name = "Sides"
-	var shape := ConcavePolygonShape3D.new()
-	shape.set_faces(sides.mesh.get_faces())
-	shape.backface_collision = true
-	var holder := CollisionShape3D.new()
-	holder.shape = shape
-	body.add_child(holder)
-	land.add_child(body)
+func dress(root: Node3D) -> void:
+	_stone(root)
 
 ## The masonry: drawn as one mesh of carved stone, collided as the
 ## greybox's walk boxes (the deck and the far landing are turf).

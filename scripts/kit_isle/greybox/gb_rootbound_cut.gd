@@ -358,10 +358,7 @@ static var _head_shape: ConcavePolygonShape3D = null
 ## on the main thread before a worker builds.
 func warm() -> void:
 	super.warm()
-	KitLook.palette()
-	KitLook.ground_material()
-	KitLook.rock_material()
-	KitLook.rock_tone(Vector3.ZERO,30.0,Vector3.UP)
+	warm_look()
 	RuinKit.materials()
 	GiantStone.warm()
 	_line_cut_boxes()
@@ -434,9 +431,11 @@ func build(into: Node3D) -> void:
 	var box := Rect2(ring[0],Vector2.ZERO)
 	for p: Vector2 in ring: box = box.expand(p)
 	var land := KitLand.island({"outline":ring,"seed":TURF_SEED,"ground":func(x: float, z: float) -> float: return ground(x,z),
-		"top":crest(70.0),"depth":DEPTH,"cliffs":box.grow(1.0),"fine":1.3,"hang":true,"resample":[80.0,260,64],"tone":tone})
+		"top":crest(70.0),"depth":DEPTH,"cliffs":box.grow(1.0),"fine":1.3,"hang":true,"resample":[80.0,260,64],"tone":tone,
+		# Its hanging sides collided as drawn (the body climbs them; a fall
+		# past a flank meets it), as the Sunken Giant's.
+		"collide_sides":true})
 	land.name = "Hill"
-	_collide_sides(land)
 	root.add_child(land)
 	turf(land)
 	var k := 0
@@ -453,21 +452,6 @@ func build(into: Node3D) -> void:
 	_head(root)
 	_kit(root)
 	built_ms = Time.get_ticks_msec()-began
-
-## The hill's hanging sides collided as drawn (the body climbs them; a fall
-## past a flank meets it), as the Sunken Giant's.
-static func _collide_sides(land: Node3D) -> void:
-	var sides := land.get_node_or_null("Mesh") as MeshInstance3D
-	if sides == null or sides.mesh == null: return
-	var body := StaticBody3D.new()
-	body.name = "Sides"
-	var shape := ConcavePolygonShape3D.new()
-	shape.set_faces(sides.mesh.get_faces())
-	shape.backface_collision = true
-	var holder := CollisionShape3D.new()
-	holder.shape = shape
-	body.add_child(holder)
-	land.add_child(body)
 
 ## The makers' blocks and rails in the Olmec basalt, each collided as drawn.
 func _stone(root: Node3D) -> void:
