@@ -270,6 +270,186 @@ func first(pattern: String, under: Node = null) -> Node:
 	var hits := find(pattern,under)
 	return hits[0] if not hits.is_empty() else null
 
+# --- Collider probes ----------------------------------------------------------
+#
+#   var h := ray(Vector3(-20, 200, -41), Vector3(-20, -50, -41))
+#   say(hit_text(h))   # "Isle/Island/Body (Concave) layer 1 mask 1 shape CollisionShape3D at (..) n (..) d 12.30"
+#   for s in pierce(Vector3(-20, 200, -41), Vector3(-20, -50, -41)): say(hit_text(s))
+#   for c in what_is_at(motor.feet, 0.5): say(hit_text(c))
+#
+# Each returns hit Dictionaries ({} or [] for nothing): `collider` (the
+# Node), `path`, `name`, `layer`, `mask`, `shape` (its index on the
+# collider), `shape_type` ("Box", "Concave"...), `shape_node` (the
+# CollisionShape3D's path) and, for a ray, `position`, `normal`, `distance`.
+
+## Every layer.
+const ALL_LAYERS := 0xFFFFFFFF
+const _SHAPE_TYPES := ["WorldBoundary","SeparationRay","Sphere","Box","Capsule","Cylinder","Convex","Concave","HeightMap","SoftBody","Custom"]
+
+## The physics space of the open scene (the root's, before `open`).
+func space() -> PhysicsDirectSpaceState3D:
+	var w: World3D = (study as Node3D).get_world_3d() if study is Node3D else root.find_world_3d()
+	return w.direct_space_state
+
+## The first collider on the segment `from`..`to` ({} if none). `mask`:
+## the layers it sees (e.g. `WalkerOnly.body_mask(study.ground.mask)`);
+## `inside`: a ray starting inside a shape hits it there (normal zero);
+## `exclude`: CollisionObject3Ds or RIDs skipped; `areas`: Area3Ds too.
+func ray(from: Vector3, to: Vector3, mask := ALL_LAYERS, inside := false, exclude: Array = [], areas := false) -> Dictionary:
+	var q := PhysicsRayQueryParameters3D.create(from,to,mask,_rids(exclude))
+	q.hit_from_inside = inside
+	q.collide_with_areas = areas
+	var h: Dictionary = space().intersect_ray(q)
+	if h.is_empty(): return {}
+	var out := _about(h.get("collider"),int(h.get("shape",0)))
+	out["position"] = h.position
+	out["normal"] = h.normal
+	out["distance"] = from.distance_to(h.position)
+	return out
+
+## Every surface on `from`..`to` in order, at most `most`: after each hit
+## the ray goes on from `step` m past it (so a trimesh's lower face under
+## an overhang is found too). A stack of floors under a point:
+## `pierce(Vector3(x, 200, z), Vector3(x, -50, z))`.
+func pierce(from: Vector3, to: Vector3, mask := ALL_LAYERS, most := 8, step := 0.05) -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	var dir := (to-from).normalized()
+	var at := from
+	for i in most:
+		var h := ray(at,to,mask)
+		if h.is_empty(): break
+		h["distance"] = from.distance_to(h.position)
+		out.append(h)
+		at = (h.position as Vector3)+dir*step
+		if (to-at).dot(dir) <= 0.0: break
+	return out
+
+## The colliders touching a ball of `radius` at `pos`, one a shape (at
+## most `most` contacts asked of the space).
+func what_is_at(pos: Vector3, radius := 0.25, mask := ALL_LAYERS, most := 16, areas := false) -> Array[Dictionary]:
+	var ball := SphereShape3D.new()
+	ball.radius = radius
+	return _overlap(ball,Transform3D(Basis.IDENTITY,pos),mask,most,areas)
+
+## The colliders touching `box` (world, axis-aligned), as `what_is_at`.
+func what_is_in(box: AABB, mask := ALL_LAYERS, most := 16, areas := false) -> Array[Dictionary]:
+	var b := BoxShape3D.new()
+	b.size = box.size.abs()
+	return _overlap(b,Transform3D(Basis.IDENTITY,box.get_center()),mask,most,areas)
+
+## Each CollisionObject3D under `node` (itself too): {collider, path,
+## layer, mask, shapes ({type: count}), box (its shapes' AABB, world)}.
+## A piece's whole collision box: `collision_box(node)`.
+func colliders(node: Node) -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	var all: Array[Node] = [node]
+	all.append_array(node.find_children("*","CollisionObject3D",true,false))
+	for n in all:
+		if not n is CollisionObject3D: continue
+		var co := n as CollisionObject3D
+		var d := _about(co,-1)
+		var kinds := {}
+		var box := AABB()
+		var any := false
+		for c: Node in co.get_children():
+			var cs := c as CollisionShape3D
+			if cs == null or cs.shape == null: continue
+			var kind := cs.shape.get_class().trim_suffix("Shape3D").replace("Polygon","")
+			kinds[kind] = int(kinds.get(kind,0))+1
+			var bb := cs.global_transform*cs.shape.get_debug_mesh().get_aabb()
+			box = bb if not any else box.merge(bb)
+			any = true
+		d["shapes"] = kinds
+		d["box"] = box
+		out.append(d)
+	return out
+
+## The AABB of every collision shape under `node`, world; in `node`'s own
+## frame with `local` (a piece built off the tree has no global frame).
+func collision_box(node: Node, local := false) -> AABB:
+	var box := AABB()
+	var any := false
+	for c: Node in node.find_children("*","CollisionShape3D",true,false):
+		var cs := c as CollisionShape3D
+		if cs.shape == null: continue
+		var x := cs.transform
+		if local:
+			var p := cs.get_parent()
+			while p != node and p is Node3D:
+				x = (p as Node3D).transform*x
+				p = p.get_parent()
+		else:
+			x = cs.global_transform
+		var bb := x*cs.shape.get_debug_mesh().get_aabb()
+		box = bb if not any else box.merge(bb)
+		any = true
+	return box
+
+## A hit (from `ray`, `pierce`, `what_is_at`, `colliders`) as one line;
+## "miss" for {}.
+func hit_text(h: Dictionary) -> String:
+	if h.is_empty(): return "miss"
+	var s := str(h.get("path","?"))
+	if str(h.get("shape_type","")) != "": s += " (%s)" % str(h.shape_type)
+	s += " layer %s mask %s" % [_bits(int(h.get("layer",0))),_bits(int(h.get("mask",0)))]
+	if h.has("shape_node") and str(h.shape_node) != "": s += " shape %s" % str(h.shape_node).get_file()
+	if h.has("position"): s += " at %s n %s d %.2f" % [str((h.position as Vector3).snapped(Vector3.ONE*0.01)),str((h.normal as Vector3).snapped(Vector3.ONE*0.01)),float(h.distance)]
+	if h.has("shapes"): s += " shapes %s box %s" % [str(h.shapes),str(h.box)]
+	return s
+
+func _overlap(shape: Shape3D, at: Transform3D, mask: int, most: int, areas: bool) -> Array[Dictionary]:
+	var q := PhysicsShapeQueryParameters3D.new()
+	q.shape = shape
+	q.transform = at
+	q.collision_mask = mask
+	q.collide_with_areas = areas
+	var out: Array[Dictionary] = []
+	var seen := {}
+	# One line a shape (a trimesh can answer once a face it touches).
+	for h: Dictionary in space().intersect_shape(q,most):
+		var key := [h.get("rid"),int(h.get("shape",0))]
+		if seen.has(key): continue
+		seen[key] = true
+		out.append(_about(h.get("collider"),int(h.get("shape",0))))
+	return out
+
+## What a hit's collider and shape index are: path, layers, shape type.
+func _about(collider: Variant, shape: int) -> Dictionary:
+	var out := {"collider":collider,"path":"","name":"","layer":0,"mask":0,"shape":shape,"shape_type":"","shape_node":""}
+	if not (collider is Node): return out
+	var n := collider as Node
+	out.path = str(n.get_path()).trim_prefix(str(study.get_path())+"/") if study != null and study.is_ancestor_of(n) else str(n.get_path())
+	out.name = str(n.name)
+	if n is CollisionObject3D:
+		var co := n as CollisionObject3D
+		out.layer = co.collision_layer
+		out.mask = co.collision_mask
+		if shape >= 0:
+			var rid := co.get_rid()
+			var shapes := PhysicsServer3D.area_get_shape_count(rid) if co is Area3D else PhysicsServer3D.body_get_shape_count(rid)
+			if shape < shapes:
+				var srid := PhysicsServer3D.area_get_shape(rid,shape) if co is Area3D else PhysicsServer3D.body_get_shape(rid,shape)
+				var t := PhysicsServer3D.shape_get_type(srid)
+				out.shape_type = _SHAPE_TYPES[t] if t < _SHAPE_TYPES.size() else str(t)
+				var holder: Object = co.shape_owner_get_owner(co.shape_find_owner(shape))
+				if holder is Node: out.shape_node = str((holder as Node).name)
+	return out
+
+## Layer bits as their numbers, "1+16"; "-" for none.
+static func _bits(v: int) -> String:
+	var on := PackedStringArray()
+	for i in 32:
+		if v & (1 << i): on.append(str(i+1))
+	if on.size() == 32: return "all"
+	return "+".join(on) if not on.is_empty() else "-"
+
+static func _rids(exclude: Array) -> Array[RID]:
+	var out: Array[RID] = []
+	for e: Variant in exclude:
+		if e is RID: out.append(e)
+		elif e is CollisionObject3D: out.append((e as CollisionObject3D).get_rid())
+	return out
+
 ## A still of the window to `path` (a rendered run only; headless prints SKIP).
 ## The HUD's canvas layers are hidden for it unless `hud`; scaled to
 ## `size` if given (a window on a scaled display is bigger than asked).
