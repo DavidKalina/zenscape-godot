@@ -937,8 +937,85 @@ func keel_top() -> float:
 	return float(_raw_span().top)
 
 func depth() -> float:
-	var s := _box().size
-	return clampf(maxf(s.x,s.y)*0.3+maxf(keel_top()-float(_raw_span().low),0.0)*0.3,12.0,36.0)
+	if _depth_cache < 0.0:
+		var s := _box().size
+		_depth_cache = maxf(clampf(maxf(s.x,s.y)*0.3+maxf(keel_top()-float(_raw_span().low),0.0)*0.3,12.0,36.0),_keel_need())
+	return _depth_cache
+var _depth_cache := -1.0
+
+## KitLand.ring_sides' rock rings: [inset toward the middle, share of the
+## depth under the top], the rim's (0, 0) first and the keel's (1, 1) last.
+const KEEL_RINGS := [Vector2(0.0,0.0),Vector2(0.1,0.22),Vector2(0.32,0.48),Vector2(0.6,0.74),Vector2(0.82,0.92),Vector2(1.0,1.0)]
+## How far under the carved ground the keel's underside is kept (m), and
+## the least share of a ring's drop its jitter leaves (ring_sides: 0.85).
+const KEEL_CLEAR := 2.0
+const KEEL_JITTER := 0.85
+## The deepest the keel is let hang to clear a cut (m).
+const KEEL_MOST := 60.0
+
+## The depth the keel needs so its underside stays under the carved ground
+## (spec-editor-traps item 13): the sides' inner rings hang from the
+## landform's crest at shares of the depth, so a ravine (or a dug lake)
+## cut deeper than the keel's underside there came out through it, and the
+## keel's long faces showed as a sheet across the cut (and collided).
+## Each ground sample (a 2 m grid, and each ravine's drawn points, its
+## floor) wants the underside under it at its inset from the rim (on the
+## line from the middle), the surface between the rings taken as straight,
+## each ring hung from the lower of the crest and the rim's ground. 0 where
+## the ground is clear; only ground an edit lowered is asked, so a motif
+## with no cut or dug ground keeps its keel.
+func _keel_need() -> float:
+	var ring := outline()
+	var poly := PackedVector2Array(ring)
+	var even := RandomNumberGenerator.new()
+	even.seed = seed_of()
+	var centre := KitLand.centre_of(KitLand.resample(ring,64,even))
+	var g := ground_fn()
+	var top := keel_top()
+	var samples: Array[Vector2] = []
+	var box := _box()
+	var x := box.position.x+1.0
+	while x < box.end.x:
+		var z := box.position.y+1.0
+		while z < box.end.y:
+			samples.append(Vector2(x,z))
+			z += 2.0
+		x += 2.0
+	for stroke: Dictionary in preset_ravines(data)+(data.get("strokes",[]) as Array):
+		if str(stroke.get("tool","")) != "ravine": continue
+		for p: Array in stroke.get("pts",[]): samples.append(Vector2(float(p[0]),float(p[1])))
+	var raw := raw_of(data)
+	var need := 0.0
+	for p: Vector2 in samples:
+		# Only where an edit lowered the ground (the landform's own clears).
+		var y := float(g.call(p.x,p.y))
+		if y > float(raw.call(p.x,p.y))-0.05 or not Geometry2D.is_point_in_polygon(p,poly): continue
+		var out := p-centre
+		var r := out.length()
+		if r < 0.01: out = Vector2.RIGHT
+		# The rim on the line out from the middle through p.
+		var far := centre+out.normalized()*10000.0
+		var rim := Vector2.INF
+		for i in range(poly.size()):
+			var hit: Variant = Geometry2D.segment_intersects_segment(centre,far,poly[i],poly[(i+1)%poly.size()])
+			if hit != null and centre.distance_to(hit) < centre.distance_to(rim): rim = hit
+		if rim == Vector2.INF: continue
+		var s := clampf(1.0-r/maxf(centre.distance_to(rim),0.01),0.0,1.0)
+		var share := 0.0
+		for k in range(1,KEEL_RINGS.size()):
+			var a: Vector2 = KEEL_RINGS[k-1]
+			var b: Vector2 = KEEL_RINGS[k]
+			if s <= b.x:
+				share = lerpf(a.y,b.y,(s-a.x)/(b.x-a.x))
+				break
+		# The rings hang from the lower of the crest and the rim's ground
+		# (ring_sides' `hang`), the rim's earth 2.1 m under the rim.
+		var hang := minf(float(g.call(rim.x,rim.y)),top)-2.1*(1.0-clampf(s/0.1,0.0,1.0))
+		var want := hang-(y-KEEL_CLEAR)
+		if want <= 0.0: continue
+		if share*KEEL_JITTER < 0.01: continue
+		need = maxf(need,want/(share*KEEL_JITTER))
+	return minf(need,KEEL_MOST)
 
 ## The land's KitLand.island spec (`tone` its turf). Crisp cliffs where
 ## there are terraces (everywhere) or ravines (round them, a finer grid
@@ -946,7 +1023,7 @@ func depth() -> float:
 func land_spec(fast := false) -> Dictionary:
 	var ring := outline()
 	var box := _box()
-	var spec := {"outline":ring,"seed":seed_of(),"ground":ground_fn(),"top":keel_top(),"depth":depth(),"hang":true,"stable":true,
+	var spec := {"outline":ring,"seed":seed_of(),"ground":ground_fn(),"top":keel_top(),"depth":depth(),"hang":true,"stable":true,"whole_sides":true,
 		"resample":[80.0,clampi(int(KitLand.perimeter(ring)/1.5),32,260),32],"tone":KitLook.turf(seed_of(),Callable())}
 	if fast:
 		spec.cell = 2.5 if fast_cell <= 0.0 else fast_cell

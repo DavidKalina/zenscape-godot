@@ -451,7 +451,7 @@ static func turf_bodies(land: Node3D) -> Array:
 ## high rim's own height, the rock from `top`. Draws the islets' rock. The
 ## rng is drawn as the aqueduct isle drew its sides.
 static func ring_sides(ring: Array, rim_y: PackedFloat32Array, centre: Vector2, top: float, depth: float, rng: RandomNumberGenerator,
-		spurs := true, hang := false, stop_small := true) -> KitLook.RockMesh:
+		spurs := true, hang := false, stop_small := true, whole := false) -> KitLook.RockMesh:
 	var count := ring.size()
 	var out := outward(ring)
 	var rims: Array = []
@@ -489,17 +489,29 @@ static func ring_sides(ring: Array, rim_y: PackedFloat32Array, centre: Vector2, 
 		var lower: Array = rims[k+1]
 		var su: int = strides[k]
 		var sl: int = strides[k+1]
+		# Lower point j fans to upper.size()/lower.size() upper points (a
+		# whole number when `count` is a multiple of the strides, 16). With
+		# `whole`, stitched by the ring's own index instead: lower point j
+		# (ring index j*sl) fans to the upper points from its index to the
+		# next lower one's, the last taking the rest. The same faces when
+		# `count` is a multiple of 16; with any other count the plain ratio
+		# leaves part of the upper ring unstitched and spans the keel with
+		# long faces (a sheet across a ravine cut under it, collided:
+		# spec-editor-traps item 13), kept so as not to change old isles.
 		var ratio := upper.size()/lower.size()
 		for j in range(lower.size()):
 			var l0: Vector3 = lower[j]
 			var l1: Vector3 = lower[(j+1)%lower.size()]
-			for s in range(ratio):
-				var u0: Vector3 = upper[j*ratio+s]
-				var u1: Vector3 = upper[(j*ratio+s+1)%upper.size()]
+			var next := mini((j+1)*sl,count) if whole else (j+1)*ratio*su
+			var u := j*sl if whole else j*ratio*su
+			while u < next:
+				var u0: Vector3 = upper[u/su]
+				var u1: Vector3 = upper[((u+su)/su)%upper.size()] if u+su < count else upper[0]
 				var m := (u0+u1+l0)/3.0
 				pin(rng,Vector2(m.x,m.z),7)
-				rock.add([u0,l0,u1],rim_y[((j*ratio+s)*su)%count],out_from(centre,m),rng.randf_range(0.88,1.1))
-			var ue: Vector3 = upper[((j+1)*ratio)%upper.size()]
+				rock.add([u0,l0,u1],rim_y[u%count],out_from(centre,m),rng.randf_range(0.88,1.1))
+				u += su
+			var ue: Vector3 = upper[(next/su)%upper.size()] if next < count or not whole else upper[0]
 			var m2 := (ue+l0+l1)/3.0
 			pin(rng,Vector2(m2.x,m2.z),8)
 			rock.add([ue,l0,l1],rim_y[(j*sl)%count],out_from(centre,m2),rng.randf_range(0.88,1.1))
@@ -539,6 +551,8 @@ static func ring_sides(ring: Array, rim_y: PackedFloat32Array, centre: Vector2, 
 ##             edit changes the land only where it changed (the editor's)
 ##   prism_drop  how far the cliffs' prisms hang under their faces away from
 ##             the rim (PRISM_DROP)
+##   whole_sides  the sides stitched whole for any ring count (ring_sides'
+##             `whole`; off: as they always were)
 ##   sides     false: no hanging sides drawn ("Mesh"; a caller that draws
 ##             its own skirt, the Stair to the Clouds' mesa)
 ##   winding   1 (counter-clockwise, Geometry2D's boundary) or -1: the
@@ -582,7 +596,7 @@ static func island(spec: Dictionary) -> Node3D:
 	for p: Vector2 in ring: rims.append(float(ground.call(p.x,p.y)))
 	var drawn: MeshInstance3D = null
 	if bool(spec.get("sides",true)):
-		var sides := ring_sides(ring,rims,centre,top,depth,rng,true,bool(spec.get("hang",false)))
+		var sides := ring_sides(ring,rims,centre,top,depth,rng,true,bool(spec.get("hang",false)),true,bool(spec.get("whole_sides",false)))
 		drawn = sides.node("Mesh")
 		if drawn != null: node.add_child(drawn)
 	bodies(node,built.faces,built.solid,not bool(spec.get("apart",false)))
