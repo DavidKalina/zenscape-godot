@@ -46,7 +46,7 @@ into the spec so every iteration knows which pieces are built elsewhere.
    worktrees), unless the user names one. Other sessions' work stays out.
 4. **The model** per AGENTS.md, Subagent models: the same for every
    iteration of the loop.
-5. **The cap.** 12 iterations unless the user says otherwise.
+5. **The cap.** 15 iterations unless the user says otherwise.
 6. **The budget.** Each agent's context: a budget, 150000 tokens unless
    the user says otherwise (an agent starts near 20000), and a wrap-up
    buffer past it, a quarter of the budget unless set
