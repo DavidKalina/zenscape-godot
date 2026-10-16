@@ -88,8 +88,18 @@ extends Node3D
 ##   constant deceleration. One that would carry past the deck's side by
 ##   KNOBS.teeter_reach or less stops at the lip and he teeters
 ##   (`teeter`, till its `end`, then tracks you); any hit while teetering
-##   puts him over; a longer one carries him over. (The landing below is
-##   still the old `stagger`; the deaths are the next task.)
+##   puts him over; a longer one carries him over.
+## - **His deaths:** broken, all three runes dark, once his skid or teeter
+##   is over he plays `kneel` (state "kneel"), the wind going out of him.
+##   Any hit then (a shot burst on him, a gust shot's `hit`) and he plays
+##   `crumble` (a heap of his blocks where he knelt) and the last of his
+##   wind bursts out of him at you: a wind shot (KNOBS.burst_speed m/s)
+##   whose parry fills the whole gauge (meta `parry_gain` 1.0, read by
+##   scripts/wind_parry.gd). Off the edge, whatever his runes, he falls
+##   (`fall`); at its `land` beat (the body's, when his root stops
+##   dropping) he plays `shatter` on the ground below. Dead ("dead"), he
+##   leaves the lock targets and his room, reads no shots, and `died_at`
+##   and `death` ("crumble" or "shatter") say where and how.
 ##
 ## The host (studies/aqueduct_isle.gd) makes him in `_add_life` when
 ## `wanted`. His knobs are the one dictionary below so a field (enemy.gd)
@@ -178,6 +188,13 @@ const KNOBS := {
 	"slash_tilt": 1.0,
 	"slash_grace": 6.0,
 	"slash_strength": 1.0,
+	# The last wind burst out of him as he crumbles: its speed (m/s), its
+	# knock's share, metres before stone can pop it, and the gauge share a
+	# parry of it fills (1.0 the whole gauge).
+	"burst_speed": 12.0,
+	"burst_strength": 1.0,
+	"burst_grace": 3.0,
+	"burst_gain": 1.0,
 }
 ## What hides you from him: stone (layer 1) and turf (layer 11).
 const SIGHT_MASK := 1 | (1 << 11)
@@ -190,7 +207,8 @@ var isle: Node3D
 var body: Node3D
 var height := 1.9
 ## "patrol", "turn", "held", "notice", "track", "gather", "throw",
-## "slash", "catch", "return", "skid", "teeter", "stagger", "fall".
+## "slash", "catch", "return", "skid", "teeter", "stagger", "fall", "down"
+## (landed from a fall, waiting on the body's `land`), "kneel", "dead".
 var state := "patrol"
 ## His yaw (he faces -Z of Basis(UP, yaw)) and the one it eases to.
 var yaw := 0.0
@@ -247,6 +265,11 @@ var attack := "slash"
 var slash_form := "level"
 var next_form := ""
 var slashes := 0
+## His death: "" alive, "crumble" or "shatter"; where it was; the wind
+## burst out of him as he crumbled (null none).
+var death := ""
+var died_at := Vector3.INF
+var burst: Node3D = null
 var _rng := RandomNumberGenerator.new()
 
 static func wanted() -> bool:
@@ -296,6 +319,7 @@ func setup(host: Node3D) -> void:
 
 func _process(delta: float) -> void:
 	var at := position
+	if state == "dead": return
 	_read_shots(delta)
 	at = position
 	_sense()
@@ -339,7 +363,7 @@ func _process(delta: float) -> void:
 					if kept.distance_to(to) > 0.01: _skid_left = 0.0
 					at = kept
 				if state == "skid" and _skid_left <= 0.0: _skid_stopped(at)
-		"teeter":
+		"teeter", "kneel", "down":
 			pass
 		"stagger":
 			at += push*delta
@@ -348,19 +372,25 @@ func _process(delta: float) -> void:
 				off_deck = true
 				state = "fall"
 				fall_v = push
+				body.play("fall")
 				print("rune knight: pushed off the deck at (%.1f, %.1f, %.1f)" % [at.x,at.y,at.z])
 			elif not off_deck:
 				at = _keep_on_deck(at)
 		"fall":
 			fall_v += Vector3.DOWN*knob("gravity")*delta
 			var step := fall_v*delta
-			var ground := _ground_below(at,step)
-			if ground != Vector3.INF:
-				at = ground
+			var hit := _fall_hit(at,step)
+			if not hit.is_empty() and (hit.normal as Vector3).y < 0.5:
+				# A wall (the aqueduct's side): he scrapes down it.
+				var nrm: Vector3 = hit.normal
+				if fall_v.dot(nrm) < 0.0: fall_v -= nrm*fall_v.dot(nrm)
+				at = (hit.position as Vector3)+nrm*0.05
+			elif not hit.is_empty():
+				at = hit.position
 				fall_v = Vector3.ZERO
 				push = Vector3.ZERO
-				state = "stagger"
-				body.play("stagger")
+				# The body sends `land` once his root stops dropping: he shatters.
+				state = "down"
 				print("rune knight: landed at (%.1f, %.1f, %.1f)" % [at.x,at.y,at.z])
 			else:
 				at += step
@@ -379,7 +409,7 @@ func _process(delta: float) -> void:
 					_gather()
 	yaw = move_toward(yaw,yaw_goal,knob("turn_rate")*delta)
 	transform = Transform3D(Basis(Vector3.UP,yaw),at)
-	_room.global_transform = Transform3D(Basis.IDENTITY,at)
+	if _room != null: _room.global_transform = Transform3D(Basis.IDENTITY,at)
 
 func _on_beat(clip: String, beat: String) -> void:
 	if clip == "turn" and beat == "plant" and state == "turn":
@@ -427,11 +457,11 @@ func _on_beat(clip: String, beat: String) -> void:
 		_skid_ended = true
 		if state == "skid" and _skid_left <= 0.0: _skid_stopped(position)
 	elif clip == "teeter" and beat == "end" and state == "teeter":
-		# Caught his balance: back to tracking you.
-		state = "track"
-		cool = knob("throw_gap")
-		body.play("idle")
+		# Caught his balance: back to tracking you (or, broken, to his knee).
 		print("rune knight: recovers from the teeter")
+		_recover()
+	elif clip == "fall" and beat == "land" and state in ["down","fall"]:
+		_shatter()
 	elif clip == "stagger" and state == "stagger":
 		if beat == "recover":
 			state = "track"
@@ -638,7 +668,7 @@ func _read_shots(delta: float) -> void:
 ## staggered or falling), the shot from in front, slow enough, and not yet
 ## caught KNOBS.rally_limit times.
 func _can_catch(node: Node, p: Vector3, v: Vector3) -> bool:
-	if state in ["catch","return","stagger","fall","skid","teeter"]: return false
+	if state in ["catch","return","stagger","fall","skid","teeter","kneel","down","dead"]: return false
 	if not (node.has_method("hold") and node.has_method("launch")) and not node.has_method("absorb"): return false
 	var off := p-position
 	if absf(wrapf(_yaw_to(off)-yaw,-PI,PI)) > knob("catch_cone"): return false
@@ -739,6 +769,11 @@ func _skid_meters(miss: bool, strength: float) -> float:
 ## that would carry past the deck's side by KNOBS.teeter_reach or less
 ## ends at the lip, teetering; farther, it carries him over.
 func _skid(v: Vector3, meters: float, crack: bool) -> void:
+	if state in ["dead","down"]: return
+	if state == "kneel":
+		hits += 1
+		_crumble()
+		return
 	_drop_gather()
 	if caught != null and is_instance_valid(caught) and caught.has_method("absorb"): caught.call("absorb")
 	caught = null
@@ -799,10 +834,60 @@ func _skid_stopped(at: Vector3) -> void:
 		print("rune knight: teeters at the lip (%.1f m skid)" % skid_from.distance_to(at))
 		return
 	if not _skid_ended: return
+	print("rune knight: skid over, %.1f m" % skid_from.distance_to(at))
+	_recover()
+
+## Back on his feet after a skid or teeter: tracking you, or, all his
+## runes dark, down on one knee.
+func _recover() -> void:
+	if runes.is_empty():
+		state = "kneel"
+		body.play("kneel")
+		print("rune knight: broken, drops to one knee")
+		return
 	state = "track"
 	cool = knob("throw_gap")
 	body.play("idle")
-	print("rune knight: skid over, %.1f m" % skid_from.distance_to(at))
+
+# --- His deaths ---------------------------------------------------------------------
+
+## Hit kneeling: he crumbles to a heap of blocks where he knelt, and the
+## last of his wind bursts out of him at you.
+func _crumble() -> void:
+	_die("crumble")
+	var node: Node3D = WindShot.new()
+	isle.add_child(node)
+	node.global_position = aim_point()
+	node.set("strength",knob("burst_strength"))
+	node.set("shooter",self)
+	node.set("target",isle.get("motor"))
+	node.set("flight",WindShot.FLIGHT)
+	node.set_meta("parry_gain",knob("burst_gain"))
+	var from := node.global_position
+	var to := _target()
+	if to == Vector3.INF: to = last_seen if last_seen != Vector3.INF else from+_forward()*10.0
+	node.call("launch",(to-from).normalized()*knob("burst_speed"),0.0,knob("burst_grace"))
+	burst = node
+	print("rune knight: crumbles, his last wind bursts out at (%.1f, %.1f, %.1f)" % [to.x,to.y,to.z])
+
+## Landed from a fall off the deck: he shatters on the ground below.
+func _shatter() -> void:
+	_die("shatter")
+	print("rune knight: shatters at (%.1f, %.1f, %.1f)" % [position.x,position.y,position.z])
+
+func _die(how: String) -> void:
+	_drop_gather()
+	if caught != null and is_instance_valid(caught) and caught.has_method("absorb"): caught.call("absorb")
+	caught = null
+	death = how
+	died_at = position
+	state = "dead"
+	body.play(how)
+	remove_from_group("lock_targets")
+	remove_from_group("wind_shot_aim")
+	if _room != null:
+		_room.queue_free()
+		_room = null
 
 ## The deck's frame: x along it, z across.
 func _deck_local(at: Vector3) -> Vector3:
@@ -820,11 +905,11 @@ func _keep_on_deck(at: Vector3) -> Vector3:
 	l.x = clampf(l.x,Art.HEAD+margin*0.5,Art.SNAP-margin*0.5)
 	return Art.AQ*l
 
-## Where a fall's step from `at` along `step` meets stone or turf, or INF.
-func _ground_below(at: Vector3, step: Vector3) -> Vector3:
+## Where a fall's step from `at` along `step` meets stone or turf (the
+## ray's hit: position, normal), or empty.
+func _fall_hit(at: Vector3, step: Vector3) -> Dictionary:
 	var ray := PhysicsRayQueryParameters3D.new()
 	ray.collision_mask = SIGHT_MASK
 	ray.from = at
 	ray.to = at+step+Vector3.DOWN*0.05
-	var hit := get_world_3d().direct_space_state.intersect_ray(ray)
-	return Vector3.INF if hit.is_empty() else hit.position as Vector3
+	return get_world_3d().direct_space_state.intersect_ray(ray)

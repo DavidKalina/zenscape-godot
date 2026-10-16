@@ -47,7 +47,17 @@ extends Node3D
 ## - **The teeter** (`teeter`, `end`): arms windmilling, leaning out over
 ##   the drop and back (the way his last skid went), runes flickering.
 ## - **The fall** (`fall`, looping till the mind plays another): arms
-##   flung up, legs hanging.
+##   flung up, legs hanging; `land` once his root, having dropped, stops.
+## - **The kneel** (`kneel`, `end`): broken, he sags, drops onto his right
+##   knee (left foot forward, right shin flat behind), slumped over the
+##   front knee, the left forearm on it, the right arm hanging, head down; dust off the knee as it meets the deck and a
+##   last breath of dust off his chest.
+## - **crumble** and **shatter** (`end` at their length): his blocks come
+##   off him (every stone box and rune line, made top level) and fall
+##   under their own weight: crumble after a shudder, slumping into a heap
+##   where he was (stacked, each on what is under it); shatter thrown
+##   apart off the ground, spinning, runes out. Each block stops on stone
+##   or turf (a ray down its step) or on a block under it.
 ## - **rune_crack** (`set_effect("rune_crack", on, form)`, form `chest`,
 ##   `hand_l` or `hand_r`): that rune's lines flare, split apart, a dark
 ##   crack shows across them, they flicker CRACK_FLICKER s and go dark for
@@ -74,6 +84,9 @@ const CLIPS := {
 	"skid": {"length": 1.6, "loop": false, "beats": {"plant": 0.1}},
 	"teeter": {"length": 1.1, "loop": false, "beats": {}},
 	"fall": {"length": 0.8, "loop": true, "beats": {}},
+	"kneel": {"length": 1.1, "loop": false, "beats": {}},
+	"crumble": {"length": 2.2, "loop": false, "beats": {}},
+	"shatter": {"length": 2.0, "loop": false, "beats": {}},
 }
 const SOCKETS := ["hand_r","hand_l","hands_mid","blade","chest_rune","eye"]
 ## Key poses: clip -> [[time (s), [arm (rad, forward-up), spread (rad,
@@ -125,6 +138,12 @@ const KEYS := {
 	"teeter": [[0.0,[0.8,0.8,0.6,0.34,-0.06,0.12]],[0.15,[1.5,1.2,0.3,0.3,0.25,-0.02]],[1.1,[1.5,1.2,0.3,0.25,0.2,0.0]]],
 	# Falling: arms flung up and wide, head back.
 	"fall": [[0.0,REST],[0.2,[2.6,1.0,0.2,-0.3,0.4,-0.02]],[0.8,[2.8,0.9,0.3,-0.25,0.35,-0.02]]],
+	# Broken: a sag (knees going), then down onto the knee at 0.45 with a
+	# jolt forward, slumped over the front knee, the left forearm across it,
+	# the right arm hanging, head bowed.
+	"kneel": [[0.0,REST],[0.2,[0.15,0.25,0.4,0.15,-0.15,0.06]],[0.45,[0.35,0.2,0.3,0.5,-0.3,0.215]],[0.65,[0.75,0.1,0.55,0.5,-0.45,0.205,0.2,0.35,-1.35,0.15,0.0]],[1.1,[0.85,0.08,0.65,0.48,-0.55,0.21,0.22,0.3,-1.4,0.15,0.0]]],
+	# Crumble's shudder before he comes apart (then the blocks fall).
+	"crumble": [[0.0,[0.85,0.08,0.65,0.48,-0.55,0.21,0.22,0.3,-1.4,0.15,0.0]],[0.2,[0.6,0.1,0.5,0.6,-0.7,0.22,0.3,0.3,-1.45,0.1,0.0]]],
 	"stagger": [[0.0,REST],[0.08,[0.9,1.15,0.3,-0.5,0.45,0.0]],[0.4,[1.8,0.95,0.5,-0.38,0.3,0.04]],[0.75,[0.7,0.8,0.4,-0.2,0.0,0.08]],[0.9,[0.25,0.6,0.6,0.25,-0.2,0.11]],[1.3,[0.3,0.45,0.8,0.18,-0.08,0.07]],[1.8,[0.3,0.35,0.95,0.06,0.0,0.025]]],
 }
 ## Steps in `stagger` are quick and short (s).
@@ -179,6 +198,28 @@ const SKID_DUST_GAP := 0.07
 ## The teeter's windmill (turns a second) and its rock (rad, a second).
 const WINDMILL := 1.7
 const ROCK := 0.18
+## The kneel: the front foot's reach ahead and the back foot's behind
+## (shares of tall), when the knee meets the deck (s).
+const KNEEL_FRONT := 0.27
+const KNEEL_BACK := 0.24
+const KNEEL_DOWN := 0.45
+## Crumble: the shudder before the blocks go (s), their drift out (m/s,
+## shares of tall a second) and pop up; shatter: their throw out and up.
+const CRUMBLE_HOLD := 0.22
+const CRUMBLE_OUT := 0.9
+const CRUMBLE_UP := 0.4
+const SHATTER_OUT := 2.6
+const SHATTER_UP := 2.4
+## A block's pull (m/s/s), what a bounce keeps, and when it rests (m/s).
+const BLOCK_FALL := 20.0
+const BLOCK_BOUNCE := 0.25
+const BLOCK_REST := 0.35
+## The heap's cone: its height at his middle (share of tall) and its fall
+## per metre out; a block landing higher than the cone slips off outward
+## (m/s/s, shares of tall).
+const HEAP_TALL := 0.5
+const HEAP_SLOPE := 0.8
+const HEAP_SLIP := 3.0
 ## His stone's tones (the kit's, a touch lighter so he reads off the deck).
 const STONE := Color("6a645d")
 const STONE_DARK := Color("3d3934")
@@ -237,6 +278,16 @@ var _rng := RandomNumberGenerator.new()
 var _skid_dir := Vector3.BACK
 var _dust_t := 0.0
 var _stone_mat: Material
+## Every block of him (stone boxes and rune lines) and, come apart, each
+## one's flight: [node, velocity, spin (axis*rad/s), half height, radius,
+## resting]. `broken` once they have come off him.
+var _blocks: Array[MeshInstance3D] = []
+var _flying: Array = []
+var broken := false
+var _fell := false
+var _fall_vy := 0.0
+## Where he came apart: his root (the heap's middle and its base).
+var _heap_at := Vector3.ZERO
 var _hip_y := 0.0
 var _thigh_len := 0.0
 var _shin_len := 0.0
@@ -295,6 +346,7 @@ func set_effect(name_: String, on: bool, form := "") -> void:
 func _process(delta: float) -> void:
 	if delta <= 0.0: return
 	var now := global_position
+	_fall_vy = (now.y-_root_last.y)/delta
 	_root_v = _root_v.lerp((now-_root_last)/delta,clampf(delta*8.0,0.0,1.0))
 	_root_last = now
 	clip_time += delta
@@ -313,6 +365,17 @@ func _process(delta: float) -> void:
 	_blade_fade = move_toward(_blade_fade,1.0 if effects.wind_blade else 0.0,delta/(BLADE_GROW if effects.wind_blade else 0.12))
 	for r: String in crack_t:
 		if crack_t[r] >= 0.0: crack_t[r] += delta
+	if clip == "fall":
+		# Landed: his root, having dropped, stops.
+		if _fall_vy < -3.0: _fell = true
+		elif _fell and _fall_vy > -0.5 and not _sent.has("land"):
+			_sent["land"] = true
+			beat_reached.emit(clip,"land")
+	if (clip == "crumble" and clip_time >= CRUMBLE_HOLD) or clip == "shatter":
+		if not broken: _come_apart(clip == "shatter")
+	if broken:
+		_step_blocks(delta)
+		return
 	var flat_v := Vector3(_root_v.x,0.0,_root_v.z)
 	if flat_v.length() > 0.8 and clip == "skid": _skid_dir = flat_v.normalized()
 	_step(delta)
@@ -340,6 +403,25 @@ func _step(delta: float) -> void:
 			_swing_from = feet[pick]
 			_swing_t = 0.0
 			_swing_len = float(CLIPS[clip].length) if moving else (STAGGER_STEP if clip == "stagger" else float(CLIPS.walk.length))
+	if clip == "kneel" or clip == "crumble":
+		# Down on the right knee: the left foot out ahead, the right behind
+		# (its shin flat, the knee on the deck), moved there as he goes down.
+		_swing = -1
+		var g := global_transform
+		var fwd := -g.basis.z.normalized()
+		var u := smoothstep(0.1,KNEEL_DOWN,clip_time) if clip == "kneel" else 1.0
+		for i in range(2):
+			var want := _home(i,0.0)+fwd*(KNEEL_FRONT if i == 0 else -KNEEL_BACK)*tall
+			feet[i] = feet[i].lerp(want,u if clip == "kneel" else 1.0)
+		if clip == "kneel" and clip_time >= KNEEL_DOWN and not _sent.has("_knee"):
+			_sent["_knee"] = true
+			var host := get_parent().get_parent() if get_parent() != null and get_parent().get_parent() != null else self
+			BodyDust.plume(host,g.origin+fwd*0.02*tall+g.basis.x.normalized()*_hip_x,0.22*tall)
+			BodyDust.puff(host,(_sockets.chest_rune as Node3D).global_position,0.16*tall,fwd*1.5+Vector3.UP)
+			effects.wind_gather = false
+		_settle_t += delta
+		_pose(0.0,0.0)
+		return
 	if clip == "skid" or (clip == "teeter" and _swing < 0):
 		# Braced, sliding with him: the lead foot (heel first) down the way
 		# he goes, the other behind; no steps.
@@ -718,6 +800,7 @@ func _box(parent: Node3D, label: String, at: Vector3, size: Vector3, tone: Color
 	m.position = at
 	m.rotation = rot
 	parent.add_child(m)
+	_blocks.append(m)
 	return m
 
 ## A rune line of rune `group`: a thin lit bar of `size` at `at`, turned
@@ -737,6 +820,7 @@ func _rune(parent: Node3D, at: Vector3, size: Vector3, roll: float, group: Strin
 	m.position = at
 	m.rotation.z = roll
 	parent.add_child(m)
+	_blocks.append(m)
 
 ## Rune `group`'s crack: a dark line across its lines, hidden till it cracks.
 func _crack(parent: Node3D, at: Vector3, size: Vector3, roll: float, group: String) -> void:
@@ -799,3 +883,104 @@ func _skid_dust(delta: float, speed: float) -> void:
 		# The heels dig in: a cloud thrown up off them.
 		_sent["_dug"] = true
 		BodyDust.plume(host,(feet[0]+feet[1])*0.5+Vector3.UP*0.12*tall,0.3*tall)
+
+# --- Coming apart -------------------------------------------------------------------
+
+## His blocks off him, each on its own flight from where it is: drifting
+## out and slumping (crumble) or thrown apart spinning (shatter, runes out).
+func _come_apart(thrown: bool) -> void:
+	broken = true
+	_heap_at = global_position
+	effects.wind_gather = false
+	effects.wind_blade = false
+	effects.rune_glow = false
+	var mid := global_position+Vector3.UP*tall*(0.25 if clip == "crumble" else 0.4)
+	for m: MeshInstance3D in _blocks:
+		if not is_instance_valid(m) or (m.name == "Crack" and not m.visible): continue
+		var g := m.global_transform
+		m.top_level = true
+		m.global_transform = g
+		var aabb := m.get_aabb()
+		var size := aabb.size*g.basis.get_scale()
+		var out := g.origin-mid
+		out.y = 0.0
+		out = out.normalized() if out.length() > 0.01 else Vector3(_rng.randf_range(-1,1),0,_rng.randf_range(-1,1)).normalized()
+		var v: Vector3
+		var spin: Vector3
+		if thrown:
+			v = out*SHATTER_OUT*tall*_rng.randf_range(0.5,1.3)+Vector3.UP*SHATTER_UP*tall*_rng.randf_range(0.4,1.1)
+			spin = Vector3(_rng.randf_range(-1,1),_rng.randf_range(-1,1),_rng.randf_range(-1,1)).normalized()*_rng.randf_range(6.0,14.0)
+		else:
+			v = out*CRUMBLE_OUT*tall*_rng.randf_range(0.2,1.0)+Vector3.UP*CRUMBLE_UP*tall*_rng.randf_range(0.0,0.6)
+			spin = Vector3(_rng.randf_range(-1,1),_rng.randf_range(-1,1),_rng.randf_range(-1,1)).normalized()*_rng.randf_range(2.5,6.0)
+		_flying.append([m,v,spin,minf(size.y,minf(size.x,size.z))*0.5,Vector2(size.x,size.z).length()*0.5,false])
+	if thrown:
+		for group: String in _rune_mats:
+			var mat: StandardMaterial3D = _rune_mats[group]
+			mat.emission_energy_multiplier = 0.0
+			mat.albedo_color = Color(0.06,0.06,0.065)
+		var host := get_parent().get_parent() if get_parent() != null and get_parent().get_parent() != null else self
+		BodyDust.plume(host,global_position+Vector3.UP*0.1*tall,0.6*tall)
+		BodyDust.puff(host,global_position+Vector3.UP*0.3*tall,0.4*tall,Vector3.UP*2.0)
+
+## Each loose block falls till it meets stone or turf (a ray down its
+## step) or rests on a block already at rest under it.
+func _step_blocks(delta: float) -> void:
+	var space := get_world_3d().direct_space_state if is_inside_tree() else null
+	for f: Array in _flying:
+		if f[5]: continue
+		var m: MeshInstance3D = f[0]
+		if not is_instance_valid(m): continue
+		var v: Vector3 = f[1]
+		v += Vector3.DOWN*BLOCK_FALL*delta
+		var at := m.global_position
+		var to := at+v*delta
+		var half: float = f[3]
+		var floor_y := -INF
+		if space != null:
+			var ray := PhysicsRayQueryParameters3D.new()
+			ray.collision_mask = 1 | (1 << 11)
+			ray.from = at+Vector3.UP*half
+			ray.to = to+Vector3.DOWN*half
+			var hit := space.intersect_ray(ray)
+			if not hit.is_empty() and (hit.normal as Vector3).y >= 0.5:
+				floor_y = (hit.position as Vector3).y+half
+			elif not hit.is_empty():
+				# A wall: it glances off.
+				var nrm: Vector3 = hit.normal
+				if v.dot(nrm) < 0.0: v -= nrm*v.dot(nrm)*1.4
+				to = at+v*delta
+		var out := Vector2(to.x-_heap_at.x,to.z-_heap_at.z)
+		var cone := _heap_at.y+maxf(HEAP_TALL*tall-HEAP_SLOPE*out.length(),0.0)
+		for o: Array in _flying:
+			if not o[5] or o == f: continue
+			var on: MeshInstance3D = o[0]
+			var off := on.global_position-to
+			if Vector2(off.x,off.z).length() < (float(f[4])+float(o[4]))*0.6:
+				var top := on.global_position.y+float(o[3])+half
+				if top-half <= cone:
+					floor_y = maxf(floor_y,top)
+				elif to.y-half < on.global_position.y+float(o[3]):
+					# Over the heap's cone: it slips off outward.
+					var away := out.normalized() if out.length() > 0.01 else Vector2(1.0,0.0).rotated(_rng.randf()*TAU)
+					v += Vector3(away.x,0.0,away.y)*HEAP_SLIP*tall*delta
+		var spin: Vector3 = f[2]
+		if to.y <= floor_y and v.y < 0.0:
+			to.y = floor_y
+			v = Vector3(v.x*0.5,-v.y*BLOCK_BOUNCE,v.z*0.5)
+			spin *= 0.5
+			if v.length() < BLOCK_REST*tall:
+				f[5] = true
+				v = Vector3.ZERO
+		if spin.length() > 0.01:
+			m.global_basis = Basis(spin.normalized(),spin.length()*delta)*m.global_basis
+		m.global_position = to
+		f[1] = v
+		f[2] = spin
+
+## How many blocks have come to rest (for the drivers), and how many flew.
+func blocks_at_rest() -> Vector2i:
+	var n := 0
+	for f: Array in _flying:
+		if f[5]: n += 1
+	return Vector2i(n,_flying.size())

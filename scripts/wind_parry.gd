@@ -199,9 +199,11 @@ func _take(shot: Node3D, m: PilotMotor, eta: float) -> void:
 		var off := p-chest
 		var flat := Vector2(off.x,off.z)
 		_wisps.append({"r":flat.length(),"a":atan2(off.z,off.x),"y":off.y,"lag":0.08*float(i%4),"seed":float(i)*1.7,"prev":p})
-	# A full segment in, capped at full; the drain's lull starts afresh.
+	# A full segment in (or the shot's meta `parry_gain`, a share of the
+	# gauge: the rune knight's last wind fills it all), capped at full; the
+	# drain's lull starts afresh.
 	if updraft != null:
-		updraft.charge = minf(float(updraft.charge)+Updraft.SEG,1.0)
+		updraft.charge = minf(float(updraft.charge)+float(shot.get_meta("parry_gain",Updraft.SEG)),1.0)
 		updraft.set("_quiet",0.0)
 	print("wind parry: took a %s in, %.3f s from contact, charge now %.2f" % [form if form != null else "shot",eta,float(updraft.charge) if updraft != null else -1.0])
 	_hitstop = float(KNOBS.hitstop)
