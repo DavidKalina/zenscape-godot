@@ -55,14 +55,13 @@ FootPieces change only adds to it.
 
 ## Playtest (the user, 2026-10-15)
 
-"Kinda cool", parked on a branch. The rope kept breaking. Not yet looked
-into. Three things can end the line early, and each shows its reason as a
-word on screen:
-- "The line tore out of your hands": in `_carry`, the tie point and the
-  hand more than 2.5 m apart in height while the line is taut. This likely
-  fires on slopes and tiers.
-- "The line parted": over `SNAP` (25 000 N) while hitched to the plane.
-- "The load fell away": the load dropped below the isle's lost height.
+"Kinda cool", parked on a branch. The rope kept breaking while flying:
+you can't carry a load off with the plane. That is `SNAP` (25 000 N) on
+takeoff, and every load hits it. The plane is an anchor that doesn't feel
+the load, moving at flight speed, so the stiff line (K 12 000 N/m, tuned
+for dragging on the ground) jerks the load from rest to flight speed in a
+fraction of a second. Even the small crate needs ~2 m of stretch, ~24 000 N.
+Round 2 is carrying in flight.
 
 ## Not done, and open
 
