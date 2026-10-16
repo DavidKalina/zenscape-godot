@@ -3,7 +3,8 @@ extends SceneTree
 ## crossing
 ## yard's own `_process` frames (not scripted), the pilot driven by Input
 ## actions (the stick and Space), the gust arrows firing on their own.
-##   - Thrown off the piers by a gust arrow, Space after the yard's
+##   - Thrown off the piers by a gust arrow (pumped again when a throw
+##     comes down on a perch route's stone), Space after the yard's
 ##     KNOCK_SAIL opens the sail out of the tumble: he glides, no longer
 ##     tumbling.
 ##   - Steered into the nearest updraft, the sail climbs; steered on to the
@@ -120,23 +121,39 @@ func _steer_to(to: Vector3) -> void:
 	Input.action_press(&"move_forward")
 
 func _sail_out() -> void:
-	var thrown := await _pump_till_thrown()
-	check(thrown and m.move == "tumble","A gust arrow throws him off the piers, tumbling (%s, move %s)" % [arrows.hits,m.move])
-	if not thrown: return
-	var hit_at := m.feet
-	# Space mashed straight away: no sail before the beat.
-	Input.action_press(&"walk_jump")
-	await process_frame
-	Input.action_release(&"walk_jump")
-	await process_frame
-	check(m.move == "tumble","Space at once (inside KNOCK_SAIL) opens nothing: still tumbling")
-	# A late sail (the beat long past, LATE m fallen): the updraft must
-	# win the height back.
+	# A throw can come down on a perch route's stone (crossing_viaduct.gd
+	# `_route`, ROUTE_ASIDE off the line) rather than out over the void:
+	# pumped again till one carries him LATE m down, tumbling.
+	var hit_at := Vector3.ZERO
 	var waited := 0
-	while m.move == "tumble" and waited < 600:
-		waited += 1
+	var clear := false
+	var landed := 0
+	for attempt in range(6):
+		var thrown := await _pump_till_thrown()
+		if attempt == 0:
+			check(thrown and m.move == "tumble","A gust arrow throws him off the piers, tumbling (%s, move %s)" % [arrows.hits,m.move])
+		if not thrown: return
+		hit_at = m.feet
+		# Space mashed straight away: no sail before the beat.
+		Input.action_press(&"walk_jump")
 		await process_frame
-		if waited*(1.0/60.0) > study.KNOCK_SAIL+0.05 and hit_at.y-m.feet.y > LATE: break
+		Input.action_release(&"walk_jump")
+		await process_frame
+		if attempt == 0:
+			check(m.move == "tumble","Space at once (inside KNOCK_SAIL) opens nothing: still tumbling")
+		# A late sail (the beat long past, LATE m fallen): the updraft must
+		# win the height back.
+		waited = 0
+		while m.move == "tumble" and waited < 600:
+			waited += 1
+			await process_frame
+			if waited*(1.0/60.0) > study.KNOCK_SAIL+0.05 and hit_at.y-m.feet.y > LATE:
+				clear = true
+				break
+		if clear: break
+		landed += 1
+	print("MEASURE throws that came down on stone before one fell clear: %d" % landed)
+	check(clear,"A throw carries him %.0f m down the void, still tumbling (%d landed on stone first)" % [LATE,landed])
 	var drop_before := hit_at.y-m.feet.y
 	for k in range(3):
 		Input.action_press(&"walk_jump")
