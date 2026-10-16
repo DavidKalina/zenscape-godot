@@ -67,7 +67,7 @@ coordinate.
      unchanged: the grey look is the editor's view only.
    Measure the frame time while editing an `editor_*` motif before and
    after (a rendered run; say how), and put both numbers in the commit.
-10. **Snappy edits** (the next task after the one in progress when this
+9. **Snappy edits** (the next task after the one in progress when this
    was added). In the grey look an edit still blocks about 1.4 s
    (iteration 3: ~1019 ms rebuilding every piece, ~355 ms the land). Aim:
    an edit answers within about 100 ms, and the full-detail rebuild never
@@ -89,7 +89,7 @@ coordinate.
    Measure, in a rendered run, the time from an edit (a brush stroke, a
    slider step, moving a piece) to the editor answering and to full detail
    in place, before and after; put the numbers in the commit.
-9. **Inspecting up close** (the last task). The fly camera
+10. **Inspecting up close** (the last task). The fly camera
    is hard to judge a place from, so give the user two close views,
    without leaving the editor or playing:
    - **Frame (F):** the camera swings in to the selected trap or piece
