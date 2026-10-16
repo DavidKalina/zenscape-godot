@@ -3,8 +3,9 @@ extends SceneTree
 ## motif_sky.gd, motif_isle.gd; docs/scenic/motif-sky.md), headless, each
 ## stood whole (`flush`): the plane lands on its turf by hand (a touch
 ## nosed down onto an open run, braked to a stop, out), the pilot walks
-## off on it; its grass and its life are up round where it stands, its
-## foot tokens on it, its rope bridges live underfoot, its bells swing as
+## off on it (on an isle with no run, the broken ring's or the dragon's
+## roost's, he is set down on its turf by its summit); its grass and its life (if its motif has any: the dragon's
+## roost has none) are up round where it stands, its foot tokens on it, its rope bridges live underfoot, its bells swing as
 ## the plane passes, the tarn's water is skimmed. Also: the plane's stone
 ## query never counts a motif's turf as stone; nothing is built on a worker
 ## headless; a motif isle not yet near the eye headless stays unbuilt.
@@ -49,17 +50,21 @@ func run() -> void:
 func _isle(isle: Node3D) -> void:
 	var id: String = isle.motif.id()
 	var c: Vector3 = isle.circle()
-	check(isle.is_up() and isle.flora != null and isle.life != null,"%s stands whole: art, grass and life" % id)
+	# A motif with no life of its own (the dragon's roost) stands up bare
+	# of it: art and grass.
+	var lives: bool = isle.motif.life_script() != null
+	check(isle.is_up() and isle.flora != null and (isle.life != null) == lives,"%s stands whole: art, grass%s" % [id," and life" if lives else ", no life of its own"])
 	check(isle.art.position.is_equal_approx(isle.offset) and isle.art.get_child_count() > 5,"%s's art stands at its place (%s)" % [id,str(isle.offset)])
 	# Its grass round its middle, its foot tokens on it.
 	var records: Array = isle.flora.get_meta("records")
 	var on := records.filter(func(r: Dictionary) -> bool: return Vector2(float(r.x)-c.x,float(r.z)-c.y).length() < c.z+2.0).size()
 	check(on == records.size() and records.size() > 1000,"%s's grass grows on it (%d of %d tufts and flowers)" % [id,on,records.size()])
-	var tokens: Array = isle.life.tokens.tokens
-	var near := tokens.filter(func(t: Dictionary) -> bool: return Vector2((t.at as Vector3).x-c.x,(t.at as Vector3).z-c.y).length() < c.z+15.0).size()
-	check(tokens.size() >= 4 and near == tokens.size(),"%s's foot tokens are on it (%d of %d)" % [id,near,tokens.size()])
-	var birds: Node3D = isle.life.birds
-	check(birds != null and not (birds.groups as Dictionary).is_empty(),"%s's songbirds have their perches (%d groups)" % [id,(birds.groups as Dictionary).size() if birds != null else 0])
+	if isle.life != null:
+		var tokens: Array = isle.life.tokens.tokens
+		var near := tokens.filter(func(t: Dictionary) -> bool: return Vector2((t.at as Vector3).x-c.x,(t.at as Vector3).z-c.y).length() < c.z+15.0).size()
+		check(tokens.size() >= 4 and near == tokens.size(),"%s's foot tokens are on it (%d of %d)" % [id,near,tokens.size()])
+		var birds: Node3D = isle.life.birds
+		check(birds != null and not (birds.groups as Dictionary).is_empty(),"%s's songbirds have their perches (%d groups)" % [id,(birds.groups as Dictionary).size() if birds != null else 0])
 	# Its turf, as the plane and the pilot meet it.
 	# A motif of small isles (the broken ring) has no run to land on: the pilot
 	# is set down on its turf instead.
@@ -70,10 +75,12 @@ func _isle(isle: Node3D) -> void:
 		var space: PhysicsDirectSpaceState3D = study.get_world_3d().direct_space_state
 		var summit: Vector3 = (isle.motif.summit() as Vector3)+(isle.offset as Vector3)
 		var top: Vector3 = study._turf_top(space,summit.x,summit.z)
+		# Its summit no turf (the roost's peak is rock): its turf nearest it.
+		if top == Vector3.INF: top = _turf_near(space,isle,summit)
 		if study.flying: study.board()
 		study.place(top,Vector2(1.0,0.0))
 		for i in range(30): study.tick(DT)
-		check(top != Vector3.INF and study.motor.grounded and absf(study.motor.feet.y-top.y) < 0.5,"%s: the pilot stands on its highest isle (%s)" % [id,str(study.motor.feet)])
+		check(top != Vector3.INF and study.motor.grounded and absf(study.motor.feet.y-top.y) < 0.5,"%s: the pilot stands on its turf by its summit (%s)" % [id,str(study.motor.feet)])
 		_bridges(isle)
 		return
 	if run_spot.is_empty(): return
@@ -123,6 +130,21 @@ func _isle(isle: Node3D) -> void:
 		_: pass
 	_bridges(isle)
 	study.board()
+
+## The isle's turf nearest `to` (rays every 2 m over its circle), or INF.
+func _turf_near(space: PhysicsDirectSpaceState3D, isle: Node3D, to: Vector3) -> Vector3:
+	var c: Vector3 = isle.circle()
+	var best := Vector3.INF
+	var x := c.x-c.z
+	while x <= c.x+c.z:
+		var z := c.y-c.z
+		while z <= c.y+c.z:
+			var top: Vector3 = study._turf_top(space,x,z)
+			if top != Vector3.INF and Vector2(x-to.x,z-to.z).length() < Vector2(best.x-to.x,best.z-to.z).length() and study._room_for_pilot(space,top):
+				best = top
+			z += 2.0
+		x += 2.0
+	return best
 
 ## The bells swing when the plane passes close.
 func _bells(isle: Node3D) -> void:
