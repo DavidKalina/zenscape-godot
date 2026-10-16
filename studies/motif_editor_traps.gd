@@ -24,6 +24,7 @@ const RuinKitFit = preload("res://scripts/ruin_kit_fit.gd")
 const TrapField = preload("res://scripts/traps/trap_field.gd")
 const Trap = preload("res://scripts/traps/trap.gd")
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
+const EditorGrid = preload("res://studies/motif_editor_grid.gd")
 const PICK_PX := 40.0
 ## The lip's edge is sought along the drop in steps this long (m); the top
 ## ends where the ground falls this far under the lip.
@@ -158,7 +159,9 @@ func begin_ghost(key: String, at: Vector2) -> void:
 ## Where a trap goes under screen point `at`, in snap order: its way in on
 ## a cliff lip near the cursor (RuinKitFit.lip_near), facing out over the
 ## drop as in the trap yard; else a placed piece's top; else the ground.
-## Alt held skips the lip. {position, on, turn (lip only)} or {}.
+## With the pilot grid on, the ground spot is its cell centre at a ledge
+## level ("on": "grid"). Alt held skips the lip. {position, on, turn (lip
+## only)} or {}.
 func spot(at: Vector2) -> Dictionary:
 	if not Input.is_key_pressed(KEY_ALT):
 		var lip := lip_spot(at)
@@ -167,6 +170,8 @@ func spot(at: Vector2) -> Dictionary:
 	if not top.is_empty(): return {"position":top.position,"on":"piece"}
 	var hit: Dictionary = editor.ground_hit(at)
 	if hit.is_empty(): return {}
+	if editor.grid != null and editor.grid.on:
+		return editor.grid.trap_spot(Vector2(hit.position.x,hit.position.z))
 	return {"position":hit.position,"on":"ground"}
 
 ## The cliff lip near the ground under `at`: the trap's origin (its way in)
@@ -267,7 +272,7 @@ func place(key: String, at: Vector3, turn := 0.0, on := "") -> int:
 	if not (editor.data as Dictionary).has("traps"): editor.data.traps = []
 	var list: Array = editor.data.traps
 	var e := {"id":key,"at":[snappedf(at.x,0.001),snappedf(at.y,0.001),snappedf(at.z,0.001)],"turn":snappedf(fposmod(turn,360.0),0.001)}
-	if on in ["lip","piece"]: e.on = on
+	if on in ["lip","piece","grid"]: e.on = on
 	list.append(e)
 	rebuild()
 	traps_made += 1
@@ -334,7 +339,7 @@ func drag_to(at: Vector2) -> void:
 	var e: Dictionary = entries()[selected]
 	e.at = [snappedf(p.x,0.001),snappedf(p.y,0.001),snappedf(p.z,0.001)]
 	if s.has("turn"): e.turn = float(s.turn)
-	if str(s.on) in ["lip","piece"]: e.on = str(s.on)
+	if str(s.on) in ["lip","piece","grid"]: e.on = str(s.on)
 	else: e.erase("on")
 	_refit(selected)
 
@@ -377,6 +382,7 @@ func reseat() -> int:
 		if known == null or int(known) == ground: continue
 		var at := Vector3(p.x,float(g.call(p.x,p.y)),p.y)
 		var turn := float(e.get("turn",0.0))
+		if on == "grid": at.y = EditorGrid.level(at.y)
 		if on == "lip":
 			var lip := lip_at(motif,p)
 			if lip.is_empty(): e.erase("on")

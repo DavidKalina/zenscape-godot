@@ -30,7 +30,7 @@ const PAD := 14.0
 const FOOT := 84.0
 ## Its top (viewport px, unscaled as the look label is): under the editor's
 ## "Look: grey · G full" label in the top right corner.
-const TOP_PX := 46.0
+const TOP_PX := 104.0
 
 var editor: Node
 var ui_scale := 1.0

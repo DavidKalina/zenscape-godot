@@ -45,6 +45,7 @@ const EditorPalette = preload("res://studies/motif_editor_palette.gd")
 const Feel = preload("res://studies/motif_editor_feel.gd")
 const EditorTraps = preload("res://studies/motif_editor_traps.gd")
 const EditorKnobs = preload("res://studies/motif_editor_knobs.gd")
+const EditorGrid = preload("res://studies/motif_editor_grid.gd")
 const GreyLook = preload("res://studies/motif_editor_grey.gd")
 const Rebuild = preload("res://studies/motif_editor_rebuild.gd")
 const ToolRoll = preload("res://scripts/tool_roll.gd")
@@ -175,6 +176,8 @@ var feel: Feel = null
 var traps: EditorTraps = null
 ## The selected trap's knobs (studies/motif_editor_knobs.gd).
 var knobs: EditorKnobs = null
+## The pilot grid (H): cells of his jump, heights in ledge steps.
+var grid: EditorGrid = null
 ## The grey editing look (studies/motif_editor_grey.gd), and whether the
 ## full look is on instead (G): editing and playing are grey by default.
 var grey: GreyLook = null
@@ -748,6 +751,7 @@ func _edit_input(event: InputEvent) -> void:
 		elif handle >= 0 and _dragging: handle_to(mm.position)
 		elif _dragging: drag_to(mm.position)
 		_show_cursor(mm.position)
+		if grid != null: grid.show_at(mm.position)
 	elif event is InputEventKey and event.pressed:
 		var k := event as InputEventKey
 		if k.keycode == KEY_S and (k.ctrl_pressed or k.meta_pressed):
@@ -779,6 +783,7 @@ func _edit_input(event: InputEvent) -> void:
 				else: delete_selected()
 			KEY_G: toggle_dress()
 			KEY_B: toggle_breakable()
+			KEY_H: if grid != null: grid.toggle()
 			KEY_ESCAPE:
 				if not _held_piece.is_empty(): _drop_ghost()
 				if traps != null:
@@ -904,8 +909,14 @@ func drag_to(at: Vector2) -> void:
 	if sel_marker != "":
 		data.markers[sel_marker] = [snappedf(p.x,0.001),snappedf(float(motif.ground(p.x,p.z)),0.001),snappedf(p.z,0.001)]
 		_place_markers()
-	elif selected >= 0: move_piece(selected,p)
+	elif selected >= 0: move_piece(selected,_on_grid(p))
 	elif traps != null and traps.selected >= 0: traps.drag_to(at)
+
+## Ground point `p` on its pilot grid cell's centre (as it is, grid off).
+func _on_grid(p: Vector3) -> Vector3:
+	if grid == null or not grid.on: return p
+	var c: Vector2 = grid.centre(Vector2(p.x,p.z))
+	return Vector3(c.x,p.y,c.y)
 
 func _end_drag() -> void:
 	_dragging = false
@@ -1536,6 +1547,9 @@ func _build_editor_ui() -> void:
 	add_child(traps)
 	traps.setup(self)
 	traps.sync()
+	grid = EditorGrid.new()
+	add_child(grid)
+	grid.setup(self)
 	knobs = EditorKnobs.new()
 	_ui.add_child(knobs)
 	knobs.setup(self)
@@ -2119,7 +2133,7 @@ func ghost_to(at: Vector2) -> void:
 	_show_snap({})
 	node.visible = not hit.is_empty()
 	if hit.is_empty(): return
-	var p: Vector3 = hit.position
+	var p: Vector3 = _on_grid(hit.position)
 	var turn := float(_held_piece.get("turn",0.0))
 	var y := MotifAuthored.seat(motif.ground_fn(),node,p.x,p.z,turn)
 	node.transform = Transform3D(Basis(Vector3.UP,deg_to_rad(turn)),Vector3(p.x,y,p.z))

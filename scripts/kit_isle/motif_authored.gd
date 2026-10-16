@@ -22,7 +22,8 @@ extends "res://scripts/kit_isle/motif_greybox.gd"
 ##    "pieces":[{id, seed, weathered, at:[x,y,z], turn (deg), sink}],
 ##    "markers":{"spawn":[x,y,z], "rim_in":[x,y,z], "rim_out":[x,y,z]},
 ##    "traps" (optional, absent = none):[{id (scripts/traps/trap_registry.gd
-##    key), at:[x,y,z] (its way in), turn (deg), on? ("lip", "piece";
+##    key), at:[x,y,z] (its way in), turn (deg), on? ("lip", "piece", "grid":
+##    set at that y;
 ##    absent = the ground: its y found from the land as built), knobs?:{only
 ##    those changed from the trap's defaults()}}],
 ##    "breakable" (optional; false: no piece of it breaks)}
@@ -215,7 +216,7 @@ static func saved_form(d: Dictionary) -> Dictionary:
 		var a: Array = e.get("at",[0.0,0.0,0.0])
 		var t := {"id":id,"at":[snappedf(float(a[0]),0.001),snappedf(float(a[1]),0.001),snappedf(float(a[2]),0.001)],
 			"turn":snappedf(float(e.get("turn",0.0)),0.001)}
-		if str(e.get("on","")) in ["lip","piece"]: t.on = str(e.on)
+		if str(e.get("on","")) in ["lip","piece","grid"]: t.on = str(e.on)
 		var knobs := TrapRegistry.changed_knobs(id,e.get("knobs",{}) if e.get("knobs") is Dictionary else {})
 		if not knobs.is_empty(): t.knobs = knobs
 		list.append(t)
@@ -233,7 +234,7 @@ static func _read_traps(d: Dictionary) -> void:
 		var a: Variant = e.get("at")
 		if not (a is Array and (a as Array).size() == 3): a = [0.0,0.0,0.0]
 		var t := {"id":str(e.id),"at":[float(a[0]),float(a[1]),float(a[2])],"turn":float(e.get("turn",0.0))}
-		if str(e.get("on","")) in ["lip","piece"]: t.on = str(e.on)
+		if str(e.get("on","")) in ["lip","piece","grid"]: t.on = str(e.on)
 		if e.get("knobs") is Dictionary and not (e.knobs as Dictionary).is_empty():
 			t.knobs = TrapRegistry.typed_knobs(t.id,e.knobs)
 		list.append(t)
