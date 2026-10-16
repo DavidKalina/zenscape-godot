@@ -14,6 +14,7 @@ extends "res://scripts/kit_isle/motif_greybox.gd"
 ## Plan frame: x east, z south (+Z), y up.
 
 const KitLife = preload("res://scripts/kit_isle/kit_life.gd")
+const Torana = preload("res://scripts/ruin_kit_torana.gd")
 
 const TURF_SEED := 5300
 ## How far a keel's spurs can hang under top-depth (KitLand ring_sides),
@@ -32,6 +33,18 @@ const LAYOUT := {
 		{"name":"Crown","at":Vector2(91.0,0.0),"r":Vector2(16.0,14.0),"top":20.0,"depth":8.0,"wobble":0.07,"seed":2},
 		{"name":"Cellar","at":Vector2(84.0,11.0),"r":Vector2(8.0,8.0),"top":10.0,"depth":7.0,"wobble":0.08,"seed":3},
 	],
+	## The stations' pieces: id, seed, weathered, `at` (its foot, world),
+	## `rot` (deg about Y), `box` its bounds (piece frame, the occupancy). The torana's jamb stands on Threshold's east
+	## lip with its lintel out east toward the Halo; rope 1 (x +3.2 off the
+	## jamb, z +1.58) hangs over turf (the lip is at about x 30), the
+	## snapped end (x +21.2) about 4 m short of the Halo's west lip, its
+	## top 10.5 over the Halo's 7. `dry` the dry rope's index (rope 3).
+	"pieces":[
+		{"id":"relic_torana","seed":5320,"weathered":0.5,"at":Vector3(25.0,0.0,0.0),"rot":0.0,"ropes":4,"dry":2,
+			"box":AABB(Vector3(-3.2,-0.2,-2.4),Vector3(24.4,11.8,4.8))},
+	],
+	## Bands kept clear of tall flora round the pieces' feet (x, z).
+	"clear":[Rect2(20.0,-4.0,11.0,8.0)],
 	"strip":Rect2(-38.0,-5.0,30.0,10.0),
 	"strip_clear":Rect2(-45.0,-8.0,42.0,16.0),
 	"paths":[
@@ -108,6 +121,8 @@ static func outline_of(i: Dictionary) -> Array:
 static func wear(p: Vector2) -> float:
 	var w: float = KitLand.wear_of(LAYOUT.paths).call(p)
 	if (LAYOUT.strip_clear as Rect2).has_point(p): w = maxf(w,0.12)
+	for r: Rect2 in LAYOUT.clear:
+		if r.has_point(p): w = maxf(w,0.12)
 	return w
 
 ## Turf tone wear: the paths only (the strip stays green, read as a lawn).
@@ -144,6 +159,9 @@ func _solids() -> Array:
 		var box := Rect2(ring[0],Vector2.ZERO)
 		for p: Vector2 in ring: box = box.expand(p)
 		out.append([box.grow(-1.0),float(i.top)-float(i.depth)*KEEL_REACH,float(i.top),null])
+	for p: Dictionary in LAYOUT.pieces:
+		var b: AABB = pose(p)*(p.box as AABB)
+		out.append([Rect2(b.position.x,b.position.z,b.size.x,b.size.z),b.position.y,b.end.y,null])
 	return out
 
 ## A guess until measured headless.
@@ -166,7 +184,49 @@ func build(into: Node3D) -> void:
 		_collide_sides(land)
 		root.add_child(land)
 		turf(land)
+	_pieces(root)
 	built_ms = Time.get_ticks_msec()-began
+
+## The stations' pieces (LAYOUT.pieces), each at its foot and turn.
+func _pieces(root: Node3D) -> void:
+	for p: Dictionary in LAYOUT.pieces:
+		var node := piece_of(p)
+		if node == null: continue
+		node.name = str(p.id)
+		node.transform = pose(p)
+		_specs["%s/%d" % [str(p.id),int(p.seed)]] = node.get_meta("ropes",[])
+		root.add_child(node)
+
+## A piece of LAYOUT.pieces built (the torana with its rope count and dry
+## rope; the others by RuinKit.piece).
+static func piece_of(p: Dictionary) -> Node3D:
+	if p.id == "relic_torana":
+		return Torana.torana(int(p.seed),float(p.weathered),int(p.get("ropes",4)),Torana.TILT,int(p.get("dry",-1)))
+	return RuinKit.piece(str(p.id),int(p.seed),float(p.weathered))
+
+static func pose(p: Dictionary) -> Transform3D:
+	return Transform3D(Basis(Vector3.UP,deg_to_rad(float(p.rot))),p.at)
+
+## The torana's prayer ropes, hung live where it stands (its "ropes" meta
+## through the host's `rope`; the dry one dried, a tag beside each).
+func live(g: Node) -> void:
+	var Authored: Script = load("res://scripts/kit_isle/motif_authored.gd")
+	for p: Dictionary in LAYOUT.pieces:
+		var specs := _rope_specs(p)
+		if specs.is_empty(): continue
+		var frame := pose(p)
+		frame.origin = g.w(frame.origin)
+		Authored.hang_ropes(specs,frame,Callable(g,"rope"))
+
+## A piece's "ropes" meta (built once per id and kept).
+static var _specs := {}
+static func _rope_specs(p: Dictionary) -> Array:
+	var key := "%s/%d" % [str(p.id),int(p.seed)]
+	if not _specs.has(key):
+		var node := piece_of(p)
+		_specs[key] = node.get_meta("ropes",[]) if node != null else []
+		if node != null: node.free()
+	return _specs[key]
 
 ## An island's hanging sides collided as drawn (as gb_sunken_giant's): a
 ## fall past a flank meets it.
