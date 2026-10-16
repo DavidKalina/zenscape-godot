@@ -103,7 +103,7 @@ func setup(owner_editor: Node) -> void:
 	var reroll := _button("Re-roll","A new seed, the same sliders",func() -> void: editor.reroll())
 	reroll.name = "Reroll"
 	seed_row.add_child(reroll)
-	seed_row.add_child(_button("Dress","Turf, flora and life again (G)",func() -> void: editor.dress()))
+	seed_row.add_child(_button("Full look","The full look (turf, flora, life, sky) or back to grey (G)",func() -> void: editor.toggle_dress()))
 	_box.add_child(seed_row)
 	_breakable = _button("Breakable","Its pieces break when hit (off: none of them do; one piece: select it, B)",func() -> void: editor.toggle_motif_breakable())
 	_breakable.name = "Breakable"

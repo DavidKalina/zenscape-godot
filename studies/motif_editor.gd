@@ -16,7 +16,8 @@ extends "res://studies/kit_isle.gd"
 ##   palette item, then left click on the ground  place it (Shift: keep placing)
 ##   Z / X                        turn the selected piece 15 deg (Shift: 5)
 ##   Delete / Backspace           delete the selected piece
-##   G                            dress again (turf, flora, life)
+##   G                            the full look (turf, flora, life, sky) or back to grey
+##                                (editing and playing are grey by default: motif_editor_grey.gd)
 ##   Ctrl+S                       save          P / Shift+P   play from the spawn / under the camera
 ##   1-8                          tools: select raise lower smooth flatten ravine water outline
 ##   brush: LMB drag (hold still to pile up), wheel or [ ] radius, panel strength
@@ -43,6 +44,7 @@ const LandformPanel = preload("res://studies/motif_editor_panel.gd")
 const EditorPalette = preload("res://studies/motif_editor_palette.gd")
 const Feel = preload("res://studies/motif_editor_feel.gd")
 const EditorTraps = preload("res://studies/motif_editor_traps.gd")
+const GreyLook = preload("res://studies/motif_editor_grey.gd")
 const ToolRoll = preload("res://scripts/tool_roll.gd")
 const ClaySound = preload("res://scripts/clay_sound.gd")
 const RuinKitFit = preload("res://scripts/ruin_kit_fit.gd")
@@ -169,6 +171,11 @@ var palette: EditorPalette = null
 var feel: Feel = null
 ## The placed traps (studies/motif_editor_traps.gd).
 var traps: EditorTraps = null
+## The grey editing look (studies/motif_editor_grey.gd), and whether the
+## full look is on instead (G): editing and playing are grey by default.
+var grey: GreyLook = null
+var dressed := false
+var _look_label: Label = null
 ## A stamp being sized ({} none): its stroke, its middle, the outline
 ## before it (an island grows the outline from that), its press.
 var _stamp: Dictionary = {}
@@ -277,7 +284,10 @@ func _first_stand() -> void:
 	_build_editor_ui()
 	set_tool("select")
 	_build_markers()
-	dress()
+	grey = GreyLook.new(self)
+	grey.set_on(not dressed)
+	_build_look_label()
+	stand()
 	frame_hill()
 	enter_edit()
 	# The study captures the mouse once he can walk (character_study.gd
@@ -285,7 +295,7 @@ func _first_stand() -> void:
 	# isle's `_ready` resumes inside that emit). In the editor the mouse
 	# stays free: `_hold_mouse` frees it every frame while editing.
 	_free_mouse_if_editing.call_deferred()
-	print("motif editor: %s stood, dressed in %d ms" % [str(data.slug),dress_ms])
+	print("motif editor: %s stood %s in %d ms" % [str(data.slug),"dressed" if dressed else "grey",dress_ms if dressed else bare_ms])
 
 func _free_mouse_if_editing() -> void:
 	if editing and not _looking: Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -358,6 +368,49 @@ func _swap_step() -> void:
 	if _stamp.is_empty() and _stroke.is_empty() and _cut.is_empty() and not _want_live: _drop_edit_ghost()
 	else: _ghost_old.clear()
 
+## The motif stood again in the look that is on: dressed, or the grey bare
+## land and pieces (full detail).
+func stand() -> void:
+	if dressed: dress()
+	else: rebuild_bare(false,true)
+
+## G: the full look as a preview (editing or playing), or back to grey.
+func toggle_dress() -> void:
+	dressed = not dressed
+	_want_dress = false
+	grey.set_on(not dressed)
+	if not editing and dressed: apply_look(KitWeather.LIVE,false)
+	elif editing and dressed and (look_id != edit_look or weather.live): apply_look(edit_look,false)
+	stand()
+	_show_look_label()
+	say("Full look (G: back to grey)" if dressed else "Grey look (G: the full look)")
+
+func _build_look_label() -> void:
+	var layer := CanvasLayer.new()
+	layer.name = "LookLabel"
+	layer.layer = 7
+	add_child(layer)
+	_look_label = Label.new()
+	_look_label.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	_look_label.offset_left = -360.0
+	_look_label.offset_right = -16.0
+	_look_label.offset_top = 10.0
+	_look_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_look_label.add_theme_font_size_override("font_size",22)
+	_look_label.add_theme_color_override("font_outline_color",Color(0.0,0.0,0.0,0.5))
+	_look_label.add_theme_constant_override("outline_size",5)
+	_look_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.add_child(_look_label)
+	_show_look_label()
+
+func _show_look_label() -> void:
+	if _look_label != null: _look_label.text = "Look: full · G grey" if dressed else "Look: grey · G full"
+
+## The grey look skips the live sky's stepping (weather, air, clouds, look pass).
+func _advance_look(delta: float) -> void:
+	if grey != null and grey.on: return
+	super._advance_look(delta)
+
 ## The motif dressed as the generator stands it: its art built now (land
 ## and pieces), its turf, plants and life coming over the next frames in
 ## the sky's budget (scripts/kit_isle/motif_isle.gd).
@@ -402,7 +455,7 @@ func dress() -> void:
 	_after_land()
 
 ## The bare land and pieces only (a slider dragging): no plants, no life.
-func rebuild_bare(live := false) -> void:
+func rebuild_bare(live := false, settled := false) -> void:
 	var began := Time.get_ticks_msec()
 	_clear_stand()
 	motif = MotifAuthored.from_data(data)
@@ -411,7 +464,7 @@ func rebuild_bare(live := false) -> void:
 	add_child(bare)
 	# A live stroke or outline drag: coarse. Else the full land if the last
 	# full one took under a quarter second, else coarse.
-	var coarse := live or full_ms > 250
+	var coarse := live or (not settled and full_ms > 250)
 	if live: motif.fast_cell = LIVE_CELL
 	var land: Node3D = motif.build_land(coarse)
 	bare.add_child(land)
@@ -420,6 +473,7 @@ func rebuild_bare(live := false) -> void:
 	holder.name = "Pieces"
 	bare.add_child(holder)
 	motif.build_pieces(holder)
+	if not dressed and grey != null: grey.paint(bare)
 	bare_ms = Time.get_ticks_msec()-began
 	if live:
 		live_ms = bare_ms
@@ -454,6 +508,10 @@ func _after_land() -> void:
 	if traps != null: traps.sync()
 	_show_status()
 
+## New pieces drawn flat when the grey look is on.
+func _grey_new(node: Node) -> void:
+	if not dressed and grey != null and bare != null: grey.paint(node)
+
 ## The Pieces holder of what stands now.
 func pieces_holder() -> Node3D:
 	var under: Node = bare if bare != null else (motifs.isles[0].art if motifs != null and not motifs.isles.is_empty() else null)
@@ -471,6 +529,7 @@ func refresh_pieces() -> void:
 		holder.remove_child(c)
 		c.free()
 	motif.build_pieces(holder)
+	_grey_new(holder)
 	hang_ropes()
 
 # --- Edit and play --------------------------------------------------------------------------
@@ -523,8 +582,8 @@ func play(under_camera := false) -> void:
 		face = Vector2(-f.x,-f.z)
 	start = at
 	start_face = face
-	# Playing, the sky turns again (from the held hour).
-	apply_look(KitWeather.LIVE,false)
+	# Playing, the sky turns again (from the held hour); grey, it stays grey.
+	if dressed: apply_look(KitWeather.LIVE,false)
 	figure.visible = true
 	_hints(true)
 	_end_fall()
@@ -588,15 +647,19 @@ func _edit_step(delta: float) -> void:
 		_want_bare = false
 		rebuild_bare()
 	_cut_step()
-	if _want_dress and not _want_bare and not _want_live and not _slider_drag and _stroke.is_empty() and _stamp.is_empty() and _path.is_empty() and _cut.is_empty() and handle_drag() == false and now-_changed_at > 250:
+	if _want_dress and not _want_bare and not _want_live and not _slider_drag and _stroke.is_empty() and _stamp.is_empty() and _path.is_empty() and _cut.is_empty() and handle_drag() == false and now-_changed_at > (250 if dressed else 60):
 		_want_dress = false
-		dress()
+		stand()
 
 # --- Input ---------------------------------------------------------------------------------
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo and (event as InputEventKey).keycode == KEY_P and walk_ready and _ui != null:
 		toggle_play((event as InputEventKey).shift_pressed)
+		get_viewport().set_input_as_handled()
+		return
+	if not editing and event is InputEventKey and event.pressed and not event.echo and (event as InputEventKey).keycode == KEY_G and grey != null:
+		toggle_dress()
 		get_viewport().set_input_as_handled()
 		return
 	if not editing or _ui == null:
@@ -670,7 +733,7 @@ func _edit_input(event: InputEvent) -> void:
 			KEY_DELETE, KEY_BACKSPACE:
 				if tool == "outline" and handle >= 0: remove_handle(handle)
 				else: delete_selected()
-			KEY_G: dress()
+			KEY_G: toggle_dress()
 			KEY_B: toggle_breakable()
 			KEY_ESCAPE:
 				if not _held_piece.is_empty(): _drop_ghost()
@@ -821,7 +884,9 @@ func place_piece(id_name: String, at: Vector3, seed_value := -1, turn := 0.0, sn
 	pieces.append(entry)
 	var k := pieces.size()-1
 	var node: Node3D = motif.make_piece(k)
-	if node != null: pieces_holder().add_child(node)
+	if node != null:
+		pieces_holder().add_child(node)
+		_grey_new(node)
 	_after_pieces()
 	select(k)
 	return k
@@ -1067,7 +1132,7 @@ func pour_at(at: Vector2, take := false) -> void:
 				snapshot()
 				waters.remove_at(i)
 				_status_line = "Pond taken away"
-				dress()
+				stand()
 				return
 		return
 	var found: Dictionary = motif.pour(p.x,p.z,brush_s)
@@ -1078,7 +1143,7 @@ func pour_at(at: Vector2, take := false) -> void:
 	snapshot()
 	waters.append({"at":[snappedf(p.x,0.001),snappedf(p.z,0.001)],"fill":snappedf(brush_s,0.01)})
 	_status_line = "Poured: level %.2f m (spills at %.2f)" % [float(found.level),float(found.spill)]
-	dress()
+	stand()
 
 ## The outline's points (x, z) as stood.
 func outline_points() -> Array:
@@ -1142,7 +1207,7 @@ func outline_click(at: Vector2, add := false, take := false) -> void:
 				best = i
 		ring.insert(best+1,[snappedf(p.x,0.001),snappedf(p.y,0.001)])
 		handle = best+1
-		dress()
+		stand()
 		return
 	handle = -1
 	_show_handles()
@@ -1157,7 +1222,7 @@ func remove_handle(k: int) -> void:
 	snapshot()
 	ring.remove_at(k)
 	handle = -1
-	dress()
+	stand()
 
 ## The dragged handle to under screen point `at` (on the level plane it
 ## was picked at, so it moves where the mouse points even off the land).
@@ -1177,7 +1242,7 @@ func reset_outline() -> void:
 	snapshot()
 	data.outline = []
 	handle = -1
-	dress()
+	stand()
 
 ## The outline's handles (the outline tool's), the picked one yellow.
 func _show_handles() -> void:
@@ -1284,7 +1349,7 @@ func _apply_data(d: Dictionary) -> void:
 	if panel != null:
 		if str(data.preset) != preset_was: panel.fill()
 		else: panel.sync()
-	dress()
+	stand()
 
 ## The landform preset changed: its sliders at their defaults (the size
 ## kept), the strokes and waters kept, the outline the preset's.
@@ -1296,7 +1361,7 @@ func set_preset(name_: String) -> void:
 	for spec: Array in MotifAuthored.PRESETS[name_]: data.sliders[spec[0]] = float(spec[5])
 	data.outline = []
 	if panel != null: panel.fill()
-	dress()
+	stand()
 	frame_hill()
 
 # --- The markers ---------------------------------------------------------------------------
@@ -1391,7 +1456,7 @@ func load_motif(slug: String) -> bool:
 		panel.slug_edit.text = str(data.slug)
 		panel.fill()
 	select(-1)
-	dress()
+	stand()
 	frame_hill()
 	_status_line = "Loaded %s" % path
 	_show_status()
@@ -1400,7 +1465,7 @@ func load_motif(slug: String) -> bool:
 func reroll() -> void:
 	snapshot()
 	data.seed = randi()%99999+1
-	dress()
+	stand()
 	if panel != null: panel.sync()
 
 # --- The UI (round 3: the early game's) ----------------------------------------------------
@@ -1519,7 +1584,7 @@ func world_verb(id_name: String) -> String:
 		"redo": redo()
 		"save": save()
 		"play": toggle_play()
-		"dress": dress()
+		"dress": toggle_dress()
 		"reroll": reroll()
 		"frame": frame_hill()
 		_: return "Not a verb here"
@@ -1842,7 +1907,7 @@ func make_lake(pts: Array) -> void:
 	feel.cue(&"water_splash",mid,0.9)
 	feel.cue(&"lurch",mid,0.6)
 	feel.kick(0.18)
-	dress()
+	stand()
 
 ## A point well inside `poly`: its middle if inside, else the inside cell
 ## furthest from the edge.
@@ -1888,7 +1953,7 @@ func grow_land(pts: Array) -> void:
 	_status_line = "New land: the isle grown to the loop, at %.1f m" % level
 	feel.cue(&"lurch",Vector3(loop[0].x,level,loop[0].y),0.7)
 	feel.kick(0.2)
-	dress()
+	stand()
 
 # --- Trash (round 3: the old trash can) -----------------------------------------------------
 
@@ -1939,7 +2004,7 @@ func trash_at(at: Vector2) -> void:
 		strokes.remove_at(best)
 		say("%s stamp taken away" % form.capitalize())
 		feel.cue(&"crumble",hit.position,0.8)
-		dress()
+		stand()
 		return
 	var ponds: Array = motif.ponds()
 	var waters: Array = data.waters
@@ -1955,7 +2020,7 @@ func trash_at(at: Vector2) -> void:
 					break
 			say("Pond taken away")
 			feel.cue(&"water_pop",hit.position,0.8)
-			dress()
+			stand()
 			return
 	for j in range(strokes.size()-1,-1,-1):
 		var s: Dictionary = strokes[j]
@@ -1963,7 +2028,7 @@ func trash_at(at: Vector2) -> void:
 			snapshot()
 			strokes.remove_at(j)
 			say("%s taken away (the outline stays: Outline tool to pull it back)" % ("Lake bed" if str(s.tool) == "basin" else "New land"))
-			dress()
+			stand()
 			return
 	say("Nothing there to take away")
 
@@ -2441,6 +2506,7 @@ func end_run() -> void:
 	run_ms = Time.get_ticks_msec()-began
 	if node != null:
 		pieces_holder().add_child(node)
+		_grey_new(node)
 		feel.cue(&"stone_drop",node.global_position,0.9)
 		feel.kick(0.12)
 	say("%s run laid (%.0f m, %d ms)" % [str(r.kind).capitalize(),from.distance_to(to),run_ms])

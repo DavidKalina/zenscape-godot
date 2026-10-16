@@ -43,7 +43,7 @@ const WORLD_VERBS := [
 	["redo","Redo","Put it back","R",["⇧","⌘","Z"]],
 	["save","Save","motifs/authored/<name>.json","S",["⌘","S"]],
 	["play","Play","Drop the pilot at the spawn","P",["P"]],
-	["dress","Dress","Turf, flora and life again","D",["G"]],
+	["dress","Full look / grey","The full look (turf, flora, life, sky) or back to the grey editing look","D",["G"]],
 	["reroll","Re-roll","A new seed, the same sliders","R",[]],
 	["frame","Frame","Back to the whole isle","F",[]],
 ]
