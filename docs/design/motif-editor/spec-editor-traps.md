@@ -124,6 +124,19 @@ coordinate.
      selectable and movable, saved as overrides.
    Smoke a base load for at least colonnade_spine and bell_spires.
 
+12. **Grid traps sit on the ground** (added after the demo; do it right
+   after item 10, before item 11). The grid's "first 1.6 m ledge level at
+   or above the ground" floats traps up to ~1.4 m over bumpy turf (the
+   demo's wind blaster stands like a raised walkway). Instead: the grid
+   snaps x and z only, and the trap sits on the ground as everywhere else
+   in the editor. Holding a key (say which; Shift is taken by "keep
+   placing") snaps the height to ledge steps for a stepped layout; then
+   the nearest level, raised only as far as needed not to bury the trap.
+   Saved `"on": "grid"` traps load and re-seat by the new rule; a ledge-
+   stepped one keeps its step (save that as its own `on` value). Re-place
+   the demo's wind blaster so it sits on the turf, and check the demo
+   route still walks clean. Stills before and after.
+
 ## Rules for this loop
 
 - **One trap list.** Lift the trap yard's `TRAPS` table into a shared
