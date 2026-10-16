@@ -52,7 +52,7 @@ hit.
 
 ## Toggles
 
-- Sources: `olmec` on; `plane`, `dragon`, `slam` off (`--breakers=+slam`,
+- Sources: `olmec` and `slam` on; `plane`, `dragon` off (`--breakers=+plane`,
   `hub.set_breaker`).
 - Per piece and per motif: meta `breakable` false on a node keeps it and
   everything under it out of `adopt`. The motif editor writes it: select a
@@ -76,7 +76,7 @@ frames after it for the parts to settle.
   the head start, and his settings.
 - `studies/colonnade_spine_isle.tscn -- --olmec`: the colonnade, now
   through the shared code, breaking as before.
-- `studies/city_breaks_yard.tscn` (add `--breakers=+slam` for the slam).
+- `studies/city_breaks_yard.tscn` (the slam breaks city pieces; `--breakers=-slam` stops it).
 - `--breakers=olmec,slam` or `--breakers=+plane,-olmec` sets the breakers.
 
 **What's built**
@@ -100,12 +100,12 @@ frames after it for the parts to settle.
 - Breaks' own share of a frame: worst 248.8 ms before, 6.9 ms after; p95
   62.7 ms before, 0.33 ms after.
 
-**Defaults the user still has to decide**
-- **`slam` is off.** The slam used to break city pieces directly; it now
-  goes through the hub, so city slam breaks need `--breakers=+slam` until
-  it is turned on by default.
-- **Tough slabs** (`tomb_chest`, `fallen_pier`) have toughness 1.6, above
-  the Olmec's 1.0, so he walks around them.
+**Defaults (decided by the user)**
+- **`slam` is on**, as before the loop: the slam breaks city pieces
+  through the hub. At strength 0.5 it also breaks RuinKit piers, posts
+  and lintels (toughness 0.4–0.5), not walls, arches, stairs or slabs.
+- **Tough slabs stay tough** (`tomb_chest`, `fallen_pier`): toughness 1.6,
+  above the Olmec's 1.0, so he walks around them.
 
 **Open**
 - **The black first-plume disc** comes from shared dust

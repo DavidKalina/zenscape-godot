@@ -3,7 +3,7 @@
 Every kit piece can come down the way the colonnade does: piers, lintels,
 arch rings and gables split along real stone joints, fall, and settle into
 rubble. Which sources can break things is a toggle. For now only the
-Olmec breaks things; the plane, the dragon and the slam are wired but off.
+Olmec and the slam break things; the plane and the dragon are wired but off.
 
 ## Done looks like
 

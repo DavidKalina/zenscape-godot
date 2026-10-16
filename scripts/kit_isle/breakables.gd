@@ -37,7 +37,7 @@ extends Node3D
 ## The city kit's pieces (scripts/city_breaks/) answer `take_hit` with their
 ## own choreography: the slam's as their slam, any other as his landing's
 ## shockwave of that reach and power. The slam reaches breakables only
-## through here (scripts/slam.gd `blast`), so it breaks nothing while
+## through here (scripts/slam.gd `blast`), so it breaks nothing when
 ## `slam` is off; the drum court's hop (no break) still hears it directly.
 const BREAKABLE := &"breakable"
 ## Every hub's group: the slam (scripts/slam.gd `blast`) hands each hub its
@@ -51,7 +51,7 @@ const BREAKERS := {
 	&"olmec":{"on":true,"strength":1.0},
 	&"plane":{"on":false,"strength":0.6},
 	&"dragon":{"on":false,"strength":1.2},
-	&"slam":{"on":false,"strength":0.5},
+	&"slam":{"on":true,"strength":0.5},
 }
 
 ## The scene's enemies (scripts/enemies/enemy_field.gd).
