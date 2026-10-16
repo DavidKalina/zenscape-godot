@@ -20,6 +20,7 @@ extends RefCounted
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 const Aqueduct = preload("res://scripts/ruin_kit_aqueduct.gd")
 const Footbridge = preload("res://scripts/footbridge.gd")
+const Cloister = preload("res://scripts/ruin_kit_cloister.gd")
 
 ## Which kinds mate (each way round).
 const MATES := {"column":["column"],"wall_end":["wall_end"],"channel":["channel"],"aq_pier":["aq_pier"],
@@ -82,6 +83,15 @@ static func connectors(id: String, node: Node3D = null) -> Array:
 			return [_c("channel",Vector3(0.0,Aqueduct.DECK,0.0),Vector3.RIGHT,"channel","end")]
 		"tomb_chest":
 			return [_c("top",Vector3(0.0,top_of.call(RuinKit.CHEST.y),0.0),Vector3.UP,"top","top")]
+		"pent_hood":
+			# Its back wall's ends on the kit wall's line (a wall's end, or
+			# the next hood's, bay to bay along it), and the wall walk.
+			var lines := Cloister.hood_lines()
+			var h := RuinKit.WALL_LENGTH*Cloister.HOOD_BAYS*0.5
+			var zm: float = lines.wall_mid
+			return [_c("left",Vector3(-h,0.0,zm),Vector3.LEFT,"wall_end","end"),
+				_c("right",Vector3(h,0.0,zm),Vector3.RIGHT,"wall_end","end"),
+				_c("top",Vector3(0.0,float(lines.wall_top),zm),Vector3.UP,"top","top")]
 	return []
 
 ## Whether a connector of kind `a` mates one of kind `b`.

@@ -4,7 +4,8 @@ extends RefCounted
 ## on clustered piers carrying a wall-walk; a lavabo pavilion of four such
 ## arches round a square; the stone heads (abutments) a rope bridge is tied
 ## to; and a stone slab bridge. Additive: nothing here changes the kit's
-## pieces or its gallery (they are not in RuinKit PIECES).
+## pieces or its gallery (they are not in RuinKit PIECES). The pent hood
+## (bottom) is a kit piece by id (RuinKit CLOISTER_PIECES, `piece`).
 ##
 ## A range runs along X at the arcade's centreline, its front (+Z) toward
 ## the garth, its back (-Z) toward the alley; its foot on y 0. `piers` are
@@ -254,3 +255,242 @@ static func slab_bridge(seed_value: int, weathered: float, length: float, width:
 	RuinKit._walk_box(b,Transform3D(Basis(Vector3.UP,PI*0.5),Vector3.ZERO),width*0.5,-0.32,0.0,length*0.5,-length*0.5)
 	for i in range(2): b.hang(Vector3(b.rng.randf_range(-length*0.3,length*0.3),-0.3,b.rng.randf_range(-width*0.4,width*0.4)),b.rng.randf_range(0.4,1.0),true,-0.32)
 	return b.finish()
+
+# --- The pent hood (round 2 card: kit-k5-hide-descend.md) -------------------
+
+const PhysicsGround = preload("res://scripts/pilot_physics_ground.gd")
+const PilotMotor = preload("res://scripts/pilot_motor.gd")
+const WorldScale = preload("res://scripts/world_scale.gd")
+
+## The cloister's pieces built by id (RuinKit CLOISTER_PIECES).
+const PIECES := ["pent_hood"]
+
+## The pent hood's gallery: clear width from the back wall's face to the
+## parapet's (TOP_ROOM: one body, no passing) and its floor's top.
+const HOOD_GALLERY := RuinKit.TOP_ROOM
+const HOOD_FLOOR := 0.14
+## The parapet: thickness, height over the floor (over PhysicsGround.HEAD,
+## so his head ray is hidden behind it; under GRAB_TOP, so one jump catches
+## its coping), its coping's depth.
+const HOOD_PARAPET := Vector3(0.5,1.45,0.18)
+## The roof's pitch (deg): over SLIDE_FROM (a crouch surfs it) and under
+## SLOPE_SLOW (he walks it at full pace), its slabs' thickness, and how far
+## its eaves overhang the parapet's outer face.
+const HOOD_PITCH := 20.0
+const HOOD_SLAB := 0.3
+const HOOD_EAVES := 0.6
+## The room over the parapet's coping under the roof (m, past the head):
+## he climbs onto the coping and stands there under the eaves to vault out.
+const HOOD_STAND_ROOM := 0.2
+## The back wall's head over the roof's high edge: under SET_OFF (he drops
+## onto the roof from the wall walk, and one jump catches the walk back).
+const HOOD_OVER := 1.1
+## Bays along X, each WALL_LENGTH (it lays on a kit wall's line).
+const HOOD_BAYS := 2
+## How dark the soot under the roof is at its deepest (a share).
+const HOOD_SOOT := 0.6
+## A fallen bay's gap in the roof: its width along X (m), least and most.
+const HOOD_GAP := Vector2(1.6,2.4)
+
+## The hood's numbers across (z) and up (y), its frame: the back wall's
+## gallery face, the parapet's faces, the eaves; the roof's underside over
+## the parapet's outer face, its top at the wall face and at the eaves.
+static func hood_lines() -> Dictionary:
+	var zw := -HOOD_GALLERY*0.5
+	var zp0 := HOOD_GALLERY*0.5
+	var zp1 := zp0+HOOD_PARAPET.x
+	var ze := zp1+HOOD_EAVES
+	var t := tan(deg_to_rad(HOOD_PITCH))
+	var slab := HOOD_SLAB/cos(deg_to_rad(HOOD_PITCH))
+	var under_p := HOOD_FLOOR+HOOD_PARAPET.y+PhysicsGround.HEAD*WorldScale.wanderer+HOOD_STAND_ROOM
+	var under := func(z: float) -> float: return under_p+(zp1-z)*t
+	var high := float(under.call(zw))+slab
+	return {"zw":zw,"zp0":zp0,"zp1":zp1,"ze":ze,"tan":t,"slab":slab,"under_p":under_p,
+		"under_w":float(under.call(zw)),"high":high,"low":float(under.call(ze))+slab,
+		"wall_top":high+HOOD_OVER,"wall_mid":zw-RuinKit.WALL_THICK*0.5}
+
+## The piece with PIECES id `id`.
+static func piece(id: String, seed_value: int, weathered := 0.0) -> Node3D:
+	match id:
+		"pent_hood": return pent_hood(seed_value,weathered)
+	return null
+
+## A pent hood: a lean-to stone roof run out from a wall's face on corbels
+## over a low, narrow gallery behind a parapet, `bays` WALL_LENGTH bays
+## along X (centred), the back wall toward -Z, the open side +Z. `fallen`
+## (0 to bays; -1, by `weathered`): that many bays have a gap of slabs
+## gone out of the roof, the sky over the gallery there.
+## Collision: the floor, the parapet, the back wall and its walk are clean
+## boxes (the walls' faces kickable); the roof one clean tilted box per
+## standing stretch (one slope, no seams), real stone on the ground mask
+## (an up ray hits it). The corbels and the drawn stones have none.
+## Meta: "gallery" AABB (under the roof, over the floor), "gaps" [AABB]
+## (the gallery under each gap), "roof" [{x0, x1}] the standing stretches,
+## "lines" (hood_lines), "parapet_top", "wall_top", "eaves" (z, top y).
+static func pent_hood(seed_value: int, weathered := 0.0, bays := HOOD_BAYS, fallen := -1) -> Node3D:
+	var b := Build.new(seed_value,weathered,"PentHood")
+	b.settle = 0.5
+	var L := hood_lines()
+	var zw: float = L.zw
+	var zp0: float = L.zp0
+	var zp1: float = L.zp1
+	var ze: float = L.ze
+	var half_len := RuinKit.WALL_LENGTH*bays*0.5
+	var wall_top: float = L.wall_top
+	var pitch := deg_to_rad(HOOD_PITCH)
+	if fallen < 0: fallen = 0 if weathered < 0.45 else (1 if weathered < 0.85 or bays < 2 else 2)
+	fallen = clampi(fallen,0,bays)
+	# The gaps: one in each of `fallen` bays (picked), somewhere along it.
+	var order: Array = range(bays)
+	for i in range(order.size()-1,0,-1):
+		var j := b.rng.randi_range(0,i)
+		var tmp: int = order[i]
+		order[i] = order[j]
+		order[j] = tmp
+	var gaps: Array[Vector2] = []
+	for k in range(fallen):
+		var bay: int = order[k]
+		var bx0 := -half_len+RuinKit.WALL_LENGTH*bay
+		var w := b.rng.randf_range(HOOD_GAP.x,HOOD_GAP.y)
+		var c := b.rng.randf_range(bx0+w*0.5+0.6,bx0+RuinKit.WALL_LENGTH-w*0.5-0.6)
+		gaps.append(Vector2(c-w*0.5,c+w*0.5))
+	gaps.sort_custom(func(a: Vector2, c: Vector2) -> bool: return a.x < c.x)
+	var in_gap := func(x: float) -> bool:
+		for g: Vector2 in gaps:
+			if x > g.x and x < g.y: return true
+		return false
+	# Dark under the roof (vertex grime: soot under the eaves), a little
+	# less toward the open side.
+	var under_w: float = L.under_w
+	b.shelter = func(mid: Vector3, _n: Vector3) -> float:
+		if mid.z < zw-0.05 or mid.z > ze+0.1 or in_gap.call(mid.x): return 0.0
+		if absf(mid.x) > half_len+0.2: return 0.0
+		if mid.y > under_w+0.1: return 0.0
+		return clampf(0.95-maxf(mid.z-zp1,0.0)*0.9,0.0,1.0)
+	# The back wall, coursed, its head whole but worn: drawn only (its clean
+	# box below is walked and kicked).
+	var keep_hulls := b.hulls.size()
+	var dw := RuinKit.WALL_THICK*0.5
+	var wall_pose := Transform3D(Basis.IDENTITY,Vector3(0.0,0.0,L.wall_mid))
+	RuinKit._plinth_course(b,wall_pose,half_len,dw)
+	RuinKit._courses(b,wall_pose,-half_len,half_len,RuinKit.PLINTH_COURSE.x,RuinKit._worn_top(b,-half_len,half_len,wall_top,0.2),dw,Callable(),0.44,true)
+	# The parapet, coursed under its coping (drawn only).
+	var dp := HOOD_PARAPET.x*0.5
+	var par_pose := Transform3D(Basis.IDENTITY,Vector3(0.0,0.0,(zp0+zp1)*0.5))
+	var par_top := HOOD_FLOOR+HOOD_PARAPET.y
+	var line := func(_x: float) -> float: return par_top-HOOD_PARAPET.z
+	RuinKit._courses(b,par_pose,-half_len,half_len,0.0,line,dp-0.02,Callable(),0.36)
+	var x := -half_len
+	while x < half_len-0.05:
+		var xb := minf(x+b.rng.randf_range(0.7,1.2),half_len)
+		if half_len-xb < 0.35: xb = half_len
+		var half := Vector3((xb-x)*0.5-0.008,HOOD_PARAPET.z*0.5,dp+0.04)
+		var planes := RuinKit._box(b,half)
+		for s: float in [-1.0,1.0]:
+			var n := Vector3(0.0,1.0,s*1.3).normalized()
+			planes.append(Plane(n,n.dot(Vector3(0.0,half.y,s*(half.z-0.05)))))
+		b.solid(planes,par_pose*RuinKit._jiggle(b,Transform3D(Basis.IDENTITY,Vector3((x+xb)*0.5,par_top-half.y,0.0)),0.3),RuinKit._stone(b,0.95),false,true)
+		x = xb
+	# The gallery's floor slabs (drawn).
+	x = -half_len
+	while x < half_len-0.05:
+		var xb := minf(x+b.rng.randf_range(0.6,1.0),half_len)
+		if half_len-xb < 0.3: xb = half_len
+		var half := Vector3((xb-x)*0.5-0.01,HOOD_FLOOR*0.5,(zp0-zw)*0.5-0.01)
+		b.solid(RuinKit._box(b,half,0.03),RuinKit._jiggle(b,Transform3D(Basis.IDENTITY,Vector3((x+xb)*0.5,half.y,0.0)),0.2),RuinKit._stone(b,0.85),false,true)
+		x = xb
+	# The drawn walls' own hulls out: the clean boxes stand for them.
+	b.hulls.resize(keep_hulls)
+	b.hull_anchors.resize(keep_hulls)
+	# The corbels under the roof, out of the wall's face (drawn, no hull),
+	# each a stepped pair of stones.
+	var corbels := int(round(half_len*2.0/1.3))
+	for i in range(corbels+1):
+		var cx := -half_len+0.35+(half_len*2.0-0.7)*float(i)/corbels
+		if in_gap.call(cx) and b.rng.randf() < 0.6: continue
+		var top := under_w-0.02
+		var lower := Vector3(0.16,0.17,0.24)
+		var upper := Vector3(0.18,0.15,0.4)
+		b.solid(RuinKit._box(b,upper,0.03),Transform3D(Basis.IDENTITY,Vector3(cx,top-upper.y,zw+upper.z-0.1)),RuinKit._stone(b,0.92),false,true)
+		b.solid(RuinKit._box(b,lower,0.03),Transform3D(Basis.IDENTITY,Vector3(cx,top-upper.y*2.0-lower.y,zw+lower.z-0.1)),RuinKit._stone(b,0.9),false,true)
+	# The roof: slabs lapped along X, each from inside the wall to the eaves
+	# on the pitch, sagged and cracked at the ends and round a gap.
+	var z_in := zw-0.3
+	var run := ze-z_in
+	var slope_len := run/cos(pitch)
+	var tilt := Basis(Vector3.RIGHT,pitch)
+	var mid_z := (ze+z_in)*0.5
+	var mid_under: float = float(L.under_p)+(zp1-mid_z)*float(L.tan)
+	var roof_mid := func(sx: float) -> Vector3:
+		return Vector3(sx,mid_under+HOOD_SLAB*0.5/cos(pitch),mid_z)
+	x = -half_len
+	var lap := 0
+	while x < half_len-0.05:
+		var xb := minf(x+b.rng.randf_range(0.75,1.25),half_len)
+		if half_len-xb < 0.35: xb = half_len
+		var cx := (x+xb)*0.5
+		if in_gap.call(cx):
+			x = xb
+			continue
+		var edge: bool = absf(cx) > half_len-1.4 or in_gap.call(x-0.5) or in_gap.call(xb+0.5)
+		var half := Vector3((xb-x)*0.5+0.03,HOOD_SLAB*0.5,slope_len*0.5)
+		var extra: Array[Plane] = []
+		if edge or b.rng.randf() < 0.25*weathered:
+			# A broken eaves end: a ragged cut off its low corner.
+			var side := signf(cx) if edge else (-1.0 if b.rng.randf() < 0.5 else 1.0)
+			var n := Vector3(side*b.rng.randf_range(0.5,1.0),0.0,b.rng.randf_range(0.7,1.2)).normalized()
+			extra.append(Plane(n,n.dot(Vector3(side*half.x*0.5,0.0,half.z*b.rng.randf_range(0.75,0.92)))))
+		var pose := Transform3D(tilt,roof_mid.call(cx)+Vector3(0.0,0.03*float(lap%2),0.0))
+		if edge: pose = Transform3D(Basis(Vector3.BACK,-signf(cx)*b.rng.randf_range(0.01,0.03))*pose.basis,pose.origin+Vector3(0.0,-0.03,0.0))
+		b.solid(RuinKit._box(b,half,0.04),RuinKit._jiggle(b,pose,0.1),RuinKit._stone(b,1.0),false,true,extra,-1,0.8)
+		lap += 1
+		x = xb
+	# The clean boxes: the floor, the parapet, the back wall (its top the
+	# wall walk), the roof per standing stretch.
+	RuinKit._walk_box(b,Transform3D.IDENTITY,half_len,-0.3,HOOD_FLOOR,zp0,zw)
+	RuinKit._walk_box(b,Transform3D.IDENTITY,half_len,0.0,par_top,zp1,zp0)
+	RuinKit._walk_box(b,Transform3D.IDENTITY,half_len,0.0,wall_top,zw,zw-RuinKit.WALL_THICK)
+	var spans: Array = []
+	var a := -half_len
+	for g: Vector2 in gaps:
+		spans.append(Vector2(a,g.x))
+		a = g.y
+	spans.append(Vector2(a,half_len))
+	var roof_meta: Array = []
+	for s: Vector2 in spans:
+		if s.y-s.x < 0.2: continue
+		var c := (s.x+s.y)*0.5
+		RuinKit._walk_box(b,Transform3D(tilt,roof_mid.call(c)),(s.y-s.x)*0.5,-HOOD_SLAB*0.5,HOOD_SLAB*0.5,slope_len*0.5,-slope_len*0.5)
+		roof_meta.append({"x0":s.x,"x1":s.y})
+	# Ivy off the eaves and the wall's head; moss on the roof.
+	for i in range(int(2+weathered*6.0)):
+		var hx := b.rng.randf_range(-half_len+0.4,half_len-0.4)
+		if in_gap.call(hx): continue
+		b.hang(Vector3(hx,0.0,ze-0.1),b.rng.randf_range(0.4,1.1)*(0.5+weathered),true,float(L.low)-HOOD_SLAB)
+	RuinKit._drift(b,Vector3(b.rng.randf_range(-half_len*0.6,half_len*0.6),0.0,ze+0.9),1.1,int(weathered*5.0))
+	RuinKit._rubble(b,half_len*0.6,int(round(weathered*b.rng.randf_range(3.0,6.0))))
+	# Soot under the roof (vertex grime): the gallery's faces darkened, the
+	# deeper the darker, so it reads dark without a light; open under a gap.
+	for face: Array in b.pending:
+		if not (face[0] is PackedVector3Array) or not (face[2] is Color): continue
+		var corners: PackedVector3Array = face[0]
+		var m := Vector3.ZERO
+		for q in corners: m += q
+		m /= corners.size()
+		var dark := float(b.shelter.call(m,face[1]))
+		if dark <= 0.0 or m.y < -0.1: continue
+		var c: Color = face[2]
+		face[2] = Color(c.r,c.g,c.b,c.a).darkened(HOOD_SOOT*dark)
+	var node := b.finish()
+	var gallery := AABB(Vector3(-half_len,HOOD_FLOOR,zw),Vector3(half_len*2.0,float(L.under_p)-HOOD_FLOOR,zp0-zw))
+	var gap_boxes: Array = []
+	for g: Vector2 in gaps: gap_boxes.append(AABB(Vector3(g.x,HOOD_FLOOR,zw),Vector3(g.y-g.x,float(L.under_p)-HOOD_FLOOR,zp0-zw)))
+	node.set_meta("gallery",gallery)
+	node.set_meta("gaps",gap_boxes)
+	node.set_meta("roof",roof_meta)
+	node.set_meta("lines",L)
+	node.set_meta("parapet_top",par_top)
+	node.set_meta("wall_top",wall_top)
+	node.set_meta("eaves",Vector2(ze,float(L.low)))
+	node.set_meta("bays",bays)
+	return node
