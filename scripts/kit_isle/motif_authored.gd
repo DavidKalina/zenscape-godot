@@ -21,6 +21,10 @@ extends "res://scripts/kit_isle/motif_greybox.gd"
 ##    fill}] (poured; the level found from the land as built),
 ##    "pieces":[{id, seed, weathered, at:[x,y,z], turn (deg), sink}],
 ##    "markers":{"spawn":[x,y,z], "rim_in":[x,y,z], "rim_out":[x,y,z]},
+##    "traps" (optional, absent = none):[{id (scripts/traps/trap_registry.gd
+##    key), at:[x,y,z] (its way in), turn (deg), on? ("lip", "piece";
+##    absent = the ground: its y found from the land as built), knobs?:{only
+##    those changed from the trap's defaults()}}],
 ##    "breakable" (optional; false: no piece of it breaks)}
 ## A piece's "breakable" (optional; false: it never breaks) and the motif's
 ## only set meta "breakable" false on the built piece, which the kit
@@ -40,6 +44,7 @@ extends "res://scripts/kit_isle/motif_greybox.gd"
 const KitLife = preload("res://scripts/kit_isle/kit_life.gd")
 const HeroTrees = preload("res://scripts/hero_trees.gd")
 const RuinKitFit = preload("res://scripts/ruin_kit_fit.gd")
+const TrapRegistry = preload("res://scripts/traps/trap_registry.gd")
 
 ## The trees the palette offers beside the kit's pieces: the game's
 ## Blender-authored hero trees (scripts/hero_trees.gd, the glbs the flora
@@ -181,9 +186,48 @@ static func write(path: String, d: Dictionary) -> Error:
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(path.get_base_dir()))
 	var f := FileAccess.open(path,FileAccess.WRITE)
 	if f == null: return FileAccess.get_open_error()
-	f.store_string(JSON.stringify(d,"\t",false)+"\n")
+	f.store_string(JSON.stringify(saved_form(d),"\t",false)+"\n")
 	f.close()
 	return OK
+
+## `d` as it is written: the traps as recipes (keys in a fixed order, only
+## their changed knobs), and no "traps" key at all when there are none, so a
+## motif without traps writes as before. `d` itself is left as it was.
+static func saved_form(d: Dictionary) -> Dictionary:
+	if not d.has("traps"): return d
+	var out := d.duplicate()
+	out.erase("traps")
+	var list: Array = []
+	for e: Variant in d.traps if d.traps is Array else []:
+		if not e is Dictionary: continue
+		var id := str(e.get("id",""))
+		var a: Array = e.get("at",[0.0,0.0,0.0])
+		var t := {"id":id,"at":[snappedf(float(a[0]),0.001),snappedf(float(a[1]),0.001),snappedf(float(a[2]),0.001)],
+			"turn":snappedf(float(e.get("turn",0.0)),0.001)}
+		if str(e.get("on","")) in ["lip","piece"]: t.on = str(e.on)
+		var knobs := TrapRegistry.changed_knobs(id,e.get("knobs",{}) if e.get("knobs") is Dictionary else {})
+		if not knobs.is_empty(): t.knobs = knobs
+		list.append(t)
+	if not list.is_empty(): out.traps = list
+	return out
+
+## The traps of a file read back: entries that aren't objects dropped, at
+## and turn made numbers, knobs typed as the trap's defaults. An unknown id
+## is kept (the editor and build warn and skip it), so a save never loses it.
+static func _read_traps(d: Dictionary) -> void:
+	if not d.has("traps"): return
+	var list: Array = []
+	for e: Variant in d.traps if d.traps is Array else []:
+		if not e is Dictionary or not e.has("id"): continue
+		var a: Variant = e.get("at")
+		if not (a is Array and (a as Array).size() == 3): a = [0.0,0.0,0.0]
+		var t := {"id":str(e.id),"at":[float(a[0]),float(a[1]),float(a[2])],"turn":float(e.get("turn",0.0))}
+		if str(e.get("on","")) in ["lip","piece"]: t.on = str(e.on)
+		if e.get("knobs") is Dictionary and not (e.knobs as Dictionary).is_empty():
+			t.knobs = TrapRegistry.typed_knobs(t.id,e.knobs)
+		list.append(t)
+	if list.is_empty(): d.erase("traps")
+	else: d.traps = list
 
 ## The authored files' slugs.
 static func saved() -> PackedStringArray:
@@ -211,6 +255,7 @@ static func normalise(d: Dictionary) -> Dictionary:
 		if not d.get(key) is Array: d[key] = []
 	if not d.get("markers") is Dictionary: d.markers = {}
 	if not d.get("sliders") is Dictionary: d.sliders = {}
+	_read_traps(d)
 	d.preset = preset_of(d)
 	for spec: Array in PRESETS[d.preset]:
 		if not (d.sliders as Dictionary).has(spec[0]): d.sliders[spec[0]] = float(spec[5])
