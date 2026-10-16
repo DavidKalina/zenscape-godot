@@ -107,7 +107,9 @@ changing. Names here are final once built on; change one only by a
   `idle` (loop), `walk` (loop; beat `plant` per footfall), `turn`
   (`plant`), `notice`, `gather` (`grab`, `full`), `throw` (`release`),
   `catch` (`contact`, `hold`), `return` (`release`), `stagger`
-  (`plant`, `recover`).
+  (`plant`, `recover`). Every one-shot clip (all but `idle` and `walk`;
+  `turn` loops too) also sends `end` at its length, so the mind can wait
+  on a clip with no beat of its own (`notice`) or on its follow-through.
 - **Sockets**: `hand_r`, `hand_l`, `hands_mid` (where a held shot sits),
   `chest_rune`, `eye`.
 - **Shape**: capsule radius and height, eye height, reach (the catch
