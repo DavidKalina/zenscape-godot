@@ -1560,7 +1560,7 @@ func build_pieces(holder: Node3D) -> void:
 		if run != null: holder.add_child(run)
 
 func make_run(k: int) -> Node3D:
-	var node: Node3D = RuinKitFit.build_run(data.runs[k],ground_fn())
+	var node: Node3D = RuinKitFit.build_run(data.runs[k],ground_fn(),outline())
 	if node != null: node.name = "Run%d" % k
 	if node != null and not bool(data.get("breakable",true)): node.set_meta("breakable",false)
 	return node
