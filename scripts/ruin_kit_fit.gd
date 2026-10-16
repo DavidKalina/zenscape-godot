@@ -1,6 +1,6 @@
 extends RefCounted
-## How the ruin kit's pieces fit together (docs/design/roguelike/
-## level-editor-round4.md): each piece's **connectors**, named points in
+## How the ruin kit's pieces fit together: each piece's **connectors**, named
+## points in
 ## its own frame (as `RuinKit.piece` builds it, front toward +Z) with a
 ## facing and a kind, read off the kit's Scale constants; which kinds
 ## **mate**; where a **cliff lip** is; and the **runs**: an aqueduct, a

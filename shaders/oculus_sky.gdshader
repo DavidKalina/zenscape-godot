@@ -1,6 +1,6 @@
 shader_type sky;
-// The oculus sky (scripts/underground/underground.gd, preset `oculus`;
-// docs/design/roguelike/underground-oculus-round2.md): the underground seen
+// The oculus sky (scripts/underground/underground.gd, preset `oculus`): the
+// underground seen
 // from the dark. Above, a cavern roof of carved rock with one vast round
 // opening, a thick rock throat round it that catches the key light, and
 // through it the open sky with a deck of billowing cloud seen from beneath.

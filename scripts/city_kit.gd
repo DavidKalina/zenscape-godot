@@ -1,11 +1,11 @@
 extends RefCounted
-## The city kit, family `city` (docs/design/roguelike/city-kit-round1.md):
+## The city kit, family `city`:
 ## the bones of the abandoned Olmec city the run starts in, deep under the
 ## sky stage. Heavy weathered basalt (the Olmec's own stone, scripts/
 ## city_kit_stone.gd), talud under tablero, stepped massing, carved glyph
 ## bands that do not glow. Built around him (scripts/enemies/
 ## headless_body.gd): every lane he is meant to use is his width, every
-## landing his room, every shelf his rule (layer-round11-body-routes.md);
+## landing his room, every shelf his rule;
 ## the wanderer's lines (ledge chains, a rail, the turn below) are cut into
 ## the same stone at her own numbers (RuinKit SET_OFF, GRAB_TOP, STAND).
 ## The gothic ruin kit (scripts/ruin_kit.gd) stays with the dragon's sky.
@@ -46,30 +46,29 @@ const WalkerOnly = preload("res://scripts/walker_only.gd")
 ## the breakables hub (scripts/kit_isle/breakables.gd).
 const FloorBreak = preload("res://scripts/city_breaks/floor_break.gd")
 ## The family's other breakables: the felled column and the drum floor
-## (scripts/city_kit_breaks.gd, city-breaks-round1.md).
+## (scripts/city_kit_breaks.gd).
 const CityBreaks = preload("res://scripts/city_kit_breaks.gd")
 ## The family's fires: the great cresset, the beacon tower, the oil runnel,
-## the wick spire (scripts/city_kit_fires.gd, city-fires-round1.md). They
+## the wick spire (scripts/city_kit_fires.gd). They
 ## stand in a parent (`stand`), not as a returned piece.
 const CityFires = preload("res://scripts/city_kit_fires.gd")
 ## The family's refuges: the mouse run, the votive niches, the hush gallery,
-## the slotted wall (scripts/city_kit_refuges.gd, city-refuges-round1.md).
+## the slotted wall (scripts/city_kit_refuges.gd).
 const CityRefuges = preload("res://scripts/city_kit_refuges.gd")
 ## The family's light pieces: the sun-mirror, the relief face
-## (scripts/city_kit_light2.gd, city-light2-round1.md); stood like the fires.
+## (scripts/city_kit_light2.gd); stood like the fires.
 const CityLight2 = preload("res://scripts/city_kit_light2.gd")
 ## The family's landmarks: the ballcourt coliseum, the temple pyramid, the
-## sundered hall (scripts/city_kit_landmarks.gd, city-landmarks-round1.md).
+## sundered hall (scripts/city_kit_landmarks.gd).
 ## The court's swing roots come as data on the piece: its scene hangs them.
 const CityLandmarks = preload("res://scripts/city_kit_landmarks.gd")
-## Breaks round 2: corbel vault, facing sheet wall, chocked slab, plug-stone
-## (docs/design/roguelike/city-breaks-round2.md).
+## Breaks round 2: corbel vault, facing sheet wall, chocked slab, plug-stone.
 const CityBreaks2 = preload("res://scripts/city_kit_breaks2.gd")
 ## Climb pieces, a lane for each body: wedge, terrace, wrapped pillar, hauling
-## lip, leaper's pit, giant's riser (docs/design/roguelike/city-climb-round1.md).
+## lip, leaper's pit, giant's riser.
 const CityClimb = preload("res://scripts/city_kit_climb.gd")
 ## The serpent's pieces, stood like the fires: waiting dais, ring, coil, ash bowl;
-## the collar rides a serpent (docs/design/roguelike/city-serpent-round1.md).
+## the collar rides a serpent.
 const CitySerpent = preload("res://scripts/city_kit_serpent.gd")
 
 const PIECES := ["city_pillar","city_drum_stair","city_stair","city_causeway"]+CityBreaks.PIECES+CityRefuges.PIECES+CityLandmarks.PIECES+CityBreaks2.PIECES+CityClimb.PIECES
@@ -110,7 +109,7 @@ const COURSE := 3.0*SET_OFF
 const RISER := SET_OFF/4.0
 const TREAD := 2.0*RISER
 
-# --- His numbers (layer-round11-body-routes.md: what he can use) ------------------------
+# --- His numbers (what he can use) ------------------------
 ## The least stair width and landing he uses (m), his headroom (neck 6.7 m
 ## and the bulk over it), and the shelf rule: a shelf under a rim is at
 ## least HIS_SHELF.y deep or under HIS_SHELF.x (nothing between).

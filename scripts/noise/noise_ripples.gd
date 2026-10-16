@@ -1,6 +1,6 @@
 extends Node3D
-## How loud the wanderer is, read in the world (docs/design/roguelike/
-## noise-stealth-round1.md): a loud noise of his makes a soft ring of dust
+## How loud the wanderer is, read in the world: a loud noise of his makes a
+## soft ring of dust
 ## running out over the ground at his feet, wider and plainer the louder
 ## (shaders/noise_ripple.gdshader). A sneak or a walk makes none, so the
 ## quiet reads as the absence of it. No UI: the ring is in the world, low,

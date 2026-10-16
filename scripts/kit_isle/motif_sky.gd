@@ -72,7 +72,7 @@ var _builds: Array = []
 ## jobs), at least one. The isles' number crunching is native
 ## (scripts/native_isle_kernels.gd), so their builds run side by side;
 ## without the library they still do, but GDScript runs one thread at a time
-## here (docs/design/roguelike/native-isles-round1.md), so they gain little.
+## here, so they gain little.
 var build_width := 1
 ## Built on workers (rendered), or on the main thread (headless).
 var threaded := DisplayServer.get_name() != "headless"

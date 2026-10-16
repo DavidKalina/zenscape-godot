@@ -1,7 +1,6 @@
 extends "res://studies/character_study.gd"
 ## GREYBOX, Opus pass: the Vigil of the Bellows
-## (docs/design/roguelike/brainstorm/round1/motif-m3-the-vigil-of-the-bellows.md,
-## its "Greybox (Opus pass)" section). A cloister garth round a still pool:
+## (its "Greybox (Opus pass)" section). A cloister garth round a still pool:
 ## the star-watchers' tower on the north side with a wind horn on a corbel
 ## over its sill, a gate tower on the south range with a second horn, and
 ## four arcade ranges round the garth. The two horns face each other across

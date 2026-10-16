@@ -1,6 +1,5 @@
 extends Node3D
-## The felled column, maker_felled (docs/design/roguelike/city-breaks-round1.md;
-## card: brainstorm/round3-olmec-city/kit-k4-destruction.md): a free-standing
+## The felled column, maker_felled: a free-standing
 ## drum column of the makers on a stepped plinth (scripts/city_kit_breaks.gd
 ## has its numbers and its stone). Lure the Olmec into it and the side he
 ## hits decides which way it goes.

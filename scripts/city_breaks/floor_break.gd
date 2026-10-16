@@ -1,6 +1,6 @@
 extends Node3D
-## A city kit floor that breaks under the Olmec's weight (docs/design/
-## roguelike/city-kit-round1.md): the epic stair's fault landing and the
+## A city kit floor that breaks under the Olmec's weight: the epic stair's fault
+## landing and the
 ## causeway's bay (scripts/city_kit.gd `_fault`, `_bay` build it as their
 ## unit: this script on it, its "Body" and its pre-cut pieces "P0".."Pn").
 ## A piece of the breakables hub (scripts/kit_isle/breakables.gd): it joins

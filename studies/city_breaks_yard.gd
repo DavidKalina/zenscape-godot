@@ -1,5 +1,5 @@
 extends "res://studies/character_study.gd"
-## The city breaks yard (docs/design/roguelike/city-breaks-round1.md): the
+## The city breaks yard: the
 ## city kit's two pieces where the Olmec's power is the wanderer's tool
 ## (scripts/city_kit_breaks.gd), with a whole Olmec hunting him (the whole
 ## body's chase, its periscope, and this round's `chase_routes`: at an edge

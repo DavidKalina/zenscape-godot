@@ -6,7 +6,7 @@ extends "res://scripts/kit_isle/kit_motif.gd"
 ## and floating stones (studies/broken_ring_isle_art.gd). Built here for its
 ## study (studies/broken_ring_isle.gd) and for the aqueduct isle's sky alike.
 ##
-## A family (docs/design/roguelike/motif-families.md): `configure(seed,
+## A family: `configure(seed,
 ## knobs)` rolls another ring (Ring `rolled`): how many isles (`isles`),
 ## how many of the hops are jumps (`jumps`), how steeply it climbs
 ## (`climb`, a share of the authored hops' rises), how many of the circle's

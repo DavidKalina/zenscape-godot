@@ -1,6 +1,6 @@
 #!/bin/zsh
-# The tower shell study (studies/tower_shell_study.tscn,
-# docs/design/roguelike/tower-shell-round1.md): the ruin kit's broken tower
+# The tower shell study (studies/tower_shell_study.tscn): the ruin kit's broken
+# tower
 # with a wall-kick chimney inside, on flat ground. Walk in at the door, jump
 # at a side wall, Space at each wall to kick up to the rim. R the doorway,
 # 1 door, 2 shaft, 3 rim. Extra args pass through, e.g.

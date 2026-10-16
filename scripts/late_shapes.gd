@@ -1,6 +1,6 @@
 extends RefCounted
-## Big collision bodies stood a slice of shapes a frame (perf round 2,
-## docs/design/roguelike/perf-round2.md). A merged ruin run's "Body" can hold
+## Big collision bodies stood a slice of shapes a frame (perf round 2). A
+## merged ruin run's "Body" can hold
 ## thousands of convex hulls (the colonnade spine's, 9254) and each hull
 ## costs the physics server 10-30 us to take (Jolt builds its shape): a part
 ## of a thousand cost 15-80 ms in one frame.
@@ -118,7 +118,7 @@ static func held_bodies(root: Node) -> Array:
 ## space, so a slice put back in place cost the square of the body's shapes
 ## (about 2.3 s of main thread for sprawl 2's isles); out of it, the
 ## compound is built once, as it re-enters. The same shapes, in the same
-## order (docs/design/roguelike/native-isles-round1.md).
+## order.
 static func drain(bodies: Array, usec: int) -> bool:
 	var end := Time.get_ticks_usec()+usec
 	var put := [0]

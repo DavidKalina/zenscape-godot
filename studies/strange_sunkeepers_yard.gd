@@ -1,7 +1,5 @@
 extends "res://studies/character_study.gd"
-## The Sun-Keepers yard (docs/design/roguelike/strange-sunkeepers-round1.md;
-## card h1 in docs/design/roguelike/brainstorm/round4-strange-city/
-## lens1-hunters.md): the Sun-Keepers (scripts/enemies/sun_keeper.gd), who
+## The Sun-Keepers yard: the Sun-Keepers (scripts/enemies/sun_keeper.gd), who
 ## can only stand where light falls, on a lit span over the void, in the
 ## underground look (`--underground`, torch by default).
 ##   south     you start on the south plaza. West of you a lone Keeper sleeps

@@ -64,7 +64,7 @@ static func mesh_of(m: Mesher, kind := "pier") -> ArrayMesh:
 	return m.mesh(wear(kind),_runes)
 
 ## One basalt, a different wear per piece: the same shader, washes and
-## palette, a few knobs apart (weathered stone, kit-stone-weathered.md). The
+## palette, a few knobs apart (weathered stone). The
 ## lichen is the underground's: dry, olive-grey and ochre, kept dim so it
 ## never glows in the dark.
 const LICHEN_A := Color(0.33,0.35,0.28)

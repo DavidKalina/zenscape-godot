@@ -1,7 +1,5 @@
 extends Node3D
-## The Earth Mouths (round 4 strange city, card a5-earth-mouths in
-## docs/design/roguelike/brainstorm/round4-strange-city/lens2-living-
-## architecture.md, on branch brainstorm/round4-strange-city): mouths in the
+## The Earth Mouths (card a5-earth-mouths): mouths in the
 ## floor (scripts/city_mouths/earth_mouth.gd) that share one belly.
 ##
 ## The rule: **they eat only dead weight, and all the mouths share one

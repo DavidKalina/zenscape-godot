@@ -182,7 +182,7 @@ func after(_delta: float, events: Dictionary) -> void:
 				events["swing"] = true
 				counts.swing += 1
 				if motor.move == "tumble":
-					# Snagged stunned (docs/design/roguelike/rope-catch.md).
+					# Snagged stunned.
 					events["snag"] = true
 					counts.snag += 1
 				break

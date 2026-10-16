@@ -12,8 +12,8 @@ extends RefCounted
 ## rope bridge. Everything in the world's frame (y up); the isles' middles
 ## are RING m out of C, their tops (W + rise) over the sky.
 ##
-## A family (scripts/kit_isle/motif_broken_ring.gd, docs/design/roguelike/
-## motif-families.md): every layout function takes a plan (`rolled`: how
+## A family (scripts/kit_isle/motif_broken_ring.gd): every layout function
+## takes a plan (`rolled`: how
 ## many isles, their angles, radii and rises, the hops, the centre's hop,
 ## the circle's missing stones), the authored tables below when none is
 ## given (`authored`), so the studies, the life and the sky read the

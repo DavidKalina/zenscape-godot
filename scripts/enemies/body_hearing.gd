@@ -1,6 +1,5 @@
 extends RefCounted
-## The Olmec's ears for the layer's noise (docs/design/roguelike/
-## noise-stealth-round1.md): a headless body or a whole Olmec
+## The Olmec's ears for the layer's noise: a headless body or a whole Olmec
 ## (scripts/enemies/headless_body.gd) hears what is made on the NoiseBus
 ## (scripts/noise/noise_bus.gd) and goes to look, as at a weaker, fading
 ## beacon. It is one: a `Lure`, a Beacon only its own body heeds (in no

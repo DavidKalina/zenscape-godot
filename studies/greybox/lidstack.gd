@@ -1,5 +1,5 @@
 extends "res://studies/character_study.gd"
-## LIDSTACK greybox (docs/design/roguelike/brainstorm/round1/motif-m2-lidstack.md):
+## LIDSTACK greybox:
 ## a tall stack of terraces round a hollow colossus column, played with the real pilot
 ## and the real traps (voussoirs, tumble, cannon). Grey is structure, orange the lips to
 ## hang from, green a pad. The whole layout is the const table below; the code only

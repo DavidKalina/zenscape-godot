@@ -1,5 +1,5 @@
 extends "res://scripts/enemies/enemy.gd"
-## The Plinth Ram (docs/design/roguelike/ideas-enemies.md, 7), greybox: a
+## The Plinth Ram (7), greybox: a
 ## stone bull. You are the red flag: it chases you, and a dodge made at the
 ## last moment near a rim sends it over. That is the only way it dies.
 ##

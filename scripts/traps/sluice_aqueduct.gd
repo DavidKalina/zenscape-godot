@@ -1,6 +1,6 @@
 extends Node3D
-## The Sluice Flush in context (scripts/traps/trap_sluice.gd; docs/design/
-## roguelike/traps-round2-sluice.md): on the aqueduct isle's own channel
+## The Sluice Flush in context (scripts/traps/trap_sluice.gd): on the aqueduct
+## isle's own channel
 ## (studies/aqueduct_isle.gd, and the game, studies/zenscape.tscn), with
 ## `--sluice`; off, nothing is laid and nothing changes.
 ##

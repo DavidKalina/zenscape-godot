@@ -8,7 +8,7 @@ extends "res://scripts/kit_isle/kit_motif.gd"
 ## here for its study (studies/colonnade_spine_isle.gd) and for the
 ## aqueduct isle's sky alike.
 ##
-## A family (docs/design/roguelike/motif-families.md): `configure(seed,
+## A family: `configure(seed,
 ## knobs)` rolls what the ruin has lost (Spine `rolled`): `collapse` (how
 ## many piers snapped, lintels fallen and voussoirs gone from the portals'
 ## crowns), `tail` (how many of the tail's fragments are left) and
@@ -32,7 +32,7 @@ var colonnade: Node3D
 var temple: Node3D
 var spine: Node3D
 var bridges: Array[MeshInstance3D] = []
-## The Olmec's destruction (docs/design/roguelike/olmec-destruction-round1.md):
+## The Olmec's destruction:
 ## the colonnade's plain piers and its lintels built apart (Spine
 ## `colonnade`'s `breakable`) for scripts/kit_isle/colonnade_breaks.gd to
 ## stand. Off, the one Build as ever.

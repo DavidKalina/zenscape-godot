@@ -1,8 +1,7 @@
 extends Node3D
-## The plane's arc, round 1 (docs/design/plane-arc/round1.md): the game starts with the plane
-## broken, its six parts spread over region one, each found a different way
-## (scripts/plane_arc/part_spots.gd), carried to the plane and fitted there;
-## with all six fitted, it flies.
+## The plane's parts, round 1 (docs/design/plane-arc/round1.md): six parts
+## (scripts/plane_arc/part_spots.gd), each taken on foot, carried to the
+## plane and fitted there; with all six fitted, it flies.
 ##
 ## - **Broken.** Until all six are fitted the parked plane stands
 ##   `set_missing` with the rest (scripts/plane_figure.gd: the damage where

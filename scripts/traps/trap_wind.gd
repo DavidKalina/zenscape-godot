@@ -1,6 +1,5 @@
 extends "res://scripts/traps/trap.gd"
-## Wind (docs/design/roguelike/ideas-traps.md modules 6 Draft Vents and 8
-## Gargoyle Spitter; built to the contract in scripts/traps/trap.gd): a
+## Wind (built to the contract in scripts/traps/trap.gd): a
 ## narrow deck over a drop with stone mouths along its -x side that blow
 ## across it (+x, the way off). One trap, two trigger modes (`mode`):
 ##   - "vent": each mouth breathes on a timer, `on` s of wind then `off` s

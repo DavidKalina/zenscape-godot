@@ -1,6 +1,5 @@
 extends "res://studies/character_study.gd"
-## GREYBOX, Opus pass: the Washing Rite (docs/design/roguelike/brainstorm/
-## round1/motif-m5-washing-rite.md, "Greybox (Opus pass)"). A drowned
+## GREYBOX, Opus pass: the Washing Rite ("Greybox (Opus pass)"). A drowned
 ## forecourt; a walled pilgrims' lane funnelling into the gate of a long
 ## channel with the REAL Sluice Flush (scripts/traps/trap_sluice.gd) in it,
 ## on a timer: the channel floor is the plate (a pilgrim's weight in it for

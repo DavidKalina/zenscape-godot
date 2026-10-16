@@ -1,12 +1,11 @@
 extends Node3D
-## The Hollow Child (card x5-hollow, docs/design/roguelike/brainstorm/
-## round4-strange-city/lens3-exploitable.md; docs/design/roguelike/
-## hollow-child-round1.md): an Olmec hollow "were-baby", a seated figure of
+## The Hollow Child (card x5-hollow): an Olmec hollow "were-baby", a seated
+## figure of
 ## white-slipped fired clay the size of a crouched wanderer, that drinks
 ## nearby light. "It is fed on the light of whoever sits with it. When it is
 ## full, it cries."
 ##
-## The rule, on the real sight and beacon code (beacons-light-sight-round1.md):
+## The rule, on the real sight and beacon code:
 ##   - It carries a LightDrinker (scripts/enemies/light_drinker.gd) of
 ##     `reach` m. While it drinks, LightLevel reads every flame there as
 ##     drunk: the wanderer beside it reads as the ambient only to the

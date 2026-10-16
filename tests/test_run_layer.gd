@@ -1,7 +1,7 @@
 extends SceneTree
 ## suite: slow
 ## The generated layer (studies/run_layer.tscn, scripts/roguelike/
-## layer_plan.gd; docs/design/roguelike/layer-round2.md, layer-round3.md),
+## layer_plan.gd),
 ## headless, over a few seeds: the plan is the same for the same seed (and
 ## knobs, the gulf's width pinned by its knob); 2 or 3 neighbourhoods of 2+
 ## isles, a gulf GULF wide between each two, open sky (every isle of

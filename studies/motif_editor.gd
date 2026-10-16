@@ -1,5 +1,5 @@
 extends "res://studies/kit_isle.gd"
-## The motif editor, round 1 (docs/design/roguelike/level-editor.md, its
+## The motif editor, round 1 (its
 ## handoff level-editor-round1.md): one authored motif built by hand in the
 ## game's real look, on the motif yard's base (studies/kit_isle.gd, the
 ## yard's sky studies/motif_yard_sky.gd, the motif stood as a placed isle
@@ -22,8 +22,8 @@ extends "res://studies/kit_isle.gd"
 ##   brush: LMB drag (hold still to pile up), wheel or [ ] radius, panel strength
 ##   water: click a hollow (Shift: take it away); outline: drag handles,
 ##   Shift+click add, Alt+click or Delete remove; Ctrl+Z / Ctrl+Shift+Z undo, redo
-##   (round 2: docs/design/roguelike/level-editor-round2.md)
-## Round 3 (docs/design/roguelike/level-editor-round3.md): the early game's
+##   (round 2)
+## Round 3: the early game's
 ## UI on it. The tool roll (scripts/tool_roll.gd) down the left edge holds
 ## the land tools and stamps; Cmd/Ctrl K or / opens the palette
 ## (studies/motif_editor_palette.gd over scripts/command_palette.gd) with the

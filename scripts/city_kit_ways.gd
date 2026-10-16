@@ -1,6 +1,6 @@
 extends RefCounted
-## The city kit's crossings (docs/design/roguelike/layer-round15-city-
-## crossings.md): the pieces the generator's crossings between city places
+## The city kit's crossings: the pieces the generator's crossings between city
+## places
 ## are drawn with (scripts/roguelike/city_crossings.gd, the plan's shapes in
 ## scripts/roguelike/city_ways.gd), in the kit's weathered basalt (scripts/
 ## city_kit_stone.gd) on a CityKit `Piece`:

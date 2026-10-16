@@ -1,5 +1,5 @@
 extends "res://studies/motif_yard.gd"
-## The flyer yard (feature `flyer`, docs/design/roguelike/flyer-round1.md):
+## The flyer yard (feature `flyer`):
 ## meet the guacharo alone. The motif yard (studies/motif_yard.gd) with one
 ## guacharo (scripts/enemies/guacharo.gd) laid over the motif through the
 ## generator's own path (LayerStage -> scripts/roguelike/layer_flyers.gd,

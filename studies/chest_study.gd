@@ -1,5 +1,5 @@
 extends "res://studies/character_study.gd"
-## The treasure chest study (docs/design/roguelike/chest-round1.md): a start
+## The treasure chest study: a start
 ## isle with two chests (scripts/chest/treasure_chest.gd, in a ChestField,
 ## scripts/chest/chest_field.gd). The first is open to a press (Space / A near
 ## it); the second is locked: a press only rattles it, a hard slam on its lid

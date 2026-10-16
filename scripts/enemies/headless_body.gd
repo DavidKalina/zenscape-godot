@@ -1,8 +1,8 @@
 extends "res://scripts/enemies/enemy.gd"
-## The headless body (docs/design/roguelike/headless-body-round1.md): the
+## The headless body: the
 ## inhaler head's (scripts/enemies/inhaler_head.gd) lost stone body, a
 ## hulking Olmec figure of masonry with an empty neck stump, walking the
-## isles to find its head. Round 3 (headless-body-round3-anim.md) gave it
+## isles to find its head. Round 3 gave it
 ## its model and authored clips (scripts/enemies/headless_body_look.gd,
 ## art/blender/headless_body/headless_body_build.py), driven from these
 ## states; its hands are put on the real wall and lip on top of them.
@@ -62,10 +62,9 @@ extends "res://scripts/enemies/enemy.gd"
 ## The walker: it is a stone he stands on and rides (the base's box); walked
 ## into while it moves (or met by its shockwave), he is shoved through his
 ## own motor (PilotMotor.knock). No damage. He can't push it.
-## Round 2: docs/design/roguelike/headless-body-round2.md.
+## Round 2.
 ##
-## Whole, with `chase` on (off but in studies/whole_body_chase.tscn:
-## docs/design/roguelike/whole-body-chase-round1.md), it hunts the walker:
+## Whole, with `chase` on (off but in studies/whole_body_chase.tscn), it hunts the walker:
 ## it sees him (`sight`, scripts/enemies/body_sight.gd, the dragon's sight at
 ## its scale), and spotted, comes for him:
 ##   "alert"   suspicious: it stops and turns to where it glimpsed him.
@@ -92,7 +91,7 @@ signal reunited(enemy)
 ## The chase's beats (whole, `chase` on): "spotted", "lost", "gave up",
 ## "pounce", "suck", "gulped", "blown out", "swat", "caught ...", "missed".
 signal chase_beat(what: String)
-## His weight come down (olmec-threat-round1.md): at `at`, `power` (a
+## His weight come down: at `at`, `power` (a
 ## mantle 0.5, a leap's landing 1 or more), `kind` ("haul", "land",
 ## "pounce"): the isle under him tips (scripts/enemies/olmec_tilt.gd).
 signal weighed(at: Vector3, power: float, kind: String)
@@ -214,7 +213,7 @@ var _feel_from := -1.0
 var _dust: Array = []
 ## Live shockwaves: {at, r, max, power, done (the walker met), parts}.
 var _waves: Array = []
-## The Olmec's destruction (docs/design/roguelike/olmec-destruction-round1.md):
+## The Olmec's destruction:
 ## what he breaks (scripts/kit_isle/colonnade_breaks.gd), or null. What
 ## still stands of it is left out of his rays (he plans and walks through
 ## it), his bulk and his shockwaves break it (`met`, `wave`), and the
@@ -225,7 +224,7 @@ var _stagger := 0.0
 const STAGGER := 0.5
 ## The reach the route he is on was planned to (for planning it again).
 var _goal_reach := 3.0
-## Round 2 (olmec-destruction-round2.md): a wall square across his way
+## Round 2: a wall square across his way
 ## (the breaker's `ahead`) he punches through: "smash", feet planted and
 ## fists up SMASH_WINDUP s, the hit (`smash`), then straight on in the
 ## state he was in, SMASH_AFTER s on. Slowed through it, never stopped.
@@ -256,7 +255,7 @@ func default_knobs(n: Dictionary) -> Dictionary:
 		"listen":2.6,"listen_every":7.0,"lost_after":20.0,"lost_for":15.0,"hear":n.unit*80.0,"sense":n.unit*15.0,"noise":0.35,"lose":2.0,
 		"climb":n.unit*1.25,"haul":0.55,"climb_max":n.unit*20.0,"standoff":0.25,"lip_in":0.8,"mantle":1.4,
 		"leap_max":n.unit*11.0,"drop_max":n.unit*20.0,"drop_under":INF,"windup":1.1,"leap_up":n.unit*1.6,"land":1.0,
-		# Round 11 (layer-round11-body-routes.md): a drop goes further
+		# Round 11: a drop goes further
 		# across the deeper it is (`leap_fall` m a m down, `leap_far` at
 		# most), so it leaps down onto another isle.
 		"leap_far":n.unit*20.0,"leap_fall":0.6,
@@ -283,7 +282,7 @@ func default_knobs(n: Dictionary) -> Dictionary:
 		# the clips are made for these, other values slide the feet), and
 		# the beat of triumph once whole (s; it was straight to listening).
 		"stride":Look.WALK_STEP,"stride_home":Look.STRIDE_STEP,"triumph":1.8,
-		# The whole body's chase (whole-body-chase-round1.md): 1 on (its
+		# The whole body's chase: 1 on (its
 		# study's), 0 off (as ever: whole, it roams). Ranges in Hh, flat.
 		"chase":0,"chase_speed":n.run*0.9,"chase_turn":1.8,"chase_memory":16.0,
 		"sight_range":n.unit*40.0,"sight_half":0.9,"sight_near":n.unit*14.0,"sight_fill":1.4,"sight_grace":1.0,"sight_drain":0.3,
@@ -293,14 +292,14 @@ func default_knobs(n: Dictionary) -> Dictionary:
 		"pounce_arc":0.3,"pounce_rest":3.0,"pounce_hit":n.unit*2.0,"pounce_shock":0.7,
 		"suck_min":4.5,"suck_max":7.0,"suck_tell":1.2,"suck_for":5.0,"suck_rest":7.0,"suck_turn":0.6,"suck_lose":1.0,
 		"suck_gulp":n.unit*1.5,"spent":1.2,
-		# Leap up and grab (whole-body-leap-grab-round2.md): 1 on (whole,
+		# Leap up and grab: 1 on (whole,
 		# with `chase` on), 0 off. A lip at most `grab_up` Hh over its feet,
 		# its hang point at most `grab_out` Hh off flat; `grab_windup` s
 		# crouched; caught if the lip is within `grab_tol` m of where it
 		# reaches; `grab_hang` s hanging, swinging, before it hauls.
 		"leap_grab":0,"grab_up":4.5,"grab_out":2.5,"grab_windup":1.0,"grab_tol":n.unit*1.0,"grab_hang":0.9,
 		"grab_rest":2.0,"grab_lean":0.14,
-		# Round 4 (headless-body-round4-anim-polish.md): before a climb it
+		# Round 4: before a climb it
 		# feels the wall, a hand laid flat on it, `feel` s (0 skips it).
 		"feel":1.0,
 		# Round 4: over the lip. 1: no haul. It climbs hand over hand till
@@ -309,8 +308,9 @@ func default_knobs(n: Dictionary) -> Dictionary:
 		# feet, by a press-up). 0: round 3's haul up the face till the lip
 		# is at its chest, then the press-up.
 		"mantle_pull":1,
-		# The periscope (olmec-periscope-round1.md): 1 on (whole, with
-		# `chase` on: always, the generator included), 0 off. Its sight lost, it lifts its head
+		# The periscope: 1 on (whole, with
+		# `chase` on: always, the generator included), 0 off. Its sight lost, it lifts
+		# its head
 		# overhead (`scope_lift` s), turns it `scope_sweep` rad either way
 		# about where it lost him over `scope_look` s, and lowers it
 		# (`scope_lower` s); seen `scope_spot` s from up there, he's found
@@ -319,7 +319,7 @@ func default_knobs(n: Dictionary) -> Dictionary:
 		# plants at once. It leans `scope_lean` rad out over low cover.
 		"periscope":1,"scope_lift":1.7,"scope_look":5.0,"scope_lower":1.6,"scope_sweep":1.0,"scope_wide":1.5,"scope_spot":0.35,
 		"scope_rest":8.0,"scope_near":1.6,"scope_wait":1.0,"scope_lean":0.38,
-		# Light (beacons-light-sight-round1.md): in the dark (scripts/enemies/
+		# Light: in the dark (scripts/enemies/
 		# light_level.gd) its sight reaches `sight_dark_range` of
 		# `sight_range` and sees `sight_dark_seen` of him, eased up to all
 		# as he is lit; a light's glow on him (his torch, a lit beacon) makes
@@ -333,13 +333,13 @@ func default_knobs(n: Dictionary) -> Dictionary:
 		# its draw and goes there, 0 it pays them no heed. Looked at its
 		# `dwell`, it tires of that one `beacon_rest` s (lit again: news).
 		"beacons":1,"beacon_rest":40.0,
-		# City breaks round 1 (docs/design/roguelike/city-breaks-round1.md):
+		# City breaks round 1:
 		# 1 on, 0 off (as ever). Hunting, an edge with no leap across and him
 		# beyond it: a route over places it fits to him (its planner's, as
 		# roaming's: a column felled across a gap is a way), walked, climbed
 		# and leapt; none, it tries again `chase_replan` s on.
 		"chase_routes":0,"chase_replan":3.0,
-		# Climbing after him (docs/design/roguelike/body-climb-after-round1.md):
+		# Climbing after him:
 		# 1 on (the default, wherever he hunts), 0 off (as before: lost
 		# up a wall or a stair, he scopes and gives up at the foot). Lost
 		# from sight up out of his walk (or him last seen going up), he
@@ -349,7 +349,7 @@ func default_knobs(n: Dictionary) -> Dictionary:
 		# way up `after_ahead` m. `after_tries` routes a loss at most, none
 		# once `after_for` s unseen.
 		"climb_after":1,"after_tries":3,"after_for":60.0,"after_ahead":n.unit*10.0,"after_wait":0.6,
-		# Olmec threat round 1 (docs/design/roguelike/olmec-threat-round1.md):
+		# Olmec threat round 1:
 		# `relentless` 1 (the generator's), 0 off (as before). Whole, the hunt
 		# never falls back to idle searching: the head going on is a beat and
 		# he knows where you are; lost, he looks `hunt_search` s, then takes
@@ -563,7 +563,7 @@ func _listen(delta: float) -> void:
 		else: _go("roam")
 
 ## Whether it is lost: no nearer its head for `lost_after` s (it goes any
-## way, `lost_for` s, then hears afresh). Round 9 (layer-round9-bodies.md):
+## way, `lost_for` s, then hears afresh). Round 9:
 ## on the generator's isles the head's bearing often runs into a wall or
 ## off a drop too deep, and it turned back and forth there for good.
 func _progress(delta: float) -> void:
@@ -725,7 +725,7 @@ func _reunite_near() -> bool:
 	var flat := Vector2(head.position.x-position.x,head.position.z-position.z).length()
 	return flat <= length*0.5+head.length*0.5+float(knobs.reunite)
 
-# --- Beacons (docs/design/roguelike/beacons-light-sight-round1.md) ----------------------------
+# --- Beacons ----------------------------
 # A lit Beacon (scripts/enemies/beacon.gd: the great cresset, a beacon tower,
 # Mudge alight) within its `draw` is heard the way the head's call is: it
 # turns to its bearing (`_pick_way`), its routes go there (`_plan`), and
@@ -742,8 +742,8 @@ func _reunite_near() -> bool:
 
 ## The lit beacon it heeds, or null.
 var beacon: Beacon = null
-## Its ears for the layer's noise (scripts/enemies/body_hearing.gd,
-## noise-stealth-round1.md): a heard noise is a weaker beacon, under a lit one.
+## Its ears for the layer's noise (scripts/enemies/body_hearing.gd): a heard
+## noise is a weaker beacon, under a lit one.
 var hearing := Hearing.new()
 ## Times a beacon turned it; times it stood and looked at one.
 var beacon_turns := 0
@@ -795,7 +795,7 @@ func _beacons(delta: float) -> void:
 	_beacon_t = BEACON_POLL
 	if beacon != null and not is_instance_valid(beacon): beacon = null
 	var b: Beacon = _beacon_pick() if _beacon_free() else null
-	# A heard noise (noise-stealth-round1.md), when no beacon draws it.
+	# A heard noise, when no beacon draws it.
 	var heard: Beacon = hearing.pick(self)
 	if b == null and _beacon_free(): b = heard
 	if b == beacon and not hearing.news(b): return
@@ -1251,8 +1251,8 @@ func _landing(dir: Vector3) -> Dictionary:
 	return {}
 
 ## Whether it drops to `at`: headless and not lost, not more than
-## `drop_under` m under its head's ground (it hears it up there). Round 9
-## (layer-round9-bodies.md): on the generator's isles it dropped onto spurs
+## `drop_under` m under its head's ground (it hears it up there). Round 9: on
+## the generator's isles it dropped onto spurs
 ## and ledges down a cliff with no way back up, and stood there for good;
 ## lost, it takes the drop (the study's way to the head goes down and up).
 func _drop_ok(at: Vector3) -> bool:
@@ -1461,7 +1461,7 @@ func _shock(at: Vector3, power: float) -> void:
 		chips.append([chip,Vector3(sin(a)*_rng.randf_range(3.0,7.0),_rng.randf_range(5.0,10.0)*sqrt(power),cos(a)*_rng.randf_range(3.0,7.0))])
 	_waves.append({"at":at,"r":0.0,"max":reach,"power":power,"done":false,"t":0.0,"parts":parts,"chips":chips})
 	field.sound(&"body_shock",at)
-	# Its landing heard across the layer (noise-stealth-round1.md); not by
+	# Its landing heard across the layer; not by
 	# itself or another body (scripts/enemies/body_hearing.gd).
 	NoiseBus.make(self,at,reach*SHOCK_HEARD,&"olmec_land")
 
@@ -1524,7 +1524,7 @@ func _shock_meets(w: Dictionary) -> void:
 	# On its shoulders he rides it out.
 	if m.grounded and field.under_pilot() == body.get_rid(): return
 	# A breakable that takes the wave's hit on him itself (the city's drum
-	# floor: docs/design/roguelike/city-breaks-round1.md).
+	# floor).
 	if breaker != null and breaker.has_method("takes_shock") and breaker.takes_shock(self,w): return
 	var f := lerpf(1.0,float(knobs.shock_edge),d/w.max)*float(w.power)
 	var way := off.normalized() if d > 0.1 else PilotMotor.forward(facing)
@@ -1534,7 +1534,7 @@ func _shock_meets(w: Dictionary) -> void:
 	shove_pilot(m,way,float(knobs.shock_out)*f,float(knobs.shock_up)*f)
 
 # --- Routes (round 11) ---------------------------------------------------------------------------
-# docs/design/roguelike/layer-round11-body-routes.md. Where `routes` is on,
+# Where `routes` is on,
 # it hears the head as before, but goes the way a route over places it fits
 # goes (scripts/enemies/body_routes.gd): walking, climbing (on up over lips
 # it doesn't fit on), jumping and dropping; a leg it can't make it gives up
@@ -1573,7 +1573,7 @@ func _plan() -> void:
 	# Lost (no nearer for `lost_after` s) counts only off a route that gets
 	# there: a way round can lead away a while.
 	if beacon != null:
-		# To the beacon (beacons-light-sight-round1.md): where it stands to
+		# To the beacon: where it stands to
 		# look at it, as near as its routes get.
 		goal = _beacon_goal()
 		reach = length*0.5+beacon.gather
@@ -1804,7 +1804,7 @@ func _unwedge(delta: float) -> void:
 func route_stats() -> String:
 	return "plans %d to %d near %d fails %d bails %d perches %d rays %d" % [plans,routed_to,routed_near,leg_fails,bails,perches,routes.rays if routes != null else 0]
 
-# --- The whole body's chase (whole-body-chase-round1.md) -------------------------------------------
+# --- The whole body's chase -------------------------------------------
 # Whole, with `chase` on: it sees the walker (`sight`), and spotted, comes for
 # him, swatting him near, pouncing on him a little way off, sucking him in
 # with its head's breath further off; lost, it looks where it last saw him,
@@ -1902,7 +1902,7 @@ func _see(delta: float) -> void:
 		seen_t = 0.0
 		return
 	var pts := Sight.pilot_points(m.feet,false)
-	# How lit he stands (beacons-light-sight-round1.md): by day, no change.
+	# How lit he stands: by day, no change.
 	LightLevel.refresh(get_tree())
 	if LightLevel.daylight(): sight.light(1.0,0.0)
 	else: sight.light(LightLevel.exposure(get_tree(),pts[1]),LightLevel.glow(get_tree(),pts[1]))
@@ -2061,7 +2061,7 @@ func _chase_drop() -> void:
 	_leg = 0
 	_search = null
 
-# --- Climbing after him (body-climb-after-round1.md) -------------------------------------------
+# --- Climbing after him -------------------------------------------
 # Hunting, with `climb_after` on: lost from sight up out of its walk (over a
 # lip it can climb, up a long stair), it doesn't give up at the foot. It
 # plans a route (its planner's moves: no refuge it doesn't fit, no wall
@@ -2555,7 +2555,7 @@ func _catch(m: PilotMotor, how: String) -> void:
 	chase_beat.emit("caught "+how)
 
 
-# --- The periscope (olmec-periscope-round1.md) ----------------------------------------------------
+# --- The periscope ----------------------------------------------------
 # Whole, hunting, with `periscope` on: his sight broken behind cover, he
 # plants, lifts his own head off his shoulders and holds it up overhead in
 # both hands (the clips scope_lift, scope_look, scope_lower), turns it slowly
@@ -2861,7 +2861,7 @@ func _look_way() -> Vector3:
 	if state == "scope" and _held_w > 0.5: return _way3(head_facing())
 	return _forward3()
 
-# --- Leap up and grab (whole-body-leap-grab-round2.md) -------------------------------------------
+# --- Leap up and grab -------------------------------------------
 # Whole, with the chase and `leap_grab` on: where its goal (him, where it
 # last saw him, its post going back) is up on a higher place it can't walk
 # or climb to, and that place's rim is within `grab_up` Hh over its feet and
@@ -3117,7 +3117,7 @@ func _triumph(delta: float) -> void:
 			return
 		_go("listen")
 
-## Relentless (olmec-threat-round1.md): whole, with the hunt on.
+## Relentless: whole, with the hunt on.
 func _relentless() -> bool:
 	return float(knobs.get("relentless",0)) >= 0.5 and _chases()
 
@@ -3220,7 +3220,7 @@ func world_changed(box: AABB) -> void:
 	if routes != null: routes.forget(box)
 	if _goal != Vector3.INF and (_routed() or _search != null): _start_search(_goal,_goal_reach)
 
-# --- Olmec round 1: its bulk against the world (olmec-turn-clip-round1.md) -------------------
+# --- Olmec round 1: its bulk against the world -------------------
 
 ## Its bulk, a box turned with it (in head heights at its size): half across
 ## its shoulders and hanging arms, half along it; from over a stair's step

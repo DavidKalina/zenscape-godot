@@ -1,5 +1,5 @@
 extends Node3D
-## A powder keg (docs/design/roguelike/cannon-round1.md): a greybox barrel
+## A powder keg: a greybox barrel
 ## lying on an isle. Touched, it is picked up and hovers along behind the
 ## pilot like a carried plane part (scripts/carried_follow.gd). It is fired
 ## from a cannon as a ranging shot: it flies the arc the pilot would at the

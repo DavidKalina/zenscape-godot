@@ -1,5 +1,5 @@
 extends "res://studies/character_study.gd"
-## The city fires yard (docs/design/roguelike/city-fires-round1.md): the
+## The city fires yard: the
 ## city kit's fire pieces (scripts/city_kit_fires.gd) on a basalt plaza over
 ## the abyss, in the underground look (`--underground`, torch by default;
 ## `--underground=haze`), with a whole Olmec hunting (the chase, the

@@ -1,6 +1,6 @@
 // Underground ground cover's dust: the painterly shade the grass ground has,
-// for drifted dust, ash and fine sand (scripts/underground/ground_cover.gd,
-// docs/design/roguelike/underground-ground-round1.md). The terrain's ground
+// for drifted dust, ash and fine sand (scripts/underground/ground_cover.gd).
+// The terrain's ground
 // (ground_look zs_ground_color, `ground_dust`) and the cover skin laid on
 // stone tops (shaders/underground_cover.gdshader) both call this, so the
 // two read as one dust. Include after reference_wind and grass_look.

@@ -1,6 +1,6 @@
 extends "res://studies/character_study.gd"
-## The headless body's study (docs/design/roguelike/headless-body-round1.md,
-## round 2: headless-body-round2.md): greybox isles in open sky (the
+## The headless body's study (round 2): greybox isles in
+## open sky (the
 ## character study's grey structure, as the enemy yard is), the inhaler head
 ## (scripts/enemies/inhaler_head.gd) heaving round its ring on the highest, and its
 ## lost body (scripts/enemies/headless_body.gd) to find it. The body comes up

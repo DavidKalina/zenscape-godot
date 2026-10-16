@@ -1,5 +1,5 @@
 extends Node3D
-## A treasure chest the pilot opens (docs/design/roguelike/chest-round1.md):
+## A treasure chest the pilot opens:
 ## the kit's carved chest (RuinKit `tomb_chest`, its base without the lid),
 ## and a lid of the same stone on a hinge along the back edge.
 ##
@@ -7,8 +7,8 @@ extends Node3D
 ##   collision, the base too: he can jump on it). Knobs: `runes` (how many
 ##   it spills), `locked` (a press only rattles it; a hard slam on the lid
 ##   breaks it open: scripts/slam.gd, the same `Slam.decent()` drop that
-##   opens a buried find) and `loud` (how big a noise it makes, 1 = the
-##   "big spike" of ideas-dragon.md's greed table).
+##   opens a buried find) and `loud` (how big a noise it makes, 1 = a big
+##   spike).
 ## - **Opening** (`open`; the field calls it on a press or a slam). A wind-up
 ##   (WINDUP s): the lid cocks a crack open with a tremble, the body
 ##   squashes a touch. Then it flings back (SWING s, eased out past its

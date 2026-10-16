@@ -1,6 +1,6 @@
 extends RefCounted
 ## A wanderer's footprints, kept to be walked again (the footprint-replay
-## buffer of docs/design/roguelike/brainstorm/round4-strange-city: h2 the
+## buffer of the strange-city enemies: h2 the
 ## Second Walker walks it 8 s behind; h5 the Tithe-Taker at a leash in
 ## metres, h7 the Mirror Twin at no delay through a reflection).
 ##

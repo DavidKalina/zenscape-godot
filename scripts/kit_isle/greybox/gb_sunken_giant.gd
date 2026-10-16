@@ -1,7 +1,6 @@
 extends "res://scripts/kit_isle/motif_greybox.gd"
 ## The Sunken Giant in the generator: studies/greybox/sunken_giant.gd's
-## LAYOUT (card: docs/design/roguelike/brainstorm/round1/motif-m2-sunken-
-## giant.md), the same geometry in the same frame, so its climb and its
+## LAYOUT, the same geometry in the same frame, so its climb and its
 ## chains keep the study's numbers. The study's stand-in catching pad for
 ## the next isle is the giant's knee here (head 2's blast lands you on it),
 ## and the rim out is the knee's far edge, where a generated crossing

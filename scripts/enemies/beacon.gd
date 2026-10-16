@@ -1,7 +1,6 @@
 class_name Beacon
 extends SightLight
-## A lit thing every Olmec turns to (docs/design/roguelike/
-## beacons-light-sight-round1.md): the great cresset, a beacon tower's crown,
+## A lit thing every Olmec turns to: the great cresset, a beacon tower's crown,
 ## Mudge alight on his spire. A SightLight (it lights the ground round it for
 ## the Olmec's sight) that also draws: lit, every headless body and calm
 ## whole Olmec within `draw` m (flat) hears it the way a body hears its

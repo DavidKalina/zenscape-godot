@@ -1,6 +1,6 @@
 extends Node
-## The tilt (docs/design/roguelike/olmec-threat-round1.md), after the
-## dragon's (scripts/dragon_gale.gd, the user's favourite): when the Olmec
+## The tilt, after the
+## dragon's (scripts/dragon_gale.gd): when the Olmec
 ## hauls himself over a rim or lands a leap, the stone under him tips toward
 ## his weight, and while he stands out near its rim it stays leaned that
 ## way; the walker on it is carried as it tips and lurches toward the low

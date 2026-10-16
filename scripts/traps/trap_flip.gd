@@ -1,6 +1,6 @@
 extends "res://scripts/traps/trap.gd"
-## Flip Platforms (the user's idea, docs/design/roguelike/traps-round3-roll-flip.md;
-## built to the contract in scripts/traps/trap.gd): a row of stone slabs over
+## Flip Platforms (built to the contract in scripts/traps/trap.gd): a row of stone
+## slabs over
 ## a drop, each turning over 180 degrees about its long axis (across the
 ## route) on a rhythm. A slab is flat for most of its `period`, then tells
 ## (`tell` s: it shudders, clicks, and warms to orange), then flips in

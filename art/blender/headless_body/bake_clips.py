@@ -1,5 +1,5 @@
 """Bake headless_body_build.py's clips into assets/models/headless_body.glb
-without Blender (docs/design/roguelike/headless-body-round4-anim-polish.md).
+without Blender.
 
 The build script is the one source of the rig and the clips: this runs its
 measures, its bones and its whole posing section (key poses, tracks, the

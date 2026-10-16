@@ -1,9 +1,8 @@
 extends RefCounted
-## The city kit's refuges (docs/design/roguelike/city-refuges-round1.md):
+## The city kit's refuges:
 ## places the Olmec can't follow, in the underground Olmec city's weathered
 ## basalt (the `city` kit family; scripts/city_kit.gd registers them, see
-## the handoff). From the round 3 brainstorm's "refuge he can't enter"
-## (docs/design/roguelike/brainstorm/round3-olmec-city/README.md):
+## the handoff). From the round 3 brainstorm's "refuge he can't enter":
 ##   city_mouserun  a walker-sized passage with a jog through a colossal wall
 ##                  he can't climb (k2 colossus_mouserun)
 ##   city_niches    a ladder of votive shelves, each with a small lamp, up a

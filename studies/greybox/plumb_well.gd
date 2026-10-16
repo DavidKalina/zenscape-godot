@@ -1,6 +1,5 @@
 extends "res://studies/character_study.gd"
-## GREYBOX (roguelike round 1, Opus pass) of the Plumb Well motif card
-## (docs/design/roguelike/brainstorm/round1/motif-m4-plumb-well.md): five
+## GREYBOX (round 1, Opus pass) of the Plumb Well motif card: five
 ## stone plates stacked in a column against one tall wall (the plumb wall,
 ## where the stone was lowered), every oculus in one line down it, one trap
 ## on each of the three middle plates (the real flip leaf, seesaw drop and

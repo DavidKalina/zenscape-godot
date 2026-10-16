@@ -1,5 +1,5 @@
 extends Node3D
-## Gust arrows (docs/design/roguelike/crossing-viaduct-arrows.md): a
+## Gust arrows: a
 ## crossing's hazard: shots from off
 ## the path that knock you off your line. No archer yet: a launch point
 ## (a small stone perch) and the dragon's air blast fired from it
@@ -57,7 +57,7 @@ const TINT := Color(0.92,0.97,1.0)
 const GATHER := 1.8
 ## The hard hit in the air: out and up in walker heights at the burst's
 ## heart (DragonAirBlast EDGE of it at the shock's rim), down this long (s).
-## A notch under the first round's 9 / 1.2 / 0.8 (crossing-viaduct-heights.md):
+## A notch under the first round's 9 / 1.2 / 0.8:
 ## a scare he can sail out of, still well off his line.
 const AIR_OUT := 7.0
 const AIR_UP := 1.0
@@ -69,15 +69,15 @@ const PUSH_UP := 2.4
 ## has a ball in flight, or fired within TURN_GAP s (no shove into a second
 ## shot's throw).
 const TURN_GAP := 1.0
-## A horn fires where it points (docs/design/roguelike/crossing-viaduct-
-## polish.md): it starts its wind-up only once its barrel is within
+## A horn fires where it points: it starts its wind-up only once its barrel is
+## within
 ## START_CONE of him (rad), finishes it only within AIM_CONE (the wind-up
 ## held at its end meanwhile), and the ball leaves along the barrel.
 const START_CONE := 0.6
 const AIM_CONE := 0.1
 
-## Slammed on its top (scripts/slam.gd, docs/design/roguelike/
-## crossing-viaduct-perches.md), a perch is disabled this long (s): no tell,
+## Slammed on its top (scripts/slam.gd), a perch is disabled this long (s): no
+## tell,
 ## no shots, its horn tipped over; then it comes back. A slam counts on the
 ## top when its touch is within SLAM_UP walker heights of the top's height
 ## and inside its round (the top's half size plus SLAM_EDGE m).

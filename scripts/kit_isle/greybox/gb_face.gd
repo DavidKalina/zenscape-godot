@@ -1,6 +1,5 @@
 extends "res://scripts/kit_isle/motif_greybox.gd"
-## The Face (card: docs/design/roguelike/brainstorm/round3-olmec-city/motif-
-## face.md), a place of the underground Olmec city: a seated lord the size of a
+## The Face, a place of the underground Olmec city: a seated lord the size of a
 ## hill, cut out of a basalt cliff over the abyss, his face lit from below by
 ## the fires on his knees. You arrive on a ledge of turf at his feet.
 ##
@@ -315,7 +314,7 @@ static func lip_port(key: String) -> Vector3:
 	return lip_xform()*local
 
 ## The relief's hold `k`'s top (motif frame), from the relief's own table
-## (city-light2-round1.md's: a set-off apart, x alternating).
+## (a set-off apart, x alternating).
 static func relief_hold_top(k: int) -> Vector3:
 	const X := [0.0,1.7,3.55,1.65,3.3,1.6,3.45,1.55,3.4,1.6]
 	var r: Dictionary = LAYOUT.relief

@@ -1,6 +1,6 @@
 extends Node3D
-## The treasure chests of a scene (docs/design/roguelike/chest-round1.md,
-## scripts/chest/treasure_chest.gd), stepped beside the pilot's motor the way
+## The treasure chests of a scene (scripts/chest/treasure_chest.gd), stepped
+## beside the pilot's motor the way
 ## scripts/cannon/cannon_field.gd is: hooked into a character study as its
 ## `foot_pieces` (`attach`), or a child a stage steps from its own `before`,
 ## `after` and `pose` (scripts/roguelike/layer_stage.gd does that for its
@@ -13,8 +13,7 @@ extends Node3D
 ## - **The slam.** The field joins the slam's group (scripts/slam.gd): a hard
 ##   slam (`Slam.decent`) landing on a lid opens that chest, locked or not.
 ## - **The noise.** An opening is "opening a chest", a big spike in the
-##   dragon's table of what greed costs (docs/design/roguelike/
-##   ideas-dragon.md). The game has no attention system yet, only the
+##   dragon's table of what greed costs. The game has no attention system yet, only the
 ##   sounds an EnemyField (scripts/enemies/enemy_field.gd `sound`) logs and
 ##   hands its `sound_hook`, as the cannon's `sounded` signal does. So the
 ##   field emits `sounded(&"chest_open", at, loud)`, logs it in `heard`, and

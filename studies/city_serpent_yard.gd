@@ -1,5 +1,5 @@
 extends "res://studies/character_study.gd"
-## The city serpent yard (docs/design/roguelike/city-serpent-round1.md): the
+## The city serpent yard: the
 ## rune serpent as the underground city's train, on a basalt plaza over the
 ## abyss, in the underground look (`--underground`, torch by default;
 ## `--underground=haze`). Its line (one closed B-spline built from the

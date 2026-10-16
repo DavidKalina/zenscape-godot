@@ -1,6 +1,6 @@
 extends SceneTree
-## The Broken Viaduct high over the void (docs/design/roguelike/
-## crossing-viaduct-heights.md) through the real play loop: the crossing
+## The Broken Viaduct high over the void through the real play loop: the
+## crossing
 ## yard's own `_process` frames (not scripted), the pilot driven by Input
 ## actions (the stick and Space), the gust arrows firing on their own.
 ##   - Thrown off the piers by a gust arrow, Space after the yard's

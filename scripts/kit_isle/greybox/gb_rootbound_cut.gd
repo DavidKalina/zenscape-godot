@@ -1,6 +1,5 @@
 extends "res://scripts/kit_isle/motif_greybox.gd"
-## The Rootbound Cut (card: docs/design/roguelike/brainstorm/round2/motif-
-## m1-rootbound-cut.md, its "Place (round 2)" section): a PLACE, built
+## The Rootbound Cut (its "Place (round 2)" section): a PLACE, built
 ## land first on the kit's terrain and look. One low whale-back hill of
 ## turf (KitLand.island) that the makers were sawing apart with straight
 ## trenches across it when they stopped: a haul road sunk along its spine

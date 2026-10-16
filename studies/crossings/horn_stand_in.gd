@@ -1,5 +1,5 @@
 extends Node3D
-## The greybox wind horn (docs/design/roguelike/crossing-viaduct-perches.md):
+## The greybox wind horn:
 ## the stand-in for the stone wind horn (RuinKitHorn `wind_horn(seed,
 ## weathered)`, being built on feature/wind-horn), with the same nodes and
 ## methods, so the swap is one line (crossing_viaduct.gd `perch_piece`):

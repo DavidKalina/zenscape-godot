@@ -1,6 +1,6 @@
 extends "res://scripts/traps/trap.gd"
-## Rolling Logs (the user's idea, docs/design/roguelike/traps-round3-roll-flip.md;
-## built to the contract in scripts/traps/trap.gd): a chain of stone drums
+## Rolling Logs (built to the contract in scripts/traps/trap.gd): a chain of
+## stone drums
 ## across a gap, each spinning about its long axis. A log's top moves, and
 ## what stands on it is carried with the surface (`motor.carry`, as
 ## foot_pieces.gd and the seesaw carry): standing still he is walked off the

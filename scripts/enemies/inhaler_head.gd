@@ -1,6 +1,5 @@
 extends "res://scripts/enemies/enemy.gd"
-## The inhaler head (docs/design/roguelike/inhaler-head.md, round 2:
-## inhaler-head-round2-scoot.md): a colossal carved head of the ruin-
+## The inhaler head (round 2): a colossal carved head of the ruin-
 ## builders' (scripts/enemies/inhaler_head_look.gd, the Blender model
 ## art/blender/inhaler_head/), squared Olmec masonry, lost off its body
 ## (scripts/enemies/headless_body.gd) and stuck on the ground. It can't
@@ -60,7 +59,7 @@ extends "res://scripts/enemies/enemy.gd"
 ## Its calls (`calls`, `calling()`, signal `called`): with him within
 ## `call_r` m (seen or not) it calls out every `call_every` s, a jaw flap
 ## and a moan ("head_call"). Its body can hear them (an ask on the body's
-## side, inhaler-head-round2-scoot.md).
+## side).
 ##
 ## The pull (`pull_at`, `_pull`) is round 1's, weaker: a cone out of its
 ## mouth, `cone` rad either side far out, `cone_near` near, reaching `reach`
@@ -71,7 +70,7 @@ extends "res://scripts/enemies/enemy.gd"
 ## (`yank`); hanging from a rim his grip slips (`grip` s); in the air his
 ## velocity is drawn (`air_pull`); the sail and the plane feel it
 ## (`sail_wind`, `plane_wind`).
-## Worn (whole-body-chase-round1.md): on a whole body whose chase is on, it
+## Worn: on a whole body whose chase is on, it
 ## still draws when its body asks (`_worn`, the body's `worn_draw()`): the
 ## jaw opening as the body plants (a "tell"), then the "inhale" and its pull
 ## from up on the neck; drawn in to the body's feet (`worn_gulp`) he is
@@ -235,7 +234,7 @@ func default_knobs(n: Dictionary) -> Dictionary:
 		"call_r":n.unit*15.0,"call_every":3.0,"call_hold":4.0,
 		"dazed":2.4,"stone_skid":n.unit*7.0,
 		"sail_wind":1.6,"plane_wind":2.2,
-		# Worn on a whole body that hunts (whole-body-chase-round1.md), its
+		# Worn on a whole body that hunts, its
 		# draw reaches from up on the neck out over the body's suck range:
 		# these in place of `reach`, `pull_d0` and `pull` while worn.
 		"worn_reach":n.unit*28.0,"worn_pull_d0":n.unit*20.0,"worn_pull":n.run*1.3,
@@ -447,7 +446,7 @@ func _go(to: String) -> void:
 	state_t = 0.0
 	_strain = 0.0
 
-# --- Worn on a whole body that hunts (whole-body-chase-round1.md) ---------------------
+# --- Worn on a whole body that hunts ---------------------
 
 ## Whether its body asks it to draw now (or it holds him, or is spent from
 ## a blast): it does, from the neck (true); else false, as perched ever was.
@@ -870,7 +869,7 @@ func _blast(m: PilotMotor) -> void:
 	swallowed = false
 	blasts += 1
 	_blast_way = face_flat()
-	# Olmec threat round 1 (olmec-threat-round1.md): worn by a relentless
+	# Olmec threat round 1: worn by a relentless
 	# body (`void_push`), the blast is bent toward the nearest void.
 	if perch != null and is_instance_valid(perch) and float(perch.knobs.get("void_push",0.0)) > 0.0:
 		var bent: Vector2 = OlmecVoid.toward(field,perch.position,Vector2(_blast_way.x,_blast_way.z),float(perch.knobs.void_push))

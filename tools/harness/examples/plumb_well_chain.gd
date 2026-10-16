@@ -1,6 +1,5 @@
 extends "res://tools/harness/chain.gd"
-## The Plumb Well's chains (scripts/kit_isle/greybox/gb_plumb_well.gd, its
-## card docs/design/roguelike/brainstorm/round1/motif-m4-plumb-well.md), on
+## The Plumb Well's chains (scripts/kit_isle/greybox/gb_plumb_well.gd), on
 ## the chain helper (tools/harness/chain.gd): the example to copy.
 ##
 ##   --chain=column (default): the whole column. From 2.6 m south of oculus

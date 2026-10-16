@@ -1,7 +1,6 @@
 class_name SightLight
 extends Node3D
-## A light the Olmec's sight reckons with (docs/design/roguelike/
-## beacons-light-sight-round1.md): a fire, a lamp, a lit stripe. Not a
+## A light the Olmec's sight reckons with: a fire, a lamp, a lit stripe. Not a
 ## renderer light: a point, a reach and a strength, read by
 ## scripts/enemies/light_level.gd to tell how lit the wanderer stands (no
 ## GPU readback). Add one beside the piece's OmniLight3D (or anywhere), set

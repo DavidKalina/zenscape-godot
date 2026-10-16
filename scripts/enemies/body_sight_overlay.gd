@@ -1,5 +1,5 @@
 extends "res://scripts/dragon_sight_overlay.gd"
-## The whole body's sight drawn (docs/design/roguelike/whole-body-chase-round1.md),
+## The whole body's sight drawn,
 ## the dragon's overlay (scripts/dragon_sight_overlay.gd) on the body's
 ## sight (scripts/enemies/body_sight.gd): its flat cone as a fan on the
 ## ground round its feet (a ring at `near`), a line from its eye to each of

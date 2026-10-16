@@ -3,7 +3,7 @@ extends Node3D
 ## crossing.gd): the rune serpent on its line round the motif, its two
 ## collars, the dais's countdown, the shrug past the coil's cap, the wake's
 ## shove and the runes woken as it passes. The yard's wiring (studies/city_
-## serpent_yard.gd, docs/design/roguelike/city-serpent-round1.md) moved into
+## serpent_yard.gd) moved into
 ## a motif: its body is moving ground (PhysicsGround.mark_moving, the
 ## capsules cut to its crest), its heave held (heave_share 0), each collar
 ## follows its ring every step. Stepped in this node's own physics frame

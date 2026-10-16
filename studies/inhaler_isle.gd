@@ -1,5 +1,5 @@
 extends "res://studies/aqueduct_isle.gd"
-## The inhaler head's study (docs/design/roguelike/inhaler-head.md): the
+## The inhaler head's study: the
 ## aqueduct isle (studies/aqueduct_isle.gd: its look, light, grass, sky and
 ## life; no lodestone, no hall chain, no dragon) with the inhaler head
 ## (scripts/enemies/inhaler_head.gd) heaving itself round the open turf

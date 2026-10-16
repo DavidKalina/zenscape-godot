@@ -1,6 +1,5 @@
 extends Node3D
-## The thin base of an enemy (docs/design/roguelike/ideas-enemies.md, "Rules
-## every enemy follows"): a mass with a reach and a footing, no hit points.
+## The thin base of an enemy: a mass with a reach and a footing, no hit points.
 ##
 ##   knobs   every number it plays by (speeds, timings, forces, sizes), made
 ##           from the pilot's numbers (`default_knobs`, given

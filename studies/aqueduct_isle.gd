@@ -106,9 +106,9 @@ extends "res://studies/kit_isle.gd"
 ## watcher.gd, docs/design/watcher/round1.md).
 ## --sluice: the Sluice Flush trap on the channel (scripts/traps/
 ## sluice_aqueduct.gd); --sluice=head starts at the top of the rubble slope.
-## The plane starts broken (scripts/plane_arc/plane_arc.gd, docs/design/
-## plane-arc/round1.md): its six parts are spread over the region, found on
-## foot, carried and fitted at the plane; --plane-fixed starts it repaired
+## The plane's parts (scripts/plane_arc/plane_arc.gd, docs/design/
+## plane-arc/round1.md): six, found on foot, carried and fitted at the
+## plane; --plane-fixed starts it repaired
 ## (--fly too), --parts-carried carrying all six, --part-at=<id> by one.
 ## --dragon-ride (round 5) starts the pilot on foot on the isle it grips, to
 ## ride the sag and be flung by the snap; G makes it let go.
@@ -581,7 +581,7 @@ func watched_find() -> Node3D:
 
 # --- The plane's arc (scripts/plane_arc/plane_arc.gd) ------------------------------------
 
-## The plane broken till its six parts are found on foot, carried and fitted
+## The plane's six parts, found on foot, carried and fitted
 ## (docs/design/plane-arc/round1.md); its flags (--plane-fixed,
 ## --parts-carried, --part-at=<id>) are its own.
 const PlaneArc = preload("res://scripts/plane_arc/plane_arc.gd")

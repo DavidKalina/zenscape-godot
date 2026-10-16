@@ -1,6 +1,5 @@
 extends Node3D
-## The drum floor, colossus_drum (docs/design/roguelike/city-breaks-round1.md;
-## card: brainstorm/round3-olmec-city/kit-k2-contrarian.md): a court of loose
+## The drum floor, colossus_drum: a court of loose
 ## stone slabs (scripts/city_kit_breaks.gd SLAB, a metre thick, a carved ring
 ## on each) set on squat hollow drums. It rings like a bell when the Olmec
 ## lands on it.

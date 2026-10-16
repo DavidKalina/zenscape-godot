@@ -1,6 +1,5 @@
 extends "res://scripts/kit_isle/motif_greybox.gd"
-## The Coliseum Pit (card: docs/design/roguelike/brainstorm/round3-olmec-
-## city/motif-coliseum-pit.md), a place of the underground Olmec city: the
+## The Coliseum Pit, a place of the underground Olmec city: the
 ## city's ballcourt coliseum (CityLandmarks `court`) sunk into a broken turf
 ## plateau over the void, its north end snapped off into the abyss, a
 ## corbel gate (CityBreaks2 `maker_corbel`) bored into the terrace wall

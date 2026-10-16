@@ -1,5 +1,5 @@
 extends "res://studies/character_study.gd"
-## The whole body's chase greybox (docs/design/roguelike/whole-body-chase-round1.md):
+## The whole body's chase greybox:
 ## the headless body (scripts/enemies/headless_body.gd) set down whole, its
 ## inhaler head (scripts/enemies/inhaler_head.gd) on its neck, with its
 ## chase on: it sees you (scripts/enemies/body_sight.gd, the dragon's sight
@@ -19,8 +19,7 @@ extends "res://studies/character_study.gd"
 ##                 it leaps after you;
 ##   north shelf   across the same gap, NORTH_DROP m lower: it leaps down
 ##                 after you; a ramp back up its east end.
-##   cover yard   south of your start (Olmec periscope round 1,
-##                docs/design/roguelike/olmec-periscope-round1.md): what
+##   cover yard   south of your start (Olmec periscope round 1): what
 ##                hides you once it lifts its head overhead to look: a low
 ##                wall (under its eyes: hides you from its eyes on its neck,
 ##                not from its head held up), a tall wall, a ledge over it

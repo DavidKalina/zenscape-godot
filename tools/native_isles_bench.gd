@@ -1,6 +1,5 @@
 extends SceneTree
-## Motif isle builds measured, profiled and dumped (docs/design/roguelike/
-## native-isles-round1.md). Builds each motif isle of the given layers as a
+## Motif isle builds measured, profiled and dumped. Builds each motif isle of the given layers as a
 ## motif isle's worker does (scripts/kit_isle/motif_isle.gd `start_build`:
 ## build, levels, held shapes), headless:
 ##   Godot --headless --path . -s res://tools/native_isles_bench.gd -- --layers=sprawl:2,ring:1 [--mode=time|profile|dump|par]

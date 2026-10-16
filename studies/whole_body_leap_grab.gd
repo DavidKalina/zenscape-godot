@@ -1,5 +1,5 @@
 extends "res://studies/whole_body_chase.gd"
-## The whole body's leap and grab greybox (docs/design/roguelike/whole-body-leap-grab-round2.md):
+## The whole body's leap and grab greybox:
 ## round 1's chase (studies/whole_body_chase.gd) with the body's `leap_grab`
 ## on (scripts/enemies/headless_body.gd): up on a higher isle it can't walk
 ## or climb to, with its rim in reach, it crouches and looks up, leaps,

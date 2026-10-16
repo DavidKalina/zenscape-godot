@@ -1,5 +1,5 @@
 extends "res://scripts/dragon_sight.gd"
-## The whole body's sight (docs/design/roguelike/whole-body-chase-round1.md):
+## The whole body's sight:
 ## the dragon's (scripts/dragon_sight.gd, docs/design/dragon-vision/round1.md)
 ## at a walker's scale, its numbers set by the body's knobs instead of the
 ## dragon's constants. The same rays to the walker's feet, chest and head
@@ -26,7 +26,7 @@ var grace := 1.0
 var drain := 0.3
 ## What a ray stops on.
 var mask := 1
-## Light (beacons-light-sight-round1.md, scripts/enemies/light_level.gd):
+## Light (scripts/enemies/light_level.gd):
 ## how lit he stands this frame (`lit`, 0 black .. 1 day) and how much of
 ## that is a light's own glow on him (`glow`, his torch, a lit beacon), set
 ## by `light` before each look. In the black its reach is `dark_range` of

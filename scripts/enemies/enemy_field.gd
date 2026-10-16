@@ -1,5 +1,5 @@
 extends Node
-## The enemies of a scene (docs/design/roguelike/ideas-enemies.md), stepped
+## The enemies of a scene, stepped
 ## beside the pilot's motor the way scripts/interactables/foot_pieces.gd
 ## steps the on-foot pieces: hooked into a character study as its
 ## `foot_pieces` (studies/character_study.gd calls `before`, `after`,
@@ -41,8 +41,9 @@ const HISTORY := 4
 
 func _init() -> void:
 	name = "EnemyField"
-	# The light the Olmec's sight reckons with (beacons-light-sight-round1.md):
-	# the flags' `--ambient=` / `--torch=`, else the underground look's, else day.
+	# The light the Olmec's sight reckons with:
+	# the flags' `--ambient=` / `--torch=`, else the underground look's, else
+	# day.
 	LightLevel.from_args(LaunchArgs.user_args())
 
 ## Hooked into `scene` (a character study): stepped by its frame.

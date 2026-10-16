@@ -1,5 +1,5 @@
 extends "res://studies/character_study.gd"
-## The cannon yard (docs/design/roguelike/cannon-round1.md): a start isle with
+## The cannon yard: a start isle with
 ## a cannon and three powder kegs, and targets whose distance you cannot
 ## judge by eye. The kegs are ranging shots, fired from outside the cannon:
 ## fire a keg, see where it lands (a marker stays), adjust, fire another;
@@ -21,7 +21,7 @@ extends "res://studies/character_study.gd"
 ## `--cannon=in` starts by the first cannon with a keg in hand.
 ##   godot --path . res://studies/cannon_yard.tscn -- --no-title
 ##
-## The catch stations (docs/design/roguelike/cannon-catch.md): cannons that
+## The catch stations: cannons that
 ## catch a body arriving in the mouth and fire it on.
 ##   2  the ledge: step off the tower's edge into the mouth below.
 ##   3  the kicker: stand on the orange plate; it knocks you, stunned, into

@@ -1,6 +1,6 @@
 extends "res://studies/kit_isle.gd"
-## The crossing yard (docs/design/roguelike/crossing-viaduct-round1.md):
-## the roguelike's crossings, the set pieces between the spiral's isles,
+## The crossing yard:
+## the crossings, the set pieces between isles,
 ## each workshopped on its own, in the game's look under the aqueduct
 ## isle's sky (its cloud sea and towers: studies/aqueduct_isle_sky.gd, as
 ## the dragon vision greybox has it). The pilot is the kit isle's (this
@@ -13,12 +13,11 @@ extends "res://studies/kit_isle.gd"
 ##   R          back to the start rim
 ##   1..        each beat's start (practice)
 ##   N          the next crossing (built afresh)
-##   K          its hazards on or off (the viaduct's gust arrows:
-##              docs/design/roguelike/crossing-viaduct-arrows.md);
+##   K          its hazards on or off (the viaduct's gust arrows);
 ##              `--arrows=0` starts with them off (default on)
 ## Crossed (stood on the far rim), the time from leaving the start rim
-## shows. The crossing hangs over the void (its `floor_y` under its walk,
-## docs/design/roguelike/crossing-viaduct-heights.md): fallen past the
+## shows. The crossing hangs over the void (its `floor_y` under its walk):
+## fallen past the
 ## void's floor he is lost, a short fade and back at the start rim, the
 ## falls counted on the foot card. Knocked into the air, Jump after
 ## KNOCK_SAIL s opens the pocket sail out of the tumble (PilotMotor

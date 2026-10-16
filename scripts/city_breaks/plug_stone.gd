@@ -1,6 +1,5 @@
 extends "res://scripts/city_breaks/stone_break.gd"
-## The plug-stone, colossus_plug (docs/design/roguelike/city-breaks-round2.md;
-## card: brainstorm/round3-olmec-city/kit-k2-contrarian.md): a colossal
+## The plug-stone, colossus_plug: a colossal
 ## keystone jammed in a gate of a wall too tall for anyone to climb. A wall,
 ## not an obstacle, until he strikes it. Lure him into it and run through
 ## the hole he leaves.

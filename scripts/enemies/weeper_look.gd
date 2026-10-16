@@ -1,6 +1,6 @@
 extends Node3D
-## The Weeper's stone (scripts/enemies/weeper.gd, docs/design/roguelike/
-## weeper-round1.md): a robed mourner carved from one block of the Olmec's
+## The Weeper's stone (scripts/enemies/weeper.gd): a robed mourner carved from
+## one block of the Olmec's
 ## weathered basalt (shaders/olmec_stone.gdshader, the material scripts/
 ## enemies/inhaler_head_look.gd `stone_material` makes), so it reads as the
 ## same old stone as the heads. No face to speak of: a worn oval in a deep

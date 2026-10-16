@@ -1,7 +1,5 @@
 extends "res://scripts/traps/trap.gd"
-## The Day-Count (round 4, strange city: card t1-day-count, lens4-traps.md
-## in docs/design/roguelike/brainstorm/round4-strange-city/; this round:
-## docs/design/roguelike/strange-day-count-round1.md). A sunk calendar
+## The Day-Count (card t1-day-count). A sunk calendar
 ## court of three nested stone rings round a still hub, over the void. The
 ## rings turn on footfalls, not on a clock: every footfall on the court, by
 ## anyone, is counted (`footfall`), each `per_click` of them clicks the

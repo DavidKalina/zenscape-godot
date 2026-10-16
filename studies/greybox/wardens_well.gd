@@ -1,6 +1,6 @@
 extends "res://studies/character_study.gd"
-## GREYBOX, Opus pass: the Warden's Well (docs/design/roguelike/brainstorm/round1/
-## motif-m5-wardens-well.md). Grey structure in open sky, the REAL pilot, two
+## GREYBOX, Opus pass: the Warden's Well. Grey structure in open sky, the REAL
+## pilot, two
 ## REAL ground-bound inhaler heads (scripts/enemies/inhaler_head.gd, round 2;
 ## the second smaller by its `size` knob, every other knob default) and, on B,
 ## the REAL headless body. The point is being spat from one head into another.

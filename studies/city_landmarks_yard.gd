@@ -1,5 +1,5 @@
 extends "res://studies/character_study.gd"
-## The city landmarks yard (docs/design/roguelike/city-landmarks-round1.md):
+## The city landmarks yard:
 ## the city kit's three set pieces (scripts/city_kit_landmarks.gd) round a
 ## basalt plaza over the abyss, each on its own foundation, in the
 ## underground look (torch by default; `--underground=haze`), a whole Olmec

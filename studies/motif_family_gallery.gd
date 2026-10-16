@@ -1,5 +1,5 @@
 extends "res://studies/kit_isle.gd"
-## The motif family gallery (docs/design/roguelike/motif-families.md): one
+## The motif family gallery: one
 ## family built at a seed, its sockets drawn as markers, the pilot on it to
 ## walk it, to flip through the isles a family gives and judge them. A kit
 ## isle (studies/kit_isle.gd: the look, the light, the grass, the plane);

@@ -1,6 +1,6 @@
 class_name WalkerOnly
 extends RefCounted
-## Walker-only geometry (docs/design/roguelike/walker-only-layer-round1.md):
+## Walker-only geometry:
 ## colliders on physics layer 15, "walker_only" (project.godot), which the
 ## wanderer stands on, walks into, grabs and kicks off, and which the
 ## headless body (the Olmec) and the other enemies don't read at all: not

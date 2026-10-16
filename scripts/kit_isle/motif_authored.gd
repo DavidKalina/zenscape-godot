@@ -1,5 +1,5 @@
 extends "res://scripts/kit_isle/motif_greybox.gd"
-## An authored motif (docs/design/roguelike/level-editor.md): a place the
+## An authored motif: a place the
 ## user built by hand in the motif editor (studies/motif_editor.tscn), read
 ## from its file, `motifs/authored/<slug>.json`, and answering the motif
 ## contract (scripts/kit_isle/kit_motif.gd) like any greybox motif
@@ -31,7 +31,7 @@ extends "res://scripts/kit_isle/motif_greybox.gd"
 ##
 ## Heavy geometry stays in the kit (KitLand.island, RuinKit.piece); this
 ## file only makes the preset's ground function and outline (GDScript runs
-## one thread at a time, docs/design/roguelike/native-isles-round1.md).
+## one thread at a time).
 const KitLife = preload("res://scripts/kit_isle/kit_life.gd")
 const Rootbound = preload("res://scripts/kit_isle/greybox/gb_rootbound_cut.gd")
 const HeroTrees = preload("res://scripts/hero_trees.gd")

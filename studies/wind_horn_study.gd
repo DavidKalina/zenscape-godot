@@ -1,5 +1,5 @@
 extends "res://studies/character_study.gd"
-## The wind-horn study (docs/design/roguelike/wind-horn-round1.md): the ruin
+## The wind-horn study: the ruin
 ## kit's wind-horn (scripts/ruin_kit_horn.gd, its runtime
 ## scripts/wind_horn.gd) on flat ground. Its head tracks the pilot, and on a
 ## loop it draws its breath (the tell, WINDUP s) and fires (the kick and the
@@ -8,7 +8,7 @@ extends "res://studies/character_study.gd"
 ##   P  knock it out for DISABLE s (slumps, grinds back up)
 ##   1  in front of it (R comes back)   2  30 m out   3  on the pedestal
 ## Knobs: --horn-weathered=<0..1> (0.4), --horn-seed=<n> (1). `--blow`: the
-## real blow (docs/design/roguelike/wind-horn-blows.md): it watches you and
+## real blow: it watches you and
 ## gusts you when it notices you (run, hop, splash); creep past it unseen.
 ##   ./run-wind-horn.command
 const Horn = preload("res://scripts/ruin_kit_horn.gd")

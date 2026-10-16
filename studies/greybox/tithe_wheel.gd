@@ -1,6 +1,5 @@
 extends "res://studies/character_study.gd"
-## GREYBOX: the Tithe Wheel (docs/design/roguelike/brainstorm/round1/
-## motif-m1-tithe-wheel.md), Opus pass. A round island, a ring road of rim
+## GREYBOX: the Tithe Wheel, Opus pass. A round island, a ring road of rim
 ## turf, a gulf, a hub; spokes of the REAL flip slabs (scripts/traps/
 ## trap_flip.gd) are the only ways across, each on its own beat. Grey is
 ## structure, green pads are landings; the slabs warm orange to tell.

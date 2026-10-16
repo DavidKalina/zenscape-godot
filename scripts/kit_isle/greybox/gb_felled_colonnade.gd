@@ -1,6 +1,5 @@
 extends "res://scripts/kit_isle/motif_greybox.gd"
-## The Felled Colonnade (card: docs/design/roguelike/brainstorm/round3-
-## olmec-city/motif-felled-colonnade.md), a place of the underground Olmec
+## The Felled Colonnade, a place of the underground Olmec
 ## city: two isles split down a fault too wide to jump, and on the near
 ## one the last standing drum column at the brink. Lure the Olmec into it
 ## and the side he hits decides how it falls: east, a bridge across; west,

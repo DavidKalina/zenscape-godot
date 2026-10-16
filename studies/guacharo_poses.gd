@@ -1,6 +1,6 @@
 extends Node3D
-## The guacharo's key poses side by side (feature `flyer`, docs/design/
-## roguelike/flyer-round1.md), to judge the body and its poses by eye:
+## The guacharo's key poses side by side (feature `flyer`), to judge the body and
+## its poses by eye:
 ## glide, the downbeat, the upbeat, the scream (thrown up), the fold (the
 ## teardrop), the stoop, the flare (the strike) and the carry. `--live`
 ## flaps the first one. A still: python3 tools/shot.py studies/guacharo_poses.tscn

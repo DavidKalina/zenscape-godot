@@ -1,8 +1,7 @@
 extends RefCounted
-## The city kit's landmarks (docs/design/roguelike/city-landmarks-round1.md):
-## the three set pieces of the underground Olmec city the user named, cards
-## city_court, city_pyramid and city_hall (brainstorm/round3-olmec-city/
-## kit-k1-literal.md). Each is a place you see from far off in the haze as a
+## The city kit's landmarks:
+## the three set pieces of the underground Olmec city: city_court,
+## city_pyramid and city_hall. Each is a place you see from far off in the haze as a
 ## silhouette, and a place two bodies use differently: his lanes his width
 ## (CityKit.LANE, 8.8 m), her lines cut at her own numbers (SET_OFF, STAND).
 ##

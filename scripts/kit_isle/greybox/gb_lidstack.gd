@@ -1,13 +1,12 @@
 extends "res://scripts/kit_isle/motif_greybox.gd"
-## Lidstack in the generator: studies/greybox/lidstack.gd's layout (card:
-## docs/design/roguelike/brainstorm/round1/motif-m2-lidstack.md), the same
+## Lidstack in the generator: studies/greybox/lidstack.gd's layout, the same
 ## geometry in the same frame, so its climb and its chains keep the study's
 ## numbers. A necropolis stacked upward: six square terraces round a hollow
 ## colossus column (the chimney), a voussoir gallery on terrace 3, the
 ## tumbling lid on terrace 4's south strip, a summit cannon.
 ##
 ## Changes from the study:
-##  - THE PIT CANNON (the real catch, docs/design/roguelike/cannon-catch.md)
+##  - THE PIT CANNON (the real catch)
 ##    replaces the study's two stand-ins on combo 1, the terrace-2 grate vent
 ##    and the CatchCannon on its plinth: a real cannon stands on terrace 2's
 ##    floor under row B (terrace 3's false lid), barrel up steep. A body the

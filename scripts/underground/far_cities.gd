@@ -1,5 +1,5 @@
 extends Node3D
-## Far cities in the abyss (docs/design/roguelike/underground-oculus-round2.md):
+## Far cities in the abyss:
 ## other Olmec cities hanging in the void round the layer, far off and far
 ## down, small lit clusters of stepped towers that go to haze with distance
 ## and show their windows as warm speckles. Some hang the right way up, some

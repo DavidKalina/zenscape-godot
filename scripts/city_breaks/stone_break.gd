@@ -1,11 +1,11 @@
 extends Node3D
-## What city breaks round 2's pieces share (docs/design/roguelike/
-## city-breaks-round2.md; scripts/city_kit_breaks2.gd builds them): a piece of
+## What city breaks round 2's pieces share (scripts/city_kit_breaks2.gd builds
+## them): a piece of
 ## the breakables hub (scripts/kit_isle/breakables.gd), its stone, its
 ## scripted falls, its hits on the wanderer, and its word to the bodies'
 ## planners when its rest is down.
 ##
-## The three-state rule (brainstorm/round3-olmec-city/kit-k4-destruction.md):
+## The three-state rule:
 ## every piece is authored whole, cracked (a tell, the same collision) and
 ## fallen (an authored rest: clean walk boxes, ground to the walker and to
 ## the Olmec's rays and planner). What flies between is the show: scripted
@@ -29,7 +29,7 @@ const BREAKABLE := &"breakable"
 const CELL := RuinKit.BAY
 const SET_OFF := RuinKit.SET_OFF
 const COURSE := 3.0*SET_OFF
-## His lane (city-kit-round1.md: his bulk with his arms needs 8.8 m).
+## His lane (his bulk with his arms needs 8.8 m).
 const LANE := 2.0*CELL
 ## The Olmec's stride in the city (city_kit_breaks.gd OLMEC_STEP).
 const OLMEC_STEP := 2.4

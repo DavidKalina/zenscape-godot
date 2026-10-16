@@ -1,5 +1,5 @@
 extends "res://studies/character_study.gd"
-## The trap yard (docs/design/roguelike/traps-round1.md): the roguelike's
+## The trap yard: the
 ## greybox traps side by side, each in its own lane on a start deck and an
 ## end deck with the drop between, for tuning. The pilot is the character
 ## study's (this extends it, as studies/interactables_yard.gd does): the

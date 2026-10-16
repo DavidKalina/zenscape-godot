@@ -1,5 +1,5 @@
 extends SceneTree
-## The loading screen measured rendered (docs/design/roguelike/loading-screen-round1.md):
+## The loading screen measured rendered:
 ## the generator's layer launched as in play, then
 ##   - when it is playable (the screen gone; with --no-loading-screen, the
 ##     first frame the stage stands) and when it stands whole, in ms since

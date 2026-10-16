@@ -1,6 +1,6 @@
 extends SceneTree
-## The Broken Viaduct's perches (docs/design/roguelike/crossing-viaduct-
-## perches.md) through the real play loop: the crossing yard's own
+## The Broken Viaduct's perches through the real play loop: the crossing yard's
+## own
 ## `_process` frames (not scripted), the pilot driven by Input actions (the
 ## stick, Space, Shift/C), the gust arrows firing on their own.
 ##   - The far perch fires at a pilot on the later piers (and the stair

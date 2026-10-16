@@ -1,6 +1,6 @@
 extends "res://scripts/enemies/enemy.gd"
-## The Millstone Beetle's wheel, let go (docs/design/roguelike/beetle-
-## round1.md): when a charging beetle can't stop before a lip, its wheel
+## The Millstone Beetle's wheel, let go: when a charging beetle can't stop
+## before a lip, its wheel
 ## tears out of its grip and rolls on alone. Spawned by scripts/enemies/
 ## millstone_beetle.gd (`field.add`), stepped by the EnemyField like any
 ## enemy. Scripted, not a rigid body, so it reads and plays the same every

@@ -1,14 +1,12 @@
 extends "res://scripts/kit_isle/motif_greybox.gd"
-## The Noon Weir in the generator: studies/greybox/noon_weir.gd's LAYOUT
-## (card: docs/design/roguelike/brainstorm/round1/motif-m1-noon-weir.md),
+## The Noon Weir in the generator: studies/greybox/noon_weir.gd's LAYOUT,
 ## the same geometry in the same frame, so its climb and its chains keep the
 ## study's numbers: three stacked sluice channels on one shared clock (the
 ## study's own, `Clock` below), a stair and a bridge per tier, the Plinth
 ## Ram on the middle tier's gate landing, the bell floor on top.
 ##
 ## Changes from the study:
-## - The way out is the catching cannon (docs/design/roguelike/cannon-
-##   catch.md), the study's "cannon on a neighbouring isle" made part of the
+## - The way out is the catching cannon, the study's "cannon on a neighbouring isle" made part of the
 ##   motif and turned round: it stands on a plinth under the bell floor's
 ##   north edge, aimed east off the stack at its rest aim (40 deg, notch 2).
 ##   From the bell floor, jump off its north edge: you fall into the

@@ -57,7 +57,7 @@ extends Node3D
 const Variety = preload("res://scripts/seeded_variety.gd")
 const StoneLampLights = preload("res://scripts/stone_lamp_lights.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
-## The Olmec's weathered basalt (docs/design/roguelike/olmec-weathered.md),
+## The Olmec's weathered basalt,
 ## its runes carved in (`runes`: shaders/rune_serpent_runes.gdshaderinc).
 const SHADER := preload("res://shaders/olmec_stone.gdshader")
 const GLOW_SHADER := preload("res://shaders/rune_serpent_glow.gdshader")

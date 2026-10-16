@@ -1,6 +1,6 @@
 extends SceneTree
 ## Checks the fixed cache (scripts/roguelike/fixed_cache.gd) gives back what a
-## build makes (docs/design/roguelike/loading-screen-round2b.md): the aqueduct
+## build makes: the aqueduct
 ## isle's base art built here, a copy kept and loaded back, both dumped node by
 ## node (class, script, groups, every stored and script property, metas, the
 ## motif's fields; resources by content, arrays hashed) and compared; and the

@@ -1,7 +1,5 @@
 extends "res://scripts/enemies/enemy.gd"
-## The Sun-Keepers (card h1, docs/design/roguelike/brainstorm/round4-strange-
-## city/lens1-hunters.md; this round: docs/design/roguelike/strange-
-## sunkeepers-round1.md). "Set here to hold the sun up. Nobody came to say it
+## The Sun-Keepers (card h1). "Set here to hold the sun up. Nobody came to say it
 ## had gone." Tall thin figures of lime plaster over clay, a disc of hammered
 ## mica for a face. They can only stand where light falls, and the torch in
 ## your hand is light.

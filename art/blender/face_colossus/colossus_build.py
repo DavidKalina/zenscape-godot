@@ -1,5 +1,4 @@
-"""Build the Face's colossus (the `face` motif, scripts/kit_isle/greybox/gb_face.gd;
-card docs/design/roguelike/brainstorm/round3-olmec-city/motif-face.md): a seated
+"""Build the Face's colossus (the `face` motif, scripts/kit_isle/greybox/gb_face.gd): a seated
 Olmec lord the size of a hill, cut out of a basalt cliff over the abyss, who has
 sat in the dark for centuries.
 

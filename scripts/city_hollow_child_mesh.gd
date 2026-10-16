@@ -1,6 +1,5 @@
 extends RefCounted
-## The Hollow Child's clay (scripts/city_hollow_child.gd; card x5-hollow in
-## docs/design/roguelike/brainstorm/round4-strange-city/lens3-exploitable.md):
+## The Hollow Child's clay (scripts/city_hollow_child.gd; card x5-hollow):
 ## an Olmec hollow "were-baby", seated, legs splayed, hands lifted to its
 ## chin, the head a little too big, heavy-lidded, an open dark mouth. Built
 ## as a signed distance field (blended ellipsoids and tapered capsules, the

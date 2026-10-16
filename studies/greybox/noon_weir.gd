@@ -1,6 +1,5 @@
 extends "res://studies/character_study.gd"
-## GREYBOX: the Noon Weir (docs/design/roguelike/brainstorm/round1/
-## motif-m1-noon-weir.md): three stacked channels with a sluice gate each on
+## GREYBOX: the Noon Weir: three stacked channels with a sluice gate each on
 ## one shared clock, a stair up beside each, a bridge from each stair's top
 ## back along the channel to its open end, a bell floor on top, the plinth
 ## ram on the middle tier's gate landing, and a cannon on a neighbouring isle

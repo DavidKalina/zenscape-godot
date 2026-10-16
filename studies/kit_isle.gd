@@ -802,7 +802,7 @@ func _build_pilot() -> void:
 	ground = decks
 	motor.water = ground.water_callable()
 	motor.wall = ground.wall_callable()
-	# Moving and soft ground (city-serpent-round1.md) ride the ground in use too.
+	# Moving and soft ground ride the ground in use too.
 	if ground.has_method("mover_callable"): motor.mover = ground.mover_callable()
 	if ground.has_method("soft_callable"): motor.soft = ground.soft_callable()
 

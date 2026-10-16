@@ -1,5 +1,5 @@
 extends "res://studies/whole_body_chase.gd"
-## The city refuges yard (docs/design/roguelike/city-refuges-round1.md): the
+## The city refuges yard: the
 ## city kit's four places the Olmec can't follow (scripts/city_kit_refuges.gd)
 ## on one paved basalt court, a whole Olmec hunting you among them (the
 ## whole body chase's: sight, swat, pounce, inhale, periscope).

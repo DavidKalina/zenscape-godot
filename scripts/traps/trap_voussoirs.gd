@@ -1,5 +1,5 @@
 extends "res://scripts/traps/trap.gd"
-## Loose Voussoirs (docs/design/roguelike/ideas-traps.md module 1; built to
+## Loose Voussoirs (built to
 ## the contract in scripts/traps/trap.gd): a row of deck slabs, never
 ## mortared, over a drop. Each falls `delay` s after the pilot's feet first
 ## land on it, and drops away; stood on while it goes, he falls with it.

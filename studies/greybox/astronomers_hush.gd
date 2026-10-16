@@ -1,6 +1,5 @@
 extends "res://studies/character_study.gd"
-## GREYBOX of motif card m3, The Astronomer's Hush
-## (docs/design/roguelike/brainstorm/round1/motif-m3-the-astronomers-hush.md):
+## GREYBOX of motif card m3, The Astronomer's Hush:
 ## four isles huddled round a henge, the real inhaler head
 ## (scripts/enemies/inhaler_head.gd) heaving its ring on the Circle, and
 ## the pilot crossing pillar to pillar a body's width outside its cone.

@@ -1,5 +1,5 @@
 extends Node3D
-## The underground look (docs/design/roguelike/underground-look-round1.md):
+## The underground look:
 ## `--underground[=torch|haze]`, a kit-isle study (studies/kit_isle.gd, so the motif yard
 ## and, later, run_layer) in an abyss instead of the sky. Everything is
 ## behind the flag; without it nothing here runs.
@@ -57,8 +57,9 @@ const PRESETS := {
 		"warm":Color(0.3,0.2,0.12),
 		"sky_low":Color(0.18,0.145,0.11),"sky_horizon":Color(0.30,0.245,0.185),"sky_high":Color(0.22,0.18,0.14),
 		"knobs":{"fog":0.0016,"volume":0.0,"ambient":1.1,"moon":0.5,"exposure":1.05,"torch":2.2,"torch_range":16.0,"next_reach":800.0,"next_most":0.72}},
-	# The oculus (docs/design/roguelike/underground-oculus-round1.md): a vast opening high in
-	# the roof with the real sky in it, a warm raking key light and a jade fill, the abyss a
+	# The oculus: a vast opening high in
+	# the roof with the real sky in it, a warm raking key light and a jade fill, the
+	# abyss a
 	# mist sea. `oculus:true` turns on _oculus_* below.
 	"oculus":{"title":"Underground: oculus","oculus":true,"fog_sky":0.0,"next_turf":Color(0.10,0.14,0.14),"next_stone":Color(0.14,0.17,0.2),"next_earth":Color(0.07,0.09,0.11),
 		"murk":Color(0.10,0.17,0.19),"ambient":Color(0.20,0.34,0.38),"moon":Color(1.0,0.77,0.52),
@@ -393,8 +394,7 @@ func _publish_stone() -> void:
 ## they sit in the murk like the isles near them.
 func _tint_next_region() -> void:
 	# By its group (scripts/roguelike/next_region_lod.gd): a find_children
-	# down the whole layer here was an 11-12 ms hitch every 20th frame
-	# (docs/design/roguelike/perf-city-run-round1.md).
+	# down the whole layer here was an 11-12 ms hitch every 20th frame.
 	for n: Node in get_tree().get_nodes_in_group(&"next_region"):
 		if not n is MeshInstance3D or not study.is_ancestor_of(n): continue
 		var mi := n as MeshInstance3D
@@ -412,8 +412,8 @@ func _tint_next_region() -> void:
 		m.set_shader_parameter("earth",p.next_earth)
 		_far_fire(mi)
 
-## The next region's beacon (the climb up, docs/design/roguelike/
-## game-v1-climb-up.md): a far fire on its landmark's top, a soft warm glow
+## The next region's beacon (the climb up): a far fire on its landmark's top, a
+## soft warm glow
 ## that reads up there in the dark where the silhouette alone would sink
 ## into the murk. One billboard, no light, no shadow. FAR_FIRE 0 drops it.
 const FAR_FIRE := 14.0

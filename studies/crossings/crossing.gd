@@ -1,5 +1,5 @@
 extends Node3D
-## A crossing (docs/design/roguelike/crossing-viaduct-round1.md): one set
+## A crossing: one set
 ## piece between two isles of the spiral, workshopped on its own in the
 ## crossing yard (studies/crossing_yard.gd) before it goes into a level or
 ## the generator. Each crossing is one script extending this.

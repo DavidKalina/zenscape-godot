@@ -1,5 +1,5 @@
 extends RefCounted
-## The Millstone Beetle's look (docs/design/roguelike/beetle-round1.md),
+## The Millstone Beetle's look,
 ## built from code: the wheel, a dressed millstone in the Olmec's weathered
 ## basalt (shaders/olmec_stone.gdshader via scripts/enemies/
 ## inhaler_head_look.gd `stone_material` and `_dressed`: the rest pose in UV

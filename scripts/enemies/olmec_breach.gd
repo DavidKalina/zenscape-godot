@@ -1,5 +1,5 @@
 extends Node3D
-## Masonry doesn't stop him (docs/design/roguelike/olmec-threat-round1.md):
+## Masonry doesn't stop him:
 ## the roaming Olmec (scripts/enemies/headless_body.gd, `breach` on, this
 ## its `breacher`) smashes through the city's walls, pillars and parapets
 ## in the way of his hunt, and the crossings' spans give way under his

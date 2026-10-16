@@ -1,6 +1,6 @@
 extends SceneTree
-## The Broken Viaduct's gust arrows (studies/crossings/gust_arrows.gd,
-## docs/design/roguelike/crossing-viaduct-arrows.md) through the real play
+## The Broken Viaduct's gust arrows (studies/crossings/gust_arrows.gd) through
+## the real play
 ## loop: the crossing yard's own `_process` frames (not scripted), the
 ## pilot driven by Input actions (the stick and Space), the perch firing
 ## on its own cadence.

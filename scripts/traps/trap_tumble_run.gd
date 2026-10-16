@@ -1,5 +1,5 @@
 extends "res://scripts/traps/trap.gd"
-## The Tumble Run (docs/design/roguelike/tumble-run.md): a few Tumbling
+## The Tumble Run: a few Tumbling
 ## Blocks (scripts/traps/trap_tumble.gd, one instance each, set by its
 ## knobs, nothing forked) hung over open void between the start deck (A) and
 ## the far deck (B), staggered into a platforming route: each block off to

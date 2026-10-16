@@ -1,13 +1,12 @@
 extends RefCounted
-## The city kit's climb pieces (docs/design/roguelike/city-climb-round1.md):
+## The city kit's climb pieces:
 ## lanes for two bodies, in the underground Olmec city's weathered basalt
 ## (the `city` family; scripts/city_kit.gd registers them, see the handoff).
 ## Each piece cuts two lanes into one stone: his (the Olmec's, scripts/
 ## enemies/headless_body.gd) wide, plain and his size, and the wanderer's
 ## narrow, broken and clever, on the walker-only layer (scripts/
 ## walker_only.gd) where he must not read it, with a true safe room in it
-## (out of his reach, his sight and his inhale). From the round 3 cards
-## (docs/design/roguelike/brainstorm/round3-olmec-city/):
+## (out of his reach, his sight and his inhale). From the round 3 cards:
 ##   city_riser    the giant's riser (k2 colossus_riser): treads a riser too
 ##                 tall for her and a stride for him; her chimney climbs
 ##                 inside the left cheek behind the treads, in by an arch at
@@ -67,7 +66,7 @@ const CARDS := {"city_riser":"colossus_riser (k2)","city_lip":"oc_lip (k3)","cit
 	"city_wrap":"oc_wrap (k3)","city_terrace":"ol_terrace (k7)","city_wedge":"ol_wedge (k7)"}
 
 ## The walker-only shelves and chimney ledges: the refuges' proven numbers
-## (city-refuges-round1.md: the slotted wall's chimney 2.41 across with 0.9
+## (the slotted wall's chimney 2.41 across with 0.9
 ## ledges a set-off up, alternating leaves; the niches' 1.4 x 1.02 shelves
 ## zigzagging 0.5 apart), as shares of the walker.
 const LEDGE_DEEP := 0.9
@@ -123,7 +122,7 @@ static func sizes() -> Dictionary:
 	var s := {
 		"set_off":so,"cell":cell,
 		# His lane and landing: the kit's two cells (his bulk 6.7 m eased off
-		# both walls; city-kit-round1.md).
+		# both walls).
 		"lane":CityKit.LANE*ws,"landing":CityKit.LANDING*ws,
 		"chimney":1.5*so,"ledge":LEDGE_DEEP*ws,"shelf":SHELF*ws,"shelf_gap":SHELF_GAP*ws,
 		# The riser: two set-offs, over her chain catch (the card's 2.2 m she

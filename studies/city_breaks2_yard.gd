@@ -1,5 +1,5 @@
 extends "res://studies/character_study.gd"
-## The city breaks yard, round 2 (docs/design/roguelike/city-breaks-round2.md):
+## The city breaks yard, round 2:
 ## four more pieces of the city kit where the Olmec's power reshapes the
 ## routes (scripts/city_kit_breaks2.gd), round a greybox yard, with a whole
 ## Olmec hunting you (his chase, his periscope, his chase routes).

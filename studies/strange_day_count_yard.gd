@@ -1,6 +1,6 @@
 extends "res://studies/character_study.gd"
-## The Day-Count yard (docs/design/roguelike/strange-day-count-round1.md;
-## the card is t1-day-count in round 4's lens4-traps.md): the calendar
+## The Day-Count yard (the card is t1-day-count in round 4's lens4-traps.md):
+## the calendar
 ## court (scripts/traps/trap_day_count.gd) on a basalt plaza in open sky,
 ## and the Olmec on call. The pilot is the character study's (this extends
 ## it, as the trap yard does): the same motor, figure, camera, F1, F2.

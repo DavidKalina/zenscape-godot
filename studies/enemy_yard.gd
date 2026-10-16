@@ -1,5 +1,5 @@
 extends "res://studies/character_study.gd"
-## The enemy yard (docs/design/roguelike/ideas-enemies.md): a greybox arena
+## The enemy yard: a greybox arena
 ## in open sky for trying an enemy against the pilot, in the interactables
 ## yard's style (the character study's grey structure; this extends it, so
 ## the motor, figure, camera, F1 numbers, F2 feel and recorder are the

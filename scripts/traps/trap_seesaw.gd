@@ -1,5 +1,5 @@
 extends "res://scripts/traps/trap.gd"
-## Seesaw Slab (docs/design/roguelike/ideas-traps.md module 2; built to the
+## Seesaw Slab (built to the
 ## contract in scripts/traps/trap.gd): a long stone slab on a central pivot
 ## spanning the gap between two ledges, route along -z. The pilot's weight
 ## tips it toward his side, more the further he is from the pivot (the tilt
@@ -40,7 +40,7 @@ extends "res://scripts/traps/trap.gd"
 ## own launch cap (a heavy drop kicks harder than a jump).
 ## `drop_hit(block, fall)` is a falling block's blow, momentum-scaled.
 ##
-## Physics (the fix of 2026-10-12, traps-round2-seesaw.md "Blocks fell
+## Physics (the fix of 2026-10-12, "Blocks fell
 ## through"): the slab is an AnimatableBody3D, its tilt stepped and posed in
 ## `_physics_process`, once per physics step, so Jolt moves it kinematically
 ## and what rests on it gets the deck's real contact velocity. The pilot (a

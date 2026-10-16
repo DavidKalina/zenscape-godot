@@ -24,8 +24,7 @@ extends Node3D
 ## REGRAB s; another can, so ropes chain. On the ground he takes it only
 ## running into it (RUN_IN): his hands meet its knot. Knocked (tumbling,
 ## stunned) past it, it snags him out of the air (SNAG, below): it whips,
-## he swings round on it limp, and his poise comes back on it
-## (docs/design/roguelike/rope-catch.md); a dry one snaps and throws him on.
+## he swings round on it limp, and his poise comes back on it; a dry one snaps and throws him on.
 ##
 ## Free, its end swings on as a pendulum and settles (and sways a little in
 ## the air), drawn as a faceted rope in the footbridges' rope tone
@@ -68,7 +67,7 @@ const CATCH_BODY := 0.32
 const CHEST := 0.6
 const GRIP_HIGH := 0.35
 const REGRAB := 0.45
-## The snag (docs/design/roguelike/rope-catch.md): a tumbling body (a
+## The snag: a tumbling body (a
 ## knock's, stunned) whose chest passes within SNAG_REACH of its lower part
 ## (swept over the frame: a ragdoll's limbs flung out) is caught by it. His
 ## hands go to the rope HANG_DROP-CHEST over where his chest met it, his pace
@@ -85,7 +84,7 @@ const SNAG_LEAST := 0.25
 const SNAG_REACH := 0.55
 const WHIP := 1.1
 const WHIP_TIME := 0.45
-## A dry rope (`dry`, the Root Curtain's dry root, kit-k1-grab.md): it
+## A dry rope (`dry`, the Root Curtain's dry root): it
 ## snags a tumbling body too but holds him only DRY_SNAG s, then snaps and
 ## throws him on along its swing, still stunned (a `toss` of a stunned body:
 ## a fresh poise). Held as a rider, it snaps after DRY_HOLD s and he keeps

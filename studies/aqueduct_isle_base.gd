@@ -1,6 +1,6 @@
 extends RefCounted
-## The aqueduct isle's art as one build (studies/aqueduct_isle.gd `_build_art`,
-## docs/design/roguelike/loading-screen-round2.md): its islands, aqueduct,
+## The aqueduct isle's art as one build (studies/aqueduct_isle.gd
+## `_build_art`): its islands, aqueduct,
 ## castellum, hill, stairs, stone circle, floating stones, islets, heel stone,
 ## pieces and stumps built into a node, touching nothing else, the collision
 ## parts and the nodes the scene keeps handed back in fields. So the isle store

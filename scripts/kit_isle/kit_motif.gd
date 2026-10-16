@@ -15,7 +15,7 @@ extends RefCounted
 ## `build`; and, if it has live bits, `frame`, `landed` and `plane_near`.
 ## Everything it answers is in its own frame (the standalone scene's world).
 ##
-## A family (docs/design/roguelike/motif-families.md): a motif that answers
+## A family: a motif that answers
 ## `family` true is a template a layer generator can place, the way a trap
 ## answers scripts/traps/trap.gd. One family gives many isles:
 ## - `configure(seed, over)` before `build` picks the isle: the seed rolls

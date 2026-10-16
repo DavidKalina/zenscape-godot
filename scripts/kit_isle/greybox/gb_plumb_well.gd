@@ -1,6 +1,5 @@
 extends "res://scripts/kit_isle/motif_greybox.gd"
-## The Plumb Well in the generator: studies/greybox/plumb_well.gd's layout
-## (card: docs/design/roguelike/brainstorm/round1/motif-m4-plumb-well.md),
+## The Plumb Well in the generator: studies/greybox/plumb_well.gd's layout,
 ## the same geometry in the same frame, so the column's chain keeps the
 ## study's numbers: walk off the cap into oculus 1, the leaf throws you into
 ## the plumb wall and down the slot, the seesaw's block flings you down
@@ -9,7 +8,7 @@ extends "res://scripts/kit_isle/motif_greybox.gd"
 ##
 ## What the study left to "whatever the generator hung there" is part of the
 ## motif now: the head's blast comes down into a CATCHING CANNON on the
-## cannon terrace under rim S (docs/design/roguelike/cannon-catch.md: its
+## cannon terrace under rim S (its
 ## mouth where the blast comes down, as the cannon yard's station 4), which
 ## fires him east, off the terrace's edge, down onto the landing (the
 ## catching isle). The rim out is the landing's far (east) edge. Missed, the

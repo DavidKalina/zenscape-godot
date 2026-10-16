@@ -1,7 +1,6 @@
 extends RefCounted
-## The Olmec city kit's light pieces, round 2 (docs/design/roguelike/
-## city-light2-round1.md; cards in brainstorm/round3-olmec-city/
-## kit-k6-light.md maker_mirror and kit-k3-climb-lanes.md oc_relief): the
+## The Olmec city kit's light pieces, round 2 (maker_mirror and
+## oc_relief): the
 ## sun-mirror that throws light where you aim it, the light shaft that
 ## feeds it, the sun plaque a beam wakes, and the relief face, a cliff
 ## carved as one seated lord that the two bodies climb their own ways. All

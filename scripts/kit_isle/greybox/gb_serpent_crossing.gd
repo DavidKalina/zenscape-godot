@@ -1,9 +1,8 @@
 extends "res://scripts/kit_isle/motif_greybox.gd"
-## The Serpent Crossing (card: docs/design/roguelike/brainstorm/round3-olmec-
-## city/motif-serpent-crossing.md), a place of the underground Olmec city: a
+## The Serpent Crossing, a place of the underground Olmec city: a
 ## wide void with no bridge between a low arrival isle and a high far one.
-## The rune serpent still runs its line across it (the city's train,
-## docs/design/roguelike/city-serpent-round1.md); the slow way is the city's
+## The rune serpent still runs its line across it (the city's train); the slow
+## way is the city's
 ## climb pieces with a whole Olmec in his lanes.
 ##
 ##   A  the arrival isle (0 m): KitLand turf, west terraces, a tongue of land

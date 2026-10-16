@@ -1,5 +1,5 @@
 extends "res://scripts/kit_isle/motif_greybox.gd"
-## The City Landing (docs/design/roguelike/layer-round14-city-layers.md):
+## The City Landing:
 ## where every underground layer of the run begins, in place of the aqueduct
 ## isle. One basalt pillar-isle of the city kit (scripts/city_kit.gd
 ## `pillar`): a paved hex crown with a stepped dais in the middle, two

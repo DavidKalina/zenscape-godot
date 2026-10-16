@@ -1,6 +1,5 @@
 extends "res://studies/whole_body_chase.gd"
-## The Second Walker's yard (round 4 strange city, card h2: docs/design/
-## roguelike/brainstorm/round4-strange-city/lens1-hunters.md; built in
+## The Second Walker's yard (card h2; built in
 ## scripts/enemies/second_walker.gd on the footprint trail, scripts/enemies/
 ## foot_trail.gd): a clay figure your size walks your exact footprints 8 s
 ## behind you. Stand still 8 s and it catches you (a knock and a heart).

@@ -1,6 +1,5 @@
 extends "res://scripts/kit_isle/motif_greybox.gd"
-## The Lamplighters' Stair (card: docs/design/roguelike/brainstorm/round3-
-## olmec-city/motif-lamplighters-stair.md), a place of the underground Olmec
+## The Lamplighters' Stair, a place of the underground Olmec
 ## city: one broken hillside of turf over the void, rising north in three
 ## uneven shelves, and the city's processional stair laid on it in three
 ## runs, a Z, its landings marked by small lamps still burning.

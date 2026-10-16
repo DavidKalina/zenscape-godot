@@ -1,6 +1,6 @@
 extends RefCounted
-## Whether a city place lays its own Olmec (its "Keeper") (docs/design/
-## roguelike/olmec-threat-round1.md). In a generated layer the layer has
+## Whether a city place lays its own Olmec (its "Keeper"). In a generated layer
+## the layer has
 ## one roaming Olmec (two on the high-danger regions: scripts/roguelike/
 ## layer_olmec.gd), not one per place, so by default the places' Keepers
 ## and their own heads stay out; `--knob=olmecs=places` brings the old

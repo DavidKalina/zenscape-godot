@@ -1,6 +1,6 @@
 extends "res://studies/character_study.gd"
-## GREYBOX of the roguelike motif "Benchfall" (docs/design/roguelike/brainstorm/
-## round1/motif-m4-benchfall.md): four benches hung under one another round an
+## GREYBOX of the motif "Benchfall": four benches hung under one
+## another round an
 ## open quarry pit, descended mostly by falling. Grey boxes for structure, the
 ## REAL voussoirs (scripts/traps/trap_voussoirs.gd) for the spoil slabs and the
 ## REAL headless body (scripts/enemies/headless_body.gd) on the benches.

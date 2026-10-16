@@ -1,5 +1,5 @@
 extends Node3D
-## The guacharo's body (docs/design/roguelike/flyer-round1.md): a giant
+## The guacharo's body: a giant
 ## oilbird, the cave bird of the Americas that screams in the dark and finds
 ## its way by clicks. Built in code: an ellipsoid body, neck and head, a
 ## hooked horn beak that opens (the scream), big dark eyes, a long graduated

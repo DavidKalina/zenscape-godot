@@ -1,5 +1,5 @@
 extends Node3D
-## The cannon (docs/design/roguelike/cannon-round1.md): a greybox barrel on a
+## The cannon: a greybox barrel on a
 ## base. Worked from outside (the field, scripts/cannon/cannon_field.gd): aim
 ## it (yaw and pitch with the stick, power in notches) and fire powder kegs
 ## as ranging shots; each flies exactly the arc you would (same launch
@@ -72,7 +72,7 @@ static func defaults() -> Dictionary:
 		"enter_reach":unit*2.4,        # from the base's middle: operate or climb in
 		"stand_back":unit*1.35,        # from the base's middle: where he stands to operate it
 		"flash_time":0.25,
-		# The catch (docs/design/roguelike/cannon-catch.md): a body arriving
+		# The catch: a body arriving
 		# in the mouth (falling, thrown, tumbling, stunned) is caught, held,
 		# wound up and fired along the aim at the power set.
 		"catch":true,

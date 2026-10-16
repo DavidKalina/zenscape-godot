@@ -1,6 +1,5 @@
 extends "res://scripts/city_breaks/stone_break.gd"
-## The facing sheet wall, maker_skin (docs/design/roguelike/city-breaks-round2.md;
-## card: brainstorm/round3-olmec-city/kit-k4-destruction.md): a terrace's
+## The facing sheet wall, maker_skin: a terrace's
 ## retaining wall, an earth core faced in sheets of dressed, bossed basalt
 ## (each sheet three courses of blocks, each a quarry batch's shade). Plumb
 ## and too tall for the wanderer, up or down (past his fall stun); the

@@ -1,5 +1,5 @@
 extends RefCounted
-## The Broken Viaduct's art (docs/design/roguelike/crossing-viaduct-art.md):
+## The Broken Viaduct's art:
 ## the sky isles under its rims and the clods of rock its piers stand on,
 ## in the kit isles' one look (scripts/kit_isle/kit_land.gd, kit_look.gd:
 ## the plate's turf over a hanging keel of the islets' rock), and the great

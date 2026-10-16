@@ -64,8 +64,7 @@ const FADE := 15.0
 ## `--flora-fade=pop`: the grass and flowers stop at their range rather than
 ## fading out over FADE (a visible trade, off by default, for a lower
 ## graphics preset). A fading tile draws alpha-blended, in the transparent
-## pass: 13 ms of the city's 28 ms at the landing (docs/design/roguelike/
-## perf-city-run-round1.md).
+## pass: 13 ms of the city's 28 ms at the landing.
 static var _fade_mode := -1
 static func fade_mode() -> int:
 	if _fade_mode < 0:

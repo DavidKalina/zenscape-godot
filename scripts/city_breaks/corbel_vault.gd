@@ -1,6 +1,5 @@
 extends "res://scripts/city_breaks/stone_break.gd"
-## The corbel vault, maker_corbel (docs/design/roguelike/city-breaks-round2.md;
-## card: brainstorm/round3-olmec-city/kit-k4-destruction.md): a gate of the
+## The corbel vault, maker_corbel: a gate of the
 ## makers, a hall his lane wide and tall enough for him, roofed the
 ## Mesoamerican way (no arch: three courses each jutting a set-off further
 ## in, a capstone over the slot), its roof a flat walk over solid haunches.

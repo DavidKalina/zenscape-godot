@@ -35,8 +35,8 @@ extends RefCounted
 ## (RuinKit `bridge_anchor`); the last bridge comes back up to the south
 ## bench, so the tail is a loop.
 ##
-## A family (scripts/kit_isle/motif_colonnade_spine.gd, docs/design/
-## roguelike/motif-families.md): what the ruin has lost takes a plan
+## A family (scripts/kit_isle/motif_colonnade_spine.gd): what the ruin has lost
+## takes a plan
 ## (`rolled`: the piers snapped, the lintels fallen, the portals' crowns,
 ## how much of the tail is left, which rope bridges hold), the authored
 ## tables below when none is given (`authored`). The ridge itself, its
@@ -636,12 +636,12 @@ static func _lying_drum(b: Build, p: Vector2, top: float, way: Vector3, length :
 ## "lintels" (as `lintels`), "portals" [{x, y (the springing), crown}],
 ## "stubs" [{at (top middle, world)}], "drums" [{at}], "wedged" (the
 ## cleft's drums' tops), "cleft_beam" {a, b}.
-## `breakable` (the Olmec's destruction, scripts/kit_isle/colonnade_breaks.gd;
-## docs/design/roguelike/olmec-destruction-round1.md): the piers not under a
+## `breakable` (the Olmec's destruction, scripts/kit_isle/colonnade_breaks.gd):
+## the piers not under a
 ## portal and every standing lintel are left out of the one Build, for the
 ## breaks to stand each on its own (meta "breakable": {piers [{line, side,
 ## frame, height}], lintels (as `lintels`)}).
-## Round 2 (olmec-destruction-round2.md): the portals too, their piers among
+## Round 2: the portals too, their piers among
 ## the piers (`portal` their line) and their rings left out (meta
 ## "breakable" "portals" [{line, frame, h, lost, lost_side}]).
 static func colonnade(seed_value: int, p := {}, breakable := false) -> Node3D:

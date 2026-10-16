@@ -1,6 +1,6 @@
 class_name NoiseBus
 extends Node
-## The layer's noise (docs/design/roguelike/noise-stealth-round1.md): one
+## The layer's noise: one
 ## bus every noise goes through and every ear reads, the way SightLight /
 ## LightLevel are the layer's light. A noise is a point, a loudness and who
 ## made it; loudness is in metres: how far off an ear of hearing 1 still

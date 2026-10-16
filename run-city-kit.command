@@ -1,5 +1,5 @@
 #!/bin/zsh
-# The city kit's gallery (docs/design/roguelike/city-kit-round1.md):
+# The city kit's gallery:
 # the pillar-isles, the drum stair, the epic stair and the causeway in the
 # underground, the Olmec walking up the stair. Flags pass on:
 #   ./run-city-kit.command --underground=haze --olmec=causeway

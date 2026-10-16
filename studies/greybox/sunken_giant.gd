@@ -1,6 +1,6 @@
 extends "res://studies/character_study.gd"
-## GREYBOX, round 1 + Opus pass: the Sunken Giant (docs/design/roguelike/brainstorm/
-## round1/motif-m2-sunken-giant.md). A kneeling headless giant in open sky,
+## GREYBOX, round 1 + Opus pass: the Sunken Giant. A kneeling headless giant in
+## open sky,
 ## blocked out in boxes (fist, forearm, elbow, chest set-offs, shoulder
 ## deck, neck stump), climbed by grabs, a pump, a rope swing and wall kicks,
 ## with the REAL inhaler heads (scripts/enemies/inhaler_head.gd) on the

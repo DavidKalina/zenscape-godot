@@ -1,6 +1,6 @@
 extends "res://studies/character_study.gd"
-## The city kit's gallery (scripts/city_kit.gd, docs/design/roguelike/
-## city-kit-round1.md): its four pieces laid out as a place in the
+## The city kit's gallery (scripts/city_kit.gd): its four pieces laid out as a
+## place in the
 ## underground (scripts/underground/underground.gd: the torch look, or
 ## `--underground=haze`), played with the real pilot.
 ##
@@ -138,7 +138,7 @@ func _ready() -> void:
 	super._ready()
 
 ## The underground's ground cover (scripts/underground/ground_cover.gd,
-## underground-ground-round1.md: `--ground=grass|dust|moss|off`, grass when
+## `--ground=grass|dust|moss|off`, grass when
 ## the flags don't say; laid once as the gallery stands) on the pieces' flat walked tops
 ## (CityKit `walk_areas`): crowns, landings, summits, decks, flank tiers.
 ## Not the drum turns (its coil reads as bare stone in the cover) nor the

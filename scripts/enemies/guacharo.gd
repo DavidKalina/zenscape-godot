@@ -1,5 +1,5 @@
 extends Node3D
-## The guacharo (docs/design/roguelike/flyer-round1.md; feature `flyer`):
+## The guacharo (feature `flyer`):
 ## a giant oilbird that hunts the wanderer where he is exposed. Its body is
 ## scripts/enemies/guacharo_look.gd; this is its mind, its flight and its
 ## voice. Laid and stepped by scripts/roguelike/layer_flyers.gd.

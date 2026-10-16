@@ -133,8 +133,7 @@ const PUSH := 5.0
 const KNOCK_OUT := Vector2(12.0,6.0)
 const KNOCK_UP := 1.6
 const TAKE_R := 3.2
-## The grip's hits are hit stuns (PilotMotor `knock`, docs/design/
-## roguelike/stun-round1.md; docs/design/dragon-grip/round2-greybox.md),
+## The grip's hits are hit stuns (PilotMotor `knock`; docs/design/dragon-grip/round2-greybox.md),
 ## the dragon their source, so they share his one restun gap with his air
 ## blast: the gale's knock is a hard hit, laid down BLOW_STUN_DOWN s once
 ## the skid stops; the snap's launch a hard throw, laid down
@@ -1269,8 +1268,8 @@ func setup_roost(cam: Camera3D, pose: RefCounted) -> void:
 var gaze := Vector3.INF
 
 ## Off his wake's takeoff and into the whole flight (the generator's
-## dragon, scripts/roguelike/layer_dragon.gd, docs/design/roguelike/
-## layer-round12-dragon.md): the roost left behind, the gale (his grip)
+## dragon, scripts/roguelike/layer_dragon.gd): the roost left behind, the gale
+## (his grip)
 ## and the air blast (with `blast_on`) built, no treasure; `_step` flies
 ## him from here on, his `route` the host's. `wake` is kept (still out),
 ## so `awake` holds and the host shows him; it is no longer stepped.

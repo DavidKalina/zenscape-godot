@@ -1,6 +1,6 @@
 extends "res://scripts/traps/trap.gd"
-## The Tumbling Block (the user's idea, docs/design/roguelike/traps-round4-giants.md;
-## built to the contract in scripts/traps/trap.gd): a giant stone cube,
+## The Tumbling Block (built to the contract in scripts/traps/trap.gd): a giant
+## stone cube,
 ## six-odd pilot-heights a side, hung over open void between two decks
 ## (nothing under it: the yard lays no floor in its lane, `open_below`) and
 ## turning about a horizontal axis through its middle (across the route, x).

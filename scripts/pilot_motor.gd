@@ -1,5 +1,5 @@
 extends RefCounted
-## Harm (docs/design/roguelike/game-v1-hearts.md): `harm` is the one call
+## Harm: `harm` is the one call
 ## everything that hurts him makes (a fall, the Olmec, a trap, a hazard),
 ## beside its knock; the motor only tells it on. Whoever keeps his hearts
 ## (scripts/roguelike/run_loop.gd, in its RunState, keyed by this motor)
@@ -201,7 +201,7 @@ signal harmed(amount: int, cause: String, source: Object)
 ## guardian's grab) till the next `knock` throws him. Only position and
 ## time are lost; never hurt.
 ##
-## The stun (docs/design/roguelike/stun-round1.md). A stunned body is an
+## The stun. A stunned body is an
 ## object: the world carries, washes, blows and launches it as it would a
 ## crate (`toss` throws a stunned body on, still stunned).
 ## - Poise: knocked into the air he has no control (no sail, twirl, steer
@@ -240,7 +240,7 @@ signal harmed(amount: int, cause: String, source: Object)
 ## rides it still stunned (move "tumble"), the twirl arming the tech, till
 ## the rope gives him his poise back (`regain`) or throws him on stunned.
 ##
-## Moving ground (`mover`, docs/design/roguelike/city-serpent-round1.md): a
+## Moving ground (`mover`): a
 ## Callable taking a point (the feet, or just inside a lip he hangs from)
 ## and giving the Node3D that carries what stands there (a moving body's
 ## shape: the rune serpent's capsules, a collar's saddle, a moving slab),
@@ -529,7 +529,7 @@ const TUMBLE_IMMUNE := 0.0
 ## floor); the seconds down at it and at FALL_STUN_FULL times it (the most).
 const FALL_STUN_PUMPS := 4.0
 const FALL_STUN_FULL := 2.0
-## The fall that hurts (docs/design/roguelike/game-v1-hearts.md), in pumps
+## The fall that hurts, in pumps
 ## as the stun: from FALL_HURT_PUMPS (9 m at the wanderer's 1.0, half again
 ## the stun's) a heart, from FALL_HARD_PUMPS (18 m) two. A roll out of it
 ## (the tech) takes one off. Under the stun's height nothing.
@@ -641,7 +641,7 @@ var slam_stuns := false
 ## Jump opens the pocket sail out of the tumble (its stun ended, even a hard
 ## hit's, the sail opened as from any fall: kicked, gliding on the throw's
 ## way). Below 0 never (the default: the poise rule above as ever). The
-## crossing yard turns it on (docs/design/roguelike/crossing-viaduct-heights.md).
+## crossing yard turns it on.
 var knock_sail := -1.0
 ## His size over the clips' (the walker drawn `size` times, studies/
 ## character_study.gd; 1 here, the game's 0.83 set by `set_size`), and
@@ -1035,8 +1035,8 @@ func _throw_stunned(v: Vector3) -> void:
 	_fall_top = feet.y
 	feet.y += 0.02
 
-## His poise back while a rider holds him (a rope that snagged him limp,
-## docs/design/roguelike/rope-catch.md): his own again on it, the twirl
+## His poise back while a rider holds him (a rope that snagged him limp): his
+## own again on it, the twirl
 ## given back. The rider says "poised" (or "teched").
 func regain() -> void:
 	move = ""

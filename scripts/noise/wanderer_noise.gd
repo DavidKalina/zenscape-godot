@@ -1,5 +1,5 @@
 extends RefCounted
-## The wanderer's noises (docs/design/roguelike/noise-stealth-round1.md),
+## The wanderer's noises,
 ## made on the layer's NoiseBus (scripts/noise/noise_bus.gd) from what his
 ## motor and body did this frame, and his ring of dust on the loud ones
 ## (scripts/noise/noise_ripples.gd). One per wanderer: the source of each

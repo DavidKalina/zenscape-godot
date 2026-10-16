@@ -1,7 +1,7 @@
 extends RefCounted
 ## STAND-IN: the Stacked Court's well with a door (gb_stacked_court.gd). The
-## city kit's drum stair has no door out of its core (city-kit-round1.md,
-## Limits; the card's first kit ask), so the drum could only be a pit. This
+## city kit's drum stair has no door out of its core (Limits; the card's first
+## kit ask), so the drum could only be a pit. This
 ## builds M (CityKit `pillar`, courses 0, a flat crown round a well) and its
 ## drum stair (CityKit `drum_stair`, rim false) as the kit does, the same
 ## planes, Piece, stone and walk areas, with one change: a tunnel cut

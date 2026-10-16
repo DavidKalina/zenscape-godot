@@ -1,5 +1,5 @@
 extends "res://scripts/enemies/enemy.gd"
-## The Weeper (docs/design/roguelike/weeper-round1.md; ideas-enemies.md 6):
+## The Weeper:
 ## a stone mourner that moves only while the wanderer's camera isn't
 ## looking at it. Seen, it is frozen stone. Unseen, it closes on him a
 ## snap at a time, never seen moving: each snap sets it down nearer in a

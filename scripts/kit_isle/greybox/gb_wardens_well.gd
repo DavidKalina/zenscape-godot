@@ -1,7 +1,6 @@
 extends "res://scripts/kit_isle/motif_greybox.gd"
 ## The Warden's Well in the generator: studies/greybox/wardens_well.gd's
-## LAYOUT (card: docs/design/roguelike/brainstorm/round1/motif-m5-wardens-
-## well.md), the same geometry in the same frame, so the head-to-head relay
+## LAYOUT, the same geometry in the same frame, so the head-to-head relay
 ## keeps the study's numbers: stand on the dais lip, head 1 blasts you north
 ## down onto cell 1, your skid ends square on head 2's face, head 2 blasts you
 ## west down onto the exit rim. The study's stand-in exit rim is part of the
@@ -9,7 +8,7 @@ extends "res://scripts/kit_isle/motif_greybox.gd"
 ## (west) edge, where a generated crossing attaches. The flooded entry's
 ## south edge is the rim in.
 ##
-## One link the study lacked (docs/design/roguelike/cannon-catch.md): a
+## One link the study lacked: a
 ## catching cannon down in void 2, under cell 1's west edge on head 2's line.
 ## A missed relay (head 2 asleep, or taken off by its headless body) leaves
 ## you on cell 1 with no way on; step off its west edge into the cannon's

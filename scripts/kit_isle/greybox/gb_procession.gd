@@ -1,6 +1,5 @@
 extends "res://scripts/kit_isle/motif_greybox.gd"
-## The Procession (card: docs/design/roguelike/brainstorm/round4-crossings/
-## motif-m2-procession.md), a place of the underground Olmec city: a gulf
+## The Procession, a place of the underground Olmec city: a gulf
 ## between a high arrival headland and a low far isle with a lit gate. The
 ## old causeway that joined them has fallen; only its piers stand, broken off
 ## in the haze. Eleven headless bodies were walking it when it went. They lie

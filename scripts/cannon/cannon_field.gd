@@ -1,7 +1,6 @@
 extends Node3D
 ## The cannons and kegs of a scene, stepped round the pilot's motor (a
 ## character study's `foot_pieces` slot, as scripts/traps/trap_field.gd).
-## docs/design/roguelike/cannon-round1.md has the controls and the why.
 ##  - Touch a keg and it is picked up: it hovers along behind him like a
 ##    carried plane part (scripts/carried_follow.gd), up to `max_kegs`. The
 ##    tech is not muffled.
@@ -29,7 +28,7 @@ extends Node3D
 ##    where it crossed the cannon's height and a "lost" sound.
 ##  - Fired, he leaves by `PilotMotor.toss`: no tumble, the sail ready, a
 ##    little steering in the air.
-##  - THE CATCH (docs/design/roguelike/cannon-catch.md): a body arriving in
+##  - THE CATCH: a body arriving in
 ##    a cannon's mouth, not by climbing in (falling off a ledge, thrown,
 ##    knocked, tumbling stunned, blown out of an inhaler head), is caught:
 ##    within `catch_pull` of the mouth and heading in, his drift off the line

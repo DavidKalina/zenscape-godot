@@ -1,6 +1,6 @@
 extends RefCounted
-## The Millstone Beetle's placeholder sounds (docs/design/roguelike/
-## beetle-round1.md): short synthesized calls in the enemy yard's style
+## The Millstone Beetle's placeholder sounds: short synthesized calls in the
+## enemy yard's style
 ## (studies/enemy_yard.gd `_synth`), and the wheel's rolling grind, a loop
 ## whose loudness follows the wheel's pace. Never heard as finished sound:
 ## stand-ins for a sound pass.

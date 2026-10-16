@@ -1,6 +1,6 @@
 extends RefCounted
-## The greybox motifs the generator can place (docs/design/roguelike/
-## greybox-in-generator.md; the base is scripts/kit_isle/motif_greybox.gd,
+## The greybox motifs the generator can place (the base is
+## scripts/kit_isle/motif_greybox.gd,
 ## whose header says how to convert the next one). One line each: slug ->
 ## script. Opt-in on the layer's knob `greybox` (scripts/roguelike/
 ## layer_plan.gd KNOBS): "" none (the default: the pool as it was), "all",
@@ -47,7 +47,7 @@ const WORLD := {
 	"coliseum_pit":"under",
 	"weir_stair":"under",
 	# The underground layers' start isle (LayerPlan `_base_isle`): never
-	# drawn into a pool (layer-round14-city-layers.md).
+	# drawn into a pool.
 	"city_landing":"base",
 }
 

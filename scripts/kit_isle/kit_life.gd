@@ -472,7 +472,7 @@ func _leaf_anchors() -> Array:
 ## holds still, hidden: the loose leaves, chaff, kicked blades and
 ## butterflies, a few centimetres, are under a pixel past SMALL_NEAR at
 ## 1080 lines; the songbirds past BIRDS_NEAR. Their steps are the most of a
-## frame's script time (docs/design/roguelike/perf-round1.md): a layer has
+## frame's script time: a layer has
 ## four or five lives in reach of the eye.
 const SMALL_NEAR := 60.0
 const BIRDS_NEAR := 150.0

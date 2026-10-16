@@ -1,6 +1,5 @@
 extends "res://scripts/kit_isle/motif_greybox.gd"
-## The Weir Stair (card: docs/design/roguelike/brainstorm/round4-crossings/
-## motif-m3-weir-stair.md), a place of the underground Olmec city: seven
+## The Weir Stair, a place of the underground Olmec city: seven
 ## stone basins stepping down a gulf from a high cistern shelf to a low far
 ## isle, the water leaping tier to tier in one white zig-zag. The stair is
 ## the way across.

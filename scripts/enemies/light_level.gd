@@ -1,7 +1,6 @@
 class_name LightLevel
 extends RefCounted
-## How lit the wanderer stands, for the Olmec's sight (docs/design/roguelike/
-## beacons-light-sight-round1.md). Cheap, no GPU readback: the ambient level,
+## How lit the wanderer stands, for the Olmec's sight. Cheap, no GPU readback: the ambient level,
 ## the wanderer's torch, and every lit SightLight (scripts/enemies/
 ## sight_light.gd; a lit Beacon is one) reaching him, summed.
 ##

@@ -1,5 +1,4 @@
-"""Build the inhaler head (scripts/enemies/inhaler_head.gd,
-docs/design/roguelike/inhaler-head.md): a colossal carved stone head, Olmec
+"""Build the inhaler head (scripts/enemies/inhaler_head.gd): a colossal carved stone head, Olmec
 in spirit (helmet-like headdress with a forehead band and ear flaps, a heavy
 furrowed brow, heavy-lidded almond eyes, a broad flat nose, full downturned
 lips, full cheeks, a solemn face) but squared off into the ruin kit's

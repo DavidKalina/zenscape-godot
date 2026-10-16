@@ -1,7 +1,6 @@
 extends Node3D
 ## The Haul-Way's machine (scripts/kit_isle/greybox/gb_haulway.gd): the kit
-## asks `haul_sledge` and `haul_fender`, built here (the card's
-## docs/design/roguelike/brainstorm/round4-crossings/motif-m5-haulway.md).
+## asks `haul_sledge` and `haul_fender`, built here.
 ##
 ## Two sledges, one slung under each hawser on a mast, a counterweight pair:
 ## sledge 0 waits at A's cradle while sledge 1 waits at B's; both set off

@@ -1,8 +1,6 @@
 extends RefCounted
-## The Olmec city kit's fire pieces, "fire on high" (docs/design/roguelike/
-## city-fires-round1.md; cards in brainstorm/round3-olmec-city/kit-k6-light.md
-## maker_cresset, maker_runnel, maker_wickspire and kit-k7-vertical.md
-## ol_beacon). One cresset piece sized as a bowl, a tower's crown or a
+## The Olmec city kit's fire pieces, "fire on high":
+## maker_cresset, maker_runnel, maker_wickspire and ol_beacon. One cresset piece sized as a bowl, a tower's crown or a
 ## spire's top, and the runnel that carries fire between them. All in the
 ## Olmec's weathered basalt (scripts/kit_isle/greybox/giant_stone.gd), the
 ## fire on the campfire's shaders (scripts/city_fire.gd).

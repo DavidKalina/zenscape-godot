@@ -1,8 +1,6 @@
 extends RefCounted
-## The serpent's pieces of the underground Olmec city kit (docs/design/
-## roguelike/city-serpent-round1.md; cards in brainstorm/round3-olmec-city/:
-## kukul_dais, kukul_collar, kukul_ring, kukul_coil in kit-k5-serpent-ride.md,
-## colossus_ashbowl in kit-k2-contrarian.md). The rune serpent
+## The serpent's pieces of the underground Olmec city kit:
+## kukul_dais, kukul_collar, kukul_ring, kukul_coil and colossus_ashbowl. The rune serpent
 ## (scripts/rune_serpent.gd) is the city's train and its lamp; these are its
 ## stops, its harness, the stone it threads and climbs, and the one soft
 ## floor in the stone city.

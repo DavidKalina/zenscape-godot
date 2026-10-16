@@ -1,6 +1,5 @@
 extends "res://scripts/kit_isle/motif_greybox.gd"
-## The Stacked Court (card: docs/design/roguelike/brainstorm/round3-olmec-
-## city/motif-stacked-court.md), a place of the underground Olmec city built
+## The Stacked Court, a place of the underground Olmec city built
 ## from the city kit (scripts/city_kit.gd, its fires): basalt pillar-isles
 ## stacked a course-set apart, each layer further back and higher, round a
 ## court of air. You arrive on the lowest and look up at the lit crowns.
@@ -454,7 +453,7 @@ func start() -> Vector3:
 	return on("forecourt",Vector2(6.0,float(LAYOUT.forecourt.apothem)-6.0))
 
 ## In on F's south edge; out on T's far (north-east) edge. Underground the
-## court is most of the pool (layer-round13-worlds.md), and the generator
+## court is most of the pool, and the generator
 ## never turns an isle, so court must join court: more ways in on F's
 ## south-east and south-west faces, and out on T's north face. A way out
 ## north meets a way in south, north-east (the summit's) meets south-west;
@@ -566,7 +565,7 @@ func parts() -> Array:
 			_hex_strips(out,Vector2(p.x,p.z),well*cos(PI/6.0),floor_y,p.y-COURSE,0.0)
 		# The turf cap's ragged overhang (`cap_outline`, `grow` past the stone,
 		# its earth hanging a course): in the occupancy, so no crossing's
-		# corridor runs through it (layer-round13-worlds.md: a layer of courts
+		# corridor runs through it (a layer of courts
 		# put them in each other's way).
 		if d.has("cap") and key != "forecourt":
 			_hex_strips(out,Vector2(p.x,p.z),float(d.apothem)+_grow_most(d.cap),p.y-COURSE,p.y+(2.2 if key == "west" else 0.0),0.0)
@@ -649,7 +648,7 @@ func flora_site() -> KitFlora.Site:
 func flora_seed() -> int:
 	return _seed+9
 
-# --- One court of many (the underground layer: layer-round13-worlds.md) ----------------
+# --- One court of many (the underground layer) ----------------
 ## Underground the court is most of the pool, so a layer holds several. The
 ## generator never turns an isle and the occupancy is the motif's (one per
 ## slug), so the shape stays; `vary` (scripts/roguelike/layer_plan.gd

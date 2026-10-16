@@ -1,6 +1,6 @@
 extends RefCounted
-## The headless body's tells that read from across a gulf (docs/design/
-## roguelike/layer-round10-far-bodies.md): soft dust puffs and plumes and
+## The headless body's tells that read from across a gulf: soft dust puffs and
+## plumes and
 ## stones falling off the face, each a one-shot CPUParticles3D that frees
 ## itself. Greybox-plus: billboards of one painted blob (a soft round broken
 ## by noise, so a cloud of them reads as brushed dust, not discs) and

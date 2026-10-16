@@ -1,5 +1,5 @@
 extends "res://studies/whole_body_chase.gd"
-## The city climb yard (docs/design/roguelike/city-climb-round1.md): the city
+## The city climb yard: the city
 ## kit's climb pieces (scripts/city_kit_climb.gd), lanes for two bodies, on a
 ## basalt plaza over the abyss, with a whole Olmec hunting (the chase, its
 ## periscope, chase routes, his breaks).

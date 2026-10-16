@@ -1,6 +1,6 @@
 extends Node3D
-## The Olmec's destruction (docs/design/roguelike/olmec-destruction-round1.md,
-## round2.md): the colonnade spine's piers, its lintels, its portals' arches
+## The Olmec's destruction (round2.md): the colonnade spine's piers, its
+## lintels, its portals' arches
 ## (studies/colonnade_spine_isle_art.gd `colonnade`, `breakable`) and the
 ## temple's rose gable, stood each on its own, for the headless body
 ## (scripts/enemies/headless_body.gd, `breaker`) to tear through.

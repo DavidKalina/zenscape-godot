@@ -1,6 +1,6 @@
 #!/bin/zsh
-# The roost's dragon live over a generated layer (docs/design/roguelike/
-# layer-round12-dragon.md): he wakes ~3 s after the layer stands, swoops
+# The roost's dragon live over a generated layer: he wakes ~3 s after the layer
+# stands, swoops
 # low over an isle, watches from a high circuit, grips a roomy isle's rim.
 #   ./run-dragon-layer.command                        sprawl seed 11
 #   ./run-dragon-layer.command --shape=ring --seed=2  the ring

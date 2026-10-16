@@ -1,5 +1,5 @@
 extends "res://studies/character_study.gd"
-## The tower shell study (docs/design/roguelike/tower-shell-round1.md): the
+## The tower shell study: the
 ## ruin kit's tower shell (scripts/ruin_kit_tower.gd) on flat ground, to
 ## climb its wall-kick chimney. The pilot is the character study's (this
 ## extends it): the same motor, figure, camera, F1 numbers, F2 feel.

@@ -1,6 +1,5 @@
 extends "res://scripts/city_breaks/stone_break.gd"
-## The chocked slab, maker_chock (docs/design/roguelike/city-breaks-round2.md;
-## card: brainstorm/round3-olmec-city/kit-k4-destruction.md): the makers'
+## The chocked slab, maker_chock: the makers'
 ## half-done work. A slab his lane wide stands on its end at a gap's near
 ## rim, leaning out over the gap, held back by a rope to a timber lever
 ## whose foot is jammed by a chock. Strike the chock's plate and the lever

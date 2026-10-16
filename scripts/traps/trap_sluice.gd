@@ -1,5 +1,5 @@
 extends "res://scripts/traps/trap.gd"
-## Sluice Flush (docs/design/roguelike/ideas-traps.md module 5; built to the
+## Sluice Flush (built to the
 ## contract in scripts/traps/trap.gd; played in context on the aqueduct
 ## isle's channel by scripts/traps/sluice_aqueduct.gd, `--sluice`): a walled
 ## stone channel with a sluice gate at its head. A pressure plate (or,

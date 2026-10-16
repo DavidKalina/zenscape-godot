@@ -1,5 +1,5 @@
 extends "res://studies/character_study.gd"
-## The city light yard, round 2 (docs/design/roguelike/city-light2-round1.md):
+## The city light yard, round 2:
 ## the sun-mirror and the relief face (scripts/city_kit_light2.gd) on a basalt
 ## plaza over the abyss, in the underground look (`--underground`, torch by
 ## default; `--underground=haze`), a whole Olmec hunting (the chase, the

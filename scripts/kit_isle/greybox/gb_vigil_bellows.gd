@@ -1,15 +1,13 @@
 extends "res://scripts/kit_isle/motif_greybox.gd"
 ## The Vigil of the Bellows in the generator: studies/greybox/vigil_bellows.gd's
-## LAYOUT (card: docs/design/roguelike/brainstorm/round1/motif-m3-the-vigil-
-## of-the-bellows.md, its "Greybox (Opus pass)"), the same geometry in the
+## LAYOUT (its "Greybox (Opus pass)"), the same geometry in the
 ## same frame, so its gust lines keep the study's numbers. A cloister garth
 ## round a still pool, the star tower on the north side (its kick shaft up
 ## to the sill under the tower horn), a gate tower on the south range with
 ## the second horn, four arcade ranges of roofed bays, the fallen NE corner.
 ##
 ## Changes from the study:
-## - The horns are the real ward (scripts/wind_horn.gd `watch`, docs/design/
-##   roguelike/wind-horn-blows.md), not the study's stand-in: they sweep,
+## - The horns are the real ward (scripts/wind_horn.gd `watch`), not the study's stand-in: they sweep,
 ##   wake on a run in sight, a jump or a splash, draw breath and fire the
 ##   gust arrows' ball (the default shot). Their arcs and reaches are the
 ##   study's; the shared bellows is `may_draw` (one breath at a time). The
@@ -23,7 +21,7 @@ extends "res://scripts/kit_isle/motif_greybox.gd"
 ## - The seesaw on the south terrace is the real trap_seesaw_drop. The
 ##   study's chain 3 (the gate horn gusting the seesaw's throw on, mid-air)
 ##   does not hold with the horn's ball (it leads flat pace only, so it
-##   misses a ballistic body: wind-horn-blows.md), so a catching cannon
+##   misses a ballistic body), so a catching cannon
 ##   (CANNON) now takes the throw where it comes down in the south apron
 ##   and fires it out through the fallen corner onto satellite 1: seesaw,
 ##   cannon, the rim out. Climbed into by hand it is also a way out.
@@ -96,8 +94,8 @@ const HORNS := [
 const TRAPS := [
 	{"name":"seesaw_drop","pos":Vector3(7.5,-3.0,30.0),"yaw":0.0,"knobs":{"ledge":0.0}},
 ]
-## The catching cannon (scripts/cannon/cannon.gd, docs/design/roguelike/
-## cannon-catch.md) in the south apron, its mouth on the seesaw's throw as
+## The catching cannon (scripts/cannon/cannon.gd) in the south apron, its mouth
+## on the seesaw's throw as
 ## it comes down (measured: the throw peaks 17.3 m over the south range and
 ## falls at 18 m/s along x 7.5, 9.7 m/s north, 62 deg steep), its barrel
 ## laid 55 deg up toward the NE satellite, so the throw goes in along it and

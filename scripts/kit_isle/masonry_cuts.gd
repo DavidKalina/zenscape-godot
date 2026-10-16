@@ -1,6 +1,6 @@
 extends RefCounted
-## The Olmec's destruction, round 2 (docs/design/roguelike/olmec-destruction-
-## round2.md): masonry pre-cut for scripts/kit_isle/colonnade_breaks.gd to
+## The Olmec's destruction, round 2: masonry pre-cut for
+## scripts/kit_isle/colonnade_breaks.gd to
 ## bring down. A piece is built again once for each part it breaks into, the
 ## same stones as the whole each time (RuinKit Build `keep_only`), so the
 ## parts break along its joints: a coursed wall comes apart in stepped

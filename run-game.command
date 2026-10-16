@@ -11,15 +11,14 @@ if [[ ! -x "$GODOT_BIN" ]]; then
   exit 1
 fi
 
-# The game, v1 (docs/design/roguelike/game-v1-launcher.md). It opens on the
-# title (studies/game_title.tscn); Space / A there opens the run with these
-# same flags. Flags after the `--`:
+# Opens the title scene (studies/game_title.tscn); Space / A there starts
+# with these same flags. Flags after the `--`:
 #   --shape=sprawl     the run's first region; the city (underground) stays sprawl,
-#                      city layers of its six places (layer-round14-city-layers.md)
+#                      city layers of its six places
 #   --world=under      every region underground: v1 is the Olmec city only;
 #                      drop it to open into the sky
-#                      after the first two regions (layer-round13-worlds.md)
-#   (no --under-look=)  the underground regions wear the oculus look (run-oculus-round1.md); --under-look=torch brings the old torch look back
+#                      after the first two regions
+#   (no --under-look=)  the underground regions wear the oculus look; --under-look=torch brings the old torch look back
 #   (no --seed=)       the run draws a new seed each launch; the card's R
 #                      keeps the same one, Space draws another
 #   (no --dragon-live) no dragon; the plane is not in this scene

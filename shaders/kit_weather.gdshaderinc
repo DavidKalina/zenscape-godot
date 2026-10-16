@@ -1,8 +1,8 @@
 #ifndef ZS_KIT_WEATHER
 #define ZS_KIT_WEATHER
 // The ruin kit's weathered basalt (shaders/ruin_stone.gdshader, with
-// ZS_STONE_WEATHER): the Olmec's weathering (shaders/olmec_stone.gdshader,
-// docs/design/roguelike/olmec-weathered.md) brought onto the kit's blocks,
+// ZS_STONE_WEATHER): the Olmec's weathering (shaders/olmec_stone.gdshader)
+// brought onto the kit's blocks,
 // so the ruins and the Olmec read as one stone. Painted in solid noise over
 // the piece's own frame (the kit's stone stands still, so its model space is
 // its rest pose), on top of the kit's face colours:

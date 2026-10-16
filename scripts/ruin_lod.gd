@@ -22,9 +22,8 @@ extends RefCounted
 ## stems go at about 115 m (dropped at 45 m, the vine curtains read as
 ## broken strings of dots in the before/after captures), the shares at
 ## about 230, 540 and 1200 m.
-## docs/design/roguelike/perf-round1.md has the numbers.
 ##
-## Round 2 (perf-round2.md): the growth is lifted out of the "Mesh" into
+## Round 2: the growth is lifted out of the "Mesh" into
 ## its own instance under it ("Growth", the very levels above, so it looks as
 ## it did) drawn without casting shadows, and shadows-only twins ("Shade0",
 ## ...) in chunks GROWTH_CELL across, at full detail, each seen only within

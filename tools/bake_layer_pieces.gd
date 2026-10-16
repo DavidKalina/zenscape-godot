@@ -1,7 +1,6 @@
 extends SceneTree
 ## Bakes what the layer generator (scripts/roguelike/layer_plan.gd) reads of
-## the isles it places without building them (docs/design/roguelike/
-## layer-round2.md): each isle built once headless and read through the
+## the isles it places without building them: each isle built once headless and read through the
 ## physics space (scripts/roguelike/isle_probe.gd): its occupancy (per 2 m
 ## cell its lowest and highest solid) and, for the motifs that are not
 ## families yet and the aqueduct isle, its rims and clear spots. Written to
@@ -10,7 +9,7 @@ extends SceneTree
 ## (The flags keep the aqueduct isle bare: its rims are its land's.)
 ## `--only=<id>[,<id>...]` bakes just those motifs (of MOTIFS) into the
 ## file as it stands, the rest kept as baked: e.g. `--only=dragon_roost`
-## (the roost's occupancy, docs/design/roguelike/layer-round5-roost.md).
+## (the roost's occupancy).
 const Probe = preload("res://scripts/roguelike/isle_probe.gd")
 const OUT := "res://data/layer/pieces.json"
 ## The motifs read: [id, whether its rims and spots are baked (else only

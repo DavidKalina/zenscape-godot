@@ -1,6 +1,5 @@
 extends "res://scripts/enemies/enemy.gd"
-## The Millstone Beetle (docs/design/roguelike/ideas-enemies.md 2, docs/
-## design/roguelike/beetle-round1.md): the deck's patroller. A heavy scarab
+## The Millstone Beetle the deck's patroller. A heavy scarab
 ## rolling a millstone up and down a lane of an isle's flat (a terrace, a
 ## causeway, a landing), the way it always did, because it has no other job.
 ## It never turns early; it sees only down its lane, ahead of its wheel.

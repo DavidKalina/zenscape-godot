@@ -318,7 +318,7 @@ static func material(spec := {}) -> ShaderMaterial:
 			if int(p.usage) & PROPERTY_USAGE_STORAGE and p.name != "script": _base_props.append([p.name,_base.get(p.name)])
 	# A copy of the base as `duplicate` makes it (each stored property set in
 	# turn), without asking the renderer for the shader's parameters, which
-	# on a worker waits a frame for each (docs/design/roguelike/native-isles-round1.md).
+	# on a worker waits a frame for each.
 	var water := ShaderMaterial.new()
 	for prop: Array in _base_props: water.set(prop[0],prop[1])
 	# The live still water's own settings.

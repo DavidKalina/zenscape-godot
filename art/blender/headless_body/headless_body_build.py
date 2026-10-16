@@ -1,5 +1,4 @@
-"""Build the headless body (scripts/enemies/headless_body.gd,
-docs/design/roguelike/headless-body-round3-anim.md): the inhaler head's lost
+"""Build the headless body (scripts/enemies/headless_body.gd): the inhaler head's lost
 stone body, rigged and animated.
 
 The figure is the head's stone (art/blender/inhaler_head/inhaler_head_build.py):
@@ -881,7 +880,7 @@ def _down(n):
     return {f"h{n}w": 0.0, f"p{n}w": 0.0, f"f{n}": 30.0, f"t{n}": 10.0}
 
 
-## Round 4 (headless-body-round4-anim-polish.md): no gesture. He goes
+## Round 4: no gesture. He goes
 ## still to listen: a slow breath out, the weight sinking a little, the
 ## arms hanging slack, held; on "heard" (as the game turns him) a small
 ## lift of the stump and the fists closing, then back to standing. No arm
@@ -1424,7 +1423,7 @@ def _step_keys(n, s, lift, lead, lag):
     (s = -1 left), `lift` m up, the hips `lead` deg ahead, the shoulders
     `lag` deg behind. Twists are + left, so a left turn's lead is +.
 
-    Olmec round 1 (docs/design/roguelike/olmec-turn-clip-round1.md): the
+    Olmec round 1: the
     poses pushed so they read on a 10 m stone giant at play distance. The
     weight goes well over onto the standing leg and he sinks into it (the
     game holds this pose through a turn's lead-in); the foot comes up high,
@@ -1503,8 +1502,7 @@ clip(Clip("feel", FEEL, [
 
 # ------------------------------------------------------------------ the periscope (Olmec periscope round 1)
 ## Whole, his sight broken, he lifts his own head off his shoulders and
-## holds it up overhead in both hands to see past the cover
-## (docs/design/roguelike/olmec-periscope-round1.md). The hands grip the
+# holds it up overhead in both hands to see past the cover. The hands grip the
 ## head's sides, the wrists SCOPE_GRIP over its chin, the palms flat on it
 ## and the fingers up; the game carries the head between them (the wrists'
 ## middle, SCOPE_GRIP down) from the grip (SCOPE_TAKE of the lift) till it

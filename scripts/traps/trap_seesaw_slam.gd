@@ -1,5 +1,5 @@
 extends "res://scripts/traps/trap_seesaw.gd"
-## Seesaw, slam to launch (docs/design/roguelike/traps-round2-seesaw.md): a
+## Seesaw, slam to launch: a
 ## heavy stone block sits on the far end, which its weight holds down; the
 ## near end stands up one jump. The pilot climbs onto the near end and
 ## SLAMS (the motor's "slammed" pace drives `impact`): the block is flung up

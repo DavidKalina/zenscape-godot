@@ -1,9 +1,8 @@
 extends RefCounted
-## The city kit's breaks, round 2 (docs/design/roguelike/city-breaks-round2.md):
+## The city kit's breaks, round 2:
 ## more pieces of the underground Olmec city where his power reshapes the
-## routes. Cards maker_corbel, maker_skin, maker_chock (brainstorm/
-## round3-olmec-city/kit-k4-destruction.md) and colossus_plug
-## (kit-k2-contrarian.md). Part of the `city` family; the family's main file
+## routes. Cards maker_corbel, maker_skin, maker_chock and colossus_plug. Part of the
+## `city` family; the family's main file
 ## (scripts/city_kit.gd, another round's) registers them:
 ##   const CityBreaks2 = preload("res://scripts/city_kit_breaks2.gd")
 ##   PIECES ... + CityBreaks2.PIECES

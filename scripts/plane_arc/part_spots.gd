@@ -1,6 +1,6 @@
 extends RefCounted
-## Where the plane's six lost parts are (docs/design/plane-arc/round1.md), worked out by name from the
-## isles' own geometry, never from a world position: an isle can move (its
+## Where the plane's six parts are (docs/design/plane-arc/round1.md), worked
+## out by name from the isles' own geometry, never from a world position: an isle can move (its
 ## place in scripts/kit_isle/motif_sky.gd PLACES) and a part goes with it.
 ## Each still part answers {at (its middle, world), glint (where the
 ## binoculars see it glint: `at`, or the water's surface over it), stand and

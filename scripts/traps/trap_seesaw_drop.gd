@@ -1,5 +1,5 @@
 extends "res://scripts/traps/trap_seesaw.gd"
-## Seesaw, dropped on (docs/design/roguelike/traps-round2-seesaw.md): the
+## Seesaw, dropped on: the
 ## pilot stands on the low end; a heavy block hangs on a hook above the other
 ## (high) end and is let fall, landing as a blow whose momentum is the
 ## block's (`drop_hit`): he is flung up and along.

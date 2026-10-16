@@ -1,6 +1,6 @@
 extends RefCounted
-## The headless body's routes (docs/design/roguelike/layer-round11-body-
-## routes.md): where the body (scripts/enemies/headless_body.gd) fits, and
+## The headless body's routes: where the body
+## (scripts/enemies/headless_body.gd) fits, and
 ## the way from where it stands to its head over places it fits.
 ##
 ## The world is read with rays, a CELL m column at a time, as the search
@@ -107,7 +107,7 @@ func _init(body: Node3D) -> void:
 	bottom = float(field.lost)
 	var k: Dictionary = body.knobs
 	step = float(k.step)
-	# Olmec round 1 (olmec-turn-clip-round1.md): room to its stump's top
+	# Olmec round 1: room to its stump's top
 	# (0.92 of it put its shoulder slab into overhangs).
 	room = float(body.neck_h)*1.0
 	breadth = float(body.width)
@@ -134,8 +134,7 @@ func block(p: Vector3) -> void:
 	for dx in range(-1,2):
 		for dz in range(-1,2): _blocked[c+Vector2i(dx,dz)] = true
 
-## The world changed in `box` (rubble come to rest: docs/design/roguelike/
-## olmec-destruction-round1.md): its columns, and those a footprint off it,
+## The world changed in `box` (rubble come to rest): its columns, and those a footprint off it,
 ## read afresh; what was known of fitting and walking there let go.
 func forget(box: AABB) -> void:
 	var lo := cell_of(box.position)-Vector2i(2,2)
@@ -359,7 +358,7 @@ func moves(u: Vector3i) -> Array:
 ## A climb from column `c` (floor `level`) to `top` isn't under something:
 ## the room over his floor there reaches the top. Climbing up out from under
 ## a deck or a pier's corbels stepping out over him (the city kit's
-## causeway over the road a bay falls to, city-kit-round1.md) is an
+## causeway over the road a bay falls to) is an
 ## overhang he can't climb.
 func _face(c: Vector2i, _d: Vector2i, level: float, top: float) -> bool:
 	var at := centre(c)

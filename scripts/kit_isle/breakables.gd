@@ -1,5 +1,5 @@
 extends Node3D
-## The breakables' hub (docs/design/roguelike/city-breaks-round1.md): the
+## The breakables' hub: the
 ## Olmec's `breaker` (scripts/enemies/headless_body.gd) for any number of
 ## breakable pieces, each its own node in the group BREAKABLE (the city
 ## kit's: scripts/city_breaks/felled_column.gd, drum_floor.gd), and for the
@@ -104,7 +104,7 @@ func shake(k: float) -> void:
 
 func sound(sound_name: StringName, at: Vector3) -> void:
 	if sound_hook.is_valid(): sound_hook.call(sound_name,at)
-	# Heard across the layer (docs/design/roguelike/noise-stealth-round1.md).
+	# Heard across the layer.
 	var loud := float(BREAK_HEARD.get(sound_name,0.0))
 	if loud > 0.0 and is_inside_tree(): NoiseBus.make(self,at,loud,&"break")
 

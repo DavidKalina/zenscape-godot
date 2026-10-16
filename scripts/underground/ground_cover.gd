@@ -1,7 +1,6 @@
 extends RefCounted
 ## The underground's ground: living, shaded, wind-moved cover for the stone and
-## the turf of the abandoned Olmec city (docs/design/roguelike/
-## underground-ground-round1.md). The meadow's grass is the look the user
+## the turf of the abandoned Olmec city. The meadow's grass is the look the user
 ## loves; under the haze its orange autumn gold is wrong, and the city's walk
 ## tops are bare stone. Three covers, flipped live with `--ground=` (and G in
 ## the generator):

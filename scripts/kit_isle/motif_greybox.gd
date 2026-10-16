@@ -1,7 +1,6 @@
 extends "res://scripts/kit_isle/kit_motif.gd"
-## A greybox motif in the generator (docs/design/roguelike/greybox-in-
-## generator.md): one of the greybox studies (studies/greybox/<slug>.gd, its
-## card in docs/design/roguelike/brainstorm/round1/) as an isle the layer
+## A greybox motif in the generator: one of the greybox studies
+## (studies/greybox/<slug>.gd, its card) as an isle the layer
 ## generator places, in the studies' own grey / orange / green / blue look,
 ## its traps and heads live in the layer. Opt-in: `--knob=greybox=<slug,...>`
 ## or `--knob=greybox=all` on studies/run_layer.tscn (scripts/kit_isle/

@@ -1,5 +1,5 @@
 extends "res://studies/kit_isle.gd"
-## The motif yard (docs/design/roguelike/harness-motif-yard.md): ONE motif
+## The motif yard: ONE motif
 ## stood on the real stage with nothing else in the world, to prove its
 ## chains fast. A chain proven here holds in a layer, because everything
 ## that moves goes through the generator's own paths:

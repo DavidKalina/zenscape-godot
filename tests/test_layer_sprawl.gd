@@ -1,7 +1,7 @@
 extends "res://tests/test_run_layer.gd"
 ## suite: slow
 ## The sprawl shape (scripts/roguelike/layer_sprawl.gd, scripts/roguelike/
-## next_region_lod.gd; docs/design/roguelike/layer-round4-sprawl.md;
+## next_region_lod.gd;
 ## studies/run_layer.tscn --shape=sprawl), headless:
 ##   - the plan is the same for the same seed (laid again from nothing);
 ##   - an exit side: the last neighbourhood stands that way, a chain of 4-5
@@ -24,8 +24,7 @@ extends "res://tests/test_run_layer.gd"
 ##     over on its serpent or ferry;
 ##   - through the gate the next layer is the region seen (its seed, its
 ##     isles where they were drawn), and it has a next region of its own;
-##   - the dragon's roost (round 5, docs/design/roguelike/
-##     layer-round5-roost.md) stands in every sprawl layer: its turf over
+##   - the dragon's roost (round 5) stands in every sprawl layer: its turf over
 ##     every isle's highest solid, ROOST_GAP clear of every isle, edge and
 ##     ride, off the exit side; built, a physics ray from the start's eye
 ##     meets its tower first, and its dragon lies on its ledge.

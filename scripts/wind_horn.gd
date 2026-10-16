@@ -17,7 +17,7 @@ extends Node
 ## either side of the piece's front, PI all round) limits the turn: a horn
 ## set into a wall can't turn behind itself.
 ##
-## The blow (docs/design/roguelike/wind-horn-blows.md). Given the pilot's
+## The blow. Given the pilot's
 ## motor with `watch`, the horn is a ward: it sweeps its arc, and when it
 ## notices him (the wake rule: on the ground moving faster than
 ## `notice_pace` within `view` of where it looks, a splash (wading on, or

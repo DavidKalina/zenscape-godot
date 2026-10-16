@@ -1,6 +1,5 @@
 extends Node3D
-## The trap contract (docs/design/roguelike/traps-round1.md; the ideas are
-## docs/design/roguelike/ideas-traps.md): the base every greybox trap
+## The trap contract: the base every greybox trap
 ## extends, the way a foot piece extends scripts/interactables/
 ## foot_slab.gd. A trap is a section of route with a way in and a way out
 ## that moves the pilot (shoves, drops, washes him); the harm is where he

@@ -1,6 +1,6 @@
 extends "res://studies/whole_body_chase.gd"
-## The Hollow Child's yard (docs/design/roguelike/hollow-child-round1.md;
-## card x5-hollow, round 4 "strange city"): one paved basalt court in the
+## The Hollow Child's yard (card x5-hollow, round 4 "strange city"): one paved
+## basalt court in the
 ## underground dark (torch by default; `--underground=haze`), a whole Olmec
 ## at his post hunting (sight, swat, pounce, inhale, periscope), a lit route
 ## past his front, and the Hollow Child (scripts/city_hollow_child.gd) sitting

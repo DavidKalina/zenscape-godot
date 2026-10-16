@@ -1,7 +1,6 @@
 extends "res://scripts/traps/trap.gd"
-## The Sky Ray (the user's idea; built to the contract in scripts/traps/
-## trap.gd): a broad flat creature, greybox, that flies a ride through the
-## sky from A to B. It waits beside the start deck (a stop), flies a long
+## The Sky Ray (built to the contract in scripts/traps/trap.gd): a broad flat creature,
+## greybox, that flies a ride through the sky from A to B. It waits beside the start deck (a stop), flies a long
 ## authored `path` (a closed list of waypoints, local to the trap: climbs,
 ## swings out east, comes back down) to the far deck, slows and waits beside
 ## that (the next stop), then flies the rest of the loop round and back to
@@ -28,7 +27,7 @@ extends "res://scripts/traps/trap.gd"
 ## would fall (a dive's plunge) he lifts off (`toss` with its velocity) and
 ## floats till it pulls up under him. Leaving its back any way, he keeps its
 ## velocity; landing on it, his own run is taken relative to it.
-## Stunned (the motor's "tumble", docs/design/roguelike/stun-round1.md) he
+## Stunned (the motor's "tumble") he
 ## rides it as a body: down on its back he is carried and slid, shed and
 ## thrown off as ever, but grabs no rail; teched onto it (the stun tech, a
 ## press just before the touch) he latches onto the nearest rail (`_latch`).

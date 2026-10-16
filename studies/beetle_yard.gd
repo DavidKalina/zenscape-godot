@@ -1,5 +1,5 @@
 extends "res://studies/character_study.gd"
-## The beetle yard (docs/design/roguelike/beetle-round1.md): the Millstone
+## The beetle yard: the Millstone
 ## Beetle (scripts/enemies/millstone_beetle.gd) met alone, on greybox lanes
 ## in open sky, with the character study's motor, figure, camera and keys
 ## (F1 numbers, R start). Three lanes off the start deck, a beetle on each:

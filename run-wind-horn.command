@@ -1,6 +1,6 @@
 #!/bin/zsh
-# The wind-horn study (studies/wind_horn_study.tscn,
-# docs/design/roguelike/wind-horn-round1.md): the ruin kit's stone wind-horn
+# The wind-horn study (studies/wind_horn_study.tscn): the ruin kit's stone
+# wind-horn
 # on flat ground; its head tracks you, draws breath and blows on a loop.
 # P knocks it out for a few seconds. 1 front, 2 30 m out, 3 on the pedestal.
 # Extra args pass through, e.g.

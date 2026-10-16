@@ -1,6 +1,5 @@
 extends RefCounted
-## The Sunken Giant's carved basalt (turf pass, docs/design/roguelike/
-## brainstorm/round1/motif-m2-sunken-giant.md "Turf pass"): the body's
+## The Sunken Giant's carved basalt (turf pass): the body's
 ## masses (fist, forearm, elbow block, chest, neck stump, chimney fins,
 ## stair stones, columns) as plain chamfered blocks and cylinders in the
 ## Olmec's weathered stone (shaders/olmec_stone.gdshader, the material

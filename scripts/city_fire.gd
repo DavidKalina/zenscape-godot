@@ -1,9 +1,9 @@
 extends Node3D
-## One fire of the city kit's fire pieces (scripts/city_kit_fires.gd,
-## docs/design/roguelike/city-fires-round1.md): what burns in a cresset's
+## One fire of the city kit's fire pieces (scripts/city_kit_fires.gd): what
+## burns in a cresset's
 ## bowl, on a beacon tower's crown, at a runnel's running front, or spilled
 ## on the ground. Its flame is the game's real fire (scripts/flame.gd, a
-## raymarched volume; docs/design/roguelike/city-real-fire-round1.md), so the
+## raymarched volume), so the
 ## city's fires, the torch and the lamps are one fire:
 ##
 ##   flame    a Flame node of `kind` (brazier for a bowl, bonfire for a spill,

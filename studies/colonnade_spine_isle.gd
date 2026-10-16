@@ -24,14 +24,13 @@ extends "res://studies/kit_isle.gd"
 ##   Space (pad A) by the parked plane: into it; land by hand, F (pad Y) out once stopped
 ##   ./run-colonnade-spine.command [--look=first_snow]
 ##   godot --path . res://studies/colonnade_spine_isle.tscn -- --no-title [--capture=out.png --at=x,y,z --look=x,y,z] [--place=x,y,z[,turn]]
-## --olmec (docs/design/roguelike/olmec-destruction-round1.md;
-## ./run-olmec-colonnade.command): the headless body (scripts/enemies/
+## --olmec (./run-olmec-colonnade.command): the headless body (scripts/enemies/
 ## headless_body.gd) stood at the low east end, its head heaving on the
 ## plaza up west; the colonnade's plain piers and lintels breakable
 ## (scripts/kit_isle/colonnade_breaks.gd): he plows through them, his
 ## landings' shockwaves topple them, and they lie where they fall as rubble
 ## to climb. R sets him and his head back; the breaks stay.
-## Round 2 (olmec-destruction-round2.md): his head heaves in the temple's
+## Round 2: his head heaves in the temple's
 ## cella, behind the rose gable; he climbs the way and the grand stair to
 ## it and punches through the gable's door, bringing it down in slabs; the
 ## portals' arches come down too.

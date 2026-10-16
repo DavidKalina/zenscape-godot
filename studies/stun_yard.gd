@@ -1,5 +1,5 @@
 extends "res://studies/character_study.gd"
-## The stun yard (docs/design/roguelike/stun-round1.md): greybox stations in
+## The stun yard: greybox stations in
 ## open sky for playing the stun (scripts/pilot_motor.gd's header). The
 ## pilot is the character study's (this extends it): the same motor,
 ## figure, camera, F1 numbers, F2 feel.

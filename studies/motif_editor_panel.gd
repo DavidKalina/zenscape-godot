@@ -1,6 +1,5 @@
 extends Control
-## The motif editor's landform generator panel (round 3,
-## docs/design/roguelike/level-editor-round3.md): top left, on the HUD's
+## The motif editor's landform generator panel (round 3): top left, on the HUD's
 ## linen (scripts/hud_linen.gd, design "ZenScape HUD 4c"), the way the tool
 ## roll and the command palette are drawn: the motif's name and Save, the
 ## landform list, the landform's sliders, the seed and Re-roll. Under it, at

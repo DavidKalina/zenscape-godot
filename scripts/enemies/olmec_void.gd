@@ -1,5 +1,5 @@
 extends RefCounted
-## Toward the void (docs/design/roguelike/olmec-threat-round1.md): a shove
+## Toward the void: a shove
 ## on the walker (the Olmec's waves and swats, his head's blast) bent toward
 ## the nearest open edge, so a hit near a rim is the one that kills (the
 ## brief's rule 3) and one in the middle of a top is only a knock.

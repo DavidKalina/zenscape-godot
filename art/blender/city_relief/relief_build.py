@@ -1,5 +1,4 @@
-"""Build the relief face (oc_relief, docs/design/roguelike/city-light2-round1.md;
-card in brainstorm/round3-olmec-city/kit-k3-climb-lanes.md): a cliff carved as
+"""Build the relief face (oc_relief): a cliff carved as
 one giant seated lord in profile, Olmec style (after La Venta Monument 19 and
 the Chalcatzingo reliefs): he sits cross-legged and leans forward, facing
 right, an incense bag in his forward hand, a jade pectoral and collar, an ear

@@ -1,6 +1,5 @@
 extends "res://tools/harness/chain.gd"
-## The Warden's Well's chains (scripts/kit_isle/greybox/gb_wardens_well.gd,
-## its card docs/design/roguelike/brainstorm/round1/motif-m5-wardens-well.md)
+## The Warden's Well's chains (scripts/kit_isle/greybox/gb_wardens_well.gd)
 ## on the chain helper (tools/harness/chain.gd): heads and a cannon.
 ##
 ##   --chain=relay (default): head to head. On the dais lip on head 1's axis

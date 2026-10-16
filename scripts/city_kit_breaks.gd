@@ -1,8 +1,8 @@
 extends RefCounted
-## The city kit's breaks (docs/design/roguelike/city-breaks-round1.md): the
+## The city kit's breaks: the
 ## Olmec city's pieces where his power is the wanderer's tool, cards
-## maker_felled (brainstorm/round3-olmec-city/kit-k4-destruction.md) and
-## colossus_drum (kit-k2-contrarian.md). Part of the `city` family; the
+## maker_felled and
+## colossus_drum. Part of the `city` family; the
 ## family's main file (scripts/city_kit.gd) registers them:
 ##   if id in CityBreaks.PIECES: return CityBreaks.piece(id, seed, weathered)
 ##

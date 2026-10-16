@@ -1,6 +1,6 @@
 extends "res://studies/enemy_yard.gd"
-## Meet the Weeper alone (scripts/enemies/weeper.gd, docs/design/roguelike/
-## weeper-round1.md): the enemy yard's open isle over the drop (its rims,
+## Meet the Weeper alone (scripts/enemies/weeper.gd): the enemy yard's open
+## isle over the drop (its rims,
 ## the spit, the north ledge, the islet), with a few tall columns to hide
 ## behind, and a Weeper (two with --weepers=2) set out mourning at the far
 ## end. Turn your back and listen.

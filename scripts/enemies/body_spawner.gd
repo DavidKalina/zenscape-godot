@@ -1,6 +1,6 @@
 extends Node
-## The headless bodies' cliff spawns (docs/design/roguelike/headless-body-
-## round2.md, layer-round9-bodies.md), shared by the body's study (studies/
+## The headless bodies' cliff spawns, shared by the
+## body's study (studies/
 ## headless_body_isle.gd) and the generator (scripts/roguelike/
 ## layer_enemies.gd): each inhaler head (scripts/enemies/inhaler_head.gd)
 ## has one body (scripts/enemies/headless_body.gd) and the cliffs it may
@@ -25,7 +25,7 @@ extends Node
 ## One body per head: a spawn takes its head's old body away, and if that
 ## body had its head on its neck, the head goes home (`go_home`).
 ## The camera shakes with the bodies' landings and steps (`shake`).
-## Far spawns (docs/design/roguelike/layer-round10-far-bodies.md): of the
+## Far spawns: of the
 ## spells a head goes bodiless, `far_share` (rolled once a spell) look for
 ## a far cliff instead, to watch come up across a gulf:
 ##   - `far_from` to `far_to` m from the walker (flat), within `far_view`
@@ -57,7 +57,7 @@ const VOICES := {
 	"body_reach":[1.2,0.0,0.0,1.0,0.07,0.3,13.0],
 	"body_whole":[1.0,70.0,110.0,0.3,0.25,0.01,0.0],
 	"body_rumble":[2.6,34.0,22.0,0.7,0.035,0.25,5.0],
-	# Olmec threat round 1 (olmec-threat-round1.md): the head-on roar, the
+	# Olmec threat round 1: the head-on roar, the
 	# masonry he breaks, an isle groaning as it tips under him.
 	"olmec_roar":[2.4,62.0,38.0,0.45,0.1,0.12,7.0],
 	"ruin_crack":[0.35,0.0,0.0,1.0,0.55,0.001,0.0],
@@ -128,7 +128,7 @@ func add_head(home: Vector3, cliffs: Array) -> int:
 	heads.append({"home":home,"cliffs":cliffs.duplicate(true),"body":null,"bodiless":0.0,"mode":""})
 	return heads.size()-1
 
-## Whether two heads' homes are the same (olmec-threat-round1.md: within
+## Whether two heads' homes are the same (within
 ## 0.5 m flat and HOME_RISE m up or down; a head set on a top that stands
 ## a little off its planned height was never found by its body).
 const HOME_RISE := 4.0
@@ -374,7 +374,7 @@ func spawn_climber(i: int, c: int, fitted := [], below := 0.0, far := false) -> 
 	if far: far_spawns += 1
 	return b
 
-## Olmec threat round 1 (olmec-threat-round1.md): a body for head `i` up
+## Olmec threat round 1: a body for head `i` up
 ## a cliff found by its caller (scripts/roguelike/layer_olmec.gd), already
 ## fitted: `at` on the lip, `out` (x, z) the face's way, `below` m down it.
 func spawn_fitted(i: int, at: Vector3, out: Vector2, below := 0.0, far := false) -> Node3D:

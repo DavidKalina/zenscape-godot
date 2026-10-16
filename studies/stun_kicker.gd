@@ -1,6 +1,6 @@
 extends "res://scripts/traps/trap.gd"
-## The stun yard's kicker (studies/stun_yard.gd; docs/design/roguelike/
-## stun-round1.md): a greybox plate that, stood on for `fuse` s (it warms
+## The stun yard's kicker (studies/stun_yard.gd): a greybox plate that, stood
+## on for `fuse` s (it warms
 ## to orange), knocks the pilot (PilotMotor.knock, itself the source) onto
 ## whatever `aim` is (the Sky Ray's body, live), peaking `up` m over the
 ## plate, landing on the aim's middle. A test fixture for the chain (a knock

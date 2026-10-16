@@ -1,6 +1,6 @@
 extends SceneTree
-## The stun (scripts/pilot_motor.gd's header; docs/design/roguelike/
-## stun-round1.md), on the motor at the wanderer's size, drawn by the
+## The stun (scripts/pilot_motor.gd's header), on the motor at the wanderer's
+## size, drawn by the
 ## figure so its ragdoll runs through every state:
 ##   - a fall of the stun's height or more lays him down, longer for a
 ##     bigger fall, capped; under it, no stun;

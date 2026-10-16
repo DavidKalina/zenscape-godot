@@ -1,6 +1,6 @@
 extends RefCounted
 ## The motif isles' native kernels (native/terrain_kernels/isle_kernels.h,
-## `ZenScapeIsleKernels`; docs/design/roguelike/native-isles-round1.md): the
+## `ZenScapeIsleKernels`): the
 ## number crunching of an isle's build (the stone, the growth, the levels, the
 ## hulls) as pure-data calls, packed arrays in and out, safe on any worker.
 ## Null when the library is not built (or lacks the isle kernels), or under

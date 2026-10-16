@@ -1,6 +1,5 @@
 extends RefCounted
-## The headless body's feet and turns (round 4, docs/design/roguelike/
-## headless-body-round4-anim-polish.md), for headless_body_look.gd.
+## The headless body's feet and turns (round 4), for headless_body_look.gd.
 ##
 ## The body's `facing` (scripts/enemies/headless_body.gd) still turns as it
 ## always did; this is how the stone shows it. Standing, the figure (its
@@ -33,7 +32,7 @@ const HOLD := 0.1
 ## Behind its facing by this (rad) before a step; the most one step turns.
 const TRIGGER := 0.14
 const MOST := 0.8
-## Olmec round 1 (olmec-turn-clip-round1.md): a stood turn is planned whole,
+## Olmec round 1: a stood turn is planned whole,
 ## toward where it is going (`want`), not chased step by step behind a
 ## facing that runs ahead. Under SMALL (rad) it is a correction: the hips
 ## ease round (SMALL_RATE rad/s), the feet pivot on their balls, no step.

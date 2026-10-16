@@ -1,6 +1,5 @@
 extends "res://scripts/kit_isle/motif_greybox.gd"
-## The Haul-Way (card: docs/design/roguelike/brainstorm/round4-crossings/
-## motif-m5-haulway.md), a crossing of the underground Olmec city: a quarry
+## The Haul-Way, a crossing of the underground Olmec city: a quarry
 ## shore, a hundred and forty metres of black air, a low green shore far down, and
 ## between them two stone hawsers sagging in one long curve, each with a
 ## house-sized sledge slung under it. The pair are counterweights: one goes

@@ -1,6 +1,6 @@
 shader_type spatial;
-// The guacharo's plumage (scripts/enemies/guacharo_look.gd, docs/design/
-// roguelike/flyer-round1.md): a giant oilbird's worn rufous feathers, real
+// The guacharo's plumage (scripts/enemies/guacharo_look.gd): a giant oilbird's
+// worn rufous feathers, real
 // stuff and not a toy: each feather a quad whose vane, rachis, barbs,
 // barring, white oilbird spots, dusky tip, sun-faded fringe and ragged,
 // split edges are drawn here (alpha scissor), so the outer primaries read as

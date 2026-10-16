@@ -1,9 +1,8 @@
 extends "res://studies/crossings/crossing.gd"
-## The Broken Viaduct (docs/design/roguelike/crossing-viaduct-round1.md):
+## The Broken Viaduct:
 ## a ruined aqueduct curving up about 15 m from the start rim to the far
 ## rim, a pure-skill crossing on the pilot's own moves (scripts/
-## pilot_motor.gd). Everything hangs DROP m over the void
-## (docs/design/roguelike/crossing-viaduct-heights.md), its stone ending
+## pilot_motor.gd). Everything hangs DROP m over the void, its stone ending
 ## ROOTS under the walk, broken off over the sky: fallen past the void's
 ## floor he is lost (the yard sends him back to the start rim). Knocked
 ## off, he may sail out (PilotMotor `knock_sail`) and ride an updraft
@@ -36,7 +35,7 @@ extends "res://studies/crossings/crossing.gd"
 ##    launch (`launch_reach`).
 ## The optional wall-run line that skips the chimney is not built (a wall
 ## run gains at most about a metre; see the doc).
-## The hazard (docs/design/roguelike/crossing-viaduct-arrows.md): gust
+## The hazard: gust
 ## arrows (studies/crossings/gust_arrows.gd) from a perch off the pier
 ## field's left, low (`archer_at`): the piers are in the open to it, and
 ## they stand between it and the safe stair on their right, so the slow
@@ -150,11 +149,10 @@ const DECK_ARCHER_ASIDE := 16.0
 const DECK_ARCHER_UP := 2.5
 const DECK_ARCHER_ZONE := 3.0
 ## The left perch fires on the field up to this share of the way to the
-## plinth (the last piers are the far perch's; docs/design/roguelike/
-## crossing-viaduct-perches.md).
+## plinth (the last piers are the far perch's).
 const ARCHER_TO := 0.7
 
-## THE PERCHES (docs/design/roguelike/crossing-viaduct-perches.md): each a
+## THE PERCHES: each a
 ## wind horn (`perch_piece`: ONE function, the stand-in now, the stone horn
 ## later) on a ruin-kit pillar (RuinKitAqueduct `pillar`) whose top, PERCH_TOP m square, he can stand
 ## on and slam to disable it (GustArrows DISABLE_TIME). The horn stands
@@ -213,7 +211,7 @@ const LOW_COOLDOWN := 3.0
 const LOW_RANGE := 45.0
 const LOW_LEAD := 0.6
 
-## ART (docs/design/roguelike/crossing-viaduct-art.md; studies/crossings/
+## ART (studies/crossings/
 ## viaduct_art.gd): the walk tops' clean boxes' depth (m) under the isles;
 ## the isles' keels (m under their tops: the start rim's, the turn
 ## platform's, the plinth's, the far rim's); the clods under the piers'
@@ -529,7 +527,7 @@ func build(paint: Callable) -> void:
 	_launch(low)
 	_arrows(low)
 
-## ART (docs/design/roguelike/crossing-viaduct-art.md): a walk top's clean
+## ART: a walk top's clean
 ## collision (a box TOP_SOLID deep, its top and edges the greybox's) under a
 ## sky isle drawn over it (ViaductArt `isle`: turf, a keel of hanging rock
 ## `depth` deep); `half` (across, along) round `middle`, heading `deg`.
@@ -692,8 +690,8 @@ func _launch(_low: float) -> void:
 		var gate := at(far_near,c_deg,FAR_RIM.x-GATE_IN.x,side*(FAR_RIM.y*0.5-GATE_IN.y))
 		piece(RuinKit.pier(SEED+210+int(side+1.0),0.55),Transform3D(Basis(Vector3.UP,yaw_of(c_deg+180.0)),gate))
 
-## The gust arrows' perches (docs/design/roguelike/crossing-viaduct-
-## perches.md), each a horn on a ruin-kit pillar with a standable top, and the
+## The gust arrows' perches, each a horn on a ruin-kit pillar with a standable
+## top, and the
 ## zones they fire on: the left perch (launcher 0) and the far perch (1) at
 ## the ends of their routes, the deck's (2), the low ones (3..).
 func _arrows(low: float) -> void:

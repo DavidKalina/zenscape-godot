@@ -1,6 +1,6 @@
 extends RefCounted
-## A material's on/off switches folded into its shader (docs/design/roguelike/
-## perf-city-run-round1.md). shaders/reference_surface.gdshader is one shader
+## A material's on/off switches folded into its shader.
+## shaders/reference_surface.gdshader is one shader
 ## for the grass, the flowers, ferns, mushrooms, the ground and the rock, each
 ## picking its paths with `uniform bool`s (grass_blades, flower_heads,
 ## terrain_growth, ...). Left as uniforms, the GPU carries every path's

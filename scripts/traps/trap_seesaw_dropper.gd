@@ -1,5 +1,5 @@
 extends "res://scripts/traps/trap_seesaw_drop.gd"
-## Seesaw dropper (traps-round2-seesaw.md): the timed trap. A heavy block
+## Seesaw dropper: the timed trap. A heavy block
 ## falls on the near end every `period` s with a warning glow (it lands as
 ## the span tips, a runner halfway across has the near end up); a pilot on the
 ## far half is thrown on and sideways (`veer`) off the span.

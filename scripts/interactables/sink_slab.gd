@@ -1,5 +1,5 @@
 extends "res://scripts/interactables/foot_slab.gd"
-## A sinking slab (docs/design/roguelike/crossing-viaduct-perches.md): one of
+## A sinking slab: one of
 ## the floating stones (scripts/interactables/foot_slab.gd, its look, its
 ## sag and tilt under his weight, a slam's shove), that gives way while he
 ## stands on it. After WAIT s stood on, it sinks RATE m/s, down to MOST m;

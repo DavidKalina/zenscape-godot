@@ -1,6 +1,5 @@
 extends Node3D
-## The Second Walker (round 4 card h2, docs/design/roguelike/brainstorm/
-## round4-strange-city/lens1-hunters.md): "Came in by the same door you
+## The Second Walker (round 4 card h2): "Came in by the same door you
 ## did. Has no road of his own." A clay figure the wanderer's size that
 ## walks his exact footprints, in order, with his timing, `delay` s behind.
 ##

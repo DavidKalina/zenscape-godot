@@ -1,6 +1,6 @@
 extends Node3D
-## The headless body's stone and its moves (scripts/enemies/headless_body.gd,
-## docs/design/roguelike/headless-body-round3-anim.md): the Blender model
+## The headless body's stone and its moves (scripts/enemies/headless_body.gd):
+## the Blender model
 ## (art/blender/headless_body/headless_body_build.py, assets/models/
 ## headless_body.glb) dressed in the ruin kit's stone as the inhaler head is
 ## (scripts/enemies/inhaler_head_look.gd `_dressed`: the kit's stone material,

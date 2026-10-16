@@ -355,7 +355,7 @@ var motor := PilotMotor.new()
 ## balustrades), or null: stepped round the motor's step each frame.
 var foot_pieces: Node = null
 ## His noises on the layer's NoiseBus and his ring of dust on the loud ones
-## (scripts/noise/wanderer_noise.gd, noise-stealth-round1.md); null: none.
+## (scripts/noise/wanderer_noise.gd); null: none.
 var wanderer_noise: RefCounted = WandererNoise.new()
 ## The sneak key (`walk_sneak`) eases the stick to this: a quiet pace.
 const SNEAK_STICK := 0.4
