@@ -20,6 +20,8 @@ shader_type spatial;
 // The kit isles' weathered rock (shaders/kit_weather.gdshaderinc; KitLook sets
 // `stone_weather` on its rock and ground, 0 everywhere else).
 #include "res://shaders/kit_weather.gdshaderinc"
+// The look pass's cloud bounce and sky fill (shaders/look_fill.gdshaderinc).
+#include "res://shaders/look_fill.gdshaderinc"
 render_mode cull_disabled, diffuse_lambert, specular_schlick_ggx;
 
 uniform bool brush_visible = false;
@@ -935,6 +937,9 @@ void fragment() {
 	if (earth_sides) contact = 1.0;
 	vec3 hemi = mix(zs_hemi_ground, zs_hemi_sky, light_normal.y * 0.5 + 0.5) * zs_hemi_energy / PI;
 	EMISSION = emissive_color + tint * hemi * contact;
+	// Look pass: the sunlit cloud sea below lighting the bellies and keels;
+	// its sky fill into the sun's shade is in light() (reference_direct_light).
+	EMISSION += tint * zs_look_bounce_light(light_normal);
 	if (underglow > 0.0 && !grass_blades && !flower_heads) EMISSION += tint * vec3(1.0, 0.88, 0.62) * underglow * grass_along * (0.6 + 0.4 * zs_hemi_energy / PI);
 	// A seed clock holds light through itself: a soft sky glow of its own.
 	if (flower_heads && grass_along > 0.95) EMISSION += tint * mix(zs_hemi_sky, vec3(1.0), 0.5) * zs_hemi_energy / PI * ZS_FLOWER_PUFF_LIGHT;

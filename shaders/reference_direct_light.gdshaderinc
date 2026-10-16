@@ -8,6 +8,12 @@ void light() {
 	if (!flowing && lake_display_lighting) energy = vec3(0.0);
 #endif
 	DIFFUSE_LIGHT += energy * nl / PI * (1.0 - metalness_value);
+#ifdef ZS_LOOK_FILL
+	// The look pass's sky fill (shaders/look_fill.gdshaderinc), the sun's
+	// light only: where its shadow falls or the face turns from it.
+	if (zs_look_fill > 0.0 && LIGHT_IS_DIRECTIONAL && dot((INV_VIEW_MATRIX * vec4(LIGHT, 0.0)).xyz, zs_key_direction) > 0.999)
+		DIFFUSE_LIGHT += zs_look_fill_light(1.0 - ATTENUATION * gate * smoothstep(0.0, 0.2, nl)) * (1.0 - metalness_value);
+#endif
 #ifdef ZS_FOLIAGE_TRANSMISSION
 	// Thin-sheet backscatter uses the same shadow attenuation as direct light.
 	// Keep it broad across a facet and strongest when looking toward the light.

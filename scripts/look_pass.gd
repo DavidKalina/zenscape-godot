@@ -64,6 +64,12 @@ var near_sea := not _flag("--dome-sea")
 const CloudVolume = preload("res://scripts/cloud_volume.gd")
 var cloud_volume: Node3D = CloudVolume.new() if CloudVolume.wanted() else null
 var shore := 1.0
+## The sunlit cloud sea's light on what faces down on it, and more of the
+## sky's hemisphere in the sun's shade (shaders/look_fill.gdshaderinc), so
+## the isles' bellies, crags and shaded stone keep their form. The bounce
+## goes with the cloud sea. --look-bounce=N / --look-fill=N try others.
+var bounce := _arg_float("--look-bounce=", 0.3)
+var fill := _arg_float("--look-fill=", 0.8)
 ## Night light round 1 (docs/design/night-light/round1.md): the night's glow
 ## kept tight. By day the bloom spreads over levels 2, 3 and 4; at night
 ## the widest (4) falls to NIGHT_GLOW.y and the middle (3) to NIGHT_GLOW.x
@@ -156,6 +162,8 @@ func update(camera: Camera3D, celestial) -> void:
 	_log_grass(dense)
 	_last_update = now
 	RenderingServer.global_shader_parameter_set("zs_look_shore", shore * on)
+	RenderingServer.global_shader_parameter_set("zs_look_bounce", bounce * cloud_sea * on)
+	RenderingServer.global_shader_parameter_set("zs_look_fill", fill * on)
 	# The chunk editor updates this texture in place; a regrow may replace it.
 	var water_map: Texture2D = _scene._precipitation.ground_texture
 	if water_map != null and water_map != _water_map:
