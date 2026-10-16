@@ -115,6 +115,33 @@ const LAYOUT := {
 		{"id":"fallen_pier","seed":5417,"at":Vector3(100.0,20.0,7.0),"rot":60.0},
 		# The Cellar: a worn floor where the stair lets out.
 		{"id":"floor","seed":5418,"at":Vector3(80.0,10.0,8.0),"rot":10.0},
+		# The landmarks, taller and less worn (their own `weathered` and
+		# `box`, dumped headless): on Threshold a pointed arch left standing
+		# north of the strip (15 m off its line, 13 m tall, its span along
+		# x), on the Crown a buttress off the east lip. The Halo's is the
+		# ring; the Cellar lies under the Crown.
+		{"id":"arch","seed":5501,"weathered":0.3,"at":Vector3(-6.0,0.0,-17.5),"rot":0.0,
+			"box":AABB(Vector3(-7.6,-0.2,-1.2),Vector3(14.9,14.3,3.0))},
+		{"id":"buttress","seed":5501,"weathered":0.3,"at":Vector3(104.5,20.0,2.5),"rot":90.0,
+			"box":AABB(Vector3(-1.9,-0.2,-1.9),Vector3(4.4,7.5,3.9))},
+	],
+	## Trees in clumps (MotifAuthored's hero trees: oak 9 m, birch 7.5,
+	## willow 6.5; a trunk collider), at their trunk's foot: Threshold's
+	## four corners off the strip's band (12 m and more off its line), the
+	## south rim's run-up (x 0..8) and the gate's line; two on the Crown's
+	## east. None on the Halo (the plane threads its ring) or the Cellar.
+	"trees":[
+		{"id":"tree_oak","seed":5601,"at":Vector3(-30.0,0.0,-14.5)},
+		{"id":"tree_birch","seed":5602,"at":Vector3(-25.5,0.0,-17.0)},
+		{"id":"tree_willow","seed":5603,"at":Vector3(-35.0,0.0,-12.5)},
+		{"id":"tree_oak","seed":5604,"at":Vector3(-25.0,0.0,15.5)},
+		{"id":"tree_birch","seed":5605,"at":Vector3(-21.0,0.0,18.5)},
+		{"id":"tree_willow","seed":5606,"at":Vector3(-28.5,0.0,17.5)},
+		{"id":"tree_birch","seed":5607,"at":Vector3(15.5,0.0,-14.5)},
+		{"id":"tree_oak","seed":5608,"at":Vector3(11.5,0.0,15.5)},
+		{"id":"tree_willow","seed":5609,"at":Vector3(15.0,0.0,12.0)},
+		{"id":"tree_oak","seed":5610,"at":Vector3(99.5,20.0,9.5)},
+		{"id":"tree_birch","seed":5611,"at":Vector3(104.0,20.0,-4.0)},
 	],
 	## Bands kept clear of tall flora round the pieces' feet (x, z).
 	"clear":[Rect2(20.0,-4.0,11.0,8.0),Rect2(52.0,-6.0,20.0,10.0),Rect2(83.0,-14.0,18.0,9.0),Rect2(79.0,14.0,5.0,5.5)],
@@ -268,7 +295,10 @@ func _solids() -> Array:
 		for p: Vector2 in ring: box = box.expand(p)
 		out.append([box.grow(-1.0),float(i.top)-float(i.depth)*KEEL_REACH,float(i.top),null])
 	for p: Dictionary in LAYOUT.dressing:
-		var b: AABB = pose(p)*DRESS_BOX
+		var b: AABB = pose(p)*(p.get("box",DRESS_BOX) as AABB)
+		out.append([Rect2(b.position.x,b.position.z,b.size.x,b.size.z),b.position.y,b.end.y,null])
+	for t: Dictionary in LAYOUT.trees:
+		var b := AABB(t.at+TREE_BOX.position,TREE_BOX.size)
 		out.append([Rect2(b.position.x,b.position.z,b.size.x,b.size.z),b.position.y,b.end.y,null])
 	for p: Dictionary in LAYOUT.pieces:
 		var b: AABB = pose(p)*(p.box as AABB)
@@ -319,16 +349,26 @@ func _pieces(root: Node3D) -> void:
 ## the stumps and stairs 2.8 m up), for the occupancy.
 const DRESS := 0.7
 const DRESS_BOX := AABB(Vector3(-3.8,-0.25,-3.8),Vector3(7.6,3.0,7.6))
+## A tree's occupancy (its crown's middle, the tallest, an oak, at 1.15)
+## and how far its trunk's foot sinks into the turf.
+const TREE_BOX := AABB(Vector3(-2.5,-0.2,-2.5),Vector3(5.0,10.6,5.0))
+const TREE_SINK := 0.15
 func _dress(root: Node3D) -> void:
 	var holder := Node3D.new()
 	holder.name = "Dressing"
 	root.add_child(holder)
 	for p: Dictionary in LAYOUT.dressing:
-		var node := RuinKit.piece(str(p.id),int(p.seed),DRESS)
+		var node := RuinKit.piece(str(p.id),int(p.seed),float(p.get("weathered",DRESS)))
 		if node == null: continue
 		node.name = "%s_%d" % [str(p.id),int(p.seed)]
 		node.transform = pose(p)
 		holder.add_child(node)
+	var Authored: Script = load("res://scripts/kit_isle/motif_authored.gd")
+	for t: Dictionary in LAYOUT.trees:
+		var tree: Node3D = Authored.tree(str(t.id),int(t.seed))
+		tree.name = "%s_%d" % [str(t.id),int(t.seed)]
+		tree.position = (t.at as Vector3)+Vector3(0.0,-TREE_SINK,0.0)
+		holder.add_child(tree)
 
 ## A piece of LAYOUT.pieces built (the torana with its rope count and dry
 ## rope; the hood with its bays and fallen count; the others by
