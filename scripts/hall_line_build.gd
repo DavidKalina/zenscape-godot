@@ -44,6 +44,7 @@ const HallPath = Hall.HallPath
 const SkyIslets = preload("res://scripts/sky_islets.gd")
 const SkyIslet = preload("res://scripts/sky_islet.gd")
 const RuinBump = preload("res://scripts/ruin_bump.gd")
+const KitFlora = preload("res://scripts/kit_isle/kit_flora.gd")
 
 ## Sundered's hall frame in a line piece's frame.
 const HALL := Transform3D(Basis(Vector3.UP,PI*0.5),Vector3.ZERO)
@@ -61,6 +62,20 @@ const TILE := 6.0
 ## BODY_FACES of the island's triangles.
 const BODY_HULLS := 40
 const BODY_FACES := 1500
+
+## The island's turf grass and flowers (KitFlora `Grow`, the aqueduct
+## isle's own growers, run on the worker): tufts a square metre at a
+## drift's thickest (the isle's is 4.6: this is seen at flying speed), their
+## size range (bigger, to read from the air), and the least rim, the
+## paving's and the lane's margins (m) kept bare. `--hall-tufts=0` turns it
+## off, `--hall-tufts=X` scales the density.
+const TUFTS := 3.0
+const TUFT_SIZE := Vector2(1.1,1.9)
+const HULL_NEAR := 0.45
+const HULL_CELL := 2.0
+const FLORA_HEIGHT := 1.2
+const LANE_MARGIN := 0.8
+const FLORA_SEED := 4177
 
 ## A line piece as a Sundered piece record (SunderedBuild's `near`, `far`
 ## and `_isle` take it): one straight stretch of its bays, both ends torn,
@@ -108,6 +123,8 @@ static func build(piece: Dictionary, palette: Dictionary) -> Dictionary:
 	var home_y := float((piece.origin as Vector3).y)+island_frame.origin.y
 	var dressed := SkyIslets.dress(shape,palette,home_y)
 	_soften_top(dressed)
+	var ring := PackedVector2Array()
+	for k in range(RIM_POINTS): ring.append(shape.rim_point(TAU*k/RIM_POINTS))
 	var island_usec := Time.get_ticks_usec()-began
 	var near_began := Time.get_ticks_usec()
 	var near: Node3D = SunderedBuild.near(hp)
@@ -121,15 +138,20 @@ static func build(piece: Dictionary, palette: Dictionary) -> Dictionary:
 	var hi := -Vector3.INF
 	var boxes: Array = []
 	var hulls := 0
+	var hull_boxes: Array = []
 	for body: StaticBody3D in bodies:
 		for holder in body.get_children():
 			var hull := (holder as CollisionShape3D).shape as ConvexPolygonShape3D
 			if hull == null: continue
 			var box := _box_of(hull.points,HALL)
 			boxes.append(box)
+			hull_boxes.append(box)
 			lo = lo.min(box.position)
 			hi = hi.max(box.end)
 			hulls += 1
+	var flora_began := Time.get_ticks_usec()
+	var flora := _flora(shape,ring,member.hall,island_frame,hp,palette,int(piece.seed),hull_boxes)
+	var flora_usec := Time.get_ticks_usec()-flora_began
 	var island_faces: Array[PackedVector3Array] = []
 	for part: String in ["top","sides"]:
 		var faces := _faces(dressed[part],-SkyIslets.OFF_MAP if part == "top" else Vector3.ZERO)
@@ -179,9 +201,7 @@ static func build(piece: Dictionary, palette: Dictionary) -> Dictionary:
 		body.collision_layer = 0
 	# Where the cloud breaks: round the island's rim at the top.
 	var rim := PackedVector3Array()
-	for k in range(RIM_POINTS):
-		var p: Vector2 = shape.rim_point(TAU*k/RIM_POINTS)
-		rim.append(island_frame*Vector3(p.x,0.0,p.y))
+	for p: Vector2 in ring: rim.append(island_frame*Vector3(p.x,0.0,p.y))
 	var samples: Array[Vector3] = []
 	var s := 0.0
 	while s <= float(hp.length)+0.1:
@@ -192,7 +212,7 @@ static func build(piece: Dictionary, palette: Dictionary) -> Dictionary:
 	if merged != null and merged.mesh != null:
 		for k in range(merged.mesh.get_surface_count()): tris += merged.mesh.surface_get_array_len(k)/3
 	return {"node":root,"bodies":bodies,"island":dressed,"island_at":at*island_frame,"pivot":pivot,"lo":lo,"hi":hi,"boxes":boxes,"rim":rim,
-		"samples":samples,"usec":Time.get_ticks_usec()-began,"near_usec":near_usec,"island_usec":island_usec,"hulls":hulls,"triangles":tris,"hall":hp}
+		"samples":samples,"usec":Time.get_ticks_usec()-began,"near_usec":near_usec,"island_usec":island_usec,"flora":flora,"flora_usec":flora_usec,"hulls":hulls,"triangles":tris,"hall":hp}
 
 ## A built piece as the hall rise's plan (scripts/hall_rise_plan.gd's
 ## shape): one chunk, the built root its `node` (HallRise takes it as
@@ -213,6 +233,15 @@ static func stand_island(islets: Node3D, made: Dictionary, root: Node3D) -> Node
 	var b: Dictionary = islets.stand("Island",at.origin,made.island,root)
 	var node: Node3D = b.node
 	node.basis = at.basis
+	# The turf's grass and flowers, the batches the worker laid (its
+	# shape's frame, as the islet's own plants are).
+	var parts: Array = made.get("flora",[])
+	if not parts.is_empty():
+		var tufts := Node3D.new()
+		tufts.name = "Tufts"
+		for part: Dictionary in parts:
+			tufts.add_child(KitFlora.batch_node(str(part.key),part.tile,int(part.count),part.buffer))
+		node.add_child(tufts)
 	return node
 
 ## Frees what a built piece holds that is in no tree (a piece never stood:
@@ -222,6 +251,61 @@ static func release(made: Dictionary) -> void:
 		if is_instance_valid(body) and not body.is_inside_tree(): body.free()
 	var node: Variant = made.get("node")
 	if node != null and is_instance_valid(node) and not (node as Node).is_inside_tree(): (node as Node).free()
+
+## The turf's grass tufts and flowers, as plain batches ([{key, tile,
+## count, buffer}], KitFlora `Grow` with a `plain` site): worker-safe, no
+## physics space. The probe reads the island's own ground: open land, not
+## steeper than the palette's rock slope (the same on every side of the
+## root), off the water, trunks and stones, and clear of the hall's
+## paving and its margin, and of the flown lane along the whole piece.
+static func _flora(shape: RefCounted, ring: PackedVector2Array, to_isle: Transform3D, island_frame: Transform3D, hp: Dictionary, palette: Dictionary, piece_seed: int, hull_boxes: Array) -> Array:
+	var density := _density()
+	if density <= 0.0: return []
+	var back := to_isle.affine_inverse()
+	var path: HallPath = hp.path
+	var steep: float = float(palette.rock_slope)*KitFlora.STEEP_SHARE
+	var lane_mid: float = Sundered.LANE_MID
+	var lane_half: float = (Hall.LANE.y-Hall.LANE.x)*0.5
+	# The hall's hulls (paving, columns, walls: AABBs in the piece's frame)
+	# filed by HULL_CELL m cells, so a point asks only the boxes near it.
+	var grid := {}
+	for box: AABB in hull_boxes:
+		for cx in range(floori((box.position.x-HULL_NEAR)/HULL_CELL),floori((box.end.x+HULL_NEAR)/HULL_CELL)+1):
+			for cz in range(floori((box.position.z-HULL_NEAR)/HULL_CELL),floori((box.end.z+HULL_NEAR)/HULL_CELL)+1):
+				var key := Vector2i(cx,cz)
+				if not grid.has(key): grid[key] = []
+				(grid[key] as Array).append(box)
+	var site := KitFlora.Site.new()
+	site.tufts = TUFTS*density
+	site.tuft_size = TUFT_SIZE
+	site.plain = true
+	site.wet = func(p: Vector2) -> bool: return shape.wet(p)
+	site.probe = func(p: Vector2, reach: float) -> float:
+		if not shape.on_land(p) or shape.blocked(p): return NAN
+		# The lane's strip along every s.
+		var loc: Vector3 = path.locate(back*Vector3(p.x,0.0,p.y))
+		if absf(loc.z-lane_mid) < lane_half+LANE_MARGIN: return NAN
+		var h: float = shape.ground_at(p)
+		# Under or beside the hall's paving, columns and walls: no turf there.
+		var at := island_frame*Vector3(p.x,h,p.y)
+		var near: Variant = grid.get(Vector2i(floori(at.x/HULL_CELL),floori(at.z/HULL_CELL)))
+		if near != null:
+			for box: AABB in near:
+				if at.x > box.position.x-HULL_NEAR and at.x < box.end.x+HULL_NEAR and at.z > box.position.z-HULL_NEAR and at.z < box.end.z+HULL_NEAR 						and at.y < box.end.y+HULL_NEAR and at.y+FLORA_HEIGHT > box.position.y: return NAN
+		var offsets: Array = [Vector2(reach,0.0),Vector2(-reach,0.0),Vector2(0.0,reach),Vector2(0.0,-reach)]
+		for off: Vector2 in offsets:
+			var q: Vector2 = p+off
+			if not shape.on_land(q): return NAN
+			if absf(shape.ground_at(q)-h)/maxf(reach,0.01) > steep: return NAN
+		return h
+	var job := KitFlora.Grow.new(FLORA_SEED+(piece_seed & 0xffff),null,[],[ring],site)
+	while not job.step(-1): pass
+	return job.parts
+
+static func _density() -> float:
+	for a in preload("res://scripts/launch_args.gd").user_args():
+		if a.begins_with("--hall-tufts="): return float(a.substr(13))
+	return 1.0
 
 ## The island's top painted as the aqueduct isle's turf is (KitLook
 ## GroundMesh): each face carries its own flat tone (three grass tones by
