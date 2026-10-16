@@ -5,17 +5,18 @@ extends RefCounted
 ## Each still part answers {at (its middle, world), glint (where the
 ## binoculars see it glint: `at`, or the water's surface over it), stand and
 ## face (where --part-at=<id> starts the pilot, facing it), move (how it's
-## got)}. Two ride: the tail fin on the rune serpent's back (`fin_ring`,
-## `on_serpent`) and the propeller on the salvager's rope (`snag`).
+## got)}. Two ride: the tail fin on the sky folk's ferry's foredeck
+## (`on_ferry`) and the propeller on the salvager's rope (`snag`).
 ##
 ##   wheel       on the stone circle's standing lintel nearest the start (the
 ##               east one, on the skyline from the parked plane): up the
 ##               hill's tiers and the leaning stone onto the lintels
 ##   wingtip     under the cloister tarn's water, out in its deep across from
 ##               the shrine isle: swim out to it
-##   fin         caught in the rune serpent's back ridges RIDE_ARC m back from
-##               its snout (where the watcher's rune rode): ride it from the
-##               home ledge; it carries you on toward the tarn
+##   fin         lying on the ferry's foredeck by the cabin's front, port
+##               side (FIN_DECK), carried round its loop with it (scripts/
+##               kit_isle/airship_ferry.gd): board it at any stop (home by
+##               the start) and walk forward to it
 ##   windscreen  lying in the drowned nave's aisle water, a bay past the
 ##               crossing (later it falls there at dusk)
 ##   propeller   on a rope under a sky-folk plane flying a fixed loop whose
@@ -36,14 +37,16 @@ const Gorge = preload("res://studies/sundered_gorge_isle_art.gd")
 const BellSpires = preload("res://scripts/kit_isle/motif_bell_spires.gd")
 const Belfry = preload("res://scripts/ruin_kit_belfry.gd")
 const SnagPlane = preload("res://scripts/snag_plane.gd")
+const AirshipFerry = preload("res://scripts/kit_isle/airship_ferry.gd")
 
 ## The six, in the order the direction lists them.
 const IDS := ["wheel","cowl","fin","wingtip","propeller","windscreen"]
 ## Each part's isle in the ledger (its objective is "<isle>/<part id>").
 const ISLES := {"wheel":"aqueduct_isle","fin":"aqueduct_isle","wingtip":"cloister_tarn","windscreen":"drowned_nave","propeller":"sundered_gorge","cowl":"bell_spires"}
-## How each is found: "still" where it's laid, "serpent" riding its back,
-## "snag" on the salvager's rope.
-const KINDS := {"wheel":"still","cowl":"still","fin":"serpent","wingtip":"still","propeller":"snag","windscreen":"still"}
+## How each is found: "still" where it's laid, "ferry" on the ferry's deck,
+## "snag" on the salvager's rope ("serpent", riding the rune serpent's back,
+## when the ferry is left out and --serpent flies it).
+const KINDS := {"wheel":"still","cowl":"still","fin":"ferry","wingtip":"still","propeller":"snag","windscreen":"still"}
 ## A still part's middle over what it rests on (m).
 const HOVER := 0.85
 ## The wingtip under the tarn's surface (m), in water at least SWIM_DEEP m
@@ -59,8 +62,13 @@ const GLINT_OVER := 0.3
 const LIE := 0.18
 ## The cowl's middle under the bell's mouth (m).
 const UNDER_BELL := 0.3
-## The tail fin: m back from the serpent's snout (the watcher's rune's,
-## scripts/kit_isle/watcher.gd RIDE_ARC), over its back's crest.
+## The tail fin on the ferry's deck (its frame, m, over the deck's top):
+## on the foredeck by the cabin's front, toward the port rail, out of reach
+## of where a start aboard stands him (the foredeck's middle, about 1.5 m
+## off) and clear of the bow hand. Off the ferry (--no-ferry, --serpent):
+## m back from the serpent's snout (the watcher's rune's, scripts/kit_isle/
+## watcher.gd RIDE_ARC), over its back's crest.
+const FIN_DECK := Vector3(-0.85,0.55,-0.95)
 const RIDE_ARC := 45.0
 const FIN_LIFT := 0.55
 ## The salvager's loop: the dip's pass this far out from the gate tower's
@@ -168,6 +176,12 @@ static func cowl_floor() -> Vector3:
 	return frame*Vector3(COWL_FLOOR.x,Belfry.FLOOR+HOVER,COWL_FLOOR.y)+offset("bell_spires")
 
 # --- The two that ride ------------------------------------------------------------------
+
+## The fin's frame on the ferry's foredeck now (its pose, FIN_DECK over its
+## deck), upright along the ship.
+static func on_ferry(ferry: Node3D) -> Transform3D:
+	var pose: Transform3D = ferry.pose
+	return pose*Transform3D(Basis.IDENTITY,FIN_DECK+Vector3.UP*AirshipFerry.DECK)
 
 ## The serpent's ring nearest RIDE_ARC m back from its snout.
 static func fin_ring(serpent: Node3D) -> int:

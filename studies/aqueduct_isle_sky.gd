@@ -21,9 +21,11 @@ extends Node3D
 ##               the plane's own propeller drone (scripts/glide_air.gd
 ##               `engine`). One is the ferry (scripts/kit_isle/
 ##               airship_ferry.gd): a bigger ship on its own loop that
-##               rests by the isle's south edge and by the bell spires,
-##               ridden on foot (--ferry-aboard starts on its deck;
-##               --no-ferry). --no-airships.
+##               shuttles round the isle's south edge, the Sundered gorge,
+##               the drowned nave, the cloister tarn and the bell spires,
+##               resting by a turf edge at each, ridden on foot
+##               (--ferry-aboard[=<stop>] starts on its deck, --ferry-at=
+##               <stop> by a stop; --no-ferry). --no-airships.
 ##   traffic     the game's CPU biplanes (scripts/sky_traffic.gd): laps
 ##               round the motif isles, buzzes of their tops and passes
 ##               through the drifting clouds, climbing over what stands.
@@ -47,10 +49,12 @@ extends Node3D
 ##               into the cloud sea under the bell spires and home; it
 ##               watches and paces the plane, solid to it. --no-serpent.
 ##               See docs/scenic/rune-serpent.md. Where the motif isles
-##               stand it flies the route between them instead, ridden on
-##               foot from a ledge at each (scripts/kit_isle/
-##               serpent_route.gd, docs/design/serpent-route.md);
-##               --serpent-old-route keeps the long way above.
+##               stand (the aqueduct isle, the game's scene) it is left
+##               out unless --serpent asks for it; then it flies the route
+##               between them, ridden on foot from a ledge at each
+##               (scripts/kit_isle/serpent_route.gd, docs/design/
+##               serpent-route.md), or with --serpent-old-route the long
+##               way above (and no ferry).
 ## --no-sky leaves all of it out. See docs/scenic/aqueduct-isle-sky.md.
 ## The far isles, the clusters and the pierced isle this sky had are gone
 ## (docs/scenic/motif-sky.md); the old game still has them (scripts/
@@ -81,14 +85,14 @@ const MIDDLE := Vector3(85.0,30.0,-20.0)
 
 ## The airships' loops (world waypoints, flown round and round, a Catmull-Rom
 ## through them) and their speeds (m/s). The first circles the colonnade
-## spine; the second the cloister tarn. Both keep well off the rune
-## serpent's way. The ship that passed the isle close and out by the bell
-## spires is the ferry now (scripts/kit_isle/airship_ferry.gd: its own
-## loop, resting by the isle's south edge and the bell spires, ridden on
-## foot), last in `airships`.
+## spine; the second the cloister tarn, high (84 m and up) so the ferry's
+## way in and out of the tarn passes some 25 m under it. Both keep well off
+## the rune serpent's way. The ship that passed the isle close and out by
+## the bell spires is the ferry now (scripts/kit_isle/airship_ferry.gd: its
+## own loop round five isles, ridden on foot), last in `airships`.
 const ROUTES := [
 	[[Vector3(-190.0,64.0,-140.0),Vector3(-440.0,60.0,-230.0),Vector3(-380.0,64.0,-560.0),Vector3(-60.0,58.0,-520.0),Vector3(-40.0,60.0,-300.0)],7.5],
-	[[Vector3(60.0,70.0,210.0),Vector3(290.0,58.0,360.0),Vector3(60.0,62.0,590.0),Vector3(-170.0,60.0,360.0)],8.0],
+	[[Vector3(60.0,92.0,210.0),Vector3(290.0,84.0,360.0),Vector3(60.0,86.0,590.0),Vector3(-170.0,84.0,360.0)],8.0],
 ]
 ## The airship's bank per radian a second of turn, and most.
 const SHIP_BANK := 0.9
@@ -159,16 +163,23 @@ func setup(study: Node3D) -> void:
 	if args.has("--no-sky-tokens"): on.tokens = false
 	if args.has("--no-serpent"): on.serpent = false
 	if args.has("--no-sky-clouds"): on.clouds = false
-	if on.isles and scene.has_method("wants_motifs") and scene.wants_motifs(): _start_motifs(args)
+	if on.isles and _with_motifs(): _start_motifs(args)
 	if on.airships: _build_airships()
 	if on.traffic: _build_traffic()
 	if on.clouds: _build_clouds()
 	if on.life and motifs != null: _build_life()
 	if on.motes: _build_motes()
 	if on.tokens: _build_tokens()
-	if on.serpent: _build_serpent()
+	# The motif isles' sky (the aqueduct isle's, the game's) has no serpent
+	# unless --serpent asks for it; the ferry shuttles between its isles.
+	if on.serpent and (not _with_motifs() or args.has("--serpent")): _build_serpent()
 
 # --- The motif isles ----------------------------------------------------------------
+
+## Whether the scene asks for the motif isles (`wants_motifs`: the aqueduct
+## isle, the game's scene).
+func _with_motifs() -> bool:
+	return scene.has_method("wants_motifs") and scene.wants_motifs()
 
 ## The four ruin motifs' isles, placed (scripts/kit_isle/motif_sky.gd): each
 ## built on a worker and stood a slice a frame within the sky's budget.
@@ -491,9 +502,9 @@ func token_source() -> String:
 
 ## The rune serpent (scripts/rune_serpent.gd): self-contained, it runs its
 ## own frame and physics frame and reads the study's camera and plane. With
-## the motif isles it flies the route between them (`route`, scripts/
-## kit_isle/serpent_route.gd: the ledges and the rider), unless
-## --serpent-old-route.
+## the motif isles (only with --serpent) it flies the route between them
+## (`route`, scripts/kit_isle/serpent_route.gd: the ledges and the rider),
+## unless --serpent-old-route.
 var serpent: Node3D
 var route: Node3D
 

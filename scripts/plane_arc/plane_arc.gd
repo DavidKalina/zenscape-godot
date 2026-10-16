@@ -38,10 +38,12 @@ extends Node3D
 ## ferry (scripts/kit_isle/airship_ferry.gd): aboard by the start, off at
 ## the bell spires' west edge, up the low stair and the hero's.
 ##
-## The tail fin rides the rune serpent's back (the watcher's find:
-## scripts/kit_isle/watcher.gd borrows it, `fin_holder`); the propeller hangs
-## on a rope under the salvager's plane (scripts/snag_plane.gd) flying its
-## loop down the Sundered gorge's west lip.
+## The tail fin lies on the ferry's foredeck, carried round its loop with
+## it (PartSpots `on_ferry`; the watcher's find: scripts/kit_isle/
+## watcher.gd borrows it, `fin_holder`); without the ferry, on the rune
+## serpent's back if --serpent flies it. The propeller hangs on a rope
+## under the salvager's plane (scripts/snag_plane.gd) flying its loop down
+## the Sundered gorge's west lip.
 ##
 ## Flags (the game's, after --):
 ##   --plane-fixed      starts repaired: the plane flies; the parts are laid
@@ -50,7 +52,8 @@ extends Node3D
 ##   --parts-carried    starts carrying every part not fitted (a dev start:
 ##                      nothing it takes or fits is saved)
 ##   --part-at=<id>     starts the pilot by that part: wheel, wingtip, fin
-##                      (on the home ledge, the serpent coming), windscreen,
+##                      (aboard the ferry at home, the fin a step off),
+##                      windscreen,
 ##                      propeller (on the gate tower's crown, a pass coming),
 ##                      cowl (on the belfry floor; the way there on foot:
 ##                      --ferry-aboard, scripts/kit_isle/airship_ferry.gd)
@@ -80,7 +83,7 @@ const BellSpires = preload("res://scripts/kit_isle/motif_bell_spires.gd")
 const IDS := PartSpots.IDS
 ## The names the pops use, and what each says as it's taken.
 const NAMES := {"wheel":"The wheel","cowl":"The cowl","fin":"The tail fin","wingtip":"The wingtip","propeller":"The propeller","windscreen":"The windscreen"}
-const TAKEN := {"wheel":"The wheel","cowl":"The cowl, worked loose from under the bell","fin":"The tail fin, off the old serpent's back",
+const TAKEN := {"wheel":"The wheel","cowl":"The cowl, worked loose from under the bell","fin":"The tail fin, off the ferry's deck",
 	"wingtip":"The wingtip, up out of the tarn","propeller":"The propeller, torn off the salvager's rope","windscreen":"The windscreen, out of the drowned aisle"}
 ## A laid part's size (m across), and carried, its share of that.
 const SIZE := 0.9
@@ -139,9 +142,11 @@ var fitting: Array[String] = []
 var _flying: Array[Dictionary] = []
 var _fit_left := 0.0
 ## The salvager's plane (scripts/snag_plane.gd) and its loop
-## (PartSpots `snag`); the serpent and the fin's ring on it.
+## (PartSpots `snag`); the ferry the fin lies on, or else the serpent and
+## the fin's ring on it.
 var snag: Node3D
 var snag_spot := {}
+var ferry: Node3D
 var serpent: Node3D
 var fin_ring := -1
 var cough: Node3D
@@ -155,10 +160,10 @@ var _was_flying := false
 
 func _init() -> void:
 	name = "PlaneArc"
-	# After the serpent (-101) and its rider (-100) move.
+	# After the serpent (-101) and its rider (-100) or the ferry (-100) move.
 	process_priority = -60
 
-## The arc on `scene` (the aqueduct isle, its sky and serpent up).
+## The arc on `scene` (the aqueduct isle, its sky and ferry up).
 func setup(scene: Node3D) -> void:
 	host = scene
 	var args := LaunchArgs.user_args()
@@ -181,6 +186,7 @@ func setup(scene: Node3D) -> void:
 	cough = PlaneCough.new()
 	add_child(cough)
 	var sky: Node3D = host.get("sky")
+	ferry = sky.get("ferry") if sky != null else null
 	serpent = sky.get("serpent") if sky != null else null
 	if serpent != null and serpent.has_method("ring_frame"): fin_ring = PartSpots.fin_ring(serpent)
 	for id: String in IDS:
@@ -217,7 +223,7 @@ func _shrink(holder: Node3D) -> void:
 
 ## Part `id` laid where it's found, glinting.
 func _lay(id: String) -> void:
-	match PartSpots.KINDS[id]:
+	match kind(id):
 		"still":
 			var s := PartSpots.spot(id,host)
 			if s.is_empty():
@@ -235,8 +241,9 @@ func _lay(id: String) -> void:
 				_glints[id] = glint
 				spot(glint,PartSpots.objective(id))
 			else: spot(holder,PartSpots.objective(id))
-		"serpent":
-			if serpent == null or fin_ring < 0: return
+		"ferry", "serpent":
+			if kind(id) == "serpent" and (serpent == null or fin_ring < 0): return
+			if kind(id) == "ferry" and ferry == null: return
 			var holder := _make(id,false)
 			holder.set("turning",false)
 			holders[id] = holder
@@ -249,12 +256,20 @@ func _lay(id: String) -> void:
 static func spot(node: Node3D, id: String) -> void:
 	Telescope.spottable(node,id)
 
-## The fin on the serpent's back where it is now.
-func place_fin() -> void:
-	if state.get("fin","") != "laid" or not holders.has("fin") or serpent == null: return
-	(holders.fin as Node3D).global_transform = PartSpots.on_serpent(serpent,fin_ring)
+## How part `id` is found (PartSpots KINDS): the fin on the ferry's deck,
+## or on the serpent's back when there's no ferry and a serpent flies.
+func kind(id: String) -> String:
+	var k: String = PartSpots.KINDS[id]
+	if k == "ferry" and ferry == null and serpent != null: return "serpent"
+	return k
 
-## The fin's holder while it rides the serpent (the watcher's find), or null.
+## The fin on the ferry's deck (or the serpent's back) where it is now.
+func place_fin() -> void:
+	if state.get("fin","") != "laid" or not holders.has("fin"): return
+	if ferry != null: (holders.fin as Node3D).global_transform = PartSpots.on_ferry(ferry)
+	elif serpent != null and fin_ring >= 0: (holders.fin as Node3D).global_transform = PartSpots.on_serpent(serpent,fin_ring)
+
+## The fin's holder while it rides the ferry (the watcher's find), or null.
 func fin_holder() -> Node3D:
 	return holders.get("fin") if state.get("fin","") == "laid" else null
 
@@ -278,7 +293,7 @@ func _build_snag() -> void:
 func _process(delta: float) -> void:
 	advance(delta)
 
-## The parts' frame: the fin on the serpent, the carried following, the
+## The parts' frame: the fin on the ferry, the carried following, the
 ## fitting beat.
 func advance(delta: float) -> void:
 	if host == null or delta <= 0.0: return
@@ -527,7 +542,7 @@ func _start_by(id: String) -> void:
 	if isle_id != "aqueduct_isle": _stand_up(isle_id)
 	var at := Vector3.INF
 	var face := Vector2(0.0,-1.0)
-	match PartSpots.KINDS[id]:
+	match kind(id):
 		"still":
 			var s: Dictionary = spots.get(id,PartSpots.spot(id,host))
 			if s.is_empty(): return
@@ -537,6 +552,11 @@ func _start_by(id: String) -> void:
 			at = snag_spot.stand
 			face = snag_spot.face
 			snag.clock = snag.lap-SNAG_SOON
+		"ferry":
+			# Aboard at home, the fin a step off on the foredeck.
+			if ferry != null and host.has_signal("isle_ready"):
+				host.isle_ready.connect(func() -> void: ferry.start("home",true),CONNECT_ONE_SHOT)
+			return
 		"serpent":
 			var sky: Node3D = host.get("sky")
 			var route: Node3D = sky.get("route") if sky != null else null
