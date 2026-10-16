@@ -25,6 +25,7 @@ const BodySpawner = preload("res://scripts/enemies/body_spawner.gd")
 const EnemyYard = preload("res://studies/enemy_yard.gd")
 const DragonAirBlast = preload("res://scripts/dragon_air_blast.gd")
 const FieldSky = preload("res://studies/olmec_field_sky.gd")
+const Arena = preload("res://scripts/olmec_boss/arena.gd")
 
 ## The field: its radius (m), the turf's datum, the land's depth under it.
 const FIELD_R := 40.0
@@ -44,6 +45,9 @@ const STONE_R := 35.5
 const CARD := "Olmec field  ·  Tab / R3 lock on  ·  X gust shot  ·  R start again"
 
 var enemies: Node
+## The breakable arena (scripts/olmec_boss/arena.gd): its `hit_at` is the
+## attacks' entry point.
+var arena: Node3D
 var free_charge := true
 var calm := false
 var _olmec_at := OLMEC_AT
@@ -120,6 +124,9 @@ static func _outline() -> Array:
 func _build_room() -> void:
 	_build_art()
 	_build_enemies()
+	arena = Arena.new()
+	add_child(arena)
+	arena.setup(self)
 
 func _build_art() -> void:
 	art = Node3D.new()
@@ -201,6 +208,7 @@ func reset_olmec() -> void:
 func respawn() -> void:
 	super.respawn()
 	reset_olmec()
+	if arena != null: arena.rebuild()
 
 func tick(delta: float) -> void:
 	# Charge for the demo: full whenever he's on foot.
@@ -219,7 +227,7 @@ func tick(delta: float) -> void:
 				_say("The Olmec crumbles!  ·  R to bring him back",4.0)
 			_down_t += delta
 		if camera != null:
-			var q := float(b.quake)*clampf(1.0-camera.global_position.distance_to(b.global_position)/60.0,0.0,1.0)
+			var q := maxf(float(b.quake),float(arena.hub.quake) if arena != null else 0.0)*clampf(1.0-camera.global_position.distance_to(b.global_position)/60.0,0.0,1.0)
 			if q > 0.001:
 				var t := Time.get_ticks_msec()/1000.0
 				camera.position += Vector3(sin(t*61.0),sin(t*53.0+1.0),sin(t*47.0+2.0))*q*0.5
