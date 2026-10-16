@@ -99,8 +99,8 @@ const LAYOUT := {
 	# under the capital's top (a deck's waist), the knock (m/s out, up), the
 	# window (m of a deck's middle off the pier's) they swing in.
 	"fender":{"arm":2.4,"block":Vector3(1.0,1.1,1.0),"drop":0.3,"knock":Vector2(3.5,3.0),"window":10.0},
-	# The quarry's stone: [kind, x, z, size or radius, ...] as Lamplighters'
-	# `stones`: ["block", x, z, size, yaw, pitch, roll, sunk], ["drum", x, z,
+	# The quarry's stone: [kind, x, z, size or radius, ...]:
+	# ["block", x, z, size, yaw, pitch, roll, sunk], ["drum", x, z,
 	# radius, length, yaw, sunk], ["slab", x, z, size, yaw, pitch, roll,
 	# sunk] (a block with its rough end unworked), ["split", x, z, size, yaw,
 	# sunk, gap] (a block split in two, wedges in the split). A: the
@@ -1010,19 +1010,16 @@ func live(g: Node) -> void:
 	var p: Dictionary = LAYOUT.pier
 	var k := 0
 	for at: Vector3 in [Vector3(-1.0,la.y,-5.9),Vector3(float(LAYOUT.house_b.x)+0.6,lb.y,9.6),Vector3(float(p.x)+3.6,pier_top(),-1.4)]:
-		var lamp: Node3D = CityFires.cresset(fires,Transform3D(Basis.IDENTITY,g.w(at)),{"size":"crown","seed":SEED+40+k,"name":"HaulLamp%d" % k,"lit":true,"barge":false,"beam":LAMP_BEAM})
-		SC._still(lamp)
+		CityFires.cresset(fires,Transform3D(Basis.IDENTITY,g.w(at)),{"size":"crown","seed":SEED+40+k,"name":"HaulLamp%d" % k,"lit":true,"barge":false,"beam":LAMP_BEAM})
 		k += 1
 	# B's lamp on its knoll (lit since ever): the far shore read from A.
 	# Polish: a dim cresset on a low plinth, not a beacon tower's blaze.
 	var bc: Vector2 = LAYOUT.b.beacon
 	if grey():
-		var tower: Node3D = CityFires.tower(fires,Transform3D(Basis(Vector3.UP,0.6),g.w(Vector3(bc.x,b_ground(bc.x,bc.y)-0.4,bc.y))),{"seed":SEED+50,"name":"FarBeacon","lit":true,"tiers":2,"beam":3.0})
-		SC._still(tower)
+		CityFires.tower(fires,Transform3D(Basis(Vector3.UP,0.6),g.w(Vector3(bc.x,b_ground(bc.x,bc.y)-0.4,bc.y))),{"seed":SEED+50,"name":"FarBeacon","lit":true,"tiers":2,"beam":3.0})
 	else:
 		var top := b_ground(bc.x,bc.y)+KNOLL_PLINTH
-		var far_lamp: Node3D = CityFires.cresset(fires,Transform3D(Basis(Vector3.UP,0.6),g.w(Vector3(bc.x,top,bc.y))),{"size":"crown","seed":SEED+50,"name":"FarBeacon","lit":true,"barge":false,"beam":LAMP_BEAM*1.3})
-		SC._still(far_lamp)
+		CityFires.cresset(fires,Transform3D(Basis(Vector3.UP,0.6),g.w(Vector3(bc.x,top,bc.y))),{"size":"crown","seed":SEED+50,"name":"FarBeacon","lit":true,"barge":false,"beam":LAMP_BEAM*1.3})
 	var args := preload("res://scripts/launch_args.gd").user_args()
 	var yard := str(study.get_script().resource_path).ends_with("motif_yard.gd")
 	if yard: _far(g)
@@ -1055,9 +1052,9 @@ func _olmec(g: Node, hub: Node3D, beat_xz: Array, y: float, face: Vector2, s: in
 	var post: Vector3 = beat[1]
 	var body: Node3D = g.enemy(HeadlessBody,post+Vector3.UP*0.1,face,{"chase":1,"chase_routes":1,"seed":s})
 	var head: Node3D = g.enemy(InhalerHead,post+Vector3.UP*0.1,face,{})
-	# (The Lamplighters' Keeper: the Stacked Court's, its refind safe for
-	# bodies freed by a fall or a reset.)
-	var keeper: Node = preload("res://scripts/kit_isle/greybox/gb_lamplighters_stair.gd").Keeper.new()
+	# (The Stacked Court's Keeper, its refind safe for bodies freed by a
+	# fall or a reset.)
+	var keeper: Node = Keeper.new()
 	keeper.name = "Rider_STANDIN_%d" % s
 	keeper.beat = beat
 	keeper.post = post
@@ -1081,6 +1078,26 @@ func _far(g: Node) -> void:
 		for nd: Node in pl.find_children("*","CollisionObject3D",true,false): (nd as CollisionObject3D).collision_layer = 0
 		far.add_child(pl)
 		if k % 2 == 0:
-			var t: Node3D = CityFires.tower(far,Transform3D(Basis(Vector3.UP,k*1.3),at+Vector3(float(f[3])*0.3,2.0*SO,0.0)),{"tiers":2,"base":9.0,"steps":false,"lit":true,"seed":SEED+80+k,"name":"FarTower%d" % k,"beam":3.0})
-			SC._still(t)
+			CityFires.tower(far,Transform3D(Basis(Vector3.UP,k*1.3),at+Vector3(float(f[3])*0.3,2.0*SO,0.0)),{"tiers":2,"base":9.0,"steps":false,"lit":true,"seed":SEED+80+k,"name":"FarTower%d" % k,"beam":3.0})
 		k += 1
+
+## STAND-IN: the Keeper's rounds (the Stacked Court's Keeper, its refind
+## made safe for a reset's freed bodies): while he listens or roams and
+## isn't hunting, turns him toward the next point of his beat, back and
+## forth; holds him at his post till the ground under him stands; puts his
+## head back after a reset; hands every Olmec the breakables hub.
+class Keeper extends "res://scripts/kit_isle/greybox/gb_stacked_court.gd".Keeper:
+	func _refind() -> void:
+		if field == null: return
+		body = null
+		head = null
+		for e in field.enemies:
+			if not is_instance_valid(e): continue
+			var n := e as Node3D
+			if n.has_method("make_whole") and n.position.distance_to(post) < 6.0: body = n
+			elif n.has_method("mouth") and n.position.distance_to(post) < 12.0: head = n
+		if body != null and head != null:
+			body.make_whole(head)
+			landed = false
+			leg = 1
+			dir = 1

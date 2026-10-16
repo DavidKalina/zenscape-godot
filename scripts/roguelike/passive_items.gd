@@ -3,10 +3,8 @@ extends Node
 ## One node on the study, reading `RunState.holds(id)` every frame so an item
 ## taken mid-layer works at once and one lost with the run is gone:
 ##   heart_vessel  (once) +1 max heart and two mended (RunState.add_vessel)
-##   lantern       a warm light on him: a real OmniLight3D and a SightLight
-##                 (scripts/enemies/sight_light.gd), so the underground reads
-##                 lit for him -- and for the Olmec's eyes (LightLevel); a
-##                 LightDrinker drinks it like any torch
+##   lantern       a warm light on him (a real OmniLight3D), so the
+##                 underground reads lit for him
 ##   waystone      a small warm arrow over his shoulder, leaning at the gate
 ##   quiet_soles   less noise (scripts/roguelike/passive_noise.gd)
 ##   rune_magnet   runes within MAGNET m drift to him
@@ -28,7 +26,6 @@ var study: Node3D
 var run: RefCounted
 var _lamp: Node3D = null
 var _omni: OmniLight3D
-var _sight: SightLight
 var _flame: MeshInstance3D
 var _arrow: Node3D = null
 var _arrow_mat: StandardMaterial3D
@@ -64,7 +61,6 @@ func _lantern(me: Node3D) -> void:
 		_make_lamp()
 	if _lamp == null: return
 	_lamp.visible = on
-	_sight.lit = on
 	if not on: return
 	var s := WorldScale.wanderer
 	var b := me.global_basis
@@ -86,10 +82,6 @@ func _make_lamp() -> void:
 	_omni.shadow_enabled = false
 	_omni.omni_attenuation = 1.3
 	_lamp.add_child(_omni)
-	_sight = SightLight.new()
-	_sight.strength = 0.5
-	_sight.radius = 9.0
-	_lamp.add_child(_sight)
 	_flame = MeshInstance3D.new()
 	var ball := SphereMesh.new()
 	var s := WorldScale.wanderer

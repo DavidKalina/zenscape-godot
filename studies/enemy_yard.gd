@@ -3,32 +3,28 @@ extends "res://studies/character_study.gd"
 ## in open sky for trying an enemy against the pilot, in the interactables
 ## yard's style (the character study's grey structure; this extends it, so
 ## the motor, figure, camera, F1 numbers, F2 feel and recorder are the
-## character study's). Laid out for the bullfight (scripts/enemies/plinth_ram.gd):
-##   - an open isle, 24 by 26 m, its rims open over the drop: open ground
-##     in the middle (a dodge there is a miss it comes back from), rims all
-##     round to bait it toward, and every rim hangs (step off it slowly);
-##   - the spit: a 2.5 m wide, 9 m long tongue off the south rim. Stand at
-##     its tip and the dodge is risky (a slide aside goes off it too, unless
-##     you hang) and sure (any miss there sends it over);
-##   - two low boulders to bait it into (it stuns on them, a stone to stand on);
-##   - along the north side a ledge 1.2 m up, orange-lipped, out of its reach;
-##   - west, an islet over a 2.5 m gap (a long jump): it won't charge across.
+## character study's):
+##   - an open isle, 24 by 26 m, its rims open over the drop, every rim
+##     hangs (step off it slowly);
+##   - the spit: a 2.5 m wide, 9 m long tongue off the south rim;
+##   - two low boulders;
+##   - along the north side a ledge 1.2 m up, orange-lipped;
+##   - west, an islet over a 2.5 m gap (a long jump).
 ## R sets him back and brings the enemies back.
-##   --enemy=NAME   which enemy (ENEMIES; `none` for an empty yard); the
-##                  pilot is set down facing it. Default: ram.
+##   --enemy=NAME   which enemy (ENEMIES; empty for now); the pilot is set
+##                  down facing it.
 ## Adding an enemy is one line in ENEMIES: its script, where it stands, where
 ## the pilot starts (it is faced toward the pilot, and he toward it).
-##   godot --path . res://studies/enemy_yard.tscn -- --no-title --enemy=ram
+##   godot --path . res://studies/enemy_yard.tscn -- --no-title --enemy=NAME
 ## Greybox sounds: the enemies' sound calls play short synthesized
-## placeholders (`_voice`), a thump, a huff, a snort, a scrape, a bellow.
+## placeholders (`_voice`); `_synth` is shared by many studies.
 const EnemyField = preload("res://scripts/enemies/enemy_field.gd")
-const PlinthRam = preload("res://scripts/enemies/plinth_ram.gd")
 
 ## name: {script, at (the enemy), pilot (where he starts), knobs (overrides)}.
-const ENEMIES := {
-	"ram":{"script":PlinthRam,"at":Vector3(0.0,0.0,-3.0),"pilot":Vector3(0.0,0.0,7.0)},
-}
-const DEFAULT_ENEMY := "ram"
+const ENEMIES := {}
+## Where the pilot starts with no enemy named (or an unknown one).
+const NO_ENEMY := {"at":Vector3(0.0,0.0,-3.0),"pilot":Vector3(0.0,0.0,7.0)}
+const DEFAULT_ENEMY := "none"
 const YARD_LOST := -20.0
 ## The isle, its spit (south), its ledge (north, up to LEDGE_TOP), the
 ## islet over the gap (west), the boulders ([middle, radius, top]); x, z.
@@ -51,7 +47,7 @@ func _ready() -> void:
 
 ## The yard's one station, not a pack's file.
 func _load_pack() -> void:
-	var entry: Dictionary = ENEMIES.get(enemy_name,ENEMIES[DEFAULT_ENEMY])
+	var entry: Dictionary = ENEMIES.get(enemy_name,NO_ENEMY)
 	var pilot: Vector3 = entry.pilot
 	var at: Vector3 = entry.at
 	var face := Vector2(at.x-pilot.x,at.z-pilot.z).normalized()
@@ -86,7 +82,7 @@ func place(at: Vector3, face: Vector2) -> void:
 	if enemies != null: enemies.reset()
 
 func _hint_text() -> String:
-	return "Enemy yard: %s · you are the red flag: let it come, and when its head locks down (deep red, a snort) jump its horns, run or slide out of its line, or drop into a rim hang · near a rim (or out on the spit) it goes over; in the open it comes again · R start (the enemies too) · F1 numbers · F2 feel · Esc mouse" % enemy_name
+	return "Enemy yard: %s · R start (the enemies too) · F1 numbers · F2 feel · Esc mouse" % enemy_name
 
 func _show_hud() -> void:
 	super._show_hud()
@@ -102,20 +98,13 @@ func _show_hud() -> void:
 ## [seconds, tone (Hz, 0 none), tone at the end, noise share, low-pass (0-1),
 ## attack (s), tremolo (Hz, 0 none)].
 const VOICES := {
-	"ram_huff":[0.35,0.0,0.0,1.0,0.12,0.12,0.0],
-	"ram_paw":[0.14,90.0,60.0,0.6,0.3,0.005,0.0],
-	"ram_charge":[0.3,70.0,50.0,0.5,0.15,0.02,30.0],
-	"ram_snort":[0.28,0.0,0.0,1.0,0.35,0.01,0.0],
-	"ram_scrape":[0.6,0.0,0.0,1.0,0.6,0.02,0.0],
-	"ram_scrabble":[0.45,0.0,0.0,1.0,0.45,0.01,24.0],
-	"ram_bellow":[0.9,120.0,70.0,0.15,0.5,0.08,0.0],
-	"ram_thud":[0.2,55.0,40.0,0.4,0.2,0.003,0.0],
+	"thud":[0.2,55.0,40.0,0.4,0.2,0.003,0.0],
 }
 
 ## Plays enemy sound `sound_name` at `at` (a short synthesized placeholder).
 func _voice(sound_name: StringName, at: Vector3) -> void:
 	var key := String(sound_name)
-	if not VOICES.has(key): key = "ram_paw"
+	if not VOICES.has(key): key = "thud"
 	if not _voices.has(key): _voices[key] = _synth(VOICES[key])
 	var player := AudioStreamPlayer3D.new()
 	player.stream = _voices[key]

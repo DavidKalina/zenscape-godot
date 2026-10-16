@@ -8,9 +8,8 @@ extends "res://scripts/kit_isle/motif_greybox.gd"
 ##                 figure, his lane (he climbs any of it), notches cut where
 ##                 the city kit's real pieces stand:
 ##   the shins     the facing sheet wall (maker_skin) between his feet, a
-##                 coursed jamb post beside it with the old fire channel (a
-##                 CityFires runnel) running up it to the cold bowl in his lap
-##   the lap       a turf island between his knees, the great cresset (unlit)
+##                 coursed jamb post beside it
+##   the lap       a turf island between his knees, the great cresset (cold)
 ##   the chest     the relief cliff (city_relief): ten carved bosses up it;
 ##                 its top is the collar shelf before his face
 ##   the shoulder  his left, cut flat, a turf cap; the hauling lip (city_lip)
@@ -21,11 +20,10 @@ extends "res://scripts/kit_isle/motif_greybox.gd"
 ##                 a hop from the lip's top
 ##
 ## Routes (rim in on the ledge's south-west, rim out on the crown's north):
-##   the face   light the channel's port: the flame runs up to the lap's bowl,
-##              the Olmec on the ledge turns to it and climbs the skin wall,
-##              which peels into an earth ramp; run up it past him, the
-##              relief's bosses to the collar shelf, west onto the shoulder,
-##              the lip's shelves up the flap to the crown.
+##   the face   let the Olmec on the ledge see you and climb after you up
+##              the skin wall, which peels into an earth ramp; run up it past
+##              him, the relief's bosses to the collar shelf, west onto the
+##              shoulder, the lip's shelves up the flap to the crown.
 ##   the ridge  west off the ledge, up the ridge's terraces (a jump-catch
 ##              each), round behind his shoulder; hop from its tip onto the
 ##              lip's top, east onto the crown.
@@ -102,9 +100,8 @@ const LAYOUT := {
 	# shelves, to the west).
 	"lip":{"at":Vector3(0.0,CROWN_Y,-40.3),"turn":180.0,"height":CROWN_Y-COLLAR_Y,"width":15.4,"seed":SEED+12},
 	"jamb":[-9.5,-7.55,-6.2,0.7],
-	# The fires: the knees' great cressets (lit since forever: they draw no
-	# one), the collar's lamps (lit), the lap's great cresset (cold: the
-	# channel lights it, and it calls every Olmec in reach).
+	# The fires: the knees' great cressets (lit since forever), the collar's
+	# lamps (lit), the lap's great cresset (cold).
 	"knees":[Vector3(-17.5,KNEE_Y,-1.5),Vector3(18.0,KNEE_Y,-2.0)],
 	"lamps":[Vector3(-10.4,COLLAR_Y,-18.8),Vector3(10.6,COLLAR_Y,-19.2)],
 	"bowl":Vector3(-7.4,LAP_Y,-11.2),
@@ -235,7 +232,7 @@ func epithet() -> String:
 	return "He sat down to watch the dark. The dark came up to his knees and stayed."
 
 func brief() -> String:
-	return "Up: light the old channel at his shin and let the Olmec climb into the lap (the shins peel), then his chest's bosses and the ear flap's shelves; or the long ridge west.\nThe Olmec keeps the ledge. Lose him above and he climbs after you."
+	return "Up: let the Olmec climb after you into the lap (the shins peel), then his chest's bosses and the ear flap's shelves; or the long ridge west.\nThe Olmec keeps the ledge. Lose him above and he climbs after you."
 
 func start() -> Vector3:
 	return Vector3(-24.0,0.0,27.0)
@@ -370,7 +367,7 @@ func flora_site() -> KitFlora.Site:
 func flora_seed() -> int:
 	return SEED+9
 
-## The worn ways on the ledge: the arrival to the channel's port, and west to
+## The worn ways on the ledge: the arrival to the jamb post, and west to
 ## the ridge's foot.
 static func paths() -> Array:
 	return [[Vector2(-24.0,27.0),Vector2(-14.0,12.0),Vector2(-9.0,3.0)],[Vector2(-24.0,27.0),Vector2(-38.0,18.0),Vector2(-45.0,12.0)]]
@@ -438,7 +435,7 @@ func build(into: Node3D) -> void:
 	skin.position = sk.at
 	root.add_child(skin)
 	pieces.skin = skin
-	# The jamb post west of it (the channel runs up its face).
+	# The jamb post west of it.
 	var j: Array = LAYOUT.jamb
 	var m := CityStone.Mesher.new(CityStone.stone_colour(),0.3)
 	var course := SO*2.0
@@ -498,7 +495,7 @@ func _triangles() -> int:
 
 # --- What moves --------------------------------------------------------------------------
 
-## The fires and the channel, the breakables hub, the whole Olmec and his beat,
+## The fires, the breakables hub, the whole Olmec and his beat,
 ## and (in the abyss) the grass on the lip's top once it stands.
 func live(g: Node) -> void:
 	var fires := Node3D.new()
@@ -506,18 +503,12 @@ func live(g: Node) -> void:
 	g.add_child(fires)
 	var k := 0
 	for at: Vector3 in LAYOUT.knees:
-		var c: Node3D = CityFires.cresset(fires,Transform3D(Basis.IDENTITY,g.w(at)),{"size":"great","seed":SEED+30+k,"name":"KneeFire%d" % k,"lit":true,"draw":1.0})
-		_still(c)
+		CityFires.cresset(fires,Transform3D(Basis.IDENTITY,g.w(at)),{"size":"great","seed":SEED+30+k,"name":"KneeFire%d" % k,"lit":true})
 		k += 1
 	for at: Vector3 in LAYOUT.lamps:
-		var c: Node3D = CityFires.cresset(fires,Transform3D(Basis.IDENTITY,g.w(at)),{"size":"crown","seed":SEED+40+k,"name":"CollarLamp%d" % k,"lit":true,"draw":1.0,"barge":false})
-		_still(c)
+		CityFires.cresset(fires,Transform3D(Basis.IDENTITY,g.w(at)),{"size":"crown","seed":SEED+40+k,"name":"CollarLamp%d" % k,"lit":true,"barge":false})
 		k += 1
-	var bowl: Node3D = CityFires.cresset(fires,Transform3D(Basis.IDENTITY,g.w(LAYOUT.bowl)),{"size":"great","seed":SEED+50,"name":"LapBowl","lit":false})
-	var line := channel_line()
-	var pts: Array = []
-	for p: Vector3 in line[0]: pts.append(g.w(p))
-	CityFires.runnel(fires,Transform3D.IDENTITY,pts,line[1],{"tail":bowl,"name":"Channel"})
+	CityFires.cresset(fires,Transform3D(Basis.IDENTITY,g.w(LAYOUT.bowl)),{"size":"great","seed":SEED+50,"name":"LapBowl","lit":false})
 	# The hub: every Olmec's breaker (the skin, the lip's corner, the bowls).
 	var hub: Node3D = Breakables.new()
 	hub.name = "Breakables"
@@ -545,26 +536,6 @@ func live(g: Node) -> void:
 		dresser.name = "Dresser"
 		dresser.motif = self
 		g.add_child(dresser)
-
-## The channel's line (motif frame) and its normals: from the feed port at the
-## jamb post's foot up its front face, over its top, across the lap's turf to
-## the bowl's plinth and up its face.
-static func channel_line() -> Array:
-	var j: Array = LAYOUT.jamb
-	var x := (float(j[0])+float(j[1]))*0.5
-	var front := float(j[3])+0.004
-	var bowl: Vector3 = LAYOUT.bowl
-	var plinth := 3.2*CityFires.size()
-	var pts: Array = [Vector3(x,0.9,front),Vector3(x,LAP_Y-0.06,front),Vector3(x,LAP_Y+0.004,front-0.4),Vector3(x,LAP_Y+0.004,float(j[2])+0.2),
-		Vector3(x,LAP_Y+0.02,bowl.z+plinth+0.004),Vector3(bowl.x-1.2,LAP_Y+0.02,bowl.z+plinth+0.004),Vector3(bowl.x-1.2,LAP_Y+SO-0.05,bowl.z+plinth+0.004)]
-	var f := Vector3.BACK
-	var nrm: Array = [f,f,(f+Vector3.UP).normalized(),Vector3.UP,Vector3.UP,Vector3.UP,f]
-	return [pts,nrm]
-
-## A fire lit since the city emptied: its beacon draws no Olmec.
-static func _still(fire: Node) -> void:
-	var b: Object = fire.get("beacon")
-	if b != null: b.set("draw",1.0)
 
 ## STAND-IN: the Olmec's rounds on the ledge (gb_stacked_court's Keeper): steers
 ## the unaware Olmec between his beat's points, holds him at his post till the

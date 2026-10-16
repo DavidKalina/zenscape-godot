@@ -24,8 +24,7 @@ extends "res://studies/whole_body_chase.gd"
 ##     [--olmec=hunt|none|riser|lip|pit|wrap|terrace|wedge]  (a piece: his
 ##       headless body at its foot homing to his head on its top, his planner's lane)
 ##     [--body-knob=k=v] [--head-knob=k=v] [--body-at=x,z] [--body-face=x,z]
-##     [--no-brazier]  (the lip's brazier unlit: it draws the calm Olmec up
-##       the face and over the cornice to look)
+##     [--no-brazier]  (the lip's brazier unlit)
 ##   1-7 the stations · R all back (the pieces rebuilt) · B him back · L the look
 ##   J his sight · F1 numbers
 const Climb = preload("res://scripts/city_kit_climb.gd")
@@ -311,9 +310,7 @@ func _build_pieces() -> void:
 	for id: String in Climb.PIECES:
 		var spot: Array = _spot(id)
 		var o: Dictionary = OPTS.get(id,{}).duplicate()
-		# The brazier lit only for the whole Olmec (a homing body would
-		# turn to it and leave his piece).
-		if id == "city_lip": o["brazier"] = olmec == "hunt" and not _no_brazier
+		if id == "city_lip": o["brazier"] = not _no_brazier
 		var p: Node3D = Climb.piece(id,7,0.4,o)
 		p.position = spot[0]
 		p.rotation.y = deg_to_rad(float(spot[1]))

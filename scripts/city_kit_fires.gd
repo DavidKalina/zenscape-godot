@@ -1,36 +1,24 @@
 extends RefCounted
 ## The Olmec city kit's fire pieces, "fire on high":
-## maker_cresset, maker_runnel, maker_wickspire and ol_beacon. One cresset piece sized as a bowl, a tower's crown or a
-## spire's top, and the runnel that carries fire between them. All in the
-## Olmec's weathered basalt (scripts/kit_isle/greybox/giant_stone.gd), the
-## fire on the campfire's shaders (scripts/city_fire.gd).
-##
-## **Lighting with the torch.** The underground look's torch (scripts/
-## underground/underground.gd, `--underground`) lights any unlit fire piece
-## it touches: its flame within TOUCH m of a bowl's rim (climb onto the
-## plinth beside the bowl, or catch the bowl's lip), or of a runnel's head
-## port (walk up to it). No button, no menu: touch it and it catches. A
-## doused torch (the look's `torch` node hidden) is lit again the same way
-## from any burning piece. No look, no torch: the pieces only light from
-## each other (a runnel) or from code (`light()`).
+## maker_cresset, maker_wickspire and ol_beacon. One cresset piece sized as a
+## bowl, a tower's crown or a spire's top. All in the Olmec's weathered
+## basalt (scripts/kit_isle/greybox/giant_stone.gd), the fire on the
+## campfire's shaders (scripts/city_fire.gd). The fires are dressing: a
+## piece stood "lit" burns for good, an unlit one stays a cold bowl: nothing
+## lights them, puts them out or is drawn to them.
 ##
 ## Pieces (`build(id, parent, xform, opts)`, or the builders):
 ##   maker_cresset   `cresset`: a basalt fire bowl on a plinth (`size`:
-##                   "cresset" one tier, "great" two). Lit, a real light, a
-##                   SightLight and a Beacon. A breakable (the group of
-##                   scripts/kit_isle/breakables.gd, the Olmec's breaker
-##                   hub): standing it is air to his routes, so a body that
-##                   barges into it (or lands his shockwave by it) tips it
-##                   over, a lit one into a burning spill on his lane (a
-##                   Beacon too) for SPILL s. A scene with no hub: "walker"
-##                   makes it walker-only stone with its own barge check.
+##                   "cresset" one tier, "great" two). Lit, a real light. A
+##                   breakable (the group of scripts/kit_isle/breakables.gd,
+##                   the Olmec's breaker hub): standing it is air to his
+##                   routes, so a body that barges into it (or lands his
+##                   shockwave by it) tips it over, its fire out. A scene
+##                   with no hub: "walker" makes it walker-only stone with
+##                   its own barge check.
 ##   ol_beacon       `tower`: a stepped basalt tower of giant steps, its
 ##                   crown a cresset ("crown"). Lit, its crown is read from
 ##                   far off; a layer's towers say where the layers above are.
-##   maker_runnel    `runnel`: a resin channel along a polyline (wall or
-##                   floor). Light its head port and the flame runs it at
-##                   `speed`, lighting the holds beside it as it goes, and
-##                   lights whatever is its `tail` (a cresset) on arrival.
 ##   maker_wickspire `spire`: a tall lone hex column, a spiral of glyph steps,
 ##                   a crown cup with a cresset ("crown"): Mudge's home.
 ##
@@ -39,38 +27,28 @@ const CityFire = preload("res://scripts/city_fire.gd")
 const GiantStone = preload("res://scripts/kit_isle/greybox/giant_stone.gd")
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
-const RUNNEL_SHADER := preload("res://shaders/city_runnel.gdshader")
 const GroundCover = preload("res://scripts/underground/ground_cover.gd")
 const CityStone = preload("res://scripts/city_kit_stone.gd")
 
 const PIECES := {
-	"maker_cresset":"Great cresset: a fire bowl on a plinth; lit, a light, a sight light and a beacon; barged, it tips",
+	"maker_cresset":"Great cresset: a fire bowl on a plinth; lit, a light; barged, it tips",
 	"ol_beacon":"Beacon tower: a stepped tower of giant steps with a cresset crown",
-	"maker_runnel":"Oil runnel: a resin channel; lit at its head, the flame runs it to its tail",
 	"maker_wickspire":"Wick spire: a lone hex column, a spiral of glyph steps, a cresset crown",
 }
 
-## How near (m) the torch's flame lights a bowl, past its rim, and the
-## band of height over and under the lip it reaches.
-const TOUCH := 0.7
-const TOUCH_UNDER := 1.2
-const TOUCH_OVER := 1.6
-## A spill burns this long (s).
-const SPILL := 14.0
 ## A tip: how long the bowl takes to go over (s).
 const TIP_TIME := 0.75
 
 ## The cresset's sizes. Plinth tiers [side m, top in SET_OFFs]; shaft
 ## [radius, tall]; bowl [lip radius, depth]; fire [flame, bed]; light
-## [range, energy, shadows]; sight [radius, strength] (its Beacon's draw is
-## radius x Beacon.DRAW_K).
+## [range, energy, shadows].
 const SIZES := {
 	"cresset":{"tiers":[[3.6,1]],"shaft":[0.55,0.45],"bowl":[1.1,0.55],"fire":[1.5,1.3],
-		"light":[24.0,6.0,false],"sight":[9.0,1.0],"halo":6.0},
+		"light":[24.0,6.0,false],"halo":6.0},
 	"great":{"tiers":[[6.4,1],[4.6,2]],"shaft":[0.75,0.5],"bowl":[1.6,0.7],"fire":[2.3,2.0],
-		"light":[34.0,10.0,true],"sight":[12.0,1.0],"halo":10.0},
+		"light":[34.0,10.0,true],"halo":10.0},
 	"crown":{"tiers":[],"shaft":[0.4,0.3],"bowl":[0.95,0.45],"fire":[1.6,1.1],
-		"light":[22.0,5.0,false],"sight":[9.0,1.0],"halo":9.0},
+		"light":[22.0,5.0,false],"halo":9.0},
 }
 
 static func size() -> float:
@@ -89,57 +67,9 @@ static func build(id: String, parent: Node3D, xform: Transform3D, opts := {}) ->
 	match id:
 		"maker_cresset": return cresset(parent,xform,opts)
 		"ol_beacon": return tower(parent,xform,opts)
-		"maker_runnel":
-			return runnel(parent,xform,opts.get("points",[]) as Array,opts.get("normals",[]) as Array,opts)
 		"maker_wickspire": return spire(parent,xform,opts)
 	push_error("city fires: no piece '%s'" % id)
 	return null
-
-# --- The torch -------------------------------------------------------------------------
-
-## The underground look on the scene (its torch), or null.
-static func look(tree: SceneTree) -> Node:
-	if tree == null or tree.current_scene == null: return null
-	return tree.current_scene.get_node_or_null("Underground")
-
-## The torch's flame (world), or INF with no torch.
-static func torch_point(tree: SceneTree) -> Vector3:
-	var u := look(tree)
-	if u == null: return Vector3.INF
-	var flame: Variant = u.get("flame")
-	if not (flame is Node3D) or not (flame as Node3D).is_inside_tree(): return Vector3.INF
-	return (flame as Node3D).global_position
-
-## Whether the torch is lit (its node shows).
-static func torch_lit(tree: SceneTree) -> bool:
-	var u := look(tree)
-	if u == null: return false
-	var t: Variant = u.get("torch")
-	return t is Node3D and (t as Node3D).visible
-
-## The torch out (it hides; the sight reads him dark) or lit again.
-static func set_torch(tree: SceneTree, on: bool) -> void:
-	var u := look(tree)
-	if u == null: return
-	var t: Variant = u.get("torch")
-	if t is Node3D: (t as Node3D).visible = on
-
-## Whether a flame at `p` touches a bowl whose rim is a circle `radius` m
-## round `rim` (world, its lip's middle).
-static func touches(p: Vector3, rim: Vector3, radius: float) -> bool:
-	if p == Vector3.INF: return false
-	var flat := Vector2(p.x-rim.x,p.z-rim.z).length()
-	return flat <= radius+TOUCH*size() and p.y >= rim.y-TOUCH_UNDER*size() and p.y <= rim.y+TOUCH_OVER*size()
-
-## A burning thing at `rim` (`radius`) relights a doused torch touching it.
-static func relight_torch(tree: SceneTree, rim: Vector3, radius: float) -> void:
-	if torch_lit(tree): return
-	var u := look(tree)
-	if u == null: return
-	var t: Variant = u.get("torch")
-	if not (t is Node3D): return
-	# Hidden, its flame still has a place: the figure carries it.
-	if touches((u.get("flame") as Node3D).global_position,rim,radius): (t as Node3D).visible = true
 
 # --- Ground cover ----------------------------------------------------------------------
 
@@ -275,7 +205,7 @@ static func mesh_node(parent: Node3D, m: GiantStone.Mesher, node_name := "Stone"
 
 ## A cresset in `parent` at `xform` (its foot). opts: "size" (SIZES key,
 ## "cresset"), "lit" (false), "seed", "walker" (true: walker-only stone,
-## barged over by the Olmec; a crown's is false), "pull", "draw".
+## barged over by the Olmec; a crown's is false), "barge", "beam".
 static func cresset(parent: Node3D, xform: Transform3D, opts := {}) -> Cresset:
 	var c := Cresset.new()
 	c.name = str(opts.get("name","Cresset"))
@@ -284,8 +214,6 @@ static func cresset(parent: Node3D, xform: Transform3D, opts := {}) -> Cresset:
 	c.barge = bool(opts.get("barge",c.kind != "crown"))
 	c.walker = bool(opts.get("walker",false))
 	c.seed_value = int(opts.get("seed",hash(xform.origin)))
-	c.pull = float(opts.get("pull",1.0))
-	c.draw = float(opts.get("draw",0.0))
 	c.beam = float(opts.get("beam",1.0))
 	parent.add_child(c)
 	c.stand_up()
@@ -293,8 +221,7 @@ static func cresset(parent: Node3D, xform: Transform3D, opts := {}) -> Cresset:
 	return c
 
 class Cresset extends Node3D:
-	## Lit, out, tipped.
-	signal lit_changed(on: bool)
+	## Tipped over.
 	signal tipped(dir: Vector3)
 	const Kit = preload("res://scripts/city_kit_fires.gd")
 	const HeadlessBody = preload("res://scripts/enemies/headless_body.gd")
@@ -313,8 +240,6 @@ class Cresset extends Node3D:
 	var runes: ShaderMaterial = null
 	var _rune_e := RUNES_OUT
 	var seed_value := 0
-	var pull := 1.0
-	var draw := 0.0
 	## Seen from far off (a far layer's tower): its halo this times wider,
 	## its flame taller by the root of it.
 	var beam := 1.0
@@ -327,18 +252,12 @@ class Cresset extends Node3D:
 	## The widest tier's half side (m): what a body barges.
 	var half := 1.0
 	var fire: Node3D
-	var beacon: Beacon
 	## What tips: the shaft's head, the bowl and its fire.
 	var bowl: Node3D
 	var bowl_body: StaticBody3D
-	var spill: Node3D = null
-	var spill_beacon: Beacon = null
-	## Lit by the torch (counted), the times it was lit.
-	var torch_lightings := 0
 	var _tip_t := -1.0
 	var _tip_from := Transform3D()
 	var _tip_to := Transform3D()
-	var _spill_t := 0.0
 
 	func spec() -> Dictionary:
 		return Kit.SIZES[kind]
@@ -423,18 +342,6 @@ class Cresset extends Node3D:
 		fire.halo_glow = 0.55+0.1*(beam-1.0)
 		fire.position = Vector3(0.0,st+depth*0.45+0.02,0.0)
 		bowl.add_child(fire)
-		var sight: Array = s.sight
-		beacon = Beacon.new()
-		beacon.name = "Beacon"
-		beacon.radius = float(sight[0])
-		beacon.strength = float(sight[1])
-		beacon.pull = pull
-		beacon.draw = draw
-		# He comes to look from past the plinth, not into it.
-		beacon.gather = half+3.0
-		beacon.position = Vector3(0.0,lip_y,0.0)
-		add_child(beacon)
-		beacon.lit = false
 
 	func mesh_node_into(p: Node3D, m: GiantStone.Mesher, n: String) -> void:
 		Kit.mesh_node(p,m,n)
@@ -447,31 +354,11 @@ class Cresset extends Node3D:
 	func fire_point() -> Vector3:
 		return fire.global_position
 
-	## Lit now: it flares, every Olmec in its draw turns to it.
-	func light() -> void:
-		if lit or broken: return
-		lit = true
-		fire.light()
-		beacon.light()
-		lit_changed.emit(true)
-
-	## Burning from the start (no flare).
+	## Burning from the start (no flare), for good.
 	func burn() -> void:
 		if lit or broken: return
 		lit = true
 		fire.burn()
-		beacon.light()
-
-	func douse() -> void:
-		if not lit: return
-		lit = false
-		fire.douse()
-		beacon.douse()
-		lit_changed.emit(false)
-
-	## Whether a flame at `p` would light it.
-	func touched_by(p: Vector3) -> bool:
-		return Kit.touches(p,rim(),radius)
 
 	# --- The breakables hub's protocol (scripts/kit_isle/breakables.gd) ---------------
 
@@ -532,20 +419,7 @@ class Cresset extends Node3D:
 				runes.set_shader_parameter("energy",_rune_e)
 		if _tip_t >= 0.0:
 			_tip(delta)
-		elif not broken:
-			if not lit:
-				if Kit.torch_lit(tree) and touched_by(Kit.torch_point(tree)):
-					torch_lightings += 1
-					light()
-			else:
-				Kit.relight_torch(tree,rim(),radius)
-			if walker and barge: _barged(tree)
-		if spill != null:
-			_spill_t += delta
-			if _spill_t > SPILL and spill_beacon.lit:
-				spill_beacon.douse()
-				spill.douse()
-			if spill_beacon.lit: Kit.relight_torch(tree,spill.global_position,1.5)
+		elif not broken and walker and barge: _barged(tree)
 
 	## A body barging through the plinth tips it its way.
 	func _barged(tree: SceneTree) -> void:
@@ -562,16 +436,13 @@ class Cresset extends Node3D:
 			return
 
 	## Over it goes, `dir` (world, flat): the bowl falls off its plinth onto
-	## the ground that way; burning, its resin spills there and burns.
+	## the ground that way, its fire out.
 	func tip(dir: Vector3) -> void:
 		if broken: return
 		broken = true
-		var was_lit := lit
 		if lit:
 			lit = false
-			beacon.douse()
 			fire.douse()
-			lit_changed.emit(false)
 		bowl_body.collision_layer = 0
 		var d := Vector3(dir.x,0.0,dir.z).normalized()
 		if d.length() < 0.5: d = Vector3.FORWARD
@@ -583,7 +454,6 @@ class Cresset extends Node3D:
 		_tip_to = Transform3D(lie,Vector3(land.x,floor_y+radius*0.75,land.z))
 		_tip_t = 0.0
 		tipped.emit(d)
-		if was_lit: _make_spill(Vector3(land.x,floor_y,land.z)+d*radius*0.6)
 
 	func _floor_at(from: Vector3) -> float:
 		var q := PhysicsRayQueryParameters3D.create(from,from+Vector3.DOWN*60.0)
@@ -612,30 +482,6 @@ class Cresset extends Node3D:
 				if _hub != null and is_instance_valid(_hub):
 					_hub.call("changed",AABB(bowl.global_position-Vector3.ONE*(half+2.0),Vector3.ONE*(half+2.0)*2.0))
 		bowl.global_transform = xf
-
-	func _make_spill(at: Vector3) -> void:
-		spill = CityFire.new()
-		spill.name = "Spill"
-		spill.kind = "bonfire"
-		spill.smoke = false
-		spill.flame = fire.flame*0.75
-		spill.bed = radius*2.6
-		spill.light_range = fire.light_range*1.1
-		spill.light_energy = fire.light_energy*1.4
-		spill.halo = fire.halo*1.2
-		add_child(spill)
-		spill.global_position = at+Vector3.UP*0.03
-		spill.light()
-		spill_beacon = Beacon.new()
-		spill_beacon.name = "SpillBeacon"
-		spill_beacon.radius = beacon.radius*1.1
-		spill_beacon.strength = beacon.strength
-		spill_beacon.gather = 3.0
-		add_child(spill_beacon)
-		spill_beacon.global_position = at+Vector3.UP*0.5
-		spill_beacon.lit = false
-		spill_beacon.light()
-		_spill_t = 0.0
 
 # --- The beacon tower --------------------------------------------------------------------
 
@@ -721,208 +567,6 @@ class Tower extends Node3D:
 		Kit.mesh_node(self,m,"TowerStone")
 		Kit.solid(self,shapes,false,"TowerSolid")
 		crown = Kit.cresset(self,Transform3D(Basis.IDENTITY,Vector3(0.0,top,(front+back)*0.5)),{"size":"crown","seed":seed_value,"walker":false,"name":"Crown","beam":beam})
-
-# --- The oil runnel ------------------------------------------------------------------------
-
-## A runnel in `parent` at `xform`: `points` its line (local), `normals`
-## the face it is cut in at each point (UP for a floor). opts: "speed" (m/s,
-## 3), "afterglow" (s, 4), "ember" (0.3), "width" (m, 0.3), "tail" (a node
-## with `light()`: lit when the flame arrives), "broken" ([Vector2(from,
-## to)] m along it: the flame stops at the first).
-static func runnel(parent: Node3D, xform: Transform3D, points: Array, normals: Array, opts := {}) -> Runnel:
-	var r := Runnel.new()
-	r.name = str(opts.get("name","Runnel"))
-	r.transform = xform
-	r.speed = float(opts.get("speed",3.0))
-	r.afterglow = float(opts.get("afterglow",4.0))
-	r.ember = float(opts.get("ember",0.3))
-	r.width = float(opts.get("width",0.3))*size()
-	r.tail = opts.get("tail",null)
-	r.broken = opts.get("broken",[]) as Array
-	parent.add_child(r)
-	r.lay(points,normals)
-	return r
-
-class Runnel extends Node3D:
-	signal arrived
-	const Kit = preload("res://scripts/city_kit_fires.gd")
-	var speed := 3.0
-	var afterglow := 4.0
-	var ember := 0.3
-	var width := 0.3
-	var tail: Variant = null
-	var broken: Array = []
-	var points: Array = []
-	var normals: Array = []
-	## Each point's length along it (m).
-	var along: PackedFloat32Array = []
-	var total := 0.0
-	## How far the flame has run (m); under 0, never lit.
-	var front := -1.0
-	var running := false
-	var done := false
-	var mat := ShaderMaterial.new()
-	## The running front: its fire, its light for the sight.
-	var flame: Node3D
-	var sight: SightLight
-	## A low light per stretch it has run, left glowing.
-	var trail: Array[OmniLight3D] = []
-	var _trail_at: PackedFloat32Array = []
-	var _lit_at: PackedFloat32Array = []
-	var _clock := 0.0
-	var head_radius := 0.38
-
-	func lay(pts: Array, nrm: Array) -> void:
-		points = pts
-		normals = nrm
-		along.resize(points.size())
-		total = 0.0
-		for i in points.size():
-			if i > 0: total += (points[i] as Vector3).distance_to(points[i-1])
-			along[i] = total
-		mat.shader = RUNNEL_SHADER
-		mat.set_shader_parameter("speed",speed)
-		mat.set_shader_parameter("afterglow",afterglow)
-		mat.set_shader_parameter("ember",ember)
-		var mi := MeshInstance3D.new()
-		mi.name = "Channel"
-		mi.mesh = _strip()
-		mi.material_override = mat
-		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		add_child(mi)
-		# The head's feed port: a small cup on the face.
-		var n0: Vector3 = normals[0]
-		var m := GiantStone.mesher()
-		var rng := RandomNumberGenerator.new()
-		rng.seed = hash(points[0])
-		var p0: Vector3 = points[0]
-		Kit.bowl_stone(m,Transform3D(Basis.IDENTITY,p0+Vector3(n0.x,0.0,n0.z)*head_radius*0.9-Vector3.UP*0.3*Kit.size()),head_radius*Kit.size(),0.3*Kit.size(),0.12,rng)
-		Kit.mesh_node(self,m,"HeadPort")
-		flame = CityFire.new()
-		flame.name = "Front"
-		flame.kind = "torch"
-		flame.smoke = false
-		flame.flame = 0.55*Kit.size()
-		flame.bed = 0.35*Kit.size()
-		flame.light_range = 9.0
-		flame.light_energy = 2.6
-		flame.halo = 2.4
-		add_child(flame)
-		flame.position = p0
-		sight = SightLight.new()
-		sight.name = "FrontLight"
-		sight.radius = 6.0
-		sight.lit = false
-		add_child(sight)
-		# A low light every few metres of its run, lit as the flame passes.
-		var stretch := 4.0
-		var d := stretch*0.5
-		while d < total:
-			var l := OmniLight3D.new()
-			l.light_color = CityFire.COLOR
-			l.omni_range = 6.0
-			l.omni_attenuation = 1.3
-			l.light_energy = 0.0
-			l.visible = false
-			l.shadow_enabled = false
-			add_child(l)
-			l.position = at(d)+(normal_at(d)*0.5)
-			trail.append(l)
-			_trail_at.append(d)
-			_lit_at.append(-1.0)
-			d += stretch
-
-	## The strip: a quad per stretch, its UV.x the length along.
-	func _strip() -> ArrayMesh:
-		var v := PackedVector3Array()
-		var n := PackedVector3Array()
-		var uv := PackedVector2Array()
-		for i in range(1,points.size()):
-			var a: Vector3 = points[i-1]
-			var b: Vector3 = points[i]
-			var na: Vector3 = (normals[i-1] as Vector3)
-			var nb: Vector3 = (normals[i] as Vector3)
-			var nn := (na+nb).normalized()
-			var side := (b-a).cross(nn).normalized()*width*0.5
-			var lift := nn*0.012
-			var ua := along[i-1]
-			var ub := along[i]
-			var quad := [[a-side+lift,Vector2(ua,0.0)],[a+side+lift,Vector2(ua,1.0)],[b+side+lift,Vector2(ub,1.0)],[b-side+lift,Vector2(ub,0.0)]]
-			var face := (quad[1][0]-quad[0][0] as Vector3).cross(quad[2][0]-quad[0][0] as Vector3)
-			var order := [0,2,1,0,3,2] if face.dot(nn) > 0.0 else [0,1,2,0,2,3]
-			for k: int in order:
-				v.append(quad[k][0])
-				n.append(nn)
-				uv.append(quad[k][1])
-		var arrays := []
-		arrays.resize(Mesh.ARRAY_MAX)
-		arrays[Mesh.ARRAY_VERTEX] = v
-		arrays[Mesh.ARRAY_NORMAL] = n
-		arrays[Mesh.ARRAY_TEX_UV] = uv
-		var out := ArrayMesh.new()
-		out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
-		return out
-
-	## The point `d` m along it (local).
-	func at(d: float) -> Vector3:
-		for i in range(1,points.size()):
-			if d <= along[i] or i == points.size()-1:
-				var span := maxf(along[i]-along[i-1],0.0001)
-				return (points[i-1] as Vector3).lerp(points[i],clampf((d-along[i-1])/span,0.0,1.0))
-		return points[0]
-
-	func normal_at(d: float) -> Vector3:
-		for i in range(1,points.size()):
-			if d <= along[i] or i == points.size()-1: return ((normals[i-1] as Vector3)+(normals[i] as Vector3)).normalized()
-		return normals[0]
-
-	## Where it stops: its end, or the first break.
-	func reach() -> float:
-		var r := total
-		for b: Vector2 in broken: r = minf(r,b.x)
-		return r
-
-	## Its head (world).
-	func head() -> Vector3:
-		return to_global(points[0])
-
-	## Lit at its head: the flame runs.
-	func light() -> void:
-		if front >= 0.0: return
-		front = 0.0
-		running = true
-		flame.light()
-		sight.light()
-
-	func _process(delta: float) -> void:
-		_clock += delta
-		mat.set_shader_parameter("time",_clock)
-		if front < 0.0: return
-		if running:
-			front = minf(front+speed*delta,reach())
-			flame.position = at(front)+normal_at(front)*0.06
-			sight.position = flame.position
-			if front >= reach():
-				running = false
-				flame.douse()
-				sight.douse()
-				if front >= total-0.001:
-					done = true
-					if tail != null and is_instance_valid(tail) and (tail as Object).has_method("light"): (tail as Object).call("light")
-					arrived.emit()
-		mat.set_shader_parameter("front",front)
-		for i in trail.size():
-			if _lit_at[i] < 0.0 and front >= _trail_at[i]: _lit_at[i] = _clock
-			if _lit_at[i] < 0.0: continue
-			var age := _clock-_lit_at[i]
-			var l := trail[i]
-			l.visible = true
-			l.light_energy = lerpf(ember*2.2,1.8,exp(-age*2.2/afterglow))
-
-	func _physics_process(_delta: float) -> void:
-		if front >= 0.0: return
-		var tree := get_tree()
-		if Kit.torch_lit(tree) and Kit.touches(Kit.torch_point(tree),head(),head_radius*Kit.size()): light()
 
 # --- The wick spire ----------------------------------------------------------------------
 

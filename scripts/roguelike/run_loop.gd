@@ -100,10 +100,9 @@ const WORDS := {
 	"cause_void": "into the void",  # the card's first fact: what did it
 	"cause": "by %s",
 	# The harm's causes (PilotMotor `harm`), as the card names them.
-	"causes": {"fall":"the fall","olmec":"the Olmec","ram":"the ram","trap":"a trap",
+	"causes": {"fall":"the fall","olmec":"the Olmec","trap":"a trap",
 		"wind":"the wind","stone":"falling stone","enemy":"the city's guardians",
-		"walker":"the Second Walker","thief":"the Collector","altar":"a bargain at the altar",  # [merchant] [altars]
-		"beetle":"the millstone beetle",  # [beetle]
+		"thief":"the Collector","altar":"a bargain at the altar",  # [merchant] [altars]
 		"serpent":"the risen serpent"},  # [linger]
 	"lost_none": "nothing carried",
 	"lost_one": "1 rune lost",

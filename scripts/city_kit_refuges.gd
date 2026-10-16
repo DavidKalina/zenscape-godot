@@ -9,9 +9,8 @@ extends RefCounted
 ##                  giant pier he can't climb, to a dark alcove (k2
 ##                  colossus_niche)
 ##   city_hush      the hush gallery: a servants' slit into a tier, a long
-##                  dark hall behind it, a snuff trough across it, out by a
-##                  side passage past a lamp that relights the torch (k6
-##                  maker_hush)
+##                  dark hall behind it, a water trough across it, out by a
+##                  side passage past a lamp (k6 maker_hush)
 ##   city_slotwall  a thick wall with a chimney inside, climbed ledge to
 ##                  ledge, his arm slots at his shoulder on his side (k3
 ##                  oc_slot)
@@ -28,14 +27,9 @@ extends RefCounted
 ## colliders, its lamps, and what it does as he plays:
 ##   hide     the boxes he is in it (the cue: scripts' RefugeCue, a dark
 ##            vignette and "hidden" while no Olmec sees him, "seen" if one does)
-##   snuff    the hush trough: his torch (the underground look's, scripts/
-##            underground/underground.gd) put out with a hiss when his feet
-##            go in the water; a lit lamp relights it as he passes
-##   shade    the hush hall is dark to the Olmec's sight (a SightLight that
-##            takes the look's ambient down to the torch preset's, inside)
 ##   echo     the trough's splash carries out of the front mouth (the mouse run
 ##            is a true safe room: its step echo is off, `MOUSE_ECHO`): a Beacon there
-##            (no light, scripts/enemies/beacon.gd) draws a calm Olmec round
+##            (scripts/enemies/beacon.gd) draws a calm Olmec round
 ##            to it to look, so no refuge is safe forever
 ## Metadata on each root: "kind", "bounds" (AABB, local), "mouths" (Array of
 ## {at, out}: local), "his_ground" (AABB where he stands to look, local),
@@ -49,7 +43,6 @@ const WorldScale = preload("res://scripts/world_scale.gd")
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 const PhysicsGround = preload("res://scripts/pilot_physics_ground.gd")
 const HeadlessBody = preload("res://scripts/enemies/headless_body.gd")
-const Underground = preload("res://scripts/underground/underground.gd")
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const GroundCover = preload("res://scripts/underground/ground_cover.gd")
 const CityStone = preload("res://scripts/city_kit_stone.gd")
@@ -66,16 +59,11 @@ const LAMP_FAR := 26.0
 const FLAME := Color(1.0,0.6,0.25)
 const CLAY := Color(0.36,0.2,0.12)
 const WATER := Color(0.02,0.025,0.03)
-## A lamp's light on him for the Olmec's sight (scripts/enemies/sight_light.gd).
-const LAMP_SIGHT := 0.5
-const LAMP_SIGHT_R := 2.6
 ## The drawn light: one OmniLight3D every LAMP_LIGHT_EVERY lamps (the rest
 ## glow only), its range and energy.
 const LAMP_LIGHT_EVERY := 2
 const LAMP_RANGE := 3.4
 const LAMP_ENERGY := 1.6
-## A relighting lamp relights his torch within this (m, flat-ish).
-const RELIGHT_REACH := 1.3
 ## The echo: how far its beacon draws (m), how long it holds once he stops
 ## (s), how long a splash carries (s).
 ## The mouse run is a true safe room: his steps inside draw nothing to a mouth.
@@ -86,8 +74,6 @@ const ECHO_HOLD := 6.0
 const SPLASH_FOR := 3.0
 ## The arm slot's cuts through the leaf (its splay down inward).
 const SLOT_STEPS := 4
-## How long a calm Olmec stands looking down the hall, drawn by the glow (s).
-const GLOW_DWELL := 10.0
 
 # --- The two bodies ------------------------------------------------------------------------
 
@@ -190,7 +176,7 @@ static func mouserun(seed_value := 1) -> Node3D:
 	r.add_child(_mesh_of(m,"Stone"))
 	r.set_meta("tris",m.triangles())
 	# Fist niches with embers in the jog's back wall (the tenders').
-	_lamp(r,Vector3(jog*0.5,cill+clear*0.62,-wide*0.5+0.06),Vector3(0,0,1),true,false)
+	_lamp(r,Vector3(jog*0.5,cill+clear*0.62,-wide*0.5+0.06),Vector3(0,0,1),true)
 	for leg in legs: _cover(r,_ab(Vector3(leg.position.x,0.0,maxf(leg.position.z,-hz)),Vector3(leg.end.x,cill,minf(leg.end.z,hz))),seed_value,true)
 	_cover(r,wall,seed_value)
 	r.hide_boxes = legs.duplicate()
@@ -253,7 +239,7 @@ static func niches(seed_value := 1) -> Node3D:
 		m.box(Transform3D(Basis.IDENTITY,s.get_center()),s.size,0.05,y-thick,1.08)
 		m.box(Transform3D(Basis.IDENTITY,Vector3(x,y-thick-0.2,h+deep*0.3)),Vector3(wide*0.4,0.4,deep*0.6),0.06,y-thick-0.4,0.95)
 		var lamp_x := x+(wide*0.5-0.2)*(1.0 if x < 0.0 else -1.0)
-		_lamp(r,Vector3(lamp_x,y,h+0.18),Vector3(0,0,1),i % LAMP_LIGHT_EVERY == 0,true)
+		_lamp(r,Vector3(lamp_x,y,h+0.18),Vector3(0,0,1),i % LAMP_LIGHT_EVERY == 0)
 		# A glyph panel over each shelf: a shallow paler block on the face.
 		m.box(Transform3D(Basis.IDENTITY,Vector3(x,y+0.75,h+0.04)),Vector3(0.5,0.5,0.1),0.03,y,1.3)
 	# The alcove: dark, its floor the pier's stone; a lintel over it.
@@ -277,10 +263,9 @@ static func _shelf_x(i: int, wide: float, gap: float) -> float:
 
 ## The hush gallery: a tier he can stand in front of (and climb), its front
 ## face to +z, a servants' slit into it (walker-wide, tall enough that from
-## his forecourt he looks along the hall: a lit torch inside is seen, a dark
-## wanderer isn't), a long hall behind it with side bays between squat
-## (walker-only) piers, a snuff trough across it, and an exit passage out of
-## the tier's east side past a lamp that relights the torch.
+## his forecourt he looks along the hall), a long hall behind it with side bays between squat
+## (walker-only) piers, a water trough across it, and an exit passage out of
+## the tier's east side past a lamp.
 static func hush(seed_value := 1) -> Node3D:
 	var o := olmec()
 	var wk := walker()
@@ -372,21 +357,15 @@ static func hush(seed_value := 1) -> Node3D:
 	r.add_child(_mesh_of(m,"Stone"))
 	r.set_meta("tris",m.triangles())
 	r.set_meta("stele",stele)
-	# The relighting lamp in the exit passage's wall, near the far mouth.
-	var lamp := _lamp(r,Vector3(tw-1.6,floor_y+clear*0.55,back+0.06),Vector3(0,0,1),true,true)
-	r.relights = [lamp.position]
+	# A lamp in the exit passage's wall, near the far mouth.
+	_lamp(r,Vector3(tw-1.6,floor_y+clear*0.55,back+0.06),Vector3(0,0,1),true)
 	for f in floors: _cover(r,f,seed_value,true)
 	_cover(r,tier,seed_value)
 	r.trough = trough
 	r.hide_boxes = [hall,_ab(exit.position,Vector3(tw,exit.end.y,exit.end.z)),_ab(Vector3(slit.position.x,0.0,-front),Vector3(slit.end.x,slit_tall,0.0))]
-	r.shade_boxes = [hall,exit]
 	r.mouths = [{"at":Vector3(0.0,floor_y,0.0),"out":Vector3(0,0,1)},{"at":Vector3(tw,floor_y,back+wide*0.5),"out":Vector3(1,0,0)}]
 	r.echo_splash = true
 	r._add_echoes(float(o.width)*0.9)
-	r._add_shade()
-	# His lit torch inside glows at the slit: a calm Olmec comes to the
-	# forecourt on the slit's line to look down the hall.
-	r._add_glow(Vector3(0.0,slit_tall*0.5,0.4),Vector3(0.0,-slit_tall*0.5,hh*5.0))
 	r.set_meta("kind",r.kind)
 	r.set_meta("bounds",tier.grow(0.6))
 	r.set_meta("mouths",r.mouths)
@@ -640,9 +619,8 @@ static var _clay_mat: StandardMaterial3D = null
 static var _flame_mat: StandardMaterial3D = null
 
 ## A clay lamp at `at` (local) on a face looking `out`: the bowl and its
-## flame (shared meshes), a drawn light if `light`, a SightLight if `sight`
-## (he is lit by it for the Olmec). Returns the lamp node.
-static func _lamp(r: Refuge, at: Vector3, out: Vector3, light: bool, sight: bool) -> Node3D:
+## flame (shared meshes), a drawn light if `light`. Returns the lamp node.
+static func _lamp(r: Refuge, at: Vector3, out: Vector3, light: bool) -> Node3D:
 	if _lamp_mesh == null:
 		var bowl := CylinderMesh.new()
 		bowl.top_radius = 0.1
@@ -709,49 +687,24 @@ static func _lamp(r: Refuge, at: Vector3, out: Vector3, light: bool, sight: bool
 		l.distance_fade_length = 15.0
 		l.position = Vector3(0.0,0.25,0.0)+out*0.15
 		lamp.add_child(l)
-	if sight:
-		var s := SightLight.new()
-		s.strength = LAMP_SIGHT
-		s.radius = LAMP_SIGHT_R
-		s.position = Vector3(0.0,0.2,0.0)
-		lamp.add_child(s)
 	r.lamps.append(lamp)
 	return lamp
 
 # --- At play -----------------------------------------------------------------------------------
 
-## The hush hall's darkness for the Olmec's sight: inside its boxes, it
-## takes the light down by the look's ambient over the torch preset's (no
-## change by day, or where the look is already that dark).
-class Shade extends SightLight:
-	var boxes: Array = []
-	func light_at(p: Vector3) -> float:
-		if not lit: return 0.0
-		var local := (get_parent() as Node3D).to_local(p)
-		for b: AABB in boxes:
-			if b.grow(0.2).has_point(local):
-				return -maxf(LightLevel.ambient-float(LightLevel.LOOK_AMBIENT.torch),0.0)
-		return 0.0
-
-## A refuge piece at play: whether he is in it, its trough, lamps, shade
-## and echoes; tells the RefugeCue each frame.
+## A refuge piece at play: whether he is in it, its trough, lamps and
+## echoes; tells the RefugeCue each frame.
 class Refuge extends Node3D:
 	var kind := ""
 	var hide_boxes: Array = []
-	var shade_boxes: Array = []
 	var mouths: Array = []
 	var trough := AABB()
-	var relights: Array = []
 	var lamps: Array = []
 	var echo_steps := false
 	var echo_splash := false
 	var echoes: Array = []
-	var glow: Beacon = null
-	var glow_count := 0
 	## He is in it now; counts for checks.
 	var inside := false
-	var snuffs := 0
-	var relit := 0
 	var echo_count := 0
 	var _still := 0.0
 	var _splash_t := 0.0
@@ -762,8 +715,6 @@ class Refuge extends Node3D:
 		for mo: Dictionary in mouths:
 			var b := Beacon.new()
 			b.name = "Echo"
-			b.strength = 0.0
-			b.radius = 0.5
 			b.draw = ECHO_DRAW
 			b.gather = 3.0
 			b.dwell = 8.0
@@ -772,30 +723,6 @@ class Refuge extends Node3D:
 			b.lit = false
 			add_child(b)
 			echoes.append(b)
-
-	## A Beacon at `at` (local) that is lit while his torch burns inside the
-	## shade boxes; an Olmec drawn to it comes to `stand` (relative to it).
-	func _add_glow(at: Vector3, stand: Vector3) -> void:
-		var b := Beacon.new()
-		b.name = "TorchGlow"
-		b.strength = 0.0
-		b.radius = 0.5
-		b.draw = ECHO_DRAW
-		b.gather = 0.5
-		b.dwell = GLOW_DWELL
-		b.position = at
-		b.stand = stand
-		b.lit = false
-		add_child(b)
-		glow = b
-
-	func _add_shade() -> void:
-		var s := Shade.new()
-		s.name = "Shade"
-		s.boxes = shade_boxes
-		s.strength = 0.0
-		s.radius = 0.0
-		add_child(s)
 
 	func _process(delta: float) -> void:
 		var scene := get_tree().current_scene
@@ -810,40 +737,16 @@ class Refuge extends Node3D:
 				inside = true
 				break
 		RefugeCue.of(scene).report(self,inside)
-		_trough(scene,feet)
-		_relight(scene,feet)
+		_trough(feet)
 		_echo(delta,motor)
-		_glow(feet)
 
-	## The torch node of the underground look, or null.
-	func _torch() -> Node3D:
-		var u := LightLevel.look(get_tree())
-		if u == null: return null
-		return u.get("torch")
-
-	func _trough(scene: Node, feet: Vector3) -> void:
+	## His feet in the trough: a splash (it carries, `_echo`).
+	func _trough(feet: Vector3) -> void:
 		if trough.size == Vector3.ZERO: return
 		var t := trough.grow(0.02)
 		var wet := feet.x > t.position.x and feet.x < t.end.x and feet.z > t.position.z and feet.z < t.end.z and feet.y < trough.end.y-0.12
-		if wet and not _was_in_trough:
-			_splash_t = SPLASH_FOR
-			var torch := _torch()
-			if torch != null and torch.visible:
-				torch.visible = false
-				snuffs += 1
-				_steam(torch.global_position+Vector3.UP*0.5)
-				_tell(scene,"Hsss: your torch is out. In the dark he can't make you out")
+		if wet and not _was_in_trough: _splash_t = SPLASH_FOR
 		_was_in_trough = wet
-
-	func _relight(scene: Node, feet: Vector3) -> void:
-		var torch := _torch()
-		if torch == null or torch.visible: return
-		for p: Vector3 in relights:
-			if Vector2(p.x-feet.x,p.z-feet.z).length() < RELIGHT_REACH and absf(p.y-feet.y) < 2.2:
-				torch.visible = true
-				relit += 1
-				_tell(scene,"Your torch takes the lamp's flame: lit again")
-				return
 
 	## The echo: in the run, moving, his steps carry out of the nearer mouth;
 	## a splash in the trough carries SPLASH_FOR s.
@@ -874,56 +777,6 @@ class Refuge extends Node3D:
 			var want := i == near
 			if want and not b.lit: echo_count += 1
 			if b.lit != want: b.lit = want
-
-	## The torch's glow at the mouth: lit while it burns in the hall.
-	func _glow(feet: Vector3) -> void:
-		if glow == null: return
-		var on := false
-		var torch := _torch()
-		if torch != null and torch.visible:
-			for b: AABB in shade_boxes:
-				if b.has_point(feet+Vector3.UP*0.5): on = true
-		if on and not glow.lit: glow_count += 1
-		if glow.lit != on: glow.lit = on
-
-	func _tell(scene: Node, text: String) -> void:
-		if scene.has_method("_say"): scene.call("_say",text,3.0)
-		elif scene.has_method("_show_toast"): scene.call("_show_toast",text)
-
-	func _steam(at: Vector3) -> void:
-		var p := CPUParticles3D.new()
-		p.one_shot = true
-		p.amount = 40
-		p.lifetime = 1.6
-		p.explosiveness = 0.85
-		p.direction = Vector3.UP
-		p.spread = 35.0
-		p.initial_velocity_min = 0.4
-		p.initial_velocity_max = 1.0
-		p.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
-		p.emission_sphere_radius = 0.12
-		p.gravity = Vector3(0.0,0.6,0.0)
-		p.scale_amount_min = 0.5
-		p.scale_amount_max = 1.2
-		var q := SphereMesh.new()
-		q.radius = 0.035
-		q.height = 0.07
-		q.radial_segments = 6
-		q.rings = 3
-		p.mesh = q
-		var mat := StandardMaterial3D.new()
-		mat.albedo_color = Color(0.8,0.8,0.82,0.16)
-		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		p.material_override = mat
-		var curve := Curve.new()
-		curve.add_point(Vector2(0.0,0.4))
-		curve.add_point(Vector2(1.0,1.6))
-		p.scale_amount_curve = curve
-		get_tree().current_scene.add_child(p)
-		p.global_position = at
-		p.emitting = true
-		p.finished.connect(p.queue_free)
 
 ## How hiding reads: a dark vignette closing in and "hidden" while he is in a
 ## refuge and no Olmec sees him; a warm one and "he sees you" while one does.

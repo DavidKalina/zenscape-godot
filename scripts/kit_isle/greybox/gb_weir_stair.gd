@@ -1611,25 +1611,20 @@ func live(g: Node) -> void:
 	g.add_child(fires)
 	var lm: Dictionary = LAYOUT.lamps
 	for k: int in lm.lit:
-		var c: Node3D = CityFires.cresset(fires,Transform3D(Basis(Vector3.UP,0.3*k),g.w(lamp(k))),{"size":"cresset","seed":SEED+40+k,"name":"WeirLamp%d" % k,"lit":true,"draw":1.0,"barge":false})
-		Court._still(c)
-	var nl: Node3D = CityFires.cresset(fires,Transform3D(Basis(Vector3.UP,PI),g.w(niche_lamp())),{"size":"cresset","seed":SEED+48,"name":"NicheLamp","lit":true,"draw":1.0,"barge":false})
-	Court._still(nl)
+		CityFires.cresset(fires,Transform3D(Basis(Vector3.UP,0.3*k),g.w(lamp(k))),{"size":"cresset","seed":SEED+40+k,"name":"WeirLamp%d" % k,"lit":true,"barge":false})
+	CityFires.cresset(fires,Transform3D(Basis(Vector3.UP,PI),g.w(niche_lamp())),{"size":"cresset","seed":SEED+48,"name":"NicheLamp","lit":true,"barge":false})
 	# The fallen one: tipped on its side across the brim, cold.
 	var fk := int(lm.fallen)
 	var fall := Transform3D(Basis(Vector3.UP,0.7)*Basis(Vector3.BACK,1.35),g.w(lamp(fk)+Vector3(0.2,0.55,0.0)))
 	CityFires.cresset(fires,fall,{"size":"cresset","seed":SEED+49,"name":"FallenLamp","lit":false})
 	var i := 0
 	for p: Vector2 in LAYOUT.far_lamps:
-		var c: Node3D = CityFires.cresset(fires,Transform3D(Basis.IDENTITY,g.w(on(p))),{"size":"cresset","seed":SEED+60+i,"name":"FarLamp%d" % i,"lit":true,"draw":1.0,"barge":false})
-		Court._still(c)
+		CityFires.cresset(fires,Transform3D(Basis.IDENTITY,g.w(on(p))),{"size":"cresset","seed":SEED+60+i,"name":"FarLamp%d" % i,"lit":true,"barge":false})
 		i += 1
-	var bc: Node3D = CityFires.tower(fires,Transform3D(Basis(Vector3.UP,0.4),g.w(on(LAYOUT.beacon))),{"seed":SEED+70,"name":"FarBeacon","lit":true,"tiers":2,"beam":3.0})
-	Court._still(bc)
+	CityFires.tower(fires,Transform3D(Basis(Vector3.UP,0.4),g.w(on(LAYOUT.beacon))),{"seed":SEED+70,"name":"FarBeacon","lit":true,"tiers":2,"beam":3.0})
 	if polished:
 		# The lookout's own lamp: a great cresset on the knoll, behind the arrival.
-		var lt: Node3D = CityFires.cresset(fires,Transform3D(Basis(Vector3.UP,-0.9),g.w(on(LAYOUT.tower))),{"size":"great","seed":SEED+71,"name":"LookoutLamp","lit":true,"draw":1.0,"barge":false})
-		Court._still(lt)
+		CityFires.cresset(fires,Transform3D(Basis(Vector3.UP,-0.9),g.w(on(LAYOUT.tower))),{"size":"great","seed":SEED+71,"name":"LookoutLamp","lit":true,"barge":false})
 	# The maw (its jaw open, its eyes dead) and the court's listening heads.
 	var mw: Dictionary = LAYOUT.maw
 	var maw := HeadLook.new()

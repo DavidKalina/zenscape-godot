@@ -319,17 +319,11 @@ func default_knobs(n: Dictionary) -> Dictionary:
 		# plants at once. It leans `scope_lean` rad out over low cover.
 		"periscope":1,"scope_lift":1.7,"scope_look":5.0,"scope_lower":1.6,"scope_sweep":1.0,"scope_wide":1.5,"scope_spot":0.35,
 		"scope_rest":8.0,"scope_near":1.6,"scope_wait":1.0,"scope_lean":0.38,
-		# Light: in the dark (scripts/enemies/
-		# light_level.gd) its sight reaches `sight_dark_range` of
-		# `sight_range` and sees `sight_dark_seen` of him, eased up to all
-		# as he is lit; a light's glow on him (his torch, a lit beacon) makes
-		# him up to `sight_glow` times plainer. By day, no change.
-		"sight_dark_range":0.4,"sight_dark_seen":0.3,"sight_glow":1.3,
 		# 1: walker-only stone (scripts/walker_only.gd) blocks its sight (he
 		# hides in a niche it can't reach; the default since city-refuges
 		# round 1); 0: it looks through it, as it walks through it.
 		"sight_walker_only":1,
-		# Beacons (scripts/enemies/beacon.gd): 1 it turns to a lit one in
+		# Beacons (scripts/enemies/beacon.gd, a refuge's echo): 1 it turns to a lit one in
 		# its draw and goes there, 0 it pays them no heed. Looked at its
 		# `dwell`, it tires of that one `beacon_rest` s (lit again: news).
 		"beacons":1,"beacon_rest":40.0,
@@ -355,14 +349,12 @@ func default_knobs(n: Dictionary) -> Dictionary:
 		# he knows where you are; lost, he looks `hunt_search` s, then takes
 		# your scent (where you are now) and comes on. Hunting he sees
 		# further and wider (`hunt_range` m, `hunt_half` rad), loses you
-		# slower (`hunt_grace` s, `hunt_drain`, `hunt_memory` s) and the dark
-		# hides you less (`hunt_dark_range`, `hunt_dark_seen`: the torch
-		# matters for being spotted, not once he is on you). He leaps gaps
+		# slower (`hunt_grace` s, `hunt_drain`, `hunt_memory` s). He leaps gaps
 		# to `hunt_gap` Hh. His leap's landing comes down `hunt_shock`
 		# times harder. `void_push`: a shove (his waves, his blast) bent
 		# this share toward the nearest void within VOID_REACH.
 		"relentless":0,"hunt_range":n.unit*60.0,"hunt_half":1.25,"hunt_grace":2.5,"hunt_drain":0.12,"hunt_memory":30.0,
-		"hunt_dark_range":0.85,"hunt_dark_seen":0.8,"hunt_gap":4.6,"hunt_rise":0.9,"hunt_search":4.0,"hunt_shock":1.35,"void_push":0.0,
+		"hunt_gap":4.6,"hunt_rise":0.9,"hunt_search":4.0,"hunt_shock":1.35,"void_push":0.0,
 		# `breach` 1: hunting, a city wall, pillar or parapet in his way
 		# (not over him: he climbs to you) he smashes through
 		# (scripts/enemies/olmec_breach.gd, his `breacher`), not round.
@@ -726,8 +718,8 @@ func _reunite_near() -> bool:
 	return flat <= length*0.5+head.length*0.5+float(knobs.reunite)
 
 # --- Beacons ----------------------------
-# A lit Beacon (scripts/enemies/beacon.gd: the great cresset, a beacon tower,
-# Mudge alight) within its `draw` is heard the way the head's call is: it
+# A lit Beacon (scripts/enemies/beacon.gd: a refuge's echo) within its
+# `draw` is heard the way the head's call is: it
 # turns to its bearing (`_pick_way`), its routes go there (`_plan`), and
 # there it stands and looks at it the beacon's `dwell` s (`_beacon_gaze`),
 # then tires of that one `beacon_rest` s (lit again, it is news again).
@@ -1886,13 +1878,11 @@ func _see(delta: float) -> void:
 	if float(knobs.get("sight_walker_only",0)) >= 0.5: sight.mask |= WalkerOnly.LAYER
 	# Held up, it looks down and about more widely (`scope_wide` times its cone).
 	# Olmec threat round 1: hunting (relentless) he sees further and wider,
-	# loses you slower, and the dark hides you less.
+	# and loses you slower.
 	var hunt := hunting and _relentless()
 	sight.deep = float(knobs.hunt_range) if hunt else float(knobs.sight_range)
 	sight.grace = float(knobs.hunt_grace) if hunt else float(knobs.sight_grace)
 	sight.drain = float(knobs.hunt_drain) if hunt else float(knobs.sight_drain)
-	sight.dark_range = float(knobs.hunt_dark_range) if hunt else float(knobs.sight_dark_range)
-	sight.dark_seen = float(knobs.hunt_dark_seen) if hunt else float(knobs.sight_dark_seen)
 	sight.half = (float(knobs.hunt_half) if hunt else float(knobs.sight_half))*(float(knobs.scope_wide) if state == "scope" and _held_w > 0.5 else 1.0)
 	sight.exclude = _skip()
 	if m.seized():
@@ -1902,10 +1892,6 @@ func _see(delta: float) -> void:
 		seen_t = 0.0
 		return
 	var pts := Sight.pilot_points(m.feet,false)
-	# How lit he stands: by day, no change.
-	LightLevel.refresh(get_tree())
-	if LightLevel.daylight(): sight.light(1.0,0.0)
-	else: sight.light(LightLevel.exposure(get_tree(),pts[1]),LightLevel.glow(get_tree(),pts[1]))
 	sight.update(delta,field.study.get_world_3d().direct_space_state,_eye(),_look_way(),pts,not m.grounded)
 	if sight.seeing():
 		seen_at = m.feet

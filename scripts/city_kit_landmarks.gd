@@ -546,8 +546,7 @@ static func ring_height() -> float:
 ## door is hers; inside, the floor, screen and niche are walker-only.
 ## Hers: the stair (run it, slide the serpent's crest), the west face's
 ## walker-only prism chain (two prisms and the lip a tier), the east face's
-## kick chimneys (two fins a slot apart a tier), the shrine (a safe room),
-## the cresset (light it, and every Olmec comes to look).
+## kick chimneys (two fins a slot apart a tier), the shrine (a safe room).
 static func pyramid(seed_value: int, weathered := 0.4, opts := {}) -> Node3D:
 	var b := CityKit.Piece.new("CityPyramid",seed_value,weathered)
 	var deep: float = opts.get("foundation",FOUNDATION)

@@ -4,8 +4,8 @@ extends "res://studies/whole_body_chase.gd"
 ## on one paved basalt court, a whole Olmec hunting you among them (the
 ## whole body chase's: sight, swat, pounce, inhale, periscope).
 ##   north   the hush gallery: a servants' slit into a tier, his forecourt
-##           before it (he stands at his post there, facing it); the trough
-##           inside snuffs your torch, the lamp by the east exit relights it
+##           before it (he stands at his post there, facing it); a splash in
+##           the trough inside carries out of its mouth
 ##   west    the mouse run through a wall he can't climb: walk round it, he must
 ##   east    the slotted wall: the door at its foot, the chimney inside, his
 ##           arm slot at his shoulder; out of the window at the top, west side
@@ -132,4 +132,4 @@ func tick(delta: float) -> void:
 	if under != null and _sun != null: _sun.visible = false
 
 func _hint_text() -> String:
-	return "City refuges · gallery N (trough snuffs, east lamp relights) · mouse run W · slotted wall E · niches SE · J his sight · B him back · R start · L look · F1 numbers"
+	return "City refuges · gallery N (a splash in the trough carries) · mouse run W · slotted wall E · niches SE · J his sight · B him back · R start · L look · F1 numbers"

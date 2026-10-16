@@ -7,7 +7,6 @@ extends "res://studies/character_study.gd"
 ##        height and share marked on each), stood on top facing the deck;
 ##        step off: under 1x a landing, from 1x laid down, longer the
 ##        higher (capped at 2x). Twirl (X) with the touch close: the roll.
-##   9    the Plinth Ram on an open isle: let it hit you.
 ##   0    the wind blaster lane (trap_wind_blaster.gd): stop on its plate
 ##        and be blown off, down onto the floor a stun's fall below.
 ##   -    the chain: stand on the orange plate (the kicker) and you are
@@ -20,8 +19,6 @@ extends "res://studies/character_study.gd"
 ##   godot --path . res://studies/stun_yard.tscn -- --no-title
 const Trap = preload("res://scripts/traps/trap.gd")
 const TrapField = preload("res://scripts/traps/trap_field.gd")
-const EnemyField = preload("res://scripts/enemies/enemy_field.gd")
-const PlinthRam = preload("res://scripts/enemies/plinth_ram.gd")
 const Ray = preload("res://scripts/traps/trap_ray.gd")
 const Dropper = preload("res://scripts/traps/trap_seesaw_dropper.gd")
 const Blaster = preload("res://scripts/traps/trap_wind_blaster.gd")
@@ -33,14 +30,12 @@ const DECK_WIDE := 10.0
 const END_DECK := 8.0
 ## Where each station's ground is (x).
 const LADDER_X := 0.0
-const RAM_X := 40.0
 const BLAST_X := 80.0
 const CHAIN_X := 130.0
 ## The chain's seesaw is this many stun falls under the ray's stop.
 const SEESAW_UNDER := 1.5
 
 var traps: Node3D
-var enemies: Node
 var ray: Node3D
 var seesaw: Node3D
 var blaster: Node3D
@@ -49,7 +44,7 @@ var _both: Node
 var _stun_label: Label
 var _knobs := {}
 
-## Steps the traps and the enemies both from the study's one slot.
+## Steps the traps from the study's one slot.
 class Both extends Node:
 	var parts: Array = []
 	func before(delta: float) -> void:
@@ -93,9 +88,6 @@ func _load_pack() -> void:
 		stations.append({"key":i+1,"name":"%.2fx" % RUNGS[i],"spawn":Vector3(x,top,-6.6),"face":Vector2(0.0,1.0),"parts":[]})
 	stations[0].parts = parts
 	stations[0]["sign"] = Vector3(LADDER_X,h*3.0+2.0,-7.0)
-	# The Ram's isle.
-	stations.append({"key":9,"name":"the Ram","spawn":Vector3(RAM_X,0.0,7.0),"face":Vector2(0.0,-1.0),"sign":Vector3(RAM_X,3.0,10.0),
-		"parts":[["box",Rect2(RAM_X-10.0,-12.0,20.0,24.0),-2.0,0.0,"floor"]]})
 	# The blaster's lane, as the trap yard lays it: a floor a stun's fall down.
 	blaster = Blaster.new()
 	var b_long: float = blaster.length()
@@ -139,11 +131,8 @@ func _build_room() -> void:
 	traps.attach(self)
 	for trap: Node3D in [blaster,ray,seesaw,kicker]: traps.add(trap)
 	kicker.aim = ray.body
-	enemies = EnemyField.new()
-	enemies.attach(self)
-	enemies.spawn(PlinthRam,Vector3(RAM_X,0.0,-4.0),Vector2(0.0,1.0))
 	_both = Both.new()
-	_both.parts = [traps,enemies]
+	_both.parts = [traps]
 	add_child(_both)
 	foot_pieces = _both
 	motor.air = traps._air
@@ -161,10 +150,9 @@ func _build_room() -> void:
 	layer.add_child(_stun_label)
 	add_child(layer)
 
-## Set down anywhere: the traps and the Ram as built.
+## Set down anywhere: the traps as built.
 func place(at: Vector3, face: Vector2) -> void:
 	if traps != null: traps.reset()
-	if enemies != null: enemies.reset()
 	super.place(at,face)
 
 ## The tech on or off (T), said on screen.
@@ -194,4 +182,4 @@ func stun_line() -> String:
 	return "\n".join(lines)
 
 func _hint_text() -> String:
-	return "Stun yard · 1-8 the drop ladder (step off) · 9 the Ram · 0 the blaster · - the chain (stand on the orange plate) · X twirl: just before a hard landing, the roll · knocked: no control till your poise is back, then sail/twirl · T tech on/off · R start · F1 numbers · Esc mouse"
+	return "Stun yard · 1-8 the drop ladder (step off) · 0 the blaster · - the chain (stand on the orange plate) · X twirl: just before a hard landing, the roll · knocked: no control till your poise is back, then sail/twirl · T tech on/off · R start · F1 numbers · Esc mouse"

@@ -10,7 +10,7 @@ extends "res://studies/character_study.gd"
 ## rim) and the gate's lintel stops it; horn, gable, altar, frieze and the
 ## layer below are labelled STAND-INs.
 ##   godot --path . res://studies/greybox/washing_rite.tscn -- --no-title
-##     [--no-ram] [--no-body] [--no-head]   (leave an enemy out)
+##     [--no-body] [--no-head]   (leave an enemy out)
 ##   number keys: 1 start, 2 refuge pier, 3 the channel mouth, 4 the channel,
 ##   5 the terrace, 6 chain 1 (ram), 7 chain 2 (speed route), 8 chain 3 (body),
 ##   9 the horn, 0 the exit rim.  R start (traps and enemies rebuilt), F1 numbers.
@@ -29,7 +29,6 @@ const TrapField = preload("res://scripts/traps/trap_field.gd")
 const Sluice = preload("res://scripts/traps/trap_sluice.gd")
 const Wind = preload("res://scripts/traps/trap_wind.gd")
 const EnemyField = preload("res://scripts/enemies/enemy_field.gd")
-const PlinthRam = preload("res://scripts/enemies/plinth_ram.gd")
 const HeadlessBody = preload("res://scripts/enemies/headless_body.gd")
 const InhalerHead = preload("res://scripts/enemies/inhaler_head.gd")
 
@@ -107,7 +106,6 @@ const LAYOUT := {
 	## body hears it from the forecourt (`hear` raised for this isle, see the
 	## card).
 	"enemies": [
-		{"kind":"ram","at":Vector3(-12.5,0.0,0.0),"face":Vector2(1.0,0.0),"cast":[1,6]},
 		{"kind":"body","at":Vector3(-36.0,0.0,-10.0),"face":Vector2(1.0,0.0),"cast":[1]},
 		{"kind":"body","at":Vector3(-12.0,0.0,0.0),"face":Vector2(1.0,0.0),"cast":[8]},
 		{"kind":"head","at":Vector3(X_T+15.0+EXIT_GAP+8.0,T_TOP-1.0,-3.0),"face":Vector2(-1.0,0.0)},
@@ -244,7 +242,6 @@ func cast(key: int) -> void:
 		if _args.has(kind) or (kind == "head" and _args.has("body") and _args.has("head")): continue
 		if e.has("cast") and not (e.cast as Array).has(key): continue
 		match kind:
-			"ram": enemies.spawn(PlinthRam,e.at,e.face)
 			"body": enemies.spawn(HeadlessBody,e.at,e.face,{"hear":ground.head_top*130.0})
 			"head": enemies.spawn(InhalerHead,e.at,e.face,{"ring":ground.head_top*3.0})
 

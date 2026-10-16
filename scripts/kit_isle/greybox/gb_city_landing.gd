@@ -4,7 +4,7 @@ extends "res://scripts/kit_isle/motif_greybox.gd"
 ## isle. One basalt pillar-isle of the city kit (scripts/city_kit.gd
 ## `pillar`): a paved hex crown with a stepped dais in the middle, two
 ## collar courses down its flanks, lit crown cressets at its six corners
-## (the only light on it, lit since ever: they draw no Olmec), and the
+## (the only light on it, lit since ever), and the
 ## makers' streets round the dais where he arrives. No head on it, no trap:
 ## the run's first breath. Six rims, one on each face, any of them a way
 ## out (the generator picks).
@@ -124,13 +124,12 @@ func build(into: Node3D) -> void:
 	root.set_meta("triangles",int(p.get_meta("triangles",0)))
 	built_ms = Time.get_ticks_msec()-began
 
-## The crown cressets, lit since ever (the arrival's light; a lit one draws
-## no one).
+## The crown cressets, lit since ever (the arrival's light).
 func live(g: Node) -> void:
 	var fires := Node3D.new()
 	fires.name = "Fires"
 	g.add_child(fires)
 	var k := 0
 	for at: Vector3 in corners():
-		CityFires.cresset(fires,Transform3D(Basis.IDENTITY,g.w(at)),{"size":"crown","seed":SEED+20+k,"name":"Lamp%d" % k,"lit":true,"draw":1.0,"barge":false})
+		CityFires.cresset(fires,Transform3D(Basis.IDENTITY,g.w(at)),{"size":"crown","seed":SEED+20+k,"name":"Lamp%d" % k,"lit":true,"barge":false})
 		k += 1

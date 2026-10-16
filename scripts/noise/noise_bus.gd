@@ -1,8 +1,7 @@
 class_name NoiseBus
 extends Node
 ## The layer's noise: one
-## bus every noise goes through and every ear reads, the way SightLight /
-## LightLevel are the layer's light. A noise is a point, a loudness and who
+## bus every noise goes through and every ear reads. A noise is a point, a loudness and who
 ## made it; loudness is in metres: how far off an ear of hearing 1 still
 ## hears it (at the very edge, faintly; full at the point).
 ##

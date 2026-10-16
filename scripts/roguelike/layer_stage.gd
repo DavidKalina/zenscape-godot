@@ -5,9 +5,8 @@ extends Node3D
 ## aqueduct_isle_art.gd `floating_stones`), its rope bridges on their stone
 ## anchors (scripts/footbridge.gd `live`, RuinKit `bridge_anchor`, as the
 ## broken ring hangs its own), the Loose Voussoirs (scripts/traps/
-## trap_voussoirs.gd) in a TrapField, the Plinth Ram (scripts/enemies/
-## plinth_ram.gd) in an EnemyField, the cannon and its kegs (scripts/
-## cannon/cannon_field.gd), the rune set on the greed isle's perch
+## trap_voussoirs.gd) in a TrapField, the EnemyField, the cannon and its
+## kegs (scripts/cannon/cannon_field.gd), the rune set on the greed isle's perch
 ## (scripts/glyph_pickup.gd runes) and the exit gate; the gulfs' rides
 ## (scripts/roguelike/layer_rides.gd: serpents, ferries, their piers and
 ## the gulf cannons).
@@ -22,7 +21,6 @@ const Footbridge = preload("res://scripts/footbridge.gd")
 const TrapField = preload("res://scripts/traps/trap_field.gd")
 const Voussoirs = preload("res://scripts/traps/trap_voussoirs.gd")
 const EnemyField = preload("res://scripts/enemies/enemy_field.gd")
-const PlinthRam = preload("res://scripts/enemies/plinth_ram.gd")
 const CannonField = preload("res://scripts/cannon/cannon_field.gd")
 const GlyphPickup = preload("res://scripts/glyph_pickup.gd")
 const Lines = preload("res://scripts/collectible_lines.gd")
@@ -36,12 +34,6 @@ const CityFires = preload("res://scripts/city_kit_fires.gd")
 const Collectibles = preload("res://scripts/roguelike/collectibles.gd")
 const Merchant = preload("res://scripts/roguelike/merchant.gd")  # [merchant]
 const Altars = preload("res://scripts/roguelike/altars.gd")  # [altars]
-# [weeper] the stone mourners (weeper-round1.md), in the EnemyField.
-const LayerWeepers = preload("res://scripts/roguelike/layer_weepers.gd")
-# [beetle] the Millstone Beetles on their lanes (beetle-round1.md).
-const LayerBeetles = preload("res://scripts/roguelike/layer_beetles.gd")
-# [inhabitant] the Hollow Child and the Sun-Keepers on the city's places.
-const LayerInhabitants = preload("res://scripts/roguelike/layer_inhabitants.gd")
 # [flyer] the guacharos over the gulfs (flyer-round1.md).
 const LayerFlyers = preload("res://scripts/roguelike/layer_flyers.gd")
 
@@ -81,8 +73,6 @@ var greybox: Node = null
 var collectibles: Node3D = null
 ## [merchant] The stall and the Collector (scripts/roguelike/merchant.gd), or null.
 var merchant: Node3D = null
-var beetles: Node = null  # [beetle]
-var inhabitants: Node = null  # [inhabitant]
 ## [flyer] The layer's guacharos (scripts/roguelike/layer_flyers.gd), or null.
 var flyers: Node3D = null
 var _last := Vector3.INF
@@ -126,18 +116,13 @@ func setup(scene: Node3D, layer: Dictionary, was: Node) -> void:
 		trap.transform = e.trap.frame
 		traps.add(trap)
 		k += 1
-	# The ram on its arena, the heads on theirs.
+	# The EnemyField and the inhaler heads on their rounds.
 	enemies = EnemyField.new()
 	enemies.study = scene
 	enemies.motor = scene.motor
 	enemies.lost = float(scene.lost)
 	add_child(enemies)
-	if not (layer.ram as Dictionary).is_empty():
-		var face: Vector3 = layer.ram.face
-		enemies.spawn(PlinthRam,layer.ram.at,Vector2(face.x,face.z))
-	# The inhaler heads on their rounds.
 	heads = LayerEnemies.dress(self,layer)
-	LayerWeepers.dress(self,layer)  # [weeper]
 	# The cannon and its kegs.
 	cannons = CannonField.new()
 	add_child(cannons)
@@ -148,13 +133,11 @@ func setup(scene: Node3D, layer: Dictionary, was: Node) -> void:
 	# The greybox isles' live bits, after the cannons (a motif's `live` may
 	# add its own to them).
 	greybox = LayerGreybox.dress(self,layer)
-	inhabitants = LayerInhabitants.dress(self,layer)  # [inhabitant]
 	scene.foot_pieces = self
 	_runes()
 	collectibles = Collectibles.dress(self,layer)  # [collectibles]
 	merchant = Merchant.dress(self,layer)  # [merchant]
 	Altars.dress(self,layer)  # [altars] pedestals, the cursed altar, the key and vault
-	beetles = LayerBeetles.dress(self,layer)  # [beetle]
 	flyers = LayerFlyers.dress(self,layer)  # [flyer]
 	_gate()
 	rides = LayerRides.new()
@@ -270,7 +253,7 @@ func _city_gate(column: CylinderMesh, faint: StandardMaterial3D) -> void:
 	light.position = Vector3(0.0,2.4,0.0)
 	gate.add_child(light)
 	for side: float in [-1.0,1.0]:
-		CityFires.cresset(gate,Transform3D(Basis.IDENTITY,Vector3(side*(GATE_WIDE*0.5+1.6),0.0,0.6)),{"size":"crown","seed":int(plan.seed)+int(side),"name":"GateFire%d" % int(side+1.0),"lit":true,"draw":1.0,"barge":false})
+		CityFires.cresset(gate,Transform3D(Basis.IDENTITY,Vector3(side*(GATE_WIDE*0.5+1.6),0.0,0.6)),{"size":"crown","seed":int(plan.seed)+int(side),"name":"GateFire%d" % int(side+1.0),"lit":true,"barge":false})
 
 ## Whether feet at `feet` (world) are through the gate: within its width
 ## of it, on its level.
@@ -309,13 +292,11 @@ func before(delta: float) -> void:
 	traps.before(delta)
 	if greybox != null: greybox.before(delta)
 	if heads != null: heads.before(delta)
-	if inhabitants != null: inhabitants.before(delta)  # [inhabitant]
 	enemies.before(delta)
 	cannons.before(delta)
 	if hazards != null: hazards.before(delta)
 	if collectibles != null: collectibles.before(delta)  # [collectibles]
 	if merchant != null: merchant.before(delta)  # [merchant]
-	if beetles != null: beetles.before(delta)  # [beetle]
 	if flyers != null: flyers.before(delta)  # [flyer]
 
 func after(delta: float, events: Dictionary) -> void:
@@ -352,5 +333,4 @@ func reset() -> void:
 	cannons.reset()
 	if greybox != null: greybox.reset()
 	if collectibles != null: collectibles.reset()  # [collectibles]
-	if inhabitants != null: inhabitants.reset()  # [inhabitant]
 	if flyers != null: flyers.reset()  # [flyer]

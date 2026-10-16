@@ -48,15 +48,14 @@ const FloorBreak = preload("res://scripts/city_breaks/floor_break.gd")
 ## The family's other breakables: the felled column and the drum floor
 ## (scripts/city_kit_breaks.gd).
 const CityBreaks = preload("res://scripts/city_kit_breaks.gd")
-## The family's fires: the great cresset, the beacon tower, the oil runnel,
-## the wick spire (scripts/city_kit_fires.gd). They
+## The family's fires (dressing): the great cresset, the beacon tower, the
+## wick spire (scripts/city_kit_fires.gd). They
 ## stand in a parent (`stand`), not as a returned piece.
 const CityFires = preload("res://scripts/city_kit_fires.gd")
 ## The family's refuges: the mouse run, the votive niches, the hush gallery,
 ## the slotted wall (scripts/city_kit_refuges.gd).
 const CityRefuges = preload("res://scripts/city_kit_refuges.gd")
-## The family's light pieces: the sun-mirror, the relief face
-## (scripts/city_kit_light2.gd); stood like the fires.
+## The relief face (scripts/city_kit_light2.gd); stood like the fires.
 const CityLight2 = preload("res://scripts/city_kit_light2.gd")
 ## The family's landmarks: the ballcourt coliseum, the temple pyramid, the
 ## sundered hall (scripts/city_kit_landmarks.gd).

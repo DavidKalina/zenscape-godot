@@ -12,7 +12,8 @@ extends Node3D
 ##                  ruins' silhouettes, depth fog and a thin volumetric fog
 ##                  that the torch scatters in
 ##   the torch      a warm flickering light riding the wanderer (and a small
-##                  flame prop), the only warm thing in the dark
+##                  flame prop), the only warm thing in the dark; part of the
+##                  look, always lit (nothing puts it out)
 ##   the eyes       the Olmec's eyes glow (scripts/enemies/inhaler_head_look.gd
 ##                  `glow`, `Underground.on()`), so he is seen before his body
 ## The study's day, sun, stars, planet, clouds and air are held off here,
@@ -245,8 +246,7 @@ func _lift_preset() -> void:
 	p = mixed
 	var haze := KNOBS.duplicate()
 	haze.merge(to.get("knobs",{}),true)
-	# The torch kept as it is: the Olmec's sight reads it (scripts/enemies/
-	# light_level.gd), so the climb's air never changes who sees whom.
+	# The torch kept as it is: the climb lightens the air, not his light.
 	for k: String in knobs:
 		if k in ["torch","torch_range"]: continue
 		knobs[k] = lerpf(float(knobs[k]),float(haze[k]),climb_lift)

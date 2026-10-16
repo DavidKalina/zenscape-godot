@@ -4,13 +4,13 @@ extends "res://studies/motif_yard.gd"
 ## guacharo (scripts/enemies/guacharo.gd) laid over the motif through the
 ## generator's own path (LayerStage -> scripts/roguelike/layer_flyers.gd,
 ## the plan's `flyers`), hunting after FLYER_GRACE s. Defaults to
-## --motif=lamplighters_stair with --rims (pads out over the drop to jump
+## --motif=stacked_court with --rims (pads out over the drop to jump
 ## to); any motif yard flag works (--motif=, --grey, --bodies=0, --sky,
 ## --underground=haze), and the flyer's own (--flyer-fold=0.8, --flyer-log).
 ##
 ##   godot --path . res://studies/flyer_yard.tscn -- --no-title [--underground=haze]
 const FLYER_GRACE := 3.0
-const DEFAULT_MOTIF := "lamplighters_stair"
+const DEFAULT_MOTIF := "stacked_court"
 
 func _ready() -> void:
 	var args := LaunchArgs.user_args()

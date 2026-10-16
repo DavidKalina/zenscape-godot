@@ -91,11 +91,9 @@ const LAYOUT := {
 	"west_steps":Vector2(-58.0,-46.0),
 	"gallery_face":[[-11.0,-8.0],[-21.0,-4.8],[-24.0,-11.0]],
 	# The column (its middle, x z; falls along x), the bed-stones on the far
-	# rim cut for its end, the cresset south of the drum floor (light it and
-	# he comes down off the terrace across the floor to it).
+	# rim cut for its end.
 	"column":Vector2(-6.0,-2.0),
 	"beds":[[Vector2(14.4,-6.2),Vector3(2.4,1.1,1.6)],[Vector2(14.4,2.2),Vector3(2.4,1.1,1.6)]],
-	"cresset":Vector2(-28.0,34.5),
 	# The drum floor (its middle, 5 x 5 slabs), its north side the terrace's
 	# cliff (he comes down onto it), and the launch stump beside it (its
 	# middle, drums, its top under the launch's reach, over a jump's).
@@ -609,15 +607,12 @@ func live(g: Node) -> void:
 	# The drum floor in the forecourt's pit.
 	var d: Vector2 = LAYOUT.drum_floor
 	live_parts.drum = CityKit.stand("colossus_drum",host,Transform3D(Basis(Vector3.UP,0.0),g.w(Vector3(d.x,0.0,d.y))),SEED+23,0.4)
-	# The fires: the crown's beacon (lit long since: it draws no one), the
-	# cresset south of the drum floor (unlit: light it and he comes to it).
+	# The fire: the crown's beacon (lit long since).
 	var fires := Node3D.new()
 	fires.name = "Fires"
 	g.add_child(fires)
 	var bc: Dictionary = LAYOUT.beacon
-	var tower: Node3D = CityFires.tower(fires,Transform3D(Basis(Vector3.UP,0.5),g.w(on_far(bc.at))),{"seed":SEED+30,"name":"CrownBeacon","lit":bool(bc.lit)})
-	_still(tower)
-	live_parts.cresset = CityFires.cresset(fires,Transform3D(Basis.IDENTITY,g.w(on_near(LAYOUT.cresset))),{"size":"cresset","seed":SEED+31,"name":"LureCresset","lit":false,"draw":0.0})
+	CityFires.tower(fires,Transform3D(Basis(Vector3.UP,0.5),g.w(on_far(bc.at))),{"seed":SEED+30,"name":"CrownBeacon","lit":bool(bc.lit)})
 	# The Feller: a whole Olmec on the terrace, chase and its routes on.
 	# In a generated layer the roaming Olmec comes instead (olmec-threat-
 	# round1.md; `--knob=olmecs=places` brings the Feller back).
@@ -644,13 +639,6 @@ func live(g: Node) -> void:
 		dresser.motif = self
 		g.add_child(dresser)
 
-## A fire lit since the city emptied: its beacon draws no Olmec.
-static func _still(fire: Node) -> void:
-	var c: Object = fire.get("crown")
-	if c == null: c = fire
-	var b: Object = c.get("beacon")
-	if b != null: b.set("draw",1.0)
-
 ## Alone in the yard: far pillars in the haze, their crowns lit (drawn only;
 ## in a layer the other isles are the distance).
 func _far(g: Node) -> void:
@@ -665,8 +653,7 @@ func _far(g: Node) -> void:
 		p.position = at
 		for n: Node in p.find_children("*","CollisionObject3D",true,false): (n as CollisionObject3D).collision_layer = 0
 		far.add_child(p)
-		var t: Node3D = CityFires.tower(far,Transform3D(Basis(Vector3.UP,k*1.3),at+Vector3(float(f[3])*0.3,2.0*SO,0.0)),{"tiers":2,"base":9.0,"steps":false,"lit":true,"seed":SEED+70+k,"name":"FarTower%d" % k,"beam":3.0})
-		_still(t)
+		CityFires.tower(far,Transform3D(Basis(Vector3.UP,k*1.3),at+Vector3(float(f[3])*0.3,2.0*SO,0.0)),{"tiers":2,"base":9.0,"steps":false,"lit":true,"seed":SEED+70+k,"name":"FarTower%d" % k,"beam":3.0})
 		k += 1
 
 ## STAND-IN: the Feller's rounds (the Stacked Court's Keeper). A whole Olmec

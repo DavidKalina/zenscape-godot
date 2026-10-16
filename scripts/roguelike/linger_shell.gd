@@ -29,7 +29,7 @@ const MOST_TRIS := 200000
 ## memory and the time (never a ground: a hillside's box would fill its
 ## hollows).
 const HULL_TRIS := 60000
-const MOVING := ["EnemyField","Enemies","Pickups","Loot","Merchant","Beetle","Flyer","Weeper","Inhabitant","Pilot","Figure","Plane"]
+const MOVING := ["EnemyField","Enemies","Pickups","Loot","Merchant","Flyer","Pilot","Figure","Plane"]
 
 var space: RID
 var root: Node

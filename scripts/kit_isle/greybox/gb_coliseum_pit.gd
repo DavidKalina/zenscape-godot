@@ -159,7 +159,7 @@ const LAYOUT := {
 	# Watcher's along the west promenade; each one's first look.
 	"player":{"beat":[Vector3(0.0,0.0,6.0),Vector3(1.5,0.0,13.0),Vector3(0.0,0.0,21.0)],"face":Vector2(0.0,-1.0)},
 	"watcher":{"beat":[Vector3(-21.4,14.4,-16.0),Vector3(-21.4,14.4,0.0),Vector3(-21.4,14.4,16.0)],"face":Vector2(1.0,0.0)},
-	# Small fires lit since forever (still: they call no Olmec): the eye-line
+	# Small fires lit since forever (dressing): the eye-line
 	# to the way out [x, z, y or NAN for the ground].
 	"lamps":[[-29.0,26.0,NAN],[-29.0,46.4,NAN],[-84.0,66.0,NAN],[-140.0,66.0,NAN],[-104.0,-84.0,NAN]],
 }
@@ -701,7 +701,7 @@ func build(into: Node3D) -> void:
 	root.add_child(corbel)
 	pieces.corbel = corbel
 	_lap("corbel")
-	# The pyramid on the high rim's brink, its summit cresset lit (still),
+	# The pyramid on the high rim's brink, its summit cresset lit,
 	# its corner slumped, its treads drifting back to turf.
 	var pd: Dictionary = LAYOUT.pyramid
 	var pyr := CityLandmarks.pyramid(SEED+4,float(pd.wear),{"foundation":float(pd.foundation),"fault":int(pd.fault),"lit":true})
@@ -1017,20 +1017,15 @@ func live(g: Node) -> void:
 	for l: Array in LAYOUT.lamps:
 		var at := at_ground(Vector2(float(l[0]),float(l[1])))
 		if not is_nan(float(l[2])): at.y = float(l[2])
-		CityFires.cresset(fires,Transform3D(Basis.IDENTITY,g.w(at)),{"size":"crown","seed":SEED+40+k,"name":"Lamp%d" % k,"lit":true,"draw":1.0,"barge":false})
+		CityFires.cresset(fires,Transform3D(Basis.IDENTITY,g.w(at)),{"size":"crown","seed":SEED+40+k,"name":"Lamp%d" % k,"lit":true,"barge":false})
 		k += 1
 	# The collapse's: one still burning at the slab's low tip, one far down
 	# on the debris, so the eye finds the fall from the arrival.
 	var sl: Vector2 = LAYOUT.slab.lamp
 	var deep: Array = LAYOUT.debris[int(LAYOUT.debris_lamp)]
 	for at: Vector3 in [_on_slab(sl),Vector3((deep[0] as Vector2).x-1.2,float(deep[1]),(deep[0] as Vector2).y+1.0)]:
-		CityFires.cresset(fires,Transform3D(Basis.IDENTITY,g.w(at)),{"size":"crown","seed":SEED+40+k,"name":"Lamp%d" % k,"lit":true,"draw":1.0,"barge":false})
+		CityFires.cresset(fires,Transform3D(Basis.IDENTITY,g.w(at)),{"size":"crown","seed":SEED+40+k,"name":"Lamp%d" % k,"lit":true,"barge":false})
 		k += 1
-	# The pyramid's summit fire burned since the city emptied: it calls no one.
-	var pyr: Node3D = pieces.get("pyramid")
-	if pyr != null:
-		var c := pyr.find_child("SummitCresset",true,false)
-		if c != null: _still(c)
 	var hub: Node3D = Breakables.new()
 	hub.name = "Breakables"
 	hub.field = g.stage.enemies
@@ -1053,10 +1048,6 @@ func live(g: Node) -> void:
 		var head: Node3D = g.enemy(InhalerHead,post+Vector3.UP*0.1,kd.face,{})
 		keepers.add(who,body,head,beat)
 
-static func _still(fire: Object) -> void:
-	var b: Object = fire.get("beacon")
-	if b != null: b.set("draw",1.0)
-
 ## STAND-IN: the keepers' rounds (gb_stacked_court's Keeper, for two). A
 ## whole Olmec unaware roams any way; this turns each, while he listens or
 ## roams and isn't hunting, toward the next point of his beat, back and
@@ -1069,7 +1060,8 @@ class Keepers extends Node:
 	## [{who, body, head, beat, post, leg, dir, landed}]
 	var keep: Array = []
 	var steered := 0
-	## Frames a keeper spent going to (or looking at) a beacon, not his beat.
+	## Frames a keeper spent going to (or looking at) a beacon (a noise he
+	## heard), not his beat.
 	var lured := 0
 
 	func add(who: String, b: Node3D, h: Node3D, beat: Array[Vector3]) -> void:
@@ -1101,8 +1093,8 @@ class Keepers extends Node:
 					body.vel = Vector3.ZERO
 					continue
 			if not body.whole or body.hunting: continue
-			# A lit beacon he heeds (a court cresset the walker lit) outranks
-			# his beat: his own planner takes him there.
+			# A beacon he heeds (a noise he heard) outranks his beat: his own
+			# planner takes him there.
 			if body.get("beacon") != null:
 				lured += 1
 				continue

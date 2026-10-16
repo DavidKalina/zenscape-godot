@@ -28,8 +28,7 @@ extends "res://scripts/kit_isle/motif_greybox.gd"
 ##              and board the next lap).
 ##   the slow   the wedge (slab or chimney), B, the pit's cornice, the wrap's
 ##   way        ramp or recess, F. The whole Olmec keeps this side.
-## The serpent is the ride (serpent_crossing_line.gd steps it); the Olmec is
-## lured by the unlit great cresset on A's west terrace.
+## The serpent is the ride (serpent_crossing_line.gd steps it).
 const OlmecPlaces = preload("res://scripts/enemies/olmec_places.gd")
 const CityKit = preload("res://scripts/city_kit.gd")
 const CityStone = preload("res://scripts/city_kit_stone.gd")
@@ -110,9 +109,6 @@ const LAYOUT := {
 		"tower":Vector3(-29.0,0.0,-184.0),"lamps":[Vector2(-12.5,-149.8),Vector2(3.5,-149.6)]},
 	# The whole Olmec's beat on B (x, z), his first look.
 	"keeper":{"beat":[Vector2(-5.0,-64.0),Vector2(-5.0,-71.0),Vector2(-5.0,-79.0)],"face":Vector2(0.0,1.0)},
-	# The great cresset on A's west terrace (unlit: lit, it calls him).
-	# Polish: nearer the rim, left of the path (it stood mid-view).
-	"lure":Vector3(-14.0,0.0,16.0),
 	# Alone (the yard): far pillars in the haze [x, z, crown (courses), apothem].
 	"far_pillars":[[-260.0,-200.0,4,30.0],[200.0,-330.0,12,26.0],[260.0,40.0,-1,34.0],[-300.0,120.0,1,38.0],[60.0,-480.0,16,32.0],[-200.0,-430.0,10,28.0],[150.0,230.0,-2,30.0]],
 }
@@ -659,11 +655,8 @@ func live(g: Node) -> void:
 	var d: Vector3 = LAYOUT.dais
 	var k := 0
 	for sz: float in [-1.0,1.0]:
-		CityFires.cresset(fires,Transform3D(Basis.IDENTITY,g.w(d+Vector3(-0.6,SO,sz*3.2))),{"size":"crown","seed":SEED+40+k,"name":"DaisLamp%d" % k,"lit":true,"draw":1.0,"barge":false})
+		CityFires.cresset(fires,Transform3D(Basis.IDENTITY,g.w(d+Vector3(-0.6,SO,sz*3.2))),{"size":"crown","seed":SEED+40+k,"name":"DaisLamp%d" % k,"lit":true,"barge":false})
 		k += 1
-	var lure: Vector3 = LAYOUT.lure
-	lure.y = arrival_ground(lure.x,lure.z)
-	CityFires.cresset(fires,Transform3D(Basis.IDENTITY,g.w(lure)),{"size":"great","seed":SEED+44,"name":"LureCresset","lit":false,"draw":0.0})
 	# Where you're going, read from the arrival rim (polish): F's beacon tower
 	# raised on its west hill, a tier taller, its crown read far off; two
 	# lamps on F's south lip where the slow way comes up; the coil's cap lit.
@@ -671,14 +664,12 @@ func live(g: Node) -> void:
 	# Its foot at the lowest ground under it: the hill's steps bury the rest.
 	var foot := INF
 	for o: Vector2 in [Vector2.ZERO,Vector2(4.5,4.5),Vector2(-4.5,4.5),Vector2(4.5,-4.5),Vector2(-4.5,-4.5)]: foot = minf(foot,far_ground(tw.x+o.x,tw.z+o.y))
-	var summit: Node3D = CityFires.tower(fires,Transform3D(Basis(Vector3.UP,0.5),g.w(Vector3(tw.x,foot,tw.z))),
+	CityFires.tower(fires,Transform3D(Basis(Vector3.UP,0.5),g.w(Vector3(tw.x,foot,tw.z))),
 		{"seed":SEED+45,"name":"FarTower","lit":true,"tiers":4,"beam":float(LAYOUT.beam)})
-	SC._still(summit)
 	k = 0
 	for p: Vector2 in LAYOUT.far.lamps:
-		var lamp := CityFires.cresset(fires,Transform3D(Basis.IDENTITY,g.w(Vector3(p.x,far_ground(p.x,p.y),p.y))),
+		CityFires.cresset(fires,Transform3D(Basis.IDENTITY,g.w(Vector3(p.x,far_ground(p.x,p.y),p.y))),
 			{"size":"crown","seed":SEED+46+k,"name":"FarLamp%d" % k,"lit":true,"barge":false,"beam":float(LAYOUT.beam)})
-		SC._still(lamp)
 		k += 1
 	# The coil's rune spiral and the ring's bore held dimly lit (the strips'
 	# `hold`; the serpent's nearness still wakes them full): the spiral
@@ -689,22 +680,19 @@ func live(g: Node) -> void:
 		for st: Dictionary in piece.get_meta("strips",[]): st.hold = maxf(float(st.hold),float(LAYOUT.glow[key]))
 	var cc := coil_at()
 	var sp: Array = LAYOUT.coil.spire
-	var spire: Node3D = CityFires.spire(fires,Transform3D(Basis.IDENTITY,g.w(coil_point(float(sp[0]),float(sp[1]),coil_top()+0.4))),
+	CityFires.spire(fires,Transform3D(Basis.IDENTITY,g.w(coil_point(float(sp[0]),float(sp[1]),coil_top()+0.4))),
 		{"tall":float(sp[2]),"radius":1.2,"lit":true,"seed":SEED+49,"name":"CoilSpire"})
-	SC._still(spire)
 	var rl: Dictionary = LAYOUT.coil.ramp_lamps
 	var phi := float(rl.from)
 	while phi < float(LAYOUT.coil.foot)+360.0*float(LAYOUT.coil.turns)-30.0:
-		var lamp := CityFires.cresset(fires,Transform3D(Basis.IDENTITY,g.w(coil_point(phi,float(rl.r),coil_ramp(phi)))),
+		CityFires.cresset(fires,Transform3D(Basis.IDENTITY,g.w(coil_point(phi,float(rl.r),coil_ramp(phi)))),
 			{"size":"crown","seed":SEED+80+k,"name":"RampLamp%d" % k,"lit":true,"barge":false,"beam":float(LAYOUT.beam)})
-		SC._still(lamp)
 		phi += float(rl.every)
 		k += 1
 	for deg: float in LAYOUT.coil.lamps:
 		var at := cc+Vector3(cos(deg_to_rad(deg))*5.4,coil_top()-cc.y+0.4,-sin(deg_to_rad(deg))*5.4)
-		var lamp := CityFires.cresset(fires,Transform3D(Basis.IDENTITY,g.w(at)),
+		CityFires.cresset(fires,Transform3D(Basis.IDENTITY,g.w(at)),
 			{"size":"crown","seed":SEED+50+k,"name":"CoilLamp%d" % k,"lit":true,"barge":false,"beam":float(LAYOUT.beam)})
-		SC._still(lamp)
 		k += 1
 	var hub: Node3D = Breakables.new()
 	hub.field = g.stage.enemies
@@ -751,6 +739,5 @@ func _far(g: Node) -> void:
 		p.position = at
 		for n: Node in p.find_children("*","CollisionObject3D",true,false): (n as CollisionObject3D).collision_layer = 0
 		far.add_child(p)
-		var t: Node3D = CityFires.tower(far,Transform3D(Basis(Vector3.UP,k*1.3),at+Vector3(float(f[3])*0.3,2.0*SO,0.0)),{"tiers":2,"base":9.0,"steps":false,"lit":true,"seed":SEED+70+k,"name":"FarTower%d" % k,"beam":3.0})
-		SC._still(t)
+		CityFires.tower(far,Transform3D(Basis(Vector3.UP,k*1.3),at+Vector3(float(f[3])*0.3,2.0*SO,0.0)),{"tiers":2,"base":9.0,"steps":false,"lit":true,"seed":SEED+70+k,"name":"FarTower%d" % k,"beam":3.0})
 		k += 1

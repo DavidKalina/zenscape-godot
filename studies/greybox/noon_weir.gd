@@ -1,11 +1,10 @@
 extends "res://studies/character_study.gd"
 ## GREYBOX: the Noon Weir: three stacked channels with a sluice gate each on
 ## one shared clock, a stair up beside each, a bridge from each stair's top
-## back along the channel to its open end, a bell floor on top, the plinth
-## ram on the middle tier's gate landing, and a cannon on a neighbouring isle
-## aimed down the top channel. Grey is structure, green a landing, orange a
-## lip. Played with the real pilot and the real trap_sluice.gd /
-## plinth_ram.gd / cannon_field.gd; STAND-INs are labelled in the world (see
+## back along the channel to its open end, a bell floor on top, and a
+## cannon on a neighbouring isle aimed down the top channel. Grey is
+## structure, green a landing, orange a lip. Played with the real pilot and
+## the real trap_sluice.gd / cannon_field.gd; STAND-INs are labelled in the world (see
 ## the card's "Greybox (Opus pass)" section).
 ##
 ## ALL OF THE LAYOUT IS IN `LAYOUT` below (the later turf pass reads it).
@@ -26,12 +25,11 @@ extends "res://studies/character_study.gd"
 ##     [--offsets=a:b:c] (s each gate opens after noon; default derived from
 ##     the layout: each lower gate opens HOLD s after the upper spill lands)
 ##     [--hold=0.6] [--sluice-knob=<key>=<value>] (repeatable, all tiers)
-##     [--no-ram] [--no-noon-double]
+##     [--no-noon-double]
 const Trap = preload("res://scripts/traps/trap.gd")
 const TrapField = preload("res://scripts/traps/trap_field.gd")
 const Sluice = preload("res://scripts/traps/trap_sluice.gd")
 const EnemyField = preload("res://scripts/enemies/enemy_field.gd")
-const PlinthRam = preload("res://scripts/enemies/plinth_ram.gd")
 const CannonField = preload("res://scripts/cannon/cannon_field.gd")
 const Cannon = preload("res://scripts/cannon/cannon.gd")
 
@@ -66,10 +64,6 @@ const LAYOUT := {
 	"stairs":[
 		["stair 1 (grand_stair stand-in)",Vector3(-12.0,0.0,0.0),Vector3(-12.0,12.0,-24.0),4.0],
 		["stair 2 (grand_stair stand-in)",Vector3(-12.0,12.0,29.5),Vector3(-12.0,24.0,5.5),4.0],
-	],
-	## [kind, position, facing (x, z)]
-	"enemies":[
-		["ram",Vector3(0.0,12.0,33.0),Vector2(0.0,-1.0)],
 	],
 	## The cannon on the neighbouring isle: its base, heading (0 fires -z,
 	## down the top channel) and its rest aim (pitch, power notch: the
@@ -143,7 +137,6 @@ var noon_flush: Array = [false,false,false]
 var _offsets_given := false
 var _noon_double := true
 var _preset := {}
-var _no_ram := false
 var _over := {}
 
 ## Steps the traps, the enemies and the cannon in the study's one
@@ -174,7 +167,6 @@ func _ready() -> void:
 			var parts := arg.get_slice("=",1).split(":")
 			for i in mini(parts.size(),3): offsets[i] = float(parts[i])
 			_offsets_given = true
-		elif arg == "--no-ram": _no_ram = true
 		elif arg == "--no-noon-double": _noon_double = false
 		elif arg.begins_with("--sluice-knob="):
 			var kv: String = arg.trim_prefix("--sluice-knob=")
@@ -258,9 +250,6 @@ func _build_room() -> void:
 	enemies.motor = motor
 	enemies.lost = lost
 	add_child(enemies)
-	if not _no_ram:
-		for e: Array in LAYOUT.enemies:
-			if e[0] == "ram": enemies.spawn(PlinthRam,e[1],e[2])
 	cannons = CannonField.new()
 	add_child(cannons)
 	cannons.attach(self)

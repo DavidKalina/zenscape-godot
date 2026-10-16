@@ -127,8 +127,7 @@ func _pillar(art: Node3D, at: Vector3, apothem: float, courses: int, seed_value:
 	var p := CityKit.pillar(seed_value,0.5,{"apothem":apothem,"courses":courses,"climb":-1,"depth":140.0,"crown":"paved"})
 	p.position = at
 	art.add_child(p)
-	var t := Fires.tower(art,Transform3D(Basis(Vector3.UP,float(seed_value)*0.7),at),{"tiers":3,"base":9.0,"steps":false,"lit":true,"seed":seed_value,"beam":3.0})
-	t.crown.beacon.draw = 0.0
+	Fires.tower(art,Transform3D(Basis(Vector3.UP,float(seed_value)*0.7),at),{"tiers":3,"base":9.0,"steps":false,"lit":true,"seed":seed_value,"beam":3.0})
 
 func _process(delta: float) -> void:
 	_t += delta

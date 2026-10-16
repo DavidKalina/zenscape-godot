@@ -157,7 +157,7 @@ python tools/sweep.py scratch/gap.gd --seed 1..6 --knob gulf=40,60,80 --csv scra
 Each axis becomes a scene flag: `--seed=N`, `--shape=S`, `--knob=k=v`, and
 `--set name=a,b` gives `--name=a`. `--arg name=a,b` gives the driver
 `--name=a` instead (before `--scene-args`), so the scene never sees it:
-`python tools/sweep.py scratch/watch_weeper.gd --arg pilot=stand,flee,dodge -- --watch-row`. Ranges are written `1..5` or `0..20..5`.
+`python tools/sweep.py scratch/watch_enemy.gd --arg pilot=stand,flee,dodge -- --watch-row`. Ranges are written `1..5` or `0..20..5`.
 The columns are the driver's RESULT values, or one row per ROW line it
 printed, plus `ok` and seconds. To try a value, pass it as a flag. Don't
 `sed` it into the source.

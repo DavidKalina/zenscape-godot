@@ -2,8 +2,7 @@ extends RefCounted
 ## The game-feel round's features (docs/design/roguelike/items-contract.md),
 ## on by default: `--loot=off` turns them all off, `--no-<name>` one
 ## (e.g. `--no-merchant`, `--no-linger`). A feature asks `RunFeatures.on(&"merchant")`
-## where it would lay or start itself. Cut features (the flyer, the
-## Sun-Keepers) ask `RunFeatures.opted(&"flyer")`: off unless `--flyer`.
+## where it would lay or start itself. Cut features (the flyer) ask `RunFeatures.opted(&"flyer")`: off unless `--flyer`.
 
 static var _args := PackedStringArray()
 static var _read := false
@@ -16,7 +15,7 @@ static func on(feature: StringName) -> bool:
 	return not ("--no-%s" % feature) in _args
 
 ## A feature cut from the run but kept in the code (run-trim-round1.md): off
-## unless `--<name>` is given (e.g. `--flyer`, `--sun-keepers`); `--loot=off`
+## unless `--<name>` is given (e.g. `--flyer`); `--loot=off`
 ## still turns it off.
 static func opted(feature: StringName) -> bool:
 	if not _read:
@@ -26,7 +25,7 @@ static func opted(feature: StringName) -> bool:
 	return ("--%s" % feature) in _args
 
 ## A motif's own opt-out: false when `motif` (an isle's) lists `feature` in
-## its `without()` (e.g. ["merchant", "beetle"]); every other motif keeps it.
+## its `without()` (e.g. ["merchant"]); every other motif keeps it.
 static func motif_lets(feature: StringName, motif: Variant) -> bool:
 	if not (motif is Object) or not (motif as Object).has_method("without"): return true
 	return not String(feature) in ((motif as Object).call("without") as Array)

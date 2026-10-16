@@ -33,9 +33,8 @@ extends "res://scripts/kit_isle/motif_greybox.gd"
 ## Routes (rim in on F's south edge, rim out on T's far edge):
 ##   the court   the serpent stair, west round M's ring past the well, U's
 ##               collar chain, U's crown, the causeway east, T's crown.
-##   the tower   F's beacon tower (its giant steps; your torch lights its
-##               crown, and every Olmec near turns to it), across the seam
-##               onto M's ring, east round it, T's collar chain to its crown.
+##   the tower   F's beacon tower (its giant steps), across the seam onto
+##               M's ring, east round it, T's collar chain to its crown.
 ##   the well    the sunken way up the hill to the door, the tunnel (walker
 ##               high: he can't follow), up the drum's coil out of the dark
 ##               onto M's south rim, then either pillar's chain. Slower and
@@ -45,8 +44,7 @@ extends "res://scripts/kit_isle/motif_greybox.gd"
 ## STAND-IN beat), under the causeway's bay; an inhaler head holds T's crown
 ## at the causeway's end, its headless body coming up the cliffs; the
 ## breakables hub is every Olmec's breaker (the bay, the stair's fault, the
-## cressets). The unlit cressets (F's tower, M's ring, the well's core, the
-## forecourt) call them when lit; the lit ones have burned too long to.
+## cressets). The cressets are dressing: some burn, some stand cold.
 ##
 ## Everything is one LAYOUT table; where the pillars stand is solved from it
 ## in `place_of`.
@@ -121,7 +119,7 @@ const LAYOUT := {
 	# The worn way from the arrival up F's terraces and the bank's shelf to
 	# the door (world x, z; the mouth's apron ends it).
 	"door_way":[Vector2(-14.0,100.0),Vector2(-26.0,88.0),Vector2(-36.0,70.0),Vector2(-38.0,48.0),Vector2(-36.0,34.0)],
-	# Lamps on the way's east rim (lit since forever; draw no Olmec).
+	# Lamps on the way's east rim (lit since forever).
 	"way_lamps":[Vector2(-28.5,72.0),Vector2(-30.0,50.0)],
 	"well":{"apothem":CityKit.DRUM_RADIUS+CityKit.LANDING,"crown":3,"wear":0.5},
 	# U and T: the face of M each is set to (hex_dir), their size.
@@ -135,7 +133,7 @@ const LAYOUT := {
 	# The causeway: its spans, the breakable bay, its line (z m) over M's
 	# north ring (its middle piers stand on the ring there).
 	"causeway":{"spans":3,"bay":1,"line":-32.0,"wear":0.6},
-	# The beacon towers: F's beside the stair, its back to M (unlit: the
+	# The beacon towers: F's beside the stair, its back to M (cold: the
 	# tower route); T's on its crown (lit: the summit); the needle's (lit).
 	"towers":{"forecourt":{"at":Vector2(19.0,0.0),"base":7.2,"lit":false},"summit":{"at":Vector2(5.0,-2.0),"lit":true},"needle":{"lit":true}},
 	# The cressets: [on (a pillar), offset (x, z), level over its crown
@@ -155,7 +153,7 @@ const LAYOUT := {
 	"drums":[[Vector2(30.0,-15.0),1.7,5.4,20.0],[Vector2(-20.0,14.0),1.5,4.2,-35.0],[Vector2(-30.0,-34.0),1.9,3.2,70.0]],
 	# Alone (the yard): far pillars in the haze [x, z, crown (courses), apothem].
 	"far":[[-290.0,-250.0,20,30.0],[250.0,-360.0,30,26.0],[350.0,-70.0,10,34.0],[-370.0,50.0,2,38.0],[70.0,-560.0,42,32.0],[-190.0,-510.0,34,28.0]],
-	# Small fires lit since forever (draw no Olmec): on M's crown corners
+	# Small fires lit since forever: on M's crown corners
 	# (hex corner f, between faces f and f+1) and on the causeway's parapets
 	# over its piers.
 	"lamps":{"well_corners":[5,0,2,3],"causeway":true},
@@ -447,7 +445,7 @@ func epithet() -> String:
 	return "Every crown was lit for someone climbing. Someone still keeps the well."
 
 func brief() -> String:
-	return "Up: the serpent stair, round the well, the west pillar's collars and the causeway; or the beacon tower, round the well, the east pillar's collars.\nThe Keeper walks the well's far ring; a head holds the summit. Light a fire and they come to it."
+	return "Up: the serpent stair, round the well, the west pillar's collars and the causeway; or the beacon tower, round the well, the east pillar's collars.\nThe Keeper walks the well's far ring; a head holds the summit."
 
 func start() -> Vector3:
 	return on("forecourt",Vector2(6.0,float(LAYOUT.forecourt.apothem)-6.0))
@@ -654,8 +652,8 @@ func flora_seed() -> int:
 ## slug), so the shape stays; `vary` (scripts/roguelike/layer_plan.gd
 ## `_motif_isle`, from the isle's own seed) changes what doesn't touch it:
 ## the stone's seeds and weathering, the turf caps' ragged edges, the fallen
-## drums' lie, the Keeper's seed, and which of the unlit cressets someone
-## still keeps lit (a lit one draws no Olmec). The yard's court is SEED's.
+## drums' lie, the Keeper's seed, and which of the cold cressets someone
+## still keeps lit. The yard's court is SEED's.
 var _seed := SEED
 var _wear := 0.0
 var _lit: Array = []
@@ -933,18 +931,16 @@ func live(g: Node) -> void:
 	var ft := forecourt_tower()
 	ft.origin = g.w(ft.origin)
 	CityFires.tower(fires,ft,{"seed":_seed+20,"name":"ForecourtTower","lit":bool(tw.forecourt.lit),"base":float(tw.forecourt.base)})
-	var summit: Node3D = CityFires.tower(fires,Transform3D(Basis(Vector3.UP,-PI/2.0),g.w(on("east",tw.summit.at))),{"seed":_seed+21,"name":"SummitTower","lit":bool(tw.summit.lit)})
-	_still(summit)
-	var needle: Node3D = CityFires.tower(fires,Transform3D(Basis(Vector3.UP,0.4),g.w(place_of("needle"))),{"seed":_seed+22,"name":"NeedleTower","lit":bool(tw.needle.lit),"steps":false,"base":9.0,"beam":3.0})
-	_still(needle)
+	CityFires.tower(fires,Transform3D(Basis(Vector3.UP,-PI/2.0),g.w(on("east",tw.summit.at))),{"seed":_seed+21,"name":"SummitTower","lit":bool(tw.summit.lit)})
+	CityFires.tower(fires,Transform3D(Basis(Vector3.UP,0.4),g.w(place_of("needle"))),{"seed":_seed+22,"name":"NeedleTower","lit":bool(tw.needle.lit),"steps":false,"base":9.0,"beam":3.0})
 	var k := 0
 	for c: Array in LAYOUT.cressets:
 		var lit := bool(c[4]) or _lit.has(k)
 		var at := on_forecourt(c[1]) if str(c[0]) == "forecourt" else on(str(c[0]),c[1],float(c[2]))
-		CityFires.cresset(fires,Transform3D(Basis.IDENTITY,g.w(at)),{"size":c[3],"seed":_seed+30+k,"name":"Cresset%d_%s" % [k,str(c[0])],"lit":lit,"draw":1.0 if lit else 0.0})
+		CityFires.cresset(fires,Transform3D(Basis.IDENTITY,g.w(at)),{"size":c[3],"seed":_seed+30+k,"name":"Cresset%d_%s" % [k,str(c[0])],"lit":lit})
 		k += 1
 	for at: Vector3 in lamp_points():
-		CityFires.cresset(fires,Transform3D(Basis.IDENTITY,g.w(at)),{"size":"crown","seed":_seed+40+k,"name":"Lamp%d" % k,"lit":true,"draw":1.0,"barge":false})
+		CityFires.cresset(fires,Transform3D(Basis.IDENTITY,g.w(at)),{"size":"crown","seed":_seed+40+k,"name":"Lamp%d" % k,"lit":true,"barge":false})
 		k += 1
 	# The hub: every Olmec's breaker (the bay, the fault, the cressets).
 	var hub: Node3D = Breakables.new()
@@ -1003,14 +999,6 @@ static func lamp_points() -> Array:
 		out.append(Vector3(q.x,land_y(q.x,q.y)+place_of("forecourt").y,q.y))
 	return out
 
-## A tower's crown (or a cresset) lit since the city emptied: its beacon
-## draws no Olmec here (`draw` 1, as the fires yard's far towers).
-static func _still(fire: Node) -> void:
-	var c: Object = fire.get("crown")
-	if c == null: c = fire
-	var b: Object = c.get("beacon")
-	if b != null: b.set("draw",1.0)
-
 ## Alone in the yard: far pillars in the haze, their crowns lit (drawn
 ## only; the layers in the distance a layer's own isles are).
 func _far(g: Node) -> void:
@@ -1025,8 +1013,7 @@ func _far(g: Node) -> void:
 		p.position = at
 		for n: Node in p.find_children("*","CollisionObject3D",true,false): (n as CollisionObject3D).collision_layer = 0
 		far.add_child(p)
-		var t: Node3D = CityFires.tower(far,Transform3D(Basis(Vector3.UP,k*1.3),at+Vector3(float(f[3])*0.3,2.0*CityKit.SET_OFF,0.0)),{"tiers":2,"base":9.0,"steps":false,"lit":true,"seed":SEED+70+k,"name":"FarTower%d" % k,"beam":3.0})
-		_still(t)
+		CityFires.tower(far,Transform3D(Basis(Vector3.UP,k*1.3),at+Vector3(float(f[3])*0.3,2.0*CityKit.SET_OFF,0.0)),{"tiers":2,"base":9.0,"steps":false,"lit":true,"seed":SEED+70+k,"name":"FarTower%d" % k,"beam":3.0})
 		k += 1
 
 ## STAND-IN: the Keeper's rounds. A whole Olmec unaware roams any way; this

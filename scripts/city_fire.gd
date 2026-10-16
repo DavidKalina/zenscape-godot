@@ -1,13 +1,11 @@
 extends Node3D
 ## One fire of the city kit's fire pieces (scripts/city_kit_fires.gd): what
-## burns in a cresset's
-## bowl, on a beacon tower's crown, at a runnel's running front, or spilled
-## on the ground. Its flame is the game's real fire (scripts/flame.gd, a
-## raymarched volume), so the
-## city's fires, the torch and the lamps are one fire:
+## burns in a cresset's bowl or on a beacon tower's crown. A look only. Its
+## flame is the game's real fire (scripts/flame.gd, a raymarched volume), so
+## the city's fires and the lamps are one fire:
 ##
-##   flame    a Flame node of `kind` (brazier for a bowl, bonfire for a spill,
-##            torch for a runnel's front) sized to `flame` m tall: volumes,
+##   flame    a Flame node of `kind` (brazier for a bowl) sized to `flame`
+##            m tall: volumes,
 ##            sparks and smoke, with no light of its own
 ##   coals    a faint glowing bed (shaders/campfire_coals.gdshader)
 ##   halo     a soft camera-facing glow (shaders/stone_lamp_halo.gdshader):
@@ -17,8 +15,7 @@ extends Node3D
 ##            a quick lick), shadowed only if `shadows`, faded with distance
 ##
 ## `lit` eases the fire in and out: lighting it flares (the flame overshooting
-## its height) then settles. The fire is a look; the sight's light and the
-## beacon are the piece's (city_kit_fires.gd).
+## its height) then settles.
 ## Sizes are the flame's height (m) and the bed's width (m).
 
 const Flame = preload("res://scripts/flame.gd")
@@ -53,10 +50,10 @@ const LIGHT_FADE_AT := 2.4
 @export var halo_glow := 0.55
 ## How lively the light's flicker is (0 steady).
 @export var flicker := 1.0
-## The Flame's kind (flame.gd KINDS): brazier in a bowl, bonfire spilled,
-## torch for a runnel's front. Before it enters the tree.
+## The Flame's kind (flame.gd KINDS): brazier in a bowl. Before it enters
+## the tree.
 @export var kind := "brazier"
-## Smoke off the flame (a runnel's front and a spill have none).
+## Smoke off the flame.
 @export var smoke := true
 
 ## Burning (eased in `_process`). `light()` / `douse()`.

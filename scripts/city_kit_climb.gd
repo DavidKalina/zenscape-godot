@@ -529,8 +529,7 @@ static func lip(seed_value: int, weathered := 0.4, opts := {}) -> Node3D:
 	var brazier := Vector3(w2-1.6,0.0,-2.4)
 	b.cresset(brazier)
 	# The brazier niche: a squat carved bowl on the top; lit (`brazier`), it
-	# glows and draws every calm Olmec in reach to come and look, up the
-	# face and over the cornice (scripts/enemies/beacon.gd).
+	# glows (dressing).
 	_drawn(b,brazier+Vector3(-0.55,0.0,-0.55),brazier+Vector3(0.55,0.35,0.55),0.9,0.12)
 	_drawn(b,brazier+Vector3(-0.75,0.35,-0.75),brazier+Vector3(0.75,0.8,0.75),1.0,0.25)
 	if opts.get("brazier",false):
@@ -557,16 +556,6 @@ static func lip(seed_value: int, weathered := 0.4, opts := {}) -> Node3D:
 		lamp.omni_range = 14.0
 		lamp.position = brazier+Vector3.UP*1.6
 		b.root.add_child(lamp)
-		var beacon := Beacon.new()
-		beacon.name = "Brazier"
-		beacon.radius = 6.0
-		beacon.strength = 0.8
-		beacon.draw = 90.0
-		beacon.gather = 2.0
-		beacon.dwell = 8.0
-		beacon.position = brazier+Vector3.UP*1.2
-		beacon.stand = Vector3(xg-brazier.x,-1.2,-3.5-brazier.z)
-		b.root.add_child(beacon)
 	b.rect_area("top",Rect2(-w2,-depth,w2*2.0,depth+ov),0.0)
 	var extra := {
 		"sizes":{"height":h,"width":w2*2.0,"depth":depth,"cornice":ct,"over":ov,"undercut":uc,"undercut_deep":ud,"shelves":count+1,"troughs":troughs,"corner":cell},

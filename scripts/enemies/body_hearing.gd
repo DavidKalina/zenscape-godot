@@ -3,13 +3,13 @@ extends RefCounted
 ## (scripts/enemies/headless_body.gd) hears what is made on the NoiseBus
 ## (scripts/noise/noise_bus.gd) and goes to look, as at a weaker, fading
 ## beacon. It is one: a `Lure`, a Beacon only its own body heeds (in no
-## group, lighting nothing), set where the noise was. The body's beacon
+## group), set where the noise was. The body's beacon
 ## machinery does the rest: it stops and listens (the tell), turns to it,
 ## routes there, stands looking `noise_dwell` s, then tires of it.
 ##
-## Its place among the body's wants: below a lit beacon (and so below its
-## head in sight or calling, and below him seen, whole), above roaming and
-## its head heard but not calling (`_beacons` in the body).
+## Its place among the body's wants: below a lit beacon (a refuge's echo;
+## and so below its head in sight or calling, and below him seen, whole),
+## above roaming and its head heard but not calling (`_beacons` in the body).
 ##
 ## Heard: a noise of loudness L reaches it within L x `hear_noise` m of its
 ## middle, x `noise_wall` with stone between; how well, 1 at the point
@@ -35,7 +35,7 @@ class Lure extends Beacon:
 	## Heeded now (a heard noise not yet looked at or forgotten).
 	var active := false
 	func _enter_tree() -> void:
-		# Not a SightLight (lights nothing) nor a Beacon (draws no one else).
+		# Not in the beacons' group: it draws no one else.
 		add_to_group(LURES)
 
 ## A noise this far (m) from the one heeded is news (it listens again).
@@ -71,8 +71,6 @@ func pick(body: Node3D) -> Beacon:
 		lure = Lure.new()
 		lure.name = "HeardNoise"
 		lure.top_level = true
-		lure.strength = 0.0
-		lure.radius = 0.0
 		lure.draw = 1.0
 		_rng.seed = hash(body.get_instance_id())
 		body.add_child(lure)

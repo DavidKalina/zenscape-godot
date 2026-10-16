@@ -567,7 +567,7 @@ static func _rids(exclude: Array) -> Array[RID]:
 #           shaped like the window)
 #   hud     true: the HUD kept in (the play view only; the others are drawn
 #           by a camera of their own, in a SubViewport, so the study's
-#           camera stays current and what acts on it, the Weeper, plays on)
+#           camera stays current and whatever acts on it plays on)
 #   when    Callable() -> bool: shot_at returns at once, armed, and takes
 #           the still the first frame it is true, while a route() or
 #           watch() plays; film starts then
@@ -843,7 +843,7 @@ func _hidden_from(eye: Vector3, target: Variant, opts: Dictionary) -> bool:
 
 ## A view of the world of its own (a SubViewport on the same World3D), so
 ## the study's camera stays current: enemies that act on what the camera
-## sees (the Weeper) play on as they would. Its camera takes the play
+## sees play on as they would. Its camera takes the play
 ## camera's environment, attributes and cull mask; the window's AA.
 func _cap_view(label: String, size: Vector2i) -> SubViewport:
 	var sv := SubViewport.new()

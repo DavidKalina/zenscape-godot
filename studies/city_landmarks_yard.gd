@@ -18,11 +18,11 @@ extends "res://studies/character_study.gd"
 ## Stations (keys): 1 start · 2 court gate · 3 court ledge · 4 court
 ## promenade · 5 stair foot · 6 summit door · 7 west chain · 8 east chimney
 ## · 9 hall high end · 0 hall aisle · - hall chimney
-## Keys: R all back · B him back · J his sight · L torch/haze · T torch
+## Keys: R all back · B him back · J his sight · L torch/haze
 ##   godot --path . res://studies/city_landmarks_yard.tscn -- --no-title
 ##     [--underground=haze|torch] [--day] [--olmec=plaza|court|stair|landing|pyramid|hall]
 ##     [--body-knob=<k>=<v>] [--head-knob=...] [--no-body] [--sight-overlay]
-##     [--lit] (the cressets burning from the start) [--no-fault] (the
+##     [--lit] (the cressets burning) [--no-fault] (the
 ##     stair's second landing whole)
 const EnemyField = preload("res://scripts/enemies/enemy_field.gd")
 const InhalerHead = preload("res://scripts/enemies/inhaler_head.gd")
@@ -334,17 +334,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		match (event as InputEventKey).keycode:
 			KEY_R:
 				reset_body()
-				Fires.set_torch(get_tree(),true)
 				respawn()
 				return
 			KEY_B:
 				reset_body()
 				_say("He is back where he began",2.0)
-				return
-			KEY_T:
-				var on := not Fires.torch_lit(get_tree())
-				Fires.set_torch(get_tree(),on)
-				_say("Torch lit" if on else "Torch out: you are dark to him",2.5)
 				return
 			KEY_J:
 				_overlay_on = not _overlay_on
@@ -357,7 +351,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	super._unhandled_input(event)
 
 func _hint_text() -> String:
-	return "City landmarks · W court (run into a ring's root, swing, chain) · N pyramid (stair, west prism chain, east kick chimneys, the shrine's door is yours) · E sundered hall (aisles, the fallen slab) · 1-9 0 - stations · R all back · B him back · J his sight · L torch/haze · T torch · F1 numbers"
+	return "City landmarks · W court (run into a ring's root, swing, chain) · N pyramid (stair, west prism chain, east kick chimneys, the shrine's door is yours) · E sundered hall (aisles, the fallen slab) · 1-9 0 - stations · R all back · B him back · J his sight · L torch/haze · F1 numbers"
 
 func _show_hud() -> void:
 	super._show_hud()

@@ -605,7 +605,7 @@ func build(into: Node3D) -> void:
 		"top":f.y,"depth":float(fd.depth),"cliffs":Rect2(f.x-8.0,f.z-34.0,60.0,66.0),"hang":true,"resample":[60.0,220,48],"cell":2.0,
 		"tone":KitLook.turf(int(fd.seed),KitLand.wear_of(paths()))}
 	if pol:
-		# The broken-hillside kit options (the Lamplighters'): turf-rounded
+		# The broken-hillside kit options: turf-rounded
 		# lips, finer cliff faces, the cut's steps kept small.
 		a_spec.cliffs = Rect2(-81.0,-41.0,88.0,76.0)
 		f_spec.cliffs = Rect2(f.x-11.0,f.z-37.0,66.0,72.0)
@@ -889,7 +889,7 @@ func _hang_roots(root: Node3D, a_outline: Array, f_outline: Array) -> void:
 	mi.set_meta("triangles",_roots.size()*70)
 	pieces.roots = mi
 
-## Fallen stone half sunk in both shores (the Lamplighters' `stones`).
+## Fallen stone half sunk in both shores.
 func _stones(root: Node3D) -> void:
 	var g: RefCounted = GiantStone.mesher()
 	var body := StaticBody3D.new()
@@ -1327,15 +1327,13 @@ func live(g: Node) -> void:
 	var f := far_at()
 	var cat := Vector3(f.x+cp.x,0.0,f.z+cp.y)
 	cat.y = far_ground(cat.x,cat.z)
-	var lamp: Node3D = CityFires.cresset(fires,Transform3D(Basis.IDENTITY,g.w(cat)),{"size":"great","seed":SEED+40,"name":"GateFire","lit":true,"draw":0.0,"beam":2.5})
-	SC._still(lamp)
+	CityFires.cresset(fires,Transform3D(Basis.IDENTITY,g.w(cat)),{"size":"great","seed":SEED+40,"name":"GateFire","lit":true,"beam":2.5})
 	# Lamps lit on the way up to it: the one warm place in the haze.
 	var li := 0
 	for lp: Vector2 in (fd.lamps+POLISH.lamps if polish() else fd.lamps):
 		var at := Vector3(f.x+lp.x,0.0,f.z+lp.y)
 		at.y = far_ground(at.x,at.z)
-		var l: Node3D = CityFires.cresset(fires,Transform3D(Basis.IDENTITY,g.w(at)),{"size":"crown","seed":SEED+42+li,"name":"FarLamp%d" % li,"lit":true,"barge":false,"draw":0.0,"beam":2.0})
-		SC._still(l)
+		CityFires.cresset(fires,Transform3D(Basis.IDENTITY,g.w(at)),{"size":"crown","seed":SEED+42+li,"name":"FarLamp%d" % li,"lit":true,"barge":false,"beam":2.0})
 		li += 1
 	# The gate: the makers' corbel vault, its hall along x, its cracked bay
 	# toward the line.

@@ -29,7 +29,6 @@ extends "res://scripts/kit_isle/motif_greybox.gd"
 ## - Turf pass (the section at the end): kit terrain and carved stone by
 ##   default, the grey boxes with `--weir-grey` (A/B checks).
 const Cannon = preload("res://scripts/cannon/cannon.gd")
-const PlinthRam = preload("res://scripts/enemies/plinth_ram.gd")
 const Trap = preload("res://scripts/traps/trap.gd")
 const Sluice = preload("res://scripts/traps/trap_sluice.gd")
 
@@ -94,10 +93,6 @@ const LAYOUT := {
 		["stair 1 (grand_stair stand-in)",Vector3(-12.0,0.0,0.0),Vector3(-12.0,12.0,-24.0),4.0],
 		["stair 2 (grand_stair stand-in)",Vector3(-12.0,12.0,29.5),Vector3(-12.0,24.0,5.5),4.0],
 	],
-	## [kind, position, facing (x, z)]
-	"enemies":[
-		["ram",Vector3(0.0,12.0,33.0),Vector2(0.0,-1.0)],
-	],
 	## Floating labels: [position, text]
 	"labels":[
 		[Vector3(0.0,3.5,-28.0),"TIER 1 open end (walk N, against the water)"],
@@ -134,7 +129,7 @@ func epithet() -> String:
 	return "It keeps the hours. It has always kept the hours."
 
 func brief() -> String:
-	return "Climb the three channels in their dry spells: walk each north against the water, stair up beside the gate, bridge back. Mind the ram on the middle landing.\nOn top, jump off the bell floor's north edge into the cannon below: it catches you and fires you east to the way on. At noon all three gates flood: ride it down."
+	return "Climb the three channels in their dry spells: walk each north against the water, stair up beside the gate, bridge back.\nOn top, jump off the bell floor's north edge into the cannon below: it catches you and fires you east to the way on. At noon all three gates flood: ride it down."
 
 func start() -> Vector3:
 	return Vector3(0.0,0.0,-34.0)
@@ -208,8 +203,6 @@ func live(g: Node) -> void:
 	clock.name = "NoonClock"
 	clock.setup(sluices)
 	g.trap(clock)
-	for e: Array in LAYOUT.enemies:
-		if e[0] == "ram": g.enemy(PlinthRam,g.w(e[1]),e[2])
 	# The stage makes its CannonField after the greybox isles (layer_stage
 	# `setup`), so the clock lays the cannon on its first step.
 	clock.host = g

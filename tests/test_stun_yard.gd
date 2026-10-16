@@ -10,7 +10,6 @@ extends SceneTree
 ##   - stood on the wind blaster's plate, he is blasted off, stunned with no
 ##     sail till his poise is back, and ends down on the floor below or
 ##     sailing;
-##   - the Ram, let come, knocks him (stunned);
 ##   - the chain: the kicker knocks him onto the waiting Sky Ray: down on
 ##     its back he is carried; with the tech on (T), the twirl pressed just
 ##     before the touch latches him onto a rail; a stunned body lying on the
@@ -63,8 +62,6 @@ func run() -> void:
 	check(rolled.rolled and not rolled.downed,"Off the 1.6x, twirl just before the touch: the roll, never down")
 	# The blaster.
 	await _blaster()
-	# The Ram.
-	await _ram()
 	# The chain.
 	await _chain()
 	_let_go()
@@ -128,16 +125,6 @@ func _blaster() -> void:
 	_let_go()
 	check(knocked and not sail_early,"Blasted off the plate, stunned: no sail till his poise is back")
 	check(poised or down_low,"Then poise back mid-air (%s) or down on the floor below (%s)" % [poised,down_low])
-
-func _ram() -> void:
-	await _go(9)
-	var hit := false
-	var t := 0.0
-	while t < 15.0 and not hit:
-		await _frame()
-		t += study.get_process_delta_time()
-		if m.move == "tumble" and m.stunned == "knock": hit = true
-	check(hit,"The Ram, let come, knocks him stunned (%.1f s)" % t)
 
 func _chain() -> void:
 	var ray: Node3D = study.ray

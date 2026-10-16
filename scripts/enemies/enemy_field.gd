@@ -41,10 +41,6 @@ const HISTORY := 4
 
 func _init() -> void:
 	name = "EnemyField"
-	# The light the Olmec's sight reckons with:
-	# the flags' `--ambient=` / `--torch=`, else the underground look's, else
-	# day.
-	LightLevel.from_args(LaunchArgs.user_args())
 
 ## Hooked into `scene` (a character study): stepped by its frame.
 func attach(scene: Node3D) -> void:
