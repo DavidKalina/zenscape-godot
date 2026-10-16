@@ -77,6 +77,20 @@ well. Now it should lose two things and gain some life:
    (item 8) should break it up with growth and wear. The two plane tokens
    stay unplaced: there's no token the plane can take.
 
+10. **Orchestrator's look at part 1** (`captures/shots/pl/dress/a3_Threshold_three.png`):
+    it still reads barren. The ruins are small dark dots scattered over a
+    big flat orange plate, all about the same 2.5 m height. Part 2 should
+    add height and mass:
+    - trees and shrubs in clumps;
+    - one taller ruin landmark per isle (an arch, a pier left standing, a
+      wall end with a lancet), within the route and strip rules;
+    - growth climbing the stone.
+
+    Find out why the turf reads saturated orange (the yard's palette, the
+    season or the flora tier) and whether the place can ask for greener
+    turf. Fix it here if it's a per-place setting; report it if it's
+    global.
+
 ## Rules
 
 Prototyping (AGENTS.md): smoke checks plus throwaway drive checks, no new
