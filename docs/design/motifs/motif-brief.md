@@ -150,3 +150,6 @@ Rounds go in docs/design/motifs/brainstorm/roundN/.
 
 - `round1-olmec-climb`: six variations of the colonnade spine as a mini
   level the Olmec climbs after you (m1-m6; maps in its index.html).
+- `round2`: spread, kit pieces only: 20 pieces in five themes (k1 relic
+  climb, k2 aqueduct rides, k3 carry, k4 keel state-change, k5 hide and
+  descend); engine-gap tally and picks in its README.
