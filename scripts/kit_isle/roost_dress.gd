@@ -34,6 +34,7 @@ const CHAR := Color("1a1512")
 ## (x, z) -> y in its frame: where its fallen blocks lie.
 static func tower(seed_value: int, height: float, outer: float, wall: float, high_side: float, sunk: float, ground: Callable) -> Node3D:
 	var b := RuinKit.Build.new(seed_value,0.8,"DragonTower")
+	b.drop_floating = true
 	b.terrain = ground
 	var inner := outer-wall
 	var half_side := outer*tan(PI/8.0)
