@@ -128,6 +128,9 @@ Build cost: low/med/high, and why (Blender model? procedural? physics?).
 Model budget: which tricks in docs/art/model-budget.md apply.
 ```
 
+A new kit piece tags its parts with a break kind or registers a cut
+(docs/design/kit-breaks/kit-breaks-handoff.md, The break contract).
+
 ## 4. From card to isle
 
 1. **Card** (`/motif-brainstorm`): text and ASCII, cheap, many.

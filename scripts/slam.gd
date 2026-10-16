@@ -71,6 +71,8 @@ const Pad = preload("res://scripts/pad.gd")
 
 ## The group whatever the slam pushes joins (see the header).
 const GROUP := &"slam"
+## The breakables hubs' group (scripts/kit_isle/breakables.gd HUBS).
+const HUBS := &"breakables_hub"
 
 # --- When and how hard (m at size 1)
 const LOW := 1.8                 # m of air under him for a fresh press to slam
@@ -364,6 +366,10 @@ func _end() -> void:
 
 ## The push: every node in GROUP hears `slam(at, radius, strength)`. How
 ## many did. Anything may call it (an enemy's own slam, a test).
+## Breakable pieces (the city kit's, kit pieces) are not in GROUP: the
+## breakables hub (scripts/kit_isle/breakables.gd, group HUBS) takes it as
+## `hit(at, radius, strength, &"slam")`, so its `slam` toggle decides, and
+## its count of what broke is added.
 static func blast(tree: SceneTree, at: Vector3, radius: float, strength: float) -> int:
 	if tree == null: return 0
 	var n := 0
@@ -371,6 +377,8 @@ static func blast(tree: SceneTree, at: Vector3, radius: float, strength: float) 
 		if not is_instance_valid(node) or not node.has_method("slam"): continue
 		node.slam(at,radius,strength)
 		n += 1
+	for hub: Node in tree.get_nodes_in_group(HUBS):
+		if is_instance_valid(hub) and hub.has_method("hit"): n += int(hub.hit(at,radius,strength,&"slam"))
 	return n
 
 ## A point's share of a slam at `at`, `radius` round: 1 at the feet,

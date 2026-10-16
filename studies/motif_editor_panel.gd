@@ -41,6 +41,7 @@ var _slider_box: VBoxContainer
 var sliders := {}
 var _values := {}
 var _seed: Label
+var _breakable: Button
 var hint: Label
 var status: Label
 var strength: HSlider
@@ -104,6 +105,10 @@ func setup(owner_editor: Node) -> void:
 	seed_row.add_child(reroll)
 	seed_row.add_child(_button("Dress","Turf, flora and life again (G)",func() -> void: editor.dress()))
 	_box.add_child(seed_row)
+	_breakable = _button("Breakable","Its pieces break when hit (off: none of them do; one piece: select it, B)",func() -> void: editor.toggle_motif_breakable())
+	_breakable.name = "Breakable"
+	_breakable.toggle_mode = true
+	_box.add_child(_breakable)
 	fill()
 	# The strip along the bottom: the hint, what happened, the strength.
 	_strip_cloth = Linen.Cloth.new()
@@ -223,6 +228,7 @@ func sync() -> void:
 		(sliders[key] as HSlider).set_value_no_signal(v)
 		(_values[key] as Label).text = str(snappedf(v,0.1 if absf(v) >= 10.0 else 0.01))
 	_seed.text = "Seed %d" % int(editor.data.seed)
+	if _breakable != null: _breakable.set_pressed_no_signal(bool(editor.data.get("breakable",true)))
 	if slug_edit.text != str(editor.data.slug) and not slug_edit.has_focus(): slug_edit.text = str(editor.data.slug)
 	if strength != null: strength.set_value_no_signal(float(editor.brush_s))
 

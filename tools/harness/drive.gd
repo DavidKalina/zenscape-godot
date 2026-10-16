@@ -81,6 +81,9 @@ extends SceneTree
 ##     walk_paths(owner = null, offset = Vector3.ZERO, opts = {}) -> Dictionary
 ##   Watching an enemy
 ##     watch(enemy, opts = {}) -> Dictionary
+##   Breaking (scripts/kit_isle/breakables.gd, spec docs/design/kit-breaks)
+##     hubs() -> Array[Node]
+##     hit(at, radius, strength = -1.0, source = &"olmec") -> int
 ##   Reporting
 ##     check(ok, label, detail = "") -> bool
 ##     result(key, value) -> void
@@ -1536,6 +1539,22 @@ func _dodge_way(from: Vector3) -> Vector3:
 	if _floor_y(feet+side*far,float(motor.jumps[1]),float(motor.jumps[1])) == -INF and _floor_y(feet-side*far,float(motor.jumps[1]),float(motor.jumps[1])) != -INF:
 		return -side
 	return side
+
+# --- Breaking (scripts/kit_isle/breakables.gd, spec docs/design/kit-breaks) --
+
+## Every breakables hub in the scene (group "breakables_hub", Breakables.HUBS).
+func hubs() -> Array[Node]:
+	return study.get_tree().get_nodes_in_group(&"breakables_hub") if study != null else [] as Array[Node]
+
+## A hit through every hub: what is in `radius` m of `at` (world) takes it
+## at `strength` (< 0: the breaker's own) from `source` (a breaker: olmec on;
+## plane, dragon, slam off unless the hub turned them on). Returns how many
+## things broke (0 too when `source` is off). Step frames after it for the
+## parts to fall and settle (`frames`, or `until` the hub's live_count() is 0).
+func hit(at: Vector3, radius: float, strength := -1.0, source: StringName = &"olmec") -> int:
+	var n := 0
+	for h: Node in hubs(): n += int(h.hit(at,radius,strength,source))
+	return n
 
 # --- Reporting ----------------------------------------------------------------
 

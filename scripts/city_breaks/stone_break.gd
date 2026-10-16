@@ -13,8 +13,11 @@ extends Node3D
 ## steered into the rest, and the rest's collision goes in when they land.
 ##
 ## A piece answers the hub's calls (`standing_rids`, `rubble_rids`, `met`,
-## `wave`, `takes_shock`) and the slam's (scripts/slam.gd GROUP: `slam(at,
-## radius, strength)`). Subclasses override `_met`, `_wave`, `_slam`, `_step`.
+## `wave`, `takes_shock`, and `take_hit`: every other breaker's hit, the
+## slam's among them). The slam reaches it only through the hub (it is not in
+## scripts/slam.gd GROUP; Slam.blast hands the hub `hit(..., &"slam")`), so
+## the hub's `slam` toggle governs it. Subclasses override `_met`, `_wave`,
+## `_slam`, `_step`.
 const Stone = preload("res://scripts/city_kit_stone.gd")
 const Dust = preload("res://scripts/enemies/body_dust.gd")
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
@@ -62,7 +65,6 @@ func _setup(id: String, seed_in: int, weathered_in: float) -> void:
 	weathered = weathered_in
 	_rng.seed = seed_in*7919+13
 	add_to_group(BREAKABLE)
-	add_to_group(Slam.GROUP)
 
 ## The node a hit on the wanderer is from (the motor keeps one stun gap per
 ## source node): one per name, a child of the piece.
@@ -95,9 +97,31 @@ func wave(hub: Node, b: Node3D, w: Dictionary) -> void:
 func takes_shock(_hub_in: Node, _b: Node3D, _w: Dictionary) -> bool:
 	return false
 
-## The wanderer's slam (scripts/slam.gd GROUP).
+## The wanderer's slam, called directly (a check); in play it comes as
+## `take_hit(..., &"slam")`.
 func slam(at: Vector3, radius: float, strength: float) -> void:
 	_slam(at,radius,strength)
+
+## The hub's `hit` from a breaker that is on (scripts/kit_isle/breakables.gd):
+## the slam's is the piece's own slam; any other's is taken as the Olmec's
+## landing shockwave at `at`, grown to `radius`, of power `strength`, so
+## the piece keeps its own choreography and its own thresholds. True if it
+## changed (cracked, peeled, fell).
+func take_hit(hub_in: Node, at: Vector3, radius: float, strength: float, source: StringName) -> bool:
+	_hub = hub_in
+	var before := _mark()
+	if source == &"slam": _slam(at,radius,strength)
+	else: _wave(null,shock_of(at,radius,strength))
+	return _mark() != before
+
+## A hit as a shockwave front at its full reach (the body's wave's keys).
+static func shock_of(at: Vector3, radius: float, strength: float) -> Dictionary:
+	return {"at":at,"r":radius,"max":radius,"power":strength,"t":0.0}
+
+## What a hit can change, to tell whether one did (a subclass with more
+## state than `state` adds it).
+func _mark() -> String:
+	return state
 
 func _met(_b: Node3D) -> void:
 	pass

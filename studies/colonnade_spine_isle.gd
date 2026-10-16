@@ -71,6 +71,7 @@ const HeadlessBody = preload("res://scripts/enemies/headless_body.gd")
 const BodySpawner = preload("res://scripts/enemies/body_spawner.gd")
 const EnemyYard = preload("res://studies/enemy_yard.gd")
 const Breaks = preload("res://scripts/kit_isle/colonnade_breaks.gd")
+const Breakables = preload("res://scripts/kit_isle/breakables.gd")
 ## Where he and his head are set down: (x along the axis, d across it), on
 ## the ground there. He stands on the low terrace's east end, facing up the
 ## way; his head heaves in the temple's cella on the podium, behind the
@@ -81,6 +82,9 @@ const OLMEC_STEP := 2.4
 var olmec := false
 var enemies: Node
 var breaks: Node3D
+## The breakables hub (scripts/kit_isle/breakables.gd): every body's
+## breaker, the colonnade's breaks one of its `others`.
+var hub: Node3D
 var _olmec_at := OLMEC_AT
 var _head_at := OLMEC_HEAD_AT
 var _body_knobs := {}
@@ -88,7 +92,7 @@ var _head_knobs := {}
 var _voices := {}
 
 ## Hides the figure while the head holds him, steps the enemies, and hands
-## every body (a new one after R too) the breaks.
+## every body (a new one after R too) the breaks' hub.
 class Slot extends Node:
 	var field: Node
 	var breaks: Node3D
@@ -139,9 +143,15 @@ func _build_olmec() -> void:
 	enemies.sound_hook = _voice
 	add_child(enemies)
 	breaks.field = enemies
+	hub = Breakables.new()
+	hub.field = enemies
+	hub.sound_hook = _voice
+	hub.others = [breaks]
+	breaks.hub = hub
+	art.add_child(hub)
 	var slot := Slot.new()
 	slot.field = enemies
-	slot.breaks = breaks
+	slot.breaks = hub
 	add_child(slot)
 	foot_pieces = slot
 	# The body first, so the head reads its neck where it is this frame.

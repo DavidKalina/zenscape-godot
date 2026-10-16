@@ -451,6 +451,8 @@ func _build_chain() -> void:
 	isle_chain.setup(lode_target,preload("res://scripts/launch_args.gd").user_args())
 	isle_chain.chain.plane_box = _chain_plane_box
 	isle_chain.started.connect(_ring_pulse)
+	# The line's room sound (scripts/hall_sound.gd; --hall-sound=0 off).
+	preload("res://scripts/hall_sound.gd").attach(self,isle_chain.chain)
 	_plane_flash = MeshInstance3D.new()
 	_plane_flash.name = "PlaneFlash"
 	var quad := QuadMesh.new()

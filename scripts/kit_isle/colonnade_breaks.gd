@@ -1,4 +1,4 @@
-extends Node3D
+extends "res://scripts/kit_isle/break_pieces.gd"
 ## The Olmec's destruction (round2.md): the colonnade spine's piers, its
 ## lintels, its portals' arches
 ## (studies/colonnade_spine_isle_art.gd `colonnade`, `breakable`) and the
@@ -28,12 +28,12 @@ extends Node3D
 ##
 ## What still stands is left out of the body's rays (`standing_rids`): he
 ## plans and walks through it as if it were air, and it breaks as he does.
-## Breaks last the session. Only the body breaks things.
+## Breaks last the session. The fall, the cap, the settling and the hub's
+## `changed` are the shared breakable's (scripts/kit_isle/break_pieces.gd);
+## the hub (scripts/kit_isle/breakables.gd) gates who may break (`olmec`) and
+## hands `hit` on here.
 const Spine = preload("res://studies/colonnade_spine_isle_art.gd")
-const RuinKit = preload("res://scripts/ruin_kit.gd")
-const Build = RuinKit.Build
 const Cuts = preload("res://scripts/kit_isle/masonry_cuts.gd")
-const Dust = preload("res://scripts/enemies/body_dust.gd")
 const HeadlessBody = preload("res://scripts/enemies/headless_body.gd")
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
 ## His veer into a pier beside his way (`veer`): how far on (m), how far
@@ -42,46 +42,24 @@ const VEER_AHEAD := 8.0
 const VEER_SIDE := 3.6
 const VEER_MOST := 0.34
 
-## Live pieces at most (scripts/native_explosives.gd's MAX_BODIES, at this
-## scale): past it a piece lands as rubble at once.
-const MAX_BODIES := 24
-## A piece this still (m/s, rad/s) this long (s) is rubble.
-const STILL_V := 0.35
-const STILL_W := 0.6
-const STILL_FOR := 0.25
-## Live this long (s) and slow, it is frozen where it is; falling on past
-## LIVE_MOST (off the isle), it is gone.
-const SETTLE_MOST := 3.5
-const LIVE_MOST := 8.0
-## A pier's reach round its middle (its sub-base's half), a drum's radius,
-## the capital's.
+## A pier's reach round its middle (its sub-base's half).
 const PIER_R := 0.62
-const DRUM_R := 0.55
-const CAPITAL := Vector2(0.66,0.62)
-const STONE_KG := 2300.0
 ## Of a shockwave's reach, the piers inside this share of it fall (surely
 ## near, by chance to its edge).
 const WAVE_BREAK := 0.62
-## The pause on impact: the game this slow this many frames; the gable's.
-const HITSTOP_FRAMES := 3
-const HITSTOP_SCALE := 0.15
+## A hit's strength (the hub's breakers: the Olmec's 1) that breaks a pier,
+## a lintel, a ring or a wall; the gable's.
+const TOUGH := 0.5
+const PUNCH := 1.0
+## The gable's pause on impact.
 const GABLE_HITSTOP := 7
 const GABLE_HITSTOP_SCALE := 0.06
 ## A column going over (round 2): its first turn about its foot (rad/s),
-## more for his push (per m/s); bursting into its drums where it hits (a
-## stop this hard, m/s, after this long, s), the drums keeping this share of
-## its way.
+## more for his push (per m/s).
 const TOPPLE_W := 0.55
 const TOPPLE_PUSH := 0.12
-const BURST_V := 1.6
-const BURST_AFTER := 0.3
-const BURST_KEEP := 0.65
-## The ground's shake (the study's camera), a break's and a landing's.
-const QUAKE_PIER := 0.35
-const QUAKE_LAND := 0.45
-const QUAKE_SLAB := 0.9
+## The ground's shake at the gable's punch.
 const QUAKE_PUNCH := 1.4
-const QUAKE_FADE := 1.4
 ## The gable punched (`ahead`): his front this near its face (m) and his
 ## way this square to it.
 const SMASH_REACH := 2.2
@@ -97,16 +75,6 @@ const PIECE_DETAIL := 0.0
 ## The rose gable's seed and wear (studies/colonnade_spine_isle_art.gd
 ## `temple`).
 const GABLE_WEAR := 0.45
-## Placeholder sounds (studies/enemy_yard.gd `_synth`: seconds, tone, tone at
-## the end, noise share, low-pass, attack, tremolo) and their reach (m).
-const VOICES := {
-	"ruin_crack":[0.35,0.0,0.0,1.0,0.55,0.001,0.0],
-	"ruin_fall":[1.6,38.0,24.0,0.8,0.07,0.04,6.0],
-	"ruin_thud":[0.45,60.0,38.0,0.55,0.16,0.002,0.0],
-	"ruin_boom":[1.2,42.0,26.0,0.7,0.06,0.003,0.0],
-}
-const REACH := {"ruin_crack":36.0,"ruin_fall":50.0,"ruin_thud":20.0,"ruin_boom":70.0}
-
 ## The piers: {line, side, frame, height (INF whole), node, alive, base, top, lintels, portal (index or -1)}.
 var piers: Array = []
 ## The lintels: {a, b, top, node, alive, piers}.
@@ -117,47 +85,19 @@ var portals: Array = []
 var gable := {}
 ## The temple's turrets and cella walls: {node, xf, box (its frame), stands, parts, alive}.
 var walls: Array = []
-## Live pieces: {rb, t, still, group, v, kind, wait, lin, ang, burst}.
-var live: Array = []
-## The scene's enemies (scripts/enemies/enemy_field.gd), told of new rubble.
-var field: Node = null
-## (name, at): the scene's sound.
-var sound_hook := Callable()
-## Under this (world y) a piece is gone.
-var lost_y := -INF
-## The ground's shake now (the study's camera adds it).
-var quake := 0.0
-var _rids: Array[RID] = []
-var _rubble: Array[RID] = []
-## The slabs come to rest (a wall's, the gable's): ankle-deep to him, he
-## wades them as if they were not there (never a heap to climb or plan
-## round); the walker climbs them.
-var _wade: Array[RID] = []
-var _rng := RandomNumberGenerator.new()
-var _seed := 0
-var _hitstop := 0
-var _material := PhysicsMaterial.new()
 ## Counted, for checks and the HUD.
 var broken := 0
 var lintels_down := 0
 var portals_down := 0
 var walls_down := 0
 var gable_down := false
-var peak_live := 0
-var landed_direct := 0
-var settled_groups := 0
-var bursts := 0
-## The longest a break took to build (ms), and the setup's pre-cuts (ms).
-var build_ms := 0.0
-var cut_ms := 0.0
 
 ## The units stood from the colonnade's `breakable` meta (Spine `colonnade`).
 func setup(colonnade: Node3D, seed_value: int) -> void:
 	name = "Breaks"
 	_seed = seed_value
 	_rng.seed = seed_value*7919+3
-	_material.friction = 0.9
-	_material.bounce = 0.05
+	flat_rest = Spine.LINTEL.y*0.5
 	var meta: Dictionary = colonnade.get_meta("breakable")
 	var was := Build.detail
 	Build.detail = was*IVY_SHARE
@@ -249,27 +189,15 @@ func setup_gable(temple: Node3D, seed_value: int) -> void:
 	cut_ms += (Time.get_ticks_usec()-began)/1000.0
 	_refresh_rids()
 
-## What still stands, and the pieces still flying (left out of the body's
-## rays: he walks through the one, and the other is gone in a moment).
-func standing_rids() -> Array[RID]:
-	return _rids
-
-## The rubble come to rest: ground to him (his feet and his routes read it),
-## but his bulk and legs wade through it (a lintel's half is ankle-high to
-## him), never shoved back off it.
-func rubble_rids() -> Array[RID]:
-	return _rubble
-
-func _refresh_rids() -> void:
-	_rids.clear()
+func _standing_bodies() -> Array[RID]:
+	var out: Array[RID] = []
 	for u: Dictionary in piers+lintels+portals:
-		if u.alive: _rids.append((u.node as Node3D).get_node("Body").get_rid())
+		if u.alive: out.append((u.node as Node3D).get_node("Body").get_rid())
 	for w: Dictionary in walls:
-		if w.alive and is_instance_valid(w.node): _rids.append((w.node as Node3D).get_node("Body").get_rid())
+		if w.alive and is_instance_valid(w.node): out.append((w.node as Node3D).get_node("Body").get_rid())
 	if not gable.is_empty() and gable.alive and is_instance_valid(gable.node):
-		_rids.append((gable.node as Node3D).get_node("Body").get_rid())
-	for p: Dictionary in live: _rids.append((p.rb as RigidBody3D).get_rid())
-	_rids.append_array(_wade)
+		out.append((gable.node as Node3D).get_node("Body").get_rid())
+	return out
 
 func standing() -> int:
 	var n := 0
@@ -366,6 +294,63 @@ func wave(body: Node3D, w: Dictionary) -> void:
 		any = true
 	if any: _pause()
 
+## A hit from any breaker (the hub's `hit`): at `at`, reaching `radius` m.
+## A pier whose foot is in reach snaps and goes over out from it, a lintel
+## or a portal's ring in reach drops, a turret or wall in reach goes over;
+## the gable needs PUNCH strength. What a hit this weak can't break
+## (`strength` under TOUGH) stands.
+func hit(at: Vector3, radius: float, strength: float, _source: StringName) -> int:
+	if strength < TOUGH: return 0
+	var n := 0
+	for i in range(piers.size()):
+		var u: Dictionary = piers[i]
+		if not u.alive: continue
+		var c: Vector3 = (u.frame as Transform3D).origin
+		var near := Vector3(c.x,clampf(at.y,float(u.base),float(u.top)),c.z)
+		if near.distance_to(at) > radius+PIER_R: continue
+		var out := Vector3(c.x-at.x,0.0,c.z-at.z)
+		var dir := out.normalized() if out.length() > 0.05 else Vector3.FORWARD
+		_break_pier(i,dir,clampf(at.y-float(u.base),0.6,1.9),Vector3.ZERO,null)
+		n += 1
+	for j in range(lintels.size()):
+		var l: Dictionary = lintels[j]
+		if not l.alive: continue
+		var q := Geometry3D.get_closest_point_to_segment(at,l.a,l.b)
+		if q.distance_to(at) > radius+Spine.LINTEL.y: continue
+		var out := Vector3(q.x-at.x,0.0,q.z-at.z)
+		_drop_lintel(j,q,out.normalized() if out.length() > 0.05 else Vector3.FORWARD,Vector3.ZERO,_new_group(q))
+		n += 1
+	for k in range(portals.size()):
+		var pt: Dictionary = portals[k]
+		if not pt.alive: continue
+		for part: Dictionary in pt.parts:
+			var c: Vector3 = part.at
+			if c.distance_to(at) > radius+0.5: continue
+			var side := "l" if ((pt.frame as Transform3D).affine_inverse()*c).x < 0.0 else "r"
+			var out := Vector3(c.x-at.x,0.0,c.z-at.z)
+			_drop_ring(k,side,out.normalized() if out.length() > 0.05 else Vector3.FORWARD,Vector3.ZERO)
+			n += 1
+			break
+	for k in range(walls.size()):
+		var w: Dictionary = walls[k]
+		if not w.alive: continue
+		var xf: Transform3D = w.xf
+		var box: AABB = w.box
+		var lp := xf.affine_inverse()*at
+		var near := Vector3(clampf(lp.x,box.position.x,box.end.x),clampf(lp.y,box.position.y,box.end.y),clampf(lp.z,box.position.z,box.end.z))
+		if (xf.basis*(near-lp)).length() > radius: continue
+		var out := xf*near-at
+		out.y = 0.0
+		_drop_wall_from(k,at,out.normalized() if out.length() > 0.05 else Vector3.FORWARD,null)
+		n += 1
+	if strength >= PUNCH and not gable.is_empty() and gable.alive:
+		var door := (gable.xf as Transform3D)*Vector3(0.0,2.0,0.0)
+		if door.distance_to(at) < radius+RuinKit.GABLE.x*0.5:
+			_smash_from(at,Vector3.ZERO,null)
+			n += 1
+	if n > 0: _pause()
+	return n
+
 ## A brute's veer: the nearest pier standing just off his way ahead (within
 ## VEER_AHEAD m on, VEER_SIDE m past his bulk's flank) draws `heading` round
 ## so his flank meets it, VEER_MOST rad at most.
@@ -418,17 +403,7 @@ func ahead(body: Node3D) -> bool:
 	var toward := -xf.basis.z.normalized()*signf(local.z)
 	return fwd.dot(toward) > SMASH_SQUARE
 
-func _pause(frames := HITSTOP_FRAMES, scale := HITSTOP_SCALE) -> void:
-	if _hitstop <= 0 or scale < Engine.time_scale: Engine.time_scale = scale
-	_hitstop = maxi(_hitstop,frames)
-
-func _shake(k: float) -> void:
-	quake = maxf(quake,k)
-
 # --- A break --------------------------------------------------------------------------------
-
-func _new_group(at: Vector3) -> Dictionary:
-	return {"pieces":[],"left":0,"box":AABB(at,Vector3.ZERO),"stump":null}
 
 ## Pier `i` snapped at `seam` m up (a drum joint near the hit), toppling
 ## along `dir` (flat); `push` the body's own way (its pieces carry some).
@@ -610,6 +585,11 @@ func _drop_ring(k: int, side: String, dir: Vector3, push: Vector3) -> void:
 ## A turret or cella wall `k` down where he went into it: its stump stands,
 ## its upper halves go over away from him (the high tier a beat after).
 func _drop_wall(k: int, body: Node3D) -> void:
+	_drop_wall_from(k,body.position,body._forward3(),body.get("body"))
+
+## Wall `k` down, hit from `from` going `fwd` (its upper halves go over
+## away from there); `his` a body its slabs pass through, or null.
+func _drop_wall_from(k: int, from: Vector3, fwd: Vector3, his: Variant) -> void:
 	var w: Dictionary = walls[k]
 	w.alive = false
 	walls_down += 1
@@ -623,11 +603,9 @@ func _drop_wall(k: int, body: Node3D) -> void:
 	stands.global_transform = xf
 	var group := _new_group(xf.origin)
 	group.stump = stands
-	var fwd: Vector3 = body._forward3()
-	var his: Variant = body.get("body")
 	for part: Dictionary in w.parts:
 		var at: Vector3 = xf*(part.at as Vector3)
-		var out := Vector3(at.x-body.position.x,0.0,at.z-body.position.z).normalized()
+		var out := Vector3(at.x-from.x,0.0,at.z-from.z).normalized()
 		var dir := (out*0.6+fwd*0.4).normalized()
 		var axis := Vector3.UP.cross(dir).normalized()
 		var hi := String(part.kind).begins_with("hi")
@@ -650,6 +628,11 @@ func _drop_wall(k: int, body: Node3D) -> void:
 ## The punch: the gable's door gone through, its slabs down in turn, its
 ## flanks left standing; a big beat (the pause, the shake, dust, a boom).
 func smash(body: Node3D) -> void:
+	_smash_from(body.position,body.vel,body.get("body"))
+
+## The gable punched from `from` (its side of it), `push` the puncher's way,
+## `his` a body its slabs pass through, or null.
+func _smash_from(from: Vector3, push: Vector3, his: Variant) -> void:
 	if gable.is_empty() or not gable.alive: return
 	var began := Time.get_ticks_usec()
 	gable.alive = false
@@ -665,11 +648,10 @@ func smash(body: Node3D) -> void:
 	var group := _new_group(xf.origin)
 	group.stump = stands
 	var n := xf.basis.z.normalized()
-	var local := xf.affine_inverse()*body.position
+	var local := xf.affine_inverse()*from
 	var into := -n*signf(local.z) if absf(local.z) > 0.01 else -n
 	var across := xf.basis.x.normalized()
 	var axis := Vector3.UP.cross(into).normalized()
-	var push: Vector3 = body.vel
 	for part: Dictionary in gable.parts:
 		var id: String = part.kind
 		var out := -across if id.ends_with("_l") else across
@@ -721,7 +703,6 @@ func smash(body: Node3D) -> void:
 				if is_instance_valid(c): rb.add_collision_exception_with(c as PhysicsBody3D)
 		# Nor on him: he strides on through what falls (it never props on
 		# his shoulders, nor shoves him).
-		var his: Variant = body.get("body")
 		if his is PhysicsBody3D: rb.add_collision_exception_with(his)
 		# Nor on each other: pre-cut round the rose and the door, their
 		# hulls overlap where they stood (they fall apart, not jammed).
@@ -741,241 +722,6 @@ func smash(body: Node3D) -> void:
 	_refresh_rids()
 	build_ms = maxf(build_ms,(Time.get_ticks_usec()-began)/1000.0)
 
-# --- The pieces -----------------------------------------------------------------------------
-
-## A built piece's "Mesh", let go of the piece.
-func _mesh_of(piece: Node3D) -> MeshInstance3D:
-	var mesh := piece.get_node("Mesh") as MeshInstance3D
-	piece.remove_child(mesh)
-	piece.free()
-	return mesh
-
-## A rigid body at `xf` of `subs` ([{mesh, shape, local, kg}]): their
-## meshes and shapes its own, at their `local`.
-func _body_of(subs: Array, xf: Transform3D) -> RigidBody3D:
-	var rb := RigidBody3D.new()
-	rb.name = "Piece"
-	rb.collision_layer = 1
-	rb.collision_mask = 1
-	var kg := 0.0
-	for s: Dictionary in subs:
-		var holder := CollisionShape3D.new()
-		holder.shape = s.shape
-		holder.transform = s.local
-		rb.add_child(holder)
-		var mesh: MeshInstance3D = s.mesh
-		if mesh.get_parent() != null: mesh.get_parent().remove_child(mesh)
-		mesh.transform = s.local
-		rb.add_child(mesh)
-		kg += float(s.kg)
-	rb.mass = maxf(kg,50.0)
-	rb.physics_material_override = _material
-	add_child(rb)
-	rb.global_transform = xf
-	return rb
-
-## `rb` set going (`lin`, `ang`) once `wait` s have gone (held where it
-## stands till then); past MAX_BODIES, laid as rubble at once.
-func _go_piece(rb: RigidBody3D, group: Dictionary, kind: String, lin: Vector3, ang: Vector3, wait: float, dir: Vector3, up: float) -> void:
-	group.pieces.append(rb)
-	group.box = (group.box as AABB).expand(rb.global_position)
-	if live.size() >= MAX_BODIES:
-		_lay(rb,dir,up,kind)
-		landed_direct += 1
-		return
-	if wait > 0.0:
-		rb.freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
-		rb.freeze = true
-	else:
-		rb.linear_velocity = lin
-		rb.angular_velocity = ang
-	group.left += 1
-	live.append({"rb":rb,"t":0.0,"still":0.0,"group":group,"v":lin,"kind":kind,"wait":wait,"lin":lin,"ang":ang,"burst":[]})
-	peak_live = maxi(peak_live,live.size())
-
-## Past the cap: laid where it would lie, a little along `dir` from where it
-## stood, on its side (a column, a drum, the capital) or flat (a lintel's
-## half, a slab, a chunk), and frozen there.
-func _lay(rb: RigidBody3D, dir: Vector3, up: float, kind: String) -> void:
-	var from := rb.global_position+dir*(0.6+2.4*up)
-	var skip: Array[RID] = [rb.get_rid()]
-	skip.append_array(_rids)
-	var q := PhysicsRayQueryParameters3D.create(from+Vector3.UP*2.0,from+Vector3.DOWN*30.0,1,skip)
-	var hit := get_world_3d().direct_space_state.intersect_ray(q)
-	var ground: float = (hit.position as Vector3).y if not hit.is_empty() else from.y-2.0
-	var lie := Basis(Vector3.UP,_rng.randf_range(-PI,PI))
-	var rest := Spine.LINTEL.y*0.5
-	var axis := Vector3.UP.cross(dir).normalized()
-	if kind in ["drum","column"]:
-		lie = Basis(axis,PI*0.5)*Basis(Vector3.UP,_rng.randf_range(-PI,PI))
-		rest = DRUM_R*0.92
-	elif kind == "capital":
-		lie = Basis(axis,_rng.randf_range(1.2,1.6))
-		rest = CAPITAL.x*0.85
-	elif kind in ["slab","chunk"]:
-		lie = Basis(axis,PI*0.5)*rb.global_transform.basis
-		rest = 0.6
-	else:
-		lie = Basis(Vector3.UP,atan2(dir.x,dir.z)+_rng.randf_range(-0.6,0.6)+PI*0.5)
-	rb.global_transform = Transform3D(lie,Vector3(from.x,ground+rest,from.z))
-	_freeze(rb)
-
-func _freeze(rb: RigidBody3D) -> void:
-	rb.linear_velocity = Vector3.ZERO
-	rb.angular_velocity = Vector3.ZERO
-	rb.freeze_mode = RigidBody3D.FREEZE_MODE_STATIC
-	rb.freeze = true
-	_rubble.append(rb.get_rid())
-
-## A column come down hard: burst into its drums and capital, each going on
-## with the column's way at its own place (BURST_KEEP of it), a little apart.
-func _burst(p: Dictionary) -> Array:
-	var rb: RigidBody3D = p.rb
-	var subs: Array = p.burst
-	var out: Array = []
-	if live.size()+subs.size()-1 > MAX_BODIES: return out
-	bursts += 1
-	var xf := rb.global_transform
-	var v := rb.linear_velocity
-	var w := rb.angular_velocity
-	var com := rb.global_position
-	var group: Dictionary = p.group
-	for s: Dictionary in subs:
-		var mesh: MeshInstance3D = s.mesh
-		var sx := xf*(s.local as Transform3D)
-		rb.remove_child(mesh)
-		var piece := _body_of([{"mesh":mesh,"shape":s.shape,"local":Transform3D.IDENTITY,"kg":float(s.kg)}],sx)
-		var at := sx.origin
-		var lin := (v+w.cross(at-com))*BURST_KEEP+Vector3(_rng.randf_range(-0.6,0.6),_rng.randf_range(0.2,0.9),_rng.randf_range(-0.6,0.6))
-		var ang := w*BURST_KEEP+Vector3(_rng.randf_range(-1.0,1.0),_rng.randf_range(-1.0,1.0),_rng.randf_range(-1.0,1.0))
-		piece.linear_velocity = lin
-		piece.angular_velocity = ang
-		group.pieces.append(piece)
-		out.append({"rb":piece,"t":0.0,"still":0.0,"group":group,"v":lin,"kind":String(s.get("kind","drum")),"wait":0.0,"lin":lin,"ang":ang,"burst":[]})
-	group.pieces.erase(rb)
-	rb.queue_free()
-	return out
-
-# --- The pieces, live -----------------------------------------------------------------------
-
-func _process(delta: float) -> void:
-	quake = maxf(0.0,quake-delta*QUAKE_FADE)
-	if _hitstop > 0:
-		_hitstop -= 1
-		if _hitstop == 0: Engine.time_scale = 1.0
-
-func _physics_process(delta: float) -> void:
-	if live.is_empty(): return
-	var done: Array = []
-	var born: Array = []
-	for p: Dictionary in live:
-		var rb: RigidBody3D = p.rb
-		if float(p.wait) > 0.0:
-			p.wait -= delta
-			if float(p.wait) <= 0.0:
-				rb.freeze = false
-				rb.linear_velocity = p.lin
-				rb.angular_velocity = p.ang
-				p.v = p.lin
-			continue
-		p.t += delta
-		var v := rb.linear_velocity
-		# A hard stop (it hit the ground or another stone): a puff, a thud.
-		var lost_v: float = ((p.v as Vector3)-v).length()
-		var heavy: bool = p.kind in ["slab","column","chunk"]
-		if lost_v > (1.8 if heavy else 2.5) and float(p.t) > 0.08:
-			var hard := minf(lost_v,7.0)
-			var low := _ground_under(rb)
-			var first: bool = not p.get("landed",false)
-			p["landed"] = true
-			if p.kind == "slab" and not first:
-				Dust.puff(self,rb.global_position,1.6+0.2*hard)
-			elif p.kind == "slab":
-				Dust.plume(self,low,2.6+0.35*hard)
-				Dust.rocks(self,low+Vector3.UP*0.6,Vector3(v.x,0.0,v.z).normalized() if Vector2(v.x,v.z).length() > 0.1 else Vector3.UP,8,0.3)
-				_shake(QUAKE_SLAB*clampf(hard/5.0,0.4,1.0))
-				_sound(&"ruin_boom",rb.global_position)
-			elif heavy:
-				Dust.plume(self,low,2.2+0.4*hard)
-				_shake(QUAKE_LAND*clampf(hard/5.0,0.4,1.0))
-				_sound(&"ruin_thud",rb.global_position)
-			else:
-				Dust.puff(self,rb.global_position,0.9+0.25*hard)
-				if lost_v > 3.5: _sound(&"ruin_thud",rb.global_position)
-			# A column bursts into its drums where it hits.
-			if p.kind == "column" and not (p.burst as Array).is_empty() and float(p.t) > BURST_AFTER:
-				var pieces := _burst(p)
-				if not pieces.is_empty():
-					born.append_array(pieces)
-					p.group.left += pieces.size()
-					done.append(p)
-					continue
-		p.v = v
-		if v.length() < STILL_V and rb.angular_velocity.length() < STILL_W: p.still += delta
-		else: p.still = 0.0
-		if float(p.still) >= STILL_FOR or (float(p.t) > SETTLE_MOST and v.length() < 2.0):
-			_freeze(rb)
-			if p.kind in ["slab","chunk"]: _wade.append(rb.get_rid())
-			done.append(p)
-		elif rb.global_position.y < lost_y or float(p.t) > LIVE_MOST:
-			(p.group.pieces as Array).erase(rb)
-			rb.queue_free()
-			done.append(p)
-	for p: Dictionary in done:
-		live.erase(p)
-		p.group.left -= 1
-	live.append_array(born)
-	peak_live = maxi(peak_live,live.size())
-	for p: Dictionary in done:
-		if int(p.group.left) <= 0: _settled(p.group)
-	if not done.is_empty() or not born.is_empty(): _refresh_rids()
-
-## The ground under a piece (or its middle, none in reach).
-func _ground_under(rb: RigidBody3D) -> Vector3:
-	var at := rb.global_position
-	var skip: Array[RID] = [rb.get_rid()]
-	var q := PhysicsRayQueryParameters3D.create(at,at+Vector3.DOWN*8.0,1,skip)
-	var hit := get_world_3d().direct_space_state.intersect_ray(q)
-	return (hit.position as Vector3)+Vector3.UP*0.3 if not hit.is_empty() else at
-
-## A break's pieces all at rest: drawn as one mesh with what stands of it,
-## and its ground read afresh by every body.
-func _settled(group: Dictionary) -> void:
-	if group.get("merged",false): return
-	group.merged = true
-	settled_groups += 1
-	var root := Node3D.new()
-	root.name = "Rubble"
-	add_child(root)
-	var box: AABB = group.box
-	var holders: Array = []
-	var take := func(owner_node: Node3D) -> void:
-		for m: Node in owner_node.get_children():
-			if not m is MeshInstance3D: continue
-			var mesh := m as MeshInstance3D
-			var holder := Node3D.new()
-			holder.transform = root.global_transform.affine_inverse()*owner_node.global_transform*mesh.transform
-			owner_node.remove_child(mesh)
-			mesh.transform = Transform3D.IDENTITY
-			mesh.name = "Mesh"
-			holder.add_child(mesh)
-			root.add_child(holder)
-			holders.append(holder)
-	for piece: Variant in group.pieces:
-		if not is_instance_valid(piece): continue
-		var rb := piece as RigidBody3D
-		box = box.expand(rb.global_position)
-		take.call(rb)
-	# What stands of it: its stone and growth go in; it keeps its own body.
-	var stump: Node3D = group.stump
-	if stump != null and is_instance_valid(stump): take.call(stump)
-	RuinKit.merge(root)
-	for h: Node3D in holders: h.free()
-	box = box.grow(2.5)
-	if field != null:
-		for e in field.enemies:
-			if is_instance_valid(e) and e.has_method("world_changed"): e.world_changed(box)
-
 ## The pre-cuts never used (out of the tree) go with this.
 func _exit_tree() -> void:
 	var orphans: Array = []
@@ -994,13 +740,3 @@ func _exit_tree() -> void:
 	for n: Variant in orphans:
 		if is_instance_valid(n) and not (n as Node).is_inside_tree() and (n as Node).get_parent() == null: (n as Node).free()
 
-func _sound(sound_name: StringName, at: Vector3) -> void:
-	if sound_hook.is_valid(): sound_hook.call(sound_name,at)
-
-## The draws the breaks add now (meshes under this, each surface).
-func draws() -> int:
-	var n := 0
-	for m: Node in find_children("*","MeshInstance3D",true,false):
-		var mi := m as MeshInstance3D
-		if mi.visible and mi.mesh != null: n += mi.mesh.get_surface_count()
-	return n
