@@ -15,11 +15,22 @@ const HeadlessBody = preload("res://scripts/enemies/headless_body.gd")
 ## A stack going over: its turn at first (rad/s), more for his push (m/s).
 const TOPPLE_W := 0.55
 const TOPPLE_PUSH := 0.12
+## A breaker this near a piece (m, past his bulk) has its cut made ahead,
+## one build a frame, so the hit only swaps it in.
+const WAKE := 9.0
+## A pre-cut serves a hit this near (m, the piece's frame) the point it guessed.
+const PRE_TOL := 1.5
 
 ## The pieces: [{node, kind, tough, box (its frame), xf, seed, rebuild, alive}].
 var targets: Array = []
 ## Pieces broken, and the cut of the last (ms).
 var broken := 0
+## Pre-cuts: made ahead, used by a hit, thrown away (guessed wrong), and
+## the longest frame's build for one (ms).
+var pre_made := 0
+var pre_used := 0
+var pre_missed := 0
+var pre_step_ms := 0.0
 
 ## Every piece under `root` with a kind (Kinds `kind_of`) noted as a
 ## target. Returns how
@@ -44,7 +55,7 @@ func add(node: Node3D, kind: String, rebuild := Callable(), seed_value := -1) ->
 		rebuild = func() -> Node3D: return RuinKit.piece(str(recipe[0]),int(recipe[1]),float(recipe[2]))
 	if seed_value < 0: seed_value = int(recipe[1]) if recipe.size() == 3 else hash(node.name)
 	targets.append({"node":node,"kind":kind,"tough":Kinds.toughness(node,kind),"box":box,"seed":seed_value,
-		"rebuild":rebuild,"alive":true})
+		"rebuild":rebuild,"alive":true,"pre":{}})
 	_refresh_rids()
 	return targets.size()-1
 
@@ -117,6 +128,7 @@ func met(body: Node3D) -> void:
 	var high: float = body.position.y+float(body._bulk_top())
 	var inv := Basis(Vector3.UP,float(body.facing)).inverse()
 	var fwd: Vector3 = body._forward3()
+	_wake(body,olmec,(low+high)*0.5,fwd,hw,hl)
 	var any := false
 	for i in range(targets.size()):
 		var t: Dictionary = targets[i]
@@ -142,6 +154,72 @@ func ahead(_body: Node3D) -> bool:
 func smash(_body: Node3D) -> void:
 	pass
 
+# --- Pre-cuts ---------------------------------------------------------------------------------
+
+## The pieces within WAKE that his way meets get their cut guessed where
+## his bulk will meet them (his middle's height, along the way he faces),
+## and one build of the nearest unfinished one is made this frame.
+func _wake(body: Node3D, olmec: float, mid_y: float, fwd: Vector3, hw: float, hl: float) -> void:
+	var best := -1
+	var best_d := INF
+	for i in range(targets.size()):
+		var t: Dictionary = targets[i]
+		if not t.alive or not is_instance_valid(t.node) or olmec < float(t.tough): continue
+		var from := Vector3(body.position.x,mid_y,body.position.z)
+		var q := _nearest(t,from)
+		var d := Vector2(q.x-from.x,q.z-from.z).length()
+		if d > WAKE+hl: continue
+		# Where along his way he comes nearest it.
+		var guess := q
+		var near := d
+		var s := 0.5
+		while s <= WAKE+hl:
+			var p := from+fwd*s
+			var qs := _nearest(t,p)
+			var ds := Vector2(qs.x-p.x,qs.z-p.z).length()
+			if ds < near:
+				near = ds
+				guess = qs
+			s += 0.5
+		# He goes by it: no guess.
+		if near > hw+0.5: continue
+		# A guess still on his way stands (a way along a face moves the
+		# nearest point a lot for a small step).
+		if not (t.pre as Dictionary).is_empty():
+			var was: Vector3 = (t.node as Node3D).global_transform*(t.pre.t.at as Vector3)
+			var rel := Vector2(was.x-from.x,was.z-from.z)
+			var f2 := Vector2(fwd.x,fwd.z).normalized()
+			if rel.dot(f2) > -hl and absf(rel.cross(f2)) <= hw+0.5: guess = was
+		prepare(i,guess)
+		if not Kinds.done(t.pre) and d < best_d:
+			best_d = d
+			best = i
+	if best >= 0: _step_pre(best)
+
+## Target `i`'s cut begun for a hit at `at` (world), unless one near it is
+## already made or under way. Any breaker may call it ahead of a hit.
+func prepare(i: int, at: Vector3) -> void:
+	var t: Dictionary = targets[i]
+	var local := (t.node as Node3D).global_transform.affine_inverse()*at
+	if not (t.pre as Dictionary).is_empty():
+		if Kinds.serves(t.pre,local,PRE_TOL): return
+		Kinds.drop(t.pre)
+		pre_missed += 1
+	t.pre = Kinds.job(str(t.kind),{"node":t.node,"box":t.box,"at":local,"dir":Vector3.FORWARD,"seed":t.seed,"rebuild":t.rebuild})
+	if not (t.pre as Dictionary).is_empty(): pre_made += 1
+
+## One build of target `i`'s pre-cut.
+func _step_pre(i: int) -> void:
+	var began := Time.get_ticks_usec()
+	Kinds.step(targets[i].pre)
+	var ms := (Time.get_ticks_usec()-began)/1000.0
+	pre_step_ms = maxf(pre_step_ms,ms)
+	build_ms += ms
+
+func _exit_tree() -> void:
+	for t: Dictionary in targets:
+		if t.alive: Kinds.drop(t.pre)
+
 # --- A break --------------------------------------------------------------------------------
 
 ## Target `i` cut by its kind where `at` (world) met it, its parts going
@@ -155,7 +233,18 @@ func _break(i: int, at: Vector3, dir: Vector3, push: Vector3, his: Variant) -> v
 	var inv := xf.affine_inverse()
 	var cut_t := {"node":node,"box":t.box,"at":inv*at,"dir":inv.basis*dir,"seed":t.seed,"rebuild":t.rebuild}
 	var began := Time.get_ticks_usec()
-	var cut := Kinds.cut(str(t.kind),cut_t)
+	var pre: Dictionary = t.pre
+	var cut := {}
+	if Kinds.serves(pre,cut_t.at as Vector3,PRE_TOL):
+		while not Kinds.step(pre): pass
+		cut = Kinds.result(pre)
+		pre_used += 1
+	else:
+		if not pre.is_empty():
+			Kinds.drop(pre)
+			pre_missed += 1
+		cut = Kinds.cut(str(t.kind),cut_t)
+	t.pre = {}
 	cut_ms = (Time.get_ticks_usec()-began)/1000.0
 	build_ms += cut_ms
 	if cut.is_empty():

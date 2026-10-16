@@ -89,9 +89,85 @@ static func toughness(node: Node, kind: String) -> float:
 
 ## Target `t` cut as its kind: {stands, parts} ({} if it can't be).
 static func cut(kind: String, t: Dictionary) -> Dictionary:
-	if _cuts.has(kind): return (_cuts[kind] as Callable).call(t)
+	var j := job(kind,t)
+	while not step(j): pass
+	return result(j)
+
+## A cut done a build at a time (`step` each frame), so a big piece's cut
+## spreads over frames before the hit instead of one long frame at it. {}
+## if `kind` can't cut `t`.
+static func job(kind: String, t: Dictionary) -> Dictionary:
+	if _cuts.has(kind): return {"t":t,"call":_cuts[kind],"todo":["all"],"i":0,"out":{}}
 	if not SHAPES.has(kind) or not (t.get("rebuild",Callable()) as Callable).is_valid(): return {}
-	return by_joints(t,SHAPES[kind])
+	var shape: Dictionary = SHAPES[kind]
+	var frame := frame_of(t,shape)
+	var todo: Array = [""]
+	for a in range(int(frame.along)):
+		for u in range(int(frame.up)): todo.append("%d_%d" % [a,u])
+	return {"t":t,"shape":shape,"frame":frame,"todo":todo,"i":0,
+		"out":{"stands":null,"parts":[],"topple":bool(shape.get("topple",false))}}
+
+## One build of `j` done; true when it's all done (or `j` is {}).
+static func step(j: Dictionary) -> bool:
+	if j.is_empty(): return true
+	if int(j.i) >= (j.todo as Array).size(): return true
+	var want: String = j.todo[j.i]
+	j.i = int(j.i)+1
+	if j.has("call"):
+		j.out = (j.call as Callable).call(j.t)
+		return true
+	var t: Dictionary = j.t
+	var shape: Dictionary = j.shape
+	var frame: Dictionary = j.frame
+	Build.keep_only = func(c: Vector3) -> bool: return part_of(c,t,shape,frame) == want
+	var was := Build.detail
+	if want != "": Build.detail = 0.0
+	var built: Node3D = (t.rebuild as Callable).call()
+	Build.keep_only = Callable()
+	Build.detail = was
+	if want == "":
+		if built != null:
+			built.name = "Stands"
+			# Nothing of it stands: none left to keep.
+			var mi := built.get_node_or_null("Mesh") as MeshInstance3D
+			if mi == null or mi.mesh == null or mi.mesh.get_surface_count() == 0:
+				built.free()
+				built = null
+		j.out.stands = built
+	elif built != null:
+		var part := Cuts._part(built,str(shape.fall))
+		built.free()
+		if not part.is_empty():
+			part.id = want
+			(j.out.parts as Array).append(part)
+	return int(j.i) >= (j.todo as Array).size()
+
+## Whether job `j` makes the cut a hit at `at` (the piece's frame) would:
+## the stump's height and, for a kind that breaks only near the hit, the
+## point along its length within `tol` (m). A registered cut: `at` within `tol`.
+static func serves(j: Dictionary, at: Vector3, tol: float) -> bool:
+	if j.is_empty(): return false
+	var was: Vector3 = j.t.at
+	if not j.has("frame"): return was.distance_to(at) <= tol
+	var shape: Dictionary = j.shape
+	var box: AABB = j.t.box
+	var dy := absf(clampf(at.y-box.position.y,0.0,box.size.y)-clampf(was.y-box.position.y,0.0,box.size.y))
+	if float(shape.stump) >= 0.0 and dy*float(shape.stump) > 0.4: return false
+	if float(shape.reach) > 0.0 and absf(at[int(j.frame.long)]-was[int(j.frame.long)]) > tol: return false
+	return true
+
+static func done(j: Dictionary) -> bool:
+	return j.is_empty() or int(j.i) >= (j.todo as Array).size()
+
+## A finished job's {stands, parts[, topple]} ({} for an empty job).
+static func result(j: Dictionary) -> Dictionary:
+	return {} if j.is_empty() else j.out
+
+## A job's builds not yet made, freed (a pre-cut never used).
+static func drop(j: Dictionary) -> void:
+	if j.is_empty(): return
+	var st: Variant = (j.out as Dictionary).get("stands")
+	if st is Node3D and is_instance_valid(st) and not (st as Node3D).is_inside_tree(): (st as Node3D).free()
 
 # --- The built-in kinds: along the joints -----------------------------------------------------
 
@@ -111,9 +187,10 @@ static func part_of(c: Vector3, t: Dictionary, shape: Dictionary, frame: Diction
 	var j := clampi(int(floor((c.y-maxf(stump,float(frame.floor)))/chunk.y)),0,int(frame.up)-1)
 	return "%d_%d" % [i,j]
 
-## A kind of `shape` cut along the joints: the piece built once as what
-## stands and once per part (at most MOST_PARTS: the chunks grow to fit).
-static func by_joints(t: Dictionary, shape: Dictionary) -> Dictionary:
+## How a kind of `shape` splits target `t` hit at `t.at`: the stump line,
+## the long axis, the span the break reaches and its parts' grid (at most
+## MOST_PARTS: the chunks grow to fit).
+static func frame_of(t: Dictionary, shape: Dictionary) -> Dictionary:
 	var box: AABB = t.box
 	var at: Vector3 = t.at
 	var long := 0 if box.size.x >= box.size.z else 2
@@ -133,34 +210,15 @@ static func by_joints(t: Dictionary, shape: Dictionary) -> Dictionary:
 	while along*up > MOST_PARTS:
 		if along >= up: along -= 1
 		else: up -= 1
-	var frame := {"stump":stump,"long":long,"from":from,"span":span,"floor":floor_y,
+	return {"stump":stump,"long":long,"from":from,"span":span,"floor":floor_y,
 		"chunk":Vector2(span/along+0.001,tall/up+0.001),"along":along,"up":up}
-	var rebuild: Callable = t.rebuild
-	var keep := func(want: String) -> Callable:
-		return func(c: Vector3) -> bool: return part_of(c,t,shape,frame) == want
-	Build.keep_only = keep.call("")
-	var stands: Node3D = rebuild.call()
-	var was := Build.detail
-	Build.detail = 0.0
-	var parts: Array = []
-	for i in range(along):
-		for j in range(up):
-			var id := "%d_%d" % [i,j]
-			Build.keep_only = keep.call(id)
-			var built: Node3D = rebuild.call()
-			if built == null: continue
-			var part := Cuts._part(built,str(shape.fall))
-			built.free()
-			if not part.is_empty():
-				part.id = id
-				parts.append(part)
-	Build.keep_only = Callable()
-	Build.detail = was
-	if stands != null:
-		stands.name = "Stands"
-		# Nothing of it stands: none left to keep.
-		var mi := stands.get_node_or_null("Mesh") as MeshInstance3D
-		if mi == null or mi.mesh == null or mi.mesh.get_surface_count() == 0:
-			stands.free()
-			stands = null
-	return {"stands":stands,"parts":parts,"topple":bool(shape.get("topple",false))}
+
+## A kind of `shape` cut along the joints at once: the piece built once as
+## what stands and once per part.
+static func by_joints(t: Dictionary, shape: Dictionary) -> Dictionary:
+	var j := {"t":t,"shape":shape,"frame":frame_of(t,shape),"todo":[""],"i":0,
+		"out":{"stands":null,"parts":[],"topple":bool(shape.get("topple",false))}}
+	for a in range(int(j.frame.along)):
+		for u in range(int(j.frame.up)): (j.todo as Array).append("%d_%d" % [a,u])
+	while not step(j): pass
+	return j.out
