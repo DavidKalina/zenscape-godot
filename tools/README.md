@@ -23,6 +23,8 @@ with `python` on Windows (there is no `py` there) and `python3` on the Mac.
 | Parse-check a script without running it | `python tools/godot.py --check-only -s res://scratch/x.gd` (one script; exit 1 with the parse error) |
 | Check a land outline (bowtie, wrong winding) | `KitLand.outline_problems(outline, winding)`; `KitLand.island` warns on its own |
 | Rendered stills to look at | `python tools/shot.py studies/x.tscn --frame Trap --view three,top --sheet` |
+| A still of a moment in a driven run (him mid-jump, a piece by its AABB) | in a driver: `await shot_at("side", motor, {"when": cond})`, then `route()`/`watch()`; run with `drive.py --rendered` (drive.gd, Shots) |
+| A short film and contact sheet while a route or watch plays | in a driver: `var f := film(enemy, {"view": "shoulder", "every": 6, "seconds": 3})`, `await watch(enemy)`, `await film_end(f)` (drive.gd, Shots) |
 | Anything that runs over ~8 min | `python tools/bg.py start NAME -- <command>`, then `python tools/bg.py wait NAME` |
 | The test suite | `python tools/run_tests.py [--tests 'test_x*.gd'] [--quick]` |
 | A brainstorm round's cards as one page of maps | `python tools/motif_cards_html.py docs/design/motifs/brainstorm/<round> [--open]` |
@@ -87,8 +89,9 @@ func drive() -> void:
   input path. Use it for setup, and prove the result with real input
   (AGENTS.md).
 - **Looking around.** `find(pattern)` and `first(pattern)` look up nodes
-  by name, class or script path. `shot(path)` takes a still, and only in a
-  rendered run.
+  by name, class or script path. `shot(path)` takes a still of the window,
+  `shot_at(view, target)` and `film(target)` place a camera of their own
+  (`--api shot`); all three only in a rendered run, and print SKIP headless.
 - **The full list.** `python tools/drive.py --api` prints every helper's
   signature and doc, read from the scripts; `--api WORD` adds the
   section's notes (a route's opts, what `watch` returns). drive.gd's

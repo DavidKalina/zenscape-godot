@@ -199,7 +199,14 @@ def main() -> int:
     if args.rendered:
         run_args += ["--rendering-method", "forward_plus", "--windowed", "--resolution", "1440x900"]
     run_args += ["--", f"--timeout={args.timeout}", *driver_args]
-    r = godot.run(run_args, rendered=args.rendered, timeout=args.timeout + 30, check_import=False)
+    if args.rendered:
+        import shot  # its window lock: one window at a time
+        shot.window_lock()
+    try:
+        r = godot.run(run_args, rendered=args.rendered, timeout=args.timeout + 30, check_import=False)
+    finally:
+        if args.rendered:
+            shot.LOCK.unlink(missing_ok=True)
     if args.log:
         Path(args.log).parent.mkdir(parents=True, exist_ok=True)
         Path(args.log).write_text(r["output"], encoding="utf-8")
