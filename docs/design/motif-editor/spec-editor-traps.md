@@ -170,6 +170,16 @@ coordinate.
    additively: saved bridges rebuild, better seated. Prove the pilot walks
    on and off each end with real input.
 
+16. **Base leftovers** (after 13-15, one task): the spawn on a base drops
+   the pilot in mid air (the user's play of colonnade_spine: P from the
+   spawn, he starts in the air); seat the spawn and rim markers on the
+   base's real ground (its collision), default them to the base's own
+   start where it has one, and prove P from the spawn lands him standing
+   on colonnade_spine, bell_spires, stair_clouds, broken_ring and
+   sundered_gorge. Also: hide the landform sliders and presets on a base;
+   sundered_gorge lips found for snapping (or say why not); broken_ring's
+   walk on a ledge wide enough.
+
 ## Rules for this loop
 
 - **One trap list.** Lift the trap yard's `TRAPS` table into a shared
