@@ -153,7 +153,6 @@ func live(g: Node) -> void:
 ## instead (A/B checks).
 
 const GiantStone = preload("res://scripts/kit_isle/greybox/giant_stone.gd")
-const KitLife = preload("res://scripts/kit_isle/kit_life.gd")
 const KitWater = preload("res://scripts/kit_isle/kit_water.gd")
 
 const TURF_SEED := 5200
@@ -161,13 +160,8 @@ const TURF_SEED := 5200
 const HALL_DEPTH := 8.0
 const CELL_DEPTH := 5.0
 const EXIT_DEPTH := 10.0
-## How far a keel's spurs can hang under top-depth (as the giant's).
-const KEEL_REACH := 1.4
 ## The water's top over the drowned floor (the greybox's 0.3 m).
 const WATER_TOP := Y_DAIS-0.4+0.3
-
-static func grey() -> bool:
-	return preload("res://scripts/launch_args.gd").user_args().has("--wardens-well-grey")
 
 ## The hall's ground: the dais at 0, the drowned floor at -0.4.
 static func hall_ground(x: float, z: float) -> float:
@@ -179,14 +173,16 @@ static func _rounded(r: Rect2, cut: float) -> Array:
 	return [Vector2(a.x+cut,a.y),Vector2(b.x-cut,a.y),Vector2(b.x,a.y+cut),Vector2(b.x,b.y-cut),
 		Vector2(b.x-cut,b.y),Vector2(a.x+cut,b.y),Vector2(a.x,b.y-cut),Vector2(a.x,a.y+cut)]
 
-## [name, outline, ground, top, depth, seed offset]. Corners cut only: the
-## lip, the skid lane and both landings are mid-edge.
-static func islands() -> Array:
+## The islands (their sides collided as drawn: a body falling past a flank
+## meets it). Corners cut only: the lip, the skid lane and both landings
+## are mid-edge.
+func turf_islands() -> Array:
 	return [
-		["Hall",_rounded(Rect2(-20.0,1.2,40.0,28.8),2.0),func(x: float, z: float) -> float: return hall_ground(x,z),Y_DAIS-0.4,HALL_DEPTH,0],
-		["Cell1",_rounded(Rect2(-3.5,-18.0,12.0,11.7),1.2),func(_x: float, _z: float) -> float: return Y_CELL,Y_CELL,CELL_DEPTH,1],
-		["Cell2",_rounded(Rect2(11.0,-21.0,10.0,10.0),1.2),func(_x: float, _z: float) -> float: return Y_CELL,Y_CELL,CELL_DEPTH,2],
-		["ExitRim",_rounded(Rect2(-34.0,-34.0,23.0,29.0),2.5),func(_x: float, _z: float) -> float: return Y_EXIT,Y_EXIT,EXIT_DEPTH,3],
+		{"name":"Hall","outline":_rounded(Rect2(-20.0,1.2,40.0,28.8),2.0),"ground":func(x: float, z: float) -> float: return hall_ground(x,z),
+			"top":Y_DAIS-0.4,"depth":HALL_DEPTH,"resample":[40.0,110,40]},
+		{"name":"Cell1","outline":_rounded(Rect2(-3.5,-18.0,12.0,11.7),1.2),"top":Y_CELL,"depth":CELL_DEPTH,"resample":[40.0,110,40]},
+		{"name":"Cell2","outline":_rounded(Rect2(11.0,-21.0,10.0,10.0),1.2),"top":Y_CELL,"depth":CELL_DEPTH,"resample":[40.0,110,40]},
+		{"name":"ExitRim","outline":_rounded(Rect2(-34.0,-34.0,23.0,29.0),2.5),"top":Y_EXIT,"depth":EXIT_DEPTH,"resample":[40.0,110,40]},
 	]
 
 ## The worn ways: the entry to the lip, the skid lane on cell 1, the exit
@@ -195,86 +191,39 @@ static func paths() -> Array:
 	return [[Vector2(-8.0,24.0),Vector2(-2.0,4.0),Vector2(0.0,2.0)],[Vector2(0.0,-7.0),Vector2(0.0,-14.9),Vector2(3.0,-14.9)],
 		[Vector2(-12.5,-14.9),Vector2(-20.0,-14.0),Vector2(-33.0,-19.5)],[Vector2(8.0,-15.0),Vector2(14.0,-15.5)]]
 
-func flora_site() -> KitFlora.Site:
-	return KitFlora.Site.new(top(),KitLand.wear_of(paths()))
+func grey_flag() -> String:
+	return "--wardens-well-grey"
 
-func flora_seed() -> int:
-	return TURF_SEED+9
+func turf_seed() -> int:
+	return TURF_SEED
 
-func life_script() -> Script:
-	return null if grey() else KitLife
+func turf_paths() -> Array:
+	return paths()
 
-func warm() -> void:
-	super.warm()
-	if grey(): return
-	KitLook.palette()
-	KitLook.ground_material()
-	KitLook.rock_material()
-	KitLook.rock_tone(Vector3.ZERO,30.0,Vector3.UP)
-	RuinKit.materials()
-	GiantStone.warm()
+## The drowned half of the hall's turf wet.
+func turf_tone() -> Callable:
+	var hall_wet := func(mid: Vector2, _y: float) -> float:
+		return 1.0 if mid.y > 14.0 and absf(mid.x) < 20.0 else 0.0
+	return KitLook.turf(TURF_SEED,KitLand.wear_of(paths()),hall_wet)
+
+## Measured headless (the turf build).
+func turf_cost() -> int:
+	return BUILD_MS
+
+func warm_turf() -> void:
+	super.warm_turf()
 	# The water's base material comes from a scene: loaded here, on the main thread.
 	KitWater.material({"tea":0.35})
 
-## The greybox's solids and the keels under the four islands (their spurs'
-## reach), so the occupancy keeps the generator off the rock.
-func _solids() -> Array:
-	var out := super._solids()
-	if grey(): return out
-	for land: Array in islands():
-		var ring: Array = land[1]
-		var box := Rect2(ring[0],Vector2.ZERO)
-		for p: Vector2 in ring: box = box.expand(p)
-		out.append([box.grow(-1.0),float(land[3])-float(land[4])*KEEL_REACH,float(land[3]),null])
-	return out
-
-## Measured headless (the turf build).
-func build_cost() -> int:
-	return 0 if grey() else BUILD_MS
-
 const BUILD_MS := 300
 
-func build(into: Node3D) -> void:
-	if grey():
-		super.build(into)
-		return
-	art = into
-	var began := Time.get_ticks_msec()
-	var root := Node3D.new()
-	root.name = "WardensWell"
-	into.add_child(root)
-	var hall_wet := func(mid: Vector2, _y: float) -> float:
-		return 1.0 if mid.y > 14.0 and absf(mid.x) < 20.0 else 0.0
-	var tone := KitLook.turf(TURF_SEED,KitLand.wear_of(paths()),hall_wet)
-	for spec: Array in islands():
-		var land := KitLand.island({"outline":spec[1],"seed":TURF_SEED+int(spec[5]),"ground":spec[2],
-			"top":spec[3],"depth":spec[4],"hang":true,"resample":[40.0,110,40],"tone":tone})
-		land.name = str(spec[0])
-		_collide_sides(land)
-		root.add_child(land)
-		turf(land)
+func dress(root: Node3D) -> void:
 	# The drowned half of the hall: still water, wading deep.
 	var water := KitWater.still({"level":WATER_TOP,"ground":func(x: float, z: float) -> float: return hall_ground(x,z),
 		"rect":Rect2(-20.0,14.0,40.0,16.0),"inside":func(p: Vector2) -> bool: return Rect2(-19.6,14.0,39.2,15.6).has_point(p),
 		"tea":0.35,"cell":1.0,"name":"Flood"})
 	root.add_child(water)
 	_stone(root)
-	built_ms = Time.get_ticks_msec()-began
-
-## An island's hanging sides collided as drawn (the giant's): a body falling
-## past a flank meets it.
-static func _collide_sides(land: Node3D) -> void:
-	var sides := land.get_node_or_null("Mesh") as MeshInstance3D
-	if sides == null or sides.mesh == null: return
-	var body := StaticBody3D.new()
-	body.name = "Sides"
-	var shape := ConcavePolygonShape3D.new()
-	shape.set_faces(sides.mesh.get_faces())
-	shape.backface_collision = true
-	var holder := CollisionShape3D.new()
-	holder.shape = shape
-	body.add_child(holder)
-	land.add_child(body)
 
 ## The stone: drawn as one mesh of the heads' basalt, collided as the
 ## greybox's walk boxes.

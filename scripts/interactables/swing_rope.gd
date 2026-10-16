@@ -300,13 +300,10 @@ func _take(walker: PilotMotor, at: Vector3, along := true) -> void:
 	if not along: velocity = velocity.limit_length(t_top)
 	var flat := Vector2(v.x,v.z)
 	facing = PilotMotor.facing_of(flat) if flat.length() > 1.0 else walker.facing
-	walker.rider = self
+	# Taken off his feet where he is; `_place` hangs him under the hands.
+	walker.mount(self,walker.feet,false,NAN,true)
 	walker.hold = "swing"
 	walker.move = ""
-	walker.chain = 0
-	walker.grounded = false
-	walker.skidding = false
-	walker.sail.rest()
 	_crouch_was = walker.crouch
 	_place(walker)
 

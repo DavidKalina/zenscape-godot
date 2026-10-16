@@ -184,7 +184,9 @@ func _round_2b() -> void:
 	# The timed trap: flung off the span.
 	var tm: Node3D = study.traps.named("seesaw_dropper")
 	check(tm != null,"The yard has the timed dropper")
-	_put(-4.6,0.3,tm)
+	# Stood a little past the pivot on the far half: stood farther out, he
+	# slides down the tilt and off its end in the 4 s before the first drop.
+	_put(-3.6,0.3,tm)
 	await _tick(30)
 	var x0: float = m.feet.x
 	var thrown := 0.0

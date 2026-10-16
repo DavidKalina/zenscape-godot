@@ -11,11 +11,12 @@ extends SceneTree
 ##   - the cloud sea's hush closes the low-pass over everything;
 ##   - the touch thumps; the body's moves (a jump, a twirl, the sail) play
 ##     their foley; parked after a flight, the engine ticks as it cools;
-##   - round 3 (kit_audio_beasts.gd): the serpent is found and grinds and
+##   - round 3 (kit_audio_beasts.gd): the serpent (--serpent) is found and grinds and
 ##     hums beside its body, silent far off; the dragon is found, whumps
 ##     once a beat with its upstroke's rustle, and calls as its jaw opens.
 ##   godot --headless --path . --script tests/test_kit_audio.gd
 const KitAudio = preload("res://scripts/kit_isle/kit_audio.gd")
+const LaunchArgs = preload("res://scripts/launch_args.gd")
 const DT := 1.0/60.0
 var failures := 0
 var study: Node3D
@@ -29,6 +30,8 @@ func check(ok: bool, label: String) -> void:
 
 func run() -> void:
 	create_timer(120.0).timeout.connect(func() -> void: push_error("kit audio test timed out"); quit(2))
+	# The serpent is out of the game's sky unless --serpent asks for it.
+	LaunchArgs.set_override(["--serpent"])
 	study = load("res://studies/aqueduct_isle.tscn").instantiate()
 	study.scripted = true
 	root.add_child(study)
@@ -77,7 +80,7 @@ func run() -> void:
 	check(audio.played.has("whip"),"Let go, the rope whips")
 	# Round 3: the beasts (scripts/kit_isle/kit_audio_beasts.gd).
 	var beasts = audio.beasts
-	check(beasts != null and beasts.serpents.size() > 0,"The serpent is found (%d)" % (beasts.serpents.size() if beasts != null else 0))
+	check(beasts != null and beasts.serpents.size() > 0,"With --serpent the serpent is found (%d)" % (beasts.serpents.size() if beasts != null else 0))
 	if beasts != null and beasts.serpents.size() > 0:
 		var serpent: Node3D = beasts.serpents[0]
 		var ring: Vector3 = serpent.global_transform*serpent.rings()[20]

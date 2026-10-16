@@ -33,7 +33,6 @@ extends "res://scripts/kit_isle/motif_greybox.gd"
 ## file only makes the preset's ground function and outline (GDScript runs
 ## one thread at a time).
 const KitLife = preload("res://scripts/kit_isle/kit_life.gd")
-const Rootbound = preload("res://scripts/kit_isle/greybox/gb_rootbound_cut.gd")
 const HeroTrees = preload("res://scripts/hero_trees.gd")
 const RuinKitFit = preload("res://scripts/ruin_kit_fit.gd")
 
@@ -913,9 +912,10 @@ func land_spec(fast := false) -> Dictionary:
 
 ## The bare land: the hill, collided, its sides collided as drawn.
 func build_land(fast := false) -> Node3D:
-	var land := KitLand.island(land_spec(fast))
+	var spec := land_spec(fast)
+	spec.collide_sides = true
+	var land := KitLand.island(spec)
 	land.name = "Hill"
-	Rootbound._collide_sides(land)
 	return land
 
 # --- Water -----------------------------------------------------------------------------
@@ -1325,10 +1325,7 @@ func life_script() -> Script:
 
 func warm() -> void:
 	super.warm()
-	KitLook.palette()
-	KitLook.ground_material()
-	KitLook.rock_material()
-	KitLook.rock_tone(Vector3.ZERO,30.0,Vector3.UP)
+	warm_look()
 	RuinKit.materials()
 	for p: Dictionary in data.get("pieces",[]):
 		if TREES.has(str(p.id)): _tree_parts(str(p.id))

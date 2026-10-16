@@ -1,4 +1,6 @@
-# One iteration (fill in SLUG, SPEC, WORKTREE)
+# One iteration (fill in SLUG, SPEC, WORKTREE, TOKENS)
+
+ITER-BUDGET: TOKENS
 
 You are one **fresh-context iteration** of a build loop in this Godot game.
 You remember nothing of earlier iterations except the working tree and the
@@ -19,6 +21,17 @@ the first iteration: break the spec into tasks yourself. Otherwise trust the
 trail and pick up where it left off. The last commit's **Notes for next
 iteration** is the previous you, talking to you.
 
+## The budget
+
+Your context has a budget, enforced by a hook
+(`.claude/skills/iterate/iter_budget.py`) from the `ITER-BUDGET:` line
+above. Past the budget you get a wrap-up note after each tool call: finish
+the run or check in progress, start nothing new, commit what works by
+explicit path with Notes saying exactly what is left and what is half done,
+and hand back. Past the budget plus its buffer, every tool call but git and
+your hand-back is denied. Commit as you go when a task has a natural
+halfway point, so the budget never strands working code.
+
 ## 2. Pick one task
 
 Break the spec into small, ordered tasks, each one commit that leaves the
@@ -35,7 +48,7 @@ before you commit:
   (`tools/smoke.py`, tools/README.md). It must PASS.
 - **Movement, routes, enemies, anything played:** a throwaway check through
   the real play loop (`scratch/<name>.gd` on `tools/harness/drive.gd`, run
-  with `tools/drive.py`), left uncommitted.
+  with `tools/drive.py`; `python tools/drive.py --api` lists its helpers), left uncommitted.
 - **Anything seen:** rendered stills (`tools/shot.py`). Open them and look.
   Fix what reads wrong and shoot again before you commit.
 

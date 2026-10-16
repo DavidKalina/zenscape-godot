@@ -1349,11 +1349,7 @@ func meet() -> void:
 	if plane == null: return
 	var way := _route_way(s)
 	var right := way.cross(Vector3.UP).normalized()
-	plane.position = _head_pos-way*MEET.x+right*MEET.y+Vector3.UP*MEET.z
-	plane.heading = atan2(-way.x,-way.z)
-	plane.pitch = 0.0
-	plane.speed = _sx[S_SPEED]
-	plane.velocity = plane.forward()*float(plane.speed)
+	plane.place(_head_pos-way*MEET.x+right*MEET.y+Vector3.UP*MEET.z,atan2(-way.x,-way.z),0.0,_sx[S_SPEED])
 	var chase: Variant = scene.get("chase")
 	if chase != null: chase.reset(plane,plane.position-plane.forward()*8.0+Vector3.UP*2.5,scene.camera.fov)
 

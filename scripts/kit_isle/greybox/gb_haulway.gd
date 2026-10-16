@@ -224,7 +224,7 @@ static func a_ground(x: float, z: float) -> float:
 	var az := absf(z)
 	var slot := float(a.slot)+0.45*sin(x*0.31+1.0)+0.25*sin(x*0.93)
 	var y := fa
-	var polish := not grey()
+	var polish := not flagged(GREY_FLAG)
 	if x > float(a.mouth):
 		# The mouth: the slot, and low shoulders either side (a set-off) where
 		# the columns stand, so the rim in sees the crossing past them.
@@ -325,8 +325,12 @@ static func _line(i: int, x: float, z: float, lines: int, apart: float, salt: in
 	var w := float(LAYOUT.pit.warp)*(0.35 if i >= lines-2 else 1.0)
 	return i*apart+w*(0.6*sin(x*(0.07+0.011*(i%3))+z*0.05+k*1.3)+0.4*sin(z*(0.09+0.013*(i%4))-x*0.04+k*0.7))
 
-static func grey() -> bool:
-	return preload("res://scripts/launch_args.gd").user_args().has("--haul-grey")
+## The grey boxes instead of the polish (A/B; `grey()`, and `flagged`
+## where a static asks).
+const GREY_FLAG := "--haul-grey"
+
+func grey_flag() -> String:
+	return GREY_FLAG
 
 ## Polish: the spoil heaps' rise at (x, z) (rough, a little lumpy).
 static func spoil(x: float, z: float) -> float:
@@ -370,7 +374,7 @@ static func b_ground(x: float, z: float) -> float:
 		var ro: Vector2 = LAYOUT.rim_out
 		var keep := smoothstep(5.0,11.0,Vector2(x-ro.x,z-ro.y).length())
 		y += float(kn[3])*pow(cos(kd*PI*0.5),1.6)*keep
-	if not grey():
+	if not flagged(GREY_FLAG):
 		# Polish: knolls beside the crown, a terrace rolling to its edge
 		# (held off the rim out).
 		var ro: Vector2 = LAYOUT.rim_out
@@ -382,7 +386,7 @@ static func b_ground(x: float, z: float) -> float:
 	var n := clampi(int(floor((x-float(LAYOUT.house_b.x)-2.0+1.2*sin(z*0.3))/float(b.step)))+1,0,4)
 	# Polish: the shoulders held low (the lintel stands on its columns over
 	# them), so from the docked deck the terrace opens beyond the cradle.
-	if not grey(): n = maxi(n,int(b.get("low",3)))
+	if not flagged(GREY_FLAG): n = maxi(n,int(b.get("low",3)))
 	if az < 21.0:
 		var sh := lb.x-n*SO
 		y = maxf(y,sh)
@@ -516,10 +520,7 @@ func warm() -> void:
 		super.warm()
 		return
 	HangingRoots.warm()
-	KitLook.palette()
-	KitLook.ground_material()
-	KitLook.rock_material()
-	KitLook.rock_tone(Vector3.ZERO,30.0,Vector3.UP)
+	warm_look()
 	CityStone.warm()
 	GiantStone.warm()
 	_computed()
@@ -542,15 +543,14 @@ func build(into: Node3D) -> void:
 	var a: Dictionary = LAYOUT.a
 	var land_a := KitLand.island({"outline":a.outline,"seed":int(a.seed),"ground":func(x: float, z: float) -> float: return a_ground(x,z),
 		"top":floor_a(),"depth":float(a.depth),"hang":true,"resample":[60.0,220,48],"cell":2.0,"fine":1.0,"cliffs":Rect2(-54.0,-32.0,60.0,64.0),
-		"fine_box":Rect2(-40.0,-28.0,46.0,56.0),"cliff_drop":0.55,"stable":true,"tone":KitLook.turf(int(a.seed),KitLand.wear_of(paths()))})
+		"fine_box":Rect2(-40.0,-28.0,46.0,56.0),"cliff_drop":0.55,"stable":true,"collide_sides":true,"tone":KitLook.turf(int(a.seed),KitLand.wear_of(paths()))})
 	land_a.name = "QuarryShore"
 	var b: Dictionary = LAYOUT.b
 	var land_b := KitLand.island({"outline":b.outline,"seed":int(b.seed),"ground":func(x: float, z: float) -> float: return b_ground(x,z),
 		"top":floor_b(),"depth":float(b.depth),"hang":true,"resample":[60.0,200,48],"cell":2.0,"fine":1.2,"cliffs":Rect2(140.0,-18.0,54.0,56.0),
-		"fine_box":Rect2(142.0,-16.0,30.0,50.0),"cliff_drop":0.55,"stable":true,"tone":KitLook.turf(int(b.seed),KitLand.wear_of(paths()))})
+		"fine_box":Rect2(142.0,-16.0,30.0,50.0),"cliff_drop":0.55,"stable":true,"collide_sides":true,"tone":KitLook.turf(int(b.seed),KitLand.wear_of(paths()))})
 	land_b.name = "FarShore"
 	for land: Node3D in [land_a,land_b]:
-		_collide_sides(land)
 		root.add_child(land)
 		turf(land)
 	pieces.quarry = land_a
@@ -563,20 +563,6 @@ func build(into: Node3D) -> void:
 	_roots(root)
 	root.set_meta("triangles",_triangles())
 	built_ms = Time.get_ticks_msec()-began
-
-## An island's hanging sides collided as drawn (gb_serpent_crossing's).
-static func _collide_sides(land: Node3D) -> void:
-	var sides := land.get_node_or_null("Mesh") as MeshInstance3D
-	if sides == null or sides.mesh == null: return
-	var body := StaticBody3D.new()
-	body.name = "Sides"
-	var shape := ConcavePolygonShape3D.new()
-	shape.set_faces(sides.mesh.get_faces())
-	shape.backface_collision = true
-	var holder := CollisionShape3D.new()
-	holder.shape = shape
-	body.add_child(holder)
-	land.add_child(body)
 
 ## A haul-house: the lintel across the slot (its ends on the shoulders), two
 ## colossus columns of stacked drums against the cut faces under it, the

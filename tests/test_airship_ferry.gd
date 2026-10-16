@@ -4,17 +4,19 @@ extends SceneTree
 ## airship-ferry/round1.md), headless, on the aqueduct isle with its motif
 ## isles stood up:
 ##   - it flies by default, its loop resting at home (the aqueduct isle's
-##     south edge) and at the bell spires, its deck level with the turf
-##     there and a hand off the edge;
+##     south edge), the Sundered gorge, the drowned nave, the cloister tarn
+##     and the bell spires (docs/design/airship-ferry/round2.md), its deck
+##     level with the turf there (a step under at the gorge) and a hand off
+##     the edge;
 ##   - its body moves with it at once (a ray this frame finds the deck where
 ##     it is now);
 ##   - round its whole lap its hull, cabin and envelope never meet an
-##     isle's ground or rock or the parked plane, and its loop keeps clear
-##     of the serpent's way and the other ships' loops;
-##   - a walker on its foredeck is carried home to the bell spires: aboard
+##     isle's ground or rock or the parked plane, and its loop keeps 40 m
+##     off the other ships' loops (the game's sky has no serpent);
+##   - a walker on its foredeck is carried from home to the gorge: aboard
 ##     and on the deck every frame, never sliding on it (his place in the
 ##     ship's frame stays put) or jittering, a jump on the moving deck lands
-##     back on it; and at the bell spires he walks off onto their turf;
+##     back on it; and at the gorge he walks off onto its turf;
 ##   - on foot at the home stop he walks aboard as it rests there;
 ##   - --ferry-aboard starts him on its foredeck at home, about to leave;
 ##     --ferry-aboard=bell coming in to the bell spires, their isle stood.
@@ -30,6 +32,8 @@ const WORLD := 1 | (1 << 11) | (1 << 13)
 ## and in any one frame (m).
 const DRIFT := 0.05
 const JITTER := 0.004
+## The loop's stops, in order round it.
+const STOPS := ["home","gorge","nave","tarn","bell"]
 var failures := 0
 var study: Node3D
 var sky: Node3D
@@ -74,10 +78,11 @@ func _end() -> void:
 	print("PASS: airship ferry" if failures == 0 else "FAIL: airship ferry (%d)" % failures)
 	quit(1 if failures > 0 else 0)
 
-## Frames of the scene: the serpent, the ferry, then the pilot.
+## Frames of the scene: the serpent (only with --serpent), the ferry,
+## then the pilot.
 func _frames(seconds: float, each := Callable()) -> void:
 	for i in range(int(round(seconds/DT))):
-		sky.serpent.advance(DT)
+		if sky.serpent != null: sky.serpent.advance(DT)
 		ferry.step(DT)
 		study.tick(DT)
 		if each.is_valid(): each.call()
@@ -87,17 +92,18 @@ func _frames(seconds: float, each := Callable()) -> void:
 func _loop() -> void:
 	var names: Array = ferry.stops.map(func(s: Dictionary) -> String: return str(s.name))
 	print("ferry: loop %.0f m, lap %.0f s, stops %s" % [ferry._length,ferry.lap,str(names)])
-	check(names == ["home","bell"],"It rests at home and at the bell spires (%s)" % str(names))
-	check(ferry.lap > 90.0 and ferry.lap < 240.0,"A lap takes a few minutes (%.0f s)" % ferry.lap)
+	check(names == STOPS,"It rests at home, the gorge, the nave, the tarn and the bell spires (%s)" % str(names))
+	check(ferry.lap > 300.0 and ferry.lap < 600.0,"A lap takes several minutes (%.0f s)" % ferry.lap)
 	var space := study.get_world_3d().direct_space_state
-	# Each stop: the deck level with the turf beside it, a hand off its edge.
-	for n: String in ["home","bell"]:
+	# Each stop: the deck level with the turf beside it (at the gorge a step
+	# under: its rim is bevelled), a hand off its edge.
+	for n: String in STOPS:
 		ferry.set_clock(ferry.clock_before(n,-1.0))
 		check(ferry.resting() == n and ferry.pace == 0.0,"%s: it rests there" % n)
 		var w: Dictionary = ferry.wait_spot(n)
 		var deck: Vector3 = ferry.deck_point()
 		var turf: Variant = _ground(space,Vector3(w.stand.x,deck.y+3.0,w.stand.z))
-		check(turf != null and absf(float(turf)-deck.y) < 0.2,"%s: the deck (%.2f) is level with the turf beside it (%s)" % [n,deck.y,str(turf)])
+		check(turf != null and absf(float(turf)-deck.y) < (0.4 if n == "gorge" else 0.2),"%s: the deck (%.2f) is level with the turf beside it (%s)" % [n,deck.y,str(turf)])
 		# Across from the deck's edge toward the turf: how far to ground.
 		var out: Vector3 = (Vector3(w.stand.x,deck.y,w.stand.z)-deck)
 		out.y = 0.0
@@ -134,7 +140,8 @@ func _clear_of_isles() -> void:
 	var exclude: Array[RID] = [ferry.body.get_rid()]
 	for a: Dictionary in sky.airships:
 		for b: Node in (a.ship as Node).find_children("*","CollisionObject3D",true,false): exclude.append((b as CollisionObject3D).get_rid())
-	for b: Node in sky.serpent.find_children("*","CollisionObject3D",true,false): exclude.append((b as CollisionObject3D).get_rid())
+	if sky.serpent != null:
+		for b: Node in sky.serpent.find_children("*","CollisionObject3D",true,false): exclude.append((b as CollisionObject3D).get_rid())
 	q.exclude = exclude
 	var hits: Array = []
 	var t := 0.0
@@ -151,26 +158,10 @@ func _clear_of_isles() -> void:
 	for h: String in hits.slice(0,12): print("  ",h)
 	check(hits.is_empty(),"Round its lap it meets no isle or the parked plane (%d touches)" % hits.size())
 
-## Its loop keeps clear of the serpent's way and the other ships' loops.
+## Its loop keeps off the other ships' loops. (The game's sky has no
+## serpent; --serpent brings it back, with its own route.)
 func _clear_of_ways() -> void:
-	var serpent: Node3D = sky.serpent
-	var worst := INF
-	var worst_at := Vector3.ZERO
-	var s := 0.0
-	while s < ferry._length:
-		var p: Vector3 = ferry.point(s)
-		var t := 0.0
-		while t < serpent.route_length:
-			var d: float = p.distance_to(serpent.route_point(t))-serpent.reach_at(t)
-			if d < worst:
-				worst = d
-				worst_at = p
-			t += 2.0
-		s += 4.0
-	# The ferry's farthest from its loop's point: down its hull's keel, out
-	# along its envelope's side (the ship's own SCALE).
-	print("ferry: nearest the serpent's way %.1f m past its reach, at %s" % [worst,str(worst_at)])
-	check(worst > 6.0,"Its loop keeps clear of the serpent's way (%.1f m past the serpent's reach)" % worst)
+	check(sky.serpent == null,"No serpent in the game's sky")
 	var ships := INF
 	for a: Dictionary in sky.airships:
 		if a.has("ferry"): continue
@@ -180,12 +171,14 @@ func _clear_of_ways() -> void:
 			while f < ferry._length:
 				ships = minf(ships,ap.distance_to(ferry.point(f)))
 				f += 6.0
-	check(ships > 80.0,"Its loop keeps well off the other ships' loops (%.0f m)" % ships)
+	# Into and out of the tarn it crosses under the tarn ship's loop, which
+	# flies high to pass well over it (round 2: about 48 m loop to loop).
+	check(ships > 40.0,"Its loop keeps well off the other ships' loops (%.0f m)" % ships)
 
 # --- Riding ----------------------------------------------------------------------
 
-## Aboard at home a few seconds before it leaves, carried to the bell
-## spires; a jump on the way; off onto their turf.
+## Aboard at home a few seconds before it leaves, carried to the gorge
+## (the next stop); a jump on the way; off onto its turf.
 func _ride() -> void:
 	ferry.set_clock(ferry.clock_before("home",-(Ferry.HOLD-Ferry.LEAVE_LEAD)))
 	ferry.board_now()
@@ -212,7 +205,7 @@ func _ride() -> void:
 		if study.script_jump:
 			jumped = true
 			landed_local = local
-		sky.serpent.advance(DT)
+		if sky.serpent != null: sky.serpent.advance(DT)
 		ferry.step(DT)
 		study.tick(DT)
 		study.script_jump = false
@@ -238,26 +231,27 @@ func _ride() -> void:
 			turn = maxf(turn,absf(angle_difference(angle_difference(ferry.heading,motor.facing),face0)))
 		resting = ferry.resting()
 		if resting == "": left_home = true
-		if left_home and resting == "bell": break
+		if left_home and resting == "gorge": break
 	print("ferry: rode %.0f m in %.0f s, drift %.3f m, worst frame %.4f m, jump came down %.2f m off, facing off the ship's by %.3f rad" % [moved,frames*DT,drift,jitter,jump_drift,turn])
-	check(resting == "bell","Carried from home to rest at the bell spires (%s after %.0f s)" % [resting,frames*DT])
+	check(resting == "gorge","Carried from home to rest at the gorge (%s after %.0f s)" % [resting,frames*DT])
 	check(aboard,"He stays aboard, on the deck, the whole way")
 	check(drift < DRIFT and jitter < JITTER,"He doesn't slide or jitter on the deck as it moves and turns (drift %.3f m, worst frame %.4f m)" % [drift,jitter])
 	check(turn < 0.02,"He turns with it (facing off the ship's by %.3f rad)" % turn)
 	check(jumped and jump_drift < 0.3,"A jump on the moving deck comes down where it went up (%.2f m off)" % jump_drift)
 	check(moved > 250.0,"He went the whole way with it (%.0f m)" % moved)
-	# Off: the isle is to port (the ship's -X); walk across onto the turf.
+	# Off: away from the wait spot's facing (toward the isle); walk across
+	# onto the turf.
 	_frames(0.5)
-	var port: Vector3 = -ferry.pose.basis.x
-	study.script_want = Vector2(port.x,port.z).normalized()
+	var w: Dictionary = ferry.wait_spot("gorge")
+	study.script_want = -(w.face as Vector2)
 	_frames(2.0)
 	study.script_want = Vector2.ZERO
 	_frames(0.5)
 	var under: Variant = _ground(study.get_world_3d().direct_space_state,motor.feet+Vector3.UP*0.5)
-	var bell: Node3D = _isle("bell_spires")
-	var c: Vector3 = bell.circle()
+	var gorge: Node3D = _isle("sundered_gorge")
+	var c: Vector3 = gorge.circle()
 	var off := Vector2(motor.feet.x-c.x,motor.feet.z-c.y).length()
-	check(motor.grounded and ferry.riding_on == "still" and off < c.z and under != null and absf(float(under)-41.8) < 0.5,"Off at the bell spires he walks onto their turf (%s, %.0f m from its middle)" % [str(motor.feet),off])
+	check(motor.grounded and ferry.riding_on == "still" and off < c.z and under != null and absf(float(under)-37.6) < 0.5,"Off at the gorge he walks onto its turf (%s, %.0f m from its middle)" % [str(motor.feet),off])
 
 ## On foot by the home stop as it comes in: he walks aboard as it rests.
 func _walk_aboard() -> void:
@@ -311,7 +305,7 @@ func _flag(n: String) -> void:
 		var leaves: float = fposmod(float(ferry.stop(n).at)+Ferry.HOLD-ferry.clock,ferry.lap)
 		check(ferry.resting() == "home" and on < 0.1 and absf(leaves-Ferry.LEAVE_LEAD) < 0.5,"--ferry-aboard: on its foredeck (%.2f m off) at home, %.1f s before it leaves" % [on,leaves])
 	else:
-		check(ferry.resting() == "" and on < 0.1 and absf(until-Ferry.BELL_LEAD) < 0.5 and bell != null and bell.is_up(),"--ferry-aboard=bell: on its foredeck (%.2f m off), %.0f s out from the bell spires, their isle up" % [on,until])
+		check(ferry.resting() == "" and on < 0.1 and absf(until-Ferry.ARRIVE_LEAD) < 0.5 and bell != null and bell.is_up(),"--ferry-aboard=bell: on its foredeck (%.2f m off), %.0f s out from the bell spires, their isle up" % [on,until])
 	_frames(1.0)
 	check(ferry.riding_on == "deck" and study.motor.grounded,"--ferry-aboard%s: he stands on the deck (%s)" % ["" if n == "home" else "=bell",ferry.riding_on])
 

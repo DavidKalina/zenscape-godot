@@ -40,13 +40,5 @@ static func bump(space: PhysicsDirectSpaceState3D, plane: RefCounted, was: Vecto
 	plane.position = was+normal*0.15
 	_query.transform = Transform3D(to_world.basis*turn,to_world*(plane.position as Vector3))
 	if not space.get_rest_info(_query).is_empty(): plane.position = was+normal*0.6
-	var way: Vector3 = plane.forward()
-	var along := way-normal*way.dot(normal)
-	if along.length() > 0.05:
-		along = along.normalized()
-		var flat := Vector2(along.x,along.z)
-		if flat.length() > 0.05: plane.heading = atan2(-flat.x,-flat.y)
-		plane.pitch = clampf(asin(clampf(along.y,-1.0,1.0)),-0.6,0.6)
-	plane.speed = maxf(SkyPlane.SLOW,float(plane.speed)*KEEP)
-	plane.velocity = plane.forward()*float(plane.speed)
+	plane.glance(normal,KEEP,SkyPlane.SLOW)
 	return true

@@ -35,6 +35,8 @@ func run() -> void:
 	current_scene = study
 	while not study.walk_ready: await process_frame
 	m = study.motor
+	# The wall run is an unlock (off by default); these routes are run with it, as `--wallrun` gives it.
+	m.wallrun_on = true
 	check(study.pack == PACK and study.stations.size() >= 6,"The pack loads, %d stations" % study.stations.size())
 	_market()
 	_chimney()

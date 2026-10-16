@@ -19,20 +19,12 @@ const FLAT := 0.06
 const STAND_STEP := 0.0015
 var failures := 0
 
-## What the figure reads of the motor.
+## What the figure reads of the motor (scripts/pilot_pose.gd), its pace
+## set outright.
 class Motor:
-	extends RefCounted
-	var facing := 0.0
-	var grounded := true
-	var skidding := false
+	extends "res://scripts/pilot_pose.gd"
 	var flip := -1.0
-	var velocity := Vector3.ZERO
-	var feet := Vector3.ZERO
 	var pace := 0.0
-	var move := ""
-	var hold := ""
-	var hold_t := 0.0
-	var shimmy := 0.0
 	func speed() -> float: return pace
 
 func _initialize() -> void:

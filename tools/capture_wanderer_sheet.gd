@@ -129,7 +129,7 @@ func run() -> void:
 func _step(open := false) -> void:
 	await process_frame
 	var delta := 1.0/60.0
-	figure.drive(motor,delta)
+	figure.drive(motor.pose(),delta)
 	sail.update(delta,open,turning)
 
 func _aim(at: Vector3, look: Vector3) -> void:

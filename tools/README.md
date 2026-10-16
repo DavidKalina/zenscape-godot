@@ -11,10 +11,20 @@ with `python` on Windows (there is no `py` there) and `python3` on the Mac.
 | Run any Godot command | `python tools/godot.py <godot args>` |
 | Smoke a scene (400 frames, no errors) | `python tools/smoke.py studies/x.tscn [-- scene flags]` |
 | A check through the real play loop | write `scratch/x.gd` extending `tools/harness/drive.gd`, then `python tools/drive.py scratch/x.gd` |
+| Every helper a driver has, with its doc | `python tools/drive.py --api [route\|watch\|ray\|...]` (read from drive.gd, chain.gd, stations.gd; no Godot run) |
 | The same over seeds and knobs | `python tools/sweep.py scratch/x.gd --seed 1..8 --knob gulf=40,60` |
+| The same over the driver's own args | `python tools/sweep.py scratch/x.gd --arg pilot=stand,flee,dodge` (the driver gets `--pilot=...`) |
 | One motif alone on the real stage (the yard) | `python tools/smoke.py studies/motif_yard.tscn -- --motif=plumb_well [--grey] [--bodies=0] [--rims]` |
 | A motif's chain, 10 jittered trials | write `scratch/x_chain.gd` extending `tools/harness/chain.gd`, then `python tools/drive.py scratch/x_chain.gd -- --trials=10 --scene-args --motif=x [--grey]` |
+| Walk points through real input (lips, walls, falls, stuns) | in a driver: `await route([start, p1, {"to": p2, "jump": "long"}])`; a motif's paths: `walk_paths(owner, offset)` / chain.gd `walk_motif_paths()` (drive.gd, Routes) |
+| Log an enemy over time while he stands, flees, dodges or walks | in a driver: `await watch(enemy, {"pilot": "flee", "frames": 600})`; `--pilot-at=`, `--enemy-at=`; `"row": true` or `--watch-row` for a sweep table (drive.gd, Watching an enemy) |
+| Who's at a point, what a ray hits | in a driver: `say(hit_text(ray(a, b)))`, `pierce(a, b)`, `what_is_at(p, r)`, `what_is_in(box)`, `colliders(node)` (drive.gd, Collider probes) |
+| What a run layer lays (isles, crossings, problems), without building it | `python tools/godot.py -s tools/layer_dump.gd -- --shape=ring --seed=2 [--isles] [--out=scratch/plan.json]`; over seeds: `python tools/sweep.py tools/layer_dump.gd --seed 1..20 --shape sprawl,ring` |
+| Parse-check a script without running it | `python tools/godot.py --check-only -s res://scratch/x.gd` (one script; exit 1 with the parse error) |
+| Check a land outline (bowtie, wrong winding) | `KitLand.outline_problems(outline, winding)`; `KitLand.island` warns on its own |
 | Rendered stills to look at | `python tools/shot.py studies/x.tscn --frame Trap --view three,top --sheet` |
+| A still of a moment in a driven run (him mid-jump, a piece by its AABB) | in a driver: `await shot_at("side", motor, {"when": cond})`, then `route()`/`watch()`; run with `drive.py --rendered` (drive.gd, Shots) |
+| A short film and contact sheet while a route or watch plays | in a driver: `var f := film(enemy, {"view": "shoulder", "every": 6, "seconds": 3})`, `await watch(enemy)`, `await film_end(f)` (drive.gd, Shots) |
 | Anything that runs over ~8 min | `python tools/bg.py start NAME -- <command>`, then `python tools/bg.py wait NAME` |
 | The test suite | `python tools/run_tests.py [--tests 'test_x*.gd'] [--quick]` |
 | A brainstorm round's cards as one page of maps | `python tools/motif_cards_html.py docs/design/motifs/brainstorm/<round> [--open]` |
@@ -79,8 +89,15 @@ func drive() -> void:
   input path. Use it for setup, and prove the result with real input
   (AGENTS.md).
 - **Looking around.** `find(pattern)` and `first(pattern)` look up nodes
-  by name, class or script path. `shot(path)` takes a still, and only in a
-  rendered run.
+  by name, class or script path. `shot(path)` takes a still of the window,
+  `shot_at(view, target)` and `film(target)` place a camera of their own
+  (`--api shot`); all three only in a rendered run, and print SKIP headless.
+- **The full list.** `python tools/drive.py --api` prints every helper's
+  signature and doc, read from the scripts; `--api WORD` adds the
+  section's notes (a route's opts, what `watch` returns). drive.gd's
+  header index comes from the same parse: after changing a helper, run
+  `python tools/drive.py --api --update`. `--api` exits 1 while the index
+  or chain.gd's header misses a helper.
 - **Reporting.** `check(ok, label, detail)` prints `OK`/`FAIL`.
   `result(k, v)` adds to the closing `RESULT {json}` line. `row(dict)`
   prints `ROW {json}`, which a sweep turns into table rows. `say(text)`
@@ -137,7 +154,9 @@ python tools/sweep.py scratch/gap.gd --seed 1..6 --knob gulf=40,60,80 --csv scra
 ```
 
 Each axis becomes a scene flag: `--seed=N`, `--shape=S`, `--knob=k=v`, and
-`--set name=a,b` gives `--name=a`. Ranges are written `1..5` or `0..20..5`.
+`--set name=a,b` gives `--name=a`. `--arg name=a,b` gives the driver
+`--name=a` instead (before `--scene-args`), so the scene never sees it:
+`python tools/sweep.py scratch/watch_weeper.gd --arg pilot=stand,flee,dodge -- --watch-row`. Ranges are written `1..5` or `0..20..5`.
 The columns are the driver's RESULT values, or one row per ROW line it
 printed, plus `ok` and seconds. To try a value, pass it as a flag. Don't
 `sed` it into the source.

@@ -62,7 +62,10 @@ func _flora() -> void:
 		if part.begins_with("grass_tuft"): grass += mmi.multimesh.instance_count
 		if part.contains("meadow-flower"): petals += mmi.multimesh.instance_count
 		var material := mmi.material_override as ShaderMaterial
-		if material == null or not material.shader.resource_path.ends_with("reference_surface.gdshader"): swaying = false
+		# Its switches folded into a shader variant (scripts/shader_fold.gd),
+		# the plant shader is the one it was folded from.
+		var shader: Shader = material.get_meta("folded_from",material.shader) if material != null else null
+		if shader == null or not shader.resource_path.ends_with("reference_surface.gdshader"): swaying = false
 		if mmi.visibility_range_end <= 0.0: swaying = false
 	check(grass == tufts and petals > 0,"Tufts and flowers drawn as the catalog's multimeshes (%d tufts, %d flower heads)" % [grass,petals])
 	check(swaying,"Every plant batch wears the game's plant shader and fades out by range")
@@ -84,6 +87,12 @@ func _flora() -> void:
 		ray.from = Vector3(p.x,Art.TOP+60.0,p.y)
 		ray.to = Vector3(p.x,Art.TOP-8.0,p.y)
 		var hit := space.intersect_ray(ray)
+		# What flies by overhead (the sky's airships on their rounds) stands
+		# over nothing: looked through.
+		ray.exclude = []
+		while not hit.is_empty() and str((hit.collider as Node).get_path()).contains("/Sky/"):
+			ray.exclude = ray.exclude+[hit.rid]
+			hit = space.intersect_ray(ray)
 		if hit.is_empty() or not study._turf.has(hit.collider):
 			off_ground += 1
 			continue

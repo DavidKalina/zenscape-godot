@@ -409,7 +409,6 @@ var field: Node
 ## The heads' bodies coming up their cliffs (scripts/enemies/
 ## body_spawner.gd), or null (`--knob=bodies=0`).
 var spawner: Node = null
-var _air_was: Callable
 var _plane_was: Callable
 var _voices := {}
 ## Olmec threat round 1: the roaming Olmec (`roams`), his director
@@ -450,18 +449,13 @@ func build(scene: Node3D, enemies: Node, heads: Array, bodies := true, void_y :=
 		# Under the void a body is gone (and its head's next comes up).
 		spawner.lost_y = void_y
 		for h: Dictionary in heads: spawner.add_head(h.at,h.get("cliffs",[]))
-	var motor: Object = study.motor
-	_air_was = motor.air
-	var was := _air_was
 	var me := self
-	motor.air = func(p: Vector3) -> Dictionary:
-		var here: Dictionary = was.call(p) if was.is_valid() else {}
-		if not is_instance_valid(me): return here
+	study.motor.push_air(self,func(p: Vector3,here: Dictionary) -> Dictionary:
 		var wind := me._head_air(p,"sail_wind")
 		if wind == Vector3.ZERO: return here
 		var out := here.duplicate()
 		out["wind"] = (here.get("wind",Vector3.ZERO) as Vector3)+wind
-		return out
+		return out)
 	if study.get("plane_air") is Callable:
 		_plane_was = study.plane_air
 		var plane_was := _plane_was
@@ -476,7 +470,7 @@ func build(scene: Node3D, enemies: Node, heads: Array, bodies := true, void_y :=
 
 func _exit_tree() -> void:
 	if study == null: return
-	if _air_was.is_valid(): study.motor.air = _air_was
+	study.motor.pop_air(self)
 	if _plane_was.is_valid(): study.plane_air = _plane_was
 
 func _head_air(p: Vector3, how: String) -> Vector3:

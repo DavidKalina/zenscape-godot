@@ -94,12 +94,16 @@ func token_source() -> String:
 ## The lazy caches its build and its life share (layouts, paths, platforms),
 ## made once on the main thread so a worker's build never races them.
 func warm() -> void:
+	warm_look()
+	KitWater.material()
+	RuinKit.materials()
+
+## The kit's look (its palette, ground and rock), made on the main thread.
+static func warm_look() -> void:
 	KitLook.palette()
 	KitLook.ground_material()
 	KitLook.rock_material()
 	KitLook.rock_tone(Vector3.ZERO,30.0,Vector3.UP)
-	KitWater.material()
-	RuinKit.materials()
 
 ## Builds the land and ruins into `into` (its Art), filling `lands`.
 func build(into: Node3D) -> void:

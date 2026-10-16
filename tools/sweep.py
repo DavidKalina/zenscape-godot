@@ -7,12 +7,15 @@ column per axis and per value it reported.
   python tools/sweep.py scratch/gap_check.gd --seed 1..6 --knob gulf=40,60,80 -j 3
   python tools/sweep.py studies/run_layer.tscn --seed 1..4 --shape ring     # smoke each
   python tools/sweep.py scratch/jump.gd --set wanderer-scale=0.8,1.0 -- --tries=5
+  python tools/sweep.py scratch/watch_bird.gd --arg pilot=stand,flee,dodge --seed 1..3
 
 Axes become the scene's launch flags (after --scene-args): `--seed 1..5`
 is --seed=1 ... --seed=5, `--shape a,b` --shape=a, `--knob gulf=40,60`
---knob=gulf=40, `--set name=a,b` --name=a. Ranges: 1..5, 0..20..5 (by 5).
-Args after `--` go to the driver as they are. A .tscn target runs the smoke
-driver (tools/harness/smoke.gd) on it.
+--knob=gulf=40, `--set name=a,b` --name=a. `--arg name=a,b` is the one axis
+that goes to the driver instead (--name=a before --scene-args), so the scene
+never sees it. Ranges: 1..5, 0..20..5 (by 5). Args after `--` go to the
+driver as they are. A .tscn target runs the smoke driver
+(tools/harness/smoke.gd) on it.
 
 The columns: the driver's RESULT values (scalars; dicts flattened a level),
 or each ROW line as its own row if it printed ROWs; `ok` (exit 0, no
@@ -46,6 +49,11 @@ def values(spec: str) -> list[str]:
     return out
 
 
+def axis_name(key: str) -> str:
+    """An axis's column: `knob:gulf` and `arg:pilot` are gulf and pilot."""
+    return key.split(":", 1)[1] if key.startswith(("knob:", "arg:")) else key
+
+
 def flatten(d: dict) -> dict:
     out = {}
     for k, v in d.items():
@@ -60,16 +68,19 @@ def flatten(d: dict) -> dict:
 
 
 def run_combo(target: str, combo: dict, args: argparse.Namespace, driver_args: list[str]) -> list[dict]:
-    flags = []
+    flags, own = [], []
     for name, value in combo.items():
-        flags.append(f"--knob={name[5:]}={value}" if name.startswith("knob:") else f"--{name}={value}")
+        if name.startswith("arg:"):
+            own.append(f"--{name[4:]}={value}")
+        else:
+            flags.append(f"--knob={name[5:]}={value}" if name.startswith("knob:") else f"--{name}={value}")
     if target.endswith(".tscn"):
         scene = target[6:] if target.startswith("res://") else target
         run_args = ["-s", "res://tools/harness/smoke.gd", "--fixed-fps", "60", "--",
                     f"--scene={scene}", f"--frames={args.frames}"]
     else:
         run_args = ["-s", res_path(target), "--fixed-fps", "60", "--"]
-    run_args += [f"--timeout={args.timeout}", *driver_args, "--scene-args", *flags]
+    run_args += [f"--timeout={args.timeout}", *driver_args, *own, "--scene-args", *flags]
     r = godot.run(run_args, timeout=args.timeout + 30, check_import=False)
     result, rows = {}, []
     for line in r["output"].splitlines():
@@ -81,7 +92,7 @@ def run_combo(target: str, combo: dict, args: argparse.Namespace, driver_args: l
         except ValueError:
             pass
     ok = godot.status(r) == 0
-    base = {k.replace("knob:", ""): v for k, v in combo.items()}
+    base = {axis_name(k): v for k, v in combo.items()}
     tail = {"ok": "yes" if ok else ("TIMEOUT" if r["timed_out"] else "NO"), "s": round(r["seconds"], 1)}
     errors = r["diag"]["errors"] + [l for l in r["output"].splitlines() if l.startswith("FAIL")]
     if rows:
@@ -123,6 +134,7 @@ def main() -> int:
     p.add_argument("--shape", help="e.g. sprawl,ring")
     p.add_argument("--knob", action="append", default=[], help="name=v1,v2 (repeatable)")
     p.add_argument("--set", action="append", default=[], help="flag=v1,v2: --flag=v (repeatable)")
+    p.add_argument("--arg", action="append", default=[], help="name=v1,v2: the driver's own --name=v (repeatable)")
     p.add_argument("-j", "--jobs", type=int, default=4)
     p.add_argument("--timeout", type=int, default=300, help="seconds per combination")
     p.add_argument("--frames", type=int, default=400, help="for a .tscn target")
@@ -140,6 +152,9 @@ def main() -> int:
     for k in args.set:
         name, _, spec = k.partition("=")
         axes[name.lstrip("-")] = values(spec)
+    for k in args.arg:
+        name, _, spec = k.partition("=")
+        axes["arg:" + name.lstrip("-")] = values(spec)
     combos = [dict(zip(axes, vs)) for vs in itertools.product(*axes.values())] or [{}]
     why = godot.import_needed()
     if why:
@@ -150,11 +165,11 @@ def main() -> int:
     with ThreadPoolExecutor(max_workers=max(1, args.jobs)) as pool:
         for i, got in enumerate(pool.map(lambda c: run_combo(args.target, c, args, driver_args), combos)):
             rows += got
-            print(f"   {i + 1}/{len(combos)} {' '.join(f'{k}={v}' for k, v in combos[i].items())}: {got[0]['ok']}", flush=True)
+            print(f"   {i + 1}/{len(combos)} {' '.join(f'{axis_name(k)}={v}' for k, v in combos[i].items())}: {got[0]['ok']}", flush=True)
     print(table(rows))
     bad = [r for r in rows if r["_errors"]]
     for r in bad:
-        axes_text = " ".join(f"{k.replace('knob:', '')}={r.get(k.replace('knob:', ''))}" for k in axes)
+        axes_text = " ".join(f"{axis_name(k)}={r.get(axis_name(k))}" for k in axes)
         print(f"\n-- {axes_text}:")
         for e in r["_errors"][:4]:
             print("   " + e.replace("\n", "\n   "))

@@ -1057,7 +1057,7 @@ func _advance_eye(delta: float) -> void:
 	step_smooth.step(motor,_motor_ground,delta)
 	_sync_figure()
 	_motor_events(events)
-	var drawn: Dictionary = body.drive(motor,delta)
+	var drawn: Dictionary = body.drive(motor.pose(),delta)
 	_sail_events(events,delta)
 	_tread(editor.terrain,events,drawn)
 	_feet = motor.feet
@@ -1200,7 +1200,7 @@ func _body_events(out: Dictionary, delta: float) -> void:
 ## him), and each stroke throws a few drops and a ring off the mitt. Out of
 ## it, the drips off him (scripts/pilot_figure.gd `soak`) fall.
 func _water_events(events: Dictionary, drawn: Dictionary, delta: float) -> void:
-	for at in body.soak(motor,delta): puffs.drip(at,at.y-figure.global_position.y)
+	for at in body.soak(motor.pose(),delta): puffs.drip(at,at.y-figure.global_position.y)
 	if not is_finite(motor.surface):
 		ripples.dry()
 		return
@@ -1732,7 +1732,7 @@ func _advance_perch(delta: float) -> void:
 	step_smooth.step(motor,ground,delta)
 	_sync_figure()
 	_motor_events(events)
-	var drawn: Dictionary = body.drive(motor,delta)
+	var drawn: Dictionary = body.drive(motor.pose(),delta)
 	_sail_events(events,delta)
 	_tread(perch.node,events,drawn)
 	_perch_feet = motor.feet

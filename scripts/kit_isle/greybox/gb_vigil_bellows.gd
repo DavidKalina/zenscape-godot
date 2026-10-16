@@ -303,23 +303,17 @@ func live(g: Node) -> void:
 
 const GiantStone = preload("res://scripts/kit_isle/greybox/giant_stone.gd")
 const Style = preload("res://scripts/ruin_stone_style.gd")
-const KitLife = preload("res://scripts/kit_isle/kit_life.gd")
 
 const TURF_SEED := 5300
 ## The stones' bottom (m): under the land, so a wall's face runs past its edge.
 const FOOT := -2.5
-## The keels (m under their datum) and how far a keel's spurs hang under
-## top-depth (the giant's KEEL_REACH), for the occupancy.
+## The keels (m under their datum).
 const MAIN_DEPTH := 10.0
 const WEST_DEPTH := 6.0
 const TERRACE_DEPTH := 8.0
-const KEEL_REACH := 1.4
 ## The south terrace's top and the scree's.
 const TERRACE := -3.0
 const SCREE := -1.2
-
-static func grey() -> bool:
-	return preload("res://scripts/launch_args.gd").user_args().has("--vigil-grey")
 
 ## The main island's ground (this frame): the garth at 0, the pool's bowl
 ## (bed and its north and south beaches), the scree under the fallen corner.
@@ -367,86 +361,41 @@ static func paths() -> Array:
 		[Vector2(0.0,-5.0),Vector2(0.0,-12.6)],
 		[Vector2(10.0,-5.0),Vector2(22.0,-8.0),Vector2(30.0,-14.0),Vector2(39.0,-14.0)]]
 
-func flora_site() -> KitFlora.Site:
-	return KitFlora.Site.new(top(),KitLand.wear_of(paths()))
+func grey_flag() -> String:
+	return "--vigil-grey"
 
-func flora_seed() -> int:
-	return TURF_SEED+9
+func turf_seed() -> int:
+	return TURF_SEED
 
-func life_script() -> Script:
-	return null if grey() else KitLife
+func turf_paths() -> Array:
+	return paths()
 
-func warm() -> void:
-	super.warm()
-	if grey(): return
-	KitLook.palette()
-	KitLook.ground_material()
-	KitLook.rock_material()
-	KitLook.rock_tone(Vector3.ZERO,30.0,Vector3.UP)
-	RuinKit.materials()
-	GiantStone.warm()
-
-## The greybox's solids and the keels under the three islands (their
-## spurs' reach), so the occupancy keeps the generator off the rock.
-func _solids() -> Array:
-	var out := super._solids()
-	if grey(): return out
-	for keel: Array in [[main_outline(),0.0,MAIN_DEPTH],[west_outline(),0.0,WEST_DEPTH],[terrace_outline(),TERRACE,TERRACE_DEPTH]]:
-		var ring: Array = keel[0]
-		var box := Rect2(ring[0],Vector2.ZERO)
-		for p: Vector2 in ring: box = box.expand(p)
-		out.append([box.grow(-1.0),float(keel[1])-float(keel[2])*KEEL_REACH,float(keel[1]),null])
-	return out
-
-## Measured headless on a loaded 4-core Linux box (the turf build, 2026-10-14: 958 ms).
-func build_cost() -> int:
-	return 0 if grey() else 950
-
-## Turf on the ground, the cloister in stone, the pool's water.
-func build(into: Node3D) -> void:
-	if grey():
-		super.build(into)
-		return
-	art = into
-	var began := Time.get_ticks_msec()
-	var root := Node3D.new()
-	root.name = "VigilBellows"
-	into.add_child(root)
+## The pool's bowl wet.
+func turf_tone() -> Callable:
 	var pool: Rect2 = POOL.rect
 	var wet := func(mid: Vector2, y: float) -> float: return 1.0 if pool.grow(0.3).has_point(mid) and y < -0.2 else 0.0
-	var tone := KitLook.turf(TURF_SEED,KitLand.wear_of(paths()),wet)
-	var main := KitLand.island({"outline":main_outline(),"seed":TURF_SEED,"ground":func(x: float, z: float) -> float: return ground(x,z),
-		"top":0.0,"depth":MAIN_DEPTH,"cliffs":Rect2(-16.5,-31.0,43.5,33.5),"fine":1.2,"hang":true,"resample":[60.0,260,32],"tone":tone})
-	main.name = "Garth"
-	var west := KitLand.island({"outline":west_outline(),"seed":TURF_SEED+1,"ground":func(_x: float, _z: float) -> float: return 0.0,
-		"top":0.0,"depth":WEST_DEPTH,"hang":true,"resample":[40.0,80,32],"tone":tone})
-	west.name = "WestSatellite"
-	var terrace := KitLand.island({"outline":terrace_outline(),"seed":TURF_SEED+2,"ground":func(_x: float, _z: float) -> float: return TERRACE,
-		"top":TERRACE,"depth":TERRACE_DEPTH,"hang":true,"resample":[60.0,160,32],"tone":tone})
-	terrace.name = "Terrace"
-	for land: Node3D in [main,west,terrace]:
-		_collide_sides(land)
-		root.add_child(land)
-		turf(land)
+	return KitLook.turf(TURF_SEED,KitLand.wear_of(paths()),wet)
+
+## Measured headless on a loaded 4-core Linux box (the turf build, 2026-10-14: 958 ms).
+func turf_cost() -> int:
+	return 950
+
+## Turf on the ground (its keels in the occupancy), the cloister in stone,
+## the pool's water.
+func turf_islands() -> Array:
+	return [
+		{"name":"Garth","outline":main_outline(),"ground":func(x: float, z: float) -> float: return ground(x,z),
+			"top":0.0,"depth":MAIN_DEPTH,"cliffs":Rect2(-16.5,-31.0,43.5,33.5),"fine":1.2,"resample":[60.0,260,32]},
+		{"name":"WestSatellite","outline":west_outline(),"top":0.0,"depth":WEST_DEPTH,"resample":[40.0,80,32]},
+		{"name":"Terrace","outline":terrace_outline(),"top":TERRACE,"depth":TERRACE_DEPTH,"resample":[60.0,160,32]},
+	]
+
+func dress(root: Node3D) -> void:
+	var pool: Rect2 = POOL.rect
 	root.add_child(KitWater.still({"name":"Pool","level":float(POOL.surface),
 		"ground":func(x: float, z: float) -> float: return ground(x,z),
 		"rect":pool.grow(0.6),"inside":func(_p: Vector2) -> bool: return true,"tea":0.35}))
 	_stone(root)
-	built_ms = Time.get_ticks_msec()-began
-
-## An island's hanging sides collided as drawn (the giant's `_collide_sides`).
-static func _collide_sides(land: Node3D) -> void:
-	var sides := land.get_node_or_null("Mesh") as MeshInstance3D
-	if sides == null or sides.mesh == null: return
-	var body := StaticBody3D.new()
-	body.name = "Sides"
-	var shape := ConcavePolygonShape3D.new()
-	shape.set_faces(sides.mesh.get_faces())
-	shape.backface_collision = true
-	var holder := CollisionShape3D.new()
-	holder.shape = shape
-	body.add_child(holder)
-	land.add_child(body)
 
 ## The cloister's stone: one mesh, collided as the greybox's walk boxes.
 func _stone(root: Node3D) -> void:

@@ -43,7 +43,7 @@ func check(ok: bool, what: String) -> void:
 
 func _step(m: PilotMotor, dt: float, want: Vector2, jump: bool, ground: Callable = flat) -> Dictionary:
 	var out := m.step(dt,want,PilotMotor.RUN,jump,ground,free)
-	figure.drive(m,dt)
+	figure.drive(m.pose(),dt)
 	return out
 
 ## The jump held from a stand, then (pressed again on the landing) the pump:

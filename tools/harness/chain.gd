@@ -25,11 +25,15 @@ extends "res://tools/harness/drive.gd"
 ##   motif_index(slug)    its isle in the plan (study.layer.isles), -1 none
 ##   motif_offset(slug)   its offset (world = its own frame + this)
 ##   motif_point(p, slug) a point of its own frame in the world
+##   motif_start(slug)    its start (the motif's `start()`), in the world
 ##   motif_isle(slug)     its placed isle (scripts/kit_isle/motif_isle.gd)
 ##   motif_host(slug)     its live host (scripts/roguelike/layer_greybox.gd
 ##                        Isle: .traps (a TrapField, .traps), .pieces (ropes))
 ##   motif_heads(slug)    its inhaler heads now (in its `heads()` order; a
 ##                        reset makes them again, so ask after one)
+##   motif_floor(slug)    its lowest solid (world y)
+##   motif_box(rect, bottom, top, slug)
+##                        a rect of its frame (x, z) as a world AABB
 ##   hold_layer()         run_layer only: no run loop, the void far down,
 ##                        the motif's isle stood now (the yard needs none)
 ##   reset_all()          the stage as built (traps, heads and their
@@ -42,6 +46,7 @@ extends "res://tools/harness/drive.gd"
 ##                        t = {i, jitter (a Vector3, +-jitter m in x and z),
 ##                        delay}; fn returns {ok, ...} (or a bool). A ROW a
 ##                        trial; RESULT gets passed, trials, rate.
+##   walk_motif_paths(opts)  drive.gd walk_paths on the motif, in the world
 ##   rest(region, frames, most)
 ##                        waits till he comes to rest (grounded, still, not
 ##                        in a cannon) for `frames`, at most `most` frames:
@@ -58,12 +63,15 @@ const GREY_FLAGS := {
 ## How far under the motif's lowest solid a trial's fall counts as lost.
 const LOST_UNDER := 30.0
 
-## The motif the trials are on, and where (yard / layer).
+## The motif the trials are on.
 var slug := ""
+## Where: "yard" or "layer".
 var where := "yard"
+## True if the scene args asked for the motif's grey look.
 var grey := false
-## When the scene was asked for, and when it stood (ms since start).
+## When the scene was asked for (ms since start).
 var opened_ms := 0
+## When it stood (ms since start).
 var stood_ms := 0
 var _rng := RandomNumberGenerator.new()
 
@@ -112,6 +120,7 @@ func _plan() -> Dictionary:
 	var p: Variant = study.get("layer") if study != null else null
 	return p if p is Dictionary else {}
 
+## Its isle's index in the plan (study.layer.isles), -1 if none.
 func motif_index(s := "") -> int:
 	var id := "gb_"+(s if s != "" else slug)
 	var isles: Array = _plan().get("isles",[])
@@ -119,6 +128,7 @@ func motif_index(s := "") -> int:
 		if str(isles[i].id) == id: return i
 	return -1
 
+## Its offset: world = its own frame + this.
 func motif_offset(s := "") -> Vector3:
 	var i := motif_index(s)
 	return (_plan().isles[i].offset as Vector3) if i >= 0 else Vector3.ZERO
@@ -137,6 +147,7 @@ func motif_start(s := "") -> Vector3:
 	var m := motif(s)
 	return motif_point(m.start(),s) if m != null and m.has_method("start") else motor.feet
 
+## Its placed isle (scripts/kit_isle/motif_isle.gd), or null.
 func motif_isle(s := "") -> Node3D:
 	var m := motif(s)
 	var sky: Variant = study.get("sky")
@@ -147,6 +158,7 @@ func motif_isle(s := "") -> Node3D:
 		if isle.motif == m: return isle
 	return null
 
+## Its live greybox host (.traps, .pieces), or null.
 func motif_host(s := "") -> Node3D:
 	var stage: Variant = study.get("stage")
 	if stage == null or stage.greybox == null: return null
@@ -277,6 +289,11 @@ func rest(region := AABB(), still := 20, most := 1800) -> Vector3:
 		if motor.feet.y < floor_y: return Vector3.INF
 		await frames(1)
 	return Vector3.INF
+
+## Walks the motif's paths (drive.gd `walk_paths`: its `walks()`, else its
+## worn `paths()`), moved into the world: {name: route summary}.
+func walk_motif_paths(opts := {}, s := "") -> Dictionary:
+	return await walk_paths(motif(s),motif_offset(s),opts)
 
 ## A rect of the motif's frame (x, z), from `bottom` to `top` (its y), as a
 ## world AABB.

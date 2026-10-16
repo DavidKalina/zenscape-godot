@@ -16,9 +16,8 @@ extends "res://tools/harness/drive.gd"
 ##   --hud                    keep the HUD in
 ##   --size=1440x900          the PNGs' size
 ## Without --at or --frame: the study's own camera, one <out>.png.
-const Sheet = preload("res://tools/harness/sheet.gd")
-const VIEWS := {"three":Vector3(1.0,0.75,1.0),"front":Vector3(0.0,0.25,1.0),"back":Vector3(0.0,0.25,-1.0),
-	"left":Vector3(-1.0,0.25,0.0),"right":Vector3(1.0,0.25,0.0),"top":Vector3(0.0,1.0,0.05),"close":Vector3(1.0,0.5,0.8)}
+## The views and the framing are drive.gd's (VIEWS, view_eye, mesh_box), so
+## a driver's shot_at frames the same way.
 
 func drive() -> void:
 	if DisplayServer.get_name() == "headless":
@@ -45,15 +44,12 @@ func drive() -> void:
 			return
 		var cam := _camera()
 		cam.fov = arg_float("fov",50.0)
-		var radius := box.size.length()*0.5
-		var dist := radius/tan(deg_to_rad(cam.fov)*0.5)*arg_float("dist",1.0)*1.05
 		var middle := box.get_center()
 		note("framed %s: middle %s, %.1f m across" % [arg("frame"),middle.round(),box.size.length()])
 		for view: String in String(arg("view","three")).split(","):
-			var way: Vector3 = VIEWS.get(view,VIEWS.three)
-			var d := dist*(0.6 if view == "close" else 1.0)
-			cam.look_at_from_position(middle+way.normalized()*d,middle,Vector3.UP)
-			cam.far = maxf(4000.0,d*4.0)
+			var at := view_eye(view if VIEWS.has(view) else "three",box,Vector3.BACK,box,cam.fov,arg_float("dist",1.0))
+			cam.look_at_from_position(at.eye,at.look,Vector3.UP)
+			cam.far = maxf(4000.0,(at.eye as Vector3).distance_to(at.look)*4.0)
 			await frames(2)
 			saved.append(await _save("%s_%s.png" % [out,view]))
 	else:
@@ -62,7 +58,7 @@ func drive() -> void:
 	result("saved",saved)
 	if flag("sheet") and saved.size() > 1:
 		var sheet_path := out+"_sheet.png"
-		check(Sheet.make(saved,sheet_path) == OK,"sheet "+sheet_path)
+		check(make_sheet(saved,sheet_path) == OK,"sheet "+sheet_path)
 	check(not saved.is_empty(),"shot saved","%d files" % saved.size())
 
 func _camera() -> Camera3D:
@@ -79,23 +75,6 @@ func _save(path: String) -> String:
 
 ## The world box of the meshes under what matches `pattern`.
 func _box(pattern: String) -> AABB:
-	var tops: Array[Node] = []
-	if pattern == "all": tops = [study]
-	elif pattern == "walker":
-		var fig: Variant = study.get("figure")
-		if fig is Node: tops = [fig]
-	else: tops = find(pattern)
-	var box := AABB()
-	var any := false
-	for top: Node in tops:
-		var meshes: Array[Node] = top.find_children("*","GeometryInstance3D",true,false)
-		if top is GeometryInstance3D: meshes.append(top)
-		for m: Node in meshes:
-			var g := m as GeometryInstance3D
-			if not g.is_visible_in_tree(): continue
-			var b := g.global_transform*g.get_aabb()
-			# A sky dome or a sea plane would swallow the frame.
-			if b.size.length() > 3000.0: continue
-			box = b if not any else box.merge(b)
-			any = true
-	return box if any else AABB()
+	if pattern == "all": return mesh_box([study])
+	if pattern == "walker": return mesh_box([study.get("figure")])
+	return mesh_box(find(pattern))

@@ -68,7 +68,9 @@ write your own runner. Headless for everything but stills.
    scratch/SLUG_routes.gd -- --scene-args --motif=SLUG` (the driver calls
    `open("studies/motif_yard.tscn")`, as tools/harness/chain.gd does): `walk_to` and
    `jump` along each route through the input, rim in to rim out. Check
-   every trap and enemy builds and ticks. Then FOCUS. Report honestly what
+   every trap and enemy builds and ticks. Helpers: `route()` / chain.gd
+   `walk_motif_paths()`, `watch()`, `ray()` / `what_is_at()`; `python tools/drive.py --api WORD`.
+   Then FOCUS. Report honestly what
    you could and couldn't verify.
 
 Do not commit. Final reply (200 words or fewer): yard command, the routes,

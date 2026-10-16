@@ -162,17 +162,13 @@ const CLIFFS := Rect2(46.0,-50.0,68.0,86.0)
 ## the plane meets them.
 static func mesa(seed_value: int) -> Node3D:
 	var spec := {"outline":outline(),"seed":seed_value,"ground":ground,
-		"top":TOP,"depth":26.0,"cliffs":CLIFFS,"fine":1.3,"hang":true,"resample":[60.0,160,32],
+		"top":TOP,"depth":26.0,"cliffs":CLIFFS,"fine":1.3,"hang":true,"resample":[60.0,160,32],"sides":false,
 		"tone":KitLook.turf(seed_value,KitLand.wear_of(paths()))}
 	var node := KitLand.island(spec)
 	node.name = "Mesa"
-	# The island's ring sides give way to the mesa's own skirt (`skirt`):
+	# No ring sides ("sides": false): the mesa's own skirt (`skirt`),
 	# buttresses, corner crags and an irregular keel, drawn and collided
 	# ("Sides") so the plane meets what it sees.
-	var sides := node.get_node_or_null("Mesh") as MeshInstance3D
-	if sides != null:
-		node.remove_child(sides)
-		sides.free()
 	var faces := dress_walls(node,seed_value)
 	var body := StaticBody3D.new()
 	body.name = "Sides"

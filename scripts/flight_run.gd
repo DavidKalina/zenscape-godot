@@ -364,8 +364,7 @@ func _crash(pre: Dictionary, hit: Dictionary) -> void:
 	var way := Metrics.angles((line[mini(at+1,line.size()-1)].p as Vector3)-(line[maxi(at-1,0)].p as Vector3))
 	var heading := float(entry.heading) if at == 0 else way.x
 	plane.launch(p,heading,SkyPlane.CRUISE_SPEED,false)
-	plane.pitch = 0.0 if at == 0 else clampf(way.y,SkyPlane.PITCH_LIMIT.x,SkyPlane.PITCH_LIMIT.y)
-	plane.velocity = plane.forward()*plane.speed
+	plane.place(p,heading,0.0 if at == 0 else clampf(way.y,SkyPlane.PITCH_LIMIT.x,SkyPlane.PITCH_LIMIT.y),plane.speed)
 	# The line stands again from where it flies on: guides ahead of it.
 	var gap := int(line[at].gap) if at < line.size() else 0
 	for i in range(tokens.size()):
