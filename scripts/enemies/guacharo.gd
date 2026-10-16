@@ -19,7 +19,10 @@ extends Node3D
 ##           drops to a stalk point in the camera's view, STALK_SIDE rad off
 ##           its forward, STALK_OUT out and STALK_UP over him (so the dive
 ##           comes across the screen and knocks him sideways off a narrow
-##           way), its line to him clear, and hangs there circling tight,
+##           way), its line to him clear; boxed in under stone with a gap
+##           over him (a fallen roof bay), up through the gap instead
+##           (STALK_PITCHES), so a gap is a quick dash under open sky; and
+##           hangs there circling tight,
 ##           clicking (oilbirds find their way by clicks), the clicks faster
 ##           as it makes up its mind; its shadow tightens on him. Gets up
 ##           again if he stays safe ABORT s or covered COVER_BREAK s.
@@ -41,7 +44,8 @@ extends Node3D
 ##           harm a heart through the motor's `harm`. The carry's first LIFT
 ##           s it beats hard to get him up (he drops back where he was if he
 ##           struggles free now); then out over the void if his exposure put
-##           a void within VOID_CARRY of him (rim, hold, wall, rope, leap),
+##           a void within VOID_CARRY of him (rim, hold, wall, rope, leap)
+##           (snatched up through a gap, straight up till clear of stone),
 ##           else along over the ground and dropped there (`drop_over_void`).
 ##   pull    heavy beats back up; then a cool-down (COOL s) before it can
 ##           mark him again.
@@ -75,6 +79,11 @@ const CARRY := 1.5
 const PULL := 1.1
 const COOL_MIN := 7.0
 const COOL_MAX := 12.0
+## A gap in his cover: when no stalk point out toward the camera has a
+## clear line to him, it tries these slopes (deg off the level) up through
+## the gap, hanging on a ring GAP_RING of the usual over it.
+const STALK_PITCHES: Array[float] = [50.0,62.0,72.0,80.0,86.0]
+const GAP_RING := 0.25
 
 ## Its knobs (sizes in his heights, speeds m/s, times s); `--flyer-<knob>=`
 ## overrides one (layer_flyers.gd).
@@ -137,6 +146,9 @@ var _centre := Vector3.INF
 var _stalk_at := Vector3.ZERO
 var _stalk_ang := 0.0
 var _stalk_up := 1.0
+## The stalk point's lift off the level (rad): 0 for the usual point out
+## toward the camera; steep for a point up through a gap in his cover.
+var _stalk_pitch := 0.0
 var _stalk_check := 0.0
 var _safe_t := 0.0
 var _cover_t := 0.0
@@ -350,25 +362,43 @@ func _steer(target: Vector3, speed: float, accel: float, delta: float, arrive: b
 	vel = vel.move_toward(want,accel*delta)
 
 ## A stalk point: in front of the camera's view of him (so the dive comes
-## at the player), out and over him, the line to his middle clear.
+## at the player), out and over him, the line to his middle clear. Boxed in
+## under stone with a gap over him (a fallen roof bay), steeper and steeper
+## up through the gap (STALK_PITCHES), so the dive comes down through it.
 func _pick_stalk() -> bool:
 	var mid := _middle()
 	var fwd := Vector3(_cam_fwd.x,0.0,_cam_fwd.z)
 	fwd = fwd.normalized() if fwd.length() > 0.1 else Vector3.FORWARD
 	var side := float(knobs.stalk_side)
 	# In view first; failing that wider round him, then higher.
+	var sides: Array[float] = [side,-side,side*0.4,-side*0.4,side*1.8,-side*1.8,side*3.0,-side*3.0,0.0]
 	for up: float in [1.0,2.2]:
-		for a: float in [side,-side,side*0.4,-side*0.4,side*1.8,-side*1.8,side*3.0,-side*3.0,0.0]:
-			var way := fwd.rotated(Vector3.UP,a*turn)
-			var p := mid+way*float(knobs.stalk_out)*unit+Vector3.UP*float(knobs.stalk_up)*up*unit
-			if field.blocked(mid+Vector3.UP*0.3,p-mid-Vector3.UP*0.3): continue
-			# Room under it to hang (not in the grass).
-			if field.floor_under(p,0.5,1.4*unit) != -INF: continue
-			_stalk_ang = a*turn
-			_stalk_up = up
-			_stalk_at = p
-			return true
+		for a: float in sides:
+			if _try_stalk(mid,fwd,a*turn,0.0,up): return true
+	for pitch: float in STALK_PITCHES:
+		for a: float in sides:
+			if _try_stalk(mid,fwd,a*turn,deg_to_rad(pitch),1.0): return true
 	return false
+
+## The stalk point for a heading `ang` off the camera's forward, `pitch`
+## off the level (0: STALK_OUT out, STALK_UP*`up` over him; else STALK_OUT
+## away on that slope).
+func _stalk_point(mid: Vector3, fwd: Vector3, ang: float, pitch: float, up: float) -> Vector3:
+	var way := fwd.rotated(Vector3.UP,ang)
+	var out := float(knobs.stalk_out)*unit
+	if pitch <= 0.0: return mid+way*out+Vector3.UP*float(knobs.stalk_up)*up*unit
+	return mid+(way*cos(pitch)+Vector3.UP*sin(pitch))*out
+
+func _try_stalk(mid: Vector3, fwd: Vector3, ang: float, pitch: float, up: float) -> bool:
+	var p := _stalk_point(mid,fwd,ang,pitch,up)
+	if field.blocked(mid+Vector3.UP*0.3,p-mid-Vector3.UP*0.3): return false
+	# Room under it to hang (not in the grass).
+	if field.floor_under(p,0.5,1.4*unit) != -INF: return false
+	_stalk_ang = ang
+	_stalk_up = up
+	_stalk_pitch = pitch
+	_stalk_at = p
+	return true
 
 func _stalk(delta: float, hunting: bool) -> void:
 	_stalk_check -= delta
@@ -379,8 +409,9 @@ func _stalk(delta: float, hunting: bool) -> void:
 			return
 	var mid := _middle()
 	var fwd := Vector3(_cam_fwd.x,0.0,_cam_fwd.z).normalized()
-	_stalk_at = _stalk_at.lerp(mid+fwd.rotated(Vector3.UP,_stalk_ang)*float(knobs.stalk_out)*unit+Vector3.UP*float(knobs.stalk_up)*_stalk_up*unit,1.0-exp(-2.0*delta))
-	var r := float(knobs.stalk_r)*unit
+	_stalk_at = _stalk_at.lerp(_stalk_point(mid,fwd,_stalk_ang,_stalk_pitch,_stalk_up),1.0-exp(-2.0*delta))
+	# Over a gap it hangs on a tight ring, so it stays over the gap.
+	var r := float(knobs.stalk_r)*unit*(GAP_RING if _stalk_pitch > 0.0 else 1.0)
 	var ang := state_t*float(knobs.stalk_speed)/maxf(r,0.5)*0.5*turn
 	var target := _stalk_at+Vector3(cos(ang)*r,sin(state_t*1.7)*0.3*unit,sin(ang)*r)
 	_steer(target,float(knobs.stalk_speed)+position.distance_to(target)*0.6,16.0,delta,false)
@@ -395,6 +426,8 @@ func _stalk(delta: float, hunting: bool) -> void:
 		_give_up()
 		return
 	var near := position.distance_to(_stalk_at) < r*2.0 and vel.length() < float(knobs.stalk_speed)*1.6
+	# Only with its own line to him clear (over a gap, not over the roof).
+	if near and _stalk_pitch > 0.0: near = not field.blocked(position,(mid-position)*0.9)
 	if near and state_t >= float(knobs.stalk_min) and (exposure >= 0.85 or (state_t >= float(knobs.stalk_max) and exposure >= 0.4)):
 		# The aim is locked with the scream: where he will be if he keeps
 		# on as he is (LEAD of his pace over the fold and the dive). Kept
@@ -539,6 +572,12 @@ func _carry(delta: float) -> void:
 	var want := Vector3.UP*float(knobs.carry_rise)*0.8+_carry_dir*1.0 if lifting else _carry_dir*float(knobs.carry_speed)+Vector3.UP*float(knobs.carry_rise)
 	vel = vel.move_toward(want,(30.0 if lifting else 10.0)*delta)
 	if _blocked_ahead: vel.y = maxf(vel.y,4.0)
+	# Snatched up through a gap in stone: straight up till clear of it.
+	var flat := Vector3(vel.x,0.0,vel.z)
+	if flat.length() > 0.1 and field.blocked(position+flat.normalized()*unit*0.8,Vector3.UP*3.0*unit):
+		vel.x = 0.0
+		vel.z = 0.0
+		vel.y = maxf(vel.y,4.0)
 	# Dropping him on the ground: it never takes him out past the floor.
 	if not drop_over_void and not lifting:
 		var ahead := m.feet+Vector3(vel.x,0.0,vel.z).normalized()*unit*1.5
