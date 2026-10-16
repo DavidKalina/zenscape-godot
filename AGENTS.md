@@ -46,6 +46,22 @@ round needs a tool the harness lacks, say so in its handoff.
 macOS has no `timeout`; wrapping a command in it silently does nothing. Use
 the harness's watchdogs or `tools/bg.py`.
 
+# Keeping context lean
+
+The scripts here are long, with long headers, so a round fills its context
+fast. Keep it lean:
+
+- Read a file's header, or grep for the constant or function you need,
+  rather than reading the whole file. Read further only where you'll change
+  code or rely on its exact behaviour.
+- Run Godot through the harness with `--only` and `--log FILE`, and grep the
+  log, rather than printing it all.
+- Put stills on one sheet (`tools/shot.py --sheet`) rather than separate images.
+- For a sweep across many files ("what reads X", "where is Y set"), send a
+  read-only search agent (Explore; Sonnet, or Haiku to locate files only)
+  that returns file:line citations and quotes constants verbatim. Read
+  yourself the lines a decision or a number rests on.
+
 # Fresh worktrees
 
 `native/terrain_kernels/bin/`, `zenscape_kernels.gdextension` and its
