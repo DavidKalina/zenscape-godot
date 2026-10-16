@@ -763,6 +763,10 @@ rig.select_set(True)
 body_ob.select_set(True)
 bpy.context.view_layer.objects.active = rig
 GLB.parent.mkdir(parents=True, exist_ok=True)
+# The clips are keyed a frame per 1/FPS s; the export reads time from the
+# scene rate (Blender's default 24 stretched every clip by 1.25).
+bpy.context.scene.render.fps = gc.FPS
+bpy.context.scene.render.fps_base = 1.0
 bpy.ops.export_scene.gltf(
     filepath=str(GLB), export_format="GLB", use_selection=True, export_yup=True,
     export_apply=False, export_animations=True, export_animation_mode="ACTIONS",
